@@ -252,22 +252,9 @@ pub(crate) fn entity(
         EntKind::Spline => poly(out, &crate::curve::tessellate(sk, i, unit), at, &ink()),
         // the polyline `render` already swept to size the page
         EntKind::Curve => poly(out, &polys[i], at, &ink()),
-        // a plane is a datum with a glyph: its chord, and a tick along the frame's own y-axis
-        // saying which side the view's second coordinate grows to.  No name — a `Sketch` holds
-        // no source names, so the label is the app's to draw.
-        EntKind::Plane => {
-            let s = ink();
-            for (from, to) in crate::plane::glyph(sk, i, unit) {
-                let (a, b) = (at(from), at(to));
-                out.push_str(&format!(
-                    "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\"{s}/>\n",
-                    n(a.0),
-                    n(a.1),
-                    n(b.0),
-                    n(b.1)
-                ));
-            }
-        }
+        // a plane is a place in space, two rays and an origin, with nothing to draw on paper:
+        // the workspace shows it as a pane
+        EntKind::Plane => {}
     }
 }
 

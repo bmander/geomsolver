@@ -2,7 +2,7 @@
 
 use super::names::write_ref;
 use super::{
-    num, snake, Arg, Attitude, CurveSpec, CurveTarget, Decl, InstArg, InstVal, Instance, Kid,
+    num, snake, Arg, CurveSpec, CurveTarget, Decl, InstArg, InstVal, Instance, Kid,
     KidSeed, OpArg, Program, Ref, Relation, Sense, Span, StmtKind, Sweep, Written,
 };
 use crate::constraints::{CKind, Fixity, SpecKind};
@@ -33,20 +33,15 @@ pub fn render_flat(p: &mut Program) -> Result<&str, PrintError> {
     if p.preview.is_some() {
         return Err(PrintError { construct: "preview blocks" });
     }
-    if !p.uses.is_empty() || !p.modules.is_empty() {
-        return Err(PrintError { construct: "imports" });
-    }
-    if p.components.len() > 1
-        || p.components
-            .iter()
-            .any(|c| c.name.is_some() || !c.formals.is_empty() || c.module.is_some())
+    // a `use` is a line of its own; what it links is the host's, printed nowhere — the flat text
+    // is unlinked, as a document is before its host links it, and read again it links again
+    let own = |c: &super::Component| c.module.is_none();
+    if p.components.iter().filter(|c| own(c)).count() > 1
+        || p.components.iter().filter(|c| own(c)).any(|c| c.name.is_some() || !c.formals.is_empty())
     {
         return Err(PrintError { construct: "component definitions" });
     }
-    if !p.in_blocks.is_empty() {
-        return Err(PrintError { construct: "plane blocks" });
-    }
-    for c in &p.components {
+    for c in p.components.iter().filter(|c| own(c)) {
         for st in &c.body {
             printable(&st.kind)?;
             if matches!(st.kind, StmtKind::Instance(_)) {
@@ -55,7 +50,13 @@ pub fn render_flat(p: &mut Program) -> Result<&str, PrintError> {
         }
     }
     let mut out = String::new();
-    for comp in &mut p.components {
+    for u in &mut p.uses {
+        let start = out.len();
+        out.push_str(&format!("use {}", u.name));
+        u.span = Span::new(start, out.len());
+        out.push('\n');
+    }
+    for comp in p.components.iter_mut().filter(|c| c.module.is_none()) {
         let lo = out.len();
         // Separate declarations from the relations that follow them.
         let mut said_decl = false;
@@ -66,13 +67,24 @@ pub fn render_flat(p: &mut Program) -> Result<&str, PrintError> {
             }
             said_decl = is_decl;
             let start = out.len();
-            write_stmt(&mut out, &st.kind);
+            // a block's plane is said on each statement it gave one: the flat form has no blocks
+            match &st.kind {
+                StmtKind::Decl(d) if d.membership.plane().is_some() && d.membership.written().is_none() => {
+                    write_decl(&mut out, d);
+                    out.push_str(" in ");
+                    write_ref(&mut out, d.membership.plane().expect("just asked"));
+                }
+                k => write_stmt(&mut out, k),
+            }
             st.span = Span::new(start, out.len());
             out.push('\n');
         }
         comp.span = Span::new(lo, out.len());
     }
+    p.components.retain(|c| c.module.is_none());
+    p.modules.clear();
     p.text = out;
+    p.in_blocks.clear();
     Ok(&p.text)
 }
 
@@ -260,7 +272,12 @@ fn write_decl(out: &mut String, d: &Decl) {
         write_curve_spec(out, c);
     } else {
         out.push_str(d.kind.as_str());
-        out.push_str(&decl_tail(d, &d.seed));
+        // a declaration written with no `hint(…)` prints none: "no clause" is the empty span
+        if d.hint_span.is_some_and(|s| s.is_empty()) && d.seed_at.is_none() {
+            out.push_str(&decl_args(d));
+        } else {
+            out.push_str(&decl_tail(d, &d.seed));
+        }
     }
     if let Some(u) = &d.knots {
         out.push_str(" knots [");
@@ -283,56 +300,6 @@ fn dim(a: &Arg) -> String {
     match a {
         Arg::Dim { text, .. } => text.clone(),
         other => write_arg("", crate::constraints::SpecKind::Float, other),
-    }
-}
-
-/// A plane's attitude, as its bracket list spells it after the children.
-fn attitude_parts(a: &Attitude, solve: &crate::syntax::PlaneSolve) -> Vec<String> {
-    let triple = |t: &[Arg; 3]| format!("({}, {}, {})", dim(&t[0]), dim(&t[1]), dim(&t[2]));
-    let mut parts = attitude_only(a, &triple);
-    match &solve.position {
-        crate::syntax::Position::Stated => {}
-        crate::syntax::Position::Free(_) => parts.push("offset: free".to_string()),
-        crate::syntax::Position::Through(r) => {
-            let mut s = String::from("through: ");
-            write_ref(&mut s, r);
-            parts.push(s);
-        }
-    }
-    parts
-}
-
-fn attitude_only(a: &Attitude, triple: &dyn Fn(&[Arg; 3]) -> String) -> Vec<String> {
-    match a {
-        Attitude::Along { plane, line } => {
-            let (mut s, mut l) = (String::from("from: "), String::from("fold: along "));
-            write_ref(&mut s, plane);
-            write_ref(&mut l, line);
-            vec![s, l]
-        }
-        Attitude::Free { .. } => vec!["attitude: free".to_string()],
-        Attitude::Page => Vec::new(),
-        Attitude::From { plane, fold } => {
-            let mut s = String::from("from: ");
-            write_ref(&mut s, plane);
-            vec![s, format!("fold: {}", dim(fold))]
-        }
-        Attitude::Offset { plane, offset } => {
-            let mut s = String::from("from: ");
-            write_ref(&mut s, plane);
-            let mut parts = vec![s];
-            if let Some(k) = offset {
-                parts.push(format!("offset: {}", dim(k)));
-            }
-            parts
-        }
-        Attitude::Basis { u, v, o } => {
-            let mut parts = vec![format!("u: {}", triple(u)), format!("v: {}", triple(v))];
-            if let Some(o) = o {
-                parts.push(format!("o: {}", triple(o)));
-            }
-            parts
-        }
     }
 }
 
@@ -435,8 +402,6 @@ pub(crate) fn decl_args(d: &Decl) -> String {
             Field::Scalar => {}
         }
     }
-    // a plane's attitude is what it is made of too, and no solve moves it
-    parts.extend(attitude_parts(&d.attitude, &d.plane));
     if let Some(sweep) = &d.sweep {
         parts.extend(sweep_parts(sweep));
     }
@@ -498,10 +463,12 @@ fn hint_of(parts: &[String]) -> String {
 /// Print owned scalar seeds using registry field names. Geometric seeds retain
 /// their `at:` spelling; child seeds belong in the argument list.
 fn point_hint(text: [Option<&str>; 2], v: [f64; 2]) -> String {
+    // a child's place in its plane: x and y, never the height a point in space has
     let parts: Vec<String> = EntKind::Point
         .fields()
         .iter()
         .filter(|(_, f)| *f == Field::Scalar)
+        .take(2)
         .enumerate()
         .map(|(i, (name, _))| match text.get(i).copied().flatten() {
             Some(t) => format!("{name}: {t}"),
@@ -539,7 +506,7 @@ pub(crate) fn hint_clause(d: &Decl, seed: &[f64]) -> String {
                 parts.push(format!("{key}: {text}"));
             }
         }
-        for (key, text) in [("by", &at.by), ("turn", &at.turn)] {
+        for (key, text) in [("by", &at.by), ("turn", &at.turn), ("x", &at.x), ("y", &at.y)] {
             if let Some((t, _)) = text {
                 parts.push(format!("{key}: {t}"));
             }
@@ -553,20 +520,24 @@ pub(crate) fn hint_clause(d: &Decl, seed: &[f64]) -> String {
             continue;
         }
         let v = seed.get(scalar).copied().unwrap_or(0.0);
-        let text = match d.seed_text.get(scalar).and_then(|t| t.as_deref()) {
+        let written = d.seed_text.get(scalar).and_then(|t| t.as_deref());
+        // a number the source wrote, though it be 0
+        let said = written.is_some() || d.seed_spans.get(scalar).is_some_and(|s| !s.is_empty());
+        scalar += 1;
+        // a number that is 0 where nobody wrote one says nothing: a point's height, a ray's
+        // place, where a plane stands — each 0 unless said
+        let optional = matches!(
+            (d.kind, *name),
+            (EntKind::Point, "z") | (EntKind::Ray, "px" | "py" | "pz") | (EntKind::Plane, _)
+        );
+        if optional && !said && v == 0.0 {
+            continue;
+        }
+        let text = match written {
             Some(t) => t.to_string(),
             None => num(v),
         };
-        scalar += 1;
         parts.push(format!("{name}: {text}"));
-    }
-    // and a plane's seeds for what its brackets made unknowns, in the order written
-    for h in &d.plane.hints {
-        let v = match h.args.as_slice() {
-            [a] => dim(a),
-            args => format!("({})", args.iter().map(dim).collect::<Vec<_>>().join(", ")),
-        };
-        parts.push(format!("{}: {v}", h.key.text));
     }
     hint_of(&parts)
 }
@@ -665,9 +636,9 @@ pub fn operator_text(kind: CKind, args: &[Option<Arg>]) -> String {
         match kind {
             CKind::HorizontalDistance => parens.push("along: x".to_string()),
             CKind::VerticalDistance => parens.push("along: y".to_string()),
-            CKind::CoordinateU => parens.push("along: u".to_string()),
-            CKind::CoordinateV => parens.push("along: v".to_string()),
-            CKind::PointPlaneDistance | CKind::PointPlaneDistanceFixed => {
+            CKind::CoordinateU | CKind::Ordinate3U => parens.push("along: u".to_string()),
+            CKind::CoordinateV | CKind::Ordinate3V => parens.push("along: v".to_string()),
+            CKind::PointPlaneDistance => {
                 parens.push("along: n".to_string())
             }
             _ => {}

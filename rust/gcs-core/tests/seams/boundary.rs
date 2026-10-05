@@ -1,7 +1,7 @@
 use super::*;
 use gcs_core::{envelope::IntersectionOptions,seam::{BoundarySeam,BoundarySeamTolerance}};
 
-pub(super) const SPHERE: &str = "
+pub(super) const SPHERE: &str = "\
 component Sphere(origin: point, size: Length) {
   private bottom := point
   private top := point
@@ -13,7 +13,9 @@ component Sphere(origin: point, size: Length) {
   private carrier := solid(face(rim,diameter),about: diameter)
   wall := surface(carrier,rim)
 }
+in std.front {
 cut := Sphere(o,size: sqrt(9.25) * 1mm)
+}
 boundary_edge := seam(first_envelope,cut.wall)
 ";
 
@@ -61,7 +63,7 @@ fn boundary_seams_refuse_support_continuations_and_excluded_material() {
         .unwrap_err(),Error::OutsideDomain);
     assert!(original.evaluate([0.5,0.,0.1],tolerance()).is_ok());
     for radius in [3.01,3.1] {
-        let src = format!("{MODEL}{}\nsmall := Sphere(o,size: {radius}mm)\n\
+        let src = format!("{MODEL}{}\nsmall := Sphere(o,size: {radius}mm) in std.front\n\
             clipped := patch(first_envelope,inside: small.wall.solid)\n",
             SPHERE.replace("boundary_edge := seam(first_envelope,cut.wall)","boundary_edge := seam(clipped,cut.wall)"));
         let e = solved(&src);
@@ -76,12 +78,12 @@ fn boundary_seams_roundtrip_copy_delete_and_preserve_private_dependencies() {
     let e = model();
     // The flat printer deliberately refuses component definitions. Exercise its
     // seam spelling with a flat sphere, and component privacy separately below.
-    let mut flat = solved(&format!("{MODEL}\n\
+    let mut flat = solved(&format!("{MODEL}\nin std.front {{\n\
         south := point\n\
         north := point\n\
         fix(x == 0, y == -sqrt(9.25)) south\nfix(x == 0, y == sqrt(9.25)) north\n\
         rim := arc(center: o,start: south,end: north)\n\
-        radius(sqrt(9.25) * 1mm) rim\ndiameter := line(north,south)\n\
+        radius(sqrt(9.25) * 1mm) rim\ndiameter := line(north,south)\n}}\n\
         ball := solid(face(rim,diameter),about: diameter)\n\
         wall := surface(ball,rim)\nboundary_edge := seam(first_envelope,wall)\n")).program;
     let text = syntax::render_flat(&mut flat).unwrap().to_string();

@@ -4,14 +4,10 @@ model m from "assembly.sv"
 sheet drawing {
   size (420mm, 297mm)
   sketch source(m) at (80mm, 180mm)
-  // Use upright paper axes; the folded model datum has a quarter-turn in its basis.
+  // the side view, the side plane, 240 to the right; the plate's own side view under it
+  sketch side(m) from m.std.side at (320mm, 180mm)
   view v0(m.plate.body) from right at (320mm, 180mm)
   style m.O { display: none }
-  style m.views.qf { display: none }
-  style m.views.right_origin { display: none }
-  style m.views.qr { display: none }
-  style m.views.top_origin { display: none }
-  style m.views.qt { display: none }
   style m.up { display: none }
   style m.plate.r.piv { display: none }
   style m.plate.r.ip.p { display: none }
@@ -326,8 +322,6 @@ sheet drawing {
   style m.plate.thr.lv_a { color: #2a7ab0; width: 1.4 }
   style m.plate.thr.lv_c { color: #2a7ab0; width: 1.4 }
   style m.plate.thr.datum { display: none }
-  style m.plate.thr.front_u { display: none }
-  style m.plate.thr.fold { display: none }
   style m.plate.thr.axis { display: none }
   style m.crank.arm { color: #888888; width: 0.5; dash: 14 3 2 3 }
   style m.crank.disc.ssa { display: none }
@@ -453,8 +447,5 @@ sheet drawing {
   style m.plate.l.sweep { color: #888888; width: 0.6; dash: 6 3; display: geometry }
   style m.plate.air.ch_in { color: #7a7a7a; width: 0.6; dash: 4 3 }
   style m.plate.air.ch_out { color: #7a7a7a; width: 0.6; dash: 4 3 }
-  style m.views.front { color: #8a8a8a; width: 0.75; dash: 2 3; display: none }
-  style m.views.right { color: #8a8a8a; width: 0.75; dash: 2 3; display: none }
-  style m.views.top { color: #8a8a8a; width: 0.75; dash: 2 3; display: none }
   style m.plate.thr.longitudinal { color: #8a8a8a; width: 0.75; dash: 2 3; display: none }
 }

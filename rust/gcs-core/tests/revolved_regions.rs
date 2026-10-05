@@ -1,8 +1,8 @@
 use gcs_core::{envelope::Error,model::SolidDef,program,
-    solid::{RegionLocation,RevolvedRegion},solve,syntax};
+    solid::{RegionLocation,RevolvedRegion},solve};
 
 fn solved(source: &str) -> program::Elaborated {
-    let (p,errors) = syntax::parse(source);
+    let (p,errors) = crate::common::parse(source);
     assert!(errors.is_empty(),"{errors:?}");
     let mut e = program::elaborate(&p);
     assert!(e.ok(),"{:?}",e.diags);
@@ -10,7 +10,10 @@ fn solved(source: &str) -> program::Elaborated {
     e
 }
 
-const RING: &str = "unit mm
+const RING: &str = "\
+unit mm
+use std
+in std.front {
 o := point
 q := point
 c := point
@@ -20,10 +23,14 @@ fix(x == 3, y == 0) c
 axis := line(o,q)
 rim := circle(center: c)
 radius(1mm) rim
+}
 body := solid(face(rim), about: axis)
 ";
 
-const SPHERE: &str = "unit mm
+const SPHERE: &str = "\
+unit mm
+use std
+in std.front {
 o := point
 a := point
 b := point
@@ -33,6 +40,7 @@ fix(x == 0, y == 2) b
 rim := arc(center: o, start: a, end: b)
 radius(2mm) rim
 axis := line(b,a)
+}
 body := solid(face(rim,axis), about: axis)
 ";
 
@@ -101,7 +109,10 @@ fn a_spheres_diameter_disappears_and_its_center_is_interior_material() {
 
 #[test]
 fn finite_conical_material_includes_caps_and_refuses_support_continuations() {
-    let e = solved("unit mm
+    let e = solved("\
+unit mm
+use std
+in std.front {
 a := point
 b := point
 c := point
@@ -112,6 +123,7 @@ fix(x == 3, y == 3) c
 fix(x == 0, y == 3) d
 axis := line(a,d)
 profile := (ab := line(a,b)) -> (bc := line(b,c)) -> (cd := line(c,d)) -> (da := line(d,a)) -> close
+}
 body := solid(profile,about: axis)
 ");
     let region = RevolvedRegion::read(&e.sketch,0,1e-12).unwrap();

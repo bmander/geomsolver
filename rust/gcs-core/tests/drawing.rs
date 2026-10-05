@@ -1,18 +1,24 @@
-use gcs_core::{drawing, program, solve, syntax};
+use gcs_core::{drawing, program, solve};
 use std::collections::BTreeMap;
 
-const MODEL: &str = "unit mm
+const MODEL: &str = "\
+unit mm
+use std
+in std.front {
 o := point
 fix(x == 0, y == 0) o
 rim := circle(center: o) hint(r: 10)
+}
 param r := 10mm
+in std.front {
 radius(r) rim
+}
 stock := solid(face(rim), depth: 4mm)
 body := solid(stock)
 ";
 
 fn solved() -> program::Elaborated {
-    let (p, errs) = syntax::parse(MODEL);
+    let (p, errs) = crate::common::parse(MODEL);
     assert!(errs.is_empty(), "{errs:?}");
     let mut e = program::elaborate(&p);
     assert!(e.ok(), "{:?}", e.diags);
@@ -30,7 +36,8 @@ fn vtwin_paper_side_view_is_upright_and_meets_the_cylinders() {
     assert!(solve::solve(&mut e.sketch, Default::default()).success);
     let doc = drawing::parse(include_str!("../../examples/vtwin/assembly.svd")).unwrap();
     let sheet = &doc.sheets[0];
-    let source = sheet.views.iter().find(|v| v.sketch).unwrap();
+    // the side plane's sketch, where the side view's points are drawn
+    let source = sheet.views.iter().find(|v| v.sketch && v.name == "side").unwrap();
     let cylinder = e.sketch.point_xy(e.map.ent_named("side.cylB.b").unwrap().i());
     let px_mm = 96.0 / 25.4;
     let cylinder_back_x = (source.at.0 + cylinder.0 * source.scale.unwrap_or(sheet.scale)) * px_mm;
@@ -83,7 +90,7 @@ fn drawing_references_are_checked_and_cannot_be_model_statements() {
     ] {
         assert!(drawing::render(&drawing::parse(text).unwrap(), &models, None).is_err(), "{text}");
     }
-    for text in ["p := point", "sheet s { p := point }", "sheet s { scale 0 }",
+    for text in ["use std\nin std.front {\np := point\n}\n", "sheet s { p := point }", "sheet s { scale 0 }",
         "sheet s { view a(m.body) at (NaN,0) }", "model m from \"unfinished",
         "sheet s { style .visible { color: red } }"] {
         assert!(drawing::parse(text).is_err(), "{text}");
@@ -95,10 +102,10 @@ fn model_sources_refuse_presentation_but_keep_geometry_and_claims() {
     for extra in ["style .hidden { width: 2 }", "view(body) in front",
         "a := point class hidden", "extra := solid(face(rim) class hidden, depth: 2mm)",
         "o distance(20) o at (1,2)"] {
-        let (_, errs) = syntax::parse(&format!("{MODEL}\n{extra}"));
+        let (_, errs) = crate::common::parse(&format!("{MODEL}\n{extra}"));
         assert!(errs.iter().any(|e| e.message.contains(".svd")), "{errs:?}");
     }
-    let (_, errs) = syntax::parse(&format!("{MODEL}\nclaim radius(10mm) rim"));
+    let (_, errs) = crate::common::parse(&format!("{MODEL}\nclaim radius(10mm) rim"));
     assert!(errs.is_empty(), "{errs:?}");
 }
 
@@ -110,7 +117,7 @@ fn requested_dimensions_survive_statement_reordering() {
     let a = drawing::render(&doc, &models, None).unwrap();
     assert!(a.contains("<text"));
     let text = MODEL.replace("radius(r) rim\n", "") + "radius(r) rim\n";
-    let (p, errs) = syntax::parse(&text); assert!(errs.is_empty());
+    let (p, errs) = crate::common::parse(&text); assert!(errs.is_empty());
     let mut other = program::elaborate(&p);
     assert!(solve::solve(&mut other.sketch, solve::SolveOpts::default()).success);
     let models = BTreeMap::from([("m".into(), drawing::Model { sketch: &other.sketch, names: &other.map })]);
@@ -138,19 +145,23 @@ fn host_loading_is_relative_cached_and_cycle_checked() {
 
 #[test]
 fn indexed_members_and_field_measurements_survive_reordering() {
-    let model = "unit mm
+    let model = "\
+unit mm
+use std
+in std.front {
 repeat 3 as i {
   p := point
   fix(x == i * 10, y == 0) p
 }
 bar := line(p[0], p[2])
+}
 ";
     let drawing = "model m from \"part.sv\" sheet s {
         sketch v(m) at (30mm,40mm)
         measure distance(m.bar.p1, m.p[2]) in v offset 8mm
     }";
     let render = |text: &str| drawing::compile(drawing, "drawing.svd", None,
-        &mut |_, _| Some(("part.sv".into(), text.into()))).unwrap();
+        &mut |path, _| (path == "part.sv").then(|| ("part.sv".into(), text.into()))).unwrap();
     let a = render(model);
     assert!(a.contains(">20</text>"), "{a}");
     assert_eq!(a, render(&("unused := 7\n".to_string() + model)));
@@ -158,9 +169,9 @@ bar := line(p[0], p[2])
 
 #[test]
 fn measurements_refuse_foreshortening_and_sections_check_the_cut_plane() {
-    let model = format!("{MODEL}b := point\nfix(x == 0, y == 10) b\n");
+    let model = format!("{MODEL}in std.front {{\nb := point\nfix(x == 0, y == 10) b\n}}\n");
     let compile = |text: &str| drawing::compile(text, "drawing.svd", None,
-        &mut |_, _| Some(("part.sv".into(), model.clone())));
+        &mut |path, _| (path == "part.sv").then(|| ("part.sv".into(), model.clone())));
     let err = compile("model m from \"part.sv\" sheet s {
         view v(m.body) from top at (30,40)
         measure distance(m.o,m.b) in v
@@ -189,8 +200,10 @@ fn styles_can_show_one_point_and_hide_selected_dimensions() {
 #[test]
 fn isometric_camera_matches_the_old_helper_plane_without_model_geometry() {
     let plain = solved();
-    let source = format!("{MODEL}\niq := point\nfix(x == 1, y == 0) iq\niso := plane(origin: o, toward: iq, u: (1, -1, 0), v: (1, 1, 2))");
-    let (p, errs) = syntax::parse(&source);
+    let source = format!("{MODEL}\niu := ray hint(x: 1, y: -1, z: 0)\nfix(x == 1, y == -1, z == 0) iu\n\
+        iv := ray hint(x: 1, y: 1, z: 2)\nfix(x == 1, y == 1, z == 2) iv\n\
+        iso := plane(u: iu, v: iv)\nfix(x == 0, y == 0, z == 0) iso");
+    let (p, errs) = crate::common::parse(&source);
     assert!(errs.is_empty(), "{errs:?}");
     let mut with_helper = program::elaborate(&p);
     assert!(with_helper.ok(), "{:?}", with_helper.diags);
@@ -203,5 +216,6 @@ fn isometric_camera_matches_the_old_helper_plane_without_model_geometry() {
     let before = gcs_core::io::dumps(&plain.sketch, None);
     assert_eq!(render(&plain, "isometric"), render(&with_helper, "m.iso"));
     assert_eq!(gcs_core::io::dumps(&plain.sketch, None), before);
-    assert!(plain.sketch.planes.is_empty());
+    // the camera made no plane of the model's: only the standard ones `use std` brings
+    assert_eq!(plain.sketch.planes.len(), 4);
 }

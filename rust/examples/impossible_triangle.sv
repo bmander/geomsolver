@@ -11,14 +11,18 @@
 // So the drawing reports as fully determined and the solve has nowhere to go, and holding those
 // two facts at once without pretending either away is what the case is for.
 
-a := point
-b := point hint(x: 10, y: 0)
-c := point hint(x: 5, y: 5)
+use std
 
-ab := horizontal line(a, b)
+in std.front {
+  a := point
+  b := point hint(x: 10, y: 0)
+  c := point hint(x: 5, y: 5)
 
-a distance(10) b
-b distance(1) c
-a distance(1) c
+  ab := horizontal line(a, b)
 
-fix(x == 0, y == 0) a
+  a distance(10) b
+  b distance(1) c
+  a distance(1) c
+
+  fix(x == 0, y == 0) a
+}

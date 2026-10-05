@@ -3,7 +3,10 @@ use gcs_core::{io,model::{MotionDef,SolidDef},program,solid::{self,MaterialField
 
 mod contacts;
 
-const SOURCE: &str = "unit mm
+const SOURCE: &str = "\
+unit mm
+use std
+in std.front {
 center := point
 a := point
 b := point
@@ -18,11 +21,12 @@ rim := arc(center: center,start: a,end: b)
 radius(1) rim
 diameter := line(a,b)
 axis := line(o,z)
+}
 tool := solid(face(rim,diameter),about: diameter)
 generating := motion(about: axis)
 ";
 fn read(source: &str) -> program::Elaborated {
-    let (mut p,errors) = syntax::parse(source);
+    let (mut p,errors) = crate::common::parse(source);
     assert!(errors.is_empty(),"{errors:?}");
     assert!(gcs_core::modules::link(&mut p,&mut gcs_core::library::resolve).is_empty());
     let mut e = program::elaborate(&p);
@@ -153,7 +157,7 @@ fn invalid_intervals_cycles_and_nested_sweeps_are_explicit() {
         "bad := solid(tool,under: generating,from: 0deg,to: 1deg,depth: 1mm)",
         "bad := solid(tool,under: axis,from: 0deg,to: 1deg)",
         "bad := solid(bad,under: generating,from: 0deg,to: 1deg)"] {
-        let (p,errors) = syntax::parse(&format!("{SOURCE}{bad}\n"));
+        let (p,errors) = crate::common::parse(&format!("{SOURCE}{bad}\n"));
         let e = program::elaborate(&p);
         assert!(!errors.is_empty() || !e.ok() ||
             e.sketch.solids.iter().enumerate().any(|(i,_)| solid::validate(&e.sketch,i).is_err()),"{bad}");

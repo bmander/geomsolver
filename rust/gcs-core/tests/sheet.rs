@@ -11,7 +11,7 @@
 
 use gcs_core::callout;
 use gcs_core::program::{elaborate, Elaborated};
-use gcs_core::syntax::parse_legacy as parse;
+use crate::common::parse_legacy as parse;
 
 /// Elaborated **and solved** — which is not a convenience here but the point: a generated
 /// dimension is a reading of the drawing, so it says what the geometry came to and not what a
@@ -30,9 +30,11 @@ fn read(src: &str) -> Elaborated {
     e
 }
 
-/// A 60 × 40 plate with a Ø16 hole through it, and a side view beside the front.
+/// A 60 × 40 plate with a Ø16 hole through it, drawn in the front.
 const PART: &str = "\
 unit mm
+use std
+in std.front {
 a := point
 b := point hint(x: 60, y: 0)
 c := point hint(x: 60, y: 40)
@@ -43,24 +45,18 @@ vertical bc
 a distance(60) b
 a distance(40) d
 fix(x == 0, y == 0) a
-sec := face(ab, bc, cd, da)
-front := plane(origin: a, toward: b)
 o := point hint(x: 30, y: 20)
 a distance(30, along: x) o
 a distance(20, along: y) o
 hole := circle(center: o) hint(r: 8)
 radius(8) hole
+}
+sec := face(ab, bc, cd, da)
 hole_f := face(hole)
 stock := solid(sec, depth: 30mm)
 bore := solid(hole_f, depth: 30mm)
 body := solid(stock)
 bore cut body
-p2 := point
-q2 := point hint(x: 150, y: 0)
-side := plane(origin: p2, toward: q2, from: front, fold: -90deg)
-fix(x == 110, y == 0) p2
-p2 distance(40, along: x) q2
-p2 distance(0, along: y) q2
 ";
 
 /// The generated callouts alone — the ones past `callout::GENERATED`.
@@ -73,7 +69,7 @@ fn made(e: &Elaborated, unit: f64) -> Vec<callout::Callout> {
 
 #[test]
 fn a_sheet_can_ask_for_its_own_dimensions() {
-    let e = read(&format!("{PART}dimensions(body) in front\n"));
+    let e = read(&format!("{PART}dimensions(body) in std.front\n"));
     let cs = made(&e, 0.05);
     let texts: Vec<&str> = cs.iter().map(|c| c.text.as_str()).collect();
     // the two extents, and the hole this view sees square on
@@ -87,7 +83,7 @@ fn a_sheet_can_ask_for_its_own_dimensions() {
 fn a_view_dimensions_what_that_view_sees() {
     // the side view sees the part's depth, and sees the bore edge-on — so it says 40 × 30 and
     // does not invent a diameter for a circle that is not a circle from there
-    let e = read(&format!("{PART}dimensions(body) in side\n"));
+    let e = read(&format!("{PART}dimensions(body) in std.side\n"));
     let cs = made(&e, 0.05);
     let texts: Vec<&str> = cs.iter().map(|c| c.text.as_str()).collect();
     assert!(texts.contains(&"40") && texts.contains(&"30"), "the side view's own two: {texts:?}");
@@ -98,7 +94,7 @@ fn a_view_dimensions_what_that_view_sees() {
 fn nothing_is_placed_by_hand_and_nothing_lands_on_the_part() {
     // **the engine that already lays out every stated dimension lays these out too**, which is
     // the whole of "never placed by the LLM": an extent stands off the outline it measures
-    let e = read(&format!("{PART}dimensions(body) in front\n"));
+    let e = read(&format!("{PART}dimensions(body) in std.front\n"));
     let cs = made(&e, 0.05);
     let (x0, y0, x1, y1) = e.sketch.drawn_bounds();
     for c in &cs {
@@ -117,7 +113,7 @@ fn a_generated_dimension_is_a_reading_and_not_a_statement() {
     // it adds no equation, no unknown and no freedom — the property that makes a sheet a
     // *report* rather than a second document to keep in step
     let plain = read(PART);
-    let sheet = read(&format!("{PART}dimensions(body) in front\n"));
+    let sheet = read(&format!("{PART}dimensions(body) in std.front\n"));
     assert_eq!(plain.sketch.params.len(), sheet.sketch.params.len());
     assert_eq!(plain.sketch.constraints.len(), sheet.sketch.constraints.len());
     // its id is past any constraint, so a front end resolving one back to a statement finds
@@ -132,7 +128,7 @@ fn the_sheet_follows_the_drawing() {
     // an edit to the design moves the generated dimensions, because they were never numbers
     // anybody wrote down
     let wider = PART.replace("a distance(60) b", "a distance(75) b");
-    let e = read(&format!("{wider}dimensions(body) in front\n"));
+    let e = read(&format!("{wider}dimensions(body) in std.front\n"));
     let texts: Vec<String> = made(&e, 0.05).into_iter().map(|c| c.text).collect();
     assert!(texts.iter().any(|t| t == "75"), "the sheet says what the part is: {texts:?}");
 }

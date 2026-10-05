@@ -12,19 +12,24 @@
 use gcs_core::diagnose::{diagnose, DiagnoseOptions};
 use gcs_core::program::{elaborate, Elaborated};
 use gcs_core::solve::{solve, SolveOpts};
-use gcs_core::syntax::parse;
+use crate::common::parse;
 
 use crate::common::{build, involute_at};
 
 const INVOLUTE: &str = "\
+use std
 component Involute(c: circle, phase: Angle, u: Angle) {
   p := point(x: c.center.x + c.r * (cos(u + phase) + u * pi / 180 * sin(u + phase)), y: c.center.y + c.r * (sin(u + phase) - u * pi / 180 * cos(u + phase)))
 }
+in std.front {
 o := point
 base := circle(center: o) hint(r: 20)
+}
 inv := Involute(base, phase: 0).p over u in (10, 90)
+in std.front {
 radius(20) base
 fix(x == 0, y == 0) o
+}
 ";
 
 /// How many constraints own the shared unknown `name`.
@@ -44,13 +49,17 @@ fn errors(src: &str) -> Vec<String> {
 /// same two contacts each owning its own, and the line solves through the point.
 #[test]
 fn two_contacts_pinned_to_one_name_own_one_unknown() {
-    let line = "a := point hint(x: 30, y: 10)\nb := point hint(x: 40, y: 35)\nl := line(a, b)\n\
-                p := point hint(x: 20, y: 20)\n";
+    let line = "\
+a := point hint(x: 30, y: 10)
+b := point hint(x: 40, y: 35)
+l := line(a, b)
+p := point hint(x: 20, y: 20)
+";
     let mut shared = build(&format!(
-        "{INVOLUTE}{line}param s: Angle hint(50)\np coincident(t == s) inv\ninv tangent(t == s) l\n"
+        "{INVOLUTE}param s: Angle hint(50)\nin std.front {{\n{line}p coincident(t == s) inv\ninv tangent(t == s) l\n}}\n"
     ));
     let mut apart =
-        build(&format!("{INVOLUTE}{line}p coincident inv hint(t: 50)\ninv tangent l hint(t: 50)\n"));
+        build(&format!("{INVOLUTE}in std.front {{\n{line}p coincident inv hint(t: 50)\ninv tangent l hint(t: 50)\n}}\n"));
     assert_eq!(owners(&shared, "s"), 2);
     assert!(apart.sketch.shared.is_empty());
     let r = solve(&mut shared.sketch, SolveOpts::default());
@@ -77,11 +86,11 @@ fn two_contacts_pinned_to_one_name_own_one_unknown() {
 #[test]
 fn a_tangency_and_a_curvature_at_one_place() {
     let src = format!(
-        "{INVOLUTE}a := point hint(x: 0, y: 10)\nb := point hint(x: 30, y: 40)\nl := line(a, b)\n\
-         a distance(40) b\nfix(x == 0) a\n\
+        "{INVOLUTE}param s: Angle hint(40)\nin std.front {{\na := point hint(x: 0, y: 10)\n\
+         b := point hint(x: 30, y: 40)\nl := line(a, b)\na distance(40) b\nfix(x == 0) a\n\
          k := point hint(x: 10, y: 10)\nosc := circle(center: k) hint(r: 12)\n\
-         param s: Angle hint(40)\ninv tangent(t == s) l\ninv curvature(t == s) osc\n\
-         radius(5 * pi) osc\n"
+         inv tangent(t == s) l\ninv curvature(t == s) osc\n\
+         radius(5 * pi) osc\n}}\n"
     );
     let mut e = build(&src);
     let r = solve(&mut e.sketch, SolveOpts::default());
@@ -105,20 +114,20 @@ fn a_tangency_and_a_curvature_at_one_place() {
 #[test]
 fn a_place_is_shared_along_one_curve_only() {
     let src = format!(
-        "{INVOLUTE}inv2 := Involute(base, phase: 90).p over u in (10, 90)\n\
-         p := point hint(x: 20, y: 20)\nq := point hint(x: -20, y: 20)\n\
-         param s: Angle hint(50)\np coincident(t == s) inv\nq coincident(t == s) inv2\n"
+        "{INVOLUTE}inv2 := Involute(base, phase: 90).p over u in (10, 90)\nparam s: Angle hint(50)\n\
+         in std.front {{\np := point hint(x: 20, y: 20)\nq := point hint(x: -20, y: 20)\n\
+         p coincident(t == s) inv\nq coincident(t == s) inv2\n}}\n"
     );
     let said = errors(&src);
     assert!(said.iter().any(|m| m.contains("cannot share it")), "{said:?}");
     let src = format!(
-        "{INVOLUTE}p := point hint(x: 20, y: 20)\nparam s: Angle hint(50)\n\
-         p coincident(t == s) inv hint(t: 50)\n"
+        "{INVOLUTE}param s: Angle hint(50)\nin std.front {{\np := point hint(x: 20, y: 20)\n\
+         p coincident(t == s) inv hint(t: 50)\n}}\n"
     );
     let said = errors(&src);
     assert!(said.iter().any(|m| m.contains("seeded where it is declared")), "{said:?}");
     // and undeclared, the name is no unknown at all
-    let said = errors(&format!("{INVOLUTE}p := point hint(x: 20, y: 20)\np coincident(t == s) inv\n"));
+    let said = errors(&format!("{INVOLUTE}in std.front {{\np := point hint(x: 20, y: 20)\np coincident(t == s) inv\n}}\n"));
     assert!(said.iter().any(|m| m.contains("`s` is not defined")), "{said:?}");
 }
 
@@ -126,10 +135,10 @@ fn a_place_is_shared_along_one_curve_only() {
 /// defines is the pin it always was: the contact is held at that number.
 #[test]
 fn a_pin_to_a_number_still_pins() {
-    let said = errors("param s: Length\np := point\nfix(x == s) p\n");
+    let said = errors("use std\nparam s: Length\nin std.front {\np := point\nfix(x == s) p\n}\n");
     assert!(said.iter().any(|m| m.contains("pinned to an unknown")), "{said:?}");
     let mut e = build(&format!(
-        "{INVOLUTE}w := 30\np := point hint(x: 20, y: 20)\np coincident(t == w) inv\n"
+        "{INVOLUTE}w := 30\nin std.front {{\np := point hint(x: 20, y: 20)\np coincident(t == w) inv\n}}\n"
     ));
     assert!(e.sketch.shared.is_empty());
     assert!(solve(&mut e.sketch, SolveOpts::default()).success);
@@ -143,8 +152,8 @@ fn a_pin_to_a_number_still_pins() {
 #[test]
 fn a_place_is_not_a_free_variable() {
     let src = format!(
-        "{INVOLUTE}p := point hint(x: 20, y: 20)\nparam s: Length hint(50)\np coincident(t == s) inv\n\
-         q := point hint(x: 5, y: 5)\nq distance(s) o\n"
+        "{INVOLUTE}param s: Length hint(50)\nin std.front {{\np := point hint(x: 20, y: 20)\np coincident(t == s) inv\n\
+         q := point hint(x: 5, y: 5)\nq distance(s) o\n}}\n"
     );
     let said = errors(&src);
     assert!(said.iter().any(|m| m.contains("is a place along a curve")), "{said:?}");
@@ -154,11 +163,24 @@ fn a_place_is_not_a_free_variable() {
 /// carry the name, so the contacts that owned one unknown own one again.
 #[test]
 fn a_copy_and_a_document_keep_the_place_shared() {
-    let src = "a := point hint(x: 0, y: 0)\nb := point hint(x: 10, y: 20)\n\
-               c := point hint(x: 30, y: 20)\nd := point hint(x: 40, y: 0)\n\
-               spl := spline(a, b, c, d)\n\
-               p := point hint(x: 15, y: 20)\nq := point hint(x: 15, y: 25)\nl := line(q, p)\n\
-               param s: Scalar hint(0.4)\np coincident(t == s) spl\nspl tangent(t == s) l\n";
+    let src = "\
+use std
+in std.front {
+a := point hint(x: 0, y: 0)
+b := point hint(x: 10, y: 20)
+c := point hint(x: 30, y: 20)
+d := point hint(x: 40, y: 0)
+spl := spline(a, b, c, d)
+p := point hint(x: 15, y: 20)
+q := point hint(x: 15, y: 25)
+l := line(q, p)
+}
+param s: Scalar hint(0.4)
+in std.front {
+p coincident(t == s) spl
+spl tangent(t == s) l
+}
+";
     let e = build(src);
     let check = |sk: &gcs_core::model::Sketch, how: &str| {
         let p = sk.shared.get("s").unwrap_or_else(|| panic!("{how}: no shared `s`")).param;

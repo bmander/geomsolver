@@ -10,26 +10,30 @@
 // radius `rp` or the pitch radii and they are generated again: the 3D counterpart, which cuts
 // the tooth space out of a solid wheel, is `../lantern_generation.sv`.
 
+use std
+
 r1 := 10      // the pinion's pitch radius, where its pins stand
 r2 := 30      // the wheel's
 rp := 2       // the pins
 
-o1 := point
-o2 := point hint(x: 40, y: 0)
-fix(x == 0, y == 0) o1
-o1 distance(r1 + r2, along: x) o2
-o1 distance(0, along: y) o2
-pitch1 := circle(center: o1) hint(r: 10)
-pitch2 := circle(center: o2) hint(r: 30)
-radius(r1) pitch1
-radius(r2) pitch2
+in std.front {
+  o1 := point
+  o2 := point hint(x: 40, y: 0)
+  fix(x == 0, y == 0) o1
+  o1 distance(r1 + r2, along: x) o2
+  o1 distance(0, along: y) o2
+  pitch1 := circle(center: o1) hint(r: 10)
+  pitch2 := circle(center: o2) hint(r: 30)
+  radius(r1) pitch1
+  radius(r2) pitch2
 
-// one pin, at the pitch point where the pitch circles touch
-pc := point hint(x: 10, y: 0)
-pc coincident pitch1
-o1 distance(0, along: y) pc
-pin := circle(center: pc) hint(r: 2)
-radius(rp) pin
+  // one pin, at the pitch point where the pitch circles touch
+  pc := point hint(x: 10, y: 0)
+  pc coincident pitch1
+  o1 distance(0, along: y) pc
+  pin := circle(center: pc) hint(r: 2)
+  radius(rp) pin
+}
 
 pinion := motion(about: o1, ratio: -r2 / r1)
 wheel := motion(about: o2, ratio: 1)

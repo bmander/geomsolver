@@ -85,12 +85,8 @@ macro_rules! undrawn {
             | CKind::SplineCurvature
             | CKind::HorizontalPoints
             | CKind::VerticalPoints
-            | CKind::FrameUnit
-            | CKind::FrameAlign
             | CKind::Project
-            | CKind::QuatUnit
             | CKind::Lift
-            | CKind::LiftFixed
             // a relation in space states a number of no one view, so it has no figure on one
             | CKind::Coincident3
             | CKind::Distance3
@@ -100,21 +96,16 @@ macro_rules! undrawn {
             | CKind::Perpendicular3
             | CKind::Parallel3
             | CKind::PointOnPlane
-            | CKind::PointOnPlaneFixed
             | CKind::PointOnCircle3
-            | CKind::PointOnCircle3Fixed
             | CKind::PointOnLine3
             | CKind::EqualLength3
             | CKind::PointPlaneDistance
-            | CKind::PointPlaneDistanceFixed
             // a sphere is on no sheet, so nothing about it is drawn on one
             | CKind::SphereOn
             | CKind::CircleOnSphere
-            | CKind::CircleOnSphereFixed
             | CKind::Midpoint3
             | CKind::Symmetric3
             | CKind::LineOnPlane
-            | CKind::LineOnPlaneFixed
             | CKind::SphereRadius
             | CKind::SphereTangentLine
             | CKind::SphereTangentSphere
@@ -125,15 +116,18 @@ macro_rules! undrawn {
             | CKind::CylinderRadius
             | CKind::CylinderTangentLine
             | CKind::ConeTangentCone
-            | CKind::Mate
             | CKind::RayUnit
             | CKind::RayFoot
             | CKind::PointOnRay
+            // an ordinate in space is no figure on any one plane
+            | CKind::Ordinate3U
+            | CKind::Ordinate3V
+            | CKind::RayOnPlane
+            | CKind::RayParallelPlane
+            | CKind::RayPerpendicularPlane
+            | CKind::PlaneDistance
             // a view's hinge is its declaration's, and a projection in space draws what
             // `project` draws: nothing
-            | CKind::Hinge
-            | CKind::HingeParallel
-            | CKind::HingeAlong
             | CKind::ProjectSolved
             | CKind::Fix
             | CKind::Ccw
@@ -342,7 +336,7 @@ pub fn layout_selected(sk: &Sketch, unit: f64, ids: Option<&[u32]>) -> Vec<Callo
         // diameter is taken across its own circle and stays there.  Which side is the side the
         // part is not on — the outline's own centre says which
         let n = perp(dir);
-        let away = if dot(n, sub(d.a, pen.hub)) >= 0.0 { 1.0 } else { -1.0 };
+        let away = if dot(n, sub(d.a, d.centre)) >= 0.0 { 1.0 } else { -1.0 };
         let base = if d.clear { away * pen.px(GEN_CLEAR_PX) } else { 0.0 };
         let off = base + away * pen.lane(d.a, d.b, dir, mul(n, away), &text);
         out.push(pen.linear(id, d.a, d.b, dir, (0.0, off), &text));
@@ -523,14 +517,13 @@ fn axis_of(k: CKind) -> P {
     if k == CKind::VerticalDistance { (0.0, 1.0) } else { (1.0, 0.0) }
 }
 
-/// A datum ordinate follows its solved rotor; page ordinates keep the page axes.
-fn dimension_axis(sk: &Sketch, c: &Constraint) -> P {
-    if matches!(c.kind, CKind::CoordinateU | CKind::CoordinateV) {
-        let f = sk.frame_of(c.args[1].ent());
-        let d = (sk.params[f.c as usize].value, sk.params[f.s as usize].value);
-        if c.kind == CKind::CoordinateV { perp(d) } else { d }
-    } else {
-        axis_of(c.kind)
+/// An ordinate along a plane's axis is drawn in that plane, along its own `x` or `y`; a run or a
+/// rise along the plane's axes as well.
+fn dimension_axis(_sk: &Sketch, c: &Constraint) -> P {
+    match c.kind {
+        CKind::CoordinateU => (1.0, 0.0),
+        CKind::CoordinateV => (0.0, 1.0),
+        k => axis_of(k),
     }
 }
 
@@ -570,10 +563,8 @@ fn ends(sk: &Sketch, c: &Constraint) -> Option<(P, P)> {
         CKind::Distance | CKind::HorizontalDistance | CKind::VerticalDistance => {
             Some((sk.point_xy(c.args[0].ent().i()), sk.point_xy(c.args[1].ent().i())))
         }
-        CKind::CoordinateU | CKind::CoordinateV => {
-            let f = sk.frame_of(c.args[1].ent());
-            Some((sk.point_xy(f.origin as usize), sk.point_xy(c.args[0].ent().i())))
-        }
+        // from the plane's origin, its coordinates' zero
+        CKind::CoordinateU | CKind::CoordinateV => Some(((0.0, 0.0), sk.point_xy(c.args[0].ent().i()))),
         CKind::PointLineDistance => {
             let p = sk.point_xy(c.args[0].ent().i());
             let i = c.args[1].ent().i();

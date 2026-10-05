@@ -32,21 +32,22 @@ use components.crank
 use components.bank
 use components.side_view
 
-// the page is the view along the crank axis, where the V is; the side view stands to its right,
-// its origin the crank axis on the plate's front face
-O := point
-fix(x == 0, y == 0) O
-views := std.ThreeViews(O, right: 240, up: 150)
-up := point hint(x: 0, y: 40) in views.front
-O distance(0, along: x) up
-O distance(40, along: y) up
-ref := line(O, up)
+// the front plane is the view along the crank axis, where the V is; the side view is the side
+// plane, its origin the crank axis on the plate's front face
+in std.front {
+  O := point
+  fix(x == 0, y == 0) O
+  up := point hint(x: 0, y: 40)
+  O distance(0, along: x) up
+  O distance(40, along: y) up
+  ref := line(O, up)
+}
 
-layout := {front: views.front, origin: O, axis: ref}
+layout := {front: std.front, origin: O, axis: ref}
 plate := components.frame.Frame(layout, dims: components.dims.vtwin_dims)
-crank := components.crank.Crank(O, ref, dims: components.dims.vtwin_dims) in views.front
-bankR := components.bank.Bank(crank.pin, plate.r.piv, fw: components.dims.fwB, dim: 1, dims: components.dims.vtwin_dims) in views.front
-bankL := components.bank.Bank(crank.pin, plate.l.piv, fw: components.dims.fwA, dim: 0, dims: components.dims.vtwin_dims) in views.front
+crank := components.crank.Crank(O, ref, dims: components.dims.vtwin_dims) in std.front
+bankR := components.bank.Bank(crank.pin, plate.r.piv, fw: components.dims.fwB, dim: 1, dims: components.dims.vtwin_dims) in std.front
+bankL := components.bank.Bank(crank.pin, plate.l.piv, fw: components.dims.fwA, dim: 0, dims: components.dims.vtwin_dims) in std.front
 // **the plate's side view is asked for, not drawn** (§6.11) — the part is a solid, so the
 // assembly's side view of it is a reading of that solid and cannot disagree with the front view
 // about how thick the plate is or how far the bearing boss stands off it
@@ -56,10 +57,10 @@ bankL := components.bank.Bank(crank.pin, plate.l.piv, fw: components.dims.fwA, d
 // ordinates are measured from the plate's front face, which stands half a thickness in front of
 // the plate's own zero: the plate is sectioned on its mid-plane (`components.frame`), and a solid's
 // derived view stands where its plane's origin is
-so := point hint(x: views.right_origin.x - components.dims.tp / 2, y: 0) in views.right
-views.right_origin distance(-components.dims.tp / 2, along: x) so
-views.right_origin distance(0, along: y) so       // the same height: the crank axis
-side := components.side_view.SideView(so, dims: components.dims.vtwin_dims) in views.right
+so := point hint(x: -components.dims.tp / 2, y: 0) in std.side
+std.side.origin distance(-components.dims.tp / 2, along: x) so
+std.side.origin distance(0, along: y) so       // the same height: the crank axis
+side := components.side_view.SideView(so, dims: components.dims.vtwin_dims) in std.side
 
 // the two views agree: every height the side view shows is the front view's
 crank.pin project side.pin_s             // the pin

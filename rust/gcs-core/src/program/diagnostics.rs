@@ -82,6 +82,9 @@ pub enum Code {
     W110,
     /// a declaration over a built-in name (§3.3, §5): the built-in is what an expression reads
     W112,
+    /// two planes lying on one another, each with geometry drawn in it: one plane in space
+    /// (§6.7, `docs/planes-plan.md`)
+    W113,
 }
 
 impl Code {
@@ -114,12 +117,13 @@ impl Code {
             Code::E107 => "E107",
             Code::W110 => "W110",
             Code::W112 => "W112",
+            Code::W113 => "W113",
         }
     }
 
     pub fn severity(self) -> Severity {
         match self {
-            Code::W110 | Code::W112 => Severity::Warning,
+            Code::W110 | Code::W112 | Code::W113 => Severity::Warning,
             _ => Severity::Error,
         }
     }

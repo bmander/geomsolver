@@ -69,32 +69,24 @@ component Axes(o: point) {
   o distance(0, along: x) up
   o distance(40, along: y) up
   ax := line(o, up)
-  f := plane(origin: o, toward: up)
+  f := std.Turned(o, up)
 }
 
 // A set screw into the shaft: its clearance hole from the bore at `rin` out to the rim at
 // `rout`, and the pocket the nut is trapped in, `nutin` out from the bore.  Written in the
 // datum `f` along the screw's axis.  Drawn on the part's sheet only.
-component Grub(f: plane, rin: Length, rout: Length, dims: group) {
-  ax := line(f.origin, f.toward)
-  h0 := point hint(x: f.origin.x + (rin) * f.c - (dims.grub / 2) * f.s,
-                    y: f.origin.y + (rin) * f.s + (dims.grub / 2) * f.c)
-  h1 := point hint(x: f.origin.x + (rout) * f.c - (dims.grub / 2) * f.s,
-                    y: f.origin.y + (rout) * f.s + (dims.grub / 2) * f.c)
-  h2 := point hint(x: f.origin.x + (rin) * f.c - (-dims.grub / 2) * f.s,
-                    y: f.origin.y + (rin) * f.s + (-dims.grub / 2) * f.c)
-  h3 := point hint(x: f.origin.x + (rout) * f.c - (-dims.grub / 2) * f.s,
-                    y: f.origin.y + (rout) * f.s + (-dims.grub / 2) * f.c)
+component Grub(f: group, rin: Length, rout: Length, dims: group) {
+  ax := line(f.u.p1, f.u.p2)
+  h0 := point hint(at: f.axes, x: rin, y: dims.grub / 2)
+  h1 := point hint(at: f.axes, x: rout, y: dims.grub / 2)
+  h2 := point hint(at: f.axes, x: rin, y: -dims.grub / 2)
+  h3 := point hint(at: f.axes, x: rout, y: -dims.grub / 2)
   s0 := line(h0, h1)
   s1 := line(h2, h3)
-  n0 := point hint(x: f.origin.x + (rin + dims.nutin) * f.c - (dims.nutaf / 2) * f.s,
-                    y: f.origin.y + (rin + dims.nutin) * f.s + (dims.nutaf / 2) * f.c)
-  n1 := point hint(x: f.origin.x + (rin + dims.nutin + dims.nutT) * f.c - (dims.nutaf / 2) * f.s,
-                    y: f.origin.y + (rin + dims.nutin + dims.nutT) * f.s + (dims.nutaf / 2) * f.c)
-  n2 := point hint(x: f.origin.x + (rin + dims.nutin + dims.nutT) * f.c - (-dims.nutaf / 2) * f.s,
-                    y: f.origin.y + (rin + dims.nutin + dims.nutT) * f.s + (-dims.nutaf / 2) * f.c)
-  n3 := point hint(x: f.origin.x + (rin + dims.nutin) * f.c - (-dims.nutaf / 2) * f.s,
-                    y: f.origin.y + (rin + dims.nutin) * f.s + (-dims.nutaf / 2) * f.c)
+  n0 := point hint(at: f.axes, x: rin + dims.nutin, y: dims.nutaf / 2)
+  n1 := point hint(at: f.axes, x: rin + dims.nutin + dims.nutT, y: dims.nutaf / 2)
+  n2 := point hint(at: f.axes, x: rin + dims.nutin + dims.nutT, y: -dims.nutaf / 2)
+  n3 := point hint(at: f.axes, x: rin + dims.nutin, y: -dims.nutaf / 2)
   q0 := line(n0, n1)
   q1 := line(n1, n2)
   q2 := line(n2, n3)
@@ -104,8 +96,8 @@ component Grub(f: plane, rin: Length, rout: Length, dims: group) {
   h0 symmetry(ax) h2
   h1 symmetry(ax) h3
   h0 distance(dims.grub / 2, side: left) ax
-  h0 distance(rin, along: u) f
-  h1 distance(rout, along: u) f
+  h0 distance(rin, along: u) f.axes
+  h1 distance(rout, along: u) f.axes
   // The nut pocket is a centered rectangle, dimensioned by the selected nut.
   q0 parallel ax
   q1 perpendicular ax
@@ -114,7 +106,7 @@ component Grub(f: plane, rin: Length, rout: Length, dims: group) {
   distance(dims.nutT) q0
   distance(dims.nutaf) q1
   n0 distance(dims.nutaf / 2, side: left) ax
-  n0 distance(rin + dims.nutin, along: u) f
+  n0 distance(rin + dims.nutin, along: u) f.axes
   // **the screw's hole is a solid; its nut's pocket is not, and that is a limit of the language
   // and not of the design.**  The hole is a turn of the half-section above about the screw's own
   // line, which lies in this plane — `about:` takes exactly such a line.  The pocket is a *hex*
@@ -122,10 +114,8 @@ component Grub(f: plane, rin: Length, rout: Length, dims: group) {
   // plane's normal and `about:` turns, so nothing here sweeps a section *along* a line lying in
   // the plane.  So the pocket stays what it has always been, four hidden lines a printer reads,
   // and it is not part of the body; it comes back when a swept solid does (spec §17).
-  a0 := point hint(x: f.origin.x + (rin) * f.c - (0mm) * f.s,
-                    y: f.origin.y + (rin) * f.s + (0mm) * f.c)
-  a1 := point hint(x: f.origin.x + (rout) * f.c - (0mm) * f.s,
-                    y: f.origin.y + (rout) * f.s + (0mm) * f.c)
+  a0 := point hint(at: f.axes, x: rin, y: 0mm)
+  a1 := point hint(at: f.axes, x: rout, y: 0mm)
   bore_f := face(a0, h0, s0, a1, -> close)
   entry := line(h0, h2)
   exit := line(h1, h3)

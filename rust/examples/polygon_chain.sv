@@ -12,18 +12,22 @@
 // Nothing says how big the ring is, so it is under-determined on purpose: all the links can grow
 // together, and dragging one shows it.
 
+use std
+
 param n := 12
 param radius := 50
 
-cycle n as i {
-  // the link from bearing i to bearing i+1 round the ring, each end its own point
-  a := point hint(x: radius * cos(tau * i / n), y: radius * sin(tau * i / n))
-  b := point hint(x: radius * cos(tau * (i + 1) / n), y: radius * sin(tau * (i + 1) / n))
-  e := line(a, b)
+in std.front {
+  cycle n as i {
+    // the link from bearing i to bearing i+1 round the ring, each end its own point
+    a := point hint(x: radius * cos(tau * i / n), y: radius * sin(tau * i / n))
+    b := point hint(x: radius * cos(tau * (i + 1) / n), y: radius * sin(tau * (i + 1) / n))
+    e := line(a, b)
 
-  b coincident next.a
-  e equal next.e
+    b coincident next.a
+    e equal next.e
+  }
+
+  // the ring floats otherwise; one end of the first link is enough to pin it
+  fix(x == radius, y == 0) a[0]
 }
-
-// the ring floats otherwise; one end of the first link is enough to pin it
-fix(x == radius, y == 0) a[0]

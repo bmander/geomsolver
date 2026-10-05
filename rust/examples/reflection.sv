@@ -18,30 +18,34 @@
 // diagnosis judges the claim a theorem — true, and adding nothing the equal angles had not
 // already said.  Drag the source or the target (or edit a number) and it stays one.
 
-m1 := point
-m2 := point hint(x: 100, y: 0)
-m := line(m1, m2)
-horizontal m
-m1 distance(100) m2
-fix(x == 0, y == 0) m1
+use std
 
-// the source and the target, each a station along the mirror and a height above it
-s := point hint(x: 10, y: 40)
-t := point hint(x: 90, y: 20)
-m1 distance(10, along: right) s
-s distance(40, side: left) m
-m1 distance(90, along: right) t
-t distance(20, side: left) m
+in std.front {
+  m1 := point
+  m2 := point hint(x: 100, y: 0)
+  m := line(m1, m2)
+  horizontal m
+  m1 distance(100) m2
+  fix(x == 0, y == 0) m1
 
-// the ray, and the one statement that places where it strikes
-p := point hint(x: 50, y: 0)
-p coincident m
-incoming := line(s, p)
-outgoing := line(p, t)
-incoming angle(m, outgoing) m
+  // the source and the target, each a station along the mirror and a height above it
+  s := point hint(x: 10, y: 40)
+  t := point hint(x: 90, y: 20)
+  m1 distance(10, along: right) s
+  s distance(40, side: left) m
+  m1 distance(90, along: right) t
+  t distance(20, side: left) m
 
-// the image of the source in the mirror lies on the line from the strike to the target
-image := point hint(x: 10, y: -40)
-s symmetry(m) image
-sight := line(image, t)
-claim p coincident sight
+  // the ray, and the one statement that places where it strikes
+  p := point hint(x: 50, y: 0)
+  p coincident m
+  incoming := line(s, p)
+  outgoing := line(p, t)
+  incoming angle(m, outgoing) m
+
+  // the image of the source in the mirror lies on the line from the strike to the target
+  image := point hint(x: 10, y: -40)
+  s symmetry(m) image
+  sight := line(image, t)
+  claim p coincident sight
+}

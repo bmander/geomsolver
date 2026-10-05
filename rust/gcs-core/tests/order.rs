@@ -112,8 +112,8 @@ fn shuffle_points(doc: &Json, seed: u32) -> Json {
     }
     let moved: Vec<Json> = perm.iter().map(|&i| pts[i].clone()).collect();
     let pt = |v: &Json| Json::Int(to_new[v.as_i64() as usize] as i64);
-    // a point reference is a field on an entity, an element of a spline's `ctrl`, or an
-    // `["point", i]` argument of a constraint
+    // a point reference is a field on an entity (a plane's origin among them), an element of a
+    // spline's `ctrl`, or an `["point", i]` argument of a constraint
     let ent = |e: &Json, fields: &[&str]| -> Json {
         let Json::Obj(o) = e else { return e.clone() };
         Json::Obj(
@@ -181,6 +181,7 @@ fn shuffle_points(doc: &Json, seed: u32) -> Json {
                         v.arr().iter().map(|e| ent(e, &["center", "start", "end"])).collect(),
                     ),
                     "splines" => Json::Arr(v.arr().iter().map(|e| ent(e, &[])).collect()),
+                    "planes" => Json::Arr(v.arr().iter().map(|e| ent(e, &["origin"])).collect()),
                     "constraints" => Json::Arr(v.arr().iter().map(con).collect()),
                     "branches" => branches(v),
                     _ => v.clone(),
@@ -644,7 +645,7 @@ fn describe_does_not_depend_on_list_position() {
 /// Shuffle the statements of a program with a seeded permutation.  Declarations and statements
 /// alike: order is exactly what P2 says means nothing.
 fn shuffle_program(text: &str, seed: u32) -> String {
-    let (prog, errs) = gcs_core::syntax::parse_legacy(text);
+    let (prog, errs) = crate::common::parse_legacy(text);
     assert!(errs.is_empty(), "{:?}", errs.iter().map(|e| &e.message).collect::<Vec<_>>());
     let mut lines: Vec<String> = prog
         .root()
@@ -661,7 +662,7 @@ fn shuffle_program(text: &str, seed: u32) -> String {
 }
 
 fn elaborated(text: &str) -> gcs_core::program::Elaborated {
-    let (prog, errs) = gcs_core::syntax::parse_legacy(text);
+    let (prog, errs) = crate::common::parse_legacy(text);
     assert!(errs.is_empty(), "{:?}", errs.iter().map(|e| &e.message).collect::<Vec<_>>());
     gcs_core::program::elaborate(&prog)
 }

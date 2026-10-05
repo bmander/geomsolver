@@ -5,7 +5,7 @@
 
 use gcs_core::program::{elaborate, Elaborated};
 use gcs_core::solve::{solve, SolveOpts};
-use gcs_core::syntax::parse;
+use crate::common::parse;
 
 fn build(src: &str) -> Elaborated {
     let (prog, errs) = parse(src);
@@ -23,6 +23,7 @@ fn messages(e: &Elaborated) -> Vec<String> {
 #[test]
 fn an_unbound_formal_is_one_unknown_everywhere_it_is_read() {
     let src = "\
+use std
 component Arm(o: point, p: point, len: Length, theta: Angle) {
   l := line(o, p)
   o distance(len) p
@@ -39,9 +40,11 @@ component Crank(o: point, theta: Angle) {
   a := Arm(o, p, len: 30, theta: theta)
   b := Arm(o, q, len: 30, theta: twice)
 }
+in std.front {
 o := point
 fix(x == 0, y == 0) o
 c := Crank(o)
+}
 ";
     let mut e = build(src);
     assert!(e.ok(), "{:?}", messages(&e));
@@ -67,6 +70,7 @@ c := Crank(o)
 #[test]
 fn a_nested_unbound_formal_is_not_captured_by_the_outer_one() {
     let src = "\
+use std
 component Inner(o: point, u: Angle) {
   q := point hint(x: 5, y: 0)
   x := point hint(x: 1, y: 0)
@@ -80,9 +84,11 @@ component Inner(o: point, u: Angle) {
 component Outer(o: point, u: Angle) {
   i := Inner(o)
 }
+in std.front {
 o := point
 base := circle(center: o) hint(r: 7)
 fix(x == 0, y == 0) o
+}
 w := Outer(o).i.q over u in (0, 90)
 ";
     let e = build(src);
@@ -99,6 +105,7 @@ w := Outer(o).i.q over u in (0, 90)
 #[test]
 fn the_owner_is_the_instance_with_the_formal() {
     let src = "\
+use std
 component Inner(o: point, a: Angle) {
   t := point hint(x: 5, y: 0)
   x := point hint(x: 1, y: 0)
@@ -112,9 +119,11 @@ component Inner(o: point, a: Angle) {
 component Outer(o: point, u: Angle) {
   i := Inner(o, a: u)
 }
+in std.front {
 o := point
 fix(x == 0, y == 0) o
 d := Outer(o, u: 30)
+}
 k := d.i.t over u in (0, 90)
 ";
     let e = build(src);
@@ -134,12 +143,15 @@ k := d.i.t over u in (0, 90)
 #[test]
 fn a_computed_point_stands_alone() {
     let src = "\
+use std
 component Both(o: point, u: Angle) {
   p := point(x: o.x + cos(u), y: o.y + sin(u))
   q := point hint(x: 3, y: 4)
   o distance(5) q
 }
+in std.front {
 o := point hint(x: 0, y: 0)
+}
 w := Both(o).p over u in (0, 90)
 ";
     let e = build(src);

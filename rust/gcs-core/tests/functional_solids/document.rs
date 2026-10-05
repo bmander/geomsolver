@@ -1,9 +1,9 @@
 //! Ordinary solved source drives the same continuous material evaluator as the workbench.
 use super::*;
-use gcs_core::{program,syntax,solve,solid::{RevolvedRegion,SweptField},interval::minimum::{Options,Status}};
+use gcs_core::{program,solve,solid::{RevolvedRegion,SweptField},interval::minimum::{Options,Status}};
 
 fn read(source: &str) -> program::Elaborated {
-    let (mut p,errors) = syntax::parse(source);
+    let (mut p,errors) = crate::common::parse(source);
     assert!(errors.is_empty(),"{errors:?}");
     // the spiral bevel's modules, where a document uses one
     assert!(gcs_core::modules::link(&mut p,&mut fixtures::gear::module).is_empty());
@@ -15,7 +15,10 @@ fn read(source: &str) -> program::Elaborated {
 fn field(e: &program::Elaborated,name: &str) -> SpatialField {
     SpatialField::read(&e.sketch,e.map.ent_named(name).unwrap().i(),1e-10).unwrap()
 }
-const SPHERE: &str = "unit mm
+const SPHERE: &str = "\
+unit mm
+use std
+in std.front {
 o := point
 a := point
 b := point
@@ -31,6 +34,7 @@ q := point
 fix(x == 0, y == 0) z
 fix(x == 0, y == 1) q
 spindle := line(z,q)
+}
 indexing := motion(about: spindle)
 ";
 
@@ -68,10 +72,24 @@ fn source_bodies_holes_and_nested_placements_keep_material_and_finite_support() 
     for p in [[3.,0.,0.],[0.,3.,0.]] { assert!(body.bounds(point(p)).unwrap().bounds()[1] < -0.99); }
     assert!(body.bounds(point([0.;3])).unwrap().bounds()[0] > 1.99);
     assert!(body.support_bounds().unwrap().is_some());
-    let e = read("unit mm\no := point\nz := point\n\
-        c := point\nfix(x == 0, y == 0) o\nfix(x == 0, y == 1) z\nfix(x == 3, y == 0) c\naxis := line(o,z)\n\
-        outer := circle(center: c)\nradius(1) outer\ninner := circle(center: c)\nradius(0.4) inner\n\
-        body := solid(face(outer,holes: inner),about: axis)\n");
+    let e = read("\
+unit mm
+use std
+in std.front {
+o := point
+z := point
+c := point
+fix(x == 0, y == 0) o
+fix(x == 0, y == 1) z
+fix(x == 3, y == 0) c
+axis := line(o,z)
+outer := circle(center: c)
+radius(1) outer
+inner := circle(center: c)
+radius(0.4) inner
+}
+body := solid(face(outer,holes: inner),about: axis)
+");
     let body = field(&e,"body");
     for x in 0..=40 {
         let x = x as f64/8.; let d = (x-3.).abs();
@@ -100,11 +118,28 @@ fn rounded_crown_source_matches_independent_analytic_material_queries() {
 
 #[test]
 fn major_arcs_and_reversed_edges_keep_their_finite_sector() {
-    let source = "unit mm\no := point\nz := point\n\
-        c := point\na := point\nb := point\n\
-        fix(x == 0, y == 0) o\nfix(x == 0, y == 1) z\nfix(x == 3, y == 0) c\nfix(x == 4, y == 0) a\nfix(x == 3, y == -1) b\naxis := line(o,z)\n\
-        round := arc(center: c,start: a,end: b)\nradius(1) round\nchord := line(a,b)\n\
-        profile := face(round,chord)\nbody := solid(profile,about: axis)\n";
+    let source = "\
+unit mm
+use std
+in std.front {
+o := point
+z := point
+c := point
+a := point
+b := point
+fix(x == 0, y == 0) o
+fix(x == 0, y == 1) z
+fix(x == 3, y == 0) c
+fix(x == 4, y == 0) a
+fix(x == 3, y == -1) b
+axis := line(o,z)
+round := arc(center: c,start: a,end: b)
+radius(1) round
+chord := line(a,b)
+}
+profile := face(round,chord)
+body := solid(profile,about: axis)
+";
     for source in [source.to_string(),source.replace("profile := face(round,chord)","profile := face(chord,round)"),
         source.replace("axis := line(o,z)","axis := line(z,o)")] {
         let e = read(&source);
@@ -150,12 +185,29 @@ fn partial_sweeps_fail_explicitly_while_prisms_and_concave_profiles_read() {
         assert!(if inside { got[1] < 0. } else { got[0] > 0. },"{p:?}: {got:?}");
     }
     // A reflex corner is no longer refused: the loop reads as its signed boundary distance.
-    let e = read("unit mm\no := point\nz := point\n\
-        fix(x == 0, y == 0) o\nfix(x == 0, y == 1) z\naxis := line(o,z)\n\
-        a := point\nb := point\nc := point\n\
-        d := point\ne := point\n\
-        fix(x == 1, y == 0) a\nfix(x == 4, y == 0) b\nfix(x == 4, y == 3) c\nfix(x == 2, y == 1) d\nfix(x == 1, y == 3) e\n\
-        profile := face(a,b,c,d,e,-> close)\nbody := solid(profile,about: axis)\n");
+    let e = read("\
+unit mm
+use std
+in std.front {
+o := point
+z := point
+fix(x == 0, y == 0) o
+fix(x == 0, y == 1) z
+axis := line(o,z)
+a := point
+b := point
+c := point
+d := point
+e := point
+fix(x == 1, y == 0) a
+fix(x == 4, y == 0) b
+fix(x == 4, y == 3) c
+fix(x == 2, y == 1) d
+fix(x == 1, y == 3) e
+}
+profile := face(a,b,c,d,e,-> close)
+body := solid(profile,about: axis)
+");
     let body = SpatialField::read(&e.sketch,0,1e-10).unwrap();
     for (p,inside) in [([3.,0.,0.5],true),([0.,1.4,2.],true),([2.2,0.,2.],false),([0.5,0.,1.],false)] {
         let got = body.bounds(point(p)).unwrap().bounds();

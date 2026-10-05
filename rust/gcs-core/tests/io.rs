@@ -436,7 +436,9 @@ fn copy_takes_the_points_that_define_what_was_picked() {
     // one line, nothing else: its two endpoints have to come with it or it is not a line
     let clip = io::copy(&sk, &[EntRef::line(0)]);
     assert_eq!(clip.lines.len(), 1);
-    assert_eq!(clip.points.len(), 2);
+    // and the plane they are drawn in comes too, with its origin
+    assert_eq!(clip.points.len(), 3);
+    assert_eq!(clip.planes.len(), 1);
     assert!(clip.circles.is_empty() && clip.arcs.is_empty());
 }
 
@@ -467,11 +469,11 @@ fn copy_is_the_other_half_of_deleting_the_rest() {
     // would have kept — checked on a sketch with arcs, tangencies and dimensions on it
     let sk = examples::rect_fillets(100.0, 60.0, 10.0, 0.0);
     let picked = [EntRef::line(0), EntRef::arc(0)];
-    let rest: Vec<EntRef> = sk
-        .primitives()
-        .into_iter()
-        .filter(|e| !model::expand(&sk, &picked).contains(e))
-        .collect();
+    // what is picked, and the plane it is drawn in, which a copy brings along
+    let front = sk.points[sk.lines[0].p1 as usize].plane.unwrap() as usize;
+    let mut kept = model::expand(&sk, &picked);
+    kept.extend(model::expand(&sk, &[EntRef::plane(front)]));
+    let rest: Vec<EntRef> = sk.primitives().into_iter().filter(|e| !kept.contains(e)).collect();
     assert_eq!(io::dumps(&io::copy(&sk, &picked), Some(1)),
                io::dumps(&io::without(&sk, &rest, &[]), Some(1)));
 }

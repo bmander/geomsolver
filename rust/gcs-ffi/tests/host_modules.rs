@@ -27,17 +27,17 @@ fn report_of(doc: &str) -> String {
 
 #[test]
 fn a_host_module_resolves_a_use_and_is_forgotten_on_request() {
-    let doc = "use demo.parts\no := point\nfix(x == 0, y == 0) o\nr := Rung(o)\n";
+    let doc = "use std\nuse demo.parts\nin std.front {\no := point\nfix(x == 0, y == 0) o\nr := Rung(o)\n}\n";
     let module = "component Rung(a: point) {\n  b := point\n  e := line(a, b)\n  horizontal e\n  a distance(10) b\n}\n";
     let name = "demo.parts";
     unsafe {
         // what the document asks for, as written
-        assert_eq!(take(gcs_program_uses(doc.as_ptr(), doc.len())), "[\"demo.parts\"]");
+        assert_eq!(take(gcs_program_uses(doc.as_ptr(), doc.len())), "[\"std\",\"demo.parts\"]");
         // nothing handed over, nothing in the library: E070 at the `use`
         assert!(report_of(doc).contains("E070"), "an unknown module is E070");
         gcs_module_set(name.as_ptr(), name.len(), module.as_ptr(), module.len());
         assert_eq!(take(gcs_module_source(name.as_ptr(), name.len())), module);
-        assert!(take(gcs_module_source(b"std".as_ptr(), 3)).contains("component ThreeViews"));
+        assert!(take(gcs_module_source(b"std".as_ptr(), 3)).contains("component StandardDatums"));
         let r = report_of(doc);
         assert!(!r.contains("E070"), "the host's module resolves the use: {r}");
         gcs_module_forget();

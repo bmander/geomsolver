@@ -1,6 +1,6 @@
 //! Matched references read from Solvent, with independent contact and indexing checks.
 use super::*;
-use gcs_core::{diagnose,modules,program,solid::RevolvedSurface,solve,syntax};
+use gcs_core::{diagnose,modules,program,solid::RevolvedSurface,solve};
 use std::f64::consts::{FRAC_PI_2,PI,TAU};
 
 mod boundary;
@@ -36,7 +36,7 @@ struct Pair {
 }
 
 fn read_model(src: &str,teeth: [u32;2],module: f64) -> program::Elaborated {
-    let (mut p,errors) = syntax::parse(&src);
+    let (mut p,errors) = crate::common::parse(&src);
     let link = modules::link(&mut p,&mut |name| match name {
         // The reference checks assume the common apex, so the offset is zero here.
         "configuration" => Some(fixtures::gear::configuration(teeth,module,0.,0.,35.)),

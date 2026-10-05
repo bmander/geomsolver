@@ -14,30 +14,34 @@
 // Three degrees of freedom are left deliberately — the foot of each altitude may slide along its
 // line — so the triangle can be dragged about while the three lines go on meeting.
 
-A := point
-B := point
-C := point
+use std
 
-(ab := line(A, B)) -> (bc := line(B, C)) -> (ca := line(C, A)) -> close
+in std.front {
+  A := point
+  B := point
+  C := point
 
-// Each altitude runs from a vertex to a foot that is free to slide along it.  The feet are
-// written *in the lines* rather than declared above them: nothing else in this file says their
-// names, and a name earns its place when something says it twice.  They are still there to
-// constrain and to drag — `alt_a.p2` is the point, and that dotted path is what it is called.
-alt_a := line(A, hint(x: 15, y: 5))
-alt_b := line(B, hint(x: 20, y: 10))
-alt_c := line(C, hint(x: 15, y: -5))
+  (ab := line(A, B)) -> (bc := line(B, C)) -> (ca := line(C, A)) -> close
 
-alt_a perpendicular bc
-alt_b perpendicular ca
-alt_c perpendicular ab
+  // Each altitude runs from a vertex to a foot that is free to slide along it.  The feet are
+  // written *in the lines* rather than declared above them: nothing else in this file says their
+  // names, and a name earns its place when something says it twice.  They are still there to
+  // constrain and to drag — `alt_a.p2` is the point, and that dotted path is what it is called.
+  alt_a := line(A, hint(x: 15, y: 5))
+  alt_b := line(B, hint(x: 20, y: 10))
+  alt_c := line(C, hint(x: 15, y: -5))
 
-// two of these place P; the third is the theorem
-P := point hint(x: 15, y: 8)
-P coincident alt_a
-P coincident alt_b
-P coincident alt_c
+  alt_a perpendicular bc
+  alt_b perpendicular ca
+  alt_c perpendicular ab
 
-fix(x == 0, y == 0) A
-fix(x == 40, y == 0) B
-fix(x == 15, y == 30) C
+  // two of these place P; the third is the theorem
+  P := point hint(x: 15, y: 8)
+  P coincident alt_a
+  P coincident alt_b
+  P coincident alt_c
+
+  fix(x == 0, y == 0) A
+  fix(x == 40, y == 0) B
+  fix(x == 15, y == 30) C
+}

@@ -145,12 +145,12 @@ pub fn view_freedoms(sk: &Sketch, d: &Diagnosis) -> Vec<String> {
     let under: BTreeSet<u32> = d.under_params.iter().copied().collect();
     let mut out = Vec::new();
     for (i, p) in sk.planes.iter().enumerate() {
-        let Some(a) = &p.att else { continue };
-        if a.q.iter().any(|q| under.contains(q)) {
+        let rays = [p.u, p.v].map(|r| sk.rays[r as usize].d);
+        if rays.iter().flatten().any(|q| under.contains(q)) {
             out.push(format!("{}.attitude", sk.plane_name(i)));
         }
-        if under.contains(&a.d) {
-            out.push(format!("{}.offset", sk.plane_name(i)));
+        if p.o.iter().any(|q| under.contains(q)) {
+            out.push(format!("{}.origin", sk.plane_name(i)));
         }
     }
     out

@@ -108,8 +108,7 @@ fn view_at(k: usize) -> Option<usize> {
 fn placements(sk: &Sketch) -> Vec<Placement> {
     let mut all = vec![Placement::of(&Basis::page(), (0.0, 0.0), 1.0, 0.0)];
     all.extend((0..sk.planes.len()).map(|i| {
-        let (o, c, s) = super::placement(sk, i);
-        Placement::of(&sk.basis(i), o, c, s)
+        Placement::of(&sk.basis(i), (0.0, 0.0), 1.0, 0.0)
     }));
     all
 }

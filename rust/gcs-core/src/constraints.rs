@@ -82,36 +82,24 @@ pub enum CKind {
     /// curve's second and third derivatives, which a formula has and a trace does not: stated
     /// against a traced curve it is refused (`validate`).
     CurveCurvature,
-    /// A frame's rotor held to the unit circle: `c² + s² = 1`.  Intrinsic — `Sketch::frame`
-    /// states it and nothing else does — like an arc's endpoints sitting at its radius.
-    FrameUnit,
-    /// A frame's rotor kept on its chord: `(toward − origin) = r·(c, s)`, with the chord's
-    /// length `r` the constraint's own unknown — two residuals, one Param, net one equation,
-    /// and directed (with the rotor on the unit circle, `r` stays positive by continuity).
-    /// Intrinsic, the other half of what `Sketch::frame` states.
-    FrameAlign,
     /// Two points are images of one point in space, each on the plane it is `in`: their
     /// coordinates along the fold line the two planes share agree (`plane::fold_line`).  One
-    /// row over both points and both planes' frames.  The plane slots are **inferred** from the
+    /// row over both points, with the fold line as constants: both planes fixed (a solved one
+    /// makes it `ProjectSolved`).  The plane slots are **inferred** from the
     /// points' memberships at `io::seed_omitted`'s seam — the source and the bindings write two
     /// points — and refused when a point is on no plane, both are on one, or the planes are
     /// parallel.  Not commutative: `same_args` swaps only the first two entity slots, so
     /// `b project a` reads as a second relation, which the diagnosis reports as implied.
     Project,
-    /// Signed ordinates of a point relative to a datum: u follows its rotor, v is left of it.
+    /// `p distance(d, along: u) P` with `p` drawn in `P`: its own coordinate, `p.x − d` (and
+    /// `p.y` for `CoordinateV`) — `radius`'s kernel over one column, since a plane's origin is its
+    /// coordinates' zero.  Drawn in any other plane, or in space, it is `Ordinate3U`.
     CoordinateU,
     CoordinateV,
-    /// A solved view's quaternion held to the unit sphere: `|q|² = 1`.  Intrinsic — minted with
-    /// a view's unknowns (`Sketch::mint_attitude`) and nowhere else, `FrameUnit`'s form one
-    /// dimension up.
-    QuatUnit,
-    /// A hidden point in space held at the lift of the view point it stands for, the view's
-    /// attitude read off its unknowns: `X − R(q)·(a + a′, b + b′, d) = 0`.  Three rows over the
+    /// A hidden point in space held at the lift of the point it stands for, drawn in a plane:
+    /// `X − (o + p.x·û + p.y·v̂) = 0` over the plane's rays and origin.  Three rows over the
     /// hidden point's three Params, so net nothing.  Intrinsic, minted by `Sketch::lift_point`.
     Lift,
-    /// The same over a *stated* view, whose basis is constants: `X − (o + a′·u + b′·v) = 0`.
-    /// Which twin a lift is follows the view's `att` alone, never its params' fixed flags.
-    LiftFixed,
     /// **Relations in space** (`docs/spatial-constraints-plan.md`): statements between points
     /// and lines drawn in *different* views, read over the hidden points the views lift them to
     /// (`model::LiftE`).  Their slots name the drawn entities, as every relation's do;
@@ -135,18 +123,12 @@ pub enum CKind {
     Perpendicular3,
     /// Two rows across the first line's direction — see `kernels::parallel3_res`.
     Parallel3,
-    /// A point on a plane in space, over a solved plane's quaternion and offset; the plane is any
-    /// view, not only the point's own.
+    /// `P coincident p`: a point on a plane in space, over the plane's rays and origin; the plane
+    /// is any, not only the point's own.
     PointOnPlane,
-    /// The same over a *stated* plane, its normal and offset constants — `Lift`'s split again:
-    /// which twin a statement is follows the plane's `att`, and `Sketch::add` and
-    /// `Sketch::free_attitude` keep it so (`CKind::attitude_twin`).
-    PointOnPlaneFixed,
-    /// A point on a circle drawn in a view: on the sphere of its radius about the centre's lift,
-    /// and on the centre's view — two rows, over that view's solved attitude.
+    /// A point on a circle drawn in a plane: on the sphere of its radius about the centre's lift,
+    /// and on the centre's plane — two rows.
     PointOnCircle3,
-    /// The same over a stated view.
-    PointOnCircle3Fixed,
     /// **The rest of the words in space**, inferred like the eleven above wherever a
     /// relation's operands are drawn in different views.  A point on a line's infinite extension:
     /// two rows across the line (`kernels::point_on_line3_res`), since the magnitude has no
@@ -154,16 +136,12 @@ pub enum CKind {
     PointOnLine3,
     /// Two lines of equal true length.
     EqualLength3,
-    /// `p distance(d, along: n) P`: a point's signed distance along a plane's normal, over a
-    /// solved plane's unknowns — the one relation that names a plane rather than lifting one, so
-    /// it is in space whatever views its operands are in.
+    /// `p distance(d, along: n) P`: a point's signed distance along a plane's normal — the one
+    /// relation that names a plane rather than lifting one, so it is in space whatever plane its
+    /// point is in.
     PointPlaneDistance,
-    /// The same over a stated plane (`attitude_twin`'s pair, as `PointOnPlane`'s is).
-    PointPlaneDistanceFixed,
-    /// A line on a plane in space: both its ends, over a solved plane's unknowns.
+    /// `P coincident l`: a line on a plane in space, both its ends.
     LineOnPlane,
-    /// The same over a stated plane.
-    LineOnPlaneFixed,
     /// A point on a sphere: `|X − C| − r` over the point's and the centre's lifts.
     SphereOn,
     /// A sphere's radius, `radius`'s kernel over the sphere's own Param.
@@ -172,23 +150,11 @@ pub enum CKind {
     SphereTangentLine,
     /// Two spheres touching, outside or inside as the seed stands (`side`, inferred).
     SphereTangentSphere,
-    /// **A view folded from a solved one**: the child's quaternion is its parent's turned
-    /// by the fold, `q_c − q_P ⊗ fold_rotor(θ) = 0` — four rows over the child's four quaternion
-    /// unknowns, so a folded view adds no freedom and needs no unit row of its own.  `fold` is
-    /// the angle written in the plane's brackets: a number, or an expression over the
-    /// document's free variable, which is how `fold: beta` is solved for (the free twin,
-    /// `hinge_free`).  Stated by the elaborator from the declaration, never written as a
-    /// relation, and recorded against the plane's statement.
-    Hinge,
-    /// A plane stood off a solved one (`from: P, offset: …`): the same attitude, `q_c = q_P`.
-    HingeParallel,
-    /// **A circle on a sphere**, `c on s`: every point of a circle drawn in a view on a
-    /// sphere — the sphere's centre on the circle's axis (two rows, across the view) and
-    /// `√(|S − C|² + r²) = R` — over the circle's view solved.  What a gear blank's toe or heel
-    /// circle is to its end sphere.  A circle *tangent* to a sphere is refused as ambiguous.
+    /// **A circle on a sphere**, `c coincident s`: every point of a circle drawn in a plane on a
+    /// sphere — the sphere's centre on the circle's axis (two rows, across the plane) and
+    /// `√(|S − C|² + r²) = R`.  What a gear blank's toe or heel circle is to its end sphere.  A
+    /// circle *tangent* to a sphere is refused as ambiguous.
     CircleOnSphere,
-    /// The same over a stated view.
-    CircleOnSphereFixed,
     /// A point the midpoint of a line drawn in another view, in space.
     Midpoint3,
     /// Two points each the other's image in a line, in space: the half turn about the line — the
@@ -214,22 +180,28 @@ pub enum CKind {
     /// beside it, as a tangency at a named end leaves the on-circle to its own statement.  What a
     /// hypoid's pitch cones do at the mean point.
     ConeTangentCone,
-    /// `fold: along l` — the child contains a line drawn in its parent, folded square to the
-    /// parent about it: the hinge over a half-angle rotor `(hc, hs)` of the constraint's own,
-    /// held to the unit circle and to the line's bearing (`kernels::hinge_along_res`).  Net
-    /// four equations over the child's four quaternion unknowns; where the line crosses is a
-    /// `PointOnPlane` stated beside it.
-    HingeAlong,
-    /// `project` where either view is solved: the projector rule in space over both images'
-    /// hidden points and both views' quaternions, `(n_A × n_B)·(X_A − X_B) = 0`
-    /// (`kernels::project_free_res`).  The same statement as `Project` — the word, the operands
-    /// and the inferred planes — and the twin `Sketch::add` picks when a view it reads is solved.
+    /// `project` where either plane is solved: the projector rule in space over both images'
+    /// hidden points and both planes' normals, `(n_A × n_B)·(X_A − X_B) = 0`
+    /// (`kernels::project_solved_rows`).  The same statement as `Project` — the word, the
+    /// operands and the inferred planes — and the twin `Sketch::add` picks when a plane it reads
+    /// is solved.
     ProjectSolved,
-    /// **A mate between solved views**: `f against g` where the two faces' planes share an
-    /// attitude and the datum's offset is solved — the placed plane's offset unknown held at the
-    /// datum's plus the gap between the faces' ordinates, `d_f − d_g − gap = 0`.  Stated by the
-    /// elaborator from the `against` statement and never written as a relation, as a hinge is.
-    Mate,
+    /// `p distance(d, along: u) P` where `p` is not drawn in `P`: how far it stands along `P`'s
+    /// `u` from `P`'s origin, in space (`kernels::ordinate3_u_rows`), and `Ordinate3V` along `v`.
+    Ordinate3U,
+    Ordinate3V,
+    /// `t coincident P`: a ray lying in a plane — two points on it a drawing's extent apart, each
+    /// on the plane (`kernels::ray_on_plane_rows`).  Reads where the ray is, so it places it.
+    RayOnPlane,
+    /// `t parallel P`: a ray square to a plane's normal, `d·n̂ = 0`.
+    RayParallelPlane,
+    /// `t perpendicular P`: a ray along a plane's normal — two rows across the normal, as
+    /// `parallel3` states two lines parallel.
+    RayPerpendicularPlane,
+    /// `P distance(d) Q`: how far `Q`'s origin stands along `P`'s normal from `P`'s origin —
+    /// for parallel planes, the gap between them.  One row; that the two are parallel is said
+    /// by their rays.
+    PlaneDistance,
     /// **A ray's direction held to the unit sphere**: `|d|² = 1`, dimensionless, degree 0.
     /// Intrinsic, minted by `Sketch::ray` and nowhere else.
     RayUnit,
@@ -281,7 +253,7 @@ impl FamilyKernel {
 }
 
 /// Every concrete constraint type, in the order the registry lists them.
-pub const ALL_KINDS: [CKind; 82] = [
+pub const ALL_KINDS: [CKind; 75] = [
     CKind::Coincident,
     CKind::Distance,
     CKind::Midpoint,
@@ -315,14 +287,10 @@ pub const ALL_KINDS: [CKind; 82] = [
     CKind::PointOnExtrusion,
     CKind::CurveTangentLine,
     CKind::CurveCurvature,
-    CKind::FrameUnit,
-    CKind::FrameAlign,
     CKind::Project,
     CKind::CoordinateU,
     CKind::CoordinateV,
-    CKind::QuatUnit,
     CKind::Lift,
-    CKind::LiftFixed,
     CKind::Coincident3,
     CKind::Distance3,
     CKind::PointLine3,
@@ -331,25 +299,17 @@ pub const ALL_KINDS: [CKind; 82] = [
     CKind::Perpendicular3,
     CKind::Parallel3,
     CKind::PointOnPlane,
-    CKind::PointOnPlaneFixed,
     CKind::PointOnCircle3,
-    CKind::PointOnCircle3Fixed,
-    CKind::Hinge,
-    CKind::HingeParallel,
-    CKind::HingeAlong,
     CKind::ProjectSolved,
     CKind::PointOnLine3,
     CKind::EqualLength3,
     CKind::PointPlaneDistance,
-    CKind::PointPlaneDistanceFixed,
     CKind::SphereOn,
     CKind::SphereRadius,
     CKind::SphereTangentLine,
     CKind::SphereTangentSphere,
     CKind::LineOnPlane,
-    CKind::LineOnPlaneFixed,
     CKind::CircleOnSphere,
-    CKind::CircleOnSphereFixed,
     CKind::Midpoint3,
     CKind::Symmetric3,
     CKind::ConeOn,
@@ -358,12 +318,17 @@ pub const ALL_KINDS: [CKind; 82] = [
     CKind::CylinderRadius,
     CKind::CylinderTangentLine,
     CKind::ConeTangentCone,
-    CKind::Mate,
     CKind::EqualAngle,
     CKind::ArcLength,
     CKind::RayUnit,
     CKind::RayFoot,
     CKind::PointOnRay,
+    CKind::Ordinate3U,
+    CKind::Ordinate3V,
+    CKind::RayOnPlane,
+    CKind::RayParallelPlane,
+    CKind::RayPerpendicularPlane,
+    CKind::PlaneDistance,
 ];
 
 /// `along:` says which axis a run or a rise is measured on.  It is the one selector that fills no
@@ -422,6 +387,8 @@ pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option
             (k, Sphere) if round(k) => CKind::CircleOnSphere,
             (Line, Plane) => CKind::LineOnPlane,
             (Point, Ray) => CKind::PointOnRay,
+            // a ray lying in a plane
+            (Ray, Plane) => CKind::RayOnPlane,
             _ => return None,
         },
         "distance" => match (a, b) {
@@ -434,6 +401,8 @@ pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option
             (Point, Plane) => ALONG.iter().find(|(n, k)| Some(*n) == sel("along").as_deref() && matches!(k, CKind::CoordinateU | CKind::CoordinateV | CKind::PointPlaneDistance)).map(|(_, k)| *k)?,
             (Point, Line) => CKind::PointLineDistance,
             (Line, Line) => CKind::ParallelDistance,
+            // two parallel planes apart: what a stack is written in
+            (Plane, Plane) => CKind::PlaneDistance,
             (x, y) if round(x) && round(y) => CKind::AnnularDistance,
             _ => return None,
         },
@@ -496,11 +465,14 @@ pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option
         "parallel" => match (a, b) {
             (Line, Line) => CKind::Parallel,
             (x, y) if rays(x, y) => CKind::Parallel3,
+            (Ray, Plane) => CKind::RayParallelPlane,
             _ => return None,
         },
         "perpendicular" => match (a, b) {
             (Line, Line) => CKind::Perpendicular,
             (x, y) if rays(x, y) => CKind::Perpendicular3,
+            // square to a plane: along its normal
+            (Ray, Plane) => CKind::RayPerpendicularPlane,
             _ => return None,
         },
         "symmetry" => match (a, b) {
@@ -808,14 +780,16 @@ impl CKind {
             CKind::PointOnExtrusion => "PointOnExtrusion",
             CKind::CurveTangentLine => "CurveTangentLine",
             CKind::CurveCurvature => "CurveCurvature",
-            CKind::FrameUnit => "FrameUnit",
-            CKind::FrameAlign => "FrameAlign",
             CKind::Project => "Project",
             CKind::CoordinateU => "CoordinateU",
+            CKind::Ordinate3U => "Ordinate3U",
+            CKind::Ordinate3V => "Ordinate3V",
+            CKind::RayOnPlane => "RayOnPlane",
+            CKind::RayParallelPlane => "RayParallelPlane",
+            CKind::RayPerpendicularPlane => "RayPerpendicularPlane",
+            CKind::PlaneDistance => "PlaneDistance",
             CKind::CoordinateV => "CoordinateV",
-            CKind::QuatUnit => "QuatUnit",
             CKind::Lift => "Lift",
-            CKind::LiftFixed => "LiftFixed",
             CKind::Coincident3 => "Coincident3",
             CKind::Distance3 => "Distance3",
             CKind::PointLine3 => "PointLine3",
@@ -824,20 +798,15 @@ impl CKind {
             CKind::Perpendicular3 => "Perpendicular3",
             CKind::Parallel3 => "Parallel3",
             CKind::PointOnPlane => "PointOnPlane",
-            CKind::PointOnPlaneFixed => "PointOnPlaneFixed",
             CKind::PointOnCircle3 => "PointOnCircle3",
-            CKind::PointOnCircle3Fixed => "PointOnCircle3Fixed",
             CKind::PointOnLine3 => "PointOnLine3",
             CKind::EqualLength3 => "EqualLength3",
             CKind::PointPlaneDistance => "PointPlaneDistance",
-            CKind::PointPlaneDistanceFixed => "PointPlaneDistanceFixed",
             CKind::SphereOn => "SphereOn",
             CKind::CircleOnSphere => "CircleOnSphere",
-            CKind::CircleOnSphereFixed => "CircleOnSphereFixed",
             CKind::Midpoint3 => "Midpoint3",
             CKind::Symmetric3 => "Symmetric3",
             CKind::LineOnPlane => "LineOnPlane",
-            CKind::LineOnPlaneFixed => "LineOnPlaneFixed",
             CKind::SphereRadius => "SphereRadius",
             CKind::SphereTangentLine => "SphereTangentLine",
             CKind::ConeOn => "ConeOn",
@@ -847,11 +816,7 @@ impl CKind {
             CKind::CylinderTangentLine => "CylinderTangentLine",
             CKind::ConeTangentCone => "ConeTangentCone",
             CKind::SphereTangentSphere => "SphereTangentSphere",
-            CKind::Hinge => "Hinge",
-            CKind::HingeParallel => "HingeParallel",
-            CKind::HingeAlong => "HingeAlong",
             CKind::ProjectSolved => "ProjectSolved",
-            CKind::Mate => "Mate",
             CKind::RayUnit => "RayUnit",
             CKind::RayFoot => "RayFoot",
             CKind::PointOnRay => "PointOnRay",
@@ -958,14 +923,13 @@ impl CKind {
             CKind::SplineCurvature => {
                 &[("spline", S::Spline), ("circle", S::CircleOrArc), ("t", S::Param)]
             }
-            CKind::CoordinateU | CKind::CoordinateV => &[("p", S::Point), ("frame", S::Plane), ("d", S::Length)],
-            CKind::FrameUnit => &[("frame", S::Plane)],
-            CKind::FrameAlign => &[("frame", S::Plane), ("r", S::Param)],
-            CKind::QuatUnit => &[("plane", S::Plane)],
+            CKind::CoordinateU | CKind::CoordinateV | CKind::Ordinate3U | CKind::Ordinate3V => {
+                &[("p", S::Point), ("frame", S::Plane), ("d", S::Length)]
+            }
             // the view point and its view: the hidden point is the lift's own, found by the
             // point (`Sketch::lift_of`), and the plane is a real slot so a drag part, a
             // deletion and the topology key follow it
-            CKind::Lift | CKind::LiftFixed => &[("p", S::Point), ("plane", S::Plane)],
+            CKind::Lift => &[("p", S::Point), ("plane", S::Plane)],
             // the drawn entities, as every relation names them; the hidden points they read are
             // found by the points (`Sketch::lift_of`)
             CKind::Coincident3 => &[("p", S::Point), ("q", S::Point)],
@@ -978,24 +942,24 @@ impl CKind {
             }
             CKind::Angle3 => &[("l1", S::Axis), ("l2", S::Axis), ("theta", S::Angle)],
             CKind::Perpendicular3 | CKind::Parallel3 => &[("l1", S::Axis), ("l2", S::Axis)],
-            CKind::PointOnPlane | CKind::PointOnPlaneFixed => {
+            CKind::PointOnPlane => {
                 &[("p", S::Point), ("plane", S::Plane)]
             }
-            CKind::PointOnCircle3 | CKind::PointOnCircle3Fixed => {
+            CKind::PointOnCircle3 => {
                 &[("p", S::Point), ("circle", S::CircleOrArc)]
             }
             CKind::PointOnLine3 => &[("p", S::Point), ("line", S::Line)],
             CKind::EqualLength3 => &[("l1", S::Line), ("l2", S::Line)],
-            CKind::PointPlaneDistance | CKind::PointPlaneDistanceFixed => {
+            CKind::PointPlaneDistance => {
                 &[("p", S::Point), ("plane", S::Plane), ("d", S::Length)]
             }
             CKind::SphereOn => &[("p", S::Point), ("sphere", S::Sphere)],
-            CKind::CircleOnSphere | CKind::CircleOnSphereFixed => {
+            CKind::CircleOnSphere => {
                 &[("circle", S::CircleOrArc), ("sphere", S::Sphere)]
             }
             CKind::Midpoint3 => &[("p", S::Point), ("line", S::Line)],
             CKind::Symmetric3 => &[("p", S::Point), ("q", S::Point), ("line", S::Line)],
-            CKind::LineOnPlane | CKind::LineOnPlaneFixed => &[("line", S::Line), ("plane", S::Plane)],
+            CKind::LineOnPlane => &[("line", S::Line), ("plane", S::Plane)],
             CKind::SphereRadius => &[("sphere", S::Sphere), ("r", S::Length)],
             CKind::SphereTangentLine => &[("sphere", S::Sphere), ("line", S::Line)],
             CKind::ConeOn => &[("p", S::Point), ("cone", S::Cone)],
@@ -1012,26 +976,17 @@ impl CKind {
             CKind::SphereTangentSphere => {
                 &[("s1", S::Sphere), ("s2", S::Sphere), ("external", S::Bool)]
             }
-            // the child view and its parent, and how the one is turned from the other: an angle,
-            // nothing (stood off), or a line of the parent's with the fold's own half-angle rotor
-            CKind::Hinge => &[("plane", S::Plane), ("from", S::Plane), ("fold", S::Angle)],
-            CKind::HingeParallel => &[("plane", S::Plane), ("from", S::Plane)],
-            CKind::HingeAlong => &[
-                ("plane", S::Plane),
-                ("from", S::Plane),
-                ("line", S::Line),
-                ("hc", S::Param),
-                ("hs", S::Param),
-            ],
             // the two planes are real slots — so the drag part, the topology key, the graft
             // and a deletion follow them — and inferred ones, so nobody writes them
             CKind::Project | CKind::ProjectSolved => {
                 &[("a", S::Point), ("b", S::Point), ("pa", S::Plane), ("pb", S::Plane)]
             }
-            // the plane a mate places, the one it bears on, and the faces' ordinates' difference
-            CKind::Mate => &[("plane", S::Plane), ("datum", S::Plane), ("gap", S::Float)],
             CKind::RayUnit | CKind::RayFoot => &[("ray", S::Ray)],
             CKind::PointOnRay => &[("p", S::Point), ("ray", S::Ray)],
+            CKind::RayOnPlane | CKind::RayParallelPlane | CKind::RayPerpendicularPlane => {
+                &[("ray", S::Ray), ("plane", S::Plane)]
+            }
+            CKind::PlaneDistance => &[("p1", S::Plane), ("p2", S::Plane), ("d", S::Length)],
             // the entity, and the numbers it holds, each pinned under the name of the field it
             // is (`model::EntKind::fields`): `fix(x == 0, y == 0) p`, `fix(r == 25) c`,
             // `fix(half == 30deg) k`.  Every scalar field a kind owns is a slot here, and which
@@ -1060,7 +1015,6 @@ impl CKind {
     pub fn param_dim(self) -> Option<crate::units::Dim> {
         use crate::units::Dim;
         match self {
-            CKind::FrameAlign => Some(Dim::LENGTH),
             // a place along a curve: a parameter, not a length
             CKind::PointOnSpline
             | CKind::PointOnCurve
@@ -1071,7 +1025,6 @@ impl CKind {
             | CKind::SplineCurvature
             => Some(Dim::SCALAR),
             // a fold's half-angle rotor: a pair of cosines, not a length
-            CKind::HingeAlong => Some(Dim::SCALAR),
             _ => None,
         }
     }
@@ -1113,7 +1066,9 @@ impl CKind {
             | CKind::ParallelDistance
             | CKind::AnnularDistance
             | CKind::CoordinateU
-            | CKind::CoordinateV => ("distance", Infix),
+            | CKind::CoordinateV
+            | CKind::Ordinate3U
+            | CKind::Ordinate3V => ("distance", Infix),
             // touching: six kinds, told apart by the pair and by `at:`
             CKind::TangentLineCircle
             | CKind::TangentLineCircleAt
@@ -1155,18 +1110,18 @@ impl CKind {
             // a lifted or described statement spells the word and the reading comes back
             CKind::Coincident3 => ("coincident", Infix),
             CKind::Distance3 | CKind::PointLine3 | CKind::LineLine3 => ("distance", Infix),
-            CKind::PointPlaneDistance | CKind::PointPlaneDistanceFixed => ("distance", Infix),
+            CKind::PointPlaneDistance => ("distance", Infix),
             CKind::Angle3 => ("angle", Infix),
             CKind::Perpendicular3 => ("perpendicular", Infix),
             CKind::Parallel3 => ("parallel", Infix),
             CKind::EqualLength3 => ("equal", Infix),
-            CKind::PointOnPlane | CKind::PointOnPlaneFixed => ("coincident", Infix),
-            CKind::PointOnCircle3 | CKind::PointOnCircle3Fixed => ("coincident", Infix),
+            CKind::PointOnPlane => ("coincident", Infix),
+            CKind::PointOnCircle3 => ("coincident", Infix),
             CKind::PointOnLine3 | CKind::SphereOn => ("coincident", Infix),
-            CKind::CircleOnSphere | CKind::CircleOnSphereFixed => ("coincident", Infix),
+            CKind::CircleOnSphere => ("coincident", Infix),
             CKind::Midpoint3 => ("midpoint", Infix),
             CKind::Symmetric3 => ("symmetry", Infix),
-            CKind::LineOnPlane | CKind::LineOnPlaneFixed => ("coincident", Infix),
+            CKind::LineOnPlane => ("coincident", Infix),
             CKind::SphereRadius => ("radius", Prefix),
             CKind::SphereTangentLine | CKind::SphereTangentSphere => ("tangent", Infix),
             CKind::ConeOn | CKind::CylinderOn => ("coincident", Infix),
@@ -1174,21 +1129,16 @@ impl CKind {
             CKind::CylinderRadius => ("radius", Prefix),
             CKind::CylinderTangentLine | CKind::ConeTangentCone => ("tangent", Infix),
             CKind::DragTarget
-            | CKind::FrameUnit
-            | CKind::FrameAlign
-            | CKind::QuatUnit
             | CKind::Lift
-            | CKind::LiftFixed
             // a hinge is a plane's brackets, never a relation anybody writes
-            | CKind::Hinge
-            | CKind::HingeParallel
-            | CKind::HingeAlong
             // nor is a mate's row: the `against` statement is the solids' word
-            | CKind::Mate
             // a ray's own algebra
             | CKind::RayUnit
             | CKind::RayFoot => return None,
-            CKind::PointOnRay => ("coincident", Infix),
+            CKind::PointOnRay | CKind::RayOnPlane => ("coincident", Infix),
+            CKind::RayParallelPlane => ("parallel", Infix),
+            CKind::RayPerpendicularPlane => ("perpendicular", Infix),
+            CKind::PlaneDistance => ("distance", Infix),
         })
     }
 
@@ -1414,16 +1364,12 @@ impl CKind {
             | CKind::VerticalDistance
             // a frame's intrinsics are algebra over its own scalars, not a touch between two
             // figures: there is no contact to double-root
-            | CKind::FrameUnit
-            | CKind::FrameAlign
             // a projection is a linear tie between two images: no contact, no double root
             | CKind::Project
             | CKind::CoordinateU
             | CKind::CoordinateV
             // a view's own algebra, and a hidden point tied to the point it lifts: no contact
-            | CKind::QuatUnit
             | CKind::Lift
-            | CKind::LiftFixed
             // incidence and measure in space: no double root the screen knows how to look for
             | CKind::Coincident3
             | CKind::Distance3
@@ -1433,19 +1379,14 @@ impl CKind {
             | CKind::Perpendicular3
             | CKind::Parallel3
             | CKind::PointOnPlane
-            | CKind::PointOnPlaneFixed
             | CKind::PointOnCircle3
-            | CKind::PointOnCircle3Fixed
             | CKind::PointOnLine3
             | CKind::EqualLength3
             | CKind::PointPlaneDistance
-            | CKind::PointPlaneDistanceFixed
             | CKind::SphereOn
             | CKind::SphereRadius
             | CKind::LineOnPlane
-            | CKind::LineOnPlaneFixed
             | CKind::CircleOnSphere
-            | CKind::CircleOnSphereFixed
             | CKind::Midpoint3
             | CKind::Symmetric3
             // touching in space is a magnitude row with a unit gradient, never the double root
@@ -1460,14 +1401,16 @@ impl CKind {
             | CKind::CylinderTangentLine
             | CKind::ConeTangentCone
             // a view turned from another, and the projector rule in space: algebra, no contact
-            | CKind::Hinge
-            | CKind::HingeParallel
-            | CKind::HingeAlong
             | CKind::ProjectSolved
-            | CKind::Mate
             | CKind::RayUnit
             | CKind::RayFoot
             | CKind::PointOnRay
+            | CKind::Ordinate3U
+            | CKind::Ordinate3V
+            | CKind::RayOnPlane
+            | CKind::RayParallelPlane
+            | CKind::RayPerpendicularPlane
+            | CKind::PlaneDistance
             | CKind::Fix
             | CKind::Ccw
             | CKind::Cw => false,
@@ -1547,14 +1490,12 @@ impl CKind {
             CKind::VerticalPoints => K::Vertical,
             CKind::HorizontalDistance => K::HorizontalDistance,
             CKind::VerticalDistance => K::VerticalDistance,
-            CKind::FrameUnit => K::FrameUnit,
-            CKind::FrameAlign => K::FrameAlign,
             CKind::Project => K::Project,
-            CKind::CoordinateU => K::CoordinateU,
-            CKind::CoordinateV => K::CoordinateV,
-            CKind::QuatUnit => K::QuatUnit,
+            // a plane's origin is its coordinates' zero: an ordinate is one coordinate stated
+            CKind::CoordinateU | CKind::CoordinateV => K::Radius,
+            CKind::Ordinate3U => K::Ordinate3U,
+            CKind::Ordinate3V => K::Ordinate3V,
             CKind::Lift => K::Lift,
-            CKind::LiftFixed => K::LiftFixed,
             CKind::Coincident3 => K::Coincident3,
             CKind::Distance3 => K::Distance3,
             CKind::PointLine3 => K::PointLine3,
@@ -1563,21 +1504,16 @@ impl CKind {
             CKind::Perpendicular3 => K::Perpendicular3,
             CKind::Parallel3 => K::Parallel3,
             CKind::PointOnPlane => K::PointOnPlane,
-            CKind::PointOnPlaneFixed => K::PointOnPlaneFixed,
             CKind::PointOnCircle3 => K::PointOnCircle3,
-            CKind::PointOnCircle3Fixed => K::PointOnCircle3Fixed,
             CKind::PointOnLine3 => K::PointOnLine3,
             CKind::EqualLength3 => K::EqualLength3,
             CKind::PointPlaneDistance => K::PointPlaneDistance,
             // a stated plane stood off by the number: the incidence kernel, D folded into h
-            CKind::PointPlaneDistanceFixed => K::PointOnPlaneFixed,
             CKind::SphereOn => K::SphereOn,
             CKind::CircleOnSphere => K::CircleOnSphere,
-            CKind::CircleOnSphereFixed => K::CircleOnSphereFixed,
             CKind::Midpoint3 => K::Midpoint3,
             CKind::Symmetric3 => K::Symmetric3,
             CKind::LineOnPlane => K::LineOnPlane,
-            CKind::LineOnPlaneFixed => K::LineOnPlaneFixed,
             CKind::SphereRadius => K::Radius,
             // the line's distance from the centre, with the radius its free column: the free
             // twin of `point_line3` at (m, c) = (1, 0)
@@ -1593,13 +1529,14 @@ impl CKind {
             CKind::CylinderTangentLine => K::LineLine3Free,
             CKind::ConeTangentCone => K::ConeCone,
             // a stood-off plane is a hinge whose turn is the identity
-            CKind::Hinge | CKind::HingeParallel => K::Hinge,
-            CKind::HingeAlong => K::HingeAlong,
-            CKind::ProjectSolved => K::ProjectFree,
-            CKind::Mate => K::Mate,
+            CKind::ProjectSolved => K::ProjectSolved,
             CKind::RayUnit => K::RayUnit,
             CKind::RayFoot => K::RayFoot,
             CKind::PointOnRay => K::PointOnRay,
+            CKind::RayOnPlane => K::RayOnPlane,
+            CKind::RayParallelPlane => K::RayParallelPlane,
+            CKind::RayPerpendicularPlane => K::RayPerpendicularPlane,
+            CKind::PlaneDistance => K::PlaneDistance,
             CKind::Fix | CKind::Ccw | CKind::Cw => {
                 panic!("{:?} is a gauge: applied by the elaborator, it has no kernel", self)
             }
@@ -1645,19 +1582,19 @@ impl CKind {
             CKind::AnnularDistance => K::AnnularDistanceFree,
             CKind::HorizontalDistance => K::HorizontalDistanceFree,
             CKind::VerticalDistance => K::VerticalDistanceFree,
-            CKind::CoordinateU => K::CoordinateUFree,
-            CKind::CoordinateV => K::CoordinateVFree,
+            CKind::CoordinateU | CKind::CoordinateV => K::RadiusFree,
+            CKind::Ordinate3U => K::Ordinate3UFree,
+            CKind::Ordinate3V => K::Ordinate3VFree,
+            CKind::PlaneDistance => K::PlaneDistanceFree,
             CKind::Distance3 => K::Distance3Free,
             CKind::PointLine3 => K::PointLine3Free,
             CKind::LineLine3 => K::LineLine3Free,
             CKind::Angle3 => K::Angle3Free,
             CKind::PointPlaneDistance => K::PointPlaneDistanceFree,
-            CKind::PointPlaneDistanceFixed => K::PointPlaneDistanceFixedFree,
             CKind::SphereRadius => K::RadiusFree,
             CKind::CylinderRadius => K::RadiusFree,
             CKind::ConeAngle => K::HalfAngleFree,
             // `fold: beta`: the fold is the document's free variable
-            CKind::Hinge => K::HingeFree,
             CKind::Coincident
             | CKind::Midpoint
             | CKind::DragTarget
@@ -1685,52 +1622,37 @@ impl CKind {
             | CKind::SplineCurvature
             | CKind::HorizontalPoints
             | CKind::VerticalPoints
-            | CKind::FrameUnit
-            | CKind::FrameAlign
             | CKind::Project
-            | CKind::QuatUnit
             | CKind::Lift
-            | CKind::LiftFixed
             | CKind::Coincident3
             | CKind::Perpendicular3
             | CKind::Parallel3
             | CKind::PointOnPlane
-            | CKind::PointOnPlaneFixed
             | CKind::PointOnCircle3
-            | CKind::PointOnCircle3Fixed
             | CKind::PointOnLine3
             | CKind::EqualLength3
             | CKind::SphereOn
             | CKind::SphereTangentLine
             | CKind::SphereTangentSphere
             | CKind::LineOnPlane
-            | CKind::LineOnPlaneFixed
             | CKind::CircleOnSphere
-            | CKind::CircleOnSphereFixed
             | CKind::Midpoint3
             | CKind::Symmetric3
             | CKind::ConeOn
             | CKind::CylinderOn
             | CKind::CylinderTangentLine
             | CKind::ConeTangentCone
-            | CKind::HingeParallel
-            | CKind::HingeAlong
             | CKind::ProjectSolved
-            | CKind::Mate
             | CKind::RayUnit
             | CKind::RayFoot
             | CKind::PointOnRay
+            | CKind::RayOnPlane
+            | CKind::RayParallelPlane
+            | CKind::RayPerpendicularPlane
             | CKind::Fix
             | CKind::Ccw
             | CKind::Cw => return None,
         })
-    }
-
-    /// A view's **hinge** to the one it is folded from: the plane's own statement, stated by
-    /// the elaborator from its brackets and never written as a relation — so it has no word, no
-    /// figure and no line of its own in a lifted program.
-    pub fn hinge(self) -> bool {
-        matches!(self, CKind::Hinge | CKind::HingeParallel | CKind::HingeAlong)
     }
 
     /// A relation **in space**: one whose kernel reads the hidden points views lift to, so
@@ -1746,21 +1668,16 @@ impl CKind {
                 | CKind::Perpendicular3
                 | CKind::Parallel3
                 | CKind::PointOnPlane
-                | CKind::PointOnPlaneFixed
                 | CKind::PointOnCircle3
-                | CKind::PointOnCircle3Fixed
                 | CKind::ProjectSolved
                 | CKind::PointOnLine3
                 | CKind::EqualLength3
                 | CKind::PointPlaneDistance
-                | CKind::PointPlaneDistanceFixed
                 | CKind::SphereOn
                 | CKind::SphereTangentLine
                 | CKind::SphereTangentSphere
                 | CKind::LineOnPlane
-                | CKind::LineOnPlaneFixed
                 | CKind::CircleOnSphere
-                | CKind::CircleOnSphereFixed
                 | CKind::Midpoint3
                 | CKind::Symmetric3
                 | CKind::ConeOn
@@ -1769,13 +1686,21 @@ impl CKind {
                 | CKind::ConeTangentCone
                 | CKind::PointOnExtrusion
                 | CKind::PointOnRay
+                | CKind::Ordinate3U
+                | CKind::Ordinate3V
+                | CKind::RayOnPlane
+                | CKind::RayParallelPlane
+                | CKind::RayPerpendicularPlane
+                | CKind::PlaneDistance
         )
     }
 
-    /// The form of a statement that reads a view's attitude, for a view that is solved (`att`
-    /// is `Some`) or stated: the one table of the pairs, asked by `Sketch::add` when a statement
-    /// arrives and by `Sketch::free_attitude` when its view is freed, so a caller names either
-    /// and the kernel is always the one the view can feed.  Every other kind is itself.
+    /// The form of a statement that reads planes, for planes of which one is solved or both
+    /// fixed: the one table of the pairs, asked by `Sketch::add` when a statement arrives, so a
+    /// caller names either and the kernel is always the one the planes can feed.  Every other
+    /// kind is itself — a kernel over a plane's rays and origin serves a fixed plane as well,
+    /// its held columns dropping out — and the projection is the one pair: over two fixed planes
+    /// it is two drawn points and a constant fold line, which needs no hidden point.
     pub fn attitude_twin(self, solved: bool) -> CKind {
         match ATTITUDE_TWINS.iter().find(|(s, f)| *s == self || *f == self) {
             Some(&(s, f)) => if solved { s } else { f },
@@ -1784,17 +1709,9 @@ impl CKind {
     }
 }
 
-/// The pairs `CKind::attitude_twin` reads: each statement over a solved view, and the same
-/// statement over a stated one.
-const ATTITUDE_TWINS: [(CKind, CKind); 7] = [
-    (CKind::Lift, CKind::LiftFixed),
-    (CKind::PointOnPlane, CKind::PointOnPlaneFixed),
-    (CKind::LineOnPlane, CKind::LineOnPlaneFixed),
-    (CKind::PointPlaneDistance, CKind::PointPlaneDistanceFixed),
-    (CKind::PointOnCircle3, CKind::PointOnCircle3Fixed),
-    (CKind::CircleOnSphere, CKind::CircleOnSphereFixed),
-    (CKind::ProjectSolved, CKind::Project),
-];
+/// The pairs `CKind::attitude_twin` reads: a statement over a solved plane, and the same
+/// statement over fixed ones.
+const ATTITUDE_TWINS: [(CKind, CKind); 1] = [(CKind::ProjectSolved, CKind::Project)];
 
 /// One constructor argument, in `spec` order.
 #[derive(Clone, Debug, PartialEq)]
@@ -2063,24 +1980,6 @@ impl Constraint {
         Constraint::contact(sk, CKind::SplineCurvature, Arg::Ent(spline), Arg::Ent(circle))
     }
 
-    /// A frame's rotor held to the unit circle — intrinsic: `Sketch::frame` states it and
-    /// nothing else does, the arc's bargain.
-    pub fn frame_unit(frame: EntRef) -> Constraint {
-        let mut c = Constraint::new(CKind::FrameUnit, vec![Arg::Ent(frame)]);
-        c.intrinsic = true;
-        c
-    }
-
-    /// A frame's rotor kept on its chord, the chord's length its own unknown — intrinsic, the
-    /// other half of what `Sketch::frame` states.
-    pub fn frame_align(sk: &Sketch, frame: EntRef) -> Constraint {
-        let mut args = vec![Arg::Ent(frame), Arg::Num(0.0)];
-        args[1] = Arg::Num(seed_param(sk, CKind::FrameAlign, &args, 1));
-        let mut c = Constraint::new(CKind::FrameAlign, args);
-        c.intrinsic = true;
-        c
-    }
-
     /// Two points as images of one point in space — the planes read off their memberships,
     /// through the same seam the document readers use (`io::seed_omitted`), so a Rust caller
     /// and a document are refused by one rule.
@@ -2345,10 +2244,6 @@ impl Constraint {
                 CKind::LineLine3 => self.skew_sign(),
                 _ => self.side().unwrap_or(1.0),
             };
-            // a stated plane's distance keeps its normal and offset beside the map
-            if self.kind == CKind::PointPlaneDistanceFixed {
-                return [stated_plane(sk, self.args[1].ent().i()).to_vec(), vec![f.m, f.c]].concat();
-            }
             return vec![s * f.m, s * f.c];
         }
         if let Some((sp, t)) = self.spline_contact(sk) {
@@ -2443,20 +2338,10 @@ impl Constraint {
             // and four dots, rather than kept in a second skip set beside the curve contacts
             CKind::Project => {
                 let basis = |i: usize| sk.basis(self.args[i].ent().i());
-                let (da, db) = crate::plane::fold_line(&basis(2), &basis(3))
+                let (a, b) = (basis(2), basis(3));
+                let (da, db) = crate::plane::fold_line(&a, &b)
                     .expect("a projection between parallel planes is refused at the add");
-                vec![da[0], da[1], db[0], db[1]]
-            }
-            // the fold's turn in the parent's axes, or none at all for a plane stood off it
-            CKind::Hinge => crate::plane::fold_rotor(self.args[2].num()).to_vec(),
-            CKind::HingeParallel => vec![1.0, 0.0, 0.0, 0.0],
-            // the in-plane part of the solved view's origin, a constant of its mint
-            CKind::Lift => sk.planes[self.args[1].ent().i()].att.as_ref().expect("a solved view")
-                .ab.to_vec(),
-            // the stated basis: u, v, o
-            CKind::LiftFixed => {
-                let b = sk.basis(self.args[1].ent().i());
-                [b.u, b.v, b.o].concat()
+                vec![da[0], da[1], db[0], db[1], crate::plane::fold_offset(&a, &b)]
             }
             CKind::Distance3 | CKind::PointLine3 => vec![self.args[2].num()],
             // the magnitude turned to the side the lines stood on when it was stated
@@ -2475,22 +2360,20 @@ impl Constraint {
                 let (e1, e2) = across(a);
                 [e1, e2].concat()
             }
-            CKind::PointOnPlaneFixed | CKind::LineOnPlaneFixed => {
-                stated_plane(sk, self.args[1].ent().i()).to_vec()
+            CKind::PointPlaneDistance | CKind::Ordinate3U | CKind::Ordinate3V | CKind::PlaneDistance => {
+                vec![self.args[2].num()]
             }
-            CKind::PointPlaneDistance => vec![self.args[2].num()],
-            // the stated plane moved along its own normal by the number
-            CKind::PointPlaneDistanceFixed => {
-                let mut k = stated_plane(sk, self.args[1].ent().i());
-                k[3] += self.args[2].num();
-                k.to_vec()
+            // two points on the ray a drawing's extent apart, so its two rows weigh alike
+            CKind::RayOnPlane => vec![sk.extent().max(1.0)],
+            // two directions across the plane's normal as it stands now
+            CKind::RayPerpendicularPlane => {
+                let (e1, e2) = across(sk.basis(self.args[1].ent().i()).normal());
+                [e1, e2].concat()
             }
             CKind::SphereRadius => vec![self.args[1].num()],
             // `point_line3_free` at (m, c) = (1, 0): the stated number is the radius column
             CKind::SphereTangentLine | CKind::CylinderOn => vec![1.0, 0.0],
             CKind::ConeAngle | CKind::CylinderRadius => vec![self.args[1].num()],
-            // the gap between the two faces' ordinates along the planes' shared normal
-            CKind::Mate => vec![self.args[2].num()],
             // two directions across the ray's, as `point_on_line3` takes them across its line
             CKind::PointOnRay => {
                 let r = &sk.rays[self.args[1].ent().i()];
@@ -2508,17 +2391,6 @@ impl Constraint {
                 } else {
                     vec![1.0, 1.0]
                 }
-            }
-            // the normal of the view the circle is drawn in
-            CKind::PointOnCircle3Fixed => {
-                let v = self.attitude_read(sk).expect("a circle in space is drawn in a view");
-                sk.basis(v).normal().to_vec()
-            }
-            // the in-plane axes of the view the circle is drawn in
-            CKind::CircleOnSphereFixed => {
-                let v = self.attitude_read(sk).expect("a circle in space is drawn in a view");
-                let b = sk.basis(v);
-                [b.u, b.v].concat()
             }
             _ => Vec::new(),
         }
@@ -2614,10 +2486,6 @@ impl Constraint {
         let ln = |i: usize| sk.line_params(e(i).i()).to_vec();
         let centre = |i: usize| sk.point_params(sk.round_center(e(i))).to_vec();
         let rad = |i: usize| sk.round_radius(e(i)) as u32;
-        let att_q = |i: usize| {
-            sk.planes[e(i).i()].att.as_ref().expect("a hinge or a solved projection reads a solved view")
-                .q.to_vec()
-        };
         match self.kind {
             CKind::Coincident
             | CKind::Distance
@@ -2691,36 +2559,33 @@ impl Constraint {
                 vec![rad(1)],
             ]
             .concat(),
-            // the rotor alone; and the chord's length, then the frame's six numbers in
-            // `entity_params` order — the kernels' column layouts exactly
-            CKind::CoordinateU | CKind::CoordinateV => {
-                let f = sk.frame_of(e(1));
-                [pt(0), sk.point_params(f.origin as usize).to_vec(), vec![f.c, f.s]].concat()
+            // the one coordinate stated, in the point's own plane — the radius kernel's column
+            CKind::CoordinateU => vec![sk.point_params(e(0).i())[0]],
+            CKind::CoordinateV => vec![sk.point_params(e(0).i())[1]],
+            // the point's hidden point, then the plane's origin and its two rays' directions
+            CKind::Ordinate3U | CKind::Ordinate3V => {
+                [self.lifted_columns(sk), plane_columns(sk, e(1).i())].concat()
             }
-            CKind::FrameUnit => sk.own_params(e(0)),
-            CKind::FrameAlign => {
-                [vec![self.args[1].param()], sk.entity_params(e(0))].concat()
+            // the two images, drawn in two fixed planes — the fold line is constants
+            CKind::Project => [pt(0), pt(1)].concat(),
+            // both images' hidden points, then both planes' rays
+            CKind::ProjectSolved => {
+                let rays = |i: usize| plane_columns(sk, e(i).i())[3..].to_vec();
+                [self.lifted_columns(sk), rays(2), rays(3)].concat()
             }
-            // the two images, then each plane's origin and rotor — the kernel's twelve columns
-            CKind::Project => {
-                let datum = |i: usize| {
-                    let f = sk.frame_of(e(i));
-                    [sk.point_params(f.origin as usize).to_vec(), vec![f.c, f.s]].concat()
-                };
-                [pt(0), pt(1), datum(2), datum(3)].concat()
-            }
-            CKind::QuatUnit => sk.planes[e(0).i()].att.as_ref().expect("a solved view").q.to_vec(),
-            // the child's quaternion and its parent's; along a line, the fold's own rotor, the
-            // parent datum's rotor and the line's ends after them
-            CKind::Hinge | CKind::HingeParallel => [att_q(0), att_q(1)].concat(),
-            CKind::HingeAlong => {
-                let f = sk.frame_of(e(1));
-                [att_q(0), att_q(1), vec![self.args[3].param(), self.args[4].param(), f.c, f.s],
-                 ln(2)].concat()
-            }
-            // both images' hidden points, then both views' quaternions
-            CKind::ProjectSolved => [self.lifted_columns(sk), att_q(2), att_q(3)].concat(),
             CKind::RayUnit => sk.rays[e(0).i()].d.to_vec(),
+            // the ray's place and direction, and the plane's origin and rays
+            CKind::RayOnPlane => {
+                let r = &sk.rays[e(0).i()];
+                [r.a.to_vec(), r.d.to_vec(), plane_columns(sk, e(1).i())].concat()
+            }
+            CKind::RayParallelPlane | CKind::RayPerpendicularPlane => {
+                [sk.rays[e(0).i()].d.to_vec(), plane_columns(sk, e(1).i())[3..].to_vec()].concat()
+            }
+            // the first plane's origin and rays, then the second's origin
+            CKind::PlaneDistance => {
+                [plane_columns(sk, e(0).i()), sk.planes[e(1).i()].o.to_vec()].concat()
+            }
             CKind::RayFoot => {
                 let r = &sk.rays[e(0).i()];
                 [r.a, r.d].concat()
@@ -2730,56 +2595,33 @@ impl Constraint {
                 let r = &sk.rays[e(1).i()];
                 [self.lifted_columns(sk), r.a.to_vec(), r.d.to_vec()].concat()
             }
-            // the two planes' offsets along their shared normal
-            CKind::Mate => {
-                let d = |i: usize| {
-                    sk.planes[e(i).i()].att.as_ref().expect("a mate between solved views").d
-                };
-                vec![d(0), d(1)]
-            }
-            // the hidden point, the view point, its datum's origin and rotor — and, over a
-            // solved view, its quaternion and offset: the kernels' 14 and 9 columns
-            CKind::Lift | CKind::LiftFixed => {
+            // the hidden point, the point as drawn, and its plane's origin and rays
+            CKind::Lift => {
                 let l = &sk.lifts[sk.lift_of(e(0).i()).expect("a lift's point has one")];
-                let f = sk.frame_of(e(1));
-                let origin = sk.point_params(f.origin as usize).to_vec();
-                let mut ps = [l.x.to_vec(), pt(0), origin, vec![f.c, f.s]].concat();
-                if self.kind == CKind::Lift {
-                    let a = sk.planes[e(1).i()].att.as_ref().expect("a solved view");
-                    ps.extend(a.q);
-                    ps.push(a.d);
-                }
-                ps
+                [l.x.to_vec(), pt(0), plane_columns(sk, e(1).i())].concat()
             }
             // the hidden points, three columns each, in the order the operands name them
             CKind::Coincident3
             | CKind::Distance3
             | CKind::PointLine3
             | CKind::LineLine3
-            | CKind::PointOnPlaneFixed
             | CKind::PointOnLine3
             | CKind::EqualLength3
-            | CKind::PointPlaneDistanceFixed
-            | CKind::LineOnPlaneFixed
             | CKind::Midpoint3
             | CKind::Symmetric3 => self.lifted_columns(sk),
             CKind::Angle3 | CKind::Perpendicular3 | CKind::Parallel3 => self.axis_columns(sk),
-            // and a solved plane's quaternion and offset after them
+            // and the plane's origin and rays after them
             CKind::PointOnPlane | CKind::PointPlaneDistance | CKind::LineOnPlane => {
-                let a = sk.planes[e(1).i()].att.as_ref().expect("a solved view");
-                [self.lifted_columns(sk), a.q.to_vec(), vec![a.d]].concat()
+                [self.lifted_columns(sk), plane_columns(sk, e(1).i())].concat()
             }
             // the hidden points, and then the radii the kernel reads as columns
             CKind::SphereOn => [self.lifted_columns(sk), vec![rad(1)]].concat(),
-            // the circle's centre and the sphere's in space, both radii, and the circle's view's
-            // quaternion where it is solved
-            CKind::CircleOnSphere | CKind::CircleOnSphereFixed => {
-                let mut out = [self.lifted_columns(sk), vec![rad(0), rad(1)]].concat();
-                if self.kind == CKind::CircleOnSphere {
-                    let v = self.attitude_read(sk).expect("a circle in space is drawn in a view");
-                    out.extend(sk.planes[v].att.as_ref().expect("a solved view").q);
-                }
-                out
+            // the circle's centre and the sphere's in space, both radii, and the circle's plane's
+            // rays
+            CKind::CircleOnSphere => {
+                let v = self.attitude_read(sk).expect("a circle in space is drawn in a plane");
+                [self.lifted_columns(sk), vec![rad(0), rad(1)], plane_columns(sk, v)[3..].to_vec()]
+                    .concat()
             }
             CKind::SphereRadius => vec![rad(0)],
             CKind::SphereTangentLine => [self.lifted_columns(sk), vec![rad(0)]].concat(),
@@ -2798,15 +2640,10 @@ impl Constraint {
                 let (k1, k2) = (sk.axial(e(0)).param, sk.axial(e(1)).param);
                 [x[0..9].to_vec(), vec![k1], x[9..15].to_vec(), vec![k2]].concat()
             }
-            // the point and the centre in space, the radius, and the view's quaternion
-            CKind::PointOnCircle3 | CKind::PointOnCircle3Fixed => {
-                let ps = self.lifted_columns(sk);
-                let mut out = [ps, vec![rad(1)]].concat();
-                if self.kind == CKind::PointOnCircle3 {
-                    let v = self.attitude_read(sk).expect("a circle in space is drawn in a view");
-                    out.extend(sk.planes[v].att.as_ref().expect("a solved view").q);
-                }
-                out
+            // the point and the centre in space, the radius, and the circle's plane's rays
+            CKind::PointOnCircle3 => {
+                let v = self.attitude_read(sk).expect("a circle in space is drawn in a plane");
+                [self.lifted_columns(sk), vec![rad(1)], plane_columns(sk, v)[3..].to_vec()].concat()
             }
             CKind::Fix | CKind::Ccw | CKind::Cw => {
                 unreachable!("{:?} is a gauge and is never in a sketch", self.kind)
@@ -2839,15 +2676,20 @@ impl Constraint {
                 [vec![e(0).i()], ends(1).to_vec()].concat()
             }
             CKind::PointOnPlane
-            | CKind::PointOnPlaneFixed
             | CKind::PointPlaneDistance
-            | CKind::PointPlaneDistanceFixed => vec![e(0).i()],
-            CKind::LineOnPlane | CKind::LineOnPlaneFixed => ends(0).to_vec(),
-            CKind::PointOnCircle3 | CKind::PointOnCircle3Fixed | CKind::SphereOn => {
+            | CKind::Ordinate3U
+            | CKind::Ordinate3V => vec![e(0).i()],
+            // a ray and a plane, and two planes: in space already
+            CKind::RayOnPlane
+            | CKind::RayParallelPlane
+            | CKind::RayPerpendicularPlane
+            | CKind::PlaneDistance => Vec::new(),
+            CKind::LineOnPlane => ends(0).to_vec(),
+            CKind::PointOnCircle3 | CKind::SphereOn => {
                 vec![e(0).i(), sk.round_center(e(1))]
             }
             CKind::SphereTangentLine => [vec![sk.round_center(e(0))], ends(1).to_vec()].concat(),
-            CKind::SphereTangentSphere | CKind::CircleOnSphere | CKind::CircleOnSphereFixed => {
+            CKind::SphereTangentSphere | CKind::CircleOnSphere => {
                 vec![sk.round_center(e(0)), sk.round_center(e(1))]
             }
             // a cone's or a cylinder's axis, apex first
@@ -2914,17 +2756,15 @@ impl Constraint {
     pub fn attitude_read(&self, sk: &Sketch) -> Option<usize> {
         match self.kind {
             CKind::Lift
-            | CKind::LiftFixed
             | CKind::PointOnPlane
-            | CKind::PointOnPlaneFixed
             | CKind::PointPlaneDistance
-            | CKind::PointPlaneDistanceFixed
             | CKind::LineOnPlane
-            | CKind::LineOnPlaneFixed => Some(self.args[1].ent().i()),
-            CKind::PointOnCircle3 | CKind::PointOnCircle3Fixed => {
+            | CKind::Ordinate3U
+            | CKind::Ordinate3V => Some(self.args[1].ent().i()),
+            CKind::PointOnCircle3 => {
                 sk.plane_of(sk.round_center(self.args[1].ent()))
             }
-            CKind::CircleOnSphere | CKind::CircleOnSphereFixed => {
+            CKind::CircleOnSphere => {
                 sk.plane_of(sk.round_center(self.args[0].ent()))
             }
             _ => None,
@@ -3023,13 +2863,6 @@ pub fn seed_param(sk: &Sketch, kind: CKind, args: &[Arg], i: usize) -> f64 {
             let (cx, cy) = sk.point_xy(sk.round_center(args[1].ent()));
             crate::curve::closest(sk, args[0].ent().i(), cx, cy).0
         }
-        // the chord's length as drawn, asked of the one function that also scales the rotor —
-        // a degenerate frame must read the same to both, or the preconditioning and the row's
-        // seed would disagree about a drawing neither can see
-        (CKind::FrameAlign, 1) => {
-            let f = sk.frame_of(args[0].ent());
-            sk.frame_chord(f.origin as usize, f.toward as usize).1
-        }
         _ => 0.0,
     }
 }
@@ -3118,9 +2951,9 @@ pub fn validate(sk: &Sketch, kind: CKind, args: &[Arg]) -> Result<(), String> {
                     crate::io::entity_name(pa)
                 ));
             }
-            // two stated views are parallel or not now and for ever; where either is solved,
+            // two fixed planes are parallel or not now and for ever; where either is solved,
             // whether they came out parallel is a question for after the solve (E065)
-            let solved = |e: EntRef| sk.planes[e.i()].att.is_some();
+            let solved = |e: EntRef| !sk.plane_fixed(e.i());
             let basis = |e: EntRef| sk.basis(e.i());
             if !solved(pa) && !solved(pb)
                 && crate::plane::fold_line(&basis(pa), &basis(pb)).is_none()
@@ -3136,9 +2969,9 @@ pub fn validate(sk: &Sketch, kind: CKind, args: &[Arg]) -> Result<(), String> {
         k if k.spatial() => {
             let c = Constraint::new(kind, args.to_vec());
             for p in c.lifted_points(sk) {
-                if sk.plane_of(p).is_none() {
+                if sk.plane_of(p).is_none() && sk.points[p].z.is_none() {
                     return Err(format!(
-                        "{} is on no view, and a relation in space reads where a view puts it",
+                        "{} is a point of a 2D sketch, with no place in space to relate",
                         crate::io::entity_name(EntRef::point(p))
                     ));
                 }
@@ -3168,9 +3001,9 @@ pub fn validate(sk: &Sketch, kind: CKind, args: &[Arg]) -> Result<(), String> {
             let own = |e: EntRef| {
                 c.lifted_points(sk).iter().all(|&p| sk.plane_of(p) == Some(e.i()))
             };
-            if matches!(k, CKind::PointOnPlane | CKind::PointOnPlaneFixed
-                | CKind::PointPlaneDistance | CKind::PointPlaneDistanceFixed
-                | CKind::LineOnPlane | CKind::LineOnPlaneFixed)
+            if matches!(k, CKind::PointOnPlane
+                | CKind::PointPlaneDistance
+                | CKind::LineOnPlane)
                 && own(args[1].ent())
             {
                 return Err(format!(
@@ -3240,10 +3073,11 @@ pub fn infer_value(sk: &Sketch, kind: CKind, args: &[Arg], i: usize) -> Option<A
 
 /// A stated plane's normal and its origin along it: the constants of every statement that puts a
 /// point on a plane whose attitude is document data.
-fn stated_plane(sk: &Sketch, p: usize) -> [f64; 4] {
-    let b = sk.basis(p);
-    let n = b.normal();
-    [n[0], n[1], n[2], b.along_normal()]
+/// A plane's columns as every kernel that reads one takes them: its origin, then its two rays'
+/// directions — nine Params, held or not.
+fn plane_columns(sk: &Sketch, p: usize) -> Vec<u32> {
+    let pl = &sk.planes[p];
+    [pl.o, sk.rays[pl.u as usize].d, sk.rays[pl.v as usize].d].concat()
 }
 
 /// Two unit vectors across a direction: perpendicular to it and to each other, with the second
@@ -3266,12 +3100,6 @@ pub fn param_scale(sk: &Sketch, kind: CKind, args: &[Arg], i: usize) -> f64 {
     // Whichever family the contact runs along, the question is the same one, so it is asked once
     // and answered by the entity the slot actually names.  A hidden unknown that runs along
     // nothing is a length already.
-    // a fold's half-angle rotor turns the view it folds as far as that view's own quaternion
-    // does, so it is worth what one unit of that is (`Sketch::att_scale`)
-    if kind == CKind::HingeAlong && (i == 3 || i == 4) {
-        return sk.planes[args[0].ent().i()].att.as_ref()
-            .map_or(1.0, |a| sk.params[a.q[0] as usize].scale);
-    }
     match kind.contact_slots() {
         Some((e, t)) if t == i => contact_speed(sk, args[e].ent()),
         _ => 1.0,

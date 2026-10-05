@@ -115,9 +115,14 @@ impl Sketch {
             EntKind::Spline => {
                 self.splines[e.i()].ctrl.iter().map(|&c| EntRef::point(c as usize)).collect()
             }
+            // its two rays and its origin, the order its declaration names them
             EntKind::Plane => {
-                let f = self.frame_of(e);
-                vec![EntRef::point(f.origin as usize), EntRef::point(f.toward as usize)]
+                let p = &self.planes[e.i()];
+                vec![
+                    EntRef::new(EntKind::Ray, p.u as usize),
+                    EntRef::new(EntKind::Ray, p.v as usize),
+                    EntRef::point(p.origin as usize),
+                ]
             }
             // the one kind whose children need not be points
             EntKind::Curve => self.curves[e.i()].args.clone(),
@@ -223,11 +228,12 @@ impl Sketch {
             EntKind::Circle,
             EntKind::Arc,
             EntKind::Spline,
+            // a plane is built over its rays
+            EntKind::Ray,
             EntKind::Plane,
             EntKind::Sphere,
             EntKind::Cone,
             EntKind::Cylinder,
-            EntKind::Ray,
         ] {
             for i in 0..self.count(kind) {
                 out.push(EntRef::new(kind, i));

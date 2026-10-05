@@ -55,6 +55,17 @@ pub(crate) fn settle(
             let (Some(a), Some(b)) = (a, b) else {
                 return Err((w.word.span, format!("`{word}` needs to know what its operands are")));
             };
+            // **a symmetric word reads either way round**: `P coincident p` is `p coincident P`,
+            // and `t perpendicular P` and `P perpendicular t` are one statement — the operands are
+            // put in the order the kind names them
+            let symmetric = matches!(word, "coincident" | "parallel" | "perpendicular");
+            if symmetric && crate::constraints::infix_op(word, a, b, &|n| w.sel(n)).is_none() {
+                if let Some(k) = crate::constraints::infix_op(word, b, a, &|n| w.sel(n)) {
+                    let mut swapped = w.clone();
+                    swapped.ops.swap(0, 1);
+                    return Ok((k, swapped.assemble(k)?));
+                }
+            }
             crate::constraints::infix_op(word, a, b, &|n| w.sel(n)).ok_or_else(|| {
                 let mut m = format!(
                     "`{word}` does not relate a {} to a {}",
@@ -612,16 +623,13 @@ fn apply_gauge(
                 bad(Code::E101, rf.span, format!("no such entity: `{}`", rf.root.text));
                 return;
             };
-            // a plane's attitude is the datum's intrinsics, held by its points
-            let scalars: Vec<&str> = match e.kind {
-                EntKind::Plane => Vec::new(),
-                k => k
-                    .fields()
-                    .iter()
-                    .filter(|(_, f)| *f == Field::Scalar)
-                    .map(|(n, _)| *n)
-                    .collect(),
-            };
+            // a plane holds where it stands; a ray its direction
+            let scalars: Vec<&str> = e.kind
+                .fields()
+                .iter()
+                .filter(|(_, f)| *f == Field::Scalar)
+                .map(|(n, _)| *n)
+                .collect();
             let own = sk.own_params(e);
             let spec = r.kind.spec();
             for (i, a) in r.args.iter().enumerate().skip(1) {
@@ -637,7 +645,8 @@ fn apply_gauge(
                         if scalars.is_empty() {
                             format!("{article} {kind} has no number of its own to fix")
                         } else {
-                            format!("{article} {kind} has {}, not `{field}`", scalars.join(" and "))
+                            format!("{article} {kind} has {}, not `{field}`",
+                                scalars[..own.len().min(scalars.len())].join(" and "))
                         },
                     );
                     continue;

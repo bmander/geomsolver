@@ -4,14 +4,14 @@ use gcs_core::{
     diagnose::{self, SolidOutcome},
     json::{self, Json},
     model::SolidRequirement,
-    program, report, syntax,
+    program, report,
 };
 
 fn fixture() -> String {
     include_str!("fixtures/solid_issue51/sweep_possible.sv").into()
 }
 fn read(src: &str) -> program::Elaborated {
-    let (p, errors) = syntax::parse(src);
+    let (p, errors) = crate::common::parse(src);
     assert!(errors.is_empty(), "{errors:?}");
     let e = program::elaborate(&p);
     assert!(e.ok(), "{:?}", e.diags);
@@ -56,13 +56,13 @@ fn parsing_preserves_only_complete_valid_variants() {
         "clear(1e309mm)",
         "clear(true)",
     ] {
-        let (p, errors) = syntax::parse(&src.replace("clear(1mm)", form));
+        let (p, errors) = crate::common::parse(&src.replace("clear(1mm)", form));
         let e = program::elaborate(&p);
         assert!(!errors.is_empty() || !e.ok(), "accepted {form}");
         assert!(e.sketch.solid_claims.is_empty(), "valid claim created for {form}");
     }
     for bounds in ["(10deg,30deg)", "(0.1mm,30deg)", "(1e309mm,2mm)"] {
-        let (p, errors) = syntax::parse(&src.replace("(0.1mm,0.9mm)", bounds));
+        let (p, errors) = crate::common::parse(&src.replace("(0.1mm,0.9mm)", bounds));
         let e = program::elaborate(&p);
         assert!(!errors.is_empty() || !e.ok());
         assert!(e.sketch.solid_claims.is_empty());
@@ -116,7 +116,7 @@ fn coverage_derives_success_partial_failure_and_counterexamples() {
 }
 
 fn round_claim(form: &str) -> String {
-    format!("unit mm\na := point\nfix(x == 0, y == 0) a\nac := circle(center:a)\nradius(1mm) ac\nb := point\nfix(x == 2, y == 0) b\nbc := circle(center:b)\nradius(1mm) bc\naf := face(ac)\nbf := face(bc)\nresult := solid(af,depth:1mm)\nother := solid(bf,depth:1mm)\nclaim result {form} other\n")
+    format!("unit mm\nuse std\nin std.front {{\na := point\nfix(x == 0, y == 0) a\nac := circle(center:a)\nradius(1mm) ac\nb := point\nfix(x == 2, y == 0) b\nbc := circle(center:b)\nradius(1mm) bc\n}}\naf := face(ac)\nbf := face(bc)\nresult := solid(af,depth:1mm)\nother := solid(bf,depth:1mm)\nclaim result {form} other\n")
 }
 
 #[test]
@@ -138,9 +138,10 @@ fn unresolved_predicates_and_spacing_are_independent_of_negative_gaps() {
         assert!(report::solid_claim_text(&v).contains("containment"));
     }
     // A sampled, valid but uncertain pose also prevents sampled success.
-    let prefix = fixture().split("resultfp0 := point").next().unwrap().to_string();
+    // the fixture up to its first solid's corners, its `in` block closed there
+    let prefix = fixture().split("resultfp0 := point").next().unwrap().to_string() + "\n}\n";
     let src = prefix
-        + &round_claim("clear(-100mm)").replace("unit mm\n", "").replace(
+        + &round_claim("clear(-100mm)").replace("unit mm\nuse std\n", "").replace(
             "claim result clear(-100mm) other",
             "claim over reach in (0.1mm,0.9mm) { result clear(-100mm) other }",
         );
@@ -230,7 +231,8 @@ fn angular_coverage_and_failure_reports_keep_degrees() {
 #[test]
 fn a_counterexample_refutes_a_sweep_with_uncertain_contact_and_successful_poses() {
     let src = round_claim("clear(-100mm)")
-        .replace("fix(x == 2, y == 0) b\n", "param reach: Length\na distance(reach,along:x) b\na distance(0mm,along:y) b\n")
+        .replace("fix(x == 2, y == 0) b\n", "a distance(reach,along:x) b\na distance(0mm,along:y) b\n")
+        .replace("use std\n", "use std\nparam reach: Length\n")
         .replace(
             "claim result clear(-100mm) other",
             "claim over reach in (1mm,3mm) { result clear(-100mm) other }",

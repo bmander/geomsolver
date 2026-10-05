@@ -7,8 +7,11 @@ use std
 
 component PointCone(side: plane, top: Length, cone: Angle, tilt: Angle, height: Length,
                     offset: Length, reach: Length) {
-  // the plane through the apex holding the cone's axis: the side datum, stood off along x
-  axial := plane(origin: side.origin, toward: side.toward, from: side, offset: offset)
+  // the plane through the apex holding the cone's axis: the side datum's rays, stood off along x
+  axial := plane(u: side.u, v: side.v)
+  axial.origin distance(0mm, along: u) side
+  axial.origin distance(0mm, along: v) side
+  axial.origin distance(offset, along: n) side
   in axial {
     // the side datum's u runs down the drill's axis and its v along y
     private apex := point
@@ -29,5 +32,10 @@ component PointCone(side: plane, top: Length, cone: Angle, tilt: Angle, height: 
 
 preview {
   unit mm
-  tip := PointCone(std.side, top: 0mm, cone: 59.4deg, tilt: 8.9deg, height: 3.3mm, offset: -0.5mm, reach: 20mm)
+  // the drill's side datum: u down the drill's axis, v along y, so x is its normal
+  down := ray hint(x: 0, y: 0, z: -1)
+  fix(x == 0, y == 0, z == -1) down
+  side := plane(u: down, v: std.y)
+  fix(x == 0, y == 0, z == 0) side
+  tip := PointCone(side, top: 0mm, cone: 59.4deg, tilt: 8.9deg, height: 3.3mm, offset: -0.5mm, reach: 20mm)
 }

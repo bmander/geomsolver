@@ -42,17 +42,19 @@ preview {
   unit mm
   pitch := views.PitchView(std.front, span: design.hypoid_design.cutter_radius)
   gear := pitch.gear.GearCone(pitch.view, g.view, design.hypoid_design)
-  g := views.FoldedView(pitch.view, gear.generator, span: design.hypoid_design.cutter_radius)
+  g := views.FoldedView(pitch.view, gear.generator, pitch.down, span: design.hypoid_design.cutter_radius)
   trace := pitch.trace.ToothTrace(pitch.view, gear.generator, design.hypoid_design)
   thickness := crown.thickness.CrownThickness(pitch.view, gear.generator, trace.normal,
     design.hypoid_design)
-  n := views.FoldedView(pitch.view, trace.normal, span: design.hypoid_design.cutter_radius)
+  n := views.FoldedView(pitch.view, trace.normal, pitch.down, span: design.hypoid_design.cutter_radius)
   tooth := crown.tooth.CrownTooth(pitch.view, trace.normal, thickness.inner_pitch,
     thickness.outer_pitch, design.hypoid_design) in n.view
   mate := crown.mate.CrownMate(tooth, design.hypoid_design) in n.view
   // Alone, each component's normal module is its own unknown: the trace constructs it.
-  trace.K distance(tooth.normal_module) trace.normal
-  trace.K distance(mate.normal_module) trace.normal
+  in std.front {
+    trace.K distance(tooth.normal_module) trace.normal
+    trace.K distance(mate.normal_module) trace.normal
+  }
   reach := CutterReach(pitch.view, n.view, gear.O, trace.normal, mate.axis,
     reach: design.hypoid_design.space_reach)
 }

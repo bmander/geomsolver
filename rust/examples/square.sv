@@ -7,11 +7,15 @@
 // mints.  `perpendicular` and `equal` are stated at all four corners; round a closed loop one
 // of each is a theorem, which the diagnosis notes as implied and never paints.
 
-cycle 4 {
-  (s := line) -> perpendicular equal
-}
+use std
 
-// the loop states everything but a size and a pose: one dimension scales it, and a grounded
-// corner leaves a single freedom — drag any side and the square swings about that corner
-distance(50) s[0]
-fix(x == 0, y == 0) s[0].p1
+in std.front {
+  cycle 4 {
+    (s := line) -> perpendicular equal
+  }
+
+  // the loop states everything but a size and a pose: one dimension scales it, and a grounded
+  // corner leaves a single freedom — drag any side and the square swings about that corner
+  distance(50) s[0]
+  fix(x == 0, y == 0) s[0].p1
+}

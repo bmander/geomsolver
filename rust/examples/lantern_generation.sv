@@ -15,19 +15,22 @@ thickness := 4mm
 
 // Both spindles stand upright in the page, the pitch radii apart. The two radii are drawn, and
 // they meet at the pitch point.
-construction centerline spindle := line(std.origin, std.up.toward)
-private pitch := point hint(x: 16, y: 0)
-pitch distance(wheel_pitch, along: u) std.front
-pitch distance(0mm, along: v) std.front
-private hub := point hint(x: 24, y: 0)
-private hub_up := point hint(x: 24, y: 5)
-hub distance(wheel_pitch + pinion_pitch, along: u) std.front
-hub distance(0mm, along: v) std.front
-hub_up distance(wheel_pitch + pinion_pitch, along: u) std.front
-hub_up distance(5mm, along: v) std.front
-construction centerline pinion_axis := line(hub, hub_up)
-construction wheel_radius := line(std.origin, pitch)
-construction pinion_radius := line(hub, pitch)
+in std.front {
+  construction centerline spindle := line(std.origin, hint(x: 0, y: 1))
+  fix(x == 0, y == 1) spindle.p2
+  private pitch := point hint(x: 16, y: 0)
+  pitch distance(wheel_pitch, along: u) std.front
+  pitch distance(0mm, along: v) std.front
+  private hub := point hint(x: 24, y: 0)
+  private hub_up := point hint(x: 24, y: 5)
+  hub distance(wheel_pitch + pinion_pitch, along: u) std.front
+  hub distance(0mm, along: v) std.front
+  hub_up distance(wheel_pitch + pinion_pitch, along: u) std.front
+  hub_up distance(5mm, along: v) std.front
+  construction centerline pinion_axis := line(hub, hub_up)
+  construction wheel_radius := line(std.origin, pitch)
+  construction pinion_radius := line(hub, pitch)
+}
 
 // The wheel turns once per turn of the shared angle; the pinion turns the other way at the
 // ratio of the radii, read from the two drawn lines whenever the motion is read.
@@ -36,31 +39,33 @@ pinion_turn := motion(about: pinion_axis, ratio: -length(wheel_radius) / length(
 roll := motion(pinion_turn, relative_to: wheel_turn)
 
 // The blank: a disc out to the addendum circle, turned about the spindle.
-private b0 := point hint(x: 0, y: -2)
-private b1 := point hint(x: 18.5, y: -2)
-private b2 := point hint(x: 18.5, y: 2)
-private b3 := point hint(x: 0, y: 2)
-blank_section := horizontal (bb := line(b0, b1)) -> vertical (bo := line(b1, b2)) ->
-                horizontal (bt := line(b2, b3)) -> (ba := line(b3, b0)) -> close
-b0 coincident spindle
-std.origin midpoint ba
-b1 distance(wheel_pitch + addendum, side: right) spindle
-distance(thickness) bo
-construction blank := solid(blank_section, about: spindle)
+in std.front {
+  private b0 := point hint(x: 0, y: -2)
+  private b1 := point hint(x: 18.5, y: -2)
+  private b2 := point hint(x: 18.5, y: 2)
+  private b3 := point hint(x: 0, y: 2)
+  blank_section := horizontal (bb := line(b0, b1)) -> vertical (bo := line(b1, b2)) ->
+                  horizontal (bt := line(b2, b3)) -> (ba := line(b3, b0)) -> close
+  b0 coincident spindle
+  std.origin midpoint ba
+  b1 distance(wheel_pitch + addendum, side: right) spindle
+  distance(thickness) bo
+  construction blank := solid(blank_section, about: spindle)
 
-// The pin: a short cylinder on the pinion's radius, taller than the blank is thick.
-private pin_at := point hint(x: 18, y: 0)
-pin_at coincident pinion_radius
-hub distance(pin_throw) pin_at
-private q0 := point hint(x: 18, y: -3)
-private q1 := point hint(x: 19.5, y: -3)
-private q2 := point hint(x: 19.5, y: 3)
-private q3 := point hint(x: 18, y: 3)
-pin_section := horizontal (qb := line(q0, q1)) -> vertical (qo := line(q1, q2)) ->
-              horizontal (qt := line(q2, q3)) -> vertical (qa := line(q3, q0)) -> close
-pin_at midpoint qa
-distance(pin_radius) qb
-distance(thickness + 2mm) qo
+  // The pin: a short cylinder on the pinion's radius, taller than the blank is thick.
+  private pin_at := point hint(x: 18, y: 0)
+  pin_at coincident pinion_radius
+  hub distance(pin_throw) pin_at
+  private q0 := point hint(x: 18, y: -3)
+  private q1 := point hint(x: 19.5, y: -3)
+  private q2 := point hint(x: 19.5, y: 3)
+  private q3 := point hint(x: 18, y: 3)
+  pin_section := horizontal (qb := line(q0, q1)) -> vertical (qo := line(q1, q2)) ->
+                horizontal (qt := line(q2, q3)) -> vertical (qa := line(q3, q0)) -> close
+  pin_at midpoint qa
+  distance(pin_radius) qb
+  distance(thickness + 2mm) qo
+}
 construction pin := solid(pin_section, about: qa)
 
 // Everything the pin passes through while the wheel turns 35 degrees either way.

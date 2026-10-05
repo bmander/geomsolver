@@ -51,15 +51,17 @@ component ConeBoundary(generator: line, axis: line, offset: Length, lean: Angle)
 
 preview {
   unit mm
-  mean := point hint(x: 50, y: 0)
-  foot := point hint(x: 40, y: 20)
-  std.origin distance(50mm, along: right) mean
-  std.origin distance(0mm, along: up) mean
-  generator := line(std.origin, mean)
-  axis := line(std.origin, foot)
-  to_foot := line(mean, foot)
-  to_foot perpendicular axis
-  generator angle(30deg) axis
-  tip := ConeBoundary(generator, axis, offset: 2mm, lean: 180deg)
-  root := ConeBoundary(generator, axis, offset: 2.5mm, lean: 0deg)
+  in std.front {
+    mean := point hint(x: 50, y: 0)
+    foot := point hint(x: 40, y: 20)
+    std.origin distance(50mm, along: right) mean
+    std.origin distance(0mm, along: up) mean
+    generator := line(std.origin, mean)
+    axis := line(std.origin, foot)
+    to_foot := line(mean, foot)
+    to_foot perpendicular axis
+    generator angle(30deg) axis
+    tip := ConeBoundary(generator, axis, offset: 2mm, lean: 180deg)
+    root := ConeBoundary(generator, axis, offset: 2.5mm, lean: 0deg)
+  }
 }

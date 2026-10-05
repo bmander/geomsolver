@@ -75,20 +75,22 @@ component EndCut(body: solid, toe: solid, heel: solid) {
 // The two chamfers in a member's axial view; blank/member.sv's preview cuts them from a blank.
 preview {
   unit mm
-  mean := point hint(x: 50, y: 0)
-  foot := point hint(x: 40, y: 20)
-  std.origin distance(50mm, along: right) mean
-  std.origin distance(0mm, along: up) mean
-  generator := line(std.origin, mean)
-  axis := line(std.origin, foot)
-  to_foot := line(mean, foot)
-  to_foot perpendicular axis
-  generator angle(30deg) axis
-  span := blank.sphere.FaceSpan(generator, width: 10mm)
-  inner := blank.sphere.FaceSpan(generator, width: 9mm)
-  toe := blank.sphere.SphericalBoundary(std.origin, generator, span.toe)
-  heel := blank.sphere.SphericalBoundary(std.origin, generator, span.heel)
-  tip := blank.cone.ConeBoundary(generator, axis, offset: 2mm, lean: 180deg)
-  toe_end := EndChamfer(std.origin, span.toe, inner.toe, generator, tip, axis, size: 0.5mm)
-  heel_end := EndChamfer(std.origin, span.heel, inner.heel, generator, tip, axis, size: 0.5mm)
+  in std.front {
+    mean := point hint(x: 50, y: 0)
+    foot := point hint(x: 40, y: 20)
+    std.origin distance(50mm, along: right) mean
+    std.origin distance(0mm, along: up) mean
+    generator := line(std.origin, mean)
+    axis := line(std.origin, foot)
+    to_foot := line(mean, foot)
+    to_foot perpendicular axis
+    generator angle(30deg) axis
+    span := blank.sphere.FaceSpan(generator, width: 10mm)
+    inner := blank.sphere.FaceSpan(generator, width: 9mm)
+    toe := blank.sphere.SphericalBoundary(std.origin, generator, span.toe)
+    heel := blank.sphere.SphericalBoundary(std.origin, generator, span.heel)
+    tip := blank.cone.ConeBoundary(generator, axis, offset: 2mm, lean: 180deg)
+    toe_end := EndChamfer(std.origin, span.toe, inner.toe, generator, tip, axis, size: 0.5mm)
+    heel_end := EndChamfer(std.origin, span.heel, inner.heel, generator, tip, axis, size: 0.5mm)
+  }
 }

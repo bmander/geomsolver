@@ -151,7 +151,8 @@ impl EntKind {
     pub fn fields(self) -> &'static [(&'static str, Field)] {
         use Field::{Child as C, List as L, Scalar as S};
         match self {
-            EntKind::Point => &[("x", S), ("y", S)],
+            // a point in space has a third, which a point drawn in a plane never owns
+            EntKind::Point => &[("x", S), ("y", S), ("z", S)],
             EntKind::Line => &[("p1", C), ("p2", C)],
             EntKind::Circle | EntKind::Sphere => &[("center", C), ("r", S)],
             // the axis is a line, the one child that is not a point: the apex is its start
@@ -162,11 +163,8 @@ impl EntKind {
             EntKind::Ray => &[("x", S), ("y", S), ("z", S), ("px", S), ("py", S), ("pz", S)],
             EntKind::Arc => &[("center", C), ("start", C), ("end", C), ("r", S)],
             EntKind::Spline => &[("ctrl", L)],
-            // a plane's attitude is not a field: a Scalar is a number a solve may write back,
-            // and the basis is document data no solve moves
-            EntKind::Plane => {
-                &[("origin", C), ("toward", C), ("c", S), ("s", S)]
-            }
+            // two rays for its attitude, its origin a point drawn in it, and where that stands
+            EntKind::Plane => &[("u", C), ("v", C), ("origin", C), ("x", S), ("y", S), ("z", S)],
             // as many arguments as its definition takes, and none of them need be points — the
             // first kind for which that is true
             EntKind::Curve => &[("args", L)],
@@ -234,9 +232,8 @@ impl EntKind {
             EntKind::Arc => {
                 [pt("center"), pt("start"), pt("end"), vec![format!("{n}.r")]].concat()
             }
-            EntKind::Plane => {
-                [pt("origin"), pt("toward"), vec![format!("{n}.c"), format!("{n}.s")]].concat()
-            }
+            // where it stands; its attitude is its rays'
+            EntKind::Plane => ["x", "y", "z"].iter().map(|f| format!("{n}.{f}")).collect(),
             // a surface in space is no formal a curve is written over
             EntKind::Cone | EntKind::Cylinder => return None,
             EntKind::Ray => ["x", "y", "z", "px", "py", "pz"].iter().map(|f| format!("{n}.{f}")).collect(),
@@ -384,9 +381,14 @@ impl EntRef {
 pub struct PointE {
     pub x: u32,
     pub y: u32,
-    /// The plane this point is an image on, if it says (`a := point in top`) — what `Project`
-    /// reads to know which two views it relates.  A membership, not a constraint: it moves
-    /// nothing, and a point with none is simply on the page.
+    /// The third coordinate of a **point in space** — one a document declares outside every
+    /// `in` (`docs/planes-plan.md`), whose three numbers are where it stands.  `None` for a
+    /// point drawn in a plane, whose two numbers are that plane's own coordinates.
+    pub z: Option<u32>,
+    /// The plane this point is drawn in (`a := point in top`): its `x`, `y` are that plane's
+    /// coordinates.  A point with neither a plane nor a `z` is a point of a **2D sketch** — one a
+    /// program or a JSON document builds with no planes at all — read in space on the front
+    /// plane, and never made by a document.
     pub plane: Option<u32>,
 }
 
@@ -463,54 +465,18 @@ pub struct SplineE {
     pub class: Classes,
 }
 
-/// An origin, a point it is pointed at, and the unit rotor `(c, s)` between them — the datum
-/// half of a `PlaneE`, see `EntKind::Plane`.  `c` and `s` are Param indices; the two intrinsic
-/// constraints that slave them to the chord are added by `Sketch::plane` and never serialized,
-/// the arc's bargain.
-#[derive(Clone, Debug)]
-pub struct FrameE {
-    pub origin: u32,
-    pub toward: u32,
-    pub c: u32,
-    pub s: u32,
-    pub class: Classes,
-}
-
-/// A frame with an attitude in space — see `EntKind::Plane`.  The frame half is the page
-/// placement (where the view sits and which way it is turned), the basis is which plane of the
-/// object it pictures; only the first is ever solved for.
+/// **A plane in space** (`docs/planes-plan.md`): its attitude is two rays' — right along `u`,
+/// out along `u × v`, up along `out × u` — and where it stands is `o`, three Params of its own.
+/// Its origin is the member point `origin`, drawn in it and held at `(0, 0)`, so it stands at
+/// `o`.  A plane owns no intrinsic row: what it is, is read off its rays and `o` (`Sketch::basis`),
+/// and it is **fixed** — its basis constants every row may read — when all nine are held.
 #[derive(Clone, Debug)]
 pub struct PlaneE {
-    pub frame: FrameE,
-    pub(in crate::model) basis: crate::plane::Basis,
-    /// The attitude as **unknowns**, where the view is solved rather than stated (or read by one
-    /// that is) — `None` for every other plane a document states, so no parameter is minted and
-    /// nothing compiles differently (`Sketch::free_attitude`).
-    pub att: Option<Att>,
-}
-
-/// A view's attitude and normal offset as solver unknowns (`docs/spatial-constraints-plan.md`).
-///
-/// `q` is a quaternion (four Params, held to the unit sphere by the intrinsic `quat_unit` row)
-/// and `d` the offset along the view's normal (one Param, a length); the view's origin stands at
-/// `o = R(q)·(a, b, d)`, where `ab` are **constants** carrying the in-plane part of the origin
-/// the plane was minted at — in-plane translation is already the datum's own 2D freedom, so it
-/// is not a second unknown here.  Kept out of `entity_params`, `fields` and `scalar_names`: a
-/// traced tape's width and a report's table are the same whether or not a view is solved.
-#[derive(Clone, Debug)]
-pub struct Att {
-    pub q: [u32; 4],
-    pub d: u32,
-    pub ab: [f64; 2],
-    /// The values of `(q, d)` the stored basis is exact at.  A quaternion read back from a basis
-    /// does not rebuild it to the bit — `cos 45°` squared is not a half — so `Sketch::basis`
-    /// answers with the stored basis while the unknowns still hold exactly these numbers, and
-    /// freeing a view moves nothing any reader sees until a solve moves the view.
-    pub(in crate::model) seat: [f64; 5],
-    /// Held by a hinge to the view it is folded from (`CKind::Hinge`) rather than by a
-    /// `quat_unit` row of its own: a product of unit quaternions is one, and a second row saying
-    /// so would be a redundant equation at every solution.
-    pub hinged: bool,
+    pub u: u32,
+    pub v: u32,
+    pub o: [u32; 3],
+    pub origin: u32,
+    pub class: Classes,
 }
 
 /// A **hidden point in space**: the lift of one view point, held to it by an intrinsic `lift`

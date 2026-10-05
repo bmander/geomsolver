@@ -223,15 +223,6 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
             }
         }
 
-        // a solved view's seeds — its fold, its attitude, its offset — spliced where the clause
-        // wrote them, and the news that one moved where it wrote none
-        let mut plane_now: Option<Vec<syntax::PlaneHint>> = None;
-        if d.kind == EntKind::Plane && sk.planes[parent.i()].att.is_some() {
-            let (sp, miss, now) = plane_seeds(sk, prog, d, parent.i());
-            mine.extend(sp);
-            missing |= miss;
-            plane_now = Some(now);
-        }
         if !missing {
             edits.extend(mine);
             continue;
@@ -249,11 +240,11 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
         // the clause, as the pose the solve arrived at; empty when the kind owns no scalar at
         // all — a line's numbers are its two points', and they are written in the slots
         let own = sk.own_params(parent);
-        let hint = match &plane_now {
+        let hint = match () {
             _ if omit_radius => String::new(),
             // only the numbers no `fix` holds: `hint(y: 7)` beside `fix(x == 3) p`, and none at
             // all where every one is held
-            None if own.iter().any(|&p| held(p)) => {
+            _ if own.iter().any(|&p| held(p)) => {
                 let fields = parent.kind.fields().iter()
                     .filter(|(_, f)| *f == crate::model::Field::Scalar);
                 let free: Vec<String> = fields.zip(&own).zip(&pose)
@@ -262,12 +253,7 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
                     .collect();
                 if free.is_empty() { String::new() } else { format!("hint({})", free.join(", ")) }
             }
-            Some(now) => {
-                let mut d2 = d.clone();
-                d2.plane.hints = now.clone();
-                syntax::hint_clause(&d2, &pose)
-            }
-            None => syntax::hint_clause(d, &pose),
+            _ => syntax::hint_clause(d, &pose),
         };
         // No slot of this list is the source's own text, so the list has to be written too —
         // a chain's thread fills slots with references written in *another* link, or written
@@ -392,74 +378,6 @@ fn unknown_seeds(sk: &Sketch, prog: &Program) -> Vec<Splice> {
     out
 }
 
-/// A solved view's seeds as the solve left them: the attitude's axes, the offset from where the
-/// attitude alone would stand it.  Each written as a
-/// literal is spliced in place; one written as an expression is the author's arithmetic and is
-/// left alone; one not written at all is `missing` when the solve moved it off where an
-/// unwritten seed starts.  The third value is the clause's keys at the solved numbers, for a
-/// caller that writes the clause whole.
-fn plane_seeds(sk: &Sketch, prog: &Program, d: &Decl, pi: usize)
-    -> (Vec<Splice>, bool, Vec<syntax::PlaneHint>)
-{
-    let b = sk.basis(pi);
-    // (a solved fold reads an unknown, whose seed is its declaration's: `unknown_seeds`)
-    let mut now: Vec<(&str, Vec<f64>)> = Vec::new();
-    if matches!(d.attitude, syntax::Attitude::Free { .. }) {
-        now.push(("u", b.u.to_vec()));
-        now.push(("v", b.v.to_vec()));
-    }
-    if matches!(d.plane.position, syntax::Position::Free(_)) {
-        // along the normal from the origin the attitude alone gives it: its parent's, or the
-        // shared origin
-        let base = match d.attitude.plane_ref() {
-            Some(_) => sk.constraints.iter()
-                .find(|c| c.kind.hinge() && c.args[0].ent().i() == pi)
-                .map_or([0.0; 3], |c| sk.basis(c.args[1].ent().i()).o),
-            None => [0.0; 3],
-        };
-        let n = b.normal();
-        let k = crate::plane::dot(n, [b.o[0] - base[0], b.o[1] - base[1], b.o[2] - base[2]]);
-        now.push(("offset", vec![k]));
-    }
-    let mut splices = Vec::new();
-    let mut missing = false;
-    let mut hints = d.plane.hints.clone();
-    for (key, vals) in now {
-        match hints.iter_mut().find(|h| h.key.text == key) {
-            Some(h) => {
-                for (a, &v) in h.args.iter_mut().zip(&vals) {
-                    let syntax::Arg::Dim { text, span } = a else { continue };
-                    if !writable_seed(text) {
-                        continue;
-                    }
-                    let with = seed_literal(text, v, false);
-                    if !span.is_empty() && span.slice(prog.text()) != with {
-                        splices.push(Splice { at: *span, with: with.clone() });
-                    }
-                    *text = with;
-                }
-            }
-            None => {
-                let rest = match key {
-                    "u" => vec![1.0, 0.0, 0.0],
-                    "v" => vec![0.0, 0.0, 1.0],
-                    _ => vec![0.0; vals.len()],
-                };
-                missing |= vals.iter().zip(&rest).any(|(a, b)| (a - b).abs() > 1e-12);
-                hints.push(syntax::PlaneHint {
-                    key: syntax::Name::new(key),
-                    args: vals.iter().map(|&v| syntax::Arg::Dim {
-                        text: num(v),
-                        span: Span::default(),
-                    }).collect(),
-                    span: Span::default(),
-                });
-            }
-        }
-    }
-    (splices, missing, hints)
-}
-
 /// Whether a statement is one of the root component's own.
 ///
 /// Not the same question as "is it reached once".  A component instantiated a single time makes
@@ -485,15 +403,23 @@ fn decl_of<'a>(prog: &'a Program, site: &Site) -> Option<&'a Decl> {
 /// comment, and a drawing tool should not write past it.
 fn append_at(prog: &Program) -> (Span, String) {
     let root = prog.root();
+    // past the statement, or past the `in` block it was hoisted out of: an appended statement
+    // writes its own membership, which inside the block would be said twice
+    let after = |st: &syntax::Stmt| {
+        let hi = prog.in_blocks.iter()
+            .find(|b| b.header.lo <= st.span.lo && st.span.hi <= b.close.hi)
+            .map_or(st.span.hi, |b| b.close.hi) as usize;
+        (Span::new(hi, hi), "\n".to_string())
+    };
     if let Some(preview) = prog.preview {
         if let Some(st) = root.body.iter().rev().find(|st| preview.contains(st.span.lo)) {
-            return (Span::new(st.span.hi as usize, st.span.hi as usize), "\n".into());
+            return after(st);
         }
         let close = preview.hi as usize - 1;
         return (Span::new(close, close), "\n".into());
     }
     match root.body.last() {
-        Some(st) => (Span::new(st.span.hi as usize, st.span.hi as usize), "\n".to_string()),
+        Some(st) => after(st),
         None => {
             let n = prog.text().len();
             let lead = if prog.text().ends_with('\n') || n == 0 { "" } else { "\n" };
@@ -678,8 +604,7 @@ pub fn add_point(prog: &Program, x: f64, y: f64) -> Edit {
         class_span: Span::default(),
         seed_at: None,
         seed_names: Vec::new(),
-        attitude: Default::default(),
-        sweep: None, motion: None, angular_span: None, plane: Default::default(),
+        sweep: None, motion: None, angular_span: None,
         membership: Default::default(),
         list_span: Span::default(),
         close: None,
@@ -690,26 +615,14 @@ pub fn add_point(prog: &Program, x: f64, y: f64) -> Edit {
 
 /// An entity built from names that already exist — a line from two points, a circle from a centre.
 pub fn add_entity(prog: &Program, kind: EntKind, args: &[String], seed: &[f64]) -> Edit {
-    add_entity_with(prog, kind, args, seed, Default::default(), None, &[])
+    add_entity_with(prog, kind, args, seed, None, &[])
 }
 
-/// A plane, with the attitude its statement will spell — folded from another, or given a basis
-/// — and, when the caller has one, the name it asked for.  A name already in use is refused
-/// rather than silently renamed: the caller is about to refer to it.
-///
-/// `places` seeds the origin and the toward point *in the statement* (`origin: hint(x: …)`),
-/// for a slot `args` leaves unnamed.  In the statement and not written into the points
-/// afterwards, because a datum's rotor and its chord-length unknown are seeded from the chord
-/// when the plane is *built*: two points moved by hand after the fact leave both stale, and a
-/// solve from there lands on the degenerate frame with its two points together.
-pub fn add_plane(
-    prog: &Program,
-    args: &[String],
-    attitude: syntax::Attitude,
-    name: Option<&str>,
-    places: &[(f64, f64)],
-) -> Edit {
-    add_entity_with(prog, EntKind::Plane, args, &[], attitude, name, places)
+/// A plane over two rays or drawn lines, `args` their names — `plane(u: a, v: b)` — and, when
+/// the caller has one, the name it asked for.  A name already in use is refused rather than
+/// silently renamed: the caller is about to refer to it.
+pub fn add_plane(prog: &Program, args: &[String], name: Option<&str>) -> Edit {
+    add_entity_with(prog, EntKind::Plane, args, &[], name, &[])
 }
 
 fn add_entity_with(
@@ -717,7 +630,6 @@ fn add_entity_with(
     kind: EntKind,
     args: &[String],
     seed: &[f64],
-    attitude: syntax::Attitude,
     name: Option<&str>,
     places: &[(f64, f64)],
 ) -> Edit {
@@ -781,10 +693,9 @@ fn add_entity_with(
         class_span: Span::default(),
         seed_at: None,
         seed_names: Vec::new(),
-        attitude,
         // a gesture never draws a solid: the sheet is where the drawing is, and a solid is
         // written over what is drawn there
-        sweep: None, motion: None, angular_span: None, plane: Default::default(),
+        sweep: None, motion: None, angular_span: None,
         membership: Default::default(),
         list_span: Span::default(),
         close: None,
@@ -994,19 +905,8 @@ fn mentions(st: &Stmt, names: &std::collections::BTreeSet<String>) -> Vec<String
                     look(r);
                 }
             }
-            // a plane folded from a deleted one is defined from nothing, and goes with it; a
-            // membership (`in …`) is a label the point survives losing, and is not counted
-            if let Some(r) = d.attitude.plane_ref() {
-                look(r);
-            }
-            // and one folded along a deleted line, or stood through a deleted point: where it
-            // stands is defined from nothing too
-            if let syntax::Attitude::Along { line, .. } = &d.attitude {
-                look(line);
-            }
-            if let syntax::Position::Through(r) = &d.plane.position {
-                look(r);
-            }
+            // a plane's rays are its children, looked at above; a membership (`in …`) is a
+            // label the point survives losing, and is not counted
             if let Some(motion) = &d.motion {
                 match motion {
                     syntax::MotionSpec::Rotation {axis,..} | syntax::MotionSpec::Translation {axis,..} => look(axis),
@@ -1306,8 +1206,15 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
     // a name for each new entity first, so a line drawn between two new points can refer to them
     let mut minted: std::collections::BTreeMap<EntRef, String> = std::collections::BTreeMap::new();
     let mut taken = taken_names(prog);
+    // a plane's origin is the plane's own, minted with it and never declared apart: it is
+    // called `P.origin` after its plane
+    let origin_of = |r: EntRef| {
+        (r.kind == EntKind::Point)
+            .then(|| sk.planes.iter().position(|p| p.origin as usize == r.i()))
+            .flatten()
+    };
     for r in sk.primitives() {
-        if r.i() < high.get(&r.kind).copied().unwrap_or(0) {
+        if r.i() < high.get(&r.kind).copied().unwrap_or(0) || origin_of(r).is_some() {
             continue;
         }
         minted.insert(r, next_name(&mut taken, r.kind));
@@ -1424,6 +1331,14 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
         }
         memberships.push((d, now));
     }
+    // a plane's origin is said through its plane's name
+    let needed: std::collections::BTreeSet<EntRef> = needed
+        .into_iter()
+        .map(|r| match origin_of(r) {
+            Some(p) if e.map.writable_name(r).is_none() => EntRef::plane(p),
+            _ => r,
+        })
+        .collect();
     for r in &needed {
         if minted.contains_key(r) || renamed.contains_key(r) {
             continue; // new (its statement carries the name), or its statement already named
@@ -1514,13 +1429,19 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
     // the elaboration's own name for an entity it made — what a new statement has to refer to.
     // Never a key: the map files one under `by_name` alone, so what it *calls* an entity is a
     // name a statement may say or nothing at all.
-    let name_of = |r: EntRef| -> String {
+    let plain = |r: EntRef| -> String {
         minted
             .get(&r)
             .cloned()
             .or_else(|| renamed.get(&r).cloned())
             .or_else(|| e.map.name_of(r).cloned())
             .unwrap_or_else(|| syntax::entity_name(r))
+    };
+    let name_of = |r: EntRef| -> String {
+        match origin_of(r) {
+            Some(p) if e.map.name_of(r).is_none() => format!("{}.origin", plain(EntRef::plane(p))),
+            _ => plain(r),
+        }
     };
 
     for r in sk.primitives() {

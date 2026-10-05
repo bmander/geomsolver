@@ -417,6 +417,12 @@ pub fn build(sk: &Sketch) -> ConstraintGraph {
         if c.soft || c.kind == CKind::Coincident || c.kind == CKind::Radius {
             continue;
         }
+        // a row over parameters every one of which is held moves nothing — `use std`'s axes,
+        // each a ray a `fix` holds — so there is nothing for the plan to place, nor for the
+        // numeric residual to do
+        if c.params(sk).iter().all(|&p| sk.params[p as usize].fixed) {
+            continue;
+        }
         match c.kind {
             CKind::Distance => {
                 let (a, b) = (g.point_el(c.args[0].ent().i()), g.point_el(c.args[1].ent().i()));

@@ -1,9 +1,6 @@
 unit mm
-o := point
-fix(x == 0, y == 0) o
-q := point
-fix(x == 40, y == 0) q
-front := plane(origin:o,toward:q)
+use std
+in std.front {
 stockfp0 := point
 fix(x == 0, y == 0) stockfp0
 stockfp1 := point
@@ -12,8 +9,10 @@ stockfp2 := point
 fix(x == 10, y == 10) stockfp2
 stockfp3 := point
 fix(x == 0, y == 10) stockfp3
+}
 stockf := face(stockfp0, stockfp1, stockfp2, stockfp3, -> close)
 stock := solid(stockf, from: -1mm, to: 0mm)
+in std.front {
 bossfp0 := point
 fix(x == 2, y == 2) bossfp0
 bossfp1 := point
@@ -22,9 +21,11 @@ bossfp2 := point
 fix(x == 5, y == 5) bossfp2
 bossfp3 := point
 fix(x == 2, y == 5) bossfp3
+}
 bossf := face(bossfp0, bossfp1, bossfp2, bossfp3, -> close)
 boss := solid(bossf, from: 1mm, to: 2mm)
 result := solid(stock)
 boss union result
-slice := plane(origin:o,toward:q,from:front,offset:3mm)
-section(result,at:slice) in front
+slice := plane(u: std.x, v: std.z) hint(x: 0, y: -3mm, z: 0)
+fix(x == 0, y == -3mm, z == 0) slice
+section(result,at:slice) in std.front

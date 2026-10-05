@@ -7,10 +7,13 @@ use std
 ring := 20mm       // from the axis to the tube's centre
 tube := 6mm        // the tube's radius
 
-construction centerline spine := line(std.origin, std.up.toward)
-private centre := point hint(x: ring, y: 0)
-std.origin horizontal centre
-std.origin distance(ring, along: right) centre
-private section := circle(center: centre) hint(r: tube)
-radius(tube) section
+in std.front {
+  construction centerline spine := line(std.origin, hint(x: 0, y: 1))
+  fix(x == 0, y == 1) spine.p2
+  private centre := point hint(x: ring, y: 0)
+  std.origin horizontal centre
+  std.origin distance(ring, along: right) centre
+  private section := circle(center: centre) hint(r: tube)
+  radius(tube) section
+}
 torus := solid(face(section), about: spine)

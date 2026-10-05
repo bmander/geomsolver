@@ -9,7 +9,7 @@ use gcs_core::model::Sketch;
 use gcs_core::program::Elaborated;
 
 fn read(src: &str) -> Elaborated {
-    let (prog, errs) = gcs_core::syntax::parse(src);
+    let (prog, errs) = crate::common::parse(src);
     assert!(errs.is_empty(), "does not parse: {errs:?}");
     let e = gcs_core::program::elaborate(&prog);
     assert!(e.ok(), "does not elaborate: {:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
@@ -23,22 +23,27 @@ fn dims(sk: &Sketch) -> Vec<String> {
 #[test]
 fn an_angle_that_names_its_unit_is_not_given_a_second_one() {
     let e = read(
-        "o := point
+        "\
+use std
+in std.front {
+o := point
          a := point hint(x: 40, y: 0)
          b := point hint(x: 20, y: 30)
          oa := line(o, a)
          ob := line(o, b)
          oa angle(60deg) ob
-         fix(x == 0, y == 0) o",
+         fix(x == 0, y == 0) o
+}
+",
     );
     assert_eq!(dims(&e.sketch), ["60deg"], "the unit as written, once");
     // a bare number in an angle slot takes the sign a reader expects; a fraction is a bare number
-    let e = read("o := point hint(x: 0, y: 0)\na := point hint(x: 40, y: 0)\nb := point hint(x: 20, y: 30)\noa := line(o, a)\nob := line(o, b)\noa angle(60) ob\n");
+    let e = read("use std\nin std.front {\no := point hint(x: 0, y: 0)\na := point hint(x: 40, y: 0)\nb := point hint(x: 20, y: 30)\noa := line(o, a)\nob := line(o, b)\noa angle(60) ob\n}\n");
     assert_eq!(dims(&e.sketch), ["60°"]);
-    let e = read("o := point hint(x: 0, y: 0)\na := point hint(x: 40, y: 0)\nb := point hint(x: 20, y: 30)\noa := line(o, a)\nob := line(o, b)\noa angle(22 1/2) ob\n");
+    let e = read("use std\nin std.front {\no := point hint(x: 0, y: 0)\na := point hint(x: 40, y: 0)\nb := point hint(x: 20, y: 30)\noa := line(o, a)\nob := line(o, b)\noa angle(22 1/2) ob\n}\n");
     assert_eq!(dims(&e.sketch), ["22 1/2°"]);
     // and a length that names its unit is left as it was, in either slot
-    let e = read("unit mm\na := point hint(x: 0, y: 0)\nb := point hint(x: 40, y: 0)\na distance(4cm) b\n");
+    let e = read("unit mm\nuse std\nin std.front {\na := point hint(x: 0, y: 0)\nb := point hint(x: 40, y: 0)\na distance(4cm) b\n}\n");
     assert_eq!(dims(&e.sketch), ["4cm"]);
 }
 
@@ -61,24 +66,29 @@ fn the_list_and_the_callout_print_one_number_one_way() {
     assert_eq!(on_drawing, "50", "{on_drawing}");
     assert!(in_list.ends_with("distance(50) P1"), "{in_list}");
     // six digits keeps what four dropped
-    let e = read("a := point hint(x: 0, y: 0)\nb := point hint(x: 1234.5, y: 0)\na distance(1234.5) b\n");
+    let e = read("use std\nin std.front {\na := point hint(x: 0, y: 0)\nb := point hint(x: 1234.5, y: 0)\na distance(1234.5) b\n}\n");
     let c = &e.sketch.user_constraints()[0];
     assert_eq!(io::dimension_text(c).unwrap(), "1234.5");
     assert_eq!(io::describe(c), "P0 distance(1234.5) P1");
     // an angle in a list is in degrees and carries no sign, as the source writes it
-    let e = read("o := point hint(x: 0, y: 0)\na := point hint(x: 40, y: 0)\nb := point hint(x: 20, y: 30)\noa := line(o, a)\nob := line(o, b)\noa angle(60) ob\n");
+    let e = read("use std\nin std.front {\no := point hint(x: 0, y: 0)\na := point hint(x: 40, y: 0)\nb := point hint(x: 20, y: 30)\noa := line(o, a)\nob := line(o, b)\noa angle(60) ob\n}\n");
     assert_eq!(io::describe(&e.sketch.user_constraints()[0]), "L0 angle(60) L1");
 }
 
 #[test]
 fn a_culprit_is_named_as_the_source_names_it() {
     let e = read(
-        "corner := point
+        "\
+use std
+in std.front {
+corner := point
          along := point  hint(x: 60, y: 0)
          base := line(corner, along)
          horizontal base
          corner distance(60) along
-         fix(x == 0, y == 0) corner",
+         fix(x == 0, y == 0) corner
+}
+",
     );
     let name = |x| e.map.name_of(x).cloned();
     let texts: Vec<String> =
@@ -86,7 +96,7 @@ fn a_culprit_is_named_as_the_source_names_it() {
     assert_eq!(texts, ["horizontal base", "corner distance(60) along"]);
     // a named line with an anonymous child: the line by its name, and without a namer the
     // sketch's own label
-    let e = read("p := point hint(x: 0, y: 0)\nl := line(p, hint(x: 10, y: 0))\nhorizontal l\n");
+    let e = read("use std\nin std.front {\np := point hint(x: 0, y: 0)\nl := line(p, hint(x: 10, y: 0))\nhorizontal l\n}\n");
     let name = |x| e.map.name_of(x).cloned();
     assert_eq!(io::describe_with(&e.sketch.user_constraints()[0], &name), "horizontal l");
     // without a namer, the sketch's own labels
@@ -101,18 +111,23 @@ fn a_culprit_is_named_as_the_source_names_it() {
 #[test]
 fn the_report_says_where_a_name_landed() {
     let e = read(
-        "unit mm\n\
-         component Arm(hub: point, tip: point) { hub distance(40) tip }\n\
-         o := point\n\
-         t := point hint(x: 5, y: 40)\n\
-         fix(x == 0, y == 0) o\n\
-         o vertical t\n\
-         a := Arm(o, t)\n\
-         c := circle(center: o) hint(r: 25)\n\
-         radius(25) c\n\
-         l := line(o, hint(x: 30, y: 0))\n\
-         horizontal l\n\
-         o distance(30) l.p2\n",
+        "\
+unit mm
+use std
+component Arm(hub: point, tip: point) { hub distance(40) tip }
+in std.front {
+o := point
+t := point hint(x: 5, y: 40)
+fix(x == 0, y == 0) o
+o vertical t
+a := Arm(o, t)
+c := circle(center: o) hint(r: 25)
+radius(25) c
+l := line(o, hint(x: 30, y: 0))
+horizontal l
+o distance(30) l.p2
+}
+",
     );
     let mut sk = e.sketch;
     assert!(gcs_core::solve::solve(&mut sk, Default::default()).success);
@@ -132,25 +147,18 @@ fn the_report_says_where_a_name_landed() {
     assert!(p.keys().all(|k| !k.starts_with("a.")), "{:?}", p.keys());
 }
 
-/// A datum reports the bearing it is turned to, not the rotor it is stored as.
+/// A plane reports which way it faces and where it stands, its rays' directions and its origin.
 #[test]
-fn a_datum_reports_its_angle() {
-    let e = read(
-        "unit mm\n\
-         o := point\n\
-         q := point hint(x: 5, y: 40)\n\
-         fix(x == 0, y == 0) o\n\
-         o vertical q\n\
-         o distance(40) q\n\
-         v := plane(origin: o, toward: q)\n",
-    );
+fn a_plane_reports_its_attitude_and_its_place() {
+    let e = read("unit mm\nuse std\nv := plane(u: std.z, v: std.x)\nfix(x == 0, y == 5, z == 0) v\n");
     let mut sk = e.sketch;
     assert!(gcs_core::solve::solve(&mut sk, Default::default()).success);
     let p: std::collections::BTreeMap<String, f64> =
         gcs_core::report::positions(&sk, &e.map).into_iter().collect();
-    assert!((p["v.angle"] - 90.0).abs() < 1e-6, "{}", p["v.angle"]);
-    assert_eq!(p["v.origin.y"], 0.0);
-    assert!((p["v.toward.y"] - 40.0).abs() < 1e-6);
+    // right along z, out along z × x, which is y, standing 5 along it
+    assert!((p["v.u.z"] - 1.0).abs() < 1e-12 && (p["v.n.y"] - 1.0).abs() < 1e-12, "{p:?}");
+    assert_eq!(p["v.y"], 5.0);
+    assert_eq!(p["v.origin.x"], 0.0);
 }
 
 #[test]
@@ -158,8 +166,11 @@ fn a_dimension_written_over_a_param_is_drawn_with_the_name() {
     // the flattener settles `w` to 100 before the sketch sees it; the callout draws what was
     // written
     let e = read(
-        "w := 100
+        "\
+use std
+w := 100
          a := 30deg
+         in std.front {
          o := point hint(x: 0, y: 0)
          p := point hint(x: 100, y: 0)
          q := point hint(x: 100, y: 50)
@@ -168,7 +179,9 @@ fn a_dimension_written_over_a_param_is_drawn_with_the_name() {
          o distance(w) p
          p distance(w / 2) q
          o distance(112) q
-         l1 angle(a) l2",
+         l1 angle(a) l2
+         }
+",
     );
     assert_eq!(dims(&e.sketch), ["w", "w / 2", "112", "a"]);
     let c = &e.sketch.user_constraints()[0];
@@ -184,44 +197,60 @@ fn a_dimension_written_over_a_param_is_drawn_with_the_name() {
     // a component written in this file draws its formula over its formals, which is true of
     // every instance
     let e = read(
-        "component Bar(a: point, b: point, len: Length, d: group) {
+        "\
+use std
+component Bar(a: point, b: point, len: Length, d: group) {
            a distance(len) b
            a distance(d.w / 2) b
            a distance(40) b
          }
+         in std.front {
          o := point hint(x: 0, y: 0)
          p := point hint(x: 40, y: 0)
          dims := {w: 80}
          one := Bar(o, p, len: 40, d: dims)
-         two := Bar(o, p, len: 40, d: dims)",
+         two := Bar(o, p, len: 40, d: dims)
+         }
+",
     );
     assert_eq!(dims(&e.sketch), ["len", "d.w / 2", "40", "len", "d.w / 2", "40"]);
     // a block's copies share one label and one callout, so they keep the number they came to
     let e = read(
-        "component Bar(a: point, b: point, len: Length) {
+        "\
+use std
+component Bar(a: point, b: point, len: Length) {
            repeat 1 as i { a distance(len) b }
          }
+         in std.front {
          o := point hint(x: 0, y: 0)
          p := point hint(x: 40, y: 0)
-         bar := Bar(o, p, len: 40)",
+         bar := Bar(o, p, len: 40)
+         }
+",
     );
     assert_eq!(dims(&e.sketch), ["40"]);
     // a module's body is a text the document is not: its number is drawn.  And a formal named
     // like a used module keeps its name, since a closed body reads no module's number
     let (mut prog, errs) = gcs_core::syntax::parse(
-        "use parts
+        "\
+use std
+use parts
          component Local(a: point, b: point, parts: group) { a distance(parts.w / 2) b }
+         in std.front {
          o := point hint(x: 0, y: 0)
          p := point hint(x: 40, y: 0)
          dims := {w: 80}
          bar := parts.Bar(o, p, len: 40)
-         local := Local(o, p, parts: dims)",
+         local := Local(o, p, parts: dims)
+         }
+",
     );
     assert!(errs.is_empty(), "{errs:?}");
     let linked = gcs_core::modules::link(&mut prog, &mut |name| {
         (name == "parts").then(|| {
             "component Bar(a: point, b: point, len: Length) { a distance(len) b }\n".to_string()
         })
+        .or_else(|| gcs_core::library::resolve(name))
     });
     assert!(linked.is_empty(), "{linked:?}");
     let e = gcs_core::program::elaborate(&prog);
@@ -235,11 +264,16 @@ fn a_number_worked_out_with_its_unit_is_read_at_six_digits() {
     // it is computed from, `13.333333333333334mm`; the drawing and the list read it as they read
     // a bare number, and a number somebody wrote with six digits or fewer is left as written
     let (mut prog, errs) = gcs_core::syntax::parse(
-        "unit mm
+        "\
+unit mm
+use std
          use parts
+         in std.front {
          o := point hint(x: 0, y: 0)
          p := point hint(x: 40, y: 0)
-         bar := parts.Bar(o, p, len: 40mm / 3, turn: 100deg / 3)",
+         bar := parts.Bar(o, p, len: 40mm / 3, turn: 100deg / 3)
+         }
+",
     );
     assert!(errs.is_empty(), "{errs:?}");
     let linked = gcs_core::modules::link(&mut prog, &mut |name| {
@@ -255,6 +289,7 @@ fn a_number_worked_out_with_its_unit_is_read_at_six_digits() {
              }\n"
                 .to_string()
         })
+        .or_else(|| gcs_core::library::resolve(name))
     });
     assert!(linked.is_empty(), "{linked:?}");
     let e = gcs_core::program::elaborate(&prog);
@@ -271,8 +306,11 @@ fn a_number_worked_out_with_its_unit_is_read_at_six_digits() {
 #[test]
 fn a_side_or_a_way_is_drawn_and_not_printed_as_a_sign() {
     let e = read(
-        "unit mm
+        "\
+unit mm
+use std
          r := 15mm
+         in std.front {
          o := point
          t := point
          p := point hint(x: 15, y: 5)
@@ -283,7 +321,9 @@ fn a_side_or_a_way_is_drawn_and_not_printed_as_a_sign() {
          p distance(15, side: right) axis
          p distance(r, side: right) axis
          p distance(15, side: left) axis
-         o distance(60, along: left) q",
+         o distance(60, along: left) q
+         }
+",
     );
     assert_eq!(dims(&e.sketch), ["15", "r", "15", "60"]);
 }

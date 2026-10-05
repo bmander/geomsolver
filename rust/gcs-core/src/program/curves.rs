@@ -159,12 +159,8 @@ fn compile_trace(
                 let c = sk.point(0.0, 0.0, false, name);
                 EntRef::circle(sk.circle(c, 1.0, name))
             }
-            // a datum: its attitude is no column of the curve, so the page's will do
-            EntKind::Plane => {
-                let o = sk.point(0.0, 0.0, false, name);
-                let t = sk.point(1.0, 0.0, false, name);
-                EntRef::plane(sk.plane(o, t, crate::plane::Basis::page(), name))
-            }
+            // a plane: its attitude is no column of the curve, so the front plane's will do
+            EntKind::Plane => EntRef::plane(sk.fixed_plane(crate::plane::Basis::page(), name)),
             other => {
                 return Err((
                     span,
@@ -370,6 +366,17 @@ fn compile_trace(
         }
         if r.kind == CKind::DragTarget || spec.iter().any(|(_, k)| k.is_param()) {
             return Err((st.span, format!("{} cannot appear in a trace block", r.kind.name())));
+        }
+        // the block is lowered through a scratch sketch of one plane, which has no place in
+        // space for a relation in space to read
+        if r.kind.spatial() {
+            return Err((
+                st.span,
+                format!(
+                    "`{}` relates its operands in space, and a traced component places its points                      in one plane",
+                    r.kind.operator().map_or("a relation", |(w, _)| w)
+                ),
+            ));
         }
         let mut cargs: Vec<CArg> = Vec::with_capacity(spec.len());
         let mut dim: Option<(SpecKind, Tape)> = None;

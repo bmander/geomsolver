@@ -16,6 +16,8 @@
 // Everything after it is ordinary.  Thirty teeth are one tooth written once and repeated, and a
 // point touching a curve is a single statement whichever component the curve belongs to.
 
+use std
+
 component Involute(c: circle, phase: Angle, u: Angle) {
   p := point(x: c.center.x + c.r * (cos(u + phase) + u / 1rad * sin(u + phase)), y: c.center.y + c.r * (sin(u + phase) - u / 1rad * cos(u + phase)))
 }
@@ -115,7 +117,9 @@ component Gear(N: Int, m: Length, phi: Angle, ded: Scalar) {
   }
 }
 
-g := Gear(N: 30, m: 3, phi: 25, ded: 1)
+in std.front {
+  g := Gear(N: 30, m: 3, phi: 25, ded: 1)
+}
 
 // Diagnosed: fully constrained.  Every number here is a length, a bearing or a tooth count; the
 // two rolls per flank are the solver's answers, and there is no closed form for either.

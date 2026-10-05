@@ -17,32 +17,35 @@
 // name — and everything still dimension-checks; what the line buys is the right to write a
 // length in the unit a person has in hand: `c1 distance(3 1/8") c2` is 79.375 here.
 unit mm
+use std
 
 param length := 80
 param r := 15
 param hole_r := 6
 
-c1 := point
-c2 := point hint(x: length, y: 0)
+in std.front {
+  c1 := point
+  c2 := point hint(x: length, y: 0)
 
-t1 := point hint(x: 0, y: r)
-t2 := point hint(x: length, y: r)
-b1 := point hint(x: length, y: -r)
-b2 := point hint(x: 0, y: -r)
+  t1 := point hint(x: 0, y: r)
+  t2 := point hint(x: length, y: r)
+  b1 := point hint(x: length, y: -r)
+  b2 := point hint(x: 0, y: -r)
 
-// round the outline counter-clockwise, the way an arc runs: each end leaves one flank and meets
-// the other at a tangent joint
-(bottom := line(b2, b1)) -> tangent
-(a_right := arc(center: c2) hint(r: r)) -> tangent
-horizontal (top := line(t2, t1)) -> tangent
-(a_left := arc(center: c1) hint(r: r)) -> tangent close
+  // round the outline counter-clockwise, the way an arc runs: each end leaves one flank and meets
+  // the other at a tangent joint
+  (bottom := line(b2, b1)) -> tangent
+  (a_right := arc(center: c2) hint(r: r)) -> tangent
+  horizontal (top := line(t2, t1)) -> tangent
+  (a_left := arc(center: c1) hint(r: r)) -> tangent close
 
-h1 := radius(hole_r) circle(center: c1) hint(r: hole_r)
-h2 := radius(hole_r) circle(center: c2) hint(r: hole_r)
+  h1 := radius(hole_r) circle(center: c1) hint(r: hole_r)
+  h2 := radius(hole_r) circle(center: c2) hint(r: hole_r)
 
-a_left equal a_right
-radius(r) a_left
+  a_left equal a_right
+  radius(r) a_left
 
-c1 distance(length) c2
+  c1 distance(length) c2
 
-fix(x == 0, y == 0) c1
+  fix(x == 0, y == 0) c1
+}

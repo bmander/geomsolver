@@ -43,10 +43,7 @@ fn point_to(sk: &Sketch, px: f64, py: f64, e: EntRef) -> f64 {
         }
         EntKind::Spline => crate::curve::distance_to(sk, e.i(), px, py),
         // a datum is not a figure: the place it stands at is its origin
-        EntKind::Plane => {
-            let (x, y) = sk.point_xy(sk.frame_of(e).origin as usize);
-            (px - x).dhypot(py - y)
-        }
+        EntKind::Plane => px.dhypot(py),
     }
 }
 
@@ -100,11 +97,8 @@ pub fn point_to_drawn(sk: &Sketch, px: f64, py: f64, e: EntRef) -> f64 {
         }
         // a plane draws its chord as a datum glyph, and that is where it is taken hold of; its
         // points still win a pick within tolerance, as every point does
-        EntKind::Plane => {
-            let f = sk.frame_of(e);
-            let (a, b) = (sk.point_xy(f.origin as usize), sk.point_xy(f.toward as usize));
-            seg_distance((px, py), a, b)
-        }
+        // a plane is drawn as its glyph at its own origin, which is where it is taken hold of
+        EntKind::Plane => px.dhypot(py),
     }
 }
 
@@ -212,7 +206,7 @@ fn swept(sk: &Sketch, e: EntRef) -> Vec<(f64, f64)> {
     match e.kind {
         EntKind::Spline => crate::curve::sample(sk, e.i(), 64),
         // a datum is not a figure: the one place it stands at
-        EntKind::Plane => vec![sk.point_xy(sk.frame_of(e).origin as usize)],
+        EntKind::Plane => vec![(0.0, 0.0)],
         _ => Vec::new(),
     }
 }

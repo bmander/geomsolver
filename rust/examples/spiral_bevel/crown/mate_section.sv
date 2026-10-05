@@ -55,15 +55,17 @@ preview {
   pitch_radius := 0.8 * 2mm * hypot(24, 48) / 2
   proportions := {pressure: 20deg, shift: 0deg,
                        base: 1, dedendum: 1, rounding: 0.3, backlash: 0mm, lashed: 0}
-  lp := point hint(x: pitch_radius - 1.3mm, y: 0)
-  rp := point hint(x: pitch_radius + 1.3mm, y: 0)
-  far := point hint(x: pitch_radius + 3.9mm, y: 0)
-  std.origin distance(pitch_radius - 1.3mm, along: right) lp
-  std.origin distance(0mm, along: up) lp
-  std.origin distance(pitch_radius + 1.3mm, along: right) rp
-  std.origin distance(0mm, along: up) rp
-  rack := crown.section.RackSection(lp, rp, proportions, normal_module: 2mm)
-  construction span := line(lp, far)
-  rp midpoint span
-  mate := MateSection(rp, far, rack.outer, rack.inner, proportions, normal_module: 2mm)
+  in std.front {
+    lp := point hint(x: pitch_radius - 1.3mm, y: 0)
+    rp := point hint(x: pitch_radius + 1.3mm, y: 0)
+    far := point hint(x: pitch_radius + 3.9mm, y: 0)
+    std.origin distance(pitch_radius - 1.3mm, along: right) lp
+    std.origin distance(0mm, along: up) lp
+    std.origin distance(pitch_radius + 1.3mm, along: right) rp
+    std.origin distance(0mm, along: up) rp
+    rack := crown.section.RackSection(lp, rp, proportions, normal_module: 2mm)
+    construction span := line(lp, far)
+    rp midpoint span
+    mate := MateSection(rp, far, rack.outer, rack.inner, proportions, normal_module: 2mm)
+  }
 }

@@ -15,9 +15,18 @@ use configuration
 use wheel
 use point
 
-construction centerline axis := line(std.origin, std.up.toward)
+// the drill's side datum: u down the drill's axis, v along y, so x is its normal
+down := ray hint(x: 0, y: 0, z: -1)
+fix(x == 0, y == 0, z == -1) down
+side := plane(u: down, v: std.y)
+fix(x == 0, y == 0, z == 0) side
 
-// the fluted stock and the shank: rectangles in the front view (x right, z up), turned about z
+in std.front {
+  construction centerline axis := line(std.origin, hint(x: 0, y: 1))
+  fix(x == 0, y == 1) axis.p2
+}
+
+// the fluted stock and the shank: rectangles in the front plane (x right, z up), turned about z
 in std.front {
   private f0 := point
   private f1 := point
@@ -52,11 +61,11 @@ finish := 360deg * (configuration.fluted_length + configuration.flute_wheel.rim)
 
 fluted := solid(stock)
 
-flute_wheel := wheel.GrindingWheel(std.side, setting: configuration.helix, wheel: configuration.flute_wheel)
+flute_wheel := wheel.GrindingWheel(side, setting: configuration.helix, wheel: configuration.flute_wheel)
 construction flute := solid(flute_wheel.body, under: grind, from: start, to: finish)
 
 clearance_grind := motion(about: axis, advance: configuration.lead, phase: configuration.clearance_phase)
-clearance_wheel := wheel.GrindingWheel(std.side, setting: configuration.helix, wheel: configuration.clearance_wheel)
+clearance_wheel := wheel.GrindingWheel(side, setting: configuration.helix, wheel: configuration.clearance_wheel)
 construction body_clearance := solid(clearance_wheel.body, under: clearance_grind, from: start, to: finish)
 
 repeat configuration.flutes as i {
@@ -72,7 +81,7 @@ repeat configuration.flutes as i {
 corner := configuration.fluted_length - configuration.point_length - 0.5mm
 lip_at_corner := configuration.lip + 360deg * corner / configuration.lead
 repeat configuration.point {
-  flank := point.PointCone(std.side, top: corner, cone: configuration.cone,
+  flank := point.PointCone(side, top: corner, cone: configuration.cone,
     tilt: configuration.tilt, height: configuration.apex_height, offset: configuration.apex_offset,
     reach: configuration.fluted_length + configuration.diameter)
   repeat configuration.flutes as i {
@@ -85,4 +94,5 @@ drill := solid(fluted)
 shank union drill
 
 // square to the axis halfway along the flutes: where the drawing cuts its section
-section_plane := plane(origin: std.origin, toward: std.front.toward, from: std.top, offset: configuration.fluted_length / 2)
+section_plane := plane(u: std.x, v: std.y) hint(x: 0, y: 0, z: configuration.fluted_length / 2)
+fix(x == 0, y == 0, z == configuration.fluted_length / 2) section_plane

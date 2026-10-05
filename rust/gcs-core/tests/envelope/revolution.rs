@@ -1,11 +1,11 @@
 //! The generating geometry comes from a solved Solvent component, including its fillets: the
 //! spiral bevel's crown tooth section (`spiral_bevel/crown/section.sv`), revolved in its preview.
 use super::*;
-use gcs_core::{diagnose,model::EntRef,modules,program,solid::RevolvedSurface,solve,syntax};
+use gcs_core::{diagnose,model::EntRef,modules,program,solid::RevolvedSurface,solve};
 
 fn read() -> program::Elaborated {
     let src = include_str!("../../../examples/spiral_bevel/crown/section.sv");
-    let (mut p,errors) = syntax::parse(src);
+    let (mut p,errors) = crate::common::parse(src);
     let link = modules::link(&mut p,&mut fixtures::gear::module);
     assert!(errors.is_empty() && link.is_empty(), "{errors:?} {link:?}");
     let mut e = program::elaborate(&p);
@@ -79,7 +79,7 @@ fn model_radius_changes_are_read_by_new_exact_surface_snapshots() {
 }
 
 #[test]
-fn exact_revolution_respects_partial_turn_sense_and_world_plane_not_page_placement() {
+fn exact_revolution_respects_partial_turn_sense_and_its_plane_in_space() {
     use gcs_core::{model::{Sense,SolidDef},plane::Basis};
     let mut e = read();
     let si = e.map.ent_named("crown").unwrap().i();
@@ -90,33 +90,10 @@ fn exact_revolution_respects_partial_turn_sense_and_world_plane_not_page_placeme
     sweep.value = std::f64::consts::FRAC_PI_2;
     *sense = Sense::Cw;
     e.sketch.faces[*face as usize].support = gcs_core::model::FaceSupport::Plane(Some(pi as u32));
-    e.sketch.set_basis(pi, Basis { u: [0.,0.,1.],v: [1.,0.,0.],o: [10.,20.,30.] });
+    crate::common::set_basis(&mut e.sketch, pi, Basis { u: [0.,0.,1.],v: [1.,0.,0.],o: [10.,20.,30.] });
     let before = patch(&e,"outer_round");
     let a = before.at(0.4,0.).unwrap().position;
     near(before.at(0.4,1.).unwrap().position,[a[0],20.+a[2]-30.,30.],1e-7);
-
-    // Move and rotate the entire drawing on the page while leaving the solid's world
-    // plane untouched. Page pose must cancel before the profile is revolved in space.
-    let (s,c) = 0.37f64.sin_cos();
-    for i in 0..e.sketch.points.len() {
-        let (x,y) = e.sketch.point_xy(i);
-        let [px,py] = e.sketch.point_params(i);
-        e.sketch.params[px as usize].value = c*x-s*y+7.;
-        e.sketch.params[py as usize].value = s*x+c*y-4.;
-    }
-    for p in &e.sketch.planes {
-        let pc = e.sketch.params[p.frame.c as usize].value;
-        let ps = e.sketch.params[p.frame.s as usize].value;
-        e.sketch.params[p.frame.c as usize].value = c*pc-s*ps;
-        e.sketch.params[p.frame.s as usize].value = s*pc+c*ps;
-    }
-    let after = patch(&e,"outer_round");
-    for (u,v) in [(0.,0.),(0.2,0.7),(0.9,0.4),(1.,1.)] {
-        let a = before.at(u,v).unwrap(); let b = after.at(u,v).unwrap();
-        near(a.position,b.position,1e-7);
-        near(a.du,b.du,1e-7);
-        near(a.dv,b.dv,1e-7);
-    }
 }
 
 #[test]

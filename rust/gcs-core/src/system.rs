@@ -488,7 +488,7 @@ impl System {
                 // A ray whose direction is fixed outright (`std.x`) is the same: its unit row is
                 // a fact about the numbers a `fix` wrote, not an equation of the drawing.
                 let held = c.intrinsic
-                    && matches!(c.kind, crate::constraints::CKind::QuatUnit | crate::constraints::CKind::RayUnit)
+                    && c.kind == crate::constraints::CKind::RayUnit
                     && ps.iter().all(|&p| col_of[p as usize] < 0);
                 for p in ps {
                     gidx.push(p as i32);

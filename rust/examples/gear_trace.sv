@@ -26,6 +26,8 @@
 // The datum line is where the angle is measured from, and it keeps the name `datum` in every
 // component that hands it down.
 
+use std
+
 component Unwind(c: circle, datum: line, phase: Angle, u: Angle) {
   t := point
   p := point
@@ -102,7 +104,9 @@ component Gear(N: Int, m: Length, phi: Angle, ded: Scalar) {
   }
 }
 
-g := Gear(N: 12, m: 3, phi: 25, ded: 1)
+in std.front {
+  g := Gear(N: 12, m: 3, phi: 25, ded: 1)
+}
 
 // Diagnosed: fully constrained.  The two rolls per flank are still the solver's answers — and so
 // now is every point of every flank in between.

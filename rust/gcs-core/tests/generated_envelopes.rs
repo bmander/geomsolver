@@ -1,7 +1,10 @@
 use gcs_core::{envelope::{Error,GeneratedEnvelope,IntersectionOptions},io,
     model::EntKind,program,solve,syntax};
 
-const MODEL: &str = "unit mm
+const MODEL: &str = "\
+unit mm
+use std
+in std.front {
 o := point
 q := point
 x := point
@@ -14,13 +17,14 @@ axis := line(o,q)
 spin_axis := line(o,x)
 meridian := circle(center: c)
 radius(1mm) meridian
+}
 ring := solid(face(meridian),about: axis)
 wall := surface(ring,meridian)
 roll := motion(about: spin_axis)
 generated := envelope(wall,under: roll,from: -20deg,to: 20deg)
 ";
 fn build(src: &str) -> program::Elaborated {
-    let (p,errors) = syntax::parse(src);
+    let (p,errors) = crate::common::parse(src);
     assert!(errors.is_empty(),"{errors:?}");
     program::elaborate(&p)
 }
@@ -148,7 +152,7 @@ fn envelopes_reject_invalid_dependencies_and_domains() {
         assert!(!e.ok() && e.errors().any(|d| d.message.contains(want)),"{:?}",e.diags);
     }
     for args in ["wall,roll", "wall,roll,from: 0deg", "wall,roll,from: 0deg,to: 1deg,to: 2deg"] {
-        assert!(!syntax::parse(&format!("bad := envelope({args})\n")).1.is_empty());
+        assert!(!crate::common::parse(&format!("bad := envelope({args})\n")).1.is_empty());
     }
 }
 

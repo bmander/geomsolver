@@ -1,83 +1,73 @@
-//! A plane is a frame with an attitude in space, a point may be `in` one, and `project` says
-//! two such points are images of one point — descriptive geometry on one sheet (§6.7).
+//! A plane is two rays and a place in space, a point may be `in` one, and `project` says two
+//! such points are images of one point — descriptive geometry (§6.7).
 use gcs_core::constraints::{CKind, Constraint};
-use gcs_core::model::{pick, EntRef, Sketch};
+use gcs_core::model::{EntRef, Sketch};
 use gcs_core::plane::{fold_line, Basis};
 use gcs_core::solve::{solve, SolveOpts};
 use gcs_core::{diagnose, io};
-use std::f64::consts::FRAC_PI_2;
 
 fn near(a: f64, b: f64) -> bool {
     (a - b).abs() < 1e-8
 }
 
-/// The frame's fixture with an attitude: chord (4, 3), so the rotor is the 3-4-5 triangle's.
-fn with_plane() -> (Sketch, usize) {
+fn top() -> Basis {
+    Basis { u: [1.0, 0.0, 0.0], v: [0.0, 1.0, 0.0], o: [0.0; 3] }
+}
+
+fn side() -> Basis {
+    Basis { u: [0.0, 1.0, 0.0], v: [0.0, 0.0, 1.0], o: [0.0; 3] }
+}
+
+/// A plane over two free rays: no row of its own, its origin a point drawn in it at (0, 0).
+#[test]
+fn a_plane_is_its_rays_and_its_place() {
     let mut sk = Sketch::new();
-    let o = sk.point(10.0, 5.0, false, "o");
-    let t = sk.point(14.0, 8.0, false, "t");
-    let p = sk.plane(o, t, Basis::page(), "front");
-    (sk, p)
-}
-
-#[test]
-fn the_rotor_and_intrinsics_mirror_a_frame() {
-    let (mut sk, p) = with_plane();
-    let f = &sk.planes[p].frame;
-    assert!((sk.params[f.c as usize].value - 0.8).abs() < 1e-12);
-    assert!((sk.params[f.s as usize].value - 0.6).abs() < 1e-12);
-    assert!((sk.params[f.c as usize].scale - 5.0).abs() < 1e-12);
-    assert_eq!(sk.constraints.len(), 2);
-    assert!(sk.constraints.iter().all(|c| c.intrinsic));
-    assert_eq!(sk.constraints[0].kind, CKind::FrameUnit);
-    assert_eq!(sk.constraints[1].kind, CKind::FrameAlign);
-    assert!(sk.user_constraints().is_empty());
-    let rp = sk.constraints[1].args[1].param() as usize;
-    assert!((sk.params[rp].value - 5.0).abs() < 1e-12);
-    assert_eq!(sk.basis(p), Basis::page());
+    let (u, v) = (sk.ray([4.0, 3.0, 0.0], "u"), sk.ray([0.0, 0.0, 1.0], "v"));
+    let before = sk.constraints.len();
+    let p = sk.plane(u, v, [1.0, 2.0, 3.0], "front");
+    assert_eq!(sk.constraints.len(), before, "no intrinsic row: the basis is read, not solved");
+    assert_eq!(before, 2, "the rays' unit rows");
+    assert!(sk.constraints.iter().all(|c| c.intrinsic && c.kind == CKind::RayUnit));
+    let b = sk.basis(p);
+    assert!(near(b.u[0], 0.8) && near(b.u[1], 0.6) && b.v == [0.0, 0.0, 1.0]);
+    let o = sk.planes[p].origin as usize;
+    assert_eq!(sk.plane_of(o), Some(p));
+    assert_eq!(sk.point_xy(o), (0.0, 0.0));
+    assert!(sk.point_params(o).iter().all(|&k| sk.params[k as usize].fixed));
+    assert_eq!(sk.world_point(o), [1.0, 2.0, 3.0]);
     let d = diagnose::diagnose(&mut sk, Default::default());
-    assert_eq!(d.dof, 4, "two free points, and the rotor slaved to them");
+    assert_eq!(d.dof, 2 + 2 + 3, "two directions and a place");
 }
 
 #[test]
-fn the_fold_convention_and_the_fold_line() {
+fn the_fold_line() {
     let near = |a: [f64; 3], b: [f64; 3]| (0..3).all(|i| (a[i] - b[i]).abs() < 1e-12);
-    let top = Basis::page().fold(0.0);
-    assert!(near(top.u, [1.0, 0.0, 0.0]) && near(top.v, [0.0, 1.0, 0.0]));
-    assert!(near(top.normal(), [0.0, 0.0, 1.0]), "the top view looks down from +z");
-    let right = Basis::page().fold(-FRAC_PI_2);
-    assert!(near(right.u, [0.0, 0.0, -1.0]) && near(right.v, [0.0, 1.0, 0.0]));
-    assert!(near(right.normal(), [1.0, 0.0, 0.0]), "and the right view from +x");
+    assert!(near(top().normal(), [0.0, 0.0, 1.0]), "the top plane looks down from +z");
+    assert!(near(side().normal(), [1.0, 0.0, 0.0]), "and the side plane from +x");
+    assert!(near(Basis::page().normal(), [0.0, -1.0, 0.0]), "and the front from -y");
     // an explicit basis is orthonormalised, and a pair spanning no plane is refused
     let b = Basis::explicit([2.0, 0.0, 0.0], [1.0, 0.0, 3.0]).unwrap();
     assert!(near(b.u, [1.0, 0.0, 0.0]) && near(b.v, [0.0, 0.0, 1.0]));
     assert!(Basis::explicit([1.0, 0.0, 0.0], [-2.0, 0.0, 0.0]).is_none());
     assert!(Basis::explicit([0.0, 0.0, 0.0], [0.0, 0.0, 1.0]).is_none(), "and a zero vector");
-    // the front and the top share the page's x-axis, which is `u` in both
-    let (da, db) = fold_line(&Basis::page(), &top).unwrap();
+    // the front and the top share the x-axis, which is `u` in both
+    let (da, db) = fold_line(&Basis::page(), &top()).unwrap();
     assert!((da[0].abs() - 1.0).abs() < 1e-12 && da[1].abs() < 1e-12);
     assert!((da[0] - db[0]).abs() < 1e-12 && db[1].abs() < 1e-12);
     assert!(fold_line(&Basis::page(), &Basis::page()).is_none());
 }
 
-/// Front, top and right views in the standard third-angle layout — top above the front, right
-/// beside it with its frame turned so z is up — and one point seen in all three.  Width agrees
-/// front↔top, height front↔right, depth top↔right: the projector rule, three times.
+/// Front, top and side planes through the origin, and one point seen in all three.  Width agrees
+/// front↔top, height front↔side, depth top↔side: the projector rule, three times.
 fn three_views() -> (Sketch, [usize; 3], [usize; 3]) {
     let mut sk = Sketch::new();
-    let datum = |sk: &mut Sketch, o: (f64, f64), t: (f64, f64), b: Basis, n: &str| {
-        let oi = sk.point(o.0, o.1, true, &format!("{n}.o"));
-        let ti = sk.point(t.0, t.1, true, &format!("{n}.t"));
-        sk.plane(oi, ti, b, n)
-    };
-    let front = datum(&mut sk, (0.0, 0.0), (1.0, 0.0), Basis::page(), "front");
-    let top = datum(&mut sk, (0.0, 100.0), (1.0, 100.0), Basis::page().fold(0.0), "top");
-    let right =
-        datum(&mut sk, (150.0, 0.0), (150.0, -1.0), Basis::page().fold(-FRAC_PI_2), "right");
+    let front = sk.fixed_plane(Basis::page(), "front");
+    let top = sk.fixed_plane(top(), "top");
+    let right = sk.fixed_plane(side(), "right");
     // the images of X = (30, 20, 40): the front's is stated, the other two are unknowns
     let pf = sk.point(30.0, 40.0, true, "pf");
-    let pt = sk.point(20.0, 110.0, false, "pt");
-    let pr = sk.point(160.0, 30.0, false, "pr");
+    let pt = sk.point(20.0, 10.0, false, "pt");
+    let pr = sk.point(10.0, 30.0, false, "pr");
     sk.set_plane(pf, Some(front));
     sk.set_plane(pt, Some(top));
     sk.set_plane(pr, Some(right));
@@ -97,7 +87,7 @@ fn three_views_agree_on_a_point() {
     assert_eq!(d.dof, 1, "three rows over four unknowns: the depth is free");
     // say the depth in the top view and everything else follows
     let py = sk.point_params(pt)[1] as usize;
-    sk.params[py].value = 120.0;
+    sk.params[py].value = 20.0;
     sk.params[py].fixed = true;
     let r = solve(&mut sk, SolveOpts::default());
     assert!(r.success, "{}", r.message);
@@ -105,32 +95,27 @@ fn three_views_agree_on_a_point() {
     let (rx, ry) = sk.point_xy(pr);
     assert!(near(tx, 30.0), "width agrees front↔top: {tx}");
     assert!(near(ry, 40.0), "height agrees front↔right: {ry}");
-    assert!(near(rx, 170.0), "depth agrees top↔right: {rx}");
+    assert!(near(rx, 20.0), "depth agrees top↔right: {rx}");
 }
 
-/// An auxiliary view folded from the top at the bearing of a slanted edge sees the edge at its
-/// true length — the reason a draughtsman draws one.  The auxiliary images are placed by
-/// projection alone, four rows over four unknowns.
+/// An auxiliary plane standing on the bearing of a slanted edge sees the edge at its true
+/// length — the reason a draughtsman draws one.  The auxiliary images are placed by projection
+/// alone, four rows over four unknowns.
 #[test]
 fn an_auxiliary_view_shows_true_length() {
     let (c30, s30) = (30f64.to_radians().cos(), 30f64.to_radians().sin());
     // A = (0, 0, 0), B = (40 cos 30°, 40 sin 30°, 30): length 50, foreshortened in every
     // principal view
     let mut sk = Sketch::new();
-    let datum = |sk: &mut Sketch, o: (f64, f64), b: Basis, n: &str| {
-        let oi = sk.point(o.0, o.1, true, &format!("{n}.o"));
-        let ti = sk.point(o.0 + 1.0, o.1, true, &format!("{n}.t"));
-        sk.plane(oi, ti, b, n)
-    };
-    let front = datum(&mut sk, (0.0, 0.0), Basis::page(), "front");
-    let top = datum(&mut sk, (0.0, 100.0), Basis::page().fold(0.0), "top");
-    let aux = datum(&mut sk, (200.0, 0.0), Basis::page().fold(0.0).fold(30f64.to_radians()), "aux");
+    let front = sk.fixed_plane(Basis::page(), "front");
+    let top = sk.fixed_plane(top(), "top");
+    let aux = sk.fixed_plane(Basis { u: [c30, s30, 0.0], v: [0.0, 0.0, 1.0], o: [0.0; 3] }, "aux");
     let af = sk.point(0.0, 0.0, true, "af");
     let bf = sk.point(40.0 * c30, 30.0, true, "bf");
-    let at = sk.point(0.0, 100.0, true, "at");
-    let bt = sk.point(40.0 * c30, 100.0 + 40.0 * s30, true, "bt");
-    let aa = sk.point(205.0, 3.0, false, "aa");
-    let ba = sk.point(230.0, -20.0, false, "ba");
+    let at = sk.point(0.0, 0.0, true, "at");
+    let bt = sk.point(40.0 * c30, 40.0 * s30, true, "bt");
+    let aa = sk.point(5.0, 3.0, false, "aa");
+    let ba = sk.point(30.0, 20.0, false, "ba");
     for (p, pl) in [(af, front), (bf, front), (at, top), (bt, top), (aa, aux), (ba, aux)] {
         sk.set_plane(p, Some(pl));
     }
@@ -143,7 +128,7 @@ fn an_auxiliary_view_shows_true_length() {
     let (ax, ay) = sk.point_xy(aa);
     let (bx, by) = sk.point_xy(ba);
     assert!(near((bx - ax).hypot(by - ay), 50.0), "true length: {}", (bx - ax).hypot(by - ay));
-    assert!(near(ax, 200.0) && near(ay, 0.0), "A sits at the auxiliary origin: {ax}, {ay}");
+    assert!(near(ax, 0.0) && near(ay, 0.0), "A sits at the auxiliary origin: {ax}, {ay}");
 }
 
 #[test]
@@ -158,9 +143,7 @@ fn the_refusals() {
     let m = e(Constraint::project(&sk, EntRef::point(pf), EntRef::point(other)));
     assert!(m.contains("relates nothing to itself"), "{m}");
     // a second plane with the front's own basis is parallel to it
-    let o = sk.point(300.0, 0.0, true, "o2");
-    let t = sk.point(301.0, 0.0, true, "t2");
-    let front2 = sk.plane(o, t, Basis::page(), "front2");
+    let front2 = sk.fixed_plane(Basis { o: [0.0, -5.0, 0.0], ..Basis::page() }, "front2");
     sk.set_plane(other, Some(front2));
     let m = e(Constraint::project(&sk, EntRef::point(pf), EntRef::point(other)));
     assert!(m.contains("parallel"), "{m}");
@@ -171,20 +154,25 @@ fn the_refusals() {
     let doc = |planes: &str, memberships: [&str; 2]| {
         format!(
             "{{\"version\":1,\"points\":[{{\"x\":0,\"y\":0{}}},{{\"x\":1,\"y\":1{}}},\
-             {{\"x\":0,\"y\":0,\"fixed\":true}},{{\"x\":1,\"y\":0,\"fixed\":true}}],\
+             {{\"x\":0,\"y\":0,\"fixed\":true}},{{\"x\":0,\"y\":0,\"fixed\":true}}],\
+             \"rays\":[{{\"d\":[1,0,0],\"fixed\":[true,true,true]}},\
+             {{\"d\":[0,0,1],\"fixed\":[true,true,true]}},\
+             {{\"d\":[0,1,0],\"fixed\":[true,true,true]}}],\
              \"planes\":[{planes}],\
              \"constraints\":[{{\"type\":\"Project\",\
              \"args\":[[\"point\",0],[\"point\",1],null,null]}}]}}",
             memberships[0], memberships[1]
         )
     };
-    let page = "{\"origin\":2,\"toward\":3,\"u\":[1,0,0],\"v\":[0,0,1]}";
-    let top_p = "{\"origin\":2,\"toward\":3,\"u\":[1,0,0],\"v\":[0,1,0]}";
-    let m = io::loads(&doc(page, ["", ""])).err().unwrap();
+    let held = "\"x\":0,\"y\":0,\"z\":0,\"fixed\":[true,true,true]";
+    let page = format!("{{\"u\":0,\"v\":1,\"origin\":2,{held}}}");
+    let page2 = format!("{{\"u\":0,\"v\":1,\"origin\":3,{held}}}");
+    let top_p = format!("{{\"u\":0,\"v\":2,\"origin\":3,{held}}}");
+    let m = io::loads(&doc(&page, ["", ""])).err().unwrap();
     assert!(m.contains("no plane"), "{m}");
-    let m = io::loads(&doc(page, [",\"plane\":0", ",\"plane\":0"])).err().unwrap();
+    let m = io::loads(&doc(&page, [",\"plane\":0", ",\"plane\":0"])).err().unwrap();
     assert!(m.contains("itself"), "{m}");
-    let two = format!("{page},{page}");
+    let two = format!("{page},{page2}");
     let m = io::loads(&doc(&two, [",\"plane\":0", ",\"plane\":1"])).err().unwrap();
     assert!(m.contains("parallel"), "{m}");
     let two = format!("{page},{top_p}");
@@ -201,7 +189,7 @@ fn round_trips_through_json_and_the_graft() {
     let id = sk.add(c);
     sk.set_class(EntRef::plane(top), "section", true);
     let text = io::dumps(&sk, Some(1));
-    assert!(!text.contains("FrameUnit"), "an intrinsic is never stored");
+    assert!(!text.contains("RayUnit"), "an intrinsic is never stored");
     let back = io::loads(&text).unwrap();
     assert_eq!(back.planes.len(), 3);
     assert_eq!(back.basis(right), sk.basis(right));
@@ -224,7 +212,7 @@ fn round_trips_through_json_and_the_graft() {
     assert_eq!(less.planes.len(), 2);
     assert!(less.user_constraints().is_empty());
     assert!(less.points.iter().all(|p| p.plane.map_or(true, |q| (q as usize) < 2)));
-    assert_eq!(less.points.iter().filter(|p| p.plane.is_none()).count(), 1 + 6);
+    assert_eq!(less.points.iter().filter(|p| p.plane.is_none()).count(), 1);
     // deleting a point drops the projection and keeps the planes
     let less = io::without(&sk, &[EntRef::point(pf)], &[]);
     assert_eq!(less.planes.len(), 3);
@@ -264,7 +252,7 @@ fn the_drag_part_reaches_the_planes() {
 /// projection alone, and comes out the true-size rectangle the face is.
 #[test]
 fn the_bracket_shows_its_incline_true_size() {
-    let (prog, errs) = gcs_core::syntax::parse(gcs_core::examples::BRACKET);
+    let (prog, errs, _) = gcs_core::library::parse_linked(gcs_core::examples::BRACKET);
     assert!(errs.is_empty(), "{errs:?}");
     let e = gcs_core::program::elaborate(&prog);
     assert!(e.ok(), "{:?}", e.errors().map(|d| d.message.clone()).collect::<Vec<_>>());
@@ -280,15 +268,6 @@ fn the_bracket_shows_its_incline_true_size() {
     assert!(near(at("Er").1, 40.0) && near(at("Cr").1, 15.0) && near(at("Fr").1, 30.0));
     assert!(near(at("A2r").0 - at("Ar").0, 30.0));
     assert_eq!(diagnose::diagnose(&mut sk, Default::default()).dof, 0);
-}
-
-#[test]
-fn a_plane_is_picked_on_its_chord_and_a_point_wins() {
-    let (sk, p) = with_plane();
-    let o = sk.planes[p].frame.origin as usize;
-    assert_eq!(pick(&sk, 12.0, 6.5, 0.5), Some(EntRef::plane(p)), "the chord's midpoint");
-    assert_eq!(pick(&sk, 10.0, 5.0, 0.5), Some(EntRef::point(o)), "the origin is a point");
-    assert_eq!(pick(&sk, 12.0, 9.0, 0.5), None);
 }
 
 /// A document is untrusted input, and `wasm32-unknown-unknown` aborts rather than unwinding —
@@ -319,23 +298,19 @@ fn a_projection_pointed_at_the_wrong_kind_is_refused() {
     assert!(m.contains("out of range"), "{m}");
 }
 
-/// The datum glyph is the core's, and one figure: `svg.rs` and the canvas both stroke what
-/// `plane::glyph` hands them, so the exported picture and the drawn one cannot come apart —
-/// which they had, at the tick's length.
+/// The plane glyph is the core's, and one figure, which the workspace strokes as it is handed.
+/// It stands at the plane's origin, in its own coordinates: an arm along `u` and a tick along
+/// `v`, both screen-constant.  The SVG export draws no plane: on paper a plane is nothing.
 #[test]
 fn the_glyph_is_laid_out_once_and_screen_constant() {
-    let (sk, p) = with_plane();
+    let mut sk = Sketch::new();
+    let p = sk.fixed_plane(Basis::page(), "front");
     let unit = 0.5;                                   // half a world unit to the screen pixel
     let [(o, t), (o2, tick)] = gcs_core::plane::glyph(&sk, p, unit);
-    assert_eq!(o, sk.point_xy(sk.planes[p].frame.origin as usize));
-    assert_eq!(t, sk.point_xy(sk.planes[p].frame.toward as usize));
+    assert_eq!(o, sk.point_xy(sk.planes[p].origin as usize));
     assert_eq!(o2, o, "the tick comes out of the origin");
-    // perpendicular to the chord, and a screen-constant length
-    let (cx, cy) = (t.0 - o.0, t.1 - o.1);
-    let (tx, ty) = (tick.0 - o.0, tick.1 - o.1);
-    assert!(near(cx * tx + cy * ty, 0.0), "the tick is the frame's y-axis");
-    assert!(near(tx.hypot(ty), gcs_core::plane::TICK_PX * unit));
-    // and it is drawn: the SVG export strokes two segments for the plane
+    assert!(near(t.0, gcs_core::plane::AXIS_PX * unit) && near(t.1, 0.0));
+    assert!(near(tick.0, 0.0) && near(tick.1, gcs_core::plane::TICK_PX * unit));
     let svg = gcs_core::svg::render(&sk, 400.0);
-    assert!(svg.contains("<line"), "{svg}");
+    assert!(!svg.contains("<line"), "{svg}");
 }

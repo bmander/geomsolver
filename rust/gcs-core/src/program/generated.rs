@@ -293,10 +293,10 @@ pub(super) fn extruded_envelopes(sk: &mut Sketch, res: &mut Resolver, map: &mut 
                     centres and lines are drawn in that view", d.name.key().text));
             }
             let Some(view) = view else {
-                return Err("the prism's face is on the page, which has no place in space: draw it `in` a view".into());
+                return Err("the prism's face is drawn in no plane: draw it `in` one".into());
             };
-            if sk.planes[view].att.is_some() {
-                return Err("a prism's side generates in a view drawn where it stands, not one solved for".into());
+            if !sk.plane_fixed(view) {
+                return Err("a prism's side generates in a plane that is fixed, not one solved for".into());
             }
             cv.extrusion = true;
             Ok(cv)

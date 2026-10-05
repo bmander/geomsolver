@@ -69,7 +69,7 @@ fn close(a: P, b: P, tol: f64) -> bool {
 /// one every `ccw`/`cw` line states.
 #[test]
 fn the_leg_assembles_on_the_stated_pose() {
-    let (prog, errs) = gcs_core::syntax::parse(examples::JANSEN);
+    let (prog, errs) = crate::common::parse(examples::JANSEN);
     assert!(errs.is_empty(), "{errs:?}");
     let mut e = gcs_core::program::elaborate(&prog);
     assert!(e.ok(), "{:?}", e.errors().map(|d| (d.code.as_str(), &d.message)).collect::<Vec<_>>());
@@ -96,7 +96,7 @@ fn the_leg_assembles_on_the_stated_pose() {
 /// at every crank angle it puts the toe where the drawing's own rods would.
 #[test]
 fn the_stride_is_the_toe_round_the_crank() {
-    let (prog, _) = gcs_core::syntax::parse(examples::JANSEN);
+    let (prog, _) = crate::common::parse(examples::JANSEN);
     let e = gcs_core::program::elaborate(&prog);
     assert!(e.ok());
     assert_eq!(e.sketch.curves.len(), 1);
@@ -146,9 +146,17 @@ fn reaching(ground: f64, lo: f64, hi: f64, bottom: impl Fn(f64) -> f64) -> f64 {
 /// seeded at `seed`, and `edit` applied to the text first.
 fn grounded_at(seed: f64, edit: impl Fn(String) -> String) -> gcs_core::program::Elaborated {
     let doc = edit(examples::JANSEN.to_string())
-        + "\ng0 := point hint(x: -60, y: -95)\ng1 := point hint(x: 0, y: -95)\n\
-           ground := horizontal line(g0, g1)\ng0 distance(60, along: x) g1\n\
-           fix(x == -60, y == -95) g0\n"
+        + "\
+use std
+
+in std.front {
+g0 := point hint(x: -60, y: -95)
+g1 := point hint(x: 0, y: -95)
+ground := horizontal line(g0, g1)
+g0 distance(60, along: x) g1
+fix(x == -60, y == -95) g0
+}
+"
         + &format!("path tangent ground hint(t: {seed})\n");
     build(&doc)
 }
@@ -210,13 +218,10 @@ fn a_curve_column_is_an_unknown_number_as_itself() {
             "component Leg(axle: point, pivot: point, theta: Angle, h: Length) {",
         )
         .replace("  h := 65.7    // heel to toe\n", "")
-        .replace(
-            "leg := Leg(axle, pivot)\n",
-            "component Pair(axle: point, pivot: point, k: Length) { leg := Leg(axle, pivot, h: 2 * k) }\n\
-             pair := Pair(axle, pivot)\n",
-        )
-        .replace("path := leg.toe", "path := pair.leg.toe");
-    let (prog, errs) = gcs_core::syntax::parse(&doc);
+        .replace("leg := Leg(axle, pivot)\n", "pair := Pair(axle, pivot)\n")
+        .replace("path := leg.toe", "path := pair.leg.toe")
+        + "component Pair(axle: point, pivot: point, k: Length) { leg := Leg(axle, pivot, h: 2 * k) }\n";
+    let (prog, errs) = crate::common::parse(&doc);
     assert!(errs.is_empty(), "{errs:?}");
     let e = gcs_core::program::elaborate(&prog);
     let said: Vec<String> = e.errors().map(|d| d.message.clone()).collect();
@@ -256,8 +261,17 @@ fn on_level_ground(extra: &str) -> gcs_core::program::Elaborated {
             "component Leg(axle: point, pivot: point, theta: Angle, h: Length) {",
         )
         .replace("  h := 65.7    // heel to toe\n", "")
-        + "\ng0 := point hint(x: -60, y: -92)\ng1 := point hint(x: 0, y: -92)\n\
-           ground := horizontal line(g0, g1)\ng0 distance(60, along: x) g1\nfix(x == -60) g0\n"
+        + "\
+use std
+
+in std.front {
+g0 := point hint(x: -60, y: -92)
+g1 := point hint(x: 0, y: -92)
+ground := horizontal line(g0, g1)
+g0 distance(60, along: x) g1
+fix(x == -60) g0
+}
+"
         + extra;
     build(&doc)
 }
@@ -301,9 +315,19 @@ fn the_stride_stands_on_the_ground_twice() {
 #[test]
 fn the_stride_bends_at_a_stated_radius() {
     let mut e = on_level_ground(
-        "k := point hint(x: -45, y: 50)\nosc := circle(center: k) hint(r: 140)\n\
-         param s: Angle hint(318)\npath tangent(t == s) ground\npath curvature(t == s) osc\n\
-         radius(150) osc\n",
+        "\
+use std
+in std.front {
+k := point hint(x: -45, y: 50)
+osc := circle(center: k) hint(r: 140)
+}
+param s: Angle hint(318)
+in std.front {
+path tangent(t == s) ground
+path curvature(t == s) osc
+radius(150) osc
+}
+",
     );
     let r = solve(&mut e.sketch, SolveOpts::default());
     assert!(r.success, "{}", r.message);

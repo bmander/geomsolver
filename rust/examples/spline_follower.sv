@@ -16,27 +16,31 @@
 // and the curve cannot simply shrug it off.  `8.666667` is where the straight edge starts
 // looking for its contact — a starting guess, not a statement.
 
-k0 := point
-k1 := point hint(x: 20, y: 0)
-k2 := point hint(x: 40, y: 26)
-k3 := point hint(x: 60, y: 0)
-k4 := point hint(x: 80, y: 26)
-k5 := point hint(x: 100, y: 0)
-k6 := point hint(x: 120, y: 26)
+use std
 
-// `cam` rather than `curve`: a statement now begins with a *name* and a name that is also an
-// element keyword could not lead one.
-cam := spline(k0, k1, k2, k3, k4, k5, k6)
+in std.front {
+  k0 := point
+  k1 := point hint(x: 20, y: 0)
+  k2 := point hint(x: 40, y: 26)
+  k3 := point hint(x: 60, y: 0)
+  k4 := point hint(x: 80, y: 26)
+  k5 := point hint(x: 100, y: 0)
+  k6 := point hint(x: 120, y: 26)
 
-// the follower: a level face resting against the curve, touching wherever it must
-flat := horizontal line(hint(x: 0, y: 8.666667), hint(x: 120, y: 8.666667))
-cam tangent flat
+  // `cam` rather than `curve`: a statement now begins with a *name* and a name that is also an
+  // element keyword could not lead one.
+  cam := spline(k0, k1, k2, k3, k4, k5, k6)
 
-// and a point riding on the curve, held off a grounded anchor above it
-rider := point hint(x: 60, y: 8.666667)
-anchor := point
-rider coincident cam
-anchor distance(60) rider
+  // the follower: a level face resting against the curve, touching wherever it must
+  flat := horizontal line(hint(x: 0, y: 8.666667), hint(x: 120, y: 8.666667))
+  cam tangent flat
 
-fix(x == 0, y == 26) k0
-fix(x == 60, y == 68.666667) anchor
+  // and a point riding on the curve, held off a grounded anchor above it
+  rider := point hint(x: 60, y: 8.666667)
+  anchor := point
+  rider coincident cam
+  anchor distance(60) rider
+
+  fix(x == 0, y == 26) k0
+  fix(x == 60, y == 68.666667) anchor
+}

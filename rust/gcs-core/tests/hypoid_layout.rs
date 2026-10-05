@@ -623,17 +623,16 @@ fn solved_design(label: &str) -> (usize,Elaborated) {
 /// hundred iterations and not at its solution: without the block rescue (`BlockMode::Off`) the
 /// solve succeeds on status 4, short of the recorded pair.  By default that stop is not
 /// *settled*, the block rescue runs, and the pose it settles on is the recorded pair's to the
-/// 1e-9 the named-quantities gate asks.  Not from every such jitter: about a third of them
-/// (4 of the first 12 seeds from the pose the coordinate seeds solved to, 5 of 12 from
-/// the one the place seeds do, the same pose to 1e-11) settle a mate section on another root,
-/// so the seeds here are three that stop and settle.
+/// 1e-9 the named-quantities gate asks.  Not from every such jitter: of the first 16 seeds, 7
+/// stop on the limit and 5 of those settle a mate or tooth section on another root, so the seeds
+/// here are the two that stop and settle.
 #[test]
 fn a_stop_on_the_iteration_limit_is_rescued_onto_the_recorded_pair() {
     use gcs_core::solve::{self,BlockMode,SolveOpts};
     let (_,rows) = recorded();
     let (k,mut e) = solved_design("24x48 m25.4");
     let reference = e.sketch.clone();
-    for seed in [2,4,5] {
+    for seed in [5,13] {
         let start = crate::common::jittered(&reference,0.001,seed);
         e.sketch = start.clone();
         let stop = solve::solve(&mut e.sketch,SolveOpts {blocks:BlockMode::Off,..SolveOpts::default()});
@@ -662,7 +661,7 @@ fn a_stop_that_stalls_again_is_restarted_in_block_order() {
     let mut held = design.unsolved().sketch;
     let accurate = SolveOpts {blocks:BlockMode::First,..fixtures::accurate()};
     assert!(solve::solve(&mut held,accurate).success);
-    let start = crate::common::jittered(&held,0.001,2);
+    let start = crate::common::jittered(&held,0.001,13);
     let mut stop = start.clone();
     let a = solve::solve(&mut stop,SolveOpts {blocks:BlockMode::Off,..SolveOpts::default()});
     assert!(a.success && a.status == 4 && a.method == "dogleg","{a:?}");
@@ -752,6 +751,7 @@ fn design_sweep() {
     }}}}}
     println!("{bad} of {n} designs");
 }
+
 
 
 

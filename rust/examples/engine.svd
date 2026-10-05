@@ -1,15 +1,14 @@
 // Presentation of engine.sv. Model geometry is independent of this drawing.
 model m from "engine.sv"
 
+// The side view is the front plane; the end view stands 620 to the right of it and the plan 620
+// above it, each in its own plane's coordinates.
 sheet drawing {
   size A3
-  sketch source(m) at (80mm, 180mm)
+  sketch side(m) at (80mm, 180mm)
+  sketch end(m) from m.std.side at (700mm, 180mm)
+  sketch plan(m) from m.std.top at (80mm, -440mm)
   style m.O { display: none }
-  style m.views.qf { display: none }
-  style m.views.right_origin { display: none }
-  style m.views.qr { display: none }
-  style m.views.top_origin { display: none }
-  style m.views.qt { display: none }
   style m.end.top.p { display: none }
   style m.side.a0.p { display: none }
   style m.side.a1.p { display: none }
@@ -152,7 +151,4 @@ sheet drawing {
   style m.drive.pcrank { color: #2a7ab0; width: 1.2 }
   style m.drive.pcam_i { color: #2a7ab0; width: 1.2 }
   style m.drive.pcam_e { color: #2a7ab0; width: 1.2 }
-  style m.views.front { color: #8a8a8a; width: 0.75; dash: 2 3; display: none }
-  style m.views.right { color: #8a8a8a; width: 0.75; dash: 2 3; display: none }
-  style m.views.top { color: #8a8a8a; width: 0.75; dash: 2 3; display: none }
 }

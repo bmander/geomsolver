@@ -3,66 +3,47 @@
 // `use std` brings it in — from the library compiled into the core, so it is there in the browser
 // as in the terminal; a `std.sv` beside a document would win over it, as any module does.
 
-// Shared fixed datums, which every document that says `use std` has — as a CAD part has its
-// origin planes — so the workspace can offer them as places to draw.  front is the page (x right,
-// z up), top is folded up from it about the x axis (x right, y away), and side is folded from it
-// about the vertical (y right, z up, looked at from +x); up is the front plane turned a quarter,
-// u up and v to the left.  Reading a datum does not assign plane membership: unplaced geometry
-// stays on the page.
+// The standard axes and planes, which every document that says `use std` has — as a CAD part
+// has its origin planes — so the workspace can offer them as places to draw.  The axes are rays,
+// each held outright: x right, y away from the front's viewer, z up, and `back` the x axis
+// reversed.  Each plane is two of them and stands at the world origin: front is x right and z up
+// (a document's 2D drawing, `in std.front`), top x right and y away (looked at from above), side
+// y right and z up (looked at from +x), and up the front turned a quarter, z right and x to the
+// left.  `origin` is a point drawn in the front plane at its origin.
 component StandardDatums() {
-  origin := point
+  x := ray hint(x: 1, y: 0, z: 0)
+  fix(x == 1, y == 0, z == 0) x
+  y := ray hint(x: 0, y: 1, z: 0)
+  fix(x == 0, y == 1, z == 0) y
+  z := ray hint(x: 0, y: 0, z: 1)
+  fix(x == 0, y == 0, z == 1) z
+  back := ray hint(x: -1, y: 0, z: 0)
+  fix(x == -1, y == 0, z == 0) back
+  front := plane(u: x, v: z)
+  fix(x == 0, y == 0, z == 0) front
+  top := plane(u: x, v: y)
+  fix(x == 0, y == 0, z == 0) top
+  side := plane(u: y, v: z)
+  fix(x == 0, y == 0, z == 0) side
+  up := plane(u: z, v: back)
+  fix(x == 0, y == 0, z == 0) up
+  origin := point in front
   fix(x == 0, y == 0) origin
-  rightward := point
-  fix(x == 1, y == 0) rightward
-  upward := point
-  fix(x == 0, y == 1) upward
-  downward := point
-  fix(x == 0, y == -1) downward
-  front := plane(origin: origin, toward: rightward)
-  up := plane(origin: origin, toward: upward)
-  top := plane(origin: origin, toward: rightward, from: front, fold: 0deg)
-  side := plane(origin: origin, toward: downward, from: front, fold: -90deg)
 }
 
-// The three principal views of third-angle projection (§6.7), laid out on one sheet: the page is
-// the **front** view, its origin at `o`; the **right** view is folded from the front's z-axis and
-// drawn `right` along the page from `o`, turned so up stays up; the **top** view is folded up from
-// the front's x-axis and drawn `up` the page from `o`.  Every origin is one corner of the object,
-// as each view sees it, so the views need no projection between their origins — a drawing states
-// its projections between the points it draws.  Ground `o` and the sheet is placed; the spacing
-// is stated here, so dragging `o` moves the whole sheet.
-//
-//   use std
-//   point O hint(x: 0, y: 0)
-//   ground O
-//   views: ThreeViews(O, right: 620, up: 620)
-//   part: Something(views.right_origin) in views.right
-//
-// The views are `front`, `right` and `top`, reached as `views.right`; `right` the length and
-// `right` the view do not meet, since a number is read in an expression and an entity in a
-// reference.
-component ThreeViews(o: point, right: Length, up: Length) {
-  // each view's `toward` point sets which way it is turned on the page; a hand's breadth away
-  qf := point
-  o distance(40, along: x) qf
-  o distance(0, along: y) qf
-  front := plane(origin: o, toward: qf)
-
-  right_origin := point
-  qr := point
-  o distance(right, along: x) right_origin
-  o distance(0, along: y) right_origin
-  right_origin distance(0, along: x) qr
-  right_origin distance(40, along: down) qr
-  right := plane(origin: right_origin, toward: qr, from: front, fold: -90deg)
-
-  top_origin := point
-  qt := point
-  o distance(0, along: x) top_origin
-  o distance(up, along: y) top_origin
-  top_origin distance(40, along: x) qt
-  top_origin distance(0, along: y) qt
-  top := plane(origin: top_origin, toward: qt, from: front, fold: 0deg)
+// Axes turned within a plane: the plane through `o` whose u runs toward `t` and whose v is a
+// quarter turn on, in the plane `o` and `t` are drawn in — what a part standing at an angle is
+// measured against (`p distance(d, along: u) axes.axes`) and seeded in (`hint(at: axes.axes,
+// x: 3, y: 4)`).  Draw it in that plane: `axes := std.Turned(o, t) in std.front`; `axes.u` is
+// the line from `o` to `t`.
+component Turned(o: point, t: point) {
+  construction u := line(o, t)
+  private q := point hint(at: o, toward: t, turn: 90deg)
+  private construction v := line(o, q)
+  v perpendicular u
+  v equal u
+  axes := plane(u: u, v: v)
+  o coincident axes.origin
 }
 
 // An axis-aligned rectangle about a supplied center. The public loop is a face boundary;
@@ -81,22 +62,22 @@ component CenteredRectangle(center: point, w: Length, h: Length) {
 }
 
 // An ellipse, as a curve: the point at eccentric angle `u` on the ellipse of semi-axes `a` and
-// `b` standing on the datum `f` — its centre at `f.origin`, its major axis along the datum's
-// bearing.  A computed point, so every contact is exact to third order: `p coincident e` holds a
+// `b` about the centre `c`, its major axis turned `turn` from the `x` of the plane `c` is drawn
+// in.  A computed point, so every contact is exact to third order: `p coincident e` holds a
 // point to the rim, `e tangent l` a line to it, `e curvature k` makes `k` the rim's osculating
 // circle.
 //
 //   use std
-//   point o hint(x: 0, y: 0)
-//   point q hint(x: 40, y: 0)
-//   plane f(origin: o, toward: q)
-//   curve e = Ellipse(f, a: 40, b: 25).p over u in (0, 360)
+//   in std.front {
+//     o := point hint(x: 0, y: 0)
+//   }
+//   e := std.Ellipse(o, a: 40, b: 25, tilt: 0deg).p over u in (0, 360)
 //
-// The axes are formals: leave one free and a dimension that reads the rim sizes it (issue #47,
-// item 4 — this replaces the entity kind the language once had, whose rim, tangent and
-// curvature were three kernels of their own).
-component Ellipse(f: plane, a: Length, b: Length, u: Angle) {
-  p := point(x: f.origin.x + a * cos(u) * cos(f.angle) - b * sin(u) * sin(f.angle), y: f.origin.y + a * cos(u) * sin(f.angle) + b * sin(u) * cos(f.angle))
+// The axes and the tilt are formals: leave one free and a dimension that reads the rim sizes it
+// (issue #47, item 4 — this replaces the entity kind the language once had, whose rim, tangent
+// and curvature were three kernels of their own).
+component Ellipse(c: point, a: Length, b: Length, tilt: Angle, u: Angle) {
+  p := point(x: c.x + a * cos(u) * cos(tilt) - b * sin(u) * sin(tilt), y: c.y + a * cos(u) * sin(tilt) + b * sin(u) * cos(tilt))
 }
 
 // A regular polygon: `n` vertices on a circle of radius `r` about `c`, the first at `phase`

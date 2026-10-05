@@ -10,7 +10,7 @@ use gcs_core::newton::Method;
 #[test]
 fn the_graph_maps_the_examples() {
     let g = build(&examples::rect_fillets(100.0, 60.0, 10.0, 0.0));
-    assert_eq!(g.n_points(), 12);
+    assert_eq!(g.n_points(), 12 + crate::common::STD_POINTS);
     assert_eq!(g.lines.len(), 4);
     assert!(g.unsupported.is_empty());
     assert_eq!(g.virtuals.len(), 8); // one radius line per arc-endpoint tangency
@@ -393,16 +393,21 @@ fn levelled_chains_decompose_separately_and_into_corners() {
 /// replay reads the sign the other way round.
 #[test]
 fn a_recorded_ccw_replays_as_the_triangle_it_names() {
-    let src = "unit mm\n\
-               a := point\n\
-               b := point\n\
-               c := point hint(x: 5, y: -4)\n\
-               fix(x == 0, y == 0) a\n\
-               fix(x == 10, y == 0) b\n\
-               a distance(6) c\n\
-               b distance(6) c\n\
-               ccw(a, b, c)\n";
-    let (prog, errs) = gcs_core::syntax::parse(src);
+    let src = "\
+unit mm
+use std
+in std.front {
+a := point
+b := point
+c := point hint(x: 5, y: -4)
+fix(x == 0, y == 0) a
+fix(x == 10, y == 0) b
+a distance(6) c
+b distance(6) c
+ccw(a, b, c)
+}
+";
+    let (prog, errs) = crate::common::parse(src);
     assert!(errs.is_empty(), "{errs:?}");
     let e = gcs_core::program::elaborate(&prog);
     assert!(e.ok(), "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());

@@ -55,6 +55,7 @@ pub fn solid_diagnostics(sk: &crate::model::Sketch, map: &SourceMap) -> Vec<Diag
         }
     }
     diags.extend(views::degenerate(sk, map));
+    diags.extend(views::coplanar(sk, map));
     for i in 0..sk.envelopes.len() {
         if let Err(message) = crate::envelope::GeneratedEnvelope::named(sk,i) {
             let site = map.site_of(crate::model::EntRef::new(crate::model::EntKind::Envelope,i));
@@ -74,7 +75,7 @@ use crate::syntax::{Name, Program, Stmt, StmtId, StmtKind};
 pub(crate) use entities::child_names;
 use entities::{build, crosses_views, settle_deferred, Deferred};
 pub(crate) use lift::{holds, lift_decl, lift_gauge, lift_relation};
-use planes::{memberships, plane_bases};
+use planes::memberships;
 pub(crate) use planes::{plane_of_entity, plane_of_entity_by};
 use relations::{constrain, repeated};
 use resolve::Resolver;
@@ -264,12 +265,13 @@ pub fn elaborate(p: &Program) -> Elaborated {
             );
         }
         if !late_face { *n += 1; }
+        // a plane's origin is a point minted with the points, in statement order
+        if kind == EntKind::Plane {
+            let n = count.entry(EntKind::Point).or_insert(0);
+            res.origins.insert(key.clone(), *n as usize);
+            *n += 1;
+        }
     }
-
-    // every plane's attitude, before any plane is built: a plane folded from another needs
-    // the parent's basis, and the build itself must stay in body order (phase 1 assigned the
-    // indices in it), so the arithmetic is done here, memoised, and handed to the build
-    let bases = plane_bases(&body, &res, &skip, sk.units, &sk.declared, &mut diags);
 
     // -- phase 2: geometry, per kind in `primitives()` order.  The same walk `io::from_json`
     // makes, through the same constructors, so the two produce the same parameter vector.
@@ -285,15 +287,26 @@ pub fn elaborate(p: &Program) -> Elaborated {
         EntKind::Circle,
         EntKind::Arc,
         EntKind::Spline,
+        // a plane is built over its rays
+        EntKind::Ray,
         EntKind::Plane,
         EntKind::Sphere,
         EntKind::Cone,
         EntKind::Cylinder,
-        EntKind::Ray,
         EntKind::Curve,
     ] {
         for st in &body {
             let StmtKind::Decl(d) = &st.kind else { continue };
+            // a plane's origin, minted with the points in statement order (`Resolver::origins`)
+            if kind == EntKind::Point && d.kind == EntKind::Plane && !skip.contains(&st.id) {
+                let key = &d.name.key().text;
+                let o = sk.point(0.0, 0.0, true, &format!("{key}.origin"));
+                debug_assert_eq!(res.origins.get(key), Some(&o));
+                // bound and recorded with its plane, after it (`build_plane`), so the plane is
+                // the first thing its statement made
+                built.insert(EntRef::point(o), true);
+                continue;
+            }
             if d.kind != kind || skip.contains(&st.id) {
                 continue;
             }
@@ -303,7 +316,6 @@ pub fn elaborate(p: &Program) -> Elaborated {
                 &res,
                 d,
                 st,
-                &bases,
                 &mut diags,
                 &mut anon,
                 &mut deferred,
@@ -337,11 +349,25 @@ pub fn elaborate(p: &Program) -> Elaborated {
                                 e.idx -= 1;
                             }
                         }
+                        if gone.kind == EntKind::Point {
+                            for o in res.origins.values_mut().filter(|o| **o > gone.i()) {
+                                *o -= 1;
+                            }
+                        }
                     }
                 }
             }
         }
     }
+
+    // memberships, once every kind is built and before anything reads one: `point a in top`
+    // names a plane built after the point, and `project` infers its planes from these — and then
+    // every point no `in` reached stands in space (`places`), and a plane written over a drawn
+    // line has its hidden ray held along it
+    memberships(&mut sk, &res, &map, &body, &skip, &mut diags);
+    entities::places(&mut sk, &deferred, &mut diags);
+    entities::drawn_in_planes(&sk, &map, &mut diags);
+    entities::rays_along(&mut sk, &deferred);
 
     // motions, once every line and point they are written over is built — and before the
     // profiles a planar motion generates, which are curves of the drawing a contact may name
@@ -363,27 +389,7 @@ pub fn elaborate(p: &Program) -> Elaborated {
     // a seed that reads a seed read from a third is settled after both (§6.4)
     let first = diags.len();
     settle_deferred(&mut sk, &res, &deferred, &mut diags);
-    let settled = first..diags.len();
-    refresh_frames(&mut sk);
-
-    // memberships, once every kind is built and before any constraint reads one: `point a in
-    // top` names a plane built after the point, and `project` infers its planes from these
-    memberships(&mut sk, &res, &map, &body, &skip, &mut diags);
-    // views whose attitude or offset is solved for, once every membership is in and before any
-    // relation: a relation over a solved view is stated against its unknowns from the first
-    views::solve_planes(&mut sk, &res, &mut map, &body, &skip, &mut diags);
-    // a place drawn in another view is read in space, which needs the memberships and the views'
-    // poses just worked out: the seeds are settled again, in statement order, so a seed reading
-    // one projected is settled after it.  Only then — a document whose places are all in their
-    // own views settles once, as it always did.  (A view's pose read off a hinge seeded across
-    // views keeps the first reading.)
-    if crosses_views(&sk, &res, &deferred) {
-        // the second reading's findings stand where the first's did
-        let mut again = Vec::new();
-        settle_deferred(&mut sk, &res, &deferred, &mut again);
-        diags.splice(settled, again);
-        refresh_frames(&mut sk);
-    }
+    let mut settled = first..diags.len();
 
     // a prism's side generating under a motion that keeps its view stands for a surface the
     // solve can hold a point to: built with the drawing, once the memberships say the view
@@ -405,9 +411,30 @@ pub fn elaborate(p: &Program) -> Elaborated {
         }
     }
 
-    // a solved view's place on the sheet is held where it was drawn, unless a statement says
-    // otherwise (the page-placement gauge)
-    reading::hold_page_placement(&mut sk);
+    // where the planes stand, from the statements that say so, before the drawing in them is
+    // read through them: a place drawn in another plane is read in space, through that plane's
+    // pose, so the seeds are settled again, in statement order, once the planes are placed.
+    // Only then — a document whose places are all in their own planes settles once.
+    // A plane placed over seeds read through another plane is read through in turn, so the two
+    // alternate until the seeds stand still — a few rounds, one per plane a chain of them crosses.
+    views::place(&mut sk);
+    if crosses_views(&sk, &res, &deferred) {
+        for _ in 0..4 {
+            let before: Vec<f64> = sk.params.iter().map(|p| p.value).collect();
+            // each reading's findings stand where the first's did
+            let mut again = Vec::new();
+            settle_deferred(&mut sk, &res, &deferred, &mut again);
+            let found = settled.start..settled.start + again.len();
+            diags.splice(settled, again);
+            settled = found;
+            // and the planes placed again over the points the seeds moved
+            views::place(&mut sk);
+            let moved = sk.params.iter().zip(&before).any(|(p, &b)| (p.value - b).abs() > 1e-12 * (1.0 + b.abs()));
+            if !moved {
+                break;
+            }
+        }
+    }
 
     // -- phase 3b: faces, then solids (§6.8, §6.9).  **After every other kind and after the
     // constraints**, because a face is written over edges the drawing already has and a solid
@@ -502,28 +529,6 @@ pub fn elaborate(p: &Program) -> Elaborated {
     }
     crate::modules::localize(p, &mut diags);
     Elaborated { sketch: sk, map, diags, program: p.clone(), taken: false }
-}
-
-/// Datums are constructed before geometry-dependent point hints settle. Refresh their intrinsic
-/// seeds from the final chord so a provisional chord cannot choose the opposite rotor branch for
-/// every coordinate written over it.
-fn refresh_frames(sk: &mut Sketch) {
-    for i in 0..sk.planes.len() {
-        let f = &sk.planes[i].frame;
-        let (cp, sp) = (f.c as usize, f.s as usize);
-        let ((c, s), length) = sk.frame_chord(f.origin as usize, f.toward as usize);
-        sk.params[cp].value = c;
-        sk.params[sp].value = s;
-        sk.params[cp].scale = length;
-        sk.params[sp].scale = length;
-    }
-    for c in &sk.constraints {
-        if c.kind == crate::constraints::CKind::FrameAlign {
-            let f = sk.frame_of(c.args[0].ent());
-            let (_, length) = sk.frame_chord(f.origin as usize, f.toward as usize);
-            sk.params[c.args[1].param() as usize].value = length;
-        }
-    }
 }
 
 /// An angle a declaration is bounded by (`from:`, `to:`), in degrees: written as an angle,

@@ -13,6 +13,7 @@ use gcs_core::model::{EntKind, EntRef, Field, Sketch};
 use gcs_core::program::{elaborate, to_program};
 use gcs_core::solve::{solve, SolveOpts};
 use gcs_core::syntax::{camel, render_flat, snake};
+use crate::common::STD_POINTS;
 
 fn cases() -> Vec<(&'static str, Sketch)> {
     let mut v: Vec<(&'static str, Sketch)> = examples::EXAMPLES
@@ -68,7 +69,7 @@ fn printing_is_a_fixed_point() {
 
 #[test]
 fn flat_rendering_updates_utf8_statement_spans() {
-    let (mut p, errors) = gcs_core::syntax::parse("café := 1\nz := 2");
+    let (mut p, errors) = crate::common::parse("café := 1\nz := 2");
     assert!(errors.is_empty(), "{errors:?}");
     assert_eq!(render_flat(&mut p).unwrap(), "café := 1\nz := 2\n");
     assert_eq!(p.root().span.slice(p.text()), p.text());
@@ -101,12 +102,6 @@ fn every_constraint_type_is_printable() {
         if kind == CKind::DragTarget {
             continue; // soft, and never in a document — `user_constraints` filters it
         }
-        if kind.hinge() || kind == CKind::Mate {
-            // a hinge is a solved view's own statement, written in its plane's brackets
-            // (`fold: beta`, `fold: along l`); `tests/spatial_lang.rs` prints those — and a mate's
-            // row is its `against` statement's, which a lifted program does not carry
-            continue;
-        }
         if matches!(kind, CKind::PointOnCurve | CKind::PointOnExtrusion | CKind::CurveTangentLine | CKind::CurveCurvature) {
             // a curve's contacts print, but the curve they name lifts as an instance of a
             // component the sketch does not hold the text of, so there is nothing for them to
@@ -115,6 +110,9 @@ fn every_constraint_type_is_printable() {
             continue;
         }
         let (sk, c) = fixture(kind);
+        // a relation holding a ray is settled as the planes are, before the solve
+        // (`views::place`), so the ray it names comes back where that put it
+        let settles_a_ray = c.args.iter().any(|a| matches!(a, Arg::Ent(e) if e.kind == EntKind::Ray));
         let mut sk = sk;
         sk.add(c);
         let p = to_program(&sk);
@@ -135,6 +133,9 @@ fn every_constraint_type_is_printable() {
             kind.name(),
             p.text()
         );
+        if settles_a_ray {
+            continue;
+        }
         assert_eq!(
             io::dumps(&e.sketch, Some(1)),
             io::dumps(&sk, Some(1)),
@@ -199,6 +200,10 @@ fn the_document_uses_the_field_names() {
     ] {
         let Some(first) = doc.get(plural).and_then(|a| a.arr().first()) else { continue };
         for (name, _) in kind.fields() {
+            // a point's height is a point in space's alone; one drawn in a plane has none
+            if (kind, *name) == (EntKind::Point, "z") && first.get("plane").is_some() {
+                continue;
+            }
             assert!(
                 first.get(name).is_some(),
                 "{plural}: the document has no `{name}`, which `EntKind::fields` names",
@@ -213,7 +218,10 @@ fn the_document_uses_the_field_names() {
 fn own_params_are_the_scalar_fields() {
     let sk = examples::example("slotted_link").unwrap();
     for e in sk.primitives() {
-        let scalars = e.kind.fields().iter().filter(|(_, f)| *f == Field::Scalar).count();
+        let mut scalars = e.kind.fields().iter().filter(|(_, f)| *f == Field::Scalar).count();
+        if e.kind == EntKind::Point && sk.points[e.i()].z.is_none() {
+            scalars -= 1;   // drawn in a plane: no height
+        }
         assert_eq!(sk.own_params(e).len(), scalars, "{}", e.kind.as_str());
         // and they are a subset of the entity's parameters, never a child's
         for p in sk.own_params(e) {
@@ -259,10 +267,19 @@ fn a_pinned_curve_parameter_survives() {
 /// `==` is taken verbatim rather than tokenized here.
 #[test]
 fn a_dimension_expression_is_kept_as_written() {
-    let src = "param s: Length hint(20)\na := point\nb := point hint(x: 10, y: 0)\n\
-               c := point hint(x: 0, y: 10)\nfix(x == 0, y == 0) a\n\
-               a distance(s / 2) b\na distance(sin(30) * s) c\n";
-    let (p, errs) = gcs_core::syntax::parse(src);
+    let src = "\
+use std
+param s: Length hint(20)
+in std.front {
+a := point
+b := point hint(x: 10, y: 0)
+c := point hint(x: 0, y: 10)
+fix(x == 0, y == 0) a
+a distance(s / 2) b
+a distance(sin(30) * s) c
+}
+";
+    let (p, errs) = crate::common::parse(src);
     assert!(errs.is_empty(), "{errs:?}");
     let sk = elaborate(&p).sketch;
     let text = to_program(&sk).text().to_string();
@@ -346,8 +363,6 @@ fn a_name_declared_twice_is_an_error() {
             class_span: Default::default(),
             seed_at: None,
             seed_names: Vec::new(),
-            attitude: Default::default(),
-            plane: Default::default(),
             sweep: None,
             motion: None, angular_span: None,
             membership: Default::default(),
@@ -385,17 +400,16 @@ fn fixture(kind: CKind) -> (Sketch, Constraint) {
         .map(|i| sk.point(60.0 + 10.0 * i as f64, 5.0 * i as f64, false, &format!("k{i}")))
         .collect();
     let sp = sk.spline(&ctrl).expect("four control points make a curve");
-    // two planes, the page's and the top's, with `p` and `q` as images on them: what a
-    // projection is inferred from
-    // a relation in space reads its datum points by their role, so there the views are drawn
-    // from datum points of their own, and none of them is drawn in a view
-    let (da, db) = if kind.spatial() {
-        (sk.point(-40.0, 0.0, false, "da"), sk.point(-10.0, 0.0, false, "db"))
-    } else {
-        (r, s)
-    };
-    let pa = sk.plane(da, db, gcs_core::plane::Basis::page(), "front");
-    let pb = sk.plane(da, db, gcs_core::plane::Basis::page().fold(0.0), "top");
+    // two planes, the front's and one stood above the top's: every point is drawn in the first,
+    // and `q` and `s` in the second where a projection or a relation in space wants two
+    let pa = sk.fixed_plane(gcs_core::plane::Basis::page(), "front");
+    let top = gcs_core::plane::Basis { u: [1.0, 0.0, 0.0], v: [0.0, 1.0, 0.0], o: [0.0, 0.0, 9.0] };
+    let pb = sk.fixed_plane(top, "top");
+    for i in 0..sk.points.len() {
+        if sk.points[i].plane.is_none() {
+            sk.set_plane(i, Some(pa));
+        }
+    }
     // two spheres, about a point of each view
     let (sa, sb) = (sk.sphere(q, 6.0, "sa"), sk.sphere(s, 4.0, "sb"));
     // two cones and a cylinder, about the second line and the first
@@ -405,7 +419,6 @@ fn fixture(kind: CKind) -> (Sketch, Constraint) {
     let (ra, rb) = (sk.ray([1.0, 0.2, 0.3], "ra"), sk.ray([0.1, 1.0, -0.4], "rb"));
     // a projection over stated views is `Project`, and comes back as the twin its views feed
     if matches!(kind, CKind::Project | CKind::ProjectSolved) {
-        sk.set_plane(p, Some(pa));
         sk.set_plane(q, Some(pb));
         let c = Constraint::project(&sk, EntRef::point(p), EntRef::point(q)).unwrap();
         return (sk, c);
@@ -413,8 +426,8 @@ fn fixture(kind: CKind) -> (Sketch, Constraint) {
     // a relation in space reads where views put its points, so each point it names is drawn in
     // one — two views, so a line from one to the other runs across them
     if kind.spatial() {
-        for (x, v) in [(p, pa), (q, pb), (r, pa), (s, pb)] {
-            sk.set_plane(x, Some(v));
+        for x in [q, s] {
+            sk.set_plane(x, Some(pb));
         }
     }
     let arg = |k: SpecKind| -> Arg {
@@ -440,8 +453,14 @@ fn fixture(kind: CKind) -> (Sketch, Constraint) {
     let mut used_circle = false;
     let mut used_sphere = false;
     let mut used_cone = false;
+    let mut used_plane = false;
     for (i, (_, k)) in spec.iter().enumerate() {
         args.push(match k {
+            SpecKind::Plane if used_plane => Arg::Ent(EntRef::plane(pa)),
+            SpecKind::Plane if kind.spatial() => {
+                used_plane = true;
+                Arg::Ent(EntRef::plane(pb))
+            }
             SpecKind::Cone if used_cone => Arg::Ent(EntRef::new(EntKind::Cone, kb)),
             SpecKind::Cone => {
                 used_cone = true;
@@ -497,7 +516,7 @@ fn fixture(kind: CKind) -> (Sketch, Constraint) {
 fn a_printed_program_parses_back_to_the_same_document() {
     for (name, sk) in cases() {
         let text = to_program(&sk).text().to_string();
-        let (p, errs) = gcs_core::syntax::parse(&text);
+        let (p, errs) = crate::common::parse(&text);
         assert!(errs.is_empty(), "{name}: {:?}\n{text}", errs.iter().map(|e| &e.message).collect::<Vec<_>>());
         let e = elaborate(&p);
         assert!(
@@ -514,7 +533,7 @@ fn a_printed_program_parses_back_to_the_same_document() {
 fn parsing_and_printing_is_a_fixed_point() {
     for (name, sk) in cases() {
         let once = to_program(&sk).text().to_string();
-        let (p, _) = gcs_core::syntax::parse(&once);
+        let (p, _) = crate::common::parse(&once);
         let twice = to_program(&elaborate(&p).sketch).text().to_string();
         assert_eq!(twice, once, "{name}");
     }
@@ -524,7 +543,9 @@ fn parsing_and_printing_is_a_fixed_point() {
 #[test]
 fn a_program_written_by_hand_draws() {
     let text = "\
+use std
 // a square with a hole, written by hand
+in std.front {
 a := point
 b := point hint(x: 100, y: 0)
 c := point hint(x: 100, y: 100)
@@ -540,17 +561,20 @@ horizontal ab
 ab perpendicular bc
 bc perpendicular cd
 cd perpendicular da
+}
 param w := 100
+in std.front {
 a distance(w) b
 b distance(w) c
 radius(w / 5) hole
 fix(x == 0, y == 0) a
+}
 ";
-    let (p, errs) = gcs_core::syntax::parse(text);
+    let (p, errs) = crate::common::parse(text);
     assert!(errs.is_empty(), "{:?}", errs.iter().map(|e| &e.message).collect::<Vec<_>>());
     let mut e = elaborate(&p);
     assert!(e.ok(), "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
-    assert_eq!(e.sketch.points.len(), 5);
+    assert_eq!(e.sketch.points.len(), 5 + STD_POINTS);
     assert_eq!(e.sketch.lines.len(), 4);
     assert_eq!(e.sketch.circles.len(), 1);
     assert!(solve(&mut e.sketch, SolveOpts::default()).success);
@@ -563,7 +587,7 @@ fix(x == 0, y == 0) a
 #[test]
 fn one_bad_line_costs_one_line() {
     let text = "a := point hint(x: 0, y: 0)\nthis is not a statement\nb := point hint(x: 10, y: 0)\n";
-    let (p, errs) = gcs_core::syntax::parse(text);
+    let (p, errs) = crate::common::parse(text);
     assert!(!errs.is_empty(), "the bad line is reported");
     let e = elaborate(&p);
     assert_eq!(e.sketch.points.len(), 2, "both good lines survived");
@@ -578,7 +602,7 @@ fn nothing_in_the_parser_panics() {
         // every prefix, cut only on a character boundary
         for i in 0..text.len() {
             if text.is_char_boundary(i) {
-                let (p, _) = gcs_core::syntax::parse(&text[..i]);
+                let (p, _) = crate::common::parse(&text[..i]);
                 let _ = elaborate(&p);
             }
         }
@@ -588,14 +612,14 @@ fn nothing_in_the_parser_panics() {
             let at = (0..t.len()).find(|&j| j >= i && t.is_char_boundary(j)).unwrap_or(0);
             if at < t.len() && t.is_char_boundary(at + 1) {
                 t.replace_range(at..at + 1, &ch.to_string());
-                let (p, _) = gcs_core::syntax::parse(&t);
+                let (p, _) = crate::common::parse(&t);
                 let _ = elaborate(&p);
             }
         }
     }
     // and outright rubbish
     for junk in ["", "((((", "point", "point a at", "distance(", "== 5", "\u{0}\u{1}", "點"] {
-        let (p, _) = gcs_core::syntax::parse(junk);
+        let (p, _) = crate::common::parse(junk);
         let _ = elaborate(&p);
     }
 }
@@ -604,7 +628,7 @@ fn nothing_in_the_parser_panics() {
 /// in the language rather than sampled into it.
 #[test]
 fn a_gear_elaborates() {
-    let (p, errs) = gcs_core::syntax::parse(examples::GEAR);
+    let (p, errs) = crate::common::parse(examples::GEAR);
     assert!(errs.is_empty(), "{:?}", errs.iter().map(|e| (&e.message, e.span)).collect::<Vec<_>>());
     let mut e = elaborate(&p);
     assert!(
@@ -616,7 +640,7 @@ fn a_gear_elaborates() {
     assert_eq!(e.sketch.curve_defs.len(), 1, "one curve family, written in the document");
     assert_eq!(e.sketch.curves.len(), 2 * n, "two involute flanks per tooth");
     assert_eq!(e.sketch.circles.len(), 3, "the base, root and tip circles");
-    assert_eq!(e.sketch.points.len(), 1 + 4 * n, "a centre, and two ends per flank");
+    assert_eq!(e.sketch.points.len(), 1 + 4 * n + STD_POINTS, "a centre, and two ends per flank");
 
     let r = solve(&mut e.sketch, SolveOpts::default());
     assert!(r.success, "{}", r.message);
@@ -633,10 +657,12 @@ fn a_gear_elaborates() {
     // every flank end is on the circle its statement said it was on, and nothing said where
     let mut on_root = 0;
     let mut on_tip = 0;
-    for i in 1..e.sketch.points.len() {
+    for i in 0..e.sketch.points.len() {
         let (x, y) = e.sketch.point_xy(i);
         let rad = x.hypot(y);
-        if (rad - rr).abs() < 1e-6 {
+        if rad < 1e-9 {
+            continue;   // the centre, and the standard planes' origins
+        } else if (rad - rr).abs() < 1e-6 {
             on_root += 1;
         } else if (rad - rt).abs() < 1e-6 {
             on_tip += 1;
@@ -695,7 +721,7 @@ fn phase_of(sk: &Sketch, ci: usize) -> f64 {
 fn a_gear_with_few_teeth() {
     for n in [22usize, 21, 18, 12, 8, 5, 4, 3, 2] {
         let src = examples::GEAR.replace("g := Gear(N: 30,", &format!("g := Gear(N: {n},"));
-        let (p, errs) = gcs_core::syntax::parse(&src);
+        let (p, errs) = crate::common::parse(&src);
         assert!(errs.is_empty(), "N = {n}: {errs:?}");
         let mut e = elaborate(&p);
         assert!(
@@ -719,10 +745,12 @@ fn a_gear_with_few_teeth() {
 
         // every flank end is on the circle its statement said it was on
         let (mut tips, mut roots) = (Vec::new(), Vec::new());
-        for i in 1..e.sketch.points.len() {
+        for i in 0..e.sketch.points.len() {
             let (x, y) = e.sketch.point_xy(i);
             let rad = x.hypot(y);
-            if (rad - rr).abs() < 1e-6 {
+            if rad < 1e-9 {
+                continue;   // the centre, and the standard planes' origins
+            } else if (rad - rr).abs() < 1e-6 {
                 roots.push(y.atan2(x));
             } else if (rad - rt).abs() < 1e-6 {
                 tips.push(y.atan2(x));
@@ -806,14 +834,14 @@ fn a_gear_with_few_teeth() {
 #[test]
 fn every_seed_is_written_in_a_hint_clause() {
     let read = |src: &str| {
-        let (p, errs) = gcs_core::syntax::parse(src);
+        let (p, errs) = crate::common::parse(src);
         assert!(errs.is_empty(), "{src}: {errs:?}");
         let e = elaborate(&p);
         assert!(e.ok(), "{src}: {:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
         e.sketch
     };
-    let now = read("a := point hint(x: 3, y: 4)\nb := point hint(x: 9, y: 1)\nl := line(a, b)\n");
-    let flipped = read("a := point hint(y: 4, x: 3)\nb := point hint(x: 9, y: 1)\nl := line(a, b)\n");
+    let now = read("use std\nin std.front {\na := point hint(x: 3, y: 4)\nb := point hint(x: 9, y: 1)\nl := line(a, b)\n}\n");
+    let flipped = read("use std\nin std.front {\na := point hint(y: 4, x: 3)\nb := point hint(x: 9, y: 1)\nl := line(a, b)\n}\n");
     assert_eq!(io::dumps(&now, Some(1)), io::dumps(&flipped, Some(1)), "keys in any order");
 
     // and the printer writes the clause, all of it
@@ -828,7 +856,7 @@ fn every_seed_is_written_in_a_hint_clause() {
         "q := point hint(x: 0, y: 0)\npoint a hint at q\n",
         "q := point hint(x: 0, y: 0)\nk := circle(center: q) hint(r: 5)\npoint a hint at k bearing (30)\n",
     ] {
-        let (_, errs) = gcs_core::syntax::parse(src);
+        let (_, errs) = crate::common::parse(src);
         assert!(!errs.is_empty(), "{src} still parses");
     }
 }
@@ -836,7 +864,7 @@ fn every_seed_is_written_in_a_hint_clause() {
 /* -- implicit children (spec §6.1, §6.2) ---------------------------------------------- */
 
 fn read_ok(src: &str) -> gcs_core::program::Elaborated {
-    let (p, errs) = gcs_core::syntax::parse(src);
+    let (p, errs) = crate::common::parse(src);
     assert!(errs.is_empty(), "{src}: {errs:?}");
     let e = elaborate(&p);
     assert!(e.ok(), "{src}: {:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
@@ -847,8 +875,8 @@ fn read_ok(src: &str) -> gcs_core::program::Elaborated {
 /// they are called — a name earns its place when something says it twice, and these said it once.
 #[test]
 fn a_declaration_may_omit_its_children() {
-    let e = read_ok("l := line\nhorizontal l\nfix(x == 0, y == 0) l.p1\n");
-    assert_eq!(e.sketch.points.len(), 2, "two ends, minted");
+    let e = read_ok("use std\nin std.front {\nl := line\nhorizontal l\nfix(x == 0, y == 0) l.p1\n}\n");
+    assert_eq!(e.sketch.points.len(), 2 + STD_POINTS, "two ends, minted");
     assert_eq!(e.sketch.lines.len(), 1);
     // the dotted path is the name: it resolves, and the map carries it
     let p1 = e.map.ent_named("l.p1").expect("l.p1 is a name");
@@ -864,7 +892,7 @@ fn a_declaration_may_omit_its_children() {
     );
     assert!(d > 1e-3, "a zero-length line has no direction to level: {d}");
 
-    for src in ["c := circle\nradius(5) c\n", "a := arc\nradius(5) a\n"] {
+    for src in ["use std\nin std.front {\nc := circle\nradius(5) c\n}\n", "use std\nin std.front {\na := arc\nradius(5) a\n}\n"] {
         let e = read_ok(src);
         assert!(!e.sketch.points.is_empty(), "{src}");
     }
@@ -874,11 +902,20 @@ fn a_declaration_may_omit_its_children() {
 /// statements it stands for — same drawing, same freedoms.
 #[test]
 fn a_child_slot_may_hold_a_seed() {
-    let mut anon = read_ok("l := line(p2: hint(x: 60, y: 20))\nfix(x == 0, y == 0) l.p1\n");
+    let mut anon = read_ok("use std\nin std.front {\nl := line(p2: hint(x: 60, y: 20))\nfix(x == 0, y == 0) l.p1\n}\n");
     let mut named = read_ok(
-        "a := point\nb := point hint(x: 60, y: 20)\nl := line(a, b)\nfix(x == 0, y == 0) a\n",
+        "use std\nin std.front {\na := point\nb := point hint(x: 60, y: 20)\nl := line(a, b)\nfix(x == 0, y == 0) a\n}\n",
     );
-    assert_eq!(gcs_core::io::dumps(&anon.sketch, Some(1)), gcs_core::io::dumps(&named.sketch, Some(1)));
+    // the same drawing: the minted ends stand where the declared points do (numbered after the
+    // standard datums, where the declared ones are numbered before them)
+    for (minted, declared) in [("l.p1", "a"), ("l.p2", "b")] {
+        let at = |e: &gcs_core::program::Elaborated, n: &str| {
+            let i = e.map.ent_named(n).unwrap().i();
+            (e.sketch.point_xy(i), e.sketch.point_fixed(i), e.sketch.points[i].plane)
+        };
+        assert_eq!(at(&anon, minted), at(&named, declared), "{minted}");
+    }
+    assert_eq!(anon.sketch.params.len(), named.sketch.params.len());
     let opts = gcs_core::diagnose::DiagnoseOptions::default();
     assert_eq!(
         gcs_core::diagnose::diagnose(&mut anon.sketch, opts).dof,
@@ -894,14 +931,14 @@ fn a_slot_left_out_is_an_implicit_child() {
     // `l := line(a)` names one end and leaves the other implicit — minted as `l.p2`, exactly as a
     // declaration that writes no list at all mints them (spec §6.1); what stays refused is a
     // kind with no arity to conjure children from, and a list with more than the kind holds
-    let (p, errs) = gcs_core::syntax::parse("a := point hint(x: 0, y: 0)\nl := line(a)\n");
+    let (p, errs) = crate::common::parse("use std\nin std.front {\na := point hint(x: 0, y: 0)\nl := line(a)\n}\n");
     assert!(errs.is_empty(), "{errs:?}");
     let e = elaborate(&p);
     assert!(e.ok(), "{:?}", e.errors().map(|d| d.message.clone()).collect::<Vec<_>>());
-    assert_eq!(e.sketch.points.len(), 2, "the second end is minted");
+    assert_eq!(e.sketch.points.len(), 2 + STD_POINTS, "the second end is minted");
 
-    for src in ["s := spline\n", "a := point\nb := point\nc := point\nl := line(a, b, c)\n"] {
-        let (p, errs) = gcs_core::syntax::parse(src);
+    for src in ["use std\nin std.front {\ns := spline\n}\n", "use std\nin std.front {\na := point\nb := point\nc := point\nl := line(a, b, c)\n}\n"] {
+        let (p, errs) = crate::common::parse(src);
         assert!(errs.is_empty(), "{src}: {errs:?}");
         let e = elaborate(&p);
         assert!(!e.ok(), "{src} should not elaborate");
@@ -912,8 +949,8 @@ fn a_slot_left_out_is_an_implicit_child() {
 /// no name has no name to print.
 #[test]
 fn an_anonymous_child_prints_back_anonymous() {
-    let src = "l := line(hint(x: 0, y: 0), hint(x: 60, y: 20))\nc := circle hint(r: 25)\n";
-    let (p, errs) = gcs_core::syntax::parse(src);
+    let src = "use std\nin std.front {\nl := line(hint(x: 0, y: 0), hint(x: 60, y: 20))\nc := circle hint(r: 25)\n}\n";
+    let (p, errs) = crate::common::parse(src);
     assert!(errs.is_empty(), "{errs:?}");
     let mut out = String::new();
     gcs_core::syntax::write_stmt_to(&mut out, &p.root().body[0].kind).unwrap();
@@ -935,8 +972,8 @@ fn an_anonymous_child_prints_back_anonymous() {
 /// against and no drag can write back, which is the one outcome worse than an error.
 #[test]
 fn a_seed_in_a_list_slot_is_refused() {
-    let src = "s := spline(hint(x: 0, y: 0), hint(x: 1, y: 0), hint(x: 2, y: 1), hint(x: 3, y: 0))\n";
-    let (p, errs) = gcs_core::syntax::parse(src);
+    let src = "use std\nin std.front {\ns := spline(hint(x: 0, y: 0), hint(x: 1, y: 0), hint(x: 2, y: 1), hint(x: 3, y: 0))\n}\n";
+    let (p, errs) = crate::common::parse(src);
     assert!(errs.is_empty(), "{errs:?}");
     let e = elaborate(&p);
     assert!(!e.ok(), "a nameless control point should not elaborate");

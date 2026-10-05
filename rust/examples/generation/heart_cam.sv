@@ -17,17 +17,21 @@
 // is how tightly the profile bends there (it must stay larger than a grinding wheel's).  Edit
 // `lift`, `base` or the roller's radius and the cam is cut again.
 
+use std
+
 base := 25    // the roller centre's nearest approach to the cam's centre
 lift := 15    // how far the follower rises
 rr := 6       // the roller
 
-o := point
-fix(x == 0, y == 0) o
-s0 := point hint(x: 0, y: 0)
-s1 := point hint(x: 10, y: 0)
-fix(x == 0, y == 0) s0
-fix(x == 10, y == 0) s1
-path := line(s0, s1)                    // the follower's line, through the cam's centre
+in std.front {
+  o := point
+  fix(x == 0, y == 0) o
+  s0 := point hint(x: 0, y: 0)
+  s1 := point hint(x: 10, y: 0)
+  fix(x == 0, y == 0) s0
+  fix(x == 10, y == 0) s1
+  path := line(s0, s1)                    // the follower's line, through the cam's centre
+}
 
 cam := motion(about: o, ratio: 1)
 out := motion(along: path, advance: 2 * lift)     // out `lift` in half a turn...
@@ -36,16 +40,18 @@ rise := motion(out, relative_to: cam)
 fall := motion(back, relative_to: cam)
 
 // the roller where the rise starts, and where the fall would start if it began at no roll
-c_rise := point hint(x: 25, y: 0)
-c_fall := point hint(x: 55, y: 0)
-o distance(base, along: x) c_rise
-o distance(0, along: y) c_rise
-o distance(base + 2 * lift, along: x) c_fall
-o distance(0, along: y) c_fall
-roller := circle(center: c_rise) hint(r: 6)
-roller_f := circle(center: c_fall) hint(r: 6)
-radius(rr) roller
-radius(rr) roller_f
+in std.front {
+  c_rise := point hint(x: 25, y: 0)
+  c_fall := point hint(x: 55, y: 0)
+  o distance(base, along: x) c_rise
+  o distance(0, along: y) c_rise
+  o distance(base + 2 * lift, along: x) c_fall
+  o distance(0, along: y) c_fall
+  roller := circle(center: c_rise) hint(r: 6)
+  roller_f := circle(center: c_fall) hint(r: 6)
+  radius(rr) roller
+  radius(rr) roller_f
+}
 
 pitch_rise := envelope(c_rise, under: rise, from: 0deg, to: 180deg)
 pitch_fall := envelope(c_fall, under: fall, from: 180deg, to: 360deg)
@@ -53,6 +59,8 @@ cam_rise := envelope(roller, under: rise, from: 0deg, to: 180deg, side: near)
 cam_fall := envelope(roller_f, under: fall, from: 180deg, to: 360deg, side: near)
 
 // how tightly the profile bends a quarter turn in
-k := point hint(x: 0, y: -5)
-osc := circle(center: k) hint(r: 25)
-cam_rise curvature(t == 90) osc
+in std.front {
+  k := point hint(x: 0, y: -5)
+  osc := circle(center: k) hint(r: 25)
+  cam_rise curvature(t == 90) osc
+}

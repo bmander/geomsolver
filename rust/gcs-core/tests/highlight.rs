@@ -15,10 +15,10 @@ fn the_spans_tile_the_text() {
     for src in [
         GEAR,
         "",
-        "p := point hint(x: 0, y: 0)",
+        "use std\nin std.front {\np := point hint(x: 0, y: 0)\n}\n",
         "// nothing but a comment",
         "/* unclosed",
-        "horizontal (a := line(p1, p2)) -> tangent\n(k := arc(center: c) hint(r: 5)) -> close",
+        "use std\nin std.front {\nhorizontal (a := line(p1, p2)) -> tangent\n(k := arc(center: c) hint(r: 5)) -> close\n}\n",
     ] {
         let mut end = 0usize;
         for (tint, s) in highlight(src) {
@@ -145,7 +145,7 @@ fn the_gear_is_coloured() {
 /// `//` by line would get wrong, and the reason this is the core's scan and not a second one.
 #[test]
 fn a_block_comment_is_one_run() {
-    let src = "p := point\n/* two\n   lines */\nl := line(p, p)";
+    let src = "use std\nin std.front {\np := point\n/* two\n   lines */\nl := line(p, p)\n}\n";
     let ts = highlight(src);
     let (tint, span) = ts.iter().find(|&&(t, _)| t == Tint::Comment).expect("a comment");
     assert_eq!(*tint, Tint::Comment);
@@ -185,6 +185,8 @@ ab := line(a, a) class centerline heavy
 #[test]
 fn an_operator_is_coloured_through_its_own_parentheses() {
     let src = "\
+use std
+in std.front {
 p := point hint(x: 0, y: 0)
 q := point hint(x: 60, y: 0)
 r := point hint(x: 60, y: 40)
@@ -192,6 +194,7 @@ p distance(80) q
 p distance(20, along: y) r
 q equal r
 horizontal p
+}
 ";
     assert_eq!(tint_of(src, "distance(80)"), Some(Tint::Relation));
     assert_eq!(tint_of(src, "distance(20"), Some(Tint::Relation), "a selector beside the number");
@@ -225,7 +228,7 @@ line -> tangent arc -> tangent line
     assert_eq!(tint_of(src, "class"), Some(Tint::Word), "an anonymous line's clause");
     assert_eq!(tint_of(src, "tangent arc"), Some(Tint::Relation), "a joint on an anonymous link");
     // a link named where it stands names itself, and the word after it is still a joint
-    let named = "(ab := line) -> tangent arc\n";
+    let named = "use std\nin std.front {\n(ab := line) -> tangent arc\n}\n";
     assert_eq!(tint_of(named, "ab"), Some(Tint::Def));
     assert_eq!(tint_of(named, "line"), Some(Tint::Word));
     assert_eq!(tint_of(named, "tangent"), Some(Tint::Relation));

@@ -22,16 +22,18 @@ component Rectangle(center: point, w: Length, h: Length) {
   diagonal := line(a, c)
   center midpoint diagonal
 }
-outer := Rectangle(std.origin, w: width, h: height)
-inner := Rectangle(std.origin, w: width - 2 * wall, h: height - 2 * wall)
-shell := solid(outer.profile, depth: depth)
-pocket := solid(inner.profile, depth: depth - wall)
-pocket cut shell
-body := solid(shell)
+in std.front {
+  outer := Rectangle(std.origin, w: width, h: height)
+  inner := Rectangle(std.origin, w: width - 2 * wall, h: height - 2 * wall)
+  shell := solid(outer.profile, depth: depth)
+  pocket := solid(inner.profile, depth: depth - wall)
+  pocket cut shell
+  body := solid(shell)
 
-// Boss centers follow an inset rectangle: each boss clears the pocket walls by 2mm.
-centers := Rectangle(std.origin, w: width - 2 * (wall + boss_radius + 2mm),
-                              h: height - 2 * (wall + boss_radius + 2mm))
+  // Boss centers follow an inset rectangle: each boss clears the pocket walls by 2mm.
+  centers := Rectangle(std.origin, w: width - 2 * (wall + boss_radius + 2mm),
+                                h: height - 2 * (wall + boss_radius + 2mm))
+}
 component Standoff(body: solid, c: point, r: Length, screw_r: Length, base_depth: Length, h: Length) {
     rim := circle(center: c)
     screw := circle(center: c)
@@ -42,7 +44,9 @@ component Standoff(body: solid, c: point, r: Length, screw_r: Length, base_depth
     boss union body
 }
 // The contour's corner references, rather than independently calculated coordinates.
-Standoff(body, centers.a, r: boss_radius, screw_r: screw_radius, base_depth: -depth + wall, h: boss_height)
-Standoff(body, centers.b, r: boss_radius, screw_r: screw_radius, base_depth: -depth + wall, h: boss_height)
-Standoff(body, centers.c, r: boss_radius, screw_r: screw_radius, base_depth: -depth + wall, h: boss_height)
-Standoff(body, centers.d, r: boss_radius, screw_r: screw_radius, base_depth: -depth + wall, h: boss_height)
+in std.front {
+  Standoff(body, centers.a, r: boss_radius, screw_r: screw_radius, base_depth: -depth + wall, h: boss_height)
+  Standoff(body, centers.b, r: boss_radius, screw_r: screw_radius, base_depth: -depth + wall, h: boss_height)
+  Standoff(body, centers.c, r: boss_radius, screw_r: screw_radius, base_depth: -depth + wall, h: boss_height)
+  Standoff(body, centers.d, r: boss_radius, screw_r: screw_radius, base_depth: -depth + wall, h: boss_height)
+}

@@ -416,14 +416,12 @@ pub unsafe extern "C" fn gcs_sketch_arc(
     })
 }
 
-/// A plane: a frame with a basis `(u, v)` in space, orthonormalised on the way in.  -1 and an
-/// error when the two do not span a plane.
+/// A plane fixed where a basis `(u, v)` stands, at the origin, orthonormalised on the way in —
+/// its two rays and its origin held.  -1 and an error when the two do not span a plane.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn gcs_sketch_plane(
     h: *mut Sketch,
-    origin: i32,
-    toward: i32,
     ux: f64,
     uy: f64,
     uz: f64,
@@ -438,7 +436,7 @@ pub unsafe extern "C" fn gcs_sketch_plane(
             set_error("u and v do not span a plane");
             return -1;
         };
-        sk(h).plane(origin as usize, toward as usize, basis, as_str(name, name_len)) as i32
+        sk(h).fixed_plane(basis, as_str(name, name_len)) as i32
     })
 }
 
@@ -490,7 +488,7 @@ pub unsafe extern "C" fn gcs_plane_glyph(
     })
 }
 
-/// Which plane a point is on: its index, or -1 for the page.
+/// Which plane a point is drawn in: its index, or -1 for a point in space (or of a 2D sketch).
 #[no_mangle]
 pub unsafe extern "C" fn gcs_point_plane(h: *mut Sketch, idx: i32) -> i32 {
     guard(-1, move || sk(h).plane_of(idx as usize).map_or(-1, |p| p as i32))
@@ -1163,10 +1161,8 @@ pub unsafe extern "C" fn gcs_entity_points(
                 vec![a.center as usize, a.start as usize, a.end as usize]
             }
             4 => s.splines[idx as usize].ctrl.iter().map(|&c| c as usize).collect(),
-            6 => {
-                let f = s.frame_of(ent(kind, idx));
-                vec![f.origin as usize, f.toward as usize]
-            }
+            // a plane's one point is its origin
+            6 => vec![s.planes[idx as usize].origin as usize],
             _ => vec![idx as usize],
         };
         for (i, p) in v.iter().enumerate() {
@@ -3970,60 +3966,10 @@ pub unsafe extern "C" fn gcs_elab_add_entity(
             .unwrap_or_default();
         let seed: Vec<f64> =
             v.get("seed").map(|a| a.arr().iter().map(|x| x.as_f64()).collect()).unwrap_or_default();
+        // a plane over two rays or lines, `args` their names, and the name asked for
         if kind == EntKind::Plane {
-            // `{"from": NAME, "fold": TEXT}` or `{"u": [TEXT; 3], "v": [TEXT; 3]}`, or nothing
-            // for the page; the texts are spelled into the statement as given and read by the
-            // elaboration like any other number
-            use gcs_core::syntax::{Arg, Attitude, Ref};
-            let dim = |x: &Json| Arg::Dim { text: x.as_str().to_string(), span: Default::default() };
-            let triple = |x: Option<&Json>| -> Option<[Arg; 3]> {
-                let a = x?.arr();
-                (a.len() == 3).then(|| [dim(&a[0]), dim(&a[1]), dim(&a[2])])
-            };
-            let att = v.get("attitude");
-            let attitude = match att {
-                Some(a) if !matches!(a, Json::Null) => {
-                    if let Some(from) = a.get("from") {
-                        // `from:` says which plane it is derived from; `fold:` turns it and
-                        // `offset:` stands it off along the normal (§6.7)
-                        let plane = Ref::new(from.as_str().to_string());
-                        match a.get("fold").map(dim) {
-                            Some(fold) => Attitude::From { plane, fold },
-                            None => Attitude::Offset { plane, offset: a.get("offset").map(dim) },
-                        }
-                    } else {
-                        match (triple(a.get("u")), triple(a.get("v"))) {
-                            (Some(u), Some(v)) => Attitude::Basis { u, v, o: None },
-                            _ => {
-                                set_error("a plane's attitude is `from`/`fold` or `u`/`v`");
-                                return std::ptr::null_mut();
-                            }
-                        }
-                    }
-                }
-                _ => Attitude::Page,
-            };
             let name = v.get("name").map(|n| n.as_str().to_string());
-            // `"places": [[x, y], [x, y]]` seeds the origin and the toward point in the statement
-            let places: Vec<(f64, f64)> = v
-                .get("places")
-                .map(|a| {
-                    a.arr()
-                        .iter()
-                        .filter_map(|p| {
-                            let p = p.arr();
-                            (p.len() == 2).then(|| (p[0].as_f64(), p[1].as_f64()))
-                        })
-                        .collect()
-                })
-                .unwrap_or_default();
-            return out_edit(gcs_core::edit::add_plane(
-                &(*h).program,
-                &args,
-                attitude,
-                name.as_deref(),
-                &places,
-            ));
+            return out_edit(gcs_core::edit::add_plane(&(*h).program, &args, name.as_deref()));
         }
         out_edit(gcs_core::edit::add_entity(&(*h).program, kind, &args, &seed))
     })

@@ -73,19 +73,26 @@ fn basis(name: &str, models: &BTreeMap<String, Model<'_>>, span: Span) -> Result
     Ok(Basis { u, v, o: [0.; 3] })
 }
 
+/// The plane a sketch view draws: a model plane by its path, and `front` the model's
+/// `std.front` — or `None`, every plane's geometry, for a model that has no front plane (a
+/// sketch built in code).
+fn sketch_plane(name: &str, alias: &str, models: &BTreeMap<String, Model<'_>>, span: Span)
+    -> Result<Option<usize>, Error>
+{
+    let target = if name == "front" { format!("{alias}.std.front") } else { name.to_string() };
+    let (_, path, model) = split(&target, models, span)?;
+    match model.names.entity_path(model.sketch, path).filter(|e| e.kind == EntKind::Plane) {
+        Some(e) => Ok(Some(e.i())),
+        None if name == "front" => Ok(None),
+        None => Err(error(span, format!("`{name}` is not a model plane"))),
+    }
+}
+
 fn point(model: Model<'_>, path: &str, span: Span) -> Result<((f64, f64), [f64; 3]), Error> {
     let e = model.names.entity_path(model.sketch, path).filter(|e| e.kind == EntKind::Point)
         .ok_or_else(|| error(span, format!("`{path}` is not a point")))?;
     let sk = model.sketch;
-    let p = sk.point_xy(e.i());
-    let world = if let Some(i) = sk.plane_of(e.i()) {
-        let plane = &sk.planes[i];
-        let f = &plane.frame;
-        let local = crate::plane::in_view(sk.params[f.c as usize].value,
-            sk.params[f.s as usize].value, sk.point_xy(f.origin as usize), p);
-        sk.basis(i).lift(local.0, local.1)
-    } else { Basis::page().lift(p.0, p.1) };
-    Ok((p, world))
+    Ok((sk.point_xy(e.i()), sk.world_point(e.i())))
 }
 
 /// Compile one sheet to SVG. This reads model snapshots, including names and measurements;
@@ -114,7 +121,20 @@ pub fn render(doc: &Document, models: &BTreeMap<String, Model<'_>>, sheet: Optio
         n(s.size.0), n(s.size.1), n(s.size.0 * PX_MM), n(s.size.1 * PX_MM), esc(&s.name));
     for v in &s.views {
         let (alias, path, model) = split(&v.target, models, v.span)?;
-        let selected = entities(model, path);
+        let mut selected = entities(model, path);
+        if v.sketch {
+            // a sketch draws one plane's geometry in that plane's own coordinates: `from` names
+            // it, and the front plane is `std.front` where the model has one
+            let plane = sketch_plane(&v.direction, alias, models, v.span)?;
+            if let Some(p) = plane {
+                let sk = model.sketch;
+                let of = |e: EntRef| match e.kind {
+                    EntKind::Curve => sk.curve_view(e.i()),
+                    _ => crate::program::plane_of_entity(sk, e),
+                };
+                selected.retain(|&e| of(e) == Some(p));
+            }
+        }
         if selected.is_empty() { return Err(error(v.span, format!("no geometry named `{}`", v.target))) }
         let scale = v.scale.unwrap_or(s.scale) * model.sketch.units.length.map_or(1.0, |u| u.1) * PX_MM;
         if !scale.is_finite() || scale <= 0.0 { return Err(error(v.span, "view scale is out of range")) }
@@ -187,9 +207,7 @@ pub fn render(doc: &Document, models: &BTreeMap<String, Model<'_>>, sheet: Optio
                     out.push_str("/>\n");
                 }
                 if v.dimensions {
-                    let o = sk.point(0., 0., false, "_drawing_origin");
-                    let q = sk.point(1., 0., false, "_drawing_axis");
-                    let plane = sk.plane(o, q, frame, "_drawing");
+                    let plane = sk.fixed_plane(frame, "_drawing");
                     sk.derived.push(crate::model::DerivedE { solid: e.idx, plane: Some(plane as u32),
                         at: None, dims: true, name: v.name.clone(), class: Classes::default() });
                 }

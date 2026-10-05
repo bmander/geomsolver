@@ -113,17 +113,8 @@ pub(super) fn loop_poly(sk: &Sketch, edges: &[EntRef], edge_names: &[String], pl
         Some(p) => { sk.planes.get(p as usize)?; sk.basis(p as usize) }
         None => Basis::page(),
     };
-    let pose = match plane {
-        Some(p) => {
-            let fr = &sk.planes.get(p as usize)?.frame;
-            (
-                sk.params[fr.c as usize].value,
-                sk.params[fr.s as usize].value,
-                sk.point_xy(fr.origin as usize),
-            )
-        }
-        None => (1.0, 0.0, (0.0, 0.0)),
-    };
+    // a point's coordinates are its plane's own
+    let pose = plane::IDENTITY_POSE;
     // Every edge is walked in *page* coordinates and the whole loop is turned into the plane's
     // own view coordinates at the end.  `in_view` is a rigid motion, so tessellating before it
     // and after it are the same chords; doing it once here is what keeps a face on a tilted

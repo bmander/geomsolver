@@ -350,7 +350,8 @@ impl<'a> Walk<'a> {
             // A document that says `use std` has the standard datums, as a CAD part has its
             // origin planes, whether or not anything refers to them yet: the workspace offers
             // them as places to draw.  They are ordinary library statements with their own spans.
-            // They precede consumers for geometry building, but participate in the same solve.
+            // They follow the document's own, so its points keep the indices they would have
+            // without them; resolution is by name, so nothing reads them the worse for it.
             let k = self.prog.modules.iter().position(|m| m.name == "std");
             let comp = self.prog.component_in(k, "StandardDatums").unwrap();
             let scope = Scope { prefixes: vec!["std.".into()], module: k, ..Scope::default() };
@@ -358,8 +359,7 @@ impl<'a> Walk<'a> {
             self.body(&comp.body, &scope, &mut vals, &[], 1);
             self.expand_pending();
             let (mut datums, resolved) = self.resolve();
-            datums.append(&mut flat);
-            flat = datums;
+            flat.append(&mut datums);
             aliases = resolved;
         }
         Expansion {

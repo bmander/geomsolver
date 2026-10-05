@@ -7,14 +7,14 @@
 // and its root corner `t2` slides up and down the line `rp + 2m` from the centre.
 //
 // `side` is the rack's flank as a surface — the prism's side `rack_flank` sweeps — and `flank` is
-// what that side generates under the rolling motion.  The motion turns about the page's normal and
-// slides in the page, so every section of the side moves alike, and the surface it cuts is one
-// curve of the page (the tooth's involute, drawn on the gear's face) extruded through the gear.
-// The drawing holds it, so a point drawn anywhere can be put on it.
+// what that side generates under the rolling motion.  The motion turns about the front's normal
+// and slides in the front plane, so every section of the side moves alike, and the surface it
+// cuts is one curve of the front plane (the tooth's involute, drawn on the gear's face) extruded
+// through the gear.  The drawing holds it, so a point drawn anywhere can be put on it.
 //
-// The gauge is such a point.  It is drawn in a view square to the page, standing on the line
+// The gauge is such a point.  It is drawn in a plane square to the front, standing on the line
 // 1.9 mm above the gear's centre, measured 20.58 mm across and 3 mm deep into the face: a point
-// off the page, which `gauge coincident flank` puts on the flank in space.  That is the one
+// off the front plane, which `gauge coincident flank` puts on the flank in space.  That is the one
 // equation that fixes the free corner, so the rack's pressure angle comes out of the solve (20
 // degrees, to the gauge's two places).  Drag the gauge across and the rack leans to follow.
 //
@@ -79,14 +79,11 @@ construction space := solid(rack_tooth, under: cutting, from: -60deg, to: 60deg)
 side := surface(rack_tooth, edge: rack_flank)
 flank := envelope(side, under: cutting, from: -30deg, to: 30deg)
 
-// the gauge, in a view square to the page through the line 1.9 above the centre (its u the page's
-// x, its v the page's normal, into the face)
-g0 := point
-g1 := point
-fix(x == 0, y == -40) g0
-fix(x == 10, y == -40) g1
-gauge_view := plane(origin: g0, toward: g1, u: (1, 0, 0), v: (0, 1, 0), o: (0, 0, 1.9))
-gauge := point in gauge_view hint(x: 20.6, y: -37)
+// the gauge, in a plane square to the front through the line 1.9 above the centre (its u the
+// front's x, its v the front's normal, into the face)
+gauge_view := plane(u: std.x, v: std.y) hint(x: 0, y: 0, z: 1.9)
+fix(x == 0, y == 0, z == 1.9) gauge_view
+gauge := point in gauge_view hint(x: 20.6, y: 3)
 gauge distance(20.58mm, along: u) gauge_view
 gauge distance(3mm, along: v) gauge_view
 gauge coincident flank

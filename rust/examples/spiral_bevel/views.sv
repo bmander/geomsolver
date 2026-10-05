@@ -1,27 +1,32 @@
-// The views the layout is drawn in. The pitch plane P is the page; every other view folds
-// square to it about a line through the mean point M, so it needs no angle of its own:
+// The views the layout is drawn in. The pitch plane P stands square to the front plane along
+// its u; every other view stands square to P on a line through the mean point M, so it needs
+// no angle of its own:
 //   G, the gear's axial view:    along O -> M, the gear apex to M  (pitch/gear.sv)
 //   Q, the pinion's axial view:  along M -> A, the pinion apex     (pitch/pinion.sv)
 //   N, the normal section:       along C -> M, the trace normal    (crown/)
 use std
 
-// The pitch plane: the page, the gear apex at its datum origin, the datum `span` long.
+// The pitch plane: square to `front` along its `u`, through its origin, so the gear apex is at
+// both origins and the front plane is the view along the pitch plane's v. `down` is the side
+// of it its normal does not point, for a view standing on it (`FoldedView`). `span` is kept for
+// the callers that name it.
 component PitchView(front: plane, span: Length) {
-  private origin := point hint(x: 0, y: 0)
-  private toward := point hint(x: span, y: 0)
-  origin coincident front.origin
-  toward distance(span, along: u) front
-  toward distance(0mm, along: v) front
-  view := plane(origin: origin, toward: toward, from: front, fold: 0deg)
+  private up := ray hint(x: 0, y: 1, z: 0)
+  up perpendicular front
+  view := plane(u: front.u, v: up)
+  front.origin coincident view.origin
+  down := ray hint(x: 0, y: 0, z: -1)
+  down perpendicular view
 }
 
-// A view folded square to `parent` about `hinge`, a line drawn in it; its u runs along the
-// hinge. Its datum is held where drawn, `span` long: about the size of what it shows, which is
-// how far a turn of the view is taken to move it.
-component FoldedView(parent: plane, hinge: line, span: Length) {
-  private origin := point hint(x: 0, y: 0)
-  private toward := point hint(x: span, y: 0)
-  view := plane(origin: origin, toward: toward, from: parent, fold: along hinge)
+// A view standing square to `parent` on `hinge`, a line drawn in it: its u runs along the hinge
+// and its v along `up`, square to the parent. Its origin is the parent's, seen in it: on the
+// fold line, where the parent's origin projects.
+component FoldedView(parent: plane, hinge: line, up: ray, span: Length) {
+  view := plane(u: hinge, v: up)
+  parent coincident view.origin
+  parent.origin project view.origin
+  hinge.p1 coincident view
 }
 
 preview {
@@ -33,5 +38,5 @@ preview {
   a distance(40mm, along: right) b
   a distance(20mm, along: up) b
   hinge := line(a, b) in pitch.view
-  folded := FoldedView(pitch.view, hinge, span: 40mm)
+  folded := FoldedView(pitch.view, hinge, pitch.down, span: 40mm)
 }

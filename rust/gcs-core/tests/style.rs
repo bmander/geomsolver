@@ -8,9 +8,11 @@ use gcs_core::diagnose::{diagnose, DiagnoseOptions, State};
 use gcs_core::model::{EntKind, EntRef, Sketch};
 use gcs_core::program::elaborate;
 use gcs_core::style::Classes;
-use gcs_core::syntax::parse_legacy as parse;
+use crate::common::parse_legacy as parse;
 
+/// `src` elaborated, drawn in the front plane (`common::front`).
 fn read(src: &str) -> Sketch {
+    let src = &crate::common::front(src);
     let (p, errs) = parse(src);
     assert!(errs.is_empty(), "{src}: {errs:?}");
     let e = elaborate(&p);
@@ -199,7 +201,7 @@ claim a distance(60, along: x) b at (10, 20)
 #[test]
 fn a_property_with_no_value_says_nothing() {
     let src = format!("style .dimension {{ color: ; width: }}\n{PLAIN}");
-    let (prog, errs) = gcs_core::syntax::parse_legacy(&src);
+    let (prog, errs) = crate::common::parse_legacy(&src);
     let said: Vec<&str> = errs.iter().map(|e| e.message.as_str()).collect();
     assert!(said.iter().any(|m| m.contains("`color:` is given no value")), "{said:?}");
     assert!(said.iter().any(|m| m.contains("`width:` is given no value")), "{said:?}");
@@ -296,7 +298,7 @@ fix(x == 0, y == 0) a
     let copy = gcs_core::io::copy(&sk, &sk.primitives());
     assert!(copy.constraints.iter().any(|c| c.class.has("shown")));
     // and prints back on the statement
-    let (prog, _) = gcs_core::syntax::parse_legacy(src);
+    let (prog, _) = crate::common::parse_legacy(src);
     let mut out = String::new();
     let st = prog.root().body.iter().find(|s| matches!(&s.kind, gcs_core::syntax::StmtKind::Relation(r) if !r.class.is_empty())).unwrap();
     gcs_core::syntax::write_stmt_to(&mut out, &st.kind).unwrap();

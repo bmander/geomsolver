@@ -7,7 +7,7 @@ use gcs_core::constraints::CKind;
 use gcs_core::io;
 use gcs_core::program::{elaborate, to_program, Elaborated};
 use gcs_core::solve::{solve, SolveOpts};
-use gcs_core::syntax::parse_legacy as parse;
+use crate::common::parse_legacy as parse;
 use std::f64::consts::PI;
 
 fn read(src: &str) -> (Elaborated, Vec<String>) {
@@ -44,6 +44,8 @@ fn said(e: &Elaborated) -> Vec<String> {
 /* -- arc length ---------------------------------------------------------------------------- */
 
 const QUARTER: &str = "\
+use std
+in std.front {
 o := point
 s := point hint(x: 10, y: 0)
 e := point hint(x: 3, y: 9)
@@ -51,6 +53,7 @@ a := arc(o, s, e)
 radius(10) a
 o horizontal s
 fix(x == 0, y == 0) o
+}
 ";
 
 /// An arc of radius 10 whose length is 5π sweeps a quarter turn: its end lands straight above
@@ -73,6 +76,8 @@ fn an_arc_of_radius_ten_and_length_five_pi_sweeps_a_quarter_turn() {
 #[test]
 fn a_length_and_a_sweep_make_the_radius() {
     let src = "\
+use std
+in std.front {
 o := point
 s := point hint(x: 14, y: 0)
 e := point hint(x: 0, y: 14)
@@ -83,6 +88,7 @@ horizontal l1
 l1 angle(90deg) l2
 length(5 * pi) a
 fix(x == 0, y == 0) o
+}
 ";
     let e = solved(src);
     assert!((e.sketch.radius_value(e.map.ent_named("a").unwrap()) - 10.0).abs() < 1e-9);
@@ -93,6 +99,8 @@ fix(x == 0, y == 0) o
 #[test]
 fn two_arc_lengths_tied_by_a_free_variable() {
     let src = "\
+use std
+in std.front {
 o1 := point
 s1 := point hint(x: 10, y: 0)
 e1 := point
@@ -107,9 +115,12 @@ a2 := arc(o2, s2, e2)
 radius(20) a2
 o2 horizontal s2
 fix(x == 50, y == 0) o2
+}
 param s: Length
+in std.front {
 length(s) a1
 length(s) a2
+}
 ";
     let (mut e, d) = read(src);
     assert!(e.ok(), "{d:?}");
@@ -140,6 +151,8 @@ fn an_arc_length_is_drawn_as_a_concentric_arc() {
 /* -- an angle as another angle ------------------------------------------------------------- */
 
 const FAN: &str = "\
+use std
+in std.front {
 a := point
 b := point hint(x: 40, y: 0)
 c := point hint(x: 10, y: 30)
@@ -153,6 +166,7 @@ a distance(30) c
 a distance(20) d
 ab angle(60deg) ac
 fix(x == 0, y == 0) a
+}
 ";
 
 /// The angle from `ab` to `ad` stated as the angle from `ad` to `ac` makes `ad` the bisector:
@@ -200,8 +214,8 @@ fn equal_angles_say_what_a_shared_free_variable_said() {
 fn both_words_print_back_as_written() {
     let src = format!(
         "{FAN}ab angle(ad, ac) ad\nab angle(ab, ac, sense: cw) ad\n\
-         o := point hint(x: 100, y: 0)\ns := point hint(x: 110, y: 0)\ne := point hint(x: 100, y: 10)\n\
-         k := arc(o, s, e)\nlength(5 * pi) k\n"
+         in std.front {{\no := point hint(x: 100, y: 0)\ns := point hint(x: 110, y: 0)\n\
+         e := point hint(x: 100, y: 10)\nk := arc(o, s, e)\n}}\nlength(5 * pi) k\n"
     );
     let (e, d) = read(&src);
     assert!(e.ok(), "{d:?}");

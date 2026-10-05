@@ -11,14 +11,18 @@ use std::collections::BTreeMap;
 use gcs_core::modules::link;
 use gcs_core::program::{elaborate, Elaborated};
 use gcs_core::solve::{solve, SolveOpts};
-use gcs_core::syntax::parse;
+use crate::common::parse;
 
-const BASE: &str = "a := point
+const BASE: &str = "\
+use std
+in std.front {
+a := point
 b := point hint(x: 60, y: 0)
 c := point hint(x: 60, y: 40)
 fix(x == 0, y == 0) a
 a horizontal b
 b vertical c
+}
 ";
 
 fn read(src: &str) -> (Elaborated, Vec<String>) {
@@ -115,7 +119,7 @@ fn a_modules_component_does_not_read_the_callers_names() {
     let src = format!("use lib.t\n{BASE}param w := 60\na distance(w) b\nt := lib.t.T(b, c)\n");
     let (mut prog, errs) = parse(&src);
     assert!(errs.is_empty(), "{errs:?}");
-    let linked = link(&mut prog, &mut |name| shelf.get(name).map(|t| t.to_string()));
+    let linked = link(&mut prog, &mut |name| shelf.get(name).map(|t| t.to_string()).or_else(|| gcs_core::library::resolve(name)));
     assert!(linked.is_empty(), "{linked:?}");
     let e = elaborate(&prog);
     // a formal left unbound is declared, so nothing is said of it
@@ -131,7 +135,7 @@ fn an_instances_unknown_is_read_by_its_dotted_path() {
     let doc = format!(
         "component T(p: point, q: point, w: Length) {{ p distance(w) q }}\n\
          component U(p: point, q: point, r: point) {{ t := T(p, q)\n  q distance(t.w / 2) r }}\n\
-         {BASE}d := point hint(x: 0, y: 40)\nu := U(a, b, c)\nc distance(u.t.w) d\n\
+         {BASE}in std.front {{\nd := point hint(x: 0, y: 40)\n}}\nu := U(a, b, c)\nc distance(u.t.w) d\n\
          a distance(60) b\n"
     );
     let (e, d) = read(&doc);
@@ -151,10 +155,23 @@ fn an_instances_unknown_is_read_by_its_dotted_path() {
 #[test]
 fn a_block_copy_declares_its_own_names_and_shares_the_documents_unknowns() {
     let (e, d) = read(
-        "o := point\nfix(x == 0, y == 0) o\nparam s: Length\n\
-         cycle 2 { z := point hint(x: 5, y: 5)\n  y := point hint(x: 9, y: 2)\n\
-         x := point hint(x: 3, y: 8)\n  w := 60\n\
-         o distance(w) z\n  o distance(w / 2) y\n  o distance(s) x }\n",
+        "\
+use std
+in std.front {
+o := point
+fix(x == 0, y == 0) o
+}
+param s: Length
+in std.front {
+cycle 2 { z := point hint(x: 5, y: 5)
+  y := point hint(x: 9, y: 2)
+x := point hint(x: 3, y: 8)
+  w := 60
+o distance(w) z
+  o distance(w / 2) y
+  o distance(s) x }
+}
+",
     );
     assert!(d.is_empty(), "{d:?}");
     // one shared unknown `s`, and no complaint about `w`
@@ -172,8 +189,16 @@ fn a_block_copy_declares_its_own_names_and_shares_the_documents_unknowns() {
 #[test]
 fn an_unbound_formal_inside_a_block_is_a_name_the_graph_reads() {
     let (e, d) = read(
-        "component T(p: point, q: point, w: Length) { p distance(w) q }\n\
-         o := point\nfix(x == 0, y == 0) o\ncycle 3 { a := point hint(x: 10, y: 0)\n  t := T(o, a) }\n",
+        "\
+use std
+component T(p: point, q: point, w: Length) { p distance(w) q }
+in std.front {
+o := point
+fix(x == 0, y == 0) o
+cycle 3 { a := point hint(x: 10, y: 0)
+  t := T(o, a) }
+}
+",
     );
     assert!(d.is_empty(), "{d:?}");
     assert_eq!(e.sketch.free_vars.len(), 3, "{:?}", e.sketch.free_vars);
@@ -277,7 +302,7 @@ fn an_input_stands_at_the_top_and_says_what_it_is() {
     shelf.insert("lib.u", "param k: Length\nparam j := 4\n");
     let (mut prog, errs) = parse(&format!("use lib.u\n{BASE}a distance(lib.u.j) b\n"));
     assert!(errs.is_empty(), "{errs:?}");
-    assert!(link(&mut prog, &mut |name| shelf.get(name).map(|t| t.to_string())).is_empty());
+    assert!(link(&mut prog, &mut |name| shelf.get(name).map(|t| t.to_string()).or_else(|| gcs_core::library::resolve(name))).is_empty());
     let e = elaborate(&prog);
     let d: Vec<String> =
         e.diags.iter().map(|d| format!("{}: {}", d.code.as_str(), d.message)).collect();
@@ -308,22 +333,23 @@ fn a_solve_writes_an_unknowns_seed_back_to_its_declaration() {
 }
 
 /// **An unknown starts at its seed**, wherever it is read: a dimension's unknown at the number in
-/// its `hint(…)` rather than where a walk from the pose would put it, and a fold's likewise.  A
-/// fold misspelling its unknown is E101 and nothing more — the plane stands, so what is drawn in
-/// it is not refused after it.
+/// its `hint(…)` rather than where a walk from the pose would put it, and one turning a plane's
+/// ray likewise.  An angle misspelling its unknown is E101 and nothing more — the plane stands,
+/// so what is drawn in it is not refused after it.
 #[test]
 fn an_unknown_starts_at_its_seed_and_a_misspelt_one_is_said_once() {
     let (e, d) = read(&format!("{BASE}param w: Length hint(25)\na distance(w) b\n"));
     assert!(d.is_empty(), "{d:?}");
     assert_eq!(e.sketch.params[e.sketch.free_vars["w"] as usize].value, 25.0);
-    let views = "o := point hint(x: 0, y: 0)\nt := point hint(x: 40, y: 0)\n\
-                 front := plane(origin: o, toward: t)\nparam beta: Angle hint(20deg)\n";
-    let side = "side := plane(origin: o, toward: t, from: front, fold: beta)\n\
+    let views = "use std\nparam beta: Angle hint(20deg)\n";
+    let side = "tilt := ray hint(x: 0, y: 0.9396926207859084, z: 0.3420201433256687)\n\
+                std.x perpendicular tilt\nstd.y angle(beta) tilt\n\
+                side := plane(u: std.x, v: tilt)\nfix(x == 0, y == 0, z == 0) side\n\
                 p := point hint(x: 5, y: 5) in side\n";
     let (e, d) = read(&format!("{views}{side}"));
     assert!(d.is_empty(), "{d:?}");
     assert!((e.sketch.params[e.sketch.free_vars["beta"] as usize].value - 20.0).abs() < 1e-12);
-    let (_, d) = read(&format!("{views}{}", side.replace("fold: beta", "fold: betta")));
+    let (_, d) = read(&format!("{views}{}", side.replace("angle(beta)", "angle(betta)")));
     assert_eq!(d.len(), 1, "{d:?}");
     assert!(d[0].starts_with("E101") && d[0].contains("`betta`"), "{d:?}");
 }

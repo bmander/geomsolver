@@ -1,7 +1,7 @@
 //! Grounded reductions from issue #50, plus controls that distinguish the failure modes.
 use gcs_core::model::SolidDef;
 use gcs_core::solve::{solve, SolveOpts};
-use gcs_core::{mesh, program, report, solid, syntax};
+use gcs_core::{mesh, program, report, solid};
 use std::collections::BTreeMap;
 
 fn source(number: usize) -> String {
@@ -22,7 +22,7 @@ fn source(number: usize) -> String {
 }
 
 fn read(src: &str) -> program::Elaborated {
-    let (p, errors) = syntax::parse(src);
+    let (p, errors) = crate::common::parse(src);
     assert!(errors.is_empty(), "{errors:?}");
     let mut e = program::elaborate(&p);
     assert!(e.ok(), "{:?}", e.diags);
@@ -85,33 +85,6 @@ fn translated_bore_evaluates_without_recursing_on_its_own_plane() {
     );
     // World coordinates around 1e9 cannot encode this 10 mm object in float32 STL;
     // the native f64 boundary and report are the geometry checked here.
-}
-
-#[test]
-fn mate_ordinates_are_sorted_and_subtraction_reverses_the_floor() {
-    let reversed = positions(&source(3));
-    let ordered = positions(&source(3).replace("from: 0mm, to: -2mm", "from: -2mm, to: 0mm"));
-    assert_eq!(reversed["result.bounds.y0"], -2.0);
-    assert_eq!(reversed["result.bounds.y1"], 0.0);
-    assert_eq!(reversed, ordered);
-    let floor = positions(&source(4));
-    assert_eq!(floor["result.bounds.y0"], 2.0);
-    assert_eq!(floor["result.bounds.y1"], 3.0);
-}
-
-#[test]
-fn a_derived_plane_inherits_its_mated_parents_final_origin() {
-    let p = positions(&source(5));
-    assert_eq!(p["result.bounds.y0"], -5.0);
-    assert_eq!(p["result.bounds.y1"], -4.0);
-    let src = source(5)
-        .replace(
-            "child := plane(",
-            "middle := plane(origin: o, toward: q, from: back, offset: 1mm)\nchild := plane(",
-        )
-        .replace("from: back, offset: 3mm", "from: middle, offset: 2mm");
-    let deeper = positions(&src);
-    assert_eq!(deeper["result.bounds.y0"], -5.0);
 }
 
 #[test]
@@ -185,7 +158,7 @@ fn invalid_solved_profiles_and_revolution_axes_are_diagnosed() {
     ] {
         let mut src = String::from("unit mm\n");
         for (i, (x, y)) in coords.iter().enumerate() {
-            src += &format!("p{i} := point\nfix(x == {x}, y == {y}) p{i}\n");
+            src += &format!("use std\nin std.front {{\np{i} := point\nfix(x == {x}, y == {y}) p{i}\n}}\n");
         }
         src += &format!(
             "f := face({}, -> close)\nresult := solid(f, depth: 5mm)\n",
@@ -197,26 +170,6 @@ fn invalid_solved_profiles_and_revolution_axes_are_diagnosed() {
         let e = read(&src);
         assert!(!program::solid_diagnostics(&e.sketch, &e.map).is_empty());
     }
-}
-
-#[test]
-fn nonexistent_and_removed_mate_faces_are_refused() {
-    let (p, _) = syntax::parse(&source(10));
-    let e = program::elaborate(&p);
-    assert!(e.errors().any(|d| d.code == program::Code::E082));
-    let removed = source(4)
-        .replace("from: -3mm, to: 0mm", "from: -6mm, to: 0mm")
-        .replace("x == 2,", "x == 0,")
-        .replace("y == 2)", "y == 0)")
-        .replace("x == 8,", "x == 10,")
-        .replace("y == 8)", "y == 10)")
-        .replace("body.tool.far", "body.stock.near");
-    let e = read(&removed);
-    let errors = program::solid_diagnostics(&e.sketch, &e.map);
-    assert!(
-        errors.iter().any(|d| d.code == program::Code::E082),
-        "{errors:?}"
-    );
 }
 
 #[test]
@@ -245,7 +198,7 @@ fn acyclic_body_nesting_has_no_fake_cycle_or_empty_term_limit() {
 #[test]
 fn depth_is_a_positive_magnitude_even_when_it_is_an_expression() {
     for depth in ["-5mm", "2mm - 7mm", "0mm"] {
-        let (p, _) = syntax::parse(&source(12).replace("-5mm", depth));
+        let (p, _) = crate::common::parse(&source(12).replace("-5mm", depth));
         let e = program::elaborate(&p);
         assert!(
             e.errors().any(|d| d.message.contains("positive magnitude")),
@@ -261,14 +214,14 @@ fn depth_is_a_positive_magnitude_even_when_it_is_an_expression() {
     let src = source(12)
         .replace("unit mm", "unit mm\nd := -5mm")
         .replace("depth: -5mm", "depth: d");
-    let (p, _) = syntax::parse(&src);
+    let (p, _) = crate::common::parse(&src);
     assert!(!program::elaborate(&p).ok());
 }
 
 #[test]
 fn geometry_validation_uses_the_solved_shape_instead_of_its_hint() {
     // p2 starts at p1. Its dimensions move it to the fourth corner before validation runs.
-    let e = read("unit mm\np0 := point\nfix(x == 0, y == 0) p0\np1 := point\nfix(x == 10, y == 0) p1\np2 := point hint(x: 10, y: 0)\np3 := point\nfix(x == 0, y == 10) p3\np0 distance(10mm, along: x) p2\np0 distance(10mm, along: y) p2\nf := face(p0,p1,p2,p3, -> close)\nresult := solid(f, depth: 5mm)\n");
+    let e = read("unit mm\nuse std\nin std.front {\np0 := point\nfix(x == 0, y == 0) p0\np1 := point\nfix(x == 10, y == 0) p1\np2 := point hint(x: 10, y: 0)\np3 := point\nfix(x == 0, y == 10) p3\np0 distance(10mm, along: x) p2\np0 distance(10mm, along: y) p2\n}\nf := face(p0,p1,p2,p3, -> close)\nresult := solid(f, depth: 5mm)\n");
     assert!(program::solid_diagnostics(&e.sketch, &e.map).is_empty());
     near(
         report::positions(&e.sketch, &e.map)

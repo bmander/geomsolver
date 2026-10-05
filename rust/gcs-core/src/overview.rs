@@ -162,15 +162,6 @@ fn corners_in(sk: &Sketch, views: &[Option<usize>]) -> Vec<Corner> {
             pairs.push((c.args[0].ent().i(), c.args[1].ent().i()));
         }
     }
-    // the origins, pairwise: they are images of one point by construction
-    let origins: Vec<usize> = (0..sk.planes.len())
-        .map(|i| sk.planes[i].frame.origin as usize)
-        .collect();
-    for i in 0..origins.len() {
-        for j in i + 1..origins.len() {
-            pairs.push((origins[i], origins[j]));
-        }
-    }
     let mut out = Vec::new();
     for (a, b) in pairs {
         let (Some(pa), Some(pb)) = (views[a], views[b]) else { continue };
@@ -184,7 +175,7 @@ fn corners_in(sk: &Sketch, views: &[Option<usize>]) -> Vec<Corner> {
         let mut rhs: Vec<f64> = Vec::with_capacity(4);
         for (i, p) in [(a, pa), (b, pb)] {
             let basis = sk.basis(p);
-            let (x, y) = view_xy(sk, p, sk.point_xy(i));
+            let (x, y) = sk.point_xy(i);
             rows.extend_from_slice(&basis.u);
             rhs.push(x);
             rows.extend_from_slice(&basis.v);
@@ -199,18 +190,10 @@ fn corners_in(sk: &Sketch, views: &[Option<usize>]) -> Vec<Corner> {
     out
 }
 
-/// The view a point **stands in** when the box is folded up: the plane it is a member of, or —
-/// for a point that is a plane's own origin or `toward` point and a member of none — that
-/// plane.  Membership is what `project` reads and what `in` writes, and a datum's points are
-/// deliberately outside it (they place the view; they are not drawn in it), but in space they
-/// are nowhere else: every plane's origin is the one shared origin, which is the convention the
-/// whole reconstruction is written against.  `None` is page geometry, a picture of nothing.
+/// The plane a point **stands in**: its membership.  `None` is a point in space, or a point of
+/// a 2D sketch.
 fn view_of(sk: &Sketch, p: usize) -> Option<usize> {
-    sk.plane_of(p).or_else(|| {
-        sk.planes
-            .iter()
-            .position(|pl| pl.frame.origin as usize == p || pl.frame.toward as usize == p)
-    })
+    sk.plane_of(p)
 }
 
 /// `view_of` for every point at once — asked per point per plane by the panes, per image by
@@ -219,28 +202,6 @@ fn views(sk: &Sketch) -> Vec<Option<usize>> {
     (0..sk.points.len()).map(|p| view_of(sk, p)).collect()
 }
 
-/// Where a plane's view sits on the page: its origin there and its rotor `(c, s)`.
-pub fn placement(sk: &Sketch, plane: usize) -> ((f64, f64), f64, f64) {
-    let f = &sk.planes[plane].frame;
-    (sk.point_xy(f.origin as usize), sk.params[f.c as usize].value, sk.params[f.s as usize].value)
-}
-
-/// A point of the page, read in the view it is drawn in.
-pub fn view_xy(sk: &Sketch, plane: usize, p: (f64, f64)) -> (f64, f64) {
-    let (o, c, s) = placement(sk, plane);
-    crate::plane::in_view(c, s, o, p)
-}
-
-/// Where a page point drawn in `plane` — or on the page itself, when it is in none — sits in
-/// space.  Geometry with no membership lies on the page plane, measured from the world origin,
-/// which is what "a point with none is simply on the page" already means.
-fn in_space(sk: &Sketch, plane: Option<usize>, p: (f64, f64)) -> [f64; 3] {
-    let (basis, (a, b)) = match plane {
-        Some(i) => (sk.basis(i), view_xy(sk, i, p)),
-        None => (Basis::page(), p),
-    };
-    basis.lift(a, b)
-}
 
 /// The view an entity stands in: the one every point it is made of stands in, or `None` where
 /// they disagree or it has none — `program::plane_of_entity`'s walk with `view_of`'s reading of
@@ -366,7 +327,7 @@ pub fn scene3d(sk: &Sketch, unit: f64) -> Vec<Item3> {
         // square to the world's axes — a wire sphere, the least that says where and how big
         if e.kind == EntKind::Sphere {
             let c = sk.round_center(e);
-            let o = in_space(sk, views[c], sk.point_xy(c));
+            let o = sk.world_point(c);
             let r = sk.radius_value(e).abs();
             let n = ((std::f64::consts::TAU * r / unit).sqrt().ceil() as usize).clamp(24, 256);
             for (a, b) in [(0, 1), (1, 2), (2, 0)] {
@@ -413,7 +374,7 @@ pub fn scene3d(sk: &Sketch, unit: f64) -> Vec<Item3> {
         if matches!(e.kind, EntKind::Cone | EntKind::Cylinder) {
             use crate::space::{add, cross, norm, scale, sub};
             let l = &sk.lines[sk.axial(e).axis as usize];
-            let end = |q: u32| in_space(sk, views[q as usize], sk.point_xy(q as usize));
+            let end = |q: u32| sk.world_point(q as usize);
             let (a, b) = (end(l.p1), end(l.p2));
             let d = sub(b, a);
             let len = norm(d);
@@ -453,7 +414,7 @@ pub fn scene3d(sk: &Sketch, unit: f64) -> Vec<Item3> {
         // and the reason a projector between two views belongs to neither
         if e.kind == EntKind::Line {
             let l = &sk.lines[e.i()];
-            let end = |q: u32| in_space(sk, views[q as usize], sk.point_xy(q as usize));
+            let end = |q: u32| sk.world_point(q as usize);
             items.push(Item3 {
                 of: Some(e),
                 in_plane,
@@ -470,7 +431,7 @@ pub fn scene3d(sk: &Sketch, unit: f64) -> Vec<Item3> {
                 of: Some(e),
                 in_plane,
                 what: Part::Drawn,
-                pts: poly.into_iter().map(|p| in_space(sk, plane, p)).collect(),
+                pts: poly.into_iter().map(|p| sk.world_in(plane, p)).collect(),
             });
         }
     }
@@ -541,7 +502,7 @@ pub fn scene_with(sk: &Sketch, unit: f64, az: f64, el: f64, shaded: bool) -> Sce
         // nor anyone's — it belongs to a view only when both its ends do
         if e.kind == EntKind::Line {
             let l = &sk.lines[e.i()];
-            let end = |q: u32| flat(in_space(sk, views[q as usize], sk.point_xy(q as usize)));
+            let end = |q: u32| flat(sk.world_point(q as usize));
             items.push(Item {
                 of: Some(e),
                 in_plane: plane.map(EntRef::plane),
@@ -559,7 +520,7 @@ pub fn scene_with(sk: &Sketch, unit: f64, az: f64, el: f64, shaded: bool) -> Sce
                 of: Some(e),
                 in_plane: plane.map(EntRef::plane),
                 what: Part::Drawn,
-                pts: poly.into_iter().map(|p| flat(in_space(sk, plane, p))).collect(),
+                pts: poly.into_iter().map(|p| flat(sk.world_in(plane, p))).collect(),
                 shade: None,
             });
         }
@@ -702,7 +663,7 @@ fn pane(sk: &Sketch, plane: usize, views: &[Option<usize>], least: f64) -> Box2 
     let mut b = (0.0f64, 0.0f64, 0.0f64, 0.0f64);
     for (i, v) in views.iter().enumerate() {
         if *v == Some(plane) {
-            grow(&mut b, view_xy(sk, plane, sk.point_xy(i)));
+            grow(&mut b, sk.point_xy(i));
         }
     }
     let widen = |lo: f64, hi: f64| {

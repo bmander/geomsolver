@@ -1,359 +1,18 @@
-//! Views whose attitude or position is **solved for** (§6.7; `docs/spatial-constraints-plan.md`):
-//! a plane is fixed unless its brackets name an unknown, and this pass is where the
-//! unknowns a plane's brackets named are minted and tied down.
-//!
-//! It runs once every plane is built and every membership is in, and before any relation is
-//! stated, so a relation over a solved view is stated against its unknowns from the first.  What
-//! each clause comes to:
-//!
-//! - `attitude: free` — the quaternion free (three freedoms and a `quat_unit` row), the offset
-//!   held where the seed stood it;
-//! - `fold: E` over an unknown (`param beta: Angle`, a formal no call binds) — a hinge to the
-//!   parent whose fold is that unknown (`CKind::Hinge`, the free twin), the parent given held
-//!   unknowns if it is stated;
-//! - `from: P, fold: θ` or `offset: k` where `P` is solved — a hinge whose turn is a constant;
-//! - `fold: along l` — a hinge along `l`'s bearing in the parent, and the offset solved so `l`'s
-//!   first end is in the view (`CKind::HingeAlong` and a `PointOnPlane`);
-//! - `offset: free` — the offset free, the attitude whatever else says it is;
-//! - `through: M` — the offset solved so `M` is in the plane (`PointOnPlane`).
-//!
-//! A plane that says none of these, folded from one that is stated, stays exactly as it was:
-//! no parameter, no row, and the corpus compiles to the same bytes.
+//! What a solve says about planes that elaboration could not: two planes of a projection that
+//! came out parallel, two lines meant to have a common perpendicular that came out parallel
+//! (E065), and two planes that lie on one another (W113, `docs/planes-plan.md`).
 
 #[allow(unused_imports)]
 use crate::fmath::Det;
-use super::planes::fold_aff;
-use super::resolve::{follow, Resolver};
-use super::{Code, Diag, Made, SourceMap};
-use crate::constraints::{Arg as CArg, CKind, Constraint, SpecKind};
-use crate::ir::{Decl, Operation as StmtKind, Statement as Stmt};
+use super::{Code, Diag, SourceMap};
+use crate::constraints::CKind;
 use crate::model::{EntKind, EntRef, Sketch};
-use crate::syntax::{Attitude, Position, Span, StmtId};
-use std::collections::{BTreeMap, BTreeSet};
 
-/// A plane's in-plane origin this close to nothing is on its own normal through the shared
-/// origin — which is what a fold turning about a line through it keeps.
-const ON_NORMAL: f64 = 1e-9;
+/// A plane this close to another, in turn and in where it stands, lies on it.
+const ON_PLANE: f64 = 1e-9;
 
-pub(super) fn solve_planes(
-    sk: &mut Sketch,
-    res: &Resolver,
-    map: &mut SourceMap,
-    body: &[&Stmt],
-    skip: &BTreeSet<StmtId>,
-    diags: &mut Vec<Diag>,
-) {
-    let mut decls: BTreeMap<&str, (&Stmt, &Decl)> = BTreeMap::new();
-    for st in body {
-        let StmtKind::Decl(d) = &st.kind else { continue };
-        if d.kind == EntKind::Plane && !skip.contains(&st.id) {
-            decls.entry(&d.name.key().text).or_insert((st, d));
-        }
-    }
-    // parents before children: a hinge reads its parent's unknowns, so they are minted first.
-    // A cycle was refused where the bases were worked out (E041); it is only cut short here.
-    let mut order: Vec<&str> = Vec::new();
-    let mut seen: BTreeSet<&str> = BTreeSet::new();
-    fn visit<'a>(k: &'a str, decls: &BTreeMap<&'a str, (&'a Stmt, &'a Decl)>,
-                 seen: &mut BTreeSet<&'a str>, order: &mut Vec<&'a str>) {
-        if !seen.insert(k) {
-            return;
-        }
-        if let Some((_, d)) = decls.get(k) {
-            if let Some(p) = d.attitude.plane_ref() {
-                if let Some((&pk, _)) = decls.get_key_value(p.root.text.as_str()) {
-                    visit(pk, decls, seen, order);
-                }
-            }
-        }
-        order.push(k);
-    }
-    for &k in decls.keys() {
-        visit(k, &decls, &mut seen, &mut order);
-    }
-    for k in order {
-        let (st, d) = decls[k];
-        let Some(e) = res.of.get(k).copied().filter(|e| e.kind == EntKind::Plane) else { continue };
-        one(sk, res, map, st, d, e.i(), diags);
-    }
-}
-
-/// What a solved view's plane statement comes to.
-fn one(
-    sk: &mut Sketch,
-    res: &Resolver,
-    map: &mut SourceMap,
-    st: &Stmt,
-    d: &Decl,
-    pi: usize,
-    diags: &mut Vec<Diag>,
-) {
-    let fail = |diags: &mut Vec<Diag>, code: Code, span: Span, message: String| {
-        diags.push(Diag { code, span, stmt: Some(st.id), message });
-    };
-    let name = sk.plane_name(pi);
-    let parent = d.attitude.plane_ref().and_then(|r| res.lookup(r)).filter(|e| e.kind == EntKind::Plane)
-        .map(|e| e.i());
-    let parent_solved = parent.is_some_and(|p| sk.planes[p].att.is_some());
-    // is the fold an unknown: an expression over a declared one (`param beta: Angle`)
-    let free_fold = match &d.attitude {
-        Attitude::From { fold, .. } => fold_aff(fold, sk.units).ok().filter(|a| a.free.is_some()),
-        _ => None,
-    };
-    // **a seed is for an unknown** (§4.3): a `hint(…)` key for a quantity the brackets state
-    // is refused at the key, in the words that say which clause would make it one
-    for h in &d.plane.hints {
-        let why = match h.key.text.as_str() {
-            // a fold is seeded where its unknown is declared, or is stated and has none
-            "fold" => Some(if free_fold.is_none() {
-                "the fold is stated; a seed is for one solved for, `fold: beta`"
-            } else {
-                "the fold reads an unknown, which is seeded where it is declared: \
-                 `param beta: Angle hint(30deg)`"
-            }),
-            "u" | "v" if !matches!(d.attitude, Attitude::Free { .. }) => {
-                Some("the attitude is stated; a seed is for one solved for, `attitude: free`")
-            }
-            "offset" if !matches!(d.plane.position, Position::Free(_)) => {
-                Some("the offset is stated; a seed is for one solved for, `offset: free`")
-            }
-            _ => None,
-        };
-        if let Some(why) = why {
-            fail(diags, Code::E040, h.key.span, format!("`{}` on `{name}`: {why}", h.key.text));
-            continue;
-        }
-        // and a seed is a number of what it seeds: a length, a direction's component
-        let want = match h.key.text.as_str() {
-            "offset" => crate::units::Dim::LENGTH,
-            _ => crate::units::Dim::SCALAR,
-        };
-        for a in &h.args {
-            let crate::syntax::Arg::Dim { text, span } = a else { continue };
-            let got = crate::flatten::value_aff(text, &BTreeMap::new(), sk.units)
-                .and_then(|v| v.number().ok_or_else(|| "a seed is a number".to_string())
-                    .and_then(|_| v.dim.require(want, &h.key.text).map_err(|e| e.to_string())));
-            if let Err(m) = got {
-                fail(diags, Code::E103, *span, format!("`{text}`: {m}"));
-            }
-        }
-    }
-    if matches!(d.attitude, Attitude::Free { .. })
-        && d.plane.hint("u").is_some() != d.plane.hint("v").is_some()
-    {
-        let h = d.plane.hint("u").or(d.plane.hint("v")).expect("one of them");
-        fail(diags, Code::E103, h.key.span, "a free attitude is seeded by both `u:` and `v:`".into());
-    }
-    // **a position is stated once**: a written offset, or a fold along a line (which stands the
-    // view where the line is), beside `offset: free` or `through:` is two answers to one number
-    let position_span = match &d.plane.position {
-        Position::Stated => None,
-        Position::Free(sp) => Some(*sp),
-        Position::Through(r) => Some(r.span),
-    };
-    if let Some(sp) = position_span {
-        let twice = match &d.attitude {
-            Attitude::Offset { offset: Some(_), .. } => Some("`offset:` already says"),
-            Attitude::Along { .. } => Some("a fold `along` a line already stands it where the line is"),
-            _ => None,
-        };
-        if let Some(w) = twice {
-            fail(diags, Code::E064, sp, format!("where `{name}` stands is stated twice: {w}"));
-            return;
-        }
-    }
-    // a view derived from a parent follows the parent's origin, which it can do only while that
-    // origin is a constant of the parent's attitude — on its normal through the shared origin,
-    // and held there — or the child's own constants would have to move with it
-    let derived_from_solved = parent_solved
-        || free_fold.is_some()
-        || matches!(d.attitude, Attitude::Along { .. });
-    if let (Some(p), true) = (parent, derived_from_solved) {
-        if let Some(a) = sk.planes[p].att.as_ref() {
-            if !sk.params[a.d as usize].fixed {
-                let span = d.attitude.plane_ref().map_or(st.span, |r| r.span);
-                fail(diags, Code::E064, span, format!(
-                    "`{}`'s offset is solved, and a view derived from it would have to follow it \
-                     — fold from a view whose offset is stated",
-                    sk.plane_name(p)
-                ));
-                return;
-            }
-        }
-        let turns = free_fold.is_some() || matches!(d.attitude, Attitude::Along { .. });
-        let ab = sk.planes[p].att.as_ref().map_or_else(|| {
-            let b = sk.basis(p);
-            [crate::plane::dot(b.o, b.u), crate::plane::dot(b.o, b.v)]
-        }, |a| a.ab);
-        if turns && ab[0].dhypot(ab[1]) > ON_NORMAL * (1.0 + sk.extent()) {
-            let span = d.attitude.plane_ref().map_or(st.span, |r| r.span);
-            fail(diags, Code::E064, span, format!(
-                "`{}` stands off the shared origin in its own plane, and a solved fold turns \
-                 about a line through that origin",
-                sk.plane_name(p)
-            ));
-            return;
-        }
-    }
-    // -- the seeded pose, before anything is minted: a fold along a line stands on the line's
-    // bearing and through its first end, and a plane `through:` a point stands through it
-    let mut hinges: Vec<Constraint> = Vec::new();
-    let mut rows: Vec<Constraint> = Vec::new();
-    let mut theta_along = None;
-    if let Attitude::Along { line, .. } = &d.attitude {
-        let p = parent.expect("an `along` fold names its parent");
-        let l = match named(sk, res, line, EntKind::Line, "a fold is taken along a line") {
-            Ok(e) => e,
-            Err((code, m)) => return fail(diags, code, line.span, m),
-        };
-        if super::planes::plane_of_entity(sk, l) != Some(p) {
-            fail(diags, Code::E064, line.span, format!(
-                "`{}` is not drawn in `{}`, and a fold is taken along a line of the view it \
-                 folds from",
-                crate::syntax::ref_text(line), sk.plane_name(p)
-            ));
-            return;
-        }
-        let ln = &sk.lines[l.i()];
-        let (p1, p2) = (ln.p1 as usize, ln.p2 as usize);
-        let f = &sk.planes[p].frame;
-        let (c, s) = (sk.params[f.c as usize].value, sk.params[f.s as usize].value);
-        let o = sk.point_xy(f.origin as usize);
-        let (a1, b1) = crate::plane::in_view(c, s, o, sk.point_xy(p1));
-        let (a2, b2) = crate::plane::in_view(c, s, o, sk.point_xy(p2));
-        let theta = (b2 - b1).datan2(a2 - a1);
-        let folded = sk.basis(p).fold(theta);
-        sk.set_basis(pi, stand_through(folded, sk.world_point(p1)));
-        theta_along = Some(theta);
-        let (hs, hc) = (0.5 * theta).dsin_cos();
-        hinges.push(Constraint::new(CKind::HingeAlong, vec![
-            CArg::Ent(EntRef::plane(pi)),
-            CArg::Ent(EntRef::plane(p)),
-            CArg::Ent(l),
-            CArg::Seed { value: hc, pinned: false },
-            CArg::Seed { value: hs, pinned: false },
-        ]));
-        rows.push(Constraint::new(CKind::PointOnPlane, vec![
-            CArg::Ent(EntRef::point(p1)),
-            CArg::Ent(EntRef::plane(pi)),
-        ]));
-    }
-    if let Position::Through(r) = &d.plane.position {
-        let m = match named(sk, res, r, EntKind::Point, "a plane is stood `through:` a point") {
-            Ok(e) => e.i(),
-            Err((code, m)) => return fail(diags, code, r.span, m),
-        };
-        match sk.plane_of(m) {
-            None => {
-                fail(diags, Code::E040, r.span, format!(
-                    "`{}` is on no view, so where it stands in space is not drawn anywhere",
-                    crate::syntax::ref_text(r)
-                ));
-                return;
-            }
-            Some(v) if v == pi => {
-                fail(diags, Code::E064, r.span, format!(
-                    "`{}` is drawn in `{name}` itself, which puts it in the plane whatever the \
-                     offset is: `through:` names a point of another view",
-                    crate::syntax::ref_text(r)
-                ));
-                return;
-            }
-            Some(_) => {}
-        }
-        let b = sk.basis(pi);
-        sk.set_basis(pi, stand_through(b, sk.world_point(m)));
-        rows.push(Constraint::new(CKind::PointOnPlane, vec![
-            CArg::Ent(EntRef::point(m)),
-            CArg::Ent(EntRef::plane(pi)),
-        ]));
-    }
-    // -- the attitude's unknowns
-    let q_parent = |sk: &Sketch, p: usize| {
-        let a = sk.planes[p].att.as_ref().expect("held or solved");
-        a.q.map(|k| sk.params[k as usize].value)
-    };
-    match &d.attitude {
-        Attitude::Free { .. } => sk.free_attitude(pi),
-        Attitude::Along { .. } => {
-            let p = parent.expect("an `along` fold names its parent");
-            sk.hold_attitude(p);
-            let rel = crate::plane::fold_rotor(theta_along.expect("read above"));
-            sk.hinge_attitude(pi, crate::plane::quat_mul(q_parent(sk, p), rel));
-        }
-        Attitude::From { fold, .. } if free_fold.is_some() || parent_solved => {
-            let Some(p) = parent else { return };
-            sk.hold_attitude(p);
-            let (text, deg) = match (&free_fold, fold) {
-                (Some(a), crate::syntax::Arg::Dim { text, .. }) => {
-                    // where the basis was folded to: the unknown's seed, or the expression at
-                    // nothing
-                    (Some(text.clone()), super::planes::fold_start(a, &sk.declared))
-                }
-                (_, _) => (None, fold_aff(fold, sk.units).map_or(0.0, |a| a.c)),
-            };
-            let theta = crate::expr::to_arg_units(SpecKind::Angle, deg);
-            let rel = crate::plane::fold_rotor(theta);
-            sk.hinge_attitude(pi, crate::plane::quat_mul(q_parent(sk, p), rel));
-            let angle = match text {
-                Some(t) => CArg::Expr(crate::expr::Expr::new(t, theta)),
-                None => CArg::Num(theta),
-            };
-            hinges.push(Constraint::new(CKind::Hinge, vec![
-                CArg::Ent(EntRef::plane(pi)),
-                CArg::Ent(EntRef::plane(p)),
-                angle,
-            ]));
-        }
-        Attitude::Offset { .. } if parent_solved => {
-            let p = parent.expect("an offset names its parent");
-            sk.hinge_attitude(pi, q_parent(sk, p));
-            hinges.push(Constraint::new(CKind::HingeParallel, vec![
-                CArg::Ent(EntRef::plane(pi)),
-                CArg::Ent(EntRef::plane(p)),
-            ]));
-        }
-        _ => {}
-    }
-    // -- the offset's
-    match (&d.plane.position, &d.attitude) {
-        (Position::Stated, Attitude::Along { .. }) => sk.fix_offset(pi, false),
-        (Position::Stated, _) => sk.fix_offset(pi, true),
-        (Position::Free(_) | Position::Through(_), _) => sk.free_offset(pi),
-    }
-    for c in hinges.into_iter().chain(rows) {
-        let id = sk.add_quiet(c);
-        map.record(st, Made::Con(id));
-    }
-}
-
-/// What a plane clause's reference names, when it is a `want`: E101 for a name nothing binds,
-/// and E040, ending in `why`, for one that names another kind of thing.
-fn named(sk: &Sketch, res: &Resolver, r: &crate::syntax::Ref, want: EntKind, why: &str)
-    -> Result<EntRef, (Code, String)>
-{
-    match res.lookup(r).map(|e| follow(sk, e, &r.path)) {
-        None => Err((Code::E101, format!("no such entity: `{}`", r.root.text))),
-        Some(Err(m)) => Err((Code::E101, m)),
-        Some(Ok(e)) if e.kind != want => Err((Code::E040, format!(
-            "`{}` is a {}, and {why}", crate::syntax::ref_text(r), e.kind.as_str()
-        ))),
-        Some(Ok(e)) => Ok(e),
-    }
-}
-
-/// `b` moved along its own normal until `x` is in it.
-fn stand_through(b: crate::plane::Basis, x: [f64; 3]) -> crate::plane::Basis {
-    let n = b.normal();
-    let gap = crate::plane::dot(n, [x[0] - b.o[0], x[1] - b.o[1], x[2] - b.o[2]]);
-    b.offset(gap)
-}
-
-/// **What a solve can make degenerate that no stated number said** (E065): two views a
-/// `project` relates that came out parallel, which share no fold line and so say nothing, and
-/// two lines whose skew distance is stated that came out parallel, which have no common
-/// perpendicular to measure.  Asked of the solved sketch — where the views are stated, the first
-/// is refused where it is written (E061) and nothing here can fire.
+/// E065 for every statement a solve left degenerate: a projection whose two planes came out
+/// parallel, a skew distance whose two lines did.
 pub(crate) fn degenerate(sk: &Sketch, map: &SourceMap) -> Vec<Diag> {
     let mut out = Vec::new();
     for c in &sk.constraints {
@@ -363,8 +22,8 @@ pub(crate) fn degenerate(sk: &Sketch, map: &SourceMap) -> Vec<Diag> {
                 let (na, nb) = (sk.basis(a).normal(), sk.basis(b).normal());
                 (crate::space::norm(crate::space::cross(na, nb)) <= crate::plane::PARALLEL_TOL)
                     .then(|| format!(
-                        "`{}` and `{}` came out parallel, so no fold line relates their views \
-                         and the projection says nothing",
+                        "`{}` and `{}` came out parallel, so no fold line relates them and the \
+                         projection says nothing",
                         sk.plane_name(a), sk.plane_name(b)
                     ))
             }
@@ -372,8 +31,8 @@ pub(crate) fn degenerate(sk: &Sketch, map: &SourceMap) -> Vec<Diag> {
                 let dir = |i: usize| {
                     // a cylinder's line is its axis
                     let e = c.args[i].ent();
-                    let e = if e.kind == crate::model::EntKind::Cylinder {
-                        crate::model::EntRef::line(sk.axial(e).axis as usize)
+                    let e = if e.kind == EntKind::Cylinder {
+                        EntRef::line(sk.axial(e).axis as usize)
                     } else {
                         e
                     };
@@ -400,4 +59,285 @@ pub(crate) fn degenerate(sk: &Sketch, map: &SourceMap) -> Vec<Diag> {
         }
     }
     out
+}
+
+/// W113 for two planes that lie on one another — turned alike up to a turn in themselves and
+/// standing in one place — where a relation reads points drawn in each: one plane in space, read
+/// twice, and the relation is read in space where the plane would do.  Permitted (a part's plane
+/// turned within the front is the common case, and two parts drawn on one plane relate nothing),
+/// and said once, at the later plane's declaration.
+pub(crate) fn coplanar(sk: &Sketch, map: &SourceMap) -> Vec<Diag> {
+    use std::collections::BTreeSet;
+    // the planes each relation reads drawn points of — a plane's own origin is where the plane
+    // stands, not drawing in it
+    let origins: BTreeSet<usize> = sk.planes.iter().map(|p| p.origin as usize).collect();
+    let mut pairs: BTreeSet<(usize, usize)> = BTreeSet::new();
+    for c in sk.constraints.iter().filter(|c| c.acts() && !c.intrinsic) {
+        let mut planes: BTreeSet<usize> = BTreeSet::new();
+        for e in c.entities() {
+            let mut pts = Vec::new();
+            points(sk, e, &mut pts, 0);
+            planes.extend(pts.iter().filter(|p| !origins.contains(p)).filter_map(|&p| sk.plane_of(p)));
+        }
+        for &i in &planes {
+            for &j in planes.range(i + 1..) {
+                pairs.insert((i, j));
+            }
+        }
+    }
+    let mut out = Vec::new();
+    let mut said: BTreeSet<usize> = BTreeSet::new();
+    for &(i, j) in &pairs {
+        let (bi, bj) = (sk.basis(i), sk.basis(j));
+        let (ni, nj) = (bi.normal(), bj.normal());
+        let tol = ON_PLANE * sk.extent().max(1.0);
+        let on = crate::space::norm(crate::space::cross(ni, nj)) <= crate::plane::PARALLEL_TOL
+            && crate::space::dot(ni, crate::space::sub(bj.o, bi.o)).abs() <= tol;
+        if !on || !said.insert(j) {
+            continue;
+        }
+        let Some(site) = map.site_of(EntRef::plane(j)) else { continue };
+        out.push(Diag {
+            code: Code::W113,
+            span: site.span,
+            stmt: Some(site.stmt),
+            message: format!(
+                "`{}` lies on `{}`, and a relation reads points drawn in each: one plane in \
+                 space, so the relation is read in space where one plane would read it on the \
+                 plane",
+                sk.plane_name(j),
+                sk.plane_name(i)
+            ),
+        });
+    }
+    out
+}
+
+/// The points an entity stands on, its rays and planes apart.
+fn points(sk: &Sketch, e: EntRef, out: &mut Vec<usize>, depth: u32) {
+    match e.kind {
+        EntKind::Point => out.push(e.i()),
+        EntKind::Plane | EntKind::Ray => {}
+        _ if depth < 4 => {
+            for k in sk.children(e) {
+                points(sk, k, out, depth + 1);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// **Where the planes stand, before the drawing is solved** (`docs/planes-plan.md`): a seed
+/// that reads a place in another plane is read through that plane's pose, and a plane whose
+/// rays or place the document solves for starts where its seeds put it — a fold line at the
+/// world origin, say, when it stands on a line a hundred millimetres off.  So the statements
+/// that say where the planes are — about rays and planes themselves, and about points of planes
+/// already placed — are solved first, alone, round by round: a statement is taken once every
+/// point it reads stands in a placed plane (or is held, or is a plane's own origin), and a ray
+/// or a plane is placed once the statements taken determine it.  The drawing in a plane never
+/// places it: its seeds are what is to be read through it.  Nothing else moves; the hidden
+/// points are put back where their points now stand.  What nothing places keeps its seed.
+pub(crate) fn place(sk: &mut Sketch) {
+    use std::collections::BTreeSet;
+    align(sk);
+    let held = |sk: &Sketch, ps: &[u32]| ps.iter().all(|&q| sk.params[q as usize].fixed);
+    let mut ray_placed: Vec<bool> =
+        (0..sk.rays.len()).map(|r| held(sk, &sk.rays[r].d)).collect();
+    let mut plane_placed: Vec<bool> = (0..sk.planes.len())
+        .map(|p| held(sk, &sk.planes[p].o)
+            && ray_placed[sk.planes[p].u as usize] && ray_placed[sk.planes[p].v as usize])
+        .collect();
+    if ray_placed.iter().all(|&b| b) && plane_placed.iter().all(|&b| b) {
+        return;
+    }
+    let origin_of: std::collections::BTreeMap<usize, usize> =
+        sk.planes.iter().enumerate().map(|(i, p)| (p.origin as usize, i)).collect();
+    // what each statement reads: its rays and planes, a plane's origin standing for its plane,
+    // and the planes of the other points it reads (`None`: a point in space, or held)
+    struct Reads { id: u32, rays: Vec<usize>, planes: Vec<usize>, through: Vec<Option<usize>> }
+    let mut reads: Vec<Reads> = Vec::new();
+    for c in sk.constraints.iter().filter(|c| c.acts()) {
+        if matches!(c.kind, CKind::Lift | CKind::RayUnit | CKind::RayFoot | CKind::DragTarget) {
+            continue;
+        }
+        // a point measured in a plane — an ordinate, a height off it — is the drawing placed by
+        // the plane, not the plane by the drawing, unless the point is where a plane stands
+        if matches!(c.kind, CKind::Ordinate3U | CKind::Ordinate3V | CKind::PointPlaneDistance) {
+            let p = c.args[0].ent().i();
+            let held = sk.point_all_params(p).iter().all(|&q| sk.params[q as usize].fixed);
+            if !origin_of.contains_key(&p) && !held {
+                continue;
+            }
+        }
+        let (mut rays, mut planes, mut pts) = (Vec::new(), Vec::new(), Vec::new());
+        for e in c.entities() {
+            match e.kind {
+                EntKind::Ray => rays.push(e.i()),
+                EntKind::Plane => planes.push(e.i()),
+                _ => points(sk, e, &mut pts, 0),
+            }
+        }
+        let mut through = Vec::new();
+        for &p in &pts {
+            if let Some(&pl) = origin_of.get(&p) {
+                planes.push(pl);
+            } else if sk.point_all_params(p).iter().all(|&q| sk.params[q as usize].fixed) {
+                // held: wherever its plane stands, it is where it is said to be
+                through.push(sk.plane_of(p).filter(|_| false));
+            } else {
+                // a point in space that is not held is the drawing's to place, never a plane's
+                through.push(Some(sk.plane_of(p).unwrap_or(usize::MAX)));
+            }
+        }
+        for &pl in &planes {
+            rays.extend([sk.planes[pl].u as usize, sk.planes[pl].v as usize]);
+        }
+        if rays.is_empty() && planes.is_empty() {
+            continue;
+        }
+        reads.push(Reads { id: c.id, rays, planes, through });
+    }
+    let mut taken: BTreeSet<u32> = BTreeSet::new();
+    let along = along(sk);
+    for _ in 0..sk.planes.len() + sk.rays.len() + 1 {
+        // a ray held along a line whose ends are placed is placed with them: turned to the line
+        // here, sense and all, and held so the solve below cannot turn it round
+        let mut newly = false;
+        for &(r, l) in &along {
+            let ends = [sk.lines[l].p1 as usize, sk.lines[l].p2 as usize];
+            let fine = ends.iter().all(|&p| {
+                origin_of.contains_key(&p)
+                    || sk.plane_of(p).is_some_and(|pl| plane_placed[pl])
+                    || sk.point_all_params(p).iter().all(|&q| sk.params[q as usize].fixed)
+            });
+            if fine && !ray_placed[r] {
+                let ln = &sk.lines[l];
+                let d = crate::space::sub(sk.world_point(ln.p2 as usize), sk.world_point(ln.p1 as usize));
+                if let Some(d) = crate::space::normalised(d) {
+                    for k in 0..3 {
+                        let q = sk.rays[r].d[k] as usize;
+                        sk.params[q].value = d[k];
+                    }
+                    ray_placed[r] = true;
+                    newly = true;
+                }
+            }
+        }
+        for p in 0..sk.planes.len() {
+            let pl = &sk.planes[p];
+            if !plane_placed[p] && held(sk, &pl.o) && ray_placed[pl.u as usize] && ray_placed[pl.v as usize] {
+                plane_placed[p] = true;
+                newly = true;
+            }
+        }
+        let before = taken.len();
+        for r in &reads {
+            let unplaced = r.rays.iter().any(|&k| !ray_placed[k])
+                || r.planes.iter().any(|&p| !plane_placed[p]);
+            let ready = r.through.iter().all(|t| t.map_or(true, |p| p != usize::MAX && plane_placed[p]));
+            if unplaced && ready {
+                taken.insert(r.id);
+            }
+        }
+        if taken.len() == before {
+            if newly {
+                continue;
+            }
+            break;
+        }
+        // the taken statements alone: the unplaced rays and places they read free, everything
+        // else held, the hidden points free to follow
+        let mut part = sk.clone();
+        let mut free: BTreeSet<u32> = BTreeSet::new();
+        for r in reads.iter().filter(|r| taken.contains(&r.id)) {
+            for &k in r.rays.iter().filter(|&&k| !ray_placed[k]) {
+                free.extend(sk.rays[k].d);
+                if sk.rays[k].placed {
+                    free.extend(sk.rays[k].a);
+                }
+            }
+            for &p in r.planes.iter().filter(|&&p| !plane_placed[p]) {
+                free.extend(sk.planes[p].o);
+            }
+        }
+        let item: BTreeSet<u32> = free.clone();
+        for l in &sk.lifts {
+            if sk.points[l.point as usize].z.is_none() {
+                free.extend(l.x);
+            }
+        }
+        for (i, q) in part.params.iter_mut().enumerate() {
+            q.fixed = q.fixed || !free.contains(&(i as u32));
+        }
+        part.constraints.retain(|c| {
+            taken.contains(&c.id) || matches!(c.kind, CKind::Lift | CKind::RayUnit | CKind::RayFoot)
+        });
+        crate::solve::solve(&mut part, crate::solve::SolveOpts::default());
+        for &q in &item {
+            sk.params[q as usize].value = part.params[q as usize].value;
+        }
+        // placed: what the statements taken leave no freedom
+        let d = crate::diagnose::diagnose(&mut part, Default::default());
+        let under: BTreeSet<u32> = d.under_params.iter().copied().collect();
+        let fixed = |ps: &[u32]| ps.iter().all(|q| !under.contains(q));
+        for k in 0..sk.rays.len() {
+            if !ray_placed[k] && sk.rays[k].d.iter().all(|q| item.contains(q)) {
+                ray_placed[k] = fixed(&sk.rays[k].d);
+            }
+        }
+        for p in 0..sk.planes.len() {
+            let pl = &sk.planes[p];
+            let o_ok = pl.o.iter().all(|q| !item.contains(q) || !under.contains(q))
+                && (held(sk, &pl.o) || pl.o.iter().all(|q| item.contains(q)));
+            if !plane_placed[p] {
+                plane_placed[p] = o_ok && ray_placed[pl.u as usize] && ray_placed[pl.v as usize];
+            }
+        }
+    }
+    relift(sk);
+}
+
+/// Every ray a plane holds along a drawn line (`program::entities::rays_along`) turned to the
+/// line as it now stands, its sense included — `parallel` is satisfied both ways, so a ray
+/// seeded before its line's points were placed may stand against it, and a plane over it turn
+/// its back.
+fn align(sk: &mut Sketch) {
+    for (r, l) in along(sk) {
+        if sk.rays[r].d.iter().any(|&q| sk.params[q as usize].fixed) {
+            continue;
+        }
+        let ln = &sk.lines[l];
+        let d = crate::space::sub(sk.world_point(ln.p2 as usize), sk.world_point(ln.p1 as usize));
+        let Some(d) = crate::space::normalised(d) else { continue };
+        for k in 0..3 {
+            let q = sk.rays[r].d[k] as usize;
+            sk.params[q].value = d[k];
+        }
+    }
+}
+
+/// The rays held along drawn lines, and their lines.
+fn along(sk: &Sketch) -> Vec<(usize, usize)> {
+    sk.constraints.iter()
+        .filter(|c| c.intrinsic && c.kind == CKind::Parallel3)
+        .filter_map(|c| match (c.args[0].ent(), c.args[1].ent()) {
+            (r, l) if r.kind == EntKind::Ray && l.kind == EntKind::Line => Some((r.i(), l.i())),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Every hidden point put where its point now stands — after a pass that moved planes or
+/// points without the lift rows that tie them.
+pub(crate) fn relift(sk: &mut Sketch) {
+    for k in 0..sk.lifts.len() {
+        let p = sk.lifts[k].point as usize;
+        if sk.points[p].z.is_none() {
+            let at = sk.world_point(p);
+            for i in 0..3 {
+                let q = sk.lifts[k].x[i] as usize;
+                sk.params[q].value = at[i];
+            }
+        }
+    }
 }

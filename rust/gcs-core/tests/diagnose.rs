@@ -460,7 +460,10 @@ fn diagnosis_scales_to_a_large_sketch() {
     assert_eq!(d.dof, 0);
     assert!(d.violated.is_empty());
     assert_eq!(d.components.len(), 1);
-    assert_eq!(d.components[0].constraints.len(), sk.hard_constraints().len());
+    // every row that moves something: not `use std`'s axes, held outright
+    let moving = sk.hard_constraints().iter()
+        .filter(|c| c.params(&sk).iter().any(|&p| !sk.params[p as usize].fixed)).count();
+    assert_eq!(d.components[0].constraints.len(), moving);
 }
 
 /// A line through a point on a circle touches it there, at a maximum of the distance from the
@@ -619,8 +622,11 @@ fn a_tangential_contact_is_rigid_not_under() {
 /// is what reading the unsatisfied rows as evidence about the geometry did (issue #43).
 #[test]
 fn a_solve_that_stopped_short_is_unsolved_not_a_conflict() {
-    let (prog, _) = gcs_core::syntax::parse(
-        "a := point
+    let (prog, _) = crate::common::parse(
+        "\
+use std
+in std.front {
+a := point
          d := point
          b := point hint(x: 8, y: 24)
          c := point hint(x: 52, y: 30)
@@ -633,7 +639,9 @@ fn a_solve_that_stopped_short_is_unsolved_not_a_conflict() {
          d distance(30) c
          fix(x == 0, y == 0) a
          fix(x == 60, y == 0) d
-         crank angle(70) ground_link",
+         crank angle(70) ground_link
+}
+",
     );
     let mut sk = gcs_core::program::elaborate(&prog).sketch;
     let r = solve(&mut sk, SolveOpts { max_iter: 1, retry: false, ..SolveOpts::default() });
@@ -657,15 +665,20 @@ fn a_solve_that_stopped_short_is_unsolved_not_a_conflict() {
 /// removed, so "remove one of these" never names one.
 #[test]
 fn an_intrinsic_row_is_never_a_culprit() {
-    let (prog, _) = gcs_core::syntax::parse(
-        "o := point
+    let (prog, _) = crate::common::parse(
+        "\
+use std
+in std.front {
+o := point
          s := point hint(x: 20, y: 0)
          e := point hint(x: 0, y: 20)
          a := arc(center: o, start: s, end: e) hint(r: 20)
          radius(20) a
          o distance(20) s
          fix(x == 0, y == 0) o
-         r0 := horizontal line(o, s)",
+         r0 := horizontal line(o, s)
+}
+",
     );
     let mut sk = gcs_core::program::elaborate(&prog).sketch;
     assert!(solve(&mut sk, SolveOpts::default()).success);
@@ -679,7 +692,8 @@ fn an_intrinsic_row_is_never_a_culprit() {
 /// #43.18 — the components line is paged like every other list in the summary.
 #[test]
 fn the_components_line_is_bounded() {
-    let (prog, _) = gcs_core::syntax::parse("repeat 400 as i { p := point hint(x: i, y: 0) }\nfix(x == 0, y == 0) p[0]\n");
+    let (prog, _) = crate::common::parse(
+        "use std\nin std.front {\nrepeat 400 as i { p := point hint(x: i, y: 0) }\n}\nfix(x == 0, y == 0) p[0]\n");
     let mut sk = gcs_core::program::elaborate(&prog).sketch;
     let d = diagnose(&mut sk, DiagnoseOptions::default());
     let s = summary(&d);
@@ -698,7 +712,7 @@ fn the_components_line_is_bounded() {
 #[test]
 fn a_relation_only_closure_is_implied_at_dof_zero_too() {
     let read = |src: &str| {
-        let (prog, errs) = gcs_core::syntax::parse(src);
+        let (prog, errs) = crate::common::parse(src);
         assert!(errs.is_empty(), "{errs:?}");
         let e = gcs_core::program::elaborate(&prog);
         assert!(e.ok(), "{:?}", e.errors().map(|d| d.message.clone()).collect::<Vec<_>>());
@@ -710,15 +724,34 @@ fn a_relation_only_closure_is_implied_at_dof_zero_too() {
         (d, dims)
     };
     let (d, dims) = read(
-        "cycle 4 {\n (s := line) -> perpendicular equal\n}\ns[0].p1 distance(50) s[0].p2\nfix(x == 0, y == 0) s[0].p1\nhorizontal s[0]\n",
+        "use std\nin std.front {\ncycle 4 {\n (s := line) -> perpendicular equal\n}\n}\n\
+         s[0].p1 distance(50) s[0].p2\nfix(x == 0, y == 0) s[0].p1\nhorizontal s[0]\n",
     );
     assert_eq!((d.dof, d.status), (0, State::Well), "{}", summary(&d));
     assert!(d.over.is_empty(), "over: {:?}", d.over);
     assert!(!d.implied.is_empty() && dims.iter().all(|c| !d.implied.contains(c)), "{:?}", d.implied);
     let (d, dims) = read(
-        "p := point\nq := point hint(x: 40, y: 0)\nr := point hint(x: 40, y: 40)\ns := point hint(x: 0, y: 40)\n\
-         a := line(p, q)\nb := line(q, r)\nc := line(r, s)\nd := line(s, p)\nhorizontal a\na perpendicular b\n\
-         b perpendicular c\nc perpendicular d\nd perpendicular a\np distance(40) q\nq distance(40) r\nfix(x == 0, y == 0) p\n",
+        "\
+use std
+in std.front {
+p := point
+q := point hint(x: 40, y: 0)
+r := point hint(x: 40, y: 40)
+s := point hint(x: 0, y: 40)
+a := line(p, q)
+b := line(q, r)
+c := line(r, s)
+d := line(s, p)
+horizontal a
+a perpendicular b
+b perpendicular c
+c perpendicular d
+d perpendicular a
+p distance(40) q
+q distance(40) r
+fix(x == 0, y == 0) p
+}
+",
     );
     assert_eq!((d.dof, d.status), (0, State::Well), "{}", summary(&d));
     assert!(d.over.is_empty(), "over: {:?}", d.over);
@@ -726,7 +759,7 @@ fn a_relation_only_closure_is_implied_at_dof_zero_too() {
     assert!(dims.iter().all(|c| !d.implied.contains(c)), "{:?}", d.implied);
     // and a redundancy a dimension takes part in is still `over`, at DOF 0 as anywhere
     let (d, dims) = read(
-        "a := point\nb := point hint(x: 40, y: 0)\na horizontal b\na distance(40) b\na distance(40) b\nfix(x == 0, y == 0) a\n",
+        "use std\nin std.front {\na := point\nb := point hint(x: 40, y: 0)\na horizontal b\na distance(40) b\na distance(40) b\nfix(x == 0, y == 0) a\n}\n",
     );
     assert_eq!(d.status, State::Over, "{}", summary(&d));
     assert!(dims.iter().all(|c| d.over.contains(c)), "over: {:?}", d.over);
@@ -739,24 +772,34 @@ fn a_relation_only_closure_is_implied_at_dof_zero_too() {
 #[test]
 fn an_unwritten_radius_starts_off_zero_and_a_conflict_names_no_intrinsic() {
     let read = |src: &str| {
-        let (prog, errs) = gcs_core::syntax::parse(src);
+        let (prog, errs) = crate::common::parse(src);
         assert!(errs.is_empty(), "{errs:?}");
         let e = gcs_core::program::elaborate(&prog);
         assert!(e.ok(), "{:?}", e.errors().map(|d| d.message.clone()).collect::<Vec<_>>());
         e
     };
-    let arc = "c := point\ns := point\ne := point\n\
-               k := arc(center: c, start: s, end: e)\nfix(x == 0, y == 0) c\nfix(x == 10, y == 0) s\nfix(x == 0, y == 10) e\n";
+    let arc = "\
+use std
+in std.front {
+c := point
+s := point
+e := point
+k := arc(center: c, start: s, end: e)
+fix(x == 0, y == 0) c
+fix(x == 10, y == 0) s
+fix(x == 0, y == 10) e
+}
+";
     let mut sk = read(arc).sketch;
     assert!(solve(&mut sk, SolveOpts::default()).success);
     let r = sk.params[sk.arcs[0].radius as usize].value;
     assert!((r - 10.0).abs() < 1e-9, "r := {r}");
-    let mut sk = read("o := point\nc := circle(center: o)\np := point\np coincident c\nfix(x == 0, y == 0) o\nfix(x == 10, y == 0) p\n").sketch;
+    let mut sk = read("use std\nin std.front {\no := point\nc := circle(center: o)\np := point\np coincident c\nfix(x == 0, y == 0) o\nfix(x == 10, y == 0) p\n}\n").sketch;
     assert!(solve(&mut sk, SolveOpts::default()).success);
     let r = sk.params[sk.circles[0].radius as usize].value;
     assert!((r - 10.0).abs() < 1e-9, "r := {r}");
     // a written seed still wins, including a written 0
-    let e = read("c := point hint(x: 0, y: 0)\nk := arc(center: c) hint(r: 0)\n");
+    let e = read("use std\nin std.front {\nc := point hint(x: 0, y: 0)\nk := arc(center: c) hint(r: 0)\n}\n");
     assert_eq!(e.sketch.params[e.sketch.arcs[0].radius as usize].value, 0.0);
     // the conflict: a point on the arc at the wrong distance from its centre
     let e = read(&format!("{arc}p := point hint(x: 7, y: 7)\np coincident k\np distance(5) c\n"));

@@ -10,7 +10,8 @@ use gcs_core::constraints::{CKind, Constraint};
 use gcs_core::edit;
 use gcs_core::model::EntRef;
 use gcs_core::program::{elaborate, Elaborated};
-use gcs_core::syntax::{parse, write_stmt_to, StmtKind};
+use gcs_core::syntax::{write_stmt_to, StmtKind};
+use crate::common::parse;
 
 fn read(src: &str) -> Elaborated {
     let (prog, errs) = parse(src);
@@ -29,8 +30,14 @@ fn refuses(src: &str, needle: &str) {
     );
 }
 
-const PTS: &str = "a := point hint(x: 0, y: 0)\nb := point hint(x: 10, y: 0)\n\
-                   c := point hint(x: 10, y: 10)\n";
+const PTS: &str = "\
+use std
+in std.front {
+a := point hint(x: 0, y: 0)
+b := point hint(x: 10, y: 0)
+c := point hint(x: 10, y: 10)
+}
+";
 
 /// Every kind of value a definition can name, each lowered to the statement it always was.
 #[test]
@@ -65,16 +72,16 @@ fn the_value_says_what_the_name_is() {
 /// parentheses because `:=` binds looser than `->`.
 #[test]
 fn a_chain_names_its_traversal_and_a_link_is_named_in_parentheses() {
-    let e = read(&format!("{PTS}l := horizontal line(a, b)\n"));
+    let e = read(&format!("{PTS}in std.front {{\nl := horizontal line(a, b)\n}}\n"));
     assert_eq!(e.map.ent_named("l"), Some(EntRef::line(0)));
     assert!(e.sketch.user_constraints().iter().any(|c| c.kind == CKind::Horizontal));
 
-    let e = read(&format!("{PTS}profile := (ab := line(a, b)) -> line -> line -> close\n"));
+    let e = read(&format!("{PTS}in std.front {{\nprofile := (ab := line(a, b)) -> line -> line -> close\n}}\n"));
     assert!(e.map.ent_named("profile").is_some(), "the chain is named");
     assert_eq!(e.map.ent_named("ab"), Some(EntRef::line(0)), "and so is its first link");
 
     // a prefix word stands outside the parentheses or inside the definition, alike
-    let e = read(&format!("{PTS}horizontal (ab := line(a, b)) -> vertical (bc := line) -> close\n"));
+    let e = read(&format!("{PTS}in std.front {{\nhorizontal (ab := line(a, b)) -> vertical (bc := line) -> close\n}}\n"));
     assert_eq!(e.sketch.lines.len(), 2, "two links, closed at a shared corner");
     assert!(e.map.ent_named("bc").is_some());
 }
@@ -122,7 +129,7 @@ fn only_the_outermost_number_is_named() {
 #[test]
 fn a_printed_definition_reads_back() {
     let src = format!(
-        "{PTS}w := 5\nl := line(a, b)\nk := circle(center: c) hint(r: 3)\nd := {{s: w}}\n"
+        "{PTS}w := 5\nin std.front {{\nl := line(a, b)\nk := circle(center: c) hint(r: 3)\n}}\nd := {{s: w}}\n"
     );
     let e = read(&src);
     let mut out = String::new();
@@ -134,26 +141,26 @@ fn a_printed_definition_reads_back() {
     {
         assert!(out.contains(line), "`{line}` in\n{out}");
     }
-    read(&out);
+    read(&crate::common::front(&out));
 }
 
 /// A name minted for an anonymous link wraps it: `(l0 := line(…))`, so the chain still parses
 /// and still threads; a lone declaration takes `l0 := ` in front.
 #[test]
 fn a_minted_name_wraps_a_link_and_prefixes_a_statement() {
-    let mut e = read("line -> line\n");
+    let mut e = read(&crate::common::front("line -> line\n"));
     e.sketch.add(Constraint::one_line(CKind::Horizontal, EntRef::line(1)));
     let sk = std::mem::take(&mut e.sketch);
     let out = edit::reconcile(&mut e, &sk);
     assert!(out.text.contains(") -> (l0 := line("), "{}", out.text);
     let back = read(&out.text);
-    assert_eq!(back.sketch.points.len(), 3, "still threaded");
+    assert_eq!(back.sketch.points.len(), 3 + crate::common::STD_POINTS, "still threaded");
 
-    let mut e = read("horizontal line\n");
+    let mut e = read(&crate::common::front("horizontal line\n"));
     e.sketch.add(Constraint::one_line(CKind::Vertical, EntRef::line(0)));
     let sk = std::mem::take(&mut e.sketch);
     let out = edit::reconcile(&mut e, &sk);
-    assert!(out.text.starts_with("l0 := horizontal line("), "{}", out.text);
+    assert!(out.text.contains("{\nl0 := horizontal line("), "{}", out.text);
 }
 
 /// Deleting a definition that a prefix word qualifies takes the whole statement: the word stands

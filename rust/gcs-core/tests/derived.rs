@@ -8,7 +8,7 @@
 
 use gcs_core::hidden;
 use gcs_core::program::{elaborate, Elaborated};
-use gcs_core::syntax::parse_legacy as parse;
+use crate::common::parse_legacy as parse;
 
 fn read(src: &str) -> Elaborated {
     let (prog, errs) = parse(src);
@@ -22,9 +22,11 @@ fn read(src: &str) -> Elaborated {
     e
 }
 
-/// A 60 × 40 rectangle grounded on the page, its face `sec`, and the front view it lies in.
+/// A 60 × 40 rectangle grounded in the front plane, and its face `sec`.
 const RECT: &str = "\
 unit mm
+use std
+in std.front {
 a := point
 b := point hint(x: 60, y: 0)
 c := point hint(x: 60, y: 40)
@@ -35,26 +37,16 @@ vertical bc
 a distance(60) b
 a distance(40) d
 fix(x == 0, y == 0) a
+}
 sec := face(ab, bc, cd, da)
-front := plane(origin: a, toward: b)
-";
-
-/// The right view, a hand's breadth to the side — `std`'s own `ThreeViews` fold.
-const SIDE: &str = "\
-p2 := point
-q2 := point hint(x: 140, y: 0)
-side := plane(origin: p2, toward: q2, from: front, fold: -90deg)
-fix(x == 100, y == 0) p2
-p2 distance(40, along: x) q2
-p2 distance(0, along: y) q2
 ";
 
 const UNIT: f64 = 0.05;
 
 #[test]
 fn projection_inputs_exclude_unrelated_geometry_and_include_solid_extents() {
-    let mut e = read(&format!("{RECT}{SIDE}stray := point hint(x: 20, y: 20)\n\
-        block := solid(sec, depth: 30mm)\nview(block) in side\n"));
+    let mut e = read(&format!("{RECT}in std.front {{\nstray := point hint(x: 20, y: 20)\n}}\n\
+        block := solid(sec, depth: 30mm)\nview(block) in std.side\n"));
     let original = hidden::inputs(&e.sketch);
     let picture = gcs_core::report::derived_json(&e.sketch, UNIT);
     let stray = e.map.ent_named("stray").unwrap().i();
@@ -72,21 +64,23 @@ fn projection_inputs_exclude_unrelated_geometry_and_include_solid_extents() {
 
 #[test]
 fn projection_inputs_follow_view_poses_and_cutting_planes() {
-    let mut e = read(&format!("{RECT}{SIDE}block := solid(sec, depth: 30mm)\n\
-        slice := plane(origin: a, toward: b, from: front, offset: 10mm)\n\
-        view(block) in side\nsection(block, at: slice) in front\n"));
+    let mut e = read(&format!("{RECT}block := solid(sec, depth: 30mm)\n\
+        slice := plane(u: std.x, v: std.z)\nfix(x == 0, y == -10, z == 0) slice\n\
+        view(block) in std.side\nsection(block, at: slice) in std.front\n"));
     let before = hidden::inputs(&e.sketch);
     let picture = gcs_core::report::derived_json(&e.sketch, UNIT);
-    let origin = e.sketch.planes[1].frame.origin as usize;
-    let x = e.sketch.points[origin].x as usize;
-    e.sketch.params[x].value += 5.0;
+    let side = e.map.ent_named("std.side").unwrap().i();
+    // along the side plane's u: out along its normal the picture would not move
+    let y = e.sketch.planes[side].o[1] as usize;
+    e.sketch.params[y].value += 5.0;
     let moved = hidden::inputs(&e.sketch);
     assert_ne!(moved, before);
     assert_ne!(gcs_core::report::derived_json(&e.sketch, UNIT), picture);
     // This is a spatial offset, not a parameter of the 2D drawing.
-    let mut o = e.sketch.basis(2).o;
+    let slice = e.map.ent_named("slice").unwrap().i();
+    let mut o = e.sketch.basis(slice).o;
     o[2] += 2.0;
-    e.sketch.set_plane_origin(2, o);
+    e.sketch.set_plane_origin(slice, o);
     assert_ne!(hidden::inputs(&e.sketch), moved);
 }
 
@@ -111,9 +105,9 @@ fn covered(v: &[hidden::Drawn], p: (f64, f64), q: (f64, f64), tol: f64) -> bool 
 fn a_view_in_the_plane_a_face_was_drawn_in_is_the_face_itself() {
     // **the strongest thing a derived view can be held to**: extrude a face along its own
     // normal and look at it square on, and the outline that comes back is the outline that was
-    // drawn — the same four corners, at the same page coordinates.  Nothing here compares one
+    // drawn — the same four corners, at the same coordinates in the plane.  Nothing here compares one
     // kernel against another; it compares the kernel against the drawing it was written over.
-    let e = read(&format!("{RECT}block := solid(sec, depth: 30mm)\nview(block) in front\n"));
+    let e = read(&format!("{RECT}block := solid(sec, depth: 30mm)\nview(block) in std.front\n"));
     let v = strokes(&e);
     let tol = 1e-6;
     for (p, q) in [
@@ -132,23 +126,23 @@ fn a_view_in_the_plane_a_face_was_drawn_in_is_the_face_itself() {
 #[test]
 fn a_bore_along_the_eye_is_two_hidden_lines_in_the_view_beside_it() {
     let src = format!(
-        "{RECT}{SIDE}o := point hint(x: 30, y: 20)\n\
+        "{RECT}in std.front {{\no := point hint(x: 30, y: 20)\n\
          a distance(30, along: x) o\na distance(20, along: y) o\n\
-         hole := circle(center: o) hint(r: 8)\nradius(8) hole\nhole_f := face(hole)\n\
+         hole := circle(center: o) hint(r: 8)\nradius(8) hole\n}}\nhole_f := face(hole)\n\
          stock := solid(sec, depth: 30mm)\nbore := solid(hole_f, depth: 30mm)\n\
-         body := solid(stock)\nbore cut body\nview(body) in side\n"
+         body := solid(stock)\nbore cut body\nview(body) in std.side\n"
     );
     let e = read(&src);
     let v = strokes(&e);
     assert!(v.iter().any(|d| d.hidden), "the bore's walls are behind the block's face");
-    // the block's outline in the right view is 40 across (its height, folded) and 30 tall (its
-    // depth), and every hidden line stands inside it
-    let hidden_x: Vec<f64> =
-        v.iter().filter(|d| d.hidden).flat_map(|d| d.pts.iter().map(|p| p.0)).collect();
-    assert!(!hidden_x.is_empty());
-    let lo = hidden_x.iter().cloned().fold(f64::INFINITY, f64::min);
-    let hi = hidden_x.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-    assert!(lo > 100.0 - 40.0 && hi < 100.0, "the bore is inside the block: {lo}..{hi}");
+    // the block's outline in the right view is 30 across (its depth) and 40 tall (its height),
+    // in the side plane's own coordinates, and every hidden line stands inside it
+    let hidden_y: Vec<f64> =
+        v.iter().filter(|d| d.hidden).flat_map(|d| d.pts.iter().map(|p| p.1)).collect();
+    assert!(!hidden_y.is_empty());
+    let lo = hidden_y.iter().cloned().fold(f64::INFINITY, f64::min);
+    let hi = hidden_y.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+    assert!(lo > 0.0 && hi < 40.0, "the bore is inside the block: {lo}..{hi}");
     // and it is 16 across, which is the bore's own diameter — the number the sheet never wrote
     // in this view and would have had to keep in step by hand
     assert!((hi - lo - 16.0).abs() < 0.2, "the bore reads its own diameter: {}", hi - lo);
@@ -159,10 +153,10 @@ fn a_cylinder_is_two_lines_at_every_zoom() {
     // the draughtsman's rule, and the reason `smooth` exists: a round surface is drawn by its
     // silhouette, never by the facets the kernel happens to have cut it into
     let src = format!(
-        "{RECT}{SIDE}o := point hint(x: 30, y: 20)\n\
+        "{RECT}in std.front {{\no := point hint(x: 30, y: 20)\n\
          a distance(30, along: x) o\na distance(20, along: y) o\n\
-         rim := circle(center: o) hint(r: 10)\nradius(10) rim\nrf := face(rim)\n\
-         cyl := solid(rf, depth: 25mm)\nview(cyl) in side\n"
+         rim := circle(center: o) hint(r: 10)\nradius(10) rim\n}}\nrf := face(rim)\n\
+         cyl := solid(rf, depth: 25mm)\nview(cyl) in std.side\n"
     );
     let e = read(&src);
     for unit in [2.0, 0.5, 0.05] {
@@ -177,11 +171,11 @@ fn a_cylinder_is_two_lines_at_every_zoom() {
 #[test]
 fn a_section_shows_the_cut() {
     let src = format!(
-        "{RECT}o := point hint(x: 30, y: 20)\n\
+        "{RECT}in std.front {{\no := point hint(x: 30, y: 20)\n\
          a distance(30, along: x) o\na distance(20, along: y) o\n\
-         hole := circle(center: o) hint(r: 8)\nradius(8) hole\nhole_f := face(hole)\n\
+         hole := circle(center: o) hint(r: 8)\nradius(8) hole\n}}\nhole_f := face(hole)\n\
          stock := solid(sec, depth: 30mm)\nbore := solid(hole_f, depth: 30mm)\n\
-         body := solid(stock)\nbore cut body\nsection(body, at: front) in front\n"
+         body := solid(stock)\nbore cut body\nsection(body, at: std.front) in std.front\n"
     );
     let e = read(&src);
     let v = strokes(&e);
@@ -196,7 +190,7 @@ fn a_section_shows_the_cut() {
 #[test]
 fn a_section_is_drawn_in_a_view_parallel_to_its_cut() {
     let src = format!(
-        "{RECT}{SIDE}block := solid(sec, depth: 30mm)\nsection(block, at: front) in side\n"
+        "{RECT}block := solid(sec, depth: 30mm)\nsection(block, at: std.front) in std.side\n"
     );
     let (prog, errs) = parse(&src);
     assert!(errs.is_empty(), "{errs:?}");
@@ -213,11 +207,11 @@ fn a_part_carries_no_views_and_a_sheet_asks_for_them() {
     // statement.  No `Int` draw flag, no second copy of the geometry, no `project` to keep in
     // step — which is the sixty lines `vtwin/cylinder.sv` spent on its two extra views
     let e = read(&format!(
-        "{RECT}{SIDE}block := solid(sec, depth: 30mm)\nview(block) in front\nview(block) in side\n"
+        "{RECT}block := solid(sec, depth: 30mm)\nview(block) in std.front\nview(block) in std.side\n"
     ));
     assert_eq!(e.sketch.derived.len(), 2, "two pictures of one solid");
     assert_eq!(e.sketch.solids.len(), 1, "written once");
+    // each in its own plane's coordinates: where the sheet puts them is the drawing's
     let v = strokes(&e);
-    assert!(v.iter().any(|d| d.pts.iter().any(|p| p.0 < 61.0)), "one where the design is");
-    assert!(v.iter().any(|d| d.pts.iter().any(|p| p.0 > 61.0)), "one beside it");
+    assert!(v.iter().any(|d| d.of == 0) && v.iter().any(|d| d.of == 1), "both drawn");
 }

@@ -1,27 +1,30 @@
 unit mm
-o := point
-q := point
-x := point
-a := point
-b := point
-m := point
-c := point
-d := point
-fix(x == 0, y == 0) o
-fix(x == 0, y == 2) q
-fix(x == 1, y == 0) x
-fix(x == 2, y == 0) a
-fix(x == 3, y == 0) b
-fix(x == 3, y == 1) m
-fix(x == 3, y == 2) c
-fix(x == 2, y == 2) d
-axis := line(o,q)
-spin_axis := line(o,x)
-bottom := line(a,b)
-low := line(b,m)
-high := line(m,c)
-top := line(c,d)
-inner := line(d,a)
+use std
+in std.front {
+  o := point
+  q := point
+  x := point
+  a := point
+  b := point
+  m := point
+  c := point
+  d := point
+  fix(x == 0, y == 0) o
+  fix(x == 0, y == 2) q
+  fix(x == 1, y == 0) x
+  fix(x == 2, y == 0) a
+  fix(x == 3, y == 0) b
+  fix(x == 3, y == 1) m
+  fix(x == 3, y == 2) c
+  fix(x == 2, y == 2) d
+  axis := line(o,q)
+  spin_axis := line(o,x)
+  bottom := line(a,b)
+  low := line(b,m)
+  high := line(m,c)
+  top := line(c,d)
+  inner := line(d,a)
+}
 profile := face(bottom,low,high,top,inner)
 body := solid(profile,about: axis)
 first_surface := surface(body,low,from: 0deg,to: 90deg)
@@ -42,20 +45,24 @@ component Sphere(origin: point,size: Length) {
   private carrier := solid(face(rim,diameter),about: diameter)
   wall := surface(carrier,rim)
 }
-shifted := point
-fix(x == 0, y == 1) shifted
-globe := Sphere(o,size: sqrt(9.25)*1mm)
-offset := Sphere(shifted,size: sqrt(10.25-cos(0.1rad))*1mm)
-join_cut := Sphere(shifted,size: sqrt(11-2*cos(0.1rad))*1mm)
+in std.front {
+  shifted := point
+  fix(x == 0, y == 1) shifted
+  globe := Sphere(o,size: sqrt(9.25)*1mm)
+  offset := Sphere(shifted,size: sqrt(10.25-cos(0.1rad))*1mm)
+  join_cut := Sphere(shifted,size: sqrt(11-2*cos(0.1rad))*1mm)
+}
 radial := seam(first_envelope,globe.wall)
 offset_edge := seam(first_envelope,offset.wall)
 join_edge := seam(second_envelope,join_cut.wall)
 corner := vertex(first: radial,second: offset_edge)
 junction := vertex(shared,join_edge)
 
-lower := Sphere(o,size: sqrt(9+0.98*0.98)*1mm)
-upper := Sphere(o,size: sqrt(9+1.02*1.02)*1mm)
-far_cut := Sphere(shifted,size: sqrt(11-2*cos(0.2rad))*1mm)
+in std.front {
+  lower := Sphere(o,size: sqrt(9+0.98*0.98)*1mm)
+  upper := Sphere(o,size: sqrt(9+1.02*1.02)*1mm)
+  far_cut := Sphere(shifted,size: sqrt(11-2*cos(0.2rad))*1mm)
+}
 low_cut := seam(first_envelope,lower.wall)
 high_cut := seam(second_envelope,upper.wall)
 near_low := seam(first_envelope,join_cut.wall)

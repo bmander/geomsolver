@@ -124,18 +124,11 @@ fn face_reads(sk: &Sketch, fi: u32, v: &mut Vec<f64>) {
             }
         }
     }
-    if let Some(p) = plane {
-        if let Some(pl) = sk.planes.get(p as usize) {
-            let basis = sk.basis(p as usize);
-            v.extend(basis.u);
-            v.extend(basis.v);
-            v.extend(basis.o);
-            v.push(sk.params[pl.frame.c as usize].value);
-            v.push(sk.params[pl.frame.s as usize].value);
-            let o = sk.point_xy(pl.frame.origin as usize);
-            v.push(o.0);
-            v.push(o.1);
-        }
+    if let Some(p) = plane.filter(|&p| (p as usize) < sk.planes.len()) {
+        let basis = sk.basis(p as usize);
+        v.extend(basis.u);
+        v.extend(basis.v);
+        v.extend(basis.o);
     }
 }
 

@@ -6,12 +6,12 @@ use gcs_core::{
     plane::Basis,
     program,
     solid::{ApproximationPolicy as Policy, LocalPoint, PageFrame, PagePoint, WorldPoint},
-    solve, syntax,
+    solve,
 };
 use std::rc::Rc;
 
 fn read(source: &str) -> program::Elaborated {
-    let (p, errors) = syntax::parse_legacy(source);
+    let (p, errors) = crate::common::parse_legacy(source);
     assert!(errors.is_empty(), "{errors:?}");
     let mut e = program::elaborate(&p);
     assert!(e.ok(), "{:?}", e.diags);

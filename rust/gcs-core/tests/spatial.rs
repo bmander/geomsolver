@@ -1,12 +1,10 @@
-//! A view whose attitude is solved rather than stated, and the hidden points in space a spatial
-//! relation reads (`docs/spatial-constraints-plan.md`): the quaternion helpers, the
-//! unknowns a freed view mints, what they cost in freedoms, and that none of it moves a number
-//! until a solve moves the view.
+//! A plane over two rays and a place in space (`docs/planes-plan.md`), and the hidden points in
+//! space a spatial relation reads: what a plane's rays and origin cost in freedoms, that none of
+//! it moves a number until a solve moves the plane, and the relations in space over them.
 use gcs_core::constraints::CKind;
 use gcs_core::model::{EntRef, Sketch};
-use gcs_core::plane::{from_quat, lift_q, quat_matrix, quat_mul, quat_rotate, to_quat, Basis, Quat};
+use gcs_core::plane::Basis;
 use gcs_core::space::cross;
-use gcs_core::rng::Rng;
 use gcs_core::solve::{solve, SolveOpts};
 use gcs_core::{diagnose, io};
 
@@ -18,280 +16,151 @@ fn bits(b: Basis) -> Vec<u64> {
     [b.u, b.v, b.o].concat().iter().map(|x| x.to_bits()).collect()
 }
 
-/// Bases worth turning into quaternions: the page and its folds (each pivot branch of the
-/// conversion is reached among them), and explicit ones at random.
-fn bases() -> Vec<Basis> {
-    let right = Basis::page().fold(-std::f64::consts::FRAC_PI_2);
-    let mut out = vec![Basis::page(), Basis::page().fold(0.0), right];
-    for k in 0..12 {
-        out.push(Basis::page().fold(0.5 * k as f64 - 3.0).fold(0.3 * k as f64));
-    }
-    let mut rng = Rng::new(7);
-    for _ in 0..40 {
-        let r = |rng: &mut Rng| [0; 3].map(|_| rng.uniform(-1.0, 1.0));
-        if let Some(b) = Basis::explicit(r(&mut rng), r(&mut rng)) {
-            out.push(b);
-        }
-    }
-    out
+/// The front plane stood `d` toward the viewer (its normal is −y).
+fn front(d: f64) -> Basis {
+    Basis { o: [0.0, -d, 0.0], ..Basis::page() }
 }
 
-#[test]
-fn a_basis_and_its_quaternion_are_one_attitude() {
-    for b in bases() {
-        let q = to_quat(&b);
-        assert!((q.iter().map(|x| x * x).sum::<f64>() - 1.0).abs() < 1e-14, "unit: {q:?}");
-        assert!(q[0] >= 0.0, "the canonical sign");
-        let back = from_quat(q, b.o).unwrap();
-        assert!(close3(back.u, b.u, 1e-14) && close3(back.v, b.v, 1e-14), "{b:?} -> {back:?}");
-        // and the rotation carries the page's axes onto the view's, the normal included
-        assert!(close3(quat_rotate(q, [0.0, 0.0, 1.0]).unwrap(), b.normal(), 1e-14));
-        // only the direction of q is read: a q off the unit sphere names the same view
-        let long = q.map(|x| 3.0 * x);
-        let b3 = from_quat(long, b.o).unwrap();
-        assert!(close3(b3.u, b.u, 1e-14) && close3(b3.v, b.v, 1e-14));
-        let gap = to_quat(&back).iter().zip(&q).map(|(a, b)| (a - b).abs()).fold(0.0, f64::max);
-        assert!(gap < 1e-14);
-    }
-    assert!(quat_matrix([0.0; 4]).is_none() && from_quat([0.0; 4], [0.0; 3]).is_none());
+/// The top plane (`u = x`, `v = y`, the normal +z) at height `h`.
+fn top(h: f64) -> Basis {
+    Basis { u: [1.0, 0.0, 0.0], v: [0.0, 1.0, 0.0], o: [0.0, 0.0, h] }
 }
 
-#[test]
-fn a_product_is_the_rotations_composed() {
-    let bs = bases();
-    for w in bs.windows(2) {
-        let (a, b) = (to_quat(&w[0]), to_quat(&w[1]));
-        let ab: Quat = quat_mul(a, b);
-        for x in [[1.0, 0.0, 0.0], [0.3, -2.0, 0.7]] {
-            let two = quat_rotate(a, quat_rotate(b, x).unwrap()).unwrap();
-            assert!(close3(quat_rotate(ab, x).unwrap(), two, 1e-13));
-        }
-    }
-}
-
-#[test]
-fn the_lift_and_its_derivative() {
-    let mut rng = Rng::new(3);
-    for _ in 0..20 {
-        let q: Quat = [0; 4].map(|_| rng.uniform(-1.0, 1.0));
-        let w = [0; 3].map(|_| rng.uniform(-5.0, 5.0));
-        let (l, r, dq) = lift_q(q, w).unwrap();
-        assert!(close3(l, quat_rotate(q, w).unwrap(), 1e-12));
-        // R is a rotation: its columns orthonormal and right-handed
-        let col = |j: usize| [r[0][j], r[1][j], r[2][j]];
-        assert!(close3(cross(col(0), col(1)), col(2), 1e-12));
-        for k in 0..4 {
-            let h = 1e-6;
-            let (mut qp, mut qm) = (q, q);
-            qp[k] += h;
-            qm[k] -= h;
-            let (lp, lm) = (lift_q(qp, w).unwrap().0, lift_q(qm, w).unwrap().0);
-            for i in 0..3 {
-                assert!(((lp[i] - lm[i]) / (2.0 * h) - dq[i][k]).abs() < 1e-6);
-            }
-        }
-        // no component along q itself: its length is quat_unit's business
-        for i in 0..3 {
-            assert!((0..4).map(|k| dq[i][k] * q[k]).sum::<f64>().abs() < 1e-12);
-        }
-    }
-}
-
-/// A view turned and stood off in space, with two points drawn in it.
+/// A plane turned off every axis and stood off the origin, over two free rays, with two points
+/// drawn in it.
 fn turned() -> (Sketch, usize, [usize; 2]) {
     let mut sk = Sketch::new();
-    let o = sk.point(10.0, 5.0, false, "o");
-    let t = sk.point(14.0, 8.0, false, "t");
-    let b = Basis::page().fold(-0.7).fold(0.4).offset(2.5);
-    let b = Basis { o: [b.o[0] + 0.3 * b.u[0], b.o[1] + 0.3 * b.u[1], b.o[2] + 0.3 * b.u[2]], ..b };
-    let v = sk.plane(o, t, b, "side");
+    let u = sk.ray([0.8, 0.3, -0.2], "u");
+    let v = sk.ray([-0.1, 0.4, 0.9], "w");
+    let pl = sk.plane(u, v, [2.0, -1.0, 3.5], "side");
     let a = sk.point(20.0, 3.0, false, "a");
     let c = sk.point(-4.0, 12.0, false, "c");
-    sk.set_plane(a, Some(v));
-    sk.set_plane(c, Some(v));
-    (sk, v, [a, c])
+    sk.set_plane(a, Some(pl));
+    sk.set_plane(c, Some(pl));
+    (sk, pl, [a, c])
 }
 
 #[test]
-fn freeing_a_view_moves_nothing() {
-    let (mut sk, v, _) = turned();
-    let before = bits(sk.basis(v));
-    let values: Vec<u64> = sk.params.iter().map(|p| p.value.to_bits()).collect();
-    sk.free_attitude(v);
-    let att = sk.planes[v].att.clone().expect("minted");
-    assert_eq!(bits(sk.basis(v)), before, "the stored basis, to the bit");
-    // the numbers that were there are untouched; five were added, all free
-    assert_eq!(sk.params.len(), values.len() + 5);
-    for (p, &x) in sk.params.iter().zip(&values) {
-        assert_eq!(p.value.to_bits(), x);
-    }
-    assert!(att.q.iter().chain([&att.d]).all(|&k| !sk.params[k as usize].fixed));
-    // one intrinsic row, never the user's
-    let c = sk.constraints.last().unwrap();
-    assert_eq!(c.kind, CKind::QuatUnit);
-    assert!(c.intrinsic && sk.user_constraints().is_empty());
-    // what the unknowns say is the stored basis, to the solve's resolution
-    let b = sk.basis(v);
-    let q = att.q.map(|k| sk.params[k as usize].value);
-    let d = sk.params[att.d as usize].value;
-    let o = quat_rotate(q, [att.ab[0], att.ab[1], d]).unwrap();
-    let r = from_quat(q, o).unwrap();
-    assert!(close3(r.u, b.u, 1e-14) && close3(r.v, b.v, 1e-14) && close3(r.o, b.o, 1e-14));
-    // freed twice is minted once
-    sk.free_attitude(v);
-    assert_eq!(sk.constraints.iter().filter(|c| c.kind == CKind::QuatUnit).count(), 1);
-    // held and let go, and nothing moves either way
-    sk.fix_attitude(v, true);
-    assert!(att.q.iter().chain([&att.d]).all(|&k| sk.params[k as usize].fixed));
-    assert_eq!(bits(sk.basis(v)), before);
-    sk.fix_attitude(v, false);
-    assert_eq!(bits(sk.basis(v)), before);
-    // a solve of a drawing already solved leaves the view where it stands
-    let r = solve(&mut sk, SolveOpts::default());
-    assert!(r.success, "{}", r.message);
-    let after = sk.basis(v);
-    assert!(close3(after.u, b.u, 1e-12) && close3(after.v, b.v, 1e-12));
-    assert!(close3(after.o, b.o, 1e-12));
+fn a_plane_stands_on_its_rays() {
+    let (sk, pl, [a, _]) = turned();
+    let b = sk.basis(pl);
+    let n = |x: [f64; 3]| gcs_core::space::norm(x);
+    // right along the first ray, up what is left of the second, out their cross product
+    let du = [0.8, 0.3, -0.2].map(|x: f64| x / n([0.8, 0.3, -0.2]));
+    assert!(close3(b.u, du, 1e-15));
+    assert!(gcs_core::space::dot(b.u, b.v).abs() < 1e-15 && (n(b.v) - 1.0).abs() < 1e-15);
+    let w = [-0.1, 0.4, 0.9];
+    assert!(gcs_core::space::dot(cross(b.u, b.v), w).abs() < 1e-15, "the second ray in it");
+    assert_eq!(b.o, [2.0, -1.0, 3.5]);
+    // a point drawn at (20, 3) stands at o + 20u + 3v, and its origin at o
+    assert!(close3(sk.world_point(a), b.lift(20.0, 3.0), 1e-12));
+    assert!(close3(sk.world_point(sk.planes[pl].origin as usize), b.o, 1e-15));
 }
 
 #[test]
-fn a_free_view_is_four_freedoms_and_a_lift_is_none() {
-    let (mut sk, v, [a, c]) = turned();
+fn a_free_plane_counts_its_freedoms() {
+    let (mut sk, _, [a, c]) = turned();
     let dof = |sk: &mut Sketch| diagnose::diagnose(sk, Default::default()).dof;
+    // two points in the plane, two directions (each on its sphere), and where the plane stands;
+    // the second ray's lean along the first is no freedom of the plane, but it is a parameter
+    // nothing states
     let stated = dof(&mut sk);
-    assert_eq!(stated, 8, "the datum's two points and the two drawn in it");
+    assert_eq!(stated, 4 + 2 + 2 + 3);
     sk.lift_point(a).unwrap();
-    assert_eq!(dof(&mut sk), stated, "a hidden point is held where its view point lifts");
-    sk.free_attitude(v);
-    assert_eq!(dof(&mut sk), stated + 4, "three turns and one offset");
+    assert_eq!(dof(&mut sk), stated, "a hidden point is held where its plane point lifts");
     sk.lift_point(c).unwrap();
-    assert_eq!(dof(&mut sk), stated + 4);
-    sk.fix_attitude(v, true);
-    assert_eq!(dof(&mut sk), stated, "a held view is a stated one");
+    assert_eq!(dof(&mut sk), stated);
+    // a point in space is its own lift: no new parameter and no row
+    let before = sk.params.len();
+    let s = sk.point3([1.0, 2.0, 3.0], false, "s");
+    let k = sk.lift_point(s).unwrap();
+    assert_eq!(sk.params.len(), before + 3);
+    assert_eq!(sk.lifted(s), [1.0, 2.0, 3.0]);
+    assert_eq!(sk.lifts[k].x[2], sk.points[s].z.unwrap());
+    assert_eq!(dof(&mut sk), stated + 3);
 }
 
 #[test]
-fn a_lift_follows_its_view() {
-    let (mut sk, v, [a, c]) = turned();
-    // a lift written before the view was freed changes twin with it, keeping its id
+fn a_lift_follows_its_plane() {
+    let (mut sk, pl, [a, c]) = turned();
     let la = sk.lift_point(a).unwrap();
-    let id = sk.constraints.last().unwrap().id;
-    assert_eq!(sk.constraints.last().unwrap().kind, CKind::LiftFixed);
-    assert_eq!(sk.lift_point(a), Some(la), "one hidden point per view point");
+    assert_eq!(sk.constraints.last().unwrap().kind, CKind::Lift);
+    assert!(sk.constraints.last().unwrap().intrinsic);
+    assert_eq!(sk.lift_point(a), Some(la), "one hidden point per plane point");
     let at = |sk: &Sketch, k: usize| sk.lifts[k].x.map(|p| sk.params[p as usize].value);
     assert_eq!(at(&sk, la), sk.world_point(a), "seeded at the lift");
-    sk.free_attitude(v);
-    let lift = sk.constraints.iter().find(|x| x.id == id).unwrap();
-    assert_eq!(lift.kind, CKind::Lift);
     let lc = sk.lift_point(c).unwrap();
-    assert_eq!(sk.constraints.last().unwrap().kind, CKind::Lift);
-    // a point on no view has no lift yet
-    let page = sk.point(1.0, 1.0, false, "page");
-    assert_eq!(sk.lift_point(page), None);
-    // turn the view by hand, hold it and the drawing, and solve: the hidden points follow
-    let att = sk.planes[v].att.clone().unwrap();
-    let q = to_quat(&sk.basis(v));
-    let turn: Quat = [0.9f64.cos(), 0.0, 0.9f64.sin(), 0.0];
-    let q2 = quat_mul(turn, q);
-    for k in 0..4 {
-        sk.params[att.q[k] as usize].value = q2[k];
+    // a point of a 2D sketch has no lift
+    let flat = sk.point(1.0, 1.0, false, "flat");
+    assert_eq!(sk.lift_point(flat), None);
+    // turn the first ray by hand, hold everything drawn, and solve: the hidden points follow
+    let u = sk.rays[sk.planes[pl].u as usize].d;
+    let turned = [0.2f64, 0.9, -0.3];
+    let n = gcs_core::space::norm(turned);
+    for k in 0..3 {
+        sk.params[u[k] as usize].value = turned[k] / n;
+        sk.params[u[k] as usize].fixed = true;
     }
-    sk.params[att.d as usize].value = -4.0;
-    sk.fix_attitude(v, true);
-    for p in 0..4 {
-        sk.fix_point(p, true);
+    for p in sk.rays[sk.planes[pl].v as usize].d.into_iter().chain(sk.planes[pl].o) {
+        sk.params[p as usize].fixed = true;
     }
+    sk.fix_point(a, true);
+    sk.fix_point(c, true);
     let r = solve(&mut sk, SolveOpts::default());
     assert!(r.success, "{}", r.message);
     for (k, p) in [(la, a), (lc, c)] {
         let want = sk.world_point(p);
         assert!(close3(at(&sk, k), want, 1e-9), "{:?} {:?}", at(&sk, k), want);
     }
-    // and the view it was turned to is what `basis` reads, offset included
-    let b = sk.basis(v);
-    assert!((b.along_normal() + 4.0).abs() < 1e-12);
-    assert!(close3(b.u, quat_rotate(q2, [1.0, 0.0, 0.0]).unwrap(), 1e-15));
-    // the stated basis turned the same way lifts the same point
-    let pv = gcs_core::plane::in_view(
-        sk.params[sk.planes[v].frame.c as usize].value,
-        sk.params[sk.planes[v].frame.s as usize].value,
-        sk.point_xy(0),
-        sk.point_xy(a),
-    );
-    assert!(close3(b.lift(pv.0, pv.1), sk.world_point(a), 1e-12));
-    let _ = EntRef::plane(v);
+    assert!(close3(sk.basis(pl).u, turned.map(|x| x / n), 1e-15));
 }
 
 #[test]
-fn a_solved_view_round_trips_through_json_and_a_copy() {
-    let (mut sk, v, [a, _]) = turned();
+fn a_plane_round_trips_through_json_and_a_copy() {
+    let (mut sk, pl, [a, _]) = turned();
     sk.lift_point(a).unwrap();
-    sk.free_attitude(v);
-    // one view left at rest and one moved: the first reads its stored basis, the second its
-    // unknowns, and both must come back to the bit
-    let (o2, t2) = (sk.point(0.0, 0.0, false, "o2"), sk.point(3.0, 0.0, false, "t2"));
-    let w = sk.plane(o2, t2, Basis::page().fold(0.2), "top");
-    sk.free_attitude(w);
-    let att = sk.planes[w].att.clone().unwrap();
-    for (k, x) in [0.8, 0.1, -0.3, 0.5].iter().enumerate() {
-        sk.params[att.q[k] as usize].value = *x;
-    }
-    sk.params[att.d as usize].value = 1.25;
-    sk.params[att.d as usize].fixed = true;
+    let held = sk.fixed_plane(top(1.25), "top");
     let text = io::dumps(&sk, None);
-    assert!(text.contains("\"att\""));
-    assert!(!text.contains("QuatUnit") && !text.contains("Lift") && !text.contains("lift"),
+    assert!(!text.contains("RayUnit") && !text.contains("\"Lift\"") && !text.contains("lift"),
             "an intrinsic row and a hidden point are never stored");
     let back = io::loads(&text).unwrap();
     assert_eq!(io::dumps(&back, None), text);
-    for p in [v, w] {
+    for p in [pl, held] {
         assert_eq!(bits(back.basis(p)), bits(sk.basis(p)), "plane {p}");
-        assert!(back.planes[p].att.is_some());
+        assert_eq!(back.plane_fixed(p), sk.plane_fixed(p));
     }
-    let batt = back.planes[w].att.clone().unwrap();
-    assert!(back.params[batt.d as usize].fixed && !back.params[batt.q[0] as usize].fixed);
-    assert_eq!(back.constraints.iter().filter(|c| c.kind == CKind::QuatUnit).count(), 2);
+    assert!(back.plane_fixed(held) && !back.plane_fixed(pl));
+    assert_eq!(back.constraints.iter().filter(|c| c.kind == CKind::RayUnit).count(), 4);
     assert!(back.lifts.is_empty(), "re-minted by whatever reads it, not by the reader");
-    // a copy carries the unknowns and the hidden point, and a stated document writes as it did
-    let copy = io::copy(&sk, &[EntRef::plane(v), EntRef::plane(w), EntRef::point(a)]);
-    for p in [v, w] {
+    // a copy carries the plane, its rays and the hidden point
+    let copy = io::copy(&sk, &[EntRef::plane(pl), EntRef::plane(held), EntRef::point(a)]);
+    for p in [pl, held] {
         assert_eq!(bits(copy.basis(p)), bits(sk.basis(p)));
     }
     assert_eq!(copy.lifts.len(), 1);
-    let (plain, _, _) = turned();
-    assert!(!io::dumps(&plain, None).contains("att"));
 }
 
 #[test]
-fn a_drag_part_carries_the_view_and_its_hidden_points() {
-    let (mut sk, v, [a, _]) = turned();
+fn a_drag_part_carries_the_plane_and_its_hidden_points() {
+    let (mut sk, pl, [a, _]) = turned();
     sk.lift_point(a).unwrap();
-    sk.free_attitude(v);
     let part = io::Part::around(&sk, EntRef::point(a));
-    let pv = part.sketch.planes.iter().position(|p| p.att.is_some()).expect("the view came");
+    assert_eq!(part.sketch.planes.len(), 1, "the plane came");
     assert_eq!(part.sketch.lifts.len(), 1);
-    assert_eq!(bits(part.sketch.basis(pv)), bits(sk.basis(v)));
-    // a move in the part reaches the document's unknowns
+    assert_eq!(bits(part.sketch.basis(0)), bits(sk.basis(pl)));
+    // a move in the part reaches the document's ray
     let mut part = part;
-    let q0 = part.sketch.planes[pv].att.as_ref().unwrap().q[0] as usize;
-    part.sketch.params[q0].value = 0.25;
+    let u0 = part.sketch.rays[part.sketch.planes[0].u as usize].d[0] as usize;
+    part.sketch.params[u0].value = 0.25;
     part.write_back(&mut sk);
-    let att = sk.planes[v].att.clone().unwrap();
-    assert_eq!(sk.params[att.q[0] as usize].value, 0.25);
+    let u = sk.rays[sk.planes[pl].u as usize].d[0] as usize;
+    assert_eq!(sk.params[u].value, 0.25);
 }
 
 /* -- the relations in space, through the Rust API --------------------------------------------- */
 
 use gcs_core::constraints::{Arg, Constraint};
 use gcs_core::diagnose::Diagnosis;
-
-/// A view with its datum held at the page's origin, so a point drawn in it at page `(x, y)` is at
-/// view coordinates `(x, y)` and stands in space at `basis.lift(x, y)`.
-fn view(sk: &mut Sketch, b: Basis, name: &str) -> usize {
-    let o = sk.point(0.0, 0.0, true, &format!("{name}.o"));
-    let t = sk.point(1.0, 0.0, true, &format!("{name}.t"));
-    sk.plane(o, t, b, name)
-}
 
 fn drawn(sk: &mut Sketch, v: usize, x: f64, y: f64, name: &str) -> usize {
     let p = sk.point(x, y, false, name);
@@ -311,15 +180,15 @@ fn relation(sk: &Sketch, kind: CKind, ents: &[EntRef], value: Option<f64>) -> Co
     Constraint::in_space(sk, kind, ents, value).unwrap_or_else(|e| panic!("{kind:?}: {e}"))
 }
 
-/// **A regular tetrahedron.**  The base is an equilateral triangle drawn on the page; the apex is
-/// drawn in a second view whose attitude is left to the solve, and stated a true length `a` from
-/// each corner.  Nothing says where the apex is in space but those three lengths, and the height
-/// that comes back is the closed form, `a·√(2/3)`.
+/// **A regular tetrahedron.**  The base is an equilateral triangle drawn on the front plane; the
+/// apex is drawn in a second plane over two free rays, standing wherever the solve puts it, and
+/// stated a true length `a` from each corner.  Nothing says where the apex is in space but those
+/// three lengths, and the height that comes back is the closed form, `a·√(2/3)`.
 #[test]
 fn a_regular_tetrahedron_stands_at_its_height() {
     let a = 30.0;
     let mut sk = Sketch::new();
-    let page = view(&mut sk, Basis::page(), "page");
+    let page = sk.fixed_plane(Basis::page(), "page");
     let b0 = drawn(&mut sk, page, 0.0, 0.0, "b0");
     let b1 = drawn(&mut sk, page, a + 2.0, 1.0, "b1");
     let b2 = drawn(&mut sk, page, 0.4 * a, 0.9 * a, "b2");
@@ -330,54 +199,80 @@ fn a_regular_tetrahedron_stands_at_its_height() {
     sk.add(Constraint::new(CKind::HorizontalPoints, vec![
         Arg::Ent(EntRef::point(b0)), Arg::Ent(EntRef::point(b1)),
     ]));
-    // the apex's view: folded off the page and then let go, so the solve may turn and stand it
-    // off wherever the three lengths want the apex
-    let slant = view(&mut sk, Basis::page().fold(0.9), "slant");
+    assert_eq!(ledger(&mut sk).dof, 0, "the base is determined");
+    // the apex's plane: two free rays and a free place
+    let (u, w) = (sk.ray([1.0, 0.3, 0.2], "u"), sk.ray([0.1, -0.6, 0.8], "w"));
+    let slant = sk.plane(u, w, [3.0, -4.0, 5.0], "slant");
     let apex = drawn(&mut sk, slant, 10.0, 8.0, "apex");
-    assert_eq!(ledger(&mut sk).dof, 2, "the base is determined; the apex has its two in the view");
-    sk.free_attitude(slant);
-    assert_eq!(ledger(&mut sk).dof, 6, "and its view three turns and an offset");
+    assert_eq!(ledger(&mut sk).dof, 2 + 2 + 2 + 3, "the apex's two, the rays' and the place");
     for b in [b0, b1, b2] {
         sk.add(relation(&sk, CKind::Distance3, &[EntRef::point(apex), EntRef::point(b)], Some(a)));
     }
     assert_eq!(sk.lifts.len(), 4, "the hidden points are minted by the add, one per point");
     let d = ledger(&mut sk);
-    // three lengths place a point in space up to its mirror; the three left are the view's own
-    // gauge about the apex — turning the view about the point, and sliding the point in it
-    assert_eq!(d.dof, 3, "{d:?}");
+    // three lengths place a point in space up to its mirror; the six left are the plane's own
+    // gauge about the apex — turning it about the point three ways, sliding the point in it, and
+    // the second ray's lean along the first
+    assert_eq!(d.dof, 6, "{d:?}");
     assert!(d.over.is_empty() && d.implied.is_empty());
     let r = solve(&mut sk, exact());
     assert!(r.success, "{}", r.message);
-    // the page is the plane y = 0, so the height is the apex's distance from it
+    // the front plane is y = 0, so the height is the apex's distance from it
     let h = sk.world_point(apex)[1].abs();
     let want = a * (2.0f64 / 3.0).sqrt();
     assert!((h - want).abs() < 1e-9 * want, "height {h} against {want}");
-    // and the hidden point is the drawn one, stood up by the view as it was solved
     assert!(close3(sk.lifted(apex), sk.world_point(apex), 1e-9));
     for b in [b0, b1, b2] {
         let d = gcs_core::space::distance(sk.world_point(apex), sk.world_point(b));
         assert!((d - a).abs() < 1e-9 * a);
     }
-    let att = sk.planes[slant].att.clone().unwrap();
-    let q = att.q.map(|k| sk.params[k as usize].value);
-    assert!((q.iter().map(|x| x * x).sum::<f64>() - 1.0).abs() < 1e-12);
+    for r in [u, w] {
+        let d = sk.rays[r].d.map(|k| sk.params[k as usize].value);
+        assert!((gcs_core::space::norm(d) - 1.0).abs() < 1e-12, "a ray stays a direction");
+    }
 }
 
-/// Two lines drawn in two stated views — one on the page, one on a top view stood `h` above the
-/// origin — with the angle between them and their common-perpendicular distance stated.  The
+/// The same tetrahedron with its apex a **point in space**: three numbers, and the three lengths
+/// leave nothing but the mirror.
+#[test]
+fn a_point_in_space_stands_at_its_height() {
+    let a = 30.0;
+    let mut sk = Sketch::new();
+    let page = sk.fixed_plane(Basis::page(), "page");
+    let b0 = drawn(&mut sk, page, 0.0, 0.0, "b0");
+    let b1 = drawn(&mut sk, page, a, 0.0, "b1");
+    let b2 = drawn(&mut sk, page, 0.5 * a, 0.75f64.sqrt() * a, "b2");
+    for b in [b0, b1, b2] {
+        sk.fix_point(b, true);
+    }
+    let apex = sk.point3([12.0, -10.0, 9.0], false, "apex");
+    for b in [b0, b1, b2] {
+        sk.add(relation(&sk, CKind::Distance3, &[EntRef::point(apex), EntRef::point(b)], Some(a)));
+    }
+    assert_eq!(ledger(&mut sk).dof, 0);
+    let r = solve(&mut sk, exact());
+    assert!(r.success, "{}", r.message);
+    let want = a * (2.0f64 / 3.0).sqrt();
+    let p = sk.world_point(apex);
+    assert!((-p[1] - want).abs() < 1e-9 * want, "{p:?}: the side the seed stood on");
+    assert_eq!(p, sk.lifted(apex), "its own lift");
+}
+
+/// Two lines drawn in two stated planes — one on the front plane, one on a top plane `h` above
+/// the origin — with the angle between them and their common-perpendicular distance stated.  The
 /// answer is worked out by hand: the top line's bearing from the angle, then its offset from the
 /// distance.
 #[test]
 fn two_skew_lines_meet_their_closed_form() {
     let (h, e, theta) = (6.0, 3.0, 60f64.to_radians());
     let mut sk = Sketch::new();
-    let page = view(&mut sk, Basis::page(), "page");
-    let top = view(&mut sk, Basis::page().fold(0.0).offset(h), "top");
-    // on the page, (0, 0) to (10, 10): in space from the origin along (1, 0, 1)
+    let page = sk.fixed_plane(Basis::page(), "page");
+    let top = sk.fixed_plane(top(h), "top");
+    // on the front plane, (0, 0) to (10, 10): in space from the origin along (1, 0, 1)
     let (a, b) = (drawn(&mut sk, page, 0.0, 0.0, "a"), drawn(&mut sk, page, 10.0, 10.0, "b"));
     sk.fix_point(a, true);
     sk.fix_point(b, true);
-    // on the top view (the plane z = h), from x = 5 somewhere along y, ten long
+    // on the top plane (z = h), from x = 5 somewhere along y, ten long
     let c = drawn(&mut sk, top, 5.0, 2.0, "c");
     let phi0 = 40f64.to_radians();
     let d = drawn(&mut sk, top, 5.0 + 10.0 * phi0.cos(), 2.0 + 10.0 * phi0.sin(), "d");
@@ -428,12 +323,12 @@ fn two_skew_lines_meet_their_closed_form() {
 }
 
 /// A skew distance between lines that are parallel as drawn has no common perpendicular, and a
-/// point on no view has no place in space: both are refused where they are stated.
+/// point of a 2D sketch has no place in space: both are refused where they are stated.
 #[test]
 fn a_relation_in_space_refuses_what_it_cannot_read() {
     let mut sk = Sketch::new();
-    let page = view(&mut sk, Basis::page(), "page");
-    let top = view(&mut sk, Basis::page().fold(0.0).offset(4.0), "top");
+    let page = sk.fixed_plane(Basis::page(), "page");
+    let top = sk.fixed_plane(top(4.0), "top");
     let (a, b) = (drawn(&mut sk, page, 0.0, 0.0, "a"), drawn(&mut sk, page, 10.0, 0.0, "b"));
     let (c, d) = (drawn(&mut sk, top, 0.0, 3.0, "c"), drawn(&mut sk, top, 7.0, 3.0, "d"));
     let (l1, l2) = (EntRef::line(sk.line(a, b)), EntRef::line(sk.line(c, d)));
@@ -442,26 +337,26 @@ fn a_relation_in_space_refuses_what_it_cannot_read() {
     let loose = sk.point(1.0, 1.0, false, "loose");
     let e = Constraint::in_space(&sk, CKind::Distance3, &[EntRef::point(loose), EntRef::point(a)],
                                  Some(2.0)).unwrap_err();
-    assert!(e.contains("no view"), "{e}");
+    assert!(e.contains("2D sketch"), "{e}");
     let e = Constraint::in_space(&sk, CKind::Distance3, &[EntRef::point(c), EntRef::point(a)],
                                  Some(-2.0)).unwrap_err();
     assert!(e.contains("magnitude"), "{e}");
 }
 
-/// Two lines in two views held parallel in space: the page's line runs along (2, 0, 1), and a
-/// view parallel to the page stood off it can carry a line that way — ten long from a held end,
-/// it can only end at `c + 10·(2, 1)/√5`.  Perpendicular from the top view, whose lines all run
+/// Two lines in two planes held parallel in space: the front plane's line runs along (2, 0, 1),
+/// and a plane parallel to it stood off it can carry a line that way — ten long from a held end,
+/// it can only end at `c + 10·(2, 1)/√5`.  Perpendicular from the top plane, whose lines all run
 /// level, the second line can only run straight across: `c + (0, 10)`.
 #[test]
 fn parallel_and_perpendicular_in_space() {
     for kind in [CKind::Parallel3, CKind::Perpendicular3] {
         let mut sk = Sketch::new();
-        let page = view(&mut sk, Basis::page(), "page");
+        let page = sk.fixed_plane(Basis::page(), "page");
         let other = match kind {
-            CKind::Parallel3 => Basis::page().offset(7.0),
-            _ => Basis::page().fold(0.0).offset(5.0),
+            CKind::Parallel3 => front(7.0),
+            _ => top(5.0),
         };
-        let v = view(&mut sk, other, "v");
+        let v = sk.fixed_plane(other, "v");
         let (a, b) = (drawn(&mut sk, page, 0.0, 0.0, "a"), drawn(&mut sk, page, 10.0, 5.0, "b"));
         sk.fix_point(a, true);
         sk.fix_point(b, true);
@@ -487,66 +382,60 @@ fn parallel_and_perpendicular_in_space() {
     }
 }
 
-/// A point on a plane, over a stated plane and then over a solved one; and the statement changes
-/// twin with its plane, keeping its id.
+/// A point on a plane, over a stated plane and then over one whose place is solved for.
 #[test]
 fn a_point_on_a_plane_in_space() {
     let h = 6.0;
     let mut sk = Sketch::new();
-    let page = view(&mut sk, Basis::page(), "page");
-    let top = view(&mut sk, Basis::page().fold(0.0).offset(h), "top");
-    // drawn on the page at x = 3, so it stands at (3, 0, y): on the plane z = h exactly at y = h
+    let page = sk.fixed_plane(Basis::page(), "page");
+    let top = sk.fixed_plane(top(h), "top");
+    // drawn on the front plane at x = 3, so it stands at (3, 0, y): on z = h exactly at y = h
     let p = drawn(&mut sk, page, 3.0, 1.0, "p");
     let px = sk.points[p].x as usize;
     sk.params[px].fixed = true;
-    let id = sk.add(relation(&sk, CKind::PointOnPlane, &[EntRef::point(p), EntRef::plane(top)],
-                             None));
-    let kind = |sk: &Sketch| sk.constraint(id).unwrap().kind;
-    assert_eq!(kind(&sk), CKind::PointOnPlaneFixed, "a stated plane's twin");
+    sk.add(relation(&sk, CKind::PointOnPlane, &[EntRef::point(p), EntRef::plane(top)], None));
     assert_eq!(ledger(&mut sk).dof, 0);
     let r = solve(&mut sk, exact());
     assert!(r.success, "{}", r.message);
     assert!((sk.point_xy(p).1 - h).abs() < 1e-10);
-    // now hold the point and let the plane's offset go: the plane comes to the point
+    // now hold the point and let the plane's height go: the plane comes to the point
     sk.fix_point(p, true);
     let py = sk.points[p].y as usize;
     sk.params[py].value = 2.5;
-    sk.free_attitude(top);
-    assert_eq!(kind(&sk), CKind::PointOnPlane, "and the solved one's, the same statement");
-    sk.fix_attitude(top, true);
-    let att = sk.planes[top].att.clone().unwrap();
-    sk.params[att.d as usize].fixed = false;
+    let oz = sk.planes[top].o[2] as usize;
+    sk.params[oz].fixed = false;
     assert_eq!(ledger(&mut sk).dof, 0);
     let r = solve(&mut sk, exact());
     assert!(r.success, "{}", r.message);
-    assert!((sk.params[att.d as usize].value - 2.5).abs() < 1e-10);
+    assert!((sk.params[oz].value - 2.5).abs() < 1e-10);
     assert!((sk.basis(top).along_normal() - 2.5).abs() < 1e-10);
 }
 
-/// A point on a circle drawn in another view: the circle is in the top view at height `h`, about
-/// the origin with radius `r`; a point drawn on the page stands at (x, 0, y), so it can only be
-/// at `(r, h)` — on the circle's plane, and `r` out from its centre.
+/// A point on a circle drawn in another plane: the circle is in the top plane at height `h`,
+/// about its origin with radius `r`; a point drawn on the front plane stands at (x, 0, y), so it
+/// can only be at `(r, h)` — on the circle's plane, and `r` out from its centre.
 #[test]
 fn a_point_on_a_circle_in_space() {
     let (h, rad) = (4.0, 7.5);
     for solved in [false, true] {
         let mut sk = Sketch::new();
-        let page = view(&mut sk, Basis::page(), "page");
-        let top = view(&mut sk, Basis::page().fold(0.0).offset(h), "top");
+        let page = sk.fixed_plane(Basis::page(), "page");
+        let top = sk.fixed_plane(top(h), "top");
+        if solved {
+            // a place the solve may move, held by a statement rather than a `fix`
+            let oz = sk.planes[top].o[2] as usize;
+            sk.params[oz].fixed = false;
+            let origin = EntRef::point(sk.planes[top].origin as usize);
+            let held = sk.point3([0.0, 0.0, h], true, "held");
+            sk.add(relation(&sk, CKind::Coincident3, &[origin, EntRef::point(held)], None));
+        }
         let centre = drawn(&mut sk, top, 0.0, 0.0, "centre");
         sk.fix_point(centre, true);
         let k = sk.circle(centre, rad, "k");
         let rp = sk.circles[k].radius as usize;
         sk.params[rp].fixed = true;
-        if solved {
-            sk.free_attitude(top);
-            sk.fix_attitude(top, true);
-        }
         let p = drawn(&mut sk, page, 6.0, 3.0, "p");
-        let id = sk.add(relation(&sk, CKind::PointOnCircle3, &[EntRef::point(p), EntRef::circle(k)],
-                                 None));
-        let want = if solved { CKind::PointOnCircle3 } else { CKind::PointOnCircle3Fixed };
-        assert_eq!(sk.constraint(id).unwrap().kind, want);
+        sk.add(relation(&sk, CKind::PointOnCircle3, &[EntRef::point(p), EntRef::circle(k)], None));
         assert_eq!(ledger(&mut sk).dof, 0, "solved: {solved}");
         let r = solve(&mut sk, exact());
         assert!(r.success, "{}", r.message);
@@ -555,15 +444,15 @@ fn a_point_on_a_circle_in_space() {
     }
 }
 
-/// The same point in space, drawn in two views: on the page (x, 0, y) and on the top view
-/// (x′, y′, h), with the page's x held — so the page point is at `(3, h)` and the top one at
-/// `(3, 0)`.
+/// The same point in space, drawn in two planes: on the front plane (x, 0, y) and on the top
+/// plane (x′, y′, h), with the front one's x held — so the front point is at `(3, h)` and the top
+/// one at `(3, 0)`.
 #[test]
-fn one_point_in_two_views_is_coincident_in_space() {
+fn one_point_in_two_planes_is_coincident_in_space() {
     let h = 5.0;
     let mut sk = Sketch::new();
-    let page = view(&mut sk, Basis::page(), "page");
-    let top = view(&mut sk, Basis::page().fold(0.0).offset(h), "top");
+    let page = sk.fixed_plane(Basis::page(), "page");
+    let top = sk.fixed_plane(top(h), "top");
     let p = drawn(&mut sk, page, 3.0, 1.0, "p");
     let q = drawn(&mut sk, top, 2.0, 1.5, "q");
     let px = sk.points[p].x as usize;
@@ -582,19 +471,22 @@ fn one_point_in_two_views_is_coincident_in_space() {
 #[test]
 fn a_relation_in_space_round_trips() {
     let mut sk = Sketch::new();
-    let page = view(&mut sk, Basis::page(), "page");
-    let top = view(&mut sk, Basis::page().fold(0.0).offset(3.0), "top");
+    let page = sk.fixed_plane(Basis::page(), "page");
+    let top = sk.fixed_plane(top(3.0), "top");
     let (a, b) = (drawn(&mut sk, page, 0.0, 0.0, "a"), drawn(&mut sk, page, 10.0, 10.0, "b"));
     let (c, d) = (drawn(&mut sk, top, 5.0, 9.0, "c"), drawn(&mut sk, top, 8.0, -2.0, "d"));
+    let s = sk.point3([1.0, -2.0, 3.0], false, "s");
     let (l1, l2) = (EntRef::line(sk.line(a, b)), EntRef::line(sk.line(c, d)));
     let dist = relation(&sk, CKind::LineLine3, &[l1, l2], Some(2.0));
     let sign = dist.args[3].clone();
     sk.add(dist);
     sk.add(relation(&sk, CKind::Distance3, &[EntRef::point(a), EntRef::point(d)], Some(12.0)));
+    sk.add(relation(&sk, CKind::Distance3, &[EntRef::point(s), EntRef::point(c)], Some(4.0)));
     let text = io::dumps(&sk, None);
     let back = io::loads(&text).unwrap();
     assert_eq!(io::dumps(&back, None), text);
     assert_eq!(back.lifts.len(), sk.lifts.len(), "the hidden points are the add's, again");
+    assert_eq!(back.points[s].z.map(|z| back.params[z as usize].value), Some(3.0));
     let ll = back.constraints.iter().find(|c| c.kind == CKind::LineLine3).unwrap();
     assert_eq!(ll.args[3], sign);
     let copy = io::copy(&sk, &[l1, l2]);

@@ -108,9 +108,12 @@ fn a_union_tool_is_refused() {
 }
 
 /// An L-shaped profile revolved about x = 3: its corner at (3.5, 0) turns inward.
-const ELL: &str = "unit mm
+const ELL: &str = "\
+unit mm
 use std
-construction centerline spindle := line(std.origin, std.up.toward)
+in std.front {
+construction centerline spindle := line(std.origin, hint(x: 0, y: 1))
+fix(x == 0, y == 1) spindle.p2
 private l0 := point
 private l1 := point
 private l2 := point
@@ -129,6 +132,7 @@ private e2 := line(l2, l3)
 private e3 := line(l3, l4)
 private e4 := line(l4, l5)
 private axis := line(l5, l0)
+}
 construction tool := solid(face(e0, e1, e2, e3, e4, axis), about: axis)
 ";
 
@@ -183,7 +187,10 @@ fn the_bevel_pinion_is_admitted_once_for_every_index() {
 fn an_indexed_ring_is_alike_by_its_revolution_and_a_boxed_ring_by_sampling() {
     let ring = |extra: &str| format!("{}{}construction removal := solid(tool, under: turn, from: -35deg, to: 35deg)\n{}{extra}",
         sphere(2.),cradle_roll(2.5,Observer::Parallel),tools::indexed_ring(6,3.5,4.2,1.7,2.3));
-    let boxed = "private b0 := point
+    let boxed = "\
+use std
+in std.front {
+private b0 := point
 private b1 := point
 private b2 := point
 private b3 := point
@@ -195,6 +202,7 @@ private bb := line(b0, b1)
 private bw := line(b1, b2)
 private bt := line(b2, b3)
 private ba := line(b3, b0)
+}
 construction holder := solid(face(bb, bw, bt, ba), from: -5mm, to: 5mm)
 holder bound part
 ";

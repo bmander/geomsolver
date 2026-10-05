@@ -327,11 +327,12 @@ fn check(s: &Source, opts: &Opts) -> (u8, Option<Json>) {
     let mut sk = e.sketch.clone();
     let r = solve(&mut sk, SolveOpts::default());
     let invalid = gcs_core::program::solid_diagnostics(&sk, &e.map);
-    if !invalid.is_empty() {
-        if !opts.json {
-            for d in &invalid { say(s, d.span.lo, "error", d.code.as_str(), &d.message); }
-        }
-        e.diags.extend(invalid);
+    if !opts.json {
+        for d in &invalid { say(s, d.span.lo, severity(d.severity()), d.code.as_str(), &d.message); }
+    }
+    let failed = invalid.iter().any(|d| d.severity() == Severity::Error);
+    e.diags.extend(invalid);
+    if failed {
         return (1, opts.json.then(|| doc_json(s, Some(&r), None, &e, Json::Null)));
     }
     let d = (!opts.no_diagnose).then(|| diagnose(&mut sk, DiagnoseOptions::default()));

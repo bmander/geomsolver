@@ -4,12 +4,12 @@ use gcs_core::{
     program,
     renderer::{Renderer, View},
     solid::{ApproximationPolicy, PageFrame},
-    solve, syntax,
+    solve,
 };
 
 fn document() -> program::Elaborated {
     let source = include_str!("fixtures/solid_issue51/view_layout_0.legacy");
-    let (p, errors) = syntax::parse_legacy(source);
+    let (p, errors) = crate::common::parse_legacy(source);
     assert!(errors.is_empty());
     let mut e = program::elaborate(&p);
     assert!(e.ok());

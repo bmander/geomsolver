@@ -20,11 +20,11 @@ use generation
 component HypoidLayout(front: plane, design: group, normal_module: Length) {
   pitch := views.PitchView(front, span: design.cutter_radius)
   gear := pitch.gear.GearCone(pitch.view, g.view, design)
-  g := views.FoldedView(pitch.view, gear.generator, span: design.cutter_radius)
+  g := views.FoldedView(pitch.view, gear.generator, pitch.down, span: design.cutter_radius)
   trace := pitch.trace.ToothTrace(pitch.view, gear.generator, design,
     normal_module: normal_module)
   pinion := pitch.pinion.PinionCone(pitch.view, q.view, gear, trace.foot, design)
-  q := views.FoldedView(pitch.view, pinion.hinge, span: design.cutter_radius)
+  q := views.FoldedView(pitch.view, pinion.hinge, pitch.down, span: design.cutter_radius)
 
   // The blanks, in the axial views; the gear's cones on the generator across its axis.
   gear_blank := blank.member.MemberLimits(gear.pitch_line, gear.opposite, gear.axis, design,
@@ -34,7 +34,7 @@ component HypoidLayout(front: plane, design: group, normal_module: Length) {
 
   // The crown, in the normal section.
   thickness := crown.thickness.CrownThickness(pitch.view, gear.generator, trace.normal, design)
-  n := views.FoldedView(pitch.view, trace.normal, span: design.cutter_radius)
+  n := views.FoldedView(pitch.view, trace.normal, pitch.down, span: design.cutter_radius)
   tooth := crown.tooth.CrownTooth(pitch.view, trace.normal, thickness.inner_pitch,
     thickness.outer_pitch, design, normal_module: normal_module) in n.view
   mate := crown.mate.CrownMate(tooth, design, normal_module: normal_module) in n.view

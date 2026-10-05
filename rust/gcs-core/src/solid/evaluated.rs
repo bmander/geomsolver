@@ -724,18 +724,8 @@ fn round_features(
             }
             let circle = &sk.circles[edges[0].i()];
             let (basis, pose) = match face.plane()? {
-                Some(i) => {
-                    let p = &sk.planes[i as usize];
-                    (
-                        sk.basis(i as usize),
-                        (
-                            sk.params[p.frame.c as usize].value,
-                            sk.params[p.frame.s as usize].value,
-                            sk.point_xy(p.frame.origin as usize),
-                        ),
-                    )
-                }
-                None => (Basis::page(), (1.0, 0.0, (0.0, 0.0))),
+                Some(i) => (sk.basis(i as usize), plane::IDENTITY_POSE),
+                None => (Basis::page(), plane::IDENTITY_POSE),
             };
             let uv = plane::in_view(pose.0, pose.1, pose.2, sk.point_xy(circle.center as usize));
             let local_basis = Basis {

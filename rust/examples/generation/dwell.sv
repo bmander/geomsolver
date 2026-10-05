@@ -17,6 +17,8 @@
 // curve, close to `osc` from about 150° to 190°.  Edit the dwell radius, or `beta` (the coupler
 // point's angle off the coupler), and `ap` and the circle are solved again.
 
+use std
+
 r2 := 10      // the crank
 r3 := 30      // the coupler
 r4 := 25      // the rocker
@@ -41,17 +43,21 @@ component FourBar(o2: point, o4: point, r2: Length, r3: Length, r4: Length, beta
   ccw(A, o4, B)               // the rocker's pose: B left of the line from A to its pivot
 }
 
-o2 := point
-o4 := point hint(x: 30, y: 0)
-fix(x == 0, y == 0) o2
-fix(x == 30, y == 0) o4
+in std.front {
+  o2 := point
+  o4 := point hint(x: 30, y: 0)
+  fix(x == 0, y == 0) o2
+  fix(x == 30, y == 0) o4
 
-// the linkage, its crank angle and its coupler point's offset both left unbound
-bar := FourBar(o2, o4, r2: r2, r3: r3, r4: r4, beta: beta)
+  // the linkage, its crank angle and its coupler point's offset both left unbound
+  bar := FourBar(o2, o4, r2: r2, r3: r3, r4: r4, beta: beta)
+}
 path := bar.P over theta in (0, 360)
 
 // the dwell arc: a circle osculating the coupler curve at 170°, of the radius the link will have
-k := point hint(x: 11.6, y: 11.9)
-osc := circle(center: k) hint(r: 25)
-path curvature(t == 170) osc
-radius(25) osc
+in std.front {
+  k := point hint(x: 11.6, y: 11.9)
+  osc := circle(center: k) hint(r: 25)
+  path curvature(t == 170) osc
+  radius(25) osc
+}

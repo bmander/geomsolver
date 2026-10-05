@@ -2,8 +2,8 @@ use super::*;
 use gcs_core::edge::{EdgeTolerance,SpatialEdge};
 
 const EDGES: &str = "
-end_offset := Sphere(shifted,size: sqrt(10.25-cos(0.2rad))*1mm)
-end_join_cut := Sphere(shifted,size: sqrt(11-2*cos(0.2rad))*1mm)
+end_offset := Sphere(shifted,size: sqrt(10.25-cos(0.2rad))*1mm) in std.front
+end_join_cut := Sphere(shifted,size: sqrt(11-2*cos(0.2rad))*1mm) in std.front
 end_edge := seam(first_envelope,end_offset.wall)
 end_join_edge := seam(second_envelope,end_join_cut.wall)
 finish := vertex(radial,end_edge)
@@ -68,7 +68,7 @@ fn reversing_an_edge_or_its_axis_preserves_the_same_locus() {
 
 #[test]
 fn a_junction_endpoint_is_mapped_into_the_boundary_seams_second_face_chart() {
-    let src = format!("{}\nheight := Sphere(o,size: sqrt(9+1.05*1.05)*1mm)\n\
+    let src = format!("{}\nheight := Sphere(o,size: sqrt(9+1.05*1.05)*1mm) in std.front\n\
         second_join_edge := seam(second_envelope,join_cut.wall)\n\
         upper_edge := seam(second_envelope,height.wall)\nupper := vertex(second_join_edge,upper_edge)\n\
         second_face := edge(second_join_edge,from: junction,to: upper,along: axis)\n",
@@ -83,7 +83,7 @@ fn a_junction_endpoint_is_mapped_into_the_boundary_seams_second_face_chart() {
         let h = 1.+p.parameters[0];
         near(p.position,[3.,-h*p.parameters[2].sin(),h*p.parameters[2].cos()]);
     }
-    let bad = format!("{src}\nlookalike := Sphere(shifted,size: sqrt(11-2*cos(0.1rad))*1mm)\n\
+    let bad = format!("{src}\nlookalike := Sphere(shifted,size: sqrt(11-2*cos(0.1rad))*1mm) in std.front\n\
         other := seam(second_envelope,lookalike.wall)\nbad := edge(other,junction,upper,axis)\n");
     assert!(build(&bad).errors().any(|d| d.message.contains("declared faces and boundary")));
 }

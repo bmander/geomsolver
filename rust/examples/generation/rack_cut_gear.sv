@@ -17,6 +17,7 @@
 // line, would generate the involute's folded branch, which the class refuses.
 
 unit mm
+use std
 
 N := 20                     // teeth
 m := 2mm                    // module
@@ -26,36 +27,38 @@ bore_r := 6mm
 rp := m * N / 2             // pitch radius
 hw := pi * m / 4            // half the rack tooth's thickness at the pitch line
 
-o := point
-fix(x == 0, y == 0) o
-rim := circle(center: o) hint(r: 22)
-radius(rp + m) rim
-construction bore_c := circle(center: o) hint(r: 6)
-radius(bore_r) bore_c
-blank := solid(face(rim), depth: width)
-construction bore := solid(face(bore_c), from: -width - 2mm, to: 2mm)
+in std.front {
+  o := point
+  fix(x == 0, y == 0) o
+  rim := circle(center: o) hint(r: 22)
+  radius(rp + m) rim
+  construction bore_c := circle(center: o) hint(r: 6)
+  radius(bore_r) bore_c
+  blank := solid(face(rim), depth: width)
+  construction bore := solid(face(bore_c), from: -width - 2mm, to: 2mm)
 
-// the rack's pitch line, tangent to the pitch circle at the pitch point
-s0 := point hint(x: 20, y: 0)
-s1 := point hint(x: 20, y: 10)
-o distance(rp, along: x) s0
-o distance(0, along: y) s0
-slide := vertical line(s0, s1)
-s0 distance(10) s1
+  // the rack's pitch line, tangent to the pitch circle at the pitch point
+  s0 := point hint(x: 20, y: 0)
+  s1 := point hint(x: 20, y: 10)
+  o distance(rp, along: x) s0
+  o distance(0, along: y) s0
+  slide := vertical line(s0, s1)
+  s0 distance(10) s1
 
-// the rack's tooth: its tip at the working depth, its back past the blank's rim
-t0 := point hint(x: 18, y: -0.84)
-t1 := point hint(x: 18, y: 0.84)
-t2 := point hint(x: 24, y: 3.03)
-t3 := point hint(x: 24, y: -3.03)
-o distance(rp - m, along: x) t0
-o distance(rp - m, along: x) t1
-o distance(rp + 2 * m, along: x) t2
-o distance(rp + 2 * m, along: x) t3
-o distance(-(hw - m * tan(alpha)), along: y) t0
-o distance(hw - m * tan(alpha), along: y) t1
-o distance(hw + 2 * m * tan(alpha), along: y) t2
-o distance(-(hw + 2 * m * tan(alpha)), along: y) t3
+  // the rack's tooth: its tip at the working depth, its back past the blank's rim
+  t0 := point hint(x: 18, y: -0.84)
+  t1 := point hint(x: 18, y: 0.84)
+  t2 := point hint(x: 24, y: 3.03)
+  t3 := point hint(x: 24, y: -3.03)
+  o distance(rp - m, along: x) t0
+  o distance(rp - m, along: x) t1
+  o distance(rp + 2 * m, along: x) t2
+  o distance(rp + 2 * m, along: x) t3
+  o distance(-(hw - m * tan(alpha)), along: y) t0
+  o distance(hw - m * tan(alpha), along: y) t1
+  o distance(hw + 2 * m * tan(alpha), along: y) t2
+  o distance(-(hw + 2 * m * tan(alpha)), along: y) t3
+}
 tooth := face(t0, t1, t2, t3, -> close)
 construction rack_tooth := solid(tooth, from: -width - 2mm, to: 2mm)
 
@@ -67,15 +70,19 @@ construction space := solid(rack_tooth, under: cutting, from: -60deg, to: 60deg)
 // The same motion draws on the sketch what it cuts in the solid: the envelope of the rack's flank
 // is the tooth's involute, and the envelope of its tip corner the root fillet, curves of the
 // drawing lying on the gear's face.  The flank's involute is of the base circle.
-rack_flank := line(t1, t2)
+in std.front {
+  rack_flank := line(t1, t2)
+}
 involute := envelope(rack_flank, under: cutting, from: -30deg, to: 30deg)
 fillet := envelope(t1, under: cutting, from: -30deg, to: 30deg)
-base_c := circle(center: o) hint(r: 18.8)
-radius(rp * cos(alpha)) base_c
+in std.front {
+  base_c := circle(center: o) hint(r: 18.8)
+  radius(rp * cos(alpha)) base_c
 
-gear := solid(blank)
-bore cut gear
-repeat N as i {
-  construction indexed := solid(space, under: turn, at: i * 360deg / N)
-  indexed cut gear
+  gear := solid(blank)
+  bore cut gear
+  repeat N as i {
+    construction indexed := solid(space, under: turn, at: i * 360deg / N)
+    indexed cut gear
+  }
 }

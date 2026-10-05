@@ -6,7 +6,8 @@ length := 40mm
 half := 10mm
 reach := 12mm
 
-end_plane := plane(origin: std.origin, toward: std.front.toward, from: std.front, offset: -length)
+end_plane := plane(u: std.x, v: std.z) hint(x: 0mm, y: length, z: 0mm)
+fix(x == 0mm, y == length, z == 0mm) end_plane
 in std.front {
   c := point hint(x: 0mm, y: 0mm)
   c coincident std.origin
@@ -29,10 +30,9 @@ in end_plane {
   fix(x == 0mm, y == reach) b2
   fix(x == -reach, y == 0mm) b3
 }
-plan := plane(origin: std.origin, toward: std.front.toward, from: std.front, fold: 0deg)
-in plan {
+in std.top {
   entry := point hint(x: 0mm, y: 0mm)
-  entry coincident std.origin
+  entry coincident std.top.origin
   exit := point hint(x: 0mm, y: length)
   construction centerline guide := line(entry, exit)
   vertical guide

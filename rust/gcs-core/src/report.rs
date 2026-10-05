@@ -231,25 +231,24 @@ pub fn positions_where(sk: &Sketch, map: &crate::program::SourceMap, asked: &dyn
     for (&e, names) in &map.names {
         let params = sk.entity_params(e);
         for n in names {
-            let Some(scalars) = e.kind.scalar_names(n) else { continue };
+            let Some(mut scalars) = e.kind.scalar_names(n) else { continue };
+            // a point in space has a third coordinate a point in a plane does not
+            if e.kind == crate::model::EntKind::Point && params.len() == 3 {
+                scalars.push(format!("{n}.z"));
+            }
             if scalars.len() != params.len() {
                 continue;
             }
             for (name, &p) in scalars.iter().zip(params.iter()) {
                 out.insert(name.clone(), sk.params[p as usize].value);
             }
+            // **and how a plane turns in space**: its axes and its normal, as the solve left them
+            // (where it stands is its own `x`, `y`, `z`, above)
             if e.kind == crate::model::EntKind::Plane {
-                let v = |i: usize| sk.params[params[i] as usize].value;
-                out.insert(format!("{n}.angle"), v(5).datan2(v(4)).to_degrees());
-                // **and where a solved view stands in space**: its axes, its normal and its
-                // origin, as the solve left them — only for a view the solve moves, so a stated
-                // one's record is as it always was
-                if sk.planes[e.i()].att.is_some() {
-                    let b = sk.basis(e.i());
-                    for (key, w) in [("u", b.u), ("v", b.v), ("n", b.normal()), ("o", b.o)] {
-                        for (axis, x) in ["x", "y", "z"].iter().zip(w) {
-                            out.insert(format!("{n}.{key}.{axis}"), x);
-                        }
+                let b = sk.basis(e.i());
+                for (key, w) in [("u", b.u), ("v", b.v), ("n", b.normal())] {
+                    for (axis, x) in ["x", "y", "z"].iter().zip(w) {
+                        out.insert(format!("{n}.{key}.{axis}"), x);
                     }
                 }
             }

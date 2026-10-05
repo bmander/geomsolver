@@ -1,28 +1,19 @@
-//! The language half of multiview sketching (§6.7): `plane` declarations and their attitude,
-//! the `in` clause, the `project` operator, and the writeback of each.
+//! The language half of multiview sketching (§6.7): `plane` declarations over rays, the `in`
+//! clause, the `project` operator, and the writeback of each.
 use gcs_core::constraints::CKind;
 use gcs_core::edit::{self, Kind};
 use gcs_core::model::{EntKind, EntRef};
 use gcs_core::plane::Basis;
 use gcs_core::program::{elaborate, Elaborated};
-use gcs_core::syntax::{highlight, parse, write_stmt_to, Tint};
+use gcs_core::syntax::{highlight, write_stmt_to, Tint};
+use crate::common::parse;
 use gcs_core::io;
 
-fn read(src: &str) -> Elaborated {
-    let (prog, errs) = parse(src);
-    assert!(errs.is_empty(), "does not parse: {errs:?}\n{src}");
-    let e = elaborate(&prog);
-    assert!(
-        e.ok(),
-        "does not elaborate: {:?}\n{src}",
-        e.errors().map(|d| d.message.clone()).collect::<Vec<_>>()
-    );
-    e
-}
+use crate::common::read;
 
 /// Elaborates with an error carrying `code`, whose message contains `needle`.
 fn refused(src: &str, code: &str, needle: &str) {
-    let (prog, errs) = parse(src);
+    let (prog, errs, _) = gcs_core::library::parse_linked(src);
     assert!(errs.is_empty(), "does not parse: {errs:?}\n{src}");
     let e = elaborate(&prog);
     let hit = e.errors().any(|d| d.code.as_str() == code && d.message.contains(needle));
@@ -33,22 +24,18 @@ fn refused(src: &str, code: &str, needle: &str) {
     );
 }
 
+/// The entity's index, by name.
+fn at(e: &Elaborated, n: &str) -> usize {
+    e.map.ent_named(n).unwrap_or_else(|| panic!("no `{n}`")).i()
+}
+
 /// A part designed in one place (§6.7): a component whose body carries `in view { … }` blocks
 /// over planes it was handed, with the projection tying its views inside it — and a view left
 /// undrawn by `repeat 0`.
 #[test]
 fn a_component_carries_its_views_in_blocks() {
     let src = "\
-Af := point in front
-qf := point
-front := plane(origin: Af, toward: qf)
-Ar := point in right
-qr := point
-right := plane(origin: Ar, toward: qr, from: front, fold: -90deg)
-fix(x == 0, y == 0) Af
-fix(x == 40, y == 0) qf
-fix(x == 150, y == 0) Ar
-fix(x == 150, y == -40) qr
+use std
 component Peg(f: plane, r: plane, cf: point, cr: point, draw_r: Int) {
   in f {
     a := point hint(x: cf.x, y: cf.y + 10)
@@ -63,23 +50,21 @@ component Peg(f: plane, r: plane, cf: point, cr: point, draw_r: Int) {
     a project b[0]
   }
 }
-p := Peg(front, right, Af, Ar, draw_r: 1)
-q := Peg(front, right, Af, Ar, draw_r: 0)
+p := Peg(std.front, std.side, std.front.origin, std.side.origin, draw_r: 1)
+q := Peg(std.front, std.side, std.front.origin, std.side.origin, draw_r: 0)
 ";
     let e = read(src);
-    assert_eq!(e.sketch.points.len(), 4 + 3, "a and b of p, a of q");
+    let bare = read("use std\n");
+    assert_eq!(e.sketch.points.len(), bare.sketch.points.len() + 3, "a and b of p, a of q");
     let mut sk = e.sketch.clone();
     assert!(gcs_core::solve::solve(&mut sk, Default::default()).success);
     let b = e.map.ent_named("p.b").or_else(|| {
         e.map.names.iter().find(|(_, ns)| ns.iter().any(|n| n.ends_with(".0.b"))).map(|(r, _)| *r)
     }).expect("p.b");
     let (bx, by) = sk.point_xy(b.i());
-    assert!((bx - 155.0).abs() < 1e-6 && (by - 10.0).abs() < 1e-6, "{bx} {by}");
+    assert!((bx - 5.0).abs() < 1e-6 && (by - 10.0).abs() < 1e-6, "{bx} {by}");
     // and inside a root block the clause is still written per declaration
-    misparses(
-        "o := point\nf := plane(origin: o, toward: hint(x: 1, y: 0))\nrepeat 2 { in f { p := point } }\n",
-        "in a component",
-    );
+    misparses("use std\nrepeat 2 { in std.front { p := point } }\n", "in a component");
 }
 
 fn misparses(src: &str, needle: &str) {
@@ -95,37 +80,29 @@ fn reconciled(e: &mut Elaborated) -> edit::Edit {
     out
 }
 
+/// Three planes of the document's own over the standard axes, held at the origin.
 const VIEWS: &str = "\
-o := point
-q := point
-o2 := point
-q2 := point
-o3 := point
-q3 := point
-front := plane(origin: o, toward: q)
-top := plane(origin: o2, toward: q2, from: front, fold: 0deg)
-right := plane(origin: o3, toward: q3, from: front, fold: -90deg)
-fix(x == 0, y == 0) o
-fix(x == 1, y == 0) q
-fix(x == 0, y == 100) o2
-fix(x == 1, y == 100) q2
-fix(x == 150, y == 0) o3
-fix(x == 150, y == -1) q3
+use std
+front := plane(u: std.x, v: std.z)
+top := plane(u: std.x, v: std.y)
+right := plane(u: std.y, v: std.z)
+fix(x == 0, y == 0, z == 0) front
+fix(x == 0, y == 0, z == 0) top
+fix(x == 0, y == 0, z == 0) right
 ";
 
 #[test]
 fn every_spelling_prints_back() {
     let src = "\
-o := point hint(x: 0, y: 0)
-q := point hint(x: 1, y: 0)
-front := plane(origin: o, toward: q)
-top := plane(origin: o, toward: q, from: front, fold: 0deg)
-right := plane(from: front, fold: -90deg)
-aux := plane(origin: o, toward: q, from: front, fold: 30deg)
-p := plane(origin: o, toward: q, u: (0.6, 0.8, 0), v: (0, 0, 1))
+use std
+r := ray hint(x: 0.6, y: 0.8, z: 0)
+front := plane(u: std.x, v: std.z)
+top := plane(u: std.x, v: std.y)
+p := plane(u: r, v: std.z) hint(x: 1, y: 2, z: 3)
 a := point in top hint(x: 10, y: 5)
 l := line(a, hint(x: 3, y: 4)) in top
 b := point hint(x: 2, y: 2) in front
+s := point hint(x: 1, y: 2, z: 3)
 a project b
 claim a project b
 ";
@@ -137,57 +114,46 @@ claim a project b
         out.push('\n');
     }
     let squash = |s: &str| s.split_whitespace().collect::<Vec<_>>().join(" ");
-    // `in` is a trailer and prints after `hint`, and a plane's rotor prints as a frame's does;
-    // every other statement prints as written
-    let want = src.replace("a := point in top hint(x: 10, y: 5)", "a := point hint(x: 10, y: 5) in top");
-    assert_eq!(squash(&out.replace(" hint(c: 0, s: 0)", "")), squash(&want));
+    // `in` is a trailer and prints after `hint`; every other statement prints as written, and
+    // the `use` is the program's, not a statement of its body
+    let want = src.replace("a := point in top hint(x: 10, y: 5)", "a := point hint(x: 10, y: 5) in top")
+        .replace("use std\n", "");
+    assert_eq!(squash(&out), squash(&want));
     let e = read(src);
-    assert_eq!(e.sketch.planes.len(), 5);
+    assert_eq!(e.sketch.planes.len(), 4 + 3);
     assert_eq!(e.sketch.user_constraints().len(), 2);
     assert!(e.sketch.user_constraints()[1].claim);
 }
 
 #[test]
-fn a_fold_chain_gives_the_bases() {
-    let e = read(&format!("{VIEWS}aux := plane(origin: o, toward: q, from: top, fold: 30deg)\n"));
-    let b = |n: usize| e.sketch.basis(n);
+fn a_plane_reads_its_basis_off_its_rays() {
+    let e = read(&format!("{VIEWS}r := ray hint(x: 0.8660254037844387, y: 0.5, z: 0)\n\
+                           fix(x == 0.8660254037844387, y == 0.5, z == 0) r\n\
+                           aux := plane(u: r, v: std.z)\n"));
+    let b = |n: &str| e.sketch.basis(at(&e, n));
     let near = |a: [f64; 3], c: [f64; 3]| (0..3).all(|i| (a[i] - c[i]).abs() < 1e-12);
-    assert_eq!(b(0), Basis::page());
-    assert!(near(b(1).u, [1.0, 0.0, 0.0]) && near(b(1).v, [0.0, 1.0, 0.0]));
-    assert!(near(b(2).u, [0.0, 0.0, -1.0]) && near(b(2).v, [0.0, 1.0, 0.0]));
+    assert_eq!(b("front"), Basis::page());
+    assert!(near(b("top").u, [1.0, 0.0, 0.0]) && near(b("top").v, [0.0, 1.0, 0.0]));
+    assert!(near(b("right").u, [0.0, 1.0, 0.0]) && near(b("right").v, [0.0, 0.0, 1.0]));
     let (c, s) = (30f64.to_radians().cos(), 30f64.to_radians().sin());
-    assert!(near(b(3).u, [c, s, 0.0]) && near(b(3).v, [0.0, 0.0, -1.0]));
-    // a fold may read a parameter, and a plane may be declared before the one it folds from.
-    // **`fold:` is written**: `from:` alone no longer means `fold: 0deg` — it says which plane
-    // this one is derived from, and the clause beside it says how (§6.7).
-    let e = read("\
-tilt := 30deg
-aux := plane(from: top, fold: tilt)
-top := plane(from: front, fold: 0deg)
-front := plane
-");
-    assert!(near(e.sketch.basis(0).u, [c, s, 0.0]));
-    // and an explicit basis is orthonormalised on the way in
-    let e = read("p := plane(u: (2, 0, 0), v: (1, 0, 3))\n");
-    assert!(near(e.sketch.basis(0).v, [0.0, 0.0, 1.0]));
+    assert!(near(b("aux").u, [c, s, 0.0]) && near(b("aux").v, [0.0, 0.0, 1.0]));
+    // a plane may be declared before the rays it stands on
+    let e = read("aux := plane(u: r, v: w)\nr := ray hint(x: 1, y: 0, z: 0)\nw := ray hint(x: 0, y: 1, z: 0)\n");
+    assert!(near(e.sketch.basis(at(&e, "aux")).v, [0.0, 1.0, 0.0]));
+    // and its rays need be neither unit nor square: `v` is what is left of the second
+    let e = read("a := ray hint(x: 2, y: 0, z: 0)\nb := ray hint(x: 1, y: 0, z: 3)\np := plane(u: a, v: b)\n");
+    assert!(near(e.sketch.basis(at(&e, "p")).v, [0.0, 0.0, 1.0]));
 }
 
 #[test]
-fn attitude_refusals_carry_their_codes() {
-    refused("a := plane(from: b)\nb := plane(from: a)\n", "E041", "folded from itself");
-    refused("a := plane(from: a)\n", "E041", "folded from itself");
-    refused("a := plane(from: nope)\n", "E101", "no such entity");
-    refused("p := point\na := plane(from: p)\n", "E040", "`from` names a plane");
-    refused("a := plane(u: (1, 0, 0), v: (2, 0, 0))\n", "E103", "do not span");
-    refused("unit mm\na := plane(from: b, fold: 3mm)\nb := plane\n", "E103", "`fold` is Angle");
-    misparses("a := plane(fold: 30deg)\n", "say `from:` too");
-    misparses("a := plane(u: (1, 0, 0))\n", "both `u:` and `v:`");
-    misparses("a := plane(from: b, u: (1, 0, 0), v: (0, 1, 0))\n", "not two of the three");
-    // `from:` with neither clause is a plane *stood off* another, and one with both is refused
-    misparses("a := plane(from: b, fold: 0deg, offset: 5)\n", "not both");
-    misparses("a := plane(offset: 5)\n", "say `from:` too");
-    misparses("p := line(from: b)\n", "has no attitude to give");
-    misparses("a := plane(from: b, from: c)\n", "given twice");
+fn plane_refusals_carry_their_codes() {
+    refused("use std\np := point hint(x: 1, y: 2, z: 3)\na := plane(u: p, v: std.z)\n", "E103",
+            "a ray or a line");
+    refused("use std\na := plane(u: std.x)\n", "E103", "`v:` is missing");
+    refused("use std\na := plane(u: nope, v: std.z)\n", "E101", "no such entity");
+    refused("use std\na := plane(u: std.x, v: std.z, origin: std.origin)\n", "E103",
+            "a plane's origin is its own");
+    misparses("f := plane(u: a, v: b) in top\n", "has none of its own");
 }
 
 #[test]
@@ -211,38 +177,34 @@ s := spline(k0, k1, k2, k3) in front
         let pts = if r.kind == EntKind::Point { vec![r] } else { sk.children(r) };
         pts.iter().map(|p| sk.plane_of(p.i())).collect()
     };
-    assert_eq!(on("a"), vec![Some(1)]);
-    assert_eq!(on("l"), vec![Some(1), Some(1)]);
-    assert_eq!(on("c"), vec![Some(2)]);
-    assert_eq!(on("k"), vec![Some(2); 3]);
-    assert_eq!(on("s"), vec![Some(0); 4]);
+    let (front, top, right) = (at(&e, "front"), at(&e, "top"), at(&e, "right"));
+    assert_eq!(on("a"), vec![Some(top)]);
+    assert_eq!(on("l"), vec![Some(top), Some(top)]);
+    assert_eq!(on("c"), vec![Some(right)]);
+    assert_eq!(on("k"), vec![Some(right); 3]);
+    assert_eq!(on("s"), vec![Some(front); 4]);
     // a point named by a line in one plane and declared in another is one image on two planes
-    refused(
-        &format!("{VIEWS}a := point in front\nl := line(a, o) in top\n"),
-        "E060",
-        "already in `front`",
-    );
+    refused(&format!("{VIEWS}a := point in front\nl := line(a, top.origin) in top\n"), "E060",
+            "already in `front`");
     // agreement is not a conflict
-    read(&format!("{VIEWS}a := point in top\nl := line(a, o2) in top\n"));
+    read(&format!("{VIEWS}a := point in top\nl := line(a, top.origin) in top\n"));
     refused("a := point in nope\n", "E101", "no such entity");
-    refused("a := point in l\nl := line\n", "E040", "`in` names a plane");
-    misparses("f := plane in top\n", "has none of its own");
+    refused("use std\na := point in l\nin std.front {\nl := line\n}\n", "E040", "`in` names a plane");
     misparses("p := plane in top\n", "has none of its own");
     misparses("p := point in top in front\n", "already in a plane");
 }
 
 #[test]
 fn unit_in_still_parses_and_in_is_not_a_name() {
-    let e = read("unit in\np := point hint(x: 3in, y: 0)\nfront := plane\n");
-    assert!((e.sketch.point_xy(0).0 - 3.0).abs() < 1e-12);
+    let e = read("unit in\nuse std\np := point hint(x: 3in, y: 0) in std.front\n");
+    assert!((e.sketch.point_xy(at(&e, "p")).0 - 3.0).abs() < 1e-12);
     // a point cannot be called `in`: the word is a clause's, and the parser says so
     let (_, errs) = parse("point in\n");
     assert!(!errs.is_empty());
-    let (prog, errs) = parse("point in front\nfront := plane\n");
-    assert!(errs.is_empty(), "{errs:?}");
-    let e = elaborate(&prog);
-    assert!(e.ok());
-    assert_eq!(e.sketch.plane_of(0), Some(0), "an anonymous point, in a plane");
+    let e = read("use std\npoint in front\nfront := plane(u: std.x, v: std.z)\n");
+    let front = at(&e, "front");
+    let drawn = e.sketch.points.iter().filter(|p| p.plane == Some(front as u32)).count();
+    assert_eq!(drawn, 2, "the plane's origin and an anonymous point, in it");
 }
 
 #[test]
@@ -250,17 +212,19 @@ fn project_settles_refuses_and_claims() {
     let e = read(&format!("{VIEWS}a := point in front\nb := point in top\na project b\n"));
     let c = &e.sketch.user_constraints()[0];
     assert_eq!(c.kind, CKind::Project);
-    assert_eq!(c.entities()[2], EntRef::plane(0));
-    assert_eq!(c.entities()[3], EntRef::plane(1));
+    assert_eq!(c.entities()[2], EntRef::plane(at(&e, "front")));
+    assert_eq!(c.entities()[3], EntRef::plane(at(&e, "top")));
     // each refusal at the statement's own span
-    let (prog, _) = parse(&format!("{VIEWS}a := point in front\nb := point\na project b\n"));
+    let (prog, _, _) =
+        gcs_core::library::parse_linked(&format!("{VIEWS}a := point in front\nb := point\na project b\n"));
     let e = elaborate(&prog);
     let d = e.errors().find(|d| d.code.as_str() == "E061").expect("refused");
     assert!(d.message.contains("no plane"), "{}", d.message);
     assert_eq!(d.span.slice(prog.text()), "a project b");
     refused(&format!("{VIEWS}a := point in front\nb := point in front\na project b\n"), "E061", "itself");
     refused(
-        &format!("{VIEWS}front2 := plane\na := point in front\nb := point in front2\na project b\n"),
+        &format!("{VIEWS}front2 := plane(u: std.x, v: std.z)\nfix(x == 0, y == -5, z == 0) front2\n\
+                  a := point in front\nb := point in front2\na project b\n"),
         "E061",
         "parallel",
     );
@@ -275,13 +239,14 @@ fn describe_and_write_skip_the_planes() {
     let c = &e.sketch.user_constraints()[0];
     let named = io::describe_with(c, &|r| e.map.name_of(r).cloned());
     assert_eq!(named, "a project b");
-    assert_eq!(io::describe(c), "P6 project P7", "and positionally, with the planes left out");
+    let want = format!("P{} project P{}", at(&e, "a"), at(&e, "b"));
+    assert_eq!(io::describe(c), want, "and positionally, with the planes left out");
 }
 
 #[test]
 fn reconcile_writes_membership_a_plane_and_a_projection() {
     let mut e = read(VIEWS);
-    let top = e.map.ent_named("top").unwrap().i();
+    let top = at(&e, "top");
     // a point drawn in the current plane: its statement says so
     let p = e.sketch.point(20.0, 110.0, false, "new");
     e.sketch.set_plane(p, Some(top));
@@ -289,68 +254,55 @@ fn reconcile_writes_membership_a_plane_and_a_projection() {
     assert_eq!(out.kind, Kind::Structural);
     assert!(out.text.contains("p0 := point hint(x: 20, y: 110) in top"), "{}", out.text);
     // an anonymous plane is named the moment a point is put in it
-    let mut e = read("plane(origin: hint(x: 0, y: 0), toward: hint(x: 1, y: 0))\n");
+    let mut e = read("use std\nplane(u: std.x, v: std.y)\n");
+    let pl = 0;   // the document's own, numbered before the standard datums
     let p = e.sketch.point(3.0, 4.0, false, "new");
-    e.sketch.set_plane(p, Some(0));
+    e.sketch.set_plane(p, Some(pl));
     let out = reconciled(&mut e);
-    assert!(out.text.starts_with("v0 := plane("), "{}", out.text);
+    assert!(out.text.contains("\nv0 := plane("), "{}", out.text);
     assert!(out.text.contains(" in v0"), "{}", out.text);
-    // a plane made by a gesture is written with its basis, and a projection with two operands
+    // a plane made by a gesture is written over its rays, and a projection with two operands
     let mut e = read(&format!("{VIEWS}a := point in front\nb := point in top\n"));
-    let o = e.sketch.point(300.0, 0.0, false, "o4");
-    let t = e.sketch.point(301.0, 0.0, false, "t4");
-    e.sketch.plane(o, t, Basis::page().fold(0.5), "aux");
+    let aux = Basis { u: [0.6, 0.8, 0.0], v: [0.0, 0.0, 1.0], o: [0.0; 3] };
+    e.sketch.fixed_plane(aux, "aux");
     let (a, b) = (e.map.ent_named("a").unwrap(), e.map.ent_named("b").unwrap());
     let c = gcs_core::constraints::Constraint::project(&e.sketch, a, b).unwrap();
     e.sketch.add(c);
     let out = reconciled(&mut e);
-    assert!(out.text.contains("v0 := plane(origin: p0, toward: p1, u: ("), "{}", out.text);
+    assert!(out.text.contains(" := plane(u: r"), "{}", out.text);
+    assert!(out.text.contains(" := ray hint(x: 0.6, y: 0.8"), "{}", out.text);
     assert!(out.text.contains("\na project b\n"), "{}", out.text);
+    assert!(!out.text.contains("origin :="), "an origin is the plane's: {}", out.text);
     assert!(!out.text.contains("project("), "the planes are never spelled: {}", out.text);
+    let back = read(&out.text);
+    assert_eq!(back.sketch.planes.len(), e.sketch.planes.len());
+    // a plane made through the edit API, over two rays and given a name
+    let (prog, _, _) = gcs_core::library::parse_linked(VIEWS);
+    let out = edit::add_plane(&prog, &["std.y".to_string(), "std.x".to_string()], Some("aux"));
+    assert!(out.text.contains("aux := plane(u: std.y, v: std.x)"), "{}", out.text);
     read(&out.text);
-    // a plane made through the edit API, folded from another and given a name
-    let (prog, _) = parse(VIEWS);
-    let out = edit::add_plane(
-        &prog,
-        &[],
-        gcs_core::syntax::Attitude::From {
-            plane: gcs_core::syntax::Ref::new("front"),
-            fold: gcs_core::syntax::Arg::Dim { text: "30deg".into(), span: Default::default() },
-        },
-        Some("aux"),
-        &[(0.0, 0.0), (40.0, 0.0)],
-    );
-    assert!(
-        out.text.contains("aux := plane(origin: hint(x: 0, y: 0), toward: hint(x: 40, y: 0), from: front, fold: 30deg)"),
-        "{}",
-        out.text
-    );
-    read(&out.text);
-    let out = edit::add_plane(&prog, &[], Default::default(), Some("front"), &[]);
+    let out = edit::add_plane(&prog, &[], Some("front"));
     assert!(out.refused.is_some(), "a taken name is refused");
-    let out = edit::add_plane(&prog, &[], Default::default(), Some("in"), &[]);
+    let out = edit::add_plane(&prog, &[], Some("in"));
     assert!(out.refused.is_some(), "a reserved word is refused");
 }
 
 #[test]
-fn commit_seeds_replaces_the_list() {
-    let src = "front := plane\nright := plane(from: front, fold: -90deg)\n";
+fn commit_seeds_writes_a_rays_direction_and_a_planes_place() {
+    let src = "use std\nr := ray hint(x: 1, y: 0, z: 0)\np := plane(u: r, v: std.z)\n";
     let e = read(src);
     let mut sk = e.sketch.clone();
-    // move the minted points, so the pose has to be written into the source
-    for i in 0..sk.points.len() {
-        let [x, y] = sk.point_params(i);
-        sk.params[x as usize].value += 7.0;
-        sk.params[y as usize].value += 1.0;
+    let (r, p) = (at(&e, "r"), at(&e, "p"));
+    for (k, x) in [0.6, 0.8, 0.0].iter().enumerate() {
+        sk.params[sk.rays[r].d[k] as usize].value = *x;
+    }
+    for (k, x) in [1.0, 2.0, 3.0].iter().enumerate() {
+        sk.params[sk.planes[p].o[k] as usize].value = *x;
     }
     let out = edit::commit_seeds(&e, &sk, &e.program);
     assert_eq!(out.kind, Kind::Numeric);
-    let line = out.text.lines().nth(1).unwrap();
-    // one list — the two minted points seeded in it, and the attitude kept — and the rotor
-    assert_eq!(line.matches("plane").count(), 1, "{line}");
-    assert_eq!(line.matches("from: front, fold: -90deg").count(), 1, "{line}");
-    assert_eq!(line.matches("origin: hint(").count(), 1, "{line}");
-    assert!(line.contains(") hint(c: "), "{line}");
+    assert!(out.text.contains("r := ray hint(x: 0.6, y: 0.8, z: 0)"), "{}", out.text);
+    assert!(out.text.contains("p := plane(u: r, v: std.z) hint(x: 1, y: 2, z: 3)"), "{}", out.text);
     read(&out.text);
 }
 
@@ -358,7 +310,6 @@ fn commit_seeds_replaces_the_list() {
 fn remove_a_plane() {
     let src = format!(
         "{VIEWS}\
-aux := plane(from: top, fold: 30deg)
 a := point in front hint(x: 3, y: 4)
 b := point hint(x: 5, y: 105) in top
 a project b
@@ -369,13 +320,14 @@ a project b
     let out = edit::remove(&e, &e.program, &e.sketch, &[top], &[]);
     assert_eq!(out.kind, Kind::Structural, "{:?}", out.refused);
     assert!(!out.text.contains("top := plane"), "{}", out.text);
-    assert!(!out.text.contains("aux := plane"), "a plane folded from it goes too: {}", out.text);
+    assert!(!out.text.contains(") top\n"), "its fix goes too: {}", out.text);
     assert!(!out.text.contains("project"), "{}", out.text);
     assert!(out.text.contains("b := point hint(x: 5, y: 105)\n"), "the clause came out: {}", out.text);
     assert!(out.text.contains("a := point in front hint(x: 3, y: 4)"), "{}", out.text);
     let back = read(&out.text);
-    assert_eq!(back.sketch.planes.len(), 2);
-    assert_eq!(back.sketch.points.len(), 8);
+    assert_eq!(back.sketch.planes.len(), 4 + 2);
+    let b = at(&back, "b");
+    assert!(back.sketch.points[b].z.is_some(), "a point in space now");
 }
 
 #[test]
@@ -392,23 +344,22 @@ b := point in front hint(x: 10, y: 5)
 "
     ));
     let sk = &e.sketch;
-    let top = e.map.ent_named("top").unwrap().i() as u32;
-    // a, the line's two minted ends, and the cycle's four corners: every declaration in the
-    // block, a nested block's copies included, is drawn in the view
-    assert_eq!(sk.points.iter().filter(|p| p.plane == Some(top)).count(), 7);
+    let top = at(&e, "top") as u32;
+    // the origin, a, the line's two minted ends, and the cycle's four corners: every declaration
+    // in the block, a nested block's copies included, is drawn in the plane
+    assert_eq!(sk.points.iter().filter(|p| p.plane == Some(top)).count(), 1 + 7);
     // a constraint inside the block passes through unchanged
     assert_eq!(sk.user_constraints().iter().filter(|c| c.kind == CKind::Project).count(), 1);
     // the statements are the body's own, and none of them spells a clause it did not write
     let mut out = String::new();
-    for st in e.program.stmts().filter(|s| !matches!(s.kind, gcs_core::syntax::StmtKind::Block(_))) {
+    for st in e.program.root().body.iter().filter(|s| !matches!(s.kind, gcs_core::syntax::StmtKind::Block(_))) {
         write_stmt_to(&mut out, &st.kind).unwrap();
         out.push('\n');
     }
     assert_eq!(out.matches(" in ").count(), 1, "only b's own clause: {out}");
-    // the one-line form reads too (the declared point builds first: index 0)
-    let e = read("front := plane\nin front { c := point hint(x: 1, y: 2) }\n");
-    let c = e.map.ent_named("c").unwrap();
-    assert_eq!(e.sketch.plane_of(c.i()), Some(0));
+    // the one-line form reads too
+    let e = read("use std\nin std.front { c := point hint(x: 1, y: 2) }\n");
+    assert_eq!(e.sketch.plane_of(at(&e, "c")), Some(at(&e, "std.front")));
 }
 
 #[test]
@@ -419,11 +370,11 @@ fn an_in_block_refuses_what_it_cannot_mean() {
         "E060",
         "already in `front`",
     );
-    misparses("front := plane\nin front { f := plane }\n", "has none of its own");
-    misparses("front := plane\nin front { a := point in front }\n", "already in a plane");
-    misparses("front := plane\ncycle 2 { in front { a := point } }\n", "stands at the top level");
-    misparses("front := plane\nin front { in front { a := point } }\n", "stands at the top level");
-    misparses("front := plane\nin front point a\n", "an `in` block is");
+    misparses("in front { f := plane(u: a, v: b) }\n", "has none of its own");
+    misparses("in front { a := point in front }\n", "already in a plane");
+    misparses("cycle 2 { in front { a := point } }\n", "stands at the top level");
+    misparses("in front { in front { a := point } }\n", "stands at the top level");
+    misparses("in front point a\n", "an `in` block is");
 }
 
 #[test]
@@ -448,11 +399,10 @@ a project b
     assert!(out.text.contains("l := line"), "{}", out.text);
     assert!(!out.text.contains("project"), "{}", out.text);
     let back = read(&out.text);
-    let front = back.map.ent_named("front").unwrap().i();
-    let a = back.map.ent_named("a").unwrap().i();
-    assert_eq!(back.sketch.plane_of(a), None, "page geometry now");
-    let b = back.map.ent_named("b").unwrap().i();
-    assert_eq!(back.sketch.plane_of(b), Some(front), "its own clause stands");
+    let a = at(&back, "a");
+    assert_eq!(back.sketch.plane_of(a), None, "a point in space now");
+    let b = at(&back, "b");
+    assert_eq!(back.sketch.plane_of(b), Some(at(&back, "front")), "its own clause stands");
 }
 
 #[test]
@@ -477,11 +427,9 @@ fn a_seed_inside_a_block_splices_in_place() {
 #[test]
 fn a_block_over_a_module_plane_is_not_a_membership_to_change() {
     let src = "unit mm\nuse std\nin std.front {\n  a := point hint(x: 10, y: 5)\n}\n\
-               fix(x == 10, y == 5) a\nb := point hint(x: 3, y: 4)\nfix(x == 3, y == 4) b\n";
-    let (prog, parse, link) = gcs_core::library::parse_linked(src);
-    assert!(parse.is_empty() && link.is_empty(), "{parse:?} {link:?}");
-    let mut e = elaborate(&prog);
-    assert!(e.ok(), "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
+               fix(x == 10, y == 5) a\nb := point hint(x: 3, y: 4) in std.front\n\
+               fix(x == 3, y == 4) b\n";
+    let mut e = read(src);
     let a = e.map.ent_named("a").unwrap();
     assert_eq!(e.sketch.plane_of(a.i()), e.map.ent_named("std.front").map(|p| p.i()));
     let out = reconciled(&mut e);
@@ -491,13 +439,13 @@ fn a_block_over_a_module_plane_is_not_a_membership_to_change() {
 
 #[test]
 fn the_words_are_tinted() {
-    let src = "top := plane(origin: o, toward: q, from: front, fold: -90deg)\na := point in top hint(x: 3in, y: 0)\na project b\nunit in\n";
+    let src = "top := plane(u: r, v: s)\nr := ray\na := point in top hint(x: 3in, y: 0)\na project b\nunit in\n";
     let tints: Vec<(Tint, &str)> =
         highlight(src).into_iter().map(|(t, s)| (t, s.slice(src))).collect();
     let has = |t: Tint, w: &str| tints.iter().any(|(x, s)| *x == t && *s == w);
     assert!(has(Tint::Word, "plane"), "{tints:?}");
-    assert!(has(Tint::Label, "from"), "{tints:?}");
-    assert!(has(Tint::Label, "fold"), "{tints:?}");
+    assert!(has(Tint::Word, "ray"), "{tints:?}");
+    assert!(has(Tint::Label, "u"), "{tints:?}");
     assert!(has(Tint::Relation, "project"), "{tints:?}");
     assert!(has(Tint::Type, "in"), "`unit in` names a unit: {tints:?}");
     let ins: Vec<&(Tint, &str)> = tints.iter().filter(|(_, s)| *s == "in").collect();
@@ -521,16 +469,14 @@ fn an_instance_may_be_drawn_in_a_view() {
         "{VIEWS}{SLOT}\
 x := point hint(x: 5, y: 5) in top
 s1 := Slot(x, w: 12) in top
-s2 := Slot(x, w: 12)
 "
     ));
     let sk = &e.sketch;
-    let top = e.map.ent_named("top").unwrap().i();
-    let at = |n: &str| sk.plane_of(e.map.ent_named(n).unwrap().i());
-    assert_eq!(at("s1.a"), Some(top));
-    assert_eq!(at("s1.b"), Some(top));
-    assert_eq!(at("s2.a"), None, "an instance with no clause stays where it was written");
-    assert_eq!(at("x"), Some(top), "the aliased argument joins through `arm`, and agrees");
+    let top = at(&e, "top");
+    let on = |n: &str| sk.plane_of(at(&e, n));
+    assert_eq!(on("s1.a"), Some(top));
+    assert_eq!(on("s1.b"), Some(top));
+    assert_eq!(on("x"), Some(top), "the aliased argument joins through `arm`, and agrees");
     // the statement prints as written
     let (prog, errs) = parse("s1 := Slot(x, w: 12) in top\n");
     assert!(errs.is_empty(), "{errs:?}");
@@ -541,8 +487,7 @@ s2 := Slot(x, w: 12)
     let e = read(&format!(
         "{VIEWS}{SLOT}x := point hint(x: 5, y: 5) in front\nin front {{ s3 := Slot(x, w: 12) }}\n"
     ));
-    let front = e.map.ent_named("front").unwrap().i();
-    assert_eq!(e.sketch.plane_of(e.map.ent_named("s3.a").unwrap().i()), Some(front));
+    assert_eq!(e.sketch.plane_of(at(&e, "s3.a")), Some(at(&e, "front")));
 }
 
 #[test]
@@ -555,34 +500,30 @@ fn an_instance_in_a_view_refuses_what_it_cannot_mean() {
     );
     // a plane given twice: a clause under an enclosing block, or under an outer instance
     misparses(
-        &format!("{SLOT}front := plane\nq := point\nin front {{ s4 := Slot(q, w: 3) in front }}\n"),
+        &format!("{SLOT}q := point\nin front {{ s4 := Slot(q, w: 3) in front }}\n"),
         "already in a plane",
     );
     refused(
         &format!(
-            "{SLOT}\
-component Two(p: Point) {{
-  mine := plane
+            "{VIEWS}{SLOT}\
+component Two(p: Point, a: ray, b: ray) {{
+  mine := plane(u: a, v: b)
   inner := Slot(p, w: 4) in mine
 }}
-front := plane
-q := point hint(x: 1, y: 1)
-t := Two(q) in front
+q := point hint(x: 1, y: 1) in front
+t := Two(q, std.x, std.y) in front
 "
         ),
         "E103",
         "already in a plane",
     );
-    // a datum inside is left alone: it has no points of its own to put on the plane
-    let e = read(
-        "component D() {\n  f := plane\n  c := point hint(x: 1, y: 2)\n}\nfront := plane\nd1 := D() in front\n",
-    );
-    let front = e.map.ent_named("front").unwrap().i();
-    assert_eq!(e.sketch.plane_of(e.map.ent_named("d1.c").unwrap().i()), Some(front));
-    let f = e.map.ent_named("d1.f").unwrap();
-    for p in e.sketch.children(f) {
-        assert_eq!(e.sketch.plane_of(p.i()), None, "a frame's points are the datum's own");
-    }
+    // a plane inside is left alone: its origin is its own
+    let e = read(&format!(
+        "{VIEWS}component D(a: ray, b: ray) {{\n  f := plane(u: a, v: b)\n  c := point hint(x: 1, y: 2)\n}}\nd1 := D(std.x, std.y) in front\n"
+    ));
+    assert_eq!(e.sketch.plane_of(at(&e, "d1.c")), Some(at(&e, "front")));
+    let f = at(&e, "d1.f");
+    assert_eq!(e.sketch.plane_of(e.sketch.planes[f].origin as usize), Some(f));
 }
 
 #[test]
@@ -595,44 +536,37 @@ fn removing_the_plane_takes_an_instances_clause() {
     assert!(out.text.contains("s1 := Slot(x, w: 12)\n"), "the instance stays: {}", out.text);
     assert!(!out.text.contains("in top"), "{}", out.text);
     let back = read(&out.text);
-    assert_eq!(back.sketch.plane_of(back.map.ent_named("s1.a").unwrap().i()), None);
+    assert_eq!(back.sketch.plane_of(at(&back, "s1.a")), None);
 }
 
 /// A statement expanded by `flatten` keeps the id of the statement it came from, so a plane
-/// declared in a component is several planes from one id — each folded by the angle *its* copy
-/// was given.  Keyed by that id, every copy read the first one's basis and came out silently
-/// wrong (no diagnostic, just the wrong geometry).
+/// declared in a component is several planes from one id — each over the ray *its* copy was
+/// given.  Keyed by that id, every copy read the first one's basis and came out silently wrong
+/// (no diagnostic, just the wrong geometry).
 #[test]
 fn every_copy_of_a_plane_gets_its_own_basis() {
     let e = read("\
-component V(base: plane, a: Angle) {
-  vo := point hint(x: 0, y: 0)
-  vq := point hint(x: 1, y: 0)
-  v := plane(origin: vo, toward: vq, from: base, fold: a)
+use std
+component V(r: ray, up: ray) {
+  v := plane(u: r, v: up)
 }
-base := plane
-x1 := V(base, a: 0deg)
-x2 := V(base, a: 90deg)
+x1 := V(std.x, std.z)
+x2 := V(std.y, std.z)
 ");
     let near = |a: [f64; 3], c: [f64; 3]| (0..3).all(|i| (a[i] - c[i]).abs() < 1e-12);
-    let b = |n: &str| e.sketch.basis(e.map.ent_named(n).unwrap().i());
+    let b = |n: &str| e.sketch.basis(at(&e, n));
     assert!(near(b("x1.v").u, [1.0, 0.0, 0.0]), "{:?}", b("x1.v"));
-    assert!(near(b("x2.v").u, [0.0, 0.0, 1.0]), "the 90° copy folds its own way: {:?}", b("x2.v"));
-    // and a plane in a `cycle`, where the fold is the binder
-    let e = read("base := plane\ncycle 3 as i { w := plane(from: base, fold: i * 30deg) }\n");
-    assert_eq!(e.sketch.planes.len(), 4);
-    let us: Vec<f64> = (1..e.sketch.planes.len()).map(|p| e.sketch.basis(p).u[2]).collect();
-    assert!(us[0] < us[1] && us[1] < us[2], "each copy folds further: {us:?}");
+    assert!(near(b("x2.v").u, [0.0, 1.0, 0.0]), "the second copy over its own ray: {:?}", b("x2.v"));
 }
 
-/// A line between a point in a view and a point on the page is a declaration that *names* its
+/// A line between a point in a view and a point in space is a declaration that *names* its
 /// points, and says nothing about planes — the case the `names_all` escape exists for.  Refused
 /// there, `reconcile` returned the refusal for ever after and the source silently stopped
 /// tracking the drawing (`syncSource` only reports it).
 #[test]
 fn a_line_across_two_views_does_not_jam_the_source() {
     let mut e = read(&format!("{VIEWS}a := point hint(x: 5, y: 5) in front\nb := point hint(x: 9, y: 9)\n"));
-    let (ai, bi) = (e.map.ent_named("a").unwrap().i(), e.map.ent_named("b").unwrap().i());
+    let (ai, bi) = (at(&e, "a"), at(&e, "b"));
     let mut sk = std::mem::take(&mut e.sketch);
     sk.line(ai, bi);
     e.sketch = sk;
@@ -652,42 +586,39 @@ fn a_line_across_two_views_does_not_jam_the_source() {
 fn an_instance_in_plane_resolves_in_the_callers_scope() {
     let e = read(&format!(
         "{VIEWS}\ncomponent Dot(o: point) {{\n top := point hint(x: 5, y: 5)\n o distance(5) top\n \
-         o horizontal top\n}}\nk := Dot(o2) in top\n"
+         o horizontal top\n}}\nk := Dot(top.origin) in top\n"
     ));
-    let top = e.map.ent_named("top").unwrap().i();
-    assert_eq!(e.sketch.plane_of(e.map.ent_named("k.top").unwrap().i()), Some(top));
+    let top = at(&e, "top");
+    assert_eq!(e.sketch.plane_of(at(&e, "k.top")), Some(top));
     let e = read(&format!(
         "{VIEWS}\ncomponent Dot(o: point) {{\n top := point hint(x: 5, y: 5)\n o distance(5) top\n}}\n\
          component Pair(o: point) {{\n top := point hint(x: 9, y: 9)\n d := Dot(o)\n}}\n\
-         k := Pair(o2) in top\n"
+         k := Pair(top.origin) in top\n"
     ));
-    let top = e.map.ent_named("top").unwrap().i();
-    assert_eq!(e.sketch.plane_of(e.map.ent_named("k.top").unwrap().i()), Some(top));
-    assert_eq!(e.sketch.plane_of(e.map.ent_named("k.d.top").unwrap().i()), Some(top));
+    let top = at(&e, "top");
+    assert_eq!(e.sketch.plane_of(at(&e, "k.top")), Some(top));
+    assert_eq!(e.sketch.plane_of(at(&e, "k.d.top")), Some(top));
     // a plane the caller cannot see is still nothing, named as written
     refused(
-        &format!("{VIEWS}\ncomponent Dot(o: point) {{\n p := point hint(x: 5, y: 5)\n}}\nk := Dot(o2) in nowhere\n"),
+        &format!("{VIEWS}\ncomponent Dot(o: point) {{\n p := point hint(x: 5, y: 5)\n}}\nk := Dot(top.origin) in nowhere\n"),
         "E101",
         "`nowhere`",
     );
 }
 
-/// Where a plane stands along its normal is document data like its directions, so a record of
-/// the sketch carries it: a derived offset survives `dumps`/`loads` and the graft, and a view
-/// standing at the origin writes no `"o"` at all, so its record is what it always was.
+/// Where a plane stands is document data like its rays, so a record of the sketch carries it:
+/// a place survives `dumps`/`loads` and the graft.
 #[test]
-fn an_offset_plane_keeps_its_origin_through_json_and_the_graft() {
-    let e = read("unit mm\np := plane\na := point hint(x: 5, y: 0)\nb := point hint(x: 30, y: 0)\n\
-        q := plane(origin: a, toward: b, from: p, offset: 12mm)\n");
-    let q = e.map.ent_named("q").unwrap().i();
+fn a_planes_place_survives_json_and_the_graft() {
+    let e = read("unit mm\nuse std\nq := plane(u: std.x, v: std.y) hint(x: 0, y: 0, z: 12)\n\
+                  a := point hint(x: 5, y: 0) in q\n");
+    let q = at(&e, "q");
     let b = e.sketch.basis(q);
-    assert!((b.along_normal() - 12.0).abs() < 1e-12, "stood off by the offset: {b:?}");
+    assert!((b.along_normal() - 12.0).abs() < 1e-12, "stood off: {b:?}");
     let text = io::dumps(&e.sketch, Some(1));
-    assert_eq!(text.matches("\"o\"").count(), 1, "only the plane off the origin writes one");
     let back = io::loads(&text).unwrap();
     assert_eq!(back.basis(q), b);
-    let pts = [e.map.ent_named("a").unwrap(), e.map.ent_named("b").unwrap()];
-    let copied = io::copy(&e.sketch, &[pts[0], pts[1], EntRef::plane(q)]);
+    let copied = io::copy(&e.sketch, &[e.map.ent_named("a").unwrap(), EntRef::plane(q)]);
     assert_eq!(copied.planes.len(), 1);
     assert_eq!(copied.basis(0), b);
 }

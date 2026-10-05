@@ -49,20 +49,11 @@ fn render(sk: &Sketch, si: usize, plane_i: Option<usize>, unit: f64, section: Op
     Renderer::prepare(&solid).project(View { frame: PageFrame::new(basis, pose), section }).strokes
 }
 
-/// The plane a picture is drawn in, and the pose that puts it on the page.  `None` is the page
-/// itself, which is what a document with no `plane` statement draws in.
+/// The plane a picture is drawn in, and the pose its coordinates are read in — a plane's own,
+/// so the identity.  `None` is the front plane, what a 2D sketch is read on.
 pub(crate) fn view_frame(sk: &Sketch, plane_i: Option<usize>) -> (Basis, (f64, f64, (f64, f64))) {
-    match plane_i.and_then(|i| sk.planes.get(i).map(|p| (i, p))) {
-        Some((i, p)) => (
-            sk.basis(i),
-            (
-                sk.params[p.frame.c as usize].value,
-                sk.params[p.frame.s as usize].value,
-                sk.point_xy(p.frame.origin as usize),
-            ),
-        ),
-        None => (Basis::page(), (1.0, 0.0, (0.0, 0.0))),
-    }
+    let basis = plane_i.filter(|&i| i < sk.planes.len()).map_or(Basis::page(), |i| sk.basis(i));
+    (basis, crate::plane::IDENTITY_POSE)
 }
 
 /// **Every picture the document asked for, laid out.**  The one entry both front ends read, so

@@ -16,6 +16,8 @@
 // The crank is still the drawing's one freedom.  Change `radius(150)` and the rod solves again;
 // the circle's centre stays straight above the stride's bottom.
 
+use std
+
 a := 38      // the axle stands this far to the right of the pivot...
 l := 7.8     // ...and this far above it
 
@@ -71,27 +73,33 @@ component Leg(axle: point, pivot: point, theta: Angle, h: Length) {
   ccw(knee, heel, toe)
 }
 
-axle := point
-pivot := point hint(x: -38, y: -7.8)
-fix(x == 0, y == 0) axle
-pivot distance(a, along: x) axle
-pivot distance(l, along: y) axle
+in std.front {
+  axle := point
+  pivot := point hint(x: -38, y: -7.8)
+  fix(x == 0, y == 0) axle
+  pivot distance(a, along: x) axle
+  pivot distance(l, along: y) axle
 
-// the leg, with its crank angle and its toe rod both left unbound
-leg := Leg(axle, pivot)
+  // the leg, with its crank angle and its toe rod both left unbound
+  leg := Leg(axle, pivot)
+}
 path := leg.toe over theta in (0, 360)
 
 // level ground of unstated height, touching the stride at its bottom
-g0 := point hint(x: -60, y: -92)
-g1 := point hint(x: 0, y: -92)
-ground := horizontal line(g0, g1)
-g0 distance(60, along: x) g1
-fix(x == -60) g0
+in std.front {
+  g0 := point hint(x: -60, y: -92)
+  g1 := point hint(x: 0, y: -92)
+  ground := horizontal line(g0, g1)
+  g0 distance(60, along: x) g1
+  fix(x == -60) g0
 
-// a circle of stated radius, osculating the stride where the stride touches the ground
-k := point hint(x: -45, y: 50)
-osc := circle(center: k) hint(r: 140)
-radius(150) osc
+  // a circle of stated radius, osculating the stride where the stride touches the ground
+  k := point hint(x: -45, y: 50)
+  osc := circle(center: k) hint(r: 140)
+  radius(150) osc
+}
 param s: Angle hint(318)
-path tangent(t == s) ground
-path curvature(t == s) osc
+in std.front {
+  path tangent(t == s) ground
+  path curvature(t == s) osc
+}

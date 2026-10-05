@@ -73,8 +73,15 @@ fn a_blind_hole_has_a_concave_floor_edge() {
 fn trimmed_cube_and_hole_edges_have_material_normals() {
     let cad = native::Session::new().unwrap();
     for hole in [false,true] {
-        let source = format!("{BOX}{}",if hole { "c := circle(center: std.origin)\nradius(0.5mm) c\n\
-            drill := solid(face(c),from: -3mm,to: 3mm)\ndrill cut body\n" } else { "" });
+        let source = format!("{BOX}{}",if hole { "\
+use std
+in std.front {
+c := circle(center: std.origin)
+radius(0.5mm) c
+}
+drill := solid(face(c),from: -3mm,to: 3mm)
+drill cut body
+" } else { "" });
         let e = fixtures::gear::read(&source,Path::new("."));
         let solid = cad.construct(&cad::recipe(&e.sketch,e.map.ent_named("body").unwrap().i()).unwrap()).unwrap();
         let rows = boundary(&cad,solid);
@@ -121,10 +128,22 @@ fn trimmed_cube_and_hole_edges_have_material_normals() {
 fn periodic_seams_and_collapsed_poles_remain_explicit() {
     let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples");
     let sphere = fixtures::gear::read(include_str!("../../examples/solid_generating_sweep.sv"),&base);
-    let torus = fixtures::gear::read("unit mm\na := point\nfix(x == 0, y == 0) a\n\
-        b := point\nfix(x == 0, y == 1) b\naxis := line(a,b)\n\
-        c := point\nfix(x == 10, y == 2) c\nring := circle(center: c)\nradius(2) ring\n\
-        tool := solid(face(ring),about: axis)\n",Path::new("."));
+    let torus = fixtures::gear::read("\
+unit mm
+use std
+in std.front {
+a := point
+fix(x == 0, y == 0) a
+b := point
+fix(x == 0, y == 1) b
+axis := line(a,b)
+c := point
+fix(x == 10, y == 2) c
+ring := circle(center: c)
+radius(2) ring
+}
+tool := solid(face(ring),about: axis)
+",Path::new("."));
     let cad = native::Session::new().unwrap();
     for (e,is_sphere) in [(&sphere,true),(&torus,false)] {
         let solid = cad.construct(&cad::recipe(&e.sketch,e.map.ent_named("tool").unwrap().i()).unwrap()).unwrap();

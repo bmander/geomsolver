@@ -3,6 +3,8 @@
 // `o`, and the inversion of a circle through the centre of inversion is a line.  The document
 // states none of that — the last statement *claims* it, and the diagnosis proves it.
 
+use std
+
 // the three lengths the machine is built from; the pen draws the line x = (arm² − side²) / (2·crank)
 param arm := 100       // the long arms, o–c and o–d
 param side := 60       // the four sides of the kite, b–c–pen–d
@@ -38,19 +40,21 @@ component Cell(orbit: circle, datum: line, arm: Length, side: Length, u: Angle) 
 // The fixed frame: the datum the crank angle is read from, and the orbit.  `o coincident orbit` is
 // the theorem's whole hypothesis — the pin's circle passes through the centre of inversion — and
 // it places `q` too, so no dimension between the pivots is ever stated.
-o := point
-q := point hint(x: crank, y: 0)
-datum := line(o, q)
-orbit := circle(center: q) hint(r: crank)
+in std.front {
+  o := point
+  q := point hint(x: crank, y: 0)
+  datum := line(o, q)
+  orbit := circle(center: q) hint(r: crank)
 
-horizontal datum
-radius(crank) orbit
-o coincident orbit
-fix(x == 0, y == 0) o
+  horizontal datum
+  radius(crank) orbit
+  o coincident orbit
+  fix(x == 0, y == 0) o
 
-// the machine itself, at one pose — `u` unbound, so the crank angle is an unknown of the
-// drawing and the pen may be dragged
-cell := Cell(orbit, datum, arm: arm, side: side)
+  // the machine itself, at one pose — `u` unbound, so the crank angle is an unknown of the
+  // drawing and the pen may be dragged
+  cell := Cell(orbit, datum, arm: arm, side: side)
+}
 
 // Where the pen goes: the drawn cell's own `pen`, as its crank angle runs.  The drawing's pose
 // is where the trace is anchored, so it needs no seeds of its own.  `rail` runs through two
@@ -59,13 +63,15 @@ cell := Cell(orbit, datum, arm: arm, side: side)
 // claim promises.
 path := cell.pen over u in (60, 115)
 
-g1 := point hint(x: 80, y: 51)
-g2 := point hint(x: 80, y: 114)
-g1 coincident(t == 65) path
-g2 coincident(t == 110) path
-rail := line(g1, g2)
+in std.front {
+  g1 := point hint(x: 80, y: 51)
+  g2 := point hint(x: 80, y: 114)
+  g1 coincident(t == 65) path
+  g2 coincident(t == 110) path
+  rail := line(g1, g2)
 
-claim vertical rail
+  claim vertical rail
+}
 
 // Diagnosed: dof 1, Under — the crank — and the claim a theorem.  Drag `cell.pen`; the cell
 // folds and stretches to carry it along the line it cannot leave.

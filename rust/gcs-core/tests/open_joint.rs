@@ -11,9 +11,12 @@ use gcs_core::constraints::CKind;
 use gcs_core::edit::{self, Kind};
 use gcs_core::model::EntRef;
 use gcs_core::program::{elaborate, Elaborated};
-use gcs_core::syntax::{highlight, parse, Chained, StmtKind, Tint};
+use gcs_core::syntax::{highlight, Chained, StmtKind, Tint};
+use crate::common::{parse, STD_POINTS};
 
+/// `src` elaborated, drawn in the front plane (`common::front`).
 fn read(src: &str) -> Elaborated {
+    let src = &crate::common::front(src);
     let (prog, errs) = parse(src);
     assert!(errs.is_empty(), "does not parse: {errs:?}");
     let e = elaborate(&prog);
@@ -41,7 +44,7 @@ fn kinds(sk: &gcs_core::model::Sketch, k: CKind) -> usize {
 fn a_cycle_of_one_link_is_a_polygon() {
     let e = read("cycle 4 {\n  distance(50) line -> angle(90)\n}\n");
     let mut sk = e.sketch;
-    assert_eq!((sk.lines.len(), sk.points.len()), (4, 4), "welds, not coincident pairs");
+    assert_eq!((sk.lines.len(), sk.points.len()), (4, 4 + STD_POINTS), "welds, not coincident pairs");
     assert_eq!((kinds(&sk, CKind::Distance), kinds(&sk, CKind::Angle)), (4, 4));
     // head to tail: each side leaves at the point the next arrives by, the last at the first's
     for i in 0..4 {
@@ -57,7 +60,7 @@ fn a_cycle_of_one_link_is_a_polygon() {
 fn a_repeat_ends_open() {
     let e = read("repeat 4 {\n  distance(50) line -> angle(90)\n}\n");
     let mut sk = e.sketch;
-    assert_eq!((sk.lines.len(), sk.points.len()), (4, 5), "an open polyline");
+    assert_eq!((sk.lines.len(), sk.points.len()), (4, 5 + STD_POINTS), "an open polyline");
     assert_eq!(kinds(&sk, CKind::Distance), 4, "the prefix is each copy's own");
     assert_eq!(kinds(&sk, CKind::Angle), 3, "N-1 corners: the last is not stated");
     for i in 0..3 {
@@ -67,7 +70,7 @@ fn a_repeat_ends_open() {
     assert!(r.success);
     // one copy is no pairs at all, not an error
     let e = read("repeat 1 {\n  line -> angle(90)\n}\n");
-    assert_eq!((e.sketch.lines.len(), e.sketch.points.len()), (1, 2));
+    assert_eq!((e.sketch.lines.len(), e.sketch.points.len()), (1, 2 + STD_POINTS));
     assert_eq!(kinds(&e.sketch, CKind::Angle), 0);
 }
 
@@ -107,7 +110,7 @@ fn a_joint_states_several_relations_per_pair() {
 fn a_declared_entry_is_the_shared_point() {
     let e = read("cycle 3 {\n  p := point hint(x: 0, y: 0)\n  (s := line(p)) ->\n}\n");
     let sk = e.sketch;
-    assert_eq!((sk.lines.len(), sk.points.len()), (3, 3), "the weld mints no point");
+    assert_eq!((sk.lines.len(), sk.points.len()), (3, 3 + STD_POINTS), "the weld mints no point");
     for i in 0..3 {
         assert_eq!(sk.lines[i].p2, sk.lines[(i + 1) % 3].p1);
     }
@@ -249,7 +252,7 @@ fn a_joint_dimension_reads_the_binder() {
 fn a_nested_body_may_end_mid_joint() {
     let e = read("repeat 2 {\n  cycle 2 {\n    line ->\n  }\n}\n");
     let sk = e.sketch;
-    assert_eq!((sk.lines.len(), sk.points.len()), (4, 4), "two separate two-gons");
+    assert_eq!((sk.lines.len(), sk.points.len()), (4, 4 + STD_POINTS), "two separate two-gons");
     for i in [0, 2] {
         assert_eq!(sk.lines[i].p2, sk.lines[i + 1].p1);
         assert_eq!(sk.lines[i + 1].p2, sk.lines[i].p1);
@@ -263,7 +266,7 @@ fn a_nested_body_may_end_mid_joint() {
 fn a_repeat_weld_runs_through_the_declared_points() {
     let e = read("repeat 3 {\n  p := point hint(x: 0, y: 0)\n  (s := line(p)) ->\n}\n");
     let sk = e.sketch;
-    assert_eq!((sk.lines.len(), sk.points.len()), (3, 4), "three p's and the open end");
+    assert_eq!((sk.lines.len(), sk.points.len()), (3, 4 + STD_POINTS), "three p's and the open end");
     assert_eq!(sk.lines[0].p2, sk.lines[1].p1);
     assert_eq!(sk.lines[1].p2, sk.lines[2].p1);
 }
@@ -274,7 +277,7 @@ fn a_repeat_weld_runs_through_the_declared_points() {
 #[test]
 fn a_one_line_body_reads() {
     let e = read("cycle 4 { distance(50) line -> angle(90) }\n");
-    assert_eq!((e.sketch.lines.len(), e.sketch.points.len()), (4, 4));
+    assert_eq!((e.sketch.lines.len(), e.sketch.points.len()), (4, 4 + STD_POINTS));
     assert_eq!(kinds(&e.sketch, CKind::Angle), 4);
     let e = read("cycle 2 { line }\n");
     assert_eq!(e.sketch.lines.len(), 2);

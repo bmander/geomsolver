@@ -25,8 +25,8 @@ mod topology;
 mod attitude;
 
 pub use entities::{
-    Param, EntKind, Field, EntRef, PointE, LineE, CircleE, SphereE, AxialE, RayE, ArcE, SplineE, FrameE,
-    PlaneE, Att,
+    Param, EntKind, Field, EntRef, PointE, LineE, CircleE, SphereE, AxialE, RayE, ArcE, SplineE,
+    PlaneE,
     LiftE,
 };
 pub use curves::{CURVE_STEPS, CurveDef, CurveBody, CurveE, Home, Trim, whole};
@@ -105,18 +105,6 @@ pub struct Sketch {
     /// 2D claim, one stratum further out.
     pub solid_claims: Vec<SolidClaim>,
     pub solid_bearings: Vec<SolidBearing>,
-    /// The datum points the **page-placement gauge** holds: a solved view's origin and
-    /// toward, where no statement of the document names them.  Their params are `fixed`, so no
-    /// solve moves them and no ledger counts them; this set is what says the hold is the gauge's
-    /// and not a `fix`'s, so a writeback into the source never spells one.  (A lifted program
-    /// does fix them: it states every view, and over a stated view the gauge holds nothing.)
-    /// Derived state, set at elaboration and never written to a document.
-    pub page_held: std::collections::BTreeSet<u32>,
-    /// The planes a **mate** places (§6.10): written `from: P` with neither `fold:` nor
-    /// `offset:`, they say which plane they are parallel to and leave where they stand to one
-    /// `against`.  Recorded here so the placement walk knows which offsets are its to write and
-    /// which the document already fixed — a plane that says `offset: 12mm` is not placed twice.
-    pub placed_planes: std::collections::BTreeSet<u32>,
     /// What the document calls each plane, for the one diagnostic that has to say so — see
     /// `plane_name`.
     pub plane_names: BTreeMap<u32, String>,
@@ -212,7 +200,7 @@ impl Sketch {
             EntKind::Ray => self.rays[e.i()].class.clone(),
             EntKind::Arc => self.arcs[e.i()].class.clone(),
             EntKind::Spline => self.splines[e.i()].class.clone(),
-            EntKind::Plane => self.planes[e.i()].frame.class.clone(),
+            EntKind::Plane => self.planes[e.i()].class.clone(),
             EntKind::Curve => self.curves[e.i()].class.clone(),
             EntKind::Face => self.faces[e.i()].class.clone(),
             EntKind::Solid => self.solids[e.i()].class.clone(),
@@ -240,7 +228,7 @@ impl Sketch {
             EntKind::Ray => self.rays.get_mut(e.i()).map(|x| &mut x.class),
             EntKind::Arc => self.arcs.get_mut(e.i()).map(|x| &mut x.class),
             EntKind::Spline => self.splines.get_mut(e.i()).map(|x| &mut x.class),
-            EntKind::Plane => self.planes.get_mut(e.i()).map(|x| &mut x.frame.class),
+            EntKind::Plane => self.planes.get_mut(e.i()).map(|x| &mut x.class),
             EntKind::Curve => self.curves.get_mut(e.i()).map(|x| &mut x.class),
             EntKind::Face => self.faces.get_mut(e.i()).map(|x| &mut x.class),
             EntKind::Solid => self.solids.get_mut(e.i()).map(|x| &mut x.class),

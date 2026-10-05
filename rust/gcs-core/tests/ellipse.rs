@@ -1,7 +1,7 @@
 //! The ellipse as a library component (issue #47, item 4): `Ellipse` in `std`, a computed point
-//! at eccentric angle `u` on a datum, traced as a curve — so `on`, `tangent` and `curvature`
-//! are the curve contacts, exact to third order, and there is no entity kind, no kernel and no
-//! `CKind` of its own.  Nothing below states the ellipse's equation to the solver; each answer
+//! at eccentric angle `u` about a centre, traced as a curve — so `coincident`, `tangent` and
+//! `curvature` are the curve contacts, exact to third order, and there is no entity kind, no
+//! kernel and no `CKind` of its own.  Nothing below states the ellipse's equation to the solver; each answer
 //! is checked against the closed form it never saw.
 
 use gcs_core::constraints::CKind;
@@ -11,15 +11,14 @@ use gcs_core::solve::{solve, SolveOpts};
 
 use crate::common::fd_jacobian;
 
-/// An ellipse of semi-axes 8 and 3 about (10, 5), its major axis along the page's x.
+/// An ellipse of semi-axes 8 and 3 about (10, 5), its major axis along the front's x.
 const ELLIPSE: &str = "\
 use std
+in std.front {
 o := point
-q := point
-f := plane(origin: o, toward: q)
-e := std.Ellipse(f, a: 8, b: 3).p over u in (0, 360)
 fix(x == 10, y == 5) o
-fix(x == 18, y == 5) q
+}
+e := std.Ellipse(o, a: 8, b: 3, tilt: 0deg).p over u in (0, 360)
 ";
 
 fn build(src: &str) -> Elaborated {
@@ -31,8 +30,7 @@ fn build(src: &str) -> Elaborated {
     e
 }
 
-/// The contact's parameter — the one curve contact's, not the datum's alignment, which owns a
-/// parameter of its own (the chord's length).
+/// The contact's parameter — the one curve contact's.
 fn param_of(e: &Elaborated) -> f64 {
     let c = e
         .sketch
@@ -47,7 +45,7 @@ fn at(e: &Elaborated, name: &str) -> (f64, f64) {
     e.sketch.point_xy(e.map.ent_named(name).unwrap().i())
 }
 
-/// (x/a)² + (y/b)² − 1 in the datum's own frame, at bearing `th` from the page.
+/// (x/a)² + (y/b)² − 1 in the ellipse's own frame, its major axis at bearing `th`.
 fn on_rim(x: f64, y: f64, cx: f64, cy: f64, th: f64, a: f64, b: f64) -> f64 {
     let (wx, wy) = (x - cx, y - cy);
     let xx = wx * th.cos() + wy * th.sin();
@@ -64,7 +62,7 @@ fn rim_at(u: f64, a: f64, b: f64) -> ((f64, f64), f64) {
 
 #[test]
 fn a_point_solves_onto_the_rim_at_its_eccentric_angle() {
-    let mut e = build(&format!("{ELLIPSE}p := point hint(x: 11, y: 9)\np coincident e hint(t: 80)\n"));
+    let mut e = build(&format!("{ELLIPSE}in std.front {{\np := point hint(x: 11, y: 9)\np coincident e hint(t: 80)\n}}\n"));
     fd_jacobian(&e.sketch, 1e-5);
     let r = solve(&mut e.sketch, SolveOpts::default());
     assert!(r.success, "{}", r.message);
@@ -80,8 +78,8 @@ fn a_point_solves_onto_the_rim_at_its_eccentric_angle() {
 fn a_line_solves_tangent_to_the_rim() {
     // a level line above the ellipse, one end grounded, the other 12 away and free to fall
     let mut e = build(&format!(
-        "{ELLIPSE}a := point\nb := point hint(x: 16, y: 10)\nl := line(a, b)\n\
-         fix(x == 4, y == 10) a\na distance(12) b\ne tangent l hint(t: 90)\n"
+        "{ELLIPSE}in std.front {{\na := point\nb := point hint(x: 16, y: 10)\nl := line(a, b)\n\
+         fix(x == 4, y == 10) a\na distance(12) b\ne tangent l hint(t: 90)\n}}\n"
     ));
     fd_jacobian(&e.sketch, 1e-5);
     let r = solve(&mut e.sketch, SolveOpts::default());
@@ -113,8 +111,8 @@ fn a_circle_solves_onto_the_osculating_circle() {
     // a circle near the major end, centre and radius free: a computed point's frame is exact
     // to third order, so the curvature is not refused as a traced curve's is
     let mut e = build(&format!(
-        "{ELLIPSE}k := point hint(x: 16, y: 5.5)\nc := circle(center: k) hint(r: 2)\n\
-         e curvature c hint(t: 10)\n"
+        "{ELLIPSE}in std.front {{\nk := point hint(x: 16, y: 5.5)\nc := circle(center: k) hint(r: 2)\n\
+         e curvature c hint(t: 10)\n}}\n"
     ));
     fd_jacobian(&e.sketch, 1e-5);
     let r = solve(&mut e.sketch, SolveOpts::default());
@@ -133,18 +131,12 @@ fn a_circle_solves_onto_the_osculating_circle() {
     assert!((k.0 - want.0).abs() < 1e-6 && (k.1 - want.1).abs() < 1e-6, "{k:?} against {want:?}");
 }
 
-/// The rim stands on its datum: turn the datum and the ellipse turns with it, its contact
-/// solved back onto the turned rim.
+/// The rim stands at its tilt: the ellipse turned a quarter, its contact solved onto the turned
+/// rim.
 #[test]
-fn the_rim_turns_with_its_datum() {
-    let mut e = build(&format!("{ELLIPSE}p := point hint(x: 11, y: 9)\np coincident e hint(t: 80)\n"));
-    let r = solve(&mut e.sketch, SolveOpts::default());
-    assert!(r.success, "{}", r.message);
-    // the datum swings to 90°: q goes from (18, 5) to (10, 13)
-    let q = e.map.ent_named("q").unwrap();
-    let ps = e.sketch.point_params(q.i());
-    e.sketch.params[ps[0] as usize].value = 10.0;
-    e.sketch.params[ps[1] as usize].value = 13.0;
+fn the_rim_turns_with_its_tilt() {
+    let turned = ELLIPSE.replace("tilt: 0deg", "tilt: 90deg");
+    let mut e = build(&format!("{turned}in std.front {{\np := point hint(x: 11, y: 9)\np coincident e hint(t: 80)\n}}\n"));
     let r = solve(&mut e.sketch, SolveOpts::default());
     assert!(r.success, "{}", r.message);
     let (x, y) = at(&e, "p");
@@ -173,8 +165,13 @@ fn the_rim_is_picked_and_bounded() {
 #[test]
 fn an_axis_left_out_is_refused_by_name() {
     let (prog, errs, _) = gcs_core::library::parse_linked(
-        "use std\no := point hint(x: 10, y: 5)\nq := point hint(x: 18, y: 5)\n\
-         f := plane(origin: o, toward: q)\ne := std.Ellipse(f, a: 8).p over u in (0, 360)\n",
+        "\
+use std
+in std.front {
+o := point hint(x: 10, y: 5)
+}
+e := std.Ellipse(o, a: 8, tilt: 0deg).p over u in (0, 360)
+",
     );
     assert!(errs.is_empty());
     let e = elaborate(&prog);

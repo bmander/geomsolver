@@ -71,8 +71,6 @@ fn unsupported_exports_preserve_source_and_fragments() {
     use gcs_core::syntax::{render_flat, write_stmt_to};
     for source in [
         "component Empty() {}\np := point",
-        "use library.parts\np := point",
-        "top := plane\nin top { p := point }",
         "repeat 2 { p := point }",
         "claim over reach in (0, 1) { a clear(1) b }",
         "part := Part()",
@@ -97,14 +95,17 @@ fn unsupported_exports_preserve_source_and_fragments() {
 fn lowering_preserves_source_and_distinguishes_instances_and_copies() {
     use gcs_core::ir::{Operation, PathStep};
     use gcs_core::syntax::RelationForm;
-    let source = "component Part() {\nrepeat 2 {\nl := horizontal line\n}\n}\na := Part()\nb := Part()";
-    let (p, errors) = parse(source);
+    let source = "use std\ncomponent Part() {\nrepeat 2 {\nl := horizontal line\n}\n}\n\
+        a := Part() in std.front\nb := Part() in std.front";
+    let (p, errors) = crate::common::parse(source);
     assert!(errors.is_empty(), "{errors:?}");
     let before = format!("{p:?}");
     let expansion = gcs_core::flatten::expand(&p, Default::default());
     assert!(expansion.diagnostics.is_empty(), "{:?}", expansion.diagnostics);
-    let declarations: Vec<_> =
-        expansion.flat.iter().filter(|s| matches!(s.kind, Operation::Decl(_))).collect();
+    // the document's own, beside the standard datums `use std` brings
+    let declarations: Vec<_> = expansion.flat.iter()
+        .filter(|s| matches!(s.kind, Operation::Decl(_)) && p.source_at(s.span.lo as usize).0.is_none())
+        .collect();
     assert_eq!(declarations.len(), 4);
     for st in &declarations {
         assert!(matches!(st.path.as_slice(), [PathStep::Instance(_), PathStep::Copy { .. }]));

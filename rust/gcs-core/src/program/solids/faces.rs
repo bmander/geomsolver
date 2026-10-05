@@ -11,8 +11,7 @@ pub(super) fn chain_face(c: &crate::syntax::NamedChain) -> Decl {
         seed: Vec::new(), seed_text: Vec::new(), seed_spans: Vec::new(),
         unseeded: false, seed_explicit: Vec::new(), closed: false, knots: None,
         curve: None, computed: None, class: Classes::default(), seed_at: None,
-        seed_names: Vec::new(), attitude: crate::syntax::Attitude::Page,
-        sweep: None, motion: None, angular_span: None, plane: Default::default(), membership: crate::syntax::Membership::default(),
+        seed_names: Vec::new(), sweep: None, motion: None, angular_span: None, membership: crate::syntax::Membership::default(),
     }
 }
 
@@ -394,13 +393,19 @@ fn build_loop(
                 continue;
             }
             let p = sk.plane_of(c.i()).map(|x| x as u32);
+            // a point in no plane stands in space, where a loop bounds nothing
+            if p.is_none() {
+                report(Code::E080, span,
+                    format!("a face lies in one plane, and `{n}` stands in space: draw it `in` one"));
+                return None;
+            }
             match plane {
                 None => plane = Some(p),
                 Some(q) if q == p => {}
                 Some(q) => {
                     let say = |x: Option<u32>| match x {
-                        Some(i) => format!("view {i}"),
-                        None => "the page".to_string(),
+                        Some(i) => format!("`{}`", sk.plane_name(i as usize)),
+                        None => "no plane".to_string(),
                     };
                     report(Code::E080,
                         span,

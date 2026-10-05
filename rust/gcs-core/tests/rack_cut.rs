@@ -23,6 +23,8 @@ use std::f64::consts::{PI, TAU};
 /// pitch circle: `2π · 20` mm of slide a turn of the blank.
 pub const SPACE: &str = "\
 unit mm
+use std
+in std.front {
 o := point
 fix(x == 0, y == 0) o
 c := circle(center: o) hint(r: 22)
@@ -44,6 +46,7 @@ fix(x == 18, y == -0.842856) t0
 fix(x == 18, y == 0.842856) t1
 fix(x == 24, y == 3.026666) t2
 fix(x == 24, y == -3.026666) t3
+}
 tooth := face(t0, t1, t2, t3, -> close)
 construction rack_tooth := solid(tooth, from: -8mm, to: 2mm)
 
@@ -210,6 +213,8 @@ fn the_racks_sheet_is_its_planar_envelope_extruded() {
 /// blank reaching it is built whole), and the tooth space indexed round the axis `teeth` times.
 pub fn gear(teeth: usize) -> String {
     SPACE.replace("space cut gear\n", &format!("\
+use std
+in std.front {{
 bore_c := circle(center: o) hint(r: 6)
 radius(6mm) bore_c
 construction bore := solid(face(bore_c), from: -8mm, to: 2mm)
@@ -217,6 +222,7 @@ bore cut gear
 repeat {teeth} as i {{
   construction indexed := solid(space, under: turn, at: i * 360deg / {teeth})
   indexed cut gear
+}}
 }}
 "))
 }

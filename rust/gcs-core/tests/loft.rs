@@ -8,7 +8,7 @@ use gcs_core::{
 };
 
 fn read(src: &str) -> program::Elaborated {
-    let (p, errors) = syntax::parse(src);
+    let (p, errors) = crate::common::parse(src);
     assert!(errors.is_empty(), "{errors:?}");
     let e = program::elaborate(&p);
     assert!(e.ok(), "{:?}", e.diags);
@@ -16,17 +16,15 @@ fn read(src: &str) -> program::Elaborated {
 }
 
 const SECTIONS: &str = "unit mm
-o := point hint(x: 0, y: 0)
-q := point hint(x: 1, y: 0)
-front := plane(origin: o, toward: q)
-back := plane(origin: o, toward: q, from: front, offset: -20mm)
-top := plane(origin: o, toward: q, from: front, fold: 0deg)
-in top {
+use std
+back := plane(u: std.x, v: std.z)
+fix(x == 0, y == 20, z == 0) back
+in std.top {
   a := point hint(x: 0, y: 0)
   b := point hint(x: 0, y: 20)
   guide := line(a, b)
 }
-in front {
+in std.front {
   c := point hint(x: 0, y: 0)
   outer := circle(center: c) hint(r: 10)
   inner := circle(center: c) hint(r: 5)
@@ -88,8 +86,10 @@ fn guide_and_end_section_changes_invalidate_cache_and_copy_retains_dependencies(
             .abs()
             < 1e-7
     );
+    // pasted where it stood: an offset moves each point within its own plane, and the guide and
+    // the sections stand in three
     let mut dest = gcs_core::model::Sketch::new();
-    io::paste(&mut dest, &copied, 13.0, 27.0);
+    io::paste(&mut dest, &copied, 0.0, 0.0);
     assert!(
         (dest.evaluated_solid(0, Report).unwrap().volume() - evaluated(&e, "body").volume()).abs()
             < 1e-7
@@ -109,7 +109,7 @@ fn guide_and_end_section_changes_invalidate_cache_and_copy_retains_dependencies(
 fn malformed_guides_and_mismatched_sections_are_diagnosed() {
     for (old, new, needle) in [
         ("y: 20", "y: 0", "distinct"),
-        ("offset: -20mm", "offset: -21mm", "end section"),
+        ("y == 20, z == 0) back", "y == 21, z == 0) back", "end section"),
         ("guide := line(a, b)", "guide := line(b, a)", "start section"),
         (
             "end_section := face(eo, holes: ei)",
@@ -119,7 +119,7 @@ fn malformed_guides_and_mismatched_sections_are_diagnosed() {
     ] {
         let src =
             format!("{SECTIONS}body := solid(section, end_section, along: guide)\n").replace(old, new);
-        let (p, err) = syntax::parse(&src);
+        let (p, err) = crate::common::parse(&src);
         assert!(err.is_empty());
         let e = program::elaborate(&p);
         let errors = program::solid_diagnostics(&e.sketch, &e.map);
@@ -134,7 +134,7 @@ fn malformed_guides_and_mismatched_sections_are_diagnosed() {
         ", about: guide",
         ", along: guide",
     ] {
-        let (_, errs) = syntax::parse(&format!(
+        let (_, errs) = crate::common::parse(&format!(
             "{SECTIONS}body := solid(section, along: guide{tail})\n"
         ));
         assert!(!errs.is_empty());
@@ -144,17 +144,14 @@ fn malformed_guides_and_mismatched_sections_are_diagnosed() {
 #[test]
 fn arc_sweep_follows_solved_radius_and_transports_the_profile() {
     let src = "unit mm
-o := point hint(x: 0, y: 0)
-q := point hint(x: 1, y: 0)
-front := plane(origin: o, toward: q)
-top := plane(origin: o, toward: q, from: front, fold: 0deg)
-in top {
+use std
+in std.top {
  center := point hint(x: 0, y: 0)
  a := point hint(x: 30, y: 0)
  b := point hint(x: 0, y: 30)
  guide := arc(center: center, start: a, end: b) hint(r: 30)
 }
-in front {
+in std.front {
  c := point hint(x: 30, y: 0)
  outer := circle(center: c) hint(r: 5)
  inner := circle(center: c) hint(r: 3)
@@ -191,7 +188,7 @@ fn reversed_and_rotated_guides_keep_the_same_loft_and_source_round_trips() {
         .replace("guide := line(a, b)", "guide := line(b, a)");
     let mut e = read(&src);
     let want = evaluated(&e, "body").volume();
-    let (mut p, errors) = syntax::parse("body := solid(end_section, section, along: guide)\n");
+    let (mut p, errors) = crate::common::parse("body := solid(end_section, section, along: guide)\n");
     assert!(errors.is_empty());
     let printed = syntax::render_flat(&mut p).unwrap();
     let rebuilt = format!(
@@ -205,16 +202,7 @@ fn reversed_and_rotated_guides_keep_the_same_loft_and_source_round_trips() {
         .contains("body := solid(end_section, section, along: guide)"));
     let k = 0.5_f64.sqrt();
     let rotate = |p: [f64; 3]| [p[0], k * (p[1] - p[2]), k * (p[1] + p[2])];
-    for p in 0..e.sketch.planes.len() {
-        let mut b = e.sketch.basis(p);
-        b.u = rotate(b.u);
-        b.v = rotate(b.v);
-        b.o = rotate(b.o);
-        for (i, delta) in [100.0, -70.0, 50.0].iter().enumerate() {
-            b.o[i] += delta;
-        }
-        e.sketch.set_basis(p, b);
-    }
+    crate::common::move_space(&mut e.sketch, rotate, [100.0, -70.0, 50.0]);
     let s = evaluated(&e, "body");
     assert!((s.volume() - want).abs() < 1e-6);
     assert_eq!(super::solid::unpaired(s.mesh()), 0);
@@ -240,23 +228,19 @@ fn a_straight_sweep_resizes_with_the_line_and_can_be_a_boolean_operand() {
 #[test]
 fn an_explicit_arc_end_section_changes_size_in_the_transported_frame() {
     let src = "unit mm
-o := point hint(x: 0, y: 0)
-q := point hint(x: 1, y: 0)
-front := plane(origin: o, toward: q)
-top := plane(origin: o, toward: q, from: front, fold: 0deg)
-side := plane(origin: o, toward: q, u: (0,1,0), v: (0,0,1))
-in top {
+use std
+in std.top {
  center := point hint(x: 0, y: 0)
  a := point hint(x: 30, y: 0)
  b := point hint(x: 0, y: 30)
  guide := arc(center: center, start: a, end: b) hint(r: 30)
 }
-in front {
+in std.front {
  c := point hint(x: 30, y: 0)
  outer := circle(center: c) hint(r: 5)
  section := face(outer)
 }
-in side {
+in std.side {
  ec := point hint(x: 30, y: 0)
  eo := circle(center: ec) hint(r: 4)
  end_section := face(eo)
@@ -296,7 +280,7 @@ inline := solid(face(outer, holes: inner), along: guide)
         ("section, along: outer", "directed line or circular arc"),
         ("section, along: absent", "no such guide"),
     ] {
-        let (p, errs) = syntax::parse(&format!("{SECTIONS}bad := solid({args})\n"));
+        let (p, errs) = crate::common::parse(&format!("{SECTIONS}bad := solid({args})\n"));
         assert!(errs.is_empty());
         let e = program::elaborate(&p);
         assert!(
@@ -310,7 +294,7 @@ inline := solid(face(outer, holes: inner), along: guide)
 #[test]
 fn concave_sections_with_multiple_holes_have_closed_caps() {
     let src = format!(
-        "{}in front {{
+        "{}in std.front {{
 p0 := point hint(x: 0, y: 0)
 p1 := point hint(x: 10, y: 0)
 p2 := point hint(x: 10, y: 5)
@@ -326,7 +310,7 @@ section := face(outline, holes: hole0, hole1)
 }}
 body := solid(section, along: guide)
 ",
-        SECTIONS.split("in front {").next().unwrap()
+        SECTIONS.split("in std.front {").next().unwrap()
     );
     let e = read(&src);
     let s = evaluated(&e, "body");
@@ -372,7 +356,7 @@ fn an_opposite_end_plane_normal_does_not_twist_circular_sections() {
     let p = e.map.ent_named("back").unwrap().i();
     let (sn, cs) = 97.0_f64.to_radians().sin_cos();
     let b = e.sketch.basis(p);
-    e.sketch.set_basis(p, gcs_core::plane::Basis { u: [cs, 0.0, sn], v: [sn, 0.0, -cs], ..b });
+    crate::common::set_basis(&mut e.sketch, p, gcs_core::plane::Basis { u: [cs, 0.0, sn], v: [sn, 0.0, -cs], ..b });
     let after = evaluated(&e, "body");
     assert!((after.volume() - before).abs() < 1e-7);
     assert_eq!(super::solid::unpaired(after.mesh()), 0);
@@ -384,21 +368,17 @@ fn an_opposite_end_plane_normal_does_not_twist_circular_sections() {
 #[test]
 fn an_end_section_written_the_other_way_round_is_refused_by_both_kernels() {
     let square = |order: &str| format!("unit mm
-o := point
-q := point
-fix(x == 0, y == 0) o
-fix(x == 1, y == 0) q
-front := plane(origin: o, toward: q)
-back := plane(origin: o, toward: q, from: front, offset: -20mm)
-top := plane(origin: o, toward: q, from: front, fold: 0deg)
-in top {{
+use std
+back := plane(u: std.x, v: std.z)
+fix(x == 0, y == 20, z == 0) back
+in std.top {{
   a := point
   b := point
   fix(x == 0, y == 0) a
   fix(x == 0, y == 20) b
   guide := line(a, b)
 }}
-in front {{
+in std.front {{
   s0 := point
   s1 := point
   s2 := point

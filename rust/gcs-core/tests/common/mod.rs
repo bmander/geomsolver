@@ -11,7 +11,6 @@ use gcs_core::program::{elaborate, Elaborated};
 use gcs_core::rng::Rng;
 use gcs_core::solve::{BlockMode, SolveOpts};
 use gcs_core::space::{cross, norm, sub};
-use gcs_core::syntax::parse;
 use gcs_core::system::System;
 
 pub fn build(src: &str) -> Elaborated {
@@ -233,4 +232,96 @@ pub fn blocks_of(sk: &Sketch) -> usize {
 /// Whether `sk` has no freedom left: no column its block order leaves under-determined.
 pub fn is_determined(sk: &Sketch) -> bool {
     System::new(sk).block_order().under_cols.is_empty()
+}
+
+/// Stand plane `pi` where `b` says: its rays turned to `b`'s directions and its place moved —
+/// for a test that holds a sketch and turns a plane by hand, as a solve would.
+pub fn set_basis(sk: &mut Sketch, pi: usize, b: gcs_core::plane::Basis) {
+    let (u, v) = (sk.planes[pi].u as usize, sk.planes[pi].v as usize);
+    for (r, d) in [(u, b.u), (v, b.v)] {
+        for k in 0..3 {
+            let q = sk.rays[r].d[k] as usize;
+            sk.params[q].value = d[k];
+        }
+    }
+    sk.set_plane_origin(pi, b.o);
+}
+
+/// Move the whole of space rigidly: every ray turned by `turn`, and every plane's place and
+/// every point in space turned and then shifted by `shift` — what a part looks like picked up
+/// and set down elsewhere.
+pub fn move_space(sk: &mut Sketch, turn: impl Fn([f64; 3]) -> [f64; 3], shift: [f64; 3]) {
+    let moved = |x: [f64; 3]| {
+        let t = turn(x);
+        [t[0] + shift[0], t[1] + shift[1], t[2] + shift[2]]
+    };
+    for r in 0..sk.rays.len() {
+        let d = sk.rays[r].d.map(|k| sk.params[k as usize].value);
+        for (k, x) in turn(d).into_iter().enumerate() {
+            let q = sk.rays[r].d[k] as usize;
+            sk.params[q].value = x;
+        }
+    }
+    for p in 0..sk.planes.len() {
+        let o = sk.basis(p).o;
+        sk.set_plane_origin(p, moved(o));
+    }
+    for i in 0..sk.points.len() {
+        let Some(z) = sk.points[i].z else { continue };
+        let ps = [sk.points[i].x, sk.points[i].y, z];
+        let at = moved(ps.map(|k| sk.params[k as usize].value));
+        for k in 0..3 {
+            sk.params[ps[k] as usize].value = at[k];
+        }
+    }
+}
+
+/// `syntax::parse`, linked against the library — what a host does, so `use std` reads.
+pub fn parse(src: &str) -> (gcs_core::syntax::Program, Vec<gcs_core::syntax::SynErr>) {
+    let (p, errs, _) = gcs_core::library::parse_linked(src);
+    (p, errs)
+}
+
+/// `syntax::parse_legacy`, linked against the library.
+pub fn parse_legacy(src: &str) -> (gcs_core::syntax::Program, Vec<gcs_core::syntax::SynErr>) {
+    let (mut p, errs) = gcs_core::syntax::parse_legacy(src);
+    let _ = gcs_core::modules::link(&mut p, &mut gcs_core::library::resolve);
+    (p, errs)
+}
+
+/// The points `use std` adds to a document: the four standard planes' origins and `std.origin`,
+/// numbered after the document's own.
+pub const STD_POINTS: usize = 5;
+
+/// A 2D document drawn in the front plane: `use std`, and every statement but a `unit`, a `use`,
+/// a `style` and a component's definition inside one `in std.front { … }` — what a document
+/// written before points stood in space says now (`docs/planes-plan.md`).  One that already says
+/// `use std` is taken as written.
+pub fn front(src: &str) -> String {
+    if src.lines().any(|l| l.trim() == "use std") {
+        return src.to_string();   // written for the front already
+    }
+    let (mut head, mut body, mut defs) = (String::new(), String::new(), String::new());
+    let mut depth = 0i32;
+    for line in src.lines() {
+        let t = line.trim_start();
+        let opens = |s: &str| s.matches('{').count() as i32 - s.matches('}').count() as i32;
+        if depth > 0 {
+            defs.push_str(line);
+            defs.push('\n');
+            depth += opens(line);
+        } else if t.starts_with("component ") {
+            defs.push_str(line);
+            defs.push('\n');
+            depth = opens(line);
+        } else if t.starts_with("unit ") || t.starts_with("use ") || t.starts_with("style ") {
+            head.push_str(line);
+            head.push('\n');
+        } else {
+            body.push_str(line);
+            body.push('\n');
+        }
+    }
+    let std = if head.lines().any(|l| l.trim() == "use std") { "" } else { "use std\n" };
+    format!("{head}{std}{defs}in std.front {{\n{body}}}\n")
 }

@@ -6,7 +6,10 @@ use gcs_core::{constraints::{CKind,SpecKind},io,model::MotionDef,motion,program,
 
 /// A stock beside an upright axis, and three lines to measure: `big` 30 long, `small` 10, and
 /// `slope` 30° off `big`.
-const DRAWING: &str = "unit mm
+const DRAWING: &str = "\
+unit mm
+use std
+in std.front {
 o := point
 z := point
 fix(x == 0, y == 0) o
@@ -43,10 +46,11 @@ fix(x == 0.8660254037844387, y == -7.5) k1
 slope := line(k0,k1)
 wheel := circle(center: o) hint(r: 12)
 radius(12mm) wheel
+}
 ";
 
 fn build(src: &str) -> program::Elaborated {
-    let (mut p,errors) = syntax::parse(src);
+    let (mut p,errors) = crate::common::parse(src);
     assert!(errors.is_empty(),"{errors:?}");
     assert!(gcs_core::modules::link(&mut p,&mut gcs_core::library::resolve).is_empty());
     program::elaborate(&p)
@@ -193,7 +197,9 @@ fn the_source_and_the_flat_print_keep_the_measurement_as_written() {
 
 #[test]
 fn a_measurement_inside_a_component_names_the_instance_geometry() {
-    let e = read("unit mm
+    let e = read("\
+unit mm
+use std
 component Pair(axis: line, big: Length, small: Length) {
   r0 := point
   r1 := point hint(x: 30,y: -4)
@@ -207,6 +213,7 @@ component Pair(axis: line, big: Length, small: Length) {
   s0 distance(small) s1
   turn := motion(about: axis, ratio: -length(wheel) / distance(pinion.p1, pinion.p2))
 }
+in std.front {
 o := point
 z := point
 fix(x == 0, y == 0) o
@@ -214,6 +221,7 @@ fix(x == 0, y == 1) z
 axis := line(o,z)
 one := Pair(axis, big: 30mm, small: 10mm)
 two := Pair(axis, big: 12mm, small: 3mm)
+}
 ");
     // each instance measures its own lines, named under it
     for (name,ratio) in [("one.turn",-3.),("two.turn",-4.)] {

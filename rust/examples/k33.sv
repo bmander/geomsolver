@@ -13,24 +13,28 @@
 // The nine lengths are read off a drawing that works.  They have to be: pick nine numbers at
 // random and there is generally no arrangement of six joints that achieves them.
 
-k0 := point
-k1 := point hint(x: 30, y: 4)
-k2 := point hint(x: 58, y: -2)
-k3 := point hint(x: 6, y: 26)
-k4 := point hint(x: 34, y: 32)
-k5 := point hint(x: 62, y: 24)
+use std
 
-datum := horizontal line(k0, k3)
+in std.front {
+  k0 := point
+  k1 := point hint(x: 30, y: 4)
+  k2 := point hint(x: 58, y: -2)
+  k3 := point hint(x: 6, y: 26)
+  k4 := point hint(x: 34, y: 32)
+  k5 := point hint(x: 62, y: 24)
 
-k0 distance(26.683328) k3
-k0 distance(46.690470) k4
-k0 distance(66.483081) k5
-k1 distance(32.557641) k3
-k1 distance(28.284271) k4
-k1 distance(37.735925) k5
-k2 distance(59.059292) k3
-k2 distance(41.617304) k4
-k2 distance(26.305893) k5
+  datum := horizontal line(k0, k3)
 
-// the framework is rigid but free to move as a whole; these two settle where it sits
-fix(x == 0, y == 0) k0
+  k0 distance(26.683328) k3
+  k0 distance(46.690470) k4
+  k0 distance(66.483081) k5
+  k1 distance(32.557641) k3
+  k1 distance(28.284271) k4
+  k1 distance(37.735925) k5
+  k2 distance(59.059292) k3
+  k2 distance(41.617304) k4
+  k2 distance(26.305893) k5
+
+  // the framework is rigid but free to move as a whole; these two settle where it sits
+  fix(x == 0, y == 0) k0
+}

@@ -82,11 +82,10 @@ fn face_loops(sk: &Sketch,face: usize) -> Result<(Basis,Vec<Vec<Edge>>),String> 
     let f = sk.faces.get(face).ok_or("no such face")?;
     let (basis,pose) = match f.plane()? {
         Some(p) => {
-            let pl = sk.planes.get(p as usize).ok_or("no such plane")?;
-            (sk.basis(p as usize),(sk.params[pl.frame.c as usize].value,sk.params[pl.frame.s as usize].value,
-                sk.point_xy(pl.frame.origin as usize)))
+            sk.planes.get(p as usize).ok_or("no such plane")?;
+            (sk.basis(p as usize),plane::IDENTITY_POSE)
         }
-        None => (Basis::page(),(1.,0.,(0.,0.))),
+        None => (Basis::page(),plane::IDENTITY_POSE),
     };
     let at = |q: (f64,f64)| { let (a,b) = plane::in_view(pose.0,pose.1,pose.2,q); [a,b] };
     let view = |i: u32| at(sk.point_xy(i as usize));
