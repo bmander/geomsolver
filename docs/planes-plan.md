@@ -1,6 +1,7 @@
 # Points in space, planes from rays, views off the paper: plan
 
-**Status (2026-10-04): proposed**, for issue #76 items 1 and 2. Not started.
+**Status (2026-10-04): in progress** on branch `planes-from-rays-76`, tracked by #81, for issue
+#76 items 1 and 2. Follow-up spellings are #80.
 
 Today a point is either *on the page* or drawn *in a view*. A point on the page has no place in
 space, and a view is two things at once: a plane in space (its basis) and a picture placed on
@@ -43,8 +44,10 @@ These were made in conversation on 2026-10-04.
    give **only the attitude**. Where they lie does not matter to the plane, so two
    planes may share their rays.
 4. **Every plane has members `P.u`, `P.v` and `P.origin`.** `P.u` and `P.v` are its axes, as
-   rays through its origin. `P.origin` is a point in space, which a component may name and a
-   relation may place. **The origin floats unless something places it.** The
+   rays through its origin. `P.origin` is a point drawn in `P`, held at `(0, 0)`, which a
+   component may name and a relation may place; the plane owns where it stands in space (three
+   unknowns). So `c coincident std.origin`, with `c` in `std.front`, stays a relation in one
+   plane. **The origin floats unless something places it.** The
    relations on a plane:
    * `P coincident p`: the plane passes through point `p` (incidence);
    * `P.origin coincident p`: the plane's origin *is* `p` (point to point);
@@ -94,12 +97,15 @@ These were made in conversation on 2026-10-04.
 
    Within one plane the directed angle is regular at 0° and 180°, and stays: the spiral bevel's
    ten `angle(0deg)`/`angle(180deg)` between drawn lines are unchanged.
-9. **Retired:** `fold:` (an angle, an unknown and `along`), `offset:`, `from:`, `through:`,
+9. **`against` is deleted**, with placed planes, E083 and `CKind::Mate`: it placed a `from:`
+   plane, and the corpus never uses it (only tests and fixtures do). Mating can return as a
+   relation or a library component over floating planes.
+10. **Retired:** `fold:` (an angle, an unknown and `along`), `offset:`, `from:`, `through:`,
    `attitude: free`, `u:`/`v:`/`o:` vectors, a plane's `origin:`/`toward:` arguments (the
    origin is now a member), the role rule, the page-placement gauge, `std.ThreeViews`, and the
    "has no place in space" refusals (E062's page case, the extruded envelope's, `through:`'s,
    `project`'s and the spatial words').
-10. **Points in space are shown and selectable in the workspace, not dragged** (dragging in
+11. **Points in space are shown and selectable in the workspace, not dragged** (dragging in
     3D is later work).
 
 ## The model
@@ -148,17 +154,17 @@ ordinary freedom.
 
 ### Planes
 
-`PlaneE` becomes `{ u: Ray, v: Ray, origin: Point, basis, fixed }`, where `origin` is the member
-point `P.origin`, a point in space: its three coordinates are where the plane stands.
+`PlaneE` becomes `{ u: Ray, v: Ray, o: [Param; 3], origin: Point, basis, fixed }`: `o` is where
+the plane stands in space, and `origin` is the member point `P.origin`, drawn in `P` with its
+`(x, y)` held at `(0, 0)`, so its lift is `o`. A plane written over a drawn line
+(`plane(u: hinge, …)`) mints a hidden ray parallel to it, so `u` and `v` are always rays.
 
 `FrameE`, the rotor `(c, s)`, the `frame_unit`/`frame_align` intrinsics, `Att` and its
 quaternion, and the `Hinge*` kernels all go.
 
-* **Where a view point stands:** a point `(x, y)` in plane `P` is `o + x·û + y·v̂`, with `o`
-  the origin's coordinates, `û = u/|u|` and `v̂ = normalize((u × v) × u)` over the rays'
-  directions.
-* **`Lift`** (a solved plane) reads the point's `(x, y)`, the origin's `(x, y, z)`, and the two
-  rays' directions.
+* **Where a view point stands:** a point `(x, y)` in plane `P` is `o + x·û + y·v̂`, with
+  `û = u/|u|` and `v̂ = normalize((u × v) × u)` over the rays' directions.
+* **`Lift`** (a solved plane) reads the point's `(x, y)`, `o`, and the two rays' directions.
 * **`LiftFixed`** reads the point and holds `(o, û, v̂)` as constants. It drops the datum
   columns: 5 columns instead of 9.
 * **`world_in`** becomes `basis(P).lift(x, y)` and **`on_view_sheet`** becomes
@@ -169,11 +175,11 @@ The relations on a plane:
 | statement | meaning | rows |
 |---|---|---|
 | `P coincident p` | the plane passes through `p` | `PointOnPlane`: 1 |
-| `P.origin coincident p` | `P`'s origin is `p` | `Coincident3` of the origin and `p` (or its lift): 3 |
+| `P.origin coincident p` | `P`'s origin is `p` | as two points: 2D within `P`, else `Coincident3` over lifts |
 | `P distance(d) Q` | parallel planes `d` apart, `Q` on `P`'s out side | `(o_Q − o_P)·n_P − d`: 1, plus `P parallel Q` if their rays are not shared |
 | `P parallel Q`, `P perpendicular Q`, `P angle(θ) Q` | between their normals | the ray kernels over `u × v` |
 
-A plane's freedoms are its origin's 3 plus whatever its rays leave free. A floating plane is free to
+A plane's freedoms are `o`'s 3 plus whatever its rays leave free. A floating plane is free to
 slide in itself (2) and along its normal (1). Placing it by `P.origin coincident p` takes all
 3. Placing it by `P coincident p` or `P distance(d) Q` takes only the normal one, and the
 document places the rest as it places anything else.
@@ -193,7 +199,12 @@ matters for speed: without it, every tilted view in the corpus would pay a solve
 * `PointE` gains `z: Option<u32>`;
 * `plane: Option<u32>` keeps its type, but `None` now means *in space* (three parameters) where
   it meant *on the page*;
-* `Sketch::world_point` of a point in space is its coordinates, and it needs no lift.
+* a language point's `z` is minted **after `memberships`**: a point no `in` reached is put in
+  space then (memberships can reach a point after it is built, through a later declaration's
+  `in`);
+* `Sketch::world_point` of a point in space is its coordinates, and it is **its own lift** (a
+  `LiftE` over its own three parameters, with no row), so every spatial kernel reads it
+  unchanged.
 
 What a point in space may make:
 * lines between points in space are lines in space, and a line is a ray wherever one is
@@ -205,15 +216,16 @@ What a point in space may make:
 Its seed is `hint(x:, y:, z:)` (`z:` on a point in a plane is refused at the key) or a place
 (`hint(at: …)`) read in space. Its gauge is `fix(x == …, y == …, z == …) p`.
 
-**`std.front` is plane 0 of every `Sketch`,** built with the sketch. Its rays are fixed at the
-standard axes, so its basis is `Basis::page()`. The *sketch-level* API keeps meaning a point on
+**`std.front` is plane 0 of every `Sketch`,** built with the sketch as a fixed plane with the
+constant basis `Basis::page()` and no member entities, so no point index moves. `use std` binds
+its members (`std.origin`, `std.x`, `std.z`) to it. The *sketch-level* API keeps meaning a point on
 it: `Sketch::point(x, y)`, a JSON document with no `"plane"` or `"z"`, and the bindings' 2D tools.
 So the Rust tests' hand-built sketches and the JSON format are unchanged. Only the *language*'s
 default is space. JSON writes `"plane"` when it is not 0, and `"z"` for a point in space.
 
 `use std` brings in the other standard planes (`std.side`, `std.top`, `std.up`), the rays
-`std.x`, `std.y` and `std.z`, and `std.origin`, a fixed point in space at the world origin, as
-ordinary library statements. `std.front` is not in `StandardDatums`, but the flattener binds the
+`std.x`, `std.y` and `std.z`, and `std.origin`, which is `std.front.origin`, as ordinary library
+statements. `std.front` is not in `StandardDatums`, but the flattener binds the
 name to plane 0 when the document says `use std`.
 
 ### Reading a relation across planes
@@ -235,8 +247,9 @@ there, and the diagnosis would read the drawing as redundant. Two ways to handle
 * otherwise, let the screen that already sets aside double roots (`witness::screen`) recognise
   the zero row.
 
-The first is cheap and covers the corpus (the vtwin parts drawn `in std.up`). The second is
-needed only for floating planes that happen to lie on one another, and can come later.
+Both are deferred unless the corpus rewrite needs them: components read a plane they are
+handed (`f.u`, `f.v`) as directions and draw in their caller's plane, rather than drawing
+`in std.up`, so no relation crosses two planes lying on one another. The lint lands now.
 
 **`p distance(d, along: u) P`** is measured in space: `(X_p − o_P)·û_P`. Within `P` it is
 `p.x − d`, which is the same number as today. Across planes it is what an engineer means by a
@@ -330,11 +343,13 @@ the gear teeth) keep their signatures.
 
 ## The `.svd`
 
-`sketch m at (X, Y)` draws `std.front`. A new clause draws any plane of the model:
+A sketch view keeps the existing grammar, `sketch NAME(TARGET) at (X, Y)`, with the target a
+path filter as before. `from P` on a sketch, refused today, selects the plane drawn, in that
+plane's own coordinates:
 
 ```
-sketch m.right at (150, 0)
-sketch m.top at (0, 90)
+sketch right(m) from m.right at (150, 0)
+sketch top(m) from m.top at (0, 90)
 ```
 
 Each sketch view draws its plane's own coordinates, scaled like a solid view. Callouts are laid
@@ -409,47 +424,25 @@ The tool lives in the scratchpad and is not committed.
 
 ## Order of work
 
-One branch and one switch. The commits are staged so each one builds and its own tests pass.
-The corpus only goes green at step 9.
+One branch. Each step lands green (`make test`) and is committed, so the corpus is rewritten in
+the step that changes its meaning; the gate below runs after steps 1, 3 and 4.
 
-0. **Baseline.** Rebuild `build/solventc` (it predates #77). Record each example's world
-   positions, DOF, report and SVG with the old binary. Write the migration tool.
-1. **Plane 0.** `std.front` as plane 0 in every `Sketch`. A point with no `in` still lands on it,
-   so the page and plane 0 are one. The page refusals are removed. Behaviour-preserving apart
-   from those refusals.
-2. **`on` retired.** `coincident` takes every kind `on` took (`constraints::infix_op`'s one
-   table, `CKind::operator()`), the 143 corpus statements and the tests' inline documents are
+0. **Baseline.** Rebuild `build/solventc` (it predated #77). A scratch tool records each
+   example's DOF and the world position of every named point with the old code.
+1. **`on` retired.** `coincident` takes every kind `on` took (`constraints::infix_op`'s one
+   table, `CKind::operator()`), the corpus statements and the tests' inline documents are
    rewritten by span, and `on(t == …)` pins become `coincident(t == …)`. A face's `on:` key is a
    slot, not the word, and stays. Behaviour-preserving: every report is unchanged.
-3. **Points in space.** `z`, `plane: None` meaning space, seeds and `fix` with `z`, `Distance3`
-   and friends over points in space, the refusals for kinds needing a plane, JSON `"z"`. The
-   language's default flips to space, and in the same commit every document and test is
-   wrapped in `in std.front` (mechanical), with every report unchanged.
-4. **Rays.** `EntKind::Ray` in every exhaustive arm. Intrinsics, kernels and relations (the
-   table above) with Jacobian rows. `ray` in the parser, seeds, `io`, `graft`, FFI `ent`/`kind_id`.
-   Tests: a ray placed by two relations against closed forms, its DOF, a free ray's rank, an
-   unread position retired, and an unsigned 0°/180° refused.
-5. **Planes from rays.** `PlaneE` over rays, `Lift`/`LiftFixed` without datum columns, the
-   ray-subsystem settle in `solve_planes`, `project`'s new constants, `P.origin` a point in
-   space. Remove `FrameE`, the
-   quaternion, the hinges, `page_held` and the role rule. Port `tests/spatial.rs`,
-   `spatial_lang.rs`, `plane.rs` and `plane_lang.rs` to the new spellings, asserting the same
-   numbers in space.
-6. **Readers.** The coplanar lint and the 2D-through-a-map reading between fixed planes lying
-   on one another, `along: u/v` in space, the overview, the workspace, the renderer, solids'
-   poses, extrusion frames.
-7. **`std.sv` and the `.svd`.** The standard planes and rays, the helper components,
-   `ThreeViews` gone, `sketch m.P at (…)`.
-8. **The app and FFI.**
-9. **The corpus.** The tool's rewrite, then the hand rewrites, then the gate above. (The
-   `in std.front` wrapping is step 3's.)
-   `tests/examples_sv.rs` and `cross_view_audit.rs` are updated.
-10. **Docs.** The primer (§1.13 and 2.10 shrink, and every 2D example in it gains its plane),
-    the spec (§6.7, §9.2, the E062 row, Draft 0.42), CLAUDE.md (the plane, page, role-rule and
-    workspace paragraphs), and a status line on `spatial-constraints-plan.md` saying which of
-    its decisions this plan replaces.
-
-`make test` runs once at the end of each step that touches the corpus, and once before the PR.
+2. **Rays.** `EntKind::Ray` in every exhaustive arm. Intrinsics, kernels and relations with
+   Jacobian rows. `ray` in the parser, seeds, `io`, `graft`, FFI. Additive.
+3. **Planes from rays, views off the paper.** `PlaneE` over rays and `o`; `Lift`/`LiftFixed`
+   without datum columns; the freezing pass; `project`'s new constants; every reader of the
+   sheet pose; `FrameE`, the quaternion, the hinges, `page_held`, the role rule and `against`
+   removed; `std.sv`; the `.svd`'s `from P` on a sketch; the corpus's planes rewritten by hand
+   and by a migration tool; the plane tests ported.
+4. **Points in space and plane 0.** `z`, plane 0, the language's default flipped to space, and
+   every document and test wrapped in `in std.front` by span in the same commit.
+5. **The app remainder and the docs** (primer, spec Draft 0.42, CLAUDE.md).
 
 ## Settled in conversation
 
