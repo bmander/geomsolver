@@ -1,4 +1,4 @@
-# Planes from rays, the page a plane: plan
+# Points in space, planes from rays, views off the paper: plan
 
 **Status (2026-10-04): proposed**, for issue #76 items 1 and 2. Not started.
 
@@ -10,9 +10,10 @@ gauge (`Sketch::page_held`), the layout lines in the corpus (`fix(x == 0, y == 2
 `std.ThreeViews(O, right: 150, up: 90)`) and the "on the page" refusals. Since 0.20, paper
 layout is the `.svd`'s job.
 
-This plan makes three changes:
+This plan makes these changes:
 
-* **every point is in a plane,** and the page is the plane `std.front`;
+* **a point not drawn in a plane stands in space,** with three coordinates; a 2D sketch is
+  drawn `in` a plane, `std.front` for what was the page;
 * **a plane is a plane in space and nothing else,** written as two rays;
 * **a ray is a new kind,** a directed line in space, placed by relations like any other entity;
 * **`on` is retired:** `coincident` is the one word for incidence.
@@ -25,11 +26,12 @@ to Draft 0.42.
 
 These were made in conversation on 2026-10-04.
 
-1. **The page is `std.front`.** Every document has it, whether or not it says `use std`. A point
-   with no `in` belongs to it, so it has a place in space: x right, z up, at the world origin.
-   It is a real plane in the model (B, "the implicit plane"), not a `None` that readers
-   special-case. Writing the name `std.front` still takes `use std` (nothing is imported bare),
-   but drawing on the page never does.
+1. **A point not in a plane stands in space.** A point declared outside every `in` has three
+   coordinates, `(x, y, z)`, and is placed by the same relations as any point. A 2D sketch is
+   drawn `in` a plane: `use std` and `in std.front { … }` for what was the page. That is
+   boilerplate, and accepted as such. The page as a concept is gone: `std.front` is the plane
+   at the world origin with x right and z up. The model keeps it as plane 0 of every `Sketch`
+   (see [Points in space and `std.front`](#points-in-space-and-stdfront)).
 2. **Views carry no place on paper.** A point's `(x, y)` are its own plane's coordinates. The
    `.svd` places each view on the sheet.
 3. **A plane's attitude is two rays:** `plane(u: r1, v: r2)`.
@@ -41,8 +43,8 @@ These were made in conversation on 2026-10-04.
    give **only the attitude**. Where they lie does not matter to the plane, so two
    planes may share their rays.
 4. **Every plane has members `P.u`, `P.v` and `P.origin`.** `P.u` and `P.v` are its axes, as
-   rays from its origin. `P.origin` is a point drawn at `(0, 0)` in `P`, which a component may
-   name and a relation may place. **The origin floats unless something places it.** The
+   rays through its origin. `P.origin` is a point in space, which a component may name and a
+   relation may place. **The origin floats unless something places it.** The
    relations on a plane:
    * `P coincident p`: the plane passes through point `p` (incidence);
    * `P.origin coincident p`: the plane's origin *is* `p` (point to point);
@@ -97,8 +99,8 @@ These were made in conversation on 2026-10-04.
    origin is now a member), the role rule, the page-placement gauge, `std.ThreeViews`, and the
    "has no place in space" refusals (E062's page case, the extruded envelope's, `through:`'s,
    `project`'s and the spatial words').
-10. **Points in space are a later issue.** A plane's origin is a position in space, but the only
-    point anyone draws or names is `P.origin`, which is drawn in `P`.
+10. **Points in space are shown and selectable in the workspace, not dragged** (dragging in
+    3D is later work).
 
 ## The model
 
@@ -132,7 +134,7 @@ points' lifts. So `plane(u: hinge, …)` takes a drawn line directly, which is w
 **A plane's axes are rays.** `P.u` and `P.v` pass through `P.origin`. A ray square to `P` is
 stated with `t perpendicular P`, so there is no `P.n` member. `std.x`, `std.y` and `std.z` are
 the world's axes, fixed rays through the world origin: `std.x` is `std.front.u`, `std.z` is
-`std.front.v`, and `std.y` points away from the page's viewer.
+`std.front.v`, and `std.y` points away from `std.front`'s viewer.
 
 **A seed** is the one `hint(…)` clause: `t := ray hint(x: 0, y: 0, z: 1)` seeds the direction.
 Its position is seeded through the origin, and moved by its relations.
@@ -146,17 +148,17 @@ ordinary freedom.
 
 ### Planes
 
-`PlaneE` becomes `{ u: Ray, v: Ray, o: [Param; 3], origin: Point, basis, fixed }`:
-* `o` is where the plane's origin stands in space, three unknowns;
-* `origin` is the member point `P.origin`, drawn in `P` with its `(x, y)` held at `(0, 0)`, so
-  its lift is `o`.
+`PlaneE` becomes `{ u: Ray, v: Ray, origin: Point, basis, fixed }`, where `origin` is the member
+point `P.origin`, a point in space: its three coordinates are where the plane stands.
 
 `FrameE`, the rotor `(c, s)`, the `frame_unit`/`frame_align` intrinsics, `Att` and its
 quaternion, and the `Hinge*` kernels all go.
 
-* **Where a view point stands:** a point `(x, y)` in plane `P` is `o + x·û + y·v̂`, with
-  `û = u/|u|` and `v̂ = normalize((u × v) × u)` over the rays' directions.
-* **`Lift`** (a solved plane) reads the point's `(x, y)`, `o`, and the two rays' directions.
+* **Where a view point stands:** a point `(x, y)` in plane `P` is `o + x·û + y·v̂`, with `o`
+  the origin's coordinates, `û = u/|u|` and `v̂ = normalize((u × v) × u)` over the rays'
+  directions.
+* **`Lift`** (a solved plane) reads the point's `(x, y)`, the origin's `(x, y, z)`, and the two
+  rays' directions.
 * **`LiftFixed`** reads the point and holds `(o, û, v̂)` as constants. It drops the datum
   columns: 5 columns instead of 9.
 * **`world_in`** becomes `basis(P).lift(x, y)` and **`on_view_sheet`** becomes
@@ -167,11 +169,11 @@ The relations on a plane:
 | statement | meaning | rows |
 |---|---|---|
 | `P coincident p` | the plane passes through `p` | `PointOnPlane`: 1 |
-| `P.origin coincident p` | `P`'s origin is `p` | `Coincident3` of `o` and `p`'s lift: 3 |
+| `P.origin coincident p` | `P`'s origin is `p` | `Coincident3` of the origin and `p` (or its lift): 3 |
 | `P distance(d) Q` | parallel planes `d` apart, `Q` on `P`'s out side | `(o_Q − o_P)·n_P − d`: 1, plus `P parallel Q` if their rays are not shared |
 | `P parallel Q`, `P perpendicular Q`, `P angle(θ) Q` | between their normals | the ray kernels over `u × v` |
 
-A plane's freedoms are 3 for `o` plus whatever its rays leave free. A floating plane is free to
+A plane's freedoms are its origin's 3 plus whatever its rays leave free. A floating plane is free to
 slide in itself (2) and along its normal (1). Placing it by `P.origin coincident p` takes all
 3. Placing it by `P coincident p` or `P distance(d) Q` takes only the normal one, and the
 document places the rest as it places anything else.
@@ -185,26 +187,46 @@ them, fixed points and numbers, and freezes every plane that subsystem determine
 full rank, by `System::conditioned`). Anything else stays solved in the main system. This
 matters for speed: without it, every tilted view in the corpus would pay a solve per frame.
 
-### The page
+### Points in space and `std.front`
 
-`std.front` is plane 0 of every `Sketch`, built with the sketch. Its rays are fixed at the
-standard axes, so its basis is `Basis::page()`. `PointE.plane` becomes `u32`, and every
-`plane_of` caller loses its `None` arm (about 35 sites; the agent survey lists them). JSON writes
-`"plane"` only when it is not 0, so a 2D document's export does not grow.
+**A point in space** is a `PointE` with a third coordinate and no plane:
+* `PointE` gains `z: Option<u32>`;
+* `plane: Option<u32>` keeps its type, but `None` now means *in space* (three parameters) where
+  it meant *on the page*;
+* `Sketch::world_point` of a point in space is its coordinates, and it needs no lift.
 
-`use std` brings in the other standard planes (`std.side`, `std.top`, `std.up`) and the rays
-`std.x`, `std.y` and `std.z`, as ordinary library statements. `std.front` is not in
-`StandardDatums`, but the flattener binds the name to plane 0 when the document says `use std`.
+What a point in space may make:
+* lines between points in space are lines in space, and a line is a ray wherever one is
+  expected;
+* a sphere's centre may be one;
+* a circle, an arc, a spline, a traced curve and a face need a plane. Built over points in space
+  they are refused (E060, naming the point), unless every point is in one plane.
+
+Its seed is `hint(x:, y:, z:)` (`z:` on a point in a plane is refused at the key) or a place
+(`hint(at: …)`) read in space. Its gauge is `fix(x == …, y == …, z == …) p`.
+
+**`std.front` is plane 0 of every `Sketch`,** built with the sketch. Its rays are fixed at the
+standard axes, so its basis is `Basis::page()`. The *sketch-level* API keeps meaning a point on
+it: `Sketch::point(x, y)`, a JSON document with no `"plane"` or `"z"`, and the bindings' 2D tools.
+So the Rust tests' hand-built sketches and the JSON format are unchanged. Only the *language*'s
+default is space. JSON writes `"plane"` when it is not 0, and `"z"` for a point in space.
+
+`use std` brings in the other standard planes (`std.side`, `std.top`, `std.up`), the rays
+`std.x`, `std.y` and `std.z`, and `std.origin`, a fixed point in space at the world origin, as
+ordinary library statements. `std.front` is not in `StandardDatums`, but the flattener binds the
+name to plane 0 when the document says `use std`.
 
 ### Reading a relation across planes
 
-The rule stays: one plane, the 2D relation; different planes, the relation in space. The role
-rule is deleted, because there are no layout points left to read by role.
+The rule stays: one plane, the 2D relation; otherwise, the relation in space. A point in space
+is in no plane, so any relation naming one is in space, and a word with no meaning there
+(`horizontal`, a run or rise, `tangent` between drawn figures) is E062. The role rule is
+deleted, because there are no layout points left to read by role.
 
-**Two planes lying on one another** (`std.front` and `std.up`, or a part's plane turned in the
-page) are permitted. The document gets a lint (a new W-code, at the second plane's declaration,
-judged on the solved pose) saying they are one plane in space and suggesting the geometry be
-drawn in one.
+**Two planes lying on one another** (`std.front` and `std.up`, or a part's plane turned in
+`std.front`) are permitted. The document gets a lint (a new W-code, at the second plane's
+declaration, judged on the solved pose) saying they are one plane in space and suggesting the
+geometry be drawn in one.
 
 The relations across them still need care. The 3D twin's out-of-plane row is identically zero
 there, and the diagnosis would read the drawing as redundant. Two ways to handle it:
@@ -223,10 +245,10 @@ The cross-plane case is a new spatial twin.
 
 ### `project`
 
-`project` stays and becomes simpler: `d_A·p − d_B·q + d·(o_A − o_B) = 0`, linear, over the two
-points and, where a plane floats, its origin's columns. Where both origins are fixed, the last
-term is a constant (zero where they coincide), and the row has 4 columns. `plane::fold_line`
-reads bases only and is unchanged.
+`project` stays and becomes simpler: `d_A·p − d_B·q + d·(o_A − o_B) = 0`, linear, over the
+two points and, where a plane floats, its origin's columns. Where both origins are fixed, the
+last term is a constant (zero where they coincide), and the row has 4 columns.
+`plane::fold_line` reads bases only and is unchanged.
 
 "A view slides freely along its projectors" becomes a statement about origins: a floating
 view's origin slides, and with it everything drawn in the view.
@@ -247,8 +269,14 @@ checked unchanged.
 ```
 use std
 
-// the page: nothing to write
-a := point hint(x: 0, y: 0)
+// a 2D sketch on the front plane
+in std.front {
+  a := point hint(x: 0, y: 0)
+}
+
+// a point in space
+c := point hint(x: 10, y: 0, z: 25)
+c distance(30) a
 
 // a view looking from +x, y right, z up, standing at the world origin
 right := plane(u: std.y, v: std.z)
@@ -289,17 +317,20 @@ The names are placeholders. They are ordinary components, and the grammar does n
 
 `std.ThreeViews` is deleted. `std.side := plane(u: std.y, v: std.z)` and
 `std.top := plane(u: std.x, v: std.y)` are the views it laid out. `std.up` is
-`plane(u: std.z, v: w)` with `w` the x axis reversed: the page turned a quarter. The library
+`plane(u: std.z, v: w)` with `w` the x axis reversed: `std.front` turned a quarter. The library
 states `w` with a `fix` on its direction, which holds it outright. A document saying the same
 writes `w parallel std.x` seeded the other way (decision 8).
 
-**Membership** is unchanged: `a := point in right`, `in right { … }`, and an instance joins a
-plane whole. A point with no `in` is on `std.front`. A component's `in f { … }` over a plane
-formal is unchanged.
+**Membership** is spelled as before: `a := point in right`, `in right { … }`, and an instance
+joins a plane whole. A point with no `in` stands in space. A component's `in f { … }` over a
+plane formal is unchanged. A 2D component need not name a plane at all: its caller writes
+`t := Tooth(…) in std.front`, or calls it inside an `in` block, and the membership is stamped on
+every point it makes, as it is today. So the library's 2D components (`std.CenteredRectangle`,
+the gear teeth) keep their signatures.
 
 ## The `.svd`
 
-`sketch m at (X, Y)` draws plane 0. A new clause draws any plane of the model:
+`sketch m at (X, Y)` draws `std.front`. A new clause draws any plane of the model:
 
 ```
 sketch m.right at (150, 0)
@@ -313,7 +344,14 @@ out per plane. A callout across two planes is drawn in neither, as now. `bracket
 
 ## The corpus
 
-The [corpus survey](#appendix-the-corpus) found two kinds of rewrite.
+The [corpus survey](#appendix-the-corpus) found two kinds of rewrite, and points in space add a
+third, which is the largest but the simplest.
+
+**Every document drawing on the page** gains `use std` and `in std.front { … }` around its root
+drawing (a `preview { … }` block included). Statements that are not geometry (values, `style`,
+solids, claims) may stay outside it. Module components are untouched (their callers stamp the
+plane). The tests' inline documents are wrapped the same way, through a test helper where many
+share a shape.
 
 **Mechanical**, by a throwaway migration tool built on the *old* elaborator:
 
@@ -355,52 +393,61 @@ The tool lives in the scratchpad and is not committed.
 
 ## The app and the FFI
 
-* `Point.plane` is never null. `gcs_point_plane` returns 0 for the page, and `-1` leaves the ABI.
-* The workspace tables drop the page slot: plane 0 *is* the page. `PAGE`, `slot()` and
+* `Point.plane` is null for a point in space, and `gcs_point_plane` returns -1 for it (it
+  meant the page). A point's `z` crosses the ABI beside `x`, `y`.
+* The workspace tables drop the page slot: plane 0 is `std.front`. `PAGE`, `slot()` and
   `view_at()` go, and "places" compare bases. `std.front` and `std.up` stay one place.
-* The plane chooser lists `std.front` always. `pendingPlane` stays for `std.side`/`std.top`
-  until `use std` is written.
+* The plane chooser lists `std.front` always and opens on it. Drawing on it writes `use std`
+  and the `in std.front` clause, as drawing on `std.side` does today (`ensurePlane`).
+* A point in space is drawn as a dot in the scene and is selectable, but not dragged.
 * The plane tool's two clicks placed a datum on the sheet. It becomes "pick two lines or rays",
   which writes `plane(u: a, v: b)`. The three-views tool is deleted.
 * A ray is drawn in the workspace as a line across the scene's bounds with an arrowhead for
   its sense, and picked like a line. There is no 2D picture of a ray.
 * The tests that pin page-ness (`app.test.ts` "the front is the page", "drawing on the page
-  stays on the page"; `core.test.ts` `plane` null) are rewritten to say plane 0.
+  stays on the page"; `core.test.ts` `plane` null) are rewritten to say `std.front`.
 
 ## Order of work
 
 One branch and one switch. The commits are staged so each one builds and its own tests pass.
-The corpus only goes green at step 8.
+The corpus only goes green at step 9.
 
 0. **Baseline.** Rebuild `build/solventc` (it predates #77). Record each example's world
    positions, DOF, report and SVG with the old binary. Write the migration tool.
-1. **The page plane.** Plane 0 in every `Sketch`, `PointE.plane: u32`, no `None` arms, the page
-   refusals removed, JSON. Every 2D test stays green. This step is behaviour-preserving apart
-   from the refusals.
+1. **Plane 0.** `std.front` as plane 0 in every `Sketch`. A point with no `in` still lands on it,
+   so the page and plane 0 are one. The page refusals are removed. Behaviour-preserving apart
+   from those refusals.
 2. **`on` retired.** `coincident` takes every kind `on` took (`constraints::infix_op`'s one
    table, `CKind::operator()`), the 143 corpus statements and the tests' inline documents are
    rewritten by span, and `on(t == …)` pins become `coincident(t == …)`. A face's `on:` key is a
    slot, not the word, and stays. Behaviour-preserving: every report is unchanged.
-3. **Rays.** `EntKind::Ray` in every exhaustive arm. Intrinsics, kernels and relations (the
+3. **Points in space.** `z`, `plane: None` meaning space, seeds and `fix` with `z`, `Distance3`
+   and friends over points in space, the refusals for kinds needing a plane, JSON `"z"`. The
+   language's default flips to space, and in the same commit every document and test is
+   wrapped in `in std.front` (mechanical), with every report unchanged.
+4. **Rays.** `EntKind::Ray` in every exhaustive arm. Intrinsics, kernels and relations (the
    table above) with Jacobian rows. `ray` in the parser, seeds, `io`, `graft`, FFI `ent`/`kind_id`.
    Tests: a ray placed by two relations against closed forms, its DOF, a free ray's rank, an
    unread position retired, and an unsigned 0°/180° refused.
-4. **Planes from rays.** `PlaneE` over rays, `Lift`/`LiftFixed` without datum columns, the
-   ray-subsystem settle in `solve_planes`, `project`'s new constants. Remove `FrameE`, the
+5. **Planes from rays.** `PlaneE` over rays, `Lift`/`LiftFixed` without datum columns, the
+   ray-subsystem settle in `solve_planes`, `project`'s new constants, `P.origin` a point in
+   space. Remove `FrameE`, the
    quaternion, the hinges, `page_held` and the role rule. Port `tests/spatial.rs`,
    `spatial_lang.rs`, `plane.rs` and `plane_lang.rs` to the new spellings, asserting the same
    numbers in space.
-5. **Readers.** The coplanar lint and the 2D-through-a-map reading between fixed planes lying
+6. **Readers.** The coplanar lint and the 2D-through-a-map reading between fixed planes lying
    on one another, `along: u/v` in space, the overview, the workspace, the renderer, solids'
    poses, extrusion frames.
-6. **`std.sv` and the `.svd`.** The standard planes and rays, the helper components,
+7. **`std.sv` and the `.svd`.** The standard planes and rays, the helper components,
    `ThreeViews` gone, `sketch m.P at (…)`.
-7. **The app and FFI.**
-8. **The corpus.** The tool's rewrite, then the hand rewrites, then the gate above.
+8. **The app and FFI.**
+9. **The corpus.** The tool's rewrite, then the hand rewrites, then the gate above. (The
+   `in std.front` wrapping is step 3's.)
    `tests/examples_sv.rs` and `cross_view_audit.rs` are updated.
-9. **Docs.** The primer (§1.13 and 2.10 shrink), the spec (§6.7, §9.2, the E062 row, Draft
-   0.42), CLAUDE.md (the plane, page, role-rule and workspace paragraphs), and a status line on
-   `spatial-constraints-plan.md` saying which of its decisions this plan replaces.
+10. **Docs.** The primer (§1.13 and 2.10 shrink, and every 2D example in it gains its plane),
+    the spec (§6.7, §9.2, the E062 row, Draft 0.42), CLAUDE.md (the plane, page, role-rule and
+    workspace paragraphs), and a status line on `spatial-constraints-plan.md` saying which of
+    its decisions this plan replaces.
 
 `make test` runs once at the end of each step that touches the corpus, and once before the PR.
 
@@ -417,8 +464,8 @@ All of these were settled on 2026-10-04. No question is open.
 * `P.origin coincident p` places an origin.
 * An unsigned 0° or 180° is refused in favour of `parallel`.
 * A ray is a directed line with no start.
-* **A part's own plane, turned within the page** (a frame like the vtwin crank's) is written with
-  existing words:
+* **A part's own plane, turned within `std.front`** (a frame like the vtwin crank's) is written
+  with existing words:
 
   ```
   w := ray
@@ -428,6 +475,8 @@ All of these were settled on 2026-10-04. No question is open.
   ```
 
   The seed picks which side faces out. No new form is needed.
+* **A point not in a plane stands in space**, in this switch: a 2D sketch is drawn
+  `in std.front`. Points in space are shown and selectable in the workspace, not dragged.
 * **`along: u/v` is measured in space**, across planes too: `p distance(d, along: u) P` is how
   far `p` stands along `P.u` from `P.origin`. Within `P` it is `p`'s own x, the number it has
   always been.
