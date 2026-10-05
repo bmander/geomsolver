@@ -367,9 +367,9 @@ fn fillet_piece(p: &super::fillet::Piece,scale: f64) -> Json {
     match p.carry {
         super::fillet::Carry::Prism {length} => object([("kind","prism".into()),("profile",profile),
             ("from",0.0.into()),("to",(length*scale).into())]),
-        super::fillet::Carry::Turn => object([("kind","revolve".into()),("profile",profile),
+        super::fillet::Carry::Turn {sweep} => object([("kind","revolve".into()),("profile",profile),
             ("origin",vector(p.section.o.map(|v| v*scale))),("axis",vector(p.section.v)),
-            ("angle",std::f64::consts::TAU.into())]),
+            ("angle",sweep.into())]),
     }
 }
 

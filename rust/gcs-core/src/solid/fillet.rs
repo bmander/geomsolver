@@ -47,6 +47,23 @@ impl Stroke {
         Stroke::Arc { centre, radius, start: a, sweep, from, to }
     }
 
+    /// How far it reaches from the section's second axis at most, its circle's whole radius for
+    /// an arc: the radius a ring of it stays within.
+    pub fn reach(&self) -> f64 {
+        match *self {
+            Stroke::Line { from, to } => from[0].abs().max(to[0].abs()),
+            Stroke::Arc { centre, radius, .. } => centre[0].abs() + radius,
+        }
+    }
+    /// The stretch of its second coordinate it stays within (a meridian's heights), its circle's
+    /// whole for an arc.
+    pub fn height(&self) -> [f64; 2] {
+        match *self {
+            Stroke::Line { from, to } => [from[1].min(to[1]), from[1].max(to[1])],
+            Stroke::Arc { centre, radius, .. } => [centre[1] - radius, centre[1] + radius],
+        }
+    }
+
     /// The least first coordinate it reaches (a meridian's radius).
     fn least_x(&self) -> f64 {
         match *self {
@@ -184,9 +201,10 @@ impl Wedge {
 }
 
 /// How the section is carried: along the edge's direction (`u × v`) through `length`, or turned
-/// once about the line through the section's origin along its `v`.
+/// through `sweep` (`τ` a whole ring) about the line through the section's origin along its `v`,
+/// right-handed — from `u` toward `v × u`.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum Carry { Prism { length: f64 }, Turn }
+pub enum Carry { Prism { length: f64 }, Turn { sweep: f64 } }
 
 /// One edge's fillet, in model units: the section plane `o + a·u + b·v`, the ball in it, and how
 /// the section is carried.
@@ -201,12 +219,20 @@ impl Piece {
     /// A point of the edge it rounds — what an oracle rounding the same edge selects it by: the
     /// corner, halfway along a straight edge.
     pub fn edge_point(&self) -> V {
-        let corner = self.section.lift(self.wedge.corner[0], self.wedge.corner[1]);
+        self.at(0.5).lift(self.wedge.corner[0], self.wedge.corner[1])
+    }
+
+    /// Its section a fraction `f` of the way along: the prism's carried along its length, the
+    /// ring's turned through its sweep (0 where it starts, 1 where it stops).
+    pub fn at(&self, f: f64) -> Basis {
         match self.carry {
-            Carry::Prism { length } => add(corner, scale(self.section.normal(), length / 2.0)),
-            Carry::Turn => corner,
+            Carry::Prism { length } => Basis { o: add(self.section.o, scale(self.section.normal(), f * length)), ..self.section },
+            Carry::Turn { sweep } => turned_basis(&self.section, f * sweep),
         }
     }
+
+    /// Whether it is a whole ring, with no ends.
+    pub fn whole(&self) -> bool { matches!(self.carry, Carry::Turn { sweep } if sweep >= TAU - 1e-9) }
 
     /// The same piece with every length divided by `per` and its plane stood off by `origin`: a
     /// piece worked out in a boundary's millimetres, in model units about the world's origin.
@@ -226,7 +252,7 @@ impl Piece {
                 centre: sc(w.centre),
                 r: w.r / per,
             },
-            carry: match self.carry { Carry::Prism { length } => Carry::Prism { length: length / per }, c => c },
+            carry: match self.carry { Carry::Prism { length } => Carry::Prism { length: length / per }, turn => turn },
         }
     }
 }
@@ -301,6 +327,10 @@ pub(crate) fn derive(sk: &Sketch, si: usize) -> Result<Blend, String> {
     let mut pieces = Vec::new();
     let mut rolls = Vec::new();
     let mut rolled_edges = std::collections::BTreeSet::new();
+    let mut ends: Vec<Open> = Vec::new();
+    let mut failed: Vec<(u32, V, String)> = Vec::new();
+    let mut first_failure: Option<String> = None;
+    let mut flush: Vec<Flush> = Vec::new();
     let mut concave: Option<(bool, String)> = None;
     for (ei, uses) in table.iter().enumerate() {
         let [(f0, c0), (f1, c1)] = match uses.as_slice() { [x, y] if x.0 != y.0 => [*x, *y], _ => continue };
@@ -326,8 +356,24 @@ pub(crate) fn derive(sk: &Sketch, si: usize) -> Result<Blend, String> {
             hollow
         } else {
             let at = Edge { brep: &brep, located: &located, table: &table, edge: ei, uses: [first, second], tol };
-            let Some((piece, hollow)) = at.round(r.value * mm)? else { continue };
+            // an edge's refusal waits for the ends to be paired: one that turns a corner says more,
+            // unless it is this edge a piece's end was to run on into (leaving their vertex its way)
+            let rounded = match at.round(r.value * mm) {
+                Ok(x) => x,
+                Err(why) => {
+                    let e = &brep.edges[ei];
+                    if let EdgeCurve::Curve(c) = &e.curve {
+                        let leaving = [unit(c.tangent(e.t[0])), scale(unit(c.tangent(e.t[1])), -1.0)];
+                        for k in 0..2 { failed.push((e.v[k], leaving[k], why.clone())); }
+                    }
+                    first_failure.get_or_insert(why);
+                    continue
+                }
+            };
+            let Some((piece, hollow, open, stops)) = rounded else { continue };
             pieces.push(piece.in_units(mm, origin));
+            ends.extend(open);
+            flush.extend(stops);
             hollow
         };
         match &concave {
@@ -337,6 +383,18 @@ pub(crate) fn derive(sk: &Sketch, si: usize) -> Result<Blend, String> {
                 if hollow { &label } else { other }, if hollow { other } else { &label })),
             Some(_) => {}
             None => concave = Some((hollow, label)),
+        }
+    }
+    if let Err(end) = paired(&ends, tol) {
+        let met = failed.iter().find(|(v, leaving, _)| *v == end.vertex && dot(*leaving, end.outward) >= 1.0 - 1e-9);
+        return Err(met.map_or(&end.refusal, |(_, _, why)| why).clone());
+    }
+    if let Some(why) = first_failure { return Err(why); }
+    // two pieces ending flush at one corner, each in a face the other rounds: a vertex blend
+    for (i, f) in flush.iter().enumerate() {
+        if flush[i + 1..].iter().map(|g| g.vertex).chain(ends.iter().map(|o| o.vertex)).any(|v| v == f.vertex) {
+            return Err(format!("the fillet of {} meets another of its edges at a corner: fillets meeting at a \
+                vertex are rung 3", f.label));
         }
     }
     let Some((concave, _)) = concave else {
@@ -406,6 +464,40 @@ fn uses_by_edge(b: &Brep) -> Vec<Vec<Use>> {
 
 fn unit(a: V) -> V { scale(a, 1.0 / norm(a)) }
 
+/// `b` turned through `angle` about the line through its origin along its `v`, right-handed.
+fn turned_basis(b: &Basis, angle: f64) -> Basis {
+    let (sn, cs) = angle.dsin_cos();
+    Basis { u: add(scale(b.u, cs), scale(cross(b.v, b.u), sn)), ..*b }
+}
+
+/// An end of a piece that is not flush: where the ball stands there, for the piece carried on
+/// past it to meet. `outward` is the way the piece leaves its end; `refusal` what is said if
+/// nothing meets it.
+#[derive(Clone, Debug)]
+struct Open { vertex: u32, outward: V, corner: V, centre: V, touch: [V; 2], refusal: String }
+
+/// An end of a piece flush in the faces beyond it: where it stands, and whose fillet it ends.
+#[derive(Clone, Debug)]
+struct Flush { vertex: u32, label: String }
+
+/// **A chain of tangent edges is rounded piece by piece**: every end that is not flush must meet
+/// exactly one other, leaving the vertex the opposite way with its ball where this one's is —
+/// the same section, so the two pieces share a cap and their union is exact. Anything else turns
+/// a corner (rung 3): the first end left unmet.
+fn paired(ends: &[Open], tol: f64) -> Result<(), &Open> {
+    let near = 8.0 * tol;
+    for (i, e) in ends.iter().enumerate() {
+        let at: Vec<&Open> = ends.iter().enumerate().filter(|&(j, o)| j != i && o.vertex == e.vertex).map(|(_, o)| o).collect();
+        let [o] = at.as_slice() else { return Err(e) };
+        let same = |a: V, b: V| norm(sub(a, b)) <= near;
+        if dot(e.outward, o.outward) > -1.0 + 1e-9 || !same(e.corner, o.corner) || !same(e.centre, o.centre)
+            || !(0..2).all(|k| same(e.touch[k], o.touch[k])) {
+            return Err(e);
+        }
+    }
+    Ok(())
+}
+
 /// One edge being rounded, in the boundary's millimetres: its two uses, the first the first side's,
 /// and every edge's uses beside it.
 struct Edge<'a> {
@@ -456,11 +548,74 @@ enum Band {
     /// `length`) and round the axis from the corner to the touch, read in the section.
     Sleeve { section: Basis, length: f64, turn: Turned },
     /// A face turned about the axis through `o` along `axis` whose meridian is a line: the
-    /// stretch of it from the corner along `dm` (radius, height), whatever turn it is at.
-    Meridian { o: V, axis: V, corner: [f64; 2], dm: [f64; 2], setback: f64 },
+    /// stretch of it from the corner along `dm` (radius, height), at every turn of a whole ring or
+    /// within a partial ring's `sector`.
+    Meridian { o: V, axis: V, corner: [f64; 2], dm: [f64; 2], setback: f64, sector: Option<Sector> },
     /// A sphere or a torus turned about the axis: the arc of its meridian from the corner to the
-    /// touch, whatever turn it is at.
-    Arc { o: V, axis: V, turn: Turned },
+    /// touch, at every turn of a whole ring or within a partial ring's `sector`.
+    Arc { o: V, axis: V, turn: Turned, sector: Option<Sector> },
+}
+
+/// The stretch of turn a partial ring sweeps about the axis through `o` along the unit `axis`:
+/// from the radial `start`, right-handed through `sweep`.
+#[derive(Clone, Copy, Debug)]
+struct Sector { o: V, axis: V, start: V, sweep: f64 }
+
+impl Sector {
+    /// A point in the plane square to the axis: along `start`, and a quarter turn on.
+    fn flat(&self, q: V) -> [f64; 2] {
+        let w = sub(q, self.o);
+        [dot(w, self.start), dot(w, cross(self.axis, self.start))]
+    }
+    /// Whether a point (flat) lies within the sector, clear of its two sides by `tol`.
+    fn holds(&self, f: [f64; 2], tol: f64) -> bool {
+        let rho = len2(f);
+        if rho <= tol { return false; }
+        let a = around(f[1].datan2(f[0]), 0.0, TAU);
+        a > tol / rho && a < self.sweep - tol / rho
+    }
+    /// Whether a circle about the axis over `t` passes within the sector: its stretch of turn,
+    /// walked from one end through its middle to the other, overlaps the sector's.
+    fn arc_overlaps(&self, curve: &Curve, t: [f64; 2], tol: f64) -> bool {
+        let turn = |s: f64| { let f = self.flat(curve.point(s)); around(f[1].datan2(f[0]), 0.0, TAU) };
+        let (a, m, b) = (turn(t[0]), turn(0.5 * (t[0] + t[1])), turn(t[1]));
+        let after = |x: f64, from: f64| around(x - from, 0.0, TAU);
+        let rho = len2(self.flat(curve.point(t[0])));
+        let slack = tol / rho.max(tol);
+        let (lo, len) = if (t[1] - t[0]) >= TAU - 1e-9 { (0.0, TAU) }
+            else if after(m, a) <= after(b, a) { (a, after(b, a)) } else { (b, after(a, b)) };
+        lo < self.sweep - slack || after(slack, lo) < len
+    }
+    /// Whether the segment from `a` to `b` (flat) has a stretch strictly between the radii `lo`
+    /// and `hi` and within the sector. Where either can change — the segment's crossings of the
+    /// two circles and of the sector's two sides — cuts it into stretches on which neither does,
+    /// and each stretch is asked at its middle.
+    fn segment_in(&self, a: [f64; 2], b: [f64; 2], lo: f64, hi: f64, tol: f64) -> bool {
+        if !(lo < hi) { return false; }
+        let d = sub2(b, a);
+        let mut cuts = vec![0.0, 1.0];
+        let (qa, qb) = (dot2(d, d), 2.0 * dot2(a, d));
+        for rho in [lo, hi] {
+            let qc = dot2(a, a) - rho * rho;
+            let disc = qb * qb - 4.0 * qa * qc;
+            if qa > 0.0 && disc >= 0.0 {
+                cuts.extend([-1.0, 1.0].map(|sg| (-qb + sg * disc.sqrt()) / (2.0 * qa)));
+            }
+        }
+        for side in [0.0, self.sweep] {
+            let (sn, cs) = side.dsin_cos();
+            let n = [-sn, cs];
+            let den = dot2(n, d);
+            if den != 0.0 { cuts.push(-dot2(n, a) / den); }
+        }
+        cuts.retain(|&c| (0.0..=1.0).contains(&c));
+        cuts.sort_by(f64::total_cmp);
+        cuts.windows(2).any(|w| {
+            let m = add2(a, d, 0.5 * (w[0] + w[1]));
+            let rho = len2(m);
+            w[1] > w[0] && rho > lo && rho < hi && self.holds(m, tol)
+        })
+    }
 }
 
 impl Band {
@@ -506,29 +661,44 @@ impl Band {
                     _ => None,
                 }
             }
-            Band::Meridian { o, axis, corner, dm, setback } => {
+            Band::Meridian { o, axis, corner, dm, setback, sector } => {
                 let w = |m: [f64; 2]| (m[0] - corner[0]) * dm[0] + (m[1] - corner[1]) * dm[1];
                 let (a, b) = match curve {
                     Curve::Circle(frame, rc) if coaxial(o, axis, frame) => {
+                        if sector.is_some_and(|s| !s.arc_overlaps(curve, t, tol)) { return Some(false); }
                         let v = w([*rc, dot(sub(frame.o, o), axis)]);
                         (v, v)
                     }
-                    // in a plane square to the axis, a plane face's band is radial
+                    // in a plane square to the axis, a plane face's band is radial: a partial
+                    // ring's, a stretch of radius within its sector
                     _ if dm[1].abs() <= 1e-12 => {
+                        if let (Some(s), Curve::Line { .. }) = (sector, curve) {
+                            let (lo, hi) = if dm[0] > 0.0 { (corner[0] + tol, corner[0] + setback - tol) }
+                                else { (corner[0] - setback + tol, corner[0] - tol) };
+                            return Some(s.segment_in(s.flat(curve.point(t[0])), s.flat(curve.point(t[1])), lo, hi, tol));
+                        }
                         let (lo, hi) = radius_range(curve, t, o, axis)?;
                         (w([lo, corner[1]]), w([hi, corner[1]]))
                     }
-                    // a line in a meridian: radius and height both affine along it
-                    Curve::Line { p: q, d: dl } if dot(cross(*dl, axis), sub(*q, o)).abs() <= tol =>
-                        (w(mer(o, axis, curve.point(t[0]))), w(mer(o, axis, curve.point(t[1])))),
+                    // a line in a meridian: radius and height both affine along it, at one turn
+                    Curve::Line { p: q, d: dl } if dot(cross(*dl, axis), sub(*q, o)).abs() <= tol => {
+                        let ends = [curve.point(t[0]), curve.point(t[1])];
+                        if let Some(s) = sector {
+                            let far = if mer(o, axis, ends[0])[0] >= mer(o, axis, ends[1])[0] { ends[0] } else { ends[1] };
+                            if !s.holds(s.flat(far), tol) { return Some(false); }
+                        }
+                        (w(mer(o, axis, ends[0])), w(mer(o, axis, ends[1])))
+                    }
                     _ => return None,
                 };
                 Some(a.max(b) > tol && a.min(b) < setback - tol)
             }
-            Band::Arc { o, axis, turn } => match curve {
+            Band::Arc { o, axis, turn, sector } => match curve {
                 // a circle about the axis is one point of the meridian
-                Curve::Circle(frame, rc) if coaxial(o, axis, frame) =>
-                    Some(turn.inside(turn.at([*rc, dot(sub(frame.o, o), axis)]), tol)),
+                Curve::Circle(frame, rc) if coaxial(o, axis, frame) => {
+                    if sector.is_some_and(|s| !s.arc_overlaps(curve, t, tol)) { return Some(false); }
+                    Some(turn.inside(turn.at([*rc, dot(sub(frame.o, o), axis)]), tol))
+                }
                 _ => None,
             },
         }
@@ -546,9 +716,10 @@ impl Edge<'_> {
         Ok(if f.reversed { scale(n, -1.0) } else { n })
     }
 
-    /// Its piece (millimetres, about the boundary's origin) and whether it is concave; none where
-    /// the two faces run on into one another (two operands' coplanar faces), with no edge to round.
-    fn round(&self, r: f64) -> Result<Option<(Piece, bool)>, String> {
+    /// Its piece (millimetres, about the boundary's origin), whether it is concave and its ends
+    /// that are not flush (for the pieces it continues into to meet); none where the two faces run
+    /// on into one another (two operands' coplanar faces), with no edge to round.
+    fn round(&self, r: f64) -> Result<Option<(Piece, bool, Vec<Open>, Vec<Flush>)>, String> {
         let e = &self.brep.edges[self.edge];
         let EdgeCurve::Curve(curve) = &e.curve else {
             return Err(format!("`{}` meets `{}` at a point", self.face_name(0), self.face_name(1)));
@@ -583,17 +754,17 @@ impl Edge<'_> {
                 let (Some(a), Some(b)) = (meridian_side(surface(0), frame.o, axis, self.tol),
                     meridian_side(surface(1), frame.o, axis, self.tol))
                     else { return Err(self.unsupported("circle")) };
-                if !e.closed() || (e.t[1] - e.t[0] - TAU).abs() > 1e-9 {
-                    return Err(format!(
-                        "`{}` meets `{}` on part of a circle: a ring is rounded only whole (rung 3)",
-                        self.face_name(0), self.face_name(1)));
-                }
+                // a whole ring, or the stretch of one the edge runs (its parameter turns about `z`)
+                let sweep = if e.closed() { TAU } else { e.t[1] - e.t[0] };
                 let u = unit(sub(p, add(frame.o, scale(axis, dot(sub(p, frame.o), axis)))));
-                (Basis { u, v: axis, o: frame.o }, [*rc, 0.0], Carry::Turn, [a, b])
+                (Basis { u, v: axis, o: frame.o }, [*rc, 0.0], Carry::Turn { sweep }, [a, b])
             }
             other => return Err(self.unsupported(other.kind())),
         };
         let flat = |x: V| [dot(x, section.u), dot(x, section.v)];
+        // the stretch of turn a partial ring sweeps, from where its edge starts
+        let sector = |sweep: f64| (sweep < TAU - 1e-9).then(|| Sector {
+            o: section.o, axis: section.v, start: turned_basis(&section, -0.5 * sweep).u, sweep });
         if d.iter().any(|x| dot(*x, section.normal()).abs() > 1e-9) {
             return Err(format!("`{}` and `{}` do not meet square to their section",
                 self.face_name(0), self.face_name(1)));
@@ -613,7 +784,7 @@ impl Edge<'_> {
                 self.face_name(0), self.face_name(1)));
         }
         let strokes = wedge.strokes();
-        if matches!(carry, Carry::Turn) && strokes.iter().any(|s| s.least_x() <= self.tol) {
+        if matches!(carry, Carry::Turn { .. }) && strokes.iter().any(|s| s.least_x() <= self.tol) {
             return Err(format!("the ball between `{}` and `{}` reaches past their axis",
                 self.face_name(0), self.face_name(1)));
         }
@@ -626,19 +797,44 @@ impl Edge<'_> {
                     corner: section.lift(corner[0], corner[1]), along: section.normal(), d: d[k], length, setback },
                 (Carry::Prism { length }, Side::Circle { .. }) => Band::Sleeve {
                     section, length, turn: turned_from(stroke, k) },
-                (Carry::Turn, Side::Line) => Band::Meridian {
-                    o: section.o, axis: section.v, corner, dm: flat(d[k]), setback },
-                (Carry::Turn, Side::Circle { .. }) => Band::Arc { o: section.o, axis: section.v, turn: turned_from(stroke, k) },
+                (Carry::Turn { sweep }, Side::Line) => Band::Meridian {
+                    o: section.o, axis: section.v, corner, dm: flat(d[k]), setback, sector: sector(sweep) },
+                (Carry::Turn { sweep }, Side::Circle { .. }) =>
+                    Band::Arc { o: section.o, axis: section.v, turn: turned_from(stroke, k), sector: sector(sweep) },
             };
             self.holds(k, &band)?;
         }
-        if let Carry::Prism { length } = carry {
+        // a ring's section stands where its edge starts: the middle's turned back half the sweep
+        let section = match carry { Carry::Turn { sweep } => turned_basis(&section, -0.5 * sweep), _ => section };
+        let piece = Piece { section, wedge, carry };
+        // each end flush, or open for the piece it continues into
+        let mut open = Vec::new();
+        let mut flush = Vec::new();
+        if !piece.whole() {
+            let fd = [flat(d[0]), flat(d[1])];
             for end in 0..2 {
-                let touch = wedge.touch.map(|t| add(section.lift(t[0], t[1]), scale(section.normal(), end as f64 * length)));
-                self.stops(end, d, touch, section.normal())?;
+                let at = piece.at(end as f64);
+                let w = &piece.wedge;
+                let touch = w.touch.map(|t| at.lift(t[0], t[1]));
+                let stopped = self.stops(end, &at, fd, touch);
+                if stopped.is_ok() {
+                    flush.push(Flush { vertex: e.v[end], label: format!("`{}` with `{}`", self.face_name(0), self.face_name(1)) });
+                }
+                if let Err(refusal) = stopped {
+                    // the way the piece is carried there: along a prism, round a ring
+                    let carried = match carry { Carry::Prism { .. } => at.normal(), Carry::Turn { .. } => cross(at.v, at.u) };
+                    open.push(Open {
+                        vertex: e.v[end],
+                        outward: scale(carried, if end == 0 { -1.0 } else { 1.0 }),
+                        corner: at.lift(w.corner[0], w.corner[1]),
+                        centre: at.lift(w.centre[0], w.centre[1]),
+                        touch,
+                        refusal,
+                    });
+                }
             }
         }
-        Ok(Some((Piece { section, wedge, carry }, concave)))
+        Ok(Some((piece, concave, open, flush)))
     }
 
     fn unsupported(&self, curve: &str) -> String {
@@ -674,12 +870,15 @@ impl Edge<'_> {
         Ok(())
     }
 
-    /// **A straight fillet stops flush at end `end`**: on each face the edge beside it at that end
-    /// leaves the corner across the band and reaches the touch there (`touch`), lying in a plane
-    /// square to the edge (along `along`) — so the ball's section stands in one plane there and the
-    /// fillet ends in it. A face running on past the end needs the ball to turn the corner (rung 3).
-    fn stops(&self, end: usize, d: [V; 2], touch: [V; 2], along: V) -> Result<(), String> {
+    /// **A fillet stops flush at end `end`**, its section there `at`: on each face the edge beside
+    /// it at that end leaves the corner across the band (along `d`, in the section) and reaches the
+    /// touch there (`touch`), lying in a plane that is the section's — so the ball's section
+    /// stands in one plane there and the fillet ends in it. A face running on past the end needs
+    /// the ball to turn the corner (rung 3), or the next piece of a chain to carry it on.
+    fn stops(&self, end: usize, at: &Basis, d: [[f64; 2]; 2], touch: [V; 2]) -> Result<(), String> {
         let vertex = self.brep.edges[self.edge].v[end];
+        let along = at.normal();
+        let d = d.map(|f| add(scale(at.u, f[0]), scale(at.v, f[1])));
         for k in 0..2 {
             let (fi, (li, ci)) = self.uses[k];
             let l = &self.brep.faces[fi].loops[li];

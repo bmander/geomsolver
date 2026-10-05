@@ -84,6 +84,90 @@ struct Arranged<'a> {
 }
 
 /// `a` combined with `b` by `op`, to `tol` (a length).
+/// **Two solids sharing a face, joined there** (the pieces of a chain of fillets, each ending in
+/// the section the next begins in): where a plane face of `a` and one of `b` are the same face —
+/// one plane, material either side of it, every edge of the one an edge of the other, end for end
+/// and through the middle, within `tol` — the two faces go and their edges become one, used by
+/// the faces beside them. Nothing is intersected, so `a` and `b` must meet nowhere else: the
+/// caller's to know. `None` where they share no such face.
+pub fn glued(a: &Brep,b: &Brep,tol: f64) -> Option<Brep> {
+    use super::geom::Surface;
+    let near = |p: V,q: V| distance(p,q) <= tol;
+    let outward = |f: &Face| match f.surface { Surface::Plane(fr) => Some(if f.reversed { fr.z.map(|x| -x) } else { fr.z }),_ => None };
+    let middle = |s: &Brep,e: usize| s.edges[e].point(0.5*(s.edges[e].t[0]+s.edges[e].t[1]),&s.vertices);
+    let ends = |s: &Brep,e: usize| s.edges[e].v.map(|v| s.vertices[v as usize].p);
+    // each face of `b` the same as one of `a`: its edges matched to `a`'s, and whether each runs the
+    // other way
+    let mut shared: Vec<(usize,usize)> = Vec::new();
+    let mut edge_of: BTreeMap<usize,(u32,bool)> = BTreeMap::new();
+    for (i,fa) in a.faces.iter().enumerate() {
+        let Some(na) = outward(fa) else { continue };
+        for (j,fb) in b.faces.iter().enumerate() {
+            let Some(nb) = outward(fb) else { continue };
+            if shared.iter().any(|&(_,k)| k == j) || crate::space::dot(na,nb) > -1.+1e-9 { continue }
+            if !super::ssi::same(&fa.surface,&fb.surface,tol) { continue }
+            let (la,lb): (Vec<usize>,Vec<usize>) = (fa.loops.iter().flatten().map(|c| c.edge as usize).collect(),
+                fb.loops.iter().flatten().map(|c| c.edge as usize).collect());
+            if la.len() != lb.len() { continue }
+            let matched: Option<Vec<(usize,u32,bool)>> = lb.iter().map(|&eb| la.iter().find_map(|&ea| {
+                let ([a0,a1],[b0,b1]) = (ends(a,ea),ends(b,eb));
+                let flip = if near(a0,b0) && near(a1,b1) { false } else if near(a0,b1) && near(a1,b0) { true } else { return None };
+                near(middle(a,ea),middle(b,eb)).then_some((eb,ea as u32,flip))
+            })).collect();
+            let Some(matched) = matched else { continue };
+            shared.push((i,j));
+            for (eb,ea,flip) in matched { edge_of.insert(eb,(ea,flip)); }
+        }
+    }
+    if shared.is_empty() { return None }
+    let mut out = a.clone();
+    // `b`'s vertices: those of a shared edge are `a`'s, the rest its own
+    let mut vertex_of: BTreeMap<u32,u32> = BTreeMap::new();
+    for (&eb,&(ea,flip)) in &edge_of {
+        let (vb,va) = (b.edges[eb].v,a.edges[ea as usize].v);
+        let va = if flip { [va[1],va[0]] } else { va };
+        for k in 0..2 { vertex_of.insert(vb[k],va[k]); }
+    }
+    for (i,v) in b.vertices.iter().enumerate() {
+        if !vertex_of.contains_key(&(i as u32)) { vertex_of.insert(i as u32,out.vertices.len() as u32); out.vertices.push(v.clone()); }
+    }
+    // `b`'s edges: a shared one is `a`'s (its tolerance the larger), the rest its own
+    let mut new_edge: Vec<(u32,bool)> = Vec::with_capacity(b.edges.len());
+    for (i,e) in b.edges.iter().enumerate() {
+        if let Some(&(ea,flip)) = edge_of.get(&i) {
+            let t = &mut out.edges[ea as usize].tol;
+            *t = t.max(e.tol);
+            new_edge.push((ea,flip));
+        } else {
+            let mut e = e.clone();
+            e.v = e.v.map(|v| vertex_of[&v]);
+            out.edges.push(e);
+            new_edge.push(((out.edges.len()-1) as u32,false));
+        }
+    }
+    out.faces = a.faces.iter().enumerate().filter(|&(i,_)| !shared.iter().any(|&(k,_)| k == i)).map(|(_,f)| f.clone()).collect();
+    for (j,f) in b.faces.iter().enumerate() {
+        if shared.iter().any(|&(_,k)| k == j) { continue }
+        let mut f = f.clone();
+        for c in f.loops.iter_mut().flatten() {
+            let (e,flip) = new_edge[c.edge as usize];
+            if flip {
+                // the pcurve runs in its edge's direction: from the other end, its ends swapped
+                let old = &b.edges[c.edge as usize];
+                let (u0,u1) = (c.pcurve.at(old.t[0],old,&f.surface,&b.vertices),c.pcurve.at(old.t[1],old,&f.surface,&b.vertices));
+                c.pcurve = match c.pcurve { Pcurve::Line {..} => Pcurve::Line {a:u1,b:u0},_ => Pcurve::Inverse {a:u1,b:u0} };
+                c.reversed = !c.reversed;
+            } else if let Pcurve::Curve(_) = c.pcurve {
+                let old = &b.edges[c.edge as usize];
+                c.pcurve = Pcurve::Inverse {a:c.pcurve.at(old.t[0],old,&f.surface,&b.vertices),b:c.pcurve.at(old.t[1],old,&f.surface,&b.vertices)};
+            }
+            c.edge = e;
+        }
+        out.faces.push(f);
+    }
+    Some(out)
+}
+
 pub fn boolean(a: &Brep,b: &Brep,op: Op,tol: f64) -> Result<Brep,String> {
     let Arranged {solids,located,pool,out,pieces,..} = arrange(a,b,tol)?;
     let mut kept: Vec<Face> = Vec::new();
@@ -240,15 +324,48 @@ fn arrange<'a>(a: &'a Brep,b: &'a Brep,tol: f64) -> Result<Arranged<'a>,String> 
                     // `tol` times their size off the curve they touch along)
                     let contact: Vec<usize> = along_face[1][fb].iter().chain(&along_face[0][fa]).copied().collect();
                     let spread = 8.*(tol*distance(boxes[0][fa].0,boxes[0][fa].1).max(distance(boxes[1][fb].0,boxes[1][fb].1))).sqrt();
+                    // an edge they touch along, over its stretch
+                    let stretch = |we: usize| -> Option<(&super::geom::Curve,[f64;2])> {
+                        let EdgeCurve::Curve(c) = &edges[we].curve else { return None };
+                        Some((c,edges[we].t))
+                    };
                     let touching = |p: V| norm(crate::space::cross(sa.gradient(p),sb.gradient(p))) < super::ssi::SHALLOW
                         && contact.iter().any(|&we| {
-                            let EdgeCurve::Curve(c) = &edges[we].curve else { return false };
+                            let Some((c,span)) = stretch(we) else { return false };
                             let mut t = c.inverse(p);
-                            if let Some(period) = c.period() { t = around(t,edges[we].t[0],period); }
-                            let t = t.clamp(edges[we].t[0],edges[we].t[1]);
+                            if let Some(period) = c.period() { t = around(t,span[0],period); }
+                            let t = t.clamp(span[0],span[1]);
                             distance(c.point(t),p) <= spread.max(8.*tol)
                         });
                     seeds.retain(|&p| !touching(p));
+                    // **where the two touch at a point**: to second order their meeting there is the
+                    // point alone, or two branches crossing at it (`ssi::touch`); where none of the
+                    // branches runs into both faces the two meet there alone — nothing is traced
+                    // through it. Read wherever a seed, a march or the search comes where the two
+                    // nearly touch; a touch with a branch into both is left to the trace, which
+                    // refuses it
+                    let least = distance(boxes[0][fa].0,boxes[0][fa].1).min(distance(boxes[1][fb].0,boxes[1][fb].1));
+                    let bare: std::cell::RefCell<Vec<super::ssi::Touch>> = std::cell::RefCell::new(Vec::new());
+                    let alone = |p: V| -> bool {
+                        if bare.borrow().iter().any(|t| distance(t.at,p) <= t.radius) { return true }
+                        if norm(crate::space::cross(sa.gradient(p),sb.gradient(p))) >= super::ssi::SHALLOW { return false }
+                        let Some(at) = super::ssi::touch_near(sa,sb,p,tol) else { return false };
+                        let Some(t) = super::ssi::touch(sa,sb,at) else { return false };
+                        if t.radius > 0.05*least || distance(at,p) > t.radius { return false }
+                        let place = |side: usize,fi: usize,d: V| {
+                            let s = &solids[side].faces[fi].surface;
+                            let q = crate::space::add(at,crate::space::scale(d,2.*t.radius));
+                            located[side].face_place(fi,s.point(s.inverse(q)))
+                        };
+                        if t.branches.iter().any(|&d| place(0,fa,d) != Place::Out && place(1,fb,d) != Place::Out) { return false }
+                        if debug { eprintln!("brep: A{fa} {} × B{fb} {}: touch alone at {:?} ({} branches, radius {:.1e})",
+                            sa.kind(),sb.kind(),t.at,t.branches.len(),t.radius); }
+                        bare.borrow_mut().push(t);
+                        true
+                    };
+                    // beside a meeting already known: where the two touch beside an edge they touch
+                    // along, or about a point they touch at alone
+                    let beside = |p: V| touching(p) || alone(p);
                     let (lo,hi): (V,V) = (std::array::from_fn(|k| boxes[0][fa].0[k].max(boxes[1][fb].0[k])),
                         std::array::from_fn(|k| boxes[0][fa].1[k].min(boxes[1][fb].1[k])));
                     let started = crate::clock::Instant::now();
@@ -260,7 +377,7 @@ fn arrange<'a>(a: &'a Brep,b: &'a Brep,tol: f64) -> Result<Arranged<'a>,String> 
                         .filter(|&p| !touching(p)));
                     if debug { eprintln!("brep: A{fa} {} × B{fb} {}: tracing from {} seed(s) {seeds:?}",sa.kind(),sb.kind(),seeds.len()); }
                     let started = crate::clock::Instant::now();
-                    let mut traced = super::ssi::trace(sa,sb,&seeds,lo,hi,tol)?;
+                    let mut traced = super::ssi::trace_beside(sa,sb,&seeds,&beside,lo,hi,tol)?;
                     // a closed curve inside both faces crosses no edge and has no seed: between
                     // analytic surfaces the smaller face is searched for what no curve yet passes,
                     // each found traced in turn, until the search shows nothing else is there
@@ -271,14 +388,22 @@ fn arrange<'a>(a: &'a Brep,b: &'a Brep,tol: f64) -> Result<Arranged<'a>,String> 
                         // more separate loops than any face pair this kernel builds meets in
                         const LOOPS: usize = 64;
                         let mut found = 0;
-                        while let Some(p) = super::ssi::unseen(mine,domain,theirs,&traced,lo,hi,tol)? {
+                        // the edges they touch along are meetings already known, over their own stretch
+                        let along: Vec<super::geom::Curve> = contact.iter().filter_map(|&we| {
+                            let (c,t) = stretch(we)?;
+                            let pts = (0..=256).map(|j| c.point(t[0]+(t[1]-t[0])*j as f64/256.)).collect();
+                            Some(super::geom::Curve::Traced(std::sync::Arc::new(super::geom::Traced {
+                                a:sa.clone(),b:sb.clone(),pts,closed:false})))
+                        }).collect();
+                        let known = |traced: &[super::geom::Curve]| traced.iter().chain(&along).cloned().collect::<Vec<_>>();
+                        while let Some(p) = super::ssi::unseen_beside(mine,domain,theirs,&known(&traced),&beside,lo,hi,tol)? {
                             if debug { eprintln!("brep: A{fa} {} × B{fb} {}: a meeting no edge crosses, at {p:?}",sa.kind(),sb.kind()); }
                             found += 1;
                             if found > LOOPS {
                                 return Err(format!("a {} and a {} meet in more than {LOOPS} curves no edge crosses, not built yet",
                                     sa.kind(),sb.kind()))
                             }
-                            let more = super::ssi::trace(sa,sb,&[p],lo,hi,tol)?;
+                            let more = super::ssi::trace_beside(sa,sb,&[p],&beside,lo,hi,tol)?;
                             if more.is_empty() {
                                 return Err(format!("a {} and a {} meet at {p:?}, where no edge crosses, in a curve that could not be \
                                     traced, not built yet",sa.kind(),sb.kind()))

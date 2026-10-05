@@ -330,12 +330,85 @@ fn solve3(m: [V;3],rhs: V) -> V {
 /// has a singular point): refused, not traced (one degree).
 pub(crate) const SHALLOW: f64 = 0.0175;
 
+/// **Where two surfaces touch at a point**: their meeting there, to second order. Over the plane
+/// they share at `p`, `b`'s signed distance along `a` grows as `½ tᵀ Q t`, `Q` the difference of
+/// their second fundamental forms (`a`'s turned by the sign of their normals' agreement): a
+/// definite `Q` touches at `p` alone, an indefinite one meets in two branches crossing there along
+/// its null directions. A touch: those directions (each either way; none for a definite `Q`), and
+/// the radius within which the two stand nearer parallel than a trace can follow (`SHALLOW`).
+/// `None` where `Q` is too near singular to say (the two touch along a curve, or closer than
+/// second order).
+#[derive(Clone,Debug)]
+pub struct Touch { pub at: V,pub branches: Vec<V>,pub radius: f64 }
+
+pub fn touch(a: &Surface,b: &Surface,p: V) -> Option<Touch> {
+    let (na,nb) = (unit(a.gradient(p)),unit(b.gradient(p)));
+    let agree = if dot(na,nb) < 0. { -1. } else { 1. };
+    let f = Frame::about(p,na);
+    let (e1,e2) = (f.x,f.y);
+    // each surface's second derivatives along the shared plane, by its exact gradient either side
+    let h = 1e-4*a.feature().min(b.feature()).min(1e6).max(1e-9);
+    let hessian = |s: &Surface,t: V| scale(sub(s.gradient(add(p,scale(t,h))),s.gradient(sub(p,scale(t,h)))),0.5/h);
+    let (ha1,ha2,hb1,hb2) = (hessian(a,e1),hessian(a,e2),hessian(b,e1),hessian(b,e2));
+    let q11 = dot(e1,hb1)-agree*dot(e1,ha1);
+    let q22 = dot(e2,hb2)-agree*dot(e2,ha2);
+    let q12 = 0.5*(dot(e1,hb2)-agree*dot(e1,ha2)+dot(e2,hb1)-agree*dot(e2,ha1));
+    let (mean,dev) = (0.5*(q11+q22),(0.25*(q11-q22)*(q11-q22)+q12*q12).sqrt());
+    let (big,least) = (mean.abs()+dev,(mean.abs()-dev).abs());
+    if !(least > 1e-6*big && big > 0.) { return None }
+    let radius = 2.*SHALLOW/least;
+    // Q(ψ) = mean + B cos 2ψ + C sin 2ψ (B, C its deviation's parts), zero where they cancel
+    let branches = if q11*q22-q12*q12 > 0. { Vec::new() } else {
+        let phase = (2.*q12).datan2(q11-q22);
+        let off = (-mean/dev).clamp(-1.,1.).dacos();
+        [phase+off,phase-off].into_iter().flat_map(|w| {
+            let (sn,cs) = (0.5*w).dsin_cos();
+            let t = add(scale(e1,cs),scale(e2,sn));
+            [t,scale(t,-1.)]
+        }).collect()
+    };
+    Some(Touch {at:p,branches,radius})
+}
+
+/// **The point near `p` where `a` and `b` touch**: on `a`, where `b`'s signed distance along it is
+/// stationary — their normals parallel there — by Newton over `a`'s tangent plane, its
+/// derivatives by differences; `None` where that does not settle, or settles off `b` (the two pass
+/// apart or cross there, and do not touch).
+pub fn touch_near(a: &Surface,b: &Surface,p: V,tol: f64) -> Option<V> {
+    let on_a = |q: V| a.point(a.inverse(q));
+    let h = 1e-4*a.feature().min(b.feature()).min(1e6).max(1e-9);
+    let mut x = on_a(p);
+    for _ in 0..32 {
+        let f = Frame::about(x,a.gradient(x));
+        let g = |s: f64,t: f64| b.implicit(on_a(add(x,add(scale(f.x,s),scale(f.y,t)))));
+        let g0 = g(0.,0.);
+        let (gs,gt) = ((g(h,0.)-g(-h,0.))/(2.*h),(g(0.,h)-g(0.,-h))/(2.*h));
+        let (gss,gtt) = ((g(h,0.)-2.*g0+g(-h,0.))/(h*h),(g(0.,h)-2.*g0+g(0.,-h))/(h*h));
+        let gst = (g(h,h)-g(h,-h)-g(-h,h)+g(-h,-h))/(4.*h*h);
+        let det = gss*gtt-gst*gst;
+        if !(det.abs() > 0.) { return None }
+        let (ds,dt) = ((-gs*gtt+gt*gst)/det,(-gt*gss+gs*gst)/det);
+        x = on_a(add(x,add(scale(f.x,ds),scale(f.y,dt))));
+        if ds.hypot(dt) <= 1e-3*tol { return (b.implicit(x).abs() <= 8.*tol).then_some(x) }
+    }
+    None
+}
+
 /// The curves two surfaces meet in, traced through `seeds` (points on both) within the box
 /// `[lo, hi]`: from each seed not already on a traced curve, a march along `∇a × ∇b` both ways
 /// — each step predicted along the tangent and pulled onto both surfaces, shortened while the
 /// tangent turns more than a few degrees — until it leaves the box or comes back to where it
-/// began. A seed where the two are tangent (their normals parallel) is refused.
+/// began. A seed where the two are tangent (their normals parallel) is refused, but for one
+/// `beside` a meeting already known — about a point where the two touch and meet in nothing on
+/// the faces asked of, or along an edge they touch along (`boolean`): there a seed traces nothing
+/// and a march ends.
 pub fn trace(a: &Surface,b: &Surface,seeds: &[V],lo: V,hi: V,tol: f64) -> Result<Vec<Curve>,String> {
+    trace_beside(a,b,seeds,&|_| false,lo,hi,tol)
+}
+
+/// `trace`, ending where it comes `beside` a known meeting.
+pub fn trace_beside(a: &Surface,b: &Surface,seeds: &[V],beside: &dyn Fn(V) -> bool,lo: V,hi: V,tol: f64)
+    -> Result<Vec<Curve>,String> {
     use super::geom::Traced;
     let tangent = |p: V| -> Option<V> {
         let t = cross(a.gradient(p),b.gradient(p));
@@ -355,7 +428,7 @@ pub fn trace(a: &Surface,b: &Surface,seeds: &[V],lo: V,hi: V,tol: f64) -> Result
     for &seed in seeds {
         let p0 = probe.project(seed);
         if traced_so_far.iter().any(|c| crate::space::distance(c.point(c.inverse(p0)),p0) <= 8.*tol) { continue }
-        let Some(_) = tangent(p0) else { return Err(shallow(p0)) };
+        let Some(_) = tangent(p0) else { if beside(p0) { continue } return Err(shallow(p0)) };
         let mut halves: Vec<Vec<V>> = Vec::new();
         let mut closed = false;
         for sense in [1.,-1.] {
@@ -379,7 +452,11 @@ pub fn trace(a: &Surface,b: &Surface,seeds: &[V],lo: V,hi: V,tol: f64) -> Result
                     }
                     break
                 }
-                let Some(tq) = tangent(q) else { return Err(shallow(q)) };
+                let Some(tq) = tangent(q) else {
+                    // into a known meeting: what runs on from there is known, or off the faces
+                    if beside(q) { pts.push(q); break }
+                    return Err(shallow(q))
+                };
                 let tq = if dot(tq,t) < 0. { scale(tq,-1.) } else { tq };
                 if dot(tq,t) < 0.996 && h > h0*1e-4 { h /= 2.; continue }
                 // back where it began: this step's chord passes the start, a closed curve
@@ -508,6 +585,15 @@ fn samples_along(c: &Curve,spacing: f64) -> Vec<V> {
 /// guessed. Two curves nearer than `leaf` are not told apart. `Ok(None)`: every part of the face is
 /// clear of `b` or beside a known curve. Both surfaces must be `searchable`.
 pub fn unseen(a: &Surface,domain: [[f64;2];2],b: &Surface,known: &[Curve],lo: V,hi: V,tol: f64) -> Result<Option<V>,String> {
+    unseen_beside(a,domain,b,known,&|_| false,lo,hi,tol)
+}
+
+/// `unseen`, a cell whose meeting (its middle pulled onto both) is `beside` a known meeting (a
+/// point where the two touch alone, its branches traced up to it) answered as beside a known
+/// curve.
+#[allow(clippy::too_many_arguments)]
+pub fn unseen_beside(a: &Surface,domain: [[f64;2];2],b: &Surface,known: &[Curve],beside: &dyn Fn(V) -> bool,lo: V,hi: V,tol: f64)
+    -> Result<Option<V>,String> {
     // a cap on the cells asked, far past any face this kernel builds, that a pathology ends at
     const CELLS: usize = 4_000_000;
     let pad = 4.*tol;
@@ -554,6 +640,7 @@ pub fn unseen(a: &Surface,domain: [[f64;2];2],b: &Surface,known: &[Curve],lo: V,
         if reach <= leaf {
             if near_known(p,2.*reach+spacing) { continue }
             let q = probe.project(p);
+            if beside(q) { continue }
             if a.implicit(q).abs().max(b.implicit(q).abs()) <= 16.*tol {
                 // a meeting beyond the shared box is on neither face; one on a known curve says
                 // nothing of this cell, which is halved

@@ -858,15 +858,23 @@ fn one_closed_intersection_found_does_not_hide_another() {
 }
 
 #[test]
-fn a_ball_touching_a_torus_is_refused_not_missed() {
-    // resting on the top of the tube: the two meet in one point, where no curve can be traced
+fn a_ball_resting_on_a_torus_touches_it_alone_and_one_sunk_in_is_not_missed() {
+    // resting on the top of the tube the two touch at one point, read to second order wherever
+    // the ball's seam runs: the meeting there is that point alone, and the ring is unchanged
     use gcs_core::brep::boolean::{boolean,Op};
     let ring = torus(3.,1.);
     let at = 3./2f64.sqrt();
     for (seam,axis,normal) in [("about y",[0.,1.,0.],XY),("about z",[0.,0.,1.],XZ)] {
         let ball = ball_about([at,at,1.2],0.2,axis,normal);
-        let out = boolean(&ring,&ball,Op::Cut,1e-9);
-        assert!(out.as_ref().is_err_and(|e| e.contains("touch")),"{seam}: {:?}",out.map(|b| volume(&b)));
+        let out = boolean(&ring,&ball,Op::Cut,1e-9).unwrap_or_else(|e| panic!("{seam}: {e}"));
+        out.check(1e-8).unwrap();
+        close(volume(&out),volume(&ring));
+        // sunk a thousandth in, they cross in a small circle — no touch, though nearly one: traced,
+        // never read as a point alone, the ring less a lens no larger than the ball's cap that deep
+        let sunk = ball_about([at,at,1.199],0.2,axis,normal);
+        let out = boolean(&ring,&sunk,Op::Cut,1e-9).unwrap_or_else(|e| panic!("{seam}: {e}"));
+        let (lens,cap) = (volume(&ring)-volume(&out),PI*1e-6*(3.*0.2-1e-3)/3.);
+        assert!(lens > 0.1*cap && lens < cap,"{seam}: {lens} against a cap of {cap}");
     }
 }
 
@@ -1227,4 +1235,44 @@ fn a_canal_touching_its_operands_along_an_edge_is_unioned_with_them() {
     assert!((got-want).abs() <= 1e-9*want,"{got} against {want}");
     // the pipes' faces it rounds are kept, cut back to the contacts: nothing is left of the edge
     assert!(whole.faces.len() > tee.faces.len());
+}
+
+/// Two solids ending in one face, material either side of it, are joined there: the face goes,
+/// its edges are shared by the faces beside them, nothing is intersected.
+#[test]
+fn solids_sharing_a_face_are_glued_along_it() {
+    use gcs_core::brep::boolean::glued;
+    let square = vec![poly(&[[1.,0.,0.],[2.,0.,0.],[2.,0.,1.],[1.,0.,1.]])];
+    let p = Profile {names:vec![],origin:[0.;3],normal:XZ,loops:square};
+    // a quarter turn about z, from the square on into +y, and a prism behind it into −y
+    let turned = revolve(&p,[0.;3],[0.,0.,1.],PI/2.).unwrap();
+    let straight = prism(&p,-3.,0.).unwrap();
+    for (a,b) in [(&turned,&straight),(&straight,&turned)] {
+        let g = glued(a,b,1e-9).expect("they share the square");
+        g.check(1e-9).unwrap();
+        close(volume(&g),3.+PI*(4.-1.)/4.);
+        assert_eq!(g.faces.len(),a.faces.len()+b.faces.len()-2);
+    }
+    // two solids that only touch share no face
+    assert!(glued(&straight,&block([5.,5.,5.],[6.,6.,6.]),1e-9).is_none());
+}
+
+/// Where two faces touch at a point of both their boundaries and their meeting runs into neither
+/// beyond it, they meet there alone: a quarter torus whose start touches a block's side at its
+/// inner equator (the plane there crosses the torus in two branches, off both faces) is their
+/// union, as it was before the second-order reading refused it as nearly touching.
+#[test]
+fn a_quarter_torus_touching_a_block_at_a_corner_meets_it_there_alone() {
+    use gcs_core::brep::boolean::{boolean,Op};
+    // the torus about z, its tube of radius 1 about the circle of radius 3, from the x axis on
+    // into +y; the block below y = 0 with its side x = 2 at the inner equator
+    let tube = vec![vec![arc([3.,0.,0.],1.,XZ,[1.,0.,0.],None)]];
+    let quarter = revolve(&Profile {names:vec![],origin:[0.;3],normal:XZ,loops:tube},[0.;3],[0.,0.,1.],PI/2.).unwrap();
+    let b = boolean(&block([-1.,-3.,-1.],[2.,0.,1.]),&quarter,Op::Union,1e-9).unwrap();
+    b.check(1e-8).unwrap();
+    close(volume(&b),18.+1.5*PI*PI);
+    // the block run on past y = 0: the torus cuts into it through that point, along a branch into
+    // both faces, which no trace follows through the touch: refused, never read as none
+    let crossed = boolean(&block([-1.,-3.,-1.],[2.,1.,1.]),&quarter,Op::Union,1e-9);
+    assert!(crossed.as_ref().is_err_and(|e| e.contains("nearly touching")),"{:?}",crossed.map(|b| volume(&b)));
 }

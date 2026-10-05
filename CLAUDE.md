@@ -296,7 +296,20 @@ the piece, 1e-4 for a body taking it.
 `tests/fillet.rs` (tee, pin, bore rim against independent quadratures), `gcs-cli/tests/fillet_oracle.rs`
 (OCCT's `BRepFilletAPI_MakeFillet` on its unified union, `solvent_cad_fillet`, links `TKFillet`; its
 own face set aside, OCCT approximating a sphere's), `rust/examples/solid_fillet{,_turned,_knob,_rail,
-_tee,_bore}.sv`. Open: open traced edges and corners (rung 3), B-spline faces, rung 4.
+_tee,_bore,_slot}.sv`.
+**A chain of tangent edges** (rung 3): a ring may be partial (`Carry::Turn { sweep }`, its section at
+the edge's start; field: the ring bounded by a pie-slice prism); each end of a piece is flush
+(`stops`, against `Piece::at(f)`) or `Open`, and `derive` pairs open ends whose sections agree
+(`paired`: opposite ways, one ball) — two flush ends at a corner are refused (vertex blends are later).
+Bands of a partial ring read only within its `Sector`. The recipe **glues** pieces that share a cap
+(`boolean::glued`: a coincident plane face either side, edges matched; nothing intersected) and
+unions the rest. Kernel rule it found: where two faces nearly touch (a seed, a march or the search
+comes there), the touch is settled (`ssi::touch_near`: stationary distance) and read to second
+order (`ssi::touch`: the difference of their second fundamental forms): definite, or no branch of
+the meeting entering both faces (probed by `face_place`), and they meet there alone — a trace or
+search `beside` it, or an edge they touch along, stops there (`trace_beside`, `unseen_beside`); a
+branch into both, or no touch at all (crossing, sunk), is still traced or refused. Open: open traced edges, vertex blends, variable radius,
+B-spline faces (rung 3), rung 4.
 **Continuous motion solids:** `removal := solid(tool, under: generating, from: -30deg, to: 30deg)`
 is the union over the whole interval, not posed meshes; `at:` and intervals exclusive.
 `MaterialField::read` promotes static DAGs when a sweep appears; nested sweeps refused; caches
