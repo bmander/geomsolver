@@ -700,8 +700,8 @@ pub(super) fn settle_deferred(
                 (*span, *stmt, r.map_err(|e| format!("`{text}`: {e}")))
             }
             Deferred::At { point, at, names, span, stmt } => {
-                let r = place_of(sk, res, *point, at, names).map(|(x, y)| {
-                    for (p, v) in sk.point_params(*point).into_iter().zip([x, y]) {
+                let r = place_of(sk, res, *point, at, names).map(|place| {
+                    for (p, v) in sk.point_all_params(*point).into_iter().zip(place) {
                         let p = &mut sk.params[p as usize];
                         if !p.fixed {
                             p.value = v;
@@ -732,15 +732,60 @@ pub(super) fn settle_deferred(
 /// Where `hint(at: …)` puts `point` on the sheet: the seed of the point it names, the edge of
 /// the circle it names at the bearing given, or a step from the point it names — `by:` (1 if
 /// unsaid) of the way toward another or of a line's run — turned `turn:` about it.  Each place
-/// is read in `point`'s view (`seed_in`); `at_seed` is the traced counterpart.
+/// is read in `point`'s view (`seed_in`); `at_seed` is the traced counterpart.  The numbers
+/// are `point`'s own: two in its plane, three for a point in space.
 fn place_of(
     sk: &Sketch,
     res: &Resolver,
     point: usize,
     a: &AtRef,
     names: &[(String, String)],
+) -> Result<Vec<f64>, String> {
+    if sk.points[point].z.is_none() {
+        return place_in(sk, res, sk.plane_of(point), a, names).map(|(x, y)| vec![x, y]);
+    }
+    // a point in space: the place is read in the plane it is drawn in and lifted from there,
+    // or, where it stands in space itself, read where it stands
+    let e = place(sk, res, &a.what)?;
+    let home = match e.kind {
+        EntKind::Plane => Some(e.i()),
+        EntKind::Circle => sk.plane_of(sk.circles[e.i()].center as usize),
+        _ => sk.plane_of(e.i()),
+    };
+    if home.is_some() || e.kind != EntKind::Point {
+        return place_in(sk, res, home, a, names).map(|q| sk.world_in(home, q).to_vec());
+    }
+    if a.turn.is_some() || a.bearing.is_some() || a.x.is_some() || a.y.is_some() {
+        return Err("a turn or a bearing is taken in a plane, and this place stands in space"
+            .to_string());
+    }
+    let at = sk.world_point(e.i());
+    let Some(t) = &a.toward else {
+        if a.along.is_some() {
+            return Err("a step along a line is taken in a plane; step `toward:` a point".into());
+        }
+        return Ok(at.to_vec());
+    };
+    let b = place(sk, res, t)?;
+    if b.kind != EntKind::Point {
+        return Err(format!("a step is taken toward a point, not a {}", b.kind.as_str()));
+    }
+    let f = match &a.by {
+        Some((text, _)) => seed_eval(sk, res, text, names).map_err(|m| format!("`{text}`: {m}"))?,
+        None => 1.0,
+    };
+    let to = sk.world_point(b.i());
+    Ok((0..3).map(|k| at[k] + f * (to[k] - at[k])).collect())
+}
+
+/// `place_of` read in `view`'s coordinates.
+fn place_in(
+    sk: &Sketch,
+    res: &Resolver,
+    view: Option<usize>,
+    a: &AtRef,
+    names: &[(String, String)],
 ) -> Result<(f64, f64), String> {
-    let view = sk.plane_of(point);
     let e = place(sk, res, &a.what)?;
     // a place's number: what the text comes to, or what an unwritten key means
     let number = |t: &Option<(String, Span)>, unsaid: f64| match t {

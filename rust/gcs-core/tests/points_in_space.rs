@@ -63,3 +63,15 @@ fn planes_stacked_by_a_distance_stand_apart_along_their_normal() {
     assert!(ob[0].abs() < 1e-9 && ob[2].abs() < 1e-9 && (ob[1].abs() - 12.0).abs() < 1e-9,
         "{ob:?}");
 }
+
+#[test]
+fn a_point_in_space_is_seeded_where_its_place_stands() {
+    let e = read("use std\nin std.top {\n  a := point hint(x: 10, y: 20)\n}\n\
+        p := point hint(x: 1, y: 2, z: 3)\nr := point hint(x: 5, y: 6, z: 7)\n\
+        q := point hint(at: a)\nm := point hint(at: p, toward: r, by: 0.5)\n\
+        s := point hint(at: std.top, x: 3, y: 4)\n");
+    let at = |n: &str| e.sketch.world_point(ent(&e, n).i());
+    assert_eq!(at("q"), [10.0, 20.0, 0.0], "a point drawn in the top, read where it stands");
+    assert_eq!(at("m"), [3.0, 4.0, 5.0], "half way from p to r, in space");
+    assert_eq!(at("s"), [3.0, 4.0, 0.0], "a place in the top's own coordinates");
+}
