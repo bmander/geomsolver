@@ -219,3 +219,39 @@ fn isometric_camera_matches_the_old_helper_plane_without_model_geometry() {
     // the camera made no plane of the model's: only the standard ones `use std` brings
     assert_eq!(plain.sketch.planes.len(), 4);
 }
+
+#[test]
+fn a_sketch_draws_the_plane_it_is_from_in_that_planes_coordinates() {
+    // one line in the front and one in the top, at different places in their own coordinates
+    let model = "\
+unit mm
+use std
+in std.front {
+  f := line
+  fix(x == 0, y == 0) f.p1
+  fix(x == 10, y == 0) f.p2
+}
+in std.top {
+  t := line
+  fix(x == 0, y == 0) t.p1
+  fix(x == 0, y == 20) t.p2
+}
+";
+    let compile = |sheet: &str| drawing::compile(&format!("model m from \"part.sv\" sheet s {{ {sheet} }}"),
+        "drawing.svd", None,
+        &mut |path, _| (path == "part.sv").then(|| ("part.sv".into(), model.into())));
+    // every drawn line's two ends, in paper pixels
+    let lines = |svg: &str| svg.lines().filter(|l| l.starts_with("<line")).map(|l| {
+        ["x1", "y1", "x2", "y2"].map(|k| l.split(&format!(" {k}=\"")).nth(1).unwrap()
+            .split('"').next().unwrap().parse::<f64>().unwrap())
+    }).collect::<Vec<_>>();
+    let near = |a: &[[f64; 4]], b: [f64; 4]| a.len() == 1 && (0..4).all(|k| (a[0][k] - b[k]).abs() < 1e-3);
+    let mm = 96.0 / 25.4;
+    let front = compile("sketch v(m) at (0mm, 0mm)").unwrap();
+    let top = compile("sketch v(m) from m.std.top at (0mm, 0mm)").unwrap();
+    // the front's line alone, 10 across; the top's alone, 20 up its own v (the paper's -y)
+    assert!(near(&lines(&front), [0.0, 0.0, 10.0 * mm, 0.0]), "{front}");
+    assert!(near(&lines(&top), [0.0, 0.0, 0.0, -20.0 * mm]), "{top}");
+    let err = compile("sketch v(m) from m.f at (0mm, 0mm)").unwrap_err();
+    assert!(err.message.contains("not a model plane"), "{err:?}");
+}
