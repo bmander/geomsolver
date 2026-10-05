@@ -24,10 +24,10 @@ component Sphere(center: point, r: Length) {
 // A round hole of radius `r` through `body`, its axis square to the page, level with `center`
 // and `offset` to its right. The hole is the hole's own business: it cuts the body it is given.
 component Hole(body: solid, center: point, r: Length, offset: Length) {
-  private axis := point hint(x: center.x + offset, y: center.y)
-  center horizontal axis
-  center distance(offset, along: right) axis
-  rim := radius(r) circle(center: axis) hint(r: r)
+  private ax := point hint(x: center.x + offset, y: center.y)
+  center horizontal ax
+  center distance(offset, along: right) ax
+  rim := radius(r) circle(center: ax) hint(r: r)
   private drill := solid(face(rim), through: body)
   drill cut body
 }

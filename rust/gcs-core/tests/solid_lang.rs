@@ -73,8 +73,8 @@ fn solid_operands_follow_surface_children_before_surfaces_are_built() {
         "body := solid(side.solid)\nside.solid cut body\nside.solid union body\n",
         "side.solid union body\nside.solid cut body\nbody := solid(side.solid)\n",
     ] {
-        let e = read(&format!("{statements}{RECT}\naxis := line(a,d)\n\
-            stock := solid(sec, about: axis)\nside := surface(stock, bc)\n"));
+        let e = read(&format!("{statements}{RECT}\nax := line(a,d)\n\
+            stock := solid(sec, about: ax)\nside := surface(stock, bc)\n"));
         let stock = e.map.ent_named("stock").unwrap().idx;
         let body = e.map.ent_named("body").unwrap().i();
         let gcs_core::model::SolidDef::Body {stock:s,on,through,..} = &e.sketch.solids[body].def
@@ -608,7 +608,7 @@ fn what_is_written_wrong_is_refused_where_it_is_written() {
 
 #[test]
 fn a_plane_may_be_stood_off_another() {
-    // a plane over the same two rays is parallel, and a distance between the two stands one
+    // a plane over the same two axes is parallel, and a distance between the two stands one
     // off the other along its normal
     let mut e = read("\
 unit mm
@@ -762,8 +762,8 @@ fn named_chains_inherit_planes_and_revolve_with_arcs() {
         back := plane(u: std.x, v: std.y) hint(x: 0, y: 0, z: 12)\nfix(x == 0, y == 0, z == 12) back\n\
         in back {\na := point hint(x: 0, y: -5)\nb := point hint(x: 0, y: 5)\n\
           c := point hint(x: 0, y: 0)\n\
-          profile := (rim := arc(center: c, start: a, end: b) hint(r: 5)) -> (axis := line(b, a)) -> close\n\
-          ball := solid(profile, about: axis)\n}\n";
+          profile := (rim := arc(center: c, start: a, end: b) hint(r: 5)) -> (ax := line(b, a)) -> close\n\
+          ball := solid(profile, about: ax)\n}\n";
     let e = read(src);
     let back = e.map.ent_named("back").unwrap().i() as u32;
     assert_eq!(e.sketch.faces[0].plane(), Ok(Some(back)));
@@ -772,7 +772,7 @@ fn named_chains_inherit_planes_and_revolve_with_arcs() {
     assert!((volume(&e, "ball") / want - 1.0).abs() < 0.002,
         "sphere volume: {} versus {want}", volume(&e, "ball"));
     let old = src.replace("profile := ", "")
-        .replace("ball := solid(profile,", "sec := face(rim, axis)\nball := solid(sec,");
+        .replace("ball := solid(profile,", "sec := face(rim, ax)\nball := solid(sec,");
     assert_eq!(volume(&e, "ball"), volume(&read(&old), "ball"));
     assert!(gcs_core::program::solid_diagnostics(&e.sketch, &e.map).is_empty());
 }

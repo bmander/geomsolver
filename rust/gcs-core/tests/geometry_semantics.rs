@@ -182,10 +182,10 @@ fn roles_preserve_the_constraint_problem_and_round_trip() {
     let tagged = "\
 use std
 in std.front {
-private construction centerline axis := line(p2: hint(x: 10,y: 0))
-fix(x == 0, y == 0) axis.p1
-horizontal axis
-distance(10) axis
+private construction centerline ax := line(p2: hint(x: 10,y: 0))
+fix(x == 0, y == 0) ax.p1
+horizontal ax
+distance(10) ax
 }
 ";
     let mut e = good(tagged);

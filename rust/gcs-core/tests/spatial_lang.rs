@@ -1,4 +1,4 @@
-//! Planes over rays, in the language (§6.7; `docs/planes-plan.md`): a plane whose ray or place
+//! Planes over axes, in the language (§6.7; `docs/planes-plan.md`): a plane whose axis or place
 //! is solved for, its seeds, its refusals, and `project` between a stated and a solved plane;
 //! the words across planes and in space; spheres; and the hypoid's pitch cones laid out by
 //! construction.
@@ -15,7 +15,7 @@ use gcs_core::syntax::write_stmt_to;
 use crate::common::{ends, ent, off_line, read, refused, unit};
 
 /// The gear and pinion axes of a hypoid layout: the gear's drawn on the front plane, up the page;
-/// the pinion's level in a plane through the origin over the page's `y` and a ray `t` the
+/// the pinion's level in a plane through the origin over the page's `y` and an axis `t` the
 /// document solves for, square to `y`.
 const AXES: &str = "\
 unit mm
@@ -25,7 +25,7 @@ in std.front {
   fix(x == 0, y == 0) gax.p1
   fix(x == 0, y == 50) gax.p2
 }
-t := ray hint(x: 0.87, y: 0, z: 0.5)
+t := axis hint(x: 0.87, y: 0, z: 0.5)
 t perpendicular std.y
 side := plane(u: t, v: std.y)
 side.origin coincident std.origin
@@ -37,19 +37,19 @@ in side {
 }
 ";
 
-/// The ray `t` of a drawing over `AXES`, as a direction.
-fn ray_t(e: &Elaborated, sk: &Sketch) -> [f64; 3] {
+/// The axis `t` of a drawing over `AXES`, as a direction.
+fn axis_t(e: &Elaborated, sk: &Sketch) -> [f64; 3] {
     let r = ent(e, "t").i();
-    sk.rays[r].d.map(|k| sk.params[k as usize].value)
+    sk.axes[r].d.map(|k| sk.params[k as usize].value)
 }
 
 #[test]
-fn the_shaft_angle_and_the_offset_solve_the_ray() {
+fn the_shaft_angle_and_the_offset_solve_the_axis() {
     let e = read(AXES);
     assert!(e.diags.is_empty(), "{:?}", e.diags.iter().map(|d| &d.message).collect::<Vec<_>>());
     let mut sk = e.sketch.clone();
     let mut d = diagnose(&mut sk, DiagnoseOptions::default());
-    assert_eq!(d.dof, 2, "the ray's turn about y and the pinion axis's height");
+    assert_eq!(d.dof, 2, "the axis's turn about y and the pinion axis's height");
     let (gax, pax) = (ent(&e, "gax"), ent(&e, "pax"));
     let offset = 17.5;
     let angle = Constraint::in_space(&sk, CKind::Angle3, &[gax, pax], Some(90f64.to_radians()))
@@ -70,8 +70,8 @@ fn the_shaft_angle_and_the_offset_solve_the_ray() {
     let m = cross(e1, e2);
     let gap = dot(m, sub(c, a)).abs() / norm(m);
     assert!((gap - offset).abs() < 1e-9, "the offset is {offset}: {gap}");
-    // and the ray came round level, from a seed 30° up
-    let t = ray_t(&e, &sk);
+    // and the axis came round level, from a seed 30° up
+    let t = axis_t(&e, &sk);
     assert!(t[2].abs() < 1e-9 && (t[0] - 1.0).abs() < 1e-9, "t = {t:?}");
 }
 
@@ -95,7 +95,7 @@ fn the_gate_round_trips_through_json() {
     // the same unknowns and the same statements, the intrinsic rows minted again
     assert_eq!(back.params.len(), sk.params.len());
     assert_eq!(back.constraints.len(), sk.constraints.len());
-    assert_eq!(back.rays.len(), sk.rays.len());
+    assert_eq!(back.axes.len(), sk.axes.len());
     // already solved: nothing moves, and the diagnosis reads the same
     let before: Vec<f64> = back.params.iter().map(|p| p.value).collect();
     assert!(solve(&mut back, SolveOpts::default()).success);
@@ -112,8 +112,8 @@ fn the_gate_round_trips_through_json() {
 fn the_declarations_print_back() {
     let src = "\
 use std
-t := ray hint(x: 1, y: 2, z: 0)
-r := ray
+t := axis hint(x: 1, y: 2, z: 0)
+r := axis
 side := plane(u: t, v: std.z)
 top := plane(u: std.x, v: r) hint(x: 0, y: 0, z: 12)
 s := point hint(x: 1, y: 2, z: 3)
@@ -129,7 +129,7 @@ m := point hint(x: 5, y: 7) in side
         }).collect::<Vec<_>>().join("\n")
     };
     let once = print(src);
-    for decl in ["t := ray hint(x: 1, y: 2, z: 0)", "r := ray", "side := plane(u: t, v: std.z)",
+    for decl in ["t := axis hint(x: 1, y: 2, z: 0)", "r := axis", "side := plane(u: t, v: std.z)",
                  "top := plane(u: std.x, v: r) hint(x: 0, y: 0, z: 12)",
                  "s := point hint(x: 1, y: 2, z: 3)", "m := point hint(x: 5, y: 7) in side"] {
         assert!(once.contains(decl), "`{decl}` is not in\n{once}");
@@ -138,7 +138,7 @@ m := point hint(x: 5, y: 7) in side
     read(src);
 }
 
-/// A plane over a drawn line holds the line's direction — a hidden ray kept parallel to it — so
+/// A plane over a drawn line holds the line's direction — a hidden axis kept parallel to it — so
 /// it follows the line when the line moves; it adds no freedom of its own beyond where it stands.
 #[test]
 fn a_plane_over_a_drawn_line_follows_the_line() {
@@ -207,13 +207,13 @@ top coincident m
     }
 }
 
-/// A plane over free rays starts where their seeds say, and stands where its own seed says.
+/// A plane over free axes starts where their seeds say, and stands where its own seed says.
 #[test]
 fn a_free_plane_starts_at_its_seeds() {
     let e = read("\
 unit mm
-a := ray hint(x: 0, y: 1, z: 0)
-b := ray hint(x: 0, y: 0, z: 2)
+a := axis hint(x: 0, y: 1, z: 0)
+b := axis hint(x: 0, y: 0, z: 2)
 q := plane(u: a, v: b) hint(x: 5, y: 0, z: 0)
 ");
     let mut sk = e.sketch.clone();
@@ -232,15 +232,15 @@ q := plane(u: a, v: b) hint(x: 5, y: 0, z: 0)
 
 /// `project` between a stated plane and a solved one is the projector rule in space: the fold
 /// line two planes share is where their images agree, and it turns with the solved plane.  The
-/// side plane holds the page's `y` and a ray square to it at β above `x`, so the fold line is
-/// that ray, at `(cos β, sin β)` on the front plane: `b` on it 50 along means
+/// side plane holds the page's `y` and an axis square to it at β above `x`, so the fold line is
+/// that axis, at `(cos β, sin β)` on the front plane: `b` on it 50 along means
 /// `cos β·30 + sin β·40 = 50`, so β = atan2(40, 30).
 #[test]
 fn a_projection_between_a_stated_and_a_solved_plane() {
     let e = read("\
 unit mm
 use std
-t := ray hint(x: 0.94, y: 0, z: 0.34)
+t := axis hint(x: 0.94, y: 0, z: 0.34)
 t perpendicular std.y
 side := plane(u: t, v: std.y)
 side.origin coincident std.origin
@@ -259,7 +259,7 @@ a project b
     assert!(solve(&mut sk, SolveOpts::default()).success);
     let d = diagnose(&mut sk, DiagnoseOptions::default());
     assert_eq!(d.dof, 0, "{}", gcs_core::diagnose::summary(&d));
-    let t = ray_t(&e, &sk);
+    let t = axis_t(&e, &sk);
     let beta = t[2].atan2(t[0]);
     assert!((beta - 40f64.atan2(30.0)).abs() < 1e-6, "beta := {}", beta.to_degrees());
     assert!(solid_diagnostics(&sk, &e.map).is_empty());
@@ -271,8 +271,8 @@ a project b
 fn planes_that_come_out_parallel_are_said() {
     let e = read("\
 use std
-r1 := ray hint(x: 1, y: 0, z: 0)
-r2 := ray hint(x: 0, y: 0, z: 1)
+r1 := axis hint(x: 1, y: 0, z: 0)
+r2 := axis hint(x: 0, y: 0, z: 1)
 q := plane(u: r1, v: r2)
 a := point hint(x: 3, y: 4) in std.front
 b := point hint(x: 3, y: 4) in q
@@ -293,25 +293,25 @@ a distance(5) b
     assert!(diags.iter().any(|d| d.code.as_str() == "W113"), "{diags:?}");
 }
 
-/// A plane is two rays and a place: what is not a ray or a line is refused at the slot, and a
+/// A plane is two axes and a place: what is not an axis or a line is refused at the slot, and a
 /// plane's origin is its own and not written.  A point drawn in a plane takes no height.
 #[test]
 fn a_plane_is_refused_what_it_cannot_stand_on() {
     refused("use std\np := point hint(x: 1, y: 2, z: 3)\nq := plane(u: std.x, v: p)\n",
-            "E103", "a ray or a line", "p");
-    refused("use std\nq := plane(u: std.x)\n", "E103", "two rays", "q := plane(u: std.x)");
+            "E103", "an axis or a line", "p");
+    refused("use std\nq := plane(u: std.x)\n", "E103", "two axes", "q := plane(u: std.x)");
     refused("use std\nq := plane(u: std.x, v: std.y, origin: std.origin)\n",
             "E103", "origin is its own", "q := plane(u: std.x, v: std.y, origin: std.origin)");
     refused("use std\nm := point hint(x: 1, y: 2, z: 3) in std.front\n", "E040", "no `z`", "3");
 }
 
-/// A solve's ray goes back into the source as its seed, where the seed was written.
+/// A solve's axis goes back into the source as its seed, where the seed was written.
 #[test]
-fn the_solved_ray_is_written_back_to_its_seed() {
+fn the_solved_axis_is_written_back_to_its_seed() {
     let (e, mut sk) = gate();
     assert!(solve(&mut sk, SolveOpts::default()).success);
     let ed = edit::commit_seeds(&e, &sk, &e.program);
-    let line = ed.text.lines().find(|l| l.starts_with("t := ray hint(")).expect("the ray's seed");
+    let line = ed.text.lines().find(|l| l.starts_with("t := axis hint(")).expect("the axis's seed");
     assert!(line.contains("z: 0)") || line.contains("z: -0)") || line.contains("e-"), "{line}");
     // and the text it wrote elaborates to the same drawing
     read(&ed.text);
@@ -343,11 +343,11 @@ fn a_skew_side_left_out_of_a_document_is_read_off_the_geometry() {
     assert_eq!(sides[0], -sides[1]);
 }
 
-/// A plane over a deleted ray or line is defined from nothing, and goes with it.
+/// A plane over a deleted axis or line is defined from nothing, and goes with it.
 #[test]
 fn deleting_what_a_plane_stands_on_deletes_the_plane() {
     let src = "use std\nl := line(hint(x: 0, y: 0), hint(x: 5, y: 5)) in std.front\n\
-               r := ray\n\
+               r := axis\n\
                s := plane(u: l, v: std.y)\n\
                u := plane(u: r, v: std.z)\n";
     let e = read(src);
@@ -359,24 +359,24 @@ fn deleting_what_a_plane_stands_on_deletes_the_plane() {
     read(&out.text);
 }
 
-/// A ray inside a component is that instance's own: two instances turn independently.
+/// An axis inside a component is that instance's own: two instances turn independently.
 #[test]
-fn a_ray_in_a_component_is_the_instances_own() {
+fn a_axis_in_a_component_is_the_instances_own() {
     let e = read("\
 use std
 component Wing(f: plane) {
-  r := ray hint(x: 1, y: 1, z: 0)
+  r := axis hint(x: 1, y: 1, z: 0)
   r perpendicular f.v
   w := plane(u: r, v: f.v)
 }
 one := Wing(std.front)
 two := Wing(std.top)
 ");
-    assert_eq!(e.sketch.rays.len(), 4 + 2, "the standard four and one each");
+    assert_eq!(e.sketch.axes.len(), 4 + 2, "the standard four and one each");
     let (a, b) = (ent(&e, "one.r").i(), ent(&e, "two.r").i());
     assert_ne!(a, b);
     for r in [a, b] {
-        assert!(e.sketch.rays[r].d.iter().all(|&k| !e.sketch.params[k as usize].fixed));
+        assert!(e.sketch.axes[r].d.iter().all(|&k| !e.sketch.params[k as usize].fixed));
     }
 }
 
@@ -390,7 +390,7 @@ gax distance(17.5) pax
 ";
 
 #[test]
-fn the_gate_in_words_solves_the_ray() {
+fn the_gate_in_words_solves_the_axis() {
     let e = read(&format!("{AXES}{AXES_IN_WORDS}"));
     let mut sk = e.sketch.clone();
     let kinds: Vec<CKind> = sk.user_constraints().iter().map(|c| c.kind).collect();
@@ -434,7 +434,7 @@ in std.side {
   cb := circle(hint(x: 20, y: 10)) hint(r: 8)
 }
 s := point hint(x: 4, y: -6, z: 9)
-r := ray hint(x: 1, y: 1, z: 1)
+r := axis hint(x: 1, y: 1, z: 1)
 q := plane(u: std.x, v: std.y) hint(x: 0, y: 0, z: 20)
 ";
 
@@ -475,11 +475,11 @@ fn each_word_across_planes_is_the_relation_in_space() {
         ("b distance(5, along: u) std.side", CKind::CoordinateU),
         ("a distance(5, along: u) std.side", CKind::Ordinate3U),
         ("s distance(5, along: v) std.side", CKind::Ordinate3V),
-        // a ray and a plane
-        ("s coincident r", CKind::PointOnRay),
-        ("r coincident q", CKind::RayOnPlane),
-        ("r parallel q", CKind::RayParallelPlane),
-        ("r perpendicular q", CKind::RayPerpendicularPlane),
+        // an axis and a plane
+        ("s coincident r", CKind::PointOnAxis),
+        ("r coincident q", CKind::AxisOnPlane),
+        ("r parallel q", CKind::AxisParallelPlane),
+        ("r perpendicular q", CKind::AxisPerpendicularPlane),
         ("r perpendicular std.z", CKind::Perpendicular3),
         ("la parallel r", CKind::Parallel3),
         ("q distance(5) std.top", CKind::PlaneDistance),
@@ -660,7 +660,7 @@ fn same_points(a: &Sketch, b: &Sketch) {
     }
 }
 
-/// **A solved plane lifts as the rays that solve it**: the ray seeded where the solve left it,
+/// **A solved plane lifts as the axes that solve it**: the axis seeded where the solve left it,
 /// the plane over it, and read back it solves to the same place with the same freedoms.
 #[test]
 fn a_lifted_program_keeps_its_rays() {
@@ -668,7 +668,7 @@ fn a_lifted_program_keeps_its_rays() {
     let mut sk = e.sketch.clone();
     assert!(solve(&mut sk, SolveOpts::default()).success);
     let (text, again) = relift(&sk);
-    assert!(text.contains(" := ray") && text.contains(" := plane(u: "), "{text}");
+    assert!(text.contains(" := axis") && text.contains(" := plane(u: "), "{text}");
     assert!(text.contains("angle(90") && text.contains("distance(17.5)"), "{text}");
     let mut back = again.sketch.clone();
     let kinds: Vec<CKind> = back.user_constraints().iter().map(|c| c.kind).collect();
@@ -683,7 +683,7 @@ fn a_lifted_program_keeps_its_rays() {
     assert_eq!(diagnose(&mut back, DiagnoseOptions::default()).dof, 0);
 }
 
-/// The hypoid's planes over its generators lift as planes over the lines, not as stated rays
+/// The hypoid's planes over its generators lift as planes over the lines, not as stated axes
 /// beside them, and read back solve to the same points.
 #[test]
 fn a_lifted_program_keeps_its_planes_over_lines() {
@@ -709,7 +709,7 @@ fn a_lifted_program_keeps_its_planes_over_lines() {
 fn a_circle_on_a_sphere_is_on_it_all_the_way_round() {
     for free in [false, true] {
         let side = if free {
-            "a := ray hint(x: 0, y: 1, z: 0)\nb := ray hint(x: 0, y: 0, z: 1)\n\
+            "a := axis hint(x: 0, y: 1, z: 0)\nb := axis hint(x: 0, y: 0, z: 1)\n\
              side := plane(u: a, v: b) hint(x: 120, y: 0, z: 0)"
         } else {
             ""

@@ -27,13 +27,13 @@ component FlankSection(base: line, flank: line, corner: arc, tip: line, cap: lin
 // The space between the outer mate section's inner flank and the inner mate section's outer
 // flank, one crown pitch round: the outer crown within its indexed neighbour. Drawn in N, about
 // the mate's `axis`.
-component ComplementarySpace(axis: line, outside: group, inside: group, indexing: motion,
+component ComplementarySpace(ax: line, outside: group, inside: group, indexing: motion,
                              cap: line) {
   private outer := FlankSection(outside.base, outside.inner, outside.inner_round, outside.tip,
     cap)
-  private inner := FlankSection(inside.base, inside.outer, inside.outer_round, inside.tip, axis)
-  private construction outer_crown := solid(outer.profile, about: axis)
-  private construction inner_crown := solid(inner.profile, about: axis)
+  private inner := FlankSection(inside.base, inside.outer, inside.outer_round, inside.tip, ax)
+  private construction outer_crown := solid(outer.profile, about: ax)
+  private construction inner_crown := solid(inner.profile, about: ax)
   private construction neighbor := solid(inner_crown, under: indexing, at: 0deg)
   body := solid(outer_crown)
   neighbor bound body
@@ -56,10 +56,10 @@ preview {
     trace.K distance(tooth.normal_module) trace.normal
     trace.K distance(mate.normal_module) trace.normal
   }
-  reach := crown.reach.CutterReach(pitch.view, n.view, gear.O, trace.normal, mate.axis,
+  reach := crown.reach.CutterReach(pitch.view, n.view, gear.O, trace.normal, mate.ax,
     reach: design.hypoid_design.space_reach)
   crown_neighbor := motion(about: gear.crown_axis,
     phase: -4 * length(thickness.ahead) / radius(thickness.ahead) * 1rad)
-  space := ComplementarySpace(mate.axis, mate.outer, mate.inner, crown_neighbor,
+  space := ComplementarySpace(mate.ax, mate.outer, mate.inner, crown_neighbor,
     reach.cap) in n.view
 }

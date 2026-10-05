@@ -25,7 +25,7 @@ impl Sketch {
     /// units does to the figure it carries.
     ///
     /// **Written out by kind, and exhaustively**, because "is this parameter a length?" is not a
-    /// question a `Param` can answer: a ray's direction is a unit vector and a curve's parameter
+    /// question a `Param` can answer: an axis's direction is a unit vector and a curve's parameter
     /// is a place along it, and scaling either would take the drawing apart.  So each table that
     /// knows says — `own_length_params` per entity kind, `CKind::param_dim` per constraint that
     /// owns an unknown — and a new kind stops the build in the first rather than being silently
@@ -117,9 +117,9 @@ impl Sketch {
             // a half-angle is an angle, and a unit's conversion leaves it alone
             EntKind::Cone => Vec::new(),
             // the direction is a unit vector and the place a length
-            EntKind::Ray => self.rays[e.i()].a.to_vec(),
+            EntKind::Axis => self.axes[e.i()].a.to_vec(),
             EntKind::Arc => vec![self.arcs[e.i()].radius],
-            // where a plane stands is three lengths; which way it faces is its rays'
+            // where a plane stands is three lengths; which way it faces is its axes'
             EntKind::Plane => self.planes[e.i()].o.to_vec(),
             // a line and a spline are their points, and a curve is its expressions: no number
             // of their own to convert
@@ -191,7 +191,7 @@ impl Sketch {
             EntKind::Cone => v.to_degrees(),
             // a direction's dust below a double's resolution of a unit vector is 0: `z: 6e-17`
             // written into a source file is a number nobody said
-            EntKind::Ray | EntKind::Plane if v.abs() < 1e-12 => 0.0,
+            EntKind::Axis | EntKind::Plane if v.abs() < 1e-12 => 0.0,
             _ => v,
         }
     }
@@ -224,8 +224,8 @@ impl Sketch {
                 vec![p.x, p.y, c.radius]
             }
             // its direction, then where it is
-            EntKind::Ray => {
-                let r = &self.rays[e.i()];
+            EntKind::Axis => {
+                let r = &self.axes[e.i()];
                 [r.d, r.a].concat()
             }
             // the axis's ends, then the number the kind owns
@@ -254,7 +254,7 @@ impl Sketch {
                 }
                 v
             }
-            // where it stands; its rays and its origin point are children of their own
+            // where it stands; its axes and its origin point are children of their own
             EntKind::Plane => self.planes[e.i()].o.to_vec(),
             // whatever its arguments contribute, in argument order — which is the order its
             // tapes were compiled against and so the order of the Jacobian's columns
@@ -284,8 +284,8 @@ impl Sketch {
             EntKind::Circle => vec![self.circles[e.i()].radius],
             EntKind::Sphere => vec![self.spheres[e.i()].radius],
             EntKind::Cone | EntKind::Cylinder => vec![self.axial(e).param],
-            EntKind::Ray => {
-                let r = &self.rays[e.i()];
+            EntKind::Axis => {
+                let r = &self.axes[e.i()];
                 [r.d, r.a].concat()
             }
             EntKind::Arc => vec![self.arcs[e.i()].radius],

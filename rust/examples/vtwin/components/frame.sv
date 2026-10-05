@@ -11,9 +11,9 @@ use components.throttle
 component FrameBank(o: point, ref: line, alpha: Angle, dim: Int, dims: group) {
   port_bearing := atan2(dims.a * sin(dims.beta), dims.H + dims.a * cos(dims.beta))
   piv := point hint(x: o.x + dims.H * sin(alpha), y: o.y + dims.H * cos(alpha))
-  axis := line(o, piv)
+  ax := line(o, piv)
   o distance(dims.H) piv
-  ref angle(alpha, sense: cw) axis
+  ref angle(alpha, sense: cw) ax
   bolt := circle(center: piv) hint(r: dims.studclr / 2)
   radius(dims.studclr / 2) bolt
   ip := components.parts.At(piv, dx: dims.a * sin(alpha - dims.beta), dy: dims.a * cos(alpha - dims.beta))
@@ -26,11 +26,11 @@ component FrameBank(o: point, ref: line, alpha: Angle, dim: Int, dims: group) {
   s1 := point hint(x: piv.x + dims.a * sin(alpha - dims.swing - 6deg), y: piv.y + dims.a * cos(alpha - dims.swing - 6deg))
   sweep := arc(center: piv, start: s0, end: s1) hint(r: dims.a)
   radius(dims.a) sweep
-  s0 distance(dims.a * sin(dims.swing + 6deg), side: right) axis
-  s1 distance(dims.a * sin(dims.swing + 6deg), side: left) axis
+  s0 distance(dims.a * sin(dims.swing + 6deg), side: right) ax
+  s1 distance(dims.a * sin(dims.swing + 6deg), side: left) ax
   rad_i := line(o, ip.p)
   rad_e := line(o, ep.p)
-  claim ref angle(alpha, sense: cw) axis
+  claim ref angle(alpha, sense: cw) ax
   claim ref angle(alpha - port_bearing, sense: cw) rad_i
   claim ref angle(alpha + port_bearing, sense: cw) rad_e
   repeat dim {
@@ -83,7 +83,7 @@ component FrameBlank(o: point, dims: group) {
 // A radial feed from the inset plenum to an intake port. The datum points from
 // the crank axis to the port; the feed overlaps both cavities at its ends.
 component IntakePassage(f: group, dims: group) {
-  axis := line(f.u.p1, f.u.p2)
+  ax := line(f.u.p1, f.u.p2)
   a := point hint(at: f.axes, x: dims.rman, y: -dims.wch / 2)
   b := point hint(at: f.axes, x: dims.rpl, y: -dims.wch / 2)
   c := point hint(at: f.axes, x: dims.rpl, y: dims.wch / 2)
@@ -93,13 +93,13 @@ component IntakePassage(f: group, dims: group) {
   bc := line(b, c)
   cd := line(c, d)
   da := line(d, a)
-  ab parallel axis
-  bc perpendicular axis
-  cd parallel axis
-  da perpendicular axis
+  ab parallel ax
+  bc perpendicular ax
+  cd parallel ax
+  da perpendicular ax
   distance(dims.rpl - dims.rman) ab
   distance(dims.wch) bc
-  a distance(dims.wch / 2, side: right) axis
+  a distance(dims.wch / 2, side: right) ax
   a distance(dims.rman, along: u) f.axes
 }
 
@@ -183,15 +183,15 @@ component Frame(layout: group, dims: group) {
 
   in layout.front {
     blank := FrameBlank(layout.origin, dims: dims)
-    r := FrameBank(layout.origin, layout.axis, alpha: dims.alphaR, dim: 0, dims: dims)
-    l := FrameBank(layout.origin, layout.axis, alpha: dims.alphaL, dim: 1, dims: dims)
-    claim r.axis angle(dims.V) l.axis
+    r := FrameBank(layout.origin, layout.ax, alpha: dims.alphaR, dim: 0, dims: dims)
+    l := FrameBank(layout.origin, layout.ax, alpha: dims.alphaL, dim: 1, dims: dims)
+    claim r.ax angle(dims.V) l.ax
     air := IntakeManifold(layout.origin, r.rad_i, l.rad_i, dims: dims)
     ventR := ExhaustPassage(r.ep.p, blank.edge_r, dims: dims)
     ventL := ExhaustPassage(l.ep.p, blank.cham_l, dims: dims)
     inlet := FrameInlet(layout.origin, dims: dims)
   }
-  thr := components.throttle.Throttle(layout.front, inlet.tb.p, layout.axis, phi: dims.throttle, dims: dims)
+  thr := components.throttle.Throttle(layout.front, inlet.tb.p, layout.ax, phi: dims.throttle, dims: dims)
 
   boltR := solid(face(r.bolt), from: zb, to: zf)
   boltL := solid(face(l.bolt), from: zb, to: zf)
@@ -231,6 +231,6 @@ preview {
     ref := line(std.origin, hint(x: 0, y: 1))
     fix(x == 0, y == 1) ref.p2
   }
-  layout := {front: std.front, origin: std.origin, axis: ref}
+  layout := {front: std.front, origin: std.origin, ax: ref}
   plate := Frame(layout, dims: components.dims.vtwin_dims)
 }

@@ -480,7 +480,7 @@ impl System {
                 let span = spans.get(&c.id).copied();
                 let ps = c.params_on(sk, span);
                 debug_assert_eq!(ps.len(), kn.n_par, "{:?} params", c.kind);
-                // an intrinsic row over held unknowns only — the unit row of a ray whose
+                // an intrinsic row over held unknowns only — the unit row of an axis whose
                 // direction a `fix` holds outright (`std.x`) — is a fact about the numbers held,
                 // true by construction and no equation the drawing answers for.  Counted, it
                 // would stand in the ledger as an equation over the rank.  Not hard, so no count

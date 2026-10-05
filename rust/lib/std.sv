@@ -4,20 +4,20 @@
 // as in the terminal; a `std.sv` beside a document would win over it, as any module does.
 
 // The standard axes and planes, which every document that says `use std` has — as a CAD part
-// has its origin planes — so the workspace can offer them as places to draw.  The axes are rays,
+// has its origin planes — so the workspace can offer them as places to draw.  The axes are axes,
 // each held outright: x right, y away from the front's viewer, z up, and `back` the x axis
 // reversed.  Each plane is two of them and stands at the world origin: front is x right and z up
 // (a document's 2D drawing, `in std.front`), top x right and y away (looked at from above), side
 // y right and z up (looked at from +x), and up the front turned a quarter, z right and x to the
 // left.  `origin` is a point drawn in the front plane at its origin.
 component StandardDatums() {
-  x := ray hint(x: 1, y: 0, z: 0)
+  x := axis hint(x: 1, y: 0, z: 0)
   fix(x == 1, y == 0, z == 0) x
-  y := ray hint(x: 0, y: 1, z: 0)
+  y := axis hint(x: 0, y: 1, z: 0)
   fix(x == 0, y == 1, z == 0) y
-  z := ray hint(x: 0, y: 0, z: 1)
+  z := axis hint(x: 0, y: 0, z: 1)
   fix(x == 0, y == 0, z == 1) z
-  back := ray hint(x: -1, y: 0, z: 0)
+  back := axis hint(x: -1, y: 0, z: 0)
   fix(x == -1, y == 0, z == 0) back
   front := plane(u: x, v: z)
   fix(x == 0, y == 0, z == 0) front

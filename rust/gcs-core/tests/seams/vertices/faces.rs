@@ -116,13 +116,13 @@ fn spatial_faces_reject_wrong_support_identity_open_loops_and_planar_sweep_use()
         "bad := face(left_low,middle_edge,right_high,bottom_edge,on: first_envelope)",
         "bad := face(left_low,middle_edge,right_low,on: first_envelope)",
         "bad := face(left_low,middle_edge,right_low,left_low,on: first_envelope)",
-        "bad := face(left_low,middle_edge,right_low,bottom_edge,on: axis)",
+        "bad := face(left_low,middle_edge,right_low,bottom_edge,on: ax)",
         "bad := face(left_low,middle_edge,right_low,bottom_edge,on: first_envelope,on: first_envelope)",
         "bad := face(left_low,middle_edge,right_low,bottom_edge,on: first_envelope,-> close)",
         "bad := face(left_low,middle_edge,right_low,bottom_edge,on: first_envelope,holes: globe)",
         "bad := solid(lower_face,depth: 1mm)",
-        "bad := solid(lower_face,about: axis)",
-        "bad := solid(lower_face,along: axis)",
+        "bad := solid(lower_face,about: ax)",
+        "bad := solid(lower_face,along: ax)",
         "bad := solid(face(left_low,middle_edge,right_low,bottom_edge,on: first_envelope),depth: 1mm)",
     ] {
         let (p,errors) = syntax::parse(&format!("{}{declaration}\n",source()));
@@ -169,7 +169,7 @@ fn surface_supported_boundaries_check_incidence_without_asserting_a_disk_interio
     // Two distinct edges trace the same arc in opposite directions. Their loop
     // has valid declared incidence but no disk interior: this reader must not be
     // confused with the still-separate geometric face/solid validity check.
-    let e = solved(&format!("{}\nother_bottom := edge(low_cut,from: bl,to: br,along: axis)\n\
+    let e = solved(&format!("{}\nother_bottom := edge(low_cut,from: bl,to: br,along: ax)\n\
         loop_only := face(bottom_edge,other_bottom,on: lower.wall)\n",source()));
     let face = face(&e,"loop_only");
     let support = gcs_core::solid::RevolvedSurface::named(&e.sketch,face.support().i()).unwrap();

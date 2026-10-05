@@ -159,7 +159,7 @@ o := point
 q := point
 fix(x == 0, y == 0) o
 fix(x == 0, y == 10) q
-axis := line(o, q)
+ax := line(o, q)
 }
 component Rect(w: Length, h: Length) {
   a := point hint(x: 2, y: 0)
@@ -178,7 +178,7 @@ in std.front {
 r := Rect(w: 4mm, h: 3mm)
 r.a distance(2mm, along: x) o
 r.a distance(0mm, along: y) o
-ring := solid(r.profile, about: axis)
+ring := solid(r.profile, about: ax)
 repeat e in r.profile as i {
   s := surface(ring, edge: e)
 }

@@ -61,7 +61,7 @@ pub enum K {
     // a hidden point held at the lift of the point it stands for, drawn in a plane
     Lift,
     // the relations in space, over the hidden points drawn points lift to: each dimension with
-    // its free twin beside it, and the two that read a plane's rays and origin
+    // its free twin beside it, and the two that read a plane's axes and origin
     Coincident3,
     Distance3,
     Distance3Free,
@@ -100,19 +100,19 @@ pub enum K {
     EqualAngle,
     ArcLength,
     ArcLengthFree,
-    // a ray's own two rows, and a point on one
-    RayUnit,
-    RayFoot,
-    PointOnRay,
+    // an axis's own two rows, and a point on one
+    AxisUnit,
+    AxisFoot,
+    PointOnAxis,
     // how far a point stands along a plane's axes from its origin, in space, and free
     Ordinate3U,
     Ordinate3V,
     Ordinate3UFree,
     Ordinate3VFree,
-    // a ray in a plane, square to its normal and along it, and two planes apart
-    RayOnPlane,
-    RayParallelPlane,
-    RayPerpendicularPlane,
+    // an axis in a plane, square to its normal and along it, and two planes apart
+    AxisOnPlane,
+    AxisParallelPlane,
+    AxisPerpendicularPlane,
     PlaneDistance,
     PlaneDistanceFree,
 }
@@ -1815,7 +1815,7 @@ fn point_on_extrusion_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
  * never a view's attitude — the `lift` rows are where a drawn point and its place in space are
  * tied together, so a relation here is plain vector algebra over points in space.  Those that
  * read a *plane* rather than points (a point or a line on a plane, the plane row of a circle)
- * read its origin and its two rays' directions (`dframe`), as `lift` does; a plane a `fix`
+ * read its origin and its two axes' directions (`dframe`), as `lift` does; a plane a `fix`
  * holds is the same kernel with those columns held.
  */
 
@@ -2142,16 +2142,16 @@ fn parallel3_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
  * spheres touching.  A sphere's radius and its tangency to a line reuse `radius` and
  * `point_line3_free` (the line's distance from the centre, stated as the radius column). */
 
-/// Columns of `ray_unit`: (dx, dy, dz).  `|d|² − 1`: a direction held to the unit sphere,
+/// Columns of `axis_unit`: (dx, dy, dz).  `|d|² − 1`: a direction held to the unit sphere,
 /// dimensionless, degree 0.
-fn ray_unit_res(n: usize, v: &[f64], _k: &[f64], r: &mut [f64]) {
+fn axis_unit_res(n: usize, v: &[f64], _k: &[f64], r: &mut [f64]) {
     for i in 0..n {
         let d = at3(v, 3 * i);
         r[i] = dot3(d, d) - 1.0;
     }
 }
 
-fn ray_unit_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
+fn axis_unit_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
     for i in 0..n {
         let o = 3 * i;
         for t in 0..3 {
@@ -2160,15 +2160,15 @@ fn ray_unit_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
     }
 }
 
-/// Columns of `ray_foot`: (a, d).  `a·d`: the ray's point is the foot of the perpendicular from
-/// the origin, so it cannot slide along the ray.  A length, degree 1.
-fn ray_foot_res(n: usize, v: &[f64], _k: &[f64], r: &mut [f64]) {
+/// Columns of `axis_foot`: (a, d).  `a·d`: the axis's point is the foot of the perpendicular from
+/// the origin, so it cannot slide along the axis.  A length, degree 1.
+fn axis_foot_res(n: usize, v: &[f64], _k: &[f64], r: &mut [f64]) {
     for i in 0..n {
         r[i] = dot3(at3(v, 6 * i), at3(v, 6 * i + 3));
     }
 }
 
-fn ray_foot_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
+fn axis_foot_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
     for i in 0..n {
         let o = 6 * i;
         for t in 0..3 {
@@ -2178,9 +2178,9 @@ fn ray_foot_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
     }
 }
 
-/// Columns of `point_on_ray`: (X, a, d), K = (e₁, e₂) — `point_on_line3` over a ray, whose
+/// Columns of `point_on_axis`: (X, a, d), K = (e₁, e₂) — `point_on_line3` over an axis, whose
 /// direction is `d` itself rather than `B − A`: `((X − a) × d)·e_k / |d| = 0`.  Degree 1.
-fn point_on_ray_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+fn point_on_axis_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
     for i in 0..n {
         let o = 9 * i;
         let (w, e) = (sub3(at3(v, o), at3(v, o + 3)), at3(v, o + 6));
@@ -2192,7 +2192,7 @@ fn point_on_ray_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
     }
 }
 
-fn point_on_ray_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+fn point_on_axis_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
     for i in 0..n {
         let o = 9 * i;
         let (w, e) = (sub3(at3(v, o), at3(v, o + 3)), at3(v, o + 6));
@@ -2513,9 +2513,9 @@ fn dunit<const N: usize>(a: V3<N>) -> V3<N> {
     a.map(|x| x / l)
 }
 
-/* -- planes over rays (`docs/planes-plan.md`) ------------------------------------------------
+/* -- planes over axes (`docs/planes-plan.md`) ------------------------------------------------
  *
- * A plane is two rays and an origin: right along the first ray's direction `du`, up along what
+ * A plane is two axes and an origin: right along the first axis's direction `du`, up along what
  * is left of the second's `dv` once its component along `du` is removed, out along their cross
  * product, standing at `o`.  Every kernel that reads a plane reads those nine numbers as columns
  * — held ones drop out of the Jacobian, so one kernel serves a plane a `fix` holds and one a
@@ -2523,7 +2523,7 @@ fn dunit<const N: usize>(a: V3<N>) -> V3<N> {
  * calculus to get wrong.
  */
 
-/// The frame of a plane over its rays: `û` along `du`, `v̂` what is left of `dv`, `n̂ = û × v̂`.
+/// The frame of a plane over its axes: `û` along `du`, `v̂` what is left of `dv`, `n̂ = û × v̂`.
 fn dframe<const N: usize>(du: V3<N>, dv: V3<N>) -> (V3<N>, V3<N>, V3<N>) {
     let u = dunit(du);
     let a = ddot(dv, u);
@@ -2779,10 +2779,10 @@ fn ordinate3_v_free_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
     dual_jac::<13, 1, 2>(n, v, k, j, ordinate3_v_free_rows)
 }
 
-/// Columns of `ray_on_plane`: (a, d, o, du, dv), K = (L) — a ray's place and direction, and the
-/// plane.  `(a − o)·n̂` and `(a + L·d − o)·n̂`: two points on the ray a drawing's extent `L` apart,
+/// Columns of `axis_on_plane`: (a, d, o, du, dv), K = (L) — an axis's place and direction, and the
+/// plane.  `(a − o)·n̂` and `(a + L·d − o)·n̂`: two points on the axis a drawing's extent `L` apart,
 /// each on the plane, so both rows are lengths and weigh alike.  Degree 1.
-fn ray_on_plane_rows(v: &[f64], k: &[f64]) -> [Dual<15>; 2] {
+fn axis_on_plane_rows(v: &[f64], k: &[f64]) -> [Dual<15>; 2] {
     let (a, d, o) = (dvec(v, 0), dvec(v, 3), dvec(v, 6));
     let (_, _, n) = dframe(dvec(v, 9), dvec(v, 12));
     let l = dconst(k[0]);
@@ -2790,44 +2790,44 @@ fn ray_on_plane_rows(v: &[f64], k: &[f64]) -> [Dual<15>; 2] {
     [ddot(dsub(a, o), n), ddot(dsub(far, o), n)]
 }
 
-fn ray_on_plane_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
-    dual_res::<15, 2, 1>(n, v, k, r, ray_on_plane_rows)
+fn axis_on_plane_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    dual_res::<15, 2, 1>(n, v, k, r, axis_on_plane_rows)
 }
 
-fn ray_on_plane_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
-    dual_jac::<15, 2, 1>(n, v, k, j, ray_on_plane_rows)
+fn axis_on_plane_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    dual_jac::<15, 2, 1>(n, v, k, j, axis_on_plane_rows)
 }
 
-/// Columns of `ray_parallel_plane`: (d, du, dv).  `d̂·n̂`: square to the plane's normal.  Degree 0.
-fn ray_parallel_plane_rows(v: &[f64], _k: &[f64]) -> [Dual<9>; 1] {
+/// Columns of `axis_parallel_plane`: (d, du, dv).  `d̂·n̂`: square to the plane's normal.  Degree 0.
+fn axis_parallel_plane_rows(v: &[f64], _k: &[f64]) -> [Dual<9>; 1] {
     let (_, _, n) = dframe(dvec(v, 3), dvec(v, 6));
     [ddot(dunit(dvec(v, 0)), n)]
 }
 
-fn ray_parallel_plane_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
-    dual_res::<9, 1, 0>(n, v, k, r, ray_parallel_plane_rows)
+fn axis_parallel_plane_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    dual_res::<9, 1, 0>(n, v, k, r, axis_parallel_plane_rows)
 }
 
-fn ray_parallel_plane_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
-    dual_jac::<9, 1, 0>(n, v, k, j, ray_parallel_plane_rows)
+fn axis_parallel_plane_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    dual_jac::<9, 1, 0>(n, v, k, j, axis_parallel_plane_rows)
 }
 
-/// Columns of `ray_perpendicular_plane`: (d, du, dv), K = (e₁, e₂) — two directions across the
+/// Columns of `axis_perpendicular_plane`: (d, du, dv), K = (e₁, e₂) — two directions across the
 /// plane's normal as it stood when compiled or refreshed, `parallel3`'s device.
 /// `(d̂ × n̂)·e_k`: along the normal, either way.  Degree 0.
-fn ray_perpendicular_plane_rows(v: &[f64], k: &[f64]) -> [Dual<9>; 2] {
+fn axis_perpendicular_plane_rows(v: &[f64], k: &[f64]) -> [Dual<9>; 2] {
     let (_, _, n) = dframe(dvec(v, 3), dvec(v, 6));
     let x = dcross(dunit(dvec(v, 0)), n);
     let e = |t: usize| [dconst(k[3 * t]), dconst(k[3 * t + 1]), dconst(k[3 * t + 2])];
     [ddot(x, e(0)), ddot(x, e(1))]
 }
 
-fn ray_perpendicular_plane_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
-    dual_res::<9, 2, 6>(n, v, k, r, ray_perpendicular_plane_rows)
+fn axis_perpendicular_plane_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    dual_res::<9, 2, 6>(n, v, k, r, axis_perpendicular_plane_rows)
 }
 
-fn ray_perpendicular_plane_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
-    dual_jac::<9, 2, 6>(n, v, k, j, ray_perpendicular_plane_rows)
+fn axis_perpendicular_plane_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    dual_jac::<9, 2, 6>(n, v, k, j, axis_perpendicular_plane_rows)
 }
 
 /// Columns of `plane_distance`: (o_P, du_P, dv_P, o_Q), K = (D).  `(o_Q − o_P)·n̂_P − D`: how far
@@ -3105,16 +3105,16 @@ pub static KERNELS: [Kernel; N_KERNELS] = [
     Kernel { name: "equal_angle", n_res: 1, n_par: 16, degree: 0, n_const: 1, res: equal_angle_res, jac: equal_angle_jac, const_jac: None },
     Kernel { name: "arc_length", n_res: 1, n_par: 7, degree: 1, n_const: 1, res: arc_length_res, jac: arc_length_jac, const_jac: None },
     Kernel { name: "arc_length_free", n_res: 1, n_par: 8, degree: 1, n_const: 2, res: arc_length_free_res, jac: arc_length_free_jac, const_jac: None },
-    Kernel { name: "ray_unit", n_res: 1, n_par: 3, degree: 0, n_const: 0, res: ray_unit_res, jac: ray_unit_jac, const_jac: None },
-    Kernel { name: "ray_foot", n_res: 1, n_par: 6, degree: 1, n_const: 0, res: ray_foot_res, jac: ray_foot_jac, const_jac: None },
-    Kernel { name: "point_on_ray", n_res: 2, n_par: 9, degree: 1, n_const: 6, res: point_on_ray_res, jac: point_on_ray_jac, const_jac: None },
+    Kernel { name: "axis_unit", n_res: 1, n_par: 3, degree: 0, n_const: 0, res: axis_unit_res, jac: axis_unit_jac, const_jac: None },
+    Kernel { name: "axis_foot", n_res: 1, n_par: 6, degree: 1, n_const: 0, res: axis_foot_res, jac: axis_foot_jac, const_jac: None },
+    Kernel { name: "point_on_axis", n_res: 2, n_par: 9, degree: 1, n_const: 6, res: point_on_axis_res, jac: point_on_axis_jac, const_jac: None },
     Kernel { name: "ordinate3_u", n_res: 1, n_par: 12, degree: 1, n_const: 1, res: ordinate3_u_res, jac: ordinate3_u_jac, const_jac: None },
     Kernel { name: "ordinate3_v", n_res: 1, n_par: 12, degree: 1, n_const: 1, res: ordinate3_v_res, jac: ordinate3_v_jac, const_jac: None },
     Kernel { name: "ordinate3_u_free", n_res: 1, n_par: 13, degree: 1, n_const: 2, res: ordinate3_u_free_res, jac: ordinate3_u_free_jac, const_jac: None },
     Kernel { name: "ordinate3_v_free", n_res: 1, n_par: 13, degree: 1, n_const: 2, res: ordinate3_v_free_res, jac: ordinate3_v_free_jac, const_jac: None },
-    Kernel { name: "ray_on_plane", n_res: 2, n_par: 15, degree: 1, n_const: 1, res: ray_on_plane_res, jac: ray_on_plane_jac, const_jac: None },
-    Kernel { name: "ray_parallel_plane", n_res: 1, n_par: 9, degree: 0, n_const: 0, res: ray_parallel_plane_res, jac: ray_parallel_plane_jac, const_jac: None },
-    Kernel { name: "ray_perpendicular_plane", n_res: 2, n_par: 9, degree: 0, n_const: 6, res: ray_perpendicular_plane_res, jac: ray_perpendicular_plane_jac, const_jac: None },
+    Kernel { name: "axis_on_plane", n_res: 2, n_par: 15, degree: 1, n_const: 1, res: axis_on_plane_res, jac: axis_on_plane_jac, const_jac: None },
+    Kernel { name: "axis_parallel_plane", n_res: 1, n_par: 9, degree: 0, n_const: 0, res: axis_parallel_plane_res, jac: axis_parallel_plane_jac, const_jac: None },
+    Kernel { name: "axis_perpendicular_plane", n_res: 2, n_par: 9, degree: 0, n_const: 6, res: axis_perpendicular_plane_res, jac: axis_perpendicular_plane_jac, const_jac: None },
     Kernel { name: "plane_distance", n_res: 1, n_par: 12, degree: 1, n_const: 1, res: plane_distance_res, jac: plane_distance_jac, const_jac: None },
     Kernel { name: "plane_distance_free", n_res: 1, n_par: 13, degree: 1, n_const: 2, res: plane_distance_free_res, jac: plane_distance_free_jac, const_jac: None },
 ];

@@ -192,7 +192,7 @@ fn partial_revolutions_keep_both_caps_on_either_side_of_the_axis() {
                         let mut origin_volume: Option<f64> = None;
                         for shift in [0.0, 100.0] {
                             let context = format!(
-                                "area={area}, side={side}, axis=({dx},{dy}), sense={sense:?}, sweep={degrees}, shift={shift}"
+                                "area={area}, side={side}, ax=({dx},{dy}), sense={sense:?}, sweep={degrees}, shift={shift}"
                             );
                             let mut sk = Sketch::new();
                             let pts: Vec<_> = profile.iter()
@@ -420,8 +420,8 @@ fn revolution_collapses_axis_roundoff_without_leaving_a_microscopic_tube() {
         let i = sk.solid(SolidDef::Revolve { face: face as u32, axis: axis as u32,
             sweep: Extent::at(std::f64::consts::TAU), sense: Sense::Ccw }, "turned");
         let solid = sk.evaluated_solid(i, solid::ApproximationPolicy::View { unit: 0.02 }).unwrap();
-        assert!(solid.contains_world(solid::WorldPoint([0.0, 0.0, 5.0])), "axis error={error}");
+        assert!(solid.contains_world(solid::WorldPoint([0.0, 0.0, 5.0])), "ax error={error}");
         assert!(!solid.surviving_faces().contains("turned.e3"), "the axial edge sweeps no surface");
-        assert_eq!(unpaired(solid.mesh()), 0, "axis error={error}");
+        assert_eq!(unpaired(solid.mesh()), 0, "ax error={error}");
     }
 }

@@ -21,10 +21,10 @@ component Span(k1: circle, k2: circle, side: Scalar) {
 // A connecting rod's *phantom* position, seen along the axis: the centreline and the two eyes,
 // the small end riding the bore axis one rod length from the pin.  The rod itself is the part
 // `engine.conrod` designs; this is the outline a draughtsman ghosts in for a second position.
-component Rod(pin: point, axis: line, dims: group) {
+component Rod(pin: point, ax: line, dims: group) {
   small := point hint(x: pin.x, y: pin.y + dims.L)
   cl := line(pin, small)
-  small coincident axis
+  small coincident ax
   pin distance(dims.L) small
   big := circle(center: pin) hint(r: dims.rbig)
   sm := circle(center: small) hint(r: dims.rsmall)

@@ -512,7 +512,7 @@ fn paste_lands_beside_what_was_copied_and_brings_its_constraints() {
     assert_eq!(sk.arcs.len(), 2 * before.2);
     assert_eq!(sk.user_constraints().len(), 2 * before.3);
     // the new entities come back in clipboard order, so the caller can select what it pasted —
-    // all but the front, its origin and its two rays
+    // all but the front, its origin and its two axes
     assert_eq!(made.len(), clip.primitives().len() - 4);
     assert!(made.iter().all(|e| match e.kind {
         EntKind::Point => e.i() >= before.0,
@@ -733,9 +733,9 @@ fn a_paste_draws_in_the_plane_the_document_already_has() {
     let front = e.map.ent_named("std.front").unwrap().i();
     let clip = io::copy(&sk, &[EntRef::line(0)]);
     assert_eq!(clip.planes.len(), 1, "the clipboard carries the plane its points are drawn in");
-    let (planes, rays) = (sk.planes.len(), sk.rays.len());
+    let (planes, axes) = (sk.planes.len(), sk.axes.len());
     let made = io::paste(&mut sk, &clip, 10.0, 10.0);
-    assert_eq!((sk.planes.len(), sk.rays.len()), (planes, rays), "no second plane, nor its rays");
+    assert_eq!((sk.planes.len(), sk.axes.len()), (planes, axes), "no second plane, nor its axes");
     let pasted: Vec<usize> = made.iter().filter(|r| r.kind == EntKind::Point).map(|r| r.i()).collect();
     assert_eq!(pasted.len(), 2, "the line's two ends, and not a second origin");
     assert!(pasted.iter().all(|&p| sk.plane_of(p) == Some(front)), "drawn in the front");

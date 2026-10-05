@@ -34,17 +34,17 @@ fn all_constraints(seed: u32) -> Sketch {
     let ctrl: Vec<usize> = (0..6).map(|_| pt(&mut sk, &mut rng)).collect();
     let sp = sk.spline(&ctrl).unwrap();
     let fr = sk.fixed_plane(gcs_core::plane::Basis::page(), "f");
-    // a plane held where it stands and one over two free rays, with `p` and `q` as images on
+    // a plane held where it stands and one over two free axes, with `p` and `q` as images on
     // them — so a projection's planes are inferred exactly as a document's would be
     let r3 = |rng: &mut Rng| [0; 3].map(|_| rng.uniform(-1.0, 1.0));
     let held = gcs_core::plane::Basis { o: r3(&mut rng), ..gcs_core::plane::Basis::page() };
     let pa = sk.fixed_plane(held, "pa");
-    // a free plane, its rays knocked off the unit sphere and its place moved — so the lift is
+    // a free plane, its axes knocked off the unit sphere and its place moved — so the lift is
     // checked where a solve passes, not only where it rests
     let free = |sk: &mut Sketch, rng: &mut Rng, name: &str| {
-        let (u, v) = (sk.ray(r3(rng), &format!("{name}.u")), sk.ray(r3(rng), &format!("{name}.v")));
+        let (u, v) = (sk.axis(r3(rng), &format!("{name}.u")), sk.axis(r3(rng), &format!("{name}.v")));
         let pl = sk.plane(u, v, r3(rng), name);
-        for k in sk.rays[u].d.into_iter().chain(sk.rays[v].d) {
+        for k in sk.axes[u].d.into_iter().chain(sk.axes[v].d) {
             sk.params[k as usize].value = rng.uniform(-1.5, 1.5);
         }
         pl
@@ -78,16 +78,16 @@ fn all_constraints(seed: u32) -> Sketch {
     let kn1 = EntRef::new(Cone, sk.cone(m1, rng.uniform(0.3, 1.2), "kn1"));
     let kn2 = EntRef::new(Cone, sk.cone(m2, rng.uniform(0.3, 1.2), "kn2"));
     let cy = EntRef::new(Cylinder, sk.cylinder(m1, rng.uniform(1.0, 11.0), "cy"));
-    // and two rays, their directions knocked off the unit sphere — the first placed, so its
+    // and two axes, their directions knocked off the unit sphere — the first placed, so its
     // point is free and read, the second read only as a direction
     let dir = |rng: &mut Rng| [rng.uniform(-1.0, 1.0), rng.uniform(-1.0, 1.0), rng.uniform(-1.0, 1.0)];
-    let ra = sk.ray(dir(&mut rng), "ra");
-    let rb = sk.ray(dir(&mut rng), "rb");
-    sk.place_ray(ra);
-    for k in sk.rays[ra].d.into_iter().chain(sk.rays[ra].a).chain(sk.rays[rb].d) {
+    let ra = sk.axis(dir(&mut rng), "ra");
+    let rb = sk.axis(dir(&mut rng), "rb");
+    sk.place_axis(ra);
+    for k in sk.axes[ra].d.into_iter().chain(sk.axes[ra].a).chain(sk.axes[rb].d) {
         sk.params[k as usize].value = rng.uniform(-1.5, 1.5);
     }
-    let (ray_a, ray_b) = (EntRef::new(gcs_core::model::EntKind::Ray, ra), EntRef::new(gcs_core::model::EntKind::Ray, rb));
+    let (axis_a, axis_b) = (EntRef::new(gcs_core::model::EntKind::Axis, ra), EntRef::new(gcs_core::model::EntKind::Axis, rb));
     // a line drawn in the free plane for a mirror to be taken in
     let lc2 = pt(&mut sk, &mut rng);
     sk.set_plane(lc2, Some(pc));
@@ -231,21 +231,21 @@ fn all_constraints(seed: u32) -> Sketch {
         Constraint::new(CKind::CylinderTangentLine, vec![e(cy), e(me2), Arg::Int(1)]),
         Constraint::new(CKind::CylinderTangentLine, vec![e(cy), e(me2), Arg::Int(-1)]),
         Constraint::new(CKind::ConeTangentCone, vec![e(kn1), e(kn2), e(EntRef::point(dp))]),
-        // a ray's own two rows, a point on one, and the direction words over a ray and a ray or
-        // a line, the ray handed to the line's kernels as the segment from the origin
-        Constraint::new(CKind::RayUnit, vec![e(ray_b)]),
-        Constraint::new(CKind::RayFoot, vec![e(ray_a)]),
-        Constraint::new(CKind::PointOnRay, vec![e(qe), e(ray_a)]),
-        Constraint::new(CKind::Angle3, vec![e(ray_a), e(me1), Arg::Num(0.9)]),
-        Constraint::two_line(CKind::Perpendicular3, ray_a, ray_b),
-        Constraint::two_line(CKind::Parallel3, ray_b, me2),
-        Constraint::two_line(CKind::Parallel3, me1, ray_a),
-        // a ray and a plane: on it, along it and square to it, over a free plane and a held one;
+        // an axis's own two rows, a point on one, and the direction words over an axis and an axis or
+        // a line, the axis handed to the line's kernels as the segment from the origin
+        Constraint::new(CKind::AxisUnit, vec![e(axis_b)]),
+        Constraint::new(CKind::AxisFoot, vec![e(axis_a)]),
+        Constraint::new(CKind::PointOnAxis, vec![e(qe), e(axis_a)]),
+        Constraint::new(CKind::Angle3, vec![e(axis_a), e(me1), Arg::Num(0.9)]),
+        Constraint::two_line(CKind::Perpendicular3, axis_a, axis_b),
+        Constraint::two_line(CKind::Parallel3, axis_b, me2),
+        Constraint::two_line(CKind::Parallel3, me1, axis_a),
+        // an axis and a plane: on it, along it and square to it, over a free plane and a held one;
         // and two planes a distance apart
-        Constraint::new(CKind::RayOnPlane, vec![e(ray_a), e(pce)]),
-        Constraint::new(CKind::RayParallelPlane, vec![e(ray_b), e(pce)]),
-        Constraint::new(CKind::RayPerpendicularPlane, vec![e(ray_b), e(pbe)]),
-        Constraint::new(CKind::RayPerpendicularPlane, vec![e(ray_a), e(pae)]),
+        Constraint::new(CKind::AxisOnPlane, vec![e(axis_a), e(pce)]),
+        Constraint::new(CKind::AxisParallelPlane, vec![e(axis_b), e(pce)]),
+        Constraint::new(CKind::AxisPerpendicularPlane, vec![e(axis_b), e(pbe)]),
+        Constraint::new(CKind::AxisPerpendicularPlane, vec![e(axis_a), e(pae)]),
         Constraint::new(CKind::PlaneDistance, vec![e(pbe), e(pce), Arg::Num(2.0)]),
         // a projection over a free plane
         Constraint::project(&sk, pe, qe).expect("two images on two planes that fold"),
@@ -275,7 +275,7 @@ fn all_constraints(seed: u32) -> Sketch {
             c
         },
         fx(CKind::Angle3, vec![e(me1), e(me2)], "t3 + 0.5", 0.9),
-        fx(CKind::Angle3, vec![e(ray_b), e(me2)], "t3r + 0.5", 0.9),
+        fx(CKind::Angle3, vec![e(axis_b), e(me2)], "t3r + 0.5", 0.9),
         fx(CKind::PointPlaneDistance, vec![e(qe), e(pce)], "n3 + 1", 1.2),
         fx(CKind::PointPlaneDistance, vec![e(EntRef::point(lc)), e(pae)], "-2 * n4", 0.5),
         fx(CKind::Ordinate3U, vec![e(s3), e(pbe)], "o3 + 1", 1.2),

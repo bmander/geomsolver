@@ -16,20 +16,20 @@ has a top-level `.sv`. Source edits add geometry inside the preview, reusable de
 Hosts look for modules beside the model, then its ancestors, then the library.
 `web/tools/copy-examples.js` packages sources for static hosts; live files override them.
 
-**Points in space, planes from rays (0.42, #81, [plan](docs/planes-plan.md)):** a point no `in`
+**Points in space, planes from axes (0.42, #81, [plan](docs/planes-plan.md)):** a point no `in`
 reaches stands in space (`PointE.z`, given by `Sketch::give_place` once memberships are in; its
 own lift, no row); a 2D drawing is `use std` + `in std.front { … }`. There is no page: a point
-with neither plane nor `z` is only a 2D sketch's (JSON, hand-built tests), with no lift. A **ray**
-(`t := ray hint(x:, y:, z:)`, `RayE` p[3], d[3]; intrinsics `ray_unit`, `ray_foot` once a point
+with neither plane nor `z` is only a 2D sketch's (JSON, hand-built tests), with no lift. A **axis**
+(`t := axis hint(x:, y:, z:)`, `AxisE` p[3], d[3]; intrinsics `axis_unit`, `axis_foot` once a point
 reads its place) is a directed line with no start; a drawn line reads as one. A **plane** is
 `P := plane(u: r1, v: r2)` (`PlaneE { u, v, o, origin }`): right u, out u × v, up out × u; it owns
 `o` (three unknowns); members `P.u`, `P.v`, `P.origin` (a point drawn in P held at (0, 0)).
 `P.origin coincident p`, `P coincident p`, `P distance(d) Q` (one row along P's normal; parallel
-only by shared rays; no plane–plane parallel/angle words yet); `fix(x ==, y ==, z ==) P`. W113 warns of two planes lying on one another. `views::place`
-settles rays and plane origins before the solve, round by round with seed settlement; they stay
+only by shared axes; no plane–plane parallel/angle words yet); `fix(x ==, y ==, z ==) P`. W113 warns of two planes lying on one another. `views::place`
+settles axes and plane origins before the solve, round by round with seed settlement; they stay
 unknowns. `p distance(d, along: u) P` is an ordinate from `P.origin` along `P.u`, in space across
 planes (`Ordinate3U`, no callout); `hint(at: P, x:, y:)` seeds in P's coordinates. Circles, arcs
-and splines over a point in space are E060, faces E080. `use std` gives rays
+and splines over a point in space are E060, faces E080. `use std` gives axes
 `std.x/y/z/back`, planes `std.front` (x, z), `std.top` (x, y), `std.side` (y, z), `std.up` (z,
 back), and `std.origin` (in front, fixed) — flattened after the document, present whenever the
 document says `use std` (the workspace offers them as places to draw). `std.Turned(o, t)` is a
@@ -56,14 +56,14 @@ Param each (half-angle in radians, written in degrees: `Sketch::seed_value`). Wo
 `p coincident k|c`, `angle(θ) k`, `radius(r) c`, `c tangent l`, `k1 tangent(M) k2` (with `M
 coincident` each). Cone kernels use forward-mode `Dual<N>` (`kernels.rs`).
 
-**Rays** (`docs/planes-plan.md`, #81): `t := ray hint(x:, y:, z:)` is a directed line in space,
-`RayE { d, a, placed }`: a unit direction (`ray_unit`, intrinsic, held like `quat_unit` when `fix`
+**Axes** (`docs/planes-plan.md`, #81): `t := axis hint(x:, y:, z:)` is a directed line in space,
+`AxisE { d, a, placed }`: a unit direction (`axis_unit`, intrinsic, held like `quat_unit` when `fix`
 holds all three) and the point nearest the origin, fixed — no freedom — until a relation reads it
-(`PointOnRay`, `p coincident t`), when `Sketch::place_ray` frees it and mints `ray_foot` (`a·d =
-0`). `parallel`/`perpendicular`/`angle` over a ray are `Parallel3`/`Perpendicular3`/`Angle3`
-(slots `SpecKind::Axis`, a line or a ray): a ray is handed to the line kernels as the segment
+(`PointOnAxis`, `p coincident t`), when `Sketch::place_axis` frees it and mints `axis_foot` (`a·d =
+0`). `parallel`/`perpendicular`/`angle` over an axis are `Parallel3`/`Perpendicular3`/`Angle3`
+(slots `SpecKind::Axis`, a line or an axis): an axis is handed to the line kernels as the segment
 `(0, d)` from `Sketch::origin_param`, a fixed 0 (`Constraint::axis_columns`). An unsigned angle
-of 0°/180° is E040 by value (`program/relations.rs`). `tests/ray.rs` is the gate.
+of 0°/180° is E040 by value (`program/relations.rs`). `tests/axis.rs` is the gate.
 
 **Closed components:** model dependencies enter through arguments, standard datums included.
 Definitions and built-ins stay callable. A component scope holds only its formals and
@@ -829,7 +829,7 @@ Conventions:
   points* with the same line kernels, and `cgraph` gives them a `virtual_line` in the ground
   x-axis's direction class, so a levelled pair decomposes rather than falling to the residue.
 - A **`plane`** (Solvent §6.7) is also a **view**: `Sketch::basis(P)` is `plane::Basis` `(u, v)`
-  over its rays' directions, `n = u × v` toward the viewer, standing at `o`.  A point drawn in
+  over its axes' directions, `n = u × v` toward the viewer, standing at `o`.  A point drawn in
   it is lifted into space by the intrinsic `lift` row (`kernels::lift`: X, p, o, d_u, d_v;
   `Sketch::lift_point`, minted on request, never serialized).  `frame` is refused by the parser.
   A point's **membership** is `PointE.plane`, set by `a := point in top` (every point the
@@ -1071,7 +1071,7 @@ Conventions:
   makes it the body over its own sweep (`program/solids.rs`'s body pass) — the name keeps its
   index, and the sweep moves to a stock of the same name (`SourceMap::also_made`), which
   `operand_paths` gives no step, so `plate.near` stays its name.
-  **Nothing three-dimensional is solved for past the sketch** (rays and planes are, with the
+  **Nothing three-dimensional is solved for past the sketch** (axes and planes are, with the
   sketch).  `EntKind::Face` and `EntKind::Solid` own no `Param`, and every extent is an `Extent`:
   the text written and the number the *flattener* settled.  The strata run one way: the sketch
   solves, depths are worked out, terms are ordered (`solid::resolve`), outputs are read.  No
@@ -1180,7 +1180,7 @@ Conventions:
   is minted only under `-> close`, so "the loop closes" stays something the source states (on a
   loop that already meets it mints nothing).  `tests/solid_lang.rs` is the gate.
 - **A stack is planes and distances**: parts standing on one another are drawn in parallel
-  planes, `P distance(d) Q` with a ray square to both through both origins (`against`, placed
+  planes, `P distance(d) Q` with an axis square to both through both origins (`against`, placed
   planes and E083 are gone, #81).  `hardware.Groove` states the O-ring rule once (10–20% squeeze,
   a groove a third wider), so `dims.sv` derives `grooveb` and `groovew`.
   **A component contributes a `cut` to a body it was handed**, which is the body rule being a

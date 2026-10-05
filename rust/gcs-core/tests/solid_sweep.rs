@@ -20,10 +20,10 @@ fix(x == 0, y == 1) z
 rim := arc(center: center,start: a,end: b)
 radius(1) rim
 diameter := line(a,b)
-axis := line(o,z)
+ax := line(o,z)
 }
 tool := solid(face(rim,diameter),about: diameter)
-generating := motion(about: axis)
+generating := motion(about: ax)
 ";
 fn read(source: &str) -> program::Elaborated {
     let (mut p,errors) = crate::common::parse(source);
@@ -93,7 +93,7 @@ fn sweep_print_copy_paste_and_delete_preserve_transitive_dependencies() {
     io::paste(&mut pasted,&copied,10.,20.);
     let i = pasted.solids.iter().position(|s| s.name == "swept").unwrap();
     assert!(material(&pasted,i,[13.,0.,20.])[1] < -0.99);
-    let removed = io::without(&e.sketch,&[e.map.ent_named("axis").unwrap()],&[]);
+    let removed = io::without(&e.sketch,&[e.map.ent_named("ax").unwrap()],&[]);
     assert!(removed.motions.is_empty());
     assert_eq!(removed.solids.len(),1);
     assert_eq!(removed.solids[0].name,"tool");
@@ -110,7 +110,7 @@ component IndexedCuts(tool: solid,target: solid,indexing: motion,count: Int) {{
 }}
 band := circle(center: center)
 radius(2) band
-stock := solid(face(band),about: axis)
+stock := solid(face(band),about: ax)
 body := solid(stock)
 swept := solid(tool,under: generating,from: -10deg,to: 10deg)
 cuts := IndexedCuts(swept,body,generating,count: 3)
@@ -155,7 +155,7 @@ fn invalid_intervals_cycles_and_nested_sweeps_are_explicit() {
         "bad := solid(tool,under: generating,from: 1mm,to: 2mm)",
         "bad := solid(tool,under: generating,from: 0deg,to: 1deg,at: 0deg)",
         "bad := solid(tool,under: generating,from: 0deg,to: 1deg,depth: 1mm)",
-        "bad := solid(tool,under: axis,from: 0deg,to: 1deg)",
+        "bad := solid(tool,under: ax,from: 0deg,to: 1deg)",
         "bad := solid(bad,under: generating,from: 0deg,to: 1deg)"] {
         let (p,errors) = crate::common::parse(&format!("{SOURCE}{bad}\n"));
         let e = program::elaborate(&p);

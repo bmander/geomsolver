@@ -616,7 +616,7 @@ fn apply_gauge(
                 bad(Code::E101, rf.span, format!("no such entity: `{}`", rf.root.text));
                 return;
             };
-            // a plane holds where it stands; a ray its direction
+            // a plane holds where it stands; an axis its direction
             let scalars: Vec<&str> = e.kind
                 .fields()
                 .iter()

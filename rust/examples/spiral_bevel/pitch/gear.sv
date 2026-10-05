@@ -25,7 +25,7 @@ component GearCone(p: plane, g: plane, design: group) {
     pitch_line := line(apex, mean)
     to_apex := line(mean, apex)
     to_foot := line(mean, foot)
-    axis := line(apex, foot)
+    ax := line(apex, foot)
     crown_axis := line(apex, top)
     opposite := line(apex, mirror)
   }
@@ -33,14 +33,14 @@ component GearCone(p: plane, g: plane, design: group) {
   mean coincident p
   O project apex
   M project mean
-  to_foot perpendicular axis
+  to_foot perpendicular ax
   mean distance(design.gear_teeth * design.module / 2) foot
   apex distance(design.pinion_teeth * design.module / 2) foot
   // The crown's axis, square to P at the apex and as long as the cone.
   pitch_line angle(90deg, sense: cw) crown_axis
   crown_axis equal pitch_line
   // The generator across the axis from M, where the gear's blank is drawn.
-  mean symmetry(axis) mirror
+  mean symmetry(ax) mirror
 }
 
 preview {

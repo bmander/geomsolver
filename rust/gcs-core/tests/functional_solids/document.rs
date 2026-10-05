@@ -27,8 +27,8 @@ fix(x == 3, y == -1) a
 fix(x == 3, y == 1) b
 rim := arc(center: o,start: a,end: b)
 radius(1) rim
-axis := line(b,a)
-ball := solid(face(rim,axis),about: axis)
+ax := line(b,a)
+ball := solid(face(rim,ax),about: ax)
 z := point
 q := point
 fix(x == 0, y == 0) z
@@ -82,13 +82,13 @@ c := point
 fix(x == 0, y == 0) o
 fix(x == 0, y == 1) z
 fix(x == 3, y == 0) c
-axis := line(o,z)
+ax := line(o,z)
 outer := circle(center: c)
 radius(1) outer
 inner := circle(center: c)
 radius(0.4) inner
 }
-body := solid(face(outer,holes: inner),about: axis)
+body := solid(face(outer,holes: inner),about: ax)
 ");
     let body = field(&e,"body");
     for x in 0..=40 {
@@ -132,16 +132,16 @@ fix(x == 0, y == 1) z
 fix(x == 3, y == 0) c
 fix(x == 4, y == 0) a
 fix(x == 3, y == -1) b
-axis := line(o,z)
+ax := line(o,z)
 round := arc(center: c,start: a,end: b)
 radius(1) round
 chord := line(a,b)
 }
 profile := face(round,chord)
-body := solid(profile,about: axis)
+body := solid(profile,about: ax)
 ";
     for source in [source.to_string(),source.replace("profile := face(round,chord)","profile := face(chord,round)"),
-        source.replace("axis := line(o,z)","axis := line(z,o)")] {
+        source.replace("ax := line(o,z)","ax := line(z,o)")] {
         let e = read(&source);
         let field = field(&e,"body");
         for ir in 10..=50 { for iz in -20..=20 {
@@ -174,11 +174,11 @@ fn declarative_bevel_blank_reads_without_gear_names_or_coordinate_adapters() {
 
 #[test]
 fn partial_sweeps_fail_explicitly_while_prisms_and_concave_profiles_read() {
-    let e = read(&SPHERE.replace("about: axis)","about: axis,sweep: 90deg)"));
+    let e = read(&SPHERE.replace("about: ax)","about: ax,sweep: 90deg)"));
     assert!(SpatialField::read(&e.sketch,0,1e-10).unwrap_err().contains("full revolution"));
     assert!(SpatialField::read(&e.sketch,999,1e-10).is_err());
     // The same half disc extruded 2 behind the page is a prism on x >= 3, y in [0, 2].
-    let e = read(&SPHERE.replace("about: axis)","depth: 2)"));
+    let e = read(&SPHERE.replace("about: ax)","depth: 2)"));
     let half = SpatialField::read(&e.sketch,0,1e-10).unwrap();
     for (p,inside) in [([3.5,1.,0.],true),([2.5,1.,0.],false),([3.5,3.,0.],false),([3.9,0.5,0.],true)] {
         let got = half.bounds(point(p)).unwrap().bounds();
@@ -193,7 +193,7 @@ o := point
 z := point
 fix(x == 0, y == 0) o
 fix(x == 0, y == 1) z
-axis := line(o,z)
+ax := line(o,z)
 a := point
 b := point
 c := point
@@ -206,7 +206,7 @@ fix(x == 2, y == 1) d
 fix(x == 1, y == 3) e
 }
 profile := face(a,b,c,d,e,-> close)
-body := solid(profile,about: axis)
+body := solid(profile,about: ax)
 ");
     let body = SpatialField::read(&e.sketch,0,1e-10).unwrap();
     for (p,inside) in [([3.,0.,0.5],true),([0.,1.4,2.],true),([2.2,0.,2.],false),([0.5,0.,1.],false)] {

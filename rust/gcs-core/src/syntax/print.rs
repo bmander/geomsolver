@@ -524,11 +524,11 @@ pub(crate) fn hint_clause(d: &Decl, seed: &[f64]) -> String {
         // a number the source wrote, though it be 0
         let said = written.is_some() || d.seed_spans.get(scalar).is_some_and(|s| !s.is_empty());
         scalar += 1;
-        // a number that is 0 where nobody wrote one says nothing: a point's height, a ray's
+        // a number that is 0 where nobody wrote one says nothing: a point's height, an axis's
         // place, where a plane stands — each 0 unless said
         let optional = matches!(
             (d.kind, *name),
-            (EntKind::Point, "z") | (EntKind::Ray, "px" | "py" | "pz") | (EntKind::Plane, _)
+            (EntKind::Point, "z") | (EntKind::Axis, "px" | "py" | "pz") | (EntKind::Plane, _)
         );
         if optional && !said && v == 0.0 {
             continue;
@@ -620,7 +620,7 @@ fn write_written(out: &mut String, w: &Written) {
 /// the constraint list and the program panel cannot come to spell one constraint three ways.
 pub fn operator_text(kind: CKind, args: &[Option<Arg>]) -> String {
     let Some((word, fixity)) = kind.operator() else {
-        // nobody writes this one: a drag target, a lift, a ray's intrinsics
+        // nobody writes this one: a drag target, a lift, an axis's intrinsics
         return format!("{}(…)", snake(kind.name()));
     };
     let spec = kind.spec();

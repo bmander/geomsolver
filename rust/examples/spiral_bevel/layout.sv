@@ -27,9 +27,9 @@ component HypoidLayout(front: plane, design: group, normal_module: Length) {
   q := views.FoldedView(pitch.view, pinion.hinge, pitch.down, span: design.cutter_radius)
 
   // The blanks, in the axial views; the gear's cones on the generator across its axis.
-  gear_blank := blank.member.MemberLimits(gear.pitch_line, gear.opposite, gear.axis, design,
+  gear_blank := blank.member.MemberLimits(gear.pitch_line, gear.opposite, gear.ax, design,
     normal_module: normal_module) in g.view
-  pinion_blank := blank.member.MemberLimits(pinion.pitch_line, pinion.pitch_line, pinion.axis,
+  pinion_blank := blank.member.MemberLimits(pinion.pitch_line, pinion.pitch_line, pinion.ax,
     design, normal_module: normal_module) in q.view
 
   // The crown, in the normal section.
@@ -38,15 +38,15 @@ component HypoidLayout(front: plane, design: group, normal_module: Length) {
   tooth := crown.tooth.CrownTooth(pitch.view, trace.normal, thickness.inner_pitch,
     thickness.outer_pitch, design, normal_module: normal_module) in n.view
   mate := crown.mate.CrownMate(tooth, design, normal_module: normal_module) in n.view
-  reach := crown.reach.CutterReach(pitch.view, n.view, gear.O, trace.normal, mate.axis,
+  reach := crown.reach.CutterReach(pitch.view, n.view, gear.O, trace.normal, mate.ax,
     reach: design.space_reach)
   generation := generation.Generation(gear, pinion, thickness)
-  construction gear_space := crown.space.ComplementarySpace(mate.axis, mate.outer, mate.inner,
+  construction gear_space := crown.space.ComplementarySpace(mate.ax, mate.outer, mate.inner,
     generation.crown_neighbor, reach.cap) in n.view
   repeat design.relieved {
     construction tooth_relief := crown.relief.ToothRelief(tooth, reach.cap, design,
       normal_module: normal_module) in n.view
-    construction space_relief := crown.relief.SpaceRelief(mate.axis, mate.outer, mate.inner,
+    construction space_relief := crown.relief.SpaceRelief(mate.ax, mate.outer, mate.inner,
       generation.crown_neighbor, reach.cap, design, normal_module: normal_module) in n.view
   }
 

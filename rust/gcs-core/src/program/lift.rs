@@ -64,9 +64,9 @@ pub fn to_program(sk: &Sketch) -> Program {
             _ => p.push(StmtKind::Decl(lift_decl(sk, e))),
         };
     }
-    // and a plane written over a drawn line says so with the ray it gave it: `r parallel l`
+    // and a plane written over a drawn line says so with the axis it gave it: `r parallel l`
     let along = sk.constraints.iter().filter(|c| {
-        c.intrinsic && c.kind == CKind::Parallel3 && c.args[0].ent().kind == EntKind::Ray
+        c.intrinsic && c.kind == CKind::Parallel3 && c.args[0].ent().kind == EntKind::Axis
     });
     for c in sk.user_constraints().into_iter().chain(along) {
         p.push(StmtKind::Relation(lift_relation(sk, c)));
@@ -244,10 +244,10 @@ pub(crate) fn holds(sk: &Sketch, e: EntRef) -> Vec<(&'static str, f64)> {
         return Vec::new();
     }
     let scalars = e.kind.fields().iter().filter(|(_, f)| *f == Field::Scalar).map(|(n, _)| *n);
-    // a ray's place is held while nothing reads it (`Sketch::place_ray`), which is no gauge of
+    // an axis's place is held while nothing reads it (`Sketch::place_axis`), which is no gauge of
     // the document's: only its direction is ever stated held
     let own = sk.own_params(e);
-    let own = if e.kind == EntKind::Ray { &own[..3] } else { &own[..] };
+    let own = if e.kind == EntKind::Axis { &own[..3] } else { &own[..] };
     scalars
         .zip(own.iter().copied())
         .filter(|&(_, p)| sk.params[p as usize].fixed)

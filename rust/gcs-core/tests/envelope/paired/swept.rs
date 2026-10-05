@@ -21,7 +21,7 @@ fn functional_profile_with_side(pair: &Pair,rack: &str,active: Option<ProfileSid
     -> (PlanarField,[f64;3],[f64;3],String) {
     let active = active.map(|side| match side { ProfileSide::Inner => "inner", ProfileSide::Outer => "outer" });
     let sk = &pair.model.sketch;
-    let axis_name = if rack == "pinion" { "pair.tooth.axis" } else { "pair.mate.axis" };
+    let axis_name = if rack == "pinion" { "pair.tooth.ax" } else { "pair.mate.ax" };
     let axis = &sk.lines[pair.model.map.ent_named(axis_name).unwrap().i()];
     let origin = sk.world_point(axis.p1 as usize);
     let end = sk.world_point(axis.p2 as usize);

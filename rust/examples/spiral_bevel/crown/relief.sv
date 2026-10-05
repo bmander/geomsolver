@@ -97,11 +97,11 @@ component ToothRelief(tooth: group, cap: line, design: group, normal_module: Len
   inner_chamfer := ArrivingChamfer(tooth.rack.inner, tooth.rack.base, design,
     normal_module: normal_module)
   private outer := crown.space.FlankSection(tooth.rack.base, outer_chamfer.slope,
-    outer_chamfer.round, outer_chamfer.top, tooth.axis)
+    outer_chamfer.round, outer_chamfer.top, tooth.ax)
   private inner := crown.space.FlankSection(tooth.rack.base, inner_chamfer.slope,
     inner_chamfer.round, inner_chamfer.top, cap)
-  private construction outer_side := solid(outer.profile, about: tooth.axis)
-  private construction inner_side := solid(inner.profile, about: tooth.axis)
+  private construction outer_side := solid(outer.profile, about: tooth.ax)
+  private construction inner_side := solid(inner.profile, about: tooth.ax)
   body := solid(outer_side)
   inner_side bound body
 }
@@ -109,7 +109,7 @@ component ToothRelief(tooth: group, cap: line, design: group, normal_module: Len
 // The gear's relief, beside its space cutter (crown/space.sv): the outer mate section's inner
 // chamfer within the inner one's outer chamfer indexed a crown pitch round, closed as the
 // space's flanks are.
-component SpaceRelief(axis: line, outside: group, inside: group, indexing: motion, cap: line,
+component SpaceRelief(ax: line, outside: group, inside: group, indexing: motion, cap: line,
                       design: group, normal_module: Length) {
   outer_chamfer := LeavingChamfer(outside.inner, outside.base, design,
     normal_module: normal_module)
@@ -118,9 +118,9 @@ component SpaceRelief(axis: line, outside: group, inside: group, indexing: motio
   private outer := crown.space.FlankSection(outside.base, outer_chamfer.slope,
     outer_chamfer.round, outer_chamfer.top, cap)
   private inner := crown.space.FlankSection(inside.base, inner_chamfer.slope,
-    inner_chamfer.round, inner_chamfer.top, axis)
-  private construction outer_side := solid(outer.profile, about: axis)
-  private construction inner_side := solid(inner.profile, about: axis)
+    inner_chamfer.round, inner_chamfer.top, ax)
+  private construction outer_side := solid(outer.profile, about: ax)
+  private construction inner_side := solid(inner.profile, about: ax)
   private construction neighbor := solid(inner_side, under: indexing, at: 0deg)
   body := solid(outer_side)
   neighbor bound body
@@ -138,14 +138,14 @@ preview {
   tooth := crown.tooth.CrownTooth(pitch.view, trace.normal, thickness.inner_pitch,
     thickness.outer_pitch, design.hypoid_design) in n.view
   mate := crown.mate.CrownMate(tooth, design.hypoid_design) in n.view
-  reach := crown.reach.CutterReach(pitch.view, n.view, gear.O, trace.normal, mate.axis,
+  reach := crown.reach.CutterReach(pitch.view, n.view, gear.O, trace.normal, mate.ax,
     reach: design.hypoid_design.space_reach)
   crown_neighbor := motion(about: gear.crown_axis,
     phase: -4 * length(thickness.ahead) / radius(thickness.ahead) * 1rad)
-  space := crown.space.ComplementarySpace(mate.axis, mate.outer, mate.inner, crown_neighbor,
+  space := crown.space.ComplementarySpace(mate.ax, mate.outer, mate.inner, crown_neighbor,
     reach.cap) in n.view
   tooth_relief := ToothRelief(tooth, reach.cap, design.hypoid_design) in n.view
-  space_relief := SpaceRelief(mate.axis, mate.outer, mate.inner, crown_neighbor, reach.cap,
+  space_relief := SpaceRelief(mate.ax, mate.outer, mate.inner, crown_neighbor, reach.cap,
     design.hypoid_design) in n.view
   // Alone, each component's normal module is its own unknown: the trace constructs it.
   in std.front {

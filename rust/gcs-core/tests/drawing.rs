@@ -200,8 +200,8 @@ fn styles_can_show_one_point_and_hide_selected_dimensions() {
 #[test]
 fn isometric_camera_matches_the_old_helper_plane_without_model_geometry() {
     let plain = solved();
-    let source = format!("{MODEL}\niu := ray hint(x: 1, y: -1, z: 0)\nfix(x == 1, y == -1, z == 0) iu\n\
-        iv := ray hint(x: 1, y: 1, z: 2)\nfix(x == 1, y == 1, z == 2) iv\n\
+    let source = format!("{MODEL}\niu := axis hint(x: 1, y: -1, z: 0)\nfix(x == 1, y == -1, z == 0) iu\n\
+        iv := axis hint(x: 1, y: 1, z: 2)\nfix(x == 1, y == 1, z == 2) iv\n\
         iso := plane(u: iu, v: iv)\nfix(x == 0, y == 0, z == 0) iso");
     let (p, errs) = crate::common::parse(&source);
     assert!(errs.is_empty(), "{errs:?}");

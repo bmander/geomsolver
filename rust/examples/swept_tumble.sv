@@ -33,7 +33,7 @@ in std.front {
   construction centerline cradle := line(hub, hub_up)
 }
 private spin := motion(about: cradle, ratio: 0.25)
-private rise := ray hint(x: 0, y: 1, z: 1)
+private rise := axis hint(x: 0, y: 1, z: 1)
 fix(x == 0, y == sqrt(0.5), z == sqrt(0.5)) rise
 private tilted := plane(u: std.x, v: rise)
 fix(x == 0, y == 0, z == 0) tilted

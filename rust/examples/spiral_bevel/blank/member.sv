@@ -9,24 +9,24 @@ use blank.ends
 
 // `generator` runs from the apex to the mean point; `cone` is the generator the cones are drawn
 // on (the gear's lies across its axis from M).
-component MemberLimits(generator: line, cone: line, axis: line, design: group,
+component MemberLimits(generator: line, cone: line, ax: line, design: group,
                        normal_module: Length) {
   span := blank.sphere.FaceSpan(generator, width: design.face_width)
   toe := blank.sphere.SphericalBoundary(generator.p1, generator, span.toe)
   heel := blank.sphere.SphericalBoundary(generator.p1, generator, span.heel)
-  tip := blank.cone.ConeBoundary(cone, axis, offset: design.addendum * normal_module,
+  tip := blank.cone.ConeBoundary(cone, ax, offset: design.addendum * normal_module,
     lean: 180deg)
-  root := blank.cone.ConeBoundary(cone, axis, offset: design.dedendum * normal_module,
+  root := blank.cone.ConeBoundary(cone, ax, offset: design.dedendum * normal_module,
     lean: 0deg)
-  back := blank.cone.ConeBoundary(cone, axis, offset: design.back * normal_module, lean: 0deg)
+  back := blank.cone.ConeBoundary(cone, ax, offset: design.back * normal_module, lean: 0deg)
   repeat design.ends_relieved {
     // the chamfers' ends on the tip: the face width less the relief at each end
     relieved_span := blank.sphere.FaceSpan(generator,
       width: design.face_width - 2 * design.end_relief)
-    toe_end := blank.ends.EndChamfer(generator.p1, span.toe, relieved_span.toe, cone, tip, axis,
+    toe_end := blank.ends.EndChamfer(generator.p1, span.toe, relieved_span.toe, cone, tip, ax,
       size: design.end_relief)
     heel_end := blank.ends.EndChamfer(generator.p1, span.heel, relieved_span.heel, cone, tip,
-      axis, size: design.end_relief)
+      ax, size: design.end_relief)
   }
 }
 
@@ -48,11 +48,11 @@ preview {
     std.origin distance(50mm, along: right) mean
     std.origin distance(0mm, along: up) mean
     generator := line(std.origin, mean)
-    axis := line(std.origin, foot)
+    ax := line(std.origin, foot)
     to_foot := line(mean, foot)
-    to_foot perpendicular axis
-    generator angle(30deg) axis
-    limits := MemberLimits(generator, generator, axis, proportions, normal_module: 2mm)
+    to_foot perpendicular ax
+    generator angle(30deg) ax
+    limits := MemberLimits(generator, generator, ax, proportions, normal_module: 2mm)
     solids := {heel: limits.heel.wall.solid, toe: limits.toe.wall.solid,
       tip: limits.tip.wall.solid, back: limits.back.wall.solid}
     body := solid(solids.heel)

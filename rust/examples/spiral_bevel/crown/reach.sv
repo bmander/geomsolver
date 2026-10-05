@@ -9,10 +9,10 @@ use crown.thickness
 use crown.tooth
 use crown.mate
 
-// The cap: in the pitch plane, the point `reach` past the apex on the ray from C through it,
+// The cap: in the pitch plane, the point `reach` past the apex on the axis from C through it,
 // carried onto the trace normal beyond C; and its image in N, drawn there along the cutter's
 // `axis`.
-component CutterReach(p: plane, n: plane, apex: point, normal: line, axis: line, reach: Length) {
+component CutterReach(p: plane, n: plane, apex: point, normal: line, ax: line, reach: Length) {
   in p {
     // Seeds, rough: as far beyond the apex as C is short of it, and twice |CM| beyond C.
     beyond := point hint(at: apex, toward: normal.p1, by: -1)
@@ -29,13 +29,13 @@ component CutterReach(p: plane, n: plane, apex: point, normal: line, axis: line,
   in n {
     // Seeds: the image of `radial`, and the axis's run along from it.
     foot := point hint(at: radial)
-    end := point hint(at: foot, along: axis)
+    end := point hint(at: foot, along: ax)
     cap := line(foot, end)
   }
   foot coincident p
   radial project foot
-  axis angle(0deg) cap
-  cap equal axis
+  ax angle(0deg) cap
+  cap equal ax
 }
 
 preview {
@@ -55,6 +55,6 @@ preview {
     trace.K distance(tooth.normal_module) trace.normal
     trace.K distance(mate.normal_module) trace.normal
   }
-  reach := CutterReach(pitch.view, n.view, gear.O, trace.normal, mate.axis,
+  reach := CutterReach(pitch.view, n.view, gear.O, trace.normal, mate.ax,
     reach: design.hypoid_design.space_reach)
 }

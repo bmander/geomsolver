@@ -23,7 +23,7 @@ fix(x == 1, y == 0) x
 fix(x == 3, y == 0) c
 fix(x == 0, y == -3.5) b
 fix(x == 0, y == 3.5) t
-axis := line(o,q)
+ax := line(o,q)
 spin_axis := line(o,x)
 meridian := circle(center: c)
 radius(1mm) meridian
@@ -31,7 +31,7 @@ rim := arc(center: o,start: b,end: t)
 radius(3.5mm) rim
 diameter := line(t,b)
 }
-ring := solid(face(meridian),about: axis)
+ring := solid(face(meridian),about: ax)
 wall := surface(ring,meridian)
 limit := solid(face(rim,diameter),about: diameter)
 roll := motion(about: spin_axis)

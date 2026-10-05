@@ -283,14 +283,14 @@ fn what_a_cone_or_a_cylinder_does_not_take_is_refused() {
 
 /* -- `against` with solved views ------------------------------------------------------------ */
 
-/// **A plane stood off the origin keeps where it stands when lifted**: its rays say how it turns,
+/// **A plane stood off the origin keeps where it stands when lifted**: its axes say how it turns,
 /// and its `hint(…)` where it is.
 #[test]
 fn a_lifted_plane_keeps_its_origin() {
     let src = "unit mm\nuse std\n\
                back := plane(u: std.x, v: std.z) hint(x: 0, y: -12, z: 0)\n\
                fix(x == 0, y == -12, z == 0) back\n\
-               r := ray hint(x: 0.8, y: 0.6, z: 0)\nfix(x == 0.8, y == 0.6, z == 0) r\n\
+               r := axis hint(x: 0.8, y: 0.6, z: 0)\nfix(x == 0.8, y == 0.6, z == 0) r\n\
                side := plane(u: r, v: std.z) hint(x: 3, y: 4, z: 5)\n\
                fix(x == 3, y == 4, z == 5) side\n\
                a := point hint(x: 5, y: 7) in back\nb := point hint(x: 9, y: -3) in side\n";

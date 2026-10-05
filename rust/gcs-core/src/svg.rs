@@ -207,7 +207,7 @@ pub(crate) fn entity(
         // and `derived` lays that out beside the entities
         EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge => {}
         // a sphere has no picture on a sheet: its centre is a point, drawn as one
-        EntKind::Sphere | EntKind::Cone | EntKind::Cylinder | EntKind::Ray => {}
+        EntKind::Sphere | EntKind::Cone | EntKind::Cylinder | EntKind::Axis => {}
         // a point is a place, not a stroke: a small filled dot, in the ink the sheet has no
         // rule for
         EntKind::Point => {
@@ -252,7 +252,7 @@ pub(crate) fn entity(
         EntKind::Spline => poly(out, &crate::curve::tessellate(sk, i, unit), at, &ink()),
         // the polyline `render` already swept to size the page
         EntKind::Curve => poly(out, &polys[i], at, &ink()),
-        // a plane is a place in space, two rays and an origin, with nothing to draw on paper:
+        // a plane is a place in space, two axes and an origin, with nothing to draw on paper:
         // the workspace shows it as a pane
         EntKind::Plane => {}
     }

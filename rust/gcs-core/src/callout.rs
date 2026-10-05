@@ -116,15 +116,15 @@ macro_rules! undrawn {
             | CKind::CylinderRadius
             | CKind::CylinderTangentLine
             | CKind::ConeTangentCone
-            | CKind::RayUnit
-            | CKind::RayFoot
-            | CKind::PointOnRay
+            | CKind::AxisUnit
+            | CKind::AxisFoot
+            | CKind::PointOnAxis
             // an ordinate in space is no figure on any one plane
             | CKind::Ordinate3U
             | CKind::Ordinate3V
-            | CKind::RayOnPlane
-            | CKind::RayParallelPlane
-            | CKind::RayPerpendicularPlane
+            | CKind::AxisOnPlane
+            | CKind::AxisParallelPlane
+            | CKind::AxisPerpendicularPlane
             | CKind::PlaneDistance
             // a projection in space draws what `project` draws: nothing
             | CKind::ProjectSolved

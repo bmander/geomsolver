@@ -78,7 +78,7 @@ use std
 in std.front {
 a := point
 fix(x == 0mm, y == 1mm) a
-axis := line(std.origin, a)
+ax := line(std.origin, a)
 }
 b := point in std.front
 in std.front {
@@ -91,7 +91,7 @@ b distance(3mm, along: v) std.front
     close(e.sketch.point_xy(e.map.ent_named("b").unwrap().i()), (2.0, 3.0));
     let front = e.map.ent_named("std.front").unwrap().i();
     assert_eq!(e.sketch.plane_of(e.map.ent_named("b").unwrap().i()), Some(front));
-    let axis = &e.sketch.lines[e.map.ent_named("axis").unwrap().i()];
+    let axis = &e.sketch.lines[e.map.ent_named("ax").unwrap().i()];
     assert_eq!(axis.p1 as usize, e.map.ent_named("std.origin").unwrap().i());
 }
 

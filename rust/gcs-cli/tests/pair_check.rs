@@ -423,7 +423,7 @@ fn the_exported_pair_meshes_with_its_backlash() {
         (e.sketch.world_point(l.p1 as usize),e.sketch.world_point(l.p2 as usize))
     };
     for (member,c,a) in [("pinion",cp,ap),("gear",cg,ag)] {
-        let (o,t) = line(&format!("pair.reference.{member}.axis"));
+        let (o,t) = line(&format!("pair.reference.{member}.ax"));
         let m = unit(sub(t,o));
         println!("{member}'s axis {:.2e}° off the model's, its centroid {:.2e} mm off it",
             dot(a,m).abs().min(1.).acos().to_degrees(),norm(cross(sub(c,o),m)));

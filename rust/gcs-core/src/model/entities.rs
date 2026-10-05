@@ -24,8 +24,8 @@ pub enum EntKind {
     Arc,
     Spline,
     /// **The one datum kind** (issue #47, item 6: `frame` is folded into it): a plane in space
-    /// over two rays, `plane(u: r1, v: r2)`, standing at a place of its own (`PlaneE`).  Its
-    /// attitude is its rays' directions and where it stands three Params — unknowns of the solve
+    /// over two axes, `plane(u: r1, v: r2)`, standing at a place of its own (`PlaneE`).  Its
+    /// attitude is its axes' directions and where it stands three Params — unknowns of the solve
     /// unless a `fix` holds them, when the plane is **fixed** (`Sketch::plane_fixed`).
     /// A point that says it is `in` the plane is drawn in the plane's own 2D coordinates and
     /// stands in space at its lift (`Sketch::world_point`); `Project` between two such points is
@@ -77,10 +77,10 @@ pub enum EntKind {
     Cone,
     /// **A cylinder**: an axis line drawn in some view and a radius it owns.
     Cylinder,
-    /// **A ray** (`docs/planes-plan.md`): a directed line in space, with no start — a direction
+    /// **An axis** (`docs/planes-plan.md`): a directed line in space, with no start — a direction
     /// and a place, placed by relations like any other entity and drawn on no sheet.  Its
     /// relations (`parallel`, `perpendicular`, `angle`, `p coincident t`) are in space.
-    Ray,
+    Axis,
 }
 
 impl EntKind {
@@ -105,7 +105,7 @@ impl EntKind {
             EntKind::Sphere => "sphere",
             EntKind::Cone => "cone",
             EntKind::Cylinder => "cylinder",
-            EntKind::Ray => "ray",
+            EntKind::Axis => "axis",
         }
     }
 
@@ -130,7 +130,7 @@ impl EntKind {
             "sphere" => EntKind::Sphere,
             "cone" => EntKind::Cone,
             "cylinder" => EntKind::Cylinder,
-            "ray" => EntKind::Ray,
+            "axis" => EntKind::Axis,
             _ => return None,
         })
     }
@@ -153,11 +153,11 @@ impl EntKind {
             EntKind::Cone => &[("axis", C), ("half", S)],
             EntKind::Cylinder => &[("axis", C), ("r", S)],
             // its direction, which a seed and a `fix` name, and then the point on it nearest the
-            // origin, which only a relation that reads where the ray is moves
-            EntKind::Ray => &[("x", S), ("y", S), ("z", S), ("px", S), ("py", S), ("pz", S)],
+            // origin, which only a relation that reads where the axis is moves
+            EntKind::Axis => &[("x", S), ("y", S), ("z", S), ("px", S), ("py", S), ("pz", S)],
             EntKind::Arc => &[("center", C), ("start", C), ("end", C), ("r", S)],
             EntKind::Spline => &[("ctrl", L)],
-            // two rays for its attitude, its origin a point drawn in it, and where that stands
+            // two axes for its attitude, its origin a point drawn in it, and where that stands
             EntKind::Plane => &[("u", C), ("v", C), ("origin", C), ("x", S), ("y", S), ("z", S)],
             // as many arguments as its definition takes, and none of them need be points — the
             // first kind for which that is true
@@ -198,7 +198,7 @@ impl EntKind {
             | EntKind::Sphere
             | EntKind::Cone
             | EntKind::Cylinder
-            | EntKind::Ray
+            | EntKind::Axis
             | EntKind::Spline
             | EntKind::Plane
             | EntKind::Curve
@@ -226,11 +226,11 @@ impl EntKind {
             EntKind::Arc => {
                 [pt("center"), pt("start"), pt("end"), vec![format!("{n}.r")]].concat()
             }
-            // where it stands; its attitude is its rays'
+            // where it stands; its attitude is its axes'
             EntKind::Plane => ["x", "y", "z"].iter().map(|f| format!("{n}.{f}")).collect(),
             // a surface in space is no formal a curve is written over
             EntKind::Cone | EntKind::Cylinder => return None,
-            EntKind::Ray => ["x", "y", "z", "px", "py", "pz"].iter().map(|f| format!("{n}.{f}")).collect(),
+            EntKind::Axis => ["x", "y", "z", "px", "py", "pz"].iter().map(|f| format!("{n}.{f}")).collect(),
             EntKind::Spline | EntKind::Curve | EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge => return None,
         })
     }
@@ -260,7 +260,7 @@ impl EntKind {
             // built over a line already drawn in its view, as a face is over its edges
             EntKind::Cone | EntKind::Cylinder => false,
             // in space, in no view
-            EntKind::Ray => false,
+            EntKind::Axis => false,
         }
     }
 
@@ -283,7 +283,7 @@ impl EntKind {
             | EntKind::Sphere
             | EntKind::Cone
             | EntKind::Cylinder
-            | EntKind::Ray
+            | EntKind::Axis
             | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge => None,
         }
     }
@@ -308,7 +308,7 @@ impl EntKind {
             | EntKind::Sphere
             | EntKind::Cone
             | EntKind::Cylinder
-            | EntKind::Ray => false,
+            | EntKind::Axis => false,
         }
     }
 
@@ -419,12 +419,12 @@ pub struct AxialE {
     pub class: Classes,
 }
 
-/// A ray: a unit direction `d` and the point `a` on it nearest the world origin, six Params.
-/// `|d| = 1` is an intrinsic row (`Sketch::ray`); `a·d = 0` is another, minted only once a
-/// relation reads where the ray is (`placed`) — a ray read only as a direction leaves `a` fixed
+/// An axis: a unit direction `d` and the point `a` on it nearest the world origin, six Params.
+/// `|d| = 1` is an intrinsic row (`Sketch::axis`); `a·d = 0` is another, minted only once a
+/// relation reads where the axis is (`placed`) — an axis read only as a direction leaves `a` fixed
 /// and no freedom of it counted.
 #[derive(Clone, Debug)]
-pub struct RayE {
+pub struct AxisE {
     pub d: [u32; 3],
     pub a: [u32; 3],
     pub placed: bool,
@@ -459,10 +459,10 @@ pub struct SplineE {
     pub class: Classes,
 }
 
-/// **A plane in space** (`docs/planes-plan.md`): its attitude is two rays' — right along `u`,
+/// **A plane in space** (`docs/planes-plan.md`): its attitude is two axes' — right along `u`,
 /// out along `u × v`, up along `out × u` — and where it stands is `o`, three Params of its own.
 /// Its origin is the member point `origin`, drawn in it and held at `(0, 0)`, so it stands at
-/// `o`.  A plane owns no intrinsic row: what it is, is read off its rays and `o` (`Sketch::basis`),
+/// `o`.  A plane owns no intrinsic row: what it is, is read off its axes and `o` (`Sketch::basis`),
 /// and it is **fixed** — its basis constants every row may read — when all nine are held.
 #[derive(Clone, Debug)]
 pub struct PlaneE {

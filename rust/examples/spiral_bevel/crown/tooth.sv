@@ -27,10 +27,10 @@ component CrownTooth(p: plane, normal: line, inner: point, outer: point, design:
   inner project lp
   outer project rp
   rack := crown.section.RackSection(lp, rp, design, normal_module: normal_module)
-  axis := line(center, top)
-  rack.pitch angle(90deg) axis
+  ax := line(center, top)
+  rack.pitch angle(90deg) ax
   center distance(design.cutter_radius) top
-  construction crown := solid(rack.profile, about: axis)
+  construction crown := solid(rack.profile, about: ax)
 }
 
 preview {

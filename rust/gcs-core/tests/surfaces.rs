@@ -10,11 +10,11 @@ c := point
 fix(x == 0, y == 0) o
 fix(x == 0, y == 1) q
 fix(x == 3, y == 0) c
-axis := line(o,q)
+ax := line(o,q)
 meridian := circle(center: c)
 radius(1mm) meridian
 }
-ring := solid(face(meridian), about: axis)
+ring := solid(face(meridian), about: ax)
 wall := surface(ring, meridian)
 ";
 
@@ -167,7 +167,7 @@ fn angular_surface_spans_keep_source_parameters_and_finite_incidence() {
 
 #[test]
 fn surface_spans_follow_sweep_sense_and_component_angles() {
-    let source = MODEL.replace("about: axis)","about: axis, sweep: 90deg, sense: cw)");
+    let source = MODEL.replace("about: ax)","about: ax, sweep: 90deg, sense: cw)");
     let source = format!("component Portion(s: solid,e: circle,start: Angle,end: Angle) {{\n\
         part := surface(s,e,from: start,to: end)\n}}\n\
         portion := Portion(ring,meridian,start: 30deg,end: 60deg)\n{source}");
@@ -202,7 +202,7 @@ fn surface_spans_refuse_missing_reversed_and_out_of_sweep_angles() {
 fn a_surface_refuses_wrong_solids_edges_and_planar_constraints() {
     for (tail,want) in [
         ("bad := surface(meridian,meridian)","first argument is a solid"),
-        ("bad := surface(ring,axis)","not a boundary"),
+        ("bad := surface(ring,ax)","not a boundary"),
         // a prism's side is a surface (issue #70); a body over one is not
         ("prism := solid(face(meridian),depth: 2mm)\nheld := solid(prism)\nbad := surface(held,meridian)",
             "unmodified revolution or prism"),
@@ -236,7 +236,7 @@ fn analytic_projection_preserves_orientation_and_distinguishes_finite_patches() 
             }
         }
     }
-    let partial = solved(&MODEL.replace("about: axis)","about: axis,sweep: 90deg)"));
+    let partial = solved(&MODEL.replace("about: ax)","about: ax,sweep: 90deg)"));
     let patch = RevolvedSurface::named(&partial.sketch,0).unwrap().projector().unwrap();
     let off = patch.project([0.,-4.,0.]).unwrap();
     assert!(off.signed_residual.abs() < 1e-10,"the point lies on the continued torus");
@@ -261,11 +261,11 @@ fix(x == 0, y == 2) c
 fix(x == 0, y == -2) d
 side := line(a,b)
 top := line(b,c)
-axis := line(d,c)
+ax := line(d,c)
 bottom := line(d,a)
 }
-profile := face(side,top,axis,bottom)
-drum := solid(profile,about: axis)
+profile := face(side,top,ax,bottom)
+drum := solid(profile,about: ax)
 wall := surface(drum,side)
 ");
     let s = RevolvedSurface::named(&e.sketch,0).unwrap();

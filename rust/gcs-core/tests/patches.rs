@@ -13,12 +13,12 @@ fix(x == 0, y == 0) o
 fix(x == 0, y == 1) q
 fix(x == 1, y == 0) x
 fix(x == 3, y == 0) c
-axis := line(o,q)
+ax := line(o,q)
 spin_axis := line(o,x)
 meridian := circle(center: c)
 radius(1mm) meridian
 }
-ring := solid(face(meridian),about: axis)
+ring := solid(face(meridian),about: ax)
 wall := surface(ring,meridian)
 roll := motion(about: spin_axis)
 generated := envelope(wall,under: roll,from: -20deg,to: 20deg)
@@ -29,8 +29,8 @@ component Sphere(o: point, size: Length) {
   fix(x == 0, y == size) top
   private rim := arc(center: o,start: bottom,end: top)
   radius(size) rim
-  private axis := line(top,bottom)
-  body := solid(face(rim,axis),about: axis)
+  private ax := line(top,bottom)
+  body := solid(face(rim,ax),about: ax)
 }
 in std.front {
 inner := Sphere(o, size: 2.5mm)
@@ -147,8 +147,8 @@ fn patch_formals_follow_forward_source_paths_and_private_regions_stay_private() 
 fn patch_diagnostics_refuse_missing_or_wrong_operands_and_ambiguous_labels() {
     for (tail,want) in [
         ("bad := patch(wall)","at least one"),
-        ("bad := patch(wall,inside: axis)","trim names a solid"),
-        ("bad := patch(axis,inside: ring)","source must be"),
+        ("bad := patch(wall,inside: ax)","trim names a solid"),
+        ("bad := patch(ax,inside: ring)","source must be"),
         ("bad := patch(wall,inside: missing)","no such entity"),
         ("bad := patch(source: wall,source: wall,inside: ring)","exactly one"),
         ("fix(x == 0, y == 0) tooth","a patch has no number of its own to fix"),

@@ -618,7 +618,7 @@ pub fn add_entity(prog: &Program, kind: EntKind, args: &[String], seed: &[f64]) 
     add_entity_with(prog, kind, args, seed, None)
 }
 
-/// A plane over two rays or drawn lines, `args` their names — `plane(u: a, v: b)` — and, when
+/// A plane over two axes or drawn lines, `args` their names — `plane(u: a, v: b)` — and, when
 /// the caller has one, the name it asked for.  A name already in use is refused rather than
 /// silently renamed: the caller is about to refer to it.
 pub fn add_plane(prog: &Program, args: &[String], name: Option<&str>) -> Edit {
@@ -898,7 +898,7 @@ fn mentions(st: &Stmt, names: &std::collections::BTreeSet<String>) -> Vec<String
                     look(r);
                 }
             }
-            // a plane's rays are its children, looked at above; a membership (`in …`) is a
+            // a plane's axes are its children, looked at above; a membership (`in …`) is a
             // label the point survives losing, and is not counted
             if let Some(motion) = &d.motion {
                 match motion {

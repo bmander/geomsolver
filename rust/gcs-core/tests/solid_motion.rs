@@ -17,7 +17,7 @@ fix(x == 3, y == 2) c
 fix(x == 1, y == 2) d
 fix(x == 0, y == 0) o
 fix(x == 0, y == 1) z
-axis := line(o,z)
+ax := line(o,z)
 ab := line(a,b)
 bc := line(b,c)
 cd := line(c,d)
@@ -25,7 +25,7 @@ da := line(d,a)
 }
 profile := face(ab,bc,cd,da)
 stock := solid(profile, from: 0mm, to: 2mm)
-turn := motion(about: axis)
+turn := motion(about: ax)
 ";
 
 fn read(src: &str) -> program::Elaborated {
@@ -117,7 +117,7 @@ fn indexed_pattern_stl_must_have_closed_encoded_topology() {
 fn malformed_placements_and_cycles_are_refused() {
     for bad in ["bad := solid(stock, under: turn)","bad := solid(stock, at: 90deg)",
         "bad := solid(stock, under: turn, at: 90deg, depth: 2mm)",
-        "bad := solid(stock, under: axis, at: 90deg)","bad := solid(stock, under: turn, at: 2mm)",
+        "bad := solid(stock, under: ax, at: 90deg)","bad := solid(stock, under: turn, at: 2mm)",
         "bad := solid(profile, under: turn, at: 90deg)","bad := solid(bad, under: turn, at: 90deg)"] {
         let (p,errors) = crate::common::parse(&format!("{SOURCE}{bad}\n"));
         let e = program::elaborate(&p);
@@ -131,7 +131,7 @@ fn solids_bind_final_motion_indices_after_dependency_ordering() {
     // Declaration order, alphabetical order and dependency order all differ.
     // Each solid must retain its named motion, including through a formal.
     let e = read(&format!("{SOURCE}\n\
-        z_turn := motion(about: axis,phase: 90deg)\n\
+        z_turn := motion(about: ax,phase: 90deg)\n\
         a_relative := motion(z_turn,relative_to: turn)\n\
         component Copy(stock: solid,movement: motion) {{\n\
           moved := solid(stock,under: movement,at: 0deg)\n\

@@ -215,7 +215,7 @@ fn remap_early(
         // face and a solid are built after every curve, so neither is one either
         // nor a sphere: a curve is written over drawn figures, and a sphere is on no sheet
         EntKind::Curve | EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge
-        | EntKind::Sphere | EntKind::Cone | EntKind::Cylinder | EntKind::Ray => None,
+        | EntKind::Sphere | EntKind::Cone | EntKind::Cylinder | EntKind::Axis => None,
     }
 }
 
@@ -380,10 +380,10 @@ pub fn to_json(sk: &Sketch) -> Json {
             doc.set(key, Json::Arr(v));
         }
     }
-    // the rays, only when there is one: a direction and its fixed flags, and where it is (read
+    // the axes, only when there is one: a direction and its fixed flags, and where it is (read
     // back, since a relation placing it is re-added on load and frees the place again)
-    let rays: Vec<Json> = sk
-        .rays
+    let axes: Vec<Json> = sk
+        .axes
         .iter()
         .map(|r| {
             let nums = |ps: &[u32; 3]| Json::Arr(ps.iter().map(|&p| sk.params[p as usize].value.into()).collect());
@@ -395,8 +395,8 @@ pub fn to_json(sk: &Sketch) -> Json {
             ])
         })
         .collect();
-    if !rays.is_empty() {
-        doc.set("rays", Json::Arr(rays));
+    if !axes.is_empty() {
+        doc.set("axes", Json::Arr(axes));
     }
     doc
 }
@@ -483,18 +483,18 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
                 .to_string(),
         );
     }
-    // the rays before the planes built over them, `primitives()`'s order
-    for r in d.get("rays").unwrap_or(&empty).arr() {
+    // the axes before the planes built over them, `primitives()`'s order
+    for r in d.get("axes").unwrap_or(&empty).arr() {
         let three = |key: &str| -> [f64; 3] {
             let v = r.get(key).map(|v| v.arr()).unwrap_or_default();
             [0, 1, 2].map(|k| v.get(k).map(|x| x.as_f64()).unwrap_or(0.0))
         };
         let fixed = r.get("fixed").map(|v| v.arr()).unwrap_or_default();
         let held = [0, 1, 2].map(|k| fixed.get(k).map(|v| v.as_bool()).unwrap_or(false));
-        sk.ray_restored(three("d"), held, three("a"), read_class(r));
+        sk.axis_restored(three("d"), held, three("a"), read_class(r));
     }
-    // the planes over their rays, each with its origin a point already read
-    let nr = sk.rays.len();
+    // the planes over their axes, each with its origin a point already read
+    let nr = sk.axes.len();
     for p in d.get("planes").unwrap_or(&empty).arr() {
         let g = |key: &str, n: usize| index(p.get(key).map(|v| v.as_i64()).unwrap_or(0), n, key);
         let o = ["x", "y", "z"].map(|k| p.get(k).map(|v| v.as_f64()).unwrap_or(0.0));
@@ -671,7 +671,7 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
     let mut made = Vec::new();
     // a paste onto a plane the document already has: one held where the clipboard's is held and
     // facing the same way *is* that plane, so what was drawn in it is drawn in it again and no
-    // second plane stands on the first; its rays and its origin are the document's
+    // second plane stands on the first; its axes and its origin are the document's
     let mut reuse: Vec<Option<usize>> = vec![None; src.planes.len()];
     if !fresh {
         let same = |a: [f64; 3], b: [f64; 3]| (0..3).all(|k| (a[k] - b[k]).abs() < 1e-9);
@@ -782,25 +782,25 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         spline_map[i] = Some(ni);
         made.push(EntRef::spline(ni));
     }
-    // the rays, each its own: a direction, its fixed flags and its place — but a reused plane's,
+    // the axes, each its own: a direction, its fixed flags and its place — but a reused plane's,
     // which are the document's plane's
-    let mut ray_map: Vec<Option<usize>> = vec![None; src.rays.len()];
+    let mut axis_map: Vec<Option<usize>> = vec![None; src.axes.len()];
     for (i, r) in reuse.iter().enumerate() {
         if let Some(j) = r {
-            ray_map[src.planes[i].u as usize] = Some(dst.planes[*j].u as usize);
-            ray_map[src.planes[i].v as usize] = Some(dst.planes[*j].v as usize);
+            axis_map[src.planes[i].u as usize] = Some(dst.planes[*j].u as usize);
+            axis_map[src.planes[i].v as usize] = Some(dst.planes[*j].v as usize);
         }
     }
-    for i in 0..src.rays.len() {
-        if !keep(EntRef::new(EntKind::Ray, i)) || ray_map[i].is_some() {
+    for i in 0..src.axes.len() {
+        if !keep(EntRef::new(EntKind::Axis, i)) || axis_map[i].is_some() {
             continue;
         }
-        let r = &src.rays[i];
+        let r = &src.axes[i];
         let value = |q: u32| src.params[q as usize].value;
-        let ni = dst.ray_restored(r.d.map(value), r.d.map(|q| src.params[q as usize].fixed),
+        let ni = dst.axis_restored(r.d.map(value), r.d.map(|q| src.params[q as usize].fixed),
                                   r.a.map(value), r.class.clone());
-        ray_map[i] = Some(ni);
-        made.push(EntRef::new(EntKind::Ray, ni));
+        axis_map[i] = Some(ni);
+        made.push(EntRef::new(EntKind::Axis, ni));
     }
     let mut plane_map: Vec<Option<usize>> = vec![None; src.planes.len()];
     for i in 0..src.planes.len() {
@@ -813,7 +813,7 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         }
         let p = &src.planes[i];
         let (Some(u), Some(v), Some(origin)) =
-            (ray_map[p.u as usize], ray_map[p.v as usize], pt_index(p.origin as usize))
+            (axis_map[p.u as usize], axis_map[p.v as usize], pt_index(p.origin as usize))
         else {
             continue;
         };
@@ -1259,7 +1259,7 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             EntKind::Sphere => sphere_map[e.i()].map(|i| EntRef::new(EntKind::Sphere, i)),
             EntKind::Cone => cone_map[e.i()].map(|i| EntRef::new(EntKind::Cone, i)),
             EntKind::Cylinder => cylinder_map[e.i()].map(|i| EntRef::new(EntKind::Cylinder, i)),
-            EntKind::Ray => ray_map[e.i()].map(|i| EntRef::new(EntKind::Ray, i)),
+            EntKind::Axis => axis_map[e.i()].map(|i| EntRef::new(EntKind::Axis, i)),
             EntKind::Arc => arc_map[e.i()].map(EntRef::arc),
             EntKind::Spline => spline_map[e.i()].map(EntRef::spline),
             EntKind::Plane => plane_map[e.i()].map(EntRef::plane),
@@ -1476,7 +1476,7 @@ impl Part {
                 by_free.entry(f.param).or_default().push(ci);
             }
         }
-        // a plane is a wall when it cannot move: its rays held as well as where it stands
+        // a plane is a wall when it cannot move: its axes held as well as where it stands
         let wall = |e: EntRef| match e.kind {
             EntKind::Plane => sk.plane_fixed(e.i()),
             _ => sk.entity_params(e).iter().all(|&p| sk.params[p as usize].fixed),
@@ -1527,7 +1527,7 @@ impl Part {
                 }
             }
         }
-        // a plane is rebuilt over its rays and its origin, wherever the walk stopped at it
+        // a plane is rebuilt over its axes and its origin, wherever the walk stopped at it
         for i in 0..sk.planes.len() {
             if keep.contains(&EntRef::plane(i)) {
                 keep.extend(sk.children(EntRef::plane(i)));

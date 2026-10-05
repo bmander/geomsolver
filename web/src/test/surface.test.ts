@@ -17,11 +17,11 @@ c := point
 fix(x == 0, y == 0) o
 fix(x == 0, y == 1) q
 fix(x == 3, y == 0) c
-axis := line(o,q)
+ax := line(o,q)
 meridian := circle(center: c)
 radius(1mm) meridian
 }
-ring := solid(face(meridian),about: axis)
+ring := solid(face(meridian),about: ax)
 wall := surface(ring,meridian)
 `);
   try {

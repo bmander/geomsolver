@@ -286,8 +286,8 @@ pub fn elaborate(p: &Program) -> Elaborated {
         EntKind::Circle,
         EntKind::Arc,
         EntKind::Spline,
-        // a plane is built over its rays
-        EntKind::Ray,
+        // a plane is built over its axes
+        EntKind::Axis,
         EntKind::Plane,
         EntKind::Sphere,
         EntKind::Cone,
@@ -362,11 +362,11 @@ pub fn elaborate(p: &Program) -> Elaborated {
     // memberships, once every kind is built and before anything reads one: `point a in top`
     // names a plane built after the point, and `project` infers its planes from these — and then
     // every point no `in` reached stands in space (`places`), and a plane written over a drawn
-    // line has its hidden ray held along it
+    // line has its hidden axis held along it
     memberships(&mut sk, &res, &map, &body, &skip, &mut diags);
     entities::places(&mut sk, &deferred, &mut diags);
     entities::drawn_in_planes(&sk, &map, &mut diags);
-    entities::rays_along(&mut sk, &deferred);
+    entities::axes_along(&mut sk, &deferred);
 
     // motions, once every line and point they are written over is built — and before the
     // profiles a planar motion generates, which are curves of the drawing a contact may name

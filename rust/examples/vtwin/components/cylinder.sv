@@ -7,7 +7,7 @@ use components.dims
 // f is the moving datum: origin at the pivot, u toward the head, v to the left.
 // The caller supplies plane membership with `in`; fw is the plate-side wall thickness.
 component Cylinder(f: group, fw: Length, dims: group) {
-  axis := line(f.u.p1, f.u.p2)
+  ax := line(f.u.p1, f.u.p2)
   // The skirt reaches the bore mouth at bottom dead centre.
   mouth_u := dims.L - dims.R - dims.ph - dims.H
   hw := dims.D / 2 + dims.wall
@@ -48,7 +48,7 @@ component Cylinder(f: group, fw: Length, dims: group) {
   radius(dims.trapfit / 2) shank
 
   // The bolt head slides in from the left; the slot holds it against the face wall.
-  pkt := std.Hex(f.u.p1, axis, af: dims.boltaf, phase: 90deg)
+  pkt := std.Hex(f.u.p1, ax, af: dims.boltaf, phase: 90deg)
   t0 := point hint(at: f.axes, x: trapw / 2, y: hw)
   t1 := point hint(at: f.axes, x: trapw / 2, y: -trapd)
   t2 := point hint(at: f.axes, x: -trapw / 2, y: -trapd)
@@ -61,35 +61,35 @@ component Cylinder(f: group, fw: Length, dims: group) {
   h0 := point hint(at: f.axes, x: top_u, y: dims.D / 2)
 
   // The outside is a rectangle centered on the bore axis. One axial dimension locates its mouth.
-  mouth perpendicular axis
-  lid perpendicular axis
-  side_l parallel axis
-  side_r parallel axis
+  mouth perpendicular ax
+  lid perpendicular ax
+  side_l parallel ax
+  side_r parallel ax
   distance(2 * hw) mouth
   distance(top_u - mouth_u) side_l
   m0 midpoint mouth
-  m0 coincident axis
+  m0 coincident ax
   m0 distance(mouth_u, along: u) f.axes
   // The bore opens at that mouth and leaves the specified side and head walls.
   b_bl coincident mouth
   b_br coincident mouth
-  bore_l parallel axis
-  bore_r parallel axis
-  hd perpendicular axis
+  bore_l parallel ax
+  bore_r parallel ax
+  hd perpendicular ax
   k_bl distance(dims.wall) b_bl
   k_br distance(dims.wall) b_br
   b_tl distance(dims.wall) lid
   hx midpoint hd
-  pt coincident axis
+  pt coincident ax
   f.u.p1 distance(dims.a) pt
   // The head slot is rectangular and opens on the left body wall.
-  trap0 perpendicular axis
-  trap1 parallel axis
-  trap2 perpendicular axis
+  trap0 perpendicular ax
+  trap1 parallel ax
+  trap2 perpendicular ax
   t0 coincident side_l
   t3 coincident side_l
   distance(trapw) trap1
-  t1 distance(trapd, side: right) axis
+  t1 distance(trapd, side: right) ax
   t0 distance(trapw / 2, along: u) f.axes
   h0 coincident lid
   h0 coincident bore_l
@@ -109,7 +109,7 @@ component Cylinder(f: group, fw: Length, dims: group) {
 
   // Sweep the body, turn the bore, then cut the port, shank hole and head slot.
   block := solid(face(mouth, side_r, lid, side_l), from: face, to: back)
-  bore := solid(face(m0, b_br, bore_r, hx, -> close), about: axis)
+  bore := solid(face(m0, b_br, bore_r, hx, -> close), about: ax)
   passage := solid(face(port), from: face, to: 0mm)
   hole := solid(face(shank), from: face, to: face + dims.trapz)
   trap := solid(face(trap0, trap1, trap2, -> close), from: face + dims.trapz, to: face + dims.trapz + dims.traph)

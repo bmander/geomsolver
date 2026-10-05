@@ -334,7 +334,7 @@ fn a_solve_writes_an_unknowns_seed_back_to_its_declaration() {
 
 /// **An unknown starts at its seed**, wherever it is read: a dimension's unknown at the number in
 /// its `hint(…)` rather than where a walk from the pose would put it, and one turning a plane's
-/// ray likewise.  An angle misspelling its unknown is E101 and nothing more — the plane stands,
+/// axis likewise.  An angle misspelling its unknown is E101 and nothing more — the plane stands,
 /// so what is drawn in it is not refused after it.
 #[test]
 fn an_unknown_starts_at_its_seed_and_a_misspelt_one_is_said_once() {
@@ -342,7 +342,7 @@ fn an_unknown_starts_at_its_seed_and_a_misspelt_one_is_said_once() {
     assert!(d.is_empty(), "{d:?}");
     assert_eq!(e.sketch.params[e.sketch.free_vars["w"] as usize].value, 25.0);
     let views = "use std\nparam beta: Angle hint(20deg)\n";
-    let side = "tilt := ray hint(x: 0, y: 0.9396926207859084, z: 0.3420201433256687)\n\
+    let side = "tilt := axis hint(x: 0, y: 0.9396926207859084, z: 0.3420201433256687)\n\
                 std.x perpendicular tilt\nstd.y angle(beta) tilt\n\
                 side := plane(u: std.x, v: tilt)\nfix(x == 0, y == 0, z == 0) side\n\
                 p := point hint(x: 5, y: 5) in side\n";

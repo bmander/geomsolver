@@ -15,14 +15,14 @@ use crown.thickness
 // `gear` is a GearCone, `pinion` a PinionCone and `thickness` a CrownThickness.
 component Generation(gear: group, pinion: group, thickness: group) {
   crown_roll := motion(about: gear.crown_axis)
-  pinion_roll := motion(about: pinion.axis,
+  pinion_roll := motion(about: pinion.ax,
     ratio: distance(gear.apex, gear.mean) / distance(gear.apex, gear.foot))
-  gear_roll := motion(about: gear.axis,
-    ratio: -distance(gear.apex, gear.mean) / distance(gear.mean, gear.axis))
+  gear_roll := motion(about: gear.ax,
+    ratio: -distance(gear.apex, gear.mean) / distance(gear.mean, gear.ax))
   pinion_generation := motion(crown_roll, relative_to: pinion_roll)
   gear_generation := motion(crown_roll, relative_to: gear_roll)
-  pinion_index := motion(about: pinion.axis)
-  gear_index := motion(about: gear.axis)
+  pinion_index := motion(about: pinion.ax)
+  gear_index := motion(about: gear.ax)
   crown_neighbor := motion(about: gear.crown_axis,
     phase: -4 * length(thickness.ahead) / radius(thickness.ahead) * 1rad)
 }
