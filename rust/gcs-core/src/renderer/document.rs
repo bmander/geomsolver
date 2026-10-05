@@ -12,11 +12,10 @@ pub fn inputs(sk: &Sketch) -> Vec<f64> {
     if sk.derived.is_empty() { return Vec::new(); }
     let mut out = vec![sk.extent()]; // the visibility walk's tolerance
     let frame = |out: &mut Vec<f64>, p: Option<u32>| {
-        let (basis, (c, s, o)) = view_frame(sk, p.map(|i| i as usize));
+        let basis = view_frame(sk, p.map(|i| i as usize));
         out.extend(basis.u);
         out.extend(basis.v);
         out.extend(basis.o);
-        out.extend([c, s, o.0, o.1]);
     };
     for d in &sk.derived {
         out.extend(solid::reads(sk, d.solid as usize, 0.0));
@@ -40,20 +39,18 @@ pub fn view(sk: &Sketch, si: usize, plane_i: Option<usize>, unit: f64) -> Vec<St
 
 /// Cut a document solid at `at` and project it in `plane_i`.
 pub fn section(sk: &Sketch, si: usize, at: Option<usize>, plane_i: Option<usize>, unit: f64) -> Vec<Stroke> {
-    render(sk, si, plane_i, unit, Some(view_frame(sk, at).0))
+    render(sk, si, plane_i, unit, Some(view_frame(sk, at)))
 }
 
 fn render(sk: &Sketch, si: usize, plane_i: Option<usize>, unit: f64, section: Option<Basis>) -> Vec<Stroke> {
     let Ok(solid) = sk.evaluated_solid(si, ApproximationPolicy::from_unit(unit)) else { return Vec::new() };
-    let (basis, pose) = view_frame(sk, plane_i);
-    Renderer::prepare(&solid).project(View { frame: PageFrame::new(basis, pose), section }).strokes
+    Renderer::prepare(&solid).project(View { frame: PageFrame::new(view_frame(sk, plane_i)), section }).strokes
 }
 
-/// The plane a picture is drawn in, and the pose its coordinates are read in — a plane's own,
-/// so the identity.  `None` is the front plane, what a 2D sketch is read on.
-pub(crate) fn view_frame(sk: &Sketch, plane_i: Option<usize>) -> (Basis, (f64, f64, (f64, f64))) {
-    let basis = plane_i.filter(|&i| i < sk.planes.len()).map_or(Basis::page(), |i| sk.basis(i));
-    (basis, crate::plane::IDENTITY_POSE)
+/// The plane a picture is drawn in, read in its own coordinates.  `None` is the front plane,
+/// what a 2D sketch is read on.
+pub(crate) fn view_frame(sk: &Sketch, plane_i: Option<usize>) -> Basis {
+    plane_i.filter(|&i| i < sk.planes.len()).map_or(Basis::page(), |i| sk.basis(i))
 }
 
 /// **Every picture the document asked for, laid out.**  The one entry both front ends read, so
@@ -81,10 +78,9 @@ pub fn layout_with_stats(sk: &Sketch, unit: f64) -> (Vec<Drawn>, RenderStats) {
     let mut out = Vec::new();
     for (i, d) in sk.derived.iter().enumerate() {
         let Some(renderer) = renderers.get(&d.solid) else { continue };
-        let (basis, pose) = view_frame(sk, d.plane.map(|i| i as usize));
         let strokes = renderer.project(View {
-            frame: PageFrame::new(basis, pose),
-            section: d.at.map(|i| view_frame(sk, Some(i as usize)).0),
+            frame: PageFrame::new(view_frame(sk, d.plane.map(|i| i as usize))),
+            section: d.at.map(|i| view_frame(sk, Some(i as usize))),
         }).strokes;
         for s in strokes {
             let mut class = crate::style::Classes(vec![

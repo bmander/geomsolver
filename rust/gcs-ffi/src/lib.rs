@@ -477,7 +477,8 @@ pub unsafe extern "C" fn gcs_plane_glyph(
     out: *mut f64,
 ) -> i32 {
     guard(-1, move || {
-        let g = gcs_core::plane::glyph(sk(h), idx as usize, unit);
+        let _ = (sk(h), idx);
+        let g = gcs_core::plane::glyph(unit);
         for (k, (from, to)) in g.iter().enumerate() {
             *out.add(4 * k) = from.0;
             *out.add(4 * k + 1) = from.1;

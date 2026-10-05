@@ -17,7 +17,7 @@ fn document() -> program::Elaborated {
     e
 }
 fn frame(basis: Basis) -> PageFrame {
-    PageFrame::new(basis, (1.0, 0.0, (0.0, 0.0)))
+    PageFrame::new(basis)
 }
 fn close(actual: [f64; 4], expected: [f64; 4]) {
     for (a, b) in actual.into_iter().zip(expected) {
@@ -26,7 +26,7 @@ fn close(actual: [f64; 4], expected: [f64; 4]) {
 }
 
 #[test]
-fn one_prepared_solid_supplies_multiple_views_and_page_placements() {
+fn one_prepared_solid_supplies_multiple_views() {
     let e = document();
     let i = e.map.ent_named("result").unwrap().i();
     let solid = e.sketch.evaluated_solid(i, ApproximationPolicy::Report).unwrap();
@@ -36,7 +36,6 @@ fn one_prepared_solid_supplies_multiple_views_and_page_placements() {
     for (frame, expected) in [
         (frame(Basis::page()), [0.0, 0.0, 10.0, 10.0]),
         (frame(side), [0.0, 0.0, 1.0, 10.0]),
-        (PageFrame::new(Basis::page(), (0.0, 1.0, (100.0, 200.0))), [90.0, 200.0, 100.0, 210.0]),
     ] {
         close(renderer.bounds(frame).unwrap(), expected);
         let drawing = renderer.project(View { frame, section: None });

@@ -306,7 +306,7 @@ fn the_glyph_is_laid_out_once_and_screen_constant() {
     let mut sk = Sketch::new();
     let p = sk.fixed_plane(Basis::page(), "front");
     let unit = 0.5;                                   // half a world unit to the screen pixel
-    let [(o, t), (o2, tick)] = gcs_core::plane::glyph(&sk, p, unit);
+    let [(o, t), (o2, tick)] = gcs_core::plane::glyph(unit);
     assert_eq!(o, sk.point_xy(sk.planes[p].origin as usize));
     assert_eq!(o2, o, "the tick comes out of the origin");
     assert!(near(t.0, gcs_core::plane::AXIS_PX * unit) && near(t.1, 0.0));

@@ -18,8 +18,6 @@ pub struct FacePoly {
     /// The drawn edges, in traversal order, by the name the document calls them.
     pub names: Vec<String>,
     pub basis: Basis,
-    /// The plane's page pose: rotor and origin, for `in_view`/`on_page`.
-    pub pose: (f64, f64, (f64, f64)),
     /// Per edge in `names`, a spline's or a curve's own parameter where the walk enters and
     /// leaves it — what a loft pairs such an edge by (`loft::pair`); `None` for the rest.
     pub curved: Vec<Option<(EntRef, [f64; 2])>>,
@@ -86,7 +84,7 @@ impl FacePoly {
             of.push(self.of[(n - 1 - i + n - 1) % n]);
         }
         let curved = self.curved.iter().map(|c| c.map(|(e, [a, b])| (e, [b, a]))).collect();
-        FacePoly { pts, of, names: self.names.clone(), basis: self.basis, pose: self.pose, curved }
+        FacePoly { pts, of, names: self.names.clone(), basis: self.basis, curved }
     }
 
     pub fn lift(&self, i: usize) -> [f64; 3] {
@@ -113,13 +111,6 @@ pub(super) fn loop_poly(sk: &Sketch, edges: &[EntRef], edge_names: &[String], pl
         Some(p) => { sk.planes.get(p as usize)?; sk.basis(p as usize) }
         None => Basis::page(),
     };
-    // a point's coordinates are its plane's own
-    let pose = plane::IDENTITY_POSE;
-    // Every edge is walked in *page* coordinates and the whole loop is turned into the plane's
-    // own view coordinates at the end.  `in_view` is a rigid motion, so tessellating before it
-    // and after it are the same chords; doing it once here is what keeps a face on a tilted
-    // plane from being read as if it were drawn on the page.
-    let view = |p: (f64, f64)| plane::in_view(pose.0, pose.1, pose.2, p);
 
     let names = edge_names.to_vec();
     let mut pts: Vec<(f64, f64)> = Vec::new();
@@ -138,9 +129,8 @@ pub(super) fn loop_poly(sk: &Sketch, edges: &[EntRef], edge_names: &[String], pl
             pts.push(*p);
             of.push((0, true));
         }
-        let pts = pts.into_iter().map(view).collect();
         let curved = vec![None; names.len()];
-        let poly = tidy_poly(FacePoly { pts, of, names, basis, pose, curved });
+        let poly = tidy_poly(FacePoly { pts, of, names, basis, curved });
         return poly.valid().then(|| poly.ccw());
     }
 
@@ -155,10 +145,9 @@ pub(super) fn loop_poly(sk: &Sketch, edges: &[EntRef], edge_names: &[String], pl
             pts.push(p);
             of.push((0, true));
         }
-        let pts = pts.into_iter().map(view).collect();
         let (a, b) = sk.curve_domain(i);
         let curved = vec![Some((edges[0], [a, b]))];
-        let poly = tidy_poly(FacePoly { pts, of, names, basis, pose, curved });
+        let poly = tidy_poly(FacePoly { pts, of, names, basis, curved });
         return poly.valid().then(|| poly.ccw());
     }
 
@@ -189,8 +178,7 @@ pub(super) fn loop_poly(sk: &Sketch, edges: &[EntRef], edge_names: &[String], pl
     if pts.len() < 3 {
         return None;
     }
-    let pts = pts.into_iter().map(view).collect();
-    let poly = tidy_poly(FacePoly { pts, of, names, basis, pose, curved });
+    let poly = tidy_poly(FacePoly { pts, of, names, basis, curved });
     poly.valid().then(|| poly.ccw())
 }
 

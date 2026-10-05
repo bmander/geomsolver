@@ -28,7 +28,7 @@ pub fn generated(sk: &Sketch, unit: f64) -> Vec<(usize, Dim)> {
         if !d.dims {
             continue;
         }
-        let (basis, pose) = view_frame(sk, d.plane.map(|p| p as usize));
+        let basis = view_frame(sk, d.plane.map(|p| p as usize));
         let Ok(solid) = sk.evaluated_solid(d.solid as usize, ApproximationPolicy::from_unit(unit)) else { continue };
         let local_basis = solid.local_basis(basis);
         // the box the part occupies, in the view's *own* axes, so an extent is measured the way
@@ -42,9 +42,8 @@ pub fn generated(sk: &Sketch, unit: f64) -> Vec<(usize, Dim)> {
         if !lo[0].is_finite() {
             continue;
         }
-        let page = |a: f64, b: f64| plane::on_page(pose.0, pose.1, pose.2, (a, b));
         // the outline's own centre: which side of it an extent stands off
-        let centre = page(0.5 * (lo[0] + hi[0]), 0.5 * (lo[1] + hi[1]));
+        let centre = (0.5 * (lo[0] + hi[0]), 0.5 * (lo[1] + hi[1]));
         // One across and one up, each **measured between the corners it bounds and stood off the
         // part** — a draughtsman does not draw an extent through the thing it measures, and the
         // engine's lane assignment then stacks the next one further out again.
@@ -53,12 +52,11 @@ pub fn generated(sk: &Sketch, unit: f64) -> Vec<(usize, Dim)> {
                 continue;
             }
             let (a, b) = if k == 0 {
-                (page(lo[0], lo[1]), page(hi[0], lo[1]))
+                ((lo[0], lo[1]), (hi[0], lo[1]))
             } else {
-                (page(lo[0], lo[1]), page(lo[0], hi[1]))
+                ((lo[0], lo[1]), (lo[0], hi[1]))
             };
-            let along = plane::on_page(pose.0, pose.1, (0.0, 0.0), dir);
-            out.push((i, Dim { a, b, dir: along, value: hi[k] - lo[k], round: false, clear: true, centre }));
+            out.push((i, Dim { a, b, dir, value: hi[k] - lo[k], round: false, clear: true, centre }));
         }
         // and every round feature this view sees square on: a face that is one circle, whose
         // plane looks at the eye.  A hole is a size a printer needs and a machine can read
@@ -67,8 +65,8 @@ pub fn generated(sk: &Sketch, unit: f64) -> Vec<(usize, Dim)> {
             if plane::dot(feature.normal, eye).abs() < 0.999_999 { continue; }
             let r = feature.radius;
             let (vu, vv) = local_basis.view_coords(feature.center.0);
-            let (a, b) = (page(vu - r, vv), page(vu + r, vv));
-            out.push((i, Dim { a, b, dir: plane::on_page(pose.0, pose.1, (0.0, 0.0), (1.0, 0.0)),
+            let (a, b) = ((vu - r, vv), (vu + r, vv));
+            out.push((i, Dim { a, b, dir: (1.0, 0.0),
                                value: 2.0 * r, round: true, clear: false, centre }));
         }
     }

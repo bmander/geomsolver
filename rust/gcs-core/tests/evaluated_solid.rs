@@ -28,19 +28,16 @@ fn close(a: f64, b: f64) {
 }
 
 #[test]
-fn coordinate_conversions_preserve_depth_rotation_and_page_placement() {
+fn coordinate_conversions_preserve_depth_and_read_the_plane_s_own_coordinates() {
     let mut e = read(BOX);
     e.sketch.set_plane_origin(0, [123.0, -456.0, 789.0]);
     let s = e.sketch.evaluated_solid(index(&e), Policy::Report).unwrap();
     let local = LocalPoint([2.0, 0.5, 3.0]);
     assert_eq!(s.to_local(s.to_world(local)), local);
-    let page_frame = PageFrame::new(
-        Basis {
-            o: s.origin().0,
-            ..Basis::page()
-        },
-        (1.0, 0.0, (0.0, 0.0)),
-    );
+    let page_frame = PageFrame::new(Basis {
+        o: s.origin().0,
+        ..Basis::page()
+    });
     assert_eq!(
         s.from_page(s.to_page(local, page_frame), -0.5, page_frame),
         local
@@ -51,8 +48,9 @@ fn coordinate_conversions_preserve_depth_rotation_and_page_placement() {
         o: s.origin().0,
         ..Basis::page()
     };
-    let frame = PageFrame::new(basis, (0.0, 1.0, (20.0, 30.0)));
-    assert_eq!(s.to_page(local, frame), PagePoint((17.0, 32.0)));
+    // the page turned a quarter within itself: the same normal, so the same depth
+    let frame = PageFrame::new(Basis { u: [0.0, 0.0, 1.0], v: [-1.0, 0.0, 0.0], ..basis });
+    assert_eq!(s.to_page(local, frame), PagePoint((3.0, -2.0)));
     assert_eq!(frame.project(s.to_world(local)), s.to_page(local, frame));
     assert_eq!(
         frame.unproject(s.to_page(local, frame), -0.5),

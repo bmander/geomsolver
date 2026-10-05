@@ -190,7 +190,7 @@ pub fn render(doc: &Document, models: &BTreeMap<String, Model<'_>>, sheet: Optio
                 let solid = sk.evaluated_solid(e.i(), ApproximationPolicy::from_unit(unit))
                     .map_err(|m| error(v.span, m))?;
                 let picture = Renderer::prepare(&solid).project(crate::renderer::View {
-                    frame: PageFrame::new(frame, (1., 0., (0., 0.))), section: cut,
+                    frame: PageFrame::new(frame), section: cut,
                 });
                 for stroke in picture.strokes {
                     let mut classes = Classes::one(if stroke.hidden { "hidden" } else { "visible" });

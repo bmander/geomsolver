@@ -106,19 +106,18 @@ impl<'a> P<'a> {
                 // a datum, traced as a curve, whose contacts are the curve's
                 self.fail(
                     "`ellipse` is a library component now: `use std`, then \
-                     `e := Ellipse(f, a: …, b: …).p over u in (0, 360)` over a datum \
-                     `f := plane(origin: c, toward: m)` — `p coincident e`, `e tangent l` and \
-                     `e curvature k` are the curve's contacts",
+                     `e := Ellipse(c, a: …, b: …, tilt: 0deg).p over u in (0deg, 360deg)` about \
+                     a centre `c` — `p coincident e`, `e tangent l` and `e curvature k` are the \
+                     curve's contacts",
                 );
                 None
             }
             "frame" => {
-                // folded into `plane` (bmander/geomsolver#47, item 6): a plane with no attitude
-                // written is the datum a frame was, on the page
+                // folded into `plane` (bmander/geomsolver#47, item 6; #81)
                 self.fail(
-                    "`frame` is folded into `plane`: write `f := plane(origin: o, toward: q)` — a \
-                     datum with no attitude written is a view of the page, and a formal \
-                     `f: plane` offers `f.angle` as `frame` did",
+                    "`frame` is folded into `plane`: write `f := plane(u: r1, v: r2)` over two \
+                     rays or lines, whose origin is `f.origin`, or turn a frame within a plane \
+                     with `std.Turned(o, t)`",
                 );
                 None
             }

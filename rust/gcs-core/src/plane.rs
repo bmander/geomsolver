@@ -88,22 +88,6 @@ impl Basis {
     }
 }
 
-/// A point's coordinates in a frame turned by the rotor `(c, s)` and standing at `o`:
-/// `Rᵀ(c, s)(p − o)`, with `Rᵀ(c, s)(x, y) = (c·x + s·y, −s·x + c·y)`.  A plane's own coordinates
-/// need no such frame; this is the 2D rigid motion a drawing places a picture by.
-pub fn in_view(c: f64, s: f64, o: (f64, f64), p: (f64, f64)) -> (f64, f64) {
-    let (x, y) = (p.0 - o.0, p.1 - o.1);
-    (c * x + s * y, -s * x + c * y)
-}
-
-/// The inverse of `in_view`: `o + R(c, s)(a, b)`, with `R(c, s)(x, y) = (c·x − s·y, s·x + c·y)`.
-pub fn on_page(c: f64, s: f64, o: (f64, f64), p: (f64, f64)) -> (f64, f64) {
-    (o.0 + c * p.0 - s * p.1, o.1 + s * p.0 + c * p.1)
-}
-
-/// The identity pose: a plane's coordinates are its own.
-pub const IDENTITY_POSE: (f64, f64, (f64, f64)) = (1.0, 0.0, (0.0, 0.0));
-
 /// The fold line two planes share, as a direction in each plane's own 2D coordinates:
 /// `(d_A, d_B)`.  `None` when the planes are parallel and share none.
 ///
@@ -139,7 +123,7 @@ pub const AXIS_PX: f64 = 32.0;
 /// `callout.rs`: it is geometry, so the core says what the figure *is* and every front end only
 /// strokes what it is handed.  `unit` is the world length of one screen pixel, so the glyph is
 /// screen-constant the way a callout's arrowhead is.
-pub fn glyph(_sk: &crate::model::Sketch, _i: usize, unit: f64) -> [((f64, f64), (f64, f64)); 2] {
+pub fn glyph(unit: f64) -> [((f64, f64), (f64, f64)); 2] {
     let o = (0.0, 0.0);
     [(o, (AXIS_PX * unit, 0.0)), (o, (0.0, TICK_PX * unit))]
 }

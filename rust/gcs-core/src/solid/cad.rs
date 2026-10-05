@@ -1,6 +1,6 @@
 //! Solved analytic construction data for a native CAD host. No meshed surfaces,
 //! filesystem access or kernel dependency enters the core through this interface.
-use crate::{json::{object,Json},model::{EntKind,EntRef,Sense,Sketch,SolidDef},plane};
+use crate::{json::{object,Json},model::{EntKind,EntRef,Sense,Sketch,SolidDef}};
 use std::collections::BTreeSet;
 
 /// How far from a revolution's axis an endpoint is read as on it, whenever an export reads the
@@ -165,10 +165,7 @@ fn recipe_with(sk: &Sketch,root: usize,static_only: bool) -> Result<StaticRecipe
                 // evaluator does; a line need not have its own plane membership.
                 let p = super::face_poly(sk,*face as usize,super::REPORT_UNIT)
                     .ok_or("invalid revolution profile")?;
-                let lift = |i| {
-                    let q = plane::in_view(p.pose.0,p.pose.1,p.pose.2,sk.point_xy(i));
-                    p.basis.lift(q.0,q.1)
-                };
+                let lift = |i| { let q = sk.point_xy(i); p.basis.lift(q.0,q.1) };
                 let line = &sk.lines[*axis as usize];
                 let a = lift(line.p1 as usize);
                 let b = lift(line.p2 as usize);
@@ -332,11 +329,8 @@ pub(crate) fn bspline_edge(poles: &[(f64,f64)],knots: &[f64],fit_mm: f64,lift: &
 fn profile(sk: &Sketch,index: usize,scale: f64) -> Result<Json,String> {
     let face = &sk.faces[index];
     let p = super::face_poly(sk,index,super::REPORT_UNIT).ok_or("invalid CAD profile")?;
-    let lift = |q| {
-        let q = plane::in_view(p.pose.0,p.pose.1,p.pose.2,q);
-        p.basis.lift(q.0,q.1).map(|v| v*scale)
-    };
-    let x_dir = std::array::from_fn(|k| p.pose.0*p.basis.u[k]-p.pose.1*p.basis.v[k]);
+    let lift = |q: (f64,f64)| p.basis.lift(q.0,q.1).map(|v| v*scale);
+    let x_dir = p.basis.u;
     // an edge's pieces in a profile: one, or a closed curve's smooth stretches
     let edge = |e: EntRef| -> Result<Vec<Json>,String> {
         Ok(vec![match e.kind {

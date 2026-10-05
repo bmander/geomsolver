@@ -119,15 +119,12 @@ impl RevolvedSurface {
             .chain(face.holes.iter().flat_map(|h| h.edges.iter().zip(&h.edge_names)))
             .find_map(|(e,n)| (*e == edge).then_some(n))
             .ok_or("the requested edge is not a boundary of this revolution's profile")?;
-        let (basis,c,s,o) = if let Some(p) = face.plane()? {
+        let basis = if let Some(p) = face.plane()? {
             sk.planes.get(p as usize).ok_or("no profile plane")?;
-            (sk.basis(p as usize),1.0,0.0,(0.0, 0.0))
-        } else { (Basis::page(),1.,0.,(0.,0.)) };
-        let lift = |p| { let q = plane::in_view(c,s,o,p); basis.lift(q.0,q.1) };
-        let vector = |p: (f64,f64)| {
-            let q = (c*p.0+s*p.1,-s*p.0+c*p.1);
-            add(scale(basis.u,q.0),scale(basis.v,q.1))
-        };
+            sk.basis(p as usize)
+        } else { Basis::page() };
+        let lift = |q: (f64,f64)| basis.lift(q.0,q.1);
+        let vector = |q: (f64,f64)| add(scale(basis.u,q.0),scale(basis.v,q.1));
         let axis = sk.lines.get(*axis as usize).ok_or("no revolution axis")?;
         let origin = lift(sk.point_xy(axis.p1 as usize));
         let delta = sub(lift(sk.point_xy(axis.p2 as usize)),origin);

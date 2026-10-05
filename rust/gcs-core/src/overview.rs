@@ -7,7 +7,7 @@
 //! **Nothing here is solved for, and nothing is stored.**  The whole scene is arithmetic over
 //! what the document already says:
 //!
-//! * a point drawn in view P has view coordinates `(a, b) = plane::in_view(…)` — the same
+//! * a point drawn in view P has view coordinates `(a, b)`, its own coordinates in P — the
 //!   reading `project`'s residual takes;
 //! * every plane's origin is the image of one shared origin in space, so the point sits at
 //!   `a·u_P + b·v_P` (`Basis::lift`);
@@ -246,7 +246,7 @@ pub fn drawable(sk: &Sketch, e: EntRef, unit: f64) -> Vec<Vec<(f64, f64)>> {
         EntKind::Spline => vec![crate::curve::tessellate(sk, i, unit)],
         EntKind::Curve => vec![sk.curve_polyline(i)],
         // a datum's glyph is already two segments of world geometry
-        EntKind::Plane => crate::plane::glyph(sk, i, unit).iter().map(|(a, b)| vec![*a, *b]).collect(),
+        EntKind::Plane => crate::plane::glyph(unit).iter().map(|(a, b)| vec![*a, *b]).collect(),
     }
 }
 

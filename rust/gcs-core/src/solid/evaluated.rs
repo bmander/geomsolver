@@ -41,30 +41,25 @@ impl ApproximationPolicy {
     }
 }
 
-/// A projection plus its page placement. `unproject` takes a signed distance from the plane.
+/// A projection into a plane's own coordinates. `unproject` takes a signed distance from the
+/// plane.
 #[derive(Clone, Copy, Debug)]
 pub struct PageFrame {
     basis: Basis,
-    pose: (f64, f64, (f64, f64)),
 }
 impl PageFrame {
-    pub fn new(basis: Basis, pose: (f64, f64, (f64, f64))) -> Self {
-        Self { basis, pose }
+    pub fn new(basis: Basis) -> Self {
+        Self { basis }
     }
-    /// The world-space view plane, before its placement on the sheet.
+    /// The world-space view plane.
     pub fn basis(self) -> Basis {
         self.basis
     }
     pub fn project(self, p: WorldPoint) -> PagePoint {
-        PagePoint(plane::on_page(
-            self.pose.0,
-            self.pose.1,
-            self.pose.2,
-            self.basis.view_coords(p.0),
-        ))
+        PagePoint(self.basis.view_coords(p.0))
     }
     pub fn unproject(self, p: PagePoint, depth: f64) -> WorldPoint {
-        let p = plane::in_view(self.pose.0, self.pose.1, self.pose.2, p.0);
+        let p = p.0;
         let x = self.basis.lift(p.0, p.1);
         WorldPoint(std::array::from_fn(|k| {
             x[k] + depth * self.basis.normal()[k]
@@ -497,15 +492,10 @@ impl EvaluatedSolid {
     pub fn to_page(&self, p: LocalPoint, frame: PageFrame) -> PagePoint {
         // Subtract origins before adding local geometry, retaining small projected features.
         let basis = self.local_basis(frame.basis);
-        PagePoint(plane::on_page(
-            frame.pose.0,
-            frame.pose.1,
-            frame.pose.2,
-            basis.view_coords(p.0),
-        ))
+        PagePoint(basis.view_coords(p.0))
     }
     pub fn from_page(&self, p: PagePoint, depth: f64, frame: PageFrame) -> LocalPoint {
-        let p = plane::in_view(frame.pose.0, frame.pose.1, frame.pose.2, p.0);
+        let p = p.0;
         let basis = self.local_basis(frame.basis);
         let x = basis.lift(p.0, p.1);
         LocalPoint(std::array::from_fn(|k| x[k] + depth * basis.normal()[k]))
@@ -723,11 +713,11 @@ fn round_features(
                 continue;
             }
             let circle = &sk.circles[edges[0].i()];
-            let (basis, pose) = match face.plane()? {
-                Some(i) => (sk.basis(i as usize), plane::IDENTITY_POSE),
-                None => (Basis::page(), plane::IDENTITY_POSE),
+            let basis = match face.plane()? {
+                Some(i) => sk.basis(i as usize),
+                None => Basis::page(),
             };
-            let uv = plane::in_view(pose.0, pose.1, pose.2, sk.point_xy(circle.center as usize));
+            let uv = sk.point_xy(circle.center as usize);
             let local_basis = Basis {
                 o: std::array::from_fn(|k| basis.o[k] - origin.0[k]),
                 ..basis

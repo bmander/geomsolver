@@ -478,9 +478,7 @@ fn validate_at(sk: &Sketch, si: usize, unit: f64) -> Result<std::collections::BT
                 return Err(fail("a revolution needs a finite positive sweep"));
             }
             let axis = sk.lines.get(*axis as usize).ok_or_else(|| fail("no revolution axis"))?;
-            let (c, s, o) = poly.pose;
-            let a = plane::in_view(c, s, o, sk.point_xy(axis.p1 as usize));
-            let b = plane::in_view(c, s, o, sk.point_xy(axis.p2 as usize));
+            let (a, b) = (sk.point_xy(axis.p1 as usize), sk.point_xy(axis.p2 as usize));
             let length = (b.0 - a.0).dhypot(b.1 - a.1);
             if !length.is_finite() || length <= 0.0 { return Err(fail("a revolution axis must have nonzero finite length")); }
             let distances: Vec<_> = poly.pts.iter().map(|p|

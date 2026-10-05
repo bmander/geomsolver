@@ -429,9 +429,7 @@ fn build(
             }
             SolidDef::Revolve { axis, sweep, sense, .. } => {
                 let Some(l) = sk.lines.get(*axis as usize) else { return Term::Empty };
-                let (c, s, o) = p.pose;
-                let a = plane::in_view(c, s, o, sk.point_xy(l.p1 as usize));
-                let b = plane::in_view(c, s, o, sk.point_xy(l.p2 as usize));
+                let (a, b) = (sk.point_xy(l.p1 as usize), sk.point_xy(l.p2 as usize));
                 revolve(&p, (a, b), sweep.value, *sense, unit, &name)
             }
             SolidDef::Body { .. } | SolidDef::Loft { .. } | SolidDef::Placed { .. } | SolidDef::Swept { .. } => unreachable!(),
