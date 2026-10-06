@@ -36,15 +36,9 @@ component MateSection(lp: point, rp: point, inner_along: line, outer_along: line
              (outer_round := arc(center: co)) -> tangent (outer := line(oj, bo)) -> close
   inner_along angle(180deg) inner
   outer_along angle(180deg) outer
-  // Each flank a quarter of the backlash outside its shared line; with none, on it.
-  repeat design.lashed {
-    lp distance(design.backlash / 4, side: left) inner
-    rp distance(design.backlash / 4, side: left) outer
-  }
-  repeat 1 - design.lashed {
-    lp coincident inner
-    rp coincident outer
-  }
+  // Each flank a quarter of the backlash outside its shared line.
+  lp distance(design.backlash / 4, side: left) inner
+  rp distance(design.backlash / 4, side: left) outer
   rounding := crown.rounding.TipRounding(pitch, base, tip, inner_round, outer_round, design,
     normal_module: normal_module)
 }
@@ -54,15 +48,13 @@ preview {
   // The preview crown section's outer mate: the tooth one width outward on its flanks.
   pitch_radius := 0.8 * 2mm * hypot(24, 48) / 2
   proportions := {pressure: 20deg, shift: 0deg,
-                       base: 1, dedendum: 1, rounding: 0.3, backlash: 0mm, lashed: 0}
+                       base: 1, dedendum: 1, rounding: 0.3, backlash: 0mm}
   in std.front {
-    lp := point hint((pitch_radius - 1.3mm, 0))
-    rp := point hint((pitch_radius + 1.3mm, 0))
+    lp := point
+    rp := point
     far := point hint((pitch_radius + 3.9mm, 0))
-    std.origin distance(pitch_radius - 1.3mm, along: right) lp
-    std.origin distance(0mm, along: up) lp
-    std.origin distance(pitch_radius + 1.3mm, along: right) rp
-    std.origin distance(0mm, along: up) rp
+    fix((pitch_radius - 1.3mm, 0)) lp
+    fix((pitch_radius + 1.3mm, 0)) rp
     rack := crown.section.RackSection(lp, rp, proportions, normal_module: 2mm)
     construction span := line(lp, far)
     rp midpoint span

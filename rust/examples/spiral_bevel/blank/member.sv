@@ -43,10 +43,9 @@ preview {
   proportions := {face_width: 10mm, addendum: 1, dedendum: 1.25, back: 4,
     end_relief: 0.2mm, ends_relieved: 1}
   in std.front {
-    mean := point hint((50, 0))
+    mean := point
     foot := point hint((40, 20))
-    std.origin distance(50mm, along: right) mean
-    std.origin distance(0mm, along: up) mean
+    fix((50, 0)) mean
     generator := line(std.origin, mean)
     ax := line(std.origin, foot)
     to_foot := line(mean, foot)

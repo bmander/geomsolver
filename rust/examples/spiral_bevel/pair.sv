@@ -6,7 +6,7 @@ use design
 use layout
 use verification
 
-pair := layout.HypoidLayout(std.front, design.hypoid_design)
+pair := layout.HypoidLayout(std.top, design.hypoid_design)
 in std.front {
   faces := verification.ReferenceFaces(pair)
 }

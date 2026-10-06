@@ -39,15 +39,9 @@ component RackSection(lp: point, rp: point, design: group, normal_module: Length
              (inner_round := arc(center: ci)) -> tangent (inner := line(ij, bi)) -> close
   base angle(90deg + design.pressure - design.shift) outer
   base angle(270deg - design.pressure - design.shift) inner
-  // Each flank a quarter of the backlash outside its shared line; with none, on it.
-  repeat design.lashed {
-    lp distance(design.backlash / 4, side: left) inner
-    rp distance(design.backlash / 4, side: left) outer
-  }
-  repeat 1 - design.lashed {
-    lp coincident inner
-    rp coincident outer
-  }
+  // Each flank a quarter of the backlash outside its shared line.
+  lp distance(design.backlash / 4, side: left) inner
+  rp distance(design.backlash / 4, side: left) outer
   rounding := crown.rounding.TipRounding(pitch, base, tip, outer_round, inner_round, design,
     normal_module: normal_module)
 }
@@ -58,16 +52,14 @@ preview {
   // tenths of the cone distance; crown.svd draws it.
   pitch_radius := 0.8 * 2mm * hypot(24, 48) / 2
   proportions := {pressure: 20deg, shift: 0deg,
-                       base: 1, dedendum: 1, rounding: 0.3, backlash: 0mm, lashed: 0}
+                       base: 1, dedendum: 1, rounding: 0.3, backlash: 0mm}
   in std.front {
-    lp := point hint((pitch_radius - 1.3mm, 0))
-    rp := point hint((pitch_radius + 1.3mm, 0))
-    std.origin distance(pitch_radius - 1.3mm, along: right) lp
-    std.origin distance(0mm, along: up) lp
-    std.origin distance(pitch_radius + 1.3mm, along: right) rp
-    std.origin distance(0mm, along: up) rp
+    lp := point
+    rp := point
+    fix((pitch_radius - 1.3mm, 0)) lp
+    fix((pitch_radius + 1.3mm, 0)) rp
     rack := RackSection(lp, rp, proportions, normal_module: 2mm)
-    construction centerline ax := line(std.origin, hint((0, 1)))
+    construction centerline ax := line(std.origin)
     fix((0, 1)) ax.p2
   }
   crown := solid(rack.profile, about: ax)

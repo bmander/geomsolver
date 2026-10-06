@@ -23,9 +23,8 @@ preview {
     ot := point hint((6, 2.5))
     it := point hint((0, 2.5))
     ij := point hint((-1, 1.5))
-    pitch := line(std.origin, hint((5, 0)))
-    std.origin distance(5mm, along: right) pitch.p2
-    std.origin distance(0mm, along: up) pitch.p2
+    pitch := line(std.origin)
+    fix((5, 0)) pitch.p2
     profile := (base := line(bi, bo)) -> (outer := line(bo, oj)) ->
                tangent (outer_round := arc(center: hint((6, 2)))) -> tangent
                (tip := line(ot, it)) -> tangent

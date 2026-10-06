@@ -29,13 +29,12 @@ component Generation(gear: group, pinion: group, thickness: group) {
 
 preview {
   unit mm
-  pitch := views.PitchView(std.front, span: design.hypoid_design.cutter_radius)
-  gear := pitch.gear.GearCone(pitch.view, g.view, design.hypoid_design)
-  g := views.FoldedView(pitch.view, gear.generator, pitch.down, span: design.hypoid_design.cutter_radius)
-  trace := pitch.trace.ToothTrace(pitch.view, gear.generator, design.hypoid_design)
-  pinion := pitch.pinion.PinionCone(pitch.view, q.view, gear, trace.foot, design.hypoid_design)
-  q := views.FoldedView(pitch.view, pinion.hinge, pitch.down, span: design.hypoid_design.cutter_radius)
-  thickness := crown.thickness.CrownThickness(pitch.view, gear.generator, trace.normal,
+  gear := pitch.gear.GearCone(std.top, g.view, design.hypoid_design)
+  g := views.FoldedView(std.top, gear.generator)
+  trace := pitch.trace.ToothTrace(std.top, gear.generator, design.hypoid_design)
+  pinion := pitch.pinion.PinionCone(std.top, q.view, gear, trace.foot, design.hypoid_design)
+  q := views.FoldedView(std.top, pinion.hinge)
+  thickness := crown.thickness.CrownThickness(std.top, gear.generator, trace.normal,
     design.hypoid_design)
   in std.front {
     generation := Generation(gear, pinion, thickness)

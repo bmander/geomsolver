@@ -1,44 +1,28 @@
-// The views the layout is drawn in. The pitch plane P stands square to the front plane along
-// its u; every other view stands square to P on a line through the mean point M, so it needs
-// no angle of its own:
+// The views the layout is drawn in. The pitch plane P is `std.top`, the gear apex O at its origin,
+// so the front plane is the view along P's v; every other view stands square to P on a line
+// through the mean point M, so it needs no angle of its own:
 //   G, the gear's axial view:    along O -> M, the gear apex to M  (pitch/gear.sv)
 //   Q, the pinion's axial view:  along M -> A, the pinion apex     (pitch/pinion.sv)
 //   N, the normal section:       along C -> M, the trace normal    (crown/)
 use std
 
-// The pitch plane: square to `front` along its `u`, through its origin, so the gear apex is at
-// both origins and the front plane is the view along the pitch plane's v. A plane's axes pass
-// through its origin, so the view's stands on the front's u, and one ordinate along it puts it
-// at the front's origin. `down` is the side of it its normal does not point, a direction for a
-// view standing on it (`FoldedView`). `span` is kept for the callers that name it.
-component PitchView(front: plane, span: Length) {
-  private up := axis hint(dir: (0, 1, 0))
-  up perpendicular front
-  view := plane(u: front.u, v: up)
-  front.origin distance(0mm, along: u) view
-  down := axis hint(dir: (0, 0, -1))
-  down perpendicular view
-}
-
 // A view standing square to `parent` on `hinge`, a line drawn in it: its u is the hinge, so it
-// stands on it, and its v runs along `up`, square to the parent — `up` read as a direction,
-// through an axis of the view's own, since a plane's axes pass through its origin and many views
-// share `up`. Its origin is the parent's, seen in it: on the fold line, where the parent's origin
-// projects.
-component FoldedView(parent: plane, hinge: line, up: axis, span: Length) {
+// stands on it, and its v is square to the parent, down from it as seeded. Its origin is the
+// parent's, seen in it: on the fold line, where the parent's origin projects.
+component FoldedView(parent: plane, hinge: line) {
   view := plane(u: hinge, v: hint(dir: (0, 0, -1)))
-  up parallel view.v
+  parent perpendicular view.v
   parent.origin project view.origin
 }
 
 preview {
   unit mm
-  pitch := PitchView(std.front, span: 40mm)
-  a := point hint((0, 0)) in pitch.view
-  b := point hint((40, 20)) in pitch.view
-  a coincident pitch.view.origin
-  a distance(40mm, along: right) b
-  a distance(20mm, along: up) b
-  hinge := line(a, b) in pitch.view
-  folded := FoldedView(pitch.view, hinge, pitch.down, span: 40mm)
+  in std.top {
+    a := point
+    b := point
+    fix((0, 0)) a
+    fix((40, 20)) b
+    hinge := line(a, b)
+  }
+  folded := FoldedView(std.top, hinge)
 }

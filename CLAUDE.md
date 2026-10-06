@@ -286,7 +286,7 @@ construction needs `admission::Admission` (only `admit_body` makes one). Contrac
 `fixtures::gear::bevel` / `hypoid6` (`rust/fixtures`, dev-only);
 `tests/native_surfaces/gear_cells.rs` holds the recorded tooth-space volumes;
 `tests/generating_harness.rs` (ignored) locates refusals by stage.
-The pair carries **backlash** (`repeat design.lashed`), **tip relief** (`crown/relief.sv`,
+The pair carries **backlash** (`crown/section.sv`, `side: left`), **tip relief** (`crown/relief.sv`,
 `relieved`) and **end relief** (`blank/ends.sv`, `ends_relieved`); `fixtures::gear::design` pins
 all to zero, `fixtures::gear::fabricated` sets them. Files:
 `build/exports/hypoid-{pinion,gear}.{step,stl}`; `gcs-cli/tests/pair_check.rs` (ignored) checks

@@ -9,10 +9,10 @@ that feeds one, computes a point with `sin` and `cos`. Each step is a module who
 says what it constructs. The plan is
 [docs/spiral-bevel-layout-plan.md](../../../docs/spiral-bevel-layout-plan.md).
 
-The layout is drawn in four views through M (`views.sv`): the pitch plane P, with the gear apex
-O at its origin, and three views folded square to it about lines through M, so none needs an
-angle of its own — G, the gear's axial view, along O → M; Q, the pinion's, along M → its apex
-A; and N, the normal section, along the trace normal C → M.
+The layout is drawn in four views through M (`views.sv`): the pitch plane P, `std.top`, with the
+gear apex O at its origin, and three views folded square to it about lines through M, so none needs
+an angle of its own — G, the gear's axial view, along O → M; Q, the pinion's, along M → its apex A;
+and N, the normal section, along the trace normal C → M.
 
 | Step | Module | Constructs |
 |---|---|---|
@@ -33,13 +33,12 @@ A; and N, the normal section, along the trace normal C → M.
 | — | `layout.sv` | `HypoidLayout`: steps 2–5 in the four views |
 | — | `members.sv` | `HypoidPair`: each blank less its crown's sweep at every tooth, and its reliefs |
 
-The normal module is stated nowhere: `HypoidLayout` leaves it unbound, the trace constructs it
-and every depth reads it. As configured the pair is a hypoid 25 mm off, whose 12.5° pressure
-shift and 25° spiral design out the undercut a symmetric rack develops past about 15 mm of
-offset; zero offset is a bevel pair with a common apex. The allowances — 0.05 mm normal
-backlash, 0.2 mm tip relief and 0.2 mm end relief — are each zero for the conjugate,
-sharp-edged pair, which is what the test suites record (`fixtures::gear` rewrites the
-configuration for them).
+The normal module is stated nowhere: `ToothTrace` leaves it unbound and constructs it, and every
+depth reads it as `trace.normal_module`. As configured the pair is a hypoid 25 mm off, whose 12.5°
+pressure shift and 25° spiral design out the undercut a symmetric rack develops past about 15 mm of
+offset; zero offset is a bevel pair with a common apex. The allowances — 0.05 mm normal backlash,
+0.2 mm tip relief and 0.2 mm end relief — are each zero for the conjugate, sharp-edged pair, which
+is what the test suites record (`fixtures::gear` rewrites the configuration for them).
 
 Two entry points: **`gears.sv`**, the pair (`pair.pinion.body`, `pair.gear.body`; the layout
 is `pair.reference`), which the app opens as the example `spiral_bevel` and the glass box (⌘B)
