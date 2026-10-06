@@ -152,9 +152,9 @@ pub(super) fn build(
                             span: st.span,
                             stmt: Some(st.id),
                             message: format!(
-                                "a {}'s control points have no names to be reached by, so each \
+                                "{}'s control points have no names to be reached by, so each \
                                  one is declared",
-                                d.kind.as_str()
+                                d.kind.a()
                             ),
                         });
                         return None;
@@ -217,10 +217,10 @@ pub(super) fn build(
                     span: r.span,
                     stmt: Some(st.id),
                     message: format!(
-                        "`{}` is a {}, and a {} is built from points",
+                        "`{}` is {}, and {} is built from points",
                         r.root.text,
-                        e.kind.as_str(),
-                        d.kind.as_str()
+                        e.kind.a(),
+                        d.kind.a()
                     ),
                 });
                 return None;
@@ -238,8 +238,8 @@ pub(super) fn build(
                 span: st.span,
                 stmt: Some(st.id),
                 message: format!(
-                    "a {} is built from {n} point(s), and {} were given",
-                    d.kind.as_str(),
+                    "{} is built from {n} point(s), and {} were given",
+                    d.kind.a(),
                     written
                 ),
             });
@@ -278,7 +278,15 @@ pub(super) fn build(
             let p = sk.point(seed(0), seed(1), false, &show);
             if wrote(2) {
                 let span = d.seed_spans.get(2).copied().unwrap_or(st.span);
-                deferred.push(Deferred::Height { point: p, z: seed(2), span, stmt: st.id });
+                let text = d.seed_text.get(2).cloned().flatten();
+                deferred.push(Deferred::Height {
+                    point: p,
+                    z: seed(2),
+                    text,
+                    names: d.seed_names.clone(),
+                    span,
+                    stmt: st.id,
+                });
             }
             p
         }
@@ -489,9 +497,9 @@ fn build_plane(
             }
             other => {
                 fail(diags, r.span, format!(
-                    "`{}` is a {}, and a plane's `{key}` is an axis or a line",
+                    "`{}` is {}, and a plane's `{key}` is an axis or a line",
                     r.root.text,
-                    other.as_str()
+                    other.a()
                 ));
                 return None;
             }
@@ -521,7 +529,7 @@ fn build_plane(
 pub(super) fn places(sk: &mut Sketch, deferred: &[Deferred], diags: &mut Vec<Diag>) {
     let mut height: BTreeMap<usize, f64> = BTreeMap::new();
     for d in deferred {
-        let &Deferred::Height { point, z, span, stmt } = d else { continue };
+        let &Deferred::Height { point, z, span, stmt, .. } = d else { continue };
         if sk.plane_of(point).is_some() {
             diags.push(Diag {
                 code: Code::E040,
@@ -682,9 +690,9 @@ fn build_axial(
     };
     if e.kind != EntKind::Line {
         fail(diags, r.span, format!(
-            "`{}` is a {}, and a {what}'s axis is a line",
+            "`{}` is {}, and a {what}'s axis is a line",
             r.root.text,
-            e.kind.as_str()
+            e.kind.a()
         ));
         return None;
     }
@@ -716,8 +724,16 @@ pub(super) enum Deferred {
     /// line once the line's points have their places (`axes_along`).
     Along { axis: usize, line: usize },
     /// A point's `hint(z: …)`: its height in space, once memberships say it is in space
-    /// (`places`), and refused where they say it is drawn in a plane.
-    Height { point: usize, z: f64, span: Span, stmt: StmtId },
+    /// (`places`), and refused where they say it is drawn in a plane.  A text reading geometry
+    /// (`z: q.z + 1`) is settled with the other seed texts, once the point has its `z`.
+    Height {
+        point: usize,
+        z: f64,
+        text: Option<String>,
+        names: Vec<(String, String)>,
+        span: Span,
+        stmt: StmtId,
+    },
     At { point: usize, at: AtRef, names: Vec<(String, String)>, span: Span, stmt: StmtId },
     /// An arc's radius the source left unwritten: its centre to its start, as `Sketch::arc`
     /// first computed it.
@@ -734,14 +750,13 @@ fn seed_read(sk: &Sketch, res: &Resolver, dotted: &str) -> Result<(f64, crate::u
     let (e, fields) =
         res.dotted(&segs).ok_or_else(|| format!("no such entity: `{}`", segs[0]))?;
     let e = follow(sk, e, &fields)?;
-    let names = e
-        .kind
-        .scalar_names(path)
-        .ok_or_else(|| format!("a {} has no scalar to read by name", e.kind.as_str()))?;
+    let names = sk
+        .scalar_names(e, path)
+        .ok_or_else(|| format!("{} has no scalar to read by name", e.kind.a()))?;
     let at = names.iter().position(|n| *n == dotted).ok_or_else(|| {
         format!(
-            "a {} has no `{scalar}`; its scalars are {}",
-            e.kind.as_str(),
+            "{} has no `{scalar}`; its scalars are {}",
+            e.kind.a(),
             names.iter().map(|n| format!("`{n}`")).collect::<Vec<_>>().join(", ")
         )
     })?;
@@ -808,6 +823,17 @@ pub(super) fn settle_deferred(
                 });
                 (*span, *stmt, r)
             }
+            Deferred::Height { point, text: Some(text), names, span, stmt, .. } => {
+                // refused already where the point is drawn in a plane (`places`)
+                let Some(param) = sk.points[*point].z else { continue };
+                let r = seed_eval(sk, res, text, names).map(|v| {
+                    let p = &mut sk.params[param as usize];
+                    if !p.fixed {
+                        p.value = v;
+                    }
+                });
+                (*span, *stmt, r.map_err(|e| format!("`{text}`: {e}")))
+            }
             Deferred::Along { .. } | Deferred::Height { .. } => continue,
             Deferred::Radius { arc } => {
                 let a = &sk.arcs[*arc];
@@ -866,7 +892,7 @@ fn place_of(
     };
     let b = place(sk, res, t)?;
     if b.kind != EntKind::Point {
-        return Err(format!("a step is taken toward a point, not a {}", b.kind.as_str()));
+        return Err(format!("a step is taken toward a point, not {}", b.kind.a()));
     }
     let f = match &a.by {
         Some((text, _)) => seed_eval(sk, res, text, names).map_err(|m| format!("`{text}`: {m}"))?,
@@ -895,14 +921,14 @@ fn place_in(
         (Some(t), _) => {
             let b = place(sk, res, t)?;
             if b.kind != EntKind::Point {
-                return Err(format!("a step is taken toward a point, not a {}", b.kind.as_str()));
+                return Err(format!("a step is taken toward a point, not {}", b.kind.a()));
             }
             Some((e.i(), b.i()))
         }
         (None, Some(l)) => {
             let l = place(sk, res, l)?;
             if l.kind != EntKind::Line {
-                return Err(format!("a step is taken along a line, not a {}", l.kind.as_str()));
+                return Err(format!("a step is taken along a line, not {}", l.kind.a()));
             }
             Some((sk.lines[l.i()].p1 as usize, sk.lines[l.i()].p2 as usize))
         }
@@ -912,8 +938,8 @@ fn place_in(
     if a.x.is_some() || a.y.is_some() {
         if e.kind != EntKind::Plane {
             return Err(format!(
-                "`x:` and `y:` are a place in a plane, and `at:` here names a {}",
-                e.kind.as_str()
+                "`x:` and `y:` are a place in a plane, and `at:` here names {}",
+                e.kind.a()
             ));
         }
         let (u, v) = (number(&a.x, 0.0)?, number(&a.y, 0.0)?);
@@ -956,7 +982,7 @@ fn place_in(
         (EntKind::Circle, None, None) => {
             Err("where on the edge?  `hint(at: c, bearing: …)` says the bearing".to_string())
         }
-        (k, _, _) => Err(format!("a seed cannot be at a {}", k.as_str())),
+        (k, _, _) => Err(format!("a seed cannot be at {}", k.a())),
     }
 }
 

@@ -18,9 +18,15 @@ pub enum Severity {
 pub enum Code {
     /// redeclaration within a body
     E001,
+    /// a block's index or edge binder over a name already in scope (§12)
+    E002,
+    /// a component that instantiates itself, directly or through others (§8)
+    E003,
     /// an argument a formal list would silently take for another: a positional one after a
     /// labelled one, or a number given by position (§4.1)
     E004,
+    /// `next` or `prev` where no `cycle` closes the copies (§12.1)
+    E020,
     /// type mismatch within an alias class
     E040,
     /// a cyclic definitional dependency: a value defined in terms of itself, a group nested in
@@ -85,7 +91,10 @@ impl Code {
     pub fn as_str(self) -> &'static str {
         match self {
             Code::E001 => "E001",
+            Code::E002 => "E002",
+            Code::E003 => "E003",
             Code::E004 => "E004",
+            Code::E020 => "E020",
             Code::E040 => "E040",
             Code::E041 => "E041",
             Code::E060 => "E060",

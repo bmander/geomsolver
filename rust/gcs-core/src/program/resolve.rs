@@ -64,9 +64,9 @@ impl Resolver {
         let named: Vec<&str> =
             kind.fields().iter().filter(|(_, k)| *k == Field::Child).map(|(n, _)| *n).collect();
         Err(if named.is_empty() {
-            format!("a {} has no parts", kind.as_str())
+            format!("{} has no parts", kind.a())
         } else {
-            format!("a {} has {}, not `{f}`", kind.as_str(), named.join(", "))
+            format!("{} has {}, not `{f}`", kind.a(), named.join(", "))
         })
     }
 }
@@ -149,9 +149,9 @@ pub(super) fn follow(sk: &Sketch, mut e: EntRef, path: &[Seg]) -> Result<EntRef,
                 let named: Vec<&str> =
                     fields.iter().filter(|(_, k)| *k == Field::Child).map(|(n, _)| *n).collect();
                 return Err(if named.is_empty() {
-                    format!("a {} has no parts", e.kind.as_str())
+                    format!("{} has no parts", e.kind.a())
                 } else {
-                    format!("a {} has {}, not `{}`", e.kind.as_str(), named.join(", "), f.text)
+                    format!("{} has {}, not `{}`", e.kind.a(), named.join(", "), f.text)
                 });
             }
         }

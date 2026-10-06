@@ -238,6 +238,9 @@ struct Walk<'a> {
     /// Where a statement read a name nothing declares (E101): the statement is not emitted, so
     /// the name never reaches the expression graph to become an unknown of its own making.
     refused: Vec<Span>,
+    /// The components being expanded, outermost first: a call to one already here is a
+    /// component instantiating itself (E003), refused rather than walked until the depth cap.
+    instantiating: Vec<&'a Component>,
 }
 
 /// Expand a program's root component into a flat list of declarations, constraints, gauges and
@@ -330,6 +333,7 @@ impl<'a> Walk<'a> {
             held: 0,
             unknowns: BTreeMap::new(),
             refused: Vec::new(),
+            instantiating: Vec::new(),
         }
     }
 

@@ -34,7 +34,7 @@ pub(super) fn memberships(
                 fail(
                     Code::E040,
                     r.span,
-                    format!("`{}` is a {}, and `in` names a plane", r.root.text, e.kind.as_str()),
+                    format!("`{}` is {}, and `in` names a plane", r.root.text, e.kind.a()),
                 );
                 continue;
             }

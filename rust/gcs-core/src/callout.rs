@@ -121,6 +121,7 @@ macro_rules! undrawn {
             | CKind::AxisFoot
             | CKind::PlaneAxis
             | CKind::PointOnAxis
+            | CKind::LineOnAxis
             // an ordinate in space is no figure on any one plane
             | CKind::Ordinate3U
             | CKind::Ordinate3V

@@ -22,8 +22,8 @@ Deleting every seed leaves the set of solutions unchanged, without exception: a 
 stated by `fix`, pinned with `==` like any pin (`fix(x == 0, y == 0) a`), never by a seed.
 
 **A point stands in space unless it is drawn `in` a plane.** A 2D drawing says `use std` and draws
-in the front plane: `in std.front { … }` around its geometry (1.13). Values, styles and solids may
-stand outside the block.
+in the front plane: `in std.front { … }` around its geometry (1.13). Values and solids may
+stand outside the block; a `param` must.
 
 Scope:
 
@@ -53,6 +53,10 @@ number      ::= decimal, exponent form allowed; `3 1/2` is a mixed fraction;
 
 A newline ends a statement, except inside brackets, after a trailing chain joint (1.7), and at a
 `}` closing a block.
+
+Two shorthands are read as the words they stand for, wherever those words may stand: `@` is
+`coincident` (`p @ c`, `a @(t == 0.4) s`) and `~` is `hint` (`p := point ~(x: 0, y: 0)`). A solve
+writes seeds back inside `~(…)` as written.
 
 ### 1.2 Three kinds of number
 
@@ -88,7 +92,7 @@ NAME := {LABEL: VALUE, ...}             values and geometry passed as one argume
      [knots [...]] [in REF]             an entity declaration; every part optional   (1.4)
 NAME := point(x: XEXPR, y: YEXPR)       a computed point, drawn only as a curve       (1.9)
 [NAME :=] axis [hint(x: E, y: E, z: E)]  a directed line in space, with no start      (1.13)
-[NAME :=] plane(u: AXIS, v: AXIS)         a plane: right along u, out of it u × v      (1.13)
+[NAME :=] plane[(u: R, v: R)]             a plane over axes or lines; one left out is free (1.13)
 NAME := sphere(center: R) | cone(axis: LINE) | cylinder(axis: LINE)  [hint(...)]
                                         a surface in space, on no sheet              (1.13)
 in REF { statement* }                   every declaration inside is drawn in that plane
@@ -162,7 +166,7 @@ read it as a provisional 0; constraints still treat it as unknown.
 
 **Children** go by position or by label; a label skips earlier slots (`l := line(p2: c)` leaves
 `p1` for a chain to thread). Any slot may be left out, or hold a `hint(…)` instead of a name,
-which mints an anonymous seeded point:
+which mints an anonymous seeded point (with no `z`: a line in space names declared points):
 
 ```
 l := line                                          two points: l.p1, l.p2
@@ -202,22 +206,22 @@ stands in the parentheses:
 
 | word | fixity | operands and options |
 |---|---|---|
-| `coincident` | infix | two points; a point to a line, circle, arc, spline or curve. In space (1.13): a point or line to a **plane**; a point or circle to a **sphere**; a point to a **cone** or **cylinder**. Not between two **solids**: material is added with `union` (1.14) |
-| `distance` | infix | two points (length; `along: x`/`y` or `right`/`left`/`up`/`down` for a signed run or rise); a point and a line, or two lines (a magnitude; `side:` picks the side); two concentric circles or arcs (radial gap); a point and a datum (`along: u`/`v` signed ordinates, `along: n` signed distance along the normal, in space) |
+| `coincident` | infix | two points; a point to a line, circle, arc, spline or curve. In space (1.13): a point, line or axis to a **plane**; a point or line to an **axis**, and two axes (one line); a point or circle to a **sphere**; a point to a **cone** or **cylinder**. Not between two **solids**: material is added with `union` (1.14) |
+| `distance` | infix | two points (length; `along: x`/`y` or `right`/`left`/`up`/`down` for a signed run or rise); a point and a line, or two lines (a magnitude; `side:` picks the side); two concentric circles or arcs (radial gap); a point and a plane (`along:` required: `u`/`v` signed ordinates, `n` signed distance along the normal, in space); two planes, `P distance(d) Q` (along `P`'s normal) |
 | `distance` | prefix | a line: its length |
 | `tangent` | infix | line–circle/arc (`at: p1`/`p2` for tangency at that end; `side:` for the centre's side); circle/arc–circle/arc (`external: true/false`); arc–line (`at: start`/`end`); spline or curve–line; in space, sphere–line, sphere–sphere, cylinder–line (round thing first); two cones at a point, `k1 tangent(M) k2` |
 | `equal` | infix | two lines (length) or two circles/arcs (radius) |
 | `curvature` | infix | spline or curve and a circle/arc: the circle becomes the osculating circle there. On a traced curve, exact (the body's Taylor orders); refused only for a body using a relation with no Taylor form, named in the error |
 | `horizontal`, `vertical` | prefix / infix | a line; or two points with no line between them |
-| `angle` | infix | two lines, directed (below). With a second line pair instead of a number, `l1 angle(l3, l4) l2` equates two angles |
+| `angle` | infix | two lines, directed (below); an axis and a line or axis, unsigned, in space (1.13). With a second line pair instead of a number, `l1 angle(l3, l4) l2` equates two angles |
 | `angle` | prefix | a cone: its half-angle |
 | `radius` | prefix | a circle, arc, sphere or cylinder |
 | `length` | prefix | an arc: radius × sweep, counter-clockwise from `start` to `end` (a magnitude) |
 | `symmetry(line)` | infix | two points |
 | `midpoint` | infix | a point and a line |
-| `parallel`, `perpendicular` | infix | two lines |
+| `parallel`, `perpendicular` | infix | two lines; an axis and a line or axis (in space); an axis and a plane (`perpendicular`: along its normal); `parallel` also two planes |
 | `project` | infix | two points, each `in` a plane: two images of one point in space (1.13) |
-| `fix` | prefix | an entity's own numbers, each named and pinned: `x`/`y` of a point (either or both), `r` of a circle, arc, sphere or cylinder, `half` of a cone (degrees) |
+| `fix` | prefix | an entity's own numbers, each named and pinned: `x`/`y` of a point (either or both), `r` of a circle, arc, sphere or cylinder, `half` of a cone (degrees), `z` of a point in space, `x`/`y`/`z` (direction) and `px`/`py`/`pz` (place) of an axis, `x`/`y`/`z` of a plane's origin |
 | `ccw(a, b, c)`, `cw(a, b, c)` | call | all three points in the parentheses; `ccw` means `c` is left of ray `a → b` |
 
 **Operand order carries meaning.** `arc tangent line` is a tangency at the arc's end;
@@ -310,7 +314,7 @@ stroke := bore * 1.2              // a value
 ```
 
 **Unknowns are declared.** An input with no value is one unknown of the drawing, tying together
-everything that reads it: a dimension (`a distance(beta) b`), an angle an axis is turned by
+everything that reads it: a dimension (`l angle(beta) m`), an angle an axis is turned by
 (`t angle(beta) std.x`, 1.13), a contact's place (`t == s`, 1.5), a value over it (`q := 2 * beta`). It names its type — `Length`,
 `Angle` or `Scalar` — since nothing else says what it is, and its seed is its `hint(…)`, which a
 solve writes back. Inside a component the unknowns are the formals a call leaves unbound (1.8).
@@ -382,7 +386,9 @@ right (`p1 -> p2` on a line, `start -> end` counter-clockwise on an arc).
 - A word without a marker relates without welding: `(l1 := line(a, b)) perpendicular
   (l2 := line(c, d))` is two separate lines at a right angle.
 - Declarations and names may mix. At a corner with an element declared elsewhere, the declared
-  side names the shared point, usually by the other's child: `(t := line(p3, k.start)) -> tangent k`.
+  side names the shared point, usually by the other's child: `(t := line(p3, k.start)) -> tangent k`,
+  where `k` names its `start` (an unnamed child of an arc or circle cannot be another
+  declaration's own: name that point).
 - `-> close` seals the loop back to the first link. Links may be anonymous:
   `line -> tangent arc -> tangent line` is a whole contour with no names.
 - `equal` is polymorphic (length between lines, radius between round things);
@@ -408,24 +414,27 @@ is refused on an open chain. A hole at every edge's midpoint, sized by index (`h
 
 ```
 unit mm
-a := point
-b := point hint(x: 60, y: 0)
-c := point hint(x: 60, y: 40)
-d := point hint(x: 0, y: 40)
-fix(x == 0, y == 0) a
-outline := (ab := line(a, b)) -> (bc := line(b, c)) -> (cd := line(c, d)) -> (da := line(d, a)) -> close
-horizontal ab
-vertical bc
-horizontal cd
-vertical da
-distance(60) ab
-distance(40) bc
+use std
+in std.front {
+  a := point
+  b := point hint(x: 60, y: 0)
+  c := point hint(x: 60, y: 40)
+  d := point hint(x: 0, y: 40)
+  fix(x == 0, y == 0) a
+  outline := (ab := line(a, b)) -> (bc := line(b, c)) -> (cd := line(c, d)) -> (da := line(d, a)) -> close
+  horizontal ab
+  vertical bc
+  horizontal cd
+  vertical da
+  distance(60) ab
+  distance(40) bc
 
-repeat e in outline as i {
-  m := point
-  m midpoint e
-  hole := circle(center: m) hint(r: 3)
-  radius(2mm + i * 1mm) hole
+  repeat e in outline as i {
+    m := point
+    m midpoint e
+    hole := circle(center: m) hint(r: 3)
+    radius(2mm + i * 1mm) hole
+  }
 }
 ```
 
@@ -470,8 +479,7 @@ t0 := Rung(l0, r0, len: 50)
   values, geometry and standard datums must be passed in. Component definitions (the file's own
   bare, a used module's by path) and built-in functions remain callable. Repetition blocks share
   the enclosing component's scope.
-- **Everything an instance makes is public by dotted name** (`t0.e`, `five.s[0].p1`, a named
-  dimension as `t0.w`) unless declared `private`, which keeps the name inside the component.
+- **Everything an instance makes is public by dotted name** (`t0.e`, `five.s[0].p1`) unless declared `private`, which keeps the name inside the component.
   `construction` and `centerline` mark purpose independently of privacy; the editor shows
   construction geometry, and drawing sheets hide it unless styled. A private entity may still be
   passed explicitly to another component, but passing a whole instance grants no access to its
@@ -510,13 +518,13 @@ unit mm
 use std
 
 sizes := {length: 20mm}
-layout := {frame: std.front, origin: std.origin}
+layout := {front: std.front, origin: std.origin}
 component Bar(layout: group, dims: group) {
-  tip := point hint(x: layout.origin.x + dims.length * layout.frame.c,
-                 y: layout.origin.y + dims.length * layout.frame.s)
-  reference := line(layout.frame.origin, layout.frame.toward)
-  ax := line(layout.origin, tip)
-  ax parallel reference
+  in layout.front {
+    tip := point hint(x: layout.origin.x + dims.length, y: layout.origin.y)
+    ax := line(layout.origin, tip)
+    horizontal ax
+  }
   distance(dims.length) ax
 }
 bar := Bar(layout, dims: sizes)
@@ -568,7 +576,7 @@ A component's point is placed one of two ways:
   is how a person states a curve — "the end of a taut string as it unwinds" (2.9). The body must
   be square: as many equations as its own coordinates.
 
-The swept formal is an `Angle` or a `Length`; the traced point must be one the component places,
+The swept formal is any numeric formal (`Angle`, `Length`, `Scalar`); the traced point must be one the component places,
 not one it was given. A traced body is drawn in one plane: a relation in space there is refused.
 To follow a tilted datum, pass the body a reference line and measure its bearings from that
 (`datum angle(u + phase) rad`, 2.9).
@@ -588,7 +596,8 @@ solve, count or conflict set; the drawing is identical with it deleted. The diag
 
 - **theorem** — holds, and the document implies it;
 - **violated** — does not hold (the CLI prints `claim refuted:`);
-- **consuming** — holds only where the solve happened to land; enforcing it would cost a freedom.
+- **consuming** — holds only where the solve happened to land; enforcing it would cost a freedom
+  (the CLI prints `claim independent:`).
 
 Use claims for what a figure was drawn to show (the altitudes concur; the traced path is
 straight). A claim may not own an unknown, so claiming a curve contact or reading an unknown
@@ -597,6 +606,8 @@ is an error.
 A claim may also run over a named motion's roll: `claim over rotor_turn in (0deg, 1080deg) {
 arc_rotor_at clear(0.25mm) housing }` reads the solids placed under the motion (`solid(arc_rotor,
 under: rotor_turn, at: 0deg)`) at each sampled pose, solving nothing again, and reports the worst.
+It may also sweep one of the drawing's unknowns (a `param` with no value, an unbound formal):
+`claim over reach in (0.1mm, 0.9mm) { … }`, solving at each sampled value.
 
 Three claim words apply only to solids (1.14): `claim bore inside stock`,
 `claim disc clear(2mm) cyl`, `claim head fits(0.15mm) trap`. The report gives the measurement; a
@@ -616,6 +627,8 @@ plane is measured against axes turned in that plane: `std.Turned(o, t)` is the p
 whose u runs toward `t`, drawn where `o` and `t` are. Ordinates against it are signed:
 
 ```sv
+unit mm
+use std
 in std.front {
   o := point hint(x: 10, y: 5)
   t := point hint(x: 40, y: 20)
@@ -641,27 +654,27 @@ positions, but the constraints must express the geometry on their own.
 
 ```
 use engine.dims          // engine/dims.sv beside the document or an ancestor, else the library
-use std                  // std.front, std.top, std.side, std.up, std.x/y/z, std.origin,
+use std                  // std.front, std.top, std.side, std.up, std.x/y/z/back, std.origin,
                          // std.Turned (1.11), std.CenteredRectangle (1.8), std.Ellipse (1.9),
                          // std.Polygon, std.Hex
-use hardware             // fasteners and fittings: hardware.hexbolt14_af, …
+use hardware             // fasteners and fittings, in mm (needs a `unit` line): hardware.hexbolt14_af, …
 ```
 
 A module is a Solvent document read for its components and its top-level values and groups; its
 own drawing is not drawn. **Nothing is imported bare**: a module's names are always written with
-its full path — `engine.parts.Crank(…)`, `engine.dims.bore`, `components.dims.vtwin_dims` (values
+its full path — `engine.parts.Rod(…)`, `engine.dims.D`, `components.dims.vtwin_dims` (values
 and groups in the root body, components anywhere). A module names its own definitions bare. Only
-modules the file itself `use`s may be named; a transitive import needs its own `use` (the error
-says so), and that includes `std` for `std.front`. Two modules may define one name; two
-definitions in one file are E071; a missing module is E070, and a module's own error is reported at
+modules the file itself `use`s may be named; a transitive import needs its own `use` (a component
+call's error says so), and that includes `std` for `std.front`. Two modules may define one name; two
+components of one name in a module are E071, a value declared twice E001; a missing module is E070, and a module's own error is reported at
 the `use` that brought it in. A callout shows a param's bare name (`D`, not `engine.dims.D`).
 `engine.sv` is the worked case: a four-cylinder engine as a dimension module, a parts module and
 one module per part.
 
 **Standard datums.** `use std` gives every document the axes `std.x` (right), `std.y` (away from
-the front's viewer) and `std.z` (up), and four planes fixed at the world origin: `std.front` (u
-along x, v along z: what a 2D drawing is drawn in), `std.top` (x, y: seen from above), `std.side`
-(y, z: seen from +x) and `std.up` (the front turned a quarter: u up, v left). `std.origin` is a
+the front's viewer), `std.z` (up) and `std.back` (−x), and four planes fixed at the world origin:
+`std.front` (u along x, v along z: what a 2D drawing is drawn in), `std.top` (x, y: seen from
+above), `std.side` (y, z: seen from +x) and `std.up` (the front turned a quarter: u up, v left). `std.origin` is a
 point in `std.front` fixed at its origin. Passing a plane as an argument does not imply `in`: a
 point no `in` reaches stands in space (1.13).
 
@@ -673,11 +686,17 @@ then its ancestors, so a component file opens with the same `use` paths it has i
 ```sv
 preview {
   unit mm
-  cyl := Cylinder(std.up, fw: 12mm, dims: components.dims.vtwin_dims)
+  in std.front {
+    up := point
+    fix(x == 0, y == 40) up
+    axes := std.Turned(std.origin, up)
+    cyl := Cylinder(axes, fw: components.dims.fwA, dims: components.dims.vtwin_dims)
+  }
 }
 ```
 
-The cylinder's bore follows the datum's u axis, so `std.up` stands it upright. The call may be
+The cylinder's bore follows its frame's `u` line (`f.u`), so axes turned from `std.origin` toward a
+point straight above stand it upright. The call may be
 unnamed, but keep `cyl :=` when a drawing or another statement references its members.
 `vtwin/components/cylinder.sv` is the complete example; `vtwin/cylinder.svd` draws its views.
 
@@ -686,8 +705,8 @@ unnamed, but keep `cyl :=` when a drawing or another statement references its me
 **Space is where a point stands unless it is drawn in a plane.** A point no `in` reaches has three
 coordinates, seeded `hint(x:, y:, z:)` and held `fix(x == …, y == …, z == …) p`; a line between two
 such points is a line in space. A circle, arc or spline over a point in space is E060, and a face
-over one E080: those are drawn in a plane. Points in space are shown and
-selectable in the workspace, but not dragged.
+over one E080: those are drawn in a plane. Points in space are shown, picked and
+dragged in the workspace, across the eye's picture plane; depth stays the constraints'.
 
 **An axis** is a directed line in space with no start, drawn in no plane: a direction, and a place
 once something reads it.
@@ -698,14 +717,18 @@ t perpendicular std.y
 t angle(30deg) std.x                  // unsigned, in space; 0° or 180° is E040: say `parallel`
 p coincident t                        // a point on it gives it its place
 t coincident s                        // one line, either way round (four rows)
+l coincident t                        // a drawn line lying on it: both ends on it (four rows)
 fix(x == 0, y == 0, z == 1) z_axis    // a direction held outright
 fix(x == 1, y == 0, z == 0, px == 0, py == 0, pz == 0) x_axis   // and where it stands
 ```
 
-An axis read only as a direction counts two freedoms; `p coincident t` adds the two of its place.
+An axis read only as a direction counts two freedoms; `p coincident t` adds the two of its place,
+as does `l coincident t` (either way round), which also lays the line along it.
 `px`, `py`, `pz` are the point on it nearest the world origin. `parallel`, `perpendicular` and
 `angle` take an axis beside an axis or a drawn line, and wherever an axis is expected a drawn line
-is read as one, from `p1` toward `p2`. A plane over a line stands on it: `plane(u: hinge, v: …)`
+is read as one, from `p1` toward `p2`; the reverse does not hold: a cone's or cylinder's `axis:`,
+a turn's `about:` and a motion's `about:`/`along:` take a drawn line, never an `axis`. A plane
+over a line stands on it: `plane(u: hinge, v: …)`
 lies along the hinge and through it, and a plane over two lines that share an end stands at
 that end (`std.Turned(o, t)` stands at `o`).
 
@@ -734,7 +757,9 @@ What else places a plane:
 - `P.origin coincident p`: the plane's origin is the point `p` (three rows: with an axis already
   through it, say less — `P.origin coincident std.front` puts an origin already on `std.y` at the
   world origin in one);
-- `P coincident p`: the plane passes through `p`; `l coincident P` lays a line in it;
+- `P coincident p`: the plane passes through `p`; `l coincident P` lays a line in it, `t coincident
+  P` an axis; `t parallel P` holds an axis square to the normal (one row), `t perpendicular P`
+  along it (two rows);
 - `p distance(d, along: n) P`: a point's signed distance along the plane's normal;
 - `P distance(d) Q`: `Q` stands `d` along `P`'s normal (one row); the two are parallel when their
   axes are, or when `P parallel Q` says so;
@@ -789,7 +814,7 @@ planes share agree (one equation). Views carry no place on paper; the `.svd` pla
 
 **Spheres, cones and cylinders** live in space, on no sheet (the glass box draws them).
 
-- `s := sphere(center: p) hint(r: 12)` (or `sphere(p)`): the centre is drawn in some view.
+- `s := sphere(center: p) hint(r: 12)` (or `sphere(p)`): the centre is drawn in a view or stands in space.
   `radius(12) s`, `a coincident s`, `s tangent l` and `s tangent s2` are spatial. `k coincident s`
   puts a whole circle `k` on the sphere (a gear blank's toe circle on its end sphere); `s tangent k`
   is refused, since a circle and sphere may touch at a point or all round.
@@ -878,19 +903,22 @@ The face and solid added nothing to the rectangle's six unknowns and six equatio
 
 ```
 unit mm
+use std
 component Par(o: point, u: Length) {
   p := point(x: o.x + u, y: o.y + u * u / 1mm)
 }
-o := point
-fix(x == 0mm, y == 0mm) o
+in std.front {
+  o := point
+  fix(x == 0mm, y == 0mm) o
+  a := point hint(y: 1mm)
+  b := point hint(y: 1mm)
+  a coincident k hint(t: -1)
+  b coincident k hint(t: 1)
+  fix(x == -1mm) a
+  fix(x == 1mm) b
+  cap := solid(face(k from a to b, -> close), depth: 3mm)
+}
 k := Par(o).p over u in (-2mm, 2mm)
-a := point hint(y: 1mm)
-b := point hint(y: 1mm)
-a coincident k hint(t: -1)
-b coincident k hint(t: 1)
-fix(x == -1mm) a
-fix(x == 1mm) b
-cap := solid(face(k from a to b, -> close), depth: 3mm)
 ```
 
 `4 params, 4 equations; DOF 0`, and `cap` is the parabolic cap, 4/3 mm² × 3 mm = 4 mm³. A curve
@@ -1103,8 +1131,8 @@ sheet's to state.
 
 ### 1.15 Spatial geometry read after the solve
 
-These declarations name exact geometry derived from solved entities. None adds an unknown or has a
-2D glyph; each may be `private` or passed through a formal of its kind, like any member.
+These declarations name exact geometry derived from solved entities. Except for envelopes in the
+plane and a prism's side (below), none adds an unknown or has a 2D glyph; each may be `private` or passed through a formal of its kind, like any member.
 
 **Surfaces.** `flank := surface(crown, edge: rack.outer)` names the surface swept by one line, arc
 or circle of an unmodified revolution's profile. It follows solved dimensions with exact positions
@@ -1191,7 +1219,7 @@ couple of seconds); edit a pitch radius and the cut follows.
   It is meshed from its material field ([field-meshing](field-meshing.md)), refined in the
   background in the app.
 - `at:` and `from:`/`to:` are exclusive; a sweep of a sweep is refused; a swept solid may only be
-  `cut` from a body.
+  `cut` from a body for an exact export (the field mesh reads `bound` and `union` too).
 
 **Envelopes.** `flank := envelope(crown_flank, under: generating, from: -35deg, to: 35deg)` is the
 source surface's zero-normal-velocity locus over the roll interval. An evaluator intersects it with
@@ -1200,9 +1228,9 @@ is not on it. Declaring one chooses no branch, designates no material and closes
 
 **Envelopes in the plane are curves** (§6.15.1). Over a tool of the sheet — a point, line, circle,
 arc or formula curve — and a planar motion (`motion(about: o, …)` is a *turn* about a point), the
-same word is a curve the solve sees: the profile the tool cuts in the moving frame.
-`flank := envelope(rack_flank, under: motion(rack, relative_to: blank), from: -25deg, to: 25deg)`
-cuts an involute; `profile := envelope(roller, under: rel, from: 0deg, to: 360deg, side: near)` a
+same word is a curve the solve sees: the profile the tool cuts in the moving frame. Over
+`cutting := motion(rack, relative_to: blank)`,
+`flank := envelope(rack_flank, under: cutting, from: -25deg, to: 25deg)` cuts an involute; `profile := envelope(roller, under: rel, from: 0deg, to: 360deg, side: near)` a
 cam (`side: near|far` of the instant centre, where a circle cuts twice). `coincident`, `tangent` and
 `curvature` hold against it, and the tool's and the motion's geometry are its columns, so they
 solve to suit — a conjugate is synthesised, not stated. See 2.9.2.
@@ -1302,7 +1330,7 @@ A redundancy among pure relations (a fourth `perpendicular` round a rectangle) i
 as `implied:`, never an error.
 
 **`--where NAME`** prints the numbers under a name: a point's (`hinge.x`, `hinge.y`), a whole
-instance's (`--where views`), a view's basis and origin (`--where side`), a solid's measurements
+instance's (`--where t0`), a plane's place and axes (`--where std.side`), a solid's measurements
 (`--where body`, 1.14), or one number (`--where hinge.x`, `--where body.volume`). Under `--json`
 every name answers in a `positions` table, narrowed by `--where`. It is quicker than writing a
 `claim` to test a position.
@@ -1369,8 +1397,8 @@ four separate `horizontal`/`vertical` lines would not; it reads as the outline.
 ### 2.3 An input: DOF 0, well
 
 ```
-// replaces 2.2's two dimensions and its `w :=` and `h :=` lines; the input stands outside
-// the `in` block, the dimensions inside it
+// replaces 2.2's two dimensions and its `w :=` and `h :=` lines (the seeds' `h` becomes
+// `w / 2`); the input stands outside the `in` block, the dimensions inside it
 param w := 60
 p0 distance(w) p1                // states it
 p1 distance(w / 2) p2            // the height follows the width
@@ -1384,7 +1412,7 @@ Edit the 60 — in the source, or by typing over the `w` callout — and the hei
 ```
 use std
 
-param s: Length         // an input nothing binds...
+param s: Length         // an unknown: declared, no value...
 
 in std.front {
   a := point
@@ -1478,7 +1506,7 @@ in std.front {
 }
 ```
 
-Six equal links: round a loop one `equal` is implied (listed `implied:`), and nothing sizes the
+Six equal links: round a loop one `equal` is redundant (all six are listed `implied:`: any one may go), and nothing sizes the
 ring, so five freedoms remain. Under-constrained repetition is normal.
 
 A body ending mid-joint (1.7) writes a closed contour with no corner names. DOF 1, under:
@@ -1607,7 +1635,7 @@ rim := c.p over theta in (0, 360)
 `rim` comes back where it started after its whole turn, so it is **closed**: a contact on it wraps
 across the seam at 0/360 instead of stopping there. Any other numeric formal the drawn instance
 leaves unbound (`component Crank(…, theta: Angle, len: Length)`, `c := Crank(o, datum)`) is an
-unknown `c.len` and a **column** of the curve: `ground tangent rim` can then solve the length.
+unknown `c.len` and a **column** of the curve: `rim tangent ground` can then solve the length.
 (Passed as an expression in another unknown — `len: 2 * k` — it is E103.)
 
 ### 2.9.2 A profile generated by a motion: DOF 0, well

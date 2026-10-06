@@ -54,17 +54,18 @@ frame turned within a plane (`.axes` the plane, `.u` the line o→t). No coordin
 helper: model contours with alignments, incidences, symmetry and dimensions. Components have no
 implicit frame; `instance := Part(f) in view` supplies membership. Aliases keep subentity paths
 (`f.origin`). Calls may omit `name :=`; anonymous keys stay out of user-facing names. E.g. `cyl
-:= Cylinder(std.up, fw: components.dims.fwA, dims: components.dims.vtwin_dims)`. Retired: the
+:= Cylinder(std.Turned(std.origin, up), fw: components.dims.fwA, dims:
+components.dims.vtwin_dims)` (`vtwin/components/cylinder.sv`'s preview). Retired: the
 datum rotor, `toward:`, `from:`, `fold:`, `offset:`, `through:`, `attitude: free`, quaternions,
 hinges, `against`, the role rule, page placement, `std.ThreeViews`.
 
 **Nothing is imported bare (Solvent §14.4, [0.30]):** a used module's component, param or group
-is written by full path — `engine.parts.Crank(…)`, `hardware.nut14_af`,
+is written by full path — `engine.parts.Rod(…)`, `hardware.nut14_af`,
 `components.dims.vtwin_dims` — only through the file's own `use`; a module names its own bare.
 `Program::resolve_component(name, from)` resolves from the calling file (`Scope::module`);
 `component_id` is program-wide identity (keys `CurveDef`s). `Walk::used_params` qualifies module
 numbers (`module_params` keeps the module's own); groups register under their path. E071 is a
-name twice in one file. `std.front` needs the document's own `use std`. A drawn callout drops a
+component defined twice in one file, the document's own included (a value twice is E001). `std.front` needs the document's own `use std`. A drawn callout drops a
 module path (`relations::unqualified`).
 
 **Cones and cylinders** (`docs/spatial-constraints-plan.md`): `cone k(axis: l) hint(half: 30deg)`
@@ -79,7 +80,8 @@ holds all three) and the point nearest the origin, fixed — no freedom — unti
 (`CKind::place_slots`: `PointOnAxis`, `AxisCoincident`, `PlaneAxis`), when `Sketch::place_axis`
 frees it and mints `axis_foot` (`a·d = 0`); `remove` holds it again once nothing reads it. `fix(px
 ==, py ==, pz ==) t` holds a place (placed first, so nothing later frees it); std's axes are held
-so. `t coincident s` between axes is `AxisCoincident` (4 rows, either sense). JSON writes a placed
+so. `t coincident s` between axes is `AxisCoincident` (4 rows, either sense); `l coincident t`, a
+line on an axis, is `LineOnAxis` (both ends, 4 rows, places the axis). JSON writes a placed
 axis's held place as `a_fixed`; a load or `graft` puts places back after the planes
 (`Sketch::place_restored`), elaboration's order. `parallel`/`perpendicular`/`angle` over an axis
 are `Parallel3`/`Perpendicular3`/`Angle3` (slots `SpecKind::Direction`, a line or an axis): an
@@ -658,7 +660,7 @@ Conventions:
   `Program::source_at` maps an offset to its text; `modules::localize` shows a
   module's diagnostic at its `use` (`Module::via`) with `name:line:col` in front.  A module
   contributes its components (`Component::module` says which) and its top-level params and groups,
-  each reached by the module's full path (`engine.parts.Crank`, [0.30]); its own drawing is not
+  each reached by the module's full path (`engine.parts.Rod`, [0.30]); its own drawing is not
   drawn.  **The core has no filesystem**: the resolver is the host's — `solventc` reads
   `engine/parts.sv` beside the document, then `library::resolve`; the FFI and `examples::document`
   use `library::parse_linked`, over `library::MODULES`.  **`rust/lib/` is the standard library**
@@ -978,7 +980,7 @@ Conventions:
   place a slot is spelled, read by both printers, as `hint_of` is for the clause around it.
   **The shape is the library's**: every user-facing kind has one or two entity slots, always first
   in spec order, with `Symmetric` the single three-slot exception.  Several kinds share a word —
-  **`coincident` is eleven, `distance` is six, `tangent` is six** — and `horizontal`/`vertical` are
+  **`coincident` is nineteen kinds, `distance` fifteen, `tangent` ten** (twins in space included) — and `horizontal`/`vertical` are
   two each with the *fixity* doing the work.
   **What a word means is the kinds of its operands, and a name does not carry its kind until
   elaboration** — so the parser resolves *nothing*: it produces a `syntax::Written` and
@@ -1482,14 +1484,15 @@ Conventions:
   `Horizontal` class made every cluster a neighbour of every other.  `relation_bound` must stay an
   upper bound on the merge rank: validate a change by forcing the factorisation on every call and
   asserting `rank <= bound` across the cases.
-- **The ellipse is a library component** (issue #47, item 4): `Ellipse(f: plane, a, b, u)` in
-  `rust/lib/std.sv`, a computed point at eccentric angle `u` on a datum, traced as a curve — so
+- **The ellipse is a library component** (issue #47, item 4): `std.Ellipse(c: point, a, b,
+  tilt, u)` in `rust/lib/std.sv`, a computed point at eccentric angle `u` about `c`, its major axis
+  turned `tilt`, traced as a curve — so
   `p coincident e`, `e tangent l` and `e curvature k` are the curve contacts, exact to third order;
   the entity kind, its kernels and `CKind`s are gone from every arm, the FFI, the binding and the
   app (an ellipse *tool* is a follow-up).  The parser keeps the word only to refuse it, naming the
   spelling; `io::from_json` refuses a document carrying the old `"ellipses"` table.
   `tests/ellipse.rs` holds the rim, the tangent and the osculating circle against closed forms,
-  and the rim turning with its datum.  An axis is a value the curve takes — stated or a `param` —
+  and the rim turning with its tilt.  An axis is a value the curve takes — stated or a `param` —
   since a component of one computed point cannot be drawn as an instance whose formal is left
   free.
 - **A curve is a point of a component, as one of its numeric formals runs** (Solvent §6.5).

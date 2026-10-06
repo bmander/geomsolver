@@ -38,9 +38,9 @@ fn compile_curve(
                     (
                         fo.span,
                         format!(
-                            "a curve cannot be written over a {}: it has no fixed number of \
+                            "a curve cannot be written over {}: it has no fixed number of \
                              coordinates",
-                            k.as_str()
+                            k.a()
                         ),
                     )
                 })?;
@@ -164,7 +164,7 @@ fn compile_trace(
             other => {
                 return Err((
                     span,
-                    format!("a trace cannot yet be written over a {}", other.as_str()),
+                    format!("a trace cannot yet be written over {}", other.a()),
                 ))
             }
         };
@@ -272,7 +272,7 @@ fn compile_trace(
             other => {
                 return Err((
                     st.span,
-                    format!("a trace block cannot yet draw a {}", other.as_str()),
+                    format!("a trace block cannot yet draw {}", other.a()),
                 ))
             }
         };
@@ -406,7 +406,7 @@ fn compile_trace(
                     None => {
                         return Err((
                             st.span,
-                            format!("`{name}`: a {} is wanted here, not {a:?}", k.as_str()),
+                            format!("`{name}`: {} is wanted here, not {a:?}", k.a()),
                         ))
                     }
                 },
@@ -424,7 +424,7 @@ fn compile_trace(
             Some((k, t)) => {
                 let twin = r.kind.free_kernel().ok_or((
                     st.span,
-                    format!("a {} cannot be stated over `u` here", r.kind.name()),
+                    format!("{} cannot be stated over `u` here", crate::model::article(&crate::syntax::snake(r.kind.name()))),
                 ))?;
                 // every declaration was consumed in pass 1, so `n_q` is final here
                 cols.push((n_outer + n_q + w.len()) as u32);
@@ -541,7 +541,7 @@ fn at_seed(
             span,
             "where on the edge?  `hint(at: c, bearing: …)` says the bearing".to_string(),
         )),
-        (k, _) => Err((a.what.span, format!("a seed cannot be at a {}", k.as_str()))),
+        (k, _) => Err((a.what.span, format!("a seed cannot be at {}", k.a()))),
     }
 }
 /// A curve instance: a family, the entities it is written over, and the numbers it takes.
@@ -659,7 +659,7 @@ fn curve_entity(
             return Err((
                 Code::E040,
                 st.span,
-                format!("`{fname}` is a {}, and a {} was given", k.as_str(), e.kind.as_str()),
+                format!("`{fname}` is {}, and {} was given", k.a(), e.kind.a()),
             ));
         }
         args.push(e);

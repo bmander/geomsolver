@@ -84,6 +84,11 @@ pub enum EntKind {
 }
 
 impl EntKind {
+    /// The kind's name with its article, as a sentence says it: `a line`, `an axis`.
+    pub fn a(self) -> String {
+        article(self.as_str())
+    }
+
     pub fn as_str(self) -> &'static str {
         match self {
             EntKind::Point => "point",
@@ -482,4 +487,10 @@ pub struct PlaneE {
 pub struct LiftE {
     pub point: u32,
     pub x: [u32; 3],
+}
+
+/// A word with its indefinite article: `a line`, `an axis`, `an arc`.
+pub fn article(word: &str) -> String {
+    let an = word.starts_with(|c: char| "aeiou".contains(c));
+    format!("{} {word}", if an { "an" } else { "a" })
 }

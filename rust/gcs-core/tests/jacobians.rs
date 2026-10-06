@@ -244,6 +244,8 @@ fn all_constraints(seed: u32) -> Sketch {
         Constraint::two_line(CKind::Parallel3, me1, axis_a),
         // two axes on one line, either way round
         Constraint::new(CKind::AxisCoincident, vec![e(axis_a), e(axis_b)]),
+        // a line lying on an axis
+        Constraint::new(CKind::LineOnAxis, vec![e(me1), e(axis_a)]),
         // an axis and a plane: on it, along it and square to it, over a free plane and a held one;
         // and two planes a distance apart
         Constraint::new(CKind::AxisOnPlane, vec![e(axis_a), e(pce)]),

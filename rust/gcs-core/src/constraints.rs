@@ -229,6 +229,10 @@ pub enum CKind {
     /// the axis's direction, over the point's lift and the axis's place and direction.  What
     /// gives an axis its place.
     PointOnAxis,
+    /// `l coincident t`: a line lying on an axis, either way round — both its ends on the axis's
+    /// line in space (`kernels::line_on_axis_rows`), so it runs along it too.  Reads where the
+    /// axis is, so it places it.
+    LineOnAxis,
     /// The **gauges** and the **orientation predicates** (spec §9.2, §9.6; issue #47, item 5):
     /// statements written as every other constraint is — an operator, its operands, a class, a
     /// placement — and settled through the same table, but **applied by the elaborator rather
@@ -269,7 +273,7 @@ impl FamilyKernel {
 }
 
 /// Every concrete constraint type, in the order the registry lists them.
-pub const ALL_KINDS: [CKind; 79] = [
+pub const ALL_KINDS: [CKind; 80] = [
     CKind::Coincident,
     CKind::Distance,
     CKind::Midpoint,
@@ -340,6 +344,7 @@ pub const ALL_KINDS: [CKind; 79] = [
     CKind::AxisFoot,
     CKind::PlaneAxis,
     CKind::PointOnAxis,
+    CKind::LineOnAxis,
     CKind::Ordinate3U,
     CKind::Ordinate3V,
     CKind::AxisOnPlane,
@@ -407,6 +412,8 @@ pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option
             (k, Sphere) if round(k) => CKind::CircleOnSphere,
             (Line, Plane) => CKind::LineOnPlane,
             (Point, Axis) => CKind::PointOnAxis,
+            // a line lying on an axis
+            (Line, Axis) => CKind::LineOnAxis,
             // an axis lying in a plane
             (Axis, Plane) => CKind::AxisOnPlane,
             // two axes on one line
@@ -735,6 +742,11 @@ impl SpecKind {
         self == SpecKind::Param
     }
 
+    /// The slot's kind with its article: `a line`, `an axis`.
+    pub fn a(self) -> String {
+        crate::model::article(self.as_str())
+    }
+
     pub fn as_str(self) -> &'static str {
         match self {
             SpecKind::Point => "point",
@@ -848,6 +860,7 @@ impl CKind {
             CKind::AxisFoot => "AxisFoot",
             CKind::PlaneAxis => "PlaneAxis",
             CKind::PointOnAxis => "PointOnAxis",
+            CKind::LineOnAxis => "LineOnAxis",
             CKind::Fix => "Fix",
             CKind::Ccw => "Ccw",
             CKind::Cw => "Cw",
@@ -1020,6 +1033,7 @@ impl CKind {
             CKind::AxisUnit | CKind::AxisFoot => &[("axis", S::Axis)],
             CKind::PlaneAxis => &[("plane", S::Plane), ("axis", S::Axis)],
             CKind::PointOnAxis => &[("p", S::Point), ("axis", S::Axis)],
+            CKind::LineOnAxis => &[("line", S::Line), ("axis", S::Axis)],
             CKind::AxisOnPlane | CKind::AxisParallelPlane | CKind::AxisPerpendicularPlane => {
                 &[("axis", S::Axis), ("plane", S::Plane)]
             }
@@ -1177,7 +1191,9 @@ impl CKind {
             | CKind::AxisUnit
             | CKind::AxisFoot
             | CKind::PlaneAxis => return None,
-            CKind::PointOnAxis | CKind::AxisOnPlane | CKind::AxisCoincident => ("coincident", Infix),
+            CKind::PointOnAxis | CKind::LineOnAxis | CKind::AxisOnPlane | CKind::AxisCoincident => {
+                ("coincident", Infix)
+            }
             CKind::AxisParallelPlane | CKind::PlaneParallel => ("parallel", Infix),
             CKind::AxisPerpendicularPlane => ("perpendicular", Infix),
             CKind::PlaneDistance => ("distance", Infix),
@@ -1234,7 +1250,7 @@ impl CKind {
     /// has a place only while something reads it (`Sketch::place_axis`).
     pub fn place_slots(self) -> &'static [usize] {
         match self {
-            CKind::PointOnAxis | CKind::PlaneAxis => &[1],
+            CKind::PointOnAxis | CKind::LineOnAxis | CKind::PlaneAxis => &[1],
             CKind::AxisOnPlane => &[0],
             CKind::AxisCoincident => &[0, 1],
             _ => &[],
@@ -1458,6 +1474,7 @@ impl CKind {
             | CKind::AxisFoot
             | CKind::PlaneAxis
             | CKind::PointOnAxis
+            | CKind::LineOnAxis
             | CKind::Ordinate3U
             | CKind::Ordinate3V
             | CKind::AxisOnPlane
@@ -1588,6 +1605,7 @@ impl CKind {
             CKind::AxisFoot => K::AxisFoot,
             CKind::PlaneAxis => K::PointOnAxis,
             CKind::PointOnAxis => K::PointOnAxis,
+            CKind::LineOnAxis => K::LineOnAxis,
             CKind::AxisOnPlane => K::AxisOnPlane,
             CKind::AxisCoincident => K::AxisCoincident,
             CKind::AxisParallelPlane => K::AxisParallelPlane,
@@ -1704,6 +1722,7 @@ impl CKind {
             | CKind::AxisFoot
             | CKind::PlaneAxis
             | CKind::PointOnAxis
+            | CKind::LineOnAxis
             | CKind::AxisOnPlane
             | CKind::AxisCoincident
             | CKind::AxisParallelPlane
@@ -1746,6 +1765,7 @@ impl CKind {
                 | CKind::ConeTangentCone
                 | CKind::PointOnExtrusion
                 | CKind::PointOnAxis
+                | CKind::LineOnAxis
                 | CKind::Ordinate3U
                 | CKind::Ordinate3V
                 | CKind::AxisOnPlane
@@ -2432,7 +2452,7 @@ impl Constraint {
                 let (e1, e2) = across(self.axis_dir(sk, 0));
                 [e1, e2].concat()
             }
-            CKind::PointOnLine3 | CKind::PointOnAxis | CKind::PlaneAxis => {
+            CKind::PointOnLine3 | CKind::PointOnAxis | CKind::LineOnAxis | CKind::PlaneAxis => {
                 let (e1, e2) = across(self.axis_dir(sk, 1));
                 [e1, e2].concat()
             }
@@ -2688,6 +2708,11 @@ impl Constraint {
                 let r = &sk.axes[e(1).i()];
                 [self.lifted_columns(sk), r.a.to_vec(), r.d.to_vec()].concat()
             }
+            // the line's ends lifted, then the axis's place and direction
+            CKind::LineOnAxis => {
+                let r = &sk.axes[e(1).i()];
+                [self.lifted_columns(sk), r.a.to_vec(), r.d.to_vec()].concat()
+            }
             // where the plane stands, in the point's place, and the axis's place and direction
             CKind::PlaneAxis => {
                 let r = &sk.axes[e(1).i()];
@@ -2784,7 +2809,7 @@ impl Constraint {
             | CKind::AxisPerpendicularPlane
             | CKind::PlaneParallel
             | CKind::PlaneDistance => Vec::new(),
-            CKind::LineOnPlane => ends(0).to_vec(),
+            CKind::LineOnPlane | CKind::LineOnAxis => ends(0).to_vec(),
             CKind::PointOnCircle3 | CKind::SphereOn => {
                 vec![e(0).i(), sk.round_center(e(1))]
             }
@@ -2983,15 +3008,21 @@ pub fn seed_param(sk: &Sketch, kind: CKind, args: &[Arg], i: usize) -> f64 {
 
 /// An entity slot the core fills when the caller leaves it out — the entity counterpart of
 /// `seed_param`: a projection's planes are its points' memberships, and nobody writes them.
-/// `Err` is the reason it cannot, in the words the caller reports.
-pub fn infer_entity(sk: &Sketch, kind: CKind, args: &[Arg], i: usize) -> Result<EntRef, String> {
+/// `Err` is the reason it cannot, in the words the caller reports, naming entities by `name`.
+pub fn infer_entity(
+    sk: &Sketch,
+    kind: CKind,
+    args: &[Arg],
+    i: usize,
+    name: &dyn Fn(EntRef) -> String,
+) -> Result<EntRef, String> {
     match (kind, i) {
         (CKind::Project | CKind::ProjectSolved, 2 | 3) => {
             let p = args[i - 2].ent();
             sk.plane_of(p.i()).map(EntRef::plane).ok_or_else(|| {
                 format!(
                     "{} is on no plane, so `project` cannot say which view it is in",
-                    crate::io::entity_name(p)
+                    name(p)
                 )
             })
         }
@@ -3010,7 +3041,12 @@ pub(crate) fn contact_carrier(kind: CKind, args: &[Arg]) -> Option<EntRef> {
 /// stands on the same curve, so the unknown has one interval, one seam and one speed.  Two
 /// curves could not agree on any of the three, and a contact's own unknown that runs along no
 /// curve has nothing to share.
-fn shared_on_one_curve(sk: &Sketch, kind: CKind, args: &[Arg]) -> Result<(), String> {
+fn shared_on_one_curve(
+    sk: &Sketch,
+    kind: CKind,
+    args: &[Arg],
+    named: &dyn Fn(EntRef) -> String,
+) -> Result<(), String> {
     let Some(name) = args.iter().find_map(|a| match a {
         Arg::Shared { name, .. } => Some(name),
         _ => None,
@@ -3028,8 +3064,8 @@ fn shared_on_one_curve(sk: &Sketch, kind: CKind, args: &[Arg]) -> Result<(), Str
     match sk.shared.get(name) {
         Some(place) if place.along != here => Err(format!(
             "`{name}` is a place along {}, and a contact on {} cannot share it",
-            crate::io::entity_name(place.along),
-            crate::io::entity_name(here)
+            named(place.along),
+            named(here)
         )),
         _ => Ok(()),
     }
@@ -3037,9 +3073,14 @@ fn shared_on_one_curve(sk: &Sketch, kind: CKind, args: &[Arg]) -> Result<(), Str
 
 /// What a kind refuses once its arguments are all in — the checks that need the sketch, which
 /// the type check on the spec cannot make.  One rule for the elaborator, the document readers,
-/// the FFI and the Rust constructors alike.
-pub fn validate(sk: &Sketch, kind: CKind, args: &[Arg]) -> Result<(), String> {
-    shared_on_one_curve(sk, kind, args)?;
+/// the FFI and the Rust constructors alike; `name` is what the caller calls an entity.
+pub fn validate(
+    sk: &Sketch,
+    kind: CKind,
+    args: &[Arg],
+    name: &dyn Fn(EntRef) -> String,
+) -> Result<(), String> {
+    shared_on_one_curve(sk, kind, args, name)?;
     match kind {
         // a curvature reads the curve's second derivative, which a trace gives exactly only
         // where every row of its block has a Taylor form (`taylor.rs`): a residual by difference
@@ -3051,7 +3092,7 @@ pub fn validate(sk: &Sketch, kind: CKind, args: &[Arg]) -> Result<(), String> {
                     return Err(format!(
                         "{} is traced through a `{kernel}`, whose second derivative is not \
                          written, so the curve has no curvature to state a circle against",
-                        crate::io::entity_name(args[0].ent())
+                        name(args[0].ent())
                     ));
                 }
             }
@@ -3062,7 +3103,7 @@ pub fn validate(sk: &Sketch, kind: CKind, args: &[Arg]) -> Result<(), String> {
             if pa == pb {
                 return Err(format!(
                     "both points are on {}, and one view relates nothing to itself",
-                    crate::io::entity_name(pa)
+                    name(pa)
                 ));
             }
             // two fixed planes are parallel or not now and for ever; where either is solved,
@@ -3074,8 +3115,8 @@ pub fn validate(sk: &Sketch, kind: CKind, args: &[Arg]) -> Result<(), String> {
             {
                 return Err(format!(
                     "{} and {} are parallel, so no fold line relates their views",
-                    crate::io::entity_name(pa),
-                    crate::io::entity_name(pb)
+                    name(pa),
+                    name(pb)
                 ));
             }
             Ok(())
@@ -3086,7 +3127,7 @@ pub fn validate(sk: &Sketch, kind: CKind, args: &[Arg]) -> Result<(), String> {
                 if sk.plane_of(p).is_none() && sk.points[p].z.is_none() {
                     return Err(format!(
                         "{} is a point of a 2D sketch, with no place in space to relate",
-                        crate::io::entity_name(EntRef::point(p))
+                        name(EntRef::point(p))
                     ));
                 }
             }
@@ -3108,7 +3149,7 @@ pub fn validate(sk: &Sketch, kind: CKind, args: &[Arg]) -> Result<(), String> {
                 let ln = &sk.lines[l.i()];
                 let [a, b] = [ln.p1, ln.p2].map(|p| sk.world_point(p as usize));
                 if crate::space::norm(crate::space::sub(b, a)) <= kernels::MIN_LINE_LEN {
-                    return Err(format!("{} has no length in space", crate::io::entity_name(l)));
+                    return Err(format!("{} has no length in space", name(l)));
                 }
             }
             // a view's own points are on it by construction: the row would be identically zero
@@ -3123,8 +3164,8 @@ pub fn validate(sk: &Sketch, kind: CKind, args: &[Arg]) -> Result<(), String> {
                 return Err(format!(
                     "{} is drawn in {}, so where it stands along that view's normal is not a \
                      question: every point of a view is on it",
-                    crate::io::entity_name(args[0].ent()),
-                    crate::io::entity_name(args[1].ent())
+                    name(args[0].ent()),
+                    name(args[1].ent())
                 ));
             }
             if matches!(k, CKind::LineLine3 | CKind::CylinderTangentLine)
@@ -3133,8 +3174,8 @@ pub fn validate(sk: &Sketch, kind: CKind, args: &[Arg]) -> Result<(), String> {
                 return Err(format!(
                     "{} and {} are parallel in space, and parallel lines have no common \
                      perpendicular to measure",
-                    crate::io::entity_name(lines[0]),
-                    crate::io::entity_name(lines[1])
+                    name(lines[0]),
+                    name(lines[1])
                 ));
             }
             Ok(())

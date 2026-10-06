@@ -1,6 +1,18 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.43 — October 2026**
+**Specification, Draft 0.44 — October 2026**
+
+**[0.44] A line lies on an axis** (`l coincident t`, either way round: both ends on it, four rows,
+placing the axis). `parallel` between a line and an axis was already the direction relation in
+space.
+
+**[0.44] Two shorthands.** `@` is `coincident` and `~` is `hint`: `p @ c` is `p coincident c`, and
+`p := point ~(x: 0, y: 0)` is `p := point hint(x: 0, y: 0)`. Each is read as the word it stands
+for and is that word everywhere the word may stand — an infix `@(t == 0.4)` pins as
+`coincident(t == 0.4)` does, and a number inside `~(…)` is a seed (§4.3). Neither is a name. A
+solve writes its seeds back inside the clause as written, so `~` stays `~`. The unimplemented path
+grammar's arc segment, `a ~C~ b` (§10), loses its delimiter and wants another spelling when it
+lands.
 
 **[0.43] A plane's axes pass through its origin, and a bare plane is free.** `P.u` and `P.v` are
 lines through `P.origin`, so where a plane's axes stand, the plane stands: `plane(u: std.x, v:
@@ -235,7 +247,7 @@ a segment whose infinite carrier is what constraints read (§3.1).*
 
 ## 1. Overview
 
-Solvent is a declarative language for describing planar geometry under constraint. A Solvent program does not construct geometry step by step; it declares a set of entities, relations among them, and structural facts (symmetry, connectivity), and delegates the discovery of coordinates to a solver. The language borrows its module discipline from hardware description languages: designs are built from **components**, component bodies are **unordered**, and connection between components is **aliasing** (net formation), not constraint.
+Solvent is a declarative language for describing geometry under constraint. A Solvent program does not construct geometry step by step; it declares a set of entities, relations among them, and structural facts (symmetry, connectivity), and delegates the discovery of coordinates to a solver. The language borrows its module discipline from hardware description languages: designs are built from **components**, component bodies are **unordered**, and connection between components is **aliasing** (net formation), not constraint.
 
 ### 1.1 Design principles (normative)
 
@@ -252,7 +264,7 @@ Statements within a component body form a set. Reordering the statements of a bo
 **P3 — Hints are semantically inert.**
 Deleting every seed from a program MUST NOT change its solution set. Seeds may change which solution a solver finds, or whether it converges, but never what counts as a solution. Any annotation that changes the solution set (orientation predicates, arc branch selection, tangency side) is a **constraint** and is classified as such by the implementation, regardless of surface syntax.
 
-**[0.2]** The two are told apart by one mark, not by analysis: a number written with `=` is a seed and a solver may rewrite it; a number written with `==` is a constraint and a solver MUST NOT (§4.3). This is what makes Invariant H (§11) checkable *syntactically*, as that section already requires.
+**[0.2]** The two are told apart by one mark, not by analysis: a number written with `=` is a seed and a solver may rewrite it (**[0.7]** the mark is now the `hint(…)` clause: a number inside one is a seed, §4.3); a number written with `==` is a constraint and a solver MUST NOT (§4.3). This is what makes Invariant H (§11) checkable *syntactically*, as that section already requires.
 
 **P4 — Component boundaries are decomposition structure.**
 A component is solvable against the entities it is written over. Implementations SHOULD exploit the component instance tree as a decomposition plan (solve interiors against the formals; solve the inter-component system over them).
@@ -262,7 +274,7 @@ The `ring` construct asserts cyclic symmetry. Its solution set contains exactly 
 
 ### 1.2 Scope of this draft
 
-This draft specifies **planar (2D) geometry only**. The entity vocabulary, constraint library, and group actions are two-dimensional. Section 17 lists the known lifting questions for 3D. This draft also excludes curve entities beyond lines and circles (no involutes, splines, or conics); see §17.
+**[0.1]** This draft specified **planar (2D) geometry only**. The entity vocabulary, constraint library, and group actions are two-dimensional. Section 17 lists the known lifting questions for 3D. This draft also excludes curve entities beyond lines and circles (no involutes, splines, or conics); see §17. **[0.2]** Curves are settled in §6.5 and splines in §6.1; **[0.42]** points, axes and planes stand in space (§6.7).
 
 **[0.18] More precisely: the draft specifies planar geometry *solved*, with solids evaluated over it.** A document may say what object its drawing is of — a face is a region of a plane (§6.8), a solid is a face swept or a term over other solids (§6.9), and a view or a section of one is a picture the sheet asks for (§6.11) — and **nothing past the sketch is ever an unknown**. **[0.42]** The sketch reaches into space: a point may stand there, and a plane and an axis (§3.1, §6.7) are unknowns of the solve, solved with the rest of the sketch before anything below reads them. An extent is an expression (§6.9), and neither a face nor a solid owns a parameter, appears in a residual, or is reached by a constraint. The strata run one way and there is no edge back: the sketch solves, the extents are worked out, the terms are ordered, the outputs are read. So everything §15 says about a solver, and every count in §16.3's ledger, is unchanged by the presence of an object — which is the whole of what makes the addition affordable.
 
@@ -275,10 +287,11 @@ MUST, MUST NOT, SHOULD, SHOULD NOT, and MAY are used as in RFC 2119. Text marked
 ## 2. Lexical structure
 
 - **Identifiers:** `[A-Za-z_][A-Za-z0-9_]*`. Component names are conventionally capitalized; this is not enforced.
-- **Keywords:** `component`, `param`, `point`, `circle`, `line`, `frame`, `path`, `repeat`, `cycle`, `ring`, `about`, `as`, `next`, `prev`, `hint`, `at`, `fix`, `ccw`, `cw`, `rev`, `true`, `false`, **[0.2]** `curve`, `over`, `spline` (and `ellipse`, until **[0.15]** made the ellipse a library component — `Ellipse` in `std`, a computed point on a datum traced as a curve, whose contacts are the curve's; an implementation keeps the word only to refuse it). **[0.7]** `unit`, `class` and `style` in, `construction` out; every constraint is a prefix or an infix operator (§9.2), so `coincident`, `equal`, `tangent`, `curvature`, `symmetry` and `distance` are the words a statement is written with — it is a class now, and the base sheet is what draws it dashed (§13.2). **[0.4]** In a chain (§6.6) the word `close` is meaningful *contextually*; it is not reserved, and an entity may bear it as a name. **[0.19]** It is read the same way after `->` inside a `face`'s brackets (§6.8), which is the other place the language draws a loop. **[0.8]** `to` is retired: the plain corner is the `->` marker, and threading is stated at the joint rather than inferred from the operands. **[0.5]** A coordinate seed is written `hint at` (§6.4). **[0.7]** Every seed is written in one `hint(…)` clause (§4.3, §6.4); `hint at REF` kept its own form inside a trace block (§6.5.1) until **[0.14]**, when a place became the `at:` and `bearing:` keys of the same clause — `hint(at: REF, bearing: β)` — so `at` after `hint` is refused, and `bearing` is a key and no keyword. **[0.10]** `plane`, `in`, `project` and `fold` in (§6.7); `from` is contextual there as it is in a trace family. **[0.42]** `axis` in; `frame`, `fold`, and `from`, `offset` and `through` as a plane's labels, out — a plane's brackets take `u:` and `v:` and nothing else. **[0.13]** `port` is retired (§7); an implementation keeps the word only to refuse it. **[0.18]** `face` and `solid` are element keywords (§6.8, §6.9) and `view` and `section` open a statement (§6.11); `cut` is the body rule's own word and `on` gains a reading over two solids (§9.2), so both join the operator words a name may not be. **[0.32]** `union` is the body rule's too, and joins them; `on` loses its reading over two solids. The seven labels a solid's brackets take — `from`, `to`, `depth`, `through`, `about`, `sweep`, `sense` — and `offset` (§6.10) and `at` (§6.11) are **contextual**: they are read as labels inside the brackets that take them and are reserved nowhere, so a `param` or a point may still bear any of them as a name (`face := -(fw + D / 2)` is idiomatic). A declaration's *name*, however, may not be an element keyword, and three shipped examples renamed a line that had been called `face`.
+- **Keywords:** `component`, `param`, `point`, `circle`, `line`, `frame`, `path`, `repeat`, `cycle`, `ring`, `about`, `as`, `next`, `prev`, `hint`, `at`, `fix`, `ccw`, `cw`, `rev`, `true`, `false`, **[0.2]** `curve`, `over`, `spline` (and `ellipse`, until **[0.15]** made the ellipse a library component — `Ellipse` in `std`, a computed point on a datum traced as a curve, whose contacts are the curve's; an implementation keeps the word only to refuse it). **[0.7]** `unit`, `class` and `style` in, `construction` out; every constraint is a prefix or an infix operator (§9.2), so `coincident`, `equal`, `tangent`, `curvature`, `symmetry` and `distance` are the words a statement is written with — it is a class now, and the base sheet is what draws it dashed (§13.2). **[0.4]** In a chain (§6.6) the word `close` is meaningful *contextually*; it is not reserved, and an entity may bear it as a name. **[0.19]** It is read the same way after `->` inside a `face`'s brackets (§6.8), which is the other place the language draws a loop. **[0.8]** `to` is retired: the plain corner is the `->` marker, and threading is stated at the joint rather than inferred from the operands. **[0.5]** A coordinate seed is written `hint at` (§6.4). **[0.7]** Every seed is written in one `hint(…)` clause (§4.3, §6.4); `hint at REF` kept its own form inside a trace block (§6.5.1) until **[0.14]**, when a place became the `at:` and `bearing:` keys of the same clause — `hint(at: REF, bearing: β)` — so `at` after `hint` is refused, and `bearing` is a key and no keyword. **[0.10]** `plane`, `in`, `project` and `fold` in (§6.7); `from` is contextual there as it is in a trace family. **[0.42]** `axis` in; `frame`, `fold`, and `from`, `offset` and `through` as a plane's labels, out — a plane's brackets take `u:` and `v:` and nothing else. **[0.13]** `port` is retired (§7); an implementation keeps the word only to refuse it. **[0.18]** `face` and `solid` are element keywords (§6.8, §6.9) and `view` and `section` open a statement (§6.11); `cut` is the body rule's own word and `on` gains a reading over two solids (§9.2), so both join the operator words a name may not be. **[0.32]** `union` is the body rule's too, and joins them; `on` loses its reading over two solids. **[0.42]** `on` is no constraint word: `coincident` says incidence (§9.2). **[0.20]** `view` and `section` leave model source for the drawing (§6.11). The eight labels a solid's brackets take — `from`, `to`, `depth`, `through`, `along`, `about`, `sweep`, `sense` — are **contextual**: they are read as labels inside the brackets that take them and are reserved nowhere, so a `param` or a point may still bear any of them as a name (`face := -(fw + D / 2)` is idiomatic). A declaration's *name*, however, may not be an element keyword, and three shipped examples renamed a line that had been called `face`.
 - **Literals:** decimal numbers with optional unit suffix (`10`, `2.5mm`, `30deg`). The constant `tau` (= 2π) and `pi` are predefined.
 - **Comments:** `//` to end of line; `/* ... */` nesting not required.
-- **Operators and punctuation:** `== + - * / ( ) { } [ ] , : . = -> ~`
+- **Operators and punctuation:** `== + - * / ( ) { } [ ] , : . := -> ~ @`
+- **Shorthands [0.44]:** `@` is the word `coincident` and `~` the word `hint`, read as those words wherever they may stand.
 - Whitespace and newlines are insignificant except as token separators. Statements are newline- or `;`-terminated; implementations MUST accept either.
 
 ---
@@ -297,9 +310,10 @@ MUST, MUST NOT, SHOULD, SHOULD NOT, and MAY are used as in RFC 2119. Text marked
 | `Point` | a position in the plane it is drawn in, or **[0.42]** in space where it is drawn in none | 2 in a plane; 3 in space |
 | `Line` | segment between two `Point`s; its infinite carrier is what constraints read **[0.2]** | 0 of its own (4 through its ends) |
 | `Circle` | center + radius | 3 |
+| `Arc` | center + radius, its start and end on that circle | 5 |
 | `Sphere` | a center drawn in some view, or standing in space, + a radius, on no sheet **[0.24]** | 1 of its own (`r`), beyond its center's |
-| `Cone` | an axis `Line` drawn in some view — the apex its start, opening toward its end — + a half-angle, on no sheet **[0.26]** | 1 of its own (`half`), beyond its axis's |
-| `Cylinder` | an axis `Line` drawn in some view + a radius, on no sheet **[0.26]** | 1 of its own (`r`), beyond its axis's |
+| `Cone` | an axis `Line` drawn in some view or standing in space — the apex its start, opening toward its end — + a half-angle, on no sheet **[0.26]** | 1 of its own (`half`), beyond its axis's |
+| `Cylinder` | an axis `Line` drawn in some view or standing in space + a radius, on no sheet **[0.26]** | 1 of its own (`r`), beyond its axis's |
 | `Axis` | a directed line in space with no start, drawn in no view **[0.42]** | 2 (its direction), and 2 more once a relation reads where it is |
 | `Plane` | **[0.42]** a plane in space: its attitude two axes `u`, `v` through its origin **[0.43]**, and where it stands; a **view**, the points drawn in it having its own coordinates (§6.7) | 3 of its own (where it stands), beyond its axes'; a bare `plane` is 7 with the axes it mints **[0.43]** |
 | `Path` | directed piecewise boundary curve | 0 (derived object) |
@@ -313,11 +327,11 @@ MUST, MUST NOT, SHOULD, SHOULD NOT, and MAY are used as in RFC 2119. Text marked
 | `Vertex` | a named spatial corner at two seams (§6.18) | 0 — it owns no parameter |
 | `Edge` | a finite seam extent between named spatial vertices (§6.19) | 0 — it owns no parameter |
 
-**`Face`, `Solid`, `Surface`, `Motion` and `Envelope` are evaluated after the solve.** None owns a coordinate, allocates an unknown, or contributes a planar residual; none may be an argument of a planar constraint of §9.3, be dragged, be dimensioned, or be put on a plane with `in`. What each *is* is settled once the drawing has been solved and every extent worked out (§1.2, §6.9). A kind of this stratum therefore adds nothing to §16.3's ledger.
+**`Face`, `Solid`, `Surface`, `Motion`, `Envelope`, `Patch`, `Seam`, `Vertex` and `Edge` are evaluated after the solve.** None owns a coordinate, allocates an unknown, or contributes a planar residual; none may be an argument of a planar constraint of §9.3, be dragged, be dimensioned, or be put on a plane with `in`. What each *is* is settled once the drawing has been solved and every extent worked out (§1.2, §6.9). A kind of this stratum therefore adds nothing to §16.3's ledger.
 
-**[0.2] `Line` was a 2-DOF undirected infinite line with a `.dir` field in 0.1.** It is now a segment between two points, and every constraint that reads a line reads the infinite carrier through those points — which is what `parallel`, `perpendicular`, `on` and `angle` mean by a line anyway.
+**[0.2] `Line` was a 2-DOF undirected infinite line with a `.dir` field in 0.1.** It is now a segment between two points, and every constraint that reads a line reads the infinite carrier through those points — which is what `parallel`, `perpendicular`, `coincident` and `angle` mean by a line anyway.
 
-The change is a concession to cost. A 2-DOF line is a second representation of a line alongside the one every constraint already works in, so it needs its own column layout and its own kernel for roughly fourteen constraint types, and the whole return is that §16.3's ledger comes out differently. Where a drawing wants a line with no ends — a datum, an axis — it says so with a construction segment.
+The change is a concession to cost. A 2-DOF line is a second representation of a line alongside the one every constraint already works in, so it needs its own column layout and its own kernel for roughly fourteen constraint types, and the whole return is that §16.3's ledger comes out differently. Where a drawing wants a line with no ends — a datum, an axis — it says so with a construction segment, or **[0.42]** in space with an `axis` (§6.7), which has none.
 
 ### 3.2 Sub-entities
 
@@ -327,6 +341,8 @@ Compound entities expose sub-entities by field access. Sub-entities are ordinary
 |---|---|---|
 | `Circle` | `.center` | `Point` |
 | `Circle` | `.r` | `Length` |
+| `Arc` | `.center`, `.start`, `.end` | `Point` |
+| `Arc` | `.r` | `Length` |
 | `Sphere` | `.center` | `Point` — drawn in whichever view the declaration is `in` **[0.24]** |
 | `Sphere` | `.r` | `Length` **[0.24]** |
 | `Cone`, `Cylinder` | `.axis` | `Line` — named in the brackets, never minted: it is what places the surface in space **[0.26]** |
@@ -367,9 +383,9 @@ Implementations **MUST** check dimensions in expressions and constraints, and MU
 - `^` takes a plain number, and a **dimensioned base takes a whole power**: `x ^ 2.5` where `x` is a length is not a dimension anybody meant, and `sqrt` is how a half is written.
 - The dimension an expression comes to is checked against the **slot** it is written in.
 
-**A bare number is dimensionless, and a *context* may take one.** That is what "drawing units" means: `distance(a, b) == 80` is a length because the slot says so, and `sin(30)` reads 30 as degrees because the function does. A context may **not** speak for a second operand: `90 / N + ivp` is a plain number added to an angle, and an implementation MUST report it rather than choose. The asymmetry is the design — a slot and a function say what they want; two operands are not a context, and neither of them is authoritative.
+**A bare number is dimensionless, and a *context* may take one.** That is what "drawing units" means: `a distance(80) b` is a length because the slot says so, and `sin(30)` reads 30 as degrees because the function does. A context may **not** speak for a second operand: `90 / N + ivp` is a plain number added to an angle, and an implementation MUST report it rather than choose. The asymmetry is the design — a slot and a function say what they want; two operands are not a context, and neither of them is authoritative.
 
-A **name** is worth a number, and where that number is *used* decides what it is: `w = 80` in a `Length` slot does not make `w` a length, since the same 80 may be a run, a rise or an angle. A unit on the literal (`w = 80mm`) says otherwise, and so does a component formal's declared type (§8) — which is what catches `x := w + phi`.
+A **name** is worth a number, and where that number is *used* decides what it is: `w := 80` in a `Length` slot does not make `w` a length, since the same 80 may be a run, a rise or an angle. A unit on the literal (`w := 80mm`) says otherwise, and so does a component formal's declared type (§8) — which is what catches `x := w + phi`.
 
 **[0.16] One namespace for a number's names; [0.41] an unknown is declared.** A number is named one way, `w := 60` — `param w := 60` when it is one of the document's inputs — and a dimension's number reads names and defines none. A name resolves by one rule (§5): a definition declares its name in the body it is written in, and a second definition of a name in one body is **E001**. An **unknown** — a number the solve answers for — is declared too: an input with no value (`param beta: Angle`, §6.3) or a formal no call binds (§8). A name nothing in scope declares is **E101**, wherever it is read; it is never made an unknown of its own accord, which turned a misspelling into a degree of freedom (0.16–0.39 called it a free variable and warned, W111). A value reading an unknown is that unknown scaled (`q := 2 * beta`), carried as the affine form it is.
 
@@ -406,7 +422,7 @@ unit mm
 
 `unit` names the document's **length** unit. A bare number in a `Length` slot is that unit, so every existing document keeps working with one added line, and a suffixed literal converts to it.
 
-**Without a `unit` line the document is in drawing units** — a length dimension with no name. Everything still checks: `distance(a, b) == 45deg` is still an error and `Length + Angle` is still an error. You simply cannot write `mm` or `"`, because there is nothing to convert to, and an implementation MUST report that rather than guess.
+**Without a `unit` line the document is in drawing units** — a length dimension with no name. Everything still checks: `a distance(45deg) b` is still an error and `Length + Angle` is still an error. You simply cannot write `mm` or `"`, because there is nothing to convert to, and an implementation MUST report that rather than guess.
 
 **Storing the document's unit costs an implementation nothing for lengths**, because a well-formed kernel is homogeneous in length: scale every length in a sketch by a constant and no residual, no tolerance and no rank moves. **Angles are the exception, and it is not a choice**: `cos θ` is not homogeneous, and there is no consistent unit it works in other than radians. So an angle is stored in radians and converted at the text seam, which is exactly where it converts anyway; what units remove is not the conversion but the *guess*.
 
@@ -459,10 +475,10 @@ Every statement belongs to exactly one class. The classification is normative be
 
 | Class | Statements | Affects solution set? |
 |---|---|---|
-| **Declaration** | entity declarations, `param`, `group`, `curve` family definitions, instance declarations, **[0.18]** the body rule (`union`, `cut` and `bound` over two solids, §6.9) **[0.32]** | introduces entities/aliases |
-| **Constraint** | predicate calls, `==` equations, **pinned seeds (`==`, §4.3) [0.2]**, orientation predicates, arc-branch and tangency-side decorations, `ring` symmetry, gauge statements | **yes** |
+| **Declaration** | entity declarations, `param`, groups (`{…}`, §8.1), curves (§6.5), instance declarations, **[0.18]** the body rule (`union`, `cut` and `bound` over two solids, §6.9) **[0.32]** | introduces entities/aliases |
+| **Constraint** | relations (prefix and infix words, §9.2), `==` equations, **pinned seeds (`==`, §4.3) [0.2]**, orientation predicates, arc-branch and tangency-side decorations, `ring` symmetry, gauge statements | **yes** |
 | **Seed** *(was Hint)* | the `hint` statement (§11), **and every seed written inline in a `hint(…)` clause (§4.3, §6.4) [0.2] [0.7]** | **no (P3)** |
-| **Structure** | `repeat`/`cycle` blocks, `path` declarations (net of their derived constraints, §10.4), **[0.18]** `view` and `section` (§6.11), which ask for a picture and declare nothing | organizational |
+| **Structure** | `repeat`/`cycle` blocks, `path` declarations (net of their derived constraints, §10.4), **[0.18]** `view` and `section` (§6.11), which ask for a picture and declare nothing — **[0.20]** in a `.svd` drawing, never in model source | organizational |
 
 ### 4.3 Seeds and pins: `hint(…)` and `==` **[0.2]** **[0.7]**
 
@@ -473,9 +489,9 @@ This is the only distinction between the two classes, and it is lexical on purpo
 ```
 p := point hint(x: 0, y: 0)          // seed: a solve may move it
 c := circle(center: o) hint(r: 25)   // seed: a solve may move the radius
-distance(a, b) == 80                 // constraint: a solve must not move it
-point_on_spline(p, s) hint(t: 0.37)  // seed: the contact may slide along the curve
-point_on_spline(p, s, t == 0.37)     // constraint: the contact is pinned there
+a distance(80) b                     // constraint: a solve must not move it
+p coincident s hint(t: 0.37)         // seed: the contact may slide along the curve
+p coincident(t == 0.37) s            // constraint: the contact is pinned there
 w := 100                             // neither: a number worked out while elaborating
 ```
 
@@ -493,21 +509,21 @@ same way and classified by intent.
 
 **Consequences, all normative.**
 
-1. A solver MUST NOT rewrite a `==` number. It MAY rewrite an `=` number, and doing so is how a
+1. A solver MUST NOT rewrite a `==` number. It MAY rewrite a number inside a `hint(…)` clause, and doing so is how a
    drawing records where it ended up (§13.1).
 2. A statement's class is decidable by inspection. An implementation MUST NOT need to consult the
    solution set, the solver, or the geometry to classify one.
-3. Deleting every `=` number from a program leaves its solution set unchanged (P3). Deleting a
+3. Deleting every `hint(…)` clause from a program leaves its solution set unchanged (P3). Deleting a
    `==` number generally does not.
 
 **Non-normative.** The mark also settles seed *writeback*, which is what an implementation needs
 when the drawing is edited by drawing on it rather than by typing:
 
-> A seed is writable iff it is written with `=` and not `==`, is a literal and not an expression,
+> A seed is writable iff it is inside a `hint(…)` clause, is a literal and not an expression,
 > and is reached by exactly one instance path.
 
 The first clause is this section. The second keeps a radius written as a component's parameter
-(`r: Rr`) from being overwritten with the number it happened to come to — the author said what it
+(`hint(r: Rr)`) from being overwritten with the number it happened to come to — the author said what it
 *is*, not where it starts. The third is §12.7: thirty instances share one statement, and there is
 no one pose to record.
 
@@ -516,7 +532,7 @@ no one pose to record.
 ## 5. Names, scope, and resolution
 
 - The scope of a name is the entire component body in which it is declared (P2). Forward reference is legal and idiomatic.
-- **[0.29] A name is defined by `NAME := VALUE` and in no other way** (formals and block binders aside). The value decides what the name is: a number (a value, or under `param` an input, §6.3), an element (§6), a chain joined by `->` (§6.6), an instance (§8), a group (§8.1), a curve (§6.5). `(NAME := VALUE)` is the value, so it may stand where the value may: a chain link, `(ab := line(a, b)) -> …`. **[0.41]** A constraint's number defines no name. `:=` binds loosest. An input with no value, `param beta: Angle`, declares an unknown (§3.4). A `label:` fills a slot and defines nothing in the caller's scope.
+- **[0.29] A name is defined by `NAME := VALUE` and in no other way** (formals and block binders aside). The value decides what the name is: a number (a value, or under `param` an input, §6.3), an element (§6), a chain joined by `->` (§6.6), an instance (§8), a group (§8.1), a curve (§6.5). `(NAME := VALUE)` is the value, so it may stand where the value may: a chain link, `(ab := line(a, b)) -> …`. **[0.41]** A constraint's number defines no name. `:=` binds loosest. An input with no value, `param beta: Angle`, declares an unknown (§3.3, §6.3). A `label:` fills a slot and defines nothing in the caller's scope.
 - Redeclaration of a name within one body is an error (**E001**), whether the two are values, inputs or one of each.
 - Instance members are accessed by dotted paths: `t.lead`, `g.hub.origin` — an unknown an instance left unbound included: `t.w` (**[0.41]** a dotted name nothing made is **E101**, as a bare one is).
 - **Components have closed model scope.** A body reads its formals and its own declarations. It may call visible component definitions and use built-in functions and constants, but cannot capture geometry, parameters or groups from the root, an importing module, or an enclosing component. Pass those dependencies as arguments. This includes `std.front` and the other standard datums.
@@ -544,9 +560,9 @@ A bare declaration introduces an entity all of whose coordinates are unknowns.
 
 **The dotted path is the name.** An anonymous child has no name in the source, so `l.p1` *is* its name, and everything that identifies an entity by name MUST agree — a constraint written against it, a selection that outlives a re-elaboration, a diagnostic that reports it.
 
-**[0.9] The name itself is optional**, independently of everything after it: `line` alone is a syntactically valid statement — a line with no name, implicit children and no hint — and so are `line(p1, p2)`, `circle hint(r: 25)` and `arc(center: c)` — a line owns no scalar of its own, so its anonymous seeded form puts the seeds in the slots, `line(hint(x: 0, y: 0), hint(x: 60, y: 20))` (§6.2). The token after the kind keyword decides what the statement says next, so a trailing-clause word (`hint`, `knots`, `class`, `at`, `close`) can no longer be a declaration's name — the same reservation element keywords and operator words carry. `curve` keeps requiring a name: its form is `curve name = family(…)`, and the name is what the contact constraints address. **Identity is minted on demand.** Internally the statement suffices — an anonymous element parses, elaborates, draws, drags and deletes without ever being named. The moment the *source* must reference it (a constraint applied from a tool, a dimension stated on it), the implementation MUST splice a real name into the declaration — the same bargain §6.4's writeback strikes with an unwritten `hint(…)` clause. No hidden names: a name is what the source calls the thing, and an unnamed thing has none until the source needs one. Chains are in scope (§6.6): `line -> tangent arc -> tangent line` is a fully anonymous open contour, the corner-minting rule naming shared points by the parent's dotted path.
+**[0.9] The name itself is optional**, independently of everything after it: `line` alone is a syntactically valid statement — a line with no name, implicit children and no hint — and so are `line(p1, p2)`, `circle hint(r: 25)` and `arc(center: c)` — a line owns no scalar of its own, so its anonymous seeded form puts the seeds in the slots, `line(hint(x: 0, y: 0), hint(x: 60, y: 20))` (§6.2). The token after the kind keyword decides what the statement says next, so a trailing-clause word (`hint`, `knots`, `class`, `at`, `close`) can no longer be a declaration's name — the same reservation element keywords and operator words carry. A curve keeps requiring a name: its form is `NAME := REF over u in (a, b)` (§6.5), and the name is what the contact constraints address. **Identity is minted on demand.** Internally the statement suffices — an anonymous element parses, elaborates, draws, drags and deletes without ever being named. The moment the *source* must reference it (a constraint applied from a tool, a dimension stated on it), the implementation MUST splice a real name into the declaration — the same bargain §6.4's writeback strikes with an unwritten `hint(…)` clause. No hidden names: a name is what the source calls the thing, and an unnamed thing has none until the source needs one. Chains are in scope (§6.6): `line -> tangent arc -> tangent line` is a fully anonymous open contour, the corner-minting rule naming shared points by the parent's dotted path.
 
-Where an unnamed and unseeded coordinate *starts* is not the language's business (§15). It is worth saying only that the obvious answer is wrong: two implicit endpoints both at the origin is a zero-length line, with no direction for `horizontal(l)` to bite on and a singular row for any tangency, so an implementation MUST NOT place them coincidently.
+Where an unnamed and unseeded coordinate *starts* is not the language's business (§15). It is worth saying only that the obvious answer is wrong: two implicit endpoints both at the origin is a zero-length line, with no direction for `horizontal l` to bite on and a singular row for any tangency, so an implementation MUST NOT place them coincidently.
 
 A **list** child slot — a spline's control polygon, a curve's arguments — has no arity to conjure children from, so a bare `s := spline` remains **E103**.
 
@@ -554,8 +570,8 @@ A **list** child slot — a spline's control polygon, a curve's arguments — ha
 
 ```
 pitch := circle(center)
-f0 := plane(u: spoke, v: std.y)   -- [0.42]: two axes, the line `spoke` read as one
-l := line(hint(x: 0, y: 0), hint(x: 60, y: 20))   -- [0.7]
+f0 := plane(u: spoke, v: std.y)   // [0.42]: two axes, the line `spoke` read as one
+l := line(hint(x: 0, y: 0), hint(x: 60, y: 20))   // [0.7]
 ```
 
 Constructor arguments have two behaviors, by type:
@@ -567,14 +583,14 @@ Constructor arguments have two behaviors, by type:
 
 **[0.2] The value-type rule is reversed from 0.1**, which made a value argument definitional — `pitch := circle(center, R)` introducing `pitch.r == R` as a substitution. That cannot stand beside §4.3, and it is wrong on its own terms: a radius is a coordinate a user drags. Under 0.1's reading, taking hold of a rim and pulling would be an *edit of what the program means* rather than a move within its solution set, and every direct-manipulation gesture on a scalar would be a different kind of event from the same gesture on a point. **[0.7]** A value argument is no longer written there at all; it is §4.3's `hint(…)`.
 
-The `name := expr` form declares an entity wholly defined by an expression; all its coordinates are definitional.
+A computed point, `p := point(x: XEXPR, y: YEXPR)`, is wholly defined by expressions and is drawn only as a curve (§6.5).
 
 A radius that is meant to be *held* says so:
 
 ```
 c := circle(center: o) hint(r: 25)   // 25 is where it starts
-radius(c) == 25                   // 25 is what it is
-fix(c.r)                          // 25 is what it is, without a dimension on the drawing
+radius(25) c                      // 25 is what it is
+fix(r == 25) c                    // 25 is what it is, without a dimension on the drawing
 ```
 
 ### 6.3 Values and inputs: `NAME := EXPR`, `param NAME` **[0.29]** **[0.41]**
@@ -610,11 +626,11 @@ add an omitted `hint(r: …)` in that case; `rim := radius(size) circle(center: 
 Authored hints remain editable, and free radii retain pose hints. A claimed radius or a radius
 expressed in terms of a free unknown does not determine that scalar for this purpose.
 
-**[0.7] One clause for every seed.** `hint(…)` joins the trailing-clause loop, so it is order-free against `knots` and `class` (§13.2) exactly as those two already are against each other. A constraint's own unknown is written the same way — `point_on_spline(p, s) hint(t: 0.4)` — and the *pin* stays in the argument list, `point_on_spline(p, s, t == 0.4)`: `hint` marks what a solve revises, and a pin is precisely what it does not.
+**[0.7] One clause for every seed.** `hint(…)` joins the trailing-clause loop, so it is order-free against `knots` exactly as those two already are against each other. A constraint's own unknown is written the same way — `p coincident s hint(t: 0.4)` — and the *pin* stays in the argument list, `p coincident(t == 0.4) s`: `hint` marks what a solve revises, and a pin is precisely what it does not.
 
-Two things that look like seeds and are not, and stay where they are. **`knots [...]`** is document data no solve moves. **A curve instance's values** — `curve e = involute(base, phase: 0)` — are numbers the family takes, not numbers the solve revises.
+Two things that look like seeds and are not, and stay where they are. **`knots [...]`** is document data no solve moves. **A curve instance's values** — `e := Involute(base, phase: 0).p over u in (u0, u1)` — are numbers the family takes, not numbers the solve revises.
 
-**What `hint` marks is that a solve revises the number — not that the number is seed-class.** The two are not the same set, and the difference decides where the word belongs. Seed-class is §4.3's classification: inert under P3, so deleting it changes no solution set. That is true of a coordinate seed *and* of a callout placement (§13.1), which is why a placement keeps its bare `at (t, r)` even though it is every bit as inert. What separates them is who writes them. A coordinate seed is an input a solve overwrites, every time, which is the whole of what §6.4's writeback does. A placement is never touched by a solve at all: it is derived by the layout until somebody drags the callout, and from then on it records where that person put it. So a placement is not a guess about anything, and `at` there says what it means.
+**What `hint` marks is that a solve revises the number — not that the number is seed-class.** The two are not the same set, and the difference decides where the word belongs. Seed-class is §4.3's classification: inert under P3, so deleting it changes no solution set. That is true of a coordinate seed *and* of a callout placement (§13.1), which **[0.20]** lives in the `.svd` drawing (§13.1) and needs no `hint` even though it is every bit as inert. What separates them is who writes them. A coordinate seed is an input a solve overwrites, every time, which is the whole of what §6.4's writeback does. A placement is never touched by a solve at all: it is derived by the layout until somebody drags the callout, and from then on it records where that person put it. So a placement is not a guess about anything, and `at` there says what it means.
 
 *Non-normative:* an implementation can therefore read `hint` as the mark of "this is the solver's to answer", which is a narrower and more useful claim than "this is inert". A reader wanting to know what may be deleted without changing the drawing should ask §4.3, which answers for both.
 
@@ -622,7 +638,7 @@ Two things that look like seeds and are not, and stay where they are. **`knots [
 
 `hint` keeps the cases inline cannot express — seeding an entity declared elsewhere, and seeding from an expression over other geometry (`hint t.lead(x: center.x + root.r, y: center.y)`).
 
-**[0.12] A seed may read geometry, and reads its seed.** The text in a `hint(…)` clause — a declaration's or a child slot's (`line l(hint(x: p.x + 10, y: p.y), …)`) — MAY name another entity's scalar by its dotted path: `p.x`, `p.y`, `k.center.x`, `k.r`, `e.b`. What it reads is that scalar's **own seed**, never a solved value, so the clause stays seed-class: delete it and the solution set is unchanged, as §4.3 requires. The same clause names a place outright **[0.14]**: `hint(at: REF)` — where another point starts — and `hint(at: K, bearing: β)`, the point on circle `K`'s edge at bearing `β` from the x axis of the plane the seeded point is drawn in. **[0.33]** A place may also be a **step** from the point `at:` names: `hint(at: A, toward: B, by: f, turn: θ)` is `A + f·R(θ)(B − A)`, the fraction `f` of the way to point `B` (1 if `by` is unsaid) turned `θ` about `A` (0 if unsaid); `hint(at: A, along: L, by: f, turn: θ)` steps by `f` times line `L`'s run from its `p1` to its `p2` instead. So `hint(at: a, toward: b, by: 0.5)` is the midpoint, `by: -1` the reflection of `b` through `a`, and `hint(at: o, toward: rim, turn: 90deg)` the rim turned a quarter about `o`. `toward` and `along` are one or the other, neither stands beside `bearing`, and `by`, `turn`, `toward`, `along` and `bearing` each need `at` — each refused at its key. **[0.33]** A place drawn in another view than the point it seeds (§6.7) is read **where it stands in space**, projected into the seeded point's view: a point of the pitch plane named in a view folded from it starts at its image there. An implementation settles such seeds once the memberships and the views' seeded poses are known, again in statement order. An arc's radius left unwritten is its centre to its start, read once the places are settled. `at`, `bearing`, `toward`, `along`, `by` and `turn` are keys beside `x`, `y`, `r` and `t`, and the rule of §4.3 is then lexical with no exception: a seed is what is inside `hint(…)`. A clause naming a place carries no coordinate (`hint(at: p, x: 3)` is an error at the key) **[0.42]** except a plane's: `hint(at: P, x: 3, y: 4)` is the place `(3, 4)` in plane `P`'s own coordinates, read in space and seen in the seeded point's plane, which is how a part seeds a point against the plane it is measured in. `bearing` without `at` is an error, and both are refused where they are written, as an unknown key is. (In 0.7–0.13 the place had a grammar of its own, `hint at REF [bearing (β)]`, which MUST NOT parse now; an implementation SHOULD say what the spelling became.) Both forms were a trace block's words (§6.5) and mean the same thing on the sheet. Seeds are settled once every declaration has one, in statement order, so a seed reading a seed that was itself read from a third comes out right when the three are written in the order they depend on; written the other way round it reads the earlier one's provisional seed (an unseeded point's scatter, an unwritten radius's default), which an implementation MAY warn about and MUST NOT refuse. A read of a scalar the entity has not (`p.z`), or of nothing (`nobody.x`), is **E103**. A geometry read is a `Length` where the document names a `unit` (so it adds to `150mm` and not to `10`) and a bare number where it does not, since there no literal can be a length. Inside a component the names resolve as references do — a formal reads as the entity it aliases, a name inside a block's copy as that copy's. A seed written this way is an expression and is never written back by a solve.
+**[0.12] A seed may read geometry, and reads its seed.** The text in a `hint(…)` clause — a declaration's or a child slot's (`l := line(hint(x: p.x + 10, y: p.y), …)`) — MAY name another entity's scalar by its dotted path: `p.x`, `p.y`, `k.center.x`, `k.r`, `e.b`. What it reads is that scalar's **own seed**, never a solved value, so the clause stays seed-class: delete it and the solution set is unchanged, as §4.3 requires. The same clause names a place outright **[0.14]**: `hint(at: REF)` — where another point starts — and `hint(at: K, bearing: β)`, the point on circle `K`'s edge at bearing `β` from the x axis of the plane the seeded point is drawn in. **[0.33]** A place may also be a **step** from the point `at:` names: `hint(at: A, toward: B, by: f, turn: θ)` is `A + f·R(θ)(B − A)`, the fraction `f` of the way to point `B` (1 if `by` is unsaid) turned `θ` about `A` (0 if unsaid); `hint(at: A, along: L, by: f, turn: θ)` steps by `f` times line `L`'s run from its `p1` to its `p2` instead. So `hint(at: a, toward: b, by: 0.5)` is the midpoint, `by: -1` the reflection of `b` through `a`, and `hint(at: o, toward: rim, turn: 90deg)` the rim turned a quarter about `o`. `toward` and `along` are one or the other, neither stands beside `bearing`, and `by`, `turn`, `toward`, `along` and `bearing` each need `at` — each refused at its key. **[0.33]** A place drawn in another view than the point it seeds (§6.7) is read **where it stands in space**, projected into the seeded point's view: a point of the pitch plane named in another view starts at its image there. An implementation settles such seeds once the memberships and the views' seeded poses are known, again in statement order. An arc's radius left unwritten is its centre to its start, read once the places are settled. `at`, `bearing`, `toward`, `along`, `by` and `turn` are keys beside `x`, `y`, `r` and `t`, and the rule of §4.3 is then lexical with no exception: a seed is what is inside `hint(…)`. A clause naming a place carries no coordinate (`hint(at: p, x: 3)` is an error at the key) **[0.42]** except a plane's: `hint(at: P, x: 3, y: 4)` is the place `(3, 4)` in plane `P`'s own coordinates, read in space and seen in the seeded point's plane, which is how a part seeds a point against the plane it is measured in. `bearing` without `at` is an error, and both are refused where they are written, as an unknown key is. (In 0.7–0.13 the place had a grammar of its own, `hint at REF [bearing (β)]`, which MUST NOT parse now; an implementation SHOULD say what the spelling became.) Both forms were a trace block's words (§6.5) and mean the same thing on the sheet. Seeds are settled once every declaration has one, in statement order, so a seed reading a seed that was itself read from a third comes out right when the three are written in the order they depend on; written the other way round it reads the earlier one's provisional seed (an unseeded point's scatter, an unwritten radius's default), which an implementation MAY warn about and MUST NOT refuse. A read of a scalar the entity has not (`l.r` of a line), or of nothing (`nobody.x`), is **E103**. A geometry read is a `Length` where the document names a `unit` (so it adds to `150mm` and not to `10`) and a bare number where it does not, since there no literal can be a length. Inside a component the names resolve as references do — a formal reads as the entity it aliases, a name inside a block's copy as that copy's. A seed written this way is an expression and is never written back by a solve.
 
 ### 6.5 Curves **[0.11]**
 
@@ -651,17 +667,17 @@ component Unwind(c: circle, datum: line, phase: Angle, u: Angle) {
 e := Unwind(base, datum, phase: a0).p over u in (u0, u1)
 ```
 
-**Over a drawn instance.** `path := leg.toe over theta in (0, 360)` names a point of an instance the drawing holds. The trace is **anchored at the drawing**: the pose the instance stands in on the sheet is where evaluation begins, and the value the instance gave the swept formal is the anchor's parameter. An instance that leaves a numeric formal **unbound** makes it an unknown of the drawing (§3.4), named under the instance (`leg.theta`) so two instances leaving the same formal unbound have two unknowns — and the anchor then follows that unknown wherever the solve puts it. This is the form a mechanism is written in: drawn once with its crank free, and traced from the same statements. **[0.37]** Every other numeric formal a drawn instance leaves unbound is an unknown of the drawing in the same way (`leg.h`), and the curve is written over it as over the entities' coordinates: it is a **column** of the curve, so a contact against the curve may solve for it — a rod's length chosen so the stride touches the ground. Only the unknown itself: a formal given an expression in an unknown (`h: 2 * k`, inside an instance that left `k` unbound) is **E103**, and so is an unknown nothing on the sheet reads, which no solve could allocate.
+**Over a drawn instance.** `path := leg.toe over theta in (0, 360)` names a point of an instance the drawing holds. The trace is **anchored at the drawing**: the pose the instance stands in on the sheet is where evaluation begins, and the value the instance gave the swept formal is the anchor's parameter. An instance that leaves a numeric formal **unbound** makes it an unknown of the drawing (§3.3), named under the instance (`leg.theta`) so two instances leaving the same formal unbound have two unknowns — and the anchor then follows that unknown wherever the solve puts it. This is the form a mechanism is written in: drawn once with its crank free, and traced from the same statements. **[0.37]** Every other numeric formal a drawn instance leaves unbound is an unknown of the drawing in the same way (`leg.h`), and the curve is written over it as over the entities' coordinates: it is a **column** of the curve, so a contact against the curve may solve for it — a rod's length chosen so the stride touches the ground. Only the unknown itself: a formal given an expression in an unknown (`h: 2 * k`, inside an instance that left `k` unbound) is **E103**, and so is an unknown nothing on the sheet reads, which no solve could allocate.
 
 **Closed curves [0.37].** A curve run over a whole turn of an `Angle` formal (`over theta in (0, 360)`) that comes back where it started — a crank's coupler curve, a cam's profile — is **closed**. A contact on it has no end to stop at: a parameter carried past the seam wraps round onto the interval and stays free, since the seam is only where the interval was written to begin. A curve that does not come back (an involute unwound a whole turn) is open, and a contact on it is held to its ends.
 
 **Over an instance written in place.** `Involute(base, phase: a0).p` binds the arguments as an instance statement would and draws nothing: the curve is the only thing made of it. The anchor is the value it gives the swept formal, or the interval's start when it gives none. **[0.42]** A traced component is solved in one plane, so a relation in space in its body (§9.2) is refused where it is written.
 
-**Requirements.** An implementation MUST differentiate `C` with respect to the swept formal *and* with respect to every coordinate the component reads. `∂C/∂u` is which way a contact may slide; `∂C/∂θ` is how the curve moves when the geometry it is written over moves, and an implementation that computes only the first will solve a contact once and drop it the moment that geometry is dragged. For a computed point both are mechanical from the expressions; for a locus both come from the implicit function theorem at the body's solution. A name a computed point's expressions cannot reach is an error (**E016**), not a free variable: a curve is written over geometry that exists, and a misspelling there would quietly add a degree of freedom to every point on the curve. A dimension in a traced body MAY read a number of the geometry the component is written over (`c.r`, `k.center.x`): it is a column of the curve, and is differentiated with the rest. **[0.37] Outside a trace a dimension MUST NOT read geometry** (**E103**): the expression graph has no column for it, and minting a free variable named `k.r` would make a drawn instance of a component state something other than its own trace.
+**Requirements.** An implementation MUST differentiate `C` with respect to the swept formal *and* with respect to every coordinate the component reads. `∂C/∂u` is which way a contact may slide; `∂C/∂θ` is how the curve moves when the geometry it is written over moves, and an implementation that computes only the first will solve a contact once and drop it the moment that geometry is dragged. For a computed point both are mechanical from the expressions; for a locus both come from the implicit function theorem at the body's solution. A name a computed point's expressions cannot reach is an error (**E103**), not a free variable: a curve is written over geometry that exists, and a misspelling there would quietly add a degree of freedom to every point on the curve. A dimension in a traced body MAY read a number of the geometry the component is written over (`c.r`, `k.center.x`): it is a column of the curve, and is differentiated with the rest. **[0.37] Outside a trace a dimension MUST NOT read geometry** (**E103**): the expression graph has no column for it, and minting a free variable named `k.r` would make a drawn instance of a component state something other than its own trace.
 
 **Branches.** A locus generically has several solutions, and a component states its way onto one — three instruments, in order of strength:
 
-1. **A signed constraint,** wherever the vocabulary can say it. Above, *neither* choice is a branch at all: `angle` is directed (§9.4), so `t` sits at the bearing and not opposite it, and `point_line_distance` is signed, so one equation unwinds the string one way for positive roll and the other for negative.
+1. **A signed constraint,** wherever the vocabulary can say it. Above, *neither* choice is a branch at all: `angle` is directed (§9.4), so `t` sits at the bearing and not opposite it, and a `distance` from a line whose number runs with the swept formal is read signed in a traced body (on the sheet it is a magnitude, §4.1), so one equation unwinds the string one way for positive roll and the other for negative.
 2. **An orientation predicate.** `ccw(a, b, x)` / `cw(a, b, x)` in the body is §9.6's statement doing §9.6's job: it contributes no residual and *selects among the discrete solution components*. Traced, its third point MUST be one the component places. A predicate is read **at the anchor** — the drawn pose, or the value the instance gave the swept formal, chosen where the predicates read unambiguously — and an implementation MUST enforce it there (reflect the placed point across the oriented line and solve again) and MUST NOT re-enforce it elsewhere: away from the anchor, continuity governs, and the component the predicate picks at the anchor is the component the whole curve is on, even where the curve has since wound to where the predicate no longer reads true. A body with predicates needs no seeds at all: an implementation MUST fall back to deterministic restarts, scaled by the geometry the component is written over and by nothing else, when the seeds (or their absence) leave the anchor solve nowhere to start. Drawn, the same predicate records the root choice the drawing is on (§9.6).
 3. **A seed.** What neither an equation nor a predicate says, a seed says: the body's seeds are places over the formals, evaluation of an instance written in place starts from them, and away from the anchor continuity governs — an implementation MUST evaluate the curve as one continuation along the parameter, so the branch picked at the anchor is the branch everywhere. A curve over a drawn instance starts from the pose on the sheet and reads no seed.
 
@@ -673,11 +689,12 @@ e := Unwind(base, datum, phase: a0).p over u in (u0, u1)
 
 ### 6.6 Chains **[0.4]**
 
-A chain writes a run of declarations and the constraints *between* them in one ordered breath. Its geometry and constraints elaborate to exactly the statements a person would otherwise write out. **[0.20]** An optional `NAME =` binds the resulting ordered traversal: an open chain, or a closed loop when the expression ends in `-> close`. Naming the traversal adds no coordinates or equations.
+A chain writes a run of declarations and the constraints *between* them in one ordered breath. Its geometry and constraints elaborate to exactly the statements a person would otherwise write out. **[0.20]** An optional `NAME :=` binds the resulting ordered traversal: an open chain, or a closed loop when the expression ends in `-> close`. Naming the traversal adds no coordinates or equations.
 
 ```
 horizontal (bottom := line(b1, b2)) -> tangent
 (a_br := arc(center: c_br) hint(r: r)) -> tangent
+…
 vertical (right := line(r1, r2)) -> tangent close
 ```
 
@@ -723,8 +740,8 @@ Naming a chain never closes an endpoint gap by itself.
 
 **[0.8] Threading is a statement, not an inference.** The `->` marker on a joint says the two links beside it share a boundary point, threaded left-to-right along the traversal below; its absence says they do not. `->` alone is the plain corner — this is what `to` said through 0.7, and `to` is retired into the marker. `-> INFIX` is a corner that also states the relation, at the point just threaded. `INFIX` alone is the relation and no corner: `a_br equal a_tr equal a_tl` says three arcs are the same size and nothing whatever about where they meet, and welding them would be an invention. Because each joint states its own threading, a chain may mix declarations and names freely — `(l1 := line(a, b)) perpendicular (l2 := line(c, d))` declares two separate lines at a right angle, and `(l1 := line(a, k.start)) -> tangent k` extends a fresh contour onto geometry that is already there.
 
-- A **prefix** desugars to that constraint applied to the declaration it stands before: `bottom := horizontal line(b1, b2)` is `bottom := line(b1, b2)` plus `horizontal(bottom)`. Eligibility is registry-derived — one entity slot and nothing else — so a new unary constraint joins the grammar without the grammar changing.
-- **[0.8] A joint may state several relations.** `A -> equal angle(30deg) B` states both between the two links, at the corner the marker threads; each word desugars to a statement of its own, with its own identity and span. The marker may stand on either side of the words, or both — `A -> equal -> B` is the one joint `A -> equal B` is — and words with no marker state their relations and weld nothing. The words need no punctuation because fixity sorts them: a word is read at the joint until one opens the next link — an element keyword, or a prefix word standing before one — so in `-> tangent horizontal line b` the tangency is the corner's and the levelling is the link's. Deleting one relation splices its word out and leaves the rest standing; the whole joint deleted at once falls back to what a single word's deletion would be — the corner stays, or the statement breaks. A trailing placement (`at (t, r)`, §13.1) qualifies the line's **one** relation; a line stating several relations refuses it, there being no way to say which.
+- A **prefix** desugars to that constraint applied to the declaration it stands before: `bottom := horizontal line(b1, b2)` is `bottom := line(b1, b2)` plus `horizontal bottom`. Eligibility is registry-derived — one entity slot and nothing else — so a new unary constraint joins the grammar without the grammar changing.
+- **[0.8] A joint may state several relations.** `A -> equal angle(30deg) B` states both between the two links, at the corner the marker threads; each word desugars to a statement of its own, with its own identity and span. The marker may stand on either side of the words, or both — `A -> equal -> B` is the one joint `A -> equal B` is — and words with no marker state their relations and weld nothing. The words need no punctuation because fixity sorts them: a word is read at the joint until one opens the next link — an element keyword, or a prefix word standing before one — so in `-> tangent horizontal line b` the tangency is the corner's and the levelling is the link's. Deleting one relation splices its word out and leaves the rest standing; the whole joint deleted at once falls back to what a single word's deletion would be — the corner stays, or the statement breaks. **[0.20]** A trailing placement is the drawing's (§13.1), refused in model source.
 - A **joint** stands between two links and says how they meet. Each joint constrains its two neighbours without changing which links the chain traverses; the optional binding names that traversal. Joint words have no operator precedence. `a equal b equal c` is therefore two statements, not three, and n operands give n−1 — the same rank as any other spanning set over the same elements, stated as a path rather than a star. An INFIX word is the two-argument counterpart of PREFIX, derived from the same registry: it desugars to that constraint over the pair, positionally, and MUST fit both — a word whose slots the pair cannot fill is an error, not a guess.
 - **[0.5]** `equal` is **polymorphic**: `equal_length` between lines, `equal_radius` between circles or arcs, and an error between one of each, since no constraint equates a length to a radius. Like `tangent` it is drafting vocabulary rather than a constraint name, so no registry lookup can resolve it — the pair it stands between does. Where a chain declares its elements the keywords settle it as the program is read; where a chain names them it cannot be settled until the names are resolved, since a name may be declared further down the body (P2) or come from a component, so the word travels to elaboration and is settled there. Both report the same error.
 - **Threading.** **[0.8]** A link a marker reaches is a line or an arc — an element with an entry and an exit, read left to right (`p1 → p2`; CCW, `start → end`); a kind with no boundary points — a circle — cannot be reached by a marker, though it may stand in a chain no marker touches. At each `->` the shared point may be named by one side, by both in agreement (two different names are an error), or — between two declarations — by nobody: the chain then mints it, the earlier-built side's boundary being an anonymous child with a name (its dotted path, §6.1), which fills the later side's slot. `(l1 := line) -> (l2 := line)` is therefore two lines and three points, one shared. A link that only *names* an element offers no list to read or fill and no kind to read a boundary field off — so at a corner with one, the declared side MUST name the shared point, usually by the existing element's own child (`k.start`). An end no marker reaches is an implicit child like any other unwritten slot (§6.1).
@@ -760,6 +777,8 @@ s` against an axis or a line, `p coincident t` for a point on it, and against a 
 P` (it lies in `P`), `t parallel P` (it runs along `P`) and `t perpendicular P` (it is square to
 `P`); each reads either way round. **[0.43]** `t coincident s` between two axes says they are one
 line, either way round: four rows, the seed choosing the sense as it does for `parallel`.
+**[0.44]** `l coincident t` between a drawn line and an axis says the line lies on it, either
+way round: both its ends on the axis's line, four rows, placing the axis as `p coincident t` does.
 `fix(x == 0, y == 0, z == 1) t` holds its direction, and **[0.43]** `fix(px == 0, py == 0, pz ==
 0) t` where it stands — `px`, `py`, `pz` are its point nearest the world origin. An axis read only
 as a direction has two freedoms, and one whose place a relation reads has two more. **A drawn line
@@ -788,7 +807,7 @@ viewer; and `v̂ = n̂ × û`. So `v` need not be square to `u`: it says which p
 is up. **[0.43]** The axes pass through the plane's origin: each plane carries two rows, its origin
 on each axis, so where the axes stand the plane stands, and `u coincident P.u` places a plane by
 an axis. Two planes share an axis only where both pass through it. A slot left unwritten mints an
-axis, `P.u` or `P.v`, free and seeded as the front's (u along x, v along z): a bare `P := plane`
+axis, `P.u` or `P.v`, free and seeded as the front's (u along x, v along z), or from a seed the slot holds (`plane(u: hint(x: 0, y: 1, z: 0))`): a bare `P := plane`
 has seven freedoms, three of place and two of direction for each axis. 0.42's planes sharing
 axes while standing apart are withdrawn: a plane parallel to another takes its own axes, held or
 `parallel` to the other's.
@@ -798,7 +817,7 @@ axes while standing apart are withdrawn: a plane parallel to another takes its o
 floats along its axes until something places it. `P.origin coincident p` puts its origin at `p`,
 all three. `P coincident p` passes it through `p`, and `Q distance(d) P` stands it `d` off `Q`
 (§6.10): each takes the one freedom across the plane and leaves it to slide within itself, which
-the rest of the document settles or leaves free. **[0.43]** A plane over two axes wholly held
+the rest of the document settles or leaves free. **[0.43]** `P parallel Q` says two planes face alike, either way round — their normals parallel, two rows — and nothing of where either stands or how it turns within itself. **[0.43]** A plane over two axes wholly held
 stands where they meet, and adds no row; held axes that do not meet or run alike, and a plane
 held where its held axes are not, are **E067**.
 
@@ -856,7 +875,7 @@ applies only to hints, never to constraints, and traced components retain parame
 Hints still select starting configurations only. Signed ordinates explicitly exclude reflections
 across the axis being measured.
 
-**A point says which plane it is on with `in`.** `a := point in top` is a trailer of the declaration, order-free against `hint`, `knots` and `class`, and it applies to **every point the declaration mints or names**: `l := line(a, b) in top` puts `a` and `b` on `top`, `c := circle in right` its centre, `arc` and `spline` likewise. A membership moves nothing; it says whose coordinates the point's numbers are, and **[0.42]** a point with none stands in space. A point put on two different planes by two declarations is **E060**; agreement is not an error. `plane`, `axis` and `curve` have no points of their own to put anywhere, and `in` on them is refused. Inside a `ring` (§12.5) a plane is invariant: a membership referencing one is true of every copy alike.
+**A point says which plane it is on with `in`.** `a := point in top` is a trailer of the declaration, order-free against `hint` and `knots`, and it applies to **every point the declaration mints or names**: `l := line(a, b) in top` puts `a` and `b` on `top`, `c := circle in right` its centre, `arc` and `spline` likewise. A membership moves nothing; it says whose coordinates the point's numbers are, and **[0.42]** a point with none stands in space. A point put on two different planes by two declarations is **E060**; agreement is not an error. `plane`, `axis` and `curve` have no points of their own to put anywhere, and `in` on them is refused. Inside a `ring` (§12.5) a plane is invariant: a membership referencing one is true of every copy alike.
 
 **`a project b` says two points are images of one point in space.** It is an infix operator over two points (§9.2), each `in` a plane; the two planes are **inferred** from the memberships and are never written — an implementation MUST refuse (**E061**) a point on no plane (one standing in space), two points on one plane (a view relates nothing to itself), and two planes that are parallel (they share no fold line), each at the statement. With `d = (n̂_A × n̂_B)/‖n̂_A × n̂_B‖` the fold line the planes share, `d_A = (û_A·d, v̂_A·d)` its direction in A's own coordinates and `d_B` likewise, the residual between two constant planes is
 
@@ -864,7 +883,7 @@ across the axis being measured.
 
 — one equation: two images of one point agree on their coordinate along the fold line their planes share, and on nothing else, each measured from its own plane's origin. **[0.42]** Where the two origins coincide the last term is zero, and a plane moved square to the fold line — along its projectors — leaves the row as it was, carrying everything drawn in it: the free spacing between a drawing's views is a floating plane's origin. Where either plane is solved for, the row is the projector rule in space over the two lifts, `(n̂_A × n̂_B)·(X_A − X_B) = 0`, and two planes that *come out* parallel are **E065** after the solve. `project` is claimable (§9.7): `claim a project b` asks whether two views are consistent. It is not commutative.
 
-**The block form writes the clause once.** `in top { … }` marks every declaration in its body `in top`; **[0.12]** it stands at the top level of a document and inside a *component* body — over a plane the component was handed, which is how a part carries its geometry for each view in one place, its own `project` statements tying them — and not inside a root block, where a header buried in another statement's span would be a splice no deletion could compose; a `repeat`, `cycle` or `ring` inside it marks the declarations of every copy, so a contour drawn as a chain round a cycle is drawn in the view. The statements are ordinary statements of the enclosing body, and an implementation MUST treat them exactly as if each had written the clause itself — they splice, diagnose and delete as themselves, only the header and the closing brace are the block's, and deleting the plane removes exactly those, leaving the statements standing in space. The block stands at the top level of a document (inside a body, the clause says it one declaration at a time); a declaration inside that writes its own `in`, and a kind with no points of its own, are refused where they stand.
+**The block form writes the clause once.** `in top { … }` marks every declaration in its body `in top`; **[0.12]** it stands at the top level of a document and inside a *component* body — over a plane the component was handed, which is how a part carries its geometry for each view in one place, its own `project` statements tying them — and not inside a root block, where a header buried in another statement's span would be a splice no deletion could compose; a `repeat`, `cycle` or `ring` inside it marks the declarations of every copy, so a contour drawn as a chain round a cycle is drawn in the view. The statements are ordinary statements of the enclosing body, and an implementation MUST treat them exactly as if each had written the clause itself — they splice, diagnose and delete as themselves, only the header and the closing brace are the block's, and deleting the plane removes exactly those, leaving the statements standing in space. The block stands at the top level of a document or of a component body (inside a root block, the clause says it one declaration at a time); a declaration inside that writes its own `in`, and a kind with no points of its own, are refused where they stand.
 
 **An instance joins a view whole.** `t := Tooth(…) in top` puts every point-bearing declaration the instance's expansion makes — through nested components and blocks — on the plane: the block's rule, over the statements one statement stands for. A plane, an axis or a curve inside is left alone, having no points of its own to put there. A point aliased in through an argument joins through any body declaration that names it, and one already on another plane is E060; an expansion given two planes — a clause of its own under an enclosing `in` — is refused. An instance inside an `in { … }` block takes the block's plane the same way.
 
@@ -956,7 +975,7 @@ As a point set, with `union(s)`, `cut(s)` and **[0.22]** `bound(s)` the three **
 B(s) = ( S(s) ∪ ⋃ { B(x) : x union s } ) ∖ ⋃ { B(y) : y cut s } ∩ ⋂ { B(z) : z bound s }
 ```
 
-Union first, and none of the three groups is ordered; difference and intersection commute, so the last two need no order between them either. `tip bound blank` keeps of the blank what lies within the tip cone, which is what a rim inside a cone is, and what `blank ∖ (blank ∖ tip)` used to spell in two statements and an intermediate. `union`, `cut` and `bound` are Declaration-class (§4.2, §9.2): each says what its right operand *is*, contributes no residual, and enters no solve. A solid that reaches itself through its operands is **E041** — "made of itself", the words a plane folded from itself is refused in.
+Union first, and none of the three groups is ordered; difference and intersection commute, so the last two need no order between them either. `tip bound blank` keeps of the blank what lies within the tip cone, which is what a rim inside a cone is, and what `blank ∖ (blank ∖ tip)` used to spell in two statements and an intermediate. `union`, `cut` and `bound` are Declaration-class (§4.2, §9.2): each says what its right operand *is*, contributes no residual, and enters no solve. A solid that reaches itself through its operands is **E041** — "made of itself".
 
 **Extent dependencies are separate from Boolean operands.** A through prism reads only the target's additive material sources for its bounds; it does not read the target's final Boolean result. Therefore `tool := solid(section, through: body)` together with `tool cut body` is valid and unordered. Genuine material/extent cycles, such as using that tool as the body's stock or adding it in `union` with the same body, are **E041**. A cutter remains a finite named solid with its own reports and faces. Its padded caps are numerical extent boundaries, not design datums.
 
@@ -1098,7 +1117,7 @@ owns no solver unknowns and does not move the sketch. `about:` names a directed 
 in world space. Rotation is right handed about that line, through its first endpoint, by
 `phase + ratio * angle`. `ratio` is a bound scalar (default 1), and `phase` is a bound Angle
 (default 0deg). Reversing the line reverses the rotation. Axis geometry follows the current
-solved model, read where it stands in space.
+solved model, read where it stands in space. `advance` is a bound Length (default 0) travelled along the line per full turn of the parameter, so a rotation with an advance is a screw. `motion(along: l, advance: a)` is a slide: a translation along the directed line `l` by `a` per full turn, with no rotation, `ratio:` or `phase:`.
 
 `relative := motion(source, relative_to: observer)` expresses the source motion in the moving
 observer's frame: `inverse(observer) * source`. `of:` may label `source`. Both dependencies
@@ -1354,7 +1373,7 @@ construction semantics, source printing and dependency-aware copy/delete apply. 
 provides shared boundary geometry; oriented face loops and checked closed-solid assembly
 remain separate work.
 
-### 6.18. Shared spatial vertices
+### 6.18 Shared spatial vertices
 
 ```sv
 tip_toe := vertex(tip_edge, toe_edge)
@@ -1393,7 +1412,7 @@ and dependency-aware copy/delete follow ordinary entity rules. They establish sh
 corner identity; finite edge branches, oriented face loops and analytic solid assembly
 remain separate work.
 
-### 6.19. Finite spatial edges
+### 6.19 Finite spatial edges
 
 ```sv
 tip_span := edge(tip_edge, from: tip_toe, to: tip_heel, along: shaft_axis)
@@ -1439,7 +1458,7 @@ geometry, construction roles, printing and dependency-aware copy/delete are ordi
 semantics. A spatial edge is distinct from a planar line and cannot be grounded or used as
 a planar constraint operand. Oriented face uses are described in §6.20.
 
-### 6.20. Spatial face boundaries
+### 6.20 Spatial face boundaries
 
 ```sv
 working := face(toe, tip, heel, join, on: flank_region)
@@ -1486,7 +1505,7 @@ two different named edges can retrace the same curve and enclose no area.
 
 An implementation MUST refuse `port` with a message naming these forms. Aliasing is untouched, being a property of argument passing and not of ports (P1): passing one instance's entity to another as an argument still merges the two into one alias class.
 
-*Non-normative:* joints between components are ordinary constraints written at the assembly site, e.g. `revolute(gear.hub, shaft.j3)`. The language deliberately has no "connect with joint" primitive; see the weld lint **W101** in §16.
+*Non-normative:* joints between components are ordinary constraints written at the assembly site, e.g. `gear.hub coincident shaft.j3`. The language deliberately has no "connect with joint" primitive.
 
 ---
 
@@ -1558,7 +1577,7 @@ fixed coordinate layout, so its needed members must be passed individually to a 
 <expr> == <expr>
 ```
 
-Both sides are dimension-checked. The residual is `lhs − rhs` (componentwise for future vector expressions; in this draft `==` applies to scalar-dimensioned expressions and to `Point` via `coincident`, §9.3).
+The reference implementation does not yet parse an equation statement; a relation is written in §9.2's form. Both sides are dimension-checked. The residual is `lhs − rhs` (componentwise for future vector expressions; in this draft `==` applies to scalar-dimensioned expressions and to `Point` via `coincident`, §9.3).
 
 ### 9.2 Operator form **[0.7]**
 
@@ -1570,39 +1589,40 @@ Where a constraint needs more than its two operands — a number, a selector, a 
 horizontal line1                    point1 horizontal point2
 radius(25) circle1                  point1 distance(1' 3") point2
 distance(6) line1                   point1 symmetry(line1) point2
-distance(x := 7) line1              point1 distance(60, along: x) point2
+distance(w / 2) line1               point1 distance(60, along: x) point2
 fix(x == 0, y == 0) p1             l1 angle(30) l2
-fix(r == 25) c                      line1 tangent(side: -1) circle1
+fix(r == 25) c                      line1 tangent(side: left) circle1
 ```
 
-**The type system already has this shape.** Every constraint a person writes has 1 or 2 entity slots, always first in spec order: 1 for `horizontal`, `vertical` and `radius`, 2 for everything else, and 3 for symmetry alone — which the parentheses absorb exactly as proposed. So "two operands, the rest in parentheses" is a *description* of the library rather than a rule imposed on it.
+**The type system already has this shape.** Every constraint a person writes has 1 or 2 entity slots, always first in spec order: 1 for the prefix words (`horizontal`, `vertical`, `radius`, `length`, a cone's `angle`, a line's `distance`, `fix`), 2 for everything else, and 3 for symmetry alone — which the parentheses absorb exactly as proposed. So "two operands, the rest in parentheses" is a *description* of the library rather than a rule imposed on it.
 
 What goes in the parentheses is a short list:
 
-- **the number**, which may be named or an expression exactly as elsewhere: `distance(80)`, `distance(x = 7)`, `distance(h = w / 2)`, `distance(1' 3")`;
+- **the number**, which may be an expression exactly as elsewhere: `distance(80)`, `distance(w / 2)`, `distance(1' 3")` — **[0.41]** it names nothing; a name is `w := 60` (§6.3);
 - **a selector** — `side: left`, `at: start`, `external: true`, `along: x`. **[0.17]** A selector's *key* must be one the word has (a slot of the settled kind, or `along`, which chooses the kind and fills no slot), and its *value* must be one of the words that slot takes — both **E040**, at the key. Neither was checked through 0.16, and both failures were silent: a mistyped key was dropped and the statement settled without it, and a word outside the set fell through to whichever reading the implementation tested for last, so `at: banana` meant `end`. An implementation MUST publish each slot's vocabulary in its registry, so that a front end offers what the core accepts rather than keeping a second list;
 - **the third entity**, for `symmetry`;
-- **a pin**, `t == 0.4`, for a slot the constraint owns. Its *seed* is the trailing `hint(t: 0.4)` where every seed in the language is (§4.3). **[0.39]** A pin to an unknown — `t == s` over `param s: Angle` (§3.4, §6.3) — does not hold the slot at a number: it makes the slot's unknown **that one**, as a dimension reading it is written in it, and every contact pinned to the same unknown owns it. Inside a component the unknown is a formal the call left unbound (`leg.s`). **[0.41]** A pin to a name nothing declares is **E101**. Only a bare name is shared (an expression over one would need an equation the slot does not have), only a curve contact's parameter (`t`) can be, and only by contacts on the **same** curve — two curves have two intervals, seams and speeds — so a contact on another curve pinned to the name is **E040**, and so is a `fix` pinned to one, since `fix` holds a number. **[0.41]** The shared unknown is seeded where it is declared; a `hint(t: …)` beside a pin to it is a second seed, **E040**.
+- **a pin**, `t == 0.4`, for a slot the constraint owns. Its *seed* is the trailing `hint(t: 0.4)` where every seed in the language is (§4.3). **[0.39]** A pin to an unknown — `t == s` over `param s: Angle` (§3.3, §6.3) — does not hold the slot at a number: it makes the slot's unknown **that one**, as a dimension reading it is written in it, and every contact pinned to the same unknown owns it. Inside a component the unknown is a formal the call left unbound (`leg.s`). **[0.41]** A pin to a name nothing declares is **E101**. Only a bare name is shared (an expression over one would need an equation the slot does not have), only a curve contact's parameter (`t`) can be, and only by contacts on the **same** curve — two curves have two intervals, seams and speeds — so a contact on another curve pinned to the name is **E040**, and so is a `fix` pinned to one, since `fix` holds a number. **[0.41]** The shared unknown is seeded where it is declared; a `hint(t: …)` beside a pin to it is a second seed, **E040**.
 
 | word | fixity | operands → constraint |
 |---|---|---|
-| `coincident` | infix | **[0.42]** (point, point); (point, line \| circle \| arc \| spline \| curve) — incidence, where 0.41 and before wrote `on`; **[0.24]** (point, plane), (line, plane), (point, sphere) in space; **[0.25]** (circle \| arc, sphere), the whole circle on the sphere; **[0.26]** (point, cone), (point, cylinder); **[0.42]** (point, axis), (axis, plane); **[0.43]** (axis, axis), one line either way round. Read either way round: `P coincident p` is `p coincident P`. **[0.32]** Not (solid, solid): the body rule's union is `union` (§6.9) |
+| `coincident` | infix | **[0.42]** (point, point); (point, line \| circle \| arc \| spline \| curve) — incidence, where 0.41 and before wrote `on`; **[0.24]** (point, plane), (line, plane), (point, sphere) in space; **[0.25]** (circle \| arc, sphere), the whole circle on the sphere; **[0.26]** (point, cone), (point, cylinder); **[0.42]** (point, axis), (axis, plane); **[0.43]** (axis, axis), one line either way round; **[0.44]** (line, axis), both ends on it; **[0.38]** (point, the envelope of a prism's side), from any view (§6.15.2). Read either way round: `P coincident p` is `p coincident P`. **[0.32]** Not (solid, solid): the body rule's union is `union` (§6.9) |
 | `cut` | infix | **[0.18]** (solid, solid) — the body rule's other half (§6.9), and no constraint at all |
 | `distance` | infix | (p, p); +`along: x`/`y` for the run and the rise; (p, line); (line, line); (circle, circle); (p, plane) with `along: u`/`v` for signed ordinates from the plane's origin, or **[0.24]** `along: n` for the signed distance along the plane's normal, in space; **[0.42]** (plane, plane), the second's origin along the first's normal (§6.10) |
 | `distance` | prefix | on a line: the distance between its own ends |
-| `tangent` | infix | (line, circle); +`at:` for a tangency at a named end; (circle, circle); (arc, line); (spline, line) — **five**; **[0.24]** (sphere, line), (sphere, sphere), in space; **[0.26]** (cylinder, line), and (cone, cone) with the contact point in the parentheses, `k1 tangent(M) k2` |
+| `tangent` | infix | (line, circle); +`at:` for a tangency at a named end; (circle, circle); (arc, line); (spline, line); (curve, line), §6.5 — **six**; **[0.24]** (sphere, line), (sphere, sphere), in space; **[0.26]** (cylinder, line), and (cone, cone) with the contact point in the parentheses, `k1 tangent(M) k2` |
 | `equal` | infix | (line, line) a length; (circle, circle) a radius |
 | `curvature` | infix | (spline, circle), (curve, circle) |
 | `horizontal`, `vertical` | prefix / infix | a line; or a pair of points |
-| `angle` | infix | (line, line); **[0.42]** (axis, axis \| line), (line, axis), the unsigned angle in space |
+| `angle` | infix | (line, line); **[0.27]** (line, line) with a second pair in the parentheses, `l1 angle(l3, l4) l2` (§9.4); **[0.42]** (axis, axis \| line), (line, axis), the unsigned angle in space |
 | `radius` | prefix | a circle or an arc; **[0.24]** a sphere; **[0.26]** a cylinder |
+| `length` | prefix | **[0.27]** an arc: its length along itself |
 | `angle` | prefix | **[0.26]** a cone: its half-angle (between two lines `angle` is infix) |
 | `midpoint`, `parallel`, `perpendicular`, `symmetry` | infix | one each; **[0.42]** `parallel` and `perpendicular` also take an axis beside an axis or a line, in space, and (axis, plane) — along the plane, and square to it — either way round; **[0.43]** `parallel` takes (plane, plane): the two face alike, either way (two rows over their normals; neither's place nor its turn within itself) |
 | `project` | infix | (point, point), each `in` a plane — the two planes are read off the memberships and never written (§6.7) **[0.10]** |
 | `fix` | prefix | the gauge (§13): an entity, and its own numbers each pinned by its field — `fix(x == 0, y == 0) p`, `fix(r == 25) c` **[0.34]** |
 | `ccw`, `cw` | call | three points, all in the parentheses (§9.6) |
 
-The collapses are where the saving is: **`coincident` is eleven constraints, `distance` is six, `tangent` is six**, and `horizontal`/`vertical` are two each with the **fixity** doing the work — a line prefixed, a pair of points infixed, which is exactly the distinction the point-pair forms were added to draw. `angle` and `radius` keep their own words rather than folding into `distance`, because over two lines a length means a parallel distance and an angle means an angle, and nothing but the number's unit could separate them.
+The collapses are where the saving is: **`coincident` is sixteen constraints, `distance` ten, `tangent` ten**, and `horizontal`/`vertical` are two each with the **fixity** doing the work — a line prefixed, a pair of points infixed, which is exactly the distinction the point-pair forms were added to draw. `angle` and `radius` keep their own words rather than folding into `distance`, because over two lines a length means a parallel distance and an angle means an angle, and nothing but the number's unit could separate them.
 
 **Operand order carries meaning.** `arc tangent line` is a tangency at the arc's end; `line tangent circle` is the ordinary one. Each named itself before and the order was decoration; as an operator, which side the arc is written on picks the constraint.
 
@@ -1610,7 +1630,7 @@ The collapses are where the saving is: **`coincident` is eleven constraints, `di
 
 **The surface word and the wire name are separate.** An export format's constraint identifier is unaffected by this section; the operator is information beside it.
 
-**`ccw` and `cw` keep a call.** Under the general rule they would be `a ccw(c) b`, which reorders three points that are symmetric: the predicate is about the *triangle*, not about a pair with a decoration. The call is a third fixity of the same table — every operand in the parentheses — and not a statement kind of its own. **[0.15]** The gauges and the orientation predicates are entries of the operator table like every other constraint: read by the one relation grammar, so a class, a placement and the chain's lookahead treat them as any other word, and settled by the word alone, since `fix c.r` names a number and `ccw(a, b, c)` has no operand outside its parentheses. They hold parameters or record a root choice rather than adding an equation, so a `claim` on one is refused (E040): a claim is judged by rank, and they add no row.
+**`ccw` and `cw` keep a call.** Under the general rule they would be `a ccw(c) b`, which reorders three points that are symmetric: the predicate is about the *triangle*, not about a pair with a decoration. The call is a third fixity of the same table — every operand in the parentheses — and not a statement kind of its own. **[0.15]** The gauges and the orientation predicates are entries of the operator table like every other constraint: read by the one relation grammar, so a class, a placement and the chain's lookahead treat them as any other word, and settled by the word alone, since `fix(r == 25) c` names a number and `ccw(a, b, c)` has no operand outside its parentheses. They hold parameters or record a root choice rather than adding an equation, so a `claim` on one is refused (E040): a claim is judged by rank, and they add no row.
 
 **[0.18] The body rule is written in this grammar and is not a constraint.** **[0.32]** `boss union cyl`, `bore cut cyl` and **[0.22]** `tip bound cyl` are **Declaration**-class (§4.2): each says what its right operand *is* (§6.9), contributes no residual, and takes no part in a solve, a decomposition or any partition of work. None relates geometry or has a residual to be settled into, so each is read by the word alone. None is in the constraint library of §9.3, and none may be `claim`ed: a claim is judged by rank and these add no row, which is the rule already stated for the gauges. `claim a cut b` and `claim a union b` are refused where they are written, neither being a constraint word. (0.18–0.31 spelled the union `on`, settled by the kinds of its operands; `coincident` between two solids is now refused as any constraint word is over operands it does not relate.)
 
@@ -1642,16 +1662,17 @@ Residual conventions: points are ℝ²; `×` is the scalar 2D cross product; `�
 | `midpoint(m, a, b)` | m − (a+b)/2 | 2 | |
 | `ccw(a, b, c)` | (b−a) × (c−a) > 0 | 0 | inequality; selects a connected component |
 | `cw(a, b, c)` | (b−a) × (c−a) < 0 | 0 | |
-| `revolute(f1: Frame, f2: Frame)` | f1.origin − f2.origin | 2 | relative angle free |
-| `weld(f1: Frame, f2: Frame)` | f1.origin − f2.origin, f1.angle − f2.angle | 3 | triggers **W101** |
 | `coincident(p, P: Plane)` **[0.24]** | n̂_P·(X − o_P) | 1 | X the point's lift; in space whatever plane `p` is in; `p` drawn in `P` is E061 |
 | `distance(p, P, along: n) == e` **[0.24]** | n̂_P·(X − o_P) − e | 1 | signed along `P`'s normal |
 | `distance(p, P, along: u) == e` **[0.21]** **[0.42]** | p.x − e; across planes (X − o_P)·û_P − e | 1 | `along: v` likewise; §6.7 |
 | `distance(P, Q) == e` **[0.42]** | (o_Q − o_P)·n̂_P − e | 1 | signed; parallel only where their axes make them so (§6.10) |
 | `coincident(t: Axis, p)` **[0.42]** | two components of (X − A) × d̂ across the axis | 2 | A the axis's place, d̂ its direction |
+| `coincident(l: Line, t: Axis)` **[0.44]** | two components of (X − A) × d̂ across the axis, for X each of the line's ends | 4 | A the axis's place, d̂ its direction; a line of no length is still on it |
 | `coincident(t: Axis, P: Plane)` **[0.42]** | n̂_P·(A − o_P), n̂_P·(A + L·d̂ − o_P) | 2 | the axis lies in `P`: two of its points, L the drawing's extent apart |
 | `parallel(t: Axis, P: Plane)`, `perpendicular(t, P)` **[0.42]** | n̂_P·d̂; (n̂_P × d̂) across n̂_P | 1; 2 | along `P`, and square to it |
-| `coincident(L, P: Plane)` **[0.24]** | n_P·A − h_P, n_P·B − h_P | 2 | the line's two ends |
+| `coincident(t: Axis, s: Axis)` **[0.43]** | two components of (d̂_s × d̂_t) across `t`, scaled by L; two components of (A_s − A_t) × d̂_t across `t` | 4 | one line, either sense; L the drawing's extent |
+| `parallel(P: Plane, Q: Plane)` **[0.43]** | two components of n̂_Q × n̂_P across n̂_P | 2 | either way round; neither plane's place nor its turn within itself |
+| `coincident(L, P: Plane)` **[0.24]** | n̂_P·(A − o_P), n̂_P·(B − o_P) | 2 | A, B the line's two ends, lifted |
 | `coincident(p, S: Sphere)` **[0.24]** | ‖X − C‖ − S.r | 1 | C the centre's lift |
 | `tangent(S, L)` **[0.24]** | ‖(C − A) × (B − A)‖ / ‖B − A‖ − S.r | 1 | the line's distance from the centre, in space |
 | `coincident(c, S: Sphere)` **[0.25]** | u·(S − C), v·(S − C), √(‖S − C‖² + r²) − S.r | 3 | C the circle's centre lifted, (u, v) its view's axes; `S tangent c` is refused (a point or a whole circle of contact) |
@@ -1661,12 +1682,14 @@ Residual conventions: points are ℝ²; `×` is the scalar 2D cross product; `�
 | `tangent(C: Cylinder, L)` **[0.26]** | the signed common perpendicular of the axis and L − s·C.r | 1 | s the side the seed stands on, as a skew distance's; parallel lines are refused |
 | `tangent(K1, K2, at: M)` **[0.26]** | n₂·g₁, n₂·c₁ | 2 | at M, a cone's normal is n = û cos α − ê sin α, its generator g = ê cos α + û sin α and its circle c = ê × û (û the unit radial direction); one tangent plane at M. That M is on each is `M coincident K` beside it |
 | `tangent(S1, S2)` **[0.24]** | ‖C1 − C2‖ − (r1 + r2) *or* ‖C1 − C2‖ − \|r1 − r2\| | 1 | `external:` inferred from the seed, as two circles' is |
-| *across views* **[0.24]** | the relation over the lifts X, Y of its points: X − Y (3); ‖X − Y‖² − e² (1); the point–line magnitude (1); the signed common perpendicular (1); two components of (X − A) × (B − A) across the line (2, `coincident` a line); â·b̂ − cos e (1); â·b̂ (1); (â × b̂) across â (2, `parallel`); ‖B − A‖² − ‖D − C‖² (1, `equal`); ‖X − C‖ − r and n·(X − C) (2, `on` a circle); **[0.25]** X − (A + B)/2 (3, `midpoint`); Q + P − 2F, F the foot of P on the line (3, `symmetry`) | as listed | §9.2 |
+| *across views* **[0.24]** | the relation over the lifts X, Y of its points: X − Y (3); ‖X − Y‖² − e² (1); the point–line magnitude (1); the signed common perpendicular (1); two components of (X − A) × (B − A) across the line (2, `coincident` a line); â·b̂ − cos e (1); â·b̂ (1); (â × b̂) across â (2, `parallel`); ‖B − A‖² − ‖D − C‖² (1, `equal`); ‖X − C‖ − r and n·(X − C) (2, `coincident` a circle); **[0.25]** X − (A + B)/2 (3, `midpoint`); Q + P − 2F, F the foot of P on the line (3, `symmetry`) | as listed | §9.2 |
 | `project(p, q)` **[0.10]** **[0.42]** | d_A·p − d_B·q + d·(o_A − o_B); over a plane solved for, (n̂_A × n̂_B)·(X_A − X_B) | 1 | the planes A, B inferred from `p`, `q`'s memberships; d the fold line they share, §6.7 |
 
 Implementations MAY extend this library. Extensions MUST document residuals and equation counts, and MUST classify each decoration as hint or constraint per P3.
 
 ### 9.4 Signed angles
+
+*Not yet spelled:* §9.2's table has no form for an angle at a vertex of three points, and the reference implementation has none.
 
 `angle(a, b, c)` is the signed turn at vertex `b` from axis `b→a` to axis `b→c`, positive counterclockwise, in (−π, π]. Equating it to an expression is a 1-equation constraint. Programs that need the unsigned angle write `abs(angle(...))`; implementations MUST warn (**W102**) that `abs` introduces a branch (two solution families) unless an orientation predicate elsewhere disambiguates.
 
@@ -1678,14 +1701,14 @@ Implementations MAY extend this library. Extensions MUST document residuals and 
 
 ### 9.5 Branch decorations are constraints
 
-Several predicates have discrete solution branches. Branch selection changes the solution set and is therefore constraint-class (P3), written as a decoration:
+Several predicates have discrete solution branches. Branch selection changes the solution set and is therefore constraint-class (P3), written as a selector on the word:
 
 ```
-tangent.ext(c1, c2)      // external tangency: ‖c1−c2‖ = r1 + r2
-tangent.int(c1, c2)      // internal tangency: ‖c1−c2‖ = |r1 − r2|
+c1 tangent(external: true) c2     // external tangency: ‖c1−c2‖ = r1 + r2
+c1 tangent(external: false) c2    // internal tangency: ‖c1−c2‖ = |r1 − r2|
 ```
 
-Undecorated `tangent` is an error (**E010**) — there is no default branch, because no consistent global rule exists for tangency the way one does for arcs (§10.3).
+A selector left unwritten is read off the seed (§9.2): the branch the seeded pose stands on is the one stated, as a side is for a distance from a line. (0.1 wrote the branch as a decoration, `tangent.ext(c1, c2)`, and refused an undecorated `tangent` as **E010**.)
 
 ### 9.6 Inequalities
 
@@ -1694,7 +1717,7 @@ Orientation predicates (`ccw`, `cw`) are the only inequalities in this draft. Th
 ### 9.7 Claims **[0.5]**
 
 ```
-claim <relation>(<args…>) [== <expr>]
+claim <relation>                  // any relation statement of §9.2: claim a distance(5) b
 ```
 
 A **claim** is a relation stated as *expected to add no rank*: an assertion about the drawing
@@ -1718,7 +1741,7 @@ A claim MUST be judged. At a solution, diagnosis classifies each claim as exactl
   enforcing it would have removed a freedom. The claim claims too much.
 
 A claim MUST NOT introduce unknowns: a relation whose signature carries a solver-owned
-parameter (a curve contact's `t`) is an error as a claim (**E017**), since its unknown would
+parameter (a curve contact's `t`) is an error as a claim (**E040**), since its unknown would
 appear in no equation. A claim's dimension may be an expression, but MUST NOT bind a free
 variable, for the same reason.
 
@@ -1755,7 +1778,7 @@ claim over crank.theta in (0deg, 360deg) {
 
 `claim over NAME in (A, B) { … }` judges every claim in its body as the drawing runs along `NAME`, and reports the **worst** pose reached.  It is Structure-class: it says how the claims inside it are judged and asserts nothing itself.
 
-- `NAME` MUST be an **unknown** of the drawing (§3.4) — an input with no value, or a formal an instance left unbound — or **[0.40]** a named motion (§6.14), whose roll the claims run along: every solid placed under it (`solid(S, under: NAME, at: A)`) is read at its angle advanced by the roll, and nothing is solved again.  A value or an input with a value is a number the document already fixed and sweeping a constant is not a question; naming one, or naming other geometry, is **E040**.
+- `NAME` MUST be an **unknown** of the drawing (§3.3, §6.3) — an input with no value, or a formal an instance left unbound — or **[0.40]** a named motion (§6.14), whose roll the claims run along: every solid placed under it (`solid(S, under: NAME, at: A)`) is read at its angle advanced by the roll, and nothing is solved again.  A value or an input with a value is a number the document already fixed and sweeping a constant is not a question; naming one, or naming other geometry, is **E040**.
 - `A` and `B` are read in the units the unknown's readers are written in: an interval of an angle is an angle, and one of a length is a length.
 - An implementation MUST state that its answer is by **sampling**, and how many poses it took. A pose that did not solve or produced invalid solid geometry cannot certify the claim; the report identifies those failed parameter values, and a sweep with unresolved poses cannot be reported as holding.  A claim that holds at every sample is a claim that held at every sample; a swept claim is honest about that in the way a faceted one is honest about its margin.
 
@@ -1765,7 +1788,7 @@ claim over crank.theta in (0deg, 360deg) {
 
 ## 10. Paths
 
-Paths are the one ordered construct (P2, exception). A path is a directed traversal of vertices connected by segments.
+Paths are the one ordered construct (P2, exception). The reference implementation does not parse them yet. A path is a directed traversal of vertices connected by segments.
 
 ### 10.1 Grammar
 
@@ -1775,7 +1798,7 @@ path outline: ccw = lead -> tl ~tip~ tr -> trail
 
 - `path NAME : ORIENT = PATHEXPR` declares a named path with orientation `ccw` or `cw`.
 - A bare `PATHEXPR` statement is an anonymous **path fragment** (used for splicing, §10.5).
-- Segments: `a -> b` is a straight segment; `a ~C~ b` is an arc on circle `C`; `a ~C rev~ b` is the reversed-branch arc (§10.3).
+- Segments: `a -> b` is a straight segment; `a ~C~ b` is an arc on circle `C`; `a ~C rev~ b` is the reversed-branch arc (§10.3). **[0.44]** `~` is `hint` (§4.3), so the arc segment wants another delimiter when paths are implemented.
 
 ### 10.2 Orientation
 
@@ -1803,13 +1826,13 @@ Path fragments compose by **endpoint identity**: two fragments whose end and sta
 
 ## 11. Hints
 
-**[0.2]** A hint is one of the two seed forms; the other, and the primitive, is the inline seed of §6.4. Everything in this section applies to both, and "hint" below should be read as "seed". Use `hint` when inline cannot say it: seeding an entity declared elsewhere, or seeding from an expression over other geometry.
+**[0.2]** A hint is one of the two seed forms; the other, and the primitive, is the inline seed of §6.4. Everything in this section applies to both, and "hint" below should be read as "seed". Use `hint` when inline cannot say it: seeding an entity declared elsewhere, or seeding from an expression over other geometry. The statement form below is not implemented; the reference implementation seeds inline only (§6.4).
 
 ```
 hint t.lead(x: center.x + root.r, y: center.y)
 ```
 
-`hint REF(key: EXPR, …)` seeds the entity `REF`'s named scalars at the values of the expressions (evaluated with whatever definitional values and previously seeded values are available; unseeded quantities in a hint expression are an error **E014**).
+`hint REF(key: EXPR, …)` seeds the entity `REF`'s named scalars at the values of the expressions (evaluated with whatever definitional values and previously seeded values are available; a quantity with no seed of its own reads its provisional one, as an inline seed's does (§6.4 **[0.12]**)).
 
 Normative invariant (**Invariant H**): *for every program P, sol(P) = sol(P minus all seeds).* Implementations MUST maintain a statement classification sufficient to verify Invariant H syntactically — i.e., the seed class is closed under everything the grammar allows in a seed, and nothing in the seed class can generate residuals or alter aliasing.
 
@@ -1910,8 +1933,9 @@ fix(r == 25) c                        // holds one of an entity's own numbers: r
 ```
 
 **[0.34]** A `fix` names an entity and states each number of its own it holds, pinned with `==`
-under the field it is (`x`, `y` of a point; `r` of a circle, arc, sphere or cylinder; `half` of a
-cone, in degrees). The values are expressions over the parameters in scope, with units, and MAY
+under the field it is (`x`, `y` of a point, **[0.42]** and `z` of one standing in space; `r` of a
+circle, arc, sphere or cylinder; `half` of a cone, in degrees; **[0.42]** `x`, `y`, `z` of a plane's
+place and of an axis's direction, **[0.43]** and `px`, `py`, `pz` of an axis's place). The values are expressions over the parameters in scope, with units, and MAY
 NOT read geometry. A `fix` is a gauge: it takes the numbers out of the solve at the values stated
 and adds no equation, so it never takes part in a conflict set. It is applied before the seeds
 that read geometry (§6.4), which read a held number where it is held and never move one; a seed
@@ -1997,9 +2021,33 @@ Elaboration lowers a program to the **kernel form** consumed by solvers. The pip
 
 1. **Instance expansion.** Recursively inline component bodies for the root's instance tree, freshening names by instance path. `repeat`/`cycle` unroll. `ring` either unrolls to `cycle` + symmetry constraints (§12.3) or lowers to quotient form (§12.4); the two MUST be solution-equivalent.
 2. **Alias resolution.** Union-find over all names, merging classes for: entity-typed arguments and constructor entity-arguments. Each class gets one representative entity. Type mismatch within a class is an error (**E040**).
-3. **Definitional substitution.** Definitional equalities (constructor value-arguments, `param`, `= expr` declarations) are substituted, METAFONT-style: they are not residuals and consume no solver iterations. A cyclic definitional dependency is an error (**E041**).
+3. **Definitional substitution.** Definitional equalities (constructor value-arguments, and values and inputs with a value — `NAME := EXPR`, `param NAME := EXPR`, §6.3) are substituted, METAFONT-style: they are not residuals and consume no solver iterations. A cyclic definitional dependency is an error (**E041**).
 4. **Constraint collection.** Predicate statements, `==` equations, derived path incidences (§10.4), symmetry constraints, and gauges are collected into the constraint store.
 5. **Path assembly.** Fragments compose per §10.5 into boundary curves attached to the model as derived objects.
+
+### 14.2 Kernel form
+
+The kernel is a **bipartite entity/constraint graph, quotiented by group actions**:
+
+```
+Kernel := {
+  groups:      [ { id, order N, ax: EntityRef } ],
+  entities:    [ { id, type, dof, orbit: Fixed | Orbit(group, size N), seed? } ],
+  constraints: [ { pred, args: [ (entity, power) ], params, class: Eq|Ineq, span } ],
+  gauges:      [ ... ],
+  paths:       [ ordered segment lists over (entity, power) refs ],
+}
+```
+
+- `orbit: Fixed` marks entities invariant under the relevant group (axis, on-axis circles, scalars).
+- Constraint arguments carry a **group power**: `(e, +1)` means "the image of e under the generator" — this is how `t.trail ~root~ next.t.lead` appears with one Tooth's worth of variables.
+- `span` is a source location; every kernel object MUST be traceable to source for diagnostics.
+
+*Non-normative:* with all groups trivial this degrades to exactly a SketchGraphs-style bipartite graph, which is the intended interchange representation for external tooling.
+
+### 14.3 Deduplication
+
+The constraint store is a **set**: two constraints identical after alias resolution and definitional substitution (same predicate, same argument classes and powers, same parameters) are one constraint. This makes derived path incidences free when also stated explicitly, and it is the reason redundancy diagnostics (§16) report *semantic* redundancy rather than syntactic repetition.
 
 ### 14.4 Modules **[0.12]**
 
@@ -2008,9 +2056,9 @@ use engine.dims
 use engine.parts
 ```
 
-A **module** is a Solvent document read for its components. `use NAME` at the top level of a document — never inside a body — asks for one; `NAME` is a dotted path, and **what it resolves to is the host's question**: an implementation with a working directory resolves `engine.parts` to `engine/parts.sv` beside the document, one without a filesystem resolves it against whatever library it carries, and both fall through to the other in that order. The core takes text and never opens a file. A module contributes exactly its **component definitions** and its top-level **`param`s and groups** (§6.3), available at the importing root; its own loose statements — its drawing — are not drawn, so a document that is also a library (`gear.sv`) is a module as it stands. A module's own `use`s are followed the same way, each module linked once however many times it is asked for, so a diamond is one copy and a cycle terminates. A module a host cannot resolve is **E070**, at the `use`.
+A **module** is a Solvent document read for its components. `use NAME` at the top level of a document — never inside a body — asks for one; `NAME` is a dotted path, and **what it resolves to is the host's question**: an implementation with a working directory resolves `engine.parts` to `engine/parts.sv` beside the document, one without a filesystem resolves it against whatever library it carries, and both fall through to the other in that order. The core takes text and never opens a file. A module contributes exactly its **component definitions** and its top-level **values, inputs and groups** (§6.3, §8.1), available at the importing root; its own loose statements — its drawing — are not drawn, so a document that is also a library (`gear.sv`) is a module as it stands. A module's own `use`s are followed the same way, each module linked once however many times it is asked for, so a diamond is one copy and a cycle terminates. A module a host cannot resolve is **E070**, at the `use`.
 
-**[0.30] Nothing is imported bare.** A file reaches a module's component, param or group only by the module's **full path**, as its `use` spells it: `engine.parts.Crank(…)`, `engine.dims.bore`, `components.dims.vtwin_dims`. A param or group so named is read in the file's root body (components are closed, §5); a component may be called from anywhere in the file. A module names its *own* definitions bare. Only a module the file itself `use`s may be named — one reached through another module's `use` is that module's business, and naming it is an error that says which `use` to write. So two modules may define one name, and only two definitions in one file are **E071**. The standard datums follow the rule: `std.front` needs the file's own `use std`. A drawn callout of a dimension written `engine.dims.D` shows `D`. A module's own errors — a parse error, a faulty `param` — are reported to a reader of the document *at the `use` that brought the module in*, with the module's name, line and column in front of the message, since that line is the one the document can edit.
+**[0.30] Nothing is imported bare.** A file reaches a module's component, param or group only by the module's **full path**, as its `use` spells it: `engine.parts.Crank(…)`, `engine.dims.bore`, `components.dims.vtwin_dims`. A value or group so named is read in the file's root body (components are closed, §5); a component may be called from anywhere in the file. A module names its *own* definitions bare. Only a module the file itself `use`s may be named — one reached through another module's `use` is that module's business, and naming it is an error that says which `use` to write. So two modules may define one name, and only two definitions in one file are **E071**. The standard datums follow the rule: `std.front` needs the file's own `use std`. A drawn callout of a dimension written `engine.dims.D` shows `D`. A module's own errors — a parse error, a faulty `param` — are reported to a reader of the document *at the `use` that brought the module in*, with the module's name, line and column in front of the message, since that line is the one the document can edit.
 
 **[0.21] Standard datums.** **[0.42]** `use std` makes the standard axes `std.x`, `std.y`,
 `std.z` and `std.back`, the standard planes `std.front`, `std.top`, `std.side` and `std.up`, and
@@ -2074,30 +2122,6 @@ an assembly beside the `components` directory. All transitive imports use the sa
 
 *Non-normative:* an implementation may parse a module with its spans offset past everything linked before it, so that every span in a linked program is one integer into one virtual text and no consumer learns a second coordinate; a splice on the document then walks the root body alone, which no module span is ever in.
 
-### 14.2 Kernel form
-
-The kernel is a **bipartite entity/constraint graph, quotiented by group actions**:
-
-```
-Kernel := {
-  groups:      [ { id, order N, ax: EntityRef } ],
-  entities:    [ { id, type, dof, orbit: Fixed | Orbit(group, size N), seed? } ],
-  constraints: [ { pred, args: [ (entity, power) ], params, class: Eq|Ineq, span } ],
-  gauges:      [ ... ],
-  paths:       [ ordered segment lists over (entity, power) refs ],
-}
-```
-
-- `orbit: Fixed` marks entities invariant under the relevant group (axis, on-axis circles, scalars).
-- Constraint arguments carry a **group power**: `(e, +1)` means "the image of e under the generator" — this is how `t.trail ~root~ next.t.lead` appears with one Tooth's worth of variables.
-- `span` is a source location; every kernel object MUST be traceable to source for diagnostics.
-
-*Non-normative:* with all groups trivial this degrades to exactly a SketchGraphs-style bipartite graph, which is the intended interchange representation for external tooling.
-
-### 14.3 Deduplication
-
-The constraint store is a **set**: two constraints identical after alias resolution and definitional substitution (same predicate, same argument classes and powers, same parameters) are one constraint. This makes derived path incidences free when also stated explicitly, and it is the reason redundancy diagnostics (§16) report *semantic* redundancy rather than syntactic repetition.
-
 ---
 
 ## 15. Solver contract
@@ -2121,16 +2145,16 @@ The numerical method is unspecified. Whatever the method, a conforming solver:
 | Code | Condition |
 |---|---|
 | E001 | redeclaration within a body |
-| E002 | block binder shadows outer name |
-| E003 | cyclic component instantiation |
+| E002 | a block's index or edge binder over a name already in scope |
+| E003 | cyclic component instantiation: a component reached again while it is being expanded |
 | E004 | a positional argument that binds a value parameter, or that follows a labelled one (§4.1) **[0.17]** |
-| E010 | undecorated `tangent` between circles |
+| E010 | withdrawn: an undecorated `tangent` between circles reads its branch off the seed (§9.5) |
 | E011 | closed path winding contradicts declared orientation |
 | E012 | ambiguous or conflicting path-fragment composition |
 | E013 | boundary fails to close where closure demanded |
-| E014 | hint expression references unseeded/undetermined quantity |
+| E014 | withdrawn: a hint expression reading an unseeded quantity reads its provisional seed (§6.4, §11) |
 | E015 | indexed hint inside `ring` |
-| E020 | `next`/`prev` in `repeat` |
+| E020 | `next`/`prev` where no `cycle` closes the copies: in a `repeat`, or in no block |
 | E021 | external entity referenced in `ring` not provably invariant |
 | E022 | nested `ring` (if unsupported) |
 | E030 | retired **[0.34]**: a `fix` states its numbers (E040 where it does not) |
@@ -2150,19 +2174,24 @@ The numerical method is unspecified. Whatever the method, a conforming solver:
 | E081 | invalid revolution axis or guided sweep path (§6.9) **[0.18]** |
 | E082 | a face of a body that the body no longer has (§6.9) **[0.18]** |
 | E084 | a section whose cutting plane is not parallel to the view it is drawn in (§6.11) **[0.18]** |
+| E101 | a name nothing in scope declares, or a member a scope cannot reach (§3.3, §5, §13.3) **[0.41]** |
+| E103 | a shape or a number the model cannot build: more children than the kind has slots (§6.1), an input whose value is not its type (§6.3), a seed reading a scalar that is not there (§6.4), a curve the model cannot trace (§6.5), an extent of the wrong dimension (§6.9), iteration over what is not a named chain (§12.8) |
+| E105 | a `fix` of a number the entity does not have (§13) **[0.34]** |
+| E107 | a measurement of the solved drawing where a number is needed before the solve (§6.14) **[0.27]** |
 
-**[0.18]** One of the four (**[0.42]** E083 is gone, with `against`) is reserved: an implementation is required to have the code and to use it for its condition when it detects it, and the reference implementation raises E080, E081 and E084 today. A negative sweep and a picture asked of the wrong kind are **E040** by the rules those codes already state (a magnitude written with a sign, §9.2 **[0.17]**; a kind mismatch, §14.1), and an unresolved name in any of these statements is **E101**, so no new code is spent on either.
+**[0.18]** The reference implementation raises all four (**[0.42]** E083 is gone, with `against`). A negative sweep and a picture asked of the wrong kind are **E040** by the rules those codes already state (a magnitude written with a sign, §9.2 **[0.17]**; a kind mismatch, §14.1), and an unresolved name in any of these statements is **E101**, so no new code is spent on either.
 
 ### 16.2 Warnings and lints
 
 | Code | Condition |
 |---|---|
 | W100 | `coincident(p, q)` where making `p`,`q` one entity would suffice — "consider binding instead of constraining" |
-| W101 | frames fully welded by constraints — "consider passing one entity to both" |
+| W101 | withdrawn: frames fully welded by constraints — `Frame` was folded into `Plane` in 0.15, and there is no `weld` |
 | W102 | `abs(angle(...))` without a disambiguating orientation predicate |
 | W103 | rank deficiency spanned by rigid motions — "add a fix" |
 | W104 | under-constrained: report the number of residual DOF and, when computable, a basis of unconstrained motions attributed to source entities |
 | W105 | consistent redundancy: constraints dependent on others; report the dependent set with spans |
+| W110 | an expression that cannot be computed: the last number stands |
 | W112 | a `param`, formal or block binder declared over a built-in name (§3.3, §5) — the built-in is what an expression reads **[0.17]** |
 | W113 | two planes lying on one another, with a relation reading points drawn in each: one plane in space, read twice (§6.7) **[0.42]** |
 
@@ -2180,10 +2209,10 @@ Implementations SHOULD emit, on request, a degrees-of-freedom ledger: per alias 
 
    **[0.18] The object is settled too, and on the same terms.** A face is a region of a plane (§6.8), a solid is a face swept or a term over other solids (§6.9), a plane may be stood off another (§6.10), and a view or a section of a solid is a picture the sheet asks for (§6.11) — so a part is written once and every drawing of it is a question, with no depth kept in step by hand. The stratification is what makes it affordable and is the thing to preserve: **nothing three-dimensional is an unknown**, every extent is an expression, and a solid owns no parameter, so the solver contract of §15 and the ledger of §16.3 are untouched.
 
-   What remains open is the lift itself, and it is now a shorter list. **Lofts** — a solid between two faces on two planes, which is the one sweep the grammar does not have. **Fillets and chamfers**, which need a name for an *edge* rather than for a face: the spelling is reserved, `body.block.side_l.near` — the edge where two named faces of one solid meet, in the path vocabulary §6.9 already uses, so that a boolean cannot renumber one. A **rigid-body mate solver**: joints between two solids in space, at which point something three-dimensional does become an unknown and P4's decomposition question is asked again one stratum out. **Export of the object itself** (a boundary format such as STEP), as against the picture of it a view already exports. Still open from before: `Frame` generalizes; the arc-branch rule needs a replacement (no global winding in 3D); the joint library grows (revolute gains an axis argument, add prismatic/cylindrical/spherical); and from §6.7, a solved-for fold (`fold: along l`) — **[0.23]** answered by `fold:`, and **[0.42]** by planes over axes.
+   What remains open is the lift itself, and it is now a shorter list (**[0.28]** lofts are §6.9's). **Fillets and chamfers**, which need a name for an *edge* rather than for a face: the spelling is reserved, `body.block.side_l.near` — the edge where two named faces of one solid meet, in the path vocabulary §6.9 already uses, so that a boolean cannot renumber one. A **rigid-body mate solver**: joints between two solids in space, at which point something three-dimensional does become an unknown and P4's decomposition question is asked again one stratum out. Still open from before: the arc-branch rule needs a replacement (no global winding in 3D); and from §6.7, a solved-for fold (`fold: along l`) — **[0.23]** answered by `fold:`, and **[0.42]** by planes over axes.
 
    **[0.18]** One item of the old list is answered by §6.9 rather than deferred: "`ring` generalizes to rotation about a line" is what `about:` does for a **sweep**, and it needed no group action to do it, because a revolution is one solid and not *N* congruent copies. `ring` itself is still the cyclic-symmetry question of §12.3 and is untouched by this — the reference implementation goes on refusing the word until it can hold its copies congruent. The two were only ever adjacent.
-2. ~~**Curve entities.**~~ **[0.2] Settled — see §6.5.** A curve is a *family declared in the document*, two expressions over the geometry it is drawn from, rather than an entity kind per curve. Involute, cycloid and trochoid are library code. What remains open is `tangent` against such a curve (one more order in the parameter, and what a *mating* gear needs) and the path grammar's slot for a curve segment.
+2. ~~**Curve entities.**~~ **[0.2] Settled — see §6.5.** **[0.11]** A curve is a point of a component as one of its numeric formals runs (0.2's family of two expressions is retired), rather than an entity kind per curve. Involute, cycloid and trochoid are library code, and `tangent` and `curvature` against such a curve are §6.5's. What remains open is the path grammar's slot for a curve segment.
 3. **Nested symmetry groups.** Semantics of `ring` in `ring` beyond the reject-or-elaborate rule of §12.6 (planetary sets are the motivating case: carrier symmetry ≠ sun symmetry).
 4. **Constraint strengths.** A Cassowary-style required/strong/weak hierarchy for graceful over-constraint. Interacts with P3 (a weak constraint changes the solution set; it is constraint-class) and with diagnostics (W105 becomes resolution, not warning).
 5. **Reflection symmetry.** `mirror about <line>` as a second group kind; the kernel's group table already permits it.
@@ -2199,17 +2228,20 @@ what an involute is (§17.2). §6.5 now does, and a flank written that way is a 
 chord across one:
 
 ```
-curve involute(c: circle, phase: Angle)(u) =
-  ( c.center.x + c.r * (cos(u + phase) + u * pi / 180 * sin(u + phase)),
-    c.center.y + c.r * (sin(u + phase) - u * pi / 180 * cos(u + phase)) )
+component Involute(c: circle, phase: Angle, u: Angle) {
+  p := point(x: c.center.x + c.r * (cos(u + phase) + u / 1rad * sin(u + phase)),
+             y: c.center.y + c.r * (sin(u + phase) - u / 1rad * cos(u + phase)))
+}
 
 component Flank(base: circle, root: circle, tip: circle,
                 phase: Angle, u0: Angle, u1: Angle) {
-  curve e = involute(base, phase: phase) over (u0, u1)
-  point lo
-  point hi
-  point_on_curve(lo, e, u = u0)      point_on_circle(lo, root)
-  point_on_curve(hi, e, u = u1)      point_on_circle(hi, tip)
+  e := Involute(base, phase: phase).p over u in (u0, u1)
+  lo := point
+  hi := point
+  lo coincident e hint(t: u0)
+  hi coincident e hint(t: u1)
+  lo coincident root
+  hi coincident tip
 }
 ```
 
@@ -2223,7 +2255,7 @@ involute.** A textbook 1.25·m dedendum on a small tooth count puts the root cir
 circle, where `u0` has no real value; a conforming implementation reports that rather than fudging
 it.
 
-The 0.1 source is kept below as written, since §18.2 and §18.3 walk through it.
+The 0.1 source is kept below as written, since §18.2 and §18.3 walk through it. None of its spellings parse now: `port` (§7), `on(…)` and `angle(…) == e` as calls (§9.2), `param R = …` (§6.3), a radius as a constructor argument (§4.3), `frame` (§6.7) and `t: Tooth(…)` (§5) are retired, and `ring`, `path` and the `hint` statement are specified and not implemented.
 
 ### 18.1 Source
 
@@ -2301,19 +2333,32 @@ Square system, full rank at the hinted seed; one Newton basin per §12.4, lifted
 program        = { use_decl | component | preview | statement } ;
 preview        = "preview" "{" { statement } "}" ;                  (* at most one, §14.4 *)
 use_decl       = "use" IDENT { "." IDENT } ;                         (* a module, §14.4 *)
-component      = "component" IDENT "(" [ params ] ")" "{" { statement } "}" ;
-params         = param { "," param } ;
-param          = IDENT ":" type ;
+component      = "component" IDENT "(" [ formals ] ")" "{" { statement } "}" ;
+formals        = formal { "," formal } ;
+formal         = IDENT ":" type ;
 type           = "Int" | "Scalar" | "Length" | "Angle" | "Side"      (* §4.1 [0.17] *)
-               | "Point" | "Line" | "Circle" | "Plane" | "Axis" | "Path"      (* Axis [0.42] *)
-               | "Face" | "Solid" ;    (* [0.18]; `Frame` was folded into `Plane` in 0.15 *)
+               | "group"                                             (* §8.1 [0.35] *)
+               | ekw | "curve" ;  (* an entity, in either case: `f: plane`, `p: Point`; `Frame`
+                                     was folded into `Plane` in 0.15 *)
 
-statement      = decl | constraint | hint | gauge | block | path_decl | chain
-               | unit_decl | frag | in_block | body_rel ;
+statement      = definition | input | relation | gauge | branch | block | in_block
+               | unit_decl | body_rel | claim_over | hint | path_decl | frag ;
 in_block       = "in" ref "{" { statement } "}" ;         (* membership, written once: §6.7 *)
 unit_decl      = "unit" IDENT ;                                           (* §3.3.2 *)
-chain          = [ IDENT "=" ] link { joint link } [ "->" { infix } "close" ] ;
-(* link, joint and infix follow §6.6; a named chain threads every joint, §6.6 [0.20]. *)
+
+(* §5 [0.29]: a name is defined by `NAME := VALUE` and in no other way, and what stands after
+   `:=` says what the name is.  An element or an instance may also be written with no name. *)
+definition     = { role } [ IDENT ":=" ] ( chain | instance )
+               | IDENT ":=" ( expr | group | curve ) ;            (* a value, a group, a curve *)
+role           = "private" | "construction" | "centerline" ;      (* once each, §13.3 *)
+input          = "param" IDENT [ ":" num_type ] [ ":=" expr ] [ hint_clause ] ;
+                 (* §6.3 [0.41]: with no value an unknown, its type stated, seeded by `hint(E)` *)
+num_type       = "Int" | "Scalar" | "Length" | "Angle" ;
+group          = "{" member { "," member } "}" ;                  (* §8.1 [0.35] [0.36] *)
+member         = IDENT ":" ( expr | group ) ;
+chain          = link { joint link } [ "->" { infix } "close" ] ;
+(* link, joint and infix follow §6.6: a link is an `element` with any prefix words before it, or
+   a named link `(NAME := element)`; a lone element is a one-link chain. *)
 
 (* §3.3.1: a number may carry a unit, and feet-and-inches is ONE literal — a space is what
    tells the readings apart, exactly as it does in a mixed fraction. *)
@@ -2325,43 +2370,46 @@ unit_suffix    = "mm" | "cm" | "m" | "km" | "in" | "ft" | "thou"
                | "'" [ " " number "\"" ]                                  (* feet, and inches *)
                | "\"" ;
 
-decl           = entity_decl | param_decl | curve_def | instance_decl ;
-(* face_decl and solid_decl below are entity_decls, spelled out for what their list holds *)
-entity_decl    = ekw binder { "," binder }
-               | ekw IDENT "=" expr
-               | "point" IDENT "=" "(" expr "," expr ")" ;   (* a computed point, §6.5 [0.13] *)
-ekw            = "point" | "circle" | "line" | "plane" | "axis" | "spline"
-               | "curve" | "face" | "solid" ;          (* §6.8, §6.9 [0.18]; `axis` [0.42] *)
+element        = ekw [ "(" ctor_arg { "," ctor_arg } ")" ] { trailer }
+               | "point" "(" "x" ":" expr "," "y" ":" expr ")"   (* a computed point, §6.5 [0.13] *)
+               | face_decl | solid_decl ;
+ekw            = "point" | "line" | "circle" | "arc" | "spline" | "plane" | "axis"  (* axis [0.42] *)
+               | "sphere" | "cone" | "cylinder" | "face" | "solid"          (* §6.8, §6.9 [0.18] *)
+               | "surface" | "motion" | "envelope" | "patch"                (* §6.13–§6.16 *)
+               | "seam" | "vertex" | "edge" ;                               (* §6.17–§6.19 *)
 (* the trailing clauses are order-free: `hint(…)`, `knots […]`, `in REF`.  A
    place — `hint(at: t)`, `hint(at: c, bearing: …)` — is the same clause with `at:` and
    `bearing:` for keys, §6.4 [0.14] *)
-binder         = IDENT [ "(" ctor_arg { "," ctor_arg } ")" ] { trailer } ;
 (* §6.1: no list at all is the anonymous form — the kind's children are minted and reached as
    `l.p1`.  A slot is a name, a seed, or implicit; only an overfull list is E103. *)
 trailer        = hint_clause
                | "knots" "[" number { "," number } "]"
                | "in" ref ;                                (* membership of a plane, §6.7 *)
-hint_clause    = "hint" "(" hint_item { "," hint_item } ")" ;   (* SEEDS, §4.3 *)
+hint_clause    = ( "hint" | "~" ) "(" ( expr | hint_item { "," hint_item } ) ")" ;
+                 (* SEEDS, §4.3; `~` [0.44]; one keyless expr seeds an unknown, §6.3 [0.41] *)
 hint_item      = IDENT ":" expr | "at" ":" ref | "bearing" ":" expr     (* a place, §6.4 [0.14] *)
                | ( "toward" | "along" ) ":" ref | ( "by" | "turn" ) ":" expr ;   (* a step [0.33] *)
 ctor_arg       = [ IDENT ":" ] ( ref | hint_clause )       (* what the thing is made of, §6.2;
                                                               a plane's are `u:` and `v:`, §6.7 *)
+               | IDENT ":" expr                            (* a motion's or an envelope's numbers,
+                                                              §6.14, §6.15 *)
                | sweep_arg ;                               (* how a solid is swept, §6.9 [0.18] *)
 (* [0.42] a plane's `from:`, `fold:`, `offset:` and a basis of triples are retired *)
 
 (* §6.9 [0.18]: the sweep stands in the brackets with the face, being what the solid is made
    of; numeric extents are expressions and never unknowns. `through:` instead names a solid
-   whose material bounds determine an extrusion after solving. `about:` is a revolution. *)
-sweep_arg      = ( "from" | "to" | "depth" | "sweep" ) ":" expr
-               | ( "about" | "through" | "along" ) ":" ref
+   whose material bounds determine an extrusion after solving. `about:` is a revolution.
+   `under:` a motion places a solid at its pose `at:` an angle, or sweeps it over `from:`/`to:`. *)
+sweep_arg      = ( "from" | "to" | "depth" | "sweep" | "at" ) ":" expr
+               | ( "about" | "through" | "along" | "under" ) ":" ref
                | "sense" ":" ( "cw" | "ccw" ) ;
 
-(* §6.8, §6.9 [0.18].  Both are ordinary entity_decls — `face` and `solid` are element
+(* §6.8, §6.9 [0.18].  Both are ordinary elements — `face` and `solid` are element
    keywords — and are written out here for what their one list slot holds. *)
-face_decl      = "face" [ IDENT ] "(" face_arg { "," face_arg } [ "," "->" "close" ] ")" ;
+face_decl      = "face" "(" face_arg { "," face_arg } [ "," "->" "close" ] ")" ;
 face_arg       = ref | ("edges" | "holes" | "on") ":" ref ;  (* planar/spatial restrictions: §6.8, §6.20 *)
-solid_decl     = "solid" [ IDENT ] "(" term ")" ;
-term           = ref [ "," ref ] { "," sweep_arg }                     (* a face swept *)
+solid_decl     = "solid" "(" solid_term ")" ;
+solid_term     = ref [ "," ref ] { "," sweep_arg }                     (* a face swept *)
                | ref { "," ref } ;                         (* a body: its stock, then solids *)
 body_rel       = ref ( "union" | "cut" | "bound" ) ref ;  (* the body rule, §6.9 — each its own
                                                      word: `bound` [0.22], `union` [0.32] *)
@@ -2377,39 +2425,43 @@ claim_over     = "claim" "over" ref "in" "(" expr "," expr ")" "{" { solid_claim
 
 (* a curve, §6.5 [0.11]: a point of a component as one of its numeric formals runs.  0.2's
    family form and 0.3's `trace … where { … }` are retired and MUST NOT parse. *)
-curve_def      = "curve" IDENT "=" [ IDENT "(" [ args ] ")" "." ] ref
+curve          = ( ref | ref "(" [ args ] ")" "." ref )
                  "over" IDENT "in" "(" expr "," expr ")" ;
-param_decl     = "param" IDENT "=" expr ;
-instance_decl  = [ IDENT ":" ] IDENT "(" [ args ] ")" [ "in" ref ] ;   (* §4 [0.21], §6.7 *)
+instance       = ref "(" [ args ] ")" [ "in" ref ] ;   (* a used module's component by its full
+                                                          path, §14.4 [0.30]; `in`, §6.7 *)
 args           = arg { "," arg } ;
-arg            = [ IDENT ":" ] expr ;
+arg            = [ IDENT ":" ] ( expr | hint_clause ) ; (* `w: hint(60)` leaves the formal unbound
+                                                          and seeds it, §5 [0.41] *)
 
 (* §9.2: every constraint is a prefix or an infix operator; `name(args…)` is retired. *)
-constraint     = [ "claim" ] ( prefix_form | infix_form )
+relation       = [ "claim" ] ( prefix_form | infix_form | orientation | solid_claim )
                  [ hint_clause ] ;  (* §4.3; presentation placement belongs to .svd *)
 prefix_form    = IDENT [ op_args ] ref ;
-infix_form     = ref IDENT [ op_args ] ref ;
+infix_form     = ref ( IDENT | "@" ) [ op_args ] ref ;   (* `@` is `coincident` [0.44] *)
+orientation    = orient "(" ref "," ref "," ref ")" ;      (* §9.2: a call *)
 op_args        = "(" op_arg { "," op_arg } ")" ;
 op_arg         = expr                                      (* the number it states *)
                | ref                                       (* a third entity: `symmetry` *)
-               | IDENT ":" value                           (* a selector *)
+               | IDENT ":" ( IDENT | number )              (* a selector, §9.2 [0.17] *)
                | IDENT "==" expr ;                         (* a pin, §4.3 *)
 
 (* §4.3: a number inside `hint(…)` seeds; `==` inside an argument list pins.  The two are the
    whole of the seed/constraint classification, and they are told apart by the clause alone. *)
-arg            = [ IDENT ":" ] expr
-               | IDENT "==" expr ;                         (* pin:  a solve may not move it *)
 
-path_decl      = "path" IDENT ":" orient "=" path_expr ;
+gauge          = "fix" "(" pin { "," pin } ")" ref ;       (* §13 [0.34] *)
+pin            = ( "x" | "y" | "z" | "r" | "half" | "px" | "py" | "pz" ) "==" expr ;
+                 (* the entity's own fields: `z` [0.42]; an axis's place `px`, `py`, `pz` [0.43] *)
+branch         = "branch" "(" KEY "," [ "-" ] digits ")" ; (* a recorded root choice, §13.1; KEY is
+                                                              the raw text up to the comma *)
+
+path_decl      = "path" IDENT ":" orient "=" path_expr ;  (* §10; unimplemented, and its `=` is no
+                                                              token since [0.29]: to respell *)
 frag           = path_expr ;                               (* statement-level fragment *)
 orient         = "ccw" | "cw" ;
 path_expr      = ref seg ref { seg ref } ;
-seg            = "->" | "~" ref [ "rev" ] "~" ;
+seg            = "->" | "~" ref [ "rev" ] "~" ;           (* `~` is `hint` since [0.44]: to respell *)
 
 hint           = "hint" ref hint_clause ;                  (* §11; unimplemented *)
-gauge          = "fix" "(" pin { "," pin } ")" ref ;       (* §13 [0.34] *)
-pin            = ( "x" | "y" | "r" | "half" ) "==" expr ;
-orientation    = orient "(" ref "," ref "," ref ")" ;      (* §9.2: a call *)
 
 block          = ( "repeat" | "cycle" ) ( expr | IDENT "in" ref ) [ "as" IDENT ]
                  "{" { statement } "}"                (* IDENT "in" ref: §12.8 [0.27] *)
@@ -2425,9 +2477,9 @@ addop          = "+" | "-" ;
 mulop          = "*" | "/" ;
 ```
 
-Parsing note: a statement beginning with an expression is disambiguated by the token following the first `ref`/`expr`: `==` → constraint; `->` or `~` → fragment; otherwise error. `ccw`/`cw` appear both as orientation keywords (after `:` in `path`) and as predicates; context disambiguates. **[0.2]** `curve NAME(` opens a family definition and `curve NAME =` an instance; the token after the name settles which. **[0.18]** `view` and `section` open a statement and are therefore not names; `cut` is settled by a one-token lookahead past the first `ref`, since it relates no geometry and has no residual for the operator machinery to settle it into — as are `bound` [0.22] and `union` [0.32]. Inside a solid's brackets a sweep label is read before an attitude label, `from` being a word both constructs use and only one of them a plane.
+Parsing note: a statement is told by its first tokens. `NAME :=` is a definition, and the token after `:=` settles which: `{` a group, `over` in the statement a curve, a call an instance, an element keyword or a prefix word a chain, anything else a value (§6.3). `param` opens an input and `in REF {` a block of membership. A constraint word opens a prefix relation, or a call for `ccw`/`cw`, which also appear as orientation keywords after `:` in `path`, where context disambiguates. Otherwise a `ref` comes first, and the word after it, read by a lookahead past the dotted path, is a constraint word, `@`, or `cut`, `bound` [0.22] or `union` [0.32], which relate no geometry and have no residual for the operator machinery to settle them into. **[0.18]** `view`, `section` and `dimensions` open a statement and are therefore not names; **[0.20]** model source refuses them as presentation (§13.2).
 
-**[0.2] Note on the trailing `==`.** After the `==` that follows a predicate's closing parenthesis, an implementation MAY take the rest of the logical line verbatim rather than tokenizing it, and hand that text to whatever evaluates dimension expressions. This is not laziness: `3 1/2` is three and a half and `31/2` is a division, and that rule belongs to one tokenizer. Two copies of it are two rules the moment one is edited. An `==` *inside* an argument list is the pin of §4.3 and is lexed normally; the two never meet. **[0.7]** A trailing `hint(…)` ends the verbatim region, since it is a clause of the statement and not part of the number.
+**[0.2] Note on a number read verbatim.** After the `:=` of a value (0.2–0.6: the `==` after a predicate's closing parenthesis, which §9.2 retired), an implementation MAY take the rest of the logical line verbatim rather than tokenizing it, and hand that text to whatever evaluates dimension expressions. This is not laziness: `3 1/2` is three and a half and `31/2` is a division, and that rule belongs to one tokenizer. Two copies of it are two rules the moment one is edited. An `==` *inside* an argument list is the pin of §4.3 and is lexed normally; the two never meet. **[0.7]** A trailing `hint(…)` ends the verbatim region, since it is a clause of the statement and not part of the number.
 
 ---
 
@@ -2435,7 +2487,7 @@ Parsing note: a statement beginning with an expression is disambiguated by the t
 
 A minimal conforming implementation provides:
 
-1. Parser for §19; classifier assigning every statement to §4.2 classes **by the `=` / `==` mark (§4.3)**; Invariant H enforced by construction of the parser.
+1. Parser for §19; classifier assigning every statement to §4.2 classes **by the `hint(…)` / `==` mark (§4.3)**; Invariant H enforced by construction of the parser.
 2. Elaborator: instance expansion **preserving statement identity (§12.7)**, union-find aliasing, definitional substitution, dedup store, `ring` lowering (quotient form or cycle-plus-symmetry — either, per §12.3, **and reported if unrolled**).
 3. Invariance check §12.5 (syntactic criterion), gauge analysis (W103), DOF ledger (§16.3).
 4. A numeric backend satisfying §15 — Newton on the quotient system seeded by hints is sufficient — with rank-deficiency reporting attributed to source spans.

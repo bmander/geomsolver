@@ -233,8 +233,8 @@ impl<'a> P<'a> {
                     }
                     if kind != EntKind::Face {
                         self.fail(&format!(
-                            "`-> close` seals a face's loop, and a {} is not a loop",
-                            kind.as_str()
+                            "`-> close` seals a face's loop, and {} is not a loop",
+                            kind.a()
                         ));
                         return None;
                     }
@@ -554,8 +554,8 @@ impl<'a> P<'a> {
                 // its expressions.
                 if !kind.bears_points() {
                     self.fail(&format!(
-                        "`in` puts points on a plane, and a {} has none of its own",
-                        kind.as_str()
+                        "`in` puts points on a plane, and {} has none of its own",
+                        kind.a()
                     ));
                     return None;
                 }

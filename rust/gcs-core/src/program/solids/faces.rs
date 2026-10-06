@@ -148,14 +148,14 @@ fn build_loop(
                 (Err((sp, m)), _) | (_, Err((sp, m))) => { report(Code::E101, sp, m); return None }
             };
             if e.kind != EntKind::Curve {
-                report(Code::E080, r.span, format!("`{} from … to …` runs along a curve, and `{}` is a {}",
-                    r.root.text, r.root.text, e.kind.as_str()));
+                report(Code::E080, r.span, format!("`{} from … to …` runs along a curve, and `{}` is {}",
+                    r.root.text, r.root.text, e.kind.a()));
                 return None;
             }
             for (x, xr) in [(p, from), (q, to)] {
                 if x.kind != EntKind::Point {
-                    report(Code::E080, xr.span, format!("a stretch of `{}` runs between points, and `{}` is a {}",
-                        r.root.text, xr.root.text, x.kind.as_str()));
+                    report(Code::E080, xr.span, format!("a stretch of `{}` runs between points, and `{}` is {}",
+                        r.root.text, xr.root.text, x.kind.a()));
                     return None;
                 }
                 if sk.contact_param(x.idx, e.idx).is_none() {
@@ -208,9 +208,9 @@ fn build_loop(
                     r.span,
                     format!(
                         "a face is bounded by lines, arcs, circles, splines and stretches of \
-                         curves, and turns at points; `{}` is a {}",
+                         curves, and turns at points; `{}` is {}",
                         r.root.text,
-                        e.kind.as_str()
+                        e.kind.a()
                     ),
                 );
                 return None;

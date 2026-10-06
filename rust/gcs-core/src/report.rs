@@ -231,11 +231,7 @@ pub fn positions_where(sk: &Sketch, map: &crate::program::SourceMap, asked: &dyn
     for (&e, names) in &map.names {
         let params = sk.entity_params(e);
         for n in names {
-            let Some(mut scalars) = e.kind.scalar_names(n) else { continue };
-            // a point in space has a third coordinate a point in a plane does not
-            if e.kind == crate::model::EntKind::Point && params.len() == 3 {
-                scalars.push(format!("{n}.z"));
-            }
+            let Some(scalars) = sk.scalar_names(e, n) else { continue };
             if scalars.len() != params.len() {
                 continue;
             }
@@ -859,7 +855,7 @@ pub fn constraint_from_json(sk: &Sketch, v: &Json) -> Result<Constraint, String>
                 // untrusted the way a document is, and every reader past this one indexes by
                 // the spec's kind — a mismatch or an overrun is a panic there, an abort in wasm
                 if !crate::constraints::kind_matches(*k, ek) {
-                    return Err(format!("a {} slot does not take a {}", k.as_str(), ek.as_str()));
+                    return Err(format!("{} slot does not take {}", k.a(), ek.a()));
                 }
                 let i = arr.get(1).map(|x| x.as_i64()).unwrap_or(0);
                 if i < 0 || i as usize >= sk.count(ek) {

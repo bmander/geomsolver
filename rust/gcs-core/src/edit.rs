@@ -644,7 +644,7 @@ fn add_entity_with(
     name: Option<&str>,
 ) -> Edit {
     if kind == EntKind::Point || kind == EntKind::Curve {
-        return Edit::none(prog, Some(format!("a {} is not built this way", kind.as_str())));
+        return Edit::none(prog, Some(format!("{} is not built this way", kind.a())));
     }
     let name = match name {
         Some(n) if taken_names(prog).contains(n) => {
