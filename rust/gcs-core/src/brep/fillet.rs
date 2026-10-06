@@ -234,7 +234,8 @@ fn build(b: &Brep,chain: &[usize],net: &Net,surfaces: &[Surface;2],face_reversed
     let [[u0,u1],[v0,v1]] = net.domain();
     let mut out = Brep::default();
     let column = |j: usize| Curve::BSpline(Arc::new(net.column(j)));
-    let row = |i: usize| Curve::BSpline(Arc::new(BSpline {degree:net.dv,knots:net.vknots.clone(),poles:net.poles[i].clone()}));
+    let row = |i: usize| Curve::BSpline(Arc::new(BSpline {degree:net.dv,knots:net.vknots.clone(),poles:net.poles[i].clone(),
+        weights:net.weights.as_ref().map(|w| w[i].clone())}));
     let last_v = net.poles[0].len()-1;
     let (va,vb) = (out.vertex(net.point(u0,v0)),out.vertex(net.point(u0,v1)));
     // the contacts, each one closed edge, and the canal's seam between them

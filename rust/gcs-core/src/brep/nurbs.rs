@@ -387,7 +387,8 @@ impl Net {
     /// The curve along `u` through the `j`th column of poles: the iso line at the `v` that column
     /// stands for where it is an end of a clamped net.
     pub fn column(&self,j: usize) -> BSpline {
-        BSpline {degree:self.du,knots:self.uknots.clone(),poles:self.poles.iter().map(|row| row[j]).collect()}
+        BSpline {degree:self.du,knots:self.uknots.clone(),poles:self.poles.iter().map(|row| row[j]).collect(),
+            weights:self.weights.as_ref().map(|w| w.iter().map(|row| row[j]).collect())}
     }
     /// `S`, `S_u`, `S_v`, `S_uu`, `S_uv`, `S_vv` at `(u, v)`, clamped into the domain.
     pub fn d2(&self,u: f64,v: f64) -> [V;6] {

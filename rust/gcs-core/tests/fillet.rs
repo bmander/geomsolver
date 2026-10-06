@@ -657,10 +657,12 @@ fn stem_inside_main(big: f64, small: f64) -> f64 {
 
 /// A pin of radius 2 through the knob's ball (radius 8) 3 off its centre, square to the knob's axis.
 const PIN: &str = "\
-pc := point hint(x: 3, y: 44)
-fix(x == 3, y == 44) pc
-pin_k := circle(center: pc) hint(r: 2)
-radius(2) pin_k
+in std.front {
+  pc := point hint(x: 3, y: 44)
+  fix(x == 3, y == 44) pc
+  pin_k := circle(center: pc) hint(r: 2)
+  radius(2) pin_k
+}
 pin := solid(face(pin_k), from: -20mm, to: 20mm)
 ";
 
