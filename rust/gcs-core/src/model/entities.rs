@@ -67,9 +67,8 @@ pub enum EntKind {
     Edge,
     /// **A cone** (`docs/spatial-constraints-plan.md`): an axis line drawn in some view — the
     /// apex its start, the axis running toward its end — and a half-angle it owns, like a
-    /// circle's radius.  No picture on any
-    /// sheet; its relations (`p coincident k`, `angle`, `tangent`) are in space and read the
-    /// axis's lifts.
+    /// circle's radius.  No picture on any sheet; its relations (`p coincident k`, `angle`,
+    /// `tangent`) are in space and read the axis's lifts.
     Cone,
     /// **A cylinder**: an axis line drawn in some view and a radius it owns.
     Cylinder,

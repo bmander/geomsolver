@@ -830,9 +830,9 @@ planes share agree (one equation). Views carry no place on paper; the `.svd` pla
 - A view's attitude may be an unknown: build it on axes the solve turns (2.11, 2.13). Planes and
   axes are settled before the main solve, round by round, and still move with it.
 
-**Spheres** are the library's: `ball := std.Sphere(c, r: 12mm)` is a centre and a radius, its
-outline `ball.rim` drawn in the view `c` is drawn in. What stands on it is said by distances
-from the centre, read in space across views:
+**Spheres** are the library's: `ball := std.Sphere(c, r: 12mm)` is a centre and a radius, and
+nothing drawn; the centre may be drawn in a view or stand in space. What stands on it is said by
+distances from the centre, read in space across views:
 
 - `p distance(ball.r) ball.center` puts a point on it; `ball.center distance(ball.r) l` makes a
   line touch it; `a.center distance(a.r + b.r) b.center` two spheres touch outside.
@@ -840,8 +840,7 @@ from the centre, read in space across views:
   share — at most one unbound radius per distance, since a dimension is affine in one unknown.
 - `std.CircleOnSphere(k, ball, view)` puts a whole circle `k` drawn in `view` on the sphere (a
   gear blank's toe circle on its end sphere): three equations.
-- `sphere(…)` is no element: the error names `std.Sphere`. A solid ball is a half disc turned
-  about its diameter (`pierced_sphere.sv`).
+- A solid ball is a half disc turned about its diameter (`pierced_sphere.sv`).
 
 **Cones and cylinders** live in space, on no sheet (the glass box draws them).
 

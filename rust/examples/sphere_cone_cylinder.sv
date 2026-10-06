@@ -1,8 +1,8 @@
 // A sphere, a cone and a cylinder: three surfaces a relation can reach in space, each built about
 // geometry drawn in a view and each owning one number — a radius, a half-angle, a radius.  The
-// sphere is the library's (`std.Sphere`): a centre and a radius, what stands on it said by
-// distances from the centre, and its outline drawn in the centre's view.  A cone or a cylinder
-// is on no sheet; the glass box draws one as two rings square to its axis and four rulings.
+// sphere is the library's (`std.Sphere`): a centre and a radius, nothing drawn, what stands on it
+// said by distances from the centre.  A cone or a cylinder is on no sheet; the glass box draws
+// one as two rings square to its axis and four rulings.
 //
 // Two planes: the front and the side, square to it at the origin, so the side plane is the one
 // the front sees edge-on along its vertical axis.  Everything in the front plane is grounded;
@@ -18,7 +18,7 @@
 //   is on both, and `k1 tangent(M) k2` says they touch there with one tangent plane — two
 //   equations more.  Four equations, four unknowns (M's two, the second apex, its half-angle).
 //
-// 45 unknowns and 44 equations: DOF 1, and it is the point on the ball.  Open the glass box (⌘B)
+// 44 unknowns and 43 equations: DOF 1, and it is the point on the ball.  Open the glass box (⌘B)
 // and orbit to see the two cones kiss at M; edit `angle(30deg) k1` and the second cone reopens
 // and slides to keep touching; edit the shaft's radius and the tangent line swings.  Back on the
 // side plane, drag `pb` and it runs round its circle on the ball.

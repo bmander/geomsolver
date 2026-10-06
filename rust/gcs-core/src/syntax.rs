@@ -134,6 +134,11 @@ impl Ty {
             Ty::Int | Ty::Scalar | Ty::Side | Ty::Group | Ty::Ent(_) => crate::units::Dim::SCALAR,
         }
     }
+
+    /// Whether a formal of this type is a number — bound to one, or an unknown where left unbound.
+    pub fn number(self) -> bool {
+        matches!(self, Ty::Int | Ty::Scalar | Ty::Length | Ty::Angle)
+    }
 }
 
 #[derive(Clone, Debug)]

@@ -57,13 +57,13 @@ component CenteredRectangle(center: point, w: Length, h: Length) {
   center midpoint diagonal
 }
 
-// A sphere of radius `r` about `center`: a centre and a number, and `rim`, its outline in the
-// view the centre is drawn in (so the centre is drawn in one; a point in space is E060 here).  What stands on it is said by distances from the centre, the
-// radius read by the instance's name — a point on it, `p distance(ball.r) ball.center`; a line
-// touching it, `ball.center distance(ball.r) l`; two touching outside, `a.center distance(a.r
-// + b.r) b.center` — and a circle drawn in another view lying on it is `CircleOnSphere`.  Leave
-// `r` unbound and it is an unknown of the drawing, which those distances share.  Not a solid:
-// a ball is a half disc turned about its diameter.
+// A sphere of radius `r` about `center`, which may be drawn in a view or stand in space: a centre
+// and a number, and nothing drawn.  What stands on it is said by distances from the centre, the
+// radius read by the instance's name — a point on it, `p distance(ball.r) ball.center`; a line touching it,
+// `ball.center distance(ball.r) l`; two touching outside, `a.center distance(a.r + b.r)
+// b.center` — and a circle drawn in another view lying on it is `std.CircleOnSphere`.  Leave `r`
+// unbound and it is an unknown of the drawing, which those distances share.  Not a solid: a ball
+// is a half disc turned about its diameter.
 //
 //   use std
 //   in std.front {
@@ -73,8 +73,6 @@ component CenteredRectangle(center: point, w: Length, h: Length) {
 //   p := point hint((5, 10)) in std.side
 //   p distance(ball.r) ball.center
 component Sphere(center: point, r: Length) {
-  rim := circle(center: center)
-  radius(r) rim
 }
 
 // A circle `k` drawn in `view` lying on the sphere `s` all the way round: the sphere's centre on

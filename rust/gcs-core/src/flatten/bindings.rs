@@ -198,16 +198,7 @@ impl<'a> Walk<'a> {
         let prefix = scope.prefix().to_string();
         let mut sub: BTreeMap<String, Aff> = BTreeMap::new();
         let mut sides: BTreeMap<String, String> = BTreeMap::new();
-        let mut positional = 0usize;
-        for a in &inst.args {
-            let formal = match &a.label {
-                Some(l) => comp.formals.iter().find(|f| f.name.text == l.text),
-                None => {
-                    let f = comp.formals.get(positional);
-                    positional += 1;
-                    f
-                }
-            };
+        for (formal, a) in formals_of(comp, inst) {
             let Some(f) = formal else {
                 self.err(
                     Code::E103,
@@ -223,7 +214,7 @@ impl<'a> Walk<'a> {
                      then `{n}: {n}`", n = f.name.text)),
                 (Ty::Group, InstVal::Ref(r)) => {
                     let actual = written(r);
-                    let key = format!("{prefix}{}.{}", inst.name.text, f.name.text);
+                    let key = formal_name(&prefix, &inst.name.text, &f.name.text);
                     self.aliases.push((key.clone(), r.clone(), scope.clone()));
                     self.group_bindings.push((key, a.span));
                     let start = format!("{actual}.");
@@ -238,7 +229,7 @@ impl<'a> Walk<'a> {
                 // `beta: hint(15deg)` — the formal stays unbound, an unknown of the drawing like
                 // any unbound numeric formal (below), and its solve begins at the number
                 (ty @ (Ty::Int | Ty::Scalar | Ty::Length | Ty::Angle), InstVal::Hint(t)) => {
-                    let name = format!("{prefix}{}.{}", inst.name.text, f.name.text);
+                    let name = formal_name(&prefix, &inst.name.text, &f.name.text);
                     match self.seed_number(t, *ty, vals) {
                         Ok(v) if *ty != Ty::Int => {
                             let declared = crate::model::Declared { dim: ty.dim(), seed: Some(v) };
@@ -255,7 +246,7 @@ impl<'a> Walk<'a> {
                     // recorded unresolved; the resolve pass turns it into an absolute name in the
                     // *caller's* scope, which is what makes it an alias rather than a copy
                     self.aliases.push((
-                        format!("{prefix}{}.{}", inst.name.text, f.name.text),
+                        formal_name(&prefix, &inst.name.text, &f.name.text),
                         r.clone(),
                         scope.clone(),
                     ));
@@ -310,10 +301,10 @@ impl<'a> Walk<'a> {
             // a side left unbound is not an unknown of the drawing: the *statement* it reaches
             // says nothing about which side, which is the magnitude form and a solution set of
             // both — so it is left out of the table and the body writes no side at all
-            if matches!(f.ty, Ty::Ent(_) | Ty::Side | Ty::Group) || sub.contains_key(&f.name.text) {
+            if !f.ty.number() || sub.contains_key(&f.name.text) {
                 continue;
             }
-            let name = format!("{prefix}{}.{}", inst.name.text, f.name.text);
+            let name = formal_name(&prefix, &inst.name.text, &f.name.text);
             // one table of every unknown, seeded by the call's `hint(…)` where it wrote one
             let unknown = crate::model::Declared { dim: f.ty.dim(), seed: None };
             self.unknowns.entry(name.clone()).or_insert(unknown);
@@ -373,48 +364,42 @@ impl<'a> Walk<'a> {
     /// (`bind`'s name) — so a dimension reads it as it reads a group's member, and an instance
     /// handed on as a group carries it (`bind`'s group arm copies `{actual}.…`).  Read before
     /// the body's statements are walked, as its `param`s are (P2: a dimension above the call
-    /// reads it too).  Nothing is reported here: `bind` works the same arguments out again
-    /// and says what is wrong with them where the call is walked.
-    pub(super) fn instance_numbers(&mut self, body: &[Stmt], vals: &mut BTreeMap<String, Aff>, scope: &Scope) {
-        use crate::syntax::{InstVal, Ty};
-        let prefix = scope.prefix().to_string();
+    /// reads it too).  Nothing is reported here: `bind` works the same arguments out again, by
+    /// the same rules (`formals_of`, `typed`), and says what is wrong with them where the call is
+    /// walked.
+    pub(super) fn instance_numbers(
+        &self,
+        body: &[Stmt],
+        vals: &mut BTreeMap<String, Aff>,
+        scope: &Scope,
+    ) {
+        use crate::syntax::InstVal;
         for st in body {
             let StmtKind::Instance(inst) = &st.kind else { continue };
             let Ok(index) = self.prog.resolve_component(&inst.component.text, scope.module) else {
                 continue;
             };
             let comp = &self.prog.components[index];
-            let mut given: BTreeMap<String, Aff> = BTreeMap::new();
-            for (i, a) in inst.args.iter().enumerate() {
-                let f = match &a.label {
-                    Some(l) => comp.formals.iter().find(|f| f.name.text == l.text),
-                    None => comp.formals.get(i),
-                };
-                let Some(f) = f.filter(|f| !matches!(f.ty, Ty::Ent(_) | Ty::Side | Ty::Group)) else {
-                    continue;
-                };
+            let mut given: BTreeMap<&str, Aff> = BTreeMap::new();
+            for (f, a) in formals_of(comp, inst) {
+                let Some(f) = f.filter(|f| f.ty.number()) else { continue };
                 let text = match &a.value {
                     InstVal::Expr(t) => t.clone(),
                     InstVal::Ref(r) => written(r),
                     InstVal::Hint(_) | InstVal::Group(_) => continue,
                 };
-                let want = f.ty.dim();
-                if let Ok(v) = value_aff(&text, vals, self.units) {
-                    if v.dim.require(want, &f.name.text).is_ok() {
-                        given.insert(f.name.text.clone(), v.as_dim(want));
-                    }
+                if let Some(v) = value_aff(&text, vals, self.units)
+                    .and_then(|v| typed(v, f.ty, &f.name.text))
+                    .ok()
+                {
+                    given.insert(&f.name.text, v);
                 }
             }
-            for f in &comp.formals {
-                if matches!(f.ty, Ty::Ent(_) | Ty::Side | Ty::Group) {
-                    continue;
-                }
-                let own = format!("{}.{}", inst.name.text, f.name.text);
-                let v = match given.remove(&f.name.text) {
-                    Some(v) => v,
-                    None => free(format!("{prefix}{own}"), f.ty),
-                };
-                vals.entry(own).or_insert(v);
+            for f in comp.formals.iter().filter(|f| f.ty.number()) {
+                let v = given.remove(f.name.text.as_str()).unwrap_or_else(|| {
+                    free(formal_name(scope.prefix(), &inst.name.text, &f.name.text), f.ty)
+                });
+                vals.entry(format!("{}.{}", inst.name.text, f.name.text)).or_insert(v);
             }
         }
     }
@@ -435,22 +420,52 @@ impl<'a> Walk<'a> {
         inst: &str,
         span: Span,
     ) {
-        let want = ty.dim();
         match value_aff(text, vals, self.units) {
-            Ok(a) => match a.dim.require(want, &f.name.text) {
-                Ok(()) => {
-                    sub.insert(f.name.text.clone(), a.as_dim(want));
+            Ok(a) => match typed(a, ty, &f.name.text) {
+                Ok(v) => {
+                    sub.insert(f.name.text.clone(), v);
                 }
                 Err(e) => self.err(Code::E103, span, e),
             },
             // a text a curve's variables leave no value to — kept, in the symbolic mode,
             // under the name the formal has inside the instance; a mistake, on the sheet
             Err(e) => {
-                let abs = format!("{}{inst}.{}", scope.prefix(), f.name.text);
+                let abs = formal_name(scope.prefix(), inst, &f.name.text);
                 if !self.keep_text(abs, text, vals, scope) {
                     self.err(Code::E103, span, format!("`{}`: {e}", f.name.text));
                 }
             }
         }
     }
+}
+
+/// The formal each argument of a call lands on, in order: by its label, else by its place among
+/// the unlabelled arguments — `None` where the component has no such formal.  `bind` and
+/// `instance_numbers` read a call through this one rule, so `ball.r` read early is the number the
+/// body is given.
+fn formals_of<'c, 'i>(
+    comp: &'c Component,
+    inst: &'i crate::syntax::Instance,
+) -> Vec<(Option<&'c crate::syntax::Formal>, &'i crate::syntax::InstArg)> {
+    let mut positional = 0usize;
+    inst.args
+        .iter()
+        .map(|a| {
+            let f = match &a.label {
+                Some(l) => comp.formals.iter().find(|f| f.name.text == l.text),
+                None => {
+                    positional += 1;
+                    comp.formals.get(positional - 1)
+                }
+            };
+            (f, a)
+        })
+        .collect()
+}
+
+/// The absolute name of a formal of the instance `inst` written under `prefix` (`leg.theta`): the
+/// key its alias is filed under, the unknown a numeric one is where the call leaves it unbound,
+/// and where a trace keeps an argument's text.
+fn formal_name(prefix: &str, inst: &str, formal: &str) -> String {
+    format!("{prefix}{inst}.{formal}")
 }

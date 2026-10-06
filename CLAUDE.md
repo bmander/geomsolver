@@ -1511,13 +1511,12 @@ Conventions:
   since a component of one computed point cannot be drawn as an instance whose formal is left
   free.
 - **The sphere is a library component too**: `std.Sphere(center, r)` in `rust/lib/std.sv`, a
-  centre, a radius formal read as `ball.r`, and `rim`, its outline in the centre's view.  What
+  centre (drawn in a view or in space) and a radius formal read as `ball.r`, nothing drawn.  What
   stands on it is a distance from the centre (`Distance3`, `PointLine3` across views);
   `std.CircleOnSphere(k, s, view)` is the three regular rows of a circle on it (a hidden point
   level with the circle's centre, an axis square to the view).  `EntKind::Sphere`, its four
   `CKind`s and three kernels are gone; FFI kind ids stay contiguous (cone 16, cylinder 17, axis
-  18).  `sphere`/`ellipse` written as a call name the library spelling
-  (`Program::resolve_component`).  `tests/spatial_lang.rs` is the gate.
+  18).  `tests/spatial_lang.rs` is the gate.
 - **A curve is a point of a component, as one of its numeric formals runs** (Solvent §6.5).
   No curve family: `path := leg.toe over theta in (0, 360)` asks a *drawn* instance, and
   `e := Involute(base, phase: a0).p over u in (u0, u1)` one written in place and never drawn.

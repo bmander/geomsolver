@@ -1,7 +1,7 @@
 //! Planes over axes, in the language (§6.7; `docs/planes-plan.md`): a plane whose axis or place
 //! is solved for, its seeds, its refusals, and `project` between a stated and a solved plane;
-//! the words across planes and in space; the library's spheres; and the hypoid's pitch cones laid out by
-//! construction.
+//! the words across planes and in space; the library's spheres; and the hypoid's pitch cones
+//! laid out by construction.
 use gcs_core::constraints::{Arg, CKind, Constraint};
 use gcs_core::diagnose::{diagnose, view_freedoms, DiagnoseOptions};
 use gcs_core::edit;
@@ -545,23 +545,18 @@ fn a_sphere_is_said_by_distances_from_its_centre() {
         "{TWO_VIEWS}in std.side {{\n  sc := point hint((20, 10))\n}}\n\
          in std.front {{\n  sc2 := point hint((10, 40))\n}}\n\
          sp := std.Sphere(sc, r: 12)\ns2 := std.Sphere(sc2, r: 5)\n{stmt}\n");
-    // the statement's kind, past the rims' radii the two instances state
+    // the one statement's kind and number: an instance of the sphere states nothing itself
     let kind = |stmt: &str| {
         let e = read(&with(stmt));
         let cs = e.sketch.user_constraints();
-        let c = cs.iter().find(|c| c.kind != CKind::Radius).unwrap_or_else(|| panic!("{stmt}"));
-        let num = c.args.iter().find_map(|a| match a {
-            Arg::Num(v) => Some(*v),
-            Arg::Expr(x) => Some(x.value),
-            _ => None,
-        });
-        (c.kind, num)
+        assert_eq!(cs.len(), 1, "{stmt}");
+        (cs[0].kind, cs[0].args.iter().find(|a| matches!(a, Arg::Num(_) | Arg::Expr(_))).map(Arg::num))
     };
     assert_eq!(kind("a distance(sp.r) sp.center"), (CKind::Distance3, Some(12.0)));
     assert_eq!(kind("sp.center distance(sp.r) la"), (CKind::PointLine3, Some(12.0)));
     assert_eq!(kind("sp.center distance(sp.r + s2.r) s2.center"), (CKind::Distance3, Some(17.0)));
-    // the word is gone, and the error says what to write instead
-    refused(&format!("{TWO_VIEWS}sp := sphere(center: a)\n"), "E103", "`use std`, then `std.Sphere(", "sphere");
+    // the word is gone: `sphere` is a name like any other
+    refused(&format!("{TWO_VIEWS}sp := sphere(center: a)\n"), "E103", "no component named `sphere`", "sphere");
     // and solved, the radius left to the drawing: the centre held, a point of the other plane on
     // it, and a line tangent to it, which sizes it
     let free = |stmt: &str| with(stmt).replace("r: 12)", "r: hint(12))");
@@ -571,7 +566,7 @@ fn a_sphere_is_said_by_distances_from_its_centre() {
     let r = solve(&mut sk, SolveOpts::default());
     assert!(r.success, "{}", r.message);
     let c = sk.world_point(ent(&e, "sc").i());
-    let rad = sk.radius_value(ent(&e, "sp.rim"));
+    let rad = sk.params[sk.free_vars["sp.r"] as usize].value;
     let pa = sk.world_point(ent(&e, "a").i());
     assert!((norm(sub(pa, c)) - rad).abs() < 1e-9, "{} against {rad}", norm(sub(pa, c)));
     let (l1, l2) = ends(&sk, ent(&e, "la"));
@@ -606,7 +601,7 @@ fn a_spheres_unbound_radius_is_shared() {
     let mut sk = e.sketch.clone();
     assert!(solve(&mut sk, SolveOpts::default()).success);
     let c = sk.world_point(ent(&e, "c").i());
-    let r = sk.radius_value(ent(&e, "ball.rim"));
+    let r = sk.params[sk.free_vars["ball.r"] as usize].value;
     for p in ["a", "b", "q"] {
         let d = norm(sub(sk.world_point(ent(&e, p).i()), c));
         assert!((d - r).abs() < 1e-9, "{p}: {d} against the radius {r}");
@@ -617,6 +612,18 @@ fn a_spheres_unbound_radius_is_shared() {
         diagnose(&mut sk, DiagnoseOptions::default()).dof
     };
     assert_eq!(dof(1) - dof(3), 2, "one equation for each point past the first");
+}
+
+/// A sphere's centre may stand in space: nothing of the sphere is drawn in a view.
+#[test]
+fn a_sphere_may_be_centred_in_space() {
+    let e = read("unit mm\nuse std\nc := point hint((1, 2, 3))\nfix((1, 2, 3)) c\n\
+                  ball := std.Sphere(c, r: 12)\np := point hint((5, 45)) in std.side\n\
+                  p distance(ball.r) ball.center\n");
+    let mut sk = e.sketch.clone();
+    assert!(solve(&mut sk, SolveOpts::default()).success);
+    let d = norm(sub(sk.world_point(ent(&e, "p").i()), [1.0, 2.0, 3.0]));
+    assert!((d - 12.0).abs() < 1e-9, "{d}");
 }
 
 /// An instance handed on as a group carries its numbers: a component reading `s.r` of the

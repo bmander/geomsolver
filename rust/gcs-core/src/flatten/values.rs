@@ -8,6 +8,13 @@ pub(super) fn free(name: String, ty: Ty) -> Aff {
     Aff { free: Some(name), m: 1.0, c: 0.0, dim: ty.dim() }
 }
 
+/// A number worked out for a name declared `ty` — a formal, a typed `param` — taken to be what
+/// the declaration says: refused if it said otherwise (`Tooth(a0: 30mm)` is a mistake, not a
+/// conversion), and a bare number becomes one of that dimension.
+pub(super) fn typed(a: Aff, ty: Ty, name: &str) -> Result<Aff, String> {
+    a.dim.require(ty.dim(), name).map(|()| a.as_dim(ty.dim()))
+}
+
 /// One definition of a body — a `param` or a group's member — worked out with the rest.
 struct Def {
     name: String,
@@ -617,11 +624,11 @@ impl<'a> Walk<'a> {
                 }
                 // a declared type is what the value is, as a formal's is: `param w: Length := 60`
                 // is a length however the 60 was written, and `param w: Length := 60deg` is wrong
-                let typed = value_aff(&d.text, vals, self.units).and_then(|a| match d.ty {
-                    Some(ty) => a.dim.require(ty.dim(), &d.name).map(|()| a.as_dim(ty.dim())),
+                let worked = value_aff(&d.text, vals, self.units).and_then(|a| match d.ty {
+                    Some(ty) => typed(a, ty, &d.name),
                     None => Ok(a),
                 });
-                match typed {
+                match worked {
                     Ok(a) => {
                         vals.insert(d.name.clone(), a);
                     }

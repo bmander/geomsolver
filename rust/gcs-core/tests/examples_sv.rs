@@ -156,7 +156,7 @@ fn the_spatial_demos_are_what_they_say() {
         (
             "sphere_cone_cylinder",
             include_str!("../../examples/sphere_cone_cylinder.sv"),
-            (45, 44),
+            (44, 43),
             1,
             State::Under,
         ),

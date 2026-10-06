@@ -2376,9 +2376,9 @@ fn symmetric3_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
 
 /* -- cones and cylinders -----------------------------------------------------------------------
  *
- * A cylinder's relations reuse the kernels of distances in space — a point on it is `point_line3_free`
- * (its distance from the axis, stated as the radius column), a line touching it `line_line3_free`
- * (the common perpendicular with the axis), its radius `radius`.  A cone's are new: a point on
+ * A cylinder's relations reuse the distance kernels in space — a point on it is
+ * `point_line3_free` (its distance from the axis, stated as the radius column), a line touching it
+ * `line_line3_free` (the common perpendicular with the axis), its radius `radius`.  A cone's are new: a point on
  * it, its half-angle (an angle row of degree 0, the radius kernel's arithmetic), and two cones
  * touching at a point.  Their derivatives are taken by `Dual`, a forward-mode number carrying
  * the gradient in every column of the block — exact, and one expression for the residual and its
