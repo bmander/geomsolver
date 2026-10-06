@@ -269,7 +269,9 @@ fn reconcile_writes_membership_a_plane_and_a_projection() {
     e.sketch.add(c);
     let out = reconciled(&mut e);
     assert!(out.text.contains(" := plane(u: x"), "{}", out.text);
-    assert!(out.text.contains(" := axis hint(x: 0.6, y: 0.8"), "{}", out.text);
+    assert!(out.text.contains("\nx0 := axis\n"), "a held direction is its own seed: {}", out.text);
+    assert!(out.text.contains("fix(x == 0.6, y == 0.8, z == 0, px == 0, py == 0, pz == 0) x0\n"),
+        "{}", out.text);
     assert!(out.text.contains("\na project b\n"), "{}", out.text);
     assert!(!out.text.contains("origin :="), "an origin is the plane's: {}", out.text);
     assert!(!out.text.contains("project("), "the planes are never spelled: {}", out.text);
@@ -425,9 +427,8 @@ fn a_seed_inside_a_block_splices_in_place() {
 /// and took every point in the block for one moved out of it: an edit was refused on load.
 #[test]
 fn a_block_over_a_module_plane_is_not_a_membership_to_change() {
-    let src = "unit mm\nuse std\nin std.front {\n  a := point hint(x: 10, y: 5)\n}\n\
-               fix(x == 10, y == 5) a\nb := point hint(x: 3, y: 4) in std.front\n\
-               fix(x == 3, y == 4) b\n";
+    let src = "unit mm\nuse std\nin std.front {\n  a := point\n}\n\
+               fix(x == 10, y == 5) a\nb := point in std.front\nfix(x == 3, y == 4) b\n";
     let mut e = read(src);
     let a = e.map.ent_named("a").unwrap();
     assert_eq!(e.sketch.plane_of(a.i()), e.map.ent_named("std.front").map(|p| p.i()));

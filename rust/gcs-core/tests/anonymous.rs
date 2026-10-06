@@ -213,7 +213,7 @@ fn a_fixed_anonymous_point_is_named_for_its_gauge() {
     let mut e = read("use std\nin std.front {\npoint hint(x: 3, y: 4)\n}\n");
     e.sketch.fix_point(0, true);
     let edit = reconciled(&mut e);
-    assert!(edit.text.contains("p0 := point hint(x: 3, y: 4)"), "{}", edit.text);
+    assert!(edit.text.contains("p0 := point\n"), "a held number is its own seed: {}", edit.text);
     assert!(edit.text.contains("fix(x == 3, y == 4) p0\n"), "{}", edit.text);
     let back = read(&edit.text);
     assert!(back.sketch.point_fixed(0));
