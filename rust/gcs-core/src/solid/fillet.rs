@@ -389,7 +389,7 @@ pub(crate) fn derive(sk: &Sketch, si: usize) -> Result<Blend, String> {
             if !(length - by > tol) {
                 return Err(format!("the ball of {} is larger than its edge between corners can hold", e.label));
             }
-            if e.end == 0 { p.section = p.section.offset(by); }
+            if e.end == 0 { p.section = carried(&p.section, by); }
             p.carry = Carry::Prism { length: length - by };
             for (_, band) in &mut bands[e.piece].2 { band.shorten(e.end, by); }
             corner_joins.push([e.piece, pieces.len() + corners.len()]);
@@ -747,7 +747,7 @@ impl Band {
                 *length -= by;
             }
             Band::Sleeve { section, length, .. } => {
-                if end == 0 { *section = section.offset(by); }
+                if end == 0 { *section = carried(section, by); }
                 *length -= by;
             }
             Band::Meridian { .. } | Band::Arc { .. } => {}
