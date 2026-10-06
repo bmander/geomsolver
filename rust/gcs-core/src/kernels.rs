@@ -1003,10 +1003,10 @@ fn annular_distance_jac(n: usize, _v: &[f64], _k: &[f64], j: &mut [f64]) {
  *
  * The curve's columns are one span's control points, `SPAN_N` of them, whichever span t is in;
  * the span itself is chosen at compile time and carried in `Sketch::topology_key`.  The local
- * knot window is the constants.
+ * knot window and its control points' weights (`curve::weigh`) are the constants.
  */
 
-use crate::curve::{self, SPAN_K, SPAN_N};
+use crate::curve::{self, SPAN_C, SPAN_K, SPAN_N};
 
 /// One span evaluated at t: the basis, and the curve point and derivatives its control points
 /// give.  Both kernels' residual and Jacobian need some part of this, and they differ only in
@@ -1025,7 +1025,7 @@ struct Span {
 
 /// `v` is one instance's columns; `t` and `ctrl` are the offsets into it of the parameter and of
 /// the first control point.
-fn span_frame(v: &[f64], t: usize, ctrl: usize, k: &[f64; SPAN_K]) -> Span {
+fn span_frame(v: &[f64], t: usize, ctrl: usize, k: &[f64; SPAN_C]) -> Span {
     let mut f = Span {
         b: [0.0; SPAN_N],
         d: [0.0; SPAN_N],
@@ -1036,7 +1036,9 @@ fn span_frame(v: &[f64], t: usize, ctrl: usize, k: &[f64; SPAN_K]) -> Span {
         d2: (0.0, 0.0),
         d3v: (0.0, 0.0),
     };
-    curve::basis(v[t], k, &mut f.b, &mut f.d, &mut f.dd, &mut f.d3);
+    let (knots, weights) = k.split_at(SPAN_K);
+    curve::basis(v[t], knots.try_into().unwrap(), &mut f.b, &mut f.d, &mut f.dd, &mut f.d3);
+    curve::weigh(weights.try_into().unwrap(), &mut f.b, &mut f.d, &mut f.dd, &mut f.d3);
     for a in 0..SPAN_N {
         let (x, y) = (v[ctrl + 2 * a], v[ctrl + 2 * a + 1]);
         f.p.0 += f.b[a] * x;
@@ -1051,10 +1053,10 @@ fn span_frame(v: &[f64], t: usize, ctrl: usize, k: &[f64; SPAN_K]) -> Span {
     f
 }
 
-/// The i-th instance's local knot window out of a block's constants.
+/// The i-th instance's local knot window and weights out of a block's constants.
 #[inline]
-fn span_knots(k: &[f64], i: usize) -> &[f64; SPAN_K] {
-    k[SPAN_K * i..SPAN_K * (i + 1)].try_into().expect("a block's constants are SPAN_K per row")
+fn span_knots(k: &[f64], i: usize) -> &[f64; SPAN_C] {
+    k[SPAN_C * i..SPAN_C * (i + 1)].try_into().expect("a block's constants are SPAN_C per row")
 }
 
 /// Columns of `point_on_spline`: (px, py, t, c0x, c0y, ... c3x, c3y).
@@ -2975,9 +2977,9 @@ pub static KERNELS: [Kernel; N_KERNELS] = [
     Kernel { name: "parallel_distance", n_res: 1, n_par: 8, degree: 1, n_const: 1, res: parallel_distance_res, jac: parallel_distance_jac, const_jac: None },
     Kernel { name: "point_line_distance", n_res: 1, n_par: 6, degree: 1, n_const: 1, res: point_line_distance_res, jac: point_line_distance_jac, const_jac: None },
     Kernel { name: "annular_distance", n_res: 1, n_par: 2, degree: 1, n_const: 1, res: annular_distance_res, jac: annular_distance_jac, const_jac: Some(ANNULAR_DISTANCE_J) },
-    Kernel { name: "point_on_spline", n_res: 2, n_par: N_PAR_ON_SPLINE, degree: 1, n_const: SPAN_K, res: point_on_spline_res, jac: point_on_spline_jac, const_jac: None },
-    Kernel { name: "spline_tangent_line", n_res: 2, n_par: N_PAR_SPLINE_LINE, degree: 1, n_const: SPAN_K, res: spline_tangent_line_res, jac: spline_tangent_line_jac, const_jac: None },
-    Kernel { name: "spline_curvature", n_res: 3, n_par: N_PAR_SPLINE_CURVE, degree: 1, n_const: SPAN_K, res: spline_curvature_res, jac: spline_curvature_jac, const_jac: None },
+    Kernel { name: "point_on_spline", n_res: 2, n_par: N_PAR_ON_SPLINE, degree: 1, n_const: SPAN_C, res: point_on_spline_res, jac: point_on_spline_jac, const_jac: None },
+    Kernel { name: "spline_tangent_line", n_res: 2, n_par: N_PAR_SPLINE_LINE, degree: 1, n_const: SPAN_C, res: spline_tangent_line_res, jac: spline_tangent_line_jac, const_jac: None },
+    Kernel { name: "spline_curvature", n_res: 3, n_par: N_PAR_SPLINE_CURVE, degree: 1, n_const: SPAN_C, res: spline_curvature_res, jac: spline_curvature_jac, const_jac: None },
     Kernel { name: "horizontal_distance", n_res: 1, n_par: 4, degree: 1, n_const: 1, res: horizontal_distance_res, jac: horizontal_distance_jac, const_jac: Some(HORIZONTAL_DISTANCE_J) },
     Kernel { name: "vertical_distance", n_res: 1, n_par: 4, degree: 1, n_const: 1, res: vertical_distance_res, jac: vertical_distance_jac, const_jac: Some(VERTICAL_DISTANCE_J) },
     Kernel { name: "distance_free", n_res: 1, n_par: 5, degree: 2, n_const: 2, res: distance_free_res, jac: distance_free_jac, const_jac: None },

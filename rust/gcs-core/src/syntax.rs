@@ -618,6 +618,16 @@ impl DeclName {
     }
 }
 
+/// One weight of a rational spline: its value, and its text where it was written as an expression
+/// (`(1 + sqrt(2)) / 3`), worked out during expansion against the scope's values and `None` from
+/// then on, as a seed's is.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Weight {
+    pub value: f64,
+    pub text: Option<String>,
+    pub span: Span,
+}
+
 /// `p0 := point hint((0, 0))`, `c0 := circle(center: p2) hint(r: 25)`,
 /// `spline s0(p3, p4, p5, p6) knots [...]`.
 #[derive(Clone, Debug)]
@@ -647,6 +657,9 @@ pub struct Decl {
     pub hint_span: Option<Span>,
     /// Document data no solve moves, so not a seed and never written back.
     pub knots: Option<Vec<f64>>,
+    /// A rational spline's weights, one per control point (`weights [1, w, w, 1]`): document data
+    /// like the knots, each written as a number or an expression over the scope's values.
+    pub weights: Option<Vec<Weight>>,
     /// A curve: what it is a curve *of* (§6.5).  `None` for every other kind.
     pub curve: Option<CurveSpec>,
     /// A **computed** point, `p := point(x: xexpr, y: yexpr)` (§6.5): its coordinates are
@@ -704,6 +717,7 @@ impl Decl {
             seed_spans: Vec::new(),
             hint_span: None,
             knots: None,
+            weights: None,
             curve: Some(curve),
             class,
             class_span,

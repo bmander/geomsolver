@@ -207,6 +207,12 @@ pub(crate) fn lift_decl(sk: &Sketch, e: EntRef) -> Decl {
         }
         _ => None,
     };
+    let weights = match e.kind {
+        EntKind::Spline => sk.splines[e.i()].weights.as_ref().map(|w| {
+            w.iter().map(|&value| crate::syntax::Weight { value, text: None, span: Span::default() }).collect()
+        }),
+        _ => None,
+    };
     Decl {
         annotations: crate::semantics::Annotations { roles: sk.roles_of(e), private: false },
         kind: e.kind,
@@ -219,6 +225,7 @@ pub(crate) fn lift_decl(sk: &Sketch, e: EntRef) -> Decl {
         curve: (e.kind == EntKind::Curve).then(|| lift_curve(sk, e.i())),
         computed: None,
         knots,
+        weights,
         class: Default::default(),
         class_span: Span::default(),
         seed_at: None,

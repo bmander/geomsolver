@@ -93,7 +93,7 @@ param NAME[: TYPE] [:= EXPR] [hint(E)]  an input; with no value, an unknown     
 NAME := {LABEL: VALUE, ...}             values and geometry passed as one argument   (1.8)
 NAME := (E, E[, E])                     a vector, read by its members NAME.x, NAME.y (1.4)
 [private] [construction] [NAME :=] KIND[(CHILD | hint((E, E)), ...)] [hint(MEMBER: E, ...)]
-     [knots [...]] [in REF]             an entity declaration; every part optional   (1.4)
+     [knots [...]] [weights [E, ...]] [in REF]  an entity declaration; every part optional (1.4)
 NAME := point(x: XEXPR, y: YEXPR)       a computed point, drawn only as a curve       (1.9)
 [NAME :=] axis [hint(dir: (E, E, E))]  a directed line in space, with no start (1.13)
 [NAME :=] plane[(u: R, v: R)]             a plane over axes or lines; one left out is free (1.13)
@@ -137,7 +137,7 @@ read any number or binder in scope). Indices and fields chain: `l.e[2].p1` is `p
 | `line` | `p1`, `p2` | | `p1 -> p2` |
 | `circle` | `center` | `r` | |
 | `arc` | `center`, `start`, `end` | `r` | `start -> end`, counter-clockwise |
-| `spline` | control points, all named | | |
+| `spline` | control points, all named; `weights [...]` makes it rational | | |
 | `axis` | — | a place and a unit direction (seeded by `hint(dir: (x, y, z))`, the direction) | |
 | `plane` | `u`, `v` (axes or lines); member `origin` | where it stands, its `origin`: `fix(origin == (x, y, z))` | |
 | `curve` | its arguments | | |
@@ -190,6 +190,15 @@ alt_a := line(A, hint((15, 5)))                one named end and one not
 dimensions. Name a point yourself when several statements mention it. The exception is a spline:
 its control points must be declared, named points (`s := spline(k0, k1, k2, k3)`); `s := spline`
 alone is an error.
+
+**A spline may be rational.** `s := spline(k0, k1, k2, k3) weights [1, w, w, 1]` gives each
+control point a weight: a heavier one pulls the curve toward itself, and with
+`w = (1 + sqrt(2)) / 3` and the inner points where a quarter circle's end tangents meet the cubic's
+thirds, the curve *is* that quarter circle (`nurbs.sv`). Weights are document data like `knots`,
+never solved for; each is a plain number, written as an expression over the scope's values where
+wanted, one per control point and each positive (else E103). All 1 is the ordinary spline. Every
+contact with the curve — `coincident`, `tangent`, `curvature` — reads it as it is, and a solid
+swept or turned from it is exact in both kernels and written to STEP as a rational curve.
 
 **The element's own name is optional.** `line(p1, p2)`, `point hint((3, 4))` and
 `arc(center: c)` are complete statements. If something later needs to reference an anonymous

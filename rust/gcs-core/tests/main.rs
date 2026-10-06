@@ -32,6 +32,7 @@ mod brep;
 mod brep_census;
 mod brep_export;
 mod rational;
+mod weighted_spline;
 mod curve_contact;
 mod curve_of;
 mod curve;

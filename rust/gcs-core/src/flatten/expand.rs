@@ -359,6 +359,16 @@ impl<'a> Walk<'a> {
         } else {
             vals
         };
+        // a rational spline's weights: numbers over this scope's values, dimensionless
+        for w in d.weights.iter_mut().flatten() {
+            let Some(t) = w.text.take() else { continue };
+            let t = self.subst_sym(&t, vals, scope);
+            match super::values::value_aff(&t, vals, self.units) {
+                Ok(a) if a.free.is_none() && a.dim.is_scalar() => w.value = a.c,
+                Ok(_) => self.err(Code::E103, w.span, format!("a weight is a plain number, and `{t}` is not")),
+                Err(e) => self.err(Code::E103, w.span, format!("`{t}`: {e}")),
+            }
+        }
         for i in 0..d.seed_text.len() {
             let Some(t) = d.seed_text[i].take() else { continue };
             if let Some(v) = self.settle_seed(t, &mut d.seed_text[i], vals, scope, span) {

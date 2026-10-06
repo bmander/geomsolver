@@ -360,9 +360,12 @@ fn profile(sk: &Sketch,index: usize,scale: f64) -> Result<Json,String> {
             EntKind::Spline => {
                 // a clamped cubic B-spline: its knots and its control points, lifted
                 let sp = &sk.splines[e.i()];
-                object([("kind","bspline".into()),("degree",crate::curve::DEGREE.into()),
+                let mut o = object([("kind","bspline".into()),("degree",crate::curve::DEGREE.into()),
                     ("knots",Json::Arr(sp.knots.iter().map(|&k| k.into()).collect())),
-                    ("poles",Json::Arr(sp.ctrl.iter().map(|&c| vector(lift(sk.point_xy(c as usize)))).collect()))])
+                    ("poles",Json::Arr(sp.ctrl.iter().map(|&c| vector(lift(sk.point_xy(c as usize)))).collect()))]);
+                // a rational one's weights: the same curve exactly, in either kernel
+                if let Some(w) = &sp.weights { o.set("weights",Json::Arr(w.iter().map(|&x| x.into()).collect())); }
+                o
             }
             EntKind::Curve => {
                 // a stretch of a traced or formula curve: the cubic B-spline through it, fitted

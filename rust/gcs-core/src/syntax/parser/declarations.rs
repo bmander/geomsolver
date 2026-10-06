@@ -7,6 +7,7 @@ use crate::syntax::lexer::Tok;
 use crate::syntax::words::trails_decl;
 use crate::syntax::{
     decl_head, Arg, AtRef, Decl, DeclName, Kid, KidSeed, Membership, Name, Ref, Sense, Span, StmtKind, StyleRule, Sweep,
+    Weight,
 };
 
 /// A solid's sweep arguments while the bracket list is being read.
@@ -183,6 +184,7 @@ impl<'a> P<'a> {
                 seed_spans: vec![Span::default(); 2],
                 hint_span: None,
                 knots: None,
+                weights: None,
                 curve: None,
                 computed,
                 class: Classes::default(),
@@ -390,10 +392,12 @@ impl<'a> P<'a> {
         } else {
             None
         };
-        // trailing clauses, in any order: `hint(…)`, `knots [...]`, `class …`, `in PLANE`.
+        // trailing clauses, in any order: `hint(…)`, `knots [...]`, `weights [...]`, `class …`,
+        // `in PLANE`.
         // Where a clause *would* go if it is not written is the point we are standing on now,
         // before any of them: that is what writeback appends at.
         let mut knots = None;
+        let mut weights = None;
         let mut class = Classes::default();
         let mut class_span = Span::default();
         let mut seed_at: Option<AtRef> = None;
@@ -547,6 +551,23 @@ impl<'a> P<'a> {
                     }
                 }
                 knots = Some(u);
+            } else if self.eat_word("weights") {
+                if !self.want_p('[') {
+                    return None;
+                }
+                let mut w = Vec::new();
+                while !self.eat_p(']') {
+                    let (value, text, span) = self.value_text()?;
+                    w.push(match value {
+                        Some(value) => Weight { value, text: None, span },
+                        None => Weight { value: f64::NAN, text: Some(text), span },
+                    });
+                    if !self.eat_p(',') && self.peek() != Some(&Tok::P(']')) {
+                        self.fail("expected `,` or `]`");
+                        return None;
+                    }
+                }
+                weights = Some(w);
             } else if self.peek_word("class") {
                 let (c, sp) = self.class_clause(insert);
                 if c.is_empty() {
@@ -611,6 +632,7 @@ impl<'a> P<'a> {
             seed_spans,
             hint_span: Some(hint_span),
             knots,
+            weights,
             curve: None,
             computed: None,
             class,
@@ -727,7 +749,7 @@ impl<'a> P<'a> {
         Some(Decl {
             annotations:Default::default(),kind:EntKind::Envelope,name,
             children:vec![vec![surface],vec![motion]],
-            seed:vec![],seed_text:vec![],seed_spans:vec![],hint_span:None,knots:None,curve:None,
+            seed:vec![],seed_text:vec![],seed_spans:vec![],hint_span:None,knots:None,weights:None,curve:None,
             computed:None,class,class_span,seed_at:None,seed_names:vec![],sweep:None,motion:None,angular_span:Some(crate::syntax::AngularSpan {from,to,side}),
             membership:Membership::default(),list_span:Span::new(start.lo as usize,end),close:None,mint_close:None,
         })
@@ -780,7 +802,7 @@ impl<'a> P<'a> {
         let (class,class_span) = self.class_clause(end);
         Some(Decl {
             annotations:Default::default(),kind:EntKind::Motion,name,children:vec![vec![]],
-            seed:vec![],seed_text:vec![],seed_spans:vec![],hint_span:None,knots:None,curve:None,
+            seed:vec![],seed_text:vec![],seed_spans:vec![],hint_span:None,knots:None,weights:None,curve:None,
             computed:None,class,class_span,seed_at:None,seed_names:vec![],sweep:None,motion:Some(spec),angular_span:None,membership:Membership::default(),
             list_span:Span::new(start.lo as usize,end),close:None,mint_close:None,
         })

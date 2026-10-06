@@ -166,6 +166,14 @@ impl Sketch {
             for k in &sp.knots {
                 let _ = write!(s, "{k},");
             }
+            // a contact's span constants carry the weights, and a pinned span's are never
+            // re-read: a weight edited is a recompile
+            if let Some(w) = &sp.weights {
+                let _ = write!(s, "w");
+                for x in w {
+                    let _ = write!(s, "{x},");
+                }
+            }
         }
         s.push('|');
         for c in &self.constraints {

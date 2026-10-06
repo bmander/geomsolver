@@ -33,6 +33,8 @@ fn all_constraints(seed: u32) -> Sketch {
     // six control points: three spans, so a contact is checked on an interior span too
     let ctrl: Vec<usize> = (0..6).map(|_| pt(&mut sk, &mut rng)).collect();
     let sp = sk.spline(&ctrl).unwrap();
+    // the same polygon weighted: the rational basis (`curve::weigh`) under every contact kernel
+    let spw = sk.spline_weighted(&ctrl, None, Some(vec![1.0, 2.5, 0.6, 1.8, 0.9, 1.3])).unwrap();
     let fr = sk.fixed_plane(gcs_core::plane::Basis::page(), "f");
     // a plane held where it stands and one over two free axes, with `p` and `q` as images on
     // them — so a projection's planes are inferred exactly as a document's would be
@@ -98,6 +100,7 @@ fn all_constraints(seed: u32) -> Sketch {
     let (le1, le2) = (EntRef::line(l1), EntRef::line(l2));
     let (ce1, ce2, ae) = (EntRef::circle(c1), EntRef::circle(c2), EntRef::arc(arc));
     let spe = EntRef::spline(sp);
+    let spwe = EntRef::spline(spw);
     let e = |x: EntRef| Arg::Ent(x);
     // a dimension written as an expression, standing at the number it is worth until it is
     // evaluated: `Sketch::add` binds it to the free variable it names
@@ -173,6 +176,9 @@ fn all_constraints(seed: u32) -> Sketch {
         Constraint::spline_tangent_line(&sk, spe, le2),
         Constraint::spline_curvature(&sk, spe, ce1),
         Constraint::spline_curvature(&sk, spe, ae),
+        Constraint::point_on_spline(&sk, qe, spwe),
+        Constraint::spline_tangent_line(&sk, spwe, le2),
+        Constraint::spline_curvature(&sk, spwe, ce2),
         // a projection between two held planes, and the lift over a free plane and a held one
         Constraint::project(&sk, EntRef::point(dp), pe).expect("two images on two planes that fold"),
         Constraint::new(CKind::Lift, vec![e(EntRef::point(lc)), e(pce)]),

@@ -2178,7 +2178,10 @@ impl Constraint {
         }
         if let Some((sp, t)) = self.spline_contact(sk) {
             let span = span.unwrap_or_else(|| crate::curve::span_of(sk, sp, t));
-            return crate::curve::local_knots(&sk.splines[sp].knots, span).to_vec();
+            let s = &sk.splines[sp];
+            let mut k = crate::curve::local_knots(&s.knots, span).to_vec();
+            k.extend(crate::curve::local_weights(s.weights.as_deref(), span));
+            return k;
         }
         // a curve contact carries its family's compiled body — two tapes, or a whole trace
         // block — and the numbers the instance was given.  They are the same for every contact

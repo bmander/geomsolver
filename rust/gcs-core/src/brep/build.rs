@@ -56,7 +56,11 @@ impl Profile {
                         let poles = field(e,"poles")?.arr().iter().map(vec3).collect();
                         let knots = field(e,"knots")?.arr().iter().map(|k| k.as_f64()).collect();
                         let degree = field(e,"degree")?.as_f64() as usize;
-                        ProfileEdge::Spline(Arc::new(BSpline::new(degree,knots,poles).map_err(|m| format!("profile: {m}"))?))
+                        let b = match e.get("weights") {
+                            Some(w) => BSpline::rational(degree,knots,poles,w.arr().iter().map(|x| x.as_f64()).collect()),
+                            None => BSpline::new(degree,knots,poles),
+                        };
+                        ProfileEdge::Spline(Arc::new(b.map_err(|m| format!("profile: {m}"))?))
                     }
                     k => return Err(format!("profile: an edge of kind `{k}`")),
                 });

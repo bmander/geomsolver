@@ -151,7 +151,7 @@ fn every_constraint_type_is_printable() {
 #[test]
 fn every_constraint_name_survives_the_case_round_trip() {
     let words = [
-        "point", "line", "circle", "arc", "spline", "plane", "at", "knots",
+        "point", "line", "circle", "arc", "spline", "plane", "at", "knots", "weights",
         "class", "in",
         "ground", "fix", "ccw", "cw", "branch", "component", "port", "param", "ring", "repeat",
         "cycle", "path", "true", "false",
@@ -357,6 +357,7 @@ fn a_name_declared_twice_is_an_error() {
             seed_spans: vec![Default::default(); 2],
             hint_span: None,
             knots: None,
+            weights: None,
             curve: None,
             computed: None,
             class: Default::default(),

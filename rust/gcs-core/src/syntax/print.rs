@@ -284,6 +284,11 @@ fn write_decl(out: &mut String, d: &Decl) {
         out.push_str(&u.iter().map(|&v| num(v)).collect::<Vec<_>>().join(", "));
         out.push(']');
     }
+    if let Some(w) = &d.weights {
+        out.push_str(" weights [");
+        out.push_str(&w.iter().map(|w| w.text.clone().unwrap_or_else(|| num(w.value))).collect::<Vec<_>>().join(", "));
+        out.push(']');
+    }
     if !d.class.is_empty() {
         out.push_str(" class ");
         out.push_str(&d.class.0.join(" "));

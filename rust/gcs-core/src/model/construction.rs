@@ -381,6 +381,18 @@ impl Sketch {
     /// A cubic B-spline with a knot vector of its own — a repeated interior knot is a corner.
     /// `None` if the knots are not ones this control polygon can be drawn with.
     pub fn spline_with(&mut self, ctrl: &[usize], knots: Option<Vec<f64>>) -> Option<usize> {
+        self.spline_weighted(ctrl, knots, None)
+    }
+
+    /// A rational cubic B-spline: a weight per control point (`curve::weigh`), `None` or all 1
+    /// being the polynomial curve, which is stored without them.  `None` where the knots or the
+    /// weights are not ones this control polygon can be drawn with.
+    pub fn spline_weighted(
+        &mut self,
+        ctrl: &[usize],
+        knots: Option<Vec<f64>>,
+        weights: Option<Vec<f64>>,
+    ) -> Option<usize> {
         if ctrl.iter().any(|&c| c >= self.points.len()) {
             return None;
         }
@@ -388,9 +400,13 @@ impl Sketch {
         if !crate::curve::knots_valid(&knots, ctrl.len()) {
             return None;
         }
+        if weights.as_ref().is_some_and(|w| !crate::curve::weights_valid(w, ctrl.len())) {
+            return None;
+        }
         self.splines.push(SplineE {
             ctrl: ctrl.iter().map(|&c| c as u32).collect(),
             knots,
+            weights: weights.filter(|w| w.iter().any(|&x| x != 1.0)),
             class: Classes::default(),
         });
         Some(self.splines.len() - 1)

@@ -38,6 +38,7 @@ const DOCS: &[(&str, Shape, i64, State)] = &[
     ("k33", (11, 1, 0, 0), 0, State::Well),
     ("pythagoras", (13, 8, 0, 0), 0, State::Well),
     ("spline_follower", (16, 1, 0, 0), 14, State::Under),
+    ("nurbs", (17, 2, 0, 0), 2, State::Under),
     ("peaucellier", (13, 9, 1, 0), 1, State::Under),
     ("peaucellier_rail", (12, 9, 1, 0), 1, State::Under),
     ("jansen", (13, 12, 1, 0), 1, State::Under),

@@ -813,6 +813,16 @@ Conventions:
   control points are non-zero at any t, so a contact addresses one *span* (fixed-width blocks);
   the span is derived from t, not stored, and `Sketch::topology_key` carries it — a contact
   walking past a knot is a recompile.
+- **A spline may be rational** (`spline(…) weights [1, w, w, 1]`, `SplineE::weights`, `None` for
+  all 1): document data like the knots, so the curve stays linear in its control points over the
+  rational basis `Rᵢ = Bᵢwᵢ / ΣBⱼwⱼ` (`curve::weigh`, applied after `basis` in `eval_on` and the
+  kernels' `span_frame`; all 1 divides nothing, so polynomial splines keep their bits). A spline
+  contact's consts are `SPAN_C` = knot window then the span's weights; `topology_key` carries
+  them. Knot insertion is homogeneous; a deleted control point takes its weight (`graft`). The
+  trailer's entries are `syntax::Weight`s, settled over the scope by expansion (E103 if not a
+  positive plain number). The recipe writes `"weights"`, so the profile is `BSpline::rational` in
+  our kernel and in OCCT's (`solvent_cad_bspline` takes a weights pointer). `nurbs.sv`,
+  `tests/weighted_spline.rs`.
 - A control polygon is edited three ways.  *Inserting* is `curve::insert_control` (Boehm's knot
   insertion: C(t) unchanged, every contact keeps parameter and place; `DEGREE - 1` neighbours
   move, keeping identity).  *Deleting* shortens the curve: `Sketch::min_children` is the general
