@@ -81,7 +81,7 @@ flank := envelope(side, under: cutting, from: -30deg, to: 30deg)
 
 // the gauge, in a plane square to the front through the line 1.9 above the centre (its u the
 // front's x, its v the front's normal, into the face)
-gauge_view := plane hint(x: 0, y: 0, z: 1.9)
+gauge_view := plane
 fix(x == 0, y == 0, z == 1.9) gauge_view
 fix(x == 1, y == 0, z == 0) gauge_view.u
 fix(x == 0, y == 1, z == 0) gauge_view.v

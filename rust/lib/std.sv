@@ -12,13 +12,13 @@
 // turned a quarter, z right and x to the left.  `origin` is a point drawn in the front plane at
 // its origin.
 component StandardDatums() {
-  x := axis hint(x: 1, y: 0, z: 0)
+  x := axis
   fix(x == 1, y == 0, z == 0, px == 0, py == 0, pz == 0) x
-  y := axis hint(x: 0, y: 1, z: 0)
+  y := axis
   fix(x == 0, y == 1, z == 0, px == 0, py == 0, pz == 0) y
-  z := axis hint(x: 0, y: 0, z: 1)
+  z := axis
   fix(x == 0, y == 0, z == 1, px == 0, py == 0, pz == 0) z
-  back := axis hint(x: -1, y: 0, z: 0)
+  back := axis
   fix(x == -1, y == 0, z == 0, px == 0, py == 0, pz == 0) back
   front := plane(u: x, v: z)
   top := plane(u: x, v: y)

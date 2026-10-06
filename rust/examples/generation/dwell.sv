@@ -45,7 +45,7 @@ component FourBar(o2: point, o4: point, r2: Length, r3: Length, r4: Length, beta
 
 in std.front {
   o2 := point
-  o4 := point hint(x: 30, y: 0)
+  o4 := point
   fix(x == 0, y == 0) o2
   fix(x == 30, y == 0) o4
 

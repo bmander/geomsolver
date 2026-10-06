@@ -16,7 +16,7 @@ use wheel
 use point
 
 // the drill's side datum: u down the drill's axis, v along y, so x is its normal
-down := axis hint(x: 0, y: 0, z: -1)
+down := axis
 fix(x == 0, y == 0, z == -1) down
 side := plane(u: down, v: std.y)
 fix(x == 0, y == 0, z == 0) side
@@ -94,7 +94,7 @@ drill := solid(fluted)
 shank union drill
 
 // square to the axis halfway along the flutes: where the drawing cuts its section
-section_plane := plane hint(x: 0, y: 0, z: configuration.fluted_length / 2)
+section_plane := plane
 fix(x == 0, y == 0, z == configuration.fluted_length / 2) section_plane
 fix(x == 1, y == 0, z == 0) section_plane.u
 fix(x == 0, y == 1, z == 0) section_plane.v

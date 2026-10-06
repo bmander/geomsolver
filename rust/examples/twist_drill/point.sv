@@ -39,7 +39,7 @@ component PointCone(side: plane, top: Length, cone: Angle, tilt: Angle, height: 
 preview {
   unit mm
   // the drill's side datum: u down the drill's axis, v along y, so x is its normal
-  down := axis hint(x: 0, y: 0, z: -1)
+  down := axis
   fix(x == 0, y == 0, z == -1) down
   side := plane(u: down, v: std.y)
   fix(x == 0, y == 0, z == 0) side

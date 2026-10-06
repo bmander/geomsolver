@@ -19,7 +19,10 @@ drawing satisfies them, then check that the diagnosis agrees (1.16).
 | `claim vertical rail` | check a consequence without enforcing it (1.10) |
 
 Deleting every seed leaves the set of solutions unchanged, without exception: a held number is
-stated by `fix`, pinned with `==` like any pin (`fix(x == 0, y == 0) a`), never by a seed.
+stated by `fix`, pinned with `==` like any pin (`fix(x == 0, y == 0) a`), never by a seed. A held
+number is its own seed, so `a := point` beside that `fix` needs no `hint`; a `hint` keeps only
+what no `fix` holds (`hint(y: 7)` beside `fix(x == 3) a`), and the app's writeback takes a held
+number out of one.
 
 **A point stands in space unless it is drawn `in` a plane.** A 2D drawing says `use std` and draws
 in the front plane: `in std.front { … }` around its geometry (1.13). Values and solids may
@@ -772,7 +775,7 @@ A plane standing off another cannot share its axes, which pass through the other
 takes its own. Held outright, the stand-off a section or a loft's end needs:
 
 ```sv
-end := plane hint(x: 0mm, y: 40mm, z: 0mm)
+end := plane
 fix(x == 0mm, y == 40mm, z == 0mm) end
 fix(x == 1, y == 0, z == 0) end.u
 fix(x == 0, y == 0, z == 1) end.v

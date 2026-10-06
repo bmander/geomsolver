@@ -503,6 +503,39 @@ fn a_gauge_a_component_wrote_is_not_repeated() {
     assert_eq!(edit.text, gcs_core::examples::GEAR, "nothing to say, and nothing said");
 }
 
+/// **A held number is its own seed** — so fixing a point takes its numbers out of its `hint(…)`,
+/// the whole clause where it holds them all, and letting it go writes them back: the source
+/// never says one number twice, and never loses where a point it stops holding stands.
+#[test]
+fn a_fix_takes_the_numbers_it_holds_out_of_the_hint() {
+    let prog = prog_of(DOC);
+    let mut e = elaborate(&prog);
+    assert!(e.ok());
+    let b = e.map.ent_named("b").unwrap();
+    let c = e.map.ent_named("c").unwrap();
+    let x = e.sketch.points[c.i()].x as usize;
+    e.sketch.params[x].fixed = true;
+    e.sketch.fix_point(b.i(), true);
+    let held = reconciled(&mut e);
+    assert!(held.text.contains("b := point\n"), "{}", held.text);
+    assert!(held.text.contains("c := point hint(y: 70)\n"), "{}", held.text);
+    assert!(held.text.contains("fix(x == 40) c\n"), "{}", held.text);
+    let back = elaborate(&prog_of(&held.text));
+    assert!(back.ok(), "{:?}", back.errors().map(|d| &d.message).collect::<Vec<_>>());
+    let at = |e: &gcs_core::program::Elaborated, r: EntRef| {
+        let p = &e.sketch.points[r.i()];
+        (e.sketch.params[p.x as usize].value, e.sketch.params[p.y as usize].value)
+    };
+    assert_eq!(at(&back, b), (100.0, 0.0), "held where the fix says, with no hint");
+    assert_eq!(at(&back, c), (40.0, 70.0));
+
+    // and let go, the seeds come back, so the drawing re-reads where it stood
+    e.sketch.params[x].fixed = false;
+    e.sketch.fix_point(b.i(), false);
+    let free = reconciled(&mut e);
+    assert_eq!(free.text, DOC, "both fixes gone and both hints back, byte for byte");
+}
+
 /// A construction flag and a gauge are neither an entity nor a constraint, so nothing about the
 /// two counts notices them: they are read off the drawing and compared with what the source says.
 #[test]
@@ -521,6 +554,7 @@ fn a_gauge_is_spliced_but_presentation_stays_out_of_model_source() {
     assert!(edit.text.contains("ab := line(a, b)      // the base"), "the comment stayed");
     assert!(edit.text.contains("fix(x == 40, y == 70) c\n"), "{}", edit.text);
     assert!(!edit.text.contains(") a\n"), "the one that was let go is gone:\n{}", edit.text);
+    assert!(edit.text.contains("c := point\n"), "the fix is its seed, and the hint goes:\n{}", edit.text);
 
     let back = elaborate(&prog_of(&edit.text));
     assert!(back.ok(), "{:?}", back.errors().map(|d| &d.message).collect::<Vec<_>>());

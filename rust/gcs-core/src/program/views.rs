@@ -133,6 +133,24 @@ pub(crate) fn origins_on_axes(sk: &mut Sketch, map: &SourceMap) -> Vec<Diag> {
     out
 }
 
+/// Each plane's axes stood through its origin again, the first plane over an axis taking it, as
+/// the plane's build stood them (`Sketch::push_plane`) — once `fix` has said where the planes
+/// stand and which way their axes run, so a plane held off the world origin carries its axes
+/// with it and needs no `hint` saying where it is.  An axis whose place a `fix` holds stays.
+pub(crate) fn stand_axes(sk: &mut Sketch) {
+    let mut stood = vec![false; sk.axes.len()];
+    for p in 0..sk.planes.len() {
+        let pl = &sk.planes[p];
+        let o = pl.o.map(|q| sk.params[q as usize].value);
+        for r in [pl.u as usize, pl.v as usize] {
+            let free = sk.axes[r].placed && !sk.axes[r].a.iter().any(|&q| sk.params[q as usize].fixed);
+            if free && !std::mem::replace(&mut stood[r], true) {
+                sk.stand_axis_through(r, o);
+            }
+        }
+    }
+}
+
 /// W113 for two planes that lie on one another — turned alike up to a turn in themselves and
 /// standing in one place — where a relation reads points drawn in each: one plane in space, read
 /// twice, and the relation is read in space where the plane would do.  Permitted (a part's plane

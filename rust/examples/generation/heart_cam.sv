@@ -26,8 +26,8 @@ rr := 6       // the roller
 in std.front {
   o := point
   fix(x == 0, y == 0) o
-  s0 := point hint(x: 0, y: 0)
-  s1 := point hint(x: 10, y: 0)
+  s0 := point
+  s1 := point
   fix(x == 0, y == 0) s0
   fix(x == 10, y == 0) s1
   path := line(s0, s1)                    // the follower's line, through the cam's centre

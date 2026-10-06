@@ -174,10 +174,18 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
         };
         let mut mine: Vec<Splice> = Vec::new();
         let mut missing = false;
-        // a number a `fix` holds is stated there: no seed of it is written, or counted missing
+        // a number a `fix` holds is stated there, and is its own seed: no seed of it is written,
+        // or counted missing — and one the clause wrote is taken out of it (`fix(x == 3) p`
+        // makes `hint(x: 3, y: 7)` say `hint(y: 7)`)
         let held = |p: u32| sk.params[p as usize].fixed;
+        let written = |i: usize| d.seed_spans.get(i).is_some_and(|s| !s.is_empty());
+        let mut redundant = false;
         for (i, p) in sk.own_params(parent).iter().enumerate() {
-            if omit_radius || held(*p) { continue; }
+            if omit_radius { continue; }
+            if held(*p) {
+                redundant |= written(i);
+                continue;
+            }
             let v = sk.seed_value(parent, *p);
             let text = d.seed_text.get(i).and_then(|t| t.as_ref());
             let (sp, miss) = one(v, text, d.seed_spans.get(i).copied().unwrap_or_default());
@@ -232,6 +240,18 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
         }
 
         if !missing {
+            // the clause rewritten without what a `fix` holds: the numbers it keeps as they stand
+            // (spliced above where the solve moved one), and the whole clause gone with the
+            // space before it where it keeps none
+            if let Some(at) = d.hint_span.filter(|at| redundant && !at.is_empty()) {
+                let own = sk.own_params(parent);
+                let free = own.iter().enumerate()
+                    .filter(|&(i, &p)| written(i) && !held(p))
+                    .map(|(i, &p)| (i, sk.seed_value(parent, p)));
+                let hint = free_clause(parent.kind, d, prog.text(), free);
+                mine.retain(|s| s.at.lo >= at.hi || s.at.hi <= at.lo);
+                mine.push(clause_splice(prog.text(), at, (!hint.is_empty()).then_some(hint)));
+            }
             edits.extend(mine);
             continue;
         }
@@ -253,13 +273,10 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
         } else if own.iter().any(|&p| held(p)) {
             // only the numbers no `fix` holds: `hint(y: 7)` beside `fix(x == 3) p`, and none at
             // all where every one is held
-            let fields = parent.kind.fields().iter()
-                .filter(|(_, f)| *f == crate::model::Field::Scalar);
-            let free: Vec<String> = fields.zip(&own).zip(&pose)
-                .filter(|((_, &p), _)| !held(p))
-                .map(|(((n, _), _), v)| format!("{n}: {}", num(*v)))
-                .collect();
-            if free.is_empty() { String::new() } else { format!("hint({})", free.join(", ")) }
+            let free = own.iter().zip(&pose).enumerate()
+                .filter(|&(_, (&p, _))| !held(p))
+                .map(|(i, (_, &v))| (i, v));
+            free_clause(parent.kind, d, prog.text(), free)
         } else {
             syntax::hint_clause(d, &pose)
         };
@@ -308,13 +325,24 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
             }
             syntax::decl_args(&d2)
         });
-        if list.is_none() && hint.is_empty() {
+        // a clause the source wrote whose every number a `fix` now holds goes, with the space
+        // before it
+        let gone = (redundant && hint.is_empty() && !at.is_empty())
+            .then(|| clause_splice(prog.text(), at, None));
+        if list.is_none() && gone.is_none() && hint.is_empty() {
             // nothing to write here: what moved is in a slot the source wrote, and splices there
             edits.extend(mine);
             continue;
         }
         // a slot the source *did* write still splices in place; only what it did not is here
         edits.extend(mine.into_iter().filter(|s| s.at.lo >= at.hi || s.at.hi <= at.lo));
+        if let Some(gone) = gone {
+            edits.push(gone);
+            if let Some(args) = list {
+                edits.push(Splice { at: d.list_span, with: args });
+            }
+            continue;
+        }
         match list {
             // Both are missing and both would go at the same offset — the parser records the
             // clause's home just past the name when there is no clause — so they are written as
@@ -349,6 +377,26 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
         return Edit::none(prog, None);
     }
     Edit::spliced(prog, edits, Kind::Numeric)
+}
+
+/// A `hint(…)` clause of the numbers given, each by its field's name: a seed written as an
+/// expression kept as written (a solve does not rewrite arithmetic), any other as the number it
+/// came to.  Empty where none is given.
+fn free_clause(kind: EntKind, d: &Decl, text: &str, free: impl Iterator<Item = (usize, f64)>) -> String {
+    let names: Vec<&str> = kind.fields().iter()
+        .filter(|(_, f)| *f == crate::model::Field::Scalar)
+        .map(|(n, _)| *n)
+        .collect();
+    let keys: Vec<String> = free
+        .filter_map(|(i, v)| {
+            let value = match (d.seed_text.get(i).and_then(|t| t.as_ref()), d.seed_spans.get(i)) {
+                (Some(_), Some(s)) if !s.is_empty() => s.slice(text).to_string(),
+                _ => num(v),
+            };
+            Some(format!("{}: {value}", names.get(i)?))
+        })
+        .collect();
+    if keys.is_empty() { String::new() } else { format!("hint({})", keys.join(", ")) }
 }
 
 /// Each unknown the document declares (`param beta: Angle hint(30deg)`), read by a dimension or

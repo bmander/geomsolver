@@ -362,3 +362,39 @@ d := point hint(bearing: 90deg, at: k)
     let e = elaborate(&prog);
     assert!(e.errors().any(|d| d.message.contains("are a place in a plane")), "{:?}", e.diags);
 }
+
+/// **A held number is its own seed**: whatever a `fix` holds needs no `hint(…)` saying it again,
+/// so a document with the hints and one without elaborate to the same numbers, bit for bit —
+/// the places of a plane held off the origin, the axes it minted standing through it, an axis
+/// held along a line whose ends are held, and a point held in that plane.
+#[test]
+fn a_fix_is_its_own_seed() {
+    let with = "use std
+P := plane hint(x: 5, y: 40, z: -3)
+fix(x == 5, y == 40, z == -3) P
+fix(x == 1, y == 0, z == 0) P.u
+fix(x == 0, y == 0, z == 1) P.v
+in P {
+  q := point hint(x: 2, y: 9)
+  fix(x == 2, y == 9) q
+}
+in std.front {
+  a := point hint(x: 10, y: 20)
+  b := point hint(x: 30, y: 25)
+  fix(x == 10, y == 20) a
+  fix(x == 30, y == 25) b
+  l := line(a, b)
+  m := line(a, hint(x: 10, y: 40))
+}
+Q := plane(u: l, v: m)
+";
+    let without = with.replace(" hint(x: 5, y: 40, z: -3)", "")
+        .replace(" hint(x: 2, y: 9)", "")
+        .replace(" hint(x: 10, y: 20)", "")
+        .replace(" hint(x: 30, y: 25)", "");
+    assert_ne!(with, without);
+    let (a, b) = (read(with), read(&without));
+    let values = |e: &Elaborated| e.sketch.params.iter().map(|p| (p.name.clone(), p.value, p.fixed))
+        .collect::<Vec<_>>();
+    assert_eq!(values(&a), values(&b));
+}

@@ -87,7 +87,7 @@ path := leg.toe over theta in (0, 360)
 
 // level ground of unstated height, touching the stride at its bottom
 in std.front {
-  g0 := point hint(x: -60, y: -92)
+  g0 := point hint(y: -92)
   g1 := point hint(x: 0, y: -92)
   ground := horizontal line(g0, g1)
   g0 distance(60, along: x) g1

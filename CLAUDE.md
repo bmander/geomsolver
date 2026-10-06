@@ -1003,8 +1003,12 @@ Conventions:
   **A `fix` states what it holds** ([0.34]): `fix(x == 0, y == 0) p`, `fix(x == 5) p` (partial),
   `fix(r == 25) c`, `fix(half == 30deg) k` — pinned slots named by the entity's scalar fields
   (`Fix`'s spec is their union; `apply_gauge` checks the kind's).  `ground`, `fix c.r` and a bare
-  `fix p` are gone (`relations::fix_spelling` refuses the others where written).  Fixes are applied
-  before `settle_deferred` (`relations::is_fix`), which never writes a held number.
+  `fix p` are gone (`relations::fix_spelling` refuses the others where written).  **A held number
+  is its own seed**: fixes are applied once points have their places (`entities::places`), before
+  `axes_along`, motions, envelopes and `settle_deferred` (`relations::is_fix`), and
+  `views::stand_axes` then stands each plane's free axes through its held origin, so no `hint`
+  repeats a `fix`.  `commit_seeds` takes a held number out of a written clause (the whole clause
+  where all are held) and writes it back when the hold goes.  `tests/seeds.rs::a_fix_is_its_own_seed`.
   `edit::reconcile` diffs holds per entity and field (`gauge_key`, `held_refs` over
   `program::holds`) and appends a statement built by `program::lift_gauge` with the numbers; a root choice under a key no triple spells stays the
   `branch(KEY, ±1)` statement (`StmtKind::Branch`).

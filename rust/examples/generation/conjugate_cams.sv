@@ -25,7 +25,7 @@ component Lobe(c: point, a: Length, b: Length, u: Angle) {
 
 in std.front {
   o1 := point
-  o2 := point hint(x: 40, y: 0)
+  o2 := point
   fix(x == 0, y == 0) o1
   fix(x == 40, y == 0) o2
   lc := point hint(x: 3, y: 0)

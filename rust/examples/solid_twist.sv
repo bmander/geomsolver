@@ -6,7 +6,7 @@ length := 40mm
 half := 10mm
 reach := 12mm
 
-end_plane := plane hint(x: 0mm, y: length, z: 0mm)
+end_plane := plane
 fix(x == 0mm, y == length, z == 0mm) end_plane
 fix(x == 1, y == 0, z == 0) end_plane.u
 fix(x == 0, y == 0, z == 1) end_plane.v
