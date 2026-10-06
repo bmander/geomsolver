@@ -28,28 +28,28 @@ fn build(src: &str) -> program::Elaborated {
 const DRAWN: &str = "\
   o := point
   c := circle(center: o) hint(r: 22)
-  s0 := point hint(x: 20, y: 0)
-  s1 := point hint(x: 20, y: 10)
+  s0 := point hint((20, 0))
+  s1 := point hint((20, 10))
   slide := line(s0, s1)
-  t0 := point hint(x: 18, y: -0.84)
-  t1 := point hint(x: 18, y: 0.84)
-  t2 := point hint(x: 24, y: 3.03)
-  t3 := point hint(x: 24, y: -3.03)
+  t0 := point hint((18, -0.84))
+  t1 := point hint((18, 0.84))
+  t2 := point hint((24, 3.03))
+  t3 := point hint((24, -3.03))
   rack_flank := line(t1, t2)
 ";
 
 /// What it states and makes: the numbers, the blank, the rack's tooth and its sweep, and the
 /// flank's surface — a prism's side — and its envelope.
 const MADE: &str = "\
-fix(x == 0, y == 0) o
+fix((0, 0)) o
 radius(22mm) c
 blank := solid(face(c), depth: 6mm)
-fix(x == 20, y == 0) s0
-fix(x == 20, y == 10) s1
-fix(x == 18, y == -0.842856) t0
-fix(x == 18, y == 0.842856) t1
-fix(x == 24, y == 3.026666) t2
-fix(x == 24, y == -3.026666) t3
+fix((20, 0)) s0
+fix((20, 10)) s1
+fix((18, -0.842856)) t0
+fix((18, 0.842856)) t1
+fix((24, 3.026666)) t2
+fix((24, -3.026666)) t3
 tooth := face(t0, t1, rack_flank, t3, -> close)
 construction rack_tooth := solid(tooth, from: -8mm, to: 2mm)
 turn := motion(about: o, ratio: 1)
@@ -70,10 +70,10 @@ fn rack() -> String {
 fn across(along: f64) -> String {
     format!("{}\
 cut := plane
-fix(x == 0, y == 0, z == 1.9) cut
-fix(x == 1, y == 0, z == 0) cut.u
-fix(x == 0, y == 1, z == 0) cut.v
-p := point in cut hint(x: 20, y: {along})
+fix(origin == (0, 0, 1.9)) cut
+fix(dir == (1, 0, 0)) cut.u
+fix(dir == (0, 1, 0)) cut.v
+p := point in cut hint((20, {along}))
 fix(y == {along}) p
 p coincident flank
 ", rack())

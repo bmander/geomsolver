@@ -616,7 +616,7 @@ pub fn call_word(w: &str) -> bool {
 /// Where an operator stands to its operand(s) — see `CKind::operator`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Fixity {
-    /// `radius(25) circle1`, `horizontal line1`, `fix(x == 0, y == 0) p1`
+    /// `radius(25) circle1`, `horizontal line1`, `fix((0, 0)) p1`
     Prefix,
     /// `p1 distance(80) p2`, `line1 tangent circle1`
     Infix,
@@ -1040,22 +1040,27 @@ impl CKind {
             CKind::AxisCoincident => &[("a", S::Axis), ("b", S::Axis)],
             CKind::PlaneParallel => &[("p1", S::Plane), ("p2", S::Plane)],
             CKind::PlaneDistance => &[("p1", S::Plane), ("p2", S::Plane), ("d", S::Length)],
-            // the entity, and the numbers it holds, each pinned under the name of the field it
-            // is (`model::EntKind::fields`): `fix(x == 0, y == 0) p`, `fix(r == 25) c`,
-            // `fix(half == 30deg) k`.  Every scalar field a kind owns is a slot here, and which
-            // of them the entity has is the gauge's own check
+            // the entity, and the numbers it holds, each pinned under the member it is
+            // (`model::EntKind::members`): `fix((0, 0)) p` fills `x` and `y`, `fix(r == 25) c`,
+            // `fix(dir == (1, 0, 0)) t` an axis's `dir.x`, `dir.y` and `dir.z`.  Every member
+            // a kind owns is a slot here, and which of them the entity has is the gauge's own
+            // check
             CKind::Fix => &[
                 ("of", S::Scalar),
                 ("x", S::Param),
                 ("y", S::Param),
-                // an axis's direction (and, from #81, a point in space)
+                // a point in space's third
                 ("z", S::Param),
                 ("r", S::Param),
                 ("half", S::Param),
-                // where an axis is: the point on it nearest the origin
-                ("px", S::Param),
-                ("py", S::Param),
-                ("pz", S::Param),
+                ("dir.x", S::Param),
+                ("dir.y", S::Param),
+                ("dir.z", S::Param),
+                // where an axis is, the point on it nearest the world's origin; where a plane
+                // stands, its own origin
+                ("origin.x", S::Param),
+                ("origin.y", S::Param),
+                ("origin.z", S::Param),
             ],
             // the predicate is about the triangle, so all three stand in the parentheses
             CKind::Ccw | CKind::Cw => &[("a", S::Point), ("b", S::Point), ("c", S::Point)],

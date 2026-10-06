@@ -10,8 +10,8 @@ component IndexedCuts(tool: solid, target: solid, indexing: motion, count: Int) 
 }
 
 in std.front {
-  construction centerline shaft := line(std.origin, hint(x: 0, y: 1))
-  fix(x == 0, y == 1) shaft.p2
+  construction centerline shaft := line(std.origin, hint((0, 1)))
+  fix((0, 1)) shaft.p2
 }
 turn := motion(about: shaft)
 in std.top {

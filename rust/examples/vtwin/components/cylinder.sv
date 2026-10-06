@@ -22,26 +22,26 @@ component Cylinder(f: group, fw: Length, dims: group) {
   back := dims.D / 2 + dims.wall
 
   // Body outline, from the open mouth to the head.
-  k_bl := point hint(at: f.axes, x: mouth_u, y: hw)
-  k_br := point hint(at: f.axes, x: mouth_u, y: -hw)
-  k_tr := point hint(at: f.axes, x: top_u, y: -hw)
-  k_tl := point hint(at: f.axes, x: top_u, y: hw)
+  k_bl := point hint(at: f.axes, (mouth_u, hw))
+  k_br := point hint(at: f.axes, (mouth_u, -hw))
+  k_tr := point hint(at: f.axes, (top_u, -hw))
+  k_tl := point hint(at: f.axes, (top_u, hw))
   (mouth := line(k_bl, k_br)) -> (side_r := line(k_br, k_tr)) -> (lid := line(k_tr, k_tl)) ->
     (side_l := line(k_tl, k_bl)) -> close
 
   // Both bore walls appear in section; only one half is revolved into the cut.
-  b_bl := point hint(at: f.axes, x: mouth_u, y: dims.D / 2)
-  b_br := point hint(at: f.axes, x: mouth_u, y: -dims.D / 2)
-  b_tr := point hint(at: f.axes, x: head_u, y: -dims.D / 2)
-  b_tl := point hint(at: f.axes, x: head_u, y: dims.D / 2)
+  b_bl := point hint(at: f.axes, (mouth_u, dims.D / 2))
+  b_br := point hint(at: f.axes, (mouth_u, -dims.D / 2))
+  b_tr := point hint(at: f.axes, (head_u, -dims.D / 2))
+  b_tl := point hint(at: f.axes, (head_u, dims.D / 2))
   bore_l := line(b_bl, b_tl)
   bore_r := line(b_br, b_tr)
   hd := line(b_tl, b_tr)
-  m0 := point hint(at: f.axes, x: mouth_u, y: 0mm)
-  hx := point hint(at: f.axes, x: head_u, y: 0mm)
+  m0 := point hint(at: f.axes, (mouth_u, 0mm))
+  hx := point hint(at: f.axes, (head_u, 0mm))
 
   // The air port and pivot shank enter through the plate-side face.
-  pt := point hint(at: f.axes, x: dims.a, y: 0mm)
+  pt := point hint(at: f.axes, (dims.a, 0mm))
   port := circle(center: pt) hint(r: dims.dport / 2)
   radius(dims.dport / 2) port
   shank := circle(center: f.u.p1) hint(r: dims.trapfit / 2)
@@ -49,16 +49,16 @@ component Cylinder(f: group, fw: Length, dims: group) {
 
   // The bolt head slides in from the left; the slot holds it against the face wall.
   pkt := std.Hex(f.u.p1, ax, af: dims.boltaf, phase: 90deg)
-  t0 := point hint(at: f.axes, x: trapw / 2, y: hw)
-  t1 := point hint(at: f.axes, x: trapw / 2, y: -trapd)
-  t2 := point hint(at: f.axes, x: -trapw / 2, y: -trapd)
-  t3 := point hint(at: f.axes, x: -trapw / 2, y: hw)
+  t0 := point hint(at: f.axes, (trapw / 2, hw))
+  t1 := point hint(at: f.axes, (trapw / 2, -trapd))
+  t2 := point hint(at: f.axes, (-trapw / 2, -trapd))
+  t3 := point hint(at: f.axes, (-trapw / 2, hw))
   trap0 := line(t0, t1)
   trap1 := line(t1, t2)
   trap2 := line(t2, t3)
 
   // Witness point for the head and side wall thicknesses.
-  h0 := point hint(at: f.axes, x: top_u, y: dims.D / 2)
+  h0 := point hint(at: f.axes, (top_u, dims.D / 2))
 
   // The outside is a rectangle centered on the bore axis. One axial dimension locates its mouth.
   mouth perpendicular ax
@@ -126,7 +126,7 @@ preview {
   unit mm
   in std.front {
     up := point
-    fix(x == 0, y == 40) up
+    fix((0, 40)) up
     axes := std.Turned(std.origin, up)
     cyl := Cylinder(axes, fw: components.dims.fwA, dims: components.dims.vtwin_dims)
   }

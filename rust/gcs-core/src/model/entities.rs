@@ -222,6 +222,35 @@ impl EntKind {
     ///
     /// `None` for a kind whose parameter count is not fixed — a spline's control polygon is as
     /// long as somebody drew it, so a curve cannot be written over one by name.
+    /// What the source calls each number the kind owns, in the order `fields` lists its scalars:
+    /// the key a `hint(…)` seeds and a `fix(…)` pins.  A point *is* its place, so its numbers are
+    /// its own `x`, `y` and `z`; an axis has a direction and an origin, a plane an origin, each a
+    /// vector whose components are `dir.x`, `origin.y`, … (`vectors`).
+    pub fn members(self) -> &'static [&'static str] {
+        match self {
+            EntKind::Point => &["x", "y", "z"],
+            EntKind::Circle | EntKind::Sphere | EntKind::Cylinder | EntKind::Arc => &["r"],
+            EntKind::Cone => &["half"],
+            EntKind::Axis => &["dir.x", "dir.y", "dir.z", "origin.x", "origin.y", "origin.z"],
+            EntKind::Plane => &["origin.x", "origin.y", "origin.z"],
+            EntKind::Line | EntKind::Spline | EntKind::Curve | EntKind::Face | EntKind::Solid
+            | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch
+            | EntKind::Seam | EntKind::Vertex | EntKind::Edge => &[],
+        }
+    }
+
+    /// The vectors among `members`, each by its key and its first member: `""` is the entity
+    /// itself — `fix((0, 0)) p`, `hint((3, 4))` — and is a point's, as many components as the
+    /// point owns (two in a plane, three in space); `dir` and `origin` have three.
+    pub fn vectors(self) -> &'static [(&'static str, usize)] {
+        match self {
+            EntKind::Point => &[("", 0)],
+            EntKind::Axis => &[("dir", 0), ("origin", 3)],
+            EntKind::Plane => &[("origin", 0)],
+            _ => &[],
+        }
+    }
+
     pub fn scalar_names(self, n: &str) -> Option<Vec<String>> {
         let pt = |f: &str| vec![format!("{n}.{f}.x"), format!("{n}.{f}.y")];
         Some(match self {

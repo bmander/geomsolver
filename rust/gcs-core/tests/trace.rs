@@ -24,8 +24,8 @@ component involute(c: circle, phase: Angle, u: Angle) {
 }
 
 component unwind(c: circle, datum: line, phase: Angle, u: Angle) {
-  t := point hint(x: c.center.x + c.r * cos(u + phase), y: c.center.y + c.r * sin(u + phase))
-  p := point hint(x: c.center.x + c.r * (cos(u + phase) + 3 * u * pi / 180 * sin(u + phase)), y: c.center.y + c.r * (sin(u + phase) - 3 * u * pi / 180 * cos(u + phase)))
+  t := point hint((c.center.x + c.r * cos(u + phase), c.center.y + c.r * sin(u + phase)))
+  p := point hint((c.center.x + c.r * (cos(u + phase) + 3 * u * pi / 180 * sin(u + phase)), c.center.y + c.r * (sin(u + phase) - 3 * u * pi / 180 * cos(u + phase))))
   rad := line(c.center, t)
   s := line(t, p)
   t coincident c
@@ -46,8 +46,8 @@ string := unwind(base, datum, phase: 0).p over u in (5, 60)
 
 in std.front {
 radius(20) base
-fix(x == 0, y == 0) o
-fix(x == 1, y == 0) ax
+fix((0, 0)) o
+fix((1, 0)) ax
 }
 ";
 
@@ -93,7 +93,7 @@ fn the_taut_string_traces_the_involute() {
 /// perpendicular to the radius at the tangent point, as long as the arc unwound.
 #[test]
 fn a_point_lands_on_a_traced_curve() {
-    let src = format!("{DOC}in std.front {{\nq := point hint(x: 28, y: 22)\nq coincident string hint(t: 30)\n}}\n");
+    let src = format!("{DOC}in std.front {{\nq := point hint((28, 22))\nq coincident string hint(t: 30)\n}}\n");
     let mut e = build(&src);
     assert!(e.ok());
     let r = solve(&mut e.sketch, SolveOpts::default());
@@ -122,7 +122,7 @@ fn a_point_lands_on_a_traced_curve() {
 /// checked at once.
 #[test]
 fn the_trace_jacobian_matches_a_finite_difference() {
-    let src = format!("{DOC}in std.front {{\nq := point hint(x: 28, y: 22)\nq coincident string hint(t: 30)\n}}\n");
+    let src = format!("{DOC}in std.front {{\nq := point hint((28, 22))\nq coincident string hint(t: 30)\n}}\n");
     let e = build(&src);
     assert!(e.ok());
     fd_jacobian(&e.sketch, 1e-4);
@@ -134,7 +134,7 @@ fn the_trace_jacobian_matches_a_finite_difference() {
 #[test]
 fn moving_the_circle_carries_the_traced_curve() {
     let doc = DOC.replace("radius(20) base", "radius(26) base");
-    let src = format!("{doc}in std.front {{\nq := point hint(x: 28, y: 22)\nq coincident string hint(t: 30)\n}}\n");
+    let src = format!("{doc}in std.front {{\nq := point hint((28, 22))\nq coincident string hint(t: 30)\n}}\n");
     let mut e = build(&src);
     assert!(e.ok());
     let r = solve(&mut e.sketch, SolveOpts::default());
@@ -163,7 +163,7 @@ component wander(c: circle, u: Angle) {
   t distance(c.r * u * pi / 180) p
 }
 in std.front {
-o := point hint(x: 0, y: 0)
+o := point hint((0, 0))
 base := circle(center: o) hint(r: 20)
 }
 w := wander(base).p over u in (0, 90)
@@ -186,11 +186,11 @@ fn a_block_holds_declarations_and_constraints_only() {
 use std
 component odd(c: circle, u: Angle) {
   p := point
-  fix(x == 0, y == 0) p
+  fix((0, 0)) p
   p coincident c.center
 }
 in std.front {
-o := point hint(x: 0, y: 0)
+o := point hint((0, 0))
 base := circle(center: o) hint(r: 20)
 }
 w := odd(base).p over u in (0, 1)
@@ -336,9 +336,9 @@ base := circle(center: o) hint(r: 20)
 w := involute(base, datum, phase: 0).p over u in (5, 60)
 in std.front {
 radius(20) base
-fix(x == 0, y == 0) o
-fix(x == 1, y == 0) ax
-q := point hint(x: 28, y: 22)
+fix((0, 0)) o
+fix((1, 0)) ax
+q := point hint((28, 22))
 q coincident w hint(t: 30)
 }
 ";
@@ -410,8 +410,8 @@ fn the_march_carries_a_branch_past_bad_seeds() {
     let src = "\
 use std
 component limp(c: circle, datum: line, phase: Angle, u: Angle) {
-  t := point hint(x: c.center.x + c.r * cos(u + phase) * max(0, 1 - u / 30), y: c.center.y + c.r * sin(u + phase) * max(0, 1 - u / 30))
-  p := point hint(x: c.center.x + c.r * cos(u + phase) * max(0, 1 - u / 30), y: c.center.y + c.r * (sin(u + phase) - u * pi / 90) * max(0, 1 - u / 30))
+  t := point hint((c.center.x + c.r * cos(u + phase) * max(0, 1 - u / 30), c.center.y + c.r * sin(u + phase) * max(0, 1 - u / 30)))
+  p := point hint((c.center.x + c.r * cos(u + phase) * max(0, 1 - u / 30), c.center.y + c.r * (sin(u + phase) - u * pi / 90) * max(0, 1 - u / 30)))
   rad := line(c.center, t)
   s := line(t, p)
   t coincident c
@@ -421,8 +421,8 @@ component limp(c: circle, datum: line, phase: Angle, u: Angle) {
 }
 
 in std.front {
-o := point hint(x: 0, y: 0)
-ax := point hint(x: 1, y: 0)
+o := point hint((0, 0))
+ax := point hint((1, 0))
 datum := line(o, ax)
 base := circle(center: o) hint(r: 20)
 }
@@ -480,13 +480,13 @@ fn a_block_may_draw_a_circle_of_its_own() {
     let src = "\
 use std
 component dot(c: circle, u: Angle) {
-  p := point hint(x: 1, y: 1)
+  p := point hint((1, 1))
   k := circle(center: p) hint(r: 2)
   p coincident c.center
   radius(5 + u) k
 }
 in std.front {
-o := point hint(x: 3, y: -2)
+o := point hint((3, -2))
 base := circle(center: o) hint(r: 20)
 }
 w := dot(base).p over u in (0, 10)
@@ -519,7 +519,7 @@ fn a_blocks_mistakes_are_named() {
     for (point, body, want) in cases {
         let src = format!(
             "use std\ncomponent b(c: circle, u: Angle) {{\n  {body}\n}}\nin std.front {{\n\
-             o := point hint(x: 0, y: 0)\nbase := circle(center: o) hint(r: 5)\n}}\nw := b(base).{point} over u in (0, 1)\n"
+             o := point hint((0, 0))\nbase := circle(center: o) hint(r: 5)\n}}\nw := b(base).{point} over u in (0, 1)\n"
         );
         let (prog, errs) = parse(&src);
         assert!(errs.is_empty(), "{want}: {errs:?}");
@@ -550,8 +550,8 @@ component rim(c: circle, datum: line, u: Angle) {
   p coincident t
 }
 in std.front {
-o := point hint(x: 2, y: 1)
-ax := point hint(x: 3, y: 1)
+o := point hint((2, 1))
+ax := point hint((3, 1))
 datum := line(o, ax)
 base := circle(center: o) hint(r: 7)
 }
@@ -592,7 +592,7 @@ fn a_geometric_seeds_mistakes_are_named() {
     for (body, want) in cases {
         let src = format!(
             "use std\ncomponent b(c: circle, u: Angle) {{\n  {body}\n}}\nin std.front {{\n\
-             o := point hint(x: 0, y: 0)\nbase := circle(center: o) hint(r: 5)\n}}\nw := b(base).p over u in (0, 1)\n"
+             o := point hint((0, 0))\nbase := circle(center: o) hint(r: 5)\n}}\nw := b(base).p over u in (0, 1)\n"
         );
         let (prog, errs) = parse(&src);
         assert!(errs.is_empty(), "{want}: {errs:?}");
@@ -611,7 +611,7 @@ fn a_geometric_seeds_mistakes_are_named() {
 /// the drawing says nothing more than it did.
 #[test]
 fn a_geometric_seed_outside_a_trace_block_is_a_place() {
-    let src = "use std\nin std.front {\no := point hint(x: 0, y: 0)\nc0 := circle(center: o) hint(r: 5)\nq := point hint(at: c0, bearing: 30)\n}\n";
+    let src = "use std\nin std.front {\no := point hint((0, 0))\nc0 := circle(center: o) hint(r: 5)\nq := point hint(at: c0, bearing: 30)\n}\n";
     let (prog, errs) = parse(src);
     assert!(errs.is_empty(), "{errs:?}");
     let e = elaborate(&prog);
@@ -656,8 +656,8 @@ component rim(c: circle, datum: line, u: Angle) {
     let doc = "\
 use std
 in std.front {
-o := point hint(x: 2, y: 1)
-ax := point hint(x: 4, y: 2)
+o := point hint((2, 1))
+ax := point hint((4, 2))
 datum := line(o, ax)
 base := circle(center: o) hint(r: 7)
 }
@@ -714,7 +714,7 @@ fn an_orientations_mistakes_are_named() {
     for (body, want) in cases {
         let src = format!(
             "use std\ncomponent b(c: circle, u: Angle) {{\n  {body}\n}}\nin std.front {{\n\
-             o := point hint(x: 0, y: 0)\nbase := circle(center: o) hint(r: 5)\n}}\nw := b(base).p over u in (0, 1)\n"
+             o := point hint((0, 0))\nbase := circle(center: o) hint(r: 5)\n}}\nw := b(base).p over u in (0, 1)\n"
         );
         let (prog, errs) = parse(&src);
         assert!(errs.is_empty(), "{want}: {errs:?}");

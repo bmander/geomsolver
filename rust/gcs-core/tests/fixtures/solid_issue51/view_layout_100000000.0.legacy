@@ -1,17 +1,17 @@
 unit mm
 use std
-front := plane hint(x: 100000000, y: 0, z: 100000000)
-fix(x == 100000000, y == 0, z == 100000000) front
-fix(x == 1, y == 0, z == 0) front.u
-fix(x == 0, y == 0, z == 1) front.v
+front := plane hint(origin: (100000000, 0, 100000000))
+fix(origin == (100000000, 0, 100000000)) front
+fix(dir == (1, 0, 0)) front.u
+fix(dir == (0, 0, 1)) front.v
 resultfp0 := point in front
-fix(x == 0, y == 0) resultfp0
+fix((0, 0)) resultfp0
 resultfp1 := point in front
-fix(x == 10, y == 0) resultfp1
+fix((10, 0)) resultfp1
 resultfp2 := point in front
-fix(x == 10, y == 10) resultfp2
+fix((10, 10)) resultfp2
 resultfp3 := point in front
-fix(x == 0, y == 10) resultfp3
+fix((0, 10)) resultfp3
 resultf := face(resultfp0, resultfp1, resultfp2, resultfp3, -> close)
 result := solid(resultf, from: -1mm, to: 0mm)
 view(result) in front

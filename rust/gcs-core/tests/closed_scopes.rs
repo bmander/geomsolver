@@ -17,7 +17,7 @@ fn groups_pass_units_and_geometry_without_copying_it() {
 unit mm
 use std
 component Bar(d: group) {
-tip := point hint(x: d.origin.x + d.length, y: d.origin.y)
+tip := point hint((d.origin.x + d.length, d.origin.y))
 d.origin distance(d.length) tip
 d.origin distance(0mm, along: y) tip
 }
@@ -26,7 +26,7 @@ part := Bar(design)
 design := {length: width, origin: o}
 width := 2cm
 o := point
-fix(x == 7mm, y == 3mm) o
+fix((7mm, 3mm)) o
 }
 ");
     assert_eq!(e.sketch.points.len(), 2 + crate::common::STD_POINTS);
@@ -40,7 +40,7 @@ fn nested_groups_forward_through_components_and_repetitions() {
 unit mm
 use std
 component Inner(d: group) {
-tip := point hint(at: d.frame.axes, x: d.sizes.width, y: 0mm)
+tip := point hint(at: d.frame.axes, (d.sizes.width, 0mm))
 ax := line(d.frame.u.p1, d.frame.u.p2)
 tip coincident ax
 d.frame.u.p1 distance(d.sizes.width) tip
@@ -48,9 +48,9 @@ d.frame.u.p1 distance(d.sizes.width) tip
 component Outer(d: group) { repeat 2 { Inner(d) } }
 in std.front {
 o := point
-fix(x == 0, y == 0) o
+fix((0, 0)) o
 t := point
-fix(x == 40, y == 0) t
+fix((40, 0)) t
 frame := std.Turned(o, t)
 Outer(design)
 }
@@ -74,8 +74,8 @@ fn layout_instances_can_be_passed_forward_without_an_extra_solve() {
     let mut e = solved("\
 use std
 component Layout() { a := point
-fix(x == 0, y == 0) a
-b := point hint(x: 20,y: 0) }
+fix((0, 0)) a
+b := point hint((20, 0)) }
 component Part(layout: group) { bar := line(layout.a, layout.b)
 horizontal bar
 layout.a distance(20) layout.b }
@@ -92,9 +92,9 @@ layout := Layout()
 fn components_cannot_capture_global_values_geometry_or_standard_datums() {
     for src in [
         "use std\nlength := 20\ncomponent Bad() { a := point\nb := point\na distance(length) b }\nin std.front {\nb := Bad()\n}\n",
-        "use std\nin std.front {\na := point\n}\ncomponent Bad() { fix(x == 0, y == 0) a }\nin std.front {\nb := Bad()\n}\n",
-        "use std\ncomponent Bad() { ax := line(std.origin, hint(x: 0, y: 1)) }\nin std.front {\nb := Bad()\n}\n",
-        "use std\ncomponent Inner() { fix(x == 0, y == 0) a }\ncomponent Outer() { a := point\ni := Inner() }\nin std.front {\no := Outer()\n}\n",
+        "use std\nin std.front {\na := point\n}\ncomponent Bad() { fix((0, 0)) a }\nin std.front {\nb := Bad()\n}\n",
+        "use std\ncomponent Bad() { ax := line(std.origin, hint((0, 1))) }\nin std.front {\nb := Bad()\n}\n",
+        "use std\ncomponent Inner() { fix((0, 0)) a }\ncomponent Outer() { a := point\ni := Inner() }\nin std.front {\no := Outer()\n}\n",
         "use std\nlength := 20\ncomponent Bad() { width := length / 2\na := point }\nin std.front {\nb := Bad()\n}\n",
     ] { assert!(!build(src).ok(), "captured ambient value: {src}"); }
 }
@@ -117,7 +117,7 @@ fn a_group_may_be_written_across_lines() {
 unit mm
 use std
 component Bar(d: group) {
-tip := point hint(x: d.origin.x + d.length, y: d.origin.y)
+tip := point hint((d.origin.x + d.length, d.origin.y))
 d.origin distance(d.length) tip
 d.origin distance(0mm, along: y) tip
 }
@@ -130,7 +130,7 @@ part := Bar(design)
 }
 in std.front {
 o := point
-fix(x == 7mm, y == 3mm) o
+fix((7mm, 3mm)) o
 h := Host(o)
 }
 ");
@@ -154,7 +154,7 @@ fn layout_groups_resolve_nested_and_indexed_members_forward() {
 component Layout() {
   repeat 2 as i {
     p := point
-    fix(x == i * 20, y == 0) p
+    fix((i * 20, 0)) p
   }
 }
 component Part(d: group) {
@@ -241,8 +241,8 @@ dims := {area: 400mm * 1mm, root: sqrt(16mm)}
 component Part(d: group) {
   length := sqrt(d.area) + d.root * d.root
   a := point
-  fix(x == 0, y == 0) a
-  b := point hint(x: length, y: 0)
+  fix((0, 0)) a
+  b := point hint((length, 0))
   a distance(length, along: x) b
   a distance(0mm, along: y) b
 }
@@ -256,7 +256,7 @@ p := Part(dims)
 
 #[test]
 fn standard_centered_rectangle_has_dimensioned_sides_and_a_private_diagonal() {
-    let mut e = build("unit mm\nuse std\nin std.front {\nc := point\nfix(x == 7mm, y == -3mm) c\nr := std.CenteredRectangle(c, w: 20mm, h: 12mm)\n}\n");
+    let mut e = build("unit mm\nuse std\nin std.front {\nc := point\nfix((7mm, -3mm)) c\nr := std.CenteredRectangle(c, w: 20mm, h: 12mm)\n}\n");
     assert!(e.ok(), "{:?}", e.diags);
     for i in 0..e.sketch.points.len() {
         for (axis, param) in e.sketch.point_params(i).into_iter().enumerate() {
@@ -286,18 +286,18 @@ fn a_group_member_may_be_a_group_written_in_place() {
 unit mm
 use std
 component Bar(d: group) {
-tip := point hint(x: d.at.x + d.size.length, y: d.at.y)
+tip := point hint((d.at.x + d.size.length, d.at.y))
 d.at distance(d.size.length) tip
 d.at distance(0mm, along: y) tip
 }
 component Pin(s: group) {
-q := point hint(x: s.length, y: 9mm)
+q := point hint((s.length, 9mm))
 fix(x == 0mm) q
 s.at distance(s.length) q
 }
 in std.front {
 o := point
-fix(x == 7mm, y == 3mm) o
+fix((7mm, 3mm)) o
 design := {
   bar: {
     at: o,
@@ -323,13 +323,13 @@ fn a_group_in_place_reads_as_one_referred_to() {
     let tail = "\
 use std
 component Bar(d: group) {
-tip := point hint(x: d.at.x + d.size.length, y: d.at.y)
+tip := point hint((d.at.x + d.size.length, d.at.y))
 d.at distance(d.size.length) tip
 d.at distance(0, along: y) tip
 }
 in std.front {
 o := point
-fix(x == 7, y == 3) o
+fix((7, 3)) o
 part := Bar(design.bar)
 }
 ";

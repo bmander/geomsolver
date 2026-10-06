@@ -7,35 +7,35 @@ half := 10mm
 reach := 12mm
 
 end_plane := plane
-fix(x == 0mm, y == length, z == 0mm) end_plane
-fix(x == 1, y == 0, z == 0) end_plane.u
-fix(x == 0, y == 0, z == 1) end_plane.v
+fix(origin == (0mm, length, 0mm)) end_plane
+fix(dir == (1, 0, 0)) end_plane.u
+fix(dir == (0, 0, 1)) end_plane.v
 in std.front {
-  c := point hint(x: 0mm, y: 0mm)
+  c := point hint((0mm, 0mm))
   c coincident std.origin
   a0 := point
   a1 := point
   a2 := point
   a3 := point
-  fix(x == -half, y == -half) a0
-  fix(x == half, y == -half) a1
-  fix(x == half, y == half) a2
-  fix(x == -half, y == half) a3
+  fix((-half, -half)) a0
+  fix((half, -half)) a1
+  fix((half, half)) a2
+  fix((-half, half)) a3
 }
 in end_plane {
   b0 := point
   b1 := point
   b2 := point
   b3 := point
-  fix(x == 0mm, y == -reach) b0
-  fix(x == reach, y == 0mm) b1
-  fix(x == 0mm, y == reach) b2
-  fix(x == -reach, y == 0mm) b3
+  fix((0mm, -reach)) b0
+  fix((reach, 0mm)) b1
+  fix((0mm, reach)) b2
+  fix((-reach, 0mm)) b3
 }
 in std.top {
-  entry := point hint(x: 0mm, y: 0mm)
+  entry := point hint((0mm, 0mm))
   entry coincident std.top.origin
-  exit := point hint(x: 0mm, y: length)
+  exit := point hint((0mm, length))
   construction centerline guide := line(entry, exit)
   vertical guide
   entry distance(length, along: y) exit

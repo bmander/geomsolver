@@ -45,11 +45,11 @@ component Bank(pin: point, piv: point, fw: Length, dim: Int, dims: group) {
 preview {
   unit mm
   in std.front {
-    pin := point hint(at: std.up, x: components.dims.R * cos(components.dims.theta0), y: -components.dims.R * sin(components.dims.theta0))
-    pivot := point hint(at: std.up, x: components.dims.H * cos(components.dims.alphaR), y: -components.dims.H * sin(components.dims.alphaR))
+    pin := point hint(at: std.up, (components.dims.R * cos(components.dims.theta0), -components.dims.R * sin(components.dims.theta0)))
+    pivot := point hint(at: std.up, (components.dims.H * cos(components.dims.alphaR), -components.dims.H * sin(components.dims.alphaR)))
     bank := Bank(pin, pivot, fw: components.dims.fwB, dim: 1, dims: components.dims.vtwin_dims)
-    reference := line(std.origin, hint(x: 0, y: 1))
-    fix(x == 0, y == 1) reference.p2
+    reference := line(std.origin, hint((0, 1)))
+    fix((0, 1)) reference.p2
     crank := line(std.origin, pin)
     bank_axis := line(std.origin, pivot)
     std.origin distance(components.dims.R) pin

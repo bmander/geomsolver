@@ -1,15 +1,15 @@
 unit mm
 use std
-front := plane(u: std.x, v: std.z) hint(x: 0, y: 0, z: 0)
-fix(x == 0, y == 0, z == 0) front
+front := plane(u: std.x, v: std.z) hint(origin: (0, 0, 0))
+fix(origin == (0, 0, 0)) front
 resultfp0 := point in front
-fix(x == 0, y == 0) resultfp0
+fix((0, 0)) resultfp0
 resultfp1 := point in front
-fix(x == 10, y == 0) resultfp1
+fix((10, 0)) resultfp1
 resultfp2 := point in front
-fix(x == 10, y == 10) resultfp2
+fix((10, 10)) resultfp2
 resultfp3 := point in front
-fix(x == 0, y == 10) resultfp3
+fix((0, 10)) resultfp3
 resultf := face(resultfp0, resultfp1, resultfp2, resultfp3, -> close)
 result := solid(resultf, from: -1mm, to: 0mm)
 view(result) in front

@@ -20,8 +20,8 @@ param radius := 50
 in std.front {
   cycle n as i {
     // the link from bearing i to bearing i+1 round the ring, each end its own point
-    a := point hint(x: radius * cos(tau * i / n), y: radius * sin(tau * i / n))
-    b := point hint(x: radius * cos(tau * (i + 1) / n), y: radius * sin(tau * (i + 1) / n))
+    a := point hint((radius * cos(tau * i / n), radius * sin(tau * i / n)))
+    b := point hint((radius * cos(tau * (i + 1) / n), radius * sin(tau * (i + 1) / n)))
     e := line(a, b)
 
     b coincident next.a
@@ -29,5 +29,5 @@ in std.front {
   }
 
   // the ring floats otherwise; one end of the first link is enough to pin it
-  fix(x == radius, y == 0) a[0]
+  fix((radius, 0)) a[0]
 }

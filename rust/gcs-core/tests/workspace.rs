@@ -34,10 +34,10 @@ fn plane(e: &program::Elaborated, name: &str) -> usize {
 
 /// A point in each standard plane, and one in space.
 const VIEWS: &str = "unit mm\nuse std\n\
-    f := point hint(x: 10, y: 4) in std.front\nfix(x == 10, y == 4) f\n\
-    s := point hint(x: 10, y: 4) in std.side\nfix(x == 10, y == 4) s\n\
-    t := point hint(x: 10, y: 4) in std.top\nfix(x == 10, y == 4) t\n\
-    p := point hint(x: 10, y: 4)\nfix(x == 10, y == 4, z == 0) p\n";
+    f := point hint((10, 4)) in std.front\nfix((10, 4)) f\n\
+    s := point hint((10, 4)) in std.side\nfix((10, 4)) s\n\
+    t := point hint((10, 4)) in std.top\nfix((10, 4)) t\n\
+    p := point hint((10, 4))\nfix((10, 4, 0)) p\n";
 
 /// From the front, seen square on, the page is the picture: the map is the identity.
 #[test]
@@ -152,8 +152,8 @@ fn a_pane_is_found_where_the_eye_sees_it_nearest_first() {
 /// is drawn — and picked — between where its two ends stand.
 #[test]
 fn lines_are_picked_where_their_ends_stand() {
-    let e = build(&format!("{VIEWS}l := line(s, t)\nm := line(hint(x: 0, y: 0), hint(x: 0, y: 8)) in std.side\n\
-        fix(x == 0, y == 0) m.p1\nfix(x == 0, y == 8) m.p2\n"));
+    let e = build(&format!("{VIEWS}l := line(s, t)\nm := line(hint((0, 0)), hint((0, 8))) in std.side\n\
+        fix((0, 0)) m.p1\nfix((0, 8)) m.p2\n"));
     let sk = &e.sketch;
     let (az, el) = (0.6, 0.5);
     let proj = Projection::new(sk, az, el);
@@ -171,7 +171,7 @@ fn lines_are_picked_where_their_ends_stand() {
 #[test]
 fn a_circle_on_a_tilted_plane_is_picked_on_its_rim() {
     let e = build("unit mm\nuse std\nc := circle(center: o) hint(r: 5) in std.top\no := point in std.top\n\
-        fix(x == 0, y == 0) o\nfix(r == 5) c\n");
+        fix((0, 0)) o\nfix(r == 5) c\n");
     let sk = &e.sketch;
     let (az, el) = (0.6, 0.5);
     let proj = Projection::new(sk, az, el);
@@ -186,8 +186,8 @@ fn a_circle_on_a_tilted_plane_is_picked_on_its_rim() {
 /// A dimension's callout is laid out in its view and picked where the eye sees its number.
 #[test]
 fn a_callout_is_picked_where_the_eye_sees_it() {
-    let e = build("unit mm\nuse std\na := point in std.side\nb := point hint(x: 30, y: 0) in std.side\n\
-        fix(x == 0, y == 0) a\na distance(30mm) b\nhorizontal line(a, b)\n");
+    let e = build("unit mm\nuse std\na := point in std.side\nb := point hint((30, 0)) in std.side\n\
+        fix((0, 0)) a\na distance(30mm) b\nhorizontal line(a, b)\n");
     let sk = &e.sketch;
     let unit = 0.05;
     let k = &callout::layout(sk, unit)[0];
@@ -237,7 +237,7 @@ fn the_report_says_each_view() {
 #[test]
 fn a_place_is_a_plane_in_space() {
     // the front stood off along its normal, which is -y
-    let e = build("unit mm\nuse std\nback := plane\nfix(x == 0, y == -10, z == 0) back\nfix(x == 1, y == 0, z == 0) back.u\nfix(x == 0, y == 0, z == 1) back.v\n");
+    let e = build("unit mm\nuse std\nback := plane\nfix(origin == (0, -10, 0)) back\nfix(dir == (1, 0, 0)) back.u\nfix(dir == (0, 0, 1)) back.v\n");
     let views = gcs_core::overview::workspace::Views::new(&e.sketch);
     let (front, up, back) = (plane(&e, "std.front"), plane(&e, "std.up"), plane(&e, "back"));
     assert_eq!(views.place(None), None, "the page is its own first place");

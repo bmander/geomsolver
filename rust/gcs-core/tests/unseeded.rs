@@ -30,7 +30,7 @@ fn dist(a: (f64, f64), b: (f64, f64)) -> f64 {
 
 #[test]
 fn two_unseeded_points_do_not_start_on_top_of_each_other() {
-    let e = read("use std\nin std.front {\na := point\nb := point\na distance(30) b\nfix(x == 0, y == 0) a\n}\n");
+    let e = read("use std\nin std.front {\na := point\nb := point\na distance(30) b\nfix((0, 0)) a\n}\n");
     let (a, b) = (e.sketch.point_xy(0), e.sketch.point_xy(1));
     assert!(dist(a, b) > 0.5, "b starts apart from a: {a:?} {b:?}");
     let mut sk = e.sketch.clone();
@@ -51,7 +51,7 @@ component Hook(len: Length) {
          }
          in std.front {
          h := Hook(len: 30)
-         fix(x == 0, y == 0) h.base
+         fix((0, 0)) h.base
          }
 ",
     );
@@ -67,8 +67,8 @@ fn a_port_takes_a_hint_clause() {
         "\
 use std
 component Hook(len: Length) {
-           tip := point hint(x: 3, y: 4)
-           base := point hint(x: 0, y: 0)
+           tip := point hint((3, 4))
+           base := point hint((0, 0))
            base distance(len) tip
          }
          in std.front {
@@ -84,8 +84,8 @@ component Hook(len: Length) {
         "\
 use std
 component Hook(len: Length) {
-           tip := point hint(x: len, y: 0)
-           base := point hint(x: 0, y: 0)
+           tip := point hint((len, 0))
+           base := point hint((0, 0))
            base distance(len) tip
          }
          in std.front {
@@ -106,12 +106,12 @@ component Hook(len: Length) {
 /// written document reads back to the same drawing.
 #[test]
 fn an_unseeded_point_gets_its_pose_written_back() {
-    let e = read("use std\nin std.front {\na := point\nb := point\na distance(30) b\nfix(x == 0, y == 0) a\n}\n");
+    let e = read("use std\nin std.front {\na := point\nb := point\na distance(30) b\nfix((0, 0)) a\n}\n");
     let mut sk = e.sketch.clone();
     assert!(solve(&mut sk, SolveOpts::default()).success);
     let edit = edit::commit_seeds(&e, &sk, &e.program);
     assert!(edit.text.starts_with("use std\nin std.front {\na := point\n"), "a held point grows no hint: {}", edit.text);
-    assert!(edit.text.contains("b := point hint(x: "), "{}", edit.text);
+    assert!(edit.text.contains("b := point hint(("), "{}", edit.text);
     let back = read(&edit.text);
     assert_eq!(back.sketch.point_xy(1), sk.point_xy(1));
     let (prog, _) = parse(&edit.text);

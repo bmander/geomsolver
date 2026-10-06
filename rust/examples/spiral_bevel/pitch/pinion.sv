@@ -23,16 +23,16 @@ component PinionCone(p: plane, q: plane, gear: group, foot: line, design: group,
   r := design.cone_distance
   d := design.offset
   in p {
-    A := point hint(x: -0.75 * d, y: 1.25 * d)
-    V := point hint(x: -0.75 * d, y: 1.25 * d)
+    A := point hint((-0.75 * d, 1.25 * d))
+    V := point hint((-0.75 * d, 1.25 * d))
     hinge := line(gear.M, A)
   }
   V coincident hinge
   V coincident foot
   in q {
-    apex := point hint(x: d, y: 0)
-    mean := point hint(x: -r, y: 0)
-    virtual := point hint(x: d, y: 0)
+    apex := point hint((d, 0))
+    mean := point hint((-r, 0))
+    virtual := point hint((d, 0))
     tip := point hint(x: d - r * design.gear_teeth / design.crown_teeth,
                       y: -r * design.pinion_teeth / design.crown_teeth)
     virtual_tip := point hint(at: tip)

@@ -18,7 +18,7 @@ component Flywheel(f: group, dims: group) {
   radius(dims.rfw) rim
   bore := circle(center: f.u.p1) hint(r: dims.dhub / 2)
   radius(dims.dhub / 2) bore
-  se := point hint(at: f.axes, x: 0mm, y: -dims.rfw)
+  se := point hint(at: f.axes, (0mm, -dims.rfw))
   ssa := line(f.u.p1, se)
   reference := line(f.u.p1, f.u.p2)
   se coincident rim
@@ -39,7 +39,7 @@ preview {
   unit mm
   in std.front {
     up := point
-    fix(x == 0, y == 40) up
+    fix((0, 40)) up
     axes := std.Turned(std.origin, up)
     fw := Flywheel(axes, dims: components.dims.vtwin_dims)
   }

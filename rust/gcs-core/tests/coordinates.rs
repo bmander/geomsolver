@@ -36,19 +36,19 @@ fn standard_datums_are_shared_fixed_and_built_whenever_std_is_used() {
     assert_eq!(unused.sketch.plane_of(unused.map.ent_named("p").unwrap().i()), Some(front));
     let without = build("p := point\n");
     assert!(without.sketch.planes.is_empty());
-    let explicit = build("use std\nstd := std.StandardDatums()\nin std.front {\na := point hint(x: 3, y: 4)\na distance(3, along: u) std.front\na distance(4, along: v) std.front\n}\n");
+    let explicit = build("use std\nstd := std.StandardDatums()\nin std.front {\na := point hint((3, 4))\na distance(3, along: u) std.front\na distance(4, along: v) std.front\n}\n");
     assert_eq!(explicit.sketch.planes.len(), 4, "an explicit std binding is not duplicated");
     let mut e = build("\
 unit mm
 use std
 in std.front {
-a := point hint(x: 3, y: 4)
+a := point hint((3, 4))
 a distance(3mm, along: u) std.front
 a distance(4mm, along: v) std.front
-b := point hint(x: -4, y: 3)
+b := point hint((-4, 3))
 b distance(3mm, along: u) std.up
 b distance(4mm, along: v) std.up
-c := point hint(x: 6, y: 8)
+c := point hint((6, 8))
 c distance(6mm, along: u) std.front
 c distance(8mm, along: v) std.front
 }
@@ -77,7 +77,7 @@ unit mm
 use std
 in std.front {
 a := point
-fix(x == 0mm, y == 1mm) a
+fix((0mm, 1mm)) a
 ax := line(std.origin, a)
 }
 b := point in std.front
@@ -98,7 +98,7 @@ b distance(3mm, along: v) std.front
 #[test]
 fn unnamed_component_calls_keep_their_instances_distinct_and_source_intact() {
     let src = "unit mm\nuse std\ncomponent Spoke(f: plane) {\n\
-        in f {\ntip := point hint(x: 5mm, y: 0mm)\ntip distance(0mm, along: v) f\n\
+        in f {\ntip := point hint((5mm, 0mm))\ntip distance(0mm, along: v) f\n\
         f.origin distance(5mm) tip\n}\n}\n\
         preview {\nSpoke(std.front)\nSpoke(std.up)\n}\n";
     let mut e = build(src);
@@ -129,11 +129,11 @@ fn unnamed_component_calls_keep_their_instances_distinct_and_source_intact() {
 
 /// Axes through `o` toward `q`, in the front: what the ordinates below are measured against.
 const AXES: &str = "unit mm\nuse std\nin std.front {\no := point\nq := point\n\
-    fix(x == 10, y == 20) o\nfix(x == 14, y == 23) q\nf := std.Turned(o, q)\n}\n";
+    fix((10, 20)) o\nfix((14, 23)) q\nf := std.Turned(o, q)\n}\n";
 
 #[test]
 fn signed_coordinates_follow_a_moving_datum_even_from_the_wrong_quadrant() {
-    let mut e = build(&format!("{AXES}in std.front {{\np := point hint(x: 100, y: -200)\n\
+    let mut e = build(&format!("{AXES}in std.front {{\np := point hint((100, -200))\n\
         p distance(-5mm, along: u) f.axes\np distance(2mm, along: v) f.axes\n}}\n"));
     let p = e.map.ent_named("p").unwrap().i();
     solved(&mut e.sketch);
@@ -154,9 +154,9 @@ fn signed_coordinates_follow_a_moving_datum_even_from_the_wrong_quadrant() {
 fn an_external_constraint_moves_the_datum_through_an_aliased_component_point() {
     let mut e = build("unit mm\nuse std\ncomponent Offset(f: plane, p: point) {\n\
         p distance(3mm, along: u) f\np distance(-2mm, along: v) f\n}\n\
-        in std.front {\no := point hint(x: 10, y: 20)\nq := point hint(x: 14, y: 20)\n\
+        in std.front {\no := point hint((10, 20))\nq := point hint((14, 20))\n\
         f := std.Turned(o, q)\nhorizontal f.u\no distance(4mm, along: x) q\n\
-        p := point\nfix(x == 23, y == 28) p\n}\ni := Offset(f.axes, p)\n");
+        p := point\nfix((23, 28)) p\n}\ni := Offset(f.axes, p)\n");
     solved(&mut e.sketch);
     close(e.sketch.point_xy(e.map.ent_named("o").unwrap().i()), (20.0, 30.0));
     // o, q and p, the frame's quarter-turn point and its plane's origin: the argument is an alias
@@ -168,7 +168,7 @@ fn an_external_constraint_moves_the_datum_through_an_aliased_component_point() {
 fn both_ordinates_can_be_solved_as_independent_dimensions() {
     let mut e = build(&format!("{AXES}component Read(f: plane, p: point, u: Length, v: Length) {{\n\
         p distance(u, along: u) f\np distance(v, along: v) f\n}}\n\
-        in std.front {{\np := point\nfix(x == 4.8, y == 18.6) p\n}}\nr := Read(f.axes, p)\n"));
+        in std.front {{\np := point\nfix((4.8, 18.6)) p\n}}\nr := Read(f.axes, p)\n"));
     super::common::fd_jacobian(&e.sketch, 1e-6);
     solved(&mut e.sketch);
     let value = |name: &str| e.sketch.params[e.sketch.free_vars[name] as usize].value;
@@ -182,9 +182,9 @@ fn both_ordinates_can_be_solved_as_independent_dimensions() {
 #[test]
 fn datum_seeds_and_membership_pass_through_nested_instances() {
     let mut e = build(&format!("{AXES}component Probe(f: plane) {{\n\
-        p := point hint(at: f, x: -5mm, y: 2mm)\np distance(-5mm, along: u) f\n\
+        p := point hint(at: f, (-5mm, 2mm))\np distance(-5mm, along: u) f\n\
         p distance(2mm, along: v) f\n}}\ncomponent Part(f: plane) {{ probe := Probe(f) }}\n\
-        view := plane\nfix(x == 0, y == -7, z == 0) view\nfix(x == 1, y == 0, z == 0) view.u\nfix(x == 0, y == 0, z == 1) view.v\n\
+        view := plane\nfix(origin == (0, -7, 0)) view\nfix(dir == (1, 0, 0)) view.u\nfix(dir == (0, 0, 1)) view.v\n\
         i := Part(f.axes) in view\n"));
     let p = e.map.ent_named("i.probe.p").unwrap().i();
     close(e.sketch.point_xy(p), (4.8, 18.6));
@@ -220,10 +220,10 @@ fn datum_axes_require_a_datum_and_lengths() {
 /// A frame's line ends reach a component as points, through an alias and into a face's corners.
 #[test]
 fn a_datum_child_remains_a_point_through_aliases_and_face_corners() {
-    let e = build("unit mm\nuse std\ncomponent Inner(p: point) {\nq := point hint(x: p.x + 1mm, y: p.y + 2mm)\n\
+    let e = build("unit mm\nuse std\ncomponent Inner(p: point) {\nq := point hint((p.x + 1mm, p.y + 2mm))\n\
         border := line(p, q)\n}\ncomponent Outer(f: group) {\ni := Inner(f.u.p1)\n\
         triangle := face(f.u.p1, i.q, f.u.p2, -> close)\n}\nin std.front {\n\
-        o := point hint(x: 10, y: 20)\nt := point hint(x: 14, y: 23)\nf := std.Turned(o, t)\n\
+        o := point hint((10, 20))\nt := point hint((14, 23))\nf := std.Turned(o, t)\n\
         x := Outer(f)\n}\n");
     let edge = &e.sketch.lines[e.map.ent_named("x.i.border").unwrap().i()];
     assert_eq!(edge.p1 as usize, e.map.ent_named("o").unwrap().i());
@@ -301,13 +301,13 @@ use std
 use components.dims
 use components.bank
 in std.front {
-bottom_pin := point hint(x: 0mm, y: -components.dims.R)
+bottom_pin := point hint((0mm, -components.dims.R))
 std.origin vertical bottom_pin
 std.origin distance(components.dims.R) bottom_pin
-top_pin := point hint(x: 0mm, y: components.dims.R)
+top_pin := point hint((0mm, components.dims.R))
 std.origin vertical top_pin
 std.origin distance(components.dims.R) top_pin
-pivot := point hint(x: 0mm, y: components.dims.H)
+pivot := point hint((0mm, components.dims.H))
 std.origin vertical pivot
 std.origin distance(components.dims.H) pivot
 }

@@ -73,7 +73,7 @@ use crate::model::{EntKind, EntRef, Sketch};
 use crate::syntax::{Name, Program, Span, Stmt, StmtId, StmtKind};
 pub(crate) use entities::child_names;
 use entities::{build, crosses_views, settle_deferred, Deferred};
-pub(crate) use lift::{holds, lift_decl, lift_gauge, lift_relation};
+pub(crate) use lift::{holds, lift_decl, lift_gauge, lift_relation, point_len};
 use planes::memberships;
 pub(crate) use planes::{plane_of_entity, plane_of_entity_by};
 use relations::{constrain, repeated};

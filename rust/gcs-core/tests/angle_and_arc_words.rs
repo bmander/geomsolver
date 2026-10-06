@@ -47,12 +47,12 @@ const QUARTER: &str = "\
 use std
 in std.front {
 o := point
-s := point hint(x: 10, y: 0)
-e := point hint(x: 3, y: 9)
+s := point hint((10, 0))
+e := point hint((3, 9))
 a := arc(o, s, e)
 radius(10) a
 o horizontal s
-fix(x == 0, y == 0) o
+fix((0, 0)) o
 }
 ";
 
@@ -79,15 +79,15 @@ fn a_length_and_a_sweep_make_the_radius() {
 use std
 in std.front {
 o := point
-s := point hint(x: 14, y: 0)
-e := point hint(x: 0, y: 14)
+s := point hint((14, 0))
+e := point hint((0, 14))
 a := arc(o, s, e)
 l1 := line(o, s)
 l2 := line(o, e)
 horizontal l1
 l1 angle(90deg) l2
 length(5 * pi) a
-fix(x == 0, y == 0) o
+fix((0, 0)) o
 }
 ";
     let e = solved(src);
@@ -102,19 +102,19 @@ fn two_arc_lengths_tied_by_a_free_variable() {
 use std
 in std.front {
 o1 := point
-s1 := point hint(x: 10, y: 0)
+s1 := point hint((10, 0))
 e1 := point
 a1 := arc(o1, s1, e1)
 o1 horizontal s1
-fix(x == 0, y == 0) o1
-fix(x == 0, y == 10) e1
+fix((0, 0)) o1
+fix((0, 10)) e1
 o2 := point
-s2 := point hint(x: 70, y: 0)
-e2 := point hint(x: 60, y: 15)
+s2 := point hint((70, 0))
+e2 := point hint((60, 15))
 a2 := arc(o2, s2, e2)
 radius(20) a2
 o2 horizontal s2
-fix(x == 50, y == 0) o2
+fix((50, 0)) o2
 }
 param s: Length
 in std.front {
@@ -154,9 +154,9 @@ const FAN: &str = "\
 use std
 in std.front {
 a := point
-b := point hint(x: 40, y: 0)
-c := point hint(x: 10, y: 30)
-d := point hint(x: 25, y: 10)
+b := point hint((40, 0))
+c := point hint((10, 30))
+d := point hint((25, 10))
 ab := line(a, b)
 ac := line(a, c)
 ad := line(a, d)
@@ -165,7 +165,7 @@ a distance(40) b
 a distance(30) c
 a distance(20) d
 ab angle(60deg) ac
-fix(x == 0, y == 0) a
+fix((0, 0)) a
 }
 ";
 
@@ -214,8 +214,8 @@ fn equal_angles_say_what_a_shared_free_variable_said() {
 fn both_words_print_back_as_written() {
     let src = format!(
         "{FAN}ab angle(ad, ac) ad\nab angle(ab, ac, sense: cw) ad\n\
-         in std.front {{\no := point hint(x: 100, y: 0)\ns := point hint(x: 110, y: 0)\n\
-         e := point hint(x: 100, y: 10)\nk := arc(o, s, e)\n}}\nlength(5 * pi) k\n"
+         in std.front {{\no := point hint((100, 0))\ns := point hint((110, 0))\n\
+         e := point hint((100, 10))\nk := arc(o, s, e)\n}}\nlength(5 * pi) k\n"
     );
     let (e, d) = read(&src);
     assert!(e.ok(), "{d:?}");

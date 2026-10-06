@@ -9,7 +9,7 @@ wall := 2mm
 bend_angle := 90deg
 
 in std.front {
-  center := point hint(x: bend_radius, y: 0mm)
+  center := point hint((bend_radius, 0mm))
   std.origin horizontal center
   std.origin distance(bend_radius) center
   outer := std.CenteredRectangle(center, w: 2 * inlet_half, h: 2 * inlet_half)
@@ -20,9 +20,9 @@ in std.front {
 // The guide is drawn in plan, the top plane; each section stands perpendicular to its tangent at its end.
 in std.top {
   turn_center := point
-  fix(x == 0mm, y == 0mm) turn_center
-  entry := point hint(x: bend_radius, y: 0mm)
-  exit := point hint(x: bend_radius * cos(bend_angle), y: bend_radius * sin(bend_angle))
+  fix((0mm, 0mm)) turn_center
+  entry := point hint((bend_radius, 0mm))
+  exit := point hint((bend_radius * cos(bend_angle), bend_radius * sin(bend_angle)))
   construction centerline inlet_axis := line(turn_center, entry)
   construction centerline outlet_axis := line(turn_center, exit)
   horizontal inlet_axis
@@ -34,7 +34,7 @@ in std.top {
 // The outlet's plane, the side plane, holds the bend's axis and the radius to the exit.
 in std.side {
   out_center := point
-  fix(x == bend_radius, y == 0mm) out_center
+  fix((bend_radius, 0mm)) out_center
   out_outer := std.CenteredRectangle(out_center, w: 2 * outlet_half, h: 2 * outlet_half)
   out_inner := std.CenteredRectangle(out_center, w: 2 * (outlet_half - wall), h: 2 * (outlet_half - wall))
 }

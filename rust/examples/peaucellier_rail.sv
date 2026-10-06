@@ -15,20 +15,20 @@ crank := 40      // the crank q–b, and the orbit its pin rides
 // the pivots is ever stated.
 in std.front {
   o := point
-  q := point hint(x: crank, y: 0)
+  q := point hint((crank, 0))
   datum := line(o, q)
   orbit := circle(center: q) hint(r: crank)
 
   horizontal datum
   radius(crank) orbit
   o coincident orbit
-  fix(x == 0, y == 0) o
+  fix((0, 0)) o
 
   // the machine itself, at one pose; the crank is the one freedom left
-  b := point   hint(x: 50.4, y: 38.6)
-  c := point   hint(x: 30.4, y: 95.2)
-  d := point   hint(x: 99.9, y: 4.8)
-  pen := point hint(x: 80.0, y: 61.4)
+  b := point   hint((50.4, 38.6))
+  c := point   hint((30.4, 95.2))
+  d := point   hint((99.9, 4.8))
+  pen := point hint((80.0, 61.4))
 
   swing := line(q, b)
   b coincident orbit
@@ -50,7 +50,7 @@ in std.front {
   // freedom, so a theorem here does not mean "the pen happens to be at 80" — it means saying so
   // takes nothing from the crank, which is to say the pen's x never changes as the crank turns.
   anchor := point
-  fix(x == 80, y == 0) anchor
+  fix((80, 0)) anchor
   rail := line(anchor, pen)
   claim vertical rail
 }

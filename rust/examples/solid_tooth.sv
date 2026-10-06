@@ -17,7 +17,7 @@ u1 := sqrt((Rt / Rb) ^ 2 - 1) * 1rad
 
 in std.front {
   center := point
-  fix(x == 0mm, y == 0mm) center
+  fix((0mm, 0mm)) center
   base := circle(center: center) hint(r: Rb)
   root := circle(center: center) hint(r: Rr)
   tip := circle(center: center) hint(r: Rt)

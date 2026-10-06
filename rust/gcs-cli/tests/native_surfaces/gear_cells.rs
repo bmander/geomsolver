@@ -149,8 +149,8 @@ in std.front {
 private bc := point
 bc distance(3.8mm, along: u) std.front
 bc distance(0mm, along: v) std.front
-private bb := point hint(x: 3.8, y: -1)
-private bt := point hint(x: 3.8, y: 1)
+private bb := point hint((3.8, -1))
+private bt := point hint((3.8, 1))
 private bd := line(bb, bt)
 bc midpoint bd
 bd parallel spindle

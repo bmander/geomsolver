@@ -10,8 +10,8 @@ use crate::common::{ent, read, refused};
 
 #[test]
 fn a_point_outside_every_plane_has_three_coordinates() {
-    let mut e = read("use std\np := point hint(x: 10, y: 20, z: 30)\n\
-        q := point\nfix(x == 1, y == 2, z == 3) q\nq distance(40) p\n");
+    let mut e = read("use std\np := point hint((10, 20, 30))\n\
+        q := point\nfix((1, 2, 3)) q\nq distance(40) p\n");
     let (p, q) = (ent(&e, "p").i(), ent(&e, "q").i());
     assert!(e.sketch.points[p].plane.is_none() && e.sketch.points[p].z.is_some());
     assert_eq!(e.sketch.world_point(q), [1.0, 2.0, 3.0], "the gauge holds all three");
@@ -23,7 +23,7 @@ fn a_point_outside_every_plane_has_three_coordinates() {
 
 #[test]
 fn a_point_in_space_round_trips_through_json() {
-    let e = read("use std\np := point hint(x: 10, y: 20, z: 30)\nin std.front {\n  c := point\n}\n");
+    let e = read("use std\np := point hint((10, 20, 30))\nin std.front {\n  c := point\n}\n");
     let text = io::dumps(&e.sketch, None);
     let back = io::loads(&text).unwrap();
     let (p, c) = (ent(&e, "p").i(), ent(&e, "c").i());
@@ -43,15 +43,15 @@ fn a_curve_over_a_point_in_space_is_refused() {
 
 #[test]
 fn a_face_over_a_point_in_space_is_refused() {
-    refused("use std\na := point\nb := point hint(x: 10, y: 0, z: 0)\n\
-        c := point hint(x: 0, y: 10, z: 0)\nf := face(a, b, c, -> close)\n", "E080",
+    refused("use std\na := point\nb := point hint((10, 0, 0))\n\
+        c := point hint((0, 10, 0))\nf := face(a, b, c, -> close)\n", "E080",
         "a face lies in one plane, and `a` stands in space", "f := face(a, b, c, -> close)");
 }
 
 #[test]
 fn planes_stacked_by_a_distance_stand_apart_along_their_normal() {
-    let mut e = read("use std\nunit mm\na := plane(u: std.x, v: std.z)\nb := plane hint(x: 0, y: -10, z: 0)\n\
-        b.u parallel std.x\nb.v parallel std.z\na distance(12) b\nn := axis hint(x: 0, y: -1, z: 0)\n\
+    let mut e = read("use std\nunit mm\na := plane(u: std.x, v: std.z)\nb := plane hint(origin: (0, -10, 0))\n\
+        b.u parallel std.x\nb.v parallel std.z\na distance(12) b\nn := axis hint(dir: (0, -1, 0))\n\
         n perpendicular a\nn coincident a.origin\nn coincident b.origin\n");
     let d = diagnose(&mut e.sketch, DiagnoseOptions::default());
     assert_eq!(d.dof, 0, "{}", gcs_core::diagnose::summary(&d));
@@ -66,10 +66,10 @@ fn planes_stacked_by_a_distance_stand_apart_along_their_normal() {
 
 #[test]
 fn a_point_in_space_is_seeded_where_its_place_stands() {
-    let e = read("use std\nin std.top {\n  a := point hint(x: 10, y: 20)\n}\n\
-        p := point hint(x: 1, y: 2, z: 3)\nr := point hint(x: 5, y: 6, z: 7)\n\
+    let e = read("use std\nin std.top {\n  a := point hint((10, 20))\n}\n\
+        p := point hint((1, 2, 3))\nr := point hint((5, 6, 7))\n\
         q := point hint(at: a)\nm := point hint(at: p, toward: r, by: 0.5)\n\
-        s := point hint(at: std.top, x: 3, y: 4)\n");
+        s := point hint(at: std.top, (3, 4))\n");
     let at = |n: &str| e.sketch.world_point(ent(&e, n).i());
     assert_eq!(at("q"), [10.0, 20.0, 0.0], "a point drawn in the top, read where it stands");
     assert_eq!(at("m"), [3.0, 4.0, 5.0], "half way from p to r, in space");
@@ -79,11 +79,11 @@ fn a_point_in_space_is_seeded_where_its_place_stands() {
 /// A seed reads a point in space's third coordinate as it reads the other two.
 #[test]
 fn a_seed_reads_the_height_of_a_point_in_space() {
-    let e = read("use std\nq := point hint(x: 1, y: 2, z: 7)\nr := point hint(x: q.x, y: q.y, z: q.z + 1)\n");
+    let e = read("use std\nq := point hint((1, 2, 7))\nr := point hint((q.x, q.y, q.z + 1))\n");
     let r = ent(&e, "r").i();
     assert_eq!(e.sketch.world_point(r), [1.0, 2.0, 8.0]);
     // and a point drawn in a plane still has two
-    refused("use std\nin std.front {\n  p := point hint(x: 1, y: 2)\n  s := point hint(x: p.z)\n}\n",
+    refused("use std\nin std.front {\n  p := point hint((1, 2))\n  s := point hint(x: p.z)\n}\n",
             "E103", "a point has no `z`", "p.z");
 }
 
@@ -92,7 +92,7 @@ fn a_seed_reads_the_height_of_a_point_in_space() {
 fn a_projection_refused_names_what_the_source_calls_things() {
     refused("use std\nin std.front {\n  a := point\n  b := point hint(x: 1)\n}\na project b\n",
             "E061", "both points are on std.front", "a project b");
-    refused("use std\nin std.front {\n  a := point\n}\nq := point hint(x: 1, y: 2, z: 3)\na project q\n",
+    refused("use std\nin std.front {\n  a := point\n}\nq := point hint((1, 2, 3))\na project q\n",
             "E061", "q is on no plane", "a project q");
 }
 

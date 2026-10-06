@@ -16,7 +16,7 @@ const ELLIPSE: &str = "\
 use std
 in std.front {
 o := point
-fix(x == 10, y == 5) o
+fix((10, 5)) o
 }
 e := std.Ellipse(o, a: 8, b: 3, tilt: 0deg).p over u in (0, 360)
 ";
@@ -62,7 +62,7 @@ fn rim_at(u: f64, a: f64, b: f64) -> ((f64, f64), f64) {
 
 #[test]
 fn a_point_solves_onto_the_rim_at_its_eccentric_angle() {
-    let mut e = build(&format!("{ELLIPSE}in std.front {{\np := point hint(x: 11, y: 9)\np coincident e hint(t: 80)\n}}\n"));
+    let mut e = build(&format!("{ELLIPSE}in std.front {{\np := point hint((11, 9))\np coincident e hint(t: 80)\n}}\n"));
     fd_jacobian(&e.sketch, 1e-5);
     let r = solve(&mut e.sketch, SolveOpts::default());
     assert!(r.success, "{}", r.message);
@@ -78,8 +78,8 @@ fn a_point_solves_onto_the_rim_at_its_eccentric_angle() {
 fn a_line_solves_tangent_to_the_rim() {
     // a level line above the ellipse, one end grounded, the other 12 away and free to fall
     let mut e = build(&format!(
-        "{ELLIPSE}in std.front {{\na := point\nb := point hint(x: 16, y: 10)\nl := line(a, b)\n\
-         fix(x == 4, y == 10) a\na distance(12) b\ne tangent l hint(t: 90)\n}}\n"
+        "{ELLIPSE}in std.front {{\na := point\nb := point hint((16, 10))\nl := line(a, b)\n\
+         fix((4, 10)) a\na distance(12) b\ne tangent l hint(t: 90)\n}}\n"
     ));
     fd_jacobian(&e.sketch, 1e-5);
     let r = solve(&mut e.sketch, SolveOpts::default());
@@ -111,7 +111,7 @@ fn a_circle_solves_onto_the_osculating_circle() {
     // a circle near the major end, centre and radius free: a computed point's frame is exact
     // to third order, so the curvature is not refused as a traced curve's is
     let mut e = build(&format!(
-        "{ELLIPSE}in std.front {{\nk := point hint(x: 16, y: 5.5)\nc := circle(center: k) hint(r: 2)\n\
+        "{ELLIPSE}in std.front {{\nk := point hint((16, 5.5))\nc := circle(center: k) hint(r: 2)\n\
          e curvature c hint(t: 10)\n}}\n"
     ));
     fd_jacobian(&e.sketch, 1e-5);
@@ -136,7 +136,7 @@ fn a_circle_solves_onto_the_osculating_circle() {
 #[test]
 fn the_rim_turns_with_its_tilt() {
     let turned = ELLIPSE.replace("tilt: 0deg", "tilt: 90deg");
-    let mut e = build(&format!("{turned}in std.front {{\np := point hint(x: 11, y: 9)\np coincident e hint(t: 80)\n}}\n"));
+    let mut e = build(&format!("{turned}in std.front {{\np := point hint((11, 9))\np coincident e hint(t: 80)\n}}\n"));
     let r = solve(&mut e.sketch, SolveOpts::default());
     assert!(r.success, "{}", r.message);
     let (x, y) = at(&e, "p");
@@ -168,7 +168,7 @@ fn an_axis_left_out_is_refused_by_name() {
         "\
 use std
 in std.front {
-o := point hint(x: 10, y: 5)
+o := point hint((10, 5))
 }
 e := std.Ellipse(o, a: 8, tilt: 0deg).p over u in (0, 360)
 ",

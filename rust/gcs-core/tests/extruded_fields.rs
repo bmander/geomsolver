@@ -9,13 +9,13 @@ unit mm
 use std
 in std.front {
 a := point
-b := point hint(x: 60, y: 0)
-c := point hint(x: 60, y: 40)
-d := point hint(x: 0, y: 40)
+b := point hint((60, 0))
+c := point hint((60, 40))
+d := point hint((0, 40))
 horizontal (ab := line(a, b)) -> vertical (bc := line(b, c)) -> horizontal (cd := line(c, d)) -> vertical (da := line(d, a)) -> close
 a distance(60) b
 b distance(40) c
-fix(x == 0, y == 0) a
+fix((0, 0)) a
 }
 sec := face(ab, bc, cd, da)
 block := solid(sec, depth: 30mm)
@@ -26,8 +26,8 @@ use std
 in std.front {
 o := point
 z := point
-fix(x == 0, y == 0) o
-fix(x == 0, y == 10) z
+fix((0, 0)) o
+fix((0, 10)) z
 ax := line(o, z)
 }
 turn := motion(about: ax)
@@ -38,7 +38,7 @@ const BORE: &str = "\
 use std
 in std.front {
 h := point
-fix(x == 30, y == 20) h
+fix((30, 20)) h
 hole := circle(center: h) hint(r: 8)
 radius(8) hole
 }
@@ -53,17 +53,17 @@ unit mm
 use std
 in std.front {
 a := point
-b := point hint(x: 50, y: 0)
-c := point hint(x: 50, y: 20)
-d := point hint(x: 20, y: 20)
-e := point hint(x: 20, y: 50)
-f := point hint(x: 0, y: 50)
+b := point hint((50, 0))
+c := point hint((50, 20))
+d := point hint((20, 20))
+e := point hint((20, 50))
+f := point hint((0, 50))
 horizontal (ab := line(a, b)) -> vertical (bc := line(b, c)) -> horizontal (cd := line(c, d)) -> vertical (de := line(d, e)) -> horizontal (ef := line(e, f)) -> vertical (fa := line(f, a)) -> close
 a distance(50) b
 b distance(20) c
 c distance(30) d
 d distance(30) e
-fix(x == 0, y == 0) a
+fix((0, 0)) a
 }
 sec := face(ab, bc, cd, de, ef, fa)
 ell := solid(sec, depth: 12mm)
@@ -76,14 +76,14 @@ unit mm
 use std
 in std.front {
 a := point
-b := point hint(x: 60, y: 0)
-c := point hint(x: 60, y: 30)
-d := point hint(x: 40, y: 30)
-e := point hint(x: 20, y: 30)
-f := point hint(x: 0, y: 30)
+b := point hint((60, 0))
+c := point hint((60, 30))
+d := point hint((40, 30))
+e := point hint((20, 30))
+f := point hint((0, 30))
 m := point
-fix(x == 0, y == 0) a
-fix(x == 30, y == 30) m
+fix((0, 0)) a
+fix((30, 30)) m
 a distance(60) b
 b distance(30) c
 a distance(30) f

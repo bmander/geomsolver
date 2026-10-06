@@ -5,17 +5,17 @@ use components.dims
 
 // A point placed from `o` by two ordinates.
 component At(o: point, dx: Length, dy: Length) {
-  p := point hint(x: o.x + dx, y: o.y + dy)
+  p := point hint((o.x + dx, o.y + dy))
   o distance(dx, along: x) p
   o distance(dy, along: y) p
 }
 
 // An axis-aligned rectangle about `o`: `a` is its lower-left corner, offset from `o`.
 component Box(o: point, x0: Length, y0: Length, x1: Length, y1: Length) {
-  a := point hint(x: o.x + x0, y: o.y + y0)
-  b := point hint(x: o.x + x1, y: o.y + y0)
-  c := point hint(x: o.x + x1, y: o.y + y1)
-  d := point hint(x: o.x + x0, y: o.y + y1)
+  a := point hint((o.x + x0, o.y + y0))
+  b := point hint((o.x + x1, o.y + y0))
+  c := point hint((o.x + x1, o.y + y1))
+  d := point hint((o.x + x0, o.y + y1))
   profile := (ab := line(a, b)) -> (bc := line(b, c)) -> (cd := line(c, d)) -> (da := line(d, a)) -> close
   o distance(x0, along: x) a
   o distance(y0, along: y) a
@@ -30,10 +30,10 @@ component Box(o: point, x0: Length, y0: Length, x1: Length, y1: Length) {
 // A rectangle between `x0` and `x1` whose top and bottom are the heights of two points another
 // view placed — the side view's reading of a part the front view designs.
 component Slab(o: point, x0: Length, x1: Length, top: point, bottom: point) {
-  a := point hint(x: o.x + x0, y: bottom.y)
-  b := point hint(x: o.x + x1, y: bottom.y)
-  c := point hint(x: o.x + x1, y: top.y)
-  d := point hint(x: o.x + x0, y: top.y)
+  a := point hint((o.x + x0, bottom.y))
+  b := point hint((o.x + x1, bottom.y))
+  c := point hint((o.x + x1, top.y))
+  d := point hint((o.x + x0, top.y))
   (ab := line(a, b)) -> (bc := line(b, c)) -> (cd := line(c, d)) -> (da := line(d, a)) -> close
   o distance(x0, along: x) a
   bottom distance(0, along: y) a
@@ -48,10 +48,10 @@ component Slab(o: point, x0: Length, x1: Length, top: point, bottom: point) {
 // The same the other way up: a rectangle between `y0` and `y1` whose left and right are the
 // widths of two points another view placed — the top view's reading of the front's.
 component Wide(o: point, y0: Length, y1: Length, left: point, right: point) {
-  a := point hint(x: left.x, y: o.y + y0)
-  b := point hint(x: right.x, y: o.y + y0)
-  c := point hint(x: right.x, y: o.y + y1)
-  d := point hint(x: left.x, y: o.y + y1)
+  a := point hint((left.x, o.y + y0))
+  b := point hint((right.x, o.y + y0))
+  c := point hint((right.x, o.y + y1))
+  d := point hint((left.x, o.y + y1))
   (ab := line(a, b)) -> (bc := line(b, c)) -> (cd := line(c, d)) -> (da := line(d, a)) -> close
   left distance(0, along: x) a
   o distance(y0, along: y) a
@@ -65,7 +65,7 @@ component Wide(o: point, y0: Length, y1: Length, left: point, right: point) {
 
 // A part sheet's datum: the part's axis up the page through `o`.
 component Axes(o: point) {
-  up := point hint(x: o.x, y: o.y + 40mm)
+  up := point hint((o.x, o.y + 40mm))
   o distance(0, along: x) up
   o distance(40, along: y) up
   ax := line(o, up)
@@ -77,16 +77,16 @@ component Axes(o: point) {
 // datum `f` along the screw's axis.  Drawn on the part's sheet only.
 component Grub(f: group, rin: Length, rout: Length, dims: group) {
   ax := line(f.u.p1, f.u.p2)
-  h0 := point hint(at: f.axes, x: rin, y: dims.grub / 2)
-  h1 := point hint(at: f.axes, x: rout, y: dims.grub / 2)
-  h2 := point hint(at: f.axes, x: rin, y: -dims.grub / 2)
-  h3 := point hint(at: f.axes, x: rout, y: -dims.grub / 2)
+  h0 := point hint(at: f.axes, (rin, dims.grub / 2))
+  h1 := point hint(at: f.axes, (rout, dims.grub / 2))
+  h2 := point hint(at: f.axes, (rin, -dims.grub / 2))
+  h3 := point hint(at: f.axes, (rout, -dims.grub / 2))
   s0 := line(h0, h1)
   s1 := line(h2, h3)
-  n0 := point hint(at: f.axes, x: rin + dims.nutin, y: dims.nutaf / 2)
-  n1 := point hint(at: f.axes, x: rin + dims.nutin + dims.nutT, y: dims.nutaf / 2)
-  n2 := point hint(at: f.axes, x: rin + dims.nutin + dims.nutT, y: -dims.nutaf / 2)
-  n3 := point hint(at: f.axes, x: rin + dims.nutin, y: -dims.nutaf / 2)
+  n0 := point hint(at: f.axes, (rin + dims.nutin, dims.nutaf / 2))
+  n1 := point hint(at: f.axes, (rin + dims.nutin + dims.nutT, dims.nutaf / 2))
+  n2 := point hint(at: f.axes, (rin + dims.nutin + dims.nutT, -dims.nutaf / 2))
+  n3 := point hint(at: f.axes, (rin + dims.nutin, -dims.nutaf / 2))
   q0 := line(n0, n1)
   q1 := line(n1, n2)
   q2 := line(n2, n3)
@@ -114,8 +114,8 @@ component Grub(f: group, rin: Length, rout: Length, dims: group) {
   // plane's normal and `about:` turns, so nothing here sweeps a section *along* a line lying in
   // the plane.  So the pocket stays what it has always been, four hidden lines a printer reads,
   // and it is not part of the body; it comes back when a swept solid does (spec §17).
-  a0 := point hint(at: f.axes, x: rin, y: 0mm)
-  a1 := point hint(at: f.axes, x: rout, y: 0mm)
+  a0 := point hint(at: f.axes, (rin, 0mm))
+  a1 := point hint(at: f.axes, (rout, 0mm))
   bore_f := face(a0, h0, s0, a1, -> close)
   entry := line(h0, h2)
   exit := line(h1, h3)

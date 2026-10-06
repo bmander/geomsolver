@@ -12,11 +12,11 @@ a := point
 b := point
 o := point
 z := point
-fix(x == 3, y == 0) center
-fix(x == 3, y == -1) a
-fix(x == 3, y == 1) b
-fix(x == 0, y == 0) o
-fix(x == 0, y == 1) z
+fix((3, 0)) center
+fix((3, -1)) a
+fix((3, 1)) b
+fix((0, 0)) o
+fix((0, 1)) z
 rim := arc(center: center,start: a,end: b)
 radius(1) rim
 diameter := line(a,b)

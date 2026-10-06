@@ -26,9 +26,9 @@ beta := 50deg // the coupler point's angle off the coupler
 
 component FourBar(o2: point, o4: point, r2: Length, r3: Length, r4: Length, beta: Angle,
                   theta: Angle, ap: Length) {
-  A := point hint(x: -9.85, y: 1.74)
-  B := point hint(x: 14.34, y: 19.49)
-  P := point hint(x: -8.19, y: 27.23)
+  A := point hint((-9.85, 1.74))
+  B := point hint((14.34, 19.49))
+  P := point hint((-8.19, 27.23))
   base := line(o2, o4)
   crank := line(o2, A)
   coupler := line(A, B)
@@ -46,8 +46,8 @@ component FourBar(o2: point, o4: point, r2: Length, r3: Length, r4: Length, beta
 in std.front {
   o2 := point
   o4 := point
-  fix(x == 0, y == 0) o2
-  fix(x == 30, y == 0) o4
+  fix((0, 0)) o2
+  fix((30, 0)) o4
 
   // the linkage, its crank angle and its coupler point's offset both left unbound
   bar := FourBar(o2, o4, r2: r2, r3: r3, r4: r4, beta: beta)
@@ -56,7 +56,7 @@ path := bar.P over theta in (0, 360)
 
 // the dwell arc: a circle osculating the coupler curve at 170°, of the radius the link will have
 in std.front {
-  k := point hint(x: 11.6, y: 11.9)
+  k := point hint((11.6, 11.9))
   osc := circle(center: k) hint(r: 25)
   path curvature(t == 170) osc
   radius(25) osc

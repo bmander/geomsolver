@@ -17,7 +17,7 @@ import { initCore } from '../core/wasm.js';
 await initCore();
 
 const TORUS = readFileSync(new URL('../../../rust/examples/swept_torus.sv', import.meta.url), 'utf8');
-const PLAIN = 'unit mm\no := point\nfix(x == 0, y == 0) o\n';
+const PLAIN = 'unit mm\no := point\nfix((0, 0)) o\n';
 
 class Stub implements MeshWorker {
   posted: Job[] = [];
@@ -211,7 +211,7 @@ test('a picture of swept solids alone is the same at every zoom; one of a static
   // the torus example's preview projects its swept part, which is one surface whatever the zoom
   assert.ok(derived(swept.sketch, 0.1).length > 0);
   assert.equal(derivedDetailFree(swept.sketch), true);
-  const plain = Document.read('unit mm\nuse std\nin std.front {\no := point\nfix(x == 0, y == 0) o\n'
+  const plain = Document.read('unit mm\nuse std\nin std.front {\no := point\nfix((0, 0)) o\n'
     + 'c := circle(center: o) hint(r: 5)\nradius(5mm) c\n}\nbody := solid(face(c), depth: 3mm)\n');
   showSolids(plain.sketch);
   assert.ok(derived(plain.sketch, 0.1).length > 0);

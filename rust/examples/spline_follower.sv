@@ -20,27 +20,27 @@ use std
 
 in std.front {
   k0 := point
-  k1 := point hint(x: 20, y: 0)
-  k2 := point hint(x: 40, y: 26)
-  k3 := point hint(x: 60, y: 0)
-  k4 := point hint(x: 80, y: 26)
-  k5 := point hint(x: 100, y: 0)
-  k6 := point hint(x: 120, y: 26)
+  k1 := point hint((20, 0))
+  k2 := point hint((40, 26))
+  k3 := point hint((60, 0))
+  k4 := point hint((80, 26))
+  k5 := point hint((100, 0))
+  k6 := point hint((120, 26))
 
   // `cam` rather than `curve`: a statement now begins with a *name* and a name that is also an
   // element keyword could not lead one.
   cam := spline(k0, k1, k2, k3, k4, k5, k6)
 
   // the follower: a level face resting against the curve, touching wherever it must
-  flat := horizontal line(hint(x: 0, y: 8.666667), hint(x: 120, y: 8.666667))
+  flat := horizontal line(hint((0, 8.666667)), hint((120, 8.666667)))
   cam tangent flat
 
   // and a point riding on the curve, held off a grounded anchor above it
-  rider := point hint(x: 60, y: 8.666667)
+  rider := point hint((60, 8.666667))
   anchor := point
   rider coincident cam
   anchor distance(60) rider
 
-  fix(x == 0, y == 26) k0
-  fix(x == 60, y == 68.666667) anchor
+  fix((0, 26)) k0
+  fix((60, 68.666667)) anchor
 }

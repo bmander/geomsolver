@@ -242,10 +242,10 @@ base := circle(center: o) hint(r: 20)
 flank := Involute(base, phase: 0).p over u in (0, 60)
 
 in std.front {
-p := point hint(x: 40, y: 40)
+p := point hint((40, 40))
 p coincident flank
 radius(20) base
-fix(x == 0, y == 0) o
+fix((0, 0)) o
 }
 ";
     let (prog, errs) = crate::common::parse(src);
@@ -322,10 +322,10 @@ component bad(s: spline, u: Angle) {
   p := point(x: u, y: u)
 }
 in std.front {
-a := point hint(x: 0, y: 0)
-b := point hint(x: 1, y: 1)
-c := point hint(x: 2, y: 1)
-d := point hint(x: 3, y: 0)
+a := point hint((0, 0))
+b := point hint((1, 1))
+c := point hint((2, 1))
+d := point hint((3, 0))
 s := spline(a, b, c, d)
 }
 w := bad(s).p over u in (0, 1)

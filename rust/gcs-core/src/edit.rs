@@ -176,7 +176,7 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
         let mut missing = false;
         // a number a `fix` holds is stated there, and is its own seed: no seed of it is written,
         // or counted missing — and one the clause wrote is taken out of it (`fix(x == 3) p`
-        // makes `hint(x: 3, y: 7)` say `hint(y: 7)`)
+        // makes `hint((3, 7))` say `hint(y: 7)`)
         let held = |p: u32| sk.params[p as usize].fixed;
         let written = |i: usize| d.seed_spans.get(i).is_some_and(|s| !s.is_empty());
         let mut redundant = false;
@@ -317,7 +317,8 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
                     for (x, p) in v.iter_mut().zip(seeded(*k)) {
                         *x = sk.params[p as usize].value;
                     }
-                    Some(syntax::Kid::Hint(syntax::KidSeed { v, ..Default::default() }))
+                    let axis = k.kind == EntKind::Axis;
+                    Some(syntax::Kid::Hint(syntax::KidSeed { v, axis, ..Default::default() }))
                 }
             });
             for g in d2.children.iter_mut() {
@@ -383,19 +384,17 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
 /// expression kept as written (a solve does not rewrite arithmetic), any other as the number it
 /// came to.  Empty where none is given.
 fn free_clause(kind: EntKind, d: &Decl, text: &str, free: impl Iterator<Item = (usize, f64)>) -> String {
-    let names: Vec<&str> = kind.fields().iter()
-        .filter(|(_, f)| *f == crate::model::Field::Scalar)
-        .map(|(n, _)| *n)
-        .collect();
-    let keys: Vec<String> = free
-        .filter_map(|(i, v)| {
-            let value = match (d.seed_text.get(i).and_then(|t| t.as_ref()), d.seed_spans.get(i)) {
-                (Some(_), Some(s)) if !s.is_empty() => s.slice(text).to_string(),
-                _ => num(v),
-            };
-            Some(format!("{}: {value}", names.get(i)?))
-        })
-        .collect();
+    let free: Vec<(usize, f64)> = free.filter(|&(i, _)| i < kind.members().len()).collect();
+    let given: Vec<usize> = free.iter().map(|&(i, _)| i).collect();
+    let value = |i: usize| {
+        let v = free.iter().find(|&&(j, _)| j == i).map_or(0.0, |&(_, v)| v);
+        match (d.seed_text.get(i).and_then(|t| t.as_ref()), d.seed_spans.get(i)) {
+            (Some(_), Some(s)) if !s.is_empty() => s.slice(text).to_string(),
+            _ => num(v),
+        }
+    };
+    let point = if given.contains(&2) { 3 } else { 2 };
+    let keys = syntax::said_text(kind, point, &given, value, ": ");
     if keys.is_empty() { String::new() } else { format!("hint({})", keys.join(", ")) }
 }
 
@@ -575,7 +574,7 @@ pub fn add_use(prog: &Program, name: &str) -> Edit {
     }
 }
 
-/// `pN := point hint(x: …, y: …)`
+/// `pN := point hint((…, …))`
 /// The rectangle the Rect tool draws: a **reusable component**, defined once per document, and
 /// one instance per gesture.  The definition is the chain a person would write — four lines
 /// welded corner to corner at right angles, the first two carrying the width and the height —
@@ -1551,11 +1550,11 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
         let with = now.map(|p| format!(" in {}", name_of(EntRef::plane(p))));
         flags.push(clause_splice(prog.text(), d.membership.span(), with));
     }
-    // `fix(x == 0, y == 0) p`: a statement per held entity, added and taken away — the holds
+    // `fix((0, 0)) p`: a statement per held entity, added and taken away — the holds
     // walked once, above, and named here now that there is a name for each
-    let held_now: std::collections::BTreeMap<GaugeKey, &[(&str, f64)]> =
+    let held_now: std::collections::BTreeMap<GaugeKey, (EntRef, &[(&str, f64)])> =
         held.iter()
-            .map(|(r, h)| (gauge_key_of(name_of(*r), h.iter().map(|(f, _)| *f)), h.as_slice()))
+            .map(|(r, h)| (gauge_key_of(name_of(*r), h.iter().map(|(f, _)| *f)), (*r, h.as_slice())))
             .collect();
     let held_was: std::collections::BTreeSet<GaugeKey> = prog
         .root()
@@ -1577,11 +1576,12 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
             doomed.insert(st.id);
         }
     }
-    for (k, h) in held_now.iter() {
+    for (k, &(r, h)) in held_now.iter() {
         if held_was.contains(k) {
             continue;
         }
-        adds.push(StmtKind::Relation(crate::program::lift_gauge(&k.0, h)));
+        let point = crate::program::point_len(sk, r);
+        adds.push(StmtKind::Relation(crate::program::lift_gauge(&k.0, r.kind, point, h)));
         made.push(Made::Gauge);
     }
 
@@ -1678,11 +1678,8 @@ fn gauge_key(r: &syntax::Relation) -> Option<GaugeKey> {
             if crate::constraints::gauge_op(&w.word.text)? != CKind::Fix {
                 return None;
             }
-            let fields = w.args.iter().filter_map(|a| match a {
-                syntax::OpArg::Slot { key, .. } => Some(key.text.as_str()),
-                _ => None,
-            });
-            Some(gauge_key_of(syntax::ref_text(w.ops.first()?), fields))
+            let fields: Vec<syntax::Name> = w.slots().map(|(key, _)| key).collect();
+            Some(gauge_key_of(syntax::ref_text(w.ops.first()?), fields.iter().map(|k| k.text.as_str())))
         }
         syntax::RelationForm::Canonical { kind: CKind::Fix, args } => {
             let Some(Some(syntax::Arg::Ref(rf))) = args.first() else { return None };

@@ -20,10 +20,10 @@ web := hypot(span / 2, height)
 // bays + 1 nodes along the bottom, and one above the middle of each bay
 in std.front {
   repeat bays + 1 as i {
-    b := point hint(x: i * span, y: 0)
+    b := point hint((i * span, 0))
   }
   repeat bays as i {
-    t := point hint(x: (i + 0.5) * span, y: height)
+    t := point hint(((i + 0.5) * span, height))
   }
 
   // the bottom chord, and the two web members that hang the top node off this bay
@@ -39,5 +39,5 @@ in std.front {
   }
 
   horizontal chord[0]
-  fix(x == 0, y == 0) b[0]
+  fix((0, 0)) b[0]
 }

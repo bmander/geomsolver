@@ -272,9 +272,9 @@ use std
 param s: Length hint(20)
 in std.front {
 a := point
-b := point hint(x: 10, y: 0)
-c := point hint(x: 0, y: 10)
-fix(x == 0, y == 0) a
+b := point hint((10, 0))
+c := point hint((0, 10))
+fix((0, 0)) a
 a distance(s / 2) b
 a distance(sin(30) * s) c
 }
@@ -547,10 +547,10 @@ use std
 // a square with a hole, written by hand
 in std.front {
 a := point
-b := point hint(x: 100, y: 0)
-c := point hint(x: 100, y: 100)
-d := point hint(x: 0, y: 100)
-o := point hint(x: 50, y: 50)
+b := point hint((100, 0))
+c := point hint((100, 100))
+d := point hint((0, 100))
+o := point hint((50, 50))
 ab := line(a, b)
 bc := line(b, c)
 cd := line(c, d)
@@ -567,7 +567,7 @@ in std.front {
 a distance(w) b
 b distance(w) c
 radius(w / 5) hole
-fix(x == 0, y == 0) a
+fix((0, 0)) a
 }
 ";
     let (p, errs) = crate::common::parse(text);
@@ -586,7 +586,7 @@ fix(x == 0, y == 0) a
 /// A bad line costs one line, and every diagnostic carries a span that slices to the problem.
 #[test]
 fn one_bad_line_costs_one_line() {
-    let text = "a := point hint(x: 0, y: 0)\nthis is not a statement\nb := point hint(x: 10, y: 0)\n";
+    let text = "a := point hint((0, 0))\nthis is not a statement\nb := point hint((10, 0))\n";
     let (p, errs) = crate::common::parse(text);
     assert!(!errs.is_empty(), "the bad line is reported");
     let e = elaborate(&p);
@@ -840,21 +840,21 @@ fn every_seed_is_written_in_a_hint_clause() {
         assert!(e.ok(), "{src}: {:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
         e.sketch
     };
-    let now = read("use std\nin std.front {\na := point hint(x: 3, y: 4)\nb := point hint(x: 9, y: 1)\nl := line(a, b)\n}\n");
-    let flipped = read("use std\nin std.front {\na := point hint(y: 4, x: 3)\nb := point hint(x: 9, y: 1)\nl := line(a, b)\n}\n");
+    let now = read("use std\nin std.front {\na := point hint((3, 4))\nb := point hint((9, 1))\nl := line(a, b)\n}\n");
+    let flipped = read("use std\nin std.front {\na := point hint((3, 4))\nb := point hint((9, 1))\nl := line(a, b)\n}\n");
     assert_eq!(io::dumps(&now, Some(1)), io::dumps(&flipped, Some(1)), "keys in any order");
 
     // and the printer writes the clause, all of it
     let text = to_program(&now).text().to_string();
-    assert!(text.contains("hint(x: 3, y: 4)"), "{text}");
+    assert!(text.contains("hint((3, 4))"), "{text}");
 
     // the retired spellings are errors, and each says where the number belongs
     for src in [
         "point a at (3, 4)\n",
         "point a hint at (3, 4)\n",
-        "o := point hint(x: 0, y: 0)\ncircle c(center: o, r: 25)\n",
-        "q := point hint(x: 0, y: 0)\npoint a hint at q\n",
-        "q := point hint(x: 0, y: 0)\nk := circle(center: q) hint(r: 5)\npoint a hint at k bearing (30)\n",
+        "o := point hint((0, 0))\ncircle c(center: o, r: 25)\n",
+        "q := point hint((0, 0))\npoint a hint at q\n",
+        "q := point hint((0, 0))\nk := circle(center: q) hint(r: 5)\npoint a hint at k bearing (30)\n",
     ] {
         let (_, errs) = crate::common::parse(src);
         assert!(!errs.is_empty(), "{src} still parses");
@@ -875,7 +875,7 @@ fn read_ok(src: &str) -> gcs_core::program::Elaborated {
 /// they are called — a name earns its place when something says it twice, and these said it once.
 #[test]
 fn a_declaration_may_omit_its_children() {
-    let e = read_ok("use std\nin std.front {\nl := line\nhorizontal l\nfix(x == 0, y == 0) l.p1\n}\n");
+    let e = read_ok("use std\nin std.front {\nl := line\nhorizontal l\nfix((0, 0)) l.p1\n}\n");
     assert_eq!(e.sketch.points.len(), 2 + STD_POINTS, "two ends, minted");
     assert_eq!(e.sketch.lines.len(), 1);
     // the dotted path is the name: it resolves, and the map carries it
@@ -902,9 +902,9 @@ fn a_declaration_may_omit_its_children() {
 /// statements it stands for — same drawing, same freedoms.
 #[test]
 fn a_child_slot_may_hold_a_seed() {
-    let mut anon = read_ok("use std\nin std.front {\nl := line(p2: hint(x: 60, y: 20))\nfix(x == 0, y == 0) l.p1\n}\n");
+    let mut anon = read_ok("use std\nin std.front {\nl := line(p2: hint((60, 20)))\nfix((0, 0)) l.p1\n}\n");
     let mut named = read_ok(
-        "use std\nin std.front {\na := point\nb := point hint(x: 60, y: 20)\nl := line(a, b)\nfix(x == 0, y == 0) a\n}\n",
+        "use std\nin std.front {\na := point\nb := point hint((60, 20))\nl := line(a, b)\nfix((0, 0)) a\n}\n",
     );
     // the same drawing: the minted ends stand where the declared points do (numbered after the
     // standard datums, where the declared ones are numbered before them)
@@ -931,7 +931,7 @@ fn a_slot_left_out_is_an_implicit_child() {
     // `l := line(a)` names one end and leaves the other implicit — minted as `l.p2`, exactly as a
     // declaration that writes no list at all mints them (spec §6.1); what stays refused is a
     // kind with no arity to conjure children from, and a list with more than the kind holds
-    let (p, errs) = crate::common::parse("use std\nin std.front {\na := point hint(x: 0, y: 0)\nl := line(a)\n}\n");
+    let (p, errs) = crate::common::parse("use std\nin std.front {\na := point hint((0, 0))\nl := line(a)\n}\n");
     assert!(errs.is_empty(), "{errs:?}");
     let e = elaborate(&p);
     assert!(e.ok(), "{:?}", e.errors().map(|d| d.message.clone()).collect::<Vec<_>>());
@@ -949,13 +949,13 @@ fn a_slot_left_out_is_an_implicit_child() {
 /// no name has no name to print.
 #[test]
 fn an_anonymous_child_prints_back_anonymous() {
-    let src = "use std\nin std.front {\nl := line(hint(x: 0, y: 0), hint(x: 60, y: 20))\nc := circle hint(r: 25)\n}\n";
+    let src = "use std\nin std.front {\nl := line(hint((0, 0)), hint((60, 20)))\nc := circle hint(r: 25)\n}\n";
     let (p, errs) = crate::common::parse(src);
     assert!(errs.is_empty(), "{errs:?}");
     let mut out = String::new();
     gcs_core::syntax::write_stmt_to(&mut out, &p.root().body[0].kind).unwrap();
-    assert!(out.contains("hint(x: 0, y: 0)"), "{out}");
-    assert!(out.contains("hint(x: 60, y: 20)"), "{out}");
+    assert!(out.contains("hint((0, 0))"), "{out}");
+    assert!(out.contains("hint((60, 20))"), "{out}");
     // and re-reading it is the same drawing
     let again = read_ok(src);
     let first = read_ok(src);
@@ -972,7 +972,7 @@ fn an_anonymous_child_prints_back_anonymous() {
 /// against and no drag can write back, which is the one outcome worse than an error.
 #[test]
 fn a_seed_in_a_list_slot_is_refused() {
-    let src = "use std\nin std.front {\ns := spline(hint(x: 0, y: 0), hint(x: 1, y: 0), hint(x: 2, y: 1), hint(x: 3, y: 0))\n}\n";
+    let src = "use std\nin std.front {\ns := spline(hint((0, 0)), hint((1, 0)), hint((2, 1)), hint((3, 0)))\n}\n";
     let (p, errs) = crate::common::parse(src);
     assert!(errs.is_empty(), "{errs:?}");
     let e = elaborate(&p);

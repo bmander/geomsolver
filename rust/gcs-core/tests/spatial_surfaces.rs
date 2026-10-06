@@ -48,17 +48,17 @@ const VIEWS: &str = "\
 unit mm
 use std
 side := plane(u: std.z, v: std.y)
-fix(x == 0, y == 0, z == 0) side
+fix(origin == (0, 0, 0)) side
 in std.front {
   ax := line
-  fix(x == 0, y == 0) ax.p1
-  fix(x == 0, y == 50) ax.p2
+  fix((0, 0)) ax.p1
+  fix((0, 50)) ax.p2
   bx := line
-  fix(x == 0, y == 20) bx.p1
-  fix(x == 50, y == 20) bx.p2
+  fix((0, 20)) bx.p1
+  fix((50, 20)) bx.p2
 }
-a := point hint(x: 10, y: 20) in side
-l := line(hint(x: 5, y: 3), hint(x: 30, y: 20)) in side
+a := point hint((10, 20)) in side
+l := line(hint((5, 3)), hint((30, 20))) in side
 c := cylinder(axis: ax) hint(r: 10)
 cb := cylinder(axis: bx) hint(r: 10)
 k := cone(axis: ax) hint(half: 30deg)
@@ -97,7 +97,7 @@ fn the_words_a_cone_and_a_cylinder_take() {
     assert_eq!(settles("angle(25deg) k"), CKind::ConeAngle);
     assert_eq!(settles("c tangent l"), CKind::CylinderTangentLine);
     // a point of the axis's own view is on a cylinder in space too
-    assert_eq!(settles("b := point hint(x: 4, y: 4) in std.front\nb coincident c"), CKind::CylinderOn);
+    assert_eq!(settles("b := point hint((4, 4)) in std.front\nb coincident c"), CKind::CylinderOn);
 }
 
 /// A point on a cylinder stands its radius off the axis, and `radius` states it.
@@ -128,7 +128,7 @@ fn a_point_on_a_cone_makes_its_half_angle_at_the_apex() {
     assert!(dot(w, d) > 0.0, "on the nappe the axis points into");
     assert_eq!(dof(&format!("{VIEWS}angle(25deg) k\n")) - dof(&src), 1);
     // and a free half-angle is found by the point
-    let e = read(&format!("{VIEWS}fix(x == 130, y == 20) a\na coincident k\n"));
+    let e = read(&format!("{VIEWS}fix((130, 20)) a\na coincident k\n"));
     let sk = solved(&e);
     let (apex, d, half) = axial(&sk, ent(&e, "k"));
     assert!((half.to_degrees() - angle(sub(at(&sk, &e, "a"), apex), d)).abs() < 1e-9);
@@ -139,7 +139,7 @@ fn a_point_on_a_cone_makes_its_half_angle_at_the_apex() {
 fn a_line_touching_a_cylinder_is_its_radius_from_the_axis() {
     // the axis runs square to the side view, so the line touches it where it passes a circle
     // about the point the axis crosses that view at
-    let src = format!("{VIEWS}radius(12) cb\nfix(x == 5, y == 3) l.p1\ncb tangent l\n");
+    let src = format!("{VIEWS}radius(12) cb\nfix((5, 3)) l.p1\ncb tangent l\n");
     let e = read(&src);
     let sk = solved(&e);
     let (p, d, _) = axial(&sk, ent(&e, "cb"));
@@ -233,7 +233,7 @@ fn cones_and_cylinders_round_trip() {
         assert!(norm(sub(sk.world_point(i), again.world_point(i))) < 1e-7, "p{i}");
     }
     // a cylinder's side comes through a document, where nobody wrote it
-    let e = read(&format!("{VIEWS}radius(12) cb\nfix(x == 5, y == 3) l.p1\ncb tangent l\n"));
+    let e = read(&format!("{VIEWS}radius(12) cb\nfix((5, 3)) l.p1\ncb tangent l\n"));
     let sk = solved(&e);
     let back = io::loads(&io::dumps(&sk, None)).expect("reads back");
     assert_eq!(io::dumps(&back, None), io::dumps(&sk, None));
@@ -288,14 +288,14 @@ fn what_a_cone_or_a_cylinder_does_not_take_is_refused() {
 #[test]
 fn a_lifted_plane_keeps_its_origin() {
     let src = "unit mm\nuse std\n\
-               back := plane hint(x: 0, y: -12, z: 0)\n\
-               fix(x == 0, y == -12, z == 0) back\n\
-               fix(x == 1, y == 0, z == 0) back.u\n\
-               fix(x == 0, y == 0, z == 1) back.v\n\
-               r := axis hint(x: 0.8, y: 0.6, z: 0)\nfix(x == 0.8, y == 0.6, z == 0) r\n\
-               side := plane(u: r) hint(x: 3, y: 4, z: 5)\n\
-               fix(x == 3, y == 4, z == 5) side\nfix(x == 0, y == 0, z == 1) side.v\n\
-               a := point hint(x: 5, y: 7) in back\nb := point hint(x: 9, y: -3) in side\n";
+               back := plane hint(origin: (0, -12, 0))\n\
+               fix(origin == (0, -12, 0)) back\n\
+               fix(dir == (1, 0, 0)) back.u\n\
+               fix(dir == (0, 0, 1)) back.v\n\
+               r := axis hint(dir: (0.8, 0.6, 0))\nfix(dir == (0.8, 0.6, 0)) r\n\
+               side := plane(u: r) hint(origin: (3, 4, 5))\n\
+               fix(origin == (3, 4, 5)) side\nfix(dir == (0, 0, 1)) side.v\n\
+               a := point hint((5, 7)) in back\nb := point hint((9, -3)) in side\n";
     let e = read(src);
     let sk = solved(&e);
     let lifted = gcs_core::program::to_program(&sk).text().to_string();

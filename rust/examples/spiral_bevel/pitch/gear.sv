@@ -10,18 +10,18 @@ component GearCone(p: plane, g: plane, design: group) {
   // Seeds only, rough: F on the side of OM the pitch angle opens to.
   r := design.cone_distance
   in p {
-    O := point hint(x: 0, y: 0)
-    M := point hint(x: r, y: 0)
+    O := point hint((0, 0))
+    M := point hint((r, 0))
     generator := line(O, M)
   }
   O coincident p.origin
   M distance(0mm, along: v) p
   in g {
-    apex := point hint(x: 0, y: 0)
-    mean := point hint(x: r, y: 0)
-    foot := point hint(x: r / 4, y: r / 2)
-    top := point hint(x: 0, y: -r)
-    mirror := point hint(x: 0, y: r)
+    apex := point hint((0, 0))
+    mean := point hint((r, 0))
+    foot := point hint((r / 4, r / 2))
+    top := point hint((0, -r))
+    mirror := point hint((0, r))
     pitch_line := line(apex, mean)
     to_apex := line(mean, apex)
     to_foot := line(mean, foot)

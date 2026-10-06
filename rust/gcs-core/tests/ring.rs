@@ -10,13 +10,13 @@ use crate::common::parse;
 const SPOKES: &str = "
 hub := point
 rim := circle(center: hub) hint(r: 40)
-fix(x == 0, y == 0) hub
+fix((0, 0)) hub
 ring 4 about hub as i {
-  tip := point hint(x: 40 * cos(90 * i), y: 40 * sin(90 * i))
+  tip := point hint((40 * cos(90 * i), 40 * sin(90 * i)))
   hub distance(40) tip
   tip coincident rim
 }
-after := point hint(x: 1, y: 2)
+after := point hint((1, 2))
 ";
 
 #[test]

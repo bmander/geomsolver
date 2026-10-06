@@ -56,9 +56,9 @@ preview {
   proportions := {pressure: 20deg, shift: 0deg,
                        base: 1, dedendum: 1, rounding: 0.3, backlash: 0mm, lashed: 0}
   in std.front {
-    lp := point hint(x: pitch_radius - 1.3mm, y: 0)
-    rp := point hint(x: pitch_radius + 1.3mm, y: 0)
-    far := point hint(x: pitch_radius + 3.9mm, y: 0)
+    lp := point hint((pitch_radius - 1.3mm, 0))
+    rp := point hint((pitch_radius + 1.3mm, 0))
+    far := point hint((pitch_radius + 3.9mm, 0))
     std.origin distance(pitch_radius - 1.3mm, along: right) lp
     std.origin distance(0mm, along: up) lp
     std.origin distance(pitch_radius + 1.3mm, along: right) rp

@@ -23,16 +23,16 @@ offset := 17.5mm
 
 in std.front {
   gax := line
-  fix(x == 0, y == 0) gax.p1
-  fix(x == 0, y == 50) gax.p2
+  fix((0, 0)) gax.p1
+  fix((0, 50)) gax.p2
 }
 
-t := axis hint(x: 0.87, y: 0, z: 0.5)
+t := axis hint(dir: (0.87, 0, 0.5))
 t perpendicular std.y
 side := plane(u: t, v: std.y)
 side.origin coincident std.front     // on std.y already, as its axes pass through it
 in side {
-  pax := line(hint(x: 0, y: 10), hint(x: 60, y: 12))
+  pax := line(hint((0, 10)), hint((60, 12)))
   pax.p1 distance(0, along: u) side
   pax.p2 distance(60, along: u) side
   pax.p1 horizontal pax.p2

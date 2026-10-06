@@ -58,10 +58,10 @@ unit mm
 use std
 in std.front {
 a := point
-b := point hint(x: 40, y: 0)
-c := point hint(x: 40, y: 30)
-d := point hint(x: 0, y: 30)
-fix(x == 0, y == 0) a
+b := point hint((40, 0))
+c := point hint((40, 30))
+d := point hint((0, 30))
+fix((0, 0)) a
 square := (ab := line(a, b)) -> (bc := line(b, c)) -> (cd := line(c, d)) -> (da := line(d, a)) -> close
 horizontal ab
 vertical bc
@@ -157,15 +157,15 @@ use std
 in std.front {
 o := point
 q := point
-fix(x == 0, y == 0) o
-fix(x == 0, y == 10) q
+fix((0, 0)) o
+fix((0, 10)) q
 ax := line(o, q)
 }
 component Rect(w: Length, h: Length) {
-  a := point hint(x: 2, y: 0)
-  b := point hint(x: 2mm + w, y: 0)
-  c := point hint(x: 2mm + w, y: h)
-  d := point hint(x: 2, y: h)
+  a := point hint((2, 0))
+  b := point hint((2mm + w, 0))
+  c := point hint((2mm + w, h))
+  d := point hint((2, h))
   profile := (bottom := line(a, b)) -> (right := line(b, c)) -> (top := line(c, d)) -> (left := line(d, a)) -> close
   horizontal bottom
   vertical right
@@ -252,11 +252,11 @@ repeat e in late.p {
   n := point
   n midpoint e
 }
-trail := (t1 := line(hint(x: 0, y: 0), hint(x: 10, y: 0))) ->
-  (t2 := line(hint(x: 10, y: 0), hint(x: 10, y: 10))) -> (t3 := line)
+trail := (t1 := line(hint((0, 0)), hint((10, 0)))) ->
+  (t2 := line(hint((10, 0)), hint((10, 10)))) -> (t3 := line)
 }
 component Late() {
-  p := line(hint(x: 0, y: 20), hint(x: 5, y: 20)) -> line
+  p := line(hint((0, 20)), hint((5, 20))) -> line
 }
 in std.front {
 late := Late()
@@ -281,7 +281,7 @@ repeat e in square as i {{
   }}
 }}
 repeat 2 as k {{
-  z := line(hint(x: 0, y: 50 + k), hint(x: 10, y: 50 + k)) -> line
+  z := line(hint((0, 50 + k)), hint((10, 50 + k))) -> line
   repeat e in z {{
     n := point
     n midpoint e
@@ -306,7 +306,7 @@ fn what_is_not_a_named_chain_is_refused() {
     refused(&format!("{SQUARE}in std.front {{\nrepeat e in ab {{ }}\n}}\n"), "E103", "`ab` is not a named chain");
     refused(&format!("{SQUARE}in std.front {{\nrepeat e in nothing {{ }}\n}}\n"), "E101", "no such entity: `nothing`");
     refused(
-        "use std\nin std.front {\nopen := line(hint(x: 0, y: 0), hint(x: 1, y: 0)) -> line\ncycle e in open { }\n}\n",
+        "use std\nin std.front {\nopen := line(hint((0, 0)), hint((1, 0))) -> line\ncycle e in open { }\n}\n",
         "E103",
         "is an open chain",
     );
@@ -316,7 +316,7 @@ fn what_is_not_a_named_chain_is_refused() {
         "\
 use std
 component Hid() {
-  private p := line(hint(x: 0, y: 0), hint(x: 1, y: 0)) -> line
+  private p := line(hint((0, 0)), hint((1, 0))) -> line
 }
 in std.front {
 h := Hid()
@@ -340,7 +340,7 @@ repeat e in h.p { }
 #[test]
 fn the_block_is_kept_as_written() {
     let src = format!(
-        "{SQUARE}in std.front {{\nrepeat e in square as i {{\n  m := point hint(x: 1, y: 1)\n  m midpoint e\n}}\n}}\n"
+        "{SQUARE}in std.front {{\nrepeat e in square as i {{\n  m := point hint((1, 1))\n  m midpoint e\n}}\n}}\n"
     );
     // the block standing before the chain it runs over, so the printer meets it first
     let early = "\
@@ -350,7 +350,7 @@ repeat e in sq {
   m := point
   m midpoint e
 }
-sq := line(hint(x: 0, y: 0), hint(x: 1, y: 0)) -> line
+sq := line(hint((0, 0)), hint((1, 0))) -> line
 }
 ";
     let (mut prog, _) = parse(early);
@@ -363,7 +363,7 @@ sq := line(hint(x: 0, y: 0), hint(x: 1, y: 0)) -> line
     e.sketch.line(p, q);
     let ed = reconciled(&mut e);
     assert_eq!(ed.kind, Kind::Structural, "{:?}", ed.refused);
-    let block = "repeat e in square as i {\n  m := point hint(x: 1, y: 1)\n";
+    let block = "repeat e in square as i {\n  m := point hint((1, 1))\n";
     assert!(ed.text.contains(block), "{}", ed.text);
     let back = read(&ed.text);
     assert_eq!(back.sketch.points.len(), e.sketch.points.len());
@@ -374,12 +374,12 @@ sq := line(hint(x: 0, y: 0), hint(x: 1, y: 0)) -> line
 /// one pose to write, and a gesture on one copy is refused with the cause.
 #[test]
 fn edits_inside_the_body_behave_as_in_a_repeat() {
-    let src = format!("{SQUARE}in std.front {{\nrepeat e in square {{\n  m := point hint(x: 1, y: 1)\n  m coincident e\n}}\n}}\n");
+    let src = format!("{SQUARE}in std.front {{\nrepeat e in square {{\n  m := point hint((1, 1))\n  m coincident e\n}}\n}}\n");
     let (prog, _) = parse(&src);
     let mut e = elaborate(&prog);
     assert!(solve::solve(&mut e.sketch, SolveOpts::default()).success);
     let ed = edit::commit_seeds(&e, &e.sketch, &prog);
-    assert!(ed.text.contains("m := point hint(x: 1, y: 1)"), "four poses, one seed:\n{}", ed.text);
+    assert!(ed.text.contains("m := point hint((1, 1))"), "four poses, one seed:\n{}", ed.text);
     let copy = EntRef::point(4);
     let copy_name = e.map.name_of(copy).cloned().unwrap();
     assert!(copy_name.starts_with('#') && copy_name.ends_with(".0.m"), "{copy_name}");
@@ -408,15 +408,15 @@ fn the_copies_stand_where_the_block_is_written() {
     let src = "\
 use std
 in std.front {
-a := point hint(x: 0, y: 0)
-b := point hint(x: 10, y: 0)
-c := point hint(x: 0, y: 10)
-before := point hint(x: -5, y: -5)
+a := point hint((0, 0))
+b := point hint((10, 0))
+c := point hint((0, 10))
+before := point hint((-5, -5))
 repeat e in tri {
   m := point
   m midpoint e
 }
-after := point hint(x: 5, y: 5)
+after := point hint((5, 5))
 tri := line(a, b) -> line(b, c) -> line(c, a) -> close
 }
 ";

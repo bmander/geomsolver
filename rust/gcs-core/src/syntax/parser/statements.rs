@@ -509,6 +509,20 @@ impl<'a> P<'a> {
                 self.end_of_stmt();
                 StmtKind::Group(crate::syntax::GroupDecl { name, fields })
             }
+            // `o := (10mm, 20mm)` — a vector, a group of its components: `o.x`, `o.y`
+            None if self.tuple_ahead() => {
+                let fields = self
+                    .vector("")?
+                    .into_iter()
+                    .map(|(key, (_, text, span))| crate::syntax::InstArg {
+                        label: Some(Name { text: key, span }),
+                        value: crate::syntax::InstVal::Expr(text),
+                        span,
+                    })
+                    .collect();
+                self.end_of_stmt();
+                StmtKind::Group(crate::syntax::GroupDecl { name, fields })
+            }
             Some("view" | "section" | "dimensions") if call => {
                 self.derived(DeclName::Written(name))?
             }

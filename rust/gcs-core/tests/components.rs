@@ -31,14 +31,14 @@ fn a_formal_is_visible_inside_a_repeat_in_the_body() {
 use std
 component Fan(hub: point) {
            repeat 3 as i {
-             tip := point hint(x: 20 + i, y: i * 5)
+             tip := point hint((20 + i, i * 5))
              hub distance(10) tip
            }
          }
          in std.front {
          h := point
          f := Fan(h)
-         fix(x == 0, y == 0) h
+         fix((0, 0)) h
          }
 ",
     );
@@ -59,7 +59,7 @@ fn a_formal_is_forwarded_into_a_nested_instance() {
         "\
 use std
 component Inner(p: point) {
-           z := point hint(x: 10, y: 0)
+           z := point hint((10, 0))
            p distance(20) z
          }
          component Outer(q: point) {
@@ -68,7 +68,7 @@ component Inner(p: point) {
          in std.front {
          a := point
          o := Outer(a)
-         fix(x == 0, y == 0) a
+         fix((0, 0)) a
          }
 ",
     );
@@ -88,9 +88,9 @@ component Peg(a: point, b: point) {
          }
          in std.front {
          hub := point
-         fix(x == 0, y == 0) hub
+         fix((0, 0)) hub
          repeat 3 as i {
-           tip := point hint(x: 20 + i, y: i * 5)
+           tip := point hint((20 + i, i * 5))
            s := Peg(hub, tip)
          }
          }
@@ -116,9 +116,9 @@ component Spoke(c: point, t: point) {
          }
          in std.front {
          hub := point
-         fix(x == 0, y == 0) hub
+         fix((0, 0)) hub
          cycle 6 as i {
-           tip := point hint(x: 40 * cos(60 * i), y: 40 * sin(60 * i))
+           tip := point hint((40 * cos(60 * i), 40 * sin(60 * i)))
            s := Spoke(hub, tip)
          }
          }
@@ -138,8 +138,8 @@ fn a_copy_inside_an_instance_is_indexed_from_outside() {
     let sk = drawn(
         "component Ladder(o: point, n: Int) {\n\
          \x20 repeat n as i {\n\
-         \x20   p := point hint(x: 0, y: i * 10)\n\
-         \x20   e := line(p, hint(x: 5, y: i * 10))\n\
+         \x20   p := point hint((0, i * 10))\n\
+         \x20   e := line(p, hint((5, i * 10)))\n\
          \x20 }\n\
          \x20 o coincident p[0]\n\
          }\n\
@@ -147,8 +147,8 @@ fn a_copy_inside_an_instance_is_indexed_from_outside() {
          o2 := point\n\
          l := Ladder(o, n: 3)\n\
          m := Ladder(o2, n: 2)\n\
-         fix(x == 0, y == 0) o\n\
-         fix(x == 50, y == 0) o2\n\
+         fix((0, 0)) o\n\
+         fix((50, 0)) o2\n\
          l.p[0] vertical l.p[1]\n\
          l.p[0] distance(10) l.p[1]\n\
          l.p[1] vertical l.p[2]\n\
@@ -173,8 +173,8 @@ fn a_copy_inside_an_instance_is_indexed_from_outside() {
         assert!(!e.ok(), "{src}");
     };
     let l = "use std\ncomponent L(n: Int) { repeat n { p := point } }\nin std.front {\nl := L(n: 2)\n}\n";
-    refused(&format!("{l}fix(x == 0, y == 0) l.p[2]\n"));
-    refused(&format!("{l}fix(x == 0, y == 0) l.p[0][0]\n"));
+    refused(&format!("{l}fix((0, 0)) l.p[2]\n"));
+    refused(&format!("{l}fix((0, 0)) l.p[0][0]\n"));
 }
 
 // **How a call is written** (issue #48, item 1; §4.1).  Positional binding is a count, and a
@@ -202,8 +202,8 @@ hub distance(len) tip
 }
 in std.front {
 o := point
-t := point hint(x: 10, y: 0)
-fix(x == 0, y == 0) o
+t := point hint((10, 0))
+fix((0, 0)) o
 }
 ";
 
@@ -236,12 +236,12 @@ fn one_call_is_read_once_however_many_copies_it_makes() {
         "\
 use std
 component Spoke(hub: point, phase: Angle) {
-tip := point hint(x: 20 * cos(phase), y: 20 * sin(phase))
+tip := point hint((20 * cos(phase), 20 * sin(phase)))
 hub distance(20) tip
 }
 in std.front {
 o := point
-fix(x == 0, y == 0) o
+fix((0, 0)) o
 cycle 4 as i { s := Spoke(o, i * 90deg) }
 }
 ",

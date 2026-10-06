@@ -150,11 +150,11 @@ fn grounded_at(seed: f64, edit: impl Fn(String) -> String) -> gcs_core::program:
 use std
 
 in std.front {
-g0 := point hint(x: -60, y: -95)
-g1 := point hint(x: 0, y: -95)
+g0 := point hint((-60, -95))
+g1 := point hint((0, -95))
 ground := horizontal line(g0, g1)
 g0 distance(60, along: x) g1
-fix(x == -60, y == -95) g0
+fix((-60, -95)) g0
 }
 "
         + &format!("path tangent ground hint(t: {seed})\n");
@@ -265,8 +265,8 @@ fn on_level_ground(extra: &str) -> gcs_core::program::Elaborated {
 use std
 
 in std.front {
-g0 := point hint(x: -60, y: -92)
-g1 := point hint(x: 0, y: -92)
+g0 := point hint((-60, -92))
+g1 := point hint((0, -92))
 ground := horizontal line(g0, g1)
 g0 distance(60, along: x) g1
 fix(x == -60) g0
@@ -318,7 +318,7 @@ fn the_stride_bends_at_a_stated_radius() {
         "\
 use std
 in std.front {
-k := point hint(x: -45, y: 50)
+k := point hint((-45, 50))
 osc := circle(center: k) hint(r: 140)
 }
 param s: Angle hint(318)

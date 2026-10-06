@@ -13,8 +13,8 @@ test('spatial seams, vertices and finite edges retain their defining geometry th
   const doc = Document.read(`unit mm
 use std
 component Sphere(origin: point,size: Length) {
-  private south := point hint(x: origin.x,y: origin.y-size)
-  private north := point hint(x: origin.x,y: origin.y+size)
+  private south := point hint((origin.x, origin.y-size))
+  private north := point hint((origin.x, origin.y+size))
   south vertical origin
   north vertical origin
   private rim := arc(center: origin,start: south,end: north)
@@ -32,27 +32,27 @@ b := point
 m := point
 c := point
 d := point
-fix(x == 0, y == 0) o
-fix(x == 0, y == 2) q
-fix(x == 1, y == 0) x
-fix(x == 2, y == 0) a
-fix(x == 3, y == 0) b
-fix(x == 3, y == 1) m
-fix(x == 3, y == 2) c
-fix(x == 2, y == 2) d
+fix((0, 0)) o
+fix((0, 2)) q
+fix((1, 0)) x
+fix((2, 0)) a
+fix((3, 0)) b
+fix((3, 1)) m
+fix((3, 2)) c
+fix((2, 2)) d
 ax := line(o,q)
 spin_axis := line(o,x)
 profile := (bottom := line(a,b)) -> (low := line(b,m)) -> (high := line(m,c)) ->
           (top := line(c,d)) -> (inner := line(d,a)) -> close
 south := point
 north := point
-fix(x == 0, y == -sqrt(9.25)) south
-fix(x == 0, y == sqrt(9.25)) north
+fix((0, -sqrt(9.25))) south
+fix((0, sqrt(9.25))) north
 rim := arc(center: o,start: south,end: north)
 radius(sqrt(9.25) * 1mm) rim
 diameter := line(north,south)
 shifted := point
-fix(x == 0, y == 1) shifted
+fix((0, 1)) shifted
 offset := Sphere(shifted,size: sqrt(10.25-cos(0.1rad))*1mm)
 join_cut := Sphere(shifted,size: sqrt(11-2*cos(0.1rad))*1mm)
 end_offset := Sphere(shifted,size: sqrt(10.25-cos(0.2rad))*1mm)

@@ -310,6 +310,11 @@ impl<'a> Walk<'a> {
             for a in w.args.iter_mut() {
                 match a {
                     crate::syntax::OpArg::Slot { arg, .. } => self.settle_arg(arg, vals, scope),
+                    crate::syntax::OpArg::Vector { parts, .. } => {
+                        for arg in parts {
+                            self.settle_arg(arg, vals, scope)
+                        }
+                    }
                     crate::syntax::OpArg::Named(_, arg) => self.settle_arg(arg, vals, scope),
                     crate::syntax::OpArg::Dim(text, span) => {
                         self.settle_dim(text, *span, vals, scope)
@@ -358,7 +363,7 @@ impl<'a> Walk<'a> {
                 d.seed[i] = v;
             }
         }
-        // a seed in a child slot — `line l(hint(x: w / 2, y: 0), …)` — is the same clause one
+        // a seed in a child slot — `line l(hint((w / 2, 0)), …)` — is the same clause one
         // level down, and is written over the same parameters
         for kid in d.children.iter_mut().flatten() {
             let crate::syntax::Kid::Hint(ks) = kid else { continue };
@@ -386,7 +391,7 @@ impl<'a> Walk<'a> {
     ///
     /// Two readers keep a text.  A trace block's compile reads a variable of the curve or a
     /// formal's coordinate off its own table.  And on the sheet a seed may **read geometry**
-    /// (`hint(x: k.center.x + k.r, y: pin.y)`): the value read is that scalar's own *seed*,
+    /// (`hint((k.center.x + k.r, pin.y))`): the value read is that scalar's own *seed*,
     /// which is a fact about the built drawing and not about this scope, so `program::build`
     /// works it out once every declaration has one (§6.4).  Any other failure is the error it
     /// always was.

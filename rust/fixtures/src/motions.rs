@@ -10,10 +10,10 @@ pub const TURN_SPINDLE: &str = "turn := motion(about: spindle)\n";
 pub const TURN_OWN_AXIS: &str = "\
 use std
 in std.front {
-private hub := point hint(x: 3, y: 0)
+private hub := point hint((3, 0))
 hub distance(3mm, along: u) std.front
 hub distance(0mm, along: v) std.front
-private hub_up := point hint(x: 3, y: 5)
+private hub_up := point hint((3, 5))
 hub_up distance(3mm, along: u) std.front
 hub_up distance(5mm, along: v) std.front
 construction centerline own := line(hub, hub_up)
@@ -26,10 +26,10 @@ turn := motion(about: own)
 pub const TUMBLE: &str = "\
 use std
 in std.front {
-private hub := point hint(x: 3, y: 0)
+private hub := point hint((3, 0))
 hub distance(3mm, along: u) std.front
 hub distance(0mm, along: v) std.front
-private hub_out := point hint(x: 4, y: 0)
+private hub_out := point hint((4, 0))
 hub_out distance(4mm, along: u) std.front
 hub_out distance(0mm, along: v) std.front
 construction centerline tumbler := line(hub, hub_out)
@@ -41,10 +41,10 @@ turn := motion(about: tumbler)
 pub const TURN_OFFSET: &str = "\
 use std
 in std.front {
-private a0 := point hint(x: 2.5, y: 0)
+private a0 := point hint((2.5, 0))
 a0 distance(2.5mm, along: u) std.front
 a0 distance(0mm, along: v) std.front
-private a1 := point hint(x: 2.5, y: 5)
+private a1 := point hint((2.5, 5))
 a1 distance(2.5mm, along: u) std.front
 a1 distance(5mm, along: v) std.front
 construction centerline pivot := line(a0, a1)
@@ -60,7 +60,7 @@ pub fn slide_x(advance_mm: f64) -> String {
     format!("\
 use std
 in std.front {{
-private rail_end := point hint(x: 10, y: 0)
+private rail_end := point hint((10, 0))
 rail_end distance(10mm, along: u) std.front
 rail_end distance(0mm, along: v) std.front
 construction centerline rail := line(std.origin, rail_end)
@@ -80,10 +80,10 @@ pub fn turn_about(u0: f64,v0: f64,u1: f64,v1: f64) -> String {
     format!("\
 use std
 in std.front {{
-private h0 := point hint(x: {u0}, y: {v0})
+private h0 := point hint(({u0}, {v0}))
 h0 distance({u0}mm, along: u) std.front
 h0 distance({v0}mm, along: v) std.front
-private h1 := point hint(x: {u1}, y: {v1})
+private h1 := point hint(({u1}, {v1}))
 h1 distance({u1}mm, along: u) std.front
 h1 distance({v1}mm, along: v) std.front
 construction centerline hinge := line(h0, h1)
@@ -99,10 +99,10 @@ pub fn roll(ratio: f64) -> String {
     format!("\
 use std
 in std.front {{
-private hub := point hint(x: 3, y: 0)
+private hub := point hint((3, 0))
 hub distance(3mm, along: u) std.front
 hub distance(0mm, along: v) std.front
-private hub_up := point hint(x: 3, y: 5)
+private hub_up := point hint((3, 5))
 hub_up distance(3mm, along: u) std.front
 hub_up distance(5mm, along: v) std.front
 construction centerline own := line(hub, hub_up)
@@ -118,14 +118,14 @@ turn := motion(spin, relative_to: observer)
 pub const CROSSED_ROLL: &str = "\
 use std
 in std.front {
-private hub := point hint(x: 3, y: 0)
+private hub := point hint((3, 0))
 hub distance(3mm, along: u) std.front
 hub distance(0mm, along: v) std.front
-private hub_up := point hint(x: 3, y: 5)
+private hub_up := point hint((3, 5))
 hub_up distance(3mm, along: u) std.front
 hub_up distance(5mm, along: v) std.front
 construction centerline own := line(hub, hub_up)
-private xend := point hint(x: 5, y: 0)
+private xend := point hint((5, 0))
 xend distance(5mm, along: u) std.front
 xend distance(0mm, along: v) std.front
 construction centerline xaxis := line(std.origin, xend)
@@ -158,7 +158,7 @@ pub fn cradle_roll(ratio: f64,observer: Observer) -> String {
         Observer::Crossed => ("\
 use std
 in std.front {
-private xend := point hint(x: 5, y: 0)
+private xend := point hint((5, 0))
 xend distance(5mm, along: u) std.front
 xend distance(0mm, along: v) std.front
 construction centerline xaxis := line(std.origin, xend)
@@ -166,13 +166,13 @@ construction centerline xaxis := line(std.origin, xend)
 ","xaxis"),
         Observer::Skew => ("\
 use std
-private rise := axis hint(x: 0, y: 1, z: 1)
-fix(x == 0, y == sqrt(0.5), z == sqrt(0.5)) rise
+private rise := axis hint(dir: (0, 1, 1))
+fix(dir == (0, sqrt(0.5), sqrt(0.5))) rise
 private flat := plane(u: std.x, v: rise)
-fix(x == 0, y == 0, z == 0) flat
+fix(origin == (0, 0, 0)) flat
 in flat {
-  private k0 := point hint(x: 0, y: 0.7071)
-  private k1 := point hint(x: 5, y: 0.7071)
+  private k0 := point hint((0, 0.7071))
+  private k1 := point hint((5, 0.7071))
   k0 distance(0mm, along: u) flat
   k0 distance(0.7071mm, along: v) flat
   k1 distance(5mm, along: u) flat
@@ -184,10 +184,10 @@ in flat {
     format!("\
 use std
 in std.front {{
-private hub := point hint(x: 2, y: 0)
+private hub := point hint((2, 0))
 hub distance(2mm, along: u) std.front
 hub distance(0mm, along: v) std.front
-private hub_up := point hint(x: 2, y: 5)
+private hub_up := point hint((2, 5))
 hub_up distance(2mm, along: u) std.front
 hub_up distance(5mm, along: v) std.front
 construction centerline cradle := line(hub, hub_up)

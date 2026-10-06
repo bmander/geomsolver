@@ -31,21 +31,21 @@ E := 20mm
 
 // the pitch plane P is the front plane, and M is on it
 M := point in std.front
-fix(x == 0, y == 0) M
+fix((0, 0)) M
 
 // the gear's axial plane, square to P about its vertical axis; the pinion's, solved, through M
 G := plane(u: std.z, v: std.y)
-fix(x == 0, y == 0, z == 0) G
-qu := axis hint(x: 0.1618, y: -0.4935, z: -0.8546)
-qv := axis hint(x: 0.0918, y: 0.8698, z: -0.4847)
+fix(origin == (0, 0, 0)) G
+qu := axis hint(dir: (0.1618, -0.4935, -0.8546))
+qv := axis hint(dir: (0.0918, 0.8698, -0.4847))
 qu perpendicular qv
 Q := plane(u: qu, v: qv)
 M coincident Q.origin
 
 // each axis from its apex, drawn at a length that says nothing about the cone; the pinion's
 // drawn level in its plane, which is where the plane's own turn is held
-gax := line(hint(x: 110.85, y: 0), hint(x: 50.85, y: 103.9)) in G
-pax := line(hint(x: -84.62, y: -48), hint(x: -4.62, y: -48)) in Q
+gax := line(hint((110.85, 0)), hint((50.85, 103.9))) in G
+pax := line(hint((-84.62, -48)), hint((-4.62, -48))) in Q
 gax.p1 coincident std.front
 gax.p1 distance(120) gax.p2
 pax.p1 distance(80) pax.p2

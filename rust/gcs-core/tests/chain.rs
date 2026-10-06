@@ -31,18 +31,18 @@ h := 60
 r := 10
 
 in std.front {
-b1 := point hint(x: r, y: 0)
-b2 := point hint(x: w - r, y: 0)
-r1 := point hint(x: w, y: r)
-r2 := point hint(x: w, y: h - r)
-t1 := point hint(x: w - r, y: h)
-t2 := point hint(x: r, y: h)
-l1 := point hint(x: 0, y: h - r)
-l2 := point hint(x: 0, y: r)
+b1 := point hint((r, 0))
+b2 := point hint((w - r, 0))
+r1 := point hint((w, r))
+r2 := point hint((w, h - r))
+t1 := point hint((w - r, h))
+t2 := point hint((r, h))
+l1 := point hint((0, h - r))
+l2 := point hint((0, r))
 
-c_br := point hint(x: w - r, y: r)
-c_tr := point hint(x: w - r, y: h - r)
-c_tl := point hint(x: r, y: h - r)
+c_br := point hint((w - r, r))
+c_tr := point hint((w - r, h - r))
+c_tl := point hint((r, h - r))
 c_bl := point
 
 bottom := line(b1, b2)
@@ -76,7 +76,7 @@ radius(r) a_bl
 l1 distance(w) r2
 t1 distance(h) b2
 
-fix(x == r, y == r) c_bl
+fix((r, r)) c_bl
 }
 ";
 
@@ -84,11 +84,11 @@ fix(x == r, y == r) c_bl
 const PTS: &str = "\
 use std
 in std.front {
-p1 := point hint(x: 0, y: 0)
-p2 := point hint(x: 10, y: 0)
-p3 := point hint(x: 20, y: 10)
-p4 := point hint(x: 20, y: 30)
-c := point hint(x: 10, y: 10)
+p1 := point hint((0, 0))
+p2 := point hint((10, 0))
+p3 := point hint((20, 10))
+p4 := point hint((20, 30))
+c := point hint((10, 10))
 }
 ";
 
@@ -200,8 +200,8 @@ fn close_threads_back_to_the_first_link() {
         "\
 use std
 in std.front {
-p1 := point hint(x: 0, y: 0)
-p2 := point hint(x: 10, y: 0)
+p1 := point hint((0, 0))
+p2 := point hint((10, 0))
 (a := line(p1, p2)) -> (b := line(p2)) -> close
 }
 ",
@@ -218,15 +218,15 @@ fn a_joint_is_named_by_exactly_one_side_or_by_both_in_agreement() {
     let agree = "\
 use std
 in std.front {
-p1 := point hint(x: 0, y: 0)
-p2 := point hint(x: 10, y: 0)
-p3 := point hint(x: 5, y: 10)
+p1 := point hint((0, 0))
+p2 := point hint((10, 0))
+p3 := point hint((5, 10))
 (a := line(p1, p2)) -> (b := line(p2, p3))
 }
 ";
     assert!(errors(agree).is_empty(), "{:?}", errors(agree));
-    let disagree = "p1 := point hint(x: 0, y: 0)\np2 := point hint(x: 10, y: 0)\np3 := point hint(x: 5, y: 10)\n\
-                    p4 := point hint(x: 9, y: 9)\n(a := line(p1, p2)) -> (b := line(p3, p4))\n";
+    let disagree = "p1 := point hint((0, 0))\np2 := point hint((10, 0))\np3 := point hint((5, 10))\n\
+                    p4 := point hint((9, 9))\n(a := line(p1, p2)) -> (b := line(p3, p4))\n";
     refuses(disagree, "names two points");
     // a joint *nobody* names, between two declarations, is minted: the earlier-built side's
     // boundary is an anonymous child with a name, and the other side's slot takes that name
@@ -234,9 +234,9 @@ p3 := point hint(x: 5, y: 10)
         "\
 use std
 in std.front {
-p1 := point hint(x: 0, y: 0)
-p3 := point hint(x: 20, y: 10)
-c := point hint(x: 5, y: 5)
+p1 := point hint((0, 0))
+p3 := point hint((20, 10))
+c := point hint((5, 5))
 (a := line(p1)) -> (k := arc(center: c, end: p3) hint(r: 5))
 }
 ",
@@ -248,7 +248,7 @@ c := point hint(x: 5, y: 5)
     );
     // with a name-link on one side there is no kind to read a boundary field off, so the
     // declared side must say where they meet — that refusal stays
-    let named_side = "p1 := point hint(x: 0, y: 0)\np2 := point hint(x: 10, y: 0)\nc := point hint(x: 5, y: 5)\n\
+    let named_side = "p1 := point hint((0, 0))\np2 := point hint((10, 0))\nc := point hint((5, 5))\n\
                       k := arc(center: c, start: p1, end: p2) hint(r: 5)\n\
                       (t := line(p1)) -> tangent k\n";
     refuses(named_side, "neither");
@@ -262,9 +262,9 @@ fn an_open_end_is_an_implicit_child() {
         "\
 use std
 in std.front {
-p3 := point hint(x: 20, y: 10)
-p4 := point hint(x: 20, y: 30)
-c := point hint(x: 10, y: 10)
+p3 := point hint((20, 10))
+p4 := point hint((20, 30))
+c := point hint((10, 10))
 (k := arc(center: c) hint(r: 5)) -> (b := line(p3, p4))
 }
 ",
@@ -312,9 +312,9 @@ fn the_vocabulary_is_the_regular_forms_or_a_refusal() {
         "\
 use std
 in std.front {
-p1 := point hint(x: 0, y: 0)
-p2 := point hint(x: 10, y: 0)
-p3 := point hint(x: 20, y: 0)
+p1 := point hint((0, 0))
+p2 := point hint((10, 0))
+p3 := point hint((20, 0))
 (a := line(p1, p2)) -> tangent (b := line(p2, p3))
 }
 ",
@@ -324,25 +324,25 @@ p3 := point hint(x: 20, y: 0)
     let perp = "\
 use std
 in std.front {
-p1 := point hint(x: 0, y: 0)
-p2 := point hint(x: 10, y: 0)
-c := point hint(x: 5, y: 5)
+p1 := point hint((0, 0))
+p2 := point hint((10, 0))
+c := point hint((5, 5))
 (k := arc(center: c, start: p1, end: p2) hint(r: 5)) perpendicular (b := line(p2, p1))
 }
 ";
     refuses_later(perp, "does not relate");
 
-    let arcs = "p1 := point hint(x: 0, y: 0)\np2 := point hint(x: 10, y: 0)\np3 := point hint(x: 20, y: 0)\n\
-                c := point hint(x: 5, y: 5)\nd := point hint(x: 15, y: 5)\n\
+    let arcs = "p1 := point hint((0, 0))\np2 := point hint((10, 0))\np3 := point hint((20, 0))\n\
+                c := point hint((5, 5))\nd := point hint((15, 5))\n\
                 (k := arc(center: c, start: p1, end: p2) hint(r: 5)) -> tangent \
                 (m := arc(center: d, start: p2, end: p3) hint(r: 5))\n";
     refuses(arcs, "already meet there");
 
-    let circle = "p1 := point hint(x: 0, y: 0)\np2 := point hint(x: 10, y: 0)\nc := point hint(x: 5, y: 5)\n\
+    let circle = "p1 := point hint((0, 0))\np2 := point hint((10, 0))\nc := point hint((5, 5))\n\
                   (q := circle(center: c) hint(r: 5)) -> (b := line(p1, p2))\n";
     refuses(circle, "no ends");
 
-    let lone = "p1 := point hint(x: 0, y: 0)\np2 := point hint(x: 10, y: 0)\n(a := line(p1, p2)) -> tangent close\n";
+    let lone = "p1 := point hint((0, 0))\np2 := point hint((10, 0))\n(a := line(p1, p2)) -> tangent close\n";
     refuses(lone, "at least two");
 }
 
@@ -355,9 +355,9 @@ fn a_binary_constraint_is_an_infix_word() {
         "\
 use std
 in std.front {
-p1 := point hint(x: 0, y: 0)
-p2 := point hint(x: 10, y: 0)
-p3 := point hint(x: 10, y: 10)
+p1 := point hint((0, 0))
+p2 := point hint((10, 0))
+p3 := point hint((10, 10))
 (a := line(p1, p2)) equal (b := line(p2, p3))
 }
 ",
@@ -368,11 +368,11 @@ p3 := point hint(x: 10, y: 10)
         "\
 use std
 in std.front {
-p1 := point hint(x: 0, y: 0)
-p2 := point hint(x: 10, y: 0)
-p3 := point hint(x: 20, y: 0)
-c := point hint(x: 5, y: 5)
-d := point hint(x: 15, y: 5)
+p1 := point hint((0, 0))
+p2 := point hint((10, 0))
+p3 := point hint((20, 0))
+c := point hint((5, 5))
+d := point hint((15, 5))
 (k := arc(center: c, start: p1, end: p2) hint(r: 5)) -> equal (m := arc(center: d, end: p3) hint(r: 5))
 }
 ",
@@ -385,9 +385,9 @@ d := point hint(x: 15, y: 5)
     let unfit = "\
 use std
 in std.front {
-p1 := point hint(x: 0, y: 0)
-p2 := point hint(x: 10, y: 0)
-c := point hint(x: 5, y: 5)
+p1 := point hint((0, 0))
+p2 := point hint((10, 0))
+c := point hint((5, 5))
 (a := line(p1, p2)) -> perpendicular (k := arc(center: c, end: p1) hint(r: 5))
 }
 ";
@@ -397,7 +397,7 @@ c := point hint(x: 5, y: 5)
 /// A prefix on a lone declaration is the smallest chain there is: two statements from one line.
 #[test]
 fn a_prefix_stands_alone() {
-    let e = read("use std\nin std.front {\np1 := point hint(x: 0, y: 0)\np2 := point hint(x: 10, y: 3)\na := horizontal line(p1, p2)\n}\n");
+    let e = read("use std\nin std.front {\np1 := point hint((0, 0))\np2 := point hint((10, 3))\na := horizontal line(p1, p2)\n}\n");
     assert!(e.sketch.user_constraints().iter().any(|c| c.kind == CKind::Horizontal));
 }
 
@@ -539,7 +539,7 @@ fn the_chain_is_coloured() {
 fn a_prefix_word_is_only_a_prefix_where_the_parser_reads_one() {
     let longhand = "use std\nin std.front {\na := line(p1, p2)\nhorizontal a\n}\n";
     let e = read(&format!(
-        "p1 := point hint(x: 0, y: 0)\np2 := point hint(x: 10, y: 3)\n{longhand}"
+        "p1 := point hint((0, 0))\np2 := point hint((10, 3))\n{longhand}"
     ));
     assert!(e.sketch.user_constraints().iter().any(|c| c.kind == CKind::Horizontal));
     // the statement is a relation, so its name colours as one and nothing reads as a chain
@@ -567,7 +567,7 @@ fn a_prefix_word_is_only_a_prefix_where_the_parser_reads_one() {
 /// carrying no chain provenance, deletable as lines.
 #[test]
 fn a_plain_declaration_is_untouched_by_the_sugar() {
-    let (prog, errs) = parse("use std\nin std.front {\np1 := point hint(x: 0, y: 0)\np2 := point hint(x: 10, y: 0)\na := line(p1, p2)\n}\n");
+    let (prog, errs) = parse("use std\nin std.front {\np1 := point hint((0, 0))\np2 := point hint((10, 0))\na := line(p1, p2)\n}\n");
     assert!(errs.is_empty());
     let marks: Vec<Chained> = prog.root().body.iter().map(|s| s.chained).collect();
     assert_eq!(marks, vec![Chained::No; 3]);
@@ -595,7 +595,7 @@ fn a_chain_records_how_each_statement_is_spelled() {
 #[test]
 fn equal_chains_over_names() {
     let e = read(&format!(
-        "{PTS}in std.front {{\nd := point hint(x: 30, y: 10)\n\
+        "{PTS}in std.front {{\nd := point hint((30, 10))\n\
          k := arc(center: c, start: p1, end: p2) hint(r: 10)\n\
          m := arc(center: d, start: p2, end: p3) hint(r: 10)\n\
          q := arc(center: d, start: p3, end: p4) hint(r: 10)\n}}\n\
@@ -613,9 +613,9 @@ fn equal_chains_over_names() {
         "\
 use std
 in std.front {
-p1 := point hint(x: 0, y: 0)
-p2 := point hint(x: 10, y: 0)
-p3 := point hint(x: 10, y: 9)
+p1 := point hint((0, 0))
+p2 := point hint((10, 0))
+p3 := point hint((10, 9))
 a := line(p1, p2)
 b := line(p2, p3)
 a equal b
@@ -630,7 +630,7 @@ a equal b
 #[test]
 fn a_relation_chain_threads_nothing() {
     let e = read(&format!(
-        "{PTS}in std.front {{\nd := point hint(x: 30, y: 10)\n\
+        "{PTS}in std.front {{\nd := point hint((30, 10))\n\
          k := arc(center: c, start: p1, end: p2) hint(r: 10)\n\
          m := arc(center: d, start: p3, end: p4) hint(r: 10)\n}}\n\
          k equal m\n"
@@ -651,10 +651,10 @@ fn any_binary_word_chains_over_names() {
         "\
 use std
 in std.front {
-p1 := point hint(x: 0, y: 0)
-p2 := point hint(x: 10, y: 0)
-p3 := point hint(x: 0, y: 9)
-p4 := point hint(x: 9, y: 9)
+p1 := point hint((0, 0))
+p2 := point hint((10, 0))
+p3 := point hint((0, 9))
+p4 := point hint((9, 9))
 a := line(p1, p2)
 b := line(p3, p4)
 a parallel b
@@ -673,9 +673,9 @@ fn a_chain_may_mix_declarations_and_names() {
         "\
 use std
 in std.front {
-p1 := point hint(x: 0, y: 0)
-p2 := point hint(x: 10, y: 0)
-p3 := point hint(x: 10, y: 9)
+p1 := point hint((0, 0))
+p2 := point hint((10, 0))
+p3 := point hint((10, 9))
 a := line(p1, p2)
 (b := line(p2, p3)) equal a
 }
@@ -695,9 +695,9 @@ fn threading_is_written_never_inferred() {
     let base = "\
 use std
 in std.front {
-p1 := point hint(x: 0, y: 0)
-p2 := point hint(x: 10, y: 0)
-c := point hint(x: 5, y: 5)
+p1 := point hint((0, 0))
+p2 := point hint((10, 0))
+c := point hint((5, 5))
 a := line(p1, p2)
 k := arc(center: c, start: p1, end: p2) hint(r: 5)
 }
@@ -705,7 +705,7 @@ k := arc(center: c, start: p1, end: p2) hint(r: 5)
     refuses(&format!("{base}a to k\n"), "`to` is retired");
     refuses(&format!("{base}a -> k\n"), "names the point where they meet");
     refuses(
-        "p1 := point hint(x: 0, y: 0)\np2 := point hint(x: 10, y: 0)\np3 := point hint(x: 5, y: 9)\n\
+        "p1 := point hint((0, 0))\np2 := point hint((10, 0))\np3 := point hint((5, 9))\n\
          (a := line(p1, p2)) -> (b := line(p2, p3)) equal close\n",
         "a loop is a thread",
     );
@@ -724,9 +724,9 @@ fn equal_across_kinds_is_refused_either_way() {
     let declared = "\
 use std
 in std.front {
-p1 := point hint(x: 0, y: 0)
-p2 := point hint(x: 10, y: 0)
-c := point hint(x: 5, y: 5)
+p1 := point hint((0, 0))
+p2 := point hint((10, 0))
+c := point hint((5, 5))
 (a := line(p1, p2)) equal (k := arc(center: c, start: p2, end: p1) hint(r: 5))
 }
 ";
@@ -736,9 +736,9 @@ c := point hint(x: 5, y: 5)
     let named = "\
 use std
 in std.front {
-p1 := point hint(x: 0, y: 0)
-p2 := point hint(x: 10, y: 0)
-c := point hint(x: 5, y: 5)
+p1 := point hint((0, 0))
+p2 := point hint((10, 0))
+c := point hint((5, 5))
 a := line(p1, p2)
 q := circle(center: c) hint(r: 5)
 a equal q
@@ -762,9 +762,9 @@ fn equal_reads_a_name_declared_further_down() {
         "\
 use std
 in std.front {
-p1 := point hint(x: 0, y: 0)
-p2 := point hint(x: 10, y: 0)
-p3 := point hint(x: 10, y: 9)
+p1 := point hint((0, 0))
+p2 := point hint((10, 0))
+p3 := point hint((10, 9))
 a equal b
 a := line(p1, p2)
 b := line(p2, p3)
@@ -801,10 +801,10 @@ fn a_joint_states_several_relations() {
         "\
 use std
 in std.front {
-p1 := point hint(x: 0, y: 0)
-p2 := point hint(x: 10, y: 0)
-p3 := point hint(x: 10, y: 8)
-p4 := point hint(x: 0, y: 9)
+p1 := point hint((0, 0))
+p2 := point hint((10, 0))
+p3 := point hint((10, 8))
+p4 := point hint((0, 9))
 A := line(p1, p2)
 B := line(p3, p4)
 A equal angle(30deg) B
@@ -872,7 +872,7 @@ fn a_comment_between_words_survives_the_splice() {
 /// splice and take the refused word — and its diagnostic — along.
 #[test]
 fn a_refused_word_holds_its_joint() {
-    let src = "c1 := point hint(x: 0, y: 0)\nc2 := point hint(x: 30, y: 0)\n\
+    let src = "c1 := point hint((0, 0))\nc2 := point hint((30, 0))\n\
                (a := arc(center: c1)) -> tangent equal (b := arc(center: c2))\n";
     let (prog, errs) = parse(src);
     assert!(!errs.is_empty(), "the threaded arc-arc tangent is refused, which is the point");
@@ -897,12 +897,12 @@ fn a_doom_no_splice_can_write_is_refused() {
         "\
 use std
 in std.front {
-p1 := point hint(x: 0, y: 0)
-p2 := point hint(x: 10, y: 0)
-p3 := point hint(x: 10, y: 8)
-p4 := point hint(x: 0, y: 9)
-p5 := point hint(x: 4, y: 4)
-p6 := point hint(x: 9, y: 9)
+p1 := point hint((0, 0))
+p2 := point hint((10, 0))
+p3 := point hint((10, 8))
+p4 := point hint((0, 9))
+p5 := point hint((4, 4))
+p6 := point hint((9, 9))
 A := line(p1, p2)
 B := line(p3, p4)
 C := line(p5, p6)
@@ -937,8 +937,8 @@ fn a_placement_names_the_lines_one_relation() {
 #[test]
 fn a_break_takes_the_trailing_placement_with_it() {
     let e = read(
-        "p1 := point hint(x: 0, y: 0)\np2 := point hint(x: 10, y: 0)\np3 := point hint(x: 10, y: 8)\n\
-         p4 := point hint(x: 0, y: 9)\nB := line(p3, p4)\n\
+        "p1 := point hint((0, 0))\np2 := point hint((10, 0))\np3 := point hint((10, 8))\n\
+         p4 := point hint((0, 9))\nB := line(p3, p4)\n\
          (a := line(p1, p2)) angle(30deg) B at (0.5, 10)\n",
     );
     let ang = e
@@ -1019,10 +1019,10 @@ fn a_joint_doomed_whole_falls_back_to_one_splice() {
         "\
 use std
 in std.front {
-p1 := point hint(x: 0, y: 0)
-p2 := point hint(x: 10, y: 0)
-p3 := point hint(x: 10, y: 8)
-p4 := point hint(x: 0, y: 9)
+p1 := point hint((0, 0))
+p2 := point hint((10, 0))
+p3 := point hint((10, 8))
+p4 := point hint((0, 9))
 A := line(p1, p2)
 B := line(p3, p4)
 A equal angle(30deg) B
@@ -1089,7 +1089,7 @@ fn a_corner_onto_existing_geometry() {
 #[test]
 fn every_threadable_pair_mints_its_corner() {
     // arc -> line: the shared point is the line's minted `l1.p1`, written into the arc's `end`
-    let e = read("use std\nin std.front {\nc := point hint(x: 5, y: 5)\n(k := arc(center: c) hint(r: 5)) -> (l1 := line)\n}\n");
+    let e = read("use std\nin std.front {\nc := point hint((5, 5))\n(k := arc(center: c) hint(r: 5)) -> (l1 := line)\n}\n");
     assert_eq!(
         e.sketch.children(EntRef::arc(0))[2],
         e.sketch.children(EntRef::line(0))[0],
@@ -1101,8 +1101,8 @@ fn every_threadable_pair_mints_its_corner() {
         "\
 use std
 in std.front {
-c := point hint(x: 5, y: 5)
-d := point hint(x: 15, y: 5)
+c := point hint((5, 5))
+d := point hint((15, 5))
 (k := arc(center: c) hint(r: 5)) -> (m := arc(center: d) hint(r: 5))
 }
 ",
@@ -1146,10 +1146,10 @@ fn removing_an_unthreaded_relation_splices_a_break() {
         "\
 use std
 in std.front {
-p1 := point hint(x: 0, y: 0)
-p2 := point hint(x: 10, y: 0)
-p3 := point hint(x: 10, y: 9)
-p4 := point hint(x: 0, y: 9)
+p1 := point hint((0, 0))
+p2 := point hint((10, 0))
+p3 := point hint((10, 9))
+p4 := point hint((0, 9))
 a := line(p1, p2)
 b := line(p2, p3)
 d := line(p3, p4)
@@ -1184,9 +1184,9 @@ fn removing_an_unthreaded_relation_from_a_closed_chain_is_refused() {
         "\
 use std
 in std.front {
-p1 := point hint(x: 0, y: 0)
-p2 := point hint(x: 10, y: 0)
-p3 := point hint(x: 5, y: 9)
+p1 := point hint((0, 0))
+p2 := point hint((10, 0))
+p3 := point hint((5, 9))
 (a := line(p1, p2)) -> (b := line(p2, p3)) equal (d := line(p3, p1)) -> close
 }
 ",
@@ -1247,10 +1247,10 @@ fn a_statement_is_a_prefix_or_an_infix_operator() {
         "\
 use std
 in std.front {
-p1 := point hint(x: 0, y: 0)
-p2 := point hint(x: 60, y: 0)
-p3 := point hint(x: 60, y: 40)
-c := point hint(x: 20, y: 20)
+p1 := point hint((0, 0))
+p2 := point hint((60, 0))
+p3 := point hint((60, 40))
+c := point hint((20, 20))
 k := circle(center: c) hint(r: 5)
 l := line(p1, p2)
 m := line(p2, p3)
@@ -1287,8 +1287,8 @@ fn one_word_two_constraints_by_fixity() {
         "\
 use std
 in std.front {
-p1 := point hint(x: 0, y: 0)
-p2 := point hint(x: 60, y: 3)
+p1 := point hint((0, 0))
+p2 := point hint((60, 3))
 l := line(p1, p2)
 horizontal l
 p1 horizontal p2
@@ -1303,13 +1303,13 @@ p1 horizontal p2
 /// what naming them would.
 #[test]
 fn a_prefix_distance_is_the_distance_between_the_ends() {
-    let a = read("use std\nin std.front {\np1 := point hint(x: 0, y: 0)\np2 := point hint(x: 6, y: 0)\nl := line(p1, p2)\ndistance(6) l\n}\n");
+    let a = read("use std\nin std.front {\np1 := point hint((0, 0))\np2 := point hint((6, 0))\nl := line(p1, p2)\ndistance(6) l\n}\n");
     let b = read(
         "\
 use std
 in std.front {
-p1 := point hint(x: 0, y: 0)
-p2 := point hint(x: 6, y: 0)
+p1 := point hint((0, 0))
+p2 := point hint((6, 0))
 l := line(p1, p2)
 l.p1 distance(6) l.p2
 }
@@ -1329,17 +1329,17 @@ fn coincident_resolves_across_every_kind_it_reaches() {
 use std
 component Holder() {
   hub := point
-  o := point hint(x: 0, y: 0)
+  o := point hint((0, 0))
   k := circle(center: o) hint(r: 20)
 }
 in std.front {
 g := Holder()
-p := point hint(x: 20, y: 0)
+p := point hint((20, 0))
 p coincident g.k
-q := point hint(x: 5, y: 0)
-r := point hint(x: 30, y: 0)
+q := point hint((5, 0))
+r := point hint((30, 0))
 l := line(q, r)
-s := point hint(x: 10, y: 1)
+s := point hint((10, 1))
 s coincident l
 }
 ";
@@ -1404,7 +1404,7 @@ fn no_document_writes_a_call() {
 /// asked two questions.  Both spellings state the same two things here, in both positions.
 #[test]
 fn a_parenthesised_prefix_opens_a_chain() {
-    let leading = read("use std\nin std.front {\no := point hint(x: 0, y: 0)\nbase := radius(25) circle(center: o)\n}\n");
+    let leading = read("use std\nin std.front {\no := point hint((0, 0))\nbase := radius(25) circle(center: o)\n}\n");
     let kinds = |e: &Elaborated| -> Vec<CKind> {
         e.sketch.user_constraints().iter().map(|c| c.kind).collect()
     };
@@ -1468,12 +1468,12 @@ fn a_slot_keeps_the_name_and_the_number_it_was_written_with() {
 const SPLINE: &str = "\
 use std
 in std.front {
-s0 := point hint(x: 0, y: 0)
-s1 := point hint(x: 20, y: 10)
-s2 := point hint(x: 40, y: 10)
-s3 := point hint(x: 60, y: 0)
+s0 := point hint((0, 0))
+s1 := point hint((20, 10))
+s2 := point hint((40, 10))
+s3 := point hint((60, 0))
 s := spline(s0, s1, s2, s3)
-a := point hint(x: 30, y: 8)
+a := point hint((30, 8))
 }
 ";
 
@@ -1484,11 +1484,11 @@ component Involute(c: circle, phase: Angle, u: Angle) {
   p := point(x: c.center.x + c.r * (cos(u + phase) + u / 1rad * sin(u + phase)), y: c.center.y + c.r * (sin(u + phase) - u / 1rad * cos(u + phase)))
 }
 in std.front {
-o := point hint(x: 0, y: 0)
+o := point hint((0, 0))
 base := circle(center: o) hint(r: 20)
 }
 flank := Involute(base, phase: 0).p over u in (0, 60)
 in std.front {
-p := point hint(x: 40, y: 40)
+p := point hint((40, 40))
 }
 ";

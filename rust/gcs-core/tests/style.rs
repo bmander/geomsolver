@@ -22,11 +22,11 @@ fn read(src: &str) -> Sketch {
 
 const PLAIN: &str = "\
 a := point
-b := point hint(x: 60, y: 0)
+b := point hint((60, 0))
 ab := line(a, b) class construction
 a distance(60) b
 horizontal ab
-fix(x == 0, y == 0) a
+fix((0, 0)) a
 ";
 
 /// `class construction` draws exactly as the retired keyword did — from the base sheet, which is
@@ -71,8 +71,8 @@ fn a_later_class_wins_only_what_it_says() {
     let src = "\
 style .centerline { dash: 12 3 2 3; width: 0.5; color: #888888 }
 style .heavy      { width: 2.5 }
-a := point hint(x: 0, y: 0)
-b := point hint(x: 60, y: 0)
+a := point hint((0, 0))
+b := point hint((60, 0))
 ab := line(a, b) class centerline heavy
 ";
     let sk = read(src);
@@ -87,7 +87,7 @@ ab := line(a, b) class centerline heavy
 /// destination says about them, or nothing.
 #[test]
 fn an_unmatched_class_is_not_an_error() {
-    let sk = read("a := point hint(x: 0, y: 0)\nb := point hint(x: 1, y: 0)\nab := line(a, b) class nobody\n");
+    let sk = read("a := point hint((0, 0))\nb := point hint((1, 0))\nab := line(a, b) class nobody\n");
     let l = EntRef::new(EntKind::Line, 0);
     assert!(sk.class_of(l).has("nobody"));
     assert_eq!(sk.style_of(l), gcs_core::style::Style::default());
@@ -181,8 +181,8 @@ fn an_svg_export_draws_a_claimed_dimension_in_the_documents_ink() {
     let src = "\
 style .dimension { color: #b00020 }
 a := point
-b := point hint(x: 60, y: 0)
-fix(x == 0, y == 0) a
+b := point hint((60, 0))
+fix((0, 0)) a
 ab := line(a, b)
 horizontal ab
 a distance(60) b at (10, -20)
@@ -219,13 +219,13 @@ fn a_property_with_no_value_says_nothing() {
 #[test]
 fn a_statement_inserted_above_does_not_move_a_callout() {
     let src = "\
-a := point hint(x: 0, y: 0)
-b := point hint(x: 60, y: 0)
+a := point hint((0, 0))
+b := point hint((60, 0))
 a distance(60) b at (12, -4)
 a horizontal b at (3, 5)
 ";
     let before = read(src);
-    let after = read(&src.replace("a := point hint", "z := point hint(x: 9, y: 9)\na := point hint"));
+    let after = read(&src.replace("a := point hint", "z := point hint((9, 9))\na := point hint"));
     let places = |sk: &Sketch| -> Vec<(f64, f64)> {
         sk.user_constraints().iter().filter_map(|c| sk.placements.get(&c.id).copied()).collect()
     };
@@ -238,7 +238,7 @@ a horizontal b at (3, 5)
 /// sketch, `Sketch::remove` drops it with the constraint.
 #[test]
 fn a_placement_dies_with_its_dimension() {
-    let mut sk = read("a := point hint(x: 0, y: 0)\nb := point hint(x: 60, y: 0)\na distance(60) b at (12, -4)\n");
+    let mut sk = read("a := point hint((0, 0))\nb := point hint((60, 0))\na distance(60) b at (12, -4)\n");
     let id = sk.user_constraints()[0].id;
     assert_eq!(sk.placements.get(&id).copied(), Some((12.0, -4.0)));
     sk.remove(id);
@@ -249,7 +249,7 @@ fn a_placement_dies_with_its_dimension() {
 /// Copying a figure brings its callouts, and pasting it twice gives two sets.
 #[test]
 fn copying_a_figure_brings_its_callouts() {
-    let sk = read("a := point hint(x: 0, y: 0)\nb := point hint(x: 60, y: 0)\na distance(60) b at (12, -4)\n");
+    let sk = read("a := point hint((0, 0))\nb := point hint((60, 0))\na distance(60) b at (12, -4)\n");
     let clip = gcs_core::io::copy(&sk, &[EntRef::point(0), EntRef::point(1)]);
     assert_eq!(clip.placements.len(), 1, "the callout came with the figure");
     let mut dst = Sketch::new();
@@ -267,15 +267,15 @@ fn a_relations_class_says_how_its_callout_looks() {
 style .dimension { display: none }
 style .shown { display: inline; color: #ff0000 }
 a := point
-b := point hint(x: 60, y: 0)
-c := point hint(x: 60, y: 40)
+b := point hint((60, 0))
+c := point hint((60, 40))
 ab := line(a, b)
 bc := line(b, c)
 a distance(60) b class shown
 b distance(40) c
 horizontal ab
 vertical bc
-fix(x == 0, y == 0) a
+fix((0, 0)) a
 ";
     let sk = read(src);
     let shown: Vec<u32> = gcs_core::callout::layout(&sk, 1.0).iter().map(|c| c.id).collect();
@@ -313,10 +313,10 @@ fn display_none_leaves_a_thing_out_of_the_export() {
 style .gone { display: none }
 style .point { display: none }
 a := point
-b := point hint(x: 60, y: 0)
+b := point hint((60, 0))
 ab := line(a, b)
-cd := line(hint(x: 0, y: 20), hint(x: 60, y: 20)) class gone
-fix(x == 0, y == 0) a
+cd := line(hint((0, 20)), hint((60, 20))) class gone
+fix((0, 0)) a
 ";
     let sk = read(src);
     assert!(!sk.style_of(EntRef::new(EntKind::Line, 1)).shown());
@@ -336,10 +336,10 @@ fix(x == 0, y == 0) a
 fn an_instance_takes_a_class_whole() {
     let sk = read(
         "component Two(a: point) {\n\
-           l := line(a, hint(x: 1, y: 1))\n\
+           l := line(a, hint((1, 1)))\n\
            k := circle(center: a) hint(r: 2) class heavy\n\
          }\n\
-         o := point hint(x: 0, y: 0)\n\
+         o := point hint((0, 0))\n\
          t := Two(o) class phantom\n\
          u := Two(o)\n",
     );
@@ -359,13 +359,13 @@ style .dimension { display: none }
 style .shown { display: inline }
 style .phantom { dash: 6 3; display: geometry }
 component Bar(a: point) {
-  b := point hint(x: a.x + 30, y: a.y)
+  b := point hint((a.x + 30, a.y))
   l := line(a, b)
   a distance(30) b class shown
   horizontal l
 }
 o := point
-fix(x == 0, y == 0) o
+fix((0, 0)) o
 r := Bar(o)
 g := Bar(o) class phantom
 ";

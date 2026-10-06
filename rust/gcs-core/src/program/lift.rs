@@ -80,7 +80,7 @@ pub fn to_program(sk: &Sketch) -> Program {
     for e in sk.primitives() {
         let held = holds(sk, e);
         if !held.is_empty() {
-            p.push(StmtKind::Relation(lift_gauge(&name(sk, e), &held)));
+            p.push(StmtKind::Relation(lift_gauge(&name(sk, e), e.kind, point_len(sk, e), &held)));
         }
     }
     for (key, &v) in &sk.branches {
@@ -240,38 +240,68 @@ pub(crate) fn lift_plane(sk: &Sketch, e: EntRef) -> crate::syntax::Membership {
     }
 }
 
-/// The numbers of an entity's own a `fix` holds, by field and at what — written as a hint
+/// The numbers of an entity's own a `fix` holds, by member and at what — written as a hint
 /// writes them (`Sketch::seed_value`: a cone's half-angle in degrees).  None for a plane's
 /// origin, which the plane holds at its own `(0, 0)` and no `fix` says.
 pub(crate) fn holds(sk: &Sketch, e: EntRef) -> Vec<(&'static str, f64)> {
     if e.kind == EntKind::Point && sk.plane_of_origin(e.i()).is_some() {
         return Vec::new();
     }
-    let scalars = e.kind.fields().iter().filter(|(_, f)| *f == Field::Scalar).map(|(n, _)| *n);
     // an axis's place is held while nothing reads it (`Sketch::place_axis`), which is no gauge of
     // the document's: a place is stated held only once something reads it
     let own = sk.own_params(e);
     let own = if e.kind == EntKind::Axis && !sk.axes[e.i()].placed { &own[..3] } else { &own[..] };
-    scalars
+    e.kind.members()
+        .iter()
         .zip(own.iter().copied())
         .filter(|&(_, p)| sk.params[p as usize].fixed)
-        .map(|(n, p)| (n, sk.seed_value(e, p)))
+        .map(|(n, p)| (*n, sk.seed_value(e, p)))
         .collect()
 }
 
-/// A `fix` statement, built: `fix(x == 0, y == 0) p`, `fix(r == 25) c` — the numbers it holds,
-/// each pinned under its field's name.  What `to_program` writes for every held entity and what
-/// `edit::reconcile` appends when the app holds one.
-pub(crate) fn lift_gauge(name: &str, held: &[(&str, f64)]) -> Relation {
-    let spec = CKind::Fix.spec();
-    let mut args: Vec<Option<Arg>> = vec![None; spec.len()];
-    args[0] = Some(Arg::Ref(Ref::new(name.to_string())));
-    for &(field, value) in held {
-        if let Some(i) = spec.iter().position(|(n, _)| *n == field) {
-            args[i] = Some(Arg::Seed { value, pinned: true });
-        }
+/// A `fix` statement, built: `fix((0, 0)) p`, `fix(x == 3) p`, `fix(r == 25) c` — the numbers it
+/// holds, each vector whole where all of it is held (`point` coordinates for a point: two in a
+/// plane, three in space), else by member.  What `to_program` writes for every held entity and
+/// what `edit::reconcile` appends when the app holds one.
+pub(crate) fn lift_gauge(name: &str, kind: EntKind, point: usize, held: &[(&str, f64)]) -> Relation {
+    use crate::syntax::{Name, OpArg, Written};
+    let members = kind.members();
+    let given: Vec<usize> =
+        held.iter().filter_map(|(m, _)| members.iter().position(|n| n == m)).collect();
+    let value = |i: usize| {
+        let v = held.iter().find(|(m, _)| *m == members[i]).map_or(0.0, |(_, v)| *v);
+        Arg::Seed { value: v, pinned: true }
+    };
+    let args = crate::syntax::said(kind, point, &given)
+        .into_iter()
+        .map(|s| match s {
+            crate::syntax::Said::Whole(key, comps) => OpArg::Vector {
+                key: (!key.is_empty()).then(|| Name::new(key)),
+                parts: comps.into_iter().map(value).collect(),
+                span: Span::default(),
+            },
+            crate::syntax::Said::One(i) => OpArg::Slot { key: Name::new(members[i]), arg: value(i) },
+        })
+        .collect();
+    Relation {
+        form: crate::syntax::RelationForm::Written(Written {
+            word: Name::new("fix"),
+            fixity: crate::constraints::Fixity::Prefix,
+            ops: vec![Ref::new(name.to_string())],
+            args,
+            span: Span::default(),
+        }),
+        place: None,
+        place_span: Span::default(),
+        claim: false,
+        class: Default::default(),
+        class_span: Span::default(),
     }
-    built(CKind::Fix, args)
+}
+
+/// How many coordinates a point's own vector has: two drawn in a plane, three in space.
+pub(crate) fn point_len(sk: &Sketch, e: EntRef) -> usize {
+    if e.kind == EntKind::Point { sk.own_params(e).len() } else { 3 }
 }
 
 /// A relation somebody built rather than wrote: the kind and its arguments, and nothing else.

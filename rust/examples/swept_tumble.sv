@@ -13,10 +13,10 @@ roll := 75deg      // how far it tumbles each way
 in std.front {
   private ta := point
   private tb := point
-  fix(x == 3, y == 1) ta
-  fix(x == 3, y == 3) tb
+  fix((3, 1)) ta
+  fix((3, 3)) tb
   private taxis := line(ta, tb)
-  private tc := point hint(x: 3mm + ring, y: 2)
+  private tc := point hint((3mm + ring, 2))
   tc distance(ring, along: right) ta
   tc distance(2mm, along: v) std.front
   private section_c := circle(center: tc) hint(r: tube)
@@ -24,22 +24,22 @@ in std.front {
   construction torus := solid(face(section_c), about: taxis)
 
   // The motion: a quarter turn about an upright axis for every turn of a frame about a tilted one.
-  private hub := point hint(x: 2, y: 0)
+  private hub := point hint((2, 0))
   hub distance(2mm, along: u) std.front
   hub distance(0mm, along: v) std.front
-  private hub_up := point hint(x: 2, y: 5)
+  private hub_up := point hint((2, 5))
   hub vertical hub_up
   hub distance(5mm, along: up) hub_up
   construction centerline cradle := line(hub, hub_up)
 }
 private spin := motion(about: cradle, ratio: 0.25)
-private rise := axis hint(x: 0, y: 1, z: 1)
-fix(x == 0, y == sqrt(0.5), z == sqrt(0.5)) rise
+private rise := axis hint(dir: (0, 1, 1))
+fix(dir == (0, sqrt(0.5), sqrt(0.5))) rise
 private tilted := plane(u: std.x, v: rise)
-fix(x == 0, y == 0, z == 0) tilted
+fix(origin == (0, 0, 0)) tilted
 in tilted {
-  private k0 := point hint(x: 0, y: 0.7071)
-  private k1 := point hint(x: 5, y: 0.7071)
+  private k0 := point hint((0, 0.7071))
+  private k1 := point hint((5, 0.7071))
   k0 distance(0mm, along: u) tilted
   k0 distance(0.7071mm, along: v) tilted
   k1 distance(5mm, along: u) tilted

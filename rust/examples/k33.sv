@@ -17,11 +17,11 @@ use std
 
 in std.front {
   k0 := point
-  k1 := point hint(x: 30, y: 4)
-  k2 := point hint(x: 58, y: -2)
-  k3 := point hint(x: 6, y: 26)
-  k4 := point hint(x: 34, y: 32)
-  k5 := point hint(x: 62, y: 24)
+  k1 := point hint((30, 4))
+  k2 := point hint((58, -2))
+  k3 := point hint((6, 26))
+  k4 := point hint((34, 32))
+  k5 := point hint((62, 24))
 
   datum := horizontal line(k0, k3)
 
@@ -36,5 +36,5 @@ in std.front {
   k2 distance(26.305893) k5
 
   // the framework is rigid but free to move as a whole; these two settle where it sits
-  fix(x == 0, y == 0) k0
+  fix((0, 0)) k0
 }

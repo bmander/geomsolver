@@ -112,20 +112,20 @@ const ELL: &str = "\
 unit mm
 use std
 in std.front {
-construction centerline spindle := line(std.origin, hint(x: 0, y: 1))
-fix(x == 0, y == 1) spindle.p2
+construction centerline spindle := line(std.origin, hint((0, 1)))
+fix((0, 1)) spindle.p2
 private l0 := point
 private l1 := point
 private l2 := point
 private l3 := point
 private l4 := point
 private l5 := point
-fix(x == 3, y == -1) l0
-fix(x == 4, y == -1) l1
-fix(x == 4, y == 0) l2
-fix(x == 3.5, y == 0) l3
-fix(x == 3.5, y == 1) l4
-fix(x == 3, y == 1) l5
+fix((3, -1)) l0
+fix((4, -1)) l1
+fix((4, 0)) l2
+fix((3.5, 0)) l3
+fix((3.5, 1)) l4
+fix((3, 1)) l5
 private e0 := line(l0, l1)
 private e1 := line(l1, l2)
 private e2 := line(l2, l3)
@@ -194,10 +194,10 @@ private b0 := point
 private b1 := point
 private b2 := point
 private b3 := point
-fix(x == -5, y == 1) b0
-fix(x == 5, y == 1) b1
-fix(x == 5, y == 3) b2
-fix(x == -5, y == 3) b3
+fix((-5, 1)) b0
+fix((5, 1)) b1
+fix((5, 3)) b2
+fix((-5, 3)) b3
 private bb := line(b0, b1)
 private bw := line(b1, b2)
 private bt := line(b2, b3)

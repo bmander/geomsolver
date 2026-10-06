@@ -12,17 +12,17 @@ use std
 in std.front {
 o := point
 z := point
-fix(x == 0, y == 0) o
-fix(x == 0, y == 1) z
+fix((0, 0)) o
+fix((0, 1)) z
 ax := line(o,z)
 a := point
 b := point
 c := point
 d := point
-fix(x == 1, y == 0) a
-fix(x == 3, y == 0) b
-fix(x == 3, y == 2) c
-fix(x == 1, y == 2) d
+fix((1, 0)) a
+fix((3, 0)) b
+fix((3, 2)) c
+fix((1, 2)) d
 ab := line(a,b)
 bc := line(b,c)
 cd := line(c,d)
@@ -30,19 +30,19 @@ da := line(d,a)
 profile := face(ab,bc,cd,da)
 stock := solid(profile, from: 0mm, to: 2mm)
 r0 := point
-r1 := point hint(x: 30,y: -4)
-fix(x == 0, y == -4) r0
+r1 := point hint((30, -4))
+fix((0, -4)) r0
 big := horizontal line(r0,r1)
 r0 distance(30mm) r1
 s0 := point
-s1 := point hint(x: 10,y: -6)
-fix(x == 0, y == -6) s0
+s1 := point hint((10, -6))
+fix((0, -6)) s0
 small := horizontal line(s0,s1)
 s0 distance(10mm) s1
 k0 := point
 k1 := point
-fix(x == 0, y == -8) k0
-fix(x == 0.8660254037844387, y == -7.5) k1
+fix((0, -8)) k0
+fix((0.8660254037844387, -7.5)) k1
 slope := line(k0,k1)
 wheel := circle(center: o) hint(r: 12)
 radius(12mm) wheel
@@ -202,13 +202,13 @@ unit mm
 use std
 component Pair(ax: line, big: Length, small: Length) {
   r0 := point
-  r1 := point hint(x: 30,y: -4)
-  fix(x == 0, y == -4) r0
+  r1 := point hint((30, -4))
+  fix((0, -4)) r0
   wheel := horizontal line(r0,r1)
   r0 distance(big) r1
   s0 := point
-  s1 := point hint(x: 10,y: -6)
-  fix(x == 0, y == -6) s0
+  s1 := point hint((10, -6))
+  fix((0, -6)) s0
   pinion := horizontal line(s0,s1)
   s0 distance(small) s1
   turn := motion(about: ax, ratio: -length(wheel) / distance(pinion.p1, pinion.p2))
@@ -216,8 +216,8 @@ component Pair(ax: line, big: Length, small: Length) {
 in std.front {
 o := point
 z := point
-fix(x == 0, y == 0) o
-fix(x == 0, y == 1) z
+fix((0, 0)) o
+fix((0, 1)) z
 ax := line(o,z)
 one := Pair(ax, big: 30mm, small: 10mm)
 two := Pair(ax, big: 12mm, small: 3mm)
@@ -247,9 +247,9 @@ fn a_measurement_read_before_the_solve_is_refused_with_the_stratum() {
     // a param feeds constraints, so it is needed before the solve
     refused(&format!("{DRAWING}k := length(big)\n"),"E107",mark);
     // a seed is where the solve begins
-    refused(&format!("{DRAWING}p := point hint(x: length(big), y: 0)\n"),"E107",mark);
+    refused(&format!("{DRAWING}p := point hint((length(big), 0))\n"),"E107",mark);
     // a constraint's number is what the solve is solving for
-    refused(&format!("{DRAWING}q := point hint(x: 5,y: 5)\nq distance(length(big)) o\n"),"E107",mark);
+    refused(&format!("{DRAWING}q := point hint((5, 5))\nq distance(length(big)) o\n"),"E107",mark);
     // a solid's extent is settled at elaboration
     refused(&format!("{DRAWING}tall := solid(profile, depth: length(small))\n"),"E107",mark);
     // an attitude and a placement angle are both read before anything measures

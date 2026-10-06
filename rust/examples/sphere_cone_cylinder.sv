@@ -28,14 +28,14 @@ use std
 // a shaft square to the side plane, and a line in that plane touching it
 in std.front {
   ax := line
-  fix(x == -60, y == 15) ax.p1
-  fix(x == 20, y == 15) ax.p2
+  fix((-60, 15)) ax.p1
+  fix((20, 15)) ax.p2
 }
 shaft := cylinder(axis: ax) hint(r: 8)
 radius(8) shaft
 in std.side {
-  l := line(p2: hint(x: 0, y: 35))
-  fix(x == 30, y == -10) l.p1
+  l := line(p2: hint((0, 35)))
+  fix((30, -10)) l.p1
   l.p1 distance(50) l.p2
 }
 shaft tangent l
@@ -43,26 +43,26 @@ shaft tangent l
 // a ball centred in the front plane, and a point of the side plane on it
 in std.front {
   bc := point
-  fix(x == -8, y == 38) bc
+  fix((-8, 38)) bc
   ball := sphere(center: bc) hint(r: 12)
   radius(12) ball
 }
-pb := point hint(x: 5, y: 45) in std.side
+pb := point hint((5, 45)) in std.side
 pb coincident ball
 
 // two cones touching at a point
 in std.front {
   kax := line
-  fix(x == 25, y == 0) kax.p1
-  fix(x == 25, y == 70) kax.p2
-  jax := line(hint(x: -42, y: 82))
-  fix(x == 18, y == 82) jax.p2
+  fix((25, 0)) kax.p1
+  fix((25, 70)) kax.p2
+  jax := line(hint((-42, 82)))
+  fix((18, 82)) jax.p2
   horizontal jax
 }
 k1 := cone(axis: kax) hint(half: 30deg)       // its apex is the axis's start; it opens toward the end
 angle(30deg) k1
 k2 := cone(axis: jax) hint(half: 38deg)
-M := point hint(x: -25, y: 61) in std.side
+M := point hint((-25, 61)) in std.side
 M coincident k1
 M coincident k2
 k1 tangent(M) k2

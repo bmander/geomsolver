@@ -36,31 +36,31 @@ component Leg(axle: point, pivot: point, theta: Angle, h: Length) {
   orbit := circle(center: axle) hint(r: m)
   radius(m) orbit
   datum := line(pivot, axle)
-  pin := point hint(x: 15, y: 0)
+  pin := point hint((15, 0))
   crank := line(axle, pin)
   pin coincident orbit
   datum angle(theta) crank
 
-  top := point  hint(x: -24, y: 31)
-  knee := point hint(x: -27, y: -46)
+  top := point  hint((-24, 31))
+  knee := point hint((-27, -46))
   rod_j := line(pin, top)
   rod_k := line(pin, knee)
   distance(j) rod_j
   distance(k) rod_k
 
-  back := point hint(x: -75, y: 8)
+  back := point hint((-75, 8))
   (ub := line(pivot, top)) -> (ue := line(top, back)) -> (ud := line(back, pivot)) -> close
   distance(b) ub
   distance(e) ue
   distance(d) ud
 
-  heel := point hint(x: -59, y: -28)
+  heel := point hint((-59, -28))
   rod_c := line(pivot, knee)
   rod_f := line(back, heel)
   distance(c) rod_c
   distance(f) rod_f
 
-  toe := point hint(x: -43, y: -92)
+  toe := point hint((-43, -92))
   (lg := line(knee, heel)) -> (lh := line(heel, toe)) -> (li := line(toe, knee)) -> close
   distance(g) lg
   distance(h) lh
@@ -75,8 +75,8 @@ component Leg(axle: point, pivot: point, theta: Angle, h: Length) {
 
 in std.front {
   axle := point
-  pivot := point hint(x: -38, y: -7.8)
-  fix(x == 0, y == 0) axle
+  pivot := point hint((-38, -7.8))
+  fix((0, 0)) axle
   pivot distance(a, along: x) axle
   pivot distance(l, along: y) axle
 
@@ -88,13 +88,13 @@ path := leg.toe over theta in (0, 360)
 // level ground of unstated height, touching the stride at its bottom
 in std.front {
   g0 := point hint(y: -92)
-  g1 := point hint(x: 0, y: -92)
+  g1 := point hint((0, -92))
   ground := horizontal line(g0, g1)
   g0 distance(60, along: x) g1
   fix(x == -60) g0
 
   // a circle of stated radius, osculating the stride where the stride touches the ground
-  k := point hint(x: -45, y: 50)
+  k := point hint((-45, 50))
   osc := circle(center: k) hint(r: 140)
   radius(150) osc
 }

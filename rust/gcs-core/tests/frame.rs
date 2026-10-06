@@ -33,7 +33,7 @@ fn every_pair_with_a_plane_measures_from_its_origin() {
 /// declaration and at a component's formal alike.
 #[test]
 fn the_word_frame_is_refused_with_the_spelling_it_became() {
-    let (_, errs) = parse("o := point hint(x: 0, y: 0)\nq := point hint(x: 4, y: 0)\nframe f(origin: o, toward: q)\n");
+    let (_, errs) = parse("o := point hint((0, 0))\nq := point hint((4, 0))\nframe f(origin: o, toward: q)\n");
     assert_eq!(errs.len(), 1, "{errs:?}");
     assert!(errs[0].message.contains("folded into `plane`"), "{}", errs[0].message);
     let (_, errs) = parse("component c(f: frame) {\n  p := point\n}\n");

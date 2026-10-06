@@ -80,13 +80,13 @@ unit mm
 use std
 in std.front {{
 p0 := point
-fix(x == {x0}, y == 0) p0
+fix(({x0}, 0)) p0
 p1 := point
-fix(x == {x1}, y == 0) p1
+fix(({x1}, 0)) p1
 p2 := point
-fix(x == {x1}, y == 2) p2
+fix(({x1}, 2)) p2
 p3 := point
-fix(x == {x0}, y == 2) p3
+fix(({x0}, 2)) p3
 }}
 section := face(p0, p1, p2, p3, -> close)
 body := solid(section, from: 0mm, to: 2mm)
@@ -151,27 +151,27 @@ fn strip_cut(frame: [[f64; 3]; 2], cutter: &str, cut: bool) -> String {
     let [u, v] = frame;
     format!("unit mm
 use std
-su := axis hint(x: {}, y: {}, z: {})
-fix(x == {}, y == {}, z == {}) su
-sv := axis hint(x: {}, y: {}, z: {})
-fix(x == {}, y == {}, z == {}) sv
+su := axis hint(dir: ({}, {}, {}))
+fix(dir == ({}, {}, {})) su
+sv := axis hint(dir: ({}, {}, {}))
+fix(dir == ({}, {}, {})) sv
 stock_plane := plane(u: su, v: sv)
-fix(x == 0, y == 0, z == 0) stock_plane
+fix(origin == (0, 0, 0)) stock_plane
 tool_plane := plane(u: std.y, v: std.z)
-fix(x == 0, y == 0, z == 0) tool_plane
+fix(origin == (0, 0, 0)) tool_plane
 in stock_plane {{
   rim := radius(10mm) circle(center: stock_plane.origin) hint(r: 10)
   stock := solid(face(rim), from: 0mm, to: 2mm)
 }}
 in tool_plane {{
-  a := point hint(x: -1, y: -1)
-  b := point hint(x: 1, y: -1)
-  c := point hint(x: 1, y: 3)
-  d := point hint(x: -1, y: 3)
-  fix(x == -1, y == -1) a
-  fix(x == 1, y == -1) b
-  fix(x == 1, y == 3) c
-  fix(x == -1, y == 3) d
+  a := point hint((-1, -1))
+  b := point hint((1, -1))
+  c := point hint((1, 3))
+  d := point hint((-1, 3))
+  fix((-1, -1)) a
+  fix((1, -1)) b
+  fix((1, 3)) c
+  fix((-1, 3)) d
   cutter := solid(face(a, b, c, d, -> close), {cutter})
 }}
 body := solid(stock)

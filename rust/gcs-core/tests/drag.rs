@@ -569,8 +569,8 @@ fn a_point_in_space_follows_the_pointer_where_the_eye_sees_it() {
 #[test]
 fn a_point_in_space_dragged_on_a_sphere_keeps_its_distance() {
     let e = crate::common::read(
-        "a := point hint(x: 0, y: 0, z: 0)\nfix(x == 0, y == 0, z == 0) a\n\
-         b := point hint(x: 10, y: 0, z: 0)\na distance(10) b\n",
+        "a := point hint((0, 0, 0))\nfix((0, 0, 0)) a\n\
+         b := point hint((10, 0, 0))\na distance(10) b\n",
     );
     let mut sk = e.sketch.clone();
     solve(&mut sk, SolveOpts::default());

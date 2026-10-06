@@ -791,9 +791,9 @@ fn an_array_is_dimensioned_once() {
 use std
 in std.front {
 o := point
-         fix(x == 0, y == 0) o
+         fix((0, 0)) o
          repeat 3 as i {
-           p := point hint(x: 10 + 10 * i, y: 0)
+           p := point hint((10 + 10 * i, 0))
            o distance(10 + 10 * i) p
          }
 }

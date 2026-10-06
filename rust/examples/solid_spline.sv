@@ -10,17 +10,17 @@ in std.front {
   c := point
   d := point
   e := point
-  fix(x == 0mm, y == 0mm) a
-  fix(x == 30mm, y == 0mm) b
-  fix(x == 36mm, y == 14mm) c
-  fix(x == 18mm, y == 28mm) d
-  fix(x == 0mm, y == 20mm) e
+  fix((0mm, 0mm)) a
+  fix((30mm, 0mm)) b
+  fix((36mm, 14mm)) c
+  fix((18mm, 28mm)) d
+  fix((0mm, 20mm)) e
   lobe := spline(b, c, d, e)
   base := line(a, b)
   back := line(e, a)
   plate := solid(face(base, lobe, back), depth: 6mm)
   axle := point
-  fix(x == 12mm, y == 9mm) axle
+  fix((12mm, 9mm)) axle
   bore := radius(4mm) circle(center: axle) hint(r: 4mm)
   drill := solid(face(bore), through: plate)
   cam := solid(plate)
@@ -33,12 +33,12 @@ in std.front {
   neck := point
   lip := point
   crown := point
-  fix(x == 60mm, y == 0mm) foot
-  fix(x == 72mm, y == 0mm) heel
-  fix(x == 80mm, y == 12mm) belly
-  fix(x == 62mm, y == 24mm) neck
-  fix(x == 70mm, y == 36mm) lip
-  fix(x == 60mm, y == 36mm) crown
+  fix((60mm, 0mm)) foot
+  fix((72mm, 0mm)) heel
+  fix((80mm, 12mm)) belly
+  fix((62mm, 24mm)) neck
+  fix((70mm, 36mm)) lip
+  fix((60mm, 36mm)) crown
   sole := line(foot, heel)
   wall := spline(heel, belly, neck, lip)
   rim := line(lip, crown)

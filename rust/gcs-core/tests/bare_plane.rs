@@ -86,8 +86,8 @@ fn two_square_axes_make_a_frame() {
 /// Held, the two axes hold the plane: it stands where they meet, with nothing left to solve.
 #[test]
 fn two_held_axes_hold_the_plane_where_they_meet() {
-    let e = read(&format!("{FRAME}fix(x == 0, y == 1, z == 0, px == 3, py == 0, pz == 4) u\n\
-                           fix(x == 0, y == 0, z == 1, px == 3, py == 0, pz == 0) v\n"));
+    let e = read(&format!("{FRAME}fix(dir == (0, 1, 0), origin == (3, 0, 4)) u\n\
+                           fix(dir == (0, 0, 1), origin == (3, 0, 0)) v\n"));
     let mut sk = e.sketch.clone();
     assert!(solve(&mut sk, SolveOpts::default()).success);
     let d = diagnose(&mut sk, DiagnoseOptions::default());
@@ -101,14 +101,14 @@ fn two_held_axes_hold_the_plane_where_they_meet() {
 /// held off its own held axes.
 #[test]
 fn a_plane_over_held_axes_that_do_not_meet_is_refused() {
-    let held = "use std\na := axis\nfix(x == 1, y == 0, z == 0, px == 0, py == 0, pz == 0) a\nb := axis\n";
-    refused(&format!("{held}fix(x == 0, y == 1, z == 0, px == 0, py == 0, pz == 5) b\n\
+    let held = "use std\na := axis\nfix(dir == (1, 0, 0), origin == (0, 0, 0)) a\nb := axis\n";
+    refused(&format!("{held}fix(dir == (0, 1, 0), origin == (0, 0, 5)) b\n\
                       p := plane(u: a, v: b)\n"),
             "E067", "do not meet", "p := plane(u: a, v: b)");
-    refused(&format!("{held}fix(x == 1, y == 0, z == 0, px == 0, py == 2, pz == 0) b\n\
+    refused(&format!("{held}fix(dir == (1, 0, 0), origin == (0, 2, 0)) b\n\
                       p := plane(u: a, v: b)\n"),
             "E067", "run alike", "p := plane(u: a, v: b)");
-    refused("use std\np := plane(u: std.x, v: std.z)\nfix(x == 0, y == -5, z == 0) p\n",
+    refused("use std\np := plane(u: std.x, v: std.z)\nfix(origin == (0, -5, 0)) p\n",
             "E067", "is held where its axis `p.u` is not", "p := plane(u: std.x, v: std.z)");
 }
 
@@ -132,7 +132,7 @@ fn removing_what_placed_an_axis_holds_its_place_again() {
 /// it starts from, so `parallel` begins where it should and picks the sense written.
 #[test]
 fn a_plane_slot_seeds_the_axis_it_mints() {
-    let e = read("use std\nb := plane(v: hint(x: 0, y: -1, z: 0)) hint(x: 0, y: 0, z: 12)\n\
+    let e = read("use std\nb := plane(v: hint(dir: (0, -1, 0))) hint(origin: (0, 0, 12))\n\
                   b.u parallel std.x\nb.v parallel std.y\n");
     let mut sk = e.sketch.clone();
     assert!(solve(&mut sk, SolveOpts::default()).success);
@@ -145,7 +145,7 @@ fn a_plane_slot_seeds_the_axis_it_mints() {
 /// A child's seed prints back as written, and a point's takes no `z`.
 #[test]
 fn a_plane_slot_seed_prints_back_and_a_point_refuses_z() {
-    let decl = "p := plane(u: hint(x: 0, y: 1, z: 0), v: hint(x: 0, y: 0, z: 1))";
+    let decl = "p := plane(u: hint(dir: (0, 1, 0)), v: hint(dir: (0, 0, 1)))";
     let (prog, errs, _) = gcs_core::library::parse_linked(&format!("use std\n{decl}\n"));
     assert!(errs.is_empty(), "{errs:?}");
     let printed: Vec<String> = prog.root().body.iter().map(|st| {
@@ -157,10 +157,10 @@ fn a_plane_slot_seed_prints_back_and_a_point_refuses_z() {
     let e = read(&format!("use std\n{decl}\n"));
     let (_, u) = line(&e, &e.sketch, "p.u");
     assert!(norm(sub(u, [0.0, 1.0, 0.0])) < 1e-12);
-    refused("use std\nin std.front {\n  l := line(hint(x: 1, y: 2, z: 3), hint(x: 4, y: 5))\n}\n",
+    refused("use std\nin std.front {\n  l := line(hint((1, 2, 3)), hint((4, 5)))\n}\n",
             "E040", "an anonymous point has no `z`", "3");
-    refused("use std\np := plane(u: hint(x: 0, y: 0, z: 0))\n",
-            "E103", "points nowhere", "hint(x: 0, y: 0, z: 0)");
+    refused("use std\np := plane(u: hint(dir: (0, 0, 0)))\n",
+            "E103", "points nowhere", "hint(dir: (0, 0, 0))");
 }
 
 /// **A solve that turns a plane's own axes writes where they point** into its slots — the
@@ -168,7 +168,7 @@ fn a_plane_slot_seed_prints_back_and_a_point_refuses_z() {
 /// written reads back to the same plane.
 #[test]
 fn a_solve_writes_a_plane_s_own_axes_back() {
-    let e = read("use std\nw := axis hint(x: 0.6, y: 0.8, z: 0)\nfix(x == 0.6, y == 0.8, z == 0) w\n\
+    let e = read("use std\nw := axis hint(dir: (0.6, 0.8, 0))\nfix(dir == (0.6, 0.8, 0)) w\n\
                   p := plane\np.u parallel w\n");
     let mut sk = e.sketch.clone();
     assert!(solve(&mut sk, SolveOpts::default()).success);
@@ -179,7 +179,7 @@ fn a_solve_writes_a_plane_s_own_axes_back() {
     let (_, was) = line(&e, &sk, "p.u");
     assert!(norm(sub(u, was)) < 1e-9, "{u:?} against {was:?}\n{}", out.text);
 
-    let e = read("use std\np := plane(u: hint(x: 1, y: 0.1, z: 0))\np.u parallel std.y\n");
+    let e = read("use std\np := plane(u: hint(dir: (1, 0.1, 0)))\np.u parallel std.y\n");
     let mut sk = e.sketch.clone();
     assert!(solve(&mut sk, SolveOpts::default()).success);
     let out = gcs_core::edit::commit_seeds(&e, &sk, &e.program);
@@ -194,8 +194,8 @@ fn a_solve_writes_a_plane_s_own_axes_back() {
 /// still leans within it.
 #[test]
 fn two_planes_parallel_face_alike_either_way() {
-    let e = read("use std\nb := plane(u: hint(x: 1, y: 0.2, z: 0.3), v: hint(x: 0.1, y: -1, z: 0.2)) \
-                  hint(x: 0, y: 0, z: 12)\nb parallel std.top\nfix(x == 0, y == 0, z == 12) b\n");
+    let e = read("use std\nb := plane(u: hint(dir: (1, 0.2, 0.3)), v: hint(dir: (0.1, -1, 0.2))) \
+                  hint(origin: (0, 0, 12))\nb parallel std.top\nfix(origin == (0, 0, 12)) b\n");
     let mut sk = e.sketch.clone();
     let kinds: Vec<CKind> = sk.user_constraints().iter().map(|c| c.kind).collect();
     assert_eq!(kinds, [CKind::PlaneParallel]);
@@ -216,9 +216,9 @@ fn two_planes_parallel_face_alike_either_way() {
 /// its start, so the line lies in the plane and the origin slides along it.
 #[test]
 fn a_plane_over_a_line_stands_on_it() {
-    let e = read("use std\nin std.front {\n  h := line(hint(x: 10, y: 5), hint(x: 40, y: 25))\n\
-                  fix(x == 10, y == 5) h.p1\nfix(x == 40, y == 25) h.p2\n}\n\
-                  p := plane(u: h, v: hint(x: 0, y: 1, z: 0))\np.v parallel std.y\n");
+    let e = read("use std\nin std.front {\n  h := line(hint((10, 5)), hint((40, 25)))\n\
+                  fix((10, 5)) h.p1\nfix((40, 25)) h.p2\n}\n\
+                  p := plane(u: h, v: hint(dir: (0, 1, 0)))\np.v parallel std.y\n");
     let mut sk = e.sketch.clone();
     assert!(solve(&mut sk, SolveOpts::default()).success);
     let b = sk.basis(ent(&e, "p").i());
@@ -236,8 +236,8 @@ fn a_plane_over_a_line_stands_on_it() {
 /// (`std.Turned`), so the count sees no dependency it cannot account for.
 #[test]
 fn a_plane_over_two_lines_from_one_end_stands_there() {
-    let e = read("use std\nin std.front {\n  o := point hint(x: 10, y: 5)\nfix(x == 10, y == 5) o\n\
-                  t := point hint(x: 40, y: 20)\n}\naxes := std.Turned(o, t) in std.front\n");
+    let e = read("use std\nin std.front {\n  o := point hint((10, 5))\nfix((10, 5)) o\n\
+                  t := point hint((40, 20))\n}\naxes := std.Turned(o, t) in std.front\n");
     let mut sk = e.sketch.clone();
     assert!(solve(&mut sk, SolveOpts::default()).success);
     let b = sk.basis(ent(&e, "axes.axes").i());

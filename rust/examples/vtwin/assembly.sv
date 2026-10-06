@@ -36,8 +36,8 @@ use components.side_view
 // plane, its origin the crank axis on the plate's front face
 in std.front {
   O := point
-  fix(x == 0, y == 0) O
-  up := point hint(x: 0, y: 40)
+  fix((0, 0)) O
+  up := point hint((0, 40))
   O distance(0, along: x) up
   O distance(40, along: y) up
   ref := line(O, up)
@@ -57,7 +57,7 @@ bankL := components.bank.Bank(crank.pin, plate.l.piv, fw: components.dims.fwA, d
 // ordinates are measured from the plate's front face, which stands half a thickness in front of
 // the plate's own zero: the plate is sectioned on its mid-plane (`components.frame`), and a solid's
 // derived view stands where its plane's origin is
-so := point hint(x: -components.dims.tp / 2, y: 0) in std.side
+so := point hint((-components.dims.tp / 2, 0)) in std.side
 std.side.origin distance(-components.dims.tp / 2, along: x) so
 std.side.origin distance(0, along: y) so       // the same height: the crank axis
 side := components.side_view.SideView(so, dims: components.dims.vtwin_dims) in std.side

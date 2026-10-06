@@ -28,14 +28,14 @@ fn private_error(src: &str) {
 
 #[test]
 fn private_names_work_locally_but_not_through_external_paths() {
-    let component = "use std\ncomponent Part() { private center := point\nfix(x == 0, y == 0) center\npublic := line(center, hint(x: 10,y: 0)) }\nin std.front {\np := Part()\n}\n";
+    let component = "use std\ncomponent Part() { private center := point\nfix((0, 0)) center\npublic := line(center, hint((10, 0))) }\nin std.front {\np := Part()\n}\n";
     let e = good(component);
     assert!(e.map.entity_path(&e.sketch, "p.center").is_none());
     assert!(e.map.entity_path(&e.sketch, "p.public.p1").is_some());
     for suffix in [
-        "fix(x == 0, y == 0) p.center",
-        "use std\nin std.front {\nq := point hint(x: p.center.x, y: 0)\n}\n",
-        "component Use(c: point) { fix(x == 0, y == 0) c }\nUse(p.center)",
+        "fix((0, 0)) p.center",
+        "use std\nin std.front {\nq := point hint((p.center.x, 0))\n}\n",
+        "component Use(c: point) { fix((0, 0)) c }\nUse(p.center)",
         "leaked := {c: p.center}",
     ] {
         private_error(&format!("{component}{suffix}"));
@@ -50,7 +50,7 @@ fn private_geometry_can_be_explicitly_passed_and_forwarded() {
     good(
         "\
 use std
-component Use(c: point) { fix(x == 0, y == 0) c }
+component Use(c: point) { fix((0, 0)) c }
 component Forward(c: point) { Use(c) }
 component Owner() { Forward(secret)
 private secret := point }
@@ -63,7 +63,7 @@ Owner()
         "\
 use std
 component Layout() { p := point }
-component Use(g: group) { fix(x == 0, y == 0) g.p }
+component Use(g: group) { fix((0, 0)) g.p }
 component Owner() { Use(layout)
 private layout := Layout() }
 in std.front {
@@ -75,7 +75,7 @@ Owner()
         "\
 use std
 component Layout() { private p := point }
-component Use(g: group) { fix(x == 0, y == 0) g.p }
+component Use(g: group) { fix((0, 0)) g.p }
 component Owner() { Use(layout)
 private layout := Layout() }
 in std.front {
@@ -91,7 +91,7 @@ fn privacy_survives_nested_instances_repetition_and_forward_references() {
         "\
 use std
 component Cell() { private p := point
-fix(x == 0, y == 0) p }
+fix((0, 0)) p }
 component Owner() { private cell := Cell() }
 in std.front {
 Owner()
@@ -102,7 +102,7 @@ Owner()
         "\
 use std
 in std.front {
-fix(x == 0, y == 0) x.hidden.p
+fix((0, 0)) x.hidden.p
 }
 component Child() { p := point }
 component Owner() { private hidden := Child() }
@@ -115,10 +115,10 @@ x := Owner()
         "\
 use std
 component Owner() { repeat 3 { private p := point
-fix(x == 0, y == 0) p } }
+fix((0, 0)) p } }
 in std.front {
 x := Owner()
-fix(x == 0, y == 0) x.p[1]
+fix((0, 0)) x.p[1]
 }
 ",
     );
@@ -127,7 +127,7 @@ fix(x == 0, y == 0) x.p[1]
 use std
 component Child() { private p := point }
 component Owner() { child := Child()
-fix(x == 0, y == 0) child.p }
+fix((0, 0)) child.p }
 in std.front {
 x := Owner()
 }
@@ -140,7 +140,7 @@ component Owner() { private p := point }
 in std.front {
 x := Owner()
 alias := {layout: x}
-fix(x == 0, y == 0) alias.layout.p
+fix((0, 0)) alias.layout.p
 }
 ",
     );
@@ -151,7 +151,7 @@ fn semantic_instance_roles_do_not_escape_to_arguments_or_consumers() {
     let e = good(
         "\
 use std
-component Layout(c: point) { spoke := line(c, hint(x: 10,y: 0))
+component Layout(c: point) { spoke := line(c, hint((10, 0)))
 ring := radius(3) circle(center: c) }
 in std.front {
 borrowed := point
@@ -182,8 +182,8 @@ fn roles_preserve_the_constraint_problem_and_round_trip() {
     let tagged = "\
 use std
 in std.front {
-private construction centerline ax := line(p2: hint(x: 10,y: 0))
-fix(x == 0, y == 0) ax.p1
+private construction centerline ax := line(p2: hint((10, 0)))
+fix((0, 0)) ax.p1
 horizontal ax
 distance(10) ax
 }
@@ -263,7 +263,7 @@ fn sheet(e: &program::Elaborated, body: &str) -> Result<String, drawing::Error> 
 
 #[test]
 fn sheets_hide_construction_by_default_and_can_reveal_it_semantically() {
-    let e = good("use std\ncomponent Part() { private construction centerline helper := line(hint(x: 0,y: 0), hint(x: 10,y: 0)) }\nin std.front {\np := Part()\n}\n");
+    let e = good("use std\ncomponent Part() { private construction centerline helper := line(hint((0, 0)), hint((10, 0))) }\nin std.front {\np := Part()\n}\n");
     assert!(e.sketch.style_of(EntRef::line(0)).shown());
     let hidden = sheet(&e, "").unwrap();
     assert!(!hidden.contains("stroke-dasharray"), "{hidden}");
@@ -312,7 +312,7 @@ fn removing_a_unary_constraint_and_updating_hints_preserve_modifiers() {
     let again = good(&changed.text);
     assert!(again.sketch.roles_of(EntRef::circle(0)).construction);
     assert!(again.map.entity_path(&again.sketch, "guide").is_none());
-    let e = good("use std\nin std.front {\nprivate construction helper := point hint(x: 1,y: 2)\n}\n");
+    let e = good("use std\nin std.front {\nprivate construction helper := point hint((1, 2))\n}\n");
     let mut moved = e.sketch.clone();
     moved.params[0].value = 7.0;
     let changed = gcs_core::edit::commit_seeds(&e, &moved, &e.program);
@@ -333,8 +333,8 @@ fn tagged_chains_preserve_the_roles_of_borrowed_links() {
     let e = good("\
 use std
 in std.front {
-borrowed := line(hint(x: 0,y: 0), hint(x: 10,y: 0))
-private construction profile := borrowed -> (end := line(borrowed.p2, hint(x: 10,y: 10)))
+borrowed := line(hint((0, 0)), hint((10, 0)))
+private construction profile := borrowed -> (end := line(borrowed.p2, hint((10, 10))))
 }
 ");
     assert!(

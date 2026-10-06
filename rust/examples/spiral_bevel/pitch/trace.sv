@@ -17,7 +17,7 @@ component ToothTrace(p: plane, generator: line, design: group, normal_module: Le
   in p {
     C := point hint(at: generator.p2, toward: generator.p1, by: design.cutter_radius / r,
                     turn: design.spiral - 90deg)
-    H := point hint(x: r / 4, y: -r / 2)
+    H := point hint((r / 4, -r / 2))
     K := point hint(at: generator.p2, toward: generator.p1, by: design.module / r)
     normal := line(C, generator.p2)
     heading := line(generator.p2, H)

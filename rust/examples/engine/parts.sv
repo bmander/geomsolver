@@ -22,7 +22,7 @@ component Span(k1: circle, k2: circle, side: Scalar) {
 // the small end riding the bore axis one rod length from the pin.  The rod itself is the part
 // `engine.conrod` designs; this is the outline a draughtsman ghosts in for a second position.
 component Rod(pin: point, ax: line, dims: group) {
-  small := point hint(x: pin.x, y: pin.y + dims.L)
+  small := point hint((pin.x, pin.y + dims.L))
   cl := line(pin, small)
   small coincident ax
   pin distance(dims.L) small
@@ -37,10 +37,10 @@ component Rod(pin: point, ax: line, dims: group) {
 // which is the one difference between the end view's piston and the side view's.
 component Piston(small: point, pin: Int, dims: group) {
   w := dims.D - 0.5mm
-  cl := point hint(x: small.x - w / 2, y: small.y + dims.ch)
-  cr := point hint(x: small.x + w / 2, y: small.y + dims.ch)
-  sl := point hint(x: small.x - w / 2, y: small.y + dims.ch - dims.ph)
-  sr := point hint(x: small.x + w / 2, y: small.y + dims.ch - dims.ph)
+  cl := point hint((small.x - w / 2, small.y + dims.ch))
+  cr := point hint((small.x + w / 2, small.y + dims.ch))
+  sl := point hint((small.x - w / 2, small.y + dims.ch - dims.ph))
+  sr := point hint((small.x + w / 2, small.y + dims.ch - dims.ph))
   (crown := line(cl, cr)) -> (rs := line(cr, sr)) -> (skirt := line(sr, sl)) -> (ls := line(sl, cl)) -> close
   small distance(-w / 2, along: x) cl
   small distance(dims.ch, along: y) cl
@@ -54,8 +54,8 @@ component Piston(small: point, pin: Int, dims: group) {
     k := circle(center: small) hint(r: dims.rpin)
     radius(dims.rpin) k
   }
-  r1 := line(hint(x: small.x - w / 2, y: small.y + dims.ch - 6mm), hint(x: small.x + w / 2, y: small.y + dims.ch - 6mm))
-  r2 := line(hint(x: small.x - w / 2, y: small.y + dims.ch - 12mm), hint(x: small.x + w / 2, y: small.y + dims.ch - 12mm))
+  r1 := line(hint((small.x - w / 2, small.y + dims.ch - 6mm)), hint((small.x + w / 2, small.y + dims.ch - 6mm)))
+  r2 := line(hint((small.x - w / 2, small.y + dims.ch - 12mm)), hint((small.x + w / 2, small.y + dims.ch - 12mm)))
   r1.p1 coincident ls
   r1.p2 coincident rs
   r2.p1 coincident ls
@@ -69,17 +69,17 @@ component Piston(small: point, pin: Int, dims: group) {
 // A point placed from `o` by two ordinates — the corner of an outline, a centre on a pitch.
 // One statement where a point and its two runs were three.
 component At(o: point, dx: Length, dy: Length) {
-  p := point hint(x: o.x + dx, y: o.y + dy)
+  p := point hint((o.x + dx, o.y + dy))
   o distance(dx, along: x) p
   o distance(dy, along: y) p
 }
 
 // An axis-aligned rectangle about a point: `a` is its lower-left corner offset from `o`.
 component Box(o: point, x0: Length, y0: Length, x1: Length, y1: Length) {
-  a := point hint(x: o.x + x0, y: o.y + y0)
-  b := point hint(x: o.x + x1, y: o.y + y0)
-  c := point hint(x: o.x + x1, y: o.y + y1)
-  d := point hint(x: o.x + x0, y: o.y + y1)
+  a := point hint((o.x + x0, o.y + y0))
+  b := point hint((o.x + x1, o.y + y0))
+  c := point hint((o.x + x1, o.y + y1))
+  d := point hint((o.x + x0, o.y + y1))
   profile := (ab := line(a, b)) -> (bc := line(b, c)) -> (cd := line(c, d)) -> (da := line(d, a)) -> close
   o distance(x0, along: x) a
   o distance(y0, along: y) a

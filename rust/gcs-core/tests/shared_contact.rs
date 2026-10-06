@@ -28,7 +28,7 @@ base := circle(center: o) hint(r: 20)
 inv := Involute(base, phase: 0).p over u in (10, 90)
 in std.front {
 radius(20) base
-fix(x == 0, y == 0) o
+fix((0, 0)) o
 }
 ";
 
@@ -50,10 +50,10 @@ fn errors(src: &str) -> Vec<String> {
 #[test]
 fn two_contacts_pinned_to_one_name_own_one_unknown() {
     let line = "\
-a := point hint(x: 30, y: 10)
-b := point hint(x: 40, y: 35)
+a := point hint((30, 10))
+b := point hint((40, 35))
 l := line(a, b)
-p := point hint(x: 20, y: 20)
+p := point hint((20, 20))
 ";
     let mut shared = build(&format!(
         "{INVOLUTE}param s: Angle hint(50)\nin std.front {{\n{line}p coincident(t == s) inv\ninv tangent(t == s) l\n}}\n"
@@ -86,9 +86,9 @@ p := point hint(x: 20, y: 20)
 #[test]
 fn a_tangency_and_a_curvature_at_one_place() {
     let src = format!(
-        "{INVOLUTE}param s: Angle hint(40)\nin std.front {{\na := point hint(x: 0, y: 10)\n\
-         b := point hint(x: 30, y: 40)\nl := line(a, b)\na distance(40) b\nfix(x == 0) a\n\
-         k := point hint(x: 10, y: 10)\nosc := circle(center: k) hint(r: 12)\n\
+        "{INVOLUTE}param s: Angle hint(40)\nin std.front {{\na := point hint((0, 10))\n\
+         b := point hint((30, 40))\nl := line(a, b)\na distance(40) b\nfix(x == 0) a\n\
+         k := point hint((10, 10))\nosc := circle(center: k) hint(r: 12)\n\
          inv tangent(t == s) l\ninv curvature(t == s) osc\n\
          radius(5 * pi) osc\n}}\n"
     );
@@ -115,19 +115,19 @@ fn a_tangency_and_a_curvature_at_one_place() {
 fn a_place_is_shared_along_one_curve_only() {
     let src = format!(
         "{INVOLUTE}inv2 := Involute(base, phase: 90).p over u in (10, 90)\nparam s: Angle hint(50)\n\
-         in std.front {{\np := point hint(x: 20, y: 20)\nq := point hint(x: -20, y: 20)\n\
+         in std.front {{\np := point hint((20, 20))\nq := point hint((-20, 20))\n\
          p coincident(t == s) inv\nq coincident(t == s) inv2\n}}\n"
     );
     let said = errors(&src);
     assert!(said.iter().any(|m| m.contains("cannot share it")), "{said:?}");
     let src = format!(
-        "{INVOLUTE}param s: Angle hint(50)\nin std.front {{\np := point hint(x: 20, y: 20)\n\
+        "{INVOLUTE}param s: Angle hint(50)\nin std.front {{\np := point hint((20, 20))\n\
          p coincident(t == s) inv hint(t: 50)\n}}\n"
     );
     let said = errors(&src);
     assert!(said.iter().any(|m| m.contains("seeded where it is declared")), "{said:?}");
     // and undeclared, the name is no unknown at all
-    let said = errors(&format!("{INVOLUTE}in std.front {{\np := point hint(x: 20, y: 20)\np coincident(t == s) inv\n}}\n"));
+    let said = errors(&format!("{INVOLUTE}in std.front {{\np := point hint((20, 20))\np coincident(t == s) inv\n}}\n"));
     assert!(said.iter().any(|m| m.contains("`s` is not defined")), "{said:?}");
 }
 
@@ -138,7 +138,7 @@ fn a_pin_to_a_number_still_pins() {
     let said = errors("use std\nparam s: Length\nin std.front {\np := point\nfix(x == s) p\n}\n");
     assert!(said.iter().any(|m| m.contains("pinned to an unknown")), "{said:?}");
     let mut e = build(&format!(
-        "{INVOLUTE}w := 30\nin std.front {{\np := point hint(x: 20, y: 20)\np coincident(t == w) inv\n}}\n"
+        "{INVOLUTE}w := 30\nin std.front {{\np := point hint((20, 20))\np coincident(t == w) inv\n}}\n"
     ));
     assert!(e.sketch.shared.is_empty());
     assert!(solve(&mut e.sketch, SolveOpts::default()).success);
@@ -152,8 +152,8 @@ fn a_pin_to_a_number_still_pins() {
 #[test]
 fn a_place_is_not_a_free_variable() {
     let src = format!(
-        "{INVOLUTE}param s: Length hint(50)\nin std.front {{\np := point hint(x: 20, y: 20)\np coincident(t == s) inv\n\
-         q := point hint(x: 5, y: 5)\nq distance(s) o\n}}\n"
+        "{INVOLUTE}param s: Length hint(50)\nin std.front {{\np := point hint((20, 20))\np coincident(t == s) inv\n\
+         q := point hint((5, 5))\nq distance(s) o\n}}\n"
     );
     let said = errors(&src);
     assert!(said.iter().any(|m| m.contains("is a place along a curve")), "{said:?}");
@@ -166,13 +166,13 @@ fn a_copy_and_a_document_keep_the_place_shared() {
     let src = "\
 use std
 in std.front {
-a := point hint(x: 0, y: 0)
-b := point hint(x: 10, y: 20)
-c := point hint(x: 30, y: 20)
-d := point hint(x: 40, y: 0)
+a := point hint((0, 0))
+b := point hint((10, 20))
+c := point hint((30, 20))
+d := point hint((40, 0))
 spl := spline(a, b, c, d)
-p := point hint(x: 15, y: 20)
-q := point hint(x: 15, y: 25)
+p := point hint((15, 20))
+q := point hint((15, 25))
 l := line(q, p)
 }
 param s: Scalar hint(0.4)

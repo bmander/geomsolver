@@ -26,26 +26,26 @@ unit mm
 use std
 in std.front {
 o := point
-fix(x == 0, y == 0) o
+fix((0, 0)) o
 c := circle(center: o) hint(r: 22)
 radius(22mm) c
 disc := face(c)
 blank := solid(disc, depth: 6mm)
 
-s0 := point hint(x: 20, y: 0)
-s1 := point hint(x: 20, y: 10)
-fix(x == 20, y == 0) s0
-fix(x == 20, y == 10) s1
+s0 := point hint((20, 0))
+s1 := point hint((20, 10))
+fix((20, 0)) s0
+fix((20, 10)) s1
 slide := line(s0, s1)
 
-t0 := point hint(x: 18, y: -0.84)
-t1 := point hint(x: 18, y: 0.84)
-t2 := point hint(x: 24, y: 3.03)
-t3 := point hint(x: 24, y: -3.03)
-fix(x == 18, y == -0.842856) t0
-fix(x == 18, y == 0.842856) t1
-fix(x == 24, y == 3.026666) t2
-fix(x == 24, y == -3.026666) t3
+t0 := point hint((18, -0.84))
+t1 := point hint((18, 0.84))
+t2 := point hint((24, 3.03))
+t3 := point hint((24, -3.03))
+fix((18, -0.842856)) t0
+fix((18, 0.842856)) t1
+fix((24, 3.026666)) t2
+fix((24, -3.026666)) t3
 }
 tooth := face(t0, t1, t2, t3, -> close)
 construction rack_tooth := solid(tooth, from: -8mm, to: 2mm)

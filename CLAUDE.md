@@ -20,7 +20,7 @@ Hosts look for modules beside the model, then its ancestors, then the library.
 reaches stands in space (`PointE.z`, given by `Sketch::give_place` once memberships are in; its
 own lift, no row); a 2D drawing is `use std` + `in std.front { … }`. There is no page: a point
 with neither plane nor `z` is only a 2D sketch's (JSON, hand-built tests), with no lift. An **axis**
-(`t := axis hint(x:, y:, z:)`, `AxisE` a[3], d[3]; intrinsics `axis_unit`, `axis_foot` once a
+(`t := axis hint(dir: (x, y, z))`, `AxisE` a[3], d[3]; intrinsics `axis_unit`, `axis_foot` once a
 relation reads its place) is a directed line with no start; a drawn line reads as one. A plane
 over a line holds a hidden axis that is the line (`entities::axes_along`: intrinsic `Parallel3`
 and `PointOnAxis` at its `p1`, or at the end it shares with the plane's other line, where the
@@ -37,15 +37,15 @@ meet, so std's planes add no row; held axes that miss or run alike, or a plane h
 axes, are E067. A plane standing off another takes its own axes (held, or `parallel`): with
 shared axes it would sit on them. `P.origin coincident p`, `P coincident p`, `P distance(d) Q`
 (one row along P's normal); `P parallel Q` (`PlaneParallel`, normals alike either way, two
-rows; no plane–plane angle yet); `fix(x ==, y ==, z ==) P`. A plane's child slot takes a seed,
-`plane(u: hint(x:, y:, z:))` (`KidSeed` carries x, y, z; a point's refuses z), and
+rows; no plane–plane angle yet); `fix(origin == (x, y, z)) P`. A plane's child slot takes a seed,
+`plane(u: hint(dir: (x, y, z)))` (`KidSeed` carries x, y, z; a point's refuses z), and
 `commit_seeds` writes a minted axis's direction back there.
 An origin already on one axis is placed in fewer rows than three (`P.origin coincident
 std.front`), or the structural count sees a redundancy. W113 warns of two planes lying on one
 another. `views::place`
 settles axes and plane origins before the solve, round by round with seed settlement; they stay
 unknowns. `p distance(d, along: u) P` is an ordinate from `P.origin` along `P.u`, in space across
-planes (`Ordinate3U`, no callout); `hint(at: P, x:, y:)` seeds in P's coordinates. Circles, arcs
+planes (`Ordinate3U`, no callout); `hint(at: P, (x, y))` seeds in P's coordinates. Circles, arcs
 and splines over a point in space are E060, faces E080. `use std` gives axes
 `std.x/y/z/back`, planes `std.front` (x, z), `std.top` (x, y), `std.side` (y, z), `std.up` (z,
 back), and `std.origin` (in front, fixed) — flattened after the document, present whenever the
@@ -74,12 +74,12 @@ Param each (half-angle in radians, written in degrees: `Sketch::seed_value`). Wo
 `p coincident k|c`, `angle(θ) k`, `radius(r) c`, `c tangent l`, `k1 tangent(M) k2` (with `M
 coincident` each). Cone kernels use forward-mode `Dual<N>` (`kernels.rs`).
 
-**Axes** (`docs/planes-plan.md`, #81): `t := axis hint(x:, y:, z:)` is a directed line in space,
+**Axes** (`docs/planes-plan.md`, #81): `t := axis hint(dir: (x, y, z))` is a directed line in space,
 `AxisE { d, a, placed }`: a unit direction (`axis_unit`, intrinsic, held like `quat_unit` when `fix`
 holds all three) and the point nearest the origin, fixed — no freedom — until a relation reads it
 (`CKind::place_slots`: `PointOnAxis`, `AxisCoincident`, `PlaneAxis`), when `Sketch::place_axis`
-frees it and mints `axis_foot` (`a·d = 0`); `remove` holds it again once nothing reads it. `fix(px
-==, py ==, pz ==) t` holds a place (placed first, so nothing later frees it); std's axes are held
+frees it and mints `axis_foot` (`a·d = 0`); `remove` holds it again once nothing reads it. `fix(origin
+== (x, y, z)) t` holds a place (placed first, so nothing later frees it); std's axes are held
 so. `t coincident s` between axes is `AxisCoincident` (4 rows, either sense); `l coincident t`, a
 line on an axis, is `LineOnAxis` (both ends, 4 rows, places the axis). JSON writes a placed
 axis's held place as `a_fixed`; a load or `graft` puts places back after the planes
@@ -572,7 +572,7 @@ Conventions:
   line)` from an operator's own parentheses.  `label:` never defines: it fills a slot.  A name in a
   child slot (`line(a, q := hint(…))`) is not implemented yet.
 - **Every seed is written in one `hint(…)` clause, and nothing else is** (Solvent §4.3, §6.4): `p :=
-  point hint(x: 0, y: 0)`, `c := circle(center: o) hint(r: 25)`, `point_on_spline(p, s) hint(t:
+  point hint((0, 0))`, `c := circle(center: o) hint(r: 25)`, `point_on_spline(p, s) hint(t:
   0.4)`.  Keys in any order, an omitted coordinate is 0 — an omitted *radius* is computed from the
   geometry (`UNSEEDED_RADIUS` where it gives none; 0 is stationary for on-circle rows); the clause
   sits in the trailer loop beside `knots`, `class`.  **The brackets after the name are what the
@@ -590,8 +590,8 @@ Conventions:
   the number, not that the number is seed-class** — so a **callout placement keeps its bare `at`**:
   inert, but nothing in the solve path writes one (`callout::drag`/`callout::reset` are a person
   acting).
-- **A seed may read geometry, and reads its seed** (Solvent §6.4).  `hint(x: k.center.x + k.r, y:
-  pin.y)`, `hint(at: k, bearing: b)`, on the sheet and in a child slot. The flattener settles a seed
+- **A seed may read geometry, and reads its seed** (Solvent §6.4).  `hint((k.center.x + k.r,
+  pin.y))`, `hint(at: k, bearing: b)`, on the sheet and in a child slot. The flattener settles a seed
   text over scope parameters; failing that, a text naming a dotted scalar is kept (`settle_seed`,
   `reads_geometry`) with every dotted name resolved to its absolute name in `Decl::seed_names`
   (`rescope_seeds`, via `lookup`; never rewritten into the text); `program::build` records each as a
@@ -686,7 +686,7 @@ Conventions:
   .dimension { display: none }` and `class shown` on the few to draw.
 - **A declaration need not name its children** (Solvent §6.1, §6.2).  `l := line` mints two points,
   `c := circle` one, `a := arc` three; a child slot may hold a `hint(…)` instead of a reference
-  (`alt_a := line(A, hint(x: 15, y: 5))`).  `Decl::children` is `Vec<Vec<Kid>>` — a name *or* a
+  (`alt_a := line(A, hint((15, 5)))`).  `Decl::children` is `Vec<Vec<Kid>>` — a name *or* a
   seed; "anonymous and unseeded" is an *empty slot*: an **implicit child**, minted by
   `program::build` (`(l1 := line) -> (l2 := line)` is three points).  E103 refuses only a list with
   *more* children than slots.  A joint threads a *name*, so a seeded slot reads as unfilled there;
@@ -965,7 +965,7 @@ Conventions:
   derived rather than canonical; `io::dumps` is still what the Rust tests and the benchmarks
   compare against.
 - **Every constraint is written as a prefix or an infix operator** (Solvent §9.2); `name(args…)`
-  is retired.  `radius(25) c`, `p1 distance(80) p2`, `horizontal l`, `fix(x == 0, y == 0) p`,
+  is retired.  `radius(25) c`, `p1 distance(80) p2`, `horizontal l`, `fix((0, 0)) p`,
   `a symmetry(l) b` — the word, its one or two operands, and everything else in the parentheses on the word: the
   number, a selector (`side: -1`, `at: start`, `along: x`), a third entity, a pin (`t == 0.4`).
   A *seed* for an owned slot stays the trailing `hint(t: 0.4)`, where every seed is.
@@ -1000,9 +1000,16 @@ Conventions:
   choice, `constrain` returns no id, and no `Constraint` is one — so they are not in `ALL_KINDS`,
   the registry never publishes them, and `CKind::gauge` is the question every table that would
   reach for a kernel asks first.  A `claim` on one is refused (E040): a gauge adds no row.
-  **A `fix` states what it holds** ([0.34]): `fix(x == 0, y == 0) p`, `fix(x == 5) p` (partial),
-  `fix(r == 25) c`, `fix(half == 30deg) k` — pinned slots named by the entity's scalar fields
-  (`Fix`'s spec is their union; `apply_gauge` checks the kind's).  `ground`, `fix c.r` and a bare
+  **A `fix` states what it holds** ([0.34]): `fix((0, 0)) p`, `fix(x == 5) p` (partial),
+  `fix(r == 25) c`, `fix(half == 30deg) k`, `fix(dir == (0, 0, 1), origin == (0, 0, 0)) t` —
+  pinned slots named by the entity's members (`EntKind::members`: `x`, `dir.x`, `origin.z`;
+  `Fix`'s spec is their union; `apply_gauge` checks the kind's).  **A vector** ([0.45]) is `(a,
+  b[, c])`: `OpArg::Vector` keeps it whole so `apply_gauge` refuses one shorter or longer than
+  what it holds (a point in space is three, so `(0, 0)` cannot leave `z` free unsaid; a partial
+  hold is by member); `Written::slots` expands it into member slots, and `hint_body` expands a
+  seed's at parse.  Writers say each vector whole where all of it is given, else by member
+  (`syntax::said`; `lift_gauge` writes a `Written` fix).  `o := (10mm, 20mm)` is a group of
+  members `x`, `y` (`o.x`).  `ground`, `fix c.r` and a bare
   `fix p` are gone (`relations::fix_spelling` refuses the others where written).  **A held number
   is its own seed**: fixes are applied once points have their places (`entities::places`), before
   `axes_along`, motions, envelopes and `settle_deferred` (`relations::is_fix`), and
@@ -1587,7 +1594,7 @@ Conventions:
   its contact's constants live* (`refresh_consts` rewrites in place; values it may change ride
   in `outer` and miss rather than read stale), so `System::new` calls `locus::forget`.
   A seed is a *place*: `hint(at: c, bearing: u + phase)`, `hint(at: t)` (`program::at_seed`
-  lowers both to tapes), and `hint(x: xexpr, y: yexpr)` only in a component that is only ever
+  lowers both to tapes), and `hint((xexpr, yexpr))` only in a component that is only ever
   traced (`build` refuses a drawn one, since on the sheet a seed is a number a solve writes).
   A traced body must be square — as many rows as inner coordinates — or elaboration refuses it.
   `tests/trace.rs` holds the taut-string involute against its closed form (seeds 3× wrong), a

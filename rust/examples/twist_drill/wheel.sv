@@ -26,7 +26,7 @@ component GrindingWheel(side: plane, setting: Angle, wheel: group) {
     h distance(10mm * cos(setting), along: v) side
     private construction hinge := line(o, h)
   }
-  private out := axis hint(x: -1, y: 0, z: 0)
+  private out := axis hint(dir: (-1, 0, 0))
   out perpendicular side
   section := plane(u: hinge, v: out)
   side.origin coincident section.origin
@@ -39,7 +39,7 @@ component GrindingWheel(side: plane, setting: Angle, wheel: group) {
     a1 distance(10mm, along: u) section
     a1 distance(centre, along: v) section
     construction centerline ax := line(a0, a1)
-    private round_centre := point hint(x: 0, y: wheel.nearest + wheel.round)
+    private round_centre := point hint((0, wheel.nearest + wheel.round))
     private tl := point
     private tr := point
     tl distance(-tangent_across, along: u) section
@@ -73,9 +73,9 @@ preview {
   unit mm
   // the drill's side datum: u down the drill's axis, v along y, so x is its normal
   down := axis
-  fix(x == 0, y == 0, z == -1) down
+  fix(dir == (0, 0, -1)) down
   side := plane(u: down, v: std.y)
-  fix(x == 0, y == 0, z == 0) side
+  fix(origin == (0, 0, 0)) side
   sizes := {rim: 25mm, nearest: 0.75mm, round: 2.5mm, flank: 35deg, depth: 7mm}
   wheel := GrindingWheel(side, setting: 30deg, wheel: sizes)
 }

@@ -11,10 +11,10 @@ screw_radius := 2mm
 boss_height := 8mm
 
 component Rectangle(center: point, w: Length, h: Length) {
-  a := point hint(x: center.x - w / 2, y: center.y - h / 2)
-  b := point hint(x: center.x + w / 2, y: center.y - h / 2)
-  c := point hint(x: center.x + w / 2, y: center.y + h / 2)
-  d := point hint(x: center.x - w / 2, y: center.y + h / 2)
+  a := point hint((center.x - w / 2, center.y - h / 2))
+  b := point hint((center.x + w / 2, center.y - h / 2))
+  c := point hint((center.x + w / 2, center.y + h / 2))
+  d := point hint((center.x - w / 2, center.y + h / 2))
   profile := horizontal (ab := line(a, b)) -> vertical (bc := line(b, c)) ->
             horizontal (cd := line(c, d)) -> vertical (da := line(d, a)) -> close
   distance(w) ab

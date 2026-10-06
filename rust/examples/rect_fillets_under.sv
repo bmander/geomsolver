@@ -19,19 +19,19 @@ r := 10
 
 // the straight runs, each between the two fillets it joins
 in std.front {
-  b1 := point hint(x: r, y: 0)
-  b2 := point hint(x: w - r, y: 0)
-  r1 := point hint(x: w, y: r)
-  r2 := point hint(x: w, y: h - r)
-  t1 := point hint(x: w - r, y: h)
-  t2 := point hint(x: r, y: h)
-  l1 := point hint(x: 0, y: h - r)
-  l2 := point hint(x: 0, y: r)
+  b1 := point hint((r, 0))
+  b2 := point hint((w - r, 0))
+  r1 := point hint((w, r))
+  r2 := point hint((w, h - r))
+  t1 := point hint((w - r, h))
+  t2 := point hint((r, h))
+  l1 := point hint((0, h - r))
+  l2 := point hint((0, r))
 
   // the fillet centres; where each arc starts and ends is the chain's to say
-  c_br := point hint(x: w - r, y: r)
-  c_tr := point hint(x: w - r, y: h - r)
-  c_tl := point hint(x: r, y: h - r)
+  c_br := point hint((w - r, r))
+  c_tr := point hint((w - r, h - r))
+  c_tl := point hint((r, h - r))
   c_bl := point
 
   // round the outline, counter-clockwise from the bottom edge
@@ -51,5 +51,5 @@ in std.front {
   // and no width: this is the freedom the case is about
   t1 distance(h) b2
 
-  fix(x == r, y == r) c_bl
+  fix((r, r)) c_bl
 }

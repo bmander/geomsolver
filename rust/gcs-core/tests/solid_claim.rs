@@ -31,12 +31,12 @@ fn verdicts(e: &Elaborated) -> Vec<gcs_core::diagnose::SolidVerdict> {
 /// between `lo` and `hi` along the front's own normal — face `f{tag}` and solid `s{tag}_`.
 fn block(tag: &str, x: f64, y: f64, w: f64, lo: f64, hi: f64) -> String {
     format!(
-        "in std.front {{\na{tag} := point\nb{tag} := point hint(x: {}, y: {y})\n\
-         c{tag} := point hint(x: {}, y: {})\nd{tag} := point hint(x: {x}, y: {})\n\
+        "in std.front {{\na{tag} := point\nb{tag} := point hint(({}, {y}))\n\
+         c{tag} := point hint(({}, {}))\nd{tag} := point hint(({x}, {}))\n\
          (p{tag} := line(a{tag}, b{tag})) -> (q{tag} := line(b{tag}, c{tag})) -> \
          (r{tag} := line(c{tag}, d{tag})) -> (s{tag} := line(d{tag}, a{tag})) -> close\n\
          horizontal p{tag}\nvertical q{tag}\nhorizontal r{tag}\nvertical s{tag}\n\
-         a{tag} distance({w}) b{tag}\na{tag} distance({w}) d{tag}\nfix(x == {x}, y == {y}) a{tag}\n}}\n\
+         a{tag} distance({w}) b{tag}\na{tag} distance({w}) d{tag}\nfix(({x}, {y})) a{tag}\n}}\n\
          f{tag} := face(p{tag}, q{tag}, r{tag}, s{tag})\n\
          s{tag}_ := solid(f{tag}, from: {lo}mm, to: {hi}mm)\n",
         x + w,
@@ -94,31 +94,31 @@ unit mm
 use std
 in std.front {
 o := point
-fix(x == 0, y == 0) o
-p := point hint(x: 10, y: 0)
+fix((0, 0)) o
+p := point hint((10, 0))
 }
 param reach: Length
 in std.front {
 o distance(reach, along: x) p
 o distance(0, along: y) p
-q := point hint(x: 14, y: 0)
+q := point hint((14, 0))
 p distance(4, along: x) q
 p distance(0, along: y) q
-r := point hint(x: 14, y: 4)
+r := point hint((14, 4))
 q distance(0, along: x) r
 q distance(4, along: y) r
-s := point hint(x: 10, y: 4)
+s := point hint((10, 4))
 p distance(0, along: x) s
 p distance(4, along: y) s
 (e0 := line(p, q)) -> (e1 := line(q, r)) -> (e2 := line(r, s)) -> (e3 := line(s, p)) -> close
 arm_f := face(e0, e1, e2, e3)
 arm := solid(arm_f, depth: 3mm)
 w0 := point
-w1 := point hint(x: 56, y: 0)
-w2 := point hint(x: 56, y: 4)
-w3 := point hint(x: 50, y: 4)
+w1 := point hint((56, 0))
+w2 := point hint((56, 4))
+w3 := point hint((50, 4))
 (g0 := line(w0, w1)) -> (g1 := line(w1, w2)) -> (g2 := line(w2, w3)) -> (g3 := line(w3, w0)) -> close
-fix(x == 50, y == 0) w0
+fix((50, 0)) w0
 horizontal g0
 vertical g1
 w0 distance(6) w1

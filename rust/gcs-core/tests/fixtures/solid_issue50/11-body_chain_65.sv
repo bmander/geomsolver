@@ -2,13 +2,13 @@ unit mm
 use std
 in std.front {
   s0fp0 := point
-  fix(x == 0, y == 0) s0fp0
+  fix((0, 0)) s0fp0
   s0fp1 := point
-  fix(x == 10, y == 0) s0fp1
+  fix((10, 0)) s0fp1
   s0fp2 := point
-  fix(x == 10, y == 10) s0fp2
+  fix((10, 10)) s0fp2
   s0fp3 := point
-  fix(x == 0, y == 10) s0fp3
+  fix((0, 10)) s0fp3
 }
 s0f := face(s0fp0, s0fp1, s0fp2, s0fp3, -> close)
 s0 := solid(s0f, from: -10mm, to: 0mm)

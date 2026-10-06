@@ -36,35 +36,35 @@ component Leg(axle: point, pivot: point, theta: Angle) {
   orbit := circle(center: axle) hint(r: m)
   radius(m) orbit
   datum := line(pivot, axle)
-  pin := point hint(x: 15, y: 0)
+  pin := point hint((15, 0))
   crank := line(axle, pin)
   pin coincident orbit
   datum angle(theta) crank
 
   // the two rods the pin drives
-  top := point  hint(x: -24, y: 31)
-  knee := point hint(x: -27, y: -46)
+  top := point  hint((-24, 31))
+  knee := point hint((-27, -46))
   rod_j := line(pin, top)
   rod_k := line(pin, knee)
   distance(j) rod_j
   distance(k) rod_k
 
   // the upper triangle, one rigid body swinging on the pivot
-  back := point hint(x: -75, y: 8)
+  back := point hint((-75, 8))
   (ub := line(pivot, top)) -> (ue := line(top, back)) -> (ud := line(back, pivot)) -> close
   distance(b) ub
   distance(e) ue
   distance(d) ud
 
   // the rocker from the pivot to the knee, and the tie from the back down to the heel
-  heel := point hint(x: -59, y: -28)
+  heel := point hint((-59, -28))
   rod_c := line(pivot, knee)
   rod_f := line(back, heel)
   distance(c) rod_c
   distance(f) rod_f
 
   // the lower triangle: the foot, with the toe at the bottom
-  toe := point hint(x: -43, y: -92)
+  toe := point hint((-43, -92))
   (lg := line(knee, heel)) -> (lh := line(heel, toe)) -> (li := line(toe, knee)) -> close
   distance(g) lg
   distance(h) lh
@@ -80,8 +80,8 @@ component Leg(axle: point, pivot: point, theta: Angle) {
 
 in std.front {
   axle := point 
-  pivot := point hint(x: -38, y: -7.8)
-  fix(x == 0, y == 0) axle
+  pivot := point hint((-38, -7.8))
+  fix((0, 0)) axle
   pivot distance(a, along: x) axle
   pivot distance(l, along: y) axle
 

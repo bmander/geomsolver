@@ -17,9 +17,9 @@ in std.front {
 o := point
 q := point
 c := point
-fix(x == 0, y == 0) o
-fix(x == 0, y == 1) q
-fix(x == 3, y == 0) c
+fix((0, 0)) o
+fix((0, 1)) q
+fix((3, 0)) c
 ax := line(o,q)
 rim := circle(center: c)
 radius(1mm) rim
@@ -34,9 +34,9 @@ in std.front {
 o := point
 a := point
 b := point
-fix(x == 0, y == 0) o
-fix(x == 0, y == -2) a
-fix(x == 0, y == 2) b
+fix((0, 0)) o
+fix((0, -2)) a
+fix((0, 2)) b
 rim := arc(center: o, start: a, end: b)
 radius(2mm) rim
 ax := line(b,a)
@@ -92,8 +92,8 @@ fn holes_are_voids_and_source_axis_direction_does_not_change_material() {
 #[test]
 fn a_spheres_diameter_disappears_and_its_center_is_interior_material() {
     for source in [SPHERE.to_string(),SPHERE.replace("ax := line(b,a)","ax := line(a,b)"),
-        SPHERE.replace("fix(x == 0, y == -2) a","fix(x == -2, y == 0) a")
-            .replace("fix(x == 0, y == 2) b","fix(x == 2, y == 0) b")] {
+        SPHERE.replace("fix((0, -2)) a","fix((-2, 0)) a")
+            .replace("fix((0, 2)) b","fix((2, 0)) b")] {
         let e = solved(&source);
         let region = RevolvedRegion::read(&e.sketch,0,1e-12).unwrap();
         for x in -20..=20 {
@@ -117,10 +117,10 @@ a := point
 b := point
 c := point
 d := point
-fix(x == 0, y == 1) a
-fix(x == 1, y == 1) b
-fix(x == 3, y == 3) c
-fix(x == 0, y == 3) d
+fix((0, 1)) a
+fix((1, 1)) b
+fix((3, 3)) c
+fix((0, 3)) d
 ax := line(a,d)
 profile := (ab := line(a,b)) -> (bc := line(b,c)) -> (cd := line(c,d)) -> (da := line(d,a)) -> close
 }

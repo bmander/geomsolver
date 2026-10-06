@@ -21,8 +21,8 @@ use std
 // a triangle, and this comment must survive every drag
 in std.front {
 a := point
-b := point hint(x: 100, y: 0)
-c := point hint(x: 40, y: 70)
+b := point hint((100, 0))
+c := point hint((40, 70))
 
 ab := line(a, b)      // the base
 bc := line(b, c)
@@ -33,7 +33,7 @@ horizontal ab
 param w := 140
 in std.front {
 a distance(w) b
-fix(x == 0, y == 0) a
+fix((0, 0)) a
 }
 
 // and this trailing note, too
@@ -95,7 +95,7 @@ component Ring(rad: Length) {
   o := point
   c := circle(center: o) hint(r: rad)
   radius(rad) c
-  fix(x == 0, y == 0) o
+  fix((0, 0)) o
 }
 in std.front {
 g := Ring(rad: 25)
@@ -116,9 +116,9 @@ fn a_seed_inside_a_block_is_left_alone() {
 use std
 in std.front {
 o := point
-fix(x == 0, y == 0) o
+fix((0, 0)) o
 cycle 4 as i {
-  p := point hint(x: 10, y: 0)
+  p := point hint((10, 0))
 }
 }
 ";
@@ -145,7 +145,7 @@ fn drawing_a_point_appends_one_statement() {
     let e = edit::add_point(&prog, 12.5, -3.0);
     assert_eq!(e.kind, Kind::Structural);
     assert_eq!(e.names, vec!["p0"], "a name nothing had taken");
-    assert!(e.text.contains("p0 := point hint(x: 12.5, y: -3)"), "{}", e.text);
+    assert!(e.text.contains("p0 := point hint((12.5, -3))"), "{}", e.text);
     assert!(e.text.trim_end().ends_with("// and this trailing note, too"), "{}", e.text);
     let back = elaborate(&prog_of(&e.text));
     assert!(back.ok());
@@ -197,7 +197,7 @@ fn preview_gestures_keep_source_mappings_with_statements_after_the_block() {
 /// figure of its own (DOF 3: position and rotation).
 #[test]
 fn a_rectangle_is_a_component_instance() {
-    let prog = prog_of("use std\nin std.front {\np9 := point hint(x: 5, y: 5)\n}\n");
+    let prog = prog_of("use std\nin std.front {\np9 := point hint((5, 5))\n}\n");
     let e = edit::add_rectangle(&prog, 120.0, 60.0, Some("std.front"));
     assert_eq!(e.kind, Kind::Structural);
     assert_eq!(e.names, vec!["r0"]);
@@ -225,7 +225,7 @@ fn a_rectangle_is_a_component_instance() {
 /// A minted name never collides with one already written, whatever it is.
 #[test]
 fn a_minted_name_is_free() {
-    let prog = prog_of("use std\nin std.front {\np0 := point hint(x: 0, y: 0)\np1 := point hint(x: 1, y: 0)\np3 := point hint(x: 3, y: 0)\n}\n");
+    let prog = prog_of("use std\nin std.front {\np0 := point hint((0, 0))\np1 := point hint((1, 0))\np3 := point hint((3, 0))\n}\n");
     assert_eq!(edit::mint(&prog, EntKind::Point), "p2", "the first gap, not the next number");
     assert_eq!(edit::mint(&prog, EntKind::Line), "l0");
 }
@@ -259,11 +259,11 @@ fn deleting_what_a_component_made_is_refused() {
 use std
 component Pair() {
   a := point
-  b := point hint(x: 10, y: 0)
+  b := point hint((10, 0))
 }
 in std.front {
 q := Pair()
-fix(x == 0, y == 0) q.a
+fix((0, 0)) q.a
 }
 ";
     let prog = prog_of(src);
@@ -313,7 +313,7 @@ fn editing_a_dimension_splices_the_number() {
 fn a_stale_span_edits_nothing() {
     let prog = prog_of(DOC);
     let e = elaborate(&prog);
-    let short = prog_of("use std\nin std.front {\na := point hint(x: 0, y: 0)\n}\n");
+    let short = prog_of("use std\nin std.front {\na := point hint((0, 0))\n}\n");
     // spans from the long document, applied to the short one
     let d = edit::remove(&e, &short, &e.sketch, &[EntRef::point(2)], &[]);
     let _ = d.text;
@@ -552,7 +552,7 @@ fn a_gauge_is_spliced_but_presentation_stays_out_of_model_source() {
     let edit = reconciled(&mut e);
     assert!(!edit.text.contains("class construction"), "{}", edit.text);
     assert!(edit.text.contains("ab := line(a, b)      // the base"), "the comment stayed");
-    assert!(edit.text.contains("fix(x == 40, y == 70) c\n"), "{}", edit.text);
+    assert!(edit.text.contains("fix((40, 70)) c\n"), "{}", edit.text);
     assert!(!edit.text.contains(") a\n"), "the one that was let go is gone:\n{}", edit.text);
     assert!(edit.text.contains("c := point\n"), "the fix is its seed, and the hint goes:\n{}", edit.text);
 
@@ -607,8 +607,8 @@ fn a_second_gesture_beside_a_component_still_lands() {
     e.sketch.line(p, q);
     let second = reconciled(&mut e);
     assert_eq!(second.kind, Kind::Structural, "{:?}", second.refused);
-    assert!(second.text.contains("p0 := point hint(x: -95, y: 48)"), "{}", second.text);
-    assert!(second.text.contains("p1 := point hint(x: -40, y: 60)"), "{}", second.text);
+    assert!(second.text.contains("p0 := point hint((-95, 48))"), "{}", second.text);
+    assert!(second.text.contains("p1 := point hint((-40, 60))"), "{}", second.text);
     assert!(second.text.contains("l0 := line(p0, p1)"), "{}", second.text);
     assert!(second.text.contains("cycle N as i {"), "and the gear is still written");
 
@@ -625,7 +625,7 @@ fn a_second_gesture_beside_a_component_still_lands() {
 /// around them alone.  Reaching for it is `reconcile`, the same seam a construction word uses.
 #[test]
 fn a_dragged_callout_does_not_rewrite_the_model() {
-    let src = "use std\nin std.front {\na := point hint(x: 0, y: 0)\nb := point hint(x: 60, y: 0)\na distance(60) b\n}\n";
+    let src = "use std\nin std.front {\na := point hint((0, 0))\nb := point hint((60, 0))\na distance(60) b\n}\n";
     let mut e = elaborate(&prog_of(src));
     let id = e.sketch.user_constraints()[0].id;
     for place in [(12.0, -4.0), (20.0, 8.0)] {
@@ -643,10 +643,10 @@ fn a_chained_dimensions_placement_stays_out_of_model_source() {
     let src = "\
 use std
 in std.front {
-p1 := point hint(x: 0, y: 0)
-p2 := point hint(x: 60, y: 0)
-p3 := point hint(x: 60, y: 40)
-p4 := point hint(x: 0, y: 40)
+p1 := point hint((0, 0))
+p2 := point hint((60, 0))
+p3 := point hint((60, 40))
+p4 := point hint((0, 40))
 B := line(p3, p4)
 (a := line(p1, p2)) angle(30deg) B
 }
@@ -670,10 +670,10 @@ fn a_callout_on_a_run_dimension_is_left_to_the_layout() {
     let src = "\
 use std
 in std.front {
-p1 := point hint(x: 0, y: 0)
-p2 := point hint(x: 60, y: 0)
-p3 := point hint(x: 60, y: 40)
-p4 := point hint(x: 0, y: 40)
+p1 := point hint((0, 0))
+p2 := point hint((60, 0))
+p3 := point hint((60, 40))
+p4 := point hint((0, 40))
 A := line(p1, p2)
 B := line(p3, p4)
 A equal angle(30deg) B
@@ -704,7 +704,7 @@ fn a_placement_on_a_relation_is_refused_in_model_source() {
 /// untouched — one splice, and every comment where it was.
 #[test]
 fn a_seed_the_source_never_wrote_is_appended() {
-    let src = "use std\nin std.front {\no := point hint(x: 0, y: 0)\nc := circle(center: o)   // a hole, and this comment stays\n}\n";
+    let src = "use std\nin std.front {\no := point hint((0, 0))\nc := circle(center: o)   // a hole, and this comment stays\n}\n";
     let mut e = elaborate(&prog_of(src));
     let mut sk = std::mem::take(&mut e.sketch);
     let r = sk.circles[0].radius as usize;
@@ -731,26 +731,26 @@ fn a_seed_the_source_never_wrote_is_appended() {
 /// words in front of them, so the statement around them is never reprinted.
 #[test]
 fn a_seed_written_in_a_hint_clause_is_written_back() {
-    let src = "use std\nin std.front {\na := point\nb := point hint(x: 10, y: 0)\nl := line(a, b)\nfix(x == 0, y == 0) a\n}\n";
+    let src = "use std\nin std.front {\na := point\nb := point hint((10, 0))\nl := line(a, b)\nfix((0, 0)) a\n}\n";
     let mut e = elaborate(&prog_of(src));
     let mut sk = std::mem::take(&mut e.sketch);
     let bx = sk.points[1].x as usize;
     sk.params[bx].value = 42.5;     // drag `b` sideways
     let out = edit::commit_seeds(&e, &sk, &e.program);
     assert_eq!(out.kind, Kind::Numeric);
-    assert!(out.text.contains("b := point hint(x: 42.5, y: 0)"), "{}", out.text);
+    assert!(out.text.contains("b := point hint((42.5, 0))"), "{}", out.text);
     assert!(out.text.starts_with("use std\nin std.front {\na := point\nb"), "and nothing else moved: {}", out.text);
 }
 
 /// **A drag of an anonymous endpoint records itself.**
 ///
-/// `line l(hint(x: 0, y: 0), …)` puts a point's seed in its parent's statement, one level down
+/// `line l(hint((0, 0)), …)` puts a point's seed in its parent's statement, one level down
 /// from where `Decl::seed_spans` looks — so writeback has to find the slot, and splice inside
 /// it.  A point named the ordinary way and one written in a slot are the same point, and a
 /// gesture on either has to reach the source.
 #[test]
 fn a_drag_of_an_anonymous_child_is_written_back() {
-    let src = "use std\nin std.front {\nl := line(hint(x: 0, y: 0), hint(x: 60, y: 20))   // one line, two points\n}\n";
+    let src = "use std\nin std.front {\nl := line(hint((0, 0)), hint((60, 20)))   // one line, two points\n}\n";
     let mut e = elaborate(&prog_of(src));
     assert!(e.ok(), "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
     let mut sk = std::mem::take(&mut e.sketch);
@@ -761,7 +761,7 @@ fn a_drag_of_an_anonymous_child_is_written_back() {
     let out = edit::commit_seeds(&e, &sk, &e.program);
     assert_eq!(out.kind, Kind::Numeric);
     assert!(
-        out.text.contains("l := line(hint(x: 0, y: 0), hint(x: 42.5, y: -3))   // one line"),
+        out.text.contains("l := line(hint((0, 0)), hint((42.5, -3)))   // one line"),
         "spliced in the slot, comment intact: {}",
         out.text
     );
@@ -784,7 +784,7 @@ fn a_drag_of_a_minted_child_writes_the_list() {
     }
     let out = edit::commit_seeds(&e, &sk, &e.program);
     assert!(
-        out.text.contains("l := line(hint(x: 10, y: 0), hint(x: 20, y: 0))   // two ends"),
+        out.text.contains("l := line(hint((10, 0)), hint((20, 0)))   // two ends"),
         "{}",
         out.text
     );
@@ -803,9 +803,9 @@ fn a_drag_of_a_minted_child_writes_the_list() {
 #[test]
 fn a_written_argument_list_goes_on_the_name_and_is_spelled_once() {
     for (src, want) in [
-        ("use std\nin std.front {\nc := circle hint(r: 25)\n}\n", "use std\nin std.front {\nc := circle(center: hint(x: 3, y: 4)) hint(r: 25)\n}\n"),
+        ("use std\nin std.front {\nc := circle hint(r: 25)\n}\n", "use std\nin std.front {\nc := circle(center: hint((3, 4))) hint(r: 25)\n}\n"),
         ("use std\nin std.front {\nc := circle hint(r: 25)\n}\n",
-         "use std\nin std.front {\nc := circle(center: hint(x: 3, y: 4)) hint(r: 25)\n}\n"),
+         "use std\nin std.front {\nc := circle(center: hint((3, 4))) hint(r: 25)\n}\n"),
     ] {
         let mut e = elaborate(&prog_of(src));
         assert!(e.ok(), "{src}: {:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
@@ -830,7 +830,7 @@ fn a_written_argument_list_goes_on_the_name_and_is_spelled_once() {
 /// case `commit_seeds` exists to prevent.
 #[test]
 fn a_slot_that_omits_a_coordinate_is_rewritten_whole() {
-    let src = "use std\nin std.front {\nl := line(hint(x: 3), hint(x: 60, y: 20))   // one keyed, one not\n}\n";
+    let src = "use std\nin std.front {\nl := line(hint(x: 3), hint((60, 20)))   // one keyed, one not\n}\n";
     let mut e = elaborate(&prog_of(src));
     assert!(e.ok(), "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
     let mut sk = std::mem::take(&mut e.sketch);
@@ -840,7 +840,7 @@ fn a_slot_that_omits_a_coordinate_is_rewritten_whole() {
     sk.params[y as usize].value = -5.0;
     let out = edit::commit_seeds(&e, &sk, &e.program);
     assert!(
-        out.text.contains("l := line(hint(x: 7, y: -5), hint(x: 60, y: 20))   // one keyed"),
+        out.text.contains("l := line(hint((7, -5)), hint((60, 20)))   // one keyed"),
         "both coordinates, comment intact: {}",
         out.text
     );
@@ -849,9 +849,9 @@ fn a_slot_that_omits_a_coordinate_is_rewritten_whole() {
 #[test]
 fn driving_radius_dimensions_do_not_acquire_redundant_hints() {
     for source in [
-        "use std\nsize := 15\nin std.front {\no := point\nfix(x == 0, y == 0) o\nc := circle(center: o)\nradius(size) c\n}\n",
-        "use std\nsize := 15\nin std.front {\no := point\nfix(x == 0, y == 0) o\nc := radius(size) circle(center: o)\n}\n",
-        "use std\nsize := 15\nin std.front {\no := point\nfix(x == 0, y == 0) o\nradius(size) c\nc := circle(center: o)\n}\n",
+        "use std\nsize := 15\nin std.front {\no := point\nfix((0, 0)) o\nc := circle(center: o)\nradius(size) c\n}\n",
+        "use std\nsize := 15\nin std.front {\no := point\nfix((0, 0)) o\nc := radius(size) circle(center: o)\n}\n",
+        "use std\nsize := 15\nin std.front {\no := point\nfix((0, 0)) o\nradius(size) c\nc := circle(center: o)\n}\n",
     ] {
         let mut e = elaborate(&prog_of(source));
         assert!(e.ok(), "{:?}", e.diags);
@@ -887,7 +887,7 @@ fn free_claimed_and_soft_radius_dimensions_keep_pose_hints() {
     for (relation, soft) in [("param unknown: Length\nradius(unknown) c", false),
                              ("claim radius(12) c", false), ("radius(12) c", true)] {
         let e = elaborate(&prog_of(&format!(
-            "use std\nin std.front {{\no := point hint(x: 0,y: 0)\nc := circle(center: o)\n}}\n{relation}")));
+            "use std\nin std.front {{\no := point hint((0, 0))\nc := circle(center: o)\n}}\n{relation}")));
         assert!(e.ok(), "{:?}", e.diags);
         let mut moved = e.sketch.clone();
         moved.constraints.iter_mut().find(|c| c.kind == CKind::Radius).unwrap().soft = soft;
@@ -900,12 +900,12 @@ fn free_claimed_and_soft_radius_dimensions_keep_pose_hints() {
 
 #[test]
 fn dimensioned_arcs_omit_new_radius_hints_but_authored_hints_are_preserved() {
-    let source = "use std\nin std.front {\no := point hint(x: 0,y: 0)\na := point hint(x: 12,y: 0)\nb := point hint(x: 0,y: 12)\nbend := arc(center: o, start: a, end: b)\nradius(12) bend\n}\n";
+    let source = "use std\nin std.front {\no := point hint((0, 0))\na := point hint((12, 0))\nb := point hint((0, 12))\nbend := arc(center: o, start: a, end: b)\nradius(12) bend\n}\n";
     let e = elaborate(&prog_of(source));
     assert!(e.ok(), "{:?}", e.diags);
     let out = edit::commit_seeds(&e, &e.sketch, &e.program);
     assert!(!out.text.contains("hint(r:"), "{}", out.text);
-    let mut explicit = elaborate(&prog_of("use std\nin std.front {\no := point hint(x: 0,y: 0)\nc := circle(center: o) hint(r: 10)\nradius(12) c\n}\n"));
+    let mut explicit = elaborate(&prog_of("use std\nin std.front {\no := point hint((0, 0))\nc := circle(center: o) hint(r: 10)\nradius(12) c\n}\n"));
     assert!(solve(&mut explicit.sketch, Default::default()).success);
     let out = edit::commit_seeds(&explicit, &explicit.sketch, &explicit.program);
     assert!(out.text.contains("hint(r:"), "{}", out.text);

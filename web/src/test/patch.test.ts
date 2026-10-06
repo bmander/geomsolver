@@ -17,12 +17,12 @@ x := point
 c := point
 b := point
 t := point
-fix(x == 0, y == 0) o
-fix(x == 0, y == 1) q
-fix(x == 1, y == 0) x
-fix(x == 3, y == 0) c
-fix(x == 0, y == -3.5) b
-fix(x == 0, y == 3.5) t
+fix((0, 0)) o
+fix((0, 1)) q
+fix((1, 0)) x
+fix((3, 0)) c
+fix((0, -3.5)) b
+fix((0, 3.5)) t
 ax := line(o,q)
 spin_axis := line(o,x)
 meridian := circle(center: c)

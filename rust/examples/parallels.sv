@@ -19,19 +19,19 @@ in std.front {
   e := point
   base := line(o, e)
 
-  a := point hint(x: 0, y: 15)
-  b := point hint(x: 40, y: 15)
-  d := point hint(x: 10, y: 35)
+  a := point hint((0, 15))
+  b := point hint((40, 15))
+  d := point hint((10, 35))
   l2 := line(a, b)
   base parallel l2
   a distance(15, side: left) base
   a distance(40) b
 
   // l3 rises from l2's start, and l4 leaves l3's top square to it
-  vertical (l3 := line(a, d)) -> perpendicular (l4 := line(d, hint(x: 30, y: 30)))
+  vertical (l3 := line(a, d)) -> perpendicular (l4 := line(d, hint((30, 30))))
   distance(20) l3
   distance(20) l4
 
-  fix(x == 0, y == 0) o
-  fix(x == 40, y == 0) e
+  fix((0, 0)) o
+  fix((40, 0)) e
 }

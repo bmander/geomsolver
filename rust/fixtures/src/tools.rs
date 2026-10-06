@@ -7,16 +7,16 @@ pub const CYLINDER: &str = "\
 unit mm
 use std
 in std.front {
-construction centerline spindle := line(std.origin, hint(x: 0, y: 1))
-fix(x == 0, y == 1) spindle.p2
+construction centerline spindle := line(std.origin, hint((0, 1)))
+fix((0, 1)) spindle.p2
 private c0 := point
 private c1 := point
 private c2 := point
 private c3 := point
-fix(x == 3, y == -1) c0
-fix(x == 4, y == -1) c1
-fix(x == 4, y == 1) c2
-fix(x == 3, y == 1) c3
+fix((3, -1)) c0
+fix((4, -1)) c1
+fix((4, 1)) c2
+fix((3, 1)) c3
 private bottom := line(c0, c1)
 private wall := line(c1, c2)
 private top := line(c2, c3)
@@ -30,16 +30,16 @@ pub const BOX: &str = "\
 unit mm
 use std
 in std.front {
-construction centerline spindle := line(std.origin, hint(x: 0, y: 1))
-fix(x == 0, y == 1) spindle.p2
+construction centerline spindle := line(std.origin, hint((0, 1)))
+fix((0, 1)) spindle.p2
 private b0 := point
 private b1 := point
 private b2 := point
 private b3 := point
-fix(x == 2, y == -3) b0
-fix(x == 4, y == -3) b1
-fix(x == 4, y == 0) b2
-fix(x == 2, y == 0) b3
+fix((2, -3)) b0
+fix((4, -3)) b1
+fix((4, 0)) b2
+fix((2, 0)) b3
 private e0 := line(b0, b1)
 private e1 := line(b1, b2)
 private e2 := line(b2, b3)
@@ -53,14 +53,14 @@ pub const TRIANGLE_PRISM: &str = "\
 unit mm
 use std
 in std.front {
-construction centerline spindle := line(std.origin, hint(x: 0, y: 1))
-fix(x == 0, y == 1) spindle.p2
+construction centerline spindle := line(std.origin, hint((0, 1)))
+fix((0, 1)) spindle.p2
 private t0 := point
 private t1 := point
 private t2 := point
-fix(x == 3, y == -0.8) t0
-fix(x == 4.5, y == 0) t1
-fix(x == 3, y == 0.8) t2
+fix((3, -0.8)) t0
+fix((4.5, 0)) t1
+fix((3, 0.8)) t2
 private e0 := line(t0, t1)
 private e1 := line(t1, t2)
 private e2 := line(t2, t0)
@@ -73,27 +73,27 @@ construction tool := solid(face(e0, e1, e2), from: -1.5mm, to: 1.5mm)
 /// (two concave crease circles where the bar enters each ball).
 pub const DUMBBELL: &str = "unit mm
 use std
-construction centerline spindle := line(std.origin, hint(x: 0, y: 1))
-fix(x == 0, y == 1) spindle.p2
+construction centerline spindle := line(std.origin, hint((0, 1)))
+fix((0, 1)) spindle.p2
 private c0 := point
 private c1 := point
 private c2 := point
 private c3 := point
-fix(x == 3, y == -1) c0
-fix(x == 3.25, y == -1) c1
-fix(x == 3.25, y == 1) c2
-fix(x == 3, y == 1) c3
+fix((3, -1)) c0
+fix((3.25, -1)) c1
+fix((3.25, 1)) c2
+fix((3, 1)) c3
 private bottom := line(c0, c1)
 private wall := line(c1, c2)
 private top := line(c2, c3)
 private ax := line(c3, c0)
 construction bar := solid(face(bottom, wall, top, ax), about: ax)
 construction tool := solid(bar)
-private ca := point hint(x: 3, y: 1)
+private ca := point hint((3, 1))
 ca distance(3mm, along: u) std.front
 ca distance(1mm, along: v) std.front
-private ba := point hint(x: 3, y: 0.5)
-private ta := point hint(x: 3, y: 1.5)
+private ba := point hint((3, 0.5))
+private ta := point hint((3, 1.5))
 private da := line(ba, ta)
 ca midpoint da
 da parallel spindle
@@ -101,11 +101,11 @@ private ma := arc(center: ca, start: ba, end: ta)
 radius(0.5mm) ma
 construction ball_a := solid(face(ma, da), about: da)
 ball_a on tool
-private cb := point hint(x: 3, y: -1)
+private cb := point hint((3, -1))
 cb distance(3mm, along: u) std.front
 cb distance(-1mm, along: v) std.front
-private bb := point hint(x: 3, y: -1.5)
-private tb := point hint(x: 3, y: -0.5)
+private bb := point hint((3, -1.5))
+private tb := point hint((3, -0.5))
 private db := line(bb, tb)
 cb midpoint db
 db parallel spindle
@@ -127,18 +127,18 @@ pub fn tilted_cylinder(degrees: f64) -> String {
 unit mm
 use std
 in std.front {{
-construction centerline spindle := line(std.origin, hint(x: 0, y: 1))
-fix(x == 0, y == 1) spindle.p2
-private a0 := point hint(x: {ax}, y: {ay})
+construction centerline spindle := line(std.origin, hint((0, 1)))
+fix((0, 1)) spindle.p2
+private a0 := point hint(({ax}, {ay}))
 a0 distance({ax}mm, along: u) std.front
 a0 distance({ay}mm, along: v) std.front
-private a1 := point hint(x: {a1x}, y: {a1y})
+private a1 := point hint(({a1x}, {a1y}))
 a1 distance({a1x}mm, along: u) std.front
 a1 distance({a1y}mm, along: v) std.front
-private a2 := point hint(x: {a2x}, y: {a2y})
+private a2 := point hint(({a2x}, {a2y}))
 a2 distance({a2x}mm, along: u) std.front
 a2 distance({a2y}mm, along: v) std.front
-private a3 := point hint(x: {bx}, y: {by})
+private a3 := point hint(({bx}, {by}))
 a3 distance({bx}mm, along: u) std.front
 a3 distance({by}mm, along: v) std.front
 private bottom := line(a0, a1)
@@ -160,18 +160,18 @@ pub fn thin_plate(thick: f64) -> String {
 unit mm
 use std
 in std.front {{
-construction centerline spindle := line(std.origin, hint(x: 0, y: 1))
-fix(x == 0, y == 1) spindle.p2
-private q0 := point hint(x: {x0}, y: {y0})
+construction centerline spindle := line(std.origin, hint((0, 1)))
+fix((0, 1)) spindle.p2
+private q0 := point hint(({x0}, {y0}))
 q0 distance({x0}mm, along: u) std.front
 q0 distance({y0}mm, along: v) std.front
-private q1 := point hint(x: {x1}, y: {y1})
+private q1 := point hint(({x1}, {y1}))
 q1 distance({x1}mm, along: u) std.front
 q1 distance({y1}mm, along: v) std.front
-private q2 := point hint(x: {x2}, y: {y2})
+private q2 := point hint(({x2}, {y2}))
 q2 distance({x2}mm, along: u) std.front
 q2 distance({y2}mm, along: v) std.front
-private q3 := point hint(x: {x3}, y: {y3})
+private q3 := point hint(({x3}, {y3}))
 q3 distance({x3}mm, along: u) std.front
 q3 distance({y3}mm, along: v) std.front
 private f0 := line(q0, q1)
@@ -189,13 +189,13 @@ pub fn sphere(h: f64) -> String {
 unit mm
 use std
 in std.front {{
-construction centerline spindle := line(std.origin, hint(x: 0, y: 1))
-fix(x == 0, y == 1) spindle.p2
+construction centerline spindle := line(std.origin, hint((0, 1)))
+fix((0, 1)) spindle.p2
 private center := point
 center distance(3mm, along: u) std.front
 center distance({h}mm, along: v) std.front
-private bottom := point hint(x: 3, y: {b})
-private top := point hint(x: 3, y: {t})
+private bottom := point hint((3, {b}))
+private top := point hint((3, {t}))
 private diameter := line(bottom, top)
 center midpoint diameter
 diameter parallel spindle
@@ -214,15 +214,15 @@ pub fn torus(h: f64) -> String {
 unit mm
 use std
 in std.front {{
-construction centerline spindle := line(std.origin, hint(x: 0, y: 1))
-fix(x == 0, y == 1) spindle.p2
+construction centerline spindle := line(std.origin, hint((0, 1)))
+fix((0, 1)) spindle.p2
 private ta := point
 private tb := point
-fix(x == 3, y == {b}) ta
-fix(x == 3, y == {t}) tb
+fix((3, {b})) ta
+fix((3, {t})) tb
 private taxis := line(ta, tb)
 private tc := point
-fix(x == 4, y == {h}) tc
+fix((4, {h})) tc
 private ring := circle(center: tc) hint(r: 0.5)
 radius(0.5mm) ring
 }}
@@ -239,21 +239,21 @@ pub fn ring_lens(h: f64) -> String {
 unit mm
 use std
 in std.front {{
-construction centerline spindle := line(std.origin, hint(x: 0, y: 1))
-fix(x == 0, y == 1) spindle.p2
+construction centerline spindle := line(std.origin, hint((0, 1)))
+fix((0, 1)) spindle.p2
 private ta := point
 private tb := point
-fix(x == 3, y == {b}) ta
-fix(x == 3, y == {t}) tb
+fix((3, {b})) ta
+fix((3, {t})) tb
 private taxis := line(ta, tb)
 private tc := point
-fix(x == 4, y == {lo}) tc
+fix((4, {lo})) tc
 private ring := circle(center: tc) hint(r: 0.5)
 radius(0.5mm) ring
 construction stock := solid(face(ring), about: taxis)
 construction tool := solid(stock)
 private tc2 := point
-fix(x == 4, y == {hi}) tc2
+fix((4, {hi})) tc2
 private ring2 := circle(center: tc2) hint(r: 0.5)
 radius(0.5mm) ring2
 }}
@@ -273,13 +273,13 @@ pub fn lens(h: f64,apart: f64,offset: bool) -> String {
 unit mm
 use std
 in std.front {{
-construction centerline spindle := line(std.origin, hint(x: 0, y: 1))
-fix(x == 0, y == 1) spindle.p2
+construction centerline spindle := line(std.origin, hint((0, 1)))
+fix((0, 1)) spindle.p2
 private center := point
 center distance(3mm, along: u) std.front
 center distance({h1}mm, along: v) std.front
-private bottom := point hint(x: 3, y: {b1})
-private top := point hint(x: 3, y: {t1})
+private bottom := point hint((3, {b1}))
+private top := point hint((3, {t1}))
 private diameter := line(bottom, top)
 center midpoint diameter
 diameter parallel spindle
@@ -290,8 +290,8 @@ construction tool := solid(stock)
 private center2 := point
 center2 distance({x2}mm, along: u) std.front
 center2 distance({h2}mm, along: v) std.front
-private bottom2 := point hint(x: {x2}, y: {b2})
-private top2 := point hint(x: {x2}, y: {t2})
+private bottom2 := point hint(({x2}, {b2}))
+private top2 := point hint(({x2}, {t2}))
 private diameter2 := line(bottom2, top2)
 center2 midpoint diameter2
 diameter2 parallel spindle
@@ -314,10 +314,10 @@ private q0 := point
 private q1 := point
 private q2 := point
 private q3 := point
-fix(x == {cx}, y == {low}) q0
-fix(x == {r}, y == {low}) q1
-fix(x == {r}, y == {high}) q2
-fix(x == {cx}, y == {high}) q3
+fix(({cx}, {low})) q0
+fix(({r}, {low})) q1
+fix(({r}, {high})) q2
+fix(({cx}, {high})) q3
 private qb := line(q0, q1)
 private qw := line(q1, q2)
 private qt := line(q2, q3)
@@ -348,10 +348,10 @@ private q0 := point
 private q1 := point
 private q2 := point
 private q3 := point
-fix(x == {inner}, y == {low}) q0
-fix(x == {outer}, y == {low}) q1
-fix(x == {outer}, y == {high}) q2
-fix(x == {inner}, y == {high}) q3
+fix(({inner}, {low})) q0
+fix(({outer}, {low})) q1
+fix(({outer}, {high})) q2
+fix(({inner}, {high})) q3
 private qb := line(q0, q1)
 private qw := line(q1, q2)
 private qt := line(q2, q3)

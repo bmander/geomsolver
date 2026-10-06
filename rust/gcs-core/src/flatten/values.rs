@@ -78,6 +78,21 @@ pub(crate) fn value_aff(
         // an unknown the scope *bound* — a formal left unbound, a param over one — carries on;
         // a name nothing binds is the document's, and a component's numbers cannot read it
         (None, Some(n)) if !env.values().any(|b| b.free.as_deref() == Some(n)) => {
+            // a member a group or a vector does not have — `o.z` of `o := (1, 2)` — is said so
+            if let Some((owner, member)) = n.rsplit_once('.') {
+                let prefix = format!("{owner}.");
+                let has: Vec<&str> = env
+                    .keys()
+                    .filter_map(|k| k.strip_prefix(&prefix))
+                    .filter(|m| !m.contains('.'))
+                    .collect();
+                if !has.is_empty() {
+                    let mut has: Vec<String> = has.iter().map(|m| format!("`{m}`")).collect();
+                    let last = has.pop().unwrap_or_default();
+                    let has = if has.is_empty() { last } else { format!("{} and {last}", has.join(", ")) };
+                    return Err(format!("`{owner}` has {has}, not `{member}`"));
+                }
+            }
             Err(format!("`{n}` is not a number here — nothing in scope gives it one"))
         }
         _ => Ok(a),

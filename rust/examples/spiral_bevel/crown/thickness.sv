@@ -19,8 +19,8 @@ component CrownThickness(p: plane, generator: line, normal: line, design: group)
   ri := rc - 0.7 * design.module
   ro := rc + 0.7 * design.module
   in p {
-    ahead_end := point hint(x: r, y: pi * design.module / 4)
-    behind_end := point hint(x: r, y: -pi * design.module / 4)
+    ahead_end := point hint((r, pi * design.module / 4))
+    behind_end := point hint((r, -pi * design.module / 4))
     ahead := arc(center: generator.p1, start: generator.p2, end: ahead_end) hint(r: r)
     behind := arc(center: generator.p1, start: behind_end, end: generator.p2) hint(r: r)
     inner := circle(center: normal.p1) hint(r: ri)

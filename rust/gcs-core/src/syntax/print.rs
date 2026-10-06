@@ -460,35 +460,79 @@ fn hint_of(parts: &[String]) -> String {
     }
 }
 
-/// Print owned scalar seeds using registry field names. Geometric seeds retain
-/// their `at:` spelling; child seeds belong in the argument list.
-fn point_hint(text: [Option<&str>; 3], v: [f64; 3], z: bool) -> String {
-    // a child's place in its plane is x and y; an axis's direction has a z as well
-    let parts: Vec<String> = ["x", "y", "z"]
-        .iter()
-        .take(if z { 3 } else { 2 })
-        .enumerate()
-        .map(|(i, name)| match text[i] {
-            Some(t) => format!("{name}: {t}"),
-            None => format!("{name}: {}", num(v[i])),
+/// How some of an entity's own numbers are said.
+pub(crate) enum Said {
+    /// A vector, every component of it given: its key (`""` the point itself) and its members.
+    Whole(&'static str, Vec<usize>),
+    /// One member, by its index in `EntKind::members`.
+    One(usize),
+}
+
+/// The numbers `given` (indices into `EntKind::members`, in order), said as the source says
+/// them: each vector whole where every component of it is given — `(3, 4)`, `dir: (1, 0, 0)` —
+/// else member by member, `y: 7`.  `point` is how many coordinates the point's own vector has
+/// here: two in a plane, three in space.
+pub(crate) fn said(kind: EntKind, point: usize, given: &[usize]) -> Vec<Said> {
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < kind.members().len() {
+        let Some(&(key, first)) = kind.vectors().iter().find(|&&(_, f)| f == i) else {
+            if given.contains(&i) {
+                out.push(Said::One(i));
+            }
+            i += 1;
+            continue;
+        };
+        let len = if key.is_empty() { point } else { 3 };
+        let comps: Vec<usize> = (first..first + len).collect();
+        if comps.iter().all(|c| given.contains(c)) {
+            out.push(Said::Whole(key, comps));
+        } else {
+            out.extend((first..first + 3).filter(|c| given.contains(c)).map(Said::One));
+        }
+        i = first + 3;
+    }
+    out
+}
+
+/// The same, as text: `value(i)` the number of member `i` as written, `sep` what stands between
+/// a key and its value (`: ` in a hint, ` == ` in a `fix`).
+pub(crate) fn said_text(
+    kind: EntKind,
+    point: usize,
+    given: &[usize],
+    value: impl Fn(usize) -> String,
+    sep: &str,
+) -> Vec<String> {
+    said(kind, point, given)
+        .into_iter()
+        .map(|s| match s {
+            Said::Whole("", comps) => vector_text(comps.into_iter().map(&value)),
+            Said::Whole(key, comps) => format!("{key}{sep}{}", vector_text(comps.into_iter().map(&value))),
+            Said::One(i) => format!("{}{sep}{}", kind.members()[i], value(i)),
         })
-        .collect();
-    hint_of(&parts)
+        .collect()
+}
+
+/// A child's seed: a point's place in its plane, or an axis's direction (a plane's `u:` and
+/// `v:`), as `hint((3, 4))` or `hint(dir: (1, 0, 0))`.
+fn kid_hint(axis: bool, text: [Option<&str>; 3], v: [f64; 3]) -> String {
+    let (kind, n) = if axis { (EntKind::Axis, 3) } else { (EntKind::Point, 2) };
+    let given: Vec<usize> = (0..n).collect();
+    let value = |i: usize| text[i].map_or_else(|| num(v[i]), str::to_string);
+    hint_of(&said_text(kind, n, &given, value, ": "))
 }
 
 /// The same, for a place a solve arrived at: numbers, and no text anybody wrote — a point's
 /// two, or an axis's three.
 pub(crate) fn hint_numbers(v: &[f64]) -> String {
     let w = [0, 1, 2].map(|i| v.get(i).copied().unwrap_or(0.0));
-    point_hint([None, None, None], w, v.len() > 2)
+    kid_hint(v.len() > 2, [None, None, None], w)
 }
 
-/// Print owned scalar seeds using registry field names. Geometric seeds retain
-/// their `at:` spelling; child seeds belong in the argument list.  A `z` is printed where one
-/// was written or is not 0.
+/// Print a child slot's seed as it was written, or as the numbers it holds.
 pub(crate) fn kid_seed_text(k: &KidSeed) -> String {
-    let z = k.text[2].is_some() || !k.spans[2].is_empty() || k.v[2] != 0.0;
-    point_hint([k.text[0].as_deref(), k.text[1].as_deref(), k.text[2].as_deref()], k.v, z)
+    kid_hint(k.axis, [k.text[0].as_deref(), k.text[1].as_deref(), k.text[2].as_deref()], k.v)
 }
 
 /// Print owned scalar seeds using registry field names. Geometric seeds retain
@@ -515,33 +559,35 @@ pub(crate) fn hint_clause(d: &Decl, seed: &[f64]) -> String {
         }
         return hint_of(&parts);
     }
-    let mut parts: Vec<String> = Vec::new();
-    let mut scalar = 0usize;
-    for (name, field) in d.kind.fields() {
-        if *field != Field::Scalar {
-            continue;
-        }
-        let v = seed.get(scalar).copied().unwrap_or(0.0);
-        let written = d.seed_text.get(scalar).and_then(|t| t.as_deref());
+    let mut given: Vec<usize> = Vec::new();
+    let text = |i: usize| match d.seed_text.get(i).and_then(|t| t.as_deref()) {
+        Some(t) => t.to_string(),
+        None => num(seed.get(i).copied().unwrap_or(0.0)),
+    };
+    for (i, member) in d.kind.members().iter().enumerate() {
+        let v = seed.get(i).copied().unwrap_or(0.0);
         // a number the source wrote, though it be 0
-        let said = written.is_some() || d.seed_spans.get(scalar).is_some_and(|s| !s.is_empty());
-        scalar += 1;
+        let said = d.seed_text.get(i).is_some_and(|t| t.is_some())
+            || d.seed_spans.get(i).is_some_and(|s| !s.is_empty());
         // a number that is 0 where nobody wrote one says nothing: a point's height, an axis's
-        // place, where a plane stands — each 0 unless said
-        let optional = matches!(
-            (d.kind, *name),
-            (EntKind::Point, "z") | (EntKind::Axis, "px" | "py" | "pz") | (EntKind::Plane, _)
-        );
+        // origin, where a plane stands — each 0 unless said
+        let optional = matches!(d.kind, EntKind::Point | EntKind::Plane) && *member == "z"
+            || member.starts_with("origin.");
         if optional && !said && v == 0.0 {
             continue;
         }
-        let text = match written {
-            Some(t) => t.to_string(),
-            None => num(v),
-        };
-        parts.push(format!("{name}: {text}"));
+        given.push(i);
     }
-    hint_of(&parts)
+    // where a plane stands is said whole, as its origin, where any of it is
+    if d.kind == EntKind::Plane && !given.is_empty() {
+        given = vec![0, 1, 2];
+    }
+    if d.kind == EntKind::Axis && given.iter().any(|&i| i >= 3) {
+        given.retain(|&i| i < 3);
+        given.extend(3..6);
+    }
+    let point = if given.contains(&2) { 3 } else { 2 };
+    hint_of(&said_text(d.kind, point, &given, text, ": "))
 }
 
 fn write_relation(out: &mut String, r: &Relation) {
@@ -582,6 +628,13 @@ fn written_parts(args: &[OpArg]) -> (Vec<String>, Vec<String>) {
                 let (pin, hint) = slot_text(&key.text, arg);
                 parts.extend(pin);
                 hints.extend(hint);
+            }
+            OpArg::Vector { key, parts: vs, .. } => {
+                let v = vector_text(vs.iter().map(value_text));
+                parts.push(match key {
+                    Some(k) => format!("{} == {v}", k.text),
+                    None => v,
+                });
             }
         }
     }
@@ -725,6 +778,21 @@ fn slot_text(name: &str, a: &Arg) -> (Option<String>, Option<String>) {
         true => (Some(format!("{name} == {v}")), None),
         false => (None, Some(format!("{name}: {v}"))),
     }
+}
+
+/// A pinned or seeded number as written: the literal, or the expression it was written as.
+fn value_text(a: &Arg) -> String {
+    match a {
+        Arg::Seed { value, .. } => num(*value),
+        Arg::SeedExpr { text, .. } => text.clone(),
+        Arg::Tie { name, .. } => name.clone(),
+        other => sel_text(other),
+    }
+}
+
+/// A vector, `(3, 4)`: its components in order, as the source writes one.
+pub(crate) fn vector_text(parts: impl IntoIterator<Item = String>) -> String {
+    format!("({})", parts.into_iter().collect::<Vec<_>>().join(", "))
 }
 
 /// A selector's value, as a `style` block writes one.

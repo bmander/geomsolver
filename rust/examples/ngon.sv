@@ -32,5 +32,5 @@ component Ngon(n: Int, side: Length) {
 // the hub and the sides are reached by their names: `five.c`, `five.s[0]`
 in std.front {
   five := Ngon(n: 5, side: 40)
-  fix(x == 0, y == 0) five.c.center
+  fix((0, 0)) five.c.center
 }

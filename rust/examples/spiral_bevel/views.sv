@@ -12,11 +12,11 @@ use std
 // at the front's origin. `down` is the side of it its normal does not point, a direction for a
 // view standing on it (`FoldedView`). `span` is kept for the callers that name it.
 component PitchView(front: plane, span: Length) {
-  private up := axis hint(x: 0, y: 1, z: 0)
+  private up := axis hint(dir: (0, 1, 0))
   up perpendicular front
   view := plane(u: front.u, v: up)
   front.origin distance(0mm, along: u) view
-  down := axis hint(x: 0, y: 0, z: -1)
+  down := axis hint(dir: (0, 0, -1))
   down perpendicular view
 }
 
@@ -26,7 +26,7 @@ component PitchView(front: plane, span: Length) {
 // share `up`. Its origin is the parent's, seen in it: on the fold line, where the parent's origin
 // projects.
 component FoldedView(parent: plane, hinge: line, up: axis, span: Length) {
-  view := plane(u: hinge, v: hint(x: 0, y: 0, z: -1))
+  view := plane(u: hinge, v: hint(dir: (0, 0, -1)))
   up parallel view.v
   parent.origin project view.origin
 }
@@ -34,8 +34,8 @@ component FoldedView(parent: plane, hinge: line, up: axis, span: Length) {
 preview {
   unit mm
   pitch := PitchView(std.front, span: 40mm)
-  a := point hint(x: 0, y: 0) in pitch.view
-  b := point hint(x: 40, y: 20) in pitch.view
+  a := point hint((0, 0)) in pitch.view
+  b := point hint((40, 20)) in pitch.view
   a coincident pitch.view.origin
   a distance(40mm, along: right) b
   a distance(20mm, along: up) b

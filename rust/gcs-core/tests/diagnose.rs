@@ -628,8 +628,8 @@ use std
 in std.front {
 a := point
          d := point
-         b := point hint(x: 8, y: 24)
-         c := point hint(x: 52, y: 30)
+         b := point hint((8, 24))
+         c := point hint((52, 30))
          ground_link := line(a, d)
          crank := line(a, b)
          coupler := line(b, c)
@@ -637,8 +637,8 @@ a := point
          a distance(25) b
          b distance(45) c
          d distance(30) c
-         fix(x == 0, y == 0) a
-         fix(x == 60, y == 0) d
+         fix((0, 0)) a
+         fix((60, 0)) d
          crank angle(70) ground_link
 }
 ",
@@ -670,12 +670,12 @@ fn an_intrinsic_row_is_never_a_culprit() {
 use std
 in std.front {
 o := point
-         s := point hint(x: 20, y: 0)
-         e := point hint(x: 0, y: 20)
+         s := point hint((20, 0))
+         e := point hint((0, 20))
          a := arc(center: o, start: s, end: e) hint(r: 20)
          radius(20) a
          o distance(20) s
-         fix(x == 0, y == 0) o
+         fix((0, 0)) o
          r0 := horizontal line(o, s)
 }
 ",
@@ -693,7 +693,7 @@ o := point
 #[test]
 fn the_components_line_is_bounded() {
     let (prog, _) = crate::common::parse(
-        "use std\nin std.front {\nrepeat 400 as i { p := point hint(x: i, y: 0) }\n}\nfix(x == 0, y == 0) p[0]\n");
+        "use std\nin std.front {\nrepeat 400 as i { p := point hint((i, 0)) }\n}\nfix((0, 0)) p[0]\n");
     let mut sk = gcs_core::program::elaborate(&prog).sketch;
     let d = diagnose(&mut sk, DiagnoseOptions::default());
     let s = summary(&d);
@@ -725,7 +725,7 @@ fn a_relation_only_closure_is_implied_at_dof_zero_too() {
     };
     let (d, dims) = read(
         "use std\nin std.front {\ncycle 4 {\n (s := line) -> perpendicular equal\n}\n}\n\
-         s[0].p1 distance(50) s[0].p2\nfix(x == 0, y == 0) s[0].p1\nhorizontal s[0]\n",
+         s[0].p1 distance(50) s[0].p2\nfix((0, 0)) s[0].p1\nhorizontal s[0]\n",
     );
     assert_eq!((d.dof, d.status), (0, State::Well), "{}", summary(&d));
     assert!(d.over.is_empty(), "over: {:?}", d.over);
@@ -735,9 +735,9 @@ fn a_relation_only_closure_is_implied_at_dof_zero_too() {
 use std
 in std.front {
 p := point
-q := point hint(x: 40, y: 0)
-r := point hint(x: 40, y: 40)
-s := point hint(x: 0, y: 40)
+q := point hint((40, 0))
+r := point hint((40, 40))
+s := point hint((0, 40))
 a := line(p, q)
 b := line(q, r)
 c := line(r, s)
@@ -749,7 +749,7 @@ c perpendicular d
 d perpendicular a
 p distance(40) q
 q distance(40) r
-fix(x == 0, y == 0) p
+fix((0, 0)) p
 }
 ",
     );
@@ -759,14 +759,14 @@ fix(x == 0, y == 0) p
     assert!(dims.iter().all(|c| !d.implied.contains(c)), "{:?}", d.implied);
     // and a redundancy a dimension takes part in is still `over`, at DOF 0 as anywhere
     let (d, dims) = read(
-        "use std\nin std.front {\na := point\nb := point hint(x: 40, y: 0)\na horizontal b\na distance(40) b\na distance(40) b\nfix(x == 0, y == 0) a\n}\n",
+        "use std\nin std.front {\na := point\nb := point hint((40, 0))\na horizontal b\na distance(40) b\na distance(40) b\nfix((0, 0)) a\n}\n",
     );
     assert_eq!(d.status, State::Over, "{}", summary(&d));
     assert!(dims.iter().all(|c| d.over.contains(c)), "over: {:?}", d.over);
 }
 
 /// #45.6 — a radius the source never wrote is computed, never 0: at 0 every on-circle row has
-/// no gradient in `r`, so an `arc` with grounded ends and no `hint(r:)` could not solve, and a
+/// no gradient in `r`, so an `arc` with grounded ends and no `hint(r: )` could not solve, and a
 /// conflict elsewhere was blamed on the arc's own intrinsic — the first row a search from that
 /// pose could not satisfy.  The conflict set names the document's statements and no intrinsic.
 #[test]
@@ -785,24 +785,24 @@ c := point
 s := point
 e := point
 k := arc(center: c, start: s, end: e)
-fix(x == 0, y == 0) c
-fix(x == 10, y == 0) s
-fix(x == 0, y == 10) e
+fix((0, 0)) c
+fix((10, 0)) s
+fix((0, 10)) e
 }
 ";
     let mut sk = read(arc).sketch;
     assert!(solve(&mut sk, SolveOpts::default()).success);
     let r = sk.params[sk.arcs[0].radius as usize].value;
     assert!((r - 10.0).abs() < 1e-9, "r := {r}");
-    let mut sk = read("use std\nin std.front {\no := point\nc := circle(center: o)\np := point\np coincident c\nfix(x == 0, y == 0) o\nfix(x == 10, y == 0) p\n}\n").sketch;
+    let mut sk = read("use std\nin std.front {\no := point\nc := circle(center: o)\np := point\np coincident c\nfix((0, 0)) o\nfix((10, 0)) p\n}\n").sketch;
     assert!(solve(&mut sk, SolveOpts::default()).success);
     let r = sk.params[sk.circles[0].radius as usize].value;
     assert!((r - 10.0).abs() < 1e-9, "r := {r}");
     // a written seed still wins, including a written 0
-    let e = read("use std\nin std.front {\nc := point hint(x: 0, y: 0)\nk := arc(center: c) hint(r: 0)\n}\n");
+    let e = read("use std\nin std.front {\nc := point hint((0, 0))\nk := arc(center: c) hint(r: 0)\n}\n");
     assert_eq!(e.sketch.params[e.sketch.arcs[0].radius as usize].value, 0.0);
     // the conflict: a point on the arc at the wrong distance from its centre
-    let e = read(&format!("{arc}p := point hint(x: 7, y: 7)\np coincident k\np distance(5) c\n"));
+    let e = read(&format!("{arc}p := point hint((7, 7))\np coincident k\np distance(5) c\n"));
     let mut sk = e.sketch;
     assert!(!solve(&mut sk, SolveOpts::default()).success);
     let d = diagnose(&mut sk, DiagnoseOptions::default());

@@ -16,13 +16,13 @@ thickness := 4mm
 // Both spindles stand upright in the page, the pitch radii apart. The two radii are drawn, and
 // they meet at the pitch point.
 in std.front {
-  construction centerline spindle := line(std.origin, hint(x: 0, y: 1))
-  fix(x == 0, y == 1) spindle.p2
-  private pitch := point hint(x: 16, y: 0)
+  construction centerline spindle := line(std.origin, hint((0, 1)))
+  fix((0, 1)) spindle.p2
+  private pitch := point hint((16, 0))
   pitch distance(wheel_pitch, along: u) std.front
   pitch distance(0mm, along: v) std.front
-  private hub := point hint(x: 24, y: 0)
-  private hub_up := point hint(x: 24, y: 5)
+  private hub := point hint((24, 0))
+  private hub_up := point hint((24, 5))
   hub distance(wheel_pitch + pinion_pitch, along: u) std.front
   hub distance(0mm, along: v) std.front
   hub_up distance(wheel_pitch + pinion_pitch, along: u) std.front
@@ -40,10 +40,10 @@ roll := motion(pinion_turn, relative_to: wheel_turn)
 
 // The blank: a disc out to the addendum circle, turned about the spindle.
 in std.front {
-  private b0 := point hint(x: 0, y: -2)
-  private b1 := point hint(x: 18.5, y: -2)
-  private b2 := point hint(x: 18.5, y: 2)
-  private b3 := point hint(x: 0, y: 2)
+  private b0 := point hint((0, -2))
+  private b1 := point hint((18.5, -2))
+  private b2 := point hint((18.5, 2))
+  private b3 := point hint((0, 2))
   blank_section := horizontal (bb := line(b0, b1)) -> vertical (bo := line(b1, b2)) ->
                   horizontal (bt := line(b2, b3)) -> (ba := line(b3, b0)) -> close
   b0 coincident spindle
@@ -53,13 +53,13 @@ in std.front {
   construction blank := solid(blank_section, about: spindle)
 
   // The pin: a short cylinder on the pinion's radius, taller than the blank is thick.
-  private pin_at := point hint(x: 18, y: 0)
+  private pin_at := point hint((18, 0))
   pin_at coincident pinion_radius
   hub distance(pin_throw) pin_at
-  private q0 := point hint(x: 18, y: -3)
-  private q1 := point hint(x: 19.5, y: -3)
-  private q2 := point hint(x: 19.5, y: 3)
-  private q3 := point hint(x: 18, y: 3)
+  private q0 := point hint((18, -3))
+  private q1 := point hint((19.5, -3))
+  private q2 := point hint((19.5, 3))
+  private q3 := point hint((18, 3))
   pin_section := horizontal (qb := line(q0, q1)) -> vertical (qo := line(q1, q2)) ->
                 horizontal (qt := line(q2, q3)) -> vertical (qa := line(q3, q0)) -> close
   pin_at midpoint qa

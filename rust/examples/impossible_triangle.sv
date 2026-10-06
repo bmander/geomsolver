@@ -15,8 +15,8 @@ use std
 
 in std.front {
   a := point
-  b := point hint(x: 10, y: 0)
-  c := point hint(x: 5, y: 5)
+  b := point hint((10, 0))
+  c := point hint((5, 5))
 
   ab := horizontal line(a, b)
 
@@ -24,5 +24,5 @@ in std.front {
   b distance(1) c
   a distance(1) c
 
-  fix(x == 0, y == 0) a
+  fix((0, 0)) a
 }

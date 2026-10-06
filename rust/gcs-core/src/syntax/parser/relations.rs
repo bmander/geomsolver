@@ -133,22 +133,14 @@ impl<'a> P<'a> {
         let mut texts: Vec<(usize, usize, usize)> = Vec::new();
         while !self.eat_p(')') {
             match (self.peek().cloned(), self.t.get(self.i + 1).map(|(t, _)| t.clone())) {
+                _ if self.tuple_ahead() || self.member_end(&Tok::EqEq).is_some() => {
+                    out.push(self.pin()?)
+                }
                 (Some(Tok::Ident(n)), Some(Tok::P(':'))) => {
                     let name = Name { text: n, span: self.here() };
                     self.i += 2;
                     let v = self.sel_value()?;
                     out.push(OpArg::Named(name, v));
-                }
-                // `t == 0.4` — the same slot the `hint(…)` clause seeds, *pinned*.  The whole
-                // of the value is kept, expression and all: written inside a component a pin
-                // reads the parameters in scope (`t == t0`), which `flatten` settles later, and
-                // taking only `value` here would pin every one of them at 0.
-                (Some(Tok::Ident(key)), Some(Tok::EqEq)) => {
-                    let at = self.here();
-                    self.i += 2;
-                    let (value, text, span) = self.value_text()?;
-                    let arg = seed_arg(value, text, span, true);
-                    out.push(OpArg::Slot { key: Name { text: key, span: at }, arg });
                 }
                 _ if takes_entity => out.push(OpArg::Ent(self.refr()?)),
                 _ => {
@@ -200,6 +192,31 @@ impl<'a> P<'a> {
             self.i = end;
         }
         Some(out)
+    }
+
+    /// A pin: `t == 0.4`, one member of a vector, `dir.x == 1`, a vector the entity has,
+    /// `dir == (1, 0, 0)`, or the entity itself, `fix((0, 0)) p`.
+    fn pin(&mut self) -> Option<OpArg> {
+        let lo = self.here();
+        let pinned = |parts: Vec<(String, (Option<f64>, String, Span))>| -> Vec<Arg> {
+            parts.into_iter().map(|(_, (v, text, span))| seed_arg(v, text, span, true)).collect()
+        };
+        if self.tuple_ahead() {
+            let parts = pinned(self.vector("")?);
+            return Some(OpArg::Vector { key: None, parts, span: Span::new(lo.lo as usize, self.prev_hi()) });
+        }
+        let name = Name { text: self.member_label(Tok::EqEq)?, span: lo };
+        if self.tuple_ahead() {
+            let parts = pinned(self.vector(&name.text)?);
+            let span = Span::new(lo.lo as usize, self.prev_hi());
+            return Some(OpArg::Vector { key: Some(name), parts, span });
+        }
+        // the same slot the `hint(…)` clause seeds, *pinned*.  The whole of the value is kept,
+        // expression and all: written inside a component a pin reads the parameters in scope
+        // (`t == t0`), which `flatten` settles later, and taking only `value` here would pin
+        // every one of them at 0.
+        let (value, text, span) = self.value_text()?;
+        Some(OpArg::Slot { key: name, arg: seed_arg(value, text, span, true) })
     }
 
     /// A selector's value: `side: -1`, `at: start`, `external: true`, `along: x`.

@@ -60,15 +60,15 @@ preview {
   proportions := {pressure: 20deg, shift: 0deg,
                        base: 1, dedendum: 1, rounding: 0.3, backlash: 0mm, lashed: 0}
   in std.front {
-    lp := point hint(x: pitch_radius - 1.3mm, y: 0)
-    rp := point hint(x: pitch_radius + 1.3mm, y: 0)
+    lp := point hint((pitch_radius - 1.3mm, 0))
+    rp := point hint((pitch_radius + 1.3mm, 0))
     std.origin distance(pitch_radius - 1.3mm, along: right) lp
     std.origin distance(0mm, along: up) lp
     std.origin distance(pitch_radius + 1.3mm, along: right) rp
     std.origin distance(0mm, along: up) rp
     rack := RackSection(lp, rp, proportions, normal_module: 2mm)
-    construction centerline ax := line(std.origin, hint(x: 0, y: 1))
-    fix(x == 0, y == 1) ax.p2
+    construction centerline ax := line(std.origin, hint((0, 1)))
+    fix((0, 1)) ax.p2
   }
   crown := solid(rack.profile, about: ax)
   outer := surface(crown, rack.outer)

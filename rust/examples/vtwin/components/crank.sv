@@ -12,7 +12,7 @@ use components.parts
 use components.disc
 
 component Crank(o: point, ref: line, dims: group, theta: Angle) {
-  pin := point hint(x: o.x + dims.R * sin(dims.theta0), y: o.y + dims.R * cos(dims.theta0))
+  pin := point hint((o.x + dims.R * sin(dims.theta0), o.y + dims.R * cos(dims.theta0)))
   arm := line(o, pin)
   o distance(dims.R) pin
   arm angle(theta) ref
@@ -29,8 +29,8 @@ component Crank(o: point, ref: line, dims: group, theta: Angle) {
 preview {
   unit mm
   in std.front {
-    ref := line(std.origin, hint(x: 0, y: 1))
-    fix(x == 0, y == 1) ref.p2
+    ref := line(std.origin, hint((0, 1)))
+    fix((0, 1)) ref.p2
     crank := Crank(std.origin, ref, dims: components.dims.vtwin_dims)
   }
 }

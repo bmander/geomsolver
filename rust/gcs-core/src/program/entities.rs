@@ -258,7 +258,7 @@ pub(super) fn build(
     let unseeded = d.unseeded;
     // A scalar the source never wrote reads as 0, and for a radius 0 is a stationary point of
     // every on-circle row (∂/∂r of |p−c|² − r² is −2r): an `arc` with its ends grounded and no
-    // `hint(r:)` could not solve at all, and a conflict elsewhere in the drawing was blamed on
+    // `hint(r: )` could not solve at all, and a conflict elsewhere in the drawing was blamed on
     // the arc's own intrinsic, the first row a search from that pose could not satisfy (#45.6).
     // So a radius is *written or computed*, never defaulted: the constructor's geometric one for
     // an arc, `UNSEEDED_RADIUS` for a circle and wherever the
@@ -402,7 +402,7 @@ pub(super) fn build(
 /// angle the kernels read is.
 /// A plane: two axes — or drawn lines, each given a hidden axis parallel to it — and an origin of
 /// its own, a point drawn in it at `(0, 0)` reached as `P.origin`; where it stands is its `x`,
-/// `y`, `z`, seeded by `hint(x:, y:, z:)`.
+/// `y`, `z`, seeded by `hint((, , ))`.
 fn build_plane(
     sk: &mut Sketch,
     res: &Resolver,
@@ -428,7 +428,7 @@ fn build_plane(
         let r = match d.children.get(k).map(|g| g.as_slice()) {
             Some([Kid::Ref(r)]) => r,
             // a slot left out is an axis of the plane's own, free: `p := plane` is an origin and
-            // two directions, seeded as the front's unless a `hint(x:, y:, z:)` in the slot says
+            // two directions, seeded as the front's unless a `hint((, , ))` in the slot says
             // which way it starts
             None | Some([]) | Some([Kid::Hint(_)]) => {
                 let seed = match d.children.get(k).and_then(|g| g.first()) {
@@ -465,7 +465,7 @@ fn build_plane(
             Some(_) => {
                 fail(diags, st.span, format!(
                     "a plane's `{key}` is an axis or a line, named: `plane(u: a1, v: a2)`, or an \
-                     axis of its own, left out or seeded: `plane(u: hint(x: 0, y: 1, z: 0))`"
+                     axis of its own, left out or seeded: `plane(u: hint(dir: (0, 1, 0)))`"
                 ));
                 return None;
             }

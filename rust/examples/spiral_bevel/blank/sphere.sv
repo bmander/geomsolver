@@ -33,7 +33,7 @@ component SphericalBoundary(apex: point, generator: line, rim: point) {
 preview {
   unit mm
   in std.front {
-    mean := point hint(x: 50, y: 0)
+    mean := point hint((50, 0))
     std.origin distance(50mm, along: right) mean
     std.origin distance(0mm, along: up) mean
     generator := line(std.origin, mean)

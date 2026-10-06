@@ -13,19 +13,19 @@ bolts := 6
 
 // The half-section carries the bore, the plate and the hub standing proud of it.
 in std.front {
-  top := point hint(x: 0mm, y: plate_depth + hub_height)
+  top := point hint((0mm, plate_depth + hub_height))
   construction centerline spindle := vertical line(std.origin, top)
-  a := point hint(x: bore_radius, y: 0mm)
-  b := point hint(x: outer_radius, y: 0mm)
-  c := point hint(x: outer_radius, y: plate_depth)
-  d := point hint(x: hub_radius, y: plate_depth)
-  e := point hint(x: hub_radius, y: plate_depth + hub_height)
-  f := point hint(x: bore_radius, y: plate_depth + hub_height)
+  a := point hint((bore_radius, 0mm))
+  b := point hint((outer_radius, 0mm))
+  c := point hint((outer_radius, plate_depth))
+  d := point hint((hub_radius, plate_depth))
+  e := point hint((hub_radius, plate_depth + hub_height))
+  f := point hint((bore_radius, plate_depth + hub_height))
   profile := horizontal (ab := line(a, b)) -> vertical (bc := line(b, c)) ->
             horizontal (cd := line(c, d)) -> vertical (de := line(d, e)) ->
             horizontal (ef := line(e, f)) -> vertical (fa := line(f, a)) -> close
   // where the axis meets the top of the plate
-  deck := point hint(x: 0mm, y: plate_depth)
+  deck := point hint((0mm, plate_depth))
 }
 a horizontal std.origin
 top horizontal f
@@ -45,12 +45,12 @@ flange := solid(profile, about: spindle)
 in std.front {
   construction centerline reference := line(deck, c)
 }
-square := axis hint(x: 0, y: 1, z: 0)
+square := axis hint(dir: (0, 1, 0))
 square parallel std.y
 plate_top := plane(u: reference, v: square)
 deck coincident plate_top.origin
 in plate_top {
-  construction centerline across := horizontal line(plate_top.origin, hint(x: 10mm, y: 0mm))
+  construction centerline across := horizontal line(plate_top.origin, hint((10mm, 0mm)))
   distance(10mm) across
 }
 pattern := hardware.BoltPattern(flange, plate_top.origin, across, n: bolts, pitch_r: bolt_circle,

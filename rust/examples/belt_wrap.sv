@@ -23,16 +23,16 @@ wrap := 90     // belt in contact with the big pulley
 
 in std.front {
   c1 := point
-  c2 := point hint(x: 66, y: 0)
+  c2 := point hint((66, 0))
 
   // each run's ends are seeded for the side it passes on; the chain threads them into the arcs
-  (bottom := line(hint(x: -2, y: -10), hint(x: 60, y: -24))) -> tangent
+  (bottom := line(hint((-2, -10)), hint((60, -24)))) -> tangent
   radius(R) (big := arc(center: c2) hint(r: R)) -> tangent
-  (top := line(hint(x: 60, y: 24), hint(x: -2, y: 10))) -> tangent
+  (top := line(hint((60, 24)), hint((-2, 10)))) -> tangent
   radius(r) (small := arc(center: c1) hint(r: r)) -> tangent close
 
   length(wrap) big
 
   c1 horizontal c2
-  fix(x == 0, y == 0) c1
+  fix((0, 0)) c1
 }

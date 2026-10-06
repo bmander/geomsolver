@@ -5,8 +5,8 @@ pub(super) const SPHERE: &str = "\
 component Sphere(origin: point, size: Length) {
   private bottom := point
   private top := point
-  fix(x == 0, y == -size) bottom
-  fix(x == 0, y == size) top
+  fix((0, -size)) bottom
+  fix((0, size)) top
   private rim := arc(center: origin,start: bottom,end: top)
   radius(size) rim
   private diameter := line(top,bottom)
@@ -81,7 +81,7 @@ fn boundary_seams_roundtrip_copy_delete_and_preserve_private_dependencies() {
     let mut flat = solved(&format!("{MODEL}\nin std.front {{\n\
         south := point\n\
         north := point\n\
-        fix(x == 0, y == -sqrt(9.25)) south\nfix(x == 0, y == sqrt(9.25)) north\n\
+        fix((0, -sqrt(9.25))) south\nfix((0, sqrt(9.25))) north\n\
         rim := arc(center: o,start: south,end: north)\n\
         radius(sqrt(9.25) * 1mm) rim\ndiameter := line(north,south)\n}}\n\
         ball := solid(face(rim,diameter),about: diameter)\n\

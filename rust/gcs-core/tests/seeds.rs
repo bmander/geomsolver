@@ -1,4 +1,4 @@
-//! Seeds that read geometry (§6.4): `hint(x: k.center.x + k.r, y: pin.y)` reads the *seeds* of
+//! Seeds that read geometry (§6.4): `hint((k.center.x + k.r, pin.y))` reads the *seeds* of
 //! the scalars it names, `hint(at: pin)` and `hint(at: k, bearing: b)` name a place outright, and a
 //! seed inside a child slot is settled over a component's parameters like any other.  A seed is
 //! where a solve begins and nothing more, so none of this changes what a document says.
@@ -53,13 +53,13 @@ fn a_seed_reads_the_seed_of_what_it_names() {
         "\
 use std
 in std.front {
-a := point hint(x: 5, y: 1)
+a := point hint((5, 1))
 k := circle(center: a) hint(r: 4)
-b := point hint(x: a.x + 10, y: k.r)
+b := point hint((a.x + 10, k.r))
 c := point hint(at: a)
 d := point hint(at: k, bearing: 90deg)
-e := point hint(x: k.center.x + k.r, y: 0)
-l := line(hint(x: a.x, y: 1), hint(x: a.x + 1, y: 1))
+e := point hint((k.center.x + k.r, 0))
+l := line(hint((a.x, 1)), hint((a.x + 1, 1)))
 }
 ",
     );
@@ -77,11 +77,11 @@ fn a_component_seeds_from_its_formals_geometry() {
         "\
 use std
 component Off(p: point, d: Length) {
-q := point hint(x: p.x + d, y: p.y)
-s := line(p, hint(x: p.x + d / 2, y: p.y + d))
+q := point hint((p.x + d, p.y))
+s := line(p, hint((p.x + d / 2, p.y + d)))
 }
 in std.front {
-a := point hint(x: 10, y: 20)
+a := point hint((10, 20))
 o := Off(a, d: 6)
 }
 ",
@@ -98,12 +98,12 @@ use std
 w := 30
 component Bar(a: point, w: Length) {
 h := w / 2
-b := point hint(x: a.x + w, y: a.y + h)
+b := point hint((a.x + w, a.y + h))
 l := line(a, b)
 a distance(w) b
 }
 in std.front {
-o := point hint(x: 0, y: 0)
+o := point hint((0, 0))
 r := Bar(o, w: w)
 }
 ",
@@ -115,10 +115,10 @@ r := Bar(o, w: w)
 use std
 w := 30
 component Bar(a: point, w: Length) {
-b := point hint(x: a.x + w, y: a.y)
+b := point hint((a.x + w, a.y))
 }
 in std.front {
-o := point hint(x: 0, y: 0)
+o := point hint((0, 0))
 r := Bar(o, w: 7)
 }
 ",
@@ -139,8 +139,8 @@ b := point hint(at: k2, bearing: atan2(k2.center.y - k1.center.y, k2.center.x - 
 s := line(a, b)
 }
 in std.front {
-o := point hint(x: 0, y: 0)
-c := point hint(x: 100, y: 0)
+o := point hint((0, 0))
+c := point hint((100, 0))
 k1 := circle(center: o) hint(r: 10)
 k2 := circle(center: c) hint(r: 20)
 up := Span(k1, k2, side: 1)
@@ -155,8 +155,8 @@ dn := Span(k1, k2, side: -1)
     // and inside a block, a copy's own
     let e = read(
         "repeat 2 as i {\n\
-           p := point hint(x: i * 10, y: 0)\n\
-           q := point hint(x: p.x + 1, y: p.y)\n\
+           p := point hint((i * 10, 0))\n\
+           q := point hint((p.x + 1, p.y))\n\
          }\n",
     );
     assert_eq!(xy(&e, "q[1]"), (11.0, 0.0));
@@ -164,13 +164,13 @@ dn := Span(k1, k2, side: -1)
 
 #[test]
 fn a_seed_that_reads_geometry_is_never_written_back() {
-    let src = "use std\nin std.front {\na := point hint(x: 5, y: 1)\nb := point hint(x: a.x + 10, y: 2)\nc := point hint(at: a)\na distance(3) b\n}\n";
+    let src = "use std\nin std.front {\na := point hint((5, 1))\nb := point hint((a.x + 10, 2))\nc := point hint(at: a)\na distance(3) b\n}\n";
     let e = read(src);
     let mut sk = e.sketch.clone();
     gcs_core::solve::solve(&mut sk, Default::default());
     let out = edit::commit_seeds(&e, &sk, &e.program);
     // `b`'s x is an expression and `c` is a place: neither is spliced; only the moved numbers are
-    assert!(out.text.contains("hint(x: a.x + 10, y: "), "{}", out.text);
+    assert!(out.text.contains("hint((a.x + 10, "), "{}", out.text);
     assert!(out.text.contains("c := point hint(at: a)"), "{}", out.text);
 }
 
@@ -184,8 +184,8 @@ fn a_place_is_a_step_from_a_point() {
     let src = "\
 use std
 in std.front {
-a := point hint(x: 10, y: 0)
-b := point hint(x: 30, y: 0)
+a := point hint((10, 0))
+b := point hint((30, 0))
 l := line(a, b)
 mid := point hint(at: a, toward: b, by: 0.5)
 back := point hint(at: a, toward: b, by: -1)
@@ -219,7 +219,7 @@ r := point hint(at: a, along: l, by: -2)
     gcs_core::solve::solve(&mut sk, Default::default());
     let out = edit::commit_seeds(&e, &sk, &e.program);
     assert!(out.text.contains("mid := point hint(at: a, toward: b, by: 0.5)"), "{}", out.text);
-    let a = "use std\nin std.front {\na := point hint(x: 0, y: 0)\nl := line(a, a)\n}\n";
+    let a = "use std\nin std.front {\na := point hint((0, 0))\nl := line(a, a)\n}\n";
     for (clause, want) in [
         ("hint(at: a, by: 0.5)", "need `toward:` or `along:`"),
         ("hint(toward: a)", "`toward:` says where from a place"),
@@ -230,7 +230,7 @@ r := point hint(at: a, along: l, by: -2)
         let said: Vec<_> = errs.iter().map(|e| &e.message).collect();
         assert!(said.iter().any(|m| m.contains(want)), "expected `{want}` from {clause}: {said:?}");
     }
-    let k = "use std\nin std.front {\na := point hint(x: 0, y: 0)\nk := circle(center: a) hint(r: 3)\n}\n";
+    let k = "use std\nin std.front {\na := point hint((0, 0))\nk := circle(center: a) hint(r: 3)\n}\n";
     refused(&format!("{k}q := point hint(at: k, toward: a)\n"), "a step starts at a point");
     refused(&format!("{k}q := point hint(at: a, toward: k)\n"), "toward a point, not a circle");
     refused(&format!("{k}q := point hint(at: a, along: a)\n"), "along a line, not a point");
@@ -244,9 +244,9 @@ r := point hint(at: a, along: l, by: -2)
 /// findings replace the first's rather than doubling them.
 #[test]
 fn a_place_in_another_view_is_read_in_space() {
-    let views = "use std\nside := plane(u: std.z, v: std.y)\nfix(x == 0, y == 0, z == 0) side\n\
-         t := point hint(x: 10, y: 0) in std.front\n\
-         p := point hint(x: 7, y: 3) in std.front\n";
+    let views = "use std\nside := plane(u: std.z, v: std.y)\nfix(origin == (0, 0, 0)) side\n\
+         t := point hint((10, 0)) in std.front\n\
+         p := point hint((7, 3)) in std.front\n";
     // the front is u = x, v = z, and `side` u = z, v = y: `p` at (7, 3) in the front is (3, 0)
     // in `side`, and a step from it toward `t` goes halfway
     let e = read(&format!("{views}q := point hint(at: p) in side\n\
@@ -264,8 +264,8 @@ fn a_place_in_another_view_is_read_in_space() {
         assert!(errs.is_empty(), "{errs:?}");
         elaborate(&prog).errors().map(|d| d.message.clone()).collect::<Vec<_>>()
     };
-    let bad = "in std.front {\nw := point hint(x: nobody.x, y: 0)\n}\n";
-    let once = findings(format!("{views}q := point hint(x: 3, y: 0) in side\n{bad}"));
+    let bad = "in std.front {\nw := point hint((nobody.x, 0))\n}\n";
+    let once = findings(format!("{views}q := point hint((3, 0)) in side\n{bad}"));
     assert!(!once.is_empty());
     assert_eq!(findings(format!("{views}q := point hint(at: p) in side\n{bad}")), once);
 }
@@ -277,10 +277,10 @@ fn an_unwritten_arc_radius_reads_its_placed_centre() {
     let e = read("\
 use std
 in std.front {
-a := point hint(x: 0, y: 0)
-b := point hint(x: 20, y: 0)
-s := point hint(x: 0, y: 10)
-f := point hint(x: 20, y: 10)
+a := point hint((0, 0))
+b := point hint((20, 0))
+s := point hint((0, 10))
+f := point hint((20, 10))
 c := point hint(at: a, toward: b, by: 0.5)
 k := arc(center: c, start: s, end: f)
 }
@@ -291,20 +291,20 @@ k := arc(center: c, start: s, end: f)
 
 #[test]
 fn what_a_seed_may_read_is_checked() {
-    refused("use std\nin std.front {\na := point hint(x: 0, y: 0)\nb := point hint(x: a.z, y: 0)\n}\n", "has no `z`");
-    refused("use std\nin std.front {\na := point hint(x: 0, y: 0)\nb := point hint(x: nobody.x, y: 0)\n}\n", "no such entity");
-    refused("use std\nin std.front {\na := point hint(x: 0, y: 0)\nk := circle(center: a) hint(r: 3)\nd := point hint(at: k)\n}\n", "where on the edge");
-    refused("use std\nin std.front {\na := point hint(x: 0, y: 0)\nk := circle(center: a) hint(r: a.x)\nl := line(a, hint(x: 1, y: 1)) hint(at: a)\n}\n", "only a point");
+    refused("use std\nin std.front {\na := point hint((0, 0))\nb := point hint((a.z, 0))\n}\n", "has no `z`");
+    refused("use std\nin std.front {\na := point hint((0, 0))\nb := point hint((nobody.x, 0))\n}\n", "no such entity");
+    refused("use std\nin std.front {\na := point hint((0, 0))\nk := circle(center: a) hint(r: 3)\nd := point hint(at: k)\n}\n", "where on the edge");
+    refused("use std\nin std.front {\na := point hint((0, 0))\nk := circle(center: a) hint(r: a.x)\nl := line(a, hint((1, 1))) hint(at: a)\n}\n", "only a point");
     // a `param` is not a seed: it feeds constraints, and a seed may not change what a document says
-    refused("use std\nin std.front {\na := point hint(x: 0, y: 0)\n}\nw := a.x + 3\n", "not a number here");
+    refused("use std\nin std.front {\na := point hint((0, 0))\n}\nw := a.x + 3\n", "not a number here");
 }
 
 #[test]
 fn a_geometry_read_is_a_length_where_the_document_names_a_unit() {
-    read("unit mm\nuse std\nin std.front {\na := point hint(x: 5, y: 1)\nb := point hint(x: a.x + 10mm, y: 0)\n}\n");
-    refused("unit mm\nuse std\nin std.front {\na := point hint(x: 5, y: 1)\nb := point hint(x: a.x + 10, y: 0)\n}\n", "cannot be added");
+    read("unit mm\nuse std\nin std.front {\na := point hint((5, 1))\nb := point hint((a.x + 10mm, 0))\n}\n");
+    refused("unit mm\nuse std\nin std.front {\na := point hint((5, 1))\nb := point hint((a.x + 10, 0))\n}\n", "cannot be added");
     // and a bare number where it does not — there is nothing else a number could be
-    read("use std\nin std.front {\na := point hint(x: 5, y: 1)\nb := point hint(x: a.x + 10, y: 0)\n}\n");
+    read("use std\nin std.front {\na := point hint((5, 1))\nb := point hint((a.x + 10, 0))\n}\n");
 }
 
 /// **A place is two keys of the one seed clause** (issue #47, item 2): `at:` and `bearing:`
@@ -318,7 +318,7 @@ fn a_place_is_two_keys_of_the_seed_clause() {
         "\
 use std
 in std.front {
-a := point hint(x: 5, y: 1)
+a := point hint((5, 1))
 k := circle(center: a) hint(r: 4)
 d := point hint(bearing: 90deg, at: k)
 }
@@ -342,12 +342,12 @@ d := point hint(bearing: 90deg, at: k)
         .collect();
     assert_eq!(printed, ["d := point hint(at: k, bearing: 90deg)", "c := point hint(at: a.p1)"]);
     for (src, want) in [
-        ("a := point hint(x: 0, y: 0)\nq := point hint(z: 3, at: a)\n", "carries no scalar"),
+        ("a := point hint((0, 0))\nq := point hint(z: 3, at: a)\n", "carries no scalar"),
         ("r := point hint(bearing: 30)\n", "needs `at:`"),
-        ("s := point hint(at: (3, 4))\n", "a coordinate seed is `hint(x: …, y: …)`"),
-        ("a := point hint(x: 0, y: 0)\nq := point hint(at: a, at: a)\n", "written twice"),
-        ("a := point hint(x: 0, y: 0)\nq := point hint at a\n", "a place is keyed now"),
-        ("a := point hint(x: 0, y: 0)\nq := point hint at a bearing (30)\n", "a place is keyed now"),
+        ("s := point hint(at: (3, 4))\n", "a point's own is `hint((x, y))`"),
+        ("a := point hint((0, 0))\nq := point hint(at: a, at: a)\n", "written twice"),
+        ("a := point hint((0, 0))\nq := point hint at a\n", "a place is keyed now"),
+        ("a := point hint((0, 0))\nq := point hint at a bearing (30)\n", "a place is keyed now"),
     ] {
         let (_, errs) = parse(src);
         assert!(
@@ -358,7 +358,7 @@ d := point hint(bearing: 90deg, at: k)
     }
     // `x:` and `y:` beside `at:` are a place in a plane, so a point is no place for them
     let (prog, _) = crate::common::parse(
-        "use std\nin std.front {\na := point hint(x: 0, y: 0)\nq := point hint(at: a, x: 3)\n}\n");
+        "use std\nin std.front {\na := point hint((0, 0))\nq := point hint(at: a, x: 3)\n}\n");
     let e = elaborate(&prog);
     assert!(e.errors().any(|d| d.message.contains("are a place in a plane")), "{:?}", e.diags);
 }
@@ -370,28 +370,28 @@ d := point hint(bearing: 90deg, at: k)
 #[test]
 fn a_fix_is_its_own_seed() {
     let with = "use std
-P := plane hint(x: 5, y: 40, z: -3)
-fix(x == 5, y == 40, z == -3) P
-fix(x == 1, y == 0, z == 0) P.u
-fix(x == 0, y == 0, z == 1) P.v
+P := plane hint(origin: (5, 40, -3))
+fix(origin == (5, 40, -3)) P
+fix(dir == (1, 0, 0)) P.u
+fix(dir == (0, 0, 1)) P.v
 in P {
-  q := point hint(x: 2, y: 9)
-  fix(x == 2, y == 9) q
+  q := point hint((2, 9))
+  fix((2, 9)) q
 }
 in std.front {
-  a := point hint(x: 10, y: 20)
-  b := point hint(x: 30, y: 25)
-  fix(x == 10, y == 20) a
-  fix(x == 30, y == 25) b
+  a := point hint((10, 20))
+  b := point hint((30, 25))
+  fix((10, 20)) a
+  fix((30, 25)) b
   l := line(a, b)
-  m := line(a, hint(x: 10, y: 40))
+  m := line(a, hint((10, 40)))
 }
 Q := plane(u: l, v: m)
 ";
-    let without = with.replace(" hint(x: 5, y: 40, z: -3)", "")
-        .replace(" hint(x: 2, y: 9)", "")
-        .replace(" hint(x: 10, y: 20)", "")
-        .replace(" hint(x: 30, y: 25)", "");
+    let without = with.replace(" hint((5, 40, -3))", "")
+        .replace(" hint((2, 9))", "")
+        .replace(" hint((10, 20))", "")
+        .replace(" hint((30, 25))", "");
     assert_ne!(with, without);
     let (a, b) = (read(with), read(&without));
     let values = |e: &Elaborated| e.sketch.params.iter().map(|p| (p.name.clone(), p.value, p.fixed))

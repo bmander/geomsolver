@@ -25,11 +25,11 @@ rr := 6       // the roller
 
 in std.front {
   o := point
-  fix(x == 0, y == 0) o
+  fix((0, 0)) o
   s0 := point
   s1 := point
-  fix(x == 0, y == 0) s0
-  fix(x == 10, y == 0) s1
+  fix((0, 0)) s0
+  fix((10, 0)) s1
   path := line(s0, s1)                    // the follower's line, through the cam's centre
 }
 
@@ -41,8 +41,8 @@ fall := motion(back, relative_to: cam)
 
 // the roller where the rise starts, and where the fall would start if it began at no roll
 in std.front {
-  c_rise := point hint(x: 25, y: 0)
-  c_fall := point hint(x: 55, y: 0)
+  c_rise := point hint((25, 0))
+  c_fall := point hint((55, 0))
   o distance(base, along: x) c_rise
   o distance(0, along: y) c_rise
   o distance(base + 2 * lift, along: x) c_fall
@@ -60,7 +60,7 @@ cam_fall := envelope(roller_f, under: fall, from: 180deg, to: 360deg, side: near
 
 // how tightly the profile bends a quarter turn in
 in std.front {
-  k := point hint(x: 0, y: -5)
+  k := point hint((0, -5))
   osc := circle(center: k) hint(r: 25)
   cam_rise curvature(t == 90) osc
 }

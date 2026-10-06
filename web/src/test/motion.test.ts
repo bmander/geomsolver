@@ -13,8 +13,8 @@ use std
 in std.front {
 a := point
 b := point
-fix(x == 2, y == 0) a
-fix(x == 2, y == 1) b
+fix((2, 0)) a
+fix((2, 1)) b
 ax := line(a,b)
 }
 relative := motion(turn,relative_to: observer)
@@ -43,17 +43,17 @@ use std
 in std.front {
 a := point
 b := point
-fix(x == 0, y == 0) a
-fix(x == 0, y == 1) b
+fix((0, 0)) a
+fix((0, 1)) b
 ax := line(a,b)
 c := point
-d := point hint(x: 25,y: -2)
-fix(x == 0, y == -2) c
+d := point hint((25, -2))
+fix((0, -2)) c
 big := horizontal line(c,d)
 c distance(30mm) d
 e := point
-f := point hint(x: 12,y: -4)
-fix(x == 0, y == -4) e
+f := point hint((12, -4))
+fix((0, -4)) e
 small := horizontal line(e,f)
 e distance(10mm) f
 }
@@ -71,8 +71,8 @@ turn := motion(about: ax, ratio: length(big) / length(small))
 
 test('a measurement where a number is needed before the solve is refused as E107', () => {
   const doc = Document.read(`unit mm
-c := point hint(x: 0,y: -2)
-d := point hint(x: 25,y: -2)
+c := point hint((0, -2))
+d := point hint((25, -2))
 big := line(c,d)
 k := length(big)
 `);

@@ -31,20 +31,20 @@ component Piston(f: group, dims: group) {
   gb := grooveb / 2
 
   // The crown is square to the datum, with its left and right stated explicitly.
-  cL := point hint(at: f.axes, x: 0mm, y: -pw)
-  cR := point hint(at: f.axes, x: 0mm, y: pw)
+  cL := point hint(at: f.axes, (0mm, -pw))
+  cR := point hint(at: f.axes, (0mm, pw))
   crownl := line(cR, cL)
   // each side's profile: down to the groove, in to its bottom, along it, out, on to the skirt
-  g0L := point hint(at: f.axes, x: dims.groove, y: -pw)
-  g1L := point hint(at: f.axes, x: dims.groove, y: -gb)
-  g2L := point hint(at: f.axes, x: dims.groove + groovew, y: -gb)
-  g3L := point hint(at: f.axes, x: dims.groove + groovew, y: -pw)
-  sL := point hint(at: f.axes, x: dims.ph, y: -pw)
-  g0R := point hint(at: f.axes, x: dims.groove, y: pw)
-  g1R := point hint(at: f.axes, x: dims.groove, y: gb)
-  g2R := point hint(at: f.axes, x: dims.groove + groovew, y: gb)
-  g3R := point hint(at: f.axes, x: dims.groove + groovew, y: pw)
-  sR := point hint(at: f.axes, x: dims.ph, y: pw)
+  g0L := point hint(at: f.axes, (dims.groove, -pw))
+  g1L := point hint(at: f.axes, (dims.groove, -gb))
+  g2L := point hint(at: f.axes, (dims.groove + groovew, -gb))
+  g3L := point hint(at: f.axes, (dims.groove + groovew, -pw))
+  sL := point hint(at: f.axes, (dims.ph, -pw))
+  g0R := point hint(at: f.axes, (dims.groove, pw))
+  g1R := point hint(at: f.axes, (dims.groove, gb))
+  g2R := point hint(at: f.axes, (dims.groove + groovew, gb))
+  g3R := point hint(at: f.axes, (dims.groove + groovew, pw))
+  sR := point hint(at: f.axes, (dims.ph, pw))
   (pL0 := line(cL, g0L)) -> (pL1 := line(g0L, g1L)) -> (pL2 := line(g1L, g2L)) ->
     (pL3 := line(g2L, g3L)) -> (pL4 := line(g3L, sL))
   (pR0 := line(cR, g0R)) -> (pR1 := line(g0R, g1R)) -> (pR2 := line(g1R, g2R)) ->
@@ -77,10 +77,10 @@ component Piston(f: group, dims: group) {
   hole := circle(center: f.u.p2) hint(r: dims.pinclr / 2)
   radius(dims.pinclr / 2) hole
   // the rod's two flanks, from the skirt to the eye
-  ra := point hint(at: f.axes, x: dims.ph, y: -dims.rt / 2)
-  rc := point hint(at: f.axes, x: dims.ph, y: dims.rt / 2)
-  rb := point hint(at: f.axes, x: dims.L - dims.reye, y: 0mm)
-  rd := point hint(at: f.axes, x: dims.L - dims.reye, y: 0mm)
+  ra := point hint(at: f.axes, (dims.ph, -dims.rt / 2))
+  rc := point hint(at: f.axes, (dims.ph, dims.rt / 2))
+  rb := point hint(at: f.axes, (dims.L - dims.reye, 0mm))
+  rd := point hint(at: f.axes, (dims.L - dims.reye, 0mm))
   rb coincident eye
   rd coincident eye
   fl parallel rod
@@ -96,7 +96,7 @@ component Piston(f: group, dims: group) {
   // three corners nothing draws — out to the rim at the crown, in to the axis at the skirt,
   // and back up the axis, which the turn sweeps into nothing — so it says the corners and
   // lets the face close itself.
-  s0 := point hint(at: f.axes, x: dims.ph, y: 0mm)
+  s0 := point hint(at: f.axes, (dims.ph, 0mm))
   s0 midpoint skirt
   // the sizes a printer needs
   claim cL distance(2 * pw) cR
@@ -129,7 +129,7 @@ component Piston(f: group, dims: group) {
 preview {
   unit mm
   in std.front {
-    pin := point hint(at: std.up, x: -components.dims.L, y: 0mm)
+    pin := point hint(at: std.up, (-components.dims.L, 0mm))
     std.origin vertical pin
     std.origin distance(components.dims.L) pin
     piston_axes := std.Turned(std.origin, pin)

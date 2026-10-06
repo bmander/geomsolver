@@ -88,7 +88,7 @@ pub(super) fn lex(src: &str) -> (Lexed, Vec<SynErr>) {
                 toks.push((Tok::Arrow, Span::new(lo, i)));
             }
             // Shorthands, read as the word they stand for: `@` is `coincident` (`p @ c`) and `~`
-            // is `hint` (`point ~(x: 0, y: 0)`).  The token's span is the one character, so a
+            // is `hint` (`point ~((0, 0))`).  The token's span is the one character, so a
             // splice edits what was written and the parser never knows.
             '@' | '~' => {
                 i += 1;

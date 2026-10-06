@@ -13,19 +13,19 @@
 // its origin.
 component StandardDatums() {
   x := axis
-  fix(x == 1, y == 0, z == 0, px == 0, py == 0, pz == 0) x
+  fix(dir == (1, 0, 0), origin == (0, 0, 0)) x
   y := axis
-  fix(x == 0, y == 1, z == 0, px == 0, py == 0, pz == 0) y
+  fix(dir == (0, 1, 0), origin == (0, 0, 0)) y
   z := axis
-  fix(x == 0, y == 0, z == 1, px == 0, py == 0, pz == 0) z
+  fix(dir == (0, 0, 1), origin == (0, 0, 0)) z
   back := axis
-  fix(x == -1, y == 0, z == 0, px == 0, py == 0, pz == 0) back
+  fix(dir == (-1, 0, 0), origin == (0, 0, 0)) back
   front := plane(u: x, v: z)
   top := plane(u: x, v: y)
   side := plane(u: y, v: z)
   up := plane(u: z, v: back)
   origin := point in front
-  fix(x == 0, y == 0) origin
+  fix((0, 0)) origin
 }
 
 // Axes turned within a plane: the plane through `o` whose u runs toward `t` and whose v is a
@@ -45,10 +45,10 @@ component Turned(o: point, t: point) {
 // An axis-aligned rectangle about a supplied center. The public loop is a face boundary;
 // the diagonal only constrains the center and stays private construction geometry.
 component CenteredRectangle(center: point, w: Length, h: Length) {
-  a := point hint(x: center.x - w / 2, y: center.y - h / 2)
-  b := point hint(x: center.x + w / 2, y: center.y - h / 2)
-  c := point hint(x: center.x + w / 2, y: center.y + h / 2)
-  d := point hint(x: center.x - w / 2, y: center.y + h / 2)
+  a := point hint((center.x - w / 2, center.y - h / 2))
+  b := point hint((center.x + w / 2, center.y - h / 2))
+  c := point hint((center.x + w / 2, center.y + h / 2))
+  d := point hint((center.x - w / 2, center.y + h / 2))
   loop := horizontal (ab := line(a, b)) -> vertical (bc := line(b, c)) ->
          horizontal (cd := line(c, d)) -> vertical (da := line(d, a)) -> close
   distance(w) ab
@@ -65,7 +65,7 @@ component CenteredRectangle(center: point, w: Length, h: Length) {
 //
 //   use std
 //   in std.front {
-//     o := point hint(x: 0, y: 0)
+//     o := point hint((0, 0))
 //   }
 //   e := std.Ellipse(o, a: 40, b: 25, tilt: 0deg).p over u in (0, 360)
 //

@@ -39,8 +39,8 @@ component Flank(base: circle, root: circle, tip: circle,
   // puts the point on the curve at exactly that roll, and the solve is nine iterations.  Left
   // unseeded, a point starts a unit or so off the centre at a bearing of its own, and from
   // there the root and tip circles pull against the flank.
-  lo := point hint(x: 0, y: 0)
-  hi := point hint(x: 0, y: 0)
+  lo := point hint((0, 0))
+  hi := point hint((0, 0))
 
   lo coincident e hint(t: u0)
   hi coincident e hint(t: u1)
@@ -105,7 +105,7 @@ component Gear(N: Int, m: Length, phi: Angle, ded: Scalar) {
   radius(Rb) base
   radius(Rr) root
   radius(Rt) tip
-  fix(x == 0, y == 0) center
+  fix((0, 0)) center
 
   // `cycle` and not `ring`: the teeth are congruent because each is given the same numbers, not
   // because the wheel is *claimed* to be symmetric.  Spec §12.3 makes the two equivalent when the

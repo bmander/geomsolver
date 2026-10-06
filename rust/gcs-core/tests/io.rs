@@ -727,8 +727,8 @@ fn a_levelled_pair_decomposes_like_a_levelled_line() {
 /// document without one, the plane comes along.
 #[test]
 fn a_paste_draws_in_the_plane_the_document_already_has() {
-    let e = crate::common::build("use std\nin std.front {\na := point hint(x: 0, y: 0)\n\
-        b := point hint(x: 60, y: 0)\nab := line(a, b)\na distance(60) b\n}\n");
+    let e = crate::common::build("use std\nin std.front {\na := point hint((0, 0))\n\
+        b := point hint((60, 0))\nab := line(a, b)\na distance(60) b\n}\n");
     let mut sk = e.sketch;
     let front = e.map.ent_named("std.front").unwrap().i();
     let clip = io::copy(&sk, &[EntRef::line(0)]);

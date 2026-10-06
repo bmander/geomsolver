@@ -30,12 +30,12 @@ use crate::common::build;
 pub const RACK: &str = "\
 use std
 component RackFlank(pitch: circle, datum: line, alpha: Angle, s0: Length, u: Angle) {
-  P := point hint(x: pitch.center.x + pitch.r * cos(u), y: pitch.center.y + pitch.r * sin(u))
-  Q := point hint(x: pitch.center.x + pitch.r * cos(u) - 10 * sin(u), y: pitch.center.y + pitch.r * sin(u) + 10 * cos(u))
-  T := point hint(x: pitch.center.x + pitch.r * cos(u) - (s0 - pitch.r * u * pi / 180) * sin(u), y: pitch.center.y + pitch.r * sin(u) + (s0 - pitch.r * u * pi / 180) * cos(u))
-  q := point hint(x: pitch.center.x + pitch.r * cos(u) - (s0 - pitch.r * u * pi / 180) * sin(u) + 10 * cos(u + alpha), y: pitch.center.y + pitch.r * sin(u) + (s0 - pitch.r * u * pi / 180) * cos(u) + 10 * sin(u + alpha))
-  N := point hint(x: pitch.center.x + pitch.r * cos(u) - 10 * sin(u + alpha), y: pitch.center.y + pitch.r * sin(u) + 10 * cos(u + alpha))
-  p := point hint(x: pitch.center.x + pitch.r * cos(u), y: pitch.center.y + pitch.r * sin(u))
+  P := point hint((pitch.center.x + pitch.r * cos(u), pitch.center.y + pitch.r * sin(u)))
+  Q := point hint((pitch.center.x + pitch.r * cos(u) - 10 * sin(u), pitch.center.y + pitch.r * sin(u) + 10 * cos(u)))
+  T := point hint((pitch.center.x + pitch.r * cos(u) - (s0 - pitch.r * u * pi / 180) * sin(u), pitch.center.y + pitch.r * sin(u) + (s0 - pitch.r * u * pi / 180) * cos(u)))
+  q := point hint((pitch.center.x + pitch.r * cos(u) - (s0 - pitch.r * u * pi / 180) * sin(u) + 10 * cos(u + alpha), pitch.center.y + pitch.r * sin(u) + (s0 - pitch.r * u * pi / 180) * cos(u) + 10 * sin(u + alpha)))
+  N := point hint((pitch.center.x + pitch.r * cos(u) - 10 * sin(u + alpha), pitch.center.y + pitch.r * sin(u) + 10 * cos(u + alpha)))
+  p := point hint((pitch.center.x + pitch.r * cos(u), pitch.center.y + pitch.r * sin(u)))
   rad := line(pitch.center, P)
   tl := line(P, Q)
   fl := line(T, q)
@@ -59,8 +59,8 @@ x := point
 datum := line(o, x)
 pitch := circle(center: o) hint(r: 30)
 radius(30) pitch
-fix(x == 0, y == 0) o
-fix(x == 1, y == 0) x
+fix((0, 0)) o
+fix((1, 0)) x
 }
 ";
 
@@ -102,7 +102,7 @@ fn a_circle_osculates_the_cut_flank() {
     let mut e = flank(
         "\
 in std.front {
-k := point hint(x: 25, y: 5)
+k := point hint((25, 5))
 osc := circle(center: k) hint(r: 8)
 flank curvature osc hint(t: 10)
 o distance(26, along: x) k
@@ -134,7 +134,7 @@ o distance(26, along: x) k
 /// the tip round, the trochoid's offset, which has no closed form worth writing.
 pub const TIP: &str = "\
 component RackTip(pitch: circle, datum: line, st: Length, ht: Length, rf: Length, u: Angle) {
-  P := point hint(x: pitch.center.x + pitch.r * cos(u), y: pitch.center.y + pitch.r * sin(u))
+  P := point hint((pitch.center.x + pitch.r * cos(u), pitch.center.y + pitch.r * sin(u)))
   Q := point hint(x: pitch.center.x + pitch.r * cos(u) - 10 * sin(u), \
                   y: pitch.center.y + pitch.r * sin(u) + 10 * cos(u))
   C := point hint(x: pitch.center.x + (pitch.r - ht) * cos(u) - (st - pitch.r * u * pi / 180) * sin(u), \
@@ -192,21 +192,21 @@ fn the_tip_round_cuts_a_fillet_tangent_to_it() {
 /// pitch line, at 20° from the radius.
 const RACK_MOTION: &str = "\
 in std.front {
-rk0 := point hint(x: 30, y: 0)
-rk1 := point hint(x: 30, y: 10)
-fix(x == 30, y == 0) rk0
-fix(x == 30, y == 10) rk1
+rk0 := point hint((30, 0))
+rk1 := point hint((30, 10))
+fix((30, 0)) rk0
+fix((30, 10)) rk1
 slide := line(rk0, rk1)
 }
 blank := motion(about: o, ratio: 1)
 rack := motion(along: slide, advance: 2 * pi * 30)
 rel := motion(of: rack, relative_to: blank)
 in std.front {
-f0 := point hint(x: 30, y: 5)
-f1 := point hint(x: 40, y: 8)
+f0 := point hint((30, 5))
+f1 := point hint((40, 8))
 flank := line(f0, f1)
-fix(x == 30, y == 5) f0
-fix(x == 39.396926207859084, y == 8.420201433256687) f1
+fix((30, 5)) f0
+fix((39.396926207859084, 8.420201433256687)) f1
 }
 ";
 
@@ -239,7 +239,7 @@ fn an_envelope_of_a_rack_flank_is_the_traced_cut() {
 fn a_circle_osculates_an_envelope() {
     let mut e = build(&format!(
         "{RACK}{RACK_MOTION}cut := envelope(flank, under: rel, from: -25deg, to: 25deg)\n\
-         in std.front {{\nk := point hint(x: 25, y: -5)\nosc := circle(center: k) hint(r: 8)\n}}\n\
+         in std.front {{\nk := point hint((25, -5))\nosc := circle(center: k) hint(r: 8)\n}}\n\
          cut curvature osc hint(t: -10)\no distance(26, along: x) k\n"
     ));
     let r = solve(&mut e.sketch, SolveOpts::default());
@@ -265,12 +265,12 @@ fn a_circle_osculates_an_envelope() {
 #[test]
 fn a_contact_on_the_cut_solves_the_tool() {
     let src = format!("{RACK}{RACK_MOTION}")
-        .replace("fix(x == 39.396926207859084, y == 8.420201433256687) f1\n", "f0 distance(10) f1\n")
+        .replace("fix((39.396926207859084, 8.420201433256687)) f1\n", "f0 distance(10) f1\n")
         + "\
 cut := envelope(flank, under: rel, from: -25deg, to: 25deg)
 in std.front {
-g := point hint(x: 31, y: -3)
-fix(x == 31.5, y == -3) g
+g := point hint((31, -3))
+fix((31.5, -3)) g
 g coincident cut hint(t: 5)
 }
 ";
@@ -306,19 +306,19 @@ fn a_roller_cuts_its_cam() {
 use std
 in std.front {
 o := point
-fix(x == 0, y == 0) o
-s0 := point hint(x: 0, y: 0)
-s1 := point hint(x: 10, y: 0)
-fix(x == 0, y == 0) s0
-fix(x == 10, y == 0) s1
+fix((0, 0)) o
+s0 := point hint((0, 0))
+s1 := point hint((10, 0))
+fix((0, 0)) s0
+fix((10, 0)) s1
 path := line(s0, s1)
 }
 cam := motion(about: o, ratio: 1)
 follower := motion(along: path, advance: 20)
 rel := motion(of: follower, relative_to: cam)
 in std.front {
-rc := point hint(x: 30, y: 0)
-fix(x == 30, y == 0) rc
+rc := point hint((30, 0))
+fix((30, 0)) rc
 roller := circle(center: rc) hint(r: 4)
 radius(4) roller
 }
@@ -359,10 +359,10 @@ component Involute(c: circle, phase: Angle, u: Angle) {
   p := point(x: c.center.x + c.r * (cos(u + phase) + u * pi / 180 * sin(u + phase)), y: c.center.y + c.r * (sin(u + phase) - u * pi / 180 * cos(u + phase)))
 }
 in std.front {
-o1 := point hint(x: 0, y: 0)
-o2 := point hint(x: 60, y: 0)
-fix(x == 0, y == 0) o1
-fix(x == 60, y == 0) o2
+o1 := point hint((0, 0))
+o2 := point hint((60, 0))
+fix((0, 0)) o1
+fix((60, 0)) o2
 base1 := circle(center: o1) hint(r: 18.79385241571817)
 radius(18.79385241571817) base1
 }
@@ -430,8 +430,8 @@ fn a_line_is_tangent_to_an_envelope() {
     let n = tx.hypot(ty);
     let a = (p0.0 + 12.0 * tx / n, p0.1 + 12.0 * ty / n);
     let mut e = build(&format!(
-        "{base}in std.front {{\na := point hint(x: {}, y: {})\nb := point hint(x: {}, y: {})\nl := line(a, b)\n\
-         fix(x == {}, y == {}) a\na distance(30) b\ncut tangent l hint(t: -13)\n}}\n",
+        "{base}in std.front {{\na := point hint(({}, {}))\nb := point hint(({}, {}))\nl := line(a, b)\n\
+         fix(({}, {})) a\na distance(30) b\ncut tangent l hint(t: -13)\n}}\n",
         a.0, a.1, a.0 - 25.0 * tx / n + 3.0, a.1 - 25.0 * ty / n - 3.0, a.0, a.1
     ));
     let r = solve(&mut e.sketch, SolveOpts::default());
@@ -461,13 +461,13 @@ const SPUR: &str = "\
 use std
 in std.front {
 o1 := point
-o2 := point hint(x: 50, y: 0)
-fix(x == 0, y == 0) o1
-fix(x == 50, y == 0) o2
-r0 := point hint(x: 20, y: 0)
-r1 := point hint(x: 20, y: 10)
-fix(x == 20, y == 0) r0
-fix(x == 20, y == 10) r1
+o2 := point hint((50, 0))
+fix((0, 0)) o1
+fix((50, 0)) o2
+r0 := point hint((20, 0))
+r1 := point hint((20, 10))
+fix((20, 0)) r0
+fix((20, 10)) r1
 pitch_line := line(r0, r1)
 }
 pinion := motion(about: o1, ratio: 1)
@@ -476,11 +476,11 @@ rack := motion(along: pitch_line, advance: 2 * pi * 20)
 cutting := motion(rack, relative_to: pinion)
 meshing := motion(pinion, relative_to: gear)
 in std.front {
-f0 := point hint(x: 20, y: 2)
-f1 := point hint(x: 29, y: 5)
+f0 := point hint((20, 2))
+f1 := point hint((29, 5))
 flank := line(f0, f1)
-fix(x == 20, y == 2) f0
-fix(x == 29.396926207859083, y == 5.420201433256687) f1
+fix((20, 2)) f0
+fix((29.396926207859083, 5.420201433256687)) f1
 }
 tooth := envelope(flank, under: cutting, from: -40deg, to: 40deg)
 mate := envelope(tooth, under: meshing, from: -15deg, to: 15deg)
@@ -556,11 +556,11 @@ component Lobe(c: point, a: Length, b: Length, u: Angle) {
 }
 in std.front {
 o1 := point
-o2 := point hint(x: 40, y: 0)
-fix(x == 0, y == 0) o1
-fix(x == 40, y == 0) o2
-lc := point hint(x: 3, y: 0)
-fix(x == 3, y == 0) lc
+o2 := point hint((40, 0))
+fix((0, 0)) o1
+fix((40, 0)) o2
+lc := point hint((3, 0))
+fix((3, 0)) lc
 }
 lobe := Lobe(lc, a: 14, b: 9).p over u in (0, 360)
 cam_a := motion(about: o1, ratio: 1)
@@ -612,7 +612,7 @@ conj := envelope(lobe, under: rel, from: 0deg, to: 360deg)
 #[test]
 fn a_circle_osculates_the_mate() {
     let mut e = build(&format!(
-        "{SPUR}in std.front {{\nk := point hint(x: 25, y: 8)\nosc := circle(center: k) hint(r: 10)\n}}\n\
+        "{SPUR}in std.front {{\nk := point hint((25, 8))\nosc := circle(center: k) hint(r: 10)\n}}\n\
          mate curvature(t == 2) osc\n"
     ));
     let r = solve(&mut e.sketch, SolveOpts::default());
@@ -657,10 +657,10 @@ fn the_generated_spur_example_proves_its_claim() {
 fn the_planar_envelope_is_the_swept_solids_boundary() {
     let src = format!(
         "{RACK}{RACK_MOTION}cut := envelope(flank, under: rel, from: -25deg, to: 25deg)\n\
-         in std.front {{\nt0 := point hint(x: 26.25, y: 1.6525)\nt1 := point hint(x: 26.25, y: 3.6351)\n\
-         t2 := point hint(x: 36, y: 7.1838)\nt3 := point hint(x: 36, y: -1.8962)\n\
-         fix(x == 26.25, y == 1.6525446) t0\nfix(x == 26.25, y == 3.6351146) t1\n\
-         fix(x == 36, y == 7.1838203) t2\nfix(x == 36, y == -1.8962057) t3\n}}\n\
+         in std.front {{\nt0 := point hint((26.25, 1.6525))\nt1 := point hint((26.25, 3.6351))\n\
+         t2 := point hint((36, 7.1838))\nt3 := point hint((36, -1.8962))\n\
+         fix((26.25, 1.6525446)) t0\nfix((26.25, 3.6351146)) t1\n\
+         fix((36, 7.1838203)) t2\nfix((36, -1.8962057)) t3\n}}\n\
          tooth := face(t0, t1, t2, t3, -> close)\n\
          construction rack_tooth := solid(tooth, depth: 4)\n\
          construction removal := solid(rack_tooth, under: rel, from: -60deg, to: 60deg)\n"

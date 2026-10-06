@@ -814,10 +814,10 @@ const ANNOTATED = `\
 use std
 in std.front {
 a := point
-b := point hint(x: 100, y: 0)
+b := point hint((100, 0))
 ab := line(a, b)      // the base
 horizontal ab
-fix(x == 0, y == 0) a
+fix((0, 0)) a
 }
 `;
 
@@ -876,7 +876,7 @@ test('a drag writes its seeds back, once, and nothing else', () => {
   assert.equal(wrote, 1, 'a drag is one edit');
   assert.ok(view.source.includes('// a base, and this comment must survive every gesture'));
   assert.ok(view.source.includes('ab := line(a, b)      // the base'));
-  assert.ok(!view.source.includes('b := point hint(x: 100, y: 0)'), `the seed did not move:\n${view.source}`);
+  assert.ok(!view.source.includes('b := point hint((100, 0))'), `the seed did not move:\n${view.source}`);
   assert.ok(/b := point hint\(/.test(view.source), 'and it is still a seed');
 });
 
@@ -888,7 +888,7 @@ test('deleting takes the statements that named it, and leaves the comments', () 
   assert.ok(!view.source.includes('ab := line'), 'the line that named it went too');
   assert.ok(!view.source.includes('horizontal ab'), 'and the constraint on that line');
   assert.ok(view.source.includes('// a base, and this comment must survive every gesture'));
-  assert.ok(view.source.includes('fix(x == 0, y == 0) a'));
+  assert.ok(view.source.includes('fix((0, 0)) a'));
   assert.equal(view.sketch.points.length, 1 + 5, 'a, and the five the standard datums bring');
 });
 
@@ -915,7 +915,7 @@ test('a gesture beside a component leaves the component written', () => {
   assert.ok(view.source.includes('component Flank('));
   assert.ok(view.source.includes('cycle N as i {'));
   assert.ok(view.source.includes('g := Gear(N: 30, m: 3, phi: 25, ded: 1)'));
-  assert.ok(/p0 := point hint\(x: 200, y: 0\)/.test(view.source), view.source);
+  assert.ok(/p0 := point hint\(\(200, 0\)\)/.test(view.source), view.source);
 });
 
 
@@ -932,11 +932,11 @@ test('a gesture beside a component leaves the component written', () => {
 const VIEWS = `\
 use std
 front := plane(u: std.x, v: std.z)
-fix(x == 0, y == 0, z == 0) front
+fix(origin == (0, 0, 0)) front
 top := plane(u: std.x, v: std.y)
-fix(x == 0, y == 0, z == 0) top
+fix(origin == (0, 0, 0)) top
 o := point in std.front
-fix(x == 30, y == 30) o
+fix((30, 30)) o
 `;
 
 function planeNamed(view: SketchView, name: string): Plane {
@@ -969,7 +969,7 @@ test('the current plane flows into a fresh point, and a snapped point stays wher
 
   view.setTool('point');
   click(view, 20, 10);
-  assert.ok(/p0 := point hint\(x: 20, y: 10\) in front/.test(view.source), view.source);
+  assert.ok(/p0 := point hint\(\(20, 10\)\) in front/.test(view.source), view.source);
   assert.equal(pointNamed(view, 'p0').plane, front);
   // a click on a point of another plane standing there snaps to it, and does not pull it in
   const n = view.sketch.points.length;
@@ -980,12 +980,12 @@ test('the current plane flows into a fresh point, and a snapped point stays wher
   // and back on the front, the next point is drawn there
   view.choosePlane('std.front');
   click(view, 25, 15);
-  assert.ok(/p1 := point hint\(x: 25, y: 15\) in std\.front\n/.test(view.source), view.source);
+  assert.ok(/p1 := point hint\(\(25, 15\)\) in std\.front\n/.test(view.source), view.source);
 });
 
 test('a projection is one constraint, and the source says `project`', () => {
-  const view = docView(`${VIEWS}a := point in front hint(x: 10, y: 5)\n`
-                       + 'b := point in top hint(x: 10, y: 100)\n');
+  const view = docView(`${VIEWS}a := point in front hint((10, 5))\n`
+                       + 'b := point in top hint((10, 100))\n');
   assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
   view.addConstraints(new C.Project(pointNamed(view, 'a'), pointNamed(view, 'b')));
   const cs = view.sketch.userConstraints();
@@ -999,8 +999,8 @@ test('a projection is one constraint, and the source says `project`', () => {
 });
 
 test('a refused projection changes nothing, says why, and leaves nothing to undo', () => {
-  const view = docView(`${VIEWS}a := point in front hint(x: 10, y: 5)\n`
-                       + 'b := point in front hint(x: 20, y: 5)\nc := point hint(x: 30, y: 30)\n');
+  const view = docView(`${VIEWS}a := point in front hint((10, 5))\n`
+                       + 'b := point in front hint((20, 5))\nc := point hint((30, 30))\n');
   const said: string[] = [];
   view.onStatus = (m) => said.push(m);
   const before = view.source;
@@ -1019,7 +1019,7 @@ test('the current plane survives an edit, goes with its deletion, and is dropped
   // a projection into the view about to go: its statement never names the plane, so whether
   // it goes too is the model's to say — through the live sketch, which the elaboration's
   // own was taken out into
-  const view = docView(`${VIEWS}a := point hint(x: 5, y: 5) in front\nb := point hint(x: 5, y: 85) in top\na project b\n`);
+  const view = docView(`${VIEWS}a := point hint((5, 5)) in front\nb := point hint((5, 85)) in top\na project b\n`);
   view.plane = planeNamed(view, 'top');
   // a structural edit re-elaborates the drawing: the plane comes across by name
   assert.ok(view.apply(view.doc.addPoint(1, 2)));
@@ -1033,7 +1033,7 @@ test('the current plane survives an edit, goes with its deletion, and is dropped
   assert.ok(!view.source.includes('top := plane'), view.source);
   assert.ok(view.source.includes('front := plane'), 'the other plane stays');
   assert.ok(!view.source.includes('project'), `the projection went with it: ${view.source}`);
-  assert.ok(view.source.includes('b := point hint(x: 5, y: 85)\n'), `the clause came out: ${view.source}`);
+  assert.ok(view.source.includes('b := point hint((5, 85))\n'), `the clause came out: ${view.source}`);
   assert.equal(view.sketch.userConstraints().length, 0);
   // and a load is another drawing's, whatever it happens to call things: it is drawn on the front
   view.plane = planeNamed(view, 'front');
@@ -1042,8 +1042,8 @@ test('the current plane survives an edit, goes with its deletion, and is dropped
 });
 
 test('the plane tool picks two lines, writes the plane over them, and makes it current', () => {
-  const view = docView(`${VIEWS}in std.front {\nab := line(hint(x: 0, y: 0), hint(x: 40, y: 0))\n`
-                       + 'ac := line(hint(x: 0, y: 0), hint(x: 0, y: 30))\n}\n');
+  const view = docView(`${VIEWS}in std.front {\nab := line(hint((0, 0)), hint((40, 0)))\n`
+                       + 'ac := line(hint((0, 0)), hint((0, 30)))\n}\n');
   assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
   view.choosePlane('std.front');
   const said: string[] = [];
@@ -1377,7 +1377,7 @@ test('the chooser offers the standard planes and the document\'s own, and turns 
   // the next point is drawn where the pointer is, on the top plane
   view.setTool('point');
   click(view, 20, 110);
-  assert.ok(/p0 := point hint\(x: 20(\.\d+)?, y: 110(\.\d+)?\) in top/.test(view.source), view.source);
+  assert.ok(/p0 := point hint\(\(20(\.\d+)?, 110(\.\d+)?\)\) in top/.test(view.source), view.source);
   view.choosePlane('std.front');
   assert.equal(view.doc.nameOf(view.plane!), 'std.front');
   assert.ok(closeTo([view.orbit.el], [0]), 'and square on to it again');
@@ -1408,7 +1408,7 @@ test('a standard plane the document does not have comes in with `use std` on the
 });
 
 test('double-clicking a pane draws on its plane', () => {
-  const view = docView('use std\nt := point in std.top hint(x: 40, y: 40)\n');
+  const view = docView('use std\nt := point in std.top hint((40, 40))\n');
   const cv = view.canvas as ReturnType<typeof fakeCanvas>;
   const top = planeNamed(view, 'std.top');
   view.orbit = { az: -Math.PI / 3, el: 1.2 };       // from above, the front and side all but edge on
@@ -1429,7 +1429,7 @@ test('double-clicking a pane draws on its plane', () => {
 });
 
 test('a point on a plane seen at an angle drags along that plane', () => {
-  const view = docView(`${VIEWS}a := point in top hint(x: 10, y: 120)\n`);
+  const view = docView(`${VIEWS}a := point in top hint((10, 120))\n`);
   view.orbit = { az: -Math.PI / 3, el: Math.PI / 6 };
   const a = pointNamed(view, 'a');
   const at = view.seen(a);
@@ -1475,8 +1475,8 @@ test('the right button turns the workspace and the middle one slides it; neither
 });
 
 test('a click picks what is seen under it, though another view lies there on the page', () => {
-  const view = docView('use std\nf := point hint(x: 10, y: 10) in std.front\nfix(x == 10, y == 10) f\n'
-    + 's := point hint(x: 10, y: 10) in std.side\nfix(x == 10, y == 10) s\n');
+  const view = docView('use std\nf := point hint((10, 10)) in std.front\nfix((10, 10)) f\n'
+    + 's := point hint((10, 10)) in std.side\nfix((10, 10)) s\n');
   view.orbit = { az: -Math.PI / 4, el: Math.PI / 6 };
   const f = pointNamed(view, 'f'), s = pointNamed(view, 's');
   assert.notDeepEqual(view.seen(f), view.seen(s), 'one place on the page, two in space');
@@ -1590,9 +1590,9 @@ test('a dimension over a param opens as written, and an edit of it goes into the
 });
 
 test('a point in space is drawn and picked where it stands, whichever way the eye looks', () => {
-  const view = docView('use std\np := point hint(x: 10, y: 20, z: 30)\n'
-    + 'in std.front {\n  f := point\n  fix(x == 10, y == 30) f\n}\n'
-    + 'in std.top {\n  t := point\n  fix(x == 10, y == 20) t\n}\n');
+  const view = docView('use std\np := point hint((10, 20, 30))\n'
+    + 'in std.front {\n  f := point\n  fix((10, 30)) f\n}\n'
+    + 'in std.top {\n  t := point\n  fix((10, 20)) t\n}\n');
   const named = (n: string) => view.doc.entity(n) as Point;
   const [p, f, t] = [named('p'), named('f'), named('t')];
   // square on to the front, p is seen where its x and z are; from above, where its x and y are

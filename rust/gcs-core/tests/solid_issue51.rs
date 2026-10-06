@@ -50,7 +50,7 @@ fn crossing_bars_are_material_interference_even_without_contained_vertices() {
     );
     close(reversed.measured().unwrap(), v.measured().unwrap());
     let unrelated = read(
-        &(source("cross_clear") + "use std\nin std.front {\nremote := point\nfix(x == 1000000000, y == 1000000000) remote\n}\n"),
+        &(source("cross_clear") + "use std\nin std.front {\nremote := point\nfix((1000000000, 1000000000)) remote\n}\n"),
     );
     close(claim(&unrelated, SolidWord::Clear, 0.1).measured().unwrap(), -1.0);
     close(claim(&case("cross_clear_control"), SolidWord::Clear, 0.1).measured().unwrap(), 2.0);
@@ -64,7 +64,7 @@ fn penetration_is_a_geometric_thickness_with_a_reported_error_bound() {
     close(v.tolerance().unwrap(), 0.0);
     assert_eq!(v.holds(), Some(false));
     let equal =
-        read(&source("penetration_10").replace("x == 5,", "x == 0,").replace("x == 15,", "x == 10,"));
+        read(&source("penetration_10").replace("fix((5, ", "fix((0, ").replace("fix((15, ", "fix((10, "));
     close(claim(&equal, SolidWord::Clear, 0.0).measured().unwrap(), -10.0);
 }
 
@@ -134,7 +134,7 @@ fn sweep_bounds_use_the_inferred_variable_dimension_and_user_units() {
     let (p, _) = crate::common::parse_legacy(&source("sweep_dimensional_error"));
     assert!(program::elaborate(&p).errors().any(|d| d.code == program::Code::E103));
     let src = source("sweep_possible")
-        .replace("c := circle(center:o)", "q := point\nfix(x == 1, y == 0) q\nc := circle(center:o)")
+        .replace("c := circle(center:o)", "q := point\nfix((1, 0)) q\nc := circle(center:o)")
         .replace(
             "o distance(reach,along:x) p",
             "datum := line(o,q)\nradial := line(o,p)\ndatum angle(reach) radial",
@@ -174,7 +174,7 @@ fn input_edge_names_cannot_steal_sweep_cap_names() {
     let e = case("cap_collision_control");
     assert!(program::solid_diagnostics(&e.sketch, &e.map).is_empty());
     let src=source("cap_collision_control").replace("bottom","start")
-        .replace("result := solid(f,depth: 2mm)","in std.front {\nax0 := point\nfix(x == -1, y == 0) ax0\nax1 := point\nfix(x == -1, y == 5) ax1\nax := line(ax0,ax1)\n}\nresult := solid(f,about:ax,sweep:90deg)");
+        .replace("result := solid(f,depth: 2mm)","in std.front {\nax0 := point\nfix((-1, 0)) ax0\nax1 := point\nfix((-1, 5)) ax1\nax := line(ax0,ax1)\n}\nresult := solid(f,about:ax,sweep:90deg)");
     let e = read(&src);
     assert!(!program::solid_diagnostics(&e.sketch, &e.map).is_empty());
 }
@@ -238,7 +238,7 @@ fn dimensions_only_describe_surviving_round_features() {
         assert!(dims.iter().all(|(_, d)| !d.round));
     }
     let src = source("ghost_dimension_through")
-        .replace("fix(x == 20, y == 20) fp", "fix(x == 5, y == 5) fp");
+        .replace("fix((20, 20)) fp", "fix((5, 5)) fp");
     let e = read(&src);
     let dims = hidden::generated(&e.sketch, solid::REPORT_UNIT);
     assert_eq!(dims.iter().filter(|(_, d)| d.round && d.value == 4.0).count(), 1);
@@ -294,7 +294,7 @@ fn box_source(name: &str, x: f64, y: f64, w: f64, h: f64, lo: f64, hi: f64) -> S
     // its corners drawn in the front, which a document using it says `use std` for
     let mut src = "in std.front {\n".to_string();
     for (i, (x, y)) in [(x, y), (x + w, y), (x + w, y + h), (x, y + h)].into_iter().enumerate() {
-        src += &format!("{name}p{i} := point\nfix(x == {x}, y == {y}) {name}p{i}\n");
+        src += &format!("{name}p{i} := point\nfix(({x}, {y})) {name}p{i}\n");
     }
     src += "}\n";
     src += &format!(
@@ -342,11 +342,11 @@ unit mm
 use std
 in std.front {
 a := point
-fix(x == 0, y == 0) a
+fix((0, 0)) a
 ac := circle(center:a)
 radius(1mm) ac
 b := point
-fix(x == 2, y == 0) b
+fix((2, 0)) b
 bc := circle(center:b)
 radius(1mm) bc
 }

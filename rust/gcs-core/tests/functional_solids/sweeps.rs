@@ -8,8 +8,8 @@ use std
 in std.front {
 a := point
 b := point
-fix(x == 0, y == 0) a
-fix(x == 0, y == 1) b
+fix((0, 0)) a
+fix((0, 1)) b
 ax := line(a,b)
 }
 turn := motion(about: ax)
