@@ -222,8 +222,9 @@ pub fn drawable(sk: &Sketch, e: EntRef, unit: f64) -> Vec<Vec<(f64, f64)>> {
         // nothing on the page: a face is the edges the document already drew, and what is drawn
         // of a solid is a derived view, which is its own geometry
         EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge => Vec::new(),
-        // nothing on its view's page either: a sphere is in space (`scene3d` draws it there)
-        EntKind::Sphere | EntKind::Cone | EntKind::Cylinder | EntKind::Axis => Vec::new(),
+        // nothing on its view's page either: a cone or a cylinder is in space (`scene3d` draws
+        // it there)
+        EntKind::Cone | EntKind::Cylinder | EntKind::Axis => Vec::new(),
         EntKind::Point => vec![vec![sk.point_xy(i)]],
         EntKind::Line => {
             let l = &sk.lines[i];
@@ -322,25 +323,6 @@ pub fn scene3d(sk: &Sketch, unit: f64) -> Vec<Item3> {
         }
         let plane = entity_view(sk, e, &views);
         let in_plane = plane.map(EntRef::plane);
-        // a sphere is in space and in no view: three great circles about its centre's lift,
-        // square to the world's axes — a wire sphere, the least that says where and how big
-        if e.kind == EntKind::Sphere {
-            let c = sk.round_center(e);
-            let o = sk.world_point(c);
-            let r = sk.radius_value(e).abs();
-            let n = ((std::f64::consts::TAU * r / unit).sqrt().ceil() as usize).clamp(24, 256);
-            for (a, b) in [(0, 1), (1, 2), (2, 0)] {
-                let pts = (0..=n).map(|k| {
-                    let t = std::f64::consts::TAU * k as f64 / n as f64;
-                    let mut p = o;
-                    p[a] += r * t.dcos();
-                    p[b] += r * t.dsin();
-                    p
-                }).collect();
-                items.push(Item3 { of: Some(e), in_plane: None, what: Part::Drawn, pts });
-            }
-            continue;
-        }
         // an axis is in space and in no view: its line across the drawing's reach, and a head at
         // the end it points to
         if e.kind == EntKind::Axis {

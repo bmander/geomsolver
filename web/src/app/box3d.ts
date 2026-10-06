@@ -4,7 +4,7 @@
  * (`paint.ts`), because that is where selection, state colours, callouts and the tools' previews
  * live.  What is left for a renderer with a depth buffer is what a flat canvas cannot order: the
  * solids' meshes, the planes' panes and axes, and the kinds that stand in space rather than on a
- * plane (spheres, cones, cylinders).
+ * plane (cones, cylinders).
  *
  * **The core owns every rule about what is here** — `overview::scene3d` says which panes exist and
  * how far each reaches, `mesh::grouped` what an object's faces are and which of them is round —
@@ -42,7 +42,7 @@ const INK = {
 const FRAME_PX = { plain: 1, current: 2.5 };
 
 /** The kinds that stand in space and on no one plane, so are this renderer's to draw. */
-const IN_SPACE = new Set(['sphere', 'cone', 'cylinder', 'axis']);
+const IN_SPACE = new Set(['cone', 'cylinder', 'axis']);
 
 /** What the scene was built from, so a repaint that changes nothing rebuilds nothing.  The box is
  *  read-only, so between edits only the camera moves — and rebuilding a mesh on every pointer

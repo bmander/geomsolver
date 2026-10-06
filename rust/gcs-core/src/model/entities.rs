@@ -65,13 +65,9 @@ pub enum EntKind {
     Vertex,
     /// A finite directed portion of a spatial seam between named corners.
     Edge,
-    /// **A sphere** (`docs/spatial-constraints-plan.md`): a centre drawn in some view and a
-    /// radius it owns, like a circle's — but no picture on any sheet, since a sphere seen in a
-    /// view is a circle only square on.  Its relations (`p coincident s`, `radius`, `tangent`) are
-    /// in space and read its centre's lift.  Last in the enum so every kind's id stays what it was.
-    Sphere,
-    /// **A cone**: an axis line drawn in some view — the apex its start, the axis running
-    /// toward its end — and a half-angle it owns, like a sphere's radius.  No picture on any
+    /// **A cone** (`docs/spatial-constraints-plan.md`): an axis line drawn in some view — the
+    /// apex its start, the axis running toward its end — and a half-angle it owns, like a
+    /// circle's radius.  No picture on any
     /// sheet; its relations (`p coincident k`, `angle`, `tangent`) are in space and read the
     /// axis's lifts.
     Cone,
@@ -107,7 +103,6 @@ impl EntKind {
             EntKind::Seam => "seam",
             EntKind::Vertex => "vertex",
             EntKind::Edge => "edge",
-            EntKind::Sphere => "sphere",
             EntKind::Cone => "cone",
             EntKind::Cylinder => "cylinder",
             EntKind::Axis => "axis",
@@ -132,7 +127,6 @@ impl EntKind {
             "seam" => EntKind::Seam,
             "vertex" => EntKind::Vertex,
             "edge" => EntKind::Edge,
-            "sphere" => EntKind::Sphere,
             "cone" => EntKind::Cone,
             "cylinder" => EntKind::Cylinder,
             "axis" => EntKind::Axis,
@@ -153,7 +147,7 @@ impl EntKind {
             // a point in space has a third, which a point drawn in a plane never owns
             EntKind::Point => &[("x", S), ("y", S), ("z", S)],
             EntKind::Line => &[("p1", C), ("p2", C)],
-            EntKind::Circle | EntKind::Sphere => &[("center", C), ("r", S)],
+            EntKind::Circle => &[("center", C), ("r", S)],
             // the axis is a line, the one child that is not a point: the apex is its start
             EntKind::Cone => &[("axis", C), ("half", S)],
             EntKind::Cylinder => &[("axis", C), ("r", S)],
@@ -200,7 +194,6 @@ impl EntKind {
             EntKind::Arc => Some((1, 2)),
             EntKind::Point
             | EntKind::Circle
-            | EntKind::Sphere
             | EntKind::Cone
             | EntKind::Cylinder
             | EntKind::Axis
@@ -229,7 +222,7 @@ impl EntKind {
     pub fn members(self) -> &'static [&'static str] {
         match self {
             EntKind::Point => &["x", "y", "z"],
-            EntKind::Circle | EntKind::Sphere | EntKind::Cylinder | EntKind::Arc => &["r"],
+            EntKind::Circle | EntKind::Cylinder | EntKind::Arc => &["r"],
             EntKind::Cone => &["half"],
             EntKind::Axis => &["dir.x", "dir.y", "dir.z", "origin.x", "origin.y", "origin.z"],
             EntKind::Plane => &["origin.x", "origin.y", "origin.z"],
@@ -256,7 +249,7 @@ impl EntKind {
         Some(match self {
             EntKind::Point => vec![format!("{n}.x"), format!("{n}.y")],
             EntKind::Line => [pt("p1"), pt("p2")].concat(),
-            EntKind::Circle | EntKind::Sphere => [pt("center"), vec![format!("{n}.r")]].concat(),
+            EntKind::Circle => [pt("center"), vec![format!("{n}.r")]].concat(),
             EntKind::Arc => {
                 [pt("center"), pt("start"), pt("end"), vec![format!("{n}.r")]].concat()
             }
@@ -287,10 +280,7 @@ impl EntKind {
             | EntKind::Line
             | EntKind::Circle
             | EntKind::Arc
-            | EntKind::Spline
-            // its centre is a point of whatever view the declaration is in
-            | EntKind::Sphere
-            => true,
+            | EntKind::Spline => true,
             // built over a line already drawn in its view, as a face is over its edges
             EntKind::Cone | EntKind::Cylinder => false,
             // in space, in no view
@@ -314,7 +304,6 @@ impl EntKind {
             | EntKind::Spline
             | EntKind::Curve
             | EntKind::Face
-            | EntKind::Sphere
             | EntKind::Cone
             | EntKind::Cylinder
             | EntKind::Axis
@@ -338,8 +327,7 @@ impl EntKind {
             | EntKind::Spline
             | EntKind::Plane
             | EntKind::Curve
-            // solved, owning its radius — a figure of the drawing stratum, not a reading of one
-            | EntKind::Sphere
+            // solved, owning its number — a figure of the drawing stratum, not a reading of one
             | EntKind::Cone
             | EntKind::Cylinder
             | EntKind::Axis => false,
@@ -430,15 +418,6 @@ pub struct LineE {
 
 #[derive(Clone, Debug)]
 pub struct CircleE {
-    pub center: u32,
-    pub radius: u32,
-    pub class: Classes,
-}
-
-/// A sphere: its centre, a drawn point, and its radius, a Param — a circle's fields with no
-/// plane to be drawn in (`EntKind::Sphere`).
-#[derive(Clone, Debug)]
-pub struct SphereE {
     pub center: u32,
     pub radius: u32,
     pub class: Classes,

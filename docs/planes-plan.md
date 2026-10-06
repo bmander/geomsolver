@@ -210,7 +210,7 @@ matters for speed: without it, every tilted view in the corpus would pay a solve
 What a point in space may make:
 * lines between points in space are lines in space, and a line is a ray wherever one is
   expected;
-* a sphere's centre may be one;
+* a sphere's centre may not, since 2026-10-06: `std.Sphere` draws its rim in the centre's view;
 * a circle, an arc, a spline, a traced curve and a face need a plane. Built over points in space
   they are refused (E060, naming the point), unless every point is in one plane.
 

@@ -1,8 +1,8 @@
 //! Planes over axes, in the language (§6.7; `docs/planes-plan.md`): a plane whose axis or place
 //! is solved for, its seeds, its refusals, and `project` between a stated and a solved plane;
-//! the words across planes and in space; spheres; and the hypoid's pitch cones laid out by
+//! the words across planes and in space; the library's spheres; and the hypoid's pitch cones laid out by
 //! construction.
-use gcs_core::constraints::{CKind, Constraint};
+use gcs_core::constraints::{Arg, CKind, Constraint};
 use gcs_core::diagnose::{diagnose, view_freedoms, DiagnoseOptions};
 use gcs_core::edit;
 use gcs_core::io;
@@ -536,30 +536,42 @@ fn a_word_with_no_meaning_in_space_is_refused_across_planes() {
     refused_as("b coincident std.side", "E061", "every point of a view is on it", "b coincident std.side");
 }
 
-/// A sphere about a centre drawn in one plane: a point of another plane on it, its radius, and
-/// its tangency to a line and to a second sphere, each in space.
+/// A sphere is the library's (`std.Sphere`): a centre and a radius read by the instance's name,
+/// and what stands on it is said by distances from the centre — a point of another plane on it,
+/// a line touching it and two spheres touching, each read in space.
 #[test]
-fn a_sphere_takes_its_words_in_space() {
+fn a_sphere_is_said_by_distances_from_its_centre() {
     let with = |stmt: &str| format!(
-        "{TWO_VIEWS}sp := sphere(hint((20, 10))) hint(r: 12) in std.side\n\
-         s2 := sphere(hint((10, 40))) hint(r: 5) in std.front\n{stmt}\n");
-    let kind = |stmt: &str| read(&with(stmt)).sketch.user_constraints()[0].kind;
-    assert_eq!(kind("a coincident sp"), CKind::SphereOn);
-    assert_eq!(kind("radius(12) sp"), CKind::SphereRadius);
-    assert_eq!(kind("sp tangent la"), CKind::SphereTangentLine);
-    assert_eq!(kind("sp tangent s2"), CKind::SphereTangentSphere);
-    refused(&with("sp tangent cb"), "E040", "a sphere is tangent to a line or to another sphere", "tangent");
-    refused(&with("sp tangent cb"), "E040", "a circle lying on the sphere is `c coincident s`", "tangent");
-    assert_eq!(kind("cb coincident s2"), CKind::CircleOnSphere);
-    // and solved: the centre held, a point of the other plane on it, and a line tangent to it
-    let e = read(&with("fix((20, 10)) sp.center\na coincident sp\nfix((0, 0)) la.p1\n\
-                            fix((30, 10)) la.p2\nsp tangent la"));
+        "{TWO_VIEWS}in std.side {{\n  sc := point hint((20, 10))\n}}\n\
+         in std.front {{\n  sc2 := point hint((10, 40))\n}}\n\
+         sp := std.Sphere(sc, r: 12)\ns2 := std.Sphere(sc2, r: 5)\n{stmt}\n");
+    // the statement's kind, past the rims' radii the two instances state
+    let kind = |stmt: &str| {
+        let e = read(&with(stmt));
+        let cs = e.sketch.user_constraints();
+        let c = cs.iter().find(|c| c.kind != CKind::Radius).unwrap_or_else(|| panic!("{stmt}"));
+        let num = c.args.iter().find_map(|a| match a {
+            Arg::Num(v) => Some(*v),
+            Arg::Expr(x) => Some(x.value),
+            _ => None,
+        });
+        (c.kind, num)
+    };
+    assert_eq!(kind("a distance(sp.r) sp.center"), (CKind::Distance3, Some(12.0)));
+    assert_eq!(kind("sp.center distance(sp.r) la"), (CKind::PointLine3, Some(12.0)));
+    assert_eq!(kind("sp.center distance(sp.r + s2.r) s2.center"), (CKind::Distance3, Some(17.0)));
+    // the word is gone, and the error says what to write instead
+    refused(&format!("{TWO_VIEWS}sp := sphere(center: a)\n"), "E103", "`use std`, then `std.Sphere(", "sphere");
+    // and solved, the radius left to the drawing: the centre held, a point of the other plane on
+    // it, and a line tangent to it, which sizes it
+    let free = |stmt: &str| with(stmt).replace("r: 12)", "r: hint(12))");
+    let e = read(&free("fix((20, 10)) sc\na distance(sp.r) sp.center\nfix((0, 0)) la.p1\n\
+                        fix((30, 10)) la.p2\nsp.center distance(sp.r) la"));
     let mut sk = e.sketch.clone();
     let r = solve(&mut sk, SolveOpts::default());
     assert!(r.success, "{}", r.message);
-    let s = ent(&e, "sp");
-    let c = sk.world_point(sk.round_center(s));
-    let rad = sk.radius_value(s);
+    let c = sk.world_point(ent(&e, "sc").i());
+    let rad = sk.radius_value(ent(&e, "sp.rim"));
     let pa = sk.world_point(ent(&e, "a").i());
     assert!((norm(sub(pa, c)) - rad).abs() < 1e-9, "{} against {rad}", norm(sub(pa, c)));
     let (l1, l2) = ends(&sk, ent(&e, "la"));
@@ -572,9 +584,56 @@ fn a_sphere_takes_its_words_in_space() {
         assert!(solve(&mut sk, SolveOpts::default()).success);
         diagnose(&mut sk, DiagnoseOptions::default()).dof
     };
-    let tied = "fix((20, 10)) sp.center\nfix((0, 0)) la.p1\n\
-                 fix((30, 10)) la.p2\nsp tangent la";
-    assert_eq!(dof(with(tied)) - dof(with(&format!("{tied}\na coincident sp"))), 1);
+    let tied = "fix((20, 10)) sc\nfix((0, 0)) la.p1\nfix((30, 10)) la.p2\n\
+                sp.center distance(sp.r) la";
+    assert_eq!(dof(free(tied)) - dof(free(&format!("{tied}\na distance(sp.r) sp.center"))), 1);
+}
+
+/// **A sphere's radius left unbound is an unknown of the drawing**, shared by every distance that
+/// reads it: three points of another plane on one sphere about a held centre take one equation
+/// each, and the radius is the fourth unknown they answer for.
+#[test]
+fn a_spheres_unbound_radius_is_shared() {
+    let src = |n: usize| {
+        let on: String = ["a", "b", "q"][..n].iter()
+            .map(|p| format!("{p} distance(ball.r) ball.center\n")).collect();
+        format!("unit mm\nuse std\nin std.front {{\n  c := point\n  fix((-8, 38)) c\n}}\n\
+                 ball := std.Sphere(c, r: hint(10mm))\n\
+                 in std.side {{\n  a := point hint((5, 45))\n  b := point hint((5, 30))\n\
+                 q := point hint((-5, 30))\n}}\n{on}")
+    };
+    let e = read(&src(3));
+    let mut sk = e.sketch.clone();
+    assert!(solve(&mut sk, SolveOpts::default()).success);
+    let c = sk.world_point(ent(&e, "c").i());
+    let r = sk.radius_value(ent(&e, "ball.rim"));
+    for p in ["a", "b", "q"] {
+        let d = norm(sub(sk.world_point(ent(&e, p).i()), c));
+        assert!((d - r).abs() < 1e-9, "{p}: {d} against the radius {r}");
+    }
+    let dof = |n: usize| {
+        let mut sk = read(&src(n)).sketch;
+        assert!(solve(&mut sk, SolveOpts::default()).success);
+        diagnose(&mut sk, DiagnoseOptions::default()).dof
+    };
+    assert_eq!(dof(1) - dof(3), 2, "one equation for each point past the first");
+}
+
+/// An instance handed on as a group carries its numbers: a component reading `s.r` of the
+/// sphere it was given reads the radius the call bound.
+#[test]
+fn an_instance_passed_as_a_group_carries_its_numbers() {
+    let doc = "unit mm\nuse std\n\
+component OnSphere(p: point, s: group) {\n  p distance(s.r) s.center\n}\n\
+in std.front {\n  c := point\n  fix((-8, 38)) c\n}\n\
+ball := std.Sphere(c, r: 12)\n\
+p := point hint((5, 45)) in std.side\n\
+OnSphere(p, ball)\n";
+    let e = read(doc);
+    let mut sk = e.sketch.clone();
+    assert!(solve(&mut sk, SolveOpts::default()).success);
+    let d = norm(sub(sk.world_point(ent(&e, "p").i()), sk.world_point(ent(&e, "c").i())));
+    assert!((d - 12.0).abs() < 1e-9, "{d}");
 }
 
 /* -- the hypoid's pitch cones, and the rest of the words in space -------------------------- */
@@ -705,9 +764,10 @@ fn a_lifted_program_keeps_its_planes_over_lines() {
     assert_eq!(d.dof, 0, "{}", gcs_core::diagnose::summary(&d));
 }
 
-/// **A circle on a sphere**: `c coincident s` puts every point of a circle drawn in one plane on
-/// a sphere about a centre drawn in another — the sphere's centre on the circle's axis, and the
-/// radii and the gap a right triangle.  The toe or heel circle of a gear blank on its end sphere.
+/// **A circle on a sphere**: `std.CircleOnSphere(k, s, view)` puts every point of a circle drawn
+/// in one plane on a sphere about a centre drawn in another — the sphere's centre on the circle's
+/// axis, and the radii and the gap a right triangle.  The toe or heel circle of a gear blank on
+/// its end sphere.
 #[test]
 fn a_circle_on_a_sphere_is_on_it_all_the_way_round() {
     for free in [false, true] {
@@ -722,19 +782,20 @@ fn a_circle_on_a_sphere_is_on_it_all_the_way_round() {
 unit mm
 use std
 {side}
-s := sphere(hint((10, 20))) hint(r: 30) in std.front
-radius(30) s
+in std.front {{
+  c := point hint((10, 20))
+}}
+s := std.Sphere(c, r: 30)
 k := circle(hint((15, 12))) hint(r: 15) in {side_name}
 radius(18) k
 {tie}
 ");
-        let e = read(&doc("k coincident s"));
+        let e = read(&doc(&format!("std.CircleOnSphere(k, s, {side_name})")));
         let mut sk = e.sketch.clone();
-        assert!(sk.user_constraints().iter().any(|c| c.kind == CKind::CircleOnSphere));
         let r = solve(&mut sk, SolveOpts::default());
         assert!(r.success, "{}", r.message);
-        let (s, k) = (ent(&e, "s"), ent(&e, "k"));
-        let (sc, kc) = (sk.world_point(sk.round_center(s)), sk.world_point(sk.round_center(k)));
+        let k = ent(&e, "k");
+        let (sc, kc) = (sk.world_point(ent(&e, "c").i()), sk.world_point(sk.round_center(k)));
         let b = sk.basis(sk.plane_of(sk.round_center(k)).unwrap());
         let (n, u, v) = (b.normal(), b.u, b.v);
         // the sphere's centre on the circle's axis, and every point of the circle 30 from it

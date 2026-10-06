@@ -410,8 +410,6 @@ fn fixture(kind: CKind) -> (Sketch, Constraint) {
             sk.set_plane(i, Some(pa));
         }
     }
-    // two spheres, about a point of each view
-    let (sa, sb) = (sk.sphere(q, 6.0, "sa"), sk.sphere(s, 4.0, "sb"));
     // two cones and a cylinder, about the second line and the first
     let (ka, kb) = (sk.cone(l2, 0.5, "ka"), sk.cone(l1, 0.25, "kb"));
     let cy = sk.cylinder(l2, 7.0, "cy");
@@ -451,7 +449,6 @@ fn fixture(kind: CKind) -> (Sketch, Constraint) {
     let mut used_point = false;
     let mut used_line = false;
     let mut used_circle = false;
-    let mut used_sphere = false;
     let mut used_cone = false;
     let mut used_plane = false;
     for (i, (_, k)) in spec.iter().enumerate() {
@@ -471,11 +468,6 @@ fn fixture(kind: CKind) -> (Sketch, Constraint) {
             SpecKind::Axis | SpecKind::Direction if i == 0 => Arg::Ent(EntRef::new(EntKind::Axis, ra)),
             SpecKind::Direction if kind == CKind::Parallel3 => Arg::Ent(EntRef::line(l2)),
             SpecKind::Axis | SpecKind::Direction => Arg::Ent(EntRef::new(EntKind::Axis, rb)),
-            SpecKind::Sphere if used_sphere => Arg::Ent(EntRef::new(EntKind::Sphere, sb)),
-            SpecKind::Sphere => {
-                used_sphere = true;
-                Arg::Ent(EntRef::new(EntKind::Sphere, sa))
-            }
             // a constraint relates *distinct* entities, so the second of a pair is a different one
             SpecKind::Point if used_point => Arg::Ent(EntRef::point(q)),
             SpecKind::Point => {

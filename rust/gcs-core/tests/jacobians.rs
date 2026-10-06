@@ -69,9 +69,6 @@ fn all_constraints(seed: u32) -> Sketch {
     sk.set_plane(cpb, Some(pa));
     let kc = sk.circle(cpc, rng.uniform(1.0, 11.0), "kc");
     let kb = sk.circle(cpb, rng.uniform(1.0, 11.0), "kb");
-    // and a sphere about each of those centres, one in a solved view and one in a stated
-    let sa = EntRef::new(gcs_core::model::EntKind::Sphere, sk.sphere(cpc, rng.uniform(1.0, 11.0), "sa"));
-    let sb = EntRef::new(gcs_core::model::EntKind::Sphere, sk.sphere(cpb, rng.uniform(1.0, 11.0), "sb"));
     let (me1, me2) = (EntRef::line(m1), EntRef::line(m2));
     // and a cone about each of those lines and a cylinder about the first
     use gcs_core::model::EntKind::{Cone, Cylinder};
@@ -203,7 +200,7 @@ fn all_constraints(seed: u32) -> Sketch {
         Constraint::new(CKind::PointOnCircle3, vec![e(pe), e(EntRef::circle(kb))]),
         // the rest of the words in space: a point on a line and true lengths, a point's
         // distance along a plane's normal and its ordinates, and a line on a plane — each over a
-        // free plane and a held one — and the sphere's four
+        // free plane and a held one
         Constraint::new(CKind::PointOnLine3, vec![e(qe), e(me1)]),
         Constraint::two_line(CKind::EqualLength3, me1, me2),
         Constraint::new(CKind::PointPlaneDistance, vec![e(qe), e(pce), Arg::Num(1.2)]),
@@ -212,16 +209,7 @@ fn all_constraints(seed: u32) -> Sketch {
         Constraint::new(CKind::Ordinate3V, vec![e(s3), e(pae), Arg::Num(-0.8)]),
         Constraint::new(CKind::LineOnPlane, vec![e(me2), e(pce)]),
         Constraint::new(CKind::LineOnPlane, vec![e(me1), e(pae)]),
-        Constraint::new(CKind::SphereOn, vec![e(qe), e(sa)]),
-        Constraint::new(CKind::SphereOn, vec![e(pe), e(sb)]),
-        Constraint::new(CKind::SphereRadius, vec![e(sa), Arg::Num(2.0)]),
-        Constraint::new(CKind::SphereTangentLine, vec![e(sa), e(me2)]),
-        Constraint::new(CKind::SphereTangentSphere, vec![e(sa), e(sb), Arg::Bool(true)]),
-        Constraint::new(CKind::SphereTangentSphere, vec![e(sb), e(sa), Arg::Bool(false)]),
-        // a circle on a sphere, its view solved and stated, and the midpoint and the mirror
-        // in a line, in space
-        Constraint::new(CKind::CircleOnSphere, vec![e(EntRef::circle(kc)), e(sb)]),
-        Constraint::new(CKind::CircleOnSphere, vec![e(EntRef::circle(kb)), e(sa)]),
+        // the midpoint and the mirror in a line, in space
         Constraint::new(CKind::Midpoint3, vec![e(qe), e(me1)]),
         Constraint::new(CKind::Symmetric3, vec![e(pe), e(qe), e(fold_line)]),
         // the cones' and the cylinder's words
@@ -290,7 +278,6 @@ fn all_constraints(seed: u32) -> Sketch {
         fx(CKind::Ordinate3U, vec![e(s3), e(pbe)], "o3 + 1", 1.2),
         fx(CKind::Ordinate3V, vec![e(qe), e(pae)], "-2 * o4", 0.5),
         fx(CKind::PlaneDistance, vec![e(pae), e(pce)], "3 * pd3", 0.5),
-        fx(CKind::SphereRadius, vec![e(sb)], "rs", 3.0),
         fx(CKind::ConeAngle, vec![e(kn2)], "2 * ka", 0.5),
         fx(CKind::CylinderRadius, vec![e(cy)], "kr - 1", 3.0),
         fx(CKind::ArcLength, vec![e(ae)], "3 * al + 1", 7.5),

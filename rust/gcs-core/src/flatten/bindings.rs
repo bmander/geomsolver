@@ -367,6 +367,58 @@ impl<'a> Walk<'a> {
         out
     }
 
+    /// **An instance's numbers are read by its name** (`ball.r`): each numeric formal of every
+    /// instance a body writes goes into the body's `vals` as `{instance}.{formal}` — the number
+    /// it was given, or the drawing's unknown it became where it was left unbound or seeded
+    /// (`bind`'s name) — so a dimension reads it as it reads a group's member, and an instance
+    /// handed on as a group carries it (`bind`'s group arm copies `{actual}.…`).  Read before
+    /// the body's statements are walked, as its `param`s are (P2: a dimension above the call
+    /// reads it too).  Nothing is reported here: `bind` works the same arguments out again
+    /// and says what is wrong with them where the call is walked.
+    pub(super) fn instance_numbers(&mut self, body: &[Stmt], vals: &mut BTreeMap<String, Aff>, scope: &Scope) {
+        use crate::syntax::{InstVal, Ty};
+        let prefix = scope.prefix().to_string();
+        for st in body {
+            let StmtKind::Instance(inst) = &st.kind else { continue };
+            let Ok(index) = self.prog.resolve_component(&inst.component.text, scope.module) else {
+                continue;
+            };
+            let comp = &self.prog.components[index];
+            let mut given: BTreeMap<String, Aff> = BTreeMap::new();
+            for (i, a) in inst.args.iter().enumerate() {
+                let f = match &a.label {
+                    Some(l) => comp.formals.iter().find(|f| f.name.text == l.text),
+                    None => comp.formals.get(i),
+                };
+                let Some(f) = f.filter(|f| !matches!(f.ty, Ty::Ent(_) | Ty::Side | Ty::Group)) else {
+                    continue;
+                };
+                let text = match &a.value {
+                    InstVal::Expr(t) => t.clone(),
+                    InstVal::Ref(r) => written(r),
+                    InstVal::Hint(_) | InstVal::Group(_) => continue,
+                };
+                let want = f.ty.dim();
+                if let Ok(v) = value_aff(&text, vals, self.units) {
+                    if v.dim.require(want, &f.name.text).is_ok() {
+                        given.insert(f.name.text.clone(), v.as_dim(want));
+                    }
+                }
+            }
+            for f in &comp.formals {
+                if matches!(f.ty, Ty::Ent(_) | Ty::Side | Ty::Group) {
+                    continue;
+                }
+                let own = format!("{}.{}", inst.name.text, f.name.text);
+                let v = match given.remove(&f.name.text) {
+                    Some(v) => v,
+                    None => free(format!("{prefix}{own}"), f.ty),
+                };
+                vals.entry(own).or_insert(v);
+            }
+        }
+    }
+
     /// One value argument, worked out and bound under the formal's *declared* dimension.
     ///
     /// The formal declares, so it wins — but an argument that said what it was and disagreed is

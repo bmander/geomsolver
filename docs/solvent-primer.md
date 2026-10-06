@@ -97,7 +97,7 @@ NAME := (E, E[, E])                     a vector, read by its members NAME.x, NA
 NAME := point(x: XEXPR, y: YEXPR)       a computed point, drawn only as a curve       (1.9)
 [NAME :=] axis [hint(dir: (E, E, E))]  a directed line in space, with no start (1.13)
 [NAME :=] plane[(u: R, v: R)]             a plane over axes or lines; one left out is free (1.13)
-NAME := sphere(center: R) | cone(axis: LINE) | cylinder(axis: LINE)  [hint(...)]
+NAME := cone(axis: LINE) | cylinder(axis: LINE)  [hint(...)]
                                         a surface in space, on no sheet              (1.13)
 in REF { statement* }                   every declaration inside is drawn in that plane
 NAME := CHAIN                           a chain joined by `->`, named as a traversal (1.14)
@@ -143,7 +143,6 @@ read any number or binder in scope). Indices and fields chain: `l.e[2].p1` is `p
 | `axis` | — | a place and a unit direction (seeded by `hint(dir: (x, y, z))`, the direction) | |
 | `plane` | `u`, `v` (axes or lines); member `origin` | where it stands, its `origin`: `fix(origin == (x, y, z))` | |
 | `curve` | its arguments | | |
-| `sphere` | `center` | `r` | |
 | `cone` | `axis` (a line; its start is the apex) | `half`, the half-angle | |
 | `cylinder` | `axis` (a line) | `r` | |
 
@@ -221,22 +220,22 @@ stands in the parentheses:
 
 | word | fixity | operands and options |
 |---|---|---|
-| `coincident` | infix | two points; a point to a line, circle, arc, spline or curve. In space (1.13): a point, line or axis to a **plane**; a point or line to an **axis**, and two axes (one line); a point or circle to a **sphere**; a point to a **cone** or **cylinder**. Not between two **solids**: material is added with `union` (1.14) |
+| `coincident` | infix | two points; a point to a line, circle, arc, spline or curve. In space (1.13): a point, line or axis to a **plane**; a point or line to an **axis**, and two axes (one line); a point to a **cone** or **cylinder**. Not between two **solids**: material is added with `union` (1.14) |
 | `distance` | infix | two points (length; `along: x`/`y` or `right`/`left`/`up`/`down` for a signed run or rise); a point and a line, or two lines (a magnitude; `side:` picks the side); two concentric circles or arcs (radial gap); a point and a plane (`along:` required: `u`/`v` signed ordinates, `n` signed distance along the normal, in space); two planes, `P distance(d) Q` (along `P`'s normal) |
 | `distance` | prefix | a line: its length |
-| `tangent` | infix | line–circle/arc (`at: p1`/`p2` for tangency at that end; `side:` for the centre's side); circle/arc–circle/arc (`external: true/false`); arc–line (`at: start`/`end`); spline or curve–line; in space, sphere–line, sphere–sphere, cylinder–line (round thing first); two cones at a point, `k1 tangent(M) k2` |
+| `tangent` | infix | line–circle/arc (`at: p1`/`p2` for tangency at that end; `side:` for the centre's side); circle/arc–circle/arc (`external: true/false`); arc–line (`at: start`/`end`); spline or curve–line; in space, cylinder–line (cylinder first); two cones at a point, `k1 tangent(M) k2` |
 | `equal` | infix | two lines (length) or two circles/arcs (radius) |
 | `curvature` | infix | spline or curve and a circle/arc: the circle becomes the osculating circle there. On a traced curve, exact (the body's Taylor orders); refused only for a body using a relation with no Taylor form, named in the error |
 | `horizontal`, `vertical` | prefix / infix | a line; or two points with no line between them |
 | `angle` | infix | two lines, directed (below); an axis and a line or axis, unsigned, in space (1.13). With a second line pair instead of a number, `l1 angle(l3, l4) l2` equates two angles |
 | `angle` | prefix | a cone: its half-angle |
-| `radius` | prefix | a circle, arc, sphere or cylinder |
+| `radius` | prefix | a circle, arc or cylinder |
 | `length` | prefix | an arc: radius × sweep, counter-clockwise from `start` to `end` (a magnitude) |
 | `symmetry(line)` | infix | two points |
 | `midpoint` | infix | a point and a line |
 | `parallel`, `perpendicular` | infix | two lines; an axis and a line or axis (in space); an axis and a plane (`perpendicular`: along its normal); `parallel` also two planes |
 | `project` | infix | two points, each `in` a plane: two images of one point in space (1.13) |
-| `fix` | prefix | an entity's own numbers, whole or by member: a point itself, `(x, y)` in a plane or `(x, y, z)` in space, or one coordinate (`x == 3`); `r` of a circle, arc, sphere or cylinder; `half` of a cone (degrees); `dir` and `origin` of an axis; `origin` of a plane; one component of a vector, `dir.x` |
+| `fix` | prefix | an entity's own numbers, whole or by member: a point itself, `(x, y)` in a plane or `(x, y, z)` in space, or one coordinate (`x == 3`); `r` of a circle, arc or cylinder; `half` of a cone (degrees); `dir` and `origin` of an axis; `origin` of a plane; one component of a vector, `dir.x` |
 | `ccw(a, b, c)`, `cw(a, b, c)` | call | all three points in the parentheses; `ccw` means `c` is left of ray `a → b` |
 
 **Operand order carries meaning.** `arc tangent line` is a tangency at the arc's end;
@@ -370,7 +369,7 @@ l angle(45deg) m
   to a `tau: Angle` formal arrives as a full turn). It is W112 at the declaration; rename it.
 
 **Measurements of the solved drawing.** `length(l)` (line or arc, in space), `radius(c)` (circle,
-arc, sphere, cylinder), `distance(a, b)` (two points, or a point and a line produced) and
+arc, cylinder), `distance(a, b)` (two points, or a point and a line produced) and
 `angle(l1, l2)` (0–180°) take geometry names and read as `Length`/`Angle` under a `unit` line, so
 `length(a) / length(b)` is a plain ratio. They are allowed **only** in a motion's `ratio:`,
 `phase:` and `advance:` (1.15), which are read after the solve. Anywhere else — a value, a seed, a
@@ -490,6 +489,10 @@ t0 := Rung(l0, r0, len: 50)
   mechanism is drawn with its crank free (2.9.1). A call seeds one by leaving it unbound with a
   `hint(…)` in its place, `Crank(o, datum, theta: hint(30deg))`; the body reads it as the instance's
   own, and the sheet as `c.theta`.
+- **An instance's numbers are read by its name**: every numeric formal, bound or not, is
+  `inst.formal` where the instance is written — `p distance(ball.r) ball.center` reads the radius
+  `ball := std.Sphere(c, r: 12mm)` was given — and an instance handed on as a `group` carries them
+  (`s.r` in the body it reaches). Values a body declares are not read this way.
 - **Scope is closed.** A body sees only its formals and its own declarations; root and module
   values, geometry and standard datums must be passed in. Component definitions (the file's own
   bare, a used module's by path) and built-in functions remain callable. Repetition blocks share
@@ -827,12 +830,21 @@ planes share agree (one equation). Views carry no place on paper; the `.svd` pla
 - A view's attitude may be an unknown: build it on axes the solve turns (2.11, 2.13). Planes and
   axes are settled before the main solve, round by round, and still move with it.
 
-**Spheres, cones and cylinders** live in space, on no sheet (the glass box draws them).
+**Spheres** are the library's: `ball := std.Sphere(c, r: 12mm)` is a centre and a radius, its
+outline `ball.rim` drawn in the view `c` is drawn in. What stands on it is said by distances
+from the centre, read in space across views:
 
-- `s := sphere(center: p) hint(r: 12)` (or `sphere(p)`): the centre is drawn in a view or stands in space.
-  `radius(12) s`, `a coincident s`, `s tangent l` and `s tangent s2` are spatial. `k coincident s`
-  puts a whole circle `k` on the sphere (a gear blank's toe circle on its end sphere); `s tangent k`
-  is refused, since a circle and sphere may touch at a point or all round.
+- `p distance(ball.r) ball.center` puts a point on it; `ball.center distance(ball.r) l` makes a
+  line touch it; `a.center distance(a.r + b.r) b.center` two spheres touch outside.
+- Leave `r` unbound (`std.Sphere(c, r: hint(10mm))`) and the radius is an unknown those distances
+  share — at most one unbound radius per distance, since a dimension is affine in one unknown.
+- `std.CircleOnSphere(k, ball, view)` puts a whole circle `k` drawn in `view` on the sphere (a
+  gear blank's toe circle on its end sphere): three equations.
+- `sphere(…)` is no element: the error names `std.Sphere`. A solid ball is a half disc turned
+  about its diameter (`pierced_sphere.sv`).
+
+**Cones and cylinders** live in space, on no sheet (the glass box draws them).
+
 - `gc := cone(axis: gax) hint(half: 60deg)`: the apex is the axis's start, opening toward its end;
   the half-angle is written in degrees. `angle(60deg) gc` states it; `p coincident gc` puts a point
   on the nappe the axis points into.

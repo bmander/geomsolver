@@ -51,7 +51,6 @@ impl Sketch {
         match e.kind {
             EntKind::Circle => self.circles[e.i()].center as usize,
             EntKind::Arc => self.arcs[e.i()].center as usize,
-            EntKind::Sphere => self.spheres[e.i()].center as usize,
             _ => panic!("not a round entity"),
         }
     }
@@ -165,11 +164,6 @@ impl Sketch {
             // on no sheet: its axis is drawn, in whichever view it is in
             EntKind::Cone | EntKind::Cylinder => {
                 self.bounds(EntRef::line(self.axial(e).axis as usize))
-            }
-            // on no sheet: only its centre is drawn, in whichever view it is in
-            EntKind::Sphere => {
-                let (x, y) = self.point_xy(self.spheres[e.i()].center as usize);
-                (x, y, x, y)
             }
             EntKind::Line => {
                 let l = &self.lines[e.i()];

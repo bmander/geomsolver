@@ -113,17 +113,6 @@ impl Sketch {
         self.circles.len() - 1
     }
 
-    /// A sphere about a drawn point, its radius a Param like a circle's.
-    pub fn sphere(&mut self, center: usize, radius: f64, name: &str) -> usize {
-        let r = self.param(radius, false, &format!("{name}.r"));
-        self.spheres.push(SphereE {
-            center: center as u32,
-            radius: r as u32,
-            class: Classes::default(),
-        });
-        self.spheres.len() - 1
-    }
-
     /// A cone about a drawn line — its apex the line's start — its half-angle a Param (radians).
     pub fn cone(&mut self, axis: usize, half: f64, name: &str) -> usize {
         let a = self.param(half, false, &format!("{name}.half"));
@@ -132,7 +121,7 @@ impl Sketch {
         self.cones.len() - 1
     }
 
-    /// A cylinder about a drawn line, its radius a Param like a sphere's.
+    /// A cylinder about a drawn line, its radius a Param like a circle's.
     pub fn cylinder(&mut self, axis: usize, radius: f64, name: &str) -> usize {
         let r = self.param(radius, false, &format!("{name}.r"));
         let class = Classes::default();

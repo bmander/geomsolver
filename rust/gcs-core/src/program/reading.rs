@@ -13,7 +13,7 @@ use crate::model::{EntKind, EntRef, Sketch};
 fn operand_points(sk: &Sketch, e: EntRef) -> Vec<usize> {
     match e.kind {
         EntKind::Point => vec![e.i()],
-        EntKind::Line | EntKind::Circle | EntKind::Arc | EntKind::Spline | EntKind::Sphere => sk
+        EntKind::Line | EntKind::Circle | EntKind::Arc | EntKind::Spline => sk
             .children(e)
             .iter()
             .filter(|c| c.kind == EntKind::Point)
@@ -38,7 +38,6 @@ fn view_points(sk: &Sketch, kind: CKind, args: &[Arg]) -> Option<Vec<usize>> {
                 | CKind::Radius
                 | CKind::EqualRadius
                 | CKind::AnnularDistance
-                | CKind::SphereRadius
                 | CKind::ConeAngle
                 | CKind::CylinderRadius
                 | CKind::DragTarget

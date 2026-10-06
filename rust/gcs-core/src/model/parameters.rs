@@ -112,7 +112,6 @@ impl Sketch {
             EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge => Vec::new(),
             EntKind::Point => self.point_all_params(e.i()),
             EntKind::Circle => vec![self.circles[e.i()].radius],
-            EntKind::Sphere => vec![self.spheres[e.i()].radius],
             EntKind::Cylinder => vec![self.cylinders[e.i()].param],
             // a half-angle is an angle, and a unit's conversion leaves it alone
             EntKind::Cone => Vec::new(),
@@ -177,7 +176,6 @@ impl Sketch {
         match e.kind {
             EntKind::Circle => self.circles[e.i()].radius as usize,
             EntKind::Arc => self.arcs[e.i()].radius as usize,
-            EntKind::Sphere => self.spheres[e.i()].radius as usize,
             _ => panic!("not a round entity"),
         }
     }
@@ -226,11 +224,6 @@ impl Sketch {
             EntKind::Line => self.line_params(e.i()).to_vec(),
             EntKind::Circle => {
                 let c = &self.circles[e.i()];
-                let p = &self.points[c.center as usize];
-                vec![p.x, p.y, c.radius]
-            }
-            EntKind::Sphere => {
-                let c = &self.spheres[e.i()];
                 let p = &self.points[c.center as usize];
                 vec![p.x, p.y, c.radius]
             }
@@ -293,7 +286,6 @@ impl Sketch {
         match e.kind {
             EntKind::Point => self.point_all_params(e.i()),
             EntKind::Circle => vec![self.circles[e.i()].radius],
-            EntKind::Sphere => vec![self.spheres[e.i()].radius],
             EntKind::Cone | EntKind::Cylinder => vec![self.axial(e).param],
             EntKind::Axis => {
                 let r = &self.axes[e.i()];

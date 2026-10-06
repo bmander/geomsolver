@@ -94,7 +94,11 @@ Definitions and built-ins stay callable. A component scope holds only its formal
 declarations; repetitions share it. `dims := {width: 20mm, origin: o}` bundles values and
 geometry aliases; `dims: group` is a required formal. Groups nest, by name or in place
 (`{bar: {at: o}}`, `InstVal::Group`, flattened to dotted members by `members_of`, each nested
-group registered so `Bar(design.bar)` binds); an instance may pass as a layout group. No
+group registered so `Bar(design.bar)` binds); an instance may pass as a layout group. **An
+instance's numbers are read by its name**: `Walk::instance_numbers` puts every numeric formal
+of every instance a body writes into its `vals` as `inst.formal` (the number bound, else the
+unknown `bind` names), before the statements, so `p distance(ball.r) ball.center` reads it and a
+group argument carries it (`bind`'s group arm copies `{actual}.…`); body values are not. No
 solver state; member units survive substitution; missing members are errors.
 Curves need fixed scalar/entity formals. The V-twin and inline-four pass
 `components.dims.vtwin_dims` / `engine.dims.engine_dims` explicitly; `Frame(layout, dims: …)`
@@ -886,7 +890,7 @@ Conventions:
   points' views by membership (a point in space is its own view) and where they differ maps the 2D kind
   to its twin in space (`Distance3`, `PointLine3`, `LineLine3`, `Angle3`, `PointOnLine3`,
   `EqualLength3`, …) or refuses (E062; E040 for `side:`/`sense:`).  Radii, `along: u`/`v` and
-  `project` are view-free; `coincident`/`distance(along: n)` to a plane and the `sphere`, `cone`,
+  `project` are view-free; `coincident`/`distance(along: n)` to a plane and the `cone` and
   `cylinder` words are spatial from `infix_op`.  `tests/cross_view_audit.rs` asserts the corpus's
   cross-membership relations keep their 2D kinds.
 - A **`claim`** (Solvent §9.7) is *judged, never solved for*: **no** `System` compiles a row for
@@ -1291,7 +1295,7 @@ Conventions:
   **The box shows the objects, not the features they are made of** — a solid is the object exactly
   when nothing else is made of it (`overview::objects`).  `box3d.ts` draws what `scene3d` says
   stands in space — panes, axes, the object's creases (a `smooth` seam dropped: shading draws the
-  round) and the spatial kinds (spheres, cones, cylinders) — and every object's mesh
+  round) and the spatial kinds (cones, cylinders) — and every object's mesh
   (`mesh::grouped`), computing no coordinate; sketches on planes are the 2D canvas's, stroked over
   it.  Its camera is set from `v.orbit` and the eye's camera; the current plane's pane is bold, a
   material write per frame.  **`⇧⌘B` toggles the solid's surfaces** (on by default; off is a
@@ -1506,6 +1510,14 @@ Conventions:
   and the rim turning with its tilt.  An axis is a value the curve takes — stated or a `param` —
   since a component of one computed point cannot be drawn as an instance whose formal is left
   free.
+- **The sphere is a library component too**: `std.Sphere(center, r)` in `rust/lib/std.sv`, a
+  centre, a radius formal read as `ball.r`, and `rim`, its outline in the centre's view.  What
+  stands on it is a distance from the centre (`Distance3`, `PointLine3` across views);
+  `std.CircleOnSphere(k, s, view)` is the three regular rows of a circle on it (a hidden point
+  level with the circle's centre, an axis square to the view).  `EntKind::Sphere`, its four
+  `CKind`s and three kernels are gone; FFI kind ids stay contiguous (cone 16, cylinder 17, axis
+  18).  `sphere`/`ellipse` written as a call name the library spelling
+  (`Program::resolve_component`).  `tests/spatial_lang.rs` is the gate.
 - **A curve is a point of a component, as one of its numeric formals runs** (Solvent §6.5).
   No curve family: `path := leg.toe over theta in (0, 360)` asks a *drawn* instance, and
   `e := Involute(base, phase: a0).p over u in (u0, u1)` one written in place and never drawn.

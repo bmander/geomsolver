@@ -262,6 +262,18 @@ impl Program {
                                     written `{path}.{name}`"));
             }
         }
+        // an element the language once had, which the standard library draws now
+        let retired = match name {
+            "sphere" => Some("`std.Sphere(center, r: …)`, and a point on it is `p distance(s.r) \
+                              s.center`"),
+            "ellipse" => Some("`std.Ellipse(c, a: …, b: …, tilt: 0deg).p over u in (0deg, \
+                               360deg)`"),
+            _ => None,
+        };
+        if let Some(instead) = retired {
+            return Err(format!("no component named `{name}`: `{name}` is a library component \
+                                now — `use std`, then {instead}"));
+        }
         Err(format!("no component named `{name}`"))
     }
 

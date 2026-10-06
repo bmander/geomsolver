@@ -69,18 +69,6 @@ pub(crate) fn settle(
                     a.a(),
                     b.a()
                 );
-                // a sphere touches a line or a sphere; a circle against one says two things
-                if word == "tangent" && (a == EntKind::Sphere || b == EntKind::Sphere) {
-                    m.push_str(": a sphere is tangent to a line or to another sphere, with the \
-                                sphere written first");
-                    if matches!(a, EntKind::Circle | EntKind::Arc)
-                        || matches!(b, EntKind::Circle | EntKind::Arc)
-                    {
-                        m.push_str(". A circle and a sphere may touch at a point or all the \
-                                    way round, so the word does not say which: a circle lying \
-                                    on the sphere is `c coincident s`");
-                    }
-                }
                 // a cone or a cylinder takes the words it has kernels for, and says so
                 let axial = |k: EntKind| matches!(k, EntKind::Cone | EntKind::Cylinder);
                 if axial(a) || axial(b) {

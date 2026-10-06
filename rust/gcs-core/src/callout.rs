@@ -101,16 +101,10 @@ macro_rules! undrawn {
             | CKind::PointOnLine3
             | CKind::EqualLength3
             | CKind::PointPlaneDistance
-            // a sphere is on no sheet, so nothing about it is drawn on one
-            | CKind::SphereOn
-            | CKind::CircleOnSphere
             | CKind::Midpoint3
             | CKind::Symmetric3
             | CKind::LineOnPlane
-            | CKind::SphereRadius
-            | CKind::SphereTangentLine
-            | CKind::SphereTangentSphere
-            // nor is a cone or a cylinder
+            // a cone or a cylinder is on no sheet, so nothing about it is drawn on one
             | CKind::ConeOn
             | CKind::CylinderOn
             | CKind::ConeAngle

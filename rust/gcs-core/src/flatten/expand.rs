@@ -72,6 +72,8 @@ impl<'a> Walk<'a> {
         }
         // every `param` of the body, whatever line it stands on — a body is a set (P2)
         self.params(body, vals, scope);
+        // and every instance's numbers, by its name (`ball.r`), over the body's own
+        self.instance_numbers(body, vals, scope);
         // Remember ambient numbers so accidental capture gets an explicit diagnostic.
         if depth == 0 {
             self.file_vals = vals.clone();

@@ -4,7 +4,9 @@
 built here stand. The solved views it built (folds, `attitude: free`, `offset: free`,
 `through:`, quaternion attitudes, hinges, `against` between solved views) were replaced by
 planes over rays, with points in space and no paper placement: [planes-plan.md](planes-plan.md)
-(#81). Read the spellings below as history.
+(#81). The sphere entity became the library's `std.Sphere` (2026-10-06): a point on it is a
+distance from its centre, and a circle on it `std.CircleOnSphere`. Read the spellings below as
+history.
 
 The [spiral-bevel layout plan](spiral-bevel-layout-plan.md) needs a true 90° hypoid: the shaft
 angle and the offset between two skew axes drawn in different views are stated, and the

@@ -1,7 +1,8 @@
-// A sphere, a cone and a cylinder: the three surfaces a relation can reach in space, each built
-// about geometry drawn in a view and each owning one number — a radius, a half-angle, a radius.
-// None is on the sheet; the glass box draws a sphere as three great circles, and a cone or a
-// cylinder as two rings square to its axis and four rulings.
+// A sphere, a cone and a cylinder: three surfaces a relation can reach in space, each built about
+// geometry drawn in a view and each owning one number — a radius, a half-angle, a radius.  The
+// sphere is the library's (`std.Sphere`): a centre and a radius, what stands on it said by
+// distances from the centre, and its outline drawn in the centre's view.  A cone or a cylinder
+// is on no sheet; the glass box draws one as two rings square to its axis and four rulings.
 //
 // Two planes: the front and the side, square to it at the origin, so the side plane is the one
 // the front sees edge-on along its vertical axis.  Everything in the front plane is grounded;
@@ -9,9 +10,9 @@
 //
 // - A shaft runs square through the side view.  A line drawn there from a grounded end, 50 long,
 //   is `tangent` to it: in space, their common perpendicular is the shaft's radius.
-// - A ball is centred in the front view.  A point of the side view is `coincident` it — one
-//   equation for two coordinates, so the point keeps one freedom: the circle the side view cuts
-//   from the ball.
+// - A ball is centred in the front view.  A point of the side view is the ball's radius from its
+//   centre — one equation for two coordinates, so the point keeps one freedom: the circle the
+//   side view cuts from the ball.
 // - Two cones: one about a vertical axis, its half-angle stated; the other about a level axis
 //   whose apex may slide along it and whose half-angle is not stated.  A point M of the side view
 //   is on both, and `k1 tangent(M) k2` says they touch there with one tangent plane — two
@@ -44,11 +45,10 @@ shaft tangent l
 in std.front {
   bc := point
   fix((-8, 38)) bc
-  ball := sphere(center: bc) hint(r: 12)
-  radius(12) ball
 }
+ball := std.Sphere(bc, r: 12)
 pb := point hint((5, 45)) in std.side
-pb coincident ball
+pb distance(ball.r) ball.center
 
 // two cones touching at a point
 in std.front {
