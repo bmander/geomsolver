@@ -27,7 +27,7 @@ mod attitude;
 pub use entities::{
     Param, EntKind, Field, EntRef, PointE, LineE, CircleE, SphereE, AxialE, AxisE, ArcE, SplineE,
     PlaneE,
-    LiftE,
+    LiftE, article,
 };
 pub use curves::{CURVE_STEPS, CurveDef, CurveBody, CurveE, Home, Trim, whole};
 pub use spatial::{

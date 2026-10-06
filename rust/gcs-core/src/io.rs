@@ -109,7 +109,7 @@ fn arg_from_json(sk: &Sketch, kind: SpecKind, v: &Json) -> Result<Arg, String> {
             // reader past this one indexes the list its *spec* names (a projection's planes
             // reach `sk.planes`), so a mismatch here is a panic there — an abort under wasm
             if !crate::constraints::kind_matches(kind, ek) {
-                return Err(format!("a {} slot does not take a {}", kind.as_str(), ek.as_str()));
+                return Err(format!("{} slot does not take {}", kind.a(), ek.a()));
             }
             Arg::Ent(EntRef::new(ek, index(a[1].as_i64(), sk.count(ek), ek.as_str())?))
         }
@@ -156,6 +156,18 @@ pub fn seed_omitted(
     args: &mut [Arg],
     left_out: impl Fn(usize) -> bool,
 ) -> Result<(), String> {
+    seed_omitted_named(sk, kind, args, left_out, &entity_name)
+}
+
+/// The same, a refusal naming entities by `name`: the elaborator's source names, where a reader
+/// with no source has only the minted label (`entity_name`).
+pub fn seed_omitted_named(
+    sk: &Sketch,
+    kind: CKind,
+    args: &mut [Arg],
+    left_out: impl Fn(usize) -> bool,
+    name: &dyn Fn(EntRef) -> String,
+) -> Result<(), String> {
     for (i, _) in kind.param_slots() {
         if left_out(i) {
             args[i] = Arg::Num(crate::constraints::seed_param(sk, kind, args, i));
@@ -163,7 +175,7 @@ pub fn seed_omitted(
     }
     for (i, (_, k)) in kind.spec().iter().enumerate() {
         if k.is_entity() && kind.infers_arg(i) && left_out(i) {
-            args[i] = Arg::Ent(crate::constraints::infer_entity(sk, kind, args, i)?);
+            args[i] = Arg::Ent(crate::constraints::infer_entity(sk, kind, args, i, name)?);
         }
     }
     // and a number the geometry decides — a skew distance's side — once the entities are in
@@ -174,7 +186,7 @@ pub fn seed_omitted(
             }
         }
     }
-    crate::constraints::validate(sk, kind, args)
+    crate::constraints::validate(sk, kind, args, name)
 }
 
 /// A cap on how long a control polygon a document may declare.  A document is untrusted input

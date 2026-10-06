@@ -70,7 +70,7 @@ pub use source_map::{public_path, Elaborated, InstPath, Made, Site, SourceMap};
 
 use crate::expr;
 use crate::model::{EntKind, EntRef, Sketch};
-use crate::syntax::{Name, Program, Stmt, StmtId, StmtKind};
+use crate::syntax::{Name, Program, Span, Stmt, StmtId, StmtKind};
 pub(crate) use entities::child_names;
 use entities::{build, crosses_views, settle_deferred, Deferred};
 pub(crate) use lift::{holds, lift_decl, lift_gauge, lift_relation};
@@ -134,6 +134,31 @@ fn shadowing(p: &Program, diags: &mut Vec<Diag>) {
     diags.append(&mut said);
 }
 
+/// **A component defined twice in the document is E071**, as one defined twice in a module is
+/// (`modules::link`): the first stands, so every call still reads one definition, and the second
+/// is said where it is written.  Asked of the text, like `shadowing`.
+fn defined_twice(p: &Program, diags: &mut Vec<Diag>) {
+    let mut first: BTreeMap<&str, Span> = BTreeMap::new();
+    for c in p.components.iter().filter(|c| c.module.is_none()) {
+        let Some(n) = &c.name else { continue };
+        match first.get(n.text.as_str()) {
+            Some(was) => diags.push(Diag {
+                code: Code::E071,
+                span: n.span,
+                stmt: None,
+                message: format!(
+                    "`{}` is defined twice; the first is at line {}",
+                    n.text,
+                    p.line_col(was.lo as usize).0
+                ),
+            }),
+            None => {
+                first.insert(&n.text, n.span);
+            }
+        }
+    }
+}
+
 pub fn elaborate(p: &Program) -> Elaborated {
     let mut diags: Vec<Diag> = Vec::new();
     let mut map = SourceMap::default();
@@ -171,6 +196,7 @@ pub fn elaborate(p: &Program) -> Elaborated {
 
     // -- a name a document declares over a built-in is said, before anything reads either.
     shadowing(p, &mut diags);
+    defined_twice(p, &mut diags);
 
     // -- phase 1: names, in one pre-pass.  Indices come from declaration order within a kind,
     // which is `primitives()` order, which is the order phase 2 builds in.
@@ -380,7 +406,7 @@ pub fn elaborate(p: &Program) -> Elaborated {
     for st in &body {
         let StmtKind::Relation(r) = &st.kind else { continue };
         if relations::is_fix(r) {
-            constrain(&mut sk, &res, r, st, p, &mut diags);
+            constrain(&mut sk, &res, r, st, p, &map, &mut diags);
         }
     }
     // a plane whose axes are held stands where they meet (#84)
@@ -403,7 +429,7 @@ pub fn elaborate(p: &Program) -> Elaborated {
         if relations::is_fix(r) {
             continue;
         }
-        if let Some(id) = constrain(&mut sk, &res, r, st, p, &mut diags) {
+        if let Some(id) = constrain(&mut sk, &res, r, st, p, &map, &mut diags) {
             map.record(st, Made::Con(id));
             if let Some(place) = r.place {
                 sk.placements.insert(id, place);

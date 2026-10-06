@@ -646,3 +646,18 @@ fn what_a_cone_or_a_cylinder_cannot_say_is_refused() {
         assert!(d.is_empty(), "{stmt}: {d:?}");
     }
 }
+
+/// Three of §16.1's codes, each said where its mistake is written: a component reached again
+/// while it is still being expanded (E003), `next` with no `cycle` to name a sibling in (E020),
+/// and a block's binder over a name already in scope (E002).
+#[test]
+fn a_cycle_a_stray_next_and_a_shadowing_binder_have_their_codes() {
+    use crate::common::refused;
+    refused("use std\ncomponent A(p: point) {\n  b := B(p)\n}\ncomponent B(p: point) {\n  a := A(p)\n}\n\
+             in std.front {\n  o := point\n  x := A(o)\n}\n",
+            "E003", "`A` instantiates itself through `B`", "a := A(p)");
+    refused("use std\nin std.front {\n  repeat 3 {\n    p := point\n    p distance(5) next.p\n  }\n}\n",
+            "E020", "`next` names the next copy round a `cycle`", "next.p");
+    refused("use std\ni := 4\nin std.front {\n  repeat 3 as i {\n    p := point\n  }\n}\n",
+            "E002", "`i` is already a name here", "i");
+}

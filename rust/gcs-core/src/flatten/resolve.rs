@@ -12,7 +12,7 @@ fn rescope_seeds(
     names_seen: &BTreeSet<String>,
     alias: &BTreeMap<String, String>,
     units: Units,
-    bad: &mut Vec<(Span, String)>,
+    bad: &mut Vec<(Code, Span, String)>,
 ) {
     let StmtKind::Decl(d) = k else { return };
     let mut names: BTreeMap<String, String> = BTreeMap::new();
@@ -50,7 +50,7 @@ fn rescope_measures(
     names_seen: &BTreeSet<String>,
     alias: &BTreeMap<String, String>,
     units: Units,
-    bad: &mut Vec<(Span, String)>,
+    bad: &mut Vec<(Code, Span, String)>,
 ) {
     let Ok(p) = expr::parse_in(text, units) else { return };
     let mut to: BTreeMap<String, String> = BTreeMap::new();
@@ -64,7 +64,7 @@ fn rescope_measures(
                 Ok(full) => {
                     to.insert(a, full);
                 }
-                Err(why) => bad.push((span, why)),
+                Err((code, why)) => bad.push((code, span, why)),
             }
         }
     }
@@ -83,7 +83,7 @@ fn rescope_text(
     alias: &BTreeMap<String, String>,
     units: Units,
     names: &mut BTreeMap<String, String>,
-    bad: &mut Vec<(Span, String)>,
+    bad: &mut Vec<(Code, Span, String)>,
 ) {
     let Ok(p) = expr::parse_in(t, units) else { return };
     for dep in p.body.deps() {
@@ -99,7 +99,7 @@ fn rescope_text(
             Ok(full) => {
                 names.insert(dep.clone(), format!("{full}.{scalar}"));
             }
-            Err(why) => bad.push((span, why)),
+            Err((code, why)) => bad.push((code, span, why)),
         }
     }
 }
@@ -114,7 +114,7 @@ fn resolve_dotted(
     names_seen: &BTreeSet<String>,
     alias: &BTreeMap<String, String>,
     units: Units,
-) -> Result<String, String> {
+) -> Result<String, (Code, String)> {
     let r = Ref {
         root: Name { text: segs[0].to_string(), span },
         path: segs[1..].iter().map(|f| Seg::Field(Name::new(*f))).collect(),
@@ -334,13 +334,23 @@ fn lookup(r: &Ref, sc: &Scope, names: &BTreeSet<String>, alias: &BTreeMap<String
     private_member(r, sc, &found.0, alias).is_none().then_some(found)
 }
 
-fn missing_ref(r: &Ref, sc: &Scope, names: &BTreeSet<String>, alias: &BTreeMap<String, String>, units: Units) -> String {
+fn missing_ref(r: &Ref, sc: &Scope, names: &BTreeSet<String>, alias: &BTreeMap<String, String>, units: Units)
+    -> (Code, String)
+{
     if let Some((target, _)) = lookup_raw(r, sc, names, alias, units) {
         if let Some(member) = private_member(r, sc, &target, alias) {
-            return format!("`{}` names private member `{member}`", written(r));
+            return (Code::E101, format!("`{}` names private member `{member}`", written(r)));
         }
     }
-    format!("no such entity: `{}`", written(r))
+    // `next` and `prev` name a sibling copy, which only a `cycle` has (§12.1)
+    let word = r.root.text.as_str();
+    if (word == "next" || word == "prev") && !r.path.is_empty() && sc.cyc.is_none() {
+        return (Code::E020, format!(
+            "`{word}` names the {} copy round a `cycle`, and no `cycle` closes the copies here",
+            if word == "next" { "next" } else { "previous" }
+        ));
+    }
+    (Code::E101, format!("no such entity: `{}`", written(r)))
 }
 
 /// A reference spelled back the way the source wrote it, for a message about it.
@@ -369,16 +379,19 @@ fn rewrite(
     names: &BTreeSet<String>,
     alias: &BTreeMap<String, String>,
     units: Units,
-    bad: &mut Vec<(Span, String)>,
+    bad: &mut Vec<(Code, Span, String)>,
 ) {
-    let fix = |r: &mut Ref, bad: &mut Vec<(Span, String)>| match lookup(r, sc, names, alias, units)
+    let fix = |r: &mut Ref, bad: &mut Vec<(Code, Span, String)>| match lookup(r, sc, names, alias, units)
     {
         Some((abs, rest)) => {
             r.root = Name { text: abs, span: r.root.span };
             r.path = rest.into_iter().map(|f| Seg::Field(Name::new(f))).collect();
         }
         // named as written, so an index that picked no copy says which one it was
-        None => bad.push((r.span, missing_ref(r, sc, names, alias, units))),
+        None => {
+            let (code, why) = missing_ref(r, sc, names, alias, units);
+            bad.push((code, r.span, why))
+        }
     };
     match k {
         StmtKind::Chain(chain) => {
@@ -419,7 +432,10 @@ fn rewrite(
                                 r.path =
                                     rest.into_iter().map(|f| Seg::Field(Name::new(f))).collect();
                             }
-                            None => bad.push((r.span, missing_ref(r, &outer, names, alias, units))),
+                            None => {
+                                let (code, why) = missing_ref(r, &outer, names, alias, units);
+                                bad.push((code, r.span, why))
+                            }
                         }
                     }
                     _ => fix(r, bad),
@@ -573,15 +589,15 @@ impl<'a> Walk<'a> {
                     r.span,
                     format!(
                         "`{}` is not a named chain: `{} {} in …` runs over the edges of a \
-                         chain written `name = line -> …`",
+                         chain written `name := line -> …`",
                         written(r),
                         if b.kind.wraps() { "cycle" } else { "repeat" },
                         over.var.text
                     ),
                 ),
                 None => {
-                    let msg = missing_ref(r, &sc, &self.names, &alias, self.units);
-                    self.err(Code::E101, r.span, msg)
+                    let (code, msg) = missing_ref(r, &sc, &self.names, &alias, self.units);
+                    self.err(code, r.span, msg)
                 }
             }
         }
@@ -717,7 +733,7 @@ impl<'a> Walk<'a> {
             {
                 continue;
             }
-            let mut bad: Vec<(Span, String)> = Vec::new();
+            let mut bad: Vec<(Code, Span, String)> = Vec::new();
             rewrite(&mut st.kind, &sc, &self.names, &alias, self.units, &mut bad);
             // a seed that reads geometry names it in the scope it was written in, and is read
             // on the sheet, where only absolute names mean anything — so it is rescoped as the
@@ -727,8 +743,8 @@ impl<'a> Walk<'a> {
                 rescope_seeds(&mut st.kind, &sc, &self.names, &alias, self.units, &mut bad);
             }
             let clean = bad.is_empty();
-            for (span, msg) in bad {
-                self.err(Code::E101, span, msg);
+            for (code, span, msg) in bad {
+                self.err(code, span, msg);
             }
             // a curve of a drawn instance's point: the point's name is absolute now, and the
             // instance it belongs to is the innermost one whose component has the formal

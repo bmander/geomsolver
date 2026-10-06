@@ -206,6 +206,17 @@ impl Sketch {
     }
 
     /// Params of any primitive, in the model's canonical order.
+    /// The names of an entity's scalars under the name `n`, in `entity_params` order: the kind's
+    /// own (`EntKind::scalar_names`), and a point in space's third coordinate, `n.z`, which a
+    /// point drawn in a plane does not have.
+    pub fn scalar_names(&self, e: EntRef, n: &str) -> Option<Vec<String>> {
+        let mut names = e.kind.scalar_names(n)?;
+        if e.kind == EntKind::Point && self.points[e.i()].z.is_some() {
+            names.push(format!("{n}.z"));
+        }
+        Some(names)
+    }
+
     pub fn entity_params(&self, e: EntRef) -> Vec<u32> {
         match e.kind {
             // the stratification, as a table entry: a face and a solid own no parameter, so

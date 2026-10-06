@@ -742,6 +742,11 @@ impl SpecKind {
         self == SpecKind::Param
     }
 
+    /// The slot's kind with its article: `a line`, `an axis`.
+    pub fn a(self) -> String {
+        crate::model::article(self.as_str())
+    }
+
     pub fn as_str(self) -> &'static str {
         match self {
             SpecKind::Point => "point",
@@ -3003,15 +3008,21 @@ pub fn seed_param(sk: &Sketch, kind: CKind, args: &[Arg], i: usize) -> f64 {
 
 /// An entity slot the core fills when the caller leaves it out — the entity counterpart of
 /// `seed_param`: a projection's planes are its points' memberships, and nobody writes them.
-/// `Err` is the reason it cannot, in the words the caller reports.
-pub fn infer_entity(sk: &Sketch, kind: CKind, args: &[Arg], i: usize) -> Result<EntRef, String> {
+/// `Err` is the reason it cannot, in the words the caller reports, naming entities by `name`.
+pub fn infer_entity(
+    sk: &Sketch,
+    kind: CKind,
+    args: &[Arg],
+    i: usize,
+    name: &dyn Fn(EntRef) -> String,
+) -> Result<EntRef, String> {
     match (kind, i) {
         (CKind::Project | CKind::ProjectSolved, 2 | 3) => {
             let p = args[i - 2].ent();
             sk.plane_of(p.i()).map(EntRef::plane).ok_or_else(|| {
                 format!(
                     "{} is on no plane, so `project` cannot say which view it is in",
-                    crate::io::entity_name(p)
+                    name(p)
                 )
             })
         }
@@ -3030,7 +3041,12 @@ pub(crate) fn contact_carrier(kind: CKind, args: &[Arg]) -> Option<EntRef> {
 /// stands on the same curve, so the unknown has one interval, one seam and one speed.  Two
 /// curves could not agree on any of the three, and a contact's own unknown that runs along no
 /// curve has nothing to share.
-fn shared_on_one_curve(sk: &Sketch, kind: CKind, args: &[Arg]) -> Result<(), String> {
+fn shared_on_one_curve(
+    sk: &Sketch,
+    kind: CKind,
+    args: &[Arg],
+    named: &dyn Fn(EntRef) -> String,
+) -> Result<(), String> {
     let Some(name) = args.iter().find_map(|a| match a {
         Arg::Shared { name, .. } => Some(name),
         _ => None,
@@ -3048,8 +3064,8 @@ fn shared_on_one_curve(sk: &Sketch, kind: CKind, args: &[Arg]) -> Result<(), Str
     match sk.shared.get(name) {
         Some(place) if place.along != here => Err(format!(
             "`{name}` is a place along {}, and a contact on {} cannot share it",
-            crate::io::entity_name(place.along),
-            crate::io::entity_name(here)
+            named(place.along),
+            named(here)
         )),
         _ => Ok(()),
     }
@@ -3057,9 +3073,14 @@ fn shared_on_one_curve(sk: &Sketch, kind: CKind, args: &[Arg]) -> Result<(), Str
 
 /// What a kind refuses once its arguments are all in — the checks that need the sketch, which
 /// the type check on the spec cannot make.  One rule for the elaborator, the document readers,
-/// the FFI and the Rust constructors alike.
-pub fn validate(sk: &Sketch, kind: CKind, args: &[Arg]) -> Result<(), String> {
-    shared_on_one_curve(sk, kind, args)?;
+/// the FFI and the Rust constructors alike; `name` is what the caller calls an entity.
+pub fn validate(
+    sk: &Sketch,
+    kind: CKind,
+    args: &[Arg],
+    name: &dyn Fn(EntRef) -> String,
+) -> Result<(), String> {
+    shared_on_one_curve(sk, kind, args, name)?;
     match kind {
         // a curvature reads the curve's second derivative, which a trace gives exactly only
         // where every row of its block has a Taylor form (`taylor.rs`): a residual by difference
@@ -3071,7 +3092,7 @@ pub fn validate(sk: &Sketch, kind: CKind, args: &[Arg]) -> Result<(), String> {
                     return Err(format!(
                         "{} is traced through a `{kernel}`, whose second derivative is not \
                          written, so the curve has no curvature to state a circle against",
-                        crate::io::entity_name(args[0].ent())
+                        name(args[0].ent())
                     ));
                 }
             }
@@ -3082,7 +3103,7 @@ pub fn validate(sk: &Sketch, kind: CKind, args: &[Arg]) -> Result<(), String> {
             if pa == pb {
                 return Err(format!(
                     "both points are on {}, and one view relates nothing to itself",
-                    crate::io::entity_name(pa)
+                    name(pa)
                 ));
             }
             // two fixed planes are parallel or not now and for ever; where either is solved,
@@ -3094,8 +3115,8 @@ pub fn validate(sk: &Sketch, kind: CKind, args: &[Arg]) -> Result<(), String> {
             {
                 return Err(format!(
                     "{} and {} are parallel, so no fold line relates their views",
-                    crate::io::entity_name(pa),
-                    crate::io::entity_name(pb)
+                    name(pa),
+                    name(pb)
                 ));
             }
             Ok(())
@@ -3106,7 +3127,7 @@ pub fn validate(sk: &Sketch, kind: CKind, args: &[Arg]) -> Result<(), String> {
                 if sk.plane_of(p).is_none() && sk.points[p].z.is_none() {
                     return Err(format!(
                         "{} is a point of a 2D sketch, with no place in space to relate",
-                        crate::io::entity_name(EntRef::point(p))
+                        name(EntRef::point(p))
                     ));
                 }
             }
@@ -3128,7 +3149,7 @@ pub fn validate(sk: &Sketch, kind: CKind, args: &[Arg]) -> Result<(), String> {
                 let ln = &sk.lines[l.i()];
                 let [a, b] = [ln.p1, ln.p2].map(|p| sk.world_point(p as usize));
                 if crate::space::norm(crate::space::sub(b, a)) <= kernels::MIN_LINE_LEN {
-                    return Err(format!("{} has no length in space", crate::io::entity_name(l)));
+                    return Err(format!("{} has no length in space", name(l)));
                 }
             }
             // a view's own points are on it by construction: the row would be identically zero
@@ -3143,8 +3164,8 @@ pub fn validate(sk: &Sketch, kind: CKind, args: &[Arg]) -> Result<(), String> {
                 return Err(format!(
                     "{} is drawn in {}, so where it stands along that view's normal is not a \
                      question: every point of a view is on it",
-                    crate::io::entity_name(args[0].ent()),
-                    crate::io::entity_name(args[1].ent())
+                    name(args[0].ent()),
+                    name(args[1].ent())
                 ));
             }
             if matches!(k, CKind::LineLine3 | CKind::CylinderTangentLine)
@@ -3153,8 +3174,8 @@ pub fn validate(sk: &Sketch, kind: CKind, args: &[Arg]) -> Result<(), String> {
                 return Err(format!(
                     "{} and {} are parallel in space, and parallel lines have no common \
                      perpendicular to measure",
-                    crate::io::entity_name(lines[0]),
-                    crate::io::entity_name(lines[1])
+                    name(lines[0]),
+                    name(lines[1])
                 ));
             }
             Ok(())

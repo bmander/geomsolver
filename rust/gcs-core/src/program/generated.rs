@@ -28,7 +28,7 @@ fn tool_of(sk: &Sketch, e: EntRef) -> Result<Tool, String> {
             CurveBody::Trace(_) => return Err("a tool curve is one written as a computed point or \
                                                generated; a traced curve cannot cut yet".into()),
         },
-        k => return Err(format!("a {} cannot cut a profile in the plane", k.as_str())),
+        k => return Err(format!("{} cannot cut a profile in the plane", k.a())),
     })
 }
 

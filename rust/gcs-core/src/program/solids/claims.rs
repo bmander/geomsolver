@@ -78,10 +78,10 @@ fn solid_claim(
                     Code::E040,
                     o.span,
                     format!(
-                        "`{}` relates solids, and `{}` is a {}",
+                        "`{}` relates solids, and `{}` is {}",
                         word.as_str(),
                         o.root.text,
-                        e.kind.as_str()
+                        e.kind.a()
                     ),
                 );
                 return;

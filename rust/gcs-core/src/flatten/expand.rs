@@ -224,9 +224,26 @@ impl<'a> Walk<'a> {
                         // and its body's calls name components from the file it was written in
                         module: comp.module,
                     };
+                    // a component reached again while it is still being expanded is a cycle:
+                    // said once, at the call that closes it, and not walked
+                    if let Some(at) = self.instantiating.iter().position(|c| std::ptr::eq(*c, comp)) {
+                        let name = |c: &Component| c.name.as_ref().map_or(String::new(), |n| n.text.clone());
+                        let through: Vec<String> =
+                            self.instantiating[at + 1..].iter().map(|c| format!("`{}`", name(c))).collect();
+                        let message = match through.is_empty() {
+                            true => format!("`{}` instantiates itself", name(comp)),
+                            false => format!("`{}` instantiates itself through {}", name(comp), through.join(", ")),
+                        };
+                        if !self.diagnostics.iter().any(|d| d.code == Code::E003 && d.span == st.span) {
+                            self.err(Code::E003, st.span, message);
+                        }
+                        continue;
+                    }
                     let mut instance_path = path.to_vec();
                     instance_path.push(PathStep::Instance(st.id));
+                    self.instantiating.push(comp);
                     self.body(&comp.body, &sc, &mut sub_vals, &instance_path, depth + 1);
+                    self.instantiating.pop();
                 }
                 StmtKind::Block(b) => {
                     if b.over.is_some() {
@@ -418,6 +435,21 @@ impl<'a> Walk<'a> {
         n: usize,
         edges: Option<(&Name, &[(Ref, Scope)])>,
     ) {
+        // a block's index and its edge binder are names of each copy, and one over a name the
+        // enclosing scope already has would read two ways in one body (E002): said once per block
+        let binders = b.binder.iter().chain(edges.map(|(v, _)| v));
+        for name in binders {
+            let taken = vals.contains_key(&name.text)
+                || scope.groups.contains(&name.text)
+                || self.names.contains(&format!("{}{}", scope.prefix(), name.text));
+            if taken && !self.diagnostics.iter().any(|d| d.code == Code::E002 && d.span == name.span) {
+                self.err(
+                    Code::E002,
+                    name.span,
+                    format!("`{}` is already a name here, and a block's binder may not shadow it", name.text),
+                );
+            }
+        }
         if n == 0 {
             return;
         }

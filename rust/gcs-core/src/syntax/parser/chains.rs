@@ -596,8 +596,8 @@ impl<'a> P<'a> {
                         self.errs.push(SynErr {
                             span: links[side].span_of_name(),
                             message: format!(
-                                "a corner joins lines and arcs; a {} has no ends to thread",
-                                links[side].kind().map(|k| k.as_str()).unwrap_or("thing")
+                                "a corner joins lines and arcs; {} has no ends to thread",
+                                links[side].kind().map(|k| k.a()).unwrap_or_else(|| "a thing".into())
                             ),
                         });
                         endless[side] = true;
@@ -806,8 +806,8 @@ impl<'a> P<'a> {
             self.errs.push(SynErr {
                 span: link.span_of_name(),
                 message: format!(
-                    "a corner joins lines and arcs; a {} has no ends to thread",
-                    kind.as_str()
+                    "a corner joins lines and arcs; {} has no ends to thread",
+                    kind.a()
                 ),
             });
             return None;
@@ -1078,10 +1078,10 @@ impl<'a> P<'a> {
                 self.errs.push(SynErr {
                     span: at,
                     message: format!(
-                        "`tangent` does not join a {} to a {} at a corner: they already meet \
+                        "`tangent` does not join {} to {} at a corner: they already meet \
                          there, and there is no regular form left to state",
-                        a.as_str(),
-                        b.as_str()
+                        a.a(),
+                        b.a()
                     ),
                 });
                 None

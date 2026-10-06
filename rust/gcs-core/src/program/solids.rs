@@ -141,10 +141,10 @@ pub(super) fn solids(
             say(
                 at,
                 format!(
-                    "`{}` relates solids, and `{}` is a {}",
+                    "`{}` relates solids, and `{}` is {}",
                     word.as_str(),
                     bad.0.root.text,
-                    bad.1.kind.as_str()
+                    bad.1.kind.a()
                 ),
             );
             continue;
@@ -188,11 +188,11 @@ pub(super) fn solids(
                 Code::E040,
                 r.span,
                 format!(
-                    "a {} is asked of a {}, and `{}` is a {}",
+                    "a {} is asked of {}, and `{}` is {}",
                     if want == EntKind::Solid { "picture" } else { "view" },
-                    want.as_str(),
+                    want.a(),
                     r.root.text,
-                    e.kind.as_str()
+                    e.kind.a()
                 ),
             )),
             None => Err((Code::E101, r.span, format!("no such entity: `{}`", r.root.text))),

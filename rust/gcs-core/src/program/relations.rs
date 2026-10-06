@@ -1,7 +1,7 @@
 //! Resolve constraint arguments and apply gauges.
 
 use super::resolve::{follow, Resolver};
-use super::{Code, Diag};
+use super::{Code, Diag, SourceMap};
 use crate::constraints::{Arg as CArg, CKind, Constraint, SpecKind};
 use crate::ir::{PathStep, Relation, ResolvedRelation, Statement as Stmt};
 use crate::model::{EntKind, EntRef, Field, Sketch};
@@ -37,9 +37,6 @@ pub(crate) fn settle(
         }
     }
     let kinds: Vec<Option<EntKind>> = w.ops.iter().map(kind_of).collect();
-    // a name that resolves to nothing is reported on the argument itself, where the message can
-    // say which name it was; here it only means the word cannot be settled
-    let named = |k: Option<EntKind>| k.map(|k| k.as_str()).unwrap_or("that");
     let kind = match w.fixity {
         Fixity::Prefix => {
             let Some(a) = kinds.first().copied().flatten() else {
@@ -47,7 +44,7 @@ pub(crate) fn settle(
                 return Err((w.word.span, m));
             };
             crate::constraints::prefix_op(word, a).ok_or_else(|| {
-                (w.word.span, format!("`{word}` does not apply to a {}", a.as_str()))
+                (w.word.span, format!("`{word}` does not apply to {}", a.a()))
             })?
         }
         Fixity::Infix => {
@@ -68,9 +65,9 @@ pub(crate) fn settle(
             }
             crate::constraints::infix_op(word, a, b, &|n| w.sel(n)).ok_or_else(|| {
                 let mut m = format!(
-                    "`{word}` does not relate a {} to a {}",
-                    named(Some(a)),
-                    named(Some(b))
+                    "`{word}` does not relate {} to {}",
+                    a.a(),
+                    b.a()
                 );
                 // a sphere touches a line or a sphere; a circle against one says two things
                 if word == "tangent" && (a == EntKind::Sphere || b == EntKind::Sphere) {
@@ -176,6 +173,7 @@ pub(super) fn constrain(
     r: &Relation,
     st: &Stmt,
     doc: &crate::syntax::Program,
+    map: &SourceMap,
     diags: &mut Vec<Diag>,
 ) -> Option<u32> {
     // **a word that relates two solids is a claim, judged and never solved** (§9.8).  Picked up
@@ -326,8 +324,8 @@ pub(super) fn constrain(
                         .unwrap_or(st.span),
                     stmt: Some(st.id),
                     message: format!(
-                        "a {} is a magnitude and cannot be negative{fix}",
-                        crate::syntax::snake(ckind.name())
+                        "{} is a magnitude and cannot be negative{fix}",
+                        crate::model::article(&crate::syntax::snake(ckind.name()))
                     ),
                 });
                 return None;
@@ -396,7 +394,8 @@ pub(super) fn constrain(
     // the inferred slots the source left out — read off the geometry, the one place that rule
     // lives, shared with the document reader and the bindings' constraint records — and what
     // the model refuses once they are in, in its own words, given this statement's span
-    if let Err(message) = io::seed_omitted(sk, ckind, &mut args, |i| left_out[i]) {
+    let name = |e: EntRef| map.name_of(e).cloned().unwrap_or_else(|| io::entity_name(e));
+    if let Err(message) = io::seed_omitted_named(sk, ckind, &mut args, |i| left_out[i], &name) {
         diags.push(Diag { code: Code::E061, span: st.span, stmt: Some(st.id), message });
         return None;
     }
@@ -531,10 +530,10 @@ pub(super) fn ent_arg(
         return Err((
             Code::E040,
             format!(
-                "`{}` is a {}, and a {} is wanted here",
+                "`{}` is {}, and {} is wanted here",
                 r.root.text,
-                e.kind.as_str(),
-                kind.as_str()
+                e.kind.a(),
+                kind.a()
             ),
         ));
     }
@@ -578,7 +577,7 @@ fn to_arg(sk: &Sketch, res: &Resolver, kind: SpecKind, a: &Arg) -> Result<CArg, 
             CArg::Shared { name: name.clone(), seed: *seed }
         }
         (k, other) => {
-            return Err((Code::E040, format!("a {} is wanted here, not {other:?}", k.as_str())))
+            return Err((Code::E040, format!("{} is wanted here, not {other:?}", k.a())))
         }
     })
 }

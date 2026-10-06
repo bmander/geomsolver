@@ -75,3 +75,30 @@ fn a_point_in_space_is_seeded_where_its_place_stands() {
     assert_eq!(at("m"), [3.0, 4.0, 5.0], "half way from p to r, in space");
     assert_eq!(at("s"), [3.0, 4.0, 0.0], "a place in the top's own coordinates");
 }
+
+/// A seed reads a point in space's third coordinate as it reads the other two.
+#[test]
+fn a_seed_reads_the_height_of_a_point_in_space() {
+    let e = read("use std\nq := point hint(x: 1, y: 2, z: 7)\nr := point hint(x: q.x, y: q.y, z: q.z + 1)\n");
+    let r = ent(&e, "r").i();
+    assert_eq!(e.sketch.world_point(r), [1.0, 2.0, 8.0]);
+    // and a point drawn in a plane still has two
+    refused("use std\nin std.front {\n  p := point hint(x: 1, y: 2)\n  s := point hint(x: p.z)\n}\n",
+            "E103", "a point has no `z`", "p.z");
+}
+
+/// `project` refused names its points and planes as the source does, never by a minted label.
+#[test]
+fn a_projection_refused_names_what_the_source_calls_things() {
+    refused("use std\nin std.front {\n  a := point\n  b := point hint(x: 1)\n}\na project b\n",
+            "E061", "both points are on std.front", "a project b");
+    refused("use std\nin std.front {\n  a := point\n}\nq := point hint(x: 1, y: 2, z: 3)\na project q\n",
+            "E061", "q is on no plane", "a project q");
+}
+
+/// A kind is said with its article: an axis, an arc.
+#[test]
+fn a_kind_is_said_with_its_article() {
+    refused("use std\nt := axis\nc := cone(axis: t) hint(half: 30deg)\n",
+            "E103", "`t` is an axis, and a cone's axis is a line", "t");
+}

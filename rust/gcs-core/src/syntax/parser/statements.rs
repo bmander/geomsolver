@@ -22,8 +22,8 @@ fn stamp_plane(stmts: &mut [Stmt], plane: &Ref, errs: &mut Vec<SynErr>) {
                     errs.push(SynErr {
                         span: st.span,
                         message: format!(
-                            "`in` puts points on a plane, and a {} has none of its own",
-                            d.kind.as_str()
+                            "`in` puts points on a plane, and {} has none of its own",
+                            d.kind.a()
                         ),
                     });
                 } else if !d.membership.join(plane, Source::Block) {

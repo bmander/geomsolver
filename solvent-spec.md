@@ -2145,8 +2145,8 @@ The numerical method is unspecified. Whatever the method, a conforming solver:
 | Code | Condition |
 |---|---|
 | E001 | redeclaration within a body |
-| E002 | block binder shadows outer name |
-| E003 | cyclic component instantiation |
+| E002 | a block's index or edge binder over a name already in scope |
+| E003 | cyclic component instantiation: a component reached again while it is being expanded |
 | E004 | a positional argument that binds a value parameter, or that follows a labelled one (§4.1) **[0.17]** |
 | E010 | withdrawn: an undecorated `tangent` between circles reads its branch off the seed (§9.5) |
 | E011 | closed path winding contradicts declared orientation |
@@ -2154,7 +2154,7 @@ The numerical method is unspecified. Whatever the method, a conforming solver:
 | E013 | boundary fails to close where closure demanded |
 | E014 | withdrawn: a hint expression reading an unseeded quantity reads its provisional seed (§6.4, §11) |
 | E015 | indexed hint inside `ring` |
-| E020 | `next`/`prev` in `repeat` |
+| E020 | `next`/`prev` where no `cycle` closes the copies: in a `repeat`, or in no block |
 | E021 | external entity referenced in `ring` not provably invariant |
 | E022 | nested `ring` (if unsupported) |
 | E030 | retired **[0.34]**: a `fix` states its numbers (E040 where it does not) |

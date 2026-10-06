@@ -195,6 +195,14 @@ used := lib.rung.Rung(p, q, len: 10)
     let linked = link(&mut p, &mut |_| Some(twice.into()));
     assert_eq!(linked.len(), 1, "{linked:?}");
     assert_eq!(linked[0].code.as_str(), "E071");
+    // and so is one defined twice in the document itself: the first stands, the second is said
+    let (p, errs) = parse(&format!("{twice}use std\nin std.front {{\n  o := point\n  a := A(o)\n}}\n"));
+    assert!(errs.is_empty(), "{errs:?}");
+    let e = elaborate(&p);
+    let d: Vec<_> = e.diags.iter().filter(|d| d.code.as_str() == "E071").collect();
+    assert_eq!(d.len(), 1, "{:?}", e.diags.iter().map(|d| &d.message).collect::<Vec<_>>());
+    assert!(d[0].message.contains("`A` is defined twice; the first is at line 1"), "{}", d[0].message);
+    assert_eq!(d[0].span.lo as usize, twice.rfind("A(").unwrap());
 }
 
 /// **Nothing is imported bare** (§14.4): a module's component, param or group is written with

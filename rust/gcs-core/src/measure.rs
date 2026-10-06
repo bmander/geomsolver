@@ -113,7 +113,7 @@ impl Measured {
                     "`{}` measures {}, and was given {}",
                     m.text(&args),
                     takes(m),
-                    kinds.iter().map(|k| format!("a {}", k.as_str())).collect::<Vec<_>>()
+                    kinds.iter().map(|k| k.a()).collect::<Vec<_>>()
                         .join(" and ")
                 ));
             }
@@ -195,7 +195,7 @@ pub fn measure(sk: &Sketch, m: Measure, es: &[EntRef]) -> Result<f64, String> {
             EntKind::Arc => sk.arcs[e.i()].radius,
             EntKind::Sphere => sk.spheres[e.i()].radius,
             EntKind::Cylinder => sk.cylinders[e.i()].param,
-            k => return Err(format!("a {} has no radius", k.as_str())),
+            k => return Err(format!("{} has no radius", k.a())),
         })
         .abs(),
         (Measure::Distance, [a, b]) if a.kind == EntKind::Point && b.kind == EntKind::Point => {

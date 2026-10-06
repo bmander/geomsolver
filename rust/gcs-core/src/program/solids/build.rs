@@ -189,9 +189,9 @@ pub(super) fn build_solid(
                     Code::E081,
                     axis.span,
                     format!(
-                        "a face turns about a line, and `{}` is a {}",
+                        "a face turns about a line, and `{}` is {}",
                         axis.root.text,
-                        ax.kind.as_str()
+                        ax.kind.a()
                     ),
                 );
                 return None;
@@ -245,7 +245,7 @@ pub(super) fn build_solid(
                     say(
                         Code::E080,
                         at,
-                        format!("a body is made of solids, and this is a {}", e.kind.as_str()),
+                        format!("a body is made of solids, and this is {}", e.kind.a()),
                     );
                     return None;
                 }
@@ -281,7 +281,7 @@ fn one_face(
             say(
                 Code::E080,
                 st.span,
-                format!("a swept solid is written over a face, and this is a {}", e.kind.as_str()),
+                format!("a swept solid is written over a face, and this is {}", e.kind.a()),
             );
             None
         }
