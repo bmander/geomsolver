@@ -485,8 +485,8 @@ waist union bars
 fn what_rung_two_cannot_round_yet_is_refused_with_its_reason() {
     // a pin off the ball's centre meets it on a traced curve: no ball rolls along it in closed form
     refused(
-        &format!("{KNOB}pc := point hint(x: 3, y: 44)\nfix(x == 3, y == 44) pc\npin_k := circle(center: pc) hint(r: 2)\n\
-                  radius(2) pin_k\npin := solid(face(pin_k), from: -20mm, to: 20mm)\nnub := fillet(pin, ball, r: 0.5mm)\n"),
+        &format!("{KNOB}in std.front {{\npc := point hint(x: 3, y: 44)\nfix(x == 3, y == 44) pc\npin_k := circle(center: pc) hint(r: 2)\n\
+                  radius(2) pin_k\n}}\npin := solid(face(pin_k), from: -20mm, to: 20mm)\nnub := fillet(pin, ball, r: 0.5mm)\n"),
         Code::E085,
         "rung 2",
     );
