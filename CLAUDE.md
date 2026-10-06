@@ -314,10 +314,11 @@ planes (flush or open), `derive` finds a `Corner` first (`cornered`: the ball's 
 face, by Cramer), shortens each piece to the section through it (`Band::shorten` too: bands are
 asked after corners), and joins the three to it (`Blend::corners`, indexed after the pieces in
 `joins`). Its piece is `brep::fillet::corner`: the cell (vertex, edge feet, touches, centre) less the
-ball, built directly; the recipe's `"corners"`, glued; facets mesh it (`brep_prim`); the field is six
-half-space slabs bounded, less a half disc turned. Native: a fillet with corners is OCCT's own
-`MakeFillet` over every edge (`"whole"`). `glued` merges two of `a`'s vertices one of `b`'s meets
-(three runs meet only through their corner). Open: open traced edges, mitres (two fillets, the
+ball, built directly, once (`Corner::piece`); the recipe's `"corners"`, glued; facets mesh it
+(`brep_prim`); the field is six half-space slabs bounded, less a disk turned; native, the same cell
+from OCCT's prisms in common, less a revolved half disc (`Session::corner`), fused with the pieces.
+A fillet's field leaves are folded in pairs (`in_pairs`: a field's depth is bounded). `glued` merges
+two of `a`'s vertices one of `b`'s meets (three runs meet only through their corner). Open: open traced edges, mitres (two fillets, the
 third edge sharp), corners of curved faces or unequal radii, variable radius, B-spline faces
 (rung 3), rung 4.
 **Continuous motion solids:** `removal := solid(tool, under: generating, from: -30deg, to: 30deg)`

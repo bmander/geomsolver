@@ -943,3 +943,23 @@ fn what_a_corner_cannot_round_is_refused() {
         half := solid(half_f, depth: 10mm)\nall := fillet(half, half, r: 2mm)\nbody := solid(half)\nall cut body\n";
     refused(half, Code::E085, "rung 3");
 }
+
+#[test]
+fn a_many_sided_prism_rounded_all_over_reads_as_a_field() {
+    // sixteen sides: forty-eight runs and thirty-two corners, their material unioned in pairs so the
+    // field stands few unions deep (folded one by one, it stood past the depth a field allows)
+    let (n, big, h, r) = (16, 20.0, 10.0, 2.0);
+    let tri: Vec<[f64; 2]> = (0..n).map(|k| {
+        let a = std::f64::consts::TAU * k as f64 / n as f64;
+        [30.0 + big * a.cos(), 25.0 + big * a.sin()]
+    }).collect();
+    // Steiner over the prism inset by `r`: its sides' exterior angles turn through 2π in all
+    let inset = big * (PI / n as f64).cos() - r;
+    let p2 = 2.0 * n as f64 * inset * (PI / n as f64).tan();
+    let (a2, h2) = (p2 * inset / 2.0, h - 2.0 * r);
+    let rounded = a2 * h2 + (2.0 * a2 + p2 * h2) * r + PI * r * r / 2.0 * p2 + PI * r * r * h2 + 4.0 * PI * r * r * r / 3.0;
+    let e = read(&format!("unit mm\n{}prism := solid(gon_f, depth: {h}mm)\nall := fillet(prism, prism, r: {r}mm)\n\
+        body := solid(prism)\nall cut body\n", polygon("gon_f", &tri)));
+    assert_volume(volume(&e, "body"), rounded);
+    field_agrees(&e, "body");
+}

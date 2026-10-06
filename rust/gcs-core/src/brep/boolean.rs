@@ -125,22 +125,23 @@ pub fn glued(a: &Brep,b: &Brep,tol: f64) -> Option<Brep> {
     // two of `a`'s (two pieces `b` joins, each with its own copy of the point it ends at) makes
     // them one
     let mut vertex_of: BTreeMap<u32,u32> = BTreeMap::new();
-    let mut same_as: BTreeMap<u32,u32> = BTreeMap::new();
-    let root = |same_as: &BTreeMap<u32,u32>,mut v: u32| { while let Some(&w) = same_as.get(&v) { v = w; } v };
+    let mut same = crate::graph::UnionFind::new(a.vertices.len());
+    let mut merged = false;
     for (&eb,&(ea,flip)) in &edge_of {
         let (vb,va) = (b.edges[eb].v,a.edges[ea as usize].v);
         let va = if flip { [va[1],va[0]] } else { va };
         for k in 0..2 {
-            let to = root(&same_as,va[k]);
-            match vertex_of.get(&vb[k]).map(|&w| root(&same_as,w)) {
-                Some(w) if w != to => { same_as.insert(to,w); }
+            match vertex_of.get(&vb[k]) {
+                Some(&w) if same.find(w as usize) != same.find(va[k] as usize) => { same.union(w as usize,va[k] as usize); merged = true; }
                 Some(_) => {}
-                None => { vertex_of.insert(vb[k],to); }
+                None => { vertex_of.insert(vb[k],va[k]); }
             }
         }
     }
-    for e in &mut out.edges { e.v = e.v.map(|v| root(&same_as,v)); }
-    for v in vertex_of.values_mut() { *v = root(&same_as,*v); }
+    if merged {
+        for e in &mut out.edges { e.v = e.v.map(|v| same.find(v as usize) as u32); }
+        for v in vertex_of.values_mut() { *v = same.find(*v as usize) as u32; }
+    }
     for (i,v) in b.vertices.iter().enumerate() {
         if !vertex_of.contains_key(&(i as u32)) { vertex_of.insert(i as u32,out.vertices.len() as u32); out.vertices.push(v.clone()); }
     }

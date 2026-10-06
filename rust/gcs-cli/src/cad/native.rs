@@ -113,6 +113,44 @@ impl Session {
         }
         self.result(unsafe { solvent_cad_face(self.0,ids.as_ptr(),ids.len() as c_int) })
     }
+    /// A fillet's corner (the recipe's `corners`): the trihedron at its vertex cut by the three
+    /// sections through the ball's centre — six half-spaces, each a prism of a large square
+    /// standing behind its plane, in common — less the ball, a half disc turned about a line
+    /// through its centre. OCCT's construction of what this kernel builds face by face.
+    fn corner(&self,c: &Json) -> Result<c_int,String> {
+        use gcs_core::json::object;
+        use gcs_core::space::{add,norm,scale,sub};
+        let (vertex,centre,r) = (v(c,"vertex"),v(c,"centre"),field(c,"radius").as_f64());
+        let toward: Vec<[f64;3]> = field(c,"toward").arr().iter().map(|m| { let a = m.arr(); [a[0].as_f64(),a[1].as_f64(),a[2].as_f64()] }).collect();
+        let toward: [[f64;3];3] = toward.try_into().map_err(|_| "a corner stands between three faces")?;
+        let reach = 4.*(norm(sub(centre,vertex))+r);
+        let vector = |a: [f64;3]| Json::Arr(a.iter().map(|&x| x.into()).collect());
+        let line = |a: [f64;3],b: [f64;3]| object([("kind","line".into()),("start",vector(a)),("end",vector(b))]);
+        // the half-space behind the plane through `o` square to `n`
+        let behind = |o: [f64;3],n: [f64;3]| -> Result<c_int,String> {
+            let f = gcs_core::brep::geom::Frame::about(o,n);
+            let at = |a: f64,b: f64| add(o,add(scale(f.x,a*reach),scale(f.y,b*reach)));
+            let square = vec![line(at(-1.,-1.),at(1.,-1.)),line(at(1.,-1.),at(1.,1.)),line(at(1.,1.),at(-1.,1.)),line(at(-1.,1.),at(-1.,-1.))];
+            let profile = object([("loops",Json::Arr(vec![Json::Arr(square)])),("origin",vector(o)),("normal",vector(f.z))]);
+            self.primitive(&object([("kind","prism".into()),("profile",profile),("from",(-reach).into()),("to",0.0.into())]),&BTreeMap::new())
+        };
+        let mut cell: Option<c_int> = None;
+        let sections = gcs_core::brep::fillet::corner_sections(vertex,centre,toward);
+        for (o,n) in sections.map(|e| (centre,e)).into_iter().chain(toward.map(|m| (vertex,scale(m,-1.)))) {
+            let slab = behind(o,n)?;
+            cell = Some(match cell { None => slab,Some(x) => self.boolean(x,slab,"bound")? });
+        }
+        let axis = toward[0];
+        let u = gcs_core::brep::geom::Frame::about(centre,axis).x;
+        let normal = gcs_core::space::cross(u,axis);
+        let arc = object([("kind","circle".into()),("center",vector(centre)),("normal",vector(normal)),("x_dir",vector(u)),
+            ("radius",r.into()),("angles",Json::Arr(vec![(-std::f64::consts::FRAC_PI_2).into(),std::f64::consts::FRAC_PI_2.into()]))]);
+        let half = vec![arc,line(add(centre,scale(axis,r)),add(centre,scale(axis,-r)))];
+        let profile = object([("loops",Json::Arr(vec![Json::Arr(half)])),("origin",vector(centre)),("normal",vector(normal))]);
+        let ball = self.primitive(&object([("kind","revolve".into()),("profile",profile),("origin",vector(centre)),
+            ("axis",vector(axis)),("angle",std::f64::consts::TAU.into())]),&BTreeMap::new())?;
+        self.boolean(cell.ok_or("a corner with no cell")?,ball,"cut")
+    }
     fn primitive(&self,node: &Json,shapes: &BTreeMap<i64,c_int>) -> Result<c_int,String> {
         let profile = field(node,"profile");
         let kind = field(node,"kind").as_str();
@@ -295,20 +333,6 @@ impl Session {
                         }
                     }
                     id
-                } else if field(node,"kind").as_str() == "fillet" && node.get("whole").is_some() {
-                    // where its edges meet at corners: OCCT's own fillet of every edge of the
-                    // operands' union, less the union (or the union less it, the ball taking
-                    // material away)
-                    let w = field(node,"whole");
-                    let mut union: Option<c_int> = None;
-                    for o in field(w,"operands").arr() {
-                        let s = shapes[&o.as_i64()];
-                        union = Some(match union { None => s,Some(u) => self.boolean(u,s,"on")? });
-                    }
-                    let union = union.ok_or("a fillet with no operands")?;
-                    let points: Vec<[f64;3]> = field(w,"points").arr().iter().map(|p| { let a = p.arr(); [a[0].as_f64(),a[1].as_f64(),a[2].as_f64()] }).collect();
-                    let filleted = self.fillet(union,field(w,"radius").as_f64(),&points)?;
-                    if matches!(field(w,"concave"),Json::Bool(true)) { self.boolean(filleted,union,"cut")? } else { self.boolean(union,filleted,"cut")? }
                 } else if field(node,"kind").as_str() == "fillet" {
                     // each edge's piece built as any primitive is, and fused
                     let mut id: Option<c_int> = None;
@@ -330,6 +354,11 @@ impl Session {
                         let p = if concave { self.boolean(filleted,union,"cut")? } else { self.boolean(union,filleted,"cut")? };
                         id = Some(match id { None => p,Some(sum) => self.boolean(sum,p,"on")? });
                     } }
+                    // a corner's patch of the ball: its cell less the ball, by OCCT's own primitives
+                    for c in node.get("corners").map(Json::arr).unwrap_or_default() {
+                        let p = self.corner(c)?;
+                        id = Some(match id { None => p,Some(sum) => self.boolean(sum,p,"on")? });
+                    }
                     id.ok_or("a fillet with no pieces")?
                 } else if field(node,"kind").as_str() == "placed" {
                     let matrix: Vec<_> = field(node,"matrix").arr().iter().map(Json::as_f64).collect();

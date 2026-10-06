@@ -414,7 +414,7 @@ fn build(
         // a ball rolled along a traced loop: its piece's boundary meshed to the sheet's flatness
         built.extend(blend.rolls.iter().map(|roll| super::fillet::brep_prim(&roll.rolled.piece, roll.mm, |p| roll.model(p), origin, unit, &name)));
         // a corner's patch of the ball, likewise
-        built.extend(blend.corners.iter().map(|c| c.brep().ok().and_then(|b| super::fillet::brep_prim(&b, 1.0, |p| p, origin, unit, &name))));
+        built.extend(blend.corners.iter().map(|c| super::fillet::brep_prim(&c.piece, 1.0, |p| p, origin, unit, &name)));
         let mut term = Term::Empty;
         for b in built {
             let Some(b) = b else { return Term::Empty };

@@ -354,7 +354,7 @@ pub(crate) fn derive(sk: &Sketch, si: usize) -> Result<Blend, String> {
             };
             let Some((piece, hollow, piece_ends, piece_bands)) = rounded else { continue };
             ends.extend(piece_ends.into_iter().map(|e| End { piece: pieces.len(), ..e }));
-            pieces.push(piece.in_units(mm, origin));
+            pieces.push(piece);
             bands.push((ei, [first, second], piece_bands));
             hollow
         };
@@ -375,30 +375,29 @@ pub(crate) fn derive(sk: &Sketch, si: usize) -> Result<Blend, String> {
     // **three of its straight edges meeting at a corner between three planes**: the ball touching
     // all three stands at the corner, a patch of it there; each edge's piece stops at the section
     // through its centre, the corner's piece glued to all three
-    let mut corners = Vec::new();
+    // (pieces, bands and corners all in the boundary's millimetres until the blend is made)
+    let mut corners: Vec<Corner> = Vec::new();
     let (mut corner_joins, mut cornered_at) = (Vec::new(), std::collections::BTreeSet::new());
     let mut at_vertex = std::collections::BTreeMap::<u32, Vec<&End>>::new();
     for e in &ends { at_vertex.entry(e.vertex).or_default().push(e); }
     for (&v, at) in &at_vertex {
-        let Some(corner) = cornered(&brep, &table, v, at, &pieces, r.value * mm, concave, tol)? else { continue };
-        // each piece shortened at this end by its setback, in model units
-        for (e, &setback) in at.iter().zip(&corner.setbacks) {
+        let Some((corner, setbacks)) = cornered(&brep, &table, v, at, &pieces, r.value * mm, concave, tol)? else { continue };
+        // each piece shortened at this end to the section through the ball's centre
+        for (e, &by) in at.iter().zip(&setbacks) {
             let p = &mut pieces[e.piece];
             let Carry::Prism { length } = p.carry else { unreachable!() };
-            let by = setback / mm;
-            if !(length - by > tol / mm) {
+            if !(length - by > tol) {
                 return Err(format!("the ball of {} is larger than its edge between corners can hold", e.label));
             }
             if e.end == 0 { p.section = p.section.offset(by); }
             p.carry = Carry::Prism { length: length - by };
-            for (_, band) in &mut bands[e.piece].2 { band.shorten(e.end, setback); }
-            corner_joins.push([e.piece, corners.len()]);
+            for (_, band) in &mut bands[e.piece].2 { band.shorten(e.end, by); }
+            corner_joins.push([e.piece, pieces.len() + corners.len()]);
         }
         cornered_at.insert(v);
-        let model = |q: V| -> V { std::array::from_fn(|k| q[k] / mm + origin[k]) };
-        corners.push(Corner { vertex: model(corner.vertex), centre: model(corner.centre), r: r.value, toward: corner.toward });
+        corners.push(corner);
     }
-    let ends: Vec<End> = ends.iter().filter(|e| !cornered_at.contains(&e.vertex)).cloned().collect();
+    ends.retain(|e| !cornered_at.contains(&e.vertex));
     // an end that meets nothing turns a corner — unless an edge refused is what it was to run on
     // into (leaving their vertex its way), whose reason says more
     let mut joins = paired(&ends, tol).map_err(|(end, refusal)| {
@@ -412,7 +411,7 @@ pub(crate) fn derive(sk: &Sketch, si: usize) -> Result<Blend, String> {
     })?;
     if let Some((_, why)) = failed.into_iter().next() { return Err(why); }
     // a corner's joins name it after the pieces
-    joins.extend(corner_joins.into_iter().map(|[p, c]| [p, pieces.len() + c]));
+    joins.extend(corner_joins);
     // **a ball no larger than each face holds**, over each piece's stretch
     for (ei, uses, checks) in &bands {
         let at = Edge { brep: &brep, located: &located, table: &table, edge: *ei, uses: *uses, tol };
@@ -426,31 +425,37 @@ pub(crate) fn derive(sk: &Sketch, si: usize) -> Result<Blend, String> {
                 vertex are rung 3", f.label));
         }
     }
+    let pieces = pieces.into_iter().map(|p| p.in_units(mm, origin)).collect();
+    let corners = corners.into_iter().map(|c| c.in_units(mm, origin)).collect::<Result<_, _>>()?;
     Ok(Blend { pieces, corners, joins, rolls, concave })
 }
 
 /// A corner a fillet rounds with a patch of its ball, in model units: where the three faces meet,
-/// the ball's centre and radius, and the directions from each face toward it.
-#[derive(Clone, Debug, PartialEq)]
-pub struct Corner { pub vertex: V, pub centre: V, pub r: f64, pub toward: [V; 3] }
+/// the ball's centre and radius, the directions from each face toward it, and its piece — the
+/// corner's cell less the ball (`brep::fillet::corner`), built once, when the corner is put in
+/// model units (`in_units`).
+#[derive(Clone, Debug)]
+pub struct Corner { pub vertex: V, pub centre: V, pub r: f64, pub toward: [V; 3], pub piece: std::rc::Rc<Brep> }
 
 impl Corner {
-    /// Its piece: the corner's cell less the ball (`brep::fillet::corner`), in model units.
-    pub fn brep(&self) -> Result<Brep, String> {
-        let tol = 1e-9 * (1.0 + norm(sub(self.centre, self.vertex)));
-        crate::brep::fillet::corner(self.vertex, self.centre, self.r, self.toward, tol)
+    /// The corner of a boundary in its millimetres, in model units about the world's origin
+    /// (`per` millimetres a model unit, its origin `origin`), its piece built there.
+    fn in_units(self, per: f64, origin: V) -> Result<Corner, String> {
+        let model = |q: V| -> V { std::array::from_fn(|k| q[k] / per + origin[k]) };
+        let (vertex, centre, r) = (model(self.vertex), model(self.centre), self.r / per);
+        let tol = 1e-9 * (1.0 + norm(sub(centre, vertex)));
+        let piece = crate::brep::fillet::corner(vertex, centre, r, self.toward, tol)?;
+        Ok(Corner { vertex, centre, r, toward: self.toward, piece: std::rc::Rc::new(piece) })
     }
 }
 
-/// A corner worked out in the boundary's millimetres, and how far back each end at it stops.
-struct Cornered { vertex: V, centre: V, toward: [V; 3], setbacks: Vec<f64> }
-
-/// Whether the flush ends `at` vertex `v` make a corner the ball rounds: three, of straight
-/// pieces, between three planes; the ball of radius `r` touching all three. `Err` where it is
-/// one but no ball fits.
+/// Whether the ends `at` vertex `v` make a corner the ball rounds: three, of straight pieces,
+/// between three planes, each piece's ball there the one touching all three faces. The corner (its
+/// piece not yet built) and how far back each end stops, in the boundary's millimetres; `Err`
+/// where it is one but no ball fits.
 #[allow(clippy::too_many_arguments)]
 fn cornered(brep: &Brep, table: &[Vec<Use>], v: u32, at: &[&End], pieces: &[Piece], r: f64, concave: bool, tol: f64)
-    -> Result<Option<Cornered>, String> {
+    -> Result<Option<(Corner, Vec<f64>)>, String> {
     if at.len() != 3 || at.iter().any(|e| !matches!(pieces[e.piece].carry, Carry::Prism { .. })) { return Ok(None); }
     let mut faces: Vec<usize> = at.iter().flat_map(|e| table[e.edge].iter().map(|u| u.0)).collect();
     faces.sort_unstable();
@@ -465,25 +470,25 @@ fn cornered(brep: &Brep, table: &[Vec<Use>], v: u32, at: &[&End], pieces: &[Piec
     };
     let (Some(m0), Some(m1), Some(m2)) = (toward(f0), toward(f1), toward(f2)) else { return Ok(None) };
     let m = [m0, m1, m2];
+    if dot(m[0], cross(m[1], m[2])).abs() < 1e-9 { return Ok(None); }
+    // (c − vertex) · m_i = r
     let vertex = brep.vertices[v as usize].p;
-    // (c − vertex) · m_i = r, by Cramer's rule
-    let det = |a: V, b: V, c: V| dot(a, cross(b, c));
-    let d = det(m[0], m[1], m[2]);
-    if d.abs() < 1e-9 { return Ok(None); }
-    let cols = |k: usize| -> V { [m[0][k], m[1][k], m[2][k]] };
-    let rhs = [r; 3];
-    let w = [det(rhs, cols(1), cols(2)) / d, det(cols(0), rhs, cols(2)) / d, det(cols(0), cols(1), rhs) / d];
+    let w = crate::brep::ssi::solve3(m, [r; 3]);
     let centre = add(vertex, w);
-    // each end's setback: the centre's foot along its edge, from the vertex
-    let setbacks = at.iter().map(|e| {
-        let ed = &brep.edges[e.edge];
-        let other = brep.vertices[ed.v[1 - e.end] as usize].p;
-        dot(w, unit(sub(other, vertex)))
-    }).collect::<Vec<_>>();
+    // each end's setback, the centre's foot along its edge from the vertex — where each piece's
+    // ball, carried that far along it, must be this one
+    let along = |e: &End| { let ed = &brep.edges[e.edge]; unit(sub(brep.vertices[ed.v[1 - e.end] as usize].p, vertex)) };
+    let setbacks: Vec<f64> = at.iter().map(|e| dot(w, along(e))).collect();
+    if at.iter().zip(&setbacks).any(|(e, &by)| {
+        let p = &pieces[e.piece];
+        let ball = add(p.at(e.end as f64).lift(p.wedge.centre[0], p.wedge.centre[1]), scale(along(e), by));
+        norm(sub(ball, centre)) > 8.0 * tol
+    }) { return Ok(None); }
     if setbacks.iter().any(|&s| !(s > tol)) {
         return Err(format!("the corner of {} is not one a ball rounds", at[0].label));
     }
-    Ok(Some(Cornered { vertex, centre, toward: m, setbacks }))
+    let corner = Corner { vertex, centre, r, toward: m, piece: std::rc::Rc::new(Brep::default()) };
+    Ok(Some((corner, setbacks)))
 }
 
 /// Every solid fillet `f` reads, once each: what either side stands for (`stands_for`).
@@ -742,7 +747,7 @@ impl Band {
                 *length -= by;
             }
             Band::Sleeve { section, length, .. } => {
-                if end == 0 { section.o = add(section.o, scale(section.normal(), by)); }
+                if end == 0 { *section = section.offset(by); }
                 *length -= by;
             }
             Band::Meridian { .. } | Band::Arc { .. } => {}
