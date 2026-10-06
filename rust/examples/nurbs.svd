@@ -1,0 +1,16 @@
+// Presentation of nurbs.sv. Model geometry is independent of this drawing.
+model m from "nurbs.sv"
+
+sheet nurbs {
+  size (297mm, 210mm)
+  label "RATIONAL SPLINES" at (14mm, 18mm)
+  label "Four weighted control points draw a quarter circle exactly; the same four unweighted do not" at (14mm, 28mm)
+  label "WEIGHTED / POLYNOMIAL" at (24mm, 52mm)
+  label "DOME" at (190mm, 52mm)
+  sketch curves(m) at (34mm, 140mm) scale 1.6
+  measure distance(m.o, m.bead) in curves offset 4mm
+  measure distance(m.p, m.slider) in curves offset 4mm
+  view dome(m.dome) from isometric at (215mm, 120mm) scale 1.4
+  label "Each bead rides its curve; only the weighted one stays at the radius." at (24mm, 170mm)
+  label "The weighted quarter turned: a hemisphere, two thirds pi r cubed." at (160mm, 170mm)
+}

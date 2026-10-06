@@ -38,7 +38,7 @@ in std.front {
   O := point
   fix((0, 0)) O
   up := point hint((0, 40))
-  O distance(0, along: x) up
+  O vertical up
   O distance(40, along: y) up
   ref := line(O, up)
 }
@@ -59,7 +59,7 @@ bankL := components.bank.Bank(crank.pin, plate.l.piv, fw: components.dims.fwA, d
 // derived view stands where its plane's origin is
 so := point hint((-components.dims.tp / 2, 0)) in std.side
 std.side.origin distance(-components.dims.tp / 2, along: x) so
-std.side.origin distance(0, along: y) so       // the same height: the crank axis
+std.side.origin horizontal so       // the same height: the crank axis
 side := components.side_view.SideView(so, dims: components.dims.vtwin_dims) in std.side
 
 // the two views agree: every height the side view shows is the front view's

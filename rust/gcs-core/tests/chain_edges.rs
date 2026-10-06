@@ -177,7 +177,7 @@ component Rect(w: Length, h: Length) {
 in std.front {
 r := Rect(w: 4mm, h: 3mm)
 r.a distance(2mm, along: x) o
-r.a distance(0mm, along: y) o
+r.a horizontal o
 ring := solid(r.profile, about: ax)
 repeat e in r.profile as i {
   s := surface(ring, edge: e)

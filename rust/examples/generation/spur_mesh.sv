@@ -22,13 +22,13 @@ in std.front {
   o2 := point hint((50, 0))
   fix((0, 0)) o1
   o1 distance(r1 + r2, along: x) o2
-  o1 distance(0, along: y) o2
+  o1 horizontal o2
 
   // the rack's pitch line, tangent to the pinion's pitch circle at the pitch point
   p0 := point hint((20, 0))
   p1 := point hint((20, 10))
   o1 distance(r1, along: x) p0
-  o1 distance(0, along: y) p0
+  o1 horizontal p0
   pitch_line := vertical line(p0, p1)
   p0 distance(10) p1
 

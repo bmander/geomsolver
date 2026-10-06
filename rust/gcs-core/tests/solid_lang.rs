@@ -330,7 +330,7 @@ vertical ax
 horizontal e0
 vertical e1
 p0 distance(10, along: x) q0
-p0 distance(0, along: y) q0
+p0 horizontal q0
 p0 distance(4) p1
 p1 distance(6) p2
 horizontal e2

@@ -196,9 +196,8 @@ fn a_regular_tetrahedron_stands_at_its_height() {
     for (p, q) in [(b0, b1), (b1, b2), (b2, b0)] {
         sk.add(Constraint::distance(EntRef::point(p), EntRef::point(q), a));
     }
-    sk.add(Constraint::new(CKind::HorizontalPoints, vec![
-        Arg::Ent(EntRef::point(b0)), Arg::Ent(EntRef::point(b1)),
-    ]));
+    let front = crate::common::view_of(&sk, page);
+    sk.add(Constraint::level(EntRef::point(b0), EntRef::point(b1), front.v));
     assert_eq!(ledger(&mut sk).dof, 0, "the base is determined");
     // the apex's plane: two free axes and a free place
     let (u, w) = (sk.axis([1.0, 0.3, 0.2], "u"), sk.axis([0.1, -0.6, 0.8], "w"));

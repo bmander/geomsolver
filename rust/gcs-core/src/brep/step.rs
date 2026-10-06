@@ -53,6 +53,14 @@ impl Out {
                 }).collect();
                 let (uk,vk) = (super::nurbs::distinct(&net.uknots),super::nurbs::distinct(&net.vknots));
                 let list = |k: &[(f64,usize)],f: &dyn Fn(&(f64,usize)) -> String| k.iter().map(f).collect::<Vec<_>>().join(",");
+                if let Some(w) = &net.weights {
+                    let w: Vec<String> = w.iter().map(|r| format!("({})",r.iter().map(|&w| real(w)).collect::<Vec<_>>().join(","))).collect();
+                    return Ok(self.add(format!("( BOUNDED_SURFACE() B_SPLINE_SURFACE({},{},({}),.UNSPECIFIED.,.F.,.F.,.F.) \
+                        B_SPLINE_SURFACE_WITH_KNOTS(({}),({}),({}),({}),.UNSPECIFIED.) GEOMETRIC_REPRESENTATION_ITEM() \
+                        RATIONAL_B_SPLINE_SURFACE(({})) REPRESENTATION_ITEM('') SURFACE() )",
+                        net.du,net.dv,rows.join(","),list(&uk,&|k| k.1.to_string()),list(&vk,&|k| k.1.to_string()),
+                        list(&uk,&|k| real(k.0)),list(&vk,&|k| real(k.0)),w.join(","))))
+                }
                 return Ok(self.add(format!("B_SPLINE_SURFACE_WITH_KNOTS('',{},{},({}),.UNSPECIFIED.,.F.,.F.,.F.,({}),({}),({}),({}),.UNSPECIFIED.)",
                     net.du,net.dv,rows.join(","),list(&uk,&|k| k.1.to_string()),list(&vk,&|k| k.1.to_string()),
                     list(&uk,&|k| real(k.0)),list(&vk,&|k| real(k.0)))))
@@ -87,16 +95,22 @@ impl Out {
     fn swept(&mut self,c: &Curve) -> usize {
         let Curve::BSpline(b) = c else { unreachable!("a swept surface's curve is a profile's B-spline") };
         let ids: Vec<String> = b.poles.iter().map(|&p| format!("#{}",self.point(p))).collect();
-        spline(self,b.degree,&ids,&b.knots)
+        spline(self,b.degree,&ids,&b.knots,b.weights.as_deref())
     }
 }
 
 /// A B-spline of `degree` through the poles `ids` over the full knot vector `knots` (written as
-/// its distinct knots and their multiplicities).
-fn spline(o: &mut Out,degree: usize,ids: &[String],knots: &[f64]) -> usize {
+/// its distinct knots and their multiplicities), rational where it has `weights`: the complex
+/// entity, its parts in the alphabetical order the standard asks.
+fn spline(o: &mut Out,degree: usize,ids: &[String],knots: &[f64],weights: Option<&[f64]>) -> usize {
     let distinct = super::nurbs::distinct(knots);
     let mults: Vec<String> = distinct.iter().map(|d| d.1.to_string()).collect();
     let ks: Vec<String> = distinct.iter().map(|d| real(d.0)).collect();
+    if let Some(w) = weights {
+        let w: Vec<String> = w.iter().map(|&w| real(w)).collect();
+        return o.add(format!("( BOUNDED_CURVE() B_SPLINE_CURVE({degree},({}),.UNSPECIFIED.,.F.,.F.) B_SPLINE_CURVE_WITH_KNOTS(({}),({}),.UNSPECIFIED.) \
+            CURVE() GEOMETRIC_REPRESENTATION_ITEM() RATIONAL_B_SPLINE_CURVE(({})) REPRESENTATION_ITEM('') )",ids.join(","),mults.join(","),ks.join(","),w.join(",")))
+    }
     o.add(format!("B_SPLINE_CURVE_WITH_KNOTS('',{degree},({}),.UNSPECIFIED.,.F.,.F.,({}),({}),.UNSPECIFIED.)",
         ids.join(","),mults.join(","),ks.join(",")))
 }
@@ -138,13 +152,15 @@ pub fn blend_net(b: &super::geom::Blend) -> Result<super::nurbs::Net,String> {
 
 /// A B-spline surface's numbers as a reader of the file compares them: its degrees, the size of
 /// its net, its distinct knots' counts, whether rational, the knots and their multiplicities along
-/// `u` then `v`, then its poles by `u` then `v`.
+/// `u` then `v`, then its poles by `u` then `v`, and a rational one's weights in the same order.
 pub fn net_numbers(net: &super::nurbs::Net) -> Vec<f64> {
     let (uk,vk) = (super::nurbs::distinct(&net.uknots),super::nurbs::distinct(&net.vknots));
-    let mut out = vec![net.du as f64,net.dv as f64,net.poles.len() as f64,net.poles[0].len() as f64,uk.len() as f64,vk.len() as f64,0.];
+    let rational = if net.is_rational() { 1. } else { 0. };
+    let mut out = vec![net.du as f64,net.dv as f64,net.poles.len() as f64,net.poles[0].len() as f64,uk.len() as f64,vk.len() as f64,rational];
     out.extend(uk.iter().map(|k| k.0)); out.extend(uk.iter().map(|k| k.1 as f64));
     out.extend(vk.iter().map(|k| k.0)); out.extend(vk.iter().map(|k| k.1 as f64));
     for col in &net.poles { for p in col { out.extend(p); } }
+    if let Some(w) = &net.weights { for col in w { out.extend(col); } }
     out
 }
 
@@ -258,7 +274,7 @@ fn pcurve(o: &mut Out,b: &Brep,fi: usize,u: &super::topo::Coedge,surface: usize,
             let Curve::BSpline(bs) = &**pc else { unreachable!() };
             let ids: Vec<String> = bs.poles.iter().map(|q| format!("#{}",p2(o,step_uv(&f.surface,[q[0],q[1]])))).collect();
             let knots: Vec<f64> = bs.knots.iter().map(|k| k-shift).collect();
-            spline(o,bs.degree,&ids,&knots)
+            spline(o,bs.degree,&ids,&knots,bs.weights.as_deref())
         }
         (_,Surface::Plane(pl),Curve::Line {p,d}) => {
             let (l,dl) = (pl.local(*p),pl.dir_local(*d));
@@ -274,7 +290,7 @@ fn pcurve(o: &mut Out,b: &Brep,fi: usize,u: &super::topo::Coedge,surface: usize,
         // a plane's parameters are an affine image of space: a B-spline's poles carried over
         (_,Surface::Plane(pl),Curve::BSpline(bs)) => {
             let ids: Vec<String> = bs.poles.iter().map(|&q| { let l = pl.local(q); format!("#{}",p2(o,[l[0],l[1]])) }).collect();
-            spline(o,bs.degree,&ids,&bs.knots)
+            spline(o,bs.degree,&ids,&bs.knots,bs.weights.as_deref())
         }
         // a cubic in the edge's parameter through its parameters at evenly spaced points, doubled
         // until it maps within a tenth of `FIT` of the edge between them (a chordal pcurve within
@@ -284,7 +300,7 @@ fn pcurve(o: &mut Out,b: &Brep,fi: usize,u: &super::topo::Coedge,surface: usize,
             &|t| u.pcurve.derivative(t,e,&f.surface,&b.vertices),&f.surface,e.t,&c.breaks(e.t)) => {
             let ids: Vec<String> = poles.iter().map(|&q| format!("#{}",p2(o,step_uv(&f.surface,q)))).collect();
             let knots: Vec<f64> = knots.iter().map(|k| k-shift).collect();
-            spline(o,3,&ids,&knots)
+            spline(o,3,&ids,&knots,None)
         }
         _ => {
             let off = |ta: f64,tz: f64| {
@@ -346,7 +362,7 @@ pub fn write(b: &Brep,name: &str,tol: f64) -> Result<String,String> {
             Curve::Ellipse(f,a,bb) => { let p = o.placement(f); o.add(format!("ELLIPSE('',#{p},{},{})",real(*a),real(*bb))) }
             Curve::BSpline(bs) => {
                 let ids: Vec<String> = bs.poles.iter().map(|&p| format!("#{}",o.point(p))).collect();
-                spline(&mut o,bs.degree,&ids,&bs.knots)
+                spline(&mut o,bs.degree,&ids,&bs.knots,bs.weights.as_deref())
             }
             // a loft's rail: the cubic through it, fitted within `FIT`, its parameter the rail's
             Curve::Iso(bl,u) => {
@@ -356,7 +372,7 @@ pub fn write(b: &Brep,name: &str,tol: f64) -> Result<String,String> {
                     None => return Err("a loft's rail could not be fitted (it is degenerate)".into()),
                 };
                 let ids: Vec<String> = fit.poles.iter().map(|&p| format!("#{}",o.point(p))).collect();
-                spline(&mut o,fit.degree,&ids,&fit.knots)
+                spline(&mut o,fit.degree,&ids,&fit.knots,None)
             }
             Curve::Traced(_) => {
                 let ts = samples(c,e.t,tol,&|a,z| distance(c.point((a+z)/2.),crate::space::lerp(c.point(a),c.point(z),0.5)));

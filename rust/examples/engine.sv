@@ -43,7 +43,7 @@ crank := engine.crankshaft.Crankshaft(std.side, std.front, std.side.origin, end.
 // rod 1's for cylinder 4, and a ghosted rod a half turn on for cylinders 2 and 3
 secA := point in std.top
 std.top.origin distance(engine.dims.back + 120mm, along: x) secA
-std.top.origin distance(0, along: y) secA
+std.top.origin horizontal secA
 rod1 := engine.conrod.ConRod(std.side, std.front, std.top, crank.t1[0].pin, end.bore, crank.pin_s[0], side.small[0], secA, draw_end: 1, draw_side: 1, draw_sec: 1, dims: engine.dims.engine_dims)
 rod2 := engine.conrod.ConRod(std.side, std.front, std.top, crank.t2[0].pin, end.bore, crank.pin_s[1], side.small[1], secA, draw_end: 0, draw_side: 1, draw_sec: 0, dims: engine.dims.engine_dims)
 rod3 := engine.conrod.ConRod(std.side, std.front, std.top, crank.t2[0].pin, end.bore, crank.pin_s[2], side.small[2], secA, draw_end: 0, draw_side: 1, draw_sec: 0, dims: engine.dims.engine_dims)

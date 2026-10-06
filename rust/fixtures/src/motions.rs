@@ -12,7 +12,7 @@ use std
 in std.front {
 private hub := point hint((3, 0))
 hub distance(3mm, along: u) std.front
-hub distance(0mm, along: v) std.front
+hub level(v) std.front
 private hub_up := point hint((3, 5))
 hub_up distance(3mm, along: u) std.front
 hub_up distance(5mm, along: v) std.front
@@ -28,10 +28,10 @@ use std
 in std.front {
 private hub := point hint((3, 0))
 hub distance(3mm, along: u) std.front
-hub distance(0mm, along: v) std.front
+hub level(v) std.front
 private hub_out := point hint((4, 0))
 hub_out distance(4mm, along: u) std.front
-hub_out distance(0mm, along: v) std.front
+hub_out level(v) std.front
 construction centerline tumbler := line(hub, hub_out)
 }
 turn := motion(about: tumbler)
@@ -43,7 +43,7 @@ use std
 in std.front {
 private a0 := point hint((2.5, 0))
 a0 distance(2.5mm, along: u) std.front
-a0 distance(0mm, along: v) std.front
+a0 level(v) std.front
 private a1 := point hint((2.5, 5))
 a1 distance(2.5mm, along: u) std.front
 a1 distance(5mm, along: v) std.front
@@ -57,16 +57,16 @@ pub fn slide_z(advance_mm: f64) -> String { format!("feed := motion(along: spind
 
 /// A translation along world x by `advance` per full turn.
 pub fn slide_x(advance_mm: f64) -> String {
-    format!("\
+    crate::levelled(format!("\
 use std
 in std.front {{
 private rail_end := point hint((10, 0))
 rail_end distance(10mm, along: u) std.front
-rail_end distance(0mm, along: v) std.front
+rail_end level(v) std.front
 construction centerline rail := line(std.origin, rail_end)
 }}
 feed := motion(along: rail, advance: {advance_mm}mm)
-")
+"))
 }
 
 /// The sweep line: `swept := solid(tool, under: NAME, from: A, to: B)`.
@@ -77,7 +77,7 @@ pub fn swept(motion: &str,from_deg: f64,to_deg: f64) -> String {
 /// A turn about the line through the page points (u0, v0) and (u1, v1)
 /// (page u is world x, page v is world z).
 pub fn turn_about(u0: f64,v0: f64,u1: f64,v1: f64) -> String {
-    format!("\
+    crate::levelled(format!("\
 use std
 in std.front {{
 private h0 := point hint(({u0}, {v0}))
@@ -89,19 +89,19 @@ h1 distance({v1}mm, along: v) std.front
 construction centerline hinge := line(h0, h1)
 }}
 turn := motion(about: hinge)
-")
+"))
 }
 
 /// A roll: the tool turned about the vertical through (3, 0) at `ratio` turns per turn of an
 /// observer turning about the spindle, so the two are near enough to beat against each other and
 /// a contact loop flickers open and closed.
 pub fn roll(ratio: f64) -> String {
-    format!("\
+    crate::levelled(format!("\
 use std
 in std.front {{
 private hub := point hint((3, 0))
 hub distance(3mm, along: u) std.front
-hub distance(0mm, along: v) std.front
+hub level(v) std.front
 private hub_up := point hint((3, 5))
 hub_up distance(3mm, along: u) std.front
 hub_up distance(5mm, along: v) std.front
@@ -110,7 +110,7 @@ construction centerline own := line(hub, hub_up)
 private spin := motion(about: own, ratio: {ratio})
 private observer := motion(about: spindle)
 turn := motion(spin, relative_to: observer)
-")
+"))
 }
 
 /// The tool spinning about its own vertical axis through (3, 0), seen from an observer turning
@@ -120,14 +120,14 @@ use std
 in std.front {
 private hub := point hint((3, 0))
 hub distance(3mm, along: u) std.front
-hub distance(0mm, along: v) std.front
+hub level(v) std.front
 private hub_up := point hint((3, 5))
 hub_up distance(3mm, along: u) std.front
 hub_up distance(5mm, along: v) std.front
 construction centerline own := line(hub, hub_up)
 private xend := point hint((5, 0))
 xend distance(5mm, along: u) std.front
-xend distance(0mm, along: v) std.front
+xend level(v) std.front
 construction centerline xaxis := line(std.origin, xend)
 }
 private spin := motion(about: own, ratio: 0.25)
@@ -160,7 +160,7 @@ use std
 in std.front {
 private xend := point hint((5, 0))
 xend distance(5mm, along: u) std.front
-xend distance(0mm, along: v) std.front
+xend level(v) std.front
 construction centerline xaxis := line(std.origin, xend)
 }
 ","xaxis"),
@@ -173,7 +173,7 @@ fix(origin == (0, 0, 0)) flat
 in flat {
   private k0 := point hint((0, 0.7071))
   private k1 := point hint((5, 0.7071))
-  k0 distance(0mm, along: u) flat
+  k0 level(u) flat
   k0 distance(0.7071mm, along: v) flat
   k1 distance(5mm, along: u) flat
   k1 distance(0.7071mm, along: v) flat
@@ -181,12 +181,12 @@ in flat {
 }
 ","kaxis"),
     };
-    format!("\
+    crate::levelled(format!("\
 use std
 in std.front {{
 private hub := point hint((2, 0))
 hub distance(2mm, along: u) std.front
-hub distance(0mm, along: v) std.front
+hub level(v) std.front
 private hub_up := point hint((2, 5))
 hub_up distance(2mm, along: u) std.front
 hub_up distance(5mm, along: v) std.front
@@ -195,5 +195,5 @@ construction centerline cradle := line(hub, hub_up)
 {axis}private spin := motion(about: cradle, ratio: {ratio})
 private observer := motion(about: {about})
 turn := motion(spin, relative_to: observer)
-")
+"))
 }

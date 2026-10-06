@@ -33,6 +33,8 @@ fn all_constraints(seed: u32) -> Sketch {
     // six control points: three spans, so a contact is checked on an interior span too
     let ctrl: Vec<usize> = (0..6).map(|_| pt(&mut sk, &mut rng)).collect();
     let sp = sk.spline(&ctrl).unwrap();
+    // the same polygon weighted: the rational basis (`curve::weigh`) under every contact kernel
+    let spw = sk.spline_weighted(&ctrl, None, Some(vec![1.0, 2.5, 0.6, 1.8, 0.9, 1.3])).unwrap();
     let fr = sk.fixed_plane(gcs_core::plane::Basis::page(), "f");
     // a plane held where it stands and one over two free axes, with `p` and `q` as images on
     // them — so a projection's planes are inferred exactly as a document's would be
@@ -93,11 +95,30 @@ fn all_constraints(seed: u32) -> Sketch {
     let dp = pt(&mut sk, &mut rng);
     sk.set_plane(dp, Some(pd));
     let s3 = EntRef::point(sp3);
+    // and a line drawn in the held view `p` is in, for an ordinate along a line of its own view;
+    // `cpb` is a second point of that view
+    let (ia, ib) = (pt(&mut sk, &mut rng), pt(&mut sk, &mut rng));
+    sk.set_plane(ia, Some(pa));
+    sk.set_plane(ib, Some(pa));
+    let in_pa = EntRef::line(sk.line(ia, ib));
+    let (pa_u, pa_v) = (EntRef::new(gcs_core::model::EntKind::Axis, sk.planes[pa].u as usize),
+        EntRef::new(gcs_core::model::EntKind::Axis, sk.planes[pa].v as usize));
+    let cpbe = EntRef::point(cpb);
+    // and the free plane's origin and axes, for an ordinate along its frame from its origin
+    let pc_o = EntRef::point(sk.planes[pc].origin as usize);
+    let (pc_u, pc_v) = (EntRef::new(gcs_core::model::EntKind::Axis, sk.planes[pc].u as usize),
+        EntRef::new(gcs_core::model::EntKind::Axis, sk.planes[pc].v as usize));
+    let worded = |mut c: Constraint, w: &str| {
+        let i = c.kind.word_slot().expect("an ordinate");
+        c.args[i] = Arg::Str(w.to_string());
+        c
+    };
 
     let (pe, qe) = (EntRef::point(p), EntRef::point(q));
     let (le1, le2) = (EntRef::line(l1), EntRef::line(l2));
     let (ce1, ce2, ae) = (EntRef::circle(c1), EntRef::circle(c2), EntRef::arc(arc));
     let spe = EntRef::spline(sp);
+    let spwe = EntRef::spline(spw);
     let e = |x: EntRef| Arg::Ent(x);
     // a dimension written as an expression, standing at the number it is worth until it is
     // evaluated: `Sketch::add` binds it to the free variable it names
@@ -111,11 +132,32 @@ fn all_constraints(seed: u32) -> Sketch {
         c.args[i] = Arg::Str(w.to_string());
         c
     };
+    let _ = fr;
     let cs = vec![
-        Constraint::new(CKind::CoordinateU, vec![e(pe), e(EntRef::plane(fr)), Arg::Num(-2.5)]),
-        Constraint::new(CKind::CoordinateV, vec![e(pe), e(EntRef::plane(fr)), Arg::Num(0.0)]),
-        fx(CKind::CoordinateU, vec![e(pe), e(EntRef::plane(fr))], "2 * local_u + 3", 4.0),
-        fx(CKind::CoordinateV, vec![e(pe), e(EntRef::plane(fr))], "-3 * local_v + 1", -2.0),
+        // an ordinate in every form its operands give it: along its view's own axes (the run
+        // and the rise), along a line drawn there, along an axis and a line in space, and along a
+        // plane's normal — and its zero over the same
+        Constraint::ordinate(pe, cpbe, pa_u, -2.5),
+        Constraint::ordinate(cpbe, pe, pa_v, 1.5),
+        Constraint::ordinate(pe, cpbe, in_pa, 2.0),
+        Constraint::ordinate(qe, s3, axis_b, 1.2),
+        Constraint::ordinate(EntRef::point(lc), qe, me1, -0.7),
+        Constraint::ordinate(qe, EntRef::point(lc), pce, 1.2),
+        Constraint::ordinate(s3, pe, pae, -0.8),
+        Constraint::level(pe, cpbe, pa_u),
+        Constraint::level(pe, cpbe, pa_v),
+        Constraint::level(pe, cpbe, in_pa),
+        Constraint::level(qe, s3, axis_a),
+        Constraint::level(qe, EntRef::point(lc), pce),
+        worded(Constraint::ordinate(pc_o, qe, pc_u, 1.5), "u"),
+        worded(Constraint::ordinate(pc_o, s3, pc_v, -0.5), "v"),
+        worded(Constraint::level(pc_o, qe, pc_v), "v"),
+        {
+            // the run said the other way, `along: left`
+            let mut c = Constraint::ordinate(pe, cpbe, pa_u, 2.5);
+            c.args[4] = Arg::Str("left".into());
+            c
+        },
         Constraint::coincident(pe, qe),
         Constraint::distance(pe, qe, 3.0),
         Constraint::new(CKind::Midpoint, vec![e(pe), e(le1)]),
@@ -124,8 +166,6 @@ fn all_constraints(seed: u32) -> Sketch {
         Constraint::drag_seen(s3, 1.0, 2.0, 0.3, 0.6, 0.4),
         Constraint::one_line(CKind::Horizontal, le1),
         Constraint::one_line(CKind::Vertical, le1),
-        Constraint::new(CKind::HorizontalPoints, vec![e(pe), e(qe)]),
-        Constraint::new(CKind::VerticalPoints, vec![e(pe), e(qe)]),
         Constraint::two_line(CKind::Parallel, le1, le2),
         Constraint::two_line(CKind::Perpendicular, le1, le2),
         Constraint::new(CKind::Angle, vec![e(le1), e(le2), Arg::Num(0.7)]),
@@ -165,14 +205,15 @@ fn all_constraints(seed: u32) -> Sketch {
             vec![e(qe), e(le1), Arg::Num(4.0), Arg::Str("left".into())],
         ),
         Constraint::new(CKind::AnnularDistance, vec![e(ce1), e(ae), Arg::Num(1.5)]),
-        Constraint::new(CKind::HorizontalDistance, vec![e(pe), e(qe), Arg::Num(2.5)]),
-        Constraint::new(CKind::VerticalDistance, vec![e(pe), e(qe), Arg::Num(-1.5)]),
         Constraint::point_on_spline(&sk, pe, spe),
         Constraint::point_on_spline(&sk, qe, spe),
         Constraint::spline_tangent_line(&sk, spe, le1),
         Constraint::spline_tangent_line(&sk, spe, le2),
         Constraint::spline_curvature(&sk, spe, ce1),
         Constraint::spline_curvature(&sk, spe, ae),
+        Constraint::point_on_spline(&sk, qe, spwe),
+        Constraint::spline_tangent_line(&sk, spwe, le2),
+        Constraint::spline_curvature(&sk, spwe, ce2),
         // a projection between two held planes, and the lift over a free plane and a held one
         Constraint::project(&sk, EntRef::point(dp), pe).expect("two images on two planes that fold"),
         Constraint::new(CKind::Lift, vec![e(EntRef::point(lc)), e(pce)]),
@@ -198,10 +239,6 @@ fn all_constraints(seed: u32) -> Sketch {
         // free plane and a held one
         Constraint::new(CKind::PointOnLine3, vec![e(qe), e(me1)]),
         Constraint::two_line(CKind::EqualLength3, me1, me2),
-        Constraint::new(CKind::PointPlaneDistance, vec![e(qe), e(pce), Arg::Num(1.2)]),
-        Constraint::new(CKind::PointPlaneDistance, vec![e(EntRef::point(lc)), e(pae), Arg::Num(-0.8)]),
-        Constraint::new(CKind::Ordinate3U, vec![e(qe), e(pce), Arg::Num(1.2)]),
-        Constraint::new(CKind::Ordinate3V, vec![e(s3), e(pae), Arg::Num(-0.8)]),
         Constraint::new(CKind::LineOnPlane, vec![e(me2), e(pce)]),
         Constraint::new(CKind::LineOnPlane, vec![e(me1), e(pae)]),
         // the midpoint and the mirror in a line, in space
@@ -247,8 +284,14 @@ fn all_constraints(seed: u32) -> Sketch {
         sided(fx(CKind::ParallelDistance, vec![e(le2), e(le1)], "s1", 4.0), "left"),
         sided(fx(CKind::PointLineDistance, vec![e(qe), e(le1)], "s2", 4.0), "right"),
         fx(CKind::AnnularDistance, vec![e(ce1), e(ae)], "z + 1", 1.5),
-        fx(CKind::HorizontalDistance, vec![e(pe), e(qe)], "g", 2.5),
-        fx(CKind::VerticalDistance, vec![e(pe), e(qe)], "-k", -1.5),
+        fx(CKind::Ordinate, vec![e(pe), e(cpbe), e(pa_u)], "g", 2.5),
+        fx(CKind::Ordinate, vec![e(pe), e(cpbe), e(pa_v)], "-k", -1.5),
+        fx(CKind::Ordinate, vec![e(pe), e(cpbe), e(in_pa)], "2 * ol + 1", 2.0),
+        {
+            let mut c = fx(CKind::Ordinate, vec![e(pe), e(cpbe), e(pa_u)], "gl", 2.5);
+            c.args[4] = Arg::Str("left".into());
+            c
+        },
         fx(CKind::Distance3, vec![e(pe), e(EntRef::point(lc))], "u3", 3.0),
         fx(CKind::PointLine3, vec![e(qe), e(me1)], "2 * v3 - 1", 2.0),
         fx(CKind::LineLine3, vec![e(me1), e(me2)], "w3 / 2", 1.5),
@@ -259,10 +302,12 @@ fn all_constraints(seed: u32) -> Sketch {
         },
         fx(CKind::Angle3, vec![e(me1), e(me2)], "t3 + 0.5", 0.9),
         fx(CKind::Angle3, vec![e(axis_b), e(me2)], "t3r + 0.5", 0.9),
-        fx(CKind::PointPlaneDistance, vec![e(qe), e(pce)], "n3 + 1", 1.2),
-        fx(CKind::PointPlaneDistance, vec![e(EntRef::point(lc)), e(pae)], "-2 * n4", 0.5),
-        fx(CKind::Ordinate3U, vec![e(s3), e(pbe)], "o3 + 1", 1.2),
-        fx(CKind::Ordinate3V, vec![e(qe), e(pae)], "-2 * o4", 0.5),
+        fx(CKind::Ordinate, vec![e(qe), e(EntRef::point(lc)), e(pce)], "n3 + 1", 1.2),
+        fx(CKind::Ordinate, vec![e(s3), e(pe), e(pae)], "-2 * n4", 0.5),
+        fx(CKind::Ordinate, vec![e(s3), e(qe), e(axis_b)], "o3 + 1", 1.2),
+        fx(CKind::Ordinate, vec![e(qe), e(EntRef::point(lc)), e(me2)], "-2 * o4", 0.5),
+        worded(fx(CKind::Ordinate, vec![e(pc_o), e(qe), e(pc_u)], "fu + 1", 1.0), "u"),
+        worded(fx(CKind::Ordinate, vec![e(pc_o), e(s3), e(pc_v)], "2 * fv", 1.0), "v"),
         fx(CKind::PlaneDistance, vec![e(pae), e(pce)], "3 * pd3", 0.5),
         fx(CKind::ArcLength, vec![e(ae)], "3 * al + 1", 7.5),
     ];

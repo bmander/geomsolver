@@ -583,7 +583,7 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
             .iter()
             .filter(|c| {
                 let e = c.error(sk);
-                let deg = crate::kernels::kernel(c.kind.kernel()).degree as i32;
+                let deg = crate::kernels::kernel(c.kernel()).degree as i32;
                 !e.is_nan() && e <= opts.tol * sk.extent().max(1.0).dpowi(deg)
             })
             .map(|c| c.id)

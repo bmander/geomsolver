@@ -50,6 +50,8 @@ pub struct Decl {
     pub seed_explicit: Vec<bool>,
     pub closed: bool,
     pub knots: Option<Vec<f64>>,
+    /// Settled by expansion: every text worked out.
+    pub weights: Option<Vec<f64>>,
     pub curve: Option<CurveSpec>,
     pub computed: Option<[(String, Span); 2]>,
     pub class: Classes,
@@ -90,6 +92,7 @@ impl From<syntax::Decl> for Decl {
             closed: d.close.is_some(),
             seed: d.seed,
             knots: d.knots,
+            weights: d.weights.map(|w| w.into_iter().map(|w| w.value).collect()),
             curve: d.curve,
             computed: d.computed,
             class: d.class,

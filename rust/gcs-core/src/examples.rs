@@ -172,7 +172,7 @@ pub fn jansen() -> Sketch {
 /// Build a named example.  `None` for an unknown name.
 pub fn example(name: &str) -> Option<Sketch> {
     Some(match name {
-        "solid_flange" | "solid_pulley" | "solid_elbow" | "solid_tray" | "solid_loft" => {
+        "solid_flange" | "solid_pulley" | "solid_elbow" | "solid_tray" | "solid_loft" | "nurbs" => {
             document(source(name)?, name)
         }
         "rect_fillets" => rect_fillets(100.0, 60.0, 10.0, 0.0),
@@ -264,7 +264,7 @@ pub fn bracket() -> Sketch {
 }
 
 /// The case library shown in the app: (label, key, one-line description).
-pub const CASES: [(&str, &str, &str); 43] = [
+pub const CASES: [(&str, &str, &str); 44] = [
     ("Mounting flange · solids", "solid_flange", "One stepped radial section turned about its axis, then a circular pattern of through holes; editable dimensions and three solid views."),
     ("V-belt pulley · solids", "solid_pulley", "A full revolution of a stepped section, with a revolved V-groove cutter and a shaft bore."),
     ("Hollow duct elbow · solids", "solid_elbow", "A hollow square section swept along a constrained circular arc; edit the guide angle, bend radius, or wall thickness."),
@@ -290,6 +290,7 @@ pub const CASES: [(&str, &str, &str); 43] = [
     ("Parallels & perpendiculars", "parallels", "direction classes: parallel/perpendicular/vertical (1 DOF left: slide along the base)"),
     ("Pythagoras, graphically", "pythagoras", "four a×b right triangles in a square of side a + b leave a square of side c; `claim P1 distance(c := hypot(a, b)) P2` is judged a theorem — edit a or b and it stays one"),
     ("Curve and follower", "spline_follower", "a cubic B-spline with a face held tangent to it and a point riding on it — drag a control point and the contact slides along the curve, across knots and all"),
+    ("Rational spline · exact circle", "nurbs", "four control points weighted `[1, w, w, 1]` draw a quarter circle exactly: a bead riding it is proved to stay at the radius, where the same points unweighted bulge to 30.53 and the claim is refuted; the weighted quarter turned is a hemisphere of ⅔πr³ to the last digit, written to STEP as a rational curve"),
     ("Belt over two pulleys", "belt_tangency", "each end on its circle and the line tangent to it — a double root: rank-deficient at every solution, yet nothing can move.  The second-order screen calls it rigid rather than 2 DOF"),
     ("Belt wrap · arc length", "belt_wrap", "an open belt over two pulleys, closed as one tangent chain, with nothing saying how far apart the pulleys are: `length(wrap) big` states the belt in contact with the big pulley — its radius times its sweep — and the centre distance follows.  Edit `wrap` and the second pulley moves"),
     ("Law of reflection · equal angles", "reflection", "a ray from a source strikes a mirror and goes on to a target, the strike placed by `incoming angle(m, outgoing) m` — the angle from the incoming ray to the mirror stated as the angle from the mirror to the outgoing one, with no number.  The classical proof, that the source's image, the strike and the target are collinear, is a `claim` the diagnosis judges a theorem"),
@@ -406,6 +407,7 @@ pub fn source(key: &str) -> Option<&'static str> {
         "solid_elbow" => Some(include_str!("../../examples/solid_elbow.sv")),
         "solid_tray" => Some(include_str!("../../examples/solid_tray.sv")),
         "solid_loft" => Some(include_str!("../../examples/solid_loft.sv")),
+        "nurbs" => Some(include_str!("../../examples/nurbs.sv")),
         "gear" => Some(GEAR),
         "gear_trace" => Some(GEAR_TRACE),
         "impossible_triangle" => Some(IMPOSSIBLE_TRIANGLE),

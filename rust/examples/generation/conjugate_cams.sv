@@ -30,7 +30,7 @@ in std.front {
   fix((40, 0)) o2
   lc := point hint((3, 0))
   o1 distance(off, along: x) lc
-  o1 distance(0, along: y) lc
+  o1 horizontal lc
 }
 
 lobe := Lobe(lc, a: a, b: b).p over u in (0, 360)

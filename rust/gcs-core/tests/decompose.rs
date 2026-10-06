@@ -66,15 +66,13 @@ fn unsupported_constraints_fall_back_to_numeric() {
 /// so it goes to the numeric residue on purpose, and the plan solver still comes out with it.
 #[test]
 fn a_run_is_numeric_residue_and_still_solves() {
-    use gcs_core::constraints::{Arg, CKind, Constraint};
+    use gcs_core::constraints::Constraint;
     use gcs_core::model::{EntRef, Sketch};
     let mut sk = Sketch::new();
     let a = sk.point(0.0, 0.0, true, "a");
     let b = sk.point(3.0, 1.0, false, "b");
-    let id = sk.add(Constraint::new(
-        CKind::HorizontalDistance,
-        vec![Arg::Ent(EntRef::point(a)), Arg::Ent(EntRef::point(b)), Arg::Num(30.0)],
-    ));
+    let f = crate::common::draw_in_front(&mut sk);
+    let id = sk.add(Constraint::ordinate(EntRef::point(a), EntRef::point(b), f.u, 30.0));
     let g = gcs_core::cgraph::build(&sk);
     assert_eq!(g.unsupported, vec![id]);
     let mut ps = PlanSolver::new(&sk, false);

@@ -39,7 +39,7 @@ use std
 component Peg(f: plane, r: plane, cf: point, cr: point, draw_r: Int) {
   in f {
     a := point hint((cf.x, cf.y + 10))
-    cf distance(0, along: x) a
+    cf vertical a
     cf distance(10, along: y) a
   }
   repeat draw_r {

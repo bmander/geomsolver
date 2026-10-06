@@ -9,7 +9,9 @@
 //! ought to be.  Those unknowns are `SpecKind::Param` slots, allocated by `Sketch::add`.
 //!
 //! The curves here are the ones *linear in their control points*, `C(t) = Σ Bᵢ(t) Pᵢ` — every
-//! B-spline, and so every Bézier (a clamped span with no interior knots).  That is the whole
+//! B-spline, and so every Bézier (a clamped span with no interior knots) — and, over fixed
+//! weights, every rational one, `C = Σ Rᵢ Pᵢ` with `Rᵢ = Bᵢ wᵢ / Σ Bⱼ wⱼ` (`weigh`): a conic
+//! exactly.  That is the whole
 //! extension point: a contact kernel needs the basis values and their first two derivatives at
 //! t and nothing else about the curve, so the same kernels serve any knot vector, and the
 //! control points are ordinary sketch Points that drag, snap and take constraints like any
@@ -148,6 +150,36 @@ pub fn basis(t: f64, lk: &[f64; SPAN_K], b: &mut [f64; SPAN_N], d: &mut [f64; SP
     }
 }
 
+/// The basis `basis` filled, made rational by the span's weights `w`: `Rᵢ = Nᵢ wᵢ / Σ Nⱼ wⱼ` and its
+/// first three derivatives in t, by the quotient rule.  A curve over fixed weights is still linear
+/// in its control points, `C = Σ Rᵢ Pᵢ`, so every contact kernel reads `R` where it read `B` and
+/// nothing else changes.  Weights all 1 leave the basis exactly as it was (no division), so a
+/// polynomial spline solves to the same bits.
+pub fn weigh(w: &[f64; SPAN_N], b: &mut [f64; SPAN_N], d: &mut [f64; SPAN_N],
+             dd: &mut [f64; SPAN_N], d3: &mut [f64; SPAN_N]) {
+    if w.iter().all(|&x| x == 1.0) {
+        return;
+    }
+    let mut s = [0.0; 4];
+    for a in 0..SPAN_N {
+        b[a] *= w[a];
+        d[a] *= w[a];
+        dd[a] *= w[a];
+        d3[a] *= w[a];
+        s[0] += b[a];
+        s[1] += d[a];
+        s[2] += dd[a];
+        s[3] += d3[a];
+    }
+    for a in 0..SPAN_N {
+        let r0 = b[a] / s[0];
+        let r1 = (d[a] - r0 * s[1]) / s[0];
+        let r2 = (dd[a] - 2.0 * r1 * s[1] - r0 * s[2]) / s[0];
+        let r3 = (d3[a] - 3.0 * r2 * s[1] - 3.0 * r1 * s[2] - r0 * s[3]) / s[0];
+        (b[a], d[a], dd[a], d3[a]) = (r0, r1, r2, r3);
+    }
+}
+
 /* -- knot vectors ----------------------------------------------------------- */
 
 /// The clamped uniform knot vector for `n` control points: the curve runs from the first control
@@ -218,11 +250,31 @@ pub fn span_index(u: &[f64], n: usize, t: f64) -> usize {
     best
 }
 
+/// What a spline contact's kernel is handed per instance: the span's knot window, then the weights
+/// of its control points.
+pub const SPAN_C: usize = SPAN_K + SPAN_N;
+
 /// `u[span-p ..= span+p+1]` — what `basis` reads.
 pub fn local_knots(u: &[f64], span: usize) -> [f64; SPAN_K] {
     let mut out = [0.0; SPAN_K];
     out.copy_from_slice(&u[span - DEGREE..span + DEGREE + 2]);
     out
+}
+
+/// `w[span-p ..= span]` — what `weigh` reads, the weights of the control points `basis` fills —
+/// all 1 for a polynomial spline.
+pub fn local_weights(w: Option<&[f64]>, span: usize) -> [f64; SPAN_N] {
+    let mut out = [1.0; SPAN_N];
+    if let Some(w) = w {
+        out.copy_from_slice(&w[span - DEGREE..=span]);
+    }
+    out
+}
+
+/// Whether `w` may weigh `n` control points: one each, every one finite and positive (a weight at
+/// or below zero lets the curve leave its control polygon's hull, or pass through infinity).
+pub fn weights_valid(w: &[f64], n: usize) -> bool {
+    w.len() == n && w.iter().all(|&x| x.is_finite() && x > 0.0)
 }
 
 /* -- a spline's geometry ---------------------------------------------------- */
@@ -261,6 +313,7 @@ pub fn eval_on(sk: &Sketch, i: usize, span: usize, t: f64) -> Frame {
     let (mut b, mut d, mut dd, mut d3) =
         ([0.0; SPAN_N], [0.0; SPAN_N], [0.0; SPAN_N], [0.0; SPAN_N]);
     basis(t, &lk, &mut b, &mut d, &mut dd, &mut d3);
+    weigh(&local_weights(s.weights.as_deref(), span), &mut b, &mut d, &mut dd, &mut d3);
     let mut f = Frame { p: (0.0, 0.0), d1: (0.0, 0.0), d2: (0.0, 0.0) };
     for a in 0..SPAN_N {
         let (x, y) = sk.point_xy(s.ctrl[span - DEGREE + a] as usize);
@@ -581,15 +634,23 @@ pub fn insert_control(sk: &mut Sketch, i: usize, t: f64) -> Option<usize> {
     if k < DEGREE || k + DEGREE >= u.len() {
         return None;
     }
-    // every combination is taken from the original positions, before any of them move
+    // every combination is taken from the original positions, before any of them move — a
+    // rational curve's in homogeneous coordinates `(w x, w y, w)`, each new point the combination
+    // over its new weight
     let lo = k + 1 - DEGREE;
+    let w = sk.splines[i].weights.clone();
+    let mut fresh_w: Vec<f64> = Vec::new();
     let q: Vec<(f64, f64)> = (lo..=k)
         .map(|idx| {
             let den = u[idx + DEGREE] - u[idx];
             let a = if den != 0.0 { (t - u[idx]) / den } else { 0.0 };
             let (x1, y1) = sk.point_xy(ctrl[idx] as usize);
             let (x0, y0) = sk.point_xy(ctrl[idx - 1] as usize);
-            (a * x1 + (1.0 - a) * x0, a * y1 + (1.0 - a) * y0)
+            let Some(w) = &w else { return (a * x1 + (1.0 - a) * x0, a * y1 + (1.0 - a) * y0) };
+            let (w1, w0) = (w[idx], w[idx - 1]);
+            let wq = a * w1 + (1.0 - a) * w0;
+            fresh_w.push(wq);
+            ((a * w1 * x1 + (1.0 - a) * w0 * x0) / wq, (a * w1 * y1 + (1.0 - a) * w0 * y0) / wq)
         })
         .collect();
     // the last combination becomes the new control point; the rest move the ones already there
@@ -603,6 +664,10 @@ pub fn insert_control(sk: &mut Sketch, i: usize, t: f64) -> Option<usize> {
     let s = &mut sk.splines[i];
     s.ctrl.insert(k, fresh as u32);
     s.knots.insert(k + 1, t);
+    if let Some(w) = &mut s.weights {
+        w.splice(lo..k, fresh_w[..DEGREE - 1].iter().copied());
+        w.insert(k, fresh_w[DEGREE - 1]);
+    }
     Some(fresh)
 }
 

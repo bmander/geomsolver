@@ -39,8 +39,9 @@ pub enum K {
     PointOnSpline,
     SplineTangentLine,
     SplineCurvature,
-    HorizontalDistance,
-    VerticalDistance,
+    // an ordinate along a view's own axes, between two points drawn in it: the run and the rise
+    OrdinateU,
+    OrdinateV,
     // the same dimensions again, with the number they state left to the solver
     DistanceFree,
     AngleFree,
@@ -48,8 +49,8 @@ pub enum K {
     ParallelDistanceFree,
     PointLineDistanceFree,
     AnnularDistanceFree,
-    HorizontalDistanceFree,
-    VerticalDistanceFree,
+    OrdinateUFree,
+    OrdinateVFree,
     Project,
     // and the magnitude forms of the two distances measured *from a line*, which a statement
     // that names no side compiles to: both sides are solutions and the seed picks (issue #48,
@@ -77,12 +78,12 @@ pub enum K {
     PointOnCircle3,
     // a projection between two images either of whose planes moves in the solve
     ProjectSolved,
-    // a point on a line in space, true lengths equal, and a point's signed distance along a
-    // plane's normal
+    // a point on a line in space, true lengths equal, and an ordinate along a line drawn in the
+    // points' own view, and free
     PointOnLine3,
     EqualLength3,
-    PointPlaneDistance,
-    PointPlaneDistanceFree,
+    OrdinateLine,
+    OrdinateLineFree,
     LineOnPlane,
     // the midpoint and the mirror in a line, in space
     Midpoint3,
@@ -95,11 +96,16 @@ pub enum K {
     AxisUnit,
     AxisFoot,
     PointOnAxis,
-    // how far a point stands along a plane's axes from its origin, in space, and free
-    Ordinate3U,
-    Ordinate3V,
-    Ordinate3UFree,
-    Ordinate3VFree,
+    // an ordinate in space along an axis or a line, and from a plane's origin along its frame's
+    // `û`, `v̂` and normal, each free too
+    OrdinateSpace,
+    OrdinateFrameU,
+    OrdinateSpaceFree,
+    OrdinateFrameUFree,
+    OrdinateFrameV,
+    OrdinateFrameVFree,
+    OrdinateFrameN,
+    OrdinateFrameNFree,
     // an axis in a plane, square to its normal and along it, and two planes apart
     AxisOnPlane,
     AxisParallelPlane,
@@ -116,7 +122,7 @@ pub enum K {
     LineOnAxis,
 }
 
-pub const N_KERNELS: usize = 80;
+pub const N_KERNELS: usize = 84;
 
 #[derive(Clone, Copy)]
 pub struct Kernel {
@@ -373,7 +379,7 @@ fn distance_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
 /// above the other, which is exactly the pose someone reaches for a horizontal dimension in.
 /// The sign is the price: negating `d` moves the second point across, as it does for the other
 /// dimensions written as a signed distance.
-fn horizontal_distance_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+fn ordinate_u_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
     for i in 0..n {
         let o = 4 * i;
         r[i] = v[o + 2] - v[o] - k[i];
@@ -381,22 +387,22 @@ fn horizontal_distance_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
 }
 
 /// And the rise: (qy - py) - d.
-fn vertical_distance_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+fn ordinate_v_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
     for i in 0..n {
         let o = 4 * i;
         r[i] = v[o + 3] - v[o + 1] - k[i];
     }
 }
 
-static HORIZONTAL_DISTANCE_J: &[f64] = &[-1.0, 0.0, 1.0, 0.0];
-static VERTICAL_DISTANCE_J: &[f64] = &[0.0, -1.0, 0.0, 1.0];
+static ORDINATE_U_J: &[f64] = &[-1.0, 0.0, 1.0, 0.0];
+static ORDINATE_V_J: &[f64] = &[0.0, -1.0, 0.0, 1.0];
 
-fn horizontal_distance_jac(n: usize, _v: &[f64], _k: &[f64], j: &mut [f64]) {
-    lin_jac(n, HORIZONTAL_DISTANCE_J, j)
+fn ordinate_u_jac(n: usize, _v: &[f64], _k: &[f64], j: &mut [f64]) {
+    lin_jac(n, ORDINATE_U_J, j)
 }
 
-fn vertical_distance_jac(n: usize, _v: &[f64], _k: &[f64], j: &mut [f64]) {
-    lin_jac(n, VERTICAL_DISTANCE_J, j)
+fn ordinate_v_jac(n: usize, _v: &[f64], _k: &[f64], j: &mut [f64]) {
+    lin_jac(n, ORDINATE_V_J, j)
 }
 
 /// (px,py), K = (tx,ty,w): the soft drag target
@@ -1003,10 +1009,10 @@ fn annular_distance_jac(n: usize, _v: &[f64], _k: &[f64], j: &mut [f64]) {
  *
  * The curve's columns are one span's control points, `SPAN_N` of them, whichever span t is in;
  * the span itself is chosen at compile time and carried in `Sketch::topology_key`.  The local
- * knot window is the constants.
+ * knot window and its control points' weights (`curve::weigh`) are the constants.
  */
 
-use crate::curve::{self, SPAN_K, SPAN_N};
+use crate::curve::{self, SPAN_C, SPAN_K, SPAN_N};
 
 /// One span evaluated at t: the basis, and the curve point and derivatives its control points
 /// give.  Both kernels' residual and Jacobian need some part of this, and they differ only in
@@ -1025,7 +1031,7 @@ struct Span {
 
 /// `v` is one instance's columns; `t` and `ctrl` are the offsets into it of the parameter and of
 /// the first control point.
-fn span_frame(v: &[f64], t: usize, ctrl: usize, k: &[f64; SPAN_K]) -> Span {
+fn span_frame(v: &[f64], t: usize, ctrl: usize, k: &[f64; SPAN_C]) -> Span {
     let mut f = Span {
         b: [0.0; SPAN_N],
         d: [0.0; SPAN_N],
@@ -1036,7 +1042,9 @@ fn span_frame(v: &[f64], t: usize, ctrl: usize, k: &[f64; SPAN_K]) -> Span {
         d2: (0.0, 0.0),
         d3v: (0.0, 0.0),
     };
-    curve::basis(v[t], k, &mut f.b, &mut f.d, &mut f.dd, &mut f.d3);
+    let (knots, weights) = k.split_at(SPAN_K);
+    curve::basis(v[t], knots.try_into().unwrap(), &mut f.b, &mut f.d, &mut f.dd, &mut f.d3);
+    curve::weigh(weights.try_into().unwrap(), &mut f.b, &mut f.d, &mut f.dd, &mut f.d3);
     for a in 0..SPAN_N {
         let (x, y) = (v[ctrl + 2 * a], v[ctrl + 2 * a + 1]);
         f.p.0 += f.b[a] * x;
@@ -1051,10 +1059,10 @@ fn span_frame(v: &[f64], t: usize, ctrl: usize, k: &[f64; SPAN_K]) -> Span {
     f
 }
 
-/// The i-th instance's local knot window out of a block's constants.
+/// The i-th instance's local knot window and weights out of a block's constants.
 #[inline]
-fn span_knots(k: &[f64], i: usize) -> &[f64; SPAN_K] {
-    k[SPAN_K * i..SPAN_K * (i + 1)].try_into().expect("a block's constants are SPAN_K per row")
+fn span_knots(k: &[f64], i: usize) -> &[f64; SPAN_C] {
+    k[SPAN_C * i..SPAN_C * (i + 1)].try_into().expect("a block's constants are SPAN_C per row")
 }
 
 /// Columns of `point_on_spline`: (px, py, t, c0x, c0y, ... c3x, c3y).
@@ -1312,33 +1320,33 @@ fn distance_free_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
 }
 
 /// (px,py,qx,qy,a), K = (m,c): (qx - px) - (m*a + c)
-fn horizontal_distance_free_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+fn ordinate_u_free_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
     for i in 0..n {
         let o = 5 * i;
         r[i] = v[o + 2] - v[o] - free_dim(v, k, i, o + 4).0;
     }
 }
 
-fn horizontal_distance_free_jac(n: usize, _v: &[f64], k: &[f64], j: &mut [f64]) {
+fn ordinate_u_free_jac(n: usize, _v: &[f64], k: &[f64], j: &mut [f64]) {
     for i in 0..n {
         let o = 5 * i;
-        j[o..o + 4].copy_from_slice(HORIZONTAL_DISTANCE_J);
+        j[o..o + 4].copy_from_slice(ORDINATE_U_J);
         j[o + 4] = -k[2 * i];
     }
 }
 
 /// (px,py,qx,qy,a), K = (m,c): (qy - py) - (m*a + c)
-fn vertical_distance_free_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+fn ordinate_v_free_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
     for i in 0..n {
         let o = 5 * i;
         r[i] = v[o + 3] - v[o + 1] - free_dim(v, k, i, o + 4).0;
     }
 }
 
-fn vertical_distance_free_jac(n: usize, _v: &[f64], k: &[f64], j: &mut [f64]) {
+fn ordinate_v_free_jac(n: usize, _v: &[f64], k: &[f64], j: &mut [f64]) {
     for i in 0..n {
         let o = 5 * i;
-        j[o..o + 4].copy_from_slice(VERTICAL_DISTANCE_J);
+        j[o..o + 4].copy_from_slice(ORDINATE_V_J);
         j[o + 4] = -k[2 * i];
     }
 }
@@ -2564,36 +2572,6 @@ fn point_on_plane_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
     dual_jac::<12, 1, 0>(n, v, k, j, point_on_plane_rows)
 }
 
-/// Columns of `point_plane_distance`: (X, o, du, dv), K = (D).  `(X − o)·n̂ − D`: the point
-/// stands `D` along the plane's normal.
-fn point_plane_distance_rows(v: &[f64], k: &[f64]) -> [Dual<12>; 1] {
-    let [g] = point_on_plane_rows(v, k);
-    [g - dconst(k[0])]
-}
-
-fn point_plane_distance_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
-    dual_res::<12, 1, 1>(n, v, k, r, point_plane_distance_rows)
-}
-
-fn point_plane_distance_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
-    dual_jac::<12, 1, 1>(n, v, k, j, point_plane_distance_rows)
-}
-
-/// (X, o, du, dv, a), K = (m, c): `(X − o)·n̂ − (m·a + c)`.
-fn point_plane_distance_free_rows(v: &[f64], k: &[f64]) -> [Dual<13>; 1] {
-    let (_, _, n) = dframe(dvec(v, 6), dvec(v, 9));
-    let d = Dual::var(v[12], 12) * dconst(k[0]) + dconst(k[1]);
-    [ddot(dsub(dvec(v, 0), dvec(v, 3)), n) - d]
-}
-
-fn point_plane_distance_free_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
-    dual_res::<13, 1, 2>(n, v, k, r, point_plane_distance_free_rows)
-}
-
-fn point_plane_distance_free_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
-    dual_jac::<13, 1, 2>(n, v, k, j, point_plane_distance_free_rows)
-}
-
 /// Columns of `line_on_plane`: (A, B, o, du, dv).  Both ends on the plane: two rows.
 fn line_on_plane_rows(v: &[f64], _k: &[f64]) -> [Dual<15>; 2] {
     let o = dvec(v, 6);
@@ -2661,64 +2639,170 @@ fn project_jac(n: usize, _v: &[f64], k: &[f64], j: &mut [f64]) {
     }
 }
 
-/// Columns of `ordinate3_u`: (X, o, du, dv), K = (D).  `(X − o)·û − D`: how far a point stands
-/// along a plane's `u` from its origin, in space — `p distance(d, along: u) P` with `p` drawn in
-/// no plane of `P`'s.  Degree 1.
-fn ordinate3_u_rows(v: &[f64], k: &[f64]) -> [Dual<12>; 1] {
-    let (u, _, _) = dframe(dvec(v, 6), dvec(v, 9));
-    [ddot(dsub(dvec(v, 0), dvec(v, 3)), u) - dconst(k[0])]
+/* -- ordinates (`docs/ordinate-plan.md`) ------------------------------------------------------
+ *
+ * How far `q` stands from `p` along a directed line, `(q − p)·t̂ − D`: degree 1, and linear in the
+ * points.  The run and the rise are its form along a view's own axes (`ordinate_u`/`_v`, above);
+ * these read a direction that is not one: a line drawn in the points' view, a line or an axis in
+ * space (an axis handed over as the segment from the origin to its direction, as the direction
+ * relations take one), and a plane's own frame from its origin.  Each has its free twin, the
+ * number `m·a + c`.
+ */
+
+/// Columns of `ordinate_line`: (p, q, a, b) in one view, K = (D).  `(q − p)·(b − a)/|b − a| − D`:
+/// along the line `a → b` drawn where the points are.
+fn ordinate_line_gap<const N: usize>(v: &[f64]) -> Dual<N> {
+    let d = |i: usize| Dual::<N>::var(v[i], i);
+    let (px, py, qx, qy) = (d(0), d(1), d(2), d(3));
+    let (ax, ay, bx, by) = (d(4), d(5), d(6), d(7));
+    let t = dunit([bx - ax, by - ay, dconst(0.0)]);
+    (qx - px) * t[0] + (qy - py) * t[1]
 }
 
-/// The same along `v`.
-fn ordinate3_v_rows(v: &[f64], k: &[f64]) -> [Dual<12>; 1] {
-    let (_, w, _) = dframe(dvec(v, 6), dvec(v, 9));
-    [ddot(dsub(dvec(v, 0), dvec(v, 3)), w) - dconst(k[0])]
+fn ordinate_line_rows(v: &[f64], k: &[f64]) -> [Dual<8>; 1] {
+    [ordinate_line_gap(v) - dconst(k[0])]
 }
 
-/// (X, o, du, dv, a), K = (m, c): along `u`, the number `m·a + c`.
-fn ordinate3_u_free_rows(v: &[f64], k: &[f64]) -> [Dual<13>; 1] {
-    let (u, _, _) = dframe(dvec(v, 6), dvec(v, 9));
+/// The free twin's columns: (p, q, a, b, n), K = (m, c) — the number `m·n + c`.
+fn ordinate_line_free_rows(v: &[f64], k: &[f64]) -> [Dual<9>; 1] {
+    [ordinate_line_gap(v) - (Dual::var(v[8], 8) * dconst(k[0]) + dconst(k[1]))]
+}
+
+fn ordinate_line_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    dual_res::<8, 1, 1>(n, v, k, r, ordinate_line_rows)
+}
+
+fn ordinate_line_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    dual_jac::<8, 1, 1>(n, v, k, j, ordinate_line_rows)
+}
+
+fn ordinate_line_free_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    dual_res::<9, 1, 2>(n, v, k, r, ordinate_line_free_rows)
+}
+
+fn ordinate_line_free_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    dual_jac::<9, 1, 2>(n, v, k, j, ordinate_line_free_rows)
+}
+
+/// Columns of `ordinate_space`: (X, Y, A, B), K = (D).  `(Y − X)·(B − A)/|B − A| − D`: how far
+/// `Y` stands from `X` along the line `A → B` in space — a drawn line's lifted ends, or an axis
+/// as the segment from the origin to its direction.
+fn ordinate_space_rows(v: &[f64], k: &[f64]) -> [Dual<12>; 1] {
+    let t = dunit(dsub(dvec(v, 9), dvec(v, 6)));
+    [ddot(dsub(dvec(v, 3), dvec(v, 0)), t) - dconst(k[0])]
+}
+
+/// (X, Y, A, B, n), K = (m, c).
+fn ordinate_space_free_rows(v: &[f64], k: &[f64]) -> [Dual<13>; 1] {
+    let t = dunit(dsub(dvec(v, 9), dvec(v, 6)));
     let d = Dual::var(v[12], 12) * dconst(k[0]) + dconst(k[1]);
-    [ddot(dsub(dvec(v, 0), dvec(v, 3)), u) - d]
+    [ddot(dsub(dvec(v, 3), dvec(v, 0)), t) - d]
 }
 
-/// And along `v`.
-fn ordinate3_v_free_rows(v: &[f64], k: &[f64]) -> [Dual<13>; 1] {
-    let (_, w, _) = dframe(dvec(v, 6), dvec(v, 9));
+/// Columns of `ordinate_frame_u`: (X, o, du, dv), K = (D).  `(X − o)·û − D`: how far a point
+/// stands from a plane's origin along the plane's `û` — `q distance(d, along: u) P` with `q` drawn
+/// in no plane of `P`'s — and `_v` along its `v̂`, `_n` along its normal `n̂`.  Over the plane's
+/// own columns, so its frame is the one its points are drawn in (`dframe`).
+fn ordinate_frame_rows(v: &[f64], k: &[f64], axis: usize) -> [Dual<12>; 1] {
+    let (u, w, n) = dframe(dvec(v, 6), dvec(v, 9));
+    let t = [u, w, n][axis];
+    [ddot(dsub(dvec(v, 0), dvec(v, 3)), t) - dconst(k[0])]
+}
+
+fn ordinate_frame_u_rows(v: &[f64], k: &[f64]) -> [Dual<12>; 1] {
+    ordinate_frame_rows(v, k, 0)
+}
+
+fn ordinate_frame_v_rows(v: &[f64], k: &[f64]) -> [Dual<12>; 1] {
+    ordinate_frame_rows(v, k, 1)
+}
+
+fn ordinate_frame_n_rows(v: &[f64], k: &[f64]) -> [Dual<12>; 1] {
+    ordinate_frame_rows(v, k, 2)
+}
+
+/// (X, o, du, dv, a), K = (m, c): the number `m·a + c`.
+fn ordinate_frame_free_rows(v: &[f64], k: &[f64], axis: usize) -> [Dual<13>; 1] {
+    let (u, w, n) = dframe(dvec(v, 6), dvec(v, 9));
+    let t = [u, w, n][axis];
     let d = Dual::var(v[12], 12) * dconst(k[0]) + dconst(k[1]);
-    [ddot(dsub(dvec(v, 0), dvec(v, 3)), w) - d]
+    [ddot(dsub(dvec(v, 0), dvec(v, 3)), t) - d]
 }
 
-fn ordinate3_u_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
-    dual_res::<12, 1, 1>(n, v, k, r, ordinate3_u_rows)
+fn ordinate_frame_u_free_rows(v: &[f64], k: &[f64]) -> [Dual<13>; 1] {
+    ordinate_frame_free_rows(v, k, 0)
 }
 
-fn ordinate3_u_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
-    dual_jac::<12, 1, 1>(n, v, k, j, ordinate3_u_rows)
+fn ordinate_frame_v_free_rows(v: &[f64], k: &[f64]) -> [Dual<13>; 1] {
+    ordinate_frame_free_rows(v, k, 1)
 }
 
-fn ordinate3_v_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
-    dual_res::<12, 1, 1>(n, v, k, r, ordinate3_v_rows)
+fn ordinate_frame_n_free_rows(v: &[f64], k: &[f64]) -> [Dual<13>; 1] {
+    ordinate_frame_free_rows(v, k, 2)
 }
 
-fn ordinate3_v_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
-    dual_jac::<12, 1, 1>(n, v, k, j, ordinate3_v_rows)
+fn ordinate_space_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    dual_res::<12, 1, 1>(n, v, k, r, ordinate_space_rows)
 }
 
-fn ordinate3_u_free_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
-    dual_res::<13, 1, 2>(n, v, k, r, ordinate3_u_free_rows)
+fn ordinate_space_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    dual_jac::<12, 1, 1>(n, v, k, j, ordinate_space_rows)
 }
 
-fn ordinate3_u_free_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
-    dual_jac::<13, 1, 2>(n, v, k, j, ordinate3_u_free_rows)
+fn ordinate_space_free_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    dual_res::<13, 1, 2>(n, v, k, r, ordinate_space_free_rows)
 }
 
-fn ordinate3_v_free_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
-    dual_res::<13, 1, 2>(n, v, k, r, ordinate3_v_free_rows)
+fn ordinate_space_free_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    dual_jac::<13, 1, 2>(n, v, k, j, ordinate_space_free_rows)
 }
 
-fn ordinate3_v_free_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
-    dual_jac::<13, 1, 2>(n, v, k, j, ordinate3_v_free_rows)
+fn ordinate_frame_u_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    dual_res::<12, 1, 1>(n, v, k, r, ordinate_frame_u_rows)
+}
+
+fn ordinate_frame_u_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    dual_jac::<12, 1, 1>(n, v, k, j, ordinate_frame_u_rows)
+}
+
+fn ordinate_frame_v_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    dual_res::<12, 1, 1>(n, v, k, r, ordinate_frame_v_rows)
+}
+
+fn ordinate_frame_v_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    dual_jac::<12, 1, 1>(n, v, k, j, ordinate_frame_v_rows)
+}
+
+fn ordinate_frame_n_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    dual_res::<12, 1, 1>(n, v, k, r, ordinate_frame_n_rows)
+}
+
+fn ordinate_frame_n_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    dual_jac::<12, 1, 1>(n, v, k, j, ordinate_frame_n_rows)
+}
+
+fn ordinate_frame_u_free_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    dual_res::<13, 1, 2>(n, v, k, r, ordinate_frame_u_free_rows)
+}
+
+fn ordinate_frame_u_free_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    dual_jac::<13, 1, 2>(n, v, k, j, ordinate_frame_u_free_rows)
+}
+
+fn ordinate_frame_v_free_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    dual_res::<13, 1, 2>(n, v, k, r, ordinate_frame_v_free_rows)
+}
+
+fn ordinate_frame_v_free_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    dual_jac::<13, 1, 2>(n, v, k, j, ordinate_frame_v_free_rows)
+}
+
+fn ordinate_frame_n_free_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    dual_res::<13, 1, 2>(n, v, k, r, ordinate_frame_n_free_rows)
+}
+
+fn ordinate_frame_n_free_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    dual_jac::<13, 1, 2>(n, v, k, j, ordinate_frame_n_free_rows)
 }
 
 /// Columns of `axis_on_plane`: (a, d, o, du, dv), K = (L) — an axis's place and direction, and the
@@ -2975,19 +3059,19 @@ pub static KERNELS: [Kernel; N_KERNELS] = [
     Kernel { name: "parallel_distance", n_res: 1, n_par: 8, degree: 1, n_const: 1, res: parallel_distance_res, jac: parallel_distance_jac, const_jac: None },
     Kernel { name: "point_line_distance", n_res: 1, n_par: 6, degree: 1, n_const: 1, res: point_line_distance_res, jac: point_line_distance_jac, const_jac: None },
     Kernel { name: "annular_distance", n_res: 1, n_par: 2, degree: 1, n_const: 1, res: annular_distance_res, jac: annular_distance_jac, const_jac: Some(ANNULAR_DISTANCE_J) },
-    Kernel { name: "point_on_spline", n_res: 2, n_par: N_PAR_ON_SPLINE, degree: 1, n_const: SPAN_K, res: point_on_spline_res, jac: point_on_spline_jac, const_jac: None },
-    Kernel { name: "spline_tangent_line", n_res: 2, n_par: N_PAR_SPLINE_LINE, degree: 1, n_const: SPAN_K, res: spline_tangent_line_res, jac: spline_tangent_line_jac, const_jac: None },
-    Kernel { name: "spline_curvature", n_res: 3, n_par: N_PAR_SPLINE_CURVE, degree: 1, n_const: SPAN_K, res: spline_curvature_res, jac: spline_curvature_jac, const_jac: None },
-    Kernel { name: "horizontal_distance", n_res: 1, n_par: 4, degree: 1, n_const: 1, res: horizontal_distance_res, jac: horizontal_distance_jac, const_jac: Some(HORIZONTAL_DISTANCE_J) },
-    Kernel { name: "vertical_distance", n_res: 1, n_par: 4, degree: 1, n_const: 1, res: vertical_distance_res, jac: vertical_distance_jac, const_jac: Some(VERTICAL_DISTANCE_J) },
+    Kernel { name: "point_on_spline", n_res: 2, n_par: N_PAR_ON_SPLINE, degree: 1, n_const: SPAN_C, res: point_on_spline_res, jac: point_on_spline_jac, const_jac: None },
+    Kernel { name: "spline_tangent_line", n_res: 2, n_par: N_PAR_SPLINE_LINE, degree: 1, n_const: SPAN_C, res: spline_tangent_line_res, jac: spline_tangent_line_jac, const_jac: None },
+    Kernel { name: "spline_curvature", n_res: 3, n_par: N_PAR_SPLINE_CURVE, degree: 1, n_const: SPAN_C, res: spline_curvature_res, jac: spline_curvature_jac, const_jac: None },
+    Kernel { name: "ordinate_u", n_res: 1, n_par: 4, degree: 1, n_const: 1, res: ordinate_u_res, jac: ordinate_u_jac, const_jac: Some(ORDINATE_U_J) },
+    Kernel { name: "ordinate_v", n_res: 1, n_par: 4, degree: 1, n_const: 1, res: ordinate_v_res, jac: ordinate_v_jac, const_jac: Some(ORDINATE_V_J) },
     Kernel { name: "distance_free", n_res: 1, n_par: 5, degree: 2, n_const: 2, res: distance_free_res, jac: distance_free_jac, const_jac: None },
     Kernel { name: "angle_free", n_res: 1, n_par: 9, degree: 0, n_const: 2, res: angle_free_res, jac: angle_free_jac, const_jac: None },
     Kernel { name: "radius_free", n_res: 1, n_par: 2, degree: 1, n_const: 2, res: radius_free_res, jac: radius_free_jac, const_jac: None },
     Kernel { name: "parallel_distance_free", n_res: 1, n_par: 9, degree: 1, n_const: 2, res: parallel_distance_free_res, jac: parallel_distance_free_jac, const_jac: None },
     Kernel { name: "point_line_distance_free", n_res: 1, n_par: 7, degree: 1, n_const: 2, res: point_line_distance_free_res, jac: point_line_distance_free_jac, const_jac: None },
     Kernel { name: "annular_distance_free", n_res: 1, n_par: 3, degree: 1, n_const: 2, res: annular_distance_free_res, jac: annular_distance_free_jac, const_jac: None },
-    Kernel { name: "horizontal_distance_free", n_res: 1, n_par: 5, degree: 1, n_const: 2, res: horizontal_distance_free_res, jac: horizontal_distance_free_jac, const_jac: None },
-    Kernel { name: "vertical_distance_free", n_res: 1, n_par: 5, degree: 1, n_const: 2, res: vertical_distance_free_res, jac: vertical_distance_free_jac, const_jac: None },
+    Kernel { name: "ordinate_u_free", n_res: 1, n_par: 5, degree: 1, n_const: 2, res: ordinate_u_free_res, jac: ordinate_u_free_jac, const_jac: None },
+    Kernel { name: "ordinate_v_free", n_res: 1, n_par: 5, degree: 1, n_const: 2, res: ordinate_v_free_res, jac: ordinate_v_free_jac, const_jac: None },
     Kernel { name: "project", n_res: 1, n_par: 4, degree: 1, n_const: 5, res: project_res, jac: project_jac, const_jac: None },
     Kernel { name: "point_line_magnitude", n_res: 1, n_par: 6, degree: 1, n_const: 1, res: point_line_magnitude_res, jac: point_line_magnitude_jac, const_jac: None },
     Kernel { name: "point_line_magnitude_free", n_res: 1, n_par: 7, degree: 1, n_const: 2, res: point_line_magnitude_free_res, jac: point_line_magnitude_free_jac, const_jac: None },
@@ -3010,8 +3094,8 @@ pub static KERNELS: [Kernel; N_KERNELS] = [
     Kernel { name: "project_solved", n_res: 1, n_par: 18, degree: 1, n_const: 0, res: project_solved_res, jac: project_solved_jac, const_jac: None },
     Kernel { name: "point_on_line3", n_res: 2, n_par: 9, degree: 1, n_const: 6, res: point_on_line3_res, jac: point_on_line3_jac, const_jac: None },
     Kernel { name: "equal_length3", n_res: 1, n_par: 12, degree: 2, n_const: 0, res: equal_length3_res, jac: equal_length3_jac, const_jac: None },
-    Kernel { name: "point_plane_distance", n_res: 1, n_par: 12, degree: 1, n_const: 1, res: point_plane_distance_res, jac: point_plane_distance_jac, const_jac: None },
-    Kernel { name: "point_plane_distance_free", n_res: 1, n_par: 13, degree: 1, n_const: 2, res: point_plane_distance_free_res, jac: point_plane_distance_free_jac, const_jac: None },
+    Kernel { name: "ordinate_line", n_res: 1, n_par: 8, degree: 1, n_const: 1, res: ordinate_line_res, jac: ordinate_line_jac, const_jac: None },
+    Kernel { name: "ordinate_line_free", n_res: 1, n_par: 9, degree: 1, n_const: 2, res: ordinate_line_free_res, jac: ordinate_line_free_jac, const_jac: None },
     Kernel { name: "line_on_plane", n_res: 2, n_par: 15, degree: 1, n_const: 0, res: line_on_plane_res, jac: line_on_plane_jac, const_jac: None },
     Kernel { name: "midpoint3", n_res: 3, n_par: 9, degree: 1, n_const: 0, res: midpoint3_res, jac: midpoint3_jac, const_jac: None },
     Kernel { name: "symmetric3", n_res: 3, n_par: 12, degree: 1, n_const: 0, res: symmetric3_res, jac: symmetric3_jac, const_jac: None },
@@ -3021,10 +3105,14 @@ pub static KERNELS: [Kernel; N_KERNELS] = [
     Kernel { name: "axis_unit", n_res: 1, n_par: 3, degree: 0, n_const: 0, res: axis_unit_res, jac: axis_unit_jac, const_jac: None },
     Kernel { name: "axis_foot", n_res: 1, n_par: 6, degree: 1, n_const: 0, res: axis_foot_res, jac: axis_foot_jac, const_jac: None },
     Kernel { name: "point_on_axis", n_res: 2, n_par: 9, degree: 1, n_const: 6, res: point_on_axis_res, jac: point_on_axis_jac, const_jac: None },
-    Kernel { name: "ordinate3_u", n_res: 1, n_par: 12, degree: 1, n_const: 1, res: ordinate3_u_res, jac: ordinate3_u_jac, const_jac: None },
-    Kernel { name: "ordinate3_v", n_res: 1, n_par: 12, degree: 1, n_const: 1, res: ordinate3_v_res, jac: ordinate3_v_jac, const_jac: None },
-    Kernel { name: "ordinate3_u_free", n_res: 1, n_par: 13, degree: 1, n_const: 2, res: ordinate3_u_free_res, jac: ordinate3_u_free_jac, const_jac: None },
-    Kernel { name: "ordinate3_v_free", n_res: 1, n_par: 13, degree: 1, n_const: 2, res: ordinate3_v_free_res, jac: ordinate3_v_free_jac, const_jac: None },
+    Kernel { name: "ordinate_space", n_res: 1, n_par: 12, degree: 1, n_const: 1, res: ordinate_space_res, jac: ordinate_space_jac, const_jac: None },
+    Kernel { name: "ordinate_frame_u", n_res: 1, n_par: 12, degree: 1, n_const: 1, res: ordinate_frame_u_res, jac: ordinate_frame_u_jac, const_jac: None },
+    Kernel { name: "ordinate_space_free", n_res: 1, n_par: 13, degree: 1, n_const: 2, res: ordinate_space_free_res, jac: ordinate_space_free_jac, const_jac: None },
+    Kernel { name: "ordinate_frame_u_free", n_res: 1, n_par: 13, degree: 1, n_const: 2, res: ordinate_frame_u_free_res, jac: ordinate_frame_u_free_jac, const_jac: None },
+    Kernel { name: "ordinate_frame_v", n_res: 1, n_par: 12, degree: 1, n_const: 1, res: ordinate_frame_v_res, jac: ordinate_frame_v_jac, const_jac: None },
+    Kernel { name: "ordinate_frame_v_free", n_res: 1, n_par: 13, degree: 1, n_const: 2, res: ordinate_frame_v_free_res, jac: ordinate_frame_v_free_jac, const_jac: None },
+    Kernel { name: "ordinate_frame_n", n_res: 1, n_par: 12, degree: 1, n_const: 1, res: ordinate_frame_n_res, jac: ordinate_frame_n_jac, const_jac: None },
+    Kernel { name: "ordinate_frame_n_free", n_res: 1, n_par: 13, degree: 1, n_const: 2, res: ordinate_frame_n_free_res, jac: ordinate_frame_n_free_jac, const_jac: None },
     Kernel { name: "axis_on_plane", n_res: 2, n_par: 15, degree: 1, n_const: 1, res: axis_on_plane_res, jac: axis_on_plane_jac, const_jac: None },
     Kernel { name: "axis_parallel_plane", n_res: 1, n_par: 9, degree: 0, n_const: 0, res: axis_parallel_plane_res, jac: axis_parallel_plane_jac, const_jac: None },
     Kernel { name: "axis_perpendicular_plane", n_res: 2, n_par: 9, degree: 0, n_const: 6, res: axis_perpendicular_plane_res, jac: axis_perpendicular_plane_jac, const_jac: None },

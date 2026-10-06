@@ -1,6 +1,23 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.45 — October 2026**
+**Specification, Draft 0.46 — October 2026**
+
+**[0.46] An ordinate along any direction, and `level`.** `a distance(d, along: t) b` states
+how far `b` stands from `a` along a directed line `t` — `(Y − X)·t̂ − d = 0`, signed from the first
+operand to the second along `t`'s own sense — and `t` may be any axis or drawn line, in a view or
+in space (`along: std.x`, `along: hinge`). The words a direction was written in before are names
+for particular ones: `x`, `y` (and with the sign said, `right`, `left`, `up`, `down`) the axes of
+the view both points are drawn in — the run and the rise — and, against a plane, `u`, `v` and `n`
+that plane's own axes and its normal, measured from its origin — its frame's: `v` is the plane's
+up, square to `u` within it, which its `v` axis need not be, so an axis written outright is read
+along itself. Its zero is a relation, **`a
+level(t) b`**: the two have the same ordinate along `t`, one row, no number and no callout; the
+direction stands in its parentheses as `symmetry`'s line does (`level(up)`, `level(std.z)`,
+`p level(u) P`). **`a horizontal b` is `a level(up) b`** and `a vertical b` is `a level(right) b`;
+both spellings are read. An ordinate written as a literal zero is **E040**, naming the level it
+is; a direction written as a plane (`along: std.top`) is **E040**, since along a plane reads as
+within it; and two points of one view along that view's normal are **E061**, the row being
+identically nothing. One statement for what 0.45 said seven ways (§9.2, §9.3).
 
 **[0.45] A vector is written `(a, b)` or `(a, b, c)`, and an entity's numbers are its
 members.** A point *is* its place, so it is held and seeded whole by a vector — `fix((0, 0)) p`,
@@ -863,13 +880,14 @@ and `t` are drawn in: `axes := std.Turned(o, t) in std.front` makes `axes.axes`,
 `o` whose u runs toward `t`, and `axes.u`, the line from `o` to `t`.
 
 **[0.21] Coordinates relative to a plane.** For a point `p` and plane `f`, `p distance(d, along:
-u) f` states how far `p` stands along `f.u` from `f.origin`: drawn in `f`, that is its own
+u) f` states how far `p` stands along `f.u` from `f.origin` — **[0.46]** the ordinate `f.origin
+distance(d, along: f.u) p`, spelled against the plane (§9.2): drawn in `f`, that is its own
 coordinate, `p.x − d = 0`; drawn in another plane or standing in space, **[0.42]** it is read in
 space over its lift, `(X_p − o_f)·û_f − d = 0`. `along: v` is the same along `v̂_f`, and **[0.24]**
 `along: n` the signed distance along `n̂_f`, in space, of a point not drawn in `f` (one drawn in
 it is **E061**: every point of a plane is on it). Each contributes one
 length-valued residual, owns no unknown, and accepts a signed length expression, including a free
-dimension. Zero is regular. Either ordinate may be stated independently; `claim` has its ordinary
+dimension. **[0.46]** Zero written as a literal is **E040**: it is `p level(u) f`. Either ordinate may be stated independently; `claim` has its ordinary
 assertion meaning. The operands MUST be a point followed by a plane, and `along: u`, `v` or `n` is
 required for this pair. These selectors are not the `x` and `y` of a run and a rise. An ordinate
 read in space is drawn with no callout.
@@ -1611,20 +1629,21 @@ fix(r == 25) c                      line1 tangent(side: left) circle1
 What goes in the parentheses is a short list:
 
 - **the number**, which may be an expression exactly as elsewhere: `distance(80)`, `distance(w / 2)`, `distance(1' 3")` — **[0.41]** it names nothing; a name is `w := 60` (§6.3);
-- **a selector** — `side: left`, `at: start`, `external: true`, `along: x`. **[0.17]** A selector's *key* must be one the word has (a slot of the settled kind, or `along`, which chooses the kind and fills no slot), and its *value* must be one of the words that slot takes — both **E040**, at the key. Neither was checked through 0.16, and both failures were silent: a mistyped key was dropped and the statement settled without it, and a word outside the set fell through to whichever reading the implementation tested for last, so `at: banana` meant `end`. An implementation MUST publish each slot's vocabulary in its registry, so that a front end offers what the core accepts rather than keeping a second list;
-- **the third entity**, for `symmetry`;
+- **a selector** — `side: left`, `at: start`, `external: true`, `along: x`. **[0.17]** A selector's *key* must be one the word has (a slot of the settled kind), and its *value* must be one of the words that slot takes — **[0.46]** `along:` takes a word or a reference to an axis or a line, a name outside its words being a reference (§9.3) — both **E040**, at the key. Neither was checked through 0.16, and both failures were silent: a mistyped key was dropped and the statement settled without it, and a word outside the set fell through to whichever reading the implementation tested for last, so `at: banana` meant `end`. An implementation MUST publish each slot's vocabulary in its registry, so that a front end offers what the core accepts rather than keeping a second list;
+- **the third entity**, for `symmetry`, and **[0.46]** the direction of `level`, which may be a word of `along:`'s (`level(up)`);
 - **a pin**, `t == 0.4`, for a slot the constraint owns. Its *seed* is the trailing `hint(t: 0.4)` where every seed in the language is (§4.3). **[0.39]** A pin to an unknown — `t == s` over `param s: Angle` (§3.3, §6.3) — does not hold the slot at a number: it makes the slot's unknown **that one**, as a dimension reading it is written in it, and every contact pinned to the same unknown owns it. Inside a component the unknown is a formal the call left unbound (`leg.s`). **[0.41]** A pin to a name nothing declares is **E101**. Only a bare name is shared (an expression over one would need an equation the slot does not have), only a curve contact's parameter (`t`) can be, and only by contacts on the **same** curve — two curves have two intervals, seams and speeds — so a contact on another curve pinned to the name is **E040**, and so is a `fix` pinned to one, since `fix` holds a number. **[0.41]** The shared unknown is seeded where it is declared; a `hint(t: …)` beside a pin to it is a second seed, **E040**.
 
 | word | fixity | operands → constraint |
 |---|---|---|
 | `coincident` | infix | **[0.42]** (point, point); (point, line \| circle \| arc \| spline \| curve) — incidence, where 0.41 and before wrote `on`; **[0.24]** (point, plane), (line, plane), (point, sphere) in space; **[0.25]** (circle \| arc, sphere), the whole circle on the sphere; **[0.26]** (point, cone), (point, cylinder); **[0.42]** (point, axis), (axis, plane); **[0.43]** (axis, axis), one line either way round; **[0.44]** (line, axis), both ends on it; **[0.38]** (point, the envelope of a prism's side), from any view (§6.15.2). Read either way round: `P coincident p` is `p coincident P`. **[0.32]** Not (solid, solid): the body rule's union is `union` (§6.9) |
 | `cut` | infix | **[0.18]** (solid, solid) — the body rule's other half (§6.9), and no constraint at all |
-| `distance` | infix | (p, p); +`along: x`/`y` for the run and the rise; (p, line); (line, line); (circle, circle); (p, plane) with `along: u`/`v` for signed ordinates from the plane's origin, or **[0.24]** `along: n` for the signed distance along the plane's normal, in space; **[0.42]** (plane, plane), the second's origin along the first's normal (§6.10) |
+| `distance` | infix | (p, p); **[0.46]** +`along:` an ordinate — an axis or a line, or the view's `x`/`y` for the run and the rise (`right`/`left`/`up`/`down` with the sign said); (p, line); (line, line); (circle, circle); (p, plane) with `along: u`/`v` for signed ordinates from the plane's origin, or **[0.24]** `along: n` for the signed distance along the plane's normal, in space; **[0.42]** (plane, plane), the second's origin along the first's normal (§6.10) |
 | `distance` | prefix | on a line: the distance between its own ends |
 | `tangent` | infix | (line, circle); +`at:` for a tangency at a named end; (circle, circle); (arc, line); (spline, line); (curve, line), §6.5 — **six**; **[0.24]** (sphere, line), (sphere, sphere), in space; **[0.26]** (cylinder, line), and (cone, cone) with the contact point in the parentheses, `k1 tangent(M) k2` |
 | `equal` | infix | (line, line) a length; (circle, circle) a radius |
 | `curvature` | infix | (spline, circle), (curve, circle) |
-| `horizontal`, `vertical` | prefix / infix | a line; or a pair of points |
+| `horizontal`, `vertical` | prefix / infix | a line; or a pair of points, **[0.46]** `level(up)` and `level(right)` between them |
+| `level` | infix | **[0.46]** (p, p), the direction in the parentheses — an axis, a line, or the view's word; (p, plane) with `u`/`v`, from the plane's origin |
 | `angle` | infix | (line, line); **[0.27]** (line, line) with a second pair in the parentheses, `l1 angle(l3, l4) l2` (§9.4); **[0.42]** (axis, axis \| line), (line, axis), the unsigned angle in space |
 | `radius` | prefix | a circle or an arc; **[0.24]** a sphere; **[0.26]** a cylinder |
 | `length` | prefix | **[0.27]** an arc: its length along itself |
@@ -1634,7 +1653,7 @@ What goes in the parentheses is a short list:
 | `fix` | prefix | the gauge (§13): an entity, and its own numbers pinned whole or by member — `fix((0, 0)) p`, `fix(x == 0) p`, `fix(r == 25) c`, `fix(dir == (0, 0, 1)) t` **[0.34]** **[0.45]** |
 | `ccw`, `cw` | call | three points, all in the parentheses (§9.6) |
 
-The collapses are where the saving is: **`coincident` is sixteen constraints, `distance` ten, `tangent` ten**, and `horizontal`/`vertical` are two each with the **fixity** doing the work — a line prefixed, a pair of points infixed, which is exactly the distinction the point-pair forms were added to draw. `angle` and `radius` keep their own words rather than folding into `distance`, because over two lines a length means a parallel distance and an angle means an angle, and nothing but the number's unit could separate them.
+The collapses are where the saving is: **`coincident` is sixteen constraints, `distance` six, `tangent` ten**, and `horizontal`/`vertical` are two each with the **fixity** doing the work — a line prefixed, a pair of points infixed, the second **[0.46]** a `level` along the view's own axis. `angle` and `radius` keep their own words rather than folding into `distance`, because over two lines a length means a parallel distance and an angle means an angle, and nothing but the number's unit could separate them.
 
 **Operand order carries meaning.** `arc tangent line` is a tangency at the arc's end; `line tangent circle` is the ordinary one. Each named itself before and the order was decoration; as an operator, which side the arc is written on picks the constraint.
 
@@ -1646,7 +1665,7 @@ The collapses are where the saving is: **`coincident` is sixteen constraints, `d
 
 **[0.18] The body rule is written in this grammar and is not a constraint.** **[0.32]** `boss union cyl`, `bore cut cyl` and **[0.22]** `tip bound cyl` are **Declaration**-class (§4.2): each says what its right operand *is* (§6.9), contributes no residual, and takes no part in a solve, a decomposition or any partition of work. None relates geometry or has a residual to be settled into, so each is read by the word alone. None is in the constraint library of §9.3, and none may be `claim`ed: a claim is judged by rank and these add no row, which is the rule already stated for the gauges. `claim a cut b` and `claim a union b` are refused where they are written, neither being a constraint word. (0.18–0.31 spelled the union `on`, settled by the kinds of its operands; `coincident` between two solids is now refused as any constraint word is over operands it does not relate.)
 
-**[0.24] Across planes, the same word is the relation in space.** A relation's operands are read in the planes their points are drawn in (§6.7). Within one plane it is the 2D relation, and the lift is rigid, so the 2D relation *is* the relation in space. **[0.42]** Where they differ, or where any point stands in space, the word means its relation between the points' lifts: `coincident`, `distance` between two points (the true length), a point and a line (to the infinite line) or two lines (the common perpendicular — a magnitude, its side the seed's), `coincident` a line or a circle, `angle` (unsigned, 0 to 180°), `parallel`, `perpendicular` and `equal` (true lengths), and **[0.25]** `midpoint` (of the line in space) and `symmetry` (the half turn about the line in space, which on the line's own plane is the mirror). No selector says so. `sense:` and `side:` name a turn and a side *in a plane* and are **E040** there; a word that has no meaning in space — `horizontal`, `vertical`, a run or a rise, `tangent` between drawn figures, a curve's contacts — is **E062**. A radius and a ring's width read only radii, which the lift carries unchanged, so they mean the same in any plane; `along: u`/`v`/`n` are measured from a plane in space wherever the point is (§6.7); and `project` relates two planes by definition. A relation over an axis or a plane is in space whatever plane its points are drawn in.
+**[0.24] Across planes, the same word is the relation in space.** A relation's operands are read in the planes their points are drawn in (§6.7). Within one plane it is the 2D relation, and the lift is rigid, so the 2D relation *is* the relation in space. **[0.42]** Where they differ, or where any point stands in space, the word means its relation between the points' lifts: `coincident`, `distance` between two points (the true length), a point and a line (to the infinite line) or two lines (the common perpendicular — a magnitude, its side the seed's), `coincident` a line or a circle, `angle` (unsigned, 0 to 180°), `parallel`, `perpendicular` and `equal` (true lengths), and **[0.25]** `midpoint` (of the line in space) and `symmetry` (the half turn about the line in space, which on the line's own plane is the mirror). No selector says so. `sense:` and `side:` name a turn and a side *in a plane* and are **E040** there; a word that has no meaning in space — `horizontal`, `vertical`, a run or a rise (**[0.46]** a direction named by the view's word: name the axis, `along: std.x`), `tangent` between drawn figures, a curve's contacts — is **E062**. A radius and a ring's width read only radii, which the lift carries unchanged, so they mean the same in any plane; `along: u`/`v`/`n` are measured from a plane in space wherever the point is (§6.7); and `project` relates two planes by definition. A relation over an axis or a plane is in space whatever plane its points are drawn in.
 
 **[0.42] The role rule is withdrawn.** 0.24 read a plane's own datum points — its origin and its `toward` — by what they were related to, because they placed the view on the sheet. A plane has no `toward` and no place on the sheet now; its origin is a point drawn in it like any other.
 
@@ -1675,8 +1694,10 @@ Residual conventions: points are ℝ²; `×` is the scalar 2D cross product; `�
 | `ccw(a, b, c)` | (b−a) × (c−a) > 0 | 0 | inequality; selects a connected component |
 | `cw(a, b, c)` | (b−a) × (c−a) < 0 | 0 | |
 | `coincident(p, P: Plane)` **[0.24]** | n̂_P·(X − o_P) | 1 | X the point's lift; in space whatever plane `p` is in; `p` drawn in `P` is E061 |
-| `distance(p, P, along: n) == e` **[0.24]** | n̂_P·(X − o_P) − e | 1 | signed along `P`'s normal |
-| `distance(p, P, along: u) == e` **[0.21]** **[0.42]** | p.x − e; across planes (X − o_P)·û_P − e | 1 | `along: v` likewise; §6.7 |
+| `distance(p, q, along: t) == e` **[0.46]** | (q − p)·t̂ − e; in one view along its own axes q.x − p.x − e (q.y − p.y); across views (Y − X)·t̂ − e | 1 | t̂ the unit direction of axis or line `t`, signed along it; `x`, `y` name the points' view's axes |
+| `distance(p, P, along: n) == e` **[0.24]** | n̂_P·(X − o_P) − e | 1 | the ordinate from `P.origin` along `P`'s normal |
+| `distance(p, P, along: u) == e` **[0.21]** **[0.42]** | p.x − e; across planes (X − o_P)·û_P − e | 1 | the ordinate from `P.origin` along `P.u`; `along: v` likewise; §6.7 |
+| `level(p, q, t)` **[0.46]** | (q − p)·t̂ | 1 | the ordinate's zero, written `p level(t) q`; `p horizontal q` is `p level(up) q` |
 | `distance(P, Q) == e` **[0.42]** | (o_Q − o_P)·n̂_P − e | 1 | signed; parallel only where their axes make them so (§6.10) |
 | `coincident(t: Axis, p)` **[0.42]** | two components of (X − A) × d̂ across the axis | 2 | A the axis's place, d̂ its direction |
 | `coincident(l: Line, t: Axis)` **[0.44]** | two components of (X − A) × d̂ across the axis, for X each of the line's ends | 4 | A the axis's place, d̂ its direction; a line of no length is still on it |
@@ -2174,7 +2195,7 @@ The numerical method is unspecified. Whatever the method, a conforming solver:
 | E041 | cyclic definitional dependency (**[0.18]** a solid made of itself, §6.9; a plane folded from itself until 0.42) |
 | E050 | inconsistent system (no solution); report a minimal infeasible subset when computable |
 | E060 | a point put on two different planes (§6.7) **[0.10]**; **[0.42]** a circle, an arc or a spline over a point standing in space |
-| E061 | `project` refused: a point on no plane, both on one plane, or parallel planes (§6.7) **[0.10]**; a point drawn in a plane asked whether it is on it, or how far off it along its normal **[0.24]** |
+| E061 | `project` refused: a point on no plane, both on one plane, or parallel planes (§6.7) **[0.10]**; a point drawn in a plane asked whether it is on it, or how far off it along its normal **[0.24]**; two points of one view, or a point with itself, measured where the row is identically nothing **[0.46]** |
 | E062 | a word across planes, or over a point in space, with no meaning in space (`horizontal`, a run or rise, `tangent` between drawn figures, a curve's contacts) (§9.2) **[0.24]** **[0.42]** |
 | E064 | withdrawn **[0.42]**: was a solved view the model cannot hold (`fold: along`, `through:`) **[0.23]** |
 | E065 | a relation in space degenerate at the solve: views a `project` relates that came out parallel, lines whose skew distance is stated that came out parallel (§6.7) **[0.23]** |

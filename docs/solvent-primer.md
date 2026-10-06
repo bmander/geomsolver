@@ -93,7 +93,7 @@ param NAME[: TYPE] [:= EXPR] [hint(E)]  an input; with no value, an unknown     
 NAME := {LABEL: VALUE, ...}             values and geometry passed as one argument   (1.8)
 NAME := (E, E[, E])                     a vector, read by its members NAME.x, NAME.y (1.4)
 [private] [construction] [NAME :=] KIND[(CHILD | hint((E, E)), ...)] [hint(MEMBER: E, ...)]
-     [knots [...]] [in REF]             an entity declaration; every part optional   (1.4)
+     [knots [...]] [weights [E, ...]] [in REF]  an entity declaration; every part optional (1.4)
 NAME := point(x: XEXPR, y: YEXPR)       a computed point, drawn only as a curve       (1.9)
 [NAME :=] axis [hint(dir: (E, E, E))]  a directed line in space, with no start (1.13)
 [NAME :=] plane[(u: R, v: R)]             a plane over axes or lines; one left out is free (1.13)
@@ -137,7 +137,7 @@ read any number or binder in scope). Indices and fields chain: `l.e[2].p1` is `p
 | `line` | `p1`, `p2` | | `p1 -> p2` |
 | `circle` | `center` | `r` | |
 | `arc` | `center`, `start`, `end` | `r` | `start -> end`, counter-clockwise |
-| `spline` | control points, all named | | |
+| `spline` | control points, all named; `weights [...]` makes it rational | | |
 | `axis` | — | a place and a unit direction (seeded by `hint(dir: (x, y, z))`, the direction) | |
 | `plane` | `u`, `v` (axes or lines); member `origin` | where it stands, its `origin`: `fix(origin == (x, y, z))` | |
 | `curve` | its arguments | | |
@@ -191,6 +191,15 @@ dimensions. Name a point yourself when several statements mention it. The except
 its control points must be declared, named points (`s := spline(k0, k1, k2, k3)`); `s := spline`
 alone is an error.
 
+**A spline may be rational.** `s := spline(k0, k1, k2, k3) weights [1, w, w, 1]` gives each
+control point a weight: a heavier one pulls the curve toward itself, and with
+`w = (1 + sqrt(2)) / 3` and the inner points where a quarter circle's end tangents meet the cubic's
+thirds, the curve *is* that quarter circle (`nurbs.sv`). Weights are document data like `knots`,
+never solved for; each is a plain number, written as an expression over the scope's values where
+wanted, one per control point and each positive (else E103). All 1 is the ordinary spline. Every
+contact with the curve — `coincident`, `tangent`, `curvature` — reads it as it is, and a solid
+swept or turned from it is exact in both kernels and written to STEP as a rational curve.
+
 **The element's own name is optional.** `line(p1, p2)`, `point hint((3, 4))` and
 `arc(center: c)` are complete statements. If something later needs to reference an anonymous
 element (a constraint applied from the app), a name is spliced in: `l0 := line(…)`, or
@@ -217,12 +226,13 @@ stands in the parentheses:
 | word | fixity | operands and options |
 |---|---|---|
 | `coincident` | infix | two points; a point to a line, circle, arc, spline or curve. In space (1.13): a point, line or axis to a **plane**; a point or line to an **axis**, and two axes (one line). Not between two **solids**: material is added with `union` (1.14) |
-| `distance` | infix | two points (length; `along: x`/`y` or `right`/`left`/`up`/`down` for a signed run or rise); a point and a line, or two lines (a magnitude; `side:` picks the side); two concentric circles or arcs (radial gap); a point and a plane (`along:` required: `u`/`v` signed ordinates, `n` signed distance along the normal, in space); two planes, `P distance(d) Q` (along `P`'s normal) |
+| `distance` | infix | two points (length; with `along:` an **ordinate**, signed from the first to the second along a direction: an axis or a line, `along: std.x`, or the view's `x`/`y` — the run and the rise — or `right`/`left`/`up`/`down`); a point and a line, or two lines (a magnitude; `side:` picks the side); two concentric circles or arcs (radial gap); a point and a plane (`along:` required: `u`/`v` signed ordinates, `n` signed distance along the normal, in space); two planes, `P distance(d) Q` (along `P`'s normal) |
 | `distance` | prefix | a line: its length |
 | `tangent` | infix | line–circle/arc (`at: p1`/`p2` for tangency at that end; `side:` for the centre's side); circle/arc–circle/arc (`external: true/false`); arc–line (`at: start`/`end`); spline or curve–line |
 | `equal` | infix | two lines (length) or two circles/arcs (radius) |
 | `curvature` | infix | spline or curve and a circle/arc: the circle becomes the osculating circle there. On a traced curve, exact (the body's Taylor orders); refused only for a body using a relation with no Taylor form, named in the error |
-| `horizontal`, `vertical` | prefix / infix | a line; or two points with no line between them |
+| `horizontal`, `vertical` | prefix / infix | a line; or two points with no line between them, which is `level(up)` / `level(right)` |
+| `level(dir)` | infix | two points with the same ordinate along `dir` — an axis, a line, or a view's word (`up`, `right`); a point and a plane with `u`/`v`: on the plane's line through its origin. The ordinate's zero: write it rather than `distance(0, along: …)`, which is refused |
 | `angle` | infix | two lines, directed (below); an axis and a line or axis, unsigned, in space (1.13). With a second line pair instead of a number, `l1 angle(l3, l4) l2` equates two angles |
 | `radius` | prefix | a circle or arc |
 | `length` | prefix | an arc: radius × sweep, counter-clockwise from `start` to `end` (a magnitude) |
@@ -245,6 +255,8 @@ stands in the parentheses:
 | `l1 distance(6, side: left) l2` | `l2`'s `p1` lies left of `l1` |
 | `a distance(60, along: x) b` | `b.x − a.x = 60`; `along: y` is the rise |
 | `a distance(60, along: right) b` | the same, said as a word; also `left`, `up`, `down` |
+| `a distance(60, along: t) b` | `(b − a)·t̂ = 60` along axis or line `t`, in space where they are in different views |
+| `a level(t) b` | the same with no distance: level along `t`; `a horizontal b` is `a level(up) b` |
 | `l1 angle(30) l2` | 30° **counter-clockwise** from `l1`'s direction to `l2`'s |
 | `l1 angle(30, sense: cw) l2` | 30° clockwise, i.e. `angle(-30)` said openly |
 | `l1 angle(l3, l4) l2` | angle `l1 → l2` equals angle `l3 → l4`, both counter-clockwise |
@@ -296,8 +308,10 @@ relates their places in space; no selector is needed:
 | `l1 angle(90deg) l2` | the **unsigned** angle between directions, strictly between 0° and 180° (say `parallel` for 0°) |
 | `parallel`, `perpendicular`, `equal` | directions, and true lengths |
 | `a midpoint l`, `a symmetry(l) b` | the midpoint in space; a half turn about the line |
+| `a distance(20, along: std.z) b`, `a level(std.z) b` | how far apart along the axis, in space; level along it |
 
-A word with no meaning in space (`horizontal`, `along: x`, `tangent` between drawn figures, the
+A word with no meaning in space (`horizontal`, `along: x` — a view's own axis: name the axis
+instead, `along: std.x` — `tangent` between drawn figures, the
 angle-equals-angle form) is **E062** across views; `sense:` and `side:` there are **E040**. Radii
 mean the same in every view, and `p distance(d, along: u) P` is measured in space, from `P.origin`
 along `P.u`, wherever `p` is drawn (within `P` it is `p`'s own x).
@@ -989,7 +1003,7 @@ in std.front {
   fix((0, 0)) q0
   q0 distance(10) q1
   q0 distance(10, along: x) p0
-  q0 distance(0, along: y) p0
+  q0 horizontal p0
   p0 distance(4) p1
   p1 distance(6) p2
 
@@ -1751,7 +1765,7 @@ side := plane(u: t, v: std.y)
 side.origin coincident std.front     // on std.y already, as its axes pass through it
 in side {
   pax := line(hint((0, 10)), hint((60, 12)))
-  pax.p1 distance(0, along: u) side
+  pax.p1 level(u) side
   pax.p2 distance(60, along: u) side
   pax.p1 horizontal pax.p2
 }
@@ -1796,10 +1810,10 @@ in std.front {
 // generator, and its v runs along std.y; its origin is where M is along the generator
 G := plane(u: gen_g, v: hint(dir: (0, 1, 0)))
 G.v parallel std.y
-M distance(0mm, along: u) G
+M level(u) G
 Q := plane(u: gen_p, v: hint(dir: (0, 1, 0)))
 Q.v parallel std.y
-M distance(0mm, along: u) Q
+M level(u) Q
 
 // each axis in its axial plane, from its apex: the apex's image is on P and projects to the apex
 // drawn in P; how long an axis is drawn says nothing about the cone

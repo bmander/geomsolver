@@ -64,10 +64,18 @@ pub enum CKind {
     PointOnSpline,
     SplineTangentLine,
     SplineCurvature,
-    HorizontalPoints,
-    VerticalPoints,
-    HorizontalDistance,
-    VerticalDistance,
+    /// **An ordinate** (`docs/ordinate-plan.md`): how far `q` stands from `p` along a directed
+    /// line, `(q − p)·t̂ − d`.  One statement whatever the direction is — a view's own axis (the
+    /// run and the rise), a drawn line, an axis in space, a plane's normal — and which kernel reads
+    /// it is the operands' business, held in its `form` slot (`OrdinateForm`), which the core
+    /// fills and nobody writes.  Signed from `p` to `q`, along the direction's own sense; the
+    /// page's words (`right`, `left`, `up`, `down`) are that sign said as a word.  The plane forms
+    /// (`q distance(d, along: u) P`) are this from `P.origin` along `P.u`.
+    Ordinate,
+    /// **Two points level along a direction**: the ordinate's zero, `(q − p)·t̂ = 0`, so a
+    /// relation with no number and no callout (`a level(t) b`).  `a horizontal b` is `a
+    /// level(up) b`.  The same slots and kernels as `Ordinate`, at no distance.
+    Level,
     /// A point on a curve written in the language.  The same shape as `PointOnSpline` — two
     /// residuals against one owned parameter, so the net one equation "a point lies on a curve"
     /// is worth — but the curve is an expression rather than a basis, so the kernel that
@@ -96,11 +104,6 @@ pub enum CKind {
     /// parallel.  Not commutative: `same_args` swaps only the first two entity slots, so
     /// `b project a` reads as a second relation, which the diagnosis reports as implied.
     Project,
-    /// `p distance(d, along: u) P` with `p` drawn in `P`: its own coordinate, `p.x − d` (and
-    /// `p.y` for `CoordinateV`) — `radius`'s kernel over one column, since a plane's origin is its
-    /// coordinates' zero.  Drawn in any other plane, or in space, it is `Ordinate3U`.
-    CoordinateU,
-    CoordinateV,
     /// A hidden point in space held at the lift of the point it stands for, drawn in a plane:
     /// `X − (o + p.x·û + p.y·v̂) = 0` over the plane's axes and origin.  Three rows over the
     /// hidden point's three Params, so net nothing.  Intrinsic, minted by `Sketch::lift_point`.
@@ -141,10 +144,6 @@ pub enum CKind {
     PointOnLine3,
     /// Two lines of equal true length.
     EqualLength3,
-    /// `p distance(d, along: n) P`: a point's signed distance along a plane's normal — the one
-    /// relation that names a plane rather than lifting one, so it is in space whatever plane its
-    /// point is in.
-    PointPlaneDistance,
     /// `P coincident l`: a line on a plane in space, both its ends.
     LineOnPlane,
     /// A point the midpoint of a line drawn in another view, in space.
@@ -158,10 +157,6 @@ pub enum CKind {
     /// operands and the inferred planes — and the twin `Sketch::add` picks when a plane it reads
     /// is not fixed (`Sketch::plane_fixed`).
     ProjectSolved,
-    /// `p distance(d, along: u) P` where `p` is not drawn in `P`: how far it stands along `P`'s
-    /// `u` from `P`'s origin, in space (`kernels::ordinate3_u_rows`), and `Ordinate3V` along `v`.
-    Ordinate3U,
-    Ordinate3V,
     /// `t coincident P`: an axis lying in a plane — two points on it a drawing's extent apart, each
     /// on the plane (`kernels::axis_on_plane_rows`).  Reads where the axis is, so it places it.
     AxisOnPlane,
@@ -240,7 +235,7 @@ impl FamilyKernel {
 }
 
 /// Every concrete constraint type, in the order the registry lists them.
-pub const ALL_KINDS: [CKind; 69] = [
+pub const ALL_KINDS: [CKind; 62] = [
     CKind::Coincident,
     CKind::Distance,
     CKind::Midpoint,
@@ -266,17 +261,13 @@ pub const ALL_KINDS: [CKind; 69] = [
     CKind::PointOnSpline,
     CKind::SplineTangentLine,
     CKind::SplineCurvature,
-    CKind::HorizontalPoints,
-    CKind::VerticalPoints,
-    CKind::HorizontalDistance,
-    CKind::VerticalDistance,
+    CKind::Ordinate,
+    CKind::Level,
     CKind::PointOnCurve,
     CKind::PointOnExtrusion,
     CKind::CurveTangentLine,
     CKind::CurveCurvature,
     CKind::Project,
-    CKind::CoordinateU,
-    CKind::CoordinateV,
     CKind::Lift,
     CKind::Coincident3,
     CKind::Distance3,
@@ -290,7 +281,6 @@ pub const ALL_KINDS: [CKind; 69] = [
     CKind::ProjectSolved,
     CKind::PointOnLine3,
     CKind::EqualLength3,
-    CKind::PointPlaneDistance,
     CKind::LineOnPlane,
     CKind::Midpoint3,
     CKind::Symmetric3,
@@ -301,8 +291,6 @@ pub const ALL_KINDS: [CKind; 69] = [
     CKind::PlaneAxis,
     CKind::PointOnAxis,
     CKind::LineOnAxis,
-    CKind::Ordinate3U,
-    CKind::Ordinate3V,
     CKind::AxisOnPlane,
     CKind::AxisCoincident,
     CKind::AxisParallelPlane,
@@ -312,23 +300,178 @@ pub const ALL_KINDS: [CKind; 69] = [
     CKind::DragSeen,
 ];
 
-/// `along:` says which axis a run or a rise is measured on.  It is the one selector that fills no
-/// slot — it *chooses the kind* and is gone — so this table is the only place its words exist,
-/// read both by `infix_op` to make the choice and by the elaborator to say what was wrong with a
-/// word that is not one of them (issue #48, item 4).  A second list would be a second answer.
-pub const ALONG: [(&str, CKind); 9] = [
-    ("x", CKind::HorizontalDistance),
-    ("y", CKind::VerticalDistance),
-    ("u", CKind::CoordinateU),
-    ("v", CKind::CoordinateV),
+/// **The words a direction may be written as** (`docs/ordinate-plan.md`): `along:` an ordinate
+/// is measured on, and what `level` keeps level.  A direction is otherwise a reference — an axis
+/// or a drawn line — and these name the ones a drawing has without naming them: the axes of the
+/// view both points are drawn in (`x`, `y`, and with the sign said, `right`, `left`, `up`,
+/// `down`), or, against a plane, its own `u`, `v` and normal (`n`).  One table, read by the
+/// parser (a word here is a word, never a name), by `infix_op`, by the elaborator's refusal and
+/// by the inference of the direction itself (`infer_entity`); the signs are `side_words`'.
+pub const ALONG: [(&str, Toward); 9] = [
+    ("x", Toward::PageU),
+    ("y", Toward::PageV),
+    ("u", Toward::PlaneU),
+    ("v", Toward::PlaneV),
     // a point's signed distance along a plane's normal, in space whatever views it is in
-    ("n", CKind::PointPlaneDistance),
-    // the same two kinds with the direction named outright, which is the sign said in a word
-    ("right", CKind::HorizontalDistance),
-    ("left", CKind::HorizontalDistance),
-    ("up", CKind::VerticalDistance),
-    ("down", CKind::VerticalDistance),
+    ("n", Toward::PlaneN),
+    // the view's axes with the direction named outright, which is the sign said in a word
+    ("right", Toward::PageU),
+    ("left", Toward::PageU),
+    ("up", Toward::PageV),
+    ("down", Toward::PageV),
 ];
+
+/// The words alone, in `ALONG`'s order: what the registry publishes and `words` offers.
+pub const ALONG_WORDS: [&str; ALONG.len()] = {
+    let mut w = [""; ALONG.len()];
+    let mut i = 0;
+    while i < w.len() {
+        w[i] = ALONG[i].0;
+        i += 1;
+    }
+    w
+};
+
+/// What a direction word names: one of the axes of the view the points are drawn in, or one of
+/// the plane's an ordinate is measured against.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Toward {
+    PageU,
+    PageV,
+    PlaneU,
+    PlaneV,
+    PlaneN,
+}
+
+impl Toward {
+    /// The word's meaning, or `None` for a word that is not a direction.
+    pub fn of(word: &str) -> Option<Toward> {
+        ALONG.iter().find(|(w, _)| *w == word).map(|(_, t)| *t)
+    }
+
+    /// Whether the word names a plane's own direction, so the second operand is that plane.
+    pub fn of_plane(self) -> bool {
+        matches!(self, Toward::PlaneU | Toward::PlaneV | Toward::PlaneN)
+    }
+}
+
+/// **Which kernel reads an ordinate** — the one fact about an `Ordinate` or a `Level` the operands
+/// decide rather than the statement: where its points are drawn and what its direction is.  Held
+/// in the kind's `form` slot, which `Sketch::add_quiet` sets from `ordinate_form` whatever it was
+/// handed, so it is never stale and never written by a person.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OrdinateForm {
+    /// Both points in one view, along its `u`: the run, `q.x − p.x`, a constant Jacobian.
+    PageU = 0,
+    /// Along the view's `v`: the rise.
+    PageV = 1,
+    /// Both points and a drawn line in one view: along the line, in the view's coordinates.
+    InView = 2,
+    /// Anything else along an axis or a line: in space, over the points' lifts.
+    Space = 3,
+    /// A plane's own word, from its origin, for a point not drawn in it: along the plane's frame
+    /// in space, its `û` — which is its `u` axis — its `v̂`, square to `û` in the plane whatever
+    /// way the `v` axis runs, and its normal `n̂`, over the plane's origin and axes as columns.
+    FrameU = 4,
+    FrameV = 5,
+    FrameN = 6,
+    /// From a plane's origin to a point drawn in the plane: the point's own coordinate, `q.x − d`
+    /// (`q.y` for `CoordV`) — `radius`'s kernel over the one column, the origin being the
+    /// coordinates' zero, so the row reads nothing it does not move.
+    CoordU = 7,
+    CoordV = 8,
+}
+
+impl OrdinateForm {
+    pub fn from_int(i: i64) -> OrdinateForm {
+        match i {
+            0 => OrdinateForm::PageU,
+            1 => OrdinateForm::PageV,
+            2 => OrdinateForm::InView,
+            4 => OrdinateForm::FrameU,
+            5 => OrdinateForm::FrameV,
+            6 => OrdinateForm::FrameN,
+            7 => OrdinateForm::CoordU,
+            8 => OrdinateForm::CoordV,
+            // 3, and anything a record made up
+            _ => OrdinateForm::Space,
+        }
+    }
+
+    /// Whether the kernel reads the points where they stand in space.
+    pub fn in_space(self) -> bool {
+        matches!(self, OrdinateForm::Space | OrdinateForm::FrameU | OrdinateForm::FrameV
+            | OrdinateForm::FrameN)
+    }
+
+    /// Whether it is read over a plane's own frame (`FrameU`, `FrameV`, `FrameN`).
+    pub fn of_frame(self) -> bool {
+        matches!(self, OrdinateForm::FrameU | OrdinateForm::FrameV | OrdinateForm::FrameN)
+    }
+}
+
+/// The form an ordinate's operands give it (`OrdinateForm`): `p`, `q`, the direction and the
+/// word it was named by.  A view both points are drawn in reads its own `u` as the run and —
+/// named so — its up as the rise, and a line drawn there in its coordinates; a plane's own word
+/// from its origin reads the plane's frame; every other direction is read in space, along the
+/// axis or the line itself.
+pub fn ordinate_form(sk: &Sketch, p: usize, q: usize, along: EntRef, word: &str) -> OrdinateForm {
+    let view = shared_view(sk, p, q);
+    let toward = Toward::of(word);
+    // the view's up, its frame's `v̂`: said as a word, or its `v` axis where the plane holds its
+    // two axes square — an axis written outright is read along itself, which `v̂` may not be
+    let square = |pl: usize| {
+        let d = |a: u32| sk.axes[a as usize].d;
+        let (du, dv) = (d(sk.planes[pl].u), d(sk.planes[pl].v));
+        let held = du.iter().chain(&dv).all(|&k| sk.params[k as usize].fixed);
+        let value = |p: [u32; 3]| p.map(|k| sk.params[k as usize].value);
+        held && crate::space::dot(value(du), value(dv)).abs() <= 1e-12
+    };
+    let up = |pl: usize| matches!(toward, Some(Toward::PageV | Toward::PlaneV)) || square(pl);
+    let axis = |pl: usize, u: bool| {
+        let a = if u { sk.planes[pl].u } else { sk.planes[pl].v };
+        along == EntRef::axis(a as usize)
+    };
+    if along.kind == EntKind::Plane {
+        return OrdinateForm::FrameN;
+    }
+    if let Some(v) = view {
+        // from the view's own origin, the point's coordinate in it
+        let origin = sk.plane_of_origin(p) == Some(v);
+        match along.kind {
+            EntKind::Axis if axis(v, true) && origin => return OrdinateForm::CoordU,
+            EntKind::Axis if axis(v, false) && up(v) && origin => return OrdinateForm::CoordV,
+            EntKind::Axis if axis(v, true) => return OrdinateForm::PageU,
+            EntKind::Axis if axis(v, false) && up(v) => return OrdinateForm::PageV,
+            EntKind::Line => {
+                let l = &sk.lines[along.i()];
+                if [l.p1, l.p2].iter().all(|&e| sk.plane_of(e as usize) == Some(v)) {
+                    return OrdinateForm::InView;
+                }
+            }
+            _ => {}
+        }
+    }
+    match (sk.plane_of_origin(p), toward) {
+        (Some(pl), Some(Toward::PlaneU)) if axis(pl, true) => OrdinateForm::FrameU,
+        (Some(pl), Some(Toward::PlaneV)) if axis(pl, false) => OrdinateForm::FrameV,
+        _ => OrdinateForm::Space,
+    }
+}
+
+/// The view points `p` and `q` are both drawn in, if they are.
+pub fn shared_view(sk: &Sketch, p: usize, q: usize) -> Option<usize> {
+    sk.plane_of(p).filter(|&v| sk.plane_of(q) == Some(v))
+}
+
+/// The word an ordinate's direction was named by — `x`, `up`, `u` … — or `""` where it was named
+/// by reference, and for every other kind.
+pub fn ordinate_word(kind: CKind, args: &[Arg]) -> &str {
+    match kind.word_slot().and_then(|w| args.get(w)) {
+        Some(Arg::Str(w)) => w,
+        _ => "",
+    }
+}
 
 /// What a written operator says, once its operands' kinds are known.
 ///
@@ -349,9 +492,6 @@ pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option
     let round = |k: EntKind| matches!(k, Circle | Arc);
     // an axis is in space, so a direction relation naming one is the relation in space
     let axes = |a: EntKind, b: EntKind| matches!((a, b), (Axis, Axis | Line) | (Line, Axis));
-    if matches!(sel("along").as_deref(), Some("u" | "v" | "n")) && (word != "distance" || (a, b) != (Point, Plane)) {
-        return None;
-    }
     Some(match word {
         // incidence, and two points being one: what it means is the kinds of its operands
         "coincident" => match (a, b) {
@@ -373,13 +513,18 @@ pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option
             _ => return None,
         },
         "distance" => match (a, b) {
-            // which of the three a pair of points means is `along:`, and the run and the rise
-            // are signed from the first point to the second — so they do not commute
+            // a pair of points apart, or — with `along:` — how far the second stands from the
+            // first along a direction: an ordinate, signed, so it does not commute.  Against a
+            // plane it is measured from the plane's origin (`along: u`, `v`, `n`); whether the
+            // direction suits the operands is the elaborator's to say, in their words
             (Point, Point) => match sel("along") {
                 None => CKind::Distance,
-                Some(w) => ALONG.iter().find(|(n, k)| *n == w && matches!(k, CKind::HorizontalDistance | CKind::VerticalDistance)).map(|(_, k)| *k)?,
+                Some(_) => CKind::Ordinate,
             },
-            (Point, Plane) => ALONG.iter().find(|(n, k)| Some(*n) == sel("along").as_deref() && matches!(k, CKind::CoordinateU | CKind::CoordinateV | CKind::PointPlaneDistance)).map(|(_, k)| *k)?,
+            (Point, Plane) => match sel("along") {
+                None => return None,
+                Some(_) => CKind::Ordinate,
+            },
             (Point, Line) => CKind::PointLineDistance,
             (Line, Line) => CKind::ParallelDistance,
             // two parallel planes apart: what a stack is written in
@@ -415,12 +560,14 @@ pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option
             (Curve, k) if round(k) => CKind::CurveCurvature,
             _ => return None,
         },
-        "horizontal" => match (a, b) {
-            (Point, Point) => CKind::HorizontalPoints,
+        // the ordinate's zero; `horizontal` and `vertical` between points are `level(up)` and
+        // `level(right)` (`level_alias`)
+        "level" => match (a, b) {
+            (Point, Point | Plane) => CKind::Level,
             _ => return None,
         },
-        "vertical" => match (a, b) {
-            (Point, Point) => CKind::VerticalPoints,
+        "horizontal" | "vertical" => match (a, b) {
+            (Point, Point) => CKind::Level,
             _ => return None,
         },
         "angle" => match (a, b) {
@@ -459,6 +606,18 @@ pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option
     })
 }
 
+/// **`horizontal` and `vertical` between two points are aliases** (`docs/ordinate-plan.md`):
+/// `a horizontal b` is `a level(up) b`, the same height in the points' view, and `a vertical b`
+/// is `a level(right) b`.  The one entry the aliases have, so that it is the one thing that moves
+/// when the library can define a relation word (#94).
+pub fn level_alias(word: &str) -> Option<&'static str> {
+    match word {
+        "horizontal" => Some("up"),
+        "vertical" => Some("right"),
+        _ => None,
+    }
+}
+
 /// The same for a word standing *before* its one operand.  `distance` on a line is sugar for the
 /// distance between its ends, which is why it is here and not in the table above.
 pub fn prefix_op(word: &str, on: EntKind) -> Option<CKind> {
@@ -479,8 +638,8 @@ pub fn prefix_op(word: &str, on: EntKind) -> Option<CKind> {
 /// table (`gauge_op`), so a class, a placement and the chain's lookahead treat them as any
 /// other word.  None of the three is a prefix word a chain can open a link with: `prefix_op`
 /// declines them, so `fix(x == 0) point p -> …` is no chain.
-pub const OPERATORS: [&str; 21] = [
-    "distance", "tangent", "equal", "curvature", "horizontal", "vertical", "angle",
+pub const OPERATORS: [&str; 22] = [
+    "distance", "tangent", "equal", "curvature", "horizontal", "vertical", "level", "angle",
     "radius", "length", "coincident", "midpoint", "parallel", "perpendicular", "symmetry", "project",
     "fix", "ccw", "cw",
     // **the words that relate two solids** (§9.8).  They are operators so that a statement
@@ -593,6 +752,10 @@ pub enum SpecKind {
     /// A direction in space: a line drawn in some view, or an axis — what `parallel`,
     /// `perpendicular` and `angle` read across views and between axes.
     Direction,
+    /// What an ordinate is measured along (`Ordinate`, `Level`): a line or an axis, as a
+    /// `Direction` is, or a plane, standing for its normal — never written so, only through the
+    /// word `n` against the plane (`program::relations`), since "along a plane" reads as within it.
+    Along,
     /// The operand of `fix`: an entity of any kind whose own numbers the statement holds
     /// (`fix(r == 25) c`).  Filled from a reference like an entity slot; which numbers that
     /// kind has is the gauge's own check.
@@ -633,6 +796,7 @@ impl SpecKind {
             | SpecKind::Plane
             | SpecKind::Axis
             | SpecKind::Direction
+            | SpecKind::Along
             | SpecKind::Scalar
             | SpecKind::Float
             | SpecKind::Int
@@ -655,6 +819,7 @@ impl SpecKind {
                 | SpecKind::Plane
                 | SpecKind::Axis
                 | SpecKind::Direction
+                | SpecKind::Along
         )
     }
 
@@ -689,6 +854,7 @@ impl SpecKind {
             SpecKind::Plane => "plane",
             SpecKind::Axis => "axis",
             SpecKind::Direction => "direction",
+            SpecKind::Along => "along",
             SpecKind::Scalar => "scalar",
             SpecKind::Length => "length",
             SpecKind::Angle => "angle",
@@ -736,25 +902,19 @@ impl CKind {
             CKind::PointOnSpline => "PointOnSpline",
             CKind::SplineTangentLine => "SplineTangentLine",
             CKind::SplineCurvature => "SplineCurvature",
-            CKind::HorizontalPoints => "HorizontalPoints",
-            CKind::VerticalPoints => "VerticalPoints",
-            CKind::HorizontalDistance => "HorizontalDistance",
-            CKind::VerticalDistance => "VerticalDistance",
+            CKind::Ordinate => "Ordinate",
+            CKind::Level => "Level",
             CKind::PointOnCurve => "PointOnCurve",
             CKind::PointOnExtrusion => "PointOnExtrusion",
             CKind::CurveTangentLine => "CurveTangentLine",
             CKind::CurveCurvature => "CurveCurvature",
             CKind::Project => "Project",
-            CKind::CoordinateU => "CoordinateU",
-            CKind::Ordinate3U => "Ordinate3U",
-            CKind::Ordinate3V => "Ordinate3V",
             CKind::AxisOnPlane => "AxisOnPlane",
             CKind::AxisCoincident => "AxisCoincident",
             CKind::AxisParallelPlane => "AxisParallelPlane",
             CKind::AxisPerpendicularPlane => "AxisPerpendicularPlane",
             CKind::PlaneParallel => "PlaneParallel",
             CKind::PlaneDistance => "PlaneDistance",
-            CKind::CoordinateV => "CoordinateV",
             CKind::Lift => "Lift",
             CKind::Coincident3 => "Coincident3",
             CKind::Distance3 => "Distance3",
@@ -767,7 +927,6 @@ impl CKind {
             CKind::PointOnCircle3 => "PointOnCircle3",
             CKind::PointOnLine3 => "PointOnLine3",
             CKind::EqualLength3 => "EqualLength3",
-            CKind::PointPlaneDistance => "PointPlaneDistance",
             CKind::Midpoint3 => "Midpoint3",
             CKind::Symmetric3 => "Symmetric3",
             CKind::LineOnPlane => "LineOnPlane",
@@ -810,19 +969,26 @@ impl CKind {
                 ("el", S::Float),
             ],
             CKind::Horizontal | CKind::Vertical => &[("line", S::Line)],
-            // the same statement about the segment between two points, with no line drawn there
-            CKind::HorizontalPoints | CKind::VerticalPoints => {
-                &[("p", S::Point), ("q", S::Point)]
-            }
-            // the run and the rise between two points: what a drawing dimensions when it wants
-            // an ordinate rather than a length.  Signed from p to q, so the pair is not
-            // commutative — swapping the points negates the number.
-            // the run and the rise: a magnitude, with `along` naming the axis (`x`, `y` — either
-            // way along it, the seed choosing) or the direction outright (`right`, `left`, `up`,
-            // `down`), which is the same statement the sign used to make (§9.2)
-            CKind::HorizontalDistance | CKind::VerticalDistance => {
-                &[("p", S::Point), ("q", S::Point), ("d", S::Length), ("along", S::Str)]
-            }
+            // how far `q` stands from `p` along `t`, signed from `p` to `q`, so the pair is not
+            // commutative.  `t` is written as a reference, or left to the core where `along` names
+            // it in a word (`x`, `up`, `u` …), the word kept for its sign and its spelling; `form`
+            // is which kernel reads it, the core's alone (`OrdinateForm`)
+            CKind::Ordinate => &[
+                ("p", S::Point),
+                ("q", S::Point),
+                ("t", S::Along),
+                ("d", S::Length),
+                ("along", S::Str),
+                ("form", S::Int),
+            ],
+            // the same at no distance: the two level along `t`
+            CKind::Level => &[
+                ("p", S::Point),
+                ("q", S::Point),
+                ("t", S::Along),
+                ("along", S::Str),
+                ("form", S::Int),
+            ],
             CKind::Parallel | CKind::Perpendicular | CKind::EqualLength => {
                 &[("l1", S::Line), ("l2", S::Line)]
             }
@@ -888,9 +1054,6 @@ impl CKind {
             CKind::SplineCurvature => {
                 &[("spline", S::Spline), ("circle", S::CircleOrArc), ("t", S::Param)]
             }
-            CKind::CoordinateU | CKind::CoordinateV | CKind::Ordinate3U | CKind::Ordinate3V => {
-                &[("p", S::Point), ("frame", S::Plane), ("d", S::Length)]
-            }
             // the view point and its view: the hidden point is the lift's own, found by the
             // point (`Sketch::lift_of`), and the plane is a real slot so a drag part, a
             // deletion and the topology key follow it
@@ -915,9 +1078,6 @@ impl CKind {
             }
             CKind::PointOnLine3 => &[("p", S::Point), ("line", S::Line)],
             CKind::EqualLength3 => &[("l1", S::Line), ("l2", S::Line)],
-            CKind::PointPlaneDistance => {
-                &[("p", S::Point), ("plane", S::Plane), ("d", S::Length)]
-            }
             CKind::Midpoint3 => &[("p", S::Point), ("line", S::Line)],
             CKind::Symmetric3 => &[("p", S::Point), ("q", S::Point), ("line", S::Line)],
             CKind::LineOnPlane => &[("line", S::Line), ("plane", S::Plane)],
@@ -994,10 +1154,9 @@ impl CKind {
     /// `Lift`, `AxisUnit` and `AxisFoot` are intrinsic (`Sketch::lift_point`, `Sketch::axis`,
     /// `Sketch::place_axis`).
     ///
-    /// Several kinds share a word, and that is where the saving is: **`coincident` is seventeen
-    /// kinds, `distance` fifteen, `tangent` ten**, and `horizontal`/`vertical` are two each with
-    /// the *fixity* doing the work — a line prefixed, a pair of points infixed, which is exactly the
-    /// distinction `HorizontalPoints` was added to draw.
+    /// Several kinds share a word, and that is where the saving is: **`coincident` is nineteen
+    /// kinds, `distance` nine, `tangent` ten**, and `horizontal`/`vertical` are a line's direction
+    /// prefixed and, between a pair of points infixed, the aliases of `level`.
     ///
     /// The **surface word and the wire name are different things**: `report::registry_json` goes
     /// on publishing the snake_case `name` that both the binding and the JSON export key on, and
@@ -1014,17 +1173,16 @@ impl CKind {
             | CKind::PointOnExtrusion => ("coincident", Infix),
             CKind::CurveTangentLine => ("tangent", Infix),
             CKind::CurveCurvature => ("curvature", Infix),
-            // a measured separation: six kinds, told apart by the pair and by `along:`
+            // a measured separation: told apart by the pair and by `along:`, which makes it an
+            // ordinate
             CKind::Distance
-            | CKind::HorizontalDistance
-            | CKind::VerticalDistance
+            | CKind::Ordinate
             | CKind::PointLineDistance
             | CKind::ParallelDistance
-            | CKind::AnnularDistance
-            | CKind::CoordinateU
-            | CKind::CoordinateV
-            | CKind::Ordinate3U
-            | CKind::Ordinate3V => ("distance", Infix),
+            | CKind::AnnularDistance => ("distance", Infix),
+            // the ordinate's zero; `horizontal` and `vertical` between points are its aliases
+            // (`level_alias`), which is how the printer spells the page's two (`operator_text`)
+            CKind::Level => ("level", Infix),
             // touching: six kinds, told apart by the pair and by `at:`
             CKind::TangentLineCircle
             | CKind::TangentLineCircleAt
@@ -1036,9 +1194,7 @@ impl CKind {
             CKind::SplineCurvature => ("curvature", Infix),
             // the fixity is the distinction: a line prefixed, a pair of points infixed
             CKind::Horizontal => ("horizontal", Prefix),
-            CKind::HorizontalPoints => ("horizontal", Infix),
             CKind::Vertical => ("vertical", Prefix),
-            CKind::VerticalPoints => ("vertical", Infix),
             // `angle` and `radius` keep their own words rather than folding into `distance`:
             // over two lines a Length means a parallel distance and an Angle means an angle, and
             // nothing but the number's unit could separate them
@@ -1066,7 +1222,6 @@ impl CKind {
             // a lifted or described statement spells the word and the reading comes back
             CKind::Coincident3 => ("coincident", Infix),
             CKind::Distance3 | CKind::PointLine3 | CKind::LineLine3 => ("distance", Infix),
-            CKind::PointPlaneDistance => ("distance", Infix),
             CKind::Angle3 => ("angle", Infix),
             CKind::Perpendicular3 => ("perpendicular", Infix),
             CKind::Parallel3 => ("parallel", Infix),
@@ -1129,8 +1284,7 @@ impl CKind {
             // the two tables together.
             (CKind::PointLineDistance, 3) | (CKind::ParallelDistance, 3) => &["left", "right"][..],
             (CKind::TangentLineCircle, 2) => &["left", "right"][..],
-            (CKind::HorizontalDistance, 3) => &["x", "right", "left"][..],
-            (CKind::VerticalDistance, 3) => &["y", "up", "down"][..],
+            (CKind::Ordinate, 4) | (CKind::Level, 3) => &ALONG_WORDS[..],
             (CKind::Angle, 3) => &["ccw", "cw"][..],
             (CKind::EqualAngle, 4) => &["ccw", "cw"][..],
             _ => return None,
@@ -1164,8 +1318,11 @@ impl CKind {
                 (3, &[("left", 1.0), ("right", -1.0)][..])
             }
             CKind::TangentLineCircle => (2, &[("left", 1.0), ("right", -1.0)][..]),
-            CKind::HorizontalDistance => (3, &[("right", 1.0), ("left", -1.0)][..]),
-            CKind::VerticalDistance => (3, &[("up", 1.0), ("down", -1.0)][..]),
+            // the page's two axes either way: the run measured `left` is the run turned round.  A
+            // level's direction has no sense, so it has no side either
+            CKind::Ordinate => {
+                (4, &[("right", 1.0), ("left", -1.0), ("up", 1.0), ("down", -1.0)][..])
+            }
             CKind::Angle => (3, &[("ccw", 1.0), ("cw", -1.0)][..]),
             // the second pair turns the way the first does, or — `cw` — the other way round
             CKind::EqualAngle => (4, &[("ccw", 1.0), ("cw", -1.0)][..]),
@@ -1187,7 +1344,24 @@ impl CKind {
                     | (CKind::TangentCircleCircle, 2)
                     | (CKind::Project | CKind::ProjectSolved, 2 | 3)
                     | (CKind::LineLine3, 3)
+                    // the direction where a word names it, and the form always
+                    | (CKind::Ordinate, 2 | 5)
+                    | (CKind::Level, 2 | 4)
             )
+    }
+
+    /// The slot an ordinate holds its form in (`OrdinateForm`), and the one its direction's word
+    /// is in: for `Ordinate` and `Level`, `None` for every other kind.
+    pub fn form_slot(self) -> Option<usize> {
+        match self {
+            CKind::Ordinate => Some(5),
+            CKind::Level => Some(4),
+            _ => None,
+        }
+    }
+
+    pub fn word_slot(self) -> Option<usize> {
+        self.form_slot().map(|i| i - 1)
     }
 
     /// The spec slots holding an unknown of this kind's own, as (index, name).  On the kind,
@@ -1315,14 +1489,10 @@ impl CKind {
             // second-order screen to look for
             | CKind::PointOnCurve
             | CKind::PointOnExtrusion
-            | CKind::HorizontalPoints
-            | CKind::VerticalPoints
-            | CKind::HorizontalDistance
-            | CKind::VerticalDistance
+            | CKind::Ordinate
+            | CKind::Level
             // a projection is a linear tie between two images: no contact, no double root
             | CKind::Project
-            | CKind::CoordinateU
-            | CKind::CoordinateV
             // a hidden point tied to the point it lifts: no contact
             | CKind::Lift
             // incidence and measure in space: no double root the screen knows how to look for
@@ -1337,7 +1507,6 @@ impl CKind {
             | CKind::PointOnCircle3
             | CKind::PointOnLine3
             | CKind::EqualLength3
-            | CKind::PointPlaneDistance
             | CKind::LineOnPlane
             | CKind::Midpoint3
             | CKind::Symmetric3
@@ -1348,8 +1517,6 @@ impl CKind {
             | CKind::PlaneAxis
             | CKind::PointOnAxis
             | CKind::LineOnAxis
-            | CKind::Ordinate3U
-            | CKind::Ordinate3V
             | CKind::AxisOnPlane
             | CKind::AxisCoincident
             | CKind::AxisParallelPlane
@@ -1379,8 +1546,8 @@ impl CKind {
                 | CKind::EqualRadius
                 | CKind::TangentCircleCircle
                 | CKind::Symmetric
-                | CKind::HorizontalPoints
-                | CKind::VerticalPoints
+                // level either way round: the zero is its own negative
+                | CKind::Level
                 | CKind::Coincident3
                 | CKind::Distance3
                 | CKind::Angle3
@@ -1430,16 +1597,11 @@ impl CKind {
             CKind::PointOnSpline => K::PointOnSpline,
             CKind::SplineTangentLine => K::SplineTangentLine,
             CKind::SplineCurvature => K::SplineCurvature,
-            // the same kernels: their four columns are already two points' coordinates
-            CKind::HorizontalPoints => K::Horizontal,
-            CKind::VerticalPoints => K::Vertical,
-            CKind::HorizontalDistance => K::HorizontalDistance,
-            CKind::VerticalDistance => K::VerticalDistance,
+            // an ordinate's kernel is its form's (`Constraint::kernel`); the kind's own is the run,
+            // and a level's the line kernel that reads a pair of points' heights alike
+            CKind::Ordinate => K::OrdinateU,
+            CKind::Level => K::Horizontal,
             CKind::Project => K::Project,
-            // a plane's origin is its coordinates' zero: an ordinate is one coordinate stated
-            CKind::CoordinateU | CKind::CoordinateV => K::Radius,
-            CKind::Ordinate3U => K::Ordinate3U,
-            CKind::Ordinate3V => K::Ordinate3V,
             CKind::Lift => K::Lift,
             CKind::Coincident3 => K::Coincident3,
             CKind::Distance3 => K::Distance3,
@@ -1452,7 +1614,6 @@ impl CKind {
             CKind::PointOnCircle3 => K::PointOnCircle3,
             CKind::PointOnLine3 => K::PointOnLine3,
             CKind::EqualLength3 => K::EqualLength3,
-            CKind::PointPlaneDistance => K::PointPlaneDistance,
             CKind::Midpoint3 => K::Midpoint3,
             CKind::Symmetric3 => K::Symmetric3,
             CKind::LineOnPlane => K::LineOnPlane,
@@ -1511,17 +1672,12 @@ impl CKind {
             CKind::ParallelDistance => K::ParallelDistanceFree,
             CKind::PointLineDistance => K::PointLineDistanceFree,
             CKind::AnnularDistance => K::AnnularDistanceFree,
-            CKind::HorizontalDistance => K::HorizontalDistanceFree,
-            CKind::VerticalDistance => K::VerticalDistanceFree,
-            CKind::CoordinateU | CKind::CoordinateV => K::RadiusFree,
-            CKind::Ordinate3U => K::Ordinate3UFree,
-            CKind::Ordinate3V => K::Ordinate3VFree,
+            CKind::Ordinate => K::OrdinateUFree,
             CKind::PlaneDistance => K::PlaneDistanceFree,
             CKind::Distance3 => K::Distance3Free,
             CKind::PointLine3 => K::PointLine3Free,
             CKind::LineLine3 => K::LineLine3Free,
             CKind::Angle3 => K::Angle3Free,
-            CKind::PointPlaneDistance => K::PointPlaneDistanceFree,
             CKind::Coincident
             | CKind::Midpoint
             | CKind::DragTarget
@@ -1548,8 +1704,7 @@ impl CKind {
             | CKind::CurveCurvature
             | CKind::SplineTangentLine
             | CKind::SplineCurvature
-            | CKind::HorizontalPoints
-            | CKind::VerticalPoints
+            | CKind::Level
             | CKind::Project
             | CKind::Lift
             | CKind::Coincident3
@@ -1596,15 +1751,12 @@ impl CKind {
                 | CKind::ProjectSolved
                 | CKind::PointOnLine3
                 | CKind::EqualLength3
-                | CKind::PointPlaneDistance
                 | CKind::LineOnPlane
                 | CKind::Midpoint3
                 | CKind::Symmetric3
                 | CKind::PointOnExtrusion
                 | CKind::PointOnAxis
                 | CKind::LineOnAxis
-                | CKind::Ordinate3U
-                | CKind::Ordinate3V
                 | CKind::AxisOnPlane
                 | CKind::AxisCoincident
                 | CKind::AxisParallelPlane
@@ -1940,6 +2092,17 @@ impl Constraint {
         Ok(Constraint::new(kind, args))
     }
 
+    /// An ordinate (`docs/ordinate-plan.md`): how far `q` stands from `p` along `t` — an axis,
+    /// a line, or a plane standing for its normal.  Its form is read when it is added.
+    pub fn ordinate(p: EntRef, q: EntRef, t: EntRef, d: f64) -> Constraint {
+        Constraint::new(CKind::Ordinate, vec![Arg::Ent(p), Arg::Ent(q), Arg::Ent(t), Arg::Num(d)])
+    }
+
+    /// The two level along `t`: the ordinate's zero.
+    pub fn level(p: EntRef, q: EntRef, t: EntRef) -> Constraint {
+        Constraint::new(CKind::Level, vec![Arg::Ent(p), Arg::Ent(q), Arg::Ent(t)])
+    }
+
     /// A two-entity curve contact whose parameter starts where the geometry puts it.
     fn contact(sk: &Sketch, kind: CKind, a: Arg, b: Arg) -> Constraint {
         let mut args = vec![a, b, Arg::Num(0.0)];
@@ -1975,8 +2138,34 @@ impl Constraint {
 
     /// Which kernel evaluates this constraint: its type's, or the free-variable twin when the
     /// number it states is an unknown rather than a constant.
-    fn kernel(&self) -> K {
+    pub(crate) fn kernel(&self) -> K {
         let free = self.free.is_some();
+        // an ordinate is read by the kernel its operands give it (`OrdinateForm`), and its zero
+        // by the same at no distance — but along a view's own axis by the line kernel that
+        // levels a pair of points
+        if let Some(form) = self.form() {
+            use OrdinateForm as F;
+            return match (self.kind, form, free) {
+                (CKind::Level, F::PageU, _) => K::Vertical,
+                (CKind::Level, F::PageV, _) => K::Horizontal,
+                (_, F::CoordU | F::CoordV, false) => K::Radius,
+                (_, F::CoordU | F::CoordV, true) => K::RadiusFree,
+                (_, F::PageU, false) => K::OrdinateU,
+                (_, F::PageU, true) => K::OrdinateUFree,
+                (_, F::PageV, false) => K::OrdinateV,
+                (_, F::PageV, true) => K::OrdinateVFree,
+                (_, F::InView, false) => K::OrdinateLine,
+                (_, F::InView, true) => K::OrdinateLineFree,
+                (_, F::Space, false) => K::OrdinateSpace,
+                (_, F::Space, true) => K::OrdinateSpaceFree,
+                (_, F::FrameU, false) => K::OrdinateFrameU,
+                (_, F::FrameU, true) => K::OrdinateFrameUFree,
+                (_, F::FrameV, false) => K::OrdinateFrameV,
+                (_, F::FrameV, true) => K::OrdinateFrameVFree,
+                (_, F::FrameN, false) => K::OrdinateFrameN,
+                (_, F::FrameN, true) => K::OrdinateFrameNFree,
+            };
+        }
         // a side left unsaid is the magnitude form: both sides are solutions, and where the solve
         // lands among them is the seed's business (§9.2)
         if self.side().is_none() {
@@ -1999,7 +2188,11 @@ impl Constraint {
     /// satisfies its constraints rather than choosing among their solutions (§9.2).  Every other
     /// type states its own number and reads it straight.
     pub fn signed_gap(&self, sk: &Sketch) -> f64 {
-        let d = self.args[2].num();
+        let d = self.dimensions().first().map_or(0.0, |&(i, _, _)| self.args[i].num());
+        // an ordinate is signed already, its word turning it: there is no line to read a side off
+        if self.kind == CKind::Ordinate {
+            return self.side().unwrap_or(1.0) * d;
+        }
         let Some(_) = self.kind.side_slot() else { return d };
         if let Some(s) = self.side() {
             return s * d;
@@ -2017,6 +2210,21 @@ impl Constraint {
         } else {
             d
         }
+    }
+
+    /// An ordinate's form (`OrdinateForm`), or `None` for every other kind.
+    pub fn form(&self) -> Option<OrdinateForm> {
+        let i = self.kind.form_slot()?;
+        Some(match self.args.get(i) {
+            Some(Arg::Int(f)) => OrdinateForm::from_int(*f),
+            _ => OrdinateForm::Space,
+        })
+    }
+
+    /// Whether this statement reads its points where they stand in space — a relation in space,
+    /// or an ordinate whose form is one — so `Sketch::add` mints their lifts.
+    pub fn reads_space(&self) -> bool {
+        self.kind.spatial() || self.form().is_some_and(|f| f.in_space())
     }
 
     /// Which way an angle turns: `sense: cw` is the minus a drawing no longer writes (§9.4), and
@@ -2178,7 +2386,10 @@ impl Constraint {
         }
         if let Some((sp, t)) = self.spline_contact(sk) {
             let span = span.unwrap_or_else(|| crate::curve::span_of(sk, sp, t));
-            return crate::curve::local_knots(&sk.splines[sp].knots, span).to_vec();
+            let s = &sk.splines[sp];
+            let mut k = crate::curve::local_knots(&s.knots, span).to_vec();
+            k.extend(crate::curve::local_weights(s.weights.as_deref(), span));
+            return k;
         }
         // a curve contact carries its family's compiled body — two tapes, or a whole trace
         // block — and the numbers the instance was given.  They are the same for every contact
@@ -2236,12 +2447,16 @@ impl Constraint {
             return k;
         }
         match self.kind {
-            CKind::Distance | CKind::CoordinateU | CKind::CoordinateV => vec![self.args[2].num()],
+            CKind::Distance => vec![self.args[2].num()],
             // signed from the first point to the second, and which way is the word: `along: left`
             // is the minus a drawing used to write (§9.2)
-            CKind::HorizontalDistance | CKind::VerticalDistance => {
-                vec![self.side().unwrap_or(1.0) * self.args[2].num()]
-            }
+            CKind::Ordinate => vec![self.side().unwrap_or(1.0) * self.args[3].num()],
+            // the line kernels a level reads along its view's axes take no number; the others a
+            // zero
+            CKind::Level => match self.form() {
+                Some(OrdinateForm::PageU | OrdinateForm::PageV) => Vec::new(),
+                _ => vec![0.0],
+            },
             CKind::DragTarget => {
                 vec![self.args[1].num(), self.args[2].num(), self.args[3].num()]
             }
@@ -2293,9 +2508,7 @@ impl Constraint {
                 let (e1, e2) = across(self.axis_dir(sk, 1));
                 [e1, e2].concat()
             }
-            CKind::PointPlaneDistance | CKind::Ordinate3U | CKind::Ordinate3V | CKind::PlaneDistance => {
-                vec![self.args[2].num()]
-            }
+            CKind::PlaneDistance => vec![self.args[2].num()],
             // two points on the axis a drawing's extent apart, so its two rows weigh alike
             CKind::AxisOnPlane => vec![sk.extent().max(1.0)],
             // two directions across the first axis as it stands now, and a drawing's extent, so
@@ -2408,12 +2621,30 @@ impl Constraint {
         let centre = |i: usize| sk.point_params(sk.round_center(e(i))).to_vec();
         let rad = |i: usize| sk.round_radius(e(i)) as u32;
         match self.kind {
-            CKind::Coincident
-            | CKind::Distance
-            | CKind::HorizontalPoints
-            | CKind::VerticalPoints
-            | CKind::HorizontalDistance
-            | CKind::VerticalDistance => [pt(0), pt(1)].concat(),
+            CKind::Coincident | CKind::Distance => [pt(0), pt(1)].concat(),
+            // the two points as its form reads them: in their view (or the one coordinate a
+            // point's ordinate from its view's origin moves), then a line drawn there; in space,
+            // their lifts and the direction as a segment, or one lift and the plane's frame
+            CKind::Ordinate | CKind::Level => match self.form().unwrap_or(OrdinateForm::Space) {
+                OrdinateForm::PageU | OrdinateForm::PageV => [pt(0), pt(1)].concat(),
+                OrdinateForm::CoordU => vec![pt(1)[0]],
+                OrdinateForm::CoordV => vec![pt(1)[1]],
+                OrdinateForm::InView => [pt(0), pt(1), ln(2)].concat(),
+                OrdinateForm::Space => {
+                    let x = self.lifted_columns(sk);
+                    [x[..6].to_vec(), self.direction_columns(sk, 2)].concat()
+                }
+                // the second point's lift, then the plane's origin and axes: along its normal the
+                // plane is the direction, and along its `û` or `v̂` the one the first point is
+                // the origin of
+                f => {
+                    let pl = match f {
+                        OrdinateForm::FrameN => e(2).i(),
+                        _ => sk.plane_of_origin(e(0).i()).expect("a frame form is from an origin"),
+                    };
+                    [self.lifted_columns(sk), plane_columns(sk, pl)].concat()
+                }
+            },
             CKind::Midpoint | CKind::PointOnLine | CKind::PointLineDistance => {
                 [pt(0), ln(1)].concat()
             }
@@ -2485,13 +2716,6 @@ impl Constraint {
                 vec![rad(1)],
             ]
             .concat(),
-            // the one coordinate stated, in the point's own plane — the radius kernel's column
-            CKind::CoordinateU => vec![sk.point_params(e(0).i())[0]],
-            CKind::CoordinateV => vec![sk.point_params(e(0).i())[1]],
-            // the point's hidden point, then the plane's origin and its two axes' directions
-            CKind::Ordinate3U | CKind::Ordinate3V => {
-                [self.lifted_columns(sk), plane_columns(sk, e(1).i())].concat()
-            }
             // the two images, drawn in two fixed planes — the fold line is constants
             CKind::Project => [pt(0), pt(1)].concat(),
             // both images' hidden points, then both planes' axes
@@ -2556,7 +2780,7 @@ impl Constraint {
             | CKind::Symmetric3 => self.lifted_columns(sk),
             CKind::Angle3 | CKind::Perpendicular3 | CKind::Parallel3 => self.axis_columns(sk),
             // and the plane's origin and axes after them
-            CKind::PointOnPlane | CKind::PointPlaneDistance | CKind::LineOnPlane => {
+            CKind::PointOnPlane | CKind::LineOnPlane => {
                 [self.lifted_columns(sk), plane_columns(sk, e(1).i())].concat()
             }
             // the point and the centre in space, the radius, and the circle's plane's axes
@@ -2575,7 +2799,7 @@ impl Constraint {
     /// every kind that reads none.  What `Sketch::add` lifts, and what `validate` asks to be on a
     /// view.
     pub fn lifted_points(&self, sk: &Sketch) -> Vec<usize> {
-        if !self.kind.spatial() {
+        if !self.reads_space() {
             return Vec::new();
         }
         let e = |i: usize| self.args[i].ent();
@@ -2590,10 +2814,16 @@ impl Constraint {
             CKind::PointLine3 | CKind::PointOnLine3 | CKind::Midpoint3 => {
                 [vec![e(0).i()], ends(1).to_vec()].concat()
             }
-            CKind::PointOnPlane
-            | CKind::PointPlaneDistance
-            | CKind::Ordinate3U
-            | CKind::Ordinate3V => vec![e(0).i()],
+            CKind::PointOnPlane => vec![e(0).i()],
+            // the two points, and a direction that is a drawn line, its ends; over a plane's
+            // frame only the second, the first being the frame's origin
+            CKind::Ordinate | CKind::Level => {
+                if self.form().is_some_and(|f| f.of_frame()) {
+                    return vec![e(1).i()];
+                }
+                let line = (e(2).kind == EntKind::Line).then(|| ends(2).to_vec());
+                [vec![e(0).i(), e(1).i()], line.unwrap_or_default()].concat()
+            }
             // an axis and a plane, and two planes: in space already
             CKind::AxisOnPlane
             | CKind::AxisCoincident
@@ -2619,22 +2849,25 @@ impl Constraint {
     /// origin, `(0, d)` — so an axis needs no kernels of its own for `parallel`, `perpendicular`
     /// and `angle` (`Sketch::origin_param`).
     fn axis_columns(&self, sk: &Sketch) -> Vec<u32> {
-        let mut out = Vec::with_capacity(12);
-        for a in &self.args[..2] {
-            let e = a.ent();
-            if e.kind == EntKind::Axis {
-                let z = sk.zero.expect("an axis mints the origin's Param");
-                out.extend([z, z, z]);
-                out.extend(sk.axes[e.i()].d);
-            } else {
-                let l = &sk.lines[e.i()];
-                for p in [l.p1, l.p2] {
-                    let k = sk.lift_of(p as usize).expect("a relation in space is lifted at the add");
-                    out.extend(sk.lifts[k].x);
-                }
-            }
+        [self.direction_columns(sk, 0), self.direction_columns(sk, 1)].concat()
+    }
+
+    /// Operand `i` as a direction in space, six columns: an axis as the segment from the origin
+    /// to its direction, a line as its two ends' hidden points.
+    fn direction_columns(&self, sk: &Sketch, i: usize) -> Vec<u32> {
+        let e = self.args[i].ent();
+        if e.kind == EntKind::Axis {
+            let z = sk.zero.expect("an axis mints the origin's Param");
+            return [[z, z, z], sk.axes[e.i()].d].concat();
         }
-        out
+        let l = &sk.lines[e.i()];
+        [l.p1, l.p2]
+            .iter()
+            .flat_map(|&p| {
+                let k = sk.lift_of(p as usize).expect("a relation in space is lifted at the add");
+                sk.lifts[k].x
+            })
+            .collect()
     }
 
     /// The axes whose place this reads (`CKind::place_slots`), which `Sketch::add` frees and
@@ -2676,12 +2909,7 @@ impl Constraint {
     /// the plane a point is put on, the view a circle is drawn in.
     pub fn attitude_read(&self, sk: &Sketch) -> Option<usize> {
         match self.kind {
-            CKind::Lift
-            | CKind::PointOnPlane
-            | CKind::PointPlaneDistance
-            | CKind::LineOnPlane
-            | CKind::Ordinate3U
-            | CKind::Ordinate3V => Some(self.args[1].ent().i()),
+            CKind::Lift | CKind::PointOnPlane | CKind::LineOnPlane => Some(self.args[1].ent().i()),
             CKind::PointOnCircle3 => {
                 sk.plane_of(sk.round_center(self.args[1].ent()))
             }
@@ -2805,8 +3033,112 @@ pub fn infer_entity(
                 )
             })
         }
+        // an ordinate's direction said in a word: an axis of the view both points are drawn in.
+        // The plane's own words never reach here from a document — the elaborator names the
+        // plane's axis — and from a record they are a plane's, with no plane to read them off
+        (CKind::Ordinate | CKind::Level, 2) => {
+            let w = ordinate_word(kind, args);
+            let toward = Toward::of(w).ok_or_else(|| {
+                format!("an ordinate names its direction: an axis, a line, or one of {}",
+                    crate::syntax::one_of(&ALONG_WORDS))
+            })?;
+            let (p, q) = (args[0].ent(), args[1].ent());
+            match (toward, shared_view(sk, p.i(), q.i())) {
+                (Toward::PageU, Some(v)) => Ok(EntRef::axis(sk.planes[v].u as usize)),
+                (Toward::PageV, Some(v)) => Ok(EntRef::axis(sk.planes[v].v as usize)),
+                (Toward::PageU | Toward::PageV, None) => Err(format!(
+                    "`{w}` is a direction of the view both points are drawn in, and {} and {} \
+                     are not drawn in one: name the axis",
+                    name(p),
+                    name(q)
+                )),
+                _ => Err(format!("`{w}` is a direction of a plane, which the ordinate is \
+                    measured from: `{} distance(d, along: {w}) P`", name(q))),
+            }
+        }
         _ => Err(format!("{} leaves nothing for the core to infer in slot {i}", kind.name())),
     }
+}
+
+/// What an ordinate (`Ordinate`, `Level`) must be to mean something — `validate`'s arm for the
+/// two.  A plane's own word is measured from that plane's origin along its own direction; a
+/// level of a point with itself, and an ordinate of two points of one view along that view's
+/// normal, are identically nothing; a reading in space needs its points' places, and a drawn
+/// line a length.
+fn validate_ordinate(
+    sk: &Sketch,
+    kind: CKind,
+    args: &[Arg],
+    name: &dyn Fn(EntRef) -> String,
+) -> Result<(), String> {
+    let (p, q, t) = (args[0].ent(), args[1].ent(), args[2].ent());
+    let word = ordinate_word(kind, args);
+    if let Some(toward) = Toward::of(word).filter(|t| t.of_plane()) {
+        let datum = sk.plane_of_origin(p.i());
+        let on = datum.is_some_and(|pl| match toward {
+            Toward::PlaneU => t == EntRef::axis(sk.planes[pl].u as usize),
+            Toward::PlaneV => t == EntRef::axis(sk.planes[pl].v as usize),
+            _ => t == EntRef::plane(pl),
+        });
+        if !on {
+            return Err(format!(
+                "`along: {word}` is a plane's own direction, measured from its origin: \
+                 `{} distance(d, along: {word}) P`",
+                name(q)
+            ));
+        }
+    }
+    if p == q {
+        return Err(format!("{} is level with itself along every direction", name(p)));
+    }
+    let form = ordinate_form(sk, p.i(), q.i(), t, word);
+    let mut a = args.to_vec();
+    if let Some(i) = kind.form_slot() {
+        a[i] = Arg::Int(form as i64);
+    }
+    let c = Constraint::new(kind, a);
+    for e in c.lifted_points(sk) {
+        if sk.plane_of(e).is_none() && sk.points[e].z.is_none() {
+            return Err(format!(
+                "{} is a point of a 2D sketch, with no place in space to relate",
+                name(EntRef::point(e))
+            ));
+        }
+    }
+    if t.kind == EntKind::Line {
+        let ln = &sk.lines[t.i()];
+        let [a, b] = [ln.p1, ln.p2].map(|e| sk.world_point(e as usize));
+        if crate::space::norm(crate::space::sub(b, a)) <= kernels::MIN_LINE_LEN {
+            return Err(format!("{} has no length to measure along", name(t)));
+        }
+    }
+    // two points of one view, along its normal: the row is identically zero.  An axis held
+    // square to a view held still is the same statement by value, which the count of rows
+    // cannot see
+    if let Some(v) = shared_view(sk, p.i(), q.i()) {
+        let square = match t.kind {
+            EntKind::Plane => t.i() == v,
+            EntKind::Axis => {
+                let d = &sk.axes[t.i()].d;
+                let held = d.iter().all(|&k| sk.params[k as usize].fixed) && sk.plane_fixed(v);
+                let dir = d.map(|k| sk.params[k as usize].value);
+                let n = sk.basis(v).normal();
+                held && crate::space::norm(crate::space::cross(dir, n))
+                    <= 1e-9 * crate::space::norm(dir).max(1e-300)
+            }
+            _ => false,
+        };
+        if square {
+            return Err(format!(
+                "{} and {} are drawn in {}, so how far apart they stand along its normal is not \
+                 a question: every point of a view is on it",
+                name(p),
+                name(q),
+                sk.plane_name(v)
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// The curve a contact's parameter runs along — a spline or a language curve, whichever the
@@ -2900,6 +3232,7 @@ pub fn validate(
             }
             Ok(())
         }
+        CKind::Ordinate | CKind::Level => validate_ordinate(sk, kind, args, name),
         k if k.spatial() => {
             let c = Constraint::new(kind, args.to_vec());
             for p in c.lifted_points(sk) {
@@ -2929,9 +3262,7 @@ pub fn validate(
             let own = |e: EntRef| {
                 c.lifted_points(sk).iter().all(|&p| sk.plane_of(p) == Some(e.i()))
             };
-            if matches!(k, CKind::PointOnPlane
-                | CKind::PointPlaneDistance
-                | CKind::LineOnPlane)
+            if matches!(k, CKind::PointOnPlane | CKind::LineOnPlane)
                 && own(args[1].ent())
             {
                 return Err(format!(
@@ -2979,6 +3310,15 @@ fn skew_seed(sk: &Sketch, l1: EntRef, l2: EntRef) -> Option<f64> {
 /// the geometry's and not a constant: a skew distance's side.  `None` for every other slot, which
 /// keeps what the caller or the defaults gave it.
 pub fn infer_value(sk: &Sketch, kind: CKind, args: &[Arg], i: usize) -> Option<Arg> {
+    if kind.form_slot() == Some(i) {
+        let ent = |j: usize| match args.get(j) {
+            Some(Arg::Ent(e)) => Some(*e),
+            _ => None,
+        };
+        let (p, q, t) = (ent(0)?, ent(1)?, ent(2)?);
+        let word = ordinate_word(kind, args);
+        return Some(Arg::Int(ordinate_form(sk, p.i(), q.i(), t, word) as i64));
+    }
     match (kind, i) {
         (CKind::LineLine3, 3) => {
             skew_seed(sk, args[0].ent(), args[1].ent()).map(|s| Arg::Int(s as i64))
@@ -3075,6 +3415,7 @@ pub fn kind_matches(spec: SpecKind, ent: EntKind) -> bool {
         SpecKind::Plane => ent == EntKind::Plane,
         SpecKind::Axis => ent == EntKind::Axis,
         SpecKind::Direction => ent == EntKind::Line || ent == EntKind::Axis,
+        SpecKind::Along => matches!(ent, EntKind::Line | EntKind::Axis | EntKind::Plane),
         _ => false,
     }
 }

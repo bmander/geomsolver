@@ -333,10 +333,12 @@ fix((0, 0)) a
     // a key the word has no slot for: dropped in silence, and the statement stood
     let (_, d) = read(&format!("{PAIR}a distance(40, sied: x) b\n"));
     assert!(d.iter().any(|m| m == "E040: `distance` takes no `sied`"), "{d:?}");
-    // `along` fills no slot — it chooses the kind — so it is the one key checked by name
+    // `along` takes a direction word or a reference, so a name that is neither is the word
+    // misspelt: said once, with the words
     let (_, d) = read(&format!("{PAIR}a distance(40, along: z) b\n"));
-    let want = "E040: `along` is `x`, `y`, `u`, `v`, `n`, `right`, `left`, `up` or `down`, not `z`";
-    assert!(d.iter().any(|m| m == want), "{d:?}");
+    let want = "E040: `along` is a direction — `x`, `y`, `u`, `v`, `n`, `right`, `left`, `up` or \
+                `down`, an axis or a line — not `z`";
+    assert_eq!(d, vec![want.to_string()]);
     assert!(read(&format!("{PAIR}a distance(40, along: x) b\n")).1.is_empty());
 
     // a word outside the slot's own set: `banana` used to mean `end`, because nothing checked
@@ -544,7 +546,7 @@ a distance(k, along: up) q
     let cases = [
         "p := point hint((10, {y}))\np distance({d}, side: {w}) ax\n",
         "l := line(hint((0, {y})), hint((40, {y})))\nl distance({d}, side: {w}) ax\n\
-         horizontal l\nl.p1 distance(0, along: x) a\n",
+         horizontal l\nl.p1 vertical a\n",
         "p := point hint(({y}, 5))\na distance({d}, along: {w}) p\n",
     ];
     for (k, case) in cases.iter().enumerate() {

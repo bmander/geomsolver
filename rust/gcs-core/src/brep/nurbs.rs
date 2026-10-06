@@ -1,7 +1,11 @@
-//! B-spline curves and tensor surfaces, non-rational: a degree, a clamped knot vector and poles,
-//! evaluated with their first two derivatives by the Cox–de Boor recurrence (Piegl and Tiller's
-//! A2.2 and A2.3). A rational one (a converted conic) is refused by whoever reads it.
-use super::geom::V;
+//! B-spline curves and tensor surfaces: a degree, a clamped knot vector and poles, evaluated with
+//! their first two derivatives by the Cox–de Boor recurrence (Piegl and Tiller's A2.2 and A2.3).
+//! A rational one carries a positive weight per pole and is the quotient `Σ N w P / Σ N w`, its
+//! derivatives by the quotient rule (A4.2, A4.4): what a conic is exactly, and what other kernels
+//! write circles, fillets and blends as. Without weights nothing here divides, so a polynomial
+//! spline reads the same bits it always did. Positive weights keep a span within its poles' hull,
+//! so every bound read off the poles holds for both.
+use super::geom::{Frame,V};
 
 /// The greatest degree evaluated (on the stack): OCCT's own bound.
 pub const MAX_DEGREE: usize = 25;
@@ -10,7 +14,20 @@ const W: usize = MAX_DEGREE+1;
 const SMALL: usize = 10;
 
 #[derive(Clone,Debug,PartialEq)]
-pub struct BSpline { pub degree: usize,pub knots: Vec<f64>,pub poles: Vec<V> }
+pub struct BSpline { pub degree: usize,pub knots: Vec<f64>,pub poles: Vec<V>,pub weights: Option<Vec<f64>> }
+
+/// Whether `weights` may weigh `count` poles: one each, every one finite and positive (a weight at
+/// or below zero lets the curve leave its poles' hull, or pass through infinity).
+fn weighs(weights: &[f64],count: usize) -> bool { weights.len() == count && weights.iter().all(|&w| w.is_finite() && w > 0.) }
+
+/// `C`, `C'`, `C''` from the weighted sums `A⁽ᵏ⁾ = Σ N⁽ᵏ⁾ w P` and `W⁽ᵏ⁾ = Σ N⁽ᵏ⁾ w` (Piegl and
+/// Tiller A4.2).
+fn quotient(a: [V;3],w: [f64;3]) -> (V,V,V) {
+    let c0: V = std::array::from_fn(|c| a[0][c]/w[0]);
+    let c1: V = std::array::from_fn(|c| (a[1][c]-w[1]*c0[c])/w[0]);
+    let c2: V = std::array::from_fn(|c| (a[2][c]-2.*w[1]*c1[c]-w[2]*c0[c])/w[0]);
+    (c0,c1,c2)
+}
 
 impl BSpline {
     /// A curve from its parts, refused unless its knots are non-decreasing and one more than its
@@ -20,8 +37,16 @@ impl BSpline {
             || knots.windows(2).any(|w| !(w[1] >= w[0])) || !(knots[degree] < knots[poles.len()]) {
             return Err(format!("a B-spline needs a degree from 1 to {MAX_DEGREE}, more poles than its degree and non-decreasing knots, one more than both"))
         }
-        Ok(BSpline {degree,knots,poles})
+        Ok(BSpline {degree,knots,poles,weights:None})
     }
+    /// A rational curve from its parts, refused as `new` refuses and unless each pole has a finite
+    /// positive weight.
+    pub fn rational(degree: usize,knots: Vec<f64>,poles: Vec<V>,weights: Vec<f64>) -> Result<BSpline,String> {
+        let s = BSpline::new(degree,knots,poles)?;
+        if !weighs(&weights,s.poles.len()) { return Err("a rational B-spline needs a finite positive weight for each pole".into()) }
+        Ok(BSpline {weights:Some(weights),..s})
+    }
+    pub fn is_rational(&self) -> bool { self.weights.is_some() }
     /// Where the curve is defined.
     pub fn domain(&self) -> [f64;2] { [self.knots[self.degree],self.knots[self.poles.len()]] }
     /// The distinct knots strictly inside `[a, b]`, where the curve's third derivative may jump.
@@ -36,6 +61,17 @@ impl BSpline {
         let p = self.degree;
         let [a,b] = self.domain();
         let (s,ders) = basis_ders(p,&self.knots,self.poles.len(),t.clamp(a,b),2);
+        if let Some(w) = &self.weights {
+            let (mut out,mut ws) = ([[0.;3];3],[0.;3]);
+            for (k,row) in ders.iter().enumerate().take(2.min(p)+1) {
+                for (j,&n) in row.iter().enumerate().take(p+1) {
+                    let (q,nw) = (self.poles[s-p+j],n*w[s-p+j]);
+                    for c in 0..3 { out[k][c] += nw*q[c]; }
+                    ws[k] += nw;
+                }
+            }
+            return quotient(out,ws)
+        }
         let mut out = [[0.;3];3];
         for (k,row) in ders.iter().enumerate().take(2.min(p)+1) {
             for (j,&n) in row.iter().enumerate().take(p+1) {
@@ -46,7 +82,8 @@ impl BSpline {
         (out[0],out[1],out[2])
     }
     pub fn point(&self,t: f64) -> V { self.d2(t).0 }
-    /// The length of the control polygon, a bound on the curve's.
+    /// The length of the control polygon, a bound on the curve's (a rational one's too: its de
+    /// Casteljau steps cut corners).
     pub fn hull_length(&self) -> f64 { self.poles.windows(2).map(|w| crate::space::distance(w[0],w[1])).sum() }
     /// The poles whose basis reaches `[a, b]` (clamped into the domain): their hull holds the curve
     /// there.
@@ -144,7 +181,7 @@ pub fn interpolate(pts: &[V],t: &[f64],degree: usize) -> Option<BSpline> {
     let degree = degree.min(m.checked_sub(1)?);
     if degree == 0 || t.len() != m || t.windows(2).any(|w| !(w[1] > w[0])) { return None }
     let knots = averaged(t,degree);
-    let s = BSpline {degree,knots,poles:vec![[0.;3];m]};
+    let s = BSpline {degree,knots,poles:vec![[0.;3];m],weights:None};
     if m > BANDED { if let Some(poles) = banded(&s,pts,t) { return Some(BSpline {poles,..s}) } }
     // the collocation matrix: each parameter's basis functions, in the columns of its span
     let mut n = vec![0.;m*m];
@@ -162,6 +199,28 @@ pub fn interpolate(pts: &[V],t: &[f64],degree: usize) -> Option<BSpline> {
         for k in 0..m { poles[k][c] = x[k]; }
     }
     poles.iter().flatten().all(|v| v.is_finite()).then(|| BSpline {poles,..s})
+}
+
+/// The arc of radius `r` about `f.o` in its `xy` plane from angle `a0` to `a1` (counter-clockwise
+/// about `f.z`, `a0 < a1`, at most a whole turn), exactly: quadratic and rational, one span per quarter turn or
+/// less, each span's middle pole where its end tangents meet, weighted the cosine of half its turn
+/// (Piegl and Tiller A7.1). Its parameter runs over `[a0, a1]`, meeting the angle at every knot.
+pub fn arc(f: &Frame,r: f64,[a0,a1]: [f64;2]) -> BSpline {
+    use crate::fmath::Det;
+    let turn = (a1-a0).clamp(0.,std::f64::consts::TAU);
+    let n = ((turn/std::f64::consts::FRAC_PI_2-1e-12).ceil() as usize).max(1);
+    let d = turn/n as f64;
+    let w = (d/2.).dcos();
+    let at = |a: f64,rr: f64| -> V { let (s,c) = a.dsin_cos(); std::array::from_fn(|k| f.o[k]+rr*(c*f.x[k]+s*f.y[k])) };
+    let (mut poles,mut weights,mut knots) = (vec![at(a0,r)],vec![1.],vec![a0;3]);
+    for k in 0..n {
+        let end = if k+1 == n { a0+turn } else { a0+(k+1) as f64*d };
+        poles.push(at(a0+(k as f64+0.5)*d,r/w));
+        poles.push(at(end,r));
+        weights.extend([w,1.]);
+        knots.extend(std::iter::repeat_n(end,if k+1 == n { 3 } else { 2 }));
+    }
+    BSpline {degree:2,knots,poles,weights:Some(weights)}
 }
 
 /// Above this many points an interpolation is solved in its band: the dense factorisation below is
@@ -234,12 +293,13 @@ pub fn distinct(knots: &[f64]) -> Vec<(f64,usize)> {
 }
 
 /// Knot `t` put into a B-spline of degree `p` once (Boehm): the same curve, one more pole. Each pole
-/// is a row of points (a net's column along the other parameter), combined alike.
-fn insert(knots: &mut Vec<f64>,poles: &mut Vec<Vec<V>>,p: usize,t: f64) {
+/// is a row of points (a net's column along the other parameter), combined alike; a rational one's
+/// in homogeneous coordinates `(w x, w y, w z, w)`.
+fn insert<const N: usize>(knots: &mut Vec<f64>,poles: &mut Vec<Vec<[f64;N]>>,p: usize,t: f64) {
     let n = poles.len();
     // the last span starting at or before t
     let k = knots[..n].iter().rposition(|&x| x <= t).unwrap_or(p).max(p);
-    let mut out: Vec<Vec<V>> = Vec::with_capacity(n+1);
+    let mut out: Vec<Vec<[f64;N]>> = Vec::with_capacity(n+1);
     for i in 0..=n {
         if i+p <= k { out.push(poles[i].clone()) }
         else if i > k { out.push(poles[i-1].clone()) }
@@ -254,7 +314,7 @@ fn insert(knots: &mut Vec<f64>,poles: &mut Vec<Vec<V>>,p: usize,t: f64) {
 
 /// The stretch `[a, b]` of a B-spline of degree `p` along its first index, exactly: each end put in
 /// until the curve passes through a pole there, and the poles and knots between kept, clamped.
-fn segment(knots: &[f64],poles: &[Vec<V>],p: usize,a: f64,b: f64) -> (Vec<f64>,Vec<Vec<V>>) {
+fn segment<const N: usize>(knots: &[f64],poles: &[Vec<[f64;N]>],p: usize,a: f64,b: f64) -> (Vec<f64>,Vec<Vec<[f64;N]>>) {
     let (mut k,mut q) = (knots.to_vec(),poles.to_vec());
     for t in [a,b] {
         while k.iter().filter(|&&x| x == t).count() < p { insert(&mut k,&mut q,p,t); }
@@ -266,11 +326,28 @@ fn segment(knots: &[f64],poles: &[Vec<V>],p: usize,a: f64,b: f64) -> (Vec<f64>,V
     (knots,q[first..first+count].to_vec())
 }
 
-/// A tensor-product B-spline surface: `poles[i][j]` the pole at `u` index `i` and `v` index `j`.
+/// A tensor-product B-spline surface: `poles[i][j]` the pole at `u` index `i` and `v` index `j`, and
+/// for a rational one `weights[i][j]` its weight.
 #[derive(Clone,Debug,PartialEq)]
-pub struct Net { pub du: usize,pub dv: usize,pub uknots: Vec<f64>,pub vknots: Vec<f64>,pub poles: Vec<Vec<V>> }
+pub struct Net { pub du: usize,pub dv: usize,pub uknots: Vec<f64>,pub vknots: Vec<f64>,pub poles: Vec<Vec<V>>,pub weights: Option<Vec<Vec<f64>>> }
 
 impl Net {
+    /// Refused unless its degrees are from 1 to `MAX_DEGREE`, its net is a grid with more poles each
+    /// way than its degree, its knots are non-decreasing and one more than both, and a rational
+    /// one's weights are a grid alike, each finite and positive.
+    pub fn check(&self) -> Result<(),String> {
+        let (nu,nv) = (self.poles.len(),self.poles.first().map_or(0,Vec::len));
+        let knots = |k: &[f64],d: usize,n: usize| k.len() == n+d+1 && k.windows(2).all(|w| w[1] >= w[0]) && k[d] < k[n];
+        if self.du == 0 || self.dv == 0 || self.du > MAX_DEGREE || self.dv > MAX_DEGREE || nu <= self.du || nv <= self.dv
+            || self.poles.iter().any(|r| r.len() != nv) || !knots(&self.uknots,self.du,nu) || !knots(&self.vknots,self.dv,nv) {
+            return Err("a B-spline surface whose net and knots do not agree".into())
+        }
+        if let Some(w) = &self.weights {
+            if w.len() != nu || w.iter().any(|r| !weighs(r,nv)) { return Err("a rational B-spline surface needs a finite positive weight for each pole".into()) }
+        }
+        Ok(())
+    }
+    pub fn is_rational(&self) -> bool { self.weights.is_some() }
     /// Where the surface is defined, in `u` and in `v`.
     pub fn domain(&self) -> [[f64;2];2] {
         let (nu,nv) = (self.poles.len(),self.poles[0].len());
@@ -282,6 +359,19 @@ impl Net {
         let (nu,nv) = (self.poles.len(),self.poles[0].len());
         let (su,bu) = basis_ders(self.du,&self.uknots,nu,u.clamp(u0,u1),1);
         let (sv,bv) = basis_ders(self.dv,&self.vknots,nv,v.clamp(v0,v1),1);
+        if let Some(w) = &self.weights {
+            let (mut a,mut ws) = ([[0.;3];3],[0.;3]);
+            for i in 0..=self.du {
+                let (row,wrow) = (&self.poles[su-self.du+i],&w[su-self.du+i]);
+                for j in 0..=self.dv {
+                    let (q,wq) = (row[sv-self.dv+j],wrow[sv-self.dv+j]);
+                    let n = [bu[0][i]*bv[0][j]*wq,bu[1][i]*bv[0][j]*wq,bu[0][i]*bv[1][j]*wq];
+                    for k in 0..3 { for c in 0..3 { a[k][c] += n[k]*q[c]; } ws[k] += n[k]; }
+                }
+            }
+            let s: V = std::array::from_fn(|c| a[0][c]/ws[0]);
+            return (s,std::array::from_fn(|c| (a[1][c]-ws[1]*s[c])/ws[0]),std::array::from_fn(|c| (a[2][c]-ws[2]*s[c])/ws[0]))
+        }
         let mut out = [[0.;3];3];
         for i in 0..=self.du {
             let row = &self.poles[su-self.du+i];
@@ -302,6 +392,29 @@ impl Net {
         let (sv,bv) = basis_ders(self.dv,&self.vknots,nv,v.clamp(v0,v1),2);
         // (u order, v order) of each output
         const ORDERS: [(usize,usize);6] = [(0,0),(1,0),(0,1),(2,0),(1,1),(0,2)];
+        if let Some(w) = &self.weights {
+            let (mut a,mut ws) = ([[0.;3];6],[0.;6]);
+            for i in 0..=self.du {
+                let (row,wrow) = (&self.poles[su-self.du+i],&w[su-self.du+i]);
+                for j in 0..=self.dv {
+                    let (q,wq) = (row[sv-self.dv+j],wrow[sv-self.dv+j]);
+                    for (k,&(x,y)) in ORDERS.iter().enumerate() {
+                        let n = bu[x][i]*bv[y][j]*wq;
+                        for c in 0..3 { a[k][c] += n*q[c]; }
+                        ws[k] += n;
+                    }
+                }
+            }
+            // the quotient rule, order by order (Piegl and Tiller A4.4)
+            let at = |f: &dyn Fn(usize) -> f64| -> V { std::array::from_fn(f) };
+            let s = at(&|c| a[0][c]/ws[0]);
+            let su_ = at(&|c| (a[1][c]-ws[1]*s[c])/ws[0]);
+            let sv_ = at(&|c| (a[2][c]-ws[2]*s[c])/ws[0]);
+            let suu = at(&|c| (a[3][c]-2.*ws[1]*su_[c]-ws[3]*s[c])/ws[0]);
+            let suv = at(&|c| (a[4][c]-ws[1]*sv_[c]-ws[2]*su_[c]-ws[4]*s[c])/ws[0]);
+            let svv = at(&|c| (a[5][c]-2.*ws[2]*sv_[c]-ws[5]*s[c])/ws[0]);
+            return [s,su_,sv_,suu,suv,svv]
+        }
         let mut out = [[0.;3];6];
         for i in 0..=self.du {
             let row = &self.poles[su-self.du+i];
@@ -320,12 +433,23 @@ impl Net {
     pub fn segment(&self,[u0,u1]: [f64;2],[v0,v1]: [f64;2]) -> Net {
         let [[a0,a1],[b0,b1]] = self.domain();
         let (u0,u1,v0,v1) = (u0.max(a0),u1.min(a1),v0.max(b0),v1.min(b1));
+        if let Some(w) = &self.weights {
+            // in homogeneous coordinates, and back
+            let h: Vec<Vec<[f64;4]>> = self.poles.iter().zip(w).map(|(r,wr)| r.iter().zip(wr).map(|(p,&w)| [w*p[0],w*p[1],w*p[2],w]).collect()).collect();
+            let (uknots,rows) = segment(&self.uknots,&h,self.du,u0,u1);
+            let cols: Vec<Vec<[f64;4]>> = (0..rows[0].len()).map(|j| rows.iter().map(|r| r[j]).collect()).collect();
+            let (vknots,cols) = segment(&self.vknots,&cols,self.dv,v0,v1);
+            let h: Vec<Vec<[f64;4]>> = (0..cols[0].len()).map(|i| cols.iter().map(|c| c[i]).collect()).collect();
+            let poles = h.iter().map(|r| r.iter().map(|q| [q[0]/q[3],q[1]/q[3],q[2]/q[3]]).collect()).collect();
+            let weights = h.iter().map(|r| r.iter().map(|q| q[3]).collect()).collect();
+            return Net {du:self.du,dv:self.dv,uknots,vknots,poles,weights:Some(weights)}
+        }
         let (uknots,rows) = segment(&self.uknots,&self.poles,self.du,u0,u1);
         // along v: each row's points as poles of their own
         let cols: Vec<Vec<V>> = (0..rows[0].len()).map(|j| rows.iter().map(|r| r[j]).collect()).collect();
         let (vknots,cols) = segment(&self.vknots,&cols,self.dv,v0,v1);
         let poles = (0..cols[0].len()).map(|i| cols.iter().map(|c| c[i]).collect()).collect();
-        Net {du:self.du,dv:self.dv,uknots,vknots,poles}
+        Net {du:self.du,dv:self.dv,uknots,vknots,poles,weights:None}
     }
     /// The poles whose basis reaches `[u0, u1] × [v0, v1]` (clamped into the domain): their hull
     /// holds the surface there.
@@ -357,7 +481,7 @@ pub fn fit_net(f: &dyn Fn(f64,f64) -> V,du: usize,dv: usize,mut nu: usize,mut nv
         let cols: Vec<BSpline> = (0..=nu).map(|i| interpolate(&rows.iter().map(|r| r.poles[i]).collect::<Vec<_>>(),&tv,dv))
             .collect::<Option<_>>()?;
         let net = Net {du:rows[0].degree,dv:cols[0].degree,uknots:rows[0].knots.clone(),vknots:cols[0].knots.clone(),
-            poles:cols.into_iter().map(|c| c.poles).collect()};
+            poles:cols.into_iter().map(|c| c.poles).collect(),weights:None};
         let off = |u: f64,v: f64| crate::space::distance(net.point(u,v),f(u,v));
         let (mut eu,mut ev) = (0f64,0f64);
         for i in 0..nu { for &v in &tv { eu = eu.max(off((tu[i]+tu[i+1])/2.,v)); } }
@@ -414,5 +538,5 @@ pub fn interpolate_net(points: &[V],rows: usize,columns: usize,kind: Parametriza
     let nv = rows_fit[0].poles.len();
     let cols_fit: Vec<BSpline> = (0..nv).map(|j| interpolate(&rows_fit.iter().map(|r| r.poles[j]).collect::<Vec<_>>(),&tu,3)).collect::<Option<_>>()?;
     let poles: Vec<Vec<V>> = (0..cols_fit[0].poles.len()).map(|i| cols_fit.iter().map(|c| c.poles[i]).collect()).collect();
-    Some(Net {du:cols_fit[0].degree,dv:rows_fit[0].degree,uknots:cols_fit[0].knots.clone(),vknots:rows_fit[0].knots.clone(),poles})
+    Some(Net {du:cols_fit[0].degree,dv:rows_fit[0].degree,uknots:cols_fit[0].knots.clone(),vknots:rows_fit[0].knots.clone(),poles,weights:None})
 }

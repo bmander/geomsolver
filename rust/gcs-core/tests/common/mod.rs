@@ -325,3 +325,29 @@ pub fn front(src: &str) -> String {
     let std = if head.lines().any(|l| l.trim() == "use std") { "" } else { "use std\n" };
     format!("{head}{std}{defs}in std.front {{\n{body}}}\n")
 }
+
+/// A hand-built sketch drawn in one view: a held front plane, made here, with every point the
+/// sketch has so far put in it — what a run, a rise or a level between two of them reads its
+/// axes off (`docs/ordinate-plan.md`).  A 2D sketch with no plane has no axes to name.
+pub struct View {
+    pub plane: usize,
+    pub u: EntRef,
+    pub v: EntRef,
+    pub origin: EntRef,
+}
+
+pub fn draw_in_front(sk: &mut Sketch) -> View {
+    let n = sk.points.len();
+    let plane = sk.fixed_plane(gcs_core::plane::Basis::page(), "front");
+    for p in 0..n {
+        sk.set_plane(p, Some(plane));
+    }
+    view_of(sk, plane)
+}
+
+/// The axes and origin of plane `plane`, as entities.
+pub fn view_of(sk: &Sketch, plane: usize) -> View {
+    let pl = &sk.planes[plane];
+    let axis = |i: u32| EntRef::new(gcs_core::model::EntKind::Axis, i as usize);
+    View { plane, u: axis(pl.u), v: axis(pl.v), origin: EntRef::point(pl.origin as usize) }
+}

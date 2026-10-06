@@ -151,7 +151,7 @@ fn every_constraint_type_is_printable() {
 #[test]
 fn every_constraint_name_survives_the_case_round_trip() {
     let words = [
-        "point", "line", "circle", "arc", "spline", "plane", "at", "knots",
+        "point", "line", "circle", "arc", "spline", "plane", "at", "knots", "weights",
         "class", "in",
         "ground", "fix", "ccw", "cw", "branch", "component", "port", "param", "ring", "repeat",
         "cycle", "path", "true", "false",
@@ -357,6 +357,7 @@ fn a_name_declared_twice_is_an_error() {
             seed_spans: vec![Default::default(); 2],
             hint_span: None,
             knots: None,
+            weights: None,
             curve: None,
             computed: None,
             class: Default::default(),
@@ -458,6 +459,8 @@ fn fixture(kind: CKind) -> (Sketch, Constraint) {
             SpecKind::Axis | SpecKind::Direction if i == 0 => Arg::Ent(EntRef::new(EntKind::Axis, ra)),
             SpecKind::Direction if kind == CKind::Parallel3 => Arg::Ent(EntRef::line(l2)),
             SpecKind::Axis | SpecKind::Direction => Arg::Ent(EntRef::new(EntKind::Axis, rb)),
+            // an ordinate along a line drawn where its two points are
+            SpecKind::Along => Arg::Ent(EntRef::line(l2)),
             // a constraint relates *distinct* entities, so the second of a pair is a different one
             SpecKind::Point if used_point => Arg::Ent(EntRef::point(q)),
             SpecKind::Point => {

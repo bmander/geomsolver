@@ -478,9 +478,10 @@ int solvent_cad_circle(Cad* cad,const double* center,const double* normal,
         return cad->put(edge.Edge());
     });
 }
-// A non-rational B-spline profile edge: `count` poles (xyz each) and its full knot vector
-// (`count + degree + 1` values, repeated knots as they are), made distinct with multiplicities.
-extern "C" int solvent_cad_bspline(Cad* cad,int degree,int count,const double* poles,const double* knots) noexcept {
+// A B-spline profile edge: `count` poles (xyz each) and its full knot vector (`count + degree + 1`
+// values, repeated knots as they are), made distinct with multiplicities; rational where `weights`
+// (one per pole) is not null.
+extern "C" int solvent_cad_bspline(Cad* cad,int degree,int count,const double* poles,const double* knots,const double* weights) noexcept {
     SOLVENT_PROBE("solvent_cad_bspline");
     return guarded(cad,[&] {
         if (degree < 1 || count <= degree) throw std::runtime_error("a B-spline edge needs more poles than its degree");
@@ -495,7 +496,14 @@ extern "C" int solvent_cad_bspline(Cad* cad,int degree,int count,const double* p
         TColStd_Array1OfReal values(1,(int)distinct.size());
         TColStd_Array1OfInteger mults(1,(int)distinct.size());
         for (size_t i=0;i<distinct.size();++i) { values.SetValue((int)i+1,distinct[i]); mults.SetValue((int)i+1,multiplicity[i]); }
-        Handle(Geom_BSplineCurve) curve = new Geom_BSplineCurve(points,values,mults,degree);
+        Handle(Geom_BSplineCurve) curve;
+        if (weights) {
+            TColStd_Array1OfReal w(1,count);
+            for (int i=0;i<count;++i) w.SetValue(i+1,weights[i]);
+            curve = new Geom_BSplineCurve(points,w,values,mults,degree);
+        } else {
+            curve = new Geom_BSplineCurve(points,values,mults,degree);
+        }
         BRepBuilderAPI_MakeEdge edge(curve);
         if (!edge.IsDone()) throw std::runtime_error("profile B-spline failed");
         return cad->put(edge.Edge());

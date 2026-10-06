@@ -356,6 +356,9 @@ impl EntRef {
     pub fn plane(idx: usize) -> EntRef {
         EntRef::new(EntKind::Plane, idx)
     }
+    pub fn axis(idx: usize) -> EntRef {
+        EntRef::new(EntKind::Axis, idx)
+    }
     pub fn face(idx: usize) -> EntRef {
         EntRef::new(EntKind::Face, idx)
     }
@@ -429,12 +432,16 @@ pub struct ArcE {
 /// same trick as an arc being a centre and two real points plus its two intrinsic constraints.
 /// The knot vector is document data, not unknowns: a repeated interior knot is a corner, and the
 /// clamped uniform default runs the curve from the first control point to the last.  Four
-/// control points and no interior knot is exactly a cubic Bézier.
+/// control points and no interior knot is exactly a cubic Bézier.  The weights are document data
+/// too: a rational spline (`curve::weigh`) is a conic exactly, and still linear in its control
+/// points.
 #[derive(Clone, Debug)]
 pub struct SplineE {
     pub ctrl: Vec<u32>,
     /// `ctrl.len() + curve::DEGREE + 1` non-decreasing values.
     pub knots: Vec<f64>,
+    /// One finite positive weight per control point, or `None`: polynomial (all 1, never stored).
+    pub weights: Option<Vec<f64>>,
     pub class: Classes,
 }
 

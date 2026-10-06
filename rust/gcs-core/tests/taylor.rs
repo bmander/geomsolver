@@ -90,10 +90,11 @@ fn the_planar_kernels_have_forms() {
         "coincident", "distance", "midpoint", "horizontal", "vertical", "parallel", "perpendicular",
         "angle", "equal_length", "point_on_line", "point_on_circle", "radius", "equal_radius",
         "tangent_line_circle", "tangent_circle_circle", "tangent_arc_line", "symmetric",
-        "parallel_distance", "point_line_distance", "annular_distance", "horizontal_distance",
-        "vertical_distance", "distance_free", "angle_free", "radius_free", "parallel_distance_free",
-        "point_line_distance_free", "annular_distance_free", "horizontal_distance_free",
-        "vertical_distance_free", "point_line_magnitude", "point_line_magnitude_free",
+        "parallel_distance", "point_line_distance", "annular_distance", "ordinate_u",
+        "ordinate_v", "ordinate_line", "ordinate_line_free",
+        "distance_free", "angle_free", "radius_free", "parallel_distance_free",
+        "point_line_distance_free", "annular_distance_free", "ordinate_u_free",
+        "ordinate_v_free", "point_line_magnitude", "point_line_magnitude_free",
         "parallel_magnitude", "parallel_magnitude_free", "arc_length", "arc_length_free",
     ];
     for name in planar {

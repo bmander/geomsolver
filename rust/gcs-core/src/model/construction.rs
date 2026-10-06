@@ -381,6 +381,18 @@ impl Sketch {
     /// A cubic B-spline with a knot vector of its own — a repeated interior knot is a corner.
     /// `None` if the knots are not ones this control polygon can be drawn with.
     pub fn spline_with(&mut self, ctrl: &[usize], knots: Option<Vec<f64>>) -> Option<usize> {
+        self.spline_weighted(ctrl, knots, None)
+    }
+
+    /// A rational cubic B-spline: a weight per control point (`curve::weigh`), `None` or all 1
+    /// being the polynomial curve, which is stored without them.  `None` where the knots or the
+    /// weights are not ones this control polygon can be drawn with.
+    pub fn spline_weighted(
+        &mut self,
+        ctrl: &[usize],
+        knots: Option<Vec<f64>>,
+        weights: Option<Vec<f64>>,
+    ) -> Option<usize> {
         if ctrl.iter().any(|&c| c >= self.points.len()) {
             return None;
         }
@@ -388,9 +400,13 @@ impl Sketch {
         if !crate::curve::knots_valid(&knots, ctrl.len()) {
             return None;
         }
+        if weights.as_ref().is_some_and(|w| !crate::curve::weights_valid(w, ctrl.len())) {
+            return None;
+        }
         self.splines.push(SplineE {
             ctrl: ctrl.iter().map(|&c| c as u32).collect(),
             knots,
+            weights: weights.filter(|w| w.iter().any(|&x| x != 1.0)),
             class: Classes::default(),
         });
         Some(self.splines.len() - 1)
@@ -506,6 +522,16 @@ impl Sketch {
         if !reads.is_empty() {
             let solved = reads.iter().any(|&v| !self.plane_fixed(v));
             c.kind = c.kind.attitude_twin(solved);
+        }
+        // an ordinate's form is its operands' (`constraints::ordinate_form`), read here and only
+        // here, so whatever a caller handed in — a document, a paste, a binding's record — the
+        // kernel is the one the points and the direction give it now
+        if let Some(i) = c.kind.form_slot() {
+            if let (Arg::Ent(p), Arg::Ent(q), Arg::Ent(t)) = (&c.args[0], &c.args[1], &c.args[2]) {
+                let word = crate::constraints::ordinate_word(c.kind, &c.args);
+                let f = crate::constraints::ordinate_form(self, p.i(), q.i(), *t, word);
+                c.args[i] = Arg::Int(f as i64);
+            }
         }
         if c.id == 0 {
             self.next_cid += 1;

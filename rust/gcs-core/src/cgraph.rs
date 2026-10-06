@@ -18,7 +18,7 @@
 
 #[allow(unused_imports)]
 use crate::fmath::Det;
-use crate::constraints::CKind;
+use crate::constraints::{CKind, OrdinateForm};
 use crate::graph::UnionFind;
 use crate::model::{EntKind, EntRef, Sketch};
 use std::collections::BTreeMap;
@@ -472,11 +472,15 @@ pub fn build(sk: &Sketch) -> ConstraintGraph {
                 let phi = branch(&[0.0, 1.0, 0.0], &line_normal(sk, ln), target);
                 g.dirs.push(DirRelation { a: X_AXIS, b, phi, source: c.id });
             }
-            // A levelled pair of points says exactly what a levelled line does, about the
-            // segment between them — so it decomposes the same way: a virtual line through the
-            // two, in the ground x-axis's direction class.  Without this it would be an
-            // unsupported constraint and every drag touching it would take the numeric path.
-            CKind::HorizontalPoints | CKind::VerticalPoints => {
+            // A pair of points level along a view's own axis says exactly what a levelled line
+            // does, about the segment between them — so it decomposes the same way: a virtual
+            // line through the two, in the ground x-axis's direction class.  Without this it would
+            // be an unsupported constraint and every drag touching it would take the numeric
+            // path.  Level along `v` (the same height) is the horizontal pair; a level along any
+            // other direction is a numeric residual
+            CKind::Level
+                if matches!(c.form(), Some(OrdinateForm::PageU | OrdinateForm::PageV)) =>
+            {
                 let (i1, i2) = (c.args[0].ent().i(), c.args[1].ent().i());
                 let (p, q) = (g.point_el(i1), g.point_el(i2));
                 if p == q {
@@ -494,7 +498,7 @@ pub fn build(sk: &Sketch) -> ConstraintGraph {
                         source: None,
                     });
                 }
-                let target = if c.kind == CKind::VerticalPoints {
+                let target = if c.form() == Some(OrdinateForm::PageU) {
                     std::f64::consts::FRAC_PI_2
                 } else {
                     0.0

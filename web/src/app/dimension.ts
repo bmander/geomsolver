@@ -17,7 +17,7 @@ import type { SketchView } from './view.js';
 export interface DimAlt {
   a: Point;
   b: Point;
-  make(kind: string): Constraint;
+  make(kind: dim.PairDimension): Constraint;
 }
 
 /** A dimension being written: the constraints the number will land on, whether writing it is
@@ -92,7 +92,7 @@ export function retarget(v: SketchView, live: LiveDim, at: [number, number]): vo
   const { a, b, make } = live.alt!;
   const want = dim.pairDimension([a.x.value, a.y.value], [b.x.value, b.y.value], at);
   const was = live.targets[0];
-  if (was.typeName === want) return;
+  if (dim.pairOf(was) === want) return;
   v.sketch.remove(was);
   const c = make(want);
   v.sketch.add(c);

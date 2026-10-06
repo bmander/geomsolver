@@ -19,7 +19,7 @@
 
 #[allow(unused_imports)]
 use crate::fmath::Det;
-use crate::constraints::{CKind, Constraint};
+use crate::constraints::{CKind, Constraint, OrdinateForm};
 use crate::io::dimension_text;
 use crate::model::{angle_between, seg_distance, signed_point_to_line, EntKind, EntRef, Sketch};
 use crate::overview::workspace::{self, apply, Map, Projection, IDENTITY};
@@ -84,8 +84,8 @@ macro_rules! undrawn {
             | CKind::CurveCurvature
             | CKind::SplineTangentLine
             | CKind::SplineCurvature
-            | CKind::HorizontalPoints
-            | CKind::VerticalPoints
+            // the ordinate's zero states no number
+            | CKind::Level
             | CKind::Project
             | CKind::Lift
             // a relation in space states a number of no one view, so it has no figure on one
@@ -100,7 +100,6 @@ macro_rules! undrawn {
             | CKind::PointOnCircle3
             | CKind::PointOnLine3
             | CKind::EqualLength3
-            | CKind::PointPlaneDistance
             | CKind::Midpoint3
             | CKind::Symmetric3
             | CKind::LineOnPlane
@@ -109,9 +108,6 @@ macro_rules! undrawn {
             | CKind::PlaneAxis
             | CKind::PointOnAxis
             | CKind::LineOnAxis
-            // an ordinate in space is no figure on any one plane
-            | CKind::Ordinate3U
-            | CKind::Ordinate3V
             | CKind::AxisOnPlane
             | CKind::AxisCoincident
             | CKind::AxisParallelPlane
@@ -479,11 +475,12 @@ pub fn frame(sk: &Sketch, c: &Constraint) -> Option<Frame> {
             let d = unit(sub(b, a))?;
             Some(Frame::Linear { o: mid(a, b), d, n: perp(d) })
         }
-        // An ordinate uses its stated axis: the page's for a run or rise, the plane's own
-        // `u` or `v` for a coordinate in it, since its point is drawn in that plane's terms.
-        CKind::HorizontalDistance | CKind::VerticalDistance | CKind::CoordinateU | CKind::CoordinateV => {
+        // An ordinate uses its stated direction: the view's own axis for a run or a rise (and
+        // for a coordinate, the run from the plane's origin), a line drawn there along it.  One
+        // read in space is a figure on no one view, and has none.
+        CKind::Ordinate => {
             let (a, b) = ends(sk, c)?;
-            let d = dimension_axis(c);
+            let d = dimension_axis(sk, c)?;
             Some(Frame::Linear { o: mid(a, b), d, n: perp(d) })
         }
         CKind::Radius | CKind::AnnularDistance => {
@@ -503,18 +500,35 @@ pub fn frame(sk: &Sketch, c: &Constraint) -> Option<Frame> {
     }
 }
 
-/// The direction a run or a rise is measured along: the page's own axes.
-fn axis_of(k: CKind) -> P {
-    if k == CKind::VerticalDistance { (0.0, 1.0) } else { (1.0, 0.0) }
+/// The direction an ordinate is drawn along in its points' view: the view's own `x` or `y`, or
+/// the drawn line it is measured along.  `None` for one read in space, which no view draws.
+fn dimension_axis(sk: &Sketch, c: &Constraint) -> Option<P> {
+    match c.form()? {
+        OrdinateForm::PageU | OrdinateForm::CoordU => Some((1.0, 0.0)),
+        OrdinateForm::PageV | OrdinateForm::CoordV => Some((0.0, 1.0)),
+        OrdinateForm::InView => unit(sk.line_dir(c.args[2].ent().i())),
+        _ => None,
+    }
 }
 
-/// An ordinate along a plane's axis is drawn in that plane, along its own `x` or `y`; a run or a
-/// rise along the plane's axes as well.
-fn dimension_axis(c: &Constraint) -> P {
-    match c.kind {
-        CKind::CoordinateU => (1.0, 0.0),
-        CKind::CoordinateV => (0.0, 1.0),
-        k => axis_of(k),
+/// The three dimensions a pair of points can state, as `pair_dimension` chooses one: the
+/// length, the run along the view's `x` and the rise along its `y` — the last two an `Ordinate`
+/// with the word (`along: x`, `along: y`) that names the axis.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PairDimension {
+    Length,
+    Run,
+    Rise,
+}
+
+impl PairDimension {
+    /// The word an ordinate names the axis with; `None` for the length.
+    pub fn along(self) -> Option<&'static str> {
+        match self {
+            PairDimension::Length => None,
+            PairDimension::Run => Some("x"),
+            PairDimension::Rise => Some("y"),
+        }
     }
 }
 
@@ -531,14 +545,13 @@ fn dimension_axis(c: &Constraint) -> P {
 /// This is how a dimension is chosen by putting it somewhere rather than by being asked, so it
 /// has to agree with the figure that then gets drawn — which is why it is here, beside the
 /// frames, and not in a front end.
-pub fn pair_dimension(a: P, b: P, at: P) -> CKind {
+pub fn pair_dimension(a: P, b: P, at: P) -> PairDimension {
     let (Some(d), Some(off)) = (unit(sub(b, a)), unit(sub(at, mid(a, b)))) else {
-        return CKind::Distance;
+        return PairDimension::Length;
     };
     // |dot| and not dot: a dimension line and its reverse are the same line
-    let mut best = (dot(off, perp(d)).abs(), CKind::Distance);
-    for (k, across) in [(CKind::HorizontalDistance, (0.0, 1.0)),
-                        (CKind::VerticalDistance, (1.0, 0.0))] {
+    let mut best = (dot(off, perp(d)).abs(), PairDimension::Length);
+    for (k, across) in [(PairDimension::Run, (0.0, 1.0)), (PairDimension::Rise, (1.0, 0.0))] {
         let s = dot(off, across).abs();
         if s > best.0 + 1e-12 {
             best = (s, k);
@@ -551,11 +564,10 @@ pub fn pair_dimension(a: P, b: P, at: P) -> CKind {
 /// agree about these, so both ask here.
 fn ends(sk: &Sketch, c: &Constraint) -> Option<(P, P)> {
     match c.kind {
-        CKind::Distance | CKind::HorizontalDistance | CKind::VerticalDistance => {
+        // an ordinate's first point is a plane's origin where it is a coordinate: (0, 0)
+        CKind::Distance | CKind::Ordinate => {
             Some((sk.point_xy(c.args[0].ent().i()), sk.point_xy(c.args[1].ent().i())))
         }
-        // from the plane's origin, its coordinates' zero
-        CKind::CoordinateU | CKind::CoordinateV => Some(((0.0, 0.0), sk.point_xy(c.args[0].ent().i()))),
         CKind::PointLineDistance => {
             let p = sk.point_xy(c.args[0].ent().i());
             let i = c.args[1].ent().i();
@@ -776,7 +788,7 @@ impl Pen<'_> {
     fn one(&mut self, c: &Constraint) -> Option<Callout> {
         match c.kind {
             CKind::Distance => self.distance(c),
-            CKind::HorizontalDistance | CKind::VerticalDistance | CKind::CoordinateU | CKind::CoordinateV => self.axis_distance(c),
+            CKind::Ordinate => self.axis_distance(c),
             CKind::PointLineDistance => self.point_line(c),
             CKind::ParallelDistance => self.parallel(c),
             CKind::Radius => self.radius(c),
@@ -984,8 +996,8 @@ impl Pen<'_> {
     /// so the figure clears the pair however the pair is turned.
     fn axis_distance(&mut self, c: &Constraint) -> Option<Callout> {
         let (a, b) = ends(self.sk, c)?;
+        let d = dimension_axis(self.sk, c)?;
         let text = claimed(c, dimension_text(c)?);
-        let d = dimension_axis(c);
         let n = perp(d);
         let place = self.placed(c).unwrap_or_else(|| {
             let s = if dot(n, sub(mid(a, b), self.hub)) < 0.0 { -1.0 } else { 1.0 };

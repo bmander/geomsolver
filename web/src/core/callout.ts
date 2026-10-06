@@ -4,7 +4,7 @@
  * the number beside it are all geometry, so all of it comes from `gcs-core/src/callout.rs` in
  * world coordinates.  This module is a proxy over that one call; the view maps the points to the
  * screen with the same transform it draws the sketch through. */
-import { REGISTRY } from './constraints.js';
+import type { Constraint } from './constraints.js';
 import { Sketch } from './model.js';
 import { core, takeJson, withBuf } from './wasm.js';
 
@@ -87,12 +87,23 @@ export function reset(sk: Sketch, id: number): boolean {
   return core().gcs_callout_reset(sk.handle, id) !== 0;
 }
 
+/** The three dimensions between two points: the length (`Distance`), and the run and the rise —
+ *  an `Ordinate` along the view's `x` and `y`. */
+export type PairDimension = 'length' | 'run' | 'rise';
+
 /** Which of the three dimensions between two points a callout dropped at `at` states: the
  *  length between them, the run, or the rise.  Where the number is put is what says which
  *  measurement was meant — see `callout::pair_dimension`, which is also what draws the figure
- *  that results, so the two cannot disagree.  The answer is a constraint type name. */
+ *  that results, so the two cannot disagree. */
 export function pairDimension(a: readonly [number, number], b: readonly [number, number],
-                              at: readonly [number, number]): string {
+                              at: readonly [number, number]): PairDimension {
   const i = core().gcs_dimension_pair_kind(a[0], a[1], b[0], b[1], at[0], at[1]);
-  return REGISTRY().types[i].name;
+  return i === 1 ? 'run' : i === 2 ? 'rise' : 'length';
+}
+
+/** Which of the three a constraint between two points is, the way `pairDimension` names it. */
+export function pairOf(c: Constraint): PairDimension | null {
+  if (c.typeName === 'Distance') return 'length';
+  if (c.typeName !== 'Ordinate') return null;
+  return c.along === 'x' ? 'run' : c.along === 'y' ? 'rise' : null;
 }

@@ -153,7 +153,7 @@ in std.front {
   a := point
   b := point
   a distance(2mm,along: u) std.front
-  a distance(0mm,along: v) std.front
+  a level(v) std.front
   b distance(2mm,along: u) std.front
   b distance(1mm,along: v) std.front
   ax := line(a,b)
@@ -333,7 +333,7 @@ fix((0, 1)) shaft.p2
         c0 := point
 c1 := point
 c0 distance({e}mm, along: u) std.front
-c0 distance(0mm, along: v) std.front
+c0 level(v) std.front
 c1 distance({e}mm, along: u) std.front
 c1 distance(1mm, along: v) std.front
 rotor_axis := line(c0, c1)

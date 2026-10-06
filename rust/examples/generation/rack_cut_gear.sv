@@ -41,7 +41,7 @@ in std.front {
   s0 := point hint((20, 0))
   s1 := point hint((20, 10))
   o distance(rp, along: x) s0
-  o distance(0, along: y) s0
+  o horizontal s0
   slide := vertical line(s0, s1)
   s0 distance(10) s1
 

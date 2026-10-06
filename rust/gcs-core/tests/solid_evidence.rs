@@ -231,7 +231,7 @@ fn angular_coverage_and_failure_reports_keep_degrees() {
 #[test]
 fn a_counterexample_refutes_a_sweep_with_uncertain_contact_and_successful_poses() {
     let src = round_claim("clear(-100mm)")
-        .replace("fix((2, 0)) b\n", "a distance(reach,along:x) b\na distance(0mm,along:y) b\n")
+        .replace("fix((2, 0)) b\n", "a distance(reach,along:x) b\na horizontal b\n")
         .replace("use std\n", "use std\nparam reach: Length\n")
         .replace(
             "claim result clear(-100mm) other",

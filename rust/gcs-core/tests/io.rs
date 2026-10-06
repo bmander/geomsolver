@@ -676,8 +676,10 @@ fn two_points_can_be_levelled_without_a_line_between_them() {
     let b = sk.point(10.0, 4.0, false, "b");
     let c = sk.point(3.0, 9.0, false, "c");
     let (pa, pb, pc) = (EntRef::point(a), EntRef::point(b), EntRef::point(c));
-    sk.add(Constraint::new(CKind::HorizontalPoints, vec![Arg::Ent(pa), Arg::Ent(pb)]));
-    sk.add(Constraint::new(CKind::VerticalPoints, vec![Arg::Ent(pa), Arg::Ent(pc)]));
+    let f = crate::common::draw_in_front(&mut sk);
+    // level along `v`, the same height, and along `u`, plumb
+    sk.add(Constraint::level(pa, pb, f.v));
+    sk.add(Constraint::level(pa, pc, f.u));
     assert!(solve(&mut sk, SolveOpts::default()).success);
     assert!((sk.point_xy(b).1 - sk.point_xy(a).1).abs() < 1e-9, "not level");
     assert!((sk.point_xy(c).0 - sk.point_xy(a).0).abs() < 1e-9, "not plumb");
@@ -691,11 +693,12 @@ fn levelling_a_pair_is_the_same_statement_either_way_round() {
     let a = sk.point(0.0, 0.0, false, "a");
     let b = sk.point(10.0, 4.0, false, "b");
     let (pa, pb) = (EntRef::point(a), EntRef::point(b));
-    let ab = Constraint::new(CKind::HorizontalPoints, vec![Arg::Ent(pa), Arg::Ent(pb)]);
-    let ba = Constraint::new(CKind::HorizontalPoints, vec![Arg::Ent(pb), Arg::Ent(pa)]);
+    let f = crate::common::draw_in_front(&mut sk);
+    let ab = Constraint::level(pa, pb, f.v);
+    let ba = Constraint::level(pb, pa, f.v);
     assert!(same_constraint(&ab, &ba), "a duplicate the other way round is still a duplicate");
     // and it is not the same as the plumb one
-    let v = Constraint::new(CKind::VerticalPoints, vec![Arg::Ent(pa), Arg::Ent(pb)]);
+    let v = Constraint::level(pa, pb, f.u);
     assert!(!same_constraint(&ab, &v));
 }
 
@@ -706,10 +709,8 @@ fn a_levelled_pair_decomposes_like_a_levelled_line() {
     let mut sk = Sketch::new();
     let a = sk.point(0.0, 0.0, true, "a");
     let b = sk.point(10.0, 4.0, false, "b");
-    sk.add(Constraint::new(
-        CKind::HorizontalPoints,
-        vec![Arg::Ent(EntRef::point(a)), Arg::Ent(EntRef::point(b))],
-    ));
+    let f = crate::common::draw_in_front(&mut sk);
+    sk.add(Constraint::level(EntRef::point(a), EntRef::point(b), f.v));
     sk.add(Constraint::distance(EntRef::point(a), EntRef::point(b), 10.0));
     let g = cgraph::build(&sk);
     assert!(g.unsupported.is_empty(), "the levelled pair went to the numeric fallback");

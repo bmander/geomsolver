@@ -9,15 +9,15 @@ use gcs_core::{model::EntKind,program};
 pub fn wankel(r: f64, e: f64, extra: &str) -> String {
     format!("unit mm\nuse std\n\
         centre := point in std.top\n\
-        centre distance(0mm, along: u) std.top\ncentre distance(0mm, along: v) std.top\n\
+        centre level(u) std.top\ncentre level(v) std.top\n\
         hub := point in std.top\n\
-        hub distance({e}mm, along: u) std.top\nhub distance(0mm, along: v) std.top\n\
+        hub distance({e}mm, along: u) std.top\nhub level(v) std.top\n\
         counter := motion(about: centre, ratio: -1)\n\
         spin := motion(about: hub, ratio: -2/3)\n\
         rotor_turn := motion(spin, relative_to: counter)\n\
         housing_turn := motion(counter, relative_to: spin)\n\
         apex := point in std.top\n\
-        apex distance({x}mm, along: u) std.top\napex distance(0mm, along: v) std.top\n\
+        apex distance({x}mm, along: u) std.top\napex level(v) std.top\n\
         {extra}\n",x = r+e)
 }
 

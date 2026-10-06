@@ -44,8 +44,8 @@ An origin already on one axis is placed in fewer rows than three (`P.origin coin
 std.front`), or the structural count sees a redundancy. W113 warns of two planes lying on one
 another. `views::place`
 settles axes and plane origins before the solve, round by round with seed settlement; they stay
-unknowns. `p distance(d, along: u) P` is an ordinate from `P.origin` along `P.u`, in space across
-planes (`Ordinate3U`, no callout); `hint(at: P, (x, y))` seeds in P's coordinates. Circles, arcs
+unknowns. `p distance(d, along: u) P` is an ordinate from `P.origin` along `P.u` (`CKind::Ordinate`,
+in space across planes with no callout); `hint(at: P, (x, y))` seeds in P's coordinates. Circles, arcs
 and splines over a point in space are E060, faces E080. `use std` gives axes
 `std.x/y/z/back`, planes `std.front` (x, z), `std.top` (x, y), `std.side` (y, z), `std.up` (z,
 back), and `std.origin` (in front, fixed) — flattened after the document, present whenever the
@@ -374,9 +374,13 @@ agrees with OCCT (volume 1e-9, faces by kind) but for named refusals of self-tou
 **Phase 1 (OCCT's shape, our files):** `SOLVENT_WRITER=rust` reads OCCT's solid into `brep`
 (`backend/dump.cpp` → `Session::brep_json` → `brep::json::read`; uses ordered by vertex and
 parameters since OCCT's wire explorer misreads a closed edge) and writes STEP/STL by ours.
-`Surface::BSpline` is a non-rational `nurbs::Net`; `Pcurve::Curve` written exactly; `Edge::tol` is
+`Surface::BSpline` is a `nurbs::Net`, **rational where it carries weights** (`BSpline`/`Net`
+`weights: Option<…>`, finite and positive; `None` divides nothing, so polynomial exports keep their
+bytes; `nurbs::arc` is a circle exactly; STEP's `RATIONAL_B_SPLINE_*` complex entities;
+`tests/rational.rs`, `brep_oracle.rs`'s OCCT round trip); `Pcurve::Curve` written exactly; `Edge::tol` is
 measured and `check` honours it, so it no longer proves pcurves meet edges: a reader holds
-tolerances to a bar itself. `props::fluxes` tables a B-spline face's `G` per span and **closes every
+tolerances to a bar itself. `props::fluxes` tables a polynomial B-spline face's `G` per span (a
+rational one's Gauss stretch by stretch) and **closes every
 loop in the face's parameters** across the kernel's gaps (unclosed, the volume moved with the
 origin). The mesher is a neighbour-array CDT, refined for sag **and** for a facet turning from the
 surface's outward normal (signed); slivers get a point off the longest side; points nearer than
@@ -643,8 +647,27 @@ Conventions:
   table `along:` is read by (choice and message).  A key naming no slot, a word outside a slot's
   set, and a bad `along:` (e.g. `along: z`) are all E040 **at the key** (`Written::key_span`), never
   silently dropped or misread; `report::registry_json` publishes each slot's words.
-  `tests/refusals.rs` is the gate.  `along: n` is the one entry naming no page axis: a point's
-  signed distance along a plane's normal, in space (`PointPlaneDistance`).
+  `tests/refusals.rs` is the gate.  `along:` also takes a reference (an axis, a line): see the
+  ordinate below.
+- **An ordinate is one kind along any direction, and `level` its zero**
+  ([plan](docs/ordinate-plan.md), Solvent [0.46]).  `a distance(d, along: t) b` is `CKind::Ordinate`,
+  `(q − p)·t̂ − d`, signed along `t`; `a level(t) b` is `CKind::Level`, no number, no callout (the
+  direction positional, as `symmetry(l)`'s line).  Slots `(p, q, t: SpecKind::Along, [d], along:
+  Str, form: Int)`: `t` an axis, a line, or a plane standing for its normal (only via the word
+  `n`); the word (`constraints::ALONG`, `Toward`) keeps the spelling and the sign
+  (`right`/`left`/`up`/`down`), and `infer_entity` reads a page word's axis off the view both points
+  are drawn in (none in a planeless sketch: refused).  `form` (`OrdinateForm`: `PageU`, `PageV`,
+  `InView`, `Space`, `CoordU`/`CoordV` — from a view's own origin, the point's one coordinate, the
+  radius kernel's one column — and `FrameU`/`FrameV`/`FrameN` — a plane's own word from its origin
+  for a point drawn elsewhere, over the plane's columns, so `v` is its frame's `v̂`, square to `u`,
+  which an axis `P.v` written outright need not be) is set by `Sketch::add_quiet` from `constraints::ordinate_form` and picks the
+  kernel (`Constraint::kernel`; the run and the rise keep their constant-Jacobian kernels,
+  `K::OrdinateU`/`V`); `Constraint::reads_space` asks it where `CKind::spatial` would.
+  The plane forms (`q distance(d, along: u) P`) are rewritten from `P.origin` along `P.u` in
+  `program::relations::ordinate_operands`, which also refuses a plane as a direction, a word that
+  also names a direction in scope, and a literal zero (E040, naming the level); `a horizontal b`
+  is `level(up)` (`constraints::level_alias`, the one entry #94 moves to `std`), and the printer
+  (`print::ordinate_text`) spells each case back.  `tests/ordinate.rs` is the gate.
 - **A recorded root choice is one record of one triangle** (`decompose::branch_record`).  `ccw(a, b,
   c)` ("c left of a→b") is the same fact as `ccw(a, c, b)` with the sign turned, so a record is
   **canonical**: point indices ascending, the sorting permutation's parity folded into the sign
@@ -809,6 +832,16 @@ Conventions:
   control points are non-zero at any t, so a contact addresses one *span* (fixed-width blocks);
   the span is derived from t, not stored, and `Sketch::topology_key` carries it — a contact
   walking past a knot is a recompile.
+- **A spline may be rational** (`spline(…) weights [1, w, w, 1]`, `SplineE::weights`, `None` for
+  all 1): document data like the knots, so the curve stays linear in its control points over the
+  rational basis `Rᵢ = Bᵢwᵢ / ΣBⱼwⱼ` (`curve::weigh`, applied after `basis` in `eval_on` and the
+  kernels' `span_frame`; all 1 divides nothing, so polynomial splines keep their bits). A spline
+  contact's consts are `SPAN_C` = knot window then the span's weights; `topology_key` carries
+  them. Knot insertion is homogeneous; a deleted control point takes its weight (`graft`). The
+  trailer's entries are `syntax::Weight`s, settled over the scope by expansion (E103 if not a
+  positive plain number). The recipe writes `"weights"`, so the profile is `BSpline::rational` in
+  our kernel and in OCCT's (`solvent_cad_bspline` takes a weights pointer). `nurbs.sv`,
+  `tests/weighted_spline.rs`.
 - A control polygon is edited three ways.  *Inserting* is `curve::insert_control` (Boehm's knot
   insertion: C(t) unchanged, every contact keeps parameter and place; `DEGREE - 1` neighbours
   move, keeping identity).  *Deleting* shortens the curve: `Sketch::min_children` is the general
@@ -861,8 +894,8 @@ Conventions:
   guard is inside `witness::screen`: at a solution, a tangency present, removals capped at what
   the matching cannot account for, at most `SCREEN_MAX`.  A double root's singular value is as
   small as a real freedom's, so a candidate is recognised only by trying it.
-- `Horizontal`/`Vertical` level a line; `HorizontalPoints`/`VerticalPoints` level a *pair of
-  points* with the same line kernels, and `cgraph` gives them a `virtual_line` in the ground
+- `Horizontal`/`Vertical` level a line; a `Level` along a view's own axis levels a *pair of
+  points* with the same line kernels, and `cgraph` gives it a `virtual_line` in the ground
   x-axis's direction class, so a levelled pair decomposes rather than falling to the residue.
 - A **`plane`** (Solvent §6.7) is also a **view**: `Sketch::basis(P)` is `plane::Basis` `(u, v)`
   over its axes' directions, `n = u × v` toward the viewer, standing at `o`.  A point drawn in
@@ -897,9 +930,9 @@ Conventions:
   **Across views a word means space** (`program/reading.rs`): `in_space` reads each operand's
   points' views by membership (a point in space is its own view) and where they differ maps the 2D kind
   to its twin in space (`Distance3`, `PointLine3`, `LineLine3`, `Angle3`, `PointOnLine3`,
-  `EqualLength3`, …) or refuses (E062; E040 for `side:`/`sense:`).  Radii, `along: u`/`v` and
-  `project` are view-free; `coincident`/`distance(along: n)` to a plane are spatial from
-  `infix_op`.  `tests/cross_view_audit.rs` asserts the corpus's
+  `EqualLength3`, …) or refuses (E062; E040 for `side:`/`sense:`).  Radii, ordinates (their
+  form is the operands') and `project` are view-free, but a page word across views is E062;
+  `coincident` to a plane is spatial from `infix_op`.  `tests/cross_view_audit.rs` asserts the corpus's
   cross-membership relations keep their 2D kinds.
 - A **`claim`** (Solvent §9.7) is *judged, never solved for*: **no** `System` compiles a row for
   it, and `cgraph`, `io::Part` and the witness's jitter skip it, so it never moves geometry,
@@ -1355,11 +1388,11 @@ Conventions:
   direction, puts a head where each point falls on that line and runs an extension line out to
   each point.  `Pen::aligned` is the case where the direction is the pair's own; a run or a rise
   passes a page axis instead.
-- A dimension between two points is three — `Distance`, `HorizontalDistance`,
-  `VerticalDistance` — *stated by where the number is put*: `callout::pair_dimension` picks the
+- A dimension between two points is three — `Distance`, and an `Ordinate` `along: x` or `y` —
+  *stated by where the number is put*: `callout::pair_dimension` (`PairDimension`) picks the
   line (pair's own, page x, page y) nearest the direction from the pair's middle to the
   placement; bisector borders, no threshold, a tie to the length.  The front end asks
-  (`gcs_dimension_pair_kind` → a registry index) and swaps the constraint as the pointer moves
+  (`gcs_dimension_pair_kind` → 0 length, 1 run, 2 rise) and swaps the constraint as the pointer moves
   (`SketchView.startDimension`, where a dimension is written: stated at once, number edited on
   the drawing).  Nothing reaches the undo stack until the number is accepted; Escape takes it out.
   *Nothing is solved while it is carried*: `afterEdit` skips the solve while `liveDim.placing`;

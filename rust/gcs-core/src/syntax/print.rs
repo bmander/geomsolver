@@ -284,6 +284,11 @@ fn write_decl(out: &mut String, d: &Decl) {
         out.push_str(&u.iter().map(|&v| num(v)).collect::<Vec<_>>().join(", "));
         out.push(']');
     }
+    if let Some(w) = &d.weights {
+        out.push_str(" weights [");
+        out.push_str(&w.iter().map(|w| w.text.clone().unwrap_or_else(|| num(w.value))).collect::<Vec<_>>().join(", "));
+        out.push(']');
+    }
     if !d.class.is_empty() {
         out.push_str(" class ");
         out.push_str(&d.class.0.join(" "));
@@ -678,27 +683,13 @@ pub fn operator_text(kind: CKind, args: &[Option<Arg>]) -> String {
         // nobody writes this one: a drag target, a lift, an axis's intrinsics
         return format!("{}(…)", snake(kind.name()));
     };
+    if let Some(text) = ordinate_text(kind, args) {
+        return text;
+    }
     let spec = kind.spec();
     let mut ents: Vec<String> = Vec::new();
     let mut parens: Vec<String> = Vec::new();
     let mut hints: Vec<String> = Vec::new();
-    // which of the three a pair of points means is not in the kind's name but in `along:`, so
-    // the axis is written back in whenever the slot itself says nothing — a run that names its
-    // direction (`along: left`) carries the word in the slot and writes it there like any other
-    let named_along =
-        matches!(args.get(3).and_then(|a| a.as_ref()), Some(Arg::Word(w)) if !w.is_empty());
-    if !named_along {
-        match kind {
-            CKind::HorizontalDistance => parens.push("along: x".to_string()),
-            CKind::VerticalDistance => parens.push("along: y".to_string()),
-            CKind::CoordinateU | CKind::Ordinate3U => parens.push("along: u".to_string()),
-            CKind::CoordinateV | CKind::Ordinate3V => parens.push("along: v".to_string()),
-            CKind::PointPlaneDistance => {
-                parens.push("along: n".to_string())
-            }
-            _ => {}
-        }
-    }
     for (i, (name, sk)) in spec.iter().enumerate() {
         let Some(a) = args.get(i).and_then(|a| a.as_ref()) else { continue };
         // an entity slot the core infers — a projection's planes — is never spelled: the
@@ -762,6 +753,43 @@ pub fn operator_text(kind: CKind, args: &[Option<Arg>]) -> String {
     out
 }
 
+/// **An ordinate and its zero, as a document writes them** (`docs/ordinate-plan.md`): the
+/// direction in the word that named it or as the reference it is, a plane's own word against the
+/// plane its first point is the origin of (`q distance(d, along: u) P`), and a level along the
+/// view's own axes as the aliases that say it (`a horizontal b`, `a vertical b`).  The form is
+/// the core's and is never written.  `None` for every other kind.
+fn ordinate_text(kind: CKind, args: &[Option<Arg>]) -> Option<String> {
+    use crate::constraints::Toward;
+    let ws = kind.word_slot()?;
+    let get = |i: usize| args.get(i).and_then(|a| a.as_ref());
+    let ent = |i: usize| get(i).map(|a| write_arg("", SpecKind::Point, a)).unwrap_or_default();
+    let (p, q) = (ent(0), ent(1));
+    let word = match get(ws) {
+        Some(Arg::Word(w)) => w.clone(),
+        _ => String::new(),
+    };
+    let toward = Toward::of(&word);
+    let dir = if toward.is_some() { word.clone() } else { ent(2) };
+    // a plane's own direction is measured from its origin: the plane is what the origin is of
+    let plane = || p.strip_suffix(".origin").unwrap_or(&p).to_string();
+    let of_plane = toward.is_some_and(|t| t.of_plane());
+    Some(match kind {
+        CKind::Ordinate => {
+            let d = get(3).map(dim_text).unwrap_or_default();
+            match of_plane {
+                true => format!("{q} distance({d}, along: {word}) {}", plane()),
+                false => format!("{p} distance({d}, along: {dir}) {q}"),
+            }
+        }
+        _ => match toward {
+            Some(_) if of_plane => format!("{q} level({word}) {}", plane()),
+            Some(Toward::PageV) => format!("{p} horizontal {q}"),
+            Some(Toward::PageU) => format!("{p} vertical {q}"),
+            _ => format!("{p} level({dir}) {q}"),
+        },
+    })
+}
+
 /// Format a slot: what goes in the argument list (a pin) and what in the trailing hint clause
 /// (a seed).  A shared place is both — `t == s`, and where it starts.
 fn slot_text(name: &str, a: &Arg) -> (Option<String>, Option<String>) {
@@ -796,12 +824,18 @@ pub(crate) fn vector_text(parts: impl IntoIterator<Item = String>) -> String {
 }
 
 /// A selector's value, as a `style` block writes one.
-fn sel_text(a: &Arg) -> String {
+pub(crate) fn sel_text(a: &Arg) -> String {
     match a {
         Arg::Num(v) => num(*v),
         Arg::Int(v) => v.to_string(),
         Arg::Bool(b) => b.to_string(),
         Arg::Word(w) => w.clone(),
+        // a direction written as a reference, `along: std.x`
+        Arg::Ref(r) => {
+            let mut s = String::new();
+            write_ref(&mut s, r);
+            s
+        }
         other => format!("{other:?}"),
     }
 }

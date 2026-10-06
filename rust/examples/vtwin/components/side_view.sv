@@ -29,7 +29,7 @@ component SideView(o: point, dims: group) {
   // the clevis pin at the height the front view puts it: its head in the disc's back, the two
   // eyes on its shank, a washer each side of them, the cotter outboard
   pin_s := point hint((o.x, o.y + dims.R * cos(dims.theta0)))
-  o distance(0, along: x) pin_s
+  o vertical pin_s
   head := components.parts.Box(pin_s, x0: -(dims.zdisc + dims.pinpocket), y0: -dims.pinhead / 2, x1: -(dims.zdisc + dims.pinpocket - dims.pinheadH), y1: dims.pinhead / 2)
   pin := components.parts.Box(pin_s, x0: -(dims.zdisc + dims.pinpocket + dims.pingrip + 7mm), y0: -dims.rpin, x1: -(dims.zdisc + dims.pinpocket), y1: dims.rpin)
   w1 := components.parts.Box(pin_s, x0: -(dims.zA - dims.rw / 2), y0: -dims.reye, x1: -(dims.zA - dims.rw / 2 - dims.wsh), y1: dims.reye)
@@ -41,7 +41,7 @@ component SideView(o: point, dims: group) {
 
   // -- a pivot bolt's stack, at the pivots' one height ---------------------------------------
   pv := point hint((o.x, o.y + dims.H * cos(dims.alphaR)))
-  o distance(0, along: x) pv
+  o vertical pv
   bhead := components.parts.Box(pv, x0: -(dims.trapz + dims.boltH), y0: -dims.boltaf / 2, x1: -dims.trapz, y1: dims.boltaf / 2)
   bshank := components.parts.Box(pv, x0: -dims.trapz, y0: -dims.rstud, x1: dims.tp + dims.spring + dims.wsh + dims.nutH + 2mm, y1: dims.rstud)
   repeat 7 as i {

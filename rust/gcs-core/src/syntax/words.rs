@@ -53,7 +53,7 @@ pub(super) const MODIFIERS: [&str; 11] = [
 
 /// The words that may follow a declaration's own, so `class a b` knows where its list ends.
 /// A chain's joints are here too: `arc a(center: c) class construction tangent …` is one link.
-const TRAILERS: [&str; 5] = ["knots", "hint", "class", "close", "in"];
+const TRAILERS: [&str; 6] = ["knots", "weights", "hint", "class", "close", "in"];
 
 /// Resolve `equal` by operand kinds: line lengths or circle/arc radii.
 pub fn equal_kind(left: EntKind, right: EntKind) -> Option<CKind> {

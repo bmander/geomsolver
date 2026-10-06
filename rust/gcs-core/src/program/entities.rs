@@ -317,18 +317,18 @@ pub(super) fn build(
                 });
                 return None;
             }
-            match sk.spline_with(&kids, d.knots.clone()) {
+            match sk.spline_weighted(&kids, d.knots.clone(), d.weights.clone()) {
                 Some(si) => si,
                 None => {
-                    diags.push(Diag {
-                        code: Code::E103,
-                        span: st.span,
-                        stmt: Some(st.id),
-                        message: format!(
+                    let message = if d.weights.as_ref().is_some_and(|w| !curve::weights_valid(w, kids.len())) {
+                        format!("a curve's weights are one per control point ({}), each a positive number", kids.len())
+                    } else {
+                        format!(
                             "a curve needs more than {} control points and a matching knot vector",
                             curve::DEGREE
-                        ),
-                    });
+                        )
+                    };
+                    diags.push(Diag { code: Code::E103, span: st.span, stmt: Some(st.id), message });
                     return None;
                 }
             }

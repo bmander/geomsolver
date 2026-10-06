@@ -33,7 +33,7 @@ side := plane(u: t, v: std.y)
 side.origin coincident std.front     // on std.y already, as its axes pass through it
 in side {
   pax := line(hint((0, 10)), hint((60, 12)))
-  pax.p1 distance(0, along: u) side
+  pax.p1 level(u) side
   pax.p2 distance(60, along: u) side
   pax.p1 horizontal pax.p2
 }

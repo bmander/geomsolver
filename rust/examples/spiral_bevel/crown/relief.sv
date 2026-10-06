@@ -21,25 +21,25 @@ use crown.space
 // Where the chamfer leaves `flank`, in a section walked counter-clockwise, its `base` on the
 // right. The flank generates the member's tip edge at `mark`, the addendum from the pitch line;
 // the `kink` stands `tip_relief` beyond it toward the pitch line, square to the base, and
-// `level` runs through the mark along the base.
+// `run` runs through the mark along the base.
 component Kink(flank: line, base: line, design: group, normal_module: Length) {
   // Seeds, rough: halfway along the flank, and the base's run on from there.
   mark := point hint(at: flank.p1, toward: flank.p2, by: 0.5)
   along := point hint(at: mark, along: base)
   kink := point hint(at: mark)
-  level := line(mark, along)
+  run := line(mark, along)
   mark coincident flank
   mark distance((design.base - design.addendum) * normal_module, side: left) base
-  base angle(0deg) level
+  base angle(0deg) run
   mark distance(design.tip_relief) along
   kink coincident flank
-  kink distance(design.tip_relief, side: left) level
+  kink distance(design.tip_relief, side: left) run
 }
 
 // What both chamfers share: the `top` half an addendum beyond the mark toward the pitch line,
 // and as long as the round's radius.
 component ChamferTop(kink: group, top: line, design: group, normal_module: Length) {
-  top.p1 distance(design.addendum * normal_module / 2, side: left) kink.level
+  top.p1 distance(design.addendum * normal_module / 2, side: left) kink.run
   distance(design.rounding * normal_module) top
 }
 

@@ -8,19 +8,19 @@
  * arguments live locally; afterwards every read and write goes through the core.
  */
 import {
-  ConstraintRecord, Entity, Kind, Param, Primitive, Sketch, registerConstraintFactory,
+  ConstraintRecord, Entity, KINDS, Kind, Param, Primitive, Sketch, registerConstraintFactory,
 } from './model.js';
 import { core, lastError, onInit, takeJson, takeStr, withBuf, withJson, withStr } from './wasm.js';
 
 export type SpecKind =
   | 'point' | 'line' | 'circle' | 'arc' | 'circle_or_arc' | 'spline'
-  | 'curve' | 'plane' | 'axis' | 'direction'
+  | 'curve' | 'plane' | 'axis' | 'direction' | 'along'
   | 'length' | 'angle' | 'float' | 'int' | 'str' | 'bool'
   | 'param';
 
 export const ENTITY_KINDS: ReadonlySet<string> =
   new Set(['point', 'line', 'circle', 'arc', 'circle_or_arc', 'spline', 'curve', 'plane', 'axis',
-           'direction']);
+           'direction', 'along']);
 export const DIMENSION_KINDS: ReadonlySet<string> = new Set(['length', 'angle']);
 /** A hidden unknown the constraint owns — where along a curve a contact sits.  It reads as the
  *  number the solver currently has it at and cannot be written: nobody states a curve
@@ -128,10 +128,10 @@ export abstract class Constraint {
   /** Entities this constraint references directly, in spec order.  A slot the core fills in
    *  from the geometry (a `project`'s two planes, read off its points' memberships) is null
    *  until the constraint is bound, and is left out here rather than handed to a caller about
-   *  to read its children. */
+   *  to read its children; so is an axis (an ordinate's direction), which has no proxy. */
   entities(): Primitive[] {
     return this.spec.flatMap(([, k], i) =>
-      (ENTITY_KINDS.has(k) && this.args[i] != null ? [this.args[i] as Primitive] : []));
+      (ENTITY_KINDS.has(k) && this.args[i] instanceof Entity ? [this.args[i] as Primitive] : []));
   }
 
   /** The (attribute, kind) pairs of this constraint's dimension values. */
@@ -289,6 +289,9 @@ export abstract class Constraint {
 function fromJson(sk: Sketch, v: unknown, kind: SpecKind): unknown {
   if (ENTITY_KINDS.has(kind) && Array.isArray(v)) {
     const [k, i] = v as [Kind, number];
+    // an axis has no proxy here (an ordinate's direction the core read off the view): the
+    // reference is kept as it came, and handed back the same way
+    if (!KINDS.includes(k)) return v;
     return sk.entities(k)[i];
   }
   return v;
@@ -386,8 +389,7 @@ export function initTypes(): Record<string, ConstraintCtor> {
     Angle, ParallelDistance, EqualLength, PointOnLine, PointLineDistance, PointOnCircle, Radius,
     EqualRadius, AnnularDistance, TangentLineCircle, TangentCircleCircle, TangentArcLine,
     TangentLineCircleAt, Symmetric, PointOnSpline, SplineTangentLine, SplineCurvature,
-    HorizontalPoints, VerticalPoints, HorizontalDistance, VerticalDistance, PointOnCurve,
-    CurveTangentLine, CurveCurvature, Project, CoordinateU, CoordinateV,
+    Ordinate, Level, PointOnCurve, CurveTangentLine, CurveCurvature, Project,
   } = CONSTRAINT_TYPES);
   return CONSTRAINT_TYPES;
 }
@@ -419,10 +421,12 @@ export let Symmetric: ConstraintCtor;
 export let PointOnSpline: ConstraintCtor;
 export let SplineTangentLine: ConstraintCtor;
 export let SplineCurvature: ConstraintCtor;
-export let HorizontalPoints: ConstraintCtor;
-export let VerticalPoints: ConstraintCtor;
-export let HorizontalDistance: ConstraintCtor;
-export let VerticalDistance: ConstraintCtor;
+/** How far `q` stands from `p` along a direction, `(p, q, t, d, along)`: `t` an axis or a line,
+ *  or left null with `along` a word the core reads it off — `x` and `y` the run and the rise in
+ *  the points' view (`docs/ordinate-plan.md`).  Its form is the core's. */
+export let Ordinate: ConstraintCtor;
+/** The ordinate's zero, `(p, q, t, along)`: the two level along `t` — `up` is `p horizontal q`. */
+export let Level: ConstraintCtor;
 /** The three contacts with a curve written in the language: a point on it, a line tangent to
  *  it, a circle osculating it.  Each owns the curve's parameter, as a spline's contacts do. */
 export let PointOnCurve: ConstraintCtor;
@@ -431,9 +435,6 @@ export let CurveCurvature: ConstraintCtor;
 /** `a project b`: two points are images of one point in space.  Its two plane slots are left
  *  out — the core reads them off the points' memberships, as it reads a tangency's side. */
 export let Project: ConstraintCtor;
-/** Signed point ordinates along a datum's u and v axes, independent of membership. */
-export let CoordinateU: ConstraintCtor;
-export let CoordinateV: ConstraintCtor;
 
 onInit(() => {
   initTypes();

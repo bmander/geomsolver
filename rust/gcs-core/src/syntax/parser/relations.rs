@@ -125,9 +125,11 @@ impl<'a> P<'a> {
         if crate::syntax::words::named_link_at(&self.t, self.i) || !self.eat_p('(') {
             return Some(Vec::new());
         }
-        // `symmetry`'s line and `tangent`'s contact point (two cones touching at M) stand in the
-        // parentheses unlabelled; `tangent` states no number, so nothing else is read there
-        let takes_entity = word == "symmetry" || word == "tangent" || call_word(word);
+        // `symmetry`'s line, `tangent`'s contact point (two cones touching at M) and `level`'s
+        // direction stand in the parentheses unlabelled; none states a number, so nothing else
+        // is read there
+        let takes_entity =
+            word == "symmetry" || word == "tangent" || word == "level" || call_word(word);
         let mut out = Vec::new();
         // where each unlabelled item was read as text: `angle`'s may turn out to be two lines
         let mut texts: Vec<(usize, usize, usize)> = Vec::new();
@@ -139,7 +141,13 @@ impl<'a> P<'a> {
                 (Some(Tok::Ident(n)), Some(Tok::P(':'))) => {
                     let name = Name { text: n, span: self.here() };
                     self.i += 2;
-                    let v = self.sel_value()?;
+                    // a direction is a word (`along: x`) or what it names (`along: std.x`): a
+                    // word of the table is a word, unless it opens a path
+                    let v = if name.text == "along" && self.reference_ahead() {
+                        Arg::Ref(self.refr()?)
+                    } else {
+                        self.sel_value()?
+                    };
                     out.push(OpArg::Named(name, v));
                 }
                 _ if takes_entity => out.push(OpArg::Ent(self.refr()?)),
@@ -220,6 +228,14 @@ impl<'a> P<'a> {
     }
 
     /// A selector's value: `side: -1`, `at: start`, `external: true`, `along: x`.
+    /// Whether what follows `along:` is a reference rather than one of the direction words: a
+    /// name outside `constraints::ALONG`, or any name a path goes on from.
+    fn reference_ahead(&self) -> bool {
+        let Some(Tok::Ident(n)) = self.peek() else { return false };
+        let path = matches!(self.t.get(self.i + 1).map(|(t, _)| t), Some(Tok::P('.' | '[')));
+        path || crate::constraints::Toward::of(n).is_none()
+    }
+
     fn sel_value(&mut self) -> Option<Arg> {
         match self.peek().cloned() {
             Some(Tok::Num(_)) | Some(Tok::P('-')) | Some(Tok::P('+')) => {

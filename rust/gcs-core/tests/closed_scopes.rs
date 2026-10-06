@@ -19,7 +19,7 @@ use std
 component Bar(d: group) {
 tip := point hint((d.origin.x + d.length, d.origin.y))
 d.origin distance(d.length) tip
-d.origin distance(0mm, along: y) tip
+d.origin horizontal tip
 }
 in std.front {
 part := Bar(design)
@@ -119,7 +119,7 @@ use std
 component Bar(d: group) {
 tip := point hint((d.origin.x + d.length, d.origin.y))
 d.origin distance(d.length) tip
-d.origin distance(0mm, along: y) tip
+d.origin horizontal tip
 }
 component Host(o: point) {
   design := {
@@ -244,7 +244,7 @@ component Part(d: group) {
   fix((0, 0)) a
   b := point hint((length, 0))
   a distance(length, along: x) b
-  a distance(0mm, along: y) b
+  a horizontal b
 }
 in std.front {
 p := Part(dims)
@@ -288,7 +288,7 @@ use std
 component Bar(d: group) {
 tip := point hint((d.at.x + d.size.length, d.at.y))
 d.at distance(d.size.length) tip
-d.at distance(0mm, along: y) tip
+d.at horizontal tip
 }
 component Pin(s: group) {
 q := point hint((s.length, 9mm))
@@ -325,7 +325,7 @@ use std
 component Bar(d: group) {
 tip := point hint((d.at.x + d.size.length, d.at.y))
 d.at distance(d.size.length) tip
-d.at distance(0, along: y) tip
+d.at horizontal tip
 }
 in std.front {
 o := point

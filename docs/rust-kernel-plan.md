@@ -305,7 +305,8 @@ STL by our writer and mesher (the solid built whole, its union made before its f
 is `backend/dump.cpp` (`solvent_cad_brep_json`) read by `brep::json`; `SOLVENT_BREP_DUMP=PATH`
 writes it for the core's tool (`brep_json_debug`). What it took, and what it found:
 
-- **B-spline surfaces and pcurves.** `Surface::BSpline` over `nurbs::Net` (tensor, non-rational;
+- **B-spline surfaces and pcurves.** `Surface::BSpline` over `nurbs::Net` (tensor; rational since
+  2026-10-06, when it carries weights;
   degrees to 25, since OCCT's pcurves reach 11); `Pcurve::Curve`, a kernel's 2D curve read at the
   edge's own parameter and written to STEP exactly (its poles).
 - **Reading OCCT's shape.** Each face dumped forward and a reversed one's loops turned by the
@@ -585,8 +586,8 @@ checks as phase 3's — OCCT's read-back within 2.5e-6, the meter's STEPs 0.42 a
   material cell kept), as the native host did, and says why. The swept torus at 0.1 µm is the case.
 - **Full verification reads our file back by OCCT** wherever the binary has it (`cad::read_back`):
   a valid solid of as many faces, measured by the core within 1e-5 (the torus 3.7e-7). A reader's
-  rational pcurve (a conic on a plane) is read as the `Pcurve::Inverse` of its edge, from its ends in
-  homogeneous coordinates, so the core builds no rational curve.
+  rational pcurve (a conic on a plane) is read exactly, as a rational `Pcurve::Curve` (until
+  2026-10-06 it was the `Pcurve::Inverse` of its edge: the core built no rational curve).
 
 - **The bridge is gone.** Phases 3 and 4 proved each core producer inside the native construction
   (`SOLVENT_WRITER=rust`'s core split, sheets and sections, shapes the core held under the kernel's

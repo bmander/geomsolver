@@ -164,6 +164,15 @@ impl Program {
         (None, off.min(self.text.len()))
     }
 
+    /// The characters a span covers, in whichever text it is in: the document's or a module's.
+    pub fn span_text(&self, span: Span) -> Option<&str> {
+        let (lo, hi) = (span.lo as usize, span.hi as usize);
+        match self.source_at(lo) {
+            (Some(k), at) => self.modules[k].text.get(at..at + hi.checked_sub(lo)?),
+            (None, _) => self.text.get(lo..hi),
+        }
+    }
+
     /// Whether a span is in the document's own text — what a splice may touch.
     pub fn owns(&self, span: Span) -> bool {
         span.hi as usize <= self.text.len()

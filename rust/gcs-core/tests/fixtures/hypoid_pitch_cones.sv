@@ -32,10 +32,10 @@ in std.front {
 // generator, and its v runs along std.y; its origin is where M is along the generator
 G := plane(u: gen_g, v: hint(dir: (0, 1, 0)))
 G.v parallel std.y
-M distance(0mm, along: u) G
+M level(u) G
 Q := plane(u: gen_p, v: hint(dir: (0, 1, 0)))
 Q.v parallel std.y
-M distance(0mm, along: u) Q
+M level(u) Q
 
 // each axis in its axial plane, from its apex: the apex's image is on P and projects to the apex
 // drawn in P; how long an axis is drawn says nothing about the cone

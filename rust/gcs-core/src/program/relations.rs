@@ -26,15 +26,16 @@ pub(crate) fn settle(
         }
         return Ok((k, w.assemble(k)?));
     }
-    // `along:` chooses the kind and fills no slot, so this is the only place its word can be
-    // checked — and unchecked, `along: z` came back as "`distance` does not relate a point to a
-    // point", a complaint about the operands for a mistake in the selector (issue #48, item 4)
-    if let Some(v) = w.sel("along") {
-        if !crate::constraints::ALONG.iter().any(|(n, _)| *n == v) {
-            let words: Vec<&str> = crate::constraints::ALONG.iter().map(|(n, _)| *n).collect();
-            let m = format!("`along` is {}, not `{v}`", crate::syntax::one_of(&words));
-            return Err((w.key_span("along").unwrap_or(w.word.span), m));
-        }
+    // `along:` is a direction word or a reference (the parser reads a name outside the table as
+    // one); anything else — a number, a flag — is neither, said at the key before the operands
+    // are asked about (issue #48, item 4)
+    let along = w.args.iter().find_map(|a| match a {
+        crate::syntax::OpArg::Named(n, v) if n.text == "along" => Some(v),
+        _ => None,
+    });
+    if let Some(v) = along.filter(|v| !matches!(v, Arg::Ref(_) | Arg::Word(_))) {
+        let m = no_direction(&crate::syntax::sel_text(v));
+        return Err((w.key_span("along").unwrap_or(w.word.span), m));
     }
     let kinds: Vec<Option<EntKind>> = w.ops.iter().map(kind_of).collect();
     let kind = match w.fixity {
@@ -190,6 +191,14 @@ pub(super) fn constrain(
         let where_ = |a: &Arg| {
             arg_span(a).or_else(|| r.written.and_then(|w| w.key_span(name))).unwrap_or(st.span)
         };
+        // an ordinate's second operand may be the plane it is measured from (`p distance(d,
+        // along: u) P`), which `ordinate_operands` reads as that plane's origin below
+        let kind = match (ckind.word_slot(), i, a) {
+            (Some(_), 1, Arg::Ref(r))
+                if res.lookup(r).and_then(|e| follow(sk, e, &r.path).ok())
+                    .is_some_and(|e| e.kind == EntKind::Plane) => &SpecKind::Plane,
+            _ => kind,
+        };
         match to_arg(sk, res, *kind, a) {
             Ok(v) => {
                 // the word is one of the kind's own, or it is a typo: unchecked, anything that
@@ -212,6 +221,16 @@ pub(super) fn constrain(
                 }
                 args.push(v)
             }
+            // a direction that names nothing is a word misspelt, more likely than an entity
+            Err((Code::E101, _)) if ckind.word_slot().is_some() && i == 2 => {
+                let what = match a {
+                    Arg::Ref(r) => crate::syntax::ref_text(r),
+                    other => crate::syntax::sel_text(other),
+                };
+                let message = no_direction(&what);
+                diags.push(Diag { code: Code::E040, span: where_(a), stmt: Some(st.id), message });
+                return None;
+            }
             Err((code, msg)) => {
                 diags.push(Diag {
                     code,
@@ -232,6 +251,14 @@ pub(super) fn constrain(
         (CKind::PointOnCurve, Some(CArg::Ent(e))) if sk.curves[e.i()].extrusion => CKind::PointOnExtrusion,
         _ => ckind,
     };
+    if ckind.word_slot().is_some() {
+        if let Err((span, message)) =
+            ordinate_operands(sk, res, &r, st, doc, &mut args, &mut left_out)
+        {
+            diags.push(Diag { code: Code::E040, span, stmt: Some(st.id), message });
+            return None;
+        }
+    }
     let (ckind, spec, mut args, left_out) = match super::reading::in_space(sk, ckind, &args) {
         Ok(None) => (ckind, spec, args, left_out),
         Ok(Some((k, a, l))) => (k, k.spec(), a, l),
@@ -368,6 +395,149 @@ pub(super) fn constrain(
     c.class = r.class.clone();
     c.written = written(&r.args, r.kind.spec(), st, doc);
     Some(sk.add_quiet(c))
+}
+
+/// **An ordinate's operands, read** (`docs/ordinate-plan.md`): a plane's own direction is
+/// measured from its origin, so `q distance(d, along: u) P` is the ordinate from `P.origin` to
+/// `q` along `P.u` (`P`'s normal for `n`) and the arguments are rewritten so; a direction written
+/// as a reference is an axis or a line, never a plane; a word of the table that is also the name
+/// of a direction in scope is refused as the two readings it has; and a number written as zero is
+/// a level, not a dimension.
+fn ordinate_operands(
+    sk: &Sketch,
+    res: &Resolver,
+    r: &ResolvedRelation<'_>,
+    st: &Stmt,
+    doc: &crate::syntax::Program,
+    args: &mut [CArg],
+    left_out: &mut [bool],
+) -> Result<(), (Span, String)> {
+    use crate::constraints::Toward;
+    let ckind = r.kind;
+    let level = ckind == CKind::Level;
+    let at_key = r.written.and_then(|w| w.key_span("along")).unwrap_or(st.span);
+    let word = crate::constraints::ordinate_word(ckind, args).to_string();
+    let toward = Toward::of(&word);
+    let alias = r.written.is_some_and(|w| crate::constraints::level_alias(&w.word.text).is_some());
+    let spell = |d: &str| match level {
+        true => format!("level({d})"),
+        false => format!("distance(…, along: {d})"),
+    };
+    // the word read as a word, though the scope has a direction by that name
+    if let (Some(_), false) = (toward, alias) {
+        let named = res.lookup(&Ref::new(word.as_str())).is_some_and(|e| {
+            matches!(e.kind, EntKind::Axis | EntKind::Line)
+        });
+        if named {
+            return Err((at_key, format!(
+                "`{word}` is a direction word and also the name of a direction here: `{}` reads \
+                 it as the word, so name the direction otherwise",
+                spell(&word)
+            )));
+        }
+    }
+    // a direction written as a reference is one a line runs along; a plane's is said in its word
+    if let CArg::Ent(t) = &args[2] {
+        if t.kind == EntKind::Plane {
+            return Err((at_key, format!(
+                "a direction along a plane reads as one within it: its normal is `n`, against \
+                 the plane — `p {} P`",
+                spell("n")
+            )));
+        }
+    }
+    let plane = match &args[1] {
+        CArg::Ent(e) if e.kind == EntKind::Plane => Some(e.i()),
+        _ => None,
+    };
+    match (plane, toward) {
+        (Some(pl), Some(t)) if t.of_plane() => {
+            if level && t == Toward::PlaneN {
+                return Err((st.span, "a point level with a plane's origin along its normal is on \
+                    the plane: `p coincident P`".to_string()));
+            }
+            let p = &sk.planes[pl];
+            let along = match t {
+                Toward::PlaneU => EntRef::axis(p.u as usize),
+                Toward::PlaneV => EntRef::axis(p.v as usize),
+                _ => EntRef::plane(pl),
+            };
+            args[1] = args[0].clone();
+            args[0] = CArg::Ent(EntRef::point(p.origin as usize));
+            args[2] = CArg::Ent(along);
+            left_out[2] = false;
+        }
+        (Some(_), _) => {
+            return Err((at_key, format!(
+                "against a plane the direction is one of its own: `{}`, `{}` or `{}`",
+                spell("u"),
+                spell("v"),
+                spell("n")
+            )));
+        }
+        (None, Some(t)) if t.of_plane() => {
+            return Err((at_key, format!(
+                "`{word}` is a plane's own direction, measured from its origin: the plane is the \
+                 second operand, `p {} P`",
+                spell(&word)
+            )));
+        }
+        _ => {}
+    }
+    // zero, written so: the two are level, which is a relation and draws no number
+    if !level {
+        if let Some(Arg::Dim { span, .. }) = r.args.get(3).and_then(|a| a.as_ref()) {
+            let text = doc.span_text(*span).unwrap_or_default();
+            if written_zero(text, sk.units) {
+                let say = level_spelling(r.written, &word);
+                return Err((*span, format!(
+                    "an ordinate of zero says the two are level, which is a relation and states no \
+                     number: `{say}`"
+                )));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// What an ordinate of zero says, in the words its statement wrote: `a horizontal b` for the
+/// view's up, `p level(u) P` for a plane's own word, `a level(t) b` for a reference.
+fn level_spelling(w: Option<&crate::syntax::Written>, word: &str) -> String {
+    use crate::constraints::Toward;
+    let ops: Vec<String> =
+        w.map(|w| w.ops.iter().map(crate::syntax::ref_text).collect()).unwrap_or_default();
+    let op = |i: usize, or: &str| ops.get(i).cloned().unwrap_or_else(|| or.to_string());
+    let (a, b) = (op(0, "a"), op(1, "b"));
+    let reference = w.and_then(|w| w.args.iter().find_map(|a| match a {
+        crate::syntax::OpArg::Named(n, Arg::Ref(t)) if n.text == "along" => {
+            Some(crate::syntax::ref_text(t))
+        }
+        _ => None,
+    }));
+    match Toward::of(word) {
+        Some(Toward::PageV) => format!("{a} horizontal {b}"),
+        Some(Toward::PageU) => format!("{a} vertical {b}"),
+        Some(Toward::PlaneN) => format!("{a} coincident {b}"),
+        Some(_) => format!("{a} level({word}) {b}"),
+        None => format!("{a} level({}) {b}", reference.unwrap_or_else(|| "t".to_string())),
+    }
+}
+
+/// Whether a dimension's text is a zero written as one: `0`, `0mm`, `-0.0` — not a name or an
+/// expression that comes to it.
+fn written_zero(text: &str, units: crate::units::Units) -> bool {
+    let text = text.trim();
+    (expr::literal(text).is_some() || expr::notation(text))
+        && expr::parse_in(text, units).ok()
+            .and_then(|p| expr::eval(&p.body, &Default::default()).ok())
+            .and_then(|a| a.number())
+            .is_some_and(|v| v == 0.0)
+}
+
+/// What `along:` is, refusing what it is not.
+fn no_direction(what: &str) -> String {
+    let words = crate::syntax::one_of(&crate::constraints::ALONG_WORDS);
+    format!("`along` is a direction — {words}, an axis or a line — not `{what}`")
 }
 
 /// A dimension as it was written, when that differs from the text it reached here as — see

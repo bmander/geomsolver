@@ -47,15 +47,6 @@ fn all_dimensions() -> Sketch {
         CKind::AnnularDistance,
         vec![Arg::Ent(ci), Arg::Ent(co), Arg::Num(10.0)],
     ));
-    // the run and the rise from the free point up to the shoulder
-    sk.add(Constraint::new(
-        CKind::HorizontalDistance,
-        vec![Arg::Ent(EntRef::point(e)), Arg::Ent(EntRef::point(c)), Arg::Num(50.0)],
-    ));
-    sk.add(Constraint::new(
-        CKind::VerticalDistance,
-        vec![Arg::Ent(EntRef::point(e)), Arg::Ent(EntRef::point(c)), Arg::Num(15.0)],
-    ));
     // a quarter arc, measured along itself
     let (ac, a_s, a_e) = (
         sk.point(220.0, 20.0, false, ""),
@@ -64,9 +55,14 @@ fn all_dimensions() -> Sketch {
     );
     let arc = sk.arc(ac, a_s, a_e, "");
     sk.add(Constraint::new(CKind::ArcLength, vec![Arg::Ent(EntRef::arc(arc)), Arg::Num(10.0 * PI)]));
-    let f = sk.fixed_plane(gcs_core::plane::Basis::page(), "datum");
-    for kind in [CKind::CoordinateU, CKind::CoordinateV] {
-        sk.add(Constraint::new(kind, vec![Arg::Ent(EntRef::point(e)), Arg::Ent(EntRef::plane(f)), Arg::Num(12.0)]));
+    // drawn in a view, for the run and the rise from the free point up to the shoulder along
+    // its axes, and the point's two coordinates from its origin
+    let f = crate::common::draw_in_front(&mut sk);
+    let (pe, pc) = (EntRef::point(e), EntRef::point(c));
+    sk.add(Constraint::ordinate(pe, pc, f.u, 50.0));
+    sk.add(Constraint::ordinate(pe, pc, f.v, 15.0));
+    for t in [f.u, f.v] {
+        sk.add(Constraint::ordinate(f.origin, pe, t, 12.0));
     }
     sk
 }
@@ -115,8 +111,10 @@ fn every_dimension_is_drawn() {
     // live fire: the fixture holds one constraint of every kind that carries a number, and each
     // one has to come back as a figure.  `Pen::one` matches `CKind` exhaustively, so a new type
     // stops the build there; this is the other half — that the arm someone wrote actually draws.
+    // an ordinate is one kind whatever its direction: the fixture states four of them
     let mut drawn: Vec<CKind> = sk_kinds(&all_dimensions());
     drawn.sort();
+    drawn.dedup();
     // a relation in space states a number of no one view, and has no figure on one
     let mut want: Vec<CKind> = ALL_KINDS.iter().copied()
         .filter(|k| k.has_dimension() && !k.spatial())
@@ -664,25 +662,27 @@ fn grabbing_a_constraint_that_has_no_callout_is_not_a_trap() {
 /// Two points, dimensioned three ways: which one it is comes from where the number is put.
 #[test]
 fn where_a_dimension_is_put_is_which_dimension_it_is() {
-    use gcs_core::callout::pair_dimension;
+    use gcs_core::callout::{pair_dimension, PairDimension as D};
     let (a, b) = ((0.0, 0.0), (40.0, 40.0));   // a diagonal pair, so all three are reachable
     let mid = (20.0, 20.0);
     let out = |dx: f64, dy: f64| (mid.0 + dx, mid.1 + dy);
     // across the pair is the length it already looked like it wanted
-    assert_eq!(pair_dimension(a, b, out(-30.0, 30.0)), CKind::Distance);
-    assert_eq!(pair_dimension(a, b, out(30.0, -30.0)), CKind::Distance, "and on the other side");
+    assert_eq!(pair_dimension(a, b, out(-30.0, 30.0)), D::Length);
+    assert_eq!(pair_dimension(a, b, out(30.0, -30.0)), D::Length, "and on the other side");
     // above or below it, the dimension line lies along the page's x: the run between them
-    assert_eq!(pair_dimension(a, b, out(0.0, 40.0)), CKind::HorizontalDistance);
-    assert_eq!(pair_dimension(a, b, out(3.0, -40.0)), CKind::HorizontalDistance);
+    assert_eq!(pair_dimension(a, b, out(0.0, 40.0)), D::Run);
+    assert_eq!(pair_dimension(a, b, out(3.0, -40.0)), D::Run);
     // out to either side, along y: the rise
-    assert_eq!(pair_dimension(a, b, out(40.0, 0.0)), CKind::VerticalDistance);
-    assert_eq!(pair_dimension(a, b, out(-40.0, -3.0)), CKind::VerticalDistance);
+    assert_eq!(pair_dimension(a, b, out(40.0, 0.0)), D::Rise);
+    assert_eq!(pair_dimension(a, b, out(-40.0, -3.0)), D::Rise);
     // the borders are the bisectors, and nothing degenerate is an error
-    assert_eq!(pair_dimension(a, b, mid), CKind::Distance, "nowhere in particular");
-    assert_eq!(pair_dimension(a, a, out(0.0, 40.0)), CKind::Distance, "no pair to measure");
+    assert_eq!(pair_dimension(a, b, mid), D::Length, "nowhere in particular");
+    assert_eq!(pair_dimension(a, a, out(0.0, 40.0)), D::Length, "no pair to measure");
     // a level pair reads the same either way, so the length wins the tie
-    assert_eq!(pair_dimension((0.0, 0.0), (40.0, 0.0), (20.0, 30.0)), CKind::Distance);
-    assert_eq!(pair_dimension((0.0, 0.0), (40.0, 0.0), (60.0, 0.0)), CKind::VerticalDistance);
+    assert_eq!(pair_dimension((0.0, 0.0), (40.0, 0.0), (20.0, 30.0)), D::Length);
+    assert_eq!(pair_dimension((0.0, 0.0), (40.0, 0.0), (60.0, 0.0)), D::Rise);
+    // and the run and the rise are an ordinate along the view's `x` and `y`
+    assert_eq!((D::Run.along(), D::Rise.along(), D::Length.along()), (Some("x"), Some("y"), None));
 }
 
 /// A run is drawn along the page, whatever the pair is doing: the dimension line is horizontal
@@ -693,10 +693,9 @@ fn a_run_is_drawn_along_the_page_and_reaches_both_points() {
     let a = sk.point(0.0, 0.0, true, "");
     let b = sk.point(30.0, 20.0, false, "");
     let (pa, pb) = (EntRef::point(a), EntRef::point(b));
-    let run = sk.add(Constraint::new(CKind::HorizontalDistance, vec![Arg::Ent(pa), Arg::Ent(pb),
-                                                                     Arg::Num(30.0)]));
-    let rise = sk.add(Constraint::new(CKind::VerticalDistance, vec![Arg::Ent(pa), Arg::Ent(pb),
-                                                                    Arg::Num(20.0)]));
+    let f = crate::common::draw_in_front(&mut sk);
+    let run = sk.add(Constraint::ordinate(pa, pb, f.u, 30.0));
+    let rise = sk.add(Constraint::ordinate(pa, pb, f.v, 20.0));
     let of = |sk: &Sketch, id: u32| layout(sk, 1.0).into_iter().find(|k| k.id == id).unwrap();
 
     let k = of(&sk, run);
@@ -717,7 +716,7 @@ fn a_run_is_drawn_along_the_page_and_reaches_both_points() {
     assert!((p.1 - 0.0).abs() < 1e-9 && (q.1 - 20.0).abs() < 1e-9);
 
     // and they hold what they say: the run is set to 50 and only x moves
-    sk.constraints.iter_mut().find(|c| c.id == run).unwrap().args[2] = Arg::Num(50.0);
+    sk.constraints.iter_mut().find(|c| c.id == run).unwrap().args[3] = Arg::Num(50.0);
     assert!(solve(&mut sk, SolveOpts::default()).success);
     assert!((sk.point_xy(b).0 - 50.0).abs() < 1e-9, "{:?}", sk.point_xy(b));
     assert!((sk.point_xy(b).1 - 20.0).abs() < 1e-9, "the rise moved with the run");

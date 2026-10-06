@@ -287,11 +287,16 @@ pub fn to_json(sk: &Sketch) -> Json {
         .splines
         .iter()
         .map(|s| {
-            object([
+            let mut o = object([
                 ("ctrl", Json::Arr(s.ctrl.iter().map(|&c| Json::Int(c as i64)).collect())),
                 ("knots", Json::Arr(s.knots.iter().map(|&k| Json::Num(k)).collect())),
                 ("class", class_json(&s.class)),
-            ])
+            ]);
+            // a polynomial spline writes none
+            if let Some(w) = &s.weights {
+                o.set("weights", Json::Arr(w.iter().map(|&x| Json::Num(x)).collect()));
+            }
+            o
         })
         .collect();
     let planes: Vec<Json> = sk
@@ -449,9 +454,11 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
             .get("knots")
             .map(|v| v.arr().iter().map(|k| k.as_f64()).collect::<Vec<f64>>())
             .filter(|k| !k.is_empty());
-        let si = sk.spline_with(&ctrl, knots).ok_or_else(|| {
+        let weights = s.get("weights").map(|v| v.arr().iter().map(|w| w.as_f64()).collect::<Vec<f64>>());
+        let si = sk.spline_weighted(&ctrl, knots, weights).ok_or_else(|| {
             format!(
-                "a spline needs more than {} control points and a matching knot vector",
+                "a spline needs more than {} control points, a matching knot vector and a \
+                 positive weight for each control point it weighs",
                 crate::curve::DEGREE
             )
         })?;
@@ -529,6 +536,12 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
         // rather than defaulted to a side the drawing may not stand on
         if kind.spatial() {
             for i in (raw.len()..spec.len()).take_while(|&i| kind.infers_arg(i)) {
+                args.push(kind.default_arg(i));
+            }
+        }
+        // and an ordinate's form is never a slot a document need write: the core reads it
+        if kind.form_slot().is_some() {
+            for i in raw.len()..spec.len() {
                 args.push(kind.default_arg(i));
             }
         }
@@ -733,10 +746,14 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
                 None => gone.push(k),
             }
         }
-        // with nothing gone this gives back the knots unchanged, so there is no case to split
+        // with nothing gone this gives back the knots unchanged, so there is no case to split;
+        // a weight goes with its control point
         let knots = crate::curve::knots_without(&sp.knots, &gone, ctrl.len());
+        let weights = sp.weights.as_ref().map(|w| {
+            w.iter().enumerate().filter(|(k, _)| !gone.contains(k)).map(|(_, &x)| x).collect()
+        });
         let class = sp.class.clone();
-        let Some(ni) = dst.spline_with(&ctrl, Some(knots)) else { continue };
+        let Some(ni) = dst.spline_weighted(&ctrl, Some(knots), weights) else { continue };
         dst.splines[ni].class = class;
         spline_map[i] = Some(ni);
         made.push(EntRef::spline(ni));
