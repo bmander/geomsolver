@@ -739,20 +739,21 @@ fn rounded(n: &str, [cx, cy]: [f64; 2], [w, h]: [f64; 2], rr: f64) -> String {
         ("t", [x1 - rr, y1], [x0 + rr, y1]), ("l", [x0, y1 - rr], [x0, y0 + rr])];
     for (s, a, b) in sides { point(&format!("{s}0"), a[0], a[1]); point(&format!("{s}1"), b[0], b[1]); }
     // the loop: each side that has a length, then the corner after it, from where the last ended
-    let mut links = Vec::new();
-    let long = |k: usize| { let (_, a, b) = sides[k]; (a[0] - b[0]).abs() + (a[1] - b[1]).abs() > 1e-12 };
-    // a corner ends where the next side starts, or the corner after a side of no length begins
-    let mut from = if long(0) { format!("{n}_b0") } else { format!("{n}_l0") };
-    for (k, (s, _, _)) in sides.iter().enumerate() {
-        if long(k) { links.push(format!("({n}_{s} := line({from}, {n}_{s}1))")); from = format!("{n}_{s}1"); }
+    // to where the next side starts
+    let mut links: Vec<(String, String)> = Vec::new();
+    let mut from = format!("{n}_b0");
+    for (k, (s, a, b)) in sides.iter().enumerate() {
+        if (a[0] - b[0]).abs() + (a[1] - b[1]).abs() > 1e-12 {
+            links.push((format!("{n}_{s}"), format!("line({from}, {n}_{s}1)")));
+            from = format!("{n}_{s}1");
+        }
         let (c, _, _) = centres[k];
-        let to = if k == 3 { format!("{n}_b0") } else { format!("{n}_{}0", sides[k + 1].0) };
-        let to = if k == 3 && !long(0) { format!("{n}_l0") } else { to };
-        links.push(format!("({n}_a{c} := arc(center: {n}_c{c}, start: {from}, end: {to}) hint(r: {rr}))"));
+        let to = format!("{n}_{}0", sides[(k + 1) % 4].0);
+        links.push((format!("{n}_a{c}"), format!("arc(center: {n}_c{c}, start: {from}, end: {to}) hint(r: {rr})")));
         from = to;
     }
-    let names: Vec<String> = links.iter().map(|l| l[1..].split(" :=").next().unwrap().to_string()).collect();
-    for l in &links { out.push_str(&format!("{}\n", &l[1..l.len() - 1])); }
+    for (name, decl) in &links { out.push_str(&format!("{name} := {decl}\n")); }
+    let names: Vec<&str> = links.iter().map(|(name, _)| name.as_str()).collect();
     out.push_str(&format!("{n} := face({})\n", names.join(", ")));
     out
 }

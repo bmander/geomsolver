@@ -250,22 +250,25 @@ fn read(sk: &Sketch,solid: usize,axis_tolerance: f64) -> Result<Snapshot,String>
                                 RevolvedField::new(profile,p.section.o,p.section.v).map_err(error)?.into(),
                         };
                         let mut leaf = Snapshot::Static(leaf);
-                        // a partial ring: the whole ring within its sector, a pie slice about the
-                        // axis reaching past the section, carried along the axis past it
+                        // a partial ring: the whole ring within its sector — bounded by a pie slice
+                        // about the axis reaching past the section, carried along the axis past it,
+                        // or less the slice of the rest of the turn where that is the convex one
                         if let (crate::solid::fillet::Carry::Turn {sweep},false) = (p.carry,p.whole()) {
-                            let strokes = p.wedge.strokes();
-                            let reach = strokes.iter().map(|s| s.reach()).fold(0_f64,f64::max);
-                            let (lo,hi) = strokes.iter().map(|s| s.height()).fold((f64::INFINITY,f64::NEG_INFINITY),
-                                |(l,h),[a,b]| (l.min(a),h.max(b)));
-                            let (radius,margin) = (2.*reach,reach);
-                            let end = [radius*sweep.dcos(),radius*sweep.dsin()];
-                            let slice = [Edge::Line {a:[0.,0.],b:[radius,0.],axis:false},
-                                Edge::Arc {center:[0.,0.],radius,start:0.,sweep,ends:[[radius,0.],end]},
-                                Edge::Line {a:end,b:[0.,0.],axis:false}];
+                            let reach = edges.iter().map(|e| match *e {
+                                Edge::Line {a,b,..} => a[0].hypot(a[1]).max(b[0].hypot(b[1])),
+                                Edge::Arc {center,radius,..} => center[0].hypot(center[1])+radius,
+                            }).fold(0_f64,f64::max);
+                            let (word,from,turn) = if sweep <= std::f64::consts::PI { (BodyWord::Bound,0.,sweep) }
+                                else { (BodyWord::Cut,sweep,TAU-sweep) };
+                            let radius = 2.*reach;
+                            let at = |a: f64| [radius*a.dcos(),radius*a.dsin()];
+                            let slice = [Edge::Line {a:[0.,0.],b:at(from),axis:false},
+                                Edge::Arc {center:[0.,0.],radius,start:from,sweep:turn,ends:[at(from),at(from+turn)]},
+                                Edge::Line {a:at(from+turn),b:[0.,0.],axis:false}];
                             let quarter = crate::space::cross(p.section.v,p.section.u);
                             let sector = ExtrudedField::new(PlanarField::from_loop(&slice,0.)?,p.section.o,p.section.u,quarter,
-                                [lo-margin,hi+margin]).map_err(error)?;
-                            leaf = leaf.combine(Snapshot::Static(sector.into()),BodyWord::Bound).map_err(error)?;
+                                [-radius,radius]).map_err(error)?;
+                            leaf = leaf.combine(Snapshot::Static(sector.into()),word).map_err(error)?;
                         }
                         out = Some(match out { None => leaf,Some(o) => o.combine(leaf,BodyWord::Union).map_err(error)? });
                     }

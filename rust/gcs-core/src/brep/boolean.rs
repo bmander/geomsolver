@@ -83,7 +83,6 @@ struct Arranged<'a> {
     pieces: Vec<(usize,usize,Vec<Vec<Half>>)>,
 }
 
-/// `a` combined with `b` by `op`, to `tol` (a length).
 /// **Two solids sharing a face, joined there** (the pieces of a chain of fillets, each ending in
 /// the section the next begins in): where a plane face of `a` and one of `b` are the same face —
 /// one plane, material either side of it, every edge of the one an edge of the other, end for end
@@ -98,13 +97,13 @@ pub fn glued(a: &Brep,b: &Brep,tol: f64) -> Option<Brep> {
     let ends = |s: &Brep,e: usize| s.edges[e].v.map(|v| s.vertices[v as usize].p);
     // each face of `b` the same as one of `a`: its edges matched to `a`'s, and whether each runs the
     // other way
-    let mut shared: Vec<(usize,usize)> = Vec::new();
+    let (mut shared_a,mut shared_b) = (std::collections::BTreeSet::new(),std::collections::BTreeSet::new());
     let mut edge_of: BTreeMap<usize,(u32,bool)> = BTreeMap::new();
     for (i,fa) in a.faces.iter().enumerate() {
         let Some(na) = outward(fa) else { continue };
         for (j,fb) in b.faces.iter().enumerate() {
             let Some(nb) = outward(fb) else { continue };
-            if shared.iter().any(|&(_,k)| k == j) || crate::space::dot(na,nb) > -1.+1e-9 { continue }
+            if shared_b.contains(&j) || crate::space::dot(na,nb) > -1.+1e-9 { continue }
             if !super::ssi::same(&fa.surface,&fb.surface,tol) { continue }
             let (la,lb): (Vec<usize>,Vec<usize>) = (fa.loops.iter().flatten().map(|c| c.edge as usize).collect(),
                 fb.loops.iter().flatten().map(|c| c.edge as usize).collect());
@@ -115,11 +114,12 @@ pub fn glued(a: &Brep,b: &Brep,tol: f64) -> Option<Brep> {
                 near(middle(a,ea),middle(b,eb)).then_some((eb,ea as u32,flip))
             })).collect();
             let Some(matched) = matched else { continue };
-            shared.push((i,j));
+            shared_a.insert(i);
+            shared_b.insert(j);
             for (eb,ea,flip) in matched { edge_of.insert(eb,(ea,flip)); }
         }
     }
-    if shared.is_empty() { return None }
+    if shared_a.is_empty() { return None }
     let mut out = a.clone();
     // `b`'s vertices: those of a shared edge are `a`'s, the rest its own
     let mut vertex_of: BTreeMap<u32,u32> = BTreeMap::new();
@@ -145,21 +145,21 @@ pub fn glued(a: &Brep,b: &Brep,tol: f64) -> Option<Brep> {
             new_edge.push(((out.edges.len()-1) as u32,false));
         }
     }
-    out.faces = a.faces.iter().enumerate().filter(|&(i,_)| !shared.iter().any(|&(k,_)| k == i)).map(|(_,f)| f.clone()).collect();
+    out.faces = a.faces.iter().enumerate().filter(|(i,_)| !shared_a.contains(i)).map(|(_,f)| f.clone()).collect();
     for (j,f) in b.faces.iter().enumerate() {
-        if shared.iter().any(|&(_,k)| k == j) { continue }
+        if shared_b.contains(&j) { continue }
         let mut f = f.clone();
         for c in f.loops.iter_mut().flatten() {
             let (e,flip) = new_edge[c.edge as usize];
-            if flip {
-                // the pcurve runs in its edge's direction: from the other end, its ends swapped
+            // a use of an edge now `a`'s: its pcurve by its ends (a pcurve read at its own edge's
+            // parameter reads another's wrongly), and from the other end where that runs the
+            // other way
+            if edge_of.contains_key(&(c.edge as usize)) && (flip || matches!(c.pcurve,Pcurve::Curve(_))) {
                 let old = &b.edges[c.edge as usize];
                 let (u0,u1) = (c.pcurve.at(old.t[0],old,&f.surface,&b.vertices),c.pcurve.at(old.t[1],old,&f.surface,&b.vertices));
-                c.pcurve = match c.pcurve { Pcurve::Line {..} => Pcurve::Line {a:u1,b:u0},_ => Pcurve::Inverse {a:u1,b:u0} };
-                c.reversed = !c.reversed;
-            } else if let Pcurve::Curve(_) = c.pcurve {
-                let old = &b.edges[c.edge as usize];
-                c.pcurve = Pcurve::Inverse {a:c.pcurve.at(old.t[0],old,&f.surface,&b.vertices),b:c.pcurve.at(old.t[1],old,&f.surface,&b.vertices)};
+                let (a,z) = if flip { (u1,u0) } else { (u0,u1) };
+                c.pcurve = match c.pcurve { Pcurve::Line {..} => Pcurve::Line {a,b:z},_ => Pcurve::Inverse {a,b:z} };
+                c.reversed ^= flip;
             }
             c.edge = e;
         }
@@ -168,6 +168,7 @@ pub fn glued(a: &Brep,b: &Brep,tol: f64) -> Option<Brep> {
     Some(out)
 }
 
+/// `a` combined with `b` by `op`, to `tol` (a length).
 pub fn boolean(a: &Brep,b: &Brep,op: Op,tol: f64) -> Result<Brep,String> {
     let Arranged {solids,located,pool,out,pieces,..} = arrange(a,b,tol)?;
     let mut kept: Vec<Face> = Vec::new();
@@ -324,19 +325,18 @@ fn arrange<'a>(a: &'a Brep,b: &'a Brep,tol: f64) -> Result<Arranged<'a>,String> 
                     // `tol` times their size off the curve they touch along)
                     let contact: Vec<usize> = along_face[1][fb].iter().chain(&along_face[0][fa]).copied().collect();
                     let spread = 8.*(tol*distance(boxes[0][fa].0,boxes[0][fa].1).max(distance(boxes[1][fb].0,boxes[1][fb].1))).sqrt();
-                    // an edge they touch along, over its stretch
-                    let stretch = |we: usize| -> Option<(&super::geom::Curve,[f64;2])> {
-                        let EdgeCurve::Curve(c) = &edges[we].curve else { return None };
-                        Some((c,edges[we].t))
-                    };
-                    let touching = |p: V| norm(crate::space::cross(sa.gradient(p),sb.gradient(p))) < super::ssi::SHALLOW
-                        && contact.iter().any(|&we| {
-                            let Some((c,span)) = stretch(we) else { return false };
-                            let mut t = c.inverse(p);
-                            if let Some(period) = c.period() { t = around(t,span[0],period); }
-                            let t = t.clamp(span[0],span[1]);
-                            distance(c.point(t),p) <= spread.max(8.*tol)
-                        });
+                    // each edge they touch along, over its stretch
+                    let stretches: Vec<(&super::geom::Curve,[f64;2])> = contact.iter().filter_map(|&we| match &edges[we].curve {
+                        EdgeCurve::Curve(c) => Some((c,edges[we].t)),
+                        EdgeCurve::Degenerate => None,
+                    }).collect();
+                    let shallow = |p: V| norm(crate::space::cross(sa.gradient(p),sb.gradient(p))) < super::ssi::SHALLOW;
+                    let on_contact = |p: V| stretches.iter().any(|&(c,span)| {
+                        let mut t = c.inverse(p);
+                        if let Some(period) = c.period() { t = around(t,span[0],period); }
+                        distance(c.point(t.clamp(span[0],span[1])),p) <= spread.max(8.*tol)
+                    });
+                    let touching = |p: V| shallow(p) && on_contact(p);
                     seeds.retain(|&p| !touching(p));
                     // **where the two touch at a point**: to second order their meeting there is the
                     // point alone, or two branches crossing at it (`ssi::touch`); where none of the
@@ -345,10 +345,9 @@ fn arrange<'a>(a: &'a Brep,b: &'a Brep,tol: f64) -> Result<Arranged<'a>,String> 
                     // nearly touch; a touch with a branch into both is left to the trace, which
                     // refuses it
                     let least = distance(boxes[0][fa].0,boxes[0][fa].1).min(distance(boxes[1][fb].0,boxes[1][fb].1));
-                    let bare: std::cell::RefCell<Vec<super::ssi::Touch>> = std::cell::RefCell::new(Vec::new());
+                    // the touches read, as they alone are met there or not, each within its radius
+                    let read: std::cell::RefCell<Vec<(super::ssi::Touch,bool)>> = std::cell::RefCell::new(Vec::new());
                     let alone = |p: V| -> bool {
-                        if bare.borrow().iter().any(|t| distance(t.at,p) <= t.radius) { return true }
-                        if norm(crate::space::cross(sa.gradient(p),sb.gradient(p))) >= super::ssi::SHALLOW { return false }
                         let Some(at) = super::ssi::touch_near(sa,sb,p,tol) else { return false };
                         let Some(t) = super::ssi::touch(sa,sb,at) else { return false };
                         if t.radius > 0.05*least || distance(at,p) > t.radius { return false }
@@ -357,15 +356,18 @@ fn arrange<'a>(a: &'a Brep,b: &'a Brep,tol: f64) -> Result<Arranged<'a>,String> 
                             let q = crate::space::add(at,crate::space::scale(d,2.*t.radius));
                             located[side].face_place(fi,s.point(s.inverse(q)))
                         };
-                        if t.branches.iter().any(|&d| place(0,fa,d) != Place::Out && place(1,fb,d) != Place::Out) { return false }
-                        if debug { eprintln!("brep: A{fa} {} × B{fb} {}: touch alone at {:?} ({} branches, radius {:.1e})",
+                        let lone = !t.branches.iter().any(|&d| place(0,fa,d) != Place::Out && place(1,fb,d) != Place::Out);
+                        if debug && lone { eprintln!("brep: A{fa} {} × B{fb} {}: touch alone at {:?} ({} branches, radius {:.1e})",
                             sa.kind(),sb.kind(),t.at,t.branches.len(),t.radius); }
-                        bare.borrow_mut().push(t);
-                        true
+                        read.borrow_mut().push((t,lone));
+                        lone
                     };
-                    // beside a meeting already known: where the two touch beside an edge they touch
-                    // along, or about a point they touch at alone
-                    let beside = |p: V| touching(p) || alone(p);
+                    // beside a meeting already known: about a point they touch at, read alone, or
+                    // where they touch beside an edge they touch along — the cheapest asked first
+                    let beside = |p: V| {
+                        let known = read.borrow().iter().find(|(t,_)| distance(t.at,p) <= t.radius).map(|&(_,lone)| lone);
+                        known == Some(true) || shallow(p) && (on_contact(p) || known.is_none() && alone(p))
+                    };
                     let (lo,hi): (V,V) = (std::array::from_fn(|k| boxes[0][fa].0[k].max(boxes[1][fb].0[k])),
                         std::array::from_fn(|k| boxes[0][fa].1[k].min(boxes[1][fb].1[k])));
                     let started = crate::clock::Instant::now();
@@ -389,14 +391,7 @@ fn arrange<'a>(a: &'a Brep,b: &'a Brep,tol: f64) -> Result<Arranged<'a>,String> 
                         const LOOPS: usize = 64;
                         let mut found = 0;
                         // the edges they touch along are meetings already known, over their own stretch
-                        let along: Vec<super::geom::Curve> = contact.iter().filter_map(|&we| {
-                            let (c,t) = stretch(we)?;
-                            let pts = (0..=256).map(|j| c.point(t[0]+(t[1]-t[0])*j as f64/256.)).collect();
-                            Some(super::geom::Curve::Traced(std::sync::Arc::new(super::geom::Traced {
-                                a:sa.clone(),b:sb.clone(),pts,closed:false})))
-                        }).collect();
-                        let known = |traced: &[super::geom::Curve]| traced.iter().chain(&along).cloned().collect::<Vec<_>>();
-                        while let Some(p) = super::ssi::unseen_beside(mine,domain,theirs,&known(&traced),&beside,lo,hi,tol)? {
+                        while let Some(p) = super::ssi::unseen_beside(mine,domain,theirs,&traced,&stretches,&beside,lo,hi,tol)? {
                             if debug { eprintln!("brep: A{fa} {} × B{fb} {}: a meeting no edge crosses, at {p:?}",sa.kind(),sb.kind()); }
                             found += 1;
                             if found > LOOPS {

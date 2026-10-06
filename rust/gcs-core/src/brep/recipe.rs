@@ -84,20 +84,29 @@ pub fn node_named(n: &Json,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64
             Ok(solid)
         }
         "fillet" => {
-            // a fillet's pieces, one per edge it rounds, each a prism or a revolution, unioned
-            let mut solid: Option<Brep> = None;
-            let mut pieces = field(n,"pieces")?.arr().iter().map(|piece| node_named(piece,built,built_names,floor)
+            // a fillet's pieces, one per edge it rounds, each a prism or a revolution: those its
+            // derivation joined (a chain's, each ending in the section the next begins in, meeting
+            // nowhere else) glued there, a cap to a cap, never intersected; the chains unioned
+            let pieces = field(n,"pieces")?.arr().iter().map(|piece| node_named(piece,built,built_names,floor)
                 .map_err(|e| format!("fillet: {e}"))).collect::<Result<Vec<_>,_>>()?;
-            // a chain's pieces each end in the section the next begins in: glued there, a cap to a
-            // cap, never intersected (they touch along the shared section's edges); the rest unioned
-            while !pieces.is_empty() {
-                let Some(s) = solid.take() else { solid = Some(pieces.remove(0)); continue };
-                let tol = (1e-9*s.size().max(1.)).max(floor);
-                let next = pieces.iter().enumerate().find_map(|(k,b)| super::boolean::glued(&s,b,8.*tol).map(|g| (k,g)));
-                solid = Some(match next {
-                    Some((k,g)) => { pieces.remove(k); g }
-                    None => combined(&s,&pieces.remove(0),Op::Union,floor)?,
-                });
+            let joins: Vec<[usize;2]> = n.get("joins").map(Json::arr).unwrap_or_default().iter()
+                .map(|j| { let j = j.arr(); [j[0].as_i64() as usize,j[1].as_i64() as usize] }).collect();
+            if joins.iter().flatten().any(|&k| k >= pieces.len()) { return Err("recipe: a fillet's join names no piece".into()) }
+            let mut solid: Option<Brep> = None;
+            let mut done = vec![false;pieces.len()];
+            for first in 0..pieces.len() {
+                if done[first] { continue }
+                done[first] = true;
+                let (mut chain,mut members) = (pieces[first].clone(),vec![first]);
+                while let Some(&[i,j]) = joins.iter().find(|[i,j]| members.contains(i) != members.contains(j)) {
+                    let k = if members.contains(&i) { j } else { i };
+                    let tol = (1e-9*chain.size().max(1.)).max(floor);
+                    chain = super::boolean::glued(&chain,&pieces[k],8.*tol)
+                        .ok_or("fillet: two pieces joined at a section share no face there")?;
+                    done[k] = true;
+                    members.push(k);
+                }
+                solid = Some(match solid { None => chain,Some(s) => combined(&s,&chain,Op::Union,floor)? });
             }
             // a ball rolled along a traced loop of the operands' union, picked by a point of it (the
             // loops of one fillet share their operands: their union is made once)

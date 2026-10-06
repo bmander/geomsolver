@@ -339,15 +339,18 @@ pub(crate) const SHALLOW: f64 = 0.0175;
 /// `None` where `Q` is too near singular to say (the two touch along a curve, or closer than
 /// second order).
 #[derive(Clone,Debug)]
-pub struct Touch { pub at: V,pub branches: Vec<V>,pub radius: f64 }
+pub(crate) struct Touch { pub at: V,pub branches: Vec<V>,pub radius: f64 }
 
-pub fn touch(a: &Surface,b: &Surface,p: V) -> Option<Touch> {
+/// The step two surfaces' derivatives are differenced over, near their finer feature.
+fn difference_step(a: &Surface,b: &Surface) -> f64 { 1e-4*a.feature().min(b.feature()).min(1e6).max(1e-9) }
+
+pub(crate) fn touch(a: &Surface,b: &Surface,p: V) -> Option<Touch> {
     let (na,nb) = (unit(a.gradient(p)),unit(b.gradient(p)));
     let agree = if dot(na,nb) < 0. { -1. } else { 1. };
     let f = Frame::about(p,na);
     let (e1,e2) = (f.x,f.y);
     // each surface's second derivatives along the shared plane, by its exact gradient either side
-    let h = 1e-4*a.feature().min(b.feature()).min(1e6).max(1e-9);
+    let h = difference_step(a,b);
     let hessian = |s: &Surface,t: V| scale(sub(s.gradient(add(p,scale(t,h))),s.gradient(sub(p,scale(t,h)))),0.5/h);
     let (ha1,ha2,hb1,hb2) = (hessian(a,e1),hessian(a,e2),hessian(b,e1),hessian(b,e2));
     let q11 = dot(e1,hb1)-agree*dot(e1,ha1);
@@ -374,16 +377,16 @@ pub fn touch(a: &Surface,b: &Surface,p: V) -> Option<Touch> {
 /// stationary — their normals parallel there — by Newton over `a`'s tangent plane, its
 /// derivatives by differences; `None` where that does not settle, or settles off `b` (the two pass
 /// apart or cross there, and do not touch).
-pub fn touch_near(a: &Surface,b: &Surface,p: V,tol: f64) -> Option<V> {
+pub(crate) fn touch_near(a: &Surface,b: &Surface,p: V,tol: f64) -> Option<V> {
     let on_a = |q: V| a.point(a.inverse(q));
-    let h = 1e-4*a.feature().min(b.feature()).min(1e6).max(1e-9);
+    let h = difference_step(a,b);
     let mut x = on_a(p);
     for _ in 0..32 {
         let f = Frame::about(x,a.gradient(x));
         let g = |s: f64,t: f64| b.implicit(on_a(add(x,add(scale(f.x,s),scale(f.y,t)))));
-        let g0 = g(0.,0.);
-        let (gs,gt) = ((g(h,0.)-g(-h,0.))/(2.*h),(g(0.,h)-g(0.,-h))/(2.*h));
-        let (gss,gtt) = ((g(h,0.)-2.*g0+g(-h,0.))/(h*h),(g(0.,h)-2.*g0+g(0.,-h))/(h*h));
+        let (g0,[sp,sm,tp,tm]) = (g(0.,0.),[g(h,0.),g(-h,0.),g(0.,h),g(0.,-h)]);
+        let (gs,gt) = ((sp-sm)/(2.*h),(tp-tm)/(2.*h));
+        let (gss,gtt) = ((sp-2.*g0+sm)/(h*h),(tp-2.*g0+tm)/(h*h));
         let gst = (g(h,h)-g(h,-h)-g(-h,h)+g(-h,-h))/(4.*h*h);
         let det = gss*gtt-gst*gst;
         if !(det.abs() > 0.) { return None }
@@ -407,7 +410,7 @@ pub fn trace(a: &Surface,b: &Surface,seeds: &[V],lo: V,hi: V,tol: f64) -> Result
 }
 
 /// `trace`, ending where it comes `beside` a known meeting.
-pub fn trace_beside(a: &Surface,b: &Surface,seeds: &[V],beside: &dyn Fn(V) -> bool,lo: V,hi: V,tol: f64)
+pub(crate) fn trace_beside(a: &Surface,b: &Surface,seeds: &[V],beside: &dyn Fn(V) -> bool,lo: V,hi: V,tol: f64)
     -> Result<Vec<Curve>,String> {
     use super::geom::Traced;
     let tangent = |p: V| -> Option<V> {
@@ -585,15 +588,15 @@ fn samples_along(c: &Curve,spacing: f64) -> Vec<V> {
 /// guessed. Two curves nearer than `leaf` are not told apart. `Ok(None)`: every part of the face is
 /// clear of `b` or beside a known curve. Both surfaces must be `searchable`.
 pub fn unseen(a: &Surface,domain: [[f64;2];2],b: &Surface,known: &[Curve],lo: V,hi: V,tol: f64) -> Result<Option<V>,String> {
-    unseen_beside(a,domain,b,known,&|_| false,lo,hi,tol)
+    unseen_beside(a,domain,b,known,&[],&|_| false,lo,hi,tol)
 }
 
-/// `unseen`, a cell whose meeting (its middle pulled onto both) is `beside` a known meeting (a
-/// point where the two touch alone, its branches traced up to it) answered as beside a known
-/// curve.
+/// `unseen`, known also the curves `stretches` over their stretches (edges the two touch along),
+/// and a cell whose meeting (its middle pulled onto both) is `beside` a known meeting (a point
+/// where the two touch alone, its branches traced up to it) answered as beside a known curve.
 #[allow(clippy::too_many_arguments)]
-pub fn unseen_beside(a: &Surface,domain: [[f64;2];2],b: &Surface,known: &[Curve],beside: &dyn Fn(V) -> bool,lo: V,hi: V,tol: f64)
-    -> Result<Option<V>,String> {
+pub(crate) fn unseen_beside(a: &Surface,domain: [[f64;2];2],b: &Surface,known: &[Curve],stretches: &[(&Curve,[f64;2])],
+    beside: &dyn Fn(V) -> bool,lo: V,hi: V,tol: f64) -> Result<Option<V>,String> {
     // a cap on the cells asked, far past any face this kernel builds, that a pathology ends at
     const CELLS: usize = 4_000_000;
     let pad = 4.*tol;
@@ -606,6 +609,10 @@ pub fn unseen_beside(a: &Surface,domain: [[f64;2];2],b: &Surface,known: &[Curve]
     let mut grid = crate::space::Grid::new(2.*leaf+spacing);
     let mut along: Vec<V> = Vec::new();
     for c in known { for p in samples_along(c,spacing) { grid.insert(p,along.len() as u32); along.push(p); } }
+    for &(c,[t0,t1]) in stretches {
+        let n = (2.*c.speed()*(t1-t0).abs()/spacing).ceil().clamp(1.,1e6) as usize;
+        for j in 0..=n { let p = c.point(t0+(t1-t0)*j as f64/n as f64); grid.insert(p,along.len() as u32); along.push(p); }
+    }
     let near_known = |p: V,within: f64| {
         let mut hit = false;
         grid.around(p,|i| if !hit && crate::space::distance(along[i as usize],p) <= within { hit = true });
