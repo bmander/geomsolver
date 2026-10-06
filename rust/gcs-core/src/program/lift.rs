@@ -4,10 +4,11 @@ use super::plane_of_entity;
 use crate::constraints::{Arg as CArg, CKind, Constraint, SpecKind};
 use crate::model::{EntKind, EntRef, Field, Sketch};
 use crate::syntax::{
-    num, Arg, Decl, DeclName, Input, Kid, Name, ParamDecl, Program, Ref, Relation, Span, StmtKind,
-    Ty,
+    is_name, num, Arg, Decl, DeclName, Input, Kid, Name, ParamDecl, Program, Ref, Relation, Span,
+    StmtKind, Ty,
 };
 use crate::{curve, decompose, expr};
+use std::collections::{BTreeMap, BTreeSet};
 
 /// What a lifted program calls an entity: its own name, except a plane's origin, which is the
 /// plane's — `v0.origin` — since the plane mints it.
@@ -48,8 +49,10 @@ pub fn to_program(sk: &Sketch) -> Program {
     if let Some(n) = sk.units.name() {
         p.push(StmtKind::Unit(Name::new(n)));
     }
-    // the unknowns its dimensions and contacts read, declared, each seeded where it stands
-    for st in unknowns(sk) {
+    // the unknowns its dimensions and contacts read, declared, each seeded where it stands, under
+    // a name a program can declare
+    let names = declarable(sk);
+    for st in unknowns(sk, &names) {
         p.push(st);
     }
     // a plane's origin is the plane's own, minted with it and never declared apart — minted with
@@ -73,7 +76,7 @@ pub fn to_program(sk: &Sketch) -> Program {
                 || c.kind == CKind::PointOnAxis)
     });
     for c in sk.user_constraints().into_iter().chain(along) {
-        p.push(StmtKind::Relation(lift_relation(sk, c)));
+        p.push(StmtKind::Relation(renamed(lift_relation(sk, c), &names)));
     }
     // every held number is said, with what it is held at; a plane's origin is not, since the
     // plane holds it at its own `(0, 0)` and no `fix` says so (`holds`)
@@ -102,7 +105,7 @@ pub fn to_program(sk: &Sketch) -> Program {
 
 /// `param beta: Angle hint(30)` for each unknown a dimension reads (`Sketch::free_vars`) and
 /// each place contacts share (`Sketch::shared`): an unknown is declared, never implied (§6.3).
-fn unknowns(sk: &Sketch) -> Vec<StmtKind> {
+fn unknowns(sk: &Sketch, names: &BTreeMap<String, String>) -> Vec<StmtKind> {
     let free = sk.free_vars.iter().filter(|(_, &p)| !sk.params[p as usize].fixed).map(|(n, &p)| {
         (n, p, sk.free_dimensions.get(n).map_or(Ty::Scalar, |&d| Ty::of_dim(d)))
     });
@@ -110,7 +113,7 @@ fn unknowns(sk: &Sketch) -> Vec<StmtKind> {
     free.chain(shared)
         .map(|(name, p, ty)| {
             StmtKind::Param(ParamDecl {
-                name: Name::new(name),
+                name: Name::new(names.get(name).unwrap_or(name)),
                 text: String::new(),
                 span: Span::default(),
                 input: Some(Input {
@@ -120,6 +123,50 @@ fn unknowns(sk: &Sketch) -> Vec<StmtKind> {
             })
         })
         .collect()
+}
+
+/// What a lifted program calls each unknown whose name no program can declare — an instance's
+/// (`pc.half`, `#c3.u`): every character a name cannot hold written `_` (`pc_half`), apart from
+/// every other unknown's.  A name a program can declare keeps itself and is not in the map.
+fn declarable(sk: &Sketch) -> BTreeMap<String, String> {
+    let all: Vec<&String> = sk.free_vars.keys().chain(sk.shared.keys()).collect();
+    let mut taken: BTreeSet<String> =
+        all.iter().filter(|n| is_name(n)).map(|n| n.to_string()).collect();
+    let mut out = BTreeMap::new();
+    for n in all.into_iter().filter(|n| !is_name(n)) {
+        let base: String = n.chars().map(|c| if c.is_alphanumeric() { c } else { '_' }).collect();
+        let name = (1..)
+            .map(|k| if k == 1 { base.clone() } else { format!("{base}_{k}") })
+            .find(|m| is_name(m) && !taken.contains(m))
+            .expect("a suffix frees a name");
+        taken.insert(name.clone());
+        out.insert(n.clone(), name);
+    }
+    out
+}
+
+/// A lifted relation with the unknowns it reads — in a dimension's text, or as the place it
+/// shares — under the names `declarable` gave them.
+fn renamed(mut rel: Relation, names: &BTreeMap<String, String>) -> Relation {
+    if names.is_empty() {
+        return rel;
+    }
+    if let crate::syntax::RelationForm::Canonical { args, .. } = &mut rel.form {
+        for a in args.iter_mut().flatten() {
+            match a {
+                Arg::Dim { text, .. } => {
+                    *text = crate::flatten::substitute_with(text, |w| names.get(w).cloned());
+                }
+                Arg::Tie { name, .. } => {
+                    if let Some(n) = names.get(name.as_str()) {
+                        *name = n.clone();
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    rel
 }
 
 pub(crate) fn lift_decl(sk: &Sketch, e: EntRef) -> Decl {

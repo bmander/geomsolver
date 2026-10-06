@@ -246,7 +246,10 @@ pub(super) fn map_measured(text: &str, of: impl Fn(&str) -> Option<String>) -> S
     out
 }
 
-fn substitute_with(text: &str, of: impl Fn(&str) -> Option<String>) -> String {
+/// `text` with every name `of` answers for written as it says — at identifier boundaries, a dotted
+/// path (`pc.half`) or a block copy's key (`#3.0.w`) read as one name, a measurement's arguments
+/// left as written.
+pub(crate) fn substitute_with(text: &str, of: impl Fn(&str) -> Option<String>) -> String {
     let mut out = String::with_capacity(text.len());
     let b: Vec<char> = text.chars().collect();
     let mut i = 0usize;

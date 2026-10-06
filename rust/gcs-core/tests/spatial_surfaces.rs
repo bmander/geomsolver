@@ -211,9 +211,9 @@ fn the_hypoid_with_its_pitch_cones_named_agrees_with_the_fold_construction() {
     assert!((gp - y[1]).abs() < 1e-9);
 }
 
-/// The named hypoid comes through JSON, and a half-angle left unbound goes back into its
-/// `hint(…)` in degrees, as it was written.  (A lifted program cannot yet declare an instance's
-/// unknown, `pc.half`: `lift::unknowns` writes its dotted name.)
+/// The named hypoid comes through JSON and a lifted program (the pinion's unknown half-angle,
+/// `pc.half`, declared as `pc_half`), and a half-angle left unbound goes back into its `hint(…)`
+/// in degrees, as it was written.
 #[test]
 fn the_named_hypoid_round_trips() {
     let named = read(include_str!("../../examples/hypoid_pitch_cones.sv"));
@@ -221,6 +221,12 @@ fn the_named_hypoid_round_trips() {
     let text = io::dumps(&sk, None);
     let back = io::loads(&text).expect("reads back");
     assert_eq!(io::dumps(&back, None), text);
+    let lifted = gcs_core::program::to_program(&sk).text().to_string();
+    assert!(lifted.contains("param pc_half: Angle hint("), "{lifted}");
+    let again = solved(&read(&lifted));
+    for i in 0..sk.points.len() {
+        assert!(norm(sub(sk.world_point(i), again.world_point(i))) < 1e-7, "p{i}");
+    }
     let src = with("10", "hint(30deg)", "fix((130, 20)) a\nstd.PointOnCone(a, k)");
     let e = read(&src);
     let sk = solved(&e);

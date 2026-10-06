@@ -77,8 +77,9 @@ What stands on one is said in the words the drawing has: a distance from the cen
 plane square to the plane through both generators: hidden planes and an axis) and
 `std.CircleOnSphere(k, s, view)`.  An unbound number is the instance's unknown (`pc.half`, an
 angle in degrees); `edit::unknown_seeds` writes it back into the call's `hint(…)`
-(`InstVal::Hint` carries the span).  A lifted program cannot yet declare one (`lift::unknowns`
-writes the dotted name).  `tests/spatial_surfaces.rs` and `tests/spatial_lang.rs` are the
+(`InstVal::Hint` carries the span).  A lifted program declares it under a name it can write
+(`lift::declarable`: `pc_half`, apart from every other unknown's) and every dimension reading
+it says so (`flatten::substitute_with`).  `tests/spatial_surfaces.rs` and `tests/spatial_lang.rs` are the
 gates.
 
 **Axes** (`docs/planes-plan.md`, #81): `t := axis hint(dir: (x, y, z))` is a directed line in space,

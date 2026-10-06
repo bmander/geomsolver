@@ -30,7 +30,7 @@ mod expand;
 mod bindings;
 mod resolve;
 
-pub(crate) use values::value_aff;
+pub(crate) use values::{substitute_with, value_aff};
 use values::{free, typed, value_of, substitute, reads_geometry};
 use resolve::{written};
 

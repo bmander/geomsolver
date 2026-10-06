@@ -353,3 +353,28 @@ fn an_unknown_starts_at_its_seed_and_a_misspelt_one_is_said_once() {
     assert_eq!(d.len(), 1, "{d:?}");
     assert!(d[0].starts_with("E101") && d[0].contains("`betta`"), "{d:?}");
 }
+
+/// **A lifted program declares an instance's unknown under a name it can write**: `c.w`, a call's
+/// formal left unbound and read by a dimension, is declared `c_w_2` beside the document's own
+/// `c_w`, and every dimension reading it says so — so the program reads back to the drawing.
+#[test]
+fn a_lifted_program_names_an_instances_unknown_it_can_declare() {
+    let e = crate::common::read(
+        "unit mm\nuse std\ncomponent Gap(w: Length) {\n}\nparam c_w: Length hint(5mm)\n\
+         in std.front {\n  a := point\n  fix((0, 0)) a\n  b := point hint((10, 0))\n\
+         q := point hint((0, 10))\n}\nc := Gap(w: hint(12mm))\n\
+         a distance(c.w) b\na distance(c_w) q\nb distance(20) q\n",
+    );
+    let mut sk = e.sketch.clone();
+    assert!(solve(&mut sk, SolveOpts::default()).success);
+    let lifted = gcs_core::program::to_program(&sk).text().to_string();
+    for want in ["param c_w: Length hint(", "param c_w_2: Length hint(", "distance(c_w_2)"] {
+        assert!(lifted.contains(want), "{want}\n{lifted}");
+    }
+    let mut back = crate::common::read(&lifted).sketch;
+    assert!(solve(&mut back, SolveOpts::default()).success);
+    for i in 0..sk.points.len() {
+        let (x, y) = (sk.world_point(i), back.world_point(i));
+        assert!((0..3).all(|t| (x[t] - y[t]).abs() < 1e-9), "p{i}: {x:?} {y:?}\n{lifted}");
+    }
+}
