@@ -64,27 +64,7 @@ pub(crate) fn settle(
                 }
             }
             crate::constraints::infix_op(word, a, b, &|n| w.sel(n)).ok_or_else(|| {
-                let mut m = format!(
-                    "`{word}` does not relate {} to {}",
-                    a.a(),
-                    b.a()
-                );
-                // a cone or a cylinder takes the words it has kernels for, and says so
-                let axial = |k: EntKind| matches!(k, EntKind::Cone | EntKind::Cylinder);
-                if axial(a) || axial(b) {
-                    m.push_str(match word {
-                        "coincident" if a == EntKind::Line => ": a line on a cone or a cylinder (a \
-                            generator) is not a relation yet; say it of the line's points — its \
-                            start at the apex and its end `coincident` the cone, or both ends \
-                            `coincident` the cylinder and the line `parallel` to the axis",
-                        "coincident" => ": a point is `coincident` a cone or a cylinder",
-                        "tangent" => ": a line touches a cylinder (`c tangent l`, the cylinder \
-                            first), and two cones touch at a point (`k1 tangent(M) k2`)",
-                        _ => ": a cone takes `coincident`, `angle` and `tangent`, and a cylinder \
-                            `coincident`, `radius` and `tangent`",
-                    });
-                }
-                (w.word.span, m)
+                (w.word.span, format!("`{word}` does not relate {} to {}", a.a(), b.a()))
             })?
         }
         // only a gauge word is written as a call, and those were settled above
@@ -101,14 +81,6 @@ pub(crate) fn settle(
     } else {
         kind
     };
-    // two cones touch at a named point: without one there is no place to read their normals
-    if kind == CKind::ConeTangentCone
-        && !w.args.iter().any(|a| matches!(a, crate::syntax::OpArg::Ent(_)))
-    {
-        return Err((w.word.span, "two cones touch at a point, and the statement names it: \
-                                  `k1 tangent(M) k2`, with `M coincident k1` and `M coincident k2` beside it"
-            .to_string()));
-    }
     Ok((kind, w.assemble(kind)?))
 }
 
@@ -664,8 +636,7 @@ fn apply_gauge(
                 // what the flattener settled the pin to; an expression it could not work out was
                 // reported there
                 let Arg::Seed { value, .. } = a else { continue };
-                // a cone's half-angle is written in degrees, as its hint is (`Sketch::seed_value`)
-                let v = if e.kind == EntKind::Cone { value.to_radians() } else { *value };
+                let v = *value;
                 // where an axis is (its numbers after the direction's three), held: placed first,
                 // so no later relation reading its place frees what this holds
                 if e.kind == EntKind::Axis && at >= 3 {

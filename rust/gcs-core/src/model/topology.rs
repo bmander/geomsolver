@@ -100,7 +100,6 @@ impl Sketch {
                 vec![EntRef::point(l.p1 as usize), EntRef::point(l.p2 as usize)]
             }
             EntKind::Circle => vec![EntRef::point(self.circles[e.i()].center as usize)],
-            EntKind::Cone | EntKind::Cylinder => vec![EntRef::line(self.axial(e).axis as usize)],
             // a direction and a place, and nothing drawn
             EntKind::Axis => Vec::new(),
             EntKind::Arc => {
@@ -142,7 +141,7 @@ impl Sketch {
             // a face is a loop: lose one edge and it is not a loop, so it goes whole.  A solid
             // is its term, and a term missing an operand is not that solid
             EntKind::Point | EntKind::Line | EntKind::Circle | EntKind::Arc
-            | EntKind::Cone | EntKind::Cylinder | EntKind::Axis
+            | EntKind::Axis
             | EntKind::Plane | EntKind::Curve | EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge => {
                 children.len()
             }
@@ -207,8 +206,6 @@ impl Sketch {
             EntKind::Point => self.points.len(),
             EntKind::Line => self.lines.len(),
             EntKind::Circle => self.circles.len(),
-            EntKind::Cone => self.cones.len(),
-            EntKind::Cylinder => self.cylinders.len(),
             EntKind::Axis => self.axes.len(),
             EntKind::Arc => self.arcs.len(),
             EntKind::Spline => self.splines.len(),
@@ -229,8 +226,6 @@ impl Sketch {
             // a plane is built over its axes
             EntKind::Axis,
             EntKind::Plane,
-            EntKind::Cone,
-            EntKind::Cylinder,
         ] {
             for i in 0..self.count(kind) {
                 out.push(EntRef::new(kind, i));

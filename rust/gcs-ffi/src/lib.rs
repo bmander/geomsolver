@@ -1083,7 +1083,8 @@ fn kind_id(k: EntKind) -> i32 {
         EntKind::Spline => 4,
         // the ids stay contiguous — the binding decodes one by indexing its list — so the
         // ellipse's (5) and the frame's (7) were taken up when those kinds went (#47), and the
-        // sphere's (16) when it became a library component (`std.Sphere`)
+        // sphere's, the cone's and the cylinder's when they became library components
+        // (`std.Sphere`, `std.Cone`, `std.Cylinder`)
         EntKind::Curve => 5,
         EntKind::Plane => 6,
         EntKind::Face => 7,
@@ -1095,9 +1096,7 @@ fn kind_id(k: EntKind) -> i32 {
         EntKind::Seam => 13,
         EntKind::Vertex => 14,
         EntKind::Edge => 15,
-        EntKind::Cone => 16,
-        EntKind::Cylinder => 17,
-        EntKind::Axis => 18,
+        EntKind::Axis => 16,
     }
 }
 
@@ -1118,9 +1117,7 @@ fn ent(kind: i32, idx: i32) -> EntRef {
         13 => EntKind::Seam,
         14 => EntKind::Vertex,
         15 => EntKind::Edge,
-        16 => EntKind::Cone,
-        17 => EntKind::Cylinder,
-        18 => EntKind::Axis,
+        16 => EntKind::Axis,
         _ => EntKind::Spline,
     };
     EntRef::new(k, idx as usize)

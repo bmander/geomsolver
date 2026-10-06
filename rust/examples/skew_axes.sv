@@ -40,9 +40,3 @@ in side {
 
 gax angle(shaft_angle) pax      // the shaft angle, in space
 gax distance(offset) pax        // the offset: their common perpendicular, in space
-
-// the shafts themselves, for the box: a cylinder about each axis, drawn as two rings and four rulings
-gear_shaft := cylinder(axis: gax) hint(r: 6)
-pinion_shaft := cylinder(axis: pax) hint(r: 4)
-radius(6) gear_shaft
-radius(4) pinion_shaft

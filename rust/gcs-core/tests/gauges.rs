@@ -84,24 +84,6 @@ fn a_fix_holds_what_it_names_and_beats_a_hint() {
     let p = &e.sketch.points[0];
     assert!(e.sketch.params[p.x as usize].fixed && !e.sketch.params[p.y as usize].fixed);
     assert_eq!(xy(&e, "a"), (-10., 7.), "x held at the expression, y left at its seed");
-    // a cone's half-angle is written in degrees, as its hint is
-    let e = read("\
-unit mm
-use std
-in std.front {
-o := point
-fix((0, 0)) o
-t := point hint((0, 10))
-l := line(o, t)
-}
-k := cone(axis: l)
-in std.front {
-fix(half == 30deg) k
-}
-");
-    assert!(e.ok(), "{:?}", messages(&e));
-    let h = &e.sketch.params[e.sketch.cones[0].param as usize];
-    assert!(h.fixed && (h.value - 30f64.to_radians()).abs() < 1e-12, "{}", h.value);
 }
 
 /// Held before the seeds that read geometry are worked out: a place reading a held point reads

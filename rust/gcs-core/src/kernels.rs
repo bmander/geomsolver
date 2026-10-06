@@ -87,11 +87,6 @@ pub enum K {
     // the midpoint and the mirror in a line, in space
     Midpoint3,
     Symmetric3,
-    // a point on a cone, a cone's half-angle stated and free, and two cones touching
-    ConeOn,
-    HalfAngle,
-    HalfAngleFree,
-    ConeCone,
     // two directed angles equal, and an arc's length along itself stated and free
     EqualAngle,
     ArcLength,
@@ -121,7 +116,7 @@ pub enum K {
     LineOnAxis,
 }
 
-pub const N_KERNELS: usize = 84;
+pub const N_KERNELS: usize = 80;
 
 #[derive(Clone, Copy)]
 pub struct Kernel {
@@ -2374,16 +2369,11 @@ fn symmetric3_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
     }
 }
 
-/* -- cones and cylinders -----------------------------------------------------------------------
+/* -- forward-mode derivatives -----------------------------------------------------------------
  *
- * A cylinder's relations reuse the distance kernels in space — a point on it is
- * `point_line3_free` (its distance from the axis, stated as the radius column), a line touching it
- * `line_line3_free` (the common perpendicular with the axis), its radius `radius`.  A cone's are new: a point on
- * it, its half-angle (an angle row of degree 0, the radius kernel's arithmetic), and two cones
- * touching at a point.  Their derivatives are taken by `Dual`, a forward-mode number carrying
- * the gradient in every column of the block — exact, and one expression for the residual and its
- * row, where the hand-derived chains of the kernels above would be a page of vector calculus to
- * get wrong. */
+ * The kernels below take their derivatives by `Dual`, a forward-mode number carrying the gradient
+ * in every column of the block — exact, and one expression for the residual and its row, where
+ * the hand-derived chains of the kernels above would be a page of vector calculus to get wrong. */
 
 /// A number and its gradient in the `N` columns of one block.
 #[derive(Clone, Copy)]
@@ -2405,12 +2395,6 @@ impl<const N: usize> Dual<N> {
         let s = self.v.max(0.0).sqrt();
         // no gradient where the root is zero: a caller asking there is on a degenerate figure
         self.map(s, if s > 0.0 { 0.5 / s } else { 0.0 })
-    }
-    fn sin(self) -> Self {
-        self.map(self.v.dsin(), self.v.dcos())
-    }
-    fn cos(self) -> Self {
-        self.map(self.v.dcos(), -self.v.dsin())
     }
 }
 
@@ -2876,86 +2860,6 @@ fn plane_distance_free_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
     dual_jac::<13, 1, 2>(n, v, k, j, plane_distance_free_rows)
 }
 
-/// A cone at a point X, read in X's meridian half-plane: the unit axis ê (apex A toward B), the
-/// height `h = (X − A)·ê`, the distance ρ from the axis and the unit radial direction û.
-struct Meridian<const N: usize> {
-    e: V3<N>,
-    h: Dual<N>,
-    rho: Dual<N>,
-    u: V3<N>,
-}
-
-fn meridian<const N: usize>(x: V3<N>, a: V3<N>, b: V3<N>) -> Meridian<N> {
-    let e = dunit(dsub(b, a));
-    let w = dsub(x, a);
-    let h = ddot(w, e);
-    let radial = dsub(w, e.map(|t| t * h));
-    let rho = ddot(radial, radial).sqrt();
-    let u = dunit(radial);
-    Meridian { e, h, rho, u }
-}
-
-/// `ρ cos α − h sin α` over (X, A, B, α): how far X stands from the cone's generator in its
-/// meridian half-plane — zero on the nappe the axis points into, a length.
-fn cone_gap(v: &[f64]) -> Dual<10> {
-    let m = meridian::<10>(dvec(v, 0), dvec(v, 3), dvec(v, 6));
-    let al = Dual::<10>::var(v[9], 9);
-    m.rho * al.cos() - m.h * al.sin()
-}
-
-/// Columns of `cone_on`: (X, A, B, α) — a point's hidden point, the axis's two, the cone's
-/// half-angle.  `ρ cos α − h sin α`, degree 1.
-fn cone_on_res(n: usize, v: &[f64], _k: &[f64], r: &mut [f64]) {
-    for i in 0..n {
-        r[i] = cone_gap(&v[10 * i..10 * i + 10]).v;
-    }
-}
-
-fn cone_on_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
-    for i in 0..n {
-        let d = cone_gap(&v[10 * i..10 * i + 10]);
-        j[10 * i..10 * i + 10].copy_from_slice(&d.g);
-    }
-}
-
-pub const N_PAR_CONE_CONE: usize = 17;
-
-/// Two cones at M: the second's surface normal against the first's generator and circle
-/// directions there.  Over (M, A₁, B₁, α₁, A₂, B₂, α₂).  A cone's outward normal at a point of
-/// its meridian is `û cos α − ê sin α`, its generator `ê cos α + û sin α` and its circle `ê × û`.
-fn cone_contact(v: &[f64]) -> [Dual<N_PAR_CONE_CONE>; 2] {
-    const N: usize = N_PAR_CONE_CONE;
-    let x = dvec::<N>(v, 0);
-    let (m1, m2) = (meridian(x, dvec(v, 3), dvec(v, 6)), meridian(x, dvec(v, 10), dvec(v, 13)));
-    let (a1, a2) = (Dual::<N>::var(v[9], 9), Dual::<N>::var(v[16], 16));
-    let (c1, s1, c2, s2) = (a1.cos(), a1.sin(), a2.cos(), a2.sin());
-    let normal = [0, 1, 2].map(|t| m2.u[t] * c2 - m2.e[t] * s2);
-    let generator = [0, 1, 2].map(|t| m1.e[t] * c1 + m1.u[t] * s1);
-    let circle = dcross(m1.e, m1.u);
-    [ddot(normal, generator), ddot(normal, circle)]
-}
-
-/// Columns of `cone_cone`: (M, A₁, B₁, α₁, A₂, B₂, α₂).  Two rows, degree 0: the second cone's
-/// normal at M square to the first's two tangent directions there — one tangent plane at M.
-fn cone_cone_res(n: usize, v: &[f64], _k: &[f64], r: &mut [f64]) {
-    for i in 0..n {
-        let o = N_PAR_CONE_CONE * i;
-        let d = cone_contact(&v[o..o + N_PAR_CONE_CONE]);
-        r[2 * i] = d[0].v;
-        r[2 * i + 1] = d[1].v;
-    }
-}
-
-fn cone_cone_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
-    for i in 0..n {
-        let o = N_PAR_CONE_CONE * i;
-        let d = cone_contact(&v[o..o + N_PAR_CONE_CONE]);
-        let jo = 2 * N_PAR_CONE_CONE * i;
-        j[jo..jo + N_PAR_CONE_CONE].copy_from_slice(&d[0].g);
-        j[jo + N_PAR_CONE_CONE..jo + 2 * N_PAR_CONE_CONE].copy_from_slice(&d[1].g);
-    }
-}
-
 /* -- two directed angles equal, and an arc's length --------------------------------------- */
 
 /// (l1, l2, l3, l4 — each a line's four coordinates), K = (s): `wrap(∠(l1→l2) − s·∠(l3→l4))`.
@@ -3111,10 +3015,6 @@ pub static KERNELS: [Kernel; N_KERNELS] = [
     Kernel { name: "line_on_plane", n_res: 2, n_par: 15, degree: 1, n_const: 0, res: line_on_plane_res, jac: line_on_plane_jac, const_jac: None },
     Kernel { name: "midpoint3", n_res: 3, n_par: 9, degree: 1, n_const: 0, res: midpoint3_res, jac: midpoint3_jac, const_jac: None },
     Kernel { name: "symmetric3", n_res: 3, n_par: 12, degree: 1, n_const: 0, res: symmetric3_res, jac: symmetric3_jac, const_jac: None },
-    Kernel { name: "cone_on", n_res: 1, n_par: 10, degree: 1, n_const: 0, res: cone_on_res, jac: cone_on_jac, const_jac: None },
-    Kernel { name: "half_angle", n_res: 1, n_par: 1, degree: 0, n_const: 1, res: radius_res, jac: radius_jac, const_jac: Some(RADIUS_J) },
-    Kernel { name: "half_angle_free", n_res: 1, n_par: 2, degree: 0, n_const: 2, res: radius_free_res, jac: radius_free_jac, const_jac: None },
-    Kernel { name: "cone_cone", n_res: 2, n_par: N_PAR_CONE_CONE, degree: 0, n_const: 0, res: cone_cone_res, jac: cone_cone_jac, const_jac: None },
     Kernel { name: "equal_angle", n_res: 1, n_par: 16, degree: 0, n_const: 1, res: equal_angle_res, jac: equal_angle_jac, const_jac: None },
     Kernel { name: "arc_length", n_res: 1, n_par: 7, degree: 1, n_const: 1, res: arc_length_res, jac: arc_length_jac, const_jac: None },
     Kernel { name: "arc_length_free", n_res: 1, n_par: 8, degree: 1, n_const: 2, res: arc_length_free_res, jac: arc_length_free_jac, const_jac: None },

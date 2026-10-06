@@ -97,8 +97,6 @@ NAME := (E, E[, E])                     a vector, read by its members NAME.x, NA
 NAME := point(x: XEXPR, y: YEXPR)       a computed point, drawn only as a curve       (1.9)
 [NAME :=] axis [hint(dir: (E, E, E))]  a directed line in space, with no start (1.13)
 [NAME :=] plane[(u: R, v: R)]             a plane over axes or lines; one left out is free (1.13)
-NAME := cone(axis: LINE) | cylinder(axis: LINE)  [hint(...)]
-                                        a surface in space, on no sheet              (1.13)
 in REF { statement* }                   every declaration inside is drawn in that plane
 NAME := CHAIN                           a chain joined by `->`, named as a traversal (1.14)
 NAME := face(EDGE, ..., holes: LOOP, ...)  a planar region                           (1.14)
@@ -143,8 +141,6 @@ read any number or binder in scope). Indices and fields chain: `l.e[2].p1` is `p
 | `axis` | — | a place and a unit direction (seeded by `hint(dir: (x, y, z))`, the direction) | |
 | `plane` | `u`, `v` (axes or lines); member `origin` | where it stands, its `origin`: `fix(origin == (x, y, z))` | |
 | `curve` | its arguments | | |
-| `cone` | `axis` (a line; its start is the apex) | `half`, the half-angle | |
-| `cylinder` | `axis` (a line) | `r` | |
 
 **Vectors and members.** A vector is written `(a, b)` or `(a, b, c)`. An entity's numbers are
 its members: a point *is* its place, so it is seeded and held whole by a vector,
@@ -220,22 +216,21 @@ stands in the parentheses:
 
 | word | fixity | operands and options |
 |---|---|---|
-| `coincident` | infix | two points; a point to a line, circle, arc, spline or curve. In space (1.13): a point, line or axis to a **plane**; a point or line to an **axis**, and two axes (one line); a point to a **cone** or **cylinder**. Not between two **solids**: material is added with `union` (1.14) |
+| `coincident` | infix | two points; a point to a line, circle, arc, spline or curve. In space (1.13): a point, line or axis to a **plane**; a point or line to an **axis**, and two axes (one line). Not between two **solids**: material is added with `union` (1.14) |
 | `distance` | infix | two points (length; `along: x`/`y` or `right`/`left`/`up`/`down` for a signed run or rise); a point and a line, or two lines (a magnitude; `side:` picks the side); two concentric circles or arcs (radial gap); a point and a plane (`along:` required: `u`/`v` signed ordinates, `n` signed distance along the normal, in space); two planes, `P distance(d) Q` (along `P`'s normal) |
 | `distance` | prefix | a line: its length |
-| `tangent` | infix | line–circle/arc (`at: p1`/`p2` for tangency at that end; `side:` for the centre's side); circle/arc–circle/arc (`external: true/false`); arc–line (`at: start`/`end`); spline or curve–line; in space, cylinder–line (cylinder first); two cones at a point, `k1 tangent(M) k2` |
+| `tangent` | infix | line–circle/arc (`at: p1`/`p2` for tangency at that end; `side:` for the centre's side); circle/arc–circle/arc (`external: true/false`); arc–line (`at: start`/`end`); spline or curve–line |
 | `equal` | infix | two lines (length) or two circles/arcs (radius) |
 | `curvature` | infix | spline or curve and a circle/arc: the circle becomes the osculating circle there. On a traced curve, exact (the body's Taylor orders); refused only for a body using a relation with no Taylor form, named in the error |
 | `horizontal`, `vertical` | prefix / infix | a line; or two points with no line between them |
 | `angle` | infix | two lines, directed (below); an axis and a line or axis, unsigned, in space (1.13). With a second line pair instead of a number, `l1 angle(l3, l4) l2` equates two angles |
-| `angle` | prefix | a cone: its half-angle |
-| `radius` | prefix | a circle, arc or cylinder |
+| `radius` | prefix | a circle or arc |
 | `length` | prefix | an arc: radius × sweep, counter-clockwise from `start` to `end` (a magnitude) |
 | `symmetry(line)` | infix | two points |
 | `midpoint` | infix | a point and a line |
 | `parallel`, `perpendicular` | infix | two lines; an axis and a line or axis (in space); an axis and a plane (`perpendicular`: along its normal); `parallel` also two planes |
 | `project` | infix | two points, each `in` a plane: two images of one point in space (1.13) |
-| `fix` | prefix | an entity's own numbers, whole or by member: a point itself, `(x, y)` in a plane or `(x, y, z)` in space, or one coordinate (`x == 3`); `r` of a circle, arc or cylinder; `half` of a cone (degrees); `dir` and `origin` of an axis; `origin` of a plane; one component of a vector, `dir.x` |
+| `fix` | prefix | an entity's own numbers, whole or by member: a point itself, `(x, y)` in a plane or `(x, y, z)` in space, or one coordinate (`x == 3`); `r` of a circle or arc; `dir` and `origin` of an axis; `origin` of a plane; one component of a vector, `dir.x` |
 | `ccw(a, b, c)`, `cw(a, b, c)` | call | all three points in the parentheses; `ccw` means `c` is left of ray `a → b` |
 
 **Operand order carries meaning.** `arc tangent line` is a tangency at the arc's end;
@@ -369,7 +364,7 @@ l angle(45deg) m
   to a `tau: Angle` formal arrives as a full turn). It is W112 at the declaration; rename it.
 
 **Measurements of the solved drawing.** `length(l)` (line or arc, in space), `radius(c)` (circle,
-arc, cylinder), `distance(a, b)` (two points, or a point and a line produced) and
+arc), `distance(a, b)` (two points, or a point and a line produced) and
 `angle(l1, l2)` (0–180°) take geometry names and read as `Length`/`Angle` under a `unit` line, so
 `length(a) / length(b)` is a plain ratio. They are allowed **only** in a motion's `ratio:`,
 `phase:` and `advance:` (1.15), which are read after the solve. Anywhere else — a value, a seed, a
@@ -744,8 +739,7 @@ An axis read only as a direction counts two freedoms; `p coincident t` adds the 
 as does `l coincident t` (either way round), which also lays the line along it.
 Its `origin` is the point on it nearest the world origin. `parallel`, `perpendicular` and
 `angle` take an axis beside an axis or a drawn line, and wherever an axis is expected a drawn line
-is read as one, from `p1` toward `p2`; the reverse does not hold: a cone's or cylinder's `axis:`,
-a turn's `about:` and a motion's `about:`/`along:` take a drawn line, never an `axis`. A plane
+is read as one, from `p1` toward `p2`; the reverse does not hold: a turn's `about:` and a motion's `about:`/`along:` take a drawn line, never an `axis`. A plane
 over a line stands on it: `plane(u: hinge, v: …)`
 lies along the hinge and through it, and a plane over two lines that share an end stands at
 that end (`std.Turned(o, t)` stands at `o`).
@@ -842,16 +836,19 @@ distances from the centre, read in space across views:
   gear blank's toe circle on its end sphere): three equations.
 - A solid ball is a half disc turned about its diameter (`pierced_sphere.sv`).
 
-**Cones and cylinders** live in space, on no sheet (the glass box draws them).
+**Cones and cylinders** are the library's too, each a drawn line and a number, nothing drawn:
 
-- `gc := cone(axis: gax) hint(half: 60deg)`: the apex is the axis's start, opening toward its end;
-  the half-angle is written in degrees. `angle(60deg) gc` states it; `p coincident gc` puts a point
-  on the nappe the axis points into.
-- `bore := cylinder(axis: ax) hint(r: 8)`: `radius(8) bore`, `p coincident bore`, and
-  `bore tangent l` (the side read from the seed).
-- `gc tangent(M) pc`: two cones share one tangent plane at M. State `M coincident gc` and
-  `M coincident pc` beside it, as an on-circle stands beside a tangency at a named end.
-- A line lying on a cone or cylinder is not yet a relation; state it of the line's points.
+- `shaft := std.Cylinder(ax, r: 8mm)`: `p distance(shaft.r) shaft.axis` puts a point on it, and
+  `shaft.axis distance(shaft.r) l` makes a line touch it (their common perpendicular, in space
+  across views; the side read from the seed).
+- `gc := std.Cone(gax, half: 60deg)`: the apex is the axis's start, opening toward its end.
+  `std.PointOnCone(p, gc)` puts a point on the nappe the axis points into (one angle at the apex;
+  within the axis's own view it is the page's directed angle, so the generator counter-clockwise
+  of the axis).
+- `std.TangentCones(gc, pc, M)`: two cones share one tangent plane at M. State
+  `std.PointOnCone(M, gc)` and `std.PointOnCone(M, pc)` beside it.
+- Leave `r` or `half` unbound (`half: hint(30deg)`) and it is an unknown of the drawing; a solve
+  writes what it found back into the `hint(…)`.
 
 `sphere_cone_cylinder.sv` shows one of each; `hypoid_pitch_cones.sv` is 2.13.
 
@@ -1865,12 +1862,11 @@ pax.p1 distance(80) pax.p2
 horizontal pax
 
 // the pitch cones: the gear's pitch angle, M on both, and the two touching there
-gc := cone(axis: gax) hint(half: 60deg)
-pc := cone(axis: pax) hint(half: 30deg)
-angle(60deg) gc
-M coincident gc
-M coincident pc
-gc tangent(M) pc
+gc := std.Cone(gax, half: 60deg)
+pc := std.Cone(pax, half: hint(30deg))
+std.PointOnCone(M, gc)
+std.PointOnCone(M, pc)
+std.TangentCones(gc, pc, M)
 
 // the two pitch radii at M, and the shafts: square, and E apart
 M distance(Rg) gax
@@ -1879,13 +1875,14 @@ gax angle(90deg) pax
 gax distance(E) pax
 ```
 
-`43 params, 43 equations, structural rank 43; DOF 0`. Here the contact is stated rather than
-constructed: the gear's apex on P makes P the gear cone's tangent plane at M, and
-`gc tangent(M) pc` makes it the pinion's, so the pinion's apex lands on P unasked. The pinion's
+`99 params, 99 equations, structural rank 99; DOF 0` (the library's cones touch through hidden
+planes and an axis). Here the contact is stated rather than constructed: the gear's apex on P
+makes P the gear cone's tangent plane at M, and `std.TangentCones(gc, pc, M)` makes it the
+pinion's, so the pinion's apex lands on P unasked. The pinion's
 plane stands on two axes the solve turns, held square to each other, with its origin at M;
 `horizontal pax` fixes its remaining turn. 2.12 and 2.13 give the same hypoid
 (Γ = 60°, γ = 29.564957707°, ε = 10.722102067°, |MA| = 97.282181449, within 2e-11;
-`tests/spatial_surfaces.rs`). `hypoid_pitch_cones.sv` shows the cones touching on P in the app.
+`tests/spatial_surfaces.rs`). `hypoid_pitch_cones.sv` is this document in the app.
 
 ### 2.14 An arc placed by its length: DOF 0, well
 

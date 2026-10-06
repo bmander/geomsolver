@@ -70,11 +70,6 @@ fn all_constraints(seed: u32) -> Sketch {
     let kc = sk.circle(cpc, rng.uniform(1.0, 11.0), "kc");
     let kb = sk.circle(cpb, rng.uniform(1.0, 11.0), "kb");
     let (me1, me2) = (EntRef::line(m1), EntRef::line(m2));
-    // and a cone about each of those lines and a cylinder about the first
-    use gcs_core::model::EntKind::{Cone, Cylinder};
-    let kn1 = EntRef::new(Cone, sk.cone(m1, rng.uniform(0.3, 1.2), "kn1"));
-    let kn2 = EntRef::new(Cone, sk.cone(m2, rng.uniform(0.3, 1.2), "kn2"));
-    let cy = EntRef::new(Cylinder, sk.cylinder(m1, rng.uniform(1.0, 11.0), "cy"));
     // and two axes, their directions knocked off the unit sphere — the first placed, so its
     // point is free and read, the second read only as a direction
     let dir = |rng: &mut Rng| [rng.uniform(-1.0, 1.0), rng.uniform(-1.0, 1.0), rng.uniform(-1.0, 1.0)];
@@ -212,15 +207,6 @@ fn all_constraints(seed: u32) -> Sketch {
         // the midpoint and the mirror in a line, in space
         Constraint::new(CKind::Midpoint3, vec![e(qe), e(me1)]),
         Constraint::new(CKind::Symmetric3, vec![e(pe), e(qe), e(fold_line)]),
-        // the cones' and the cylinder's words
-        Constraint::new(CKind::ConeOn, vec![e(qe), e(kn1)]),
-        Constraint::new(CKind::ConeOn, vec![e(pe), e(kn2)]),
-        Constraint::new(CKind::CylinderOn, vec![e(qe), e(cy)]),
-        Constraint::new(CKind::ConeAngle, vec![e(kn1), Arg::Num(0.6)]),
-        Constraint::new(CKind::CylinderRadius, vec![e(cy), Arg::Num(2.0)]),
-        Constraint::new(CKind::CylinderTangentLine, vec![e(cy), e(me2), Arg::Int(1)]),
-        Constraint::new(CKind::CylinderTangentLine, vec![e(cy), e(me2), Arg::Int(-1)]),
-        Constraint::new(CKind::ConeTangentCone, vec![e(kn1), e(kn2), e(EntRef::point(dp))]),
         // an axis's own two rows, a point on one, and the direction words over an axis and an axis or
         // a line, the axis handed to the line's kernels as the segment from the origin
         Constraint::new(CKind::AxisUnit, vec![e(axis_b)]),
@@ -278,8 +264,6 @@ fn all_constraints(seed: u32) -> Sketch {
         fx(CKind::Ordinate3U, vec![e(s3), e(pbe)], "o3 + 1", 1.2),
         fx(CKind::Ordinate3V, vec![e(qe), e(pae)], "-2 * o4", 0.5),
         fx(CKind::PlaneDistance, vec![e(pae), e(pce)], "3 * pd3", 0.5),
-        fx(CKind::ConeAngle, vec![e(kn2)], "2 * ka", 0.5),
-        fx(CKind::CylinderRadius, vec![e(cy)], "kr - 1", 3.0),
         fx(CKind::ArcLength, vec![e(ae)], "3 * al + 1", 7.5),
     ];
     // the two intrinsic PointOnCircle constraints the arc brought with it stay in the sketch

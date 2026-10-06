@@ -359,8 +359,9 @@ pub enum InstVal {
     /// group a call may be given (`Part(dims.cyl)`).  Only a group's member may be one.
     Group(Vec<InstArg>),
     /// `beta: hint(15deg)` — the formal left unbound, so an unknown of the drawing as any
-    /// unbound numeric formal is, and its solve begun at this number.  Only a call's argument.
-    Hint(String),
+    /// unbound numeric formal is, and its solve begun at this number, which a solve writes back
+    /// at the span.  Only a call's argument.
+    Hint(String, Span),
 }
 
 /// A number defined by name: `w := 60`, a value worked out while elaborating, or — under the

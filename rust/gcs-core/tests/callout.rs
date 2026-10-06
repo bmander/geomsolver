@@ -117,11 +117,9 @@ fn every_dimension_is_drawn() {
     // stops the build there; this is the other half — that the arm someone wrote actually draws.
     let mut drawn: Vec<CKind> = sk_kinds(&all_dimensions());
     drawn.sort();
-    // a relation in space states a number of no one view, and has no figure on one; and a cone or
-    // a cylinder is on no sheet, so its number is drawn on none
+    // a relation in space states a number of no one view, and has no figure on one
     let mut want: Vec<CKind> = ALL_KINDS.iter().copied()
         .filter(|k| k.has_dimension() && !k.spatial())
-        .filter(|k| !matches!(k, CKind::ConeAngle | CKind::CylinderRadius))
         .collect();
     want.sort();
     assert_eq!(drawn, want, "the fixture is missing a dimensioned kind");

@@ -410,9 +410,6 @@ fn fixture(kind: CKind) -> (Sketch, Constraint) {
             sk.set_plane(i, Some(pa));
         }
     }
-    // two cones and a cylinder, about the second line and the first
-    let (ka, kb) = (sk.cone(l2, 0.5, "ka"), sk.cone(l1, 0.25, "kb"));
-    let cy = sk.cylinder(l2, 7.0, "cy");
     // two axes, one placed through `p` by a relation of its own
     let (ra, rb) = (sk.axis([1.0, 0.2, 0.3], "ra"), sk.axis([0.1, 1.0, -0.4], "rb"));
     // a projection over stated views is `Project`, and comes back as the twin its views feed
@@ -449,7 +446,6 @@ fn fixture(kind: CKind) -> (Sketch, Constraint) {
     let mut used_point = false;
     let mut used_line = false;
     let mut used_circle = false;
-    let mut used_cone = false;
     let mut used_plane = false;
     for (i, (_, k)) in spec.iter().enumerate() {
         args.push(match k {
@@ -458,12 +454,6 @@ fn fixture(kind: CKind) -> (Sketch, Constraint) {
                 used_plane = true;
                 Arg::Ent(EntRef::plane(pb))
             }
-            SpecKind::Cone if used_cone => Arg::Ent(EntRef::new(EntKind::Cone, kb)),
-            SpecKind::Cone => {
-                used_cone = true;
-                Arg::Ent(EntRef::new(EntKind::Cone, ka))
-            }
-            SpecKind::Cylinder => Arg::Ent(EntRef::new(EntKind::Cylinder, cy)),
             // a direction relation over an axis and a line, or two axes
             SpecKind::Axis | SpecKind::Direction if i == 0 => Arg::Ent(EntRef::new(EntKind::Axis, ra)),
             SpecKind::Direction if kind == CKind::Parallel3 => Arg::Ent(EntRef::line(l2)),

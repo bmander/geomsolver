@@ -145,18 +145,18 @@ fn no_document_writes_a_seed_the_old_way() {
 #[test]
 fn the_spatial_demos_are_what_they_say() {
     let demos: &[(&str, &str, (usize, usize), i64, State)] = &[
-        ("skew_axes", include_str!("../../examples/skew_axes.sv"), (30, 30), 0, State::Well),
+        ("skew_axes", include_str!("../../examples/skew_axes.sv"), (28, 28), 0, State::Well),
         (
             "hypoid_pitch_cones",
             include_str!("../../examples/hypoid_pitch_cones.sv"),
-            (43, 43),
+            (99, 99),
             0,
             State::Well,
         ),
         (
             "sphere_cone_cylinder",
             include_str!("../../examples/sphere_cone_cylinder.sv"),
-            (44, 43),
+            (99, 98),
             1,
             State::Under,
         ),

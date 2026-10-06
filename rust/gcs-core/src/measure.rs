@@ -69,7 +69,7 @@ pub struct MotionMeasure {
 fn takes(m: Measure) -> &'static str {
     match m {
         Measure::Length => "a line or an arc",
-        Measure::Radius => "a circle, an arc or a cylinder",
+        Measure::Radius => "a circle or an arc",
         Measure::Distance => "two points, or a point and a line",
         Measure::Angle => "two lines",
     }
@@ -79,7 +79,7 @@ fn fits(m: Measure, kinds: &[EntKind]) -> bool {
     use EntKind::*;
     match (m, kinds) {
         (Measure::Length, [Line | Arc]) => true,
-        (Measure::Radius, [Circle | Arc | Cylinder]) => true,
+        (Measure::Radius, [Circle | Arc]) => true,
         (Measure::Distance, [Point, Point | Line] | [Line, Point]) => true,
         (Measure::Angle, [Line, Line]) => true,
         _ => false,
@@ -193,7 +193,6 @@ pub fn measure(sk: &Sketch, m: Measure, es: &[EntRef]) -> Result<f64, String> {
         (Measure::Radius, [e]) => param(match e.kind {
             EntKind::Circle => sk.circles[e.i()].radius,
             EntKind::Arc => sk.arcs[e.i()].radius,
-            EntKind::Cylinder => sk.cylinders[e.i()].param,
             k => return Err(format!("{} has no radius", k.a())),
         })
         .abs(),

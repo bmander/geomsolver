@@ -616,37 +616,6 @@ fn a_word_across_views_with_no_meaning_in_space_is_refused() {
     }
 }
 
-/// Cones and cylinders take the words they have kernels for and say so for the rest: a
-/// line on either (a generator) is said of its points, two cones touch at a point the statement
-/// names, and each is built about a line already drawn in a view.
-#[test]
-fn what_a_cone_or_a_cylinder_cannot_say_is_refused() {
-    let views = "use std\n\
-                 in std.front {\na := point hint((5, 5))\nla := line(hint((0, 0)), hint((0, 20)))\n}\n\
-                 in std.side {\nlb := line(hint((0, 0)), hint((20, 9)))\n}\n\
-                 k := cone(axis: la) hint(half: 30deg)\nk2 := cone(axis: lb) hint(half: 20deg)\n\
-                 c := cylinder(axis: la) hint(r: 5)\n";
-    for (stmt, code, needle) in [
-        ("lb coincident k", "E040", "a line on a cone or a cylinder"),
-        ("lb coincident c", "E040", "a line on a cone or a cylinder"),
-        ("k tangent lb", "E040", "a line touches a cylinder"),
-        ("lb tangent c", "E040", "the cylinder first"),
-        ("k tangent k2", "E040", "names it"),
-        ("angle(20deg) c", "E040", "does not apply to a cylinder"),
-        ("radius(-2) c", "E040", "magnitude"),
-        ("bad := cone(axis: a)", "E103", "axis is a line"),
-        ("bad := cylinder", "E103", "built about a line"),
-    ] {
-        let (_, d) = read(&format!("{views}{stmt}\n"));
-        assert!(d.iter().any(|m| m.starts_with(code) && m.contains(needle)), "{stmt}: {d:?}");
-    }
-    for stmt in ["a coincident k", "a coincident c", "radius(4) c", "angle(25deg) k", "c tangent lb",
-                 "m := point hint((3, 3)) in std.front\nk tangent(m) k2"] {
-        let (_, d) = read(&format!("{views}{stmt}\n"));
-        assert!(d.is_empty(), "{stmt}: {d:?}");
-    }
-}
-
 /// Three of §16.1's codes, each said where its mistake is written: a component reached again
 /// while it is still being expanded (E003), `next` with no `cycle` to name a sibling in (E020),
 /// and a block's binder over a name already in scope (E002).

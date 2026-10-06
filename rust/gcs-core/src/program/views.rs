@@ -32,16 +32,9 @@ pub(crate) fn degenerate(sk: &Sketch, map: &SourceMap) -> Vec<Diag> {
                         sk.plane_name(a), sk.plane_name(b)
                     ))
             }
-            CKind::LineLine3 | CKind::CylinderTangentLine => {
+            CKind::LineLine3 => {
                 let dir = |i: usize| {
-                    // a cylinder's line is its axis
-                    let e = c.args[i].ent();
-                    let e = if e.kind == EntKind::Cylinder {
-                        EntRef::line(sk.axial(e).axis as usize)
-                    } else {
-                        e
-                    };
-                    let l = &sk.lines[e.i()];
+                    let l = &sk.lines[c.args[i].ent().i()];
                     crate::space::sub(sk.lifted(l.p2 as usize), sk.lifted(l.p1 as usize))
                 };
                 let (a, b) = (dir(0), dir(1));

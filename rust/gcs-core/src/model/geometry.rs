@@ -161,10 +161,6 @@ impl Sketch {
                 let (x, y) = self.point_xy(e.i());
                 (x, y, x, y)
             }
-            // on no sheet: its axis is drawn, in whichever view it is in
-            EntKind::Cone | EntKind::Cylinder => {
-                self.bounds(EntRef::line(self.axial(e).axis as usize))
-            }
             EntKind::Line => {
                 let l = &self.lines[e.i()];
                 let (ax, ay) = self.point_xy(l.p1 as usize);

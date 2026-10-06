@@ -216,7 +216,7 @@ fn write_inst_val(out: &mut String, v: &InstVal) {
     match v {
         InstVal::Ref(r) => write_ref(out, r),
         InstVal::Expr(t) => out.push_str(t),
-        InstVal::Hint(t) => out.push_str(&format!("hint({t})")),
+        InstVal::Hint(t, _) => out.push_str(&format!("hint({t})")),
         InstVal::Group(fields) => write_members(out, fields),
     }
 }

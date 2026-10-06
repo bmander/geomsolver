@@ -398,42 +398,62 @@ fn free_clause(kind: EntKind, d: &Decl, text: &str, free: impl Iterator<Item = (
     if keys.is_empty() { String::new() } else { format!("hint({})", keys.join(", ")) }
 }
 
-/// Each unknown the document declares (`param beta: Angle hint(30deg)`), read by a dimension or
-/// shared by contacts, its seed written as the solve left it: spliced over a literal seed, or a
-/// clause written where none was — and only where the solve moved it, so an unread unknown and an
+/// Each unknown the document declares (`param beta: Angle hint(30deg)`, or a call's formal left
+/// unbound and seeded, `Cone(gax, half: hint(30deg))`), read by a dimension or shared by
+/// contacts, its seed written as the solve left it: spliced over a literal seed, or a clause
+/// written where none was — and only where the solve moved it, so an unread unknown and an
 /// unmoved one change nothing.  A seed written as an expression is the author's arithmetic, and is
 /// left alone.
 fn unknown_seeds(sk: &Sketch, prog: &Program) -> Vec<Splice> {
+    let solved = |name: &str| {
+        let p = sk.free_vars.get(name).copied().or(sk.shared.get(name).map(|s| s.param))?;
+        Some(sk.params[p as usize].value)
+    };
     let mut out = Vec::new();
     for st in &prog.root().body {
-        let StmtKind::Param(p) = &st.kind else { continue };
-        let Some(input) = p.input.as_ref().filter(|_| !p.bound()) else { continue };
-        // read by a dimension, or a place contacts share along a curve (`t == s`)
-        let name = &p.name.text;
-        let Some(param) = sk.free_vars.get(name).copied().or(sk.shared.get(name).map(|s| s.param))
-        else {
-            continue;
-        };
-        let v = sk.params[param as usize].value;
-        let angle = input.ty == Some(syntax::Ty::Angle);
-        match &input.seed {
-            // a length written in another unit (`2in` in an `mm` document) is left as written
-            Some((text, span))
-                if writable_seed(text) && (angle || !crate::expr::names_unit(text)) =>
-            {
-                let with = seed_literal(text, v, angle);
-                if !span.is_empty() && span.slice(prog.text()) != with {
-                    out.push(Splice { at: *span, with });
+        match &st.kind {
+            StmtKind::Param(p) => {
+                let Some(input) = p.input.as_ref().filter(|_| !p.bound()) else { continue };
+                let Some(v) = solved(&p.name.text) else { continue };
+                let angle = input.ty == Some(syntax::Ty::Angle);
+                match &input.seed {
+                    Some((text, span)) => out.extend(seed_splice(prog, text, *span, v, angle)),
+                    None if v != 0.0 => {
+                        out.push(Splice { at: p.span, with: format!(" hint({})", num(v)) });
+                    }
+                    None => {}
                 }
             }
-            Some(_) => {}
-            None if v != 0.0 => {
-                out.push(Splice { at: p.span, with: format!(" hint({})", num(v)) });
+            // a number is given by label, so a seeded formal is found by its own
+            StmtKind::Instance(inst) => {
+                let Ok(c) = prog.resolve_component(&inst.component.text, None) else { continue };
+                for a in &inst.args {
+                    let (Some(l), syntax::InstVal::Hint(text, span)) = (&a.label, &a.value) else {
+                        continue;
+                    };
+                    let Some(f) = prog.components[c].formals.iter().find(|f| f.name.text == l.text)
+                    else {
+                        continue;
+                    };
+                    let Some(v) = solved(&format!("{}.{}", inst.name.text, l.text)) else { continue };
+                    out.extend(seed_splice(prog, text, *span, v, f.ty == syntax::Ty::Angle));
+                }
             }
-            None => {}
+            _ => {}
         }
     }
     out
+}
+
+/// A literal seed, `text` at `span`, rewritten to the value `v` a solve left its unknown at —
+/// `None` where it reads the same, or is not a literal this can write: an expression, or a length
+/// written in another unit (`2in` in an `mm` document), each left as written.
+fn seed_splice(prog: &Program, text: &str, span: Span, v: f64, angle: bool) -> Option<Splice> {
+    if !writable_seed(text) || !angle && crate::expr::names_unit(text) || span.is_empty() {
+        return None;
+    }
+    let with = seed_literal(text, v, angle);
+    (span.slice(prog.text()) != with).then_some(Splice { at: span, with })
 }
 
 /// Whether a statement is one of the root component's own.
@@ -941,7 +961,7 @@ fn mentions(st: &Stmt, names: &std::collections::BTreeSet<String>) -> Vec<String
                 match &field.value {
                     syntax::InstVal::Ref(r) => look(r),
                     syntax::InstVal::Group(inner) => fields.extend(inner),
-                    syntax::InstVal::Expr(_) | syntax::InstVal::Hint(_) => {}
+                    syntax::InstVal::Expr(_) | syntax::InstVal::Hint(..) => {}
                 }
             }
         }

@@ -68,11 +68,18 @@ numbers (`module_params` keeps the module's own); groups register under their pa
 component defined twice in one file, the document's own included (a value twice is E001). `std.front` needs the document's own `use std`. A drawn callout drops a
 module path (`relations::unqualified`).
 
-**Cones and cylinders** (`docs/spatial-constraints-plan.md`): `cone k(axis: l) hint(half: 30deg)`
-and `cylinder c(axis: l) hint(r: 10)` stand about a line in a view (cone apex at its start), one
-Param each (half-angle in radians, written in degrees: `Sketch::seed_value`). Words:
-`p coincident k|c`, `angle(θ) k`, `radius(r) c`, `c tangent l`, `k1 tangent(M) k2` (with `M
-coincident` each). Cone kernels use forward-mode `Dual<N>` (`kernels.rs`).
+**Spheres, cones and cylinders are library components** (`rust/lib/std.sv`, 2026-10-06): a
+centre or a line and one number (`std.Sphere(c, r)`, `std.Cylinder(axis, r)`, `std.Cone(axis,
+half)`, apex at the axis's start), nothing drawn, no entity kind, kernel or `CKind` of their own.
+What stands on one is said in the words the drawing has: a distance from the centre or the axis
+(`p distance(shaft.r) shaft.axis`, `PointLine3`/`LineLine3` across views), and
+`std.PointOnCone(p, k)` (an angle at the apex), `std.TangentCones(k1, k2, m)` (each meridian
+plane square to the plane through both generators: hidden planes and an axis) and
+`std.CircleOnSphere(k, s, view)`.  An unbound number is the instance's unknown (`pc.half`, an
+angle in degrees); `edit::unknown_seeds` writes it back into the call's `hint(…)`
+(`InstVal::Hint` carries the span).  A lifted program cannot yet declare one (`lift::unknowns`
+writes the dotted name).  `tests/spatial_surfaces.rs` and `tests/spatial_lang.rs` are the
+gates.
 
 **Axes** (`docs/planes-plan.md`, #81): `t := axis hint(dir: (x, y, z))` is a directed line in space,
 `AxisE { d, a, placed }`: a unit direction (`axis_unit`, intrinsic, held like `quat_unit` when `fix`
@@ -890,8 +897,8 @@ Conventions:
   points' views by membership (a point in space is its own view) and where they differ maps the 2D kind
   to its twin in space (`Distance3`, `PointLine3`, `LineLine3`, `Angle3`, `PointOnLine3`,
   `EqualLength3`, …) or refuses (E062; E040 for `side:`/`sense:`).  Radii, `along: u`/`v` and
-  `project` are view-free; `coincident`/`distance(along: n)` to a plane and the `cone` and
-  `cylinder` words are spatial from `infix_op`.  `tests/cross_view_audit.rs` asserts the corpus's
+  `project` are view-free; `coincident`/`distance(along: n)` to a plane are spatial from
+  `infix_op`.  `tests/cross_view_audit.rs` asserts the corpus's
   cross-membership relations keep their 2D kinds.
 - A **`claim`** (Solvent §9.7) is *judged, never solved for*: **no** `System` compiles a row for
   it, and `cgraph`, `io::Part` and the witness's jitter skip it, so it never moves geometry,
@@ -1295,7 +1302,7 @@ Conventions:
   **The box shows the objects, not the features they are made of** — a solid is the object exactly
   when nothing else is made of it (`overview::objects`).  `box3d.ts` draws what `scene3d` says
   stands in space — panes, axes, the object's creases (a `smooth` seam dropped: shading draws the
-  round) and the spatial kinds (cones, cylinders) — and every object's mesh
+  round) and the axes — and every object's mesh
   (`mesh::grouped`), computing no coordinate; sketches on planes are the 2D canvas's, stroked over
   it.  Its camera is set from `v.orbit` and the eye's camera; the current plane's pane is bold, a
   material write per frame.  **`⇧⌘B` toggles the solid's surfaces** (on by default; off is a
@@ -1510,13 +1517,8 @@ Conventions:
   and the rim turning with its tilt.  An axis is a value the curve takes — stated or a `param` —
   since a component of one computed point cannot be drawn as an instance whose formal is left
   free.
-- **The sphere is a library component too**: `std.Sphere(center, r)` in `rust/lib/std.sv`, a
-  centre (drawn in a view or in space) and a radius formal read as `ball.r`, nothing drawn.  What
-  stands on it is a distance from the centre (`Distance3`, `PointLine3` across views);
-  `std.CircleOnSphere(k, s, view)` is the three regular rows of a circle on it (a hidden point
-  level with the circle's centre, an axis square to the view).  `EntKind::Sphere`, its four
-  `CKind`s and three kernels are gone; FFI kind ids stay contiguous (cone 16, cylinder 17, axis
-  18).  `tests/spatial_lang.rs` is the gate.
+- **The sphere, the cone and the cylinder are library components too** (see the paragraph near
+  the top): FFI kind ids stay contiguous, the axis now 16.
 - **A curve is a point of a component, as one of its numeric formals runs** (Solvent §6.5).
   No curve family: `path := leg.toe over theta in (0, 360)` asks a *drawn* instance, and
   `e := Involute(base, phase: a0).p over u in (u0, u1)` one written in place and never drawn.

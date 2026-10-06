@@ -224,11 +224,11 @@ impl<'a> Walk<'a> {
                         }
                     }
                 }
-                (Ty::Group | Ty::Ent(_), InstVal::Hint(_)) => self.err(Code::E103, a.span,
+                (Ty::Group | Ty::Ent(_), InstVal::Hint(..)) => self.err(Code::E103, a.span,
                     format!("`{}` is not a number, so there is nothing to seed", f.name.text)),
                 // `beta: hint(15deg)` — the formal stays unbound, an unknown of the drawing like
                 // any unbound numeric formal (below), and its solve begins at the number
-                (ty @ (Ty::Int | Ty::Scalar | Ty::Length | Ty::Angle), InstVal::Hint(t)) => {
+                (ty @ (Ty::Int | Ty::Scalar | Ty::Length | Ty::Angle), InstVal::Hint(t, _)) => {
                     let name = formal_name(&prefix, &inst.name.text, &f.name.text);
                     match self.seed_number(t, *ty, vals) {
                         Ok(v) if *ty != Ty::Int => {
@@ -262,7 +262,7 @@ impl<'a> Walk<'a> {
                     let w = match v {
                         InstVal::Ref(r) if r.path.is_empty() => r.root.text.clone(),
                         InstVal::Ref(r) => r.root.text.clone(),
-                        InstVal::Expr(t) | InstVal::Hint(t) => t.clone(),
+                        InstVal::Expr(t) | InstVal::Hint(t, _) => t.clone(),
                         InstVal::Group(_) => unreachable!("refused by the first arm"),
                     };
                     let w = scope.sides.get(&w).cloned().unwrap_or(w);
@@ -386,7 +386,7 @@ impl<'a> Walk<'a> {
                 let text = match &a.value {
                     InstVal::Expr(t) => t.clone(),
                     InstVal::Ref(r) => written(r),
-                    InstVal::Hint(_) | InstVal::Group(_) => continue,
+                    InstVal::Hint(..) | InstVal::Group(_) => continue,
                 };
                 if let Some(v) = value_aff(&text, vals, self.units)
                     .and_then(|v| typed(v, f.ty, &f.name.text))

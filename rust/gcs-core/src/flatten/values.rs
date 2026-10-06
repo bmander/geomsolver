@@ -515,7 +515,7 @@ impl<'a> Walk<'a> {
                             written(r)
                         }
                         crate::syntax::InstVal::Expr(t) => t.clone(),
-                        crate::syntax::InstVal::Hint(_) => {
+                        crate::syntax::InstVal::Hint(..) => {
                             let m = "a `hint(…)` leaves a call's formal unbound and seeds it; \
                                      a group's member is a value";
                             self.err(Code::E103, field.span, m);

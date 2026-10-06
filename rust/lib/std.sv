@@ -93,6 +93,55 @@ component CircleOnSphere(k: circle, s: group, view: plane) {
   q distance(s.r) s.center
 }
 
+// A cylinder of radius `r` about the line `axis`: a line and a number, and nothing drawn.  What
+// stands on it is said by distances from the axis — a point on it, `p distance(shaft.r)
+// shaft.axis`; a line touching it, `shaft.axis distance(shaft.r) l` (the common perpendicular,
+// read in space across views, its side the seed's).  Leave `r` unbound and it is an unknown of
+// the drawing those distances share.
+//
+//   shaft := std.Cylinder(ax, r: 8mm)
+//   shaft.axis distance(shaft.r) l
+component Cylinder(axis: line, r: Length) {
+}
+
+// A cone about the line `axis`, its apex the line's start and opening toward its end, `half` the
+// angle between the axis and every generator: a line and a number, and nothing drawn.  A point on
+// it is `PointOnCone`, two cones touching at a point `TangentCones`.  Leave `half` unbound
+// (`half: hint(30deg)`) and it is an unknown of the drawing.
+//
+//   gc := std.Cone(gax, half: 60deg)
+//   std.PointOnCone(M, gc)
+component Cone(axis: line, half: Angle) {
+}
+
+// A point `p` on the cone `k`: the generator from the apex to `p` makes the cone's half-angle
+// with its axis — on the nappe the axis points into.  One equation.  Across views it is the angle
+// in space; with `p` in the axis's own view it is the page's directed angle, so `p` is on the
+// generator counter-clockwise of the axis.
+component PointOnCone(p: point, k: group) {
+  private construction g := line(k.axis.p1, p)
+  k.axis angle(k.half) g
+}
+
+// Two cones `k1` and `k2` touching at `m` with one tangent plane there, `m` on each beside it
+// (`PointOnCone`).  Each cone's tangent plane at `m` is the one through its generator square to
+// its meridian plane, so the two are one when the plane through both generators stands square to
+// both meridian planes: its normal, `n`, lies in each.  Two equations.  What a hypoid's pitch
+// cones do at the mean point.
+//
+//   std.TangentCones(gc, pc, M)
+component TangentCones(k1: group, k2: group, m: point) {
+  private construction g1 := line(k1.axis.p1, m)
+  private construction g2 := line(k2.axis.p1, m)
+  private t := plane(u: g1, v: g2)
+  private m1 := plane(u: k1.axis, v: g1)
+  private m2 := plane(u: k2.axis, v: g2)
+  private n := axis
+  n perpendicular t
+  n parallel m1
+  n parallel m2
+}
+
 // An ellipse, as a curve: the point at eccentric angle `u` on the ellipse of semi-axes `a` and
 // `b` about the centre `c`, its major axis turned `turn` from the `x` of the plane `c` is drawn
 // in.  A computed point, so every contact is exact to third order: `p coincident e` holds a

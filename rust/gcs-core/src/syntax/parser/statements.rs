@@ -973,9 +973,9 @@ impl<'a> P<'a> {
             return Some(InstArg { label, value: InstVal::Group(fields), span: Span::new(lo, self.prev_hi()) });
         }
         // `beta: hint(15deg)` — an argument that leaves the formal unbound and seeds its unknown
-        if let Some((text, _)) = self.hint_value()? {
+        if let Some((text, at)) = self.hint_value()? {
             let span = Span::new(lo, self.prev_hi());
-            return Some(InstArg { label, value: InstVal::Hint(text), span });
+            return Some(InstArg { label, value: InstVal::Hint(text, at), span });
         }
         // A whole dotted/indexed path is a reference; a path followed by arithmetic
         // is an expression, e.g. `dims.bore / 2`.

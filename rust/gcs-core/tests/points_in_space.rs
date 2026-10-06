@@ -99,6 +99,6 @@ fn a_projection_refused_names_what_the_source_calls_things() {
 /// A kind is said with its article: an axis, an arc.
 #[test]
 fn a_kind_is_said_with_its_article() {
-    refused("use std\nt := axis\nc := cone(axis: t) hint(half: 30deg)\n",
-            "E103", "`t` is an axis, and a cone's axis is a line", "t");
+    refused("use std\nt := axis\nc := circle(center: t)\n",
+            "E040", "`t` is an axis, and a circle is built from points", "t");
 }

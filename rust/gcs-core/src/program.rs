@@ -315,8 +315,6 @@ pub fn elaborate(p: &Program) -> Elaborated {
         // a plane is built over its axes
         EntKind::Axis,
         EntKind::Plane,
-        EntKind::Cone,
-        EntKind::Cylinder,
         EntKind::Curve,
     ] {
         for st in &body {

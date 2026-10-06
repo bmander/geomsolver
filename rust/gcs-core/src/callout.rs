@@ -104,13 +104,6 @@ macro_rules! undrawn {
             | CKind::Midpoint3
             | CKind::Symmetric3
             | CKind::LineOnPlane
-            // a cone or a cylinder is on no sheet, so nothing about it is drawn on one
-            | CKind::ConeOn
-            | CKind::CylinderOn
-            | CKind::ConeAngle
-            | CKind::CylinderRadius
-            | CKind::CylinderTangentLine
-            | CKind::ConeTangentCone
             | CKind::AxisUnit
             | CKind::AxisFoot
             | CKind::PlaneAxis
