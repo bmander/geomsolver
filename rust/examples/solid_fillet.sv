@@ -27,11 +27,14 @@ component Rectangle(center: point, w: Length, h: Length) {
   center midpoint diagonal
 }
 
-outline := Rectangle(std.origin, w: width, h: depth)
-rim := circle(center: std.origin) hint(r: boss_radius)
-radius(boss_radius) rim
-hole := circle(center: std.origin) hint(r: bore_radius)
-radius(bore_radius) hole
+// everything drawn in the front plane, about its origin
+outline := Rectangle(std.front.origin, w: width, h: depth) in std.front
+in std.front {
+  rim := circle(center: std.front.origin) hint(r: boss_radius)
+  radius(boss_radius) rim
+  hole := circle(center: std.front.origin) hint(r: bore_radius)
+  radius(bore_radius) hole
+}
 
 plate := solid(outline.profile, depth: thickness)
 boss := solid(face(rim), from: 0mm, to: boss_height)

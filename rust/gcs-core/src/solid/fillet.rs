@@ -583,7 +583,7 @@ impl Piece {
         of.push((2, false));
         let basis = Basis { o: std::array::from_fn(|k| self.section.o[k] - origin[k]), ..self.section };
         let poly = FacePoly { pts, of, names: EDGE_NAMES.map(String::from).to_vec(), basis,
-            pose: (1.0, 0.0, (0.0, 0.0)), curved: vec![None; EDGE_NAMES.len()] };
+            curved: vec![None; EDGE_NAMES.len()] };
         poly.valid().then(|| poly.ccw())
     }
 }

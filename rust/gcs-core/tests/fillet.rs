@@ -4,13 +4,21 @@
 //! and every fillet this rung cannot round exactly refused with its reason.
 
 use gcs_core::program::{elaborate, Code, Elaborated};
-use gcs_core::syntax::parse;
 use std::f64::consts::PI;
 
-use crate::common::read;
+/// A drawing written on the page, drawn in `std.front` (the page's own coordinates: x right, z
+/// up, its depth toward −y); one already drawn in a plane of `std` as it is.
+fn front(src: &str) -> String {
+    if src.contains("in std.") { return src.to_string(); }
+    let (head, body) = match src.strip_prefix("unit mm\n") { Some(rest) => ("unit mm\n", rest), None => ("", src) };
+    format!("{head}use std\nin std.front {{\n{body}\n}}\n")
+}
+
+fn read(src: &str) -> Elaborated { crate::common::read(&front(src)) }
 
 fn refused(src: &str, code: Code, needle: &str) {
-    let (prog, errs) = parse(src);
+    let src = &front(src);
+    let (prog, errs, _) = gcs_core::library::parse_linked(src);
     let mut saw: Vec<String> = errs.iter().map(|e| format!("E100: {}", e.message)).collect();
     let mut hit = code == Code::E100 && errs.iter().any(|d| d.message.contains(needle));
     if !hit && errs.is_empty() {
@@ -271,7 +279,7 @@ a0 := point
 a1 := point hint(x: 0, y: 40)
 fix(x == 0, y == 0) a0
 fix(x == 0, y == 40) a1
-axis := line(a0, a1)
+spindle := line(a0, a1)
 s0 := point
 s1 := point hint(x: 40, y: 0)
 s2 := point hint(x: 40, y: 10)
@@ -285,7 +293,7 @@ fix(x == 15, y == 10) s3
 fix(x == 15, y == 30) s4
 fix(x == 0, y == 30) s5
 (base := line(s0, s1)) -> (rim := line(s1, s2)) -> (deck := line(s2, s3)) -> (hub := line(s3, s4)) -> (top := line(s4, s5)) -> (spine := line(s5, s0)) -> close
-stepped := solid(face(base, rim, deck, hub, top, spine), about: axis)
+stepped := solid(face(base, rim, deck, hub, top, spine), about: spindle)
 both := fillet(stepped.deck, stepped, r: 2mm)
 both union stepped
 ";
@@ -296,10 +304,10 @@ both union stepped
 fn a_ball_on_a_plate_is_rung_two() {
     // a sphere sunk into the plate meets it on a circle no plane, cylinder or cone carries
     let src = format!(
-        "{TURNED}c0 := point hint(x: 0, y: 10)\ns0 := point hint(x: 0, y: 4)\ns1 := point hint(x: 0, y: 16)\n\
+        "{TURNED}in std.front {{\nc0 := point hint(x: 0, y: 10)\ns0 := point hint(x: 0, y: 4)\ns1 := point hint(x: 0, y: 16)\n\
          fix(x == 0, y == 10) c0\nfix(x == 0, y == 4) s0\nfix(x == 0, y == 16) s1\n\
-         rim_arc := arc(center: c0, start: s0, end: s1) hint(r: 6)\nshut := line(s1, s0)\n\
-         ball := solid(face(rim_arc, shut), about: axis)\nball union body\n\
+         rim_arc := arc(center: c0, start: s0, end: s1) hint(r: 6)\nshut := line(s1, s0)\n}}\n\
+         ball := solid(face(rim_arc, shut), about: spindle)\nball union body\n\
          neck := fillet(ball, plate, r: 1mm)\nneck union body\n"
     );
     refused(&src, Code::E085, "rung 2");
@@ -308,7 +316,7 @@ fn a_ball_on_a_plate_is_rung_two() {
 #[test]
 fn a_fillet_is_written_as_it_was_read() {
     let src = "root := fillet(boss, plate.near, r: 3mm)\n";
-    let (mut prog, errs) = parse(src);
+    let (mut prog, errs) = gcs_core::syntax::parse(src);
     assert!(errs.is_empty(), "{errs:?}");
     assert_eq!(gcs_core::syntax::render_flat(&mut prog).unwrap().trim(), src.trim());
     // coloured as the declaration word it is, as `solid` is
