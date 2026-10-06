@@ -1024,8 +1024,11 @@ fn mentions(st: &Stmt, names: &std::collections::BTreeSet<String>) -> Vec<String
                     look(r);
                 }
                 for a in &w.args {
-                    if let syntax::OpArg::Ent(r) = a {
-                        look(r);
+                    match a {
+                        syntax::OpArg::Ent(r) | syntax::OpArg::Named(_, syntax::Arg::Ref(r)) => {
+                            look(r)
+                        }
+                        _ => {}
                     }
                 }
             }

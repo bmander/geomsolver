@@ -26,7 +26,7 @@ in std.front {
   // The motion: a quarter turn about an upright axis for every turn of a frame about a tilted one.
   private hub := point hint((2, 0))
   hub distance(2mm, along: u) std.front
-  hub distance(0mm, along: v) std.front
+  hub level(v) std.front
   private hub_up := point hint((2, 5))
   hub vertical hub_up
   hub distance(5mm, along: up) hub_up
@@ -40,7 +40,7 @@ fix(origin == (0, 0, 0)) tilted
 in tilted {
   private k0 := point hint((0, 0.7071))
   private k1 := point hint((5, 0.7071))
-  k0 distance(0mm, along: u) tilted
+  k0 level(u) tilted
   k0 distance(0.7071mm, along: v) tilted
   k1 distance(5mm, along: u) tilted
   k1 distance(0.7071mm, along: v) tilted

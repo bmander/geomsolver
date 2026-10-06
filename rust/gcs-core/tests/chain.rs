@@ -1270,7 +1270,7 @@ p1 distance(20, along: y) p3
         CKind::Horizontal,
         CKind::Perpendicular,
         CKind::Symmetric,
-        CKind::VerticalDistance,
+        CKind::Ordinate,
     ] {
         assert!(kinds.contains(&want), "{want:?} not among {kinds:?}");
     }
@@ -1279,8 +1279,8 @@ p1 distance(20, along: y) p3
     assert_eq!(gcs_core::io::describe(sym), "P0 symmetry(L1) P2");
 }
 
-/// **The fixity does the work** for `horizontal` and `vertical`: a line prefixed, a pair of
-/// points infixed — which is exactly the distinction `HorizontalPoints` was added to draw.
+/// **The fixity does the work** for `horizontal` and `vertical`: a line prefixed is the line's
+/// direction, a pair of points infixed is `level(up)` between them.
 #[test]
 fn one_word_two_constraints_by_fixity() {
     let e = read(
@@ -1296,7 +1296,7 @@ p1 horizontal p2
 ",
     );
     let kinds: Vec<CKind> = e.sketch.user_constraints().iter().map(|c| c.kind).collect();
-    assert!(kinds.contains(&CKind::Horizontal) && kinds.contains(&CKind::HorizontalPoints));
+    assert!(kinds.contains(&CKind::Horizontal) && kinds.contains(&CKind::Level));
 }
 
 /// `distance` before a line is sugar for the distance between its own ends, and states exactly

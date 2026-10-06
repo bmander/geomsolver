@@ -148,7 +148,7 @@ use std
 in std.front {
 private bc := point
 bc distance(3.8mm, along: u) std.front
-bc distance(0mm, along: v) std.front
+bc level(v) std.front
 private bb := point hint((3.8, -1))
 private bt := point hint((3.8, 1))
 private bd := line(bb, bt)

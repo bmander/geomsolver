@@ -22,7 +22,7 @@ component SideSection(o: point, dims: group) {
   repeat 4 as i {
     ax := engine.parts.At(o, dx: dims.front + 25mm + dims.P / 2 + i * dims.P, dy: 0mm)
     small := point hint((o.x + dims.front + 25mm + dims.P / 2 + i * dims.P, o.y + dims.R + dims.L))
-    ax.p distance(0, along: x) small
+    ax.p vertical small
     piston := engine.parts.Piston(small, pin: 0, dims: dims)
   }
 }

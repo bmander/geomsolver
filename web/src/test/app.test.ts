@@ -13,7 +13,8 @@ import * as io from '../core/io.js';
 import { Plane, Point, Sketch } from '../core/model.js';
 import { Document, fromSketch } from '../core/program.js';
 import type { Diagnosis } from '../core/diagnose.js';
-import { callouts } from '../core/callout.js';
+import { callouts, pairOf } from '../core/callout.js';
+import type { PairDimension } from '../core/callout.js';
 import { PlanDrag } from '../core/decompose.js';
 import { solve } from '../core/system.js';
 import { DimAlt, SketchView } from '../app/view.js';
@@ -594,32 +595,35 @@ function pairToDimension(): { view: SketchView; sk: Sketch; alt: DimAlt } {
   const view = viewOn(built);
   const sk = view.sketch;
   const [a, b] = sk.points;
-  const make = (kind: string): Constraint => {
-    const v = kind === 'HorizontalDistance' ? b.x.value - a.x.value
-            : kind === 'VerticalDistance' ? b.y.value - a.y.value
-            : Math.hypot(b.x.value - a.x.value, b.y.value - a.y.value);
-    return C.build(kind, [a, b, v]);
-  };
-  return { view, sk, alt: { a, b, make } };
+  return { view, sk, alt: { a, b, make: pairMaker(a, b) } };
+}
+
+/** The three dimensions of a pair, as `commands::pairDim` states them: the length, and the run
+ *  and the rise — an ordinate along the view's `x` and `y`. */
+function pairMaker(a: Point, b: Point): (kind: PairDimension) => Constraint {
+  return (kind) => kind === 'length'
+    ? C.build('Distance', [a, b, Math.hypot(b.x.value - a.x.value, b.y.value - a.y.value)])
+    : C.build('Ordinate', [a, b, null, kind === 'run' ? b.x.value - a.x.value
+      : b.y.value - a.y.value, kind === 'run' ? 'x' : 'y']);
 }
 
 test('where the number is put is which dimension it is', () => {
   const { view, sk, alt } = pairToDimension();
   const cv = view.canvas as ReturnType<typeof fakeCanvas>;
-  const first = alt.make('Distance');
+  const first = alt.make('length');
   assert.ok(view.startDimension([first], true, alt));
   assert.equal(sk.userConstraints().length, 1, 'stated at once, not after a dialog');
 
   const at = (dx: number, dy: number): [number, number] => view.w2s(20 + dx, 20 + dy);
-  const kind = (): string => view.liveDim!.targets[0].typeName;
+  const kind = (): PairDimension | null => pairOf(view.liveDim!.targets[0]);
   cv.fire('pointermove', pointer(...at(-30, 30)));      // across the pair: its own length
-  assert.equal(kind(), 'Distance');
+  assert.equal(kind(), 'length');
   cv.fire('pointermove', pointer(...at(0, 40)));        // above it: the run
-  assert.equal(kind(), 'HorizontalDistance');
+  assert.equal(kind(), 'run');
   assert.equal(view.sketch.userConstraints().length, 1, 'the old one should have gone');
   assert.equal((view.liveDim!.targets[0] as unknown as { d: number }).d, 40);
   cv.fire('pointermove', pointer(...at(40, 0)));        // out to the side: the rise
-  assert.equal(kind(), 'VerticalDistance');
+  assert.equal(kind(), 'rise');
 
   // the number goes where it is put: the callout's placement follows the pointer
   const k = callouts(sk, view.unit).items[0];
@@ -632,7 +636,7 @@ test('a dimension being written is one edit, and Escape takes all of it back', (
   const { view, sk, alt } = pairToDimension();
   const cv = view.canvas as ReturnType<typeof fakeCanvas>;
   const before = io.dumps(sk);
-  const first = alt.make('Distance');
+  const first = alt.make('length');
   view.startDimension([first], true, alt);
   cv.fire('pointermove', pointer(...view.w2s(20, 60)));
   view.endDimension(false);
@@ -641,7 +645,7 @@ test('a dimension being written is one edit, and Escape takes all of it back', (
   assert.equal(view.liveDim, null);
 
   // accepted, it is one step back — the constraint, where it was put and what it says together
-  const c = alt.make('Distance');
+  const c = alt.make('length');
   view.startDimension([c], true, alt);
   cv.fire('pointermove', pointer(...view.w2s(20, 60)));
   view.endDimension(true);
@@ -659,7 +663,7 @@ test('a dimension being written is one edit, and Escape takes all of it back', (
 test('a click plants the number, and the pointer stops carrying it', () => {
   const { view, sk, alt } = pairToDimension();
   const cv = view.canvas as ReturnType<typeof fakeCanvas>;
-  const c = alt.make('Distance');
+  const c = alt.make('length');
   view.startDimension([c], true, alt);
   cv.fire('pointermove', pointer(...view.w2s(-20, 20)));
   const kind = view.liveDim!.targets[0].typeName;
@@ -677,7 +681,7 @@ test('a click plants the number, and the pointer stops carrying it', () => {
   const on = view.w2s(...callouts(sk, view.unit).items[0].anchor);
   cv.fire('pointerdown', pointer(...on));
   cv.fire('pointermove', pointer(...view.w2s(20, 60)));
-  assert.equal(view.liveDim!.targets[0].typeName, 'HorizontalDistance');
+  assert.equal(pairOf(view.liveDim!.targets[0]), 'run');
   cv.fire('pointerup', pointer(...view.w2s(20, 60)));
   view.endDimension(true);
 });
@@ -685,7 +689,7 @@ test('a click plants the number, and the pointer stops carrying it', () => {
 test('a pair with a length on it can still be given its run', () => {
   const { view, sk, alt } = pairToDimension();
   const cv = view.canvas as ReturnType<typeof fakeCanvas>;
-  const first = alt.make('Distance');
+  const first = alt.make('length');
   view.startDimension([first], true, alt);
   cv.fire('pointermove', pointer(...view.w2s(-10, 50)));    // across the pair: its own length
   view.endDimension(true);
@@ -693,18 +697,17 @@ test('a pair with a length on it can still be given its run', () => {
 
   // asking again writes a second dimension rather than reopening the first, so the pointer
   // still gets to say which of the three it is — the run, which is a fact the length is not
-  const second = alt.make('Distance');
+  const second = alt.make('length');
   assert.ok(view.startDimension([second], true, alt), 'a second dimension was refused');
   cv.fire('pointermove', pointer(...view.w2s(20, 60)));     // above it: the run
-  assert.equal(view.liveDim!.targets[0].typeName, 'HorizontalDistance');
+  assert.equal(pairOf(view.liveDim!.targets[0]), 'run');
   view.endDimension(true);
-  assert.deepEqual(sk.userConstraints().map((c) => c.typeName).sort(),
-                   ['Distance', 'HorizontalDistance']);
+  assert.deepEqual(sk.userConstraints().map((c) => pairOf(c)).sort(), ['length', 'run']);
 });
 
 test('a dimension already on the drawing is opened, not stated twice', () => {
   const { view, sk, alt } = pairToDimension();
-  const c = alt.make('Distance');
+  const c = alt.make('length');
   view.startDimension([c], true, alt);
   view.endDimension(true);
   const there = sk.userConstraints()[0];
@@ -734,11 +737,9 @@ test('nothing is solved or judged while a dimension is being laid down', () => {
   view.onChanged = () => { refreshes += 1; };
   const still = c.xy;
   const judged = (): Diagnosis | null => view.diagnosis;
-  const make = (kind: string): Constraint => C.build(kind, [a, b, kind === 'HorizontalDistance'
-    ? b.x.value - a.x.value : kind === 'VerticalDistance' ? b.y.value - a.y.value
-    : Math.hypot(b.x.value - a.x.value, b.y.value - a.y.value)]);
+  const make = pairMaker(a, b);
 
-  const first = make('Distance');
+  const first = make('length');
   const was = judged();
   view.startDimension([first], true, { a, b, make });
   assert.deepEqual(c.xy, still, 'stating the dimension solved the sketch');

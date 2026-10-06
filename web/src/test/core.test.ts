@@ -1697,36 +1697,48 @@ test('a circle against a curve is a curvature constraint', () => {
   sk.dispose();
 });
 
+/** Points drawn in a front plane of their own: what a run, a rise or a level reads its axes off
+ *  (`docs/ordinate-plan.md`) — a 2D sketch with no plane has none to name. */
+function drawnInFront(sk: Sketch, ...pts: Point[]): Plane {
+  const f = sk.plane([1, 0, 0], [0, 0, 1]);
+  for (const p of pts) p.plane = f;
+  return f;
+}
+
 test('two points can be levelled without a line between them', () => {
   const sk = new Sketch();
   const a = sk.point(0, 0), b = sk.point(10, 4), c = sk.point(3, 9);
+  drawnInFront(sk, a, b, c);
   a.x.fixed = true;
   a.y.fixed = true;
-  sk.add(new C.HorizontalPoints(a, b), new C.VerticalPoints(a, c));
+  // level along the view's `up`, `a horizontal b`, and along its `right`, `a vertical c`; the
+  // core reads the axis off the view the two are drawn in
+  sk.add(new C.Level(a, b, null, 'up'), new C.Level(a, c, null, 'right'));
   assert.ok(solve(sk).success);
   assert.ok(Math.abs(b.y.value - a.y.value) < 1e-9);
   assert.ok(Math.abs(c.x.value - a.x.value) < 1e-9);
   // and it is the same statement either way round, so a duplicate is caught
-  assert.ok(C.sameConstraint(new C.HorizontalPoints(a, b), new C.HorizontalPoints(b, a)));
+  assert.ok(C.sameConstraint(new C.Level(a, b, null, 'up'), new C.Level(b, a, null, 'up')));
   sk.dispose();
 });
 
 test('the run and the rise between two points are dimensions of their own', () => {
   const sk = new Sketch();
   const a = sk.point(0, 0), b = sk.point(10, 4);
+  drawnInFront(sk, a, b);
   a.x.fixed = true;
   a.y.fixed = true;
-  sk.add(new C.HorizontalDistance(a, b, 30), new C.VerticalDistance(a, b, -5));
+  sk.add(new C.Ordinate(a, b, null, 30, 'x'), new C.Ordinate(a, b, null, -5, 'y'));
   assert.ok(solve(sk).success);
   assert.ok(Math.abs(b.x.value - 30) < 1e-9, `x ${b.x.value}`);
   assert.ok(Math.abs(b.y.value + 5) < 1e-9, `y ${b.y.value}`);
   // signed from the first point to the second, so the pair does not commute
-  assert.ok(!C.sameConstraint(new C.HorizontalDistance(a, b, 30),
-                              new C.HorizontalDistance(b, a, 30)));
+  assert.ok(!C.sameConstraint(new C.Ordinate(a, b, null, 30, 'x'),
+                              new C.Ordinate(b, a, null, 30, 'x')));
   // and which of the three a callout states comes from where it is put
-  assert.equal(pairDimension([0, 0], [40, 40], [-10, 50]), 'Distance');
-  assert.equal(pairDimension([0, 0], [40, 40], [20, 60]), 'HorizontalDistance');
-  assert.equal(pairDimension([0, 0], [40, 40], [60, 20]), 'VerticalDistance');
+  assert.equal(pairDimension([0, 0], [40, 40], [-10, 50]), 'length');
+  assert.equal(pairDimension([0, 0], [40, 40], [20, 60]), 'run');
+  assert.equal(pairDimension([0, 0], [40, 40], [60, 20]), 'rise');
   sk.dispose();
 });
 
@@ -1793,12 +1805,12 @@ test('coordinates in a plane cross the ABI and round-trip as ordinary constraint
   const f = sk.plane([1, 0, 0], [0, 0, 1]);
   const p = sk.point(100, -200);
   p.plane = f;
-  sk.add(new C.CoordinateU(p, f, -5), new C.CoordinateV(p, f, 2));
+  // an ordinate from the plane's origin along its own axes: the point's coordinates
+  sk.add(new C.Ordinate(f.origin, p, null, -5, 'x'), new C.Ordinate(f.origin, p, null, 2, 'y'));
   assert.ok(solve(sk).success);
   assert.ok(Math.hypot(p.x.value + 5, p.y.value - 2) < 1e-6, `${p.x.value}, ${p.y.value}`);
   const back = io.loads(io.dumps(sk));
-  assert.ok(back.constraints.some(c => c.typeName === 'CoordinateU'));
-  assert.ok(back.constraints.some(c => c.typeName === 'CoordinateV'));
+  assert.equal(back.constraints.filter(c => c.typeName === 'Ordinate').length, 2);
   assert.ok(allSatisfied(back));
   sk.dispose();
   back.dispose();

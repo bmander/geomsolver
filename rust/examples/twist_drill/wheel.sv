@@ -20,8 +20,7 @@ component GrindingWheel(side: plane, setting: Angle, wheel: group) {
   in side {
     private o := point
     private h := point
-    o distance(0mm, along: u) side
-    o distance(0mm, along: v) side
+    o coincident side.origin
     h distance(-10mm * sin(setting), along: u) side
     h distance(10mm * cos(setting), along: v) side
     private construction hinge := line(o, h)

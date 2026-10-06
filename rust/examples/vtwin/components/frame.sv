@@ -131,7 +131,7 @@ component IntakeManifold(o: point, right: line, left: line, dims: group) {
 component ExhaustPassage(opening: point, boundary: line, dims: group) {
   outlet := point hint(((boundary.p1.x + boundary.p2.x) / 2, opening.y))
   outlet coincident boundary
-  opening distance(0mm, along: y) outlet
+  opening horizontal outlet
   center := line(opening, outlet)
   a := components.parts.At(opening, dx: 0mm, dy: dims.wch / 2)
   b := components.parts.At(outlet, dx: 0mm, dy: dims.wch / 2)

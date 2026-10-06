@@ -15,7 +15,7 @@ component GearCone(p: plane, g: plane, design: group) {
     generator := line(O, M)
   }
   O coincident p.origin
-  M distance(0mm, along: v) p
+  M level(v) p
   in g {
     apex := point hint((0, 0))
     mean := point hint((r, 0))

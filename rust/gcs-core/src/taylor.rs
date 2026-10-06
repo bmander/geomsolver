@@ -224,8 +224,8 @@ fn form(kn: &Kernel) -> Option<Form> {
     use Form::*;
     Some(match kn.name {
         "coincident" | "midpoint" | "horizontal" | "vertical" | "radius" | "equal_radius"
-        | "horizontal_distance" | "vertical_distance" | "annular_distance" | "radius_free"
-        | "horizontal_distance_free" | "vertical_distance_free" | "annular_distance_free" => Affine,
+        | "ordinate_u" | "ordinate_v" | "annular_distance" | "radius_free"
+        | "ordinate_u_free" | "ordinate_v_free" | "annular_distance_free" => Affine,
         "distance" => Jet(distance),
         "distance_free" => Jet(distance_free),
         "parallel" => Jet(parallel),
@@ -248,6 +248,8 @@ fn form(kn: &Kernel) -> Option<Form> {
         "parallel_magnitude" => Jet(parallel_magnitude),
         "parallel_magnitude_free" => Jet(parallel_magnitude_free),
         "arc_length" => Jet(arc_length),
+        "ordinate_line" => Jet(ordinate_line),
+        "ordinate_line_free" => Jet(ordinate_line_free),
         "arc_length_free" => Jet(arc_length_free),
         _ => return None,
     })
@@ -342,6 +344,21 @@ fn point_line_gap(v: &[Jet]) -> Jet {
     let (dx, dy) = (v[4] - v[2], v[5] - v[3]);
     let (wx, wy) = (v[0] - v[2], v[1] - v[3]);
     (dx * wy - dy * wx) / Jet::line_len(dx, dy)
+}
+
+/// How far `q` stands from `p` along the line `a → b`, all four in one view: `ordinate_line`'s
+/// columns (p, q, a, b).
+fn ordinate_gap(v: &[Jet]) -> Jet {
+    let (dx, dy) = (v[6] - v[4], v[7] - v[5]);
+    ((v[2] - v[0]) * dx + (v[3] - v[1]) * dy) / Jet::line_len(dx, dy)
+}
+
+fn ordinate_line(v: &[Jet], k: &[f64], r: &mut [Jet]) {
+    r[0] = ordinate_gap(v).shift(-k[0]);
+}
+
+fn ordinate_line_free(v: &[Jet], k: &[f64], r: &mut [Jet]) {
+    r[0] = ordinate_gap(v) - free_dim(v, k, 8);
 }
 
 fn arc_sweep(v: &[Jet]) -> Jet {

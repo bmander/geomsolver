@@ -98,7 +98,7 @@ b distance(3mm, along: v) std.front
 #[test]
 fn unnamed_component_calls_keep_their_instances_distinct_and_source_intact() {
     let src = "unit mm\nuse std\ncomponent Spoke(f: plane) {\n\
-        in f {\ntip := point hint((5mm, 0mm))\ntip distance(0mm, along: v) f\n\
+        in f {\ntip := point hint((5mm, 0mm))\ntip level(v) f\n\
         f.origin distance(5mm) tip\n}\n}\n\
         preview {\nSpoke(std.front)\nSpoke(std.up)\n}\n";
     let mut e = build(src);
@@ -145,7 +145,7 @@ fn signed_coordinates_follow_a_moving_datum_even_from_the_wrong_quadrant() {
     solved(&mut e.sketch);
     close(e.sketch.point_xy(p), (11.4, 14.8));
     assert_eq!(diagnose::diagnose(&mut e.sketch, Default::default()).dof, 0);
-    let ordinate = |k: CKind| matches!(k, CKind::Ordinate3U | CKind::Ordinate3V);
+    let ordinate = |k: CKind| k == CKind::Ordinate;
     let back = io::loads(&io::dumps(&e.sketch, None)).unwrap();
     assert_eq!(back.constraints.iter().filter(|c| ordinate(c.kind)).count(), 2);
 }
@@ -199,8 +199,8 @@ fn datum_seeds_and_membership_pass_through_nested_instances() {
 #[test]
 fn zero_ordinates_are_regular_and_claims_remain_assertions() {
     let mut e = build(&format!("{AXES}in std.front {{\np := point\n\
-        p distance(0mm, along: u) f.axes\np distance(0mm, along: v) f.axes\n\
-        claim p distance(0mm, along: u) f.axes\n}}\n"));
+        p level(u) f.axes\np level(v) f.axes\n\
+        claim p level(u) f.axes\n}}\n"));
     solved(&mut e.sketch);
     close(e.sketch.point_xy(e.map.ent_named("p").unwrap().i()), (10.0, 20.0));
     assert_eq!(diagnose::diagnose(&mut e.sketch, Default::default()).status, diagnose::State::Well);

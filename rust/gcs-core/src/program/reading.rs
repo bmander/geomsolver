@@ -32,8 +32,8 @@ fn view_points(sk: &Sketch, kind: CKind, args: &[Arg]) -> Option<Vec<usize>> {
         || kind.gauge()
         || matches!(
             kind,
-            CKind::CoordinateU
-                | CKind::CoordinateV
+            CKind::Ordinate
+                | CKind::Level
                 | CKind::Project
                 | CKind::Radius
                 | CKind::EqualRadius
@@ -67,15 +67,22 @@ pub(super) fn in_space(
     kind: CKind,
     args: &[Arg],
 ) -> Result<Option<(CKind, Vec<Arg>, Vec<bool>)>, (bool, String)> {
-    // an ordinate along a plane's axis is the point's own coordinate where it is drawn in that
-    // plane, and how far it stands along the axis in space where it is not
-    if matches!(kind, CKind::CoordinateU | CKind::CoordinateV) {
-        let (p, plane) = (args[0].ent().i(), args[1].ent().i());
-        if sk.plane_of(p) == Some(plane) {
-            return Ok(None);
+    // an ordinate is one statement in a view and in space — its form says which kernel reads it
+    // (`constraints::OrdinateForm`) — but a direction said as a view's own word is an axis of
+    // the view both points are drawn in, and across views there is none
+    if kind.word_slot().is_some() {
+        let word = crate::constraints::ordinate_word(kind, args);
+        if crate::constraints::Toward::of(word).is_some_and(|t| !t.of_plane()) {
+            let (p, q) = (args[0].ent().i(), args[1].ent().i());
+            if crate::constraints::shared_view(sk, p, q).is_none() {
+                return Err((false, format!(
+                    "a view's own direction (`{word}`) has no meaning in space, and these points \
+                     are not drawn in one view: name the direction, an axis such as `std.z` or a \
+                     line"
+                )));
+            }
         }
-        let k3 = if kind == CKind::CoordinateU { CKind::Ordinate3U } else { CKind::Ordinate3V };
-        return Ok(Some((k3, args.to_vec(), vec![false; args.len()])));
+        return Ok(None);
     }
     let Some(pts) = view_points(sk, kind, args) else { return Ok(None) };
     // where each point is read: its plane, or `None` for a point in space (a document gives

@@ -9,6 +9,7 @@ import {
 } from '../core/model.js';
 import { view } from './shell.js';
 import { ToolbarButton, toast } from './ui.js';
+import type { PairDimension } from '../core/callout.js';
 import type { DimAlt } from './view.js';
 
 /* constraints whose arguments are just entities: (label, class, shortcut).  What each wants
@@ -22,18 +23,25 @@ const SIMPLE: Simple[] = [
 ];
 /* Level and plumb read the selection too.  A pair of points says exactly what a line through
  * them would — that the segment between them is level — and wanting that without drawing the
- * line is the common case: two corners of a shape that share no edge. */
+ * line is the common case: two corners of a shape that share no edge.  Between points it is
+ * `level` along the view's `up` or `right`, which the source spells `a horizontal b`. */
 const LEVEL: Simple[] = [
   ['Horizontal', C.Horizontal],
-  ['Horizontal', C.HorizontalPoints],
   ['Vertical', C.Vertical],
-  ['Vertical', C.VerticalPoints],
 ];
+const LEVEL_WORD = { Horizontal: 'up', Vertical: 'right' } as const;
 
 function cLevel(label: 'Horizontal' | 'Vertical'): void {
   const hit = LEVEL.find(([l, cls]) => l === label && fits(cls));
-  if (!need(!!hit, 'one or more lines, or two points')) return;
-  applySimple(hit as Simple);
+  if (hit) {
+    applySimple(hit);
+    return;
+  }
+  const s = sel();
+  const pair = s.pts.length === 2 && BINS.every((b) => b === 'pts' || s[b].length === 0);
+  if (!need(pair, 'one or more lines, or two points')) return;
+  // the direction is the word's: the core reads the axis off the view the two are drawn in
+  view.addConstraints(C.build('Level', [s.pts[0], s.pts[1], null, LEVEL_WORD[label]]));
 }
 
 /* One "these touch" button.  Which incidence it means is the selection's business, not the
@@ -96,8 +104,10 @@ function sel(): Sel {
 }
 
 /** The bin of the selection a spec slot of this kind is filled from — `null` for a slot that is
- *  not an entity (a number, a selector, a contact's own parameter, which the core seeds). */
+ *  not an entity (a number, a selector, a contact's own parameter, which the core seeds), and
+ *  for an ordinate's direction, which a word names and the core reads off the view. */
 function binOf(kind: string): Bin | null {
+  if (kind === 'along') return null;
   if (kind === 'point') return 'pts';
   if (kind === 'line') return 'lines';
   if (kind === 'spline') return 'splines';
@@ -172,12 +182,13 @@ function cCoincident(): void {
 /** One of the three dimensions between two points, stated at what the sketch measures now.
  *  The pair is ordered so the number reads positive: a run or a rise is signed from the first
  *  point to the second, so which of the two comes first is what its sign says. */
-function pairDim(kind: string, a: Point, b: Point): Constraint {
-  // a run measures x and a rise measures y; a length has no axis of its own, and no sign
-  const axis = kind === 'HorizontalDistance' ? 0 : kind === 'VerticalDistance' ? 1 : null;
-  const [p, q] = axis !== null && b.xy[axis] < a.xy[axis] ? [b, a] : [a, b];
-  const v = axis !== null ? q.xy[axis] - p.xy[axis] : distanceBetween(p, q);
-  return C.build(kind, [p, q, v]);
+function pairDim(kind: PairDimension, a: Point, b: Point): Constraint {
+  // a run measures x and a rise measures y — an ordinate along the view's axis, the word naming
+  // it; a length has no axis of its own, and no sign
+  const axis = kind === 'run' ? 0 : kind === 'rise' ? 1 : null;
+  if (axis === null) return C.build('Distance', [a, b, distanceBetween(a, b)]);
+  const [p, q] = b.xy[axis] < a.xy[axis] ? [b, a] : [a, b];
+  return C.build('Ordinate', [p, q, null, q.xy[axis] - p.xy[axis], axis === 0 ? 'x' : 'y']);
 }
 
 /** Put a dimension on the selection — the one path all six dimension buttons take.
@@ -231,7 +242,7 @@ function cDimension(): void {
   if (!need(pts.length === 2, 'two points, one line, a point and a line, two lines, '
                             + 'or one or more circles/arcs')) return;
   const [a, b] = pts;
-  dimension([pairDim('Distance', a, b)], { a, b, make: (k: string) => pairDim(k, a, b) });
+  dimension([pairDim('length', a, b)], { a, b, make: (k: PairDimension) => pairDim(k, a, b) });
 }
 
 /** Two parallel lines: dimension the gap between them.  It does not make them parallel — the

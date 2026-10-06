@@ -19,7 +19,7 @@ in std.top {
   stock := solid(face(rim), depth: 5mm)
   private hole_center := point
   hole_center distance(12mm, along: u) std.top
-  hole_center distance(0mm, along: v) std.top
+  hole_center level(v) std.top
   hole := radius(2mm) circle(center: hole_center)
   construction tool := solid(face(hole), through: body)
 }

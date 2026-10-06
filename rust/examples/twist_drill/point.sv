@@ -15,14 +15,14 @@ component PointCone(side: plane, top: Length, cone: Angle, tilt: Angle, height: 
   au parallel side.u
   av parallel side.v
   axial := plane(u: au, v: av)
-  axial.origin distance(0mm, along: u) side
-  axial.origin distance(0mm, along: v) side
+  axial.origin level(u) side
+  axial.origin level(v) side
   axial.origin distance(offset, along: n) side
   in axial {
     // the side datum's u runs down the drill's axis and its v along y
     private apex := point
     apex distance(-(top + height), along: u) axial
-    apex distance(0mm, along: v) axial
+    apex level(v) axial
     private foot := point
     foot distance(-(top + height) + reach * cos(tilt), along: u) axial
     foot distance(reach * sin(tilt), along: v) axial

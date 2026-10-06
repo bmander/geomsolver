@@ -459,6 +459,8 @@ fn fixture(kind: CKind) -> (Sketch, Constraint) {
             SpecKind::Axis | SpecKind::Direction if i == 0 => Arg::Ent(EntRef::new(EntKind::Axis, ra)),
             SpecKind::Direction if kind == CKind::Parallel3 => Arg::Ent(EntRef::line(l2)),
             SpecKind::Axis | SpecKind::Direction => Arg::Ent(EntRef::new(EntKind::Axis, rb)),
+            // an ordinate along a line drawn where its two points are
+            SpecKind::Along => Arg::Ent(EntRef::line(l2)),
             // a constraint relates *distinct* entities, so the second of a pair is a different one
             SpecKind::Point if used_point => Arg::Ent(EntRef::point(q)),
             SpecKind::Point => {

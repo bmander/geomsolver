@@ -64,8 +64,8 @@ component EngineBlock(end: plane, side: plane, top: plane, o: point, o_s: point,
     cap := arc(center: o, start: c_l, end: c_r) hint(r: dims.rmb + dims.capd)
     radius(dims.rmb + dims.capd) cap
     parting := line(c_l, c_r)
-    o distance(0, along: y) c_l
-    o distance(0, along: y) c_r
+    o horizontal c_l
+    o horizontal c_r
     // the sump
     sh_l := engine.parts.At(o, dx: -dims.kw, dy: dims.rail - 30mm)
     sh_r := engine.parts.At(o, dx: dims.kw, dy: dims.rail - 30mm)
@@ -150,7 +150,7 @@ component EngineBlock(end: plane, side: plane, top: plane, o: point, o_s: point,
     vertical e4
     repeat 4 as i {
       c := point hint((o_t.x + dims.front + 25mm + dims.P / 2 + i * dims.P, o_t.y))
-      o_t distance(0, along: y) c
+      o_t horizontal c
       bore := circle(center: c) hint(r: dims.D / 2)
       radius(dims.D / 2) bore
     }

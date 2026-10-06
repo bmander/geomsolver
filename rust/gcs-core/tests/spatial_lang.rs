@@ -2,7 +2,7 @@
 //! is solved for, its seeds, its refusals, and `project` between a stated and a solved plane;
 //! the words across planes and in space; the library's spheres; and the hypoid's pitch cones
 //! laid out by construction.
-use gcs_core::constraints::{Arg, CKind, Constraint};
+use gcs_core::constraints::{Arg, CKind, Constraint, OrdinateForm};
 use gcs_core::diagnose::{diagnose, view_freedoms, DiagnoseOptions};
 use gcs_core::edit;
 use gcs_core::io;
@@ -31,7 +31,7 @@ side := plane(u: t, v: std.y)
 side.origin coincident std.front
 in side {
   pax := line(hint((0, 10)), hint((60, 12)))
-  pax.p1 distance(0, along: u) side
+  pax.p1 level(u) side
   pax.p2 distance(60, along: u) side
   pax.p1 horizontal pax.p2
 }
@@ -443,10 +443,15 @@ q := plane(u: std.x, v: std.y) hint(origin: (0, 0, 20))
 
 /// The kind one statement over `TWO_VIEWS` settles to.
 fn settles(stmt: &str) -> CKind {
+    settles_as(stmt).0
+}
+
+/// The same, with the form an ordinate takes (`docs/ordinate-plan.md`).
+fn settles_as(stmt: &str) -> (CKind, Option<OrdinateForm>) {
     let e = read(&format!("{TWO_VIEWS}{stmt}\n"));
     let cs = e.sketch.user_constraints();
     assert_eq!(cs.len(), 1, "{stmt}: {:?}", cs.iter().map(|c| c.kind).collect::<Vec<_>>());
-    cs[0].kind
+    (cs[0].kind, cs[0].form())
 }
 
 /// Every word that has a meaning in space means it across planes, and the same word within one
@@ -473,11 +478,6 @@ fn each_word_across_planes_is_the_relation_in_space() {
         ("a coincident std.side", CKind::PointOnPlane),
         ("s coincident std.side", CKind::PointOnPlane),
         ("la coincident std.side", CKind::LineOnPlane),
-        ("a distance(5, along: n) std.side", CKind::PointPlaneDistance),
-        // an ordinate is a coordinate in its own plane, and how far along the axis in another
-        ("b distance(5, along: u) std.side", CKind::CoordinateU),
-        ("a distance(5, along: u) std.side", CKind::Ordinate3U),
-        ("s distance(5, along: v) std.side", CKind::Ordinate3V),
         // an axis and a plane
         ("s coincident r", CKind::PointOnAxis),
         ("r coincident q", CKind::AxisOnPlane),
@@ -492,6 +492,19 @@ fn each_word_across_planes_is_the_relation_in_space() {
         ("la angle(60deg) la", CKind::Angle),
     ] {
         assert_eq!(settles(stmt), kind, "{stmt}");
+    }
+    // an ordinate is one kind in or out of a plane: a coordinate in its own plane, how far along
+    // the axis in another, along the normal in space
+    use OrdinateForm as F;
+    for (stmt, form) in [
+        ("a distance(5, along: n) std.side", F::FrameN),
+        ("b distance(5, along: u) std.side", F::CoordU),
+        ("a distance(5, along: u) std.side", F::FrameU),
+        ("s distance(5, along: v) std.side", F::FrameV),
+        // an axis written outright is read along itself
+        ("a distance(5, along: std.y) b", F::Space),
+    ] {
+        assert_eq!(settles_as(stmt), (CKind::Ordinate, Some(form)), "{stmt}");
     }
 }
 
@@ -511,7 +524,10 @@ fn a_relation_in_space_is_described_by_its_word() {
 fn a_planes_origin_is_drawn_in_it() {
     assert_eq!(settles("std.side.origin distance(15) b"), CKind::Distance);
     assert_eq!(settles("std.front.origin distance(15) b"), CKind::Distance3);
-    assert_eq!(settles("std.origin distance(10, along: x) a"), CKind::HorizontalDistance);
+    assert_eq!(
+        settles_as("std.origin distance(10, along: x) a"),
+        (CKind::Ordinate, Some(OrdinateForm::PageU))
+    );
 }
 
 fn refused_as(stmt: &str, code: &str, needle: &str, at: &str) {

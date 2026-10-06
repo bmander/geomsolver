@@ -3,7 +3,7 @@
 use super::relations::{ent_arg, scalar_arg};
 use super::resolve::{follow, Resolver};
 use super::{Code, Diag, Severity};
-use crate::constraints::{Arg as CArg, CKind, Constraint, SpecKind};
+use crate::constraints::{Arg as CArg, CKind, Constraint, OrdinateForm, SpecKind};
 use crate::ir::{Decl, Operation as StmtKind, Statement as Stmt};
 use crate::model::{EntKind, EntRef, Sketch};
 use crate::syntax::{Arg, Program, Ref, Span};
@@ -373,15 +373,64 @@ fn compile_trace(
             return Err((
                 st.span,
                 format!(
-                    "`{}` relates its operands in space, and a traced component places its points                      in one plane",
+                    "`{}` relates its operands in space, and a traced component places its points \
+                     in one plane",
                     r.kind.operator().map_or("a relation", |(w, _)| w)
                 ),
             ));
         }
+        // **an ordinate in a trace** is read in the block's one plane: the run and the rise by
+        // their word, a drawn line of the block by itself, and a plane's own `u`/`v` as the
+        // point's own coordinate in it — the point is drawn there, the block having no other
+        let ord = match r.kind.word_slot() {
+            Some(_) => match trace_ordinate(&sk, &scope, &r, st.span)? {
+                TraceOrdinate::Coordinate(p, axis) => {
+                    let col = sk.point_params(p)[axis];
+                    let Some(&col) = slot.get(&col) else {
+                        return Err((st.span, "trace lowering lost a column".to_string()));
+                    };
+                    match r.args.get(3).and_then(|a| a.as_ref()) {
+                        // the coordinate's number over the swept formal: `radius`'s free twin
+                        // over the one column, as any dimension's is
+                        Some(Arg::Dim { text, span }) if r.kind == CKind::Ordinate => {
+                            let cols = vec![col as u32, (n_outer + n_q + w.len()) as u32];
+                            w.push(tape(text, *span)?);
+                            let units = crate::expr::to_arg_units(SpecKind::Length, 1.0);
+                            let kid = crate::kernels::K::RadiusFree as usize;
+                            rows.push(Row { kid, cols, consts: vec![units, 0.0] });
+                        }
+                        _ if r.kind == CKind::Level => rows.push(Row {
+                            kid: crate::kernels::K::Radius as usize,
+                            cols: vec![col as u32],
+                            consts: vec![0.0],
+                        }),
+                        _ => {
+                            return Err((st.span, "`d` must be stated: a trace block infers nothing"
+                                .to_string()))
+                        }
+                    }
+                    continue;
+                }
+                TraceOrdinate::Form(f) => Some(f),
+            },
+            None => None,
+        };
         let mut cargs: Vec<CArg> = Vec::with_capacity(spec.len());
         let mut dim: Option<(SpecKind, Tape)> = None;
         for (i, (name, kind)) in spec.iter().enumerate() {
             let given = r.args.get(i).and_then(|a| a.as_ref());
+            // an ordinate's form is the block's reading of it, and a direction a word named is
+            // read by that form, so its slot holds nothing
+            if let Some(f) = ord {
+                if r.kind.form_slot() == Some(i) {
+                    cargs.push(CArg::Int(f as i64));
+                    continue;
+                }
+                if i == 2 && given.is_none() {
+                    cargs.push(CArg::Num(0.0));
+                    continue;
+                }
+            }
             match (kind, given) {
                 (k, Some(Arg::Ref(rf))) if k.is_entity() => {
                     let found = scope.get(&rf.root.text).copied();
@@ -422,7 +471,13 @@ fn compile_trace(
         }
         let kid = match dim {
             Some((k, t)) => {
-                let twin = r.kind.free_kernel().ok_or((
+                // an ordinate's twin is its form's
+                let form_twin = ord.map(|f| match f {
+                    OrdinateForm::PageU => crate::kernels::K::OrdinateUFree,
+                    OrdinateForm::PageV => crate::kernels::K::OrdinateVFree,
+                    _ => crate::kernels::K::OrdinateLineFree,
+                });
+                let twin = form_twin.or(r.kind.free_kernel()).ok_or((
                     st.span,
                     format!("{} cannot be stated over `u` here", crate::model::article(&crate::syntax::snake(r.kind.name()))),
                 ))?;
@@ -430,11 +485,13 @@ fn compile_trace(
                 cols.push((n_outer + n_q + w.len()) as u32);
                 w.push(t);
                 // the tape works in the units a person writes (degrees); (m, c) are the
-                // conversion to what the kernel reads, the same seam `expr::set_dimension` is
+                // conversion to what the kernel reads, the same seam `expr::set_dimension` is,
+                // turned by a word that says which way as a stated number is
+                let sign = c.side().unwrap_or(1.0);
                 rows.push(Row {
                     kid: twin as usize,
                     cols,
-                    consts: vec![crate::expr::to_arg_units(k, 1.0), 0.0],
+                    consts: vec![sign * crate::expr::to_arg_units(k, 1.0), 0.0],
                 });
                 continue;
             }
@@ -458,6 +515,53 @@ fn compile_trace(
     let locus =
         Locus::new(n_outer, n_theta, n_q, traced, w, seeds, rows, preds).map_err(|m| (span, m))?;
     Ok((locus, pose_of))
+}
+
+/// How a trace block reads an ordinate (`compile_trace`).
+enum TraceOrdinate {
+    /// Point `.0`'s own coordinate `.1` (0 its x, 1 its y) in the plane it is measured against.
+    Coordinate(usize, usize),
+    /// Between two of the block's points, by a form of its one plane.
+    Form(OrdinateForm),
+}
+
+/// An ordinate or a level in a trace block, read in the block's one plane: a page word between
+/// two points is the run or the rise, a line the block draws is a direction in it, a plane's `u`
+/// or `v` is the point's own coordinate; any other direction, and a plane's normal, are in space.
+fn trace_ordinate(
+    sk: &Sketch,
+    scope: &BTreeMap<String, EntRef>,
+    r: &crate::ir::ResolvedRelation<'_>,
+    span: Span,
+) -> Result<TraceOrdinate, (Span, String)> {
+    use crate::constraints::Toward;
+    let ent = |i: usize| -> Option<EntRef> {
+        let Some(Arg::Ref(rf)) = r.args.get(i).and_then(|a| a.as_ref()) else { return None };
+        scope.get(&rf.root.text).copied().and_then(|e| follow(sk, e, &rf.path).ok())
+    };
+    let ws = r.kind.word_slot().expect("an ordinate has a word slot");
+    let word = match r.args.get(ws).and_then(|a| a.as_ref()) {
+        Some(Arg::Word(w)) => Toward::of(w),
+        _ => None,
+    };
+    let in_space = || {
+        let w = r.kind.operator().map_or("an ordinate", |(w, _)| w);
+        (span, format!("`{w}` relates its operands in space, and a traced component places its \
+            points in one plane"))
+    };
+    let plane = ent(1).filter(|e| e.kind == EntKind::Plane);
+    Ok(match (plane, word, ent(2)) {
+        (Some(_), Some(Toward::PlaneU | Toward::PlaneV), _) => {
+            let p = ent(0).filter(|e| e.kind == EntKind::Point).ok_or_else(in_space)?;
+            TraceOrdinate::Coordinate(p.i(), usize::from(word == Some(Toward::PlaneV)))
+        }
+        (None, Some(Toward::PageU), _) => TraceOrdinate::Form(OrdinateForm::PageU),
+        (None, Some(Toward::PageV), _) => TraceOrdinate::Form(OrdinateForm::PageV),
+        (None, None, Some(t)) if t.kind == EntKind::Line => {
+            TraceOrdinate::Form(OrdinateForm::InView)
+        }
+        _ => return Err(in_space()),
+    })
 }
 
 /// A seed named geometrically, compiled to the tapes a written pair would be: the place a point

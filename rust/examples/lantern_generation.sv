@@ -20,11 +20,11 @@ in std.front {
   fix((0, 1)) spindle.p2
   private pitch := point hint((16, 0))
   pitch distance(wheel_pitch, along: u) std.front
-  pitch distance(0mm, along: v) std.front
+  pitch level(v) std.front
   private hub := point hint((24, 0))
   private hub_up := point hint((24, 5))
   hub distance(wheel_pitch + pinion_pitch, along: u) std.front
-  hub distance(0mm, along: v) std.front
+  hub level(v) std.front
   hub_up distance(wheel_pitch + pinion_pitch, along: u) std.front
   hub_up distance(5mm, along: v) std.front
   construction centerline pinion_axis := line(hub, hub_up)

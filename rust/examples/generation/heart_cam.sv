@@ -44,9 +44,9 @@ in std.front {
   c_rise := point hint((25, 0))
   c_fall := point hint((55, 0))
   o distance(base, along: x) c_rise
-  o distance(0, along: y) c_rise
+  o horizontal c_rise
   o distance(base + 2 * lift, along: x) c_fall
-  o distance(0, along: y) c_fall
+  o horizontal c_fall
   roller := circle(center: c_rise) hint(r: 6)
   roller_f := circle(center: c_fall) hint(r: 6)
   radius(rr) roller

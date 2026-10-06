@@ -14,6 +14,7 @@ pub use highlight::{highlight, Tint};
 pub use names::{camel, entity_name, hidden, kind_initial, num, one_of, snake};
 pub use parser::{parse, parse_from, parse_legacy, parse_with_limits, ParseLimits};
 pub use print::{operator_text, render_flat, write_stmt_to, PrintError};
+pub(crate) use print::sel_text;
 pub use source::{line_col, Module, Name, Program, Span, StmtId, SynErr, Use, MAX_STMTS, MAX_TEXT};
 pub use words::{equal_kind, is_name};
 
@@ -1136,11 +1137,16 @@ impl Written {
         }
         // and a *selector* naming nothing was dropped in silence, which is the same mistake one
         // layer down (issue #48, item 4): `a distance(80, sied: x) b` settled as a plain distance
-        // and the argument went nowhere.  `along` is the one key with no slot — it chose the kind
-        // and is gone — so it is named here rather than looked for in the spec.
+        // and the argument went nowhere.  A level's direction stands in its parentheses
+        // unlabelled, so `along:` there is a second spelling and refused as one.
         for a in &self.args {
             let OpArg::Named(key, _) = a else { continue };
-            if key.text != "along" && !spec.iter().any(|(n, _)| *n == key.text) {
+            if kind == CKind::Level && key.text == "along" {
+                let m = "`level` takes its direction in its parentheses: `a level(up) b`, \
+                         `a level(std.z) b`".to_string();
+                return Err((key.span, m));
+            }
+            if !spec.iter().any(|(n, _)| *n == key.text) {
                 let word = &self.word.text;
                 let m = format!("`{word}` takes no `{}`", key.text);
                 return Err((key.span, m));
@@ -1204,7 +1210,32 @@ impl Written {
                 })
             };
         }
+        if let Some(w) = kind.word_slot() {
+            self.direction(w, &mut out);
+        }
         Ok(out)
+    }
+
+    /// **An ordinate's direction, where it was written** (`docs/ordinate-plan.md`): `along:` an
+    /// ordinate is measured on and the parentheses of `level` hold a word of
+    /// `constraints::ALONG` or a reference.  The word goes to the kind's word slot — the core
+    /// infers the axis it names — and a reference to its direction slot; `horizontal` and
+    /// `vertical` between points say `up` and `right` (`constraints::level_alias`).
+    fn direction(&self, w: usize, out: &mut [Option<Arg>]) {
+        let t = 2;
+        match out[w].take() {
+            Some(Arg::Ref(r)) => out[t] = Some(Arg::Ref(r)),
+            other => out[w] = other,
+        }
+        if let Some(Arg::Ref(r)) = &out[t] {
+            if let Some(v) = r.direction_word().map(str::to_string) {
+                out[t] = None;
+                out[w] = Some(Arg::Word(v));
+            }
+        }
+        if let Some(v) = crate::constraints::level_alias(&self.word.text) {
+            out[w] = Some(Arg::Word(v.to_string()));
+        }
     }
 }
 
@@ -1319,6 +1350,13 @@ pub struct Ref {
 }
 
 impl Ref {
+    /// The direction word this reference is, where it is a bare one of `constraints::ALONG` —
+    /// `level(up)`'s `up`, which names a direction and no entity.
+    pub fn direction_word(&self) -> Option<&str> {
+        let w = self.root.text.as_str();
+        (self.path.is_empty() && crate::constraints::Toward::of(w).is_some()).then_some(w)
+    }
+
     pub fn new(name: impl Into<String>) -> Ref {
         Ref { root: Name::new(name), path: Vec::new(), span: Span::default() }
     }

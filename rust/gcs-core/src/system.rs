@@ -884,7 +884,7 @@ impl System {
             let ps = c.params(sk);
             let v = c.local_values(sk);
             let j = c.jacobian(sk, &v);
-            let kn = crate::kernels::kernel(c.kind.kernel());
+            let kn = crate::kernels::kernel(c.kernel());
             let inv = 1.0 / self.extent.max(1.0).dpowi(kn.degree as i32 - 1);
             for t in 0..kn.n_res {
                 for (k, &p) in ps.iter().enumerate() {

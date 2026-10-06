@@ -11,7 +11,7 @@ in std.front {
   fix((0, 1)) spindle.p2
   private center := point
   center distance(3mm, along: u) std.front
-  center distance(0mm, along: v) std.front
+  center level(v) std.front
   private bottom := point hint((3, -1))
   private top := point hint((3, 1))
   private diameter := line(bottom, top)

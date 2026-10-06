@@ -19,7 +19,7 @@ in std.front {
   construction tool := solid(face(ring), about: taxis)
   private hub := point hint((2, 0))
   hub distance(2mm, along: u) std.front
-  hub distance(0mm, along: v) std.front
+  hub level(v) std.front
   private hub_up := point hint((2, 5))
   hub_up distance(2mm, along: u) std.front
   hub_up distance(5mm, along: v) std.front
@@ -33,7 +33,7 @@ fix(origin == (0, 0, 0)) flat
 in flat {
   private k0 := point hint((0, 0.7071))
   private k1 := point hint((5, 0.7071))
-  k0 distance(0mm, along: u) flat
+  k0 level(u) flat
   k0 distance(0.7071mm, along: v) flat
   k1 distance(5mm, along: u) flat
   k1 distance(0.7071mm, along: v) flat

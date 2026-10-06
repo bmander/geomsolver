@@ -356,6 +356,9 @@ impl EntRef {
     pub fn plane(idx: usize) -> EntRef {
         EntRef::new(EntKind::Plane, idx)
     }
+    pub fn axis(idx: usize) -> EntRef {
+        EntRef::new(EntKind::Axis, idx)
+    }
     pub fn face(idx: usize) -> EntRef {
         EntRef::new(EntKind::Face, idx)
     }

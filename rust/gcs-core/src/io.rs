@@ -539,6 +539,12 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
                 args.push(kind.default_arg(i));
             }
         }
+        // and an ordinate's form is never a slot a document need write: the core reads it
+        if kind.form_slot().is_some() {
+            for i in raw.len()..spec.len() {
+                args.push(kind.default_arg(i));
+            }
+        }
         seed_omitted(&sk, kind, &mut args, |i| omitted(raw.get(i)))?;
         // `add_quiet`, because the evaluation below is the document's: adding one at a time
         // would parse every expression again for each

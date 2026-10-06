@@ -76,13 +76,13 @@ component WebSide(o: point, x0: Length, x1: Length, top: point, bottom: point) {
   d := point hint((o.x + x0, bottom.y))
   (ab := line(a, b)) -> (bc := line(b, c)) -> (cd := line(c, d)) -> (da := line(d, a)) -> close
   o distance(x0, along: x) a
-  top distance(0, along: y) a
+  top horizontal a
   o distance(x1, along: x) b
-  top distance(0, along: y) b
+  top horizontal b
   o distance(x1, along: x) c
-  bottom distance(0, along: y) c
+  bottom horizontal c
   o distance(x0, along: x) d
-  bottom distance(0, along: y) d
+  bottom horizontal d
 }
 
 component Crankshaft(end: plane, side: plane, o: point, ax: line, o_s: point,

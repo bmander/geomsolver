@@ -235,10 +235,12 @@ pub(crate) fn place(sk: &mut Sketch) {
             | CKind::DragSeen) {
             continue;
         }
-        // a point measured in a plane — an ordinate, a height off it — is the drawing placed by
-        // the plane, not the plane by the drawing, unless the point is where a plane stands
-        if matches!(c.kind, CKind::Ordinate3U | CKind::Ordinate3V | CKind::PointPlaneDistance) {
-            let p = c.args[0].ent().i();
+        // a point measured from a plane's origin in space — an ordinate, a height off it — is the
+        // drawing placed by the plane, not the plane by the drawing, unless the point is where a
+        // plane stands
+        let from_origin = || sk.plane_of_origin(c.args[0].ent().i()).is_some();
+        if c.form().is_some_and(|f| f.in_space()) && from_origin() {
+            let p = c.args[1].ent().i();
             if sk.plane_of_origin(p).is_none() && !sk.point_held(p) {
                 continue;
             }

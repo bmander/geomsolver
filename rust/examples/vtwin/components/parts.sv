@@ -36,13 +36,13 @@ component Slab(o: point, x0: Length, x1: Length, top: point, bottom: point) {
   d := point hint((o.x + x0, top.y))
   (ab := line(a, b)) -> (bc := line(b, c)) -> (cd := line(c, d)) -> (da := line(d, a)) -> close
   o distance(x0, along: x) a
-  bottom distance(0, along: y) a
+  bottom horizontal a
   o distance(x1, along: x) b
-  bottom distance(0, along: y) b
+  bottom horizontal b
   o distance(x1, along: x) c
-  top distance(0, along: y) c
+  top horizontal c
   o distance(x0, along: x) d
-  top distance(0, along: y) d
+  top horizontal d
 }
 
 // The same the other way up: a rectangle between `y0` and `y1` whose left and right are the
@@ -53,20 +53,20 @@ component Wide(o: point, y0: Length, y1: Length, left: point, right: point) {
   c := point hint((right.x, o.y + y1))
   d := point hint((left.x, o.y + y1))
   (ab := line(a, b)) -> (bc := line(b, c)) -> (cd := line(c, d)) -> (da := line(d, a)) -> close
-  left distance(0, along: x) a
+  left vertical a
   o distance(y0, along: y) a
-  right distance(0, along: x) b
+  right vertical b
   o distance(y0, along: y) b
-  right distance(0, along: x) c
+  right vertical c
   o distance(y1, along: y) c
-  left distance(0, along: x) d
+  left vertical d
   o distance(y1, along: y) d
 }
 
 // A part sheet's datum: the part's axis up the page through `o`.
 component Axes(o: point) {
   up := point hint((o.x, o.y + 40mm))
-  o distance(0, along: x) up
+  o vertical up
   o distance(40, along: y) up
   ax := line(o, up)
   f := std.Turned(o, up)

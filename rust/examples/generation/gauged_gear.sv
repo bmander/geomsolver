@@ -54,7 +54,7 @@ fix((0, 0)) o
 radius(rp + m) rim
 radius(bore_r) bore_c
 o distance(rp, along: x) s0
-o distance(0, along: y) s0
+o horizontal s0
 s0 distance(10) s1
 o distance(rp + 3 * m) e
 blank := solid(face(rim), depth: width)

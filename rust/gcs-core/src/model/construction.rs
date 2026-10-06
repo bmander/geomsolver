@@ -523,6 +523,16 @@ impl Sketch {
             let solved = reads.iter().any(|&v| !self.plane_fixed(v));
             c.kind = c.kind.attitude_twin(solved);
         }
+        // an ordinate's form is its operands' (`constraints::ordinate_form`), read here and only
+        // here, so whatever a caller handed in — a document, a paste, a binding's record — the
+        // kernel is the one the points and the direction give it now
+        if let Some(i) = c.kind.form_slot() {
+            if let (Arg::Ent(p), Arg::Ent(q), Arg::Ent(t)) = (&c.args[0], &c.args[1], &c.args[2]) {
+                let word = crate::constraints::ordinate_word(c.kind, &c.args);
+                let f = crate::constraints::ordinate_form(self, p.i(), q.i(), *t, word);
+                c.args[i] = Arg::Int(f as i64);
+            }
+        }
         if c.id == 0 {
             self.next_cid += 1;
             c.id = self.next_cid;

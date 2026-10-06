@@ -21,14 +21,13 @@ clearance := configuration.clearance
 // from it, an apex `R` beyond that on the line of centres.
 in std.top {
   private centre := point
-  centre distance(0mm, along: u) std.top
-  centre distance(0mm, along: v) std.top
+  centre coincident std.top.origin
   private hub := point
-  hub distance(e, along: u) std.top
-  hub distance(0mm, along: v) std.top
+  centre distance(e, along: x) hub
+  centre horizontal hub
   apex := point
-  apex distance(e + R, along: u) std.top
-  apex distance(0mm, along: v) std.top
+  hub distance(R, along: x) apex
+  hub horizontal apex
 }
 
 // The shaft's turn seen from the housing, backwards, and the rotor's turn about its centre

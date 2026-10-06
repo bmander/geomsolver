@@ -33,14 +33,14 @@ component EndChamfer(apex: point, rim: point, rim_in: point, cone_line: line, ti
   // the corner toward its `foot` on the cone line.
   private foot := point hint(at: cone_line.p2)
   private mark := point hint(at: corner, toward: foot, by: 0.5)
-  private level := point hint(at: tip.q)
+  private beneath := point hint(at: tip.q)
   foot coincident cone_line
   private drop := line(corner, foot)
   drop perpendicular cone_line
   private down := line(corner, mark)
   down angle(0deg) drop
   distance(size) down
-  private below := line(mark, level)
+  private below := line(mark, beneath)
   below parallel tip_line
   distance(size) below
   down_end := point hint(at: mark)

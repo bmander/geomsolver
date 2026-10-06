@@ -491,9 +491,21 @@ fn rewrite(
                 for r in w.ops.iter_mut() {
                     fix(r, bad);
                 }
+                // `level(up)`: a direction word in level's parentheses names nothing to rescope
+                let level = w.word.text == "level";
                 for a in w.args.iter_mut() {
-                    if let crate::syntax::OpArg::Ent(r) = a {
-                        fix(r, bad);
+                    match a {
+                        crate::syntax::OpArg::Ent(r) if level && r.direction_word().is_some() => {}
+                        crate::syntax::OpArg::Ent(r) => fix(r, bad),
+                        // a direction an ordinate is measured along, `along: f.axis`; a name that
+                        // is nothing is a direction word misspelt, which the elaborator says
+                        // what `along:` takes about
+                        crate::syntax::OpArg::Named(_, crate::syntax::Arg::Ref(r)) => {
+                            if lookup(r, sc, names, alias, units).is_some() {
+                                fix(r, bad)
+                            }
+                        }
+                        _ => {}
                     }
                 }
             }

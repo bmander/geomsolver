@@ -112,7 +112,7 @@ component CylinderHead(end: plane, side: plane, top: plane, o: point, o_s: point
     repeat 5 as j {
       bc := point hint((o_s.x + dims.front + 25mm + j * dims.P, o_s.y + dims.camh + dims.gasket))
       o_s distance(dims.front + 25mm + j * dims.P, along: x) bc
-      cam distance(0, along: y) bc
+      cam horizontal bc
       bearing := CamBearing(bc, dims: dims)
     }
     // every lobe at its own cylinder's angle: the firing order 1-3-4-2 puts cylinder 3 a half
@@ -132,7 +132,7 @@ component CylinderHead(end: plane, side: plane, top: plane, o: point, o_s: point
       bot_e := max(dims.rb, dims.rn - ny_e)
       lc := point hint((o_s.x + dims.front + 25mm + dims.P / 2 + i * dims.P, o_s.y + dims.camh + dims.gasket))
       o_s distance(dims.front + 25mm + dims.P / 2 + i * dims.P, along: x) lc
-      cam distance(0, along: y) lc
+      cam horizontal lc
       lobe_i := engine.parts.Box(lc, x0: 14mm, y0: -bot_i, x1: 26mm, y1: top_i)
       lobe_e := engine.parts.Box(lc, x0: -26mm, y0: -bot_e, x1: -14mm, y1: top_e)
     }
@@ -187,15 +187,15 @@ component CylinderHead(end: plane, side: plane, top: plane, o: point, o_s: point
       be := point hint((o_t.x + dims.front + 25mm + j * dims.P, o_t.y - dims.camx))
       o_t distance(dims.front + 25mm + j * dims.P, along: x) bi
       o_t distance(dims.front + 25mm + j * dims.P, along: x) be
-      ci distance(0, along: y) bi
-      ce distance(0, along: y) be
+      ci horizontal bi
+      ce horizontal be
       cap_i := CamBearing(bi, dims: dims)
       cap_e := CamBearing(be, dims: dims)
     }
     repeat 4 as i {
       pc := point hint((o_t.x + dims.front + 25mm + dims.P / 2 + i * dims.P, o_t.y))
       o_t distance(dims.front + 25mm + dims.P / 2 + i * dims.P, along: x) pc
-      o_t distance(0, along: y) pc
+      o_t horizontal pc
       plug := circle(center: pc) hint(r: 7mm)
       radius(7) plug
       repeat 2 as k {

@@ -123,7 +123,7 @@ pub fn tilted_cylinder(degrees: f64) -> String {
     // the axis' ends, and the rim corners a radius out from each, square to the axis
     let (ax,ay) = (3.-s,-c);
     let (bx,by) = (3.+s,c);
-    format!("\
+    crate::levelled(format!("\
 unit mm
 use std
 in std.front {{
@@ -147,7 +147,7 @@ private top := line(a2, a3)
 private ax := line(a3, a0)
 }}
 construction tool := solid(face(bottom, wall, top, ax), about: ax)
-",ax=ax,ay=ay,bx=bx,by=by,a1x=ax+c,a1y=ay-s,a2x=bx+c,a2y=by-s)
+",ax=ax,ay=ay,bx=bx,by=by,a1x=ax+c,a1y=ay-s,a2x=bx+c,a2y=by-s))
 }
 
 /// A plate 2 wide, `thick` thick and 2 deep, standing at (3, 0) tilted 20 degrees in the page: a
@@ -156,7 +156,7 @@ pub fn thin_plate(thick: f64) -> String {
     let (s,c) = 20_f64.to_radians().sin_cos();
     let corner = |u: f64,v: f64| (3.+u*c-v*s,u*s+v*c);
     let (p0,p1,p2,p3) = (corner(-1.,-thick/2.),corner(1.,-thick/2.),corner(1.,thick/2.),corner(-1.,thick/2.));
-    format!("\
+    crate::levelled(format!("\
 unit mm
 use std
 in std.front {{
@@ -180,12 +180,12 @@ private f2 := line(q2, q3)
 private f3 := line(q3, q0)
 }}
 construction tool := solid(face(f0, f1, f2, f3), from: -1mm, to: 1mm)
-",x0=p0.0,y0=p0.1,x1=p1.0,y1=p1.1,x2=p2.0,y2=p2.1,x3=p3.0,y3=p3.1)
+",x0=p0.0,y0=p0.1,x1=p1.0,y1=p1.1,x2=p2.0,y2=p2.1,x3=p3.0,y3=p3.1))
 }
 
 /// A unit sphere centred at (3, 0, `h`), its axis vertical.
 pub fn sphere(h: f64) -> String {
-    format!("\
+    crate::levelled(format!("\
 unit mm
 use std
 in std.front {{
@@ -204,7 +204,7 @@ private meridian := arc(center: center, start: bottom, end: top)
 radius(1mm) meridian
 }}
 construction tool := solid(face(meridian, diameter), about: diameter)
-",b=h-1.,t=h+1.)
+",b=h-1.,t=h+1.))
 }
 
 /// A torus about the vertical line through (3, 0): a circle of radius 0.5 whose centre is 1
@@ -269,7 +269,7 @@ other bound tool
 /// at (3, 0, 0) bounded by the one at (3.8, 0, 0), a crease circle of radius 0.917 in x = 3.4.
 pub fn lens(h: f64,apart: f64,offset: bool) -> String {
     let (x2,h1,h2) = if offset { (3.8,h,h) } else { (3.,h-apart,h+apart) };
-    format!("\
+    crate::levelled(format!("\
 unit mm
 use std
 in std.front {{
@@ -300,7 +300,7 @@ radius(1mm) meridian2
 }}
 construction other := solid(face(meridian2, diameter2), about: diameter2)
 other bound tool
-",b1=h1-1.,t1=h1+1.,b2=h2-1.,t2=h2+1.)
+",b1=h1-1.,t1=h1+1.,b2=h2-1.,t2=h2+1.))
 }
 
 /// A post of radius `radius` about the vertical line x = `cx`, z in [low, high], the blank a

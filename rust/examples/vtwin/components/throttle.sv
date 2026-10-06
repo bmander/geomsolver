@@ -111,7 +111,7 @@ component Throttle(front: plane, c: point, ref: line, phi: Angle, dims: group) {
   zkeep := -(dims.bossz / 2 + dims.tretain)
   in longitudinal {
     section_center := point hint((-c.y, 0mm))
-    section_center distance(0mm, along: v) longitudinal
+    section_center level(v) longitudinal
     section_center project c
     back_axis := components.parts.At(section_center, dx: 0mm, dy: -zback)
     back := components.parts.At(section_center, dx: dims.rbar, dy: -zback)
