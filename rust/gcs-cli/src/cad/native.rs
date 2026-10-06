@@ -295,6 +295,20 @@ impl Session {
                         }
                     }
                     id
+                } else if field(node,"kind").as_str() == "fillet" && node.get("whole").is_some() {
+                    // where its edges meet at corners: OCCT's own fillet of every edge of the
+                    // operands' union, less the union (or the union less it, the ball taking
+                    // material away)
+                    let w = field(node,"whole");
+                    let mut union: Option<c_int> = None;
+                    for o in field(w,"operands").arr() {
+                        let s = shapes[&o.as_i64()];
+                        union = Some(match union { None => s,Some(u) => self.boolean(u,s,"on")? });
+                    }
+                    let union = union.ok_or("a fillet with no operands")?;
+                    let points: Vec<[f64;3]> = field(w,"points").arr().iter().map(|p| { let a = p.arr(); [a[0].as_f64(),a[1].as_f64(),a[2].as_f64()] }).collect();
+                    let filleted = self.fillet(union,field(w,"radius").as_f64(),&points)?;
+                    if matches!(field(w,"concave"),Json::Bool(true)) { self.boolean(filleted,union,"cut")? } else { self.boolean(union,filleted,"cut")? }
                 } else if field(node,"kind").as_str() == "fillet" {
                     // each edge's piece built as any primitive is, and fused
                     let mut id: Option<c_int> = None;

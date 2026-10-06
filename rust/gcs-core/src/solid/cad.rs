@@ -162,10 +162,24 @@ fn recipe_with(sk: &Sketch,root: usize,static_only: bool) -> Result<StaticRecipe
                 let rolled = blend.rolls.iter().map(|roll| object([("operands",operands.clone()),
                     ("radius",(roll.rolled.r/roll.mm*scale).into()),
                     ("point",vector(roll.edge_point().map(|v| v*scale))),("concave",roll.rolled.concave.into())])).collect();
-                object([("kind","fillet".into()),
+                // a corner, the ball's patch there, built by the kernel from where it stands
+                let corners = blend.corners.iter().map(|c| object([("vertex",vector(c.vertex.map(|v| v*scale))),
+                    ("centre",vector(c.centre.map(|v| v*scale))),("radius",(c.r*scale).into()),
+                    ("toward",Json::Arr(c.toward.iter().map(|&m| vector(m)).collect()))])).collect();
+                let mut node = object([("kind","fillet".into()),
                     ("pieces",Json::Arr(blend.pieces.iter().map(|p| fillet_piece(p,scale)).collect())),
+                    ("corners",Json::Arr(corners)),
                     ("joins",Json::Arr(blend.joins.iter().map(|j| Json::Arr(j.iter().map(|&k| k.into()).collect())).collect())),
-                    ("rolled",Json::Arr(rolled))])
+                    ("rolled",Json::Arr(rolled))]);
+                // where corners meet, a kernel with a fillet of its own (OCCT's) rounds every edge at
+                // once, from the operands it rounds, each edge picked by a point of it
+                if !blend.corners.is_empty() {
+                    let SolidDef::Fillet {r,..} = &solid.def else { unreachable!() };
+                    let points = blend.pieces.iter().map(|p| vector(p.edge_point().map(|v| v*scale))).collect();
+                    node.set("whole",object([("operands",operands.clone()),("radius",(r.value*scale).into()),
+                        ("points",Json::Arr(points)),("concave",blend.concave.into())]));
+                }
+                node
             }
             SolidDef::Prism {face,from,to} => object([
                 ("kind","prism".into()),("profile",profile(sk,*face as usize,scale)?),
@@ -276,6 +290,16 @@ pub fn shifted(recipe: &Json,by: [f64;3]) -> Json {
             if let Some(Json::Arr(rolled)) = n.get("rolled") {
                 let rolled = Json::Arr(rolled.iter().map(|r| points(r,&["point"])).collect());
                 n.set("rolled",rolled);
+            }
+            if let Some(Json::Arr(corners)) = n.get("corners") {
+                let corners = Json::Arr(corners.iter().map(|c| points(c,&["vertex","centre"])).collect());
+                n.set("corners",corners);
+            }
+            if let Some(Json::Arr(at)) = n.get("whole").and_then(|w| w.get("points")) {
+                let moved = Json::Arr(at.iter().map(|p| points(&object([("p",p.clone())]),&["p"]).get("p").unwrap().clone()).collect());
+                let mut w = n.get("whole").unwrap().clone();
+                w.set("points",moved);
+                n.set("whole",w);
             }
             n
         }).collect();

@@ -308,8 +308,18 @@ comes there), the touch is settled (`ssi::touch_near`: stationary distance) and 
 order (`ssi::touch`: the difference of their second fundamental forms): definite, or no branch of
 the meeting entering both faces (probed by `face_place`), and they meet there alone — a trace or
 search `beside` it, or an edge they touch along, stops there (`trace_beside`, `unseen_beside`); a
-branch into both, or no touch at all (crossing, sunk), is still traced or refused. Open: open traced edges, vertex blends, variable radius,
-B-spline faces (rung 3), rung 4.
+branch into both, or no touch at all (crossing, sunk), is still traced or refused.
+**A corner of three** (rung 3): where three ends of straight pieces meet at a vertex between three
+planes (flush or open), `derive` finds a `Corner` first (`cornered`: the ball's centre `r` from each
+face, by Cramer), shortens each piece to the section through it (`Band::shorten` too: bands are
+asked after corners), and joins the three to it (`Blend::corners`, indexed after the pieces in
+`joins`). Its piece is `brep::fillet::corner`: the cell (vertex, edge feet, touches, centre) less the
+ball, built directly; the recipe's `"corners"`, glued; facets mesh it (`brep_prim`); the field is six
+half-space slabs bounded, less a half disc turned. Native: a fillet with corners is OCCT's own
+`MakeFillet` over every edge (`"whole"`). `glued` merges two of `a`'s vertices one of `b`'s meets
+(three runs meet only through their corner). Open: open traced edges, mitres (two fillets, the
+third edge sharp), corners of curved faces or unequal radii, variable radius, B-spline faces
+(rung 3), rung 4.
 **Continuous motion solids:** `removal := solid(tool, under: generating, from: -30deg, to: 30deg)`
 is the union over the whole interval, not posed meshes; `at:` and intervals exclusive.
 `MaterialField::read` promotes static DAGs when a sweep appears; nested sweeps refused; caches

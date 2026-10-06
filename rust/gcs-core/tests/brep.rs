@@ -1276,3 +1276,41 @@ fn a_quarter_torus_touching_a_block_at_a_corner_meets_it_there_alone() {
     let crossed = boolean(&block([-1.,-3.,-1.],[2.,1.,1.]),&quarter,Op::Union,1e-9);
     assert!(crossed.as_ref().is_err_and(|e| e.contains("nearly touching")),"{:?}",crossed.map(|b| volume(&b)));
 }
+
+/// A corner where a fillet rounds all three edges: the cell between the vertex and the ball's
+/// centre less the ball — `r³ − πr³/6` on a square corner; on a slanted one, the cell fanned into
+/// tetrahedra from the centre, less the ball within it (its solid angle times `r³/3`).
+#[test]
+fn a_spherical_corner_is_its_cell_less_the_ball() {
+    use gcs_core::brep::fillet::corner;
+    use gcs_core::space::{add,cross,dot,norm,scale,sub};
+    let unit = |a: V| scale(a,1./norm(a));
+    let r = 1.5;
+    let square = corner([0.;3],[r;3],r,[[1.,0.,0.],[0.,1.,0.],[0.,0.,1.]],1e-9).unwrap();
+    square.check(1e-9).unwrap();
+    assert_eq!(square.faces.len(),7);
+    close(volume(&square),r*r*r-PI*r*r*r/6.);
+    // a slanted corner: the ball's centre a radius from each face
+    let m = [[1.,0.,0.],unit([0.4,1.,0.]),unit([0.2,-0.3,1.])];
+    let p: V = [2.,-1.,0.5];
+    let rows = m.map(|mi| (mi,dot(mi,p)+r));
+    // Cramer's rule for (c · m_i) = (p · m_i) + r
+    let det = |a: V,b: V,c: V| dot(a,cross(b,c));
+    let d = det(rows[0].0,rows[1].0,rows[2].0);
+    let (mx,my,mz) = ([m[0][0],m[1][0],m[2][0]],[m[0][1],m[1][1],m[2][1]],[m[0][2],m[1][2],m[2][2]]);
+    let b = [rows[0].1,rows[1].1,rows[2].1];
+    let c = [det(b,my,mz)/d,det(mx,b,mz)/d,det(mx,my,b)/d];
+    let slanted = corner(p,c,r,m,1e-9).unwrap();
+    slanted.check(1e-9).unwrap();
+    let along = sub(c,p);
+    let edge = |i: usize,j: usize| { let e = unit(cross(m[i],m[j])); if dot(e,along) < 0. { scale(e,-1.) } else { e } };
+    let foot = |i: usize,j: usize| { let e = edge(i,j); add(p,scale(e,dot(along,e))) };
+    let touch = |i: usize| sub(c,scale(m[i],r));
+    let tet = |a: V,b: V,q: V| det(sub(a,c),sub(b,c),sub(q,c)).abs()/6.;
+    let mut cell = 0.;
+    for (i,j,k) in [(0,1,2),(1,2,0),(2,0,1)] {
+        cell += tet(p,foot(i,j),touch(i))+tet(p,touch(i),foot(i,k));
+    }
+    let omega = 2.*(det(m[0],m[1],m[2]).abs()/(1.+dot(m[0],m[1])+dot(m[1],m[2])+dot(m[2],m[0]))).atan();
+    close(volume(&slanted),cell-omega*r*r*r/3.);
+}

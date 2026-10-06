@@ -1218,6 +1218,17 @@ lip := fillet(cupped.plate, cupped.pocket, r: 1mm)   // a rounded pocket's rim
 lip cut part
 ```
 
+Where three of a fillet's straight edges meet at a corner between three planes, the corner is a
+patch of the ball touching all three: every edge of a block, or every edge inside a pocket, rounds
+at once (`solid_fillet_block.sv`):
+
+```
+round := fillet(block, block, r: 3mm)        // every edge where two of its faces meet
+round cut pebble
+inside := fillet(cupped.pocket, cupped.pocket, r: 2mm)   // the pocket's floor edges and corners
+inside union tray
+```
+
 Refused with their reasons (E085): a traced meeting that runs on into another face (a branch at
 the pipe's end: rung 3), a face swept from a spline (no offset in closed form, not yet), a ball
 larger than a face holds (a branch shorter than the ball's reach), a chain that turns a sharp
@@ -1298,7 +1309,7 @@ sheet's to state.
 | `fillet(plate.lobe, plate.near, r: 1mm)`, a face swept from a spline | E085 — "`lobe` (extrusion) has no offset in closed form, so no ball rolls on it yet: …" |
 | a tee whose branch stands at the main pipe's end | E085 — "the edge of … runs on into other faces: a fillet along it ends, rung 3" |
 | `fillet(boss, plate, r: 2mm)` round a square boss's foot | E085 — "the fillet of … runs on past its end into …: a fillet turning a corner is rung 3" |
-| `fillet(block.near, block, r: 2mm)`, a block's whole rim | E085 — "the fillet of … meets another of its edges at a corner: fillets meeting at a vertex are rung 3" |
+| `fillet(block.near, block, r: 2mm)`, a block's whole rim (two fillets at each corner) | E085 — "the fillet of … meets another of its edges at a corner: fillets meeting at a vertex are rung 3" |
 | `root := fillet(boss, plate)` | E100 — "a fillet needs `r:`, the ball's radius" |
 
 ### 1.15 Spatial geometry read after the solve

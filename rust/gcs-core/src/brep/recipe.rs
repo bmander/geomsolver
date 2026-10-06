@@ -87,8 +87,16 @@ pub fn node_named(n: &Json,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64
             // a fillet's pieces, one per edge it rounds, each a prism or a revolution: those its
             // derivation joined (a chain's, each ending in the section the next begins in, meeting
             // nowhere else) glued there, a cap to a cap, never intersected; the chains unioned
-            let pieces = field(n,"pieces")?.arr().iter().map(|piece| node_named(piece,built,built_names,floor)
+            let mut pieces = field(n,"pieces")?.arr().iter().map(|piece| node_named(piece,built,built_names,floor)
                 .map_err(|e| format!("fillet: {e}"))).collect::<Result<Vec<_>,_>>()?;
+            // a corner's patch of the ball, after the pieces (joins name it so)
+            for c in n.get("corners").map(Json::arr).unwrap_or_default() {
+                let (vertex,centre,radius) = (vec3(field(c,"vertex")?),vec3(field(c,"centre")?),field(c,"radius")?.as_f64());
+                let toward: Vec<V> = field(c,"toward")?.arr().iter().map(vec3).collect();
+                let toward: [V;3] = toward.try_into().map_err(|_| "recipe: a corner stands between three faces")?;
+                let tol = (1e-9*(1.+radius)).max(floor);
+                pieces.push(super::fillet::corner(vertex,centre,radius,toward,tol).map_err(|e| format!("fillet: a corner: {e}"))?);
+            }
             let joins: Vec<[usize;2]> = n.get("joins").map(Json::arr).unwrap_or_default().iter()
                 .map(|j| { let j = j.arr(); [j[0].as_i64() as usize,j[1].as_i64() as usize] }).collect();
             if joins.iter().flatten().any(|&k| k >= pieces.len()) { return Err("recipe: a fillet's join names no piece".into()) }

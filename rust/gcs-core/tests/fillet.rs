@@ -855,3 +855,91 @@ fn a_rib_built_in_two_halves_is_rounded_as_one() {
     assert_volume(volume(&e, "body"), 60.0 * 40.0 * 10.0 + 10.0 * 40.0 * 5.0 + rounds);
     field_agrees(&e, "body");
 }
+
+// -- rung 3: spherical corners -----------------------------------------------------------------
+
+/// A box `l × w × h` with every edge rounded to `r`: Steiner's formula, the inset box grown by a
+/// ball — its volume, its faces carried out by `r`, its edges' quarter cylinders, the ball itself.
+fn rounded_box([l, w, h]: [f64; 3], r: f64) -> f64 {
+    let (a, b, c) = (l - 2.0 * r, w - 2.0 * r, h - 2.0 * r);
+    a * b * c + 2.0 * r * (a * b + b * c + a * c) + PI * r * r * (a + b + c) + 4.0 * PI * r * r * r / 3.0
+}
+
+#[test]
+fn a_block_rounded_all_over_has_a_ball_at_each_corner() {
+    let r = 2.0;
+    let e = read(&format!("{RECT}block := solid(sec, depth: 10mm)\nall := fillet(block, block, r: {r}mm)\n\
+        body := solid(block)\nall cut body\n"));
+    let i = e.map.ent_named("all").unwrap().i();
+    let blend = e.sketch.fillet_blend(i).unwrap();
+    assert_eq!((blend.pieces.len(), blend.corners.len(), blend.joins.len()), (12, 8, 24));
+    // glued whole: each corner meets three runs, which meet one another only through it
+    let built = gcs_core::brep::recipe::build(&gcs_core::solid::cad::recipe(&e.sketch, i).unwrap()).unwrap();
+    built.check(1e-9).unwrap();
+    assert_volume(volume(&e, "body"), rounded_box([60.0, 40.0, 10.0], r));
+    assert_volume(volume(&e, "all"), 60.0 * 40.0 * 10.0 - rounded_box([60.0, 40.0, 10.0], r));
+    field_agrees(&e, "body");
+}
+
+/// A polygon of fixed points as face `{n}`.
+fn polygon(n: &str, pts: &[[f64; 2]]) -> String {
+    let mut out = String::new();
+    for (k, p) in pts.iter().enumerate() {
+        out.push_str(&format!("{n}{k} := point hint(x: {}, y: {})\nfix(x == {}, y == {}) {n}{k}\n", p[0], p[1], p[0], p[1]));
+    }
+    let sides: Vec<String> = (0..pts.len()).map(|k| format!("({n}_s{k} := line({n}{k}, {n}{}))", (k + 1) % pts.len())).collect();
+    out.push_str(&format!("{} -> close\n", sides.join(" -> ")));
+    out.push_str(&format!("{n} := face({})\n", (0..pts.len()).map(|k| format!("{n}_s{k}")).collect::<Vec<_>>().join(", ")));
+    out
+}
+
+#[test]
+fn a_pocket_rounded_inside_fills_a_ball_at_each_floor_corner() {
+    // the floor's edges and the walls' corners, concave: runs, and at each floor corner a ball's
+    // patch filling the corner's cell; the corners' runs stop flush in the plate's top
+    let (r, [l, w], d) = (1.5, [30.0, 20.0], 6.0);
+    let e = read(&format!(
+        "{RECT}{}plate := solid(sec, depth: 10mm)\npocket := solid(cut_f, from: 1mm, to: -{d}mm)\n\
+         cupped := solid(plate)\npocket cut cupped\nbody := solid(cupped)\n\
+         inside := fillet(cupped.pocket, cupped.pocket, r: {r}mm)\ninside union body\n",
+        polygon("cut_f", &[[15.0, 10.0], [45.0, 10.0], [45.0, 30.0], [15.0, 30.0]])
+    ));
+    let run = (1.0 - PI / 4.0) * r * r;
+    let want = 4.0 * run * (d - r) + run * (2.0 * (l - 2.0 * r) + 2.0 * (w - 2.0 * r)) + 4.0 * (r * r * r - PI * r * r * r / 6.0);
+    assert_volume(volume(&e, "inside"), want);
+    assert_volume(volume(&e, "body"), 60.0 * 40.0 * 10.0 - l * w * d + want);
+    field_agrees(&e, "body");
+}
+
+#[test]
+fn a_triangular_prism_rounded_all_over_meets_slanted_corners_with_the_ball() {
+    // Steiner's formula over the prism inset by `r`: its volume, its area carried out by `r`, its
+    // edges' wedges of cylinder (the caps' square, the sides' turning through the triangle's
+    // exterior angles, 2π in all), and the whole ball
+    let (r, h) = (2.0, 10.0);
+    let tri = [[10.0, 5.0], [50.0, 5.0], [25.0, 35.0]];
+    let side = |a: [f64; 2], b: [f64; 2]| (b[0] - a[0]).hypot(b[1] - a[1]);
+    let perimeter = side(tri[0], tri[1]) + side(tri[1], tri[2]) + side(tri[2], tri[0]);
+    let area = 0.5 * ((tri[1][0] - tri[0][0]) * (tri[2][1] - tri[0][1]) - (tri[2][0] - tri[0][0]) * (tri[1][1] - tri[0][1])).abs();
+    let inradius = 2.0 * area / perimeter;
+    let s = (inradius - r) / inradius;
+    let (a2, p2, h2) = (s * s * area, s * perimeter, h - 2.0 * r);
+    let rounded = a2 * h2 + (2.0 * a2 + p2 * h2) * r + PI * r * r / 2.0 * p2 + PI * r * r * h2 + 4.0 * PI * r * r * r / 3.0;
+    let e = read(&format!("unit mm\n{}prism := solid(tri_f, depth: {h}mm)\nall := fillet(prism, prism, r: {r}mm)\n\
+        body := solid(prism)\nall cut body\n", polygon("tri_f", &tri)));
+    assert_volume(volume(&e, "body"), rounded);
+    field_agrees(&e, "body");
+}
+
+#[test]
+fn what_a_corner_cannot_round_is_refused() {
+    // a ball too large for a short edge between two corners: their setbacks meet
+    refused(&format!("{RECT}block := solid(sec, depth: 3mm)\nall := fillet(block, block, r: 2mm)\n\
+        body := solid(block)\nall cut body\n"), Code::E085, "can hold");
+    // a half disc's prism: where its flat side meets its round, a cap and a cylinder at a corner
+    let half = "unit mm\nh0 := point hint(x: 10, y: 20)\nh1 := point hint(x: 50, y: 20)\nho := point hint(x: 30, y: 20)\n\
+        fix(x == 10, y == 20) h0\nfix(x == 50, y == 20) h1\nfix(x == 30, y == 20) ho\n\
+        (flat := line(h0, h1)) -> (bow := arc(center: ho) hint(r: 20)) -> close\nhalf_f := face(flat, bow)\n\
+        half := solid(half_f, depth: 10mm)\nall := fillet(half, half, r: 2mm)\nbody := solid(half)\nall cut body\n";
+    refused(half, Code::E085, "rung 3");
+}

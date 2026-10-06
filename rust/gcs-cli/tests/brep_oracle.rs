@@ -93,10 +93,16 @@ fn every_node_the_kernel_builds_is_occts() {
                 }).collect());
                 let their_kinds = kinds(&mut session.faces(theirs).unwrap().into_iter().map(|g| session.face_kind(g).unwrap()).collect());
                 if our_kinds != their_kinds {
-                    let extra_planes = their_kinds.iter().filter(|&&k| k != 0).eq(our_kinds.iter().filter(|&&k| k != 0))
-                        && their_kinds.iter().filter(|&&k| k == 0).count() > our_kinds.iter().filter(|&&k| k == 0).count();
-                    if extra_planes { eprintln!("  (OCCT splits a plane along a line it only touches: {their_kinds:?} against our {our_kinds:?})"); }
-                    else { failures.push(format!("{label}: faces by kind {our_kinds:?} against OCCT's {their_kinds:?}")); continue }
+                    let curved_alike = their_kinds.iter().filter(|&&k| k != 0).eq(our_kinds.iter().filter(|&&k| k != 0));
+                    let planes = |ks: &[i32]| ks.iter().filter(|&&k| k == 0).count();
+                    // a fillet's glued pieces keep each strip on a face their own, where OCCT's fillet
+                    // unifies the faces of one plane
+                    let glued = n.get("joins").is_some_and(|j| !j.arr().is_empty());
+                    if curved_alike && planes(&their_kinds) > planes(&our_kinds) {
+                        eprintln!("  (OCCT splits a plane along a line it only touches: {their_kinds:?} against our {our_kinds:?})");
+                    } else if curved_alike && glued {
+                        eprintln!("  (glued pieces keep their strips apart: {our_kinds:?} against OCCT's {their_kinds:?})");
+                    } else { failures.push(format!("{label}: faces by kind {our_kinds:?} against OCCT's {their_kinds:?}")); continue }
                 }
                 }
                 let whole = n.get("kind").unwrap().as_str() == "body" || id == root_id;

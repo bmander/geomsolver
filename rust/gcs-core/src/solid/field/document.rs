@@ -272,6 +272,39 @@ fn read(sk: &Sketch,solid: usize,axis_tolerance: f64) -> Result<Snapshot,String>
                         }
                         out = Some(match out { None => leaf,Some(o) => o.combine(leaf,BodyWord::Union).map_err(error)? });
                     }
+                    // a corner: its cell — on the ball's side of each face, on the vertex's of each
+                    // section through the ball's centre, each a half-space (a slab of a large square)
+                    // — less the ball (a half disc turned about a line through its centre)
+                    for c in &blend.corners {
+                        use crate::space::{cross,dot,norm,scale,sub};
+                        let unit = |a: [f64;3]| scale(a,1./norm(a));
+                        let reach = 4.*(norm(sub(c.centre,c.vertex))+c.r);
+                        let square = PlanarField::from_loop(&[
+                            Edge::Line {a:[-reach,-reach],b:[reach,-reach],axis:false},Edge::Line {a:[reach,-reach],b:[reach,reach],axis:false},
+                            Edge::Line {a:[reach,reach],b:[-reach,reach],axis:false},Edge::Line {a:[-reach,reach],b:[-reach,-reach],axis:false}],0.)?;
+                        // the half-space through `o` behind `n` (where (p − o)·n ≤ 0)
+                        let behind = |o: [f64;3],n: [f64;3]| -> Result<Snapshot,String> {
+                            let f = crate::brep::geom::Frame::about(o,n);
+                            Ok(Snapshot::Static(ExtrudedField::new(square.clone(),o,f.x,f.y,[-reach,0.]).map_err(error)?.into()))
+                        };
+                        let along = sub(c.centre,c.vertex);
+                        let mut cell: Option<Snapshot> = None;
+                        let mut within = |s: Snapshot| -> Result<(),String> {
+                            cell = Some(match cell.take() { None => s,Some(x) => x.combine(s,BodyWord::Bound).map_err(error)? });
+                            Ok(())
+                        };
+                        for (i,j) in [(0,1),(1,2),(2,0)] {
+                            let e = unit(cross(c.toward[i],c.toward[j]));
+                            within(behind(c.centre,if dot(e,along) < 0. { scale(e,-1.) } else { e })?)?;
+                        }
+                        for m in c.toward { within(behind(c.vertex,scale(m,-1.))?)?; }
+                        let disc = PlanarField::from_loop(&[
+                            Edge::Arc {center:[0.,0.],radius:c.r,start:-std::f64::consts::FRAC_PI_2,sweep:std::f64::consts::PI,ends:[[0.,-c.r],[0.,c.r]]},
+                            Edge::Line {a:[0.,c.r],b:[0.,-c.r],axis:true}],0.)?;
+                        let ball = Snapshot::Static(RevolvedField::new(disc,c.centre,c.toward[0]).map_err(error)?.into());
+                        let piece = cell.ok_or("a corner with no cell")?.combine(ball,BodyWord::Cut).map_err(error)?;
+                        out = Some(match out { None => piece,Some(o) => o.combine(piece,BodyWord::Union).map_err(error)? });
+                    }
                     // a ball rolled along a traced loop: the canal's material less the operands' (at
                     // a concave edge) or within it (convex), read from the spine and contacts
                     if !blend.rolls.is_empty() {

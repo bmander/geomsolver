@@ -178,9 +178,10 @@ fn the_wankel_rotor_and_housing_export_and_measure_within_their_tolerance() {
 /// The fillet examples (issue #66): a cast pad (a boss's root filleted, two plate edges rounded, a
 /// bore drilled after), a knob (a rod's root and its neck in a ball), a rail (a rod half sunk in a
 /// plate, filleted along both sides), a pipe tee's crotch and a bore's rim (balls rolled round traced
-/// loops, their faces fitted), and an obround boss's foot and a rounded pocket's rim (chains of
-/// tangent edges), each written by the core's kernel within 10 µm and its STL measured against its
-/// exact faces, the fillets' among them.
+/// loops, their faces fitted), an obround boss's foot and a rounded pocket's rim (chains of tangent
+/// edges), and a block rounded all over and a pocket rounded inside (balls at the corners), each
+/// written by the core's kernel within 10 µm and its STL measured against its exact faces, the
+/// fillets' among them.
 #[test]
 fn the_filleted_examples_export_and_measure_within_their_tolerance() {
     let dir = std::env::temp_dir().join(format!("solventc-fillet-{}",std::process::id()));
@@ -188,7 +189,8 @@ fn the_filleted_examples_export_and_measure_within_their_tolerance() {
     for (file,solid,built) in [("solid_fillet.sv","pad","26549.817129 mm³, 12 faces"),
         ("solid_fillet_knob.sv","knob","26224.398265 mm³, 7 faces"),("solid_fillet_rail.sv","rail","26306.865907 mm³, 18 faces"),
         ("solid_fillet_tee.sv","tee","20616.666786 mm³, 6 faces"),("solid_fillet_bore.sv","pipe","17747.246919 mm³, 6 faces"),
-        ("solid_fillet_slot.sv","part","40846.580342 mm³, 32 faces")] {
+        ("solid_fillet_slot.sv","part","40846.580342 mm³, 32 faces"),
+        ("solid_fillet_block.sv","pebble","10969.008701 mm³, 26 faces"),("solid_fillet_block.sv","tray","16501.085574 mm³, 27 faces")] {
         let (stl,step) = (dir.join(format!("{solid}.stl")),dir.join(format!("{solid}.step")));
         let (stl,step) = (stl.to_str().unwrap(),step.to_str().unwrap());
         let source = doc(file);
