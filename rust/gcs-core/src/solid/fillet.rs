@@ -209,7 +209,7 @@ impl Piece {
     /// ring's turned through its sweep (0 where it starts, 1 where it stops).
     pub fn at(&self, f: f64) -> Basis {
         match self.carry {
-            Carry::Prism { length } => self.section.offset(f * length),
+            Carry::Prism { length } => carried(&self.section, f * length),
             Carry::Turn { sweep } => turned_basis(&self.section, f * sweep),
         }
     }
@@ -446,6 +446,9 @@ fn unit(a: V) -> V { scale(a, 1.0 / norm(a)) }
 
 /// `b` turned through `angle` about the line through its origin along its `v`, right-handed.
 fn turned_basis(b: &Basis, angle: f64) -> Basis { Basis { u: Rigid::turn(b.o, b.v, angle).vector(b.u), ..*b } }
+
+/// `b` carried `k` along its own normal.
+fn carried(b: &Basis, k: f64) -> Basis { Basis { o: add(b.o, scale(b.normal(), k)), ..*b } }
 
 /// Whether a turn is a whole one.
 fn whole(sweep: f64) -> bool { sweep >= TAU - 1e-9 }
