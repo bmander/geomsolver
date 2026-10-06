@@ -571,8 +571,11 @@ fn analytic_ruled(a: &Seg,z: &Seg,e: V,outward: V,tol: f64) -> Option<(Surface,b
 /// (each its net's outermost row or column of poles, exactly), its sense the net's own.
 pub fn sheet(net: crate::brep::nurbs::Net) -> Result<Brep,String> {
     let [[u0,u1],[v0,v1]] = net.domain();
-    let row = |i: usize| -> Curve { Curve::BSpline(Arc::new(BSpline {degree:net.dv,knots:net.vknots.clone(),poles:net.poles[i].clone()})) };
-    let column = |j: usize| -> Curve { Curve::BSpline(Arc::new(BSpline {degree:net.du,knots:net.uknots.clone(),poles:net.poles.iter().map(|r| r[j]).collect()})) };
+    // a rational net's boundary rows and columns weighed as the net weighs them
+    let row = |i: usize| -> Curve { Curve::BSpline(Arc::new(BSpline {degree:net.dv,knots:net.vknots.clone(),poles:net.poles[i].clone(),
+        weights:net.weights.as_ref().map(|w| w[i].clone())})) };
+    let column = |j: usize| -> Curve { Curve::BSpline(Arc::new(BSpline {degree:net.du,knots:net.uknots.clone(),poles:net.poles.iter().map(|r| r[j]).collect(),
+        weights:net.weights.as_ref().map(|w| w.iter().map(|r| r[j]).collect())})) };
     let (last_u,last_v) = (net.poles.len()-1,net.poles[0].len()-1);
     let mut b = Brep::default();
     let corner = [net.point(u0,v0),net.point(u1,v0),net.point(u1,v1),net.point(u0,v1)];

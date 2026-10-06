@@ -31,6 +31,7 @@ mod bore;
 mod brep;
 mod brep_census;
 mod brep_export;
+mod rational;
 mod curve_contact;
 mod curve_of;
 mod curve;

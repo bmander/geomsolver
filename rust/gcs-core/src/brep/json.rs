@@ -36,9 +36,12 @@ fn curve(j: &Json) -> Result<Curve,String> {
         "circle" => Curve::Circle(axes(j)?.0,field(j,"r")?.as_f64()),
         "ellipse" => Curve::Ellipse(axes(j)?.0,field(j,"a")?.as_f64(),field(j,"b")?.as_f64()),
         "bspline" => {
-            if j.get("weights").is_some() { return Err("a rational B-spline curve: not built yet".into()) }
+            let (degree,knots) = (field(j,"degree")?.as_f64() as usize,reals(field(j,"knots")?));
             let poles = field(j,"poles")?.arr().iter().map(vec3).collect();
-            Curve::BSpline(Arc::new(BSpline::new(field(j,"degree")?.as_f64() as usize,reals(field(j,"knots")?),poles)?))
+            Curve::BSpline(Arc::new(match j.get("weights") {
+                Some(w) => BSpline::rational(degree,knots,poles,reals(w))?,
+                None => BSpline::new(degree,knots,poles)?,
+            }))
         }
         k => return Err(format!("brep json: a curve of kind `{k}`")),
     })
@@ -49,16 +52,11 @@ fn curve(j: &Json) -> Result<Curve,String> {
 fn surface(j: &Json) -> Result<(Surface,bool),String> {
     let kind = field(j,"kind")?.as_str();
     if kind == "bspline" {
-        if j.get("weights").is_some() { return Err("a rational B-spline surface: not built yet".into()) }
         let poles: Vec<Vec<V>> = field(j,"poles")?.arr().iter().map(|row| row.arr().iter().map(vec3).collect()).collect();
+        let weights = j.get("weights").map(|w| w.arr().iter().map(reals).collect());
         let net = Net {du:field(j,"du")?.as_f64() as usize,dv:field(j,"dv")?.as_f64() as usize,
-            uknots:reals(field(j,"uknots")?),vknots:reals(field(j,"vknots")?),poles};
-        let (nu,nv) = (net.poles.len(),net.poles.first().map_or(0,Vec::len));
-        if net.du == 0 || net.dv == 0 || net.du > super::nurbs::MAX_DEGREE || net.dv > super::nurbs::MAX_DEGREE
-            || nu <= net.du || nv <= net.dv || net.poles.iter().any(|r| r.len() != nv)
-            || net.uknots.len() != nu+net.du+1 || net.vknots.len() != nv+net.dv+1 {
-            return Err("brep json: a B-spline surface whose net and knots do not agree".into())
-        }
+            uknots:reals(field(j,"uknots")?),vknots:reals(field(j,"vknots")?),poles,weights};
+        net.check().map_err(|m| format!("brep json: {m}"))?;
         return Ok((Surface::BSpline(Frame::new([0.;3],[0.,0.,1.],[1.,0.,0.]),Arc::new(net)),false))
     }
     let (f,right) = axes(j)?;
@@ -80,20 +78,9 @@ fn surface(j: &Json) -> Result<(Surface,bool),String> {
     Ok((s,flip))
 }
 
-/// A curve in a face's parameters, its `u` negated where the face's surface runs it the other way.
-/// A rational one (a reader's conic on a plane) is taken as the preimage it is of its edge,
-/// `Pcurve::Inverse` from its ends at the edge's parameters `t` — read in homogeneous coordinates,
-/// a non-rational curve of `(w x, w y, w)`, so no rational curve is built.
-fn pcurve(j: &Json,flip: bool,t: [f64;2]) -> Result<Pcurve,String> {
-    if let Some(w) = j.get("weights").filter(|_| field(j,"kind").is_ok_and(|k| k.as_str() == "bspline")) {
-        let w = reals(w);
-        let poles = field(j,"poles")?.arr().iter().map(vec3).collect::<Vec<V>>();
-        if w.len() != poles.len() || w.iter().any(|&x| !(x > 0.)) { return Err("brep json: a rational pcurve's weights".into()) }
-        let h = BSpline::new(field(j,"degree")?.as_f64() as usize,reals(field(j,"knots")?),
-            poles.iter().zip(&w).map(|(p,&w)| [w*p[0],w*p[1],w]).collect())?;
-        let at = |t: f64| { let q = h.point(t); [if flip { -q[0]/q[2] } else { q[0]/q[2] },q[1]/q[2]] };
-        return Ok(Pcurve::Inverse {a:at(t[0]),b:at(t[1])})
-    }
+/// A curve in a face's parameters, its `u` negated where the face's surface runs it the other way
+/// (a rational one's weights unchanged: negating a coordinate is linear).
+fn pcurve(j: &Json,flip: bool) -> Result<Pcurve,String> {
     let mut c = curve(j)?;
     if flip {
         let neg = |p: V| [-p[0],p[1],p[2]];
@@ -128,8 +115,7 @@ pub fn read(text: &str) -> Result<Brep,String> {
             for u in field(l,"uses")?.arr() {
                 let edge = field(u,"edge")?.as_i64() as u32;
                 if edge as usize >= b.edges.len() { return Err("brep json: a use's edge out of range".into()) }
-                let t = b.edges[edge as usize].t;
-                found.push(Coedge {edge,reversed:field(u,"reversed")?.as_bool(),pcurve:pcurve(field(u,"pcurve")?,flip,t)?});
+                found.push(Coedge {edge,reversed:field(u,"reversed")?.as_bool(),pcurve:pcurve(field(u,"pcurve")?,flip)?});
             }
             let mut uses = chained(found,&b,&s);
             // a reversed face's loops run the other way round from its forward self's, as dumped

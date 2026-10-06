@@ -632,7 +632,7 @@ fn a_net_segmented_is_the_same_surface() {
         let (x,y) = (i as f64,j as f64);
         [x+0.3*(x*y).sin(),y-0.2*x*x,0.1*x*y+(x+2.*y).cos()]
     }).collect()).collect();
-    let net = Net {du:3,dv:2,uknots,vknots,poles};
+    let net = Net {du:3,dv:2,uknots,vknots,poles,weights:None};
     for (bu,bv) in [([0.1,0.7],[-0.5,1.2]),([0.,0.4],[0.5,2.]),([0.3,0.45],[-1.,0.2])] {
         let cut = net.segment(bu,bv);
         assert_eq!(cut.domain(),[bu,bv]);

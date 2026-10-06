@@ -139,7 +139,9 @@ pub fn terms(b: &Brep,fi: usize) -> Vec<Vec<(f64,f64)>> {
         let s = &f.surface;
         let [pu,pv] = s.periods();
         let g = |u: f64,v: f64| { let (x,su,sv) = s.d1([u,v]); dot(x,cross(su,sv)) };
-        let mut prefix = if let Surface::BSpline(_,n) = s { Some(Prefix::new(n)) } else { None };
+        // a rational net's `g` is a quotient, which no Gauss rule integrates exactly: it takes the
+        // stretch-by-stretch rule a swept face does
+        let mut prefix = match s { Surface::BSpline(_,n) if !n.is_rational() => Some(Prefix::new(n)),_ => None };
         // The face's box in its parameters. Away from a spline's table, `g` is integrated from the
         // middle of the face's range and across the parameter it spans less: `G` is then as small
         // as the face allows, and an error δ in a use's parameters moves the flux by `G δ` — from 0

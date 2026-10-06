@@ -152,3 +152,45 @@ fn every_node_the_kernel_builds_is_occts() {
     assert!(failures.is_empty(),"{} failures",failures.len());
     assert!(refused.len() <= 8,"{} refused",refused.len());
 }
+
+/// Rational B-splines both ways through OCCT: solids turned from exact arcs (`nurbs::arc`), written
+/// by our STEP writer as surfaces of revolution over rational curves and read by OCCT as valid
+/// solids of their closed-form volumes; then OCCT's reading handed back through its dump, where its
+/// faces arrive as rational nets, read by `brep::json` into a solid of the same volume. (Not a
+/// prism of a closed spline: OCCT reads one, rational or not, 3.6% over; nor the ball's dump, whose
+/// net with poles at both ends `brep::json` reads as volume 0, rational or not.)
+#[test]
+fn rational_solids_go_through_occt_and_back() {
+    use gcs_core::brep::build::{revolve,Profile,ProfileEdge};
+    use gcs_core::brep::geom::{Frame,Surface};
+    use gcs_core::brep::nurbs::arc;
+    use std::f64::consts::{FRAC_PI_2,PI,TAU};
+    let session = native::Session::new().unwrap();
+    let spline = |c| ProfileEdge::Spline(std::sync::Arc::new(c));
+    let xz = [0.,1.,0.];
+    let solids = [
+        ("ball",revolve(&Profile {names:vec![],origin:[0.;3],normal:xz,loops:vec![vec![spline(arc(&Frame::new([0.;3],xz,[1.,0.,0.]),2.,[-FRAC_PI_2,FRAC_PI_2])),
+            ProfileEdge::Line {a:[0.,0.,-2.],b:[0.,0.,2.]}]]},[0.;3],[0.,0.,1.],TAU).unwrap(),4./3.*PI*8.,false),
+        ("ring",revolve(&Profile {names:vec![],origin:[0.;3],normal:xz,loops:vec![vec![spline(arc(&Frame::new([3.,0.,1.],xz,[1.,0.,0.]),1.,[0.,TAU]))]]},[0.;3],[0.,0.,1.],TAU).unwrap(),TAU*3.*PI,true),
+    ];
+    for (what,b,whole,back) in solids {
+        let text = gcs_core::brep::step::write(&b,what,1e-5).unwrap();
+        assert!(text.contains("RATIONAL_B_SPLINE_CURVE"),"{what}: nothing rational written");
+        let file = std::env::temp_dir().join(format!("solvent-rational-{what}-{}.step",std::process::id()));
+        std::fs::write(&file,&text).unwrap();
+        let read = session.read_step(file.to_str().unwrap());
+        let _ = std::fs::remove_file(&file);
+        let read = read.unwrap_or_else(|e| panic!("{what}: OCCT does not read our STEP: {e}"));
+        session.validate(read).unwrap_or_else(|e| panic!("{what}: OCCT reads an invalid solid: {e}"));
+        let theirs = session.volume(read).unwrap();
+        eprintln!("{what}: OCCT reads {theirs:.9} mm³ against {whole:.9}");
+        assert!(((theirs-whole)/whole).abs() < 1e-6,"{what}: OCCT reads {theirs} against {whole}");
+        if !back { continue }
+        let ours = gcs_core::brep::json::read(&session.brep_json(read).unwrap()).unwrap_or_else(|e| panic!("{what}: OCCT's dump not read: {e}"));
+        assert!(ours.faces.iter().any(|f| matches!(&f.surface,Surface::BSpline(_,n) if n.is_rational())),"{what}: OCCT's reading carries no rational net");
+        ours.check(1e-7).unwrap_or_else(|e| panic!("{what}: OCCT's dump read invalid: {e}"));
+        let v = gcs_core::brep::props::volume(&ours);
+        eprintln!("{what}: its dump read as {v:.12} mm³ ({:e})",(v-whole)/whole);
+        assert!(((v-whole)/whole).abs() < 1e-9,"{what}: OCCT's dump read as {v} against {whole}");
+    }
+}
