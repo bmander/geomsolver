@@ -9,16 +9,16 @@ use crate::common::parse;
 fn an_instance_inside_a_copy_is_indexed_like_a_declaration() {
     let src = "\
 component Rung(a: point) {
-  b := point hint(x: a.x + 10, y: a.y)
+  b := point hint((a.x + 10, a.y))
   l := line(a, b)
   a distance(10) b
   horizontal l
 }
 repeat 3 as i {
-  p := point hint(x: 0, y: i * 20)
+  p := point hint((0, i * 20))
   r := Rung(p)
 }
-fix(x == 0, y == 0) p[0]
+fix((0, 0)) p[0]
 p[1] distance(5) r[2].b
 r[0].b distance(20, along: y) r[1].b
 ";

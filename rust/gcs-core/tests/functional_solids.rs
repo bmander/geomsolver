@@ -112,8 +112,8 @@ use std
 in std.front {
 a := point
 b := point
-fix(x == 1, y == 0) a
-fix(x == 1, y == 1) b
+fix((1, 0)) a
+fix((1, 1)) b
 ax := line(a,b)
 }
 turn := motion(about: ax)

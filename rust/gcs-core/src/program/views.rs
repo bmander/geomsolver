@@ -32,16 +32,9 @@ pub(crate) fn degenerate(sk: &Sketch, map: &SourceMap) -> Vec<Diag> {
                         sk.plane_name(a), sk.plane_name(b)
                     ))
             }
-            CKind::LineLine3 | CKind::CylinderTangentLine => {
+            CKind::LineLine3 => {
                 let dir = |i: usize| {
-                    // a cylinder's line is its axis
-                    let e = c.args[i].ent();
-                    let e = if e.kind == EntKind::Cylinder {
-                        EntRef::line(sk.axial(e).axis as usize)
-                    } else {
-                        e
-                    };
-                    let l = &sk.lines[e.i()];
+                    let l = &sk.lines[c.args[i].ent().i()];
                     crate::space::sub(sk.lifted(l.p2 as usize), sk.lifted(l.p1 as usize))
                 };
                 let (a, b) = (dir(0), dir(1));
@@ -131,6 +124,24 @@ pub(crate) fn origins_on_axes(sk: &mut Sketch, map: &SourceMap) -> Vec<Diag> {
         }
     }
     out
+}
+
+/// Each plane's axes stood through its origin again, the first plane over an axis taking it, as
+/// the plane's build stood them (`Sketch::push_plane`) — once `fix` has said where the planes
+/// stand and which way their axes run, so a plane held off the world origin carries its axes
+/// with it and needs no `hint` saying where it is.  An axis whose place a `fix` holds stays.
+pub(crate) fn stand_axes(sk: &mut Sketch) {
+    let mut stood = vec![false; sk.axes.len()];
+    for p in 0..sk.planes.len() {
+        let pl = &sk.planes[p];
+        let o = pl.o.map(|q| sk.params[q as usize].value);
+        for r in [pl.u as usize, pl.v as usize] {
+            let free = sk.axes[r].placed && !sk.axes[r].a.iter().any(|&q| sk.params[q as usize].fixed);
+            if free && !std::mem::replace(&mut stood[r], true) {
+                sk.stand_axis_through(r, o);
+            }
+        }
+    }
 }
 
 /// W113 for two planes that lie on one another — turned alike up to a turn in themselves and

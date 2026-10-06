@@ -128,30 +128,24 @@ component SpaceRelief(ax: line, outside: group, inside: group, indexing: motion,
 
 preview {
   unit mm
-  pitch := views.PitchView(std.front, span: design.hypoid_design.cutter_radius)
-  gear := pitch.gear.GearCone(pitch.view, g.view, design.hypoid_design)
-  g := views.FoldedView(pitch.view, gear.generator, pitch.down, span: design.hypoid_design.cutter_radius)
-  trace := pitch.trace.ToothTrace(pitch.view, gear.generator, design.hypoid_design)
-  thickness := crown.thickness.CrownThickness(pitch.view, gear.generator, trace.normal,
+  gear := pitch.gear.GearCone(std.top, g.view, design.hypoid_design)
+  g := views.FoldedView(std.top, gear.generator)
+  trace := pitch.trace.ToothTrace(std.top, gear.generator, design.hypoid_design)
+  thickness := crown.thickness.CrownThickness(std.top, gear.generator, trace.normal,
     design.hypoid_design)
-  n := views.FoldedView(pitch.view, trace.normal, pitch.down, span: design.hypoid_design.cutter_radius)
-  tooth := crown.tooth.CrownTooth(pitch.view, trace.normal, thickness.inner_pitch,
-    thickness.outer_pitch, design.hypoid_design) in n.view
-  mate := crown.mate.CrownMate(tooth, design.hypoid_design) in n.view
-  reach := crown.reach.CutterReach(pitch.view, n.view, gear.O, trace.normal, mate.ax,
+  n := views.FoldedView(std.top, trace.normal)
+  tooth := crown.tooth.CrownTooth(std.top, trace.normal, thickness.inner_pitch,
+    thickness.outer_pitch, design.hypoid_design, normal_module: trace.normal_module) in n.view
+  mate := crown.mate.CrownMate(tooth, design.hypoid_design,
+    normal_module: trace.normal_module) in n.view
+  reach := crown.reach.CutterReach(std.top, n.view, gear.O, trace.normal, mate.ax,
     reach: design.hypoid_design.space_reach)
   crown_neighbor := motion(about: gear.crown_axis,
     phase: -4 * length(thickness.ahead) / radius(thickness.ahead) * 1rad)
   space := crown.space.ComplementarySpace(mate.ax, mate.outer, mate.inner, crown_neighbor,
     reach.cap) in n.view
-  tooth_relief := ToothRelief(tooth, reach.cap, design.hypoid_design) in n.view
+  tooth_relief := ToothRelief(tooth, reach.cap, design.hypoid_design,
+    normal_module: trace.normal_module) in n.view
   space_relief := SpaceRelief(mate.ax, mate.outer, mate.inner, crown_neighbor, reach.cap,
-    design.hypoid_design) in n.view
-  // Alone, each component's normal module is its own unknown: the trace constructs it.
-  in std.front {
-    trace.K distance(tooth.normal_module) trace.normal
-    trace.K distance(mate.normal_module) trace.normal
-    trace.K distance(tooth_relief.normal_module) trace.normal
-    trace.K distance(space_relief.normal_module) trace.normal
-  }
+    design.hypoid_design, normal_module: trace.normal_module) in n.view
 }

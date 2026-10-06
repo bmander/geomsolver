@@ -30,8 +30,8 @@ component ReliefCut(body: solid, design: group, tool: solid, teeth: Int, roll_li
   }
 }
 
-component HypoidPair(front: plane, design: group) {
-  private reference := layout.HypoidLayout(front, design)
+component HypoidPair(p: plane, design: group) {
+  private reference := layout.HypoidLayout(p, design)
   pinion := GeneratedMember(reference.pinion_design, reference.tooth.crown,
     teeth: design.pinion_teeth, roll_limit: design.pinion_roll)
   // The gear rolls slower against the crown, so further, to carry the cutter clear of its
@@ -54,5 +54,5 @@ component HypoidPair(front: plane, design: group) {
 
 preview {
   unit mm
-  pair := HypoidPair(std.front, design.hypoid_design)
+  pair := HypoidPair(std.top, design.hypoid_design)
 }

@@ -174,10 +174,18 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
         };
         let mut mine: Vec<Splice> = Vec::new();
         let mut missing = false;
-        // a number a `fix` holds is stated there: no seed of it is written, or counted missing
+        // a number a `fix` holds is stated there, and is its own seed: no seed of it is written,
+        // or counted missing — and one the clause wrote is taken out of it (`fix(x == 3) p`
+        // makes `hint((3, 7))` say `hint(y: 7)`)
         let held = |p: u32| sk.params[p as usize].fixed;
+        let written = |i: usize| d.seed_spans.get(i).is_some_and(|s| !s.is_empty());
+        let mut redundant = false;
         for (i, p) in sk.own_params(parent).iter().enumerate() {
-            if omit_radius || held(*p) { continue; }
+            if omit_radius { continue; }
+            if held(*p) {
+                redundant |= written(i);
+                continue;
+            }
             let v = sk.seed_value(parent, *p);
             let text = d.seed_text.get(i).and_then(|t| t.as_ref());
             let (sp, miss) = one(v, text, d.seed_spans.get(i).copied().unwrap_or_default());
@@ -232,6 +240,18 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
         }
 
         if !missing {
+            // the clause rewritten without what a `fix` holds: the numbers it keeps as they stand
+            // (spliced above where the solve moved one), and the whole clause gone with the
+            // space before it where it keeps none
+            if let Some(at) = d.hint_span.filter(|at| redundant && !at.is_empty()) {
+                let own = sk.own_params(parent);
+                let free = own.iter().enumerate()
+                    .filter(|&(i, &p)| written(i) && !held(p))
+                    .map(|(i, &p)| (i, sk.seed_value(parent, p)));
+                let hint = free_clause(parent.kind, d, prog.text(), free);
+                mine.retain(|s| s.at.lo >= at.hi || s.at.hi <= at.lo);
+                mine.push(clause_splice(prog.text(), at, (!hint.is_empty()).then_some(hint)));
+            }
             edits.extend(mine);
             continue;
         }
@@ -253,13 +273,10 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
         } else if own.iter().any(|&p| held(p)) {
             // only the numbers no `fix` holds: `hint(y: 7)` beside `fix(x == 3) p`, and none at
             // all where every one is held
-            let fields = parent.kind.fields().iter()
-                .filter(|(_, f)| *f == crate::model::Field::Scalar);
-            let free: Vec<String> = fields.zip(&own).zip(&pose)
-                .filter(|((_, &p), _)| !held(p))
-                .map(|(((n, _), _), v)| format!("{n}: {}", num(*v)))
-                .collect();
-            if free.is_empty() { String::new() } else { format!("hint({})", free.join(", ")) }
+            let free = own.iter().zip(&pose).enumerate()
+                .filter(|&(_, (&p, _))| !held(p))
+                .map(|(i, (_, &v))| (i, v));
+            free_clause(parent.kind, d, prog.text(), free)
         } else {
             syntax::hint_clause(d, &pose)
         };
@@ -300,7 +317,8 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
                     for (x, p) in v.iter_mut().zip(seeded(*k)) {
                         *x = sk.params[p as usize].value;
                     }
-                    Some(syntax::Kid::Hint(syntax::KidSeed { v, ..Default::default() }))
+                    let axis = k.kind == EntKind::Axis;
+                    Some(syntax::Kid::Hint(syntax::KidSeed { v, axis, ..Default::default() }))
                 }
             });
             for g in d2.children.iter_mut() {
@@ -308,13 +326,24 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
             }
             syntax::decl_args(&d2)
         });
-        if list.is_none() && hint.is_empty() {
+        // a clause the source wrote whose every number a `fix` now holds goes, with the space
+        // before it
+        let gone = (redundant && hint.is_empty() && !at.is_empty())
+            .then(|| clause_splice(prog.text(), at, None));
+        if list.is_none() && gone.is_none() && hint.is_empty() {
             // nothing to write here: what moved is in a slot the source wrote, and splices there
             edits.extend(mine);
             continue;
         }
         // a slot the source *did* write still splices in place; only what it did not is here
         edits.extend(mine.into_iter().filter(|s| s.at.lo >= at.hi || s.at.hi <= at.lo));
+        if let Some(gone) = gone {
+            edits.push(gone);
+            if let Some(args) = list {
+                edits.push(Splice { at: d.list_span, with: args });
+            }
+            continue;
+        }
         match list {
             // Both are missing and both would go at the same offset — the parser records the
             // clause's home just past the name when there is no clause — so they are written as
@@ -351,42 +380,80 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
     Edit::spliced(prog, edits, Kind::Numeric)
 }
 
-/// Each unknown the document declares (`param beta: Angle hint(30deg)`), read by a dimension or
-/// shared by contacts, its seed written as the solve left it: spliced over a literal seed, or a
-/// clause written where none was — and only where the solve moved it, so an unread unknown and an
+/// A `hint(…)` clause of the numbers given, each by its field's name: a seed written as an
+/// expression kept as written (a solve does not rewrite arithmetic), any other as the number it
+/// came to.  Empty where none is given.
+fn free_clause(kind: EntKind, d: &Decl, text: &str, free: impl Iterator<Item = (usize, f64)>) -> String {
+    let free: Vec<(usize, f64)> = free.filter(|&(i, _)| i < kind.members().len()).collect();
+    let given: Vec<usize> = free.iter().map(|&(i, _)| i).collect();
+    let value = |i: usize| {
+        let v = free.iter().find(|&&(j, _)| j == i).map_or(0.0, |&(_, v)| v);
+        match (d.seed_text.get(i).and_then(|t| t.as_ref()), d.seed_spans.get(i)) {
+            (Some(_), Some(s)) if !s.is_empty() => s.slice(text).to_string(),
+            _ => num(v),
+        }
+    };
+    let point = if given.contains(&2) { 3 } else { 2 };
+    let keys = syntax::said_text(kind, point, &given, value, ": ");
+    if keys.is_empty() { String::new() } else { format!("hint({})", keys.join(", ")) }
+}
+
+/// Each unknown the document declares (`param beta: Angle hint(30deg)`, or a call's formal left
+/// unbound and seeded, `Cone(gax, half: hint(30deg))`), read by a dimension or shared by
+/// contacts, its seed written as the solve left it: spliced over a literal seed, or a clause
+/// written where none was — and only where the solve moved it, so an unread unknown and an
 /// unmoved one change nothing.  A seed written as an expression is the author's arithmetic, and is
 /// left alone.
 fn unknown_seeds(sk: &Sketch, prog: &Program) -> Vec<Splice> {
+    let solved = |name: &str| {
+        let p = sk.free_vars.get(name).copied().or(sk.shared.get(name).map(|s| s.param))?;
+        Some(sk.params[p as usize].value)
+    };
     let mut out = Vec::new();
     for st in &prog.root().body {
-        let StmtKind::Param(p) = &st.kind else { continue };
-        let Some(input) = p.input.as_ref().filter(|_| !p.bound()) else { continue };
-        // read by a dimension, or a place contacts share along a curve (`t == s`)
-        let name = &p.name.text;
-        let Some(param) = sk.free_vars.get(name).copied().or(sk.shared.get(name).map(|s| s.param))
-        else {
-            continue;
-        };
-        let v = sk.params[param as usize].value;
-        let angle = input.ty == Some(syntax::Ty::Angle);
-        match &input.seed {
-            // a length written in another unit (`2in` in an `mm` document) is left as written
-            Some((text, span))
-                if writable_seed(text) && (angle || !crate::expr::names_unit(text)) =>
-            {
-                let with = seed_literal(text, v, angle);
-                if !span.is_empty() && span.slice(prog.text()) != with {
-                    out.push(Splice { at: *span, with });
+        match &st.kind {
+            StmtKind::Param(p) => {
+                let Some(input) = p.input.as_ref().filter(|_| !p.bound()) else { continue };
+                let Some(v) = solved(&p.name.text) else { continue };
+                let angle = input.ty == Some(syntax::Ty::Angle);
+                match &input.seed {
+                    Some((text, span)) => out.extend(seed_splice(prog, text, *span, v, angle)),
+                    None if v != 0.0 => {
+                        out.push(Splice { at: p.span, with: format!(" hint({})", num(v)) });
+                    }
+                    None => {}
                 }
             }
-            Some(_) => {}
-            None if v != 0.0 => {
-                out.push(Splice { at: p.span, with: format!(" hint({})", num(v)) });
+            // a number is given by label, so a seeded formal is found by its own
+            StmtKind::Instance(inst) => {
+                let Ok(c) = prog.resolve_component(&inst.component.text, None) else { continue };
+                for a in &inst.args {
+                    let (Some(l), syntax::InstVal::Hint(text, span)) = (&a.label, &a.value) else {
+                        continue;
+                    };
+                    let Some(f) = prog.components[c].formals.iter().find(|f| f.name.text == l.text)
+                    else {
+                        continue;
+                    };
+                    let Some(v) = solved(&format!("{}.{}", inst.name.text, l.text)) else { continue };
+                    out.extend(seed_splice(prog, text, *span, v, f.ty == syntax::Ty::Angle));
+                }
             }
-            None => {}
+            _ => {}
         }
     }
     out
+}
+
+/// A literal seed, `text` at `span`, rewritten to the value `v` a solve left its unknown at —
+/// `None` where it reads the same, or is not a literal this can write: an expression, or a length
+/// written in another unit (`2in` in an `mm` document), each left as written.
+fn seed_splice(prog: &Program, text: &str, span: Span, v: f64, angle: bool) -> Option<Splice> {
+    if !writable_seed(text) || !angle && crate::expr::names_unit(text) || span.is_empty() {
+        return None;
+    }
+    let with = seed_literal(text, v, angle);
+    (span.slice(prog.text()) != with).then_some(Splice { at: span, with })
 }
 
 /// Whether a statement is one of the root component's own.
@@ -527,7 +594,7 @@ pub fn add_use(prog: &Program, name: &str) -> Edit {
     }
 }
 
-/// `pN := point hint(x: …, y: …)`
+/// `pN := point hint((…, …))`
 /// The rectangle the Rect tool draws: a **reusable component**, defined once per document, and
 /// one instance per gesture.  The definition is the chain a person would write — four lines
 /// welded corner to corner at right angles, the first two carrying the width and the height —
@@ -894,7 +961,7 @@ fn mentions(st: &Stmt, names: &std::collections::BTreeSet<String>) -> Vec<String
                 match &field.value {
                     syntax::InstVal::Ref(r) => look(r),
                     syntax::InstVal::Group(inner) => fields.extend(inner),
-                    syntax::InstVal::Expr(_) | syntax::InstVal::Hint(_) => {}
+                    syntax::InstVal::Expr(_) | syntax::InstVal::Hint(..) => {}
                 }
             }
         }
@@ -1503,11 +1570,11 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
         let with = now.map(|p| format!(" in {}", name_of(EntRef::plane(p))));
         flags.push(clause_splice(prog.text(), d.membership.span(), with));
     }
-    // `fix(x == 0, y == 0) p`: a statement per held entity, added and taken away — the holds
+    // `fix((0, 0)) p`: a statement per held entity, added and taken away — the holds
     // walked once, above, and named here now that there is a name for each
-    let held_now: std::collections::BTreeMap<GaugeKey, &[(&str, f64)]> =
+    let held_now: std::collections::BTreeMap<GaugeKey, (EntRef, &[(&str, f64)])> =
         held.iter()
-            .map(|(r, h)| (gauge_key_of(name_of(*r), h.iter().map(|(f, _)| *f)), h.as_slice()))
+            .map(|(r, h)| (gauge_key_of(name_of(*r), h.iter().map(|(f, _)| *f)), (*r, h.as_slice())))
             .collect();
     let held_was: std::collections::BTreeSet<GaugeKey> = prog
         .root()
@@ -1529,11 +1596,12 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
             doomed.insert(st.id);
         }
     }
-    for (k, h) in held_now.iter() {
+    for (k, &(r, h)) in held_now.iter() {
         if held_was.contains(k) {
             continue;
         }
-        adds.push(StmtKind::Relation(crate::program::lift_gauge(&k.0, h)));
+        let point = crate::program::point_len(sk, r);
+        adds.push(StmtKind::Relation(crate::program::lift_gauge(&k.0, r.kind, point, h)));
         made.push(Made::Gauge);
     }
 
@@ -1630,11 +1698,8 @@ fn gauge_key(r: &syntax::Relation) -> Option<GaugeKey> {
             if crate::constraints::gauge_op(&w.word.text)? != CKind::Fix {
                 return None;
             }
-            let fields = w.args.iter().filter_map(|a| match a {
-                syntax::OpArg::Slot { key, .. } => Some(key.text.as_str()),
-                _ => None,
-            });
-            Some(gauge_key_of(syntax::ref_text(w.ops.first()?), fields))
+            let fields: Vec<syntax::Name> = w.slots().map(|(key, _)| key).collect();
+            Some(gauge_key_of(syntax::ref_text(w.ops.first()?), fields.iter().map(|k| k.text.as_str())))
         }
         syntax::RelationForm::Canonical { kind: CKind::Fix, args } => {
             let Some(Some(syntax::Arg::Ref(rf))) = args.first() else { return None };

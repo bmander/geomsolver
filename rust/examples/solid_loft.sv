@@ -12,24 +12,24 @@ component Section(c: point, size: Length, wall: Length) {
   profile := face(outer.loop, holes: inner.loop)
 }
 
-end_plane := plane hint(x: 0mm, y: length, z: 0mm)
-fix(x == 0mm, y == length, z == 0mm) end_plane
-fix(x == 1, y == 0, z == 0) end_plane.u
-fix(x == 0, y == 0, z == 1) end_plane.v
+end_plane := plane
+fix(origin == (0mm, length, 0mm)) end_plane
+fix(dir == (1, 0, 0)) end_plane.u
+fix(dir == (0, 0, 1)) end_plane.v
 in std.front {
-  inlet_center := point hint(x: 0mm, y: 0mm)
+  inlet_center := point hint((0mm, 0mm))
   inlet_center coincident std.origin
   inlet := Section(inlet_center, size: inlet_size, wall: wall)
 }
 in end_plane {
-  outlet_center := point hint(x: 0mm, y: 0mm)
+  outlet_center := point hint((0mm, 0mm))
   outlet_center coincident end_plane.origin
   outlet := Section(outlet_center, size: outlet_size, wall: wall)
 }
 in std.top {
-  entry := point hint(x: 0mm, y: 0mm)
+  entry := point hint((0mm, 0mm))
   entry coincident std.top.origin
-  exit := point hint(x: 0mm, y: length)
+  exit := point hint((0mm, length))
   construction centerline guide := line(entry, exit)
   vertical guide
   entry distance(length, along: y) exit

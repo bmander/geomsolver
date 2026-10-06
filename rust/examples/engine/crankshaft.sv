@@ -20,20 +20,20 @@ use engine.parts
 // and `heel` are where the arm's line crosses the eye and the rim — the throw's extreme points,
 // which the side view reads.
 component Throw(o: point, ax: line, theta: Angle, dims: group, shape: group) {
-  pin := point hint(x: o.x + dims.R * sin(theta), y: o.y + dims.R * cos(theta))
+  pin := point hint((o.x + dims.R * sin(theta), o.y + dims.R * cos(theta)))
   arm := line(o, pin)
   o distance(dims.R) pin
   ax angle(theta, sense: cw) arm
   kp := circle(center: pin) hint(r: dims.rp)
   radius(dims.rp) kp
   // the eye: the arc of the far side, between the two flank tangents
-  el := point hint(x: pin.x - shape.eye * cos(theta), y: pin.y + shape.eye * sin(theta))
-  er := point hint(x: pin.x + shape.eye * cos(theta), y: pin.y - shape.eye * sin(theta))
+  el := point hint((pin.x - shape.eye * cos(theta), pin.y + shape.eye * sin(theta)))
+  er := point hint((pin.x + shape.eye * cos(theta), pin.y - shape.eye * sin(theta)))
   eye := arc(center: pin, start: er, end: el) hint(r: shape.eye)
   radius(shape.eye) eye
   // the rim: an arc about the axis on the far side from the pin, `shape.half_width` either side of the arm
-  cl := point hint(x: o.x - shape.rim * sin(theta - asin(shape.half_width / shape.rim)), y: o.y - shape.rim * cos(theta - asin(shape.half_width / shape.rim)))
-  cr := point hint(x: o.x - shape.rim * sin(theta + asin(shape.half_width / shape.rim)), y: o.y - shape.rim * cos(theta + asin(shape.half_width / shape.rim)))
+  cl := point hint((o.x - shape.rim * sin(theta - asin(shape.half_width / shape.rim)), o.y - shape.rim * cos(theta - asin(shape.half_width / shape.rim))))
+  cr := point hint((o.x - shape.rim * sin(theta + asin(shape.half_width / shape.rim)), o.y - shape.rim * cos(theta + asin(shape.half_width / shape.rim))))
   rim := arc(center: o, start: cl, end: cr) hint(r: shape.rim)
   radius(shape.rim) rim
   cl distance(shape.half_width, side: left) arm
@@ -44,17 +44,17 @@ component Throw(o: point, ax: line, theta: Angle, dims: group, shape: group) {
   fl tangent(at: p1) eye
   fr tangent(at: p1) eye
   // the crown of the eye and the heel of the rim, on the arm's own line
-  crown := point hint(x: pin.x + shape.eye * sin(theta), y: pin.y + shape.eye * cos(theta))
-  heel := point hint(x: o.x - shape.rim * sin(theta), y: o.y - shape.rim * cos(theta))
+  crown := point hint((pin.x + shape.eye * sin(theta), pin.y + shape.eye * cos(theta)))
+  heel := point hint((o.x - shape.rim * sin(theta), o.y - shape.rim * cos(theta)))
   crown coincident eye
   crown coincident arm
   heel coincident rim
   heel coincident arm
   // the oil passage, drilled up the arm from the journal's surface to the pin's
-  oa := point hint(x: o.x + dims.rj * sin(theta) - shape.oil_radius * cos(theta), y: o.y + dims.rj * cos(theta) + shape.oil_radius * sin(theta))
-  ob := point hint(x: pin.x - dims.rp * sin(theta) - shape.oil_radius * cos(theta), y: pin.y - dims.rp * cos(theta) + shape.oil_radius * sin(theta))
-  oc := point hint(x: o.x + dims.rj * sin(theta) + shape.oil_radius * cos(theta), y: o.y + dims.rj * cos(theta) - shape.oil_radius * sin(theta))
-  od := point hint(x: pin.x - dims.rp * sin(theta) + shape.oil_radius * cos(theta), y: pin.y - dims.rp * cos(theta) - shape.oil_radius * sin(theta))
+  oa := point hint((o.x + dims.rj * sin(theta) - shape.oil_radius * cos(theta), o.y + dims.rj * cos(theta) + shape.oil_radius * sin(theta)))
+  ob := point hint((pin.x - dims.rp * sin(theta) - shape.oil_radius * cos(theta), pin.y - dims.rp * cos(theta) + shape.oil_radius * sin(theta)))
+  oc := point hint((o.x + dims.rj * sin(theta) + shape.oil_radius * cos(theta), o.y + dims.rj * cos(theta) - shape.oil_radius * sin(theta)))
+  od := point hint((pin.x - dims.rp * sin(theta) + shape.oil_radius * cos(theta), pin.y - dims.rp * cos(theta) - shape.oil_radius * sin(theta)))
   oil_l := line(oa, ob)
   oil_r := line(oc, od)
   oa distance(shape.oil_radius, side: left) arm
@@ -70,10 +70,10 @@ component Throw(o: point, ax: line, theta: Angle, dims: group, shape: group) {
 // A web seen edge on: a rectangle between `x0` and `x1` along the axis whose top and bottom are
 // the heights of two points the end view placed.
 component WebSide(o: point, x0: Length, x1: Length, top: point, bottom: point) {
-  a := point hint(x: o.x + x0, y: top.y)
-  b := point hint(x: o.x + x1, y: top.y)
-  c := point hint(x: o.x + x1, y: bottom.y)
-  d := point hint(x: o.x + x0, y: bottom.y)
+  a := point hint((o.x + x0, top.y))
+  b := point hint((o.x + x1, top.y))
+  c := point hint((o.x + x1, bottom.y))
+  d := point hint((o.x + x0, bottom.y))
   (ab := line(a, b)) -> (bc := line(b, c)) -> (cd := line(c, d)) -> (da := line(d, a)) -> close
   o distance(x0, along: x) a
   top distance(0, along: y) a
@@ -123,12 +123,12 @@ component Crankshaft(end: plane, side: plane, o: point, ax: line, o_s: point,
       // cylinders 1 and 4 are up together, 2 and 3 a half turn on
       k := i * (3 - i) / 2
       ph := dims.theta + 180deg * k
-      pin_s := point hint(x: o_s.x + xc, y: o_s.y + dims.R * cos(ph))
+      pin_s := point hint((o_s.x + xc, o_s.y + dims.R * cos(ph)))
       o_s distance(xc, along: x) pin_s
       pin := engine.parts.Box(pin_s, x0: -wpin / 2, y0: -dims.rp, x1: wpin / 2, y1: dims.rp)
       // the throw's crown and heel at this cylinder, their heights the end view's
-      ct := point hint(x: o_s.x + xc, y: o_s.y + (dims.R + eP) * cos(ph))
-      hb := point hint(x: o_s.x + xc, y: o_s.y - rcw * cos(ph))
+      ct := point hint((o_s.x + xc, o_s.y + (dims.R + eP) * cos(ph)))
+      hb := point hint((o_s.x + xc, o_s.y - rcw * cos(ph)))
       o_s distance(xc, along: x) ct
       o_s distance(xc, along: x) hb
       wl := WebSide(o_s, x0: xc - dims.P / 2 + wj / 2, x1: xc - wpin / 2, top: ct, bottom: hb)

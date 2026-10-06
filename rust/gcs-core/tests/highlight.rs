@@ -15,7 +15,7 @@ fn the_spans_tile_the_text() {
     for src in [
         GEAR,
         "",
-        "use std\nin std.front {\np := point hint(x: 0, y: 0)\n}\n",
+        "use std\nin std.front {\np := point hint((0, 0))\n}\n",
         "// nothing but a comment",
         "/* unclosed",
         "use std\nin std.front {\nhorizontal (a := line(p1, p2)) -> tangent\n(k := arc(center: c) hint(r: 5)) -> close\n}\n",
@@ -52,11 +52,11 @@ fn a_statement_is_coloured_by_what_it_declares() {
     let src = "\
 component Gear(N: Int, m: Length, c: circle) {
   R := m * N / 2
-  hub := point hint(x: 0, y: 5)
+  hub := point hint((0, 5))
   center := point
   base := circle(center: center) hint(r: R) class construction
   radius(R) base
-  fix(x == 0, y == 0) center
+  fix((0, 0)) center
   cycle N as i {
     t := Tooth(base, a0: i * R)
   }
@@ -81,7 +81,7 @@ g := Gear(N: 30, m: 3)  // one wheel
     assert_eq!(tint_of(src, "construction"), Some(Tint::Class));
     assert_eq!(tint_of(src, "radius"), Some(Tint::Relation));
     assert_eq!(tint_of(src, "radius(R)"), Some(Tint::Relation));
-    assert_eq!(tint_of(src, "fix(x"), Some(Tint::Relation));
+    assert_eq!(tint_of(src, "fix(("), Some(Tint::Relation));
     assert_eq!(tint_of(src, "cycle"), Some(Tint::Word));
     assert_eq!(tint_of(src, "as"), Some(Tint::Word));
     assert_eq!(tint_of(src, "i {"), Some(Tint::Def));
@@ -162,7 +162,7 @@ fn a_block_comment_is_one_run() {
 fn a_class_and_a_style_block_read_as_presentation() {
     let src = "\
 style .centerline { dash: 12 3 2 3; width: 0.5; color: #888888 }
-a := point hint(x: 0, y: 0)
+a := point hint((0, 0))
 ab := line(a, a) class centerline heavy
 ";
     assert_eq!(tint_of(src, "style"), Some(Tint::Word));
@@ -187,9 +187,9 @@ fn an_operator_is_coloured_through_its_own_parentheses() {
     let src = "\
 use std
 in std.front {
-p := point hint(x: 0, y: 0)
-q := point hint(x: 60, y: 0)
-r := point hint(x: 60, y: 40)
+p := point hint((0, 0))
+q := point hint((60, 0))
+r := point hint((60, 40))
 p distance(80) q
 p distance(20, along: y) r
 q equal r
@@ -218,13 +218,13 @@ fn a_faces_close_marker_is_distinct_from_an_edge_named_close() {
 #[test]
 fn an_anonymous_declaration_gives_its_name_tint_to_nobody() {
     let src = "\
-a := point hint(x: 0, y: 0)
-point hint(x: 1, y: 0)
+a := point hint((0, 0))
+point hint((1, 0))
 line class construction
 line -> tangent arc -> tangent line
 ";
     assert_eq!(tint_of(src, "a :="), Some(Tint::Def), "a written name still tints");
-    assert_eq!(tint_of(src, "hint(x: 1"), Some(Tint::Word), "an anonymous point's clause");
+    assert_eq!(tint_of(src, "hint((1"), Some(Tint::Word), "an anonymous point's clause");
     assert_eq!(tint_of(src, "class"), Some(Tint::Word), "an anonymous line's clause");
     assert_eq!(tint_of(src, "tangent arc"), Some(Tint::Relation), "a joint on an anonymous link");
     // a link named where it stands names itself, and the word after it is still a joint

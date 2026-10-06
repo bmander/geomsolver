@@ -765,7 +765,7 @@ test('redundancy the matching cannot see is counted and named as implied', () =>
   assert.deepEqual([...named].sort(), [
     'L3 perpendicular L1', 'L4 perpendicular L2', 'L5 perpendicular L0',
     // `P3` is the concurrency point: `altitudes.sv` writes the three feet *in* the lines they
-    // slide along (`line alt_a(A, hint(x: 15, y: 5))`), so those points are minted with the
+    // slide along (`line alt_a(A, hint((15, 5)))`), so those points are minted with the
     // lines and come after it
     'P3 coincident L3', 'P3 coincident L4', 'P3 coincident L5',
   ]);
@@ -995,7 +995,7 @@ test('classes round-trip, and the core resolves what they look like', () => {
 test('a claimed callout takes the dimension rule and then its own', () => {
   // `paint.ts` asks for both classes, because a reference dimension *is* a dimension: a sheet
   // that recoloured `.dimension` alone would otherwise recolour only the unclaimed half
-  const plain = Document.read('a := point hint(x: 0, y: 0)\nb := point hint(x: 60, y: 0)\n');
+  const plain = Document.read('a := point hint((0, 0))\nb := point hint((60, 0))\n');
   assert.equal(plain.sketch.styleNamed('dimension').color, '#0f6f7a');
   assert.equal(plain.sketch.styleNamed('dimension reference').color, '#7aa7ad');
   assert.equal(plain.sketch.styleNamed('dimension reference').width,
@@ -1003,7 +1003,7 @@ test('a claimed callout takes the dimension rule and then its own', () => {
   plain.dispose();
 
   const styled = Document.read(
-    'style .dimension { color: #b00020; width: 2 }\na := point hint(x: 0, y: 0)\n');
+    'style .dimension { color: #b00020; width: 2 }\na := point hint((0, 0))\n');
   assert.equal(styled.ok, false);
   assert.ok(styled.diagnostics.some(d => d.message.includes('.svd')));
   styled.dispose();
@@ -1263,11 +1263,11 @@ test('a solid crosses the ABI as a mesh a viewer can use', () => {
   // layer's business and not the geometry, whose test is `gcs-core/tests/mesh.rs`.
   const src = [
     'unit mm', 'use std', 'in std.front {',
-    'a := point', 'b := point hint(x: 60, y: 0)',
-    'c := point hint(x: 60, y: 40)', 'd := point hint(x: 0, y: 40)',
+    'a := point', 'b := point hint((60, 0))',
+    'c := point hint((60, 40))', 'd := point hint((0, 40))',
     '(ab := line(a, b)) -> (bc := line(b, c)) -> (cd := line(c, d)) -> (da := line(d, a)) -> close',
-    'horizontal ab', 'vertical bc', 'a distance(60) b', 'a distance(40) d', 'fix(x == 0, y == 0) a',
-    'o := point hint(x: 30, y: 20)',
+    'horizontal ab', 'vertical bc', 'a distance(60) b', 'a distance(40) d', 'fix((0, 0)) a',
+    'o := point hint((30, 20))',
     'a distance(30, along: x) o', 'a distance(20, along: y) o',
     'hole := circle(center: o) hint(r: 8)', 'radius(8) hole', '}',
     'sec := face(ab, bc, cd, da)', 'hole_f := face(hole)',
@@ -1306,7 +1306,7 @@ test('a solid crosses the ABI as a mesh a viewer can use', () => {
 
 test('a named component chain reaches the browser as the same swept mesh', () => {
   const src = [
-    'unit mm', 'use std', 'use components.parts', 'in std.front {', 'O := point', 'fix(x == 0, y == 0) O',
+    'unit mm', 'use std', 'use components.parts', 'in std.front {', 'O := point', 'fix((0, 0)) O',
     'boss := components.parts.Box(O, x0: 0mm, y0: 0mm, x1: 10mm, y1: 20mm)', '}',
     'block := solid(boss.profile, depth: 8mm)', '',
   ].join('\n');
@@ -1763,7 +1763,7 @@ test('a name nothing defines is a free variable that ties the dimensions reading
 
 test('an ellipse is a curve of the library, and a point solves onto its rim', () => {
   const d = Document.read(
-    'use std\nin std.front {\no := point\nfix(x == 10, y == 5) o\np := point hint(x: 11, y: 9)\n}\n'
+    'use std\nin std.front {\no := point\nfix((10, 5)) o\np := point hint((11, 9))\n}\n'
     + 'e := std.Ellipse(o, a: 8, b: 3, tilt: 0deg).p over u in (0, 360)\np coincident e hint(t: 80)\n');
   assert.ok(d.ok, JSON.stringify(d.diagnostics));
   const sk = d.sketch;
@@ -1903,8 +1903,8 @@ test('the overview folds the views into the box, and is flat looked at square on
 });
 
 test('a plane is written through the edit API over two lines, and its origin answers by name', () => {
-  const d = Document.read('use std\nin std.front {\na := point hint(x: 0, y: 0)\n'
-                          + 'b := point hint(x: 40, y: 0)\nc := point hint(x: 0, y: 30)\n'
+  const d = Document.read('use std\nin std.front {\na := point hint((0, 0))\n'
+                          + 'b := point hint((40, 0))\nc := point hint((0, 30))\n'
                           + 'ab := line(a, b)\nac := line(a, c)\n}\n');
   assert.ok(d.ok, JSON.stringify(d.diagnostics));
   const e = d.addEntity('plane', ['ab', 'ac'], [], 'tilted');
@@ -1927,7 +1927,7 @@ test('a plane is written through the edit API over two lines, and its origin ans
   p.plane = pl;
   const r = next.reconcile();
   assert.ok(!r.refused, r.refused ?? '');
-  assert.ok(/p0 := point hint\(x: 3, y: 4\) in tilted/.test(r.text), r.text);
+  assert.ok(/p0 := point hint\(\(3, 4\)\) in tilted/.test(r.text), r.text);
   next.dispose();
   d.dispose();
 });
@@ -1953,11 +1953,11 @@ test('a program written by hand draws', () => {
     'param w := 60',
     'in std.front {',
     'a := point',
-    'b := point hint(x: 100, y: 0)',
+    'b := point hint((100, 0))',
     'ab := line(a, b)',
     'a distance(w) b',
     'horizontal ab',
-    'fix(x == 0, y == 0) a',
+    'fix((0, 0)) a',
     '}',
   ].join('\n'));
   assert.ok(d.ok, JSON.stringify(d.diagnostics));
@@ -1967,7 +1967,7 @@ test('a program written by hand draws', () => {
 });
 
 test('a program with a bad line reports it and draws the rest', () => {
-  const d = Document.read('a := point hint(x: 0, y: 0)\nnonsense here\nb := point hint(x: 5, y: 5)\n');
+  const d = Document.read('a := point hint((0, 0))\nnonsense here\nb := point hint((5, 5))\n');
   assert.ok(!d.ok);
   assert.ok(d.diagnostics.length > 0);
   assert.ok(d.diagnostics[0].line >= 1 && d.diagnostics[0].code.length === 4);
@@ -2036,8 +2036,8 @@ use std
 param w := 140
 in std.front {
 a := point
-b := point hint(x: 100, y: 0)
-c := point hint(x: 40, y: 70)
+b := point hint((100, 0))
+c := point hint((40, 70))
 
 ab := line(a, b)      // the base
 bc := line(b, c)
@@ -2045,7 +2045,7 @@ ca := line(c, a)
 
 horizontal ab
 a distance(w) b
-fix(x == 0, y == 0) a
+fix((0, 0)) a
 }
 `;
 
@@ -2055,7 +2055,7 @@ test('an edit is a new text, and the document is unchanged until it is applied',
   const e = d.addPoint(12.5, -3);
   assert.equal(e.kind, 'structural');
   assert.deepEqual(e.names, ['p0']);
-  assert.ok(e.text.includes('p0 := point hint(x: 12.5, y: -3)'), e.text);
+  assert.ok(e.text.includes('p0 := point hint((12.5, -3))'), e.text);
   assert.equal(d.text, TRIANGLE, 'the document has not moved');
   assert.equal(d.sketch.points.length, 3 + 5, 'its three, and the five the standard datums bring');
   const next = Document.read(e.text);
@@ -2245,7 +2245,7 @@ test('a diagnostic and a source map index the string, not the core\'s bytes', ()
   assert.equal(text.slice(centre.lo, centre.hi), 'center := point');
   const lo = d.map.entities.find((x) => x.name?.endsWith('.t.r.lo'))!;
   assert.ok(lo, 'a flank end is in the map');
-  assert.equal(text.slice(lo.lo, lo.hi), 'lo := point hint(x: 0, y: 0)');
+  assert.equal(text.slice(lo.lo, lo.hi), 'lo := point hint((0, 0))');
   d.dispose();
 
   // and a diagnostic points at the words it is about, on a line past the em dash
@@ -2297,7 +2297,7 @@ test('a rectangle joins the view it is drawn in, whole', () => {
 });
 
 test('a module the host hands over resolves a use before the library', async () => {
-  const doc = 'use demo.parts\no := point\nfix(x == 0, y == 0) o\nr := demo.parts.Rung(o)\n';
+  const doc = 'use demo.parts\no := point\nfix((0, 0)) o\nr := demo.parts.Rung(o)\n';
   const mod = 'component Rung(a: point) {\n  b := point\n  e := line(a, b)\n  horizontal e\n  a distance(10) b\n}\n';
   assert.deepEqual(modules.uses(doc), ['demo.parts']);
   assert.equal(modules.pathOf('demo.parts'), 'demo/parts.sv');

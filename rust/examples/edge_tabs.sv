@@ -13,10 +13,10 @@ rise := 12mm
 
 in std.front {
   a := point
-  b := point hint(x: 60, y: 0)
-  c := point hint(x: 60, y: 40)
-  d := point hint(x: 0, y: 40)
-  fix(x == 0, y == 0) a
+  b := point hint((60, 0))
+  c := point hint((60, 40))
+  d := point hint((0, 40))
+  fix((0, 0)) a
   outline := distance(height) vertical (ad := line(a, d)) -> horizontal (dc := line(d, c)) ->
     vertical (cb := line(c, b)) -> distance(width) horizontal (ba := line(b, a)) -> close
 

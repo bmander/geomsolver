@@ -380,38 +380,125 @@ impl<'a> P<'a> {
 
     /// Read named hint values through the closing parenthesis. The caller validates
     /// which keys its construct accepts.
+    ///
+    /// A vector is read into its components, each keyed by the member it is: `(3, 4)` the
+    /// point's own `x` and `y`, `dir: (1, 0, 0)` an axis's `dir.x`, `dir.y` and `dir.z` — so a
+    /// component keeps the span a solve splices, and every table below reads members.
     fn hint_body(&mut self, eg: &str) -> Option<Vec<Hint>> {
         let mut out = Vec::new();
         while !self.eat_p(')') {
             let at = self.here();
-            let Some(key) = self.slot_label() else {
-                self.fail(&format!("a hint names what it seeds: `hint({eg})`"));
-                return None;
-            };
-            let (value, text, span, place) = if ["at", "toward", "along"].contains(&key.as_str()) {
-                // a place, not a number — `at: pin`, `at: k` — so it is read as a reference;
-                // `at: (3, 4)` is the coordinate pair the keys replaced, and says so
-                if self.peek() == Some(&Tok::P('(')) {
-                    self.fail(&format!(
-                        "`{key}:` names a place; a coordinate seed is `hint(x: …, y: …)`"
-                    ));
-                    return None;
+            if self.tuple_ahead() {
+                for (key, (value, text, span)) in self.vector("")? {
+                    out.push(Hint { key, at, value, text, span, place: None });
                 }
-                let r = self.refr()?;
-                let mut text = String::new();
-                write_ref(&mut text, &r);
-                (None, text, r.span, Some(r))
             } else {
-                let (value, text, span) = self.value_text()?;
-                (value, text, span, None)
-            };
-            out.push(Hint { key, at, value, text, span, place });
+                let Some(key) = self.member_label(Tok::P(':')) else {
+                    self.fail(&format!("a hint names what it seeds: `hint({eg})`"));
+                    return None;
+                };
+                if ["at", "toward", "along"].contains(&key.as_str()) {
+                    // a place, not a number — `at: pin`, `at: k` — so it is read as a
+                    // reference; a pair of numbers is the point's own place, and says so
+                    if self.peek() == Some(&Tok::P('(')) {
+                        self.fail(&format!(
+                            "`{key}:` names a place; a point's own is `hint((x, y))`"
+                        ));
+                        return None;
+                    }
+                    let r = self.refr()?;
+                    let mut text = String::new();
+                    write_ref(&mut text, &r);
+                    out.push(Hint { key, at, value: None, text, span: r.span, place: Some(r) });
+                } else if self.tuple_ahead() {
+                    for (key, (value, text, span)) in self.vector(&key)? {
+                        out.push(Hint { key, at, value, text, span, place: None });
+                    }
+                } else {
+                    let (value, text, span) = self.value_text()?;
+                    out.push(Hint { key, at, value, text, span, place: None });
+                }
+            }
             if !self.eat_p(',') && self.peek() != Some(&Tok::P(')')) {
                 self.fail("expected `,` or `)`");
                 return None;
             }
         }
         Some(out)
+    }
+
+    /// Whether a vector stands here: a parenthesis whose contents hold a comma at their own
+    /// level — `(3, 4)` — as against a grouped expression, `(w + 2) / 3`.
+    pub(super) fn tuple_ahead(&self) -> bool {
+        if self.peek() != Some(&Tok::P('(')) {
+            return false;
+        }
+        let mut depth = 0i32;
+        for (t, _) in &self.t[self.i..] {
+            match t {
+                Tok::P('(') | Tok::P('[') => depth += 1,
+                Tok::P(')') | Tok::P(']') => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return false;
+                    }
+                }
+                Tok::P(',') if depth == 1 => return true,
+                Tok::Nl => return false,
+                _ => {}
+            }
+        }
+        false
+    }
+
+    /// A vector, `(a, b)` or `(a, b, c)`, each component an expression as `value_text` reads
+    /// one, keyed by the member it is: `x`, `y`, `z` under `key` (`dir.x`), or bare for `""`.
+    pub(super) fn vector(&mut self, key: &str) -> Option<Vec<(String, (Option<f64>, String, Span))>> {
+        let lo = self.here();
+        self.want_p('(');
+        let mut parts = Vec::new();
+        loop {
+            parts.push(self.value_text()?);
+            if self.eat_p(')') {
+                break;
+            }
+            if !self.want_p(',') {
+                return None;
+            }
+        }
+        if !(2..=3).contains(&parts.len()) {
+            self.fail_at(Span::new(lo.lo as usize, self.prev_hi()), "a vector has two or three components");
+            return None;
+        }
+        let member = |c: &str| if key.is_empty() { c.to_string() } else { format!("{key}.{c}") };
+        Some(["x", "y", "z"].iter().zip(parts).map(|(c, p)| (member(c), p)).collect())
+    }
+
+    /// `name:` or `dir.x:` (with `Tok::EqEq` for `==`) at the head of a slot — the key and
+    /// nothing else, consumed; a dotted key names one component of a vector the entity has.
+    pub(super) fn member_label(&mut self, sep: Tok) -> Option<String> {
+        let (key, past) = self.member_end(&sep)?;
+        self.i = past;
+        Some(key)
+    }
+
+    /// The same, read and not consumed: the key, and where the value after `sep` begins.
+    pub(super) fn member_end(&self, sep: &Tok) -> Option<(String, usize)> {
+        let mut j = self.i;
+        let mut key = String::new();
+        loop {
+            let Some((Tok::Ident(s), _)) = self.t.get(j) else { return None };
+            key.push_str(s);
+            j += 1;
+            match self.t.get(j) {
+                Some((Tok::P('.'), _)) => {
+                    key.push('.');
+                    j += 1;
+                }
+                Some((t, _)) if t == sep => return Some((key, j + 1)),
+                _ => return None,
+            }
+        }
     }
 
     fn eat_word(&mut self, w: &str) -> bool {

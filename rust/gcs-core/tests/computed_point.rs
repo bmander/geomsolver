@@ -23,8 +23,8 @@ fn refuses(src: &str, needle: &str) {
 /// Each of the three forms a port took is refused, and the message names what replaces them.
 #[test]
 fn port_is_retired_and_says_what_to_write() {
-    for form in ["port lo: point hint(x: 0, y: 0)", "port hub = c", "port p = (c.x, c.y)"] {
-        let src = format!("component H(c: point) {{\n  {form}\n}}\no := point hint(x: 0, y: 0)\nh := H(o)\n");
+    for form in ["port lo: point hint((0, 0))", "port hub = c", "port p = (c.x, c.y)"] {
+        let src = format!("component H(c: point) {{\n  {form}\n}}\no := point hint((0, 0))\nh := H(o)\n");
         refuses(&src, "`port` is retired");
         refuses(&src, "`p := point(x: …, y: …)`");
     }
@@ -37,17 +37,17 @@ fn an_instances_entities_are_reached_by_dotted_name() {
     let src = "\
 use std
 component Rung(a: point, len: Length) {
-  b := point hint(x: a.x + len, y: a.y)
+  b := point hint((a.x + len, a.y))
   e := line(a, b)
   a distance(len) b
   repeat 2 as i {
-    q := point hint(x: a.x, y: a.y + 10 * (i + 1))
+    q := point hint((a.x, a.y + 10 * (i + 1)))
   }
 }
 in std.front {
 o := point
 r := Rung(o, len: 30)
-fix(x == 0, y == 0) r.a
+fix((0, 0)) r.a
 horizontal r.e
 r.b distance(5) r.q[1]
 }
@@ -86,8 +86,8 @@ fn a_computed_point_is_a_declaration() {
     write_stmt_to(&mut out, &comp.body[0].kind).unwrap();
     assert_eq!(out.split_whitespace().collect::<Vec<_>>().join(" "), "p := point(x: c.x + cos(u), y: c.y + sin(u))");
     // nothing on the sheet holds a point to a formula — neither written there nor drawn there
-    refuses("use std\nin std.front {\no := point hint(x: 0, y: 0)\np := point(x: o.x + 1, y: o.y)\n}\n", "computed point");
-    refuses(&format!("{ray}o := point hint(x: 0, y: 0)\nr := Ray(o)\n"), "drawn only as a curve");
+    refuses("use std\nin std.front {\no := point hint((0, 0))\np := point(x: o.x + 1, y: o.y)\n}\n", "computed point");
+    refuses(&format!("{ray}o := point hint((0, 0))\nr := Ray(o)\n"), "drawn only as a curve");
     // and the form is a point's alone
     refuses("p := point(x: 1)\n", "both `x:` and `y:`");
     refuses("point(x: 1, y: 2)\n", "a computed point is named");

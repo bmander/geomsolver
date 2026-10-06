@@ -12,11 +12,11 @@ const TRIANGLES: &str = "\
 use std
 in std.front {
 a := point
-b := point hint(x: 10, y: 1)
-c := point hint(x: 5, y: 9)
-d := point hint(x: 15, y: 8)
-e := point hint(x: 20, y: 1)
-fix(x == 0, y == 0) a
+b := point hint((10, 1))
+c := point hint((5, 9))
+d := point hint((15, 8))
+e := point hint((20, 1))
+fix((0, 0)) a
 a distance(10) b
 a horizontal b
 a distance(10) c
@@ -35,10 +35,10 @@ use std
 in std.front {
 o1 := point
 o2 := point
-a := point hint(x: 2, y: 4)
-b := point hint(x: 12, y: 5)
-fix(x == 0, y == 0) o1
-fix(x == 20, y == 0) o2
+a := point hint((2, 4))
+b := point hint((12, 5))
+fix((0, 0)) o1
+fix((20, 0)) o2
 o1 distance(5) a
 o2 distance(12) b
 a distance(9) b
@@ -93,7 +93,7 @@ fn a_closed_linkage_is_one_block() {
 /// redundant row reads, and every row those read, in the over-determined part.
 #[test]
 fn the_over_and_under_determined_parts_stand_apart() {
-    let src = format!("{TRIANGLES}f := point hint(x: 30, y: 30)\na distance(10) b\n");
+    let src = format!("{TRIANGLES}f := point hint((30, 30))\na distance(10) b\n");
     let e = build(&src);
     let mut sys = System::new(&e.sketch);
     let order = sys.block_order();
@@ -111,21 +111,21 @@ fn the_over_and_under_determined_parts_stand_apart() {
 /// The configured hypoid's layout as recorded, with no backlash or tip relief; the relief's own
 /// geometry is `the_tip_relief_orders_whole`'s.
 #[test]
-fn the_hypoid_layout_is_123_blocks_14_deep() {
+fn the_hypoid_layout_is_118_blocks_13_deep() {
     let e = fixtures::gear::read_configured_with(&mut |name, text| fixtures::gear::design(name, text, 25., 12.5, 25.));
     let mut sys = System::new(&e.sketch);
     let order = sys.block_order();
-    assert_eq!((sys.hard_rows().len(), sys.n_free), (387, 387));
+    assert_eq!((sys.hard_rows().len(), sys.n_free), (372, 372));
     assert!(order.over_rows.is_empty() && order.under_cols.is_empty());
-    assert_eq!(order.blocks.len(), 123);
-    assert_eq!(order.depth(), 14);
+    assert_eq!(order.blocks.len(), 118);
+    assert_eq!(order.depth(), 13);
     let mut sizes = std::collections::BTreeMap::new();
     for b in &order.blocks {
         assert_eq!(b.rows.len(), b.cols.len());
         *sizes.entry(b.rows.len()).or_insert(0) += 1;
     }
     // a plane's origin where its two axes meet is a block of three
-    let want = [(1, 18), (2, 69), (3, 20), (4, 6), (5, 4), (6, 1), (16, 3), (28, 1), (45, 1)];
+    let want = [(1, 18), (2, 69), (3, 15), (4, 6), (5, 4), (6, 1), (16, 3), (28, 1), (45, 1)];
     assert_eq!(sizes.into_iter().collect::<Vec<_>>(), want);
     // every block reads only the blocks before it: a column a block's rows touch that is not its
     // own is an earlier block's

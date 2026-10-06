@@ -127,6 +127,7 @@ mod wankel;
 mod twist_drill;
 mod units;
 mod unseeded;
+mod vectors;
 mod witness;
 
 /// Every `tests/*.rs` beside this file is declared above: with `autotests := false` a file

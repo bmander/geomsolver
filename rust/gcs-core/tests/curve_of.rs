@@ -27,7 +27,7 @@ use std
 component Arm(o: point, p: point, len: Length, theta: Angle) {
   l := line(o, p)
   o distance(len) p
-  x := point hint(x: 1, y: 0)
+  x := point hint((1, 0))
   ax := line(o, x)
   horizontal ax
   o distance(1) x
@@ -35,14 +35,14 @@ component Arm(o: point, p: point, len: Length, theta: Angle) {
 }
 component Crank(o: point, theta: Angle) {
   twice := theta * 2
-  p := point hint(x: 20, y: 10)
-  q := point hint(x: 10, y: 20)
+  p := point hint((20, 10))
+  q := point hint((10, 20))
   a := Arm(o, p, len: 30, theta: theta)
   b := Arm(o, q, len: 30, theta: twice)
 }
 in std.front {
 o := point
-fix(x == 0, y == 0) o
+fix((0, 0)) o
 c := Crank(o)
 }
 ";
@@ -72,8 +72,8 @@ fn a_nested_unbound_formal_is_not_captured_by_the_outer_one() {
     let src = "\
 use std
 component Inner(o: point, u: Angle) {
-  q := point hint(x: 5, y: 0)
-  x := point hint(x: 1, y: 0)
+  q := point hint((5, 0))
+  x := point hint((1, 0))
   ax := line(o, x)
   l := line(o, q)
   horizontal ax
@@ -87,7 +87,7 @@ component Outer(o: point, u: Angle) {
 in std.front {
 o := point
 base := circle(center: o) hint(r: 7)
-fix(x == 0, y == 0) o
+fix((0, 0)) o
 }
 w := Outer(o).i.q over u in (0, 90)
 ";
@@ -107,8 +107,8 @@ fn the_owner_is_the_instance_with_the_formal() {
     let src = "\
 use std
 component Inner(o: point, a: Angle) {
-  t := point hint(x: 5, y: 0)
-  x := point hint(x: 1, y: 0)
+  t := point hint((5, 0))
+  x := point hint((1, 0))
   ax := line(o, x)
   l := line(o, t)
   horizontal ax
@@ -121,7 +121,7 @@ component Outer(o: point, u: Angle) {
 }
 in std.front {
 o := point
-fix(x == 0, y == 0) o
+fix((0, 0)) o
 d := Outer(o, u: 30)
 }
 k := d.i.t over u in (0, 90)
@@ -146,11 +146,11 @@ fn a_computed_point_stands_alone() {
 use std
 component Both(o: point, u: Angle) {
   p := point(x: o.x + cos(u), y: o.y + sin(u))
-  q := point hint(x: 3, y: 4)
+  q := point hint((3, 4))
   o distance(5) q
 }
 in std.front {
-o := point hint(x: 0, y: 0)
+o := point hint((0, 0))
 }
 w := Both(o).p over u in (0, 90)
 ";

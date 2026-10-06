@@ -231,8 +231,7 @@ impl Projection {
 
     /// What an entity is drawn as, as the eye sees it.  A line is drawn between its ends wherever
     /// each end stands (a projector between two views is one); anything else stands in its one
-    /// view.  Datums, solids and the kinds that live in space (spheres, cones, cylinders) have no
-    /// figure here — a renderer with a depth buffer draws those.
+    /// view.  Datums and solids have no figure here — a renderer with a depth buffer draws those.
     pub fn figure(&self, sk: &Sketch, e: EntRef, unit: f64) -> Vec<Vec<(f64, f64)>> {
         match e.kind {
             EntKind::Point => vec![vec![self.point(sk, e.i())]],
@@ -240,7 +239,7 @@ impl Projection {
                 let l = &sk.lines[e.i()];
                 vec![vec![self.point(sk, l.p1 as usize), self.point(sk, l.p2 as usize)]]
             }
-            EntKind::Plane | EntKind::Sphere | EntKind::Cone | EntKind::Cylinder => Vec::new(),
+            EntKind::Plane => Vec::new(),
             _ => {
                 let Ok(view) = self.views.entity_view(sk, e) else { return Vec::new() };
                 let m = self.map(view);

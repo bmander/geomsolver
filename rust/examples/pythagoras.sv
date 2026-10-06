@@ -26,9 +26,9 @@ s := a + b
 
 in std.front {
   O := point
-  E := point hint(x: s, y: 0)
-  F := point hint(x: s, y: s)
-  G := point hint(x: 0, y: s)
+  E := point hint((s, 0))
+  F := point hint((s, s))
+  G := point hint((0, s))
 
   horizontal (bottom := line(O, E)) -> perpendicular
   (right := line(E, F)) -> perpendicular
@@ -37,10 +37,10 @@ in std.front {
   bottom equal left
 
   // one point on each side, `a` along from the corner it follows going round
-  P1 := point hint(x: a, y: 0)
-  P2 := point hint(x: s, y: a)
-  P3 := point hint(x: b, y: s)
-  P4 := point hint(x: 0, y: b)
+  P1 := point hint((a, 0))
+  P2 := point hint((s, a))
+  P3 := point hint((b, s))
+  P4 := point hint((0, b))
 
   P1 coincident bottom
   P2 coincident right
@@ -59,5 +59,5 @@ in std.front {
 
   // the theorem, stated as a claim: judged against the figure, never imposed on it
   claim P1 distance(c) P2
-  fix(x == 0, y == 0) O
+  fix((0, 0)) O
 }

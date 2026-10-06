@@ -17,7 +17,7 @@ component ToothTrace(p: plane, generator: line, design: group, normal_module: Le
   in p {
     C := point hint(at: generator.p2, toward: generator.p1, by: design.cutter_radius / r,
                     turn: design.spiral - 90deg)
-    H := point hint(x: r / 4, y: -r / 2)
+    H := point hint((r / 4, -r / 2))
     K := point hint(at: generator.p2, toward: generator.p1, by: design.module / r)
     normal := line(C, generator.p2)
     heading := line(generator.p2, H)
@@ -36,8 +36,7 @@ component ToothTrace(p: plane, generator: line, design: group, normal_module: Le
 
 preview {
   unit mm
-  pitch := views.PitchView(std.front, span: design.hypoid_design.cutter_radius)
-  gear := pitch.gear.GearCone(pitch.view, g.view, design.hypoid_design)
-  g := views.FoldedView(pitch.view, gear.generator, pitch.down, span: design.hypoid_design.cutter_radius)
-  trace := ToothTrace(pitch.view, gear.generator, design.hypoid_design)
+  gear := pitch.gear.GearCone(std.top, g.view, design.hypoid_design)
+  g := views.FoldedView(std.top, gear.generator)
+  trace := ToothTrace(std.top, gear.generator, design.hypoid_design)
 }

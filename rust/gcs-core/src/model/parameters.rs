@@ -112,10 +112,6 @@ impl Sketch {
             EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge => Vec::new(),
             EntKind::Point => self.point_all_params(e.i()),
             EntKind::Circle => vec![self.circles[e.i()].radius],
-            EntKind::Sphere => vec![self.spheres[e.i()].radius],
-            EntKind::Cylinder => vec![self.cylinders[e.i()].param],
-            // a half-angle is an angle, and a unit's conversion leaves it alone
-            EntKind::Cone => Vec::new(),
             // the direction is a unit vector and the place a length
             EntKind::Axis => self.axes[e.i()].a.to_vec(),
             EntKind::Arc => vec![self.arcs[e.i()].radius],
@@ -177,18 +173,16 @@ impl Sketch {
         match e.kind {
             EntKind::Circle => self.circles[e.i()].radius as usize,
             EntKind::Arc => self.arcs[e.i()].radius as usize,
-            EntKind::Sphere => self.spheres[e.i()].radius as usize,
             _ => panic!("not a round entity"),
         }
     }
 
-    /// One of `e`'s own params as its declaration's `hint(…)` writes it: the value, except a
-    /// cone's half-angle, held in radians as every angle the kernels read and written in degrees
-    /// as every angle a document states.  What a writeback and a lifted program both spell.
+    /// One of `e`'s own params as its declaration's `hint(…)` writes it: the value, with a
+    /// direction's dust below a double's resolution written as 0.  What a writeback and a lifted
+    /// program both spell.
     pub fn seed_value(&self, e: EntRef, p: u32) -> f64 {
         let v = self.params[p as usize].value;
         match e.kind {
-            EntKind::Cone => v.to_degrees(),
             // a direction's dust below a double's resolution of a unit vector is 0: `z: 6e-17`
             // written into a source file is a number nobody said
             EntKind::Axis | EntKind::Plane if v.abs() < 1e-12 => 0.0,
@@ -196,14 +190,6 @@ impl Sketch {
         }
     }
 
-    /// A cone's or a cylinder's axis and the number it owns.
-    pub fn axial(&self, e: EntRef) -> &AxialE {
-        match e.kind {
-            EntKind::Cone => &self.cones[e.i()],
-            EntKind::Cylinder => &self.cylinders[e.i()],
-            _ => panic!("not a cone or a cylinder"),
-        }
-    }
 
     /// Params of any primitive, in the model's canonical order.
     /// The names of an entity's scalars under the name `n`, in `entity_params` order: the kind's
@@ -229,20 +215,10 @@ impl Sketch {
                 let p = &self.points[c.center as usize];
                 vec![p.x, p.y, c.radius]
             }
-            EntKind::Sphere => {
-                let c = &self.spheres[e.i()];
-                let p = &self.points[c.center as usize];
-                vec![p.x, p.y, c.radius]
-            }
             // its direction, then where it is
             EntKind::Axis => {
                 let r = &self.axes[e.i()];
                 [r.d, r.a].concat()
-            }
-            // the axis's ends, then the number the kind owns
-            EntKind::Cone | EntKind::Cylinder => {
-                let a = self.axial(e);
-                [self.line_params(a.axis as usize).to_vec(), vec![a.param]].concat()
             }
             EntKind::Arc => {
                 let a = &self.arcs[e.i()];
@@ -293,8 +269,6 @@ impl Sketch {
         match e.kind {
             EntKind::Point => self.point_all_params(e.i()),
             EntKind::Circle => vec![self.circles[e.i()].radius],
-            EntKind::Sphere => vec![self.spheres[e.i()].radius],
-            EntKind::Cone | EntKind::Cylinder => vec![self.axial(e).param],
             EntKind::Axis => {
                 let r = &self.axes[e.i()];
                 [r.d, r.a].concat()

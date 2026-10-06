@@ -25,12 +25,12 @@ param hole_r := 6
 
 in std.front {
   c1 := point
-  c2 := point hint(x: length, y: 0)
+  c2 := point hint((length, 0))
 
-  t1 := point hint(x: 0, y: r)
-  t2 := point hint(x: length, y: r)
-  b1 := point hint(x: length, y: -r)
-  b2 := point hint(x: 0, y: -r)
+  t1 := point hint((0, r))
+  t2 := point hint((length, r))
+  b1 := point hint((length, -r))
+  b2 := point hint((0, -r))
 
   // round the outline counter-clockwise, the way an arc runs: each end leaves one flank and meets
   // the other at a tangent joint
@@ -47,5 +47,5 @@ in std.front {
 
   c1 distance(length) c2
 
-  fix(x == 0, y == 0) c1
+  fix((0, 0)) c1
 }

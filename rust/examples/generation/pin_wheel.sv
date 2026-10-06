@@ -18,8 +18,8 @@ rp := 2       // the pins
 
 in std.front {
   o1 := point
-  o2 := point hint(x: 40, y: 0)
-  fix(x == 0, y == 0) o1
+  o2 := point hint((40, 0))
+  fix((0, 0)) o1
   o1 distance(r1 + r2, along: x) o2
   o1 distance(0, along: y) o2
   pitch1 := circle(center: o1) hint(r: 10)
@@ -28,7 +28,7 @@ in std.front {
   radius(r2) pitch2
 
   // one pin, at the pitch point where the pitch circles touch
-  pc := point hint(x: 10, y: 0)
+  pc := point hint((10, 0))
   pc coincident pitch1
   o1 distance(0, along: y) pc
   pin := circle(center: pc) hint(r: 2)

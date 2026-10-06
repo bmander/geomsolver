@@ -25,30 +25,30 @@ tilt := atan((rise - toe) / leg)   // the incline's bearing in the front view
 // the auxiliary view's plane: along the incline, and the front's normal the other way, so it
 // looks at the incline square on.  Each view's origin is the part's corner A as that view sees
 // it, so the origins are all images of one point and no projection between them needs stating.
-incline := axis hint(x: cos(tilt), y: 0, z: sin(tilt))
-fix(x == cos(tilt), y == 0, z == sin(tilt)) incline
+incline := axis
+fix(dir == (cos(tilt), 0, sin(tilt))) incline
 aux := plane(u: incline, v: std.y)
-fix(x == 0, y == 0, z == 0) aux
+fix(origin == (0, 0, 0)) aux
 in std.front {
   Af := point
-  fix(x == 0, y == 0) Af
+  fix((0, 0)) Af
 }
 in std.top {
   At := point
-  fix(x == 0, y == 0) At
+  fix((0, 0)) At
 }
 in std.side {
   Ar := point
-  fix(x == 0, y == 0) Ar
+  fix((0, 0)) Ar
 }
 
 // the front view: the profile, and every dimension the part is made to
 in std.front {
-  Bf := point hint(x: 60, y: 0)
-  Cf := point hint(x: 60, y: 15)
-  Df := point hint(x: 15, y: 15)
-  Ef := point hint(x: 15, y: 40)
-  Ff := point hint(x: 0, y: 30)
+  Bf := point hint((60, 0))
+  Cf := point hint((60, 15))
+  Df := point hint((15, 15))
+  Ef := point hint((15, 40))
+  Ff := point hint((0, 30))
   horizontal (ab := line(Af, Bf)) -> vertical (bc := line(Bf, Cf)) -> horizontal (cd := line(Cf, Df)) ->
     vertical (de := line(Df, Ef)) -> (ef := line(Ef, Ff)) -> vertical (fa := line(Ff, Af))
   Af distance(width) Bf

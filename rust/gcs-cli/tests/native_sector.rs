@@ -106,10 +106,10 @@ private b0 := point
 private b1 := point
 private b2 := point
 private b3 := point
-fix(x == -5, y == 1) b0
-fix(x == 5, y == 1) b1
-fix(x == 5, y == 3) b2
-fix(x == -5, y == 3) b3
+fix((-5, 1)) b0
+fix((5, 1)) b1
+fix((5, 3)) b2
+fix((-5, 3)) b3
 private bb := line(b0, b1)
 private bw := line(b1, b2)
 private bt := line(b2, b3)

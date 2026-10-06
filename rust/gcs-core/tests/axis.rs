@@ -33,18 +33,18 @@ fn axis(sk: &Sketch, e: EntRef) -> ([f64; 3], [f64; 3]) {
 /// The world's axes as axes fixed outright, as `std.sv` will state them.
 const AXES: &str = "\
 unit mm
-x_axis := axis hint(x: 1, y: 0, z: 0)
-fix(x == 1, y == 0, z == 0) x_axis
-z_axis := axis hint(x: 0, y: 0, z: 1)
-fix(x == 0, y == 0, z == 1) z_axis
+x_axis := axis hint(dir: (1, 0, 0))
+fix(dir == (1, 0, 0)) x_axis
+z_axis := axis hint(dir: (0, 0, 1))
+fix(dir == (0, 0, 1)) z_axis
 ";
 
 /// Square to one axis and at a stated angle to another is a direction, and the seed picks which
 /// of the two it could be: here, in the xz-plane 30° from x toward z.
 #[test]
 fn two_relations_give_an_axis_its_direction() {
-    let src = format!("{AXES}y_axis := axis hint(x: 0, y: 1, z: 0)\nfix(x == 0, y == 1, z == 0) y_axis\n\
-                       t := axis hint(x: 0.8, y: 0.1, z: 0.5)\nt perpendicular y_axis\nt angle(30deg) x_axis\n");
+    let src = format!("{AXES}y_axis := axis hint(dir: (0, 1, 0))\nfix(dir == (0, 1, 0)) y_axis\n\
+                       t := axis hint(dir: (0.8, 0.1, 0.5))\nt perpendicular y_axis\nt angle(30deg) x_axis\n");
     let e = read(&src);
     let mut sk = solved(&e);
     let (d, _) = axis(&sk, ent(&e, "t"));
@@ -77,8 +77,8 @@ fn an_axis_read_only_as_a_direction_counts_two_freedoms() {
 /// `parallel`, a fixed point leaves it nothing.
 #[test]
 fn a_point_coincident_an_axis_places_it() {
-    let src = format!("{AXES}use std\nin std.front {{\n  p := point hint(x: 10, y: 5)\n  fix(x == 10, y == 5) p\n}}\n\
-                       t := axis hint(x: 0.9, y: 0, z: 0.1)\nt parallel x_axis\np coincident t\n");
+    let src = format!("{AXES}use std\nin std.front {{\n  p := point hint((10, 5))\n  fix((10, 5)) p\n}}\n\
+                       t := axis hint(dir: (0.9, 0, 0.1))\nt parallel x_axis\np coincident t\n");
     let e = read(&src);
     let t = ent(&e, "t");
     assert!(e.sketch.axes[t.i()].placed, "a relation reading where the axis is placed it");
@@ -98,9 +98,9 @@ fn a_point_coincident_an_axis_places_it() {
 /// foot row gone, two freedoms and not five.  One still reading it keeps it placed.
 #[test]
 fn an_axis_no_relation_places_is_held_again() {
-    let e = read("use std\nt := axis hint(x: 0, y: 0, z: 1)\np := point hint(x: 1, y: 2, z: 3)\n\
-                  q := point hint(x: 1, y: 2, z: 5)\nfix(x == 1, y == 2, z == 3) p\n\
-                  fix(x == 1, y == 2, z == 5) q\np coincident t\nq coincident t\n");
+    let e = read("use std\nt := axis hint(dir: (0, 0, 1))\np := point hint((1, 2, 3))\n\
+                  q := point hint((1, 2, 5))\nfix((1, 2, 3)) p\n\
+                  fix((1, 2, 5)) q\np coincident t\nq coincident t\n");
     let mut sk = e.sketch.clone();
     let t = ent(&e, "t").i();
     let on: Vec<u32> = sk.user_constraints().iter()
@@ -121,10 +121,10 @@ fn an_axis_no_relation_places_is_held_again() {
 #[test]
 fn an_unsigned_angle_of_zero_or_half_a_turn_is_refused() {
     for a in ["0deg", "180deg"] {
-        let src = format!("{AXES}t := axis hint(x: 0.9, y: 0, z: 0.1)\nt angle({a}) x_axis\n");
+        let src = format!("{AXES}t := axis hint(dir: (0.9, 0, 0.1))\nt angle({a}) x_axis\n");
         refused(&src, "E040", "write `parallel`", a);
     }
-    let e = read(&format!("{AXES}t := axis hint(x: 0.9, y: 0, z: 0.1)\nt angle(45deg) x_axis\n"));
+    let e = read(&format!("{AXES}t := axis hint(dir: (0.9, 0, 0.1))\nt angle(45deg) x_axis\n"));
     assert!(e.ok());
 }
 
@@ -132,8 +132,8 @@ fn an_unsigned_angle_of_zero_or_half_a_turn_is_refused() {
 /// the relation placing it places it again.
 #[test]
 fn an_axis_survives_json_and_a_copy() {
-    let src = format!("{AXES}use std\nin std.front {{\n  p := point hint(x: 10, y: 5)\n  fix(x == 10, y == 5) p\n}}\n\
-                       t := axis hint(x: 0.9, y: 0, z: 0.1)\nt parallel x_axis\np coincident t\n");
+    let src = format!("{AXES}use std\nin std.front {{\n  p := point hint((10, 5))\n  fix((10, 5)) p\n}}\n\
+                       t := axis hint(dir: (0.9, 0, 0.1))\nt parallel x_axis\np coincident t\n");
     let sk = solved(&read(&src));
     for back in [io::from_json(&io::to_json(&sk)).expect("reads back"), io::copy(&sk, &sk.primitives())] {
         assert_eq!(back.axes.len(), sk.axes.len());
@@ -161,9 +161,9 @@ fn an_axis_is_in_no_view() {
 /// the line.  Removing the relation takes the second's place away again.
 #[test]
 fn two_coincident_axes_are_one_line_either_way() {
-    for seed in ["0.9, y: 0.1, z: 0.2", "-0.9, y: 0.1, z: -0.2"] {
-        let src = format!("{AXES}p := point hint(x: 3, y: 4, z: 5)\nfix(x == 3, y == 4, z == 5) p\n\
-                           p coincident x_axis\nt := axis hint(x: {seed})\nt coincident x_axis\n");
+    for seed in ["0.9, 0.1, 0.2", "-0.9, 0.1, -0.2"] {
+        let src = format!("{AXES}p := point hint((3, 4, 5))\nfix((3, 4, 5)) p\n\
+                           p coincident x_axis\nt := axis hint(dir: ({seed}))\nt coincident x_axis\n");
         let e = read(&src);
         let mut sk = solved(&e);
         let (t, x) = (ent(&e, "t"), ent(&e, "x_axis"));
@@ -187,9 +187,9 @@ fn two_coincident_axes_are_one_line_either_way() {
 #[test]
 fn an_axis_and_a_line_are_parallel_either_way_round() {
     for stated in ["t parallel l", "l parallel t"] {
-        let src = format!("{AXES}use std\nin std.front {{\n  a := point hint(x: 0, y: 0)\n  \
-                           b := point hint(x: 10, y: 3)\n  fix(x == 0, y == 0) a\n  l := line(a, b)\n}}\n\
-                           t := axis hint(x: 1, y: 0.2, z: 0)\nfix(x == 0.6, y == 0, z == 0.8) t\n{stated}\n");
+        let src = format!("{AXES}use std\nin std.front {{\n  a := point hint((0, 0))\n  \
+                           b := point hint((10, 3))\n  fix((0, 0)) a\n  l := line(a, b)\n}}\n\
+                           t := axis hint(dir: (1, 0.2, 0))\nfix(dir == (0.6, 0, 0.8)) t\n{stated}\n");
         let e = read(&src);
         let kinds: Vec<CKind> = e.sketch.user_constraints().iter().map(|c| c.kind).collect();
         assert!(kinds.contains(&CKind::Parallel3), "{stated}: {kinds:?}");
@@ -206,9 +206,9 @@ fn an_axis_and_a_line_are_parallel_either_way_round() {
 #[test]
 fn a_line_coincident_an_axis_lies_on_it() {
     for stated in ["l coincident t", "t coincident l", "l @ t"] {
-        let src = format!("{AXES}use std\nin std.front {{\n  a := point hint(x: 1, y: 4)\n  \
-                           b := point hint(x: 9, y: 7)\n  fix(x == 2, y == 5) a\n  l := line(a, b)\n}}\n\
-                           t := axis hint(x: 1, y: 0.2, z: 0.3)\nfix(x == 0.6, y == 0, z == 0.8) t\n{stated}\n");
+        let src = format!("{AXES}use std\nin std.front {{\n  a := point hint((1, 4))\n  \
+                           b := point hint((9, 7))\n  fix((2, 5)) a\n  l := line(a, b)\n}}\n\
+                           t := axis hint(dir: (1, 0.2, 0.3))\nfix(dir == (0.6, 0, 0.8)) t\n{stated}\n");
         let e = read(&src);
         let t = ent(&e, "t");
         assert!(e.sketch.axes[t.i()].placed, "{stated}: a line on the axis says where it is");
@@ -230,9 +230,9 @@ fn a_line_coincident_an_axis_lies_on_it() {
 /// A line in space on a free axis gives the axis both its direction and its place.
 #[test]
 fn a_line_in_space_on_an_axis_gives_it_direction_and_place() {
-    let e = read("use std\np := point hint(x: 1, y: 2, z: 3)\nq := point hint(x: 4, y: 6, z: 3)\n\
-                  fix(x == 1, y == 2, z == 3) p\nfix(x == 4, y == 6, z == 3) q\nl := line(p, q)\n\
-                  t := axis hint(x: 0, y: 0.2, z: 1)\nl coincident t\n");
+    let e = read("use std\np := point hint((1, 2, 3))\nq := point hint((4, 6, 3))\n\
+                  fix((1, 2, 3)) p\nfix((4, 6, 3)) q\nl := line(p, q)\n\
+                  t := axis hint(dir: (0, 0.2, 1))\nl coincident t\n");
     let mut sk = solved(&e);
     let (d, a) = axis(&sk, ent(&e, "t"));
     assert!(norm(cross(unit(d), [0.6, 0.8, 0.0])) < 1e-9, "the axis runs {d:?}");

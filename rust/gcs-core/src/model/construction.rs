@@ -113,33 +113,6 @@ impl Sketch {
         self.circles.len() - 1
     }
 
-    /// A sphere about a drawn point, its radius a Param like a circle's.
-    pub fn sphere(&mut self, center: usize, radius: f64, name: &str) -> usize {
-        let r = self.param(radius, false, &format!("{name}.r"));
-        self.spheres.push(SphereE {
-            center: center as u32,
-            radius: r as u32,
-            class: Classes::default(),
-        });
-        self.spheres.len() - 1
-    }
-
-    /// A cone about a drawn line — its apex the line's start — its half-angle a Param (radians).
-    pub fn cone(&mut self, axis: usize, half: f64, name: &str) -> usize {
-        let a = self.param(half, false, &format!("{name}.half"));
-        let class = Classes::default();
-        self.cones.push(AxialE { axis: axis as u32, param: a as u32, class });
-        self.cones.len() - 1
-    }
-
-    /// A cylinder about a drawn line, its radius a Param like a sphere's.
-    pub fn cylinder(&mut self, axis: usize, radius: f64, name: &str) -> usize {
-        let r = self.param(radius, false, &format!("{name}.r"));
-        let class = Classes::default();
-        self.cylinders.push(AxialE { axis: axis as u32, param: r as u32, class });
-        self.cylinders.len() - 1
-    }
-
     /// An axis: its direction `d` (normalised here, so a seed need not be a unit vector) and the
     /// point on it nearest the origin, `a`, which stays fixed — no freedom of the drawing's —
     /// until a relation reads where the axis is (`place_axis`).  The intrinsic `axis_unit` row is

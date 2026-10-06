@@ -38,7 +38,7 @@ fn says(src: &str, what: &str) {
     assert!(ds.iter().any(|m| m.contains(what)), "expected {what:?} in {ds:?}");
 }
 
-const PAIR: &str = "use std\nin std.front {\na := point hint(x: 0, y: 0)\nb := point hint(x: 60, y: 0)\nl := line(a, b)\n}\n";
+const PAIR: &str = "use std\nin std.front {\na := point hint((0, 0))\nb := point hint((60, 0))\nl := line(a, b)\n}\n";
 
 /* -- the literal ------------------------------------------------------------------------- */
 
@@ -82,7 +82,7 @@ fn an_angle_in_a_length_slot_is_an_error() {
     says(&format!("{PAIR}a distance(45deg) b\n"), "is Length, and this is Angle");
     // and the other way round
     says(
-        &format!("{PAIR}c := point hint(x: 1, y: 1)\nm := line(b, c)\nl angle(3in) m\n"),
+        &format!("{PAIR}c := point hint((1, 1))\nm := line(b, c)\nl angle(3in) m\n"),
         "names no unit",
     );
 }
@@ -97,7 +97,7 @@ use std
 component Bad(w: Length, phi: Angle) {
   x := w + phi
   p := point
-  fix(x == x, y == 0) p
+  fix((x, 0)) p
 }
 in std.front {
 g := Bad(w: 10, phi: 20)
@@ -131,9 +131,9 @@ fn pi_is_a_number_and_tau_is_an_angle() {
     let sk = read("\
 use std
 in std.front {
-a := point hint(x: 0, y: 0)
-b := point hint(x: 1, y: 0)
-c := point hint(x: 1, y: 1)
+a := point hint((0, 0))
+b := point hint((1, 0))
+c := point hint((1, 1))
 l := line(a, b)
 m := line(a, c)
 l angle(tau / 8) m
@@ -152,9 +152,9 @@ fn a_free_variable_read_two_ways_is_an_error() {
 use std
 param k: Length
 in std.front {
-a := point hint(x: 0, y: 0)
-b := point hint(x: 60, y: 0)
-c := point hint(x: 60, y: 40)
+a := point hint((0, 0))
+b := point hint((60, 0))
+c := point hint((60, 40))
 l := line(a, b)
 m := line(b, c)
 a distance(k) b
@@ -221,7 +221,7 @@ fn a_paste_between_units_converts() {
     let clip = io::copy(&inches, &inches.primitives());
     assert_eq!(clip.units.name(), Some("in"), "a clipboard says what its numbers are in");
 
-    let mut mm = read("unit mm\nuse std\nin std.front {\nz := point hint(x: 0, y: 0)\n}\n").expect("elaborates");
+    let mut mm = read("unit mm\nuse std\nin std.front {\nz := point hint((0, 0))\n}\n").expect("elaborates");
     io::paste(&mut mm, &clip, 0.0, 0.0);
     let far = mm.points.iter().skip(1).map(|p| mm.params[p.x as usize].value).fold(0.0, f64::max);
     assert!((far - 60.0 * 25.4).abs() < 1e-6, "60 in is 1524 mm, got {far}");
@@ -230,7 +230,7 @@ fn a_paste_between_units_converts() {
     assert!((d.expect("the length came too").args[2].num() - 50.8).abs() < 1e-9);
 
     // and into a document in the same units, nothing is scaled
-    let mut same = read("unit in\nuse std\nin std.front {\nz := point hint(x: 0, y: 0)\n}\n").expect("elaborates");
+    let mut same = read("unit in\nuse std\nin std.front {\nz := point hint((0, 0))\n}\n").expect("elaborates");
     io::paste(&mut same, &clip, 0.0, 0.0);
     let far = same.points.iter().skip(1).map(|p| same.params[p.x as usize].value).fold(0.0, f64::max);
     assert!((far - 60.0).abs() < 1e-9, "got {far}");
@@ -269,11 +269,11 @@ fn there_is_no_string_literal() {
     read("\
 use std
 in std.front {
-o := point hint(x: 0, y: 0)
-s := point hint(x: 10, y: 0)
-e := point hint(x: 0, y: 10)
+o := point hint((0, 0))
+s := point hint((10, 0))
+e := point hint((0, 10))
 a := arc(center: o, start: s, end: e) hint(r: 10)
-q := point hint(x: 20, y: 0)
+q := point hint((20, 0))
 l := line(s, q)
 a tangent(at: start) l
 }
@@ -282,7 +282,7 @@ a tangent(at: start) l
     // a raw branch, bare, and printed back the same way.  A key the reader does not recognise
     // is exactly what `branch` exists for — a recorded root choice from a document this
     // implementation did not write.
-    let sk = read("use std\nin std.front {\na := point hint(x: 0, y: 0)\nbranch(other:0|1|2, 1)\n}\n")
+    let sk = read("use std\nin std.front {\na := point hint((0, 0))\nbranch(other:0|1|2, 1)\n}\n")
         .expect("a raw branch key is bare");
     assert_eq!(sk.branches.get("other:0|1|2").copied(), Some(1));
     let mut p = gcs_core::program::to_program(&sk);
@@ -293,8 +293,8 @@ a tangent(at: start) l
 unit mm
 use std
 in std.front {
-a := point hint(x: 0, y: 0)
-b := point hint(x: 1, y: 0)
+a := point hint((0, 0))
+b := point hint((1, 0))
 a distance(6\") b
 }
 ");
@@ -313,11 +313,11 @@ a distance(6\") b
 fn a_paste_converts_the_lengths_that_are_not_arguments() {
     let src = "unit in\n\
                use std\n\
-               r := axis hint(x: 0.6, y: 0.8, z: 0)\n\
-               f := plane(u: r) hint(x: 4, y: 0, z: 0)\n\
-               fix(x == 0, y == 0, z == 1) f.v\n\
-               a := point hint(x: 0, y: 3) in f\n\
-               b := point hint(x: 6, y: 3) in f\n\
+               r := axis hint(dir: (0.6, 0.8, 0))\n\
+               f := plane(u: r) hint(origin: (4, 0, 0))\n\
+               fix(dir == (0, 0, 1)) f.v\n\
+               a := point hint((0, 3)) in f\n\
+               b := point hint((6, 3)) in f\n\
                param w: Length\n\
                a distance(w) b\n\
                f.origin distance(w / 2) a\n";
@@ -344,7 +344,7 @@ fn a_paste_converts_the_lengths_that_are_not_arguments() {
     assert!((place(&clip) - 4.0).abs() < 1e-9, "the plane stands 4 in out, got {}", place(&clip));
     assert!((free(&clip) - 6.0).abs() < 1e-9, "`w` is 6 in, got {}", free(&clip));
 
-    let mut mm = read("unit mm\nuse std\nin std.front {\nz := point hint(x: 0, y: 0)\n}\n").expect("elaborates");
+    let mut mm = read("unit mm\nuse std\nin std.front {\nz := point hint((0, 0))\n}\n").expect("elaborates");
     let made = io::paste(&mut mm, &clip, 0.0, 0.0);
     assert!(!made.is_empty());
 
@@ -362,7 +362,7 @@ fn a_paste_converts_a_placement() {
     let clip = io::copy(&inches, &inches.primitives());
     assert_eq!(clip.placements.len(), 1, "the placement came along");
 
-    let mut mm = read("unit mm\nuse std\nin std.front {\nz := point hint(x: 0, y: 0)\n}\n").expect("elaborates");
+    let mut mm = read("unit mm\nuse std\nin std.front {\nz := point hint((0, 0))\n}\n").expect("elaborates");
     io::paste(&mut mm, &clip, 0.0, 0.0);
     let &(t, r) = mm.placements.values().next().expect("a placement");
     assert!((t - 3.0 * 25.4).abs() < 1e-6 && (r - 1.0 * 25.4).abs() < 1e-6, "got {t}, {r}");
@@ -398,7 +398,7 @@ component slide(c: circle, u: Angle) {
   p := point(x: c.center.x + 1in * u, y: c.center.y)
 }
 in std.front {
-o := point hint(x: 0, y: 0)
+o := point hint((0, 0))
 c1 := circle(center: o) hint(r: 25)
 }
 w := slide(c1).p over u in (0, 1)
@@ -433,7 +433,7 @@ fn a_saved_document_has_its_unit_before_its_expressions() {
 fn a_unit_is_stated_once_and_only_in_the_root() {
     says("unit mm\nuse std\nunit in\nin std.front {\na := point\n}\n", "already stated above");
     says(
-        "unit mm\nuse std\ncomponent Part { unit in\n  a := point hint(x: 0, y: 0)\n}\nin std.front {\np := Part()\n}\n",
+        "unit mm\nuse std\ncomponent Part { unit in\n  a := point hint((0, 0))\n}\nin std.front {\np := Part()\n}\n",
         "stated once, at the top",
     );
 }
@@ -451,7 +451,7 @@ fn a_slot_mismatch_is_an_error_and_a_free_name_is_not() {
         let e = gcs_core::program::elaborate(&prog);
         e.diags.iter().map(|d| (d.code.as_str().to_string(), d.message.clone())).collect()
     };
-    let two = "use std\nin std.front {\na := point hint(x: 0, y: 0)\nb := point hint(x: 40, y: 0)\n}\n";
+    let two = "use std\nin std.front {\na := point hint((0, 0))\nb := point hint((40, 0))\n}\n";
     let d = diag(&format!("{two}a distance(45deg) b\n"));
     assert_eq!(d.len(), 1, "{d:?}");
     assert_eq!(d[0].0, "E103");
@@ -459,7 +459,7 @@ fn a_slot_mismatch_is_an_error_and_a_free_name_is_not() {
     assert!(!d[0].1.contains("last number"), "{}", d[0].1);
 
     let d = diag(&format!(
-        "{two}c := point hint(x: 40, y: 30)\na distance(40) b\nb distance(30) c\nparam zz: Length\nclaim a distance(zz) c\nfix(x == 0, y == 0) a\nfix(x == 40, y == 0) b\n"
+        "{two}c := point hint((40, 30))\na distance(40) b\nb distance(30) c\nparam zz: Length\nclaim a distance(zz) c\nfix((0, 0)) a\nfix((40, 0)) b\n"
     ));
     assert_eq!(d.iter().filter(|x| x.0 == "E040").count(), 1, "{d:?}");
     assert!(d.iter().any(|x| x.1.contains("a claim may not bind an unknown")), "{d:?}");

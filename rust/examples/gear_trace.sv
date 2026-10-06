@@ -53,8 +53,8 @@ component Flank(base: circle, datum: line, root: circle, tip: circle,
   // the wrong bearings, a tooth flaring the wrong way — and `over (u0, u1)` is what now refuses
   // that: a contact off the drawn interval is put back and held, and the drawing either solves
   // on the flank or says it did not.
-  lo := point hint(x: 0, y: 0)
-  hi := point hint(x: 0, y: 0)
+  lo := point hint((0, 0))
+  hi := point hint((0, 0))
 
   lo coincident e hint(t: u0)
   hi coincident e hint(t: u1)
@@ -95,8 +95,8 @@ component Gear(N: Int, m: Length, phi: Angle, ded: Scalar) {
   radius(Rb) base
   radius(Rr) root
   radius(Rt) tip
-  fix(x == 0, y == 0) center
-  fix(x == R, y == 0) anchor
+  fix((0, 0)) center
+  fix((R, 0)) anchor
 
   cycle N as i {
     t := Tooth(base, datum, root, tip, a0: i * pitch, half: half, u0: u0, u1: u1)

@@ -20,7 +20,7 @@ component Rung(a: point, b: point, len: Length) {
   a distance(len) b
 }
 in std.front {
-stray := point hint(x: 999, y: 999)
+stray := point hint((999, 999))
 }
 ";
 
@@ -29,15 +29,15 @@ use std
 use lib.rung
 in std.front {
 l0 := point
-r0 := point hint(x: 50, y: 0)
-l1 := point hint(x: 0, y: 20)
-r1 := point hint(x: 50, y: 20)
+r0 := point hint((50, 0))
+l1 := point hint((0, 20))
+r1 := point hint((50, 20))
 t0 := lib.rung.Rung(l0, r0, len: lib.rung.len)
 t1 := lib.rung.Rung(l1, r1, len: lib.rung.len)
 stile := line(l0, l1)
 vertical stile
 l0 distance(lib.rung.len) l1
-fix(x == 0, y == 0) l0
+fix((0, 0)) l0
 }
 ";
 
@@ -80,7 +80,7 @@ fn a_component_only_file_does_not_instantiate_its_last_definition() {
 #[test]
 fn preview_solves_only_when_its_file_is_opened() {
     let src = "use std\nshared := 3mm\ncomponent Sample(size: Length) {\n\
-        c := circle hint(r: size)\nradius(size) c\nfix(x == 0, y == 0) c.center\n}\n\
+        c := circle hint(r: size)\nradius(size) c\nfix((0, 0)) c.center\n}\n\
         preview {\nunit cm\npreview_size := 7cm\n\
         sample := Sample(size: preview_size) in std.front\n}\n";
     let (mut p, errs) = parse(src);
@@ -273,9 +273,9 @@ use std
 use lib.over
 in std.front {
 a := point
-b := point hint(x: 100, y: 0)
+b := point hint((100, 0))
 l := lib.over.Long(a, b, twice: lib.over.twice)
-fix(x == 0, y == 0) a
+fix((0, 0)) a
 b distance(lib.over.twice, along: y) a
 }
 ");

@@ -11,12 +11,12 @@ c := point
 d := point
 o := point
 z := point
-fix(x == 1, y == 0) a
-fix(x == 3, y == 0) b
-fix(x == 3, y == 2) c
-fix(x == 1, y == 2) d
-fix(x == 0, y == 0) o
-fix(x == 0, y == 1) z
+fix((1, 0)) a
+fix((3, 0)) b
+fix((3, 2)) c
+fix((1, 2)) d
+fix((0, 0)) o
+fix((0, 1)) z
 ax := line(o,z)
 ab := line(a,b)
 bc := line(b,c)

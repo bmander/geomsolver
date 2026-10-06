@@ -116,7 +116,7 @@ fn coverage_derives_success_partial_failure_and_counterexamples() {
 }
 
 fn round_claim(form: &str) -> String {
-    format!("unit mm\nuse std\nin std.front {{\na := point\nfix(x == 0, y == 0) a\nac := circle(center:a)\nradius(1mm) ac\nb := point\nfix(x == 2, y == 0) b\nbc := circle(center:b)\nradius(1mm) bc\n}}\naf := face(ac)\nbf := face(bc)\nresult := solid(af,depth:1mm)\nother := solid(bf,depth:1mm)\nclaim result {form} other\n")
+    format!("unit mm\nuse std\nin std.front {{\na := point\nfix((0, 0)) a\nac := circle(center:a)\nradius(1mm) ac\nb := point\nfix((2, 0)) b\nbc := circle(center:b)\nradius(1mm) bc\n}}\naf := face(ac)\nbf := face(bc)\nresult := solid(af,depth:1mm)\nother := solid(bf,depth:1mm)\nclaim result {form} other\n")
 }
 
 #[test]
@@ -132,7 +132,7 @@ fn unresolved_predicates_and_spacing_are_independent_of_negative_gaps() {
     // Equal curved solids share a boundary: faceting cannot certify containment at contact.
     for form in ["inside", "fits(-100mm)"] {
         let v = verdict(
-            &round_claim(form).replace("fix(x == 2, y == 0) b", "fix(x == 0, y == 0) b"),
+            &round_claim(form).replace("fix((2, 0)) b", "fix((0, 0)) b"),
         );
         assert_eq!(v.holds(), None);
         assert!(report::solid_claim_text(&v).contains("containment"));
@@ -212,7 +212,7 @@ fn empty_boundaries_are_explicitly_unbounded_and_cannot_certify() {
 #[test]
 fn angular_coverage_and_failure_reports_keep_degrees() {
     let src = fixture()
-        .replace("c := circle(center:o)", "q := point\nfix(x == 1, y == 0) q\nc := circle(center:o)")
+        .replace("c := circle(center:o)", "q := point\nfix((1, 0)) q\nc := circle(center:o)")
         .replace(
             "o distance(reach,along:x) p",
             "datum := line(o,q)\nradial := line(o,p)\ndatum angle(reach) radial",
@@ -231,7 +231,7 @@ fn angular_coverage_and_failure_reports_keep_degrees() {
 #[test]
 fn a_counterexample_refutes_a_sweep_with_uncertain_contact_and_successful_poses() {
     let src = round_claim("clear(-100mm)")
-        .replace("fix(x == 2, y == 0) b\n", "a distance(reach,along:x) b\na distance(0mm,along:y) b\n")
+        .replace("fix((2, 0)) b\n", "a distance(reach,along:x) b\na distance(0mm,along:y) b\n")
         .replace("use std\n", "use std\nparam reach: Length\n")
         .replace(
             "claim result clear(-100mm) other",
@@ -250,7 +250,7 @@ fn a_counterexample_refutes_a_sweep_with_uncertain_contact_and_successful_poses(
 #[test]
 fn a_single_pose_claim_cannot_silently_solve_a_different_pose() {
     let mut e =
-        read(&round_claim("clear(1mm)").replace("fix(x == 2, y == 0) b", "fix(x == 20, y == 0) b"));
+        read(&round_claim("clear(1mm)").replace("fix((2, 0)) b", "fix((20, 0)) b"));
     assert!(gcs_core::solve::solve(&mut e.sketch, Default::default()).success);
     let radius = e.sketch.circles[0].radius as usize;
     e.sketch.params[radius].value = 5.0; // Valid geometry, but violates radius(1mm).

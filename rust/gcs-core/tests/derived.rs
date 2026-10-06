@@ -28,15 +28,15 @@ unit mm
 use std
 in std.front {
 a := point
-b := point hint(x: 60, y: 0)
-c := point hint(x: 60, y: 40)
-d := point hint(x: 0, y: 40)
+b := point hint((60, 0))
+c := point hint((60, 40))
+d := point hint((0, 40))
 (ab := line(a, b)) -> (bc := line(b, c)) -> (cd := line(c, d)) -> (da := line(d, a)) -> close
 horizontal ab
 vertical bc
 a distance(60) b
 a distance(40) d
-fix(x == 0, y == 0) a
+fix((0, 0)) a
 }
 sec := face(ab, bc, cd, da)
 ";
@@ -45,7 +45,7 @@ const UNIT: f64 = 0.05;
 
 #[test]
 fn projection_inputs_exclude_unrelated_geometry_and_include_solid_extents() {
-    let mut e = read(&format!("{RECT}in std.front {{\nstray := point hint(x: 20, y: 20)\n}}\n\
+    let mut e = read(&format!("{RECT}in std.front {{\nstray := point hint((20, 20))\n}}\n\
         block := solid(sec, depth: 30mm)\nview(block) in std.side\n"));
     let original = hidden::inputs(&e.sketch);
     let picture = gcs_core::report::derived_json(&e.sketch, UNIT);
@@ -65,7 +65,7 @@ fn projection_inputs_exclude_unrelated_geometry_and_include_solid_extents() {
 #[test]
 fn projection_inputs_follow_view_poses_and_cutting_planes() {
     let mut e = read(&format!("{RECT}block := solid(sec, depth: 30mm)\n\
-        slice := plane\nfix(x == 0, y == -10, z == 0) slice\nfix(x == 1, y == 0, z == 0) slice.u\nfix(x == 0, y == 0, z == 1) slice.v\n\
+        slice := plane\nfix(origin == (0, -10, 0)) slice\nfix(dir == (1, 0, 0)) slice.u\nfix(dir == (0, 0, 1)) slice.v\n\
         view(block) in std.side\nsection(block, at: slice) in std.front\n"));
     let before = hidden::inputs(&e.sketch);
     let picture = gcs_core::report::derived_json(&e.sketch, UNIT);
@@ -126,7 +126,7 @@ fn a_view_in_the_plane_a_face_was_drawn_in_is_the_face_itself() {
 #[test]
 fn a_bore_along_the_eye_is_two_hidden_lines_in_the_view_beside_it() {
     let src = format!(
-        "{RECT}in std.front {{\no := point hint(x: 30, y: 20)\n\
+        "{RECT}in std.front {{\no := point hint((30, 20))\n\
          a distance(30, along: x) o\na distance(20, along: y) o\n\
          hole := circle(center: o) hint(r: 8)\nradius(8) hole\n}}\nhole_f := face(hole)\n\
          stock := solid(sec, depth: 30mm)\nbore := solid(hole_f, depth: 30mm)\n\
@@ -153,7 +153,7 @@ fn a_cylinder_is_two_lines_at_every_zoom() {
     // the draughtsman's rule, and the reason `smooth` exists: a round surface is drawn by its
     // silhouette, never by the facets the kernel happens to have cut it into
     let src = format!(
-        "{RECT}in std.front {{\no := point hint(x: 30, y: 20)\n\
+        "{RECT}in std.front {{\no := point hint((30, 20))\n\
          a distance(30, along: x) o\na distance(20, along: y) o\n\
          rim := circle(center: o) hint(r: 10)\nradius(10) rim\n}}\nrf := face(rim)\n\
          cyl := solid(rf, depth: 25mm)\nview(cyl) in std.side\n"
@@ -171,7 +171,7 @@ fn a_cylinder_is_two_lines_at_every_zoom() {
 #[test]
 fn a_section_shows_the_cut() {
     let src = format!(
-        "{RECT}in std.front {{\no := point hint(x: 30, y: 20)\n\
+        "{RECT}in std.front {{\no := point hint((30, 20))\n\
          a distance(30, along: x) o\na distance(20, along: y) o\n\
          hole := circle(center: o) hint(r: 8)\nradius(8) hole\n}}\nhole_f := face(hole)\n\
          stock := solid(sec, depth: 30mm)\nbore := solid(hole_f, depth: 30mm)\n\

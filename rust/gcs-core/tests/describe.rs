@@ -27,23 +27,23 @@ fn an_angle_that_names_its_unit_is_not_given_a_second_one() {
 use std
 in std.front {
 o := point
-         a := point hint(x: 40, y: 0)
-         b := point hint(x: 20, y: 30)
+         a := point hint((40, 0))
+         b := point hint((20, 30))
          oa := line(o, a)
          ob := line(o, b)
          oa angle(60deg) ob
-         fix(x == 0, y == 0) o
+         fix((0, 0)) o
 }
 ",
     );
     assert_eq!(dims(&e.sketch), ["60deg"], "the unit as written, once");
     // a bare number in an angle slot takes the sign a reader expects; a fraction is a bare number
-    let e = read("use std\nin std.front {\no := point hint(x: 0, y: 0)\na := point hint(x: 40, y: 0)\nb := point hint(x: 20, y: 30)\noa := line(o, a)\nob := line(o, b)\noa angle(60) ob\n}\n");
+    let e = read("use std\nin std.front {\no := point hint((0, 0))\na := point hint((40, 0))\nb := point hint((20, 30))\noa := line(o, a)\nob := line(o, b)\noa angle(60) ob\n}\n");
     assert_eq!(dims(&e.sketch), ["60°"]);
-    let e = read("use std\nin std.front {\no := point hint(x: 0, y: 0)\na := point hint(x: 40, y: 0)\nb := point hint(x: 20, y: 30)\noa := line(o, a)\nob := line(o, b)\noa angle(22 1/2) ob\n}\n");
+    let e = read("use std\nin std.front {\no := point hint((0, 0))\na := point hint((40, 0))\nb := point hint((20, 30))\noa := line(o, a)\nob := line(o, b)\noa angle(22 1/2) ob\n}\n");
     assert_eq!(dims(&e.sketch), ["22 1/2°"]);
     // and a length that names its unit is left as it was, in either slot
-    let e = read("unit mm\nuse std\nin std.front {\na := point hint(x: 0, y: 0)\nb := point hint(x: 40, y: 0)\na distance(4cm) b\n}\n");
+    let e = read("unit mm\nuse std\nin std.front {\na := point hint((0, 0))\nb := point hint((40, 0))\na distance(4cm) b\n}\n");
     assert_eq!(dims(&e.sketch), ["4cm"]);
 }
 
@@ -55,8 +55,8 @@ fn the_list_and_the_callout_print_one_number_one_way() {
         "pcd := 100
          n := 6
          repeat 1 as i {
-           a := point hint(x: 50, y: 0)
-           b := point hint(x: 25, y: 43)
+           a := point hint((50, 0))
+           b := point hint((25, 43))
            a distance(pcd * sin(180deg / n)) b
          }",
     );
@@ -66,12 +66,12 @@ fn the_list_and_the_callout_print_one_number_one_way() {
     assert_eq!(on_drawing, "50", "{on_drawing}");
     assert!(in_list.ends_with("distance(50) P1"), "{in_list}");
     // six digits keeps what four dropped
-    let e = read("use std\nin std.front {\na := point hint(x: 0, y: 0)\nb := point hint(x: 1234.5, y: 0)\na distance(1234.5) b\n}\n");
+    let e = read("use std\nin std.front {\na := point hint((0, 0))\nb := point hint((1234.5, 0))\na distance(1234.5) b\n}\n");
     let c = &e.sketch.user_constraints()[0];
     assert_eq!(io::dimension_text(c).unwrap(), "1234.5");
     assert_eq!(io::describe(c), "P0 distance(1234.5) P1");
     // an angle in a list is in degrees and carries no sign, as the source writes it
-    let e = read("use std\nin std.front {\no := point hint(x: 0, y: 0)\na := point hint(x: 40, y: 0)\nb := point hint(x: 20, y: 30)\noa := line(o, a)\nob := line(o, b)\noa angle(60) ob\n}\n");
+    let e = read("use std\nin std.front {\no := point hint((0, 0))\na := point hint((40, 0))\nb := point hint((20, 30))\noa := line(o, a)\nob := line(o, b)\noa angle(60) ob\n}\n");
     assert_eq!(io::describe(&e.sketch.user_constraints()[0]), "L0 angle(60) L1");
 }
 
@@ -82,11 +82,11 @@ fn a_culprit_is_named_as_the_source_names_it() {
 use std
 in std.front {
 corner := point
-         along := point  hint(x: 60, y: 0)
+         along := point  hint((60, 0))
          base := line(corner, along)
          horizontal base
          corner distance(60) along
-         fix(x == 0, y == 0) corner
+         fix((0, 0)) corner
 }
 ",
     );
@@ -96,7 +96,7 @@ corner := point
     assert_eq!(texts, ["horizontal base", "corner distance(60) along"]);
     // a named line with an anonymous child: the line by its name, and without a namer the
     // sketch's own label
-    let e = read("use std\nin std.front {\np := point hint(x: 0, y: 0)\nl := line(p, hint(x: 10, y: 0))\nhorizontal l\n}\n");
+    let e = read("use std\nin std.front {\np := point hint((0, 0))\nl := line(p, hint((10, 0)))\nhorizontal l\n}\n");
     let name = |x| e.map.name_of(x).cloned();
     assert_eq!(io::describe_with(&e.sketch.user_constraints()[0], &name), "horizontal l");
     // without a namer, the sketch's own labels
@@ -117,13 +117,13 @@ use std
 component Arm(hub: point, tip: point) { hub distance(40) tip }
 in std.front {
 o := point
-t := point hint(x: 5, y: 40)
-fix(x == 0, y == 0) o
+t := point hint((5, 40))
+fix((0, 0)) o
 o vertical t
 a := Arm(o, t)
 c := circle(center: o) hint(r: 25)
 radius(25) c
-l := line(o, hint(x: 30, y: 0))
+l := line(o, hint((30, 0)))
 horizontal l
 o distance(30) l.p2
 }
@@ -150,7 +150,7 @@ o distance(30) l.p2
 /// A plane reports which way it faces and where it stands, its axes' directions and its origin.
 #[test]
 fn a_plane_reports_its_attitude_and_its_place() {
-    let e = read("unit mm\nuse std\nv := plane\nfix(x == 0, y == 5, z == 0) v\nfix(x == 0, y == 0, z == 1) v.u\nfix(x == 1, y == 0, z == 0) v.v\n");
+    let e = read("unit mm\nuse std\nv := plane\nfix(origin == (0, 5, 0)) v\nfix(dir == (0, 0, 1)) v.u\nfix(dir == (1, 0, 0)) v.v\n");
     let mut sk = e.sketch;
     assert!(gcs_core::solve::solve(&mut sk, Default::default()).success);
     let p: std::collections::BTreeMap<String, f64> =
@@ -171,9 +171,9 @@ use std
 w := 100
          a := 30deg
          in std.front {
-         o := point hint(x: 0, y: 0)
-         p := point hint(x: 100, y: 0)
-         q := point hint(x: 100, y: 50)
+         o := point hint((0, 0))
+         p := point hint((100, 0))
+         q := point hint((100, 50))
          l1 := line(o, p)
          l2 := line(o, q)
          o distance(w) p
@@ -205,8 +205,8 @@ component Bar(a: point, b: point, len: Length, d: group) {
            a distance(40) b
          }
          in std.front {
-         o := point hint(x: 0, y: 0)
-         p := point hint(x: 40, y: 0)
+         o := point hint((0, 0))
+         p := point hint((40, 0))
          dims := {w: 80}
          one := Bar(o, p, len: 40, d: dims)
          two := Bar(o, p, len: 40, d: dims)
@@ -222,8 +222,8 @@ component Bar(a: point, b: point, len: Length) {
            repeat 1 as i { a distance(len) b }
          }
          in std.front {
-         o := point hint(x: 0, y: 0)
-         p := point hint(x: 40, y: 0)
+         o := point hint((0, 0))
+         p := point hint((40, 0))
          bar := Bar(o, p, len: 40)
          }
 ",
@@ -237,8 +237,8 @@ use std
 use parts
          component Local(a: point, b: point, parts: group) { a distance(parts.w / 2) b }
          in std.front {
-         o := point hint(x: 0, y: 0)
-         p := point hint(x: 40, y: 0)
+         o := point hint((0, 0))
+         p := point hint((40, 0))
          dims := {w: 80}
          bar := parts.Bar(o, p, len: 40)
          local := Local(o, p, parts: dims)
@@ -269,8 +269,8 @@ unit mm
 use std
          use parts
          in std.front {
-         o := point hint(x: 0, y: 0)
-         p := point hint(x: 40, y: 0)
+         o := point hint((0, 0))
+         p := point hint((40, 0))
          bar := parts.Bar(o, p, len: 40mm / 3, turn: 100deg / 3)
          }
 ",
@@ -313,11 +313,11 @@ use std
          in std.front {
          o := point
          t := point
-         p := point hint(x: 15, y: 5)
-         q := point hint(x: -60, y: 0)
+         p := point hint((15, 5))
+         q := point hint((-60, 0))
          ax := line(o, t)
-         fix(x == 0, y == 0) o
-         fix(x == 0, y == 1) t
+         fix((0, 0)) o
+         fix((0, 1)) t
          p distance(15, side: right) ax
          p distance(r, side: right) ax
          p distance(15, side: left) ax

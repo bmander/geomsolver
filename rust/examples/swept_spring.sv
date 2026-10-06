@@ -12,8 +12,8 @@ turns := 2         // how many turns
 
 // A sphere of radius `r` about `center`: a half disc turned about its upright diameter.
 component Sphere(center: point, r: Length) {
-  private bottom := point hint(x: center.x, y: center.y - r)
-  private top := point hint(x: center.x, y: center.y + r)
+  private bottom := point hint((center.x, center.y - r))
+  private top := point hint((center.x, center.y + r))
   private diameter := line(bottom, top)
   center midpoint diameter
   vertical diameter
@@ -23,9 +23,9 @@ component Sphere(center: point, r: Length) {
 }
 
 in std.front {
-  construction centerline spindle := line(std.origin, hint(x: 0, y: 1))
-  fix(x == 0, y == 1) spindle.p2
-  private start := point hint(x: coil_r, y: 0)
+  construction centerline spindle := line(std.origin, hint((0, 1)))
+  fix((0, 1)) spindle.p2
+  private start := point hint((coil_r, 0))
   std.origin horizontal start
   std.origin distance(coil_r, along: right) start
   private ball := Sphere(start, r: wire_r)

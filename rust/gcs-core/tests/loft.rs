@@ -18,22 +18,22 @@ fn read(src: &str) -> program::Elaborated {
 const SECTIONS: &str = "unit mm
 use std
 back := plane
-fix(x == 0, y == 20, z == 0) back
-fix(x == 1, y == 0, z == 0) back.u
-fix(x == 0, y == 0, z == 1) back.v
+fix(origin == (0, 20, 0)) back
+fix(dir == (1, 0, 0)) back.u
+fix(dir == (0, 0, 1)) back.v
 in std.top {
-  a := point hint(x: 0, y: 0)
-  b := point hint(x: 0, y: 20)
+  a := point hint((0, 0))
+  b := point hint((0, 20))
   guide := line(a, b)
 }
 in std.front {
-  c := point hint(x: 0, y: 0)
+  c := point hint((0, 0))
   outer := circle(center: c) hint(r: 10)
   inner := circle(center: c) hint(r: 5)
   section := face(outer, holes: inner)
 }
 in back {
-  ec := point hint(x: 0, y: 0)
+  ec := point hint((0, 0))
   eo := circle(center: ec) hint(r: 6)
   ei := circle(center: ec) hint(r: 3)
   end_section := face(eo, holes: ei)
@@ -110,8 +110,8 @@ fn guide_and_end_section_changes_invalidate_cache_and_copy_retains_dependencies(
 #[test]
 fn malformed_guides_and_mismatched_sections_are_diagnosed() {
     for (old, new, needle) in [
-        ("y: 20", "y: 0", "distinct"),
-        ("y == 20, z == 0) back", "y == 21, z == 0) back", "end section"),
+        ("hint((0, 20))", "hint((0, 0))", "distinct"),
+        ("(0, 20, 0)) back", "(0, 21, 0)) back", "end section"),
         ("guide := line(a, b)", "guide := line(b, a)", "start section"),
         (
             "end_section := face(eo, holes: ei)",
@@ -148,13 +148,13 @@ fn arc_sweep_follows_solved_radius_and_transports_the_profile() {
     let src = "unit mm
 use std
 in std.top {
- center := point hint(x: 0, y: 0)
- a := point hint(x: 30, y: 0)
- b := point hint(x: 0, y: 30)
+ center := point hint((0, 0))
+ a := point hint((30, 0))
+ b := point hint((0, 30))
  guide := arc(center: center, start: a, end: b) hint(r: 30)
 }
 in std.front {
- c := point hint(x: 30, y: 0)
+ c := point hint((30, 0))
  outer := circle(center: c) hint(r: 5)
  inner := circle(center: c) hint(r: 3)
  section := face(outer, holes: inner)
@@ -232,18 +232,18 @@ fn an_explicit_arc_end_section_changes_size_in_the_transported_frame() {
     let src = "unit mm
 use std
 in std.top {
- center := point hint(x: 0, y: 0)
- a := point hint(x: 30, y: 0)
- b := point hint(x: 0, y: 30)
+ center := point hint((0, 0))
+ a := point hint((30, 0))
+ b := point hint((0, 30))
  guide := arc(center: center, start: a, end: b) hint(r: 30)
 }
 in std.front {
- c := point hint(x: 30, y: 0)
+ c := point hint((30, 0))
  outer := circle(center: c) hint(r: 5)
  section := face(outer)
 }
 in std.side {
- ec := point hint(x: 30, y: 0)
+ ec := point hint((30, 0))
  eo := circle(center: ec) hint(r: 4)
  end_section := face(eo)
 }
@@ -297,14 +297,14 @@ inline := solid(face(outer, holes: inner), along: guide)
 fn concave_sections_with_multiple_holes_have_closed_caps() {
     let src = format!(
         "{}in std.front {{
-p0 := point hint(x: 0, y: 0)
-p1 := point hint(x: 10, y: 0)
-p2 := point hint(x: 10, y: 5)
-p3 := point hint(x: 5, y: 5)
-p4 := point hint(x: 5, y: 10)
-p5 := point hint(x: 0, y: 10)
-h0 := point hint(x: 7, y: 2)
-h1 := point hint(x: 2, y: 7)
+p0 := point hint((0, 0))
+p1 := point hint((10, 0))
+p2 := point hint((10, 5))
+p3 := point hint((5, 5))
+p4 := point hint((5, 10))
+p5 := point hint((0, 10))
+h0 := point hint((7, 2))
+h1 := point hint((2, 7))
 hole0 := circle(center: h0) hint(r: 1)
 hole1 := circle(center: h1) hint(r: 1)
 outline := (e0 := line(p0, p1)) -> (e1 := line(p1, p2)) -> (e2 := line(p2, p3)) -> (e3 := line(p3, p4)) -> (e4 := line(p4, p5)) -> (e5 := line(p5, p0)) -> close
@@ -372,14 +372,14 @@ fn an_end_section_written_the_other_way_round_is_refused_by_both_kernels() {
     let square = |order: &str| format!("unit mm
 use std
 back := plane
-fix(x == 0, y == 20, z == 0) back
-fix(x == 1, y == 0, z == 0) back.u
-fix(x == 0, y == 0, z == 1) back.v
+fix(origin == (0, 20, 0)) back
+fix(dir == (1, 0, 0)) back.u
+fix(dir == (0, 0, 1)) back.v
 in std.top {{
   a := point
   b := point
-  fix(x == 0, y == 0) a
-  fix(x == 0, y == 20) b
+  fix((0, 0)) a
+  fix((0, 20)) b
   guide := line(a, b)
 }}
 in std.front {{
@@ -387,20 +387,20 @@ in std.front {{
   s1 := point
   s2 := point
   s3 := point
-  fix(x == -5, y == -5) s0
-  fix(x == 5, y == -5) s1
-  fix(x == 5, y == 5) s2
-  fix(x == -5, y == 5) s3
+  fix((-5, -5)) s0
+  fix((5, -5)) s1
+  fix((5, 5)) s2
+  fix((-5, 5)) s3
 }}
 in back {{
   e0 := point
   e1 := point
   e2 := point
   e3 := point
-  fix(x == -3, y == -3) e0
-  fix(x == 3, y == -3) e1
-  fix(x == 3, y == 3) e2
-  fix(x == -3, y == 3) e3
+  fix((-3, -3)) e0
+  fix((3, -3)) e1
+  fix((3, 3)) e2
+  fix((-3, 3)) e3
 }}
 body := solid(face(s0, s1, s2, s3, -> close), face({order}, -> close), along: guide)
 ");

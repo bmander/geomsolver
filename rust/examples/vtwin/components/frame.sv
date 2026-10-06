@@ -10,7 +10,7 @@ use components.throttle
 // exhaust clockwise, for a clockwise crank. The pivot remains available as r.piv or l.piv.
 component FrameBank(o: point, ref: line, alpha: Angle, dim: Int, dims: group) {
   port_bearing := atan2(dims.a * sin(dims.beta), dims.H + dims.a * cos(dims.beta))
-  piv := point hint(x: o.x + dims.H * sin(alpha), y: o.y + dims.H * cos(alpha))
+  piv := point hint((o.x + dims.H * sin(alpha), o.y + dims.H * cos(alpha)))
   ax := line(o, piv)
   o distance(dims.H) piv
   ref angle(alpha, sense: cw) ax
@@ -22,8 +22,8 @@ component FrameBank(o: point, ref: line, alpha: Angle, dim: Int, dims: group) {
   exhaust := circle(center: ep.p) hint(r: dims.dport / 2)
   radius(dims.dport / 2) intake
   radius(dims.dport / 2) exhaust
-  s0 := point hint(x: piv.x + dims.a * sin(alpha + dims.swing + 6deg), y: piv.y + dims.a * cos(alpha + dims.swing + 6deg))
-  s1 := point hint(x: piv.x + dims.a * sin(alpha - dims.swing - 6deg), y: piv.y + dims.a * cos(alpha - dims.swing - 6deg))
+  s0 := point hint((piv.x + dims.a * sin(alpha + dims.swing + 6deg), piv.y + dims.a * cos(alpha + dims.swing + 6deg)))
+  s1 := point hint((piv.x + dims.a * sin(alpha - dims.swing - 6deg), piv.y + dims.a * cos(alpha - dims.swing - 6deg)))
   sweep := arc(center: piv, start: s0, end: s1) hint(r: dims.a)
   radius(dims.a) sweep
   s0 distance(dims.a * sin(dims.swing + 6deg), side: right) ax
@@ -84,10 +84,10 @@ component FrameBlank(o: point, dims: group) {
 // the crank axis to the port; the feed overlaps both cavities at its ends.
 component IntakePassage(f: group, dims: group) {
   ax := line(f.u.p1, f.u.p2)
-  a := point hint(at: f.axes, x: dims.rman, y: -dims.wch / 2)
-  b := point hint(at: f.axes, x: dims.rpl, y: -dims.wch / 2)
-  c := point hint(at: f.axes, x: dims.rpl, y: dims.wch / 2)
-  d := point hint(at: f.axes, x: dims.rman, y: dims.wch / 2)
+  a := point hint(at: f.axes, (dims.rman, -dims.wch / 2))
+  b := point hint(at: f.axes, (dims.rpl, -dims.wch / 2))
+  c := point hint(at: f.axes, (dims.rpl, dims.wch / 2))
+  d := point hint(at: f.axes, (dims.rman, dims.wch / 2))
   body := solid(face(a, b, c, d, -> close), from: -dims.wch / 2, to: dims.wch / 2)
   ab := line(a, b)
   bc := line(b, c)
@@ -111,10 +111,10 @@ component IntakeManifold(o: point, right: line, left: line, dims: group) {
   intake_l := std.Turned(o, left.p2)
   feedR := IntakePassage(intake_r, dims: dims)
   feedL := IntakePassage(intake_l, dims: dims)
-  ci0 := point hint(x: o.x + (left.p2.x - o.x) * kin, y: o.y + (left.p2.y - o.y) * kin)
-  ci1 := point hint(x: o.x + (right.p2.x - o.x) * kin, y: o.y + (right.p2.y - o.y) * kin)
-  co0 := point hint(x: o.x + (left.p2.x - o.x) * kout, y: o.y + (left.p2.y - o.y) * kout)
-  co1 := point hint(x: o.x + (right.p2.x - o.x) * kout, y: o.y + (right.p2.y - o.y) * kout)
+  ci0 := point hint((o.x + (left.p2.x - o.x) * kin, o.y + (left.p2.y - o.y) * kin))
+  ci1 := point hint((o.x + (right.p2.x - o.x) * kin, o.y + (right.p2.y - o.y) * kin))
+  co0 := point hint((o.x + (left.p2.x - o.x) * kout, o.y + (left.p2.y - o.y) * kout))
+  co1 := point hint((o.x + (right.p2.x - o.x) * kout, o.y + (right.p2.y - o.y) * kout))
   ch_in := arc(center: o, start: ci1, end: ci0) hint(r: dims.rman - dims.wch / 2)
   ch_out := arc(center: o, start: co1, end: co0) hint(r: dims.rman + dims.wch / 2)
   radius(dims.rman - dims.wch / 2) ch_in
@@ -129,7 +129,7 @@ component IntakeManifold(o: point, right: line, left: line, dims: group) {
 
 // A square exhaust passage from a port to its nearest plate edge.
 component ExhaustPassage(opening: point, boundary: line, dims: group) {
-  outlet := point hint(x: (boundary.p1.x + boundary.p2.x) / 2, y: opening.y)
+  outlet := point hint(((boundary.p1.x + boundary.p2.x) / 2, opening.y))
   outlet coincident boundary
   opening distance(0mm, along: y) outlet
   center := line(opening, outlet)
@@ -228,8 +228,8 @@ component Frame(layout: group, dims: group) {
 preview {
   unit mm
   in std.front {
-    ref := line(std.origin, hint(x: 0, y: 1))
-    fix(x == 0, y == 1) ref.p2
+    ref := line(std.origin, hint((0, 1)))
+    fix((0, 1)) ref.p2
   }
   layout := {front: std.front, origin: std.origin, ax: ref}
   plate := Frame(layout, dims: components.dims.vtwin_dims)

@@ -38,13 +38,13 @@ fn a_component_carries_its_views_in_blocks() {
 use std
 component Peg(f: plane, r: plane, cf: point, cr: point, draw_r: Int) {
   in f {
-    a := point hint(x: cf.x, y: cf.y + 10)
+    a := point hint((cf.x, cf.y + 10))
     cf distance(0, along: x) a
     cf distance(10, along: y) a
   }
   repeat draw_r {
     in r {
-      b := point hint(x: cr.x + 5, y: cr.y + 10)
+      b := point hint((cr.x + 5, cr.y + 10))
       cr distance(5, along: x) b
     }
     a project b[0]
@@ -86,23 +86,23 @@ use std
 front := plane(u: std.x, v: std.z)
 top := plane(u: std.x, v: std.y)
 right := plane(u: std.y, v: std.z)
-fix(x == 0, y == 0, z == 0) front
-fix(x == 0, y == 0, z == 0) top
-fix(x == 0, y == 0, z == 0) right
+fix(origin == (0, 0, 0)) front
+fix(origin == (0, 0, 0)) top
+fix(origin == (0, 0, 0)) right
 ";
 
 #[test]
 fn every_spelling_prints_back() {
     let src = "\
 use std
-r := axis hint(x: 0.6, y: 0.8, z: 0)
+r := axis hint(dir: (0.6, 0.8, 0))
 front := plane(u: std.x, v: std.z)
 top := plane(u: std.x, v: std.y)
-p := plane(u: r, v: std.z) hint(x: 1, y: 2, z: 3)
-a := point in top hint(x: 10, y: 5)
-l := line(a, hint(x: 3, y: 4)) in top
-b := point hint(x: 2, y: 2) in front
-s := point hint(x: 1, y: 2, z: 3)
+p := plane(u: r, v: std.z) hint(origin: (1, 2, 3))
+a := point in top hint((10, 5))
+l := line(a, hint((3, 4))) in top
+b := point hint((2, 2)) in front
+s := point hint((1, 2, 3))
 a project b
 claim a project b
 ";
@@ -116,7 +116,7 @@ claim a project b
     let squash = |s: &str| s.split_whitespace().collect::<Vec<_>>().join(" ");
     // `in` is a trailer and prints after `hint`; every other statement prints as written, and
     // the `use` is the program's, not a statement of its body
-    let want = src.replace("a := point in top hint(x: 10, y: 5)", "a := point hint(x: 10, y: 5) in top")
+    let want = src.replace("a := point in top hint((10, 5))", "a := point hint((10, 5)) in top")
         .replace("use std\n", "");
     assert_eq!(squash(&out), squash(&want));
     let e = read(src);
@@ -127,8 +127,8 @@ claim a project b
 
 #[test]
 fn a_plane_reads_its_basis_off_its_rays() {
-    let e = read(&format!("{VIEWS}r := axis hint(x: 0.8660254037844387, y: 0.5, z: 0)\n\
-                           fix(x == 0.8660254037844387, y == 0.5, z == 0) r\n\
+    let e = read(&format!("{VIEWS}r := axis hint(dir: (0.8660254037844387, 0.5, 0))\n\
+                           fix(dir == (0.8660254037844387, 0.5, 0)) r\n\
                            aux := plane(u: r, v: std.z)\n"));
     let b = |n: &str| e.sketch.basis(at(&e, n));
     let near = |a: [f64; 3], c: [f64; 3]| (0..3).all(|i| (a[i] - c[i]).abs() < 1e-12);
@@ -138,16 +138,16 @@ fn a_plane_reads_its_basis_off_its_rays() {
     let (c, s) = (30f64.to_radians().cos(), 30f64.to_radians().sin());
     assert!(near(b("aux").u, [c, s, 0.0]) && near(b("aux").v, [0.0, 0.0, 1.0]));
     // a plane may be declared before the axes it stands on
-    let e = read("aux := plane(u: r, v: w)\nr := axis hint(x: 1, y: 0, z: 0)\nw := axis hint(x: 0, y: 1, z: 0)\n");
+    let e = read("aux := plane(u: r, v: w)\nr := axis hint(dir: (1, 0, 0))\nw := axis hint(dir: (0, 1, 0))\n");
     assert!(near(e.sketch.basis(at(&e, "aux")).v, [0.0, 1.0, 0.0]));
     // and its axes need be neither unit nor square: `v` is what is left of the second
-    let e = read("a := axis hint(x: 2, y: 0, z: 0)\nb := axis hint(x: 1, y: 0, z: 3)\np := plane(u: a, v: b)\n");
+    let e = read("a := axis hint(dir: (2, 0, 0))\nb := axis hint(dir: (1, 0, 3))\np := plane(u: a, v: b)\n");
     assert!(near(e.sketch.basis(at(&e, "p")).v, [0.0, 0.0, 1.0]));
 }
 
 #[test]
 fn plane_refusals_carry_their_codes() {
-    refused("use std\np := point hint(x: 1, y: 2, z: 3)\na := plane(u: p, v: std.z)\n", "E103",
+    refused("use std\np := point hint((1, 2, 3))\na := plane(u: p, v: std.z)\n", "E103",
             "an axis or a line");
     refused("use std\na := plane(u: nope, v: std.z)\n", "E101", "no such entity");
     refused("use std\na := plane(u: std.x, v: std.z, origin: std.origin)\n", "E103",
@@ -163,10 +163,10 @@ a := point in top
 l := line in top
 c := circle in right
 k := arc in right
-k0 := point hint(x: 0, y: 0)
-k1 := point hint(x: 1, y: 0)
-k2 := point hint(x: 2, y: 1)
-k3 := point hint(x: 3, y: 0)
+k0 := point hint((0, 0))
+k1 := point hint((1, 0))
+k2 := point hint((2, 1))
+k3 := point hint((3, 0))
 s := spline(k0, k1, k2, k3) in front
 "
     ));
@@ -195,7 +195,7 @@ s := spline(k0, k1, k2, k3) in front
 
 #[test]
 fn unit_in_still_parses_and_in_is_not_a_name() {
-    let e = read("unit in\nuse std\np := point hint(x: 3in, y: 0) in std.front\n");
+    let e = read("unit in\nuse std\np := point hint((3in, 0)) in std.front\n");
     assert!((e.sketch.point_xy(at(&e, "p")).0 - 3.0).abs() < 1e-12);
     // a point cannot be called `in`: the word is a clause's, and the parser says so
     let (_, errs) = parse("point in\n");
@@ -222,7 +222,7 @@ fn project_settles_refuses_and_claims() {
     assert_eq!(d.span.slice(prog.text()), "a project b");
     refused(&format!("{VIEWS}a := point in front\nb := point in front\na project b\n"), "E061", "itself");
     refused(
-        &format!("{VIEWS}front2 := plane\nfix(x == 0, y == -5, z == 0) front2\nfix(x == 1, y == 0, z == 0) front2.u\nfix(x == 0, y == 0, z == 1) front2.v\n\
+        &format!("{VIEWS}front2 := plane\nfix(origin == (0, -5, 0)) front2\nfix(dir == (1, 0, 0)) front2.u\nfix(dir == (0, 0, 1)) front2.v\n\
                   a := point in front\nb := point in front2\na project b\n"),
         "E061",
         "parallel",
@@ -251,7 +251,7 @@ fn reconcile_writes_membership_a_plane_and_a_projection() {
     e.sketch.set_plane(p, Some(top));
     let out = reconciled(&mut e);
     assert_eq!(out.kind, Kind::Structural);
-    assert!(out.text.contains("p0 := point hint(x: 20, y: 110) in top"), "{}", out.text);
+    assert!(out.text.contains("p0 := point hint((20, 110)) in top"), "{}", out.text);
     // an anonymous plane is named the moment a point is put in it
     let mut e = read("use std\nplane(u: std.x, v: std.y)\n");
     let pl = 0;   // the document's own, numbered before the standard datums
@@ -269,7 +269,9 @@ fn reconcile_writes_membership_a_plane_and_a_projection() {
     e.sketch.add(c);
     let out = reconciled(&mut e);
     assert!(out.text.contains(" := plane(u: x"), "{}", out.text);
-    assert!(out.text.contains(" := axis hint(x: 0.6, y: 0.8"), "{}", out.text);
+    assert!(out.text.contains("\nx0 := axis\n"), "a held direction is its own seed: {}", out.text);
+    assert!(out.text.contains("fix(dir == (0.6, 0.8, 0), origin == (0, 0, 0)) x0\n"),
+        "{}", out.text);
     assert!(out.text.contains("\na project b\n"), "{}", out.text);
     assert!(!out.text.contains("origin :="), "an origin is the plane's: {}", out.text);
     assert!(!out.text.contains("project("), "the planes are never spelled: {}", out.text);
@@ -288,7 +290,7 @@ fn reconcile_writes_membership_a_plane_and_a_projection() {
 
 #[test]
 fn commit_seeds_writes_a_rays_direction_and_a_planes_place() {
-    let src = "use std\nr := axis hint(x: 1, y: 0, z: 0)\np := plane(u: r, v: std.z)\n";
+    let src = "use std\nr := axis hint(dir: (1, 0, 0))\np := plane(u: r, v: std.z)\n";
     let e = read(src);
     let mut sk = e.sketch.clone();
     let (r, p) = (at(&e, "r"), at(&e, "p"));
@@ -300,8 +302,8 @@ fn commit_seeds_writes_a_rays_direction_and_a_planes_place() {
     }
     let out = edit::commit_seeds(&e, &sk, &e.program);
     assert_eq!(out.kind, Kind::Numeric);
-    assert!(out.text.contains("r := axis hint(x: 0.6, y: 0.8, z: 0)"), "{}", out.text);
-    assert!(out.text.contains("p := plane(u: r, v: std.z) hint(x: 1, y: 2, z: 3)"), "{}", out.text);
+    assert!(out.text.contains("r := axis hint(dir: (0.6, 0.8, 0))"), "{}", out.text);
+    assert!(out.text.contains("p := plane(u: r, v: std.z) hint(origin: (1, 2, 3))"), "{}", out.text);
     read(&out.text);
 }
 
@@ -309,8 +311,8 @@ fn commit_seeds_writes_a_rays_direction_and_a_planes_place() {
 fn remove_a_plane() {
     let src = format!(
         "{VIEWS}\
-a := point in front hint(x: 3, y: 4)
-b := point hint(x: 5, y: 105) in top
+a := point in front hint((3, 4))
+b := point hint((5, 105)) in top
 a project b
 "
     );
@@ -321,8 +323,8 @@ a project b
     assert!(!out.text.contains("top := plane"), "{}", out.text);
     assert!(!out.text.contains(") top\n"), "its fix goes too: {}", out.text);
     assert!(!out.text.contains("project"), "{}", out.text);
-    assert!(out.text.contains("b := point hint(x: 5, y: 105)\n"), "the clause came out: {}", out.text);
-    assert!(out.text.contains("a := point in front hint(x: 3, y: 4)"), "{}", out.text);
+    assert!(out.text.contains("b := point hint((5, 105))\n"), "the clause came out: {}", out.text);
+    assert!(out.text.contains("a := point in front hint((3, 4))"), "{}", out.text);
     let back = read(&out.text);
     assert_eq!(back.sketch.planes.len(), 4 + 2);
     let b = at(&back, "b");
@@ -334,12 +336,12 @@ fn an_in_block_is_the_clause_written_once() {
     let e = read(&format!(
         "{VIEWS}\
 in top {{
-  a := point hint(x: 10, y: 90)
+  a := point hint((10, 90))
   l := line
   cycle 4 {{ (s := line) -> perpendicular equal }}
   a project b
 }}
-b := point in front hint(x: 10, y: 5)
+b := point in front hint((10, 5))
 "
     ));
     let sk = &e.sketch;
@@ -357,7 +359,7 @@ b := point in front hint(x: 10, y: 5)
     }
     assert_eq!(out.matches(" in ").count(), 1, "only b's own clause: {out}");
     // the one-line form reads too
-    let e = read("use std\nin std.front { c := point hint(x: 1, y: 2) }\n");
+    let e = read("use std\nin std.front { c := point hint((1, 2)) }\n");
     assert_eq!(e.sketch.plane_of(at(&e, "c")), Some(at(&e, "std.front")));
 }
 
@@ -365,7 +367,7 @@ b := point in front hint(x: 10, y: 5)
 fn an_in_block_refuses_what_it_cannot_mean() {
     refused("in nope { a := point }\n", "E101", "no such entity");
     refused(
-        &format!("{VIEWS}a := point in front\nin top {{ l := line(a, hint(x: 1, y: 2)) }}\n"),
+        &format!("{VIEWS}a := point in front\nin top {{ l := line(a, hint((1, 2))) }}\n"),
         "E060",
         "already in `front`",
     );
@@ -381,10 +383,10 @@ fn removing_the_plane_unwraps_its_block() {
     let src = format!(
         "{VIEWS}\
 in top {{
-  a := point hint(x: 10, y: 90)
+  a := point hint((10, 90))
   l := line
 }}
-b := point in front hint(x: 1, y: 1)
+b := point in front hint((1, 1))
 a project b
 "
     );
@@ -394,7 +396,7 @@ a project b
     assert_eq!(out.kind, Kind::Structural, "{:?}", out.refused);
     assert!(!out.text.contains("in top"), "{}", out.text);
     assert!(!out.text.contains('{') && !out.text.contains('}'), "{}", out.text);
-    assert!(out.text.contains("a := point hint(x: 10, y: 90)"), "the statements stay: {}", out.text);
+    assert!(out.text.contains("a := point hint((10, 90))"), "the statements stay: {}", out.text);
     assert!(out.text.contains("l := line"), "{}", out.text);
     assert!(!out.text.contains("project"), "{}", out.text);
     let back = read(&out.text);
@@ -406,7 +408,7 @@ a project b
 
 #[test]
 fn a_seed_inside_a_block_splices_in_place() {
-    let src = format!("{VIEWS}in top {{\n  a := point hint(x: 10, y: 90)\n}}\n");
+    let src = format!("{VIEWS}in top {{\n  a := point hint((10, 90))\n}}\n");
     let e = read(&src);
     let mut sk = e.sketch.clone();
     let a = e.map.ent_named("a").unwrap();
@@ -415,7 +417,7 @@ fn a_seed_inside_a_block_splices_in_place() {
     sk.params[py as usize].value = 95.0;
     let out = edit::commit_seeds(&e, &sk, &e.program);
     assert_eq!(out.kind, Kind::Numeric);
-    assert!(out.text.contains("a := point hint(x: 12, y: 95)"), "{}", out.text);
+    assert!(out.text.contains("a := point hint((12, 95))"), "{}", out.text);
     assert!(out.text.contains("in top {"), "the block is untouched: {}", out.text);
     read(&out.text);
 }
@@ -425,9 +427,8 @@ fn a_seed_inside_a_block_splices_in_place() {
 /// and took every point in the block for one moved out of it: an edit was refused on load.
 #[test]
 fn a_block_over_a_module_plane_is_not_a_membership_to_change() {
-    let src = "unit mm\nuse std\nin std.front {\n  a := point hint(x: 10, y: 5)\n}\n\
-               fix(x == 10, y == 5) a\nb := point hint(x: 3, y: 4) in std.front\n\
-               fix(x == 3, y == 4) b\n";
+    let src = "unit mm\nuse std\nin std.front {\n  a := point\n}\n\
+               fix((10, 5)) a\nb := point in std.front\nfix((3, 4)) b\n";
     let mut e = read(src);
     let a = e.map.ent_named("a").unwrap();
     assert_eq!(e.sketch.plane_of(a.i()), e.map.ent_named("std.front").map(|p| p.i()));
@@ -438,7 +439,7 @@ fn a_block_over_a_module_plane_is_not_a_membership_to_change() {
 
 #[test]
 fn the_words_are_tinted() {
-    let src = "top := plane(u: r, v: s)\nr := axis\na := point in top hint(x: 3in, y: 0)\na project b\nunit in\n";
+    let src = "top := plane(u: r, v: s)\nr := axis\na := point in top hint((3in, 0))\na project b\nunit in\n";
     let tints: Vec<(Tint, &str)> =
         highlight(src).into_iter().map(|(t, s)| (t, s.slice(src))).collect();
     let has = |t: Tint, w: &str| tints.iter().any(|(x, s)| *x == t && *s == w);
@@ -454,8 +455,8 @@ fn the_words_are_tinted() {
 
 const SLOT: &str = "\
 component Slot(p: Point, w: Length) {
-  a := point hint(x: 0, y: 0)
-  b := point hint(x: 10, y: 0)
+  a := point hint((0, 0))
+  b := point hint((10, 0))
   a distance(w) b
   l := line(a, b)
   arm := line(p, a)
@@ -466,7 +467,7 @@ component Slot(p: Point, w: Length) {
 fn an_instance_may_be_drawn_in_a_view() {
     let e = read(&format!(
         "{VIEWS}{SLOT}\
-x := point hint(x: 5, y: 5) in top
+x := point hint((5, 5)) in top
 s1 := Slot(x, w: 12) in top
 "
     ));
@@ -484,7 +485,7 @@ s1 := Slot(x, w: 12) in top
     assert_eq!(out.trim(), "s1 := Slot(x, w: 12) in top");
     // and inside an `in` block the instance takes the block's plane
     let e = read(&format!(
-        "{VIEWS}{SLOT}x := point hint(x: 5, y: 5) in front\nin front {{ s3 := Slot(x, w: 12) }}\n"
+        "{VIEWS}{SLOT}x := point hint((5, 5)) in front\nin front {{ s3 := Slot(x, w: 12) }}\n"
     ));
     assert_eq!(e.sketch.plane_of(at(&e, "s3.a")), Some(at(&e, "front")));
 }
@@ -493,7 +494,7 @@ s1 := Slot(x, w: 12) in top
 fn an_instance_in_a_view_refuses_what_it_cannot_mean() {
     // an argument already on another plane is one image on two planes
     refused(
-        &format!("{VIEWS}{SLOT}y := point hint(x: 1, y: 1) in front\ns3 := Slot(y, w: 5) in top\n"),
+        &format!("{VIEWS}{SLOT}y := point hint((1, 1)) in front\ns3 := Slot(y, w: 5) in top\n"),
         "E060",
         "already in `front`",
     );
@@ -509,7 +510,7 @@ component Two(p: Point, a: axis, b: axis) {{
   mine := plane(u: a, v: b)
   inner := Slot(p, w: 4) in mine
 }}
-q := point hint(x: 1, y: 1) in front
+q := point hint((1, 1)) in front
 t := Two(q, std.x, std.y) in front
 "
         ),
@@ -518,7 +519,7 @@ t := Two(q, std.x, std.y) in front
     );
     // a plane inside is left alone: its origin is its own
     let e = read(&format!(
-        "{VIEWS}component D(a: axis, b: axis) {{\n  f := plane(u: a, v: b)\n  c := point hint(x: 1, y: 2)\n}}\nd1 := D(std.x, std.y) in front\n"
+        "{VIEWS}component D(a: axis, b: axis) {{\n  f := plane(u: a, v: b)\n  c := point hint((1, 2))\n}}\nd1 := D(std.x, std.y) in front\n"
     ));
     assert_eq!(e.sketch.plane_of(at(&e, "d1.c")), Some(at(&e, "front")));
     let f = at(&e, "d1.f");
@@ -527,7 +528,7 @@ t := Two(q, std.x, std.y) in front
 
 #[test]
 fn removing_the_plane_takes_an_instances_clause() {
-    let src = format!("{VIEWS}{SLOT}x := point hint(x: 5, y: 5)\ns1 := Slot(x, w: 12) in top\n");
+    let src = format!("{VIEWS}{SLOT}x := point hint((5, 5))\ns1 := Slot(x, w: 12) in top\n");
     let e = read(&src);
     let top = e.map.ent_named("top").unwrap();
     let out = edit::remove(&e, &e.program, &e.sketch, &[top], &[]);
@@ -564,7 +565,7 @@ x2 := V(std.y, std.z)
 /// tracking the drawing (`syncSource` only reports it).
 #[test]
 fn a_line_across_two_views_does_not_jam_the_source() {
-    let mut e = read(&format!("{VIEWS}a := point hint(x: 5, y: 5) in front\nb := point hint(x: 9, y: 9)\n"));
+    let mut e = read(&format!("{VIEWS}a := point hint((5, 5)) in front\nb := point hint((9, 9))\n"));
     let (ai, bi) = (at(&e, "a"), at(&e, "b"));
     let mut sk = std::mem::take(&mut e.sketch);
     sk.line(ai, bi);
@@ -584,14 +585,14 @@ fn a_line_across_two_views_does_not_jam_the_source() {
 #[test]
 fn an_instance_in_plane_resolves_in_the_callers_scope() {
     let e = read(&format!(
-        "{VIEWS}\ncomponent Dot(o: point) {{\n top := point hint(x: 5, y: 5)\n o distance(5) top\n \
+        "{VIEWS}\ncomponent Dot(o: point) {{\n top := point hint((5, 5))\n o distance(5) top\n \
          o horizontal top\n}}\nk := Dot(top.origin) in top\n"
     ));
     let top = at(&e, "top");
     assert_eq!(e.sketch.plane_of(at(&e, "k.top")), Some(top));
     let e = read(&format!(
-        "{VIEWS}\ncomponent Dot(o: point) {{\n top := point hint(x: 5, y: 5)\n o distance(5) top\n}}\n\
-         component Pair(o: point) {{\n top := point hint(x: 9, y: 9)\n d := Dot(o)\n}}\n\
+        "{VIEWS}\ncomponent Dot(o: point) {{\n top := point hint((5, 5))\n o distance(5) top\n}}\n\
+         component Pair(o: point) {{\n top := point hint((9, 9))\n d := Dot(o)\n}}\n\
          k := Pair(top.origin) in top\n"
     ));
     let top = at(&e, "top");
@@ -599,7 +600,7 @@ fn an_instance_in_plane_resolves_in_the_callers_scope() {
     assert_eq!(e.sketch.plane_of(at(&e, "k.d.top")), Some(top));
     // a plane the caller cannot see is still nothing, named as written
     refused(
-        &format!("{VIEWS}\ncomponent Dot(o: point) {{\n p := point hint(x: 5, y: 5)\n}}\nk := Dot(top.origin) in nowhere\n"),
+        &format!("{VIEWS}\ncomponent Dot(o: point) {{\n p := point hint((5, 5))\n}}\nk := Dot(top.origin) in nowhere\n"),
         "E101",
         "`nowhere`",
     );
@@ -609,9 +610,9 @@ fn an_instance_in_plane_resolves_in_the_callers_scope() {
 /// a place survives `dumps`/`loads` and the graft.
 #[test]
 fn a_planes_place_survives_json_and_the_graft() {
-    let e = read("unit mm\nuse std\nq := plane hint(x: 0, y: 0, z: 12)\n\
-                  fix(x == 0, y == 0, z == 12) q\nfix(x == 1, y == 0, z == 0) q.u\n\
-                  fix(x == 0, y == 1, z == 0) q.v\na := point hint(x: 5, y: 0) in q\n");
+    let e = read("unit mm\nuse std\nq := plane hint(origin: (0, 0, 12))\n\
+                  fix(origin == (0, 0, 12)) q\nfix(dir == (1, 0, 0)) q.u\n\
+                  fix(dir == (0, 1, 0)) q.v\na := point hint((5, 0)) in q\n");
     let q = at(&e, "q");
     let b = e.sketch.basis(q);
     assert!((b.along_normal() - 12.0).abs() < 1e-12, "stood off: {b:?}");

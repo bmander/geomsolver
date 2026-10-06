@@ -677,16 +677,16 @@ fn a_stop_that_stalls_again_is_restarted_in_block_order() {
     assert!(apart(&stop) > 1e-5 && apart(&sk) < 1e-8,"{:e} apart",apart(&sk));
 }
 
-/// **A stop the rescue cannot settle keeps its pose**: the six-millimetre hypoid solved and then
-/// shrunk to 0.35 about its centroid succeeds on its iteration limit, and the block pass
-/// from there does not settle
-/// (its polish stops on the limit too, far off), so the default solve returns the stop exactly as
-/// a solve without the rescue does — the same bits, status, success, residual, counts and method.
+/// **A stop the rescue cannot settle keeps its pose**: the bevel pair solved and then shrunk to
+/// 0.37 about its centroid succeeds on its iteration limit, and the block pass from there does not
+/// settle (its polish stops on the limit too, far off), so the default solve returns the stop
+/// exactly as a solve without the rescue does — the same bits, status, success, residual, counts
+/// and method.
 #[test]
 fn a_stop_the_rescue_cannot_settle_keeps_its_pose() {
     use gcs_core::solve::{self,BlockMode,SolveOpts};
-    let (_,reference) = solved_design("hypoid6");
-    let start = crate::common::scaled(&reference.sketch,0.35);
+    let (_,reference) = solved_design("bevel");
+    let start = crate::common::scaled(&reference.sketch,0.37);
     let (mut off,mut on) = (start.clone(),start);
     let a = solve::solve(&mut off,SolveOpts {blocks:BlockMode::Off,..SolveOpts::default()});
     let b = solve::solve(&mut on,SolveOpts::default());

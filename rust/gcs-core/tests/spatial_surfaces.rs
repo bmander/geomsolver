@@ -1,12 +1,13 @@
-//! Cones and cylinders (`docs/spatial-constraints-plan.md`): surfaces in space a relation can
-//! name, built about an axis already drawn in a view and owning one number each — a half-angle
-//! or a radius — and the words they take, against closed forms; the hypoid's pitch cones named
-//! and stated to touch, against the fold construction of them (`spatial_lang.rs`); `against`
-//! between solved views; and a stated plane's origin through a lifted program.
+//! Cones and cylinders, the library's (`std.Cone`, `std.Cylinder`): a line and a number each, and
+//! what stands on them said by the words the drawing already has — a distance from a cylinder's
+//! axis, an angle at a cone's apex (`std.PointOnCone`), two cones' tangent planes made one
+//! (`std.TangentCones`) — against closed forms; the hypoid's pitch cones named and stated to
+//! touch, against the fold construction of them (`spatial_lang.rs`); and a stated plane's origin
+//! through a lifted program.
 use gcs_core::constraints::CKind;
 use gcs_core::diagnose::{diagnose, summary, DiagnoseOptions};
 use gcs_core::io;
-use gcs_core::model::{EntKind, EntRef, Sketch};
+use gcs_core::model::Sketch;
 use gcs_core::program::Elaborated;
 use gcs_core::solve::{solve, SolveOpts};
 use gcs_core::space::{cross, dot, norm, sub};
@@ -17,12 +18,16 @@ fn at(sk: &Sketch, e: &Elaborated, n: &str) -> [f64; 3] {
     sk.world_point(ent(e, n).i())
 }
 
-/// A cone's or a cylinder's axis — its start (a cone's apex) and unit direction — and its own
-/// number, as solved.
-fn axial(sk: &Sketch, e: EntRef) -> ([f64; 3], [f64; 3], f64) {
-    let a = sk.axial(e);
-    let (p, q) = ends(sk, EntRef::line(a.axis as usize));
-    (p, unit(sub(q, p)), sk.params[a.param as usize].value)
+/// A line's start (a cone's apex) and unit direction, as solved.
+fn axis(sk: &Sketch, e: &Elaborated, n: &str) -> ([f64; 3], [f64; 3]) {
+    let (p, q) = ends(sk, ent(e, n));
+    (p, unit(sub(q, p)))
+}
+
+/// What the drawing solved an unknown it declared to, in the units it was declared in (an angle
+/// in degrees).
+fn unknown(sk: &Sketch, name: &str) -> f64 {
+    sk.params[sk.free_vars[name] as usize].value
 }
 
 /// The angle in degrees between two directions.
@@ -42,96 +47,92 @@ fn dof(src: &str) -> i64 {
     diagnose(&mut sk, DiagnoseOptions::default()).dof
 }
 
-/// Two planes square to each other: an axis grounded in the front one, and a point and a line in
+/// Two planes square to each other: two axes grounded in the front one, and a point and a line in
 /// the side one.
 const VIEWS: &str = "\
 unit mm
 use std
 side := plane(u: std.z, v: std.y)
-fix(x == 0, y == 0, z == 0) side
+fix(origin == (0, 0, 0)) side
 in std.front {
   ax := line
-  fix(x == 0, y == 0) ax.p1
-  fix(x == 0, y == 50) ax.p2
+  fix((0, 0)) ax.p1
+  fix((0, 50)) ax.p2
   bx := line
-  fix(x == 0, y == 20) bx.p1
-  fix(x == 50, y == 20) bx.p2
+  fix((0, 20)) bx.p1
+  fix((50, 20)) bx.p2
 }
-a := point hint(x: 10, y: 20) in side
-l := line(hint(x: 5, y: 3), hint(x: 30, y: 20)) in side
-c := cylinder(axis: ax) hint(r: 10)
-cb := cylinder(axis: bx) hint(r: 10)
-k := cone(axis: ax) hint(half: 30deg)
+a := point hint((10, 20)) in side
+l := line(hint((5, 3)), hint((30, 20))) in side
 ";
 
-/// The kind one statement over `VIEWS` settles to.
+/// `VIEWS` with a cylinder about each axis and a cone about the first, and `more` after them.
+fn with(c: &str, k: &str, more: &str) -> String {
+    format!("{VIEWS}c := std.Cylinder(ax, r: {c})\ncb := std.Cylinder(bx, r: {c})\n\
+             k := std.Cone(ax, half: {k})\n{more}\n")
+}
+
+/// The kind the one statement over the surfaces settles to.
 fn settles(stmt: &str) -> CKind {
-    let e = read(&format!("{VIEWS}{stmt}\n"));
+    let e = read(&with("10", "30deg", stmt));
     let cs = e.sketch.user_constraints();
     assert_eq!(cs.len(), 1, "{stmt}: {:?}", cs.iter().map(|c| c.kind).collect::<Vec<_>>());
     cs[0].kind
 }
 
+/// A cylinder and a cone add nothing to the drawing: no unknown, no equation, nothing drawn.
 #[test]
-fn a_cone_and_a_cylinder_are_entities_about_a_drawn_axis() {
-    let e = read(VIEWS);
-    let (c, k) = (ent(&e, "c"), ent(&e, "k"));
-    assert_eq!((c.kind, k.kind), (EntKind::Cylinder, EntKind::Cone));
-    let sk = &e.sketch;
-    // made of the axis, owning one number: the seed, and a half-angle held in radians
-    assert_eq!(sk.children(c), vec![ent(&e, "ax")]);
-    assert_eq!(sk.params[sk.axial(c).param as usize].value, 10.0);
-    assert!((sk.params[sk.axial(k).param as usize].value - 30f64.to_radians()).abs() < 1e-15);
-    // no freedom of their own beyond that number: a grounded axis leaves the two numbers
-    let held = format!("{VIEWS}fix(r == 10) c\nfix(r == 10) cb\nfix(half == 30deg) k\n");
-    assert_eq!(dof(VIEWS) - dof(&held), 3);
-    // and nothing on a sheet: neither is drawn on a page
-    assert_eq!(gcs_core::overview::drawable(sk, c, 1.0).len(), 0);
+fn a_cone_and_a_cylinder_are_a_line_and_a_number() {
+    let (bare, named) = (read(VIEWS), read(&with("10", "30deg", "")));
+    assert_eq!(named.sketch.params.len(), bare.sketch.params.len());
+    assert_eq!(named.sketch.user_constraints().len(), 0);
+    assert_eq!(named.sketch.drawn().len(), bare.sketch.drawn().len());
 }
 
 #[test]
-fn the_words_a_cone_and_a_cylinder_take() {
-    assert_eq!(settles("a coincident c"), CKind::CylinderOn);
-    assert_eq!(settles("a coincident k"), CKind::ConeOn);
-    assert_eq!(settles("radius(15) c"), CKind::CylinderRadius);
-    assert_eq!(settles("angle(25deg) k"), CKind::ConeAngle);
-    assert_eq!(settles("c tangent l"), CKind::CylinderTangentLine);
-    // a point of the axis's own view is on a cylinder in space too
-    assert_eq!(settles("b := point hint(x: 4, y: 4) in std.front\nb coincident c"), CKind::CylinderOn);
+fn the_words_on_a_cone_and_a_cylinder() {
+    // a distance from the axis, in space across views and on the page within one
+    assert_eq!(settles("a distance(c.r) c.axis"), CKind::PointLine3);
+    assert_eq!(settles("b := point hint((4, 4)) in std.front\nb distance(c.r) c.axis"),
+               CKind::PointLineDistance);
+    assert_eq!(settles("c.axis distance(c.r) l"), CKind::LineLine3);
+    // an angle at the apex
+    assert_eq!(settles("std.PointOnCone(a, k)"), CKind::Angle3);
+    // and the words are gone: `cone` and `cylinder` are names like any other
+    refused(&format!("{VIEWS}k := cone(axis: ax)\n"), "E103", "no component named `cone`", "cone");
 }
 
-/// A point on a cylinder stands its radius off the axis, and `radius` states it.
+/// A point on a cylinder stands its radius off the axis.
 #[test]
 fn a_point_on_a_cylinder_is_its_radius_off_the_axis() {
-    let src = format!("{VIEWS}radius(15) c\na coincident c\n");
+    let src = with("15", "30deg", "a distance(c.r) c.axis");
     let e = read(&src);
     let sk = solved(&e);
-    let (p, d, r) = axial(&sk, ent(&e, "c"));
-    assert!((r - 15.0).abs() < 1e-12);
+    let (p, d) = axis(&sk, &e, "ax");
     let got = off_line(at(&sk, &e, "a"), p, d);
     assert!((got - 15.0).abs() < 1e-9, "{got}");
     // one equation: the point keeps one of its two freedoms
-    assert_eq!(dof(&format!("{VIEWS}radius(15) c\n")) - dof(&src), 1);
+    assert_eq!(dof(&with("15", "30deg", "")) - dof(&src), 1);
 }
 
 /// A point on a cone makes the half-angle with the axis at the apex, on the nappe the axis
 /// points into.
 #[test]
 fn a_point_on_a_cone_makes_its_half_angle_at_the_apex() {
-    let src = format!("{VIEWS}angle(25deg) k\na coincident k\n");
+    let src = with("10", "25deg", "std.PointOnCone(a, k)");
     let e = read(&src);
     let sk = solved(&e);
-    let (apex, d, half) = axial(&sk, ent(&e, "k"));
-    assert!((half.to_degrees() - 25.0).abs() < 1e-12);
+    let (apex, d) = axis(&sk, &e, "ax");
     let w = sub(at(&sk, &e, "a"), apex);
     assert!((angle(w, d) - 25.0).abs() < 1e-9, "{}", angle(w, d));
     assert!(dot(w, d) > 0.0, "on the nappe the axis points into");
-    assert_eq!(dof(&format!("{VIEWS}angle(25deg) k\n")) - dof(&src), 1);
-    // and a free half-angle is found by the point
-    let e = read(&format!("{VIEWS}fix(x == 130, y == 20) a\na coincident k\n"));
+    assert_eq!(dof(&with("10", "25deg", "")) - dof(&src), 1);
+    // and a half-angle left unbound is found by the point
+    let e = read(&with("10", "hint(30deg)", "fix((130, 20)) a\nstd.PointOnCone(a, k)"));
     let sk = solved(&e);
-    let (apex, d, half) = axial(&sk, ent(&e, "k"));
-    assert!((half.to_degrees() - angle(sub(at(&sk, &e, "a"), apex), d)).abs() < 1e-9);
+    let (apex, d) = axis(&sk, &e, "ax");
+    let half = unknown(&sk, "k.half");
+    assert!((half - angle(sub(at(&sk, &e, "a"), apex), d)).abs() < 1e-9, "{half}");
 }
 
 /// A line touching a cylinder is its radius from the axis along their common perpendicular.
@@ -139,10 +140,9 @@ fn a_point_on_a_cone_makes_its_half_angle_at_the_apex() {
 fn a_line_touching_a_cylinder_is_its_radius_from_the_axis() {
     // the axis runs square to the side view, so the line touches it where it passes a circle
     // about the point the axis crosses that view at
-    let src = format!("{VIEWS}radius(12) cb\nfix(x == 5, y == 3) l.p1\ncb tangent l\n");
-    let e = read(&src);
+    let e = read(&with("12", "30deg", "fix((5, 3)) l.p1\ncb.axis distance(cb.r) l"));
     let sk = solved(&e);
-    let (p, d, _) = axial(&sk, ent(&e, "cb"));
+    let (p, d) = axis(&sk, &e, "bx");
     let (a, b) = ends(&sk, ent(&e, "l"));
     let m = cross(d, sub(b, a));
     let gap = dot(unit(m), sub(a, p)).abs();
@@ -150,11 +150,11 @@ fn a_line_touching_a_cylinder_is_its_radius_from_the_axis() {
 }
 
 /// **The named hypoid** (the plan's P4 gate): the app's `examples/hypoid_pitch_cones.sv`, its
-/// pitch cones named — the gear's axial plane stated, the pinion's solved, `M on` both cones and
-/// `gc tangent(M) pc` — against the fold construction `fixtures/hypoid_pitch_cones.sv` states.  The two
-/// documents put their views differently on the sheet, so they are compared by what a hypoid
-/// is: the pitch angles, the offset angle, the apexes' distances from M and from each other, all
-/// to 1e-9.
+/// pitch cones named — the gear's axial plane stated, the pinion's solved, M on both cones and
+/// `std.TangentCones(gc, pc, M)` — against the fold construction `fixtures/hypoid_pitch_cones.sv`
+/// states.  The two documents put their views differently on the sheet, so they are compared by
+/// what a hypoid is: the pitch angles, the offset angle, the apexes' distances from M and from
+/// each other, all to 1e-9.
 #[test]
 fn the_hypoid_with_its_pitch_cones_named_agrees_with_the_fold_construction() {
     let named = read(include_str!("../../examples/hypoid_pitch_cones.sv"));
@@ -192,93 +192,49 @@ fn the_hypoid_with_its_pitch_cones_named_agrees_with_the_fold_construction() {
     // there, worked out here from its apex, axis and half-angle, is the other's and the pitch
     // plane's
     let m = at(&sk, &named, "M");
-    let normal = |n: &str| {
-        let (apex, d, half) = axial(&sk, ent(&named, n));
+    let normal = |n: &str, half: f64| {
+        let (apex, d) = axis(&sk, &named, n);
         let w = sub(m, apex);
         let h = dot(w, d);
         let radial = unit(sub(w, [d[0] * h, d[1] * h, d[2] * h]));
         assert!((angle(w, d) - half.to_degrees()).abs() < 1e-9, "M on {n}");
         [0, 1, 2].map(|t| radial[t] * half.cos() - d[t] * half.sin())
     };
-    let (ng, np) = (normal("gc"), normal("pc"));
+    let gp = unknown(&sk, "pc.half");
+    let (ng, np) = (normal("gax", 60f64.to_radians()), normal("pax", gp.to_radians()));
     let pn = sk.basis(ent(&named, "std.front").i()).normal();
     assert!(norm(cross(ng, np)) < 1e-9, "one tangent plane at M: {:e}", norm(cross(ng, np)));
     assert!(norm(cross(ng, pn)) < 1e-9, "and it is P: {:e}", norm(cross(ng, pn)));
     // the pinion's apex is on P though nothing says so: two cones with one tangent plane at M
     let a = ends(&sk, ent(&named, "pax")).0;
     assert!(dot(pn, sub(a, m)).abs() < 1e-9, "{:e}", dot(pn, sub(a, m)));
-    let (_, _, gp) = axial(&sk, ent(&named, "pc"));
-    assert!((gp.to_degrees() - y[1]).abs() < 1e-9);
+    assert!((gp - y[1]).abs() < 1e-9);
 }
 
-/// A cone, a cylinder and their words come through JSON and a lifted program, and a half-angle
-/// goes back into the source in degrees, as it was written.
+/// The named hypoid comes through JSON and a lifted program (the pinion's unknown half-angle,
+/// `pc.half`, declared as `pc_half`), and a half-angle left unbound goes back into its `hint(…)`
+/// in degrees, as it was written.
 #[test]
-fn cones_and_cylinders_round_trip() {
+fn the_named_hypoid_round_trips() {
     let named = read(include_str!("../../examples/hypoid_pitch_cones.sv"));
     let sk = solved(&named);
     let text = io::dumps(&sk, None);
     let back = io::loads(&text).expect("reads back");
     assert_eq!(io::dumps(&back, None), text);
-    assert_eq!((back.cones.len(), back.cylinders.len()), (2, 0));
-    // a lifted program spells both cones and the contact, and reads back to the same drawing
     let lifted = gcs_core::program::to_program(&sk).text().to_string();
-    let half = lifted.split("n0 := cone(axis: l0) hint(half: ").nth(1).and_then(|t| t.split(')').next())
-        .unwrap_or_else(|| panic!("{lifted}"));
-    assert!((half.parse::<f64>().unwrap() - 60.0).abs() < 1e-9, "in degrees: {lifted}");
-    let m = ent(&named, "M").i();
-    assert!(lifted.contains(&format!("n0 tangent(p{m}) n1")), "{lifted}");
+    assert!(lifted.contains("param pc_half: Angle hint("), "{lifted}");
     let again = solved(&read(&lifted));
     for i in 0..sk.points.len() {
         assert!(norm(sub(sk.world_point(i), again.world_point(i))) < 1e-7, "p{i}");
     }
-    // a cylinder's side comes through a document, where nobody wrote it
-    let e = read(&format!("{VIEWS}radius(12) cb\nfix(x == 5, y == 3) l.p1\ncb tangent l\n"));
-    let sk = solved(&e);
-    let back = io::loads(&io::dumps(&sk, None)).expect("reads back");
-    assert_eq!(io::dumps(&back, None), io::dumps(&sk, None));
-    // the solve's half-angle written back where the seed was, in degrees (a literal written with
-    // its unit is text a writeback leaves alone, as a sphere's `hint(r: 25mm)` is)
-    let src = format!("{}angle(40deg) k\n", VIEWS.replace("hint(half: 30deg)", "hint(half: 30)"));
+    let src = with("10", "hint(30deg)", "fix((130, 20)) a\nstd.PointOnCone(a, k)");
     let e = read(&src);
     let sk = solved(&e);
     let out = gcs_core::edit::commit_seeds(&e, &sk, &e.program).text;
-    assert!(out.contains("k := cone(axis: ax) hint(half: 40)"), "{out}");
-}
-
-/// Each is drawn in the glass box: two circles square to the axis and four rulings.
-#[test]
-fn the_glass_box_draws_them() {
-    let e = read(&format!("{VIEWS}radius(15) c\nangle(25deg) k\n"));
-    let sk = solved(&e);
-    let items = gcs_core::overview::scene3d(&sk, 0.0);
-    for n in ["c", "k"] {
-        let of = ent(&e, n);
-        let mine = items.iter().filter(|i| i.of == Some(of)).count();
-        assert!(mine >= 5, "{n}: {mine}");
-    }
-    // the cylinder's circles and rulings stand its radius off the axis
-    let (p, d, r) = axial(&sk, ent(&e, "c"));
-    for item in items.iter().filter(|i| i.of == Some(ent(&e, "c"))) {
-        for q in &item.pts {
-            assert!((off_line(*q, p, d) - r).abs() < 1e-9);
-        }
-    }
-}
-
-/// What is not a relation yet is said, and a cone or a cylinder is built about a line.
-#[test]
-fn what_a_cone_or_a_cylinder_does_not_take_is_refused() {
-    let with = |s: &str| format!("{VIEWS}k2 := cone(axis: l) hint(half: 20deg)\n{s}\n");
-    refused(&with("l coincident k"), "E040", "a line on a cone or a cylinder", "coincident");
-    refused(&with("l coincident c"), "E040", "a line on a cone or a cylinder", "coincident");
-    refused(&with("k tangent l"), "E040", "a line touches a cylinder", "tangent");
-    refused(&with("k tangent k2"), "E040", "names it", "tangent");
-    refused(&with("angle(20deg) c"), "E040", "does not apply to a cylinder", "angle");
-    refused(&with("radius(20) k"), "E040", "does not apply to a cone", "radius");
-    refused(&format!("{VIEWS}bad := cone(axis: a)\n"), "E103", "axis is a line", "a");
-    refused(&format!("{VIEWS}bad := cylinder\n"), "E103", "built about a line", "bad := cylinder");
-    refused(&format!("{VIEWS}radius(-3) c\n"), "E040", "magnitude", "-3");
+    let half = angle(sub(at(&sk, &e, "a"), [0.0; 3]), [0.0, 0.0, 1.0]);
+    let written = out.split("half: hint(").nth(1).and_then(|t| t.split("deg)").next())
+        .unwrap_or_else(|| panic!("{out}"));
+    assert!((written.parse::<f64>().unwrap() - half).abs() < 1e-6, "{written} against {half}");
 }
 
 /* -- `against` with solved views ------------------------------------------------------------ */
@@ -288,14 +244,14 @@ fn what_a_cone_or_a_cylinder_does_not_take_is_refused() {
 #[test]
 fn a_lifted_plane_keeps_its_origin() {
     let src = "unit mm\nuse std\n\
-               back := plane hint(x: 0, y: -12, z: 0)\n\
-               fix(x == 0, y == -12, z == 0) back\n\
-               fix(x == 1, y == 0, z == 0) back.u\n\
-               fix(x == 0, y == 0, z == 1) back.v\n\
-               r := axis hint(x: 0.8, y: 0.6, z: 0)\nfix(x == 0.8, y == 0.6, z == 0) r\n\
-               side := plane(u: r) hint(x: 3, y: 4, z: 5)\n\
-               fix(x == 3, y == 4, z == 5) side\nfix(x == 0, y == 0, z == 1) side.v\n\
-               a := point hint(x: 5, y: 7) in back\nb := point hint(x: 9, y: -3) in side\n";
+               back := plane hint(origin: (0, -12, 0))\n\
+               fix(origin == (0, -12, 0)) back\n\
+               fix(dir == (1, 0, 0)) back.u\n\
+               fix(dir == (0, 0, 1)) back.v\n\
+               r := axis hint(dir: (0.8, 0.6, 0))\nfix(dir == (0.8, 0.6, 0)) r\n\
+               side := plane(u: r) hint(origin: (3, 4, 5))\n\
+               fix(origin == (3, 4, 5)) side\nfix(dir == (0, 0, 1)) side.v\n\
+               a := point hint((5, 7)) in back\nb := point hint((9, -3)) in side\n";
     let e = read(src);
     let sk = solved(&e);
     let lifted = gcs_core::program::to_program(&sk).text().to_string();

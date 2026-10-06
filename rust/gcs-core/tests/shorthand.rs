@@ -12,26 +12,26 @@ use crate::common::parse;
 const LONG: &str = "\
 use std
 in std.front {
-o := point hint(x: 0, y: 0)
+o := point hint((0, 0))
 c := circle(center: o) hint(r: 20)
-p := point hint(x: 18, y: 5)
+p := point hint((18, 5))
 p coincident c
-q := point hint(x: 3, y: 1)
+q := point hint((3, 1))
 q coincident o
-fix(x == 0, y == 0) o
+fix((0, 0)) o
 }
 ";
 
 const SHORT: &str = "\
 use std
 in std.front {
-o := point ~(x: 0, y: 0)
+o := point ~((0, 0))
 c := circle(center: o) ~(r: 20)
-p := point ~(x: 18, y: 5)
+p := point ~((18, 5))
 p @ c
-q := point ~(x: 3, y: 1)
+q := point ~((3, 1))
 q@o
-fix(x == 0, y == 0) o
+fix((0, 0)) o
 }
 ";
 
@@ -55,8 +55,8 @@ fn the_shorthand_is_coloured_as_its_word() {
         highlight(SHORT).into_iter().find(|(_, s)| s.lo as usize == at).map(|(t, _)| t)
     };
     assert_eq!(tint("@ c"), Some(Tint::Relation));
-    assert_eq!(tint("~(x: 18"), Some(Tint::Word));
-    assert_eq!(tint("18, y: 5"), Some(Tint::Seed), "a number inside `~(…)` is a seed");
+    assert_eq!(tint("~((18"), Some(Tint::Word));
+    assert_eq!(tint("18, 5"), Some(Tint::Seed), "a number inside `~(…)` is a seed");
 }
 
 /// A solve writes its seeds inside `~(…)` and leaves the `~` and the `@` as they were written.
@@ -69,7 +69,7 @@ fn a_solve_writes_back_into_the_shorthand() {
     assert_eq!(edit.kind, Kind::Numeric);
     assert!(!edit.text.contains("hint"), "{}", edit.text);
     assert!(edit.text.contains("p @ c\n") && edit.text.contains("q@o\n"), "{}", edit.text);
-    assert!(edit.text.contains("q := point ~(x: "), "{}", edit.text);
+    assert!(edit.text.contains("q := point ~(("), "{}", edit.text);
     drawing(&edit.text);
 }
 
@@ -80,13 +80,13 @@ fn a_pin_and_a_slot_seed_ride_on_the_shorthand() {
     const SPLINE: &str = "\
 use std
 in std.front {
-s0 := point hint(x: 0, y: 0)
-s1 := point hint(x: 20, y: 10)
-s2 := point hint(x: 40, y: 10)
-s3 := point hint(x: 60, y: 0)
+s0 := point hint((0, 0))
+s1 := point hint((20, 10))
+s2 := point hint((40, 10))
+s3 := point hint((60, 0))
 s := spline(s0, s1, s2, s3)
-a := point hint(x: 30, y: 8)
-b := point hint(x: 10, y: 4)
+a := point hint((30, 8))
+b := point hint((10, 4))
 ";
     let long = format!("{SPLINE}a coincident(t == 0.4) s\nb coincident s hint(t: 0.2)\n}}\n");
     let short = format!("{SPLINE}a @(t == 0.4) s\nb @ s ~(t: 0.2)\n}}\n");

@@ -17,14 +17,14 @@ b := point
 m := point
 c := point
 d := point
-fix(x == 0, y == 0) o
-fix(x == 0, y == 2) q
-fix(x == 1, y == 0) x
-fix(x == 2, y == 0) a
-fix(x == 3, y == 0) b
-fix(x == 3, y == 1) m
-fix(x == 3, y == 2) c
-fix(x == 2, y == 2) d
+fix((0, 0)) o
+fix((0, 2)) q
+fix((1, 0)) x
+fix((2, 0)) a
+fix((3, 0)) b
+fix((3, 1)) m
+fix((3, 2)) c
+fix((2, 2)) d
 ax := line(o,q)
 spin_axis := line(o,x)
 bottom := line(a,b)
@@ -159,8 +159,8 @@ fn a_retained_seam_must_satisfy_material_trims_on_both_faces() {
 component Sphere(o: point,size: Length) {{
   private bottom := point
   private top := point
-  fix(x == 0, y == -size) bottom
-  fix(x == 0, y == size) top
+  fix((0, -size)) bottom
+  fix((0, size)) top
   private rim := arc(center: o,start: bottom,end: top)
   radius(size) rim
   private diameter := line(top,bottom)
@@ -186,10 +186,10 @@ clipped := seam(first_patch,second_patch)
 
 #[test]
 fn an_unresolved_arc_radius_cannot_hide_a_gap_at_a_shared_vertex() {
-    let source = MODEL.replace("fix(x == 2, y == 0) a","fix(x == 1, y == 0) a")
-        .replace("fix(x == 3, y == 2) c","fix(x == 2, y == 2) c")
-        .replace("fix(x == 2, y == 2) d","fix(x == 1, y == 2) d")
-        .replace("high := line(m,c)","arc_center := point\nfix(x == 2, y == 1) arc_center\n\
+    let source = MODEL.replace("fix((2, 0)) a","fix((1, 0)) a")
+        .replace("fix((3, 2)) c","fix((2, 2)) c")
+        .replace("fix((2, 2)) d","fix((1, 2)) d")
+        .replace("high := line(m,c)","arc_center := point\nfix((2, 1)) arc_center\n\
             high := arc(center: arc_center,start: m,end: c)\nradius(1mm) high");
     let mut e = solved(&source);
     assert!(EnvelopeSeam::named(&e.sketch,0,tolerance()).is_ok());

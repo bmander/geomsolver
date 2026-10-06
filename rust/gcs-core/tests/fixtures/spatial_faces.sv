@@ -9,14 +9,14 @@ in std.front {
   m := point
   c := point
   d := point
-  fix(x == 0, y == 0) o
-  fix(x == 0, y == 2) q
-  fix(x == 1, y == 0) x
-  fix(x == 2, y == 0) a
-  fix(x == 3, y == 0) b
-  fix(x == 3, y == 1) m
-  fix(x == 3, y == 2) c
-  fix(x == 2, y == 2) d
+  fix((0, 0)) o
+  fix((0, 2)) q
+  fix((1, 0)) x
+  fix((2, 0)) a
+  fix((3, 0)) b
+  fix((3, 1)) m
+  fix((3, 2)) c
+  fix((2, 2)) d
   ax := line(o,q)
   spin_axis := line(o,x)
   bottom := line(a,b)
@@ -35,8 +35,8 @@ second_envelope := envelope(second_surface,under: roll,from: -20deg,to: 20deg)
 shared := seam(first_envelope,second_envelope)
 
 component Sphere(origin: point,size: Length) {
-  private south := point hint(x: origin.x,y: origin.y-size)
-  private north := point hint(x: origin.x,y: origin.y+size)
+  private south := point hint((origin.x, origin.y-size))
+  private north := point hint((origin.x, origin.y+size))
   south vertical origin
   north vertical origin
   private rim := arc(center: origin,start: south,end: north)
@@ -47,7 +47,7 @@ component Sphere(origin: point,size: Length) {
 }
 in std.front {
   shifted := point
-  fix(x == 0, y == 1) shifted
+  fix((0, 1)) shifted
   globe := Sphere(o,size: sqrt(9.25)*1mm)
   offset := Sphere(shifted,size: sqrt(10.25-cos(0.1rad))*1mm)
   join_cut := Sphere(shifted,size: sqrt(11-2*cos(0.1rad))*1mm)

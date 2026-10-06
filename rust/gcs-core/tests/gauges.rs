@@ -1,5 +1,5 @@
 //! The gauges and the orientation predicates are entries of the operator table (issue #47,
-//! item 5): `fix(x == 0, y == 0) p`, `fix(r == 25) c`, `ccw(a, b, c)` are read by the one
+//! item 5): `fix((0, 0)) p`, `fix(r == 25) c`, `ccw(a, b, c)` are read by the one
 //! relation parser and settled by the one table, so a class, a placement and a `claim` reach
 //! them syntactically — and they are *applied* rather than added, holding parameters or
 //! recording a root choice, with no constraint the sketch holds to show for it.
@@ -33,8 +33,8 @@ use std
 
 in std.front {
 a := point
-b := point hint(x: 10, y: 0)
-c := point hint(x: 0, y: 10)
+b := point hint((10, 0))
+c := point hint((0, 10))
 k := circle(center: a) hint(r: 5)
 }
 ";
@@ -53,7 +53,7 @@ fn the_three_are_operators_and_none_is_in_the_registry() {
     assert!(!is_operator("ground") && gauge_op("ground").is_none());
     assert_eq!(CKind::Ccw.operator(), Some(("ccw", Fixity::Call)));
     assert_eq!(CKind::Fix.operator(), Some(("fix", Fixity::Prefix)));
-    let (prog, errs) = parse(&format!("{TRI}fix(x == 0, y == 0) a\nfix(r == 5) k\nccw(a, b, c)\n"));
+    let (prog, errs) = parse(&format!("{TRI}fix((0, 0)) a\nfix(r == 5) k\nccw(a, b, c)\n"));
     assert!(errs.is_empty(), "{errs:?}");
     let rels = prog.root().body.iter().filter(|s| matches!(s.kind, StmtKind::Relation(_))).count();
     assert_eq!(rels, 3, "each is an ordinary relation statement");
@@ -63,7 +63,7 @@ fn the_three_are_operators_and_none_is_in_the_registry() {
 /// the root choice is recorded, and the sketch holds no constraint for any of it.
 #[test]
 fn applied_at_the_numbers_stated_and_not_added() {
-    let e = read(&format!("{TRI}fix(x == 3, y == -4) a\nfix(r == 7) k\ncw(a, b, c)\n"));
+    let e = read(&format!("{TRI}fix((3, -4)) a\nfix(r == 7) k\ncw(a, b, c)\n"));
     assert!(e.ok(), "{:?}", messages(&e));
     let sk = &e.sketch;
     assert!(sk.point_fixed(0));
@@ -79,29 +79,11 @@ fn applied_at_the_numbers_stated_and_not_added() {
 /// states, whatever a hint on the declaration says: a hint is only where a solve begins.
 #[test]
 fn a_fix_holds_what_it_names_and_beats_a_hint() {
-    let e = read("unit mm\nuse std\nhalf := 10mm\nin std.front {\na := point hint(x: 3, y: 7)\nfix(x == -half) a\n}\n");
+    let e = read("unit mm\nuse std\nhalf := 10mm\nin std.front {\na := point hint((3, 7))\nfix(x == -half) a\n}\n");
     assert!(e.ok(), "{:?}", messages(&e));
     let p = &e.sketch.points[0];
     assert!(e.sketch.params[p.x as usize].fixed && !e.sketch.params[p.y as usize].fixed);
     assert_eq!(xy(&e, "a"), (-10., 7.), "x held at the expression, y left at its seed");
-    // a cone's half-angle is written in degrees, as its hint is
-    let e = read("\
-unit mm
-use std
-in std.front {
-o := point
-fix(x == 0, y == 0) o
-t := point hint(x: 0, y: 10)
-l := line(o, t)
-}
-k := cone(axis: l)
-in std.front {
-fix(half == 30deg) k
-}
-");
-    assert!(e.ok(), "{:?}", messages(&e));
-    let h = &e.sketch.params[e.sketch.cones[0].param as usize];
-    assert!(h.fixed && (h.value - 30f64.to_radians()).abs() < 1e-12, "{}", h.value);
 }
 
 /// Held before the seeds that read geometry are worked out: a place reading a held point reads
@@ -112,7 +94,7 @@ fn a_seed_reads_a_held_point_and_never_moves_one() {
 use std
 in std.front {
 a := point
-fix(x == 4, y == 5) a
+fix((4, 5)) a
 q := point hint(at: a)
 b := point hint(at: q)
 fix(y == -1) b
@@ -127,10 +109,10 @@ fix(y == -1) b
 /// nothing is drawn for it — and a claim is refused with the reason.
 #[test]
 fn a_class_is_read_and_a_claim_is_refused() {
-    let e = read(&format!("{TRI}fix(x == 0, y == 0) a class held\nccw(a, b, c) class chosen\n"));
+    let e = read(&format!("{TRI}fix((0, 0)) a class held\nccw(a, b, c) class chosen\n"));
     assert!(e.ok(), "{:?}", messages(&e));
     assert!(e.sketch.point_fixed(0));
-    let e = read(&format!("{TRI}claim fix(x == 0, y == 0) a\n"));
+    let e = read(&format!("{TRI}claim fix((0, 0)) a\n"));
     let m = messages(&e);
     assert!(m.iter().any(|m| m.starts_with("E040") && m.contains("fix")), "{m:?}");
     assert!(!e.sketch.point_fixed(0), "a refused claim holds nothing");
@@ -144,7 +126,12 @@ fn a_fix_that_does_not_state_its_numbers_is_refused() {
         ("fix a", "`fix` states the numbers it holds"),
         ("fix(x: 0) a", "`fix` pins a number with `==`"),
         ("fix(5) k", "`fix(r == 5) k`"),
-        ("fix(w == 1) a", "`fix` holds `x`, `y`, `z`, `r`, `half`, `px`, `py` or `pz`, not `w`"),
+        ("fix(w == 1) a", "or one component, `dir.x` — not `w`"),
+        ("fix(px == 1) a", "not `px`"),
+        ("fix((1, 2, 3)) a", "a point in a plane has two coordinates: `(x, y)`"),
+        ("fix(dir == (1, 0, 0)) a", "a point has x and y, not `dir`"),
+        ("fix(dir.x == 1) a", "a point has x and y, not `dir.x`"),
+        ("fix((1, 2)) k", "a circle is no vector: it has r"),
         ("fix(z == 1) a", "a point has x and y, not `z`"),
         ("fix(x == 1) k", "a circle has r, not `x`"),
         ("fix(r == 1) a", "a point has x and y, not `r`"),
@@ -163,12 +150,12 @@ fn a_fix_that_does_not_state_its_numbers_is_refused() {
 /// as partial — and the colouring reads them as the relation words they are.
 #[test]
 fn lifted_with_their_numbers_and_coloured_as_relations() {
-    let src = format!("{TRI}fix(x == 2, y == 3) a\nfix(y == 0) b\nfix(r == 5) k\nccw(a, b, c)\n");
+    let src = format!("{TRI}fix((2, 3)) a\nfix(y == 0) b\nfix(r == 5) k\nccw(a, b, c)\n");
     let e = read(&src);
     assert!(e.ok(), "{:?}", messages(&e));
     let mut p = gcs_core::program::to_program(&e.sketch);
     let text = gcs_core::syntax::render_flat(&mut p).unwrap().to_string();
-    assert!(text.contains("fix(x == 2, y == 3) p0"), "{text}");
+    assert!(text.contains("fix((2, 3)) p0"), "{text}");
     assert!(text.contains("fix(y == 0) p1"), "{text}");
     assert!(text.contains("fix(r == 5) c0"), "{text}");
     // the key canonicalises the triple's order and keeps its sense — and the call is printed
@@ -182,7 +169,7 @@ fn lifted_with_their_numbers_and_coloured_as_relations() {
         e.sketch.params.iter().map(|p| (p.fixed, p.fixed.then_some(p.value))).collect::<Vec<_>>()
     };
     assert_eq!(held(&again), held(&e), "{text}");
-    let src = format!("{TRI}fix(x == 0, y == 0) a\nccw(a, b, c)\n");
+    let src = format!("{TRI}fix((0, 0)) a\nccw(a, b, c)\n");
     let runs = highlight(&src);
     for w in ["fix", "ccw"] {
         let at = src.find(&format!("\n{w}")).unwrap() + 1;
@@ -200,12 +187,12 @@ fn a_solve_writes_no_seed_for_a_held_number() {
 use std
 in std.front {
 b := point
-fix(x == 30, y == 0) b
+fix((30, 0)) b
 c := point
 fix(x == 3) c
 c distance(30) b
 l := line
-fix(x == 0, y == 0) l.p1
+fix((0, 0)) l.p1
 l.p1 distance(10) l.p2
 }
 ";
@@ -228,7 +215,7 @@ l.p1 distance(10) l.p2
 /// partial one — and taken away again when let go.
 #[test]
 fn a_hold_made_in_the_app_is_written_with_its_numbers() {
-    let src = "use std\nin std.front {\na := point hint(x: 2, y: 3)\nb := point hint(x: 7, y: 1)\nfix(x == 7, y == 1) b\n}\n";
+    let src = "use std\nin std.front {\na := point hint((2, 3))\nb := point hint((7, 1))\nfix((7, 1)) b\n}\n";
     let (prog, errs) = parse(src);
     assert!(errs.is_empty(), "{errs:?}");
     let mut e = elaborate(&prog);

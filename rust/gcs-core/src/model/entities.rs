@@ -65,18 +65,6 @@ pub enum EntKind {
     Vertex,
     /// A finite directed portion of a spatial seam between named corners.
     Edge,
-    /// **A sphere** (`docs/spatial-constraints-plan.md`): a centre drawn in some view and a
-    /// radius it owns, like a circle's — but no picture on any sheet, since a sphere seen in a
-    /// view is a circle only square on.  Its relations (`p coincident s`, `radius`, `tangent`) are
-    /// in space and read its centre's lift.  Last in the enum so every kind's id stays what it was.
-    Sphere,
-    /// **A cone**: an axis line drawn in some view — the apex its start, the axis running
-    /// toward its end — and a half-angle it owns, like a sphere's radius.  No picture on any
-    /// sheet; its relations (`p coincident k`, `angle`, `tangent`) are in space and read the
-    /// axis's lifts.
-    Cone,
-    /// **A cylinder**: an axis line drawn in some view and a radius it owns.
-    Cylinder,
     /// **An axis** (`docs/planes-plan.md`): a directed line in space, with no start — a direction
     /// and a place, placed by relations like any other entity and drawn on no sheet.  Its
     /// relations (`parallel`, `perpendicular`, `angle`, `p coincident t`) are in space.
@@ -107,9 +95,6 @@ impl EntKind {
             EntKind::Seam => "seam",
             EntKind::Vertex => "vertex",
             EntKind::Edge => "edge",
-            EntKind::Sphere => "sphere",
-            EntKind::Cone => "cone",
-            EntKind::Cylinder => "cylinder",
             EntKind::Axis => "axis",
         }
     }
@@ -132,9 +117,6 @@ impl EntKind {
             "seam" => EntKind::Seam,
             "vertex" => EntKind::Vertex,
             "edge" => EntKind::Edge,
-            "sphere" => EntKind::Sphere,
-            "cone" => EntKind::Cone,
-            "cylinder" => EntKind::Cylinder,
             "axis" => EntKind::Axis,
             _ => return None,
         })
@@ -153,10 +135,7 @@ impl EntKind {
             // a point in space has a third, which a point drawn in a plane never owns
             EntKind::Point => &[("x", S), ("y", S), ("z", S)],
             EntKind::Line => &[("p1", C), ("p2", C)],
-            EntKind::Circle | EntKind::Sphere => &[("center", C), ("r", S)],
-            // the axis is a line, the one child that is not a point: the apex is its start
-            EntKind::Cone => &[("axis", C), ("half", S)],
-            EntKind::Cylinder => &[("axis", C), ("r", S)],
+            EntKind::Circle => &[("center", C), ("r", S)],
             // its direction, which a seed and a `fix` name, and then the point on it nearest the
             // origin, which only a relation that reads where the axis is moves
             EntKind::Axis => &[("x", S), ("y", S), ("z", S), ("px", S), ("py", S), ("pz", S)],
@@ -200,9 +179,6 @@ impl EntKind {
             EntKind::Arc => Some((1, 2)),
             EntKind::Point
             | EntKind::Circle
-            | EntKind::Sphere
-            | EntKind::Cone
-            | EntKind::Cylinder
             | EntKind::Axis
             | EntKind::Spline
             | EntKind::Plane
@@ -222,19 +198,45 @@ impl EntKind {
     ///
     /// `None` for a kind whose parameter count is not fixed — a spline's control polygon is as
     /// long as somebody drew it, so a curve cannot be written over one by name.
+    /// What the source calls each number the kind owns, in the order `fields` lists its scalars:
+    /// the key a `hint(…)` seeds and a `fix(…)` pins.  A point *is* its place, so its numbers are
+    /// its own `x`, `y` and `z`; an axis has a direction and an origin, a plane an origin, each a
+    /// vector whose components are `dir.x`, `origin.y`, … (`vectors`).
+    pub fn members(self) -> &'static [&'static str] {
+        match self {
+            EntKind::Point => &["x", "y", "z"],
+            EntKind::Circle | EntKind::Arc => &["r"],
+            EntKind::Axis => &["dir.x", "dir.y", "dir.z", "origin.x", "origin.y", "origin.z"],
+            EntKind::Plane => &["origin.x", "origin.y", "origin.z"],
+            EntKind::Line | EntKind::Spline | EntKind::Curve | EntKind::Face | EntKind::Solid
+            | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch
+            | EntKind::Seam | EntKind::Vertex | EntKind::Edge => &[],
+        }
+    }
+
+    /// The vectors among `members`, each by its key and its first member: `""` is the entity
+    /// itself — `fix((0, 0)) p`, `hint((3, 4))` — and is a point's, as many components as the
+    /// point owns (two in a plane, three in space); `dir` and `origin` have three.
+    pub fn vectors(self) -> &'static [(&'static str, usize)] {
+        match self {
+            EntKind::Point => &[("", 0)],
+            EntKind::Axis => &[("dir", 0), ("origin", 3)],
+            EntKind::Plane => &[("origin", 0)],
+            _ => &[],
+        }
+    }
+
     pub fn scalar_names(self, n: &str) -> Option<Vec<String>> {
         let pt = |f: &str| vec![format!("{n}.{f}.x"), format!("{n}.{f}.y")];
         Some(match self {
             EntKind::Point => vec![format!("{n}.x"), format!("{n}.y")],
             EntKind::Line => [pt("p1"), pt("p2")].concat(),
-            EntKind::Circle | EntKind::Sphere => [pt("center"), vec![format!("{n}.r")]].concat(),
+            EntKind::Circle => [pt("center"), vec![format!("{n}.r")]].concat(),
             EntKind::Arc => {
                 [pt("center"), pt("start"), pt("end"), vec![format!("{n}.r")]].concat()
             }
             // where it stands; its attitude is its axes'
             EntKind::Plane => ["x", "y", "z"].iter().map(|f| format!("{n}.{f}")).collect(),
-            // a surface in space is no formal a curve is written over
-            EntKind::Cone | EntKind::Cylinder => return None,
             EntKind::Axis => ["x", "y", "z", "px", "py", "pz"].iter().map(|f| format!("{n}.{f}")).collect(),
             EntKind::Spline | EntKind::Curve | EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge => return None,
         })
@@ -258,12 +260,7 @@ impl EntKind {
             | EntKind::Line
             | EntKind::Circle
             | EntKind::Arc
-            | EntKind::Spline
-            // its centre is a point of whatever view the declaration is in
-            | EntKind::Sphere
-            => true,
-            // built over a line already drawn in its view, as a face is over its edges
-            EntKind::Cone | EntKind::Cylinder => false,
+            | EntKind::Spline => true,
             // in space, in no view
             EntKind::Axis => false,
         }
@@ -285,9 +282,6 @@ impl EntKind {
             | EntKind::Spline
             | EntKind::Curve
             | EntKind::Face
-            | EntKind::Sphere
-            | EntKind::Cone
-            | EntKind::Cylinder
             | EntKind::Axis
             | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge => None,
         }
@@ -309,10 +303,7 @@ impl EntKind {
             | EntKind::Spline
             | EntKind::Plane
             | EntKind::Curve
-            // solved, owning its radius — a figure of the drawing stratum, not a reading of one
-            | EntKind::Sphere
-            | EntKind::Cone
-            | EntKind::Cylinder
+            // solved, owning its number — a figure of the drawing stratum, not a reading of one
             | EntKind::Axis => false,
         }
     }
@@ -406,23 +397,6 @@ pub struct CircleE {
     pub class: Classes,
 }
 
-/// A sphere: its centre, a drawn point, and its radius, a Param — a circle's fields with no
-/// plane to be drawn in (`EntKind::Sphere`).
-#[derive(Clone, Debug)]
-pub struct SphereE {
-    pub center: u32,
-    pub radius: u32,
-    pub class: Classes,
-}
-
-/// A cone or a cylinder: its axis, a drawn line — a cone's apex is the line's start — and
-/// the number it owns, a Param: a cone's half-angle (radians) or a cylinder's radius.
-#[derive(Clone, Debug)]
-pub struct AxialE {
-    pub axis: u32,
-    pub param: u32,
-    pub class: Classes,
-}
 
 /// An axis: a unit direction `d` and the point `a` on it nearest the world origin, six Params.
 /// `|d| = 1` is an intrinsic row (`Sketch::axis`); `a·d = 0` is another, minted only once a

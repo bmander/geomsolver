@@ -399,9 +399,9 @@ use std
 in std.front {
 a := point
 b := point
-c := point hint(x: 5, y: -4)
-fix(x == 0, y == 0) a
-fix(x == 10, y == 0) b
+c := point hint((5, -4))
+fix((0, 0)) a
+fix((10, 0)) b
 a distance(6) c
 b distance(6) c
 ccw(a, b, c)

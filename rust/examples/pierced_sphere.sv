@@ -11,8 +11,8 @@ offset := 5mm      // from the sphere's centre to the hole's axis
 // A sphere of radius `r` about `center`: a half disc turned about its diameter, which stands
 // upright through the centre.
 component Sphere(center: point, r: Length) {
-  private bottom := point hint(x: center.x, y: center.y - r)
-  private top := point hint(x: center.x, y: center.y + r)
+  private bottom := point hint((center.x, center.y - r))
+  private top := point hint((center.x, center.y + r))
   private diameter := line(bottom, top)
   center midpoint diameter
   vertical diameter
@@ -24,7 +24,7 @@ component Sphere(center: point, r: Length) {
 // A round hole of radius `r` through `body`, its axis square to the page, level with `center`
 // and `offset` to its right. The hole is the hole's own business: it cuts the body it is given.
 component Hole(body: solid, center: point, r: Length, offset: Length) {
-  private ax := point hint(x: center.x + offset, y: center.y)
+  private ax := point hint((center.x + offset, center.y))
   center horizontal ax
   center distance(offset, along: right) ax
   rim := radius(r) circle(center: ax) hint(r: r)

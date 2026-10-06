@@ -14,9 +14,9 @@ in std.front {
 o := point
 q := point
 c := point
-fix(x == 0, y == 0) o
-fix(x == 0, y == 1) q
-fix(x == 3, y == 0) c
+fix((0, 0)) o
+fix((0, 1)) q
+fix((3, 0)) c
 ax := line(o,q)
 meridian := circle(center: c)
 radius(1mm) meridian

@@ -29,7 +29,7 @@ hw := pi * m / 4            // half the rack tooth's thickness at the pitch line
 
 in std.front {
   o := point
-  fix(x == 0, y == 0) o
+  fix((0, 0)) o
   rim := circle(center: o) hint(r: 22)
   radius(rp + m) rim
   construction bore_c := circle(center: o) hint(r: 6)
@@ -38,18 +38,18 @@ in std.front {
   construction bore := solid(face(bore_c), from: -width - 2mm, to: 2mm)
 
   // the rack's pitch line, tangent to the pitch circle at the pitch point
-  s0 := point hint(x: 20, y: 0)
-  s1 := point hint(x: 20, y: 10)
+  s0 := point hint((20, 0))
+  s1 := point hint((20, 10))
   o distance(rp, along: x) s0
   o distance(0, along: y) s0
   slide := vertical line(s0, s1)
   s0 distance(10) s1
 
   // the rack's tooth: its tip at the working depth, its back past the blank's rim
-  t0 := point hint(x: 18, y: -0.84)
-  t1 := point hint(x: 18, y: 0.84)
-  t2 := point hint(x: 24, y: 3.03)
-  t3 := point hint(x: 24, y: -3.03)
+  t0 := point hint((18, -0.84))
+  t1 := point hint((18, 0.84))
+  t2 := point hint((24, 3.03))
+  t3 := point hint((24, -3.03))
   o distance(rp - m, along: x) t0
   o distance(rp - m, along: x) t1
   o distance(rp + 2 * m, along: x) t2

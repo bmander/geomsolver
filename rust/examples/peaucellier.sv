@@ -16,10 +16,10 @@ param crank := 40      // the crank q–b, and the orbit its pin rides
 // left unbound, so the crank is the drawing's one freedom; traced below that, where the same
 // component is asked where `pen` goes as `u` runs.
 component Cell(orbit: circle, datum: line, arm: Length, side: Length, u: Angle) {
-  b := point   hint(x: 50.4, y: 38.6)
-  c := point   hint(x: 30.4, y: 95.2)
-  d := point   hint(x: 99.9, y: 4.8)
-  pen := point hint(x: 80.0, y: 61.4)
+  b := point   hint((50.4, 38.6))
+  c := point   hint((30.4, 95.2))
+  d := point   hint((99.9, 4.8))
+  pen := point hint((80.0, 61.4))
   swing := line(datum.p2, b)
   b coincident orbit                         // the crank pin on its circle...
   datum angle(u) swing               // ...posed at bearing u; directed, so this side up
@@ -42,14 +42,14 @@ component Cell(orbit: circle, datum: line, arm: Length, side: Length, u: Angle) 
 // it places `q` too, so no dimension between the pivots is ever stated.
 in std.front {
   o := point
-  q := point hint(x: crank, y: 0)
+  q := point hint((crank, 0))
   datum := line(o, q)
   orbit := circle(center: q) hint(r: crank)
 
   horizontal datum
   radius(crank) orbit
   o coincident orbit
-  fix(x == 0, y == 0) o
+  fix((0, 0)) o
 
   // the machine itself, at one pose — `u` unbound, so the crank angle is an unknown of the
   // drawing and the pen may be dragged
@@ -64,8 +64,8 @@ in std.front {
 path := cell.pen over u in (60, 115)
 
 in std.front {
-  g1 := point hint(x: 80, y: 51)
-  g2 := point hint(x: 80, y: 114)
+  g1 := point hint((80, 51))
+  g2 := point hint((80, 114))
   g1 coincident(t == 65) path
   g2 coincident(t == 110) path
   rail := line(g1, g2)

@@ -22,17 +22,17 @@ in std.front {
 o := point
 a := point
 b := point
-fix(x == 3, y == 0) o
-fix(x == 3, y == -1) a
-fix(x == 3, y == 1) b
+fix((3, 0)) o
+fix((3, -1)) a
+fix((3, 1)) b
 rim := arc(center: o,start: a,end: b)
 radius(1) rim
 ax := line(b,a)
 ball := solid(face(rim,ax),about: ax)
 z := point
 q := point
-fix(x == 0, y == 0) z
-fix(x == 0, y == 1) q
+fix((0, 0)) z
+fix((0, 1)) q
 spindle := line(z,q)
 }
 indexing := motion(about: spindle)
@@ -79,9 +79,9 @@ in std.front {
 o := point
 z := point
 c := point
-fix(x == 0, y == 0) o
-fix(x == 0, y == 1) z
-fix(x == 3, y == 0) c
+fix((0, 0)) o
+fix((0, 1)) z
+fix((3, 0)) c
 ax := line(o,z)
 outer := circle(center: c)
 radius(1) outer
@@ -127,11 +127,11 @@ z := point
 c := point
 a := point
 b := point
-fix(x == 0, y == 0) o
-fix(x == 0, y == 1) z
-fix(x == 3, y == 0) c
-fix(x == 4, y == 0) a
-fix(x == 3, y == -1) b
+fix((0, 0)) o
+fix((0, 1)) z
+fix((3, 0)) c
+fix((4, 0)) a
+fix((3, -1)) b
 ax := line(o,z)
 round := arc(center: c,start: a,end: b)
 radius(1) round
@@ -191,19 +191,19 @@ use std
 in std.front {
 o := point
 z := point
-fix(x == 0, y == 0) o
-fix(x == 0, y == 1) z
+fix((0, 0)) o
+fix((0, 1)) z
 ax := line(o,z)
 a := point
 b := point
 c := point
 d := point
 e := point
-fix(x == 1, y == 0) a
-fix(x == 4, y == 0) b
-fix(x == 4, y == 3) c
-fix(x == 2, y == 1) d
-fix(x == 1, y == 3) e
+fix((1, 0)) a
+fix((4, 0)) b
+fix((4, 3)) c
+fix((2, 1)) d
+fix((1, 3)) e
 }
 profile := face(a,b,c,d,e,-> close)
 body := solid(profile,about: ax)

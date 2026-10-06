@@ -11,18 +11,18 @@ groove_half_width := 5mm
 
 // The half-section is an orthogonal contour, symmetric about the radial centerline.
 in std.front {
-  construction centerline spindle := line(std.origin, hint(x: 0, y: 1))
-  fix(x == 0, y == 1) spindle.p2
-  construction centerline mid_axis := line(std.origin, hint(x: 1, y: 0))
-  fix(x == 1, y == 0) mid_axis.p2
-  a := point hint(x: bore_radius, y: -half_width - hub_extension)
-  b := point hint(x: hub_radius, y: -half_width - hub_extension)
-  c := point hint(x: hub_radius, y: -half_width)
-  d := point hint(x: rim_radius, y: -half_width)
-  e := point hint(x: rim_radius, y: half_width)
-  f := point hint(x: hub_radius, y: half_width)
-  g := point hint(x: hub_radius, y: half_width + hub_extension)
-  h := point hint(x: bore_radius, y: half_width + hub_extension)
+  construction centerline spindle := line(std.origin, hint((0, 1)))
+  fix((0, 1)) spindle.p2
+  construction centerline mid_axis := line(std.origin, hint((1, 0)))
+  fix((1, 0)) mid_axis.p2
+  a := point hint((bore_radius, -half_width - hub_extension))
+  b := point hint((hub_radius, -half_width - hub_extension))
+  c := point hint((hub_radius, -half_width))
+  d := point hint((rim_radius, -half_width))
+  e := point hint((rim_radius, half_width))
+  f := point hint((hub_radius, half_width))
+  g := point hint((hub_radius, half_width + hub_extension))
+  h := point hint((bore_radius, half_width + hub_extension))
   profile := horizontal (ab := line(a, b)) -> vertical (bc := line(b, c)) ->
             horizontal (cd := line(c, d)) -> vertical (de := line(d, e)) ->
             horizontal (ef := line(e, f)) -> vertical (fg := line(f, g)) ->
@@ -38,9 +38,9 @@ in std.front {
   body := solid(profile, about: spindle)
 
   // The triangular cutter extends outside the rim so the groove opens cleanly.
-  lo := point hint(x: rim_radius + 1mm, y: -groove_half_width)
-  root := point hint(x: rim_radius - groove_depth, y: 0mm)
-  hi := point hint(x: rim_radius + 1mm, y: groove_half_width)
+  lo := point hint((rim_radius + 1mm, -groove_half_width))
+  root := point hint((rim_radius - groove_depth, 0mm))
+  hi := point hint((rim_radius + 1mm, groove_half_width))
   root coincident mid_axis
   root distance(groove_depth, side: left) de
   lo distance(1mm, side: right) de

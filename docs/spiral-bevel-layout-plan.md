@@ -108,7 +108,7 @@ spiral_bevel/          (the app key; the file pane lists the steps)
   README.md            the steps, one paragraph and one file each
   configuration.sv     what a designer states: teeth, module, shafts, shift, spiral
   design.sv            step 1: the requirements group over the configuration
-  views.sv             PitchView and FoldedView: the views through M
+  views.sv             FoldedView: the views through M, folded off P (`std.top`)
   pitch/gear.sv        GearCone: the O–M–F triangle, gear axis, crown axis
   pitch/trace.sv       ToothTrace: C, the trace circle, its heading and normal at M
   pitch/pinion.sv      PinionCone: A, V, the pinion's axis solved against the gear's

@@ -28,18 +28,18 @@ component Lobe(c: point, ref: line, phi: Angle, dn: Length, dims: group) {
 // is tangent to whichever of base circle, flank or nose is under it, without saying which.
 component Valve(seat: point, ax: line, lift: Length, head: Length, dims: group) {
   // the follower face: on the axis and square to it, `rb + lift` short of the cam's centre
-  fc := point hint(x: ax.p2.x - (dims.rb + lift) * (ax.p2.x - ax.p1.x) / dims.stem, y: ax.p2.y - (dims.rb + lift) * (ax.p2.y - ax.p1.y) / dims.stem)
+  fc := point hint((ax.p2.x - (dims.rb + lift) * (ax.p2.x - ax.p1.x) / dims.stem, ax.p2.y - (dims.rb + lift) * (ax.p2.y - ax.p1.y) / dims.stem))
   fc coincident ax
   ax.p2 distance(dims.rb + lift) fc
-  f1 := point hint(x: ax.p2.x - 15mm, y: ax.p2.y - dims.rb)
-  f2 := point hint(x: ax.p2.x + 15mm, y: ax.p2.y - dims.rb)
+  f1 := point hint((ax.p2.x - 15mm, ax.p2.y - dims.rb))
+  f2 := point hint((ax.p2.x + 15mm, ax.p2.y - dims.rb))
   flat := line(f1, f2)
   fc midpoint flat
   flat perpendicular ax
   f1 distance(30) f2
   // the bucket under the face, 30 wide and 20 deep
-  b1 := point hint(x: ax.p2.x - 15mm, y: ax.p2.y - dims.rb - 20mm)
-  b2 := point hint(x: ax.p2.x + 15mm, y: ax.p2.y - dims.rb - 20mm)
+  b1 := point hint((ax.p2.x - 15mm, ax.p2.y - dims.rb - 20mm))
+  b2 := point hint((ax.p2.x + 15mm, ax.p2.y - dims.rb - 20mm))
   bl := line(f1, b1)
   br := line(f2, b2)
   bb := line(b1, b2)
@@ -52,8 +52,8 @@ component Valve(seat: point, ax: line, lift: Length, head: Length, dims: group) 
   hc coincident ax
   hc distance(dims.stem) fc
   st := line(hc, fc)
-  h1 := point hint(x: seat.x - head / 2, y: seat.y)
-  h2 := point hint(x: seat.x + head / 2, y: seat.y)
+  h1 := point hint((seat.x - head / 2, seat.y))
+  h2 := point hint((seat.x + head / 2, seat.y))
   hd := line(h1, h2)
   hc midpoint hd
   hd perpendicular ax

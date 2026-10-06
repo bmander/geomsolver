@@ -77,25 +77,16 @@ pub enum K {
     PointOnCircle3,
     // a projection between two images either of whose planes moves in the solve
     ProjectSolved,
-    // a point on a line in space, true lengths equal, a point's signed distance along a
-    // plane's normal, and the sphere's own two
+    // a point on a line in space, true lengths equal, and a point's signed distance along a
+    // plane's normal
     PointOnLine3,
     EqualLength3,
     PointPlaneDistance,
     PointPlaneDistanceFree,
-    SphereOn,
-    SphereSphere,
     LineOnPlane,
-    // a circle drawn in a plane on a sphere, and the midpoint and the mirror in a line, in
-    // space
-    CircleOnSphere,
+    // the midpoint and the mirror in a line, in space
     Midpoint3,
     Symmetric3,
-    // a point on a cone, a cone's half-angle stated and free, and two cones touching
-    ConeOn,
-    HalfAngle,
-    HalfAngleFree,
-    ConeCone,
     // two directed angles equal, and an arc's length along itself stated and free
     EqualAngle,
     ArcLength,
@@ -125,7 +116,7 @@ pub enum K {
     LineOnAxis,
 }
 
-pub const N_KERNELS: usize = 87;
+pub const N_KERNELS: usize = 80;
 
 #[derive(Clone, Copy)]
 pub struct Kernel {
@@ -1857,14 +1848,6 @@ fn at3(v: &[f64], o: usize) -> [f64; 3] {
     [v[o], v[o + 1], v[o + 2]]
 }
 
-/// `|d|` and the unit vector along `d`, or zero where `d` has no length — the gradient of a
-/// distance in space, which has none at its own centre.
-#[inline]
-fn length_and_unit(d: [f64; 3]) -> (f64, [f64; 3]) {
-    let l = norm3(d);
-    (l, if l > 0.0 { d.map(|t| t / l) } else { [0.0; 3] })
-}
-
 /// Columns of `coincident3`: (X, Y) — two hidden points.  `X − Y = 0`: three signed
 /// displacements, degree 1.  The same point in space, whatever views its two images are in.
 fn coincident3_res(n: usize, v: &[f64], _k: &[f64], r: &mut [f64]) {
@@ -2166,12 +2149,10 @@ fn parallel3_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
     }
 }
 
-/* -- the rest of the spatial words, and the sphere ---------------------------------------------
+/* -- the rest of the spatial words --------------------------------------------------------------
  *
- * A point on a line in space, two lines of equal true length, a point's signed distance from a
- * plane (`distance(along: n)`), and a sphere's two relations of its own: a point on it and two
- * spheres touching.  A sphere's radius and its tangency to a line reuse `radius` and
- * `point_line3_free` (the line's distance from the centre, stated as the radius column). */
+ * A point on a line in space, two lines of equal true length, and a point's signed distance from
+ * a plane (`distance(along: n)`). */
 
 /// Columns of `axis_unit`: (dx, dy, dz).  `|d|² − 1`: a direction held to the unit sphere,
 /// dimensionless, degree 0.
@@ -2308,52 +2289,7 @@ fn equal_length3_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
     }
 }
 
-/// Columns of `sphere_on`: (X, C, r).  `|X − C| − r`, a point in some view on a sphere about a
-/// centre drawn in another: the magnitude, degree 1, with a unit gradient wherever X is off C.
-fn sphere_on_res(n: usize, v: &[f64], _k: &[f64], r: &mut [f64]) {
-    for i in 0..n {
-        let o = 7 * i;
-        r[i] = norm3(sub3(at3(v, o), at3(v, o + 3))) - v[o + 6];
-    }
-}
-
-fn sphere_on_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
-    for i in 0..n {
-        let o = 7 * i;
-        let (_, u) = length_and_unit(sub3(at3(v, o), at3(v, o + 3)));
-        for t in 0..3 {
-            j[o + t] = u[t];
-            j[o + 3 + t] = -u[t];
-        }
-        j[o + 6] = -1.0;
-    }
-}
-
-/// Columns of `sphere_sphere`: (C₁, C₂, r₁, r₂), K = (a, b).  `|C₁ − C₂| − (a·r₁ + b·r₂)`: two
-/// spheres touching outside (a = b = 1) or inside (one of them −1, whichever the seed makes
-/// positive), degree 1.
-fn sphere_sphere_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
-    for i in 0..n {
-        let o = 8 * i;
-        let l = norm3(sub3(at3(v, o), at3(v, o + 3)));
-        r[i] = l - (k[2 * i] * v[o + 6] + k[2 * i + 1] * v[o + 7]);
-    }
-}
-
-fn sphere_sphere_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
-    for i in 0..n {
-        let o = 8 * i;
-        let (_, u) = length_and_unit(sub3(at3(v, o), at3(v, o + 3)));
-        for t in 0..3 {
-            j[o + t] = u[t];
-            j[o + 3 + t] = -u[t];
-        }
-        j[o + 6] = -k[2 * i];
-        j[o + 7] = -k[2 * i + 1];
-    }
-}
-
-/* -- a circle on a sphere, and the midpoint and the mirror in space ------------------------ */
+/* -- the midpoint and the mirror in space ----------------------------------------------------- */
 
 /// Columns of `midpoint3`: (X, A, B).  `X − (A + B)/2`, three rows, degree 1 — a point drawn in
 /// one view the midpoint of a line drawn in another, in space.
@@ -2433,16 +2369,11 @@ fn symmetric3_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
     }
 }
 
-/* -- cones and cylinders -----------------------------------------------------------------------
+/* -- forward-mode derivatives -----------------------------------------------------------------
  *
- * A cylinder's relations reuse the kernels a sphere's do — a point on it is `point_line3_free`
- * (its distance from the axis, stated as the radius column), a line touching it `line_line3_free`
- * (the common perpendicular with the axis), its radius `radius`.  A cone's are new: a point on
- * it, its half-angle (an angle row of degree 0, the radius kernel's arithmetic), and two cones
- * touching at a point.  Their derivatives are taken by `Dual`, a forward-mode number carrying
- * the gradient in every column of the block — exact, and one expression for the residual and its
- * row, where the hand-derived chains of the kernels above would be a page of vector calculus to
- * get wrong. */
+ * The kernels below take their derivatives by `Dual`, a forward-mode number carrying the gradient
+ * in every column of the block — exact, and one expression for the residual and its row, where
+ * the hand-derived chains of the kernels above would be a page of vector calculus to get wrong. */
 
 /// A number and its gradient in the `N` columns of one block.
 #[derive(Clone, Copy)]
@@ -2464,12 +2395,6 @@ impl<const N: usize> Dual<N> {
         let s = self.v.max(0.0).sqrt();
         // no gradient where the root is zero: a caller asking there is on a degenerate figure
         self.map(s, if s > 0.0 { 0.5 / s } else { 0.0 })
-    }
-    fn sin(self) -> Self {
-        self.map(self.v.dsin(), self.v.dcos())
-    }
-    fn cos(self) -> Self {
-        self.map(self.v.dcos(), -self.v.dsin())
     }
 }
 
@@ -2700,25 +2625,6 @@ fn point_on_circle3_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
 
 fn point_on_circle3_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
     dual_jac::<13, 2, 0>(n, v, k, j, point_on_circle3_rows)
-}
-
-/// Columns of `circle_on_sphere`: (C, S, r, R, du, dv) — a circle's centre lifted and its
-/// radius, a sphere's centre and radius, and the circle's plane.  `û·(S − C)`, `v̂·(S − C)` (the
-/// sphere's centre on the circle's axis) and `√(|S − C|² + r²) − R` (every point of the circle at
-/// R from it).  Three rows, degree 1.
-fn circle_on_sphere_rows(v: &[f64], _k: &[f64]) -> [Dual<14>; 3] {
-    let d = dsub(dvec(v, 3), dvec(v, 0));
-    let r = Dual::var(v[6], 6);
-    let (u, w, _) = dframe(dvec(v, 8), dvec(v, 11));
-    [ddot(u, d), ddot(w, d), (ddot(d, d) + r * r).sqrt() - Dual::var(v[7], 7)]
-}
-
-fn circle_on_sphere_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
-    dual_res::<14, 3, 0>(n, v, k, r, circle_on_sphere_rows)
-}
-
-fn circle_on_sphere_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
-    dual_jac::<14, 3, 0>(n, v, k, j, circle_on_sphere_rows)
 }
 
 /// Columns of `project_solved`: (X_A, X_B, du_A, dv_A, du_B, dv_B) — two images' hidden points
@@ -2954,86 +2860,6 @@ fn plane_distance_free_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
     dual_jac::<13, 1, 2>(n, v, k, j, plane_distance_free_rows)
 }
 
-/// A cone at a point X, read in X's meridian half-plane: the unit axis ê (apex A toward B), the
-/// height `h = (X − A)·ê`, the distance ρ from the axis and the unit radial direction û.
-struct Meridian<const N: usize> {
-    e: V3<N>,
-    h: Dual<N>,
-    rho: Dual<N>,
-    u: V3<N>,
-}
-
-fn meridian<const N: usize>(x: V3<N>, a: V3<N>, b: V3<N>) -> Meridian<N> {
-    let e = dunit(dsub(b, a));
-    let w = dsub(x, a);
-    let h = ddot(w, e);
-    let radial = dsub(w, e.map(|t| t * h));
-    let rho = ddot(radial, radial).sqrt();
-    let u = dunit(radial);
-    Meridian { e, h, rho, u }
-}
-
-/// `ρ cos α − h sin α` over (X, A, B, α): how far X stands from the cone's generator in its
-/// meridian half-plane — zero on the nappe the axis points into, a length.
-fn cone_gap(v: &[f64]) -> Dual<10> {
-    let m = meridian::<10>(dvec(v, 0), dvec(v, 3), dvec(v, 6));
-    let al = Dual::<10>::var(v[9], 9);
-    m.rho * al.cos() - m.h * al.sin()
-}
-
-/// Columns of `cone_on`: (X, A, B, α) — a point's hidden point, the axis's two, the cone's
-/// half-angle.  `ρ cos α − h sin α`, degree 1.
-fn cone_on_res(n: usize, v: &[f64], _k: &[f64], r: &mut [f64]) {
-    for i in 0..n {
-        r[i] = cone_gap(&v[10 * i..10 * i + 10]).v;
-    }
-}
-
-fn cone_on_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
-    for i in 0..n {
-        let d = cone_gap(&v[10 * i..10 * i + 10]);
-        j[10 * i..10 * i + 10].copy_from_slice(&d.g);
-    }
-}
-
-pub const N_PAR_CONE_CONE: usize = 17;
-
-/// Two cones at M: the second's surface normal against the first's generator and circle
-/// directions there.  Over (M, A₁, B₁, α₁, A₂, B₂, α₂).  A cone's outward normal at a point of
-/// its meridian is `û cos α − ê sin α`, its generator `ê cos α + û sin α` and its circle `ê × û`.
-fn cone_contact(v: &[f64]) -> [Dual<N_PAR_CONE_CONE>; 2] {
-    const N: usize = N_PAR_CONE_CONE;
-    let x = dvec::<N>(v, 0);
-    let (m1, m2) = (meridian(x, dvec(v, 3), dvec(v, 6)), meridian(x, dvec(v, 10), dvec(v, 13)));
-    let (a1, a2) = (Dual::<N>::var(v[9], 9), Dual::<N>::var(v[16], 16));
-    let (c1, s1, c2, s2) = (a1.cos(), a1.sin(), a2.cos(), a2.sin());
-    let normal = [0, 1, 2].map(|t| m2.u[t] * c2 - m2.e[t] * s2);
-    let generator = [0, 1, 2].map(|t| m1.e[t] * c1 + m1.u[t] * s1);
-    let circle = dcross(m1.e, m1.u);
-    [ddot(normal, generator), ddot(normal, circle)]
-}
-
-/// Columns of `cone_cone`: (M, A₁, B₁, α₁, A₂, B₂, α₂).  Two rows, degree 0: the second cone's
-/// normal at M square to the first's two tangent directions there — one tangent plane at M.
-fn cone_cone_res(n: usize, v: &[f64], _k: &[f64], r: &mut [f64]) {
-    for i in 0..n {
-        let o = N_PAR_CONE_CONE * i;
-        let d = cone_contact(&v[o..o + N_PAR_CONE_CONE]);
-        r[2 * i] = d[0].v;
-        r[2 * i + 1] = d[1].v;
-    }
-}
-
-fn cone_cone_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
-    for i in 0..n {
-        let o = N_PAR_CONE_CONE * i;
-        let d = cone_contact(&v[o..o + N_PAR_CONE_CONE]);
-        let jo = 2 * N_PAR_CONE_CONE * i;
-        j[jo..jo + N_PAR_CONE_CONE].copy_from_slice(&d[0].g);
-        j[jo + N_PAR_CONE_CONE..jo + 2 * N_PAR_CONE_CONE].copy_from_slice(&d[1].g);
-    }
-}
-
 /* -- two directed angles equal, and an arc's length --------------------------------------- */
 
 /// (l1, l2, l3, l4 — each a line's four coordinates), K = (s): `wrap(∠(l1→l2) − s·∠(l3→l4))`.
@@ -3186,16 +3012,9 @@ pub static KERNELS: [Kernel; N_KERNELS] = [
     Kernel { name: "equal_length3", n_res: 1, n_par: 12, degree: 2, n_const: 0, res: equal_length3_res, jac: equal_length3_jac, const_jac: None },
     Kernel { name: "point_plane_distance", n_res: 1, n_par: 12, degree: 1, n_const: 1, res: point_plane_distance_res, jac: point_plane_distance_jac, const_jac: None },
     Kernel { name: "point_plane_distance_free", n_res: 1, n_par: 13, degree: 1, n_const: 2, res: point_plane_distance_free_res, jac: point_plane_distance_free_jac, const_jac: None },
-    Kernel { name: "sphere_on", n_res: 1, n_par: 7, degree: 1, n_const: 0, res: sphere_on_res, jac: sphere_on_jac, const_jac: None },
-    Kernel { name: "sphere_sphere", n_res: 1, n_par: 8, degree: 1, n_const: 2, res: sphere_sphere_res, jac: sphere_sphere_jac, const_jac: None },
     Kernel { name: "line_on_plane", n_res: 2, n_par: 15, degree: 1, n_const: 0, res: line_on_plane_res, jac: line_on_plane_jac, const_jac: None },
-    Kernel { name: "circle_on_sphere", n_res: 3, n_par: 14, degree: 1, n_const: 0, res: circle_on_sphere_res, jac: circle_on_sphere_jac, const_jac: None },
     Kernel { name: "midpoint3", n_res: 3, n_par: 9, degree: 1, n_const: 0, res: midpoint3_res, jac: midpoint3_jac, const_jac: None },
     Kernel { name: "symmetric3", n_res: 3, n_par: 12, degree: 1, n_const: 0, res: symmetric3_res, jac: symmetric3_jac, const_jac: None },
-    Kernel { name: "cone_on", n_res: 1, n_par: 10, degree: 1, n_const: 0, res: cone_on_res, jac: cone_on_jac, const_jac: None },
-    Kernel { name: "half_angle", n_res: 1, n_par: 1, degree: 0, n_const: 1, res: radius_res, jac: radius_jac, const_jac: Some(RADIUS_J) },
-    Kernel { name: "half_angle_free", n_res: 1, n_par: 2, degree: 0, n_const: 2, res: radius_free_res, jac: radius_free_jac, const_jac: None },
-    Kernel { name: "cone_cone", n_res: 2, n_par: N_PAR_CONE_CONE, degree: 0, n_const: 0, res: cone_cone_res, jac: cone_cone_jac, const_jac: None },
     Kernel { name: "equal_angle", n_res: 1, n_par: 16, degree: 0, n_const: 1, res: equal_angle_res, jac: equal_angle_jac, const_jac: None },
     Kernel { name: "arc_length", n_res: 1, n_par: 7, degree: 1, n_const: 1, res: arc_length_res, jac: arc_length_jac, const_jac: None },
     Kernel { name: "arc_length_free", n_res: 1, n_par: 8, degree: 1, n_const: 2, res: arc_length_free_res, jac: arc_length_free_jac, const_jac: None },

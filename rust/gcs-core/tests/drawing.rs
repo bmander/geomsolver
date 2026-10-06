@@ -6,7 +6,7 @@ unit mm
 use std
 in std.front {
 o := point
-fix(x == 0, y == 0) o
+fix((0, 0)) o
 rim := circle(center: o) hint(r: 10)
 }
 param r := 10mm
@@ -151,7 +151,7 @@ use std
 in std.front {
 repeat 3 as i {
   p := point
-  fix(x == i * 10, y == 0) p
+  fix((i * 10, 0)) p
 }
 bar := line(p[0], p[2])
 }
@@ -169,7 +169,7 @@ bar := line(p[0], p[2])
 
 #[test]
 fn measurements_refuse_foreshortening_and_sections_check_the_cut_plane() {
-    let model = format!("{MODEL}in std.front {{\nb := point\nfix(x == 0, y == 10) b\n}}\n");
+    let model = format!("{MODEL}in std.front {{\nb := point\nfix((0, 10)) b\n}}\n");
     let compile = |text: &str| drawing::compile(text, "drawing.svd", None,
         &mut |path, _| (path == "part.sv").then(|| ("part.sv".into(), model.clone())));
     let err = compile("model m from \"part.sv\" sheet s {
@@ -200,9 +200,9 @@ fn styles_can_show_one_point_and_hide_selected_dimensions() {
 #[test]
 fn isometric_camera_matches_the_old_helper_plane_without_model_geometry() {
     let plain = solved();
-    let source = format!("{MODEL}\niu := axis hint(x: 1, y: -1, z: 0)\nfix(x == 1, y == -1, z == 0) iu\n\
-        iv := axis hint(x: 1, y: 1, z: 2)\nfix(x == 1, y == 1, z == 2) iv\n\
-        iso := plane(u: iu, v: iv)\nfix(x == 0, y == 0, z == 0) iso");
+    let source = format!("{MODEL}\niu := axis hint(dir: (1, -1, 0))\nfix(dir == (1, -1, 0)) iu\n\
+        iv := axis hint(dir: (1, 1, 2))\nfix(dir == (1, 1, 2)) iv\n\
+        iso := plane(u: iu, v: iv)\nfix(origin == (0, 0, 0)) iso");
     let (p, errs) = crate::common::parse(&source);
     assert!(errs.is_empty(), "{errs:?}");
     let mut with_helper = program::elaborate(&p);
@@ -228,13 +228,13 @@ unit mm
 use std
 in std.front {
   f := line
-  fix(x == 0, y == 0) f.p1
-  fix(x == 10, y == 0) f.p2
+  fix((0, 0)) f.p1
+  fix((10, 0)) f.p2
 }
 in std.top {
   t := line
-  fix(x == 0, y == 0) t.p1
-  fix(x == 0, y == 20) t.p2
+  fix((0, 0)) t.p1
+  fix((0, 20)) t.p2
 }
 ";
     let compile = |sheet: &str| drawing::compile(&format!("model m from \"part.sv\" sheet s {{ {sheet} }}"),

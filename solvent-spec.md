@@ -1,13 +1,25 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.44 — October 2026**
+**Specification, Draft 0.45 — October 2026**
+
+**[0.45] A vector is written `(a, b)` or `(a, b, c)`, and an entity's numbers are its
+members.** A point *is* its place, so it is held and seeded whole by a vector — `fix((0, 0)) p`,
+`p := point hint((3, 4))` — or by one of its own `x`, `y`, `z` (`fix(x == 3) p`, `hint(y: 7)`).
+An axis has two vectors, `dir` (its direction) and `origin` (its point nearest the world origin),
+and a plane one, `origin` (where it stands): `fix(dir == (1, 0, 0), origin == (0, 0, 0)) t`,
+`back := plane hint(origin: (0, 0, 12))`, and a member of one is `dir.x`, `origin.z`. A vector
+held whole is as long as the vector it holds — a point in a plane two, one in space three, `dir`
+and `origin` three — so `fix((0, 0)) p` cannot leave a point in space's height free unsaid
+(**E105**). `px`, `py`, `pz` and an axis's or a plane's bare `x`, `y`, `z` keys are gone. A vector
+may be named, `o := (10mm, 20mm)`, and is read by its members, `o.x`; a member it has not (`o.z`)
+is **E103**. A grouped expression, `(w + 2) / 3`, holds no comma and is no vector.
 
 **[0.44] A line lies on an axis** (`l coincident t`, either way round: both ends on it, four rows,
 placing the axis). `parallel` between a line and an axis was already the direction relation in
 space.
 
 **[0.44] Two shorthands.** `@` is `coincident` and `~` is `hint`: `p @ c` is `p coincident c`, and
-`p := point ~(x: 0, y: 0)` is `p := point hint(x: 0, y: 0)`. Each is read as the word it stands
+`p := point ~((0, 0))` is `p := point hint((0, 0))`. Each is read as the word it stands
 for and is that word everywhere the word may stand — an infix `@(t == 0.4)` pins as
 `coincident(t == 0.4)` does, and a number inside `~(…)` is a seed (§4.3). Neither is a name. A
 solve writes its seeds back inside the clause as written, so `~` stays `~`. The unimplemented path
@@ -22,7 +34,7 @@ slot written mints both axes, `P.u` and `P.v`, free: seven freedoms, three of pl
 direction each; a slot left out of `plane(u: r)` is minted alone. **`a coincident b` between two
 axes** says they are one line, either way round (four rows), so `u coincident P.u` places a plane
 by its axes. An axis's place is held as its direction is, by `px`, `py`, `pz` — the point on it
-nearest the world origin: `fix(x == 1, y == 0, z == 0, px == 0, py == 0, pz == 0) x`, which is how
+nearest the world origin: `fix(dir == (1, 0, 0), origin == (0, 0, 0)) x`, which is how
 `std`'s axes are held. A plane over two held axes stands where they meet; held axes that miss,
 that run alike, or a plane held off its held axes, are **E067**. A drawn line serving as a
 plane's axis is the line — parallel to it and through its start, or through the end it shares
@@ -32,16 +44,16 @@ child slot of a plane takes a seed, the direction its own axis starts from: `pla
 y: 1, z: 0))`.
 
 **[0.42] A point stands in space, and a plane is two axes.** A point drawn in no plane stands in
-space, with three coordinates — `hint(x: 1, y: 2, z: 3)`, `fix(x == 1, y == 2, z == 3) p` — and a
+space, with three coordinates — `hint((1, 2, 3))`, `fix((1, 2, 3)) p` — and a
 2D drawing is drawn in a plane: `use std`, then `in std.front { … }`. There is no page.
 `std.front` is the plane at the world origin with u = x to the right and v = z up, its viewer at
 −y. A plane is `P := plane(u: r1, v: r2)` over two axes, a drawn line serving as the axis from its
 `p1` toward its `p2`: right is `u`, out of the plane is `u × v`, and up is out × u, so `v` says
 only which plane and which side is up (§6.7). The plane owns where it stands, three unknowns that
-`fix(x == 0, y == 0, z == 0) P` holds, and it floats until a relation places it: `P.origin
+`fix(origin == (0, 0, 0)) P` holds, and it floats until a relation places it: `P.origin
 coincident p`, `P coincident p`, `Q distance(d) P`. `P.u` and `P.v` are its axes and `P.origin` a
 point drawn in it at (0, 0). A point drawn in a plane has that plane's own coordinates, and
-`hint(at: P, x: 3, y: 4)` seeds a point at a place in them. A plane carries no place on paper:
+`hint(at: P, (3, 4))` seeds a point at a place in them. A plane carries no place on paper:
 the `.svd` puts each view on the sheet (`sketch top(m) from m.top at (X, Y)`). Retired, and
 refused where written: `plane(origin:, toward:)`, `from:`, `fold:` (an angle, an unknown or
 `along l`), `offset:`, `through:`, `attitude: free`, a basis written as `u:`/`v:`/`o:` triples,
@@ -51,11 +63,11 @@ placement and every refusal of "the page, which has no place in space" go with t
 arc or a spline over a point in space is **E060**, and a face over one **E080**; two planes lying
 on one another are permitted and said (**W113**).
 
-**[0.42] An axis is a directed line in space.** `t := axis hint(x: 0, y: 0, z: 1)` declares one:
+**[0.42] An axis is a directed line in space.** `t := axis hint(dir: (0, 0, 1))` declares one:
 a direction and a place, with no start, drawn in no view (§3.1). It is placed by the relations
 every entity takes — `t parallel s`, `t perpendicular s` and `t angle(θ) s` against an axis or a
 line, `p coincident t` for a point on it — and a direction is held by
-`fix(x == 0, y == 0, z == 1) t`. An axis read only as a direction has two freedoms; a relation that
+`fix(dir == (0, 0, 1)) t`. An axis read only as a direction has two freedoms; a relation that
 reads where it is gives it two more. An angle in space of 0° or 180° is **E040**, by value: it is
 `parallel` read by a cosine that does not move there, and `parallel` with the seed picking the
 sense is the regular statement.
@@ -113,7 +125,7 @@ braces are not an argument in a call.
 `group(…)` is retired. A group's braces hold a list, not a body: like an argument list it may run
 across lines, and a brace is a group's exactly when it stands straight after `:=`.
 
-**[0.34] A `fix` states what it holds.** `fix(x == 0, y == 0) p` holds a point at the numbers it
+**[0.34] A `fix` states what it holds.** `fix((0, 0)) p` holds a point at the numbers it
 states, each pinned with `==` under the field it is, as any pin in a relation's parentheses is;
 `fix(x == 0) p` holds one coordinate and leaves the other free, and `fix(r == 25) c` holds a
 circle's radius. `ground` is retired, and so are `fix c.r` and a bare `fix p`, which held a number
@@ -348,11 +360,11 @@ Compound entities expose sub-entities by field access. Sub-entities are ordinary
 | `Cone`, `Cylinder` | `.axis` | `Line` — named in the brackets, never minted: it is what places the surface in space **[0.26]** |
 | `Cone` | `.half` | `Angle` — written in degrees in `hint(half: …)`, stated by `angle(θ) k` **[0.26]** |
 | `Cylinder` | `.r` | `Length` **[0.26]** |
-| `Axis` | `.x`, `.y`, `.z` | its unit direction — seeded by `hint(x:, y:, z:)` (normalised) and held by `fix(x == …, y == …, z == …)` **[0.42]** |
-| `Axis` | `.px`, `.py`, `.pz` | `Length` — where it stands: its point nearest the world origin, held by `fix(px == …, py == …, pz == …)` once a relation reads it **[0.43]** |
+| `Axis` | `.x`, `.y`, `.z` | its unit direction — seeded by `hint(dir: (…, …, …))` (normalised) and held by `fix(dir == (…, …, …))` **[0.42]** **[0.45]** |
+| `Axis` | `.px`, `.py`, `.pz` | `Length` — where it stands: its point nearest the world origin, held by `fix(origin == (…, …, …))` once a relation reads it **[0.43]** **[0.45]** |
 | `Plane` | `.u`, `.v` | `Axis` — its axes, through its origin **[0.42]**; minted where the slot is not written (`P.u`, `P.v`) **[0.43]** |
 | `Plane` | `.origin` | `Point` — drawn in the plane and held at its `(0, 0)` **[0.42]** |
-| `Plane` | `.x`, `.y`, `.z` | `Length` — where it stands in space: read by a seed, held by `fix(x == …, y == …, z == …)` **[0.42]** |
+| `Plane` | `.x`, `.y`, `.z` | `Length` — where it stands in space: read by a seed, seeded by `hint(origin: (…, …, …))` and held by `fix(origin == (…, …, …))` **[0.42]** **[0.45]** |
 | `Line` | `.p1`, `.p2` | `Point` **[0.2]** |
 | `Face` | its edges; `on:` for a spatial support | aliased boundaries; `face.on` reaches a spatial support (§6.20) |
 | `Solid` | `.near`, `.far` | a prism's two caps, at the higher and the lower ordinate **[0.18]** |
@@ -487,7 +499,7 @@ Every statement belongs to exactly one class. The classification is normative be
 This is the only distinction between the two classes, and it is lexical on purpose. §11 requires an implementation to verify Invariant H *syntactically*; a mark you can see does that, and no analysis of what a number "is really doing" does.
 
 ```
-p := point hint(x: 0, y: 0)          // seed: a solve may move it
+p := point hint((0, 0))          // seed: a solve may move it
 c := circle(center: o) hint(r: 25)   // seed: a solve may move the radius
 a distance(80) b                     // constraint: a solve must not move it
 p coincident s hint(t: 0.37)         // seed: the contact may slide along the curve
@@ -560,7 +572,7 @@ A bare declaration introduces an entity all of whose coordinates are unknowns.
 
 **The dotted path is the name.** An anonymous child has no name in the source, so `l.p1` *is* its name, and everything that identifies an entity by name MUST agree — a constraint written against it, a selection that outlives a re-elaboration, a diagnostic that reports it.
 
-**[0.9] The name itself is optional**, independently of everything after it: `line` alone is a syntactically valid statement — a line with no name, implicit children and no hint — and so are `line(p1, p2)`, `circle hint(r: 25)` and `arc(center: c)` — a line owns no scalar of its own, so its anonymous seeded form puts the seeds in the slots, `line(hint(x: 0, y: 0), hint(x: 60, y: 20))` (§6.2). The token after the kind keyword decides what the statement says next, so a trailing-clause word (`hint`, `knots`, `class`, `at`, `close`) can no longer be a declaration's name — the same reservation element keywords and operator words carry. A curve keeps requiring a name: its form is `NAME := REF over u in (a, b)` (§6.5), and the name is what the contact constraints address. **Identity is minted on demand.** Internally the statement suffices — an anonymous element parses, elaborates, draws, drags and deletes without ever being named. The moment the *source* must reference it (a constraint applied from a tool, a dimension stated on it), the implementation MUST splice a real name into the declaration — the same bargain §6.4's writeback strikes with an unwritten `hint(…)` clause. No hidden names: a name is what the source calls the thing, and an unnamed thing has none until the source needs one. Chains are in scope (§6.6): `line -> tangent arc -> tangent line` is a fully anonymous open contour, the corner-minting rule naming shared points by the parent's dotted path.
+**[0.9] The name itself is optional**, independently of everything after it: `line` alone is a syntactically valid statement — a line with no name, implicit children and no hint — and so are `line(p1, p2)`, `circle hint(r: 25)` and `arc(center: c)` — a line owns no scalar of its own, so its anonymous seeded form puts the seeds in the slots, `line(hint((0, 0)), hint((60, 20)))` (§6.2). The token after the kind keyword decides what the statement says next, so a trailing-clause word (`hint`, `knots`, `class`, `at`, `close`) can no longer be a declaration's name — the same reservation element keywords and operator words carry. A curve keeps requiring a name: its form is `NAME := REF over u in (a, b)` (§6.5), and the name is what the contact constraints address. **Identity is minted on demand.** Internally the statement suffices — an anonymous element parses, elaborates, draws, drags and deletes without ever being named. The moment the *source* must reference it (a constraint applied from a tool, a dimension stated on it), the implementation MUST splice a real name into the declaration — the same bargain §6.4's writeback strikes with an unwritten `hint(…)` clause. No hidden names: a name is what the source calls the thing, and an unnamed thing has none until the source needs one. Chains are in scope (§6.6): `line -> tangent arc -> tangent line` is a fully anonymous open contour, the corner-minting rule naming shared points by the parent's dotted path.
 
 Where an unnamed and unseeded coordinate *starts* is not the language's business (§15). It is worth saying only that the obvious answer is wrong: two implicit endpoints both at the origin is a zero-length line, with no direction for `horizontal l` to bite on and a singular row for any tangency, so an implementation MUST NOT place them coincidently.
 
@@ -571,7 +583,7 @@ A **list** child slot — a spline's control polygon, a curve's arguments — ha
 ```
 pitch := circle(center)
 f0 := plane(u: spoke, v: std.y)   // [0.42]: two axes, the line `spoke` read as one
-l := line(hint(x: 0, y: 0), hint(x: 60, y: 20))   // [0.7]
+l := line(hint((0, 0)), hint((60, 20)))   // [0.7]
 ```
 
 Constructor arguments have two behaviors, by type:
@@ -612,9 +624,9 @@ A value or an input is visible throughout the body that declares it and its repe
 A declaration MAY carry the starting values of its own scalars, in a trailing `hint(…)` clause:
 
 ```
-p := point  hint(x: 0, y: 0)
+p := point  hint((0, 0))
 p := point  hint(y: 12)                     // an omitted scalar is 0
-q := point  hint(x: 0, y: 12, z: 5)         // [0.42] a point drawn in no plane stands in space
+q := point  hint((0, 12, 5))         // [0.42] a point drawn in no plane stands in space
 t := point                                  // no clause at all
 c := circle(center: o) hint(r: 25)
 ```
@@ -638,7 +650,7 @@ Two things that look like seeds and are not, and stay where they are. **`knots [
 
 `hint` keeps the cases inline cannot express — seeding an entity declared elsewhere, and seeding from an expression over other geometry (`hint t.lead(x: center.x + root.r, y: center.y)`).
 
-**[0.12] A seed may read geometry, and reads its seed.** The text in a `hint(…)` clause — a declaration's or a child slot's (`l := line(hint(x: p.x + 10, y: p.y), …)`) — MAY name another entity's scalar by its dotted path: `p.x`, `p.y`, `k.center.x`, `k.r`, `e.b`. What it reads is that scalar's **own seed**, never a solved value, so the clause stays seed-class: delete it and the solution set is unchanged, as §4.3 requires. The same clause names a place outright **[0.14]**: `hint(at: REF)` — where another point starts — and `hint(at: K, bearing: β)`, the point on circle `K`'s edge at bearing `β` from the x axis of the plane the seeded point is drawn in. **[0.33]** A place may also be a **step** from the point `at:` names: `hint(at: A, toward: B, by: f, turn: θ)` is `A + f·R(θ)(B − A)`, the fraction `f` of the way to point `B` (1 if `by` is unsaid) turned `θ` about `A` (0 if unsaid); `hint(at: A, along: L, by: f, turn: θ)` steps by `f` times line `L`'s run from its `p1` to its `p2` instead. So `hint(at: a, toward: b, by: 0.5)` is the midpoint, `by: -1` the reflection of `b` through `a`, and `hint(at: o, toward: rim, turn: 90deg)` the rim turned a quarter about `o`. `toward` and `along` are one or the other, neither stands beside `bearing`, and `by`, `turn`, `toward`, `along` and `bearing` each need `at` — each refused at its key. **[0.33]** A place drawn in another view than the point it seeds (§6.7) is read **where it stands in space**, projected into the seeded point's view: a point of the pitch plane named in another view starts at its image there. An implementation settles such seeds once the memberships and the views' seeded poses are known, again in statement order. An arc's radius left unwritten is its centre to its start, read once the places are settled. `at`, `bearing`, `toward`, `along`, `by` and `turn` are keys beside `x`, `y`, `r` and `t`, and the rule of §4.3 is then lexical with no exception: a seed is what is inside `hint(…)`. A clause naming a place carries no coordinate (`hint(at: p, x: 3)` is an error at the key) **[0.42]** except a plane's: `hint(at: P, x: 3, y: 4)` is the place `(3, 4)` in plane `P`'s own coordinates, read in space and seen in the seeded point's plane, which is how a part seeds a point against the plane it is measured in. `bearing` without `at` is an error, and both are refused where they are written, as an unknown key is. (In 0.7–0.13 the place had a grammar of its own, `hint at REF [bearing (β)]`, which MUST NOT parse now; an implementation SHOULD say what the spelling became.) Both forms were a trace block's words (§6.5) and mean the same thing on the sheet. Seeds are settled once every declaration has one, in statement order, so a seed reading a seed that was itself read from a third comes out right when the three are written in the order they depend on; written the other way round it reads the earlier one's provisional seed (an unseeded point's scatter, an unwritten radius's default), which an implementation MAY warn about and MUST NOT refuse. A read of a scalar the entity has not (`l.r` of a line), or of nothing (`nobody.x`), is **E103**. A geometry read is a `Length` where the document names a `unit` (so it adds to `150mm` and not to `10`) and a bare number where it does not, since there no literal can be a length. Inside a component the names resolve as references do — a formal reads as the entity it aliases, a name inside a block's copy as that copy's. A seed written this way is an expression and is never written back by a solve.
+**[0.12] A seed may read geometry, and reads its seed.** The text in a `hint(…)` clause — a declaration's or a child slot's (`l := line(hint((p.x + 10, p.y)), …)`) — MAY name another entity's scalar by its dotted path: `p.x`, `p.y`, `k.center.x`, `k.r`, `e.b`. What it reads is that scalar's **own seed**, never a solved value, so the clause stays seed-class: delete it and the solution set is unchanged, as §4.3 requires. The same clause names a place outright **[0.14]**: `hint(at: REF)` — where another point starts — and `hint(at: K, bearing: β)`, the point on circle `K`'s edge at bearing `β` from the x axis of the plane the seeded point is drawn in. **[0.33]** A place may also be a **step** from the point `at:` names: `hint(at: A, toward: B, by: f, turn: θ)` is `A + f·R(θ)(B − A)`, the fraction `f` of the way to point `B` (1 if `by` is unsaid) turned `θ` about `A` (0 if unsaid); `hint(at: A, along: L, by: f, turn: θ)` steps by `f` times line `L`'s run from its `p1` to its `p2` instead. So `hint(at: a, toward: b, by: 0.5)` is the midpoint, `by: -1` the reflection of `b` through `a`, and `hint(at: o, toward: rim, turn: 90deg)` the rim turned a quarter about `o`. `toward` and `along` are one or the other, neither stands beside `bearing`, and `by`, `turn`, `toward`, `along` and `bearing` each need `at` — each refused at its key. **[0.33]** A place drawn in another view than the point it seeds (§6.7) is read **where it stands in space**, projected into the seeded point's view: a point of the pitch plane named in another view starts at its image there. An implementation settles such seeds once the memberships and the views' seeded poses are known, again in statement order. An arc's radius left unwritten is its centre to its start, read once the places are settled. `at`, `bearing`, `toward`, `along`, `by` and `turn` are keys beside `x`, `y`, `r` and `t`, and the rule of §4.3 is then lexical with no exception: a seed is what is inside `hint(…)`. A clause naming a place carries no coordinate (`hint(at: p, x: 3)` is an error at the key) **[0.42]** except a plane's: `hint(at: P, (3, 4))` is the place `(3, 4)` in plane `P`'s own coordinates, read in space and seen in the seeded point's plane, which is how a part seeds a point against the plane it is measured in. `bearing` without `at` is an error, and both are refused where they are written, as an unknown key is. (In 0.7–0.13 the place had a grammar of its own, `hint at REF [bearing (β)]`, which MUST NOT parse now; an implementation SHOULD say what the spelling became.) Both forms were a trace block's words (§6.5) and mean the same thing on the sheet. Seeds are settled once every declaration has one, in statement order, so a seed reading a seed that was itself read from a third comes out right when the three are written in the order they depend on; written the other way round it reads the earlier one's provisional seed (an unseeded point's scatter, an unwritten radius's default), which an implementation MAY warn about and MUST NOT refuse. A read of a scalar the entity has not (`l.r` of a line), or of nothing (`nobody.x`), is **E103**. A geometry read is a `Length` where the document names a `unit` (so it adds to `150mm` and not to `10`) and a bare number where it does not, since there no literal can be a length. Inside a component the names resolve as references do — a formal reads as the entity it aliases, a name inside a block's copy as that copy's. A seed written this way is an expression and is never written back by a solve.
 
 ### 6.5 Curves **[0.11]**
 
@@ -681,7 +693,7 @@ e := Unwind(base, datum, phase: a0).p over u in (u0, u1)
 2. **An orientation predicate.** `ccw(a, b, x)` / `cw(a, b, x)` in the body is §9.6's statement doing §9.6's job: it contributes no residual and *selects among the discrete solution components*. Traced, its third point MUST be one the component places. A predicate is read **at the anchor** — the drawn pose, or the value the instance gave the swept formal, chosen where the predicates read unambiguously — and an implementation MUST enforce it there (reflect the placed point across the oriented line and solve again) and MUST NOT re-enforce it elsewhere: away from the anchor, continuity governs, and the component the predicate picks at the anchor is the component the whole curve is on, even where the curve has since wound to where the predicate no longer reads true. A body with predicates needs no seeds at all: an implementation MUST fall back to deterministic restarts, scaled by the geometry the component is written over and by nothing else, when the seeds (or their absence) leave the anchor solve nowhere to start. Drawn, the same predicate records the root choice the drawing is on (§9.6).
 3. **A seed.** What neither an equation nor a predicate says, a seed says: the body's seeds are places over the formals, evaluation of an instance written in place starts from them, and away from the anchor continuity governs — an implementation MUST evaluate the curve as one continuation along the parameter, so the branch picked at the anchor is the branch everywhere. A curve over a drawn instance starts from the pose on the sheet and reads no seed.
 
-**Places, not coordinates.** Inside a component that is only ever traced, a seed may be a *place*: `t := point hint(at: c, bearing: u + phase)` is the point at the edge of circle `c` at that bearing from the x axis of the plane it is drawn in, and `p := point hint(at: t)` is wherever `t` starts (a point already named must be declared first). Both lower to exactly what the coordinate spelling would, so `hint(x: xexpr, y: yexpr)` remains available and means the same thing. On the sheet a seed is a number a solve writes back, which a place named by reference is not, so a drawn instance of a component with a geometric seed is an error (**E103**).
+**Places, not coordinates.** Inside a component that is only ever traced, a seed may be a *place*: `t := point hint(at: c, bearing: u + phase)` is the point at the edge of circle `c` at that bearing from the x axis of the plane it is drawn in, and `p := point hint(at: t)` is wherever `t` starts (a point already named must be declared first). Both lower to exactly what the coordinate spelling would, so `hint((xexpr, yexpr))` remains available and means the same thing. On the sheet a seed is a number a solve writes back, which a place named by reference is not, so a drawn instance of a component with a geometric seed is an error (**E103**).
 
 **Bearings are measured in a plane.** A bare bearing was page-fixed, and a body posed against a datum with page-fixed seeds went quietly stale the moment the datum tilted (bmander/geomsolver#10); 0.6 answered with the datum's derived `f.angle`. **[0.42]** A bearing is measured from the x axis of the plane the seeded point is drawn in, so geometry drawn in a part's own plane turns with it and needs no correction; `f.angle` is retired with the rotor (§3.2), and reading it is **E103**, naming the scalars a plane has.
 
@@ -764,14 +776,14 @@ each, related by projection: the draughtsman's descriptive geometry, stated as s
 place to draw and nothing else; where its picture goes on paper is the drawing's (§6.11).
 
 **A point in space** **[0.42]** is a point no `in` reaches. It has three coordinates in the
-world's axes, seeded by `hint(x: …, y: …, z: …)` and held by `fix(x == …, y == …, z == …) p`; a
+world's axes, seeded by `hint((…, …, …))` and held by `fix((…, …, …)) p`; a
 `z:` on a point drawn in a plane is **E040** at the key. A line between two points in space is a
 line in space. A circle, an arc and a spline are drawn in a plane, and over a point in space each
 is **E060**, naming the point; a face is **E080** (§6.8). A 2D drawing is drawn in a plane — `use
 std`, then `in std.front { … }` — and there is no page: `std.front` is a plane like any other,
 the one at the world origin with u = x to the right and v = z up, its viewer at −y.
 
-**An axis** (§3.1) is a directed line in space with no start. `t := axis hint(x: 0, y: 0, z: 1)`
+**An axis** (§3.1) is a directed line in space with no start. `t := axis hint(dir: (0, 0, 1))`
 seeds its direction, and relations place it: `t parallel s`, `t perpendicular s` and `t angle(θ)
 s` against an axis or a line, `p coincident t` for a point on it, and against a plane `t coincident
 P` (it lies in `P`), `t parallel P` (it runs along `P`) and `t perpendicular P` (it is square to
@@ -779,8 +791,8 @@ P` (it lies in `P`), `t parallel P` (it runs along `P`) and `t perpendicular P` 
 line, either way round: four rows, the seed choosing the sense as it does for `parallel`.
 **[0.44]** `l coincident t` between a drawn line and an axis says the line lies on it, either
 way round: both its ends on the axis's line, four rows, placing the axis as `p coincident t` does.
-`fix(x == 0, y == 0, z == 1) t` holds its direction, and **[0.43]** `fix(px == 0, py == 0, pz ==
-0) t` where it stands — `px`, `py`, `pz` are its point nearest the world origin. An axis read only
+`fix(dir == (0, 0, 1)) t` holds its direction, and **[0.43]** `fix(origin == (0, 0, 0)) t`
+where it stands — its `origin` **[0.45]** is its point nearest the world origin. An axis read only
 as a direction has two freedoms, and one whose place a relation reads has two more. **A drawn line
 is an axis** wherever an axis is asked for, from its `p1` toward its `p2`, as its points stand.
 **[0.43]** A plane over a line holds a hidden axis that is the line: parallel to it, and through
@@ -792,7 +804,7 @@ There is no vector arithmetic: a direction is a thing constrained, never a value
 
 ```
 right := plane(u: std.y, v: std.z)        // looked at from +x: y to the right, z up, at the origin
-t := axis hint(x: 0.87, y: 0, z: 0.5)
+t := axis hint(dir: (0.87, 0, 0.5))
 t perpendicular std.y
 side := plane(u: t, v: std.y)             // turns about y as the solve turns t
 side.origin coincident std.front          // on std.y already: at the world origin
@@ -807,13 +819,13 @@ viewer; and `v̂ = n̂ × û`. So `v` need not be square to `u`: it says which p
 is up. **[0.43]** The axes pass through the plane's origin: each plane carries two rows, its origin
 on each axis, so where the axes stand the plane stands, and `u coincident P.u` places a plane by
 an axis. Two planes share an axis only where both pass through it. A slot left unwritten mints an
-axis, `P.u` or `P.v`, free and seeded as the front's (u along x, v along z), or from a seed the slot holds (`plane(u: hint(x: 0, y: 1, z: 0))`): a bare `P := plane`
+axis, `P.u` or `P.v`, free and seeded as the front's (u along x, v along z), or from a seed the slot holds (`plane(u: hint(dir: (0, 1, 0)))`): a bare `P := plane`
 has seven freedoms, three of place and two of direction for each axis. 0.42's planes sharing
 axes while standing apart are withdrawn: a plane parallel to another takes its own axes, held or
 `parallel` to the other's.
 
 **Where a plane stands** is three unknowns, its origin's place in space, read by a seed as `P.x`,
-`P.y`, `P.z`, seeded by `hint(x:, y:, z:)` and held by `fix(x == 0, y == 0, z == 0) P`. A plane
+`P.y`, `P.z`, seeded by `hint(origin: (…, …, …))` and held by `fix(origin == (0, 0, 0)) P` **[0.45]**. A plane
 floats along its axes until something places it. `P.origin coincident p` puts its origin at `p`,
 all three. `P coincident p` passes it through `p`, and `Q distance(d) P` stands it `d` off `Q`
 (§6.10): each takes the one freedom across the plane and leaves it to slide within itself, which
@@ -868,7 +880,7 @@ or `f.v` to another component aliases it, including through nested components; a
 likewise name `f.origin` as a corner.
 
 A seed may read `f.x`, `f.y`, `f.z` and the coordinates of `f.origin`, and place a point in `f`'s
-coordinates with `hint(at: f, x: …, y: …)` (§6.4). These read the starting pose, including
+coordinates with `hint(at: f, (…, …))` (§6.4). These read the starting pose, including
 geometric seeds already settled. A hint over an unbound numeric formal uses zero for that
 unknown's provisional value; an affine expression retains its constant offset. This substitution
 applies only to hints, never to constraints, and traced components retain parameterized hints.
@@ -1009,7 +1021,7 @@ over planes whose axes are parallel it is two parallel planes `d` apart, which i
 
 ```
 deck := plane(u: std.x, v: std.y)         // [0.43] at the world origin, where its axes meet
-lid := plane hint(x: 0, y: 0, z: 12mm)
+lid := plane hint(origin: (0, 0, 12mm))
 lid.u parallel std.x
 lid.v parallel std.y
 deck distance(12mm) lid
@@ -1499,7 +1511,7 @@ two different named edges can retrace the same curve and enclose no area.
 
 | was | is |
 |---|---|
-| `port lo: point hint(x: 0, y: 0)` | `lo := point hint(x: 0, y: 0)` — a declaration of the body |
+| `port lo: point hint((0, 0))` | `lo := point hint((0, 0))` — a declaration of the body |
 | `port hub = c` | nothing; the caller writes `inst.c` |
 | `port p = (xexpr, yexpr)` | `p := point(x: xexpr, y: yexpr)` — a computed point (§6.5) |
 
@@ -1527,7 +1539,7 @@ sizes := {length: 20mm}
 layout := {frame: axes.axes, ax: axes.u, origin: o}
 
 component Bar(layout: group, dims: group) {
-  tip := point hint(at: layout.frame, x: dims.length, y: 0mm)
+  tip := point hint(at: layout.frame, (dims.length, 0mm))
   ax := line(layout.origin, tip)
   ax parallel layout.ax
   distance(dims.length) ax
@@ -1535,9 +1547,9 @@ component Bar(layout: group, dims: group) {
 
 in std.front {
   o := point
-  fix(x == 0, y == 0) o
+  fix((0, 0)) o
   q := point
-  fix(x == 30, y == 40) q
+  fix((30, 40)) q
   axes := std.Turned(o, q)
   bar := Bar(layout, dims: sizes)
 }
@@ -1590,7 +1602,7 @@ horizontal line1                    point1 horizontal point2
 radius(25) circle1                  point1 distance(1' 3") point2
 distance(6) line1                   point1 symmetry(line1) point2
 distance(w / 2) line1               point1 distance(60, along: x) point2
-fix(x == 0, y == 0) p1             l1 angle(30) l2
+fix((0, 0)) p1             l1 angle(30) l2
 fix(r == 25) c                      line1 tangent(side: left) circle1
 ```
 
@@ -1619,7 +1631,7 @@ What goes in the parentheses is a short list:
 | `angle` | prefix | **[0.26]** a cone: its half-angle (between two lines `angle` is infix) |
 | `midpoint`, `parallel`, `perpendicular`, `symmetry` | infix | one each; **[0.42]** `parallel` and `perpendicular` also take an axis beside an axis or a line, in space, and (axis, plane) — along the plane, and square to it — either way round; **[0.43]** `parallel` takes (plane, plane): the two face alike, either way (two rows over their normals; neither's place nor its turn within itself) |
 | `project` | infix | (point, point), each `in` a plane — the two planes are read off the memberships and never written (§6.7) **[0.10]** |
-| `fix` | prefix | the gauge (§13): an entity, and its own numbers each pinned by its field — `fix(x == 0, y == 0) p`, `fix(r == 25) c` **[0.34]** |
+| `fix` | prefix | the gauge (§13): an entity, and its own numbers pinned whole or by member — `fix((0, 0)) p`, `fix(x == 0) p`, `fix(r == 25) c`, `fix(dir == (0, 0, 1)) t` **[0.34]** **[0.45]** |
 | `ccw`, `cw` | call | three points, all in the parentheses (§9.6) |
 
 The collapses are where the saving is: **`coincident` is sixteen constraints, `distance` ten, `tangent` ten**, and `horizontal`/`vertical` are two each with the **fixity** doing the work — a line prefixed, a pair of points infixed, which is exactly the distinction the point-pair forms were added to draw. `angle` and `radius` keep their own words rather than folding into `distance`, because over two lines a length means a parallel distance and an angle means an angle, and nothing but the number's unit could separate them.
@@ -1927,7 +1939,7 @@ One copy per link of a named chain (§6.6), in traversal order, with `e` a refer
 Well-posed models are typically invariant under rigid motion; the Jacobian is rank-deficient by design. The language names this freedom rather than letting the solver pick:
 
 ```
-fix(x == 0, y == 0) center            // holds a point: removes 2 DOF
+fix((0, 0)) center            // holds a point: removes 2 DOF
 fix(x == 0) p                         // holds one coordinate: removes 1 DOF
 fix(r == 25) c                        // holds one of an entity's own numbers: removes 1 DOF
 ```
@@ -2080,7 +2092,7 @@ preview {
   unit mm
   in std.front {
     up := point
-    fix(x == 0, y == 40) up
+    fix((0, 40)) up
     axes := std.Turned(std.origin, up)
     cyl := Cylinder(axes, fw: components.dims.fwA, dims: components.dims.vtwin_dims)
   }
@@ -2293,7 +2305,7 @@ component Gear(N: Int, m: Length) {
 
   hint t.lead(x: center.x + root.r, y: center.y)
 
-  fix(x == 0, y == 0) center
+  fix((0, 0)) center
   t.lead horizontal center
 }
 ```
@@ -2318,7 +2330,7 @@ component Gear(N: Int, m: Length) {
 | tooth span angle `== slot/2` | −1 |
 | flank symmetry angle equality | −1 |
 | gap angle `== tau/(2N)` | −1 |
-| `fix(x == 0, y == 0) center` | −2 |
+| `fix((0, 0)) center` | −2 |
 | `t.lead horizontal center` | −1 |
 | **Equations** | **10** |
 | `ccw(lead, tl, tr)` | 0 (inequality) |
@@ -2349,13 +2361,15 @@ unit_decl      = "unit" IDENT ;                                           (* §3
 (* §5 [0.29]: a name is defined by `NAME := VALUE` and in no other way, and what stands after
    `:=` says what the name is.  An element or an instance may also be written with no name. *)
 definition     = { role } [ IDENT ":=" ] ( chain | instance )
-               | IDENT ":=" ( expr | group | curve ) ;            (* a value, a group, a curve *)
+               | IDENT ":=" ( expr | group | vector | curve ) ;   (* a value, a group, a vector, a curve *)
 role           = "private" | "construction" | "centerline" ;      (* once each, §13.3 *)
 input          = "param" IDENT [ ":" num_type ] [ ":=" expr ] [ hint_clause ] ;
                  (* §6.3 [0.41]: with no value an unknown, its type stated, seeded by `hint(E)` *)
 num_type       = "Int" | "Scalar" | "Length" | "Angle" ;
 group          = "{" member { "," member } "}" ;                  (* §8.1 [0.35] [0.36] *)
 member         = IDENT ":" ( expr | group ) ;
+vector         = "(" expr "," expr [ "," expr ] ")" ;      (* [0.45]: members x, y, z *)
+member_key     = IDENT { "." IDENT } ;                     (* `x`, `dir`, `dir.x` [0.45] *)
 chain          = link { joint link } [ "->" { infix } "close" ] ;
 (* link, joint and infix follow §6.6: a link is an `element` with any prefix words before it, or
    a named link `(NAME := element)`; a lone element is a one-link chain. *)
@@ -2387,7 +2401,8 @@ trailer        = hint_clause
                | "in" ref ;                                (* membership of a plane, §6.7 *)
 hint_clause    = ( "hint" | "~" ) "(" ( expr | hint_item { "," hint_item } ) ")" ;
                  (* SEEDS, §4.3; `~` [0.44]; one keyless expr seeds an unknown, §6.3 [0.41] *)
-hint_item      = IDENT ":" expr | "at" ":" ref | "bearing" ":" expr     (* a place, §6.4 [0.14] *)
+hint_item      = member_key ":" ( expr | vector ) | vector  (* `(3, 4)`, `dir: (1, 0, 0)` [0.45] *)
+               | "at" ":" ref | "bearing" ":" expr                  (* a place, §6.4 [0.14] *)
                | ( "toward" | "along" ) ":" ref | ( "by" | "turn" ) ":" expr ;   (* a step [0.33] *)
 ctor_arg       = [ IDENT ":" ] ( ref | hint_clause )       (* what the thing is made of, §6.2;
                                                               a plane's are `u:` and `v:`, §6.7 *)
@@ -2449,7 +2464,9 @@ op_arg         = expr                                      (* the number it stat
    whole of the seed/constraint classification, and they are told apart by the clause alone. *)
 
 gauge          = "fix" "(" pin { "," pin } ")" ref ;       (* §13 [0.34] *)
-pin            = ( "x" | "y" | "z" | "r" | "half" | "px" | "py" | "pz" ) "==" expr ;
+pin            = vector                                    (* the point itself [0.45] *)
+               | member_key "==" ( expr | vector ) ;       (* `x`, `r`, `half`, `dir`, `origin`,
+                                                             `dir.x`, … [0.45] *)
                  (* the entity's own fields: `z` [0.42]; an axis's place `px`, `py`, `pz` [0.43] *)
 branch         = "branch" "(" KEY "," [ "-" ] digits ")" ; (* a recorded root choice, §13.1; KEY is
                                                               the raw text up to the comma *)

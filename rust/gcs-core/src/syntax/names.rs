@@ -28,11 +28,6 @@ pub fn kind_initial(k: EntKind) -> char {
         EntKind::Seam => 'j',
         EntKind::Vertex => 'w',
         EntKind::Edge => 'k',
-        // `s` is the spline's: a sphere is an orb
-        EntKind::Sphere => 'o',
-        // `c` is the circle's and `k` the curve's: a coNe, and a cYlinder
-        EntKind::Cone => 'n',
-        EntKind::Cylinder => 'y',
         // `a` is the arc's: an aXis
         EntKind::Axis => 'x',
         EntKind::Point | EntKind::Line | EntKind::Circle | EntKind::Arc | EntKind::Spline => {

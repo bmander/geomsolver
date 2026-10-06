@@ -23,16 +23,16 @@ component PinionCone(p: plane, q: plane, gear: group, foot: line, design: group,
   r := design.cone_distance
   d := design.offset
   in p {
-    A := point hint(x: -0.75 * d, y: 1.25 * d)
-    V := point hint(x: -0.75 * d, y: 1.25 * d)
+    A := point hint((-0.75 * d, 1.25 * d))
+    V := point hint((-0.75 * d, 1.25 * d))
     hinge := line(gear.M, A)
   }
   V coincident hinge
   V coincident foot
   in q {
-    apex := point hint(x: d, y: 0)
-    mean := point hint(x: -r, y: 0)
-    virtual := point hint(x: d, y: 0)
+    apex := point hint((d, 0))
+    mean := point hint((-r, 0))
+    virtual := point hint((d, 0))
     tip := point hint(x: d - r * design.gear_teeth / design.crown_teeth,
                       y: -r * design.pinion_teeth / design.crown_teeth)
     virtual_tip := point hint(at: tip)
@@ -63,10 +63,9 @@ component PinionCone(p: plane, q: plane, gear: group, foot: line, design: group,
 
 preview {
   unit mm
-  pitch := views.PitchView(std.front, span: design.hypoid_design.cutter_radius)
-  gear := pitch.gear.GearCone(pitch.view, g.view, design.hypoid_design)
-  g := views.FoldedView(pitch.view, gear.generator, pitch.down, span: design.hypoid_design.cutter_radius)
-  trace := pitch.trace.ToothTrace(pitch.view, gear.generator, design.hypoid_design)
-  pinion := PinionCone(pitch.view, q.view, gear, trace.foot, design.hypoid_design)
-  q := views.FoldedView(pitch.view, pinion.hinge, pitch.down, span: design.hypoid_design.cutter_radius)
+  gear := pitch.gear.GearCone(std.top, g.view, design.hypoid_design)
+  g := views.FoldedView(std.top, gear.generator)
+  trace := pitch.trace.ToothTrace(std.top, gear.generator, design.hypoid_design)
+  pinion := PinionCone(std.top, q.view, gear, trace.foot, design.hypoid_design)
+  q := views.FoldedView(std.top, pinion.hinge)
 }

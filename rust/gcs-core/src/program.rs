@@ -73,7 +73,7 @@ use crate::model::{EntKind, EntRef, Sketch};
 use crate::syntax::{Name, Program, Span, Stmt, StmtId, StmtKind};
 pub(crate) use entities::child_names;
 use entities::{build, crosses_views, settle_deferred, Deferred};
-pub(crate) use lift::{holds, lift_decl, lift_gauge, lift_relation};
+pub(crate) use lift::{holds, lift_decl, lift_gauge, lift_relation, point_len};
 use planes::memberships;
 pub(crate) use planes::{plane_of_entity, plane_of_entity_by};
 use relations::{constrain, repeated};
@@ -315,9 +315,6 @@ pub fn elaborate(p: &Program) -> Elaborated {
         // a plane is built over its axes
         EntKind::Axis,
         EntKind::Plane,
-        EntKind::Sphere,
-        EntKind::Cone,
-        EntKind::Cylinder,
         EntKind::Curve,
     ] {
         for st in &body {
@@ -391,6 +388,20 @@ pub fn elaborate(p: &Program) -> Elaborated {
     // line has its hidden axis held along it
     memberships(&mut sk, &res, &map, &body, &skip, &mut diags);
     entities::places(&mut sk, &deferred, &mut diags);
+    // the numbers `fix` holds, once every point has its place and before anything reads one: a
+    // held number is its own seed, so nothing that holds one needs a `hint` saying it again — an
+    // axis along a line, a motion, a place reading a held point all read where it is held, and
+    // a seed never writes a held number (`settle_deferred`)
+    for st in &body {
+        let StmtKind::Relation(r) = &st.kind else { continue };
+        if relations::is_fix(r) {
+            constrain(&mut sk, &res, r, st, p, &map, &mut diags);
+        }
+    }
+    // a plane whose axes are held stands where they meet (#84), and one held elsewhere takes
+    // its free axes with it
+    diags.extend(views::origins_on_axes(&mut sk, &map));
+    views::stand_axes(&mut sk);
     entities::drawn_in_planes(&sk, &map, &mut diags);
     entities::axes_along(&mut sk, &deferred);
 
@@ -400,17 +411,6 @@ pub fn elaborate(p: &Program) -> Elaborated {
     // here only resolves what it is written over.
     motions::motions(&mut sk, &mut res, &mut map, &body, &skip, &mut diags);
     let planar = generated::planar_envelopes(&mut sk, &mut res, &mut map, &body, &skip, &mut diags);
-
-    // the numbers `fix` holds, before the seeds that read geometry: a place reading a held
-    // point reads where it is held, and a seed never writes a held number (`settle_deferred`)
-    for st in &body {
-        let StmtKind::Relation(r) = &st.kind else { continue };
-        if relations::is_fix(r) {
-            constrain(&mut sk, &res, r, st, p, &map, &mut diags);
-        }
-    }
-    // a plane whose axes are held stands where they meet (#84)
-    diags.extend(views::origins_on_axes(&mut sk, &map));
 
     // seeds named by geometry, once every entity has a seed to be read: in statement order, so
     // a seed that reads a seed read from a third is settled after both (§6.4)

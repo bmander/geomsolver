@@ -4,7 +4,7 @@ use super::resolve::{follow, Resolver};
 use super::{Code, Diag, SourceMap};
 use crate::constraints::{Arg as CArg, CKind, Constraint, SpecKind};
 use crate::ir::{PathStep, Relation, ResolvedRelation, Statement as Stmt};
-use crate::model::{EntKind, EntRef, Field, Sketch};
+use crate::model::{EntKind, EntRef, Sketch};
 use crate::syntax::{Arg, Ref, RelationForm, Span, StmtId};
 use std::collections::BTreeSet;
 use crate::fmath::Det;
@@ -64,39 +64,7 @@ pub(crate) fn settle(
                 }
             }
             crate::constraints::infix_op(word, a, b, &|n| w.sel(n)).ok_or_else(|| {
-                let mut m = format!(
-                    "`{word}` does not relate {} to {}",
-                    a.a(),
-                    b.a()
-                );
-                // a sphere touches a line or a sphere; a circle against one says two things
-                if word == "tangent" && (a == EntKind::Sphere || b == EntKind::Sphere) {
-                    m.push_str(": a sphere is tangent to a line or to another sphere, with the \
-                                sphere written first");
-                    if matches!(a, EntKind::Circle | EntKind::Arc)
-                        || matches!(b, EntKind::Circle | EntKind::Arc)
-                    {
-                        m.push_str(". A circle and a sphere may touch at a point or all the \
-                                    way round, so the word does not say which: a circle lying \
-                                    on the sphere is `c coincident s`");
-                    }
-                }
-                // a cone or a cylinder takes the words it has kernels for, and says so
-                let axial = |k: EntKind| matches!(k, EntKind::Cone | EntKind::Cylinder);
-                if axial(a) || axial(b) {
-                    m.push_str(match word {
-                        "coincident" if a == EntKind::Line => ": a line on a cone or a cylinder (a \
-                            generator) is not a relation yet; say it of the line's points — its \
-                            start at the apex and its end `coincident` the cone, or both ends \
-                            `coincident` the cylinder and the line `parallel` to the axis",
-                        "coincident" => ": a point is `coincident` a cone or a cylinder",
-                        "tangent" => ": a line touches a cylinder (`c tangent l`, the cylinder \
-                            first), and two cones touch at a point (`k1 tangent(M) k2`)",
-                        _ => ": a cone takes `coincident`, `angle` and `tangent`, and a cylinder \
-                            `coincident`, `radius` and `tangent`",
-                    });
-                }
-                (w.word.span, m)
+                (w.word.span, format!("`{word}` does not relate {} to {}", a.a(), b.a()))
             })?
         }
         // only a gauge word is written as a call, and those were settled above
@@ -113,23 +81,18 @@ pub(crate) fn settle(
     } else {
         kind
     };
-    // two cones touch at a named point: without one there is no place to read their normals
-    if kind == CKind::ConeTangentCone
-        && !w.args.iter().any(|a| matches!(a, crate::syntax::OpArg::Ent(_)))
-    {
-        return Err((w.word.span, "two cones touch at a point, and the statement names it: \
-                                  `k1 tangent(M) k2`, with `M coincident k1` and `M coincident k2` beside it"
-            .to_string()));
-    }
     Ok((kind, w.assemble(kind)?))
 }
 
-/// `fix` states every number it holds, each pinned under its field's name (§9.2: inside the
-/// parentheses `==` pins and `:` selects).  A bare `fix p`, a held number without its name and
-/// one written as a selector are each refused where they stand, with the spelling.
+/// `fix` states every number it holds, pinned whole or by member (§9.2: inside the parentheses
+/// `==` pins and `:` selects): `fix((0, 0)) p`, `fix(x == 0) p`, `fix(dir == (1, 0, 0)) t`.  A
+/// bare `fix p`, a held number without its name and one written as a selector are each refused
+/// where they stand, with the spelling.
 fn fix_spelling(w: &crate::syntax::Written) -> Result<(), (Span, String)> {
     use crate::syntax::OpArg;
     let of = w.ops.first().map_or("p".to_string(), |r| r.root.text.clone());
+    let refused = |key: &str| format!("`fix` holds a point itself, `fix((0, 0)) {of}`, or what an \
+        entity has — `x`, `r`, `half`, `dir`, `origin`, or one component, `dir.x` — not `{key}`");
     for a in &w.args {
         match a {
             OpArg::Named(key, _) => {
@@ -137,23 +100,24 @@ fn fix_spelling(w: &crate::syntax::Written) -> Result<(), (Span, String)> {
                 return Err((key.span, m))
             }
             OpArg::Dim(text, span) => {
-                return Err((*span, format!("`fix` names each number it holds, by its field: \
-                    `fix(r == {text}) {of}`")))
+                return Err((*span, format!("`fix` names each number it holds: \
+                    `fix(r == {text}) {of}`, and a point's place is a vector, `fix((0, 0)) {of}`")))
             }
             OpArg::Slot { key, .. } => {
-                let fields = &CKind::Fix.spec()[1..];
-                if !fields.iter().any(|(n, _)| *n == key.text) {
-                    let names: Vec<&str> = fields.iter().map(|(n, _)| *n).collect();
-                    return Err((key.span, format!("`fix` holds {}, not `{}`",
-                        crate::syntax::one_of(&names), key.text)))
+                if !CKind::Fix.spec()[1..].iter().any(|(n, _)| *n == key.text) {
+                    return Err((key.span, refused(&key.text)))
+                }
+            }
+            OpArg::Vector { key: Some(key), .. } => {
+                if !matches!(key.text.as_str(), "dir" | "origin") {
+                    return Err((key.span, refused(&key.text)))
                 }
             }
             _ => {}
         }
     }
-    if !w.args.iter().any(|a| matches!(a, OpArg::Slot { .. })) {
-        return Err((w.word.span, format!("`fix` states the numbers it holds: `fix(x == 0, y == 0) \
-            {of}`")));
+    if !w.args.iter().any(|a| matches!(a, OpArg::Slot { .. } | OpArg::Vector { .. })) {
+        return Err((w.word.span, format!("`fix` states the numbers it holds: `fix((0, 0)) {of}`")));
     }
     Ok(())
 }
@@ -615,30 +579,50 @@ fn apply_gauge(
                 bad(Code::E101, rf.span, format!("no such entity: `{}`", rf.root.text));
                 return;
             };
-            // a plane holds where it stands; an axis its direction
-            let scalars: Vec<&str> = e.kind
-                .fields()
-                .iter()
-                .filter(|(_, f)| *f == Field::Scalar)
-                .map(|(n, _)| *n)
-                .collect();
+            // a plane holds where it stands; an axis its direction and its origin
+            let members = e.kind.members();
             let spec = r.kind.spec();
             let own = sk.own_params(e);
+            let owned = &members[..own.len().min(members.len())];
+            let kind = e.kind.as_str();
+            let article = if kind.starts_with(['a', 'e', 'i', 'o', 'u']) { "an" } else { "a" };
+            // a vector held whole is as long as the vector it holds: a point in a plane is two
+            // numbers and one in space three, so `(0, 0)` cannot leave a height free unsaid
+            for a in r.written.map_or(&[][..], |w| &w.args[..]) {
+                let crate::syntax::OpArg::Vector { key, parts, span } = a else { continue };
+                let k = key.as_ref().map_or("", |k| k.text.as_str());
+                let Some(&(_, first)) = e.kind.vectors().iter().find(|(v, _)| *v == k) else {
+                    let m = match k {
+                        _ if owned.is_empty() => format!("{article} {kind} has no number of its \
+                                                          own to fix"),
+                        "" => format!("{article} {kind} is no vector: it has {}", said(e.kind, owned)),
+                        _ => format!("{article} {kind} has {}, not `{k}`", said(e.kind, owned)),
+                    };
+                    bad(Code::E105, *span, m);
+                    return;
+                };
+                let n = owned.len().saturating_sub(first).min(3);
+                if parts.len() != n {
+                    let m = match (k, n) {
+                        ("", 2) => "a point in a plane has two coordinates: `(x, y)`".to_string(),
+                        ("", _) => "a point in space has three coordinates: `(x, y, z)`".to_string(),
+                        _ => format!("`{k}` has three components: `{k} == (x, y, z)`"),
+                    };
+                    bad(Code::E105, *span, m);
+                    return;
+                }
+            }
             for (i, a) in r.args.iter().enumerate().skip(1) {
                 let Some(a) = a else { continue };
                 let field = spec[i].0;
-                let Some(at) = scalars.iter().position(|&n| n == field).filter(|&at| at < own.len())
-                else {
-                    let kind = e.kind.as_str();
-                    let article = if kind.starts_with(['a', 'e', 'i', 'o', 'u']) { "an" } else { "a" };
+                let Some(at) = owned.iter().position(|&n| n == field) else {
                     bad(
                         Code::E105,
                         st.span,
-                        if scalars.is_empty() {
+                        if owned.is_empty() {
                             format!("{article} {kind} has no number of its own to fix")
                         } else {
-                            format!("{article} {kind} has {}, not `{field}`",
-                                scalars[..own.len().min(scalars.len())].join(" and "))
+                            format!("{article} {kind} has {}, not `{field}`", said(e.kind, owned))
                         },
                     );
                     continue;
@@ -652,8 +636,7 @@ fn apply_gauge(
                 // what the flattener settled the pin to; an expression it could not work out was
                 // reported there
                 let Arg::Seed { value, .. } = a else { continue };
-                // a cone's half-angle is written in degrees, as its hint is (`Sketch::seed_value`)
-                let v = if e.kind == EntKind::Cone { value.to_radians() } else { *value };
+                let v = *value;
                 // where an axis is (its numbers after the direction's three), held: placed first,
                 // so no later relation reading its place frees what this holds
                 if e.kind == EntKind::Axis && at >= 3 {
@@ -686,6 +669,22 @@ fn apply_gauge(
         }
         _ => unreachable!("{:?} is not a gauge", r.kind),
     }
+}
+
+/// What an entity has to hold, as the source names it: a point's coordinates (`x and y`), and
+/// for anything else its vectors whole (`dir and origin`) beside its scalars (`r`).
+fn said(kind: EntKind, owned: &[&str]) -> String {
+    let mut names: Vec<&str> = Vec::new();
+    for m in owned {
+        let head = m.split_once('.').map_or(*m, |(v, _)| v);
+        if !names.contains(&head) {
+            names.push(head);
+        }
+    }
+    if kind == EntKind::Point && names.len() == 3 {
+        return "x, y and z".to_string();
+    }
+    names.join(" and ")
 }
 
 impl Relation {

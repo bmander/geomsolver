@@ -20,9 +20,9 @@ E := 20mm
 // the pitch plane, and M on it
 in std.front {
   M := point
-  fix(x == 0, y == 0) M
-  O := point hint(x: 110, y: 0)
-  A := point hint(x: 95, y: 18)
+  fix((0, 0)) M
+  O := point hint((110, 0))
+  A := point hint((95, 18))
   gen_g := line(O, M)
   gen_p := line(A, M)
   horizontal gen_g
@@ -30,17 +30,17 @@ in std.front {
 
 // the axial planes, square to P over the generators and through M: each stands on its
 // generator, and its v runs along std.y; its origin is where M is along the generator
-G := plane(u: gen_g, v: hint(x: 0, y: 1, z: 0))
+G := plane(u: gen_g, v: hint(dir: (0, 1, 0)))
 G.v parallel std.y
 M distance(0mm, along: u) G
-Q := plane(u: gen_p, v: hint(x: 0, y: 1, z: 0))
+Q := plane(u: gen_p, v: hint(dir: (0, 1, 0)))
 Q.v parallel std.y
 M distance(0mm, along: u) Q
 
 // each axis in its axial plane, from its apex: the apex's image is on P and projects to the apex
 // drawn in P; how long an axis is drawn says nothing about the cone
-gax := line(hint(x: -110, y: 0), hint(x: -50, y: 104)) in G
-pax := line(hint(x: -97, y: 0), hint(x: -28, y: -39)) in Q
+gax := line(hint((-110, 0)), hint((-50, 104))) in G
+pax := line(hint((-97, 0)), hint((-28, -39))) in Q
 gax.p1 coincident std.front
 O project gax.p1
 pax.p1 coincident std.front

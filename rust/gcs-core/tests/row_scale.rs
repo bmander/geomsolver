@@ -28,8 +28,8 @@ use std
 in std.front {
 a := point
          d := point
-         b := point hint(x: 8, y: 24)
-         c := point hint(x: 52, y: 30)
+         b := point hint((8, 24))
+         c := point hint((52, 30))
          ground_link := line(a, d)
          crank := line(a, b)
          coupler := line(b, c)
@@ -37,8 +37,8 @@ a := point
          a distance(25) b
          b distance(45) c
          d distance(30) c
-         fix(x == 0, y == 0) a
-         fix(x == 60, y == 0) d
+         fix((0, 0)) a
+         fix((60, 0)) d
          crank angle(70) ground_link
 }
 ",
@@ -57,14 +57,14 @@ fn an_angle_beside_lengths_solves_at_every_size() {
 use std
 in std.front {{
 o := point
-             a := point hint(x: {side}, y: 0)
-             b := point hint(x: 0, y: {side})
+             a := point hint(({side}, 0))
+             b := point hint((0, {side}))
              oa := line(o, a)
              ob := line(o, b)
              horizontal oa
              o distance({side}) a
              o distance({side}) b
-             fix(x == 0, y == 0) o
+             fix((0, 0)) o
              oa angle(60) ob
 }}
 "
@@ -83,13 +83,13 @@ fn residuals_are_in_row_units() {
 use std
 in std.front {
 o := point
-         a := point hint(x: 1000, y: 0)
-         b := point hint(x: 0, y: 1000)
+         a := point hint((1000, 0))
+         b := point hint((0, 1000))
          oa := line(o, a)
          ob := line(o, b)
          o distance(1000) a
          oa angle(90) ob
-         fix(x == 0, y == 0) o
+         fix((0, 0)) o
 }
 ",
     );

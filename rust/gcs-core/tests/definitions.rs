@@ -33,9 +33,9 @@ fn refuses(src: &str, needle: &str) {
 const PTS: &str = "\
 use std
 in std.front {
-a := point hint(x: 0, y: 0)
-b := point hint(x: 10, y: 0)
-c := point hint(x: 10, y: 10)
+a := point hint((0, 0))
+b := point hint((10, 0))
+c := point hint((10, 10))
 }
 ";
 
@@ -167,7 +167,7 @@ fn a_minted_name_wraps_a_link_and_prefixes_a_statement() {
 /// inside the declaration's text once the name is written before both.
 #[test]
 fn deleting_a_prefixed_definition_takes_its_line() {
-    let e = read(&format!("{PTS}l := horizontal line(a, b)\nfix(x == 0, y == 0) a\n"));
+    let e = read(&format!("{PTS}l := horizontal line(a, b)\nfix((0, 0)) a\n"));
     let out = edit::remove(&e, &e.program, &e.sketch, &[EntRef::line(0)], &[]);
     assert!(out.refused.is_none(), "{:?}", out.refused);
     assert!(!out.text.contains("horizontal") && !out.text.contains("l :="), "{}", out.text);

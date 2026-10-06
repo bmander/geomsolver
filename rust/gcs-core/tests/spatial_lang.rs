@@ -1,8 +1,8 @@
 //! Planes over axes, in the language (§6.7; `docs/planes-plan.md`): a plane whose axis or place
 //! is solved for, its seeds, its refusals, and `project` between a stated and a solved plane;
-//! the words across planes and in space; spheres; and the hypoid's pitch cones laid out by
-//! construction.
-use gcs_core::constraints::{CKind, Constraint};
+//! the words across planes and in space; the library's spheres; and the hypoid's pitch cones
+//! laid out by construction.
+use gcs_core::constraints::{Arg, CKind, Constraint};
 use gcs_core::diagnose::{diagnose, view_freedoms, DiagnoseOptions};
 use gcs_core::edit;
 use gcs_core::io;
@@ -22,15 +22,15 @@ unit mm
 use std
 in std.front {
   gax := line
-  fix(x == 0, y == 0) gax.p1
-  fix(x == 0, y == 50) gax.p2
+  fix((0, 0)) gax.p1
+  fix((0, 50)) gax.p2
 }
-t := axis hint(x: 0.87, y: 0, z: 0.5)
+t := axis hint(dir: (0.87, 0, 0.5))
 t perpendicular std.y
 side := plane(u: t, v: std.y)
 side.origin coincident std.front
 in side {
-  pax := line(hint(x: 0, y: 10), hint(x: 60, y: 12))
+  pax := line(hint((0, 10)), hint((60, 12)))
   pax.p1 distance(0, along: u) side
   pax.p2 distance(60, along: u) side
   pax.p1 horizontal pax.p2
@@ -112,12 +112,12 @@ fn the_gate_round_trips_through_json() {
 fn the_declarations_print_back() {
     let src = "\
 use std
-t := axis hint(x: 1, y: 2, z: 0)
+t := axis hint(dir: (1, 2, 0))
 r := axis
 side := plane(u: t, v: std.z)
-top := plane(u: std.x, v: r) hint(x: 0, y: 0, z: 12)
-s := point hint(x: 1, y: 2, z: 3)
-m := point hint(x: 5, y: 7) in side
+top := plane(u: std.x, v: r) hint(origin: (0, 0, 12))
+s := point hint((1, 2, 3))
+m := point hint((5, 7)) in side
 ";
     let print = |text: &str| -> String {
         let (prog, errs, _) = gcs_core::library::parse_linked(text);
@@ -129,9 +129,9 @@ m := point hint(x: 5, y: 7) in side
         }).collect::<Vec<_>>().join("\n")
     };
     let once = print(src);
-    for decl in ["t := axis hint(x: 1, y: 2, z: 0)", "r := axis", "side := plane(u: t, v: std.z)",
-                 "top := plane(u: std.x, v: r) hint(x: 0, y: 0, z: 12)",
-                 "s := point hint(x: 1, y: 2, z: 3)", "m := point hint(x: 5, y: 7) in side"] {
+    for decl in ["t := axis hint(dir: (1, 2, 0))", "r := axis", "side := plane(u: t, v: std.z)",
+                 "top := plane(u: std.x, v: r) hint(origin: (0, 0, 12))",
+                 "s := point hint((1, 2, 3))", "m := point hint((5, 7)) in side"] {
         assert!(once.contains(decl), "`{decl}` is not in\n{once}");
     }
     assert_eq!(print(&once), once);
@@ -148,15 +148,15 @@ unit mm
 use std
 in std.front {{
   base := line
-  fix(x == 0, y == 0) base.p1
-  fix(x == 50, y == 0) base.p2
-  l := line(p2: hint(x: 40, y: 20))
-  fix(x == 10, y == 5) l.p1
+  fix((0, 0)) base.p1
+  fix((50, 0)) base.p2
+  l := line(p2: hint((40, 20)))
+  fix((10, 5)) l.p1
   l.p1 distance(40) l.p2
   base angle({deg}deg) l
 }}
 side := plane(u: l)
-fix(x == 0, y == 1, z == 0) side.v
+fix(dir == (0, 1, 0)) side.v
 side.origin coincident l.p1
 ");
     for deg in [30.0, 55.0] {
@@ -188,13 +188,13 @@ fn a_plane_through_a_point_follows_it() {
 unit mm
 use std
 in std.front {{
-  m := point hint(x: 12, y: 3)
+  m := point hint((12, 3))
   std.origin distance(12, along: x) m
   std.origin distance({h}, along: y) m
 }}
-top := plane hint(x: 0, y: 0, z: 30)
-fix(x == 1, y == 0, z == 0) top.u
-fix(x == 0, y == 1, z == 0) top.v
+top := plane hint(origin: (0, 0, 30))
+fix(dir == (1, 0, 0)) top.u
+fix(dir == (0, 1, 0)) top.v
 top coincident m
 ");
     for h in [8.0, -3.5] {
@@ -216,9 +216,9 @@ top coincident m
 fn a_free_plane_starts_at_its_seeds() {
     let e = read("\
 unit mm
-a := axis hint(x: 0, y: 1, z: 0)
-b := axis hint(x: 0, y: 0, z: 2)
-q := plane(u: a, v: b) hint(x: 5, y: 0, z: 0)
+a := axis hint(dir: (0, 1, 0))
+b := axis hint(dir: (0, 0, 2))
+q := plane(u: a, v: b) hint(origin: (5, 0, 0))
 ");
     let mut sk = e.sketch.clone();
     let q = ent(&e, "q").i();
@@ -244,17 +244,17 @@ fn a_projection_between_a_stated_and_a_solved_plane() {
     let e = read("\
 unit mm
 use std
-t := axis hint(x: 0.94, y: 0, z: 0.34)
+t := axis hint(dir: (0.94, 0, 0.34))
 t perpendicular std.y
 side := plane(u: t, v: std.y)
 side.origin coincident std.front
 in std.front {
-  a := point hint(x: 30, y: 40)
-  fix(x == 30, y == 40) a
+  a := point hint((30, 40))
+  fix((30, 40)) a
 }
 in side {
-  b := point hint(x: 50, y: 0)
-  fix(x == 50, y == 0) b
+  b := point hint((50, 0))
+  fix((50, 0)) b
 }
 a project b
 ");
@@ -275,11 +275,11 @@ a project b
 fn planes_that_come_out_parallel_are_said() {
     let e = read("\
 use std
-r1 := axis hint(x: 1, y: 0, z: 0)
-r2 := axis hint(x: 0, y: 0, z: 1)
+r1 := axis hint(dir: (1, 0, 0))
+r2 := axis hint(dir: (0, 0, 1))
 q := plane(u: r1, v: r2)
-a := point hint(x: 3, y: 4) in std.front
-b := point hint(x: 3, y: 4) in q
+a := point hint((3, 4)) in std.front
+b := point hint((3, 4)) in q
 a project b
 ");
     let diags = solid_diagnostics(&e.sketch, &e.map);
@@ -289,8 +289,8 @@ a project b
 use std
 q := plane(u: std.x, v: std.z)
 q.origin coincident std.origin
-a := point hint(x: 3, y: 4) in std.front
-b := point hint(x: 7, y: 1) in q
+a := point hint((3, 4)) in std.front
+b := point hint((7, 1)) in q
 a distance(5) b
 ");
     let diags = solid_diagnostics(&e.sketch, &e.map);
@@ -301,11 +301,11 @@ a distance(5) b
 /// plane's origin is its own and not written.  A point drawn in a plane takes no height.
 #[test]
 fn a_plane_is_refused_what_it_cannot_stand_on() {
-    refused("use std\np := point hint(x: 1, y: 2, z: 3)\nq := plane(u: std.x, v: p)\n",
+    refused("use std\np := point hint((1, 2, 3))\nq := plane(u: std.x, v: p)\n",
             "E103", "an axis or a line", "p");
     refused("use std\nq := plane(u: std.x, v: std.y, origin: std.origin)\n",
             "E103", "origin is its own", "q := plane(u: std.x, v: std.y, origin: std.origin)");
-    refused("use std\nm := point hint(x: 1, y: 2, z: 3) in std.front\n", "E040", "no `z`", "3");
+    refused("use std\nm := point hint((1, 2, 3)) in std.front\n", "E040", "no `z`", "3");
 }
 
 /// A solve's axis goes back into the source as its seed, where the seed was written.
@@ -315,7 +315,7 @@ fn the_solved_axis_is_written_back_to_its_seed() {
     assert!(solve(&mut sk, SolveOpts::default()).success);
     let ed = edit::commit_seeds(&e, &sk, &e.program);
     let line = ed.text.lines().find(|l| l.starts_with("t := axis hint(")).expect("the axis's seed");
-    assert!(line.contains("z: 0)") || line.contains("z: -0)") || line.contains("e-"), "{line}");
+    assert!(line.contains(", 0))") || line.contains(", -0))") || line.contains("e-"), "{line}");
     // and the text it wrote elaborates to the same drawing
     read(&ed.text);
 }
@@ -326,7 +326,7 @@ fn the_solved_axis_is_written_back_to_its_seed() {
 fn a_skew_side_left_out_of_a_document_is_read_off_the_geometry() {
     let mut sides = Vec::new();
     // the pinion's axis drawn on one side of the gear's, and on the other
-    let below = AXES.replace("y: 10), hint(x: 60, y: 12)", "y: -10), hint(x: 60, y: -12)");
+    let below = AXES.replace("hint((0, 10)), hint((60, 12))", "hint((0, -10)), hint((60, -12))");
     for doc in [AXES.to_string(), below] {
         let e = read(&doc);
         let mut sk = e.sketch.clone();
@@ -349,7 +349,7 @@ fn a_skew_side_left_out_of_a_document_is_read_off_the_geometry() {
 /// A plane over a deleted axis or line is defined from nothing, and goes with it.
 #[test]
 fn deleting_what_a_plane_stands_on_deletes_the_plane() {
-    let src = "use std\nl := line(hint(x: 0, y: 0), hint(x: 5, y: 5)) in std.front\n\
+    let src = "use std\nl := line(hint((0, 0)), hint((5, 5))) in std.front\n\
                r := axis\n\
                s := plane(u: l, v: std.y)\n\
                u := plane(u: r, v: std.z)\n";
@@ -368,7 +368,7 @@ fn an_axis_in_a_component_is_the_instances_own() {
     let e = read("\
 use std
 component Wing(f: plane) {
-  r := axis hint(x: 1, y: 1, z: 0)
+  r := axis hint(dir: (1, 1, 0))
   r perpendicular f.v
   w := plane(u: r, v: f.v)
 }
@@ -428,17 +428,17 @@ const TWO_VIEWS: &str = "\
 unit mm
 use std
 in std.front {
-  a := point hint(x: 10, y: 20)
-  la := line(hint(x: 0, y: 0), hint(x: 30, y: 10))
+  a := point hint((10, 20))
+  la := line(hint((0, 0)), hint((30, 10)))
 }
 in std.side {
-  b := point hint(x: 10, y: 5)
-  lb := line(hint(x: 5, y: 3), hint(x: 30, y: 20))
-  cb := circle(hint(x: 20, y: 10)) hint(r: 8)
+  b := point hint((10, 5))
+  lb := line(hint((5, 3)), hint((30, 20)))
+  cb := circle(hint((20, 10))) hint(r: 8)
 }
-s := point hint(x: 4, y: -6, z: 9)
-r := axis hint(x: 1, y: 1, z: 1)
-q := plane(u: std.x, v: std.y) hint(x: 0, y: 0, z: 20)
+s := point hint((4, -6, 9))
+r := axis hint(dir: (1, 1, 1))
+q := plane(u: std.x, v: std.y) hint(origin: (0, 0, 20))
 ";
 
 /// The kind one statement over `TWO_VIEWS` settles to.
@@ -536,30 +536,37 @@ fn a_word_with_no_meaning_in_space_is_refused_across_planes() {
     refused_as("b coincident std.side", "E061", "every point of a view is on it", "b coincident std.side");
 }
 
-/// A sphere about a centre drawn in one plane: a point of another plane on it, its radius, and
-/// its tangency to a line and to a second sphere, each in space.
+/// A sphere is the library's (`std.Sphere`): a centre and a radius read by the instance's name,
+/// and what stands on it is said by distances from the centre — a point of another plane on it,
+/// a line touching it and two spheres touching, each read in space.
 #[test]
-fn a_sphere_takes_its_words_in_space() {
+fn a_sphere_is_said_by_distances_from_its_centre() {
     let with = |stmt: &str| format!(
-        "{TWO_VIEWS}sp := sphere(hint(x: 20, y: 10)) hint(r: 12) in std.side\n\
-         s2 := sphere(hint(x: 10, y: 40)) hint(r: 5) in std.front\n{stmt}\n");
-    let kind = |stmt: &str| read(&with(stmt)).sketch.user_constraints()[0].kind;
-    assert_eq!(kind("a coincident sp"), CKind::SphereOn);
-    assert_eq!(kind("radius(12) sp"), CKind::SphereRadius);
-    assert_eq!(kind("sp tangent la"), CKind::SphereTangentLine);
-    assert_eq!(kind("sp tangent s2"), CKind::SphereTangentSphere);
-    refused(&with("sp tangent cb"), "E040", "a sphere is tangent to a line or to another sphere", "tangent");
-    refused(&with("sp tangent cb"), "E040", "a circle lying on the sphere is `c coincident s`", "tangent");
-    assert_eq!(kind("cb coincident s2"), CKind::CircleOnSphere);
-    // and solved: the centre held, a point of the other plane on it, and a line tangent to it
-    let e = read(&with("fix(x == 20, y == 10) sp.center\na coincident sp\nfix(x == 0, y == 0) la.p1\n\
-                            fix(x == 30, y == 10) la.p2\nsp tangent la"));
+        "{TWO_VIEWS}in std.side {{\n  sc := point hint((20, 10))\n}}\n\
+         in std.front {{\n  sc2 := point hint((10, 40))\n}}\n\
+         sp := std.Sphere(sc, r: 12)\ns2 := std.Sphere(sc2, r: 5)\n{stmt}\n");
+    // the one statement's kind and number: an instance of the sphere states nothing itself
+    let kind = |stmt: &str| {
+        let e = read(&with(stmt));
+        let cs = e.sketch.user_constraints();
+        assert_eq!(cs.len(), 1, "{stmt}");
+        (cs[0].kind, cs[0].args.iter().find(|a| matches!(a, Arg::Num(_) | Arg::Expr(_))).map(Arg::num))
+    };
+    assert_eq!(kind("a distance(sp.r) sp.center"), (CKind::Distance3, Some(12.0)));
+    assert_eq!(kind("sp.center distance(sp.r) la"), (CKind::PointLine3, Some(12.0)));
+    assert_eq!(kind("sp.center distance(sp.r + s2.r) s2.center"), (CKind::Distance3, Some(17.0)));
+    // the word is gone: `sphere` is a name like any other
+    refused(&format!("{TWO_VIEWS}sp := sphere(center: a)\n"), "E103", "no component named `sphere`", "sphere");
+    // and solved, the radius left to the drawing: the centre held, a point of the other plane on
+    // it, and a line tangent to it, which sizes it
+    let free = |stmt: &str| with(stmt).replace("r: 12)", "r: hint(12))");
+    let e = read(&free("fix((20, 10)) sc\na distance(sp.r) sp.center\nfix((0, 0)) la.p1\n\
+                        fix((30, 10)) la.p2\nsp.center distance(sp.r) la"));
     let mut sk = e.sketch.clone();
     let r = solve(&mut sk, SolveOpts::default());
     assert!(r.success, "{}", r.message);
-    let s = ent(&e, "sp");
-    let c = sk.world_point(sk.round_center(s));
-    let rad = sk.radius_value(s);
+    let c = sk.world_point(ent(&e, "sc").i());
+    let rad = sk.params[sk.free_vars["sp.r"] as usize].value;
     let pa = sk.world_point(ent(&e, "a").i());
     assert!((norm(sub(pa, c)) - rad).abs() < 1e-9, "{} against {rad}", norm(sub(pa, c)));
     let (l1, l2) = ends(&sk, ent(&e, "la"));
@@ -572,9 +579,68 @@ fn a_sphere_takes_its_words_in_space() {
         assert!(solve(&mut sk, SolveOpts::default()).success);
         diagnose(&mut sk, DiagnoseOptions::default()).dof
     };
-    let tied = "fix(x == 20, y == 10) sp.center\nfix(x == 0, y == 0) la.p1\n\
-                 fix(x == 30, y == 10) la.p2\nsp tangent la";
-    assert_eq!(dof(with(tied)) - dof(with(&format!("{tied}\na coincident sp"))), 1);
+    let tied = "fix((20, 10)) sc\nfix((0, 0)) la.p1\nfix((30, 10)) la.p2\n\
+                sp.center distance(sp.r) la";
+    assert_eq!(dof(free(tied)) - dof(free(&format!("{tied}\na distance(sp.r) sp.center"))), 1);
+}
+
+/// **A sphere's radius left unbound is an unknown of the drawing**, shared by every distance that
+/// reads it: three points of another plane on one sphere about a held centre take one equation
+/// each, and the radius is the fourth unknown they answer for.
+#[test]
+fn a_spheres_unbound_radius_is_shared() {
+    let src = |n: usize| {
+        let on: String = ["a", "b", "q"][..n].iter()
+            .map(|p| format!("{p} distance(ball.r) ball.center\n")).collect();
+        format!("unit mm\nuse std\nin std.front {{\n  c := point\n  fix((-8, 38)) c\n}}\n\
+                 ball := std.Sphere(c, r: hint(10mm))\n\
+                 in std.side {{\n  a := point hint((5, 45))\n  b := point hint((5, 30))\n\
+                 q := point hint((-5, 30))\n}}\n{on}")
+    };
+    let e = read(&src(3));
+    let mut sk = e.sketch.clone();
+    assert!(solve(&mut sk, SolveOpts::default()).success);
+    let c = sk.world_point(ent(&e, "c").i());
+    let r = sk.params[sk.free_vars["ball.r"] as usize].value;
+    for p in ["a", "b", "q"] {
+        let d = norm(sub(sk.world_point(ent(&e, p).i()), c));
+        assert!((d - r).abs() < 1e-9, "{p}: {d} against the radius {r}");
+    }
+    let dof = |n: usize| {
+        let mut sk = read(&src(n)).sketch;
+        assert!(solve(&mut sk, SolveOpts::default()).success);
+        diagnose(&mut sk, DiagnoseOptions::default()).dof
+    };
+    assert_eq!(dof(1) - dof(3), 2, "one equation for each point past the first");
+}
+
+/// A sphere's centre may stand in space: nothing of the sphere is drawn in a view.
+#[test]
+fn a_sphere_may_be_centred_in_space() {
+    let e = read("unit mm\nuse std\nc := point hint((1, 2, 3))\nfix((1, 2, 3)) c\n\
+                  ball := std.Sphere(c, r: 12)\np := point hint((5, 45)) in std.side\n\
+                  p distance(ball.r) ball.center\n");
+    let mut sk = e.sketch.clone();
+    assert!(solve(&mut sk, SolveOpts::default()).success);
+    let d = norm(sub(sk.world_point(ent(&e, "p").i()), [1.0, 2.0, 3.0]));
+    assert!((d - 12.0).abs() < 1e-9, "{d}");
+}
+
+/// An instance handed on as a group carries its numbers: a component reading `s.r` of the
+/// sphere it was given reads the radius the call bound.
+#[test]
+fn an_instance_passed_as_a_group_carries_its_numbers() {
+    let doc = "unit mm\nuse std\n\
+component OnSphere(p: point, s: group) {\n  p distance(s.r) s.center\n}\n\
+in std.front {\n  c := point\n  fix((-8, 38)) c\n}\n\
+ball := std.Sphere(c, r: 12)\n\
+p := point hint((5, 45)) in std.side\n\
+OnSphere(p, ball)\n";
+    let e = read(doc);
+    let mut sk = e.sketch.clone();
+    assert!(solve(&mut sk, SolveOpts::default()).success);
+    let d = norm(sub(sk.world_point(ent(&e, "p").i()), sk.world_point(ent(&e, "c").i())));
+    assert!((d - 12.0).abs() < 1e-9, "{d}");
 }
 
 /* -- the hypoid's pitch cones, and the rest of the words in space -------------------------- */
@@ -705,15 +771,16 @@ fn a_lifted_program_keeps_its_planes_over_lines() {
     assert_eq!(d.dof, 0, "{}", gcs_core::diagnose::summary(&d));
 }
 
-/// **A circle on a sphere**: `c coincident s` puts every point of a circle drawn in one plane on
-/// a sphere about a centre drawn in another — the sphere's centre on the circle's axis, and the
-/// radii and the gap a right triangle.  The toe or heel circle of a gear blank on its end sphere.
+/// **A circle on a sphere**: `std.CircleOnSphere(k, s, view)` puts every point of a circle drawn
+/// in one plane on a sphere about a centre drawn in another — the sphere's centre on the circle's
+/// axis, and the radii and the gap a right triangle.  The toe or heel circle of a gear blank on
+/// its end sphere.
 #[test]
 fn a_circle_on_a_sphere_is_on_it_all_the_way_round() {
     for free in [false, true] {
         let side = if free {
-            "a := axis hint(x: 0, y: 1, z: 0)\nb := axis hint(x: 0, y: 0, z: 1)\n\
-             side := plane(u: a, v: b) hint(x: 120, y: 0, z: 0)"
+            "a := axis hint(dir: (0, 1, 0))\nb := axis hint(dir: (0, 0, 1))\n\
+             side := plane(u: a, v: b) hint(origin: (120, 0, 0))"
         } else {
             ""
         };
@@ -722,19 +789,20 @@ fn a_circle_on_a_sphere_is_on_it_all_the_way_round() {
 unit mm
 use std
 {side}
-s := sphere(hint(x: 10, y: 20)) hint(r: 30) in std.front
-radius(30) s
-k := circle(hint(x: 15, y: 12)) hint(r: 15) in {side_name}
+in std.front {{
+  c := point hint((10, 20))
+}}
+s := std.Sphere(c, r: 30)
+k := circle(hint((15, 12))) hint(r: 15) in {side_name}
 radius(18) k
 {tie}
 ");
-        let e = read(&doc("k coincident s"));
+        let e = read(&doc(&format!("std.CircleOnSphere(k, s, {side_name})")));
         let mut sk = e.sketch.clone();
-        assert!(sk.user_constraints().iter().any(|c| c.kind == CKind::CircleOnSphere));
         let r = solve(&mut sk, SolveOpts::default());
         assert!(r.success, "{}", r.message);
-        let (s, k) = (ent(&e, "s"), ent(&e, "k"));
-        let (sc, kc) = (sk.world_point(sk.round_center(s)), sk.world_point(sk.round_center(k)));
+        let k = ent(&e, "k");
+        let (sc, kc) = (sk.world_point(ent(&e, "c").i()), sk.world_point(sk.round_center(k)));
         let b = sk.basis(sk.plane_of(sk.round_center(k)).unwrap());
         let (n, u, v) = (b.normal(), b.u, b.v);
         // the sphere's centre on the circle's axis, and every point of the circle 30 from it
@@ -757,13 +825,13 @@ radius(18) k
 #[test]
 fn the_midpoint_and_the_mirror_read_in_space() {
     let e = read(&format!("{TWO_VIEWS}\
-fix(x == 5, y == 3) lb.p1
-fix(x == 0, y == 0) la.p1
-fix(x == 30, y == 10) la.p2
-c := point hint(x: 20, y: 5) in std.front
+fix((5, 3)) lb.p1
+fix((0, 0)) la.p1
+fix((30, 10)) la.p2
+c := point hint((20, 5)) in std.front
 c midpoint lb
-d := point hint(x: 5, y: 30) in std.front
-f := point hint(x: 10, y: 30) in std.side
+d := point hint((5, 30)) in std.front
+f := point hint((10, 30)) in std.side
 d symmetry(la) f
 "));
     let mut sk = e.sketch.clone();

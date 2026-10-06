@@ -37,20 +37,20 @@ in std.front {
   construction bore_c := circle(center: o) hint(r: 6)
   // the rack's pitch line, tangent to the pitch circle at the pitch point, and the gear's centre
   // line, which the rack's tooth is symmetrical about
-  s0 := point hint(x: 20, y: 0)
-  s1 := point hint(x: 20, y: 10)
+  s0 := point hint((20, 0))
+  s1 := point hint((20, 10))
   construction slide := vertical line(s0, s1)
-  e := point hint(x: 30, y: 0)
+  e := point hint((30, 0))
   construction centre_line := horizontal line(o, e)
   // the rack's tooth: its tip at the working depth, its back past the blank's rim
-  t0 := point hint(x: 18, y: -0.84)
-  t1 := point hint(x: 18, y: 0.84)
-  t2 := point hint(x: 24, y: 3.03)
-  t3 := point hint(x: 24, y: -3.03)
+  t0 := point hint((18, -0.84))
+  t1 := point hint((18, 0.84))
+  t2 := point hint((24, 3.03))
+  t3 := point hint((24, -3.03))
   rack_flank := line(t1, t2)
 }
 
-fix(x == 0, y == 0) o
+fix((0, 0)) o
 radius(rp + m) rim
 radius(bore_r) bore_c
 o distance(rp, along: x) s0
@@ -81,11 +81,11 @@ flank := envelope(side, under: cutting, from: -30deg, to: 30deg)
 
 // the gauge, in a plane square to the front through the line 1.9 above the centre (its u the
 // front's x, its v the front's normal, into the face)
-gauge_view := plane hint(x: 0, y: 0, z: 1.9)
-fix(x == 0, y == 0, z == 1.9) gauge_view
-fix(x == 1, y == 0, z == 0) gauge_view.u
-fix(x == 0, y == 1, z == 0) gauge_view.v
-gauge := point in gauge_view hint(x: 20.6, y: 3)
+gauge_view := plane
+fix(origin == (0, 0, 1.9)) gauge_view
+fix(dir == (1, 0, 0)) gauge_view.u
+fix(dir == (0, 1, 0)) gauge_view.v
+gauge := point in gauge_view hint((20.6, 3))
 gauge distance(20.58mm, along: u) gauge_view
 gauge distance(3mm, along: v) gauge_view
 gauge coincident flank

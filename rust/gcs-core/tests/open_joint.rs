@@ -79,7 +79,7 @@ fn a_repeat_ends_open() {
 #[test]
 fn a_tangent_corner_is_the_at_form() {
     let e = read(
-        "cycle 2 {\n  p := point hint(x: 0, y: 0)\n  c := point hint(x: 10, y: 10)\n  \
+        "cycle 2 {\n  p := point hint((0, 0))\n  c := point hint((10, 10))\n  \
          (a := line(p)) -> tangent (k := arc(center: c) hint(r: 10)) -> tangent\n}\n",
     );
     let sk = e.sketch;
@@ -108,7 +108,7 @@ fn a_joint_states_several_relations_per_pair() {
 /// declared points and mints nothing: N sides over the N points the body wrote.
 #[test]
 fn a_declared_entry_is_the_shared_point() {
-    let e = read("cycle 3 {\n  p := point hint(x: 0, y: 0)\n  (s := line(p)) ->\n}\n");
+    let e = read("cycle 3 {\n  p := point hint((0, 0))\n  (s := line(p)) ->\n}\n");
     let sk = e.sketch;
     assert_eq!((sk.lines.len(), sk.points.len()), (3, 3 + STD_POINTS), "the weld mints no point");
     for i in 0..3 {
@@ -212,12 +212,12 @@ fn the_refusals() {
     );
     // a name-link's boundary is elaboration's to read (issue #35), so the body must declare
     refuses(
-        "q := point hint(x: 0, y: 0)\nw := point hint(x: 9, y: 0)\ns := line(q, w)\ncycle 2 {\n  s -> angle(30)\n}\n",
+        "q := point hint((0, 0))\nw := point hint((9, 0))\ns := line(q, w)\ncycle 2 {\n  s -> angle(30)\n}\n",
         "declared elsewhere",
     );
     // both boundary slots declared name two different points across the seam
     refuses(
-        "cycle 2 {\n  a := point hint(x: 0, y: 0)\n  b := point hint(x: 9, y: 0)\n  (l := line(a, b)) ->\n}\n",
+        "cycle 2 {\n  a := point hint((0, 0))\n  b := point hint((9, 0))\n  (l := line(a, b)) ->\n}\n",
         "the joint names two points",
     );
     // a circle has no ends, at an open joint as at any other
@@ -264,7 +264,7 @@ fn a_nested_body_may_end_mid_joint() {
 /// only the last copy's exit is left to mint: N declared points and one implicit end.
 #[test]
 fn a_repeat_weld_runs_through_the_declared_points() {
-    let e = read("repeat 3 {\n  p := point hint(x: 0, y: 0)\n  (s := line(p)) ->\n}\n");
+    let e = read("repeat 3 {\n  p := point hint((0, 0))\n  (s := line(p)) ->\n}\n");
     let sk = e.sketch;
     assert_eq!((sk.lines.len(), sk.points.len()), (3, 4 + STD_POINTS), "three p's and the open end");
     assert_eq!(sk.lines[0].p2, sk.lines[1].p1);

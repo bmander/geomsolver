@@ -16,14 +16,14 @@ use wheel
 use point
 
 // the drill's side datum: u down the drill's axis, v along y, so x is its normal
-down := axis hint(x: 0, y: 0, z: -1)
-fix(x == 0, y == 0, z == -1) down
+down := axis
+fix(dir == (0, 0, -1)) down
 side := plane(u: down, v: std.y)
-fix(x == 0, y == 0, z == 0) side
+fix(origin == (0, 0, 0)) side
 
 in std.front {
-  construction centerline ax := line(std.origin, hint(x: 0, y: 1))
-  fix(x == 0, y == 1) ax.p2
+  construction centerline ax := line(std.origin, hint((0, 1)))
+  fix((0, 1)) ax.p2
 }
 
 // the fluted stock and the shank: rectangles in the front plane (x right, z up), turned about z
@@ -32,10 +32,10 @@ in std.front {
   private f1 := point
   private f2 := point
   private f3 := point
-  fix(x == 0mm, y == 0mm) f0
-  fix(x == configuration.diameter / 2, y == 0mm) f1
-  fix(x == configuration.diameter / 2, y == configuration.fluted_length) f2
-  fix(x == 0mm, y == configuration.fluted_length) f3
+  fix((0mm, 0mm)) f0
+  fix((configuration.diameter / 2, 0mm)) f1
+  fix((configuration.diameter / 2, configuration.fluted_length)) f2
+  fix((0mm, configuration.fluted_length)) f3
   private stock_axis := line(f3, f0)
   private stock_end := line(f0, f1)
   private stock_wall := line(f1, f2)
@@ -43,8 +43,8 @@ in std.front {
   stock := solid(face(stock_axis, stock_end, stock_wall, stock_top), about: stock_axis)
   private s0 := point
   private s1 := point
-  fix(x == 0mm, y == -configuration.shank_length) s0
-  fix(x == configuration.diameter / 2, y == -configuration.shank_length) s1
+  fix((0mm, -configuration.shank_length)) s0
+  fix((configuration.diameter / 2, -configuration.shank_length)) s1
   private shank_axis := line(f0, s0)
   private shank_end := line(s0, s1)
   private shank_wall := line(s1, f1)
@@ -94,7 +94,7 @@ drill := solid(fluted)
 shank union drill
 
 // square to the axis halfway along the flutes: where the drawing cuts its section
-section_plane := plane hint(x: 0, y: 0, z: configuration.fluted_length / 2)
-fix(x == 0, y == 0, z == configuration.fluted_length / 2) section_plane
-fix(x == 1, y == 0, z == 0) section_plane.u
-fix(x == 0, y == 1, z == 0) section_plane.v
+section_plane := plane
+fix(origin == (0, 0, configuration.fluted_length / 2)) section_plane
+fix(dir == (1, 0, 0)) section_plane.u
+fix(dir == (0, 1, 0)) section_plane.v

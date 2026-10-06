@@ -11,10 +11,10 @@ a := point
 b := point
 o := point
 x := point
-fix(x == 2, y == 0) a
-fix(x == 2, y == 1) b
-fix(x == 0, y == 0) o
-fix(x == 1, y == 0) x
+fix((2, 0)) a
+fix((2, 1)) b
+fix((0, 0)) o
+fix((1, 0)) x
 ax := line(a,b)
 other := line(o,x)
 }
@@ -328,8 +328,8 @@ fn two_turns_about_parallel_axes_are_the_wankel_rotors_planetary_motion() {
 unit mm
 use std
 in std.front {{
-shaft := line(std.origin, hint(x: 0, y: 1))
-fix(x == 0, y == 1) shaft.p2
+shaft := line(std.origin, hint((0, 1)))
+fix((0, 1)) shaft.p2
         c0 := point
 c1 := point
 c0 distance({e}mm, along: u) std.front

@@ -19,8 +19,8 @@ component CrownThickness(p: plane, generator: line, normal: line, design: group)
   ri := rc - 0.7 * design.module
   ro := rc + 0.7 * design.module
   in p {
-    ahead_end := point hint(x: r, y: pi * design.module / 4)
-    behind_end := point hint(x: r, y: -pi * design.module / 4)
+    ahead_end := point hint((r, pi * design.module / 4))
+    behind_end := point hint((r, -pi * design.module / 4))
     ahead := arc(center: generator.p1, start: generator.p2, end: ahead_end) hint(r: r)
     behind := arc(center: generator.p1, start: behind_end, end: generator.p2) hint(r: r)
     inner := circle(center: normal.p1) hint(r: ri)
@@ -42,9 +42,8 @@ component CrownThickness(p: plane, generator: line, normal: line, design: group)
 
 preview {
   unit mm
-  pitch := views.PitchView(std.front, span: design.hypoid_design.cutter_radius)
-  gear := pitch.gear.GearCone(pitch.view, g.view, design.hypoid_design)
-  g := views.FoldedView(pitch.view, gear.generator, pitch.down, span: design.hypoid_design.cutter_radius)
-  trace := pitch.trace.ToothTrace(pitch.view, gear.generator, design.hypoid_design)
-  thickness := CrownThickness(pitch.view, gear.generator, trace.normal, design.hypoid_design)
+  gear := pitch.gear.GearCone(std.top, g.view, design.hypoid_design)
+  g := views.FoldedView(std.top, gear.generator)
+  trace := pitch.trace.ToothTrace(std.top, gear.generator, design.hypoid_design)
+  thickness := CrownThickness(std.top, gear.generator, trace.normal, design.hypoid_design)
 }

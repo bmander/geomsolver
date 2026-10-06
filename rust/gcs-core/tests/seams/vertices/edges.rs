@@ -97,7 +97,7 @@ fn finite_edges_reject_lookalike_endpoints_wrong_types_and_degenerate_slices() {
         "bad := edge(radial,from: corner,to: finish,along: o)",
         "bad := edge(first_envelope,from: corner,to: finish,along: ax)",
         "bad := edge(radial,from: corner,to: finish)",
-        "fix(x == 0, y == 0) bounded",
+        "fix((0, 0)) bounded",
     ] {
         let (p,errors) = syntax::parse(&format!("{}{tail}\n",source()));
         assert!(!errors.is_empty() || !program::elaborate(&p).ok(),"accepted {tail}");

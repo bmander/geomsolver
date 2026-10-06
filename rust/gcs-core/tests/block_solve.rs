@@ -19,13 +19,13 @@ const PARTS: &str = "\
 use std
 in std.front {
 a := point
-b := point hint(x: 10, y: 1)
-c := point hint(x: 5, y: 9)
-d := point hint(x: 15, y: 8)
-e := point hint(x: 20, y: 1)
-f := point hint(x: 30, y: 30)
-g := point hint(x: 26, y: 2)
-fix(x == 0, y == 0) a
+b := point hint((10, 1))
+c := point hint((5, 9))
+d := point hint((15, 8))
+e := point hint((20, 1))
+f := point hint((30, 30))
+g := point hint((26, 2))
+fix((0, 0)) a
 a distance(10) b
 a horizontal b
 a distance(10) b
@@ -122,14 +122,14 @@ fn chain(n: usize) -> String {
 use std
 in std.front {
 p0 := point
-p1 := point hint(x: 10, y: 0)
-fix(x == 0, y == 0) p0
+p1 := point hint((10, 0))
+fix((0, 0)) p0
 p0 horizontal p1
 p0 distance(10) p1
 }
 ");
     for k in 2..n + 2 {
-        s += &format!("use std\nin std.front {{\np{k} := point hint(x: {}, y: {})\n}}\n", 5 * k, if k % 2 == 0 { 8 } else { 0 });
+        s += &format!("use std\nin std.front {{\np{k} := point hint(({}, {}))\n}}\n", 5 * k, if k % 2 == 0 { 8 } else { 0 });
         s += &format!("p{} distance(10) p{k}\np{} distance(10) p{k}\n", k - 2, k - 1);
     }
     s

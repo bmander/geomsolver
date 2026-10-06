@@ -18,18 +18,18 @@ fn read(src: &str) -> (Elaborated, Vec<String>) {
 /// the document did not describe.  The signed dimensions keep their sign.
 #[test]
 fn a_negative_magnitude_is_refused_and_a_signed_dimension_is_not() {
-    let (_, d) = read("use std\nin std.front {\no := point\nc := circle(center: o) hint(r: 20)\nradius(-20) c\nfix(x == 0, y == 0) o\n}\n");
+    let (_, d) = read("use std\nin std.front {\no := point\nc := circle(center: o) hint(r: 20)\nradius(-20) c\nfix((0, 0)) o\n}\n");
     assert!(d.iter().any(|m| m.starts_with("E040") && m.contains("radius is a magnitude")), "{d:?}");
-    let (_, d) = read("use std\nin std.front {\na := point hint(x: 0, y: 0)\nb := point hint(x: 40, y: 0)\na distance(-40) b\n}\n");
+    let (_, d) = read("use std\nin std.front {\na := point hint((0, 0))\nb := point hint((40, 0))\na distance(-40) b\n}\n");
     assert!(d.iter().any(|m| m.starts_with("E040") && m.contains("distance is a magnitude")), "{d:?}");
     // the run is signed from the first point to the second, and −40 is a statement
-    let (e, d) = read("use std\nin std.front {\na := point\nb := point hint(x: -40, y: 0)\na distance(-40, along: x) b\nfix(x == 0, y == 0) a\n}\n");
+    let (e, d) = read("use std\nin std.front {\na := point\nb := point hint((-40, 0))\na distance(-40, along: x) b\nfix((0, 0)) a\n}\n");
     assert!(d.is_empty(), "{d:?}");
     let mut sk = e.sketch;
     assert!(solve(&mut sk, SolveOpts::default()).success);
     assert!((sk.point_xy(1).0 + 40.0).abs() < 1e-9);
     // and the app's own write path says the same
-    let (e, _) = read("use std\nin std.front {\no := point hint(x: 0, y: 0)\nc := circle(center: o) hint(r: 20)\nradius(20) c\n}\n");
+    let (e, _) = read("use std\nin std.front {\no := point hint((0, 0))\nc := circle(center: o) hint(r: 20)\nradius(20) c\n}\n");
     let mut sk = e.sketch;
     let id = sk.user_constraints()[0].id;
     assert!(gcs_core::expr::set_dimension(&mut sk, id, "r", "-5").is_err());
@@ -46,25 +46,25 @@ fn an_arc_length_and_an_angle_pair_refuse_what_they_cannot_mean() {
 use std
 in std.front {
 o := point
-s := point hint(x: 10, y: 0)
-e := point hint(x: 0, y: 10)
+s := point hint((10, 0))
+e := point hint((0, 10))
 a := arc(o, s, e)
-fix(x == 0, y == 0) o
+fix((0, 0)) o
 }
 ";
     let (_, d) = read(&format!("{ARC}length(-5) a\n"));
     assert!(d.iter().any(|m| m.starts_with("E040") && m.contains("length is a magnitude")), "{d:?}");
     assert!(read(&format!("{ARC}length(5) a\n")).1.is_empty());
-    let (_, d) = read("use std\nin std.front {\no := point hint(x: 0, y: 0)\nc := circle(center: o) hint(r: 5)\nlength(10) c\n}\n");
+    let (_, d) = read("use std\nin std.front {\no := point hint((0, 0))\nc := circle(center: o) hint(r: 5)\nlength(10) c\n}\n");
     assert!(d.iter().any(|m| m.contains("`length` does not apply to a circle")), "{d:?}");
-    let (_, d) = read("use std\nin std.front {\na := point hint(x: 0, y: 0)\nb := point hint(x: 5, y: 0)\nl := line(a, b)\nlength(10) l\n}\n");
+    let (_, d) = read("use std\nin std.front {\na := point hint((0, 0))\nb := point hint((5, 0))\nl := line(a, b)\nlength(10) l\n}\n");
     assert!(d.iter().any(|m| m.contains("`length` does not apply to a line")), "{d:?}");
     const PAIR: &str = "\
 use std
 in std.front {
-a := point hint(x: 0, y: 0)
-b := point hint(x: 10, y: 0)
-c := point hint(x: 0, y: 10)
+a := point hint((0, 0))
+b := point hint((10, 0))
+c := point hint((0, 10))
 ab := line(a, b)
 ac := line(a, c)
 }
@@ -80,11 +80,11 @@ ac := line(a, c)
 /// #43.13 — a second `param w` is the E001 a second `w := point` is, and the first stands.
 #[test]
 fn a_param_declared_twice_is_an_error() {
-    let (e, d) = read("use std\nw := 60\nw := 80\nin std.front {\na := point\nb := point hint(x: 40, y: 0)\na distance(w) b\nfix(x == 0, y == 0) a\n}\n");
+    let (e, d) = read("use std\nw := 60\nw := 80\nin std.front {\na := point\nb := point hint((40, 0))\na distance(w) b\nfix((0, 0)) a\n}\n");
     assert!(d.iter().any(|m| m.starts_with("E001") && m.contains("`w` is declared twice")), "{d:?}");
     assert!(!e.ok());
     // one per body: a component may have its own
-    let (e, d) = read("use std\nw := 60\ncomponent C() { w := 5\n p := point hint(x: w, y: 0) }\nin std.front {\nc := C()\n}\n");
+    let (e, d) = read("use std\nw := 60\ncomponent C() { w := 5\n p := point hint((w, 0)) }\nin std.front {\nc := C()\n}\n");
     assert!(d.is_empty() && e.ok(), "{d:?}");
 }
 
@@ -92,7 +92,7 @@ fn a_param_declared_twice_is_an_error() {
 /// level, inside a block and inside a component alike.
 #[test]
 fn a_param_may_read_one_declared_below_it() {
-    let (e, d) = read("use std\nh := w / 2\nw := 60\nin std.front {\na := point\nb := point hint(x: w, y: 0)\na horizontal b\na distance(w) b\nc := point hint(x: 0, y: h)\na vertical c\na distance(h) c\nfix(x == 0, y == 0) a\n}\n");
+    let (e, d) = read("use std\nh := w / 2\nw := 60\nin std.front {\na := point\nb := point hint((w, 0))\na horizontal b\na distance(w) b\nc := point hint((0, h))\na vertical c\na distance(h) c\nfix((0, 0)) a\n}\n");
     assert!(d.is_empty() && e.ok(), "{d:?}");
     let mut sk = e.sketch;
     assert!(solve(&mut sk, SolveOpts::default()).success);
@@ -100,7 +100,7 @@ fn a_param_may_read_one_declared_below_it() {
     assert!((sk.point_xy(2).1 - 30.0).abs() < 1e-9);
     // a block's param reads the binder and a param of the enclosing body written after the
     // block; a component's reads its formal and a sibling written below
-    let (e, d) = read("use std\nin std.front {\nrepeat 2 as i {\n p := point hint(x: k, y: 0)\n k := base + i * 10\n}\n}\nbase := 5\ncomponent C(n: Int) {\n half := whole / 2\n whole := n * 2\n q := point hint(x: half, y: whole)\n}\nin std.front {\nc := C(n: 4)\n}\n");
+    let (e, d) = read("use std\nin std.front {\nrepeat 2 as i {\n p := point hint((k, 0))\n k := base + i * 10\n}\n}\nbase := 5\ncomponent C(n: Int) {\n half := whole / 2\n whole := n * 2\n q := point hint((half, whole))\n}\nin std.front {\nc := C(n: 4)\n}\n");
     assert!(d.is_empty() && e.ok(), "{d:?}");
     let sk = e.sketch;
     assert!((sk.point_xy(0).0 - 5.0).abs() < 1e-9 && (sk.point_xy(1).0 - 15.0).abs() < 1e-9);
@@ -111,7 +111,7 @@ fn a_param_may_read_one_declared_below_it() {
 /// block: `p[n - 1]` reads the `param n`, wherever the statement stands.
 #[test]
 fn a_top_level_index_reads_a_param() {
-    let (e, d) = read("p[n - 1] distance(10) p[0]\nn := 4\ncycle n as i {\n p := point hint(x: 40 * cos(i * 90), y: 40 * sin(i * 90))\n}\nfix(x == 40, y == 0) p[0]\np[n / 2] distance(k) p[1]\nk := 30\n");
+    let (e, d) = read("p[n - 1] distance(10) p[0]\nn := 4\ncycle n as i {\n p := point hint((40 * cos(i * 90), 40 * sin(i * 90)))\n}\nfix(x == 40, y == 0) p[0]\np[n / 2] distance(k) p[1]\nk := 30\n");
     assert!(d.is_empty() && e.ok(), "{d:?}");
     let mut sk = e.sketch;
     assert!(solve(&mut sk, SolveOpts::default()).success);
@@ -123,7 +123,7 @@ fn a_top_level_index_reads_a_param() {
     let (x2, y2) = sk.point_xy(2);
     assert!(((x2 - x1).hypot(y2 - y1) - 30.0).abs() < 1e-6);
     // an index past the copies is still nothing
-    let (e, d) = read("n := 4\ncycle n {\n p := point\n}\nfix(x == 0, y == 0) p[n]\n");
+    let (e, d) = read("n := 4\ncycle n {\n p := point\n}\nfix((0, 0)) p[n]\n");
     assert!(!e.ok() && d.iter().any(|m| m.contains("no such entity: `p[n]`")), "{d:?}");
 }
 
@@ -132,7 +132,7 @@ fn a_top_level_index_reads_a_param() {
 /// is written, not again at every param that reads it.
 #[test]
 fn a_cyclic_param_is_e041_and_a_failed_one_is_reported_once() {
-    let (e, d) = read("use std\na := b + 1\nb := c * 2\nc := a\nd := d\ne := 60\nin std.front {\np := point\nfix(x == e, y == 0) p\n}\n");
+    let (e, d) = read("use std\na := b + 1\nb := c * 2\nc := a\nd := d\ne := 60\nin std.front {\np := point\nfix((e, 0)) p\n}\n");
     assert!(!e.ok());
     let cycles: Vec<&String> = d.iter().filter(|m| m.starts_with("E041")).collect();
     assert_eq!(cycles.len(), 4, "{d:?}");
@@ -141,7 +141,7 @@ fn a_cyclic_param_is_e041_and_a_failed_one_is_reported_once() {
     // `e` is not in the cycle and is worked out
     assert!((e.sketch.point_xy(0).0 - 60.0).abs() < 1e-9);
     // `h` reads a `w` whose definition failed: the one error is at `w`
-    let (_, d) = read("use std\nw := nosuch * 2\nh := w / 2\nin std.front {\na := point\nfix(x == 0, y == 0) a\n}\n");
+    let (_, d) = read("use std\nw := nosuch * 2\nh := w / 2\nin std.front {\na := point\nfix((0, 0)) a\n}\n");
     assert_eq!(d.len(), 1, "{d:?}");
     assert!(d[0].contains("`w`: `nosuch` is not a number here"), "{d:?}");
 }
@@ -150,7 +150,7 @@ fn a_cyclic_param_is_e041_and_a_failed_one_is_reported_once() {
 /// entity is still declared for everything that names it.
 #[test]
 fn a_bad_hint_key_is_one_error_and_keeps_the_declaration() {
-    let (_, d) = read("use std\nin std.front {\na := point hint(x: 0, y: 0, z: 5)\nb := point hint(x: 40, y: 0)\nab := line(a, b)\nhorizontal ab\na distance(40) b\nfix(x == 0, y == 0) a\n}\n");
+    let (_, d) = read("use std\nin std.front {\na := point hint((0, 0, 5))\nb := point hint((40, 0))\nab := line(a, b)\nhorizontal ab\na distance(40) b\nfix((0, 0)) a\n}\n");
     assert_eq!(d.len(), 1, "{d:?}");
     assert!(d[0].contains("no `z`"), "{d:?}");
 }
@@ -183,11 +183,11 @@ b := point
 c := point
 d := point
 s := spline(a, b, c, d)
-fix(x == 0, y == 0) a
-fix(x == 10, y == 20) b
-fix(x == 30, y == 20) c
-fix(x == 40, y == 0) d
-p := point hint(x: 20, y: 14)
+fix((0, 0)) a
+fix((10, 20)) b
+fix((30, 20)) c
+fix((40, 0)) d
+p := point hint((20, 14))
 p coincident s hint(t: {t})
 p vertical b
 }}
@@ -225,9 +225,9 @@ o := point
 }}
 f := spiral(o, k: 10).p over u in (0, 720)
 in std.front {{
-t := point hint(x: 12, y: 3)
+t := point hint((12, 3))
 t coincident f hint(t: {u})
-fix(x == 0, y == 0) o
+fix((0, 0)) o
 }}
 "
         ));
@@ -246,11 +246,11 @@ fix(x == 0, y == 0) o
 #[test]
 fn distance_between_circles_centred_apart_is_refused() {
     let (_, d) = read(
-        "use std\nin std.front {\no1 := point hint(x: 0, y: 0)\no2 := point hint(x: 70, y: 0)\nc1 := circle(center: o1) hint(r: 15)\nc2 := circle(center: o2) hint(r: 20)\nc1 distance(10) c2\n}\n",
+        "use std\nin std.front {\no1 := point hint((0, 0))\no2 := point hint((70, 0))\nc1 := circle(center: o1) hint(r: 15)\nc2 := circle(center: o2) hint(r: 20)\nc1 distance(10) c2\n}\n",
     );
     assert!(d.iter().any(|m| m.starts_with("E040") && m.contains("concentric")), "{d:?}");
     let (e, d) = read(
-        "use std\nin std.front {\no := point\nc1 := circle(center: o) hint(r: 15)\nc2 := circle(center: o) hint(r: 20)\nradius(15) c1\nc1 distance(5) c2\nfix(x == 0, y == 0) o\n}\n",
+        "use std\nin std.front {\no := point\nc1 := circle(center: o) hint(r: 15)\nc2 := circle(center: o) hint(r: 20)\nradius(15) c1\nc1 distance(5) c2\nfix((0, 0)) o\n}\n",
     );
     assert!(d.is_empty(), "{d:?}");
     let mut sk = e.sketch;
@@ -274,9 +274,9 @@ component quarter(c: circle, u: Angle) {
          }
          f := quarter(c).p over u in (0, 90)
          in std.front {
-         fix(x == 0, y == 0) o
+         fix((0, 0)) o
          fix(r == 20) c
-         p := point hint(x: 0, y: -20)
+         p := point hint((0, -20))
          p coincident f
          p distance(20, along: y) o
          }
@@ -300,15 +300,15 @@ component quarter(c: circle, u: Angle) {
 /// reported where it is used, like any other stray character.
 #[test]
 fn a_non_ascii_character_in_a_statement_does_not_hang_the_lexer() {
-    for src in ["p := point hint(x: 0, y: 0) …\n", "use a…\n", "p := point → q\n", "l := line(a, b) — c\n"] {
+    for src in ["p := point hint((0, 0)) …\n", "use a…\n", "p := point → q\n", "l := line(a, b) — c\n"] {
         let (_, d) = read(src);
         assert!(!d.is_empty(), "{src:?} should be refused, not accepted");
     }
     // a letter outside ASCII is a letter, in a name as in a comment
-    let (e, d) = read("use std\nin std.front {\ndébut := point\nfix(x == 1, y == 2) début\n}\n");
+    let (e, d) = read("use std\nin std.front {\ndébut := point\nfix((1, 2)) début\n}\n");
     assert!(d.is_empty(), "{d:?}");
     assert_eq!(e.sketch.point_xy(0), (1.0, 2.0));
-    let (_, d) = read("use std\n// an em dash — in a comment\nin std.front {\np := point hint(x: 0, y: 0)\n}\n");
+    let (_, d) = read("use std\n// an em dash — in a comment\nin std.front {\np := point hint((0, 0))\n}\n");
     assert!(d.is_empty(), "{d:?}");
 }
 
@@ -326,8 +326,8 @@ unit mm
 use std
 in std.front {
 a := point
-b := point hint(x: 40, y: 10)
-fix(x == 0, y == 0) a
+b := point hint((40, 10))
+fix((0, 0)) a
 }
 ";
     // a key the word has no slot for: dropped in silence, and the statement stood
@@ -345,13 +345,13 @@ unit mm
 use std
 in std.front {
 c := point
-s := point hint(x: 12, y: 0)
-e := point hint(x: 0, y: 12)
+s := point hint((12, 0))
+e := point hint((0, 12))
 k := arc(c, s, e)
 radius(12) k
-q := point hint(x: 40, y: 0)
+q := point hint((40, 0))
 l := line(s, q)
-fix(x == 0, y == 0) c
+fix((0, 0)) c
 }
 ";
     let (_, d) = read(&format!("{ARC}k tangent(at: banana) l\n"));
@@ -386,8 +386,8 @@ in std.front {
 a := point
 b := point
 ax := line(a, b)
-fix(x == 0, y == 0) a
-fix(x == 40, y == 0) b
+fix((0, 0)) a
+fix((40, 0)) b
 }
 ";
     let solved = |src: &str| {
@@ -399,20 +399,20 @@ fix(x == 40, y == 0) b
     };
     // seeded below, it stays below; seeded above, above.  One statement, two solutions, and the
     // seed is what chooses — the drawing says where it was drawn
-    assert!((solved(&format!("{AXIS}in std.front {{\np := point hint(x: 10, y: -3)\np distance(12) ax\n}}\n")) + 12.0).abs() < 1e-6);
-    assert!((solved(&format!("{AXIS}in std.front {{\np := point hint(x: 10, y: 3)\np distance(12) ax\n}}\n")) - 12.0).abs() < 1e-6);
+    assert!((solved(&format!("{AXIS}in std.front {{\np := point hint((10, -3))\np distance(12) ax\n}}\n")) + 12.0).abs() < 1e-6);
+    assert!((solved(&format!("{AXIS}in std.front {{\np := point hint((10, 3))\np distance(12) ax\n}}\n")) - 12.0).abs() < 1e-6);
     // pinned, the seed does not get a say
-    assert!((solved(&format!("{AXIS}in std.front {{\np := point hint(x: 10, y: 3)\np distance(12, side: right) ax\n}}\n")) + 12.0).abs() < 1e-6);
-    assert!((solved(&format!("{AXIS}in std.front {{\np := point hint(x: 10, y: -3)\np distance(12, side: left) ax\n}}\n")) - 12.0).abs() < 1e-6);
+    assert!((solved(&format!("{AXIS}in std.front {{\np := point hint((10, 3))\np distance(12, side: right) ax\n}}\n")) + 12.0).abs() < 1e-6);
+    assert!((solved(&format!("{AXIS}in std.front {{\np := point hint((10, -3))\np distance(12, side: left) ax\n}}\n")) - 12.0).abs() < 1e-6);
 
     // and the minus is refused *by value*, so a component handed one is caught at the call
-    let (_, d) = read(&format!("{AXIS}in std.front {{\np := point hint(x: 10, y: 3)\np distance(-12) ax\n}}\n"));
+    let (_, d) = read(&format!("{AXIS}in std.front {{\np := point hint((10, 3))\np distance(-12) ax\n}}\n"));
     let said = "E040: a point_line_distance is a magnitude and cannot be negative, and which \
                 way is a word: write `distance(12, side: right)`";
     assert!(d.iter().any(|m| m == said), "{d:?}");
     let (_, d) = read(&format!(
         "{AXIS}component Off(o: point, ax: line, v: Length) {{\n\
-           p := point hint(x: o.x, y: o.y + 20mm)\n\
+           p := point hint((o.x, o.y + 20mm))\n\
            p distance(v) ax\n\
          }}\n\
          f := Off(a, ax, v: -8mm) in std.front\n"
@@ -429,15 +429,15 @@ fn a_component_takes_a_side() {
 unit mm
 use std
 component Off(o: point, ax: line, d: Length, s: Side) {
-p := point hint(x: o.x, y: o.y + 20mm)
+p := point hint((o.x, o.y + 20mm))
 p distance(d, side: s) ax
 }
 in std.front {
 a := point
 b := point
 ax := line(a, b)
-fix(x == 0, y == 0) a
-fix(x == 40, y == 0) b
+fix((0, 0)) a
+fix((40, 0)) b
 }
 ";
     let at = |src: &str, i: usize| {
@@ -466,8 +466,8 @@ unit mm
 use std
 in std.front {
 a := point
-b := point hint(x: 40, y: 10)
-fix(x == 0, y == 0) a
+b := point hint((40, 10))
+fix((0, 0)) a
 }
 ";
     let at = |src: &str| {
@@ -490,11 +490,11 @@ use std
 in std.front {
 o := point
 p := point
-q := point hint(x: 7, y: 7)
+q := point hint((7, 7))
 l1 := line(o, p)
 l2 := line(o, q)
-fix(x == 0, y == 0) o
-fix(x == 10, y == 0) p
+fix((0, 0)) o
+fix((10, 0)) p
 }
 ";
     let (e, d) = read(&format!("{lines}l1 angle(30, sense: cw) l2\n"));
@@ -521,9 +521,9 @@ a := point
 b := point
 q := point
 ax := line(a, b)
-fix(x == 0, y == 0) a
-fix(x == 40, y == 0) b
-fix(x == 0, y == 30) q
+fix((0, 0)) a
+fix((40, 0)) b
+fix((0, 30)) q
 }
 param k: Length
 in std.front {
@@ -542,10 +542,10 @@ a distance(k, along: up) q
     // each read with the number stated and with it free, seeded either side: one answer
     // a point from a line, a line from a line, and a run
     let cases = [
-        "p := point hint(x: 10, y: {y})\np distance({d}, side: {w}) ax\n",
-        "l := line(hint(x: 0, y: {y}), hint(x: 40, y: {y}))\nl distance({d}, side: {w}) ax\n\
+        "p := point hint((10, {y}))\np distance({d}, side: {w}) ax\n",
+        "l := line(hint((0, {y})), hint((40, {y})))\nl distance({d}, side: {w}) ax\n\
          horizontal l\nl.p1 distance(0, along: x) a\n",
-        "p := point hint(x: {y}, y: 5)\na distance({d}, along: {w}) p\n",
+        "p := point hint(({y}, 5))\na distance({d}, along: {w}) p\n",
     ];
     for (k, case) in cases.iter().enumerate() {
         let words = if k == 2 { ["left", "right"] } else { ["right", "left"] };
@@ -571,14 +571,14 @@ use std
 in std.front {
 o := point
 p := point
-q := point hint(x: 7, y: 7)
+q := point hint((7, 7))
 r := point
 l1 := line(o, p)
 l2 := line(o, q)
 l3 := line(o, r)
-fix(x == 0, y == 0) o
-fix(x == 10, y == 0) p
-fix(x == 8.660254037844387, y == 5) r
+fix((0, 0)) o
+fix((10, 0)) p
+fix((8.660254037844387, 5)) r
 }
 param t: Angle
 in std.front {
@@ -595,8 +595,8 @@ l1 angle(t) l3
 #[test]
 fn a_word_across_views_with_no_meaning_in_space_is_refused() {
     let views = "use std\n\
-                 in std.front {\na := point hint(x: 5, y: 5)\nla := line(hint(x: 0, y: 0), hint(x: 20, y: 5))\n}\n\
-                 in std.side {\nb := point hint(x: 10, y: 5)\nlb := line(hint(x: 0, y: 0), hint(x: 20, y: 9))\n}\n";
+                 in std.front {\na := point hint((5, 5))\nla := line(hint((0, 0)), hint((20, 5)))\n}\n\
+                 in std.side {\nb := point hint((10, 5))\nlb := line(hint((0, 0)), hint((20, 9)))\n}\n";
     for (stmt, code, needle) in [
         ("a horizontal b", "E062", "no meaning in space"),
         ("a vertical b", "E062", "no meaning in space"),
@@ -611,37 +611,6 @@ fn a_word_across_views_with_no_meaning_in_space_is_refused() {
     // the midpoint and the mirror in a line among them
     for stmt in ["a horizontal la.p1", "a distance(4, along: y) la.p1", "a distance(8) b", "la angle(40) lb",
                  "a symmetry(lb) la.p1", "a midpoint lb"] {
-        let (_, d) = read(&format!("{views}{stmt}\n"));
-        assert!(d.is_empty(), "{stmt}: {d:?}");
-    }
-}
-
-/// Cones and cylinders take the words they have kernels for and say so for the rest: a
-/// line on either (a generator) is said of its points, two cones touch at a point the statement
-/// names, and each is built about a line already drawn in a view.
-#[test]
-fn what_a_cone_or_a_cylinder_cannot_say_is_refused() {
-    let views = "use std\n\
-                 in std.front {\na := point hint(x: 5, y: 5)\nla := line(hint(x: 0, y: 0), hint(x: 0, y: 20))\n}\n\
-                 in std.side {\nlb := line(hint(x: 0, y: 0), hint(x: 20, y: 9))\n}\n\
-                 k := cone(axis: la) hint(half: 30deg)\nk2 := cone(axis: lb) hint(half: 20deg)\n\
-                 c := cylinder(axis: la) hint(r: 5)\n";
-    for (stmt, code, needle) in [
-        ("lb coincident k", "E040", "a line on a cone or a cylinder"),
-        ("lb coincident c", "E040", "a line on a cone or a cylinder"),
-        ("k tangent lb", "E040", "a line touches a cylinder"),
-        ("lb tangent c", "E040", "the cylinder first"),
-        ("k tangent k2", "E040", "names it"),
-        ("angle(20deg) c", "E040", "does not apply to a cylinder"),
-        ("radius(-2) c", "E040", "magnitude"),
-        ("bad := cone(axis: a)", "E103", "axis is a line"),
-        ("bad := cylinder", "E103", "built about a line"),
-    ] {
-        let (_, d) = read(&format!("{views}{stmt}\n"));
-        assert!(d.iter().any(|m| m.starts_with(code) && m.contains(needle)), "{stmt}: {d:?}");
-    }
-    for stmt in ["a coincident k", "a coincident c", "radius(4) c", "angle(25deg) k", "c tangent lb",
-                 "m := point hint(x: 3, y: 3) in std.front\nk tangent(m) k2"] {
         let (_, d) = read(&format!("{views}{stmt}\n"));
         assert!(d.is_empty(), "{stmt}: {d:?}");
     }

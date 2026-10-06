@@ -8,9 +8,9 @@ ring := 20mm       // from the axis to the tube's centre
 tube := 6mm        // the tube's radius
 
 in std.front {
-  construction centerline spine := line(std.origin, hint(x: 0, y: 1))
-  fix(x == 0, y == 1) spine.p2
-  private centre := point hint(x: ring, y: 0)
+  construction centerline spine := line(std.origin, hint((0, 1)))
+  fix((0, 1)) spine.p2
+  private centre := point hint((ring, 0))
   std.origin horizontal centre
   std.origin distance(ring, along: right) centre
   private section := circle(center: centre) hint(r: tube)

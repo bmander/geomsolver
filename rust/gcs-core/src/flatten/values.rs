@@ -8,6 +8,13 @@ pub(super) fn free(name: String, ty: Ty) -> Aff {
     Aff { free: Some(name), m: 1.0, c: 0.0, dim: ty.dim() }
 }
 
+/// A number worked out for a name declared `ty` — a formal, a typed `param` — taken to be what
+/// the declaration says: refused if it said otherwise (`Tooth(a0: 30mm)` is a mistake, not a
+/// conversion), and a bare number becomes one of that dimension.
+pub(super) fn typed(a: Aff, ty: Ty, name: &str) -> Result<Aff, String> {
+    a.dim.require(ty.dim(), name).map(|()| a.as_dim(ty.dim()))
+}
+
 /// One definition of a body — a `param` or a group's member — worked out with the rest.
 struct Def {
     name: String,
@@ -78,6 +85,21 @@ pub(crate) fn value_aff(
         // an unknown the scope *bound* — a formal left unbound, a param over one — carries on;
         // a name nothing binds is the document's, and a component's numbers cannot read it
         (None, Some(n)) if !env.values().any(|b| b.free.as_deref() == Some(n)) => {
+            // a member a group or a vector does not have — `o.z` of `o := (1, 2)` — is said so
+            if let Some((owner, member)) = n.rsplit_once('.') {
+                let prefix = format!("{owner}.");
+                let has: Vec<&str> = env
+                    .keys()
+                    .filter_map(|k| k.strip_prefix(&prefix))
+                    .filter(|m| !m.contains('.'))
+                    .collect();
+                if !has.is_empty() {
+                    let mut has: Vec<String> = has.iter().map(|m| format!("`{m}`")).collect();
+                    let last = has.pop().unwrap_or_default();
+                    let has = if has.is_empty() { last } else { format!("{} and {last}", has.join(", ")) };
+                    return Err(format!("`{owner}` has {has}, not `{member}`"));
+                }
+            }
             Err(format!("`{n}` is not a number here — nothing in scope gives it one"))
         }
         _ => Ok(a),
@@ -224,7 +246,10 @@ pub(super) fn map_measured(text: &str, of: impl Fn(&str) -> Option<String>) -> S
     out
 }
 
-fn substitute_with(text: &str, of: impl Fn(&str) -> Option<String>) -> String {
+/// `text` with every name `of` answers for written as it says — at identifier boundaries, a dotted
+/// path (`pc.half`) or a block copy's key (`#3.0.w`) read as one name, a measurement's arguments
+/// left as written.
+pub(crate) fn substitute_with(text: &str, of: impl Fn(&str) -> Option<String>) -> String {
     let mut out = String::with_capacity(text.len());
     let b: Vec<char> = text.chars().collect();
     let mut i = 0usize;
@@ -493,7 +518,7 @@ impl<'a> Walk<'a> {
                             written(r)
                         }
                         crate::syntax::InstVal::Expr(t) => t.clone(),
-                        crate::syntax::InstVal::Hint(_) => {
+                        crate::syntax::InstVal::Hint(..) => {
                             let m = "a `hint(…)` leaves a call's formal unbound and seeds it; \
                                      a group's member is a value";
                             self.err(Code::E103, field.span, m);
@@ -602,11 +627,11 @@ impl<'a> Walk<'a> {
                 }
                 // a declared type is what the value is, as a formal's is: `param w: Length := 60`
                 // is a length however the 60 was written, and `param w: Length := 60deg` is wrong
-                let typed = value_aff(&d.text, vals, self.units).and_then(|a| match d.ty {
-                    Some(ty) => a.dim.require(ty.dim(), &d.name).map(|()| a.as_dim(ty.dim())),
+                let worked = value_aff(&d.text, vals, self.units).and_then(|a| match d.ty {
+                    Some(ty) => typed(a, ty, &d.name),
                     None => Ok(a),
                 });
-                match typed {
+                match worked {
                     Ok(a) => {
                         vals.insert(d.name.clone(), a);
                     }

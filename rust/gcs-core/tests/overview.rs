@@ -388,16 +388,16 @@ unit mm
 use std
 in std.front {
   a := point
-  b := point hint(x: 60, y: 0)
-  c := point hint(x: 60, y: 40)
-  d := point hint(x: 0, y: 40)
+  b := point hint((60, 0))
+  c := point hint((60, 40))
+  d := point hint((0, 40))
   (ab := line(a, b)) -> (bc := line(b, c)) -> (cd := line(c, d)) -> (da := line(d, a)) -> close
   horizontal ab
   vertical bc
   a distance(60) b
   a distance(40) d
-  fix(x == 0, y == 0) a
-  o := point hint(x: 30, y: 20)
+  fix((0, 0)) a
+  o := point hint((30, 20))
   a distance(30, along: x) o
   a distance(20, along: y) o
   hole := circle(center: o) hint(r: 8)

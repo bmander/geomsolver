@@ -17,9 +17,9 @@ const BASE: &str = "\
 use std
 in std.front {
 a := point
-b := point hint(x: 60, y: 0)
-c := point hint(x: 60, y: 40)
-fix(x == 0, y == 0) a
+b := point hint((60, 0))
+c := point hint((60, 40))
+fix((0, 0)) a
 a horizontal b
 b vertical c
 }
@@ -68,7 +68,7 @@ fn a_name_defined_both_ways_is_declared_twice() {
 #[test]
 fn a_name_a_component_never_declares_is_refused() {
     let doc = format!(
-        "component T(p: point, q: point) {{ p distance(w) q }}\n{BASE}d := point hint(x: 0, y: 40)\n\
+        "component T(p: point, q: point) {{ p distance(w) q }}\n{BASE}d := point hint((0, 40))\n\
          t1 := T(a, b)\nt2 := T(b, c)\nt3 := T(c, d)\n"
     );
     let (e, d) = read(&doc);
@@ -135,7 +135,7 @@ fn an_instances_unknown_is_read_by_its_dotted_path() {
     let doc = format!(
         "component T(p: point, q: point, w: Length) {{ p distance(w) q }}\n\
          component U(p: point, q: point, r: point) {{ t := T(p, q)\n  q distance(t.w / 2) r }}\n\
-         {BASE}in std.front {{\nd := point hint(x: 0, y: 40)\n}}\nu := U(a, b, c)\nc distance(u.t.w) d\n\
+         {BASE}in std.front {{\nd := point hint((0, 40))\n}}\nu := U(a, b, c)\nc distance(u.t.w) d\n\
          a distance(60) b\n"
     );
     let (e, d) = read(&doc);
@@ -159,13 +159,13 @@ fn a_block_copy_declares_its_own_names_and_shares_the_documents_unknowns() {
 use std
 in std.front {
 o := point
-fix(x == 0, y == 0) o
+fix((0, 0)) o
 }
 param s: Length
 in std.front {
-cycle 2 { z := point hint(x: 5, y: 5)
-  y := point hint(x: 9, y: 2)
-x := point hint(x: 3, y: 8)
+cycle 2 { z := point hint((5, 5))
+  y := point hint((9, 2))
+x := point hint((3, 8))
   w := 60
 o distance(w) z
   o distance(w / 2) y
@@ -194,8 +194,8 @@ use std
 component T(p: point, q: point, w: Length) { p distance(w) q }
 in std.front {
 o := point
-fix(x == 0, y == 0) o
-cycle 3 { a := point hint(x: 10, y: 0)
+fix((0, 0)) o
+cycle 3 { a := point hint((10, 0))
   t := T(o, a) }
 }
 ",
@@ -235,7 +235,7 @@ fn a_name_that_shadows_a_built_in_is_said() {
     assert_eq!(d.len(), 1, "{d:?}");
     assert!(d[0].contains("a formal"), "{d:?}");
     // a block's index
-    let d = w112(&format!("{BASE}cycle 3 as pi {{ p := point hint(x: 10 * pi, y: 0) }}\n"));
+    let d = w112(&format!("{BASE}cycle 3 as pi {{ p := point hint((10 * pi, 0)) }}\n"));
     assert_eq!(d.len(), 1, "{d:?}");
     assert!(d[0].contains("a block's index"), "{d:?}");
     // a function's name is built in as much as a constant's
@@ -266,7 +266,7 @@ fn a_dimension_reading_geometry_is_refused_outside_a_trace() {
     assert!(d.iter().any(|m| m.starts_with("E103") && m.contains("`k.r` is a number of the geometry")), "{d:?}");
 
     let traced = format!(
-        "component L(k: circle, u: Length) {{ p := point hint(x: 1, y: 1)\n  \
+        "component L(k: circle, u: Length) {{ p := point hint((1, 1))\n  \
          horizontal line(k.center, p)\n  k.center distance(k.r + u) p }}\n\
          {BASE}k := circle(center: a) hint(r: 10)\nradius(10) k\ne := L(k).p over u in (0, 5)\n"
     );
@@ -316,7 +316,7 @@ fn an_input_stands_at_the_top_and_says_what_it_is() {
 #[test]
 fn a_solve_writes_an_unknowns_seed_back_to_its_declaration() {
     let src = format!("{BASE}param w: Length hint(10)\na distance(w) b\nb distance(w / 2) c\n\
-                       fix(x == 80, y == 0) b\n");
+                       fix((80, 0)) b\n");
     let (e, d) = read(&src);
     assert!(d.is_empty(), "{d:?}");
     let mut sk = e.sketch.clone();
@@ -342,14 +342,39 @@ fn an_unknown_starts_at_its_seed_and_a_misspelt_one_is_said_once() {
     assert!(d.is_empty(), "{d:?}");
     assert_eq!(e.sketch.params[e.sketch.free_vars["w"] as usize].value, 25.0);
     let views = "use std\nparam beta: Angle hint(20deg)\n";
-    let side = "tilt := axis hint(x: 0, y: 0.9396926207859084, z: 0.3420201433256687)\n\
+    let side = "tilt := axis hint(dir: (0, 0.9396926207859084, 0.3420201433256687))\n\
                 std.x perpendicular tilt\nstd.y angle(beta) tilt\n\
-                side := plane(u: std.x, v: tilt)\nfix(x == 0, y == 0, z == 0) side\n\
-                p := point hint(x: 5, y: 5) in side\n";
+                side := plane(u: std.x, v: tilt)\nfix(origin == (0, 0, 0)) side\n\
+                p := point hint((5, 5)) in side\n";
     let (e, d) = read(&format!("{views}{side}"));
     assert!(d.is_empty(), "{d:?}");
     assert!((e.sketch.params[e.sketch.free_vars["beta"] as usize].value - 20.0).abs() < 1e-12);
     let (_, d) = read(&format!("{views}{}", side.replace("angle(beta)", "angle(betta)")));
     assert_eq!(d.len(), 1, "{d:?}");
     assert!(d[0].starts_with("E101") && d[0].contains("`betta`"), "{d:?}");
+}
+
+/// **A lifted program declares an instance's unknown under a name it can write**: `c.w`, a call's
+/// formal left unbound and read by a dimension, is declared `c_w_2` beside the document's own
+/// `c_w`, and every dimension reading it says so — so the program reads back to the drawing.
+#[test]
+fn a_lifted_program_names_an_instances_unknown_it_can_declare() {
+    let e = crate::common::read(
+        "unit mm\nuse std\ncomponent Gap(w: Length) {\n}\nparam c_w: Length hint(5mm)\n\
+         in std.front {\n  a := point\n  fix((0, 0)) a\n  b := point hint((10, 0))\n\
+         q := point hint((0, 10))\n}\nc := Gap(w: hint(12mm))\n\
+         a distance(c.w) b\na distance(c_w) q\nb distance(20) q\n",
+    );
+    let mut sk = e.sketch.clone();
+    assert!(solve(&mut sk, SolveOpts::default()).success);
+    let lifted = gcs_core::program::to_program(&sk).text().to_string();
+    for want in ["param c_w: Length hint(", "param c_w_2: Length hint(", "distance(c_w_2)"] {
+        assert!(lifted.contains(want), "{want}\n{lifted}");
+    }
+    let mut back = crate::common::read(&lifted).sketch;
+    assert!(solve(&mut back, SolveOpts::default()).success);
+    for i in 0..sk.points.len() {
+        let (x, y) = (sk.world_point(i), back.world_point(i));
+        assert!((0..3).all(|t| (x[t] - y[t]).abs() < 1e-9), "p{i}: {x:?} {y:?}\n{lifted}");
+    }
 }

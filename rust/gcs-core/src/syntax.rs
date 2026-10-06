@@ -21,7 +21,7 @@ use crate::constraints::{CKind, Fixity};
 use crate::model::EntKind;
 use crate::style::{Classes, Style};
 pub(crate) use names::{build_rank, decl_head, ref_text, under_root};
-pub(crate) use print::{decl_args, hint_clause, hint_numbers};
+pub(crate) use print::{decl_args, hint_clause, hint_numbers, said, said_text, Said};
 
 /// A component point traced over a numeric formal, with domain endpoints kept as expressions.
 #[derive(Clone, Debug)]
@@ -133,6 +133,11 @@ impl Ty {
             Ty::Angle => crate::units::Dim::ANGLE,
             Ty::Int | Ty::Scalar | Ty::Side | Ty::Group | Ty::Ent(_) => crate::units::Dim::SCALAR,
         }
+    }
+
+    /// Whether a formal of this type is a number — bound to one, or an unknown where left unbound.
+    pub fn number(self) -> bool {
+        matches!(self, Ty::Int | Ty::Scalar | Ty::Length | Ty::Angle)
     }
 }
 
@@ -354,8 +359,9 @@ pub enum InstVal {
     /// group a call may be given (`Part(dims.cyl)`).  Only a group's member may be one.
     Group(Vec<InstArg>),
     /// `beta: hint(15deg)` — the formal left unbound, so an unknown of the drawing as any
-    /// unbound numeric formal is, and its solve begun at this number.  Only a call's argument.
-    Hint(String),
+    /// unbound numeric formal is, and its solve begun at this number, which a solve writes back
+    /// at the span.  Only a call's argument.
+    Hint(String, Span),
 }
 
 /// A number defined by name: `w := 60`, a value worked out while elaborating, or — under the
@@ -612,7 +618,7 @@ impl DeclName {
     }
 }
 
-/// `p0 := point hint(x: 0, y: 0)`, `c0 := circle(center: p2) hint(r: 25)`,
+/// `p0 := point hint((0, 0))`, `c0 := circle(center: p2) hint(r: 25)`,
 /// `spline s0(p3, p4, p5, p6) knots [...]`.
 #[derive(Clone, Debug)]
 pub struct Decl {
@@ -932,7 +938,7 @@ pub enum Sense {
 pub enum Kid<D = Decl> {
     /// `l := line(a, b)` — the point is named, and named somewhere else.
     Ref(Ref),
-    /// `line l(hint(x: 0, y: 0), …)` — an anonymous point, and where its solve begins.  The
+    /// `line l(hint((0, 0)), …)` — an anonymous point, and where its solve begins.  The
     /// same clause as everywhere else in the language, one level down.
     Hint(KidSeed),
     /// `block := solid(face(a, b, c, -> close), depth: t)` — a private section.
@@ -981,6 +987,8 @@ pub struct KidSeed {
     pub spans: [Span; 3],
     /// The whole `hint(…)`, so a writeback that has to add a key can rewrite it.
     pub span: Span,
+    /// The slot is an axis's (a plane's `u:` and `v:`), so the seed is its direction, `dir:`.
+    pub axis: bool,
 }
 
 /// `hint(at: c, bearing: u + phase)` — a place given as geometry: at a point, or at the edge
@@ -999,7 +1007,7 @@ pub struct AtRef {
     pub along: Option<Ref>,
     pub by: Option<(String, Span)>,
     pub turn: Option<(String, Span)>,
-    /// `hint(at: P, x: 3, y: 4)`: the place `(3, 4)` in plane `P`'s own coordinates, read in
+    /// `hint(at: P, (3, 4))`: the place `(3, 4)` in plane `P`'s own coordinates, read in
     /// space and seen in the seeded point's plane.
     pub x: Option<(String, Span)>,
     pub y: Option<(String, Span)>,
@@ -1029,6 +1037,11 @@ pub enum OpArg {
     /// A named constraint slot. Pins (`t == 0.4`) constrain the solution; values
     /// inside `hint(…)` only seed it. Selectors such as `end: start` use `Named`.
     Slot { key: Name, arg: Arg },
+    /// A whole vector pinned at once: `fix((0, 0)) p`, the point itself, or `fix(dir == (1, 0,
+    /// 0)) t`, a vector the entity has.  Its components fill the slots of the members they are
+    /// (`Written::assemble`), and it is kept whole here so that what a vector was written as —
+    /// how many components — is still known where the entity is (`apply_gauge`).
+    Vector { key: Option<Name>, parts: Vec<Arg>, span: Span },
     /// the number, as written — `80`, `x = 7`, `h = w / 2`, `1' 3"`
     Dim(String, Span),
 }
@@ -1071,6 +1084,26 @@ impl Written {
         })
     }
 
+    /// Every pinned or seeded slot, a vector's components each under the member it is — `x`,
+    /// `dir.y` — and where its key was written: what `assemble` fills and a gauge's key reads.
+    pub fn slots(&self) -> impl Iterator<Item = (Name, &Arg)> + '_ {
+        self.args.iter().flat_map(|a| -> Vec<(Name, &Arg)> {
+            match a {
+                OpArg::Slot { key, arg } => vec![(key.clone(), arg)],
+                OpArg::Vector { key, parts, span } => {
+                    let span = key.as_ref().map_or(*span, |k| k.span);
+                    let member = |c: &str| match key {
+                        Some(k) => format!("{}.{c}", k.text),
+                        None => c.to_string(),
+                    };
+                    let names = ["x", "y", "z"].map(member);
+                    names.into_iter().zip(parts).map(|(text, arg)| (Name { text, span }, arg)).collect()
+                }
+                _ => Vec::new(),
+            }
+        })
+    }
+
     /// Assemble arguments in registry order, rejecting unknown slot and selector names.
     /// Missing arguments remain `None` for elaboration to validate.
     pub fn assemble(&self, kind: CKind) -> Result<Vec<Option<Arg>>, (Span, String)> {
@@ -1080,8 +1113,7 @@ impl Written {
         // word here would silently pin the right slot at the wrong
         // number.  Checked before anything is assembled, so the message is about what was
         // written and not about what it came to.
-        for a in &self.args {
-            let OpArg::Slot { key, .. } = a else { continue };
+        for (key, _) in self.slots() {
             if !spec.iter().any(|(n, k)| k.is_param() && *n == key.text) {
                 let word = &self.word.text;
                 let m = format!("`{word}` has no slot `{}` to seed", key.text);
@@ -1124,10 +1156,7 @@ impl Written {
             out[i] = if sk.takes_ref() {
                 next.next().map(Arg::Ref)
             } else if sk.is_param() {
-                let slot = || self.args.iter().filter_map(|a| match a {
-                    OpArg::Slot { key, arg } if key.text == *name => Some(arg),
-                    _ => None,
-                });
+                let slot = || self.slots().filter(|(key, _)| key.text == *name).map(|(_, arg)| arg);
                 // a shared parameter is pinned to an unknown and seeded where the unknown is
                 // declared (`param s: Angle hint(330)`): a `hint(t: …)` beside the pin would be a
                 // second seed for one unknown, and the contacts sharing it would disagree

@@ -7,13 +7,13 @@ component GeneratingCut(tool: solid, generating: motion, start: Angle, finish: A
 }
 
 in std.front {
-  construction centerline spindle := line(std.origin, hint(x: 0, y: 1))
-  fix(x == 0, y == 1) spindle.p2
+  construction centerline spindle := line(std.origin, hint((0, 1)))
+  fix((0, 1)) spindle.p2
   private center := point
   center distance(3mm, along: u) std.front
   center distance(0mm, along: v) std.front
-  private bottom := point hint(x: 3, y: -1)
-  private top := point hint(x: 3, y: 1)
+  private bottom := point hint((3, -1))
+  private top := point hint((3, 1))
   private diameter := line(bottom, top)
   center midpoint diameter
   diameter parallel spindle

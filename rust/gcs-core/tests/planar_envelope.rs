@@ -106,7 +106,7 @@ fn a_motion_off_the_plane_gives_no_envelope() {
 bore := envelope(apex, under: rotor_turn, from: 0deg, to: 1080deg)
 tilt := motion(about: rightward_line)
 in std.front {
-rightward_line := horizontal line(std.origin, hint(x: 1, y: 0))
+rightward_line := horizontal line(std.origin, hint((1, 0)))
 distance(1mm) rightward_line
 }
 "));

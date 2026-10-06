@@ -225,9 +225,8 @@ fn remap_early(
         EntKind::Plane => plane_map[e.i()].map(EntRef::plane),
         // a curve is never another curve's argument: nothing in the language says so, and a
         // face and a solid are built after every curve, so neither is one either
-        // nor a sphere: a curve is written over drawn figures, and a sphere is on no sheet
         EntKind::Curve | EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge
-        | EntKind::Sphere | EntKind::Cone | EntKind::Cylinder | EntKind::Axis => None,
+        | EntKind::Axis => None,
     }
 }
 
@@ -260,18 +259,6 @@ pub fn to_json(sk: &Sketch) -> Json {
         .collect();
     let circles: Vec<Json> = sk
         .circles
-        .iter()
-        .map(|c| {
-            object([
-                ("center", (c.center as i64).into()),
-                ("r", sk.params[c.radius as usize].value.into()),
-                ("fixed", sk.params[c.radius as usize].fixed.into()),
-                ("class", class_json(&c.class)),
-            ])
-        })
-        .collect();
-    let spheres: Vec<Json> = sk
-        .spheres
         .iter()
         .map(|c| {
             object([
@@ -372,26 +359,6 @@ pub fn to_json(sk: &Sketch) -> Json {
             ("centerline", Json::Bool(roles.centerline)),
         ])).collect::<Vec<_>>();
     if !roles.is_empty() { doc.set("roles", Json::Arr(roles)); }
-    // only when there is one, so a document with no sphere dumps exactly as it always has
-    if !spheres.is_empty() { doc.set("spheres", Json::Arr(spheres)); }
-    // and the cones and the cylinders, likewise only when there is one
-    for (key, list) in [("cones", &sk.cones), ("cylinders", &sk.cylinders)] {
-        let own = if key == "cones" { "half" } else { "r" };
-        let v: Vec<Json> = list
-            .iter()
-            .map(|a| {
-                object([
-                    ("axis", (a.axis as i64).into()),
-                    (own, sk.params[a.param as usize].value.into()),
-                    ("fixed", sk.params[a.param as usize].fixed.into()),
-                    ("class", class_json(&a.class)),
-                ])
-            })
-            .collect();
-        if !v.is_empty() {
-            doc.set(key, Json::Arr(v));
-        }
-    }
     // the axes, only when there is one: a direction and its fixed flags, and where it is (read
     // back, since a relation placing it is re-added on load and frees the place again)
     let axes: Vec<Json> = sk
@@ -525,38 +492,6 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
     }
     for (ri, a, held) in places {
         sk.place_restored(ri, a, held);
-    }
-    // the spheres after the planes, `primitives()`'s order, so a sphere's radius is where an
-    // elaboration puts it
-    for c in d.get("spheres").unwrap_or(&empty).arr() {
-        let centre = c.get("center").map(|v| v.as_i64()).unwrap_or(0);
-        let centre = index(centre, np, "sphere.center")?;
-        let ci = sk.sphere(centre, c.get("r").map(|v| v.as_f64()).unwrap_or(0.0), "");
-        let rp = sk.spheres[ci].radius as usize;
-        sk.params[rp].fixed = c.get("fixed").map(|v| v.as_bool()).unwrap_or(false);
-        sk.spheres[ci].class = read_class(c);
-    }
-    // the cones and the cylinders after the spheres, each about a line already read
-    let nl = sk.lines.len();
-    for (key, kind) in [("cones", EntKind::Cone), ("cylinders", EntKind::Cylinder)] {
-        let own = if kind == EntKind::Cone { "half" } else { "r" };
-        for c in d.get(key).unwrap_or(&empty).arr() {
-            let axis = c.get("axis").map(|v| v.as_i64()).unwrap_or(0);
-            let axis = index(axis, nl, "axis")?;
-            let v = c.get(own).map(|v| v.as_f64()).unwrap_or(0.0);
-            let ci = match kind {
-                EntKind::Cone => sk.cone(axis, v, ""),
-                _ => sk.cylinder(axis, v, ""),
-            };
-            let e = EntRef::new(kind, ci);
-            let rp = sk.axial(e).param as usize;
-            sk.params[rp].fixed = c.get("fixed").map(|v| v.as_bool()).unwrap_or(false);
-            let class = read_class(c);
-            match kind {
-                EntKind::Cone => sk.cones[ci].class = class,
-                _ => sk.cylinders[ci].class = class,
-            }
-        }
     }
     // memberships once the planes exist to be members of: a point's `"plane"` names one by
     // index, and the point was read before any plane was
@@ -853,49 +788,6 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
     for (ni, a, held) in places {
         dst.place_restored(ni, a, held);
     }
-    let mut sphere_map: Vec<Option<usize>> = vec![None; src.spheres.len()];
-    for i in 0..src.spheres.len() {
-        if !keep(EntRef::new(EntKind::Sphere, i)) {
-            continue;
-        }
-        let c = &src.spheres[i];
-        let Some(centre) = pt_index(c.center as usize) else { continue };
-        let ni = dst.sphere(centre, src.params[c.radius as usize].value, "");
-        let rp = dst.spheres[ni].radius as usize;
-        dst.params[rp].fixed = src.params[c.radius as usize].fixed;
-        dst.spheres[ni].class = c.class.clone();
-        sphere_map[i] = Some(ni);
-        made.push(EntRef::new(EntKind::Sphere, ni));
-    }
-    // the cones and the cylinders after the spheres, each following its axis across
-    let mut axial_maps: [Vec<Option<usize>>; 2] =
-        [vec![None; src.cones.len()], vec![None; src.cylinders.len()]];
-    for (m, kind) in [EntKind::Cone, EntKind::Cylinder].into_iter().enumerate() {
-        for i in 0..src.count(kind) {
-            let e = EntRef::new(kind, i);
-            if !keep(e) {
-                continue;
-            }
-            let a = src.axial(e);
-            let Some(axis) = line_map[a.axis as usize] else { continue };
-            let v = src.params[a.param as usize].value;
-            let ni = match kind {
-                EntKind::Cone => dst.cone(axis, v, ""),
-                _ => dst.cylinder(axis, v, ""),
-            };
-            let ne = EntRef::new(kind, ni);
-            let np = dst.axial(ne).param as usize;
-            dst.params[np].fixed = src.params[a.param as usize].fixed;
-            let class = a.class.clone();
-            match kind {
-                EntKind::Cone => dst.cones[ni].class = class,
-                _ => dst.cylinders[ni].class = class,
-            }
-            axial_maps[m][i] = Some(ni);
-            made.push(ne);
-        }
-    }
-    let [cone_map, cylinder_map] = axial_maps;
     // a membership follows its plane across, and a plane that did not come — deleted, or
     // missing a point — takes the memberships that named it with it
     for i in 0..src.points.len() {
@@ -1025,8 +917,6 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             EntKind::Line => line_map[e.i()].map(EntRef::line),
             EntKind::Circle => circle_map[e.i()].map(EntRef::circle),
             EntKind::Arc => arc_map[e.i()].map(EntRef::arc),
-            EntKind::Sphere => sphere_map[e.i()].map(|i| EntRef::new(EntKind::Sphere, i)),
-            EntKind::Cylinder => cylinder_map[e.i()].map(|i| EntRef::new(EntKind::Cylinder, i)),
             _ => None,
         }
     };
@@ -1286,9 +1176,6 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             EntKind::Point => pt_index(e.i()).map(EntRef::point),
             EntKind::Line => line_map[e.i()].map(EntRef::line),
             EntKind::Circle => circle_map[e.i()].map(EntRef::circle),
-            EntKind::Sphere => sphere_map[e.i()].map(|i| EntRef::new(EntKind::Sphere, i)),
-            EntKind::Cone => cone_map[e.i()].map(|i| EntRef::new(EntKind::Cone, i)),
-            EntKind::Cylinder => cylinder_map[e.i()].map(|i| EntRef::new(EntKind::Cylinder, i)),
             EntKind::Axis => axis_map[e.i()].map(|i| EntRef::new(EntKind::Axis, i)),
             EntKind::Arc => arc_map[e.i()].map(EntRef::arc),
             EntKind::Spline => spline_map[e.i()].map(EntRef::spline),

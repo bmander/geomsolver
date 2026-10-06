@@ -83,7 +83,7 @@ pub const FUNCTIONS: &[(&str, usize, usize)] = &[
 pub enum Measure {
     /// A line's length, or an arc's, in space.
     Length,
-    /// A circle's, an arc's, a sphere's or a cylinder's radius.
+    /// A circle's or an arc's radius.
     Radius,
     /// Between two points, or from a point to a line (the line produced), in space.
     Distance,

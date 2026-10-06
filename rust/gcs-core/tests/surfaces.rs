@@ -7,9 +7,9 @@ in std.front {
 o := point
 q := point
 c := point
-fix(x == 0, y == 0) o
-fix(x == 0, y == 1) q
-fix(x == 3, y == 0) c
+fix((0, 0)) o
+fix((0, 1)) q
+fix((3, 0)) c
 ax := line(o,q)
 meridian := circle(center: c)
 radius(1mm) meridian
@@ -209,7 +209,7 @@ fn a_surface_refuses_wrong_solids_edges_and_planar_constraints() {
         ("prism := solid(face(meridian),depth: 2mm)\nbad := surface(prism,meridian,from: 0deg,to: 90deg)",
             "no angular bounds"),
         ("bad := surface(missing,meridian)","no such entity"),
-        ("fix(x == 0, y == 0) wall","a surface has no number of its own to fix"),
+        ("fix((0, 0)) wall","a surface has no number of its own to fix"),
     ] {
         let e = build(&format!("{MODEL}{tail}\n"));
         assert!(!e.ok() && e.errors().any(|d| d.message.contains(want)),"{:?}",e.diags);
@@ -255,10 +255,10 @@ a := point
 b := point
 c := point
 d := point
-fix(x == 1, y == -2) a
-fix(x == 1, y == 2) b
-fix(x == 0, y == 2) c
-fix(x == 0, y == -2) d
+fix((1, -2)) a
+fix((1, 2)) b
+fix((0, 2)) c
+fix((0, -2)) d
 side := line(a,b)
 top := line(b,c)
 ax := line(d,c)

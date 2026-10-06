@@ -28,8 +28,8 @@ in std.front {
   k1 := radius(10) circle(center: c1) hint(r: 10)
   k2 := radius(10) circle(center: c2) hint(r: 10)
 
-  p := point hint(x: 0, y: 10)
-  q := point hint(x: 50, y: 10)
+  p := point hint((0, 10))
+  q := point hint((50, 10))
   belt := line(p, q)
 
   p coincident k1
@@ -37,6 +37,6 @@ in std.front {
   belt tangent(side: right) k1
   belt tangent(side: right) k2
 
-  fix(x == 0, y == 0) c1
-  fix(x == 50, y == 0) c2
+  fix((0, 0)) c1
+  fix((50, 0)) c2
 }

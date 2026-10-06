@@ -30,8 +30,8 @@ mod expand;
 mod bindings;
 mod resolve;
 
-pub(crate) use values::value_aff;
-use values::{free, value_of, substitute, reads_geometry};
+pub(crate) use values::{substitute_with, value_aff};
+use values::{free, typed, value_of, substitute, reads_geometry};
 use resolve::{written};
 
 /// How deep components and blocks may nest.  A document is untrusted input and

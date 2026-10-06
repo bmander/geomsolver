@@ -301,7 +301,14 @@ impl<'a> P<'a> {
                         // A slot names an entity, seeds a point, or holds a solid's inline
                         // section. An entity whose children are all unseeded writes no list.
                         let kid = match self.eat_hint_clause() {
-                            Some(lo) => Kid::Hint(self.kid_seed(lo)?),
+                            Some(lo) => {
+                                // a plane's `u:` and `v:` are axes, seeded by their direction
+                                let axis = kind == EntKind::Plane && match &label {
+                                    Some(l) => l == "u" || l == "v",
+                                    None => positional < 2,
+                                };
+                                Kid::Hint(self.kid_seed(lo, axis)?)
+                            }
                             None if self.peek_word("face")
                                 && self.t.get(self.i + 1).map(|t| &t.0) == Some(&Tok::P('(')) =>
                             {
@@ -395,7 +402,7 @@ impl<'a> P<'a> {
         let mut hint_span = Span::new(insert, insert);
         loop {
             if let Some(lo) = self.eat_hint_clause() {
-                // `hint(x: 0, y: 12)` — keyed, keys in any order, an omitted scalar is 0 — or a
+                // `hint((0, 12))` — keyed, keys in any order, an omitted scalar is 0 — or a
                 // place named geometrically, `hint(at: t)`, `hint(at: c, bearing: u + phase)`,
                 // `hint(at: a, toward: b, by: 0.5, turn: 90deg)`, `hint(at: a, along: l, by: 2)`:
                 // the same clause, since a seed is what is inside one and nothing else is
@@ -433,7 +440,7 @@ impl<'a> P<'a> {
                         texts[k] = Some((h.text, h.span, h.at));
                         continue;
                     }
-                    let Some(i) = scalars.iter().position(|&s| s == h.key) else {
+                    let Some(i) = kind.members().iter().position(|&s| s == h.key) else {
                         // the key is the mistake, not the declaration: reported, and the rest
                         // of the clause read on, so the entity is still declared and no
                         // statement naming it fails for want of it (#43.19)
@@ -458,7 +465,7 @@ impl<'a> P<'a> {
                 let text = |t: Option<(String, Span, Span)>| t.map(|(text, span, _)| (text, span));
                 match at {
                     Some(what) => {
-                        // a place in a plane, `hint(at: P, x: 3, y: 4)`: the plane's own
+                        // a place in a plane, `hint(at: P, (3, 4))`: the plane's own
                         // coordinates, read where the point is seen; any other scalar beside a
                         // place is refused
                         let in_plane = kind == EntKind::Point && coord.is_some() && other_coord.is_none();
@@ -580,7 +587,7 @@ impl<'a> P<'a> {
                 let m = if place {
                     format!("a place is keyed now: `{head} hint(at: REF, bearing: …)`")
                 } else {
-                    format!("a coordinate seed is keyed now: `{head} hint(x: …, y: …)`")
+                    format!("a coordinate seed is keyed now: `{head} hint((…, …))`")
                 };
                 self.fail(&m);
                 return None;
@@ -782,18 +789,23 @@ impl<'a> P<'a> {
     /// A `hint(…)` standing in a child slot, the opening paren already eaten.
     ///
     /// The same clause as everywhere else, so it is read by the same `hint_body`; what the keys
-    /// mean is this table — an anonymous child is a point, and a point has x and y.
-    fn kid_seed(&mut self, lo: usize) -> Option<KidSeed> {
-        let mut k = KidSeed::default();
-        for h in self.hint_body("x: 0, y: 0")? {
-            let i = match h.key.as_str() {
-                "x" => 0,
-                "y" => 1,
-                // an axis's direction has a third; a point's is refused where it is built
-                "z" => 2,
+    /// mean is this table — an anonymous child is a point, `hint((3, 4))`, or a plane's axis,
+    /// `hint(dir: (1, 0, 0))`.
+    fn kid_seed(&mut self, lo: usize, axis: bool) -> Option<KidSeed> {
+        let mut k = KidSeed { axis, ..KidSeed::default() };
+        for h in self.hint_body("(0, 0)")? {
+            let i = match (axis, h.key.as_str()) {
+                (false, "x") | (true, "dir.x") => 0,
+                (false, "y") | (true, "dir.y") => 1,
+                // a point's third is refused where it is built
+                (false, "z") | (true, "dir.z") => 2,
                 _ => {
-                    let m = format!("a child's seed has no scalar `{}`: a point's are x and y, an \
-                                     axis's x, y and z", h.key);
+                    let m = match axis {
+                        true => format!("an axis's seed is its direction, `hint(dir: (1, 0, 0))`, \
+                                         not `{}`", h.key),
+                        false => format!("a point's seed is its place, `hint((0, 0))`, not `{}`",
+                                         h.key),
+                    };
                     self.fail_at(h.at, &m);
                     return None;
                 }

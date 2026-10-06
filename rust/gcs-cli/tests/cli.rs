@@ -241,7 +241,7 @@ unit mm
 use std
 in std.front {
 o := point
-fix(x == 0, y == 0) o
+fix((0, 0)) o
 c := circle(center: o)
 radius(2) c
 }
@@ -296,9 +296,9 @@ unit mm
 use std
 in std.front {
 a := point
-fix(x == 0, y == 0) a
+fix((0, 0)) a
 b := point
-fix(x == 20, y == 0) b
+fix((20, 0)) b
 bar := line(a,b)
 }
 ").unwrap();
@@ -402,7 +402,7 @@ fn a_broken_document_says_where() {
     let dir = std::env::temp_dir().join("solventc-test");
     std::fs::create_dir_all(&dir).expect("a place to write");
     let path = dir.join("uni.sv");
-    std::fs::write(&path, "use std\nin std.front {\né := point hint(x: 0, y: 0)   // — an em dash\nl := line(é, zzz)\n}\n")
+    std::fs::write(&path, "use std\nin std.front {\né := point hint((0, 0))   // — an em dash\nl := line(é, zzz)\n}\n")
         .expect("write");
     let out = run(&[&path.to_string_lossy()]);
     let err = String::from_utf8_lossy(&out.stderr);
@@ -547,12 +547,12 @@ o := point
 b := point
 a := point
 d := point
-fix(x == 0, y == 0) o
-fix(x == 10, y == 0) b
-fix(x == 10, y == 6) a
-fix(x == 0, y == 6) d
+fix((0, 0)) o
+fix((10, 0)) b
+fix((10, 6)) a
+fix((0, 6)) d
 m := point
-fix(x == 5, y == 3) m
+fix((5, 3)) m
 c := circle(center: m) hint(r: 1)
 radius(1) c
 }

@@ -12,20 +12,20 @@
 // turned a quarter, z right and x to the left.  `origin` is a point drawn in the front plane at
 // its origin.
 component StandardDatums() {
-  x := axis hint(x: 1, y: 0, z: 0)
-  fix(x == 1, y == 0, z == 0, px == 0, py == 0, pz == 0) x
-  y := axis hint(x: 0, y: 1, z: 0)
-  fix(x == 0, y == 1, z == 0, px == 0, py == 0, pz == 0) y
-  z := axis hint(x: 0, y: 0, z: 1)
-  fix(x == 0, y == 0, z == 1, px == 0, py == 0, pz == 0) z
-  back := axis hint(x: -1, y: 0, z: 0)
-  fix(x == -1, y == 0, z == 0, px == 0, py == 0, pz == 0) back
+  x := axis
+  fix(dir == (1, 0, 0), origin == (0, 0, 0)) x
+  y := axis
+  fix(dir == (0, 1, 0), origin == (0, 0, 0)) y
+  z := axis
+  fix(dir == (0, 0, 1), origin == (0, 0, 0)) z
+  back := axis
+  fix(dir == (-1, 0, 0), origin == (0, 0, 0)) back
   front := plane(u: x, v: z)
   top := plane(u: x, v: y)
   side := plane(u: y, v: z)
   up := plane(u: z, v: back)
   origin := point in front
-  fix(x == 0, y == 0) origin
+  fix((0, 0)) origin
 }
 
 // Axes turned within a plane: the plane through `o` whose u runs toward `t` and whose v is a
@@ -45,16 +45,101 @@ component Turned(o: point, t: point) {
 // An axis-aligned rectangle about a supplied center. The public loop is a face boundary;
 // the diagonal only constrains the center and stays private construction geometry.
 component CenteredRectangle(center: point, w: Length, h: Length) {
-  a := point hint(x: center.x - w / 2, y: center.y - h / 2)
-  b := point hint(x: center.x + w / 2, y: center.y - h / 2)
-  c := point hint(x: center.x + w / 2, y: center.y + h / 2)
-  d := point hint(x: center.x - w / 2, y: center.y + h / 2)
+  a := point hint((center.x - w / 2, center.y - h / 2))
+  b := point hint((center.x + w / 2, center.y - h / 2))
+  c := point hint((center.x + w / 2, center.y + h / 2))
+  d := point hint((center.x - w / 2, center.y + h / 2))
   loop := horizontal (ab := line(a, b)) -> vertical (bc := line(b, c)) ->
          horizontal (cd := line(c, d)) -> vertical (da := line(d, a)) -> close
   distance(w) ab
   distance(h) bc
   private construction diagonal := line(a, c)
   center midpoint diagonal
+}
+
+// A sphere of radius `r` about `center`, which may be drawn in a view or stand in space: a centre
+// and a number, and nothing drawn.  What stands on it is said by distances from the centre, the
+// radius read by the instance's name — a point on it, `p distance(ball.r) ball.center`; a line touching it,
+// `ball.center distance(ball.r) l`; two touching outside, `a.center distance(a.r + b.r)
+// b.center` — and a circle drawn in another view lying on it is `std.CircleOnSphere`.  Leave `r`
+// unbound and it is an unknown of the drawing, which those distances share.  Not a solid: a ball
+// is a half disc turned about its diameter.
+//
+//   use std
+//   in std.front {
+//     c := point hint((0, 0))
+//   }
+//   ball := std.Sphere(c, r: 12mm)
+//   p := point hint((5, 10)) in std.side
+//   p distance(ball.r) ball.center
+component Sphere(center: point, r: Length) {
+}
+
+// A circle `k` drawn in `view` lying on the sphere `s` all the way round: the sphere's centre on
+// the circle's axis, and one point of the circle — `q`, level with the centre in `view`, so it
+// cannot slide round — at the sphere's radius from it.  Three equations, independent wherever
+// the circle is off the sphere's centre.  The toe or heel circle of a bevel blank on its end
+// sphere.
+//
+//   std.CircleOnSphere(k, ball, std.side)
+component CircleOnSphere(k: circle, s: group, view: plane) {
+  private q := point hint(at: k, bearing: 0deg) in view
+  q coincident k
+  k.center horizontal q
+  private n := axis
+  n perpendicular view
+  k.center coincident n
+  s.center coincident n
+  q distance(s.r) s.center
+}
+
+// A cylinder of radius `r` about the line `axis`: a line and a number, and nothing drawn.  What
+// stands on it is said by distances from the axis — a point on it, `p distance(shaft.r)
+// shaft.axis`; a line touching it, `shaft.axis distance(shaft.r) l` (the common perpendicular,
+// read in space across views, its side the seed's).  Leave `r` unbound and it is an unknown of
+// the drawing those distances share.
+//
+//   shaft := std.Cylinder(ax, r: 8mm)
+//   shaft.axis distance(shaft.r) l
+component Cylinder(axis: line, r: Length) {
+}
+
+// A cone about the line `axis`, its apex the line's start and opening toward its end, `half` the
+// angle between the axis and every generator: a line and a number, and nothing drawn.  A point on
+// it is `PointOnCone`, two cones touching at a point `TangentCones`.  Leave `half` unbound
+// (`half: hint(30deg)`) and it is an unknown of the drawing.
+//
+//   gc := std.Cone(gax, half: 60deg)
+//   std.PointOnCone(M, gc)
+component Cone(axis: line, half: Angle) {
+}
+
+// A point `p` on the cone `k`: the generator from the apex to `p` makes the cone's half-angle
+// with its axis — on the nappe the axis points into.  One equation.  Across views it is the angle
+// in space; with `p` in the axis's own view it is the page's directed angle, so `p` is on the
+// generator counter-clockwise of the axis.
+component PointOnCone(p: point, k: group) {
+  private construction g := line(k.axis.p1, p)
+  k.axis angle(k.half) g
+}
+
+// Two cones `k1` and `k2` touching at `m` with one tangent plane there, `m` on each beside it
+// (`PointOnCone`).  Each cone's tangent plane at `m` is the one through its generator square to
+// its meridian plane, so the two are one when the plane through both generators stands square to
+// both meridian planes: its normal, `n`, lies in each.  Two equations.  What a hypoid's pitch
+// cones do at the mean point.
+//
+//   std.TangentCones(gc, pc, M)
+component TangentCones(k1: group, k2: group, m: point) {
+  private construction g1 := line(k1.axis.p1, m)
+  private construction g2 := line(k2.axis.p1, m)
+  private t := plane(u: g1, v: g2)
+  private m1 := plane(u: k1.axis, v: g1)
+  private m2 := plane(u: k2.axis, v: g2)
+  private n := axis
+  n perpendicular t
+  n parallel m1
+  n parallel m2
 }
 
 // An ellipse, as a curve: the point at eccentric angle `u` on the ellipse of semi-axes `a` and
@@ -65,7 +150,7 @@ component CenteredRectangle(center: point, w: Length, h: Length) {
 //
 //   use std
 //   in std.front {
-//     o := point hint(x: 0, y: 0)
+//     o := point hint((0, 0))
 //   }
 //   e := std.Ellipse(o, a: 40, b: 25, tilt: 0deg).p over u in (0, 360)
 //

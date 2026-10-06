@@ -19,14 +19,14 @@ alpha := 20deg              // the rack's pressure angle
 
 in std.front {
   o1 := point
-  o2 := point hint(x: 50, y: 0)
-  fix(x == 0, y == 0) o1
+  o2 := point hint((50, 0))
+  fix((0, 0)) o1
   o1 distance(r1 + r2, along: x) o2
   o1 distance(0, along: y) o2
 
   // the rack's pitch line, tangent to the pinion's pitch circle at the pitch point
-  p0 := point hint(x: 20, y: 0)
-  p1 := point hint(x: 20, y: 10)
+  p0 := point hint((20, 0))
+  p1 := point hint((20, 10))
   o1 distance(r1, along: x) p0
   o1 distance(0, along: y) p0
   pitch_line := vertical line(p0, p1)
@@ -34,8 +34,8 @@ in std.front {
 
   // the rack's flank, drawn where it stands at roll 0: its foot on the pitch line, at the
   // pressure angle from the radius
-  f0 := point hint(x: 20, y: 2)
-  f1 := point hint(x: 29.4, y: 5.4)
+  f0 := point hint((20, 2))
+  f1 := point hint((29.4, 5.4))
   radial := line(o1, p0)
   flank := line(f0, f1)
   f0 coincident pitch_line
@@ -56,7 +56,7 @@ mate := envelope(tooth, under: meshing, from: -15deg, to: 15deg)
 
 // the mate's curvature where the two mesh, and where its centre must lie
 in std.front {
-  k := point hint(x: 23.5, y: -9.6)
+  k := point hint((23.5, -9.6))
   osc := circle(center: k) hint(r: 6)
   mate curvature(t == 0) osc
   base2 := circle(center: o2) hint(r: 28.2)

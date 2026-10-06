@@ -52,7 +52,7 @@ const BLOCK: &str = "\
 unit mm
 use std
 in std.front {
-private mid := point hint(x: 0, y: -6)
+private mid := point hint((0, -6))
 std.origin vertical mid
 std.origin distance(6mm, along: down) mid
 private outline := std.CenteredRectangle(mid, w: 40mm, h: 12mm)

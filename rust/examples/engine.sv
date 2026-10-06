@@ -21,7 +21,7 @@ use engine.side_view
 // the three views are the standard planes: the side view is the front plane, the end view
 // the side plane, and the plan the top plane; where each is drawn on the sheet is `engine.svd`'s
 O := point in std.front
-fix(x == 0, y == 0) O
+fix((0, 0)) O
 
 end := engine.end_view.EndSection(std.side.origin, dims: engine.dims.engine_dims) in std.side
 side := engine.side_view.SideSection(O, dims: engine.dims.engine_dims) in std.front

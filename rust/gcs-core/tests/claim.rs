@@ -37,16 +37,16 @@ use std
 
 in std.front {
 p0 := point
-p1 := point hint(x: 60, y: 0)
-p2 := point hint(x: 60, y: 40)
-p3 := point hint(x: 0, y: 40)
+p1 := point hint((60, 0))
+p2 := point hint((60, 40))
+p3 := point hint((0, 40))
 horizontal (bottom := line(p0, p1)) ->
 vertical   (right := line(p1, p2)) ->
 horizontal (top := line(p2, p3)) ->
 vertical   (left := line(p3, p0)) -> close
 p0 distance(60) p1
 p1 distance(40) p2
-fix(x == 0, y == 0) p0
+fix((0, 0)) p0
 }
 ";
 
@@ -87,9 +87,9 @@ use std
 
 in std.front {
 a := point
-c := point hint(x: 0, y: 9)
+c := point hint((0, 9))
 ac := line(a, c)
-fix(x == 0, y == 0) a
+fix((0, 0)) a
 claim vertical ac
 }
 ",
@@ -107,11 +107,11 @@ fn a_claim_may_not_own_an_unknown() {
 use std
 
 in std.front {
-o := point hint(x: 0, y: 0)
+o := point hint((0, 0))
 k := circle(center: o) hint(r: 20)
-p := point hint(x: 20, y: 0)
+p := point hint((20, 0))
 claim p coincident k
-q := point hint(x: 25, y: 8)
+q := point hint((25, 8))
 s := spline(o, p, q, o, p, q, o)
 claim q coincident s
 }
@@ -156,17 +156,17 @@ use std
 
 in std.front {
 a := point
-b := point hint(x: 30, y: 0)
+b := point hint((30, 0))
 ab := line(a, b)
 horizontal ab
 a distance(30) b
-fix(x == 0, y == 0) a
+fix((0, 0)) a
 c := point
-d := point hint(x: 30, y: 20)
+d := point hint((30, 20))
 cd := line(c, d)
 horizontal cd
 c distance(30) d
-fix(x == 0, y == 20) c
+fix((0, 20)) c
 claim ab equal cd
 }
 ",
@@ -213,7 +213,7 @@ use std
 in std.front {
 o := point
 k := circle(center: o) hint(r: 20)
-fix(x == 0, y == 0) o
+fix((0, 0)) o
 }
 ";
     let plain = drawn(CIRCLE);
@@ -233,11 +233,11 @@ use std
 
 in std.front {
 o := point
-p := point hint(x: 20, y: 0)
-q := point hint(x: 25, y: 8)
+p := point hint((20, 0))
+q := point hint((25, 8))
 s := spline(o, p, q, o, p, q, o)
 q coincident s
-fix(x == 0, y == 0) o
+fix((0, 0)) o
 }
 ",
     );
@@ -261,9 +261,9 @@ use std
 
 in std.front {
 a := point
-c := point hint(x: 0, y: 9)
+c := point hint((0, 9))
 ac := line(a, c)
-fix(x == 0, y == 0) a
+fix((0, 0)) a
 }
 ", "vertical ac\n"),                         // consuming: the pose alone satisfies it
         ("\
@@ -271,12 +271,12 @@ use std
 
 in std.front {
 a := point
-b := point hint(x: 30, y: 0)
-c := point hint(x: 30, y: 40)
+b := point hint((30, 0))
+c := point hint((30, 40))
 ab := line(a, b)
 bc := line(b, c)
 horizontal ab
-fix(x == 0, y == 0) a
+fix((0, 0)) a
 }
 ", "vertical bc\n"),                         // consuming as well, with a bigger base
     ] {
@@ -319,9 +319,9 @@ use std
 
 in std.front {
 o := point
-p := point hint(x: 60, y: 0)
+p := point hint((60, 0))
 k := circle(center: o) hint(r: 20)
-fix(x == 0, y == 0) o
+fix((0, 0)) o
 l := horizontal line(o, p)
 o distance(60) p
 }
@@ -412,7 +412,7 @@ fn the_rail_proves_the_line_without_tracing_it() {
 #[test]
 fn the_rail_is_refuted_when_it_is_not_where_the_pen_goes() {
     let src = gcs_core::examples::source("peaucellier_rail").unwrap()
-        .replace("fix(x == 80, y == 0) anchor", "fix(x == 70, y == 0) anchor");
+        .replace("fix((80, 0)) anchor", "fix((70, 0)) anchor");
     let (prog, errs) = crate::common::parse(&src);
     assert!(errs.is_empty(), "{errs:?}");
     let mut e = gcs_core::program::elaborate(&prog);

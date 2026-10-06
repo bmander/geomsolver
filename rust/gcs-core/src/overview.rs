@@ -222,8 +222,8 @@ pub fn drawable(sk: &Sketch, e: EntRef, unit: f64) -> Vec<Vec<(f64, f64)>> {
         // nothing on the page: a face is the edges the document already drew, and what is drawn
         // of a solid is a derived view, which is its own geometry
         EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge => Vec::new(),
-        // nothing on its view's page either: a sphere is in space (`scene3d` draws it there)
-        EntKind::Sphere | EntKind::Cone | EntKind::Cylinder | EntKind::Axis => Vec::new(),
+        // nothing on its view's page either: an axis is in space (`scene3d` draws it there)
+        EntKind::Axis => Vec::new(),
         EntKind::Point => vec![vec![sk.point_xy(i)]],
         EntKind::Line => {
             let l = &sk.lines[i];
@@ -322,25 +322,6 @@ pub fn scene3d(sk: &Sketch, unit: f64) -> Vec<Item3> {
         }
         let plane = entity_view(sk, e, &views);
         let in_plane = plane.map(EntRef::plane);
-        // a sphere is in space and in no view: three great circles about its centre's lift,
-        // square to the world's axes — a wire sphere, the least that says where and how big
-        if e.kind == EntKind::Sphere {
-            let c = sk.round_center(e);
-            let o = sk.world_point(c);
-            let r = sk.radius_value(e).abs();
-            let n = ((std::f64::consts::TAU * r / unit).sqrt().ceil() as usize).clamp(24, 256);
-            for (a, b) in [(0, 1), (1, 2), (2, 0)] {
-                let pts = (0..=n).map(|k| {
-                    let t = std::f64::consts::TAU * k as f64 / n as f64;
-                    let mut p = o;
-                    p[a] += r * t.dcos();
-                    p[b] += r * t.dsin();
-                    p
-                }).collect();
-                items.push(Item3 { of: Some(e), in_plane: None, what: Part::Drawn, pts });
-            }
-            continue;
-        }
         // an axis is in space and in no view: its line across the drawing's reach, and a head at
         // the end it points to
         if e.kind == EntKind::Axis {
@@ -357,49 +338,6 @@ pub fn scene3d(sk: &Sketch, unit: f64) -> Vec<Item3> {
             for sgn in [1.0, -1.0] {
                 let back = add(tip, add(scale(d, -head), scale(u, sgn * head * 0.5)));
                 items.push(Item3 { of: Some(e), in_plane: None, what: Part::Drawn, pts: vec![tip, back] });
-            }
-            continue;
-        }
-        // a cone or a cylinder is in space too: two circles square to its axis and four rulings
-        // between them — at the axis's two ends for a cylinder, and for a cone from the apex to
-        // the circle at the axis's far end (a cone opening past a right angle draws the circle
-        // one axis-length out, where it stays finite)
-        if matches!(e.kind, EntKind::Cone | EntKind::Cylinder) {
-            use crate::space::{add, cross, norm, scale, sub};
-            let l = &sk.lines[sk.axial(e).axis as usize];
-            let end = |q: u32| sk.world_point(q as usize);
-            let (a, b) = (end(l.p1), end(l.p2));
-            let d = sub(b, a);
-            let len = norm(d);
-            if len <= 0.0 {
-                continue;
-            }
-            let ax = scale(d, 1.0 / len);
-            let pick = if ax[0].abs() < 0.9 { [1.0, 0.0, 0.0] } else { [0.0, 1.0, 0.0] };
-            let u = cross(ax, pick);
-            let u = scale(u, 1.0 / norm(u));
-            let v = cross(ax, u);
-            let own = sk.params[sk.axial(e).param as usize].value;
-            let (r0, r1) = if e.kind == EntKind::Cylinder {
-                (own.abs(), own.abs())
-            } else {
-                (0.0, len * own.dtan().abs().min(4.0))
-            };
-            let ring = |c: [f64; 3], r: f64, t: f64| {
-                add(c, add(scale(u, r * t.dcos()), scale(v, r * t.dsin())))
-            };
-            let tau = std::f64::consts::TAU;
-            let n = ((tau * r1.max(r0) / unit).sqrt().ceil() as usize).clamp(24, 256);
-            for (c, r) in [(a, r0), (b, r1)] {
-                if r > 0.0 {
-                    let pts = (0..=n).map(|k| ring(c, r, tau * k as f64 / n as f64)).collect();
-                    items.push(Item3 { of: Some(e), in_plane: None, what: Part::Drawn, pts });
-                }
-            }
-            for k in 0..4 {
-                let t = std::f64::consts::FRAC_PI_2 * k as f64;
-                let pts = vec![ring(a, r0, t), ring(b, r1, t)];
-                items.push(Item3 { of: Some(e), in_plane: None, what: Part::Drawn, pts });
             }
             continue;
         }

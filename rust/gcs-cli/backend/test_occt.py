@@ -71,21 +71,21 @@ class StepTests(unittest.TestCase):
                     self.assertAlmostEqual(actual, expected, delta=1e-6)
 
     def test_inches_are_exported_in_millimetres(self):
-        self.export("unit in\npoint o hint(x: 0,y: 0)\nground o\ncircle c(center: o)\n"
+        self.export("unit in\npoint o hint((0, 0))\nground o\ncircle c(center: o)\n"
                     "radius(1) c\nsolid body(face(c), depth: 2)\n",
                     math.pi*25.4**2*50.8, [-25.4, 0, -25.4, 25.4, 50.8, 25.4])
 
     def test_tilted_profile_and_hole_use_the_same_spatial_frame(self):
-        self.export("unit mm\nuse std\npoint q hint(x: 1,y: 0)\nground q\n"
+        self.export("unit mm\nuse std\npoint q hint((1, 0))\nground q\n"
             "plane p(origin: std.origin, toward: q, u: (0,1,0), v: (0,0,1))\n"
             "in p {\ncircle a(center: std.origin)\ncircle b(center: std.origin)\n"
             "radius(2) a\nradius(1) b\nsolid body(face(a, holes: b), depth: 3)\n}\n",
             math.pi*9, [-3, -2, -2, 0, 2, 2], stl=True)
 
     def test_circular_revolution_and_clockwise_partial_revolution(self):
-        source = ("unit mm\npoint a hint(x: 0,y: 0)\nground a\n"
-            "point b hint(x: 0,y: 1)\nground b\nline axis(a,b)\n"
-            "point c hint(x: 10,y: 2)\nground c\ncircle ring(center: c)\n"
+        source = ("unit mm\npoint a hint((0, 0))\nground a\n"
+            "point b hint((0, 1))\nground b\nline axis(a,b)\n"
+            "point c hint((10, 2))\nground c\ncircle ring(center: c)\n"
             "radius(2) ring\nsolid body(face(ring), about: axis%s)\n")
         self.export(source % "", 80*math.pi**2, [-12, -12, 0, 12, 12, 4], stl=True)
         self.export(source % ", sweep: 90deg, sense: cw", 20*math.pi**2, stl=True)
@@ -105,18 +105,18 @@ class StepTests(unittest.TestCase):
             self.assertAlmostEqual(volume(reader.OneShape()), expected, delta=expected*1e-7)
 
     def test_motion_placement_uses_offset_world_axes_and_model_units(self):
-        self.export("unit in\npoint a hint(x: 1,y: 0)\nground a\n"
-            "point b hint(x: 1,y: 1)\nground b\nline axis(a,b)\n"
-            "point c hint(x: 2,y: 0)\nground c\ncircle ring(center: c)\n"
+        self.export("unit in\npoint a hint((1, 0))\nground a\n"
+            "point b hint((1, 1))\nground b\nline axis(a,b)\n"
+            "point c hint((2, 0))\nground c\ncircle ring(center: c)\n"
             "radius(0.25) ring\nsolid stock(face(ring), depth: 0.5)\n"
             "motion turn(about: axis)\nsolid moved(stock, under: turn, at: 90deg)\n",
             math.pi*(0.25*25.4)**2*(0.5*25.4),
             [0.5*25.4,0.75*25.4,-0.25*25.4,25.4,1.25*25.4,0.25*25.4])
 
     def test_placement_binds_motion_after_dependency_ordering(self):
-        self.export("unit in\npoint a hint(x: 1,y: 0)\nground a\n"
-            "point b hint(x: 1,y: 1)\nground b\nline axis(a,b)\n"
-            "point c hint(x: 2,y: 0)\nground c\ncircle ring(center: c)\n"
+        self.export("unit in\npoint a hint((1, 0))\nground a\n"
+            "point b hint((1, 1))\nground b\nline axis(a,b)\n"
+            "point c hint((2, 0))\nground c\ncircle ring(center: c)\n"
             "radius(0.25) ring\nsolid stock(face(ring), depth: 0.5)\n"
             "motion z_turn(about: axis,phase: 90deg)\n"
             "motion rest(about: axis)\nmotion a_relative(z_turn,relative_to: rest)\n"
@@ -132,8 +132,8 @@ class StepTests(unittest.TestCase):
     def test_native_stl_alone_uses_millimetres_and_checks_multiple_shells(self):
         with tempfile.TemporaryDirectory() as directory:
             model, stl = Path(directory)/"model.sv", Path(directory)/"result.stl"
-            model.write_text("unit in\npoint a hint(x: 0,y: 0)\nground a\n"
-                "point b hint(x: 4,y: 0)\nground b\ncircle ca(center: a)\n"
+            model.write_text("unit in\npoint a hint((0, 0))\nground a\n"
+                "point b hint((4, 0))\nground b\ncircle ca(center: a)\n"
                 "radius(1) ca\ncircle cb(center: b)\nradius(1) cb\n"
                 "solid first(face(ca), depth: 2)\nsolid second(face(cb), depth: 2)\n"
                 "solid body(first)\nsecond on body\n")
@@ -145,7 +145,7 @@ class StepTests(unittest.TestCase):
     def test_failed_stl_encoding_preserves_both_requested_outputs(self):
         with tempfile.TemporaryDirectory() as directory:
             model, step, stl = [Path(directory)/n for n in ("model.sv", "result.step", "result.stl")]
-            model.write_text("unit mm\npoint c hint(x: 1000000,y: 1000000)\nground c\n"
+            model.write_text("unit mm\npoint c hint((1000000, 1000000))\nground c\n"
                 "circle profile(center: c)\nradius(0.01) profile\nsolid body(face(profile), depth: 0.01)\n")
             step.write_text("old step")
             stl.write_text("old stl")
@@ -158,7 +158,7 @@ class StepTests(unittest.TestCase):
             self.assertFalse(list(Path(directory).glob(".solvent-cad-*")))
 
     def test_native_stl_preserves_an_enclosed_cavity(self):
-        self.export("unit mm\npoint o hint(x: 0,y: 0)\nground o\n"
+        self.export("unit mm\npoint o hint((0, 0))\nground o\n"
             "circle rim(center: o)\nradius(3) rim\ncircle hole(center: o)\nradius(1) hole\n"
             "solid stock(face(rim), depth: 6)\nsolid tool(face(hole), from: -4, to: -2)\n"
             "solid body(stock)\ntool cut body\n", 52*math.pi, stl=True)
@@ -166,7 +166,7 @@ class StepTests(unittest.TestCase):
     def test_step_and_stl_cannot_share_a_destination(self):
         with tempfile.TemporaryDirectory() as directory:
             model, output = Path(directory)/"model.sv", Path(directory)/"result"
-            model.write_text("unit mm\npoint c hint(x: 0,y: 0)\nground c\n"
+            model.write_text("unit mm\npoint c hint((0, 0))\nground c\n"
                 "circle profile(center: c)\nradius(2) profile\nsolid body(face(profile), depth: 3)\n")
             output.write_text("old output")
             result = subprocess.run([str(CLI), str(model), "--step", str(output), "--stl", str(output),
@@ -200,7 +200,7 @@ class StepTests(unittest.TestCase):
             self.assertEqual(stl.read_text(), "old stl")
 
     def test_unitless_and_unsolved_models_do_not_replace_an_export(self):
-        source = ("point o hint(x: 0,y: 0)\nground o\ncircle c(center: o)\n"
+        source = ("point o hint((0, 0))\nground o\ncircle c(center: o)\n"
                   "radius(2) c\nsolid body(face(c), depth: 3)\n")
         for model_source, diagnostic in [
             (source, "explicit model length unit"),
@@ -220,7 +220,7 @@ class StepTests(unittest.TestCase):
     def test_native_exception_becomes_a_diagnostic_without_replacing_the_export(self):
         with tempfile.TemporaryDirectory() as directory:
             model, step = Path(directory)/"model.sv", Path(directory)/"result.step"
-            model.write_text("unit mm\npoint o hint(x: 0,y: 0)\nground o\n"
+            model.write_text("unit mm\npoint o hint((0, 0))\nground o\n"
                 "circle c(center: o)\nradius(2) c\nsolid stock(face(c), depth: 3)\n"
                 "solid body(stock)\nstock cut body\n")
             step.write_text("existing export")

@@ -27,7 +27,7 @@ fn report_of(doc: &str) -> String {
 
 #[test]
 fn a_host_module_resolves_a_use_and_is_forgotten_on_request() {
-    let doc = "use std\nuse demo.parts\nin std.front {\no := point\nfix(x == 0, y == 0) o\nr := Rung(o)\n}\n";
+    let doc = "use std\nuse demo.parts\nin std.front {\no := point\nfix((0, 0)) o\nr := Rung(o)\n}\n";
     let module = "component Rung(a: point) {\n  b := point\n  e := line(a, b)\n  horizontal e\n  a distance(10) b\n}\n";
     let name = "demo.parts";
     unsafe {

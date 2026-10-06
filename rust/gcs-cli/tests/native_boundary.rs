@@ -133,12 +133,12 @@ unit mm
 use std
 in std.front {
 a := point
-fix(x == 0, y == 0) a
+fix((0, 0)) a
 b := point
-fix(x == 0, y == 1) b
+fix((0, 1)) b
 ax := line(a,b)
 c := point
-fix(x == 10, y == 2) c
+fix((10, 2)) c
 ring := circle(center: c)
 radius(2) ring
 }
@@ -207,7 +207,7 @@ fn native_cutter_edges_agree_with_the_independent_source_material() {
 fn a_sliver_is_sampled_between_its_faces() {
     let mut text = String::from("unit mm\n");
     for (name,x,y) in [("a",0.,0.),("b",20.,10.),("c",40.,0.),("d",40.,0.004),("e",20.,10.004),("f",0.,0.004)] {
-        text += &format!("{name} := point\nfix(x == {x}, y == {y}) {name}\n");
+        text += &format!("{name} := point\nfix(({x}, {y})) {name}\n");
     }
     text += "sliver := solid(face(a, b, c, d, e, f, -> close), depth: 10mm)\n";
     let e = fixtures::gear::read(&text,Path::new("."));

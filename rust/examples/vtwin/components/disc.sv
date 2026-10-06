@@ -28,7 +28,7 @@ component Disc(f: group, dims: group) {
   pkt := circle(center: f.u.p2) hint(r: pinpocketd / 2)
   radius(pinpocketd / 2) pkt
   // the set screw, square to the arm so its pocket stays clear of the pin's
-  se := point hint(at: f.axes, x: 0mm, y: -dims.rdisc)
+  se := point hint(at: f.axes, (0mm, -dims.rdisc))
   ssa := line(f.u.p1, se)
   reference := line(f.u.p1, f.u.p2)
   se coincident rim
@@ -63,7 +63,7 @@ component Disc(f: group, dims: group) {
 preview {
   unit mm
   in std.front {
-    pin := point hint(at: std.up, x: components.dims.R, y: 0mm)
+    pin := point hint(at: std.up, (components.dims.R, 0mm))
     std.origin vertical pin
     std.origin distance(components.dims.R) pin
     disc_axes := std.Turned(std.origin, pin)

@@ -117,12 +117,9 @@ fn every_dimension_is_drawn() {
     // stops the build there; this is the other half — that the arm someone wrote actually draws.
     let mut drawn: Vec<CKind> = sk_kinds(&all_dimensions());
     drawn.sort();
-    // a relation in space states a number of no one view, and has no figure on one; and a sphere is on no
-    // sheet, so its radius is drawn on none
+    // a relation in space states a number of no one view, and has no figure on one
     let mut want: Vec<CKind> = ALL_KINDS.iter().copied()
         .filter(|k| k.has_dimension() && !k.spatial())
-        // nor are a cone's or a cylinder's
-        .filter(|k| !matches!(k, CKind::SphereRadius | CKind::ConeAngle | CKind::CylinderRadius))
         .collect();
     want.sort();
     assert_eq!(drawn, want, "the fixture is missing a dimensioned kind");
@@ -791,9 +788,9 @@ fn an_array_is_dimensioned_once() {
 use std
 in std.front {
 o := point
-         fix(x == 0, y == 0) o
+         fix((0, 0)) o
          repeat 3 as i {
-           p := point hint(x: 10 + 10 * i, y: 0)
+           p := point hint((10 + 10 * i, 0))
            o distance(10 + 10 * i) p
          }
 }

@@ -42,7 +42,7 @@ component ConRod(end: plane, side: plane, secv: plane,
   repeat draw_end {
     in end {
       // the small end rides the bore axis one rod length from the pin
-      sm := point hint(x: pin.x, y: pin.y + dims.L)
+      sm := point hint((pin.x, pin.y + dims.L))
       sm coincident ax
       pin distance(dims.L) sm
       cl := line(pin, sm)
@@ -57,10 +57,10 @@ component ConRod(end: plane, side: plane, secv: plane,
       // bare circle–circle tangency has) and the flank square to it, the tangency stated at
       // that point (§1.5).  The eyes themselves are drawn as the arcs left between the
       // fillets, the long way round.
-      cbl := point hint(x: pin.x - (hB + rf), y: pin.y + 31.2mm)
-      cbr := point hint(x: pin.x + (hB + rf), y: pin.y + 31.2mm)
-      csl := point hint(x: sm.x - (hS + rf), y: sm.y - 16.1mm)
-      csr := point hint(x: sm.x + (hS + rf), y: sm.y - 16.1mm)
+      cbl := point hint((pin.x - (hB + rf), pin.y + 31.2mm))
+      cbr := point hint((pin.x + (hB + rf), pin.y + 31.2mm))
+      csl := point hint((sm.x - (hS + rf), sm.y - 16.1mm))
+      csr := point hint((sm.x + (hS + rf), sm.y - 16.1mm))
       // (that the centre is `eB + rf` from the pin follows: the contact is on the axis, on the
       // eye and on the fillet, so it is not stated a second time)
       cbl distance(hB + rf, side: left) cl
@@ -71,18 +71,18 @@ component ConRod(end: plane, side: plane, secv: plane,
       rayBR := line(pin, cbr)
       raySL := line(sm, csl)
       raySR := line(sm, csr)
-      sbl := point hint(x: pin.x - 15mm, y: pin.y + 26mm)
-      sbr := point hint(x: pin.x + 15mm, y: pin.y + 26mm)
-      ssl := point hint(x: sm.x - 10.9mm, y: sm.y - 11.7mm)
-      ssr := point hint(x: sm.x + 10.9mm, y: sm.y - 11.7mm)
+      sbl := point hint((pin.x - 15mm, pin.y + 26mm))
+      sbr := point hint((pin.x + 15mm, pin.y + 26mm))
+      ssl := point hint((sm.x - 10.9mm, sm.y - 11.7mm))
+      ssr := point hint((sm.x + 10.9mm, sm.y - 11.7mm))
       sbl coincident rayBL
       sbr coincident rayBR
       ssl coincident raySL
       ssr coincident raySR
-      ebl := point hint(x: pin.x - hB, y: pin.y + 31mm)
-      ebr := point hint(x: pin.x + hB, y: pin.y + 31mm)
-      esl := point hint(x: sm.x - hS, y: sm.y - 16mm)
-      esr := point hint(x: sm.x + hS, y: sm.y - 16mm)
+      ebl := point hint((pin.x - hB, pin.y + 31mm))
+      ebr := point hint((pin.x + hB, pin.y + 31mm))
+      esl := point hint((sm.x - hS, sm.y - 16mm))
+      esr := point hint((sm.x + hS, sm.y - 16mm))
       flank_l := line(ebl, esl)
       flank_r := line(ebr, esr)
       fbl := arc(center: cbl, start: sbl, end: ebl) hint(r: rf)
@@ -103,16 +103,16 @@ component ConRod(end: plane, side: plane, secv: plane,
       radius(eS) eyeS
 
       // the cap: a parting line through the pin square to the rod, and the two bolts through it
-      pl0 := point hint(x: pin.x - eB, y: pin.y)
-      pl1 := point hint(x: pin.x + eB, y: pin.y)
+      pl0 := point hint((pin.x - eB, pin.y))
+      pl1 := point hint((pin.x + eB, pin.y))
       parting := line(pl0, pl1)
       pin midpoint parting
       parting perpendicular cl
       pl0 coincident eyeB
-      bl0 := point hint(x: pin.x - bolt, y: pin.y - capd)
-      bl1 := point hint(x: pin.x - bolt, y: pin.y + rodd)
-      br0 := point hint(x: pin.x + bolt, y: pin.y - capd)
-      br1 := point hint(x: pin.x + bolt, y: pin.y + rodd)
+      bl0 := point hint((pin.x - bolt, pin.y - capd))
+      bl1 := point hint((pin.x - bolt, pin.y + rodd))
+      br0 := point hint((pin.x + bolt, pin.y - capd))
+      br1 := point hint((pin.x + bolt, pin.y + rodd))
       bolt_l := line(bl0, bl1)
       bolt_r := line(br0, br1)
       bl0 distance(bolt, side: left) cl
@@ -126,10 +126,10 @@ component ConRod(end: plane, side: plane, secv: plane,
       claim bl0 distance(2 * bolt) br0
 
       // the oil passage, drilled from the big-end bore to the small-end bore
-      ol0 := point hint(x: pin.x - oil, y: pin.y + rB)
-      ol1 := point hint(x: sm.x - oil, y: sm.y - rS)
-      or0 := point hint(x: pin.x + oil, y: pin.y + rB)
-      or1 := point hint(x: sm.x + oil, y: sm.y - rS)
+      ol0 := point hint((pin.x - oil, pin.y + rB))
+      ol1 := point hint((sm.x - oil, sm.y - rS))
+      or0 := point hint((pin.x + oil, pin.y + rB))
+      or1 := point hint((sm.x + oil, sm.y - rS))
       oil_l := line(ol0, ol1)
       oil_r := line(or0, or1)
       ol0 coincident bigbore
@@ -146,8 +146,8 @@ component ConRod(end: plane, side: plane, secv: plane,
   repeat draw_side {
     in side {
       // the big end: a block `wB` along the axis, the parting line across it, a bolt down it
-      ba := point hint(x: pin_s.x - wB / 2, y: pin_s.y - eB)
-      bb := point hint(x: pin_s.x + wB / 2, y: pin_s.y - eB)
+      ba := point hint((pin_s.x - wB / 2, pin_s.y - eB))
+      bb := point hint((pin_s.x + wB / 2, pin_s.y - eB))
       bc := engine.parts.At(pin_s, dx: wB / 2, dy: eB)
       bd := engine.parts.At(pin_s, dx: -wB / 2, dy: eB)
       (b1 := line(ba, bb)) -> (b2 := line(bb, bc.p)) -> (b3 := line(bc.p, bd.p)) -> (b4 := line(bd.p, ba)) -> close
@@ -162,8 +162,8 @@ component ConRod(end: plane, side: plane, secv: plane,
       b1s := engine.parts.At(pin_s, dx: 0mm, dy: rodd)
       bolt_s := line(b0.p, b1s.p)
       // the small end
-      sa := point hint(x: sm_s.x - wS / 2, y: sm_s.y - eS)
-      sb := point hint(x: sm_s.x + wS / 2, y: sm_s.y - eS)
+      sa := point hint((sm_s.x - wS / 2, sm_s.y - eS))
+      sb := point hint((sm_s.x + wS / 2, sm_s.y - eS))
       sc := engine.parts.At(sm_s, dx: wS / 2, dy: eS)
       sd := engine.parts.At(sm_s, dx: -wS / 2, dy: eS)
       (s1 := line(sa, sb)) -> (s2 := line(sb, sc.p)) -> (s3 := line(sc.p, sd.p)) -> (s4 := line(sd.p, sa)) -> close
@@ -172,10 +172,10 @@ component ConRod(end: plane, side: plane, secv: plane,
       sm_s distance(-eS, along: y) sb
       sa distance(wS) sb
       // the shank's flanges between them
-      ka := point hint(x: pin_s.x - fl / 2, y: pin_s.y + eB)
-      kb := point hint(x: pin_s.x + fl / 2, y: pin_s.y + eB)
-      kc := point hint(x: sm_s.x + fl / 2, y: sm_s.y - eS)
-      kd := point hint(x: sm_s.x - fl / 2, y: sm_s.y - eS)
+      ka := point hint((pin_s.x - fl / 2, pin_s.y + eB))
+      kb := point hint((pin_s.x + fl / 2, pin_s.y + eB))
+      kc := point hint((sm_s.x + fl / 2, sm_s.y - eS))
+      kd := point hint((sm_s.x - fl / 2, sm_s.y - eS))
       k1 := line(ka, kd)
       k2 := line(kb, kc)
       pin_s distance(-fl / 2, along: x) ka
@@ -198,13 +198,13 @@ component ConRod(end: plane, side: plane, secv: plane,
   repeat draw_sec {
     in secv {
       q0 := engine.parts.At(at, dx: -fl / 2, dy: -hM)
-      q1 := point hint(x: at.x + fl / 2, y: at.y - hM)
-      q2 := point hint(x: at.x + fl / 2, y: at.y - hM + ft)
-      q3 := point hint(x: at.x + wt / 2, y: at.y - hM + ft)
+      q1 := point hint((at.x + fl / 2, at.y - hM))
+      q2 := point hint((at.x + fl / 2, at.y - hM + ft))
+      q3 := point hint((at.x + wt / 2, at.y - hM + ft))
       q4 := engine.parts.At(at, dx: wt / 2, dy: hM - ft)
       q5 := engine.parts.At(at, dx: fl / 2, dy: hM - ft)
       q6 := engine.parts.At(at, dx: fl / 2, dy: hM)
-      q7 := point hint(x: at.x - fl / 2, y: at.y + hM)
+      q7 := point hint((at.x - fl / 2, at.y + hM))
       q8 := engine.parts.At(at, dx: -fl / 2, dy: hM - ft)
       q9 := engine.parts.At(at, dx: -wt / 2, dy: hM - ft)
       q10 := engine.parts.At(at, dx: -wt / 2, dy: -hM + ft)
