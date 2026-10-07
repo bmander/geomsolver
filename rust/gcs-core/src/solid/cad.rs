@@ -162,8 +162,13 @@ fn recipe_with(sk: &Sketch,root: usize,static_only: bool) -> Result<StaticRecipe
                 let rolled = blend.rolls.iter().map(|roll| object([("operands",operands.clone()),
                     ("radius",(roll.rolled.r/roll.mm*scale).into()),
                     ("point",vector(roll.edge_point().map(|v| v*scale))),("concave",roll.rolled.concave.into())])).collect();
+                // a corner, the ball's patch there, built by the kernel from where it stands
+                let corners = blend.corners.iter().map(|c| object([("vertex",vector(c.vertex.map(|v| v*scale))),
+                    ("centre",vector(c.centre.map(|v| v*scale))),("radius",(c.r*scale).into()),
+                    ("toward",Json::Arr(c.toward.iter().map(|&m| vector(m)).collect()))])).collect();
                 object([("kind","fillet".into()),
                     ("pieces",Json::Arr(blend.pieces.iter().map(|p| fillet_piece(p,scale)).collect())),
+                    ("corners",Json::Arr(corners)),
                     ("joins",Json::Arr(blend.joins.iter().map(|j| Json::Arr(j.iter().map(|&k| k.into()).collect())).collect())),
                     ("rolled",Json::Arr(rolled))])
             }
@@ -276,6 +281,10 @@ pub fn shifted(recipe: &Json,by: [f64;3]) -> Json {
             if let Some(Json::Arr(rolled)) = n.get("rolled") {
                 let rolled = Json::Arr(rolled.iter().map(|r| points(r,&["point"])).collect());
                 n.set("rolled",rolled);
+            }
+            if let Some(Json::Arr(corners)) = n.get("corners") {
+                let corners = Json::Arr(corners.iter().map(|c| points(c,&["vertex","centre"])).collect());
+                n.set("corners",corners);
             }
             n
         }).collect();

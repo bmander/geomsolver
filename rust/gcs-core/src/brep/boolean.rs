@@ -121,12 +121,26 @@ pub fn glued(a: &Brep,b: &Brep,tol: f64) -> Option<Brep> {
     }
     if shared_a.is_empty() { return None }
     let mut out = a.clone();
-    // `b`'s vertices: those of a shared edge are `a`'s, the rest its own
+    // `b`'s vertices: those of a shared edge are `a`'s, the rest its own. A vertex of `b` met by
+    // two of `a`'s (two pieces `b` joins, each with its own copy of the point it ends at) makes
+    // them one
     let mut vertex_of: BTreeMap<u32,u32> = BTreeMap::new();
+    let mut same = crate::graph::UnionFind::new(a.vertices.len());
+    let mut merged = false;
     for (&eb,&(ea,flip)) in &edge_of {
         let (vb,va) = (b.edges[eb].v,a.edges[ea as usize].v);
         let va = if flip { [va[1],va[0]] } else { va };
-        for k in 0..2 { vertex_of.insert(vb[k],va[k]); }
+        for k in 0..2 {
+            match vertex_of.get(&vb[k]) {
+                Some(&w) if same.find(w as usize) != same.find(va[k] as usize) => { same.union(w as usize,va[k] as usize); merged = true; }
+                Some(_) => {}
+                None => { vertex_of.insert(vb[k],va[k]); }
+            }
+        }
+    }
+    if merged {
+        for e in &mut out.edges { e.v = e.v.map(|v| same.find(v as usize) as u32); }
+        for v in vertex_of.values_mut() { *v = same.find(*v as usize) as u32; }
     }
     for (i,v) in b.vertices.iter().enumerate() {
         if !vertex_of.contains_key(&(i as u32)) { vertex_of.insert(i as u32,out.vertices.len() as u32); out.vertices.push(v.clone()); }

@@ -12,8 +12,9 @@ between planes and cylinders along it (the fillet's face a cylinder), a circle b
 cylinders, cones, spheres and tori about one axis (a torus), and a closed loop where two such faces
 meet on no line or circle (a pipe tee's crotch: the ball's centre traced where the faces offset by
 `r` meet, its face that canal, fitted), and a chain of tangent edges piece by piece (a rounded
-boss's foot: straight runs and parts of rings, each ending in the section the next begins in) —
-and the rest is refused by name (**E085**).
+boss's foot: straight runs and parts of rings, each ending in the section the next begins in), and
+where three of its edges meet between three planes, a patch of the ball (a block rounded all over)
+— and the rest is refused by name (**E085**).
 
 **[0.48] Relation words, and `use M (names)`.** A file may define a relation word at its top
 level, as it defines a component: `a horizontal b := a level(up) b`, `flat l := l perpendicular
@@ -1080,6 +1081,13 @@ lip cut block                                //   ... convex: the ball rolls the
   The foot of a rounded or obround boss and the rim of a rounded pocket are each one fillet. An end
   meeting no such continuation, or two flush ends at one corner (a block's whole rim, the ball
   turning the corner), is refused.
+- **A corner of three** is a patch of the ball: where three of a fillet's straight edges meet
+  between three planes, the ball touching all three stands in the corner, its centre `r` from each
+  face. Each edge's piece stops at the section through that centre, square to its edge, and the
+  corner's piece is the corner's cell (the trihedron cut by those three sections) less the ball —
+  an eighth of a sphere at a square corner, `r³ − πr³/6` of material. Every edge of a block
+  (`fillet(block, block, r: 3mm)`) or of a pocket inside rounds so; a corner of two fillets (the
+  third edge sharp), of curved faces, or of more edges is refused.
 - **A closed traced loop** is rounded too: two faces on planes, cylinders, cones, spheres or tori
   meeting all the way round on a curve no line or circle carries (a pipe tee's crotch, a pin
   through a ball off its centre, a bore's rim in a pipe's wall). The ball's centre runs where the

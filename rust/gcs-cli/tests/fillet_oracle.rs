@@ -72,6 +72,12 @@ fn held(session: &native::Session,name: &str,e: &gcs_core::program::Elaborated) 
             assert!(take(&mut mine,own),"{name}: `{}`: no face of its own",s.name);
             assert!(take(&mut its,own) || take(&mut its,6),"{name}: `{}`: OCCT made no fillet face",s.name);
         }
+        // a corner's patch of the ball: a sphere, or OCCT's approximation of its blend there
+        for _ in &blend.corners {
+            let take = |ks: &mut Vec<i32>,k: i32| ks.iter().position(|&x| x == k).map(|i| ks.remove(i)).is_some();
+            assert!(take(&mut mine,3),"{name}: `{}`: no corner of its own",s.name);
+            assert!(take(&mut its,3) || take(&mut its,6),"{name}: `{}`: OCCT made no corner",s.name);
+        }
         for _ in &blend.rolls {
             let take = |ks: &mut Vec<i32>,k: i32| ks.iter().position(|&x| x == k).map(|i| ks.remove(i)).is_some();
             assert!(take(&mut mine,6),"{name}: `{}`: no canal face of its own",s.name);

@@ -263,7 +263,13 @@ impl Roll {
 /// that end in one another's sections (indices into `pieces`), which share that cap and meet
 /// nowhere else.
 #[derive(Clone, Debug)]
-pub struct Blend { pub pieces: Vec<Piece>, pub joins: Vec<[usize; 2]>, pub rolls: Vec<Roll>, pub concave: bool }
+pub struct Blend {
+    pub pieces: Vec<Piece>,
+    pub corners: Vec<Corner>,
+    pub joins: Vec<[usize; 2]>,
+    pub rolls: Vec<Roll>,
+    pub concave: bool,
+}
 
 /// Two faces running on into one another, to this (one less the cosine of the angle they turn
 /// through, the angle's square over two): no edge, nothing to round.
@@ -313,6 +319,8 @@ pub(crate) fn derive(sk: &Sketch, si: usize) -> Result<Blend, String> {
     let mut rolls = Vec::new();
     let mut rolled_edges = std::collections::BTreeSet::new();
     let mut ends: Vec<End> = Vec::new();
+    // each piece's edge, its uses and its bands, asked once the corners are known
+    let mut bands: Vec<(usize, [Use; 2], Vec<(usize, Band)>)> = Vec::new();
     // each edge refused, and why: told once the ends are paired
     let mut failed: Vec<(usize, String)> = Vec::new();
     let mut concave: Option<(bool, String)> = None;
@@ -344,9 +352,10 @@ pub(crate) fn derive(sk: &Sketch, si: usize) -> Result<Blend, String> {
                 Ok(x) => x,
                 Err(why) => { failed.push((ei, why)); continue }
             };
-            let Some((piece, hollow, piece_ends)) = rounded else { continue };
+            let Some((piece, hollow, piece_ends, piece_bands)) = rounded else { continue };
             ends.extend(piece_ends.into_iter().map(|e| End { piece: pieces.len(), ..e }));
-            pieces.push(piece.in_units(mm, origin));
+            pieces.push(piece);
+            bands.push((ei, [first, second], piece_bands));
             hollow
         };
         match &concave {
@@ -358,9 +367,40 @@ pub(crate) fn derive(sk: &Sketch, si: usize) -> Result<Blend, String> {
             None => concave = Some((hollow, label)),
         }
     }
+    let Some((concave, _)) = concave else {
+        if let Some((_, why)) = failed.into_iter().next() { return Err(why); }
+        return Err(format!("`{}` and `{}` meet at no edge to round",
+            side_name(sk, a), side_name(sk, b)));
+    };
+    // **three of its straight edges meeting at a corner between three planes**: the ball touching
+    // all three stands at the corner, a patch of it there; each edge's piece stops at the section
+    // through its centre, the corner's piece glued to all three
+    // (pieces, bands and corners all in the boundary's millimetres until the blend is made)
+    let mut corners: Vec<Corner> = Vec::new();
+    let (mut corner_joins, mut cornered_at) = (Vec::new(), std::collections::BTreeSet::new());
+    let mut at_vertex = std::collections::BTreeMap::<u32, Vec<&End>>::new();
+    for e in &ends { at_vertex.entry(e.vertex).or_default().push(e); }
+    for (&v, at) in &at_vertex {
+        let Some((corner, setbacks)) = cornered(&brep, &table, v, at, &pieces, r.value * mm, concave, tol)? else { continue };
+        // each piece shortened at this end to the section through the ball's centre
+        for (e, &by) in at.iter().zip(&setbacks) {
+            let p = &mut pieces[e.piece];
+            let Carry::Prism { length } = p.carry else { unreachable!() };
+            if !(length - by > tol) {
+                return Err(format!("the ball of {} is larger than its edge between corners can hold", e.label));
+            }
+            if e.end == 0 { p.section = carried(&p.section, by); }
+            p.carry = Carry::Prism { length: length - by };
+            for (_, band) in &mut bands[e.piece].2 { band.shorten(e.end, by); }
+            corner_joins.push([e.piece, pieces.len() + corners.len()]);
+        }
+        cornered_at.insert(v);
+        corners.push(corner);
+    }
+    ends.retain(|e| !cornered_at.contains(&e.vertex));
     // an end that meets nothing turns a corner — unless an edge refused is what it was to run on
     // into (leaving their vertex its way), whose reason says more
-    let joins = paired(&ends, tol).map_err(|(end, refusal)| {
+    let mut joins = paired(&ends, tol).map_err(|(end, refusal)| {
         let into = failed.iter().find(|(ei, _)| {
             let e = &brep.edges[*ei];
             let EdgeCurve::Curve(c) = &e.curve else { return false };
@@ -370,18 +410,85 @@ pub(crate) fn derive(sk: &Sketch, si: usize) -> Result<Blend, String> {
         into.map_or(&refusal.refusal, |(_, why)| why).clone()
     })?;
     if let Some((_, why)) = failed.into_iter().next() { return Err(why); }
-    // a piece ending flush at a corner another end stands at, in a face the other rounds: a vertex blend
+    // a corner's joins name it after the pieces
+    joins.extend(corner_joins);
+    // **a ball no larger than each face holds**, over each piece's stretch
+    for (ei, uses, checks) in &bands {
+        let at = Edge { brep: &brep, located: &located, table: &table, edge: *ei, uses: *uses, tol };
+        for (k, band) in checks { at.holds(*k, band)?; }
+    }
+    // any other flush end at a corner another end stands at, in a face the other rounds: a vertex
+    // blend of two fillets, or of curved faces, or more
     for (i, f) in ends.iter().enumerate().filter(|(_, e)| e.meet.is_none()) {
         if ends.iter().enumerate().any(|(j, g)| j != i && g.vertex == f.vertex) {
             return Err(format!("the fillet of {} meets another of its edges at a corner: fillets meeting at a \
                 vertex are rung 3", f.label));
         }
     }
-    let Some((concave, _)) = concave else {
-        return Err(format!("`{}` and `{}` meet at no edge to round",
-            side_name(sk, a), side_name(sk, b)));
+    let pieces = pieces.into_iter().map(|p| p.in_units(mm, origin)).collect();
+    let corners = corners.into_iter().map(|c| c.in_units(mm, origin)).collect::<Result<_, _>>()?;
+    Ok(Blend { pieces, corners, joins, rolls, concave })
+}
+
+/// A corner a fillet rounds with a patch of its ball, in model units: where the three faces meet,
+/// the ball's centre and radius, the directions from each face toward it, and its piece — the
+/// corner's cell less the ball (`brep::fillet::corner`), built once, when the corner is put in
+/// model units (`in_units`).
+#[derive(Clone, Debug)]
+pub struct Corner { pub vertex: V, pub centre: V, pub r: f64, pub toward: [V; 3], pub piece: std::rc::Rc<Brep> }
+
+impl Corner {
+    /// The corner of a boundary in its millimetres, in model units about the world's origin
+    /// (`per` millimetres a model unit, its origin `origin`), its piece built there.
+    fn in_units(self, per: f64, origin: V) -> Result<Corner, String> {
+        let model = |q: V| -> V { std::array::from_fn(|k| q[k] / per + origin[k]) };
+        let (vertex, centre, r) = (model(self.vertex), model(self.centre), self.r / per);
+        let tol = 1e-9 * (1.0 + norm(sub(centre, vertex)));
+        let piece = crate::brep::fillet::corner(vertex, centre, r, self.toward, tol)?;
+        Ok(Corner { vertex, centre, r, toward: self.toward, piece: std::rc::Rc::new(piece) })
+    }
+}
+
+/// Whether the ends `at` vertex `v` make a corner the ball rounds: three, of straight pieces,
+/// between three planes, each piece's ball there the one touching all three faces. The corner (its
+/// piece not yet built) and how far back each end stops, in the boundary's millimetres; `Err`
+/// where it is one but no ball fits.
+#[allow(clippy::too_many_arguments)]
+fn cornered(brep: &Brep, table: &[Vec<Use>], v: u32, at: &[&End], pieces: &[Piece], r: f64, concave: bool, tol: f64)
+    -> Result<Option<(Corner, Vec<f64>)>, String> {
+    if at.len() != 3 || at.iter().any(|e| !matches!(pieces[e.piece].carry, Carry::Prism { .. })) { return Ok(None); }
+    let mut faces: Vec<usize> = at.iter().flat_map(|e| table[e.edge].iter().map(|u| u.0)).collect();
+    faces.sort_unstable();
+    faces.dedup();
+    let [f0, f1, f2] = faces[..] else { return Ok(None) };
+    // each face's plane, and the way from it to the ball: into the material at a convex corner
+    let toward = |fi: usize| -> Option<V> {
+        let f = &brep.faces[fi];
+        let Surface::Plane(frame) = f.surface else { return None };
+        let out = if f.reversed { scale(frame.z, -1.0) } else { frame.z };
+        Some(if concave { out } else { scale(out, -1.0) })
     };
-    Ok(Blend { pieces, joins, rolls, concave })
+    let (Some(m0), Some(m1), Some(m2)) = (toward(f0), toward(f1), toward(f2)) else { return Ok(None) };
+    let m = [m0, m1, m2];
+    if dot(m[0], cross(m[1], m[2])).abs() < 1e-9 { return Ok(None); }
+    // (c − vertex) · m_i = r
+    let vertex = brep.vertices[v as usize].p;
+    let w = crate::brep::ssi::solve3(m, [r; 3]);
+    let centre = add(vertex, w);
+    // each end's setback, the centre's foot along its edge from the vertex — where each piece's
+    // ball, carried that far along it, must be this one
+    let along = |e: &End| { let ed = &brep.edges[e.edge]; unit(sub(brep.vertices[ed.v[1 - e.end] as usize].p, vertex)) };
+    let setbacks: Vec<f64> = at.iter().map(|e| dot(w, along(e))).collect();
+    if at.iter().zip(&setbacks).any(|(e, &by)| {
+        let p = &pieces[e.piece];
+        let ball = add(p.at(e.end as f64).lift(p.wedge.centre[0], p.wedge.centre[1]), scale(along(e), by));
+        norm(sub(ball, centre)) > 8.0 * tol
+    }) { return Ok(None); }
+    if setbacks.iter().any(|&s| !(s > tol)) {
+        return Err(format!("the corner of {} is not one a ball rounds", at[0].label));
+    }
+    let corner = Corner { vertex, centre, r, toward: m, piece: std::rc::Rc::new(Brep::default()) };
+    Ok(Some((corner, setbacks)))
 }
 
 /// Every solid fillet `f` reads, once each: what either side stands for (`stands_for`).
@@ -456,7 +563,7 @@ fn whole(sweep: f64) -> bool { sweep >= TAU - 1e-9 }
 /// An end of a piece: its piece, the vertex it stands at and whose fillet it is; flush in the
 /// faces beyond it, or open (`meet`) for the piece carried on past it.
 #[derive(Clone, Debug)]
-struct End { piece: usize, vertex: u32, label: String, meet: Option<Meet> }
+struct End { piece: usize, edge: usize, end: usize, vertex: u32, label: String, meet: Option<Meet> }
 
 /// Where an open end's ball stands, for the next piece to meet: `outward` the way the piece
 /// leaves its end, `refusal` what is said if nothing meets it.
@@ -526,6 +633,7 @@ impl Turned {
 }
 
 /// Where the ball rolls on one face, in coordinates its edges are read in.
+#[derive(Clone, Copy, Debug)]
 enum Band {
     /// A plane face beside a straight edge: a rectangle, along the edge from `corner` (`along`,
     /// through `length`) and across it into the face (`d`, through the setback).
@@ -630,6 +738,22 @@ impl Sector {
 }
 
 impl Band {
+    /// The band of a straight piece shortened by `by` at end `end` (0 where it starts), where a
+    /// corner takes it.
+    fn shorten(&mut self, end: usize, by: f64) {
+        match self {
+            Band::Strip { corner, along, length, .. } => {
+                if end == 0 { *corner = add(*corner, scale(*along, by)); }
+                *length -= by;
+            }
+            Band::Sleeve { section, length, .. } => {
+                if end == 0 { *section = carried(section, by); }
+                *length -= by;
+            }
+            Band::Meridian { .. } | Band::Arc { .. } => {}
+        }
+    }
+
     /// Whether an edge of the face over `t` enters the band; `None` where there is no closed
     /// form for it.
     fn enters(&self, curve: &Curve, t: [f64; 2], tol: f64) -> Option<bool> {
@@ -738,7 +862,7 @@ impl Edge<'_> {
     /// Its piece (millimetres, about the boundary's origin), whether it is concave and its ends
     /// that are not flush (for the pieces it continues into to meet); none where the two faces run
     /// on into one another (two operands' coplanar faces), with no edge to round.
-    fn round(&self, r: f64) -> Result<Option<(Piece, bool, Vec<End>)>, String> {
+    fn round(&self, r: f64) -> Result<Option<(Piece, bool, Vec<End>, Vec<(usize, Band)>)>, String> {
         let e = &self.brep.edges[self.edge];
         let EdgeCurve::Curve(curve) = &e.curve else {
             return Err(format!("`{}` meets `{}` at a point", self.face_name(0), self.face_name(1)));
@@ -804,6 +928,9 @@ impl Edge<'_> {
                 self.face_name(0), self.face_name(1)));
         }
         let strokes = wedge.strokes();
+        // where the ball rolls on each face, asked once the corners are known (a corner takes the
+        // band's ends)
+        let mut bands = Vec::new();
         if matches!(carry, Carry::Turn { .. }) && strokes.iter().any(|s| s.least_x() <= self.tol) {
             return Err(format!("the ball between `{}` and `{}` reaches past their axis",
                 self.face_name(0), self.face_name(1)));
@@ -822,7 +949,7 @@ impl Edge<'_> {
                 (Carry::Turn { sweep }, Side::Circle { .. }) =>
                     Band::Arc { o: section.o, axis: section.v, turn: turned_from(stroke, k), sector: sector(sweep) },
             };
-            self.holds(k, &band)?;
+            bands.push((k, band));
         }
         let piece = Piece { section: start, wedge, carry };
         // each end flush, or open for the piece it continues into
@@ -848,10 +975,10 @@ impl Edge<'_> {
                         })
                     }
                 };
-                ends.push(End { piece: 0, vertex: e.v[end], label: label.clone(), meet });
+                ends.push(End { piece: 0, edge: self.edge, end, vertex: e.v[end], label: label.clone(), meet });
             }
         }
-        Ok(Some((piece, concave, ends)))
+        Ok(Some((piece, concave, ends, bands)))
     }
 
     fn unsupported(&self, curve: &str) -> String {
@@ -1079,17 +1206,16 @@ impl Piece {
     }
 }
 
-/// A rolled piece as one polyhedral primitive of the faceted kernel: its exact boundary meshed
-/// within the sheet's flatness at `unit`, about the evaluation's `origin`, each facet on the face
-/// it meshes (`round`, `a`, `b`).
-pub(super) fn rolled_prim(roll: &Roll, origin: [f64; 3], unit: f64, of: &str) -> Option<Prim> {
-    let b = &roll.rolled.piece;
-    let bar = crate::curve::flatness(unit) * roll.mm;
+/// A piece the kernel builds whole — a rolled loop's, a corner's — as one polyhedral primitive of
+/// the faceted kernel: its exact boundary (`per` of its units a model unit, `model` taking its
+/// points there) meshed within the sheet's flatness at `unit`, about the evaluation's `origin`,
+/// each facet on the face it meshes.
+pub(super) fn brep_prim(b: &Brep, per: f64, model: impl Fn(V) -> V, origin: [f64; 3], unit: f64, of: &str) -> Option<Prim> {
+    let bar = crate::curve::flatness(unit) * per;
     let m = crate::brep::mesh::mesh(b, bar.max(1e-6 * b.size()), TAU / 64.0).ok()?;
     let faces: Vec<String> = b.faces.iter().map(|f| f.name.clone()).collect();
-    let at = |p: V| -> V { crate::space::sub(roll.model(p), origin) };
     let facets = m.tris.iter().zip(&m.of).filter_map(|(t, &fi)| {
-        let pts: Vec<V> = t.iter().map(|&i| at(m.pts[i as usize])).collect();
+        let pts: Vec<V> = t.iter().map(|&i| crate::space::sub(model(m.pts[i as usize]), origin)).collect();
         let n = super::primitive::facet_normal(&pts)?;
         let smooth = !matches!(b.faces[fi as usize].surface, Surface::Plane(_));
         Some(Facet { pts, n, face: fi as usize, smooth })

@@ -315,7 +315,7 @@ fn axis_of(s: &Surface,t: &Surface) -> Option<(V,V)> {
 }
 
 /// `m x = rhs` for a 3×3 system by Cramer's rule.
-fn solve3(m: [V;3],rhs: V) -> V {
+pub(crate) fn solve3(m: [V;3],rhs: V) -> V {
     let det = dot(m[0],cross(m[1],m[2]));
     let col = |k: usize| -> f64 {
         let mut a = m;

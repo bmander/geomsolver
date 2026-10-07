@@ -218,23 +218,18 @@ fn read(sk: &Sketch,solid: usize,axis_tolerance: f64) -> Result<Snapshot,String>
                     // the leaves in the same order; but the union keeps an indexed cut's copies
                     // together, where a mesher's query asks only those near it (`Spread`), and
                     // is folded in pairs, so a gear's forty-eight copies stand six unions deep.
-                    let mut cuts: Vec<Snapshot> = through.iter().map(|&i| get(i)).collect();
-                    while cuts.len() > 1 {
-                        let mut paired = Vec::with_capacity(cuts.len().div_ceil(2));
-                        let mut it = cuts.into_iter();
-                        while let Some(a) = it.next() {
-                            paired.push(match it.next() { Some(b) => a.combine(b,BodyWord::Union).map_err(error)?, None => a });
-                        }
-                        cuts = paired;
+                    if let Some(cut) = in_pairs(through.iter().map(|&i| get(i)).collect(),BodyWord::Union)? {
+                        body = body.combine(cut,BodyWord::Cut).map_err(error)?;
                     }
-                    if let Some(cut) = cuts.pop() { body = body.combine(cut,BodyWord::Cut).map_err(error)?; }
                     for &i in bound { body = body.combine(get(i),BodyWord::Bound).map_err(error)?; }
                     body
                 }
                 // each piece's section exactly, swept or turned as the kernels build it
                 SolidDef::Fillet {..} => {
                     let blend = sk.fillet_blend(i)?;
-                    let mut out: Option<Snapshot> = None;
+                    // every piece's material, unioned in pairs (a casting's many edges and corners
+                    // stand few unions deep)
+                    let mut leaves: Vec<Snapshot> = Vec::new();
                     for p in &blend.pieces {
                         use crate::solid::fillet::Stroke;
                         let edges: Vec<Edge> = p.wedge.strokes().into_iter().map(|s| match s {
@@ -270,7 +265,28 @@ fn read(sk: &Sketch,solid: usize,axis_tolerance: f64) -> Result<Snapshot,String>
                                 [-radius,radius]).map_err(error)?;
                             leaf = leaf.combine(Snapshot::Static(sector.into()),word).map_err(error)?;
                         }
-                        out = Some(match out { None => leaf,Some(o) => o.combine(leaf,BodyWord::Union).map_err(error)? });
+                        leaves.push(leaf);
+                    }
+                    // a corner: its cell — on the ball's side of each face, on the vertex's of each
+                    // section through the ball's centre, each a half-space (a slab of a large square)
+                    // — less the ball (a half disc turned about a line through its centre)
+                    for c in &blend.corners {
+                        use crate::space::{norm,scale,sub};
+                        let reach = 4.*(norm(sub(c.centre,c.vertex))+c.r);
+                        let square = PlanarField::from_loop(&[
+                            Edge::Line {a:[-reach,-reach],b:[reach,-reach],axis:false},Edge::Line {a:[reach,-reach],b:[reach,reach],axis:false},
+                            Edge::Line {a:[reach,reach],b:[-reach,reach],axis:false},Edge::Line {a:[-reach,reach],b:[-reach,-reach],axis:false}],0.)?;
+                        // the half-space through `o` behind `n` (where (p − o)·n ≤ 0)
+                        let behind = |o: [f64;3],n: [f64;3]| -> Result<Snapshot,String> {
+                            let f = crate::brep::geom::Frame::about(o,n);
+                            Ok(Snapshot::Static(ExtrudedField::new(square.clone(),o,f.x,f.y,[-reach,0.]).map_err(error)?.into()))
+                        };
+                        let mut slabs = Vec::new();
+                        for e in crate::brep::fillet::corner_sections(c.vertex,c.centre,c.toward) { slabs.push(behind(c.centre,e)?); }
+                        for m in c.toward { slabs.push(behind(c.vertex,scale(m,-1.))?); }
+                        let cell = in_pairs(slabs,BodyWord::Bound)?.ok_or("a corner with no cell")?;
+                        let ball = Snapshot::Static(RevolvedField::new(PlanarField::disk([0.,0.],c.r).map_err(error)?,c.centre,c.toward[0]).map_err(error)?.into());
+                        leaves.push(cell.combine(ball,BodyWord::Cut).map_err(error)?);
                     }
                     // a ball rolled along a traced loop: the canal's material less the operands' (at
                     // a concave edge) or within it (convex), read from the spine and contacts
@@ -289,11 +305,10 @@ fn read(sk: &Sketch,solid: usize,axis_tolerance: f64) -> Result<Snapshot,String>
                                 rolled.r/roll.mm,rolled.reach/roll.mm)?;
                             let leaf = Snapshot::Static(SpatialField::from(leaf));
                             let word = if rolled.concave { BodyWord::Cut } else { BodyWord::Bound };
-                            let piece = leaf.combine(union.clone(),word).map_err(error)?;
-                            out = Some(match out { None => piece,Some(o) => o.combine(piece,BodyWord::Union).map_err(error)? });
+                            leaves.push(leaf.combine(union.clone(),word).map_err(error)?);
                         }
                     }
-                    out.ok_or("a fillet with no pieces")?
+                    in_pairs(leaves,BodyWord::Union)?.ok_or("a fillet with no pieces")?
                 }
                 SolidDef::Loft {..} => return Err("material fields currently require prisms, \
                     full revolutions, Boolean bodies or named motions".into()),
@@ -302,6 +317,20 @@ fn read(sk: &Sketch,solid: usize,axis_tolerance: f64) -> Result<Snapshot,String>
         done.insert(i,field);
     }
     Ok(done.remove(&solid).unwrap())
+}
+
+/// Fields combined by `word`, in pairs and then pairs of those: as many leaves as a long fold, but
+/// their depth (which a field bounds) only the logarithm of their count. `None` for none.
+fn in_pairs(mut fields: Vec<Snapshot>,word: BodyWord) -> Result<Option<Snapshot>,String> {
+    while fields.len() > 1 {
+        let mut paired = Vec::with_capacity(fields.len().div_ceil(2));
+        let mut it = fields.into_iter();
+        while let Some(a) = it.next() {
+            paired.push(match it.next() { Some(b) => a.combine(b,word).map_err(|e| format!("material field: {e:?}"))?, None => a });
+        }
+        fields = paired;
+    }
+    Ok(fields.pop())
 }
 
 impl SpatialField {
