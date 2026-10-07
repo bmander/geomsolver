@@ -688,7 +688,7 @@ fn a_gear_elaborates() {
 
 /// The bearing a curve's involute starts from — the `phase` its instance was given.
 fn phase_of(sk: &Sketch, ci: usize) -> f64 {
-    sk.curves[ci].values[0]
+    crate::common::curve_phase(sk, ci)
 }
 
 /// **A gear with few teeth.**  The flank is an involute of the base circle, and an involute of a

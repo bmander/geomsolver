@@ -358,7 +358,11 @@ fn retire_free(sk: &mut Sketch, bound: &BTreeMap<String, f64>) {
 /// Bring every dimension written in terms of a free variable up to the number that variable now
 /// stands at.  The binding is what the kernels read, so a solve needs nothing from this; the
 /// *text* of a dimension does, and so does anyone asking what it says without a sketch in hand.
+///
+/// The seam every raw write of the parameter vector ends at, so it is also where a ring's turned
+/// copies are brought up to their representative (`Sketch::settle_turns`).
 pub fn sync_free(sk: &mut Sketch) {
+    sk.settle_turns();
     if sk.free_vars.is_empty() {
         return; // a document with no free variable in it pays nothing
     }

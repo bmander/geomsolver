@@ -22,6 +22,9 @@ pub struct Statement {
     pub span: Span,
     pub path: Vec<PathStep>,
     pub kind: Operation,
+    /// Of a `ring`'s turned copy (k ≥ 1, §12.4): its declarations are built — a copy is an
+    /// entity — and its relations, holds and claims are not, being the representative's turned.
+    pub turned: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -158,6 +161,6 @@ impl Statement {
                 message: "parameters, groups, component instances and repetition are not supported inside a swept claim".into(),
             }),
         };
-        Ok(Self { id: st.id, span: st.span, path, kind })
+        Ok(Self { id: st.id, span: st.span, path, kind, turned: false })
     }
 }

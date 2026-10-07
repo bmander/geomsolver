@@ -344,7 +344,7 @@ fn dragging_the_gear_does_not_rewrite_the_gear() {
     assert_eq!(edit.text, gcs_core::examples::GEAR, "the source is untouched");
     assert!(edit.text.contains("component Involute(c: circle, phase: Angle, u: Angle) {"));
     assert!(edit.text.contains("component Flank("));
-    assert!(edit.text.contains("cycle N as i {"));
+    assert!(edit.text.contains("ring N about center {"));
 }
 
 /// A drawing made *by drawing* round-trips: append, elaborate, append again, and each statement
@@ -451,7 +451,7 @@ fn drawing_beside_a_component_leaves_the_component_written() {
         let Some(i) = rest.find(line) else { panic!("lost: {line}") };
         rest = &rest[i + line.len()..];
     }
-    assert!(edit.text.contains("cycle N as i {"));
+    assert!(edit.text.contains("ring N about center {"));
     assert!(edit.text.contains("component Involute(c: circle, phase: Angle, u: Angle) {"));
     let back = elaborate(&prog_of(&edit.text));
     assert!(back.ok(), "{:?}", back.errors().map(|d| &d.message).collect::<Vec<_>>());
@@ -610,7 +610,7 @@ fn a_second_gesture_beside_a_component_still_lands() {
     assert!(second.text.contains("p0 := point hint((-95, 48))"), "{}", second.text);
     assert!(second.text.contains("p1 := point hint((-40, 60))"), "{}", second.text);
     assert!(second.text.contains("l0 := line(p0, p1)"), "{}", second.text);
-    assert!(second.text.contains("cycle N as i {"), "and the gear is still written");
+    assert!(second.text.contains("ring N about center {"), "and the gear is still written");
 
     let back = elaborate(&prog_of(&second.text));
     assert!(back.ok(), "{:?}", back.errors().map(|d| &d.message).collect::<Vec<_>>());

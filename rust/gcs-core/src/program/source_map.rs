@@ -105,6 +105,12 @@ impl SourceMap {
         }
     }
 
+    /// Every key an entity was bound under, the anonymous ones included — what a ring's copies
+    /// are paired with their representative's by.
+    pub(crate) fn keys(&self) -> impl Iterator<Item = (&String, EntRef)> {
+        self.by_name.iter().map(|(k, &e)| (k, e))
+    }
+
     /// What the source calls an entity, where it calls it anything.
     pub fn name_of(&self, e: EntRef) -> Option<&String> {
         self.names.get(&e)?.first()

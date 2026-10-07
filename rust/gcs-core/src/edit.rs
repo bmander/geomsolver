@@ -124,7 +124,13 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
             && !c.claim && !c.soft && c.free.is_none())
         .map(|c| c.args[0].ent()).collect();
     let mut edits = Vec::new();
-    for st in &prog.root().body {
+    // and a `ring`'s body at the root: one statement however many copies, but the copies are
+    // turns of the first, so the first's pose is the one there is to record (§12.4)
+    let ring_bodies = prog.root().body.iter().filter_map(|st| match &st.kind {
+        StmtKind::Block(b) if b.kind == syntax::BlockKind::Ring => Some(b.body.iter()),
+        _ => None,
+    });
+    for st in prog.root().body.iter().chain(ring_bodies.flatten()) {
         let StmtKind::Decl(d) = &st.kind else { continue };
         // `hint(at: t)` names a *place*, and has no coordinates to write.  Faces and
         // solids also own no seeds: their children are boundaries and operands, not points.

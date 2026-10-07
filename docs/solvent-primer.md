@@ -118,6 +118,7 @@ ccw(a, b, c) | cw(a, b, c)              record a root choice; adds no equation
 component NAME(FORMALS) { statement* }  a component definition (not a value)
 repeat N [as i] { ... }                 N unrelated copies                           (1.7)
 cycle N [as i] { ... }                  N copies that close; `next`, `prev` in scope
+ring N about C { ... }                  N copies, each the first turned τ/N about C   (1.7)
 repeat e in CHAIN [as i] { ... }        a copy per link of a named chain
 cycle e in CHAIN [as i] { ... }         the same over a closed chain, closing
 NAME := INSTANCE.POINT over FORMAL in (A, B)          a curve                        (1.9)
@@ -419,7 +420,35 @@ right (`p1 -> p2` on a line, `start -> end` counter-clockwise on an arc).
 
 **Repetition.** `repeat N { … }` makes N unrelated copies. `cycle N { … }` makes N copies that
 close, with `next` and `prev` in scope. `as i` binds the index. Copies are reached as `p[0]`.
-(`ring` is refused; use `cycle`.)
+
+**A ring is a cycle whose copies are turns** (§12.3, issue #96). `ring N about C { … }` makes N
+copies, `next`/`prev` in scope, each the first one (the *representative*) turned `k · 360°/N`
+about `C` — a point (counter-clockwise in its view; every point of the body drawn in that view)
+or an axis whose direction is held (in space; every point of the body a point in space). Only
+the representative is solved for: the copies own no unknowns, their relations are its relations
+turned and are not stated again, and the closing statement a `cycle` of equalities carries does
+not exist. So a regular polygon is one vertex, one radius, one edge (`std.Polygon`), a gear one
+tooth (`gear.sv`), and no `cos`/`sin` places a copy. The ring's own turn is the
+representative's freedom, gauged from outside (`hub horizontal tip[0]`). Refused: the index read
+in the body (E015: there is nothing for it to vary); a reference from inside to what the turn
+would move — anything outside but the centre, a circle about it, a value, a seed's place, a plane
+a point is drawn in — or to a copy by index rather than `next`/`prev` (E021); a ring in a ring
+(E022); and what a ring cannot turn (E023): a plane, axis or motion declared in it, a point
+outside its view, a hold on a copy (hold the representative), a relation reading a turned
+curve. A copy is an entity like any other — `tip[2]` may be dimensioned, dragged or made a
+face's edge — and a relation on it moves the representative.
+
+```
+in std.front {
+  hub := point
+  ring 3 about hub {
+    tip := point hint((10, 1))
+    hub distance(10) tip
+    chord := line(tip, next.tip)
+  }
+  hub horizontal tip[0]
+}
+```
 
 **A block may end mid-joint.** A trailing joint before `}` threads onto the next copy's first
 link. A `cycle` wraps, closing the loop with no `close`; a `repeat` leaves its last joint unstated,

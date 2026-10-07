@@ -1,6 +1,14 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.46 — October 2026**
+**Specification, Draft 0.47 — October 2026**
+
+**[0.47] `ring`, solved over one copy.** `ring N about C { … }` (§12.3) is implemented as §12.4
+asks: one representative per ring-local entity, the other copies its turns, owning no unknown —
+so a 30-tooth gear is one tooth's unknowns, and a regular polygon one vertex's. `C` may be a point
+(the turn is in its view) or an axis whose direction is held (the turn is in space, right-handed
+about it). The index of a ring is refused wherever its body reads it (**E015**, widened from
+hints: a relation that varies with it is not a turn), a copy reached by index from inside is a
+non-invariant reference (**E021**), and what a ring cannot turn is **E023**.
 
 **[0.46] An ordinate along any direction, and `level`.** `a distance(d, along: t) b` states
 how far `b` stands from `a` along a directed line `t` — `(Y − X)·t̂ − d = 0`, signed from the first
@@ -1871,7 +1879,7 @@ Normative invariant (**Invariant H**): *for every program P, sol(P) = sol(P minu
 
 **[0.2]** §4.3 is how that classification is meant to be maintained: a number inside `hint(…)` is seed-class and every other number is not, so the check is a look at the clause rather than an argument about the statement.
 
-Hints on entities inside a `ring` seed the fundamental-domain representative (§12.4). Hints MAY use block indices in `repeat`/`cycle` (where each instance is a distinct variable) and MUST NOT use them in `ring` (**E015**: there is only one representative to seed).
+Hints on entities inside a `ring` seed the fundamental-domain representative (§12.4). Hints MAY use block indices in `repeat`/`cycle` (where each instance is a distinct variable) and MUST NOT use them in `ring` (**E015**: there is only one representative to seed). **[0.47]** Nor may anything else in a ring's body: a relation, a count or an argument that varies with the index is not a turn of the representative's, and a quotient solve would state only the representative's (**E015**).
 
 ---
 
@@ -1901,7 +1909,7 @@ Elaborates N copies; `next` denotes instance (i+1) mod N and `prev` instance (i�
 ring N about center as i { ... }
 ```
 
-**Semantics.** Let g = Rot(center, τ/N), the rotation by τ/N about the point entity named in the `about` clause. Define the unrolled program U = the same body under `cycle N`. Then:
+**Semantics.** Let g = Rot(center, τ/N), the rotation by τ/N about the point entity named in the `about` clause — counter-clockwise in that point's view — or **[0.47]** about the axis it names, right-handed about the axis's direction, which MUST be held (a free direction makes g a function of an unknown; **E023**). A ring about a point turns points drawn in its view; one about an axis turns points in space (**E023** otherwise). Define the unrolled program U = the same body under `cycle N`. Then:
 
 > sol(`ring`) = { x ∈ sol(U) : instance i+1 of every ring-local entity equals g · (instance i) }.
 
@@ -1917,6 +1925,8 @@ Implementations SHOULD solve a `ring` in the quotient: one representative per ri
 
 *Non-normative:* this is N× fewer unknowns and structurally excludes asymmetric spurious roots and permutation-collapsed roots. It is why one hint seeds one tooth and the gear cannot stack its teeth.
 
+**[0.47]** The reference implementation solves in the quotient: a copy is an entity like any other — named `name[k]`, drawn, an operand of a relation outside the ring, an edge of a face — whose numbers are its representative's turned, a linear function of the representative's and the centre's (`model::Turn`). A copy's relations, holds and claims are the representative's turned and are not stated; its curve is the representative's, turned. The ring's own turn is the representative's freedom, gauged by a statement outside the ring (`hub horizontal tip[0]`). A copy may not be held (**E023**: hold the representative), and a relation reading a turned curve is refused (**E023**) until a contact can be stated through the turn.
+
 ### 12.5 Invariance of external references
 
 An entity declared **outside** a ring and referenced **inside** it MUST be invariant under g. Implementations MUST verify this by the following syntactic criterion, and MAY additionally prove invariance semantically:
@@ -1924,7 +1934,8 @@ An entity declared **outside** a ring and referenced **inside** it MUST be invar
 - the axis point itself: invariant;
 - a `Circle` whose `.center` is (an alias of) the axis point: invariant;
 - any value-typed entity (`Scalar`, `Length`, `Angle` used as magnitude): invariant;
-- everything else: **not** established — error **E021** ("entity referenced in ring is not C_N-invariant").
+- **[0.47]** a plane a ring-local point is drawn `in` (a place, not a position), and anything a seed's place reads (a seed is no constraint, §11): not judged;
+- everything else: **not** established — error **E021** ("entity referenced in ring is not C_N-invariant"). **[0.47]** So is a copy of the ring's own reached by index from inside it (`tip[2]`): it reads the same copy from every turn; a neighbour is `next.tip` or `prev.tip`. A curve written in place inside a ring is judged by the entities its instance is given.
 
 *Non-normative:* E021 is one of the language's best diagnostics; it converts "the solver produced something weird and asymmetric" into a precise compile-time message.
 
@@ -2186,10 +2197,11 @@ The numerical method is unspecified. Whatever the method, a conforming solver:
 | E012 | ambiguous or conflicting path-fragment composition |
 | E013 | boundary fails to close where closure demanded |
 | E014 | withdrawn: a hint expression reading an unseeded quantity reads its provisional seed (§6.4, §11) |
-| E015 | indexed hint inside `ring` |
+| E015 | a `ring`'s index read inside it (**[0.47]** any read, not only a hint) |
 | E020 | `next`/`prev` where no `cycle` closes the copies: in a `repeat`, or in no block |
 | E021 | external entity referenced in `ring` not provably invariant |
 | E022 | nested `ring` (if unsupported) |
+| E023 | **[0.47]** what a `ring` cannot turn: a centre neither a point nor an axis held in its direction, a plane, axis or motion declared in it, a point outside its centre's view (or not in space, about an axis), a hold on a turned copy, a relation reading a turned curve |
 | E030 | retired **[0.34]**: a `fix` states its numbers (E040 where it does not) |
 | E040 | type mismatch within an alias class |
 | E041 | cyclic definitional dependency (**[0.18]** a solid made of itself, §6.9; a plane folded from itself until 0.42) |

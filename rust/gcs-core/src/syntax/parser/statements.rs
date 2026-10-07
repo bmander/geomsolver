@@ -135,23 +135,10 @@ impl<'a> P<'a> {
                 self.i += 1;
                 let kind = match w.as_str() {
                     "repeat" => BlockKind::Repeat,
+                    "ring" => BlockKind::Ring,
                     _ => BlockKind::Cycle,
                 };
                 self.block(kind, next_id).map(StmtKind::Block)
-            }
-            "ring" => {
-                // Not a construct of this implementation (bmander/geomsolver#47, item 3): a
-                // ring it could only unroll into the cycle it stood over, and then say so on
-                // every run.  The word comes back with the fundamental-domain solve of spec
-                // §12.4.  Reported once, the body consumed, so its statements are not read as
-                // loose lines and one mistake told N ways.
-                self.fail(
-                    "`ring` is not yet a construct of this implementation: write `cycle N { … }`, \
-                     whose copies are congruent by the numbers each is given (spec §12.3 is \
-                     what `ring` will add)",
-                );
-                self.skip_block();
-                None
             }
             // **`claim over crank.theta in (0deg, 360deg) { … }`** (§9.8): every claim in the
             // body judged as the drawing runs along one of its own free variables, and the worst
@@ -826,7 +813,13 @@ impl<'a> P<'a> {
 
     fn block(&mut self, kind: BlockKind, next_id: &mut u32) -> Option<Block> {
         let lo = self.prev_hi();
-        // `repeat e in rack.profile` — the block runs over a chain's edges
+        // `repeat e in rack.profile` — the block runs over a chain's edges; a ring is counted,
+        // since its turn is a fraction of a whole one
+        if kind == BlockKind::Ring && over_chain(&self.t, self.i) {
+            self.fail("a `ring` is counted and turned about a centre: `ring N about C { … }`");
+            self.skip_block();
+            return None;
+        }
         if over_chain(&self.t, self.i) {
             let var = self.ident()?;
             self.i += 1;
@@ -840,6 +833,8 @@ impl<'a> P<'a> {
                 binder,
                 body,
                 joint,
+                about: None,
+                index_reads: Vec::new(),
                 span: Span::new(lo, self.prev_hi()),
             });
         }
@@ -851,17 +846,44 @@ impl<'a> P<'a> {
                 Some(Tok::P('(')) => depth += 1,
                 Some(Tok::P(')')) => depth -= 1,
                 Some(Tok::P('{')) if depth == 0 => break,
-                Some(Tok::Ident(w)) if depth == 0 && w == "as" => break,
+                Some(Tok::Ident(w)) if depth == 0 && (w == "as" || w == "about") => break,
                 Some(Tok::Nl) => break,
                 _ => {}
             }
             self.i += 1;
         }
         let count = self.text_from(from).trim().to_string();
+        // a ring names what its copies turn about, and only a ring does
+        let about = if self.eat_word("about") {
+            let r = self.refr()?;
+            if kind != BlockKind::Ring {
+                self.fail_at(r.span, "only a `ring` turns about a centre; a `cycle` or a `repeat` names none");
+            }
+            Some(r)
+        } else {
+            if kind == BlockKind::Ring {
+                self.fail("a `ring` names what its copies turn about: `ring N about C { … }`");
+            }
+            None
+        };
         let binder = if self.eat_word("as") { Some(self.ident()?) } else { None };
+        let body_at = self.i;
         let (body, joint) = self.braced_body(next_id)?;
+        // a ring's index read in its body: a name token spelled as the binder, not a field
+        // (`t.k`) nor a key (`k: …`)
+        let mut index_reads = Vec::new();
+        if let (BlockKind::Ring, Some(b)) = (kind, &binder) {
+            for j in body_at..self.i {
+                let Tok::Ident(w) = &self.t[j].0 else { continue };
+                let field = j > 0 && self.t[j - 1].0 == Tok::P('.');
+                let key = self.t.get(j + 1).is_some_and(|t| t.0 == Tok::P(':'));
+                if *w == b.text && !field && !key {
+                    index_reads.push(self.t[j].1);
+                }
+            }
+        }
         let span = Span::new(lo, self.prev_hi());
-        Some(Block { kind, count, over: None, binder, body, joint, span })
+        Some(Block { kind, count, over: None, binder, body, joint, about, index_reads, span })
     }
 
     /// Step over a refused block: the rest of its header line and, where one opens there, the

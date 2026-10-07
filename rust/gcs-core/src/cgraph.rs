@@ -253,10 +253,12 @@ impl ConstraintGraph {
 pub fn coincident_classes(sk: &Sketch) -> (Vec<usize>, Vec<Vec<usize>>) {
     let n = sk.points.len();
     let mut uf = UnionFind::new(n);
+    let derived = sk.derived_mask();
     for c in &sk.constraints {
         // a *claimed* coincidence holds nothing together: it is a question about the drawing,
-        // not part of it
-        if c.kind == CKind::Coincident && !c.claim {
+        // not part of it; nor does one with a ring's turned copy, which moves with its
+        // representative rather than with the class (`build` leaves it to the numeric residual)
+        if c.kind == CKind::Coincident && !c.claim && !touches(sk, &derived, c) {
             uf.union(c.args[0].ent().i(), c.args[1].ent().i());
         }
     }
@@ -382,8 +384,17 @@ pub fn remainder(x: f64, y: f64) -> f64 {
     x - q * y
 }
 
+/// Whether a constraint reads a ring's turned copy (`Sketch::derived`): a point the cluster
+/// vocabulary has no element for, since it moves with its representative by a turn rather than
+/// on its own.
+/// `derived` is `Sketch::derived_mask`, empty where there is no ring.
+fn touches(sk: &Sketch, derived: &[bool], c: &crate::constraints::Constraint) -> bool {
+    !derived.is_empty() && c.params(sk).iter().any(|&p| derived[p as usize])
+}
+
 pub fn build(sk: &Sketch) -> ConstraintGraph {
     let mut g = ConstraintGraph::default();
+    let derived = sk.derived_mask();
     let (of, members) = coincident_classes(sk);
     g.point_of = of;
     for (k, ms) in members.iter().enumerate() {
@@ -410,6 +421,12 @@ pub fn build(sk: &Sketch) -> ConstraintGraph {
         // an edge carrying it would be read as a rigid distance somebody had fixed.  So it goes
         // to the numeric residual, on the same grounds as the run and the rise.
         if c.free.is_some() {
+            g.unsupported.push(c.id);
+            continue;
+        }
+        // one reading a ring's turned copy reads its representative and the ring's centre through
+        // a turn, which no element carries: the numeric residual solves it over the quotient
+        if !c.soft && touches(sk, &derived, c) {
             g.unsupported.push(c.id);
             continue;
         }

@@ -697,6 +697,10 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
     }
     let ents = sk.primitives();
     let mut state: BTreeMap<EntRef, State> = BTreeMap::new();
+    // a ring's turned copy is as free as what it is worked out from
+    let derived: BTreeMap<u32, Vec<u32>> =
+        sk.derived().into_iter().map(|d| (d.param, d.terms.iter().map(|t| t.0).collect())).collect();
+    let free_of = |p: u32| -> Vec<u32> { derived.get(&p).cloned().unwrap_or_else(|| vec![p]) };
     for &e in &ents {
         let empty = Vec::new();
         let cs = touched.get(&e).unwrap_or(&empty);
@@ -704,7 +708,7 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
             State::Conflict
         } else if cs.iter().any(|c| over_set.contains(c)) {
             State::Over
-        } else if sk.entity_params(e).iter().any(|p| under_set.contains(p)) {
+        } else if sk.entity_params(e).iter().flat_map(|&p| free_of(p)).any(|p| under_set.contains(&p)) {
             State::Under
         } else {
             State::Well

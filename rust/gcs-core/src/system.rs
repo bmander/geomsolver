@@ -105,7 +105,15 @@ pub struct System {
     pub n_params: usize,
     pub free: Vec<i32>,
     pub n_free: usize,
+    /// Each parameter's column: `>= 0` a free one, `-1` none (held), and `-2 - k` the `k`th
+    /// derived parameter, whose Jacobian is folded into its bases' columns (`dcols`).
     pub col_of: Vec<i32>,
+    /// A ring's turned copies' parameters (`Sketch::derived`): worked out from their bases
+    /// wherever the free vector is written (`apply_z`, `full_x`).
+    derived: Vec<crate::model::Derivation>,
+    /// Per derived parameter, its free bases' columns with their weights: where one kernel output
+    /// lands by the chain rule.
+    dcols: Vec<Vec<(i64, f64)>>,
     pub n_res: usize,
     /// World length one unit of each free column is worth — `Param::scale`, gathered.  The
     /// solver's variables are `z = x * col_scale`, so a step of a given size means the same
@@ -160,6 +168,7 @@ pub struct System {
     jdata: Vec<f64>,
     ent_src: Vec<i32>,
     ent_slot: Vec<i32>,
+    ent_w: Vec<f64>,
     csr_data: Vec<f64>,
     slot_of: BTreeMap<u32, (usize, usize)>,
     ata: Option<Ata>,
@@ -226,6 +235,7 @@ pub struct Subset {
     pub data: Vec<f64>,
     ent_src: Vec<i32>,
     ent_slot: Vec<i32>,
+    ent_w: Vec<f64>,
     jdata: Vec<f64>,
     v: Vec<f64>,
 }
@@ -269,25 +279,31 @@ fn fill_const_jac(kn: Kernel, count: usize, out: &mut [f64]) {
 }
 
 /// Push the Jacobian entries of `count` instances of `kn` over the parameters `gidx`, their first
-/// row `row0` and their first kernel output `src0`, as `(row * ncols + column, output)` in
-/// (instance, row, parameter) order; `col` is a parameter's column, or `None` where it has none.
+/// row `row0` and their first kernel output `src0`, as `(row * ncols + column, output, weight)`
+/// in (instance, row, parameter) order; `col` pushes a parameter's columns with their weights —
+/// none where it has none, one of weight 1 where it is free, a derived one's bases by the chain
+/// rule.
 fn jac_entries(
-    es: &mut Vec<(i64, i32)>,
+    es: &mut Vec<(i64, i32, f64)>,
     kn: Kernel,
     gidx: &[i32],
     count: usize,
     row0: usize,
     src0: usize,
     ncols: i64,
-    col: impl Fn(i32) -> Option<i64>,
+    col: impl Fn(i32, &mut Vec<(i64, f64)>),
 ) {
+    let mut cs = Vec::new();
     for i in 0..count {
         for t in 0..kn.n_res {
             for c in 0..kn.n_par {
-                let Some(col) = col(gidx[i * kn.n_par + c]) else { continue };
+                cs.clear();
+                col(gidx[i * kn.n_par + c], &mut cs);
                 let row = (row0 + i * kn.n_res + t) as i64;
                 let src = (src0 + (i * kn.n_res + t) * kn.n_par + c) as i32;
-                es.push((row * ncols + col, src));
+                for &(col, w) in &cs {
+                    es.push((row * ncols + col, src, w));
+                }
             }
         }
     }
@@ -299,15 +315,17 @@ struct Csr {
     indices: Vec<i32>,
     ent_src: Vec<i32>,
     ent_slot: Vec<i32>,
+    ent_w: Vec<f64>,
 }
 
 /// The structure of `n_rows` rows from `jac_entries`' list: sorted stably by position, so a
 /// column a row names twice is one value, summed in the order its entries were listed.
-fn csr_structure(mut es: Vec<(i64, i32)>, n_rows: usize, ncols: i64) -> Csr {
+fn csr_structure(mut es: Vec<(i64, i32, f64)>, n_rows: usize, ncols: i64) -> Csr {
     es.sort_by_key(|e| e.0);
     let mut indptr = vec![0i32; n_rows + 1];
     let mut indices: Vec<i32> = Vec::with_capacity(es.len());
     let (mut ent_src, mut ent_slot) = (Vec::with_capacity(es.len()), Vec::with_capacity(es.len()));
+    let mut ent_w = Vec::with_capacity(es.len());
     for e in 0..es.len() {
         if e == 0 || es[e].0 != es[e - 1].0 {
             indices.push((es[e].0 % ncols) as i32);
@@ -315,13 +333,14 @@ fn csr_structure(mut es: Vec<(i64, i32)>, n_rows: usize, ncols: i64) -> Csr {
         }
         ent_src.push(es[e].1);
         ent_slot.push(indices.len() as i32 - 1);
+        ent_w.push(es[e].2);
     }
     for i in 1..indptr.len() {
         if indptr[i] < indptr[i - 1] {
             indptr[i] = indptr[i - 1];
         }
     }
-    Csr { indptr, indices, ent_src, ent_slot }
+    Csr { indptr, indices, ent_src, ent_slot, ent_w }
 }
 
 /// out <- J v, J the CSR over `indptr`, `indices` and `data`.
@@ -335,13 +354,32 @@ pub(crate) fn csr_mul(indptr: &[i32], indices: &[i32], data: &[f64], v: &[f64], 
     }
 }
 
-/// `data` <- every entry's kernel output summed into its value.
-fn assemble(data: &mut [f64], jdata: &[f64], ent_src: &[i32], ent_slot: &[i32]) {
+/// `data` <- every entry's kernel output, times its weight, summed into its value.  A weight is
+/// 1 but where a derived parameter's output is folded into a base, and multiplying by 1 is exact,
+/// so a sketch with no ring keeps every bit.
+fn assemble(data: &mut [f64], jdata: &[f64], ent_src: &[i32], ent_slot: &[i32], ent_w: &[f64]) {
     for v in data.iter_mut() {
         *v = 0.0;
     }
     for e in 0..ent_src.len() {
-        data[ent_slot[e] as usize] += jdata[ent_src[e] as usize];
+        data[ent_slot[e] as usize] += ent_w[e] * jdata[ent_src[e] as usize];
+    }
+}
+
+/// Push parameter `p`'s columns with their weights: its own where it is free, a derived one's
+/// bases', none where it is held.
+fn fold(col_of: &[i32], dcols: &[Vec<(i64, f64)>], p: i32, cs: &mut Vec<(i64, f64)>) {
+    match col_of[p as usize] {
+        c if c >= 0 => cs.push((c as i64, 1.0)),
+        -1 => {}
+        c => cs.extend_from_slice(&dcols[(-2 - c) as usize]),
+    }
+}
+
+/// `x` <- every derived parameter worked out from its bases.
+fn settle(x: &mut [f64], derived: &[crate::model::Derivation]) {
+    for d in derived {
+        x[d.param as usize] = d.value(x);
     }
 }
 
@@ -419,6 +457,17 @@ impl System {
         for (i, &p) in free.iter().enumerate() {
             col_of[p as usize] = i as i32;
         }
+        let derived = sk.derived();
+        let mut dcols = Vec::with_capacity(derived.len());
+        for (k, d) in derived.iter().enumerate() {
+            col_of[d.param as usize] = -2 - k as i32;
+            dcols.push(
+                d.terms.iter()
+                    .filter(|&&(b, _)| col_of[b as usize] >= 0)
+                    .map(|&(b, w)| (col_of[b as usize] as i64, w))
+                    .collect::<Vec<_>>(),
+            );
+        }
         // A contact parameter's scale is read off the thing it runs along here rather than off
         // the Param, so it is a fact about this compile and cannot be stale — and once per
         // entity, not once per contact, since the arc-length walk is the expensive part.  Either
@@ -453,6 +502,7 @@ impl System {
         // system carries one, which is the whole of what keeps a claim from moving the geometry:
         // the diagnosis judges it by stacking its rows onto a compiled system (`conditioned_with`)
         // rather than by compiling a system that has them.
+        let spans = crate::curve::contact_spans(sk);
         let mut by_kernel: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
         for (i, c) in sk.constraints.iter().enumerate() {
             if c.claim {
@@ -464,7 +514,6 @@ impl System {
         let mut blocks: Vec<Block> = Vec::new();
         let mut slot_of = BTreeMap::new();
         let mut cids: Vec<u32> = Vec::new();
-        let spans = crate::curve::contact_spans(sk);
         let mut hard: Vec<bool> = Vec::new();
         let mut row0 = 0usize;
         let mut joff = 0usize;
@@ -512,12 +561,12 @@ impl System {
 
         // Jacobian structure: entry (block, i, res, par) -> (row, col), duplicates merged
         let ncols = n_free.max(1) as i64;
-        let mut es: Vec<(i64, i32)> = Vec::with_capacity(joff);
+        let mut es: Vec<(i64, i32, f64)> = Vec::with_capacity(joff);
         for b in &blocks {
-            let col = |p: i32| (col_of[p as usize] >= 0).then(|| col_of[p as usize] as i64);
+            let col = |p: i32, cs: &mut Vec<(i64, f64)>| fold(&col_of, &dcols, p, cs);
             jac_entries(&mut es, table[b.kid], &b.gidx, b.count, b.row0, b.jac_off, ncols, col);
         }
-        let Csr { indptr: csr_indptr, indices: csr_indices, ent_src, ent_slot } =
+        let Csr { indptr: csr_indptr, indices: csr_indices, ent_src, ent_slot, ent_w } =
             csr_structure(es, n_res, ncols);
         let nnz = csr_indices.len();
 
@@ -539,6 +588,8 @@ impl System {
             free,
             n_free,
             col_of,
+            derived,
+            dcols,
             n_res,
             col_scale,
             scaled,
@@ -558,6 +609,7 @@ impl System {
             jdata,
             ent_src,
             ent_slot,
+            ent_w,
             csr_data: vec![0.0; nnz.max(1)],
             slot_of,
             ata: None,
@@ -647,6 +699,7 @@ impl System {
         for (i, &p) in self.free.iter().enumerate() {
             x[p as usize] = if self.scaled { z[i] / self.col_scale[i] } else { z[i] };
         }
+        settle(&mut x, &self.derived);
         x
     }
 
@@ -654,6 +707,7 @@ impl System {
         for (i, &p) in self.free.iter().enumerate() {
             self.x[p as usize] = if self.scaled { z[i] / self.col_scale[i] } else { z[i] };
         }
+        settle(&mut self.x, &self.derived);
     }
 
     pub fn residuals_into(&mut self, z: &[f64], r: &mut [f64]) {
@@ -696,7 +750,7 @@ impl System {
     /// Refill the Jacobian's CSR values at z (the structure never changes).
     pub fn compute_csr(&mut self, z: &[f64]) -> &[f64] {
         self.jac_blocks(z);
-        assemble(&mut self.csr_data, &self.jdata, &self.ent_src, &self.ent_slot);
+        assemble(&mut self.csr_data, &self.jdata, &self.ent_src, &self.ent_slot, &self.ent_w);
         // dr/dz = (dr/dx) / col_scale: the same chain rule that turned x into z above — and the
         // row over its own units, as `residuals_into` hands the residual out
         if self.scaled || self.row_scaled {
@@ -886,11 +940,13 @@ impl System {
             let j = c.jacobian(sk, &v);
             let kn = crate::kernels::kernel(c.kernel());
             let inv = 1.0 / self.extent.max(1.0).dpowi(kn.degree as i32 - 1);
+            let mut cs = Vec::new();
             for t in 0..kn.n_res {
                 for (k, &p) in ps.iter().enumerate() {
-                    let col = self.col_of[p as usize];
-                    if col >= 0 {
-                        m.data[r * self.n_free + col as usize] += j[t * kn.n_par + k] * inv;
+                    cs.clear();
+                    fold(&self.col_of, &self.dcols, p as i32, &mut cs);
+                    for &(col, w) in &cs {
+                        m.data[r * self.n_free + col as usize] += w * j[t * kn.n_par + k] * inv;
                     }
                 }
                 row_c.push(c.id);
@@ -920,11 +976,11 @@ impl System {
                     continue;
                 }
                 let mut cols: Vec<usize> = Vec::with_capacity(kn.n_par);
+                let mut cs = Vec::new();
                 for t in 0..kn.n_par {
-                    let col = self.col_of[b.gidx[i * kn.n_par + t] as usize];
-                    if col >= 0 {
-                        cols.push(col as usize);
-                    }
+                    cs.clear();
+                    fold(&self.col_of, &self.dcols, b.gidx[i * kn.n_par + t], &mut cs);
+                    cols.extend(cs.iter().map(|&(c, _)| c as usize));
                 }
                 cols.sort_unstable();
                 cols.dedup();
@@ -1017,23 +1073,26 @@ impl System {
         // entries in the whole system's order — (instance, row, parameter) — so a column named
         // twice sums in the same order, merged as `new` merges them
         let ncols = cols.len().max(1) as i64;
-        let mut es: Vec<(i64, i32)> = Vec::with_capacity(joff);
+        let mut es: Vec<(i64, i32, f64)> = Vec::with_capacity(joff);
         let mut jdata = vec![0.0; joff];
         for &(b, i0, count, out0, joff0) in &runs {
             let blk = &self.blocks[b];
             let kn = self.kernels[blk.kid];
             let gidx = &blk.gidx[i0 * kn.n_par..(i0 + count) * kn.n_par];
-            let col = |p: i32| {
-                let c = self.col_of[p as usize];
-                (c >= 0 && local[c as usize] >= 0).then(|| local[c as usize] as i64)
+            let col = |p: i32, cs: &mut Vec<(i64, f64)>| {
+                fold(&self.col_of, &self.dcols, p, cs);
+                cs.retain_mut(|(c, _)| {
+                    *c = local[*c as usize] as i64;
+                    *c >= 0
+                });
             };
             jac_entries(&mut es, kn, gidx, count, out0, joff0, ncols, col);
             fill_const_jac(kn, count, &mut jdata[joff0..]);
         }
-        let Csr { indptr, indices, ent_src, ent_slot } = csr_structure(es, rows.len(), ncols);
+        let Csr { indptr, indices, ent_src, ent_slot, ent_w } = csr_structure(es, rows.len(), ncols);
         let data = vec![0.0; indices.len()];
-        Subset { runs, rows, cols: cols.to_vec(), indptr, indices, data, ent_src, ent_slot, jdata,
-            v: Vec::new() }
+        Subset { runs, rows, cols: cols.to_vec(), indptr, indices, data, ent_src, ent_slot, ent_w,
+            jdata, v: Vec::new() }
     }
 
     /// The subset's residuals at `z` (the whole free vector), one per `s.rows`, each over its
@@ -1069,7 +1128,7 @@ impl System {
             let sz = count * kn.n_res * kn.n_par;
             (kn.jac)(count, &s.v, k, &mut s.jdata[joff0..joff0 + sz]);
         }
-        assemble(&mut s.data, &s.jdata, &s.ent_src, &s.ent_slot);
+        assemble(&mut s.data, &s.jdata, &s.ent_src, &s.ent_slot, &s.ent_w);
         if self.scaled || self.row_scaled {
             let (rs, cs, rows, cols) = (&self.row_scale, &self.col_scale, &s.rows, &s.cols);
             to_units(&mut s.data, &s.indptr, &s.indices, |k| rs[rows[k]], |j| cs[cols[j]]);

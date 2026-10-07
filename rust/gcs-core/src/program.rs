@@ -22,6 +22,7 @@ mod seams;
 mod vertices;
 mod edges;
 mod spatial_faces;
+mod rings;
 mod source_map;
 
 pub use diagnostics::{Code, Diag, Severity};
@@ -213,6 +214,9 @@ pub fn elaborate(p: &Program) -> Elaborated {
     let mut skip: BTreeSet<StmtId> = BTreeSet::new();
     use crate::ir::{Operation as StmtKind, Statement};
     let body: Vec<&Statement> = expansion.flat.iter().collect();
+    // what states something: every statement but a `ring`'s turned copy's, whose relations,
+    // holds and claims are its representative's turned (§12.4) — its declarations are built
+    let stating: Vec<&Statement> = body.iter().copied().filter(|st| !st.turned).collect();
     // the style sheet, before anything is built: it says nothing about what the drawing is, so
     // it is collected once and never consulted again by anything here (spec §14)
     let mut sheet = crate::style::Sheet::new();
@@ -392,7 +396,7 @@ pub fn elaborate(p: &Program) -> Elaborated {
     // held number is its own seed, so nothing that holds one needs a `hint` saying it again — an
     // axis along a line, a motion, a place reading a held point all read where it is held, and
     // a seed never writes a held number (`settle_deferred`)
-    for st in &body {
+    for st in &stating {
         let StmtKind::Relation(r) = &st.kind else { continue };
         if relations::is_fix(r) {
             constrain(&mut sk, &res, r, st, p, &map, &mut diags);
@@ -404,6 +408,8 @@ pub fn elaborate(p: &Program) -> Elaborated {
     views::stand_axes(&mut sk);
     entities::drawn_in_planes(&sk, &map, &mut diags);
     entities::axes_along(&mut sk, &deferred);
+    // a ring's copies, turns of its representative: after the holds, which a copy may not have
+    rings::rings(&mut sk, &res, &map, &expansion.rings, &mut diags);
 
     // motions, once every line and point they are written over is built — and before the
     // profiles a planar motion generates, which are curves of the drawing a contact may name
@@ -424,7 +430,7 @@ pub fn elaborate(p: &Program) -> Elaborated {
 
     // -- phase 3: constraints, in statement order
     let mut arrays = BTreeSet::new();
-    for st in &body {
+    for st in &stating {
         let StmtKind::Relation(r) = &st.kind else { continue };
         if relations::is_fix(r) {
             continue;
@@ -437,6 +443,8 @@ pub fn elaborate(p: &Program) -> Elaborated {
             repeated(&mut sk, id, st, &mut arrays);
         }
     }
+
+    rings::contacts(&sk, &map, &mut diags);
 
     // where the planes stand, from the statements that say so, before the drawing in them is
     // read through them: a place drawn in another plane is read in space, through that plane's
@@ -463,6 +471,9 @@ pub fn elaborate(p: &Program) -> Elaborated {
         }
     }
 
+    // a ring's copies where their representatives' seeds put them, whatever a seed said of a copy
+    sk.settle_turns();
+
     // -- phase 3b: faces, then solids (§6.8, §6.9).  **After every other kind and after the
     // constraints**, because a face is written over edges the drawing already has and a solid
     // over faces and other solids; and *evaluated* rather than solved, because nothing about
@@ -484,7 +495,7 @@ pub fn elaborate(p: &Program) -> Elaborated {
     // `evaluate` allocates, so they come after it — the one pass of the elaboration that is *below*
     // the expressions
     let post_expr = expr::evaluate(&mut sk);
-    solid_claims(&mut sk, &res, &mut map, &body, &skip, &mut diags);
+    solid_claims(&mut sk, &res, &mut map, &stating, &skip, &mut diags);
     for item in post_expr {
         let span = map.site_of_constraint(item.id).map(|s| s.span).unwrap_or_default();
         let stmt = map.site_of_constraint(item.id).map(|s| s.stmt);
@@ -524,7 +535,7 @@ pub fn elaborate(p: &Program) -> Elaborated {
     }
 
     // -- phase 5: a root choice under a key no triple of points spells, kept verbatim
-    for st in &body {
+    for st in &stating {
         if let StmtKind::Branch(b) = &st.kind {
             sk.branches.insert(b.key.clone(), b.value);
         }

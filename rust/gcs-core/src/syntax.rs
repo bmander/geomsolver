@@ -402,8 +402,8 @@ pub struct GroupDecl {
     pub fields: Vec<InstArg>,
 }
 
-/// Repetition.  Two constructs and two meanings (spec §12): the third, `ring`, is refused by
-/// name until it can hold its copies congruent (issue #47, item 3).
+/// Repetition.  Three constructs and three meanings (spec §12): an open array, a closed one, and
+/// a ring — a closed one whose copies are one another's turns (issue #96).
 #[derive(Clone, Debug)]
 pub struct Block {
     pub kind: BlockKind,
@@ -419,6 +419,11 @@ pub struct Block {
     /// The body's trailing open joint, where its last chain ends mid-joint: the chain threads
     /// onto the next copy (issue #38).
     pub joint: Option<OpenJoint>,
+    /// A ring's centre, `ring N about C`: a point, or an axis (§12.3).  `None` for the others.
+    pub about: Option<Ref>,
+    /// Where a ring's body reads its own index — E015, said by the flattener: every copy is the
+    /// representative turned, so there is nothing an index could vary.
+    pub index_reads: Vec<Span>,
     pub span: Span,
 }
 
@@ -489,6 +494,9 @@ pub enum BlockKind {
     Repeat,
     /// N copies that close: `next` is instance (i+1) mod N, `prev` is (i-1) mod N.
     Cycle,
+    /// N copies that close and are one another's turns about a centre (§12.3): solved over the
+    /// first, the representative, the others worked out from it (`model::Turn`).
+    Ring,
 }
 
 impl BlockKind {

@@ -163,37 +163,27 @@ component Ellipse(c: point, a: Length, b: Length, tilt: Angle, u: Angle) {
 
 // A regular polygon: `n` vertices on a circle of radius `r` about `c`, the first at `phase`
 // counter-clockwise from the line `ref`'s direction, so the figure turns with whatever `ref`
-// belongs to — a part's axis, a crank arm.  Every vertex is `r` from the centre, each chord is
-// as long as the next, and the first edge is turned a fixed angle from `ref` (an edge lies
-// `90° + 180°/n` past its own vertex's bearing): `2n` statements for `2n` coordinates, with the
-// seeds walking the circle once so the winding is the one asked for.  Not "every edge at its
-// own angle": with every direction stated and every vertex on the circle, alternate vertices
-// can slide opposite ways along the circle to first order when `n` is even, and the diagnosis
-// reads that flex as a dependency.  The last chord's equality is left unstated — it is the
-// theorem the others imply.  The vertices are `v[i]` and the edges `e[i]`, `e[i]` running from
+// belongs to — a part's axis, a crank arm.  A `ring`: every vertex is the first turned a step of
+// `360°/n` about `c`, so the polygon is regular by construction and one vertex is solved for —
+// `r` from the centre, its edge turned a fixed angle from `ref` (an edge lies `90° + 180°/n` past
+// its own vertex's bearing).  The vertices are `v[i]` and the edges `e[i]`, `e[i]` running from
 // `v[i]` to `v[i + 1]`; a class on the instance dashes or hides the lot.
 //
 //   use std
 //   pocket: Hex(c, axis, af: 11.1, phase: 0deg) class hidden
 //   claim pocket.p.e[1] distance(11.1) pocket.p.e[4]      // across the flats
 component Polygon(c: point, ref: line, n: Int, r: Length, phase: Angle) {
-  cycle n as i {
-    v := point hint(x: c.x + r * cos(atan2(ref.p2.y - ref.p1.y, ref.p2.x - ref.p1.x) + phase + i * 360deg / n),
-                 y: c.y + r * sin(atan2(ref.p2.y - ref.p1.y, ref.p2.x - ref.p1.x) + phase + i * 360deg / n))
+  ring n about c {
+    v := point hint(at: c, along: ref, turn: phase)
     c distance(r) v
     e := line(v, next.v)
-    repeat 1 - min(i, 1) {
-      ref angle(phase + 90deg + 180deg / n) e
-    }
-    repeat 1 - floor(i / (n - 1)) {
-      e equal e[i + 1]
-    }
   }
+  ref angle(phase + 90deg + 180deg / n) e[0]
 }
 
 // A hexagon by its width across the flats — a nut, a bolt's head, the pocket either sits in —
 // the first vertex at `phase` from `ref`, so `phase: 0deg` puts a corner along the reference
 // and `phase: 30deg` a flat square to it.
 component Hex(c: point, ref: line, af: Length, phase: Angle) {
-  p := Polygon(c, ref, n: 6, r: af / (2 * cos(30deg)), phase: phase)
+  p := Polygon(c, ref, n: 6, r: af / sqrt(3), phase: phase)
 }

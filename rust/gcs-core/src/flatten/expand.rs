@@ -211,6 +211,8 @@ impl<'a> Walk<'a> {
                         forbidden,
                         groups: comp.formals.iter().filter(|f| f.ty == Ty::Group).map(|f| f.name.text.clone()).collect(),
                         cyc: None,
+                        // a ring's copy reaches into the instances written in it
+                        ring: scope.ring.clone(),
                         copies: scope.copies,
                         anonymous: scope.anonymous || inst.name.text.starts_with('#'),
                         vals: sub_vals.clone(),
@@ -475,6 +477,27 @@ impl<'a> Walk<'a> {
             return;
         }
         let block_prefix = format!("{}#{}.", scope.prefix(), st.id.0);
+        // a ring: copies the representative's turns.  One inside another is refused (E022) and
+        // expanded as the cycle it is besides, so what it makes is still there to be named; and
+        // its index, read anywhere in its body, varies nothing (E015)
+        let ring = match (b.kind, &b.about) {
+            (BlockKind::Ring, Some(_)) if scope.ring.is_some() => {
+                self.once(Code::E022, st.span, "a `ring` inside a `ring` is not supported: turn the \
+                    inner one's copies about a centre the outer ring does not move, outside it");
+                None
+            }
+            (BlockKind::Ring, Some(about)) => {
+                let i = b.binder.as_ref().map_or("", |n| n.text.as_str());
+                for &s in &b.index_reads {
+                    self.once(Code::E015, s, format!("`{i}` is a `ring`'s index: every copy is the \
+                        first turned, so there is nothing for it to vary — reach a neighbour by \
+                        `next` or `prev`"));
+                }
+                self.rings.push((block_prefix.clone(), about.clone(), scope.clone(), n, st.span));
+                Some(block_prefix.clone())
+            }
+            _ => None,
+        };
         let mut ranges: Vec<(usize, usize)> = Vec::new();
         for k in 0..n {
             let mut sub = vals.clone();
@@ -498,6 +521,10 @@ impl<'a> Walk<'a> {
                 forbidden: scope.forbidden.clone(),
                 groups: scope.groups.clone(),
                 cyc: b.kind.wraps().then(|| Cyc { prefix: block_prefix.clone(), k, n }),
+                ring: match &ring {
+                    Some(prefix) => Some(super::Ring { prefix: prefix.clone(), turned: k > 0 }),
+                    None => scope.ring.clone(),
+                },
                 // the prefix just built is the block's id, so every declaration
                 // below is a copy, however deep and through however many instances
                 copies: true,

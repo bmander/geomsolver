@@ -77,6 +77,20 @@ pub fn read(src: &str) -> Elaborated {
     e
 }
 
+/// The bearing an involute flank starts from, in degrees: the `phase` its instance was given — a
+/// `ring`'s turned copy's being its representative's, turned `k` steps of `360/n`.
+pub fn curve_phase(sk: &Sketch, ci: usize) -> f64 {
+    match sk.turn_of(EntRef::new(gcs_core::model::EntKind::Curve, ci)) {
+        Some(t) => sk.curves[t.rep.i()].values[0] + 360.0 * t.k as f64 / t.n as f64,
+        None => sk.curves[ci].values[0],
+    }
+}
+
+/// An entity by the path the document reads it by — `tip[2]`, `g.t[3].l.lo`.
+pub fn at_path(e: &Elaborated, n: &str) -> EntRef {
+    e.map.entity_path(&e.sketch, n).unwrap_or_else(|| panic!("no `{n}`"))
+}
+
 /// `src` is refused with `code` and a message holding `needle`, shown at `at`.
 pub fn refused(src: &str, code: &str, needle: &str, at: &str) {
     let (prog, errs, linked) = gcs_core::library::parse_linked(src);
