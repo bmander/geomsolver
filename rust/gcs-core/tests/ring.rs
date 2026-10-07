@@ -203,3 +203,34 @@ fn dragging_a_copy_turns_the_representative() {
     let th = (-30f64).to_radians();
     assert!((b.0 - (1.0 + 10.0 * th.cos())).abs() < 1e-6 && (b.1 - (2.0 + 10.0 * th.sin())).abs() < 1e-6, "{b:?}");
 }
+
+/// A curve written in place reads its entities through its instance's arguments: a datum line
+/// from outside the ring is read by the representative's tooth alone, and is refused as any
+/// reference is (the traced gear gives each tooth a spoke of its own instead).
+#[test]
+fn a_curve_reading_what_the_turn_would_move_is_refused() {
+    let src = gcs_core::examples::GEAR_TRACE.replace(
+        "  fix((0, 0)) center\n",
+        "  fix((0, 0)) center\n  far := point\n  fix((R, 0)) far\n  outside := line(center, far)\n",
+    ).replace("t := Tooth(base, datum,", "t := Tooth(base, outside,");
+    refused(&src, "E021", "`datum` is outside the `ring`", "ring N about center {\n    // the first tooth's datum points along x; the others are turned with their teeth\n    private anchor := point\n    fix((R, 0)) anchor\n    private datum := line(center, anchor)\n    t := Tooth(base, outside, root, tip, a0: 0deg, half: half, u0: u0, u1: u1)\n    gap := line(t.l.lo, next.t.r.lo)\n  }");
+}
+
+#[test]
+fn a_plane_in_a_ring_and_a_relation_on_a_turned_curve_are_refused() {
+    refused("
+unit mm
+use std
+hub := point in std.front
+ring 3 about hub {
+  q := point in std.front
+  p := plane(u: std.x, v: std.z)
+}
+", "E023", "declare it outside", "ring 3 about hub {\n  q := point in std.front\n  p := plane(u: std.x, v: std.z)\n}");
+    // the gear's first flank of the second tooth, read from outside the ring
+    let src = gcs_core::examples::GEAR.replace(
+        "    gap := line(t.l.lo, next.t.r.lo)\n  }\n",
+        "    gap := line(t.l.lo, next.t.r.lo)\n  }\n  probe := point\n  probe coincident t[1].r.e\n",
+    );
+    refused(&src, "E023", "turned copy of a curve", "probe coincident t[1].r.e");
+}
