@@ -214,6 +214,15 @@ impl Piece {
         }
     }
 
+    /// A prism carried `by` further past end `end` (0 where it starts; back where `by` is
+    /// negative): its new length.
+    fn stretch(&mut self, end: usize, by: f64) -> f64 {
+        let Carry::Prism { length } = &mut self.carry else { unreachable!("only a prism stretches") };
+        *length += by;
+        if end == 0 { self.section = carried(&self.section, -by); }
+        *length
+    }
+
     /// Whether it is a whole ring, with no ends.
     pub fn whole(&self) -> bool { matches!(self.carry, Carry::Turn { sweep } if whole(sweep)) }
 
@@ -320,7 +329,8 @@ pub(crate) fn derive(sk: &Sketch, si: usize) -> Result<Blend, String> {
     let mut rolled_edges = std::collections::BTreeSet::new();
     let mut ends: Vec<End> = Vec::new();
     // each piece's edge, its uses and its bands, asked once the corners are known
-    let mut bands: Vec<(usize, [Use; 2], Vec<(usize, Band)>)> = Vec::new();
+    // (and the edges of the fillet's own its band may meet: a mitre's other run)
+    let mut bands: Vec<(usize, [Use; 2], Vec<(usize, Band)>, Vec<usize>)> = Vec::new();
     // each edge refused, and why: told once the ends are paired
     let mut failed: Vec<(usize, String)> = Vec::new();
     let mut concave: Option<(bool, String)> = None;
@@ -355,7 +365,7 @@ pub(crate) fn derive(sk: &Sketch, si: usize) -> Result<Blend, String> {
             let Some((piece, hollow, piece_ends, piece_bands)) = rounded else { continue };
             ends.extend(piece_ends.into_iter().map(|e| End { piece: pieces.len(), ..e }));
             pieces.push(piece);
-            bands.push((ei, [first, second], piece_bands));
+            bands.push((ei, [first, second], piece_bands, Vec::new()));
             hollow
         };
         match &concave {
@@ -384,13 +394,9 @@ pub(crate) fn derive(sk: &Sketch, si: usize) -> Result<Blend, String> {
         let Some((corner, setbacks)) = cornered(&brep, &table, v, at, &pieces, r.value * mm, concave, tol)? else { continue };
         // each piece shortened at this end to the section through the ball's centre
         for (e, &by) in at.iter().zip(&setbacks) {
-            let p = &mut pieces[e.piece];
-            let Carry::Prism { length } = p.carry else { unreachable!() };
-            if !(length - by > tol) {
+            if !(pieces[e.piece].stretch(e.end, -by) > tol) {
                 return Err(format!("the ball of {} is larger than its edge between corners can hold", e.label));
             }
-            if e.end == 0 { p.section = carried(&p.section, by); }
-            p.carry = Carry::Prism { length: length - by };
             for (_, band) in &mut bands[e.piece].2 { band.shorten(e.end, by); }
             corner_joins.push([e.piece, pieces.len() + corners.len()]);
         }
@@ -400,21 +406,16 @@ pub(crate) fn derive(sk: &Sketch, si: usize) -> Result<Blend, String> {
     // **two of its straight edges meeting at a corner whose third edge is left sharp**: each piece
     // runs on to the plane beyond it, and the two cross there (a mitre); the other's edge is the
     // fillet's own, not one its band must keep clear of
-    let mut skip: Vec<Vec<usize>> = vec![Vec::new(); pieces.len()];
     let mut mitred_at = Vec::new();
     for (&v, at) in at_vertex.iter().filter(|(v, _)| !cornered_at.contains(*v)) {
         let Some(runs) = mitred(&brep, &located, &table, v, at, &pieces, concave, tol)? else { continue };
-        for (e, by) in at.iter().zip(runs) {
-            let p = &mut pieces[e.piece];
-            let Carry::Prism { length } = p.carry else { unreachable!() };
-            if e.end == 0 { p.section = carried(&p.section, -by); }
-            p.carry = Carry::Prism { length: length + by };
-        }
-        skip[at[0].piece].push(at[1].edge);
-        skip[at[1].piece].push(at[0].edge);
+        for (e, by) in at.iter().zip(runs) { pieces[e.piece].stretch(e.end, by); }
+        bands[at[0].piece].3.push(at[1].edge);
+        bands[at[1].piece].3.push(at[0].edge);
         mitred_at.push(v);
     }
-    ends.retain(|e| !cornered_at.contains(&e.vertex) && !mitred_at.contains(&e.vertex));
+    cornered_at.extend(mitred_at);
+    ends.retain(|e| !cornered_at.contains(&e.vertex));
     // an end that meets nothing turns a corner — unless an edge refused is what it was to run on
     // into (leaving their vertex its way), whose reason says more
     let mut joins = paired(&ends, tol).map_err(|(end, refusal)| {
@@ -430,7 +431,7 @@ pub(crate) fn derive(sk: &Sketch, si: usize) -> Result<Blend, String> {
     // a corner's joins name it after the pieces
     joins.extend(corner_joins);
     // **a ball no larger than each face holds**, over each piece's stretch
-    for ((ei, uses, checks), skip) in bands.iter().zip(&skip) {
+    for (ei, uses, checks, skip) in &bands {
         let at = Edge { brep: &brep, located: &located, table: &table, edge: *ei, uses: *uses, tol };
         for (k, band) in checks { at.holds(*k, band, skip)?; }
     }
@@ -479,12 +480,7 @@ fn cornered(brep: &Brep, table: &[Vec<Use>], v: u32, at: &[&End], pieces: &[Piec
     faces.dedup();
     let [f0, f1, f2] = faces[..] else { return Ok(None) };
     // each face's plane, and the way from it to the ball: into the material at a convex corner
-    let toward = |fi: usize| -> Option<V> {
-        let f = &brep.faces[fi];
-        let Surface::Plane(frame) = f.surface else { return None };
-        let out = if f.reversed { scale(frame.z, -1.0) } else { frame.z };
-        Some(if concave { out } else { scale(out, -1.0) })
-    };
+    let toward = |fi: usize| toward(&brep.faces[fi], concave);
     let (Some(m0), Some(m1), Some(m2)) = (toward(f0), toward(f1), toward(f2)) else { return Ok(None) };
     let m = [m0, m1, m2];
     if dot(m[0], cross(m[1], m[2])).abs() < 1e-9 { return Ok(None); }
@@ -508,6 +504,16 @@ fn cornered(brep: &Brep, table: &[Vec<Use>], v: u32, at: &[&End], pieces: &[Piec
     Ok(Some((corner, setbacks)))
 }
 
+/// The way from a plane face to the ball beside it: into the material at a convex edge, out of
+/// it at a concave one. None for a face on any other surface.
+fn toward(f: &crate::brep::topo::Face, concave: bool) -> Option<V> {
+    let Surface::Plane(frame) = f.surface else { return None };
+    Some(if f.reversed == concave { scale(frame.z, -1.0) } else { frame.z })
+}
+
+/// The faces using edge `ei`.
+fn faces_of_edge(table: &[Vec<Use>], ei: usize) -> impl Iterator<Item = usize> + '_ { table[ei].iter().map(|u| u.0) }
+
 /// Whether the two ends `at` vertex `v` make a **mitre**: two straight pieces whose edges share a
 /// face, the edge between their other two faces left sharp (a block's top rim rounded alone, a
 /// pocket's floor). Each piece runs on to the plane of the face beyond its end, the other's second
@@ -520,38 +526,34 @@ fn mitred(brep: &Brep, located: &Located, table: &[Vec<Use>], v: u32, at: &[&End
     tol: f64) -> Result<Option<[f64; 2]>, String> {
     let &[e0, e1] = at else { return Ok(None) };
     if at.iter().any(|e| !matches!(pieces[e.piece].carry, Carry::Prism { .. })) { return Ok(None); }
-    let faces = |ei: usize| -> Vec<usize> { table[ei].iter().map(|u| u.0).collect() };
-    let (f0, f1) = (faces(e0.edge), faces(e1.edge));
+    let (f0, f1): (Vec<usize>, Vec<usize>) = (faces_of_edge(table, e0.edge).collect(), faces_of_edge(table, e1.edge).collect());
     let shared: Vec<usize> = f0.iter().copied().filter(|f| f1.contains(f)).collect();
     let [shared] = shared[..] else { return Ok(None) };
     let (Some(s0), Some(s1)) = (f0.iter().copied().find(|&f| f != shared), f1.iter().copied().find(|&f| f != shared))
         else { return Ok(None) };
-    // the edge left sharp: at the vertex, between the two other faces
-    let Some(sharp) = (0..brep.edges.len()).find(|&ei| {
-        let fs = faces(ei);
-        brep.edges[ei].v.contains(&v) && fs.len() == 2 && fs.contains(&s0) && fs.contains(&s1)
+    // the edge left sharp: at the vertex, among the first other face's, the second's beside it
+    let Some(sharp) = brep.faces[s0].loops.iter().flatten().map(|c| c.edge as usize).find(|&ei| {
+        brep.edges[ei].v.contains(&v) && table[ei].len() == 2 && faces_of_edge(table, ei).any(|f| f == s1)
     }) else { return Ok(None) };
     let ed = &brep.edges[sharp];
     let EdgeCurve::Curve(curve) = &ed.curve else { return Ok(None) };
     let edge = Edge { brep, located, table, edge: sharp, uses: [table[sharp][0], table[sharp][1]], tol };
     let (n, d) = edge.across(curve, 0.5 * (ed.t[0] + ed.t[1]))?;
-    match turns(n, d) {
-        None => return Ok(None),
-        Some(kind) if kind != concave => return Err(format!(
+    let Some(kind) = turns(n, d) else { return Ok(None) };
+    if kind != concave {
+        return Err(format!(
             "the fillets of {} and {} meet at a corner whose edge `{}` with `{}` turns the other way: \
              run on to it, they would leave a gap, and a fillet turning the corner is rung 3", e0.label, e1.label,
-            brep.faces[s0].name, brep.faces[s1].name)),
-        Some(_) => {}
+            brep.faces[s0].name, brep.faces[s1].name));
     }
     let vertex = brep.vertices[v as usize].p;
     let mut runs = [0.0; 2];
     for (k, (e, beyond)) in [(e0, s1), (e1, s0)].into_iter().enumerate() {
         if e.meet.is_none() { continue; }
-        let f = &brep.faces[beyond];
-        let Surface::Plane(frame) = f.surface else { return Ok(None) };
         // out of the side the fillet works in: the material at a convex edge, the void at a
         // concave one
-        let out = if f.reversed != concave { scale(frame.z, -1.0) } else { frame.z };
+        let Some(inward) = toward(&brep.faces[beyond], concave) else { return Ok(None) };
+        let out = scale(inward, -1.0);
         let p = &pieces[e.piece];
         let end = p.at(e.end as f64);
         let rate = dot(scale(end.normal(), if e.end == 0 { -1.0 } else { 1.0 }), out);

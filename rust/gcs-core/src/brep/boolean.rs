@@ -322,8 +322,9 @@ fn arrange<'a>(a: &'a Brep,b: &'a Brep,tol: f64) -> Result<Arranged<'a>,String> 
         for fb in 0..b.faces.len() {
             if !overlap(&boxes[0][fa],&boxes[1][fb],pad) { continue }
             let (sa,sb) = (&a.faces[fa].surface,&b.faces[fb].surface);
-            let curves = match intersect(sa,sb,tol) {
-                Ssi::Curves(cs) => cs,
+            // two curves of one meeting in closed form may cross one another (`crossings_among`)
+            let (curves,crossed) = match intersect(sa,sb,tol) {
+                Ssi::Curves(cs) => { let x = crossings_among(sa,&cs,tol); (cs,x) }
                 Ssi::Same => { same_pairs.push((fa,fb)); continue }
                 Ssi::Traced => {
                     // traced through the points where either face's boundary crosses the other, and
@@ -431,14 +432,14 @@ fn arrange<'a>(a: &'a Brep,b: &'a Brep,tol: f64) -> Result<Arranged<'a>,String> 
                                 t.pts[0],t.pts[t.pts.len()-1],seeds.iter().map(|&p| distance(c.point(c.inverse(p)),p)).collect::<Vec<_>>());
                         }
                     } }
-                    traced
+                    let none = vec![Vec::new();traced.len()];
+                    (traced,none)
                 }
             };
             let reach = [boxes[0][fa].0,boxes[0][fa].1,boxes[1][fb].0,boxes[1][fb].1];
             if debug && !curves.is_empty() {
                 eprintln!("brep: A{fa} {} × B{fb} {}: {} curve(s)",sa.kind(),sb.kind(),curves.len());
             }
-            let crossed = crossings_among(sa,&curves,tol);
             for (c,crossed) in curves.into_iter().zip(crossed) {
                 // a curve that comes nowhere near both faces (a far crossing of two nearly parallel
                 // meridians) leaves nothing on them
@@ -669,7 +670,7 @@ fn arrange<'a>(a: &'a Brep,b: &'a Brep,tol: f64) -> Result<Arranged<'a>,String> 
     Ok(Arranged {solids,located,pool,out,pieces})
 }
 
-/// Where the closed curves two surfaces meet in (`curves`, read in closed form) cross one another,
+/// Where the closed curves two surfaces meet in (`curves`, in closed form) cross one another,
 /// each crossing listed against both: two curves of one meeting cross only where the surfaces
 /// touch (two cylinders of one radius whose axes cross meet in two ellipses, crossing where both
 /// touch), and there each is split as at an edge.
@@ -678,7 +679,6 @@ fn crossings_among(surface: &super::geom::Surface,curves: &[super::geom::Curve],
     for i in 0..curves.len() {
         for j in i+1..curves.len() {
             let (Some(pi),Some(pj)) = (curves[i].period(),curves[j].period()) else { continue };
-            if matches!(curves[i],super::geom::Curve::Traced(_)) || matches!(curves[j],super::geom::Curve::Traced(_)) { continue }
             for (_,q) in crossings_in(surface,&curves[i],[0.,pi],&curves[j],[0.,pj],tol).unwrap_or_default() {
                 crossed[i].push(q);
                 crossed[j].push(q);

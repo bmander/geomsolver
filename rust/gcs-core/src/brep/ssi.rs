@@ -278,12 +278,9 @@ pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi {
             // one radius, axes crossing at O: a point as far from both axes has
             // ((p−O)·a₁)² = ((p−O)·a₂)², so the meeting is the first cylinder cut by the two planes
             // through O square to a₁ − a₂ and a₁ + a₂: two ellipses, crossing where both touch
-            let n = cross(f.z,g.z);
-            let w = sub(g.o,f.o);
-            if dot(w,unit(n)).abs() > tol { return Ssi::Traced }
-            // O on the first axis: the foot of the second's on it, in their common plane
-            let t = dot(cross(w,g.z),n)/dot(n,n);
-            let o = add(f.o,scale(f.z,t));
+            let axis = |c: &Frame| Curve::Line {p:c.o,d:c.z};
+            let all = [f64::NEG_INFINITY,f64::INFINITY];
+            let Some(&[(_,o)]) = super::query::curve_curve(&axis(&f),all,&axis(&g),all,tol).as_deref() else { return Ssi::Traced };
             let mut out = Vec::new();
             for m in [sub(f.z,g.z),add(f.z,g.z)] {
                 let m = unit(m);

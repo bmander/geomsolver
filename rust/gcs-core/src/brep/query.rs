@@ -44,13 +44,11 @@ pub fn curve_curve(a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2],tol: f64) -> Opti
         }
         if dot(sub(p,o),z).abs() > tol { return Vec::new(); }
         let foot = add(p,scale(d,dot(sub(o,p),d)));
-        let h = distance(foot,o);
-        if h > r+tol { return Vec::new(); }
-        // a tangent line meets the circle once: two roots `half` either side of the foot stand off
-        // the circle by `half² / 2r`, so where that is within the tolerance they are the one touch
-        // (taken apart, the square root of a rounding puts each a long way from it)
-        let half2 = (r*r-h*h).max(0.);
-        if half2 <= 2.*r*tol { vec![foot] } else { let half = half2.sqrt(); vec![add(foot,scale(d,-half)),add(foot,scale(d,half))] }
+        match half_chord(distance(foot,o),r,tol) {
+            None => Vec::new(),
+            Some(0.) => vec![foot],
+            Some(half) => vec![add(foot,scale(d,-half)),add(foot,scale(d,half))],
+        }
     };
     let on = |c: &Curve,q: V| match *c {
         Curve::Line {p,d} => norm(cross(sub(q,p),d)) <= tol,
@@ -129,9 +127,10 @@ pub fn crossings_in(surface: &Surface,a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2
         };
         Some(roots.into_iter().filter_map(|(t,_)| { let q = other.point(t); on(q).map(|_| (t,q)) }).collect())
     };
+    let carries = |c: &Curve| matches!(c,Curve::Line {..} | Curve::Circle(..) | Curve::Ellipse(..));
     match (a,b) {
-        (_,Curve::Line {..} | Curve::Circle(..) | Curve::Ellipse(..)) => carried(b,tb,a,ta),
-        (Curve::Line {..} | Curve::Circle(..) | Curve::Ellipse(..),_) => {
+        (_,b) if carries(b) => carried(b,tb,a,ta),
+        (a,_) if carries(a) => {
             // the roots are `b`'s: read back onto `a`
             let found = carried(a,ta,b,tb)?;
             Some(found.into_iter().map(|(_,q)| {
@@ -193,10 +192,8 @@ pub fn curve_surface(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64) 
 }
 
 /// A line through `p` along the unit `d`, over `[t0, t1]`, against the cylinder of radius `r` about
-/// `c`'s axis, in closed form: across the axis it is a chord of the circle, and where that chord's
-/// two roots stand off the circle by no more than the tolerance (`half² ≤ 2r·tol`) they are one
-/// touch at the foot — sampled, a tangent line's double root is found only to the square root of
-/// the tolerance. A line along the axis lies in the surface or misses it.
+/// `c`'s axis, in closed form: across the axis it is a chord of the circle (`half_chord`, one touch at the foot where it is
+/// tangent). A line along the axis lies in the surface or misses it.
 fn line_cylinder(p: V,d: V,[t0,t1]: [f64;2],c: &super::geom::Frame,r: f64,tol: f64) -> Meets {
     use crate::space::{dot,sub};
     let across = |v: V| sub(v,scale(c.z,dot(v,c.z)));
@@ -206,15 +203,23 @@ fn line_cylinder(p: V,d: V,[t0,t1]: [f64;2],c: &super::geom::Frame,r: f64,tol: f
         return if (norm(w)-r).abs() <= tol { Meets::Along } else { Meets::At(Vec::new()) }
     }
     let foot = -dot(w,e)/ee;
-    let h = norm(add(w,scale(e,foot)));
-    if h > r+tol { return Meets::At(Vec::new()) }
-    let half2 = r*r-h*h;
-    let roots: Vec<(f64,bool)> = if half2 <= 2.*r*tol { vec![(foot,true)] } else {
-        let half = (half2/ee).sqrt();
-        vec![(foot-half,false),(foot+half,false)]
+    let roots = match half_chord(norm(add(w,scale(e,foot))),r,tol) {
+        None => Vec::new(),
+        Some(0.) => vec![(foot,true)],
+        Some(half) => { let half = half/ee.sqrt(); vec![(foot-half,false),(foot+half,false)] }
     };
-    let slack = tol;
-    Meets::At(roots.into_iter().filter(|&(t,_)| t >= t0-slack && t <= t1+slack).map(|(t,k)| (t.clamp(t0,t1),k)).collect())
+    Meets::At(roots.into_iter().filter(|&(t,_)| t >= t0-tol && t <= t1+tol).map(|(t,k)| (t.clamp(t0,t1),k)).collect())
+}
+
+/// Half the chord a line at `h` from a circle's centre cuts from it, radius `r`: none where it
+/// passes clear, 0 where it touches. A tangent line meets the circle once: two roots `half` either
+/// side of the foot stand off the circle by `half² / 2r`, so where that is within the tolerance
+/// they are the one touch (taken apart, the square root of a rounding puts each a long way from
+/// it, and a sampled search finds the double root only to the square root of the tolerance).
+fn half_chord(h: f64,r: f64,tol: f64) -> Option<f64> {
+    if h > r+tol { return None }
+    let half2 = (r*r-h*h).max(0.);
+    Some(if half2 <= 2.*r*tol { 0. } else { half2.sqrt() })
 }
 
 /// A face's box in space, from its edges and a grid across its parameters, grown by what the
