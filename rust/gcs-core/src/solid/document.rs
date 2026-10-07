@@ -402,16 +402,21 @@ fn build(
     if let SolidDef::Fillet { .. } = sol.def {
         // each edge's piece, swept as the faceted kernel sweeps a drawn face
         let Ok(blend) = sk.fillet_blend(si as usize) else { return Term::Empty };
-        let mut term = Term::Empty;
+        let mut built = Vec::new();
         for piece in &blend.pieces {
             let Some(p) = piece.face_poly(origin, unit) else { return Term::Empty };
-            let built = match piece.carry {
+            built.push(match piece.carry {
                 super::fillet::Carry::Prism { length } => prism(&p, 0.0, length, &name),
                 super::fillet::Carry::Turn => revolve(&p, ((0.0, 0.0), (0.0, 1.0)),
                     std::f64::consts::TAU, Sense::Ccw, unit, &name),
-            };
-            let Some(built) = built else { return Term::Empty };
-            prims.push(built);
+            });
+        }
+        // a ball rolled along a traced loop: its piece's boundary meshed to the sheet's flatness
+        built.extend(blend.rolls.iter().map(|roll| super::fillet::rolled_prim(roll, origin, unit, &name)));
+        let mut term = Term::Empty;
+        for b in built {
+            let Some(b) = b else { return Term::Empty };
+            prims.push(b);
             let next = Term::Prim(prims.len() - 1);
             term = if matches!(term, Term::Empty) { next } else { Term::Union(Box::new(term), Box::new(next)) };
         }

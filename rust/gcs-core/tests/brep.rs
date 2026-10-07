@@ -1158,3 +1158,73 @@ fn a_ring_on_a_coincident_wall_joins_it() {
     close(volume(&ring),TAU*moment);
     close(volume(&whole),36000.+PI*64.*20.+TAU*moment);
 }
+
+#[test]
+fn a_surface_offset_moves_its_signed_distance_by_the_offset() {
+    use gcs_core::brep::geom::Surface;
+    let f = Frame::new([1.,-2.,0.5],[0.3,0.4,1.],[1.,0.,0.]);
+    let surfaces = [Surface::Plane(f),Surface::Cylinder(f,4.),Surface::Cone(f,3.,0.4),Surface::Sphere(f,5.),
+        Surface::Torus(f,6.,2.)];
+    let points = [[0.,0.,0.],[3.,1.,-2.],[-4.,6.,3.],[7.,-1.,4.]];
+    for s in &surfaces {
+        for d in [-1.5,0.25,2.] {
+            let o = s.offset(d).unwrap_or_else(|| panic!("a {} offset by {d}",s.kind()));
+            for p in points { close(o.implicit(p),s.implicit(p)-d); }
+        }
+    }
+    // past its axis or its centre a surface offset inward is no surface
+    assert!(Surface::Cylinder(f,4.).offset(-4.).is_none());
+    assert!(Surface::Torus(f,6.,2.).offset(-3.).is_none());
+}
+
+/// The main pipe of a tee, radius 10 along x with its seam along +z, and its branch, radius 6
+/// along z; and the upper loop where they meet.
+fn tee_loop() -> (gcs_core::brep::geom::Surface,gcs_core::brep::geom::Curve) {
+    use gcs_core::brep::geom::Surface;
+    use gcs_core::brep::ssi::trace;
+    let main = Surface::Cylinder(Frame::new([0.;3],[1.,0.,0.],[0.,0.,1.]),10.);
+    let stem = Surface::Cylinder(Frame::new([0.;3],[0.,0.,1.],[1.,0.,0.]),6.);
+    let seed = [0.,6.,8.];
+    let mut loops = trace(&main,&stem,&[seed],[-20.;3],[20.;3],1e-9).unwrap();
+    loops.sort_by(|a,b| a.point(a.inverse(seed)).iter().zip(seed).map(|(x,y)| (x-y).abs()).sum::<f64>()
+        .total_cmp(&b.point(b.inverse(seed)).iter().zip(seed).map(|(x,y)| (x-y).abs()).sum::<f64>()));
+    (main,loops.swap_remove(0))
+}
+
+#[test]
+fn a_traced_edge_lying_in_a_cylinder_crosses_its_seam() {
+    use gcs_core::brep::geom::Curve;
+    use gcs_core::brep::query::crossings_in;
+    let (main,crotch) = tee_loop();
+    let period = crotch.period().expect("a closed loop");
+    // the main pipe's seam, where the loop crosses it at x = ±6
+    let seam = Curve::Line {p:[0.,0.,10.],d:[1.,0.,0.]};
+    let mut found = crossings_in(&main,&crotch,[0.,period],&seam,[-30.,30.],1e-9).expect("a line carries its crossings");
+    found.sort_by(|a,b| a.1[0].total_cmp(&b.1[0]));
+    assert_eq!(found.len(),2,"{found:?}");
+    for ((_,q),x) in found.iter().zip([-6.,6.]) {
+        for (k,want) in [x,0.,10.].into_iter().enumerate() { assert!((q[k]-want).abs() <= 1e-7,"{q:?}"); }
+    }
+    // and read from the line's side, the same two
+    assert_eq!(crossings_in(&main,&seam,[-30.,30.],&crotch,[0.,period],1e-9).unwrap().len(),2);
+}
+
+/// A rolled fillet's canal touches each operand along a whole contact edge: the union traces the
+/// canal against the pipes away from that contact, where their gradients are parallel, and reads
+/// the pair as meeting only there.
+#[test]
+fn a_canal_touching_its_operands_along_an_edge_is_unioned_with_them() {
+    use gcs_core::brep::boolean::{boolean,Op};
+    let main = prism(&Profile {names:vec![],origin:[0.;3],normal:[1.,0.,0.],
+        loops:vec![vec![arc([0.,0.,0.],10.,[1.,0.,0.],[0.,0.,1.],None)]]},-30.,30.).unwrap();
+    let tee = boolean(&main,&rod([0.,0.,0.],6.,[0.,25.]),Op::Union,1e-9).unwrap();
+    let rolled = gcs_core::brep::fillet::roll(&tee,[6.,0.,10.],2.,1e-9).unwrap();
+    assert!(rolled.concave);
+    rolled.piece.check(1e-6).unwrap();
+    let whole = boolean(&tee,&rolled.piece,Op::Union,1e-9).unwrap();
+    whole.check(1e-6).unwrap();
+    let (got,want) = (volume(&whole),volume(&tee)+volume(&rolled.piece));
+    assert!((got-want).abs() <= 1e-9*want,"{got} against {want}");
+    // the pipes' faces it rounds are kept, cut back to the contacts: nothing is left of the edge
+    assert!(whole.faces.len() > tee.faces.len());
+}

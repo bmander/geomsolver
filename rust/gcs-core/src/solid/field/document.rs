@@ -252,6 +252,27 @@ fn read(sk: &Sketch,solid: usize,axis_tolerance: f64) -> Result<Snapshot,String>
                         let leaf = Snapshot::Static(leaf);
                         out = Some(match out { None => leaf,Some(o) => o.combine(leaf,BodyWord::Union).map_err(error)? });
                     }
+                    // a ball rolled along a traced loop: the canal's material less the operands' (at
+                    // a concave edge) or within it (convex), read from the spine and contacts
+                    if !blend.rolls.is_empty() {
+                        let mut union: Option<Snapshot> = None;
+                        for o in crate::solid::fillet::operands(sk,i) {
+                            let f = get(o);
+                            union = Some(match union { None => f,Some(u) => u.combine(f,BodyWord::Union).map_err(error)? });
+                        }
+                        let union = union.ok_or("a fillet with no operands")?;
+                        for roll in &blend.rolls {
+                            let model = |c: &crate::brep::nurbs::BSpline| crate::brep::nurbs::BSpline {
+                                poles:c.poles.iter().map(|&p| roll.model(p)).collect(),..c.clone() };
+                            let rolled = &roll.rolled;
+                            let leaf = super::CanalField::new(model(&rolled.spine),[model(&rolled.contacts[0]),model(&rolled.contacts[1])],
+                                rolled.r/roll.mm,rolled.reach/roll.mm)?;
+                            let leaf = Snapshot::Static(SpatialField::from(leaf));
+                            let word = if rolled.concave { BodyWord::Cut } else { BodyWord::Bound };
+                            let piece = leaf.combine(union.clone(),word).map_err(error)?;
+                            out = Some(match out { None => piece,Some(o) => o.combine(piece,BodyWord::Union).map_err(error)? });
+                        }
+                    }
                     out.ok_or("a fillet with no pieces")?
                 }
                 SolidDef::Loft {..} => return Err("material fields currently require prisms, \

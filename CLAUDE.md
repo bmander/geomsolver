@@ -281,10 +281,22 @@ never sampled; coplanar seams are skipped. Every consumer reads the pieces as pr
 where it crosses that face's edges (`query::curve_curve`, closed form); a seam is no boundary
 (`face_place`); a hull corner's fan is walked both ways (`mesh::Tri2::fan`, cusps); a cusp turns a
 profile half a turn (`field/profile.rs::turning`); a tangency is one crossing (`curve_curve`).
-`tests/fillet.rs`, `gcs-cli/tests/fillet_oracle.rs` (OCCT's `BRepFilletAPI_MakeFillet` on its
-unified union, `solvent_cad_fillet`, links `TKFillet`; its own face set aside, OCCT approximating a
-sphere's), `rust/examples/solid_fillet{,_turned,_knob,_rail}.sv`. Open: traced centre curves (the
-pipe tee: canal face, local B-rep operation, tube field leaf), B-spline faces, rungs 3–4.
+**A closed traced loop is rolled** (rung 2): an edge on no line or circle between analytic faces is
+`brep::fillet::roll` — the spine where `Surface::offset`s meet (`ssi`), fitted; the canal
+`c + r·slerp(eA, eB, v)` by `nurbs::fit_net`; the piece built directly (canal seamed, strips on each
+face, winding or holed) and checked; `solid::fillet::Roll` carries it (facets: `rolled_prim`; recipe
+`"rolled"`; native: OCCT's fillet on the fused operands). Field: `solid::field::CanalField`, read
+from spine and contacts only (tube, cone, reach; bounds by pole hulls and the cone's Lipschitz bound
+within `near`, where the foot is unique; past it refused). Kernel rules it found: an edge lying in a
+face is cut by that face's lines/circles via a carrier plane (`query::crossings_in`); a traced pair
+drops seeds where the gradients are parallel beside an edge lying along both (`boolean`, `ssi::SHALLOW`);
+a fitted edge's tol is at least its fit. OCCT's own rolled pieces differ (tee 0.33%, bore rim 0.8%,
+whatever its bars; an independent quadrature agrees with ours to 1e-6), so oracle bars are 1e-2 for
+the piece, 1e-4 for a body taking it.
+`tests/fillet.rs` (tee, pin, bore rim against independent quadratures), `gcs-cli/tests/fillet_oracle.rs`
+(OCCT's `BRepFilletAPI_MakeFillet` on its unified union, `solvent_cad_fillet`, links `TKFillet`; its
+own face set aside, OCCT approximating a sphere's), `rust/examples/solid_fillet{,_turned,_knob,_rail,
+_tee,_bore}.sv`. Open: open traced edges and corners (rung 3), B-spline faces, rung 4.
 **Continuous motion solids:** `removal := solid(tool, under: generating, from: -30deg, to: 30deg)`
 is the union over the whole interval, not posed meshes; `at:` and intervals exclusive.
 `MaterialField::read` promotes static DAGs when a sweep appears; nested sweeps refused; caches

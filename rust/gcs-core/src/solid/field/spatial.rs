@@ -1,5 +1,5 @@
 //! Immutable spatial composition of analytic material fields.
-use super::{min,max,union_support,intersection_support,Error,I,V,RevolvedField,ExtrudedField};
+use super::{min,max,union_support,intersection_support,Error,I,V,RevolvedField,ExtrudedField,CanalField};
 use crate::motion::{Family,MotionBounds};
 use std::{collections::HashMap,sync::Arc};
 
@@ -9,6 +9,7 @@ type Cache = HashMap<(usize,[[u64;2];3]),I>;
 enum Node {
     Revolved(RevolvedField),
     Extruded(ExtrudedField),
+    Canal(CanalField),
     Transformed {source:SpatialField,pose:MotionBounds},
     Union(SpatialField,SpatialField),
     Intersection(SpatialField,SpatialField),
@@ -32,6 +33,9 @@ impl From<RevolvedField> for SpatialField {
 impl From<ExtrudedField> for SpatialField {
     fn from(source: ExtrudedField) -> Self { Self {node:Arc::new(Node::Extruded(source)),depth:1,shares:false,leaves:1} }
 }
+impl From<CanalField> for SpatialField {
+    fn from(source: CanalField) -> Self { Self {node:Arc::new(Node::Canal(source)),depth:1,shares:false,leaves:1} }
+}
 
 impl SpatialField {
     /// Conservative support of all regularized material. No query domain is
@@ -45,6 +49,7 @@ impl SpatialField {
         let value = match self.node.as_ref() {
             Node::Revolved(source) => source.support_bounds()?,
             Node::Extruded(source) => source.support_bounds()?,
+            Node::Canal(source) => source.support_bounds()?,
             Node::Transformed {source,pose} => source.support(cache)?.map(|b| pose.point(b)).transpose()?,
             Node::Union(a,b) => union_support(a.support(cache)?,b.support(cache)?),
             Node::Intersection(a,b) => intersection_support(a.support(cache)?,b.support(cache)?),
@@ -56,7 +61,7 @@ impl SpatialField {
     fn node(node: Node,depth: u8) -> Result<Self,Error> {
         if depth > 64 { return Err(Error::OutsideDomain); }
         let leaves = match &node {
-            Node::Revolved(_) | Node::Extruded(_) => 1,
+            Node::Revolved(_) | Node::Extruded(_) | Node::Canal(_) => 1,
             Node::Transformed {source,..} => source.leaves,
             Node::Union(a,b) | Node::Intersection(a,b) | Node::Difference(a,b) => a.leaves+b.leaves,
         };
@@ -101,6 +106,7 @@ impl SpatialField {
         match self.node.as_ref() {
             Node::Revolved(source) => source.value(p),
             Node::Extruded(source) => source.value(p),
+            Node::Canal(source) => source.value(p),
             Node::Transformed {source,pose} => source.value(pose.inverse_point_mid(p)),
             Node::Union(a,b) => a.value(p).min(b.value(p)),
             Node::Intersection(a,b) => a.value(p).max(b.value(p)),
@@ -113,7 +119,7 @@ impl SpatialField {
     pub fn reading(&self,p: [f64;3],q: &super::Query,first: usize) -> super::Reading {
         use super::reading::{higher,leaf,lower};
         match self.node.as_ref() {
-            Node::Revolved(_) | Node::Extruded(_) => {
+            Node::Revolved(_) | Node::Extruded(_) | Node::Canal(_) => {
                 let l = self.leaf().unwrap();
                 leaf(|x| l.value(x),p,q.step,first,l.value_piece(p).1)
             }
@@ -138,6 +144,7 @@ impl SpatialField {
         match self.node.as_ref() {
             Node::Revolved(source) => Some(Leaf::Revolved(source)),
             Node::Extruded(source) => Some(Leaf::Extruded(source)),
+            Node::Canal(source) => Some(Leaf::Canal(source)),
             _ => None,
         }
     }
@@ -148,7 +155,7 @@ impl SpatialField {
     fn find_leaf(&self,p: [f64;3],target: usize,first: usize) -> Option<(Leaf<'_>,[f64;3],Vec<&MotionBounds>,bool)> {
         if target < first || target >= first+self.leaves { return None; }
         match self.node.as_ref() {
-            Node::Revolved(_) | Node::Extruded(_) => Some((self.leaf().unwrap(),p,Vec::new(),false)),
+            Node::Revolved(_) | Node::Extruded(_) | Node::Canal(_) => Some((self.leaf().unwrap(),p,Vec::new(),false)),
             Node::Transformed {source,pose} => source.find_leaf(pose.inverse_point_mid(p),target,first)
                 .map(|(l,x,mut poses,negated)| { poses.push(pose); (l,x,poses,negated) }),
             Node::Union(a,b) | Node::Intersection(a,b) => if target < first+a.leaves { a.find_leaf(p,target,first) }
@@ -206,7 +213,7 @@ impl SpatialField {
             if seen.contains(&key) { return true; }
             seen.push(key);
             match f.node.as_ref() {
-                Node::Revolved(_) | Node::Extruded(_) => false,
+                Node::Revolved(_) | Node::Extruded(_) | Node::Canal(_) => false,
                 Node::Transformed {source,..} => walk(source,seen),
                 Node::Union(a,b) | Node::Intersection(a,b) | Node::Difference(a,b) => walk(a,seen) || walk(b,seen),
             }
@@ -224,6 +231,7 @@ impl SpatialField {
         let value = match self.node.as_ref() {
             Node::Revolved(source) => source.bounds(p),
             Node::Extruded(source) => source.bounds(p),
+            Node::Canal(source) => source.bounds(p),
             Node::Transformed {source,pose} => source.evaluate(pose.inverse_point(p)?,cache),
             Node::Union(a,b) => Ok(min(a.evaluate(p,cache)?,b.evaluate(p,cache)?)),
             Node::Intersection(a,b) => Ok(max(a.evaluate(p,cache)?,b.evaluate(p,cache)?)),
@@ -236,19 +244,20 @@ impl SpatialField {
 
 /// A leaf of either kind, read alike.
 #[derive(Clone,Copy)]
-enum Leaf<'a> { Revolved(&'a RevolvedField),Extruded(&'a ExtrudedField) }
+enum Leaf<'a> { Revolved(&'a RevolvedField),Extruded(&'a ExtrudedField),Canal(&'a CanalField) }
 
 impl Leaf<'_> {
     fn value(self,p: [f64;3]) -> f64 {
-        match self { Leaf::Revolved(l) => l.value(p),Leaf::Extruded(l) => l.value(p) }
+        match self { Leaf::Revolved(l) => l.value(p),Leaf::Extruded(l) => l.value(p),Leaf::Canal(l) => l.value(p) }
     }
     fn value_piece(self,p: [f64;3]) -> (f64,usize) {
-        match self { Leaf::Revolved(l) => l.value_piece(p),Leaf::Extruded(l) => l.value_piece(p) }
+        match self { Leaf::Revolved(l) => l.value_piece(p),Leaf::Extruded(l) => l.value_piece(p),Leaf::Canal(l) => (l.value(p),0) }
     }
+    /// (a canal is one piece: its creases are not traced)
     fn piece_count(self) -> usize {
-        match self { Leaf::Revolved(l) => l.piece_count(),Leaf::Extruded(l) => l.piece_count() }
+        match self { Leaf::Revolved(l) => l.piece_count(),Leaf::Extruded(l) => l.piece_count(),Leaf::Canal(_) => 1 }
     }
     fn carrier(self,p: [f64;3],piece: usize) -> Option<f64> {
-        match self { Leaf::Revolved(l) => l.carrier(p,piece),Leaf::Extruded(l) => l.carrier(p,piece) }
+        match self { Leaf::Revolved(l) => l.carrier(p,piece),Leaf::Extruded(l) => l.carrier(p,piece),Leaf::Canal(l) => Some(l.value(p)) }
     }
 }

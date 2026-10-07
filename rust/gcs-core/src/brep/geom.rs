@@ -599,6 +599,21 @@ impl Surface {
             Surface::Extrusion(..) | Surface::Revolution(..) | Surface::Blend(..) | Surface::BSpline(..) => unreachable!(),
         }
     }
+    /// The surface standing `d` off this one along its own normal (`S_u × S_v`), where its signed
+    /// distance (`implicit`) is `d`: in closed form for the analytic kinds — a plane moved, a radius
+    /// grown or shrunk — and `None` for the swept and fitted kinds, or an offset through an axis.
+    pub fn offset(&self,d: f64) -> Option<Surface> {
+        let positive = |r: f64| (r > 0.).then_some(r);
+        Some(match *self {
+            Surface::Plane(f) => Surface::Plane(Frame {o:add(f.o,scale(f.z,d)),..f}),
+            Surface::Cylinder(f,r) => Surface::Cylinder(f,positive(r+d)?),
+            // implicit (ρ − r) cos α − z sin α = d is the cone of radius r + d / cos α at `o`
+            Surface::Cone(f,r,a) => Surface::Cone(f,positive(r+d/a.dcos())?,a),
+            Surface::Sphere(f,r) => Surface::Sphere(f,positive(r+d)?),
+            Surface::Torus(f,big,r) => Surface::Torus(f,big,positive(r+d)?),
+            Surface::Extrusion(..) | Surface::Revolution(..) | Surface::Blend(..) | Surface::BSpline(..) => return None,
+        })
+    }
     /// A signed distance whose zero set is the surface (for a cone, the one sheet `ρ ≥ 0` its
     /// parameters reach), positive on the side its normal points to: exact for the plane,
     /// cylinder, sphere and torus. A cone's is the distance to its generating line in the meridian
