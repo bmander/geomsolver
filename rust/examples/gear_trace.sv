@@ -24,7 +24,8 @@
 // unmistakable and carried round by continuity.
 //
 // The datum line is where the angle is measured from, and it keeps the name `datum` in every
-// component that hands it down.
+// component that hands it down.  Each tooth has its own, a spoke from the centre: the wheel is a
+// `ring` (§12.3), every tooth the first turned a pitch, and a turn moves a tooth's datum with it.
 
 use std
 
@@ -40,7 +41,7 @@ component Unwind(c: circle, datum: line, phase: Angle, u: Angle) {
 }
 
 // From here down the wheel is `gear.sv` unchanged — a flank between two circles, a tooth as two
-// flanks, the tooth round a cycle — which is the point: what a curve *is* and what is drawn with
+// flanks, the tooth round a ring — which is the point: what a curve *is* and what is drawn with
 // it are separate statements, and swapping the component the flank is a point of touched
 // neither.
 
@@ -79,15 +80,12 @@ component Gear(N: Int, m: Length, phi: Angle, ded: Scalar) {
   clear := 0.02
   Rr := max(R - ded * m, Rb * (1 + clear))
 
-  pitch := tau / N
   ivp := tan(phi) * 1rad - phi
   half := 90deg / N + ivp
   u0 := sqrt((Rr / Rb) ^ 2 - 1) * 1rad
   u1 := sqrt((Rt / Rb) ^ 2 - 1) * 1rad
 
   center := point
-  anchor := point
-  datum := line(center, anchor)
   base := circle(center: center) hint(r: Rb)
   root := circle(center: center) hint(r: Rr)
   tip := circle(center: center) hint(r: Rt)
@@ -96,10 +94,13 @@ component Gear(N: Int, m: Length, phi: Angle, ded: Scalar) {
   radius(Rr) root
   radius(Rt) tip
   fix((0, 0)) center
-  fix((R, 0)) anchor
 
-  cycle N as i {
-    t := Tooth(base, datum, root, tip, a0: i * pitch, half: half, u0: u0, u1: u1)
+  ring N about center {
+    // the first tooth's datum points along x; the others are turned with their teeth
+    private anchor := point
+    fix((R, 0)) anchor
+    private datum := line(center, anchor)
+    t := Tooth(base, datum, root, tip, a0: 0deg, half: half, u0: u0, u1: u1)
     gap := line(t.l.lo, next.t.r.lo)
   }
 }

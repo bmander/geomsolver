@@ -13,8 +13,9 @@
 // curve is a point of a component as one of its formals runs, so `Involute(base, …).p over u`
 // is the flank.
 //
-// Everything after it is ordinary.  Thirty teeth are one tooth written once and repeated, and a
-// point touching a curve is a single statement whichever component the curve belongs to.
+// Everything after it is ordinary.  Thirty teeth are one tooth written once and turned round the
+// wheel, and a point touching a curve is a single statement whichever component the curve belongs
+// to.
 
 use std
 
@@ -85,7 +86,6 @@ component Gear(N: Int, m: Length, phi: Angle, ded: Scalar) {
   clear := 0.02
   Rr := max(R - ded * m, Rb * (1 + clear))
 
-  pitch := tau / N
   // half a tooth's angular thickness, measured from the base circle.  `inv(u) = u - atan(u)`,
   // and the roll at the pitch circle is `tan(phi)` — the two facts an involute gear needs.
   ivp := tan(phi) * 1rad - phi
@@ -107,11 +107,11 @@ component Gear(N: Int, m: Length, phi: Angle, ded: Scalar) {
   radius(Rt) tip
   fix((0, 0)) center
 
-  // `cycle` and not `ring`: the teeth are congruent because each is given the same numbers, not
-  // because the wheel is *claimed* to be symmetric.  Spec §12.3 makes the two equivalent when the
-  // symmetry is stated as constraints; stating it is what `ring` would add.
-  cycle N as i {
-    t := Tooth(base, root, tip, a0: i * pitch, half: half, u0: u0, u1: u1)
+  // A `ring`: every tooth is the first turned a pitch about the centre (§12.3), so one tooth is
+  // solved for — its four rolls — and the other teeth are its turns, holding no unknown of their
+  // own.  The first stands at bearing 0; the ring puts the rest a pitch apart.
+  ring N about center {
+    t := Tooth(base, root, tip, a0: 0deg, half: half, u0: u0, u1: u1)
     // the gap to the next tooth, drawn across the root circle
     gap := line(t.l.lo, next.t.r.lo)
   }

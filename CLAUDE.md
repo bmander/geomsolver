@@ -82,6 +82,27 @@ angle in degrees); `edit::unknown_seeds` writes it back into the call's `hint(�
 it says so (`flatten::substitute_with`).  `tests/spatial_surfaces.rs` and `tests/spatial_lang.rs` are the
 gates.
 
+**`ring N about C { … }`, solved over one copy (0.47, #96):** copies that are turns of the first
+(the representative) about a point (in its view) or an axis held in its direction (in space).
+The flattener expands it as a `cycle` (`BlockKind::Ring`, `Block::about`, `Scope::ring`) and marks
+every statement of copy k ≥ 1 `ir::Statement::turned` (`Site::turned`): its declarations are
+built, its relations, holds, claims and branches are not (`program.rs`'s `stating`).
+`program/rings.rs` pairs each turned entity with the representative's by key
+(`prefix#id.k.rest` ↔ `prefix#id.0.rest`) into `Sketch::turns` (`model/turns.rs`): a point's,
+circle's or arc's numbers are then **derived** (`Sketch::derived`, linear in the
+representative's and the centre's params), owning no column — `System::col_of` is `-2 - k` for
+one, its Jacobian folded into its bases by weights (`ent_w`, 1 elsewhere so every other bit
+stands), its value settled in `apply_z`/`full_x` and at `expr::sync_free`; a turned arc's
+intrinsic rows are not compiled; a turned curve evaluates as its representative, turned
+(`curve_turn`). Readers outside `System` are told: `cgraph` leaves rows on copies to the
+numeric residual, `decompose` writes none, the diagnosis reads a copy as free as its bases,
+`Part`/`graft`/JSON (`"turns"`)/`topology_key` carry turns. E015 the index read in the body
+(parser finds the reads, `Block::index_reads`), E021 a reference the turn would move or a copy
+by index (`judge_rings`, curves through their instances' arguments), E022 a ring in a ring, E023
+what a ring cannot turn (`rings.rs`). The ring's own turn is gauged outside (`hub horizontal
+tip[0]`). `std.Polygon`, `gear.sv`, `gear_trace.sv`, `ngon.sv` and the Wankel rotor are rings;
+`tests/ring.rs` and `tests/turns.rs` are the gates.
+
 **Axes** (`docs/planes-plan.md`, #81): `t := axis hint(dir: (x, y, z))` is a directed line in space,
 `AxisE { d, a, placed }`: a unit direction (`axis_unit`, intrinsic, held like `quat_unit` when `fix`
 holds all three) and the point nearest the origin, fixed — no freedom — until a relation reads it
@@ -1127,9 +1148,8 @@ Conventions:
   tells copies apart, and `commit_seeds` needs to see the multiplicity.  `Program::stmts` walks
   into block bodies; whether the *root* may splice a statement on its own is asked against
   `root().body` (`edit::in_root`).
-- **`ring` is refused by name** (issue #47): the parser reports it once, naming `cycle N { … }`,
-  and consumes the block (`skip_block`).  §12.3–12.5 stay the target; `tests/ring.rs` gates its
-  return with the fundamental-domain solve.  A diagnostic carrying its own code (E041) goes
+- **`ring` solves one copy** (#96, the paragraph near the top; it was refused from #47 until it
+  could).  A diagnostic carrying its own code (E041) goes
   through `Expansion::coded`, since plain `errors` are sorted into E101/E103 by message.  An
   expression's failure is an `expr::ExprError` with a `Fault` — `Dimension` (E103, §3.3:
   `distance(45deg)` is an error, never a coercion), `ClaimFree` (E040, §9.7) or `Uncomputable`

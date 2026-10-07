@@ -193,6 +193,9 @@ fn the_library_is_unchanged() {
     }
     // and the gear says its radians now, in the same numbers
     let mut a = examples::gear();
+    // solved first: one tooth's unknowns are few enough for the numeric cross-check, which reads
+    // the pose it is given, and the seeds put every flank end at the centre
+    assert!(gcs_core::solve::solve(&mut a, gcs_core::solve::SolveOpts::default()).success);
     assert_eq!(diagnose(&mut a, DiagnoseOptions::default()).dof, 0);
     assert!(!examples::GEAR.contains("180 / pi"), "no conversion is left written out");
     assert!(examples::GEAR.contains("1rad"));

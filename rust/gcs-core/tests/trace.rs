@@ -251,8 +251,8 @@ fn a_gear_runs_on_a_traced_involute() {
     for i in 0..e.sketch.points.len() {
         let (x, y) = e.sketch.point_xy(i);
         let rad = x.hypot(y);
-        if i < 2 || rad < 1e-9 {
-            continue;   // the centre and the datum's far end, and the standard planes' origins
+        if rad < 1e-9 || (rad - r_pitch).abs() < 1e-9 {
+            continue;   // the centre, each tooth's datum anchor, and the standard planes' origins
         } else if (rad - rr).abs() < 1e-6 {
             on_root += 1;
         } else if (rad - rt).abs() < 1e-6 {
@@ -266,7 +266,7 @@ fn a_gear_runs_on_a_traced_involute() {
 
     // and every flank is an involute: the string test, sampled along each traced curve
     for ci in 0..e.sketch.curves.len() {
-        let ph = e.sketch.curves[ci].values[0];
+        let ph = crate::common::curve_phase(&e.sketch, ci);
         let (u0, u1) = e.sketch.curve_domain(ci);
         for k in 0..=6 {
             let u = u0 + (u1 - u0) * k as f64 / 6.0;

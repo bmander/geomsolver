@@ -22,10 +22,10 @@ clearance := configuration.clearance
 in std.top {
   private centre := point
   centre coincident std.top.origin
-  private hub := point
+  private hub := point hint((15, 0))
   centre distance(e, along: x) hub
   centre horizontal hub
-  apex := point
+  apex := point hint((120, 0))
   hub distance(R, along: x) apex
   hub horizontal apex
 }
@@ -73,19 +73,26 @@ swept cut rotor
 // centre, where the flank faces the bore's waist (R − e from the shaft, the centre e nearer). An
 // arc through those three points lies within the flank, and the claim says this rotor clears the
 // housing by half the clearance at every pose of a whole turn.
+//
+// A `ring` about the rotor's centre: each flank is the first turned a third of a turn, so one
+// apex, one crown and one arc are solved for. The apex stands on the line of centres; the crown
+// square across its chord from the centre (the seeds pick the side and the arc's centre beyond).
 in std.top {
-  cycle 3 as k {
-    private tip := point
-    tip distance(e + (R - clearance) * cos(k * 120deg), along: u) std.top
-    tip distance((R - clearance) * sin(k * 120deg), along: v) std.top
-    private crown := point
-    crown distance(e + (R - 2 * e - clearance) * cos(k * 120deg + 60deg), along: u) std.top
-    crown distance((R - 2 * e - clearance) * sin(k * 120deg + 60deg), along: v) std.top
+  ring 3 about hub {
+    private tip := point hint(at: hub, toward: apex, by: (R - clearance) / R)
+    private chord := line(tip, next.tip)
+    private crown := point hint(at: hub, toward: apex, by: (R - 2 * e - clearance) / R, turn: 60deg)
+    private across := line(hub, crown)
+    across perpendicular chord
+    hub distance(R - 2 * e - clearance) crown
     // its centre on the far side of the rotor's, about R from it
-    flank := arc(center: hint(x: e - R * cos(k * 120deg + 60deg),
-      y: -R * sin(k * 120deg + 60deg)), start: tip, end: next.tip)
+    private pivot := point hint(at: hub, toward: apex, by: -1, turn: 60deg)
+    flank := arc(center: pivot, start: tip, end: next.tip)
     crown coincident flank
   }
+  // the first apex on the line of centres, `clearance` in from the generating one
+  hub horizontal tip[0]
+  tip[0] distance(clearance, along: x) apex
 }
 arc_rotor := solid(face(flank[0], flank[1], flank[2]), from: 0mm, to: W)
 arc_rotor_at := solid(arc_rotor, under: rotor_turn, at: 0deg)
