@@ -164,6 +164,7 @@ fn recipe_with(sk: &Sketch,root: usize,static_only: bool) -> Result<StaticRecipe
                     ("point",vector(roll.edge_point().map(|v| v*scale))),("concave",roll.rolled.concave.into())])).collect();
                 object([("kind","fillet".into()),
                     ("pieces",Json::Arr(blend.pieces.iter().map(|p| fillet_piece(p,scale)).collect())),
+                    ("joins",Json::Arr(blend.joins.iter().map(|j| Json::Arr(j.iter().map(|&k| k.into()).collect())).collect())),
                     ("rolled",Json::Arr(rolled))])
             }
             SolidDef::Prism {face,from,to} => object([
@@ -367,9 +368,9 @@ fn fillet_piece(p: &super::fillet::Piece,scale: f64) -> Json {
     match p.carry {
         super::fillet::Carry::Prism {length} => object([("kind","prism".into()),("profile",profile),
             ("from",0.0.into()),("to",(length*scale).into())]),
-        super::fillet::Carry::Turn => object([("kind","revolve".into()),("profile",profile),
+        super::fillet::Carry::Turn {sweep} => object([("kind","revolve".into()),("profile",profile),
             ("origin",vector(p.section.o.map(|v| v*scale))),("axis",vector(p.section.v)),
-            ("angle",std::f64::consts::TAU.into())]),
+            ("angle",sweep.into())]),
     }
 }
 

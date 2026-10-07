@@ -1189,11 +1189,11 @@ concave and a convex edge is two fillets. `rust/examples/solid_fillet.sv` is a c
 this way.
 
 What is rounded is what has a closed form: a straight edge between planes and cylinders along it
-(a rod half sunk in a plate, two round bars side by side: `solid_fillet_rail.sv`), and a whole
-circle between planes, cylinders, cones, spheres and tori about one axis (a rod's neck in a ball:
-`solid_fillet_knob.sv`). A section's sides may be arcs; the fillet's face is a cylinder or a torus
-still. A **closed loop** no line or circle carries is rolled round too, between any two of those
-faces: a pipe tee's crotch (`solid_fillet_tee.sv`), a pin through a ball off its centre, a bore's
+(a rod half sunk in a plate, two round bars side by side: `solid_fillet_rail.sv`), and a circle,
+whole or the part an edge runs, between planes, cylinders, cones, spheres and tori about one axis
+(a rod's neck in a ball: `solid_fillet_knob.sv`). A section's sides may be arcs; the fillet's face
+is a cylinder or a torus still. A **closed loop** no line or circle carries is rolled round too,
+between any two of those faces: a pipe tee's crotch (`solid_fillet_tee.sv`), a pin through a ball off its centre, a bore's
 rim in a pipe's wall (`solid_fillet_bore.sv`, a convex edge, so `rim cut pipe`). The ball's centre
 is traced where the two faces offset by `r` meet, and its face is that canal, fitted (a B-spline).
 Name what the fillet reads: the bore's rim is an edge of `drilled`, the pipe with its bore, since a
@@ -1207,9 +1207,21 @@ rim := fillet(drilled.main, drilled.bore, r: 1mm)
 rim cut pipe
 ```
 
+A **chain of tangent edges** is one fillet too: the foot of a rounded or obround boss, the rim of
+a rounded pocket. Each straight run is a prism and each corner part of a ring, and every piece ends
+in the section the next begins in, so nothing is blended between them (`solid_fillet_slot.sv`):
+
+```
+foot := fillet(boss, cupped, r: 2mm)          // an obround boss's sides and half-circle ends
+foot union part
+lip := fillet(cupped.plate, cupped.pocket, r: 1mm)   // a rounded pocket's rim
+lip cut part
+```
+
 Refused with their reasons (E085): a traced meeting that runs on into another face (a branch at
 the pipe's end: rung 3), a face swept from a spline (no offset in closed form, not yet), a ball
-larger than a face holds (a branch shorter than the ball's reach). The material field also refuses
+larger than a face holds (a branch shorter than the ball's reach), a chain that turns a sharp
+corner (a square boss's foot) and fillets meeting at a corner (a block's whole rim): rung 3. The material field also refuses
 a ball reaching across its own centre's bend (a branch thinner than the ball): the canal's nearest
 point is no longer unique there.
 
@@ -1285,6 +1297,8 @@ sheet's to state.
 | a fillet round a rib that ends on the plate | E085 — "… runs on past its end into `plate.near`: a fillet turning a corner is rung 3" |
 | `fillet(plate.lobe, plate.near, r: 1mm)`, a face swept from a spline | E085 — "`lobe` (extrusion) has no offset in closed form, so no ball rolls on it yet: …" |
 | a tee whose branch stands at the main pipe's end | E085 — "the edge of … runs on into other faces: a fillet along it ends, rung 3" |
+| `fillet(boss, plate, r: 2mm)` round a square boss's foot | E085 — "the fillet of … runs on past its end into …: a fillet turning a corner is rung 3" |
+| `fillet(block.near, block, r: 2mm)`, a block's whole rim | E085 — "the fillet of … meets another of its edges at a corner: fillets meeting at a vertex are rung 3" |
 | `root := fillet(boss, plate)` | E100 — "a fillet needs `r:`, the ball's radius" |
 
 ### 1.15 Spatial geometry read after the solve

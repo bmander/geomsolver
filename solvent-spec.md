@@ -11,7 +11,9 @@ cut after it passes through it. What is rounded is what has a closed form — a 
 between planes and cylinders along it (the fillet's face a cylinder), a circle between planes,
 cylinders, cones, spheres and tori about one axis (a torus), and a closed loop where two such faces
 meet on no line or circle (a pipe tee's crotch: the ball's centre traced where the faces offset by
-`r` meet, its face that canal, fitted) — and the rest is refused by name (**E085**).
+`r` meet, its face that canal, fitted), and a chain of tangent edges piece by piece (a rounded
+boss's foot: straight runs and parts of rings, each ending in the section the next begins in) —
+and the rest is refused by name (**E085**).
 
 **[0.48] Relation words, and `use M (names)`.** A file may define a relation word at its top
 level, as it defines a component: `a horizontal b := a level(up) b`, `flat l := l perpendicular
@@ -1065,10 +1067,19 @@ lip cut block                                //   ... convex: the ball rolls the
 - **What is rounded** is, first, what has a closed form: the ball's centre runs along a line or a
   circle, so its face is a cylinder or a torus. A straight edge between planes and cylinders whose
   axes run along it, its section square to the edge; a whole circle between planes square to an
-  axis and cylinders, cones, spheres and tori about it, its section in the meridian. Either side of
-  a section is a line or an arc, and the ball is the circle of radius `r` touching both, ahead of
-  the corner along each. A straight fillet MUST end flush, each face's edge beside it at both ends
-  leaving across the band, reaching the touch, in a plane square to the edge.
+  axis and cylinders, cones, spheres and tori about it, its section in the meridian — the whole
+  circle, or the part of it an edge runs, turned through that part. Either side of a section is a
+  line or an arc, and the ball is the circle of radius `r` touching both, ahead of the corner along
+  each. Each end of a straight or part-turned fillet MUST end flush — each face's edge beside it at
+  that end leaving across the band, reaching the touch, in the plane of the section there — or
+  **run on** into the next edge of the fillet.
+- **A chain of tangent edges** is rounded piece by piece: where two of a fillet's edges meet, one
+  running on from the other with no turn and each side's faces running on into one another (a
+  rounded boss's side into its corner, an obround's side into its end), the two pieces' sections
+  there are one, the ball in it where both put it, so each ends in it and the two share that cap.
+  The foot of a rounded or obround boss and the rim of a rounded pocket are each one fillet. An end
+  meeting no such continuation, or two flush ends at one corner (a block's whole rim, the ball
+  turning the corner), is refused.
 - **A closed traced loop** is rounded too: two faces on planes, cylinders, cones, spheres or tori
   meeting all the way round on a curve no line or circle carries (a pipe tee's crotch, a pin
   through a ball off its centre, a bore's rim in a pipe's wall). The ball's centre runs where the
@@ -1077,10 +1088,10 @@ lip cut block                                //   ... convex: the ball rolls the
   that canal, fitted as a B-spline surface within the export's fit (a ten-millionth of the part),
   its touches on the faces its edges. Its faces are `round`, `a` and `b`; it has no caps.
 - **What is refused.** The ball MUST stand within both faces — the band it rolls on crossed by no
-  other edge of either. Anything else is **E085** with its reason: a traced meeting that runs on
-  into other faces (rung 3, a fillet that ends), a face with no offset in closed form (a swept
-  spline: not yet), part of a circle or a fillet that would turn a corner (rung 3), a ball larger
-  than a face holds. A fillet that is not exact, or not fitted within its bar, is never built.
+  other edge of either, a partial ring's band within its sector. Anything else is **E085** with its
+  reason: a traced meeting that runs on into other faces (rung 3, a fillet that ends), a face with
+  no offset in closed form (a swept spline: not yet), a fillet that would turn a corner or meet
+  another at a vertex (rung 3), a ball larger than a face holds. A fillet that is not exact, or not fitted within its bar, is never built.
 - **The material field needs no true distance.** Rolling-ball closing and opening want one, which
   a one-Lipschitz field does not carry; the fillet's material is instead an explicit leaf — the
   section of corner, touches and arc, swept along the edge or turned about the axis — evaluated
@@ -2328,7 +2339,7 @@ The numerical method is unspecified. Whatever the method, a conforming solver:
 | E081 | invalid revolution axis or guided sweep path (§6.9) **[0.18]** |
 | E082 | a face of a body that the body no longer has (§6.9) **[0.18]** |
 | E084 | a section whose cutting plane is not parallel to the view it is drawn in (§6.11) **[0.18]** |
-| E085 | a fillet the model cannot round exactly — a face with no offset in closed form, part of a circle, a traced meeting that ends, an end that is not flush, a ball larger than a face holds — or one a body takes with the wrong word (§6.9) **[0.49]** |
+| E085 | a fillet the model cannot round exactly — a face with no offset in closed form, a traced meeting that ends, an end neither flush nor running on into the next edge, fillets meeting at a corner, a ball larger than a face holds — or one a body takes with the wrong word (§6.9) **[0.49]** |
 | E101 | a name nothing in scope declares, or a member a scope cannot reach (§3.3, §5, §13.3) **[0.41]** |
 | E102 | **[0.48]** a relation word nothing defines where it is written (§9.9), naming the import that would where a module defines it |
 | E103 | a shape or a number the model cannot build: more children than the kind has slots (§6.1), an input whose value is not its type (§6.3), a seed reading a scalar that is not there (§6.4), a curve the model cannot trace (§6.5), an extent of the wrong dimension (§6.9), iteration over what is not a named chain (§12.8) |

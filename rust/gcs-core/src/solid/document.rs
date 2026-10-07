@@ -407,8 +407,8 @@ fn build(
             let Some(p) = piece.face_poly(origin, unit) else { return Term::Empty };
             built.push(match piece.carry {
                 super::fillet::Carry::Prism { length } => prism(&p, 0.0, length, &name),
-                super::fillet::Carry::Turn => revolve(&p, ((0.0, 0.0), (0.0, 1.0)),
-                    std::f64::consts::TAU, Sense::Ccw, unit, &name),
+                super::fillet::Carry::Turn { sweep } => revolve(&p, ((0.0, 0.0), (0.0, 1.0)),
+                    sweep, Sense::Ccw, unit, &name),
             });
         }
         // a ball rolled along a traced loop: its piece's boundary meshed to the sheet's flatness

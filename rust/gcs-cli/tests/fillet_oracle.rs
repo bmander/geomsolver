@@ -67,7 +67,7 @@ fn held(session: &native::Session,name: &str,e: &gcs_core::program::Elaborated) 
         let curved = |k: &[i32]| k.iter().copied().filter(|&k| k != 0).collect::<Vec<_>>();
         let (mut mine,mut its) = (curved(&kinds(&ours)),curved(&their_kinds));
         for p in &blend.pieces {
-            let own = match p.carry { gcs_core::solid::fillet::Carry::Prism {..} => 1,gcs_core::solid::fillet::Carry::Turn => 4 };
+            let own = match p.carry { gcs_core::solid::fillet::Carry::Prism {..} => 1,gcs_core::solid::fillet::Carry::Turn {..} => 4 };
             let take = |ks: &mut Vec<i32>,k: i32| ks.iter().position(|&x| x == k).map(|i| ks.remove(i)).is_some();
             assert!(take(&mut mine,own),"{name}: `{}`: no face of its own",s.name);
             assert!(take(&mut its,own) || take(&mut its,6),"{name}: `{}`: OCCT made no fillet face",s.name);
@@ -94,3 +94,4 @@ fn every_fillet_is_occts() {
     }
     assert!(compared >= 5,"only {compared} fillets compared");
 }
+

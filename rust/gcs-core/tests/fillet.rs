@@ -720,3 +720,138 @@ fn a_bores_rim_is_rolled_off_round_its_saddle() {
     assert_volume(volume(&e, "pipe"), volume(&e, "drilled") - got);
     field_agrees(&e, "pipe");
 }
+
+// -- rung 3: fillets carried along chains of tangent edges -------------------------------------
+
+/// A rectangle `w` × `h` about `(cx, cy)` with its corners rounded to `rr`, every point fixed, as
+/// face `{n}`: the sides straight runs between the corners' quarter circles, a side of no length
+/// left out (an obround's ends are half circles).
+fn rounded(n: &str, [cx, cy]: [f64; 2], [w, h]: [f64; 2], rr: f64) -> String {
+    let (x0, x1, y0, y1) = (cx - w / 2.0, cx + w / 2.0, cy - h / 2.0, cy + h / 2.0);
+    let mut out = String::new();
+    let mut point = |p: &str, x: f64, y: f64| {
+        out.push_str(&format!("{n}_{p} := point hint(x: {x}, y: {y})\nfix(x == {x}, y == {y}) {n}_{p}\n"));
+    };
+    // corners' centres, and each side's two ends, counter-clockwise from the bottom
+    let centres = [("br", x1 - rr, y0 + rr), ("tr", x1 - rr, y1 - rr), ("tl", x0 + rr, y1 - rr), ("bl", x0 + rr, y0 + rr)];
+    for (c, x, y) in centres { point(&format!("c{c}"), x, y); }
+    let sides = [("b", [x0 + rr, y0], [x1 - rr, y0]), ("r", [x1, y0 + rr], [x1, y1 - rr]),
+        ("t", [x1 - rr, y1], [x0 + rr, y1]), ("l", [x0, y1 - rr], [x0, y0 + rr])];
+    for (s, a, b) in sides { point(&format!("{s}0"), a[0], a[1]); point(&format!("{s}1"), b[0], b[1]); }
+    // the loop: each side that has a length, then the corner after it, from where the last ended
+    // to where the next side starts
+    let mut links: Vec<(String, String)> = Vec::new();
+    let mut from = format!("{n}_b0");
+    for (k, (s, a, b)) in sides.iter().enumerate() {
+        if (a[0] - b[0]).abs() + (a[1] - b[1]).abs() > 1e-12 {
+            links.push((format!("{n}_{s}"), format!("line({from}, {n}_{s}1)")));
+            from = format!("{n}_{s}1");
+        }
+        let (c, _, _) = centres[k];
+        let to = format!("{n}_{}0", sides[(k + 1) % 4].0);
+        links.push((format!("{n}_a{c}"), format!("arc(center: {n}_c{c}, start: {from}, end: {to}) hint(r: {rr})")));
+        from = to;
+    }
+    for (name, decl) in &links { out.push_str(&format!("{name} := {decl}\n")); }
+    let names: Vec<&str> = links.iter().map(|(name, _)| name.as_str()).collect();
+    out.push_str(&format!("{n} := face({})\n", names.join(", ")));
+    out
+}
+
+/// The straight runs' share of a rounded outline's foot fillet: its perimeter less the corners'.
+fn runs([w, h]: [f64; 2], rr: f64) -> f64 { 2.0 * (w - 2.0 * rr) + 2.0 * (h - 2.0 * rr) }
+
+#[test]
+fn a_rounded_bosss_foot_is_carried_round_its_corners() {
+    let (size, rr, r) = ([30.0, 20.0], 4.0, 2.0);
+    let e = read(&format!(
+        "{RECT}{}plate := solid(sec, depth: 10mm)\nboss := solid(boss_f, from: 0mm, to: 20mm)\n\
+         body := solid(plate)\nboss union body\nfoot := fillet(boss, plate, r: {r}mm)\nfoot union body\n",
+        rounded("boss_f", [30.0, 20.0], size, rr)
+    ));
+    // the straight runs, and the four quarter rings: one whole ring about a corner's axis
+    let want = (1.0 - PI / 4.0) * r * r * runs(size, rr) + root_ring(rr, r);
+    assert_volume(volume(&e, "foot"), want);
+    let boss = (size[0] * size[1] - (4.0 - PI) * rr * rr) * 20.0;
+    assert_volume(volume(&e, "body"), 60.0 * 40.0 * 10.0 + boss + want);
+    field_agrees(&e, "body");
+}
+
+#[test]
+fn an_obround_bosss_foot_runs_round_its_half_circles() {
+    // the ends' quarter circles meet at the end's middle, two to a half circle
+    let (size, rr, r) = ([30.0, 12.0], 6.0, 2.0);
+    let e = read(&format!(
+        "{RECT}{}plate := solid(sec, depth: 10mm)\nboss := solid(boss_f, from: 0mm, to: 8mm)\n\
+         body := solid(plate)\nboss union body\nfoot := fillet(boss, plate, r: {r}mm)\nfoot union body\n",
+        rounded("boss_f", [30.0, 20.0], size, rr)
+    ));
+    let want = (1.0 - PI / 4.0) * r * r * runs(size, rr) + root_ring(rr, r);
+    assert_volume(volume(&e, "foot"), want);
+    let boss = (size[0] * size[1] - (4.0 - PI) * rr * rr) * 8.0;
+    assert_volume(volume(&e, "body"), 60.0 * 40.0 * 10.0 + boss + want);
+}
+
+#[test]
+fn a_rounded_pockets_rim_is_rolled_off_round_its_corners() {
+    // the rim's section at a corner stands outside the corner's radius, as a boss's root does
+    let (size, rr, r) = ([30.0, 20.0], 5.0, 1.0);
+    let e = read(&format!(
+        "{RECT}{}plate := solid(sec, depth: 10mm)\npocket := solid(pocket_f, from: 1mm, to: -6mm)\n\
+         cupped := solid(plate)\npocket cut cupped\nbody := solid(cupped)\n\
+         rim := fillet(cupped.plate, cupped.pocket, r: {r}mm)\nrim cut body\n",
+        rounded("pocket_f", [30.0, 20.0], size, rr)
+    ));
+    let want = (1.0 - PI / 4.0) * r * r * runs(size, rr) + root_ring(rr, r);
+    assert_volume(volume(&e, "rim"), want);
+    let pocket = (size[0] * size[1] - (4.0 - PI) * rr * rr) * 6.0;
+    assert_volume(volume(&e, "cupped"), 60.0 * 40.0 * 10.0 - pocket);
+    assert_volume(volume(&e, "body"), 60.0 * 40.0 * 10.0 - pocket - want);
+    field_agrees(&e, "body");
+}
+
+#[test]
+fn a_chain_that_turns_a_corner_or_crowds_a_ring_is_refused() {
+    let doc = |boss: &str, more: &str, plate: &str| format!(
+        "{RECT}{boss}{more}plate := solid(sec, depth: 10mm)\nboss := solid(boss_f, from: 0mm, to: 8mm)\n\
+         body := solid({plate})\nboss union body\nfoot := fillet(boss, {plate}, r: 2mm)\nfoot union body\n");
+    // a square boss: its foot's runs meet at corners no ball rolls round without turning
+    let square = "q0 := point hint(x: 15, y: 10)\nq1 := point hint(x: 45, y: 10)\nq2 := point hint(x: 45, y: 30)\n\
+        q3 := point hint(x: 15, y: 30)\nfix(x == 15, y == 10) q0\nfix(x == 45, y == 10) q1\nfix(x == 45, y == 30) q2\n\
+        fix(x == 15, y == 30) q3\n(s0 := line(q0, q1)) -> (s1 := line(q1, q2)) -> (s2 := line(q2, q3)) -> (s3 := line(q3, q0)) -> close\n\
+        boss_f := face(s0, s1, s2, s3)\n";
+    refused(&doc(square, "", "plate"), Code::E085, "rung 3");
+    // a hole drilled in the plate under a rounded corner's quarter ring, within the band it rolls on
+    let hole = "h_o := point hint(x: 44.5, y: 10.5)\nfix(x == 44.5, y == 10.5) h_o\nh_k := circle(center: h_o) hint(r: 0.5)\n\
+        radius(0.5) h_k\nhole := solid(face(h_k), from: 1mm, to: -11mm)\n";
+    let drilled = doc(&rounded("boss_f", [30.0, 20.0], [30.0, 20.0], 4.0), hole, "holed")
+        .replace("body := solid(holed)", "holed := solid(plate)\nhole cut holed\nbody := solid(holed)");
+    refused(&drilled, Code::E085, "can hold");
+    // a block's whole rim: its runs end flush in one another's faces at each corner
+    refused(&format!("{RECT}block := solid(sec, depth: 10mm)\nlip := fillet(block.near, block, r: 2mm)\n\
+        body := solid(block)\nlip cut body\n"), Code::E085, "meeting at a vertex are rung 3");
+}
+
+#[test]
+fn a_rib_built_in_two_halves_is_rounded_as_one() {
+    // the halves' sides meet flat, so each foot is two straight edges end to end: two runs, their
+    // sections one at the joint
+    let r = 2.0;
+    let half = |n: &str, lo: f64, hi: f64| format!(
+        "{n}0 := point hint(x: 20, y: {lo})\n{n}1 := point hint(x: 30, y: {lo})\n{n}2 := point hint(x: 30, y: {hi})\n\
+         {n}3 := point hint(x: 20, y: {hi})\nfix(x == 20, y == {lo}) {n}0\nfix(x == 30, y == {lo}) {n}1\n\
+         fix(x == 30, y == {hi}) {n}2\nfix(x == 20, y == {hi}) {n}3\n\
+         ({n}e0 := line({n}0, {n}1)) -> ({n}e1 := line({n}1, {n}2)) -> ({n}e2 := line({n}2, {n}3)) -> ({n}e3 := line({n}3, {n}0)) -> close\n\
+         {n}_f := face({n}e0, {n}e1, {n}e2, {n}e3)\n{n} := solid({n}_f, from: 0mm, to: 5mm)\n");
+    let e = read(&format!(
+        "{RECT}{}{}plate := solid(sec, depth: 10mm)\nrib := solid(front)\nback union rib\n\
+         body := solid(plate)\nrib union body\nroot := fillet(rib, plate, r: {r}mm)\nroot union body\n",
+        half("front", 0.0, 20.0), half("back", 20.0, 40.0)
+    ));
+    let i = e.map.ent_named("root").unwrap().i();
+    assert_eq!(e.sketch.fillet_blend(i).unwrap().pieces.len(), 4, "each foot split at the joint");
+    let rounds = 2.0 * (1.0 - PI / 4.0) * r * r * 40.0;
+    assert_volume(volume(&e, "root"), rounds);
+    assert_volume(volume(&e, "body"), 60.0 * 40.0 * 10.0 + 10.0 * 40.0 * 5.0 + rounds);
+    field_agrees(&e, "body");
+}
