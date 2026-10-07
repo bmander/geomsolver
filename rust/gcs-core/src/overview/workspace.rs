@@ -140,6 +140,10 @@ impl Views {
         if e.kind == EntKind::Point {
             return if self.space[e.i()] { Err(()) } else { Ok(self.points[e.i()]) };
         }
+        // a curve owns no point: it is drawn in the view of what it is written over
+        if e.kind == EntKind::Curve {
+            return Ok(sk.curve_view(e.i()));
+        }
         if !e.kind.bears_points() {
             return Ok(None);
         }
