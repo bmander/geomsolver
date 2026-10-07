@@ -3,7 +3,7 @@
 // along, `setting` from the drill's side datum; its rim comes within `nearest` of the drill's
 // axis. Every face it grinds with meets the next one tangent, so its characteristic under a
 // screw runs smoothly from face to face (docs/generating-sweeps.md, the constant-twist class).
-use std
+use std (coords)
 
 // `wheel` gives the wheel's radius to its rim (`rim`), how near the drill's axis the rim comes
 // (`nearest`), the round's radius (`round`), the flanks' lean from the wheel's radius (`flank`),
@@ -21,8 +21,7 @@ component GrindingWheel(side: plane, setting: Angle, wheel: group) {
     private o := point
     private h := point
     o coincident side.origin
-    h distance(-10mm * sin(setting), along: u) side
-    h distance(10mm * cos(setting), along: v) side
+    h coords(du: -10mm * sin(setting), dv: 10mm * cos(setting)) side
     private construction hinge := line(o, h)
   }
   private out := axis hint(dir: (-1, 0, 0))
@@ -33,30 +32,22 @@ component GrindingWheel(side: plane, setting: Angle, wheel: group) {
   in section {
     private a0 := point
     private a1 := point
-    a0 distance(-10mm, along: u) section
-    a0 distance(centre, along: v) section
-    a1 distance(10mm, along: u) section
-    a1 distance(centre, along: v) section
+    a0 coords(du: -10mm, dv: centre) section
+    a1 coords(du: 10mm, dv: centre) section
     construction centerline ax := line(a0, a1)
     private round_centre := point hint((0, wheel.nearest + wheel.round))
     private tl := point
     private tr := point
-    tl distance(-tangent_across, along: u) section
-    tl distance(tangent_up, along: v) section
-    tr distance(tangent_across, along: u) section
-    tr distance(tangent_up, along: v) section
+    tl coords(du: -tangent_across, dv: tangent_up) section
+    tr coords(du: tangent_across, dv: tangent_up) section
     private fl := point
     private fr := point
-    fl distance(-flank_across, along: u) section
-    fl distance(wheel.nearest + wheel.depth, along: v) section
-    fr distance(flank_across, along: u) section
-    fr distance(wheel.nearest + wheel.depth, along: v) section
+    fl coords(du: -flank_across, dv: wheel.nearest + wheel.depth) section
+    fr coords(du: flank_across, dv: wheel.nearest + wheel.depth) section
     private hl := point
     private hr := point
-    hl distance(-flank_across, along: u) section
-    hl distance(centre, along: v) section
-    hr distance(flank_across, along: u) section
-    hr distance(centre, along: v) section
+    hl coords(du: -flank_across, dv: centre) section
+    hr coords(du: flank_across, dv: centre) section
     round := arc(center: round_centre, start: tl, end: tr) hint(r: wheel.round)
     radius(wheel.round) round
     right_flank := line(tr, fr)

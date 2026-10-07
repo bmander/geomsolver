@@ -51,7 +51,10 @@ and splines over a point in space are E060, faces E080. `use std` gives axes
 back), and `std.origin` (in front, fixed) — flattened after the document, present whenever the
 document says `use std` (the workspace offers them as places to draw). `std.Turned(o, t)` is a
 frame turned within a plane (`.axes` the plane, `.u` the line o→t). No coordinate-placement
-helper: model contours with alignments, incidences, symmetry and dimensions. Components have no
+helper: model contours with alignments, incidences, symmetry and dimensions — `std`'s words
+`offset`, `right_of`/`left_of`/`above`/`below`, `coords`, `on_u`/`on_v` are pairs of those
+dimensions (an ordinate and an ordinate or a level) said as one statement, still dimensions;
+`skew` and `turned` are the same for two lines (#103's corpus pass). Components have no
 implicit frame; `instance := Part(f) in view` supplies membership. Aliases keep subentity paths
 (`f.origin`). Calls may omit `name :=`; anonymous keys stay out of user-facing names. E.g. `cyl
 := Cylinder(std.Turned(std.origin, up), fw: components.dims.fwA, dims:

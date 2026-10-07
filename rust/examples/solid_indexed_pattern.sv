@@ -1,6 +1,6 @@
 // One source cutter, placed by a named motion at each index.
 unit mm
-use std
+use std (on_u)
 
 component IndexedCuts(tool: solid, target: solid, indexing: motion, count: Int) {
   repeat count as i {
@@ -18,8 +18,7 @@ in std.top {
   rim := radius(20mm) circle(center: std.top.origin)
   stock := solid(face(rim), depth: 5mm)
   private hole_center := point
-  hole_center distance(12mm, along: u) std.top
-  hole_center level(v) std.top
+  hole_center on_u(d: 12mm) std.top
   hole := radius(2mm) circle(center: hole_center)
   construction tool := solid(face(hole), through: body)
 }

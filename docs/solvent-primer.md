@@ -761,7 +761,17 @@ a apart(d) b := {                                // what the body declares, each
 ```
 
 An infix word is a relation **between** its operands; that both stand on a third thing is said of
-each (`a coincident P`), not as a word. A word and a set are one thing (#103): a body over
+each (`a coincident P`), not as a word. `std` defines the ones a drawing needs most, each a pair of
+statements said as one (import by name, `use std (offset, right_of)`):
+
+```
+b offset(dx: 30, dy: 12) a       // b 30 right of a and 12 above it: two ordinates
+b right_of(d: 30) a              // 30 right of a, level with it; left_of, above, below
+p coords(du: 20, dv: 5) P        // 20 along P.u and 5 along P.v from P's origin
+p on_u(d: 20) P                  // on P's u axis, 20 out; on_v
+a skew(theta: 90deg, e: 20mm) b  // two lines crossed: the angle and the common perpendicular
+a turned(theta: 180deg) b        // a the length of b, turned from it: reversed, or carried across
+``` A word and a set are one thing (#103): a body over
 **parameters**, given where it is called, and **bound variables** — a word's operands, a set's
 point — filled where it is used, applied by one rule. A statement writing the word is the body
 with operands and parameters put in. Parameters are

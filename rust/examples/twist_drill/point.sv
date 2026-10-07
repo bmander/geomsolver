@@ -3,7 +3,7 @@
 // on z: its apex `height` above the lip's corner and `offset` along the lip, its axis tilted
 // `tilt` from the drill's (towards y, behind the lip as the drill turns), and its half-angle
 // `cone`. It reaches `reach` down the drill's axis from the corner, past everything it keeps.
-use std
+use std (coords, on_u)
 
 component PointCone(side: plane, top: Length, cone: Angle, tilt: Angle, height: Length,
                     offset: Length, reach: Length) {
@@ -21,14 +21,11 @@ component PointCone(side: plane, top: Length, cone: Angle, tilt: Angle, height: 
   in axial {
     // the side datum's u runs down the drill's axis and its v along y
     private apex := point
-    apex distance(-(top + height), along: u) axial
-    apex level(v) axial
+    apex on_u(d: -(top + height)) axial
     private foot := point
-    foot distance(-(top + height) + reach * cos(tilt), along: u) axial
-    foot distance(reach * sin(tilt), along: v) axial
+    foot coords(du: -(top + height) + reach * cos(tilt), dv: reach * sin(tilt)) axial
     private rim := point
-    rim distance(-(top + height) + reach * cos(tilt) + reach * tan(cone) * sin(tilt), along: u) axial
-    rim distance(reach * sin(tilt) - reach * tan(cone) * cos(tilt), along: v) axial
+    rim coords(du: -(top + height) + reach * cos(tilt) + reach * tan(cone) * sin(tilt), dv: reach * sin(tilt) - reach * tan(cone) * cos(tilt)) axial
     private construction centerline ax := line(apex, foot)
     private base := line(foot, rim)
     flank := line(rim, apex)

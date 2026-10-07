@@ -10,7 +10,7 @@
 // radius `rp` or the pitch radii and they are generated again: the 3D counterpart, which cuts
 // the tooth space out of a solid wheel, is `../lantern_generation.sv`.
 
-use std (horizontal)
+use std (horizontal, right_of)
 
 r1 := 10      // the pinion's pitch radius, where its pins stand
 r2 := 30      // the wheel's
@@ -20,8 +20,7 @@ in std.front {
   o1 := point
   o2 := point hint((40, 0))
   fix((0, 0)) o1
-  o1 distance(r1 + r2, along: x) o2
-  o1 horizontal o2
+  o2 right_of(d: r1 + r2) o1
   pitch1 := circle(center: o1) hint(r: 10)
   pitch2 := circle(center: o2) hint(r: 30)
   radius(r1) pitch1

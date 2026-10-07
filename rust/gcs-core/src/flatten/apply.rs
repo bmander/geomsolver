@@ -124,8 +124,22 @@ impl<'a> Walk<'a> {
             let mut vals = scope.vals.clone();
             self.body(&body, &scope, &mut vals, &path, depth + 1);
         }
-        let made = self.out[from..].iter().filter(|(st, _, _)| matches!(st.kind, StmtKind::Relation(_))).count();
-        for (st, p, _) in self.out[from..].iter_mut() {
+        // where the callout sits is the statement's: the relation it made, or the one of them that
+        // states a dimension
+        let relations: Vec<usize> = (from..self.out.len())
+            .filter(|&i| matches!(self.out[i].0.kind, StmtKind::Relation(_)))
+            .collect();
+        let dimensioned: Vec<usize> = relations.iter().copied().filter(|&i| match &self.out[i].0.kind {
+            StmtKind::Relation(r) => r.form.written().is_some_and(|w| w.args.iter().any(|a| {
+                matches!(a, OpArg::Dim(..) | OpArg::Named(_, crate::syntax::Arg::Dim { .. }))
+            })),
+            _ => false,
+        }).collect();
+        let placed = match (relations.as_slice(), dimensioned.as_slice()) {
+            ([one], _) | (_, [one]) => Some(*one),
+            _ => None,
+        };
+        for (i, (st, p, _)) in self.out.iter_mut().enumerate().skip(from) {
             let StmtKind::Relation(r) = &mut st.kind else { continue };
             st.id = u.st.id;
             st.span = u.st.span;
@@ -133,8 +147,7 @@ impl<'a> Walk<'a> {
             *p = u.path.to_vec();
             r.word = Some(stamp.clone());
             r.claim |= u.rel.claim;
-            // where the callout sits is the statement's, when it states one relation
-            if made == 1 {
+            if placed == Some(i) {
                 r.place = u.rel.place;
                 r.place_span = u.rel.place_span;
             }

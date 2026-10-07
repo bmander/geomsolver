@@ -3,7 +3,7 @@
 // face leaves a round-bottomed channel. Change a number and apply (⌘↵) to watch it refine again;
 // ⌘B shows it in the glass box. Keep `arc_r + ball_r` inside the block's half width.
 unit mm
-use std (horizontal, vertical)
+use std (below, right_of)
 
 block_w := 40mm      // the block's width and depth
 block_h := 12mm      // its height
@@ -27,8 +27,7 @@ component Sphere(center: point, r: Length) {
 // so its top face is level with the origin.
 in std.front {
   private mid := point hint((0, -block_h / 2))
-  std.origin vertical mid
-  std.origin distance(block_h / 2, along: down) mid
+  mid below(d: block_h / 2) std.origin
   private outline := std.CenteredRectangle(mid, w: block_w, h: block_h)
   construction block := solid(outline.loop, from: -block_w / 2, to: block_w / 2)
 
@@ -36,8 +35,7 @@ in std.front {
   construction centerline spindle := line(std.origin, hint((0, 1)))
   fix((0, 1)) spindle.p2
   private centre := point hint((arc_r, 0))
-  std.origin horizontal centre
-  std.origin distance(arc_r, along: right) centre
+  centre right_of(d: arc_r) std.origin
   private ball := Sphere(centre, r: ball_r)
 }
 swing_about := motion(about: spindle)

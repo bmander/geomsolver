@@ -171,7 +171,7 @@ fn grounded(edit: impl Fn(String) -> String) -> gcs_core::program::Elaborated {
 /// stated — is what solves: the height at which the stride's lowest point just reaches it.
 #[test]
 fn the_frame_solves_for_the_stride_to_touch_the_ground() {
-    let mut e = grounded(|d| d.replace("pivot distance(l, along: y) axle\n", ""));
+    let mut e = grounded(|d| d.replace("axle offset(dx: a, dy: l) pivot\n", "pivot distance(a, along: x) axle\n"));
     let r = solve(&mut e.sketch, SolveOpts::default());
     assert!(r.success, "{}", r.message);
     let d = diagnose(&mut e.sketch, DiagnoseOptions::default());
@@ -236,7 +236,7 @@ fn a_curve_column_is_an_unknown_number_as_itself() {
 fn a_contact_on_a_closed_stride_wraps_round_the_seam() {
     let want = reaching(-95.0, 5.0, 15.0, |l| lowest(l, H));
     for seed in [0.0, 45.0, 90.0, 135.0, 225.0, 270.0, 340.0] {
-        let mut e = grounded_at(seed, |d| d.replace("pivot distance(l, along: y) axle\n", ""));
+        let mut e = grounded_at(seed, |d| d.replace("axle offset(dx: a, dy: l) pivot\n", "pivot distance(a, along: x) axle\n"));
         assert!(e.sketch.curve_closed(0), "the stride closes on itself");
         let r = solve(&mut e.sketch, SolveOpts::default());
         assert!(r.success, "seeded at {seed}: {}", r.message);

@@ -16,7 +16,7 @@
 // The crank is still the drawing's one freedom.  Change `radius(150)` and the rod solves again;
 // the circle's centre stays straight above the stride's bottom.
 
-use std
+use std (offset)
 
 a := 38      // the axle stands this far to the right of the pivot...
 l := 7.8     // ...and this far above it
@@ -77,8 +77,7 @@ in std.front {
   axle := point
   pivot := point hint((-38, -7.8))
   fix((0, 0)) axle
-  pivot distance(a, along: x) axle
-  pivot distance(l, along: y) axle
+  axle offset(dx: a, dy: l) pivot
 
   // the leg, with its crank angle and its toe rod both left unbound
   leg := Leg(axle, pivot)

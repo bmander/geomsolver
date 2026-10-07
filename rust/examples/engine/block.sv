@@ -11,7 +11,7 @@
 
 use engine.dims
 use engine.parts
-use std (horizontal)
+use std (horizontal, offset)
 
 // A main bearing edge on, at the axis point `jc`: the shell above and below the journal, the
 // bulkhead rising from the shell to the cylinder walls, the cap hung below it.
@@ -32,8 +32,7 @@ component EngineBlock(end: plane, side: plane, top: plane, o: point, o_s: point,
     br1 := engine.parts.At(o, dx: dims.D / 2, dy: dims.deck - dims.wall)
     wall_l := line(bl0, bl1.p)
     wall_r := line(br0, br1.p)
-    o distance(-dims.D / 2, along: x) bl0
-    o distance(dims.deck, along: y) bl0
+    bl0 offset(dx: -dims.D / 2, dy: dims.deck) o
     o distance(dims.deck, along: y) br0
     bl0 distance(dims.D) br0
     // the outline: deck, walls, skirt, pan rail
@@ -48,12 +47,10 @@ component EngineBlock(end: plane, side: plane, top: plane, o: point, o_s: point,
     (deckline := line(d_l, d_r)) -> (b_r := line(d_r, s_r.p)) -> (sk_r := line(s_r.p, k_r.p)) ->
       (kr := line(k_r.p, pr_r)) -> (railline := line(pr_r, pr_l)) -> (kl := line(pr_l, k_l.p)) ->
       (sk_l := line(k_l.p, s_l.p)) -> (b_l := line(s_l.p, d_l)) -> close
-    o distance(-dims.hw, along: x) d_l
-    o distance(dims.deck, along: y) d_l
+    d_l offset(dx: -dims.hw, dy: dims.deck) o
     o distance(dims.deck, along: y) d_r
     d_l distance(2 * dims.hw) d_r
-    o distance(-dims.kw, along: x) pr_l
-    o distance(dims.rail, along: y) pr_l
+    pr_l offset(dx: -dims.kw, dy: dims.rail) o
     o distance(dims.rail, along: y) pr_r
     pr_l distance(2 * dims.kw) pr_r
     // the main bearing behind the section: the shell round the journal, hidden, and the cap
@@ -74,8 +71,7 @@ component EngineBlock(end: plane, side: plane, top: plane, o: point, o_s: point,
     sp_r := point hint((o.x + 60mm, o.y + dims.sump))
     (su_r := line(pr_r, sh_r.p)) -> (ss_r := line(sh_r.p, sp_r)) -> (sb := line(sp_r, sp_l)) ->
       (ss_l := line(sp_l, sh_l.p)) -> (su_l := line(sh_l.p, pr_l))
-    o distance(60, along: left) sp_l
-    o distance(dims.sump, along: y) sp_l
+    sp_l offset(dx: -60, dy: dims.sump) o
     o distance(60, along: x) sp_r
     sp_r distance(-dims.sump, along: y) o
   }

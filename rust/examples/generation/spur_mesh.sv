@@ -11,7 +11,7 @@
 // involute, and Euler–Savary's centre of curvature on the common normal.  The diagnosis judges
 // it a theorem: true at every pose the freedom reaches, and implied rather than stated.
 
-use std (horizontal)
+use std (right_of)
 
 r1 := 20                    // the pinion's pitch radius
 r2 := 30                    // the gear's
@@ -21,14 +21,12 @@ in std.front {
   o1 := point
   o2 := point hint((50, 0))
   fix((0, 0)) o1
-  o1 distance(r1 + r2, along: x) o2
-  o1 horizontal o2
+  o2 right_of(d: r1 + r2) o1
 
   // the rack's pitch line, tangent to the pinion's pitch circle at the pitch point
   p0 := point hint((20, 0))
   p1 := point hint((20, 10))
-  o1 distance(r1, along: x) p0
-  o1 horizontal p0
+  p0 right_of(d: r1) o1
   pitch_line := vertical line(p0, p1)
   p0 distance(10) p1
 

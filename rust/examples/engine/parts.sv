@@ -4,6 +4,7 @@
 // in every view. The caller passes `engine_dims` from `engine.dims`.
 
 use engine.dims
+use std (offset)
 
 // A line tangent to two circles at both ends — a belt run, a crank web's flank, a cam's flank.
 // `side` says which side of the centre line: the seeds are the two contact points at the bearing
@@ -42,14 +43,10 @@ component Piston(small: point, pin: Int, dims: group) {
   sl := point hint((small.x - w / 2, small.y + dims.ch - dims.ph))
   sr := point hint((small.x + w / 2, small.y + dims.ch - dims.ph))
   (crown := line(cl, cr)) -> (rs := line(cr, sr)) -> (skirt := line(sr, sl)) -> (ls := line(sl, cl)) -> close
-  small distance(-w / 2, along: x) cl
-  small distance(dims.ch, along: y) cl
-  small distance(w / 2, along: x) cr
-  small distance(dims.ch, along: y) cr
-  small distance(-w / 2, along: x) sl
-  small distance(dims.ch - dims.ph, along: y) sl
-  small distance(w / 2, along: x) sr
-  small distance(dims.ch - dims.ph, along: y) sr
+  cl offset(dx: -w / 2, dy: dims.ch) small
+  cr offset(dx: w / 2, dy: dims.ch) small
+  sl offset(dx: -w / 2, dy: dims.ch - dims.ph) small
+  sr offset(dx: w / 2, dy: dims.ch - dims.ph) small
   repeat pin {
     k := circle(center: small) hint(r: dims.rpin)
     radius(dims.rpin) k
@@ -70,8 +67,7 @@ component Piston(small: point, pin: Int, dims: group) {
 // One statement where a point and its two runs were three.
 component At(o: point, dx: Length, dy: Length) {
   p := point hint((o.x + dx, o.y + dy))
-  o distance(dx, along: x) p
-  o distance(dy, along: y) p
+  p offset(dx: dx, dy: dy) o
 }
 
 // An axis-aligned rectangle about a point: `a` is its lower-left corner offset from `o`.
@@ -81,12 +77,8 @@ component Box(o: point, x0: Length, y0: Length, x1: Length, y1: Length) {
   c := point hint((o.x + x1, o.y + y1))
   d := point hint((o.x + x0, o.y + y1))
   profile := (ab := line(a, b)) -> (bc := line(b, c)) -> (cd := line(c, d)) -> (da := line(d, a)) -> close
-  o distance(x0, along: x) a
-  o distance(y0, along: y) a
-  o distance(x1, along: x) b
-  o distance(y0, along: y) b
-  o distance(x1, along: x) c
-  o distance(y1, along: y) c
-  o distance(x0, along: x) d
-  o distance(y1, along: y) d
+  a offset(dx: x0, dy: y0) o
+  b offset(dx: x1, dy: y0) o
+  c offset(dx: x1, dy: y1) o
+  d offset(dx: x0, dy: y1) o
 }

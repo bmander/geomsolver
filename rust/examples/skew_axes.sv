@@ -17,7 +17,7 @@
 // `distance` line and the report says DOF 1: the pinion may slide.
 
 unit mm
-use std (horizontal)
+use std (horizontal, skew)
 shaft_angle := 90deg
 offset := 17.5mm
 
@@ -38,5 +38,4 @@ in side {
   pax.p1 horizontal pax.p2
 }
 
-gax angle(shaft_angle) pax      // the shaft angle, in space
-gax distance(offset) pax        // the offset: their common perpendicular, in space
+gax skew(theta: shaft_angle, e: offset) pax  // the angle, and the common perpendicular, in space

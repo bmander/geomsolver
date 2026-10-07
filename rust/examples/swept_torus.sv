@@ -3,7 +3,7 @@
 // The part's boundary is the material field's, meshed by Delaunay refinement.
 
 unit mm
-use std
+use std (coords, on_u, on_v)
 in std.front {
   construction centerline spindle := line(std.origin, hint((0, 1)))
   fix((0, 1)) spindle.p2
@@ -18,11 +18,9 @@ in std.front {
   radius(0.5mm) ring
   construction tool := solid(face(ring), about: taxis)
   private hub := point hint((2, 0))
-  hub distance(2mm, along: u) std.front
-  hub level(v) std.front
+  hub on_u(d: 2mm) std.front
   private hub_up := point hint((2, 5))
-  hub_up distance(2mm, along: u) std.front
-  hub_up distance(5mm, along: v) std.front
+  hub_up coords(du: 2mm, dv: 5mm) std.front
   construction centerline cradle := line(hub, hub_up)
 }
 private spin := motion(about: cradle, ratio: 0.25)
@@ -33,10 +31,8 @@ fix(origin == (0, 0, 0)) flat
 in flat {
   private k0 := point hint((0, 0.7071))
   private k1 := point hint((5, 0.7071))
-  k0 level(u) flat
-  k0 distance(0.7071mm, along: v) flat
-  k1 distance(5mm, along: u) flat
-  k1 distance(0.7071mm, along: v) flat
+  k0 on_v(d: 0.7071mm) flat
+  k1 coords(du: 5mm, dv: 0.7071mm) flat
   construction centerline kaxis := line(k0, k1)
 }
 private observer := motion(about: kaxis)
