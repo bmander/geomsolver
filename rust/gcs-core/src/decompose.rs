@@ -1920,7 +1920,10 @@ impl PlanDrag {
         let guards = guards.map(|g| part.triangles_in(&g));
         let sk = &mut part.sketch;
         let mut solver = PlanSolver::new(sk, true);
+        // a ring's turned copy has no element of its own to move: it moves with its
+        // representative, which only the numeric drag reaches through the turn
         let usable = eye.is_none()
+            && sk.turn_of(EntRef::point(point)).is_none()
             && solver.ensure_solved(sk, 1e-9, Method::DogLeg)
             && solver.plan.graph.unsupported.is_empty();
         let wave = Wave::new(&solver.plan, solver.plan.graph.point_el(point), sk.extent());
@@ -1955,6 +1958,7 @@ impl PlanDrag {
     ) -> PlanDrag {
         let max_step = max_step_rel * doc.extent().max(1.0);
         let usable = eye.is_none()
+            && doc.turn_of(EntRef::point(point)).is_none()
             && plan.ensure_solved(doc, 1e-9, Method::DogLeg)
             && plan.plan.graph.unsupported.is_empty();
         let wave = Wave::new(&plan.plan, plan.plan.graph.point_el(point), doc.extent());

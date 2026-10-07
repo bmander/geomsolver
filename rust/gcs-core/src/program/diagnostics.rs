@@ -25,8 +25,20 @@ pub enum Code {
     /// an argument a formal list would silently take for another: a positional one after a
     /// labelled one, or a number given by position (§4.1)
     E004,
+    /// a `ring`'s index read in its body (§11, §12.3): every copy is the representative turned,
+    /// so there is nothing an index could vary
+    E015,
     /// `next` or `prev` where no `cycle` closes the copies (§12.1)
     E020,
+    /// a `ring` reading what its turn would move: an entity outside it other than its centre, a
+    /// circle about it, or a plane a point is drawn in — or a copy reached by index (§12.5)
+    E021,
+    /// a `ring` inside a `ring` (§12.6)
+    E022,
+    /// what a `ring` cannot turn (§12.3): a plane, an axis or a motion declared in it, a point
+    /// outside its centre's view, a centre that is neither a point nor an axis held in its
+    /// direction, a hold or a curve contact on a turned copy
+    E023,
     /// type mismatch within an alias class
     E040,
     /// a cyclic definitional dependency: a value defined in terms of itself, a group nested in
@@ -94,7 +106,11 @@ impl Code {
             Code::E002 => "E002",
             Code::E003 => "E003",
             Code::E004 => "E004",
+            Code::E015 => "E015",
             Code::E020 => "E020",
+            Code::E021 => "E021",
+            Code::E022 => "E022",
+            Code::E023 => "E023",
             Code::E040 => "E040",
             Code::E041 => "E041",
             Code::E060 => "E060",

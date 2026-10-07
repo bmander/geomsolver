@@ -503,20 +503,21 @@ impl System {
         // the diagnosis judges it by stacking its rows onto a compiled system (`conditioned_with`)
         // rather than by compiling a system that has them.
         let spans = crate::curve::contact_spans(sk);
+        let turned_arcs: std::collections::BTreeSet<EntRef> = sk.turns.iter()
+            .filter(|tn| tn.copy.kind == crate::model::EntKind::Arc)
+            .map(|tn| tn.copy)
+            .collect();
         let mut by_kernel: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
         for (i, c) in sk.constraints.iter().enumerate() {
             if c.claim {
                 continue;
             }
-            // an intrinsic row over a ring's turned copy — an arc's ends on its circle — is the
-            // image of the representative's: the same row again, which only the representative's
-            // states
-            if c.intrinsic && !derived.is_empty() {
-                let ps = c.params_on(sk, spans.get(&c.id).copied());
-                let col = |p: &u32| col_of[*p as usize];
-                if ps.iter().all(|p| col(p) < 0) && ps.iter().any(|p| col(p) <= -2) {
-                    continue;
-                }
+            // a turned arc's intrinsic rows — its ends on its circle — are the images of the
+            // representative's: the same rows again, which only the representative's state
+            if c.intrinsic && !turned_arcs.is_empty()
+                && c.entities().iter().any(|e| turned_arcs.contains(e))
+            {
+                continue;
             }
             by_kernel.entry(c.kernel_id_in(sk)).or_default().push(i);
         }

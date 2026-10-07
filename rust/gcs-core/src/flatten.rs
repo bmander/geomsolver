@@ -50,6 +50,29 @@ struct Cyc {
     n: usize,
 }
 
+/// The `ring` a statement stands in (§12.3): the prefix every copy's name starts with, how many
+/// copies, and whether the statement is of a turned copy (k ≥ 1) rather than the representative.
+#[derive(Clone)]
+struct Ring {
+    prefix: String,
+    turned: bool,
+}
+
+/// A ring the walk expanded: what its copies' names start with, its centre (an absolute
+/// reference once resolved), how many copies, and the block, for a message about it.
+#[derive(Clone, Debug)]
+pub struct RingInfo {
+    pub prefix: String,
+    pub about: Ref,
+    pub n: u32,
+    pub span: Span,
+}
+
+/// A reference spelled back as one name, as the source wrote it — for a message about it.
+pub fn written_name(r: &Ref) -> String {
+    written(r)
+}
+
 /// What the names in one statement are resolved against: the prefixes it is nested in, innermost
 /// first.  An instance's entity arguments are not here: a formal is an *alias* under the
 /// instance's own prefix (`bind`), found by `lookup` through the prefixes like any other name.
@@ -64,6 +87,8 @@ struct Scope {
     forbidden: BTreeSet<String>,
     groups: BTreeSet<String>,
     cyc: Option<Cyc>,
+    /// The `ring` the statement stands in, through however many instances and blocks.
+    ring: Option<Ring>,
     /// Whether a `cycle` or a `repeat` stands anywhere above: the prefix in force then carries a
     /// block's id (`#3.0.`) rather than an instance's name, and a declaration under it is one
     /// *copy* — shown and selected by, never written into a statement.  This walk is the only
@@ -142,6 +167,8 @@ pub struct Expansion {
     /// beta: Angle`) and a formal a call left unbound with a seed (`Wing(f, beta: hint(15deg))`)
     /// — what each is and where its solve begins (`model::Declared`).
     pub unknowns: BTreeMap<String, crate::model::Declared>,
+    /// Every `ring` expanded, its centre resolved — what the elaborator turns copies about.
+    pub rings: Vec<RingInfo>,
 }
 
 /// One instance, as bound: which component, under what prefix, given what.
@@ -241,6 +268,12 @@ struct Walk<'a> {
     /// The components being expanded, outermost first: a call to one already here is a
     /// component instantiating itself (E003), refused rather than walked until the depth cap.
     instantiating: Vec<&'a Component>,
+    /// The rings expanded, waiting for their centres to be resolved with everything else: the
+    /// copies' prefix, the centre as written and the scope it was written in, the count, the
+    /// block.
+    rings: Vec<(String, Ref, Scope, usize, Span)>,
+    /// Those resolved — see `Expansion::rings`.
+    ring_infos: Vec<RingInfo>,
 }
 
 /// Expand a program's root component into a flat list of declarations, constraints, gauges and
@@ -334,11 +367,21 @@ impl<'a> Walk<'a> {
             unknowns: BTreeMap::new(),
             refused: Vec::new(),
             instantiating: Vec::new(),
+            rings: Vec::new(),
+            ring_infos: Vec::new(),
         }
     }
 
     fn err(&mut self, code: Code, span: Span, message: impl Into<String>) {
         self.diagnostic(Diag { code, span, stmt: None, message: message.into() });
+    }
+
+    /// An error said once at its place, however many times the walk passes it — a block in a
+    /// component instantiated thirty times is one mistake.
+    fn once(&mut self, code: Code, span: Span, message: impl Into<String>) {
+        if !self.diagnostics.iter().any(|d| d.code == code && d.span == span) {
+            self.err(code, span, message);
+        }
     }
 
     fn diagnostic(&mut self, diag: Diag) {
@@ -373,6 +416,7 @@ impl<'a> Walk<'a> {
             instances: self.instances,
             aliases,
             unknowns: self.unknowns,
+            rings: self.ring_infos,
         }
     }
 }

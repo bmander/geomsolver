@@ -15,6 +15,9 @@ pub struct Site {
     pub stmt: StmtId,
     pub span: Span,
     pub path: InstPath,
+    /// Made by a `ring`'s turned copy (`ir::Statement::turned`): what its representative's
+    /// statement made, turned — no pose of its own to write back.
+    pub turned: bool,
 }
 
 /// Provenance for one elaboration. Entity indices and constraint IDs can change
@@ -105,6 +108,12 @@ impl SourceMap {
         }
     }
 
+    /// Every key an entity was bound under, the anonymous ones included — what a ring's copies
+    /// are paired with their representative's by.
+    pub(crate) fn keys(&self) -> impl Iterator<Item = (&String, EntRef)> {
+        self.by_name.iter().map(|(k, &e)| (k, e))
+    }
+
     /// What the source calls an entity, where it calls it anything.
     pub fn name_of(&self, e: EntRef) -> Option<&String> {
         self.names.get(&e)?.first()
@@ -135,7 +144,7 @@ impl SourceMap {
     }
 
     pub(super) fn record(&mut self, st: &crate::ir::Statement, what: Made) {
-        let site = Site { stmt: st.id, span: st.span, path: InstPath(st.path.clone()) };
+        let site = Site { stmt: st.id, span: st.span, path: InstPath(st.path.clone()), turned: st.turned };
         match what {
             Made::Ent(e) => {
                 self.of_entity.insert(e, site);
@@ -217,7 +226,7 @@ impl Elaborated {
         // a statement may have gone as well as arrived, and one that went takes its entries with it
         self.restamp(&spans(&prog), Keep::Live);
         for (st, m) in tail.iter().zip(made) {
-            let site = Site { stmt: st.id, span: st.span, path: InstPath::default() };
+            let site = Site { stmt: st.id, span: st.span, path: InstPath::default(), turned: false };
             match *m {
                 Made::Ent(r) => {
                     if let StmtKind::Decl(d) = &st.kind {
