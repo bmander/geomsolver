@@ -33,7 +33,7 @@ pub use entities::{
 pub use curves::{CURVE_STEPS, CurveDef, CurveBody, CurveE, Home, Trim, whole};
 pub use spatial::{
     FaceLoop, FaceSupport, FaceE, Length, SolidRequirement, SolidClaim, SolidBearing, Sweep,
-    DerivedE, Extent, Sense, SolidDef, SolidE, SeamE, EdgeE, VertexE, PatchE, EnvelopeE, SurfaceE,
+    DerivedE, Extent, FilletSide, Sense, SolidDef, SolidE, SeamE, EdgeE, VertexE, PatchE, EnvelopeE, SurfaceE,
     MotionDef, MotionE,
 };
 pub use construction::{ThreePointArc, three_point_arc};
@@ -152,6 +152,11 @@ pub struct Sketch {
     /// again for each one the evaluated solids above ask for.
     pub exact_cache:
         std::cell::RefCell<BTreeMap<usize, (Vec<f64>, Result<std::rc::Rc<crate::solid::Exact>, String>)>>,
+    /// Each fillet's blend (`solid::fillet`), against the `solid::reads` it was worked out under:
+    /// derived from its operands' exact boundaries, so worked out once for a geometry and read by
+    /// every kernel that evaluates it.
+    pub fillet_cache:
+        std::cell::RefCell<BTreeMap<usize, (Vec<f64>, Result<std::rc::Rc<crate::solid::fillet::Blend>, String>)>>,
     /// Swept solids' surfaces a host meshed elsewhere (`supply_field`), each against the
     /// `solid::reads` it was supplied under, so a moved drawing reads none.
     pub field_surfaces: std::cell::RefCell<BTreeMap<usize, (Vec<f64>, std::rc::Rc<crate::solid::FieldSurface>)>>,

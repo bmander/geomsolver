@@ -29,6 +29,16 @@ pub(super) const OPENERS: [&str; 16] = [
 
 pub(super) const BLOCKS: [&str; 3] = ["repeat", "cycle", "ring"];
 
+/// `root := fillet(boss, plate, r: 3mm)`: the value of a definition is a fillet — a solid spelled
+/// by what it rounds (issue #66) — where the token at `at` is the word and a bracket follows. The
+/// parser and the colouring both ask it.
+pub(super) fn fillet_at(toks: &[(Tok, Span)], at: usize) -> bool {
+    matches!(
+        (toks.get(at), toks.get(at + 1)),
+        (Some((Tok::Ident(w), _)), Some((Tok::P('('), _))) if w == "fillet"
+    )
+}
+
 /// `repeat e in rack.profile`: a block runs over a chain's edges when the tokens from `at` (the
 /// one after its word) are a name and `in`, which no count expression can begin with, `in` being
 /// no operator.  The parser and the colouring both ask it.

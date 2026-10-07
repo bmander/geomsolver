@@ -32,7 +32,7 @@ fn main() {
     println!("cargo:rustc-link-search=native={}",out.display());
     println!("cargo:rustc-link-lib=static=solvent_occt");
     println!("cargo:rustc-link-search=native={}",root.join("lib").display());
-    for library in ["TKDESTEP","TKDESTL","TKMesh","TKShHealing","TKXSBase","TKBO","TKBool","TKPrim","TKTopAlgo",
+    for library in ["TKDESTEP","TKDESTL","TKMesh","TKShHealing","TKXSBase","TKBO","TKBool","TKFillet","TKPrim","TKTopAlgo",
         "TKGeomAlgo","TKBRep","TKGeomBase","TKG3d","TKG2d","TKMath","TKernel"] {
         println!("cargo:rustc-link-lib=dylib={library}");
     }

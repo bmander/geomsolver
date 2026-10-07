@@ -58,6 +58,7 @@ pub use field::BoundaryComponent;
 mod raycast;
 mod section;
 mod loft;
+pub mod fillet;
 pub(crate) mod surface;
 mod sweep_contacts;
 pub mod admission;
@@ -458,6 +459,7 @@ fn validate_at(sk: &Sketch, si: usize, unit: f64) -> Result<std::collections::BT
                 continue;
             }
             SolidDef::Body { .. } => { pending.extend(s.operands().into_iter().rev().map(|o| (o as usize, false))); continue; }
+            SolidDef::Fillet { .. } => { sk.fillet_blend(i).map_err(|m| fail(&m))?; continue; }
         };
         let polys = face_polys(sk, face as usize, unit).map_err(|m| fail(&m))?;
         let poly = &polys[0];

@@ -31,12 +31,14 @@ pub use diagnostics::{Code, Diag, Severity};
 /// Geometry diagnostics belong after solving: a poor hint is not an invalid final profile.
 pub fn solid_diagnostics(sk: &crate::model::Sketch, map: &SourceMap) -> Vec<Diag> {
     let mut diags: Vec<_> = sk.solids.iter().enumerate().filter(|(_, s)| !matches!(s.def, crate::model::SolidDef::Body { .. }))
-        .filter_map(|(i, _)| {
+        .filter_map(|(i, s)| {
             let message = crate::solid::validate(sk, i).err()?;
             let site = map.site_of(crate::model::EntRef::solid(i));
-            Some(Diag { code: Code::E080, span: site.map(|s| s.span).unwrap_or_default(),
+            let code = if matches!(s.def, crate::model::SolidDef::Fillet { .. }) { Code::E085 } else { Code::E080 };
+            Some(Diag { code, span: site.map(|s| s.span).unwrap_or_default(),
                 stmt: site.map(|s| s.stmt), message })
         }).collect();
+    diags.extend(solids::fillet_words(sk, map));
     diags.extend(crate::solid::bearing_errors(sk).into_iter().map(|(b, message)| Diag {
         code: Code::E082, span: b.span, stmt: Some(crate::syntax::StmtId(b.stmt)), message,
     }));

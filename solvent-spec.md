@@ -1,6 +1,15 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.48 — October 2026**
+**Specification, Draft 0.49 — October 2026**
+
+**[0.49] A fillet is a noun.** `root := fillet(boss, plate, r: 3mm)` is the material a ball of
+radius `r` fills or rolls off along every edge where a face of one operand meets a face of the
+other; an operand is a solid or a face of one (`fillet(block.near, block.bc, r: 1mm)`). A body adds
+it with `union` at a concave edge and takes it away with `cut` at a convex one, and the other word
+is refused: the body rule is unchanged (§6.9). Its edges are those of the union stratum, so a bore
+cut after it passes through it. Rung 1 rounds what has a closed form — a straight edge between
+planes (a cylinder), a circle between planes, cylinders and cones about one axis (a torus) — and
+refuses the rest by name (**E085**).
 
 **[0.48] Relation words, and `use M (names)`.** A file may define a relation word at its top
 level, as it defines a component: `a horizontal b := a level(up) b`, `flat l := l perpendicular
@@ -1025,6 +1034,43 @@ B(s) = ( S(s) ∪ ⋃ { B(x) : x union s } ) ∖ ⋃ { B(y) : y cut s } ∩ ⋂ 
 ```
 
 Union first, and none of the three groups is ordered; difference and intersection commute, so the last two need no order between them either. `tip bound blank` keeps of the blank what lies within the tip cone, which is what a rim inside a cone is, and what `blank ∖ (blank ∖ tip)` used to spell in two statements and an intermediate. `union`, `cut` and `bound` are Declaration-class (§4.2, §9.2): each says what its right operand *is*, contributes no residual, and enters no solve. A solid that reaches itself through its operands is **E041** — "made of itself".
+
+**[0.49] A fillet is the ball's material, named.** A rolling-ball fillet is neither a union nor
+a cut: it adds material at a concave edge and removes it at a convex one. Solvent writes it as a
+noun, a solid whose material is the ball's, and the body takes it with the word its edges call for:
+
+```
+root := fillet(boss, plate, r: 3mm)          // every edge where a face of `boss` meets one of `plate`
+root union body                              //   ... concave: the ball fills the corner
+lip := fillet(block.near, block.bc, r: 1mm)  // one edge, named by its two faces
+lip cut block                                //   ... convex: the ball rolls the edge off
+```
+
+- **What it rounds.** Each operand is a solid, or a face path through one (`near`, `boss.wall`, or
+  `boss` for every face the operand `boss` made). The fillet's edges are every edge of the two
+  operands' union where a face of the first meets a face of the second; two faces running on into
+  one another (coplanar operands' faces) meet at no edge. An operand that is the body taking the
+  fillet is read **at its union stratum** — its stock and what it adds, before what it cuts and
+  before any fillet — so `lip cut block` may round `block`'s own edge, and a bore cut afterwards
+  passes through a filleted boss. A fillet of an edge a cut makes rounds a named intermediate, as
+  §6.9's other orders do.
+- **The word.** A body MUST take a fillet of concave edges with `union` and one of convex edges
+  with `cut`; the other word, a fillet as a body's stock or a `bound`, and one whose edges are of
+  both kinds (written as two fillets instead) are **E085**.
+- **Its faces** are named as a swept section's are: `round` the ball's, `a` and `b` the two sides
+  lying on the faces it rounds, and a straight fillet's caps `near` and `far`
+  (`body.root.round`). `r:` is a `Length` extent like a prism's ordinates: never an unknown.
+- **What rung 1 rounds** is what has a closed form: a straight edge between two planes (the
+  fillet's face a cylinder), and a whole circle between planes square to an axis and cylinders and
+  cones about it (a torus). The ball MUST stand within both faces — the band it rolls on crossed by
+  no other edge of either — and a straight fillet MUST end flush, each face's edge beside it at
+  both ends running on across the band into a plane square to the edge. Anything else is **E085**
+  with its reason: a pair of other faces (rung 2), part of a circle or a fillet that would turn a
+  corner (rung 3), a ball larger than a face holds. A fillet that is not exact is never built.
+- **The material field needs no true distance.** Rolling-ball closing and opening want one, which
+  a one-Lipschitz field does not carry; the fillet's material is instead an explicit leaf — the
+  section of corner, touches and arc, swept along the edge or turned about the axis — evaluated
+  like any prism or revolution.
 
 **Extent dependencies are separate from Boolean operands.** A through prism reads only the target's additive material sources for its bounds; it does not read the target's final Boolean result. Therefore `tool := solid(section, through: body)` together with `tool cut body` is valid and unordered. Genuine material/extent cycles, such as using that tool as the body's stock or adding it in `union` with the same body, are **E041**. A cutter remains a finite named solid with its own reports and faces. Its padded caps are numerical extent boundaries, not design datums.
 
@@ -2262,6 +2308,7 @@ The numerical method is unspecified. Whatever the method, a conforming solver:
 | E081 | invalid revolution axis or guided sweep path (§6.9) **[0.18]** |
 | E082 | a face of a body that the body no longer has (§6.9) **[0.18]** |
 | E084 | a section whose cutting plane is not parallel to the view it is drawn in (§6.11) **[0.18]** |
+| E085 | a fillet the model cannot round exactly — faces of other kinds, part of a circle, an end that is not flush, a ball larger than a face holds — or one a body takes with the wrong word (§6.9) **[0.49]** |
 | E101 | a name nothing in scope declares, or a member a scope cannot reach (§3.3, §5, §13.3) **[0.41]** |
 | E102 | **[0.48]** a relation word nothing defines where it is written (§9.9), naming the import that would where a module defines it |
 | E103 | a shape or a number the model cannot build: more children than the kind has slots (§6.1), an input whose value is not its type (§6.3), a seed reading a scalar that is not there (§6.4), a curve the model cannot trace (§6.5), an extent of the wrong dimension (§6.9), iteration over what is not a named chain (§12.8) |

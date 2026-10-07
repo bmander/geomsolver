@@ -271,20 +271,32 @@ impl Tri2 {
             if flips > 10_000_000 { break }
         }
     }
-    /// The triangles about `v`, in turn.
+    /// The triangles about `v`, in turn. About a point of the hull (a corner of the enclosing
+    /// triangle) the turn stops at the hull each way, so it is walked both ways round: from one
+    /// way only, a thin face's boundary crossing a side to such a corner finds no triangle to flip.
     fn fan(&self,v: u32) -> Vec<usize> {
         let first = self.about[v as usize] as usize;
+        let at = |t: usize| (0..3).find(|&i| self.tris[t][i] == v).unwrap();
         let mut out = vec![first];
         let mut t = first;
         loop {
-            let i = (0..3).find(|&i| self.tris[t][i] == v).unwrap();
-            let u = self.nbr[t][(i+2)%3];
-            if u == NONE || u as usize == first { break }
+            let u = self.nbr[t][(at(t)+2)%3];
+            if u as usize == first || out.len() > self.tris.len() { return out }
+            if u == NONE { break }
             t = u as usize;
             out.push(t);
-            if out.len() > self.tris.len() { break }
         }
-        out
+        let mut back = Vec::new();
+        let mut t = first;
+        loop {
+            let u = self.nbr[t][at(t)];
+            if u == NONE || back.len() > self.tris.len() { break }
+            t = u as usize;
+            back.push(t);
+        }
+        back.reverse();
+        back.extend(out);
+        back
     }
     /// Whether the side from `a` to `b` (either way) is in the triangulation.
     fn has(&self,a: u32,b: u32) -> bool { self.fan(a).iter().any(|&t| self.tris[t].contains(&b)) }

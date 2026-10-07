@@ -1066,3 +1066,86 @@ fn a_face_thinner_than_its_chords_sag_still_meshes() {
     let m = gcs_core::brep::mesh::mesh(&b,0.5,0.8).unwrap();
     assert!(m.tris.len() > 4);
 }
+
+#[test]
+fn curves_cross_in_closed_form() {
+    use gcs_core::brep::geom::Curve;
+    use gcs_core::brep::query::curve_curve;
+    let near = |got: Vec<(f64,V)>,want: &[(f64,V)]| {
+        assert_eq!(got.len(),want.len(),"{got:?} against {want:?}");
+        for ((t,p),(u,q)) in got.iter().zip(want) {
+            assert!((t-u).abs() < 1e-12 && (0..3).all(|k| (p[k]-q[k]).abs() < 1e-12),"{got:?} against {want:?}");
+        }
+    };
+    let x = Curve::Line {p:[0.,0.,0.],d:[1.,0.,0.]};
+    near(curve_curve(&x,[0.,10.],&Curve::Line {p:[5.,-5.,0.],d:[0.,1.,0.]},[0.,10.],1e-9).unwrap(),&[(5.,[5.,0.,0.])]);
+    // skew, and crossing beyond the other's stretch
+    near(curve_curve(&x,[0.,10.],&Curve::Line {p:[5.,-5.,1.],d:[0.,1.,0.]},[0.,10.],1e-9).unwrap(),&[]);
+    near(curve_curve(&x,[0.,10.],&Curve::Line {p:[5.,1.,0.],d:[0.,1.,0.]},[0.,10.],1e-9).unwrap(),&[]);
+    let circle = Curve::Circle(Frame::new([0.;3],XY,[1.,0.,0.]),2.);
+    // a line through the circle's plane, and one in it
+    near(curve_curve(&Curve::Line {p:[2.,0.,-5.],d:XY},[0.,10.],&circle,[0.,TAU],1e-9).unwrap(),&[(5.,[2.,0.,0.])]);
+    let s3 = 3f64.sqrt();
+    near(curve_curve(&Curve::Line {p:[-5.,1.,0.],d:[1.,0.,0.]},[0.,10.],&circle,[0.,TAU],1e-9).unwrap(),
+        &[(5.-s3,[-s3,1.,0.]),(5.+s3,[s3,1.,0.])]);
+    // two circles in one plane, and in planes square to one another; a half circle has one of two
+    let beside = Curve::Circle(Frame::new([2.,0.,0.],XY,[1.,0.,0.]),2.);
+    let got = curve_curve(&circle,[0.,TAU],&beside,[0.,TAU],1e-9).unwrap();
+    let mut pts: Vec<V> = got.iter().map(|g| g.1).collect();
+    pts.sort_by(|a,b| a[1].total_cmp(&b[1]));
+    assert!((pts[0][0]-1.).abs() < 1e-12 && (pts[0][1]+s3).abs() < 1e-12 && (pts[1][1]-s3).abs() < 1e-12,"{got:?}");
+    let upright = Curve::Circle(Frame::new([0.;3],[1.,0.,0.],[0.,1.,0.]),2.);
+    assert_eq!(curve_curve(&circle,[0.,TAU],&upright,[0.,TAU],1e-9).unwrap().len(),2);
+    near(curve_curve(&circle,[0.,PI],&upright,[0.,TAU],1e-9).unwrap(),&[(PI/2.,[0.,2.,0.])]);
+    // no closed form for any other curve
+    assert!(curve_curve(&Curve::Ellipse(Frame::new([0.;3],XY,[1.,0.,0.]),2.,1.),[0.,TAU],&x,[0.,10.],1e-9).is_none());
+}
+
+#[test]
+fn a_point_on_a_seam_is_in_its_face() {
+    use gcs_core::brep::query::{Located,Place};
+    let b = rod([0.;3],2.,[0.,4.]);
+    let located = Located::new(&b,1e-9);
+    let wall = b.faces.iter().position(|f| f.surface.kind() == "cylinder").unwrap();
+    // the seam runs up the wall at its first parameter, here +x: no boundary of the face
+    assert_eq!(located.face_place(wall,[2.,0.,2.]),Place::In);
+    assert_eq!(located.face_place(wall,[0.,2.,2.]),Place::In);
+    assert_eq!(located.face_place(wall,[2.,0.,4.]),Place::On);
+}
+
+/// A fillet's section in the meridian of the line along z: the corner at radius 8, the ball of
+/// radius 3 touching the plane `z = 0` and the cylinder of radius 8.
+fn wedge_section(origin: V) -> Profile {
+    let at = |p: V| [p[0]+origin[0],p[1]+origin[1],p[2]+origin[2]];
+    let (e,tp,tw,c) = (at([8.,0.,0.]),at([11.,0.,0.]),at([8.,0.,3.]),at([11.,0.,3.]));
+    // seen from +y an angle turns x toward −z: the plane's touch at π/2, the wall's at π
+    Profile {names:vec![],origin:e,normal:XZ,loops:vec![vec![line(e,tp),arc(c,3.,XZ,[1.,0.,0.],Some([PI/2.,PI])),line(tw,e)]]}
+}
+
+#[test]
+fn a_section_with_cusps_meshes_at_every_bar() {
+    // a line meeting an arc tangent to it is a cusp, where a thin face's boundary runs past the
+    // corners of the triangle the mesh starts in
+    let b = prism(&wedge_section([0.;3]),0.,40.).unwrap();
+    b.check(1e-9).unwrap();
+    close(volume(&b),(1.-PI/4.)*9.*40.);
+    for k in 0..12 {
+        let bar = 1e-1/2f64.powi(k);
+        gcs_core::brep::mesh::mesh(&b,bar,TAU/64.).unwrap_or_else(|e| panic!("at bar {bar}: {e}"));
+    }
+}
+
+#[test]
+fn a_ring_on_a_coincident_wall_joins_it() {
+    use gcs_core::brep::boolean::Op;
+    use gcs_core::brep::recipe::combined;
+    // a rod standing on a block, and the ring a ball rolled round its foot fills: one side of the
+    // ring lies on the rod's wall and is seamed elsewhere, its contact circle crossing the rod's seam
+    let ring = revolve(&wedge_section([0.;3]),[0.;3],XY,TAU).unwrap();
+    ring.check(1e-9).unwrap();
+    let foot = combined(&block([-30.,-30.,-10.],[30.,30.,0.]),&rod([0.;3],8.,[0.,20.]),Op::Union,0.).unwrap();
+    let whole = combined(&foot,&ring,Op::Union,0.).unwrap();
+    let moment = 9.*(8.+1.5)-PI*9./4.*(8.+3.-4.*3./(3.*PI));
+    close(volume(&ring),TAU*moment);
+    close(volume(&whole),36000.+PI*64.*20.+TAU*moment);
+}

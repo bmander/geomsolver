@@ -72,6 +72,9 @@ pub enum Code {
     E082,
     /// a section whose cutting plane is not parallel to the view it is drawn in (§6.11)
     E084,
+    /// a fillet the model cannot round exactly, or one a body takes with the wrong word: a
+    /// `union` of a convex edge's, a `cut` of a concave edge's (§6.9, issue #66)
+    E085,
     /// syntax
     E100,
     /// no such name
@@ -124,6 +127,7 @@ impl Code {
             Code::E081 => "E081",
             Code::E082 => "E082",
             Code::E084 => "E084",
+            Code::E085 => "E085",
             Code::E100 => "E100",
             Code::E101 => "E101",
             Code::E102 => "E102",

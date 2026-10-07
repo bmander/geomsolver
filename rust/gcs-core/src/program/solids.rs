@@ -153,6 +153,13 @@ pub(super) fn solids(
             say(at, format!("`{}` is {} itself", into.root.text, word.as_str()));
             continue;
         }
+        // a fillet is the ball's material, read off what it rounds: nothing stands on it or cuts it
+        if sk.solids.get(b.i()).is_some_and(|s| matches!(s.def, SolidDef::Fillet { .. })) {
+            diags.push(Diag { code: Code::E085, span: at, stmt: Some(st.id), message: format!(
+                "`{}` is a fillet, which takes no `{}`: a body takes it",
+                into.root.text, word.as_str()) });
+            continue;
+        }
         // **a swept solid that takes a feature is the body over its own sweep**: the name keeps
         // its index, so everything already reading it (a `through:` extent, a body's operand, a
         // view) reads the whole object, and the sweep moves to a stock of the same name, so a
@@ -299,4 +306,39 @@ fn res_forget(res: &mut Resolver, name: &str) {
             }
         }
     }
+}
+
+/// **A body takes a fillet with the word its edges call for** (§6.9, issue #66): the ball's
+/// material is added with `union` at a concave edge and taken away with `cut` at a convex one, so
+/// the other word — or a fillet as a body's stock or a bound — is refused where the fillet is
+/// written. A fillet that cannot be rounded at all says so itself (`solid::validate`).
+pub(super) fn fillet_words(sk: &Sketch, map: &SourceMap) -> Vec<Diag> {
+    let mut out = Vec::new();
+    for body in &sk.solids {
+        let SolidDef::Body { stock, on, through, bound } = &body.def else { continue };
+        let taken = std::iter::once((*stock, None))
+            .chain(on.iter().map(|&o| (o, Some(true))))
+            .chain(through.iter().map(|&o| (o, Some(false))))
+            .chain(bound.iter().map(|&o| (o, None)));
+        for (f, adds) in taken {
+            let s = &sk.solids[f as usize];
+            if !matches!(s.def, SolidDef::Fillet { .. }) { continue; }
+            let (fillet, of) = (&s.name, &body.name);
+            // (a fillet that cannot be rounded says so itself: there is no word to check)
+            let concave = || sk.fillet_blend(f as usize).ok().map(|b| b.concave);
+            let message = match adds {
+                None => format!("`{fillet}` is a fillet, which `{of}` takes with `union` or `cut`, \
+                                 not as its stock or a bound"),
+                Some(true) if concave() == Some(false) => format!("`{fillet}` rounds convex edges, whose \
+                                 material the ball rolls off: write `{fillet} cut {of}`, not `union`"),
+                Some(false) if concave() == Some(true) => format!("`{fillet}` fills concave edges, whose \
+                                 material the ball adds: write `{fillet} union {of}`, not `cut`"),
+                _ => continue,
+            };
+            let site = map.site_of(EntRef::solid(f as usize));
+            out.push(Diag { code: Code::E085, span: site.map(|s| s.span).unwrap_or_default(),
+                stmt: site.map(|s| s.stmt), message });
+        }
+    }
+    out
 }

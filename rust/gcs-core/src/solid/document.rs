@@ -68,6 +68,15 @@ pub fn reads(sk: &Sketch, si: usize, unit: f64) -> Vec<f64> {
                     }
                 }
             }
+            SolidDef::Fillet { a, b, r } => {
+                // what it rounds, read whole: a moved face moves the edge
+                v.extend([7.0, a.solid as f64, b.solid as f64, r.value]);
+                for side in [a, b] {
+                    v.push(side.face.len() as f64);
+                    for f in &side.face { name_read(f, &mut v); }
+                }
+                stack.extend(super::fillet::operands(sk, s as usize));
+            }
             SolidDef::Body { stock, on, through, bound } => {
                 v.extend([2.0, *stock as f64, on.len() as f64]);
                 v.extend(on.iter().map(|&i| i as f64));
@@ -199,6 +208,8 @@ pub(crate) fn evaluation_operands(sk: &Sketch, i: usize) -> Result<Vec<u32>, Str
     let s = sk.solids.get(i).ok_or_else(|| format!("no solid at index {i}"))?;
     match s.def {
         SolidDef::Through { body, .. } => material_sources(sk, body),
+        // a fillet is worked out from the two solids it rounds between
+        SolidDef::Fillet { .. } => Ok(super::fillet::operands(sk, i)),
         _ => Ok(s.operands()),
     }
 }
@@ -388,6 +399,24 @@ fn build(
         prims.push(loft.primitive(origin, &name));
         return Term::Prim(prims.len()-1);
     }
+    if let SolidDef::Fillet { .. } = sol.def {
+        // each edge's piece, swept as the faceted kernel sweeps a drawn face
+        let Ok(blend) = sk.fillet_blend(si as usize) else { return Term::Empty };
+        let mut term = Term::Empty;
+        for piece in &blend.pieces {
+            let Some(p) = piece.face_poly(origin, unit) else { return Term::Empty };
+            let built = match piece.carry {
+                super::fillet::Carry::Prism { length } => prism(&p, 0.0, length, &name),
+                super::fillet::Carry::Turn => revolve(&p, ((0.0, 0.0), (0.0, 1.0)),
+                    std::f64::consts::TAU, Sense::Ccw, unit, &name),
+            };
+            let Some(built) = built else { return Term::Empty };
+            prims.push(built);
+            let next = Term::Prim(prims.len() - 1);
+            term = if matches!(term, Term::Empty) { next } else { Term::Union(Box::new(term), Box::new(next)) };
+        }
+        return term;
+    }
     let Some(face) = sol.face() else { return Term::Empty };
     let Ok(polys) = face_polys(sk, face as usize, unit) else { return Term::Empty };
     let through_extent = if let SolidDef::Through { body, .. } = sol.def {
@@ -433,7 +462,8 @@ fn build(
                 let (a, b) = (sk.point_xy(l.p1 as usize), sk.point_xy(l.p2 as usize));
                 revolve(&p, (a, b), sweep.value, *sense, unit, &name)
             }
-            SolidDef::Body { .. } | SolidDef::Loft { .. } | SolidDef::Placed { .. } | SolidDef::Swept { .. } => unreachable!(),
+            SolidDef::Body { .. } | SolidDef::Loft { .. } | SolidDef::Placed { .. } | SolidDef::Swept { .. }
+                | SolidDef::Fillet { .. } => unreachable!(),
         };
         let Some(p) = built else { return Term::Empty };
         prims.push(p);

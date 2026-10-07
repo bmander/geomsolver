@@ -10,6 +10,9 @@
 #include <BRepBuilderAPI_MakeFace.hxx>
 #include <BRepBuilderAPI_MakeWire.hxx>
 #include <BRepBuilderAPI_Transform.hxx>
+#include <BRepExtrema_DistShapeShape.hxx>
+#include <BRepBuilderAPI_MakeVertex.hxx>
+#include <BRepFilletAPI_MakeFillet.hxx>
 #include <BRepCheck_Analyzer.hxx>
 #include <BRepCheck_Result.hxx>
 #include <BRepCheck_ListOfStatus.hxx>
@@ -587,6 +590,33 @@ int solvent_cad_boolean(Cad* cad,int a,int b,int operation_kind) noexcept {
             result = operation.Shape();
         }
         return cad->put(result);
+    });
+}
+// The oracle a fillet is held to (issue #66): OCCT's own rolling-ball fillet of `radius` (mm) on
+// the edges of solid `id` nearest each of `count` points (xyz each), one edge a point.
+int solvent_cad_fillet(Cad* cad,int id,double radius,const double* points,int count) noexcept {
+    SOLVENT_PROBE("solvent_cad_fillet");
+    return guarded(cad,[&] {
+        const TopoDS_Shape& shape = cad->at(id);
+        TopTools_IndexedMapOfShape edges;
+        TopExp::MapShapes(shape,TopAbs_EDGE,edges);
+        BRepFilletAPI_MakeFillet fillet(shape);
+        for (int i=0;i<count;++i) {
+            TopoDS_Vertex at = BRepBuilderAPI_MakeVertex(point(points+3*i));
+            int best = 0;
+            double nearest = 1e300;
+            for (int k=1;k<=edges.Extent();++k) {
+                BRepExtrema_DistShapeShape distance(at,edges(k));
+                if (distance.IsDone() && distance.Value() < nearest) { nearest = distance.Value(); best = k; }
+            }
+            if (best == 0 || nearest > 1e-6) throw std::runtime_error("no edge of the solid at a fillet's point");
+            fillet.Add(radius,TopoDS::Edge(edges(best)));
+        }
+        fillet.Build();
+        if (!fillet.IsDone()) throw std::runtime_error("OCCT's fillet failed");
+        auto result = fillet.Shape();
+        const double volume = validate(result);
+        return cad->put(result,true,result.ShapeType() == TopAbs_SOLID ? volume : std::nan(""));
     });
 }
 int solvent_cad_transform(Cad* cad,int source,const double* matrix) noexcept {

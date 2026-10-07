@@ -3,7 +3,7 @@
 use super::P;
 use crate::style::Classes;
 use crate::syntax::lexer::Tok;
-use crate::syntax::words::{over_chain, BLOCKS};
+use crate::syntax::words::{fillet_at, over_chain, BLOCKS};
 use crate::syntax::{
     Arg, Block, BlockKind, BodyWord, Branch, Chained, ClaimOver, Component, CurveSpec, CurveTarget,
     Decl, DeclName, EdgesOf, DerivedDecl, Formal, InBlock, InstArg, InstVal, Instance, Membership,
@@ -531,6 +531,13 @@ impl<'a> P<'a> {
             Some(_) if matches!(self.t.get(self.i + 1).map(|(t, _)| t),
                 Some(Tok::P('+' | '-' | '*' | '/' | '^'))) => self.param(name)?,
             _ if dotted_call => StmtKind::Instance(self.instance(name, lo)?),
+            // `root := fillet(boss, plate, r: 3mm)` — a solid, spelled by what it rounds (#66)
+            _ if fillet_at(&self.t, self.i) => {
+                self.i += 1;
+                let d = self.decl_as(crate::model::EntKind::Solid, Some(name), true)?;
+                self.end_of_stmt();
+                StmtKind::Decl(d)
+            }
             _ if self.chain_starts() => return self.chain(next_id, out, Some(name)),
             Some(w) if call
                 && !crate::constraints::is_operator(w)
