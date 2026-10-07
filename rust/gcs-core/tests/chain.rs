@@ -1285,7 +1285,7 @@ p1 distance(20, along: y) p3
 fn one_word_two_constraints_by_fixity() {
     let e = read(
         "\
-use std
+use std (horizontal)
 in std.front {
 p1 := point hint((0, 0))
 p2 := point hint((60, 3))

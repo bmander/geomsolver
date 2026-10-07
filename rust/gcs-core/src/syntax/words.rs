@@ -150,9 +150,25 @@ pub fn is_name(s: &str) -> bool {
         && cs.all(ident_char)
         && EntKind::parse(s).is_none()
         && !trails_decl(s)
-        && !["cut", "union", "bound"].contains(&s)
+        && !BODY_WORDS.contains(&s)
         && !MODIFIERS.contains(&s)
         && !OPENERS.contains(&s)
+}
+
+/// The words of the body rule (§6.9), which no name may be.
+const BODY_WORDS: [&str; 3] = ["cut", "union", "bound"];
+
+/// **A word the grammar keeps for itself** (§9.9): an element keyword, a trailing clause, a body
+/// word, a modifier or a word opening a statement — what no relation word may be defined as,
+/// whatever its fixity.  The constraint words are not here: which of them a definition collides
+/// with depends on the fixity (`constraints::builtin_word`).
+pub fn reserved_word(s: &str) -> bool {
+    EntKind::parse(s).is_some()
+        || TRAILERS.contains(&s)
+        || BODY_WORDS.contains(&s)
+        || ["through", "next", "prev"].contains(&s)
+        || MODIFIERS.contains(&s)
+        || OPENERS.contains(&s)
 }
 
 /// A trailing clause or joint; also terminates class lists and reserves optional names.

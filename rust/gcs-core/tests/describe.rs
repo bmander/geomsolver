@@ -113,7 +113,7 @@ fn the_report_says_where_a_name_landed() {
     let e = read(
         "\
 unit mm
-use std
+use std (vertical)
 component Arm(hub: point, tip: point) { hub distance(40) tip }
 in std.front {
 o := point

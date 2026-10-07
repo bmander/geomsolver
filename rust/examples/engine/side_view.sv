@@ -5,6 +5,7 @@
 
 use engine.dims
 use engine.parts
+use std (vertical)
 
 // The timing drive on the front face, edge on: the pulleys are rectangles, the belt two lines.
 component DriveSide(o: point, cam: point, dims: group) {

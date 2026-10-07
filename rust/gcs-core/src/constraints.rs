@@ -560,14 +560,10 @@ pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option
             (Curve, k) if round(k) => CKind::CurveCurvature,
             _ => return None,
         },
-        // the ordinate's zero; `horizontal` and `vertical` between points are `level(up)` and
-        // `level(right)` (`level_alias`)
+        // the ordinate's zero; `horizontal` and `vertical` between points are the standard
+        // library's words for `level(up)` and `level(right)` (`std.sv`, §9.9)
         "level" => match (a, b) {
             (Point, Point | Plane) => CKind::Level,
-            _ => return None,
-        },
-        "horizontal" | "vertical" => match (a, b) {
-            (Point, Point) => CKind::Level,
             _ => return None,
         },
         "angle" => match (a, b) {
@@ -606,16 +602,40 @@ pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option
     })
 }
 
-/// **`horizontal` and `vertical` between two points are aliases** (`docs/ordinate-plan.md`):
-/// `a horizontal b` is `a level(up) b`, the same height in the points' view, and `a vertical b`
-/// is `a level(right) b`.  The one entry the aliases have, so that it is the one thing that moves
-/// when the library can define a relation word (#94).
-pub fn level_alias(word: &str) -> Option<&'static str> {
-    match word {
-        "horizontal" => Some("up"),
-        "vertical" => Some("right"),
-        _ => None,
-    }
+/// **Whether the language itself has a word of this fixity** (§9.9): what a relation word may
+/// not be defined as.  Read off the tables that settle a statement — `infix_op` and `prefix_op`
+/// over every pair of kinds, the gauges, the calls and the words about solids — so a word the
+/// core comes to know is reserved with nothing here to edit.  `horizontal` is a prefix word of
+/// the core's (a line's direction) and an infix word of the standard library's (two points'
+/// level), which is why the question is asked of a fixity.  Every such word is an operator, so
+/// the tables are read once, over `OPERATORS`.
+pub fn builtin_word(word: &str, fixity: Fixity) -> bool {
+    static BUILTIN: std::sync::OnceLock<Vec<(&'static str, Fixity)>> = std::sync::OnceLock::new();
+    let table = BUILTIN.get_or_init(|| {
+        let has = |w: &str, f: Fixity| match f {
+            Fixity::Call => call_word(w),
+            Fixity::Prefix => {
+                matches!(gauge_op(w).map(CKind::operator), Some(Some((_, Fixity::Prefix))))
+                    || EntKind::ALL.iter().any(|&k| prefix_op(w, k).is_some())
+            }
+            Fixity::Infix => {
+                solid_word(w).is_some()
+                    || EntKind::ALL.iter().any(|&a| {
+                        EntKind::ALL.iter().any(|&b| infix_op(w, a, b, &|_| None).is_some())
+                    })
+            }
+        };
+        let mut out = Vec::new();
+        for w in OPERATORS {
+            for f in [Fixity::Call, Fixity::Prefix, Fixity::Infix] {
+                if has(w, f) {
+                    out.push((w, f));
+                }
+            }
+        }
+        out
+    });
+    table.contains(&(word, fixity))
 }
 
 /// The same for a word standing *before* its one operand.  `distance` on a line is sugar for the
@@ -1180,8 +1200,8 @@ impl CKind {
             | CKind::PointLineDistance
             | CKind::ParallelDistance
             | CKind::AnnularDistance => ("distance", Infix),
-            // the ordinate's zero; `horizontal` and `vertical` between points are its aliases
-            // (`level_alias`), which is how the printer spells the page's two (`operator_text`)
+            // the ordinate's zero; `horizontal` and `vertical` between points are the standard
+            // library's words for two of its readings (§9.9)
             CKind::Level => ("level", Infix),
             // touching: six kinds, told apart by the pair and by `at:`
             CKind::TangentLineCircle
@@ -1901,6 +1921,20 @@ pub struct Constraint {
     /// that draws the same label; the full callout layout leaves it out, and asking for it by id
     /// (editing that one) still draws it.  Presentation, like `class`.
     pub repeated: bool,
+    /// The defined word the statement was written with (§9.9), where it was one: `a horizontal
+    /// b` reaches the sketch as the `Level` its body states, and is described as written.
+    /// Presentation, like `class`; `graft` carries it while its operands survive.
+    pub word: Option<WordUse>,
+}
+
+/// A defined relation word as a statement wrote it — see `Constraint::word`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct WordUse {
+    pub word: String,
+    /// The entities the statement's operands named, in written order: two of an infix word.
+    pub ops: Vec<EntRef>,
+    /// The parentheses' text as written (`d: 5mm`), or empty.
+    pub args: String,
 }
 
 /// `+1` and `−1` as the words a statement writes them with — the one place the two meet, read by
@@ -1948,6 +1982,7 @@ impl Constraint {
             class: Default::default(),
             written: None,
             repeated: false,
+            word: None,
         }
     }
 

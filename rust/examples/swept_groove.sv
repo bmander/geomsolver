@@ -3,7 +3,7 @@
 // face leaves a round-bottomed channel. Change a number and apply (⌘↵) to watch it refine again;
 // ⌘B shows it in the glass box. Keep `arc_r + ball_r` inside the block's half width.
 unit mm
-use std
+use std (horizontal, vertical)
 
 block_w := 40mm      // the block's width and depth
 block_h := 12mm      // its height

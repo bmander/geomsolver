@@ -1,7 +1,7 @@
 //! Constraint arguments and dimension spellings.
 
 use super::P;
-use crate::constraints::{call_word, is_operator, Fixity};
+use crate::constraints::{builtin_word, call_word, is_operator, Fixity};
 use crate::style::Classes;
 use crate::syntax::lexer::Tok;
 use crate::syntax::{seed_arg, Arg, Name, OpArg, Ref, Relation, Span, Written};
@@ -16,13 +16,13 @@ impl<'a> P<'a> {
             Some(Tok::Ident(w)) if call_word(&w) => {
                 let word = Name { text: w, span: self.here() };
                 self.i += 1;
-                let args = self.op_args(&word.text)?;
+                let args = self.op_args(&word.text, Fixity::Call)?;
                 (word, Fixity::Call, Vec::new(), args)
             }
-            Some(Tok::Ident(w)) if is_operator(&w) => {
+            Some(Tok::Ident(w)) if is_operator(&w) || self.defined_prefix_ahead() => {
                 let word = Name { text: w, span: self.here() };
                 self.i += 1;
-                let args = self.op_args(&word.text)?;
+                let args = self.op_args(&word.text, Fixity::Prefix)?;
                 let r = self.refr()?;
                 (word, Fixity::Prefix, vec![r], args)
             }
@@ -32,13 +32,15 @@ impl<'a> P<'a> {
                     self.fail("a statement relates two things with a word between them");
                     return None;
                 };
-                if !is_operator(&w) {
+                // a word the language does not have may be one a file defines (§9.9), which
+                // elaboration knows and the parser does not; a word the grammar keeps is neither
+                if !is_operator(&w) && crate::syntax::reserved_word(&w) {
                     self.fail(&format!("`{w}` is not a constraint"));
                     return None;
                 }
                 let word = Name { text: w, span: self.here() };
                 self.i += 1;
-                let args = self.op_args(&word.text)?;
+                let args = self.op_args(&word.text, Fixity::Infix)?;
                 let right = self.refr()?;
                 (word, Fixity::Infix, vec![left, right], args)
             }
@@ -115,15 +117,21 @@ impl<'a> P<'a> {
             claim: false,
             class,
             class_span,
+            word: None,
         })
     }
 
     /// Read optional operator arguments. Slot pins stay in parentheses; seeds come
     /// from the separate hint clause.
-    pub(super) fn op_args(&mut self, word: &str) -> Option<Vec<OpArg>> {
+    pub(super) fn op_args(&mut self, word: &str, fixity: Fixity) -> Option<Vec<OpArg>> {
         // `horizontal (l := line)` — a named link after the word, not the word's own arguments
         if crate::syntax::words::named_link_at(&self.t, self.i) || !self.eat_p('(') {
             return Some(Vec::new());
+        }
+        // a defined word's parameters, by label, each kept as written (§9.9) — a word the
+        // language has in the other fixity included, as the expansion reads it
+        if !builtin_word(word, fixity) {
+            return self.word_args();
         }
         // `symmetry`'s line, `tangent`'s contact point (two cones touching at M) and `level`'s
         // direction stand in the parentheses unlabelled; none states a number, so nothing else

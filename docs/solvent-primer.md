@@ -213,7 +213,7 @@ between its two; everything else — the number, a selector, a third entity — 
 on the word:
 
 ```
-horizontal line1                    point1 horizontal point2
+horizontal line1                    point1 level(up) point2
 radius(25) circle1                  point1 distance(80) point2
 distance(6) line1                   point1 symmetry(line1) point2
 fix((0, 0)) p1             l1 angle(30) l2
@@ -232,7 +232,7 @@ stands in the parentheses:
 | `tangent` | infix | line–circle/arc (`at: p1`/`p2` for tangency at that end; `side:` for the centre's side); circle/arc–circle/arc (`external: true/false`); arc–line (`at: start`/`end`); spline or curve–line |
 | `equal` | infix | two lines (length) or two circles/arcs (radius) |
 | `curvature` | infix | spline or curve and a circle/arc: the circle becomes the osculating circle there. On a traced curve, exact (the body's Taylor orders); refused only for a body using a relation with no Taylor form, named in the error |
-| `horizontal`, `vertical` | prefix / infix | a line; or two points with no line between them, which is `level(up)` / `level(right)` |
+| `horizontal`, `vertical` | prefix | a line. Between two points they are `std`'s relation words (1.12), `level(up)` / `level(right)`: `use std (horizontal, vertical)`, then `a horizontal b` |
 | `level(dir)` | infix | two points with the same ordinate along `dir` — an axis, a line, or a view's word (`up`, `right`); a point and a plane with `u`/`v`: on the plane's line through its origin. The ordinate's zero: write it rather than `distance(0, along: …)`, which is refused |
 | `angle` | infix | two lines, directed (below); an axis and a line or axis, unsigned, in space (1.13). With a second line pair instead of a number, `l1 angle(l3, l4) l2` equates two angles |
 | `radius` | prefix | a circle or arc |
@@ -257,7 +257,7 @@ stands in the parentheses:
 | `a distance(60, along: x) b` | `b.x − a.x = 60`; `along: y` is the rise |
 | `a distance(60, along: right) b` | the same, said as a word; also `left`, `up`, `down` |
 | `a distance(60, along: t) b` | `(b − a)·t̂ = 60` along axis or line `t`, in space where they are in different views |
-| `a level(t) b` | the same with no distance: level along `t`; `a horizontal b` is `a level(up) b` |
+| `a level(t) b` | the same with no distance: level along `t`; `std`'s `a horizontal b` is `a level(up) b` |
 | `l1 angle(30) l2` | 30° **counter-clockwise** from `l1`'s direction to `l2`'s |
 | `l1 angle(30, sense: cw) l2` | 30° clockwise, i.e. `angle(-30)` said openly |
 | `l1 angle(l3, l4) l2` | angle `l1 → l2` equals angle `l3 → l4`, both counter-clockwise |
@@ -439,6 +439,8 @@ curve. A copy is an entity like any other — `tip[2]` may be dimensioned, dragg
 face's edge — and a relation on it moves the representative.
 
 ```
+use std (horizontal)
+
 in std.front {
   hub := point
   ring 3 about hub {
@@ -716,16 +718,47 @@ use std                  // std.front, std.top, std.side, std.up, std.x/y/z/back
 use hardware             // fasteners and fittings, in mm (needs a `unit` line): hardware.hexbolt14_af, …
 ```
 
-A module is a Solvent document read for its components and its top-level values and groups; its
-own drawing is not drawn. **Nothing is imported bare**: a module's names are always written with
-its full path — `engine.parts.Rod(…)`, `engine.dims.D`, `components.dims.vtwin_dims` (values
-and groups in the root body, components anywhere). A module names its own definitions bare. Only
-modules the file itself `use`s may be named; a transitive import needs its own `use` (a component
-call's error says so), and that includes `std` for `std.front`. Two modules may define one name; two
-components of one name in a module are E071, a value declared twice E001; a missing module is E070, and a module's own error is reported at
-the `use` that brought it in. A callout shows a param's bare name (`D`, not `engine.dims.D`).
-`engine.sv` is the worked case: a four-cylinder engine as a dimension module, a parts module and
-one module per part.
+A module is a Solvent document read for its components, its relation words and its top-level
+values and groups; its own drawing is not drawn. **Nothing is imported bare unless the `use`
+names it**: a module's names are written with its full path — `engine.parts.Rod(…)`,
+`engine.dims.D`, `components.dims.vtwin_dims` (values and groups in the root body, components
+anywhere) — or bare where the `use` lists them in brackets:
+
+```
+use std (horizontal, vertical)        // `a horizontal b` between points: std's word
+use components.dims (vtwin_dims)      // `dims: vtwin_dims` beside `components.dims.vtwin_dims`
+```
+
+Any name may be listed: a relation word, a component, a value, a group. Imports are per file
+and not transitive; there is no prelude (`use std` alone imports nothing bare). A relation word is
+only ever bare (no `a std.horizontal b`), so a file writing one imports it. A module names its own
+definitions bare. Only modules the file itself `use`s may be named; a transitive import needs its
+own `use` (a component call's error says so), and that includes `std` for `std.front`. Two modules
+may define one name; two components or two relation words of one name in a file are E071, a value
+declared twice E001; a missing module is E070, and a module's own error is reported at the `use`
+that brought it in. An import the module does not define is E101 at the name; one imported twice,
+from two modules, over the file's own definition, or over a word of the language's own is E071. A
+callout shows a param's bare name (`D`, not `engine.dims.D`). `engine.sv` is the worked case: a
+four-cylinder engine as a dimension module, a parts module and one module per part.
+
+**Relation words.** A file defines a word at its top level, as it defines a component — between
+two operands or before one, parameters in parentheses, `:=`, and the one relation it stands for:
+
+```
+a horizontal b := a level(up) b                  // std.sv
+a above(d) b := b distance(d, along: up) a       // r above(d: 7) q: r stands 7 above q
+flat l := l perpendicular t                      // E101: `t` is no operand or parameter
+```
+
+A statement writing the word is the body with operands and parameters put in. Parameters are
+given by label (`above(d: 7)`; by position is E004, a missing or unknown label E040); a number
+parameter is read in the body's dimensions, a word parameter where a selector word or a direction
+stands (`side: s`, `level(s)`). The body reads only its operands (and their members, `a.p1`) and
+parameters (E101 otherwise); a word defined over a keyword or a language word of the same fixity
+is E071 (`a horizontal b` is std's beside the language's `horizontal l`); an unknown word is E102,
+naming the import where a used module defines it. Errors in the expansion are reported at the
+word, culprits and `describe` lines read `p horizontal q`, and a dimension that is a parameter's
+argument draws and edits that argument. One relation per body; none inside a component.
 
 **Standard datums.** `use std` gives every document the axes `std.x` (right), `std.y` (away from
 the front's viewer), `std.z` (up) and `std.back` (−x), and four planes fixed at the world origin:
@@ -1013,7 +1046,7 @@ are refused. `examples/solid_tooth.sv` is an involute tooth written this way.
 
 ```
 unit mm
-use std
+use std (horizontal)
 
 in std.front {
   p0 := point hint((10, 0))
@@ -1778,7 +1811,7 @@ across and height up). No view says where it goes on paper: the `.svd` places ea
 
 ```
 unit mm
-use std
+use std (horizontal)
 shaft_angle := 90deg
 offset := 17.5mm
 
@@ -1930,7 +1963,7 @@ plane stands on two axes the solve turns, held square to each other, with its or
 ### 2.14 An arc placed by its length: DOF 0, well
 
 ```
-use std
+use std (horizontal)
 
 in std.front {
   o := point

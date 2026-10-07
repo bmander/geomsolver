@@ -11,7 +11,7 @@ await initCore();
 
 test('spatial seams, vertices and finite edges retain their defining geometry through the ABI', () => {
   const doc = Document.read(`unit mm
-use std
+use std (vertical)
 component Sphere(origin: point,size: Length) {
   private south := point hint((origin.x, origin.y-size))
   private north := point hint((origin.x, origin.y+size))

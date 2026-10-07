@@ -2,7 +2,7 @@
 // Change either number and apply (⌘↵) to see it rebuild; ⌘B shows it in the glass box.
 // Keep `tube` below `ring`, so the torus has a hole.
 unit mm
-use std
+use std (horizontal)
 
 ring := 20mm       // from the axis to the tube's centre
 tube := 6mm        // the tube's radius

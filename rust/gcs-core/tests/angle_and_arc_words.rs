@@ -44,7 +44,7 @@ fn said(e: &Elaborated) -> Vec<String> {
 /* -- arc length ---------------------------------------------------------------------------- */
 
 const QUARTER: &str = "\
-use std
+use std (horizontal)
 in std.front {
 o := point
 s := point hint((10, 0))
@@ -99,7 +99,7 @@ fix((0, 0)) o
 #[test]
 fn two_arc_lengths_tied_by_a_free_variable() {
     let src = "\
-use std
+use std (horizontal)
 in std.front {
 o1 := point
 s1 := point hint((10, 0))

@@ -83,7 +83,7 @@ fn a_claim_the_pose_happens_to_satisfy_is_consuming() {
     // not a theorem and the diagnosis says which kind of not
     let mut sk = drawn(
         "\
-use std
+use std (vertical)
 
 in std.front {
 a := point

@@ -24,7 +24,7 @@
 // and the drawing cannot say otherwise.
 
 unit mm
-use std
+use std (horizontal, vertical)
 use components.dims
 use components.parts
 use components.frame

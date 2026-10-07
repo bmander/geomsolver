@@ -7,7 +7,7 @@ mod vertices;
 
 const MODEL: &str = "\
 unit mm
-use std
+use std (vertical)
 in std.front {
 o := point
 q := point

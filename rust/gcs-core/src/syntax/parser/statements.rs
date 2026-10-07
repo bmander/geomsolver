@@ -224,7 +224,7 @@ impl<'a> P<'a> {
             // or a used module's by its full path (`engine.parts.Crank(…)`, §14.4)
             _ if self.call_at(self.i).is_some_and(|dotted| {
                 dotted || !crate::constraints::is_operator(&w)
-            }) =>
+            }) && !self.defined_prefix_ahead() =>
             {
                 let lo = self.here().lo as usize;
                 let name = Name { text: format!("#i{lo}"), span: Span::new(lo, lo) };
@@ -599,6 +599,13 @@ impl<'a> P<'a> {
     }
 
     fn unannotated_chain_or_one(&mut self, next_id: &mut u32, out: &mut Vec<Stmt>) -> Option<()> {
+        // the top level reads a definition before it gets here (`parse_at`), so this is one
+        // written inside a body, where a word would be a name of the body's (§9.9)
+        if self.word_definition_ahead().is_some() {
+            self.fail("a relation word is defined at the top of a file, as a component is, \
+                       not inside a body");
+            return None;
+        }
         // `in top { … }` before anything else: `in` opens no chain and no statement of any
         // other kind, and no name may be called `in`
         if self.peek_word("in")
@@ -773,8 +780,18 @@ impl<'a> P<'a> {
             name.push('.');
             name.push_str(&self.ident()?.text);
         }
+        // `use std (horizontal, vertical)`: the names this file reads bare (§14.4 [0.48])
+        let mut names = Vec::new();
+        if self.eat_p('(') {
+            names = self.ident_list()?;
+            if names.is_empty() {
+                self.fail("an import names what it reads bare: `use std (horizontal)`, or no \
+                           brackets at all");
+                return None;
+            }
+        }
         self.end_of_stmt();
-        Some(Use { name, span: Span::new(lo, self.prev_hi()) })
+        Some(Use { name, span: Span::new(lo, self.prev_hi()), names })
     }
 
     pub(super) fn component(&mut self, next_id: &mut u32) -> Option<Component> {

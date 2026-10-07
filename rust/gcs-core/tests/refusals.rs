@@ -92,7 +92,7 @@ fn a_param_declared_twice_is_an_error() {
 /// level, inside a block and inside a component alike.
 #[test]
 fn a_param_may_read_one_declared_below_it() {
-    let (e, d) = read("use std\nh := w / 2\nw := 60\nin std.front {\na := point\nb := point hint((w, 0))\na horizontal b\na distance(w) b\nc := point hint((0, h))\na vertical c\na distance(h) c\nfix((0, 0)) a\n}\n");
+    let (e, d) = read("use std (horizontal, vertical)\nh := w / 2\nw := 60\nin std.front {\na := point\nb := point hint((w, 0))\na horizontal b\na distance(w) b\nc := point hint((0, h))\na vertical c\na distance(h) c\nfix((0, 0)) a\n}\n");
     assert!(d.is_empty() && e.ok(), "{d:?}");
     let mut sk = e.sketch;
     assert!(solve(&mut sk, SolveOpts::default()).success);
@@ -176,7 +176,7 @@ fn a_contact_seeded_off_its_curve_still_solves() {
     let doc = |t: &str| {
         format!(
             "\
-use std
+use std (vertical)
 in std.front {{
 a := point
 b := point
@@ -517,7 +517,7 @@ fn a_free_dimension_keeps_its_word() {
     // `k` is 30, stated by a rise whose sign is arithmetic
     const AXIS: &str = "\
 unit mm
-use std
+use std (vertical)
 in std.front {
 a := point
 b := point
@@ -596,7 +596,7 @@ l1 angle(t) l3
 /// always were.
 #[test]
 fn a_word_across_views_with_no_meaning_in_space_is_refused() {
-    let views = "use std\n\
+    let views = "use std (horizontal, vertical)\n\
                  in std.front {\na := point hint((5, 5))\nla := line(hint((0, 0)), hint((20, 5)))\n}\n\
                  in std.side {\nb := point hint((10, 5))\nlb := line(hint((0, 0)), hint((20, 9)))\n}\n";
     for (stmt, code, needle) in [

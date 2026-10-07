@@ -59,12 +59,34 @@ components.dims.vtwin_dims)` (`vtwin/components/cylinder.sv`'s preview). Retired
 datum rotor, `toward:`, `from:`, `fold:`, `offset:`, `through:`, `attitude: free`, quaternions,
 hinges, `against`, the role rule, page placement, `std.ThreeViews`.
 
-**Nothing is imported bare (Solvent §14.4, [0.30]):** a used module's component, param or group
-is written by full path — `engine.parts.Rod(…)`, `hardware.nut14_af`,
-`components.dims.vtwin_dims` — only through the file's own `use`; a module names its own bare.
+**Nothing is imported bare unless the `use` names it (Solvent §14.4, [0.30], [0.48], #94):** a
+used module's component, relation word, param or group is written by full path —
+`engine.parts.Rod(…)`, `hardware.nut14_af`, `components.dims.vtwin_dims` — only through the
+file's own `use`, or bare where it lists the name: `use std (horizontal, vertical)` (`Use::names`;
+`Module::uses` keeps each module's `Use`s). `Program::imported` is the one lookup;
+`resolve_component`/`resolve_word` consult it after the file's own; `Walk::imported_params` puts
+values and groups under their bare names at a root (a group as an alias of the module's). Per
+file, not transitive, no prelude. `program/words.rs` checks every import as written: undefined
+E101, twice / two modules / over the file's own top-level name / over a built-in word E071; a
+module names its own bare.
 `Program::resolve_component(name, from)` resolves from the calling file (`Scope::module`);
 `component_id` is program-wide identity (keys `CurveDef`s). `Walk::used_params` qualifies module
-numbers (`module_params` keeps the module's own); groups register under their path. E071 is a
+numbers (`module_params` keeps the module's own); groups register under their path.
+**Relation words (§9.9, #94):** `a horizontal b := a level(up) b`, `flat(d) l := …`, `a above(d)
+b := b distance(d, along: up) a` at a file's top level (`syntax::WordDef`, `Program::words`,
+parsed by `parser/definitions.rs`: `word_definition_ahead`, `defined_prefix_ahead` before a call,
+`word_args` keeping labelled texts). The flattener expands a use (`flatten/words.rs`,
+`Walk::expand_word`): params by label (E004/E040), a number parameter written into the body's
+texts, a word parameter where a word stands, operands aliased, every body span moved to the use's
+word (a parameter's dimension to its argument, so `written` and `edit::set_dimension`'s
+`word_dimension` read it); nested words resolve from the definition's file, a cycle is E003, an
+unknown word E102 naming the import. `Relation::word` (`Worded`) rides to
+`Constraint::word` (`WordUse`, entities; `graft` keeps it while its operands survive) and
+`io::describe_with` reads it (`p horizontal q`). `flatten::word_faults` (closure E101, a
+reserved word or a builtin of the fixity E071 — `constraints::builtin_word` — names twice E001)
+is asked of every definition (`program/words.rs`) and blocks its expansion. One relation per body;
+none in a body. `horizontal`/`vertical` between points live in `rust/lib/std.sv`; the printer
+writes `level(up)` (`print::ordinate_text`). `tests/relation_words.rs` is the gate. E071 is a
 component defined twice in one file, the document's own included (a value twice is E001). `std.front` needs the document's own `use std`. A drawn callout drops a
 module path (`relations::unqualified`).
 
@@ -687,7 +709,7 @@ Conventions:
   The plane forms (`q distance(d, along: u) P`) are rewritten from `P.origin` along `P.u` in
   `program::relations::ordinate_operands`, which also refuses a plane as a direction, a word that
   also names a direction in scope, and a literal zero (E040, naming the level); `a horizontal b`
-  is `level(up)` (`constraints::level_alias`, the one entry #94 moves to `std`), and the printer
+  is `std`'s word for `level(up)` (`use std (horizontal)`, §9.9), and the printer
   (`print::ordinate_text`) spells each case back.  `tests/ordinate.rs` is the gate.
 - **A recorded root choice is one record of one triangle** (`decompose::branch_record`).  `ccw(a, b,
   c)` ("c left of a→b") is the same fact as `ccw(a, c, b)` with the sign turned, so a record is

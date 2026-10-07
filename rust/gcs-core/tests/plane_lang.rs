@@ -35,7 +35,7 @@ fn at(e: &Elaborated, n: &str) -> usize {
 #[test]
 fn a_component_carries_its_views_in_blocks() {
     let src = "\
-use std
+use std (vertical)
 component Peg(f: plane, r: plane, cf: point, cr: point, draw_r: Int) {
   in f {
     a := point hint((cf.x, cf.y + 10))
@@ -82,7 +82,7 @@ fn reconciled(e: &mut Elaborated) -> edit::Edit {
 
 /// Three planes of the document's own over the standard axes, held at the origin.
 const VIEWS: &str = "\
-use std
+use std (horizontal)
 front := plane(u: std.x, v: std.z)
 top := plane(u: std.x, v: std.y)
 right := plane(u: std.y, v: std.z)

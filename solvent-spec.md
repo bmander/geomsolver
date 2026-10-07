@@ -1,6 +1,17 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.47 — October 2026**
+**Specification, Draft 0.48 — October 2026**
+
+**[0.48] Relation words, and `use M (names)`.** A file may define a relation word at its top
+level, as it defines a component: `a horizontal b := a level(up) b`, `flat l := l perpendicular
+t`, `a above(d) b := b distance(d, along: up) a` (§9.9). A statement writing the word is its body
+with the operands and parameters put in, closed over them as a component's body is, and an error
+inside it is reported where the word is written. `use std (horizontal, vertical)` reads the
+names listed bare in the file that says it (§14.4) — any name a module defines: a word, a
+component, a value or a group — revising 0.30's "nothing is imported bare" to *nothing is
+imported bare unless the `use` names it*. There is no prelude. `a horizontal b` and `a vertical
+b` between points are `std`'s words now, not the language's: a file writing them says `use std
+(horizontal, vertical)`; `horizontal l` of a line is the language's own and needs nothing.
 
 **[0.47] `ring`, solved over one copy.** `ring N about C { … }` (§12.3) is implemented as §12.4
 asks: one representative per ring-local entity, the other copies its turns, owning no unknown —
@@ -1650,7 +1661,7 @@ What goes in the parentheses is a short list:
 | `tangent` | infix | (line, circle); +`at:` for a tangency at a named end; (circle, circle); (arc, line); (spline, line); (curve, line), §6.5 — **six**; **[0.24]** (sphere, line), (sphere, sphere), in space; **[0.26]** (cylinder, line), and (cone, cone) with the contact point in the parentheses, `k1 tangent(M) k2` |
 | `equal` | infix | (line, line) a length; (circle, circle) a radius |
 | `curvature` | infix | (spline, circle), (curve, circle) |
-| `horizontal`, `vertical` | prefix / infix | a line; or a pair of points, **[0.46]** `level(up)` and `level(right)` between them |
+| `horizontal`, `vertical` | prefix | a line. **[0.48]** Between a pair of points they are the standard library's relation words (§9.9), `level(up)` and `level(right)`: `use std (horizontal, vertical)` |
 | `level` | infix | **[0.46]** (p, p), the direction in the parentheses — an axis, a line, or the view's word; (p, plane) with `u`/`v`, from the plane's origin |
 | `angle` | infix | (line, line); **[0.27]** (line, line) with a second pair in the parentheses, `l1 angle(l3, l4) l2` (§9.4); **[0.42]** (axis, axis \| line), (line, axis), the unsigned angle in space |
 | `radius` | prefix | a circle or an arc; **[0.24]** a sphere; **[0.26]** a cylinder |
@@ -1824,6 +1835,26 @@ claim over crank.theta in (0deg, 360deg) {
 - An implementation MUST state that its answer is by **sampling**, and how many poses it took. A pose that did not solve or produced invalid solid geometry cannot certify the claim; the report identifies those failed parameter values, and a sweep with unresolved poses cannot be reported as holding.  A claim that holds at every sample is a claim that held at every sample; a swept claim is honest about that in the way a faceted one is honest about its margin.
 
 *Non-normative:* the two together are what make a drawing's claims a test suite for the *object* rather than for one picture of it at one moment.  The loop an author works in — write, run, read the verdicts — needs the verdicts to be about the thing being made.
+
+### 9.9 Relation words **[0.48]**
+
+```
+a horizontal b := a level(up) b
+flat l := l perpendicular t
+a above(d) b := b distance(d, along: up) a
+```
+
+A **relation word** is defined at the top level of a file — never inside a body — as a component is: the word between its two operand names (infix) or before its one (prefix), its parameters in parentheses after it, `:=`, and the **one** relation it stands for. A statement writing the word, `p horizontal q`, `r above(d: 7mm) q`, is that relation with the operands and the parameters put in, expanded where the statement stands (§14.1) as a component's body is.
+
+- **Operands are entities**, aliased as a component's entity formals are (P1); their kinds are checked by the relation they reach, where the word is expanded (`p above(d: 1) l` of a line is **E040**, as `l distance(…, along: up) p` would be). A body may read an operand's members (`a.p1`).
+- **Parameters are numbers or selector words**, given **by label** where the word is written, as a call's numbers are (§4.1): a value given by position is **E004**, a label the word has not is **E040**, and a parameter left out is **E040**. Whether a parameter is a number or a word is how its body reads it: a name read in a dimension, a pin or a seed is a number (written in as the text it was given, read where the word is written), and one standing where a selector's word or a direction does (`side: s`, `level(s)`, `along: s`) is a word; one read both ways is **E040**.
+- **The body is closed** over its operands and parameters (§5): a reference or a name it reads that is neither — another entity, a value of the file, a datum — is **E101** at the definition. A word whose body states another defined word is that word's expansion in turn, resolved from the file the body is written in; a word reached again while it is being expanded is **E003**.
+- **An error inside the expansion is reported where the word is written**: every place in the body is the word's own place in the statement that writes it, and a dimension that is one of the word's parameters is the argument the statement gave it — so its callout shows that argument, and editing the callout edits it.
+- A word that is a word of the language's own — an element keyword, a trailing clause, a modifier, a body word, a word opening a statement — or a constraint word of the language **of the same fixity** is **E071**; so is a word defined twice in one file with one fixity. An infix word and a prefix word of one spelling are two words: `std`'s `a horizontal b` stands beside the language's `horizontal l` of a line.
+- A word nothing defines where it is written is **E102**, naming the `use` that would import it where a module defines it.
+- The statement keeps its identity: its placement, classes and `claim` are the statement's, and a constraint the body states is **described in the word as written** (`p horizontal q`), not its expansion. A body states its relation alone: a placement or a class in it is a syntax error.
+
+A word's body is one relation. *Open, non-normative:* a body of several (`a coincident(P) b := a coincident P; b coincident P`) would make one statement several constraints, deleted together; it is not part of this draft, nor is a word as a value (#80). The standard library defines `horizontal` and `vertical` between two points this way (§14.4).
 
 ---
 
@@ -2098,11 +2129,23 @@ The constraint store is a **set**: two constraints identical after alias resolut
 ```
 use engine.dims
 use engine.parts
+use std (horizontal, vertical)
 ```
 
-A **module** is a Solvent document read for its components. `use NAME` at the top level of a document — never inside a body — asks for one; `NAME` is a dotted path, and **what it resolves to is the host's question**: an implementation with a working directory resolves `engine.parts` to `engine/parts.sv` beside the document, one without a filesystem resolves it against whatever library it carries, and both fall through to the other in that order. The core takes text and never opens a file. A module contributes exactly its **component definitions** and its top-level **values, inputs and groups** (§6.3, §8.1), available at the importing root; its own loose statements — its drawing — are not drawn, so a document that is also a library (`gear.sv`) is a module as it stands. A module's own `use`s are followed the same way, each module linked once however many times it is asked for, so a diamond is one copy and a cycle terminates. A module a host cannot resolve is **E070**, at the `use`.
+A **module** is a Solvent document read for its components and relation words. `use NAME` at the top level of a document — never inside a body — asks for one; `NAME` is a dotted path, and **what it resolves to is the host's question**: an implementation with a working directory resolves `engine.parts` to `engine/parts.sv` beside the document, one without a filesystem resolves it against whatever library it carries, and both fall through to the other in that order. The core takes text and never opens a file. A module contributes exactly its **component definitions**, its **relation words** (§9.9) and its top-level **values, inputs and groups** (§6.3, §8.1), available at the importing root; its own loose statements — its drawing — are not drawn, so a document that is also a library (`gear.sv`) is a module as it stands. A module's own `use`s are followed the same way, each module linked once however many times it is asked for, so a diamond is one copy and a cycle terminates. A module a host cannot resolve is **E070**, at the `use`.
 
-**[0.30] Nothing is imported bare.** A file reaches a module's component, param or group only by the module's **full path**, as its `use` spells it: `engine.parts.Crank(…)`, `engine.dims.bore`, `components.dims.vtwin_dims`. A value or group so named is read in the file's root body (components are closed, §5); a component may be called from anywhere in the file. A module names its *own* definitions bare. Only a module the file itself `use`s may be named — one reached through another module's `use` is that module's business, and naming it is an error that says which `use` to write. So two modules may define one name, and only two definitions in one file are **E071**. The standard datums follow the rule: `std.front` needs the file's own `use std`. A drawn callout of a dimension written `engine.dims.D` shows `D`. A module's own errors — a parse error, a faulty `param` — are reported to a reader of the document *at the `use` that brought the module in*, with the module's name, line and column in front of the message, since that line is the one the document can edit.
+**[0.30] [0.48] Nothing is imported bare unless the `use` names it.** A file reaches a module's component, relation word, param or group by the module's **full path**, as its `use` spells it: `engine.parts.Crank(…)`, `engine.dims.bore`, `components.dims.vtwin_dims` — or bare, where its `use` lists the name in brackets:
+
+```
+use std (horizontal, vertical)
+use engine.parts (Crank)
+```
+
+A value or group so named is read in the file's root body (components are closed, §5); a component may be called from anywhere in the file, and a relation word written anywhere in it. A module names its *own* definitions bare. Only a module the file itself `use`s may be named — one reached through another module's `use` is that module's business, and naming it is an error that says which `use` to write. So two modules may define one name, and only two definitions in one file are **E071**. A relation word is reached only bare: there is no `a std.horizontal b`, so a file writing one imports it.
+
+**[0.48] Imports.** Any name a module defines may be listed — a relation word (both fixities of its spelling), a component, a value or input, a group. The full path still works beside the bare name. Imports are **per file and not transitive**, as `use` is: a module's imports are its own, and a file importing from a module that imported a name has not imported it. There is **no prelude**: `use std` alone imports nothing bare, and a file writing `a horizontal b` says `use std (horizontal)`. A listed name the module does not define is **E101**, at the name; the same name imported twice, or from two modules, is **E071**; an import of a name the file defines itself at its top level — a component, a word, a value, a group, an instance or a declaration — is **E071**; and an import of a name that is a word of the language's own (a keyword, a constraint word, a built-in function or constant) that is not a relation word of the module's is **E071**, read by its path instead.
+
+The standard datums follow the rule: `std.front` needs the file's own `use std` (with or without names). A drawn callout of a dimension written `engine.dims.D` shows `D`. A module's own errors — a parse error, a faulty `param`, a faulty relation word or import — are reported to a reader of the document *at the `use` that brought the module in*, with the module's name, line and column in front of the message, since that line is the one the document can edit.
 
 **[0.21] Standard datums.** **[0.42]** `use std` makes the standard axes `std.x`, `std.y`,
 `std.z` and `std.back`, the standard planes `std.front`, `std.top`, `std.side` and `std.up`, and
@@ -2214,12 +2257,13 @@ The numerical method is unspecified. Whatever the method, a conforming solver:
 | E066 | withdrawn **[0.42]**: was `against` between planes that turn apart **[0.23; narrowed 0.26]** |
 | E067 | a plane that cannot stand on its held axes: two wholly held axes that do not meet or run alike, or a plane held where its held axes are not — a plane's axes pass through its origin (§6.7) **[0.43]** |
 | E070 | a `use` nothing resolves (§14.4) **[0.12]** |
-| E071 | a component defined twice in one file (§14.4) **[0.12]** **[0.30]** |
+| E071 | a component or a relation word defined twice in one file (§14.4, §9.9) **[0.12]** **[0.30]**; **[0.48]** a relation word defined over a word of the language's own, and an import of a name twice, from two modules, over the file's own definition, or over a built-in word (§14.4) |
 | E080 | a face or a solid the model cannot build (§6.8, §6.9) **[0.18]**: a loop that does not close, an edge that is not a line, an arc, a circle or a point, a circle standing *in* a loop rather than being one, **[0.19]** an edge that meets neither neighbour and so is walked two ways, a straight loop with fewer than three corners, edges in two planes, a swept solid written over anything but one face, a body made of what is not a solid, a prism swept nowhere, a feature written into a solid that is a face swept rather than a body; **[0.42]** a face over a point standing in space, and a prism's side generating in a plane the solve places (§6.15.2) |
 | E081 | invalid revolution axis or guided sweep path (§6.9) **[0.18]** |
 | E082 | a face of a body that the body no longer has (§6.9) **[0.18]** |
 | E084 | a section whose cutting plane is not parallel to the view it is drawn in (§6.11) **[0.18]** |
 | E101 | a name nothing in scope declares, or a member a scope cannot reach (§3.3, §5, §13.3) **[0.41]** |
+| E102 | **[0.48]** a relation word nothing defines where it is written (§9.9), naming the import that would where a module defines it |
 | E103 | a shape or a number the model cannot build: more children than the kind has slots (§6.1), an input whose value is not its type (§6.3), a seed reading a scalar that is not there (§6.4), a curve the model cannot trace (§6.5), an extent of the wrong dimension (§6.9), iteration over what is not a named chain (§12.8) |
 | E105 | a `fix` of a number the entity does not have (§13) **[0.34]** |
 | E107 | a measurement of the solved drawing where a number is needed before the solve (§6.14) **[0.27]** |
@@ -2375,9 +2419,13 @@ Square system, full rank at the hinted seed; one Newton basin per §12.4, lifted
 ## 19. Grammar (EBNF)
 
 ```ebnf
-program        = { use_decl | component | preview | statement } ;
+program        = { use_decl | component | word_def | preview | statement } ;
 preview        = "preview" "{" { statement } "}" ;                  (* at most one, §14.4 *)
-use_decl       = "use" IDENT { "." IDENT } ;                         (* a module, §14.4 *)
+use_decl       = "use" IDENT { "." IDENT }
+                 [ "(" IDENT { "," IDENT } ")" ] ;          (* a module, and names read bare, §14.4 *)
+word_def       = ( IDENT IDENT [ "(" IDENT { "," IDENT } ")" ] IDENT  (* infix, §9.9 [0.48] *)
+                 | IDENT [ "(" IDENT { "," IDENT } ")" ] IDENT )      (* prefix *)
+                 ":=" relation ;
 component      = "component" IDENT "(" [ formals ] ")" "{" { statement } "}" ;
 formals        = formal { "," formal } ;
 formal         = IDENT ":" type ;

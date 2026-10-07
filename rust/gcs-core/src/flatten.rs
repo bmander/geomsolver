@@ -29,6 +29,9 @@ mod values;
 mod expand;
 mod bindings;
 mod resolve;
+mod words;
+
+pub(crate) use words::faults as word_faults;
 
 pub(crate) use values::{substitute_with, value_aff};
 use values::{free, typed, value_of, substitute, reads_geometry};
@@ -274,6 +277,8 @@ struct Walk<'a> {
     rings: Vec<(String, Ref, Scope, usize, Span)>,
     /// Those resolved — see `Expansion::rings`.
     ring_infos: Vec<RingInfo>,
+    /// Each relation word reached, read once — see `expand_word`.
+    word_kinds: BTreeMap<usize, Option<std::rc::Rc<BTreeMap<String, words::Param>>>>,
 }
 
 /// Expand a program's root component into a flat list of declarations, constraints, gauges and
@@ -369,6 +374,7 @@ impl<'a> Walk<'a> {
             instantiating: Vec::new(),
             rings: Vec::new(),
             ring_infos: Vec::new(),
+            word_kinds: BTreeMap::new(),
         }
     }
 

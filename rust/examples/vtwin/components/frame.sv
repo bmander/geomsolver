@@ -1,7 +1,7 @@
 // The V-twin frame: plate and bearing support, two banks of ports, intake manifold,
 // exhaust vents, and inlet hardware. One printed part, printed foot down.
 
-use std
+use std (horizontal)
 use components.dims
 use components.parts
 use components.throttle

@@ -14,9 +14,9 @@ pub use highlight::{highlight, Tint};
 pub use names::{camel, entity_name, hidden, kind_initial, num, one_of, snake};
 pub use parser::{parse, parse_from, parse_legacy, parse_with_limits, ParseLimits};
 pub use print::{operator_text, render_flat, write_stmt_to, PrintError};
-pub(crate) use print::sel_text;
+pub(crate) use print::{sel_text, written_parts};
 pub use source::{line_col, Module, Name, Program, Span, StmtId, SynErr, Use, MAX_STMTS, MAX_TEXT};
-pub use words::{equal_kind, is_name};
+pub use words::{equal_kind, is_name, reserved_word};
 
 use crate::constraints::{CKind, Fixity};
 use crate::model::EntKind;
@@ -63,6 +63,40 @@ pub struct Component {
     pub span: Span,
     /// Which of the program's `modules` it was read from; `None` for one the document wrote.
     pub module: Option<usize>,
+}
+
+/// **A relation word defined in the language** (§9.9): `a horizontal b := a level(up) b`, `flat
+/// l := l perpendicular t`, `a above(d) b := b distance(d, along: up) a`.  Written at the top of
+/// a file, as a component is; a statement writing the word is the body with the operands and the
+/// parameters put in, expanded by the flattener where the statement stands
+/// (`flatten::words`).
+#[derive(Clone, Debug)]
+pub struct WordDef {
+    pub word: Name,
+    /// `Infix` over two operands or `Prefix` over one, as the head is written.
+    pub fixity: Fixity,
+    /// The operands' names, in written order — what the body's references may name.
+    pub operands: Vec<Name>,
+    /// The parameters in the word's parentheses: numbers or selector words, given by label
+    /// where the word is written (§4.1).
+    pub params: Vec<Name>,
+    /// The one relation the word stands for, as written after `:=`.
+    pub body: Relation,
+    pub span: Span,
+    /// Which of the program's `modules` it was read from; `None` for one the document wrote.
+    pub module: Option<usize>,
+}
+
+/// **A defined word, as the statement using it wrote it** (§9.9): carried on the relation its
+/// body expands to, so a constraint is described in the word and not in its expansion.  The
+/// operands (two of an infix word) are rescoped like any reference; the arguments are the
+/// parentheses' text.
+#[derive(Clone, Debug)]
+pub struct Worded {
+    pub word: String,
+    pub ops: Vec<Ref>,
+    /// `(d: 5mm)`, as written, or empty.
+    pub args: String,
 }
 
 #[derive(Clone, Debug)]
@@ -242,6 +276,21 @@ pub enum StmtKind {
     /// says nothing is in **drawing units**, and everything still dimension-checks, you simply
     /// cannot write `mm` because there is nothing to convert to.
     Unit(Name),
+}
+
+impl StmtKind {
+    /// The name a statement defines in its body — a declaration, a chain, an instance, a value or
+    /// a group — and so the one no other name there may take.
+    pub fn bound_name(&self) -> Option<&Name> {
+        match self {
+            StmtKind::Decl(d) => Some(d.name.key()),
+            StmtKind::Chain(c) => Some(c.name.key()),
+            StmtKind::Instance(i) => Some(&i.name),
+            StmtKind::Param(d) => Some(&d.name),
+            StmtKind::Group(g) => Some(&g.name),
+            _ => None,
+        }
+    }
 }
 
 /// `profile := line -> line -> line -> close`. The links remain declarations of the
@@ -1219,7 +1268,7 @@ impl Written {
             };
         }
         if let Some(w) = kind.word_slot() {
-            self.direction(w, &mut out);
+            Self::direction(w, &mut out);
         }
         Ok(out)
     }
@@ -1227,9 +1276,8 @@ impl Written {
     /// **An ordinate's direction, where it was written** (`docs/ordinate-plan.md`): `along:` an
     /// ordinate is measured on and the parentheses of `level` hold a word of
     /// `constraints::ALONG` or a reference.  The word goes to the kind's word slot — the core
-    /// infers the axis it names — and a reference to its direction slot; `horizontal` and
-    /// `vertical` between points say `up` and `right` (`constraints::level_alias`).
-    fn direction(&self, w: usize, out: &mut [Option<Arg>]) {
+    /// infers the axis it names — and a reference to its direction slot.
+    fn direction(w: usize, out: &mut [Option<Arg>]) {
         let t = 2;
         match out[w].take() {
             Some(Arg::Ref(r)) => out[t] = Some(Arg::Ref(r)),
@@ -1240,9 +1288,6 @@ impl Written {
                 out[t] = None;
                 out[w] = Some(Arg::Word(v));
             }
-        }
-        if let Some(v) = crate::constraints::level_alias(&self.word.text) {
-            out[w] = Some(Arg::Word(v.to_string()));
         }
     }
 }
@@ -1268,6 +1313,9 @@ pub struct Relation {
     pub class: Classes,
     /// Where the clause is, or an empty span where one would go.
     pub class_span: Span,
+    /// The defined word this relation was written with, where it was (§9.9): the flattener
+    /// replaces the statement's form by the word's body and keeps the word here.
+    pub word: Option<Worded>,
 }
 
 /// Parsed operators and generated registry calls are mutually exclusive.

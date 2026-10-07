@@ -328,9 +328,10 @@ impl<'a> Walk<'a> {
         let m = &self.prog.modules[k];
         let scope = Scope { prefixes: vec![format!("{}.", m.name)], module: Some(k), ..Scope::default() };
         let mut vals: BTreeMap<String, Aff> = BTreeMap::new();
-        let (body, uses) = (m.root.body.clone(), m.uses.clone());
+        let (body, uses) = (m.root.body.clone(), m.uses.iter().map(|u| u.name.clone()).collect::<Vec<_>>());
         // the modules it uses first, under their paths, so its own params may read them
-        let used = self.used_params(&uses);
+        let mut used = self.used_params(&uses);
+        used.extend(self.imported_params(Some(k)));
         for (name, v) in &used {
             vals.insert(name.clone(), v.clone());
         }
@@ -342,6 +343,33 @@ impl<'a> Walk<'a> {
             *slot = Some(vals.clone());
         }
         vals
+    }
+
+    /// **The values and groups a file imports bare** (§14.4 [0.48]): `use components.dims
+    /// (vtwin_dims)` reads `vtwin_dims` and its members as the module's, beside their full path.
+    /// A group so imported is an alias of the module's, so a call is handed it by either name.
+    pub(super) fn imported_params(&mut self, from: Option<usize>) -> BTreeMap<String, Aff> {
+        let mut out: BTreeMap<String, Aff> = BTreeMap::new();
+        let prog = self.prog;
+        for u in prog.use_stmts(from).iter().filter(|u| !u.names.is_empty()) {
+            let module = &u.name;
+            let Some(k) = prog.module_named(module) else { continue };
+            let params = self.module_params(k);
+            for n in u.names.iter().map(|n| &n.text) {
+                let member = format!("{n}.");
+                for (key, v) in &params {
+                    if key == n || key.starts_with(&member) {
+                        out.insert(key.clone(), v.clone());
+                    }
+                }
+                let full = format!("{module}.{n}");
+                if from.is_none() && self.group_names.contains(&full) {
+                    let root = Scope { prefixes: vec![String::new()], ..Scope::default() };
+                    self.aliases.push((n.clone(), Ref::new(full), root));
+                }
+            }
+        }
+        out
     }
 
     /// The params of the modules a file names in its `use`s, each under the module's full path

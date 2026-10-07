@@ -1,6 +1,6 @@
 // What every view draws with.
 
-use std
+use std (horizontal, vertical)
 use components.dims
 
 // A point placed from `o` by two ordinates.

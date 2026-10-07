@@ -13,7 +13,7 @@
 // its shank with a washer against the disc and one under the hairpin cotter, so the pin is
 // captured between its head and the cotter and nothing is threaded into plastic.
 
-use std
+use std (vertical)
 use components.dims
 use components.parts
 

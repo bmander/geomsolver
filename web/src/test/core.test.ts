@@ -1711,7 +1711,7 @@ test('two points can be levelled without a line between them', () => {
   drawnInFront(sk, a, b, c);
   a.x.fixed = true;
   a.y.fixed = true;
-  // level along the view's `up`, `a horizontal b`, and along its `right`, `a vertical c`; the
+  // level along the view's `up`, `a level(up) b`, and along its `right`, `a level(right) c`; the
   // core reads the axis off the view the two are drawn in
   sk.add(new C.Level(a, b, null, 'up'), new C.Level(a, c, null, 'right'));
   assert.ok(solve(sk).success);
@@ -2265,9 +2265,9 @@ test('a diagnostic and a source map index the string, not the core\'s bytes', ()
   const b = Document.read(broken);
   const err = b.diagnostics.find((x) => x.severity === 'error')!;
   assert.ok(err, JSON.stringify(b.diagnostics));
-  // `nonsense here` has the shape of an infix statement — a name, a word, a name — so what the
-  // parser complains about is the word that was supposed to relate them
-  assert.ok(broken.slice(err.lo, err.hi).startsWith('here'),
+  // `nonsense here` has the shape of a prefix statement — a word before its one operand — and
+  // no file defines the word (§9.9), so what is complained about is the word
+  assert.ok(broken.slice(err.lo, err.hi).startsWith('nonsense'),
             `the diagnostic covers ${JSON.stringify(broken.slice(err.lo, err.hi))}`);
   // the line the core counted and the line the string has agree
   assert.equal(broken.slice(0, err.lo).split('\n').length, err.line);

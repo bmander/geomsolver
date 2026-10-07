@@ -46,7 +46,7 @@ fn said(e: &Elaborated) -> Vec<String> {
 
 const VIEWS: &str = "\
 unit mm
-use std
+use std (horizontal, vertical)
 in std.front {
   a := point hint((10, 20))
   a2 := point hint((30, 5))
@@ -165,7 +165,7 @@ fn a_views_words_are_its_own_axes() {
         vec![
             "a distance(20, along: x) a2",
             "a distance(-15, along: y) a2",
-            "d horizontal a",
+            "d level(up) a",
             "d vertical a2",
             "b distance(5, along: u) std.top",
             "c level(v) std.side",
@@ -230,7 +230,7 @@ fn a_planes_own_words_are_against_the_plane() {
 
 #[test]
 fn a_zero_written_so_is_a_level() {
-    refused(&format!("{VIEWS}a distance(0mm, along: y) a2\n"), "E040", "`a horizontal a2`", "0mm");
+    refused(&format!("{VIEWS}a distance(0mm, along: y) a2\n"), "E040", "`a level(y) a2`", "0mm");
     refused(&format!("{VIEWS}b distance(0, along: v) std.top\n"), "E040", "`b level(v) std.top`", "0");
     refused(&format!("{VIEWS}a distance(0, along: std.x) b\n"), "E040", "`a level(std.x) b`", "0");
     // a zero a name stands for is a dimension like any other

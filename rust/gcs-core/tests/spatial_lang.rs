@@ -19,7 +19,7 @@ use crate::common::{ends, ent, off_line, read, refused, unit};
 /// document solves for, square to `y`.
 const AXES: &str = "\
 unit mm
-use std
+use std (horizontal)
 in std.front {
   gax := line
   fix((0, 0)) gax.p1
@@ -426,7 +426,7 @@ fn the_gate_in_words_solves_the_axis() {
 /// each, and a point in space.
 const TWO_VIEWS: &str = "\
 unit mm
-use std
+use std (horizontal)
 in std.front {
   a := point hint((10, 20))
   la := line(hint((0, 0)), hint((30, 10)))

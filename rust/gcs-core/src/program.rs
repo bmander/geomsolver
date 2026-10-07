@@ -24,6 +24,7 @@ mod edges;
 mod spatial_faces;
 mod rings;
 mod source_map;
+mod words;
 
 pub use diagnostics::{Code, Diag, Severity};
 
@@ -143,21 +144,19 @@ fn defined_twice(p: &Program, diags: &mut Vec<Diag>) {
     for c in p.components.iter().filter(|c| c.module.is_none()) {
         let Some(n) = &c.name else { continue };
         match first.get(n.text.as_str()) {
-            Some(was) => diags.push(Diag {
-                code: Code::E071,
-                span: n.span,
-                stmt: None,
-                message: format!(
-                    "`{}` is defined twice; the first is at line {}",
-                    n.text,
-                    p.line_col(was.lo as usize).0
-                ),
-            }),
+            Some(&was) => diags.push(defined_again(p, n, was)),
             None => {
                 first.insert(&n.text, n.span);
             }
         }
     }
+}
+
+/// E071 at `n`, defined in its file already at `was`.
+fn defined_again(p: &Program, n: &crate::syntax::Name, was: Span) -> Diag {
+    let line = p.line_col(was.lo as usize).0;
+    let message = format!("`{}` is defined twice; the first is at line {line}", n.text);
+    Diag { code: Code::E071, span: n.span, stmt: None, message }
 }
 
 pub fn elaborate(p: &Program) -> Elaborated {
@@ -198,6 +197,8 @@ pub fn elaborate(p: &Program) -> Elaborated {
     // -- a name a document declares over a built-in is said, before anything reads either.
     shadowing(p, &mut diags);
     defined_twice(p, &mut diags);
+    // -- and every relation word and import, as written (§9.9, §14.4)
+    words::check(p, &mut diags);
 
     // -- phase 1: names, in one pre-pass.  Indices come from declaration order within a kind,
     // which is `primitives()` order, which is the order phase 2 builds in.

@@ -1279,6 +1279,11 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             nc.class = c.class.clone();
             nc.written = c.written.clone();
             nc.repeated = c.repeated;
+            // the word it was written with, while every operand it named came along (§9.9)
+            nc.word = c.word.as_ref().and_then(|w| {
+                let ops = w.ops.iter().map(|&e| remap(e)).collect::<Option<Vec<_>>>()?;
+                Some(crate::constraints::WordUse { ops, ..w.clone() })
+            });
             let id = dst.add_quiet(nc);
             if let Some(&place) = src.placements.get(&c.id) {
                 dst.placements.insert(id, place);   // a dimension keeps where it was dragged to
@@ -1787,6 +1792,18 @@ pub fn describe(c: &Constraint) -> String {
 /// The wording is still this function's: a front end supplies names and never composes the
 /// line, which is what keeps the app and the CLI describing one constraint one way.
 pub fn describe_with(c: &Constraint, name: &dyn Fn(EntRef) -> Option<String>) -> String {
+    let claim = if c.claim { "claim " } else { "" };
+    // **a defined word is read as it was written** (§9.9): `a horizontal b`, not the level its
+    // body states — the statement a reader can find is the one in the word
+    if let Some(w) = &c.word {
+        let ops: Vec<String> =
+            w.ops.iter().map(|&e| name(e).unwrap_or_else(|| entity_name(e))).collect();
+        let args = if w.args.is_empty() { String::new() } else { format!("({})", w.args) };
+        return match ops.as_slice() {
+            [a, b] => format!("{claim}{a} {}{args} {b}", w.word),
+            ops => format!("{claim}{}{args} {}", w.word, ops.join(" ")),
+        };
+    }
     // **the operator, as a document writes it** (spec §9.1) — `syntax::operator_text` is the one
     // place a constraint becomes its spelling, so the drawing, the constraint list and the
     // program panel cannot come to say one constraint three ways.  Hidden unknowns are left out
@@ -1814,7 +1831,6 @@ pub fn describe_with(c: &Constraint, name: &dyn Fn(EntRef) -> Option<String>) ->
     // a claim is a different statement from the relation it is written over — it is judged, not
     // solved for — so it says so wherever a constraint is read out, in the word the document
     // spells it with.
-    let claim = if c.claim { "claim " } else { "" };
     format!("{claim}{text}")
 }
 
