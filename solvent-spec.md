@@ -1,6 +1,16 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.48 — October 2026**
+**Specification, Draft 0.49 — October 2026**
+
+**[0.49] Sets.** A shape may be written as the points that satisfy a predicate: `ball := { p |
+p distance(12mm) c }`, and a family of them as a component whose body is one, `component
+Sphere(center: point, r: Length) := { p | p distance(r) center }` (§6.21). A set adds nothing to
+the drawing. `q coincident S` states the body with `q` for its point; `l tangent S` states the
+body at a contact on `l` the solve finds, and the body's **linearisation** there along `l` — one
+condition for a line touching a surface, derived from the definition rather than written as a
+kernel per pair of kinds. `std.Sphere`, `std.Cylinder` and `std.Cone` are sets now; the line a
+cylinder or a cone is about is its `.about` (`axis` is an element's word, which a body cannot
+name bare), and `std.PointOnCone(p, k)` is retired: write `p coincident k`.
 
 **[0.48] Relation words, and `use M (names)`.** A file may define a relation word at its top
 level, as it defines a component: `a horizontal b := a level(up) b`, `flat l := l perpendicular
@@ -393,7 +403,7 @@ Compound entities expose sub-entities by field access. Sub-entities are ordinary
 | `Arc` | `.r` | `Length` |
 | `Sphere` | `.center` | `Point` — drawn in whichever view the declaration is `in` **[0.24]** |
 | `Sphere` | `.r` | `Length` **[0.24]** |
-| `Cone`, `Cylinder` | `.axis` | `Line` — named in the brackets, never minted: it is what places the surface in space **[0.26]** |
+| `Cone`, `Cylinder` | `.about` | `Line` — named in the brackets, never minted: it is what places the surface in space **[0.26]** **[0.49]** |
 | `Cone` | `.half` | `Angle` — written in degrees in `hint(half: …)`, stated by `angle(θ) k` **[0.26]** |
 | `Cylinder` | `.r` | `Length` **[0.26]** |
 | `Axis` | `.x`, `.y`, `.z` | its unit direction — seeded by `hint(dir: (…, …, …))` (normalised) and held by `fix(dir == (…, …, …))` **[0.42]** **[0.45]** |
@@ -1541,6 +1551,63 @@ A closed loop with valid support incidence is not yet proof of a disk interior, 
 orientation, geometric embedding or a valid solid. Those checks remain separate, as do
 global branch selection and tolerance-controlled curve/surface export. In particular,
 two different named edges can retrace the same curve and enclose no area.
+
+### 6.21 Sets **[0.49]**
+
+```sv
+ball := { p | p distance(12mm) c }
+
+component Cylinder(about: line, r: Length) := { p | p distance(r) about }
+
+component Cone(about: line, half: Angle) := { p |
+  private construction g := line(about.p1, p)
+  about angle(half) g
+}
+
+shaft := std.Cylinder(ax, r: 8mm)
+q coincident ball
+l tangent shaft
+```
+
+A **set** is the points that satisfy its body: `{ NAME | STATEMENTS }`, a name for the point —
+**bound**: it names whatever is put on the set — then one or more statements about it, on the
+line or on lines of their own up to the closing brace. Written as a value, `S := { p | … }`, it
+reads the names of the body it stands in. Written as a component's definition, `component
+Name(FORMALS) := { p | … }`, it is a **family**: an instance is the set, its formals bound as a
+call binds them (§4.1) and read by its name as an instance's are (`shaft.r`, `shaft.about`), a
+numeric formal left unbound an unknown of the drawing (§6.3). A set with no statement is a syntax
+error.
+
+**A set adds nothing to the drawing**: no unknown, no equation, nothing drawn. What it means is
+said where it is used, by two words:
+
+- `q coincident S` (either way round) states the body with `q` for the bound point, expanded
+  where the statement stands as a component's body is (§14.1). What the body declares privately
+  — the cone's generator — is made once for each use. `q` MUST be a point (**E040**).
+- `l tangent S` (either way round), `l` a line: a **contact** point standing in space, on `l`,
+  is minted for the use and the body is stated at it; and each relation of the body is stated a
+  second time as its **linearisation** there — the relation's derivative as the contact moves
+  along `l`'s direction, every other number it reads (the set's own) held. So `l`'s direction
+  lies in the set's tangent space at the contact: for a surface, one condition (the contact's
+  three unknowns against its two rows on `l`, the body's one and the linearisation's one), the
+  same count `distance(r)` from a sphere's centre states, and regular, the contact being an
+  unknown of its own rather than a double root of the line's distance. The contact starts at
+  `l`'s middle. A body that declares geometry of its own — a point, or a line not between points
+  it was given — has a motion along the set the linearisation would need too, and a tangency to
+  it is **E040**; so is `tangent` to a set from anything but a line, and a claimed tangency.
+
+Every relation a use states is **described as the statement wrote it** (`l tangent shaft`, §9.9),
+its placement and classes the statement's; a dimension the body states is drawn as a component
+body's is, and its linearisation draws nothing. A set named anywhere else a reference stands —
+`radius(5) ball`, a face's loop — is **E040**; `coincident` or `tangent` between two sets is
+**E040**, with parentheses **E040**; a set whose body uses itself, however indirectly, is
+**E003**. A set may be handed to a component as a `group` formal, as an instance is, and used
+there by the formal's name (`std.CircleOnSphere(k, ball, view)`).
+
+*Non-normative:* `std.Sphere`, `std.Cylinder` and `std.Cone` are sets. A circle written as a set
+— `{ p | p coincident P; p distance(r) o }`, lowered to the `Circle` kernel where the elaborator
+recognises it — the tangency of two sets at a point, a set drawn by tracing its points, and sets
+bounded by inequalities (arcs, segments, rays) are not part of this draft (#101).
 
 ## 7. Ports **[0.13]**
 

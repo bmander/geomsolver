@@ -30,12 +30,13 @@ mod expand;
 mod bindings;
 mod resolve;
 mod words;
+mod sets;
 
 pub(crate) use words::faults as word_faults;
 
 pub(crate) use values::{substitute_with, value_aff};
 use values::{free, typed, value_of, substitute, reads_geometry};
-use resolve::{written};
+use resolve::{lookup_raw, written};
 
 /// How deep components and blocks may nest.  A document is untrusted input and
 /// `wasm32-unknown-unknown` aborts rather than unwinding, so recursion is bounded here.
@@ -119,6 +120,9 @@ struct Scope {
     /// The file the body being walked was written in — the document (`None`) or a module — which
     /// is what a call's component name is resolved from (`Program::resolve_component`).
     module: Option<usize>,
+    /// Walking a set's body a second time for `l tangent S` (§6.21): each relation is emitted as
+    /// its linearisation at the contact along the line, and nothing else is made again.
+    twin: Option<crate::syntax::Along>,
 }
 
 impl Scope {
@@ -279,6 +283,8 @@ struct Walk<'a> {
     ring_infos: Vec<RingInfo>,
     /// Each relation word reached, read once — see `expand_word`.
     word_kinds: BTreeMap<usize, Option<std::rc::Rc<BTreeMap<String, words::Param>>>>,
+    /// Every set the walk made, by absolute name (§6.21) — see `sets::Site`.
+    sets: BTreeMap<String, sets::Site>,
 }
 
 /// Expand a program's root component into a flat list of declarations, constraints, gauges and
@@ -375,6 +381,7 @@ impl<'a> Walk<'a> {
             rings: Vec::new(),
             ring_infos: Vec::new(),
             word_kinds: BTreeMap::new(),
+            sets: BTreeMap::new(),
         }
     }
 
@@ -397,6 +404,9 @@ impl<'a> Walk<'a> {
     }
 
     fn finish(mut self) -> Expansion {
+        self.expand_pending();
+        // a set's uses, once every set is known (§6.21); a use may hold a block over a chain
+        self.expand_sets();
         self.expand_pending();
         let (mut flat, mut aliases) = self.resolve();
         if self.standard_datums {

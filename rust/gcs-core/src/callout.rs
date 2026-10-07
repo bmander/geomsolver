@@ -293,10 +293,11 @@ pub fn layout_selected(sk: &Sketch, unit: f64, ids: Option<&[u32]>) -> Vec<Callo
     for c in &sk.constraints {
         // a drag target is a number, not a dimension, and an arc's own definition is not
         // something the drawing states twice — nor is a block's dimension, once per copy,
-        // unless that copy is the one asked for
+        // unless that copy is the one asked for, nor a set's row stated as its linearisation
+        // (§6.21), whose number is its row's
         let asked = ids.map(|ids| ids.contains(&c.id));
         if asked == Some(false) || (c.repeated && asked.is_none())
-            || c.soft || c.intrinsic || !style_of(sk, c).dimensioned() {
+            || c.soft || c.intrinsic || c.along.is_some() || !style_of(sk, c).dimensioned() {
             continue;
         }
         if let Some(k) = pen.one(c) {

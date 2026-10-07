@@ -63,6 +63,38 @@ pub struct Component {
     pub span: Span,
     /// Which of the program's `modules` it was read from; `None` for one the document wrote.
     pub module: Option<usize>,
+    /// `component Sphere(center: point, r: Length) := { p | p distance(r) center }` — a family
+    /// of sets (§6.21): an instance *is* the set, its formals its named parts.  The body is
+    /// empty; what being on the set means is the literal's.
+    pub set: Option<SetLit>,
+}
+
+/// **A set, written as the points that satisfy a predicate** (§6.21): `{ p | p distance(12mm)
+/// c }`.  Making one adds nothing to the drawing; `q coincident S` is the body with `q` for
+/// `p`, and `l tangent S` the body at a contact on `l` with its linearisation along `l`
+/// (`flatten::sets`).
+#[derive(Clone, Debug)]
+pub struct SetLit {
+    /// The point the body is about — `p` — bound to the operand at each use.
+    pub bound: Name,
+    pub body: Vec<Stmt>,
+    pub span: Span,
+}
+
+/// `ball := { p | … }` — a set written in place, reading the names of the body it stands in.
+#[derive(Clone, Debug)]
+pub struct SetDecl {
+    pub name: Name,
+    pub lit: SetLit,
+}
+
+/// **A relation stated as its linearisation** (§6.21): the flattener's twin of a set's body row
+/// for `l tangent S` — the row's derivative as `point` moves along `line`'s direction, every
+/// other number of the row held.  Never written; the references are the expansion's own.
+#[derive(Clone, Debug)]
+pub struct Along {
+    pub point: Ref,
+    pub line: Ref,
 }
 
 /// **A relation word defined in the language** (§9.9): `a horizontal b := a level(up) b`, `flat
@@ -97,6 +129,12 @@ pub struct Worded {
     pub ops: Vec<Ref>,
     /// `(d: 5mm)`, as written, or empty.
     pub args: String,
+    /// The operand that is a set (§6.21), by its place among the operands and as the statement
+    /// wrote it — `ball` in `q coincident ball`: no entity, so it stands outside `ops`, described
+    /// by the name and never resolved.
+    pub set: Option<(usize, String)>,
+    /// The word as the statement wrote it, where a fault in what it expanded to is said.
+    pub span: Span,
 }
 
 #[derive(Clone, Debug)]
@@ -276,6 +314,8 @@ pub enum StmtKind {
     /// says nothing is in **drawing units**, and everything still dimension-checks, you simply
     /// cannot write `mm` because there is nothing to convert to.
     Unit(Name),
+    /// `ball := { p | p distance(12mm) c }` — a set (§6.21), see `SetLit`.
+    Set(SetDecl),
 }
 
 impl StmtKind {
@@ -288,6 +328,7 @@ impl StmtKind {
             StmtKind::Instance(i) => Some(&i.name),
             StmtKind::Param(d) => Some(&d.name),
             StmtKind::Group(g) => Some(&g.name),
+            StmtKind::Set(d) => Some(&d.name),
             _ => None,
         }
     }
@@ -763,6 +804,36 @@ pub struct Decl {
 }
 
 impl Decl {
+    /// A point built rather than parsed: seeded at `seed`, or at a place, with no clause in any
+    /// text to write a solve back into.
+    pub fn point(name: DeclName, seed: [f64; 2], seed_at: Option<AtRef>) -> Decl {
+        Decl {
+            annotations: Default::default(),
+            kind: EntKind::Point,
+            name,
+            children: Vec::new(),
+            seed: seed.to_vec(),
+            seed_text: vec![None; 2],
+            seed_spans: Vec::new(),
+            hint_span: None,
+            knots: None,
+            weights: None,
+            curve: None,
+            computed: None,
+            class: Default::default(),
+            class_span: Span::default(),
+            seed_at,
+            seed_names: Vec::new(),
+            sweep: None,
+            motion: None,
+            angular_span: None,
+            membership: Membership::default(),
+            list_span: Span::default(),
+            close: None,
+            mint_close: None,
+        }
+    }
+
     /// `k := leg.toe over theta in (0, 360)` — the declaration a curve definition makes.
     pub fn curve(name: DeclName, curve: CurveSpec, class: Classes, class_span: Span) -> Decl {
         Decl {
@@ -1316,6 +1387,8 @@ pub struct Relation {
     /// The defined word this relation was written with, where it was (§9.9): the flattener
     /// replaces the statement's form by the word's body and keeps the word here.
     pub word: Option<Worded>,
+    /// Set by the flattener on a set's body row stated as its linearisation (§6.21).
+    pub along: Option<Along>,
 }
 
 /// Parsed operators and generated registry calls are mutually exclusive.

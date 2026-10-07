@@ -1925,16 +1925,52 @@ pub struct Constraint {
     /// b` reaches the sketch as the `Level` its body states, and is described as written.
     /// Presentation, like `class`; `graft` carries it while its operands survive.
     pub word: Option<WordUse>,
+    /// **Stated as its linearisation** (§6.21): this row's derivative as one point moves along a
+    /// line's direction, every other number it reads held — what `l tangent S` makes of each row
+    /// of a set's body, at the contact on `l`.  `None` for every constraint stated as itself.
+    /// Not presentation: it picks the kernel (`kernels::linearised_kernel`) and appends the
+    /// line's ends to the columns, as `free` appends its column.
+    pub along: Option<Along>,
+}
+
+/// A linearisation's point and line, by index — see `Constraint::along`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Along {
+    pub point: usize,
+    pub line: usize,
+}
+
+impl Along {
+    /// The line's two ends, which the linearisation reads lifted.
+    pub fn ends(&self, sk: &Sketch) -> [usize; 2] {
+        let l = &sk.lines[self.line];
+        [l.p1 as usize, l.p2 as usize]
+    }
+}
+
+/// A line's two ends lifted, three columns each.
+fn lifted_ends(sk: &Sketch, line: usize) -> Vec<u32> {
+    let l = &sk.lines[line];
+    [l.p1, l.p2]
+        .iter()
+        .flat_map(|&p| {
+            let k = sk.lift_of(p as usize).expect("a relation in space is lifted at the add");
+            sk.lifts[k].x
+        })
+        .collect()
 }
 
 /// A defined relation word as a statement wrote it — see `Constraint::word`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct WordUse {
     pub word: String,
-    /// The entities the statement's operands named, in written order: two of an infix word.
+    /// The entities the statement's operands named, in written order: two of an infix word —
+    /// but for a set (§6.21), which is no entity and stands in `set`.
     pub ops: Vec<EntRef>,
     /// The parentheses' text as written (`d: 5mm`), or empty.
     pub args: String,
+    /// The operand that is a set, by its place among the operands and its name as written.
+    pub set: Option<(usize, String)>,
 }
 
 /// `+1` and `−1` as the words a statement writes them with — the one place the two meet, read by
@@ -1983,6 +2019,7 @@ impl Constraint {
             written: None,
             repeated: false,
             word: None,
+            along: None,
         }
     }
 
@@ -2156,6 +2193,12 @@ impl Constraint {
     /// cannot share a block — and the definition is only reachable through the sketch.  The ids
     /// run on past the static ones, which is what lets `System` hold a table of both.
     pub fn kernel_id_in(&self, sk: &Sketch) -> usize {
+        // a linearisation's kernel is its row's kernel's twin, past the families' (§6.21)
+        if self.along.is_some() {
+            return kernels::N_KERNELS
+                + FamilyKernel::ALL.len() * sk.curve_defs.len()
+                + self.kernel_id();
+        }
         match (self.kind.family_kernel(), self.curve_of()) {
             (Some(fk), Some(e)) => {
                 let def = sk.curves[e.i()].def as usize;
@@ -2405,6 +2448,23 @@ impl Constraint {
 
     /// The same, for a curve contact read on a *given* span — see `params_on`.
     pub fn consts_on(&self, sk: &Sketch, span: Option<usize>) -> Vec<f64> {
+        let inner = self.own_consts_on(sk, span);
+        let Some(a) = self.along else { return inner };
+        // a linearisation's: its row's kernel, the row's own constants, then which component
+        // of the line's direction moves each of the row's columns — the point's coordinates in
+        // space, 1 to 3, and 0 for every other number the row reads, held (§6.21)
+        let at = sk.lift_of(a.point).map(|k| sk.lifts[k].x);
+        let mut k = Vec::with_capacity(1 + inner.len() + 8);
+        k.push(self.kernel_id() as f64);
+        k.extend(inner);
+        for p in self.params_on_row(sk, span) {
+            let c = at.and_then(|x| x.iter().position(|&q| q == p)).map_or(0, |c| c + 1);
+            k.push(c as f64);
+        }
+        k
+    }
+
+    fn own_consts_on(&self, sk: &Sketch, span: Option<usize>) -> Vec<f64> {
         // a dimension written in terms of a free variable states no number, so what its kernel
         // wants is the map onto the unknown instead: every free twin takes (m, c) and nothing
         // else, which is why this is one branch and not eight
@@ -2639,6 +2699,35 @@ impl Constraint {
     /// choice, not two: `System::new` makes it once and passes it here and to `consts_on`, so a
     /// compiled block cannot end up with one span's columns and another's knots.
     pub fn params_on(&self, sk: &Sketch, span: Option<usize>) -> Vec<u32> {
+        let mut ps = self.params_on_row(sk, span);
+        // a linearisation reads the row's columns and then the ends of the line it is taken
+        // along, in space (§6.21)
+        if let Some(a) = self.along {
+            ps.extend(lifted_ends(sk, a.line));
+        }
+        ps
+    }
+
+    /// Whether this row may be stated as its linearisation at `a` (§6.21) — `Ok(false)` where it
+    /// does not read the point, so its linearisation is nothing — or why it may not.  The one
+    /// rule the elaborator and a document reader share.
+    pub fn linearisable(&self, sk: &Sketch, a: Along) -> Result<bool, String> {
+        if !a.ends(sk).iter().all(|&e| sk.has_place(e)) {
+            return Err("a line touching a set stands in space, or in a plane: this one is a 2D \
+                        sketch's"
+                .to_string());
+        }
+        if self.kind.family_kernel().is_some() {
+            return Err(format!(
+                "a set whose body states {} has no linearisation yet, so nothing is tangent to it",
+                crate::model::article(&crate::syntax::snake(self.kind.name()))
+            ));
+        }
+        Ok(self.reads_space() && self.lifted_points(sk).contains(&a.point))
+    }
+
+    /// The columns the row reads as itself — its own, and a free twin's after them.
+    fn params_on_row(&self, sk: &Sketch, span: Option<usize>) -> Vec<u32> {
         let mut ps = self.own_params_on(sk, span);
         // the free column always comes last, so appending it is the whole of what a free twin
         // needs from here — see `expr::Free`
@@ -2895,14 +2984,7 @@ impl Constraint {
             let z = sk.zero.expect("an axis mints the origin's Param");
             return [[z, z, z], sk.axes[e.i()].d].concat();
         }
-        let l = &sk.lines[e.i()];
-        [l.p1, l.p2]
-            .iter()
-            .flat_map(|&p| {
-                let k = sk.lift_of(p as usize).expect("a relation in space is lifted at the add");
-                sk.lifts[k].x
-            })
-            .collect()
+        lifted_ends(sk, e.i())
     }
 
     /// The axes whose place this reads (`CKind::place_slots`), which `Sketch::add` frees and
@@ -2986,17 +3068,26 @@ impl Constraint {
     /// Current residual norm — convenience for reporting and tests.
     pub fn error(&self, sk: &Sketch) -> f64 {
         let v = self.local_values(sk);
-        let (r, _) = kernels::eval_one(self.kernel_id(), &v, &self.consts(sk));
+        let (r, _) = self.eval(sk, &v);
         crate::linalg::norm(&r)
     }
 
     pub fn residual(&self, sk: &Sketch, v: &[f64]) -> Vec<f64> {
-        kernels::eval_one(self.kernel_id(), v, &self.consts(sk)).0
+        self.eval(sk, v).0
     }
 
     /// n_res x n_par, row-major.
     pub fn jacobian(&self, sk: &Sketch, v: &[f64]) -> Vec<f64> {
-        kernels::eval_one(self.kernel_id(), v, &self.consts(sk)).1
+        self.eval(sk, v).1
+    }
+
+    /// The residual and Jacobian at `v`, by the kernel this row runs: its own, or its
+    /// linearisation's (§6.21).
+    fn eval(&self, sk: &Sketch, v: &[f64]) -> (Vec<f64>, Vec<f64>) {
+        match self.along {
+            Some(_) => kernels::eval_with(&kernels::linearised_kernel(self.kernel_id()), v, &self.consts(sk)),
+            None => kernels::eval_one(self.kernel_id(), v, &self.consts(sk)),
+        }
     }
 }
 
@@ -3133,7 +3224,7 @@ fn validate_ordinate(
     }
     let c = Constraint::new(kind, a);
     for e in c.lifted_points(sk) {
-        if sk.plane_of(e).is_none() && sk.points[e].z.is_none() {
+        if !sk.has_place(e) {
             return Err(format!(
                 "{} is a point of a 2D sketch, with no place in space to relate",
                 name(EntRef::point(e))
@@ -3271,7 +3362,7 @@ pub fn validate(
         k if k.spatial() => {
             let c = Constraint::new(kind, args.to_vec());
             for p in c.lifted_points(sk) {
-                if sk.plane_of(p).is_none() && sk.points[p].z.is_none() {
+                if !sk.has_place(p) {
                     return Err(format!(
                         "{} is a point of a 2D sketch, with no place in space to relate",
                         name(EntRef::point(p))
@@ -3431,7 +3522,8 @@ pub fn same_relation(a: &Constraint, b: &Constraint) -> bool {
 }
 
 fn matches(a: &Constraint, b: &Constraint, want: impl Fn(SpecKind) -> bool + Copy) -> bool {
-    if a.kind != b.kind {
+    // a row and its linearisation are two equations about the same entities
+    if a.kind != b.kind || a.along != b.along {
         return false;
     }
     same_args(a, b, false, want) || (a.kind.commutative() && same_args(a, b, true, want))

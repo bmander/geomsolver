@@ -100,6 +100,12 @@ impl Sketch {
         Some(self.lifts.len() - 1)
     }
 
+    /// Whether point `p` has a place in space: drawn in a plane, or standing there itself — not a
+    /// point of a 2D sketch, which `lift_point` has nothing to lift.
+    pub fn has_place(&self, p: usize) -> bool {
+        self.plane_of(p).is_some() || self.points[p].z.is_some()
+    }
+
     /// Which hidden point lifts point `p`, if one has been minted.
     pub fn lift_of(&self, p: usize) -> Option<usize> {
         self.lifts.iter().position(|l| l.point as usize == p)

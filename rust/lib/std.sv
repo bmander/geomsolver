@@ -63,13 +63,12 @@ component CenteredRectangle(center: point, w: Length, h: Length) {
   center midpoint diagonal
 }
 
-// A sphere of radius `r` about `center`, which may be drawn in a view or stand in space: a centre
-// and a number, and nothing drawn.  What stands on it is said by distances from the centre, the
-// radius read by the instance's name — a point on it, `p distance(ball.r) ball.center`; a line touching it,
-// `ball.center distance(ball.r) l`; two touching outside, `a.center distance(a.r + b.r)
-// b.center` — and a circle drawn in another view lying on it is `std.CircleOnSphere`.  Leave `r`
-// unbound and it is an unknown of the drawing, which those distances share.  Not a solid: a ball
-// is a half disc turned about its diameter.
+// A sphere of radius `r` about `center`, which may be drawn in a view or stand in space: the points
+// `r` from the centre (§6.21), a set and nothing drawn.  A point on it is `p coincident ball`, a
+// line touching it `l tangent ball`; two touching outside are `a.center distance(a.r + b.r)
+// b.center`, the radius read by the instance's name, and a circle drawn in another view lying on
+// it is `std.CircleOnSphere`.  Leave `r` unbound and it is an unknown of the drawing.  Not a
+// solid: a ball is a half disc turned about its diameter.
 //
 //   use std
 //   in std.front {
@@ -77,9 +76,8 @@ component CenteredRectangle(center: point, w: Length, h: Length) {
 //   }
 //   ball := std.Sphere(c, r: 12mm)
 //   p := point hint((5, 10)) in std.side
-//   p distance(ball.r) ball.center
-component Sphere(center: point, r: Length) {
-}
+//   p coincident ball
+component Sphere(center: point, r: Length) := { p | p distance(r) center }
 
 // A circle `k` drawn in `view` lying on the sphere `s` all the way round: the sphere's centre on
 // the circle's axis, and one point of the circle — `q`, level with the centre in `view`, so it
@@ -96,52 +94,47 @@ component CircleOnSphere(k: circle, s: group, view: plane) {
   n perpendicular view
   k.center coincident n
   s.center coincident n
-  q distance(s.r) s.center
+  q coincident s
 }
 
-// A cylinder of radius `r` about the line `axis`: a line and a number, and nothing drawn.  What
-// stands on it is said by distances from the axis — a point on it, `p distance(shaft.r)
-// shaft.axis`; a line touching it, `shaft.axis distance(shaft.r) l` (the common perpendicular,
-// read in space across views, its side the seed's).  Leave `r` unbound and it is an unknown of
-// the drawing those distances share.
+// A cylinder of radius `r` about the line `about`: the points `r` from it (§6.21), a set and
+// nothing drawn.  A point on it is `p coincident shaft`, a line touching it `l tangent shaft`.
+// Leave `r` unbound and it is an unknown of the drawing.  (The line is not called `axis`: that
+// is an element's word, and a body could not name it bare.)
 //
 //   shaft := std.Cylinder(ax, r: 8mm)
-//   shaft.axis distance(shaft.r) l
-component Cylinder(axis: line, r: Length) {
-}
+//   l tangent shaft
+component Cylinder(about: line, r: Length) := { p | p distance(r) about }
 
-// A cone about the line `axis`, its apex the line's start and opening toward its end, `half` the
-// angle between the axis and every generator: a line and a number, and nothing drawn.  A point on
-// it is `PointOnCone`, two cones touching at a point `TangentCones`.  Leave `half` unbound
-// (`half: hint(30deg)`) and it is an unknown of the drawing.
+// A cone about the line `about`, its apex the line's start and opening toward its end, `half` the
+// angle between the axis and every generator: the points whose generator from the apex makes
+// that angle with the axis (§6.21) — on the nappe the axis points into — a set and nothing drawn.
+// A point on it is `p coincident k`, a line touching it `l tangent k`, two cones touching at a
+// point `TangentCones`.  Across views the angle is the angle in space; with the point in the
+// axis's own view it is the page's directed angle, so the point is on the generator
+// counter-clockwise of the axis.  Leave `half` unbound (`half: hint(30deg)`) and it is an unknown
+// of the drawing.
 //
 //   gc := std.Cone(gax, half: 60deg)
-//   std.PointOnCone(M, gc)
-component Cone(axis: line, half: Angle) {
-}
-
-// A point `p` on the cone `k`: the generator from the apex to `p` makes the cone's half-angle
-// with its axis — on the nappe the axis points into.  One equation.  Across views it is the angle
-// in space; with `p` in the axis's own view it is the page's directed angle, so `p` is on the
-// generator counter-clockwise of the axis.
-component PointOnCone(p: point, k: group) {
-  private construction g := line(k.axis.p1, p)
-  k.axis angle(k.half) g
+//   M coincident gc
+component Cone(about: line, half: Angle) := { p |
+  private construction g := line(about.p1, p)
+  about angle(half) g
 }
 
 // Two cones `k1` and `k2` touching at `m` with one tangent plane there, `m` on each beside it
-// (`PointOnCone`).  Each cone's tangent plane at `m` is the one through its generator square to
+// (`m coincident k1`).  Each cone's tangent plane at `m` is the one through its generator square to
 // its meridian plane, so the two are one when the plane through both generators stands square to
 // both meridian planes: its normal, `n`, lies in each.  Two equations.  What a hypoid's pitch
 // cones do at the mean point.
 //
 //   std.TangentCones(gc, pc, M)
 component TangentCones(k1: group, k2: group, m: point) {
-  private construction g1 := line(k1.axis.p1, m)
-  private construction g2 := line(k2.axis.p1, m)
+  private construction g1 := line(k1.about.p1, m)
+  private construction g2 := line(k2.about.p1, m)
   private t := plane(u: g1, v: g2)
-  private m1 := plane(u: k1.axis, v: g1)
-  private m2 := plane(u: k2.axis, v: g2)
+  private m1 := plane(u: k1.about, v: g1)
+  private m2 := plane(u: k2.about, v: g2)
   private n := axis
   n perpendicular t
   n parallel m1

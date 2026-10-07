@@ -1,7 +1,8 @@
-//! Cones and cylinders, the library's (`std.Cone`, `std.Cylinder`): a line and a number each, and
-//! what stands on them said by the words the drawing already has — a distance from a cylinder's
-//! axis, an angle at a cone's apex (`std.PointOnCone`), two cones' tangent planes made one
-//! (`std.TangentCones`) — against closed forms; the hypoid's pitch cones named and stated to
+//! Cones and cylinders, the library's (`std.Cone`, `std.Cylinder`): a line and a number each, sets
+//! of points (§6.21, `tests/sets.rs`), and what stands on them — a point on a cylinder its radius
+//! from the axis, one on a cone at its half-angle at the apex, a line its radius from a cylinder's
+//! axis by the common perpendicular, two cones' tangent planes made one (`std.TangentCones`) —
+//! against closed forms; the hypoid's pitch cones named and stated to
 //! touch, against the fold construction of them (`spatial_lang.rs`); and a stated plane's origin
 //! through a lifted program.
 use gcs_core::constraints::CKind;
@@ -92,12 +93,12 @@ fn a_cone_and_a_cylinder_are_a_line_and_a_number() {
 #[test]
 fn the_words_on_a_cone_and_a_cylinder() {
     // a distance from the axis, in space across views and on the page within one
-    assert_eq!(settles("a distance(c.r) c.axis"), CKind::PointLine3);
-    assert_eq!(settles("b := point hint((4, 4)) in std.front\nb distance(c.r) c.axis"),
+    assert_eq!(settles("a coincident c"), CKind::PointLine3);
+    assert_eq!(settles("b := point hint((4, 4)) in std.front\nb coincident c"),
                CKind::PointLineDistance);
-    assert_eq!(settles("c.axis distance(c.r) l"), CKind::LineLine3);
+    assert_eq!(settles("c.about distance(c.r) l"), CKind::LineLine3);
     // an angle at the apex
-    assert_eq!(settles("std.PointOnCone(a, k)"), CKind::Angle3);
+    assert_eq!(settles("a coincident k"), CKind::Angle3);
     // and the words are gone: `cone` and `cylinder` are names like any other
     refused(&format!("{VIEWS}k := cone(axis: ax)\n"), "E103", "no component named `cone`", "cone");
 }
@@ -105,7 +106,7 @@ fn the_words_on_a_cone_and_a_cylinder() {
 /// A point on a cylinder stands its radius off the axis.
 #[test]
 fn a_point_on_a_cylinder_is_its_radius_off_the_axis() {
-    let src = with("15", "30deg", "a distance(c.r) c.axis");
+    let src = with("15", "30deg", "a coincident c");
     let e = read(&src);
     let sk = solved(&e);
     let (p, d) = axis(&sk, &e, "ax");
@@ -119,7 +120,7 @@ fn a_point_on_a_cylinder_is_its_radius_off_the_axis() {
 /// points into.
 #[test]
 fn a_point_on_a_cone_makes_its_half_angle_at_the_apex() {
-    let src = with("10", "25deg", "std.PointOnCone(a, k)");
+    let src = with("10", "25deg", "a coincident k");
     let e = read(&src);
     let sk = solved(&e);
     let (apex, d) = axis(&sk, &e, "ax");
@@ -128,7 +129,7 @@ fn a_point_on_a_cone_makes_its_half_angle_at_the_apex() {
     assert!(dot(w, d) > 0.0, "on the nappe the axis points into");
     assert_eq!(dof(&with("10", "25deg", "")) - dof(&src), 1);
     // and a half-angle left unbound is found by the point
-    let e = read(&with("10", "hint(30deg)", "fix((130, 20)) a\nstd.PointOnCone(a, k)"));
+    let e = read(&with("10", "hint(30deg)", "fix((130, 20)) a\na coincident k"));
     let sk = solved(&e);
     let (apex, d) = axis(&sk, &e, "ax");
     let half = unknown(&sk, "k.half");
@@ -140,7 +141,7 @@ fn a_point_on_a_cone_makes_its_half_angle_at_the_apex() {
 fn a_line_touching_a_cylinder_is_its_radius_from_the_axis() {
     // the axis runs square to the side view, so the line touches it where it passes a circle
     // about the point the axis crosses that view at
-    let e = read(&with("12", "30deg", "fix((5, 3)) l.p1\ncb.axis distance(cb.r) l"));
+    let e = read(&with("12", "30deg", "fix((5, 3)) l.p1\ncb.about distance(cb.r) l"));
     let sk = solved(&e);
     let (p, d) = axis(&sk, &e, "bx");
     let (a, b) = ends(&sk, ent(&e, "l"));
@@ -227,7 +228,7 @@ fn the_named_hypoid_round_trips() {
     for i in 0..sk.points.len() {
         assert!(norm(sub(sk.world_point(i), again.world_point(i))) < 1e-7, "p{i}");
     }
-    let src = with("10", "hint(30deg)", "fix((130, 20)) a\nstd.PointOnCone(a, k)");
+    let src = with("10", "hint(30deg)", "fix((130, 20)) a\na coincident k");
     let e = read(&src);
     let sk = solved(&e);
     let out = gcs_core::edit::commit_seeds(&e, &sk, &e.program).text;

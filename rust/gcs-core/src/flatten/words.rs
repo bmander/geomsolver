@@ -206,6 +206,8 @@ impl<'a> Walk<'a> {
             word: used.word.text.clone(),
             ops: used.ops.clone(),
             args: crate::syntax::written_parts(&used.args).0.join(", "),
+            set: None,
+            span: used.word.span,
         });
         Some(out)
     }

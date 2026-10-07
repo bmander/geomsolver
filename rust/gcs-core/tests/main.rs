@@ -100,6 +100,7 @@ mod roots;
 mod ring;
 mod row_scale;
 mod seeds;
+mod sets;
 mod shared_contact;
 mod sheet;
 mod smoke;

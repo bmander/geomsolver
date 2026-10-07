@@ -7,7 +7,8 @@ use crate::syntax::words::{over_chain, BLOCKS};
 use crate::syntax::{
     Arg, Block, BlockKind, BodyWord, Branch, Chained, ClaimOver, Component, CurveSpec, CurveTarget,
     Decl, DeclName, EdgesOf, DerivedDecl, Formal, InBlock, InstArg, InstVal, Instance, Membership,
-    Input, Name, OpenJoint, ParamDecl, Ref, SolidRel, Source, Span, Stmt, StmtKind, SynErr, Ty, Use,
+    Input, Name, OpenJoint, ParamDecl, Ref, SetLit, SolidRel, Source, Span, Stmt, StmtKind, SynErr,
+    Ty, Use,
 };
 
 /// Apply block membership recursively. Faces and solids inherit their geometry's plane;
@@ -490,6 +491,12 @@ impl<'a> P<'a> {
         let call = matches!(self.t.get(self.i + 1).map(|(t, _)| t), Some(Tok::P('(')));
         let dotted_call = self.call_at(self.i) == Some(true);
         let kind = match word.as_deref() {
+            // `ball := { p | p distance(12mm) c }` — a set, the points its body holds (§6.21)
+            None if self.set_ahead() => {
+                let lit = self.set_lit(next_id)?;
+                self.end_of_stmt();
+                StmtKind::Set(crate::syntax::SetDecl { name, lit })
+            }
             // `dims := {bore: 16mm, axis: datum}` — a group, its members named in braces
             None if self.peek() == Some(&Tok::P('{')) => {
                 let fields = self.group_members()?;
@@ -814,6 +821,28 @@ impl<'a> P<'a> {
                 }
             }
         }
+        // `component Sphere(center: point, r: Length) := { p | … }` — a family of sets: the
+        // instance is the set, and its body is the literal's (§6.21)
+        if self.peek() == Some(&Tok::Define) {
+            self.i += 1;
+            if !self.set_ahead() {
+                self.fail("a component defined with `:=` is a set: `component Name(…) := { p | … }`");
+                return None;
+            }
+            let was = std::mem::replace(&mut self.in_comp, true);
+            let got = self.set_lit(next_id);
+            self.in_comp = was;
+            let set = got?;
+            self.end_of_stmt();
+            return Some(Component {
+                name: Some(name),
+                formals,
+                body: Vec::new(),
+                span: Span::new(lo, self.prev_hi()),
+                module: None,
+                set: Some(set),
+            });
+        }
         let was = std::mem::replace(&mut self.in_comp, true);
         let got = self.braced_body(next_id);
         self.in_comp = was;
@@ -825,7 +854,48 @@ impl<'a> P<'a> {
             body,
             span: Span::new(lo, self.prev_hi()),
             module: None,
+            set: None,
         })
+    }
+
+    /// Whether a set literal opens here: `{`, one name, `|` (§6.21), line breaks between them
+    /// read past as the lexer reads past them.
+    fn set_ahead(&self) -> bool {
+        if self.peek() != Some(&Tok::P('{')) {
+            return false;
+        }
+        let mut toks = self.t[self.i + 1..].iter().map(|(t, _)| t);
+        let mut next = || toks.find(|t| **t != Tok::Nl);
+        matches!(next(), Some(Tok::Ident(_))) && next() == Some(&Tok::P('|'))
+    }
+
+    /// `{ p | statement … }` — the bound point, then the body through the closing brace, each
+    /// statement as a braced body's (§6.21).
+    fn set_lit(&mut self, next_id: &mut u32) -> Option<SetLit> {
+        let lo = self.here().lo as usize;
+        self.i += 1; // `{`
+        self.skip_ends();
+        let bound = self.ident()?;
+        self.skip_ends();
+        self.i += 1; // `|`
+        if self.in_body as usize >= self.limits.max_depth {
+            self.fail(&format!("bodies may not nest more than {} deep", self.limits.max_depth));
+            return None;
+        }
+        self.in_body += 1;
+        let got = self.braced_stmts(next_id);
+        self.in_body -= 1;
+        let joint = self.open.take();
+        let body = got?;
+        self.no_open_joint(joint, "a set");
+        if body.is_empty() {
+            self.fail_at(Span::new(lo, self.prev_hi()), &format!(
+                "a set says what its points satisfy: `{{ {} | {} distance(r) c }}`",
+                bound.text, bound.text
+            ));
+            return None;
+        }
+        Some(SetLit { bound, body, span: Span::new(lo, self.prev_hi()) })
     }
 
     fn block(&mut self, kind: BlockKind, next_id: &mut u32) -> Option<Block> {

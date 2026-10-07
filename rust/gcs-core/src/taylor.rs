@@ -284,10 +284,7 @@ pub fn residual(kid: usize, v: &[Jet], k: &[f64], r: &mut [Jet], jrow: &mut Vec<
             (kn.res)(1, v0, k, &mut r0[..kn.n_res]);
             jrow.clear();
             jrow.resize(kn.n_res * kn.n_par, 0.0);
-            match kn.const_jac {
-                Some(cj) => jrow.copy_from_slice(cj),
-                None => (kn.jac)(1, v0, k, jrow),
-            }
+            kn.jac_into(v0, k, jrow);
             for t in 0..kn.n_res {
                 let mut out = [0.0; ORDER];
                 out[0] = r0[t];
