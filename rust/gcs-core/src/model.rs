@@ -23,6 +23,7 @@ mod geometry;
 mod measure;
 mod topology;
 mod attitude;
+mod turns;
 
 pub use entities::{
     Param, EntKind, Field, EntRef, PointE, LineE, CircleE, AxisE, ArcE, SplineE,
@@ -36,6 +37,7 @@ pub use spatial::{
     MotionDef, MotionE,
 };
 pub use construction::{ThreePointArc, three_point_arc};
+pub use turns::{Turn, Derivation};
 pub use geometry::{Box2, grow};
 pub use topology::{edge_ends, expand};
 pub(crate) use measure::polyline_distance;
@@ -106,6 +108,9 @@ pub struct Sketch {
     /// The curve families this document defines.  Document state like `branches`: a curve
     /// instance names one by index.
     pub curve_defs: Vec<CurveDef>,
+    /// A `ring`'s copies, each the representative turned (`model/turns.rs`): document state like
+    /// `branches`, saved and grafted, from which the derived parameters are worked out.
+    pub turns: Vec<Turn>,
     pub constraints: Vec<Constraint>,
     /// Recorded root choices (Stage 5), persisted with the document.
     pub branches: BTreeMap<String, i32>,

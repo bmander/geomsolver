@@ -197,6 +197,12 @@ impl Sketch {
         for p in &self.params {
             s.push(if p.fixed { '1' } else { '0' });
         }
+        // a ring's turns are compiled into the columns (`System::col_of`): which copy turns
+        // about what, and by how much
+        for tn in &self.turns {
+            let _ = write!(s, "|t{:?}{}{:?}{}{}{}{}", tn.copy.kind, tn.copy.idx, tn.rep.kind, tn.rep.idx,
+                tn.about.idx, tn.k, tn.n);
+        }
         s
     }
 

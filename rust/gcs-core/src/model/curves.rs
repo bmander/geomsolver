@@ -168,8 +168,11 @@ impl Sketch {
         v
     }
 
-    /// Where a curve is at `u`.
+    /// Where a curve is at `u` — a ring's turned copy where its representative is, turned.
     pub fn curve_point(&self, i: usize, u: f64) -> (f64, f64) {
+        if let Some((r, t)) = self.curve_turn(i) {
+            return self.turn_view_point(&t, self.curve_point(r, u));
+        }
         let d = &self.curve_defs[self.curves[i].def as usize];
         let x = self.curve_vars(i, u);
         match &d.body {
@@ -314,6 +317,9 @@ impl Sketch {
     /// one march across the domain, each sample warm-started from the last — which is also what
     /// carries its branch along the curve.
     pub fn curve_polyline(&self, i: usize) -> Vec<(f64, f64)> {
+        if let Some((r, t)) = self.curve_turn(i) {
+            return self.curve_polyline(r).into_iter().map(|p| self.turn_view_point(&t, p)).collect();
+        }
         let (a, b) = self.curve_domain(i);
         // what the polyline is a function of: the curve's variables at the interval's start
         // (the parameter first, then every coordinate it reads), the interval, the anchor and
@@ -368,6 +374,9 @@ impl Sketch {
 
     /// `n` chords of the curve over `[a, b]`, the same walk the polyline takes.
     pub(crate) fn curve_sweep(&self, i: usize, a: f64, b: f64, n: usize) -> Vec<(f64, f64)> {
+        if let Some((r, t)) = self.curve_turn(i) {
+            return self.curve_sweep(r, a, b, n).into_iter().map(|p| self.turn_view_point(&t, p)).collect();
+        }
         let d = &self.curve_defs[self.curves[i].def as usize];
         match &d.body {
             CurveBody::Exprs { x: tx, y: ty } => {

@@ -312,15 +312,19 @@ impl Sketch {
         for (i, p) in self.params.iter_mut().enumerate() {
             p.value = x[i];
         }
+        // which also brings a ring's turned copies up to what they are turns of
         crate::expr::sync_free(self);
         true
     }
 
+    /// The unknowns: every parameter neither held nor derived (a ring's turned copy's, which
+    /// `System` folds into the parameters it is worked out from).
     pub fn free_indices(&self) -> Vec<i32> {
+        let derived = self.derived_mask();
         self.params
             .iter()
             .enumerate()
-            .filter(|(_, p)| !p.fixed)
+            .filter(|&(i, p)| !p.fixed && !derived[i])
             .map(|(i, _)| i as i32)
             .collect()
     }
@@ -328,10 +332,12 @@ impl Sketch {
     /// Seeded Gaussian noise on every free parameter (warm starts, witness construction).
     pub fn perturb(&mut self, sigma: f64, seed: u32) {
         let mut rng = Rng::new(seed);
-        for p in self.params.iter_mut() {
-            if !p.fixed {
+        let derived = self.derived_mask();
+        for (i, p) in self.params.iter_mut().enumerate() {
+            if !p.fixed && !derived[i] {
                 p.value += rng.normal(0.0, sigma) / p.scale;
             }
         }
+        self.settle_turns();
     }
 }

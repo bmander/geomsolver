@@ -364,6 +364,17 @@ pub fn to_json(sk: &Sketch) -> Json {
             ("centerline", Json::Bool(roles.centerline)),
         ])).collect::<Vec<_>>();
     if !roles.is_empty() { doc.set("roles", Json::Arr(roles)); }
+    // a ring's turned copies, only when there is one (a curve is no JSON entity, so its turn is
+    // not either): which copy is which representative turned how far about what
+    let turns: Vec<Json> = sk.turns.iter().filter(|tn| tn.copy.kind != EntKind::Curve)
+        .map(|tn| object([
+            ("copy", ref_json(tn.copy)),
+            ("rep", ref_json(tn.rep)),
+            ("about", ref_json(tn.about)),
+            ("k", Json::Int(tn.k as i64)),
+            ("n", Json::Int(tn.n as i64)),
+        ])).collect();
+    if !turns.is_empty() { doc.set("turns", Json::Arr(turns)); }
     // the axes, only when there is one: a direction and its fixed flags, and where it is (read
     // back, since a relation placing it is re-added on load and frees the place again)
     let axes: Vec<Json> = sk
@@ -611,6 +622,31 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
         };
         if roles != Default::default() { sk.roles.insert(e, roles); }
     }
+    for item in d.get("turns").unwrap_or(&empty).arr() {
+        let ent = |key: &str| -> Result<EntRef, String> {
+            let a = item.get(key).ok_or(format!("a turn needs `{key}`"))?.arr();
+            if a.len() != 2 { return Err(format!("a turn's `{key}` must be [kind, index]")); }
+            let kind = EntKind::parse(a[0].as_str()).ok_or("unknown turn entity kind")?;
+            Ok(EntRef::new(kind, index(a[1].as_i64(), sk.count(kind), "turn entity")?))
+        };
+        let (copy, rep, about) = (ent("copy")?, ent("rep")?, ent("about")?);
+        let n = item.get("n").map(Json::as_i64).unwrap_or(0);
+        let k = item.get("k").map(Json::as_i64).unwrap_or(0);
+        let fits = copy.kind == rep.kind && matches!(copy.kind, EntKind::Point | EntKind::Circle | EntKind::Arc)
+            && matches!(about.kind, EntKind::Point | EntKind::Axis);
+        if !fits || n < 2 || k < 1 || k >= n {
+            return Err("a turn is a point, circle or arc turned k of n steps about a point or an axis".into());
+        }
+        sk.turns.push(crate::model::Turn { copy, rep, about, k: k as u32, n: n as u32 });
+    }
+    // a copy is worked out from what is not one: once, and never from another copy
+    let copies: BTreeSet<EntRef> = sk.turns.iter().map(|tn| tn.copy).collect();
+    if copies.len() != sk.turns.len()
+        || sk.turns.iter().any(|tn| copies.contains(&tn.rep) || copies.contains(&tn.about))
+    {
+        return Err("a turned copy is turned once, from an entity that is not itself a copy".into());
+    }
+    sk.settle_turns();
     Ok(sk)
 }
 
@@ -1273,6 +1309,24 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             }
         }
     }
+    // a ring's turns, where every entity of one came along; a copy whose representative or
+    // centre did not stands free where it is
+    let ent_map = |e: EntRef| -> Option<EntRef> {
+        match e.kind {
+            EntKind::Point => pt_index(e.i()).map(EntRef::point),
+            EntKind::Circle => circle_map[e.i()].map(EntRef::circle),
+            EntKind::Arc => arc_map[e.i()].map(EntRef::arc),
+            EntKind::Curve => curve_map[e.i()].map(|i| EntRef::new(EntKind::Curve, i)),
+            EntKind::Axis => axis_map[e.i()].map(|i| EntRef::new(EntKind::Axis, i)),
+            _ => None,
+        }
+    };
+    for tn in &src.turns {
+        if let (Some(copy), Some(rep), Some(about)) = (ent_map(tn.copy), ent_map(tn.rep), ent_map(tn.about)) {
+            dst.turns.push(crate::model::Turn { copy, rep, about, ..*tn });
+        }
+    }
+    dst.settle_turns();
     made
 }
 
@@ -1410,6 +1464,14 @@ impl Part {
                 by_free.entry(f.param).or_default().push(ci);
             }
         }
+        // a ring's turned copy moves with its representative and its centre, and they with it
+        let mut turned: BTreeMap<EntRef, Vec<EntRef>> = BTreeMap::new();
+        for tn in &sk.turns {
+            for (a, b) in [(tn.copy, tn.rep), (tn.copy, tn.about)] {
+                turned.entry(a).or_default().push(b);
+                turned.entry(b).or_default().push(a);
+            }
+        }
         // a plane is a wall when it cannot move: its axes held as well as where it stands
         let wall = |e: EntRef| match e.kind {
             EntKind::Plane => sk.plane_fixed(e.i()),
@@ -1444,6 +1506,7 @@ impl Part {
             if e.kind == EntKind::Point {
                 next.extend(parents[e.i()].iter().copied());
             }
+            next.extend(turned.get(&e).map(|v| v.as_slice()).unwrap_or(&[]));
             if e.kind == EntKind::Curve {
                 for f in sk.curves[e.i()].unknowns.iter().filter_map(free_param) {
                     open(f, &mut next);
