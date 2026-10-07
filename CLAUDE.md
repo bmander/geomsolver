@@ -296,7 +296,7 @@ the piece, 1e-4 for a body taking it.
 `tests/fillet.rs` (tee, pin, bore rim against independent quadratures), `gcs-cli/tests/fillet_oracle.rs`
 (OCCT's `BRepFilletAPI_MakeFillet` on its unified union, `solvent_cad_fillet`, links `TKFillet`; its
 own face set aside, OCCT approximating a sphere's), `rust/examples/solid_fillet{,_turned,_knob,_rail,
-_tee,_bore,_slot,_block,_lid}.sv`.
+_tee,_bore,_slot,_block,_lid,_runout}.sv`.
 **A chain of tangent edges** (rung 3): a ring may be partial (`Carry::Turn { sweep }`, its section at
 the edge's start; field: the ring bounded by a pie-slice prism); each end of a piece is flush
 (`stops`, against `Piece::at(f)`) or `Open`, and `derive` pairs open ends whose sections agree
@@ -328,8 +328,23 @@ the crossing square to `a₁ ∓ a₂` (`ssi::intersect`, closed form beside `pl
 curves of one meeting crossing each other are split there (`boolean::crossings_among`, conics by
 `crossings_in`); a line meets a cylinder in closed form, a tangent one a single touch at its foot
 (`query::line_cylinder`; sampled, a double root lands √tol off). `examples/solid_fillet_lid.sv`.
-Open: open traced edges, corners of curved faces or unequal radii, a fillet turning a sharp
-corner, variable radius, B-spline faces (rung 3), rung 4.
+**A traced run that ends** (rung 3): `roll` takes the run through the picked edge (faces on one
+surface the same way out are one side); at each odd end (`Stop`) every other face is one plane
+(else E085, rung 3), the spine's stretch runs on past it until the end section clears it by the
+reach, the piece is built open (`build_open`: caps square to the spine, the faces' meeting fitted
+past each vertex; `canal_face`, `copy_run`, `face_out` shared with `build` and `corner`) and cut
+off at each plane once (`trimmed`: in common with a block; `Rolled::trims`, each a `Trim`),
+whatever lies beyond. Every spine span but those leading from an end must clear each plane by the
+reach, by its poles' hull (closed form), else refused. Field: the canal leaf over an open spine
+(foot held to its ends) within each trim's half-space. Kernel rules it found: a trace leaving a
+sheet's patch ends on its edge (the last step bisected), at a seed crossing there exactly,
+crowding steps dropped (`ssi::trace_beside`); a root an edge meets a face at is known only as the
+stretch of the edge within the tolerance of the surface, and an exact crossing of that edge inside
+it is that root (`boolean`, `Loose`, the vertex it minted `gone`); two surfaces touching outside a
+face need no trace past there (`beside`'s `outside`). OCCT builds such a piece's faces split at a
+seam (`brep_oracle`, `fillet_oracle` allow as many of each kind or more). `examples/solid_fillet_runout.sv`.
+Open: a run ending on a curved face or a corner, corners of curved faces or unequal radii, a
+fillet turning a sharp corner, variable radius, B-spline faces (rung 3), rung 4.
 **Continuous motion solids:** `removal := solid(tool, under: generating, from: -30deg, to: 30deg)`
 is the union over the whole interval, not posed meshes; `at:` and intervals exclusive.
 `MaterialField::read` promotes static DAGs when a sweep appears; nested sweeps refused; caches

@@ -7,7 +7,7 @@
 #[allow(unused_imports)]
 use crate::fmath::Det;
 use super::geom::{Curve,Frame,Surface,V};
-use crate::space::{add,cross,dot,norm,scale,sub};
+use crate::space::{add,cross,distance,dot,norm,scale,sub};
 
 fn unit(a: V) -> V { scale(a,1./norm(a)) }
 
@@ -442,11 +442,15 @@ pub(crate) fn trace_beside(a: &Surface,b: &Surface,seeds: &[V],beside: &dyn Fn(V
     let h0 = (a.feature().min(b.feature())/12.).min(diag/24.).max(diag*1e-4);
     let inside = |p: V,pad: f64| (0..3).all(|k| p[k] >= lo[k]-pad && p[k] <= hi[k]+pad);
     let mut curves: Vec<Curve> = Vec::new();
+    // the seeds projected onto both, once; those landing on both are where a patch's edge crosses
+    // the other
+    let projected: Vec<V> = seeds.iter().map(|&s| probe.project(s)).collect();
+    let edge_seeds: Vec<V> = projected.iter().copied()
+        .filter(|&q| a.implicit(q).abs().max(b.implicit(q).abs()) <= 16.*tol).collect();
     // the curves traced so far, as traced (exact: each point a projection onto both surfaces), so a
     // seed on one is known by its distance to the curve and not to a polyline's chords
     let mut traced_so_far: Vec<Curve> = Vec::new();
-    for &seed in seeds {
-        let p0 = probe.project(seed);
+    for &p0 in &projected {
         if traced_so_far.iter().any(|c| crate::space::distance(c.point(c.inverse(p0)),p0) <= 8.*tol) { continue }
         let Some(_) = tangent(p0) else { if beside(p0) { continue } return Err(shallow(p0)) };
         let mut halves: Vec<Vec<V>> = Vec::new();
@@ -463,12 +467,35 @@ pub(crate) fn trace_beside(a: &Surface,b: &Surface,seeds: &[V],beside: &dyn Fn(V
                 // end of this direction. Past the edge a sheet's signed distance runs on along its
                 // tangent extension, so it is the distance to the patch itself that says so — read by
                 // the signed one alone, a trace went back and forth at an edge a hundred thousand times
-                let off = |s: &Surface| s.off_patch(q).unwrap_or(0.);
-                if a.implicit(q).abs().max(b.implicit(q).abs()).max(off(a)).max(off(b)) > 16.*tol {
+                let lands = |q: V| {
+                    let off = |s: &Surface| s.off_patch(q).unwrap_or(0.);
+                    a.implicit(q).abs().max(b.implicit(q).abs()).max(off(a)).max(off(b)) <= 16.*tol
+                };
+                if !lands(q) {
                     // a step too long for the projection to land: shorter, as a turn too sharp is
                     if h > h0*1e-4 { h /= 2.; continue }
                     if std::env::var_os("SOLVENT_BREP_DEBUG").is_some() {
                         eprintln!("brep:   a step left the surfaces after {} points: {:.1e} and {:.1e} off, h {h:.1e}",pts.len(),a.implicit(q),b.implicit(q));
+                    }
+                    // **a trace leaving a patch ends on its edge**: a march standing on an edge
+                    // crossing already (seeded there) ends there; else the last step's length is
+                    // halved between where it lands on the patch and where it does not, so the end is
+                    // the edge's crossing (a vertex the curve's edge ends at), not up to a step short
+                    // of it — and where an edge crossing it was seeded from lies within that step
+                    // ahead, that vertex, which a sheet's numerical foot finds only to its slack
+                    if edge_seeds.iter().any(|&s| distance(s,p) <= tol) { break }
+                    let along = |m: f64| probe.project(add(p,scale(t,m)));
+                    let (inside_h,_) = crate::roots::bisect(0.,h,|x,y| 0.5*(x+y),|x,y| y-x > tol,|m| lands(along(m)));
+                    let last = (inside_h > 0.).then(|| along(inside_h));
+                    let end = last.unwrap_or(p);
+                    let crossing = edge_seeds.iter().copied()
+                        .filter(|&s| dot(sub(s,p),t) > 0. && distance(s,end) <= (h+16.*tol).min(distance(s,p)+tol))
+                        .min_by(|x,y| distance(*x,end).total_cmp(&distance(*y,end)));
+                    if let Some(q) = crossing.or(last) {
+                        // the steps that crowd it dropped: a fit through points a step's ten
+                        // thousandth apart turns sharply between them
+                        while pts.len() > 1 && distance(*pts.last().unwrap(),q) < 0.25*h0 { pts.pop(); }
+                        if distance(q,*pts.last().unwrap()) > tol { pts.push(q) }
                     }
                     break
                 }
@@ -513,7 +540,6 @@ pub(crate) fn trace_beside(a: &Surface,b: &Surface,seeds: &[V],beside: &dyn Fn(V
     // each fitted through the seeds on it, exactly: they are where the faces' boundaries cross, the
     // vertices its edges will end at (a fit within `tol` of the traced points may pass farther from
     // a vertex between them, where a swept surface's curve runs on into its tangent)
-    let projected: Vec<V> = seeds.iter().map(|&s| probe.project(s)).collect();
     for c in traced_so_far {
         let Curve::Traced(t) = &c else { unreachable!() };
         let through: Vec<(f64,V)> = projected.iter().filter_map(|&p| {

@@ -39,7 +39,8 @@ fn refused(src: &str, code: Code, needle: &str) {
 
 fn volume(e: &Elaborated, name: &str) -> f64 {
     let key = format!("{name}.volume");
-    gcs_core::report::positions(&e.sketch, &e.map)
+    // the one solid asked of the report: every other solid of the document is left unevaluated
+    gcs_core::report::positions_where(&e.sketch, &e.map, &|n| n == name)
         .into_iter()
         .find(|(n, _)| *n == key)
         .unwrap_or_else(|| panic!("no `{key}` in the report"))
@@ -501,9 +502,10 @@ fn what_rung_two_cannot_round_yet_is_refused_with_its_reason() {
     );
     // a branch so short the ball would roll up past its end
     refused(&TEE.replace("from: 0mm, to: 25mm", "from: 0mm, to: 11mm"), Code::E085, "can hold");
-    // a branch at the main pipe's end meets it on an open curve, which the ball would roll off
+    // a branch at the main pipe's end: its crotch runs out onto the end, where the branch's foot on
+    // the end, rounded too, meets it
     refused(&TEE.replace("fix(x == 0, y == 0) c2", "fix(x == 27, y == 0) c2").replace("c2 := point\n", "c2 := point hint(x: 27)\n"),
-        Code::E085, "rung 3");
+        Code::E085, "meets a traced run of the same fillet where it ends");
     // a face swept from a spline has no offset in closed form
     refused(
         &format!("{}round := fillet(plate.lobe, plate.near, r: 1mm)\n", include_str!("../../examples/solid_spline.sv")),
@@ -699,13 +701,11 @@ fn a_pin_through_a_ball_off_its_centre_is_rolled_round_both_loops() {
 
 const BORE: &str = include_str!("../../examples/solid_fillet_bore.sv");
 
-#[test]
-fn a_bores_rim_is_rolled_off_round_its_saddle() {
-    let e = read_linked(BORE);
-    // the rim's material is the crotch's mirror: the ball rolls inside the main pipe's wall and
-    // outside the bore, its centre on the cylinders of radii 10 − 1 and 6 + 1
-    let (big, small, r) = (10.0, 6.0, 1.0);
-    let want = rolled(
+/// The rim's material where a bore of radius `small` is drilled square into a pipe of radius `big`:
+/// the crotch's mirror, the ball rolling inside the pipe's wall and outside the bore, its centre on
+/// the cylinders of radii `big − r` and `small + r`.
+fn bore_rim(big: f64, small: f64, r: f64) -> f64 {
+    rolled(
         &|phi: f64| {
             let (s, co) = phi.sin_cos();
             let (rb, rs) = (big - r, small + r);
@@ -714,11 +714,171 @@ fn a_bores_rim_is_rolled_off_round_its_saddle() {
         [&|p: V3| unit([0.0, p[1], p[2]]), &|p: V3| unit([-p[0], -p[1], 0.0])],
         [&|o, w| ray_cylinder(o, w, [0.0; 3], 0, big), &|o, w| ray_cylinder(o, w, [0.0; 3], 2, small)],
         r,
-    );
+    )
+}
+
+#[test]
+fn a_bores_rim_is_rolled_off_round_its_saddle() {
+    let e = read_linked(BORE);
+    let want = bore_rim(10.0, 6.0, 1.0);
     let got = volume(&e, "rim");
     assert!((got - want).abs() <= 1e-6 * want, "{got} != {want} (off by {:e})", got - want);
     assert_volume(volume(&e, "pipe"), volume(&e, "drilled") - got);
     field_agrees(&e, "pipe");
+}
+
+// -- rung 3: a traced run that ends ------------------------------------------------------------
+
+/// A rectangle in `std.side` (its own `y`, `z` as `x`, `y`), swept from the plane `x = 0` to
+/// `x = 40`: the half of space past it, within reach of the pipes, as `half`.
+const HALF: &str = "\
+in std.side {
+  h0 := point hint(x: -30, y: -30)
+  h1 := point hint(x: 30, y: -30)
+  h2 := point hint(x: 30, y: 40)
+  h3 := point hint(x: -30, y: 40)
+  (hs := line(h0, h1)) -> (he := line(h1, h2)) -> (hn := line(h2, h3)) -> (hw := line(h3, h0)) -> close
+  half_f := face(hs, he, hn, hw)
+}
+fix(x == -30, y == -30) h0
+fix(x == 30, y == -30) h1
+fix(x == 30, y == 40) h2
+fix(x == -30, y == 40) h3
+half := solid(half_f, from: 0mm, to: 40mm)
+";
+
+/// `src` with `HALF` written before `at` and `then` in place of it.
+fn halved(src: &str, at: &str, then: &str) -> String {
+    assert!(src.contains(at), "no `{at}`");
+    src.replacen(at, &format!("{HALF}{then}"), 1)
+}
+
+#[test]
+fn half_a_tees_crotch_runs_out_onto_the_face_it_was_cut_by() {
+    // the tee cut in half along the plane through both pipes' axes: its crotch an open run, ending
+    // square at that plane at both ends, the ball rolled on past and cut off there
+    let e = read_linked(&halved(TEE, "tee := solid(main)\nstem union tee\ncrotch := fillet(stem, main, r: 2mm)\n",
+        "halved := solid(main)\nstem union halved\nhalf bound halved\ntee := solid(halved)\n\
+         crotch := fillet(halved.stem, halved.main, r: 2mm)\n"));
+    let want = tee_crotch(10.0, 6.0, 2.0) / 2.0;
+    let got = volume(&e, "crotch");
+    assert!((got - want).abs() <= 1e-6 * want, "{got} != {want} (off by {:e})", got - want);
+    // the field's fillet stops at the plane too: in the crotch's corner on the kept side, not past it
+    let crotch = gcs_core::solid::MaterialField::read(&e.sketch, e.map.ent_named("crotch").unwrap().i(), 1e-10).unwrap();
+    // (a tenth from the corner where the cutting plane meets both pipes, toward the ball)
+    assert!(crotch.side([0.3, 6.09, 8.04]) < 0.0 && crotch.side([-0.3, 6.09, 8.04]) > 0.0);
+    field_agrees(&e, "tee");
+}
+
+#[test]
+fn half_a_bores_rim_runs_out_into_the_void_past_the_face_it_was_cut_by() {
+    // convex: the ball rolled on past the plane takes away nothing more there, and is cut off too
+    let e = read_linked(&halved(BORE, "pipe := solid(drilled)\n", "half bound drilled\npipe := solid(drilled)\n"));
+    let want = bore_rim(10.0, 6.0, 1.0) / 2.0;
+    let got = volume(&e, "rim");
+    assert!((got - want).abs() <= 1e-6 * want, "{got} != {want} (off by {:e})", got - want);
+    assert_volume(volume(&e, "pipe"), volume(&e, "drilled") - got);
+    field_agrees(&e, "pipe");
+}
+
+/// A wedge 40 long, its top sloping from 20 high at `x = 0` to 10 at `x = 40`, drawn in `std.front`
+/// and swept 24 deep (`y` from −24 to 0), with a boss of radius 6 standing on the floor through the
+/// slope at `(20, 0)`, centred on the wedge's near face, its root on the slope rounded to 2: `body`,
+/// `root`.
+const SLOPED: &str = "unit mm
+use std
+in std.front {
+  w0 := point
+  w1 := point hint(x: 40, y: 0)
+  w2 := point hint(x: 40, y: 10)
+  w3 := point hint(x: 0, y: 20)
+  (wb := line(w0, w1)) -> (we := line(w1, w2)) -> (wt := line(w2, w3)) -> (ww := line(w3, w0)) -> close
+  side_f := face(wb, we, wt, ww)
+}
+fix(x == 0, y == 0) w0
+fix(x == 40, y == 0) w1
+fix(x == 40, y == 10) w2
+fix(x == 0, y == 20) w3
+in std.top {
+  bc := point hint(x: 20, y: 0)
+  boss_k := circle(center: bc) hint(r: 6)
+}
+fix(x == 20, y == 0) bc
+radius(6) boss_k
+wedge := solid(side_f, from: 0mm, to: 24mm)
+boss := solid(face(boss_k), from: 0mm, to: 30mm)
+body := solid(wedge)
+boss union body
+root := fillet(boss, wedge.wt, r: 2mm)
+root union body
+";
+
+/// The fillet a ball of radius `r` fills round a boss of radius `big` about `(cx, cy)` standing
+/// through the plane `z = h0 − s x`, the whole way round, independently: its spine is where the
+/// plane offset by `r` meets the cylinder of `big + r`, an ellipse.
+fn sloped_root(big: f64, [cx, cy]: [f64; 2], [h0, s]: [f64; 2], r: f64) -> f64 {
+    let n = unit([s, 0.0, 1.0]);
+    let lift = r / n[2];
+    rolled(
+        &|phi: f64| {
+            let (sn, co) = phi.sin_cos();
+            let x = cx + (big + r) * co;
+            [x, cy + (big + r) * sn, h0 - s * x + lift]
+        },
+        [&|_: V3| scale(n, -1.0), &|p: V3| unit([cx - p[0], cy - p[1], 0.0])],
+        [&|o: V3, w: V3| { let d = dot(w, n); if d < 0.0 { -(dot(o, n) - h0 * n[2]) / d } else { f64::INFINITY } },
+            &|o, w| ray_cylinder(o, w, [cx, cy, 0.0], 2, big)],
+        r,
+    )
+}
+
+#[test]
+fn a_boss_on_a_slope_standing_off_its_edge_is_rounded_to_the_edge() {
+    // the boss centred on the wedge's near face: its root an arc of an ellipse, ending square at
+    // that face at both ends, half the root of a boss standing in the slope's middle
+    let e = read_linked(SLOPED);
+    let want = sloped_root(6.0, [20.0, 0.0], [20.0, 0.25], 2.0) / 2.0;
+    let got = volume(&e, "root");
+    assert!((got - want).abs() <= 1e-6 * want, "{got} != {want} (off by {:e})", got - want);
+    field_agrees(&e, "body");
+}
+
+#[test]
+fn what_a_run_that_ends_cannot_round_is_refused() {
+    // the tee bound by a cylinder across the main pipe: its crotch cut off by a curved face
+    let curved = TEE.replace("tee := solid(main)\nstem union tee\ncrotch := fillet(stem, main, r: 2mm)\n",
+        "in std.front {\n  rc := point hint(x: -6, y: 0)\n  round_k := circle(center: rc) hint(r: 14)\n}\n\
+         fix(x == -6, y == 0) rc\nradius(14) round_k\nround := solid(face(round_k), from: -30mm, to: 30mm)\n\
+         halved := solid(main)\nstem union halved\nround bound halved\ntee := solid(halved)\n\
+         crotch := fillet(halved.stem, halved.main, r: 2mm)\n");
+    refused(&curved, Code::E085, "ending on a curved face is rung 3");
+    // the half tee cut at the crotch's height too, both planes through its ends: each a corner
+    let cornered = halved(TEE, "tee := solid(main)\nstem union tee\ncrotch := fillet(stem, main, r: 2mm)\n",
+        "in std.front {\n  l0 := point hint(x: -40, y: 8)\n  l1 := point hint(x: 40, y: 8)\n  l2 := point hint(x: 40, y: 40)\n\
+         l3 := point hint(x: -40, y: 40)\n  (ls := line(l0, l1)) -> (le := line(l1, l2)) -> (ln := line(l2, l3)) -> (lw := line(l3, l0)) -> close\n\
+         lift_f := face(ls, le, ln, lw)\n}\nfix(x == -40, y == 8) l0\nfix(x == 40, y == 8) l1\nfix(x == 40, y == 40) l2\n\
+         fix(x == -40, y == 40) l3\nlift := solid(lift_f, from: -40mm, to: 40mm)\n\
+         halved := solid(main)\nstem union halved\nhalf bound halved\nlift bound halved\ntee := solid(halved)\n\
+         crotch := fillet(halved.stem, halved.main, r: 2mm)\n");
+    refused(&cornered, Code::E085, "a fillet ending at a corner is rung 3");
+    // the boss's foot on the wedge's near face rounded too: two straight runs up the face meet the
+    // root where it is cut off
+    refused(&SLOPED.replace("fillet(boss, wedge.wt", "fillet(boss, wedge"), Code::E085,
+        "meets a traced run of the same fillet where it ends");
+}
+
+const RUNOUT: &str = include_str!("../../examples/solid_fillet_runout.sv");
+
+#[test]
+fn a_fillet_cut_off_obliquely_by_the_face_it_runs_out_onto_reads_as_built() {
+    // the boss off the near face and the hole through the far one: each run ends where the face
+    // cuts it obliquely; the bodies are their operands and fillets, exactly, and the fields agree
+    let e = read_linked(RUNOUT);
+    let (root, rim) = (volume(&e, "root"), volume(&e, "rim"));
+    assert!(root > 0.0 && rim > 0.0);
+    assert_volume(volume(&e, "vent"), volume(&e, "drilled") - rim);
+    field_agrees(&e, "lug");
+    field_agrees(&e, "vent");
 }
 
 // -- rung 3: fillets carried along chains of tangent edges -------------------------------------

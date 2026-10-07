@@ -180,9 +180,10 @@ fn the_wankel_rotor_and_housing_export_and_measure_within_their_tolerance() {
 /// plate, filleted along both sides), a pipe tee's crotch and a bore's rim (balls rolled round traced
 /// loops, their faces fitted), an obround boss's foot and a rounded pocket's rim (chains of tangent
 /// edges), a block rounded all over and a pocket rounded inside (balls at the corners), and a
-/// block's rim, a pocket's floor and a triangular prism's cap rounded alone (runs mitred), each
-/// written by the core's kernel within 10 µm and its STL measured against its exact faces, the
-/// fillets' among them.
+/// block's rim, a pocket's floor and a triangular prism's cap rounded alone (runs mitred), and a
+/// boss's root and a hole's rim on a slope, cut off where they run out onto a face, each written
+/// by the core's kernel within 10 µm and its STL measured against its exact faces, the fillets'
+/// among them.
 #[test]
 fn the_filleted_examples_export_and_measure_within_their_tolerance() {
     let dir = std::env::temp_dir().join(format!("solventc-fillet-{}",std::process::id()));
@@ -193,7 +194,8 @@ fn the_filleted_examples_export_and_measure_within_their_tolerance() {
         ("solid_fillet_slot.sv","part","40846.580342 mm³, 32 faces"),
         ("solid_fillet_block.sv","pebble","10969.008701 mm³, 26 faces"),("solid_fillet_block.sv","tray","16501.085574 mm³, 27 faces"),
         ("solid_fillet_lid.sv","lid","11283.132681 mm³, 10 faces"),("solid_fillet_lid.sv","tray","16482.772884 mm³, 15 faces"),
-        ("solid_fillet_lid.sv","wedge","2918.186217 mm³, 8 faces")] {
+        ("solid_fillet_lid.sv","wedge","2918.186217 mm³, 8 faces"),
+        ("solid_fillet_runout.sv","lug","16453.073887 mm³, 14 faces"),("solid_fillet_runout.sv","vent","13965.430082 mm³, 9 faces")] {
         let (stl,step) = (dir.join(format!("{solid}.stl")),dir.join(format!("{solid}.step")));
         let (stl,step) = (stl.to_str().unwrap(),step.to_str().unwrap());
         let source = doc(file);

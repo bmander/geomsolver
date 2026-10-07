@@ -37,6 +37,11 @@ impl Pool {
     }
 }
 
+/// A root an edge meets a face of the other solid at, by its distance from the face's surface:
+/// the working edge, the vertex the root minted, its parameter, the edge's solid and index there,
+/// and the face met.
+struct Loose { edge: usize,vertex: u32,t: f64,side: usize,index: usize,face: usize }
+
 /// An edge of the working set: a stretch of a curve (or a pole) between two pooled vertices.
 #[derive(Clone,Debug)]
 struct WEdge { curve: EdgeCurve,t: [f64;2],v: [u32;2] }
@@ -256,6 +261,8 @@ fn arrange<'a>(a: &'a Brep,b: &'a Brep,tol: f64) -> Result<Arranged<'a>,String> 
     let mut on_face: [Vec<Vec<u32>>;2] = [vec![Vec::new();a.faces.len()],vec![Vec::new();b.faces.len()]];
     // each face's edges of the other solid lying in its surface (`Meets::Along`), working indices
     let mut along_face: [Vec<Vec<usize>>;2] = [vec![Vec::new();a.faces.len()],vec![Vec::new();b.faces.len()]];
+    // each root an edge meets a face at by its distance from the surface, at a vertex of its own
+    let mut loose: Vec<Loose> = Vec::new();
     for s in 0..2 {
         let other = 1-s;
         for (i,e) in solids[s].edges.iter().enumerate() {
@@ -305,13 +312,47 @@ fn arrange<'a>(a: &'a Brep,b: &'a Brep,tol: f64) -> Result<Arranged<'a>,String> 
                         if debug { eprintln!("brep: edge {i} of {} ({}) meets face {fi} ({}) at {q:?}{}: {:?}",["A","B"][s],c.kind(),
                             f.surface.kind(),if touch { ", touching" } else { "" },located[other].face_place(fi,q)); }
                         if located[other].face_place(fi,q) == Place::Out { continue }
+                        let fresh = pool.pts.len();
                         let v = pool.at(q);
                         cuts[we].push((t,v));
                         on_face[other][fi].push(v);
+                        if v as usize >= fresh { loose.push(Loose {edge:we,vertex:v,t,side:s,index:i,face:fi}); }
                     },
                 }
             }
         }
+    }
+    // **a root found where an edge meets a surface flatly is known only as the stretch of the edge
+    // within the tolerance of it**: a crossing of the same edge found exactly inside that stretch (a
+    // fillet's contact, where its canal lies tangent to the face the edge lies in) is that root, and
+    // the vertex the root minted is no vertex at all
+    let rooted: std::collections::BTreeSet<(usize,u32)> = loose.iter().map(|l| (l.edge,l.vertex)).collect();
+    let mut gone = std::collections::BTreeSet::new();
+    for l in &loose {
+        if cuts[l.edge].len() < 2 { continue }
+        let e = &solids[l.side].edges[l.index];
+        let EdgeCurve::Curve(c) = &e.curve else { continue };
+        let s = &solids[1-l.side].faces[l.face].surface;
+        let near = |t: f64| s.implicit(c.point(t)).abs() <= 16.*tol.max(e.tol);
+        // out from the root each way, doubling, as far as the edge stays that near
+        let reach = |dir: f64| {
+            let (mut d,mut last) = (1e-12*(e.t[1]-e.t[0]).abs().max(1e-300),l.t);
+            loop {
+                let t = (l.t+dir*d).clamp(e.t[0],e.t[1]);
+                if !near(t) { return last }
+                last = t;
+                if t == e.t[0] || t == e.t[1] { return last }
+                d *= 2.;
+            }
+        };
+        let (lo,hi) = (reach(-1.),reach(1.));
+        let exact = cuts[l.edge].iter().filter(|&&(t,w)| w != l.vertex && !rooted.contains(&(l.edge,w)) && t >= lo && t <= hi)
+            .min_by(|x,y| (x.0-l.t).abs().total_cmp(&(y.0-l.t).abs())).map(|x| x.1);
+        let Some(w) = exact else { continue };
+        if debug { eprintln!("brep: a root at {:?} met flatly is the crossing at {:?}",pool.pts[l.vertex as usize],pool.pts[w as usize]); }
+        cuts[l.edge].retain(|&(_,u)| u != l.vertex);
+        for u in on_face[1-l.side][l.face].iter_mut() { if *u == l.vertex { *u = w } }
+        gone.insert(l.vertex);
     }
     let t1 = clock.elapsed().as_secs_f64();
     // 2. every pair of faces: their surfaces' curves, kept where they lie in both faces
@@ -377,11 +418,17 @@ fn arrange<'a>(a: &'a Brep,b: &'a Brep,tol: f64) -> Result<Arranged<'a>,String> 
                         read.borrow_mut().push((t,lone));
                         lone
                     };
+                    // **where they touch outside a face**: no part of what is built, so no trace need
+                    // pass it (a fillet's canal run on past the face that cuts it off lies tangent to
+                    // the face it rolls on beyond the contact's end)
+                    let outside = |p: V| [(0,fa,sa),(1,fb,sb)].into_iter()
+                        .any(|(side,fi,s)| located[side].face_place(fi,s.point(s.inverse(p))) == Place::Out);
                     // beside a meeting already known: about a point they touch at, read alone, or
-                    // where they touch beside an edge they touch along — the cheapest asked first
+                    // where they touch beside an edge they touch along, or outside a face — the
+                    // cheapest asked first
                     let beside = |p: V| {
                         let known = read.borrow().iter().find(|(t,_)| distance(t.at,p) <= t.radius).map(|&(_,lone)| lone);
-                        known == Some(true) || shallow(p) && (on_contact(p) || known.is_none() && alone(p))
+                        known == Some(true) || shallow(p) && (on_contact(p) || outside(p) || known.is_none() && alone(p))
                     };
                     let (lo,hi): (V,V) = (std::array::from_fn(|k| boxes[0][fa].0[k].max(boxes[1][fb].0[k])),
                         std::array::from_fn(|k| boxes[0][fa].1[k].min(boxes[1][fb].1[k])));
@@ -521,7 +568,7 @@ fn arrange<'a>(a: &'a Brep,b: &'a Brep,tol: f64) -> Result<Arranged<'a>,String> 
         let EdgeCurve::Curve(c) = &e.curve else { return Vec::new() };
         let (lo,hi) = c.bounds(e.t);
         (0..pool.pts.len() as u32).filter_map(|v| {
-            if v == e.v[0] || v == e.v[1] || cuts[we].iter().any(|&(_,w)| w == v) { return None }
+            if v == e.v[0] || v == e.v[1] || gone.contains(&v) || cuts[we].iter().any(|&(_,w)| w == v) { return None }
             let p = pool.pts[v as usize];
             if (0..3).any(|k| p[k] < lo[k]-pad || p[k] > hi[k]+pad) { return None }
             let mut t = c.inverse(p);

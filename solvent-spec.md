@@ -15,7 +15,9 @@ meet on no line or circle (a pipe tee's crotch: the ball's centre traced where t
 boss's foot: straight runs and parts of rings, each ending in the section the next begins in), and
 where three of its edges meet between three planes, a patch of the ball (a block rounded all over),
 and where two meet with the third edge left sharp, a mitre (a block's top rim alone: each run
-carried on to the plane beyond, the two crossing) — and the rest is refused by name (**E085**).
+carried on to the plane beyond, the two crossing), and a traced meeting cut short by a plane (a
+boss standing off a sloped plate's edge: the ball rolled on past it, the plane cutting the fillet
+off) — and the rest is refused by name (**E085**).
 
 **[0.48] Relation words, and `use M (names)`.** A file may define a relation word at its top
 level, as it defines a component: `a horizontal b := a level(up) b`, `flat l := l perpendicular
@@ -1104,12 +1106,19 @@ lip cut block                                //   ... convex: the ball rolls the
   the spine the ball's arc runs between the directions to the two faces; the fillet's `round` is
   that canal, fitted as a B-spline surface within the export's fit (a ten-millionth of the part),
   its touches on the faces its edges. Its faces are `round`, `a` and `b`; it has no caps.
+- **A traced meeting that ends** runs out onto the face that cuts it short: where the run of the
+  two faces' meeting stops at a vertex, the faces there besides the two lying in one plane, the
+  ball rolls on along the spine past that plane and the plane cuts the fillet off, however it
+  stands to the edge — square, oblique, with void beyond it (a boss standing off a plate's edge,
+  its root hanging over the plate's side) or material (a fillet running into a wall). The face
+  so cut keeps the fillet's end, flush with it. A run crossing that plane again elsewhere, an end
+  on a curved face or where two faces meet, and a run meeting another piece of the same fillet
+  where it ends are refused (rung 3).
 - **What is refused.** The ball MUST stand within both faces — the band it rolls on crossed by no
   other edge of either, a partial ring's band within its sector. Anything else is **E085** with its
-  reason: a traced meeting that runs on into other faces (rung 3, a fillet that ends), a face with
-  no offset in closed form (a swept spline: not yet), a fillet that would turn a corner or meet
-  another at a vertex other than as a corner of three or a mitre (rung 3), a ball larger than a
-  face holds. A fillet that is not exact, or not fitted within its bar, is never built.
+  reason: a traced meeting that ends other than on a plane (rung 3), a face with no offset in
+  closed form (a swept spline: not yet), a fillet that would turn a corner or meet another at a
+  vertex other than as a corner of three or a mitre (rung 3), a ball larger than a face holds. A fillet that is not exact, or not fitted within its bar, is never built.
 - **The material field needs no true distance.** Rolling-ball closing and opening want one, which
   a one-Lipschitz field does not carry; the fillet's material is instead an explicit leaf — the
   section of corner, touches and arc, swept along the edge or turned about the axis — evaluated
@@ -1119,7 +1128,8 @@ lip cut block                                //   ... convex: the ball rolls the
   touches, within the corner's reach. Its enclosure is by distances and the cone's Lipschitz bound
   near the spine, every constant read from the curves' poles; a corner reaching past where the
   spine's nearest point is unique — its curvature, its distance from itself — is refused by the
-  field.
+  field. A run that ends is that leaf over its spine run on past both ends, within the half-space
+  each end's plane keeps.
 
 **Extent dependencies are separate from Boolean operands.** A through prism reads only the target's additive material sources for its bounds; it does not read the target's final Boolean result. Therefore `tool := solid(section, through: body)` together with `tool cut body` is valid and unordered. Genuine material/extent cycles, such as using that tool as the body's stock or adding it in `union` with the same body, are **E041**. A cutter remains a finite named solid with its own reports and faces. Its padded caps are numerical extent boundaries, not design datums.
 
@@ -2357,7 +2367,7 @@ The numerical method is unspecified. Whatever the method, a conforming solver:
 | E081 | invalid revolution axis or guided sweep path (§6.9) **[0.18]** |
 | E082 | a face of a body that the body no longer has (§6.9) **[0.18]** |
 | E084 | a section whose cutting plane is not parallel to the view it is drawn in (§6.11) **[0.18]** |
-| E085 | a fillet the model cannot round exactly — a face with no offset in closed form, a traced meeting that ends, an end neither flush nor running on into the next edge, fillets meeting at a corner, a ball larger than a face holds — or one a body takes with the wrong word (§6.9) **[0.49]** |
+| E085 | a fillet the model cannot round exactly — a face with no offset in closed form, a traced meeting that ends other than on a plane, an end neither flush nor running on into the next edge, fillets meeting at a corner, a ball larger than a face holds — or one a body takes with the wrong word (§6.9) **[0.49]** |
 | E101 | a name nothing in scope declares, or a member a scope cannot reach (§3.3, §5, §13.3) **[0.41]** |
 | E102 | **[0.48]** a relation word nothing defines where it is written (§9.9), naming the import that would where a module defines it |
 | E103 | a shape or a number the model cannot build: more children than the kind has slots (§6.1), an input whose value is not its type (§6.3), a seed reading a scalar that is not there (§6.4), a curve the model cannot trace (§6.5), an extent of the wrong dimension (§6.9), iteration over what is not a named chain (§12.8) |
