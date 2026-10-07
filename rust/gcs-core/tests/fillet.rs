@@ -852,6 +852,15 @@ fn what_a_run_that_ends_cannot_round_is_refused() {
          halved := solid(main)\nstem union halved\nround bound halved\ntee := solid(halved)\n\
          crotch := fillet(halved.stem, halved.main, r: 2mm)\n");
     refused(&curved, Code::E085, "ending on a curved face is rung 3");
+    // the half tee cut at the crotch's height too, both planes through its ends: each a corner
+    let cornered = halved(TEE, "tee := solid(main)\nstem union tee\ncrotch := fillet(stem, main, r: 2mm)\n",
+        "in std.front {\n  l0 := point hint(x: -40, y: 8)\n  l1 := point hint(x: 40, y: 8)\n  l2 := point hint(x: 40, y: 40)\n\
+         l3 := point hint(x: -40, y: 40)\n  (ls := line(l0, l1)) -> (le := line(l1, l2)) -> (ln := line(l2, l3)) -> (lw := line(l3, l0)) -> close\n\
+         lift_f := face(ls, le, ln, lw)\n}\nfix(x == -40, y == 8) l0\nfix(x == 40, y == 8) l1\nfix(x == 40, y == 40) l2\n\
+         fix(x == -40, y == 40) l3\nlift := solid(lift_f, from: -40mm, to: 40mm)\n\
+         halved := solid(main)\nstem union halved\nhalf bound halved\nlift bound halved\ntee := solid(halved)\n\
+         crotch := fillet(halved.stem, halved.main, r: 2mm)\n");
+    refused(&cornered, Code::E085, "a fillet ending at a corner is rung 3");
     // the boss's foot on the wedge's near face rounded too: two straight runs up the face meet the
     // root where it is cut off
     refused(&sloped(0.0).replace("fillet(boss, wedge.wt", "fillet(boss, wedge"), Code::E085,
