@@ -1,19 +1,23 @@
 //! **Relation words** (§9.9): a statement written with a word a file defines is that word's body
-//! with the operands and the parameters put in, expanded where the statement stands — the way a
-//! component's body is, and closed the same way: the body reads only what the word is given.
+//! **applied** (#103, `flatten::apply`): its operands are the word's bound variables, each an
+//! alias of what the statement wrote; its parameters, given by label, are numbers bound in the
+//! body's scope or selector words put where the body's words stand; and the body is closed over
+//! them as a component's is.  A body is one relation, or several and the declarations they need.
 //!
-//! The expansion keeps the statement's identity (its id, span, placement and classes) and puts
-//! every span of the body at the word as written, so a fault inside it is reported where the
-//! word is used.  The word itself is kept on the relation (`Relation::word`), so the constraint
-//! the body states is described as the statement wrote it.
+//! What the application makes is the statement's: its id, span, placement and classes, every
+//! place in it the word's as written — so a fault inside it is said where the word is used — and
+//! a dimension that is a parameter at the argument it was given, where its callout reads it.
+//! The word itself is kept on each relation (`Relation::word`), so a culprit reads `p horizontal
+//! q`.
 
 use super::*;
+use super::apply::Use;
 use std::rc::Rc;
 use crate::constraints::{builtin_word, Fixity};
-use crate::syntax::{Arg, OpArg, Relation, RelationForm, WordDef, Worded, Written};
+use crate::syntax::{Arg, OpArg, Relation, WordDef, Worded, Written};
 
-/// How a word's parameter is read in its body: a number put into the body's texts, or a selector
-/// word put where a word stands (`side: s`, `level(s)`).
+/// How a word's parameter is read in its body: a number bound in its scope, or a selector word
+/// put where a word stands (`side: s`, `level(s)`).
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum Param {
     Number,
@@ -22,7 +26,7 @@ pub(super) enum Param {
 
 /// Every reference a written relation holds: its operands, the entities in its parentheses and a
 /// direction named by reference.
-fn refs_mut(w: &mut Written) -> Vec<&mut Ref> {
+pub(super) fn refs_mut(w: &mut Written) -> Vec<&mut Ref> {
     let mut out: Vec<&mut Ref> = w.ops.iter_mut().collect();
     for a in w.args.iter_mut() {
         match a {
@@ -35,7 +39,7 @@ fn refs_mut(w: &mut Written) -> Vec<&mut Ref> {
 
 /// Every number a written relation holds as text, with its span: the dimension, a defined word's
 /// argument, a pin or a seed written as an expression.
-fn texts_mut(w: &mut Written) -> Vec<(&mut String, &mut Span)> {
+pub(super) fn texts_mut(w: &mut Written) -> Vec<(&mut String, &mut Span)> {
     fn arg(a: &mut Arg) -> Option<(&mut String, &mut Span)> {
         match a {
             Arg::Dim { text, span } | Arg::SeedExpr { text, span, .. } => Some((text, span)),
@@ -61,11 +65,17 @@ fn reads(text: &str) -> BTreeSet<String> {
     expr::parse_in(text, units).map(|p| p.body.deps()).unwrap_or_default()
 }
 
+/// Every relation a word's body writes.
+fn relations(def: &WordDef) -> impl Iterator<Item = &Written> {
+    def.body.iter().filter_map(|st| match &st.kind {
+        StmtKind::Relation(r) => r.form.written(),
+        _ => None,
+    })
+}
+
 /// How each parameter of a word is read in its body — or, for one read both ways, the fault.
 fn param_kinds(def: &WordDef) -> Result<BTreeMap<String, Param>, (Span, String)> {
     let mut out: BTreeMap<String, Param> = BTreeMap::new();
-    let Some(w) = def.body.form.written() else { return Ok(out) };
-    let mut w = w.clone();
     let mut said = |name: &str, how: Param, span: Span| -> Result<(), (Span, String)> {
         if !def.params.iter().any(|p| p.text == name) {
             return Ok(());
@@ -79,18 +89,21 @@ fn param_kinds(def: &WordDef) -> Result<BTreeMap<String, Param>, (Span, String)>
             _ => Ok(()),
         }
     };
-    for a in &w.args {
-        match a {
-            OpArg::Named(_, Arg::Word(v)) => said(v, Param::Word, def.word.span)?,
-            OpArg::Ent(r) | OpArg::Named(_, Arg::Ref(r)) if r.path.is_empty() => {
-                said(&r.root.text, Param::Word, r.span)?
+    for w in relations(def) {
+        let mut w = w.clone();
+        for a in &w.args {
+            match a {
+                OpArg::Named(_, Arg::Word(v)) => said(v, Param::Word, def.word.span)?,
+                OpArg::Ent(r) | OpArg::Named(_, Arg::Ref(r)) if r.path.is_empty() => {
+                    said(&r.root.text, Param::Word, r.span)?
+                }
+                _ => {}
             }
-            _ => {}
         }
-    }
-    for (text, span) in texts_mut(&mut w) {
-        for name in reads(text) {
-            said(&name, Param::Number, *span)?;
+        for (text, span) in texts_mut(&mut w) {
+            for name in reads(text) {
+                said(&name, Param::Number, *span)?;
+            }
         }
     }
     for p in &def.params {
@@ -100,9 +113,10 @@ fn param_kinds(def: &WordDef) -> Result<BTreeMap<String, Param>, (Span, String)>
 }
 
 /// **What is wrong with a word's definition, as written** (§9.9): a word the language keeps for
-/// itself, an operand or a parameter named twice, and a body reading anything it was not given.
-/// Asked of every definition by `program::words`, used or not; the expansion asks it too, and
-/// expands no definition it faults, so a fault is said once, at the definition.
+/// itself, an operand or a parameter named twice, and a body reading anything it was neither
+/// given nor declared itself.  Asked of every definition by `program::words`, used or not; the
+/// application asks it too, and applies no definition it faults, so a fault is said once, at the
+/// definition.
 pub(crate) fn faults(def: &WordDef) -> Vec<(Code, Span, String)> {
     let mut out = Vec::new();
     let word = &def.word.text;
@@ -135,81 +149,201 @@ pub(crate) fn faults(def: &WordDef) -> Vec<(Code, Span, String)> {
             return out;
         }
     };
-    let Some(w) = def.body.form.written() else { return out };
-    let mut w = w.clone();
+    // what the body declares for itself (`private m := point`, a set written in place) it may
+    // read
+    let locals: BTreeSet<&str> = def.body.iter().filter_map(|st| match &st.kind {
+        StmtKind::Decl(d) => Some(d.name.key().text.as_str()),
+        other => other.bound_name().map(|n| n.text.as_str()),
+    }).collect();
     let reach = |name: &str| format!(
         "`{name}` is not an operand or a parameter of `{word}`: a relation word reads only what \
          it is given (§5)"
     );
-    for r in refs_mut(&mut w) {
+    let known = |r: &Ref| {
         let root = r.root.text.as_str();
-        let operand = def.operands.iter().any(|o| o.text == root);
-        let param = r.path.is_empty() && kinds.get(root) == Some(&Param::Word);
-        if !operand && !param && r.direction_word().is_none() {
-            out.push((Code::E101, r.span, reach(&crate::syntax::ref_text(r))));
-        }
-    }
-    for (text, span) in texts_mut(&mut w) {
-        for name in reads(text) {
-            if !def.params.iter().any(|p| p.text == name) {
-                out.push((Code::E101, *span, reach(&name)));
+        def.operands.iter().any(|o| o.text == root)
+            || locals.contains(root)
+            || (r.path.is_empty() && kinds.get(root) == Some(&Param::Word))
+            || r.direction_word().is_some()
+    };
+    for st in &def.body {
+        match &st.kind {
+            StmtKind::Relation(rel) => {
+                let Some(w) = rel.form.written() else { continue };
+                let mut w = w.clone();
+                for r in refs_mut(&mut w) {
+                    if !known(r) {
+                        out.push((Code::E101, r.span, reach(&crate::syntax::ref_text(r))));
+                    }
+                }
+                for (text, span) in texts_mut(&mut w) {
+                    for name in reads(text) {
+                        if !def.params.iter().any(|p| p.text == name) {
+                            out.push((Code::E101, *span, reach(&name)));
+                        }
+                    }
+                }
             }
+            StmtKind::Decl(d) => {
+                for r in d.children.iter().flatten().flat_map(|k| k.refs()) {
+                    if !known(r) {
+                        out.push((Code::E101, r.span, reach(&crate::syntax::ref_text(r))));
+                    }
+                }
+            }
+            _ => {}
         }
     }
-    out
-}
-
-/// A reference written in a body, with an operand put in: the statement's own reference, the
-/// body's path after it (`a.p1` of `a` given `l` is `l.p1`).
-fn put_operand(r: &Ref, given: &Ref) -> Ref {
-    let mut out = given.clone();
-    out.path.extend(r.path.iter().cloned());
     out
 }
 
 impl<'a> Walk<'a> {
-    /// **The relation a statement states**: itself, or — written with a word a file defines —
-    /// that word's body, expanded.  `None` where it cannot be, said once at the word as written.
-    pub(super) fn expand_word(&mut self, rel: &Relation, scope: &Scope) -> Option<Relation> {
+    /// **A statement written with a word a file defines, applied** — `true` where the statement
+    /// is such a use, whatever became of it; `false` for a relation in the language's own words.
+    /// What it cannot be is said once, at the word as written.
+    pub(super) fn apply_word(
+        &mut self,
+        st: &Stmt,
+        rel: &Relation,
+        path: &[PathStep],
+        scope: &Scope,
+        depth: usize,
+    ) -> bool {
         let used = match rel.form.written() {
             Some(w) if !builtin_word(&w.word.text, w.fixity) => w,
-            _ => return Some(rel.clone()),
+            _ => return false,
         };
-        let prog = self.prog;
-        let mut current: Option<Written> = None;
-        let mut from = scope.module;
-        let mut through: Vec<usize> = Vec::new();
-        loop {
-            let w = current.as_ref().unwrap_or(used);
-            if builtin_word(&w.word.text, w.fixity) {
-                break;
-            }
-            let Some(k) = prog.resolve_word(&w.word.text, w.fixity, from) else {
-                let m = self.no_word(w, from);
-                self.once(Code::E102, used.word.span, m);
-                return None;
-            };
-            if through.contains(&k) || through.len() >= MAX_DEPTH {
-                let m = format!("`{}` is defined in terms of itself", w.word.text);
-                self.once(Code::E003, used.word.span, m);
-                return None;
-            }
-            through.push(k);
-            let def = &prog.words[k];
-            let kinds = self.word_kinds(k)?;
-            current = Some(self.instantiate(def, &kinds, w, used)?);
-            from = def.module;
+        // a word reached again inside its own application is defined in terms of itself, said
+        // where the outermost use is written
+        let outer = self.applying_words.first().map_or(used.word.span, |(_, s)| *s);
+        let Some(k) = self.prog.resolve_word(&used.word.text, used.fixity, scope.module) else {
+            let m = self.no_word(used, scope.module);
+            self.once(Code::E102, used.word.span, m);
+            return true;
+        };
+        if self.applying_words.iter().any(|(j, _)| *j == k) || self.applying_words.len() >= MAX_DEPTH {
+            let m = format!("`{}` is defined in terms of itself", used.word.text);
+            self.once(Code::E003, outer, m);
+            return true;
         }
-        let mut out = rel.clone();
-        out.form = RelationForm::Written(current?);
-        out.word = Some(Worded {
+        let Some(kinds) = self.word_kinds(k) else { return true };
+        let def = &self.prog.words[k];
+        let Some(values) = self.word_args(def, &kinds, used) else { return true };
+        // the numbers, bound as the body's own, worked out where the statement is written
+        let mut vals: BTreeMap<String, Aff> = BTreeMap::new();
+        let mut dims: BTreeMap<String, Span> = BTreeMap::new();
+        for (name, (text, span)) in &values {
+            if kinds.get(name) != Some(&Param::Number) {
+                continue;
+            }
+            match value_aff(text, &scope.vals, self.units) {
+                Ok(v) => {
+                    vals.insert(name.clone(), v);
+                    dims.insert(name.clone(), *span);
+                }
+                Err(e) => {
+                    self.once(Code::E103, *span, format!("`{text}`: {e}"));
+                    return true;
+                }
+            }
+        }
+        // the selector words, put where the body's words stand
+        let words: BTreeMap<&str, &str> = values
+            .iter()
+            .filter(|(n, _)| kinds.get(*n) == Some(&Param::Word))
+            .map(|(n, (t, _))| (n.as_str(), t.as_str()))
+            .collect();
+        let mut body = def.body.clone();
+        for st in body.iter_mut() {
+            let StmtKind::Relation(r) = &mut st.kind else { continue };
+            let Some(w) = r.form.written_mut() else { continue };
+            for a in w.args.iter_mut() {
+                if let OpArg::Named(_, Arg::Word(v)) = a {
+                    if let Some(given) = words.get(v.as_str()) {
+                        *v = given.to_string();
+                    }
+                }
+            }
+            for r in refs_mut(w) {
+                if let Some(given) = words.get(r.root.text.as_str()).filter(|_| r.path.is_empty()) {
+                    r.root.text = given.to_string();
+                }
+            }
+        }
+        let at = used.word.span;
+        let closure = Scope { closed: true, module: def.module, vals, ..Scope::default() };
+        let u = Use { st, rel, path, scope, at };
+        let app = self.begin(&u, &closure);
+        for (operand, given) in def.operands.iter().zip(&used.ops) {
+            self.bind_to_use(&app, &operand.text, given.clone(), &u);
+        }
+        let walks = [self.inherited_twin(&app, &u)];
+        let worded = Worded {
             word: used.word.text.clone(),
             ops: used.ops.clone(),
             args: crate::syntax::written_parts(&used.args).0.join(", "),
             set: None,
-            span: used.word.span,
-        });
-        Some(out)
+            span: at,
+        };
+        self.applying_words.push((k, outer));
+        self.apply(&u, app, body, &dims, &walks, worded, depth);
+        self.applying_words.pop();
+        true
+    }
+
+    /// The parameters a use gives, by label (§4.1) — each name to the text it was given and
+    /// where — or `None`, said at the use, where they are not the word's.
+    fn word_args(
+        &mut self,
+        def: &WordDef,
+        kinds: &BTreeMap<String, Param>,
+        given: &Written,
+    ) -> Option<BTreeMap<String, (String, Span)>> {
+        let word = &def.word.text;
+        let mut values: BTreeMap<String, (String, Span)> = BTreeMap::new();
+        for a in &given.args {
+            match a {
+                OpArg::Named(n, Arg::Dim { text, span }) => {
+                    if !def.params.iter().any(|p| p.text == n.text) {
+                        let m = format!("`{word}` has no parameter `{}`", n.text);
+                        self.once(Code::E040, n.span, m);
+                        return None;
+                    }
+                    if values.insert(n.text.clone(), (text.clone(), *span)).is_some() {
+                        self.once(Code::E040, n.span, format!("`{}` is given twice", n.text));
+                        return None;
+                    }
+                }
+                OpArg::Dim(text, span) => {
+                    let p = def.params.first().map_or("p", |p| p.text.as_str());
+                    let m = format!(
+                        "a relation word's parameters are given by label: `{word}({p}: {text})`"
+                    );
+                    self.once(Code::E004, *span, m);
+                    return None;
+                }
+                _ => {
+                    let m = format!("`{word}` takes its parameters by label");
+                    self.once(Code::E040, given.word.span, m);
+                    return None;
+                }
+            }
+        }
+        if let Some(p) = def.params.iter().find(|p| !values.contains_key(&p.text)) {
+            let m = format!("`{word}` needs `{}`: `{word}({}: …)`", p.text, p.text);
+            self.once(Code::E040, given.word.span, m);
+            return None;
+        }
+        for (name, (text, span)) in &values {
+            if kinds.get(name) == Some(&Param::Word) && !crate::syntax::is_name(text)
+                && crate::constraints::Toward::of(text).is_none()
+            {
+                let m = format!("`{name}` is a word in `{word}`, not `{text}`");
+                self.once(Code::E040, *span, m);
+                return None;
+            }
+        }
+        Some(values)
     }
 
     /// How each parameter of word `k` is read in its body, worked out once a walk; `None` for a
@@ -250,115 +384,5 @@ impl<'a> Walk<'a> {
             };
         }
         format!("no relation word `{word}`")
-    }
-
-    /// One step of the expansion: `def`'s body with `given`'s operands and parameters put in,
-    /// every span of it at the word `used` was written with.
-    fn instantiate(
-        &mut self,
-        def: &WordDef,
-        kinds: &BTreeMap<String, Param>,
-        given: &Written,
-        used: &Written,
-    ) -> Option<Written> {
-        let word = &def.word.text;
-        // the parameters, by label (§4.1): a value given by position is the call's E004
-        let mut values: BTreeMap<String, (String, Span)> = BTreeMap::new();
-        for a in &given.args {
-            match a {
-                OpArg::Named(n, Arg::Dim { text, span }) => {
-                    if !def.params.iter().any(|p| p.text == n.text) {
-                        let m = format!("`{word}` has no parameter `{}`", n.text);
-                        self.once(Code::E040, n.span, m);
-                        return None;
-                    }
-                    if values.insert(n.text.clone(), (text.clone(), *span)).is_some() {
-                        self.once(Code::E040, n.span, format!("`{}` is given twice", n.text));
-                        return None;
-                    }
-                }
-                OpArg::Dim(text, span) => {
-                    let p = def.params.first().map_or("p", |p| p.text.as_str());
-                    let m = format!(
-                        "a relation word's parameters are given by label: `{word}({p}: {text})`"
-                    );
-                    self.once(Code::E004, *span, m);
-                    return None;
-                }
-                _ => {
-                    self.once(Code::E040, used.word.span, format!("`{word}` takes its parameters by label"));
-                    return None;
-                }
-            }
-        }
-        if let Some(p) = def.params.iter().find(|p| !values.contains_key(&p.text)) {
-            let m = format!("`{word}` needs `{}`: `{word}({}: …)`", p.text, p.text);
-            self.once(Code::E040, used.word.span, m);
-            return None;
-        }
-        for (name, (text, span)) in &values {
-            if kinds.get(name) == Some(&Param::Word) && !crate::syntax::is_name(text)
-                && crate::constraints::Toward::of(text).is_none()
-            {
-                let m = format!("`{name}` is a word in `{word}`, not `{text}`");
-                self.once(Code::E040, *span, m);
-                return None;
-            }
-        }
-        let Some(body) = def.body.form.written() else { return None };
-        let mut out = body.clone();
-        let at = used.word.span;
-        let nowhere = Span::new(at.lo as usize, at.lo as usize);
-        // the operands, and a word parameter wherever the body names it as a reference
-        let operands: BTreeMap<&str, &Ref> =
-            def.operands.iter().map(|o| o.text.as_str()).zip(given.ops.iter()).collect();
-        for r in refs_mut(&mut out) {
-            if let Some(g) = operands.get(r.root.text.as_str()) {
-                *r = put_operand(r, g);
-            } else if let Some((v, _)) = values.get(&r.root.text).filter(|_| r.path.is_empty()) {
-                *r = Ref { root: Name { text: v.clone(), span: at }, path: Vec::new(), span: at };
-            } else {
-                r.root.span = at;
-                r.span = at;
-            }
-        }
-        // a word parameter where a selector's word stands
-        for a in out.args.iter_mut() {
-            if let OpArg::Named(_, Arg::Word(v)) = a {
-                if let Some((given, _)) = values.get(v.as_str()) {
-                    *v = given.clone();
-                }
-            }
-        }
-        // the numbers: each name of a parameter written in as the text it was given, once over
-        // the whole text so a value is never read again for a name inside it
-        for (text, span) in texts_mut(&mut out) {
-            let exact = values.get(text.trim()).filter(|_| kinds.get(text.trim()) == Some(&Param::Number));
-            *span = exact.map_or(nowhere, |(_, s)| *s);
-            *text = substitute_with(text, |n| match kinds.get(n) {
-                Some(Param::Number) => values.get(n).map(|(v, _)| match exact {
-                    Some(_) => v.clone(),
-                    None => format!("({v})"),
-                }),
-                _ => None,
-            });
-        }
-        // and every other place in the body is the word's own place
-        out.word.span = at;
-        out.span = used.span;
-        for a in out.args.iter_mut() {
-            match a {
-                OpArg::Named(n, _) => n.span = at,
-                OpArg::Slot { key, .. } => key.span = at,
-                OpArg::Vector { key, span, .. } => {
-                    *span = at;
-                    if let Some(k) = key {
-                        k.span = at;
-                    }
-                }
-                OpArg::Ent(_) | OpArg::Dim(..) => {}
-            }
-        }
-        Some(out)
     }
 }

@@ -75,17 +75,17 @@ numbers (`module_params` keeps the module's own); groups register under their pa
 **Relation words (§9.9, #94):** `a horizontal b := a level(up) b`, `flat(d) l := …`, `a above(d)
 b := b distance(d, along: up) a` at a file's top level (`syntax::WordDef`, `Program::words`,
 parsed by `parser/definitions.rs`: `word_definition_ahead`, `defined_prefix_ahead` before a call,
-`word_args` keeping labelled texts). The flattener expands a use (`flatten/words.rs`,
-`Walk::expand_word`): params by label (E004/E040), a number parameter written into the body's
-texts, a word parameter where a word stands, operands aliased, every body span moved to the use's
-word (a parameter's dimension to its argument, so `written` and `edit::set_dimension`'s
-`word_dimension` read it); nested words resolve from the definition's file, a cycle is E003, an
-unknown word E102 naming the import. `Relation::word` (`Worded`) rides to
+`word_args` keeping labelled texts). The flattener applies a use (`flatten/words.rs`,
+`Walk::apply_word`, over `flatten/apply.rs`, #103): params by label (E004/E040), a number
+parameter bound in the body's scope, a word parameter where a word stands, operands aliased,
+every relation's span moved to the use's word (a parameter's dimension to its argument, so
+`written` and `edit::set_dimension`'s `word_dimension` read it); nested words resolve from the
+definition's file, a cycle is E003, an unknown word E102 naming the import. `Relation::word` (`Worded`) rides to
 `Constraint::word` (`WordUse`, entities; `graft` keeps it while its operands survive) and
 `io::describe_with` reads it (`p horizontal q`). `flatten::word_faults` (closure E101, a
 reserved word or a builtin of the fixity E071 — `constraints::builtin_word` — names twice E001)
-is asked of every definition (`program/words.rs`) and blocks its expansion. One relation per body;
-none in a body. `horizontal`/`vertical` between points live in `rust/lib/std.sv`; the printer
+is asked of every definition (`program/words.rs`) and blocks its expansion. A body is one relation
+or several with their declarations (#103); none is defined in a body. `horizontal`/`vertical` between points live in `rust/lib/std.sv`; the printer
 writes `level(up)` (`print::ordinate_text`). `tests/relation_words.rs` is the gate. E071 is a
 component defined twice in one file, the document's own included (a value twice is E001). `std.front` needs the document's own `use std`. A drawn callout drops a
 module path (`relations::unqualified`).
@@ -126,6 +126,24 @@ it, `to_program` drops it (a flat program cannot spell it).  Refused: a set name
 (E040 in `rewrite`), two sets, parentheses, a non-point `coincident`, a non-line or claimed
 `tangent`, a tangency to a body that declares geometry of its own (`sets::makes_points`).
 `tests/sets.rs` is the gate.
+
+**Predicates, applied (§9.9, §6.21, 0.50, #103):** a relation word and a set are one predicate —
+parameters given at the call, **bound variables** (a word's operands, a set's point) filled at
+the use — applied by one routine, `flatten/apply.rs`: `begin` (an `Application`: the closure
+under the use's prefix `{scope}#{stmt}.0.`, and where its output starts), `bind_to_use` (each
+bound variable an alias of the use's operand; one naming nothing is E101 once at the operand,
+`use_aliases`/`failed` in `resolve`), `inherited_twin` (linearised already where the use is),
+`apply` (a dimension that is a parameter put at its argument for `written` and
+`edit::word_dimension`, every other at an empty span; the body walked per `walks`; every relation
+the application made stamped with the use's id/span/path, claim, placement when it makes one
+relation, word spans at the use, and `Worded`, the outermost use's).  `syntax::Relation::of`
+builds a relation with nothing but its form.  Words: `WordDef::body` is `Vec<Stmt>` (one relation, or `{ … }` of relations and
+declarations), applied synchronously in the walk's Relation arm (`Walk::apply_word`; numbers
+bound in the closure's `vals`, selector words substituted; `applying_words` for E003); sets:
+`expand_use`.  A set may be written in place on the right of `coincident`/`tangent`
+(`P::inline_set_use`, hoisted as a `Chained::Link` statement keyed `#s…`/`#i…`, described by its
+text).  The lexer reads a brace after `:=` as a group only before `}` or `name:` (`group_ahead`).
+`tests/applied.rs` is the gate.
 
 **`ring N about C { … }`, solved over one copy (0.47, #96):** copies that are turns of the first
 (the representative) about a point (in its view) or an axis held in its direction (in space).

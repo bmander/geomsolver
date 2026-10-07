@@ -49,7 +49,7 @@ impl<'a> P<'a> {
     }
 
     /// Everything a relation statement may carry after its operands.
-    fn relation_tail(
+    pub(super) fn relation_tail(
         &mut self,
         word: Name,
         fixity: Fixity,

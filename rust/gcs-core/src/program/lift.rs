@@ -340,22 +340,13 @@ pub(crate) fn lift_gauge(name: &str, kind: EntKind, point: usize, held: &[(&str,
             crate::syntax::Said::One(i) => OpArg::Slot { key: Name::new(members[i]), arg: value(i) },
         })
         .collect();
-    Relation {
-        form: crate::syntax::RelationForm::Written(Written {
-            word: Name::new("fix"),
-            fixity: crate::constraints::Fixity::Prefix,
-            ops: vec![Ref::new(name.to_string())],
-            args,
-            span: Span::default(),
-        }),
-        place: None,
-        place_span: Span::default(),
-        claim: false,
-        class: Default::default(),
-        class_span: Span::default(),
-        word: None,
-        along: None,
-    }
+    Relation::of(crate::syntax::RelationForm::Written(Written {
+        word: Name::new("fix"),
+        fixity: crate::constraints::Fixity::Prefix,
+        ops: vec![Ref::new(name.to_string())],
+        args,
+        span: Span::default(),
+    }))
 }
 
 /// How many coordinates a point's own vector has: two drawn in a plane, three in space.
@@ -365,16 +356,7 @@ pub(crate) fn point_len(sk: &Sketch, e: EntRef) -> usize {
 
 /// A relation somebody built rather than wrote: the kind and its arguments, and nothing else.
 fn built(kind: CKind, args: Vec<Option<Arg>>) -> Relation {
-    Relation {
-        form: crate::syntax::RelationForm::Canonical { kind, args },
-        place: None,
-        place_span: Span::default(),
-        claim: false,
-        class: Default::default(),
-        class_span: Span::default(),
-        word: None,
-        along: None,
-    }
+    Relation::of(crate::syntax::RelationForm::Canonical { kind, args })
 }
 
 pub(crate) fn lift_relation(sk: &Sketch, c: &Constraint) -> Relation {
@@ -383,16 +365,7 @@ pub(crate) fn lift_relation(sk: &Sketch, c: &Constraint) -> Relation {
     for (i, (_, kind)) in spec.iter().enumerate() {
         args.push(lift_arg(sk, *kind, &c.args[i]));
     }
-    Relation {
-        form: crate::syntax::RelationForm::Canonical { kind: c.kind, args },
-        place: None,
-        place_span: Span::default(),
-        claim: c.claim,
-        class: Default::default(),
-        class_span: Span::default(),
-        word: None,
-        along: None,
-    }
+    Relation { claim: c.claim, ..built(c.kind, args) }
 }
 
 fn lift_arg(sk: &Sketch, kind: SpecKind, a: &CArg) -> Option<Arg> {

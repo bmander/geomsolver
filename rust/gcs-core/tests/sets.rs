@@ -291,7 +291,7 @@ fn what_a_set_refuses() {
     refused(&with("claim l tangent ball"), "E040", "stated, not claimed", "tangent");
     refused(&with("a coincident(5) ball"), "E040", "takes nothing in its parentheses", "coincident(5)");
     refused(&with("loop := { p | p coincident loop }\na coincident loop"), "E003",
-        "defined in terms of itself", "p coincident loop");
+        "defined in terms of itself", "a coincident loop");
     // and a set says what its points satisfy
     let (_, errs, _) = gcs_core::library::parse_linked("unit mm\nempty := { p | }\n");
     assert!(errs.iter().any(|e| e.message.contains("says what its points satisfy")), "{errs:?}");

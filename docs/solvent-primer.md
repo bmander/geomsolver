@@ -742,15 +742,29 @@ callout shows a param's bare name (`D`, not `engine.dims.D`). `engine.sv` is the
 four-cylinder engine as a dimension module, a parts module and one module per part.
 
 **Relation words.** A file defines a word at its top level, as it defines a component — between
-two operands or before one, parameters in parentheses, `:=`, and the one relation it stands for:
+two operands or before one, parameters in parentheses, `:=`, and what it stands for: one
+relation, or several in braces with the geometry they need, for one fact about the operands that
+takes several rows:
 
 ```
 a horizontal b := a level(up) b                  // std.sv
 a above(d) b := b distance(d, along: up) a       // r above(d: 7) q: r stands 7 above q
 flat l := l perpendicular t                      // E101: `t` is no operand or parameter
+l1 flush(d) l2 := {                              // parallel, and d apart
+  l1 parallel l2
+  l2.p1 distance(d) l1
+}
+a apart(d) b := {                                // what the body declares, each use makes anew
+  private ab := line(a, b)
+  distance(d) ab
+}
 ```
 
-A statement writing the word is the body with operands and parameters put in. Parameters are
+An infix word is a relation **between** its operands; that both stand on a third thing is said of
+each (`a coincident P`), not as a word. A word and a set are one thing (#103): a body over
+**parameters**, given where it is called, and **bound variables** — a word's operands, a set's
+point — filled where it is used, applied by one rule. A statement writing the word is the body
+with operands and parameters put in. Parameters are
 given by label (`above(d: 7)`; by position is E004, a missing or unknown label E040); a number
 parameter is read in the body's dimensions, a word parameter where a selector word or a direction
 stands (`side: s`, `level(s)`). The body reads only its operands (and their members, `a.p1`) and
@@ -758,7 +772,8 @@ parameters (E101 otherwise); a word defined over a keyword or a language word of
 is E071 (`a horizontal b` is std's beside the language's `horizontal l`); an unknown word is E102,
 naming the import where a used module defines it. Errors in the expansion are reported at the
 word, culprits and `describe` lines read `p horizontal q`, and a dimension that is a parameter's
-argument draws and edits that argument. One relation per body; none inside a component.
+argument draws and edits that argument. A body may write other words, and use sets (`a orbits(r)
+o := a coincident std.Sphere(o, r: r)`); no word is defined inside a component.
 
 **Standard datums.** `use std` gives every document the axes `std.x` (right), `std.y` (away from
 the front's viewer), `std.z` (up) and `std.back` (−x), and four planes fixed at the world origin:
@@ -904,7 +919,9 @@ planes share agree (one equation). Views carry no place on paper; the `.svd` pla
 c }`, its point named after the `{` and the statements about it after the `|`, on one line or
 several up to the `}`. It adds nothing to the drawing; what it means is said where it is used:
 
-- `q coincident near` states the body with `q` for `p` (either way round; `q` a point).
+- `q coincident near` states the body with `q` for `p` (either way round; `q` a point). A set
+  may be written where it is used: `q coincident { p | p distance(5mm) c }`, `l tangent
+  std.Cylinder(ax, r: 8mm)` (on the right of the word).
 - `l tangent near`, `l` a line: the solve finds a contact on `l` in the set, and `l`'s direction
   is in the set's tangent plane there — the body's rows differentiated along `l`, derived from
   the definition. One condition for a surface. Refused for a set whose body makes points of its

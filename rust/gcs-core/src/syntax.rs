@@ -112,8 +112,10 @@ pub struct WordDef {
     /// The parameters in the word's parentheses: numbers or selector words, given by label
     /// where the word is written (§4.1).
     pub params: Vec<Name>,
-    /// The one relation the word stands for, as written after `:=`.
-    pub body: Relation,
+    /// What the word stands for, as written after `:=`: one relation, or a braced body of
+    /// relations and the declarations they need (#103) — a fact about the two operands that takes
+    /// several rows to state.
+    pub body: Vec<Stmt>,
     pub span: Span,
     /// Which of the program's `modules` it was read from; `None` for one the document wrote.
     pub module: Option<usize>,
@@ -1389,6 +1391,23 @@ pub struct Relation {
     pub word: Option<Worded>,
     /// Set by the flattener on a set's body row stated as its linearisation (§6.21).
     pub along: Option<Along>,
+}
+
+impl Relation {
+    /// A relation built rather than written: its form and nothing else — no placement, class,
+    /// claim, word or linearisation.
+    pub fn of(form: RelationForm) -> Relation {
+        Relation {
+            form,
+            place: None,
+            place_span: Span::default(),
+            claim: false,
+            class: Classes::default(),
+            class_span: Span::default(),
+            word: None,
+            along: None,
+        }
+    }
 }
 
 /// Parsed operators and generated registry calls are mutually exclusive.

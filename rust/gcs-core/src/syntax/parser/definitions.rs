@@ -5,7 +5,7 @@ use super::P;
 use crate::constraints::{is_operator, Fixity};
 use crate::syntax::lexer::Tok;
 use crate::syntax::words::{past_args, MODIFIERS};
-use crate::syntax::{reserved_word, Arg, Name, OpArg, Span, WordDef};
+use crate::syntax::{reserved_word, Arg, Chained, Name, OpArg, Span, StmtKind, WordDef};
 
 impl<'a> P<'a> {
     /// Names separated by commas up to the `)` closing a list already opened: a word's
@@ -43,8 +43,9 @@ impl<'a> P<'a> {
     }
 
     /// `a horizontal b := a level(up) b` — the head's names, the word and its parameters, and
-    /// the one relation after `:=` the word stands for.
-    pub(super) fn word_definition(&mut self, fixity: Fixity) -> Option<WordDef> {
+    /// what it stands for after `:=`: one relation, or `{ … }` holding several and the
+    /// declarations they need (#103).
+    pub(super) fn word_definition(&mut self, fixity: Fixity, next_id: &mut u32) -> Option<WordDef> {
         let lo = self.here().lo as usize;
         let mut operands = Vec::new();
         if fixity == Fixity::Infix {
@@ -58,16 +59,39 @@ impl<'a> P<'a> {
             self.fail("a relation word says what it stands for: `a horizontal b := a level(up) b`");
             return None;
         }
-        let at = self.here();
-        let body = self.relation()?;
-        // where the callout sits and how it looks are the statement's that writes the word
-        if body.place.is_some() || !body.class.is_empty() {
-            self.errs.push(crate::syntax::SynErr {
-                span: at,
-                message: "a relation word's body states the relation alone: a placement or a \
-                          class is written where the word is used"
-                    .to_string(),
-            });
+        // braces hold several statements; the line, one — read as any statement is, so a set
+        // written in place there is a statement of the body beside the relation
+        let body = if self.peek() == Some(&Tok::P('{')) {
+            let (body, joint) = self.braced_body(next_id)?;
+            self.no_open_joint(joint, "a relation word");
+            body
+        } else {
+            let mut body = Vec::new();
+            self.chain_or_one(next_id, &mut body)?;
+            body
+        };
+        for st in &body {
+            let refused = match &st.kind {
+                // where the callout sits and how it looks are the statement's that writes the word
+                StmtKind::Relation(r) if r.place.is_some() || !r.class.is_empty() => Some(
+                    "a relation word's body states the relation alone: a placement or a class \
+                     is written where the word is used",
+                ),
+                StmtKind::Relation(_) | StmtKind::Decl(_) => None,
+                // a set written in place where the body uses it
+                StmtKind::Set(_) | StmtKind::Instance(_) if st.chained == Chained::Link => None,
+                _ => Some(
+                    "a relation word's body states relations, and declares the geometry they \
+                     need",
+                ),
+            };
+            if let Some(m) = refused {
+                self.errs.push(crate::syntax::SynErr { span: st.span, message: m.to_string() });
+                return None;
+            }
+        }
+        if body.is_empty() {
+            self.fail("a relation word says what it stands for: `a horizontal b := a level(up) b`");
             return None;
         }
         Some(WordDef {

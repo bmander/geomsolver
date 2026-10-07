@@ -1231,9 +1231,11 @@ pub fn set_dimension(e: &Elaborated, prog: &Program, cid: u32, attr: &str, text:
 /// callout draws, so the text an edit of it writes.
 fn word_dimension(prog: &Program, w: &syntax::Written) -> Option<(Span, String)> {
     let k = prog.resolve_word(&w.word.text, w.fixity, None)?;
-    let body = prog.words[k].body.form.written()?;
-    let param = body.args.iter().find_map(|a| match a {
-        syntax::OpArg::Dim(t, _) => Some(t.trim()),
+    let param = prog.words[k].body.iter().find_map(|st| match &st.kind {
+        StmtKind::Relation(r) => r.form.written()?.args.iter().find_map(|a| match a {
+            syntax::OpArg::Dim(t, _) => Some(t.trim()),
+            _ => None,
+        }),
         _ => None,
     })?;
     w.args.iter().find_map(|a| match a {

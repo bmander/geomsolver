@@ -382,17 +382,26 @@ pub(super) struct Seen {
     abs: String,
 }
 
-#[allow(clippy::too_many_arguments)]
+/// What a reference may resolve to once the walk is done: every name declared, every alias
+/// resolved, the sets (no entity of the drawing), the operands an application found naming
+/// nothing (said once already), and the units numbers are read in.
+#[derive(Clone, Copy)]
+struct Known<'k> {
+    names: &'k BTreeSet<String>,
+    alias: &'k BTreeMap<String, String>,
+    sets: &'k BTreeSet<String>,
+    failed: &'k BTreeSet<String>,
+    units: Units,
+}
+
 fn rewrite(
     k: &mut StmtKind,
     sc: &Scope,
-    names: &BTreeSet<String>,
-    alias: &BTreeMap<String, String>,
-    sets: &BTreeSet<String>,
-    units: Units,
+    known: Known,
     bad: &mut Vec<(Code, Span, String)>,
     seen: &std::cell::RefCell<Vec<Seen>>,
 ) {
+    let Known { names, alias, sets, failed, units } = known;
     // only a ring's representative is judged by what it reads (E021)
     let judged = sc.ring.as_ref().is_some_and(|r| !r.turned);
     let fix = |r: &mut Ref, bad: &mut Vec<(Code, Span, String)>| match lookup(r, sc, names, alias, units)
@@ -416,6 +425,8 @@ fn rewrite(
             }
         }
         // named as written, so an index that picked no copy says which one it was
+        // read through an operand already said to name nothing
+        None if sc.prefixes.iter().any(|p| failed.contains(&format!("{p}{}", r.root.text))) => {}
         None => {
             let (code, why) = missing_ref(r, sc, names, alias, units);
             bad.push((code, r.span, why))
@@ -712,11 +723,22 @@ impl<'a> Walk<'a> {
         for (_, _, sc) in &mut self.out { sc.access = access.clone(); }
         for (_, _, sc) in &mut self.aliases { sc.access = access.clone(); }
         let alias = self.alias_table();
-        for (_, r, sc) in self.aliases.clone() {
-            if let Some((target, _)) = lookup_raw(&r, &sc, &self.names, &alias, self.units) {
-                if let Some(member) = private_member(&r, &sc, &target, &alias) {
-                    self.err(Code::E101, r.span, format!("`{}` names private member `{member}`", written(&r)));
+        // an operand a use wrote that names nothing is said there, once, and not again at every
+        // place in the body that reads it (#103)
+        let mut failed: BTreeSet<String> = BTreeSet::new();
+        for (key, r, sc) in self.aliases.clone() {
+            match lookup_raw(&r, &sc, &self.names, &alias, self.units) {
+                Some((target, _)) => {
+                    if let Some(member) = private_member(&r, &sc, &target, &alias) {
+                        self.err(Code::E101, r.span, format!("`{}` names private member `{member}`", written(&r)));
+                    }
                 }
+                None if self.use_aliases.contains(&key) => {
+                    let (code, why) = missing_ref(&r, &sc, &self.names, &alias, self.units);
+                    self.once(code, r.span, why);
+                    failed.insert(key);
+                }
+                None => {}
             }
         }
         for (key, span) in self.group_fields.clone() {
@@ -806,7 +828,8 @@ impl<'a> Walk<'a> {
             }
             let mut bad: Vec<(Code, Span, String)> = Vec::new();
             let seen = std::cell::RefCell::new(Vec::new());
-            rewrite(&mut st.kind, &sc, &self.names, &alias, &sets, self.units, &mut bad, &seen);
+            let known = Known { names: &self.names, alias: &alias, sets: &sets, failed: &failed, units: self.units };
+            rewrite(&mut st.kind, &sc, known, &mut bad, &seen);
             if let StmtKind::Decl(d) = &st.kind {
                 // a centre the circle names, or `None` for one it mints (`c.center`)
                 if d.kind == EntKind::Circle {
