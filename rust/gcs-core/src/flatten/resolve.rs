@@ -203,7 +203,7 @@ fn alias_target(
 /// Greedy on the dotted name: `t.lead` is one name if something declared it, and `c0.center` is
 /// the entity `c0` and its field `center`.  Which it is cannot be told from the spelling, only
 /// from what exists — so the longest match that names something wins.
-fn lookup_raw(
+pub(super) fn lookup_raw(
     r: &Ref,
     sc: &Scope,
     names: &BTreeSet<String>,
@@ -382,11 +382,13 @@ pub(super) struct Seen {
     abs: String,
 }
 
+#[allow(clippy::too_many_arguments)]
 fn rewrite(
     k: &mut StmtKind,
     sc: &Scope,
     names: &BTreeSet<String>,
     alias: &BTreeMap<String, String>,
+    sets: &BTreeSet<String>,
     units: Units,
     bad: &mut Vec<(Code, Span, String)>,
     seen: &std::cell::RefCell<Vec<Seen>>,
@@ -395,6 +397,16 @@ fn rewrite(
     let judged = sc.ring.as_ref().is_some_and(|r| !r.turned);
     let fix = |r: &mut Ref, bad: &mut Vec<(Code, Span, String)>| match lookup(r, sc, names, alias, units)
     {
+        // a set is no entity: what it means is said where it is used (§6.21)
+        Some((abs, rest)) if rest.is_empty() && sets.contains(&abs) => bad.push((
+            Code::E040,
+            r.span,
+            format!(
+                "`{}` is a set, the points its body holds: a point is put on it by `coincident` \
+                 and a line touches it by `tangent`",
+                written(r)
+            ),
+        )),
         Some((abs, rest)) => {
             let was = judged.then(|| written(r));
             r.root = Name { text: abs, span: r.root.span };
@@ -507,6 +519,11 @@ fn rewrite(
                     }
                 }
             }
+            // a set's linearised row: its contact and the line it is taken along (§6.21)
+            if let Some(a) = rel.along.as_mut() {
+                fix(&mut a.point, bad);
+                fix(&mut a.line, bad);
+            }
             for a in rel.form.canonical_args_mut().iter_mut().flatten() {
                 if let crate::syntax::Arg::Ref(r) = a {
                     fix(r, bad);
@@ -542,7 +559,7 @@ fn rewrite(
 impl<'a> Walk<'a> {
     /// Every alias the walk has made, resolved to the absolute name it denotes — transitively,
     /// since a formal may be bound to another instance's formal.
-    fn alias_table(&self) -> BTreeMap<String, String> {
+    pub(super) fn alias_table(&self) -> BTreeMap<String, String> {
         let mut alias: BTreeMap<String, String> = BTreeMap::new();
         for (abs, r, sc) in &self.aliases {
             if let Some((target, rest)) = lookup_raw(r, sc, &self.names, &alias, self.units) {
@@ -603,6 +620,9 @@ impl<'a> Walk<'a> {
     /// make the instance holding another's chain, so this runs until nothing more resolves; what
     /// is left names no chain, and says so at the reference.
     pub(super) fn expand_pending(&mut self) {
+        if self.pending.is_empty() {
+            return;
+        }
         while !self.pending.is_empty() {
             let alias = self.alias_table();
             let found = self
@@ -774,6 +794,7 @@ impl<'a> Walk<'a> {
         let mut judged: Vec<(String, Vec<Seen>)> = Vec::new();
         let mut centres: BTreeMap<String, Option<String>> = BTreeMap::new();
         let out = std::mem::take(&mut self.out);
+        let sets: BTreeSet<String> = self.sets.keys().cloned().collect();
         let mut flat = Vec::with_capacity(out.len());
         for (mut st, path, sc) in out {
             // a refused relation is not emitted; a declaration is (a plane whose fold misspells
@@ -785,7 +806,7 @@ impl<'a> Walk<'a> {
             }
             let mut bad: Vec<(Code, Span, String)> = Vec::new();
             let seen = std::cell::RefCell::new(Vec::new());
-            rewrite(&mut st.kind, &sc, &self.names, &alias, self.units, &mut bad, &seen);
+            rewrite(&mut st.kind, &sc, &self.names, &alias, &sets, self.units, &mut bad, &seen);
             if let StmtKind::Decl(d) = &st.kind {
                 // a centre the circle names, or `None` for one it mints (`c.center`)
                 if d.kind == EntKind::Circle {

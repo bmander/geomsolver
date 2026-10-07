@@ -94,6 +94,11 @@ impl<'a> Walk<'a> {
         }));
         let scope = &Scope { vals: vals.clone(), groups, ..scope.clone() };
         for st in body {
+            // a set's body walked again for a tangency states its relations' linearisations and
+            // makes nothing a second time (§6.21)
+            if scope.twin.is_some() && !matches!(st.kind, StmtKind::Relation(_)) {
+                continue;
+            }
             if self.emitted() >= MAX_FLAT {
                 self.err(
                     Code::E103,
@@ -231,6 +236,7 @@ impl<'a> Walk<'a> {
                         sides,
                         // and its body's calls name components from the file it was written in
                         module: comp.module,
+                        twin: None,
                     };
                     // a component reached again while it is still being expanded is a cycle:
                     // said once, at the call that closes it, and not walked
@@ -249,6 +255,11 @@ impl<'a> Walk<'a> {
                     }
                     let mut instance_path = path.to_vec();
                     instance_path.push(PathStep::Instance(st.id));
+                    // an instance of a family of sets is the set, its formals bound (§6.21)
+                    if let Some(lit) = &comp.set {
+                        let name = sc.prefix().trim_end_matches('.').to_string();
+                        self.set_made(name, lit, &sc, depth + 1);
+                    }
                     self.instantiating.push(comp);
                     self.body(&comp.body, &sc, &mut sub_vals, &instance_path, depth + 1);
                     self.instantiating.pop();
@@ -290,8 +301,25 @@ impl<'a> Walk<'a> {
                 // do not exist in the flat document, so they are worked out here
                 // — and one written with a defined word is that word's body (§9.9)
                 StmtKind::Relation(rel) => {
-                    let Some(r2) = self.settle_relation(rel, vals, scope) else { continue };
+                    let Some(mut r2) = self.settle_relation(rel, vals, scope) else { continue };
+                    if let Some(twin) = &scope.twin {
+                        // a claim and a gauge state no row, so they have no linearisation
+                        let gauge = r2.form.written().is_some_and(|w| {
+                            crate::constraints::gauge_op(&w.word.text).is_some()
+                        });
+                        if r2.claim || gauge {
+                            continue;
+                        }
+                        r2.along = Some(twin.clone());
+                    }
                     self.emit(StmtKind::Relation(r2), st, scope, path);
+                }
+                // a set written in place: nothing drawn, its uses expanded once every name is
+                // known (§6.21)
+                StmtKind::Set(set) => {
+                    let abs = format!("{prefix}{}", set.name.text);
+                    self.names.insert(abs.clone());
+                    self.set_made(abs, &set.lit, scope, depth);
                 }
                 // a claim over an interval: its numbers and its relations' worked out as above
                 StmtKind::ClaimOver(c) => {
@@ -541,6 +569,7 @@ impl<'a> Walk<'a> {
                 in_class: scope.in_class.clone(),
                 sides: scope.sides.clone(),
                 module: scope.module,
+                twin: scope.twin.clone(),
             };
             let mut p2 = path.to_vec();
             p2.push(PathStep::Copy { block: st.id, index: k as u32 });

@@ -667,29 +667,7 @@ pub fn add_rectangle(prog: &Program, w: f64, h: f64, plane: Option<&str>) -> Edi
 
 pub fn add_point(prog: &Program, x: f64, y: f64) -> Edit {
     let name = mint(prog, EntKind::Point);
-    let d = Decl {
-        annotations: Default::default(),
-        kind: EntKind::Point,
-        name: syntax::DeclName::Written(syntax::Name::new(name.clone())),
-        children: Vec::new(),
-        seed: vec![x, y],
-        seed_text: vec![None, None],
-        seed_spans: Vec::new(),
-        hint_span: None,
-        knots: None,
-        weights: None,
-        curve: None,
-        computed: None,
-        class: Default::default(),
-        class_span: Span::default(),
-        seed_at: None,
-        seed_names: Vec::new(),
-        sweep: None, motion: None, angular_span: None,
-        membership: Default::default(),
-        list_span: Span::default(),
-        close: None,
-        mint_close: None,
-    };
+    let d = Decl::point(syntax::DeclName::Written(syntax::Name::new(name.clone())), [x, y], None);
     append(prog, StmtKind::Decl(d), vec![name])
 }
 
@@ -1011,6 +989,13 @@ fn mentions(st: &Stmt, names: &std::collections::BTreeSet<String>) -> Vec<String
                         }
                     }
                 }
+            }
+        }
+        // a set goes with what its body names (§6.21), as a component's call goes with its
+        // arguments
+        StmtKind::Set(set) => {
+            for inner in &set.lit.body {
+                hit.extend(mentions(inner, names));
             }
         }
         StmtKind::Relation(rel) => {

@@ -117,6 +117,8 @@ pub struct Relation {
     pub class: Classes,
     /// The defined word the statement was written with (§9.9) — see `syntax::Relation::word`.
     pub word: Option<syntax::Worded>,
+    /// A set's body row stated as its linearisation (§6.21) — see `syntax::Relation::along`.
+    pub along: Option<syntax::Along>,
 }
 
 /// An operator selected against the declared entity kinds, before argument validation.
@@ -148,6 +150,7 @@ impl Statement {
             S::Decl(d) => Operation::Decl(Box::new(d.into())),
             S::Relation(r) => Operation::Relation(Relation {
                 form: r.form, place: r.place, claim: r.claim, class: r.class, word: r.word,
+                along: r.along,
             }),
             S::Branch(b) => Operation::Branch(b),
             S::Style(s) => Operation::Style(s),
@@ -158,9 +161,9 @@ impl Statement {
                 formal: c.formal, from: c.from, to: c.to, span: c.span,
                 body: c.body.into_iter().map(|s| Self::lower(s, path.clone())).collect::<Result<_, _>>()?,
             }),
-            S::Param(_) | S::Group(_) | S::Instance(_) | S::Block(_) => return Err(crate::program::Diag {
+            S::Param(_) | S::Group(_) | S::Instance(_) | S::Block(_) | S::Set(_) => return Err(crate::program::Diag {
                 code: crate::program::Code::E103, span: st.span, stmt: Some(st.id),
-                message: "parameters, groups, component instances and repetition are not supported inside a swept claim".into(),
+                message: "parameters, groups, sets, component instances and repetition are not supported inside a swept claim".into(),
             }),
         };
         Ok(Self { id: st.id, span: st.span, path, kind, turned: false })

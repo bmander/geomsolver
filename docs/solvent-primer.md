@@ -900,29 +900,42 @@ planes share agree (one equation). Views carry no place on paper; the `.svd` pla
 - A view's attitude may be an unknown: build it on axes the solve turns (2.11, 2.13). Planes and
   axes are settled before the main solve, round by round, and still move with it.
 
-**Spheres** are the library's: `ball := std.Sphere(c, r: 12mm)` is a centre and a radius, and
-nothing drawn; the centre may be drawn in a view or stand in space. What stands on it is said by
-distances from the centre, read in space across views:
+**A set is the points that satisfy a predicate** (spec §6.21): `near := { p | p distance(20mm)
+c }`, its point named after the `{` and the statements about it after the `|`, on one line or
+several up to the `}`. It adds nothing to the drawing; what it means is said where it is used:
 
-- `p distance(ball.r) ball.center` puts a point on it; `ball.center distance(ball.r) l` makes a
-  line touch it; `a.center distance(a.r + b.r) b.center` two spheres touch outside.
-- Leave `r` unbound (`std.Sphere(c, r: hint(10mm))`) and the radius is an unknown those distances
-  share — at most one unbound radius per distance, since a dimension is affine in one unknown.
+- `q coincident near` states the body with `q` for `p` (either way round; `q` a point).
+- `l tangent near`, `l` a line: the solve finds a contact on `l` in the set, and `l`'s direction
+  is in the set's tangent plane there — the body's rows differentiated along `l`, derived from
+  the definition. One condition for a surface. Refused for a set whose body makes points of its
+  own.
+- A family of sets is a component whose body is one: `component Ball(center: point, r: Length)
+  := { p | p distance(r) center }`; an instance is the set, its formals read by its name.
+- A culprit reads as the statement (`l tangent shaft`), never as the body's rows.
+
+**Spheres** are the library's set: `ball := std.Sphere(c, r: 12mm)` is a centre and a radius, and
+nothing drawn; the centre may be drawn in a view or stand in space.
+
+- `p coincident ball` puts a point on it; `l tangent ball` makes a line touch it;
+  `a.center distance(a.r + b.r) b.center` two spheres touch outside.
+- Leave `r` unbound (`std.Sphere(c, r: hint(10mm))`) and the radius is an unknown of the drawing
+  — at most one unbound radius per distance, since a dimension is affine in one unknown.
 - `std.CircleOnSphere(k, ball, view)` puts a whole circle `k` drawn in `view` on the sphere (a
   gear blank's toe circle on its end sphere): three equations.
 - A solid ball is a half disc turned about its diameter (`pierced_sphere.sv`).
 
-**Cones and cylinders** are the library's too, each a drawn line and a number, nothing drawn:
+**Cones and cylinders** are the library's sets too, each a drawn line and a number, nothing drawn;
+the line is the instance's `.about` (`axis` is an element's word, which a body cannot name bare):
 
-- `shaft := std.Cylinder(ax, r: 8mm)`: `p distance(shaft.r) shaft.axis` puts a point on it, and
-  `shaft.axis distance(shaft.r) l` makes a line touch it (their common perpendicular, in space
-  across views; the side read from the seed).
+- `shaft := std.Cylinder(ax, r: 8mm)`: `p coincident shaft` puts a point on it, and `l tangent
+  shaft` makes a line touch it. `shaft.about distance(shaft.r) l` states the touch directly, as
+  their common perpendicular (the side read from the seed).
 - `gc := std.Cone(gax, half: 60deg)`: the apex is the axis's start, opening toward its end.
-  `std.PointOnCone(p, gc)` puts a point on the nappe the axis points into (one angle at the apex;
+  `p coincident gc` puts a point on the nappe the axis points into (one angle at the apex;
   within the axis's own view it is the page's directed angle, so the generator counter-clockwise
-  of the axis).
+  of the axis); `l tangent gc` makes a line touch it.
 - `std.TangentCones(gc, pc, M)`: two cones share one tangent plane at M. State
-  `std.PointOnCone(M, gc)` and `std.PointOnCone(M, pc)` beside it.
+  `M coincident gc` and `M coincident pc` beside it.
 - Leave `r` or `half` unbound (`half: hint(30deg)`) and it is an unknown of the drawing; a solve
   writes what it found back into the `hint(…)`.
 
@@ -1940,8 +1953,8 @@ horizontal pax
 // the pitch cones: the gear's pitch angle, M on both, and the two touching there
 gc := std.Cone(gax, half: 60deg)
 pc := std.Cone(pax, half: hint(30deg))
-std.PointOnCone(M, gc)
-std.PointOnCone(M, pc)
+M coincident gc
+M coincident pc
 std.TangentCones(gc, pc, M)
 
 // the two pitch radii at M, and the shafts: square, and E apart

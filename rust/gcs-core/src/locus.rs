@@ -554,11 +554,7 @@ fn assemble(v: &View, s: &mut Scratch, fill: Fill) -> f64 {
         if fill >= Fill::Jac {
             s.jrow.clear();
             s.jrow.resize(kn.n_res * kn.n_par, 0.0);
-            if let Some(cj) = kn.const_jac {
-                s.jrow.copy_from_slice(cj);
-            } else {
-                (kn.jac)(1, &s.v, consts, &mut s.jrow);
-            }
+            kn.jac_into(&s.v, consts, &mut s.jrow);
             for t in 0..kn.n_res {
                 for (c, &col) in cols.iter().enumerate() {
                     let g = s.jrow[t * kn.n_par + c];

@@ -420,7 +420,8 @@ pub fn build(sk: &Sketch) -> ConstraintGraph {
         // *relation* between dimensions, and the cluster vocabulary has no element for that —
         // an edge carrying it would be read as a rigid distance somebody had fixed.  So it goes
         // to the numeric residual, on the same grounds as the run and the rise.
-        if c.free.is_some() {
+        // A set's linearised row (§6.21) is a derivative, which no element carries either.
+        if c.free.is_some() || c.along.is_some() {
             g.unsupported.push(c.id);
             continue;
         }

@@ -148,13 +148,36 @@ pub(super) fn constrain(
         return None;
     }
     // the defined word it was written with, its operands the entities they name (§9.9)
+    // — but for a set (§6.21), which is no entity and is named as written
     let word = r.word.as_ref().and_then(|w| {
         let ops = w.ops.iter().map(|o| res.lookup(o).and_then(|e| follow(sk, e, &o.path).ok()));
         Some(crate::constraints::WordUse {
             word: w.word.clone(),
             ops: ops.collect::<Option<Vec<EntRef>>>()?,
             args: w.args.clone(),
+            set: w.set.clone(),
         })
+    });
+    // a set's points are points: `coincident` puts one on it, and nothing else (§6.21)
+    // — said at the use, where the statement was written
+    let used = r.word.as_ref().filter(|w| w.set.is_some()).map(|w| w.span);
+    if let (Some(w), Some(found)) = (r.word.as_ref().filter(|w| w.word == "coincident"), &word) {
+        if let (Some(&op), Some((_, set))) = (found.ops.first(), &w.set) {
+            if op.kind != EntKind::Point {
+                let at = w.span;
+                let m = format!("`{set}` is a set of points, and `coincident` puts a point on it, not {}",
+                    op.kind.a());
+                if !diags.iter().any(|d| d.span == at && d.message == m) {
+                    diags.push(Diag { code: Code::E040, span: at, stmt: Some(st.id), message: m });
+                }
+                return None;
+            }
+        }
+    }
+    // a set's body row stated as its linearisation at a tangency's contact (§6.21)
+    let along = r.along.as_ref().map(|a| {
+        let ent = |x: &Ref| res.lookup(x).and_then(|e| follow(sk, e, &x.path).ok());
+        (ent(&a.point), ent(&a.line))
     });
     let r = match r
         .resolve(&|r| res.lookup(r).and_then(|e| follow(sk, e, &r.path).ok()).map(|e| e.kind))
@@ -404,6 +427,30 @@ pub(super) fn constrain(
     c.class = r.class.clone();
     c.written = written(&r.args, r.kind.spec(), st, doc);
     c.word = word;
+    if let Some(found) = along {
+        // said once at the use, however many of the body's rows find it
+        let mut say = |m: String| {
+            let at = used.unwrap_or(st.span);
+            if !diags.iter().any(|d| d.span == at && d.message == m) {
+                diags.push(Diag { code: Code::E040, span: at, stmt: Some(st.id), message: m });
+            }
+        };
+        let (Some(p), Some(l)) = found else { return None };
+        if l.kind != EntKind::Line {
+            say(format!("a set is touched by a line, not {}", l.kind.a()));
+            return None;
+        }
+        let a = crate::constraints::Along { point: p.i(), line: l.i() };
+        match c.linearisable(sk, a) {
+            Ok(true) => c.along = Some(a),
+            // a row that does not read the contact holds still as it moves: no linearisation
+            Ok(false) => return None,
+            Err(m) => {
+                say(m);
+                return None;
+            }
+        }
+    }
     Some(sk.add_quiet(c))
 }
 

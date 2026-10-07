@@ -438,6 +438,11 @@ fn kernel_table(sk: &Sketch) -> Vec<Kernel> {
             });
         }
     }
+    // a linearisation per static kernel, past the families, where any row is one (§6.21) —
+    // `Constraint::kernel_id_in` counts the same way
+    if sk.constraints.iter().any(|c| c.along.is_some()) {
+        t.extend((0..kernels::N_KERNELS).map(kernels::linearised_kernel));
+    }
     t
 }
 

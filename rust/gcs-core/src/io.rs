@@ -336,6 +336,10 @@ pub fn to_json(sk: &Sketch) -> Json {
             if c.claim {
                 o.set("claim", Json::Bool(true));
             }
+            // a set's linearised row (§6.21): its contact and line, by index
+            if let Some(a) = c.along {
+                o.set("along", Json::Arr(vec![Json::Num(a.point as f64), Json::Num(a.line as f64)]));
+            }
             if !c.class.is_empty() {
                 o.set("class", Json::Arr(c.class.0.iter().map(|s| Json::Str(s.clone())).collect()));
             }
@@ -563,6 +567,9 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
         // a document is untrusted input: a claim on a kind that owns an unknown would mint a
         // degree of freedom no equation mentions, so the flag is dropped rather than honoured
         nc.claim = c.get("claim").map(|v| v.as_bool()).unwrap_or(false) && kind.claimable();
+        if let Some(a) = c.get("along") {
+            nc.along = Some(along_from_json(&sk, &nc, a)?);
+        }
         if let Some(cls) = c.get("class") {
             nc.class = crate::style::Classes(
                 cls.arr().iter().map(|s| s.as_str().to_string()).filter(|s| !s.is_empty()).collect(),
@@ -1284,6 +1291,13 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
                 let ops = w.ops.iter().map(|&e| remap(e)).collect::<Option<Vec<_>>>()?;
                 Some(crate::constraints::WordUse { ops, ..w.clone() })
             });
+            // a linearisation comes with its contact and its line, or not at all (§6.21)
+            if let Some(a) = c.along {
+                let p = remap(EntRef::point(a.point));
+                let l = remap(EntRef::new(EntKind::Line, a.line));
+                let (Some(p), Some(l)) = (p, l) else { continue };
+                nc.along = Some(crate::constraints::Along { point: p.i(), line: l.i() });
+            }
             let id = dst.add_quiet(nc);
             if let Some(&place) = src.placements.get(&c.id) {
                 dst.placements.insert(id, place);   // a dimension keeps where it was dragged to
@@ -1780,6 +1794,20 @@ pub fn dimension_text(c: &Constraint) -> Option<String> {
     })
 }
 
+/// A linearised row's contact and line, read from a document (§6.21) and held to the rule the
+/// elaborator's are (`Constraint::linearisable`).
+fn along_from_json(sk: &Sketch, c: &Constraint, j: &Json) -> Result<crate::constraints::Along, String> {
+    let a = j.arr();
+    let at = |k: usize| a.get(k).map_or(-1, |v| v.as_i64());
+    let point = index(at(0), sk.points.len(), "along point")?;
+    let line = index(at(1), sk.lines.len(), "along line")?;
+    let along = crate::constraints::Along { point, line };
+    match c.linearisable(sk, along)? {
+        true => Ok(along),
+        false => Err(format!("`along` on a {} that does not read its point", c.type_name())),
+    }
+}
+
 /// Human-readable one-liner: `P0 distance(80) P1`; angles shown in degrees.  Entities are named
 /// `P0`, `L1` — what a sketch with no source calls them; a caller holding a source map gives
 /// `describe_with` the names the document uses.
@@ -1796,8 +1824,12 @@ pub fn describe_with(c: &Constraint, name: &dyn Fn(EntRef) -> Option<String>) ->
     // **a defined word is read as it was written** (§9.9): `a horizontal b`, not the level its
     // body states — the statement a reader can find is the one in the word
     if let Some(w) = &c.word {
-        let ops: Vec<String> =
+        let mut ops: Vec<String> =
             w.ops.iter().map(|&e| name(e).unwrap_or_else(|| entity_name(e))).collect();
+        // a set is no entity, and reads as the statement named it (§6.21)
+        if let Some((i, set)) = &w.set {
+            ops.insert((*i).min(ops.len()), set.clone());
+        }
         let args = if w.args.is_empty() { String::new() } else { format!("({})", w.args) };
         return match ops.as_slice() {
             [a, b] => format!("{claim}{a} {}{args} {b}", w.word),

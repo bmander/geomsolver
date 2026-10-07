@@ -547,6 +547,12 @@ impl Sketch {
         for p in c.lifted_points(self) {
             self.lift_point(p);
         }
+        // and a linearisation reads its line's ends there too (§6.21)
+        if let Some(a) = c.along {
+            for p in a.ends(self) {
+                self.lift_point(p);
+            }
+        }
         // a relation that reads where an axis is gives the axis its place
         for r in c.axes_placed_by() {
             if r < self.axes.len() {

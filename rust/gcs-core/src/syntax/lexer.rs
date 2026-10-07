@@ -105,7 +105,8 @@ pub(super) fn lex(src: &str) -> (Lexed, Vec<SynErr>) {
                     ')' | ']' => depth = (depth - 1).max(0),
                     '{' => {
                         let group = match toks.last() {
-                            Some((Tok::Define, _)) => true,
+                            // `{ p | … }` after `:=` is a set, whose body is statements (§6.21)
+                            Some((Tok::Define, _)) => !set_ahead(&src[i..]),
                             Some((Tok::P(':'), _)) => braces.last() == Some(&true),
                             _ => false,
                         };
@@ -163,6 +164,19 @@ pub(super) fn lex(src: &str) -> (Lexed, Vec<SynErr>) {
         }
     }
     (Lexed { toks, comments }, errs)
+}
+
+/// Whether the text after a `{` opens a set, `{ p | … }`: one name, then `|` (§6.21), whatever
+/// space or line breaks stand between.  A group's first member is a name and then `:`, so the
+/// bar tells them apart.
+fn set_ahead(rest: &str) -> bool {
+    let rest = rest.trim_start();
+    let mut chars = rest.char_indices();
+    if !chars.next().is_some_and(|(_, c)| ident_start(c)) {
+        return false;
+    }
+    let end = chars.find(|&(_, c)| !ident_char(c)).map_or(rest.len(), |(k, _)| k);
+    rest[end..].trim_start().starts_with('|')
 }
 
 /// Identifier character rules, shared with name validation.

@@ -366,12 +366,17 @@ impl Program {
                         walk(inner, out);
                     }
                 }
+                StmtKind::Set(s) => {
+                    for inner in &s.lit.body {
+                        walk(inner, out);
+                    }
+                }
                 _ => {}
             }
         }
         let mut out = Vec::new();
         for c in self.components.iter() {
-            for st in c.body.iter() {
+            for st in c.body.iter().chain(c.set.iter().flat_map(|s| &s.body)) {
                 walk(st, &mut out);
             }
         }

@@ -90,19 +90,42 @@ writes `level(up)` (`print::ordinate_text`). `tests/relation_words.rs` is the ga
 component defined twice in one file, the document's own included (a value twice is E001). `std.front` needs the document's own `use std`. A drawn callout drops a
 module path (`relations::unqualified`).
 
-**Spheres, cones and cylinders are library components** (`rust/lib/std.sv`, 2026-10-06): a
-centre or a line and one number (`std.Sphere(c, r)`, `std.Cylinder(axis, r)`, `std.Cone(axis,
-half)`, apex at the axis's start), nothing drawn, no entity kind, kernel or `CKind` of their own.
-What stands on one is said in the words the drawing has: a distance from the centre or the axis
-(`p distance(shaft.r) shaft.axis`, `PointLine3`/`LineLine3` across views), and
-`std.PointOnCone(p, k)` (an angle at the apex), `std.TangentCones(k1, k2, m)` (each meridian
-plane square to the plane through both generators: hidden planes and an axis) and
-`std.CircleOnSphere(k, s, view)`.  An unbound number is the instance's unknown (`pc.half`, an
-angle in degrees); `edit::unknown_seeds` writes it back into the call's `hint(…)`
+**Spheres, cones and cylinders are library sets** (`rust/lib/std.sv`, 2026-10-06; sets #101): a
+centre or a line and one number (`std.Sphere(c, r)`, `std.Cylinder(about, r)`, `std.Cone(about,
+half)`, apex at the line's start; the line is `.about`, since `axis` is an element's word a body
+cannot name bare), nothing drawn, no entity kind, kernel or `CKind` of their own.  A point on one
+is `p coincident S`, a line touching one `l tangent S` (below); `std.TangentCones(k1, k2, m)`
+(each meridian plane square to the plane through both generators: hidden planes and an axis) and
+`std.CircleOnSphere(k, s, view)` stay components.  An unbound number is the instance's unknown
+(`pc.half`, an angle in degrees); `edit::unknown_seeds` writes it back into the call's `hint(…)`
 (`InstVal::Hint` carries the span).  A lifted program declares it under a name it can write
 (`lift::declarable`: `pc_half`, apart from every other unknown's) and every dimension reading
 it says so (`flatten::substitute_with`).  `tests/spatial_surfaces.rs` and `tests/spatial_lang.rs` are the
 gates.
+
+**Sets (§6.21, 0.49, #101):** `S := { p | BODY }` (`StmtKind::Set`, `syntax::SetLit`; the lexer
+reads `{ NAME |` after `:=` as a body, not a group) and `component Name(F) := { p | … }`
+(`Component::set`, an empty body: the instance *is* the set).  Making one makes nothing
+(`flatten::sets::Site`, `Walk::set_made`).  Uses are expanded once every name is known
+(`Walk::expand_sets`, rounds, E003 past `MAX_DEPTH`): `q coincident S` walks the body under the
+use's own prefix (`{use scope prefix}#{stmt}.0.`, path + `Instance(stmt)`), the bound name an
+alias of `q`; `l tangent S` declares the contact at the bound name (in space, seeded at `l`'s
+middle), states it `coincident l`, walks the body, then walks it again with `Scope::twin` set —
+relations only, each with `Relation::along` (`syntax::Along`, refs resolved in `rewrite`).  Every
+relation made carries `Worded { set: Some((k, name)), span }`, so `describe` reads `l tangent
+shaft` (`WordUse::set`).  `program::relations::constrain` turns `along` into `Constraint::along`
+(`Along { point, line }`), dropping a row that does not read the contact
+(`Constraint::linearisable`, the one rule `io::from_json` shares); it picks
+`kernels::linearised_kernel(inner)` (ids past the curve families, `kernel_id_in`; built in
+`kernel_table` when any row has one): `J(x)·ẋ`, `ẋ` the line's direction in the contact's lift
+columns (`consts_on`: kernel id, row consts, a column mask), its Jacobian a central difference of
+the row's exact `jac` along `ẋ`.  `params_on` appends the line's lifted ends (minted in
+`Sketch::add`).  `along` travels through `graft`, JSON (`"along": [point, line]`) and
+`topology_key`; `cgraph` leaves it to the residual, the witness never jitters it, callouts skip
+it, `to_program` drops it (a flat program cannot spell it).  Refused: a set named as an entity
+(E040 in `rewrite`), two sets, parentheses, a non-point `coincident`, a non-line or claimed
+`tangent`, a tangency to a body that declares geometry of its own (`sets::makes_points`).
+`tests/sets.rs` is the gate.
 
 **`ring N about C { … }`, solved over one copy (0.47, #96):** copies that are turns of the first
 (the representative) about a point (in its view) or an axis held in its direction (in space).

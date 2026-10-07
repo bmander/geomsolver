@@ -108,6 +108,7 @@ fn printable(k: &StmtKind) -> Result<(), PrintError> {
         StmtKind::Chain(_) => Err(PrintError { construct: "named chains" }),
         StmtKind::Block(_) => Err(PrintError { construct: "repeat and cycle blocks" }),
         StmtKind::ClaimOver(_) => Err(PrintError { construct: "claim-over bodies" }),
+        StmtKind::Set(_) => Err(PrintError { construct: "set literals" }),
         _ => Ok(()),
     }
 }
@@ -198,7 +199,7 @@ fn write_stmt(out: &mut String, k: &StmtKind) {
             out.push_str(&parts.join("; "));
             out.push_str(" }");
         }
-        StmtKind::Block(_) | StmtKind::ClaimOver(_) | StmtKind::Chain(_) => {
+        StmtKind::Block(_) | StmtKind::ClaimOver(_) | StmtKind::Chain(_) | StmtKind::Set(_) => {
             unreachable!("validated before printing")
         }
     }

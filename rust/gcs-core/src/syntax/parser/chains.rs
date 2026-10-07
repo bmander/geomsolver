@@ -707,6 +707,7 @@ impl<'a> P<'a> {
                     class: Classes::default(),
                     class_span: Span::default(),
                     word: None,
+                    along: None,
                 };
                 let Some(id) = self.mint_stmt(next_id, sp) else { return };
                 out.push(Stmt {
@@ -1026,6 +1027,7 @@ impl<'a> P<'a> {
                 class: Classes::default(),
                 class_span: Span::default(),
                 word: None,
+                along: None,
             })
         };
         let end = |w: &str| {

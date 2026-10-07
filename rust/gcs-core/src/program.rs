@@ -105,6 +105,7 @@ fn shadowing(p: &Program, diags: &mut Vec<Diag>) {
             match &st.kind {
                 StmtKind::Param(d) => say(&d.name, "a `param`", Some(st.id), diags),
                 StmtKind::Group(d) => say(&d.name, "a `group`", Some(st.id), diags),
+                StmtKind::Set(d) => say(&d.name, "a set", Some(st.id), diags),
                 StmtKind::Block(b) => {
                     if let Some(i) = &b.binder {
                         say(i, "a block's index", Some(st.id), diags);

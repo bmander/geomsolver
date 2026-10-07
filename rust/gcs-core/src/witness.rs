@@ -125,7 +125,9 @@ pub fn make_witness(sk: &mut Sketch, seed: u32, jitter: f64, tol: f64) -> Vec<f6
         // a dimension written in terms of a free variable states no number, so there is no
         // number to make generic: it is structure, and it stays exactly as it is.  A claim's
         // number is not an input either — no system reads it, so a jitter would measure nothing.
-        if c.soft || c.claim || c.free.is_some() {
+        // a set's linearised row (§6.21) reads its row's number only to differentiate it, so a
+        // jitter of it would only make it and its row disagree
+        if c.soft || c.claim || c.free.is_some() || c.along.is_some() {
             continue;
         }
         for (ai, _, kind) in c.dimensions() {

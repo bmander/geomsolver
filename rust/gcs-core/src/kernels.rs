@@ -142,6 +142,17 @@ pub struct Kernel {
     pub const_jac: Option<&'static [f64]>,
 }
 
+impl Kernel {
+    /// One instance's Jacobian at `v` into `j` (`n_res × n_par`, row-major): the constant one
+    /// where the kernel has it, else computed.
+    pub fn jac_into(&self, v: &[f64], k: &[f64], j: &mut [f64]) {
+        match self.const_jac {
+            Some(cj) => j.copy_from_slice(cj),
+            None => (self.jac)(1, v, k, j),
+        }
+    }
+}
+
 pub fn kernel(id: K) -> &'static Kernel {
     &KERNELS[id as usize]
 }
@@ -166,6 +177,136 @@ pub fn curve_kernel(n_theta: usize, n_const: usize) -> Kernel {
         res: point_on_curve_res,
         jac: point_on_curve_jac,
         const_jac: None,
+    }
+}
+
+/// **A row's linearisation** (§6.21): the twin of static kernel `inner` that a set's body row
+/// is stated as for `l tangent S` — the row's derivative as the contact moves along the line,
+/// `J(x)·ẋ`, where `ẋ` is the line's direction `b − a` in the contact's columns and 0 in every
+/// other (the set's own numbers are held while its point moves on it).  The columns are the
+/// row's and then the line's ends in space; the constants the row's kernel, its constants, and
+/// which component of the direction moves each column (`Constraint::consts_on`).
+///
+/// Of the same degree as the row: a Jacobian of degree `g − 1` times a length.  The Jacobian
+/// over the row's columns is the derivative of `J` along `ẋ` (the Hessian is symmetric, so
+/// `∂(Jẋ)/∂x = d/dh J(x + hẋ)`), by a central difference of the row's own exact Jacobian; over
+/// the line's ends it is the row's Jacobian, read off the columns the direction moves.
+pub fn linearised_kernel(inner: usize) -> Kernel {
+    let kn = &KERNELS[inner];
+    Kernel {
+        name: "linearised",
+        n_res: kn.n_res,
+        n_par: kn.n_par + 6,
+        n_const: 1 + kn.n_const + kn.n_par,
+        degree: kn.degree,
+        res: linearised_res,
+        jac: linearised_jac,
+        const_jac: None,
+    }
+}
+
+/// One linearisation's parts: the row's kernel, its columns, its constants, which direction
+/// component moves each column, and the direction.
+struct Linearised<'a> {
+    kn: &'static Kernel,
+    x: &'a [f64],
+    kc: &'a [f64],
+    mask: &'a [f64],
+    dir: [f64; 3],
+}
+
+impl<'a> Linearised<'a> {
+    fn read(v: &'a [f64], k: &'a [f64]) -> Option<Linearised<'a>> {
+        let kn = KERNELS.get(*k.first()? as usize)?;
+        let m = kn.n_par;
+        if v.len() != m + 6 || k.len() != 1 + kn.n_const + m {
+            return None;
+        }
+        let (a, b) = (&v[m..m + 3], &v[m + 3..m + 6]);
+        Some(Linearised {
+            kn,
+            x: &v[..m],
+            kc: &k[1..1 + kn.n_const],
+            mask: &k[1 + kn.n_const..],
+            dir: [b[0] - a[0], b[1] - a[1], b[2] - a[2]],
+        })
+    }
+
+    /// `ẋ`: the direction in the columns it moves.
+    fn xdot(&self) -> Vec<f64> {
+        self.mask
+            .iter()
+            .map(|&c| match c as usize {
+                c @ 1..=3 => self.dir[c - 1],
+                _ => 0.0,
+            })
+            .collect()
+    }
+
+    /// The row's Jacobian at `x`, into `j`.
+    fn jac_at(&self, x: &[f64], j: &mut Vec<f64>) {
+        j.resize(self.kn.n_res * self.kn.n_par, 0.0);
+        self.kn.jac_into(x, self.kc, j);
+    }
+}
+
+fn linearised_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    let (n_par, n_const) = curve_widths(n, v, k);
+    let mut j = Vec::new();
+    for i in 0..n {
+        let Some(l) = Linearised::read(&v[n_par * i..n_par * (i + 1)], &k[n_const * i..n_const * (i + 1)])
+        else {
+            continue;
+        };
+        let (m, nr) = (l.kn.n_par, l.kn.n_res);
+        let xd = l.xdot();
+        l.jac_at(l.x, &mut j);
+        for row in 0..nr {
+            r[nr * i + row] = (0..m).map(|c| j[row * m + c] * xd[c]).sum();
+        }
+    }
+}
+
+fn linearised_jac(n: usize, v: &[f64], k: &[f64], out: &mut [f64]) {
+    let (n_par, n_const) = curve_widths(n, v, k);
+    let (mut j, mut jp, mut jm, mut step) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+    for i in 0..n {
+        let Some(l) = Linearised::read(&v[n_par * i..n_par * (i + 1)], &k[n_const * i..n_const * (i + 1)])
+        else {
+            continue;
+        };
+        let (m, nr) = (l.kn.n_par, l.kn.n_res);
+        let o = nr * n_par * i;
+        out[o..o + nr * n_par].iter_mut().for_each(|e| *e = 0.0);
+        let xd = l.xdot();
+        l.jac_at(l.x, &mut j);
+        // over the line's ends: the row's Jacobian where the direction moves a column
+        for row in 0..nr {
+            for c in 0..m {
+                let comp = l.mask[c] as usize;
+                if (1..=3).contains(&comp) {
+                    out[o + row * n_par + m + 3 + comp - 1] += j[row * m + c];
+                    out[o + row * n_par + m + comp - 1] -= j[row * m + c];
+                }
+            }
+        }
+        // over the row's columns: `J` differentiated along `ẋ`
+        let speed = xd.iter().map(|d| d * d).sum::<f64>().sqrt();
+        if speed == 0.0 {
+            continue;
+        }
+        let scale = l.x.iter().fold(1.0f64, |s, x| s.max(x.abs()));
+        let h = 1e-6 * scale / speed;
+        for (s, jac) in [(h, &mut jp), (-h, &mut jm)] {
+            step.clear();
+            step.extend(l.x.iter().zip(&xd).map(|(x, d)| x + s * d));
+            l.jac_at(&step, jac);
+        }
+        for row in 0..nr {
+            for c in 0..m {
+                out[o + row * n_par + c] = (jp[row * m + c] - jm[row * m + c]) / (2.0 * h);
+            }
+        }
     }
 }
 
@@ -3127,7 +3268,11 @@ pub static KERNELS: [Kernel; N_KERNELS] = [
 /// One row of a kernel: residual and Jacobian for a single constraint's local values.  The
 /// scalar view of the vectorized kernels, kept for the finite-difference checker and reporting.
 pub fn eval_one(id: usize, v: &[f64], c: &[f64]) -> (Vec<f64>, Vec<f64>) {
-    let k = &KERNELS[id];
+    eval_with(&KERNELS[id], v, c)
+}
+
+/// `eval_one` over a kernel in hand — one built rather than registered (`linearised_kernel`).
+pub fn eval_with(k: &Kernel, v: &[f64], c: &[f64]) -> (Vec<f64>, Vec<f64>) {
     let mut r = vec![0.0; k.n_res];
     let mut j = vec![0.0; k.n_res * k.n_par];
     (k.res)(1, v, c, &mut r);

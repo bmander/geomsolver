@@ -6,7 +6,8 @@ built here stand. The solved views it built (folds, `attitude: free`, `offset: f
 planes over rays, with points in space and no paper placement: [planes-plan.md](planes-plan.md)
 (#81). The sphere, cone and cylinder entities became the library's `std.Sphere`, `std.Cone` and
 `std.Cylinder` (2026-10-06): what stands on one is a distance from its centre or axis, or
-`std.CircleOnSphere`, `std.PointOnCone`, `std.TangentCones`. Read the spellings below as
+`std.CircleOnSphere`, `std.PointOnCone`, `std.TangentCones`; since #101 they are sets, and a
+point on one is `p coincident S`, a line touching one `l tangent S`. Read the spellings below as
 history.
 
 The [spiral-bevel layout plan](spiral-bevel-layout-plan.md) needs a true 90° hypoid: the shaft
