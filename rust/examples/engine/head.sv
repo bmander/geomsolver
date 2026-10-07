@@ -14,7 +14,7 @@
 use engine.dims
 use engine.parts
 use engine.valvetrain
-use std (horizontal)
+use std (horizontal, offset, right_of)
 
 // A cam bearing cap, edge on or from above: a block `wcamb` long round the journal.
 component CamBearing(c: point, dims: group) {
@@ -30,12 +30,10 @@ component CylinderHead(end: plane, side: plane, top: plane, o: point, o_s: point
     t_l := point hint((o.x - 110mm, o.y + dims.deck + dims.head))
     tr := engine.parts.At(o, dx: 110mm, dy: dims.deck + dims.head)
     (gasket := line(f_l, f_r)) -> (side_r := line(f_r, tr.p)) -> (topline := line(tr.p, t_l)) -> (side_l := line(t_l, f_l)) -> close
-    o distance(-dims.hw, along: x) f_l
-    o distance(dims.deck + dims.gasket, along: y) f_l
+    f_l offset(dx: -dims.hw, dy: dims.deck + dims.gasket) o
     o distance(dims.deck + dims.gasket, along: y) f_r
     f_l distance(2 * dims.hw) f_r
-    o distance(110, along: left) t_l
-    o distance(dims.deck + dims.head, along: y) t_l
+    t_l offset(dx: -110, dy: dims.deck + dims.head) o
     // the pent roof over the bore, from the face at the bore's edges up to the ridge
     r_l := engine.parts.At(o, dx: -dims.D / 2, dy: dims.deck + dims.gasket)
     r_r := engine.parts.At(o, dx: dims.D / 2, dy: dims.deck + dims.gasket)
@@ -195,8 +193,7 @@ component CylinderHead(end: plane, side: plane, top: plane, o: point, o_s: point
     }
     repeat 4 as i {
       pc := point hint((o_t.x + dims.front + 25mm + dims.P / 2 + i * dims.P, o_t.y))
-      o_t distance(dims.front + 25mm + dims.P / 2 + i * dims.P, along: x) pc
-      o_t horizontal pc
+      pc right_of(d: dims.front + 25mm + dims.P / 2 + i * dims.P) o_t
       plug := circle(center: pc) hint(r: 7mm)
       radius(7) plug
       repeat 2 as k {

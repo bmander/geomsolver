@@ -1,6 +1,6 @@
 // Step 4, how far the gear's space cutter reaches: a cap in N standing |CO| + reach from the
 // cutter's axis, clear of every blank point. crown/space.sv closes the cutter's sections there.
-use std
+use std (turned)
 use design
 use views
 use pitch.gear
@@ -34,8 +34,7 @@ component CutterReach(p: plane, n: plane, apex: point, normal: line, ax: line, r
   }
   foot coincident p
   radial project foot
-  ax angle(0deg) cap
-  cap equal ax
+  cap turned(theta: 0deg) ax
 }
 
 preview {

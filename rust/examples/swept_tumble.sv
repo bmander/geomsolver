@@ -3,7 +3,7 @@
 // between -`roll` and +`roll`. Change a number and apply (⌘↵) to watch it refine again; ⌘B shows
 // it in the glass box. Keep `tube` below `ring`, so the torus has a hole.
 unit mm
-use std (vertical)
+use std (above, coords, on_u, on_v)
 
 ring := 1mm        // the torus's centre circle
 tube := 0.5mm      // the torus's tube
@@ -25,11 +25,9 @@ in std.front {
 
   // The motion: a quarter turn about an upright axis for every turn of a frame about a tilted one.
   private hub := point hint((2, 0))
-  hub distance(2mm, along: u) std.front
-  hub level(v) std.front
+  hub on_u(d: 2mm) std.front
   private hub_up := point hint((2, 5))
-  hub vertical hub_up
-  hub distance(5mm, along: up) hub_up
+  hub_up above(d: 5mm) hub
   construction centerline cradle := line(hub, hub_up)
 }
 private spin := motion(about: cradle, ratio: 0.25)
@@ -40,10 +38,8 @@ fix(origin == (0, 0, 0)) tilted
 in tilted {
   private k0 := point hint((0, 0.7071))
   private k1 := point hint((5, 0.7071))
-  k0 level(u) tilted
-  k0 distance(0.7071mm, along: v) tilted
-  k1 distance(5mm, along: u) tilted
-  k1 distance(0.7071mm, along: v) tilted
+  k0 on_v(d: 0.7071mm) tilted
+  k1 coords(du: 5mm, dv: 0.7071mm) tilted
   construction centerline kaxis := line(k0, k1)
 }
 private observer := motion(about: kaxis)

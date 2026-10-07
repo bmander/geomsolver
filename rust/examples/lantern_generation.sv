@@ -5,7 +5,7 @@
 // through removed, meshed from its material field (the glass box shows it refining).
 
 unit mm
-use std
+use std (coords, on_u)
 wheel_pitch := 16mm
 pinion_pitch := 8mm
 pin_throw := 6mm
@@ -19,14 +19,11 @@ in std.front {
   construction centerline spindle := line(std.origin, hint((0, 1)))
   fix((0, 1)) spindle.p2
   private pitch := point hint((16, 0))
-  pitch distance(wheel_pitch, along: u) std.front
-  pitch level(v) std.front
+  pitch on_u(d: wheel_pitch) std.front
   private hub := point hint((24, 0))
   private hub_up := point hint((24, 5))
-  hub distance(wheel_pitch + pinion_pitch, along: u) std.front
-  hub level(v) std.front
-  hub_up distance(wheel_pitch + pinion_pitch, along: u) std.front
-  hub_up distance(5mm, along: v) std.front
+  hub on_u(d: wheel_pitch + pinion_pitch) std.front
+  hub_up coords(du: wheel_pitch + pinion_pitch, dv: 5mm) std.front
   construction centerline pinion_axis := line(hub, hub_up)
   construction wheel_radius := line(std.origin, pitch)
   construction pinion_radius := line(hub, pitch)

@@ -1,6 +1,16 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.49 — October 2026**
+**Specification, Draft 0.50 — October 2026**
+
+**[0.50] Predicates, applied.** A relation word and a set are one thing: a body over
+**parameters**, given where it is called (`Sphere(c, r: 12mm)`, `above(d: 5mm)`), and **bound
+variables**, written where it is defined (`{ p | … }`, `a above(d) b`) and filled where it is used
+(`q coincident ball`, `r above(d: 5mm) q`) — applied by one rule (§9.9, §6.21). So a word's body
+may hold several statements and declare the geometry they need (`l1 flush(d) l2 := { l1
+parallel l2; l2.p1 distance(d) l1 }`), each use making its own; a set may be written where it is
+used (`q coincident { p | p distance(5mm) c }`, `l tangent std.Cylinder(ax, r: 8mm)`); a word may
+use a set and a set write a word, and a tangency linearises through both. An operand that names
+nothing is said once, where it is written.
 
 **[0.49] Sets.** A shape may be written as the points that satisfy a predicate: `ball := { p |
 p distance(12mm) c }`, and a family of them as a component whose body is one, `component
@@ -1569,7 +1579,7 @@ q coincident ball
 l tangent shaft
 ```
 
-A **set** is the points that satisfy its body: `{ NAME | STATEMENTS }`, a name for the point —
+A **set** is the points that satisfy its body (a predicate with one bound variable, §9.9): `{ NAME | STATEMENTS }`, a name for the point —
 **bound**: it names whatever is put on the set — then one or more statements about it, on the
 line or on lines of their own up to the closing brace. Written as a value, `S := { p | … }`, it
 reads the names of the body it stands in. Written as a component's definition, `component
@@ -1581,6 +1591,9 @@ error.
 **A set adds nothing to the drawing**: no unknown, no equation, nothing drawn. What it means is
 said where it is used, by two words:
 
+- **A set may be written where it is used** **[0.50]**, on the right of `coincident` or
+  `tangent`: `q coincident { p | p distance(5mm) c }`, `l tangent std.Cylinder(ax, r: 8mm)` —
+  and is described as written.
 - `q coincident S` (either way round) states the body with `q` for the bound point, expanded
   where the statement stands as a component's body is (§14.1). What the body declares privately
   — the cone's generator — is made once for each use. `q` MUST be a point (**E040**).
@@ -1921,7 +1934,9 @@ A **relation word** is defined at the top level of a file — never inside a bod
 - A word nothing defines where it is written is **E102**, naming the `use` that would import it where a module defines it.
 - The statement keeps its identity: its placement, classes and `claim` are the statement's, and a constraint the body states is **described in the word as written** (`p horizontal q`), not its expansion. A body states its relation alone: a placement or a class in it is a syntax error.
 
-A word's body is one relation. *Open, non-normative:* a body of several (`a coincident(P) b := a coincident P; b coincident P`) would make one statement several constraints, deleted together; it is not part of this draft, nor is a word as a value (#80). The standard library defines `horizontal` and `vertical` between two points this way (§14.4).
+**A body may be several statements** **[0.50]**: `l1 flush(d) l2 := { l1 parallel l2; l2.p1 distance(d) l1 }`, in braces, one per line, for one fact about the operands that takes several rows. It may declare the geometry its relations need (`private ab := line(a, b)`), which each use makes anew, under a name of the use's own, and read only what it declares besides its operands and parameters. Every relation a use makes is the statement's: deleted with it, described as it, a placement on it going to the one relation when it makes one. A body may write other words and use sets (§6.21), a set written in place included (`a orbits(r) o := a coincident std.Sphere(o, r: r)`). An infix word is a relation **between** its operands — distance, symmetry, flushness; that each stands on a third thing is said of each (`a coincident P`), not made a word.
+
+**A word and a set are one predicate** **[0.50]**: a body over parameters (in parentheses, given at the call) and bound variables (a word's operands, a set's point, written where the definition shows them and filled at the use), applied by one rule — under a name of the use's own, each bound variable the operand the use wrote, the body closed over what it was given. A component instance is the case with no bound variable, stated where it is written. An operand that names nothing is **E101** once, where it is written, and not again at each place in the body that reads it. *Open, non-normative:* a word as a value (#80). The standard library defines `horizontal` and `vertical` between two points as words (§14.4), and where one point stands from another (`b offset(dx: 30, dy: 12) a`, `b right_of(d: 30) a`, `left_of`, `above`, `below`), where a point stands in a plane's frame (`p coords(du: 20, dv: 5) P`, `p on_u(d: 20) P`, `p on_v(d: 5) P`), two lines crossed (`a skew(theta: 90deg, e: 20mm) b`) and one line turned from another (`a turned(theta: 180deg) b`). Each is two dimensions or a dimension and a level, said as the one fact they are.
 
 ---
 

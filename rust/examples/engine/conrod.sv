@@ -16,6 +16,7 @@
 
 use engine.dims
 use engine.parts
+use std (offset)
 
 component ConRod(end: plane, side: plane, secv: plane,
                  pin: point, ax: line, pin_s: point, sm_s: point, at: point,
@@ -151,8 +152,7 @@ component ConRod(end: plane, side: plane, secv: plane,
       bc := engine.parts.At(pin_s, dx: wB / 2, dy: eB)
       bd := engine.parts.At(pin_s, dx: -wB / 2, dy: eB)
       (b1 := line(ba, bb)) -> (b2 := line(bb, bc.p)) -> (b3 := line(bc.p, bd.p)) -> (b4 := line(bd.p, ba)) -> close
-      pin_s distance(-wB / 2, along: x) ba
-      pin_s distance(-eB, along: y) ba
+      ba offset(dx: -wB / 2, dy: -eB) pin_s
       pin_s distance(-eB, along: y) bb
       ba distance(wB) bb
       pa := engine.parts.At(pin_s, dx: -wB / 2, dy: 0mm)
@@ -167,8 +167,7 @@ component ConRod(end: plane, side: plane, secv: plane,
       sc := engine.parts.At(sm_s, dx: wS / 2, dy: eS)
       sd := engine.parts.At(sm_s, dx: -wS / 2, dy: eS)
       (s1 := line(sa, sb)) -> (s2 := line(sb, sc.p)) -> (s3 := line(sc.p, sd.p)) -> (s4 := line(sd.p, sa)) -> close
-      sm_s distance(-wS / 2, along: x) sa
-      sm_s distance(-eS, along: y) sa
+      sa offset(dx: -wS / 2, dy: -eS) sm_s
       sm_s distance(-eS, along: y) sb
       sa distance(wS) sb
       // the shank's flanges between them
@@ -178,14 +177,11 @@ component ConRod(end: plane, side: plane, secv: plane,
       kd := point hint((sm_s.x - fl / 2, sm_s.y - eS))
       k1 := line(ka, kd)
       k2 := line(kb, kc)
-      pin_s distance(-fl / 2, along: x) ka
-      pin_s distance(eB, along: y) ka
+      ka offset(dx: -fl / 2, dy: eB) pin_s
       pin_s distance(eB, along: y) kb
       ka distance(fl) kb
-      sm_s distance(fl / 2, along: x) kc
-      sm_s distance(-eS, along: y) kc
-      sm_s distance(-fl / 2, along: x) kd
-      sm_s distance(-eS, along: y) kd
+      kc offset(dx: fl / 2, dy: -eS) sm_s
+      kd offset(dx: -fl / 2, dy: -eS) sm_s
     }
   }
 

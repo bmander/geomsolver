@@ -1,13 +1,12 @@
 // What every view draws with.
 
-use std (horizontal, vertical)
+use std (horizontal, vertical, above, offset)
 use components.dims
 
 // A point placed from `o` by two ordinates.
 component At(o: point, dx: Length, dy: Length) {
   p := point hint((o.x + dx, o.y + dy))
-  o distance(dx, along: x) p
-  o distance(dy, along: y) p
+  p offset(dx: dx, dy: dy) o
 }
 
 // An axis-aligned rectangle about `o`: `a` is its lower-left corner, offset from `o`.
@@ -17,14 +16,10 @@ component Box(o: point, x0: Length, y0: Length, x1: Length, y1: Length) {
   c := point hint((o.x + x1, o.y + y1))
   d := point hint((o.x + x0, o.y + y1))
   profile := (ab := line(a, b)) -> (bc := line(b, c)) -> (cd := line(c, d)) -> (da := line(d, a)) -> close
-  o distance(x0, along: x) a
-  o distance(y0, along: y) a
-  o distance(x1, along: x) b
-  o distance(y0, along: y) b
-  o distance(x1, along: x) c
-  o distance(y1, along: y) c
-  o distance(x0, along: x) d
-  o distance(y1, along: y) d
+  a offset(dx: x0, dy: y0) o
+  b offset(dx: x1, dy: y0) o
+  c offset(dx: x1, dy: y1) o
+  d offset(dx: x0, dy: y1) o
 }
 
 // A rectangle between `x0` and `x1` whose top and bottom are the heights of two points another
@@ -66,8 +61,7 @@ component Wide(o: point, y0: Length, y1: Length, left: point, right: point) {
 // A part sheet's datum: the part's axis up the page through `o`.
 component Axes(o: point) {
   up := point hint((o.x, o.y + 40mm))
-  o vertical up
-  o distance(40, along: y) up
+  up above(d: 40) o
   ax := line(o, up)
   f := std.Turned(o, up)
 }

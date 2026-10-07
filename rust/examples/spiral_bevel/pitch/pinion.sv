@@ -8,7 +8,7 @@
 // |MV| cos(spiral + offset angle). A virtual axis leaves V at the bevel pinion's pitch angle,
 // the angle at M in the gear's triangle, and the pinion's pitch radius is one circle about M
 // that both axes touch. With no offset, A and V are O and the two axes one.
-use std
+use std (skew)
 use design
 use views
 use pitch.gear
@@ -53,8 +53,7 @@ component PinionCone(p: plane, q: plane, gear: group, foot: line, design: group,
   ax tangent(side: right) pitch_radius
   virtual_axis tangent(side: right) pitch_radius
   // The shafts.
-  gear.ax angle(design.shaft) ax
-  gear.ax distance(design.offset) ax
+  gear.ax skew(theta: design.shaft, e: design.offset) ax
   // The bevel pinion's pitch angle, generator to axis: the angle at M in the gear's triangle
   // is the angle at V.
   gear.to_apex angle(pinion_angle, sense: cw) gear.to_foot

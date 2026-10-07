@@ -283,8 +283,9 @@ fn an_import_is_per_file_and_there_is_no_prelude() {
     // `lib.uses` imports `horizontal` for its own body; the document has not
     ok(&format!("use std\nuse lib.uses\n{BODY}  f := lib.uses.Flat(p, q)\n}}\n"));
     has(&format!("use std\nuse lib.uses\n{BODY}  p horizontal q\n}}\n"), "E102", "use std (horizontal)", "horizontal");
-    // a word is only ever bare: imported, or not written
-    has(&format!("use std\nuse lib.words\n{BODY}  q above(d: 1) p\n}}\n"), "E102", "use lib.words (above)", "above");
+    // a word is only ever bare: imported, or not written (`std` defines an `above` too, and the
+    // file uses it first)
+    has(&format!("use std\nuse lib.words\n{BODY}  q above(d: 1) p\n}}\n"), "E102", "use std (above)", "above");
 }
 
 #[test]

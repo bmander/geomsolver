@@ -9,6 +9,61 @@
 a horizontal b := a level(up) b
 a vertical b := a level(right) b
 
+// Where one point stands from another in the view both are drawn in (§9.9, #103): `b offset(dx:
+// 30, dy: 12) a` — `b` 30 to the right of `a` and 12 above it, each a dimension; and the four
+// steps along one of the view's axes, `b right_of(d: 30) a` — `b` 30 to the right of `a`, level
+// with it — `left_of`, `above` and `below`.
+b offset(dx, dy) a := {
+  a distance(dx, along: x) b
+  a distance(dy, along: y) b
+}
+b right_of(d) a := {
+  a distance(d, along: right) b
+  a level(up) b
+}
+b left_of(d) a := {
+  a distance(d, along: left) b
+  a level(up) b
+}
+b above(d) a := {
+  a distance(d, along: up) b
+  a level(right) b
+}
+b below(d) a := {
+  a distance(d, along: down) b
+  a level(right) b
+}
+
+// Where a point stands in a plane's own frame, from its origin (§9.9, #103): `p coords(du: 20,
+// dv: 5) P` — 20 along `P.u` and 5 along its `v` — and on one of its axes, `p on_u(d: 20) P`,
+// `p on_v(d: 5) P`.
+p coords(du, dv) P := {
+  p distance(du, along: u) P
+  p distance(dv, along: v) P
+}
+p on_u(d) P := {
+  p distance(d, along: u) P
+  p level(v) P
+}
+p on_v(d) P := {
+  p level(u) P
+  p distance(d, along: v) P
+}
+
+// Two lines crossed at an angle and a distance apart — two shafts, the angle between them and
+// their common perpendicular, in space: `gax skew(theta: 90deg, e: 20mm) pax`.
+a skew(theta, e) b := {
+  a angle(theta) b
+  a distance(e) b
+}
+
+// A line the length of another, turned from it by an angle — `ax turned(theta: 180deg) t.ax`
+// is `t.ax` reversed, `turned(theta: 0deg)` a copy carried across.
+a turned(theta) b := {
+  b angle(theta) a
+  a equal b
+}
+
 // The standard axes and planes, which every document that says `use std` has — as a CAD part
 // has its origin planes — so the workspace can offer them as places to draw.  The axes are held
 // outright, each through the world origin: x right, y away from the front's viewer, z up, and

@@ -30,6 +30,7 @@ mod expand;
 mod bindings;
 mod resolve;
 mod words;
+mod apply;
 mod sets;
 
 pub(crate) use words::faults as word_faults;
@@ -283,6 +284,12 @@ struct Walk<'a> {
     ring_infos: Vec<RingInfo>,
     /// Each relation word reached, read once — see `expand_word`.
     word_kinds: BTreeMap<usize, Option<std::rc::Rc<BTreeMap<String, words::Param>>>>,
+    /// The relation words being applied, outermost first, each with where its outermost use is
+    /// written: one reached again inside its own application is defined in terms of itself.
+    applying_words: Vec<(usize, Span)>,
+    /// The names an application bound to what its use wrote (`apply::bind_to_use`): one that
+    /// names nothing is said once, at the operand, and not again inside the body.
+    use_aliases: BTreeSet<String>,
     /// Every set the walk made, by absolute name (§6.21) — see `sets::Site`.
     sets: BTreeMap<String, sets::Site>,
 }
@@ -381,6 +388,8 @@ impl<'a> Walk<'a> {
             rings: Vec::new(),
             ring_infos: Vec::new(),
             word_kinds: BTreeMap::new(),
+            applying_words: Vec::new(),
+            use_aliases: BTreeSet::new(),
             sets: BTreeMap::new(),
         }
     }

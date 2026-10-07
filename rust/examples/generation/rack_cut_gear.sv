@@ -17,7 +17,7 @@
 // line, would generate the involute's folded branch, which the class refuses.
 
 unit mm
-use std (horizontal)
+use std (right_of)
 
 N := 20                     // teeth
 m := 2mm                    // module
@@ -40,8 +40,7 @@ in std.front {
   // the rack's pitch line, tangent to the pitch circle at the pitch point
   s0 := point hint((20, 0))
   s1 := point hint((20, 10))
-  o distance(rp, along: x) s0
-  o horizontal s0
+  s0 right_of(d: rp) o
   slide := vertical line(s0, s1)
   s0 distance(10) s1
 

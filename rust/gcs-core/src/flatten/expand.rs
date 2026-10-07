@@ -301,6 +301,10 @@ impl<'a> Walk<'a> {
                 // do not exist in the flat document, so they are worked out here
                 // — and one written with a defined word is that word's body (§9.9)
                 StmtKind::Relation(rel) => {
+                    // a word a file defines is its body, applied where the statement stands
+                    if self.apply_word(st, rel, path, scope, depth) {
+                        continue;
+                    }
                     let Some(mut r2) = self.settle_relation(rel, vals, scope) else { continue };
                     if let Some(twin) = &scope.twin {
                         // a claim and a gauge state no row, so they have no linearisation
@@ -325,12 +329,28 @@ impl<'a> Walk<'a> {
                 StmtKind::ClaimOver(c) => {
                     let mut c2 = c.clone();
                     for a in [&mut c2.from, &mut c2.to] { self.settle_arg(a, vals, scope); }
-                    c2.body.retain_mut(|inner| {
-                        let StmtKind::Relation(rel) = &inner.kind else { return true };
-                        let Some(r2) = self.settle_relation(rel, vals, scope) else { return false };
-                        inner.kind = StmtKind::Relation(r2);
-                        true
-                    });
+                    let mut body = Vec::with_capacity(c.body.len());
+                    for inner in &c.body {
+                        let StmtKind::Relation(rel) = &inner.kind else {
+                            body.push(inner.clone());
+                            continue;
+                        };
+                        // a word's relations are claimed as the statement is
+                        let from = self.out.len();
+                        if self.apply_word(inner, rel, path, scope, depth) {
+                            for (made, _, _) in self.out.drain(from..).collect::<Vec<_>>() {
+                                match made.kind {
+                                    StmtKind::Relation(_) => body.push(made),
+                                    _ => self.once(Code::E103, inner.span, "a word in a swept claim \
+                                        states relations, and declares nothing"),
+                                }
+                            }
+                            continue;
+                        }
+                        let Some(r2) = self.settle_relation(rel, vals, scope) else { continue };
+                        body.push(Stmt { kind: StmtKind::Relation(r2), ..inner.clone() });
+                    }
+                    c2.body = body;
                     self.emit(StmtKind::ClaimOver(c2), st, scope, path);
                 }
                 // a gauge or an orientation: kept as written, resolved later
@@ -340,11 +360,10 @@ impl<'a> Walk<'a> {
     }
 
     /// A relation's numbers worked out against the parameters in scope, in either of its
-    /// representations, and the enclosing instances' classes stamped over its own — the relation
-    /// it states, a defined word's body expanded (`expand_word`; `None` where it cannot be).
+    /// representations, and the enclosing instances' classes stamped over its own.
     fn settle_relation(&mut self, rel: &crate::syntax::Relation, vals: &BTreeMap<String, Aff>, scope: &Scope)
         -> Option<crate::syntax::Relation> {
-        let mut r2 = self.expand_word(rel, scope)?;
+        let mut r2 = rel.clone();
         if let Some(w) = r2.form.written_mut() {
             for a in w.args.iter_mut() {
                 match a {

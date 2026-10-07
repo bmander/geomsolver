@@ -2,7 +2,7 @@
 // lines (crown/mate_section.sv), one tooth's width outward and one inward along the pitch line,
 // each with its own tip and roundings, revolved about the cutter's axis turned tip down. The
 // shift is stated once, on the tooth, so the two crowns are complementary by construction.
-use std
+use std (turned)
 use design
 use views
 use pitch.gear
@@ -26,8 +26,7 @@ component CrownMate(tooth: group, design: group, normal_module: Length) {
   inner := crown.mate_section.MateSection(inner_far, tooth.rack.pitch.p1, tooth.rack.outer,
     tooth.rack.inner, design, normal_module: normal_module)
   ax := line(tooth.ax.p1, bottom)
-  tooth.ax angle(180deg) ax
-  ax equal tooth.ax
+  ax turned(theta: 180deg) tooth.ax
   construction outer_crown := solid(outer.profile, about: ax)
   construction inner_crown := solid(inner.profile, about: ax)
 }

@@ -12,7 +12,7 @@
 // `toe` as `theta` runs, the same component is the stride, and the drawing's own pose is
 // where the trace is anchored.
 
-use std
+use std (offset)
 
 // the frame the leg hangs from: the crank's axle, and the pivot both triangles swing on
 a := 38      // the axle stands this far to the right of the pivot...
@@ -82,8 +82,7 @@ in std.front {
   axle := point 
   pivot := point hint((-38, -7.8))
   fix((0, 0)) axle
-  pivot distance(a, along: x) axle
-  pivot distance(l, along: y) axle
+  axle offset(dx: a, dy: l) pivot
 
   // the leg, with its crank angle left unbound — the drawing's one freedom
   leg := Leg(axle, pivot)

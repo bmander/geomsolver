@@ -634,6 +634,9 @@ impl<'a> P<'a> {
         if let Some(name) = self.defines() {
             return self.definition(name, next_id, out);
         }
+        if self.inline_set_ahead() {
+            return self.inline_set_use(next_id, out);
+        }
         if self.chain_starts() {
             return self.chain(next_id, out, None);
         }
@@ -858,13 +861,77 @@ impl<'a> P<'a> {
         })
     }
 
+    /// Whether the statement from here uses a set written in place (#103): a reference, `coincident`
+    /// or `tangent`, then a set literal or a call — `q coincident { p | … }`, `l tangent
+    /// std.Cylinder(ax, r: 8mm)`.
+    fn inline_set_ahead(&self) -> bool {
+        // an element's word opens a declaration, never an operand
+        if self.word_at(self.i).is_none_or(|w| crate::model::EntKind::parse(w).is_some()) {
+            return false;
+        }
+        let Some(j) = self.past_ref(self.i) else { return false };
+        if !matches!(self.word_at(j), Some("coincident" | "tangent")) {
+            return false;
+        }
+        // a call is a component's: not a word of the language's own (`hint(…)`)
+        let call = self.call_at(j + 1).is_some_and(|dotted| {
+            dotted || self.word_at(j + 1).is_some_and(|w| !crate::syntax::reserved_word(w) && !crate::constraints::is_operator(w))
+        });
+        self.set_at(j + 1) || call
+    }
+
+    /// `q coincident { p | … }` or `l tangent std.Cylinder(ax, r: 8mm)`: the set written in place
+    /// is its own statement, a set or an instance under a key the source cannot write, read by
+    /// the relation as a name (#103).  The set is a link of the statement's text: deleting it
+    /// alone is refused, as a chain's link is.
+    fn inline_set_use(&mut self, next_id: &mut u32, out: &mut Vec<Stmt>) -> Option<()> {
+        let lo = self.here().lo as usize;
+        let left = self.refr()?;
+        let word = self.ident()?;
+        let at = self.here().lo as usize;
+        let key = |prefix: &str| Name { text: format!("#{prefix}{at}"), span: Span::new(at, at) };
+        let (name, kind) = if self.set_ahead() {
+            let name = key("s");
+            let lit = self.set_lit(next_id)?;
+            (name.clone(), StmtKind::Set(crate::syntax::SetDecl { name, lit }))
+        } else {
+            let name = key("i");
+            let component = self.component_name()?;
+            let args = self.inst_args()?;
+            let inst = Instance {
+                annotations: Default::default(),
+                name: name.clone(),
+                component,
+                args,
+                span: Span::new(at, self.prev_hi()),
+                membership: Membership::default(),
+                class: Classes::default(),
+            };
+            (name, StmtKind::Instance(inst))
+        };
+        let span = Span::new(at, self.prev_hi());
+        let id = self.mint_stmt(next_id, span)?;
+        out.push(Stmt { id, kind, span, chained: Chained::Link });
+        let right = Ref { root: Name { text: name.text, span }, path: Vec::new(), span };
+        let rel = self.relation_tail(word, crate::constraints::Fixity::Infix, vec![left, right], Vec::new(), lo)?;
+        let span = Span::new(lo, self.prev_hi());
+        let id = self.mint_stmt(next_id, span)?;
+        out.push(Stmt { id, kind: StmtKind::Relation(rel), span, chained: Chained::No });
+        Some(())
+    }
+
     /// Whether a set literal opens here: `{`, one name, `|` (§6.21), line breaks between them
     /// read past as the lexer reads past them.
     fn set_ahead(&self) -> bool {
-        if self.peek() != Some(&Tok::P('{')) {
+        self.set_at(self.i)
+    }
+
+    /// `set_ahead` at token `i`.
+    fn set_at(&self, i: usize) -> bool {
+        if self.t.get(i).map(|(t, _)| t) != Some(&Tok::P('{')) {
             return false;
         }
-        let mut toks = self.t[self.i + 1..].iter().map(|(t, _)| t);
+        let mut toks = self.t[i + 1..].iter().map(|(t, _)| t);
         let mut next = || toks.find(|t| **t != Tok::Nl);
         matches!(next(), Some(Tok::Ident(_))) && next() == Some(&Tok::P('|'))
     }

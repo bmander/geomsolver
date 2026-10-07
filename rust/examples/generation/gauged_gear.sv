@@ -22,7 +22,7 @@
 // envelope extruded (`brep::sweep::extruded`), not a traced sheet.
 
 unit mm
-use std (horizontal)
+use std (coords, offset, right_of)
 
 N := 20                     // teeth
 m := 2mm                    // module
@@ -53,8 +53,7 @@ in std.front {
 fix((0, 0)) o
 radius(rp + m) rim
 radius(bore_r) bore_c
-o distance(rp, along: x) s0
-o horizontal s0
+s0 right_of(d: rp) o
 s0 distance(10) s1
 o distance(rp + 3 * m) e
 blank := solid(face(rim), depth: width)
@@ -62,8 +61,7 @@ construction bore := solid(face(bore_c), from: -width - 2mm, to: 2mm)
 
 // the tip held at the working depth, a pressure angle of 20 degrees's thickness; the root corner
 // free along its line, the other flank its mirror
-o distance(rp - m, along: x) t1
-o distance(0.842856, along: y) t1
+t1 offset(dx: rp - m, dy: 0.842856) o
 o distance(rp + 2 * m, along: x) t2
 t1 symmetry(centre_line) t0
 t2 symmetry(centre_line) t3
@@ -86,8 +84,7 @@ fix(origin == (0, 0, 1.9)) gauge_view
 fix(dir == (1, 0, 0)) gauge_view.u
 fix(dir == (0, 1, 0)) gauge_view.v
 gauge := point in gauge_view hint((20.6, 3))
-gauge distance(20.58mm, along: u) gauge_view
-gauge distance(3mm, along: v) gauge_view
+gauge coords(du: 20.58mm, dv: 3mm) gauge_view
 gauge coincident flank
 
 gear := solid(blank)

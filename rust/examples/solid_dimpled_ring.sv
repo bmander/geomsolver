@@ -4,7 +4,7 @@
 // cannot tell. Open the glass box (⌘B) to see it. Raise `sunk` to deepen the dimple; at 0mm the
 // ball only rests on the ring, and that touch is refused, not built.
 unit mm
-use std (horizontal)
+use std (offset, right_of)
 
 ring_r := 30mm     // from the spindle to the middle of the tube
 tube_r := 10mm     // the tube's radius
@@ -17,8 +17,7 @@ in std.front {
   construction centerline spindle := line(std.origin, hint((0, 1)))
   fix((0, 1)) spindle.p2
   tube := point hint((ring_r, 0mm))
-  std.origin horizontal tube
-  std.origin distance(ring_r, along: right) tube
+  tube right_of(d: ring_r) std.origin
   section := circle(center: tube) hint(r: tube_r)
   radius(tube_r) section
 }
@@ -32,8 +31,7 @@ fix(dir == (1, 0, 0)) beside.u
 fix(dir == (0, 0, 1)) beside.v
 in beside {
   c := point hint((ring_r * cos(around), tube_r + ball_r - sunk))
-  beside.origin distance(ring_r * cos(around), along: right) c
-  beside.origin distance(tube_r + ball_r - sunk, along: up) c
+  c offset(dx: ring_r * cos(around), dy: tube_r + ball_r - sunk) beside.origin
   near := point hint((ring_r * cos(around) - ball_r, tube_r + ball_r - sunk))
   far := point hint((ring_r * cos(around) + ball_r, tube_r + ball_r - sunk))
   diameter := line(near, far)

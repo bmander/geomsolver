@@ -228,7 +228,7 @@ fn parse_at(src: &str, base: usize, first_id: u32, limits: ParseLimits) -> (Prog
             if !st.take_statement(st.here()) {
                 break;
             }
-            match st.word_definition(fixity) {
+            match st.word_definition(fixity, &mut next_id) {
                 Some(d) => words.push(d),
                 None => st.resync(),
             }

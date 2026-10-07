@@ -105,8 +105,10 @@ pub(super) fn lex(src: &str) -> (Lexed, Vec<SynErr>) {
                     ')' | ']' => depth = (depth - 1).max(0),
                     '{' => {
                         let group = match toks.last() {
-                            // `{ p | … }` after `:=` is a set, whose body is statements (§6.21)
-                            Some((Tok::Define, _)) => !set_ahead(&src[i..]),
+                            // after `:=` a list of members, `{width: 20mm}` — not a set, `{ p |
+                            // … }` (§6.21), nor a relation word's body (#103), which are
+                            // statements
+                            Some((Tok::Define, _)) => group_ahead(&src[i..]),
                             Some((Tok::P(':'), _)) => braces.last() == Some(&true),
                             _ => false,
                         };
@@ -166,17 +168,30 @@ pub(super) fn lex(src: &str) -> (Lexed, Vec<SynErr>) {
     (Lexed { toks, comments }, errs)
 }
 
-/// Whether the text after a `{` opens a set, `{ p | … }`: one name, then `|` (§6.21), whatever
-/// space or line breaks stand between.  A group's first member is a name and then `:`, so the
-/// bar tells them apart.
-fn set_ahead(rest: &str) -> bool {
-    let rest = rest.trim_start();
+/// Whether the text after a `{` opens a list of members: empty, or a name and then `:` (not
+/// `:=`), whatever space, line breaks or comments stand between.  Anything else — a set's `{ p |
+/// … }`, a word's statements — is a body.
+fn group_ahead(rest: &str) -> bool {
+    fn skip(mut s: &str) -> &str {
+        loop {
+            s = s.trim_start();
+            match s.strip_prefix("//") {
+                Some(c) => s = c.find('\n').map_or("", |k| &c[k..]),
+                None => return s,
+            }
+        }
+    }
+    let rest = skip(rest);
+    if rest.starts_with('}') {
+        return true;
+    }
     let mut chars = rest.char_indices();
     if !chars.next().is_some_and(|(_, c)| ident_start(c)) {
         return false;
     }
     let end = chars.find(|&(_, c)| !ident_char(c)).map_or(rest.len(), |(k, _)| k);
-    rest[end..].trim_start().starts_with('|')
+    let after = skip(&rest[end..]);
+    after.starts_with(':') && !after.starts_with(":=")
 }
 
 /// Identifier character rules, shared with name validation.

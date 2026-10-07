@@ -2,7 +2,7 @@
 // rebuild; ⌘B shows it in the glass box. Keep `hole_r + offset` below `sphere_r`, or the hole
 // breaks out of the side rather than passing through.
 unit mm
-use std (horizontal)
+use std (right_of)
 
 sphere_r := 20mm   // the sphere's radius
 hole_r := 6mm      // the hole's radius
@@ -25,8 +25,7 @@ component Sphere(center: point, r: Length) {
 // and `offset` to its right. The hole is the hole's own business: it cuts the body it is given.
 component Hole(body: solid, center: point, r: Length, offset: Length) {
   private ax := point hint((center.x + offset, center.y))
-  center horizontal ax
-  center distance(offset, along: right) ax
+  ax right_of(d: offset) center
   rim := radius(r) circle(center: ax) hint(r: r)
   private drill := solid(face(rim), through: body)
   drill cut body

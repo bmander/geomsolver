@@ -3,8 +3,9 @@
 //! `component Sphere(center: point, r: Length) := { p | … }`.
 //!
 //! Making a set makes nothing: the walk records where it stands (`Site`) and moves on.  What a
-//! set means is said where it is used, and a use is expanded here, once every name is known (a
-//! body is a set of statements, P2, so a use may stand before the set it names):
+//! set means is said where it is used, and a use is applied here — by the routine a relation word
+//! is (`flatten::apply`, #103), the set's point its one bound variable — once every name is known
+//! (a body is a set of statements, P2, so a use may stand before the set it names):
 //!
 //! * `q coincident S` is the body with `q` for the bound point — walked like an instance's,
 //!   under a prefix of the use's own, so what the body makes privately is made once per use;
@@ -19,6 +20,7 @@
 
 use super::*;
 use crate::program::public_path;
+use super::apply::{local, Application, Use};
 use crate::syntax::{Along, Chained, Relation, RelationForm, SetLit, Worded};
 
 /// Where a set stands: its literal, the scope its body reads names in (an instance's, with its
@@ -28,11 +30,6 @@ pub(super) struct Site {
     lit: SetLit,
     scope: Scope,
     depth: usize,
-}
-
-/// A reference standing for a name the expansion made under its prefix.
-fn local(text: impl Into<String>, span: Span) -> Ref {
-    Ref { root: Name { text: text.into(), span }, path: Vec::new(), span }
 }
 
 impl<'a> Walk<'a> {
@@ -149,8 +146,7 @@ impl<'a> Walk<'a> {
             return;
         }
         let site = &self.sets[abs];
-        let (lit, depth) = (site.lit.clone(), site.depth);
-        let mut scope = site.scope.clone();
+        let (lit, depth, closure) = (site.lit.clone(), site.depth, site.scope.clone());
         if tangent {
             if let Some(what) = makes_points(&lit) {
                 let m = format!(
@@ -162,90 +158,43 @@ impl<'a> Walk<'a> {
                 return;
             }
         }
-        // a prefix of the use's own: what the body makes privately is made once per use, and a
-        // use's two walks — the body and its linearisation — share it
-        let prefix = format!("{}#{}.0.", sc.prefix(), st.id.0);
-        scope.prefixes.insert(0, prefix.clone());
-        scope.copies = true;
-        scope.anonymous = true;
-        scope.cyc = None;
-        // turned with the use, where it stands in a ring's copy; dressed as the use is
-        scope.ring = sc.ring.clone();
-        for c in sc.in_class.0.iter().chain(&rel.class.0) {
-            if !scope.in_class.has(c) {
-                scope.in_class.0.push(c.clone());
-            }
-        }
+        let u = Use { st, rel, path, scope: sc, at };
+        let app = self.begin(&u, &closure);
         let other = w.ops[1 - k].clone();
         let bound = lit.bound.text.clone();
-        let mut sub_path = path.to_vec();
-        sub_path.push(PathStep::Instance(st.id));
-        // the statement every relation of the use reads as: the use's own, or — a use inside
-        // a set's body — the one that body was expanded for
-        let worded = match rel.word.as_ref().filter(|w| w.set.is_some()) {
-            Some(outer) => outer.clone(),
-            None => Worded {
-                word: word.to_string(),
-                ops: vec![other.clone()],
-                args: String::new(),
-                set: Some((k, written(&w.ops[k]))),
-                span: at,
-            },
+        // a tangency: the body at a contact on the line, then linearised along it; else the body
+        // at the point — linearised already where the use is in a body being linearised (a
+        // tangency there was refused above)
+        let walks = if tangent {
+            self.bind_to_use(&app, "#line", other.clone(), &u);
+            self.contact(&app, st, &bound, at, path);
+            vec![None, Some(Along { point: local(&bound, at), line: local("#line", at) })]
+        } else {
+            self.bind_to_use(&app, &bound, other.clone(), &u);
+            vec![self.inherited_twin(&app, &u)]
         };
-        let from = self.out.len();
-        // the line a tangency is taken along: this one's, or — a use inside a body walked for its
-        // linearisation — that body's, at the same contact
-        let line = match (&rel.along, tangent) {
-            (Some(along), _) => Some(along.line.clone()),
-            (None, true) => Some(other.clone()),
-            (None, false) => None,
+        let worded = Worded {
+            word: word.to_string(),
+            ops: vec![other],
+            args: String::new(),
+            set: Some((k, self.set_written(&w.ops[k]))),
+            span: at,
         };
-        if let Some(l) = line {
-            self.aliases.push((format!("{prefix}#line"), l, sc.clone()));
-        }
-        match tangent {
-            true => self.contact(st, &prefix, &bound, at, &scope, &sub_path),
-            false => self.aliases.push((format!("{prefix}{bound}"), other, sc.clone())),
-        }
-        let twin = Along { point: local(&bound, at), line: local("#line", at) };
-        // the body, at the point — linearised already where the use is — and a tangency's body
-        // a second time, linearised
-        let walks = match (&rel.along, tangent) {
-            (Some(_), _) => vec![Some(twin)],
-            (None, true) => vec![None, Some(twin)],
-            (None, false) => vec![None],
-        };
-        for twin in walks {
-            scope.twin = twin;
-            let mut vals = scope.vals.clone();
-            self.body(&lit.body, &scope, &mut vals, &sub_path, depth + 1);
-        }
-        // every relation made reads as the statement, its operands named where it was written
-        let ops: Vec<Ref> = worded.ops.iter().enumerate().map(|(i, r)| {
-            self.aliases.push((format!("{prefix}#word.{i}"), r.clone(), sc.clone()));
-            local(format!("#word.{i}"), r.span)
-        }).collect();
-        let stamp = Worded { ops, ..worded };
-        for (made, _, _) in self.out[from..].iter_mut() {
-            if let StmtKind::Relation(r) = &mut made.kind {
-                r.word = Some(stamp.clone());
-                r.claim |= rel.claim;
-            }
+        self.apply(&u, app, lit.body, &BTreeMap::new(), &walks, worded, depth);
+    }
+
+    /// A set as the statement wrote it: its name, or — written in place — its text, on one line.
+    fn set_written(&self, r: &Ref) -> String {
+        match self.prog.span_text(r.span).filter(|_| r.root.text.starts_with('#')) {
+            Some(text) => text.split_whitespace().collect::<Vec<_>>().join(" "),
+            None => written(r),
         }
     }
 
     /// `l tangent S`'s contact: a point standing in space, on the line, seeded at its middle —
     /// declared at the bound name under the use's prefix, so the body reads it as its point.
-    fn contact(
-        &mut self,
-        st: &Stmt,
-        prefix: &str,
-        bound: &str,
-        at: Span,
-        scope: &Scope,
-        path: &[PathStep],
-    ) {
-        let abs = format!("{prefix}{bound}");
+    fn contact(&mut self, app: &Application, st: &Stmt, bound: &str, at: Span, path: &[PathStep]) {
+        let abs = format!("{}{bound}", app.prefix());
         self.names.insert(abs.clone());
         let line = local("#line", at);
         let end = |e: &str| {
@@ -265,25 +214,16 @@ impl<'a> Walk<'a> {
         };
         let key = Name { text: abs, span: Span::new(at.lo as usize, at.lo as usize) };
         let decl = Decl::point(crate::syntax::DeclName::Key(key), [0.0; 2], Some(seed_at));
-        let on = Relation {
-            form: RelationForm::Written(crate::syntax::Written {
-                word: Name { text: "coincident".to_string(), span: at },
-                fixity: crate::constraints::Fixity::Infix,
-                ops: vec![local(bound, at), line],
-                args: Vec::new(),
-                span: st.span,
-            }),
-            place: None,
-            place_span: Span::default(),
-            claim: false,
-            class: Default::default(),
-            class_span: Span::default(),
-            word: None,
-            along: None,
-        };
+        let on = Relation::of(RelationForm::Written(crate::syntax::Written {
+            word: Name { text: "coincident".to_string(), span: at },
+            fixity: crate::constraints::Fixity::Infix,
+            ops: vec![local(bound, at), line],
+            args: Vec::new(),
+            span: st.span,
+        }));
         for kind in [StmtKind::Decl(decl), StmtKind::Relation(on)] {
             let made = Stmt { id: st.id, kind, span: st.span, chained: Chained::No };
-            self.out.push((made, path.to_vec(), scope.clone()));
+            self.out.push((made, path.to_vec(), app.scope().clone()));
         }
     }
 }
@@ -300,7 +240,7 @@ fn makes_points(lit: &SetLit) -> Option<String> {
                 if d.kind == crate::model::EntKind::Line
                     && d.children.iter().all(|g| !g.is_empty() && g.iter().all(|k| matches!(k, Kid::Ref(_)))) => {}
             StmtKind::Decl(d) => return Some(d.name.key().text.clone()),
-            other => return other.bound_name().map(|n| n.text.clone()).or(Some("a statement".into())),
+            other => return Some(other.bound_name().map_or_else(|| "a statement".into(), |n| n.text.clone())),
         }
     }
     None

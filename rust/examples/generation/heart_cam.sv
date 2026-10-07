@@ -17,7 +17,7 @@
 // is how tightly the profile bends there (it must stay larger than a grinding wheel's).  Edit
 // `lift`, `base` or the roller's radius and the cam is cut again.
 
-use std (horizontal)
+use std (right_of)
 
 base := 25    // the roller centre's nearest approach to the cam's centre
 lift := 15    // how far the follower rises
@@ -43,10 +43,8 @@ fall := motion(back, relative_to: cam)
 in std.front {
   c_rise := point hint((25, 0))
   c_fall := point hint((55, 0))
-  o distance(base, along: x) c_rise
-  o horizontal c_rise
-  o distance(base + 2 * lift, along: x) c_fall
-  o horizontal c_fall
+  c_rise right_of(d: base) o
+  c_fall right_of(d: base + 2 * lift) o
   roller := circle(center: c_rise) hint(r: 6)
   roller_f := circle(center: c_fall) hint(r: 6)
   radius(rr) roller

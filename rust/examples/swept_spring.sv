@@ -3,7 +3,7 @@
 // number and apply (⌘↵) to watch it refine again; ⌘B shows it in the glass box. Keep `wire_r`
 // below half the pitch, or neighbouring turns run into each other.
 unit mm
-use std (horizontal)
+use std (right_of)
 
 coil_r := 12mm     // from the axis to the wire's centre
 wire_r := 2mm      // the wire's radius
@@ -26,8 +26,7 @@ in std.front {
   construction centerline spindle := line(std.origin, hint((0, 1)))
   fix((0, 1)) spindle.p2
   private start := point hint((coil_r, 0))
-  std.origin horizontal start
-  std.origin distance(coil_r, along: right) start
+  start right_of(d: coil_r) std.origin
   private ball := Sphere(start, r: wire_r)
 }
 

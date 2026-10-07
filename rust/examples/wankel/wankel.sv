@@ -8,7 +8,7 @@
 // whole period — the largest rotor that turns in the bore. Its flank is the bore's envelope under
 // the housing's motion, drawn on the page as `flank`. The numbers are in `configuration.sv`.
 unit mm
-use std (horizontal)
+use std (horizontal, right_of)
 use configuration
 
 R := configuration.generating_radius
@@ -23,11 +23,9 @@ in std.top {
   private centre := point
   centre coincident std.top.origin
   private hub := point hint((15, 0))
-  centre distance(e, along: x) hub
-  centre horizontal hub
+  hub right_of(d: e) centre
   apex := point hint((120, 0))
-  hub distance(R, along: x) apex
-  hub horizontal apex
+  apex right_of(d: R) hub
 }
 
 // The shaft's turn seen from the housing, backwards, and the rotor's turn about its centre

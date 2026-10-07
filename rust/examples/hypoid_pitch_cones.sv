@@ -22,7 +22,7 @@
 // solve both and find the same pair to 2e-11.
 
 unit mm
-use std
+use std (skew)
 Ng := 48          // gear teeth
 Np := 24          // pinion teeth
 module := 4mm
@@ -62,5 +62,4 @@ std.TangentCones(gc, pc, M)
 // the two pitch radii at M, and the shafts: square, and E apart
 M distance(Rg) gax
 M distance(Rp) pax
-gax angle(90deg) pax
-gax distance(E) pax
+gax skew(theta: 90deg, e: E) pax

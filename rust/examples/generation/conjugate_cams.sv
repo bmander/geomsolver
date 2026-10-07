@@ -13,7 +13,7 @@
 // Edit the lobe's semi-axes `a` and `b`, or how far its centre `off` sits from the shaft, and
 // the partner is cut again.
 
-use std (horizontal)
+use std (right_of)
 
 a := 14
 b := 9
@@ -29,8 +29,7 @@ in std.front {
   fix((0, 0)) o1
   fix((40, 0)) o2
   lc := point hint((3, 0))
-  o1 distance(off, along: x) lc
-  o1 horizontal lc
+  lc right_of(d: off) o1
 }
 
 lobe := Lobe(lc, a: a, b: b).p over u in (0, 360)
