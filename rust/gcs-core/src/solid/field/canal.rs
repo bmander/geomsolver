@@ -66,9 +66,9 @@ pub struct CanalField {
     /// Within this distance of the spine a point's nearest point on it is unique.
     near: f64,
     support: [f64;6],
-    /// Whether the spine is open: its foot then held to its ends, the leaf left to be bounded
-    /// past them (a run's trims, which its ends lie beyond by more than the reach).
-    open: bool,
+    /// Whether the spine is closed; open, its foot is held to its ends and the leaf left to be
+    /// bounded short of them (a run's trims, which its ends lie beyond by more than the reach).
+    closed: bool,
 }
 
 impl CanalField {
@@ -141,7 +141,7 @@ impl CanalField {
             hi:std::array::from_fn(|k| m.hi[k].max(b.hi[k]))});
         let support = [all.lo[0]-reach,all.hi[0]+reach,all.lo[1]-reach,all.hi[1]+reach,all.lo[2]-reach,all.hi[2]+reach];
         let boxes = Bvh::new(span_boxes.iter().copied());
-        Ok(CanalField {spine,contacts,r,reach,boxes,span_boxes,samples,in_span,kappa,turn,near,support,open:!closed})
+        Ok(CanalField {spine,contacts,r,reach,boxes,span_boxes,samples,in_span,kappa,turn,near,support,closed})
     }
 
     /// The parameter and point of the spine nearest `x`: from the nearest sample (among those of
@@ -166,7 +166,7 @@ impl CanalField {
             if h <= 0. { return (u,c) }
             let step = g/h;
             if step.abs() < 1e-15*period { return (u,c) }
-            u = if self.open { (u-step).clamp(u0,u1) } else { u0+(u-step-u0).rem_euclid(period) };
+            u = if !self.closed { (u-step).clamp(u0,u1) } else { u0+(u-step-u0).rem_euclid(period) };
         }
         (u,self.spine.point(u))
     }

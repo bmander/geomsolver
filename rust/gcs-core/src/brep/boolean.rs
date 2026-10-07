@@ -37,6 +37,11 @@ impl Pool {
     }
 }
 
+/// A root an edge meets a face of the other solid at, by its distance from the face's surface:
+/// the working edge, the vertex the root minted, its parameter, the edge's solid and index there,
+/// and the face met.
+struct Loose { edge: usize,vertex: u32,t: f64,side: usize,index: usize,face: usize }
+
 /// An edge of the working set: a stretch of a curve (or a pole) between two pooled vertices.
 #[derive(Clone,Debug)]
 struct WEdge { curve: EdgeCurve,t: [f64;2],v: [u32;2] }
@@ -256,9 +261,8 @@ fn arrange<'a>(a: &'a Brep,b: &'a Brep,tol: f64) -> Result<Arranged<'a>,String> 
     let mut on_face: [Vec<Vec<u32>>;2] = [vec![Vec::new();a.faces.len()],vec![Vec::new();b.faces.len()]];
     // each face's edges of the other solid lying in its surface (`Meets::Along`), working indices
     let mut along_face: [Vec<Vec<usize>>;2] = [vec![Vec::new();a.faces.len()],vec![Vec::new();b.faces.len()]];
-    // each root an edge meets a face at by its distance from the surface: (edge, vertex, how far
-    // along it the root is known, side and face met)
-    let mut loose: Vec<(usize,u32,f64,usize,usize)> = Vec::new();
+    // each root an edge meets a face at by its distance from the surface, at a vertex of its own
+    let mut loose: Vec<Loose> = Vec::new();
     for s in 0..2 {
         let other = 1-s;
         for (i,e) in solids[s].edges.iter().enumerate() {
@@ -308,34 +312,47 @@ fn arrange<'a>(a: &'a Brep,b: &'a Brep,tol: f64) -> Result<Arranged<'a>,String> 
                         if debug { eprintln!("brep: edge {i} of {} ({}) meets face {fi} ({}) at {q:?}{}: {:?}",["A","B"][s],c.kind(),
                             f.surface.kind(),if touch { ", touching" } else { "" },located[other].face_place(fi,q)); }
                         if located[other].face_place(fi,q) == Place::Out { continue }
+                        let fresh = pool.pts.len();
                         let v = pool.at(q);
                         cuts[we].push((t,v));
                         on_face[other][fi].push(v);
-                        // how far along the edge the root is known: the tolerance over the slope
-                        // its distance from the surface crosses at
-                        let (_,d,_) = c.d2(t);
-                        let h = 1e-6*(e.t[1]-e.t[0]).abs().max(1e-12);
-                        let slope = (f.surface.implicit(c.point(t+h))-f.surface.implicit(c.point(t-h))).abs()/(2.*h*norm(d).max(1e-300));
-                        loose.push((we,v,16.*tol.max(e.tol)/slope.max(1e-12),other,fi));
+                        if v as usize >= fresh { loose.push(Loose {edge:we,vertex:v,t,side:s,index:i,face:fi}); }
                     },
                 }
             }
         }
     }
-    // **a root found where an edge meets a surface flatly is known only to the tolerance over its
-    // slope**: a crossing of the same edge found exactly within that (a fillet's contact, where its
-    // canal lies tangent to the face the edge lies in) is that root
+    // **a root found where an edge meets a surface flatly is known only as the stretch of the edge
+    // within the tolerance of it**: a crossing of the same edge found exactly inside that stretch (a
+    // fillet's contact, where its canal lies tangent to the face the edge lies in) is that root, and
+    // the vertex the root minted is no vertex at all
+    let rooted: std::collections::BTreeSet<(usize,u32)> = loose.iter().map(|l| (l.edge,l.vertex)).collect();
     let mut gone = std::collections::BTreeSet::new();
-    for &(we,v,radius,other,fi) in &loose {
-        let p = pool.pts[v as usize];
-        let exact = cuts[we].iter().map(|&(_,w)| w).filter(|&w| w != v && !loose.iter().any(|l| l.0 == we && l.1 == w))
-            .map(|w| (distance(pool.pts[w as usize],p),w)).filter(|&(d,_)| d <= radius)
-            .min_by(|x,y| x.0.total_cmp(&y.0));
-        let Some((_,w)) = exact else { continue };
-        if debug { eprintln!("brep: a root at {p:?} met flatly is the crossing at {:?}",pool.pts[w as usize]); }
-        cuts[we].retain(|&(_,u)| u != v);
-        for u in on_face[other][fi].iter_mut() { if *u == v { *u = w } }
-        gone.insert(v);
+    for l in &loose {
+        if cuts[l.edge].len() < 2 { continue }
+        let e = &solids[l.side].edges[l.index];
+        let EdgeCurve::Curve(c) = &e.curve else { continue };
+        let s = &solids[1-l.side].faces[l.face].surface;
+        let near = |t: f64| s.implicit(c.point(t)).abs() <= 16.*tol.max(e.tol);
+        // out from the root each way, doubling, as far as the edge stays that near
+        let reach = |dir: f64| {
+            let (mut d,mut last) = (1e-12*(e.t[1]-e.t[0]).abs().max(1e-300),l.t);
+            loop {
+                let t = (l.t+dir*d).clamp(e.t[0],e.t[1]);
+                if !near(t) { return last }
+                last = t;
+                if t == e.t[0] || t == e.t[1] { return last }
+                d *= 2.;
+            }
+        };
+        let (lo,hi) = (reach(-1.),reach(1.));
+        let exact = cuts[l.edge].iter().filter(|&&(t,w)| w != l.vertex && !rooted.contains(&(l.edge,w)) && t >= lo && t <= hi)
+            .min_by(|x,y| (x.0-l.t).abs().total_cmp(&(y.0-l.t).abs())).map(|x| x.1);
+        let Some(w) = exact else { continue };
+        if debug { eprintln!("brep: a root at {:?} met flatly is the crossing at {:?}",pool.pts[l.vertex as usize],pool.pts[w as usize]); }
+        cuts[l.edge].retain(|&(_,u)| u != l.vertex);
+        for u in on_face[1-l.side][l.face].iter_mut() { if *u == l.vertex { *u = w } }
+        gone.insert(l.vertex);
     }
     let t1 = clock.elapsed().as_secs_f64();
     // 2. every pair of faces: their surfaces' curves, kept where they lie in both faces

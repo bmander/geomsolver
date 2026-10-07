@@ -332,15 +332,17 @@ curves of one meeting crossing each other are split there (`boolean::crossings_a
 surface the same way out are one side); at each odd end (`Stop`) every other face is one plane
 (else E085, rung 3), the spine's stretch runs on past it until the end section clears it by the
 reach, the piece is built open (`build_open`: caps square to the spine, the faces' meeting fitted
-past each vertex) and cut off at each plane (`trimmed`: in common with a block; `Rolled::trims`),
-whatever lies beyond; a rail crossing an end's plane elsewhere is refused. Field: the canal leaf
-over an open spine (foot held to its ends) within each trim's half-space. Kernel rules it found: a
-trace leaving a sheet's patch ends on its edge (the last step halved), at a seed crossing there
-exactly, crowding steps dropped (`ssi::trace_beside`); a root an edge meets a face at flatly is
-known only to the tolerance over its slope, and an exact crossing of that edge within it is that
-root (`boolean`, `loose`, merged vertices `gone`); two surfaces touching outside a face need no
-trace past there (`beside`'s `outside`). OCCT builds such a piece's faces split at a seam
-(`brep_oracle`, `fillet_oracle` compare kinds). `examples/solid_fillet_runout.sv`.
+past each vertex; `canal_face`, `copy_run`, `face_out` shared with `build` and `corner`) and cut
+off at each plane once (`trimmed`: in common with a block; `Rolled::trims`, each a `Trim`),
+whatever lies beyond. Every spine span but those leading from an end must clear each plane by the
+reach, by its poles' hull (closed form), else refused. Field: the canal leaf over an open spine
+(foot held to its ends) within each trim's half-space. Kernel rules it found: a trace leaving a
+sheet's patch ends on its edge (the last step bisected), at a seed crossing there exactly,
+crowding steps dropped (`ssi::trace_beside`); a root an edge meets a face at is known only as the
+stretch of the edge within the tolerance of the surface, and an exact crossing of that edge inside
+it is that root (`boolean`, `Loose`, the vertex it minted `gone`); two surfaces touching outside a
+face need no trace past there (`beside`'s `outside`). OCCT builds such a piece's faces split at a
+seam (`brep_oracle`, `fillet_oracle` allow as many of each kind or more). `examples/solid_fillet_runout.sv`.
 Open: a run ending on a curved face or a corner, corners of curved faces or unequal radii, a
 fillet turning a sharp corner, variable radius, B-spline faces (rung 3), rung 4.
 **Continuous motion solids:** `removal := solid(tool, under: generating, from: -30deg, to: 30deg)`

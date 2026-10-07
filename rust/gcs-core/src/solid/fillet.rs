@@ -379,9 +379,7 @@ pub(crate) fn derive(sk: &Sketch, si: usize) -> Result<Blend, String> {
     }
     // a traced run that ends where a straight piece of the fillet also ends: a vertex blend
     for roll in &rolls {
-        let mut degree = std::collections::BTreeMap::<u32, usize>::new();
-        for &e in &roll.rolled.chain { for v in brep.edges[e].v { *degree.entry(v).or_default() += 1; } }
-        if let Some(e) = ends.iter().find(|e| degree.get(&e.vertex).is_some_and(|d| d % 2 == 1)) {
+        if let Some(e) = ends.iter().find(|e| roll.rolled.trims.iter().any(|t| t.vertex == e.vertex)) {
             return Err(format!("the fillet of {} meets a traced run of the same fillet where it ends: fillets meeting \
                 at a vertex are rung 3", e.label));
         }

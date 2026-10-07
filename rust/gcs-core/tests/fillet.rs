@@ -39,7 +39,8 @@ fn refused(src: &str, code: Code, needle: &str) {
 
 fn volume(e: &Elaborated, name: &str) -> f64 {
     let key = format!("{name}.volume");
-    gcs_core::report::positions(&e.sketch, &e.map)
+    // the one solid asked of the report: every other solid of the document is left unevaluated
+    gcs_core::report::positions_where(&e.sketch, &e.map, &|n| n == name)
         .into_iter()
         .find(|(n, _)| *n == key)
         .unwrap_or_else(|| panic!("no `{key}` in the report"))
@@ -782,27 +783,27 @@ fn half_a_bores_rim_runs_out_into_the_void_past_the_face_it_was_cut_by() {
 
 /// A wedge 40 long, its top sloping from 20 high at `x = 0` to 10 at `x = 40`, drawn in `std.front`
 /// and swept 24 deep (`y` from −24 to 0), with a boss of radius 6 standing on the floor through the
-/// slope at `(20, y)`, its root on the slope rounded to 2: `body`, `root`.
-fn sloped(y: f64) -> String {
-    format!("unit mm
+/// slope at `(20, 0)`, centred on the wedge's near face, its root on the slope rounded to 2: `body`,
+/// `root`.
+const SLOPED: &str = "unit mm
 use std
-in std.front {{
+in std.front {
   w0 := point
   w1 := point hint(x: 40, y: 0)
   w2 := point hint(x: 40, y: 10)
   w3 := point hint(x: 0, y: 20)
   (wb := line(w0, w1)) -> (we := line(w1, w2)) -> (wt := line(w2, w3)) -> (ww := line(w3, w0)) -> close
   side_f := face(wb, we, wt, ww)
-}}
+}
 fix(x == 0, y == 0) w0
 fix(x == 40, y == 0) w1
 fix(x == 40, y == 10) w2
 fix(x == 0, y == 20) w3
-in std.top {{
-  bc := point hint(x: 20, y: {y})
+in std.top {
+  bc := point hint(x: 20, y: 0)
   boss_k := circle(center: bc) hint(r: 6)
-}}
-fix(x == 20, y == {y}) bc
+}
+fix(x == 20, y == 0) bc
 radius(6) boss_k
 wedge := solid(side_f, from: 0mm, to: 24mm)
 boss := solid(face(boss_k), from: 0mm, to: 30mm)
@@ -810,8 +811,7 @@ body := solid(wedge)
 boss union body
 root := fillet(boss, wedge.wt, r: 2mm)
 root union body
-")
-}
+";
 
 /// The fillet a ball of radius `r` fills round a boss of radius `big` about `(cx, cy)` standing
 /// through the plane `z = h0 − s x`, the whole way round, independently: its spine is where the
@@ -836,7 +836,7 @@ fn sloped_root(big: f64, [cx, cy]: [f64; 2], [h0, s]: [f64; 2], r: f64) -> f64 {
 fn a_boss_on_a_slope_standing_off_its_edge_is_rounded_to_the_edge() {
     // the boss centred on the wedge's near face: its root an arc of an ellipse, ending square at
     // that face at both ends, half the root of a boss standing in the slope's middle
-    let e = read_linked(&sloped(0.0));
+    let e = read_linked(SLOPED);
     let want = sloped_root(6.0, [20.0, 0.0], [20.0, 0.25], 2.0) / 2.0;
     let got = volume(&e, "root");
     assert!((got - want).abs() <= 1e-6 * want, "{got} != {want} (off by {:e})", got - want);
@@ -863,7 +863,7 @@ fn what_a_run_that_ends_cannot_round_is_refused() {
     refused(&cornered, Code::E085, "a fillet ending at a corner is rung 3");
     // the boss's foot on the wedge's near face rounded too: two straight runs up the face meet the
     // root where it is cut off
-    refused(&sloped(0.0).replace("fillet(boss, wedge.wt", "fillet(boss, wedge"), Code::E085,
+    refused(&SLOPED.replace("fillet(boss, wedge.wt", "fillet(boss, wedge"), Code::E085,
         "meets a traced run of the same fillet where it ends");
 }
 

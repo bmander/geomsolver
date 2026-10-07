@@ -192,7 +192,6 @@ fn read(sk: &Sketch,solid: usize,axis_tolerance: f64) -> Result<Snapshot,String>
         }
         let field = (|| {
             let get = |i: u32| done[&(i as usize)].clone();
-            let error = |e| format!("material field: {e:?}");
             Ok(match &s.def {
                 SolidDef::Revolve {..} => Snapshot::Static(RevolvedRegion::read(sk,i,axis_tolerance)?.field()?.into()),
                 SolidDef::Prism {face,from,to} =>
@@ -296,15 +295,12 @@ fn read(sk: &Sketch,solid: usize,axis_tolerance: f64) -> Result<Snapshot,String>
                             let rolled = &roll.rolled;
                             let canal = super::CanalField::new(model(&rolled.spine),[model(&rolled.contacts[0]),model(&rolled.contacts[1])],
                                 rolled.r/roll.mm,rolled.reach/roll.mm,rolled.trims.is_empty())?;
-                            let size = canal.support_bounds().map_err(error)?.map_or(0.,|b| {
-                                let w = b.map(|i| { let [lo,hi] = i.bounds(); hi-lo });
-                                (w[0]*w[0]+w[1]*w[1]+w[2]*w[2]).sqrt()
-                            });
+                            let size = canal.support_bounds().map_err(error)?.map_or(0.,|b| crate::space::box_centre_diagonal(&b).1);
                             let mut leaf = Snapshot::Static(SpatialField::from(canal));
                             // a run that ends: cut off at each end's plane, on the run's side
-                            for &(o,keep) in &rolled.trims {
-                                let o = roll.model(o);
-                                leaf = leaf.combine(half_space(o,crate::space::scale(keep,-1.),2.*size)?,BodyWord::Bound).map_err(error)?;
+                            for t in &rolled.trims {
+                                let o = roll.model(t.o);
+                                leaf = leaf.combine(half_space(o,crate::space::scale(t.keep,-1.),2.*size)?,BodyWord::Bound).map_err(error)?;
                             }
                             let word = if rolled.concave { BodyWord::Cut } else { BodyWord::Bound };
                             leaves.push(leaf.combine(union.clone(),word).map_err(error)?);
@@ -328,8 +324,10 @@ fn half_space(o: [f64;3],n: [f64;3],reach: f64) -> Result<Snapshot,String> {
         Edge::Line {a:[-reach,-reach],b:[reach,-reach],axis:false},Edge::Line {a:[reach,-reach],b:[reach,reach],axis:false},
         Edge::Line {a:[reach,reach],b:[-reach,reach],axis:false},Edge::Line {a:[-reach,reach],b:[-reach,-reach],axis:false}],0.)?;
     let f = crate::brep::geom::Frame::about(o,n);
-    Ok(Snapshot::Static(ExtrudedField::new(square,o,f.x,f.y,[-reach,0.]).map_err(|e| format!("material field: {e:?}"))?.into()))
+    Ok(Snapshot::Static(ExtrudedField::new(square,o,f.x,f.y,[-reach,0.]).map_err(error)?.into()))
 }
+
+fn error(e: impl std::fmt::Debug) -> String { format!("material field: {e:?}") }
 
 /// Fields combined by `word`, in pairs and then pairs of those: as many leaves as a long fold, but
 /// their depth (which a field bounds) only the logarithm of their count. `None` for none.

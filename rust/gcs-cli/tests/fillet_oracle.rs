@@ -78,12 +78,13 @@ fn held(session: &native::Session,name: &str,e: &gcs_core::program::Elaborated) 
             assert!(take(&mut mine,3),"{name}: `{}`: no corner of its own",s.name);
             assert!(take(&mut its,3) || take(&mut its,6),"{name}: `{}`: OCCT made no corner",s.name);
         }
-        // (OCCT builds the face of a run that ends, cut off by the face it meets, in pieces)
+        // (OCCT builds the face of a run that ends, cut off by the face it meets, split at the seam
+        // of the surface it rolls round: in one piece or two)
         for roll in &blend.rolls {
             let take = |ks: &mut Vec<i32>,k: i32| ks.iter().position(|&x| x == k).map(|i| ks.remove(i)).is_some();
             assert!(take(&mut mine,6),"{name}: `{}`: no canal face of its own",s.name);
             assert!(take(&mut its,6),"{name}: `{}`: OCCT made no fillet face",s.name);
-            if !roll.rolled.trims.is_empty() { while take(&mut its,6) {} }
+            if !roll.rolled.trims.is_empty() { take(&mut its,6); }
         }
         assert_eq!(mine,its,"{name}: `{}`: curved faces by kind",s.name);
         compared += 1;

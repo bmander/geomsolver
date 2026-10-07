@@ -97,8 +97,12 @@ fn every_node_the_kernel_builds_is_occts() {
                         && their_kinds.iter().filter(|&&k| k == 0).count() > our_kinds.iter().filter(|&&k| k == 0).count();
                     // a rolled piece of OCCT's (and a body taking one) is split where its fillet
                     // crosses a periodic surface's seam, which this kernel's strips turn away from:
-                    // the same kinds, more of them
-                    let seamed = (rolls(n) || takes_rolled(n)) && { let mut a = our_kinds.clone(); a.dedup(); let mut b = their_kinds.clone(); b.dedup(); a == b };
+                    // the same kinds, as many of each or more
+                    let count = |ks: &[i32],k: i32| ks.iter().filter(|&&x| x == k).count();
+                    let seamed = (rolls(n) || takes_rolled(n)) && (0..9).all(|k| {
+                        let (ours,theirs) = (count(&our_kinds,k),count(&their_kinds,k));
+                        (ours == 0) == (theirs == 0) && theirs >= ours
+                    });
                     if extra_planes { eprintln!("  (OCCT splits a plane along a line it only touches: {their_kinds:?} against our {our_kinds:?})"); }
                     else if seamed { eprintln!("  (OCCT splits a rolled piece at a seam: {their_kinds:?} against our {our_kinds:?})"); }
                     else { failures.push(format!("{label}: faces by kind {our_kinds:?} against OCCT's {their_kinds:?}")); continue }
