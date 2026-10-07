@@ -1240,8 +1240,23 @@ floor := fillet(cupped.pocket.far, cupped.pocket, r: 2mm)   // the floor alone, 
 floor union tray
 ```
 
-Refused with their reasons (E085): a traced meeting that runs on into another face (a branch at
-the pipe's end: rung 3), a face swept from a spline (no offset in closed form, not yet), a ball
+Where a traced meeting is cut short — a boss standing off a sloped plate's edge, a hole breaking
+out of a part's side — the ball rolls on past the face that cuts it and that face cuts the fillet
+off, flush with it, however obliquely it stands (`solid_fillet_runout.sv`):
+
+```
+root := fillet(boss, wedge.wt, r: 2mm)       // the boss's root on the slope, run out at the near face
+root union lug
+rim := fillet(drilled.block.vt, drilled.hole, r: 1mm)   // the hole's rim, run out at the low end
+rim cut vent
+```
+
+Name the face it rounds on (`wedge.wt`, the slope): `fillet(boss, wedge, …)` would round the boss's
+foot on the near face too, two straight runs meeting the root where it is cut off.
+
+Refused with their reasons (E085): a traced meeting cut short by a curved face, or meeting another
+piece of the same fillet where it ends (a branch at the pipe's end, its foot on the end rounded
+too: rung 3), a face swept from a spline (no offset in closed form, not yet), a ball
 larger than a face holds (a branch shorter than the ball's reach), and runs that would part at a
 sharp corner turning the other way (a square boss's foot): rung 3. The material field also refuses
 a ball reaching across its own centre's bend (a branch thinner than the ball): the canal's nearest
@@ -1318,7 +1333,8 @@ sheet's to state.
 | `root := fillet(boss, plate, r: 13mm)` on a plate 12 beyond the boss | E085 — "the ball of `boss.k` with `plate.near` is larger than `plate.near` can hold" |
 | a fillet round a rib that ends on the plate | E085 — "the fillets of `rib.e0` with `plate.near` and `rib.e3` with `plate.near` meet at a corner whose edge `rib.e0` with `rib.e3` turns the other way: … a fillet turning the corner is rung 3" |
 | `fillet(plate.lobe, plate.near, r: 1mm)`, a face swept from a spline | E085 — "`lobe` (extrusion) has no offset in closed form, so no ball rolls on it yet: …" |
-| a tee whose branch stands at the main pipe's end | E085 — "the edge of … runs on into other faces: a fillet along it ends, rung 3" |
+| a tee whose branch stands at the main pipe's end | E085 — "the fillet of … meets a traced run of the same fillet where it ends: fillets meeting at a vertex are rung 3" |
+| a tee bound by a cylinder across its crotch | E085 — "the fillet of … runs out onto `…` (cylinder): a fillet ending on a curved face is rung 3" |
 | `fillet(boss, plate, r: 2mm)` round a square boss's foot | E085 — "the fillets of … and … meet at a corner whose edge … turns the other way: run on to it, they would leave a gap, and a fillet turning the corner is rung 3" |
 | `root := fillet(boss, plate)` | E100 — "a fillet needs `r:`, the ball's radius" |
 

@@ -372,6 +372,40 @@ fn a_line_meets_a_cylinder_in_closed_form() {
     assert!(matches!(curve_surface(&Curve::Line {p:[2.5,2.,0.],d:[0.,0.,1.]},[-9.,9.],&cyl,1e-9),Meets::Along));
 }
 
+#[test]
+fn a_trace_leaving_a_sheet_ends_where_its_edge_crosses() {
+    use gcs_core::brep::geom::{Curve,Surface};
+    // a curved sheet over [0, 10] × [0, 10], cut by the plane x = 4: the meeting runs from the sheet's
+    // edge at v = 0 to its edge at v = 1, each crossing a seed; traced from one, it ends at both
+    let f = |u: f64,v: f64| [10.*u,10.*v,(2.*u).sin()+v*v];
+    let (net,_) = gcs_core::brep::nurbs::fit_net(&f,3,3,16,16,1e-10).unwrap();
+    let sheet = Surface::BSpline(Frame::new([0.;3],[0.,0.,1.],[1.,0.,0.]),std::sync::Arc::new(net.clone()));
+    let plane = Surface::Plane(Frame::about([4.,0.,0.],[1.,0.,0.]));
+    let tol = 1e-9;
+    let ends = [net.point(0.4,0.),net.point(0.4,1.)];
+    for seeds in [vec![ends[0]],vec![ends[0],ends[1]],vec![ends[1],f(0.4,0.5)]] {
+        let curves = gcs_core::brep::ssi::trace(&plane,&sheet,&seeds,[-1.;3],[11.;3],tol).unwrap();
+        assert_eq!(curves.len(),1);
+        let c = &curves[0];
+        let span = match c { Curve::BSpline(b) => b.domain(),Curve::Traced(t) => [0.,(t.pts.len()-1) as f64],_ => panic!("{}",c.kind()) };
+        let (a,z) = (c.point(span[0]),c.point(span[1]));
+        // its ends the crossings, either way round: a seed exactly, else where the last step,
+        // halved, still lands on the sheet (within the march's slack)
+        let at = |p: V,q: V| (0..3).map(|k| (p[k]-q[k]).abs()).fold(0.,f64::max);
+        let (a,z) = if at(a,ends[0]) <= at(z,ends[0]) { (a,z) } else { (z,a) };
+        for (p,q) in [(a,ends[0]),(z,ends[1])] {
+            let bar = if seeds.contains(&q) { tol } else { 16.*tol };
+            assert!(at(p,q) <= bar,"{seeds:?}: end {p:?} off {q:?} by {:e}",at(p,q));
+        }
+        // and on both surfaces all the way, its ends too (a fit through points crowded at an end
+        // hooks off between them)
+        for k in 0..=1000 {
+            let p = c.point(span[0]+(span[1]-span[0])*k as f64/1000.);
+            assert!(plane.implicit(p).abs() <= 16.*tol && sheet.implicit(p).abs() <= 16.*tol,"{seeds:?}: {k}: {p:?}");
+        }
+    }
+}
+
 /// The volume a mesh encloses: the signed tetrahedra from the origin to each triangle.
 fn mesh_volume(m: &gcs_core::brep::mesh::Mesh) -> f64 {
     m.tris.iter().map(|t| {

@@ -273,14 +273,7 @@ fn read(sk: &Sketch,solid: usize,axis_tolerance: f64) -> Result<Snapshot,String>
                     for c in &blend.corners {
                         use crate::space::{norm,scale,sub};
                         let reach = 4.*(norm(sub(c.centre,c.vertex))+c.r);
-                        let square = PlanarField::from_loop(&[
-                            Edge::Line {a:[-reach,-reach],b:[reach,-reach],axis:false},Edge::Line {a:[reach,-reach],b:[reach,reach],axis:false},
-                            Edge::Line {a:[reach,reach],b:[-reach,reach],axis:false},Edge::Line {a:[-reach,reach],b:[-reach,-reach],axis:false}],0.)?;
-                        // the half-space through `o` behind `n` (where (p − o)·n ≤ 0)
-                        let behind = |o: [f64;3],n: [f64;3]| -> Result<Snapshot,String> {
-                            let f = crate::brep::geom::Frame::about(o,n);
-                            Ok(Snapshot::Static(ExtrudedField::new(square.clone(),o,f.x,f.y,[-reach,0.]).map_err(error)?.into()))
-                        };
+                        let behind = |o: [f64;3],n: [f64;3]| half_space(o,n,reach);
                         let mut slabs = Vec::new();
                         for e in crate::brep::fillet::corner_sections(c.vertex,c.centre,c.toward) { slabs.push(behind(c.centre,e)?); }
                         for m in c.toward { slabs.push(behind(c.vertex,scale(m,-1.))?); }
@@ -301,9 +294,18 @@ fn read(sk: &Sketch,solid: usize,axis_tolerance: f64) -> Result<Snapshot,String>
                             let model = |c: &crate::brep::nurbs::BSpline| crate::brep::nurbs::BSpline {
                                 poles:c.poles.iter().map(|&p| roll.model(p)).collect(),..c.clone() };
                             let rolled = &roll.rolled;
-                            let leaf = super::CanalField::new(model(&rolled.spine),[model(&rolled.contacts[0]),model(&rolled.contacts[1])],
-                                rolled.r/roll.mm,rolled.reach/roll.mm)?;
-                            let leaf = Snapshot::Static(SpatialField::from(leaf));
+                            let canal = super::CanalField::new(model(&rolled.spine),[model(&rolled.contacts[0]),model(&rolled.contacts[1])],
+                                rolled.r/roll.mm,rolled.reach/roll.mm,rolled.trims.is_empty())?;
+                            let size = canal.support_bounds().map_err(error)?.map_or(0.,|b| {
+                                let w = b.map(|i| { let [lo,hi] = i.bounds(); hi-lo });
+                                (w[0]*w[0]+w[1]*w[1]+w[2]*w[2]).sqrt()
+                            });
+                            let mut leaf = Snapshot::Static(SpatialField::from(canal));
+                            // a run that ends: cut off at each end's plane, on the run's side
+                            for &(o,keep) in &rolled.trims {
+                                let o = roll.model(o);
+                                leaf = leaf.combine(half_space(o,crate::space::scale(keep,-1.),2.*size)?,BodyWord::Bound).map_err(error)?;
+                            }
                             let word = if rolled.concave { BodyWord::Cut } else { BodyWord::Bound };
                             leaves.push(leaf.combine(union.clone(),word).map_err(error)?);
                         }
@@ -317,6 +319,16 @@ fn read(sk: &Sketch,solid: usize,axis_tolerance: f64) -> Result<Snapshot,String>
         done.insert(i,field);
     }
     Ok(done.remove(&solid).unwrap())
+}
+
+/// The half-space through `o` behind `n` (where (p − o)·n ≤ 0), within `reach` of `o`: a slab of
+/// a large square.
+fn half_space(o: [f64;3],n: [f64;3],reach: f64) -> Result<Snapshot,String> {
+    let square = PlanarField::from_loop(&[
+        Edge::Line {a:[-reach,-reach],b:[reach,-reach],axis:false},Edge::Line {a:[reach,-reach],b:[reach,reach],axis:false},
+        Edge::Line {a:[reach,reach],b:[-reach,reach],axis:false},Edge::Line {a:[-reach,reach],b:[-reach,-reach],axis:false}],0.)?;
+    let f = crate::brep::geom::Frame::about(o,n);
+    Ok(Snapshot::Static(ExtrudedField::new(square,o,f.x,f.y,[-reach,0.]).map_err(|e| format!("material field: {e:?}"))?.into()))
 }
 
 /// Fields combined by `word`, in pairs and then pairs of those: as many leaves as a long fold, but

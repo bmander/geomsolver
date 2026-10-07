@@ -66,13 +66,17 @@ pub struct CanalField {
     /// Within this distance of the spine a point's nearest point on it is unique.
     near: f64,
     support: [f64;6],
+    /// Whether the spine is open: its foot then held to its ends, the leaf left to be bounded
+    /// past them (a run's trims, which its ends lie beyond by more than the reach).
+    open: bool,
 }
 
 impl CanalField {
-    /// The leaf over a closed spine and the two contact curves (each over the same parameter as
-    /// the spine), the ball's radius and the corner's reach from the spine; `Err` where the
-    /// corner reaches past where the spine's foot is unique.
-    pub fn new(spine: BSpline,contacts: [BSpline;2],r: f64,reach: f64) -> Result<Self,String> {
+    /// The leaf over a spine and the two contact curves (each over the same parameter as the
+    /// spine), the ball's radius and the corner's reach from the spine — the spine closed, or open
+    /// and the leaf to be bounded short of its ends; `Err` where the corner reaches past where the
+    /// spine's foot is unique.
+    pub fn new(spine: BSpline,contacts: [BSpline;2],r: f64,reach: f64,closed: bool) -> Result<Self,String> {
         if spine.degree < 2 { return Err("a canal's spine is at least quadratic".into()) }
         let ks = spans(&spine);
         let span_boxes: Vec<Bounds<3>> = ks.iter().map(|&j| hull(&spine.poles[j-spine.degree..=j])).collect();
@@ -95,8 +99,8 @@ impl CanalField {
         let period = u1-u0;
         let n = 1024;
         let mut least = f64::INFINITY;
-        let mut samples = Vec::with_capacity(n);
-        for k in 0..n {
+        let mut samples = Vec::with_capacity(n+1);
+        for k in 0..n+usize::from(!closed) {
             let u = u0+period*k as f64/n as f64;
             let c = spine.point(u);
             samples.push((u,c));
@@ -124,7 +128,8 @@ impl CanalField {
         let mut gap = f64::INFINITY;
         for i in 0..ks.len() { for j in i+1..ks.len() {
             let ([a0,a1],[b0,b1]) = (reach_in(i),reach_in(j));
-            if fast*(b1-a0).min(a1+period-b0) < half_turn { continue }
+            let apart = if closed { (b1-a0).min(a1+period-b0) } else { b1-a0 };
+            if fast*apart < half_turn { continue }
             gap = gap.min(span_boxes[i].gap(span_boxes[j]));
         } }
         let near = (1./kappa).min(0.5*gap);
@@ -136,7 +141,7 @@ impl CanalField {
             hi:std::array::from_fn(|k| m.hi[k].max(b.hi[k]))});
         let support = [all.lo[0]-reach,all.hi[0]+reach,all.lo[1]-reach,all.hi[1]+reach,all.lo[2]-reach,all.hi[2]+reach];
         let boxes = Bvh::new(span_boxes.iter().copied());
-        Ok(CanalField {spine,contacts,r,reach,boxes,span_boxes,samples,in_span,kappa,turn,near,support})
+        Ok(CanalField {spine,contacts,r,reach,boxes,span_boxes,samples,in_span,kappa,turn,near,support,open:!closed})
     }
 
     /// The parameter and point of the spine nearest `x`: from the nearest sample (among those of
@@ -161,7 +166,7 @@ impl CanalField {
             if h <= 0. { return (u,c) }
             let step = g/h;
             if step.abs() < 1e-15*period { return (u,c) }
-            u = u0+(u-step-u0).rem_euclid(period);
+            u = if self.open { (u-step).clamp(u0,u1) } else { u0+(u-step-u0).rem_euclid(period) };
         }
         (u,self.spine.point(u))
     }

@@ -33,6 +33,9 @@ pub struct Rolled {
     pub concave: bool,
     pub r: f64,
     pub reach: f64,
+    /// Where a run that ends is cut off: at each end a point of the plane and its normal toward
+    /// the piece. None for a closed loop.
+    pub trims: Vec<(V,V)>,
 }
 
 fn unit(a: V) -> V { scale(a,1./norm(a)) }
@@ -74,15 +77,32 @@ pub fn roll(b: &Brep,at: V,r: f64,tol: f64) -> Result<Rolled,String> {
                 cylinders, cones, spheres and tori are rounded (rung 2)",f.name,f.surface.kind()));
         }
     }
-    // the loop: every edge between these two faces, closing on itself
-    let chain: Vec<usize> = (0..b.edges.len()).filter(|&e| {
-        let fs: Vec<usize> = uses[e].iter().map(|u| u.0).collect();
-        fs.len() == 2 && fs.contains(&fa) && fs.contains(&fb)
+    // each side: every face on its surface, the same way out (a face split at its seam is one
+    // face to the ball)
+    let on = |f: &Face| (0..b.faces.len()).filter(|&g| b.faces[g].reversed == f.reversed
+        && super::ssi::same(&b.faces[g].surface,&f.surface,tol)).collect::<Vec<usize>>();
+    let sides_faces = [on(face_a),on(face_b)];
+    // the run: the edges between these two sides reached from this one through their vertices,
+    // closing on itself or ending at two vertices
+    let between: Vec<usize> = (0..b.edges.len()).filter(|&e| match uses[e].as_slice() {
+        [x,y] => (0..2).any(|k| sides_faces[k].contains(&x.0) && sides_faces[1-k].contains(&y.0)),
+        _ => false,
     }).collect();
+    let mut chain = vec![nearest];
+    let mut k = 0;
+    while k < chain.len() {
+        let vs = b.edges[chain[k]].v;
+        for &e in &between {
+            if !chain.contains(&e) && b.edges[e].v.iter().any(|v| vs.contains(v)) { chain.push(e); }
+        }
+        k += 1;
+    }
+    chain.sort();
     let mut degree = std::collections::BTreeMap::<u32,usize>::new();
     for &e in &chain { for v in b.edges[e].v { *degree.entry(v).or_default() += 1; } }
-    if degree.values().any(|&d| d % 2 != 0) {
-        return Err(format!("the edge of {} runs on into other faces: a fillet along it ends, rung 3",names()));
+    let stops: Vec<u32> = degree.iter().filter(|(_,&d)| d % 2 != 0).map(|(&v,_)| v).collect();
+    if !(stops.is_empty() || stops.len() == 2 && degree.values().all(|&d| d <= 2)) {
+        return Err(format!("the meeting of {} branches: a fillet along it is rung 3",names()));
     }
     // the faces' outward normals and the directions into each from the edge, at its middle
     let e = &b.edges[nearest];
@@ -129,37 +149,117 @@ pub fn roll(b: &Brep,at: V,r: f64,tol: f64) -> Result<Rolled,String> {
         let off = |c: &Curve| distance(c.point(c.inverse(seed)),seed);
         off(x).total_cmp(&off(y))
     }).ok_or_else(|| format!("the ball between {} rolls nowhere",names()))?;
-    let Some(period) = spine.period() else {
-        return Err(format!("the ball between {} rolls off the end of their meeting: a fillet that ends is rung 3",names()));
-    };
     // where the ball touches each face, and the direction from its centre to there
     let toward = |k: usize,c: V| scale(unit(surfaces[k].gradient(c)),-sides[k]);
+    // **a run that ends**: at each end the faces there besides the two lie in one plane, which cuts
+    // the fillet off; the ball rolls on past it and the piece is trimmed there
+    let mut ends: Vec<Stop> = Vec::new();
+    for &v in &stops {
+        let p = b.vertices[v as usize].p;
+        let others: std::collections::BTreeSet<usize> = (0..b.edges.len()).filter(|&e| b.edges[e].v.contains(&v))
+            .flat_map(|e| uses[e].iter().map(|u| u.0).collect::<Vec<_>>()).filter(|f| !sides_faces.iter().any(|s| s.contains(f))).collect();
+        let plane = |f: usize| match b.faces[f].surface { Surface::Plane(fr) => Some(fr),_ => None };
+        let &first = others.iter().next().ok_or_else(|| format!("the run of {} ends where nothing meets it",names()))?;
+        let Some(fr) = plane(first) else {
+            return Err(format!("the fillet of {} runs out onto `{}` ({}): a fillet ending on a curved face is rung 3",
+                names(),b.faces[first].name,b.faces[first].surface.kind()));
+        };
+        if let Some(&f) = others.iter().find(|&&f| !plane(f).is_some_and(|g| 1.-dot(g.z,fr.z).abs() <= 1e-9
+            && dot(sub(g.o,fr.o),fr.z).abs() <= tol)) {
+            return Err(format!("the fillet of {} ends where `{}` and `{}` meet: a fillet ending at a corner is rung 3",
+                names(),b.faces[first].name,b.faces[f].name));
+        }
+        // not a face either runs on into smoothly (a chain of traced and straight edges)
+        let normals = [0,1].map(|k| unit(surfaces[k].gradient(p)));
+        if normals.iter().any(|&n| 1.-dot(n,fr.z).abs() <= 1e-9) {
+            return Err(format!("the fillet of {} runs on smoothly into `{}`: a chain of traced and straight edges is rung 3",
+                names(),b.faces[first].name));
+        }
+        // the side the run lies on, along its edge leaving the vertex
+        let e = &b.edges[*chain.iter().find(|&&e| b.edges[e].v.contains(&v)).unwrap()];
+        let EdgeCurve::Curve(c) = &e.curve else { return Err(format!("{} meet at a point",names())) };
+        let leaving = if e.v[0] == v { unit(c.tangent(e.t[0])) } else { scale(unit(c.tangent(e.t[1])),-1.) };
+        let s = dot(leaving,fr.z);
+        if s.abs() < MIN_TURN.dsin() {
+            return Err(format!("the fillet of {} meets `{}` along it",names(),b.faces[first].name));
+        }
+        // the ball's centre over the vertex: `r` from each face along its normal toward the ball
+        let m = [0,1].map(|k| scale(normals[k],sides[k]));
+        let guess = add(p,scale(add(m[0],m[1]),r/(1.+dot(m[0],m[1]))));
+        ends.push(Stop {vertex:v,o:p,keep:if s > 0. { fr.z } else { scale(fr.z,-1.) },centre:onto.project(guess),
+            faces:others.into_iter().collect()});
+    }
     // each strip's surface, its seam turned away from the loop, and whether the loop winds round
     // it (a branch pipe's crotch round the branch)
     let loop_pts: Vec<V> = chain.iter().flat_map(|&e| { let ed = &b.edges[e];
         (0..16).map(move |k| ed.point(ed.t[0]+(ed.t[1]-ed.t[0])*k as f64/16.,&b.vertices)) }).collect();
     let strips = [0,1].map(|k| reframed(&surfaces[k],&loop_pts));
-    let winding = [0,1].map(|k| winds(&strips[k],&loop_pts));
+    let winding = [0,1].map(|k| ends.is_empty() && winds(&strips[k],&loop_pts));
     if winding[0] && winding[1] {
         return Err(format!("the fillet of {} winds round both faces: not built yet",names()));
     }
-    // the canal starts where its contact with a winding strip crosses the strip's iso line through
-    // a vertex of the loop, so the strip's seam runs between vertices both already have
-    let mut t0 = spine.inverse(seed);
-    let vertex = b.vertices[b.edges[chain[0]].v[0] as usize].p;
-    if let Some(k) = (0..2).find(|&k| winding[k]) {
-        let s = &strips[k];
-        let target = s.inverse(vertex)[0];
-        let contact = |t: f64| { let c = spine.point(t); add(c,scale(toward(k,c),r)) };
-        t0 = crossing(&|t| s.inverse(contact(t))[0],target,s.periods()[0].unwrap_or(TAU),t0,period)
-            .ok_or_else(|| format!("the fillet of {}: its contact never crosses the strip's seam",names()))?;
-    }
+    let (t0,span) = if ends.is_empty() {
+        let Some(period) = spine.period() else {
+            return Err(format!("the ball between {} rolls off the end of their meeting",names()));
+        };
+        // the canal starts where its contact with a winding strip crosses the strip's iso line
+        // through a vertex of the loop, so the strip's seam runs between vertices both already have
+        let mut t0 = spine.inverse(seed);
+        let vertex = b.vertices[b.edges[chain[0]].v[0] as usize].p;
+        if let Some(k) = (0..2).find(|&k| winding[k]) {
+            let s = &strips[k];
+            let target = s.inverse(vertex)[0];
+            let contact = |t: f64| { let c = spine.point(t); add(c,scale(toward(k,c),r)) };
+            t0 = crossing(&|t| s.inverse(contact(t))[0],target,s.periods()[0].unwrap_or(TAU),t0,period)
+                .ok_or_else(|| format!("the fillet of {}: its contact never crosses the strip's seam",names()))?;
+        }
+        (t0,period)
+    } else {
+        // from one end's centre to the other's through the seed, then on past each end's plane
+        // until the whole section there (the centre, the arc, the corner, within its reach of the
+        // centre) lies beyond it; the ends in the order the stretch runs
+        let at_seed = spine.inverse(seed);
+        let ts = [0,1].map(|k| spine.inverse(ends[k].centre));
+        let (mut lo,mut hi,[a,z]) = match spine.period() {
+            Some(p) => {
+                let back = |t: f64| (at_seed-t).rem_euclid(p);
+                let fwd = |t: f64| (t-at_seed).rem_euclid(p);
+                if back(ts[0]) <= back(ts[1]) { (at_seed-back(ts[0]),at_seed+fwd(ts[1]),[0,1]) }
+                else { (at_seed-back(ts[1]),at_seed+fwd(ts[0]),[1,0]) }
+            }
+            None if ts[0] <= ts[1] => (ts[0],ts[1],[0,1]),
+            None => (ts[1],ts[0],[1,0]),
+        };
+        if ends.len() == 2 && ends[0].vertex == ends[1].vertex || !(lo <= at_seed && at_seed <= hi) {
+            return Err(format!("the run of {} does not lie between its ends",names()));
+        }
+        let (floor,ceiling) = match &spine {
+            Curve::Traced(c) if !c.closed => (0.,c.pts.len() as f64-1.),
+            _ => (f64::NEG_INFINITY,f64::INFINITY),
+        };
+        let length = spine.period().unwrap_or(ceiling-floor);
+        let step = if length.is_finite() { length/2048. } else { r/64. };
+        let past = |t: f64,e: &Stop| {
+            let c = onto.project(spine.point(t));
+            let w = dot(toward(0,c),toward(1,c)).clamp(-1.,1.).dacos();
+            dot(sub(c,e.o),e.keep) < -(r/(0.5*w).dcos()+0.1*r)
+        };
+        let room = |lo: f64,hi: f64| lo >= floor && hi <= ceiling && spine.period().is_none_or(|p| hi-lo < p);
+        while !past(lo,&ends[a]) { lo -= step; if !room(lo,hi) { break } }
+        while !past(hi,&ends[z]) { hi += step; if !room(lo,hi) { break } }
+        if !room(lo,hi) {
+            return Err(format!("the ball of {} cannot roll on past where `{}` and `{}` cut it off",
+                names(),b.faces[ends[a].faces[0]].name,b.faces[ends[z].faces[0]].name));
+        }
+        ends.swap(0,a);
+        (lo,hi-lo)
+    };
     // the spine read along a smooth guide: a trace's own parameter turns at every point it was
     // marched through, which no smooth fit follows; a cubic through its points, by chord length,
     // projected back onto both offsets point by point, is exact and smooth between its ends
     let guide = {
         let n = 256;
-        let pts: Vec<V> = (0..=n).map(|k| spine.point(t0+period*k as f64/n as f64)).collect();
+        let pts: Vec<V> = (0..=n).map(|k| spine.point(t0+span*k as f64/n as f64)).collect();
         let mut ts = vec![0.];
         for w in pts.windows(2) { let last = *ts.last().unwrap(); ts.push(last+distance(w[0],w[1])); }
         let total = *ts.last().unwrap();
@@ -198,11 +298,15 @@ pub fn roll(b: &Brep,at: V,r: f64,tol: f64) -> Result<Rolled,String> {
         let contact = |u: f64| { let (c,e) = frame_at(u); add(c,scale(e[k],r)) };
         let height = (0..=256).map(|i| sides[o]*surfaces[o].implicit(contact(i as f64/256.))).fold(0_f64,f64::max)*1.01+tol;
         let level = surfaces[o].offset(sides[o]*height).ok_or_else(|| format!("the band of {} cannot be read",names()))?;
-        let fi = [fa,fb][k];
+        // an end's face cuts the fillet off: the ball crosses its edges with these two; and an
+        // edge between two faces of one side is no edge to it
+        let ending = |e: u32| uses[e as usize].iter().any(|u| ends.iter().any(|s| s.faces.contains(&u.0))
+            || u.0 != uses[e as usize][0].0 && sides_faces[k].contains(&u.0) && sides_faces[k].contains(&uses[e as usize][0].0));
+        for &fi in &sides_faces[k] {
         let face = &b.faces[fi];
         let seams = face.seams();
         for c in face.loops.iter().flatten() {
-            if chain.contains(&(c.edge as usize)) || seams.contains(&c.edge) { continue }
+            if chain.contains(&(c.edge as usize)) || seams.contains(&c.edge) || ending(c.edge) { continue }
             let g = &b.edges[c.edge as usize];
             let EdgeCurve::Curve(gc) = &g.curve else { continue };
             let at_start = sides[o]*surfaces[o].implicit(gc.point(g.t[0]));
@@ -214,6 +318,7 @@ pub fn roll(b: &Brep,at: V,r: f64,tol: f64) -> Result<Rolled,String> {
                 return Err(format!("the ball of {} is larger than `{}` can hold",names(),face.name));
             }
         }
+        }
     }
     // fitted to the bar asked, or as near it as the densest net comes, no worse than a ten-millionth
     // of the boundary: its contacts are read at what was measured (`Edge::tol`)
@@ -222,9 +327,197 @@ pub fn roll(b: &Brep,at: V,r: f64,tol: f64) -> Result<Rolled,String> {
     if net_err > bar { return Err(format!("the canal between {} misses its fit by {net_err:e}",names())); }
     let (spine_fit,spine_err) = fit_curve(&c_at,3,64,tol).ok_or("the spine could not be fitted")?;
     if spine_err > bar { return Err(format!("the spine between {} misses its fit by {spine_err:e}",names())); }
-    let piece = build(b,&chain,&net,&strips,[face_a.reversed,face_b.reversed],concave,tol,net_err)?;
+    // a run cut off by a plane crosses it only where it is run on past it (once for each end in
+    // it): a run turning back across it would be cut there too
+    let rails = [spine_fit.clone(),net.column(0),net.column(net.poles[0].len()-1)];
+    for e in &ends {
+        let plane = Surface::Plane(Frame::about(e.o,e.keep));
+        let at = ends.iter().filter(|f| dot(f.keep,e.keep) >= 1.-1e-9 && dot(sub(f.o,e.o),e.keep).abs() <= tol).count();
+        for c in &rails {
+            let crossings = match super::query::curve_surface(&Curve::BSpline(Arc::new(c.clone())),c.domain(),&plane,tol) {
+                super::query::Meets::At(roots) => roots.len(),
+                super::query::Meets::Along => 0,
+            };
+            if crossings != at {
+                return Err(format!("the fillet of {} turns back across the plane of `{}` it ends at",names(),b.faces[e.faces[0]].name));
+            }
+        }
+    }
+    let reversed = [face_a.reversed,face_b.reversed];
+    let piece = if ends.is_empty() { build(b,&chain,&net,&strips,reversed,concave,tol,net_err)? } else {
+        let meeting = super::geom::Traced {a:surfaces[0].clone(),b:surfaces[1].clone(),pts:Vec::new(),closed:false};
+        let run = build_open(b,&chain,&net,&strips,&meeting,&frame_at,&guide,&ends,reversed,concave,tol,net_err)?;
+        trimmed(run,&ends,tol)?
+    };
     let contacts = [net.column(0),net.column(net.poles[0].len()-1)];
-    Ok(Rolled {piece,chain,spine:spine_fit,contacts,concave,r,reach})
+    let trims = ends.iter().map(|e| (e.o,e.keep)).collect();
+    Ok(Rolled {piece,chain,spine:spine_fit,contacts,concave,r,reach,trims})
+}
+
+/// An end of a run that ends: its vertex (at `o`), the faces there besides the run's two (all in
+/// one plane), the plane's normal toward the run, and the ball's centre over the vertex.
+struct Stop { vertex: u32,o: V,keep: V,centre: V,faces: Vec<usize> }
+
+/// The point where `meeting` (two surfaces' meeting) crosses the plane through `o` square to `n`,
+/// from `guess`: projected onto the meeting, then along its tangent to the plane, until it stays.
+fn crossing_plane(meeting: &super::geom::Traced,o: V,n: V,guess: V) -> V {
+    let mut k = meeting.project(guess);
+    for _ in 0..32 {
+        let t = cross(meeting.a.gradient(k),meeting.b.gradient(k));
+        let along = dot(t,n);
+        if along == 0. { break }
+        let step = dot(sub(o,k),n)/along;
+        let next = meeting.project(add(k,scale(t,step)));
+        let moved = distance(next,k);
+        k = next;
+        if moved <= 1e-15*norm(k).max(1.) { break }
+    }
+    k
+}
+
+/// A curve on `meeting` from `a` to `z` (both on it), through `along(s)` projected onto it for `s`
+/// in `[0, 1]`, fitted within `tol`: its ends exactly `a` and `z`.
+fn fitted(meeting: &super::geom::Traced,a: V,z: V,along: &dyn Fn(f64) -> V,tol: f64) -> Result<(Curve,f64),String> {
+    let at = |s: f64| if s <= 0. { a } else if s >= 1. { z } else { meeting.project(along(s)) };
+    let (c,err) = fit_curve(&at,3,16,tol).ok_or("a fillet's run-on could not be fitted")?;
+    Ok((Curve::BSpline(Arc::new(c)),err))
+}
+
+/// The piece of a run that ends, rolled on past both ends (`ends`, in the order the net's `u`
+/// runs): the canal face over `net`, on each surface the strip between the run (`chain`, edges of
+/// `b`, run on past each end along the faces' `meeting`) and the canal's contact with it, and at
+/// each end of the net a cap in the plane of its arc. `frame_at` is the ball's centre and the
+/// directions to its contacts at `u`, `guide` the spine `u` follows.
+#[allow(clippy::too_many_arguments)]
+fn build_open(b: &Brep,chain: &[usize],net: &Net,surfaces: &[Surface;2],meeting: &super::geom::Traced,
+    frame_at: &dyn Fn(f64) -> (V,[V;2]),guide: &BSpline,ends: &[Stop],face_reversed: [bool;2],concave: bool,tol: f64,fit: f64)
+    -> Result<Brep,String> {
+    let [[u0,u1],[v0,v1]] = net.domain();
+    let r = distance(net.point(u0,v0),frame_at(0.).0);
+    let mut out = Brep::default();
+    let column = |j: usize| Curve::BSpline(Arc::new(net.column(j)));
+    let row = |i: usize| Curve::BSpline(Arc::new(BSpline {degree:net.dv,knots:net.vknots.clone(),poles:net.poles[i].clone(),
+        weights:net.weights.as_ref().map(|w| w[i].clone())}));
+    let (last_u,last_v) = (net.poles.len()-1,net.poles[0].len()-1);
+    // the section's plane at `u`: through the ball's centre, square to the spine (the plane of its
+    // arc), its normal along `u`
+    let section = |u: f64| -> (V,V,[V;2]) {
+        let (c,e) = frame_at(u);
+        let n = unit(cross(e[0],e[1]));
+        (c,if dot(n,guide.d2(u.clamp(0.,1.)).1) < 0. { scale(n,-1.) } else { n },e)
+    };
+    // where the faces meet in the section at `u`: across the ball from its centre
+    let corner = |u: f64| { let (c,n,e) = section(u);
+        crossing_plane(meeting,c,n,add(c,scale(add(e[0],e[1]),r/(1.+dot(e[0],e[1]))))) };
+    let mut worst = fit;
+    // the net's corners: contact `k` at each end
+    let ct = [[net.point(u0,v0),net.point(u1,v0)],[net.point(u0,v1),net.point(u1,v1)]];
+    let cv = ct.map(|p| p.map(|q| out.vertex(q)));
+    let contact = [0,1].map(|k| out.edge(EdgeCurve::Curve(column([0,last_v][k])),[u0,u1],cv[k]) as usize);
+    let arc = [0,1].map(|j| out.edge(EdgeCurve::Curve(row([0,last_u][j])),[v0,v1],[cv[0][j],cv[1][j]]) as usize);
+    // the run's edges, copied with their vertices
+    let mut copied = std::collections::BTreeMap::<u32,u32>::new();
+    let mut run = Vec::new();
+    for &e in chain {
+        let ed = &b.edges[e];
+        let vs = ed.v.map(|v| *copied.entry(v).or_insert_with(|| out.vertex(b.vertices[v as usize].p)));
+        let id = out.edge(ed.curve.clone(),ed.t,vs);
+        out.edges[id as usize].tol = ed.tol;
+        run.push(id as usize);
+    }
+    // at each end: the section through the vertex (where the corner passes it), the run on along
+    // the faces' meeting from the cap's corner to the vertex, and on each face the cap's curve from
+    // the contact to the corner
+    let mut caps: Vec<[usize;3]> = Vec::new();
+    for (j,stop) in ends.iter().enumerate() {
+        let vertex = b.vertices[stop.vertex as usize].p;
+        let ahead = |u: f64| { let (c,n,_) = section(u); dot(sub(vertex,c),n) };
+        let n = 512;
+        let us: Vec<f64> = (0..=n).map(|i| i as f64/n as f64).collect();
+        let pass = if j == 0 { (0..n).find(|&i| ahead(us[i]) >= 0. && ahead(us[i+1]) < 0.) }
+            else { (0..n).rev().find(|&i| ahead(us[i]) >= 0. && ahead(us[i+1]) < 0.) };
+        let i = pass.ok_or("a fillet's run-on never passes the vertex it ends at")?;
+        let at = crate::roots::bracketed_root(|u| Some(ahead(u)),us[i],ahead(us[i]),us[i+1],ahead(us[i+1]),1e-15);
+        let end = [u0,u1][j];
+        let k_end = corner(end);
+        let k_v = out.vertex(k_end);
+        let (from,to) = if j == 0 { (end,at) } else { (at,end) };
+        let (curve,err) = fitted(meeting,if j == 0 { k_end } else { vertex },if j == 0 { vertex } else { k_end },
+            &|s| corner(from+(to-from)*s),tol)?;
+        worst = worst.max(err);
+        let vv = copied[&stop.vertex];
+        let ext = out.edge(EdgeCurve::Curve(curve),[0.,1.],if j == 0 { [k_v,vv] } else { [vv,k_v] }) as usize;
+        out.edges[ext].tol = out.edges[ext].tol.max(err);
+        run.push(ext);
+        let (c,nrm,_) = section(end);
+        let cap_plane = Surface::Plane(Frame::about(c,nrm));
+        let across: Vec<usize> = (0..2).map(|k| -> Result<usize,String> {
+            let on = super::geom::Traced {a:surfaces[k].clone(),b:cap_plane.clone(),pts:Vec::new(),closed:false};
+            let p = ct[k][j];
+            let (curve,err) = fitted(&on,p,k_end,&|s| crate::space::lerp(p,k_end,s),tol)?;
+            worst = worst.max(err);
+            let e = out.edge(EdgeCurve::Curve(curve),[0.,1.],[cv[k][j],k_v]) as usize;
+            out.edges[e].tol = out.edges[e].tol.max(err);
+            Ok(e)
+        }).collect::<Result<_,_>>()?;
+        caps.push([arc[j],across[0],across[1]]);
+        // the cap: its piece lies toward the run, its outward normal away along the spine
+        let outward = if j == 0 { scale(nrm,-1.) } else { nrm };
+        let l = closed_loop(&out,&caps[j],&cap_plane)?;
+        let (_,su,sv) = cap_plane.d1(cap_plane.inverse(c));
+        let reversed = dot(cross(su,sv),outward) < 0.;
+        out.faces.push(Face {surface:cap_plane,reversed,loops:vec![turned(l.coedges,(l.area > 0.) == reversed)],
+            name:["start","end"][j].into()});
+    }
+    // the canal: the contacts along `u`, the arcs at its ends
+    let line = |a: Uv,z: Uv| Pcurve::Line {a,b:z};
+    let canal_loop = vec![
+        Coedge {edge:contact[0] as u32,reversed:false,pcurve:line([u0,v0],[u1,v0])},
+        Coedge {edge:arc[1] as u32,reversed:false,pcurve:line([u1,v0],[u1,v1])},
+        Coedge {edge:contact[1] as u32,reversed:true,pcurve:line([u0,v1],[u1,v1])},
+        Coedge {edge:arc[0] as u32,reversed:true,pcurve:line([u0,v0],[u0,v1])},
+    ];
+    let surface = Surface::BSpline(Frame::new([0.;3],[0.,0.,1.],[1.,0.,0.]),Arc::new(net.clone()));
+    let (m,su,sv) = surface.d1([0.5*(u0+u1),0.5*(v0+v1)]);
+    let spine_side = {
+        let (a,z) = (net.point(0.5*(u0+u1),v0),net.point(0.5*(u0+u1),v1));
+        unit(sub(scale(add(a,z),0.5),m))
+    };
+    let canal_reversed = dot(cross(su,sv),spine_side) < 0.;
+    out.faces.push(Face {surface,reversed:canal_reversed,loops:vec![turned(canal_loop,canal_reversed)],name:"round".into()});
+    // each strip: the run (on past both ends), a cap's curve, the contact, the other cap's curve
+    for k in 0..2 {
+        let reversed = face_reversed[k] != concave;
+        let s = &surfaces[k];
+        let mut es = run.clone();
+        es.extend([caps[0][1+k],contact[k],caps[1][1+k]]);
+        let l = closed_loop(&out,&es,s)?;
+        let want = !reversed;
+        let coedges = if (l.area > 0.) == want { l.coedges } else { reverse(l.coedges) };
+        out.faces.push(Face {surface:s.clone(),reversed,loops:vec![coedges],name:["a","b"][k].into()});
+    }
+    super::json::measure(&mut out);
+    for c in contact { let e = &mut out.edges[c]; e.tol = e.tol.max(fit); }
+    out.check(10.*tol.max(worst))?;
+    Ok(out)
+}
+
+/// A run's piece cut off at each end's plane, kept on the run's side: each end a block standing on
+/// the plane, as large as the piece, in common with it.
+fn trimmed(mut piece: Brep,ends: &[Stop],tol: f64) -> Result<Brep,String> {
+    for stop in ends {
+        let (lo,hi) = piece.bounds();
+        let size = 2.*norm(sub(hi,lo))+distance(scale(add(lo,hi),0.5),stop.o);
+        let f = Frame::about(stop.o,stop.keep);
+        let at = |x: f64,y: f64| f.at([x,y,0.]);
+        let corners = [at(-size,-size),at(size,-size),at(size,size),at(-size,size)];
+        let edges = (0..4).map(|k| super::build::ProfileEdge::Line {a:corners[k],b:corners[(k+1)%4]}).collect();
+        let block = super::build::prism(&super::build::Profile {origin:stop.o,normal:stop.keep,loops:vec![edges],names:vec![]},0.,size)?;
+        piece = super::recipe::combined(&piece,&block,super::boolean::Op::Common,0.)
+            .map_err(|m| format!("a fillet's run cannot be cut off where it ends: {m}"))?;
+    }
+    let _ = tol;
+    Ok(piece)
 }
 
 /// The piece: the canal face over `net` (seamed along its first column), and on each surface the
