@@ -350,6 +350,7 @@ pub(crate) fn lift_gauge(name: &str, kind: EntKind, point: usize, held: &[(&str,
         claim: false,
         class: Default::default(),
         class_span: Span::default(),
+        word: None,
     }
 }
 
@@ -367,6 +368,7 @@ fn built(kind: CKind, args: Vec<Option<Arg>>) -> Relation {
         claim: false,
         class: Default::default(),
         class_span: Span::default(),
+        word: None,
     }
 }
 
@@ -383,6 +385,7 @@ pub(crate) fn lift_relation(sk: &Sketch, c: &Constraint) -> Relation {
         claim: c.claim,
         class: Default::default(),
         class_span: Span::default(),
+        word: None,
     }
 }
 

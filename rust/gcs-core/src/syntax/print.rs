@@ -41,6 +41,9 @@ pub fn render_flat(p: &mut Program) -> Result<&str, PrintError> {
     {
         return Err(PrintError { construct: "component definitions" });
     }
+    if p.words.iter().any(|d| d.module.is_none()) {
+        return Err(PrintError { construct: "relation word definitions" });
+    }
     for c in p.components.iter().filter(|c| own(c)) {
         for st in &c.body {
             printable(&st.kind)?;
@@ -53,6 +56,10 @@ pub fn render_flat(p: &mut Program) -> Result<&str, PrintError> {
     for u in &mut p.uses {
         let start = out.len();
         out.push_str(&format!("use {}", u.name));
+        if !u.names.is_empty() {
+            let names: Vec<&str> = u.names.iter().map(|n| n.text.as_str()).collect();
+            out.push_str(&format!(" ({})", names.join(", ")));
+        }
         u.span = Span::new(start, out.len());
         out.push('\n');
     }
@@ -82,6 +89,7 @@ pub fn render_flat(p: &mut Program) -> Result<&str, PrintError> {
         comp.span = Span::new(lo, out.len());
     }
     p.components.retain(|c| c.module.is_none());
+    p.words.clear();
     p.modules.clear();
     p.text = out;
     p.in_blocks.clear();
@@ -614,7 +622,7 @@ fn write_relation(out: &mut String, r: &Relation) {
 }
 
 /// Partition operator arguments between parentheses and the trailing hint clause.
-fn written_parts(args: &[OpArg]) -> (Vec<String>, Vec<String>) {
+pub(crate) fn written_parts(args: &[OpArg]) -> (Vec<String>, Vec<String>) {
     let mut parts: Vec<String> = Vec::new();
     let mut hints: Vec<String> = Vec::new();
     for a in args {
@@ -755,8 +763,9 @@ pub fn operator_text(kind: CKind, args: &[Option<Arg>]) -> String {
 
 /// **An ordinate and its zero, as a document writes them** (`docs/ordinate-plan.md`): the
 /// direction in the word that named it or as the reference it is, a plane's own word against the
-/// plane its first point is the origin of (`q distance(d, along: u) P`), and a level along the
-/// view's own axes as the aliases that say it (`a horizontal b`, `a vertical b`).  The form is
+/// plane its first point is the origin of (`q distance(d, along: u) P`), and a level in its
+/// own word (`a level(up) b`) — the standard library's `a horizontal b` is a word a file must
+/// import, and a constraint written with it says so itself (`Constraint::word`).  The form is
 /// the core's and is never written.  `None` for every other kind.
 fn ordinate_text(kind: CKind, args: &[Option<Arg>]) -> Option<String> {
     use crate::constraints::Toward;
@@ -783,8 +792,6 @@ fn ordinate_text(kind: CKind, args: &[Option<Arg>]) -> Option<String> {
         }
         _ => match toward {
             Some(_) if of_plane => format!("{q} level({word}) {}", plane()),
-            Some(Toward::PageV) => format!("{p} horizontal {q}"),
-            Some(Toward::PageU) => format!("{p} vertical {q}"),
             _ => format!("{p} level({dir}) {q}"),
         },
     })
@@ -836,6 +843,8 @@ pub(crate) fn sel_text(a: &Arg) -> String {
             write_ref(&mut s, r);
             s
         }
+        // a defined word's argument, as written (§9.9)
+        Arg::Dim { text, .. } => text.clone(),
         other => format!("{other:?}"),
     }
 }

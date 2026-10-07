@@ -12,7 +12,7 @@
 // look at it from the front (`std.front`), from above (`std.top`), from the right (`std.side`)
 // and square-on to the incline (`aux`, standing on the incline's own bearing in the front plane).
 
-use std
+use std (horizontal, vertical)
 
 width := 60
 depth := 30

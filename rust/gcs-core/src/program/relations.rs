@@ -147,6 +147,15 @@ pub(super) fn constrain(
     if r.form.written().is_some_and(|w| crate::constraints::solid_word(&w.word.text).is_some()) {
         return None;
     }
+    // the defined word it was written with, its operands the entities they name (§9.9)
+    let word = r.word.as_ref().and_then(|w| {
+        let ops = w.ops.iter().map(|o| res.lookup(o).and_then(|e| follow(sk, e, &o.path).ok()));
+        Some(crate::constraints::WordUse {
+            word: w.word.clone(),
+            ops: ops.collect::<Option<Vec<EntRef>>>()?,
+            args: w.args.clone(),
+        })
+    });
     let r = match r
         .resolve(&|r| res.lookup(r).and_then(|e| follow(sk, e, &r.path).ok()).map(|e| e.kind))
     {
@@ -394,6 +403,7 @@ pub(super) fn constrain(
     c.claim = r.claim;
     c.class = r.class.clone();
     c.written = written(&r.args, r.kind.spec(), st, doc);
+    c.word = word;
     Some(sk.add_quiet(c))
 }
 
@@ -418,13 +428,12 @@ fn ordinate_operands(
     let at_key = r.written.and_then(|w| w.key_span("along")).unwrap_or(st.span);
     let word = crate::constraints::ordinate_word(ckind, args).to_string();
     let toward = Toward::of(&word);
-    let alias = r.written.is_some_and(|w| crate::constraints::level_alias(&w.word.text).is_some());
     let spell = |d: &str| match level {
         true => format!("level({d})"),
         false => format!("distance(…, along: {d})"),
     };
     // the word read as a word, though the scope has a direction by that name
-    if let (Some(_), false) = (toward, alias) {
+    if toward.is_some() {
         let named = res.lookup(&Ref::new(word.as_str())).is_some_and(|e| {
             matches!(e.kind, EntKind::Axis | EntKind::Line)
         });
@@ -500,8 +509,8 @@ fn ordinate_operands(
     Ok(())
 }
 
-/// What an ordinate of zero says, in the words its statement wrote: `a horizontal b` for the
-/// view's up, `p level(u) P` for a plane's own word, `a level(t) b` for a reference.
+/// What an ordinate of zero says, in the words its statement wrote: `a level(y) b` for the
+/// view's own axis, `p level(u) P` for a plane's own word, `a level(t) b` for a reference.
 fn level_spelling(w: Option<&crate::syntax::Written>, word: &str) -> String {
     use crate::constraints::Toward;
     let ops: Vec<String> =
@@ -515,8 +524,6 @@ fn level_spelling(w: Option<&crate::syntax::Written>, word: &str) -> String {
         _ => None,
     }));
     match Toward::of(word) {
-        Some(Toward::PageV) => format!("{a} horizontal {b}"),
-        Some(Toward::PageU) => format!("{a} vertical {b}"),
         Some(Toward::PlaneN) => format!("{a} coincident {b}"),
         Some(_) => format!("{a} level({word}) {b}"),
         None => format!("{a} level({}) {b}", reference.unwrap_or_else(|| "t".to_string())),

@@ -22,7 +22,7 @@
 // envelope extruded (`brep::sweep::extruded`), not a traced sheet.
 
 unit mm
-use std
+use std (horizontal)
 
 N := 20                     // teeth
 m := 2mm                    // module

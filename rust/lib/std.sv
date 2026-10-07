@@ -3,6 +3,12 @@
 // `use std` brings it in — from the library compiled into the core, so it is there in the browser
 // as in the terminal; a `std.sv` beside a document would win over it, as any module does.
 
+// Two points at one height, and one above the other, in the view they are drawn in: the
+// ordinate's zero along the view's up and along its right (§9.9).  A file says `use std
+// (horizontal, vertical)` to write them bare; `horizontal l` of a line is the language's own.
+a horizontal b := a level(up) b
+a vertical b := a level(right) b
+
 // The standard axes and planes, which every document that says `use std` has — as a CAD part
 // has its origin planes — so the workspace can offer them as places to draw.  The axes are held
 // outright, each through the world origin: x right, y away from the front's viewer, z up, and

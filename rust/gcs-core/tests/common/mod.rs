@@ -312,7 +312,8 @@ pub const STD_POINTS: usize = 5;
 /// written before points stood in space says now (`docs/planes-plan.md`).  One that already says
 /// `use std` is taken as written.
 pub fn front(src: &str) -> String {
-    if src.lines().any(|l| l.trim() == "use std") {
+    let says_std = |l: &str| l.trim() == "use std" || l.trim().starts_with("use std (");
+    if src.lines().any(says_std) {
         return src.to_string();   // written for the front already
     }
     let (mut head, mut body, mut defs) = (String::new(), String::new(), String::new());
@@ -336,7 +337,17 @@ pub fn front(src: &str) -> String {
             body.push('\n');
         }
     }
-    let std = if head.lines().any(|l| l.trim() == "use std") { "" } else { "use std\n" };
+    // `std`'s two words between points, where the source writes them (§9.9)
+    let infix = |w: &str| src.lines().any(|l| {
+        let t: Vec<&str> = l.split_whitespace().collect();
+        (1..t.len().saturating_sub(1)).any(|i| t[i] == w && !["->", ":=", "claim"].contains(&t[i - 1]))
+    });
+    let words: Vec<&str> = ["horizontal", "vertical"].into_iter().filter(|w| infix(w)).collect();
+    let std = match (head.lines().any(says_std), words.is_empty()) {
+        (true, _) => String::new(),
+        (false, true) => "use std\n".to_string(),
+        (false, false) => format!("use std ({})\n", words.join(", ")),
+    };
     format!("{head}{std}{defs}in std.front {{\n{body}}}\n")
 }
 

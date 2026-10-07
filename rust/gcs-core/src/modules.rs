@@ -7,8 +7,9 @@
 //! core (`library.rs`).  A module's own `use`s are followed the same way, once each, so a diamond
 //! is one copy and a cycle is not a hang.
 //!
-//! What a module contributes is exactly its component definitions, plus the top-level parameters and groups
-//! available to the importing root (§6.3).  Its own drawing — whatever loose statements it holds — is its own
+//! What a module contributes is exactly its component definitions and relation words, plus the
+//! top-level parameters and groups available to the importing root (§6.3, §9.9) — each by its
+//! full path, or bare where the importing `use` names it (`use std (horizontal)`).  Its own drawing — whatever loose statements it holds — is its own
 //! and is not drawn here, so `gear.sv` is a module as it stands.  Two definitions of one component
 //! name, wherever they come from, are refused: there is no shadowing (§5).
 //!
@@ -113,8 +114,12 @@ pub fn link(prog: &mut Program, resolve: &mut dyn FnMut(&str) -> Option<String>)
         for u in &mp.uses {
             queue.push_back((u.name.clone(), u.span, via));
         }
-        let uses = mp.uses.iter().map(|u| u.name.clone()).collect();
-        prog.modules.push(Module { name, text, base, via, root, uses });
+        // its relation words, said to be its own (§9.9); one defined twice is `words::check`'s
+        prog.words.extend(mp.words.into_iter().map(|mut d| {
+            d.module = Some(k);
+            d
+        }));
+        prog.modules.push(Module { name, text, base, via, root, uses: mp.uses });
     }
     localize(prog, &mut diags);
     diags

@@ -50,7 +50,7 @@ fn a_pierced_spheres_two_rims_are_found_and_followed() {
 
 const BLOCK: &str = "\
 unit mm
-use std
+use std (vertical)
 in std.front {
 private mid := point hint((0, -6))
 std.origin vertical mid

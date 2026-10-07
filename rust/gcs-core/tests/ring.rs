@@ -24,7 +24,7 @@ fn solved(src: &str) -> (gcs_core::program::Elaborated, Sketch) {
 
 const RING: &str = "
 unit mm
-use std
+use std (horizontal)
 in std.front {
   hub := point
   fix((1, 2)) hub
@@ -40,7 +40,7 @@ in std.front {
 /// The same triangle as a `cycle`, every turn written out: the oracle.
 const CYCLE: &str = "
 unit mm
-use std
+use std (horizontal)
 in std.front {
   hub := point
   fix((1, 2)) hub

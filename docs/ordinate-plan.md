@@ -2,7 +2,7 @@
 
 **Status (2026-10-06): implemented** on branch `ordinate-level`, all five phases in one change
 (Solvent Draft 0.46). The proposed defaults below were taken as written. Relation aliases in the
-library are #94.
+library are #94, done in 0.48.
 
 A drawing that wants "this point is `d` along that direction from that one" has seven ways to
 say it today, chosen by what the direction happens to be: the page's x or y
@@ -249,11 +249,9 @@ Each phase lands green (`make test` once, captured) with its own gate.
 
 ## Open
 
-* **Relation aliases in the library** (#94). `horizontal` belongs in `std.sv` as `a horizontal b
-  := a level(up) b`, but the language can define components, not relation words. Two things are
-  needed: a definition form for an infix or prefix word over its operands, expanded by the
-  flattener like a component body; and a `use` that imports individual names
-  (`use std (horizontal)`), not an exemption from §14.4's full-path rule. Out of scope here. The
-  alias is one entry, `constraints::level_alias`, so that it is the only thing that moves.
+* **Relation aliases in the library** (#94) — **done** (Draft 0.48). `horizontal` and `vertical`
+  between points are `std.sv`'s relation words (`a horizontal b := a level(up) b`, §9.9), which a
+  file imports by name, `use std (horizontal, vertical)` (§14.4); `constraints::level_alias` is
+  gone, and the printer writes `level(up)` for a level the core made itself.
 * `InView` along a drawn line whose ends are p or q (`a level(l) b` with `l :=
   line(a, b)`) forces a collapse. It is legal and silly, and is not refused.

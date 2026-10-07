@@ -2,7 +2,7 @@
 // rebuild; ⌘B shows it in the glass box. Keep `hole_r + offset` below `sphere_r`, or the hole
 // breaks out of the side rather than passing through.
 unit mm
-use std
+use std (horizontal)
 
 sphere_r := 20mm   // the sphere's radius
 hole_r := 6mm      // the hole's radius

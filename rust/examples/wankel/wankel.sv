@@ -8,7 +8,7 @@
 // whole period — the largest rotor that turns in the bore. Its flank is the bore's envelope under
 // the housing's motion, drawn on the page as `flank`. The numbers are in `configuration.sv`.
 unit mm
-use std
+use std (horizontal)
 use configuration
 
 R := configuration.generating_radius

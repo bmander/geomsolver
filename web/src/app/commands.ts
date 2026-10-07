@@ -24,7 +24,8 @@ const SIMPLE: Simple[] = [
 /* Level and plumb read the selection too.  A pair of points says exactly what a line through
  * them would — that the segment between them is level — and wanting that without drawing the
  * line is the common case: two corners of a shape that share no edge.  Between points it is
- * `level` along the view's `up` or `right`, which the source spells `a horizontal b`. */
+ * `level` along the view's `up` or `right`, which the source spells `a level(up) b` (`std`'s
+ * `a horizontal b` is a word a file imports, §9.9). */
 const LEVEL: Simple[] = [
   ['Horizontal', C.Horizontal],
   ['Vertical', C.Vertical],

@@ -99,6 +99,27 @@ impl EntKind {
         }
     }
 
+    /// Every kind, in declaration order — what a question about the whole table walks.
+    pub const ALL: [EntKind; 17] = [
+        EntKind::Point,
+        EntKind::Line,
+        EntKind::Circle,
+        EntKind::Arc,
+        EntKind::Spline,
+        EntKind::Plane,
+        EntKind::Curve,
+        EntKind::Face,
+        EntKind::Solid,
+        EntKind::Surface,
+        EntKind::Motion,
+        EntKind::Envelope,
+        EntKind::Patch,
+        EntKind::Seam,
+        EntKind::Vertex,
+        EntKind::Edge,
+        EntKind::Axis,
+    ];
+
     pub fn parse(s: &str) -> Option<EntKind> {
         Some(match s {
             "point" => EntKind::Point,

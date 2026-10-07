@@ -11,6 +11,7 @@
 
 use engine.dims
 use engine.parts
+use std (horizontal)
 
 // A main bearing edge on, at the axis point `jc`: the shell above and below the journal, the
 // bulkhead rising from the shell to the cylinder walls, the cap hung below it.

@@ -14,6 +14,7 @@
 use engine.dims
 use engine.parts
 use engine.valvetrain
+use std (horizontal)
 
 // A cam bearing cap, edge on or from above: a block `wcamb` long round the journal.
 component CamBearing(c: point, dims: group) {

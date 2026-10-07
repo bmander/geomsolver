@@ -264,7 +264,7 @@ impl<'a> P<'a> {
                 // an infix operator carries its own parentheses: `p1 distance(80) p2` is a
                 // chain of one joint, which is the unification that makes a lone statement
                 // and a chain one grammar rather than two
-                let args = self.op_args(&w)?;
+                let args = self.op_args(&w, Fixity::Infix)?;
                 words.push((w, args, Span::new(lo, self.prev_hi())));
                 hi = self.prev_hi();
                 // the marker may stand on either side of the words, or both — `A -> equal -> B`
@@ -520,7 +520,7 @@ impl<'a> P<'a> {
             // `radius(25) circle(center: c)`
             let mut word = Name { text: w, span: self.here() };
             self.i += 1;
-            let args = self.op_args(&word.text)?;
+            let args = self.op_args(&word.text, Fixity::Prefix)?;
             // Removing a unary constraint removes its argument list with its word.
             word.span.hi = self.prev_hi() as u32;
             prefixes.push((word, args));
@@ -706,6 +706,7 @@ impl<'a> P<'a> {
                     claim: false,
                     class: Classes::default(),
                     class_span: Span::default(),
+                    word: None,
                 };
                 let Some(id) = self.mint_stmt(next_id, sp) else { return };
                 out.push(Stmt {
@@ -1024,6 +1025,7 @@ impl<'a> P<'a> {
                 claim: false,
                 class: Classes::default(),
                 class_span: Span::default(),
+                word: None,
             })
         };
         let end = |w: &str| {

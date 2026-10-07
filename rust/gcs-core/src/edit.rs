@@ -583,6 +583,7 @@ pub fn add_use(prog: &Program, name: &str) -> Edit {
                 .filter(|st| !matches!(st.kind, StmtKind::Unit(_)))
                 .map(|st| st.span.lo as usize)
                 .chain(prog.components.iter().filter(|c| !std::ptr::eq(*c, root)).map(|c| c.span.lo as usize))
+                .chain(prog.words.iter().filter(|d| d.module.is_none()).map(|d| d.span.lo as usize))
                 .filter(|&lo| lo <= text.len())
                 .min();
             match first {
@@ -629,13 +630,7 @@ pub fn add_rectangle(prog: &Program, w: f64, h: f64, plane: Option<&str>) -> Edi
     // a fresh instance name, past every name the document already binds
     let taken: std::collections::BTreeSet<&str> = prog
         .stmts()
-        .filter_map(|s| match &s.kind {
-            StmtKind::Decl(d) => Some(d.name.key().text.as_str()),
-            StmtKind::Instance(i) => Some(i.name.text.as_str()),
-            StmtKind::Param(p) => Some(p.name.text.as_str()),
-            StmtKind::Group(g) => Some(g.name.text.as_str()),
-            _ => None,
-        })
+        .filter_map(|s| s.kind.bound_name().map(|n| n.text.as_str()))
         .collect();
     let name =
         (0..).map(|i| format!("r{i}")).find(|n| !taken.contains(n.as_str())).unwrap_or_default();
@@ -1213,7 +1208,7 @@ pub fn set_dimension(e: &Elaborated, prog: &Program, cid: u32, attr: &str, text:
         syntax::RelationForm::Written(w) => w.args.iter().find_map(|a| match a {
             syntax::OpArg::Dim(text, span) => Some((*span, text.clone())),
             _ => None,
-        }),
+        }).or_else(|| word_dimension(prog, w)),
         syntax::RelationForm::Canonical { kind, args } => kind
             .spec()
             .iter()
@@ -1243,6 +1238,25 @@ pub fn set_dimension(e: &Elaborated, prog: &Program, cid: u32, attr: &str, text:
     let plain = crate::expr::literal(text).is_some() && crate::expr::literal(was).is_some();
     let number = Splice { at: span, with: text.trim().to_string() };
     Edit::spliced(prog, vec![number], if plain { Kind::Numeric } else { Kind::Structural })
+}
+
+/// **A defined word's number, where the statement wrote it** (§9.9): where the word's body
+/// states its dimension as one of its parameters (`a above(d) b := b distance(d, along: up) a`),
+/// the argument the statement gave that parameter (`r above(d: 7) q`'s `7`) — the text the
+/// callout draws, so the text an edit of it writes.
+fn word_dimension(prog: &Program, w: &syntax::Written) -> Option<(Span, String)> {
+    let k = prog.resolve_word(&w.word.text, w.fixity, None)?;
+    let body = prog.words[k].body.form.written()?;
+    let param = body.args.iter().find_map(|a| match a {
+        syntax::OpArg::Dim(t, _) => Some(t.trim()),
+        _ => None,
+    })?;
+    w.args.iter().find_map(|a| match a {
+        syntax::OpArg::Named(n, syntax::Arg::Dim { text, span }) if n.text == param => {
+            Some((*span, text.clone()))
+        }
+        _ => None,
+    })
 }
 
 /* -- bringing the source back into step ------------------------------------------- */

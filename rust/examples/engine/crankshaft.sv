@@ -13,6 +13,7 @@
 
 use engine.dims
 use engine.parts
+use std (horizontal)
 
 // One throw seen along the axis: the pin at `theta` from the bore axis, clockwise from top dead
 // centre, in its eye; the web's two flanks leaving the eye tangent and running out to the

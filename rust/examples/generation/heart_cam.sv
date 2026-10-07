@@ -17,7 +17,7 @@
 // is how tightly the profile bends there (it must stay larger than a grinding wheel's).  Edit
 // `lift`, `base` or the roller's radius and the cam is cut again.
 
-use std
+use std (horizontal)
 
 base := 25    // the roller centre's nearest approach to the cam's centre
 lift := 15    // how far the follower rises

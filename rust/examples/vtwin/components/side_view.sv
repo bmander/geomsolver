@@ -10,7 +10,7 @@
 // of it — the cylinders, the disc — lies to the left, toward the view it is projected from.
 // Every height the front view designs is projected, never restated.
 
-use std
+use std (vertical)
 use components.dims
 use components.parts
 

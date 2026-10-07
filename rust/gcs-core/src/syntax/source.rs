@@ -1,6 +1,7 @@
 //! Source text, byte spans, statement identities, and program traversal.
 
-use super::{Chained, Component, InBlock, Stmt, StmtKind};
+use super::{Chained, Component, InBlock, Stmt, StmtKind, WordDef};
+use crate::constraints::Fixity;
 
 /// How long a program may be.  A document is untrusted input and `wasm32-unknown-unknown` aborts
 /// rather than unwinding, so the size is checked here rather than left to an allocator.
@@ -91,18 +92,25 @@ pub struct Program {
     /// name resolves to is the host's business (`modules::link`): the core takes text and has
     /// no filesystem.
     pub uses: Vec<Use>,
+    /// The relation words defined at the top of a file (`a horizontal b := a level(up) b`, §9.9):
+    /// the document's own, then each module's once `modules::link` has run, each saying which
+    /// file it was written in.
+    pub words: Vec<WordDef>,
     /// The modules linked in, in the order they were resolved.  Each one's text is kept, so a
     /// re-parse of the document (`retext`) can link again without asking the host.
     pub modules: Vec<Module>,
     pub(super) next_stmt: u32,
 }
 
-/// `use engine.crank` — a module the document reads its components from.
+/// `use engine.crank` — a module the document reads its components from — and, in brackets,
+/// the names it reads bare: `use std (horizontal, vertical)` (§14.4 [0.48]).
 #[derive(Clone, Debug)]
 pub struct Use {
     /// The dotted name as written, `engine.crank`.
     pub name: String,
     pub span: Span,
+    /// The names imported bare, as written; empty for a `use` that imports none.
+    pub names: Vec<Name>,
 }
 
 /// A linked module. Spans use virtual offsets: document text, then modules separated
@@ -119,8 +127,9 @@ pub struct Module {
     /// The module's own top-level body: its `param`s are what its components may read (§6.3).
     /// Nothing else in it is drawn — a module's drawing is its own.
     pub root: Component,
-    /// The modules this one `use`s, whose params its file reads in turn.
-    pub uses: Vec<String>,
+    /// The modules this one `use`s, whose params its file reads in turn, and the names each
+    /// imports bare.
+    pub uses: Vec<Use>,
 }
 
 impl Program {
@@ -131,6 +140,7 @@ impl Program {
             in_blocks: Vec::new(),
             preview: None,
             uses: Vec::new(),
+            words: Vec::new(),
             modules: Vec::new(),
             next_stmt: 0,
         }
@@ -235,12 +245,44 @@ impl Program {
     /// The modules a body read `from` the document (`None`) or a module may name: exactly the
     /// ones its own file `use`s (§14.4) — a module brought in by another is that one's business.
     pub fn uses_of(&self, from: Option<usize>) -> Vec<&str> {
+        self.use_stmts(from).iter().map(|u| u.name.as_str()).collect()
+    }
+
+    /// The `use` statements of the document (`None`) or a module, as written.
+    pub fn use_stmts(&self, from: Option<usize>) -> &[Use] {
         match from {
-            None => self.uses.iter().map(|u| u.name.as_str()).collect(),
-            Some(k) => self.modules.get(k).map_or(Vec::new(), |m| {
-                m.uses.iter().map(String::as_str).collect()
-            }),
+            None => &self.uses,
+            Some(k) => self.modules.get(k).map_or(&[], |m| &m.uses),
         }
+    }
+
+    /// **The module a bare name is imported from** in the file `from` (§14.4 [0.48]): the first
+    /// `use` whose brackets name it, and only a module that was linked.  Two imports of one name
+    /// are refused where the second is written (`words::check`), so the first is the answer.
+    pub fn imported(&self, name: &str, from: Option<usize>) -> Option<usize> {
+        let u = self.use_stmts(from).iter().find(|u| u.names.iter().any(|n| n.text == name))?;
+        self.module_named(&u.name)
+    }
+
+    /// The linked module of that path (`engine.parts`), by index.
+    pub fn module_named(&self, path: &str) -> Option<usize> {
+        self.modules.iter().position(|m| m.name == path)
+    }
+
+    /// The relation word `word` of that fixity defined in `module` (`None`: the document's own),
+    /// by index into `words`.
+    pub fn word_in(&self, module: Option<usize>, word: &str, fixity: Fixity) -> Option<usize> {
+        self.words
+            .iter()
+            .position(|d| d.module == module && d.fixity == fixity && d.word.text == word)
+    }
+
+    /// **The relation word a statement writes, from where it is written** (§9.9): one its own
+    /// file defines, else one a `use` of the file imports by name — of the same fixity, since an
+    /// infix word and a prefix one of the same spelling are two words.  The index into `words`.
+    pub fn resolve_word(&self, word: &str, fixity: Fixity, from: Option<usize>) -> Option<usize> {
+        let find = |module| self.word_in(module, word, fixity);
+        find(from).or_else(|| self.imported(word, from).and_then(|m| find(Some(m))))
     }
 
     /// **The component a call names, from where it is written** (§14.4): a bare name is one its
@@ -257,18 +299,22 @@ impl Program {
             if !uses.contains(&path) {
                 return Err(format!("no module `{path}` is used here: write `use {path}`"));
             }
-            let m = self.modules.iter().position(|m| m.name == path);
+            let m = self.module_named(path);
             return find(m, base).ok_or_else(|| format!("`{path}` defines no component `{base}`"));
         }
         if let Some(i) = find(from, name) {
             return Ok(i);
         }
+        // a name the file imports bare (`use engine.parts (Crank)`)
+        if let Some(i) = self.imported(name, from).and_then(|m| find(Some(m), name)) {
+            return Ok(i);
+        }
         // a module this file uses defines it: the one mistake worth naming the fix for
         for path in uses {
-            let m = self.modules.iter().position(|m| m.name == path);
+            let m = self.module_named(path);
             if m.is_some() && find(m, name).is_some() {
                 return Err(format!("no component named `{name}` here: `{path}` defines one, \
-                                    written `{path}.{name}`"));
+                                    written `{path}.{name}`, or imported `use {path} ({name})`"));
             }
         }
         Err(format!("no component named `{name}`"))

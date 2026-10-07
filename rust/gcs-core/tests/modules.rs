@@ -1,7 +1,8 @@
 //! Modules (§14.4): `use NAME` at the top of a document, resolved by the host and linked by
 //! `modules::link` — a module's components are called, and its top-level params and groups read
 //! by the root bodies of files that `use` it, **by the module's full path** (`lib.rung.Rung`,
-//! `lib.rung.len`); nothing is imported bare, and its own drawing is its own.
+//! `lib.rung.len`) or bare where the `use` names it (`use lib.rung (Rung, len)`, [0.48]); and
+//! its own drawing is its own.  Relation words and the import errors are `relation_words.rs`'.
 
 use gcs_core::diagnose::{diagnose, DiagnoseOptions, State};
 use gcs_core::modules::{link, relink};
@@ -156,6 +157,23 @@ fn a_module_contributes_its_components_and_its_params() {
     assert_eq!((d.dof, d.status), (0, State::Well));
     let (x, y) = sk.point_xy(e.map.ent_named("l1").unwrap().i());
     assert!((x - 0.0).abs() < 1e-6 && (y - 50.0).abs() < 1e-6, "{x} {y}");
+}
+
+#[test]
+fn a_use_names_what_it_reads_bare() {
+    // the ladder again, its rungs and their length imported by name beside the full path
+    let src = LADDER
+        .replace("use lib.rung\n", "use lib.rung (Rung, len)\n")
+        .replace("lib.rung.Rung(l0, r0, len: lib.rung.len)", "Rung(l0, r0, len: len)");
+    assert!(src.contains("Rung(l0, r0, len: len)") && src.contains("lib.rung.Rung(l1"));
+    let (e, linked) = read(&src);
+    assert!(linked.is_empty(), "{linked:?}");
+    assert!(e.ok(), "{:?}", e.diags);
+    let (full, _) = read(LADDER);
+    assert_eq!(e.sketch.constraints.len(), full.sketch.constraints.len());
+    // nothing listed is nothing imported: no prelude
+    let (e, _) = read(&LADDER.replace("lib.rung.Rung(l0, r0, len: lib.rung.len)", "Rung(l0, r0, len: 50)"));
+    assert!(e.errors().any(|d| d.message.contains("use lib.rung (Rung)")), "{:?}", e.diags);
 }
 
 #[test]

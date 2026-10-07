@@ -15,7 +15,7 @@ fn solved(src: &str) -> program::Elaborated {
 fn groups_pass_units_and_geometry_without_copying_it() {
     let mut e = solved("\
 unit mm
-use std
+use std (horizontal)
 component Bar(d: group) {
 tip := point hint((d.origin.x + d.length, d.origin.y))
 d.origin distance(d.length) tip
@@ -115,7 +115,7 @@ fn groups_reject_missing_duplicate_and_wrong_kind_members() {
 fn a_group_may_be_written_across_lines() {
     let e = solved("\
 unit mm
-use std
+use std (horizontal)
 component Bar(d: group) {
 tip := point hint((d.origin.x + d.length, d.origin.y))
 d.origin distance(d.length) tip
@@ -236,7 +236,7 @@ two := Part()
 fn numeric_groups_preserve_derived_dimensions() {
     let e = solved(r#"
 unit mm
-use std
+use std (horizontal)
 dims := {area: 400mm * 1mm, root: sqrt(16mm)}
 component Part(d: group) {
   length := sqrt(d.area) + d.root * d.root
@@ -284,7 +284,7 @@ fn standard_centered_rectangle_has_dimensioned_sides_and_a_private_diagonal() {
 fn a_group_member_may_be_a_group_written_in_place() {
     let e = solved("\
 unit mm
-use std
+use std (horizontal)
 component Bar(d: group) {
 tip := point hint((d.at.x + d.size.length, d.at.y))
 d.at distance(d.size.length) tip
@@ -321,7 +321,7 @@ pin := Pin(design.pin)
 #[test]
 fn a_group_in_place_reads_as_one_referred_to() {
     let tail = "\
-use std
+use std (horizontal)
 component Bar(d: group) {
 tip := point hint((d.at.x + d.size.length, d.at.y))
 d.at distance(d.size.length) tip

@@ -425,7 +425,7 @@ export let SplineCurvature: ConstraintCtor;
  *  or left null with `along` a word the core reads it off — `x` and `y` the run and the rise in
  *  the points' view (`docs/ordinate-plan.md`).  Its form is the core's. */
 export let Ordinate: ConstraintCtor;
-/** The ordinate's zero, `(p, q, t, along)`: the two level along `t` — `up` is `p horizontal q`. */
+/** The ordinate's zero, `(p, q, t, along)`: the two level along `t` — `p level(up) q`. */
 export let Level: ConstraintCtor;
 /** The three contacts with a curve written in the language: a point on it, a line tangent to
  *  it, a circle osculating it.  Each owns the curve's parameter, as a spline's contacts do. */

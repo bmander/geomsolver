@@ -91,7 +91,7 @@ fn a_swept_claim_finds_the_worst_pose() {
     // V-twin's port timing and disc clearance were checked by.
     let src = "\
 unit mm
-use std
+use std (horizontal, vertical)
 in std.front {
 o := point
 fix((0, 0)) o

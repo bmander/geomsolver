@@ -69,6 +69,10 @@ impl<'a> Walk<'a> {
             for (k, v) in self.used_params(&uses) {
                 vals.entry(k).or_insert(v);
             }
+            // and those it imports bare, by their own names (§14.4 [0.48])
+            for (k, v) in self.imported_params(None) {
+                vals.entry(k).or_insert(v);
+            }
         }
         // every `param` of the body, whatever line it stands on — a body is a set (P2)
         self.params(body, vals, scope);
@@ -284,19 +288,21 @@ impl<'a> Walk<'a> {
                 }
                 // a constraint: its dimension is written in the component's own parameters, which
                 // do not exist in the flat document, so they are worked out here
+                // — and one written with a defined word is that word's body (§9.9)
                 StmtKind::Relation(rel) => {
-                    let r2 = self.settle_relation(rel, vals, scope);
+                    let Some(r2) = self.settle_relation(rel, vals, scope) else { continue };
                     self.emit(StmtKind::Relation(r2), st, scope, path);
                 }
                 // a claim over an interval: its numbers and its relations' worked out as above
                 StmtKind::ClaimOver(c) => {
                     let mut c2 = c.clone();
                     for a in [&mut c2.from, &mut c2.to] { self.settle_arg(a, vals, scope); }
-                    for inner in &mut c2.body {
-                        if let StmtKind::Relation(rel) = &inner.kind {
-                            inner.kind = StmtKind::Relation(self.settle_relation(rel, vals, scope));
-                        }
-                    }
+                    c2.body.retain_mut(|inner| {
+                        let StmtKind::Relation(rel) = &inner.kind else { return true };
+                        let Some(r2) = self.settle_relation(rel, vals, scope) else { return false };
+                        inner.kind = StmtKind::Relation(r2);
+                        true
+                    });
                     self.emit(StmtKind::ClaimOver(c2), st, scope, path);
                 }
                 // a gauge or an orientation: kept as written, resolved later
@@ -306,10 +312,11 @@ impl<'a> Walk<'a> {
     }
 
     /// A relation's numbers worked out against the parameters in scope, in either of its
-    /// representations, and the enclosing instances' classes stamped over its own.
+    /// representations, and the enclosing instances' classes stamped over its own — the relation
+    /// it states, a defined word's body expanded (`expand_word`; `None` where it cannot be).
     fn settle_relation(&mut self, rel: &crate::syntax::Relation, vals: &BTreeMap<String, Aff>, scope: &Scope)
-        -> crate::syntax::Relation {
-        let mut r2 = rel.clone();
+        -> Option<crate::syntax::Relation> {
+        let mut r2 = self.expand_word(rel, scope)?;
         if let Some(w) = r2.form.written_mut() {
             for a in w.args.iter_mut() {
                 match a {
@@ -337,7 +344,7 @@ impl<'a> Walk<'a> {
                 r2.class.0.push(c.clone());
             }
         }
-        r2
+        Some(r2)
     }
 
     /// A seed written as an expression is worked out here, against the parameters in scope,

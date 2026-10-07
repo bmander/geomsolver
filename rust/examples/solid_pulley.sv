@@ -1,6 +1,6 @@
 // Turn a stepped radial section through a full revolution, then cut a V-belt groove.
 unit mm
-use std
+use std (vertical)
 bore_radius := 6mm
 rim_radius := 28mm
 hub_radius := 12mm

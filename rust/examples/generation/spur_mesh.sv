@@ -11,7 +11,7 @@
 // involute, and Euler–Savary's centre of curvature on the common normal.  The diagnosis judges
 // it a theorem: true at every pose the freedom reaches, and implied rather than stated.
 
-use std
+use std (horizontal)
 
 r1 := 20                    // the pinion's pitch radius
 r2 := 30                    // the gear's

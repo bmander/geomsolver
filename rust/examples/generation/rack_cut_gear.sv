@@ -17,7 +17,7 @@
 // line, would generate the involute's folded branch, which the class refuses.
 
 unit mm
-use std
+use std (horizontal)
 
 N := 20                     // teeth
 m := 2mm                    // module

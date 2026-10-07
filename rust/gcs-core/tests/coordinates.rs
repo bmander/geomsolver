@@ -297,7 +297,7 @@ fn vtwin_variant(src: &str, edits: &[(&str, &str, &str)]) -> program::Elaborated
 fn vtwin_cylinder_follows_piston_travel_and_wall_thickness() {
     let src = "\
 unit mm
-use std
+use std (vertical)
 use components.dims
 use components.bank
 in std.front {

@@ -759,7 +759,7 @@ fix((0, 0)) p
     assert!(dims.iter().all(|c| !d.implied.contains(c)), "{:?}", d.implied);
     // and a redundancy a dimension takes part in is still `over`, at DOF 0 as anywhere
     let (d, dims) = read(
-        "use std\nin std.front {\na := point\nb := point hint((40, 0))\na horizontal b\na distance(40) b\na distance(40) b\nfix((0, 0)) a\n}\n",
+        "use std (horizontal)\nin std.front {\na := point\nb := point hint((40, 0))\na horizontal b\na distance(40) b\na distance(40) b\nfix((0, 0)) a\n}\n",
     );
     assert_eq!(d.status, State::Over, "{}", summary(&d));
     assert!(dims.iter().all(|c| d.over.contains(c)), "over: {:?}", d.over);

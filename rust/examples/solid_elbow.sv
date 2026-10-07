@@ -1,6 +1,6 @@
 // A hollow duct elbow: carry one hollow section along a constrained arc.
 unit mm
-use std
+use std (horizontal)
 bend_radius := 30mm
 half_size := 9mm
 wall := 2mm

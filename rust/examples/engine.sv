@@ -9,7 +9,7 @@
 
 unit mm
 use engine.parts
-use std
+use std (horizontal)
 use engine.dims
 use engine.block
 use engine.head

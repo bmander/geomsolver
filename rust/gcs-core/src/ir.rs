@@ -115,6 +115,8 @@ pub struct Relation {
     pub place: Option<(f64, f64)>,
     pub claim: bool,
     pub class: Classes,
+    /// The defined word the statement was written with (§9.9) — see `syntax::Relation::word`.
+    pub word: Option<syntax::Worded>,
 }
 
 /// An operator selected against the declared entity kinds, before argument validation.
@@ -145,7 +147,7 @@ impl Statement {
             S::Chain(c) => Operation::Chain(c),
             S::Decl(d) => Operation::Decl(Box::new(d.into())),
             S::Relation(r) => Operation::Relation(Relation {
-                form: r.form, place: r.place, claim: r.claim, class: r.class,
+                form: r.form, place: r.place, claim: r.claim, class: r.class, word: r.word,
             }),
             S::Branch(b) => Operation::Branch(b),
             S::Style(s) => Operation::Style(s),

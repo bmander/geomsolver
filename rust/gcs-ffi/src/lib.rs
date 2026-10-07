@@ -4081,6 +4081,7 @@ pub unsafe extern "C" fn gcs_elab_add_relation(
                 claim: false,
                 class: Default::default(),
                 class_span: gcs_core::syntax::Span::default(),
+                word: None,
             },
         ))
     })

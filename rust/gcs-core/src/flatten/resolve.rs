@@ -497,6 +497,16 @@ fn rewrite(
             }
         }
         StmtKind::Relation(rel) => {
+            // the operands a defined word was written with, read where it was written (§9.9);
+            // the body holds the same references, so one that names nothing is said there
+            if let Some(w) = rel.word.as_mut() {
+                for r in w.ops.iter_mut() {
+                    if let Some((abs, rest)) = lookup(r, sc, names, alias, units) {
+                        r.root = Name { text: abs, span: r.root.span };
+                        r.path = rest.into_iter().map(|f| Seg::Field(Name::new(f))).collect();
+                    }
+                }
+            }
             for a in rel.form.canonical_args_mut().iter_mut().flatten() {
                 if let crate::syntax::Arg::Ref(r) = a {
                     fix(r, bad);
@@ -662,14 +672,7 @@ impl<'a> Walk<'a> {
         }
         // a declaration of the body called what each copy calls its edge would hide it
         let var = &over.var.text;
-        if b.body.iter().any(|st| match &st.kind {
-            StmtKind::Decl(d) => &d.name.key().text == var,
-            StmtKind::Chain(c) => &c.name.key().text == var,
-            StmtKind::Instance(i) => &i.name.text == var,
-            StmtKind::Param(d) => &d.name.text == var,
-            StmtKind::Group(g) => &g.name.text == var,
-            _ => false,
-        }) {
+        if b.body.iter().any(|st| st.kind.bound_name().is_some_and(|n| &n.text == var)) {
             self.err(Code::E001, over.var.span, format!("`{var}` is declared twice"));
             return;
         }

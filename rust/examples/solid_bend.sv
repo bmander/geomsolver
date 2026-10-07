@@ -1,7 +1,7 @@
 // A hollow duct that narrows as it bends: an inlet and an outlet lofted along a constrained arc,
 // each section blended into the next while it turns about the bend's axis.
 unit mm
-use std
+use std (horizontal)
 bend_radius := 30mm
 inlet_half := 9mm
 outlet_half := 6mm

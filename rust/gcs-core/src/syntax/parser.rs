@@ -2,6 +2,7 @@
 
 mod chains;
 mod declarations;
+mod definitions;
 mod relations;
 mod statements;
 
@@ -172,6 +173,7 @@ fn parse_at(src: &str, base: usize, first_id: u32, limits: ParseLimits) -> (Prog
     let mut body: Vec<Stmt> = Vec::new();
     let mut comps: Vec<Component> = Vec::new();
     let mut uses: Vec<Use> = Vec::new();
+    let mut words: Vec<crate::syntax::WordDef> = Vec::new();
     let mut next_id = first_id;
     while !st.done() {
         st.skip_ends();
@@ -220,6 +222,18 @@ fn parse_at(src: &str, base: usize, first_id: u32, limits: ParseLimits) -> (Prog
             }
             continue;
         }
+        // `a horizontal b := a level(up) b` — a relation word, defined at the top of a file as
+        // a component is (§9.9)
+        if let Some(fixity) = st.word_definition_ahead() {
+            if !st.take_statement(st.here()) {
+                break;
+            }
+            match st.word_definition(fixity) {
+                Some(d) => words.push(d),
+                None => st.resync(),
+            }
+            continue;
+        }
         // `curve name(` was a *family* until 0.11; a family is a component now (§6.5)
         if st.peek_word("curve") && matches!(st.t.get(st.i + 2).map(|(t, _)| t), Some(Tok::P('(')))
         {
@@ -242,6 +256,7 @@ fn parse_at(src: &str, base: usize, first_id: u32, limits: ParseLimits) -> (Prog
     p.next_stmt = next_id;
     p.in_blocks = std::mem::take(&mut st.in_blocks);
     p.uses = uses;
+    p.words = words;
     // A file's root is its top-level statements, even when empty. A component definition is
     // reusable source, not an implicit instance with missing arguments when opened on its own.
     p.components = comps;

@@ -9,7 +9,7 @@ use crate::common::{build, ent};
 /// A chain of triangles off one grounded point: each new point is placed by two distances from
 /// the two before it, so each is a block of its own, solved after the ones it reads.
 const TRIANGLES: &str = "\
-use std
+use std (horizontal)
 in std.front {
 a := point
 b := point hint((10, 1))
@@ -31,7 +31,7 @@ d distance(10) e
 /// Two cranks on grounded pivots joined by a level coupler: no point is placed before the other,
 /// so the four equations are one block.
 const LINKAGE: &str = "\
-use std
+use std (horizontal)
 in std.front {
 o1 := point
 o2 := point

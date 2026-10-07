@@ -13,7 +13,7 @@
 // Edit the lobe's semi-axes `a` and `b`, or how far its centre `off` sits from the shaft, and
 // the partner is cut again.
 
-use std
+use std (horizontal)
 
 a := 14
 b := 9

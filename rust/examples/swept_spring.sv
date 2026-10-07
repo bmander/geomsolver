@@ -3,7 +3,7 @@
 // number and apply (⌘↵) to watch it refine again; ⌘B shows it in the glass box. Keep `wire_r`
 // below half the pitch, or neighbouring turns run into each other.
 unit mm
-use std
+use std (horizontal)
 
 coil_r := 12mm     // from the axis to the wire's centre
 wire_r := 2mm      // the wire's radius
