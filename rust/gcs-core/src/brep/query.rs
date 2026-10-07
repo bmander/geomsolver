@@ -102,10 +102,10 @@ pub fn curve_curve(a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2],tol: f64) -> Opti
 }
 
 /// Where two curves lying in `surface` cross, to `tol`: `curve_curve`'s closed forms where they
-/// have one, else — one of them a line or a circle — the other's roots on a plane carrying it (a
-/// circle's own plane; a line's plane through it square to the surface there), kept where they lie
-/// on it within its stretch. Each crossing's parameter on `a` and its point; `None` where neither
-/// is a line or a circle, or the other runs along the carrier.
+/// have one, else — one of them a line, a circle or an ellipse — the other's roots on a plane
+/// carrying it (a conic's own plane; a line's plane through it square to the surface there), kept
+/// where they lie on it within its stretch. Each crossing's parameter on `a` and its point; `None`
+/// where neither is a line or a conic, or the other runs along the carrier.
 pub fn crossings_in(surface: &Surface,a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2],tol: f64) -> Option<Vec<(f64,V)>> {
     use crate::space::cross;
     if let Some(found) = curve_curve(a,ta,b,tb,tol) { return Some(found) }
@@ -117,7 +117,7 @@ pub fn crossings_in(surface: &Surface,a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2
                 let n = crate::space::normalised(cross(d,surface.gradient(mid)))?;
                 super::geom::Frame::about(p,n)
             }
-            Curve::Circle(f,_) => super::geom::Frame::about(f.o,f.z),
+            Curve::Circle(f,_) | Curve::Ellipse(f,..) => super::geom::Frame::about(f.o,f.z),
             _ => return None,
         };
         let Meets::At(roots) = curve_surface(other,over,&Surface::Plane(plane),tol) else { return None };
@@ -130,8 +130,8 @@ pub fn crossings_in(surface: &Surface,a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2
         Some(roots.into_iter().filter_map(|(t,_)| { let q = other.point(t); on(q).map(|_| (t,q)) }).collect())
     };
     match (a,b) {
-        (_,Curve::Line {..} | Curve::Circle(..)) => carried(b,tb,a,ta),
-        (Curve::Line {..} | Curve::Circle(..),_) => {
+        (_,Curve::Line {..} | Curve::Circle(..) | Curve::Ellipse(..)) => carried(b,tb,a,ta),
+        (Curve::Line {..} | Curve::Circle(..) | Curve::Ellipse(..),_) => {
             // the roots are `b`'s: read back onto `a`
             let found = carried(a,ta,b,tb)?;
             Some(found.into_iter().map(|(_,q)| {
@@ -148,6 +148,7 @@ pub fn crossings_in(surface: &Surface,a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2
 /// signed distance along it refined to a root, every sampled minimum of its size that comes within
 /// `tol` refined to a touching point, and an end on the surface a root there.
 pub fn curve_surface(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64) -> Meets {
+    if let (&Curve::Line {p,d},Surface::Cylinder(c,r)) = (curve,surface) { return line_cylinder(p,d,[t0,t1],c,*r,tol) }
     let f = |t: f64| surface.implicit(curve.point(t));
     let length = (t1-t0)*curve.speed();
     let n = ((length/surface.feature()*16.).ceil() as usize)
@@ -189,6 +190,31 @@ pub fn curve_surface(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64) 
         });
     }
     Meets::At(roots)
+}
+
+/// A line through `p` along the unit `d`, over `[t0, t1]`, against the cylinder of radius `r` about
+/// `c`'s axis, in closed form: across the axis it is a chord of the circle, and where that chord's
+/// two roots stand off the circle by no more than the tolerance (`half² ≤ 2r·tol`) they are one
+/// touch at the foot — sampled, a tangent line's double root is found only to the square root of
+/// the tolerance. A line along the axis lies in the surface or misses it.
+fn line_cylinder(p: V,d: V,[t0,t1]: [f64;2],c: &super::geom::Frame,r: f64,tol: f64) -> Meets {
+    use crate::space::{dot,sub};
+    let across = |v: V| sub(v,scale(c.z,dot(v,c.z)));
+    let (w,e) = (across(sub(p,c.o)),across(d));
+    let ee = dot(e,e);
+    if ee <= 1e-24 {
+        return if (norm(w)-r).abs() <= tol { Meets::Along } else { Meets::At(Vec::new()) }
+    }
+    let foot = -dot(w,e)/ee;
+    let h = norm(add(w,scale(e,foot)));
+    if h > r+tol { return Meets::At(Vec::new()) }
+    let half2 = r*r-h*h;
+    let roots: Vec<(f64,bool)> = if half2 <= 2.*r*tol { vec![(foot,true)] } else {
+        let half = (half2/ee).sqrt();
+        vec![(foot-half,false),(foot+half,false)]
+    };
+    let slack = tol;
+    Meets::At(roots.into_iter().filter(|&(t,_)| t >= t0-slack && t <= t1+slack).map(|(t,k)| (t.clamp(t0,t1),k)).collect())
 }
 
 /// A face's box in space, from its edges and a grid across its parameters, grown by what the

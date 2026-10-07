@@ -438,7 +438,8 @@ fn arrange<'a>(a: &'a Brep,b: &'a Brep,tol: f64) -> Result<Arranged<'a>,String> 
             if debug && !curves.is_empty() {
                 eprintln!("brep: A{fa} {} × B{fb} {}: {} curve(s)",sa.kind(),sb.kind(),curves.len());
             }
-            for c in curves {
+            let crossed = crossings_among(sa,&curves,tol);
+            for (c,crossed) in curves.into_iter().zip(crossed) {
                 // a curve that comes nowhere near both faces (a far crossing of two nearly parallel
                 // meridians) leaves nothing on them
                 let (lo,hi): (V,V) = (std::array::from_fn(|k| reach[0][k].max(reach[2][k])-pad),
@@ -467,6 +468,10 @@ fn arrange<'a>(a: &'a Brep,b: &'a Brep,tol: f64) -> Result<Arranged<'a>,String> 
                     // they meet at off their meeting
                     let sine = norm(crate::space::cross(sa.gradient(p),sb.gradient(p))).max(1e-4);
                     if distance(c.point(t),p) <= 8.*tol/sine && !ts.iter().any(|&(_,w)| w == v) { ts.push((t,v)); }
+                }
+                for q in crossed {
+                    let v = pool.at(q);
+                    if !ts.iter().any(|&(_,w)| w == v) { ts.push((c.inverse(q),v)); }
                 }
                 let closed = c.period().is_some();
                 let period = c.period().unwrap_or(TAU);
@@ -662,6 +667,25 @@ fn arrange<'a>(a: &'a Brep,b: &'a Brep,tol: f64) -> Result<Arranged<'a>,String> 
             the rest {:.2} s",t2-t1,clock.elapsed().as_secs_f64()-t2);
     }
     Ok(Arranged {solids,located,pool,out,pieces})
+}
+
+/// Where the closed curves two surfaces meet in (`curves`, read in closed form) cross one another,
+/// each crossing listed against both: two curves of one meeting cross only where the surfaces
+/// touch (two cylinders of one radius whose axes cross meet in two ellipses, crossing where both
+/// touch), and there each is split as at an edge.
+fn crossings_among(surface: &super::geom::Surface,curves: &[super::geom::Curve],tol: f64) -> Vec<Vec<V>> {
+    let mut crossed = vec![Vec::new();curves.len()];
+    for i in 0..curves.len() {
+        for j in i+1..curves.len() {
+            let (Some(pi),Some(pj)) = (curves[i].period(),curves[j].period()) else { continue };
+            if matches!(curves[i],super::geom::Curve::Traced(_)) || matches!(curves[j],super::geom::Curve::Traced(_)) { continue }
+            for (_,q) in crossings_in(surface,&curves[i],[0.,pi],&curves[j],[0.,pj],tol).unwrap_or_default() {
+                crossed[i].push(q);
+                crossed[j].push(q);
+            }
+        }
+    }
+    crossed
 }
 
 /// The B-rep of `faces`, their edges among `out` (vertices in `pool`), with the vertices and edges

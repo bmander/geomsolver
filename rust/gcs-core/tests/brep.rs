@@ -171,6 +171,9 @@ fn surfaces_meet_in_curves_on_both() {
         (Surface::Torus(f([0.,0.,0.],z,x),3.,1.),Surface::Torus(f([0.,0.,1.],z,x),3.5,1.),2),
         (Surface::Sphere(f([0.,0.,0.],z,x),2.),Surface::Sphere(f([1.,1.,1.],z,x),2.5),1),
         (Surface::Cylinder(f([0.,0.,0.],z,x),2.),Surface::Cylinder(f([1.,1.,5.],z,y),1.5),2),
+        // one radius, axes crossing (square and slanted, the second's origin off the crossing)
+        (Surface::Cylinder(f([0.,0.,0.],z,x),2.),Surface::Cylinder(f([3.,0.,1.],x,y),2.),2),
+        (Surface::Cylinder(f([1.,2.,0.],z,x),2.),Surface::Cylinder(f([1.,2.,1.],tilted,y),2.),2),
     ];
     for (a,b,n) in cases {
         let Ssi::Curves(cs) = intersect(&a,&b,1e-9) else { panic!("{a:?} {b:?}") };
@@ -183,7 +186,8 @@ fn surfaces_meet_in_curves_on_both() {
             }
         }
     }
-    // perpendicular cylinders have no closed form
+    // perpendicular cylinders of two radii, or of one with axes passing apart, have no closed form
+    assert_eq!(intersect(&Surface::Cylinder(f([0.,0.,0.],z,x),2.),&Surface::Cylinder(f([0.,0.5,0.],x,y),2.),1e-9),Ssi::Traced);
     assert_eq!(intersect(&Surface::Cylinder(f([0.,0.,0.],z,x),2.),&Surface::Cylinder(f([0.,0.,0.],x,y),1.),1e-9),Ssi::Traced);
     // the same surface, written from another frame
     assert_eq!(intersect(&Surface::Cylinder(f([0.,0.,0.],z,x),2.),&Surface::Cylinder(f([0.,0.,7.],scale3(z,-1.),y),2.),1e-9),Ssi::Same);
@@ -313,6 +317,60 @@ fn traced_intersections_cross_bores_and_a_pierced_ball() {
     assert!((volume(&pierced)-want).abs() <= 1e-7*want,"{} against {want}",volume(&pierced));
 }
 
+
+/// Two rods of one radius whose axes cross meet in two ellipses, in closed form: in common they are
+/// the bicylinder, `16r³ / (3 sin θ)` for axes at θ, and a block's corner cut by both is the
+/// corner less their two volumes plus that common part.
+#[test]
+fn rods_of_one_radius_crossing_meet_in_ellipses() {
+    use gcs_core::brep::boolean::{boolean,Op};
+    let r = 1.5;
+    let upright = rod([0.;3],r,[-4.,4.]);
+    for th in [PI/2.,PI/3.,1.1] {
+        let d = [th.sin(),0.,th.cos()];
+        let slanted = prism(&Profile {names:vec![],origin:[0.;3],normal:d,
+            loops:vec![vec![arc([0.;3],r,d,[0.,1.,0.],None)]]},-9.,9.).unwrap();
+        let both = boolean(&upright,&slanted,Op::Common,1e-9).unwrap_or_else(|e| panic!("{th}: {e}"));
+        both.check(1e-8).unwrap();
+        close(volume(&both),16.*r*r*r/(3.*th.sin()));
+    }
+    // the two rods a square corner's fillet runs round, their axes a radius in from both faces,
+    // crossing there: united, they are their sum less the whole bicylinder
+    let along_x = prism(&Profile {names:vec![],origin:[0.;3],normal:[1.,0.,0.],
+        loops:vec![vec![arc([0.,r,-r],r,[1.,0.,0.],[0.,1.,0.],None)]]},-1.,6.).unwrap();
+    let along_y = prism(&Profile {names:vec![],origin:[0.;3],normal:[0.,1.,0.],
+        loops:vec![vec![arc([r,0.,-r],r,[0.,1.,0.],[1.,0.,0.],None)]]},-1.,6.).unwrap();
+    let u = boolean(&along_x,&along_y,Op::Union,1e-9).unwrap();
+    u.check(1e-8).unwrap();
+    close(volume(&u),2.*PI*r*r*7.-16.*r*r*r/3.);
+}
+
+/// A line meets a cylinder in closed form: a chord's two roots, one touch where it is tangent (the
+/// two roots standing off by no more than the tolerance — sampled, that double root lands the
+/// square root of the tolerance away), the surface itself along the axis.
+#[test]
+fn a_line_meets_a_cylinder_in_closed_form() {
+    use gcs_core::brep::geom::{Curve,Surface};
+    use gcs_core::brep::query::{curve_surface,Meets};
+    let cyl = Surface::Cylinder(Frame::new([1.,2.,0.],[0.,0.,1.],[1.,0.,0.]),1.5);
+    let slant = scale3([1.,0.,0.3],1./1.09f64.sqrt());
+    // tangent: through the foot (1, 3.5, 2) square to the radius there, slanted along the axis
+    let touch = Curve::Line {p:[1.,3.5,2.],d:slant};
+    let Meets::At(roots) = curve_surface(&touch,[-4.,4.],&cyl,1e-9) else { panic!("along") };
+    assert_eq!(roots.len(),1,"{roots:?}");
+    assert!(roots[0].0.abs() <= 1e-15 && roots[0].1,"{roots:?}");
+    // a chord at 0.9 from the axis: ±1.2 across it
+    let chord = Curve::Line {p:[1.,2.9,2.],d:slant};
+    let Meets::At(roots) = curve_surface(&chord,[-9.,9.],&cyl,1e-9) else { panic!("along") };
+    let want = 1.2*1.09f64.sqrt();
+    assert_eq!(roots.len(),2);
+    assert!((roots[0].0+want).abs() <= 1e-12 && (roots[1].0-want).abs() <= 1e-12,"{roots:?}");
+    // clipped to the stretch asked, missing, and lying along the surface
+    let Meets::At(roots) = curve_surface(&chord,[0.,9.],&cyl,1e-9) else { panic!("along") };
+    assert_eq!(roots.len(),1);
+    assert!(matches!(curve_surface(&Curve::Line {p:[1.,3.6,0.],d:slant},[-9.,9.],&cyl,1e-9),Meets::At(r) if r.is_empty()));
+    assert!(matches!(curve_surface(&Curve::Line {p:[2.5,2.,0.],d:[0.,0.,1.]},[-9.,9.],&cyl,1e-9),Meets::Along));
+}
 
 /// The volume a mesh encloses: the signed tetrahedra from the origin to each triangle.
 fn mesh_volume(m: &gcs_core::brep::mesh::Mesh) -> f64 {

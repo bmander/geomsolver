@@ -233,26 +233,7 @@ pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi {
         (Surface::Plane(_),Surface::Cylinder(..)) | (Surface::Cylinder(..),Surface::Plane(_)) => {
             let (pl,cy) = if matches!(a,Surface::Plane(_)) { (f,b.clone()) } else { (g,a.clone()) };
             let Surface::Cylinder(c,r) = cy else { unreachable!() };
-            let (n,h) = (pl.z,dot(pl.z,pl.o));
-            let cos = dot(n,c.z);
-            if cos.abs() <= 1e-12 {
-                // the plane along the axis: lines at the chord's ends
-                let dist = h-dot(n,c.o);
-                if dist.abs() > r+tol { return Ssi::Curves(vec![]) }
-                let foot = add(c.o,scale(n,dist));
-                let w = unit(cross(c.z,n));
-                let half = (r*r-dist*dist).max(0.).sqrt();
-                if half <= tol { return Ssi::Curves(vec![Curve::Line {p:foot,d:c.z}]) }
-                return Ssi::Curves(vec![Curve::Line {p:add(foot,scale(w,half)),d:c.z},Curve::Line {p:sub(foot,scale(w,half)),d:c.z}])
-            }
-            // oblique: an ellipse about where the axis pierces the plane, its minor axis the
-            // radius square to both
-            let centre = add(c.o,scale(c.z,(h-dot(n,c.o))/cos));
-            let minor = cross(c.z,n);
-            if norm(minor) <= 1e-12 { return Ssi::Curves(vec![Curve::Circle(Frame::new(centre,c.z,c.x),r)]) }
-            let minor = unit(minor);
-            let major = cross(minor,n);
-            Ssi::Curves(vec![Curve::Ellipse(Frame::new(centre,cross(major,minor),major),r/cos.abs(),r)])
+            Ssi::Curves(plane_cylinder(pl.z,dot(pl.z,pl.o),&c,r,tol))
         }
         (Surface::Plane(_),Surface::Sphere(..)) | (Surface::Sphere(..),Surface::Plane(_)) => {
             let (pl,sp) = if matches!(a,Surface::Plane(_)) { (f,b.clone()) } else { (g,a.clone()) };
@@ -293,8 +274,47 @@ pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi {
             if h <= tol { return Ssi::Curves(vec![Curve::Line {p:m,d:f.z}]) }
             Ssi::Curves(vec![Curve::Line {p:add(m,scale(v,h)),d:f.z},Curve::Line {p:sub(m,scale(v,h)),d:f.z}])
         }
+        (Surface::Cylinder(_,r),Surface::Cylinder(_,s)) if (r-s).abs() <= tol => {
+            // one radius, axes crossing at O: a point as far from both axes has
+            // ((p−O)·a₁)² = ((p−O)·a₂)², so the meeting is the first cylinder cut by the two planes
+            // through O square to a₁ − a₂ and a₁ + a₂: two ellipses, crossing where both touch
+            let n = cross(f.z,g.z);
+            let w = sub(g.o,f.o);
+            if dot(w,unit(n)).abs() > tol { return Ssi::Traced }
+            // O on the first axis: the foot of the second's on it, in their common plane
+            let t = dot(cross(w,g.z),n)/dot(n,n);
+            let o = add(f.o,scale(f.z,t));
+            let mut out = Vec::new();
+            for m in [sub(f.z,g.z),add(f.z,g.z)] {
+                let m = unit(m);
+                out.extend(plane_cylinder(m,dot(m,o),&f,r,tol));
+            }
+            Ssi::Curves(out)
+        }
         _ => Ssi::Traced,
     }
+}
+
+/// A plane `n·x = h` and a cylinder: lines where the plane runs along the axis (one where it
+/// touches), else an ellipse about where the axis pierces it, its minor axis the radius square to
+/// both.
+fn plane_cylinder(n: V,h: f64,c: &Frame,r: f64,tol: f64) -> Vec<Curve> {
+    let cos = dot(n,c.z);
+    if cos.abs() <= 1e-12 {
+        let dist = h-dot(n,c.o);
+        if dist.abs() > r+tol { return vec![] }
+        let foot = add(c.o,scale(n,dist));
+        let w = unit(cross(c.z,n));
+        let half = (r*r-dist*dist).max(0.).sqrt();
+        if half <= tol { return vec![Curve::Line {p:foot,d:c.z}] }
+        return vec![Curve::Line {p:add(foot,scale(w,half)),d:c.z},Curve::Line {p:sub(foot,scale(w,half)),d:c.z}]
+    }
+    let centre = add(c.o,scale(c.z,(h-dot(n,c.o))/cos));
+    let minor = cross(c.z,n);
+    if norm(minor) <= 1e-12 { return vec![Curve::Circle(Frame::new(centre,c.z,c.x),r)] }
+    let minor = unit(minor);
+    let major = cross(minor,n);
+    vec![Curve::Ellipse(Frame::new(centre,cross(major,minor),major),r/cos.abs(),r)]
 }
 
 /// An axis both surfaces may turn about: a surface of revolution's own (a sphere lends the other's),

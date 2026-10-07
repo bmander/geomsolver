@@ -815,7 +815,8 @@ fn a_chain_that_turns_a_corner_or_crowds_a_ring_is_refused() {
     let doc = |boss: &str, more: &str, plate: &str| format!(
         "{RECT}{boss}{more}plate := solid(sec, depth: 10mm)\nboss := solid(boss_f, from: 0mm, to: 8mm)\n\
          body := solid({plate})\nboss union body\nfoot := fillet(boss, {plate}, r: 2mm)\nfoot union body\n");
-    // a square boss: its foot's runs meet at corners no ball rolls round without turning
+    // a square boss: its foot's runs meet at corners no ball rolls round without turning, the
+    // boss's upright edge convex where the foot is concave
     let square = "q0 := point hint(x: 15, y: 10)\nq1 := point hint(x: 45, y: 10)\nq2 := point hint(x: 45, y: 30)\n\
         q3 := point hint(x: 15, y: 30)\nfix(x == 15, y == 10) q0\nfix(x == 45, y == 10) q1\nfix(x == 45, y == 30) q2\n\
         fix(x == 15, y == 30) q3\n(s0 := line(q0, q1)) -> (s1 := line(q1, q2)) -> (s2 := line(q2, q3)) -> (s3 := line(q3, q0)) -> close\n\
@@ -827,9 +828,6 @@ fn a_chain_that_turns_a_corner_or_crowds_a_ring_is_refused() {
     let drilled = doc(&rounded("boss_f", [30.0, 20.0], [30.0, 20.0], 4.0), hole, "holed")
         .replace("body := solid(holed)", "holed := solid(plate)\nhole cut holed\nbody := solid(holed)");
     refused(&drilled, Code::E085, "can hold");
-    // a block's whole rim: its runs end flush in one another's faces at each corner
-    refused(&format!("{RECT}block := solid(sec, depth: 10mm)\nlip := fillet(block.near, block, r: 2mm)\n\
-        body := solid(block)\nlip cut body\n"), Code::E085, "meeting at a vertex are rung 3");
 }
 
 #[test]
@@ -917,7 +915,7 @@ fn a_triangular_prism_rounded_all_over_meets_slanted_corners_with_the_ball() {
     // edges' wedges of cylinder (the caps' square, the sides' turning through the triangle's
     // exterior angles, 2π in all), and the whole ball
     let (r, h) = (2.0, 10.0);
-    let tri = [[10.0, 5.0], [50.0, 5.0], [25.0, 35.0]];
+    let tri = [[10.0, 5.0], [50.0, 5.0], [5.0, 20.0]];
     let side = |a: [f64; 2], b: [f64; 2]| (b[0] - a[0]).hypot(b[1] - a[1]);
     let perimeter = side(tri[0], tri[1]) + side(tri[1], tri[2]) + side(tri[2], tri[0]);
     let area = 0.5 * ((tri[1][0] - tri[0][0]) * (tri[2][1] - tri[0][1]) - (tri[2][0] - tri[0][0]) * (tri[1][1] - tri[0][1])).abs();
@@ -931,8 +929,85 @@ fn a_triangular_prism_rounded_all_over_meets_slanted_corners_with_the_ball() {
     field_agrees(&e, "body");
 }
 
+/// Where two runs of a fillet cross at a corner whose third edge is left sharp (a mitre), each
+/// height `z` within `r` of the face they share has its strips `δ = r − √(2rz − z²)` wide along both
+/// edges; over a convex polygon's prism a cap rounded alone loses the polygon less its inset by
+/// `δ`, `Pδ − δ² Σ cot(θᵢ/2)` (θ its angles), so `∫δ = (1 − π/4) r²` along the perimeter and
+/// `∫δ² = (5/3 − π/2) r³` at each corner, counted twice in the runs.
+fn mitred(perimeter: f64, cots: f64, r: f64) -> f64 {
+    (1.0 - PI / 4.0) * r * r * perimeter - (5.0 / 3.0 - PI / 2.0) * r * r * r * cots
+}
+
+#[test]
+fn a_blocks_top_rim_rounded_alone_is_mitred_at_its_sharp_corners() {
+    let r = 2.0;
+    let e = read(&format!("{RECT}block := solid(sec, depth: 10mm)
+rim := fillet(block.near, block, r: {r}mm)
+        body := solid(block)
+rim cut body
+"));
+    let i = e.map.ent_named("rim").unwrap().i();
+    let blend = e.sketch.fillet_blend(i).unwrap();
+    assert_eq!((blend.pieces.len(), blend.corners.len(), blend.joins.len()), (4, 0, 0));
+    assert_volume(volume(&e, "rim"), mitred(200.0, 4.0, r));
+    assert_volume(volume(&e, "body"), 60.0 * 40.0 * 10.0 - mitred(200.0, 4.0, r));
+    field_agrees(&e, "body");
+}
+
+#[test]
+fn a_pockets_floor_rounded_alone_is_mitred_at_its_corners() {
+    let (r, [l, w], d) = (1.5, [30.0, 20.0], 6.0);
+    let e = read(&format!(
+        "{RECT}{}plate := solid(sec, depth: 10mm)
+pocket := solid(cut_f, from: 1mm, to: -{d}mm)
+         cupped := solid(plate)
+pocket cut cupped
+body := solid(cupped)
+         floor := fillet(cupped.pocket.far, cupped.pocket, r: {r}mm)
+floor union body
+",
+        polygon("cut_f", &[[15.0, 10.0], [45.0, 10.0], [45.0, 30.0], [15.0, 30.0]])
+    ));
+    let fill = mitred(2.0 * (l + w), 4.0, r);
+    assert_volume(volume(&e, "body"), 60.0 * 40.0 * 10.0 - l * w * d + fill);
+    field_agrees(&e, "body");
+}
+
+#[test]
+fn a_triangular_prisms_cap_rounded_alone_runs_each_side_on_to_the_next() {
+    // an obtuse corner, where each run carries on past the vertex to the plane beyond, and two
+    // acute ones, where each run crosses the other's edge in the cap
+    let (r, h) = (1.5, 10.0);
+    let tri = [[10.0, 5.0], [50.0, 5.0], [5.0, 20.0]];
+    let side = |a: [f64; 2], b: [f64; 2]| (b[0] - a[0]).hypot(b[1] - a[1]);
+    let perimeter = side(tri[0], tri[1]) + side(tri[1], tri[2]) + side(tri[2], tri[0]);
+    let cots: f64 = (0..3).map(|k| {
+        let (p, a, b) = (tri[k], tri[(k + 1) % 3], tri[(k + 2) % 3]);
+        let (u, v) = ([a[0] - p[0], a[1] - p[1]], [b[0] - p[0], b[1] - p[1]]);
+        let theta = (u[0] * v[1] - u[1] * v[0]).abs().atan2(u[0] * v[0] + u[1] * v[1]);
+        1.0 / (theta / 2.0).tan()
+    }).sum();
+    let e = read(&format!("unit mm
+{}prism := solid(tri_f, depth: {h}mm)
+cap := fillet(prism.near, prism, r: {r}mm)
+        body := solid(prism)
+cap cut body
+", polygon("tri_f", &tri)));
+    let area = 0.5 * ((tri[1][0] - tri[0][0]) * (tri[2][1] - tri[0][1]) - (tri[2][0] - tri[0][0]) * (tri[1][1] - tri[0][1])).abs();
+    field_agrees(&e, "body");
+    assert_volume(volume(&e, "body"), area * h - mitred(perimeter, cots, r));
+}
+
 #[test]
 fn what_a_corner_cannot_round_is_refused() {
+    // an L-shaped plate's cap rounded alone: at its reflex corner the runs would part, not cross
+    let ell = polygon("ell_f", &[[10.0, 5.0], [50.0, 5.0], [50.0, 20.0], [30.0, 20.0], [30.0, 35.0], [10.0, 35.0]]);
+    refused(&format!("unit mm
+{ell}ell := solid(ell_f, depth: 10mm)
+cap := fillet(ell.near, ell, r: 2mm)
+        body := solid(ell)
+cap cut body
+"), Code::E085, "turns the other way");
     // a ball too large for a short edge between two corners: their setbacks meet
     refused(&format!("{RECT}block := solid(sec, depth: 3mm)\nall := fillet(block, block, r: 2mm)\n\
         body := solid(block)\nall cut body\n"), Code::E085, "can hold");
@@ -942,6 +1017,8 @@ fn what_a_corner_cannot_round_is_refused() {
         (flat := line(h0, h1)) -> (bow := arc(center: ho) hint(r: 20)) -> close\nhalf_f := face(flat, bow)\n\
         half := solid(half_f, depth: 10mm)\nall := fillet(half, half, r: 2mm)\nbody := solid(half)\nall cut body\n";
     refused(half, Code::E085, "rung 3");
+    // its cap alone: a run and a ring at each end of the flat side
+    refused(&half.replace("fillet(half, half", "fillet(half.near, half"), Code::E085, "rung 3");
 }
 
 #[test]

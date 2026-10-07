@@ -13,8 +13,9 @@ cylinders, cones, spheres and tori about one axis (a torus), and a closed loop w
 meet on no line or circle (a pipe tee's crotch: the ball's centre traced where the faces offset by
 `r` meet, its face that canal, fitted), and a chain of tangent edges piece by piece (a rounded
 boss's foot: straight runs and parts of rings, each ending in the section the next begins in), and
-where three of its edges meet between three planes, a patch of the ball (a block rounded all over)
-— and the rest is refused by name (**E085**).
+where three of its edges meet between three planes, a patch of the ball (a block rounded all over),
+and where two meet with the third edge left sharp, a mitre (a block's top rim alone: each run
+carried on to the plane beyond, the two crossing) — and the rest is refused by name (**E085**).
 
 **[0.48] Relation words, and `use M (names)`.** A file may define a relation word at its top
 level, as it defines a component: `a horizontal b := a level(up) b`, `flat l := l perpendicular
@@ -1079,15 +1080,23 @@ lip cut block                                //   ... convex: the ball rolls the
   rounded boss's side into its corner, an obround's side into its end), the two pieces' sections
   there are one, the ball in it where both put it, so each ends in it and the two share that cap.
   The foot of a rounded or obround boss and the rim of a rounded pocket are each one fillet. An end
-  meeting no such continuation, or two flush ends at one corner (a block's whole rim, the ball
-  turning the corner), is refused.
+  meeting no such continuation, a corner of three or a mitre (below), is refused.
 - **A corner of three** is a patch of the ball: where three of a fillet's straight edges meet
   between three planes, the ball touching all three stands in the corner, its centre `r` from each
   face. Each edge's piece stops at the section through that centre, square to its edge, and the
   corner's piece is the corner's cell (the trihedron cut by those three sections) less the ball —
   an eighth of a sphere at a square corner, `r³ − πr³/6` of material. Every edge of a block
-  (`fillet(block, block, r: 3mm)`) or of a pocket inside rounds so; a corner of two fillets (the
-  third edge sharp), of curved faces, or of more edges is refused.
+  (`fillet(block, block, r: 3mm)`) or of a pocket inside rounds so; a corner of curved faces, or
+  of more edges, is refused.
+- **A mitre** is two runs crossing: where two of a fillet's straight edges meet at a corner along
+  one face, the edge between their other two faces left sharp, each run carries on past the corner
+  to the plane of the face beyond it — the other's — and the two are united there, their faces
+  crossing (two cylinders of one radius whose axes cross meet in two ellipses). A block's top rim
+  rounded alone (`fillet(block.near, block, r: 2mm)`), its upright edges sharp, or a pocket's floor
+  alone, its corners sharp, rounds so, at any angle. The sharp edge MUST turn the fillet's way —
+  convex beside a convex fillet, concave beside a concave one: the other way (a square boss's foot,
+  an L-shaped plate's reflex corner) the runs would part, and the ball would have to turn the
+  corner, which is refused.
 - **A closed traced loop** is rounded too: two faces on planes, cylinders, cones, spheres or tori
   meeting all the way round on a curve no line or circle carries (a pipe tee's crotch, a pin
   through a ball off its centre, a bore's rim in a pipe's wall). The ball's centre runs where the
@@ -1099,7 +1108,8 @@ lip cut block                                //   ... convex: the ball rolls the
   other edge of either, a partial ring's band within its sector. Anything else is **E085** with its
   reason: a traced meeting that runs on into other faces (rung 3, a fillet that ends), a face with
   no offset in closed form (a swept spline: not yet), a fillet that would turn a corner or meet
-  another at a vertex (rung 3), a ball larger than a face holds. A fillet that is not exact, or not fitted within its bar, is never built.
+  another at a vertex other than as a corner of three or a mitre (rung 3), a ball larger than a
+  face holds. A fillet that is not exact, or not fitted within its bar, is never built.
 - **The material field needs no true distance.** Rolling-ball closing and opening want one, which
   a one-Lipschitz field does not carry; the fillet's material is instead an explicit leaf — the
   section of corner, touches and arc, swept along the edge or turned about the axis — evaluated
