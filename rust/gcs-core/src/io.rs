@@ -637,7 +637,7 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
         if !fits || n < 2 || k < 1 || k >= n {
             return Err("a turn is a point, circle or arc turned k of n steps about a point or an axis".into());
         }
-        sk.turns.push(crate::model::Turn { copy, rep, about, k: k as u32, n: n as u32 });
+        sk.turn(crate::model::Turn { copy, rep, about, k: k as u32, n: n as u32 });
     }
     // a copy is worked out from what is not one: once, and never from another copy
     let copies: BTreeSet<EntRef> = sk.turns.iter().map(|tn| tn.copy).collect();
@@ -1311,19 +1311,9 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
     }
     // a ring's turns, where every entity of one came along; a copy whose representative or
     // centre did not stands free where it is
-    let ent_map = |e: EntRef| -> Option<EntRef> {
-        match e.kind {
-            EntKind::Point => pt_index(e.i()).map(EntRef::point),
-            EntKind::Circle => circle_map[e.i()].map(EntRef::circle),
-            EntKind::Arc => arc_map[e.i()].map(EntRef::arc),
-            EntKind::Curve => curve_map[e.i()].map(|i| EntRef::new(EntKind::Curve, i)),
-            EntKind::Axis => axis_map[e.i()].map(|i| EntRef::new(EntKind::Axis, i)),
-            _ => None,
-        }
-    };
     for tn in &src.turns {
-        if let (Some(copy), Some(rep), Some(about)) = (ent_map(tn.copy), ent_map(tn.rep), ent_map(tn.about)) {
-            dst.turns.push(crate::model::Turn { copy, rep, about, ..*tn });
+        if let (Some(copy), Some(rep), Some(about)) = (remap(tn.copy), remap(tn.rep), remap(tn.about)) {
+            dst.turn(crate::model::Turn { copy, rep, about, ..*tn });
         }
     }
     dst.settle_turns();

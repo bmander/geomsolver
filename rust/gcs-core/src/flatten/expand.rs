@@ -484,19 +484,19 @@ impl<'a> Walk<'a> {
             (BlockKind::Ring, Some(_)) if scope.ring.is_some() => {
                 self.once(Code::E022, st.span, "a `ring` inside a `ring` is not supported: turn the \
                     inner one's copies about a centre the outer ring does not move, outside it");
-                false
+                None
             }
             (BlockKind::Ring, Some(about)) => {
+                let i = b.binder.as_ref().map_or("", |n| n.text.as_str());
                 for &s in &b.index_reads {
-                    let i = b.binder.as_ref().map_or("", |n| n.text.as_str()).to_string();
                     self.once(Code::E015, s, format!("`{i}` is a `ring`'s index: every copy is the \
                         first turned, so there is nothing for it to vary — reach a neighbour by \
                         `next` or `prev`"));
                 }
                 self.rings.push((block_prefix.clone(), about.clone(), scope.clone(), n, st.span));
-                true
+                Some(block_prefix.clone())
             }
-            _ => false,
+            _ => None,
         };
         let mut ranges: Vec<(usize, usize)> = Vec::new();
         for k in 0..n {
@@ -521,9 +521,9 @@ impl<'a> Walk<'a> {
                 forbidden: scope.forbidden.clone(),
                 groups: scope.groups.clone(),
                 cyc: b.kind.wraps().then(|| Cyc { prefix: block_prefix.clone(), k, n }),
-                ring: match ring {
-                    true => Some(super::Ring { prefix: block_prefix.clone(), turned: k > 0 }),
-                    false => scope.ring.clone(),
+                ring: match &ring {
+                    Some(prefix) => Some(super::Ring { prefix: prefix.clone(), turned: k > 0 }),
+                    None => scope.ring.clone(),
                 },
                 // the prefix just built is the block's id, so every declaration
                 // below is a copy, however deep and through however many instances

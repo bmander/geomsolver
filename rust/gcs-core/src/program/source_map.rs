@@ -15,9 +15,6 @@ pub struct Site {
     pub stmt: StmtId,
     pub span: Span,
     pub path: InstPath,
-    /// Made by a `ring`'s turned copy (`ir::Statement::turned`): what its representative's
-    /// statement made, turned — no pose of its own to write back.
-    pub turned: bool,
 }
 
 /// Provenance for one elaboration. Entity indices and constraint IDs can change
@@ -144,7 +141,7 @@ impl SourceMap {
     }
 
     pub(super) fn record(&mut self, st: &crate::ir::Statement, what: Made) {
-        let site = Site { stmt: st.id, span: st.span, path: InstPath(st.path.clone()), turned: st.turned };
+        let site = Site { stmt: st.id, span: st.span, path: InstPath(st.path.clone()) };
         match what {
             Made::Ent(e) => {
                 self.of_entity.insert(e, site);
@@ -226,7 +223,7 @@ impl Elaborated {
         // a statement may have gone as well as arrived, and one that went takes its entries with it
         self.restamp(&spans(&prog), Keep::Live);
         for (st, m) in tail.iter().zip(made) {
-            let site = Site { stmt: st.id, span: st.span, path: InstPath::default(), turned: false };
+            let site = Site { stmt: st.id, span: st.span, path: InstPath::default() };
             match *m {
                 Made::Ent(r) => {
                     if let StmtKind::Decl(d) = &st.kind {

@@ -14,7 +14,6 @@
 //! which must be held — a free direction makes the turn nonlinear in it.  A curve owns no
 //! parameter: a turned curve is evaluated as its representative and turned (`curve_point`).
 
-#[allow(unused_imports)]
 use crate::fmath::Det;
 use super::*;
 
@@ -59,6 +58,16 @@ impl Turn {
 }
 
 impl Sketch {
+    /// Record a turn.  A turned arc's intrinsic rows — its ends on its circle — are the images of
+    /// the representative's, so they go: every reader of the constraints, the solve's and the
+    /// plan's alike, sees the representative's alone.
+    pub fn turn(&mut self, t: Turn) {
+        if t.copy.kind == EntKind::Arc {
+            self.constraints.retain(|c| !(c.intrinsic && c.entities().contains(&t.copy)));
+        }
+        self.turns.push(t);
+    }
+
     /// The turn copy `e` is, if it is one.
     pub fn turn_of(&self, e: EntRef) -> Option<&Turn> {
         self.turns.iter().find(|t| t.copy == e)
@@ -67,10 +76,8 @@ impl Sketch {
     /// The rotation of a turn about an axis, from the axis's held direction: Rodrigues' formula,
     /// row-major.
     fn axis_rotation(&self, t: &Turn) -> [[f64; 3]; 3] {
-        let ax = &self.axes[t.about.i()];
-        let d = ax.d.map(|p| self.params[p as usize].value);
-        let l = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
-        let d = if l > 0.0 { d.map(|v| v / l) } else { [0.0, 0.0, 1.0] };
+        let d = self.axes[t.about.i()].d.map(|p| self.params[p as usize].value);
+        let d = crate::space::normalised(d).unwrap_or([0.0, 0.0, 1.0]);
         let (c, s) = t.cos_sin();
         let k = 1.0 - c;
         [
@@ -133,8 +140,12 @@ impl Sketch {
         out
     }
 
-    /// Whether each parameter is derived, by index.
+    /// Whether each parameter is derived, by index — empty for a sketch with no ring, which every
+    /// reader takes as "none is".
     pub fn derived_mask(&self) -> Vec<bool> {
+        if self.turns.is_empty() {
+            return Vec::new();
+        }
         let mut m = vec![false; self.params.len()];
         for d in self.derived() {
             m[d.param as usize] = true;
@@ -148,30 +159,25 @@ impl Sketch {
         if self.turns.is_empty() {
             return;
         }
-        let x = self.get_x();
+        // a base is never derived, so each value is read off the parameters as they stand
         for d in self.derived() {
-            self.params[d.param as usize].value = d.value(&x);
+            let mut v = 0.0;
+            for &(b, w) in &d.terms {
+                v += w * self.params[b as usize].value;
+            }
+            self.params[d.param as usize].value = v;
         }
     }
 
-    /// The free parameters a parameter moves with: itself where it is free, its free bases where
-    /// it is derived, nothing where it is held.
-    pub fn bases_of(&self, p: u32) -> Vec<u32> {
-        match self.derived().into_iter().find(|d| d.param == p) {
-            Some(d) => d.terms.iter().map(|t| t.0).filter(|&b| !self.params[b as usize].fixed).collect(),
-            None if self.params[p as usize].fixed => Vec::new(),
-            None => vec![p],
-        }
-    }
-
-    /// A point of a turned curve's view turned as the turn says, about its centre's place in
-    /// that view.
-    pub fn turn_view_point(&self, t: &Turn, (x, y): (f64, f64)) -> (f64, f64) {
-        let o = &self.points[t.about.i()];
-        let (ox, oy) = (self.params[o.x as usize].value, self.params[o.y as usize].value);
+    /// The turn of a turned curve's view, about its centre's place in that view: worked out once
+    /// and applied to every sample.
+    pub fn turn_in_view(&self, t: &Turn) -> impl Fn((f64, f64)) -> (f64, f64) {
+        let (ox, oy) = self.point_xy(t.about.i());
         let (c, s) = t.cos_sin();
-        let (dx, dy) = (x - ox, y - oy);
-        (ox + c * dx - s * dy, oy + s * dx + c * dy)
+        move |(x, y)| {
+            let (dx, dy) = (x - ox, y - oy);
+            (ox + c * dx - s * dy, oy + s * dx + c * dy)
+        }
     }
 
     /// The turn a curve is, with the curve it is a turn of — `None` for a curve of its own.

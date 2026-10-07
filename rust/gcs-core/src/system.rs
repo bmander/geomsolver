@@ -503,20 +503,9 @@ impl System {
         // the diagnosis judges it by stacking its rows onto a compiled system (`conditioned_with`)
         // rather than by compiling a system that has them.
         let spans = crate::curve::contact_spans(sk);
-        let turned_arcs: std::collections::BTreeSet<EntRef> = sk.turns.iter()
-            .filter(|tn| tn.copy.kind == crate::model::EntKind::Arc)
-            .map(|tn| tn.copy)
-            .collect();
         let mut by_kernel: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
         for (i, c) in sk.constraints.iter().enumerate() {
             if c.claim {
-                continue;
-            }
-            // a turned arc's intrinsic rows — its ends on its circle — are the images of the
-            // representative's: the same rows again, which only the representative's state
-            if c.intrinsic && !turned_arcs.is_empty()
-                && c.entities().iter().any(|e| turned_arcs.contains(e))
-            {
                 continue;
             }
             by_kernel.entry(c.kernel_id_in(sk)).or_default().push(i);
@@ -1091,10 +1080,11 @@ impl System {
             let kn = self.kernels[blk.kid];
             let gidx = &blk.gidx[i0 * kn.n_par..(i0 + count) * kn.n_par];
             let col = |p: i32, cs: &mut Vec<(i64, f64)>| {
-                let mut all = Vec::new();
-                fold(&self.col_of, &self.dcols, p, &mut all);
-                cs.extend(all.into_iter().filter(|&(c, _)| local[c as usize] >= 0)
-                    .map(|(c, w)| (local[c as usize] as i64, w)));
+                fold(&self.col_of, &self.dcols, p, cs);
+                cs.retain_mut(|(c, _)| {
+                    *c = local[*c as usize] as i64;
+                    *c >= 0
+                });
             };
             jac_entries(&mut es, kn, gidx, count, out0, joff0, ncols, col);
             fill_const_jac(kn, count, &mut jdata[joff0..]);

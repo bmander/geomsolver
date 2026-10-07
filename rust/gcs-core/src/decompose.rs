@@ -1261,10 +1261,6 @@ pub fn write_point(g: &ConstraintGraph, sk: &mut Sketch, e: El, pose: &[f64]) {
     for &p in &g.members[e.i()] {
         // a class can hold a fixed point as well as free ones; the pose came *from* the fixed
         // one, and writing it back over a fixed param would move geometry the user pinned
-        // nor over a ring's turned copy, which is its representative's turn and settles from it
-        if sk.turn_of(EntRef::point(p)).is_some() {
-            continue;
-        }
         let (px, py) = (sk.points[p].x as usize, sk.points[p].y as usize);
         if !sk.params[px].fixed {
             sk.params[px].value = pose[0];
@@ -1424,6 +1420,8 @@ pub fn execute(plan: &mut Plan, sk: &mut Sketch, capture: Option<usize>) -> Opti
             }
         }
     }
+    // whatever was written over a ring's turned copy, it is its representative's turn
+    sk.settle_turns();
     None
 }
 

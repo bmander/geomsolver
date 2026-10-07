@@ -354,18 +354,6 @@ fn missing_ref(r: &Ref, sc: &Scope, names: &BTreeSet<String>, alias: &BTreeMap<S
     (Code::E101, format!("no such entity: `{}`", written(r)))
 }
 
-/// A resolved reference as one name: its root and the fields after it.
-fn joined(r: &Ref) -> String {
-    let mut out = r.root.text.clone();
-    for seg in &r.path {
-        if let Seg::Field(f) = seg {
-            out.push('.');
-            out.push_str(&f.text);
-        }
-    }
-    out
-}
-
 /// A reference spelled back the way the source wrote it, for a message about it.
 fn written_ref(r: &Ref) -> String {
     written(r)
@@ -403,13 +391,17 @@ fn rewrite(
     bad: &mut Vec<(Code, Span, String)>,
     seen: &std::cell::RefCell<Vec<Seen>>,
 ) {
+    // only a ring's representative is judged by what it reads (E021)
+    let judged = sc.ring.as_ref().is_some_and(|r| !r.turned);
     let fix = |r: &mut Ref, bad: &mut Vec<(Code, Span, String)>| match lookup(r, sc, names, alias, units)
     {
         Some((abs, rest)) => {
-            let joined = std::iter::once(abs.clone()).chain(rest.iter().cloned()).collect::<Vec<_>>().join(".");
-            seen.borrow_mut().push(Seen { written: written(r), span: r.span, abs: joined });
+            let was = judged.then(|| written(r));
             r.root = Name { text: abs, span: r.root.span };
             r.path = rest.into_iter().map(|f| Seg::Field(Name::new(f))).collect();
+            if let Some(was) = was {
+                seen.borrow_mut().push(Seen { written: was, span: r.span, abs: written(r) });
+            }
         }
         // named as written, so an index that picked no copy says which one it was
         None => {
@@ -759,26 +751,25 @@ impl<'a> Walk<'a> {
                 _ => {}
             }
         }
-        // each ring's centre, resolved where the block stands — outside every copy
-        let mut about: BTreeMap<String, String> = BTreeMap::new();
-        let mut ring_spans: BTreeMap<String, Span> = BTreeMap::new();
+        // each ring's centre, resolved where the block stands — outside every copy — and the
+        // block, by the prefix its copies' names start with
+        let mut about: BTreeMap<String, (String, Span)> = BTreeMap::new();
         for (prefix, r, sc, n, span) in std::mem::take(&mut self.rings) {
             let Some((abs, rest)) = lookup(&r, &sc, &self.names, &alias, self.units) else {
                 let (code, why) = missing_ref(&r, &sc, &self.names, &alias, self.units);
                 self.err(code, r.span, why);
                 continue;
             };
-            let joined = std::iter::once(abs.clone()).chain(rest.iter().cloned()).collect::<Vec<_>>().join(".");
             let mut resolved = r.clone();
             resolved.root = Name { text: abs, span: r.root.span };
             resolved.path = rest.into_iter().map(|f| Seg::Field(Name::new(f))).collect();
-            about.insert(prefix.clone(), joined);
-            ring_spans.insert(prefix.clone(), span);
+            about.insert(prefix.clone(), (written(&resolved), span));
             self.ring_infos.push(RingInfo { prefix, about: resolved, n: n as u32, span });
         }
-        // what a ring's representative reads, judged once every declaration is resolved (E021)
-        let mut judged: Vec<(String, Vec<Seen>, Vec<Span>)> = Vec::new();
-        let mut decls: BTreeMap<String, (EntKind, Option<String>)> = BTreeMap::new();
+        // what a ring's representative reads, judged once every declaration is resolved (E021),
+        // and every circle's centre, which a circle about a ring's is judged by
+        let mut judged: Vec<(String, Vec<Seen>)> = Vec::new();
+        let mut centres: BTreeMap<String, Option<String>> = BTreeMap::new();
         let out = std::mem::take(&mut self.out);
         let mut flat = Vec::with_capacity(out.len());
         for (mut st, path, sc) in out {
@@ -793,11 +784,14 @@ impl<'a> Walk<'a> {
             let seen = std::cell::RefCell::new(Vec::new());
             rewrite(&mut st.kind, &sc, &self.names, &alias, self.units, &mut bad, &seen);
             if let StmtKind::Decl(d) = &st.kind {
-                let centre = d.children.first().and_then(|g| g.first()).and_then(|k| match k {
-                    Kid::Ref(r) if d.kind == EntKind::Circle => Some(joined(r)),
-                    _ => None,
-                });
-                decls.insert(d.name.key().text.clone(), (d.kind, centre));
+                // a centre the circle names, or `None` for one it mints (`c.center`)
+                if d.kind == EntKind::Circle {
+                    let named = match d.children.first().and_then(|g| g.first()) {
+                        Some(Kid::Ref(r)) => Some(written(r)),
+                        _ => None,
+                    };
+                    centres.insert(d.name.key().text.clone(), named);
+                }
             }
             if let Some(ring) = sc.ring.as_ref().filter(|r| !r.turned) {
                 // a seed is no relation: it may start a copy anywhere (Invariant H), and a plane
@@ -809,7 +803,9 @@ impl<'a> Walk<'a> {
                     }
                     free.extend(d.membership.plane().map(|r| r.span));
                 }
-                judged.push((ring.prefix.clone(), seen.into_inner(), free));
+                let mut seen = seen.into_inner();
+                seen.retain(|s| !free.contains(&s.span));
+                judged.push((ring.prefix.clone(), seen));
             }
             // a seed that reads geometry names it in the scope it was written in, and is read
             // on the sheet, where only absolute names mean anything — so it is rescoped as the
@@ -854,15 +850,15 @@ impl<'a> Walk<'a> {
         // a curve written in place reads its entities through its instance's arguments, which no
         // statement of the ring states: judged as the representative's references are
         for info in self.instances.iter().filter(|i| !i.drawn) {
-            let Some(prefix) = about.keys().find(|p| info.prefix.starts_with(&format!("{p}0."))) else {
+            let Some((prefix, (_, span))) = about.iter().find(|(p, _)| info.prefix.starts_with(&format!("{p}0."))) else {
                 continue;
             };
             let seen = info.ents.iter().filter_map(|(formal, actual)| {
-                actual.as_ref().map(|a| Seen { written: formal.clone(), span: ring_spans[prefix], abs: a.clone() })
+                actual.as_ref().map(|a| Seen { written: formal.clone(), span: *span, abs: a.clone() })
             }).collect();
-            judged.push((prefix.clone(), seen, Vec::new()));
+            judged.push((prefix.clone(), seen));
         }
-        self.judge_rings(&about, judged, &decls);
+        self.judge_rings(&about, judged, &centres);
         (flat, alias)
     }
 
@@ -872,13 +868,13 @@ impl<'a> Walk<'a> {
     /// reference, and seeds and planes were set aside.
     fn judge_rings(
         &mut self,
-        about: &BTreeMap<String, String>,
-        judged: Vec<(String, Vec<Seen>, Vec<Span>)>,
-        decls: &BTreeMap<String, (EntKind, Option<String>)>,
+        about: &BTreeMap<String, (String, Span)>,
+        judged: Vec<(String, Vec<Seen>)>,
+        centres: &BTreeMap<String, Option<String>>,
     ) {
-        for (prefix, seen, free) in judged {
-            let Some(centre) = about.get(&prefix) else { continue };
-            for s in seen.into_iter().filter(|s| !free.contains(&s.span)) {
+        for (prefix, seen) in judged {
+            let Some((centre, _)) = about.get(&prefix) else { continue };
+            for s in seen {
                 if s.abs.starts_with(&prefix) {
                     // a copy reached by index reads the same copy from every turn
                     let by_turn = s.written.starts_with("next.") || s.written.starts_with("prev.");
@@ -889,8 +885,8 @@ impl<'a> Walk<'a> {
                     continue;
                 }
                 let invariant = s.abs == *centre
-                    || matches!(decls.get(&s.abs), Some((EntKind::Circle, Some(c))) if c == centre)
-                    || matches!(decls.get(&s.abs), Some((EntKind::Circle, _))) && *centre == format!("{}.center", s.abs);
+                    || centres.get(&s.abs).is_some_and(|c| c.as_ref() == Some(centre))
+                    || centres.contains_key(&s.abs) && *centre == format!("{}.center", s.abs);
                 if !invariant {
                     self.once(Code::E021, s.span, format!("`{}` is outside the `ring` and does not \
                         turn with it: from inside, only its centre `{centre}`, a circle about it and \

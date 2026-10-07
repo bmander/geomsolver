@@ -387,8 +387,9 @@ pub fn remainder(x: f64, y: f64) -> f64 {
 /// Whether a constraint reads a ring's turned copy (`Sketch::derived`): a point the cluster
 /// vocabulary has no element for, since it moves with its representative by a turn rather than
 /// on its own.
+/// `derived` is `Sketch::derived_mask`, empty where there is no ring.
 fn touches(sk: &Sketch, derived: &[bool], c: &crate::constraints::Constraint) -> bool {
-    derived.iter().any(|&d| d) && c.params(sk).iter().any(|&p| derived[p as usize])
+    !derived.is_empty() && c.params(sk).iter().any(|&p| derived[p as usize])
 }
 
 pub fn build(sk: &Sketch) -> ConstraintGraph {

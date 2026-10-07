@@ -43,14 +43,15 @@ pub(super) fn rings(
             continue;
         };
         let centre = public_path(&crate::flatten::written_name(&ring.about));
-        match about.kind {
+        // the view a turn about a point is in; `None` for one about an axis, in space
+        let view = match about.kind {
             EntKind::Point if sk.points[about.i()].z.is_some() => {
                 refuse(diags, ring.about.span, format!(
                     "`{centre}` stands in space, where a turn about a point has no plane: turn \
                      about an axis, or about a point drawn in a view"));
                 continue;
             }
-            EntKind::Point => {}
+            EntKind::Point => Some(sk.points[about.i()].plane),
             EntKind::Axis if !sk.axes[about.i()].d.iter().all(|&p| sk.params[p as usize].fixed) => {
                 refuse(diags, ring.about.span, format!(
                     "a `ring` about an axis turns about its direction, and `{centre}`'s is not \
@@ -58,14 +59,13 @@ pub(super) fn rings(
                      a view"));
                 continue;
             }
-            EntKind::Axis => {}
+            EntKind::Axis => None,
             k => {
                 refuse(diags, ring.about.span, format!(
                     "a `ring` turns about a point or an axis, and `{centre}` is {}", k.a()));
                 continue;
             }
-        }
-        let view = sk.points.get(about.i()).map(|p| p.plane).filter(|_| about.kind == EntKind::Point);
+        };
         let mut seen: BTreeSet<EntRef> = BTreeSet::new();
         let mut pairs: Vec<(EntRef, EntRef, u32)> = Vec::new();
         for (key, copy) in map.keys() {
@@ -119,7 +119,7 @@ pub(super) fn rings(
                     called(map, copy), called(map, rep)));
                 continue;
             }
-            sk.turns.push(Turn { copy, rep, about, k, n: ring.n });
+            sk.turn(Turn { copy, rep, about, k, n: ring.n });
         }
     }
     sk.settle_turns();

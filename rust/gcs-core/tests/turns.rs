@@ -36,7 +36,7 @@ fn three() -> (Sketch, usize, usize, [usize; 2], usize) {
     let p2 = sk.point(0.0, 0.0, false, "p2");
     let q = sk.point(-4.0, 6.0, false, "q");
     for (k, copy) in [(1, p1), (2, p2)] {
-        sk.turns.push(Turn {
+        sk.turn(Turn {
             copy: EntRef::point(copy),
             rep: EntRef::point(p),
             about: EntRef::point(c),
@@ -92,9 +92,9 @@ fn a_turned_arc_states_its_ends_once() {
     let (a1, b1) = (sk.point(0.0, 0.0, false, "a1"), sk.point(0.0, 0.0, false, "b1"));
     let arc1 = sk.arc(c, a1, b1, "k1");
     let ring = |copy, rep| Turn { copy, rep, about: EntRef::point(c), k: 1, n: 4 };
-    sk.turns.push(ring(EntRef::point(a1), EntRef::point(a)));
-    sk.turns.push(ring(EntRef::point(b1), EntRef::point(b)));
-    sk.turns.push(ring(EntRef::arc(arc1), EntRef::arc(arc)));
+    sk.turn(ring(EntRef::point(a1), EntRef::point(a)));
+    sk.turn(ring(EntRef::point(b1), EntRef::point(b)));
+    sk.turn(ring(EntRef::arc(arc1), EntRef::arc(arc)));
     sk.settle_turns();
     // the representative's two intrinsic rows; the copy's are their images and are not compiled
     let sys = System::new(&sk);
@@ -115,7 +115,7 @@ fn a_turn_about_a_held_axis_turns_a_point_in_space() {
     let p1 = sk.point(0.0, 0.0, false, "p1");
     sk.give_place(p1, 0.0);
     let about = EntRef::new(EntKind::Axis, t);
-    sk.turns.push(Turn { copy: EntRef::point(p1), rep: EntRef::point(p), about, k: 1, n: 4 });
+    sk.turn(Turn { copy: EntRef::point(p1), rep: EntRef::point(p), about, k: 1, n: 4 });
     sk.settle_turns();
     let v = |i: u32| sk.params[i as usize].value;
     let q = &sk.points[p1];

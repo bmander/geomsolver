@@ -324,7 +324,7 @@ impl Sketch {
         self.params
             .iter()
             .enumerate()
-            .filter(|&(i, p)| !p.fixed && !derived[i])
+            .filter(|&(i, p)| !p.fixed && !derived.get(i).copied().unwrap_or(false))
             .map(|(i, _)| i as i32)
             .collect()
     }
@@ -334,7 +334,7 @@ impl Sketch {
         let mut rng = Rng::new(seed);
         let derived = self.derived_mask();
         for (i, p) in self.params.iter_mut().enumerate() {
-            if !p.fixed && !derived[i] {
+            if !p.fixed && !derived.get(i).copied().unwrap_or(false) {
                 p.value += rng.normal(0.0, sigma) / p.scale;
             }
         }
