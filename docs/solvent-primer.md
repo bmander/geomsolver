@@ -1188,8 +1188,11 @@ the faces it rounds), and a straight fillet's caps `near` and `far`. A fillet th
 concave and a convex edge is two fillets. `rust/examples/solid_fillet.sv` is a cast pad written
 this way.
 
-Rung 1 rounds what has a closed form: a straight edge between planes, and a whole circle between
-planes, cylinders and cones about one axis. Everything else is refused with its reason (E085).
+What is rounded is what has a closed form: a straight edge between planes and cylinders along it
+(a rod half sunk in a plate, two round bars side by side: `solid_fillet_rail.sv`), and a whole
+circle between planes, cylinders, cones, spheres and tori about one axis (a rod's neck in a ball:
+`solid_fillet_knob.sv`). A section's sides may be arcs; the fillet's face is a cylinder or a torus
+still. A meeting no line or circle carries (a pipe tee) is refused with its reason (E085).
 
 #### Writing a part
 
@@ -1261,7 +1264,7 @@ sheet's to state.
 | `lip := fillet(block.near, block.bc, r: 5mm)` with `lip union block` | E085 — "`lip` rounds convex edges, whose material the ball rolls off: write `lip cut block`, not `union`" |
 | `root := fillet(boss, plate, r: 13mm)` on a plate 12 beyond the boss | E085 — "the ball of `boss.k` with `plate.near` is larger than `plate.near` can hold" |
 | a fillet round a rib that ends on the plate | E085 — "… runs on past its end into `plate.near`: a fillet turning a corner is rung 3" |
-| `fillet(ball, plate, r: 1mm)`, a sphere sunk in a plate | E085 — "… only a line between planes, or a circle between planes, cylinders and cones about its axis, is rounded yet (rung 2)" |
+| `fillet(pin, ball, r: 0.5mm)`, a pin off the ball's centre | E085 — "… no ball rolls along in closed form: … a traced meeting is not yet (rung 2)" |
 | `root := fillet(boss, plate)` | E100 — "a fillet needs `r:`, the ball's radius" |
 
 ### 1.15 Spatial geometry read after the solve

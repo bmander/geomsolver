@@ -46,8 +46,11 @@ pub fn curve_curve(a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2],tol: f64) -> Opti
         let foot = add(p,scale(d,dot(sub(o,p),d)));
         let h = distance(foot,o);
         if h > r+tol { return Vec::new(); }
-        let half = (r*r-h*h).max(0.).sqrt();
-        if half <= tol { vec![foot] } else { vec![add(foot,scale(d,-half)),add(foot,scale(d,half))] }
+        // a tangent line meets the circle once: two roots `half` either side of the foot stand off
+        // the circle by `half² / 2r`, so where that is within the tolerance they are the one touch
+        // (taken apart, the square root of a rounding puts each a long way from it)
+        let half2 = (r*r-h*h).max(0.);
+        if half2 <= 2.*r*tol { vec![foot] } else { let half = half2.sqrt(); vec![add(foot,scale(d,-half)),add(foot,scale(d,half))] }
     };
     let on = |c: &Curve,q: V| match *c {
         Curve::Line {p,d} => norm(cross(sub(q,p),d)) <= tol,

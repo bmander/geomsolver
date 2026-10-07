@@ -25,51 +25,161 @@ use crate::brep::query::{Located, Place};
 use crate::brep::topo::{Brep, EdgeCurve};
 use crate::space::{add, cross, dot, norm, scale, sub};
 
+/// A face's trace in a section through the corner: a straight line, or a circle — a cylinder
+/// along a straight edge, a sphere or a torus in the meridian of a ring.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Side { Line, Circle { centre: [f64; 2], radius: f64 } }
+
+/// One stroke of a section's loop: a segment, or an arc of a circle from `from` to `to`, `sweep`
+/// signed (counter-clockwise positive) from the angle `start`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Stroke {
+    Line { from: [f64; 2], to: [f64; 2] },
+    Arc { centre: [f64; 2], radius: f64, start: f64, sweep: f64, from: [f64; 2], to: [f64; 2] },
+}
+
+impl Stroke {
+    /// The arc about `centre` through `radius` from `from` to `to`, turning the way `sense` says
+    /// (counter-clockwise positive), never more than a whole turn.
+    fn arc(centre: [f64; 2], radius: f64, from: [f64; 2], to: [f64; 2], sense: f64) -> Stroke {
+        let (a, b) = (angle(centre, from), angle(centre, to));
+        let sweep = if sense > 0.0 { (b - a).rem_euclid(TAU) } else { -(a - b).rem_euclid(TAU) };
+        Stroke::Arc { centre, radius, start: a, sweep, from, to }
+    }
+
+    /// The least first coordinate it reaches (a meridian's radius).
+    fn least_x(&self) -> f64 {
+        match *self {
+            Stroke::Line { from, to } => from[0].min(to[0]),
+            Stroke::Arc { centre, radius, start, sweep, from, to } => {
+                let reaches = around(PI, start.min(start + sweep), TAU) <= start.max(start + sweep);
+                let ends = from[0].min(to[0]);
+                if reaches { ends.min(centre[0] - radius) } else { ends }
+            }
+        }
+    }
+}
+
+const TAU: f64 = std::f64::consts::TAU;
+const PI: f64 = std::f64::consts::PI;
+
+/// The angle of `p` about `c`.
+fn angle(c: [f64; 2], p: [f64; 2]) -> f64 { (p[1] - c[1]).datan2(p[0] - c[0]) }
+fn dot2(a: [f64; 2], b: [f64; 2]) -> f64 { a[0] * b[0] + a[1] * b[1] }
+fn sub2(a: [f64; 2], b: [f64; 2]) -> [f64; 2] { [a[0] - b[0], a[1] - b[1]] }
+fn add2(a: [f64; 2], b: [f64; 2], k: f64) -> [f64; 2] { [a[0] + k * b[0], a[1] + k * b[1]] }
+fn len2(a: [f64; 2]) -> f64 { a[0].dhypot(a[1]) }
+
 /// The ball's section at one edge, in its section plane's coordinates: the corner the two faces
-/// meet at, the points where the ball touches the first face and the second, and its centre.
+/// meet at, each face's trace through it and the direction it leaves the corner along that face,
+/// the points where the ball touches the first face and the second, and its centre.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Wedge {
     pub corner: [f64; 2],
+    pub sides: [Side; 2],
+    pub dirs: [[f64; 2]; 2],
     pub touch: [[f64; 2]; 2],
     pub centre: [f64; 2],
     pub r: f64,
 }
 
+/// Why no ball fits a corner.
+enum Misfit { Angle, Ball }
+
 impl Wedge {
-    /// The ball of radius `r` in the corner at `corner` between the unit directions `d` (each
-    /// along a face, away from the edge): `None` where the two are too near parallel to round.
-    fn new(corner: [f64; 2], d: [[f64; 2]; 2], r: f64) -> Option<Wedge> {
-        let cos = (d[0][0] * d[1][0] + d[0][1] * d[1][1]).clamp(-1.0, 1.0);
-        let theta = cos.dacos();
-        if !(theta > MIN_TURN && theta < std::f64::consts::PI - MIN_TURN) { return None; }
-        let half = theta / 2.0;
-        let setback = r / half.dtan();
-        let bis = [d[0][0] + d[1][0], d[0][1] + d[1][1]];
-        let bl = bis[0].dhypot(bis[1]);
-        let reach = r / half.dsin();
-        let at = |u: [f64; 2], k: f64| [corner[0] + k * u[0], corner[1] + k * u[1]];
-        Some(Wedge {
-            corner,
-            touch: [at(d[0], setback), at(d[1], setback)],
-            centre: at([bis[0] / bl, bis[1] / bl], reach),
-            r,
-        })
+    /// The ball of radius `r` in the corner at `corner` between the sides, each leaving it along
+    /// the unit direction `d` (into its face): its centre on both sides' offsets by `r` into the
+    /// corner, touching each ahead of the corner, the nearest such.
+    fn new(corner: [f64; 2], sides: [Side; 2], d: [[f64; 2]; 2], r: f64) -> Result<Wedge, Misfit> {
+        let theta = dot2(d[0], d[1]).clamp(-1.0, 1.0).dacos();
+        if !(theta > MIN_TURN && theta < PI - MIN_TURN) { return Err(Misfit::Angle); }
+        // each side's offset into the corner: a line (a point and a direction) or a circle
+        enum Offset { Line([f64; 2], [f64; 2]), Circle([f64; 2], f64) }
+        let offset = |k: usize| -> Option<Offset> {
+            let other = d[1 - k];
+            match sides[k] {
+                Side::Line => {
+                    let n = [-d[k][1], d[k][0]];
+                    let n = if dot2(n, other) > 0.0 { n } else { [-n[0], -n[1]] };
+                    Some(Offset::Line(add2(corner, n, r), d[k]))
+                }
+                Side::Circle { centre, radius } => {
+                    let radial = sub2(corner, centre);
+                    let outside = dot2(other, radial) > 0.0;
+                    let big = if outside { radius + r } else { radius - r };
+                    (big > 0.0).then_some(Offset::Circle(centre, big))
+                }
+            }
+        };
+        let (Some(a), Some(b)) = (offset(0), offset(1)) else { return Err(Misfit::Ball) };
+        let line_circle = |p: [f64; 2], u: [f64; 2], c: [f64; 2], rr: f64| -> Vec<[f64; 2]> {
+            let foot = add2(p, u, dot2(sub2(c, p), u));
+            let h2 = rr * rr - dot2(sub2(foot, c), sub2(foot, c));
+            if h2 < 0.0 { return Vec::new(); }
+            let h = h2.sqrt();
+            vec![add2(foot, u, -h), add2(foot, u, h)]
+        };
+        let candidates: Vec<[f64; 2]> = match (&a, &b) {
+            (Offset::Line(p, u), Offset::Line(q, w)) => {
+                let det = u[0] * (-w[1]) - u[1] * (-w[0]);
+                if det.abs() <= 1e-15 { Vec::new() } else {
+                    let rhs = sub2(*q, *p);
+                    let s = (rhs[0] * (-w[1]) - rhs[1] * (-w[0])) / det;
+                    vec![add2(*p, *u, s)]
+                }
+            }
+            (Offset::Line(p, u), Offset::Circle(c, rr)) | (Offset::Circle(c, rr), Offset::Line(p, u)) =>
+                line_circle(*p, *u, *c, *rr),
+            (Offset::Circle(c0, r0), Offset::Circle(c1, r1)) => {
+                let between = sub2(*c1, *c0);
+                let l = len2(between);
+                if l == 0.0 { Vec::new() } else {
+                    let u = [between[0] / l, between[1] / l];
+                    let x = (l * l + r0 * r0 - r1 * r1) / (2.0 * l);
+                    line_circle(add2(*c0, u, x), [-u[1], u[0]], *c0, *r0)
+                }
+            }
+        };
+        // where a ball centred at `c` touches side `k`, if ahead of the corner along it
+        let touch = |k: usize, c: [f64; 2]| -> Option<[f64; 2]> {
+            match sides[k] {
+                Side::Line => {
+                    let t = add2(corner, d[k], dot2(sub2(c, corner), d[k]));
+                    (dot2(sub2(t, corner), d[k]) > 0.0).then_some(t)
+                }
+                Side::Circle { centre, radius } => {
+                    let toward = sub2(c, centre);
+                    let t = add2(centre, toward, radius / len2(toward));
+                    let radial = sub2(corner, centre);
+                    let sense = dot2(d[k], [-radial[1], radial[0]]).signum();
+                    let Stroke::Arc { sweep, .. } = Stroke::arc(centre, radius, corner, t, sense) else { unreachable!() };
+                    (sweep.abs() > 0.0 && sweep.abs() < PI).then_some(t)
+                }
+            }
+        };
+        let best = candidates.into_iter()
+            .filter_map(|c| Some((c, [touch(0, c)?, touch(1, c)?])))
+            .min_by(|x, y| len2(sub2(x.0, corner)).total_cmp(&len2(sub2(y.0, corner))));
+        let (centre, touch) = best.ok_or(Misfit::Ball)?;
+        Ok(Wedge { corner, sides, dirs: d, touch, centre, r })
     }
 
-    /// How far along each face the ball touches it.
-    pub fn setback(&self) -> f64 {
-        (self.touch[0][0] - self.corner[0]).dhypot(self.touch[0][1] - self.corner[1])
-    }
-
-    /// The ball's arc between the touches as a counter-clockwise turn about the centre, the short
-    /// way (past the corner): its start angle, its sweep, and its ends in that order — the second
-    /// touch first where the turn runs from it.
-    pub fn arc(&self) -> (f64, f64, [[f64; 2]; 2]) {
-        let angle = |p: [f64; 2]| (p[1] - self.centre[1]).datan2(p[0] - self.centre[0]);
-        let [t0, t1] = self.touch;
-        let ccw = (angle(t1) - angle(t0)).rem_euclid(std::f64::consts::TAU);
-        if ccw <= std::f64::consts::PI { (angle(t0), ccw, [t0, t1]) }
-        else { (angle(t1), std::f64::consts::TAU - ccw, [t1, t0]) }
+    /// The section's loop: along the first side from the corner to its touch, round the ball to
+    /// the second touch the short way (past the corner), back along the second side.
+    pub fn strokes(&self) -> [Stroke; 3] {
+        let along = |k: usize, from: [f64; 2], to: [f64; 2]| match self.sides[k] {
+            Side::Line => Stroke::Line { from, to },
+            Side::Circle { centre, radius } => {
+                let radial = sub2(self.corner, centre);
+                let sense = dot2(self.dirs[k], [-radial[1], radial[0]]).signum();
+                // the second side is walked back, from its touch to the corner
+                Stroke::arc(centre, radius, from, to, if k == 0 { sense } else { -sense })
+            }
+        };
+        let (a, b) = (angle(self.centre, self.touch[0]), angle(self.centre, self.touch[1]));
+        let ccw = (b - a).rem_euclid(TAU);
+        let ball = Stroke::arc(self.centre, self.r, self.touch[0], self.touch[1], if ccw <= PI { 1.0 } else { -1.0 });
+        [along(0, self.corner, self.touch[0]), ball, along(1, self.touch[1], self.corner)]
     }
 }
 
@@ -105,7 +215,17 @@ impl Piece {
         let sc = |p: [f64; 2]| [p[0] / per, p[1] / per];
         Piece {
             section: Basis { o: std::array::from_fn(|k| self.section.o[k] / per + origin[k]), ..self.section },
-            wedge: Wedge { corner: sc(w.corner), touch: w.touch.map(sc), centre: sc(w.centre), r: w.r / per },
+            wedge: Wedge {
+                corner: sc(w.corner),
+                sides: w.sides.map(|side| match side {
+                    Side::Line => Side::Line,
+                    Side::Circle { centre, radius } => Side::Circle { centre: sc(centre), radius: radius / per },
+                }),
+                dirs: w.dirs,
+                touch: w.touch.map(sc),
+                centre: sc(w.centre),
+                r: w.r / per,
+            },
             carry: match self.carry { Carry::Prism { length } => Carry::Prism { length: length / per }, c => c },
         }
     }
@@ -262,22 +382,61 @@ struct Edge<'a> {
     tol: f64,
 }
 
+/// How far round a circle a point is from where a band starts, turning the band's way: the
+/// coordinate across a band on a cylinder (in the section) or a sphere or torus (in the meridian).
+#[derive(Clone, Copy, Debug)]
+struct Turned { centre: [f64; 2], start: f64, sense: f64, extent: f64, radius: f64 }
+
+impl Turned {
+    /// The stroke from the corner to a touch along a circle side, as a band's turn.
+    fn of(stroke: &Stroke) -> Option<Turned> {
+        let Stroke::Arc { centre, radius, start, sweep, .. } = *stroke else { return None };
+        Some(Turned { centre, start, sense: sweep.signum(), extent: sweep.abs(), radius })
+    }
+    /// The turn to `p`, in `[0, 2π)`.
+    fn at(&self, p: [f64; 2]) -> f64 { around(self.sense * (angle(self.centre, p) - self.start), 0.0, TAU) }
+    /// Whether a turn lies within the band, clear of its ends by `tol` (a length).
+    fn inside(&self, psi: f64, tol: f64) -> bool {
+        let slack = tol / self.radius;
+        psi > slack && psi < self.extent - slack
+    }
+    /// Whether the stretch of turn from `p0` through `pm` to `p1` (the ends and middle of an arc)
+    /// overlaps the band, clear of its ends by `tol`.
+    fn overlaps(&self, [p0, pm, p1]: [[f64; 2]; 3], tol: f64) -> bool {
+        let (a, m, b) = (self.at(p0), self.at(pm), self.at(p1));
+        let after = |x: f64, from: f64| around(x - from, 0.0, TAU);
+        // the stretch as `[lo, lo + len]`, walked up through the middle
+        let (lo, len) = if after(m, a) <= after(b, a) { (a, after(b, a)) } else { (b, after(a, b)) };
+        let slack = tol / self.radius;
+        len > 0.0 && (lo < self.extent - slack || lo + len > TAU + slack)
+    }
+}
+
 /// Where the ball rolls on one face, in coordinates its edges are read in.
 enum Band {
     /// A plane face beside a straight edge: a rectangle, along the edge from `corner` (`along`,
     /// through `length`) and across it into the face (`d`, through the setback).
-    Strip { corner: V, along: V, d: V, length: f64 },
-    /// A face turned about the axis through `o` along `axis`: the stretch of its meridian line
-    /// from the corner along `dm` (radius, height), whatever turn it is at.
-    Meridian { o: V, axis: V, corner: [f64; 2], dm: [f64; 2] },
+    Strip { corner: V, along: V, d: V, length: f64, setback: f64 },
+    /// A cylinder along a straight edge: along the edge from the section's origin (`along`, through
+    /// `length`) and round the axis from the corner to the touch, read in the section.
+    Sleeve { section: Basis, length: f64, turn: Turned },
+    /// A face turned about the axis through `o` along `axis` whose meridian is a line: the
+    /// stretch of it from the corner along `dm` (radius, height), whatever turn it is at.
+    Meridian { o: V, axis: V, corner: [f64; 2], dm: [f64; 2], setback: f64 },
+    /// A sphere or a torus turned about the axis: the arc of its meridian from the corner to the
+    /// touch, whatever turn it is at.
+    Arc { o: V, axis: V, turn: Turned },
 }
 
 impl Band {
-    /// The stretch of the band's across-coordinate an edge reaches, or — a strip — whether it
-    /// enters the band at all; `None` where there is no closed form for it.
-    fn enters(&self, curve: &Curve, t: [f64; 2], setback: f64, tol: f64) -> Option<bool> {
+    /// Whether an edge of the face over `t` enters the band; `None` where there is no closed
+    /// form for it.
+    fn enters(&self, curve: &Curve, t: [f64; 2], tol: f64) -> Option<bool> {
+        let mer = |o: V, axis: V, q: V| { let z = dot(sub(q, o), axis); [norm(sub(sub(q, o), scale(axis, z))), z] };
+        let coaxial = |o: V, axis: V, frame: &crate::brep::geom::Frame|
+            norm(cross(frame.z, axis)) <= 1e-9 && norm(cross(sub(frame.o, o), axis)) <= tol;
         match *self {
-            Band::Strip { corner, along, d, length } => {
+            Band::Strip { corner, along, d, length, setback } => {
                 let to2 = |q: V| { let w = sub(q, corner); [dot(w, along), dot(w, d)] };
                 let (lo, hi) = ([tol, tol], [length - tol, setback - tol]);
                 match curve {
@@ -292,30 +451,51 @@ impl Band {
                     _ => None,
                 }
             }
-            Band::Meridian { o, axis, corner, dm } => {
-                let w = |rho: f64, z: f64| (rho - corner[0]) * dm[0] + (z - corner[1]) * dm[1];
-                let mer = |q: V| { let z = dot(sub(q, o), axis); (norm(sub(sub(q, o), scale(axis, z))), z) };
+            Band::Sleeve { section, length, turn } => {
+                let along = section.normal();
+                let flat = |q: V| { let w = sub(q, section.o); [dot(w, section.u), dot(w, section.v)] };
+                let at = |q: V| dot(sub(q, section.o), along);
+                let within = |x: f64| x > tol && x < length - tol;
+                match curve {
+                    // a generator: one turn, a stretch along
+                    Curve::Line { d: dl, .. } if norm(cross(*dl, along)) <= 1e-9 => {
+                        let (a, b) = (at(curve.point(t[0])), at(curve.point(t[1])));
+                        Some(turn.inside(turn.at(flat(curve.point(t[0]))), tol)
+                            && a.max(b) > tol && a.min(b) < length - tol)
+                    }
+                    // a circle square to the axis: one place along, a stretch of turn
+                    Curve::Circle(frame, _) if norm(cross(frame.z, along)) <= 1e-9 => {
+                        let pts = [t[0], 0.5 * (t[0] + t[1]), t[1]].map(|s| flat(curve.point(s)));
+                        Some(within(at(frame.o)) && turn.overlaps(pts, tol))
+                    }
+                    _ => None,
+                }
+            }
+            Band::Meridian { o, axis, corner, dm, setback } => {
+                let w = |m: [f64; 2]| (m[0] - corner[0]) * dm[0] + (m[1] - corner[1]) * dm[1];
                 let (a, b) = match curve {
-                    Curve::Circle(frame, rc)
-                        if norm(cross(frame.z, axis)) <= 1e-9 && norm(cross(sub(frame.o, o), axis)) <= tol =>
-                    {
-                        let v = w(*rc, dot(sub(frame.o, o), axis));
+                    Curve::Circle(frame, rc) if coaxial(o, axis, frame) => {
+                        let v = w([*rc, dot(sub(frame.o, o), axis)]);
                         (v, v)
                     }
                     // in a plane square to the axis, a plane face's band is radial
                     _ if dm[1].abs() <= 1e-12 => {
                         let (lo, hi) = radius_range(curve, t, o, axis)?;
-                        (w(lo, corner[1]), w(hi, corner[1]))
+                        (w([lo, corner[1]]), w([hi, corner[1]]))
                     }
                     // a line in a meridian: radius and height both affine along it
-                    Curve::Line { p: q, d: dl } if dot(cross(*dl, axis), sub(*q, o)).abs() <= tol => {
-                        let ((r0, z0), (r1, z1)) = (mer(curve.point(t[0])), mer(curve.point(t[1])));
-                        (w(r0, z0), w(r1, z1))
-                    }
+                    Curve::Line { p: q, d: dl } if dot(cross(*dl, axis), sub(*q, o)).abs() <= tol =>
+                        (w(mer(o, axis, curve.point(t[0]))), w(mer(o, axis, curve.point(t[1])))),
                     _ => return None,
                 };
                 Some(a.max(b) > tol && a.min(b) < setback - tol)
             }
+            Band::Arc { o, axis, turn } => match curve {
+                // a circle about the axis is one point of the meridian
+                Curve::Circle(frame, rc) if coaxial(o, axis, frame) =>
+                    Some(turn.inside(turn.at([*rc, dot(sub(frame.o, o), axis)]), tol)),
+                _ => None,
+            },
         }
     }
 }
@@ -355,25 +535,26 @@ impl Edge<'_> {
         if dot(d[0], d[1]) <= -1.0 + SMOOTH { return Ok(None); }
         let concave = dot(d[1], n[0]) > 0.0;
         let surface = |k: usize| &self.brep.faces[self.uses[k].0].surface;
-        let (section, corner, carry) = match curve {
-            Curve::Line { d: along, .. }
-                if matches!(surface(0), Surface::Plane(_)) && matches!(surface(1), Surface::Plane(_)) =>
-            {
+        let (section, corner, carry, sides) = match curve {
+            Curve::Line { d: along, .. } => {
                 let (u, start) = (d[0], curve.point(e.t[0]));
-                (Basis { u, v: cross(*along, u), o: start }, [0.0, 0.0], Carry::Prism { length: e.t[1] - e.t[0] })
+                let section = Basis { u, v: cross(*along, u), o: start };
+                let (Some(a), Some(b)) = (prism_side(surface(0), &section), prism_side(surface(1), &section))
+                    else { return Err(self.unsupported("line")) };
+                (section, [0.0, 0.0], Carry::Prism { length: e.t[1] - e.t[0] }, [a, b])
             }
             Curve::Circle(frame, rc) => {
                 let axis = frame.z;
-                if !(0..2).all(|k| coaxial(surface(k), frame.o, axis, self.tol)) {
-                    return Err(self.unsupported("circle"));
-                }
-                if !e.closed() || (e.t[1] - e.t[0] - std::f64::consts::TAU).abs() > 1e-9 {
+                let (Some(a), Some(b)) = (meridian_side(surface(0), frame.o, axis, self.tol),
+                    meridian_side(surface(1), frame.o, axis, self.tol))
+                    else { return Err(self.unsupported("circle")) };
+                if !e.closed() || (e.t[1] - e.t[0] - TAU).abs() > 1e-9 {
                     return Err(format!(
                         "`{}` meets `{}` on part of a circle: a ring is rounded only whole (rung 3)",
                         self.face_name(0), self.face_name(1)));
                 }
                 let u = unit(sub(p, add(frame.o, scale(axis, dot(sub(p, frame.o), axis)))));
-                (Basis { u, v: axis, o: frame.o }, [*rc, 0.0], Carry::Turn)
+                (Basis { u, v: axis, o: frame.o }, [*rc, 0.0], Carry::Turn, [a, b])
             }
             other => return Err(self.unsupported(other.kind())),
         };
@@ -382,9 +563,12 @@ impl Edge<'_> {
             return Err(format!("`{}` and `{}` do not meet square to their section",
                 self.face_name(0), self.face_name(1)));
         }
-        let wedge = Wedge::new(corner, [flat(d[0]), flat(d[1])], r).ok_or_else(|| format!(
-            "`{}` and `{}` meet too nearly flat or too sharply to round",
-            self.face_name(0), self.face_name(1)))?;
+        let wedge = Wedge::new(corner, sides, [flat(d[0]), flat(d[1])], r).map_err(|why| match why {
+            Misfit::Angle => format!("`{}` and `{}` meet too nearly flat or too sharply to round",
+                self.face_name(0), self.face_name(1)),
+            Misfit::Ball => format!("no ball of radius {r} fits between `{}` and `{}`",
+                self.face_name(0), self.face_name(1)),
+        })?;
         // the corner's material says the same as the normals: a ball in the wedge is in the
         // material at a convex edge and out of it at a concave one
         let toward = sub(section.lift(wedge.centre[0], wedge.centre[1]), section.lift(corner[0], corner[1]));
@@ -393,36 +577,47 @@ impl Edge<'_> {
             return Err(format!("cannot tell which side of `{}` with `{}` is material",
                 self.face_name(0), self.face_name(1)));
         }
-        if matches!(carry, Carry::Turn) && [wedge.touch[0][0], wedge.touch[1][0]].iter().any(|&x| x <= self.tol) {
+        let strokes = wedge.strokes();
+        if matches!(carry, Carry::Turn) && strokes.iter().any(|s| s.least_x() <= self.tol) {
             return Err(format!("the ball between `{}` and `{}` reaches past their axis",
                 self.face_name(0), self.face_name(1)));
         }
-        let setback = wedge.setback();
         for k in 0..2 {
-            let band = match carry {
-                Carry::Prism { length } => Band::Strip {
-                    corner: section.lift(corner[0], corner[1]), along: section.normal(), d: d[k], length },
-                Carry::Turn => Band::Meridian { o: section.o, axis: section.v, corner, dm: flat(d[k]) },
+            // the stroke from the corner to this side's touch
+            let stroke = strokes[2 * k];
+            let setback = len2(sub2(wedge.touch[k], corner));
+            let band = match (carry, sides[k]) {
+                (Carry::Prism { length }, Side::Line) => Band::Strip {
+                    corner: section.lift(corner[0], corner[1]), along: section.normal(), d: d[k], length, setback },
+                (Carry::Prism { length }, Side::Circle { .. }) => Band::Sleeve {
+                    section, length, turn: turned_from(stroke, k) },
+                (Carry::Turn, Side::Line) => Band::Meridian {
+                    o: section.o, axis: section.v, corner, dm: flat(d[k]), setback },
+                (Carry::Turn, Side::Circle { .. }) => Band::Arc { o: section.o, axis: section.v, turn: turned_from(stroke, k) },
             };
-            self.holds(k, &band, setback)?;
+            self.holds(k, &band)?;
         }
-        if let Carry::Prism { .. } = carry {
-            for end in 0..2 { self.stops(end, d, setback, section.normal())?; }
+        if let Carry::Prism { length } = carry {
+            for end in 0..2 {
+                let touch = wedge.touch.map(|t| add(section.lift(t[0], t[1]), scale(section.normal(), end as f64 * length)));
+                self.stops(end, d, touch, section.normal())?;
+            }
         }
         Ok(Some((Piece { section, wedge, carry }, concave)))
     }
 
     fn unsupported(&self, curve: &str) -> String {
         let kind = |k: usize| self.brep.faces[self.uses[k].0].surface.kind();
-        format!("`{}` ({}) meets `{}` ({}) on a {curve}: only a line between planes, or a circle \
-                 between planes, cylinders and cones about its axis, is rounded yet (rung 2)",
+        format!("`{}` ({}) meets `{}` ({}) on a {curve} no ball rolls along in closed form: a straight \
+                 edge between planes and cylinders along it, or a circle between surfaces turned about \
+                 its axis, is rounded; a traced meeting is not yet (rung 2)",
             self.face_name(0), kind(0), self.face_name(1), kind(1))
     }
 
     /// **A ball no larger than face `k` can hold**: the band of the face within the setback of the
     /// edge, where the ball rolls, crossed by none of the face's other edges. Read in closed form
     /// for lines and circles; anything else is refused, never sampled.
-    fn holds(&self, k: usize, band: &Band, setback: f64) -> Result<(), String> {
+    fn holds(&self, k: usize, band: &Band) -> Result<(), String> {
         let (fi, (li, ci)) = self.uses[k];
         let f = &self.brep.faces[fi];
         let seams = f.seams();
@@ -431,7 +626,7 @@ impl Edge<'_> {
                 if (lj, cj) == (li, ci) || seams.contains(&c.edge) { continue; }
                 let e = &self.brep.edges[c.edge as usize];
                 let EdgeCurve::Curve(curve) = &e.curve else { continue };
-                match band.enters(curve, e.t, setback, self.tol) {
+                match band.enters(curve, e.t, self.tol) {
                     Some(false) => {}
                     Some(true) => return Err(format!("the ball of `{}` with `{}` is larger than `{}` can hold",
                         self.face_name(0), self.face_name(1), f.name)),
@@ -445,12 +640,11 @@ impl Edge<'_> {
     }
 
     /// **A straight fillet stops flush at end `end`**: on each face the edge beside it at that end
-    /// runs on across the band, a straight edge at least the setback long, into a plane square to
-    /// the edge (along `along`) — so the ball's section stands in one plane there and the fillet
-    /// ends in it. A face running on past the end needs the ball to turn the corner (rung 3).
-    fn stops(&self, end: usize, d: [V; 2], setback: f64, along: V) -> Result<(), String> {
+    /// leaves the corner across the band and reaches the touch there (`touch`), lying in a plane
+    /// square to the edge (along `along`) — so the ball's section stands in one plane there and the
+    /// fillet ends in it. A face running on past the end needs the ball to turn the corner (rung 3).
+    fn stops(&self, end: usize, d: [V; 2], touch: [V; 2], along: V) -> Result<(), String> {
         let vertex = self.brep.edges[self.edge].v[end];
-        let at = self.brep.vertices[vertex as usize].p;
         for k in 0..2 {
             let (fi, (li, ci)) = self.uses[k];
             let l = &self.brep.faces[fi].loops[li];
@@ -463,10 +657,19 @@ impl Edge<'_> {
                 .find(|&cj| cj != ci && self.brep.ends(&l[cj]).contains(&vertex)).ok_or_else(runs_on)?;
             let c = &l[next];
             let ne = &self.brep.edges[c.edge as usize];
-            let EdgeCurve::Curve(Curve::Line { .. }) = &ne.curve else { return Err(runs_on()) };
-            let other = if ne.v[0] == vertex { ne.v[1] } else { ne.v[0] };
-            let dir = unit(sub(self.brep.vertices[other as usize].p, at));
-            if dot(dir, d[k]) < 1.0 - 1e-9 || ne.t[1] - ne.t[0] < setback - self.tol { return Err(runs_on()); }
+            let EdgeCurve::Curve(curve) = &ne.curve else { return Err(runs_on()) };
+            // it leaves the corner into the band...
+            let from_start = ne.v[0] == vertex;
+            let leaving = scale(unit(curve.tangent(if from_start { ne.t[0] } else { ne.t[1] })),
+                if from_start { 1.0 } else { -1.0 });
+            if dot(leaving, d[k]) < 1.0 - 1e-9 { return Err(runs_on()); }
+            // ...and runs on as far as the touch
+            let mut t = curve.inverse(touch[k]);
+            if let Some(period) = curve.period() { t = around(t, ne.t[0], period); }
+            let near = 8.0 * self.tol.max(1e-9);
+            if !(t >= ne.t[0] - 1e-9 && t <= ne.t[1] + 1e-9) || norm(sub(curve.point(t), touch[k])) > near {
+                return Err(runs_on());
+            }
             // the face across that edge is the plane the fillet ends in
             let across = self.table[c.edge as usize].iter().map(|u| u.0).find(|&g| g != fi).ok_or_else(runs_on)?;
             let Surface::Plane(frame) = &self.brep.faces[across].surface else { return Err(runs_on()) };
@@ -476,16 +679,48 @@ impl Edge<'_> {
     }
 }
 
-/// Whether `s` is a surface of revolution about the line through `o` along the unit `axis` whose
-/// meridian is a line: a plane square to it, or a cylinder or cone about it.
-fn coaxial(s: &Surface, o: V, axis: V, tol: f64) -> bool {
-    let parallel = |z: V| norm(cross(z, axis)) <= 1e-9;
+/// The band's turn along the stroke from the corner to side `k`'s touch — the section's first
+/// stroke for the first side, its last walked back for the second.
+fn turned_from(stroke: Stroke, k: usize) -> Turned {
+    let stroke = match (stroke, k) {
+        (Stroke::Arc { centre, radius, start, sweep, from, to }, 1) =>
+            Stroke::Arc { centre, radius, start: start + sweep, sweep: -sweep, from: to, to: from },
+        (s, _) => s,
+    };
+    Turned::of(&stroke).expect("a circle side's stroke is an arc")
+}
+
+/// A face's trace in the section square to a straight edge: a plane's line, or the circle of a
+/// cylinder whose axis runs along the edge; none for any other face.
+fn prism_side(s: &Surface, section: &Basis) -> Option<Side> {
+    let along = section.normal();
     match s {
-        Surface::Plane(f) => parallel(f.z),
-        Surface::Cylinder(f, _) | Surface::Cone(f, _, _) => parallel(f.z) && norm(cross(sub(f.o, o), axis)) <= tol,
-        _ => false,
+        Surface::Plane(_) => Some(Side::Line),
+        Surface::Cylinder(f, radius) if norm(cross(f.z, along)) <= 1e-9 => {
+            let foot = sub(sub(f.o, section.o), scale(along, dot(sub(f.o, section.o), along)));
+            Some(Side::Circle { centre: [dot(foot, section.u), dot(foot, section.v)], radius: *radius })
+        }
+        _ => None,
     }
 }
+
+/// A surface of revolution about the line through `o` along the unit `axis`, read in its meridian
+/// `(ρ, z)` from `o`: a line for a plane square to the axis or a cylinder or cone about it, a
+/// circle for a sphere centred on it or a torus about it; none for any other.
+fn meridian_side(s: &Surface, o: V, axis: V, tol: f64) -> Option<Side> {
+    let parallel = |z: V| norm(cross(z, axis)) <= 1e-9;
+    let on_axis = |c: V| norm(cross(sub(c, o), axis)) <= tol;
+    let height = |c: V| dot(sub(c, o), axis);
+    match s {
+        Surface::Plane(f) if parallel(f.z) => Some(Side::Line),
+        Surface::Cylinder(f, _) | Surface::Cone(f, _, _) if parallel(f.z) && on_axis(f.o) => Some(Side::Line),
+        Surface::Sphere(f, radius) if on_axis(f.o) => Some(Side::Circle { centre: [0.0, height(f.o)], radius: *radius }),
+        Surface::Torus(f, big, small) if parallel(f.z) && on_axis(f.o) =>
+            Some(Side::Circle { centre: [*big, height(f.o)], radius: *small }),
+        _ => None,
+    }
+}
+
 
 /// The least and greatest distance from the axis through `o` along `axis` over a curve lying in a
 /// plane square to the axis: exact for a line and a circle, `None` for any other curve.
@@ -568,19 +803,24 @@ impl Piece {
     /// the loop in the section's own coordinates, the arc cut to the sheet's flatness at `unit`,
     /// about the evaluation's `origin`.
     pub(super) fn face_poly(&self, origin: [f64; 3], unit: f64) -> Option<FacePoly> {
-        let w = &self.wedge;
-        let (start, sweep, ends) = w.arc();
-        let mut arc = super::profile::tessellate_arc((w.centre[0], w.centre[1]), w.r, start, sweep, unit);
-        // walked from the first touch to the second
-        if ends[0] != w.touch[0] { arc.reverse(); }
-        let mut pts = vec![(w.corner[0], w.corner[1])];
-        let mut of = vec![(0, false)];
-        for p in &arc[..arc.len() - 1] {
-            pts.push(*p);
-            of.push((1, true));
+        // each stroke from its start, an arc as chords within the flatness
+        let mut pts = Vec::new();
+        let mut of = Vec::new();
+        for (k, stroke) in self.wedge.strokes().into_iter().enumerate() {
+            match stroke {
+                Stroke::Line { from, .. } => {
+                    pts.push((from[0], from[1]));
+                    of.push((k, false));
+                }
+                Stroke::Arc { centre, radius, start, sweep, .. } => {
+                    let arc = super::profile::tessellate_arc((centre[0], centre[1]), radius, start, sweep, unit);
+                    for p in &arc[..arc.len() - 1] {
+                        pts.push(*p);
+                        of.push((k, true));
+                    }
+                }
+            }
         }
-        pts.push((w.touch[1][0], w.touch[1][1]));
-        of.push((2, false));
         let basis = Basis { o: std::array::from_fn(|k| self.section.o[k] - origin[k]), ..self.section };
         let poly = FacePoly { pts, of, names: EDGE_NAMES.map(String::from).to_vec(), basis,
             curved: vec![None; EDGE_NAMES.len()] };

@@ -1097,6 +1097,15 @@ fn curves_cross_in_closed_form() {
     let upright = Curve::Circle(Frame::new([0.;3],[1.,0.,0.],[0.,1.,0.]),2.);
     assert_eq!(curve_curve(&circle,[0.,TAU],&upright,[0.,TAU],1e-9).unwrap().len(),2);
     near(curve_curve(&circle,[0.,PI],&upright,[0.,TAU],1e-9).unwrap(),&[(PI/2.,[0.,2.,0.])]);
+    // a tangency is one touch, where it is: not two crossings the square root of a rounding apart
+    // either side of it (a fillet's ball touching the circle it rolls on)
+    near(curve_curve(&circle,[0.,TAU],&Curve::Circle(Frame::new([3.,0.,0.],XY,[1.,0.,0.]),1.),[0.,TAU],1e-9).unwrap(),
+        &[(0.,[2.,0.,0.])]);
+    let r = 6.0f64;
+    let tilt = Curve::Circle(Frame::new([0.;3],XY,[1.,0.,0.]),r);
+    let touching = Curve::Circle(Frame::new([r+2.,1e-12,0.],XY,[1.,0.,0.]),2.);
+    let got = curve_curve(&tilt,[-1.,1.],&touching,[0.,TAU],1e-9).unwrap();
+    assert!(got.len() == 1 && (got[0].1[0]-r).abs() < 1e-9 && got[0].1[1].abs() < 1e-9,"{got:?}");
     // no closed form for any other curve
     assert!(curve_curve(&Curve::Ellipse(Frame::new([0.;3],XY,[1.,0.,0.]),2.,1.),[0.,TAU],&x,[0.,10.],1e-9).is_none());
 }

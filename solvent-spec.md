@@ -7,9 +7,10 @@ radius `r` fills or rolls off along every edge where a face of one operand meets
 other; an operand is a solid or a face of one (`fillet(block.near, block.bc, r: 1mm)`). A body adds
 it with `union` at a concave edge and takes it away with `cut` at a convex one, and the other word
 is refused: the body rule is unchanged (§6.9). Its edges are those of the union stratum, so a bore
-cut after it passes through it. Rung 1 rounds what has a closed form — a straight edge between
-planes (a cylinder), a circle between planes, cylinders and cones about one axis (a torus) — and
-refuses the rest by name (**E085**).
+cut after it passes through it. What is rounded is what has a closed form — a straight edge
+between planes and cylinders along it (the fillet's face a cylinder), a circle between planes,
+cylinders, cones, spheres and tori about one axis (a torus) — and the rest is refused by name
+(**E085**).
 
 **[0.48] Relation words, and `use M (names)`.** A file may define a relation word at its top
 level, as it defines a component: `a horizontal b := a level(up) b`, `flat l := l perpendicular
@@ -1060,13 +1061,17 @@ lip cut block                                //   ... convex: the ball rolls the
 - **Its faces** are named as a swept section's are: `round` the ball's, `a` and `b` the two sides
   lying on the faces it rounds, and a straight fillet's caps `near` and `far`
   (`body.root.round`). `r:` is a `Length` extent like a prism's ordinates: never an unknown.
-- **What rung 1 rounds** is what has a closed form: a straight edge between two planes (the
-  fillet's face a cylinder), and a whole circle between planes square to an axis and cylinders and
-  cones about it (a torus). The ball MUST stand within both faces — the band it rolls on crossed by
-  no other edge of either — and a straight fillet MUST end flush, each face's edge beside it at
-  both ends running on across the band into a plane square to the edge. Anything else is **E085**
-  with its reason: a pair of other faces (rung 2), part of a circle or a fillet that would turn a
-  corner (rung 3), a ball larger than a face holds. A fillet that is not exact is never built.
+- **What is rounded** is what has a closed form: the ball's centre runs along a line or a circle,
+  so its face is a cylinder or a torus. A straight edge between planes and cylinders whose axes run
+  along it, its section square to the edge; a whole circle between planes square to an axis and
+  cylinders, cones, spheres and tori about it, its section in the meridian. Either side of a section
+  is a line or an arc, and the ball is the circle of radius `r` touching both, ahead of the corner
+  along each. The ball MUST stand within both faces — the band it rolls on crossed by no other edge
+  of either — and a straight fillet MUST end flush, each face's edge beside it at both ends leaving
+  across the band, reaching the touch, in a plane square to the edge. Anything else is **E085**
+  with its reason: a meeting no line or circle carries (a pipe tee, a ball off a rod's axis: rung
+  2, not yet), part of a circle or a fillet that would turn a corner (rung 3), a ball larger than a
+  face holds. A fillet that is not exact is never built.
 - **The material field needs no true distance.** Rolling-ball closing and opening want one, which
   a one-Lipschitz field does not carry; the fillet's material is instead an explicit leaf — the
   section of corner, touches and arc, swept along the edge or turned about the axis — evaluated

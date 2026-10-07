@@ -53,9 +53,19 @@ fn held(session: &native::Session,name: &str,e: &gcs_core::program::Elaborated) 
         eprintln!("{name}: `{}`: {v:.9} mm³ against OCCT's {w:.9} ({rel:e}); faces {:?} against {their_kinds:?}",s.name,kinds(&ours));
         assert!(rel < 1e-7,"{name}: `{}`: volume {v} against OCCT's {w}",s.name);
         // OCCT may leave a plane split where this kernel's Boolean joined it, or the reverse: the
-        // curved faces — the fillet's own among them — must agree
+        // curved faces must agree. Each fillet's own face is a cylinder or a torus here; OCCT builds
+        // it so where its blend has a closed form and approximates it by a B-spline (kind 6) where
+        // not (a ball between a cylinder and a sphere) — within the volume bar above — so a fillet's
+        // own face is set aside on both sides before the rest are compared
         let curved = |k: &[i32]| k.iter().copied().filter(|&k| k != 0).collect::<Vec<_>>();
-        assert_eq!(curved(&kinds(&ours)),curved(&their_kinds),"{name}: `{}`: curved faces by kind",s.name);
+        let (mut mine,mut its) = (curved(&kinds(&ours)),curved(&their_kinds));
+        for p in &blend.pieces {
+            let own = match p.carry { gcs_core::solid::fillet::Carry::Prism {..} => 1,gcs_core::solid::fillet::Carry::Turn => 4 };
+            let take = |ks: &mut Vec<i32>,k: i32| ks.iter().position(|&x| x == k).map(|i| ks.remove(i)).is_some();
+            assert!(take(&mut mine,own),"{name}: `{}`: no face of its own",s.name);
+            assert!(take(&mut its,own) || take(&mut its,6),"{name}: `{}`: OCCT made no fillet face",s.name);
+        }
+        assert_eq!(mine,its,"{name}: `{}`: curved faces by kind",s.name);
         compared += 1;
     }
     compared
