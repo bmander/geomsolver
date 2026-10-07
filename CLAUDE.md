@@ -296,12 +296,11 @@ the piece, 1e-4 for a body taking it.
 `tests/fillet.rs` (tee, pin, bore rim against independent quadratures), `gcs-cli/tests/fillet_oracle.rs`
 (OCCT's `BRepFilletAPI_MakeFillet` on its unified union, `solvent_cad_fillet`, links `TKFillet`; its
 own face set aside, OCCT approximating a sphere's), `rust/examples/solid_fillet{,_turned,_knob,_rail,
-_tee,_bore,_slot}.sv`.
+_tee,_bore,_slot,_block,_lid}.sv`.
 **A chain of tangent edges** (rung 3): a ring may be partial (`Carry::Turn { sweep }`, its section at
 the edge's start; field: the ring bounded by a pie-slice prism); each end of a piece is flush
 (`stops`, against `Piece::at(f)`) or `Open`, and `derive` pairs open ends whose sections agree
-(`paired`: opposite ways, one ball; `Blend::joins`, the recipe's `"joins"`) — two flush ends at a
-corner are refused (vertex blends are later). Bands of a partial ring read only within its `Sector`
+(`paired`: opposite ways, one ball; `Blend::joins`, the recipe's `"joins"`). Bands of a partial ring read only within its `Sector`
 (lines and circles in closed form). The recipe **glues** the pieces joined (`boolean::glued`: a
 coincident plane face either side, edges matched; nothing intersected) and unions the chains. Kernel rule it found: where two faces nearly touch (a seed, a march or the search
 comes there), the touch is settled (`ssi::touch_near`: stationary distance) and read to second
@@ -318,9 +317,19 @@ ball, built directly, once (`Corner::piece`); the recipe's `"corners"`, glued; f
 (`brep_prim`); the field is six half-space slabs bounded, less a disk turned; native, the same cell
 from OCCT's prisms in common, less a revolved half disc (`Session::corner`), fused with the pieces.
 A fillet's field leaves are folded in pairs (`in_pairs`: a field's depth is bounded). `glued` merges
-two of `a`'s vertices one of `b`'s meets (three runs meet only through their corner). Open: open traced edges, mitres (two fillets, the
-third edge sharp), corners of curved faces or unequal radii, variable radius, B-spline faces
-(rung 3), rung 4.
+two of `a`'s vertices one of `b`'s meets (three runs meet only through their corner).
+**A mitre** (rung 3): two ends of straight pieces at a vertex whose edges share a face, the edge
+between their other faces left sharp and turning the fillet's way (`mitred`, `turns` over
+`Edge::across`; the other way is a gap, refused: rung 3): each piece runs on to the plane beyond
+(none at a square corner, else as far as its end section reaches across it), its band ignoring the
+other's edge, and the two are not joined but unioned, crossing in the corner. Kernel rules it
+found: two cylinders of one radius whose axes cross meet in two ellipses, in the planes through
+the crossing square to `a₁ ∓ a₂` (`ssi::intersect`, closed form beside `plane_cylinder`), and
+curves of one meeting crossing each other are split there (`boolean::crossings_among`, conics by
+`crossings_in`); a line meets a cylinder in closed form, a tangent one a single touch at its foot
+(`query::line_cylinder`; sampled, a double root lands √tol off). `examples/solid_fillet_lid.sv`.
+Open: open traced edges, corners of curved faces or unequal radii, a fillet turning a sharp
+corner, variable radius, B-spline faces (rung 3), rung 4.
 **Continuous motion solids:** `removal := solid(tool, under: generating, from: -30deg, to: 30deg)`
 is the union over the whole interval, not posed meshes; `at:` and intervals exclusive.
 `MaterialField::read` promotes static DAGs when a sweep appears; nested sweeps refused; caches

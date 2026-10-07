@@ -44,13 +44,11 @@ pub fn curve_curve(a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2],tol: f64) -> Opti
         }
         if dot(sub(p,o),z).abs() > tol { return Vec::new(); }
         let foot = add(p,scale(d,dot(sub(o,p),d)));
-        let h = distance(foot,o);
-        if h > r+tol { return Vec::new(); }
-        // a tangent line meets the circle once: two roots `half` either side of the foot stand off
-        // the circle by `half² / 2r`, so where that is within the tolerance they are the one touch
-        // (taken apart, the square root of a rounding puts each a long way from it)
-        let half2 = (r*r-h*h).max(0.);
-        if half2 <= 2.*r*tol { vec![foot] } else { let half = half2.sqrt(); vec![add(foot,scale(d,-half)),add(foot,scale(d,half))] }
+        match half_chord(distance(foot,o),r,tol) {
+            None => Vec::new(),
+            Some(0.) => vec![foot],
+            Some(half) => vec![add(foot,scale(d,-half)),add(foot,scale(d,half))],
+        }
     };
     let on = |c: &Curve,q: V| match *c {
         Curve::Line {p,d} => norm(cross(sub(q,p),d)) <= tol,
@@ -102,10 +100,10 @@ pub fn curve_curve(a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2],tol: f64) -> Opti
 }
 
 /// Where two curves lying in `surface` cross, to `tol`: `curve_curve`'s closed forms where they
-/// have one, else — one of them a line or a circle — the other's roots on a plane carrying it (a
-/// circle's own plane; a line's plane through it square to the surface there), kept where they lie
-/// on it within its stretch. Each crossing's parameter on `a` and its point; `None` where neither
-/// is a line or a circle, or the other runs along the carrier.
+/// have one, else — one of them a line, a circle or an ellipse — the other's roots on a plane
+/// carrying it (a conic's own plane; a line's plane through it square to the surface there), kept
+/// where they lie on it within its stretch. Each crossing's parameter on `a` and its point; `None`
+/// where neither is a line or a conic, or the other runs along the carrier.
 pub fn crossings_in(surface: &Surface,a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2],tol: f64) -> Option<Vec<(f64,V)>> {
     use crate::space::cross;
     if let Some(found) = curve_curve(a,ta,b,tb,tol) { return Some(found) }
@@ -117,7 +115,7 @@ pub fn crossings_in(surface: &Surface,a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2
                 let n = crate::space::normalised(cross(d,surface.gradient(mid)))?;
                 super::geom::Frame::about(p,n)
             }
-            Curve::Circle(f,_) => super::geom::Frame::about(f.o,f.z),
+            Curve::Circle(f,_) | Curve::Ellipse(f,..) => super::geom::Frame::about(f.o,f.z),
             _ => return None,
         };
         let Meets::At(roots) = curve_surface(other,over,&Surface::Plane(plane),tol) else { return None };
@@ -129,9 +127,10 @@ pub fn crossings_in(surface: &Surface,a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2
         };
         Some(roots.into_iter().filter_map(|(t,_)| { let q = other.point(t); on(q).map(|_| (t,q)) }).collect())
     };
+    let carries = |c: &Curve| matches!(c,Curve::Line {..} | Curve::Circle(..) | Curve::Ellipse(..));
     match (a,b) {
-        (_,Curve::Line {..} | Curve::Circle(..)) => carried(b,tb,a,ta),
-        (Curve::Line {..} | Curve::Circle(..),_) => {
+        (_,b) if carries(b) => carried(b,tb,a,ta),
+        (a,_) if carries(a) => {
             // the roots are `b`'s: read back onto `a`
             let found = carried(a,ta,b,tb)?;
             Some(found.into_iter().map(|(_,q)| {
@@ -148,6 +147,7 @@ pub fn crossings_in(surface: &Surface,a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2
 /// signed distance along it refined to a root, every sampled minimum of its size that comes within
 /// `tol` refined to a touching point, and an end on the surface a root there.
 pub fn curve_surface(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64) -> Meets {
+    if let (&Curve::Line {p,d},Surface::Cylinder(c,r)) = (curve,surface) { return line_cylinder(p,d,[t0,t1],c,*r,tol) }
     let f = |t: f64| surface.implicit(curve.point(t));
     let length = (t1-t0)*curve.speed();
     let n = ((length/surface.feature()*16.).ceil() as usize)
@@ -189,6 +189,37 @@ pub fn curve_surface(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64) 
         });
     }
     Meets::At(roots)
+}
+
+/// A line through `p` along the unit `d`, over `[t0, t1]`, against the cylinder of radius `r` about
+/// `c`'s axis, in closed form: across the axis it is a chord of the circle (`half_chord`, one touch at the foot where it is
+/// tangent). A line along the axis lies in the surface or misses it.
+fn line_cylinder(p: V,d: V,[t0,t1]: [f64;2],c: &super::geom::Frame,r: f64,tol: f64) -> Meets {
+    use crate::space::{dot,sub};
+    let across = |v: V| sub(v,scale(c.z,dot(v,c.z)));
+    let (w,e) = (across(sub(p,c.o)),across(d));
+    let ee = dot(e,e);
+    if ee <= 1e-24 {
+        return if (norm(w)-r).abs() <= tol { Meets::Along } else { Meets::At(Vec::new()) }
+    }
+    let foot = -dot(w,e)/ee;
+    let roots = match half_chord(norm(add(w,scale(e,foot))),r,tol) {
+        None => Vec::new(),
+        Some(0.) => vec![(foot,true)],
+        Some(half) => { let half = half/ee.sqrt(); vec![(foot-half,false),(foot+half,false)] }
+    };
+    Meets::At(roots.into_iter().filter(|&(t,_)| t >= t0-tol && t <= t1+tol).map(|(t,k)| (t.clamp(t0,t1),k)).collect())
+}
+
+/// Half the chord a line at `h` from a circle's centre cuts from it, radius `r`: none where it
+/// passes clear, 0 where it touches. A tangent line meets the circle once: two roots `half` either
+/// side of the foot stand off the circle by `half² / 2r`, so where that is within the tolerance
+/// they are the one touch (taken apart, the square root of a rounding puts each a long way from
+/// it, and a sampled search finds the double root only to the square root of the tolerance).
+fn half_chord(h: f64,r: f64,tol: f64) -> Option<f64> {
+    if h > r+tol { return None }
+    let half2 = (r*r-h*h).max(0.);
+    Some(if half2 <= 2.*r*tol { 0. } else { half2.sqrt() })
 }
 
 /// A face's box in space, from its edges and a grid across its parameters, grown by what the
