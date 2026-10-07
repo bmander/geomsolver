@@ -204,9 +204,13 @@ fn views(sk: &Sketch) -> Vec<Option<usize>> {
 
 /// The view an entity stands in: the one every point it is made of stands in, or `None` where
 /// they disagree or it has none — `program::plane_of_entity`'s walk over the `views` table, read
-/// once for every point.
+/// once for every point.  A curve owns no point, and is drawn in its tool's view
+/// (`Sketch::curve_view`).
 fn entity_view(sk: &Sketch, e: EntRef, views: &[Option<usize>]) -> Option<usize> {
-    crate::program::plane_of_entity_by(sk, e, |p| views[p])
+    match e.kind {
+        EntKind::Curve => sk.curve_view(e.i()),
+        _ => crate::program::plane_of_entity_by(sk, e, |p| views[p]),
+    }
 }
 
 /// What an entity is **drawn as**, in world coordinates, as polylines.

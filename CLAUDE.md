@@ -1324,7 +1324,7 @@ Conventions:
   free point keeps its own).  A view opens drawing on `std.front`
   (`drawOnFront`), and File ▸ New is `use std`.  `workspace::Views` is what does not depend on
   the eye — each view placed in space (slot 0 a 2D sketch's front plane, `Basis::page`), the view
-  each point and entity stands in, and each view's **place** (the first view on the same plane in
+  each point and entity stands in (a curve, owning no point, its tool's: `Sketch::curve_view`), and each view's **place** (the first view on the same plane in
   space: `std.front`, `std.up`)
   — read once an edit (`gcs_workspace_json`); the maps are per frame (`gcs_workspace_maps`, a
   buffer).  The front end compares place ids, never maps.  The chooser in the viewport's upper right (`#plane-select`) lists `std.front`,

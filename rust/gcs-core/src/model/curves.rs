@@ -241,13 +241,15 @@ impl Sketch {
     }
 
     /// The view a curve is drawn in: its tool's (a generated profile's, and every point it is
-    /// written over shares it), `None` on the page.
+    /// written over shares it) — a curve's own where the tool is a curve, as a flank cut by a bore
+    /// is — `None` on the page.
     pub fn curve_view(&self, i: usize) -> Option<usize> {
         let e = *self.curves[i].args.first()?;
         let p = match e.kind {
             EntKind::Point => e.i(),
             EntKind::Line => self.lines[e.i()].p1 as usize,
             EntKind::Circle | EntKind::Arc => self.round_center(e),
+            EntKind::Curve => return self.curve_view(e.i()),
             _ => return None,
         };
         self.plane_of(p)

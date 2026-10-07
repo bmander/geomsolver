@@ -258,3 +258,41 @@ fn the_bounds_reach_past_a_turned_section() {
     let (x0, _, x1, _) = gcs_core::overview::workspace::bounds(&e.sketch, &proj, 0.05).unwrap();
     assert!(x0 <= -31.9 && x1 >= 31.9, "{x0} {x1}");
 }
+
+/// A curve owns no point, so the view it is drawn in is what it is written over's: an envelope of
+/// a point drawn in `std.top`, and an envelope of that envelope, stand in `std.top` — drawn flat
+/// in the plane at z = 0 — and not on the page the front stands for (the Wankel's bore and flank).
+#[test]
+fn a_curve_is_drawn_in_the_view_of_what_it_is_written_over() {
+    let e = build("unit mm
+use std
+in std.top {
+  centre := point
+  fix((0, 0)) centre
+  hub := point
+  fix((15, 0)) hub
+  apex := point
+  fix((120, 0)) apex
+}
+counter := motion(about: centre, ratio: -1)
+spin := motion(about: hub, ratio: -2 / 3)
+rotor_turn := motion(spin, relative_to: counter)
+housing_turn := motion(counter, relative_to: spin)
+bore := envelope(apex, under: rotor_turn, from: 0deg, to: 1080deg)
+flank := envelope(bore, under: housing_turn, from: 10deg, to: 170deg)
+");
+    let top = plane(&e, "std.top");
+    let views = gcs_core::overview::workspace::Views::new(&e.sketch);
+    let scene = gcs_core::overview::scene3d(&e.sketch, 0.1);
+    for name in ["bore", "flank"] {
+        let c = e.map.ent_named(name).unwrap();
+        assert_eq!(views.entity_view(&e.sketch, c), Ok(Some(top)), "{name}");
+        let drawn: Vec<_> = scene.iter().filter(|it| it.of == Some(c)).collect();
+        assert!(!drawn.is_empty(), "{name} is drawn");
+        for it in drawn {
+            assert_eq!(it.in_plane, Some(EntRef::plane(top)), "{name}");
+            assert!(it.pts.iter().all(|p| p[2].abs() < 1e-9), "{name} lies in the plane z = 0");
+            assert!(it.pts.iter().any(|p| p[1].abs() > 1.0), "{name} reaches off the x axis");
+        }
+    }
+}
