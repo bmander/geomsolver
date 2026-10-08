@@ -311,6 +311,21 @@ fn two_sets_tangent_at_a_point() {
     assert_eq!(io::dumps(&back, None), io::dumps(&sk, None));
 }
 
+/// A tangency's derivative rows deleted, its tangent unknowns are no freedom: each is held again.
+#[test]
+fn a_tangencys_unknowns_go_with_its_rows() {
+    let mut sk = solved(&read(&with(&format!("{}l tangent foot", footed("")))));
+    let rows: Vec<u32> = sk.constraints.iter().filter(|c| c.along.is_some() && !c.intrinsic)
+        .map(|c| c.id).collect();
+    let free = |sk: &Sketch| sk.duals.iter().flat_map(|d| d.tangent.values())
+        .filter(|&&t| !sk.params[t as usize].fixed).count();
+    assert!(free(&sk) > 0);
+    for id in rows {
+        sk.remove(id);
+    }
+    assert_eq!(free(&sk), 0);
+}
+
 /// A tangency is one condition and a regular one: the diagnosis sees no redundancy, no shaky
 /// motion, and the numeric rank agrees with the structural.
 #[test]
@@ -370,6 +385,9 @@ fn what_a_set_refuses() {
     // two sets touch at a point the word names, stated and not claimed, and each body is read at
     // the point, so neither may make geometry of its own
     refused(&with("k tangent kc"), "E040", "which the word names", "tangent");
+    // a tangency at a point reads where it stands in space, so not a row over its place in a
+    // view: `c` and `ax` both drawn in the front read `k`'s angle on the page
+    refused(&with("k tangent(at: c) kc"), "E040", "reads it in its view", "tangent(at: c)");
     refused(&with("claim k tangent(at: a) kc"), "E040", "stated, not claimed", "tangent");
     refused(
         &with(&format!("{}k tangent(at: a) foot", footed(""))),
