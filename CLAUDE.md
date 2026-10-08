@@ -161,7 +161,7 @@ family call's argument); a use the element answers (`Form::answers`: plain `coin
 as written against it (`set_use`), `tangent` uses read the body. The elaborator judges each (`Expansion::lowered`,
 `lowering::refused`: `X` a plane, `Y` drawn in it, after `incidences`) and one that is none is
 walked again as a set (`elaborate` loops over `elaborate_in`, `flatten::expand_with`'s
-`refused`). The judgment cannot precede the expansion — `Y` may be drawn by another set's use
+`unlowered`). The judgment cannot precede the expansion — `Y` may be drawn by another set's use
 (`o coincident on`) — so a pass ends at it, before any constraint; a refusal is final.
 Lowering is a representation, never a meaning: the solutions are the same either way.
 `tests/membership.rs` is the gate.

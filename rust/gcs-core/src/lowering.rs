@@ -38,8 +38,7 @@ pub(crate) struct Radius<'a> {
 
 impl Radius<'_> {
     /// Where the number is written: in the body, or — for a family's instance, `call` — where
-    /// the call gives the formal the body reads (`None` where it gives none).  Where a callout is
-    /// drawn from and an edit writes.
+    /// the call gives the formal the body reads (`None` where it gives none).
     pub(crate) fn at(&self, call: Option<&Instance>) -> Option<Span> {
         match call {
             None => Some(self.span),

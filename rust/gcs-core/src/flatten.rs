@@ -321,11 +321,11 @@ pub fn expand(prog: &Program, units: Units) -> Expansion {
     expand_with(prog, units, &BTreeSet::new())
 }
 
-/// `expand`, with the sets named in `refused` walked as sets though their bodies are elements' —
-/// those the elaborator found are none (`lowering::refused`).
-pub fn expand_with(prog: &Program, units: Units, refused: &BTreeSet<String>) -> Expansion {
+/// `expand`, with the sets named in `unlowered` walked as sets though their bodies are elements'
+/// — those the elaborator refused (`lowering::refused`).
+pub fn expand_with(prog: &Program, units: Units, unlowered: &BTreeSet<String>) -> Expansion {
     let mut w = Walk::new(prog, units, None);
-    w.unlowered = refused;
+    w.unlowered = unlowered;
     let root = prog.root();
     // A definitions-only file has nothing to expand. In particular, imported parameters must
     // not be evaluated in a unit system that only an eventual instantiating model will supply.

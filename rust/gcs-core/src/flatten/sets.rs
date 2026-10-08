@@ -92,8 +92,7 @@ impl<'a> Walk<'a> {
             StmtKind::Instance(inst) => (&inst.name, Some(inst)),
             _ => return false,
         };
-        let text = radius.text;
-        let seed = value_aff(text, &sc.vals, self.units).ok().and_then(|a| a.number())
+        let seed = value_aff(radius.text, &sc.vals, self.units).ok().and_then(|a| a.number())
             .filter(|r| r.is_finite() && *r > 0.0);
         // a set written in place, or an unnamed call, is named nothing the source can say
         let name = if outer.anonymous || written.text.starts_with('#') {
@@ -114,14 +113,14 @@ impl<'a> Walk<'a> {
         // comes to
         let span = radius.at(call).unwrap_or(Span::new(st.span.lo as usize, st.span.lo as usize));
         let word = radius.word.span;
-        let radius = Relation::of(RelationForm::Written(crate::syntax::Written {
+        let stated = Relation::of(RelationForm::Written(crate::syntax::Written {
             word: Name { text: "radius".to_string(), span: word },
             fixity: crate::constraints::Fixity::Prefix,
             ops: vec![local(abs, word)],
-            args: vec![crate::syntax::OpArg::Dim(text.to_string(), span)],
+            args: vec![crate::syntax::OpArg::Dim(radius.text.to_string(), span)],
             span: st.span,
         }));
-        if let Some(r) = self.settle_relation(&radius, &sc.vals, sc) {
+        if let Some(r) = self.settle_relation(&stated, &sc.vals, sc) {
             // the circle by its absolute name, which the body's scope may be closed to
             let named = Scope { prefixes: vec![String::new()], closed: false, ..sc.clone() };
             let kind = StmtKind::Relation(r);
