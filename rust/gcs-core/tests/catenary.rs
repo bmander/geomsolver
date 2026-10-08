@@ -140,3 +140,25 @@ fn didos_curve_is_the_circular_arc() {
     let names: Vec<&str> = d.extrema.iter().map(|(_, v)| v.name()).collect();
     assert_eq!(names, ["maximum"]);
 }
+
+/// `std.hangs(L) rope` is the longhand in one word: the same rope, the same verdict, and a rope
+/// deleted takes the word's use with it.
+#[test]
+fn the_library_word_hangs_the_same_rope() {
+    let longhand = solved(ROPE);
+    let src = ROPE
+        .replace("use std\n", "use std (hangs)\n")
+        .replace("  length(150) rope\n", "  hangs(L: 150) rope\n")
+        .replace("minimize integral(p.y over p in rope)\n", "");
+    let mut e = solved(&src);
+    for (i, &p) in e.sketch.splines[0].ctrl.iter().enumerate() {
+        let (x, y) = e.sketch.point_xy(p as usize);
+        let (lx, ly) = longhand.sketch.point_xy(longhand.sketch.splines[0].ctrl[i] as usize);
+        assert!((x - lx).hypot(y - ly) < 1e-9, "{i}");
+    }
+    let d = gcs_core::diagnose::diagnose(&mut e.sketch, gcs_core::diagnose::DiagnoseOptions::default());
+    let names: Vec<&str> = d.extrema.iter().map(|(_, v)| v.name()).collect();
+    assert_eq!(names, ["minimum"]);
+    let out = gcs_core::edit::remove(&e, &e.program, &e.sketch, &[gcs_core::model::EntRef::spline(0)], &[]);
+    assert!(!out.text.contains("hangs(L: 150) rope"), "{}", out.text);
+}

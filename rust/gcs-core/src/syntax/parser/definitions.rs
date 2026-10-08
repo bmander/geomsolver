@@ -77,7 +77,8 @@ impl<'a> P<'a> {
                     "a relation word's body states the relation alone: a placement or a class \
                      is written where the word is used",
                 ),
-                StmtKind::Relation(_) | StmtKind::Decl(_) => None,
+                // and an energy over an operand, which is a statement of the drawing's (#121)
+                StmtKind::Relation(_) | StmtKind::Decl(_) | StmtKind::Minimize(_) => None,
                 // a set written in place where the body uses it
                 StmtKind::Set(_) | StmtKind::Instance(_) if st.chained == Chained::Link => None,
                 _ => Some(
