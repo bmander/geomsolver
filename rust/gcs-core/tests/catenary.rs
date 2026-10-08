@@ -334,3 +334,45 @@ fn a_rope_too_short_to_reach_is_unsolved() {
     assert!(e.sketch.curve_polyline(0).is_empty());
 }
 
+
+/// A line drawn tangent to the rope and the rope's free end are one figure, whichever is dragged:
+/// dragging the end re-hangs the rope and carries the line with it, and dragging the line moves it
+/// along the rope — every frame the line still touches the rope, and the rope is still a catenary.
+#[test]
+fn a_tangent_line_and_the_rope_drag_together_either_way() {
+    let src = ROPE.replace("  fix((100, 0)) b\n", "").replace("  b := point\n", "  b := point hint((100, 0))\n").replace(
+        "  length(150) rope\n",
+        "  length(150) rope\n  f0 := point hint((20, -40))\n  f1 := point hint((90, -45))\n  floor := line(f0, f1)\n  rope tangent floor\n",
+    );
+    let touching = |e: &Elaborated| {
+        let c = e.sketch.constraints.iter().find(|c| c.kind == gcs_core::constraints::CKind::CurveTangentLine).unwrap();
+        let t = e.sketch.params[c.aux_params()[0] as usize].value;
+        let (x, y) = e.sketch.curve_point(0, t);
+        let l = &e.sketch.lines[0];
+        let (a, b) = (e.sketch.point_xy(l.p1 as usize), e.sketch.point_xy(l.p2 as usize));
+        (((b.0 - a.0) * (y - a.1) - (b.1 - a.1) * (x - a.0)) / (b.0 - a.0).hypot(b.1 - a.1)).abs()
+    };
+    let hangs = |e: &Elaborated| off(&e.sketch, 0, catenary((0.0, 0.0), e.sketch.point_xy(b_of(e)), 150.0));
+    let mut e = solved(&src);
+    // the rope's end, dragged
+    let b = b_of(&e);
+    let mut drag = gcs_core::decompose::PlanDrag::new(&e.sketch, b, 100.0, 0.0, None, 0.05);
+    for k in 1..=5 {
+        let r = drag.move_to(&mut e.sketch, None, 100.0 - 2.0 * k as f64, -2.0 * k as f64);
+        assert!(r.success, "end, frame {k}: {r:?}");
+        assert!(touching(&e) < 1e-6, "end, frame {k}: the line left the rope by {}", touching(&e));
+        assert!(hangs(&e) < 1e-6, "end, frame {k}: off the catenary by {}", hangs(&e));
+    }
+    drag.end();
+    // and the line's end
+    let f1 = e.sketch.lines[0].p2 as usize;
+    let (x, y) = e.sketch.point_xy(f1);
+    let mut drag = gcs_core::decompose::PlanDrag::new(&e.sketch, f1, x, y, None, 0.05);
+    for k in 1..=5 {
+        let r = drag.move_to(&mut e.sketch, None, x + k as f64, y - k as f64);
+        assert!(r.success, "line, frame {k}: {r:?}");
+        assert!(touching(&e) < 1e-6, "line, frame {k}: the line left the rope by {}", touching(&e));
+        assert!(hangs(&e) < 1e-6, "line, frame {k}: off the catenary by {}", hangs(&e));
+    }
+    drag.end();
+}

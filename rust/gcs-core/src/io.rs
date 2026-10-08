@@ -1522,7 +1522,9 @@ impl Part {
         let prims = sk.primitives();
         // who contains a point, and which constraints name an entity
         let mut parents: Vec<Vec<EntRef>> = vec![Vec::new(); sk.points.len()];
-        for &e in &prims {
+        // a curve is no primitive, but a free curve's ends are points it moves with (#144)
+        let curves = (0..sk.curves.len()).map(|i| EntRef::new(EntKind::Curve, i));
+        for e in prims.iter().copied().chain(curves) {
             for c in sk.children(e).into_iter().filter(|c| c.kind == EntKind::Point) {
                 parents[c.i()].push(e);
             }
@@ -1639,6 +1641,32 @@ impl Part {
             }
             for (a, b) in sketch.entity_params(m).into_iter().zip(sk.entity_params(s)) {
                 params.push((a as usize, b as usize));
+            }
+        }
+        // a free curve's length is its own number (#144): the curves come after the primitives,
+        // the ones kept in document order
+        let mut ent: BTreeMap<EntRef, EntRef> = srcs.iter().copied().zip(made.iter().copied()).collect();
+        let kept = (0..sk.curves.len()).filter(|&i| keep.contains(&EntRef::new(EntKind::Curve, i)));
+        for (doc, part) in kept.zip(0..sketch.curves.len()) {
+            ent.insert(EntRef::new(EntKind::Curve, doc), EntRef::new(EntKind::Curve, part));
+            if let (Some(a), Some(b)) = (sketch.curves[part].length, sk.curves[doc].length) {
+                params.push((a as usize, b as usize));
+            }
+        }
+        // and a constraint's own unknowns (a contact's place along its curve) with its copy's:
+        // the constraint of the same kind over the same entities, each copy paired once
+        let mut taken = vec![false; sketch.constraints.len()];
+        for c in sk.constraints.iter().filter(|c| !c.aux_params().is_empty()) {
+            let Some(over) = c.entities().iter().map(|e| ent.get(e).copied()).collect::<Option<Vec<_>>>() else {
+                continue;
+            };
+            let found = (0..sketch.constraints.len())
+                .find(|&j| !taken[j] && sketch.constraints[j].kind == c.kind && sketch.constraints[j].entities() == over);
+            if let Some(j) = found {
+                taken[j] = true;
+                for (a, b) in sketch.constraints[j].aux_params().into_iter().zip(c.aux_params()) {
+                    params.push((a as usize, b as usize));
+                }
             }
         }
         // and a hidden point moves with the view point it lifts
