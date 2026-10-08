@@ -1162,7 +1162,10 @@ Conventions:
   is its own seed**: fixes are applied once points have their places (`entities::places`), before
   `axes_along`, motions, envelopes and `settle_deferred` (`relations::is_fix`), and
   `views::stand_axes` then stands each plane's free axes through its held origin, so no `hint`
-  repeats a `fix`.  `commit_seeds` takes a held number out of a written clause (the whole clause
+  repeats a `fix`.  Holds and root choices are gathered (`relations::Gauges`) and applied once
+  all are in (`hold_all` after the fix pass, `choose_all` after phase 5's `branch`es): alike, one
+  gauge; differing, E031 at each statement and nothing applied, so no order decides (#113).
+  `commit_seeds` takes a held number out of a written clause (the whole clause
   where all are held) and writes it back when the hold goes.  `tests/seeds.rs::a_fix_is_its_own_seed`.
   `edit::reconcile` diffs holds per entity and field (`gauge_key`, `held_refs` over
   `program::holds`) and appends a statement built by `program::lift_gauge` with the numbers; a root choice under a key no triple spells stays the
