@@ -152,14 +152,19 @@ it. `q coincident P` (or `l coincident P`, its ends) of a point standing in spac
 `PointE.plane` (`planes::incidences`, after `memberships`, in statement order; the statement
 then states nothing, `drawn` in `program.rs`), the rows `in P` makes. Kept in space, a row:
 a point with a `Deferred::Height` seed, held by a `fix`, a dual's point (`along.point`), a
-ring's, or claimed. **A set whose body is a circle's is the circle**: `sets::round` reads `{ p |
-p coincident X; p distance(r) Y }`, and `make_round` (in `set_made`, outside applications)
-emits `circle(center: Y)` under the set's name (its statement's) and `radius(r)` on it (span at
-the body's number, or the family call's argument; `edit::set_dimension` reads both); plain
-`coincident` uses stay as written against the circle (`set_use`), `tangent` uses read the body.
-The elaborator judges each (`Expansion::set_circles`, `planes::unround`: `X` a plane, `Y` drawn
-in it, after `incidences`); one that is none is walked again as a set (`elaborate` loops over
-`elaborate_in` with `flatten::expand_with`'s `plain`). `tests/membership.rs` is the gate.
+ring's, or claimed. **A set whose body is a circle's is the circle**, the one entry so far of
+**`lowering.rs`**, the table of what a set may be drawn as (#140): `lowering::shape` reads `{ p
+| p coincident X; p distance(r) Y }` (the flattener's and `edit::set_dimension`'s one reader),
+and `lower_circle` (in `set_made`, outside applications) emits `circle(center: Y)` under the
+set's name (its statement's) and `radius(r)` on it (span at the body's number, or the family
+call's argument); plain `coincident` uses stay as written against the circle (`set_use`),
+`tangent` uses read the body. The elaborator judges each (`Expansion::lowered`,
+`lowering::refused`: `X` a plane, `Y` drawn in it, after `incidences`) and one that is none is
+walked again as a set (`elaborate` loops over `elaborate_in`, `flatten::expand_with`'s
+`refused`). The judgment cannot precede the expansion — `Y` may be drawn by another set's use
+(`o coincident on`) — so a pass ends at it, before any constraint; a refusal is final.
+Lowering is a representation, never a meaning: the solutions are the same either way.
+`tests/membership.rs` is the gate.
 
 **Variational curves (§9.10, §6.1, 0.53, #121, `variational.rs`):** `k minimizes E` / `k maximizes
 E` (`StmtKind::Minimize`, `parser/minimize.rs`; indicative, a statement about `k` read by the word

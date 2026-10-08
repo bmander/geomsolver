@@ -147,26 +147,6 @@ pub(super) fn incidences(
     lowered
 }
 
-/// The sets the flattener drew as circles (#105) that are none: `{ p | p coincident P; p
-/// distance(r) o }` is the circle about `o` only where `P` is a plane and `o` a point drawn in
-/// it — `P` a line, or `o` standing off it, and the body says something else, which the set
-/// itself says when walked as one.
-pub(super) fn unround(
-    sk: &Sketch,
-    res: &Resolver,
-    circles: &[crate::flatten::SetCircle],
-) -> BTreeSet<String> {
-    use super::resolve::follow;
-    let round = |c: &crate::flatten::SetCircle| {
-        let plane = c.plane.as_ref()
-            .and_then(|r| res.lookup(r).and_then(|e| follow(sk, e, &r.path).ok()))
-            .filter(|e| e.kind == EntKind::Plane)?;
-        let k = res.of.get(&c.key).filter(|e| e.kind == EntKind::Circle)?;
-        (sk.plane_of(sk.circles[k.i()].center as usize) == Some(plane.i())).then_some(())
-    };
-    circles.iter().filter(|c| round(c).is_none()).map(|c| c.key.clone()).collect()
-}
-
 /// The one plane every point of an entity is on, or `None` — for a point, its own.
 pub(crate) fn plane_of_entity(sk: &Sketch, e: EntRef) -> Option<usize> {
     plane_of_entity_by(sk, e, |p| sk.plane_of(p))

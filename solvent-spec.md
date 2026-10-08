@@ -1659,7 +1659,11 @@ said where it is used, by two words:
   dimensioned and swept to a solid as that circle is, `face(k)` included. `q coincident k` is a
   point on the circle; `l tangent k` still reads the body's rows (above), whatever the set is drawn
   as. Where `P` is no plane or `o` stands off it, the body says something else — a line's points
-  at a distance, a sphere cut off its centre — and the set is a set, drawn as nothing.
+  at a distance, a sphere cut off its centre — and the set is a set, drawn as nothing. Whether `o`
+  is drawn in `P` is read once every statement has said where its points are, a use of another
+  set included (`o coincident on`, `on := { p | p coincident P }`). *Non-normative:* which of the
+  two a set is drawn as changes its rows and its callout, never the drawing's solutions; an
+  implementation that drew it as a set and then found it a circle may keep it a set.
 - `S1 tangent(at: m) S2` **[0.51]**, two sets: their **tangent spaces at `m` are one** — every
   direction along `S1` there is along `S2`. Two directions are solved for at `m`, in a chart the
   elaborator picks once (each rises along the world axis the sets' normal there is most along),
