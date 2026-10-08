@@ -824,6 +824,13 @@ such points is a line in space. A circle, arc or spline over a point in space is
 over one E080: those are drawn in a plane. Points in space are shown, picked and
 dragged in the workspace, across the eye's picture plane; depth stays the constraints'.
 
+**`p coincident P` is `in P`, said as a relation.** Put on a plane, a point in space is drawn in
+it — two coordinates of the plane's, the same rows `p := point in P` makes — and every relation
+over it reads as the plane's (`p distance(25) a`, `a` in `P`, is a 2D distance; a circle about
+it is drawn there). `l coincident P` puts both ends in. The first plane wins; a second is a row in
+space. A point whose seed has a `z`, whose three numbers a `fix` holds, or that is claimed on the
+plane stays in space, held there by a row.
+
 **An axis** is a directed line in space with no start, drawn in no plane: a direction, and a place
 once something reads it.
 
@@ -955,6 +962,14 @@ several up to the `}`. It adds nothing to the drawing; what it means is said whe
 - A family of sets is a component whose body is one: `component Ball(center: point, r: Length)
   := { p | p distance(r) center }`; an instance is the set, its formals read by its name.
 - A culprit reads as the statement (`l tangent shaft`), never as the body's rows.
+- **A set whose body is a circle's is the circle**: `k := { p | p coincident std.front; p
+  distance(25mm) o }`, `o` drawn in `std.front`, is drawn, dragged, dimensioned `R25` and swept
+  (`face(k)`) exactly as `k := circle(center: o)` with `radius(25mm) k`; editing the `R25` edits
+  the body's number. `q coincident k` is a point on the circle. Where the plane is no plane or `o`
+  stands off it, the set is a set again (a sphere met with a plane off its centre), drawn as nothing.
+- **Sets compose by conjunction**: two statements in one body are the points on both (an
+  intersection). A union is a choice of root (`ccw`, `branch`), not a body; a difference cannot be
+  written.
 
 **Spheres** are the library's set: `ball := std.Sphere(c, r: 12mm)` is a centre and a radius, and
 nothing drawn; the centre may be drawn in a view or stand in space.

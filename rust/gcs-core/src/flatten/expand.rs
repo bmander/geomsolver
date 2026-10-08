@@ -2,6 +2,8 @@
 
 use super::*;
 use super::apply::Pass;
+use super::sets::Made;
+use crate::syntax::DeclName;
 
 impl<'a> Walk<'a> {
     /// The view an enclosing instance is drawn `in`, put on one declaration its expansion
@@ -262,7 +264,9 @@ impl<'a> Walk<'a> {
                     // an instance of a family of sets is the set, its formals bound (§6.21)
                     if let Some(lit) = &comp.set {
                         let name = sc.prefix().trim_end_matches('.').to_string();
-                        self.set_made(name, lit, &sc, depth + 1);
+                        let written = DeclName::Written(inst.name.clone());
+                        let made = Made { st, path, name: written, family: true, outer: scope };
+                        self.set_made(name, lit, &sc, depth + 1, made);
                     }
                     self.instantiating.push(comp);
                     self.body(&comp.body, &sc, &mut sub_vals, &instance_path, depth + 1);
@@ -330,7 +334,9 @@ impl<'a> Walk<'a> {
                 StmtKind::Set(set) => {
                     let abs = format!("{prefix}{}", set.name.text);
                     self.names.insert(abs.clone());
-                    self.set_made(abs, &set.lit, scope, depth);
+                    let written = DeclName::Written(set.name.clone());
+                    let made = Made { st, path, name: written, family: false, outer: scope };
+                    self.set_made(abs, &set.lit, scope, depth, made);
                 }
                 // a claim over an interval: its numbers and its relations' worked out as above
                 StmtKind::ClaimOver(c) => {
@@ -368,7 +374,7 @@ impl<'a> Walk<'a> {
 
     /// A relation's numbers worked out against the parameters in scope, in either of its
     /// representations, and the enclosing instances' classes stamped over its own.
-    fn settle_relation(&mut self, rel: &crate::syntax::Relation, vals: &BTreeMap<String, Aff>, scope: &Scope)
+    pub(super) fn settle_relation(&mut self, rel: &crate::syntax::Relation, vals: &BTreeMap<String, Aff>, scope: &Scope)
         -> Option<crate::syntax::Relation> {
         let mut r2 = rel.clone();
         if let Some(w) = r2.form.written_mut() {

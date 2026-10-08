@@ -146,6 +146,20 @@ hand-written spatial kernels have generic twins held to them by `tests/taylor.rs
 set named as an entity (E040 in `rewrite`), `coincident` between two sets, parentheses, a
 non-point `coincident`, a non-line or claimed `tangent`.  `tests/sets.rs` is the gate.
 
+**Membership is one rule (§6.7, §6.21, 0.53, #105):** a plane is a set and `in` membership of
+it. `q coincident P` (or `l coincident P`, its ends) of a point standing in space is lowered to
+`PointE.plane` (`planes::incidences`, after `memberships`, in statement order; the statement
+then states nothing, `drawn` in `program.rs`), the rows `in P` makes. Kept in space, a row:
+a point with a `Deferred::Height` seed, held by a `fix`, a dual's point (`along.point`), a
+ring's, or claimed. **A set whose body is a circle's is the circle**: `sets::round` reads `{ p |
+p coincident X; p distance(r) Y }`, and `make_round` (in `set_made`, outside applications)
+emits `circle(center: Y)` under the set's name (its statement's) and `radius(r)` on it (span at
+the body's number, or the family call's argument; `edit::set_dimension` reads both); plain
+`coincident` uses stay as written against the circle (`set_use`), `tangent` uses read the body.
+The elaborator judges each (`Expansion::set_circles`, `planes::unround`: `X` a plane, `Y` drawn
+in it, after `incidences`); one that is none is walked again as a set (`elaborate` loops over
+`elaborate_in` with `flatten::expand_with`'s `plain`). `tests/membership.rs` is the gate.
+
 **Predicates, applied (§9.9, §6.21, 0.50, #103):** a relation word and a set are one predicate —
 parameters given at the call, **bound variables** (a word's operands, a set's point) filled at
 the use — applied by one routine, `flatten/apply.rs`: `begin` (an `Application`: the closure

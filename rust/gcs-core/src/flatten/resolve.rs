@@ -818,7 +818,9 @@ impl<'a> Walk<'a> {
         let mut judged: Vec<(String, Vec<Seen>)> = Vec::new();
         let mut centres: BTreeMap<String, Option<String>> = BTreeMap::new();
         let out = std::mem::take(&mut self.out);
-        let sets: BTreeSet<String> = self.sets.keys().cloned().collect();
+        // a set made a circle is named as the circle (#105)
+        let sets: BTreeSet<String> =
+            self.sets.keys().filter(|k| !self.rounds.contains_key(*k)).cloned().collect();
         let mut flat = Vec::with_capacity(out.len());
         for (mut st, path, sc) in out {
             // a refused relation is not emitted; a declaration is (a plane whose fold misspells

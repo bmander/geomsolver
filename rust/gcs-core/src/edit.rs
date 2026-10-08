@@ -1186,7 +1186,45 @@ pub fn set_dimension(e: &Elaborated, prog: &Program, cid: u32, attr: &str, text:
         return Edit::none(prog, Some("that dimension is written inside a component".into()));
     }
     let Some(st) = prog.stmt(site.stmt) else { return Edit::none(prog, None) };
-    let StmtKind::Relation(rel) = &st.kind else { return Edit::none(prog, None) };
+    // a set drawn as a circle states its radius as its body's distance (#105): written in place,
+    // the body's number; a family's instance, the number its call gives the formal read there
+    fn distance(lit: &syntax::SetLit) -> Option<&syntax::Relation> {
+        lit.body.iter().find_map(|st| match &st.kind {
+            StmtKind::Relation(r)
+                if r.form.written().is_some_and(|w| w.word.text == "distance") => Some(r),
+            _ => None,
+        })
+    }
+    let rel = match &st.kind {
+        StmtKind::Relation(rel) => rel,
+        StmtKind::Set(set) => match distance(&set.lit) {
+            Some(rel) => rel,
+            None => return Edit::none(prog, None),
+        },
+        StmtKind::Instance(inst) => {
+            let formal = prog.resolve_component(&inst.component.text, None).ok()
+                .and_then(|k| prog.components[k].set.as_ref())
+                .and_then(distance)
+                .and_then(|r| r.form.written()?.args.iter().find_map(|a| match a {
+                    syntax::OpArg::Dim(t, _) => Some(t.trim().to_string()),
+                    _ => None,
+                }));
+            let given = inst.args.iter().find_map(|a| match (&a.label, &a.value) {
+                (Some(l), syntax::InstVal::Expr(t)) if Some(&l.text) == formal.as_ref() => {
+                    Some(Span::new(a.span.hi as usize - t.len(), a.span.hi as usize))
+                }
+                _ => None,
+            });
+            let Some(at) = given else {
+                return Edit::none(prog, Some("that dimension is the component's".into()));
+            };
+            let plain = crate::expr::literal(text).is_some();
+            let number = Splice { at, with: text.trim().to_string() };
+            let kind = if plain { Kind::Numeric } else { Kind::Structural };
+            return Edit::spliced(prog, vec![number], kind);
+        }
+        _ => return Edit::none(prog, None),
+    };
     // the number a statement states is the unlabelled thing in its operator's parentheses
     // (spec §9.1), which is where a *written* statement carries it
     let dim = match &rel.form {
@@ -1370,6 +1408,17 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
             .filter(|p| p.kind == EntKind::Plane)
             .map(|p| p.i());
         if now == was {
+            continue;
+        }
+        // a point a `coincident` drew in its plane is in it by that statement, which no clause
+        // here repeats (#105)
+        let points = match r.kind {
+            EntKind::Point => vec![*r],
+            _ => sk.children(*r),
+        };
+        if was.is_none() && now.is_some()
+            && points.iter().any(|p| e.map.drawn.get(&p.i()).copied() == now)
+        {
             continue;
         }
         // a membership the `in … { }` block around the statement gave it: there is no clause

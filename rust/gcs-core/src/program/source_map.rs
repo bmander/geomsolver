@@ -33,6 +33,9 @@ pub struct SourceMap {
     writable: BTreeSet<EntRef>,
     by_name: BTreeMap<String, EntRef>,
     made: BTreeMap<StmtId, Vec<Made>>,
+    /// The points a `coincident` drew in a plane (§6.7, #105), to the plane: their membership is
+    /// that statement's, and no clause of their declarations says it.
+    pub(crate) drawn: BTreeMap<usize, usize>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

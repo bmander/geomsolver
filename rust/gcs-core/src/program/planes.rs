@@ -68,6 +68,105 @@ pub(super) fn memberships(
     }
 }
 
+/// **A plane is a set, and `in` is membership of it** (§6.7, #105): `q coincident P`, said of a
+/// point that no `in` reached, draws it in `P` as `q := point in P` would — two coordinates of
+/// `P`'s and its lift, where a point in space would be three unknowns and a row holding one of
+/// them to the plane.  One statement, two spellings, the same rows.  A line is its ends, so `l
+/// coincident P` draws each end not yet in `P` there.  Read once every membership is in, in
+/// statement order, so the first plane a point is put on is the one it is drawn in and any
+/// other stays a row in space.  The index of each statement read so (into `stating`), which
+/// then states nothing.
+///
+/// A point stays in space, its statement a row, where its own declaration or a statement says
+/// it stands there: its seed has a height (`hint(z: …)`), a `fix` holds its three numbers, a
+/// tangency's derivative moves it (§6.21), or it is a `ring`'s, whose copies turn it in space.
+pub(super) fn incidences(
+    sk: &mut Sketch,
+    res: &Resolver,
+    map: &mut SourceMap,
+    stating: &[&Stmt],
+    deferred: &[super::Deferred],
+    rings: &[crate::flatten::RingInfo],
+) -> BTreeSet<usize> {
+    use super::resolve::follow;
+    let ent = |r: &crate::syntax::Ref, sk: &Sketch| {
+        res.lookup(r).and_then(|e| follow(sk, e, &r.path).ok())
+    };
+    let mut kept: BTreeSet<usize> = deferred.iter().filter_map(|d| match d {
+        super::Deferred::Height { point, .. } => Some(*point),
+        _ => None,
+    }).collect();
+    for r in rings {
+        kept.extend(map.ents_under(&r.prefix).into_iter()
+            .filter(|e| e.kind == EntKind::Point).map(|e| e.i()));
+    }
+    for st in stating {
+        let StmtKind::Relation(r) = &st.kind else { continue };
+        if let Some(e) = r.along.as_ref().and_then(|a| ent(&a.point, sk)) {
+            kept.insert(e.i());
+        }
+        if super::relations::is_fix(r) {
+            let held = r.form.written().and_then(|w| w.ops.first()).and_then(|o| ent(o, sk));
+            kept.extend(held.filter(|e| e.kind == EntKind::Point).map(|e| e.i()));
+        }
+    }
+    let mut lowered = BTreeSet::new();
+    for (i, st) in stating.iter().enumerate() {
+        let StmtKind::Relation(r) = &st.kind else { continue };
+        let Some(w) = r.form.written() else { continue };
+        if r.claim || r.along.is_some() || w.word.text != "coincident" || w.ops.len() != 2
+            || !w.args.is_empty()
+        {
+            continue;
+        }
+        let ops = [ent(&w.ops[0], sk), ent(&w.ops[1], sk)];
+        let (plane, what) = match ops {
+            [Some(p), Some(e)] | [Some(e), Some(p)] if p.kind == EntKind::Plane => (p.i(), e),
+            _ => continue,
+        };
+        let points = match what.kind {
+            EntKind::Point => vec![what.i()],
+            EntKind::Line => sk.children(what).into_iter().map(|k| k.i()).collect(),
+            _ => continue,
+        };
+        // a point of another view is put on this plane in space; one of this plane's already is
+        // on it, which the row's own refusal says
+        if points.iter().any(|&p| sk.plane_of(p).is_some_and(|v| v != plane)) {
+            continue;
+        }
+        let free: Vec<usize> = points.into_iter().filter(|&p| sk.plane_of(p).is_none()).collect();
+        if free.is_empty() || free.iter().any(|p| kept.contains(p)) {
+            continue;
+        }
+        for p in free {
+            sk.set_plane(p, Some(plane));
+            map.drawn.insert(p, plane);
+        }
+        lowered.insert(i);
+    }
+    lowered
+}
+
+/// The sets the flattener drew as circles (#105) that are none: `{ p | p coincident P; p
+/// distance(r) o }` is the circle about `o` only where `P` is a plane and `o` a point drawn in
+/// it — `P` a line, or `o` standing off it, and the body says something else, which the set
+/// itself says when walked as one.
+pub(super) fn unround(
+    sk: &Sketch,
+    res: &Resolver,
+    circles: &[crate::flatten::SetCircle],
+) -> BTreeSet<String> {
+    use super::resolve::follow;
+    let round = |c: &crate::flatten::SetCircle| {
+        let plane = c.plane.as_ref()
+            .and_then(|r| res.lookup(r).and_then(|e| follow(sk, e, &r.path).ok()))
+            .filter(|e| e.kind == EntKind::Plane)?;
+        let k = res.of.get(&c.key).filter(|e| e.kind == EntKind::Circle)?;
+        (sk.plane_of(sk.circles[k.i()].center as usize) == Some(plane.i())).then_some(())
+    };
+    circles.iter().filter(|c| round(c).is_none()).map(|c| c.key.clone()).collect()
+}
+
 /// The one plane every point of an entity is on, or `None` — for a point, its own.
 pub(crate) fn plane_of_entity(sk: &Sketch, e: EntRef) -> Option<usize> {
     plane_of_entity_by(sk, e, |p| sk.plane_of(p))
