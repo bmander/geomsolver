@@ -3,7 +3,7 @@
 use super::P;
 use crate::style::Classes;
 use crate::syntax::lexer::Tok;
-use crate::syntax::words::{over_chain, BLOCKS};
+use crate::syntax::words::{over_chain, BLOCKS, ENERGY_WORDS};
 use crate::syntax::{
     Arg, Block, BlockKind, BodyWord, Branch, Chained, ClaimOver, Component, CurveSpec, CurveTarget,
     Decl, DeclName, EdgesOf, DerivedDecl, Formal, InBlock, InstArg, InstVal, Instance, Membership,
@@ -220,6 +220,11 @@ impl<'a> P<'a> {
                     body,
                     span: Span::new(lo, self.prev_hi()),
                 }))
+            }
+            // `rope minimizes integral(p.y over p)` — what a curve is stationary for (#121), read
+            // by the word past its curve, as the body words are
+            _ if self.past_ref(self.i).and_then(|j| self.word_at(j)).is_some_and(|w| ENERGY_WORDS.contains(&w)) => {
+                self.minimize().map(StmtKind::Minimize)
             }
             // a bare component call, when no source name is needed — its own file's component,
             // or a used module's by its full path (`engine.parts.Crank(…)`, §14.4)

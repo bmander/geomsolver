@@ -185,6 +185,63 @@ fn of_vals(vals: &BTreeMap<String, Aff>, units: Units) -> impl Fn(&str) -> Optio
     }
 }
 
+/// An integrand settled (#121): the scope's numbers written in, and the point and tangent it is
+/// read at renamed `p` and `t` whatever the document called them — so what reaches the sketch is
+/// text over `p.x`, `p.y`, `t.x`, `t.y` and nothing else.  A name it reads that is none of those
+/// and no number in scope is refused here, naming it: an energy is over its curve's shape, and an
+/// unknown inside one would be a second thing to minimise over.
+pub(crate) fn settle_integrand(
+    t: &crate::syntax::Integral,
+    vals: &BTreeMap<String, Aff>,
+    units: Units,
+) -> Result<String, String> {
+    let bound = |w: &str| -> Option<Result<String, String>> {
+        let (root, field) = w.split_once('.').unwrap_or((w, ""));
+        let canon = if root == t.point.text {
+            "p"
+        } else if t.tangent.as_ref().is_some_and(|n| n.text == root) {
+            "t"
+        } else {
+            return None;
+        };
+        Some(match field {
+            "x" | "y" => Ok(format!("{canon}.{field}")),
+            _ => Err(format!(
+                "`{w}`: {} has an `x` and a `y` and nothing else",
+                if canon == "p" { "the point running along the curve" } else { "its tangent" }
+            )),
+        })
+    };
+    let fault = std::cell::RefCell::new(None);
+    let number = of_vals(vals, units);
+    let text = substitute_with(&t.body, |w| match bound(w) {
+        Some(Ok(c)) => Some(c),
+        Some(Err(e)) => {
+            fault.borrow_mut().get_or_insert(e);
+            None
+        }
+        None => number(w),
+    });
+    if let Some(e) = fault.into_inner() {
+        return Err(e);
+    }
+    let parsed = expr::parse_in(&text, units)?;
+    if !parsed.body.measures().is_empty() {
+        return Err("an integrand reads the point it is integrated at, and measures nothing of \
+                    the solved drawing"
+            .to_string());
+    }
+    if let Some(d) = parsed.body.deps().iter().find(|d| !crate::variational::BOUND.contains(&d.as_str())) {
+        return Err(format!(
+            "`{d}` is no number in scope: an integrand reads the point `{}` it runs along{} and \
+             numbers",
+            t.point.text,
+            t.tangent.as_ref().map_or(String::new(), |n| format!(", its tangent `{}`", n.text)),
+        ));
+    }
+    Ok(text)
+}
+
 /// `substitute`, over whatever `of` says a word stands for.
 /// Whether a seed's text reads a scalar of the geometry — `k.center.x`, `pin.y`, `base.r` — which
 /// is the one kind of name a seed may keep past the flattener (§6.4): a dotted name, since a

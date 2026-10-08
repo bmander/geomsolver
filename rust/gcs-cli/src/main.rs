@@ -354,6 +354,12 @@ fn check(s: &Source, opts: &Opts) -> (u8, Option<Json>) {
             report_set(&sk, &e.map, "implied", &d.implied);
             report_set(&sk, &e.map, "claim refuted", &d.claims_violated);
             report_set(&sk, &e.map, "claim independent", &d.claims_consuming);
+            // what each energy came to, in its statement's words (#121)
+            for &(id, v) in &d.extrema {
+                if let Some(c) = sk.constraint(id) {
+                    println!("  {}: {}", v.name(), io::describe_with(c, &|r| e.map.name_of(r).cloned()));
+                }
+            }
             // the claims about solids, in the core's own words: what was asked, what was
             // measured, and — for one the faceting cannot decide — that it could not
             for v in &d.solid_claims {

@@ -177,6 +177,12 @@ fn all_constraints(seed: u32) -> Sketch {
         ),
         // an arc's length along itself
         Constraint::new(CKind::ArcLength, vec![e(ae), Arg::Num(7.5)]),
+        // a spline's whole length, polynomial and rational
+        Constraint::new(CKind::SplineLength, vec![e(spe), Arg::Num(30.0)]),
+        Constraint::new(CKind::SplineLength, vec![e(spwe), Arg::Num(30.0)]),
+        // two neighbouring spans equally long: the first pair, and the weighted last
+        Constraint::new(CKind::SplineGauge, vec![e(spe), Arg::Int(3)]),
+        Constraint::new(CKind::SplineGauge, vec![e(spwe), Arg::Int(4)]),
         Constraint::two_line(CKind::EqualLength, le1, le2),
         Constraint::new(CKind::PointOnLine, vec![e(pe), e(le1)]),
         Constraint::point_on_circle(pe, ce1, false),
@@ -310,6 +316,7 @@ fn all_constraints(seed: u32) -> Sketch {
         worded(fx(CKind::Ordinate, vec![e(pc_o), e(s3), e(pc_v)], "2 * fv", 1.0), "v"),
         fx(CKind::PlaneDistance, vec![e(pae), e(pce)], "3 * pd3", 0.5),
         fx(CKind::ArcLength, vec![e(ae)], "3 * al + 1", 7.5),
+        fx(CKind::SplineLength, vec![e(spwe)], "2 * sl + 3", 30.0),
     ];
     // the two intrinsic PointOnCircle constraints the arc brought with it stay in the sketch
     sk.constraints.clear();
@@ -334,8 +341,9 @@ fn every_constraint_jacobian_agrees_with_finite_differences() {
 #[test]
 fn every_constraint_type_has_a_kernel_and_all_are_covered() {
     let sk = all_constraints(0);
+    // a kind whose kernel is built at its operands' width has no static one
     let used: std::collections::BTreeSet<usize> =
-        sk.constraints.iter().map(|c| c.kernel_id()).collect();
+        sk.constraints.iter().filter(|c| !c.kind.built()).map(|c| c.kernel_id()).collect();
     assert_eq!(used.len(), gcs_core::kernels::N_KERNELS);
 }
 
@@ -400,6 +408,10 @@ fn system_blocks_cover_every_constraint_once() {
 fn every_dimension_can_be_written_free() {
     use gcs_core::kernels;
     for k in gcs_core::constraints::ALL_KINDS {
+        // a built kernel's free twin is built beside it, at the same width plus the unknown's
+        if k.built() {
+            continue;
+        }
         assert_eq!(k.has_dimension(), k.free_kernel().is_some(), "{k:?}");
         let Some(free) = k.free_kernel() else { continue };
         let (stated, free) = (kernels::kernel(k.kernel()), kernels::kernel(free));

@@ -1,0 +1,10 @@
+// Presentation of dido.sv. Model geometry is independent of this drawing.
+model m from "dido.sv"
+
+sheet drawing {
+  size A4
+  label "DIDO'S PROBLEM" at (14mm, 18mm)
+  label "A strip 130 long on a shore 100 wide, enclosing the most land: an arc of a circle" at (14mm, 28mm)
+  sketch land(m) at (55mm, 60mm)
+  dimensions in land
+}

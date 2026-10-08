@@ -434,6 +434,57 @@ pub fn min_norm_solve(a: &Mat, b: &[f64], rcond: f64) -> (Vec<f64>, usize) {
     (x.data, rank)
 }
 
+/// The eigenvalues of a symmetric matrix, ascending, by cyclic Jacobi rotations — what the
+/// inertia of an energy's reduced Hessian is read off (`variational::verdict`).  Only the upper
+/// triangle is read; each sweep zeroes every off-diagonal entry in turn, and the sweeps stop when
+/// what is left off the diagonal is rounding next to what is on it.
+pub fn sym_eigenvalues(a: &Mat) -> Vec<f64> {
+    let n = a.rows;
+    let mut m = a.clone();
+    for i in 0..n {
+        for j in 0..i {
+            m.data[i * n + j] = m.data[j * n + i];
+        }
+    }
+    let off = |m: &Mat| -> f64 {
+        (0..n).flat_map(|i| (0..n).filter(move |&j| j != i).map(move |j| (i, j)))
+            .map(|(i, j)| m.data[i * n + j] * m.data[i * n + j]).sum::<f64>()
+    };
+    let scale: f64 = m.data.iter().map(|x| x * x).sum::<f64>();
+    for _ in 0..100 {
+        if off(&m) <= 1e-30 * scale.max(f64::MIN_POSITIVE) {
+            break;
+        }
+        for p in 0..n {
+            for q in p + 1..n {
+                let apq = m.data[p * n + q];
+                if apq == 0.0 {
+                    continue;
+                }
+                let (app, aqq) = (m.data[p * n + p], m.data[q * n + q]);
+                let theta = (aqq - app) / (2.0 * apq);
+                let sign = if theta >= 0.0 { 1.0 } else { -1.0 };
+                let t = sign / (theta.abs() + (theta * theta + 1.0).sqrt());
+                let c = 1.0 / (t * t + 1.0).sqrt();
+                let s = t * c;
+                for k in 0..n {
+                    let (akp, akq) = (m.data[k * n + p], m.data[k * n + q]);
+                    m.data[k * n + p] = c * akp - s * akq;
+                    m.data[k * n + q] = s * akp + c * akq;
+                }
+                for k in 0..n {
+                    let (apk, aqk) = (m.data[p * n + k], m.data[q * n + k]);
+                    m.data[p * n + k] = c * apk - s * aqk;
+                    m.data[q * n + k] = s * apk + c * aqk;
+                }
+            }
+        }
+    }
+    let mut ev: Vec<f64> = (0..n).map(|i| m.data[i * n + i]).collect();
+    ev.sort_by(|x, y| x.total_cmp(y));
+    ev
+}
+
 /* -- SVD (Golub–Reinsch) ---------------------------------------------------- */
 
 fn pythag(a: f64, b: f64) -> f64 {

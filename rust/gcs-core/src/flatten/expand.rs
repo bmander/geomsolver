@@ -101,7 +101,11 @@ impl<'a> Walk<'a> {
             let relation = matches!(st.kind, StmtKind::Relation(_));
             match scope.pass {
                 Pass::Along(_) if !relation => continue,
-                Pass::Made if relation || matches!(st.kind, StmtKind::ClaimOver(_)) => continue,
+                Pass::Made
+                    if relation || matches!(st.kind, StmtKind::ClaimOver(_) | StmtKind::Minimize(_)) =>
+                {
+                    continue
+                }
                 _ => {}
             }
             if self.emitted() >= MAX_FLAT {
@@ -332,6 +336,23 @@ impl<'a> Walk<'a> {
                     let abs = format!("{prefix}{}", set.name.text);
                     self.names.insert(abs.clone());
                     self.set_made(abs, &set.lit, scope, depth, Made { st, path, outer: scope });
+                }
+                // an energy: each integrand with the scope's numbers written in (#121)
+                StmtKind::Minimize(m) => {
+                    let mut m2 = m.clone();
+                    let mut ok = true;
+                    for t in &mut m2.terms {
+                        match super::values::settle_integrand(t, vals, self.units) {
+                            Ok(text) => t.body = text,
+                            Err(e) => {
+                                self.err(Code::E101, t.body_span, e);
+                                ok = false;
+                            }
+                        }
+                    }
+                    if ok {
+                        self.emit(StmtKind::Minimize(m2), st, scope, path);
+                    }
                 }
                 // a claim over an interval: its numbers and its relations' worked out as above
                 StmtKind::ClaimOver(c) => {

@@ -1368,12 +1368,12 @@ test('the registry the binding generates its classes from matches the kernels', 
   assert.equal(reg.types.length, Object.keys(C.CONSTRAINT_TYPES).length);
   for (const t of reg.types) {
     // -1 means the kernel belongs to the curve *definition* rather than to the type: two curve
-    // families read different numbers of coordinates, so they cannot share one.  Every other
-    // type names a static kernel, and must.
+    // families read different numbers of coordinates, so they cannot share one — and a spline's
+    // length is built at its spline's count.  Every other type names a static kernel, and must.
     if (t.kernel === -1) {
-      // exactly the kinds with a curve slot: their kernel is the curve's definition's
+      // exactly the kinds with a curve slot, the spline's length and an energy's stationarity
       const onCurve = C.CONSTRAINT_TYPES[t.name].spec.some(([, k]) => k === 'curve');
-      assert.ok(onCurve, `${t.name} has no static kernel`);
+      assert.ok(onCurve || t.name === 'SplineLength' || t.name === 'Stationary', `${t.name} has no static kernel`);
     } else {
       assert.ok(t.kernel >= 0 && t.kernel < reg.kernels.length, t.name);
     }
@@ -1452,6 +1452,22 @@ test('expressions round-trip through the document and survive a rebuild', () => 
   sk.dispose();
   sk2.dispose();
   sk3.dispose();
+});
+
+test('an energy is told what its stationary curve is', () => {
+  // the hanging rope (#121): its verdict comes from the core, by the statement's constraint, with
+  // whether it is what the statement asked for — what the program panel's wash reads
+  const sk = examples.build('catenary');
+  assert.ok(solve(sk).success);
+  const d = diagnose(sk);
+  assert.equal(d.extrema.length, 1);
+  const [x] = d.extrema;
+  assert.equal(x.verdict, 'minimum');
+  assert.ok(x.asked);
+  assert.ok(io.describe(x.constraint).endsWith(' minimizes integral(p.y over p)'), io.describe(x.constraint));
+  // its rows are its group's, as wide as the curve: the binding asks the core, not a table
+  assert.equal(x.constraint.nResiduals, 28);
+  sk.dispose();
 });
 
 test('a claim reads as one, and a claimed dimension is drawn as a reference dimension', () => {

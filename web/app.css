@@ -115,6 +115,10 @@ label.check { display: inline-flex; align-items: center; gap: 4px; cursor: point
 .claim-proved      { background: rgba(46, 139, 66, 0.13); }
 .claim-refuted     { background: rgba(214, 39, 40, 0.20); }
 .claim-independent { background: rgba(230, 149, 0, 0.17); }
+/* An energy's verdict (#121): the extremum its statement asked for, or a saddle, the other one,
+   or no verdict at all. */
+.extremum-asked    { background: rgba(46, 139, 66, 0.13); }
+.extremum-other    { background: rgba(230, 149, 0, 0.17); }
 
 main { flex: 1; display: flex; min-height: 0; }
 #canvas-wrap { flex: 1; position: relative; min-width: 0; }

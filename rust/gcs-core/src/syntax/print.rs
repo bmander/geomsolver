@@ -199,6 +199,26 @@ fn write_stmt(out: &mut String, k: &StmtKind) {
             out.push_str(&parts.join("; "));
             out.push_str(" }");
         }
+        StmtKind::Minimize(m) => {
+            write_ref(out, &m.curve);
+            out.push_str(if m.maximize { " maximizes " } else { " minimizes " });
+            for (i, t) in m.terms.iter().enumerate() {
+                let c = if i == 0 { t.coef } else { t.coef.abs() };
+                if i > 0 {
+                    out.push_str(if t.coef < 0.0 { " - " } else { " + " });
+                }
+                match c {
+                    1.0 => {}
+                    -1.0 => out.push('-'),
+                    _ => out.push_str(&format!("{} * ", super::num(c))),
+                }
+                let over = match &t.tangent {
+                    Some(tn) => format!("({}, {})", t.point.text, tn.text),
+                    None => t.point.text.clone(),
+                };
+                out.push_str(&format!("integral({} over {over})", t.body));
+            }
+        }
         StmtKind::Block(_) | StmtKind::ClaimOver(_) | StmtKind::Chain(_) | StmtKind::Set(_) => {
             unreachable!("validated before printing")
         }

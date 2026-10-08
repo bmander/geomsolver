@@ -135,6 +135,13 @@ pub struct Sketch {
     /// it and handed to the rest.  The constraints hold the index (`Arg::Param`), so this table
     /// is what a rebuild (`io::graft`) and the document writer read the name back from.
     pub shared: BTreeMap<String, SharedPlace>,
+    /// Each energy's multipliers (#121), by (the group's leading constraint, the row's, the
+    /// residual's index in it) — unknowns `settle_variational` mints for every row an energy's
+    /// curve is held by, and retires when the row goes.  Derived state, never saved.
+    pub multipliers: BTreeMap<(u32, u32, u8), u32>,
+    /// The energies' groups as `settle_variational` last read them — what a stationarity's
+    /// columns, rows and constants are read off.
+    pub variational: Vec<crate::variational::Group>,
     /// Physical dimensions inferred by expression evaluation, in user units (angles in degrees).
     pub free_dimensions: BTreeMap<String, crate::units::Dim>,
     /// The unknowns the source declared, by name — an input nothing binds (`param beta:

@@ -108,6 +108,11 @@ pub struct Diagnosis {
     pub claims_theorem: Vec<u32>,
     pub claims_violated: Vec<u32>,
     pub claims_consuming: Vec<u32>,
+    /// Each `minimizes`'s and `maximizes`'s verdict (#121), by its terms' constraints: minimum,
+    /// maximum, saddle or degenerate, read off the reduced Hessian at the pose diagnosed — told,
+    /// never enforced: a stationary point the solve reached is the drawing's, and the verdict says
+    /// which kind it is.
+    pub extrema: Vec<(u32, crate::variational::Extremum)>,
     /// The claims about **solids**, judged (§9.8).  Kept apart from the three lists above
     /// because the trichotomy does not apply: a solid claim compiles no row, so there is no rank
     /// for it to consume and *consuming* has no meaning.  It holds, it is refuted, or the
@@ -583,7 +588,7 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
             .iter()
             .filter(|c| {
                 let e = c.error(sk);
-                let deg = crate::kernels::kernel(c.kernel()).degree as i32;
+                let deg = c.kernel_in(sk).degree as i32;
                 !e.is_nan() && e <= opts.tol * sk.extent().max(1.0).dpowi(deg)
             })
             .map(|c| c.id)
@@ -766,6 +771,7 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
         claims_theorem,
         claims_violated,
         claims_consuming,
+        extrema: crate::variational::extrema(sk),
         // **judged, at the very end, and never compiled.**  A solid claim reads the solved pose
         // and the terms over it; it enters no system, so nothing above this line can see it and
         // nothing it says can move a number.

@@ -55,6 +55,13 @@ fn all_dimensions() -> Sketch {
     );
     let arc = sk.arc(ac, a_s, a_e, "");
     sk.add(Constraint::new(CKind::ArcLength, vec![Arg::Ent(EntRef::arc(arc)), Arg::Num(10.0 * PI)]));
+    // a spline, measured along the whole of it
+    let ctrl: Vec<usize> = [(260.0, 0.0), (270.0, 30.0), (290.0, -10.0), (300.0, 20.0)]
+        .iter()
+        .map(|&(x, y)| sk.point(x, y, false, ""))
+        .collect();
+    let sp = sk.spline(&ctrl).unwrap();
+    sk.add(Constraint::new(CKind::SplineLength, vec![Arg::Ent(EntRef::spline(sp)), Arg::Num(60.0)]));
     // drawn in a view, for the run and the rise from the free point up to the shoulder along
     // its axes, and the point's two coordinates from its origin
     let f = crate::common::draw_in_front(&mut sk);

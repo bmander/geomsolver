@@ -145,7 +145,17 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
         // the statement's slot for each child, in field order — the same order `sk.children`
         // hands them back in.  A slot may be empty (an implicit child), so for the per-slot
         // kinds the groups are indexed directly; a `List` kind's one group is flattened.
+        // a free curve wrote its ends and minted the rest (#121): its last child is its second slot
+        let free = parent.kind == EntKind::Spline && sk.splines[parent.i()].free;
         let slot_kid = |j: usize| -> Option<&syntax::Kid> {
+            if free {
+                let slots: Vec<&syntax::Kid> = d.children.iter().flatten().collect();
+                return match j {
+                    0 => slots.first().copied(),
+                    _ if j + 1 == kids.len() => slots.get(1).copied(),
+                    _ => None,
+                };
+            }
             if d.children.len() == kids.len() {
                 d.children.get(j).and_then(|g| g.first())
             } else {
@@ -212,6 +222,10 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
         };
         for (j, &k) in kids.iter().enumerate() {
             if seeded(k).iter().all(|&p| held(p)) {
+                continue;
+            }
+            // a free curve's interior is the drawing's to find, and has no slot to be written in
+            if free && j > 0 && j + 1 < kids.len() {
                 continue;
             }
             let seed = match slot_kid(j) {
@@ -991,6 +1005,8 @@ fn mentions(st: &Stmt, names: &std::collections::BTreeSet<String>) -> Vec<String
                 }
             }
         }
+        // an energy goes with the curve it is over (#121)
+        StmtKind::Minimize(m) => look(&m.curve),
         // a set goes with what its body names (§6.21), as a component's call goes with its
         // arguments
         StmtKind::Set(set) => {
