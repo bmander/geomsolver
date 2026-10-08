@@ -14,6 +14,7 @@
 //! Splices run **back to front**, so a span computed before the edit is still valid when its turn
 //! comes.  Nothing here re-parses: the caller applies the returned text and elaborates once.
 
+use crate::lowering::Shape;
 use crate::model::{EntKind, EntRef, Sketch};
 use crate::program::{Elaborated, Made, Site};
 use crate::syntax::{self, num, Decl, Program, Span, Stmt, StmtKind};
@@ -1222,13 +1223,12 @@ pub fn set_dimension(e: &Elaborated, prog: &Program, cid: u32, attr: &str, text:
                     _ => None,
                 }),
         },
-        StmtKind::Set(set) => {
-            crate::flatten::round(&set.lit).map(|(_, _, (text, span, _))| (span, text.clone()))
-        }
+        StmtKind::Set(set) => crate::lowering::shape(&set.lit)
+            .map(|Shape::Circle { radius, .. }| (radius.span, radius.text.to_string())),
         StmtKind::Instance(inst) => prog.resolve_component(&inst.component.text, None).ok()
             .and_then(|k| prog.components[k].set.as_ref())
-            .and_then(crate::flatten::round)
-            .and_then(|(_, _, (formal, _, _))| inst.given(formal.trim()))
+            .and_then(crate::lowering::shape)
+            .and_then(|Shape::Circle { radius, .. }| radius.at(Some(inst)))
             .map(|at| (at, at.slice(prog.text()).to_string())),
         _ => None,
     };

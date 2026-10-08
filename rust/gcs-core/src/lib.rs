@@ -44,6 +44,7 @@ pub mod kernels;
 pub mod library;
 pub mod linalg;
 pub mod locus;
+pub mod lowering;
 pub mod measure;
 pub mod model;
 pub mod modules;

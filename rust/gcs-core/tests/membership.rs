@@ -329,3 +329,46 @@ fn a_set_on_a_set_is_no_circle() {
     assert!(e.sketch.circles.is_empty());
     assert_eq!(kinds(&e).len(), 2);
 }
+
+/// Whether a set is a circle is judged once every membership is in, those another set's use draws
+/// included (`lowering`, #140): `o coincident on`, `on` a set on the front plane, is what draws
+/// `o` there, and so what makes `k` the circle about it — as `o coincident std.front` would.
+#[test]
+fn a_centre_another_sets_use_draws_is_a_circle() {
+    let doc = |o: &str| format!(
+        "unit mm\nuse std\non := {{ p | p coincident std.front }}\no := point\n{o}\n\
+         k := {{ p | p coincident std.front; p distance(25) o }}\n\
+         q := point hint((20, 10)) in std.front\nq coincident k\n");
+    let by_set = read(&doc("o coincident on"));
+    let said = read(&doc("o coincident std.front"));
+    let front = Some(ent(&by_set, "std.front").i());
+    assert_eq!(plane_of(&by_set, "o"), front);
+    assert_eq!(by_set.sketch.circles.len(), 1);
+    assert_eq!(kinds(&by_set), vec![CKind::Radius, CKind::PointOnCircle]);
+    assert_eq!(by_set.sketch.topology_key(), said.sketch.topology_key());
+    let sk = solved(&by_set);
+    let callouts: Vec<String> =
+        gcs_core::callout::layout(&sk, 0.1).into_iter().map(|c| c.text).collect();
+    assert_eq!(callouts, vec!["R25".to_string()]);
+}
+
+/// A refusal is final (`lowering`): `k1`'s centre stands off the front plane, so it is walked as
+/// a set, and `k2`'s centre `q`, put on `k1`, is in space when both are judged — so `k2` is walked
+/// as a set too, though `k1`'s body then draws `q` in front.  Either way is one drawing: it solves.
+#[test]
+fn a_refusal_is_final() {
+    let e = read("unit mm\nuse std\na := point\nfix((0, 3, 0)) a\n\
+        k1 := { p | p coincident std.front; p distance(5) a }\n\
+        q := point\nq coincident k1\n\
+        k2 := { p | p coincident std.front; p distance(3) q }\n\
+        s := point\ns coincident k2\n");
+    assert!(e.sketch.circles.is_empty());
+    let front = Some(ent(&e, "std.front").i());
+    assert_eq!(plane_of(&e, "q"), front);
+    assert_eq!(plane_of(&e, "s"), front);
+    let sk = solved(&e);
+    let at = |n: &str| sk.world_point(ent(&e, n).i());
+    let d = |a: [f64; 3], b: [f64; 3]| dot(sub(a, b), sub(a, b)).sqrt();
+    assert!((d(at("q"), at("a")) - 5.0).abs() < 1e-6);
+    assert!((d(at("s"), at("q")) - 3.0).abs() < 1e-6);
+}

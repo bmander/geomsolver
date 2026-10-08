@@ -162,20 +162,22 @@ fn defined_again(p: &Program, n: &crate::syntax::Name, was: Span) -> Diag {
 }
 
 pub fn elaborate(p: &Program) -> Elaborated {
-    // a set the flattener drew as a circle that is none here is walked again as a set, until
-    // every circle drawn is one (#105): each round walks at least one more set as a set
-    let mut plain = BTreeSet::new();
+    // a set the flattener drew as an element that is none here is walked again as a set, until
+    // every element drawn is one (`lowering`): whether one is can rest on what another set's use
+    // draws, so it is judged after the expansion, and a pass ends at the judgment, before any
+    // constraint is stated.  Each pass refuses at least one more set, and a refusal is final
+    let mut refused = BTreeSet::new();
     loop {
-        match elaborate_in(p, &plain) {
+        match elaborate_in(p, &refused) {
             Ok(e) => return e,
-            Err(more) => plain.extend(more),
+            Err(more) => refused.extend(more),
         }
     }
 }
 
-/// `elaborate`, with the sets in `plain` walked as sets — or `Err` naming the sets drawn as
-/// circles that are none, for another walk.
-fn elaborate_in(p: &Program, plain: &BTreeSet<String>) -> Result<Elaborated, BTreeSet<String>> {
+/// `elaborate`, with the sets in `refused` walked as sets — or `Err` naming the sets drawn as
+/// elements that are none, for another pass.
+fn elaborate_in(p: &Program, refused: &BTreeSet<String>) -> Result<Elaborated, BTreeSet<String>> {
     let mut diags: Vec<Diag> = Vec::new();
     let mut map = SourceMap::default();
     let mut sk = Sketch::new();
@@ -218,7 +220,7 @@ fn elaborate_in(p: &Program, plain: &BTreeSet<String>) -> Result<Elaborated, BTr
 
     // -- phase 1: names, in one pre-pass.  Indices come from declaration order within a kind,
     // which is `primitives()` order, which is the order phase 2 builds in.
-    let mut expansion = crate::flatten::expand_with(p, sk.units, plain);
+    let mut expansion = crate::flatten::expand_with(p, sk.units, refused);
     map.private_names = expansion.private_names.clone();
     // the unknowns the source declared — a solved fold and the expression graph read their
     // seeds and dimensions as they are built
@@ -419,10 +421,13 @@ fn elaborate_in(p: &Program, plain: &BTreeSet<String>) -> Result<Elaborated, BTr
     memberships(&mut sk, &res, &map, &body, &skip, &mut diags);
     // and `q coincident P` of a point in space is its membership of `P`, said another way
     let drawn = planes::incidences(&mut sk, &res, &mut map, &stating, &deferred, &expansion.rings);
-    // and a set drawn as a circle is one only about a point drawn in its plane
-    let unround = planes::unround(&sk, &res, &expansion.set_circles);
-    if !unround.is_empty() {
-        return Err(unround);
+    // and a set drawn as an element is one only where what it reads says so (`lowering`)
+    let ent = |r: &crate::syntax::Ref| {
+        res.lookup(r).and_then(|e| resolve::follow(&sk, e, &r.path).ok())
+    };
+    let more = crate::lowering::refused(&sk, &expansion.lowered, ent, |k| res.of.get(k).copied());
+    if !more.is_empty() {
+        return Err(more);
     }
     entities::places(&mut sk, &deferred, &mut diags);
     // the numbers `fix` holds, once every point has its place and before anything reads one: a
