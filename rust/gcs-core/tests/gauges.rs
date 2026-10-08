@@ -228,3 +228,24 @@ fn a_hold_made_in_the_app_is_written_with_its_numbers() {
     assert!(edit.text.contains("fix(x == 2) a"), "{}", edit.text);
     assert!(!edit.text.contains(") b"), "the hold let go is gone:\n{}", edit.text);
 }
+
+/// A number is held once in one `fix` (issue #112): assembled, the slot took the first argument
+/// naming it, and a second vector, or a member a vector already gave, went nowhere and said
+/// nothing.  Refused at the second, holding nothing.
+#[test]
+fn a_fix_gives_each_number_once() {
+    for (twice, said) in [
+        ("fix((3, 4), (1, 1)) a", "`fix` is given its place twice: a point is one vector"),
+        ("fix((3, 4), x == 1) a", "`x` is given twice"),
+        ("fix(y == 4, (3, 4)) a", "`y` is given twice"),
+        ("fix(x == 3, x == 3) a", "`x` is given twice"),
+        ("fix(r == 5, r == 6) k", "`r` is given twice"),
+    ] {
+        let e = read(&format!("{TRI}{twice}\n"));
+        let m = messages(&e);
+        assert!(m.iter().any(|m| m.starts_with("E040") && m.contains(said)), "{twice}: {m:?}");
+        let held = ["a", "k"].iter().flat_map(|n| e.sketch.own_params(e.map.ent_named(n).unwrap()))
+            .any(|i| e.sketch.params[i as usize].fixed);
+        assert!(!held, "{twice} holds nothing");
+    }
+}
