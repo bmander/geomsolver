@@ -121,11 +121,9 @@ pub enum K {
     DragSeen,
     // a line lying on an axis
     LineOnAxis,
-    // a free curve's gauge: two neighbouring spans equally long (#121)
-    SplineGauge,
 }
 
-pub const N_KERNELS: usize = 85;
+pub const N_KERNELS: usize = 84;
 
 #[derive(Clone, Copy)]
 pub struct Kernel {
@@ -166,7 +164,8 @@ pub enum KernelKey {
     Family { def: usize, fk: u8 },
     Dual(usize),
     SplineLength { n: usize, free: bool },
-    /// An energy's stationarity, by the constraint that leads its group (#121).
+    /// A free curve's length stationary under its energy (`H = 0`, #144), by the energy's first
+    /// statement.
     Stationary(u32),
 }
 
@@ -380,6 +379,21 @@ pub fn envelope_kernel(n_theta: usize, n_const: usize) -> Kernel {
     }
 }
 
+/// A point on a free curve (`extremal.rs`): `(px, py, u, a, b, L)`, the rows of `trace_kernel`
+/// with `C` and its gradient from the shape its energy makes.  One per definition.
+pub fn extremal_kernel(n_theta: usize, n_const: usize) -> Kernel {
+    Kernel {
+        name: "point_on_extremal",
+        n_res: 2,
+        n_par: 3 + n_theta,
+        n_const,
+        degree: 1,
+        res: point_on_body_res::<EXTREMAL>,
+        jac: point_on_body_jac::<EXTREMAL>,
+        const_jac: None,
+    }
+}
+
 /// The view's numbers a point on an extrusion reads before its contact's (`extrusion_kernel`):
 /// its plane's basis `(u, v, o)`.
 pub const EXTRUSION_FRAME: usize = 9;
@@ -414,6 +428,7 @@ pub fn curve_tangent_kernel(n_theta: usize, n_const: usize, body: u8) -> Kernel 
     let (name, res, jac): (&'static str, KernelFn, KernelFn) = match body {
         TRACE => ("trace_tangent_line", curve_tangent_res::<TRACE>, curve_tangent_jac::<TRACE>),
         ENVELOPE => ("envelope_tangent_line", curve_tangent_res::<ENVELOPE>, curve_tangent_jac::<ENVELOPE>),
+        EXTREMAL => ("extremal_tangent_line", curve_tangent_res::<EXTREMAL>, curve_tangent_jac::<EXTREMAL>),
         _ => ("curve_tangent_line", curve_tangent_res::<FORMULA>, curve_tangent_jac::<FORMULA>),
     };
     Kernel { name, n_res: 2, n_par: 1 + n_theta + 4, n_const, degree: 1, res, jac, const_jac: None }
@@ -467,40 +482,6 @@ fn spline_length_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
     }
 }
 
-/// The control points two neighbouring spans of a cubic read between them.
-pub const GAUGE_CTRL: usize = curve::SPAN_N + 1;
-
-/// The constants of one gauge row: the two spans' nodes, over their five control points.
-pub const GAUGE_CONST: usize = 2 * crate::integral::PER_SPAN * crate::integral::NODE_W;
-
-/// Two neighbouring spans of a spline equally long (`CKind::SplineGauge`, #121):
-/// `(c0x, c0y, …, c4x, c4y)`, the five control points they read, over the two spans' quadrature
-/// nodes (`integral::write_nodes`, span 0 and span 1 of a five-point spline of their own) — the
-/// second span's length less the first's.
-fn spline_gauge_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
-    for i in 0..n {
-        let (v, k) = gauge_instance(v, k, i);
-        let nodes = crate::integral::read_nodes(k);
-        r[i] = crate::integral::length(&nodes, v, Some(1)) - crate::integral::length(&nodes, v, Some(0));
-    }
-}
-
-fn spline_gauge_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
-    for i in 0..n {
-        let (v, k) = gauge_instance(v, k, i);
-        let row = &mut j[2 * GAUGE_CTRL * i..2 * GAUGE_CTRL * (i + 1)];
-        row.fill(0.0);
-        let nodes = crate::integral::read_nodes(k);
-        crate::integral::length_grad(&nodes, v, 1.0, Some(1), row);
-        crate::integral::length_grad(&nodes, v, -1.0, Some(0), row);
-    }
-}
-
-fn gauge_instance<'a>(v: &'a [f64], k: &'a [f64], i: usize) -> (&'a [f64], &'a [f64]) {
-    let np = 2 * GAUGE_CTRL;
-    (&v[np * i..np * (i + 1)], &k[GAUGE_CONST * i..GAUGE_CONST * (i + 1)])
-}
-
 /// A circle osculating a curve written in the language: `(u, θ…, cx, cy, r)` — the three rows
 /// of `spline_curvature`, with `C`, `C'`, `C''` and `C'''` from the definition's tapes, or from
 /// its block's Taylor orders (`locus::higher_orders`).  A trace whose block has a row with no
@@ -509,6 +490,7 @@ pub fn curve_curvature_kernel(n_theta: usize, n_const: usize, body: u8, formed: 
     let (name, res, jac): (&'static str, KernelFn, KernelFn) = match body {
         TRACE => ("trace_curvature", curve_curvature_res::<TRACE>, curve_curvature_jac::<TRACE>),
         ENVELOPE => ("envelope_curvature", curve_curvature_res::<ENVELOPE>, curve_curvature_jac::<ENVELOPE>),
+        EXTREMAL => ("extremal_curvature", curve_curvature_res::<EXTREMAL>, curve_curvature_jac::<EXTREMAL>),
         _ => ("curve_curvature", curve_curvature_res::<FORMULA>, curve_curvature_jac::<FORMULA>),
     };
     let (res, jac): (KernelFn, KernelFn) = if formed { (res, jac) } else { (refused_res, refused_jac) };
@@ -1756,6 +1738,8 @@ struct CurveFrame {
 pub const FORMULA: u8 = 0;
 pub const TRACE: u8 = 1;
 pub const ENVELOPE: u8 = 2;
+/// A free curve's: its energy's Lagrangian and its pegs, its shape solved (`extremal.rs`).
+pub const EXTREMAL: u8 = 3;
 
 /// `C` and its derivatives in the parameter, for a residual.  `BODY` says which body the
 /// constants hold — a formula's two tapes, a trace's block, a generated profile's tool and
@@ -1779,20 +1763,20 @@ fn curve_value<const BODY: u8>(k: &[f64], u: f64, theta: &[f64], need: u8) -> [[
 /// A trace's or a generated profile's evaluation, orders to `need`, with the gradient along
 /// the columns when `gradient` is asked (a trace's always has it).
 fn body_val<const BODY: u8>(k: &[f64], u: f64, theta: &[f64], need: u8, gradient: bool) -> crate::locus::Val {
-    if BODY == ENVELOPE {
-        crate::generate::kernel_eval(k, u, theta, need, gradient)
-    } else {
-        crate::locus::kernel_eval_to(k, u, theta, need)
+    match BODY {
+        ENVELOPE => crate::generate::kernel_eval(k, u, theta, need, gradient),
+        EXTREMAL => crate::extremal::kernel_eval(k, u, theta, need),
+        _ => crate::locus::kernel_eval_to(k, u, theta, need),
     }
 }
 
 /// The whole frame, for a Jacobian: orders to `need`, and the gradients of one fewer.
 fn curve_frame<const BODY: u8>(k: &[f64], u: f64, theta: &[f64], need: u8) -> CurveFrame {
     if BODY != FORMULA {
-        let fr = if BODY == ENVELOPE {
-            crate::generate::kernel_frame(k, u, theta, need)
-        } else {
-            crate::locus::kernel_frame(k, u, theta, need)
+        let fr = match BODY {
+            ENVELOPE => crate::generate::kernel_frame(k, u, theta, need),
+            EXTREMAL => crate::extremal::kernel_frame(k, u, theta, need),
+            _ => crate::locus::kernel_frame(k, u, theta, need),
         };
         let v = fr.val;
         return CurveFrame {
@@ -3606,7 +3590,6 @@ pub static KERNELS: [Kernel; N_KERNELS] = [
     Kernel { name: "plane_parallel", n_res: 2, n_par: 12, degree: 0, n_const: 6, res: plane_parallel_res, jac: plane_parallel_jac, const_jac: None },
     Kernel { name: "drag_seen", n_res: 2, n_par: 3, degree: 1, n_const: 9, res: drag_seen_res, jac: drag_seen_jac, const_jac: None },
     Kernel { name: "line_on_axis", n_res: 4, n_par: 12, degree: 1, n_const: 6, res: line_on_axis_res, jac: line_on_axis_jac, const_jac: None },
-    Kernel { name: "spline_gauge", n_res: 1, n_par: 2 * GAUGE_CTRL, degree: 1, n_const: GAUGE_CONST, res: spline_gauge_res, jac: spline_gauge_jac, const_jac: None },
 ];
 
 /// One row of a kernel: residual and Jacobian for a single constraint's local values.  The

@@ -85,6 +85,43 @@ pub enum CurveBody {
     Trace(crate::locus::Locus),
     /// A tool carried by a planar motion, and the envelope it cuts (`generate.rs`).
     Envelope(crate::generate::Generated),
+    /// A free curve (`rope := curve(a, b)`, #144): the solution of its energy's Euler–Lagrange
+    /// equation, from its first end to its second, of its own length (`extremal.rs`).
+    Extremal(Extremal),
+}
+
+/// A free curve's definition: its energy's Lagrangian — `None` until an energy is stated — and how
+/// many pegs its curves pass, which sets its contacts' constant widths.
+#[derive(Clone, Debug)]
+pub struct Extremal {
+    pub lag: Option<crate::extremal::Lagrangian>,
+    pub pegs: usize,
+}
+
+impl Extremal {
+    /// A contact's constants on this definition: the Lagrangian, then the pegs (`extremal::write`).
+    pub fn n_const(&self) -> usize {
+        let tapes = self.lag.as_ref().map_or(0, |l| l.tapes.iter().map(Vec::len).sum());
+        3 + tapes + 1 + 2 * self.pegs
+    }
+}
+
+/// A free curve's definition under `name` (`variational::key_of`): over its two ends, swept in
+/// `u` from 0 to 1, its columns the ends and its length.
+pub fn extremal_def(name: String, lag: Option<crate::extremal::Lagrangian>, pegs: usize) -> CurveDef {
+    CurveDef {
+        name,
+        component: String::new(),
+        port: String::new(),
+        formals: vec![("a".into(), EntKind::Point), ("b".into(), EntKind::Point)],
+        columns: Vec::new(),
+        values: Vec::new(),
+        param: "u".into(),
+        turns: false,
+        vars: ["u", "a.x", "a.y", "b.x", "b.y", "length"].map(String::from).to_vec(),
+        body: CurveBody::Extremal(Extremal { lag, pegs }),
+        pose_of: Vec::new(),
+    }
 }
 
 /// One curve, drawn: a definition, the entities it is written over, and the numbers it was
@@ -119,6 +156,12 @@ pub struct CurveE {
     /// envelope(surface(prism, edge: e), under: m, …)`, §6.15, issue #70).  A point in space is
     /// `coincident` with it by its place in the view (`CKind::PointOnExtrusion`).
     pub extrusion: bool,
+    /// A free curve's length (`curve(a, b)`, #144): the one number it owns, a column of its
+    /// contacts after its ends.  `None` for every other curve.
+    pub length: Option<u32>,
+    /// The held points a free curve passes — its pegs, in its problem — as
+    /// `Sketch::settle_variational` last read them.
+    pub pegs: Vec<u32>,
 }
 
 /// Where a trimmed curve runs: along curve `of`, from point `from` to point `to`, each held on
@@ -188,7 +231,57 @@ impl Sketch {
                 (v.x, v.y)
             }),
             CurveBody::Envelope(g) => crate::generate::point(&g.flat, &x, self.curve_home(i)),
+            CurveBody::Extremal(_) => match self.curve_shape(i) {
+                Some(sh) => {
+                    let lag = self.extremal_lagrangian(i).expect("a shape has a Lagrangian");
+                    crate::extremal::shoot::at(lag, &sh, u).map_or((f64::NAN, f64::NAN), |a| (a.z[0], a.z[1]))
+                }
+                None => (f64::NAN, f64::NAN),
+            },
         }
+    }
+
+    /// Whether curve `i` is a free curve (`curve(a, b)`).
+    pub fn curve_extremal(&self, i: usize) -> bool {
+        matches!(self.curve_defs[self.curves[i].def as usize].body, CurveBody::Extremal(_))
+    }
+
+    /// A free curve's energy's Lagrangian, once one is stated.
+    pub fn extremal_lagrangian(&self, i: usize) -> Option<&crate::extremal::Lagrangian> {
+        match &self.curve_defs[self.curves[i].def as usize].body {
+            CurveBody::Extremal(x) => x.lag.as_ref(),
+            _ => None,
+        }
+    }
+
+    /// Where a free curve's pegs are.
+    fn extremal_pegs(&self, i: usize) -> Vec<[f64; 2]> {
+        self.curves[i]
+            .pegs
+            .iter()
+            .map(|&p| {
+                let [x, y] = self.point_params(p as usize);
+                [self.params[x as usize].value, self.params[y as usize].value]
+            })
+            .collect()
+    }
+
+    /// A free curve's problem as its contacts' constants carry it (`extremal::write`).
+    pub fn extremal_consts(&self, i: usize) -> Option<Vec<f64>> {
+        let lag = self.extremal_lagrangian(i)?;
+        let mut k = Vec::new();
+        crate::extremal::write(lag, &self.extremal_pegs(i), &mut k);
+        Some(k)
+    }
+
+    /// A free curve's shape where its ends and length are now, through its pegs — the one solve
+    /// its contacts and its drawing share (`extremal::shape_for`).
+    pub fn curve_shape(&self, i: usize) -> Option<crate::extremal::Shape> {
+        let lag = self.extremal_lagrangian(i)?;
+        let k = self.extremal_consts(i)?;
+        let v = self.curve_vars(i, 0.0);
+        let ends = crate::extremal::Ends { a: [v[1], v[2]], b: [v[3], v[4]], len: v[5] };
+        crate::extremal::shape_for(&k, lag, &self.extremal_pegs(i), &ends)
     }
 
     /// The interval a curve is drawn over: the one written, or for a trim the parameters of its
@@ -324,10 +417,16 @@ impl Sketch {
         }
         let (a, b) = self.curve_domain(i);
         // what the polyline is a function of: the curve's variables at the interval's start
-        // (the parameter first, then every coordinate it reads), the interval, the anchor and
-        // the anchor pose — the same reading `curve_point` and `sweep` take
+        // (the parameter first, then every coordinate it reads), the interval, the anchor, its
+        // definition, a free curve's pegs and the anchor pose — the same reading `curve_point`
+        // and `sweep` take
         let mut key = self.curve_vars(i, a);
-        key.extend([b, self.curve_home(i)]);
+        // and the definition, which a free curve's energy settles after it is built
+        key.extend([b, self.curve_home(i), self.curves[i].def as f64]);
+        key.extend(self.curves[i].pegs.iter().flat_map(|&p| {
+            let (x, y) = self.point_xy(p as usize);
+            [x, y]
+        }));
         key.extend(self.curve_pose(i).unwrap_or_default());
         if let Some((k, poly)) = self.polyline_cache.borrow().get(&i) {
             if *k == key {
@@ -395,6 +494,17 @@ impl Sketch {
             }),
             CurveBody::Envelope(g) => {
                 crate::generate::sweep(&g.flat, &self.curve_vars(i, a), self.curve_home(i), a, b, n)
+            }
+            CurveBody::Extremal(_) => {
+                let (Some(lag), Some(sh)) = (self.extremal_lagrangian(i), self.curve_shape(i)) else {
+                    return Vec::new();
+                };
+                (0..=n)
+                    .map(|k| {
+                        let u = a + (b - a) * k as f64 / n as f64;
+                        crate::extremal::shoot::at(lag, &sh, u).map_or((f64::NAN, f64::NAN), |p| (p.z[0], p.z[1]))
+                    })
+                    .collect()
             }
         }
     }

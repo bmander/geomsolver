@@ -149,7 +149,7 @@ fn every_kernel_a_body_states_has_a_form() {
         (0..KERNELS.len()).filter(|&k| !has_form(k)).map(|k| KERNELS[k].name).collect();
     assert_eq!(
         formless,
-        ["drag", "drag_seen", "spline_gauge"]
+        ["drag", "drag_seen"]
     );
 }
 

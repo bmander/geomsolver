@@ -180,9 +180,6 @@ fn all_constraints(seed: u32) -> Sketch {
         // a spline's whole length, polynomial and rational
         Constraint::new(CKind::SplineLength, vec![e(spe), Arg::Num(30.0)]),
         Constraint::new(CKind::SplineLength, vec![e(spwe), Arg::Num(30.0)]),
-        // two neighbouring spans equally long: the first pair, and the weighted last
-        Constraint::new(CKind::SplineGauge, vec![e(spe), Arg::Int(3)]),
-        Constraint::new(CKind::SplineGauge, vec![e(spwe), Arg::Int(4)]),
         Constraint::two_line(CKind::EqualLength, le1, le2),
         Constraint::new(CKind::PointOnLine, vec![e(pe), e(le1)]),
         Constraint::point_on_circle(pe, ce1, false),

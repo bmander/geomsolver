@@ -51,33 +51,54 @@ fn ends_of(theta: &[f64]) -> Option<Ends> {
 /* -- the memo ----------------------------------------------------------------------------- */
 
 thread_local! {
-    /// The last shape each contact's constants were solved to, by where they live (as
-    /// `locus`'s poses are): asked again at the same ends it is the answer, at neighbouring ones
-    /// where the next solve starts.
-    static SEEN: std::cell::RefCell<std::collections::BTreeMap<(usize, usize), Shape>> =
+    /// The last shape each curve's problem was solved to, by the problem's constants — what a
+    /// contact, the transversality row and the drawing all read, so a curve is solved once
+    /// for all of them.  Asked again at the same ends it is the answer, at neighbouring ones where
+    /// the next solve starts.  By content, not by where the constants live: a recompile keeps
+    /// every curve warm, and a different curve can never read another's.
+    static SEEN: std::cell::RefCell<std::collections::BTreeMap<u64, Vec<(Vec<f64>, Shape)>>> =
         std::cell::RefCell::new(std::collections::BTreeMap::new());
 }
 
-const SEEN_MAX: usize = 4096;
+const SEEN_MAX: usize = 1024;
 
-/// Forget every remembered shape — `System::new`, where constants move.
+/// Forget every remembered shape.
 pub fn forget() {
     SEEN.with(|s| s.borrow_mut().clear());
 }
 
-/// The shape a contact's constants and outer columns come to, warm from the last.
-fn shape_for(k: &[f64], lag: &Lagrangian, pegs: &[[f64; 2]], ends: &Ends) -> Option<Shape> {
-    let key = crate::locus::key_of(k);
-    let prev = SEEN.with(|s| s.borrow().get(&key).cloned());
+/// An FNV-1a hash of the constants' bits.
+fn digest(k: &[f64]) -> u64 {
+    k.iter().fold(0xcbf2_9ce4_8422_2325u64, |h, v| (h ^ v.to_bits()).wrapping_mul(0x0100_0000_01b3))
+}
+
+/// The shape a problem's constants and outer columns come to, warm from the last.
+pub fn shape_for(k: &[f64], lag: &Lagrangian, pegs: &[[f64; 2]], ends: &Ends) -> Option<Shape> {
+    let key = digest(k);
+    let prev = SEEN.with(|s| {
+        s.borrow().get(&key).and_then(|v| v.iter().find(|(c, _)| c == k).map(|(_, sh)| sh.clone()))
+    });
     let sh = shoot::solve(lag, ends, pegs, prev.as_ref())?;
     SEEN.with(|s| {
         let mut s = s.borrow_mut();
         if s.len() >= SEEN_MAX {
             s.clear();
         }
-        s.insert(key, sh.clone());
+        let v = s.entry(key).or_default();
+        match v.iter_mut().find(|(c, _)| c == k) {
+            Some(e) => e.1 = sh.clone(),
+            None => v.push((k.to_vec(), sh.clone())),
+        }
     });
     Some(sh)
+}
+
+/// A curve's shape from its constants and outer columns, as every reader asks it.
+fn shape_of(k: &[f64], theta: &[f64]) -> Option<(Lagrangian, Shape)> {
+    let (lag, pegs) = read(k)?;
+    let ends = ends_of(theta)?;
+    let sh = shape_for(k, &lag, &pegs, &ends)?;
+    Some((lag, sh))
 }
 
 /* -- reading a shape ---------------------------------------------------------------------- */
@@ -123,9 +144,7 @@ fn third(lag: &Lagrangian, sh: &Shape, u: f64) -> Option<[f64; 2]> {
 /// shape cannot be had.
 pub fn kernel_eval(k: &[f64], u: f64, theta: &[f64], need: u8) -> Val {
     let mut v = Val::default();
-    let Some((lag, pegs)) = read(k) else { return v };
-    let Some(ends) = ends_of(theta) else { return v };
-    let Some(sh) = shape_for(k, &lag, &pegs, &ends) else { return v };
+    let Some((lag, sh)) = shape_of(k, theta) else { return v };
     let Some(r) = read_at(&lag, &sh, u) else { return v };
     v.x = r.c[0][0];
     v.y = r.c[0][1];
@@ -152,13 +171,11 @@ pub fn kernel_frame(k: &[f64], u: f64, theta: &[f64], need: u8) -> Frame {
     let val = kernel_eval(k, u, theta, need);
     let mut d1 = [[0.0f64; MAX_VARS]; 2];
     let mut d2 = [[f64::NAN; MAX_VARS]; 2];
-    let fr = |val| Frame { val, d1, d2 };
     if !val.ok {
-        return fr(val);
+        return Frame { val, d1, d2 };
     }
-    let (Some((lag, pegs)), Some(ends)) = (read(k), ends_of(theta)) else { return fr(val) };
-    let Some(sh) = shape_for(k, &lag, &pegs, &ends) else { return fr(val) };
-    let Some(r) = read_at(&lag, &sh, u) else { return fr(val) };
+    let Some((lag, sh)) = shape_of(k, theta) else { return Frame { val, d1, d2 } };
+    let Some(r) = read_at(&lag, &sh, u) else { return Frame { val, d1, d2 } };
     for j in 0..6 {
         d1[0][j] = r.g[1][0][j];
         d1[1][j] = r.g[1][1][j];
@@ -166,13 +183,13 @@ pub fn kernel_frame(k: &[f64], u: f64, theta: &[f64], need: u8) -> Frame {
     if need >= 3 {
         d2[0][0] = val.d3[0];
         d2[1][0] = val.d3[1];
-        let o = ends.outer();
+        let o = sh.ends.outer();
         for c in 0..5 {
-            let h = 1e-6 * ends.len.abs().max(1.0);
+            let h = 1e-6 * sh.ends.len.abs().max(1.0);
             let at = |sign: f64| -> Option<[f64; 2]> {
                 let mut oo = o;
                 oo[c] += sign * h;
-                let s = shoot::solve(&lag, &Ends::of(&oo), &pegs, Some(&sh))?;
+                let s = shoot::solve(&lag, &Ends::of(&oo), &sh.pegs, Some(&sh))?;
                 Some(read_at(&lag, &s, u)?.c[2])
             };
             if let (Some(p), Some(m)) = (at(1.0), at(-1.0)) {
@@ -182,6 +199,37 @@ pub fn kernel_frame(k: &[f64], u: f64, theta: &[f64], need: u8) -> Frame {
         }
     }
     Frame { val, d1, d2 }
+}
+
+/* -- the length's stationarity ------------------------------------------------------------ */
+
+/// The transversality row of a curve whose length nothing holds (`variational::kernel`): `H` at
+/// its end, over `[a, b, L]` — the energy's rate in the length, zero where the length is where
+/// the energy is stationary in it.
+pub fn transversal_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    let nk = k.len() / n.max(1);
+    for i in 0..n {
+        r[i] = match shape_of(&k[nk * i..nk * (i + 1)], &v[5 * i..5 * i + 5]) {
+            Some((lag, sh)) => shoot::at(&lag, &sh, 1.0).map_or(f64::NAN, |a| a.point.h),
+            None => f64::NAN,
+        };
+    }
+}
+
+/// Its gradient: `∂H/∂z · dz/d(a, b, L)` at the end, `H_θ` being zero.
+pub fn transversal_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    let nk = k.len() / n.max(1);
+    for i in 0..n {
+        let row = &mut j[5 * i..5 * i + 5];
+        row.fill(f64::NAN);
+        let Some((lag, sh)) = shape_of(&k[nk * i..nk * (i + 1)], &v[5 * i..5 * i + 5]) else { continue };
+        let Some(a) = shoot::at(&lag, &sh, 1.0) else { continue };
+        let (sn, cs) = a.theta.dsin_cos();
+        let hz = [a.point.d.x, a.point.d.y, cs, sn];
+        for c in 0..5 {
+            row[c] = (0..4).map(|q| hz[q] * a.dz[q * 6 + 1 + c]).sum();
+        }
+    }
 }
 
 /// The curve sampled at `n + 1` even steps of its parameter, for drawing and picking.

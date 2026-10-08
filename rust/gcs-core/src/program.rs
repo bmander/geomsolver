@@ -379,15 +379,6 @@ fn elaborate_in(p: &Program, plain: &BTreeSet<String>) -> Result<Elaborated, BTr
                         map.bind(&name, k, d.name.named());
                         map.record(st, Made::Ent(k));
                     }
-                    // a free curve's interior is the statement's too, though nameless (#121):
-                    // made by it, so no gesture reads it as geometry the source has yet to say
-                    if e.kind == EntKind::Spline && sk.splines[e.i()].free {
-                        let ctrl = sk.splines[e.i()].ctrl.clone();
-                        for &c in &ctrl[1..ctrl.len() - 1] {
-                            built.insert(EntRef::point(c as usize), true);
-                            map.record(st, Made::Ent(EntRef::point(c as usize)));
-                        }
-                    }
                 }
                 None => {
                     // a declaration that could not be built leaves its name unbound, so every
@@ -542,11 +533,9 @@ fn elaborate_in(p: &Program, plain: &BTreeSet<String>) -> Result<Elaborated, BTr
     // `evaluate` allocates, so they come after it — the one pass of the elaboration that is *below*
     // the expressions
     let post_expr = expr::evaluate(&mut sk);
-    // every energy's group, gauge and multipliers, once every row it may be held by is stated —
-    // a length an unknown sets included (#121)
+    // every free curve's energy, once every row it may be held by is stated — a length an
+    // unknown sets included (#121, #144)
     variational::settle(&mut sk, &map, &mut diags);
-    // and a free curve's interior where its energy hangs it
-    crate::variational::seed_free(&mut sk);
     solid_claims(&mut sk, &res, &mut map, &stating, &skip, &mut diags);
     for item in post_expr {
         let span = map.site_of_constraint(item.id).map(|s| s.span).unwrap_or_default();

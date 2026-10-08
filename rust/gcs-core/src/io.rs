@@ -303,10 +303,6 @@ pub fn to_json(sk: &Sketch) -> Json {
             if let Some(w) = &s.weights {
                 o.set("weights", Json::Arr(w.iter().map(|&x| Json::Num(x)).collect()));
             }
-            // and a free curve says so, its interior the drawing's (#121)
-            if s.free {
-                o.set("free", Json::Bool(true));
-            }
             o
         })
         .collect();
@@ -537,7 +533,6 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
             )
         })?;
         sk.splines[si].class = read_class(s);
-        sk.splines[si].free = matches!(s.get("free"), Some(Json::Bool(true)));
     }
     // an ellipse is a library component now (`use std`, `curve e = Ellipse(f, a: …, b: …).p
     // over u in (0, 360)` — issue #47, item 4) and a sketch document cannot say so, so one that
@@ -717,7 +712,7 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
     sk.settle_turns();
     // a chart a document did not gauge is gauged where its point stands (§6.21)
     sk.choose_charts();
-    // an energy's gauge rows and multipliers, which a document never carries (#121)
+    // each free curve's energy, read again from the statements (#121, #144)
     sk.settle_variational();
     Ok(sk)
 }
@@ -863,7 +858,6 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         let class = sp.class.clone();
         let Some(ni) = dst.spline_weighted(&ctrl, Some(knots), weights) else { continue };
         dst.splines[ni].class = class;
-        dst.splines[ni].free = sp.free;
         spline_map[i] = Some(ni);
         made.push(EntRef::spline(ni));
     }
@@ -972,6 +966,12 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
                     .map(|r| (r, j))
             })
             .collect();
+        // a free curve's length is its own number, and comes as a circle's radius does; its
+        // pegs are the energy's to settle again
+        let length = cv.length.map(|l| {
+            let p = &src.params[l as usize];
+            dst.param(p.value, p.fixed, &p.name) as u32
+        });
         dst.curves.push(crate::model::CurveE {
             def: at as u32,
             args,
@@ -983,6 +983,8 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             class: cv.class.clone(),
             trim,
             extrusion: cv.extrusion,
+            length,
+            pegs: Vec::new(),
         });
         curve_map[i] = Some(dst.curves.len() - 1);
         made.push(EntRef::new(EntKind::Curve, dst.curves.len() - 1));
@@ -1415,7 +1417,7 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         }
     }
     dst.settle_turns();
-    // an energy's gauge rows and multipliers are minted, not copied (#121)
+    // each free curve's energy, its pegs and its definition, read again from what came (#144)
     dst.settle_variational();
     made
 }

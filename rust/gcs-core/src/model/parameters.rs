@@ -128,8 +128,9 @@ impl Sketch {
             // where a plane stands is three lengths; which way it faces is its axes'
             EntKind::Plane => self.planes[e.i()].o.to_vec(),
             // a line and a spline are their points, and a curve is its expressions: no number
-            // of their own to convert
-            EntKind::Line | EntKind::Spline | EntKind::Curve => Vec::new(),
+            // of their own to convert — but a free curve's length
+            EntKind::Line | EntKind::Spline => Vec::new(),
+            EntKind::Curve => self.curves[e.i()].length.into_iter().collect(),
         }
     }
 
@@ -263,6 +264,8 @@ impl Sketch {
                 }
                 // the numbers left unknown, once the expression graph has allocated them
                 v.extend(cv.unknowns.iter().filter_map(|n| self.free_vars.get(n).copied()));
+                // and a free curve's length, its own
+                v.extend(cv.length);
                 v
             }
         }

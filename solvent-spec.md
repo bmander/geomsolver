@@ -1,6 +1,15 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.54 — October 2026**
+**Specification, Draft 0.55 — October 2026**
+
+**[0.55] A free curve is the solution of its energy.** `rope := curve(a, b)` is a curve from `a`
+to `b` whose shape its energy states (§6.1, §9.10): the solution of that energy's Euler–Lagrange
+equation, exact, however sharply it bends — not a spline bent towards it, so it has no control
+points to count, space or gauge. It owns one number, its length; with none stated, the length too
+is where the energy is stationary. A held point the curve passes is a **peg**, and the curve
+drapes over it in a corner. The verdict is the classical one: Legendre's condition, and Jacobi's
+(no point conjugate to the start before the end). `spline(a, b)` is no longer a free curve, and an
+energy over a spline whose control points are written is refused.
 
 **[0.54] Membership is one rule.** A plane is a set of points, and `in` is membership of it:
 `p coincident P`, said of a point standing in space, draws the point in `P` as `p := point in P`
@@ -15,9 +24,9 @@ by its formula: `rope minimizes integral(p.y over p)` says the curve has the sha
 its height, integrated along its length, least — with `length(150mm) rope` beside it, a hanging
 rope, the catenary, though nothing says so (§9.10). An energy is a sum of integrals of the point
 `p` running along the curve and its unit tangent `t`, weighted by arc length; `maximizes` turns it
-over. Like every statement, it says what the curve is, not what to do. `spline(a, b)` is a
-**free curve**: its ends written, its shape the drawing's to find (§6.1). `length(L) s` holds a
-spline's whole length. The diagnosis says what each stationary curve is — a minimum, a maximum, a
+over. Like every statement, it says what the curve is, not what to do. **[0.55]** `curve(a, b)` is
+a **free curve**: its ends written, its shape the drawing's to find (§6.1). `length(L) s` holds a
+spline's whole length, and a free curve's. The diagnosis says what each stationary curve is — a minimum, a maximum, a
 saddle — and `std.hangs(L) k` is a hanging rope in one word.
 
 **[0.52] Two gauges that disagree are refused.** A `fix` adds no equation, so two holding one
@@ -661,7 +670,7 @@ Where an unnamed and unseeded coordinate *starts* is not the language's business
 
 A **list** child slot — a spline's control polygon, a curve's arguments — has no arity to conjure children from, so a bare `s := spline` remains **E103**.
 
-**[0.53] A free curve** is a spline written with its two ends and nothing between, `rope := spline(a, b)`: the curve runs from `a` to `b` and its shape is the drawing's to find — what an energy over it (§9.10) settles. Its interior has no name and no seed in the source, and is never written back; how finely the implementation discretises it is its own business (§15), as where an unseeded point starts is, so long as the answer converges to the curve the statements describe. A two-point list with `knots` or `weights` written is a control polygon like any other, and refused as one too short.
+**[0.53] A free curve** **[0.55]** is written with the two points it runs between, `rope := curve(a, b)`: the curve runs from `a` to `b` and its shape is the drawing's to find — what an energy over it (§9.10) settles, the solution of that energy's Euler–Lagrange equation. It has no control points: how the implementation solves the equation is its own business (§15), so long as the answer is the curve the statements describe to the accuracy it reports. It owns one number, its **length**, held by `length(L) rope` or, with none stated, where the energy is stationary in it. It is drawn in the plane its ends are in (**E060** for ends in space). A free curve no energy is stated over has no shape (**E040**). **[0.55]** `spline(a, b)` is a spline of two control points, refused as too short.
 
 ### 6.2 Constructor declarations
 
@@ -2007,15 +2016,15 @@ rope minimizes 2 * integral(p.y over p) - integral(p.x over p)
 
 `k minimizes E` is a statement about the curve `k`, as `horizontal l` is about a line: the word is indicative, never an instruction. Its **energy** `E` is a sum of terms `c * integral(EXPR over p)`, each a constant `c` (1 where none is written) times an integral along `k` of `EXPR`, read at the point `p` running along it — and, written `over (p, t)`, at its unit tangent `t` there — **weighted by arc length**. `EXPR` reads `p.x`, `p.y`, `t.x`, `t.y` (the point's coordinates in the view `k` is drawn in) and numbers in scope; any other name is **E101**. Where the document names a unit the point is a length and `EXPR` is dimension-checked: a whole power of length, every term of one energy the same (**E103**).
 
-`k minimizes E` states that **`k` has the shape that makes `E` stationary** among every shape the rest of the drawing allows it: at a regular point, the conditions of Lagrange — the gradient of `E` in the curve's unknowns is a combination of the gradients of the relations holding the curve, each with a multiplier the implementation solves for. `k maximizes E` is `k minimizes -E`. A curve is varied only in its **interior**: its ends are what it hangs between, so they keep the freedom they have, and an energy closes exactly the freedoms of the shape it varies (§16.3). Several energy statements over one curve, or over curves one relation joins, are **one energy**, their terms added: order-free (P2), as a body's operations are. What is solved for is stationarity; that the stationary shape is the extremum the word names is **judged**, as a claim is (§9.7, below).
+`k minimizes E` states that **`k` has the shape that makes `E` stationary** among every shape from its start to its end of its length: **[0.55]** the solution of `E`'s Euler–Lagrange equation — in arc length `s`, with the tangent at angle `θ`, the Hamiltonian `H = f(p, t) + λ·t` stationary in the direction, `p' = t`, `λ' = −f_p`. `k maximizes E` is `k minimizes -E`. The curve's **ends** are what it hangs between, so they keep the freedom they have: the curve is a function of its ends and its length, and adds no freedom of its own to the drawing (§16.3). Several energy statements over one curve are **one energy**, their terms added: order-free (P2), as a body's operations are. What is solved for is stationarity; that the stationary shape is the extremum the word names is **judged**, as a claim is (§9.7, below).
 
-- **What may be varied.** An energy is over a spline — a free one (§6.1) or one whose control points are written — and over the unknowns the relations holding it own (a contact's place along it): the configuration is the curve and where it touches.
-- **A contact presses; a drawing relation yields.** A relation reading a varied coordinate and other geometry that is still free is satisfied by that geometry and holds the energy to nothing: a line drawn tangent to a hanging rope moves onto it. One whose every other operand is held is a constraint of the minimisation, with its multiplier: the rope is pushed to touch a held line. A relation of either kind whose second derivative the implementation cannot take is **E040** where it would press, said at that relation.
-- **The discretisation's gauge.** A spline's control points can slide along it without moving its shape, so an energy of the shape alone does not decide them; an implementation MUST fix that freedom itself (the reference holds neighbouring spans equally long), never asking the document to.
-- **The solution set is the stationary points (P3).** A stationary curve may be a minimum, a maximum or a saddle, and the seed decides which the solve reaches. The diagnosis MUST say which — from the inertia of the Lagrangian's Hessian on the motions the curve's relations leave it — and SHOULD say it where the statement is written, as a claim's verdict is (§9.7): `minimum`, `maximum`, `saddle`, or `degenerate` where the second order cannot tell. A `maximizes` answered `maximum` found what it asked for. A non-minimum is reported, not refused.
+- **What it is over.** **[0.55]** An energy is over a free curve (§6.1); over anything else it is **E040**.
+- **Its length.** Held by `length(L) k`, the length is that. With none, it is where `E` is stationary in it too — transversality, `H = 0` at the end: two points and an energy with no length is a geodesic of the weight `f`.
+- **A peg presses; a drawing relation yields.** A relation between the curve and other geometry that is still free is satisfied by that geometry: a line drawn tangent to a hanging rope moves onto it. **[0.55]** A held point the curve is stated to pass (`peg coincident rope`, `peg` held) is a **peg**: the curve's problem passes it, its costate free to jump there — a point force — and its direction with it: the rope drapes over the peg in a corner, the place along the rope where it does solved too. Any other relation whose every operand but the curve is held is **E040**: a held line pressed against the curve meets it at a corner, so no smooth tangency to it is stationary.
+- **The solution set is the stationary points (P3).** A stationary curve may be a minimum, a maximum or a saddle, and the seed decides which the solve reaches. The diagnosis MUST say which — **[0.55]** by Legendre's condition (the Hamiltonian's sign in the direction along the curve), Jacobi's (no point conjugate to an arc's start before its end), and, with pegs or a free length, the energy's Hessian in where they are — and SHOULD say it where the statement is written, as a claim's verdict is (§9.7): `minimum`, `maximum`, `saddle`, `degenerate` where the second order cannot tell, or `unsolved` where no stationary shape was found. A `maximizes` answered `maximum` found what it asked for. A non-minimum is reported, not refused.
 - A relation word's body may state an energy over its operand: `std.hangs(L) k := { length(L) k; k minimizes integral(p.y over p) }`.
 
-*Open, non-normative:* an integral as a constraint of its own (`integral(…) == A`), an integrand reading other geometry, a natural end condition (an end free to slide, varied with the curve), and a discretisation refined until the answer converges within a stated tolerance and reports its error.
+*Open, non-normative:* an integral as a constraint of its own (`integral(…) == A`), an integrand reading other geometry or the curvature (the elastica, #136), a natural end condition (an end free to slide, varied with the curve), a held line touched at a point the curve chooses (a corner on the line), and a free curve in space.
 
 ---
 

@@ -426,9 +426,11 @@ pub fn build_kernel(sk: &Sketch, key: KernelKey) -> Kernel {
                 crate::model::CurveBody::Envelope(g) => {
                     (2 + d.values.len() + g.flat.len(), kernels::ENVELOPE, true)
                 }
+                crate::model::CurveBody::Extremal(x) => (x.n_const(), kernels::EXTREMAL, true),
             };
             match (FamilyKernel::ALL[fk as usize], body) {
                 (FamilyKernel::Contact, kernels::TRACE) => kernels::trace_kernel(n_theta, n_const),
+                (FamilyKernel::Contact, kernels::EXTREMAL) => kernels::extremal_kernel(n_theta, n_const),
                 (FamilyKernel::Contact, kernels::ENVELOPE) => kernels::envelope_kernel(n_theta, n_const),
                 (FamilyKernel::Contact, _) => kernels::curve_kernel(n_theta, n_const),
                 (FamilyKernel::Tangent, _) => kernels::curve_tangent_kernel(n_theta, n_const, body),
@@ -483,6 +485,12 @@ impl System {
                     .entry(e)
                     .or_insert_with(|| crate::constraints::contact_speed(sk, e));
                 scale_of.insert(t, v);
+            }
+            // a free curve runs over [0, 1] at its length's speed
+            if let (Some(_), Some(e)) = (c.kind.family_kernel(), c.curve_of()) {
+                if let (Some(l), Some(&t)) = (sk.curves[e.i()].length, c.aux_params().first()) {
+                    scale_of.insert(t, sk.params[l as usize].value.abs().max(1e-9));
+                }
             }
         }
         let col_scale: Vec<f64> = free

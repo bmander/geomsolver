@@ -88,8 +88,7 @@ macro_rules! undrawn {
             | CKind::Level
             | CKind::Project
             | CKind::Lift
-            // a free curve's gauge and an energy state no number on the figure
-            | CKind::SplineGauge
+            // an energy states no number on the figure
             | CKind::Stationary
             // a relation in space states a number of no one view, so it has no figure on one
             | CKind::Coincident3
@@ -500,20 +499,25 @@ pub fn frame(sk: &Sketch, c: &Constraint) -> Option<Frame> {
             let e = c.args[0].ent();
             Some(Frame::Polar { o: sk.point_xy(sk.round_center(e)), th0: sweep_start(sk, e) })
         }
-        // along the spline where its parameter is halfway, and off it to its left
-        CKind::SplineLength => {
-            let (o, d) = spline_middle(sk, c.args[0].ent().i())?;
+        // along the spline (or free curve) where its parameter is halfway, and off it to its left
+        CKind::SplineLength | CKind::CurveLength => {
+            let (o, d) = curve_middle(sk, c.args[0].ent())?;
             Some(Frame::Linear { o, d, n: perp(d) })
         }
         undrawn!() => None,
     }
 }
 
-/// Where a spline is halfway along its parameter, and its unit tangent there: what its length's
-/// callout hangs off.
-fn spline_middle(sk: &Sketch, i: usize) -> Option<(P, P)> {
-    let (t0, t1) = crate::curve::domain(sk, i);
-    let f = crate::curve::eval(sk, i, 0.5 * (t0 + t1));
+/// Where a spline or a free curve is halfway along its parameter, and its unit tangent there: what
+/// its length's callout hangs off.
+fn curve_middle(sk: &Sketch, e: EntRef) -> Option<(P, P)> {
+    if e.kind == EntKind::Curve {
+        // a free curve's middle is half its length along it, its tangent the chord either side
+        let (a, b) = (sk.curve_point(e.i(), 0.499), sk.curve_point(e.i(), 0.501));
+        return Some((sk.curve_point(e.i(), 0.5), unit(sub(b, a))?));
+    }
+    let (t0, t1) = crate::curve::domain(sk, e.i());
+    let f = crate::curve::eval(sk, e.i(), 0.5 * (t0 + t1));
     Some((f.p, unit(f.d1)?))
 }
 
@@ -812,7 +816,7 @@ impl Pen<'_> {
             CKind::AnnularDistance => self.annular(c),
             CKind::Angle => self.angle(c),
             CKind::ArcLength => self.arc_length(c),
-            CKind::SplineLength => self.spline_length(c),
+            CKind::SplineLength | CKind::CurveLength => self.spline_length(c),
             undrawn!() => None,
         }
     }
@@ -1207,7 +1211,7 @@ impl Pen<'_> {
     /// it is the place to measure.
     fn spline_length(&mut self, c: &Constraint) -> Option<Callout> {
         let text = claimed(c, prefixed("⌒", dimension_text(c)?));
-        let (o, d) = spline_middle(self.sk, c.args[0].ent().i())?;
+        let (o, d) = curve_middle(self.sk, c.args[0].ent())?;
         let n = perp(d);
         let place = self.placed(c).unwrap_or((0.0, self.px(LEADER_PX)));
         let mut k = Callout::new(c.id, CalloutKind::Radial, &text);

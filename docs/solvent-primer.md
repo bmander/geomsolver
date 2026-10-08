@@ -194,10 +194,10 @@ dimensions. Name a point yourself when several statements mention it. The except
 its control points must be declared, named points (`s := spline(k0, k1, k2, k3)`); `s := spline`
 alone is an error.
 
-**A free curve** is a spline written with its two ends and nothing between: `rope := spline(a,
-b)` runs from `a` to `b`, and its shape is the drawing's to find — what an energy over it settles
-(1.10.1). Its interior control points have no names, take no constraints and are never written
-back; there are sixteen in all, and you cannot insert one.
+**A free curve** is written with the two points it runs between: `rope := curve(a, b)` runs from
+`a` to `b`, and its shape is the drawing's to find — what an energy over it settles (1.10.1). It
+has no control points: its shape is the solution of its energy's equation, exact to the
+integration's accuracy, however sharply it bends. It owns one number, its length.
 
 **A spline may be rational.** `s := spline(k0, k1, k2, k3) weights [1, w, w, 1]` gives each
 control point a weight: a heavier one pulls the curve toward itself, and with
@@ -690,7 +690,7 @@ claim decided within the faceting of a round face is **undecided**:
 An energy states a curve by the principle that makes it rather than by its formula:
 
 ```
-rope := spline(a, b)                  // a free curve: its shape is the drawing's to find
+rope := curve(a, b)                   // a free curve: its shape is the drawing's to find
 length(150mm) rope
 rope minimizes integral(p.y over p)   // ...and it hangs: its height along it least
 ```
@@ -702,21 +702,28 @@ reads `p.x`, `p.y`, `t.x`, `t.y` and numbers in scope, nothing else (E101). An e
 such terms, each times a number: `rope minimizes 2 * integral(…) - integral(…)`. `maximizes` is the
 same with the sign turned. Several statements over one curve add up.
 
-- **What it varies.** The curve's interior, never its ends: an energy closes exactly the curve's
-  own freedoms, so an end left free keeps its freedom and can be dragged (the rope re-hangs).
-  The curve is a free spline (`spline(a, b)`) or one with written control points.
+- **What it is.** The curve is the solution of the energy's Euler–Lagrange equation from `a`,
+  landing on `b`: a function of its ends and its length, with no unknowns of its own in the
+  drawing, so its ends keep their freedom and can be dragged (the rope re-hangs). Only a free
+  curve (`curve(a, b)`) takes an energy; a spline with written control points is E040.
+- **Its length.** `length(150mm) rope` holds it. With none stated the length is wherever the
+  energy is stationary in it too: two points and `k minimizes integral(f over p)` with no length
+  is a geodesic of the weight `f`.
 - **Contacts and drawing.** A relation between the curve and other geometry that is still free
   moves that geometry: `rope tangent floor` with `floor` free puts the line on the hanging rope,
-  which hangs as before. With the other geometry held, the relation presses on the curve: a held
-  `floor` lifts or lowers the rope to touch it (a tangency touches and matches direction; it is
-  not "rests on", and may cross elsewhere). A contact's place along the curve is varied with it.
+  which hangs as before.
+- **Pegs.** A held point the curve is stated to pass, `peg coincident rope` with `peg` held,
+  presses on it: the rope drapes over the peg in a corner, two arcs of the one equation. A held
+  line or circle pressed against it is E040 — it would meet the curve at a corner, so it cannot be
+  tangent there; draw the touch as a held point.
 - **Under a `unit`** the point is a length and the integrand is dimension-checked: `p.y + 1` is
   E103, `p.y + 1mm` is fine. Without one every number is plain.
-- **The verdict.** A stationary curve may be a minimum, a maximum or a saddle, and the seed
-  decides which the solve reaches. The CLI prints `minimum: rope minimizes integral(p.y over
-  p)`, and the app washes the statement green when it found what it asked for. A free curve
-  starts bowed to whichever side lowers the energy, so a hanging rope hangs and Dido's strip bulges
-  outward.
+- **The verdict.** A stationary curve may be a minimum, a maximum or a saddle — by Legendre's
+  condition and Jacobi's (a point conjugate to the start before the end makes a saddle). The CLI
+  prints `minimum: rope minimizes integral(p.y over p)`, and the app washes the statement green
+  when it found what it asked for; `unsolved` where no shape was found. A free curve starts from
+  an arc bowed to whichever side lowers the energy, so a hanging rope hangs and Dido's strip
+  bulges outward.
 - **Area** is a line integral round the boundary: `integral((p.x * t.y - p.y * t.x) / 2 over (p,
   t))` is the area between `k` and the chord back from its end to its start, positive when that
   loop runs counter-clockwise.
@@ -2140,16 +2147,18 @@ in std.front {
   a := point
   b := point hint((100, 0))
   fix((0mm, 0mm)) a
-  rope := spline(a, b)
+  rope := curve(a, b)
   length(150mm) rope
 }
 rope minimizes integral(p.y over p)
 ```
 
-`43 params, 41 equations, structural rank 41; DOF 2` and `minimum: rope minimizes integral(p.y
-over p)`: the two freedoms are `b`'s, and dragging it re-hangs the rope. With `b` held at
-`(100mm, 0mm)` the rope is within 0.005 of `a cosh((x − 50)/a) + c` with `2a sinh(50/a) = 150`
-(`catenary.sv`). `maximizes` instead stands it up as an arch, reported a maximum.
+`3 params, 1 equations, structural rank 1; DOF 2` and `minimum: rope minimizes integral(p.y over
+p)`: the two freedoms are `b`'s (the third parameter is the rope's length, which `length` holds),
+and dragging it re-hangs the rope. With `b` held at `(100mm, 0mm)` the rope is
+`a cosh((x − 50)/a) + c` with `2a sinh(50/a) = 150` to 1e-9, and with `b` at `(20mm, 0mm)` too,
+where its bottom bends at a radius of 2.4 (`catenary.sv`). `maximizes` instead stands it up as an
+arch, reported a maximum.
 
 ### 2.17 Dido's problem: DOF 0, well
 
@@ -2163,15 +2172,15 @@ in std.front {
   fix((0mm, 0mm)) a
   fix((100mm, 0mm)) b
   shore := line(a, b)
-  strip := spline(a, b)
+  strip := curve(a, b)
   length(130mm) strip
 }
 strip maximizes integral((p.x * t.y - p.y * t.x) / 2 over (p, t))
 ```
 
-`41 params, 41 equations, structural rank 41; DOF 0` and `maximum: …`: the strip that encloses
-the most land against the shore is an arc of a circle, `R sin α = 50`, `2Rα = 130`, to within
-0.001 (`dido.sv`).
+`1 params, 1 equations, structural rank 1; DOF 0` and `maximum: …`: the strip that encloses the
+most land against the shore is an arc of a circle, `R sin α = 50`, `2Rα = 130`, to 1e-9
+(`dido.sv`).
 
 ---
 
