@@ -196,6 +196,21 @@ pub(super) fn constrain(
         }
     }
     let touch = touch.is_some();
+    // a plane touching a set names the point it touches at: without one, the use would read the
+    // plane as a line (`l tangent S`), so none of its rows is stated
+    let bare = r.word.as_ref()
+        .filter(|w| w.word == "tangent" && !w.sets.is_empty() && w.args.is_empty());
+    if let (Some(w), Some(found)) = (bare, &word) {
+        if found.ops.first().is_some_and(|e| e.kind == EntKind::Plane) {
+            let set = w.sets.first().map_or("K", |(_, s)| s.as_str());
+            let m = format!("a plane touches a set at a point, which the word names: \
+                             `P tangent(at: m) {set}`");
+            if !diags.iter().any(|d| d.span == w.span && d.message == m) {
+                diags.push(Diag { code: Code::E040, span: w.span, stmt: Some(st.id), message: m });
+            }
+            return None;
+        }
+    }
     // a set's body row stated as its derivative at a tangency's point (§6.21)
     // — what moves its point, or the kind a line was expected in place of
     let along = r.along.as_ref().map(|a| {

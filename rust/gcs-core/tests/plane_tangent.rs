@@ -130,4 +130,5 @@ fn a_plane_touches_a_cone_at_a_point() {
             "std.top tangent(at: M) gax");
     refused(&src("gax tangent(at: M) gc"), "E040", "touched at a point by a plane",
             "tangent(at: M)");
+    refused(&src("std.top tangent gc"), "E040", "which the word names", "tangent");
 }
