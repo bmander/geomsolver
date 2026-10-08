@@ -156,9 +156,9 @@ ring's, or claimed. **A set whose body is a circle's is the circle**, the one en
 **`lowering.rs`**, the table of what a set may be drawn as (#140): `lowering::shape` reads `{ p
 | p coincident X; p distance(r) Y }` (the flattener's and `edit::set_dimension`'s one reader),
 and `lower_circle` (in `set_made`, outside applications) emits `circle(center: Y)` under the
-set's name (its statement's) and `radius(r)` on it (span at the body's number, or the family
-call's argument); plain `coincident` uses stay as written against the circle (`set_use`),
-`tangent` uses read the body. The elaborator judges each (`Expansion::lowered`,
+set's name (its statement's) and `radius(r)` on it (`Radius::at`: the body's number, or the
+family call's argument); a use the element answers (`Form::answers`: plain `coincident`) stays
+as written against it (`set_use`), `tangent` uses read the body. The elaborator judges each (`Expansion::lowered`,
 `lowering::refused`: `X` a plane, `Y` drawn in it, after `incidences`) and one that is none is
 walked again as a set (`elaborate` loops over `elaborate_in`, `flatten::expand_with`'s
 `refused`). The judgment cannot precede the expansion — `Y` may be drawn by another set's use

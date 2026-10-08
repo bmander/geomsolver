@@ -1223,16 +1223,12 @@ pub fn set_dimension(e: &Elaborated, prog: &Program, cid: u32, attr: &str, text:
                     _ => None,
                 }),
         },
-        StmtKind::Set(set) => match crate::lowering::shape(&set.lit) {
-            Some(Shape::Circle { radius, .. }) => Some((radius.span, radius.text.clone())),
-            None => None,
-        },
+        StmtKind::Set(set) => crate::lowering::shape(&set.lit)
+            .map(|Shape::Circle { radius, .. }| (radius.span, radius.text.to_string())),
         StmtKind::Instance(inst) => prog.resolve_component(&inst.component.text, None).ok()
             .and_then(|k| prog.components[k].set.as_ref())
             .and_then(crate::lowering::shape)
-            .and_then(|shape| match shape {
-                Shape::Circle { radius, .. } => inst.given(radius.text.trim()),
-            })
+            .and_then(|Shape::Circle { radius, .. }| radius.at(Some(inst)))
             .map(|at| (at, at.slice(prog.text()).to_string())),
         _ => None,
     };

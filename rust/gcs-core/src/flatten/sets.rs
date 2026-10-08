@@ -23,7 +23,7 @@
 use super::*;
 use crate::program::public_path;
 use super::apply::{local, Application, Pass, Use};
-use crate::lowering::{self, Form, Lowered, Radius, Shape};
+use crate::lowering::{self, Lowered, Radius, Shape};
 use crate::syntax::{Along, AlongBy, Chained, DeclName, Relation, RelationForm, SetLit, Worded};
 
 /// Where a set stands: its literal, the scope its body reads names in (an instance's, with its
@@ -63,11 +63,15 @@ impl<'a> Walk<'a> {
         {
             return;
         }
-        match lowering::shape(lit) {
-            Some(Shape::Circle { centre, radius, .. }) => {
-                self.lower_circle(abs, centre, radius, scope, made)
+        let Some(shape) = lowering::shape(lit) else { return };
+        let form = shape.form();
+        let drawn = match shape {
+            Shape::Circle { centre, radius, .. } => {
+                self.lower_circle(&abs, centre, radius, scope, made)
             }
-            None => {}
+        };
+        if drawn {
+            self.lowered.insert(abs, form);
         }
     }
 
@@ -77,45 +81,44 @@ impl<'a> Walk<'a> {
     /// what the set's statement made, under the set's name; its radius is the body's distance,
     /// drawn where the body writes it — or, for a family's instance, where the call gives it.
     /// Whether `P` is a plane and `o` a point drawn in it is the elaborator's question
-    /// (`lowering::refused`): where either is not, the set is walked again as a set.
-    fn lower_circle(&mut self, abs: String, centre: &Ref, radius: Radius, sc: &Scope, made: Made) {
-        let Radius { text, span, word } = radius;
+    /// (`lowering::refused`): where either is not, the set is walked again as a set.  Whether
+    /// it drew one.
+    fn lower_circle(&mut self, abs: &str, centre: &Ref, radius: Radius, sc: &Scope, made: Made)
+        -> bool {
         let Made { st, path, outer } = made;
         // what the source calls it, and for a family's instance the call its number is given in
         let (written, call) = match &st.kind {
             StmtKind::Set(set) => (&set.name, None),
             StmtKind::Instance(inst) => (&inst.name, Some(inst)),
-            _ => return,
+            _ => return false,
         };
+        let text = radius.text;
         let seed = value_aff(text, &sc.vals, self.units).ok().and_then(|a| a.number())
             .filter(|r| r.is_finite() && *r > 0.0);
         // a set written in place, or an unnamed call, is named nothing the source can say
         let name = if outer.anonymous || written.text.starts_with('#') {
             let at = written.span.lo as usize;
-            DeclName::Key(Name { text: abs.clone(), span: Span::new(at, at) })
+            DeclName::Key(Name { text: abs.to_string(), span: Span::new(at, at) })
         } else {
-            DeclName::Written(written.clone()).prefixed(abs.clone(), outer.copies)
+            DeclName::Written(written.clone()).prefixed(abs.to_string(), outer.copies)
         };
         let mut d = Decl::point(name, [0.0; 2], None);
         d.kind = crate::model::EntKind::Circle;
         d.children = vec![vec![Kid::Ref(centre.clone())]];
         d.seed = vec![seed.unwrap_or(1.0)];
         d.seed_text = vec![None];
-        self.names.insert(abs.clone());
+        self.names.insert(abs.to_string());
         let decl = Stmt { id: st.id, kind: StmtKind::Decl(d), span: st.span, chained: Chained::No };
         self.out.push((decl, path.to_vec(), sc.clone()));
-        // a family's number is the call's: drawn and edited where the call gives the formal the
-        // body reads, else drawn as what it comes to
-        let span = match call {
-            None => span,
-            Some(inst) => inst.given(text.trim())
-                .unwrap_or(Span::new(st.span.lo as usize, st.span.lo as usize)),
-        };
+        // drawn and edited where the number is written; a call that gives none draws what it
+        // comes to
+        let span = radius.at(call).unwrap_or(Span::new(st.span.lo as usize, st.span.lo as usize));
+        let word = radius.word.span;
         let radius = Relation::of(RelationForm::Written(crate::syntax::Written {
-            word: Name { text: "radius".to_string(), span: word.span },
+            word: Name { text: "radius".to_string(), span: word },
             fixity: crate::constraints::Fixity::Prefix,
-            ops: vec![local(abs.clone(), word.span)],
-            args: vec![crate::syntax::OpArg::Dim(text.clone(), span)],
+            ops: vec![local(abs, word)],
+            args: vec![crate::syntax::OpArg::Dim(text.to_string(), span)],
             span: st.span,
         }));
         if let Some(r) = self.settle_relation(&radius, &sc.vals, sc) {
@@ -125,12 +128,12 @@ impl<'a> Walk<'a> {
             let rel = Stmt { id: st.id, kind, span: st.span, chained: Chained::No };
             self.out.push((rel, path.to_vec(), named));
         }
-        self.lowered.insert(abs);
+        true
     }
 
     /// Every set drawn as an element, what its shape names resolved where its body reads it —
     /// for the elaborator to judge (`lowering::refused`).
-    pub(super) fn lowered(&self, alias: &BTreeMap<String, String>) -> Vec<Lowered> {
+    pub(super) fn to_judge(&self, alias: &BTreeMap<String, String>) -> Vec<Lowered> {
         // a reference the body reads, absolute — `None` where it names a set or nothing
         let absolute = |r: &Ref, site: &Site| {
             let (abs, rest) = lookup(r, &site.scope, &self.names, alias, self.units)?;
@@ -140,12 +143,13 @@ impl<'a> Walk<'a> {
             let path = rest.into_iter().map(|f| Seg::Field(Name::new(f))).collect();
             Some(Ref { root: Name { text: abs, span: r.span }, path, span: r.span })
         };
-        self.lowered.iter().filter_map(|key| {
+        self.lowered.iter().map(|(key, form)| {
             let site = &self.sets[key];
-            let form = match lowering::shape(&site.lit)? {
-                Shape::Circle { plane, .. } => Form::Circle { plane: absolute(plane, site) },
-            };
-            Some(Lowered { key: key.clone(), form })
+            let mut form = form.clone();
+            for r in form.refs() {
+                *r = r.take().and_then(|r| absolute(&r, site));
+            }
+            Lowered { key: key.clone(), form }
         }).collect()
     }
 
@@ -171,8 +175,9 @@ impl<'a> Walk<'a> {
             .collect();
         // a set drawn as an element is one, and a point is put on it as on any (#105) — but for
         // a derivative, which reads the body's rows
-        let element = matches!(found.as_slice(), [(_, abs)] if self.lowered.contains(abs))
-            && w.word.text == "coincident" && rel.along.is_none() && sc.twin().is_none();
+        let element = matches!(found.as_slice(),
+                [(_, abs)] if self.lowered.get(abs).is_some_and(|f| f.answers(&w.word.text)))
+            && rel.along.is_none() && sc.twin().is_none();
         (!found.is_empty() && !element).then_some((rel, found))
     }
 

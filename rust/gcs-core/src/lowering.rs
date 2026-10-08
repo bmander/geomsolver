@@ -13,9 +13,12 @@
 //! before the expansion.  A set refused is walked again as a set, and stays one: refusals only
 //! grow, so `program::elaborate`'s passes end, and a pass ends at the judgment, before any
 //! constraint is stated.
+//!
+//! A *use* is lowered elsewhere, and needs no judgment: `q coincident P` of a point in space is
+//! its membership of `P` (`program::planes::incidences`).
 
 use crate::model::{EntKind, EntRef, Sketch};
-use crate::syntax::{Name, Ref, SetLit, Span, Stmt, StmtKind};
+use crate::syntax::{Instance, Name, Ref, SetLit, Span, Stmt, StmtKind};
 use std::collections::BTreeSet;
 
 /// What a set's body is the body of.
@@ -28,9 +31,30 @@ pub(crate) enum Shape<'a> {
 /// A shape's number as its body writes it: the text, where it stands, and the word it is written
 /// with — what a callout draws and an edit writes.
 pub(crate) struct Radius<'a> {
-    pub text: &'a String,
+    pub text: &'a str,
     pub span: Span,
     pub word: &'a Name,
+}
+
+impl Radius<'_> {
+    /// Where the number is written: in the body, or — for a family's instance, `call` — where
+    /// the call gives the formal the body reads (`None` where it gives none).  Where a callout is
+    /// drawn from and an edit writes.
+    pub(crate) fn at(&self, call: Option<&Instance>) -> Option<Span> {
+        match call {
+            None => Some(self.span),
+            Some(inst) => inst.given(self.text.trim()),
+        }
+    }
+}
+
+impl Shape<'_> {
+    /// What the elaborator judges the shape by, its references as the body writes them.
+    pub(crate) fn form(&self) -> Form {
+        match self {
+            Shape::Circle { plane, .. } => Form::Circle { plane: Some((*plane).clone()) },
+        }
+    }
 }
 
 /// What `lit`'s body is the body of, read off the statements as written; `None` for a body that
@@ -61,7 +85,8 @@ pub(crate) fn shape<'a>(lit: &'a SetLit) -> Option<Shape<'a>> {
         }
         let (centre, d) = other(at, "distance", bound)?;
         let [crate::syntax::OpArg::Dim(text, span)] = d.args.as_slice() else { return None };
-        Some(Shape::Circle { plane, centre, radius: Radius { text, span: *span, word: &d.word } })
+        let radius = Radius { text: text.as_str(), span: *span, word: &d.word };
+        Some(Shape::Circle { plane, centre, radius })
     };
     circle(a, b).or_else(|| circle(b, a))
 }
@@ -82,6 +107,23 @@ pub enum Form {
     Circle { plane: Option<Ref> },
 }
 
+impl Form {
+    /// Every reference the judgment reads, for the flattener to make absolute.
+    pub(crate) fn refs(&mut self) -> Vec<&mut Option<Ref>> {
+        match self {
+            Form::Circle { plane } => vec![plane],
+        }
+    }
+
+    /// Whether a use by `word` is a use of the element: a point is put on a circle as on any —
+    /// but a tangency reads the body's rows, whatever the set is drawn as.
+    pub(crate) fn answers(&self, word: &str) -> bool {
+        match self {
+            Form::Circle { .. } => word == "coincident",
+        }
+    }
+}
+
 /// The sets drawn as elements that are none here, by key — each walked again as a set.  `ent`
 /// resolves a reference, `key` finds what a key built.
 pub(crate) fn refused(
@@ -96,12 +138,9 @@ pub(crate) fn refused(
         Form::Circle { plane } => {
             let plane = plane.as_ref().and_then(&ent).filter(|e| e.kind == EntKind::Plane);
             let circle = key(&l.key).filter(|e| e.kind == EntKind::Circle);
-            match (plane, circle) {
-                (Some(plane), Some(k)) => {
-                    sk.plane_of(sk.circles[k.i()].center as usize) == Some(plane.i())
-                }
-                _ => false,
-            }
+            plane.zip(circle).is_some_and(|(plane, k)| {
+                sk.plane_of(sk.circles[k.i()].center as usize) == Some(plane.i())
+            })
         }
     };
     lowered.iter().filter(|l| !holds(l)).map(|l| l.key.clone()).collect()

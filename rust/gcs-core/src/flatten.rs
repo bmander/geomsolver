@@ -34,7 +34,7 @@ mod apply;
 mod sets;
 
 pub(crate) use words::faults as word_faults;
-pub use crate::lowering::{Form, Lowered};
+use crate::lowering::Lowered;
 
 pub(crate) use values::{substitute_with, value_aff};
 use values::{free, typed, value_of, substitute, reads_geometry};
@@ -307,8 +307,8 @@ struct Walk<'a> {
     use_aliases: BTreeSet<String>,
     /// Every set the walk made, by absolute name (§6.21) — see `sets::Site`.
     sets: BTreeMap<String, sets::Site>,
-    /// Those drawn as elements (`lowering`), by the same name.
-    lowered: BTreeSet<String>,
+    /// Those drawn as elements (`lowering`), by the same name, with what each is judged by.
+    lowered: BTreeMap<String, crate::lowering::Form>,
     /// The sets the elaborator refused as elements, walked as sets (`expand_with`).
     unlowered: &'a BTreeSet<String>,
     /// Whether the uses of sets are being applied, so a set made now is made inside one.
@@ -419,7 +419,7 @@ impl<'a> Walk<'a> {
             applying_words: Vec::new(),
             use_aliases: BTreeSet::new(),
             sets: BTreeMap::new(),
-            lowered: BTreeSet::new(),
+            lowered: BTreeMap::new(),
             unlowered: &NONE,
             applying_sets: false,
         }
@@ -449,7 +449,7 @@ impl<'a> Walk<'a> {
         self.expand_sets();
         self.expand_pending();
         let (mut flat, mut aliases) = self.resolve();
-        let lowered = self.lowered(&aliases);
+        let lowered = self.to_judge(&aliases);
         if self.standard_datums {
             // A document that says `use std` has the standard datums, as a CAD part has its
             // origin planes, whether or not anything refers to them yet: the workspace offers

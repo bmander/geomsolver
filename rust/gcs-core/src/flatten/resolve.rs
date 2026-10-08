@@ -822,7 +822,7 @@ impl<'a> Walk<'a> {
         let out = std::mem::take(&mut self.out);
         // a set drawn as an element is named as the element (#105)
         let sets: BTreeSet<String> =
-            self.sets.keys().filter(|k| !self.lowered.contains(*k)).cloned().collect();
+            self.sets.keys().filter(|k| !self.lowered.contains_key(*k)).cloned().collect();
         let mut flat = Vec::with_capacity(out.len());
         for (mut st, path, sc) in out {
             // a refused relation is not emitted; a declaration is (a plane whose fold misspells
