@@ -15,7 +15,7 @@ use std
 
 in std.front {
   a := point
-  b := point hint((100mm, 0mm))
+  b := point hint((100, 0))
   fix((0mm, 0mm)) a
   rope := spline(a, b)
   length(150mm) rope

@@ -3,7 +3,6 @@
 //! minimum, and re-hung as an end is dragged; and Dido's problem, a fixed length enclosing the
 //! most area against a line, held to the circular arc.
 
-use gcs_core::constraints::CKind;
 use gcs_core::program::{elaborate, Elaborated};
 use gcs_core::solve::{solve, SolveOpts};
 use crate::common::parse;
@@ -161,4 +160,32 @@ fn the_library_word_hangs_the_same_rope() {
     assert_eq!(names, ["minimum"]);
     let out = gcs_core::edit::remove(&e, &e.program, &e.sketch, &[gcs_core::model::EntRef::spline(0)], &[]);
     assert!(!out.text.contains("hangs(L: 150) rope"), "{}", out.text);
+}
+
+/// A free curve's interior is its statement's, nameless and never written: after a solve, a
+/// gesture's reconcile and a seed writeback leave the source as it was.
+#[test]
+fn a_free_curve_writes_nothing_back() {
+    let mut e = solved(ROPE);
+    let sk = e.sketch.clone();
+    let out = gcs_core::edit::reconcile(&mut e, &sk);
+    assert_eq!(out.text, ROPE, "reconcile wrote {}", out.text);
+    let seeds = gcs_core::edit::commit_seeds(&e, &e.sketch, &e.program);
+    assert_eq!(seeds.text, ROPE, "a writeback wrote {}", seeds.text);
+}
+
+/// An end dragged is a seed like any other: its `hint(…)` is rewritten where it moved to, and the
+/// free curve's interior beside it is still not written.
+#[test]
+fn a_dragged_end_writes_its_hint() {
+    let src = ROPE.replace("  b := point\n", "  b := point hint((100, 0))\n").replace("  fix((100, 0)) b\n", "");
+    let mut e = solved(&src);
+    let b = e.sketch.splines[0].ctrl[gcs_core::variational::FREE_CTRL - 1] as usize;
+    let mut drag = gcs_core::decompose::PlanDrag::new(&e.sketch, b, 100.0, 0.0, None, 0.05);
+    let r = drag.move_to(&mut e.sketch, None, 90.0, -10.0);
+    assert!(r.success, "{r:?}");
+    drag.end();
+    let seeds = gcs_core::edit::commit_seeds(&e, &e.sketch, &e.program);
+    assert!(seeds.text.contains("b := point hint((90, -10))"), "{}", seeds.text);
+    assert_eq!(seeds.text.matches("hint").count(), 1, "{}", seeds.text);
 }

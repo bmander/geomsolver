@@ -365,6 +365,15 @@ pub fn elaborate(p: &Program) -> Elaborated {
                         map.bind(&name, k, d.name.named());
                         map.record(st, Made::Ent(k));
                     }
+                    // a free curve's interior is the statement's too, though nameless (#121):
+                    // made by it, so no gesture reads it as geometry the source has yet to say
+                    if e.kind == EntKind::Spline && sk.splines[e.i()].free {
+                        let ctrl = sk.splines[e.i()].ctrl.clone();
+                        for &c in &ctrl[1..ctrl.len() - 1] {
+                            built.insert(EntRef::point(c as usize), true);
+                            map.record(st, Made::Ent(EntRef::point(c as usize)));
+                        }
+                    }
                 }
                 None => {
                     // a declaration that could not be built leaves its name unbound, so every
