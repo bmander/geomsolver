@@ -11,6 +11,7 @@
 
 #[allow(unused_imports)]
 use crate::fmath::Det;
+use crate::taylor::Jet;
 /// Kernel ids, in registration order.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(u8)]
@@ -244,36 +245,37 @@ impl<'a> DualRow<'a> {
         })
     }
 
-    /// `ẋ`, column by column.
-    fn xdot(&self) -> Vec<f64> {
-        (0..self.x.len())
-            .map(|c| match self.mask[c] as usize {
-                d @ 1..=3 => self.dir[d - 1],
-                TANGENT => self.t[c],
-                _ => 0.0,
-            })
-            .collect()
+    /// `ẋ`, column by column, into `out`.
+    fn xdot(&self, out: &mut Vec<f64>) {
+        out.clear();
+        out.extend((0..self.x.len()).map(|c| match self.mask[c] as usize {
+            d @ 1..=3 => self.dir[d - 1],
+            TANGENT => self.t[c],
+            _ => 0.0,
+        }));
     }
 
     /// The row's Taylor coefficients along `x + wε`, into `r`; `false` where it has no form.
-    fn along(&self, w: &[f64], r: &mut [crate::taylor::Jet], jrow: &mut Vec<f64>) -> bool {
-        use crate::taylor::Jet;
-        let path: Vec<Jet> = self.x.iter().zip(w).map(|(&x, &d)| Jet::from(&[x, d])).collect();
-        crate::taylor::residual(self.kid, &path, self.kc, r, jrow)
+    /// `path` is scratch, its constant terms the row's columns.
+    fn along(&self, w: &[f64], path: &mut Vec<Jet>, r: &mut [Jet], jrow: &mut Vec<f64>) -> bool {
+        path.clear();
+        path.extend(self.x.iter().zip(w).map(|(&x, &d)| Jet::from(&[x, d])));
+        crate::taylor::residual(self.kid, path, self.kc, r, jrow)
     }
 }
 
 fn dual_row_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
     let (n_par, n_const) = curve_widths(n, v, k);
-    let (mut jets, mut jrow) = (Vec::new(), Vec::new());
+    let (mut jets, mut jrow, mut path, mut xd) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
     for i in 0..n {
         let Some(d) = DualRow::read(&v[n_par * i..n_par * (i + 1)], &k[n_const * i..n_const * (i + 1)])
         else {
             continue;
         };
         let nr = d.kn.n_res;
-        jets.resize(nr, crate::taylor::Jet::default());
-        let ok = d.along(&d.xdot(), &mut jets, &mut jrow);
+        jets.resize(nr, Jet::default());
+        d.xdot(&mut xd);
+        let ok = d.along(&xd, &mut path, &mut jets, &mut jrow);
         for row in 0..nr {
             r[nr * i + row] = if ok { jets[row].0[1] } else { f64::NAN };
         }
@@ -282,7 +284,8 @@ fn dual_row_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
 
 fn dual_row_jac(n: usize, v: &[f64], k: &[f64], out: &mut [f64]) {
     let (n_par, n_const) = curve_widths(n, v, k);
-    let (mut j, mut plus, mut minus, mut jrow) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+    let (mut j, mut jrow, mut path, mut w) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+    let (mut plus, mut minus) = (Vec::new(), Vec::new());
     for i in 0..n {
         let Some(d) = DualRow::read(&v[n_par * i..n_par * (i + 1)], &k[n_const * i..n_const * (i + 1)])
         else {
@@ -307,18 +310,22 @@ fn dual_row_jac(n: usize, v: &[f64], k: &[f64], out: &mut [f64]) {
                 }
             }
         }
-        // over the row's columns: the Hessian along `ẋ`, by polarisation of the second order
-        let xd = d.xdot();
-        let s = xd.iter().map(|x| x * x).sum::<f64>().sqrt().max(1.0);
-        plus.resize(nr, crate::taylor::Jet::default());
-        minus.resize(nr, crate::taylor::Jet::default());
-        let mut w = xd.clone();
+        // over the row's columns: the Hessian along `ẋ`, by polarisation of the second order —
+        // none where the row is affine
+        if crate::taylor::is_affine(d.kid) {
+            continue;
+        }
+        d.xdot(&mut w);
+        let s = w.iter().map(|x| x * x).sum::<f64>().sqrt().max(1.0);
+        plus.resize(nr, Jet::default());
+        minus.resize(nr, Jet::default());
         for c in 0..m {
-            w[c] = xd[c] + s;
-            let ok = d.along(&w, &mut plus, &mut jrow);
-            w[c] = xd[c] - s;
-            let ok = ok && d.along(&w, &mut minus, &mut jrow);
-            w[c] = xd[c];
+            let at = w[c];
+            w[c] = at + s;
+            let ok = d.along(&w, &mut path, &mut plus, &mut jrow);
+            w[c] = at - s;
+            let ok = ok && d.along(&w, &mut path, &mut minus, &mut jrow);
+            w[c] = at;
             for row in 0..nr {
                 out[o + row * n_par + c] =
                     if ok { (plus[row].0[2] - minus[row].0[2]) / (2.0 * s) } else { f64::NAN };
@@ -2642,15 +2649,15 @@ impl<const N: usize> Num for Dual<N> {
     }
 }
 
-impl Num for crate::taylor::Jet {
+impl Num for Jet {
     fn cst(v: f64) -> Self {
-        crate::taylor::Jet::constant(v)
+        Jet::constant(v)
     }
     fn val(self) -> f64 {
         self.0[0]
     }
     fn sqrt(self) -> Self {
-        if self.0[0] > 0.0 { crate::taylor::Jet::sqrt(self) } else { Self::cst(0.0) }
+        if self.0[0] > 0.0 { Jet::sqrt(self) } else { Self::cst(0.0) }
     }
     fn cos(self) -> Self {
         self.sin_cos().1
@@ -2679,9 +2686,19 @@ fn vcross<T: Num>(a: V3<T>, b: V3<T>) -> V3<T> {
 /// The unit vector along `a`; a vector shorter than `MIN_LINE_LEN` is divided by that instead,
 /// as every kernel above guards a degenerate line.
 fn vunit<T: Num>(a: V3<T>) -> V3<T> {
-    let l = vdot(a, a).sqrt();
-    let l = if l.val() > MIN_LINE_LEN { l } else { T::cst(MIN_LINE_LEN) };
+    let l = vlen(a, MIN_LINE_LEN);
     a.map(|x| x / l)
+}
+
+/// `|a|`, floored as the kernels floor a line's length.
+fn vlen<T: Num>(a: V3<T>, floor: f64) -> T {
+    let l = vdot(a, a).sqrt();
+    if l.val() > floor { l } else { T::cst(floor) }
+}
+
+/// The free twin's number `m·a + c`, from its column and constants (m, c).
+fn free_num<T: Num>(a: T, k: &[f64]) -> T {
+    a * T::cst(k[0]) + T::cst(k[1])
 }
 
 /* -- planes over axes (`docs/planes-plan.md`) ------------------------------------------------
@@ -2859,9 +2876,8 @@ fn project_jac(n: usize, _v: &[f64], k: &[f64], j: &mut [f64]) {
 /// Columns of `ordinate_line`: (p, q, a, b) in one view, K = (D).  `(q − p)·(b − a)/|b − a| − D`:
 /// along the line `a → b` drawn where the points are.
 fn ordinate_line_gap<T: Num>(v: &[T]) -> T {
-    let d = |i: usize| v[i];
-    let (px, py, qx, qy) = (d(0), d(1), d(2), d(3));
-    let (ax, ay, bx, by) = (d(4), d(5), d(6), d(7));
+    let (px, py, qx, qy) = (v[0], v[1], v[2], v[3]);
+    let (ax, ay, bx, by) = (v[4], v[5], v[6], v[7]);
     let t = vunit([bx - ax, by - ay, T::cst(0.0)]);
     (qx - px) * t[0] + (qy - py) * t[1]
 }
@@ -2872,7 +2888,7 @@ fn ordinate_line_rows<T: Num>(v: &[T], k: &[f64]) -> [T; 1] {
 
 /// The free twin's columns: (p, q, a, b, n), K = (m, c) — the number `m·n + c`.
 fn ordinate_line_free_rows<T: Num>(v: &[T], k: &[f64]) -> [T; 1] {
-    [ordinate_line_gap(v) - (v[8] * T::cst(k[0]) + T::cst(k[1]))]
+    [ordinate_line_gap(v) - free_num(v[8], k)]
 }
 
 fn ordinate_line_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
@@ -2902,7 +2918,7 @@ fn ordinate_space_rows<T: Num>(v: &[T], k: &[f64]) -> [T; 1] {
 /// (X, Y, A, B, n), K = (m, c).
 fn ordinate_space_free_rows<T: Num>(v: &[T], k: &[f64]) -> [T; 1] {
     let t = vunit(vsub(vec3(v, 9), vec3(v, 6)));
-    let d = v[12] * T::cst(k[0]) + T::cst(k[1]);
+    let d = free_num(v[12], k);
     [vdot(vsub(vec3(v, 3), vec3(v, 0)), t) - d]
 }
 
@@ -2932,7 +2948,7 @@ fn ordinate_frame_n_rows<T: Num>(v: &[T], k: &[f64]) -> [T; 1] {
 fn ordinate_frame_free_rows<T: Num>(v: &[T], k: &[f64], axis: usize) -> [T; 1] {
     let (u, w, n) = frame(vec3(v, 6), vec3(v, 9));
     let t = [u, w, n][axis];
-    let d = v[12] * T::cst(k[0]) + T::cst(k[1]);
+    let d = free_num(v[12], k);
     [vdot(vsub(vec3(v, 0), vec3(v, 3)), t) - d]
 }
 
@@ -3139,7 +3155,7 @@ fn plane_distance_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
 /// (o_P, du_P, dv_P, o_Q, a), K = (m, c): the gap `m·a + c`.
 fn plane_distance_free_rows<T: Num>(v: &[T], k: &[f64]) -> [T; 1] {
     let (_, _, n) = frame(vec3(v, 3), vec3(v, 6));
-    let d = v[12] * T::cst(k[0]) + T::cst(k[1]);
+    let d = free_num(v[12], k);
     [vdot(vsub(vec3(v, 9), vec3(v, 0)), n) - d]
 }
 
@@ -3156,17 +3172,6 @@ fn plane_distance_free_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
  * The kernels above whose rows were derived by hand keep their `f64` code; each is written again
  * here over `Num`, once, as the Taylor form a body's derivative row reads (`taylor.rs`,
  * `kernels::dual_kernel`).  `tests/taylor.rs` holds every form to its kernel. */
-
-/// `|a|`, floored as the kernels floor a line's length.
-fn vlen<T: Num>(a: V3<T>, floor: f64) -> T {
-    let l = vdot(a, a).sqrt();
-    if l.val() >= floor { l } else { T::cst(floor) }
-}
-
-/// The free twin's number `m·a + c`, from its column and constants (m, c).
-fn free_num<T: Num>(a: T, k: &[f64]) -> T {
-    a * T::cst(k[0]) + T::cst(k[1])
-}
 
 fn distance3_rows<T: Num>(v: &[T], k: &[f64]) -> [T; 1] {
     let d = vsub(vec3(v, 0), vec3(v, 3));
@@ -3278,12 +3283,11 @@ fn symmetric3_rows<T: Num>(v: &[T], _k: &[f64]) -> [T; 3] {
 }
 
 /// A kernel's Taylor form, its rows over `Jet`s into `r`.
-pub(crate) type JetForm = fn(&[crate::taylor::Jet], &[f64], &mut [crate::taylor::Jet]);
+pub(crate) type JetForm = fn(&[Jet], &[f64], &mut [Jet]);
 
 /// The form of a kernel written over `Num`, by the name it is registered under: its rows read
 /// over `Jet`s.
 pub(crate) fn num_form(name: &str) -> Option<JetForm> {
-    use crate::taylor::Jet;
     macro_rules! form {
         ($rows:ident) => {
             Some(|v: &[Jet], k: &[f64], r: &mut [Jet]| r.copy_from_slice(&$rows(v, k)))

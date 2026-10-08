@@ -114,11 +114,12 @@ use's own prefix (`{use scope prefix}#{stmt}.0.`, path + `Instance(stmt)`), the 
 alias of `q`; `l tangent S` declares the contact at the bound name (in space, seeded at `l`'s
 middle), states it `coincident l`, walks the body, then walks it again with `Scope::twin` set —
 relations only, each with `Relation::along` (`syntax::Along { point, toward: AlongBy::Line,
-key }`, `key` the use's prefix; refs resolved in `rewrite`).  Every relation made carries
+key, made }`, `key` the use's derivative, `made` the prefix its geometry is under; refs resolved
+in `rewrite`).  Every relation made carries
 `Worded { sets: [(k, name)], span }`, so `describe` reads `l tangent shaft` (`WordUse::sets`).
 **Differentiated at elaboration (#104):** `program::relations::constrain` registers one
 `model::Dual` per key (`Sketch::add_dual`: the point, `Toward::Line(l)` or `Chart`, `owned` =
-`SourceMap::ents_under(key)` but the point) and sets `Constraint::along` to its index, dropping a
+`SourceMap::ents_under(made)` but the point) and sets `Constraint::along` to its index, dropping a
 row that reads nothing the use moves (`Constraint::differentiable`, entity-level, the one rule
 `io::from_json` shares; refuses a kernel with no Taylor form).  The kernel is
 `kernels::dual_kernel(inner)` (ids past the curve families, `kernel_id_in`; in `kernel_table`
@@ -130,7 +131,7 @@ read from `taylor::residual`, exact.  The use's own geometry (its `own_params` a
 0, never saved; `retire_tangents` on `remove`); its intrinsic rows (a lift) are stated as
 derivatives too (`twin_intrinsics`, at `add_dual` and at each later intrinsic add) — never the
 point's own.  **`S1 tangent(at: m) S2`** (`expand_pair`): each body applied under
-`begin_nth` (`#{stmt}.{n}.`), walked `Pass::Made` (declarations only, `Scope::made_only`) then
+`begin_nth` (`#{stmt}.{n}.`), walked `Pass::Made` (declarations only; `Scope::pass` is the walk's `Pass`) then
 `Pass::Along` along `Chart(0)` and `Chart(1)` (keys `#{stmt}.t{k}.`, shared by both sets); a
 chart's point tangent is `e_a + s·e_c`, two components held (`set_chart`), `c` the world axis
 the rows' gradient at the seed runs most along (`Sketch::choose_charts`, after phase 3 and at

@@ -34,6 +34,12 @@ pub fn expand(sk: &Sketch, ents: &[EntRef]) -> Vec<EntRef> {
 }
 
 impl Sketch {
+    /// Line `l`'s two ends, as point indices.
+    pub fn line_ends(&self, l: usize) -> [usize; 2] {
+        let ln = &self.lines[l];
+        [ln.p1 as usize, ln.p2 as usize]
+    }
+
     /// Sub-entities: a line's endpoints, an arc's centre and ends.
     pub fn children(&self, e: EntRef) -> Vec<EntRef> {
         match e.kind {

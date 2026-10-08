@@ -176,11 +176,15 @@ pub(super) fn constrain(
         }
     }
     // a set's body row stated as its derivative at a tangency's point (§6.21)
+    // — what moves its point, or the kind a line was expected in place of
     let along = r.along.as_ref().map(|a| {
         let ent = |x: &Ref| res.lookup(x).and_then(|e| follow(sk, e, &x.path).ok());
         let toward = match &a.toward {
-            crate::syntax::AlongBy::Line(l) => Some(ent(l)),
-            crate::syntax::AlongBy::Chart(_) => None,
+            crate::syntax::AlongBy::Line(l) => ent(l).map(|l| match l.kind {
+                EntKind::Line => Ok(Toward::Line(l.i())),
+                kind => Err(kind),
+            }),
+            crate::syntax::AlongBy::Chart(k) => Some(Ok(Toward::Chart { k: *k, axis: None })),
         };
         (ent(&a.point), toward, a)
     });
@@ -440,20 +444,18 @@ pub(super) fn constrain(
                 diags.push(Diag { code: Code::E040, span: at, stmt: Some(st.id), message: m });
             }
         };
-        let (Some(p), toward, a) = found else { return None };
-        let toward = match (toward, &a.toward) {
-            (Some(Some(l)), _) if l.kind == EntKind::Line => Toward::Line(l.i()),
-            (Some(Some(l)), _) => {
-                say(format!("a set is touched by a line, not {}", l.kind.a()));
+        let (Some(p), Some(toward), a) = found else { return None };
+        let toward = match toward {
+            Ok(t) => t,
+            Err(kind) => {
+                say(format!("a set is touched by a line, not {}", kind.a()));
                 return None;
             }
-            (_, crate::syntax::AlongBy::Chart(k)) => Toward::Chart { k: *k, axis: None },
-            _ => return None,
         };
-        // one derivative per use: the geometry the use made, under its key, moves with it
+        // one derivative per use: the geometry the use made, under its prefix, moves with it
         let d = *duals.entry(a.key.clone()).or_insert_with(|| {
-            let owned = map.ents_under(&a.key).into_iter().filter(|&e| e != p).collect();
-            sk.add_dual(p.i(), toward, owned)
+            let made = a.made.iter().flat_map(|m| map.ents_under(m));
+            sk.add_dual(p.i(), toward, made.filter(|&e| e != p).collect())
         });
         match c.differentiable(sk, d) {
             Ok(true) => c.along = Some(d),

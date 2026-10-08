@@ -44,6 +44,18 @@ fn ref_json(e: EntRef) -> Json {
     Json::Arr(vec![Json::Str(e.kind.as_str().to_string()), Json::Int(e.idx as i64)])
 }
 
+/// `ref_json`'s reader: `[kind, index]`, the index held to the entities of that kind `sk` has.
+/// `what` names the reference in what is refused.
+fn ref_from_json(sk: &Sketch, j: &Json, what: &str) -> Result<EntRef, String> {
+    let a = j.arr();
+    if a.len() != 2 {
+        return Err(format!("{what} must be [kind, index]"));
+    }
+    let kind = EntKind::parse(a[0].as_str())
+        .ok_or_else(|| format!("unknown {what} kind {:?}", a[0].as_str()))?;
+    Ok(EntRef::new(kind, index(a[1].as_i64(), sk.count(kind), what)?))
+}
+
 fn arg_json(sk: &Sketch, a: &Arg) -> Json {
     match a {
         Arg::Ent(e) => ref_json(*e),
@@ -99,19 +111,14 @@ fn arg_from_json(sk: &Sketch, kind: SpecKind, v: &Json) -> Result<Arg, String> {
             Arg::Expr(expr::Expr::new(text, value))
         }
         k if k.is_entity() => {
-            let a = v.arr();
-            if a.len() != 2 {
-                return Err("entity reference must be [kind, index]".into());
-            }
-            let ek = EntKind::parse(a[0].as_str())
-                .ok_or_else(|| format!("unknown entity kind {:?}", a[0].as_str()))?;
+            let e = ref_from_json(sk, v, "entity reference")?;
             // and it must be a kind the slot takes: a document is untrusted input, and every
             // reader past this one indexes the list its *spec* names (a projection's planes
             // reach `sk.planes`), so a mismatch here is a panic there — an abort under wasm
-            if !crate::constraints::kind_matches(kind, ek) {
-                return Err(format!("{} slot does not take {}", kind.a(), ek.a()));
+            if !crate::constraints::kind_matches(kind, e.kind) {
+                return Err(format!("{} slot does not take {}", kind.a(), e.kind.a()));
             }
-            Arg::Ent(EntRef::new(ek, index(a[1].as_i64(), sk.count(ek), ek.as_str())?))
+            Arg::Ent(e)
         }
         SpecKind::Int => Arg::Int(v.as_i64()),
         SpecKind::Bool => Arg::Bool(v.as_bool()),
@@ -447,13 +454,9 @@ fn dual_from_json(sk: &Sketch, j: &Json) -> Result<(usize, crate::model::Toward,
         }
         (None, None) => return Err("a dual moves its point along a line or in a chart".to_string()),
     };
-    let mut owned = Vec::new();
-    for e in j.get("owned").map(|v| v.arr()).unwrap_or_default() {
-        let a = e.arr();
-        let kind = a.first().and_then(|k| EntKind::parse(k.as_str())).ok_or("unknown dual entity kind")?;
-        let i = index(a.get(1).map_or(-1, |v| v.as_i64()), sk.count(kind), "dual entity")?;
-        owned.push(EntRef::new(kind, i));
-    }
+    let owned = j.get("owned").map(|v| v.arr()).unwrap_or_default().iter()
+        .map(|e| ref_from_json(sk, e, "dual entity"))
+        .collect::<Result<_, _>>()?;
     Ok((point, toward, owned))
 }
 
@@ -676,10 +679,8 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
         }
     }
     for item in d.get("roles").unwrap_or(&empty).arr() {
-        let entity = item.get("entity").ok_or("geometry role needs an entity")?.arr();
-        if entity.len() != 2 { return Err("geometry role entity must be [kind, index]".into()); }
-        let kind = EntKind::parse(entity[0].as_str()).ok_or("unknown geometry role entity kind")?;
-        let e = EntRef::new(kind, index(entity[1].as_i64(), sk.count(kind), "role entity")?);
+        let entity = item.get("entity").ok_or("geometry role needs an entity")?;
+        let e = ref_from_json(&sk, entity, "geometry role entity")?;
         let roles = crate::semantics::GeometryRoles {
             construction: item.get("construction").is_some_and(Json::as_bool),
             centerline: item.get("centerline").is_some_and(Json::as_bool),
@@ -688,10 +689,8 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
     }
     for item in d.get("turns").unwrap_or(&empty).arr() {
         let ent = |key: &str| -> Result<EntRef, String> {
-            let a = item.get(key).ok_or(format!("a turn needs `{key}`"))?.arr();
-            if a.len() != 2 { return Err(format!("a turn's `{key}` must be [kind, index]")); }
-            let kind = EntKind::parse(a[0].as_str()).ok_or("unknown turn entity kind")?;
-            Ok(EntRef::new(kind, index(a[1].as_i64(), sk.count(kind), "turn entity")?))
+            let a = item.get(key).ok_or(format!("a turn needs `{key}`"))?;
+            ref_from_json(&sk, a, &format!("a turn's `{key}`"))
         };
         let (copy, rep, about) = (ent("copy")?, ent("rep")?, ent("about")?);
         let n = item.get("n").map(Json::as_i64).unwrap_or(0);

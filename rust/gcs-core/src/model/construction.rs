@@ -551,8 +551,8 @@ impl Sketch {
         // column its use moves by one (§6.21)
         if let Some(d) = c.along {
             if let super::Toward::Line(l) = self.duals[d].toward {
-                for p in [self.lines[l].p1, self.lines[l].p2] {
-                    self.lift_point(p as usize);
+                for p in self.line_ends(l) {
+                    self.lift_point(p);
                 }
             }
             let cols = c.row_params(self);

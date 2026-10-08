@@ -32,7 +32,9 @@ pub(super) struct Use<'u> {
 
 /// One walk of a predicate's body (`Walk::apply`): as itself, for only what it makes, or as its
 /// derivative.
+#[derive(Clone, Debug, Default)]
 pub(super) enum Pass {
+    #[default]
     Itself,
     Made,
     Along(Along),
@@ -87,8 +89,7 @@ impl<'a> Walk<'a> {
         scope.copies = true;
         scope.anonymous = true;
         scope.cyc = None;
-        scope.twin = None;
-        scope.made_only = false;
+        scope.pass = Pass::Itself;
         scope.ring = u.scope.ring.clone();
         for c in u.scope.in_class.0.iter().chain(&u.rel.class.0) {
             if !scope.in_class.has(c) {
@@ -109,7 +110,7 @@ impl<'a> Walk<'a> {
     /// whether the use was written in it (`Scope::twin`) or set aside from it (`Relation::along`)
     /// — read again under the application's prefix.
     pub(super) fn inherited_twin(&mut self, app: &Application, u: &Use) -> Option<Along> {
-        let t = u.rel.along.clone().or_else(|| u.scope.twin.clone())?;
+        let t = u.rel.along.clone().or_else(|| u.scope.twin().cloned())?;
         self.bind_to_use(app, "#along.p", t.point, u);
         let toward = match t.toward {
             AlongBy::Line(l) => {
@@ -118,7 +119,7 @@ impl<'a> Walk<'a> {
             }
             chart => chart,
         };
-        Some(Along { point: local("#along.p", u.at), toward, key: t.key })
+        Some(Along { point: local("#along.p", u.at), toward, ..t })
     }
 
     /// The body walked once per entry of `walks` — as itself, for only what it makes, or as its derivative —
@@ -147,11 +148,7 @@ impl<'a> Walk<'a> {
         let mut path = u.path.to_vec();
         path.push(PathStep::Instance(u.st.id));
         for pass in walks {
-            scope.twin = match pass {
-                Pass::Along(a) => Some(a.clone()),
-                Pass::Itself | Pass::Made => None,
-            };
-            scope.made_only = matches!(pass, Pass::Made);
+            scope.pass = pass.clone();
             let mut vals = scope.vals.clone();
             self.body(&body, &scope, &mut vals, &path, depth + 1);
         }

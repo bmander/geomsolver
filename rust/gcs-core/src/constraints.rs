@@ -2692,12 +2692,11 @@ impl Constraint {
         // a derivative reads the row's columns, a tangent column for each (the fixed zero where
         // it has none), and the ends of the line it is taken along, in space (§6.21)
         if let Some(d) = self.along {
-            let zero = sk.zero.expect("a derivative row mints the zero at the add");
             let tangents: Vec<u32> = ps.iter().map(|&p| sk.tangent_col(d, p)).collect();
             ps.extend(tangents);
             match sk.duals[d].toward {
                 crate::model::Toward::Line(l) => ps.extend(lifted_ends(sk, l)),
-                crate::model::Toward::Chart { .. } => ps.extend([zero; 6]),
+                crate::model::Toward::Chart { .. } => ps.extend([sk.zero_col(); 6]),
             }
         }
         ps
@@ -2722,8 +2721,7 @@ impl Constraint {
     pub fn differentiable(&self, sk: &Sketch, d: usize) -> Result<bool, String> {
         let dual = &sk.duals[d];
         if let crate::model::Toward::Line(l) = dual.toward {
-            let ln = &sk.lines[l];
-            if ![ln.p1, ln.p2].iter().all(|&e| sk.has_place(e as usize)) {
+            if !sk.line_ends(l).iter().all(|&e| sk.has_place(e)) {
                 return Err("a line touching a set stands in space, or in a plane: this one is a \
                             2D sketch's"
                     .to_string());
@@ -2737,10 +2735,7 @@ impl Constraint {
             ));
         }
         // everything the row reads, children and all
-        let mut read: Vec<EntRef> = self.args.iter().filter_map(|a| match a {
-            Arg::Ent(e) => Some(*e),
-            _ => None,
-        }).collect();
+        let mut read = self.entities();
         let mut i = 0;
         while i < read.len() {
             let more = sk.children(read[i]);

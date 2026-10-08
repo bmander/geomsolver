@@ -92,21 +92,25 @@ impl Sketch {
         for &e in &dual.owned {
             owned.extend(self.own_params(e));
             if e.kind == EntKind::Point {
-                if let Some(k) = self.lift_of(e.i()) {
-                    owned.extend(self.lifts[k].x);
-                }
+                owned.extend(self.lifted_cols(e.i()).into_iter().flatten());
             }
         }
-        let point = self.lift_of(dual.point).map(|k| self.lifts[k].x);
-        Moves { point, toward: dual.toward, owned }
+        Moves { point: self.lifted_cols(dual.point), toward: dual.toward, owned }
     }
 
     /// The tangent column of `p` under dual `d`, or the fixed zero where it has none.
     pub fn tangent_col(&self, d: usize, p: u32) -> u32 {
-        match self.duals[d].tangent.get(&p) {
-            Some(&t) => t,
-            None => self.zero.expect("a derivative row mints the zero at the add"),
-        }
+        self.duals[d].tangent.get(&p).copied().unwrap_or_else(|| self.zero_col())
+    }
+
+    /// The fixed zero a derivative row reads where a column has no motion.
+    pub(crate) fn zero_col(&self) -> u32 {
+        self.zero.expect("a derivative row mints the zero at the add")
+    }
+
+    /// The three columns point `p` stands at in space, once its lift is minted.
+    fn lifted_cols(&self, p: usize) -> Option<[u32; 3]> {
+        self.lift_of(p).map(|k| self.lifts[k].x)
     }
 
     /// Mint the tangent columns a derivative row over `cols` reads, seeded still; a chart's are
@@ -132,7 +136,7 @@ impl Sketch {
     pub fn set_chart(&mut self, d: usize, c: u8) {
         let Toward::Chart { k, .. } = self.duals[d].toward else { return };
         self.duals[d].toward = Toward::Chart { k, axis: Some(c) };
-        let Some(x) = self.lift_of(self.duals[d].point).map(|l| self.lifts[l].x) else { return };
+        let Some(x) = self.lifted_cols(self.duals[d].point) else { return };
         let others: Vec<usize> = (0..3).filter(|&a| a != c as usize).collect();
         for (a, &col) in x.iter().enumerate() {
             let Some(&t) = self.duals[d].tangent.get(&col) else { continue };
@@ -155,7 +159,7 @@ impl Sketch {
     pub fn choose_charts(&mut self) {
         for d in 0..self.duals.len() {
             let Toward::Chart { axis: None, .. } = self.duals[d].toward else { continue };
-            let Some(x) = self.lift_of(self.duals[d].point).map(|l| self.lifts[l].x) else { continue };
+            let Some(x) = self.lifted_cols(self.duals[d].point) else { continue };
             let mut score = [0.0f64; 3];
             for c in self.constraints.iter().filter(|c| c.along == Some(d)) {
                 let cols = c.row_params(self);

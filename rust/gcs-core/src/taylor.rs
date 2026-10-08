@@ -258,6 +258,12 @@ fn form(kn: &Kernel) -> Option<Form> {
     })
 }
 
+/// Whether kernel `kid`'s form is affine: its second order is zero, so a derivative of it along
+/// any motion has no Hessian to read (`kernels::dual_kernel`).
+pub fn is_affine(kid: usize) -> bool {
+    matches!(form_of(kid), Some(Form::Affine))
+}
+
 /// Whether kernel `kid` has a form — what a trace's rows are asked before a curvature is stated
 /// against it.
 pub fn has_form(kid: usize) -> bool {

@@ -167,7 +167,8 @@ impl<'a> Walk<'a> {
             self.contact(&app, st, &bound, at, path);
             let toward = AlongBy::Line(local("#line", at));
             let key = app.prefix().to_string();
-            vec![Pass::Itself, Pass::Along(Along { point: local(&bound, at), toward, key })]
+            let made = Some(key.clone());
+            vec![Pass::Itself, Pass::Along(Along { point: local(&bound, at), toward, key, made })]
         } else {
             self.bind_to_use(&app, &bound, other.clone(), &u);
             vec![self.inherited_twin(&app, &u).into()]
@@ -220,7 +221,7 @@ impl<'a> Walk<'a> {
             self.once(Code::E040, at, m);
             return;
         }
-        if rel.along.is_some() || sc.twin.is_some() {
+        if rel.along.is_some() || sc.twin().is_some() {
             let m = format!("a set's body may put its point on another set, not state {spelled}");
             self.once(Code::E040, at, m);
             return;
@@ -255,6 +256,7 @@ impl<'a> Walk<'a> {
                 point: local(&bound, at),
                 toward: AlongBy::Chart(k),
                 key: keys[k as usize].clone(),
+                made: None,
             });
             let walks = [Pass::Made, along(0), along(1)];
             self.apply(&u, app, lit.body, &BTreeMap::new(), &walks, worded.clone(), depth);

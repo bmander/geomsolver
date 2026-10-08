@@ -91,14 +91,15 @@ pub struct SetDecl {
 /// **A relation stated as its derivative** (§6.21): the flattener's twin of a set's body row for
 /// a tangency — the row's rate as `point` moves (along a line's direction, or in a chart), the
 /// geometry the use made moving with it and every other number of the row held.  `key` names the
-/// use's derivative, one per tangency (one per chart direction of a tangency at a point), and is
-/// the prefix the use's own geometry is made under.  Never written; the references are the
-/// expansion's own.
+/// use's derivative, one per tangency (one per chart direction of a tangency at a point); `made`
+/// is the prefix the use's own geometry is made under, where it may make some.  Never written;
+/// the references are the expansion's own.
 #[derive(Clone, Debug)]
 pub struct Along {
     pub point: Ref,
     pub toward: AlongBy,
     pub key: String,
+    pub made: Option<String>,
 }
 
 /// What moves an `Along`'s point.
