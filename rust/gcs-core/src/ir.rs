@@ -38,6 +38,9 @@ pub enum Operation {
     SolidRel(syntax::SolidRel),
     ClaimOver(ClaimOver),
     Derived(syntax::DerivedDecl),
+    /// `k minimizes …` (#121): its curve, resolved, and its integrands as text over
+    /// `p.x`, `p.y`, `t.x`, `t.y`.
+    Minimize(syntax::Minimize),
 }
 
 #[derive(Clone, Debug)]
@@ -157,6 +160,7 @@ impl Statement {
             S::Unit(n) => Operation::Unit(n),
             S::SolidRel(r) => Operation::SolidRel(r),
             S::Derived(d) => Operation::Derived(d),
+            S::Minimize(m) => Operation::Minimize(m),
             S::ClaimOver(c) => Operation::ClaimOver(ClaimOver {
                 formal: c.formal, from: c.from, to: c.to, span: c.span,
                 body: c.body.into_iter().map(|s| Self::lower(s, path.clone())).collect::<Result<_, _>>()?,

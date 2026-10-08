@@ -408,6 +408,7 @@ impl Sketch {
             knots,
             weights: weights.filter(|w| w.iter().any(|&x| x != 1.0)),
             class: Classes::default(),
+            free: false,
         });
         Some(self.splines.len() - 1)
     }
@@ -505,6 +506,8 @@ impl Sketch {
         if expr {
             crate::expr::evaluate(self);   // its text may read names, or define one others read
         }
+        // an energy, or a row an energy's curve may be held by (#121)
+        self.settle_variational();
         id
     }
 
@@ -644,6 +647,7 @@ impl Sketch {
             // it may have defined a name others read, or been the last reader of a free one
             crate::expr::evaluate(self);
         }
+        self.settle_variational();
     }
 
     pub fn constraint(&self, id: u32) -> Option<&Constraint> {
@@ -677,7 +681,7 @@ impl Sketch {
     }
 
     pub fn n_residuals(&self) -> usize {
-        self.constraints.iter().filter(|c| !c.claim).map(|c| c.n_residuals()).sum()
+        self.constraints.iter().filter(|c| !c.claim).map(|c| c.rows_in(self)).sum()
     }
 
     /// Constraints the user added (excludes intrinsic and soft/transient ones).

@@ -1,6 +1,16 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.52 — October 2026**
+**Specification, Draft 0.53 — October 2026**
+
+**[0.53] Variational curves.** A curve may be stated by the principle that makes it rather than
+by its formula: `rope minimizes integral(p.y over p)` says the curve has the shape that makes
+its height, integrated along its length, least — with `length(150mm) rope` beside it, a hanging
+rope, the catenary, though nothing says so (§9.10). An energy is a sum of integrals of the point
+`p` running along the curve and its unit tangent `t`, weighted by arc length; `maximizes` turns it
+over. Like every statement, it says what the curve is, not what to do. `spline(a, b)` is a
+**free curve**: its ends written, its shape the drawing's to find (§6.1). `length(L) s` holds a
+spline's whole length. The diagnosis says what each stationary curve is — a minimum, a maximum, a
+saddle — and `std.hangs(L) k` is a hanging rope in one word.
 
 **[0.52] Two gauges that disagree are refused.** A `fix` adds no equation, so two holding one
 number at different values, or two orientations choosing opposite roots of one triangle, are a
@@ -642,6 +652,8 @@ A bare declaration introduces an entity all of whose coordinates are unknowns.
 Where an unnamed and unseeded coordinate *starts* is not the language's business (§15). It is worth saying only that the obvious answer is wrong: two implicit endpoints both at the origin is a zero-length line, with no direction for `horizontal l` to bite on and a singular row for any tangency, so an implementation MUST NOT place them coincidently.
 
 A **list** child slot — a spline's control polygon, a curve's arguments — has no arity to conjure children from, so a bare `s := spline` remains **E103**.
+
+**[0.53] A free curve** is a spline written with its two ends and nothing between, `rope := spline(a, b)`: the curve runs from `a` to `b` and its shape is the drawing's to find — what an energy over it (§9.10) settles. Its interior has no name and no seed in the source, and is never written back; how finely the implementation discretises it is its own business (§15), as where an unseeded point starts is, so long as the answer converges to the curve the statements describe. A two-point list with `knots` or `weights` written is a control polygon like any other, and refused as one too short.
 
 ### 6.2 Constructor declarations
 
@@ -1765,7 +1777,7 @@ What goes in the parentheses is a short list:
 | `level` | infix | **[0.46]** (p, p), the direction in the parentheses — an axis, a line, or the view's word; (p, plane) with `u`/`v`, from the plane's origin |
 | `angle` | infix | (line, line); **[0.27]** (line, line) with a second pair in the parentheses, `l1 angle(l3, l4) l2` (§9.4); **[0.42]** (axis, axis \| line), (line, axis), the unsigned angle in space |
 | `radius` | prefix | a circle or an arc |
-| `length` | prefix | **[0.27]** an arc: its length along itself |
+| `length` | prefix | **[0.27]** an arc: its length along itself; **[0.53]** a spline: its whole length |
 | `midpoint`, `parallel`, `perpendicular`, `symmetry` | infix | one each; **[0.42]** `parallel` and `perpendicular` also take an axis beside an axis or a line, in space, and (axis, plane) — along the plane, and square to it — either way round; **[0.43]** `parallel` takes (plane, plane): the two face alike, either way (two rows over their normals; neither's place nor its turn within itself) |
 | `project` | infix | (point, point), each `in` a plane — the two planes are read off the memberships and never written (§6.7) **[0.10]** |
 | `fix` | prefix | the gauge (§13): an entity, and its own numbers pinned whole or by member — `fix((0, 0)) p`, `fix(x == 0) p`, `fix(r == 25) c`, `fix(dir == (0, 0, 1)) t` **[0.34]** **[0.45]** |
@@ -1949,7 +1961,27 @@ A **relation word** is defined at the top level of a file — never inside a bod
 
 **A body may be several statements** **[0.50]**: `l1 flush(d) l2 := { l1 parallel l2; l2.p1 distance(d) l1 }`, in braces, one per line, for one fact about the operands that takes several rows. It may declare the geometry its relations need (`private ab := line(a, b)`), which each use makes anew, under a name of the use's own, and read only what it declares besides its operands and parameters. Every relation a use makes is the statement's: deleted with it, described as it, a placement on it going to the one relation when it makes one. A body may write other words and use sets (§6.21), a set written in place included (`a orbits(r) o := a coincident std.Sphere(o, r: r)`). An infix word is a relation **between** its operands — distance, symmetry, flushness; that each stands on a third thing is said of each (`a coincident P`), not made a word.
 
-**A word and a set are one predicate** **[0.50]**: a body over parameters (in parentheses, given at the call) and bound variables (a word's operands, a set's point, written where the definition shows them and filled at the use), applied by one rule — under a name of the use's own, each bound variable the operand the use wrote, the body closed over what it was given. A component instance is the case with no bound variable, stated where it is written. An operand that names nothing is **E101** once, where it is written, and not again at each place in the body that reads it. *Open, non-normative:* a word as a value (#80). The standard library defines `horizontal` and `vertical` between two points as words (§14.4), and where one point stands from another (`b offset(dx: 30, dy: 12) a`, `b right_of(d: 30) a`, `left_of`, `above`, `below`), where a point stands in a plane's frame (`p coords(du: 20, dv: 5) P`, `p on_u(d: 20) P`, `p on_v(d: 5) P`), two lines crossed (`a skew(theta: 90deg, e: 20mm) b`) and one line turned from another (`a turned(theta: 180deg) b`). Each is two dimensions or a dimension and a level, said as the one fact they are.
+**A word and a set are one predicate** **[0.50]**: a body over parameters (in parentheses, given at the call) and bound variables (a word's operands, a set's point, written where the definition shows them and filled at the use), applied by one rule — under a name of the use's own, each bound variable the operand the use wrote, the body closed over what it was given. A component instance is the case with no bound variable, stated where it is written. An operand that names nothing is **E101** once, where it is written, and not again at each place in the body that reads it. *Open, non-normative:* a word as a value (#80). The standard library defines `horizontal` and `vertical` between two points as words (§14.4), and where one point stands from another (`b offset(dx: 30, dy: 12) a`, `b right_of(d: 30) a`, `left_of`, `above`, `below`), where a point stands in a plane's frame (`p coords(du: 20, dv: 5) P`, `p on_u(d: 20) P`, `p on_v(d: 5) P`), two lines crossed (`a skew(theta: 90deg, e: 20mm) b`) and one line turned from another (`a turned(theta: 180deg) b`). Each is two dimensions or a dimension and a level, said as the one fact they are. **[0.53]** A body may state an energy over an operand (§9.10): `std.hangs(L: 150mm) rope` is a curve that long, hanging.
+
+### 9.10 Energies: `minimizes` and `maximizes` **[0.53]**
+
+```
+rope minimizes integral(p.y over p)
+strip maximizes integral((p.x * t.y - p.y * t.x) / 2 over (p, t))
+rope minimizes 2 * integral(p.y over p) - integral(p.x over p)
+```
+
+`k minimizes E` is a statement about the curve `k`, as `horizontal l` is about a line: the word is indicative, never an instruction. Its **energy** `E` is a sum of terms `c * integral(EXPR over p)`, each a constant `c` (1 where none is written) times an integral along `k` of `EXPR`, read at the point `p` running along it — and, written `over (p, t)`, at its unit tangent `t` there — **weighted by arc length**. `EXPR` reads `p.x`, `p.y`, `t.x`, `t.y` (the point's coordinates in the view `k` is drawn in) and numbers in scope; any other name is **E101**. Where the document names a unit the point is a length and `EXPR` is dimension-checked: a whole power of length, every term of one energy the same (**E103**).
+
+`k minimizes E` states that **`k` has the shape that makes `E` stationary** among every shape the rest of the drawing allows it: at a regular point, the conditions of Lagrange — the gradient of `E` in the curve's unknowns is a combination of the gradients of the relations holding the curve, each with a multiplier the implementation solves for. `k maximizes E` is `k minimizes -E`. A curve is varied only in its **interior**: its ends are what it hangs between, so they keep the freedom they have, and an energy closes exactly the freedoms of the shape it varies (§16.3). Several energy statements over one curve, or over curves one relation joins, are **one energy**, their terms added: order-free (P2), as a body's operations are. What is solved for is stationarity; that the stationary shape is the extremum the word names is **judged**, as a claim is (§9.7, below).
+
+- **What may be varied.** An energy is over a spline — a free one (§6.1) or one whose control points are written — and over the unknowns the relations holding it own (a contact's place along it): the configuration is the curve and where it touches.
+- **A contact presses; a drawing relation yields.** A relation reading a varied coordinate and other geometry that is still free is satisfied by that geometry and holds the energy to nothing: a line drawn tangent to a hanging rope moves onto it. One whose every other operand is held is a constraint of the minimisation, with its multiplier: the rope is pushed to touch a held line. A relation of either kind whose second derivative the implementation cannot take is **E040** where it would press, said at that relation.
+- **The discretisation's gauge.** A spline's control points can slide along it without moving its shape, so an energy of the shape alone does not decide them; an implementation MUST fix that freedom itself (the reference holds neighbouring spans equally long), never asking the document to.
+- **The solution set is the stationary points (P3).** A stationary curve may be a minimum, a maximum or a saddle, and the seed decides which the solve reaches. The diagnosis MUST say which — from the inertia of the Lagrangian's Hessian on the motions the curve's relations leave it — and SHOULD say it where the statement is written, as a claim's verdict is (§9.7): `minimum`, `maximum`, `saddle`, or `degenerate` where the second order cannot tell. A `maximizes` answered `maximum` found what it asked for. A non-minimum is reported, not refused.
+- A relation word's body may state an energy over its operand: `std.hangs(L) k := { length(L) k; k minimizes integral(p.y over p) }`.
+
+*Open, non-normative:* an integral as a constraint of its own (`integral(…) == A`), an integrand reading other geometry, a natural end condition (an end free to slide, varied with the curve), and a discretisation refined until the answer converges within a stated tolerance and reports its error.
 
 ---
 
@@ -2535,7 +2567,10 @@ type           = "Int" | "Scalar" | "Length" | "Angle" | "Side"      (* §4.1 [0
                                      was folded into `Plane` in 0.15 *)
 
 statement      = definition | input | relation | gauge | branch | block | in_block
-               | unit_decl | body_rel | claim_over | hint | path_decl | frag ;
+               | unit_decl | body_rel | claim_over | energy | hint | path_decl | frag ;
+energy         = ref ( "minimizes" | "maximizes" ) term { ( "+" | "-" ) term } ; (* §9.10 [0.53] *)
+term           = [ "-" ] [ NUMBER "*" ] "integral" "(" expr "over"
+                 ( IDENT | "(" IDENT "," IDENT ")" ) ")" ;
 in_block       = "in" ref "{" { statement } "}" ;         (* membership, written once: §6.7 *)
 unit_decl      = "unit" IDENT ;                                           (* §3.3.2 *)
 

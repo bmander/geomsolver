@@ -11,7 +11,7 @@
 #[allow(unused_imports)]
 use crate::fmath::Det;
 use crate::constraints::Constraint;
-use crate::kernels::{self, Kernel};
+use crate::kernels::{self, Kernel, KernelKey};
 use crate::linalg::{rank_and_nullspace_with, rrqr_with, Mat, RankNull, Tol};
 use crate::model::{EntRef, Sketch};
 use crate::sparse::Ata;
@@ -172,7 +172,7 @@ pub struct System {
     csr_data: Vec<f64>,
     slot_of: BTreeMap<u32, (usize, usize)>,
     ata: Option<Ata>,
-    /// The static kernels plus one per curve definition — see `kernel_table`.
+    /// The kernel of each block, by `Block::kid` — see `build_kernel`.
     kernels: Vec<Kernel>,
     /// The block-triangular order of the hard rows, worked out the first time it is asked for
     /// (`block_order`) and kept for the life of the compile, whose topology it is a fact about.
@@ -401,32 +401,33 @@ fn to_units(
     }
 }
 
-/// Every kernel this system may evaluate: the static table, then one per curve definition the
-/// document holds.
+/// The kernel a key names (`Constraint::kernel_key`): a static one, or one built from the
+/// sketch.
 ///
 /// A curve family's kernel is not in `KERNELS` because there is no fixed number of them, and its
-/// width is the family's rather than the type's.  Building the table here — once, at compile
-/// time, like everything else about a block — is what lets two different curves have different
-/// column counts while each block keeps a fixed one.
-fn kernel_table(sk: &Sketch) -> Vec<Kernel> {
-    let mut t: Vec<Kernel> = kernels::KERNELS.to_vec();
-    // `FamilyKernel::ALL` per definition, in its order — which is what `kernel_id_in` counts
+/// width is the family's rather than the type's — as a spline length's is its control-point
+/// count's.  Building them here — once per key, at compile time, like everything else about a
+/// block — is what lets two different curves have different column counts while each block
+/// keeps a fixed one.
+pub fn build_kernel(sk: &Sketch, key: KernelKey) -> Kernel {
     use crate::constraints::FamilyKernel;
-    for d in &sk.curve_defs {
-        let n_theta = d.vars.len().saturating_sub(1 + d.values.len());
-        let (n_const, body, formed) = match &d.body {
-            crate::model::CurveBody::Exprs { x, y } => {
-                (3 + x.flat.len() + y.flat.len() + d.values.len(), kernels::FORMULA, true)
-            }
-            crate::model::CurveBody::Trace(l) => {
-                (3 + d.values.len() + l.flat.len() + l.n_q(), kernels::TRACE, l.without_form().is_none())
-            }
-            crate::model::CurveBody::Envelope(g) => {
-                (2 + d.values.len() + g.flat.len(), kernels::ENVELOPE, true)
-            }
-        };
-        for fk in FamilyKernel::ALL {
-            t.push(match (fk, body) {
+    match key {
+        KernelKey::Static(id) => kernels::KERNELS[id],
+        KernelKey::Family { def, fk } => {
+            let d = &sk.curve_defs[def];
+            let n_theta = d.vars.len().saturating_sub(1 + d.values.len());
+            let (n_const, body, formed) = match &d.body {
+                crate::model::CurveBody::Exprs { x, y } => {
+                    (3 + x.flat.len() + y.flat.len() + d.values.len(), kernels::FORMULA, true)
+                }
+                crate::model::CurveBody::Trace(l) => {
+                    (3 + d.values.len() + l.flat.len() + l.n_q(), kernels::TRACE, l.without_form().is_none())
+                }
+                crate::model::CurveBody::Envelope(g) => {
+                    (2 + d.values.len() + g.flat.len(), kernels::ENVELOPE, true)
+                }
+            };
+            match (FamilyKernel::ALL[fk as usize], body) {
                 (FamilyKernel::Contact, kernels::TRACE) => kernels::trace_kernel(n_theta, n_const),
                 (FamilyKernel::Contact, kernels::ENVELOPE) => kernels::envelope_kernel(n_theta, n_const),
                 (FamilyKernel::Contact, _) => kernels::curve_kernel(n_theta, n_const),
@@ -435,15 +436,12 @@ fn kernel_table(sk: &Sketch) -> Vec<Kernel> {
                     kernels::curve_curvature_kernel(n_theta, n_const, body, formed)
                 }
                 (FamilyKernel::Extrusion, _) => kernels::extrusion_kernel(n_theta, n_const, body),
-            });
+            }
         }
+        KernelKey::Dual(inner) => kernels::dual_kernel(inner),
+        KernelKey::SplineLength { n, free } => kernels::spline_length_kernel(n, free),
+        KernelKey::Stationary(cid) => crate::variational::kernel(sk, cid),
     }
-    // a derivative per static kernel, past the families, where any row is one (§6.21) —
-    // `Constraint::kernel_id_in` counts the same way
-    if sk.constraints.iter().any(|c| c.along.is_some()) {
-        t.extend((0..kernels::N_KERNELS).map(kernels::dual_kernel));
-    }
-    t
 }
 
 impl System {
@@ -454,7 +452,6 @@ impl System {
         // Forgetting here is exact — nothing earlier is worth carrying past a recompile anyway.
         crate::locus::forget();
         crate::generate::forget();
-        let table = kernel_table(sk);
         let n = sk.params.len();
         let free = sk.free_indices();
         let n_free = free.len();
@@ -508,13 +505,16 @@ impl System {
         // the diagnosis judges it by stacking its rows onto a compiled system (`conditioned_with`)
         // rather than by compiling a system that has them.
         let spans = crate::curve::contact_spans(sk);
-        let mut by_kernel: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+        let mut by_kernel: BTreeMap<KernelKey, Vec<usize>> = BTreeMap::new();
         for (i, c) in sk.constraints.iter().enumerate() {
-            if c.claim {
+            // a constraint with no rows here compiles none: an energy's are carried once, by the
+            // constraint leading its group (#121)
+            if c.claim || c.rows_in(sk) == 0 {
                 continue;
             }
-            by_kernel.entry(c.kernel_id_in(sk)).or_default().push(i);
+            by_kernel.entry(c.kernel_key(sk)).or_default().push(i);
         }
+        let table: Vec<Kernel> = by_kernel.keys().map(|&k| build_kernel(sk, k)).collect();
 
         let mut blocks: Vec<Block> = Vec::new();
         let mut slot_of = BTreeMap::new();
@@ -522,7 +522,7 @@ impl System {
         let mut hard: Vec<bool> = Vec::new();
         let mut row0 = 0usize;
         let mut joff = 0usize;
-        for (&kid, idxs) in by_kernel.iter() {
+        for (kid, idxs) in by_kernel.values().enumerate() {
             let kn = table[kid];
             let nb = idxs.len();
             let mut gidx = Vec::with_capacity(nb * kn.n_par);
@@ -935,7 +935,7 @@ impl System {
         if extra.is_empty() || self.n_free == 0 {
             return (base, row_c);
         }
-        let n_extra: usize = extra.iter().map(|c| c.n_residuals()).sum();
+        let n_extra: usize = extra.iter().map(|c| c.rows_in(sk)).sum();
         let mut m = Mat::zeros(base.rows() + n_extra, self.n_free);
         m.data[..base.as_mat().data.len()].copy_from_slice(&base.as_mat().data);
         let mut r = base.rows();
@@ -943,7 +943,7 @@ impl System {
             let ps = c.params(sk);
             let v = c.local_values(sk);
             let j = c.jacobian(sk, &v);
-            let kn = crate::kernels::kernel(c.kernel());
+            let kn = c.kernel_in(sk);
             let inv = 1.0 / self.extent.max(1.0).dpowi(kn.degree as i32 - 1);
             let mut cs = Vec::new();
             for t in 0..kn.n_res {

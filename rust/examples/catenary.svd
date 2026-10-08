@@ -1,0 +1,10 @@
+// Presentation of catenary.sv. Model geometry is independent of this drawing.
+model m from "catenary.sv"
+
+sheet drawing {
+  size A4
+  label "A HANGING ROPE" at (14mm, 18mm)
+  label "A curve 150 long between two points, its height along it least: the catenary" at (14mm, 28mm)
+  sketch rope(m) at (55mm, 80mm)
+  dimensions in rope
+}

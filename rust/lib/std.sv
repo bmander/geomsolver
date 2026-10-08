@@ -64,6 +64,14 @@ a turned(theta) b := {
   a equal b
 }
 
+// A rope hanging (#121): a curve `L` long that makes its height, integrated along it, least —
+// `hangs(L: 150mm) rope` of a free curve `rope := spline(a, b)`.  The view's down is the way it
+// falls.  What it comes to is the catenary, which nothing here says.
+hangs(L) k := {
+  length(L) k
+  k minimizes integral(p.y over p)
+}
+
 // The standard axes and planes, which every document that says `use std` has — as a CAD part
 // has its origin planes — so the workspace can offer them as places to draw.  The axes are held
 // outright, each through the world origin: x right, y away from the front's viewer, z up, and

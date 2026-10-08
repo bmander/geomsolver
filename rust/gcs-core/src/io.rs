@@ -303,6 +303,10 @@ pub fn to_json(sk: &Sketch) -> Json {
             if let Some(w) = &s.weights {
                 o.set("weights", Json::Arr(w.iter().map(|&x| Json::Num(x)).collect()));
             }
+            // and a free curve says so, its interior the drawing's (#121)
+            if s.free {
+                o.set("free", Json::Bool(true));
+            }
             o
         })
         .collect();
@@ -533,6 +537,7 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
             )
         })?;
         sk.splines[si].class = read_class(s);
+        sk.splines[si].free = matches!(s.get("free"), Some(Json::Bool(true)));
     }
     // an ellipse is a library component now (`use std`, `curve e = Ellipse(f, a: …, b: …).p
     // over u in (0, 360)` — issue #47, item 4) and a sketch document cannot say so, so one that
@@ -712,6 +717,8 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
     sk.settle_turns();
     // a chart a document did not gauge is gauged where its point stands (§6.21)
     sk.choose_charts();
+    // an energy's gauge rows and multipliers, which a document never carries (#121)
+    sk.settle_variational();
     Ok(sk)
 }
 
@@ -856,6 +863,7 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         let class = sp.class.clone();
         let Some(ni) = dst.spline_weighted(&ctrl, Some(knots), weights) else { continue };
         dst.splines[ni].class = class;
+        dst.splines[ni].free = sp.free;
         spline_map[i] = Some(ni);
         made.push(EntRef::spline(ni));
     }
@@ -1407,6 +1415,8 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         }
     }
     dst.settle_turns();
+    // an energy's gauge rows and multipliers are minted, not copied (#121)
+    dst.settle_variational();
     made
 }
 
@@ -1902,6 +1912,17 @@ pub fn describe_with(c: &Constraint, name: &dyn Fn(EntRef) -> Option<String>) ->
             [a, b] => format!("{claim}{a} {}{args} {b}", w.word),
             ops => format!("{claim}{}{args} {}", w.word, ops.join(" ")),
         };
+    }
+    // an energy's term reads as the statement it came from wrote it, its point and tangent
+    // under the names the integrand is stated in (#121)
+    if c.kind == CKind::Stationary {
+        let (Arg::Str(text), Arg::Ent(e)) = (&c.args[2], &c.args[0]) else { return String::new() };
+        let verb = if crate::variational::maximizes(c) { "maximizes" } else { "minimizes" };
+        let w = c.args[1].num();
+        let w = if w == 1.0 { String::new() } else { format!("{} * ", reading(SpecKind::Float, w)) };
+        let over = if text.contains("t.") { "(p, t)" } else { "p" };
+        let curve = name(*e).unwrap_or_else(|| entity_name(*e));
+        return format!("{curve} {verb} {w}integral({text} over {over})");
     }
     // **the operator, as a document writes it** (spec §9.1) — `syntax::operator_text` is the one
     // place a constraint becomes its spelling, so the drawing, the constraint list and the

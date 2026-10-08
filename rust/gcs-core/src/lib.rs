@@ -37,6 +37,7 @@ pub mod graph;
 pub mod hidden;
 pub mod homotopy;
 pub mod io;
+pub mod integral;
 pub mod interval;
 pub mod json;
 pub mod kernels;
@@ -75,6 +76,7 @@ pub mod vertex;
 pub mod edge;
 pub mod spatial_face;
 pub mod units;
+pub mod variational;
 pub mod witness;
 
 pub mod ir;

@@ -140,11 +140,46 @@ inside a derivative.  `along` and `duals` travel through `graft` (duals first, r
 missing its point or line is dropped with its rows), JSON (`"duals"`, `"along": index`) and
 `topology_key`; `cgraph` leaves it to the residual, the witness never jitters it, callouts skip
 it, `to_program` drops it (a flat program cannot spell it).  Every static kernel but the drags
-and the spline contacts has a Taylor form: the spatial `*_rows` are generic over
+and the spline gauge has a Taylor form (the spline contacts' exact to every order, `taylor::span_frame`:
+the basis about `t₀` a cubic in the jet `τ`, over `Σ wB` by the quotient rule): the spatial `*_rows` are generic over
 `kernels::Num` (`Dual<N>` for res/jac, `Jet` for the form, `kernels::num_form`), the
 hand-written spatial kernels have generic twins held to them by `tests/taylor.rs`.  Refused: a
 set named as an entity (E040 in `rewrite`), `coincident` between two sets, parentheses, a
 non-point `coincident`, a non-line or claimed `tangent`.  `tests/sets.rs` is the gate.
+
+**Variational curves (§9.10, §6.1, 0.53, #121, `variational.rs`):** `k minimizes E` / `k maximizes
+E` (`StmtKind::Minimize`, `parser/minimize.rs`; indicative, a statement about `k` read by the word
+past its ref, as the body words are — never an imperative opener) with `E` a sum of `c *
+integral(EXPR over p)` (or `over (p, t)`, `t` the unit tangent) along `k`, ds-weighted; `flatten::values::settle_integrand` writes the scope's numbers in and
+renames the binders `p`/`t`, so the sketch holds text over `p.x p.y t.x t.y`. Each term is a
+`CKind::Stationary` constraint (`[spline, weight, integrand, degree, maximize]`); `Sketch::
+settle_variational` (at `add`/`remove`, the end of `graft`, `from_json`, after elaboration's
+`expr::evaluate`) groups the terms over one curve (or curves one row reads), mints the **gauge**
+(`CKind::SplineGauge`, intrinsic, static kernel: neighbouring spans equally long — without it the
+KKT point is a saddle) and the **multipliers** (`Sketch::multipliers`, never saved), and caches
+`Sketch::variational`. The group's lowest id **leads**: its rows are `∂E/∂y + Σ λ ∂g/∂y` over the
+free coordinates `y` of the varied splines' **interior** control points (ends keep their freedom),
+`g` every hard row reading one whose other free columns are the curves' own (a **contact**, which
+presses; a row reading other free geometry is a **drawing relation**, satisfied by that geometry,
+no multiplier — a free line tangent to the rope moves onto it), and `y` also holds the contacts'
+own unknowns (a contact's `t`); the others compile none (`rows_in` 0, skipped in `System::new`).
+Its kernel is built per leader (`KernelKey::Stationary`, `variational::pack`/`kernel`):
+self-contained, the energy's Hessian from four tapes of `F = f(C, C'/|C'|)|C'|` (each first in one
+variable, `tape::eval_series_flat`'s `g[1]`), a row's by polarising its Taylor form, a spline
+length's and the gauge's from `integral.rs`; a row with neither is E040. `System::solve` seeds λ
+by least squares (`variational::seed_multipliers`). **Kernels built from the sketch are keyed**
+(`kernels::KernelKey`: static, family, dual, spline length, stationary; derived order = block
+order) and asked through `Constraint::kernel_key`/`kernel_in`/`rows_in`, never `kernel_id()`.
+`length(L) s` on a spline is `CKind::SplineLength` (all control points, Gauss–Legendre on four
+pieces a span, `integral.rs`; the nodes are written into each kernel's constants, never rebuilt per
+evaluation). `spline(a, b)` is a **free curve** (`SplineE::free`): 16 control
+points (`FREE_CTRL`), the interior minted nameless, skipped by `commit_seeds`, seeded by
+`variational::seed_free` (chord bowed to the stated length, to the lower-energy side); knot
+insertion refuses it. The verdict (`variational::verdict`: reduced Hessian on `null(∂g/∂y)`,
+inertia by `linalg::sym_eigenvalues`) is `Diagnosis::extrema`, reported by the CLI, the JSON
+(`[id, verdict, asked]`) and the app's `.extremum-asked`/`.extremum-other` marks. `std.hangs(L) k`
+is a word whose body states `k minimizes …`. `tests/{spline_length,minimize,catenary}.rs` are the
+gates.
 
 **Predicates, applied (§9.9, §6.21, 0.50, #103):** a relation word and a set are one predicate —
 parameters given at the call, **bound variables** (a word's operands, a set's point) filled at

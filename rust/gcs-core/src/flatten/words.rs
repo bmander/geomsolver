@@ -191,6 +191,24 @@ pub(crate) fn faults(def: &WordDef) -> Vec<(Code, Span, String)> {
                     }
                 }
             }
+            // an energy is over an operand, and its integrand reads the point it runs along, its
+            // tangent and the word's numbers (#121)
+            StmtKind::Minimize(m) => {
+                if !known(&m.curve) {
+                    out.push((Code::E101, m.curve.span, reach(&crate::syntax::ref_text(&m.curve))));
+                }
+                for t in &m.terms {
+                    let bound = |name: &str| {
+                        let root = name.split('.').next().unwrap_or(name);
+                        root == t.point.text || t.tangent.as_ref().is_some_and(|n| n.text == root)
+                    };
+                    for name in reads(&t.body) {
+                        if !bound(&name) && !def.params.iter().any(|p| p.text == name) {
+                            out.push((Code::E101, t.body_span, reach(&name)));
+                        }
+                    }
+                }
+            }
             _ => {}
         }
     }

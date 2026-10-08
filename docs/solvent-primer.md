@@ -194,6 +194,11 @@ dimensions. Name a point yourself when several statements mention it. The except
 its control points must be declared, named points (`s := spline(k0, k1, k2, k3)`); `s := spline`
 alone is an error.
 
+**A free curve** is a spline written with its two ends and nothing between: `rope := spline(a,
+b)` runs from `a` to `b`, and its shape is the drawing's to find — what an energy over it settles
+(1.10.1). Its interior control points have no names, take no constraints and are never written
+back; there are sixteen in all, and you cannot insert one.
+
 **A spline may be rational.** `s := spline(k0, k1, k2, k3) weights [1, w, w, 1]` gives each
 control point a weight: a heavier one pulls the curve toward itself, and with
 `w = (1 + sqrt(2)) / 3` and the inner points where a quarter circle's end tangents meet the cubic's
@@ -238,7 +243,7 @@ stands in the parentheses:
 | `level(dir)` | infix | two points with the same ordinate along `dir` — an axis, a line, or a view's word (`up`, `right`); a point and a plane with `u`/`v`: on the plane's line through its origin. The ordinate's zero: write it rather than `distance(0, along: …)`, which is refused |
 | `angle` | infix | two lines, directed (below); an axis and a line or axis, unsigned, in space (1.13). With a second line pair instead of a number, `l1 angle(l3, l4) l2` equates two angles |
 | `radius` | prefix | a circle or arc |
-| `length` | prefix | an arc: radius × sweep, counter-clockwise from `start` to `end` (a magnitude) |
+| `length` | prefix | an arc: radius × sweep, counter-clockwise from `start` to `end` (a magnitude); a spline: its whole length |
 | `symmetry(line)` | infix | two points |
 | `midpoint` | infix | a point and a line |
 | `parallel`, `perpendicular` | infix | two lines; an axis and a line or axis (in space); an axis and a plane (`perpendicular`: along its normal); `parallel` also two planes |
@@ -281,9 +286,10 @@ stands in the parentheses:
   `ab angle(ad, ac) ad`, a reflection `incoming angle(mirror, outgoing) mirror`. That is one
   equation; the same tie through a shared unknown is two equations and an unknown (2.15).
   Two numbers in the parentheses are refused.
-- **`length(L) a`** is only for arcs (a line's length is `distance`; a circle has no ends). The
-  sweep is read counter-clockwise in `(0°, 360°]`, so measure the long way round by going round
-  counter-clockwise. It may read an unknown and is drawn with a `⌒` mark.
+- **`length(L) a`** is for arcs and splines (a line's length is `distance`; a circle has no
+  ends). An arc's sweep is read counter-clockwise in `(0°, 360°]`, so measure the long way round
+  by going round counter-clockwise; a spline's is its whole length, by quadrature. It may read an
+  unknown and is drawn with a `⌒` mark.
 
 **Slots a constraint owns** (a contact's curve parameter, always called `t`) are normally omitted.
 Seed one with `p coincident s hint(t: 0.4)`; pin one with `p coincident(t == 0.4) s`.
@@ -678,6 +684,43 @@ claim decided within the faceting of a round face is **undecided**:
     unresolved: containment is within curved-faceting uncertainty
   claim bore clear(2mm) stock — refuted, measured -9.999665339174008 (interval [-10.00026533917401, -9.999065339174006])
 ```
+
+### 1.10.1 Energies: `minimizes` and `maximizes`
+
+An energy states a curve by the principle that makes it rather than by its formula:
+
+```
+rope := spline(a, b)                  // a free curve: its shape is the drawing's to find
+length(150mm) rope
+rope minimizes integral(p.y over p)   // ...and it hangs: its height along it least
+```
+
+`k minimizes E` says what the curve `k` is — the shape that makes `E` stationary — the way
+`horizontal l` says what a line is. `integral(EXPR over p)` integrates `EXPR` along `k`, weighted by
+arc length, `p` the point running along it; `over (p, t)` also names its unit tangent `t`. `EXPR`
+reads `p.x`, `p.y`, `t.x`, `t.y` and numbers in scope, nothing else (E101). An energy is a sum of
+such terms, each times a number: `rope minimizes 2 * integral(…) - integral(…)`. `maximizes` is the
+same with the sign turned. Several statements over one curve add up.
+
+- **What it varies.** The curve's interior, never its ends: an energy closes exactly the curve's
+  own freedoms, so an end left free keeps its freedom and can be dragged (the rope re-hangs).
+  The curve is a free spline (`spline(a, b)`) or one with written control points.
+- **Contacts and drawing.** A relation between the curve and other geometry that is still free
+  moves that geometry: `rope tangent floor` with `floor` free puts the line on the hanging rope,
+  which hangs as before. With the other geometry held, the relation presses on the curve: a held
+  `floor` lifts or lowers the rope to touch it (a tangency touches and matches direction; it is
+  not "rests on", and may cross elsewhere). A contact's place along the curve is varied with it.
+- **Under a `unit`** the point is a length and the integrand is dimension-checked: `p.y + 1` is
+  E103, `p.y + 1mm` is fine. Without one every number is plain.
+- **The verdict.** A stationary curve may be a minimum, a maximum or a saddle, and the seed
+  decides which the solve reaches. The CLI prints `minimum: rope minimizes integral(p.y over
+  p)`, and the app washes the statement green when it found what it asked for. A free curve
+  starts bowed to whichever side lowers the energy, so a hanging rope hangs and Dido's strip bulges
+  outward.
+- **Area** is a line integral round the boundary: `integral((p.x * t.y - p.y * t.x) / 2 over (p,
+  t))` is the area between `k` and the chord back from its end to its start, positive when that
+  loop runs counter-clockwise.
+- `use std (hangs)` gives `hangs(L: 150mm) rope`, the length and the energy in one word.
 
 ### 1.11 Datums
 
@@ -2071,6 +2114,49 @@ is `7 params, 7 equations` — an extra unknown only to be equated away.
 `ab angle(ab, ac, sense: cw) ad` puts `ad` at −60°, `ac`'s mirror in `ab`. `reflection.sv` states
 the law of reflection as `incoming angle(m, outgoing) m`, with the classical proof as a `claim`
 judged a theorem.
+
+### 2.16 A hanging rope: DOF 2, under, on purpose
+
+```
+unit mm
+use std
+
+in std.front {
+  a := point
+  b := point hint((100, 0))
+  fix((0mm, 0mm)) a
+  rope := spline(a, b)
+  length(150mm) rope
+}
+rope minimizes integral(p.y over p)
+```
+
+`43 params, 41 equations, structural rank 41; DOF 2` and `minimum: rope minimizes integral(p.y
+over p)`: the two freedoms are `b`'s, and dragging it re-hangs the rope. With `b` held at
+`(100mm, 0mm)` the rope is within 0.005 of `a cosh((x − 50)/a) + c` with `2a sinh(50/a) = 150`
+(`catenary.sv`). `maximizes` instead stands it up as an arch, reported a maximum.
+
+### 2.17 Dido's problem: DOF 0, well
+
+```
+unit mm
+use std
+
+in std.front {
+  a := point
+  b := point
+  fix((0mm, 0mm)) a
+  fix((100mm, 0mm)) b
+  shore := line(a, b)
+  strip := spline(a, b)
+  length(130mm) strip
+}
+strip maximizes integral((p.x * t.y - p.y * t.x) / 2 over (p, t))
+```
+
+`41 params, 41 equations, structural rank 41; DOF 0` and `maximum: …`: the strip that encloses
+the most land against the shore is an arc of a circle, `R sin α = 50`, `2Rα = 130`, to within
+0.001 (`dido.sv`).
 
 ---
 

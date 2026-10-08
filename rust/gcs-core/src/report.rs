@@ -165,6 +165,20 @@ pub fn diagnosis_json(sk: &Sketch, d: &Diagnosis) -> Json {
         ("claimsTheorem", ids(&d.claims_theorem)),
         ("claimsViolated", ids(&d.claims_violated)),
         ("claimsConsuming", ids(&d.claims_consuming)),
+        // each energy's verdict, by its terms' constraints (#121): `[id, "minimum", asked]`, the
+        // last whether it is what the statement asked for — a minimum of a `minimizes`
+        (
+            "extrema",
+            Json::Arr(
+                d.extrema
+                    .iter()
+                    .map(|&(id, v)| {
+                        let asked = crate::variational::asked(sk, id) == v;
+                        Json::Arr(vec![Json::Int(id as i64), Json::Str(v.name().into()), asked.into()])
+                    })
+                    .collect(),
+            ),
+        ),
         // the claims about solids, each with what was measured and how far the faceting could be
         // wrong — there is no `consuming` here, since a solid claim compiles no row to consume
         // rank with (§9.8)
@@ -800,11 +814,12 @@ pub fn registry_json() -> Json {
                 ("soft", k.soft_by_default().into()),
                 ("commutative", k.commutative().into()),
                 // -1 for a curve contact: its kernel is the curve *definition's*, so there is no
-                // one id to publish and a binding has nothing to do with the number anyway
+                // one id to publish and a binding has nothing to do with the number anyway — and
+                // for a kind whose kernel is built at its operands' width (a spline's length)
                 (
                     "kernel",
                     match k {
-                        k if k.family_kernel().is_some() => Json::Int(-1),
+                        k if k.family_kernel().is_some() || k.built() => Json::Int(-1),
                         _ => (k.kernel() as i64).into(),
                     },
                 ),
