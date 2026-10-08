@@ -1955,8 +1955,8 @@ pub struct WordUse {
     pub ops: Vec<EntRef>,
     /// The parentheses' text as written (`d: 5mm`), or empty.
     pub args: String,
-    /// The operand that is a set, by its place among the operands and its name as written.
-    pub set: Option<(usize, String)>,
+    /// The operands that are sets, each by its place among the operands and its name as written.
+    pub sets: Vec<(usize, String)>,
 }
 
 /// `+1` and `−1` as the words a statement writes them with — the one place the two meet, read by
@@ -2179,7 +2179,7 @@ impl Constraint {
     /// cannot share a block — and the definition is only reachable through the sketch.  The ids
     /// run on past the static ones, which is what lets `System` hold a table of both.
     pub fn kernel_id_in(&self, sk: &Sketch) -> usize {
-        // a linearisation's kernel is its row's kernel's twin, past the families' (§6.21)
+        // a derivative's kernel is its row's kernel's twin, past the families' (§6.21)
         if self.along.is_some() {
             return kernels::N_KERNELS
                 + FamilyKernel::ALL.len() * sk.curve_defs.len()
@@ -2709,12 +2709,17 @@ impl Constraint {
         self.params_on_row(sk, None)
     }
 
+    /// The constants the row reads as itself, before a derivative's.
+    pub(crate) fn row_consts(&self, sk: &Sketch) -> Vec<f64> {
+        self.own_consts_on(sk, None)
+    }
+
     /// Whether this row may be stated as its derivative under dual `d` (§6.21) — `Ok(false)`
     /// where it reads nothing the use moves, so its derivative is nothing — or why it may not.
     /// The one rule the elaborator and a document reader share.  Asked before the row is added,
     /// so it reads entities, not columns: the dual's point, or geometry of the use's own that
     /// owns a number.
-    pub fn linearisable(&self, sk: &Sketch, d: usize) -> Result<bool, String> {
+    pub fn differentiable(&self, sk: &Sketch, d: usize) -> Result<bool, String> {
         let dual = &sk.duals[d];
         if let crate::model::Toward::Line(l) = dual.toward {
             let ln = &sk.lines[l];
@@ -3118,7 +3123,7 @@ impl Constraint {
     }
 
     /// The residual and Jacobian at `v`, by the kernel this row runs: its own, or its
-    /// linearisation's (§6.21).
+    /// derivative's (§6.21).
     fn eval(&self, sk: &Sketch, v: &[f64]) -> (Vec<f64>, Vec<f64>) {
         match self.along {
             Some(_) => kernels::eval_with(&kernels::dual_kernel(self.kernel_id()), v, &self.consts(sk)),
@@ -3558,7 +3563,7 @@ pub fn same_relation(a: &Constraint, b: &Constraint) -> bool {
 }
 
 fn matches(a: &Constraint, b: &Constraint, want: impl Fn(SpecKind) -> bool + Copy) -> bool {
-    // a row and its linearisation are two equations about the same entities
+    // a row and its derivative are two equations about the same entities
     if a.kind != b.kind || a.along != b.along {
         return false;
     }

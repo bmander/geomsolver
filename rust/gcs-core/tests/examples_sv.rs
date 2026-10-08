@@ -150,14 +150,14 @@ fn the_spatial_demos_are_what_they_say() {
         (
             "hypoid_pitch_cones",
             include_str!("../../examples/hypoid_pitch_cones.sv"),
-            (99, 99),
+            (44, 44),
             0,
             State::Well,
         ),
         (
             "sphere_cone_cylinder",
             include_str!("../../examples/sphere_cone_cylinder.sv"),
-            (102, 101),
+            (47, 46),
             1,
             State::Under,
         ),

@@ -117,7 +117,7 @@ pub struct Relation {
     pub class: Classes,
     /// The defined word the statement was written with (§9.9) — see `syntax::Relation::word`.
     pub word: Option<syntax::Worded>,
-    /// A set's body row stated as its linearisation (§6.21) — see `syntax::Relation::along`.
+    /// A set's body row stated as its derivative (§6.21) — see `syntax::Relation::along`.
     pub along: Option<syntax::Along>,
 }
 

@@ -11,16 +11,18 @@
 //!   under a prefix of the use's own, so what the body makes privately is made once per use;
 //! * `l tangent S` is a contact point declared under that prefix, on `l`, in `S` — the body at
 //!   the contact — and the body walked a second time, each relation stated as its
-//!   **linearisation** at the contact along `l` (`Scope::twin`, `syntax::Along`): `l`'s
-//!   direction is in the set's tangent space there.  A body that makes points of its own would
-//!   need their tangents too, so a tangency to one is refused.
+//!   **derivative** at the contact along `l` (`Scope::twin`, `syntax::Along`): `l`'s direction
+//!   is in the set's tangent space there.  What the body made of its own moves with the contact
+//!   by a tangent unknown of its own (`model::Dual`), solved with the rest;
+//! * `S1 tangent(at: m) S2` is each body walked for what it makes and then as its derivative
+//!   along two directions solved for at `m`, shared by both: their tangent spaces there are one.
 //!
 //! Every relation a use makes reads as the statement wrote it (`Relation::word`, the set by
 //! name), so a culprit is `l tangent shaft` and not the distance inside the cylinder.
 
 use super::*;
 use crate::program::public_path;
-use super::apply::{local, Application, Use};
+use super::apply::{local, Application, Pass, Use};
 use crate::syntax::{Along, AlongBy, Chained, Relation, RelationForm, SetLit, Worded};
 
 /// Where a set stands: its literal, the scope its body reads names in (an instance's, with its
@@ -94,15 +96,21 @@ impl<'a> Walk<'a> {
                     self.once(Code::E003, st.span, m);
                     continue;
                 }
-                if found.len() > 1 {
-                    let m = "`coincident` and `tangent` relate a set to a point or a line, not to \
-                             another set";
+                let pair = found.len() == 2
+                    && rel.form.written().is_some_and(|w| w.word.text == "tangent");
+                if found.len() > 1 && !pair {
+                    let m = "`coincident` relates a set to a point, and `tangent` a set to a line \
+                             or to another set at a point";
                     self.once(Code::E040, st.span, m);
                     continue;
                 }
                 self.held = next.len() + rest.len();
-                let (k, abs) = found.into_iter().next().unwrap();
-                self.expand_use(&st, rel, &path, &sc, k, &abs);
+                if pair {
+                    self.expand_pair(&st, rel, &path, &sc, &found);
+                } else {
+                    let (k, abs) = found.into_iter().next().unwrap();
+                    self.expand_use(&st, rel, &path, &sc, k, &abs);
+                }
                 next.append(&mut self.out);
                 self.held = 0;
             }
@@ -151,27 +159,106 @@ impl<'a> Walk<'a> {
         let app = self.begin(&u, &closure);
         let other = w.ops[1 - k].clone();
         let bound = lit.bound.text.clone();
-        // a tangency: the body at a contact on the line, then linearised along it; else the body
-        // at the point — linearised already where the use is in a body being linearised (a
-        // tangency there was refused above)
+        // a tangency: the body at a contact on the line, then differentiated along it; else the
+        // body at the point — differentiated already where the use is in a body being
+        // differentiated (a tangency there was refused above)
         let walks = if tangent {
             self.bind_to_use(&app, "#line", other.clone(), &u);
             self.contact(&app, st, &bound, at, path);
             let toward = AlongBy::Line(local("#line", at));
             let key = app.prefix().to_string();
-            vec![None, Some(Along { point: local(&bound, at), toward, key })]
+            vec![Pass::Itself, Pass::Along(Along { point: local(&bound, at), toward, key })]
         } else {
             self.bind_to_use(&app, &bound, other.clone(), &u);
-            vec![self.inherited_twin(&app, &u)]
+            vec![self.inherited_twin(&app, &u).into()]
         };
         let worded = Worded {
             word: word.to_string(),
             ops: vec![other],
             args: String::new(),
-            set: Some((k, self.set_written(&w.ops[k]))),
+            sets: vec![(k, self.set_written(&w.ops[k]))],
             span: at,
         };
         self.apply(&u, app, lit.body, &BTreeMap::new(), &walks, worded, depth);
+    }
+
+    /// Two sets tangent at a point, `S1 tangent(at: m) S2` (§6.21): their tangent spaces at `m`
+    /// are one — every direction along the first there is along the second.  Two directions span
+    /// the first's, each solved for in a chart (`model::Toward::Chart`), and each set's body is
+    /// stated as its derivative along both at `m`: four rows over two unknowns for two surfaces.
+    /// `m` on each is stated beside it (`m coincident S1`); the word walks each body only for
+    /// what it makes, so a body with geometry of its own, which the incidence would place, is
+    /// refused.
+    fn expand_pair(
+        &mut self,
+        st: &Stmt,
+        rel: &Relation,
+        path: &[PathStep],
+        sc: &Scope,
+        found: &[(usize, String)],
+    ) {
+        let Some(w) = rel.form.written() else { return };
+        let at = w.word.span;
+        let names: Vec<String> = found.iter().map(|(k, _)| written(&w.ops[*k])).collect();
+        let point = match w.args.as_slice() {
+            [crate::syntax::OpArg::Named(n, v)] if n.text == "at" => match v {
+                crate::syntax::Arg::Ref(r) => Some(r.clone()),
+                crate::syntax::Arg::Word(x) => Some(local(x.clone(), n.span)),
+                _ => None,
+            },
+            _ => None,
+        };
+        let spell = |m: &str| format!("`{} tangent(at: {m}) {}`", names[0], names[1]);
+        let Some(point) = point else {
+            let m = format!("two sets touch at a point, which the word names: {}", spell("m"));
+            self.once(Code::E040, at, m);
+            return;
+        };
+        let spelled = spell(&written(&point));
+        if rel.claim {
+            let m = format!("a tangency between two sets is stated, not claimed: {spelled}");
+            self.once(Code::E040, at, m);
+            return;
+        }
+        if rel.along.is_some() || sc.twin.is_some() {
+            let m = format!("a set's body may put its point on another set, not state {spelled}");
+            self.once(Code::E040, at, m);
+            return;
+        }
+        for ((_, abs), name) in found.iter().zip(&names) {
+            if let Some(what) = makes_points(&self.sets[abs].lit) {
+                let m = format!(
+                    "{spelled} reads each set's body at the point, where `{name}`'s makes \
+                     `{what}` of its own, which only the point on it would place"
+                );
+                self.once(Code::E040, at, m);
+                return;
+            }
+        }
+        // one derivative per direction, which both sets' rows share
+        let keys = [0u8, 1].map(|k| format!("{}#{}.t{k}.", sc.prefix(), st.id.0));
+        let worded = Worded {
+            word: w.word.text.clone(),
+            ops: Vec::new(),
+            args: format!("at: {}", written(&point)),
+            sets: found.iter().map(|(k, _)| (*k, self.set_written(&w.ops[*k]))).collect(),
+            span: at,
+        };
+        let u = Use { st, rel, path, scope: sc, at };
+        for (n, (_, abs)) in found.iter().enumerate() {
+            let site = &self.sets[abs];
+            let (lit, depth, closure) = (site.lit.clone(), site.depth, site.scope.clone());
+            let app = self.begin_nth(&u, &closure, n);
+            let bound = lit.bound.text.clone();
+            self.bind_to_use(&app, &bound, point.clone(), &u);
+            let along = |k: u8| Pass::Along(Along {
+                point: local(&bound, at),
+                toward: AlongBy::Chart(k),
+                key: keys[k as usize].clone(),
+            });
+            let walks = [Pass::Made, along(0), along(1)];
+            self.apply(&u, app, lit.body, &BTreeMap::new(), &walks, worded.clone(), depth);
+        }
     }
 
     /// A set as the statement wrote it: its name, or — written in place — its text, on one line.
@@ -220,9 +307,9 @@ impl<'a> Walk<'a> {
 }
 
 /// What in a set's body is geometry of its own — a declaration naming no points it was given,
-/// or anything that makes some — where a tangency would need its motion too; `None` where the
-/// body only relates the bound point and what the set was given (a line between two of them is
-/// no geometry of its own: it moves as its ends do).
+/// or anything that makes some — which a tangency at a point cannot place; `None` where the body
+/// only relates the bound point and what the set was given (a line between two of them is no
+/// geometry of its own: it moves as its ends do).
 fn makes_points(lit: &SetLit) -> Option<String> {
     for st in &lit.body {
         match &st.kind {

@@ -711,6 +711,8 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
         return Err("a turned copy is turned once, from an entity that is not itself a copy".into());
     }
     sk.settle_turns();
+    // a chart a document did not gauge is gauged where its point stands (§6.21)
+    sk.choose_charts();
     Ok(sk)
 }
 
@@ -1865,10 +1867,10 @@ pub fn dimension_text(c: &Constraint) -> Option<String> {
 }
 
 /// A derivative row's dual, read from a document (§6.21) and held to the rule the elaborator's
-/// are (`Constraint::linearisable`).
+/// are (`Constraint::differentiable`).
 fn along_from_json(sk: &Sketch, c: &Constraint, j: &Json) -> Result<usize, String> {
     let d = index(j.as_i64(), sk.duals.len(), "along")?;
-    match c.linearisable(sk, d)? {
+    match c.differentiable(sk, d)? {
         true => Ok(d),
         false => Err(format!("`along` on a {} that reads nothing its use moves", c.type_name())),
     }
@@ -1893,7 +1895,7 @@ pub fn describe_with(c: &Constraint, name: &dyn Fn(EntRef) -> Option<String>) ->
         let mut ops: Vec<String> =
             w.ops.iter().map(|&e| name(e).unwrap_or_else(|| entity_name(e))).collect();
         // a set is no entity, and reads as the statement named it (§6.21)
-        if let Some((i, set)) = &w.set {
+        for (i, set) in &w.sets {
             ops.insert((*i).min(ops.len()), set.clone());
         }
         let args = if w.args.is_empty() { String::new() } else { format!("({})", w.args) };

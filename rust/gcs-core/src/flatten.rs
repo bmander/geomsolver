@@ -122,8 +122,11 @@ struct Scope {
     /// is what a call's component name is resolved from (`Program::resolve_component`).
     module: Option<usize>,
     /// Walking a set's body a second time for `l tangent S` (§6.21): each relation is emitted as
-    /// its linearisation at the contact along the line, and nothing else is made again.
+    /// its derivative at the contact along the line, and nothing else is made again.
     twin: Option<crate::syntax::Along>,
+    /// Walking a set's body for what it makes and nothing it states: the geometry a tangency at
+    /// a point reads its derivatives over (§6.21), whose incidence is stated beside it.
+    made_only: bool,
 }
 
 impl Scope {

@@ -94,9 +94,13 @@ impl<'a> Walk<'a> {
         }));
         let scope = &Scope { vals: vals.clone(), groups, ..scope.clone() };
         for st in body {
-            // a set's body walked again for a tangency states its relations' linearisations and
+            // a set's body walked again for a tangency states its relations' derivatives and
             // makes nothing a second time (§6.21)
             if scope.twin.is_some() && !matches!(st.kind, StmtKind::Relation(_)) {
+                continue;
+            }
+            // and one walked for what it makes states nothing
+            if scope.made_only && matches!(st.kind, StmtKind::Relation(_) | StmtKind::ClaimOver(_)) {
                 continue;
             }
             if self.emitted() >= MAX_FLAT {
@@ -237,6 +241,7 @@ impl<'a> Walk<'a> {
                         // and its body's calls name components from the file it was written in
                         module: comp.module,
                         twin: None,
+                        made_only: false,
                     };
                     // a component reached again while it is still being expanded is a cycle:
                     // said once, at the call that closes it, and not walked
@@ -307,7 +312,7 @@ impl<'a> Walk<'a> {
                     }
                     let Some(mut r2) = self.settle_relation(rel, vals, scope) else { continue };
                     if let Some(twin) = &scope.twin {
-                        // a claim and a gauge state no row, so they have no linearisation
+                        // a claim and a gauge state no row, so they have no derivative
                         let gauge = r2.form.written().is_some_and(|w| {
                             crate::constraints::gauge_op(&w.word.text).is_some()
                         });
@@ -589,6 +594,7 @@ impl<'a> Walk<'a> {
                 sides: scope.sides.clone(),
                 module: scope.module,
                 twin: scope.twin.clone(),
+                made_only: scope.made_only,
             };
             let mut p2 = path.to_vec();
             p2.push(PathStep::Copy { block: st.id, index: k as u32 });

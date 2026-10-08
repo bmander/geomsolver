@@ -66,6 +66,11 @@ impl Moves {
         }
         if self.owned.contains(&p) { Move::Tangent } else { Move::Held }
     }
+
+    /// Whether `p` is a column of geometry the use made — whose own rows move with it.
+    pub fn made(&self, p: u32) -> bool {
+        self.owned.contains(&p)
+    }
 }
 
 impl Sketch {
@@ -142,15 +147,48 @@ impl Sketch {
         }
     }
 
+    /// Each chart not yet gauged, gauged where its point stands now: `c` is the world axis the
+    /// sets' normal there runs most along, read off the gradients of the rows the chart's
+    /// directions differentiate in the point's place — so the two directions `e_a + s·e_c`,
+    /// `e_b + s·e_c` span the tangent plane wherever its normal is off square to `c`.  A choice
+    /// of chart, made once: a document carries it (`set_chart`).
+    pub fn choose_charts(&mut self) {
+        for d in 0..self.duals.len() {
+            let Toward::Chart { axis: None, .. } = self.duals[d].toward else { continue };
+            let Some(x) = self.lift_of(self.duals[d].point).map(|l| self.lifts[l].x) else { continue };
+            let mut score = [0.0f64; 3];
+            for c in self.constraints.iter().filter(|c| c.along == Some(d)) {
+                let cols = c.row_params(self);
+                let v: Vec<f64> = cols.iter().map(|&p| self.params[p as usize].value).collect();
+                let (_, jac) = crate::kernels::eval_one(c.kernel_id(), &v, &c.row_consts(self));
+                for row in jac.chunks(cols.len().max(1)) {
+                    let g: [f64; 3] = std::array::from_fn(|a| {
+                        cols.iter().zip(row).filter(|(p, _)| **p == x[a]).map(|(_, g)| g).sum()
+                    });
+                    let n = crate::space::norm(g);
+                    if n > 0.0 {
+                        for a in 0..3 {
+                            score[a] += (g[a] / n).abs();
+                        }
+                    }
+                }
+            }
+            let c = (0..3).fold(0, |best, a| if score[a] > score[best] { a } else { best });
+            self.set_chart(d, c as u8);
+        }
+    }
+
     /// The private geometry's own rows among `rows` (constraint indices), each stated again as its
-    /// derivative under dual `d` where it reads a column the dual moves.
+    /// derivative under dual `d` where it reads a column of that geometry — and never the
+    /// point's own row: a tangency at a point drawn in a view reads where it stands in space,
+    /// moving in no view.
     fn twin_intrinsics(&mut self, d: usize, rows: &[usize]) {
         let moves = self.dual_moves(d);
         let twins: Vec<Constraint> = rows
             .iter()
             .map(|&i| &self.constraints[i])
             .filter(|c| c.intrinsic && c.along.is_none() && !c.soft)
-            .filter(|c| c.params(self).iter().any(|&p| moves.of(p) == Move::Tangent))
+            .filter(|c| c.params(self).iter().any(|&p| moves.made(p)))
             .map(|c| {
                 let mut t = c.clone();
                 t.id = 0;

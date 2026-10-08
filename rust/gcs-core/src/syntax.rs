@@ -71,7 +71,7 @@ pub struct Component {
 
 /// **A set, written as the points that satisfy a predicate** (§6.21): `{ p | p distance(12mm)
 /// c }`.  Making one adds nothing to the drawing; `q coincident S` is the body with `q` for
-/// `p`, and `l tangent S` the body at a contact on `l` with its linearisation along `l`
+/// `p`, and `l tangent S` the body at a contact on `l` with its derivative along `l`
 /// (`flatten::sets`).
 #[derive(Clone, Debug)]
 pub struct SetLit {
@@ -144,10 +144,10 @@ pub struct Worded {
     pub ops: Vec<Ref>,
     /// `(d: 5mm)`, as written, or empty.
     pub args: String,
-    /// The operand that is a set (§6.21), by its place among the operands and as the statement
-    /// wrote it — `ball` in `q coincident ball`: no entity, so it stands outside `ops`, described
-    /// by the name and never resolved.
-    pub set: Option<(usize, String)>,
+    /// The operands that are sets (§6.21), each by its place among the operands and as the
+    /// statement wrote it — `ball` in `q coincident ball`, both in `gc tangent(at: m) pc`: no
+    /// entity, so they stand outside `ops`, described by the name and never resolved.
+    pub sets: Vec<(usize, String)>,
     /// The word as the statement wrote it, where a fault in what it expanded to is said.
     pub span: Span,
 }
@@ -1402,13 +1402,13 @@ pub struct Relation {
     /// The defined word this relation was written with, where it was (§9.9): the flattener
     /// replaces the statement's form by the word's body and keeps the word here.
     pub word: Option<Worded>,
-    /// Set by the flattener on a set's body row stated as its linearisation (§6.21).
+    /// Set by the flattener on a set's body row stated as its derivative (§6.21).
     pub along: Option<Along>,
 }
 
 impl Relation {
     /// A relation built rather than written: its form and nothing else — no placement, class,
-    /// claim, word or linearisation.
+    /// claim, word or derivative.
     pub fn of(form: RelationForm) -> Relation {
         Relation {
             form,

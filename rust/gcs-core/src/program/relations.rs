@@ -156,14 +156,14 @@ pub(super) fn constrain(
             word: w.word.clone(),
             ops: ops.collect::<Option<Vec<EntRef>>>()?,
             args: w.args.clone(),
-            set: w.set.clone(),
+            sets: w.sets.clone(),
         })
     });
     // a set's points are points: `coincident` puts one on it, and nothing else (§6.21)
     // — said at the use, where the statement was written
-    let used = r.word.as_ref().filter(|w| w.set.is_some()).map(|w| w.span);
+    let used = r.word.as_ref().filter(|w| !w.sets.is_empty()).map(|w| w.span);
     if let (Some(w), Some(found)) = (r.word.as_ref().filter(|w| w.word == "coincident"), &word) {
-        if let (Some(&op), Some((_, set))) = (found.ops.first(), &w.set) {
+        if let (Some(&op), Some((_, set))) = (found.ops.first(), w.sets.first()) {
             if op.kind != EntKind::Point {
                 let at = w.span;
                 let m = format!("`{set}` is a set of points, and `coincident` puts a point on it, not {}",
@@ -455,7 +455,7 @@ pub(super) fn constrain(
             let owned = map.ents_under(&a.key).into_iter().filter(|&e| e != p).collect();
             sk.add_dual(p.i(), toward, owned)
         });
-        match c.linearisable(sk, d) {
+        match c.differentiable(sk, d) {
             Ok(true) => c.along = Some(d),
             // a row that reads nothing the use moves holds still as it moves: no derivative
             Ok(false) => return None,

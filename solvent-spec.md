@@ -1,6 +1,13 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.50 — October 2026**
+**Specification, Draft 0.51 — October 2026**
+
+**[0.51] Tangencies, differentiated.** `l tangent S` states each row of the set's body again as
+its **derivative** along `l`, and what the body makes of its own — a foot point, a lift — moves
+with the contact by a tangent unknown of its own, solved with the rest: a set whose body declares
+geometry is now tangent to a line (§6.21). Two sets may touch at a point, `S1 tangent(at: m) S2`:
+their tangent spaces there are one, two conditions for two surfaces. `std.TangentCones` is that
+word.
 
 **[0.50] Predicates, applied.** A relation word and a set are one thing: a body over
 **parameters**, given where it is called (`Sphere(c, r: 12mm)`, `above(d: 5mm)`), and **bound
@@ -9,7 +16,7 @@ variables**, written where it is defined (`{ p | … }`, `a above(d) b`) and fil
 may hold several statements and declare the geometry they need (`l1 flush(d) l2 := { l1
 parallel l2; l2.p1 distance(d) l1 }`), each use making its own; a set may be written where it is
 used (`q coincident { p | p distance(5mm) c }`, `l tangent std.Cylinder(ax, r: 8mm)`); a word may
-use a set and a set write a word, and a tangency linearises through both. An operand that names
+use a set and a set write a word, and a tangency differentiates through both. An operand that names
 nothing is said once, where it is written.
 
 **[0.49] Sets.** A shape may be written as the points that satisfy a predicate: `ball := { p |
@@ -1599,28 +1606,39 @@ said where it is used, by two words:
   — the cone's generator — is made once for each use. `q` MUST be a point (**E040**).
 - `l tangent S` (either way round), `l` a line: a **contact** point standing in space, on `l`,
   is minted for the use and the body is stated at it; and each relation of the body is stated a
-  second time as its **linearisation** there — the relation's derivative as the contact moves
-  along `l`'s direction, every other number it reads (the set's own) held. So `l`'s direction
-  lies in the set's tangent space at the contact: for a surface, one condition (the contact's
-  three unknowns against its two rows on `l`, the body's one and the linearisation's one), the
-  same count `distance(r)` from a sphere's centre states, and regular, the contact being an
-  unknown of its own rather than a double root of the line's distance. The contact starts at
-  `l`'s middle. A body that declares geometry of its own — a point, or a line not between points
-  it was given — has a motion along the set the linearisation would need too, and a tangency to
-  it is **E040**; so is `tangent` to a set from anything but a line, and a claimed tangency.
+  second time as its **derivative** there **[0.51]** — the relation's rate as the contact moves
+  along `l`'s direction, the numbers the set was given held. What the body declares of its own —
+  a point, or a line not between points it was given — moves with the contact, by a **tangent
+  unknown** of its own (its rows, a lift's among them, differentiated too), solved with
+  everything else. So `l`'s direction lies in the set's tangent space at the contact: for a
+  surface, one condition (the contact's three unknowns against its two rows on `l`, the body's
+  rows against the geometry it declares, and the derivatives' against the tangents), the same
+  count `distance(r)` from a sphere's centre states, and regular, the contact being an unknown
+  of its own rather than a double root of the line's distance. The contact starts at `l`'s
+  middle. `tangent` to a set from anything but a line or a set is **E040**, and so is a claimed
+  tangency.
+- `S1 tangent(at: m) S2` **[0.51]**, two sets: their **tangent spaces at `m` are one** — every
+  direction along `S1` there is along `S2`. Two directions are solved for at `m`, in a chart the
+  elaborator picks once (each rises along the world axis the sets' normal there is most along),
+  and each body is stated as its derivative along both: two conditions for two surfaces, the
+  directions' two unknowns against four rows. `m` on each is said beside it (`m coincident S1`);
+  the word reads each body only at `m`, so a body that declares geometry of its own is **E040**
+  here, and the word without `at:` is **E040**.
 
 Every relation a use states is **described as the statement wrote it** (`l tangent shaft`, §9.9),
 its placement and classes the statement's; a dimension the body states is drawn as a component
-body's is, and its linearisation draws nothing. A set named anywhere else a reference stands —
-`radius(5) ball`, a face's loop — is **E040**; `coincident` or `tangent` between two sets is
-**E040**, with parentheses **E040**; a set whose body uses itself, however indirectly, is
+body's is, and its derivative draws nothing. A set named anywhere else a reference stands —
+`radius(5) ball`, a face's loop — is **E040**; `coincident` between two sets is **E040**, with
+parentheses **E040**; a set whose body uses itself, however indirectly, is
 **E003**. A set may be handed to a component as a `group` formal, as an instance is, and used
 there by the formal's name (`std.CircleOnSphere(k, ball, view)`).
 
 *Non-normative:* `std.Sphere`, `std.Cylinder` and `std.Cone` are sets. A circle written as a set
 — `{ p | p coincident P; p distance(r) o }`, lowered to the `Circle` kernel where the elaborator
-recognises it — the tangency of two sets at a point, a set drawn by tracing its points, and sets
-bounded by inequalities (arcs, segments, rays) are not part of this draft (#101).
+recognises it — a set drawn by tracing its points, and sets bounded by inequalities (arcs,
+segments, rays) are not part of this draft (#101). A derivative row has no flat spelling, so a
+program lifted from a sketch (`to_program`) keeps a tangency's contact and says nothing of the
+tangency.
 
 ## 7. Ports **[0.13]**
 

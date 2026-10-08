@@ -293,7 +293,7 @@ pub fn layout_selected(sk: &Sketch, unit: f64, ids: Option<&[u32]>) -> Vec<Callo
     for c in &sk.constraints {
         // a drag target is a number, not a dimension, and an arc's own definition is not
         // something the drawing states twice — nor is a block's dimension, once per copy,
-        // unless that copy is the one asked for, nor a set's row stated as its linearisation
+        // unless that copy is the one asked for, nor a set's row stated as its derivative
         // (§6.21), whose number is its row's
         let asked = ids.map(|ids| ids.contains(&c.id));
         if asked == Some(false) || (c.repeated && asked.is_none())

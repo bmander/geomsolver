@@ -3517,7 +3517,7 @@ pub fn eval_one(id: usize, v: &[f64], c: &[f64]) -> (Vec<f64>, Vec<f64>) {
     eval_with(&KERNELS[id], v, c)
 }
 
-/// `eval_one` over a kernel in hand — one built rather than registered (`linearised_kernel`).
+/// `eval_one` over a kernel in hand — one built rather than registered (`dual_kernel`).
 pub fn eval_with(k: &Kernel, v: &[f64], c: &[f64]) -> (Vec<f64>, Vec<f64>) {
     let mut r = vec![0.0; k.n_res];
     let mut j = vec![0.0; k.n_res * k.n_par];

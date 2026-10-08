@@ -449,6 +449,8 @@ pub fn elaborate(p: &Program) -> Elaborated {
     }
 
     rings::contacts(&sk, &map, &mut diags);
+    // a tangency at a point gauges its directions where the point stands (§6.21)
+    sk.choose_charts();
 
     // where the planes stand, from the statements that say so, before the drawing in them is
     // read through them: a place drawn in another plane is read in space, through that plane's

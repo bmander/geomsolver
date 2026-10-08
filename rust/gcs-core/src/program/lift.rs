@@ -72,11 +72,12 @@ pub fn to_program(sk: &Sketch) -> Program {
     // plane's axes stand on one point, the plane stands there by its own rows once read back.
     let along = sk.constraints.iter().filter(|c| {
         c.intrinsic
+            && c.along.is_none()
             && (c.kind == CKind::Parallel3 && c.args[0].ent().kind == EntKind::Axis
                 || c.kind == CKind::PointOnAxis)
     });
-    // a set's linearised row (§6.21) is a derivative no flat statement spells: a flat program
-    // keeps the contact and the set's rows at it, and says nothing of the tangency
+    // a set's derivative row (§6.21) is one no flat statement spells: a flat program keeps the
+    // contact and the set's rows at it, and says nothing of the tangency
     let stated = sk.user_constraints().into_iter().filter(|c| c.along.is_none());
     for c in stated.chain(along) {
         p.push(StmtKind::Relation(renamed(lift_relation(sk, c), &names)));

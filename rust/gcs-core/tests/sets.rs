@@ -1,10 +1,11 @@
 //! **Sets** (§6.21): a shape written as the points that satisfy a predicate — `{ p | p
 //! distance(r) c }`, and the library's sphere, cylinder and cone as families of them — with `q
-//! coincident S` the body at `q`, and `l tangent S` the body at a contact on `l` with its
-//! linearisation along `l`.  Held to closed forms (a sphere's radius from its centre, a
-//! cylinder's common perpendicular, a cone's half-angle and its tangent plane), to the count a
-//! tangency must add (one condition, regular), to the derivative the linearised kernel writes,
-//! through a document, and to every refusal at its span.
+//! coincident S` the body at `q`, `l tangent S` the body at a contact on `l` with its derivative
+//! along `l` — a body with geometry of its own included — and `S1 tangent(at: m) S2` their
+//! derivatives at `m` along two directions both share.  Held to closed forms (a sphere's radius
+//! from its centre, a cylinder's common perpendicular, a cone's half-angle and its tangent
+//! plane), to the count a tangency must add (one condition, regular), to the exact Jacobian the
+//! derivative kernel writes, through a document, and to every refusal at its span.
 use gcs_core::diagnose::{diagnose, DiagnoseOptions};
 use gcs_core::io;
 use gcs_core::model::Sketch;
@@ -217,7 +218,7 @@ fn a_line_tangent_to_a_cone_touches_without_crossing() {
 }
 
 /// A line held still and tangent to a cone whose half-angle is left unbound finds the half-angle:
-/// the linearisation reads the row's free twin, its unknown held while the contact moves.
+/// the derivative reads the row's free twin, its unknown held while the contact moves.
 #[test]
 fn a_tangency_finds_an_unbound_half_angle() {
     let src = format!(
@@ -280,6 +281,36 @@ fn a_set_with_geometry_of_its_own_is_tangent_to_a_line() {
     }
 }
 
+/// Two cones tangent at a point, written as one word: their tangent planes there are one, two
+/// conditions — the hypoid's pitch cones, which `std.TangentCones` now states this way, and
+/// which `spatial_surfaces.rs` holds to the fold construction.  The chart its two directions are
+/// gauged in rises along the pitch plane's normal, and every row's Jacobian is exact.
+#[test]
+fn two_sets_tangent_at_a_point() {
+    let src = include_str!("../../examples/hypoid_pitch_cones.sv")
+        .replace("std.TangentCones(gc, pc, M)", "gc tangent(at: M) pc");
+    let e = read(&src);
+    assert!(described(&e).contains(&"gc tangent(at: M) pc".to_string()), "{:?}", described(&e));
+    let mut sk = solved(&e);
+    let d = diagnose(&mut sk, DiagnoseOptions::default());
+    assert_eq!(d.dof, 0, "{d:?}");
+    assert!(d.over.is_empty() && d.warnings.is_empty(), "{d:?}");
+    // two directions, each gauged along y, the front's normal
+    let charts: Vec<_> = sk.duals.iter().map(|d| d.toward).collect();
+    assert_eq!(
+        charts,
+        [0, 1].map(|k| gcs_core::model::Toward::Chart { k, axis: Some(1) }).to_vec(),
+    );
+    // the two cones' normals at M agree: the pinion's apex comes out on the pitch plane
+    let (m, apex) = (at(&sk, &e, "M"), ends(&sk, ent(&e, "pax")).0);
+    assert!(sub(apex, m)[1].abs() < 1e-9, "{apex:?}");
+    fd_jacobian(&e.sketch, 1e-5);
+    fd_jacobian(&sk, 1e-5);
+    // and a document carries it
+    let back = io::from_json(&io::to_json(&sk)).expect("reads back");
+    assert_eq!(io::dumps(&back, None), io::dumps(&sk, None));
+}
+
 /// A tangency is one condition and a regular one: the diagnosis sees no redundancy, no shaky
 /// motion, and the numeric rank agrees with the structural.
 #[test]
@@ -308,7 +339,7 @@ fn the_derivatives_jacobian_is_its_derivative() {
     }
 }
 
-/// A linearised row travels through a document and a graft with its contact and its line.
+/// A derivative row travels through a document and a graft with its use's derivative.
 #[test]
 fn a_tangency_travels_through_a_document() {
     for src in ["l tangent rod".to_string(), format!("{}l tangent foot", footed(" in std.front"))] {
@@ -335,7 +366,17 @@ fn dof_of(sk: &mut Sketch) -> i64 {
 #[test]
 fn what_a_set_refuses() {
     refused(&with("radius(5) ball"), "E040", "`ball` is a set", "ball");
-    refused(&with("ball coincident rod"), "E040", "not to another set", "ball coincident rod");
+    refused(&with("ball coincident rod"), "E040", "or to another set at a point", "ball coincident rod");
+    // two sets touch at a point the word names, stated and not claimed, and each body is read at
+    // the point, so neither may make geometry of its own
+    refused(&with("k tangent kc"), "E040", "which the word names", "tangent");
+    refused(&with("claim k tangent(at: a) kc"), "E040", "stated, not claimed", "tangent");
+    refused(
+        &with(&format!("{}k tangent(at: a) foot", footed(""))),
+        "E040",
+        "`k tangent(at: a) foot` reads each set's body at the point, where `foot`'s makes `q`",
+        "tangent(at: a)",
+    );
     refused(&with("l coincident ball"), "E040", "puts a point on it, not a line", "coincident");
     refused(
         &with("kk := circle(center: a) hint(r: 3) in side\nkk tangent ball"),
