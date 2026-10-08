@@ -209,6 +209,7 @@ pub(super) fn constrain(
         let toward = match &a.toward {
             crate::syntax::AlongBy::Line(l) => ent(l).map(|l| match l.kind {
                 EntKind::Line => Ok(Toward::Line(l.i())),
+                EntKind::Axis => Ok(Toward::Axis(l.i())),
                 kind => Err(kind),
             }),
             crate::syntax::AlongBy::Chart(k) => Some(Ok(Toward::Chart { k: *k, axis: None })),
@@ -225,12 +226,6 @@ pub(super) fn constrain(
         }
     };
     let ckind = r.kind;
-    if ckind == CKind::TangentPlaneCone && !touch {
-        let m = "`tangent(at: m)` relates a plane to a set it touches there: `P tangent(at: m) K`, \
-                 `K` a cone (`std.Cone`)";
-        diags.push(Diag { code: Code::E040, span: st.span, stmt: Some(st.id), message: m.into() });
-        return None;
-    }
     // a gauge is applied, not added: it holds parameters or records a root choice, and there
     // is no constraint for the map to know it by.  A claim on one is refused below the way any
     // unclaimable kind is, so it is checked first.
@@ -316,8 +311,8 @@ pub(super) fn constrain(
             }
         }
     }
-    // a touched cone's apex, or the point it is touched at, drawn on the plane already: no row
-    if touch && ckind == CKind::PointOnPlane {
+    // the point a plane touches a set at, drawn on the plane already: no row
+    if touch && along.is_none() && ckind == CKind::PointOnPlane {
         if let [CArg::Ent(p), CArg::Ent(plane)] = args.as_slice() {
             if sk.plane_of(p.i()) == Some(plane.i()) {
                 return None;

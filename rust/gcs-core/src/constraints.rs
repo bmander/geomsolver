@@ -212,11 +212,6 @@ pub enum CKind {
     /// line in space (`kernels::line_on_axis_rows`), so it runs along it too.  Reads where the
     /// axis is, so it places it.
     LineOnAxis,
-    /// `P tangent(at: m) K`, `K` a cone (`std.Cone`): the plane is the cone's tangent plane at
-    /// `m` — the cone's axis in the plane square to `P` through the generator at `m`, one row
-    /// (`kernels::tangent_plane_cone_rows`).  Made only by a set's use (`flatten::sets`, #145),
-    /// with the apex and `m` stated on `P` beside it where the drawing does not draw them there.
-    TangentPlaneCone,
     /// The **gauges** and the **orientation predicates** (spec §9.2, §9.6; issue #47, item 5):
     /// statements written as every other constraint is — an operator, its operands, a class, a
     /// placement — and settled through the same table, but **applied by the elaborator rather
@@ -257,7 +252,7 @@ impl FamilyKernel {
 }
 
 /// Every concrete constraint type, in the order the registry lists them.
-pub const ALL_KINDS: [CKind; 66] = [
+pub const ALL_KINDS: [CKind; 65] = [
     CKind::Coincident,
     CKind::Distance,
     CKind::Midpoint,
@@ -323,7 +318,6 @@ pub const ALL_KINDS: [CKind; 66] = [
     CKind::SplineLength,
     CKind::SplineGauge,
     CKind::Stationary,
-    CKind::TangentPlaneCone,
 ];
 
 /// **The words a direction may be written as** (`docs/ordinate-plan.md`): `along:` an ordinate
@@ -566,9 +560,6 @@ pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option
                 None => CKind::TangentLineCircle,
             },
             (Arc, Line) => CKind::TangentArcLine,
-            // a plane tangent to a cone at a point, the cone by its axis (#145): only a set's use
-            // states it (`flatten::sets`), which the elaborator checks
-            (Plane, Line) if sel("at").is_some() => CKind::TangentPlaneCone,
             // two round things meeting at a corner already touch there, so a threaded joint's
             // `at:` has no regular form to pick — refused, never a silently degenerate row
             (x, y) if round(x) && round(y) => match sel("at") {
@@ -978,7 +969,6 @@ impl CKind {
             CKind::Perpendicular3 => "Perpendicular3",
             CKind::Parallel3 => "Parallel3",
             CKind::PointOnPlane => "PointOnPlane",
-            CKind::TangentPlaneCone => "TangentPlaneCone",
             CKind::PointOnCircle3 => "PointOnCircle3",
             CKind::PointOnLine3 => "PointOnLine3",
             CKind::EqualLength3 => "EqualLength3",
@@ -1137,7 +1127,6 @@ impl CKind {
             CKind::PointOnPlane => {
                 &[("p", S::Point), ("plane", S::Plane)]
             }
-            CKind::TangentPlaneCone => &[("plane", S::Plane), ("axis", S::Line), ("at", S::Point)],
             CKind::PointOnCircle3 => {
                 &[("p", S::Point), ("circle", S::CircleOrArc)]
             }
@@ -1292,7 +1281,6 @@ impl CKind {
             CKind::Parallel3 => ("parallel", Infix),
             CKind::EqualLength3 => ("equal", Infix),
             CKind::PointOnPlane => ("coincident", Infix),
-            CKind::TangentPlaneCone => ("tangent", Infix),
             CKind::PointOnCircle3 => ("coincident", Infix),
             CKind::PointOnLine3 => ("coincident", Infix),
             CKind::Midpoint3 => ("midpoint", Infix),
@@ -1584,7 +1572,6 @@ impl CKind {
             | CKind::Perpendicular3
             | CKind::Parallel3
             | CKind::PointOnPlane
-            | CKind::TangentPlaneCone
             | CKind::PointOnCircle3
             | CKind::PointOnLine3
             | CKind::EqualLength3
@@ -1695,7 +1682,6 @@ impl CKind {
             CKind::Perpendicular3 => K::Perpendicular3,
             CKind::Parallel3 => K::Parallel3,
             CKind::PointOnPlane => K::PointOnPlane,
-            CKind::TangentPlaneCone => K::TangentPlaneCone,
             CKind::PointOnCircle3 => K::PointOnCircle3,
             CKind::PointOnLine3 => K::PointOnLine3,
             CKind::EqualLength3 => K::EqualLength3,
@@ -1799,7 +1785,6 @@ impl CKind {
             | CKind::Perpendicular3
             | CKind::Parallel3
             | CKind::PointOnPlane
-            | CKind::TangentPlaneCone
             | CKind::PointOnCircle3
             | CKind::PointOnLine3
             | CKind::EqualLength3
@@ -1836,7 +1821,6 @@ impl CKind {
                 | CKind::Perpendicular3
                 | CKind::Parallel3
                 | CKind::PointOnPlane
-                | CKind::TangentPlaneCone
                 | CKind::PointOnCircle3
                 | CKind::ProjectSolved
                 | CKind::PointOnLine3
@@ -2813,6 +2797,11 @@ impl Constraint {
             ps.extend(tangents);
             match sk.duals[d].toward {
                 crate::model::Toward::Line(l) => ps.extend(lifted_ends(sk, l)),
+                // the axis's direction where a line's ends go, from a held zero
+                crate::model::Toward::Axis(a) => {
+                    ps.extend([sk.zero_col(); 3]);
+                    ps.extend(sk.axes[a].d);
+                }
                 crate::model::Toward::Chart { .. } => ps.extend([sk.zero_col(); 6]),
             }
         }
@@ -3072,10 +3061,6 @@ impl Constraint {
             CKind::PointOnPlane | CKind::LineOnPlane => {
                 [self.lifted_columns(sk), plane_columns(sk, e(1).i())].concat()
             }
-            // and only the plane's axes, which its normal is read off
-            CKind::TangentPlaneCone => {
-                [self.lifted_columns(sk), plane_columns(sk, e(0).i())[3..].to_vec()].concat()
-            }
             // the point and the centre in space, the radius, and the circle's plane's axes
             CKind::PointOnCircle3 => {
                 let v = self.attitude_read(sk).expect("a circle in space is drawn in a plane");
@@ -3108,8 +3093,6 @@ impl Constraint {
                 [vec![e(0).i()], ends(1).to_vec()].concat()
             }
             CKind::PointOnPlane => vec![e(0).i()],
-            // the cone's apex and the far end of its axis, then the point it touches at
-            CKind::TangentPlaneCone => [ends(1).to_vec(), vec![e(2).i()]].concat(),
             // the two points, and a direction that is a drawn line, its ends; over a plane's
             // frame only the second, the first being the frame's origin
             CKind::Ordinate | CKind::Level => {
@@ -3198,7 +3181,6 @@ impl Constraint {
     pub fn attitude_read(&self, sk: &Sketch) -> Option<usize> {
         match self.kind {
             CKind::Lift | CKind::PointOnPlane | CKind::LineOnPlane => Some(self.args[1].ent().i()),
-            CKind::TangentPlaneCone => Some(self.args[0].ent().i()),
             CKind::PointOnCircle3 => {
                 sk.plane_of(sk.round_center(self.args[1].ent()))
             }

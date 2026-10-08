@@ -430,6 +430,7 @@ fn dual_json(d: &crate::model::Dual) -> Json {
     ]);
     match d.toward {
         Toward::Line(l) => o.set("line", Json::Int(l as i64)),
+        Toward::Axis(a) => o.set("axis", Json::Int(a as i64)),
         Toward::Chart { k, axis } => o.set("chart", Json::Arr(vec![
             Json::Int(k as i64),
             axis.map_or(Json::Null, |c| Json::Int(c as i64)),
@@ -444,6 +445,10 @@ fn dual_from_json(sk: &Sketch, j: &Json) -> Result<(usize, crate::model::Toward,
     let point = index(j.get("point").map_or(-1, |v| v.as_i64()), sk.points.len(), "dual point")?;
     let toward = match (j.get("line"), j.get("chart")) {
         (Some(l), _) => Toward::Line(index(l.as_i64(), sk.lines.len(), "dual line")?),
+        (None, None) if j.get("axis").is_some() => {
+            let a = j.get("axis").map_or(-1, |v| v.as_i64());
+            Toward::Axis(index(a, sk.axes.len(), "dual axis")?)
+        }
         (None, Some(c)) => {
             let c = c.arr();
             let k = c.first().map_or(-1, |v| v.as_i64());
@@ -456,7 +461,9 @@ fn dual_from_json(sk: &Sketch, j: &Json) -> Result<(usize, crate::model::Toward,
             };
             Toward::Chart { k: k as u8, axis }
         }
-        (None, None) => return Err("a dual moves its point along a line or in a chart".to_string()),
+        (None, None) => {
+            return Err("a dual moves its point along a line, an axis or in a chart".to_string())
+        }
     };
     let owned = j.get("owned").map(|v| v.arr()).unwrap_or_default().iter()
         .map(|e| ref_from_json(sk, e, "dual entity"))
@@ -1329,6 +1336,10 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         let toward = match d.toward {
             crate::model::Toward::Line(l) => match remap(EntRef::line(l)) {
                 Some(l) => crate::model::Toward::Line(l.i()),
+                None => continue,
+            },
+            crate::model::Toward::Axis(a) => match remap(EntRef::new(EntKind::Axis, a)) {
+                Some(a) => crate::model::Toward::Axis(a.i()),
                 None => continue,
             },
             chart => chart,

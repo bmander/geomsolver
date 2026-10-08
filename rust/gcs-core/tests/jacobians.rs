@@ -238,8 +238,6 @@ fn all_constraints(seed: u32) -> Sketch {
         Constraint::new(CKind::PointOnPlane, vec![e(qe), e(pce)]),
         Constraint::new(CKind::PointOnPlane, vec![e(EntRef::point(lc)), e(pae)]),
         Constraint::new(CKind::PointOnPlane, vec![e(s3), e(pbe)]),
-        // a plane tangent at a point to the cone about a line (#145)
-        Constraint::new(CKind::TangentPlaneCone, vec![e(pce), e(me1), e(qe)]),
         Constraint::new(CKind::PointOnCircle3, vec![e(qe), e(EntRef::circle(kc))]),
         Constraint::new(CKind::PointOnCircle3, vec![e(pe), e(EntRef::circle(kb))]),
         // the rest of the words in space: a point on a line and true lengths, a point's
