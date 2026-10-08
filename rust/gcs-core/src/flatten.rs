@@ -35,10 +35,14 @@ mod sets;
 
 pub(crate) use words::faults as word_faults;
 pub use sets::SetCircle;
+pub(crate) use sets::round;
 
 pub(crate) use values::{substitute_with, value_aff};
 use values::{free, typed, value_of, substitute, reads_geometry};
-use resolve::{lookup_raw, written};
+use resolve::{lookup, lookup_raw, written};
+
+/// No set walked as a set for want of a circle: `Walk::plain` where nothing was refused.
+static NONE: BTreeSet<String> = BTreeSet::new();
 
 /// How deep components and blocks may nest.  A document is untrusted input and
 /// `wasm32-unknown-unknown` aborts rather than unwinding, so recursion is bounded here.
@@ -304,10 +308,10 @@ struct Walk<'a> {
     use_aliases: BTreeSet<String>,
     /// Every set the walk made, by absolute name (§6.21) — see `sets::Site`.
     sets: BTreeMap<String, sets::Site>,
-    /// Those made circles (#105), by the same name — see `sets::Round`.
-    rounds: BTreeMap<String, sets::Round>,
+    /// Those made circles (#105), by the same name — see `sets::make_round`.
+    rounds: BTreeSet<String>,
     /// The sets the elaborator found are no circle, walked as sets (`expand_with`).
-    plain: BTreeSet<String>,
+    plain: &'a BTreeSet<String>,
     /// Whether the uses of sets are being applied, so a set made now is made inside one.
     applying_sets: bool,
 }
@@ -322,7 +326,7 @@ pub fn expand(prog: &Program, units: Units) -> Expansion {
 /// those the elaborator found no circle is drawn for (#105, `SetCircle`).
 pub fn expand_with(prog: &Program, units: Units, plain: &BTreeSet<String>) -> Expansion {
     let mut w = Walk::new(prog, units, None);
-    w.plain = plain.clone();
+    w.plain = plain;
     let root = prog.root();
     // A definitions-only file has nothing to expand. In particular, imported parameters must
     // not be evaluated in a unit system that only an eventual instantiating model will supply.
@@ -416,8 +420,8 @@ impl<'a> Walk<'a> {
             applying_words: Vec::new(),
             use_aliases: BTreeSet::new(),
             sets: BTreeMap::new(),
-            rounds: BTreeMap::new(),
-            plain: BTreeSet::new(),
+            rounds: BTreeSet::new(),
+            plain: &NONE,
             applying_sets: false,
         }
     }

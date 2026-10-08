@@ -448,6 +448,19 @@ pub struct Instance {
     pub class: Classes,
 }
 
+impl Instance {
+    /// Where the call writes the number it gives `formal` (`r: 25`'s `25`), labelled and worked
+    /// out here — what a dimension reading the formal is drawn and edited at.
+    pub fn given(&self, formal: &str) -> Option<Span> {
+        self.args.iter().find_map(|a| match (&a.label, &a.value) {
+            (Some(l), InstVal::Expr(t)) if l.text == formal => {
+                Some(Span::new(a.span.hi as usize - t.len(), a.span.hi as usize))
+            }
+            _ => None,
+        })
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct InstArg {
     pub label: Option<Name>,

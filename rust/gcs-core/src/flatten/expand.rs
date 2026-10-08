@@ -3,7 +3,6 @@
 use super::*;
 use super::apply::Pass;
 use super::sets::Made;
-use crate::syntax::DeclName;
 
 impl<'a> Walk<'a> {
     /// The view an enclosing instance is drawn `in`, put on one declaration its expansion
@@ -264,9 +263,7 @@ impl<'a> Walk<'a> {
                     // an instance of a family of sets is the set, its formals bound (§6.21)
                     if let Some(lit) = &comp.set {
                         let name = sc.prefix().trim_end_matches('.').to_string();
-                        let written = DeclName::Written(inst.name.clone());
-                        let made = Made { st, path, name: written, family: true, outer: scope };
-                        self.set_made(name, lit, &sc, depth + 1, made);
+                        self.set_made(name, lit, &sc, depth + 1, Made { st, path, outer: scope });
                     }
                     self.instantiating.push(comp);
                     self.body(&comp.body, &sc, &mut sub_vals, &instance_path, depth + 1);
@@ -334,9 +331,7 @@ impl<'a> Walk<'a> {
                 StmtKind::Set(set) => {
                     let abs = format!("{prefix}{}", set.name.text);
                     self.names.insert(abs.clone());
-                    let written = DeclName::Written(set.name.clone());
-                    let made = Made { st, path, name: written, family: false, outer: scope };
-                    self.set_made(abs, &set.lit, scope, depth, made);
+                    self.set_made(abs, &set.lit, scope, depth, Made { st, path, outer: scope });
                 }
                 // a claim over an interval: its numbers and its relations' worked out as above
                 StmtKind::ClaimOver(c) => {

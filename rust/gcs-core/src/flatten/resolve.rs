@@ -328,7 +328,7 @@ fn private_member(r: &Ref, sc: &Scope, target: &str, alias: &BTreeMap<String, St
     None
 }
 
-fn lookup(r: &Ref, sc: &Scope, names: &BTreeSet<String>, alias: &BTreeMap<String, String>, units: Units)
+pub(super) fn lookup(r: &Ref, sc: &Scope, names: &BTreeSet<String>, alias: &BTreeMap<String, String>, units: Units)
     -> Option<(String, Vec<String>)>
 {
     let found = lookup_raw(r, sc, names, alias, units)?;
@@ -820,7 +820,7 @@ impl<'a> Walk<'a> {
         let out = std::mem::take(&mut self.out);
         // a set made a circle is named as the circle (#105)
         let sets: BTreeSet<String> =
-            self.sets.keys().filter(|k| !self.rounds.contains_key(*k)).cloned().collect();
+            self.sets.keys().filter(|k| !self.rounds.contains(*k)).cloned().collect();
         let mut flat = Vec::with_capacity(out.len());
         for (mut st, path, sc) in out {
             // a refused relation is not emitted; a declaration is (a plane whose fold misspells
