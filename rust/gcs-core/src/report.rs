@@ -800,11 +800,12 @@ pub fn registry_json() -> Json {
                 ("soft", k.soft_by_default().into()),
                 ("commutative", k.commutative().into()),
                 // -1 for a curve contact: its kernel is the curve *definition's*, so there is no
-                // one id to publish and a binding has nothing to do with the number anyway
+                // one id to publish and a binding has nothing to do with the number anyway — and
+                // for a kind whose kernel is built at its operands' width (a spline's length)
                 (
                     "kernel",
                     match k {
-                        k if k.family_kernel().is_some() => Json::Int(-1),
+                        k if k.family_kernel().is_some() || k.built() => Json::Int(-1),
                         _ => (k.kernel() as i64).into(),
                     },
                 ),

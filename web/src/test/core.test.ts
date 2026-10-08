@@ -1368,12 +1368,12 @@ test('the registry the binding generates its classes from matches the kernels', 
   assert.equal(reg.types.length, Object.keys(C.CONSTRAINT_TYPES).length);
   for (const t of reg.types) {
     // -1 means the kernel belongs to the curve *definition* rather than to the type: two curve
-    // families read different numbers of coordinates, so they cannot share one.  Every other
-    // type names a static kernel, and must.
+    // families read different numbers of coordinates, so they cannot share one — and a spline's
+    // length is built at its spline's count.  Every other type names a static kernel, and must.
     if (t.kernel === -1) {
-      // exactly the kinds with a curve slot: their kernel is the curve's definition's
+      // exactly the kinds with a curve slot, and the spline's length
       const onCurve = C.CONSTRAINT_TYPES[t.name].spec.some(([, k]) => k === 'curve');
-      assert.ok(onCurve, `${t.name} has no static kernel`);
+      assert.ok(onCurve || t.name === 'SplineLength', `${t.name} has no static kernel`);
     } else {
       assert.ok(t.kernel >= 0 && t.kernel < reg.kernels.length, t.name);
     }

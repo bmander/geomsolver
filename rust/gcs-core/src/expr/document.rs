@@ -240,7 +240,8 @@ fn write_value(
     // a column.  The two go together — `every_dimension_can_be_written_free` — so this is the
     // belt to that braces: an expression somewhere it was never meant to be says so rather than
     // selecting a kernel that does not exist.
-    if !kind.is_dimension() || sk.constraints[ci].kind.free_kernel().is_none() {
+    let k = sk.constraints[ci].kind;
+    if !kind.is_dimension() || (k.free_kernel().is_none() && !k.built()) {
         return Err(format!("`{name}` is free, and this is not a dimension it can be").into());
     }
     // a claim compiles to no rows, so an unknown bound here would sit in no equation at all — a
@@ -293,8 +294,8 @@ fn write_value(
 /// Seed a new free variable from its first dimension at the current pose.
 /// If the Newton step is nonfinite, kick by one sketch extent in variable units.
 fn settle(sk: &mut Sketch, c: &Constraint, param: u32, reach: f64) {
-    let kid = c.kernel_id();
-    if crate::kernels::kernel_by_id(kid).n_res != 1 {
+    let kn = c.kernel_in(sk);
+    if kn.n_res != 1 {
         return;
     }
     let ps = c.params(sk);
@@ -303,7 +304,7 @@ fn settle(sk: &mut Sketch, c: &Constraint, param: u32, reach: f64) {
     let kick = sk.extent().max(1.0) / if reach.is_finite() && reach > 0.0 { reach } else { 1.0 };
     let err = |sk: &Sketch| {
         let v: Vec<f64> = ps.iter().map(|&p| sk.params[p as usize].value).collect();
-        let (r, j) = crate::kernels::eval_one(kid, &v, &consts);
+        let (r, j) = crate::kernels::eval_with(&kn, &v, &consts);
         (r[0], j[col])
     };
     let start = sk.params[param as usize].value;

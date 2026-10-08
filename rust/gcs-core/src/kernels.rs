@@ -154,6 +154,18 @@ impl Kernel {
     }
 }
 
+/// Which kernel a row runs, as `System` keys its blocks (`Constraint::kernel_key`): a static
+/// one, or one built from the sketch — a curve definition's, a row's derivative (§6.21), a
+/// spline's length at its control-point count (#121).  The derived order is the block order,
+/// every static kernel first, so a document with no built kernel compiles as it always has.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum KernelKey {
+    Static(usize),
+    Family { def: usize, fk: u8 },
+    Dual(usize),
+    SplineLength { n: usize, free: bool },
+}
+
 pub fn kernel(id: K) -> &'static Kernel {
     &KERNELS[id as usize]
 }
@@ -407,6 +419,52 @@ pub fn curve_tangent_kernel(n_theta: usize, n_const: usize, body: u8) -> Kernel 
 
 /// A kernel's residual or Jacobian, as the table holds it.
 type KernelFn = fn(usize, &[f64], &[f64], &mut [f64]);
+
+/// A spline's whole length (`length(L) s`, #121): `(c0x, c0y, …, c(n−1)x, c(n−1)y[, a])` over
+/// the constants `integral::length_consts`, `Σ w |C'| − L` by Gauss–Legendre per span
+/// (`integral.rs`) — or `− (m·a + c)` where an unknown sets the length.  Every control point is
+/// a column, so the kernel is built per count, as a curve family's is per definition.  A
+/// signed length, so degree 1.
+pub fn spline_length_kernel(n: usize, free: bool) -> Kernel {
+    let stated = if free { 2 } else { 1 };
+    Kernel {
+        name: "spline_length",
+        n_res: 1,
+        n_par: 2 * n + free as usize,
+        n_const: 2 * n + curve::DEGREE + 1 + stated,
+        degree: 1,
+        res: spline_length_res,
+        jac: spline_length_jac,
+        const_jac: None,
+    }
+}
+
+fn spline_length_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    let (n_par, n_const) = curve_widths(n, v, k);
+    let (m, free) = crate::integral::length_widths(n_par);
+    for i in 0..n {
+        let (v, k) = (&v[n_par * i..n_par * (i + 1)], &k[n_const * i..n_const * (i + 1)]);
+        let nodes = crate::integral::length_nodes(m, k);
+        let stated = &k[2 * m + curve::DEGREE + 1..];
+        let target = if free { stated[0] * v[2 * m] + stated[1] } else { stated[0] };
+        r[i] = crate::integral::length(&nodes, &v[..2 * m]) - target;
+    }
+}
+
+fn spline_length_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    let (n_par, n_const) = curve_widths(n, v, k);
+    let (m, free) = crate::integral::length_widths(n_par);
+    for i in 0..n {
+        let (v, k) = (&v[n_par * i..n_par * (i + 1)], &k[n_const * i..n_const * (i + 1)]);
+        let row = &mut j[n_par * i..n_par * (i + 1)];
+        row.fill(0.0);
+        let nodes = crate::integral::length_nodes(m, k);
+        crate::integral::length_grad(&nodes, &v[..2 * m], 1.0, None, &mut row[..2 * m]);
+        if free {
+            row[2 * m] = -k[2 * m + curve::DEGREE + 1];
+        }
+    }
+}
 
 /// A circle osculating a curve written in the language: `(u, θ…, cx, cy, r)` — the three rows
 /// of `spline_curvature`, with `C`, `C'`, `C''` and `C'''` from the definition's tapes, or from

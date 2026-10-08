@@ -497,8 +497,21 @@ pub fn frame(sk: &Sketch, c: &Constraint) -> Option<Frame> {
             let e = c.args[0].ent();
             Some(Frame::Polar { o: sk.point_xy(sk.round_center(e)), th0: sweep_start(sk, e) })
         }
+        // along the spline where its parameter is halfway, and off it to its left
+        CKind::SplineLength => {
+            let (o, d) = spline_middle(sk, c.args[0].ent().i())?;
+            Some(Frame::Linear { o, d, n: perp(d) })
+        }
         undrawn!() => None,
     }
+}
+
+/// Where a spline is halfway along its parameter, and its unit tangent there: what its length's
+/// callout hangs off.
+fn spline_middle(sk: &Sketch, i: usize) -> Option<(P, P)> {
+    let (t0, t1) = crate::curve::domain(sk, i);
+    let f = crate::curve::eval(sk, i, 0.5 * (t0 + t1));
+    Some((f.p, unit(f.d1)?))
 }
 
 /// The direction an ordinate is drawn along in its points' view: the view's own `x` or `y`, or
@@ -796,6 +809,7 @@ impl Pen<'_> {
             CKind::AnnularDistance => self.annular(c),
             CKind::Angle => self.angle(c),
             CKind::ArcLength => self.arc_length(c),
+            CKind::SplineLength => self.spline_length(c),
             undrawn!() => None,
         }
     }
@@ -1182,6 +1196,23 @@ impl Pen<'_> {
         }
         k.anchor = along(ctr, ray(am), place.1);
         self.seal(&mut k);
+        Some(k)
+    }
+
+    /// A spline's length: a leader off the curve at its middle, out to the number on a landing,
+    /// as a radius is called out — the length runs along the whole curve, so no one stretch of
+    /// it is the place to measure.
+    fn spline_length(&mut self, c: &Constraint) -> Option<Callout> {
+        let text = claimed(c, prefixed("⌒", dimension_text(c)?));
+        let (o, d) = spline_middle(self.sk, c.args[0].ent().i())?;
+        let n = perp(d);
+        let place = self.placed(c).unwrap_or((0.0, self.px(LEADER_PX)));
+        let mut k = Callout::new(c.id, CalloutKind::Radial, &text);
+        k.place = place;
+        let elbow = along(along(o, d, place.0), n, place.1);
+        let toward = unit(sub(o, elbow)).unwrap_or(mul(n, -1.0));
+        k.arrows.push(Arrow { at: o, dir: toward });
+        self.land(&mut k, o, elbow, &text);
         Some(k)
     }
 

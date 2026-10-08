@@ -1567,6 +1567,21 @@ pub unsafe extern "C" fn gcs_constraint_params(h: *mut Sketch, id: i32, out: *mu
     })
 }
 
+/// A constraint's rows and columns into `out` as `[n_res, n_par]`; returns 2, or 0 for no such
+/// constraint.  What a binding sizes its buffers by: a kernel built at its operands' width (a
+/// spline's length reads every control point) has no fixed width a registry could publish.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_constraint_widths(h: *mut Sketch, id: i32, out: *mut i32) -> i32 {
+    guard(-1, move || {
+        let s = sk(h);
+        let Some(c) = s.constraint(id as u32) else { return 0 };
+        let k = c.kernel_in(s);
+        *out = k.n_res as i32;
+        *out.add(1) = k.n_par as i32;
+        2
+    })
+}
+
 /// The current values of those params; returns how many.
 #[no_mangle]
 pub unsafe extern "C" fn gcs_constraint_local_values(
@@ -1598,7 +1613,7 @@ pub unsafe extern "C" fn gcs_constraint_eval(
     guard(-1, move || {
         let s = sk(h);
         let Some(c) = s.constraint(id as u32) else { return 0 };
-        let k = kernels::kernel_by_id(c.kernel_id());
+        let k = c.kernel_in(s);
         let vals = std::slice::from_raw_parts(v, k.n_par);
         let r = c.residual(s, vals);
         let j = c.jacobian(s, vals);

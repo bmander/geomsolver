@@ -12,7 +12,7 @@
 #[allow(unused_imports)]
 use crate::fmath::Det;
 use crate::expr::Free;
-use crate::kernels::{self, K};
+use crate::kernels::{self, Kernel, K};
 use crate::model::{EntKind, EntRef, Sketch};
 use crate::space::across;
 
@@ -48,6 +48,11 @@ pub enum CKind {
     /// counter-clockwise from its start to its end, in (0, 2π] — what `Sketch::arc_angles`
     /// reads.  A magnitude, degree 1; the length a belt wraps or a circular pitch measures.
     ArcLength,
+    /// **A spline's whole length** (`length(L) s`, #121): `∫ |C'| dt` over its domain, by
+    /// Gauss–Legendre per span (`integral.rs`).  Every control point is a column, so the kernel
+    /// is built per count (`KernelKey::SplineLength`).  A magnitude, degree 1; a belt's, a
+    /// cable's, a hanging rope's length.
+    SplineLength,
     ParallelDistance,
     EqualLength,
     PointOnLine,
@@ -235,7 +240,7 @@ impl FamilyKernel {
 }
 
 /// Every concrete constraint type, in the order the registry lists them.
-pub const ALL_KINDS: [CKind; 62] = [
+pub const ALL_KINDS: [CKind; 63] = [
     CKind::Coincident,
     CKind::Distance,
     CKind::Midpoint,
@@ -298,6 +303,7 @@ pub const ALL_KINDS: [CKind; 62] = [
     CKind::PlaneParallel,
     CKind::PlaneDistance,
     CKind::DragSeen,
+    CKind::SplineLength,
 ];
 
 /// **The words a direction may be written as** (`docs/ordinate-plan.md`): `along:` an ordinate
@@ -641,13 +647,15 @@ pub fn builtin_word(word: &str, fixity: Fixity) -> bool {
 /// The same for a word standing *before* its one operand.  `distance` on a line is sugar for the
 /// distance between its ends, which is why it is here and not in the table above.
 pub fn prefix_op(word: &str, on: EntKind) -> Option<CKind> {
-    use EntKind::{Arc, Circle, Line};
+    use EntKind::{Arc, Circle, Line, Spline};
     Some(match (word, on) {
         ("horizontal", Line) => CKind::Horizontal,
         ("vertical", Line) => CKind::Vertical,
         ("radius", Circle | Arc) => CKind::Radius,
         // an arc's length along itself: the other way a round thing is dimensioned
         ("length", Arc) => CKind::ArcLength,
+        // and a spline's, along the whole of it
+        ("length", Spline) => CKind::SplineLength,
         ("distance", Line) => CKind::Distance,
         _ => return None,
     })
@@ -906,6 +914,7 @@ impl CKind {
             CKind::Angle => "Angle",
             CKind::EqualAngle => "EqualAngle",
             CKind::ArcLength => "ArcLength",
+            CKind::SplineLength => "SplineLength",
             CKind::ParallelDistance => "ParallelDistance",
             CKind::EqualLength => "EqualLength",
             CKind::PointOnLine => "PointOnLine",
@@ -1027,6 +1036,7 @@ impl CKind {
                 ("sense", S::Str),
             ],
             CKind::ArcLength => &[("arc", S::Arc), ("l", S::Length)],
+            CKind::SplineLength => &[("spline", S::Spline), ("l", S::Length)],
             // the number is a magnitude, and `side` says which side of `l1` its second line lies
             // on; omitted, both sides are solutions and the seed picks between them (§9.2)
             CKind::ParallelDistance => {
@@ -1223,7 +1233,7 @@ impl CKind {
             // another angle rather than as a number
             CKind::EqualAngle => ("angle", Infix),
             CKind::Radius => ("radius", Prefix),
-            CKind::ArcLength => ("length", Prefix),
+            CKind::ArcLength | CKind::SplineLength => ("length", Prefix),
             CKind::Coincident => ("coincident", Infix),
             CKind::Midpoint => ("midpoint", Infix),
             CKind::Parallel => ("parallel", Infix),
@@ -1423,6 +1433,7 @@ impl CKind {
                 | CKind::PointLine3
                 | CKind::LineLine3
                 | CKind::ArcLength
+                | CKind::SplineLength
         )
     }
 
@@ -1446,6 +1457,13 @@ impl CKind {
     /// caller wanting only "does this run along something, and how fast" asks `param_scale`.
     pub fn contact_slots(self) -> Option<(usize, usize)> {
         self.contact_on(SpecKind::Spline)
+    }
+
+    /// Whether this kind's kernel is built from the sketch at a width of its operands' (a
+    /// spline length's control-point count) rather than registered: `Constraint::kernel_key`
+    /// names it, and nothing may ask `kernel()` for it.
+    pub fn built(self) -> bool {
+        matches!(self, CKind::SplineLength)
     }
 
     /// The per-definition kernel this kind runs through, for the four kinds that have one.
@@ -1495,6 +1513,7 @@ impl CKind {
             | CKind::Angle
             | CKind::EqualAngle
             | CKind::ArcLength
+            | CKind::SplineLength
             | CKind::ParallelDistance
             | CKind::EqualLength
             | CKind::PointOnLine
@@ -1587,6 +1606,7 @@ impl CKind {
             CKind::PointOnCurve | CKind::PointOnExtrusion | CKind::CurveTangentLine | CKind::CurveCurvature => {
                 panic!("a curve contact's kernel belongs to its definition, not its type")
             }
+            CKind::SplineLength => panic!("a spline length's kernel belongs to its spline's count"),
             CKind::Coincident => K::Coincident,
             CKind::Distance => K::Distance,
             CKind::Midpoint => K::Midpoint,
@@ -1689,6 +1709,8 @@ impl CKind {
             CKind::Angle => K::AngleFree,
             CKind::Radius => K::RadiusFree,
             CKind::ArcLength => K::ArcLengthFree,
+            // its free twin is built beside it, at the spline's count (`KernelKey::SplineLength`)
+            CKind::SplineLength => return None,
             CKind::ParallelDistance => K::ParallelDistanceFree,
             CKind::PointLineDistance => K::PointLineDistanceFree,
             CKind::AnnularDistance => K::AnnularDistanceFree,
@@ -2174,24 +2196,31 @@ impl Constraint {
 
     /// Which kernel evaluates this constraint, when the sketch is at hand.
     ///
-    /// The same as `kernel_id` for every type but one.  A curve contact's kernel belongs to the
-    /// curve's *definition* — different families read different numbers of coordinates, so they
-    /// cannot share a block — and the definition is only reachable through the sketch.  The ids
-    /// run on past the static ones, which is what lets `System` hold a table of both.
-    pub fn kernel_id_in(&self, sk: &Sketch) -> usize {
-        // a derivative's kernel is its row's kernel's twin, past the families' (§6.21)
+    /// The static one (`kernel_id`) for every type but those whose kernel is built from the
+    /// sketch.  A curve contact's belongs to the curve's *definition* — different families read
+    /// different numbers of coordinates, so they cannot share a block — a spline's length to its
+    /// control-point count, and a derivative to its row's kernel.  `System` builds one kernel per
+    /// key present (`system::build_kernel`) and orders its blocks by key, so the derived order
+    /// keeps every static block ahead of every built one.
+    pub fn kernel_key(&self, sk: &Sketch) -> kernels::KernelKey {
+        use kernels::KernelKey as Key;
+        // a derivative's kernel is its row's kernel's twin (§6.21)
         if self.along.is_some() {
-            return kernels::N_KERNELS
-                + FamilyKernel::ALL.len() * sk.curve_defs.len()
-                + self.kernel_id();
+            return Key::Dual(self.kernel_id());
+        }
+        if self.kind == CKind::SplineLength {
+            let n = sk.splines[self.args[0].ent().i()].ctrl.len();
+            return Key::SplineLength { n, free: self.free.is_some() };
         }
         match (self.kind.family_kernel(), self.curve_of()) {
-            (Some(fk), Some(e)) => {
-                let def = sk.curves[e.i()].def as usize;
-                kernels::N_KERNELS + FamilyKernel::ALL.len() * def + fk as usize
-            }
-            _ => self.kernel_id(),
+            (Some(fk), Some(e)) => Key::Family { def: sk.curves[e.i()].def as usize, fk: fk as u8 },
+            _ => Key::Static(self.kernel_id()),
         }
+    }
+
+    /// The kernel itself (`kernel_key`, built where it must be).
+    pub fn kernel_in(&self, sk: &Sketch) -> Kernel {
+        crate::system::build_kernel(sk, self.kernel_key(sk))
     }
 
     /// The curve a per-definition kernel is over — the spec's `Curve` slot, wherever it stands.
@@ -2309,6 +2338,7 @@ impl Constraint {
         // a curve's kernel belongs to its definition, so its row count is a fact about the kind
         match self.kind.family_kernel() {
             Some(fk) => fk.n_res(),
+            None if self.kind == CKind::SplineLength => 1,
             None => kernels::kernel(self.kernel()).n_res,
         }
     }
@@ -2454,6 +2484,15 @@ impl Constraint {
     }
 
     fn own_consts_on(&self, sk: &Sketch, span: Option<usize>) -> Vec<f64> {
+        // a spline's length reads the whole curve's knots and weights before what it states
+        if self.kind == CKind::SplineLength {
+            let s = &sk.splines[self.args[0].ent().i()];
+            let stated = match self.free {
+                Some(f) => vec![f.m, f.c],
+                None => vec![self.args[1].num()],
+            };
+            return crate::integral::length_consts(&s.knots, s.weights.as_deref(), s.ctrl.len(), &stated);
+        }
         // a dimension written in terms of a free variable states no number, so what its kernel
         // wants is the map onto the unknown instead: every free twin takes (m, c) and nothing
         // else, which is why this is one branch and not eight
@@ -2728,7 +2767,10 @@ impl Constraint {
             }
         }
         let what = || crate::model::article(&crate::syntax::snake(self.kind.name()));
-        if self.kind.family_kernel().is_some() || !crate::taylor::has_form(self.kernel_id()) {
+        if self.kind.family_kernel().is_some()
+            || self.kind.built()
+            || !crate::taylor::has_form(self.kernel_id())
+        {
             return Err(format!(
                 "a set whose body states {} has no derivative yet, so nothing is tangent to it",
                 what()
@@ -2823,6 +2865,8 @@ impl Constraint {
             CKind::EqualAngle => [ln(0), ln(1), ln(2), ln(3)].concat(),
             // the centre, the two ends and the radius: the sweep is read off the ends, the
             // length is the radius times it
+            // every control point: the length reads the whole curve
+            CKind::SplineLength => sk.entity_params(e(0)),
             CKind::ArcLength => {
                 let a = &sk.arcs[e(0).i()];
                 [pt_at(a.center), pt_at(a.start), pt_at(a.end), vec![rad(0)]].concat()
@@ -3120,10 +3164,7 @@ impl Constraint {
     /// The residual and Jacobian at `v`, by the kernel this row runs: its own, or its
     /// derivative's (§6.21).
     fn eval(&self, sk: &Sketch, v: &[f64]) -> (Vec<f64>, Vec<f64>) {
-        match self.along {
-            Some(_) => kernels::eval_with(&kernels::dual_kernel(self.kernel_id()), v, &self.consts(sk)),
-            None => kernels::eval_one(self.kernel_id(), v, &self.consts(sk)),
-        }
+        kernels::eval_with(&self.kernel_in(sk), v, &self.consts(sk))
     }
 }
 

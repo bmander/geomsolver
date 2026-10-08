@@ -207,8 +207,8 @@ fn two_curve_families_get_their_own_kernels() {
             Arg::Seed { value: 100.0, pinned: false },
         ],
     ));
-    let ids: Vec<usize> =
-        sk.constraints.iter().map(|c| c.kernel_id_in(&sk)).collect();
+    let ids: Vec<gcs_core::kernels::KernelKey> =
+        sk.constraints.iter().map(|c| c.kernel_key(&sk)).collect();
     assert_ne!(ids[0], ids[1], "one kernel per definition");
     let mut sk2 = sk;
     let r = solve(&mut sk2, SolveOpts::default());

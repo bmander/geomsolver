@@ -37,6 +37,7 @@ pub mod graph;
 pub mod hidden;
 pub mod homotopy;
 pub mod io;
+pub mod integral;
 pub mod interval;
 pub mod json;
 pub mod kernels;

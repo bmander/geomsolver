@@ -364,7 +364,7 @@ fn compile_trace(
                 ),
             ));
         }
-        if r.kind.soft_by_default() || spec.iter().any(|(_, k)| k.is_param()) {
+        if r.kind.soft_by_default() || r.kind.built() || spec.iter().any(|(_, k)| k.is_param()) {
             return Err((st.span, format!("{} cannot appear in a trace block", r.kind.name())));
         }
         // the block is lowered through a scratch sketch of one plane, which has no place in

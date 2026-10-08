@@ -160,3 +160,4 @@ mod block_solve;
 mod block_measure;
 mod limit_measure;
 mod workspace;
+mod spline_length;

@@ -77,7 +77,6 @@ export function curveInfo(): CurveInfo {
   return REGISTRY().curve;
 }
 
-const MAX_PAR = 24;   // the widest kernel takes 13; a little headroom costs nothing
 
 export abstract class Constraint {
   static readonly spec: Spec = [];
@@ -122,7 +121,16 @@ export abstract class Constraint {
   }
 
   get nResiduals(): number {
-    return REGISTRY().kernels[this.kernelId].nRes;
+    return this.widths().nRes;
+  }
+
+  /** Its rows and columns, the core's: a kernel built at its operands' width (a spline's
+   *  length reads every control point) has none the registry could publish. */
+  private widths(): { nRes: number; nPar: number } {
+    return this.evaluated((sk, id) => withBuf(2, 4, (b) => {
+      core().gcs_constraint_widths(sk.handle, id, b.ptr);
+      return { nRes: b.i32[0], nPar: b.i32[1] };
+    }));
   }
 
   /** Entities this constraint references directly, in spec order.  A slot the core fills in
@@ -218,7 +226,8 @@ export abstract class Constraint {
 
   /** The values of the params the kernel's columns refer to. */
   localValues(): Float64Array {
-    return this.evaluated((sk, id) => withBuf(MAX_PAR, 8, (b) => {
+    const { nPar } = this.widths();
+    return this.evaluated((sk, id) => withBuf(nPar, 8, (b) => {
       const n = core().gcs_constraint_local_values(sk.handle, id, b.ptr);
       return b.f64.slice(0, n);
     }));
@@ -226,7 +235,8 @@ export abstract class Constraint {
 
   /** The global Param indices the kernel's columns refer to. */
   paramIndices(): number[] {
-    return this.evaluated((sk, id) => withBuf(MAX_PAR, 4, (b) => {
+    const { nPar } = this.widths();
+    return this.evaluated((sk, id) => withBuf(nPar, 4, (b) => {
       const n = core().gcs_constraint_params(sk.handle, id, b.ptr);
       return [...b.i32.subarray(0, n)];
     }));
@@ -243,9 +253,9 @@ export abstract class Constraint {
   }
 
   private eval(v: ArrayLike<number>): { r: Float64Array; j: Float64Array; nPar: number } {
-    const nRes = this.nResiduals;
+    const { nRes, nPar: width } = this.widths();
     return this.evaluated((sk, id) => withBuf(v.length, 8, (vb) => withBuf(nRes, 8, (rb) =>
-      withBuf(nRes * MAX_PAR, 8, (jb) => {
+      withBuf(nRes * width, 8, (jb) => {
         vb.set(v);
         const nPar = core().gcs_constraint_eval(sk.handle, id, vb.ptr, rb.ptr, jb.ptr);
         return { r: rb.f64.slice(), j: jb.f64.slice(0, nRes * nPar), nPar };
