@@ -1,6 +1,11 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.54 — October 2026**
+**Specification, Draft 0.55 — October 2026**
+
+**[0.55] A plane tangent to a cone.** `P tangent(at: m) K`, with `K` a cone (`std.Cone`), says
+`P` is the cone's tangent plane at `m` — what a hypoid's pitch plane is to each pitch cone, said
+without drawing the cone's axis in a view square to the plane (§6.21). One condition where the
+apex and `m` are drawn on `P`, as a tangent plane of a cone always holds its apex.
 
 **[0.54] Membership is one rule.** A plane is a set of points, and `in` is membership of it:
 `p coincident P`, said of a point standing in space, draws the point in `P` as `p := point in P`
@@ -1671,6 +1676,15 @@ said where it is used, by two words:
   directions' two unknowns against four rows. `m` on each is said beside it (`m coincident S1`);
   the word reads each body only at `m`, so a body that declares geometry of its own is **E040**
   here, and the word without `at:` is **E040**.
+- `P tangent(at: m) K` **[0.55]**, a plane and a cone (`std.Cone`): `P` is **`K`'s tangent plane
+  at `m`**. Every tangent plane of a cone holds the generator through the point, apex included,
+  so the statement is the apex and `m` on `P` and one condition more — the cone's axis in the
+  plane through the generator square to `P` — and each of the first two adds nothing where the
+  drawing already draws the point on `P`. `m` on `K` is said beside it, as for two sets. Any
+  other set after a plane's `tangent(at:)` is **E040**, as is a line or anything but a plane
+  before it. *Non-normative:* stated as the body's derivatives along `P`, the condition would be
+  two rows that are one and its multiple wherever the apex is on `P`, a cone's body being
+  stationary along its generator.
 
 Every relation a use states is **described as the statement wrote it** (`l tangent shaft`, §9.9),
 its placement and classes the statement's; a dimension the body states is drawn as a component

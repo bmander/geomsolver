@@ -26,6 +26,10 @@ pub(crate) enum Shape<'a> {
     /// `p coincident plane` and `p distance(r) centre`, in either order and either way round, and
     /// nothing else.
     Circle { plane: &'a Ref, centre: &'a Ref, radius: Radius<'a> },
+    /// `std.Cone`'s: `g := line(about.p1, p)` and `about angle(half) g` — the points whose
+    /// generator from the apex `about.p1` makes that angle with `about`.  Drawn as nothing yet;
+    /// known to a plane tangent to it (`P tangent(at: m) K`, #145).
+    Cone { about: &'a Ref },
 }
 
 /// A shape's number as its body writes it: the text, where it stands, and the word it is written
@@ -48,10 +52,12 @@ impl Radius<'_> {
 }
 
 impl Shape<'_> {
-    /// What the elaborator judges the shape by, its references as the body writes them.
-    pub(crate) fn form(&self) -> Form {
+    /// What the elaborator judges the shape by, its references as the body writes them —
+    /// `None` for a shape drawn as nothing.
+    pub(crate) fn form(&self) -> Option<Form> {
         match self {
-            Shape::Circle { plane, .. } => Form::Circle { plane: Some((*plane).clone()) },
+            Shape::Circle { plane, .. } => Some(Form::Circle { plane: Some((*plane).clone()) }),
+            Shape::Cone { .. } => None,
         }
     }
 }
@@ -87,7 +93,25 @@ pub(crate) fn shape<'a>(lit: &'a SetLit) -> Option<Shape<'a>> {
         let radius = Radius { text: text.as_str(), span: *span, word: &d.word };
         Some(Shape::Circle { plane, centre, radius })
     };
-    circle(a, b).or_else(|| circle(b, a))
+    // a line from the apex to the point, and the axis at an angle to it
+    let cone = |g: &'a Stmt, at: &'a Stmt| {
+        let StmtKind::Decl(d) = &g.kind else { return None };
+        let [from, to] = d.children.as_slice() else { return None };
+        let ([crate::syntax::Kid::Ref(apex)], [crate::syntax::Kid::Ref(p)]) = (&from[..], &to[..])
+        else {
+            return None;
+        };
+        let line = d.kind == EntKind::Line && p.path.is_empty() && p.root.text == bound;
+        let StmtKind::Relation(r) = &at.kind else { return None };
+        let w = r.form.written()?;
+        let [about, gen] = w.ops.as_slice() else { return None };
+        let apex_of = |x: &Ref| apex.root.text == x.root.text && x.path.is_empty()
+            && matches!(apex.path.as_slice(), [crate::syntax::Seg::Field(f)] if f.text == "p1");
+        let read = !r.claim && w.word.text == "angle" && gen.path.is_empty()
+            && gen.root.text == d.name.key().text && apex_of(about);
+        (line && read).then_some(Shape::Cone { about })
+    };
+    circle(a, b).or_else(|| circle(b, a)).or_else(|| cone(a, b))
 }
 
 /// A set the flattener drew as an element, for the elaborator to judge: the key its element is

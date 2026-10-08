@@ -77,8 +77,10 @@ pub fn to_program(sk: &Sketch) -> Program {
                 || c.kind == CKind::PointOnAxis)
     });
     // a set's derivative row (§6.21) is one no flat statement spells: a flat program keeps the
-    // contact and the set's rows at it, and says nothing of the tangency
-    let stated = sk.user_constraints().into_iter().filter(|c| c.along.is_none());
+    // contact and the set's rows at it, and says nothing of the tangency — nor of a plane's to a
+    // cone (#145), which only the set's use states
+    let stated = sk.user_constraints().into_iter()
+        .filter(|c| c.along.is_none() && c.kind != CKind::TangentPlaneCone);
     for c in stated.chain(along) {
         p.push(StmtKind::Relation(renamed(lift_relation(sk, c), &names)));
     }

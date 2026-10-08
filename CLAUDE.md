@@ -146,6 +146,14 @@ the basis about `t₀` a cubic in the jet `τ`, over `Σ wB` by the quotient rul
 hand-written spatial kernels have generic twins held to them by `tests/taylor.rs`.  Refused: a
 set named as an entity (E040 in `rewrite`), `coincident` between two sets, parentheses, a
 non-point `coincident`, a non-line or claimed `tangent`.  `tests/sets.rs` is the gate.
+**`P tangent(at: m) K`, a plane tangent to a cone (#145, 0.55):** `lowering::Shape::Cone` reads
+`std.Cone`'s body (drawn as nothing); `sets::expand_touch` states `P tangent(at: m) K.about`
+(`CKind::TangentPlaneCone`, one row: the axis in the plane through the generator square to `P`,
+`((M − A) × n̂)·d̂`) and `apex`/`m coincident P`, each dropped in `relations::constrain` where
+the point is drawn in `P` — a cone's body is stationary along its generator, so its two
+derivatives along `P` would be dependent wherever the apex is on `P`. Written directly, or with
+another set or a non-plane, E040; `lift` drops it as it does a dual's rows; a labelled
+reference fills its slot (`Written::assemble`). `tests/plane_tangent.rs` is the gate.
 
 **Membership is one rule (§6.7, §6.21, 0.54, #105):** a plane is a set and `in` membership of
 it. `q coincident P` (or `l coincident P`, its ends) of a point standing in space is lowered to

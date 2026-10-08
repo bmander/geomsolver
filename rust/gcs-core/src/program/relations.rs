@@ -176,6 +176,26 @@ pub(super) fn constrain(
             }
         }
     }
+    // a set touched at a point is touched by a plane (#145), said at the use in its words; and
+    // what that use states besides the tangency — its apex and point on the plane — is stated
+    // only where the drawing does not draw them there
+    let touch = r.word.as_ref()
+        .filter(|w| w.word == "tangent" && !w.sets.is_empty() && !w.args.is_empty())
+        .filter(|_| r.along.is_none());
+    if let (Some(w), Some(found)) = (touch, &word) {
+        if let (Some(&op), Some((_, set))) = (found.ops.first(), w.sets.first()) {
+            if op.kind != EntKind::Plane {
+                let m = format!("a set is touched at a point by a plane, `P tangent({}) {set}`, \
+                                 not by {}", w.args, op.kind.a());
+                if !diags.iter().any(|d| d.span == w.span && d.message == m) {
+                    let stmt = Some(st.id);
+                    diags.push(Diag { code: Code::E040, span: w.span, stmt, message: m });
+                }
+                return None;
+            }
+        }
+    }
+    let touch = touch.is_some();
     // a set's body row stated as its derivative at a tangency's point (§6.21)
     // — what moves its point, or the kind a line was expected in place of
     let along = r.along.as_ref().map(|a| {
@@ -199,6 +219,12 @@ pub(super) fn constrain(
         }
     };
     let ckind = r.kind;
+    if ckind == CKind::TangentPlaneCone && !touch {
+        let m = "`tangent(at: m)` relates a plane to a set it touches there: `P tangent(at: m) K`, \
+                 `K` a cone (`std.Cone`)";
+        diags.push(Diag { code: Code::E040, span: st.span, stmt: Some(st.id), message: m.into() });
+        return None;
+    }
     // a gauge is applied, not added: it holds parameters or records a root choice, and there
     // is no constraint for the map to know it by.  A claim on one is refused below the way any
     // unclaimable kind is, so it is checked first.
@@ -280,6 +306,14 @@ pub(super) fn constrain(
                     stmt: Some(st.id),
                     message: format!("{}: {msg}", name),
                 });
+                return None;
+            }
+        }
+    }
+    // a touched cone's apex, or the point it is touched at, drawn on the plane already: no row
+    if touch && ckind == CKind::PointOnPlane {
+        if let [CArg::Ent(p), CArg::Ent(plane)] = args.as_slice() {
+            if sk.plane_of(p.i()) == Some(plane.i()) {
                 return None;
             }
         }

@@ -123,9 +123,12 @@ pub enum K {
     LineOnAxis,
     // a free curve's gauge: two neighbouring spans equally long (#121)
     SplineGauge,
+    // a plane tangent to a cone at a point: the cone's axis in the plane square to it through
+    // the generator there (#145)
+    TangentPlaneCone,
 }
 
-pub const N_KERNELS: usize = 85;
+pub const N_KERNELS: usize = 86;
 
 #[derive(Clone, Copy)]
 pub struct Kernel {
@@ -2889,6 +2892,27 @@ fn point_on_plane_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
     dual_jac::<12, 1, 0>(n, v, k, j, point_on_plane_rows)
 }
 
+/// Columns of `tangent_plane_cone`: (A, B, M, du, dv).  A plane tangent at `M` to a cone about
+/// the line `A → B`, its apex `A`: every tangent plane of a cone holds the generator through the
+/// point, so with `A` and `M` on the plane (stated beside it, where the drawing does not draw them
+/// there) what is left is one condition — the axis lies in the plane through the generator square
+/// to this one, `((M − A) × n̂)·d̂`.  The two rows of the cone's body differentiated along the
+/// plane would be one and its multiple there: the body is stationary along the generator.
+fn tangent_plane_cone_rows<T: Num>(v: &[T], _k: &[f64]) -> [T; 1] {
+    let (a, b, m) = (vec3(v, 0), vec3(v, 3), vec3(v, 6));
+    let (_, _, n) = frame(vec3(v, 9), vec3(v, 12));
+    let d = vsub(b, a);
+    [vdot(vcross(vsub(m, a), n), d) / vlen(d, MIN_LINE_LEN)]
+}
+
+fn tangent_plane_cone_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    dual_res::<15, 1, 0>(n, v, k, r, tangent_plane_cone_rows)
+}
+
+fn tangent_plane_cone_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    dual_jac::<15, 1, 0>(n, v, k, j, tangent_plane_cone_rows)
+}
+
 /// Columns of `line_on_plane`: (A, B, o, du, dv).  Both ends on the plane: two rows.
 fn line_on_plane_rows<T: Num>(v: &[T], _k: &[f64]) -> [T; 2] {
     let o = vec3(v, 6);
@@ -3399,6 +3423,7 @@ pub(crate) fn num_form(name: &str) -> Option<JetForm> {
         "perpendicular3" => form!(perpendicular3_rows),
         "parallel3" => form!(parallel3_rows),
         "point_on_plane" => form!(point_on_plane_rows),
+        "tangent_plane_cone" => form!(tangent_plane_cone_rows),
         "point_on_circle3" => form!(point_on_circle3_rows),
         "project_solved" => form!(project_solved_rows),
         "point_on_line3" => form!(point_on_line3_rows),
@@ -3607,6 +3632,7 @@ pub static KERNELS: [Kernel; N_KERNELS] = [
     Kernel { name: "drag_seen", n_res: 2, n_par: 3, degree: 1, n_const: 9, res: drag_seen_res, jac: drag_seen_jac, const_jac: None },
     Kernel { name: "line_on_axis", n_res: 4, n_par: 12, degree: 1, n_const: 6, res: line_on_axis_res, jac: line_on_axis_jac, const_jac: None },
     Kernel { name: "spline_gauge", n_res: 1, n_par: 2 * GAUGE_CTRL, degree: 1, n_const: GAUGE_CONST, res: spline_gauge_res, jac: spline_gauge_jac, const_jac: None },
+    Kernel { name: "tangent_plane_cone", n_res: 1, n_par: 15, degree: 1, n_const: 0, res: tangent_plane_cone_res, jac: tangent_plane_cone_jac, const_jac: None },
 ];
 
 /// One row of a kernel: residual and Jacobian for a single constraint's local values.  The

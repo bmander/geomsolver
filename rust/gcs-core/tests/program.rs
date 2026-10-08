@@ -109,6 +109,11 @@ fn every_constraint_type_is_printable() {
             // `tests/extruded_envelope.rs` the point on an extrusion)
             continue;
         }
+        if kind == CKind::TangentPlaneCone {
+            // a plane tangent to a cone is a set's use (#145): no flat program can spell the set,
+            // so it lifts as a dual's rows do, to nothing; `tests/plane_tangent.rs` holds it
+            continue;
+        }
         let (sk, c) = fixture(kind);
         // a relation holding an axis is settled as the planes are, before the solve
         // (`views::place`), so the axis it names comes back where that put it
