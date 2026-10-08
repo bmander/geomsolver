@@ -284,8 +284,11 @@ impl<'a> Walk<'a> {
                         self.out.push((st.clone(), path.to_vec(), scope.clone()));
                         continue;
                     }
+                    // a count is a whole number: a computed one (`360deg / 15deg`) may carry
+                    // the arithmetic's last bit, but 2.5 is not rounded to anything (#115)
                     let n = match value_of(&b.count, vals, self.units) {
-                        Ok(v) if v.is_finite() && v >= 0.0 => v.round() as usize,
+                        Ok(v) if v.is_finite() && v >= 0.0
+                            && (v - v.round()).abs() <= 1e-9 * v.max(1.0) => v.round() as usize,
                         Ok(v) => {
                             self.err(
                                 Code::E103,

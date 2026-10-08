@@ -249,3 +249,75 @@ fn a_fix_gives_each_number_once() {
         assert!(!held, "{twice} holds nothing");
     }
 }
+
+/// Two holds of one number are one gauge or a contradiction, and which is never decided by the
+/// order they are written in (issue #113): a hold adds no row, so the diagnosis cannot see them
+/// disagree, and applied as read the later would silently win.  Disagreeing, each statement is
+/// refused (E031) and neither holds; agreeing — a coordinate held whole by one and alone by
+/// another — they hold it once.
+#[test]
+fn two_holds_of_one_number_agree_or_are_refused_in_either_order() {
+    let held = |e: &Elaborated| {
+        let p = e.map.ent_named("a").expect("a");
+        let own = e.sketch.own_params(p);
+        own.iter().map(|&i| (e.sketch.params[i as usize].value, e.sketch.params[i as usize].fixed))
+            .collect::<Vec<_>>()
+    };
+    let refused = |e: &Elaborated| {
+        e.diags.iter().filter(|d| d.code.as_str() == "E031").map(|d| d.span).collect::<Vec<_>>()
+    };
+    let both = |one: &str, two: &str| {
+        let ab = read(&format!("{TRI}{one}\n{two}\n"));
+        let ba = read(&format!("{TRI}{two}\n{one}\n"));
+        assert_eq!(held(&ab), held(&ba), "{one} / {two}");
+        let (m, n) = (messages(&ab), messages(&ba));
+        assert_eq!(m.len(), n.len(), "{m:?} / {n:?}");
+        (ab, ba)
+    };
+
+    let (e, f) = both("fix((1, 1)) a", "fix((2, 2)) a");
+    assert_eq!(refused(&e).len(), 2, "{:?}", messages(&e));
+    assert_eq!(refused(&f).len(), 2, "{:?}", messages(&f));
+    assert!(messages(&e).iter().all(|m| m.starts_with("E031 `x` and `y` of `a` are held at two")),
+        "{:?}", messages(&e));
+    assert!(held(&e).iter().all(|&(_, fixed)| !fixed), "neither holds");
+
+    // the issue's second case: `x` agrees, `y` does not
+    let (e, _) = both("fix(x == 3) a", "fix((3, 1)) a");
+    assert!(e.ok(), "{:?}", messages(&e));
+    assert_eq!(held(&e), vec![(3., true), (1., true)]);
+    let (e, _) = both("fix(x == 3) a", "fix((1, 1)) a");
+    assert_eq!(refused(&e).len(), 2, "{:?}", messages(&e));
+    assert_eq!(held(&e)[1], (1., true), "`y` is held once, and so held");
+    assert!(!held(&e)[0].1, "`x` is held twice, differently, and so not held");
+
+    // one number spelled two ways is one hold
+    let (e, _) = both("fix((6 / 3, 0)) a", "fix((2, 0)) a");
+    assert!(e.ok(), "{:?}", messages(&e));
+    assert_eq!(held(&e), vec![(2., true), (0., true)]);
+}
+
+/// A block's copies holding a point they share alike are one hold, not a contradiction.
+#[test]
+fn copies_holding_a_shared_point_alike_are_one_hold() {
+    let e = read(&format!("{TRI}repeat 3 {{\n  fix((4, 5)) a\n}}\n"));
+    assert!(e.ok(), "{:?}", messages(&e));
+    assert_eq!(xy(&e, "a"), (4., 5.));
+}
+
+/// Orientations of one triangle are one record (`decompose::branch_record`), so two that
+/// contradict — in any order of their points — are refused, and record no root.
+#[test]
+fn two_orientations_of_one_triangle_agree_or_are_refused() {
+    for (one, two) in [("ccw(a, b, c)", "cw(a, b, c)"), ("ccw(a, b, c)", "ccw(a, c, b)")] {
+        for src in [format!("{TRI}{one}\n{two}\n"), format!("{TRI}{two}\n{one}\n")] {
+            let e = read(&src);
+            let codes: Vec<_> = e.diags.iter().map(|d| d.code.as_str()).collect();
+            assert_eq!(codes, ["E031", "E031"], "{src}");
+            assert!(e.sketch.branches.is_empty(), "{src}");
+        }
+    }
+    let e = read(&format!("{TRI}ccw(a, b, c)\ncw(a, c, b)\n"));
+    assert!(e.ok(), "{:?}", messages(&e));
+    assert_eq!(e.sketch.branches.len(), 1);
+}

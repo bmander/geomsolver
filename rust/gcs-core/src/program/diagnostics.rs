@@ -39,6 +39,9 @@ pub enum Code {
     /// outside its centre's view, a centre that is neither a point nor an axis held in its
     /// direction, a hold or a curve contact on a turned copy
     E023,
+    /// two gauges that disagree (§13, §9.6): a number held at two values, or three points
+    /// oriented both ways — applied as read, the later would silently win
+    E031,
     /// type mismatch within an alias class
     E040,
     /// a cyclic definitional dependency: a value defined in terms of itself, a group nested in
@@ -111,6 +114,7 @@ impl Code {
             Code::E021 => "E021",
             Code::E022 => "E022",
             Code::E023 => "E023",
+            Code::E031 => "E031",
             Code::E040 => "E040",
             Code::E041 => "E041",
             Code::E060 => "E060",

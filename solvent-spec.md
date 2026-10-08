@@ -1,6 +1,12 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.51 — October 2026**
+**Specification, Draft 0.52 — October 2026**
+
+**[0.52] Two gauges that disagree are refused.** A `fix` adds no equation, so two holding one
+number at different values, or two orientations choosing opposite roots of one triangle, are a
+contradiction no conflict set can show — and applied as read, whichever came last would win,
+an outcome hanging on the order of statements. They are **E031** at each statement (§13); holds
+that agree are one hold.
 
 **[0.51] Tangencies, differentiated.** `l tangent S` states each row of the set's body again as
 its **derivative** along `l`, and what the body makes of its own — a foot point, a lift — moves
@@ -2101,7 +2107,10 @@ under the field it is (`x`, `y` of a point, **[0.42]** and `z` of one standing i
 circle or arc; **[0.42]** `x`, `y`, `z` of a plane's
 place and of an axis's direction, **[0.43]** and `px`, `py`, `pz` of an axis's place). The values are expressions over the parameters in scope, with units, and MAY
 NOT read geometry. A `fix` is a gauge: it takes the numbers out of the solve at the values stated
-and adds no equation, so it never takes part in a conflict set. It is applied before the seeds
+and adds no equation, so it never takes part in a conflict set. **[0.52]** Two holds of one number
+are one gauge where they state one value; where they differ, each statement is **E031** and the
+number is not held — no order of statements may decide which wins (P2). Two orientations of one
+triangle (§9.6) choosing opposite roots are **E031** alike. It is applied before the seeds
 that read geometry (§6.4), which read a held number where it is held and never move one; a seed
 for a held number is never read. A `fix` that states no number, writes one as a selector
 (`fix(x: 0) p`) or unnamed (`fix(5) c`), or names a field the entity does not have is **E040** /
@@ -2336,6 +2345,7 @@ The numerical method is unspecified. Whatever the method, a conforming solver:
 | E022 | nested `ring` (if unsupported) |
 | E023 | **[0.47]** what a `ring` cannot turn: a centre neither a point nor an axis held in its direction, a plane, axis or motion declared in it, a point outside its centre's view (or not in space, about an axis), a hold on a turned copy, a relation reading a turned curve |
 | E030 | retired **[0.34]**: a `fix` states its numbers (E040 where it does not) |
+| E031 | two gauges that disagree: a number held at two values, or a triangle oriented both ways (§13) **[0.52]** |
 | E040 | type mismatch within an alias class |
 | E041 | cyclic definitional dependency (**[0.18]** a solid made of itself, §6.9; a plane folded from itself until 0.42) |
 | E050 | inconsistent system (no solution); report a minimal infeasible subset when computable |

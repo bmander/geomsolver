@@ -31,7 +31,11 @@ impl Sketch {
     /// owns an unknown — and a new kind stops the build in the first rather than being silently
     /// left unconverted.
     ///
-    /// **An expression's *text* is not rewritten, and the number it came to is converted.**
+    /// **An expression's *text* is not rewritten, and the number it came to is converted** —
+    /// except a formula of bare numbers (`40 / 2`), which a destination in other units would read
+    /// as its own, and which `graft`'s `expr::evaluate` would then write back unconverted: it
+    /// is multiplied by the ratio (`(40 / 2) * 25.4`).  A text naming a unit or a name is
+    /// already right in either.
     /// `w = 80` is arithmetic the author wrote, and rewriting it would be an edit of what the
     /// document says rather than a change of the units it says it in — the same reason
     /// `commit_seeds` never overwrites `hint(r: Rr)`.  What the formula last came to is not
@@ -88,8 +92,14 @@ impl Sketch {
                     // index's value was scaled above, the seed is scaled here
                     Some(Arg::Seed { value, .. }) => *value *= k,
                     Some(Arg::Shared { seed: Some(value), .. }) => *value *= k,
-                    // the text stays as written; what it came to converts
-                    Some(Arg::Expr(e)) => e.value *= k,
+                    // what it came to converts; the text stays as written unless it is a
+                    // unit-less number, which the destination would read as its own units
+                    Some(Arg::Expr(e)) => {
+                        e.value *= k;
+                        if unitless_number(&e.text, self.units) {
+                            e.text = format!("({}) * {k}", e.text);
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -339,5 +349,14 @@ impl Sketch {
             }
         }
         self.settle_turns();
+    }
+}
+
+/// Whether `text` is a closed formula of bare numbers: no name, and no unit written in it.
+fn unitless_number(text: &str, units: crate::units::Units) -> bool {
+    let Ok(parsed) = crate::expr::parse_in(text, units) else { return false };
+    match crate::expr::eval(&parsed.body, &Default::default()) {
+        Ok(a) => a.free.is_none() && a.dim.is_scalar(),
+        Err(_) => false,
     }
 }
