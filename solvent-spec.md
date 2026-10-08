@@ -2114,7 +2114,8 @@ triangle (§9.6) choosing opposite roots are **E031** alike. It is applied befor
 that read geometry (§6.4), which read a held number where it is held and never move one; a seed
 for a held number is never read. A `fix` that states no number, writes one as a selector
 (`fix(x: 0) p`) or unnamed (`fix(5) c`), or names a field the entity does not have is **E040** /
-**E105** at what was written. Implementations MUST report residual gauge freedom (rank deficiency
+**E105** at what was written; so is one stating a number twice (`fix((3, 4), (1, 1)) p`,
+`fix((3, 4), x == 1) p`), as any relation giving one slot twice is **E040** at the second. Implementations MUST report residual gauge freedom (rank deficiency
 whose null space is spanned by rigid motions) with the suggestion to add a `fix` (**W103**), and
 MUST distinguish it from genuine under-constraint.
 
