@@ -317,8 +317,28 @@ pub(super) fn build(
                 });
                 return None;
             }
+            // **a free curve** (#121): two ends written and nothing between, so its interior is
+            // minted — on the chord for now, bowed where an energy is over it once the drawing is
+            // stated (`variational::seed_free`)
+            let free = kids.len() == 2 && d.knots.is_none() && d.weights.is_none();
+            if free {
+                let (a, b) = (sk.point_xy(kids[0]), sk.point_xy(kids[1]));
+                let n = crate::variational::FREE_CTRL;
+                let base = shown(sk, d);
+                let inner: Vec<usize> = (1..n - 1)
+                    .map(|i| {
+                        let u = i as f64 / (n - 1) as f64;
+                        let p = (a.0 + u * (b.0 - a.0), a.1 + u * (b.1 - a.1));
+                        sk.point(p.0, p.1, false, &format!("{base}.k{i}"))
+                    })
+                    .collect();
+                kids.splice(1..1, inner);
+            }
             match sk.spline_weighted(&kids, d.knots.clone(), d.weights.clone()) {
-                Some(si) => si,
+                Some(si) => {
+                    sk.splines[si].free = free;
+                    si
+                }
                 None => {
                     let message = if d.weights.as_ref().is_some_and(|w| !curve::weights_valid(w, kids.len())) {
                         format!("a curve's weights are one per control point ({}), each a positive number", kids.len())

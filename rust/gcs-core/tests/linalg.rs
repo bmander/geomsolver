@@ -200,3 +200,24 @@ fn jacobian_rank_agrees_with_the_reference_on_a_real_sketch() {
     let ours = s.rank(&z, RANK_TOL, true);
     assert_eq!(ours, dm(c.as_mat()).rank(RANK_TOL));
 }
+
+/// The symmetric eigenvalues, against nalgebra's, on random symmetric matrices of mixed sign —
+/// and the property: their sum is the trace.
+#[test]
+fn symmetric_eigenvalues_agree_with_nalgebra() {
+    for (seed, n) in [(1u32, 1usize), (2, 2), (3, 5), (4, 9), (5, 16)] {
+        let r = rand(seed, n, n);
+        let mut a = Mat::zeros(n, n);
+        for i in 0..n {
+            for j in 0..n {
+                a.data[i * n + j] = r.data[i * n + j] + r.data[j * n + i];
+            }
+        }
+        let got = gcs_core::linalg::sym_eigenvalues(&a);
+        let mut want: Vec<f64> = dm(&a).symmetric_eigen().eigenvalues.iter().copied().collect();
+        want.sort_by(|x, y| x.total_cmp(y));
+        assert_vec_close(&got, &want, 1e-10, "eigenvalues");
+        let trace: f64 = (0..n).map(|i| a.data[i * n + i]).sum();
+        assert!(close(got.iter().sum(), trace, 1e-10));
+    }
+}

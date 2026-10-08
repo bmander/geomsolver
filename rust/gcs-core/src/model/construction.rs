@@ -408,6 +408,7 @@ impl Sketch {
             knots,
             weights: weights.filter(|w| w.iter().any(|&x| x != 1.0)),
             class: Classes::default(),
+            free: false,
         });
         Some(self.splines.len() - 1)
     }

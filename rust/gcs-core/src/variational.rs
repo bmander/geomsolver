@@ -39,6 +39,11 @@ use crate::taylor::Jet;
 use crate::tape::{self, Tape};
 use std::collections::{BTreeMap, BTreeSet};
 
+/// The control points a free curve (`spline(a, b)`) is drawn with: its two ends and the interior
+/// the drawing finds.  A discretisation, not a statement — the curve it stands for is the one the
+/// energy makes, and sixteen hold the catenary to 4e-5 of its span.
+pub const FREE_CTRL: usize = 16;
+
 /// One energy's stationarity, as `Sketch::settle_variational` last read it.
 #[derive(Clone, Debug, Default)]
 pub struct Group {
@@ -691,5 +696,187 @@ pub fn seed_multipliers(sk: &mut Sketch) {
                 sk.params[p as usize].value = lam[l];
             }
         }
+    }
+}
+
+/* -- a free curve's start ----------------------------------------------------------------- */
+
+/// The energy a group's terms come to at the sketch's pose.
+fn energy(sk: &Sketch, members: &[u32]) -> f64 {
+    let mut s = tape::Scratch::new();
+    let mut e = 0.0;
+    for c in members.iter().filter_map(|&m| sk.constraint(m)) {
+        let sp = &sk.splines[c.args[0].ent().i()];
+        let Arg::Str(text) = &c.args[2] else { continue };
+        let Ok(f) = integrand(text, sk.units) else { continue };
+        let sign = if matches!(c.args[4], Arg::Bool(true)) { -1.0 } else { 1.0 };
+        let pts: Vec<f64> = sk.entity_params(EntRef::spline(c.args[0].ent().i()))
+            .iter().map(|&p| sk.params[p as usize].value).collect();
+        let nodes = integral::nodes(&sp.knots, sp.weights.as_deref(), sp.ctrl.len());
+        for q in nodes {
+            let (cc, d) = q.frame(&pts);
+            let v = tape::eval_flat(&f.tapes[0].flat, 4, &[cc[0], cc[1], d[0], d[1]], &mut s);
+            e += sign * c.args[1].num() * q.w * v.v;
+        }
+    }
+    e
+}
+
+/// Where a free curve's interior starts (`spline(a, b)`): on its chord, bowed off it as far as its
+/// stated length asks — a parabola of sagitta `s` is `c + 8s²/3c` long — or a quarter of the chord
+/// where none is stated, to whichever side the energy is lower.  An implementation's choice of
+/// start, as `program::scatter` is; it picks the branch a hanging rope and Dido's arc hang on.
+pub fn seed_free(sk: &mut Sketch) {
+    for g in sk.variational.clone() {
+        for &si in &g.splines {
+            let sp = sk.splines[si].clone();
+            if !sp.free {
+                continue;
+            }
+            let n = sp.ctrl.len();
+            let (a, b) = (sk.point_xy(sp.ctrl[0] as usize), sk.point_xy(sp.ctrl[n - 1] as usize));
+            let c = (b.0 - a.0).hypot(b.1 - a.1);
+            if c <= 0.0 {
+                continue;
+            }
+            let normal = (-(b.1 - a.1) / c, (b.0 - a.0) / c);
+            let length = sk.constraints.iter()
+                .find(|k| k.kind == CKind::SplineLength && k.args[0].ent().i() == si)
+                .map(|k| k.args[1].num());
+            let sag = match length {
+                Some(l) if l > c => (3.0 * c * (l - c) / 8.0).sqrt(),
+                Some(_) => 0.0,
+                None => c / 4.0,
+            };
+            let place = |sk: &mut Sketch, side: f64| {
+                for (i, &p) in sp.ctrl.iter().enumerate().take(n - 1).skip(1) {
+                    let u = i as f64 / (n - 1) as f64;
+                    let off = side * 4.0 * sag * u * (1.0 - u);
+                    let xy = sk.point_params(p as usize);
+                    sk.params[xy[0] as usize].value = a.0 + u * (b.0 - a.0) + off * normal.0;
+                    sk.params[xy[1] as usize].value = a.1 + u * (b.1 - a.1) + off * normal.1;
+                }
+            };
+            place(sk, 1.0);
+            let left = energy(sk, &g.members);
+            place(sk, -1.0);
+            let right = energy(sk, &g.members);
+            if left < right {
+                place(sk, 1.0);
+            }
+        }
+    }
+}
+
+/* -- the second-order verdict ------------------------------------------------------------- */
+
+/// What a stationary curve is, to second order: read off the inertia of the Lagrangian's Hessian
+/// on the motions the rows that hold the curve leave it (`verdict`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Extremum {
+    Minimum,
+    Maximum,
+    Saddle,
+    /// A motion the second order cannot see either way: no verdict.
+    Degenerate,
+}
+
+impl Extremum {
+    pub fn name(self) -> &'static str {
+        match self {
+            Extremum::Minimum => "minimum",
+            Extremum::Maximum => "maximum",
+            Extremum::Saddle => "saddle",
+            Extremum::Degenerate => "degenerate",
+        }
+    }
+
+    /// The same verdict read for the energy's negation — what a `maximize` asked about.
+    fn turned(self) -> Extremum {
+        match self {
+            Extremum::Minimum => Extremum::Maximum,
+            Extremum::Maximum => Extremum::Minimum,
+            other => other,
+        }
+    }
+}
+
+/// The verdict on group `g` at the sketch's pose, of the energy as it is minimised: the reduced
+/// Hessian `Zᵀ (∂²E + Σ λ ∂²g) Z`, `Z` a basis of the motions of the curve's coordinates the rows
+/// holding it leave free to first order (`∂g/∂y · Z = 0`), positive definite at a minimum,
+/// negative at a maximum, of both signs at a saddle.  Its inertia is the same in any basis of
+/// those motions (Sylvester), so neither the units nor the basis decide it.  `None` where the rows
+/// leave the curve no motion at all, and so nothing for the energy to choose.
+pub fn verdict(sk: &Sketch, g: &Group) -> Option<Extremum> {
+    let c = sk.constraint(g.leader)?;
+    let n_y = g.y.len();
+    if n_y == 0 {
+        return None;
+    }
+    let n_lam: usize = g.rows.iter().map(|&r| sk.constraint(r).map_or(0, |c| c.rows_in(sk))).sum();
+    let lam0 = g.cols.len() - n_lam;
+    let v: Vec<f64> = g.cols.iter().map(|&p| sk.params[p as usize].value).collect();
+    let kn = c.kernel_in(sk);
+    let (_, j) = kernels::eval_with(&kn, &v, &c.consts(sk));
+    if j.iter().any(|x| !x.is_finite()) {
+        return None;
+    }
+    let mut gm = crate::linalg::Mat::zeros(n_lam, n_y);
+    for l in 0..n_lam {
+        for i in 0..n_y {
+            gm.data[l * n_y + i] = j[i * kn.n_par + lam0 + l];
+        }
+    }
+    let z = crate::linalg::rank_and_nullspace(&gm, 1e-10).null();
+    let k = z.cols;
+    if k == 0 {
+        return None;
+    }
+    // the y block, made symmetric: the energy's and each row's Hessian are, up to rounding
+    let h = |a: usize, b: usize| 0.5 * (j[a * kn.n_par + b] + j[b * kn.n_par + a]);
+    let mut hz = vec![0.0; n_y * k];
+    for a in 0..n_y {
+        for col in 0..k {
+            hz[a * k + col] = (0..n_y).map(|b| h(a, b) * z.data[b * k + col]).sum();
+        }
+    }
+    let mut m = crate::linalg::Mat::zeros(k, k);
+    for p in 0..k {
+        for q in 0..k {
+            m.data[p * k + q] = (0..n_y).map(|a| z.data[a * k + p] * hz[a * k + q]).sum();
+        }
+    }
+    let ev = crate::linalg::sym_eigenvalues(&m);
+    let big = ev.iter().fold(0.0f64, |m, e| m.max(e.abs()));
+    let tol = 1e-9 * big;
+    let (pos, neg) = (ev.iter().filter(|&&e| e > tol).count(), ev.iter().filter(|&&e| e < -tol).count());
+    Some(match (pos, neg) {
+        (_, _) if big == 0.0 => Extremum::Degenerate,
+        (p, 0) if p == k => Extremum::Minimum,
+        (0, q) if q == k => Extremum::Maximum,
+        (p, q) if p > 0 && q > 0 => Extremum::Saddle,
+        _ => Extremum::Degenerate,
+    })
+}
+
+/// Every energy statement's verdict, by constraint, as each asked it: a `maximize` that found a
+/// maximum is answered `maximum`.
+pub fn extrema(sk: &Sketch) -> Vec<(u32, Extremum)> {
+    let mut out = Vec::new();
+    for g in &sk.variational {
+        let Some(v) = verdict(sk, g) else { continue };
+        for &m in &g.members {
+            let max = sk.constraint(m).is_some_and(|c| matches!(c.args[4], Arg::Bool(true)));
+            out.push((m, if max { v.turned() } else { v }));
+        }
+    }
+    out
+}
+
+/// What energy constraint `cid`'s statement asked for: a minimum, or — `maximize` — a maximum.
+pub fn asked(sk: &Sketch, cid: u32) -> Extremum {
+    match sk.constraint(cid).map(|c| &c.args[4]) {
+        Some(Arg::Bool(true)) => Extremum::Maximum,
+        _ => Extremum::Minimum,
     }
 }

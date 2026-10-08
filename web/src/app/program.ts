@@ -422,6 +422,11 @@ function marks(): Mark[] {
       if (at) out.push({ lo: at.lo, hi: at.hi, cls });
     }
   }
+  // an energy's verdict (#121), as quietly: the wash of what was asked for, or of what was not
+  for (const x of d.extrema) {
+    const at = doc.spanOfConstraint(x.constraint.id);
+    if (at) out.push({ lo: at.lo, hi: at.hi, cls: x.asked ? 'extremum-asked' : 'extremum-other' });
+  }
   return out;
 }
 

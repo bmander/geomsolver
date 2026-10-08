@@ -619,7 +619,8 @@ pub fn interpolating_ctrl_at(
 ///
 /// Returns the new control Point, or `None` if `t` is not a place a knot can go.
 pub fn insert_control(sk: &mut Sketch, i: usize, t: f64) -> Option<usize> {
-    if !t.is_finite() {
+    // a free curve's control points are its discretisation, uniform so its gauge holds (#121)
+    if !t.is_finite() || sk.splines[i].free {
         return None;
     }
     let (t0, t1) = domain(sk, i);

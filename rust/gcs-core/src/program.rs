@@ -510,6 +510,8 @@ pub fn elaborate(p: &Program) -> Elaborated {
     // every energy's group, gauge and multipliers, once every row it may be held by is stated —
     // a length an unknown sets included (#121)
     variational::settle(&mut sk, &map, &mut diags);
+    // and a free curve's interior where its energy hangs it
+    crate::variational::seed_free(&mut sk);
     solid_claims(&mut sk, &res, &mut map, &stating, &skip, &mut diags);
     for item in post_expr {
         let span = map.site_of_constraint(item.id).map(|s| s.span).unwrap_or_default();

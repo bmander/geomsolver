@@ -165,6 +165,20 @@ pub fn diagnosis_json(sk: &Sketch, d: &Diagnosis) -> Json {
         ("claimsTheorem", ids(&d.claims_theorem)),
         ("claimsViolated", ids(&d.claims_violated)),
         ("claimsConsuming", ids(&d.claims_consuming)),
+        // each energy's verdict, by its terms' constraints (#121): `[id, "minimum", asked]`, the
+        // last whether it is what the statement asked for — a minimum of a `minimize`
+        (
+            "extrema",
+            Json::Arr(
+                d.extrema
+                    .iter()
+                    .map(|&(id, v)| {
+                        let asked = crate::variational::asked(sk, id) == v;
+                        Json::Arr(vec![Json::Int(id as i64), Json::Str(v.name().into()), asked.into()])
+                    })
+                    .collect(),
+            ),
+        ),
         // the claims about solids, each with what was measured and how far the faceting could be
         // wrong — there is no `consuming` here, since a solid claim compiles no row to consume
         // rank with (§9.8)
