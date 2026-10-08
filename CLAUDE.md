@@ -166,7 +166,8 @@ by least squares (`variational::seed_multipliers`). **Kernels built from the ske
 (`kernels::KernelKey`: static, family, dual, spline length, stationary; derived order = block
 order) and asked through `Constraint::kernel_key`/`kernel_in`/`rows_in`, never `kernel_id()`.
 `length(L) s` on a spline is `CKind::SplineLength` (all control points, Gauss–Legendre on four
-pieces a span, `integral.rs`). `spline(a, b)` is a **free curve** (`SplineE::free`): 16 control
+pieces a span, `integral.rs`; the nodes are written into each kernel's constants, never rebuilt per
+evaluation). `spline(a, b)` is a **free curve** (`SplineE::free`): 16 control
 points (`FREE_CTRL`), the interior minted nameless, skipped by `commit_seeds`, seeded by
 `variational::seed_free` (chord bowed to the stated length, to the lower-energy side); knot
 insertion refuses it. The verdict (`variational::verdict`: reduced Hessian on `null(∂g/∂y)`,
