@@ -632,3 +632,21 @@ fn a_cycle_a_stray_next_and_a_shadowing_binder_have_their_codes() {
     refused("use std\ni := 4\nin std.front {\n  repeat 3 as i {\n    p := point\n  }\n}\n",
             "E002", "`i` is already a name here", "i");
 }
+
+/// #115 — a block's count is a whole number: `repeat 2.5` was rounded to three copies, and
+/// `repeat 0.4` silently to none.  A computed count keeps its arithmetic's last bit (0.1 · 30).
+#[test]
+fn a_count_that_is_not_whole_is_refused() {
+    let doc = |n: &str, count: &str| read(&format!("use std\nn := {n}\nin std.front {{\nrepeat {count} {{\n a := point\n}}\n}}\n"));
+    let (none, d) = doc("10", "0");
+    assert!(d.is_empty(), "{d:?}");
+    let std_points = none.sketch.points.len();
+    for count in ["2.5", "2.4", "0.4", "n / 4"] {
+        let (e, d) = doc("10", count);
+        assert!(d.iter().any(|m| m.starts_with("E103") && m.contains("which is not a count")), "{count}: {d:?}");
+        assert_eq!(e.sketch.points.len(), std_points, "{count}: no copy is made");
+    }
+    let (e, d) = doc("0.1 * 30", "n");
+    assert!(d.is_empty(), "{d:?}");
+    assert_eq!(e.sketch.points.len(), std_points + 3);
+}
