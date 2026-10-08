@@ -2,7 +2,7 @@
 
 #[allow(unused_imports)]
 use crate::fmath::Det;
-use super::{Ast, ExprError, Fault, Measure, Op, CONSTANTS};
+use super::{Ast, ExprError, Measure, Op, CONSTANTS};
 use crate::constraints::SpecKind;
 use crate::units::Dim;
 use std::collections::BTreeMap;
@@ -178,13 +178,13 @@ fn ev(
                 Op::Pow => match (x.number(), y.number()) {
                     (Some(p), Some(q)) => {
                         if !y.dim.is_scalar() {
-                            return Err(dimension(format!(
+                            return Err(ExprError::dimension(format!(
                                 "a power is a plain number, and this one is {}",
                                 y.dim.name()
                             )));
                         }
                         let dim = x.dim.powf(q).ok_or_else(|| {
-                            dimension(format!(
+                            ExprError::dimension(format!(
                                 "{} to the power {q} is not a dimension — a dimensioned base \
                                  takes a whole power",
                                 x.dim.name()
@@ -207,16 +207,11 @@ fn ev(
                     None => return Err(not_affine(v.free.as_deref().unwrap_or("")).into()),
                 }
             }
-            Aff::of_dim(call(name, &vals), signature(name, &dims).map_err(dimension)?)
+            Aff::of_dim(call(name, &vals), signature(name, &dims).map_err(ExprError::dimension)?)
         }
         Ast::Measure(m, args) => match ms {
             Some(f) => f(*m, args)?,
-            None => {
-                return Err(ExprError::new(
-                    Fault::Measure,
-                    super::measure_refusal(&m.text(args)),
-                ))
-            }
+            None => return Err(ExprError::measure(&m.text(args))),
         },
     })
 }
@@ -224,18 +219,12 @@ fn ev(
 /// What `a + b` is, when a bare number takes the other's dimension and anything else must agree.
 fn sum(x: &Aff, y: &Aff, op: &str) -> Result<Dim, ExprError> {
     x.dim.agree(y.dim).ok_or_else(|| {
-        dimension(format!(
+        ExprError::dimension(format!(
             "`{}` and `{}` cannot be added: {op} needs one dimension, not two",
             x.dim.name(),
             y.dim.name()
         ))
     })
-}
-
-/// A number that is not what the arithmetic around it takes: the E103 a slot mismatch is
-/// (§3.3), not a number that would not compute (#116).
-fn dimension(message: String) -> ExprError {
-    ExprError::new(Fault::Dimension, message)
 }
 
 /// A function's dimensions: what it takes and what it gives back (spec §3.3).

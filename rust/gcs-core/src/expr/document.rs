@@ -40,6 +40,16 @@ impl ExprError {
     pub(crate) fn new(fault: Fault, message: impl Into<String>) -> ExprError {
         ExprError { fault, message: message.into() }
     }
+
+    /// A number that is not what its slot, or the arithmetic around it, takes (§3.3, #116).
+    pub(crate) fn dimension(message: impl Into<String>) -> ExprError {
+        ExprError::new(Fault::Dimension, message)
+    }
+
+    /// A measurement read where nothing has been solved for it to read (E107).
+    pub(crate) fn measure(call: &str) -> ExprError {
+        ExprError::new(Fault::Measure, super::measure_refusal(call))
+    }
 }
 
 /// A bare message is the ordinary fault: it would not compute.
@@ -134,10 +144,7 @@ pub fn evaluate(sk: &mut Sketch) -> Vec<ExprItem> {
             Ok(p) => {
                 deps = p.body.deps().into_iter().collect();
                 match p.body.measures().first() {
-                    Some((m, args)) => Some(ExprError::new(
-                        Fault::Measure,
-                        super::measure_refusal(&m.text(args)),
-                    )),
+                    Some((m, args)) => Some(ExprError::measure(&m.text(args))),
                     // work it out, check what it came to against its slot, write it: three
                     // steps that fail the same way, so they are one chain and one error arm
                     None => match (|| -> Result<(f64, Aff), ExprError> {
@@ -188,27 +195,26 @@ fn check_dim(
 ) -> Result<(), ExprError> {
     let want = nd.kind.dim();
     let attr = sk.constraints[nd.ci].spec()[nd.ai].0;
-    let dim = |m: String| ExprError::new(Fault::Dimension, m);
     let Some(name) = a.free.clone() else {
-        return a.dim.require(want, attr).map_err(dim);
+        return a.dim.require(want, attr).map_err(ExprError::dimension);
     };
     let d = want.div(a.dim);
     if d != Dim::SCALAR && d != Dim::LENGTH && d != Dim::ANGLE {
-        return Err(dim(format!(
+        return Err(ExprError::dimension(format!(
             "`{name}` would have to be {} here, which is not a length, an angle or a plain number",
             d.name()
         )));
     }
     // an unknown the source declared is what it was declared, wherever it is read
     if let Some(decl) = sk.declared.get(&name).filter(|decl| decl.dim != d) {
-        return Err(dim(format!(
+        return Err(ExprError::dimension(format!(
             "`{name}` is declared {}, and `{attr}` reads it as {}",
             decl.dim.name(),
             d.name()
         )));
     }
     match free_dim.get(&name) {
-        Some(&(was, first)) if was != d => Err(dim(format!(
+        Some(&(was, first)) if was != d => Err(ExprError::dimension(format!(
             "`{name}` is {} in `{first}` and {} in `{attr}` — one free name, one dimension",
             was.name(),
             d.name()
