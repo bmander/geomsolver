@@ -53,7 +53,9 @@ pub struct Group {
     pub members: Vec<u32>,
     /// The splines varied, ascending.
     pub splines: Vec<usize>,
-    /// The free coordinates varied: each spline's interior control points', in order.
+    /// The free coordinates varied: each spline's interior control points', in order, then the
+    /// unknowns of the rows reading them own (a contact's place along the curve) — the
+    /// configuration the energy is minimised over is the curve and where it touches.
     pub y: Vec<u32>,
     /// Every hard row that reads one, in sketch order, with how many residuals it has.
     pub rows: Vec<(u32, usize)>,
@@ -205,6 +207,10 @@ impl Sketch {
             }
             y_of.insert(s, ys);
         }
+        // every coordinate of a varied curve, its ends included: what a row may read and still be
+        // about the curve alone
+        let curve: BTreeSet<u32> =
+            varied.iter().flat_map(|&s| self.entity_params(EntRef::spline(s))).collect();
         // splines read by one row are one energy, as two terms over one spline are
         let mut sets = crate::graph::UnionFind::new(self.splines.len());
         let mut reading: Vec<(u32, usize, usize, bool)> = Vec::new();
@@ -212,9 +218,21 @@ impl Sketch {
             if !c.acts() || c.kind == CKind::Stationary {
                 continue;
             }
-            let touched: BTreeSet<usize> =
-                c.params_on(self, None).iter().filter_map(|p| owner.get(p).copied()).collect();
+            let ps = c.params_on(self, None);
+            let touched: BTreeSet<usize> = ps.iter().filter_map(|p| owner.get(p).copied()).collect();
             let Some(&first) = touched.first() else { continue };
+            // **a contact, or a relation of the drawing**: a row that reads free geometry besides
+            // the curve and its own unknowns is satisfied by that geometry — a line drawn tangent
+            // to a hanging rope moves to touch it, and the rope hangs as it would — so it holds
+            // the energy to nothing and takes no multiplier.  One whose every other column is
+            // held presses on the curve: the rope is pushed to touch a line that cannot move.
+            let own = c.aux_params();
+            let elsewhere = ps.iter().any(|p| {
+                !curve.contains(p) && !own.contains(p) && !self.params[*p as usize].fixed
+            });
+            if elsewhere {
+                continue;
+            }
             let tag = hessian_tag(self, c);
             for &s in &touched {
                 sets.union(first, s);
@@ -251,6 +269,20 @@ impl Sketch {
             let g = groups.get_mut(&sets.find(s)).expect("a row read is in a group");
             g.rows.push((id, n));
             g.refused |= refused;
+        }
+        // a row's own unknown (a contact's place on the curve) is the energy's to vary too: held
+        // by the row alone, with no stationarity of its own it would be a freedom the drawing
+        // does not have
+        for g in groups.values_mut() {
+            let mut seen: BTreeSet<u32> = g.y.iter().copied().collect();
+            for &(id, _) in &g.rows {
+                let Some(c) = self.constraint(id) else { continue };
+                for p in c.aux_params() {
+                    if !self.params[p as usize].fixed && seen.insert(p) {
+                        g.y.push(p);
+                    }
+                }
+            }
         }
         // the columns, and the multipliers — one per residual of each row the group reads, kept
         // where they were
@@ -324,9 +356,14 @@ impl Sketch {
         }
     }
 
-    /// The group whose rows constraint `cid` carries, when it leads one that states any.
+    /// The group whose rows constraint `cid` carries, when it leads one that states any — and
+    /// whose every row and term is still in the sketch: a caller that filters the constraints in
+    /// place (the conflict search) is left an energy that states nothing rather than one that
+    /// names rows it no longer has.
     pub fn leads(&self, cid: u32) -> Option<&Group> {
-        self.variational.iter().find(|g| g.leader == cid && !g.refused)
+        let g = self.variational.iter().find(|g| g.leader == cid && !g.refused)?;
+        let here = |id: &u32| self.constraint(*id).is_some();
+        (g.members.iter().all(here) && g.rows.iter().all(|(id, _)| here(id))).then_some(g)
     }
 }
 

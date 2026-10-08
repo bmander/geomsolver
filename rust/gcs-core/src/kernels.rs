@@ -1450,7 +1450,7 @@ pub const N_PAR_SPLINE_CURVE: usize = 1 + 2 * SPAN_N + 3;
 /// a whole `(C'·C')/turn` away along the normal — so where the curve does not turn there is no
 /// finite circle to be had, and the floor keeps that as a very large residual rather than an
 /// infinity.  Same bargain as `MIN_LINE_LEN`, for the same reason.
-const MIN_TURN: f64 = 1e-12;
+pub(crate) const MIN_TURN: f64 = 1e-12;
 
 fn turn(k: f64) -> f64 {
     if k.abs() < MIN_TURN {

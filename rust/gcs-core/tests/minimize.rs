@@ -173,8 +173,6 @@ fn energies_refused() {
     refused(&base.replace("p.y over", "p.y + h over"), "E101");
     // and a point's own field that is not one
     refused(&base.replace("p.y over", "p.z over"), "E101");
-    // a contact on the rope has no second derivative to vary it by
-    refused(&base.replace("}\nminimize", "q := point hint((50, -30))\nq coincident rope\n}\nminimize"), "E040");
     // nor, where the document names a unit, is an angle a power of length
     let mm = format!("unit mm\n{base}");
     refused(&mm.replace("p.y over", "atan2(p.y, p.x) * 1deg over"), "E103");

@@ -105,15 +105,15 @@ fn the_planar_kernels_have_forms() {
 
 /// Every kernel a body can state has a form, in space as on the page — so the derivative row a
 /// tangency states of each (`kernels::dual_kernel`) is exact.  What has none is a soft drag, which
-/// no body states, a point on a spline, a curve contact, and a free curve's gauge, whose second
-/// derivative an energy reads off its spans' lengths instead (`variational.rs`).
+/// no body states, and a free curve's gauge, whose second derivative an energy reads off its
+/// spans' lengths instead (`variational.rs`).
 #[test]
 fn every_kernel_a_body_states_has_a_form() {
     let formless: Vec<&str> =
         (0..KERNELS.len()).filter(|&k| !has_form(k)).map(|k| KERNELS[k].name).collect();
     assert_eq!(
         formless,
-        ["drag", "point_on_spline", "spline_tangent_line", "spline_curvature", "drag_seen", "spline_gauge"]
+        ["drag", "drag_seen", "spline_gauge"]
     );
 }
 
@@ -143,18 +143,25 @@ fn every_derivative_rows_jacobian_is_its_derivative() {
             k.extend((0..inner.n_const).map(|_| rng.uniform(0.5, 2.0)));
             k.extend((0..m).map(|_| [0, 1, 2, 3, TANGENT][rng.uniform(0.0, 4.999) as usize] as f64));
             let (r0, jac) = eval_with(&dual, &v, &k);
-            let h = 1e-6;
-            for c in 0..dual.n_par {
+            // a central difference at one step is either truncation or cancellation: a spline
+            // contact's basis, extrapolated far past its random knots, reads hundreds where its
+            // residual reads one, and 1e-6 is all cancellation there — so the exact column must
+            // agree with the difference at one of two steps
+            let fd_at = |c: usize, h: f64| {
                 let (mut vp, mut vm) = (v.clone(), v.clone());
                 vp[c] += h;
                 vm[c] -= h;
                 let (rp, rm) = (eval_with(&dual, &vp, &k).0, eval_with(&dual, &vm, &k).0);
+                (0..dual.n_res).map(|t| (rp[t] - rm[t]) / (2.0 * h)).collect::<Vec<f64>>()
+            };
+            for c in 0..dual.n_par {
+                let (fine, coarse) = (fd_at(c, 1e-6), fd_at(c, 1e-4));
                 for t in 0..dual.n_res {
-                    let fd = (rp[t] - rm[t]) / (2.0 * h);
                     let got = jac[t * dual.n_par + c];
-                    let scale = 1.0 + r0[t].abs() + fd.abs();
+                    let off = |fd: f64| (got - fd).abs() / (1.0 + r0[t].abs() + fd.abs());
+                    let fd = if off(fine[t]) <= off(coarse[t]) { fine[t] } else { coarse[t] };
                     assert!(
-                        (got - fd).abs() <= 1e-5 * scale,
+                        off(fd) <= 1e-5,
                         "{} seed {seed} row {t} column {c}: {got} against {fd}",
                         inner.name
                     );

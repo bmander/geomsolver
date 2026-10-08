@@ -701,8 +701,12 @@ the sign turned. Several statements over one curve add up.
 
 - **What it varies.** The curve's interior, never its ends: an energy closes exactly the curve's
   own freedoms, so an end left free keeps its freedom and can be dragged (the rope re-hangs).
-  The curve is a free spline (`spline(a, b)`) or one with written control points. A relation on
-  a varied point must have a second derivative the solver can take: `q coincident rope` is E040.
+  The curve is a free spline (`spline(a, b)`) or one with written control points.
+- **Contacts and drawing.** A relation between the curve and other geometry that is still free
+  moves that geometry: `rope tangent floor` with `floor` free puts the line on the hanging rope,
+  which hangs as before. With the other geometry held, the relation presses on the curve: a held
+  `floor` lifts or lowers the rope to touch it (a tangency touches and matches direction; it is
+  not "rests on", and may cross elsewhere). A contact's place along the curve is varied with it.
 - **Under a `unit`** the point is a length and the integrand is dimension-checked: `p.y + 1` is
   E103, `p.y + 1mm` is fine. Without one every number is plain.
 - **The verdict.** A stationary curve may be a minimum, a maximum or a saddle, and the seed

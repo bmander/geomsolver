@@ -195,23 +195,87 @@ fn a_dragged_end_writes_its_hint() {
     assert_eq!(seeds.text.matches("hint").count(), 1, "{}", seeds.text);
 }
 
-/// A line tangent to the rope: a contact has no second derivative for the energy to vary the rope
-/// by, so a tool's statement of one is refused, saying why — and one added past that check leaves
-/// the energy stating nothing rather than a wrong stationarity, and the solve standing.
-#[test]
-fn a_contact_on_a_rope_is_refused_and_never_breaks_the_solve() {
-    use gcs_core::constraints::{validate, Constraint};
+/// The rope with a line drawn beside it, held or free, and made tangent to it.
+fn with_line(fixed: bool, at: [(f64, f64); 2]) -> (Elaborated, usize, usize) {
+    use gcs_core::constraints::Constraint;
     use gcs_core::model::EntRef;
     let mut e = solved(ROPE);
     let sk = &mut e.sketch;
-    let p = sk.point(20.0, -80.0, false, "lp");
-    let q = sk.point(90.0, -80.0, false, "lq");
+    let p = sk.point(at[0].0, at[0].1, fixed, "lp");
+    let q = sk.point(at[1].0, at[1].1, fixed, "lq");
     let l = sk.line(p, q);
     let c = Constraint::spline_tangent_line(sk, EntRef::spline(0), EntRef::line(l));
-    let why = validate(sk, c.kind, &c.args, &|e| format!("{e:?}")).unwrap_err();
-    assert!(why.contains("energy") && why.contains("second derivative"), "{why}");
     sk.add(c);
-    assert!(sk.variational.iter().all(|g| g.refused));
-    let r = gcs_core::solve::solve(sk, gcs_core::solve::SolveOpts::default());
+    (e, p, q)
+}
+
+/// **A line drawn tangent to the rope moves to touch it**: the line is free, so the tangency is
+/// the drawing's to satisfy and presses on nothing — the rope hangs as the catenary, the line
+/// keeps the freedoms the tangency leaves it, and the rope is still a minimum.
+#[test]
+fn a_free_line_drawn_tangent_to_the_rope_moves_to_it() {
+    let (mut e, p, q) = with_line(false, [(20.0, -40.0), (90.0, -45.0)]);
+    let r = gcs_core::solve::solve(&mut e.sketch, gcs_core::solve::SolveOpts::default());
     assert!(r.success, "{}", r.message);
+    let off = off_catenary(&e.sketch, 0, 150.0);
+    assert!(off < 1e-2, "{off}");
+    let d = gcs_core::diagnose::diagnose(&mut e.sketch, gcs_core::diagnose::DiagnoseOptions::default());
+    // the line's four coordinates less the one the tangency takes
+    assert_eq!(d.dof, 3, "{d:?}");
+    assert_eq!(d.extrema.iter().map(|(_, v)| v.name()).collect::<Vec<_>>(), ["minimum"]);
+    // and it touches: the curve's nearest point to the line is on it
+    let (a, b) = (e.sketch.point_xy(p), e.sketch.point_xy(q));
+    let (t0, t1) = gcs_core::curve::domain(&e.sketch, 0);
+    let gap = (0..=2000)
+        .map(|k| {
+            let (x, y) = gcs_core::curve::point_at(&e.sketch, 0, t0 + (t1 - t0) * k as f64 / 2000.0);
+            ((b.0 - a.0) * (y - a.1) - (b.1 - a.1) * (x - a.0)) / (b.0 - a.0).hypot(b.1 - a.1)
+        })
+        .map(f64::abs)
+        .fold(f64::INFINITY, f64::min);
+    assert!(gap < 1e-3, "{gap}");
+}
+
+/// **A held line presses the rope**: nothing else can move to satisfy the tangency, so it is a
+/// contact of the energy, with a multiplier of its own — the rope's lowest point is lifted onto a
+/// level line a little above where it would hang, or pulled down to one a little below, at DOF 0.
+#[test]
+fn a_held_line_tangent_to_the_rope_lifts_or_lowers_it() {
+    let (a, c) = crate::minimize::catenary(150.0);
+    for dy in [1.0, -1.0] {
+        let level = a + c + dy;
+        let (mut e, _, _) = with_line(true, [(20.0, level), (90.0, level)]);
+        let r = gcs_core::solve::solve(&mut e.sketch, gcs_core::solve::SolveOpts::default());
+        assert!(r.success, "{dy}: {}", r.message);
+        let (t0, t1) = gcs_core::curve::domain(&e.sketch, 0);
+        let lowest = (0..=2000)
+            .map(|k| gcs_core::curve::point_at(&e.sketch, 0, t0 + (t1 - t0) * k as f64 / 2000.0).1)
+            .fold(f64::INFINITY, f64::min);
+        assert!((lowest - level).abs() < 1e-3, "{dy}: lowest {lowest} against {level}");
+        let d = gcs_core::diagnose::diagnose(&mut e.sketch, gcs_core::diagnose::DiagnoseOptions::default());
+        assert_eq!(d.dof, 0, "{dy}: {d:?}");
+    }
+}
+
+/// A held line the rope cannot be bent to touch from where it hangs is a solve that fails and
+/// says so — and the diagnosis, which then searches for a conflict among subsets of the
+/// constraints, never reads an energy whose rows it has set aside.
+#[test]
+fn a_rope_that_cannot_touch_is_diagnosed_not_crashed() {
+    let (mut e, _, _) = with_line(true, [(20.0, -40.0), (90.0, -45.0)]);
+    let _ = gcs_core::solve::solve(&mut e.sketch, gcs_core::solve::SolveOpts::default());
+    let _ = gcs_core::diagnose::diagnose(&mut e.sketch, gcs_core::diagnose::DiagnoseOptions::default());
+}
+
+/// The same, written: `rope tangent floor` in the document elaborates, solves, and leaves the rope
+/// the catenary with the line moved onto it.
+#[test]
+fn a_written_tangent_to_the_rope_elaborates_and_solves() {
+    let src = ROPE.replace(
+        "  length(150) rope\n",
+        "  length(150) rope\n  f0 := point hint((20, -40))\n  f1 := point hint((90, -45))\n  floor := line(f0, f1)\n  rope tangent floor\n",
+    );
+    let e = solved(&src);
+    let off = off_catenary(&e.sketch, 0, 150.0);
+    assert!(off < 1e-2, "{off}");
 }
