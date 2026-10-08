@@ -2,7 +2,7 @@
 
 #[allow(unused_imports)]
 use crate::fmath::Det;
-use super::{Ast, Measure, Op, CONSTANTS};
+use super::{Ast, ExprError, Fault, Measure, Op, CONSTANTS};
 use crate::constraints::SpecKind;
 use crate::units::Dim;
 use std::collections::BTreeMap;
@@ -106,7 +106,7 @@ fn not_affine(name: &str) -> String {
 /// (`sqrt(-1)`, `1/0`) comes back as is, for the caller to judge.
 ///
 /// A measurement is refused here: nothing has been solved for it to read (`measure_refusal`).
-pub fn eval(ast: &Ast, env: &BTreeMap<String, Aff>) -> Result<Aff, String> {
+pub fn eval(ast: &Ast, env: &BTreeMap<String, Aff>) -> Result<Aff, ExprError> {
     ev(ast, env, None)
 }
 
@@ -119,11 +119,15 @@ pub fn eval_measured(
     ast: &Ast,
     env: &BTreeMap<String, Aff>,
     measure: Measurer,
-) -> Result<Aff, String> {
+) -> Result<Aff, ExprError> {
     ev(ast, env, Some(measure))
 }
 
-fn ev(ast: &Ast, env: &BTreeMap<String, Aff>, ms: Option<Measurer>) -> Result<Aff, String> {
+fn ev(
+    ast: &Ast,
+    env: &BTreeMap<String, Aff>,
+    ms: Option<Measurer>,
+) -> Result<Aff, ExprError> {
     Ok(match ast {
         Ast::Num(v, d) => Aff::of_dim(*v, *d),
         Ast::Var(name) => match CONSTANTS.iter().find(|&&(n, _, _)| n == name) {
@@ -161,34 +165,34 @@ fn ev(ast: &Ast, env: &BTreeMap<String, Aff>, ms: Option<Measurer>) -> Result<Af
                     match (x.number(), y.number()) {
                         (Some(k), _) => Aff { free: y.free, m: k * y.m, c: k * y.c, dim },
                         (_, Some(k)) => Aff { free: x.free, m: k * x.m, c: k * x.c, dim },
-                        _ => return Err(free_pair_of(&x, &y)),
+                        _ => return Err(free_pair_of(&x, &y).into()),
                     }
                 }
                 Op::Div => {
                     let dim = x.dim.div(y.dim);
                     match y.number() {
                         Some(k) => Aff { free: x.free, m: x.m / k, c: x.c / k, dim },
-                        None => return Err(not_affine(y.free.as_deref().unwrap_or(""))),
+                        None => return Err(not_affine(y.free.as_deref().unwrap_or("")).into()),
                     }
                 }
                 Op::Pow => match (x.number(), y.number()) {
                     (Some(p), Some(q)) => {
                         if !y.dim.is_scalar() {
-                            return Err(format!(
+                            return Err(dimension(format!(
                                 "a power is a plain number, and this one is {}",
                                 y.dim.name()
-                            ));
+                            )));
                         }
                         let dim = x.dim.powf(q).ok_or_else(|| {
-                            format!(
+                            dimension(format!(
                                 "{} to the power {q} is not a dimension — a dimensioned base \
                                  takes a whole power",
                                 x.dim.name()
-                            )
+                            ))
                         })?;
                         Aff::of_dim(p.dpowf(q), dim)
                     }
-                    _ => return Err(free_pair_of(&x, &y)),
+                    _ => return Err(free_pair_of(&x, &y).into()),
                 },
             }
         }
@@ -200,27 +204,38 @@ fn ev(ast: &Ast, env: &BTreeMap<String, Aff>, ms: Option<Measurer>) -> Result<Af
                 dims.push(v.dim);
                 match v.number() {
                     Some(n) => vals.push(n),
-                    None => return Err(not_affine(v.free.as_deref().unwrap_or(""))),
+                    None => return Err(not_affine(v.free.as_deref().unwrap_or("")).into()),
                 }
             }
-            Aff::of_dim(call(name, &vals), signature(name, &dims)?)
+            Aff::of_dim(call(name, &vals), signature(name, &dims).map_err(dimension)?)
         }
         Ast::Measure(m, args) => match ms {
             Some(f) => f(*m, args)?,
-            None => return Err(super::measure_refusal(&m.text(args))),
+            None => {
+                return Err(ExprError::new(
+                    Fault::Measure,
+                    super::measure_refusal(&m.text(args)),
+                ))
+            }
         },
     })
 }
 
 /// What `a + b` is, when a bare number takes the other's dimension and anything else must agree.
-fn sum(x: &Aff, y: &Aff, op: &str) -> Result<Dim, String> {
+fn sum(x: &Aff, y: &Aff, op: &str) -> Result<Dim, ExprError> {
     x.dim.agree(y.dim).ok_or_else(|| {
-        format!(
+        dimension(format!(
             "`{}` and `{}` cannot be added: {op} needs one dimension, not two",
             x.dim.name(),
             y.dim.name()
-        )
+        ))
     })
+}
+
+/// A number that is not what the arithmetic around it takes: the E103 a slot mismatch is
+/// (§3.3), not a number that would not compute (#116).
+fn dimension(message: String) -> ExprError {
+    ExprError::new(Fault::Dimension, message)
 }
 
 /// A function's dimensions: what it takes and what it gives back (spec §3.3).

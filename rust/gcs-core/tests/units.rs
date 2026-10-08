@@ -467,6 +467,23 @@ fn a_slot_mismatch_is_an_error_and_a_free_name_is_not() {
     assert_eq!(d.iter().filter(|x| x.0 == "E040").count(), 1, "{d:?}");
     assert!(d.iter().any(|x| x.1.contains("a claim may not bind an unknown")), "{d:?}");
 
+    // the arithmetic's own mismatches are the same error as the slot's (#116): `3 + 2deg` in a
+    // dimension is what it is in a `param`, not a number that would not compute
+    for (text, says) in [
+        ("3 + 2deg", "cannot be added"),
+        ("3 - 2deg", "cannot be added"),
+        ("floor(45deg)", "takes a plain number"),
+        ("2 ^ 1deg", "a power is a plain number"),
+    ] {
+        let d = diag(&format!("{two}a distance({text}) b\n"));
+        assert_eq!(d.len(), 1, "{text}: {d:?}");
+        assert_eq!(d[0].0, "E103", "{text}: {d:?}");
+        assert!(d[0].1.contains(says), "{text}: {}", d[0].1);
+        assert!(!d[0].1.contains("last number"), "{text}: {}", d[0].1);
+        let d = diag(&format!("{two}w := {text}\na distance(w) b\n"));
+        assert!(d.iter().any(|x| x.0 == "E103" && x.1.contains(says)), "{text}: {d:?}");
+    }
+
     let d = diag(&format!("{two}param w: Length\na distance(w) b\n"));
     assert!(d.is_empty(), "{d:?}");
     let d = diag(&format!("{two}a distance(w) b\n"));

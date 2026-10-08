@@ -37,7 +37,7 @@ pub struct ExprError {
 }
 
 impl ExprError {
-    fn new(fault: Fault, message: impl Into<String>) -> ExprError {
+    pub(crate) fn new(fault: Fault, message: impl Into<String>) -> ExprError {
         ExprError { fault, message: message.into() }
     }
 }
@@ -46,6 +46,13 @@ impl ExprError {
 impl From<String> for ExprError {
     fn from(message: String) -> ExprError {
         ExprError::new(Fault::Uncomputable, message)
+    }
+}
+
+/// Where only the words are wanted — a caller with nowhere to put the fault.
+impl From<ExprError> for String {
+    fn from(e: ExprError) -> String {
+        e.message
     }
 }
 
