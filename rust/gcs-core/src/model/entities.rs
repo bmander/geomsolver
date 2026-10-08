@@ -464,9 +464,6 @@ pub struct SplineE {
     /// One finite positive weight per control point, or `None`: polynomial (all 1, never stored).
     pub weights: Option<Vec<f64>>,
     pub class: Classes,
-    /// A **free curve** (`spline(a, b)`, #121): its ends written, its interior control points
-    /// minted — a shape the drawing finds, nameless, never written back.
-    pub free: bool,
 }
 
 /// **A plane in space** (`docs/planes-plan.md`): its attitude is two axes' — right along `u`,

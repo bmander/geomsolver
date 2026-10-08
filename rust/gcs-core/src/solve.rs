@@ -196,8 +196,6 @@ impl System {
     }
 
     fn solve_compiled(&mut self, sk: &mut Sketch, opts: SolveOpts) -> SolveResult {
-        // an energy's multipliers are where they best fit the pose a solve starts from (#121)
-        crate::variational::seed_multipliers(sk);
         let z0 = self.z0(sk);
         let dogleg = opts.method == Method::DogLeg;
         let mut z = z0.clone();

@@ -226,7 +226,8 @@ pub(crate) fn lift_decl(sk: &Sketch, e: EntRef) -> Decl {
         seed_spans: vec![Span::default(); seed.len()],
         hint_span: None,
         seed,
-        curve: (e.kind == EntKind::Curve).then(|| lift_curve(sk, e.i())),
+        // a free curve is the two points it runs between, `curve(a, b)`
+        curve: (e.kind == EntKind::Curve && !sk.curve_extremal(e.i())).then(|| lift_curve(sk, e.i())),
         computed: None,
         knots,
         weights,

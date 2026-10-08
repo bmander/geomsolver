@@ -123,8 +123,10 @@ fn every_dimension_is_drawn() {
     drawn.sort();
     drawn.dedup();
     // a relation in space states a number of no one view, and has no figure on one
+    // a free curve's length is drawn from a document, where its curve has an energy to give it a
+    // shape (`a_free_curves_length_is_drawn`)
     let mut want: Vec<CKind> = ALL_KINDS.iter().copied()
-        .filter(|k| k.has_dimension() && !k.spatial())
+        .filter(|k| k.has_dimension() && !k.spatial() && *k != CKind::CurveLength)
         .collect();
     want.sort();
     assert_eq!(drawn, want, "the fixture is missing a dimensioned kind");
@@ -803,4 +805,16 @@ o := point
 ",
     );
     assert_eq!(texts(&layout(&sk, 0.1)), ["10", "20", "30"]);
+}
+
+/// A free curve's length is drawn as a spline's is, hung off the curve's middle — once its energy
+/// has given it a shape.
+#[test]
+fn a_free_curves_length_is_drawn() {
+    let mut sk = examples::example("catenary").expect("the catenary");
+    assert!(solve(&mut sk, SolveOpts::default()).success);
+    let id = sk.constraints.iter().find(|c| c.kind == CKind::CurveLength).expect("its length").id;
+    let ks = layout(&sk, 1.0);
+    let k = ks.iter().find(|k| k.id == id).expect("a callout for the rope's length");
+    sane(k);
 }

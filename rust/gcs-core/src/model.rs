@@ -31,7 +31,7 @@ pub use entities::{
     PlaneE,
     LiftE, article,
 };
-pub use curves::{CURVE_STEPS, CurveDef, CurveBody, CurveE, Home, Trim, whole};
+pub use curves::{CURVE_STEPS, CurveDef, CurveBody, CurveE, Extremal, Home, Trim, extremal_def, whole};
 pub use spatial::{
     FaceLoop, FaceSupport, FaceE, Length, SolidRequirement, SolidClaim, SolidBearing, Sweep,
     DerivedE, Extent, Sense, SolidDef, SolidE, SeamE, EdgeE, VertexE, PatchE, EnvelopeE, SurfaceE,
@@ -135,13 +135,9 @@ pub struct Sketch {
     /// it and handed to the rest.  The constraints hold the index (`Arg::Param`), so this table
     /// is what a rebuild (`io::graft`) and the document writer read the name back from.
     pub shared: BTreeMap<String, SharedPlace>,
-    /// Each energy's multipliers (#121), by (the group's leading constraint, the row's, the
-    /// residual's index in it) — unknowns `settle_variational` mints for every row an energy's
-    /// curve is held by, and retires when the row goes.  Derived state, never saved.
-    pub multipliers: BTreeMap<(u32, u32, u8), u32>,
-    /// The energies' groups as `settle_variational` last read them — what a stationarity's
-    /// columns, rows and constants are read off.
-    pub variational: Vec<crate::variational::Group>,
+    /// Each free curve's energy as `settle_variational` last read it: its statements, pegs and
+    /// whether its length is free.  Derived state, never saved.
+    pub variational: Vec<crate::variational::Energy>,
     /// Physical dimensions inferred by expression evaluation, in user units (angles in degrees).
     pub free_dimensions: BTreeMap<String, crate::units::Dim>,
     /// The unknowns the source declared, by name — an input nothing binds (`param beta:

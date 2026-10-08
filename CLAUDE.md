@@ -140,7 +140,7 @@ inside a derivative.  `along` and `duals` travel through `graft` (duals first, r
 missing its point or line is dropped with its rows), JSON (`"duals"`, `"along": index`) and
 `topology_key`; `cgraph` leaves it to the residual, the witness never jitters it, callouts skip
 it, `to_program` drops it (a flat program cannot spell it).  Every static kernel but the drags
-and the spline gauge has a Taylor form (the spline contacts' exact to every order, `taylor::span_frame`:
+has a Taylor form (the spline contacts' exact to every order, `taylor::span_frame`:
 the basis about `t₀` a cubic in the jet `τ`, over `Σ wB` by the quotient rule): the spatial `*_rows` are generic over
 `kernels::Num` (`Dual<N>` for res/jac, `Jet` for the form, `kernels::num_form`), the
 hand-written spatial kernels have generic twins held to them by `tests/taylor.rs`.  Refused: a
@@ -166,39 +166,40 @@ walked again as a set (`elaborate` loops over `elaborate_in`, `flatten::expand_w
 Lowering is a representation, never a meaning: the solutions are the same either way.
 `tests/membership.rs` is the gate.
 
-**Variational curves (§9.10, §6.1, 0.53, #121, `variational.rs`):** `k minimizes E` / `k maximizes
-E` (`StmtKind::Minimize`, `parser/minimize.rs`; indicative, a statement about `k` read by the word
-past its ref, as the body words are — never an imperative opener) with `E` a sum of `c *
-integral(EXPR over p)` (or `over (p, t)`, `t` the unit tangent) along `k`, ds-weighted; `flatten::values::settle_integrand` writes the scope's numbers in and
-renames the binders `p`/`t`, so the sketch holds text over `p.x p.y t.x t.y`. Each term is a
-`CKind::Stationary` constraint (`[spline, weight, integrand, degree, maximize]`); `Sketch::
-settle_variational` (at `add`/`remove`, the end of `graft`, `from_json`, after elaboration's
-`expr::evaluate`) groups the terms over one curve (or curves one row reads), mints the **gauge**
-(`CKind::SplineGauge`, intrinsic, static kernel: neighbouring spans equally long — without it the
-KKT point is a saddle) and the **multipliers** (`Sketch::multipliers`, never saved), and caches
-`Sketch::variational`. The group's lowest id **leads**: its rows are `∂E/∂y + Σ λ ∂g/∂y` over the
-free coordinates `y` of the varied splines' **interior** control points (ends keep their freedom),
-`g` every hard row reading one whose other free columns are the curves' own (a **contact**, which
-presses; a row reading other free geometry is a **drawing relation**, satisfied by that geometry,
-no multiplier — a free line tangent to the rope moves onto it), and `y` also holds the contacts'
-own unknowns (a contact's `t`); the others compile none (`rows_in` 0, skipped in `System::new`).
-Its kernel is built per leader (`KernelKey::Stationary`, `variational::pack`/`kernel`):
-self-contained, the energy's Hessian from four tapes of `F = f(C, C'/|C'|)|C'|` (each first in one
-variable, `tape::eval_series_flat`'s `g[1]`), a row's by polarising its Taylor form, a spline
-length's and the gauge's from `integral.rs`; a row with neither is E040. `System::solve` seeds λ
-by least squares (`variational::seed_multipliers`). **Kernels built from the sketch are keyed**
-(`kernels::KernelKey`: static, family, dual, spline length, stationary; derived order = block
-order) and asked through `Constraint::kernel_key`/`kernel_in`/`rows_in`, never `kernel_id()`.
-`length(L) s` on a spline is `CKind::SplineLength` (all control points, Gauss–Legendre on four
-pieces a span, `integral.rs`; the nodes are written into each kernel's constants, never rebuilt per
-evaluation). `spline(a, b)` is a **free curve** (`SplineE::free`): 16 control
-points (`FREE_CTRL`), the interior minted nameless, skipped by `commit_seeds`, seeded by
-`variational::seed_free` (chord bowed to the stated length, to the lower-energy side); knot
-insertion refuses it. The verdict (`variational::verdict`: reduced Hessian on `null(∂g/∂y)`,
-inertia by `linalg::sym_eigenvalues`) is `Diagnosis::extrema`, reported by the CLI, the JSON
-(`[id, verdict, asked]`) and the app's `.extremum-asked`/`.extremum-other` marks. `std.hangs(L) k`
-is a word whose body states `k minimizes …`. `tests/{spline_length,minimize,catenary}.rs` are the
-gates.
+**Variational curves (§9.10, §6.1, 0.53–0.55, #121, #144, `variational.rs`, `extremal.rs`):**
+`k minimizes E` / `k maximizes E` (`StmtKind::Minimize`, `parser/minimize.rs`; indicative, read by
+the word past its ref, as the body words are) with `E` a sum of `c * integral(EXPR over p)` (or
+`over (p, t)`, `t` the unit tangent) along `k`, ds-weighted; `flatten::values::settle_integrand`
+writes the scope's numbers in and renames the binders `p`/`t`. Each term is a `CKind::Stationary`
+(`[curve, weight, integrand, degree, maximize]`), only over a **free curve** `rope := curve(a, b)`
+(`program/entities.rs::build_free_curve`: `EntKind::Curve`, `CurveBody::Extremal`, `CurveE::length`
+its one own param, `CurveE::pegs`). **The curve is the solution of its Euler–Lagrange equation**,
+solved inside it (`extremal.rs`): optimal control in arc length — state `z = (x, y, λx, λy)`, the
+direction algebraic (`H_θ = 0` by Newton, `H_θθ > 0` Pontryagin, so a branch flip is refused, not
+followed), `λ' = −f_p` — from `Lagrangian`'s three tapes over `(θ, x, y)` (`t.x → cos θ`; each
+first in one variable, so second derivatives only). Integrated by Gragg–Bulirsch–Stoer
+(`extremal/flow.rs`, seven columns) with the variational equations through the same substeps; the
+BVP (`extremal/shoot.rs`) is multiple shooting, four pieces an arc, a **peg** (a held point the
+curve passes: `peg coincident rope`, absorbed — `rows_in` 0, its place held) splitting arcs with
+the costate free to jump and `H` unbroken (a corner); dense Newton, a long curve started as a
+gentle sag (`EASY`) and walked out, a pegged one from the unpegged shape with each peg where it
+passes, warm starts walked along `dq` (`walk`). The drawing sees a curve of columns `[a, b, L]`
+(`entity_params`): contacts are the ordinary curve kinds (`kernels::EXTREMAL` body,
+`extremal::kernel_eval`/`kernel_frame`, gradients by the implicit function theorem; `∇C''` and
+`C'''` by differences), the shape memoised by its constants' content (`extremal::shape_for`,
+shared with `Sketch::curve_shape` and drawing). `length(L) rope` is `CKind::CurveLength` (the
+radius kernel on `L`); with none holding it the energy's first statement carries the
+transversality row `H = 0` (`variational::rows`/`kernel`, `KernelKey::Stationary`). A held row
+pressing the curve that is not a peg is E040 (a corner, never a tangency). `Sketch::
+settle_variational` (at `add`/`remove`, the end of `graft`, `from_json`, elaboration) compiles each
+curve's definition (keyed by its terms and peg count), its pegs and free length into
+`Sketch::variational`; `seed_extremals` then seeds lengths (a row's number, else `H = 0` by
+bracketing above the chord) and contacts left at 0. The verdict (`extremal::verdict`: Legendre,
+conjugate points as sign changes of `det ∂p/∂λ₀`, the Hessian in pegs' places and a free length)
+is `Diagnosis::extrema` (`unsolved` where no shape is found), reported by the CLI, the JSON
+(`[id, verdict, asked]`) and the app's marks. `length(L) s` on a spline stays `SplineLength`
+(`integral.rs`). `std.hangs(L) k` is a word. `tests/{extremal,catenary,minimize,spline_length}.rs`
+are the gates.
 
 **Predicates, applied (§9.9, §6.21, 0.50, #103):** a relation word and a set are one predicate —
 parameters given at the call, **bound variables** (a word's operands, a set's point) filled at
@@ -1781,7 +1782,7 @@ Conventions:
   code exists.  `C(u)` is a small damped Newton solve, its derivatives the implicit function
   theorem from one factorisation.  The body encodes to flat `f64` in the contact's consts
   (`locus::eval_at` the one evaluator, `eval_flat` its cold entry); `System` picks
-  `trace_kernel` over `curve_kernel` per definition, bindings untouched.  A trace contact's
+  `point_on_body_kernel` over `curve_kernel` per definition, bindings untouched.  A trace contact's
   constants are `[anchor, n_values, values…, has_pose, flat…, pose…]` (`kernel_eval` reads,
   `consts_on` writes, `kernel_table` sizes; `view` ignores what trails): for a **drawn**
   instance the **pose on the sheet**, read at every compile and refresh (`CurveDef::pose_of`,

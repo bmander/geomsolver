@@ -275,9 +275,8 @@ pub fn has_form(kid: usize) -> bool {
 }
 
 /// One row of kernel `kid` along `x + wε`, into `r` (`n_res` jets) — the path built into `path`,
-/// scratch the caller keeps; `false` where the kernel has no form.  What a derivative row and an
-/// energy's Hessian both read a row's second order through (`kernels::dual_kernel`,
-/// `variational`).
+/// scratch the caller keeps; `false` where the kernel has no form.  What a derivative row reads a
+/// row's second order through (`kernels::dual_kernel`).
 pub fn along(kid: usize, x: &[f64], w: &[f64], k: &[f64], path: &mut Vec<Jet>, r: &mut [Jet],
              jrow: &mut Vec<f64>) -> bool {
     path.clear();

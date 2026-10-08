@@ -1,12 +1,12 @@
-//! Integrals over a whole spline (#121): its length, and an energy along it.
+//! A whole spline's length (#121).
 //!
 //! A contact reads one span of a curve; an integral reads all of them, so its row's columns are
 //! every control point's coordinates and its kernel is built per control-point count
 //! (`kernels::spline_length_kernel`), as a curve family's is per definition.  The quadrature is
 //! Gauss–Legendre on equal pieces of each non-empty span (`nodes`): the curve is linear in its
-//! control points over a fixed basis, so a node is the basis there and nothing else — its value,
-//! gradient and Hessian in the control points follow from the integrand's in `C` and `C'` by the
-//! chain rule, exactly.  Not exact in the integral: `|C'|` is no polynomial, so the length is good
+//! control points over a fixed basis, so a node is the basis there and nothing else — the
+//! length's value and gradient in the control points follow from `|C'|`'s by the chain rule,
+//! exactly.  Not exact in the integral: `|C'|` is no polynomial, so the length is good
 //! to the rule's order per span, which on a drawing's splines is far below the solve's tolerance.
 //!
 //! The nodes are document data — the knots and weights are — so they are worked out once, where a
@@ -38,22 +38,19 @@ pub const PIECES: usize = 4;
 pub const PER_SPAN: usize = PIECES * GAUSS8.len();
 
 /// One quadrature node of a spline: the span's first control point, the basis there and its
-/// derivative in t (rational where the spline is weighted), the node's weight in t, and the
-/// span it is on (counting non-empty spans from 0).
+/// derivative in t (rational where the spline is weighted), and the node's weight in t.
 #[derive(Clone, Copy, Debug)]
 pub struct Node {
     pub first: usize,
     pub b: [f64; SPAN_N],
     pub d: [f64; SPAN_N],
     pub w: f64,
-    pub span: usize,
 }
 
 /// Every node of a spline of `n` control points over `knots` (and `weights`, all 1 when
 /// `None`), span by span in parameter order.
 pub fn nodes(knots: &[f64], weights: Option<&[f64]>, n: usize) -> Vec<Node> {
     let mut out = Vec::with_capacity(PER_SPAN * n.saturating_sub(DEGREE));
-    let mut k = 0;
     for s in DEGREE..n {
         let (t0, t1) = (knots[s], knots[s + 1]);
         if t1 <= t0 {
@@ -69,24 +66,23 @@ pub fn nodes(knots: &[f64], weights: Option<&[f64]>, n: usize) -> Vec<Node> {
                     ([0.0; SPAN_N], [0.0; SPAN_N], [0.0; SPAN_N], [0.0; SPAN_N]);
                 curve::basis(mid + x * h, &lk, &mut b, &mut d, &mut dd, &mut d3);
                 curve::weigh(&lw, &mut b, &mut d, &mut dd, &mut d3);
-                out.push(Node { first: s - DEGREE, b, d, w: w * h, span: k });
+                out.push(Node { first: s - DEGREE, b, d, w: w * h });
             }
         }
-        k += 1;
     }
     out
 }
 
 /* -- nodes as constants ------------------------------------------------------------------- */
 
-/// How many numbers one node is in a kernel's constants: `[first, span, b…, d…, w]`.
-pub const NODE_W: usize = 3 + 2 * SPAN_N;
+/// How many numbers one node is in a kernel's constants: `[first, b…, d…, w]`.
+pub const NODE_W: usize = 2 + 2 * SPAN_N;
 
 /// The nodes into `out`, then as many empty ones (weight 0, read back as none) as it takes to
 /// make `room` — a kernel's constants are one width for every spline of its count.
 pub fn write_nodes(nodes: &[Node], room: usize, out: &mut Vec<f64>) {
     for q in nodes {
-        out.extend([q.first as f64, q.span as f64]);
+        out.push(q.first as f64);
         out.extend(q.b);
         out.extend(q.d);
         out.push(q.w);
@@ -100,9 +96,8 @@ pub fn read_nodes(k: &[f64]) -> Vec<Node> {
         .filter(|c| c[NODE_W - 1] != 0.0)
         .map(|c| Node {
             first: c[0] as usize,
-            span: c[1] as usize,
-            b: c[2..2 + SPAN_N].try_into().expect("a node's basis"),
-            d: c[2 + SPAN_N..2 + 2 * SPAN_N].try_into().expect("a node's derivative"),
+            b: c[1..1 + SPAN_N].try_into().expect("a node's basis"),
+            d: c[1 + SPAN_N..1 + 2 * SPAN_N].try_into().expect("a node's derivative"),
             w: c[NODE_W - 1],
         })
         .collect()
@@ -138,19 +133,14 @@ fn speed(d: [f64; 2]) -> f64 {
     d[0].dhypot(d[1]).max(MIN_SPEED)
 }
 
-/// The nodes of span `only`, or all of them.
-fn of_span(nodes: &[Node], only: Option<usize>) -> impl Iterator<Item = &Node> {
-    nodes.iter().filter(move |q| only.is_none_or(|k| q.span == k))
-}
-
-/// A spline's length over control points `p` (2n numbers) — span `only`'s, where it is given.
-pub fn length(nodes: &[Node], p: &[f64], only: Option<usize>) -> f64 {
-    of_span(nodes, only).map(|q| q.w * speed(q.frame(p).1)).sum()
+/// A spline's length over control points `p` (2n numbers).
+pub fn length(nodes: &[Node], p: &[f64]) -> f64 {
+    nodes.iter().map(|q| q.w * speed(q.frame(p).1)).sum()
 }
 
 /// The length's gradient in the control points, scaled by `s`, added into `g` (2n).
-pub fn length_grad(nodes: &[Node], p: &[f64], s: f64, only: Option<usize>, g: &mut [f64]) {
-    for q in of_span(nodes, only) {
+pub fn length_grad(nodes: &[Node], p: &[f64], s: f64, g: &mut [f64]) {
+    for q in nodes {
         let d = q.frame(p).1;
         let v = speed(d);
         let (ux, uy) = (d[0] / v, d[1] / v);
@@ -158,28 +148,6 @@ pub fn length_grad(nodes: &[Node], p: &[f64], s: f64, only: Option<usize>, g: &m
             let c = 2 * (q.first + a);
             g[c] += s * q.w * q.d[a] * ux;
             g[c + 1] += s * q.w * q.d[a] * uy;
-        }
-    }
-}
-
-/// The length's Hessian in the control points, scaled by `s`, added into `h` (2n × 2n, row
-/// major, `stride` columns a row): per node `w · d_a d_b (I − ûûᵀ) / |C'|`.
-pub fn length_hess(nodes: &[Node], p: &[f64], s: f64, only: Option<usize>, h: &mut [f64],
-                   stride: usize) {
-    for q in of_span(nodes, only) {
-        let d = q.frame(p).1;
-        let v = speed(d);
-        let (ux, uy) = (d[0] / v, d[1] / v);
-        let k = [[(1.0 - ux * ux) / v, -ux * uy / v], [-ux * uy / v, (1.0 - uy * uy) / v]];
-        for a in 0..SPAN_N {
-            for b in 0..SPAN_N {
-                let f = s * q.w * q.d[a] * q.d[b];
-                for i in 0..2 {
-                    for j in 0..2 {
-                        h[(2 * (q.first + a) + i) * stride + 2 * (q.first + b) + j] += f * k[i][j];
-                    }
-                }
-            }
         }
     }
 }

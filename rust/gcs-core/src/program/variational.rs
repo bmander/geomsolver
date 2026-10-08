@@ -1,7 +1,7 @@
-//! `k minimizes …` and `k maximizes …` (#121), lowered: one `Stationary` constraint per term over
-//! the statement's curve, its integrand compiled once here so a bad one is refused where it was
-//! written.  The groups, gauges and multipliers are the sketch's (`Sketch::settle_variational`),
-//! worked out once every row is stated.
+//! `k minimizes …` and `k maximizes …` (#121, #144), lowered: one `Stationary` constraint per term
+//! over the statement's free curve, its integrand compiled once here so a bad one is refused where
+//! it was written.  The curve's definition, pegs and free length are the sketch's
+//! (`Sketch::settle_variational`), worked out once every row is stated.
 
 use super::resolve::{follow, Resolver};
 use super::{Code, Diag, Made, SourceMap};
@@ -23,14 +23,14 @@ pub(super) fn state(
         diags.push(err(Code::E101, m.curve.span, format!("`{}` names nothing", m.curve.root.text)));
         return;
     };
-    if e.kind != EntKind::Spline {
+    if !(e.kind == EntKind::Curve && sk.curve_extremal(e.i())) {
+        let what = if e.kind == EntKind::Curve { "a curve of its own definition".to_string() } else { e.kind.a().to_string() };
         diags.push(err(
             Code::E040,
             m.curve.span,
             format!(
-                "an energy varies a spline's shape, and `{}` is {}",
-                m.curve.root.text,
-                e.kind.a()
+                "an energy states the shape of a free curve, `{} := curve(a, b)`, and `{}` is {what}",
+                m.curve.root.text, m.curve.root.text,
             ),
         ));
         return;
@@ -38,7 +38,7 @@ pub(super) fn state(
     let mut degree = None;
     for t in &m.terms {
         let d = match crate::variational::integrand(&t.body, sk.units) {
-            Ok(f) => f.degree,
+            Ok(d) => d,
             Err(why) => {
                 diags.push(err(Code::E103, t.body_span, why));
                 continue;
@@ -78,6 +78,25 @@ pub(super) fn settle(sk: &mut Sketch, map: &SourceMap, diags: &mut Vec<Diag>) {
             span: site.map(|s| s.span).unwrap_or_default(),
             stmt: site.map(|s| s.stmt),
             message: why,
+        });
+    }
+    sk.seed_extremals();
+    // a free curve whose shape nothing states
+    for i in 0..sk.curves.len() {
+        if !sk.curve_extremal(i) || sk.energy_of(i).is_some() {
+            continue;
+        }
+        let e = crate::model::EntRef::new(EntKind::Curve, i);
+        let Some(site) = map.site_of(e) else { continue };
+        let name = map.name_of(e).cloned().unwrap_or_else(|| "the curve".into());
+        diags.push(Diag {
+            code: Code::E040,
+            span: site.span,
+            stmt: Some(site.stmt),
+            message: format!(
+                "`{name}` is a free curve, and no energy states its shape: say what it is, \
+                 `{name} minimizes integral(p.y over p)`"
+            ),
         });
     }
 }
