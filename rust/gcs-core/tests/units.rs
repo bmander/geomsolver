@@ -239,6 +239,25 @@ fn a_paste_between_units_converts() {
     assert!((far - 60.0).abs() < 1e-9, "got {far}");
 }
 
+/// **A formula of bare numbers converts too**: `graft` re-evaluates the text in the destination's
+/// units, so the text carries the ratio (#117).  A formula naming its unit is right already.
+#[test]
+fn a_pasted_formula_converts() {
+    let inches = read(&format!("unit in\n{PAIR}a distance(40 / 2) b\n")).expect("elaborates");
+    let clip = io::copy(&inches, &inches.primitives());
+    let mut mm = read("unit mm\nuse std\nin std.front {\nz := point hint((0, 0))\n}\n").expect("elaborates");
+    io::paste(&mut mm, &clip, 0.0, 0.0);
+    let d = mm.user_constraints().into_iter().find(|c| c.kind == gcs_core::constraints::CKind::Distance);
+    assert!((d.expect("came").args[2].num() - 508.0).abs() < 1e-9);
+
+    let named = read(&format!("unit in\n{PAIR}a distance(1in + 1in) b\n")).expect("elaborates");
+    let clip = io::copy(&named, &named.primitives());
+    let mut mm = read("unit mm\nuse std\nin std.front {\nz := point hint((0, 0))\n}\n").expect("elaborates");
+    io::paste(&mut mm, &clip, 0.0, 0.0);
+    let d = mm.user_constraints().into_iter().find(|c| c.kind == gcs_core::constraints::CKind::Distance);
+    assert!((d.expect("came").args[2].num() - 50.8).abs() < 1e-9);
+}
+
 /// The unit itself: a name the language does not know, and one that is an angle.
 #[test]
 fn a_unit_line_says_what_it_will_not_take() {
