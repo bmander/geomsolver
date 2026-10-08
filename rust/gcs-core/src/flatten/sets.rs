@@ -23,7 +23,7 @@
 use super::*;
 use crate::program::public_path;
 use super::apply::{local, Application, Pass, Use};
-use crate::syntax::{Along, AlongBy, Chained, Relation, RelationForm, SetLit, Worded};
+use crate::syntax::{Along, AlongBy, Chained, DeclName, Relation, RelationForm, SetLit, Worded};
 
 /// Where a set stands: its literal, the scope its body reads names in (an instance's, with its
 /// formals bound, for a family's), and how deep the walk was there.  A use's expansion stands
@@ -34,10 +34,118 @@ pub(super) struct Site {
     depth: usize,
 }
 
+/// Where the walk made a set: the statement that made it — the set written in place, or an
+/// instance of a family — at its path, and the scope that statement stands in.
+pub(super) struct Made<'m> {
+    pub st: &'m Stmt,
+    pub path: &'m [PathStep],
+    pub outer: &'m Scope,
+}
+
+/// A set the walk made a circle, for the elaborator to judge (#105): the circle's key, and the
+/// plane its body puts its point on — `None` where that names nothing a circle can be drawn in.
+#[derive(Clone, Debug)]
+pub struct SetCircle {
+    pub key: String,
+    pub plane: Option<Ref>,
+}
+
 impl<'a> Walk<'a> {
-    /// A set, made where the walk met it (§6.21).
-    pub(super) fn set_made(&mut self, abs: String, lit: &SetLit, scope: &Scope, depth: usize) {
-        self.sets.insert(abs, Site { lit: lit.clone(), scope: scope.clone(), depth });
+    /// A set, made where the walk met it (§6.21) — and where its body is a circle's, the circle.
+    pub(super) fn set_made(
+        &mut self,
+        abs: String,
+        lit: &SetLit,
+        scope: &Scope,
+        depth: usize,
+        made: Made,
+    ) {
+        self.sets.insert(abs.clone(), Site { lit: lit.clone(), scope: scope.clone(), depth });
+        // a set made inside a predicate's use is made once per use, and is that use's: no
+        // drawing of its own
+        let applied = self.applying_sets || !self.applying_words.is_empty();
+        if self.sym.is_some() || applied || !matches!(scope.pass, Pass::Itself)
+            || self.plain.contains(&abs)
+        {
+            return;
+        }
+        if round(lit).is_some() {
+            self.make_round(abs, lit, scope, made);
+        }
+    }
+
+    /// **A set whose body is a circle's is the circle** (#105, §6.21): `{ p | p coincident P; p
+    /// distance(r) o }` is drawn as `circle(center: o)` with `radius(r)` on it, so it solves,
+    /// drags and is dimensioned as one, and a point is put on it as on any circle.  The circle is
+    /// what the set's statement made, under the set's name; its radius is the body's distance,
+    /// drawn where the body writes it — or, for a family's instance, where the call gives it.
+    /// Whether `P` is a plane and `o` a point drawn in it is the elaborator's question
+    /// (`SetCircle`): where either is not, the set is walked again as a set.
+    fn make_round(&mut self, abs: String, lit: &SetLit, sc: &Scope, made: Made) {
+        let Some((_, centre, (text, span, word))) = round(lit) else { return };
+        let Made { st, path, outer } = made;
+        // what the source calls it, and for a family's instance the call its number is given in
+        let (written, call) = match &st.kind {
+            StmtKind::Set(set) => (&set.name, None),
+            StmtKind::Instance(inst) => (&inst.name, Some(inst)),
+            _ => return,
+        };
+        let seed = value_aff(text, &sc.vals, self.units).ok().and_then(|a| a.number())
+            .filter(|r| r.is_finite() && *r > 0.0);
+        // a set written in place, or an unnamed call, is named nothing the source can say
+        let name = if outer.anonymous || written.text.starts_with('#') {
+            let at = written.span.lo as usize;
+            DeclName::Key(Name { text: abs.clone(), span: Span::new(at, at) })
+        } else {
+            DeclName::Written(written.clone()).prefixed(abs.clone(), outer.copies)
+        };
+        let mut d = Decl::point(name, [0.0; 2], None);
+        d.kind = crate::model::EntKind::Circle;
+        d.children = vec![vec![Kid::Ref(centre.clone())]];
+        d.seed = vec![seed.unwrap_or(1.0)];
+        d.seed_text = vec![None];
+        self.names.insert(abs.clone());
+        let decl = Stmt { id: st.id, kind: StmtKind::Decl(d), span: st.span, chained: Chained::No };
+        self.out.push((decl, path.to_vec(), sc.clone()));
+        // a family's number is the call's: drawn and edited where the call gives the formal the
+        // body reads, else drawn as what it comes to
+        let span = match call {
+            None => span,
+            Some(inst) => inst.given(text.trim())
+                .unwrap_or(Span::new(st.span.lo as usize, st.span.lo as usize)),
+        };
+        let radius = Relation::of(RelationForm::Written(crate::syntax::Written {
+            word: Name { text: "radius".to_string(), span: word.span },
+            fixity: crate::constraints::Fixity::Prefix,
+            ops: vec![local(abs.clone(), word.span)],
+            args: vec![crate::syntax::OpArg::Dim(text.clone(), span)],
+            span: st.span,
+        }));
+        if let Some(r) = self.settle_relation(&radius, &sc.vals, sc) {
+            // the circle by its absolute name, which the body's scope may be closed to
+            let named = Scope { prefixes: vec![String::new()], closed: false, ..sc.clone() };
+            let kind = StmtKind::Relation(r);
+            let rel = Stmt { id: st.id, kind, span: st.span, chained: Chained::No };
+            self.out.push((rel, path.to_vec(), named));
+        }
+        self.rounds.insert(abs);
+    }
+
+    /// Every set made a circle, its plane resolved where its body reads it (`SetCircle`).
+    pub(super) fn set_circles(&self, alias: &BTreeMap<String, String>) -> Vec<SetCircle> {
+        self.rounds.iter().map(|key| {
+            let site = &self.sets[key];
+            let plane = round(&site.lit)
+                .and_then(|(on, _, _)| lookup(on, &site.scope, &self.names, alias, self.units)
+                    .map(|found| (on.span, found)))
+                .filter(|(_, (abs, rest))| !(rest.is_empty() && self.sets.contains_key(abs)))
+                .map(|(span, (abs, rest))| Ref {
+                    root: Name { text: abs, span },
+                    path: rest.into_iter().map(|f| Seg::Field(Name::new(f))).collect(),
+                    span,
+                });
+            SetCircle { key: key.clone(), plane }
+        }).collect()
     }
 
     /// A statement's use of a set: the relation, which operand names the set and the sets its
@@ -60,7 +168,11 @@ impl<'a> Walk<'a> {
                 _ => None,
             })
             .collect();
-        (!found.is_empty()).then_some((rel, found))
+        // a set made a circle is one, and a point is put on it as on any circle (#105) — but
+        // for a derivative, which reads the body's rows
+        let circle = matches!(found.as_slice(), [(_, abs)] if self.rounds.contains(abs))
+            && w.word.text == "coincident" && rel.along.is_none() && sc.twin().is_none();
+        (!found.is_empty() && !circle).then_some((rel, found))
     }
 
     /// Expand every use of a set, each where the walk met it, until none is left.  A use's
@@ -70,6 +182,13 @@ impl<'a> Walk<'a> {
         if self.sets.is_empty() {
             return;
         }
+        self.applying_sets = true;
+        self.expand_set_uses();
+        self.applying_sets = false;
+    }
+
+    /// `expand_sets`' rounds, while every set made is made inside a use.
+    fn expand_set_uses(&mut self) {
         for round in 0..=MAX_DEPTH {
             // no word a set is used by, no table to build: the last round is usually this
             let words = |st: &Stmt| match &st.kind {
@@ -330,4 +449,38 @@ fn makes_points(lit: &SetLit) -> Option<String> {
 /// two operands.
 fn may_use(w: &crate::syntax::Written) -> bool {
     matches!(w.word.text.as_str(), "coincident" | "tangent") && w.ops.len() == 2
+}
+
+/// A set's body that is a circle's (#105): `p coincident P` and `p distance(r) o`, in either
+/// order and either way round, and nothing else — the plane and the centre as written, and the
+/// radius's text, where it is written and the word it is written with.  What the flattener draws
+/// as a circle, and where an edit of its radius writes.
+pub(crate) fn round<'a>(lit: &'a SetLit) -> Option<(&'a Ref, &'a Ref, (&'a String, Span, &'a Name))> {
+    let [a, b] = lit.body.as_slice() else { return None };
+    // the one operand that is not the set's point, of a plain relation between two
+    fn other<'s>(st: &'s Stmt, word: &str, bound: &str) -> Option<(&'s Ref, &'s crate::syntax::Written)> {
+        let StmtKind::Relation(r) = &st.kind else { return None };
+        let w = r.form.written()?;
+        let plain = !r.claim && r.word.is_none() && r.along.is_none();
+        if !plain || w.word.text != word || w.ops.len() != 2 {
+            return None;
+        }
+        let is = |r: &Ref| r.path.is_empty() && r.root.text == bound;
+        match (is(&w.ops[0]), is(&w.ops[1])) {
+            (true, false) => Some((&w.ops[1], w)),
+            (false, true) => Some((&w.ops[0], w)),
+            _ => None,
+        }
+    }
+    let bound = lit.bound.text.as_str();
+    let pair = |on: &'a Stmt, at: &'a Stmt| {
+        let (plane, w) = other(on, "coincident", bound)?;
+        if !w.args.is_empty() {
+            return None;
+        }
+        let (centre, d) = other(at, "distance", bound)?;
+        let [crate::syntax::OpArg::Dim(text, span)] = d.args.as_slice() else { return None };
+        Some((plane, centre, (text, *span, &d.word)))
+    };
+    pair(a, b).or_else(|| pair(b, a))
 }

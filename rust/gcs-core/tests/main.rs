@@ -103,6 +103,7 @@ mod row_scale;
 mod seeds;
 mod sets;
 mod applied;
+mod membership;
 mod shared_contact;
 mod sheet;
 mod smoke;

@@ -162,6 +162,20 @@ fn defined_again(p: &Program, n: &crate::syntax::Name, was: Span) -> Diag {
 }
 
 pub fn elaborate(p: &Program) -> Elaborated {
+    // a set the flattener drew as a circle that is none here is walked again as a set, until
+    // every circle drawn is one (#105): each round walks at least one more set as a set
+    let mut plain = BTreeSet::new();
+    loop {
+        match elaborate_in(p, &plain) {
+            Ok(e) => return e,
+            Err(more) => plain.extend(more),
+        }
+    }
+}
+
+/// `elaborate`, with the sets in `plain` walked as sets — or `Err` naming the sets drawn as
+/// circles that are none, for another walk.
+fn elaborate_in(p: &Program, plain: &BTreeSet<String>) -> Result<Elaborated, BTreeSet<String>> {
     let mut diags: Vec<Diag> = Vec::new();
     let mut map = SourceMap::default();
     let mut sk = Sketch::new();
@@ -204,7 +218,7 @@ pub fn elaborate(p: &Program) -> Elaborated {
 
     // -- phase 1: names, in one pre-pass.  Indices come from declaration order within a kind,
     // which is `primitives()` order, which is the order phase 2 builds in.
-    let mut expansion = crate::flatten::expand(p, sk.units);
+    let mut expansion = crate::flatten::expand_with(p, sk.units, plain);
     map.private_names = expansion.private_names.clone();
     // the unknowns the source declared — a solved fold and the expression graph read their
     // seeds and dimensions as they are built
@@ -403,6 +417,13 @@ pub fn elaborate(p: &Program) -> Elaborated {
     // every point no `in` reached stands in space (`places`), and a plane written over a drawn
     // line has its hidden axis held along it
     memberships(&mut sk, &res, &map, &body, &skip, &mut diags);
+    // and `q coincident P` of a point in space is its membership of `P`, said another way
+    let drawn = planes::incidences(&mut sk, &res, &mut map, &stating, &deferred, &expansion.rings);
+    // and a set drawn as a circle is one only about a point drawn in its plane
+    let unround = planes::unround(&sk, &res, &expansion.set_circles);
+    if !unround.is_empty() {
+        return Err(unround);
+    }
     entities::places(&mut sk, &deferred, &mut diags);
     // the numbers `fix` holds, once every point has its place and before anything reads one: a
     // held number is its own seed, so nothing that holds one needs a `hint` saying it again — an
@@ -448,14 +469,14 @@ pub fn elaborate(p: &Program) -> Elaborated {
 
     // -- phase 3: constraints, in statement order
     let mut arrays = BTreeSet::new();
-    for st in &stating {
+    for (i, st) in stating.iter().enumerate() {
         // an energy's terms are constraints of their own, stationary together (#121)
         if let StmtKind::Minimize(m) = &st.kind {
             variational::state(&mut sk, &res, m, st, &mut map, &mut diags);
             continue;
         }
         let StmtKind::Relation(r) = &st.kind else { continue };
-        if relations::is_fix(r) {
+        if relations::is_fix(r) || drawn.contains(&i) {
             continue;
         }
         let made = constrain(&mut sk, &res, r, st, p, &map, &mut duals, &mut gauges, &mut diags);
@@ -598,7 +619,7 @@ pub fn elaborate(p: &Program) -> Elaborated {
         }
     }
     crate::modules::localize(p, &mut diags);
-    Elaborated { sketch: sk, map, diags, program: p.clone(), taken: false }
+    Ok(Elaborated { sketch: sk, map, diags, program: p.clone(), taken: false })
 }
 
 /// An angle a declaration is bounded by (`from:`, `to:`), in degrees: written as an angle,

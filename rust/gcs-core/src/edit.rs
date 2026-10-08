@@ -1202,23 +1202,35 @@ pub fn set_dimension(e: &Elaborated, prog: &Program, cid: u32, attr: &str, text:
         return Edit::none(prog, Some("that dimension is written inside a component".into()));
     }
     let Some(st) = prog.stmt(site.stmt) else { return Edit::none(prog, None) };
-    let StmtKind::Relation(rel) = &st.kind else { return Edit::none(prog, None) };
     // the number a statement states is the unlabelled thing in its operator's parentheses
-    // (spec §9.1), which is where a *written* statement carries it
-    let dim = match &rel.form {
-        syntax::RelationForm::Written(w) => w.args.iter().find_map(|a| match a {
-            syntax::OpArg::Dim(text, span) => Some((*span, text.clone())),
-            _ => None,
-        }).or_else(|| word_dimension(prog, w)),
-        syntax::RelationForm::Canonical { kind, args } => kind
-            .spec()
-            .iter()
-            .position(|(n, _)| *n == attr)
-            .and_then(|i| args.get(i).and_then(|a| a.as_ref()))
-            .and_then(|a| match a {
-                syntax::Arg::Dim { span, text } => Some((*span, text.clone())),
+    // (spec §9.1), which is where a *written* statement carries it — and a set drawn as a circle
+    // states its radius as its body's distance (#105): written in place, the body's number; a
+    // family's instance, the number its call gives the formal the body reads
+    let dim = match &st.kind {
+        StmtKind::Relation(rel) => match &rel.form {
+            syntax::RelationForm::Written(w) => w.args.iter().find_map(|a| match a {
+                syntax::OpArg::Dim(text, span) => Some((*span, text.clone())),
                 _ => None,
-            }),
+            }).or_else(|| word_dimension(prog, w)),
+            syntax::RelationForm::Canonical { kind, args } => kind
+                .spec()
+                .iter()
+                .position(|(n, _)| *n == attr)
+                .and_then(|i| args.get(i).and_then(|a| a.as_ref()))
+                .and_then(|a| match a {
+                    syntax::Arg::Dim { span, text } => Some((*span, text.clone())),
+                    _ => None,
+                }),
+        },
+        StmtKind::Set(set) => {
+            crate::flatten::round(&set.lit).map(|(_, _, (text, span, _))| (span, text.clone()))
+        }
+        StmtKind::Instance(inst) => prog.resolve_component(&inst.component.text, None).ok()
+            .and_then(|k| prog.components[k].set.as_ref())
+            .and_then(crate::flatten::round)
+            .and_then(|(_, _, (formal, _, _))| inst.given(formal.trim()))
+            .map(|at| (at, at.slice(prog.text()).to_string())),
+        _ => None,
     };
     let Some((span, was)) = dim else {
         return Edit::none(prog, Some("that argument is not a dimension".into()));
@@ -1386,6 +1398,17 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
             .filter(|p| p.kind == EntKind::Plane)
             .map(|p| p.i());
         if now == was {
+            continue;
+        }
+        // a point a `coincident` drew in its plane is in it by that statement, which no clause
+        // here repeats (#105)
+        let points = || match r.kind {
+            EntKind::Point => vec![*r],
+            _ => sk.children(*r),
+        };
+        if was.is_none() && now.is_some()
+            && points().iter().any(|p| e.map.drawn.get(&p.i()).copied() == now)
+        {
             continue;
         }
         // a membership the `in … { }` block around the statement gave it: there is no clause

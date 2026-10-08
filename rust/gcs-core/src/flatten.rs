@@ -34,10 +34,15 @@ mod apply;
 mod sets;
 
 pub(crate) use words::faults as word_faults;
+pub use sets::SetCircle;
+pub(crate) use sets::round;
 
 pub(crate) use values::{substitute_with, value_aff};
 use values::{free, typed, value_of, substitute, reads_geometry};
-use resolve::{lookup_raw, written};
+use resolve::{lookup, lookup_raw, written};
+
+/// No set walked as a set for want of a circle: `Walk::plain` where nothing was refused.
+static NONE: BTreeSet<String> = BTreeSet::new();
 
 /// How deep components and blocks may nest.  A document is untrusted input and
 /// `wasm32-unknown-unknown` aborts rather than unwinding, so recursion is bounded here.
@@ -186,6 +191,8 @@ pub struct Expansion {
     pub unknowns: BTreeMap<String, crate::model::Declared>,
     /// Every `ring` expanded, its centre resolved — what the elaborator turns copies about.
     pub rings: Vec<RingInfo>,
+    /// Every set made a circle, for the elaborator to judge (#105).
+    pub set_circles: Vec<SetCircle>,
 }
 
 /// One instance, as bound: which component, under what prefix, given what.
@@ -301,12 +308,25 @@ struct Walk<'a> {
     use_aliases: BTreeSet<String>,
     /// Every set the walk made, by absolute name (§6.21) — see `sets::Site`.
     sets: BTreeMap<String, sets::Site>,
+    /// Those made circles (#105), by the same name — see `sets::make_round`.
+    rounds: BTreeSet<String>,
+    /// The sets the elaborator found are no circle, walked as sets (`expand_with`).
+    plain: &'a BTreeSet<String>,
+    /// Whether the uses of sets are being applied, so a set made now is made inside one.
+    applying_sets: bool,
 }
 
 /// Expand a program's root component into a flat list of declarations, constraints, gauges and
 /// orientations, with every name made absolute.
 pub fn expand(prog: &Program, units: Units) -> Expansion {
+    expand_with(prog, units, &BTreeSet::new())
+}
+
+/// `expand`, with the sets named in `plain` walked as sets though their bodies are circles' —
+/// those the elaborator found no circle is drawn for (#105, `SetCircle`).
+pub fn expand_with(prog: &Program, units: Units, plain: &BTreeSet<String>) -> Expansion {
     let mut w = Walk::new(prog, units, None);
+    w.plain = plain;
     let root = prog.root();
     // A definitions-only file has nothing to expand. In particular, imported parameters must
     // not be evaluated in a unit system that only an eventual instantiating model will supply.
@@ -400,6 +420,9 @@ impl<'a> Walk<'a> {
             applying_words: Vec::new(),
             use_aliases: BTreeSet::new(),
             sets: BTreeMap::new(),
+            rounds: BTreeSet::new(),
+            plain: &NONE,
+            applying_sets: false,
         }
     }
 
@@ -427,6 +450,7 @@ impl<'a> Walk<'a> {
         self.expand_sets();
         self.expand_pending();
         let (mut flat, mut aliases) = self.resolve();
+        let set_circles = self.set_circles(&aliases);
         if self.standard_datums {
             // A document that says `use std` has the standard datums, as a CAD part has its
             // origin planes, whether or not anything refers to them yet: the workspace offers
@@ -451,6 +475,7 @@ impl<'a> Walk<'a> {
             aliases,
             unknowns: self.unknowns,
             rings: self.ring_infos,
+            set_circles,
         }
     }
 }

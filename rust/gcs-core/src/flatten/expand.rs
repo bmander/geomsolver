@@ -2,6 +2,7 @@
 
 use super::*;
 use super::apply::Pass;
+use super::sets::Made;
 
 impl<'a> Walk<'a> {
     /// The view an enclosing instance is drawn `in`, put on one declaration its expansion
@@ -266,7 +267,7 @@ impl<'a> Walk<'a> {
                     // an instance of a family of sets is the set, its formals bound (§6.21)
                     if let Some(lit) = &comp.set {
                         let name = sc.prefix().trim_end_matches('.').to_string();
-                        self.set_made(name, lit, &sc, depth + 1);
+                        self.set_made(name, lit, &sc, depth + 1, Made { st, path, outer: scope });
                     }
                     self.instantiating.push(comp);
                     self.body(&comp.body, &sc, &mut sub_vals, &instance_path, depth + 1);
@@ -334,7 +335,7 @@ impl<'a> Walk<'a> {
                 StmtKind::Set(set) => {
                     let abs = format!("{prefix}{}", set.name.text);
                     self.names.insert(abs.clone());
-                    self.set_made(abs, &set.lit, scope, depth);
+                    self.set_made(abs, &set.lit, scope, depth, Made { st, path, outer: scope });
                 }
                 // an energy: each integrand with the scope's numbers written in (#121)
                 StmtKind::Minimize(m) => {
@@ -389,7 +390,7 @@ impl<'a> Walk<'a> {
 
     /// A relation's numbers worked out against the parameters in scope, in either of its
     /// representations, and the enclosing instances' classes stamped over its own.
-    fn settle_relation(&mut self, rel: &crate::syntax::Relation, vals: &BTreeMap<String, Aff>, scope: &Scope)
+    pub(super) fn settle_relation(&mut self, rel: &crate::syntax::Relation, vals: &BTreeMap<String, Aff>, scope: &Scope)
         -> Option<crate::syntax::Relation> {
         let mut r2 = rel.clone();
         if let Some(w) = r2.form.written_mut() {

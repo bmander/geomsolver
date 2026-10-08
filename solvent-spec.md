@@ -1,6 +1,14 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.53 — October 2026**
+**Specification, Draft 0.54 — October 2026**
+
+**[0.54] Membership is one rule.** A plane is a set of points, and `in` is membership of it:
+`p coincident P`, said of a point standing in space, draws the point in `P` as `p := point in P`
+does — two spellings of one statement, the same rows (§6.7). And a set whose body is a circle's,
+`{ p | p coincident P; p distance(r) o }` with `o` drawn in `P`, is the circle: drawn, dimensioned
+`R`, dragged and swept as `circle(center: o)` with `radius(r)` is (§6.21). The elaborator
+recognises the cheap representation; the meaning stays the set's. Sets compose by conjunction —
+intersection is two statements in one body — and §6.21 says what union and difference are.
 
 **[0.53] Variational curves.** A curve may be stated by the principle that makes it rather than
 by its formula: `rope minimizes integral(p.y over p)` says the curve has the shape that makes
@@ -860,6 +868,18 @@ is **E060**, naming the point; a face is **E080** (§6.8). A 2D drawing is drawn
 std`, then `in std.front { … }` — and there is no page: `std.front` is a plane like any other,
 the one at the world origin with u = x to the right and v = z up, its viewer at −y.
 
+**A plane is a set, and `in` is membership of it** **[0.54]**. `p coincident P` (either way
+round), said of a point standing in space, **draws the point in `P`**: it is `p := point in P`
+said as a relation, and the two are one statement with the same rows — the point has `P`'s two
+coordinates, and every relation over it reads as one of `P`'s points' (`p distance(25) a`, with
+`a` drawn in `P`, is `P`'s own distance). `l coincident P` draws each end of `l` not yet in `P`
+there. A point is drawn in the first plane a statement puts it on; put on a second, it is held
+there by a row in space, as a point of one view put on another plane is. A point whose own
+statements say it stands in space stays there and the plane holds it by a row: one seeded with a
+height (`hint(z: …)`), one whose three numbers a `fix` holds, the point a tangency differentiates
+at (§6.21), a `ring`'s (§12.4), and any under a `claim`. Which representation stands is the
+elaborator's; what the drawing means is the statement's either way.
+
 **An axis** (§3.1) is a directed line in space with no start. `t := axis hint(dir: (0, 0, 1))`
 seeds its direction, and relations place it: `t parallel s`, `t perpendicular s` and `t angle(θ)
 s` against an axis or a line, `p coincident t` for a point on it, and against a plane `t coincident
@@ -1631,6 +1651,15 @@ said where it is used, by two words:
   of its own rather than a double root of the line's distance. The contact starts at `l`'s
   middle. `tangent` to a set from anything but a line or a set is **E040**, and so is a claimed
   tangency.
+- **A set whose body is a circle's is the circle** **[0.54]**: `k := { p | p coincident P; p
+  distance(r) o }` — the two statements in either order and either way round, and nothing else —
+  with `P` a plane and `o` a point drawn in it, is drawn as `k := circle(center: o)` with `radius(r)
+  k`: the circle's entity, rows and topology, its radius drawn `R…` where the body writes the
+  number (for a family's instance, where the call gives it, `Round(o, std.front, r: 25)`), dragged,
+  dimensioned and swept to a solid as that circle is, `face(k)` included. `q coincident k` is a
+  point on the circle; `l tangent k` still reads the body's rows (above), whatever the set is drawn
+  as. Where `P` is no plane or `o` stands off it, the body says something else — a line's points
+  at a distance, a sphere cut off its centre — and the set is a set, drawn as nothing.
 - `S1 tangent(at: m) S2` **[0.51]**, two sets: their **tangent spaces at `m` are one** — every
   direction along `S1` there is along `S2`. Two directions are solved for at `m`, in a chart the
   elaborator picks once (each rises along the world axis the sets' normal there is most along),
@@ -1647,9 +1676,14 @@ parentheses **E040**; a set whose body uses itself, however indirectly, is
 **E003**. A set may be handed to a component as a `group` formal, as an instance is, and used
 there by the formal's name (`std.CircleOnSphere(k, ball, view)`).
 
-*Non-normative:* `std.Sphere`, `std.Cylinder` and `std.Cone` are sets. A circle written as a set
-— `{ p | p coincident P; p distance(r) o }`, lowered to the `Circle` kernel where the elaborator
-recognises it — a set drawn by tracing its points, and sets bounded by inequalities (arcs,
+**Set algebra** **[0.54]**. A body's statements all hold of its point, so **intersection is
+conjunction**: `on_both := { p | p coincident ball; p coincident shaft }` is the points on both, and
+the circle above is a plane met with a sphere. **Union is a choice**: a point on `A` or on `B` is
+on one of them, which a root choice says (`ccw`, `branch`, §13) and a body cannot. **Difference
+is not expressible**: a set says what its points satisfy, never what they do not.
+
+*Non-normative:* `std.Sphere`, `std.Cylinder` and `std.Cone` are sets. A set drawn by tracing its
+points, other recognised shapes (a line as two planes met), and sets bounded by inequalities (arcs,
 segments, rays) are not part of this draft (#101). A derivative row has no flat spelling, so a
 program lifted from a sketch (`to_program`) keeps a tangency's contact and says nothing of the
 tangency.
@@ -1766,7 +1800,7 @@ What goes in the parentheses is a short list:
 
 | word | fixity | operands → constraint |
 |---|---|---|
-| `coincident` | infix | **[0.42]** (point, point); (point, line \| circle \| arc \| spline \| curve) — incidence, where 0.41 and before wrote `on`; **[0.24]** (point, plane), (line, plane) in space; **[0.49]** (point, set), the set's body at the point (§6.21); **[0.42]** (point, axis), (axis, plane); **[0.43]** (axis, axis), one line either way round; **[0.44]** (line, axis), both ends on it; **[0.38]** (point, the envelope of a prism's side), from any view (§6.15.2). Read either way round: `P coincident p` is `p coincident P`. **[0.32]** Not (solid, solid): the body rule's union is `union` (§6.9) |
+| `coincident` | infix | **[0.42]** (point, point); (point, line \| circle \| arc \| spline \| curve) — incidence, where 0.41 and before wrote `on`; **[0.24]** (point, plane), (line, plane) in space — **[0.54]** of a point standing in space, its membership of the plane, as `in` (§6.7); **[0.49]** (point, set), the set's body at the point (§6.21); **[0.42]** (point, axis), (axis, plane); **[0.43]** (axis, axis), one line either way round; **[0.44]** (line, axis), both ends on it; **[0.38]** (point, the envelope of a prism's side), from any view (§6.15.2). Read either way round: `P coincident p` is `p coincident P`. **[0.32]** Not (solid, solid): the body rule's union is `union` (§6.9) |
 | `cut` | infix | **[0.18]** (solid, solid) — the body rule's other half (§6.9), and no constraint at all |
 | `distance` | infix | (p, p); **[0.46]** +`along:` an ordinate — an axis or a line, or the view's `x`/`y` for the run and the rise (`right`/`left`/`up`/`down` with the sign said); (p, line); (line, line); (circle, circle); (p, plane) with `along: u`/`v` for signed ordinates from the plane's origin, or **[0.24]** `along: n` for the signed distance along the plane's normal, in space; **[0.42]** (plane, plane), the second's origin along the first's normal (§6.10) |
 | `distance` | prefix | on a line: the distance between its own ends |
