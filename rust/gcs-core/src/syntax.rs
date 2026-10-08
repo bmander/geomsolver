@@ -1273,21 +1273,24 @@ impl Written {
     /// Every pinned or seeded slot, a vector's components each under the member it is — `x`,
     /// `dir.y` — and where its key was written: what `assemble` fills and a gauge's key reads.
     pub fn slots(&self) -> impl Iterator<Item = (Name, &Arg)> + '_ {
-        self.args.iter().flat_map(|a| -> Vec<(Name, &Arg)> {
-            match a {
-                OpArg::Slot { key, arg } => vec![(key.clone(), arg)],
-                OpArg::Vector { key, parts, span } => {
-                    let span = key.as_ref().map_or(*span, |k| k.span);
-                    let member = |c: &str| match key {
-                        Some(k) => format!("{}.{c}", k.text),
-                        None => c.to_string(),
-                    };
-                    let names = ["x", "y", "z"].map(member);
-                    names.into_iter().zip(parts).map(|(text, arg)| (Name { text, span }, arg)).collect()
-                }
-                _ => Vec::new(),
+        self.args.iter().flat_map(Self::fills)
+    }
+
+    /// The slots one argument fills: a pin or a seed its own, a vector one per member.
+    fn fills(a: &OpArg) -> Vec<(Name, &Arg)> {
+        match a {
+            OpArg::Slot { key, arg } => vec![(key.clone(), arg)],
+            OpArg::Vector { key, parts, span } => {
+                let span = key.as_ref().map_or(*span, |k| k.span);
+                let member = |c: &str| match key {
+                    Some(k) => format!("{}.{c}", k.text),
+                    None => c.to_string(),
+                };
+                let names = ["x", "y", "z"].map(member);
+                names.into_iter().zip(parts).map(|(text, arg)| (Name { text, span }, arg)).collect()
             }
-        })
+            _ => Vec::new(),
+        }
     }
 
     /// Assemble arguments in registry order, rejecting unknown slot and selector names.
@@ -1323,6 +1326,7 @@ impl Written {
                 return Err((key.span, m));
             }
         }
+        self.given_once()?;
         let mut out: Vec<Option<Arg>> = vec![None; spec.len()];
         let mut ents: Vec<Ref> = self.ops.clone();
         // `distance line1` is the distance between the line's own ends — the one prefix word
@@ -1385,6 +1389,38 @@ impl Written {
             Self::direction(w, &mut out);
         }
         Ok(out)
+    }
+
+    /// **A slot is given once** (issue #112): assembled, a slot takes the first argument naming
+    /// it, so a second — `fix((3, 4), (1, 1)) a`, `fix((3, 4), x == 1) a`, two pins of one
+    /// contact — went nowhere and said nothing.  Refused at the second, saying which.  A pin to
+    /// an unknown beside a seed for it has a message of its own (`assemble`'s tie).
+    fn given_once(&self) -> Result<(), (Span, String)> {
+        let seed = |x: &Arg| {
+            matches!(x, Arg::Seed { pinned: false, .. } | Arg::SeedExpr { pinned: false, .. })
+        };
+        let tie = |x: &Arg| matches!(x, Arg::Tie { .. });
+        // each slot given so far, and whether by a place written whole (`(3, 4)`)
+        let mut said: Vec<(String, &Arg, bool)> = Vec::new();
+        for a in &self.args {
+            let whole = matches!(a, OpArg::Vector { key: None, .. });
+            for (key, arg) in Self::fills(a) {
+                let before = said.iter().find(|(n, b, _)| {
+                    *n == key.text && !(tie(arg) && seed(b) || seed(arg) && tie(b))
+                });
+                if let Some(&(_, _, was_whole)) = before {
+                    let word = &self.word.text;
+                    let m = if whole && was_whole {
+                        format!("`{word}` is given its place twice: a point is one vector")
+                    } else {
+                        format!("`{}` is given twice: a number is said once", key.text)
+                    };
+                    return Err((key.span, m));
+                }
+                said.push((key.text, arg, whole));
+            }
+        }
+        Ok(())
     }
 
     /// **An ordinate's direction, where it was written** (`docs/ordinate-plan.md`): `along:` an

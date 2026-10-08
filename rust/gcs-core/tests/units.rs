@@ -239,6 +239,25 @@ fn a_paste_between_units_converts() {
     assert!((far - 60.0).abs() < 1e-9, "got {far}");
 }
 
+/// **A formula of bare numbers converts too**: `graft` re-evaluates the text in the destination's
+/// units, so the text carries the ratio (#117).  A formula naming its unit is right already.
+#[test]
+fn a_pasted_formula_converts() {
+    let inches = read(&format!("unit in\n{PAIR}a distance(40 / 2) b\n")).expect("elaborates");
+    let clip = io::copy(&inches, &inches.primitives());
+    let mut mm = read("unit mm\nuse std\nin std.front {\nz := point hint((0, 0))\n}\n").expect("elaborates");
+    io::paste(&mut mm, &clip, 0.0, 0.0);
+    let d = mm.user_constraints().into_iter().find(|c| c.kind == gcs_core::constraints::CKind::Distance);
+    assert!((d.expect("came").args[2].num() - 508.0).abs() < 1e-9);
+
+    let named = read(&format!("unit in\n{PAIR}a distance(1in + 1in) b\n")).expect("elaborates");
+    let clip = io::copy(&named, &named.primitives());
+    let mut mm = read("unit mm\nuse std\nin std.front {\nz := point hint((0, 0))\n}\n").expect("elaborates");
+    io::paste(&mut mm, &clip, 0.0, 0.0);
+    let d = mm.user_constraints().into_iter().find(|c| c.kind == gcs_core::constraints::CKind::Distance);
+    assert!((d.expect("came").args[2].num() - 50.8).abs() < 1e-9);
+}
+
 /// The unit itself: a name the language does not know, and one that is an angle.
 #[test]
 fn a_unit_line_says_what_it_will_not_take() {
@@ -466,6 +485,23 @@ fn a_slot_mismatch_is_an_error_and_a_free_name_is_not() {
     ));
     assert_eq!(d.iter().filter(|x| x.0 == "E040").count(), 1, "{d:?}");
     assert!(d.iter().any(|x| x.1.contains("a claim may not bind an unknown")), "{d:?}");
+
+    // the arithmetic's own mismatches are the same error as the slot's (#116): `3 + 2deg` in a
+    // dimension is what it is in a `param`, not a number that would not compute
+    for (text, says) in [
+        ("3 + 2deg", "cannot be added"),
+        ("3 - 2deg", "cannot be added"),
+        ("floor(45deg)", "takes a plain number"),
+        ("2 ^ 1deg", "a power is a plain number"),
+    ] {
+        let d = diag(&format!("{two}a distance({text}) b\n"));
+        assert_eq!(d.len(), 1, "{text}: {d:?}");
+        assert_eq!(d[0].0, "E103", "{text}: {d:?}");
+        assert!(d[0].1.contains(says), "{text}: {}", d[0].1);
+        assert!(!d[0].1.contains("last number"), "{text}: {}", d[0].1);
+        let d = diag(&format!("{two}w := {text}\na distance(w) b\n"));
+        assert!(d.iter().any(|x| x.0 == "E103" && x.1.contains(says)), "{text}: {d:?}");
+    }
 
     let d = diag(&format!("{two}param w: Length\na distance(w) b\n"));
     assert!(d.is_empty(), "{d:?}");

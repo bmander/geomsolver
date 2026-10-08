@@ -1450,6 +1450,10 @@ fn a_slot_keeps_the_name_and_the_number_it_was_written_with() {
     // a key the kind has no slot for is a typo, not something to fill the first slot with —
     // reported on the key, which is what it is about, and in the word the writer typed
     refuses_later(&format!("{SPLINE}a coincident s hint(bogus: 0.4)\n"), "`coincident` has no slot `bogus`");
+    // and a slot is given once: the second went nowhere (issue #112)
+    for twice in ["a coincident(t == 0.4) s hint(t: 0.3)", "a coincident(t == 0.4, t == 0.5) s"] {
+        refuses_later(&format!("{SPLINE}{twice}\n"), "`t` is given twice");
+    }
 
     // and the printer writes the name that was written, off the key and never off the kind: the
     // retired hard-code printed `hint(t: …)` for a statement that said `u`, when a curve's slot

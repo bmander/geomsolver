@@ -150,7 +150,9 @@ its members: a point *is* its place, so it is seeded and held whole by a vector,
 12)) back` — whose members are `dir.x`, `origin.z`. A vector held whole is as long as what it
 holds: two coordinates for a point in a plane, three for one in space, so `fix((0, 0)) p` cannot
 leave a point in space's height free unsaid (E105; hold it by member, `fix(x == 0, y == 0) p`,
-when that is meant). `o := (10mm, 20mm)` names a vector, read as `o.x` and `o.y`; `o.z` is E103.
+when that is meant). A number is held once: two `fix`es holding it at different values, or
+`ccw` and `cw` of one triangle, are E031 at both, whatever order they are written in.
+`o := (10mm, 20mm)` names a vector, read as `o.x` and `o.y`; `o.z` is E103.
 
 **Seeds.** Every scalar is seeded in the trailing clause, whole or by member, keys in any order:
 `p := point hint((0, 0))`, `a := arc(center: c, start: s, end: e) hint(r: 5)`. An omitted

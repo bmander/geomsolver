@@ -144,7 +144,7 @@ fn fold(sub: &str, text: &str, units: Units) -> Result<String, String> {
     let env: BTreeMap<String, Aff> = BTreeMap::new();
     let evaluated = expr::eval(&p.body, &env);
     if p.body.deps().is_empty() {
-        if let Err(e) = &evaluated { return Err(e.clone()); }
+        if let Err(e) = &evaluated { return Err(e.to_string()); }
     }
     if let Ok(a) = evaluated {
         if let Some(v) = a.number() {

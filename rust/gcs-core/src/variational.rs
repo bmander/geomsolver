@@ -152,7 +152,7 @@ fn degree(body: &Ast, units: crate::units::Units) -> Result<u32, String> {
             ])
             .map(|(k, v)| (k.to_string(), v))
             .collect();
-        crate::expr::eval(body, &env)
+        crate::expr::eval(body, &env).map_err(String::from)
     };
     if units.length.is_none() {
         let d = (at(2.0)?.c / at(1.0)?.c).abs().log2().round();

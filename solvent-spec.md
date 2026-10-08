@@ -1,15 +1,22 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.52 — October 2026**
+**Specification, Draft 0.53 — October 2026**
 
-**[0.52] Variational curves.** A curve may be stated by the principle that makes it rather than
+**[0.53] Variational curves.** A curve may be stated by the principle that makes it rather than
 by its formula: `rope minimizes integral(p.y over p)` says the curve has the shape that makes
 its height, integrated along its length, least — with `length(150mm) rope` beside it, a hanging
 rope, the catenary, though nothing says so (§9.10). An energy is a sum of integrals of the point
 `p` running along the curve and its unit tangent `t`, weighted by arc length; `maximizes` turns it
-over. Like every statement, it says what the curve is, not what to do. `spline(a, b)` is a **free curve**: its ends written, its shape the drawing's to find
-(§6.1). `length(L) s` holds a spline's whole length. The diagnosis says what each stationary curve
-is — a minimum, a maximum, a saddle — and `std.hangs(L) k` is a hanging rope in one word.
+over. Like every statement, it says what the curve is, not what to do. `spline(a, b)` is a
+**free curve**: its ends written, its shape the drawing's to find (§6.1). `length(L) s` holds a
+spline's whole length. The diagnosis says what each stationary curve is — a minimum, a maximum, a
+saddle — and `std.hangs(L) k` is a hanging rope in one word.
+
+**[0.52] Two gauges that disagree are refused.** A `fix` adds no equation, so two holding one
+number at different values, or two orientations choosing opposite roots of one triangle, are a
+contradiction no conflict set can show — and applied as read, whichever came last would win,
+an outcome hanging on the order of statements. They are **E031** at each statement (§13); holds
+that agree are one hold.
 
 **[0.51] Tangencies, differentiated.** `l tangent S` states each row of the set's body again as
 its **derivative** along `l`, and what the body makes of its own — a foot point, a lift — moves
@@ -646,7 +653,7 @@ Where an unnamed and unseeded coordinate *starts* is not the language's business
 
 A **list** child slot — a spline's control polygon, a curve's arguments — has no arity to conjure children from, so a bare `s := spline` remains **E103**.
 
-**[0.52] A free curve** is a spline written with its two ends and nothing between, `rope := spline(a, b)`: the curve runs from `a` to `b` and its shape is the drawing's to find — what an energy over it (§9.10) settles. Its interior has no name and no seed in the source, and is never written back; how finely the implementation discretises it is its own business (§15), as where an unseeded point starts is, so long as the answer converges to the curve the statements describe. A two-point list with `knots` or `weights` written is a control polygon like any other, and refused as one too short.
+**[0.53] A free curve** is a spline written with its two ends and nothing between, `rope := spline(a, b)`: the curve runs from `a` to `b` and its shape is the drawing's to find — what an energy over it (§9.10) settles. Its interior has no name and no seed in the source, and is never written back; how finely the implementation discretises it is its own business (§15), as where an unseeded point starts is, so long as the answer converges to the curve the statements describe. A two-point list with `knots` or `weights` written is a control polygon like any other, and refused as one too short.
 
 ### 6.2 Constructor declarations
 
@@ -1770,7 +1777,7 @@ What goes in the parentheses is a short list:
 | `level` | infix | **[0.46]** (p, p), the direction in the parentheses — an axis, a line, or the view's word; (p, plane) with `u`/`v`, from the plane's origin |
 | `angle` | infix | (line, line); **[0.27]** (line, line) with a second pair in the parentheses, `l1 angle(l3, l4) l2` (§9.4); **[0.42]** (axis, axis \| line), (line, axis), the unsigned angle in space |
 | `radius` | prefix | a circle or an arc |
-| `length` | prefix | **[0.27]** an arc: its length along itself; **[0.52]** a spline: its whole length |
+| `length` | prefix | **[0.27]** an arc: its length along itself; **[0.53]** a spline: its whole length |
 | `midpoint`, `parallel`, `perpendicular`, `symmetry` | infix | one each; **[0.42]** `parallel` and `perpendicular` also take an axis beside an axis or a line, in space, and (axis, plane) — along the plane, and square to it — either way round; **[0.43]** `parallel` takes (plane, plane): the two face alike, either way (two rows over their normals; neither's place nor its turn within itself) |
 | `project` | infix | (point, point), each `in` a plane — the two planes are read off the memberships and never written (§6.7) **[0.10]** |
 | `fix` | prefix | the gauge (§13): an entity, and its own numbers pinned whole or by member — `fix((0, 0)) p`, `fix(x == 0) p`, `fix(r == 25) c`, `fix(dir == (0, 0, 1)) t` **[0.34]** **[0.45]** |
@@ -1954,9 +1961,9 @@ A **relation word** is defined at the top level of a file — never inside a bod
 
 **A body may be several statements** **[0.50]**: `l1 flush(d) l2 := { l1 parallel l2; l2.p1 distance(d) l1 }`, in braces, one per line, for one fact about the operands that takes several rows. It may declare the geometry its relations need (`private ab := line(a, b)`), which each use makes anew, under a name of the use's own, and read only what it declares besides its operands and parameters. Every relation a use makes is the statement's: deleted with it, described as it, a placement on it going to the one relation when it makes one. A body may write other words and use sets (§6.21), a set written in place included (`a orbits(r) o := a coincident std.Sphere(o, r: r)`). An infix word is a relation **between** its operands — distance, symmetry, flushness; that each stands on a third thing is said of each (`a coincident P`), not made a word.
 
-**A word and a set are one predicate** **[0.50]**: a body over parameters (in parentheses, given at the call) and bound variables (a word's operands, a set's point, written where the definition shows them and filled at the use), applied by one rule — under a name of the use's own, each bound variable the operand the use wrote, the body closed over what it was given. A component instance is the case with no bound variable, stated where it is written. An operand that names nothing is **E101** once, where it is written, and not again at each place in the body that reads it. *Open, non-normative:* a word as a value (#80). The standard library defines `horizontal` and `vertical` between two points as words (§14.4), and where one point stands from another (`b offset(dx: 30, dy: 12) a`, `b right_of(d: 30) a`, `left_of`, `above`, `below`), where a point stands in a plane's frame (`p coords(du: 20, dv: 5) P`, `p on_u(d: 20) P`, `p on_v(d: 5) P`), two lines crossed (`a skew(theta: 90deg, e: 20mm) b`) and one line turned from another (`a turned(theta: 180deg) b`). Each is two dimensions or a dimension and a level, said as the one fact they are. **[0.52]** A body may state an energy over an operand (§9.10): `std.hangs(L: 150mm) rope` is a curve that long, hanging.
+**A word and a set are one predicate** **[0.50]**: a body over parameters (in parentheses, given at the call) and bound variables (a word's operands, a set's point, written where the definition shows them and filled at the use), applied by one rule — under a name of the use's own, each bound variable the operand the use wrote, the body closed over what it was given. A component instance is the case with no bound variable, stated where it is written. An operand that names nothing is **E101** once, where it is written, and not again at each place in the body that reads it. *Open, non-normative:* a word as a value (#80). The standard library defines `horizontal` and `vertical` between two points as words (§14.4), and where one point stands from another (`b offset(dx: 30, dy: 12) a`, `b right_of(d: 30) a`, `left_of`, `above`, `below`), where a point stands in a plane's frame (`p coords(du: 20, dv: 5) P`, `p on_u(d: 20) P`, `p on_v(d: 5) P`), two lines crossed (`a skew(theta: 90deg, e: 20mm) b`) and one line turned from another (`a turned(theta: 180deg) b`). Each is two dimensions or a dimension and a level, said as the one fact they are. **[0.53]** A body may state an energy over an operand (§9.10): `std.hangs(L: 150mm) rope` is a curve that long, hanging.
 
-### 9.10 Energies: `minimizes` and `maximizes` **[0.52]**
+### 9.10 Energies: `minimizes` and `maximizes` **[0.53]**
 
 ```
 rope minimizes integral(p.y over p)
@@ -2132,11 +2139,15 @@ under the field it is (`x`, `y` of a point, **[0.42]** and `z` of one standing i
 circle or arc; **[0.42]** `x`, `y`, `z` of a plane's
 place and of an axis's direction, **[0.43]** and `px`, `py`, `pz` of an axis's place). The values are expressions over the parameters in scope, with units, and MAY
 NOT read geometry. A `fix` is a gauge: it takes the numbers out of the solve at the values stated
-and adds no equation, so it never takes part in a conflict set. It is applied before the seeds
+and adds no equation, so it never takes part in a conflict set. **[0.52]** Two holds of one number
+are one gauge where they state one value; where they differ, each statement is **E031** and the
+number is not held — no order of statements may decide which wins (P2). Two orientations of one
+triangle (§9.6) choosing opposite roots are **E031** alike. It is applied before the seeds
 that read geometry (§6.4), which read a held number where it is held and never move one; a seed
 for a held number is never read. A `fix` that states no number, writes one as a selector
 (`fix(x: 0) p`) or unnamed (`fix(5) c`), or names a field the entity does not have is **E040** /
-**E105** at what was written. Implementations MUST report residual gauge freedom (rank deficiency
+**E105** at what was written; so is one stating a number twice (`fix((3, 4), (1, 1)) p`,
+`fix((3, 4), x == 1) p`), as any relation giving one slot twice is **E040** at the second. Implementations MUST report residual gauge freedom (rank deficiency
 whose null space is spanned by rigid motions) with the suggestion to add a `fix` (**W103**), and
 MUST distinguish it from genuine under-constraint.
 
@@ -2366,6 +2377,7 @@ The numerical method is unspecified. Whatever the method, a conforming solver:
 | E022 | nested `ring` (if unsupported) |
 | E023 | **[0.47]** what a `ring` cannot turn: a centre neither a point nor an axis held in its direction, a plane, axis or motion declared in it, a point outside its centre's view (or not in space, about an axis), a hold on a turned copy, a relation reading a turned curve |
 | E030 | retired **[0.34]**: a `fix` states its numbers (E040 where it does not) |
+| E031 | two gauges that disagree: a number held at two values, or a triangle oriented both ways (§13) **[0.52]** |
 | E040 | type mismatch within an alias class |
 | E041 | cyclic definitional dependency (**[0.18]** a solid made of itself, §6.9; a plane folded from itself until 0.42) |
 | E050 | inconsistent system (no solution); report a minimal infeasible subset when computable |
@@ -2556,7 +2568,7 @@ type           = "Int" | "Scalar" | "Length" | "Angle" | "Side"      (* §4.1 [0
 
 statement      = definition | input | relation | gauge | branch | block | in_block
                | unit_decl | body_rel | claim_over | energy | hint | path_decl | frag ;
-energy         = ref ( "minimizes" | "maximizes" ) term { ( "+" | "-" ) term } ; (* §9.10 [0.52] *)
+energy         = ref ( "minimizes" | "maximizes" ) term { ( "+" | "-" ) term } ; (* §9.10 [0.53] *)
 term           = [ "-" ] [ NUMBER "*" ] "integral" "(" expr "over"
                  ( IDENT | "(" IDENT "," IDENT ")" ) ")" ;
 in_block       = "in" ref "{" { statement } "}" ;         (* membership, written once: §6.7 *)

@@ -140,6 +140,7 @@ pub(super) fn constrain(
     doc: &crate::syntax::Program,
     map: &SourceMap,
     duals: &mut BTreeMap<String, usize>,
+    gauges: &mut Gauges,
     diags: &mut Vec<Diag>,
 ) -> Option<u32> {
     // **a word that relates two solids is a claim, judged and never solved** (§9.8).  Picked up
@@ -215,7 +216,7 @@ pub(super) fn constrain(
             });
             return None;
         }
-        apply_gauge(sk, res, &r, st, diags);
+        apply_gauge(sk, res, &r, st, gauges, diags);
         return None;
     }
     let spec = ckind.spec();
@@ -790,12 +791,14 @@ fn to_arg(sk: &Sketch, res: &Resolver, kind: SpecKind, a: &Arg) -> Result<CArg, 
 /// every other relation — an operator, a class, a placement — but holding parameters or
 /// recording a root choice instead of becoming a constraint the sketch holds, so `constrain`
 /// returns no id for it and the map never knows it.  The checks are the ones the two statement
-/// kinds always made, in their words.
+/// kinds always made, in their words.  What it holds or chooses goes into `gauges`, applied once
+/// every gauge is in (`Gauges::hold_all`, `choose_all`).
 fn apply_gauge(
     sk: &mut Sketch,
     res: &Resolver,
     r: &ResolvedRelation<'_>,
     st: &Stmt,
+    gauges: &mut Gauges,
     diags: &mut Vec<Diag>,
 ) {
     let refs: Vec<&Ref> = r
@@ -882,9 +885,7 @@ fn apply_gauge(
                 if e.kind == EntKind::Axis && at >= 3 {
                     sk.place_axis(e.i());
                 }
-                let p = &mut sk.params[own[at] as usize];
-                p.value = v;
-                p.fixed = true;
+                gauges.hold(own[at], v, field, crate::syntax::ref_text(rf), st);
             }
         }
         CKind::Ccw | CKind::Cw => {
@@ -905,7 +906,8 @@ fn apply_gauge(
             // canonical, so the choice the document states and the one the plan replays are one
             // record and not two that never meet (issue #48, item 4)
             let (key, v) = decompose::branch_record(pts, r.kind == CKind::Ccw);
-            sk.branches.insert(key, v);
+            let names: Vec<String> = refs.iter().map(|rf| crate::syntax::ref_text(rf)).collect();
+            gauges.orient(key, v, format!("the triangle `{}`", names.join("`, `")), st);
         }
         _ => unreachable!("{:?} is not a gauge", r.kind),
     }
@@ -925,6 +927,87 @@ fn said(kind: EntKind, owned: &[&str]) -> String {
         return "x, y and z".to_string();
     }
     names.join(" and ")
+}
+
+/// Every number the `fix`es hold and every root the orientations choose, gathered before any is
+/// applied (issue #113).  A gauge adds no row, so the diagnosis never sees two of them disagree,
+/// and applied as each was read the later would silently win: an outcome hanging on the order
+/// of statements (P2).  So each is applied once all are in — those that agree as the one gauge
+/// they are (copies of a block holding a shared point alike), and those that disagree not at
+/// all, **E031** at every statement taking part.
+#[derive(Default)]
+pub(super) struct Gauges {
+    /// each held parameter: its value, then where, per statement holding it, with the field and
+    /// the entity as that statement names them
+    holds: BTreeMap<u32, Vec<(f64, Span, StmtId, &'static str, String)>>,
+    /// each canonical triangle's choices (`decompose::branch_record`), and a raw key's
+    branches: BTreeMap<String, Vec<(i32, String, Span, StmtId)>>,
+}
+
+impl Gauges {
+    fn hold(&mut self, param: u32, v: f64, field: &'static str, of: String, st: &Stmt) {
+        self.holds.entry(param).or_default().push((v, st.span, st.id, field, of));
+    }
+
+    fn orient(&mut self, key: String, v: i32, what: String, st: &Stmt) {
+        self.branches.entry(key).or_default().push((v, what, st.span, st.id));
+    }
+
+    /// A `branch(KEY, ±1)` statement: a root choice under a key no triple of points spells.
+    pub(super) fn branch(&mut self, b: &crate::syntax::Branch, st: &Stmt) {
+        self.orient(b.key.clone(), b.value, format!("the root choice `{}`", b.key), st);
+    }
+
+    /// Hold every number its holds agree on.  Values a rounding apart are one hold — two
+    /// spellings of one number (`w / 3 * 3`, `w`) — held at the least, whichever came first.
+    /// A statement holding several numbers in dispute is told once, naming each.
+    pub(super) fn hold_all(&mut self, sk: &mut Sketch, diags: &mut Vec<Diag>) {
+        let mut disputed: BTreeMap<(Span, StmtId), (Vec<&'static str>, String)> = BTreeMap::new();
+        for (param, holds) in std::mem::take(&mut self.holds) {
+            let lo = holds.iter().map(|h| h.0).fold(f64::INFINITY, f64::min);
+            let hi = holds.iter().map(|h| h.0).fold(f64::NEG_INFINITY, f64::max);
+            if hi - lo <= 1e-12 * lo.abs().max(hi.abs()).max(1.0) {
+                let p = &mut sk.params[param as usize];
+                p.value = lo;
+                p.fixed = true;
+                continue;
+            }
+            for (_, span, id, field, of) in holds {
+                let (fields, _) = disputed.entry((span, id)).or_insert_with(|| (Vec::new(), of));
+                if !fields.contains(&field) {
+                    fields.push(field);
+                }
+            }
+        }
+        for ((span, id), (fields, of)) in disputed {
+            let are = if fields.len() == 1 { "is" } else { "are" };
+            let fields = fields.iter().map(|f| format!("`{f}`")).collect::<Vec<_>>().join(" and ");
+            let message = format!(
+                "{fields} of `{of}` {are} held at two values: a number is held once, and another \
+                 `fix` holding it says otherwise"
+            );
+            diags.push(Diag { code: Code::E031, span, stmt: Some(id), message });
+        }
+    }
+
+    /// Record every root choice its statements agree on.
+    pub(super) fn choose_all(&mut self, sk: &mut Sketch, diags: &mut Vec<Diag>) {
+        for (key, choices) in std::mem::take(&mut self.branches) {
+            if choices.iter().all(|c| c.0 == choices[0].0) {
+                sk.branches.insert(key, choices[0].0);
+                continue;
+            }
+            let at: BTreeMap<(Span, StmtId), String> =
+                choices.into_iter().map(|(_, what, span, id)| ((span, id), what)).collect();
+            for ((span, id), what) in at {
+                let message = format!(
+                    "{what} is oriented both ways: one statement chooses one root, and another \
+                     the other"
+                );
+                diags.push(Diag { code: Code::E031, span, stmt: Some(id), message });
+            }
+        }
+    }
 }
 
 impl Relation {

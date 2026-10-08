@@ -79,7 +79,7 @@ use entities::{build, crosses_views, settle_deferred, Deferred};
 pub(crate) use lift::{holds, lift_decl, lift_gauge, lift_relation, point_len};
 use planes::memberships;
 pub(crate) use planes::{plane_of_entity, plane_of_entity_by};
-use relations::{constrain, repeated};
+use relations::{constrain, repeated, Gauges};
 use resolve::Resolver;
 use solids::{solid_claims, solids};
 use std::collections::{BTreeMap, BTreeSet};
@@ -410,12 +410,16 @@ pub fn elaborate(p: &Program) -> Elaborated {
     // a seed never writes a held number (`settle_deferred`)
     // each tangency's derivative, by the key the flattener gave its use (§6.21)
     let mut duals = BTreeMap::new();
+    // every gauge gathered before any is applied, so neither statement order nor a second hold
+    // decides what is held (#113)
+    let mut gauges = Gauges::default();
     for st in &stating {
         let StmtKind::Relation(r) = &st.kind else { continue };
         if relations::is_fix(r) {
-            constrain(&mut sk, &res, r, st, p, &map, &mut duals, &mut diags);
+            constrain(&mut sk, &res, r, st, p, &map, &mut duals, &mut gauges, &mut diags);
         }
     }
+    gauges.hold_all(&mut sk, &mut diags);
     // a plane whose axes are held stands where they meet (#84), and one held elsewhere takes
     // its free axes with it
     diags.extend(views::origins_on_axes(&mut sk, &map));
@@ -454,7 +458,8 @@ pub fn elaborate(p: &Program) -> Elaborated {
         if relations::is_fix(r) {
             continue;
         }
-        if let Some(id) = constrain(&mut sk, &res, r, st, p, &map, &mut duals, &mut diags) {
+        let made = constrain(&mut sk, &res, r, st, p, &map, &mut duals, &mut gauges, &mut diags);
+        if let Some(id) = made {
             map.record(st, Made::Con(id));
             if let Some(place) = r.place {
                 sk.placements.insert(id, place);
@@ -563,9 +568,10 @@ pub fn elaborate(p: &Program) -> Elaborated {
     // -- phase 5: a root choice under a key no triple of points spells, kept verbatim
     for st in &stating {
         if let StmtKind::Branch(b) = &st.kind {
-            sk.branches.insert(b.key.clone(), b.value);
+            gauges.branch(b, st);
         }
     }
+    gauges.choose_all(&mut sk, &mut diags);
 
     // Roles follow creation provenance, including unnamed children. Referenced geometry
     // belongs to its own declaration, even when a construction component borrows it.

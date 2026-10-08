@@ -147,7 +147,7 @@ hand-written spatial kernels have generic twins held to them by `tests/taylor.rs
 set named as an entity (E040 in `rewrite`), `coincident` between two sets, parentheses, a
 non-point `coincident`, a non-line or claimed `tangent`.  `tests/sets.rs` is the gate.
 
-**Variational curves (§9.10, §6.1, 0.52, #121, `variational.rs`):** `k minimizes E` / `k maximizes
+**Variational curves (§9.10, §6.1, 0.53, #121, `variational.rs`):** `k minimizes E` / `k maximizes
 E` (`StmtKind::Minimize`, `parser/minimize.rs`; indicative, a statement about `k` read by the word
 past its ref, as the body words are — never an imperative opener) with `E` a sum of `c *
 integral(EXPR over p)` (or `over (p, t)`, `t` the unit tangent) along `k`, ds-weighted; `flatten::values::settle_integrand` writes the scope's numbers in and
@@ -1197,7 +1197,10 @@ Conventions:
   is its own seed**: fixes are applied once points have their places (`entities::places`), before
   `axes_along`, motions, envelopes and `settle_deferred` (`relations::is_fix`), and
   `views::stand_axes` then stands each plane's free axes through its held origin, so no `hint`
-  repeats a `fix`.  `commit_seeds` takes a held number out of a written clause (the whole clause
+  repeats a `fix`.  Holds and root choices are gathered (`relations::Gauges`) and applied once
+  all are in (`hold_all` after the fix pass, `choose_all` after phase 5's `branch`es): alike, one
+  gauge; differing, E031 at each statement and nothing applied, so no order decides (#113).
+  `commit_seeds` takes a held number out of a written clause (the whole clause
   where all are held) and writes it back when the hold goes.  `tests/seeds.rs::a_fix_is_its_own_seed`.
   `edit::reconcile` diffs holds per entity and field (`gauge_key`, `held_refs` over
   `program::holds`) and appends a statement built by `program::lift_gauge` with the numbers; a root choice under a key no triple spells stays the
