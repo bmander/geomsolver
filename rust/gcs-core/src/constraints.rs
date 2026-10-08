@@ -3464,7 +3464,6 @@ pub fn validate(
     name: &dyn Fn(EntRef) -> String,
 ) -> Result<(), String> {
     shared_on_one_curve(sk, kind, args, name)?;
-    crate::variational::admits(sk, kind, args, name)?;
     match kind {
         // a curvature reads the curve's second derivative, which a trace gives exactly only
         // where every row of its block has a Taylor form (`taylor.rs`): a residual by difference

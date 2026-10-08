@@ -520,30 +520,32 @@ fn span_frame(t: Jet, ctrl: &[Jet], k: &[f64]) -> [[Jet; 2]; 3] {
     let (mut b, mut d, mut dd, mut d3) = ([0.0; SPAN_N], [0.0; SPAN_N], [0.0; SPAN_N], [0.0; SPAN_N]);
     crate::curve::basis(t0, k[..SPAN_K].try_into().expect("a span's knots"), &mut b, &mut d, &mut dd, &mut d3);
     let w = &k[SPAN_K..SPAN_K + SPAN_N];
-    let poly = |c: &[f64]| Jet::from(c).compose(tau);
-    let n: Vec<[Jet; 3]> = (0..SPAN_N)
-        .map(|a| {
-            [
-                poly(&[b[a], d[a], dd[a] / 2.0, d3[a] / 6.0]) * w[a],
-                poly(&[d[a], dd[a], d3[a] / 2.0]) * w[a],
-                poly(&[dd[a], d3[a]]) * w[a],
-            ]
-        })
-        .collect();
+    let poly = |d: &[f64]| Jet::from_derivatives(d).compose(tau);
+    // `B`, `B'`, `B''` of each control point along the path, times its weight
+    let n: [[Jet; 3]; SPAN_N] = std::array::from_fn(|a| {
+        [
+            poly(&[b[a], d[a], dd[a], d3[a]]) * w[a],
+            poly(&[d[a], dd[a], d3[a]]) * w[a],
+            poly(&[dd[a], d3[a]]) * w[a],
+        ]
+    });
     // weights all 1 divide nothing, as `curve::weigh` leaves the basis
-    let sum = |o: usize| n.iter().fold(Jet::constant(0.0), |acc, x| acc + x[o]);
-    let (w0, w1, w2) = match w.iter().all(|&x| x == 1.0) {
-        true => (Jet::constant(1.0), Jet::constant(0.0), Jet::constant(0.0)),
-        false => (sum(0), sum(1), sum(2)),
+    let r: [[Jet; 3]; SPAN_N] = if w.iter().all(|&x| x == 1.0) {
+        n
+    } else {
+        let sum = |o: usize| n.iter().fold(Jet::constant(0.0), |acc, x| acc + x[o]);
+        let (w0, w1, w2) = (sum(0), sum(1), sum(2));
+        n.map(|[n0, n1, n2]| {
+            let r0 = n0 / w0;
+            let r1 = (n1 - r0 * w1) / w0;
+            [r0, r1, (n2 - r1 * w1 * 2.0 - r0 * w2) / w0]
+        })
     };
     let mut out = [[Jet::constant(0.0); 2]; 3];
-    for (a, [n0, n1, n2]) in n.iter().enumerate() {
-        let r0 = *n0 / w0;
-        let r1 = (*n1 - r0 * w1) / w0;
-        let r2 = (*n2 - r1 * w1 * 2.0 - r0 * w2) / w0;
-        for (o, r) in [r0, r1, r2].into_iter().enumerate() {
-            out[o][0] = out[o][0] + r * ctrl[2 * a];
-            out[o][1] = out[o][1] + r * ctrl[2 * a + 1];
+    for (a, ra) in r.iter().enumerate() {
+        for (o, &ro) in ra.iter().enumerate() {
+            out[o][0] = out[o][0] + ro * ctrl[2 * a];
+            out[o][1] = out[o][1] + ro * ctrl[2 * a + 1];
         }
     }
     out
@@ -561,10 +563,8 @@ fn point_on_spline(v: &[Jet], k: &[f64], r: &mut [Jet]) {
 fn spline_tangent_line(v: &[Jet], k: &[f64], r: &mut [Jet]) {
     let [c, c1, _] = span_frame(v[0], &v[1..9], k);
     let (dx, dy) = (v[11] - v[9], v[12] - v[10]);
-    let (wx, wy) = (c[0] - v[9], c[1] - v[10]);
-    let len = Jet::line_len(dx, dy);
-    r[0] = (dx * wy - dy * wx) / len;
-    r[1] = (c1[0] * dy - c1[1] * dx) / len;
+    r[0] = point_line_gap(&[c[0], c[1], v[9], v[10], v[11], v[12]]);
+    r[1] = (c1[0] * dy - c1[1] * dx) / Jet::line_len(dx, dy);
 }
 
 /// (t, c0x … c3y, cx, cy, r): the centre is the centre of curvature, and the radius its
@@ -575,8 +575,9 @@ fn spline_curvature(v: &[Jet], k: &[f64], r: &mut [Jet]) {
     let (dx, dy) = (v[9] - c[0], v[10] - c[1]);
     let mut turn = tx * c2[1] - ty * c2[0];
     // the kernel's floor (`kernels::turn`): no finite circle where the curve does not turn
-    if turn.0[0].abs() < crate::kernels::MIN_TURN {
-        turn = Jet::constant(crate::kernels::MIN_TURN.copysign(if turn.0[0] == 0.0 { 1.0 } else { turn.0[0] }));
+    let floor = crate::kernels::turn(turn.0[0]);
+    if floor != turn.0[0] {
+        turn = Jet::constant(floor);
     }
     let g = (tx * tx + ty * ty) / turn;
     r[0] = dx + g * ty;

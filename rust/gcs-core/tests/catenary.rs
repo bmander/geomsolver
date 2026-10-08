@@ -225,12 +225,9 @@ fn a_free_line_drawn_tangent_to_the_rope_moves_to_it() {
     assert_eq!(d.extrema.iter().map(|(_, v)| v.name()).collect::<Vec<_>>(), ["minimum"]);
     // and it touches: the curve's nearest point to the line is on it
     let (a, b) = (e.sketch.point_xy(p), e.sketch.point_xy(q));
-    let (t0, t1) = gcs_core::curve::domain(&e.sketch, 0);
-    let gap = (0..=2000)
-        .map(|k| {
-            let (x, y) = gcs_core::curve::point_at(&e.sketch, 0, t0 + (t1 - t0) * k as f64 / 2000.0);
-            ((b.0 - a.0) * (y - a.1) - (b.1 - a.1) * (x - a.0)) / (b.0 - a.0).hypot(b.1 - a.1)
-        })
+    let gap = gcs_core::curve::sample(&e.sketch, 0, 200)
+        .into_iter()
+        .map(|(x, y)| ((b.0 - a.0) * (y - a.1) - (b.1 - a.1) * (x - a.0)) / (b.0 - a.0).hypot(b.1 - a.1))
         .map(f64::abs)
         .fold(f64::INFINITY, f64::min);
     assert!(gap < 1e-3, "{gap}");
@@ -247,9 +244,9 @@ fn a_held_line_tangent_to_the_rope_lifts_or_lowers_it() {
         let (mut e, _, _) = with_line(true, [(20.0, level), (90.0, level)]);
         let r = gcs_core::solve::solve(&mut e.sketch, gcs_core::solve::SolveOpts::default());
         assert!(r.success, "{dy}: {}", r.message);
-        let (t0, t1) = gcs_core::curve::domain(&e.sketch, 0);
-        let lowest = (0..=2000)
-            .map(|k| gcs_core::curve::point_at(&e.sketch, 0, t0 + (t1 - t0) * k as f64 / 2000.0).1)
+        let lowest = gcs_core::curve::sample(&e.sketch, 0, 200)
+            .into_iter()
+            .map(|(_, y)| y)
             .fold(f64::INFINITY, f64::min);
         assert!((lowest - level).abs() < 1e-3, "{dy}: lowest {lowest} against {level}");
         let d = gcs_core::diagnose::diagnose(&mut e.sketch, gcs_core::diagnose::DiagnoseOptions::default());

@@ -29,6 +29,42 @@ fn rate(kid: usize, path: &[Jet], k: &[f64], e: f64) -> Vec<f64> {
         .collect()
 }
 
+/// A spline contact's constants are its span's knot window and weights, and its parameter sits
+/// inside that span: drawn as anything else's are (unsorted knots, a parameter far outside them)
+/// the basis is extrapolated past where any drawing reads it, and a central difference of a
+/// derivative row there is all cancellation.  So for the derivative rows a spline contact's knots
+/// are drawn sorted, its weights near 1, and the column its parameter is in returned, to be put
+/// inside the span.  `None` for any other kernel.  (The forms keep the wild draw: a form is a
+/// polynomial or a quotient of two, exact wherever it is read, and there the check is of exact
+/// rates, which do not cancel — where sensible knots on random points would leave a nearly
+/// straight span whose curvature row's second difference is the one thing that does.)
+fn spline_contact(name: &str, rng: &mut Rng) -> Option<(usize, Vec<f64>)> {
+    let t = match name {
+        "point_on_spline" => 2,
+        "spline_tangent_line" | "spline_curvature" => 0,
+        _ => return None,
+    };
+    let mut k = vec![0.0];
+    for _ in 1..gcs_core::curve::SPAN_K {
+        let last = *k.last().unwrap();
+        k.push(last + rng.uniform(0.5, 1.5));
+    }
+    k.extend((0..gcs_core::curve::SPAN_N).map(|_| rng.uniform(0.7, 1.4)));
+    Some((t, k))
+}
+
+/// A kernel's constants, and its columns adjusted to them: a spline contact's parameter put inside
+/// its span (`spline_contact`).
+fn constants(name: &str, n_const: usize, rng: &mut Rng, t_at: &mut dyn FnMut(usize, f64)) -> Vec<f64> {
+    match spline_contact(name, rng) {
+        Some((t, k)) => {
+            t_at(t, rng.uniform(k[3], k[4]));
+            k
+        }
+        None => (0..n_const).map(|_| rng.uniform(0.5, 2.0)).collect(),
+    }
+}
+
 #[test]
 fn every_taylor_form_is_its_kernel() {
     let mut checked = 0;
@@ -133,35 +169,28 @@ fn every_derivative_rows_jacobian_is_its_derivative() {
         let m = inner.n_par;
         for seed in 0..4u32 {
             let mut rng = Rng::new(7000 * kid as u32 + seed + 1);
-            let v: Vec<f64> = (0..dual.n_par)
+            let mut v: Vec<f64> = (0..dual.n_par)
                 .map(|_| {
                     let s = if rng.uniform(0.0, 1.0) < 0.5 { -1.0 } else { 1.0 };
                     s * rng.uniform(1.0, 10.0)
                 })
                 .collect();
             let mut k = vec![kid as f64];
-            k.extend((0..inner.n_const).map(|_| rng.uniform(0.5, 2.0)));
+            k.extend(constants(inner.name, inner.n_const, &mut rng, &mut |t, at| v[t] = at));
             k.extend((0..m).map(|_| [0, 1, 2, 3, TANGENT][rng.uniform(0.0, 4.999) as usize] as f64));
             let (r0, jac) = eval_with(&dual, &v, &k);
-            // a central difference at one step is either truncation or cancellation: a spline
-            // contact's basis, extrapolated far past its random knots, reads hundreds where its
-            // residual reads one, and 1e-6 is all cancellation there — so the exact column must
-            // agree with the difference at one of two steps
-            let fd_at = |c: usize, h: f64| {
+            let h = 1e-6;
+            for c in 0..dual.n_par {
                 let (mut vp, mut vm) = (v.clone(), v.clone());
                 vp[c] += h;
                 vm[c] -= h;
                 let (rp, rm) = (eval_with(&dual, &vp, &k).0, eval_with(&dual, &vm, &k).0);
-                (0..dual.n_res).map(|t| (rp[t] - rm[t]) / (2.0 * h)).collect::<Vec<f64>>()
-            };
-            for c in 0..dual.n_par {
-                let (fine, coarse) = (fd_at(c, 1e-6), fd_at(c, 1e-4));
                 for t in 0..dual.n_res {
+                    let fd = (rp[t] - rm[t]) / (2.0 * h);
                     let got = jac[t * dual.n_par + c];
-                    let off = |fd: f64| (got - fd).abs() / (1.0 + r0[t].abs() + fd.abs());
-                    let fd = if off(fine[t]) <= off(coarse[t]) { fine[t] } else { coarse[t] };
+                    let scale = 1.0 + r0[t].abs() + fd.abs();
                     assert!(
-                        off(fd) <= 1e-5,
+                        (got - fd).abs() <= 1e-5 * scale,
                         "{} seed {seed} row {t} column {c}: {got} against {fd}",
                         inner.name
                     );

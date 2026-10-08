@@ -213,7 +213,9 @@ impl Sketch {
             varied.iter().flat_map(|&s| self.entity_params(EntRef::spline(s))).collect();
         // splines read by one row are one energy, as two terms over one spline are
         let mut sets = crate::graph::UnionFind::new(self.splines.len());
-        let mut reading: Vec<(u32, usize, usize, bool)> = Vec::new();
+        // each row a contact reads: its id, residuals, a spline it reads, whether it is refused, and
+        // its own free unknowns (a contact's place along the curve)
+        let mut reading: Vec<(u32, usize, usize, bool, Vec<u32>)> = Vec::new();
         for c in &self.constraints {
             if !c.acts() || c.kind == CKind::Stationary {
                 continue;
@@ -226,6 +228,8 @@ impl Sketch {
             // to a hanging rope moves to touch it, and the rope hangs as it would — so it holds
             // the energy to nothing and takes no multiplier.  One whose every other column is
             // held presses on the curve: the rope is pushed to touch a line that cannot move.
+            // "Held" is the `fix` bit: a line whose free coordinates other rows pin down all the
+            // same is read as free, and its tangency reported unsolvable rather than pressing.
             let own = c.aux_params();
             let elsewhere = ps.iter().any(|p| {
                 !curve.contains(p) && !own.contains(p) && !self.params[*p as usize].fixed
@@ -237,7 +241,8 @@ impl Sketch {
             for &s in &touched {
                 sets.union(first, s);
             }
-            reading.push((c.id, c.rows_in(self), first, tag.is_err()));
+            let free: Vec<u32> = own.into_iter().filter(|&p| !self.params[p as usize].fixed).collect();
+            reading.push((c.id, c.rows_in(self), first, tag.is_err(), free));
             if let Err(why) = tag {
                 faults.push((c.id, why));
             }
@@ -265,24 +270,15 @@ impl Sketch {
             g.splines.push(s);
             g.y.extend(ys);
         }
-        for &(id, n, s, refused) in &reading {
-            let g = groups.get_mut(&sets.find(s)).expect("a row read is in a group");
-            g.rows.push((id, n));
-            g.refused |= refused;
-        }
         // a row's own unknown (a contact's place on the curve) is the energy's to vary too: held
         // by the row alone, with no stationarity of its own it would be a freedom the drawing
         // does not have
-        for g in groups.values_mut() {
-            let mut seen: BTreeSet<u32> = g.y.iter().copied().collect();
-            for &(id, _) in &g.rows {
-                let Some(c) = self.constraint(id) else { continue };
-                for p in c.aux_params() {
-                    if !self.params[p as usize].fixed && seen.insert(p) {
-                        g.y.push(p);
-                    }
-                }
-            }
+        let mut own_seen = BTreeSet::new();
+        for (id, n, s, refused, free) in reading {
+            let g = groups.get_mut(&sets.find(s)).expect("a row read is in a group");
+            g.rows.push((id, n));
+            g.refused |= refused;
+            g.y.extend(free.into_iter().filter(|&p| own_seen.insert(p)));
         }
         // the columns, and the multipliers — one per residual of each row the group reads, kept
         // where they were
@@ -365,47 +361,6 @@ impl Sketch {
         let here = |id: &u32| self.constraint(*id).is_some();
         (g.members.iter().all(here) && g.rows.iter().all(|(id, _)| here(id))).then_some(g)
     }
-}
-
-/// Whether a constraint of `kind` over `args` may be added beside the energies the sketch holds:
-/// one reading a coordinate an energy varies must have a second derivative to vary it by — the
-/// rule `hessian_tag` states of a row already there, asked before the row is made, so a tool's
-/// statement is refused with its reason rather than leaving the energy nothing to say.
-pub fn admits(sk: &Sketch, kind: CKind, args: &[Arg], name: &dyn Fn(EntRef) -> String)
-    -> Result<(), String> {
-    if sk.variational.is_empty() || kind == CKind::Stationary || kind.gauge() {
-        return Ok(());
-    }
-    let formed = kind.built() || kind == CKind::SplineGauge
-        || (kind.family_kernel().is_none() && crate::taylor::has_form(kind.kernel() as usize));
-    if formed {
-        return Ok(());
-    }
-    let varied: BTreeSet<usize> = sk.variational.iter().flat_map(|g| g.splines.iter().copied()).collect();
-    let interior = |p: usize| varied.iter().copied().find(|&s| {
-        let ctrl = &sk.splines[s].ctrl;
-        ctrl[1..ctrl.len() - 1].contains(&(p as u32))
-    });
-    let spec = kind.spec();
-    for ((_, k), a) in spec.iter().zip(args) {
-        let Arg::Ent(e) = a else { continue };
-        if !k.is_entity() {
-            continue;
-        }
-        let hit = match e.kind {
-            crate::model::EntKind::Spline => varied.contains(&e.i()).then_some(e.i()),
-            crate::model::EntKind::Point => interior(e.i()),
-            _ => None,
-        };
-        if let Some(s) = hit {
-            return Err(format!(
-                "{} is shaped by an energy, and {} has no second derivative to vary it by",
-                name(EntRef::spline(s)),
-                crate::model::article(&crate::syntax::snake(kind.name()))
-            ));
-        }
-    }
-    Ok(())
 }
 
 /// How a row's second derivative is taken inside a stationarity (`pack`'s tag): its static
