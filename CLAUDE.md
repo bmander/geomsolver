@@ -1777,7 +1777,7 @@ Conventions:
   code exists.  `C(u)` is a small damped Newton solve, its derivatives the implicit function
   theorem from one factorisation.  The body encodes to flat `f64` in the contact's consts
   (`locus::eval_at` the one evaluator, `eval_flat` its cold entry); `System` picks
-  `trace_kernel` over `curve_kernel` per definition, bindings untouched.  A trace contact's
+  `point_on_body_kernel` over `curve_kernel` per definition, bindings untouched.  A trace contact's
   constants are `[anchor, n_values, values…, has_pose, flat…, pose…]` (`kernel_eval` reads,
   `consts_on` writes, `kernel_table` sizes; `view` ignores what trails): for a **drawn**
   instance the **pose on the sheet**, read at every compile and refresh (`CurveDef::pose_of`,

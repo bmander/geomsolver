@@ -101,8 +101,7 @@ pub struct Extremal {
 impl Extremal {
     /// A contact's constants on this definition: the Lagrangian, then the pegs (`extremal::write`).
     pub fn n_const(&self) -> usize {
-        let tapes = self.lag.as_ref().map_or(0, |l| l.tapes.iter().map(Vec::len).sum());
-        3 + tapes + 1 + 2 * self.pegs
+        self.lag.as_ref().map_or(4 + 2 * self.pegs, |l| crate::extremal::width(l, self.pegs))
     }
 }
 
@@ -231,13 +230,10 @@ impl Sketch {
                 (v.x, v.y)
             }),
             CurveBody::Envelope(g) => crate::generate::point(&g.flat, &x, self.curve_home(i)),
-            CurveBody::Extremal(_) => match self.curve_shape(i) {
-                Some(sh) => {
-                    let lag = self.extremal_lagrangian(i).expect("a shape has a Lagrangian");
-                    crate::extremal::shoot::at(lag, &sh, u).map_or((f64::NAN, f64::NAN), |a| (a.z[0], a.z[1]))
-                }
-                None => (f64::NAN, f64::NAN),
-            },
+            CurveBody::Extremal(_) => self
+                .curve_shape(i)
+                .and_then(|(lag, sh)| crate::extremal::shoot::position(&lag, &sh, u))
+                .map_or((f64::NAN, f64::NAN), |p| (p[0], p[1])),
         }
     }
 
@@ -254,34 +250,21 @@ impl Sketch {
         }
     }
 
-    /// Where a free curve's pegs are.
-    fn extremal_pegs(&self, i: usize) -> Vec<[f64; 2]> {
-        self.curves[i]
-            .pegs
-            .iter()
-            .map(|&p| {
-                let [x, y] = self.point_params(p as usize);
-                [self.params[x as usize].value, self.params[y as usize].value]
-            })
-            .collect()
-    }
-
-    /// A free curve's problem as its contacts' constants carry it (`extremal::write`).
+    /// A free curve's problem as its contacts' constants carry it (`extremal::write`): its
+    /// Lagrangian and where its pegs are.
     pub fn extremal_consts(&self, i: usize) -> Option<Vec<f64>> {
         let lag = self.extremal_lagrangian(i)?;
+        let pegs: Vec<[f64; 2]> = self.curves[i].pegs.iter().map(|&p| self.point_xy(p as usize).into()).collect();
         let mut k = Vec::new();
-        crate::extremal::write(lag, &self.extremal_pegs(i), &mut k);
+        crate::extremal::write(lag, &pegs, &mut k);
         Some(k)
     }
 
     /// A free curve's shape where its ends and length are now, through its pegs — the one solve
-    /// its contacts and its drawing share (`extremal::shape_for`).
-    pub fn curve_shape(&self, i: usize) -> Option<crate::extremal::Shape> {
-        let lag = self.extremal_lagrangian(i)?;
+    /// its contacts and its drawing share (`extremal::shape_for`) — with its Lagrangian.
+    pub fn curve_shape(&self, i: usize) -> Option<(crate::extremal::Lagrangian, crate::extremal::Shape)> {
         let k = self.extremal_consts(i)?;
-        let v = self.curve_vars(i, 0.0);
-        let ends = crate::extremal::Ends { a: [v[1], v[2]], b: [v[3], v[4]], len: v[5] };
-        crate::extremal::shape_for(&k, lag, &self.extremal_pegs(i), &ends)
+        crate::extremal::shape_for(&k, &crate::extremal::Ends::of(&self.curve_vars(i, 0.0)[1..]))
     }
 
     /// The interval a curve is drawn over: the one written, or for a trim the parameters of its
@@ -380,7 +363,8 @@ impl Sketch {
     /// The parameter at which a curve's polyline comes nearest by some measure — where a fresh
     /// contact starts: nearest a point for a contact, nearest a line for a tangency.  Over the
     /// drawn polyline, which is what a person points at, and to its resolution; the solve does
-    /// the rest.
+    /// the rest.  NaN where the curve draws nothing: no place to start, which the caller says
+    /// (`Sketch::seed_extremals` seeds a free curve's once its energy has given it a shape).
     pub fn curve_nearest_by(&self, i: usize, dist: impl Fn(f64, f64) -> f64) -> f64 {
         let (a, b) = self.curve_domain(i);
         let poly = self.curve_polyline(i);
@@ -390,7 +374,8 @@ impl Sketch {
             .map(|(k, &(px, py))| (dist(px, py), k))
             .min_by(|p, q| p.0.total_cmp(&q.0))
             .map(|(_, k)| a + (b - a) * k as f64 / n as f64)
-            .unwrap_or(a)
+            // a curve with no shape to draw (a free curve before its energy) has no nearest point
+            .unwrap_or(f64::NAN)
     }
 
     /// The pose a curve's trace is anchored at, read off the sheet — `None` for a curve whose
@@ -495,17 +480,10 @@ impl Sketch {
             CurveBody::Envelope(g) => {
                 crate::generate::sweep(&g.flat, &self.curve_vars(i, a), self.curve_home(i), a, b, n)
             }
-            CurveBody::Extremal(_) => {
-                let (Some(lag), Some(sh)) = (self.extremal_lagrangian(i), self.curve_shape(i)) else {
-                    return Vec::new();
-                };
-                (0..=n)
-                    .map(|k| {
-                        let u = a + (b - a) * k as f64 / n as f64;
-                        crate::extremal::shoot::at(lag, &sh, u).map_or((f64::NAN, f64::NAN), |p| (p.z[0], p.z[1]))
-                    })
-                    .collect()
-            }
+            CurveBody::Extremal(_) => match self.curve_shape(i) {
+                Some((lag, sh)) => crate::extremal::points(&lag, &sh, a, b, n),
+                None => Vec::new(),
+            },
         }
     }
 

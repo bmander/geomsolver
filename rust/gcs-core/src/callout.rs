@@ -512,9 +512,11 @@ pub fn frame(sk: &Sketch, c: &Constraint) -> Option<Frame> {
 /// its length's callout hangs off.
 fn curve_middle(sk: &Sketch, e: EntRef) -> Option<(P, P)> {
     if e.kind == EntKind::Curve {
-        // a free curve's middle is half its length along it, its tangent the chord either side
-        let (a, b) = (sk.curve_point(e.i(), 0.499), sk.curve_point(e.i(), 0.501));
-        return Some((sk.curve_point(e.i(), 0.5), unit(sub(b, a))?));
+        // a free curve's middle is half its length along it, its tangent the shape's direction
+        let (lag, sh) = sk.curve_shape(e.i())?;
+        let at = crate::extremal::shoot::at(&lag, &sh, 0.5, false)?;
+        let (s, c) = at.theta.dsin_cos();
+        return Some(((at.z[0], at.z[1]), (c, s)));
     }
     let (t0, t1) = crate::curve::domain(sk, e.i());
     let f = crate::curve::eval(sk, e.i(), 0.5 * (t0 + t1));

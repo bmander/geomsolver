@@ -135,8 +135,8 @@ pub struct Sketch {
     /// it and handed to the rest.  The constraints hold the index (`Arg::Param`), so this table
     /// is what a rebuild (`io::graft`) and the document writer read the name back from.
     pub shared: BTreeMap<String, SharedPlace>,
-    /// The energies' groups as `settle_variational` last read them — what a stationarity's
-    /// columns, rows and constants are read off.
+    /// Each free curve's energy as `settle_variational` last read it: its statements, pegs and
+    /// whether its length is free.  Derived state, never saved.
     pub variational: Vec<crate::variational::Energy>,
     /// Physical dimensions inferred by expression evaluation, in user units (angles in degrees).
     pub free_dimensions: BTreeMap<String, crate::units::Dim>,

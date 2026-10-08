@@ -30,7 +30,7 @@ fn catenary(d: f64, l: f64) -> impl Fn(f64) -> f64 {
 fn off(lag: &Lagrangian, sh: &shoot::Shape, y: impl Fn(f64) -> f64) -> f64 {
     (0..=200)
         .map(|i| {
-            let a = shoot::at(lag, sh, i as f64 / 200.0).unwrap();
+            let a = shoot::at(lag, sh, i as f64 / 200.0, true).unwrap();
             (a.z[1] - y(a.z[0])).abs()
         })
         .fold(0.0, f64::max)
@@ -74,12 +74,12 @@ fn didos_strip_is_the_circular_arc() {
     let centre = [50.0, r * alpha.cos()];
     let e = (0..=200)
         .map(|i| {
-            let z = shoot::at(&l, &sh, i as f64 / 200.0).unwrap().z;
+            let z = shoot::at(&l, &sh, i as f64 / 200.0, true).unwrap().z;
             ((z[0] - centre[0]).hypot(z[1] - centre[1]) - r).abs()
         })
         .fold(0.0, f64::max);
     assert!(e < 1e-9, "off the arc by {e}");
-    let below = shoot::at(&l, &sh, 0.5).unwrap().z[1];
+    let below = shoot::at(&l, &sh, 0.5, true).unwrap().z[1];
     assert!(below < 0.0, "the strip bulges below the shore, ccw: {below}");
     // the Lagrangian is the area negated, so its minimum is the area's maximum
     assert_eq!(extremal::verdict(&l, &sh, false), Extremum::Minimum);
@@ -121,7 +121,7 @@ fn a_peg_makes_a_corner_of_two_catenaries() {
     let e = off(&l, &sh, |x| if x <= 50.0 { left(x) } else { right(x) });
     assert!(e < 1e-9, "off the two catenaries by {e}");
     // the corner: the direction turns at the peg
-    let (a, b) = (shoot::at(&l, &sh, 0.5 - 1e-9).unwrap(), shoot::at(&l, &sh, 0.5 + 1e-9).unwrap());
+    let (a, b) = (shoot::at(&l, &sh, 0.5 - 1e-9, true).unwrap(), shoot::at(&l, &sh, 0.5 + 1e-9, true).unwrap());
     assert!((a.theta - b.theta).abs() > 0.1, "a corner at the peg: {} {}", a.theta, b.theta);
     assert_eq!(extremal::verdict(&l, &sh, false), Extremum::Minimum);
 }
@@ -147,12 +147,12 @@ fn a_great_circle_is_a_minimum_short_of_the_antipode_and_a_saddle_past_it() {
         let next = shoot::solve(&l, &ends, &[], sh.as_ref()).unwrap_or_else(|| panic!("a shape at {deg}°"));
         let e = (0..=100)
             .map(|i| {
-                let z = shoot::at(&l, &next, i as f64 / 100.0).unwrap().z;
+                let z = shoot::at(&l, &next, i as f64 / 100.0, true).unwrap().z;
                 ((z[0] - c[0]).hypot(z[1] - c[1]) - rho).abs()
             })
             .fold(0.0, f64::max);
         assert!(e < 1e-9, "{deg}°: off the great circle by {e}");
-        let h = shoot::at(&l, &next, 1.0).unwrap().point.h;
+        let h = shoot::at(&l, &next, 1.0, true).unwrap().point.h;
         assert!(h.abs() < 1e-9, "{deg}°: transversal, H = {h}");
         if deg == 40 || deg == 70 {
             verdicts.push(extremal::verdict(&l, &next, true));
@@ -171,7 +171,7 @@ fn the_shapes_derivatives_are_its_differences() {
         let ends = Ends { a: [0.0, 0.0], b: [100.0, 5.0], len: 150.0 };
         let sh = shoot::solve(&l, &ends, &pegs, None).expect("a shape");
         for u in [0.13, 0.6] {
-            let at = shoot::at(&l, &sh, u).unwrap();
+            let at = shoot::at(&l, &sh, u, true).unwrap();
             let o = ends.outer();
             for c in 0..5 {
                 let h = 1e-5;
@@ -179,7 +179,7 @@ fn the_shapes_derivatives_are_its_differences() {
                     let mut oo = o;
                     oo[c] += sign * h;
                     let s = shoot::solve(&l, &Ends::of(&oo), &pegs, Some(&sh)).unwrap();
-                    shoot::at(&l, &s, u).unwrap().z
+                    shoot::at(&l, &s, u, true).unwrap().z
                 };
                 let (p, m) = (z(1.0), z(-1.0));
                 for i in 0..4 {
@@ -189,7 +189,7 @@ fn the_shapes_derivatives_are_its_differences() {
                 }
             }
             let du = 1e-6;
-            let (p, m) = (shoot::at(&l, &sh, u + du).unwrap().z, shoot::at(&l, &sh, u - du).unwrap().z);
+            let (p, m) = (shoot::at(&l, &sh, u + du, true).unwrap().z, shoot::at(&l, &sh, u - du, true).unwrap().z);
             for i in 0..4 {
                 let fd = (p[i] - m[i]) / (2.0 * du);
                 assert!((fd - at.dz[i * 6]).abs() <= 1e-5 * (1.0 + fd.abs()), "z{i} / u: {} against {fd}", at.dz[i * 6]);

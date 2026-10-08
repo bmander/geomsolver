@@ -91,11 +91,15 @@ pub struct Energy {
     pub maximize: bool,
     /// The held points it passes: the rows that state each, and the point.
     pub pegs: Vec<(u32, u32)>,
-    /// The pegs' places along the curve (their contacts' own unknowns), held while the curve's
-    /// problem has the peg — it says where — and freed when it lets the peg go.
+    /// The pegs' places along the curve (their contacts' own unknowns): the curve's problem says
+    /// where they are, so while it has the peg they are no column of the drawing's
+    /// (`Sketch::free_indices`) — kept out of the solve, never marked held, so nothing a copy or
+    /// a save reads changes.
     pub held: Vec<u32>,
     /// No row holds its length: it is where the energy is stationary in it.
     pub free_len: bool,
+    /// The number a row holding its length states, if one does.
+    pub stated: Option<f64>,
     pub degree: u32,
 }
 
@@ -113,24 +117,7 @@ impl Sketch {
     /// one that is not a peg.
     pub fn settle_variational(&mut self) -> Vec<(u32, String)> {
         let free: Vec<usize> = (0..self.curves.len()).filter(|&i| self.curve_extremal(i)).collect();
-        if free.is_empty() && self.variational.iter().all(|e| e.held.is_empty()) {
-            self.variational.clear();
-            return self
-                .constraints
-                .iter()
-                .filter(|c| c.kind == CKind::Stationary && !c.claim)
-                .map(|c| (c.id, "an energy states the shape of a free curve, `curve(a, b)`".into()))
-                .collect();
-        }
         let mut faults = Vec::new();
-        // the places last held go back to the drawing, to be held again below if still pegs
-        for e in std::mem::take(&mut self.variational) {
-            for p in e.held {
-                if let Some(q) = self.params.get_mut(p as usize) {
-                    q.fixed = false;
-                }
-            }
-        }
         let mut energies: BTreeMap<usize, Energy> =
             free.iter().map(|&i| (i, Energy { curve: i, free_len: true, ..Energy::default() })).collect();
         let mut terms: BTreeMap<usize, Vec<(f64, String)>> = BTreeMap::new();
@@ -168,7 +155,10 @@ impl Sketch {
                 .all(|p| own.contains(p) || aux.contains(p) || self.params[*p as usize].fixed);
             let en = energies.get_mut(&e.i()).expect("a free curve");
             match c.kind {
-                CKind::CurveLength if others_held => en.free_len = false,
+                CKind::CurveLength if others_held => {
+                    en.free_len = false;
+                    en.stated = Some(c.args[1].num());
+                }
                 CKind::CurveLength => {}
                 CKind::PointOnCurve if others_held => {
                     if let Arg::Ent(p) = c.args[0] {
@@ -205,13 +195,11 @@ impl Sketch {
             self.curves[i].pegs = en.pegs.iter().map(|&(_, p)| p).collect();
         }
         for en in energies.values_mut() {
-            for &(cid, _) in &en.pegs {
-                let Some(t) = self.constraint(cid).and_then(|c| c.aux_params().first().copied()) else { continue };
-                if !self.params[t as usize].fixed {
-                    self.params[t as usize].fixed = true;
-                    en.held.push(t);
-                }
-            }
+            en.held = en
+                .pegs
+                .iter()
+                .filter_map(|&(cid, _)| self.constraint(cid)?.family_contact().map(|(_, t)| t))
+                .collect();
         }
         self.variational = energies.into_values().collect();
         faults
@@ -221,91 +209,77 @@ impl Sketch {
     /// once each energy is known (`program::variational::settle`):
     ///
     /// - a length a row states, at its number;
-    /// - a length nothing holds, where the energy is stationary in it (`H = 0` at the end): found
-    ///   from just over the chord upward, doubling the slack until `H` changes sign, then by
-    ///   bisection.  Near the chord the curve is taut and `H` steep, and under it no curve is
-    ///   that short, so a Newton step from a guess is no seed;
-    /// - a contact's place along a free curve, where it was left at the start (the curve had no
-    ///   shape when the contact was stated), where the curve now passes nearest.
+    /// - a length nothing holds, where the energy is stationary in it (`H = 0` at the end,
+    ///   `stationary_length`).  Near the chord the curve is taut and `H` steep, and under it no
+    ///   curve is that short, so a Newton step from a guess is no seed;
+    /// - a contact's place along a free curve that had no place to start (the curve had no shape
+    ///   when the contact was stated: `curve_nearest_by` said NaN), where the curve now passes
+    ///   nearest.
     pub fn seed_extremals(&mut self) {
         for k in 0..self.variational.len() {
-            let (i, free_len) = (self.variational[k].curve, self.variational[k].free_len);
+            let e = &self.variational[k];
+            let (i, stated) = (e.curve, e.stated);
             let Some(l) = self.curves[i].length else { continue };
             // its length where a row says, else where the energy is stationary in it — the
             // seed it was built with read its ends before they were placed
-            let stated = self.constraints.iter().find_map(|c| {
-                (c.kind == CKind::CurveLength && c.acts() && c.args[0].ent().i() == i).then(|| c.args[1].num())
-            });
             match stated {
                 Some(d) if d > 0.0 => self.params[l as usize].value = d,
-                _ if free_len && !self.variational[k].members.is_empty() => self.seed_length(i),
+                _ if e.free_len && !e.members.is_empty() => {
+                    if let Some(len) = self.stationary_length(i) {
+                        self.params[l as usize].value = len;
+                    }
+                }
                 _ => {}
             }
         }
-        let reseed: Vec<usize> = (0..self.constraints.len())
-            .filter(|&j| {
-                let c = &self.constraints[j];
-                c.kind.family_kernel().is_some()
-                    && c.curve_of().is_some_and(|e| self.curve_extremal(e.i()))
-                    && c.aux_params().first().is_some_and(|&t| {
-                        let p = &self.params[t as usize];
-                        !p.fixed && p.value == 0.0
-                    })
+        let reseed: Vec<(usize, u32)> = (0..self.constraints.len())
+            .filter_map(|j| {
+                let (e, t) = self.constraints[j].family_contact()?;
+                (self.curve_extremal(e.i()) && !self.params[t as usize].value.is_finite()).then_some((j, t))
             })
             .collect();
-        for j in reseed {
+        for (j, t) in reseed {
             let c = &self.constraints[j];
-            let slot = c.kind.spec().iter().position(|(_, s)| s.is_param()).expect("a contact's place");
-            let seed = crate::constraints::seed_param(self, c.kind, &c.args, slot);
-            let t = c.aux_params()[0];
-            self.params[t as usize].value = seed;
+            let (_, slot) = c.kind.contact_on(crate::constraints::SpecKind::Curve).expect("a curve contact");
+            self.params[t as usize].value = crate::constraints::seed_param(self, c.kind, &c.args, slot);
         }
     }
 
-    /// Free curve `i`'s length set where its energy is stationary in it.
-    fn seed_length(&mut self, i: usize) {
-        let Some(l) = self.curves[i].length else { return };
+    /// The length at which free curve `i`'s energy is stationary in it (`H = 0` at its end):
+    /// bracketed walking up from just over the chord (through its pegs), the slack doubling, then
+    /// by Illinois' regula falsi (`roots::bracketed_root`).
+    fn stationary_length(&self, i: usize) -> Option<f64> {
+        let k = self.extremal_consts(i)?;
         let v = self.curve_vars(i, 0.0);
         let mut path = vec![(v[1], v[2])];
         path.extend(self.curves[i].pegs.iter().map(|&p| self.point_xy(p as usize)));
         path.push((v[3], v[4]));
         let chord: f64 = path.windows(2).map(|w| (w[1].0 - w[0].0).dhypot(w[1].1 - w[0].1)).sum();
         if !(chord > 0.0) {
-            return;
+            return None;
         }
-        let h_at = |sk: &mut Sketch, len: f64| -> Option<f64> {
-            sk.params[l as usize].value = len;
-            let lag = sk.extremal_lagrangian(i)?;
-            let sh = sk.curve_shape(i)?;
-            Some(crate::extremal::shoot::at(lag, &sh, 1.0)?.point.h)
+        let h_at = |len: f64| -> Option<f64> {
+            let ends = crate::extremal::Ends::of(&[v[1], v[2], v[3], v[4], len]);
+            let (lag, sh) = crate::extremal::shape_for(&k, &ends)?;
+            Some(crate::extremal::shoot::at(&lag, &sh, 1.0, false)?.point.h)
         };
-        let was = self.params[l as usize].value;
         let mut lo: Option<(f64, f64)> = None;
-        let mut hi = None;
-        for k in 0..24 {
-            let len = chord * (1.0 + 1e-3 * 2f64.powi(k));
-            let Some(h) = h_at(self, len) else { continue };
+        for n in 0..24 {
+            let len = chord * (1.0 + 1e-3 * 2f64.powi(n));
+            let Some(h) = h_at(len) else { continue };
             match lo {
-                Some((_, h0)) if h.signum() != h0.signum() => {
-                    hi = Some(len);
-                    break;
+                Some((a, ha)) if h.signum() != ha.signum() => {
+                    return Some(crate::roots::bracketed_root(h_at, a, ha, len, h, 1e-12 * chord));
                 }
                 _ => lo = Some((len, h)),
             }
         }
-        let (Some((mut a, ha)), Some(mut b)) = (lo, hi) else {
-            self.params[l as usize].value = was;
-            return;
-        };
-        for _ in 0..60 {
-            let m = 0.5 * (a + b);
-            match h_at(self, m) {
-                Some(h) if h.signum() == ha.signum() => a = m,
-                Some(_) => b = m,
-                None => break,
-            }
-        }
-        self.params[l as usize].value = 0.5 * (a + b);
+        None
+    }
+
+    /// The places of the pegs some free curve's problem has absorbed (`Energy::held`).
+    pub fn pegged_places(&self) -> std::collections::BTreeSet<u32> {
+        self.variational.iter().flat_map(|e| e.held.iter().copied()).collect()
     }
 
     /// The energy over free curve `i`, if one is stated.
@@ -347,15 +321,17 @@ pub fn pack(sk: &Sketch, cid: u32) -> Vec<f64> {
 
 /// Its kernel: `H` at the curve's end over `[a, b, L]`, of the integrand's degree.
 pub fn kernel(sk: &Sketch, cid: u32) -> Kernel {
-    let degree = sk
-        .constraint(cid)
-        .and_then(|c| sk.energy_of(c.args[0].ent().i()))
-        .map_or(1, |e| e.degree);
+    let curve = sk.constraint(cid).map(|c| c.args[0].ent().i());
+    let degree = curve.and_then(|i| sk.energy_of(i)).map_or(1, |e| e.degree);
+    let n_const = match curve.map(|i| &sk.curve_defs[sk.curves[i].def as usize].body) {
+        Some(crate::model::CurveBody::Extremal(x)) => x.n_const(),
+        _ => 0,
+    };
     Kernel {
         name: "transversal",
         n_res: 1,
         n_par: 5,
-        n_const: pack(sk, cid).len(),
+        n_const,
         degree,
         res: crate::extremal::transversal_res,
         jac: crate::extremal::transversal_jac,
@@ -407,9 +383,9 @@ pub fn extrema(sk: &Sketch) -> Vec<(u32, Extremum)> {
         if e.members.is_empty() {
             continue;
         }
-        let v = match (sk.extremal_lagrangian(e.curve), sk.curve_shape(e.curve)) {
-            (Some(lag), Some(sh)) => crate::extremal::verdict(lag, &sh, e.free_len),
-            _ => Extremum::Unsolved,
+        let v = match sk.curve_shape(e.curve) {
+            Some((lag, sh)) => crate::extremal::verdict(&lag, &sh, e.free_len),
+            None => Extremum::Unsolved,
         };
         // the Lagrangian is negated for a `maximizes`, so its minimum is the energy's maximum
         let v = if e.maximize { v.turned() } else { v };

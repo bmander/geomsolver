@@ -18,9 +18,9 @@ fn stamp_plane(stmts: &mut [Stmt], plane: &Ref, errs: &mut Vec<SynErr>) {
     for st in stmts {
         match &mut st.kind {
             StmtKind::Decl(d) => {
-                // Faces and solids use the planes of their constituent geometry, and a curve
-                // the view of what it is written over.
-                if d.kind.spatial() || d.kind == EntKind::Curve {
+                // Faces and solids use the planes of their constituent geometry, and a free curve
+                // the view of the points it runs between.
+                if d.kind.spatial() || (d.kind == EntKind::Curve && d.curve.is_none()) {
                 } else if !d.kind.bears_points() {
                     errs.push(SynErr {
                         span: st.span,

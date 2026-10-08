@@ -334,10 +334,11 @@ impl Sketch {
     /// `System` folds into the parameters it is worked out from).
     pub fn free_indices(&self) -> Vec<i32> {
         let derived = self.derived_mask();
+        let pegged = self.pegged_places();
         self.params
             .iter()
             .enumerate()
-            .filter(|&(i, p)| !p.fixed && !derived.get(i).copied().unwrap_or(false))
+            .filter(|&(i, p)| !p.fixed && !derived.get(i).copied().unwrap_or(false) && !pegged.contains(&(i as u32)))
             .map(|(i, _)| i as i32)
             .collect()
     }
@@ -346,8 +347,9 @@ impl Sketch {
     pub fn perturb(&mut self, sigma: f64, seed: u32) {
         let mut rng = Rng::new(seed);
         let derived = self.derived_mask();
+        let pegged = self.pegged_places();
         for (i, p) in self.params.iter_mut().enumerate() {
-            if !p.fixed && !derived.get(i).copied().unwrap_or(false) {
+            if !p.fixed && !derived.get(i).copied().unwrap_or(false) && !pegged.contains(&(i as u32)) {
                 p.value += rng.normal(0.0, sigma) / p.scale;
             }
         }

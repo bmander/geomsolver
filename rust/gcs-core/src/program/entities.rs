@@ -94,8 +94,9 @@ fn build_free_curve(sk: &mut Sketch, res: &Resolver, d: &Decl, st: &Stmt, diags:
         );
     }
     let (a, b) = (sk.point_xy(ends[0].i()), sk.point_xy(ends[1].i()));
-    let chord = (b.0 - a.0).hypot(b.1 - a.1);
-    let length = sk.param((1.2 * chord).max(1.0), false, &format!("{}.length", shown(sk, d))) as u32;
+    // a gentle sag over the chord, until `Sketch::seed_extremals` seeds it once the ends are placed
+    let chord = (b.0 - a.0).dhypot(b.1 - a.1);
+    let length = sk.param((crate::extremal::shoot::EASY * chord).max(1.0), false, &format!("{}.length", shown(sk, d))) as u32;
     let def = match sk.curve_defs.iter().position(|c| c.name == "extremal:") {
         Some(k) => k,
         None => {

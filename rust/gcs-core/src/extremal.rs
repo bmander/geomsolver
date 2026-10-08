@@ -36,6 +36,11 @@ pub fn write(lag: &Lagrangian, pegs: &[[f64; 2]], out: &mut Vec<f64>) {
     }
 }
 
+/// How many numbers `write` writes.
+pub fn width(lag: &Lagrangian, pegs: usize) -> usize {
+    3 + lag.tapes.iter().map(Vec::len).sum::<usize>() + 1 + 2 * pegs
+}
+
 /// What `write` wrote.
 pub fn read(k: &[f64]) -> Option<(Lagrangian, Vec<[f64; 2]>)> {
     let (lag, rest) = Lagrangian::read(k)?;
@@ -44,87 +49,77 @@ pub fn read(k: &[f64]) -> Option<(Lagrangian, Vec<[f64; 2]>)> {
     Some((lag, pegs))
 }
 
-fn ends_of(theta: &[f64]) -> Option<Ends> {
-    (theta.len() >= 5).then(|| Ends { a: [theta[0], theta[1]], b: [theta[2], theta[3]], len: theta[4] })
-}
-
 /* -- the memo ----------------------------------------------------------------------------- */
 
 thread_local! {
-    /// The last shape each curve's problem was solved to, by the problem's constants — what a
-    /// contact, the transversality row and the drawing all read, so a curve is solved once
-    /// for all of them.  Asked again at the same ends it is the answer, at neighbouring ones where
-    /// the next solve starts.  By content, not by where the constants live: a recompile keeps
-    /// every curve warm, and a different curve can never read another's.
-    static SEEN: std::cell::RefCell<std::collections::BTreeMap<u64, Vec<(Vec<f64>, Shape)>>> =
+    /// The last shapes each curve's problem was solved to, by the problem's constants — what a
+    /// contact, the transversality row and the drawing all read, so a curve is solved once for
+    /// all of them.  Asked again at the same ends a shape is the answer, at neighbouring ones the
+    /// nearest is where the next solve starts.  By content, not by where the constants live, so a
+    /// recompile keeps every curve warm; a few a problem, for two curves under one energy and a
+    /// rejected trial step beside the pose it was tried from.
+    static SEEN: std::cell::RefCell<std::collections::BTreeMap<Vec<u64>, Vec<Shape>>> =
         std::cell::RefCell::new(std::collections::BTreeMap::new());
 }
 
 const SEEN_MAX: usize = 1024;
+const KEEP: usize = 4;
 
-/// Forget every remembered shape.
-pub fn forget() {
-    SEEN.with(|s| s.borrow_mut().clear());
-}
-
-/// An FNV-1a hash of the constants' bits.
-fn digest(k: &[f64]) -> u64 {
-    k.iter().fold(0xcbf2_9ce4_8422_2325u64, |h, v| (h ^ v.to_bits()).wrapping_mul(0x0100_0000_01b3))
-}
-
-/// The shape a problem's constants and outer columns come to, warm from the last.
-pub fn shape_for(k: &[f64], lag: &Lagrangian, pegs: &[[f64; 2]], ends: &Ends) -> Option<Shape> {
-    let key = digest(k);
+/// The shape a curve's problem (its constants, `write`'s) and ends come to, warm from the
+/// nearest remembered — with the problem's Lagrangian, read off the constants.
+pub fn shape_for(k: &[f64], ends: &Ends) -> Option<(Lagrangian, Shape)> {
+    let (lag, pegs) = read(k)?;
+    let key: Vec<u64> = k.iter().map(|v| v.to_bits()).collect();
+    let o = ends.outer();
+    let far = |sh: &Shape| sh.ends.outer().iter().zip(&o).map(|(a, b)| (a - b).abs()).fold(0.0, f64::max);
     let prev = SEEN.with(|s| {
-        s.borrow().get(&key).and_then(|v| v.iter().find(|(c, _)| c == k).map(|(_, sh)| sh.clone()))
+        let s = s.borrow();
+        let v = s.get(&key)?;
+        v.iter().min_by(|a, b| far(a).total_cmp(&far(b))).cloned()
     });
-    let sh = shoot::solve(lag, ends, pegs, prev.as_ref())?;
+    if let Some(p) = prev.as_ref().filter(|p| p.ends == *ends) {
+        return Some((lag, p.clone()));
+    }
+    let sh = shoot::solve(&lag, ends, &pegs, prev.as_ref())?;
     SEEN.with(|s| {
         let mut s = s.borrow_mut();
         if s.len() >= SEEN_MAX {
             s.clear();
         }
         let v = s.entry(key).or_default();
-        match v.iter_mut().find(|(c, _)| c == k) {
-            Some(e) => e.1 = sh.clone(),
-            None => v.push((k.to_vec(), sh.clone())),
-        }
+        v.insert(0, sh.clone());
+        v.truncate(KEEP);
     });
-    Some(sh)
-}
-
-/// A curve's shape from its constants and outer columns, as every reader asks it.
-fn shape_of(k: &[f64], theta: &[f64]) -> Option<(Lagrangian, Shape)> {
-    let (lag, pegs) = read(k)?;
-    let ends = ends_of(theta)?;
-    let sh = shape_for(k, &lag, &pegs, &ends)?;
     Some((lag, sh))
 }
 
 /* -- reading a shape ---------------------------------------------------------------------- */
 
-/// `C`, `C'`, `C''` at `u` and the gradients of the first two over `[u, a, b, L]`.
+/// `C`, `C'`, `C''` at `u` and — where asked — the gradients of the first two over `[u, a, b, L]`.
 struct Read {
     c: [[f64; 2]; 3],
     g: [[[f64; 6]; 2]; 2],
 }
 
-fn read_at(lag: &Lagrangian, sh: &Shape, u: f64) -> Option<Read> {
-    let at = shoot::at(lag, sh, u)?;
+fn read_at(lag: &Lagrangian, sh: &Shape, u: f64, deriv: bool) -> Option<Read> {
+    let at = shoot::at(lag, sh, u, deriv)?;
     let len = sh.ends.len;
     let (sn, cs) = at.theta.dsin_cos();
+    let tz = at.point.theta_z();
     // dθ/ds, and dθ over the columns
-    let rate: f64 = (0..4).map(|i| at.tz[i] * at.f[i]).sum();
-    let dth: [f64; 6] = std::array::from_fn(|j| (0..4).map(|i| at.tz[i] * at.dz[i * 6 + j]).sum());
+    let rate: f64 = (0..4).map(|i| tz[i] * at.f[i]).sum();
     let mut g = [[[0.0f64; 6]; 2]; 2];
-    for j in 0..6 {
-        g[0][0][j] = at.dz[j];
-        g[0][1][j] = at.dz[6 + j];
-        g[1][0][j] = -len * sn * dth[j];
-        g[1][1][j] = len * cs * dth[j];
+    if deriv {
+        let dth: [f64; 6] = std::array::from_fn(|j| (0..4).map(|i| tz[i] * at.dz[i * 6 + j]).sum());
+        for j in 0..6 {
+            g[0][0][j] = at.dz[j];
+            g[0][1][j] = at.dz[6 + j];
+            g[1][0][j] = -len * sn * dth[j];
+            g[1][1][j] = len * cs * dth[j];
+        }
+        g[1][0][5] += cs;
+        g[1][1][5] += sn;
     }
-    g[1][0][5] += cs;
-    g[1][1][5] += sn;
     let k2 = len * len * rate;
     Some(Read { c: [[at.z[0], at.z[1]], [len * cs, len * sn], [-k2 * sn, k2 * cs]], g })
 }
@@ -134,28 +129,34 @@ fn read_at(lag: &Lagrangian, sh: &Shape, u: f64) -> Option<Read> {
 fn third(lag: &Lagrangian, sh: &Shape, u: f64) -> Option<[f64; 2]> {
     const DU: f64 = 1e-5;
     let (lo, hi) = ((u - DU).max(0.0), (u + DU).min(1.0));
-    let a = read_at(lag, sh, lo)?.c[2];
-    let b = read_at(lag, sh, hi)?.c[2];
+    let a = read_at(lag, sh, lo, false)?.c[2];
+    let b = read_at(lag, sh, hi, false)?.c[2];
     Some([(b[0] - a[0]) / (hi - lo), (b[1] - a[1]) / (hi - lo)])
 }
 
-/// A contact's evaluation (`kernels::body_val`'s for this body): `C` and its derivatives in `u`
-/// to `need`, and the gradient of `C` over `[u, θ…]` (`θ…` = `a`, `b`, `L`).  NaN where the
-/// shape cannot be had.
-pub fn kernel_eval(k: &[f64], u: f64, theta: &[f64], need: u8) -> Val {
+/// A contact's reading at `u`: the shape its constants and columns come to, and what it is there.
+fn frame_at(k: &[f64], u: f64, theta: &[f64], deriv: bool) -> Option<(Lagrangian, Shape, Read)> {
+    let ends = (theta.len() >= 5).then(|| Ends::of(theta))?;
+    let (lag, sh) = shape_for(k, &ends)?;
+    let r = read_at(&lag, &sh, u, deriv)?;
+    Some((lag, sh, r))
+}
+
+fn val_of(lag: &Lagrangian, sh: &Shape, r: &Read, u: f64, need: u8) -> Val {
     let mut v = Val::default();
-    let Some((lag, sh)) = shape_of(k, theta) else { return v };
-    let Some(r) = read_at(&lag, &sh, u) else { return v };
     v.x = r.c[0][0];
     v.y = r.c[0][1];
     for j in 0..6.min(MAX_VARS) {
         v.dx[j] = r.g[0][0][j];
         v.dy[j] = r.g[0][1][j];
     }
+    // `C'` is the gradient's `u` column, there whether the rest was asked for or not
+    v.dx[0] = r.c[1][0];
+    v.dy[0] = r.c[1][1];
     v.d2 = r.c[2];
     v.orders = 2;
     if need >= 3 {
-        if let Some(d3) = third(&lag, &sh, u) {
+        if let Some(d3) = third(lag, sh, u) {
             v.d3 = d3;
             v.orders = 3;
         }
@@ -164,18 +165,24 @@ pub fn kernel_eval(k: &[f64], u: f64, theta: &[f64], need: u8) -> Val {
     v
 }
 
+/// A contact's evaluation (`kernels::body_val`'s for this body): `C` and its derivatives in `u`
+/// to `need`, and — where `gradient` — the gradient of `C` over `[u, θ…]` (`θ…` = `a`, `b`, `L`).
+/// NaN where the shape cannot be had.
+pub fn kernel_eval(k: &[f64], u: f64, theta: &[f64], need: u8, gradient: bool) -> Val {
+    match frame_at(k, u, theta, gradient) {
+        Some((lag, sh, r)) => val_of(&lag, &sh, &r, u, need),
+        None => Val::default(),
+    }
+}
+
 /// A contact's frame (`kernels::curve_frame`'s): the evaluation, the gradient of `C'`, and, asked
 /// for (`need` 3), of `C''` — along `u` that is `C'''`, along the ends and the length a central
 /// difference of solves warm from this one.
 pub fn kernel_frame(k: &[f64], u: f64, theta: &[f64], need: u8) -> Frame {
-    let val = kernel_eval(k, u, theta, need);
     let mut d1 = [[0.0f64; MAX_VARS]; 2];
     let mut d2 = [[f64::NAN; MAX_VARS]; 2];
-    if !val.ok {
-        return Frame { val, d1, d2 };
-    }
-    let Some((lag, sh)) = shape_of(k, theta) else { return Frame { val, d1, d2 } };
-    let Some(r) = read_at(&lag, &sh, u) else { return Frame { val, d1, d2 } };
+    let Some((lag, sh, r)) = frame_at(k, u, theta, true) else { return Frame { val: Val::default(), d1, d2 } };
+    let val = val_of(&lag, &sh, &r, u, need);
     for j in 0..6 {
         d1[0][j] = r.g[1][0][j];
         d1[1][j] = r.g[1][1][j];
@@ -184,13 +191,13 @@ pub fn kernel_frame(k: &[f64], u: f64, theta: &[f64], need: u8) -> Frame {
         d2[0][0] = val.d3[0];
         d2[1][0] = val.d3[1];
         let o = sh.ends.outer();
+        let h = 1e-6 * sh.ends.len.abs().max(1.0);
         for c in 0..5 {
-            let h = 1e-6 * sh.ends.len.abs().max(1.0);
             let at = |sign: f64| -> Option<[f64; 2]> {
                 let mut oo = o;
                 oo[c] += sign * h;
                 let s = shoot::solve(&lag, &Ends::of(&oo), &sh.pegs, Some(&sh))?;
-                Some(read_at(&lag, &s, u)?.c[2])
+                Some(read_at(&lag, &s, u, false)?.c[2])
             };
             if let (Some(p), Some(m)) = (at(1.0), at(-1.0)) {
                 d2[0][1 + c] = (p[0] - m[0]) / (2.0 * h);
@@ -209,10 +216,9 @@ pub fn kernel_frame(k: &[f64], u: f64, theta: &[f64], need: u8) -> Frame {
 pub fn transversal_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
     let nk = k.len() / n.max(1);
     for i in 0..n {
-        r[i] = match shape_of(&k[nk * i..nk * (i + 1)], &v[5 * i..5 * i + 5]) {
-            Some((lag, sh)) => shoot::at(&lag, &sh, 1.0).map_or(f64::NAN, |a| a.point.h),
-            None => f64::NAN,
-        };
+        r[i] = shape_for(&k[nk * i..nk * (i + 1)], &Ends::of(&v[5 * i..]))
+            .and_then(|(lag, sh)| shoot::at(&lag, &sh, 1.0, false))
+            .map_or(f64::NAN, |a| a.point.h);
     }
 }
 
@@ -222,25 +228,22 @@ pub fn transversal_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
     for i in 0..n {
         let row = &mut j[5 * i..5 * i + 5];
         row.fill(f64::NAN);
-        let Some((lag, sh)) = shape_of(&k[nk * i..nk * (i + 1)], &v[5 * i..5 * i + 5]) else { continue };
-        let Some(a) = shoot::at(&lag, &sh, 1.0) else { continue };
-        let (sn, cs) = a.theta.dsin_cos();
-        let hz = [a.point.d.x, a.point.d.y, cs, sn];
+        let Some((lag, sh)) = shape_for(&k[nk * i..nk * (i + 1)], &Ends::of(&v[5 * i..])) else { continue };
+        let Some(a) = shoot::at(&lag, &sh, 1.0, true) else { continue };
+        let hz = a.point.h_z();
         for c in 0..5 {
             row[c] = (0..4).map(|q| hz[q] * a.dz[q * 6 + 1 + c]).sum();
         }
     }
 }
 
-/// The curve sampled at `n + 1` even steps of its parameter, for drawing and picking.
-pub fn sweep(lag: &Lagrangian, sh: &Shape, n: usize) -> Vec<(f64, f64)> {
+/// The curve over `[a, b]` of its parameter at `n + 1` even steps, for drawing and picking —
+/// positions alone.
+pub fn points(lag: &Lagrangian, sh: &Shape, a: f64, b: f64, n: usize) -> Vec<(f64, f64)> {
     (0..=n)
         .map(|i| {
-            let u = i as f64 / n as f64;
-            match shoot::at(lag, sh, u) {
-                Some(a) => (a.z[0], a.z[1]),
-                None => (f64::NAN, f64::NAN),
-            }
+            let u = a + (b - a) * i as f64 / n as f64;
+            shoot::position(lag, sh, u).map_or((f64::NAN, f64::NAN), |p| (p[0], p[1]))
         })
         .collect()
 }
@@ -319,7 +322,7 @@ fn legendre(lag: &Lagrangian, sh: &Shape) -> Option<f64> {
 /// sampled at every step and between.  `None` where the arc's end is itself conjugate.
 fn conjugate(lag: &Lagrangian, sh: &Shape, j: usize) -> Option<usize> {
     let scale = sh.ends.len.abs().max(1e-9);
-    let mut psi = [1.0, 0., 0., 0., 0., 1., 0., 0., 0., 0., 1., 0., 0., 0., 0., 1.];
+    let mut psi = shoot::IDENTITY;
     let det_of = |m: &[f64; 16]| {
         let (a, b, c, d) = (m[2], m[3], m[6], m[7]);
         let n = a.dhypot(c) * b.dhypot(d);
@@ -341,7 +344,7 @@ fn conjugate(lag: &Lagrangian, sh: &Shape, j: usize) -> Option<usize> {
         for w in piece.nodes.windows(2) {
             for q in 1..4 {
                 let s = w[0].s + (w[1].s - w[0].s) * q as f64 / 4.0;
-                let n = shoot::within(lag, piece, s, scale)?;
+                let n = shoot::within(lag, piece, s, scale, true)?;
                 samples.push(n.phi);
             }
             samples.push(w[1].phi);

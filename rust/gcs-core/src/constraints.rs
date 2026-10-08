@@ -1472,7 +1472,7 @@ impl CKind {
     /// names the entity and which holds the parameter along it.  Read off the spec, so a new
     /// kind of contact is covered by declaring one — there is no table of kinds here to forget
     /// to extend.
-    fn contact_on(self, of: SpecKind) -> Option<(usize, usize)> {
+    pub(crate) fn contact_on(self, of: SpecKind) -> Option<(usize, usize)> {
         let spec = self.spec();
         let e = spec.iter().position(|&(_, k)| k == of)?;
         let t = spec.iter().position(|&(_, k)| k.is_param())?;
@@ -1636,7 +1636,7 @@ impl CKind {
                 panic!("a curve contact's kernel belongs to its definition, not its type")
             }
             CKind::SplineLength => panic!("a spline length's kernel belongs to its spline's count"),
-            CKind::Stationary => panic!("an energy's kernel belongs to its group"),
+            CKind::Stationary => panic!("an energy's kernel belongs to its curve"),
             CKind::CurveLength => K::Radius,
             CKind::Coincident => K::Coincident,
             CKind::Distance => K::Distance,
@@ -2260,8 +2260,8 @@ impl Constraint {
     }
 
     /// Rows this constraint compiles to, when the sketch is at hand: `n_residuals` for every kind
-    /// whose rows are a fact about it, and an energy's — one per coordinate its group varies,
-    /// carried by the group's first constraint (`variational.rs`).
+    /// whose rows are a fact about it; an energy's — its curve's length stationary, one row on its
+    /// first statement where nothing holds the length — and a peg's, none (`variational.rs`).
     pub fn rows_in(&self, sk: &Sketch) -> usize {
         match self.kind {
             CKind::Stationary => crate::variational::rows(sk, self.id),
@@ -2387,7 +2387,7 @@ impl Constraint {
         match self.kind.family_kernel() {
             Some(fk) => fk.n_res(),
             None if self.kind == CKind::SplineLength => 1,
-            // its group's, which only the sketch can say: `rows_in`
+            // its curve's, which only the sketch can say: `rows_in`
             None if self.kind == CKind::Stationary => 0,
             None => kernels::kernel(self.kernel()).n_res,
         }
@@ -3609,7 +3609,7 @@ pub fn param_scale(sk: &Sketch, kind: CKind, args: &[Arg], i: usize) -> f64 {
     // Whichever family the contact runs along, the question is the same one, so it is asked once
     // and answered by the entity the slot actually names.  A hidden unknown that runs along
     // nothing is a length already.
-    match kind.contact_slots() {
+    match kind.contact_slots().or_else(|| kind.contact_on(SpecKind::Curve)) {
         Some((e, t)) if t == i => contact_speed(sk, args[e].ent()),
         _ => 1.0,
     }
@@ -3619,7 +3619,11 @@ pub fn param_scale(sk: &Sketch, kind: CKind, args: &[Arg], i: usize) -> f64 {
 /// — the one answer, so the seed `Sketch::add` records and the scale `System::new` compiles
 /// against cannot come from two different rules.
 pub fn contact_speed(sk: &Sketch, e: EntRef) -> f64 {
-    crate::curve::speed(sk, e.i())
+    match e.kind {
+        // a free curve runs over [0, 1] at its length's speed; another curve's parameter is its own
+        EntKind::Curve => sk.curves[e.i()].length.map_or(1.0, |l| sk.params[l as usize].value.abs().max(1e-9)),
+        _ => crate::curve::speed(sk, e.i()),
+    }
 }
 
 fn same_args(a: &Constraint, b: &Constraint, swap: bool, want: impl Fn(SpecKind) -> bool)

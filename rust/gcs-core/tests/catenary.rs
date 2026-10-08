@@ -333,3 +333,4 @@ fn a_rope_too_short_to_reach_is_unsolved() {
     assert_eq!(verdicts(&mut e), ["unsolved"]);
     assert!(e.sketch.curve_polyline(0).is_empty());
 }
+

@@ -17,7 +17,7 @@ use super::flow::{self, Flow, Lagrangian};
 /// Pieces per arc.
 pub const SEGMENTS: usize = 4;
 
-/// What a curve's shape is asked for: its ends, its length, and the held points it passes.
+/// What a curve's shape is asked for: its ends and its length.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Ends {
     pub a: [f64; 2],
@@ -31,7 +31,8 @@ impl Ends {
         [self.a[0], self.a[1], self.b[0], self.b[1], self.len]
     }
 
-    pub fn of(o: &[f64; 5]) -> Ends {
+    /// The ends from the curve's columns, `a`, `b`, the length (five numbers or more).
+    pub fn of(o: &[f64]) -> Ends {
         Ends { a: [o[0], o[1]], b: [o[2], o[3]], len: o[4] }
     }
 
@@ -41,12 +42,10 @@ impl Ends {
     }
 }
 
-/// One integrated piece: where it starts along the curve, how long it is, and the state at each
-/// step's end with its sensitivity to the piece's start (`phi`, 4 × 4, row-major).
+/// One integrated piece: the state at each step's end with its sensitivity to the piece's start
+/// (`phi`, 4 × 4, row-major).
 #[derive(Clone, Debug)]
 pub struct Piece {
-    pub s0: f64,
-    pub len: f64,
     pub nodes: Vec<Node>,
 }
 
@@ -58,7 +57,7 @@ pub struct Node {
     pub phi: [f64; 16],
 }
 
-const IDENTITY: [f64; 16] = [1., 0., 0., 0., 0., 1., 0., 0., 0., 0., 1., 0., 0., 0., 0., 1.];
+pub(super) const IDENTITY: [f64; 16] = [1., 0., 0., 0., 0., 1., 0., 0., 0., 0., 1., 0., 0., 0., 0., 1.];
 
 /// The most steps a piece may take — a flow needing more is followed nowhere near its answer.
 const STEPS_MAX: usize = 4000;
@@ -101,12 +100,12 @@ pub fn integrate(lag: &Lagrangian, s0: f64, z0: [f64; 4], theta: f64, len: f64, 
             h = flow::next_h(hh, err).min(hh * 0.5);
         }
     }
-    Some(Piece { s0, len, nodes })
+    Some(Piece { nodes })
 }
 
 /// The state at `s` within a piece (its start ≤ `s` ≤ its end): one step from the node before
-/// it, with the sensitivity to the piece's start (the piece integrated with them).
-pub fn within(lag: &Lagrangian, piece: &Piece, s: f64, scale_len: f64) -> Option<Node> {
+/// it, with the sensitivity to the piece's start where `sens` (the piece integrated with them).
+pub fn within(lag: &Lagrangian, piece: &Piece, s: f64, scale_len: f64, sens: bool) -> Option<Node> {
     let i = piece.nodes.partition_point(|n| n.s <= s).saturating_sub(1);
     let n = piece.nodes[i];
     let h = s - n.s;
@@ -118,9 +117,12 @@ pub fn within(lag: &Lagrangian, piece: &Piece, s: f64, scale_len: f64) -> Option
     let mut y = [0.0; flow::WIDTH];
     y[..4].copy_from_slice(&n.z);
     y[4..].copy_from_slice(&n.phi);
-    let (y1, _) = flow::step(&mut flow, n.theta, &y, h, 4, &[scale_len, scale_len, lam, lam])?;
-    let mut phi = [0.0; 16];
-    phi.copy_from_slice(&y1[4..20]);
+    let m = if sens { 4 } else { 0 };
+    let (y1, _) = flow::step(&mut flow, n.theta, &y, h, m, &[scale_len, scale_len, lam, lam])?;
+    let mut phi = IDENTITY;
+    if sens {
+        phi.copy_from_slice(&y1[4..20]);
+    }
     Some(Node { s, z: [y1[0], y1[1], y1[2], y1[3]], theta: flow.theta, phi })
 }
 
@@ -184,20 +186,41 @@ pub struct Shape {
     pub places: Vec<f64>,
     pub pieces: Vec<Piece>,
     pub dq: Vec<f64>,
-    /// Each piece's direction where it starts, to start the next solve's from.
-    pub thetas: Vec<f64>,
+}
+
+/// Each piece's direction where it starts — where the next solve's start from.
+fn thetas(pieces: &[Piece]) -> Vec<f64> {
+    pieces.iter().map(|p| p.nodes[0].theta).collect()
 }
 
 /// The rows, their Jacobian in the unknowns and in the outer columns, at one set of unknowns.
 struct Eval {
     r: Vec<f64>,
+    /// What each row is measured against, for convergence.
+    w: Vec<f64>,
     jq: Vec<f64>,
     jo: Vec<f64>,
     pieces: Vec<Piece>,
     places: Vec<f64>,
-    thetas: Vec<f64>,
-    /// What each row is measured against, for convergence.
-    w: Vec<f64>,
+}
+
+impl Eval {
+    /// Push a row: its value, what it is measured against, and its derivative over what it
+    /// depends on (where the Jacobian is asked for).
+    fn push(&mut self, n: usize, value: f64, scale: f64, deps: impl IntoIterator<Item = (Var, f64)>) -> usize {
+        let row = self.r.len();
+        self.r.push(value);
+        self.w.push(scale);
+        if !self.jq.is_empty() {
+            for (v, f) in deps {
+                match v {
+                    Var::Q(i) => self.jq[row * n + i] += f,
+                    Var::O(i) => self.jo[row * 5 + i] += f,
+                }
+            }
+        }
+        row
+    }
 }
 
 struct Problem<'a> {
@@ -209,7 +232,12 @@ struct Problem<'a> {
     held: &'a [f64],
 }
 
-impl Problem<'_> {
+impl<'a> Problem<'a> {
+    /// The problem with every peg's place free.
+    fn free(lag: &'a Lagrangian, ends: &'a Ends, pegs: &'a [[f64; 2]]) -> Problem<'a> {
+        Problem { lag, ends, pegs, lay: Layout { pegs: pegs.len(), held: false }, held: &[] }
+    }
+
     fn places(&self, q: &[f64]) -> Vec<f64> {
         let k = self.lay.pegs;
         let mut p = Vec::with_capacity(k + 2);
@@ -224,15 +252,6 @@ impl Problem<'_> {
         p
     }
 
-    /// Arc `j`'s start point and what it depends on.
-    fn arc_point(&self, j: usize) -> ([f64; 2], [Option<Var>; 2]) {
-        if j == 0 {
-            (self.ends.a, [Some(Var::O(0)), Some(Var::O(1))])
-        } else {
-            (self.pegs[j - 1], [None, None])
-        }
-    }
-
     /// The place `j` and what it is (0 and the length are a constant and an outer column).
     fn place_var(&self, j: usize) -> Option<Var> {
         if j == 0 {
@@ -244,18 +263,19 @@ impl Problem<'_> {
         }
     }
 
-    /// Piece `(j, m)`'s starting state and what each component depends on.
+    /// Piece `(j, m)`'s starting state and what each component depends on: arc 0's start point
+    /// on `a`, a later arc's on its peg, its costate an unknown; a later piece's all four.
     fn start(&self, q: &[f64], j: usize, m: usize) -> ([f64; 4], [Option<Var>; 4]) {
         if m == 0 {
-            let (p, dp) = self.arc_point(j);
+            let (p, dp) = match j {
+                0 => (self.ends.a, [Some(Var::O(0)), Some(Var::O(1))]),
+                _ => (self.pegs[j - 1], [None, None]),
+            };
             let l = self.lay.lambda(j);
             ([p[0], p[1], q[l], q[l + 1]], [dp[0], dp[1], Some(Var::Q(l)), Some(Var::Q(l + 1))])
         } else {
             let n = self.lay.node(j, m);
-            (
-                [q[n], q[n + 1], q[n + 2], q[n + 3]],
-                [Some(Var::Q(n)), Some(Var::Q(n + 1)), Some(Var::Q(n + 2)), Some(Var::Q(n + 3))],
-            )
+            ([q[n], q[n + 1], q[n + 2], q[n + 3]], std::array::from_fn(|c| Some(Var::Q(n + c))))
         }
     }
 
@@ -264,130 +284,85 @@ impl Problem<'_> {
         let k = self.lay.pegs;
         let places = self.places(q);
         let scale_len = self.ends.scale();
-        let mut r = Vec::with_capacity(n);
-        let mut w = Vec::with_capacity(n);
-        let mut jq = vec![0.0; if jac { n * n } else { 0 }];
-        let mut jo = vec![0.0; if jac { n * 5 } else { 0 }];
-        let mut pieces = Vec::with_capacity((k + 1) * SEGMENTS);
-        let mut new_thetas = Vec::with_capacity((k + 1) * SEGMENTS);
+        let mut e = Eval {
+            r: Vec::with_capacity(n),
+            w: Vec::with_capacity(n),
+            jq: vec![0.0; if jac { n * n } else { 0 }],
+            jo: vec![0.0; if jac { n * 5 } else { 0 }],
+            pieces: Vec::with_capacity((k + 1) * SEGMENTS),
+            places: Vec::new(),
+        };
         let lam_scale = (0..=k)
             .map(|j| q[self.lay.lambda(j)].dhypot(q[self.lay.lambda(j) + 1]))
             .fold(1e-300, f64::max);
-        let add = |jq: &mut Vec<f64>, jo: &mut Vec<f64>, row: usize, v: Var, f: f64| match v {
-            Var::Q(i) => jq[row * n + i] += f,
-            Var::O(i) => jo[row * 5 + i] += f,
-        };
-        let mut h_start = vec![0.0; k + 1];
-        let mut h_start_d: Vec<([f64; 4], [Option<Var>; 4])> = Vec::with_capacity(k + 1);
+        // each `H` row (the arc before a peg's end), and the arc after's start, filled in below
+        let mut h_rows = Vec::with_capacity(k);
+        let mut h_starts = Vec::with_capacity(k);
         for j in 0..=k {
             let len_arc = places[j + 1] - places[j];
             if !(len_arc > 0.0) {
                 return None;
             }
             let h = len_arc / SEGMENTS as f64;
+            // ∂h/∂(places): h = (s_{j+1} − s_j)/SEGMENTS
+            let dh = [(self.place_var(j), -1.0 / SEGMENTS as f64), (self.place_var(j + 1), 1.0 / SEGMENTS as f64)];
             for m in 0..SEGMENTS {
                 let (z0, dz0) = self.start(q, j, m);
-                let s0 = places[j] + h * m as f64;
                 let th = thetas.get(j * SEGMENTS + m).copied().unwrap_or(0.0);
-                let piece = integrate(self.lag, s0, z0, th, h, scale_len, jac)?;
-                new_thetas.push(piece.nodes[0].theta);
-                if m == 0 {
-                    let mut fl = Flow::new(self.lag, piece.nodes[0].theta);
-                    let p = fl.at(&z0, false)?;
-                    let (sn, cs) = p.theta.dsin_cos();
-                    h_start[j] = p.h;
-                    h_start_d.push(([p.d.x, p.d.y, cs, sn], dz0));
+                let piece = integrate(self.lag, places[j] + h * m as f64, z0, th, h, scale_len, jac)?;
+                if m == 0 && j > 0 && !self.lay.held {
+                    let p = Flow::new(self.lag, piece.nodes[0].theta).at(&z0, false)?;
+                    h_starts.push((p.h, p.h_z(), dz0));
                 }
                 let end = *piece.nodes.last().expect("a node");
-                // the piece's end, and its derivative in its length: the flow there
-                let mut fl = Flow::new(self.lag, end.theta);
-                let mut fz = [0.0; 4];
-                if !fl.rhs(&end.z, &mut fz, 0) {
-                    return None;
-                }
-                let pe = fl.at(&end.z, false)?;
-                // ∂h/∂(places): h = (s_{j+1} − s_j)/SEGMENTS
-                let dh = [(self.place_var(j), -1.0 / SEGMENTS as f64), (self.place_var(j + 1), 1.0 / SEGMENTS as f64)];
-                let emit = |r: &mut Vec<f64>, w: &mut Vec<f64>, jq: &mut Vec<f64>, jo: &mut Vec<f64>,
-                                comps: std::ops::Range<usize>, target: &[f64], tdep: &[Option<Var>], scale: &[f64]| {
-                    for (ii, c) in comps.enumerate() {
-                        let row = r.len();
-                        r.push(end.z[c] - target[ii]);
-                        w.push(scale[ii]);
-                        if !jac {
-                            continue;
-                        }
-                        for (cc, d) in dz0.iter().enumerate() {
-                            if let Some(v) = d {
-                                add(jq, jo, row, *v, end.phi[c * 4 + cc]);
-                            }
-                        }
-                        for (pv, f) in dh {
-                            if let Some(v) = pv {
-                                add(jq, jo, row, v, fz[c] * f);
-                            }
-                        }
-                        if let Some(v) = tdep[ii] {
-                            add(jq, jo, row, v, -1.0);
-                        }
-                    }
+                let pe = Flow::new(self.lag, end.theta).at(&end.z, false)?;
+                // the end's derivative: through the piece's start, and its length (the flow there)
+                let fz = pe.flow();
+                let dend = |c: usize| {
+                    let start = dz0.iter().enumerate().filter_map(move |(cc, d)| d.map(|v| (v, end.phi[c * 4 + cc])));
+                    let length = dh.into_iter().filter_map(move |(pv, f)| pv.map(|v| (v, fz[c] * f)));
+                    start.chain(length)
                 };
                 if m + 1 < SEGMENTS {
                     let (z1, dz1) = self.start(q, j, m + 1);
-                    emit(&mut r, &mut w, &mut jq, &mut jo, 0..4, &z1, &dz1,
-                         &[scale_len, scale_len, lam_scale, lam_scale]);
+                    let scales = [scale_len, scale_len, lam_scale, lam_scale];
+                    for c in 0..4 {
+                        e.push(n, end.z[c] - z1[c], scales[c], dend(c).chain(dz1[c].map(|v| (v, -1.0))));
+                    }
                 } else if j < k {
-                    let peg = self.pegs[j];
-                    emit(&mut r, &mut w, &mut jq, &mut jo, 0..2, &peg, &[None, None], &[scale_len, scale_len]);
-                    // H unbroken across the peg, where its place is free
+                    for c in 0..2 {
+                        e.push(n, end.z[c] - self.pegs[j][c], scale_len, dend(c));
+                    }
+                    // H unbroken across the peg, where its place is free: −H at this end here
                     if !self.lay.held {
-                        let row = r.len();
-                        // the next arc's start H is filled in once that arc is integrated
-                        r.push(-pe.h);
-                        w.push(lam_scale.max(pe.h.abs()));
-                        if jac {
-                            let (sn, cs) = pe.theta.dsin_cos();
-                            let hz = [pe.d.x, pe.d.y, cs, sn];
-                            // −H at the arc's end: through the piece's start and its length
-                            for c in 0..4 {
-                                for (cc, d) in dz0.iter().enumerate() {
-                                    if let Some(v) = d {
-                                        add(&mut jq, &mut jo, row, *v, -hz[c] * end.phi[c * 4 + cc]);
-                                    }
-                                }
-                                for (pv, f) in dh {
-                                    if let Some(v) = pv {
-                                        add(&mut jq, &mut jo, row, v, -hz[c] * fz[c] * f);
-                                    }
-                                }
-                            }
-                        }
+                        let hz = pe.h_z();
+                        let deps = (0..4).flat_map(|c| dend(c).map(move |(v, f)| (v, -hz[c] * f)));
+                        h_rows.push(e.push(n, -pe.h, lam_scale.max(pe.h.abs()), deps));
                     }
                 } else {
-                    emit(&mut r, &mut w, &mut jq, &mut jo, 0..2, &self.ends.b,
-                         &[Some(Var::O(2)), Some(Var::O(3))], &[scale_len, scale_len]);
+                    for c in 0..2 {
+                        e.push(n, end.z[c] - self.ends.b[c], scale_len, dend(c).chain([(Var::O(2 + c), -1.0)]));
+                    }
                 }
-                pieces.push(piece);
+                e.pieces.push(piece);
             }
         }
         // the H rows' other side: the arc after each peg, where it starts
-        if !self.lay.held {
-            let per_arc = 4 * (SEGMENTS - 1) + 3;
-            for j in 1..=k {
-                let row = (j - 1) * per_arc + 4 * (SEGMENTS - 1) + 2;
-                r[row] += h_start[j];
-                if jac {
-                    let (hz, dz) = h_start_d[j];
-                    for c in 0..4 {
-                        if let Some(v) = dz[c] {
-                            add(&mut jq, &mut jo, row, v, hz[c]);
-                        }
+        for (&row, (h, hz, dz)) in h_rows.iter().zip(h_starts) {
+            e.r[row] += h;
+            if jac {
+                for c in 0..4 {
+                    match dz[c] {
+                        Some(Var::Q(i)) => e.jq[row * n + i] += hz[c],
+                        Some(Var::O(i)) => e.jo[row * 5 + i] += hz[c],
+                        None => {}
                     }
                 }
             }
         }
-        debug_assert_eq!(r.len(), n);
-        Some(Eval { r, jq, jo, pieces, places, thetas: new_thetas, w })
+        debug_assert_eq!(e.r.len(), n);
+        e.places = places;
+        Some(e)
     }
 }
 
@@ -412,15 +387,17 @@ fn merit(e: &Eval) -> f64 {
     e.r.iter().zip(&e.w).map(|(r, w)| (r / w) * (r / w)).sum()
 }
 
-/// Newton from `q`, damped by halving, for at most `most` iterations.
-fn newton(pb: &Problem, mut q: Vec<f64>, mut thetas: Vec<f64>, most: usize) -> Option<(Vec<f64>, Eval)> {
+/// Newton from `q`, damped by halving, for at most `most` iterations: the unknowns, the rows
+/// there, and whether they reached `DONE` (else only `GOOD`).  The full step is tried with its
+/// Jacobian, since it is nearly always the one taken.
+fn newton(pb: &Problem, mut q: Vec<f64>, from: &[f64], most: usize) -> Option<(Vec<f64>, Eval, bool)> {
     let n = pb.lay.len();
-    let mut e = pb.eval(&q, &thetas, true)?;
+    let mut e = pb.eval(&q, from, true)?;
     let mut piv = Vec::new();
     for _ in 0..most {
         let f = norm(&e);
         if f <= DONE {
-            return Some((q, e));
+            return Some((q, e, true));
         }
         let m0 = merit(&e);
         let mut a = e.jq.clone();
@@ -429,53 +406,53 @@ fn newton(pb: &Problem, mut q: Vec<f64>, mut thetas: Vec<f64>, most: usize) -> O
         }
         let mut dq: Vec<f64> = e.r.iter().map(|v| -v).collect();
         crate::linalg::lu_apply(n, &a, &piv, &mut dq);
+        let from = thetas(&e.pieces);
         let mut t = 1.0;
-        let mut moved = false;
+        let mut next = None;
         while t > 1e-6 {
             let trial: Vec<f64> = q.iter().zip(&dq).map(|(a, b)| a + t * b).collect();
-            if let Some(et) = pb.eval(&trial, &e.thetas, false) {
+            if let Some(et) = pb.eval(&trial, &from, t == 1.0) {
                 if merit(&et) < m0 * (1.0 - 0.5 * t) {
-                    q = trial;
-                    thetas = et.thetas.clone();
-                    moved = true;
+                    next = Some((trial, et));
                     break;
                 }
             }
             t *= 0.5;
         }
-        if !moved {
-            return (f <= GOOD).then_some((q, e));
-        }
-        e = pb.eval(&q, &thetas, true)?;
+        let Some((trial, et)) = next else { return (f <= GOOD).then_some((q, e, false)) };
+        q = trial;
+        e = if t == 1.0 { et } else { pb.eval(&q, &thetas(&et.pieces), true)? };
     }
-    (norm(&e) <= GOOD).then_some((q, e))
+    let f = norm(&e);
+    (f <= GOOD).then_some((q, e, f <= DONE))
 }
 
 /// The solved shape from a converged `Eval`: the unknowns' derivative in the outer columns.
 fn shape(pb: &Problem, q: Vec<f64>, e: Eval) -> Option<Shape> {
     let n = pb.lay.len();
-    let mut a = e.jq.clone();
+    let mut a = e.jq;
     let mut piv = Vec::new();
     if !crate::linalg::lu_factor(n, &mut a, &mut piv) {
         return None;
     }
     let mut dq = vec![0.0; n * 5];
+    let mut col = vec![0.0; n];
     for c in 0..5 {
-        let mut col: Vec<f64> = (0..n).map(|i| -e.jo[i * 5 + c]).collect();
+        for i in 0..n {
+            col[i] = -e.jo[i * 5 + c];
+        }
         crate::linalg::lu_apply(n, &a, &piv, &mut col);
         for i in 0..n {
             dq[i * 5 + c] = col[i];
         }
     }
-    Some(Shape {
-        ends: pb.ends.clone(),
-        pegs: pb.pegs.to_vec(),
-        q,
-        places: e.places,
-        pieces: e.pieces,
-        dq,
-        thetas: e.thetas,
-    })
+    Some(Shape { ends: pb.ends.clone(), pegs: pb.pegs.to_vec(), q, places: e.places, pieces: e.pieces, dq })
+}
+
+/// Newton on `pb` from `q`, and the shape it comes to, with whether it reached `DONE`.
+fn settle(pb: &Problem, q: Vec<f64>, thetas: &[f64], most: usize) -> Option<(Shape, bool)> {
+    let (q, e, done) = newton(pb, q, thetas, most)?;
+    Some((shape(pb, q, e)?, done))
 }
 
 /// The shape of a curve from `ends`, through `pegs`: warm from `prev` where there is one, else
@@ -484,8 +461,7 @@ fn shape(pb: &Problem, q: Vec<f64>, e: Eval) -> Option<Shape> {
 /// rope is two strands and a tight bend), and from it Newton may find another stationary curve
 /// (one with a loop); walked out, the curve stays on the branch it started on.
 pub fn solve(lag: &Lagrangian, ends: &Ends, pegs: &[[f64; 2]], prev: Option<&Shape>) -> Option<Shape> {
-    let lay = Layout { pegs: pegs.len(), held: false };
-    if let Some(p) = prev.filter(|p| p.pegs.len() == pegs.len() && p.q.len() == lay.len()) {
+    if let Some(p) = prev.filter(|p| p.pegs.len() == pegs.len()) {
         let pegs = paired(&p.pegs, pegs);
         if p.ends == *ends && p.pegs == pegs {
             return Some(p.clone());
@@ -500,10 +476,10 @@ pub fn solve(lag: &Lagrangian, ends: &Ends, pegs: &[[f64; 2]], prev: Option<&Sha
     let chord = (ends.b[0] - ends.a[0]).dhypot(ends.b[1] - ends.a[1]);
     let short = chord * EASY;
     if ends.len <= short {
-        return cold(lag, ends, pegs);
+        return cold(lag, ends);
     }
-    let easy = cold(lag, &Ends { len: short, ..ends.clone() }, pegs)?;
-    walk(lag, &easy, ends, pegs)
+    let easy = cold(lag, &Ends { len: short, ..ends.clone() })?;
+    walk(lag, &easy, ends, &[])
 }
 
 /// `pegs` in the order `before` had them along the curve, each paired with the nearest of the
@@ -513,12 +489,8 @@ fn paired(before: &[[f64; 2]], pegs: &[[f64; 2]]) -> Vec<[f64; 2]> {
     before
         .iter()
         .map(|b| {
-            let i = (0..left.len())
-                .min_by(|&i, &j| {
-                    let d = |p: &[f64; 2]| (p[0] - b[0]).dhypot(p[1] - b[1]);
-                    d(&left[i]).total_cmp(&d(&left[j]))
-                })
-                .expect("as many pegs");
+            let d = |p: &[f64; 2]| (p[0] - b[0]).dhypot(p[1] - b[1]);
+            let i = (0..left.len()).min_by(|&i, &j| d(&left[i]).total_cmp(&d(&left[j]))).expect("as many pegs");
             left.remove(i)
         })
         .collect()
@@ -545,7 +517,7 @@ fn pegged(lag: &Lagrangian, ends: &Ends, pegs: &[[f64; 2]]) -> Option<Shape> {
     for j in 0..=pegs.len() {
         let h = (places[j + 1] - places[j]) / SEGMENTS as f64;
         for m in 0..SEGMENTS {
-            let at = at(lag, &free, (places[j] + h * m as f64) / len)?;
+            let at = at(lag, &free, (places[j] + h * m as f64) / len, false)?;
             thetas.push(at.theta);
             if m == 0 {
                 if j > 0 {
@@ -553,53 +525,41 @@ fn pegged(lag: &Lagrangian, ends: &Ends, pegs: &[[f64; 2]]) -> Option<Shape> {
                     virtual_pegs.push([at.z[0], at.z[1]]);
                 }
                 let l = lay.lambda(j);
-                q[l] = at.z[2];
-                q[l + 1] = at.z[3];
+                q[l..l + 2].copy_from_slice(&at.z[2..]);
             } else {
                 let n = lay.node(j, m);
                 q[n..n + 4].copy_from_slice(&at.z);
             }
         }
     }
-    let pb = Problem { lag, ends, pegs: &virtual_pegs, lay, held: &[] };
-    let (q, e) = newton(&pb, q, thetas, NEWTON_MAX)?;
-    let start = shape(&pb, q, e)?;
+    let (start, _) = settle(&Problem::free(lag, ends, &virtual_pegs), q, &thetas, NEWTON_MAX)?;
     let real: Vec<[f64; 2]> = near.iter().map(|n| n.1).collect();
     walk(lag, &start, ends, &real)
 }
 
 /// Where along `sh` (in `u`) it passes nearest `p`: the best of an even sampling, refined by
-/// golden section.
+/// Brent's minimisation between its neighbours.
 fn nearest(lag: &Lagrangian, sh: &Shape, p: [f64; 2]) -> f64 {
     const N: usize = 256;
-    let d = |u: f64| match at(lag, sh, u) {
-        Some(a) => (a.z[0] - p[0]).dhypot(a.z[1] - p[1]),
-        None => f64::INFINITY,
-    };
-    let best = (0..=N).min_by(|&i, &j| d(i as f64 / N as f64).total_cmp(&d(j as f64 / N as f64))).unwrap_or(0);
-    let (mut lo, mut hi) = (((best as f64 - 1.0) / N as f64).max(0.0), ((best as f64 + 1.0) / N as f64).min(1.0));
-    let g = 0.5 * (5f64.sqrt() - 1.0);
-    for _ in 0..80 {
-        let (a, b) = (hi - g * (hi - lo), lo + g * (hi - lo));
-        if d(a) < d(b) { hi = b } else { lo = a }
-    }
-    0.5 * (lo + hi)
+    let d = |u: f64| position(lag, sh, u).map_or(f64::INFINITY, |c| (c[0] - p[0]).dhypot(c[1] - p[1]));
+    let best = (0..=N).map(|i| (d(i as f64 / N as f64), i)).min_by(|a, b| a.0.total_cmp(&b.0)).map_or(0, |b| b.1);
+    let (lo, hi) = (((best as f64 - 1.0) / N as f64).max(0.0), ((best as f64 + 1.0) / N as f64).min(1.0));
+    crate::roots::brent(&d, lo, hi, 1e-13, 100, |_, _| false).1
 }
 
 /// A length over the chord whose arc seed lies near its answer: a gentle sag.
-const EASY: f64 = 1.2;
+pub const EASY: f64 = 1.2;
 
-fn cold(lag: &Lagrangian, ends: &Ends, pegs: &[[f64; 2]]) -> Option<Shape> {
-    let lay = Layout { pegs: pegs.len(), held: false };
-    let (q, thetas) = seed(lag, ends, pegs)?;
-    let pb = Problem { lag, ends, pegs, lay, held: &[] };
-    let (q, e) = newton(&pb, q, thetas, NEWTON_MAX)?;
-    shape(&pb, q, e)
+/// A curve with no pegs from its seed.
+fn cold(lag: &Lagrangian, ends: &Ends) -> Option<Shape> {
+    let (q, thetas) = seed(lag, ends)?;
+    Some(settle(&Problem::free(lag, ends, &[]), q, &thetas, NEWTON_MAX)?.0)
 }
 
 /// From `p` to `ends` along the straight path between their outer columns (the pegs alike),
 /// each step predicted along the last shape's derivative and corrected, the step halved where a
-/// correction fails and grown where it succeeds.
+/// correction fails and grown where it succeeds; the last taken to `DONE` if its correction
+/// stopped at `GOOD`.
 fn walk(lag: &Lagrangian, p: &Shape, ends: &Ends, pegs: &[[f64; 2]]) -> Option<Shape> {
     let o0 = p.ends.outer();
     let o1 = ends.outer();
@@ -609,6 +569,7 @@ fn walk(lag: &Lagrangian, p: &Shape, ends: &Ends, pegs: &[[f64; 2]]) -> Option<S
         (Ends::of(&o), pg)
     };
     let mut cur = p.clone();
+    let mut done_last = true;
     let (mut done, mut step) = (0.0f64, 1.0f64);
     while done < 1.0 {
         if step < 1.0 / 256.0 {
@@ -617,32 +578,29 @@ fn walk(lag: &Lagrangian, p: &Shape, ends: &Ends, pegs: &[[f64; 2]]) -> Option<S
         let f = (done + step).min(1.0);
         let (e, pg) = at(f);
         match correct(lag, &cur, &e, &pg) {
-            Some(s) => {
+            Some((s, d)) => {
                 cur = s;
+                done_last = d;
                 done = f;
                 step *= 1.5;
             }
             None => step *= 0.5,
         }
     }
-    // a step's correction may stop at `GOOD`; the last is taken to `DONE`
-    let lay = Layout { pegs: pegs.len(), held: false };
-    let pb = Problem { lag, ends: &cur.ends, pegs: &cur.pegs, lay, held: &[] };
-    let (q, e) = newton(&pb, cur.q.clone(), cur.thetas.clone(), NEWTON_MAX)?;
-    shape(&pb, q, e)
+    if done_last {
+        return Some(cur);
+    }
+    let pb = Problem::free(lag, &cur.ends, &cur.pegs);
+    Some(settle(&pb, cur.q.clone(), &thetas(&cur.pieces), NEWTON_MAX)?.0)
 }
 
 /// `cur`'s unknowns predicted to `ends` along its derivative, and corrected there.
-fn correct(lag: &Lagrangian, cur: &Shape, ends: &Ends, pegs: &[[f64; 2]]) -> Option<Shape> {
+fn correct(lag: &Lagrangian, cur: &Shape, ends: &Ends, pegs: &[[f64; 2]]) -> Option<(Shape, bool)> {
     let (o, oc) = (ends.outer(), cur.ends.outer());
-    let n = cur.q.len();
-    let q: Vec<f64> = (0..n)
+    let q: Vec<f64> = (0..cur.q.len())
         .map(|r| cur.q[r] + (0..5).map(|c| cur.dq[r * 5 + c] * (o[c] - oc[c])).sum::<f64>())
         .collect();
-    let lay = Layout { pegs: pegs.len(), held: false };
-    let pb = Problem { lag, ends, pegs, lay, held: &[] };
-    let (q, ev) = newton(&pb, q, cur.thetas.clone(), CORRECT_MAX)?;
-    shape(&pb, q, ev)
+    settle(&Problem::free(lag, ends, pegs), q, &thetas(&cur.pieces), CORRECT_MAX)
 }
 
 /// The shape re-solved with its pegs' places held at `held` — the verdict's question of how the
@@ -652,20 +610,18 @@ pub fn solve_held(lag: &Lagrangian, from: &Shape, held: &[f64]) -> Option<Shape>
     let pb = Problem { lag, ends: &from.ends, pegs: &from.pegs, lay, held };
     // the free layout's unknowns less the places
     let free = Layout { pegs: from.pegs.len(), held: false };
-    let mut q = Vec::with_capacity(lay.len());
-    for (i, v) in from.q.iter().enumerate() {
-        if !(1..=from.pegs.len()).any(|j| free.place(j) == Some(i)) {
-            q.push(*v);
-        }
-    }
-    let (q, e) = newton(&pb, q, from.thetas.clone(), CORRECT_MAX)?;
-    shape(&pb, q, e)
+    let q: Vec<f64> = (0..from.q.len())
+        .filter(|&i| !(1..=from.pegs.len()).any(|j| free.place(j) == Some(i)))
+        .map(|i| from.q[i])
+        .collect();
+    Some(settle(&pb, q, &thetas(&from.pieces), CORRECT_MAX)?.0)
 }
 
 /* -- the seed ----------------------------------------------------------------------------- */
 
 /// A circular arc from `p` to `q` of length `len`, bowed to the side `side` (±1): its start
-/// direction and curvature.  A length at or under the chord is a straight seed.
+/// direction and curvature (`sin α / α = c / len`, increasing towards 0, so bracketed).  A
+/// length at or under the chord is a straight seed.
 fn arc(p: [f64; 2], q: [f64; 2], len: f64, side: f64) -> (f64, f64) {
     let (dx, dy) = (q[0] - p[0], q[1] - p[1]);
     let c = dx.dhypot(dy);
@@ -673,18 +629,9 @@ fn arc(p: [f64; 2], q: [f64; 2], len: f64, side: f64) -> (f64, f64) {
     if len <= c * (1.0 + 1e-9) || c == 0.0 {
         return (chord, 0.0);
     }
-    // sin α / α = c / len, α in (0, π)
-    let want = c / len;
-    let (mut lo, mut hi) = (1e-9, std::f64::consts::PI - 1e-12);
-    for _ in 0..200 {
-        let mid = 0.5 * (lo + hi);
-        if mid.dsin() / mid > want {
-            lo = mid;
-        } else {
-            hi = mid;
-        }
-    }
-    let alpha = 0.5 * (lo + hi);
+    let g = |a: f64| a.dsin() / a - c / len;
+    let (lo, hi) = (1e-9, std::f64::consts::PI - 1e-12);
+    let alpha = crate::roots::bracketed_root(|a| Some(g(a)), lo, g(lo), hi, g(hi), 1e-14);
     (chord + side * alpha, -side * 2.0 * alpha / len)
 }
 
@@ -702,169 +649,128 @@ fn on_arc(p: [f64; 2], th0: f64, k: f64, s: f64) -> ([f64; 2], f64) {
 
 const SEED_SAMPLES: usize = 256;
 
-/// The seed: per arc (the length shared over the arcs by their chords) the circular arc bowed to
-/// the side of less energy, the costate at its start by least squares on `H_θ = 0` along it (the
-/// costate is its start less `∫ f_p`, so the rows are linear in it), each piece's start read off
-/// it.
-fn seed(lag: &Lagrangian, ends: &Ends, pegs: &[[f64; 2]]) -> Option<(Vec<f64>, Vec<f64>)> {
-    let mut pts = vec![ends.a];
-    pts.extend_from_slice(pegs);
-    pts.push(ends.b);
-    let chords: Vec<f64> = pts.windows(2).map(|w| (w[1][0] - w[0][0]).dhypot(w[1][1] - w[0][1])).collect();
-    let total: f64 = chords.iter().sum();
+/// The seed of a curve with no pegs (a pegged one starts from it, `pegged`): the circular arc of
+/// its length through its ends, bowed to the side of less energy, the costate at its start by
+/// least squares on `H_θ = 0` along it (the costate is its start less `∫ f_p`, so the rows are
+/// linear in it), each piece's start read off it.
+fn seed(lag: &Lagrangian, ends: &Ends) -> Option<(Vec<f64>, Vec<f64>)> {
     if !(ends.len > 0.0) {
         return None;
     }
-    let lay = Layout { pegs: pegs.len(), held: false };
-    let mut q = vec![0.0; lay.len()];
-    let mut thetas = Vec::new();
+    let (a, b, len) = (ends.a, ends.b, ends.len);
     let mut flow = Flow::new(lag, 0.0);
-    let mut s_at = 0.0;
-    for j in 0..pts.len() - 1 {
-        let len = if total > 0.0 { ends.len * chords[j] / total } else { ends.len / chords.len() as f64 };
-        // the side of less energy
-        let energy = |flow: &mut Flow, side: f64| {
-            let (th0, k) = arc(pts[j], pts[j + 1], len, side);
-            (0..SEED_SAMPLES)
-                .map(|i| {
-                    let s = len * (i as f64 + 0.5) / SEED_SAMPLES as f64;
-                    let (p, th) = on_arc(pts[j], th0, k, s);
-                    flow.partials(th, p[0], p[1], false).f
-                })
-                .sum::<f64>()
-        };
-        let side = if energy(&mut flow, 1.0) <= energy(&mut flow, -1.0) { 1.0 } else { -1.0 };
-        let (th0, k) = arc(pts[j], pts[j + 1], len, side);
-        // ∫ f_p along it, and the least-squares rows for the starting costate
-        let ds = len / SEED_SAMPLES as f64;
-        let mut integral = [0.0f64; 2];
-        let mut at = Vec::with_capacity(SEED_SAMPLES + 1);
-        let (mut ata, mut atb) = ([[0.0f64; 2]; 2], [0.0f64; 2]);
-        for i in 0..=SEED_SAMPLES {
-            let s = i as f64 * ds;
-            let (p, th) = on_arc(pts[j], th0, k, s);
-            let d = flow.partials(th, p[0], p[1], false);
-            if i > 0 {
-                let prev: &(f64, [f64; 2], f64, [f64; 2], [f64; 2]) = &at[i - 1];
-                integral[0] += 0.5 * ds * (prev.4[0] + d.x);
-                integral[1] += 0.5 * ds * (prev.4[1] + d.y);
-            }
-            let (sn, cs) = th.dsin_cos();
-            let row = [sn, -cs];
-            let rhs = d.t + integral[0] * sn - integral[1] * cs;
-            for a in 0..2 {
-                for b in 0..2 {
-                    ata[a][b] += row[a] * row[b];
-                }
-                atb[a] += row[a] * rhs;
-            }
-            at.push((s, p, th, integral, [d.x, d.y]));
+    let energy = |flow: &mut Flow, side: f64| {
+        let (th0, k) = arc(a, b, len, side);
+        (0..SEED_SAMPLES)
+            .map(|i| {
+                let (p, th) = on_arc(a, th0, k, len * (i as f64 + 0.5) / SEED_SAMPLES as f64);
+                flow.partials(th, p[0], p[1], false).f
+            })
+            .sum::<f64>()
+    };
+    let side = if energy(&mut flow, 1.0) <= energy(&mut flow, -1.0) { 1.0 } else { -1.0 };
+    let (th0, k) = arc(a, b, len, side);
+    // ∫ f_p along it (trapezoidal), and the least-squares rows `[sin θ, −cos θ]·λ₀ = …` there
+    let ds = len / SEED_SAMPLES as f64;
+    let mut integral = [0.0f64; 2];
+    let mut last = [0.0f64; 2];
+    let mut along = Vec::with_capacity(SEED_SAMPLES + 1);
+    let mut rows = crate::linalg::Mat::zeros(SEED_SAMPLES + 1, 2);
+    let mut rhs = Vec::with_capacity(SEED_SAMPLES + 1);
+    for i in 0..=SEED_SAMPLES {
+        let (p, th) = on_arc(a, th0, k, i as f64 * ds);
+        let d = flow.partials(th, p[0], p[1], false);
+        if i > 0 {
+            integral[0] += 0.5 * ds * (last[0] + d.x);
+            integral[1] += 0.5 * ds * (last[1] + d.y);
         }
-        let lam0 = {
-            let a = crate::linalg::Mat::from_vec(2, 2, vec![ata[0][0], ata[0][1], ata[1][0], ata[1][1]]);
-            let (x, _) = crate::linalg::min_norm_solve(&a, &atb, 1e-12);
-            [x[0], x[1]]
-        };
-        if !(lam0[0].is_finite() && lam0[1].is_finite()) {
-            return None;
+        last = [d.x, d.y];
+        let (sn, cs) = th.dsin_cos();
+        rows.data[2 * i] = sn;
+        rows.data[2 * i + 1] = -cs;
+        rhs.push(d.t + integral[0] * sn - integral[1] * cs);
+        along.push((p, th, integral));
+    }
+    let (lam0, _) = crate::linalg::min_norm_solve(&rows, &rhs, 1e-12);
+    if !(lam0[0].is_finite() && lam0[1].is_finite()) {
+        return None;
+    }
+    let lay = Layout { pegs: 0, held: false };
+    let mut q = vec![0.0; lay.len()];
+    q[..2].copy_from_slice(&lam0[..2]);
+    let mut thetas = Vec::with_capacity(SEGMENTS);
+    for m in 0..SEGMENTS {
+        let (p, th, integ) = along[m * SEED_SAMPLES / SEGMENTS];
+        if m > 0 {
+            let nd = lay.node(0, m);
+            q[nd..nd + 4].copy_from_slice(&[p[0], p[1], lam0[0] - integ[0], lam0[1] - integ[1]]);
         }
-        if j > 0 {
-            q[lay.place(j).expect("a peg's place")] = s_at;
-        }
-        let l = lay.lambda(j);
-        q[l] = lam0[0];
-        q[l + 1] = lam0[1];
-        for m in 0..SEGMENTS {
-            let i = m * SEED_SAMPLES / SEGMENTS;
-            let (_, p, th, integ, _) = at[i];
-            if m > 0 {
-                let nd = lay.node(j, m);
-                q[nd] = p[0];
-                q[nd + 1] = p[1];
-                q[nd + 2] = lam0[0] - integ[0];
-                q[nd + 3] = lam0[1] - integ[1];
-            }
-            thetas.push(th);
-        }
-        s_at += len;
+        thetas.push(th);
     }
     Some((q, thetas))
 }
 
 /* -- reading a shape ---------------------------------------------------------------------- */
 
-/// The shape at `u` in [0, 1] (`s = uL`): the state there, its direction, and its derivative in
-/// the outer columns and in `u`, the unknowns' dependence carried through `dq`.
+/// The shape at `u` in [0, 1] (`s = uL`): the state there, its direction, and — where asked —
+/// its derivative in the outer columns and in `u`, the unknowns' dependence carried through `dq`.
 pub struct At {
     pub z: [f64; 4],
     pub theta: f64,
-    /// `dz/d[u, a.x, a.y, b.x, b.y, L]`, 4 × 6, row-major.
+    /// `dz/d[u, a.x, a.y, b.x, b.y, L]`, 4 × 6, row-major (zero where not asked for).
     pub dz: [f64; 24],
     /// The flow there.
     pub f: [f64; 4],
-    /// `dθ/dz` there.
-    pub tz: [f64; 4],
     pub point: flow::Point,
 }
 
-pub fn at(lag: &Lagrangian, sh: &Shape, u: f64) -> Option<At> {
-    let lay = Layout { pegs: sh.pegs.len(), held: false };
-    let pb = Problem { lag, ends: &sh.ends, pegs: &sh.pegs, lay, held: &[] };
+/// Where `u` is: its arc length `s`, and the arc and piece it falls in.
+fn locate(sh: &Shape, u: f64) -> (f64, usize, usize) {
     let len = sh.ends.len;
     let s = (u * len).clamp(0.0, len);
-    let k = sh.pegs.len();
-    let j = (1..=k).rev().find(|&j| s >= sh.places[j]).unwrap_or(0);
+    let j = (1..=sh.pegs.len()).rev().find(|&j| s >= sh.places[j]).unwrap_or(0);
     let h = (sh.places[j + 1] - sh.places[j]) / SEGMENTS as f64;
-    let m = (((s - sh.places[j]) / h).floor() as usize).min(SEGMENTS - 1);
-    let piece = &sh.pieces[j * SEGMENTS + m];
-    let node = within(lag, piece, s, sh.ends.scale())?;
-    let (_, dz0) = pb.start(&sh.q, j, m);
-    let mut fl = Flow::new(lag, node.theta);
-    let mut f = [0.0; 4];
-    if !fl.rhs(&node.z, &mut f, 0) {
-        return None;
-    }
-    let p = fl.at(&node.z, false)?;
-    let (sn, cs) = p.theta.dsin_cos();
-    if p.htt == 0.0 {
-        return None;
-    }
-    let tz = [-p.d.tx / p.htt, -p.d.ty / p.htt, sn / p.htt, -cs / p.htt];
-    let n = sh.q.len();
-    // dz/dq (4 × n) and dz/do directly (4 × 5)
-    let mut dq = vec![0.0; 4 * n];
-    let mut dodirect = [0.0f64; 20];
-    let put = |dq: &mut Vec<f64>, dod: &mut [f64; 20], i: usize, v: Var, x: f64| match v {
-        Var::Q(c) => dq[i * n + c] += x,
-        Var::O(c) => dod[i * 5 + c] += x,
-    };
-    for i in 0..4 {
-        for (c, d) in dz0.iter().enumerate() {
-            if let Some(v) = d {
-                put(&mut dq, &mut dodirect, i, *v, node.phi[i * 4 + c]);
-            }
-        }
-        // the piece's start moves with the places it lies between: −f per unit
-        let wts = [(pb.place_var(j), 1.0 - m as f64 / SEGMENTS as f64), (pb.place_var(j + 1), m as f64 / SEGMENTS as f64)];
-        for (pv, wt) in wts {
-            if let Some(v) = pv {
-                put(&mut dq, &mut dodirect, i, v, -f[i] * wt);
-            }
-        }
-        // and s = uL itself moves with the length
-        dodirect[i * 5 + 4] += f[i] * u;
-    }
-    let mut dz = [0.0f64; 24];
-    for i in 0..4 {
-        dz[i * 6] = f[i] * len;
-        for c in 0..5 {
-            let mut v = dodirect[i * 5 + c];
-            for r in 0..n {
-                v += dq[i * n + r] * sh.dq[r * 5 + c];
-            }
-            dz[i * 6 + 1 + c] = v;
-        }
-    }
-    Some(At { z: node.z, theta: p.theta, dz, f, tz, point: p })
+    (s, j, (((s - sh.places[j]) / h).floor() as usize).min(SEGMENTS - 1))
 }
 
+pub fn at(lag: &Lagrangian, sh: &Shape, u: f64, deriv: bool) -> Option<At> {
+    let len = sh.ends.len;
+    let (s, j, m) = locate(sh, u);
+    let piece = &sh.pieces[j * SEGMENTS + m];
+    let node = within(lag, piece, s, sh.ends.scale(), deriv)?;
+    let p = Flow::new(lag, node.theta).at(&node.z, false)?;
+    let f = p.flow();
+    let mut dz = [0.0f64; 24];
+    if deriv {
+        let pb = Problem::free(lag, &sh.ends, &sh.pegs);
+        let (_, dz0) = pb.start(&sh.q, j, m);
+        // the piece's start moves with the places it lies between: −f per unit
+        let wts = [(pb.place_var(j), 1.0 - m as f64 / SEGMENTS as f64), (pb.place_var(j + 1), m as f64 / SEGMENTS as f64)];
+        for i in 0..4 {
+            let row = &mut dz[i * 6..i * 6 + 6];
+            row[0] = f[i] * len;
+            // and s = uL itself moves with the length
+            row[5] += f[i] * u;
+            let deps = dz0.iter().enumerate().filter_map(|(c, d)| d.map(|v| (v, node.phi[i * 4 + c])));
+            let places = wts.iter().filter_map(|&(pv, wt)| pv.map(|v| (v, -f[i] * wt)));
+            for (v, x) in deps.chain(places) {
+                match v {
+                    Var::O(c) => row[1 + c] += x,
+                    Var::Q(r) => {
+                        for c in 0..5 {
+                            row[1 + c] += x * sh.dq[r * 5 + c];
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Some(At { z: node.z, theta: p.theta, dz, f, point: p })
+}
+
+/// Where the shape is at `u`, alone — one step from the node before it, no sensitivities.
+pub fn position(lag: &Lagrangian, sh: &Shape, u: f64) -> Option<[f64; 2]> {
+    let (s, j, m) = locate(sh, u);
+    let n = within(lag, &sh.pieces[j * SEGMENTS + m], s, sh.ends.scale(), false)?;
+    Some([n.z[0], n.z[1]])
+}

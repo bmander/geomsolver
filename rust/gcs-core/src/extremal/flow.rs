@@ -167,12 +167,14 @@ impl<'a> Flow<'a> {
     pub fn at(&mut self, z: &[f64], full: bool) -> Option<Point> {
         let guess = self.theta;
         for start in [guess, guess + std::f64::consts::PI] {
-            if let Some(th) = self.root(z, start) {
-                self.theta = th;
-                let d = self.partials(th, z[0], z[1], full);
+            if let Some((th, mut d)) = self.root(z, start) {
                 let (s, c) = th.dsin_cos();
                 let htt = d.tt - z[2] * c - z[3] * s;
                 if htt > 0.0 {
+                    self.theta = th;
+                    if full {
+                        d = self.partials(th, z[0], z[1], true);
+                    }
                     return Some(Point { theta: th, d, htt, h: d.f + z[2] * c + z[3] * s });
                 }
             }
@@ -181,8 +183,9 @@ impl<'a> Flow<'a> {
         None
     }
 
-    /// A root of `H_θ` by Newton from `th`.
-    fn root(&mut self, z: &[f64], mut th: f64) -> Option<f64> {
+    /// A root of `H_θ` by Newton from `th`, with the integrand's partials there (the last
+    /// iteration's, at a direction within rounding of the root).
+    fn root(&mut self, z: &[f64], mut th: f64) -> Option<(f64, Partials)> {
         let (lx, ly) = (z[2], z[3]);
         for _ in 0..NEWTON_MAX {
             let d = self.partials(th, z[0], z[1], false);
@@ -195,7 +198,7 @@ impl<'a> Flow<'a> {
             let step = g / gp;
             th -= step;
             if step.abs() <= 1e-15 * (1.0 + th.abs()) {
-                return Some(th);
+                return Some((th, d));
             }
         }
         None
@@ -206,19 +209,13 @@ impl<'a> Flow<'a> {
     pub fn rhs(&mut self, y: &[f64], out: &mut [f64], m: usize) -> bool {
         debug_assert!(m == 0 || m == 4);
         let Some(p) = self.at(&y[..4], m > 0) else { return false };
-        let (s, c) = p.theta.dsin_cos();
-        out[0] = c;
-        out[1] = s;
-        out[2] = -p.d.x;
-        out[3] = -p.d.y;
+        let f = p.flow();
+        out[..4].copy_from_slice(&f);
         if m == 0 {
             return true;
         }
-        if p.htt == 0.0 {
-            return false;
-        }
-        // dθ/dz = −H_θz / H_θθ, H_θz = (f_θx, f_θy, −sin θ, cos θ)
-        let tz = [-p.d.tx / p.htt, -p.d.ty / p.htt, s / p.htt, -c / p.htt];
+        let (s, c) = p.theta.dsin_cos();
+        let tz = p.theta_z();
         let mut a = [[0.0f64; 4]; 4];
         for j in 0..4 {
             a[0][j] = -s * tz[j];
@@ -245,6 +242,26 @@ impl<'a> Flow<'a> {
     }
 }
 
+impl Point {
+    /// The flow here: `z' = (cos θ, sin θ, −f_x, −f_y)`.
+    pub fn flow(&self) -> [f64; 4] {
+        let (s, c) = self.theta.dsin_cos();
+        [c, s, -self.d.x, -self.d.y]
+    }
+
+    /// `dθ/dz = −H_θz / H_θθ`, with `H_θz = (f_θx, f_θy, −sin θ, cos θ)`.
+    pub fn theta_z(&self) -> [f64; 4] {
+        let (s, c) = self.theta.dsin_cos();
+        [-self.d.tx / self.htt, -self.d.ty / self.htt, s / self.htt, -c / self.htt]
+    }
+
+    /// `∂H/∂z = (f_x, f_y, cos θ, sin θ)` — the direction's own term vanishing, `H_θ` being zero.
+    pub fn h_z(&self) -> [f64; 4] {
+        let (s, c) = self.theta.dsin_cos();
+        [self.d.x, self.d.y, c, s]
+    }
+}
+
 /* -- Gragg–Bulirsch–Stoer ----------------------------------------------------------------- */
 
 /// The substep counts of the extrapolation: seven columns, to order fourteen.
@@ -256,19 +273,18 @@ pub const TOL: f64 = 1e-13;
 /// The augmented state's width: the state, then its sensitivities to four starting values.
 pub const WIDTH: usize = 20;
 
-/// The explicit midpoint rule over `n` substeps of one step `h` from `y0` (`4 + 4m` wide).
-fn midpoint(flow: &mut Flow, theta0: f64, y0: &[f64; WIDTH], h: f64, n: usize, m: usize, out: &mut [f64; WIDTH]) -> bool {
+/// The explicit midpoint rule over `n` substeps of one step `h` from `y0` (`4 + 4m` wide), the
+/// flow at `y0` given (`f0`, the direction there `theta0`): it is every column's first.
+#[allow(clippy::too_many_arguments)]
+fn midpoint(flow: &mut Flow, theta0: f64, y0: &[f64; WIDTH], f0: &[f64; WIDTH], h: f64, n: usize, m: usize, out: &mut [f64; WIDTH]) -> bool {
     let len = 4 + 4 * m;
     let hs = h / n as f64;
     flow.theta = theta0;
     let mut f = [0.0; WIDTH];
     let mut prev = *y0;
-    if !flow.rhs(&prev, &mut f, m) {
-        return false;
-    }
     let mut cur = [0.0; WIDTH];
     for i in 0..len {
-        cur[i] = prev[i] + hs * f[i];
+        cur[i] = prev[i] + hs * f0[i];
     }
     for _ in 1..n {
         if !flow.rhs(&cur, &mut f, m) {
@@ -291,10 +307,16 @@ fn midpoint(flow: &mut Flow, theta0: f64, y0: &[f64; WIDTH], h: f64, n: usize, m
 pub fn step(flow: &mut Flow, theta0: f64, y0: &[f64; WIDTH], h: f64, m: usize, scale: &[f64; 4]) -> Option<([f64; WIDTH], f64)> {
     let len = 4 + 4 * m;
     const K: usize = STEPS.len();
+    flow.theta = theta0;
+    let mut f0 = [0.0; WIDTH];
+    if !flow.rhs(y0, &mut f0, m) {
+        return None;
+    }
+    let theta0 = flow.theta;
     let mut prev = [[0.0; WIDTH]; K];
     let mut row = [[0.0; WIDTH]; K];
     for (j, &n) in STEPS.iter().enumerate() {
-        if !midpoint(flow, theta0, y0, h, n, m, &mut row[0]) {
+        if !midpoint(flow, theta0, y0, &f0, h, n, m, &mut row[0]) {
             return None;
         }
         for c in 1..=j {
