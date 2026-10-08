@@ -1454,6 +1454,22 @@ test('expressions round-trip through the document and survive a rebuild', () => 
   sk3.dispose();
 });
 
+test('an energy is told what its stationary curve is', () => {
+  // the hanging rope (#121): its verdict comes from the core, by the statement's constraint, with
+  // whether it is what the statement asked for — what the program panel's wash reads
+  const sk = examples.build('catenary');
+  assert.ok(solve(sk).success);
+  const d = diagnose(sk);
+  assert.equal(d.extrema.length, 1);
+  const [x] = d.extrema;
+  assert.equal(x.verdict, 'minimum');
+  assert.ok(x.asked);
+  assert.ok(io.describe(x.constraint).startsWith('minimize integral(p.y over p in '), io.describe(x.constraint));
+  // its rows are its group's, as wide as the curve: the binding asks the core, not a table
+  assert.equal(x.constraint.nResiduals, 28);
+  sk.dispose();
+});
+
 test('a claim reads as one, and a claimed dimension is drawn as a reference dimension', () => {
   // what the app puts in a constraint row and on a callout comes from the core, so both
   // bindings say the same thing about a claim and neither has a rule of its own

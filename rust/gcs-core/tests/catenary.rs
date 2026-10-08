@@ -57,6 +57,11 @@ fn the_rope_is_a_minimum_and_the_arch_a_maximum() {
     let d = gcs_core::diagnose::diagnose(&mut arch.sketch, gcs_core::diagnose::DiagnoseOptions::default());
     let names: Vec<&str> = d.extrema.iter().map(|(_, v)| v.name()).collect();
     assert_eq!(names, ["maximum"]);
+    // and the report says each is what its statement asked for
+    let asked = |e: &Elaborated, d: &gcs_core::diagnose::Diagnosis| {
+        gcs_core::report::diagnosis_json(&e.sketch, d).dump(None)
+    };
+    assert!(asked(&arch, &d).contains(r#""extrema":[["#) && asked(&arch, &d).contains(r#","maximum",true]"#), "{}", asked(&arch, &d));
     // the arch is the rope turned over the chord
     for (i, &p) in e.sketch.splines[0].ctrl.iter().enumerate() {
         let (x, y) = e.sketch.point_xy(p as usize);
