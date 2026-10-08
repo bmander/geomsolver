@@ -74,6 +74,11 @@ impl Rat {
         self.n == 0
     }
 
+    /// The whole number this is, if it is one.
+    pub fn whole(self) -> Option<i32> {
+        (self.d == 1).then_some(self.n)
+    }
+
     fn text(self) -> String {
         if self.d == 1 {
             format!("{}", self.n)

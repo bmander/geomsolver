@@ -76,6 +76,7 @@ pub mod vertex;
 pub mod edge;
 pub mod spatial_face;
 pub mod units;
+pub mod variational;
 pub mod witness;
 
 pub mod ir;

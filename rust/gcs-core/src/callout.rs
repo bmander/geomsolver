@@ -88,6 +88,9 @@ macro_rules! undrawn {
             | CKind::Level
             | CKind::Project
             | CKind::Lift
+            // a free curve's gauge and an energy state no number on the figure
+            | CKind::SplineGauge
+            | CKind::Stationary
             // a relation in space states a number of no one view, so it has no figure on one
             | CKind::Coincident3
             | CKind::Distance3

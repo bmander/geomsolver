@@ -61,6 +61,7 @@ impl<'a> P<'a> {
                 Some(StmtKind::Unit(self.ident()?))
             }
             "style" => self.style_rule(),
+            "minimize" | "maximize" => self.minimize(w == "maximize").map(StmtKind::Minimize),
             "use" => {
                 self.fail("a `use` stands at the top of a document, not inside a body");
                 None

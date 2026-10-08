@@ -99,6 +99,11 @@ pub fn length(nodes: &[Node], p: &[f64]) -> f64 {
     nodes.iter().map(|q| q.w * speed(q.frame(p).1)).sum()
 }
 
+/// The length of the nodes' span `k` alone.
+pub fn span_length(nodes: &[Node], p: &[f64], k: usize) -> f64 {
+    nodes.iter().filter(|q| q.span == k).map(|q| q.w * speed(q.frame(p).1)).sum()
+}
+
 fn speed(d: [f64; 2]) -> f64 {
     d[0].dhypot(d[1]).max(MIN_SPEED)
 }

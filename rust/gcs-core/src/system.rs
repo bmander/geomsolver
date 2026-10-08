@@ -440,6 +440,7 @@ pub fn build_kernel(sk: &Sketch, key: KernelKey) -> Kernel {
         }
         KernelKey::Dual(inner) => kernels::dual_kernel(inner),
         KernelKey::SplineLength { n, free } => kernels::spline_length_kernel(n, free),
+        KernelKey::Stationary(cid) => crate::variational::kernel(sk, cid),
     }
 }
 
@@ -506,7 +507,8 @@ impl System {
         let spans = crate::curve::contact_spans(sk);
         let mut by_kernel: BTreeMap<KernelKey, Vec<usize>> = BTreeMap::new();
         for (i, c) in sk.constraints.iter().enumerate() {
-            if c.claim {
+            // an energy compiles its rows once, at the constraint leading its group (#121)
+            if c.claim || (c.kind == crate::constraints::CKind::Stationary && c.rows_in(sk) == 0) {
                 continue;
             }
             by_kernel.entry(c.kernel_key(sk)).or_default().push(i);
@@ -932,7 +934,7 @@ impl System {
         if extra.is_empty() || self.n_free == 0 {
             return (base, row_c);
         }
-        let n_extra: usize = extra.iter().map(|c| c.n_residuals()).sum();
+        let n_extra: usize = extra.iter().map(|c| c.rows_in(sk)).sum();
         let mut m = Mat::zeros(base.rows() + n_extra, self.n_free);
         m.data[..base.as_mat().data.len()].copy_from_slice(&base.as_mat().data);
         let mut r = base.rows();

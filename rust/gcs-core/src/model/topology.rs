@@ -202,6 +202,16 @@ impl Sketch {
                     let _ = write!(s, "{p}.");
                 }
             }
+            // an energy's columns are its group's, and its integrand's tapes are the length of
+            // its constants (#121)
+            if c.kind == crate::constraints::CKind::Stationary {
+                if let crate::constraints::Arg::Str(text) = &c.args[2] {
+                    let _ = write!(s, "[{text}]");
+                }
+                for p in c.params(self) {
+                    let _ = write!(s, "{p}.");
+                }
+            }
         }
         s.push('|');
         for p in &self.params {

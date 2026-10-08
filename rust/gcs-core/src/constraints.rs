@@ -53,6 +53,18 @@ pub enum CKind {
     /// is built per count (`KernelKey::SplineLength`).  A magnitude, degree 1; a belt's, a
     /// cable's, a hanging rope's length.
     SplineLength,
+    /// **A free curve's gauge** (#121): span `k`'s length is span `k + 1`'s.  A spline's control
+    /// points can slide along it without moving its shape, so an energy over its shape alone has
+    /// no minimum among them — the stationarity is a saddle, and the solve wanders.  Minted, one
+    /// row per pair of neighbouring spans, for every spline a `minimize` varies; intrinsic, never
+    /// written.  The span is the knot index its first span starts at.
+    SplineGauge,
+    /// **Stationarity of an energy** (`minimize …`, #121): one term of the document's energy, an
+    /// integral over a spline with a coefficient.  The terms over one curve are one group, and
+    /// the group's first constraint carries its rows — `∂E/∂y + Σ λ ∂g/∂y = 0`, one per free
+    /// coordinate `y` of the curve's interior control points, `g` every row that reads one and
+    /// `λ` its multiplier (`variational.rs`).  Its kernel is built per group.
+    Stationary,
     ParallelDistance,
     EqualLength,
     PointOnLine,
@@ -240,7 +252,7 @@ impl FamilyKernel {
 }
 
 /// Every concrete constraint type, in the order the registry lists them.
-pub const ALL_KINDS: [CKind; 63] = [
+pub const ALL_KINDS: [CKind; 65] = [
     CKind::Coincident,
     CKind::Distance,
     CKind::Midpoint,
@@ -304,6 +316,8 @@ pub const ALL_KINDS: [CKind; 63] = [
     CKind::PlaneDistance,
     CKind::DragSeen,
     CKind::SplineLength,
+    CKind::SplineGauge,
+    CKind::Stationary,
 ];
 
 /// **The words a direction may be written as** (`docs/ordinate-plan.md`): `along:` an ordinate
@@ -915,6 +929,8 @@ impl CKind {
             CKind::EqualAngle => "EqualAngle",
             CKind::ArcLength => "ArcLength",
             CKind::SplineLength => "SplineLength",
+            CKind::SplineGauge => "SplineGauge",
+            CKind::Stationary => "Stationary",
             CKind::ParallelDistance => "ParallelDistance",
             CKind::EqualLength => "EqualLength",
             CKind::PointOnLine => "PointOnLine",
@@ -1037,6 +1053,14 @@ impl CKind {
             ],
             CKind::ArcLength => &[("arc", S::Arc), ("l", S::Length)],
             CKind::SplineLength => &[("spline", S::Spline), ("l", S::Length)],
+            CKind::SplineGauge => &[("spline", S::Spline), ("span", S::Int)],
+            CKind::Stationary => &[
+                ("spline", S::Spline),
+                ("weight", S::Float),
+                ("integrand", S::Str),
+                ("degree", S::Int),
+                ("maximize", S::Bool),
+            ],
             // the number is a magnitude, and `side` says which side of `l1` its second line lies
             // on; omitted, both sides are solutions and the seed picks between them (§9.2)
             CKind::ParallelDistance => {
@@ -1265,6 +1289,9 @@ impl CKind {
             CKind::DragTarget
             | CKind::DragSeen
             | CKind::Lift
+            // a free curve's own algebra, and an energy, which is a statement of its own
+            | CKind::SplineGauge
+            | CKind::Stationary
             // an axis's own algebra
             | CKind::AxisUnit
             | CKind::AxisFoot
@@ -1463,7 +1490,7 @@ impl CKind {
     /// spline length's control-point count) rather than registered: `Constraint::kernel_key`
     /// names it, and nothing may ask `kernel()` for it.
     pub fn built(self) -> bool {
-        matches!(self, CKind::SplineLength)
+        matches!(self, CKind::SplineLength | CKind::Stationary)
     }
 
     /// The per-definition kernel this kind runs through, for the four kinds that have one.
@@ -1514,6 +1541,8 @@ impl CKind {
             | CKind::EqualAngle
             | CKind::ArcLength
             | CKind::SplineLength
+            | CKind::SplineGauge
+            | CKind::Stationary
             | CKind::ParallelDistance
             | CKind::EqualLength
             | CKind::PointOnLine
@@ -1607,6 +1636,8 @@ impl CKind {
                 panic!("a curve contact's kernel belongs to its definition, not its type")
             }
             CKind::SplineLength => panic!("a spline length's kernel belongs to its spline's count"),
+            CKind::Stationary => panic!("an energy's kernel belongs to its group"),
+            CKind::SplineGauge => K::SplineGauge,
             CKind::Coincident => K::Coincident,
             CKind::Distance => K::Distance,
             CKind::Midpoint => K::Midpoint,
@@ -1711,6 +1742,7 @@ impl CKind {
             CKind::ArcLength => K::ArcLengthFree,
             // its free twin is built beside it, at the spline's count (`KernelKey::SplineLength`)
             CKind::SplineLength => return None,
+            CKind::SplineGauge | CKind::Stationary => return None,
             CKind::ParallelDistance => K::ParallelDistanceFree,
             CKind::PointLineDistance => K::PointLineDistanceFree,
             CKind::AnnularDistance => K::AnnularDistanceFree,
@@ -2212,6 +2244,9 @@ impl Constraint {
             let n = sk.splines[self.args[0].ent().i()].ctrl.len();
             return Key::SplineLength { n, free: self.free.is_some() };
         }
+        if self.kind == CKind::Stationary {
+            return Key::Stationary(self.id);
+        }
         match (self.kind.family_kernel(), self.curve_of()) {
             (Some(fk), Some(e)) => Key::Family { def: sk.curves[e.i()].def as usize, fk: fk as u8 },
             _ => Key::Static(self.kernel_id()),
@@ -2221,6 +2256,16 @@ impl Constraint {
     /// The kernel itself (`kernel_key`, built where it must be).
     pub fn kernel_in(&self, sk: &Sketch) -> Kernel {
         crate::system::build_kernel(sk, self.kernel_key(sk))
+    }
+
+    /// Rows this constraint compiles to, when the sketch is at hand: `n_residuals` for every kind
+    /// whose rows are a fact about it, and an energy's — one per coordinate its group varies,
+    /// carried by the group's first constraint (`variational.rs`).
+    pub fn rows_in(&self, sk: &Sketch) -> usize {
+        match self.kind {
+            CKind::Stationary => crate::variational::rows(sk, self.id),
+            _ => self.n_residuals(),
+        }
     }
 
     /// The curve a per-definition kernel is over — the spec's `Curve` slot, wherever it stands.
@@ -2339,6 +2384,8 @@ impl Constraint {
         match self.kind.family_kernel() {
             Some(fk) => fk.n_res(),
             None if self.kind == CKind::SplineLength => 1,
+            // its group's, which only the sketch can say: `rows_in`
+            None if self.kind == CKind::Stationary => 0,
             None => kernels::kernel(self.kernel()).n_res,
         }
     }
@@ -2484,6 +2531,18 @@ impl Constraint {
     }
 
     fn own_consts_on(&self, sk: &Sketch, span: Option<usize>) -> Vec<f64> {
+        // the two spans' own five-point spline: their knots' window and their points' weights
+        if self.kind == CKind::SplineGauge {
+            let sp = &sk.splines[self.args[0].ent().i()];
+            let s = self.args[1].num() as usize;
+            let d = crate::curve::DEGREE;
+            let mut k = sp.knots[s - d..=s + d + 2].to_vec();
+            k.extend((s - d..=s + 1).map(|c| sp.weights.as_ref().map_or(1.0, |w| w[c])));
+            return k;
+        }
+        if self.kind == CKind::Stationary {
+            return crate::variational::pack(sk, self.id);
+        }
         // a spline's length reads the whole curve's knots and weights before what it states
         if self.kind == CKind::SplineLength {
             let s = &sk.splines[self.args[0].ent().i()];
@@ -2867,6 +2926,13 @@ impl Constraint {
             // length is the radius times it
             // every control point: the length reads the whole curve
             CKind::SplineLength => sk.entity_params(e(0)),
+            // the five control points two neighbouring spans read
+            CKind::SplineGauge => {
+                let s = self.args[1].num() as usize;
+                let ctrl = &sk.splines[e(0).i()].ctrl;
+                ctrl[s - crate::curve::DEGREE..=s + 1].iter().flat_map(|&p| pt_at(p)).collect()
+            }
+            CKind::Stationary => crate::variational::columns(sk, self.id),
             CKind::ArcLength => {
                 let a = &sk.arcs[e(0).i()];
                 [pt_at(a.center), pt_at(a.start), pt_at(a.end), vec![rad(0)]].concat()

@@ -105,14 +105,15 @@ fn the_planar_kernels_have_forms() {
 
 /// Every kernel a body can state has a form, in space as on the page — so the derivative row a
 /// tangency states of each (`kernels::dual_kernel`) is exact.  What has none is a soft drag, which
-/// no body states, and a point on a spline, a curve contact.
+/// no body states, a point on a spline, a curve contact, and a free curve's gauge, whose second
+/// derivative an energy reads off its spans' lengths instead (`variational.rs`).
 #[test]
 fn every_kernel_a_body_states_has_a_form() {
     let formless: Vec<&str> =
         (0..KERNELS.len()).filter(|&k| !has_form(k)).map(|k| KERNELS[k].name).collect();
     assert_eq!(
         formless,
-        ["drag", "point_on_spline", "spline_tangent_line", "spline_curvature", "drag_seen"]
+        ["drag", "point_on_spline", "spline_tangent_line", "spline_curvature", "drag_seen", "spline_gauge"]
     );
 }
 

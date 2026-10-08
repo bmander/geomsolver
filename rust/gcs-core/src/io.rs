@@ -712,6 +712,8 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
     sk.settle_turns();
     // a chart a document did not gauge is gauged where its point stands (§6.21)
     sk.choose_charts();
+    // an energy's gauge rows and multipliers, which a document never carries (#121)
+    sk.settle_variational();
     Ok(sk)
 }
 
@@ -1407,6 +1409,8 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         }
     }
     dst.settle_turns();
+    // an energy's gauge rows and multipliers are minted, not copied (#121)
+    dst.settle_variational();
     made
 }
 

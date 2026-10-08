@@ -24,6 +24,7 @@ mod edges;
 mod spatial_faces;
 mod rings;
 mod source_map;
+mod variational;
 mod words;
 
 pub use diagnostics::{Code, Diag, Severity};
@@ -435,6 +436,11 @@ pub fn elaborate(p: &Program) -> Elaborated {
     // -- phase 3: constraints, in statement order
     let mut arrays = BTreeSet::new();
     for st in &stating {
+        // an energy's terms are constraints of their own, stationary together (#121)
+        if let StmtKind::Minimize(m) = &st.kind {
+            variational::state(&mut sk, &res, m, st, &mut map, &mut diags);
+            continue;
+        }
         let StmtKind::Relation(r) = &st.kind else { continue };
         if relations::is_fix(r) {
             continue;
@@ -501,6 +507,9 @@ pub fn elaborate(p: &Program) -> Elaborated {
     // `evaluate` allocates, so they come after it — the one pass of the elaboration that is *below*
     // the expressions
     let post_expr = expr::evaluate(&mut sk);
+    // every energy's group, gauge and multipliers, once every row it may be held by is stated —
+    // a length an unknown sets included (#121)
+    variational::settle(&mut sk, &map, &mut diags);
     solid_claims(&mut sk, &res, &mut map, &stating, &skip, &mut diags);
     for item in post_expr {
         let span = map.site_of_constraint(item.id).map(|s| s.span).unwrap_or_default();

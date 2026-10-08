@@ -332,6 +332,9 @@ pub enum StmtKind {
     Unit(Name),
     /// `ball := { p | p distance(12mm) c }` — a set (§6.21), see `SetLit`.
     Set(SetDecl),
+    /// `minimize integral(p.y over p in rope)` — a term of the document's one energy (#121):
+    /// the curves its integrals run over take the shape that makes it stationary.
+    Minimize(Minimize),
 }
 
 impl StmtKind {
@@ -367,6 +370,28 @@ pub struct StyleRule {
     pub style: Style,
     /// The property names as written, in order, so the printer says what the source said.
     pub props: Vec<String>,
+    pub span: Span,
+}
+
+/// `minimize TERM + TERM …` (or `maximize`, the same with every term's sign turned): a sum of
+/// integrals over curves, each with a constant coefficient (#121).
+#[derive(Clone, Debug)]
+pub struct Minimize {
+    pub maximize: bool,
+    pub terms: Vec<Integral>,
+    pub span: Span,
+}
+
+/// `c * integral(EXPR over p in k)` or `… over (p, t) in k`: `EXPR` read at the point `p`
+/// running along `k` (and `t`, its unit tangent there), weighted by arc length.
+#[derive(Clone, Debug)]
+pub struct Integral {
+    pub coef: f64,
+    pub point: Name,
+    pub tangent: Option<Name>,
+    pub curve: Ref,
+    pub body: String,
+    pub body_span: Span,
     pub span: Span,
 }
 

@@ -1371,9 +1371,9 @@ test('the registry the binding generates its classes from matches the kernels', 
     // families read different numbers of coordinates, so they cannot share one — and a spline's
     // length is built at its spline's count.  Every other type names a static kernel, and must.
     if (t.kernel === -1) {
-      // exactly the kinds with a curve slot, and the spline's length
+      // exactly the kinds with a curve slot, the spline's length and an energy's stationarity
       const onCurve = C.CONSTRAINT_TYPES[t.name].spec.some(([, k]) => k === 'curve');
-      assert.ok(onCurve || t.name === 'SplineLength', `${t.name} has no static kernel`);
+      assert.ok(onCurve || t.name === 'SplineLength' || t.name === 'Stationary', `${t.name} has no static kernel`);
     } else {
       assert.ok(t.kernel >= 0 && t.kernel < reg.kernels.length, t.name);
     }

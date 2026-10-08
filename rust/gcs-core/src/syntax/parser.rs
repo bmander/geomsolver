@@ -3,6 +3,7 @@
 mod chains;
 mod declarations;
 mod definitions;
+mod minimize;
 mod relations;
 mod statements;
 
@@ -636,6 +637,30 @@ impl<'a> P<'a> {
             match self.peek() {
                 Some(Tok::P('(')) | Some(Tok::P('[')) => depth += 1,
                 Some(Tok::P(c)) if *c == end && depth == 0 => break,
+                Some(Tok::P(')')) | Some(Tok::P(']')) if depth == 0 => break,
+                Some(Tok::P(')')) | Some(Tok::P(']')) => depth -= 1,
+                Some(Tok::Nl) => break,
+                _ => {}
+            }
+            self.i += 1;
+        }
+        let text = self.text_from(from).trim().to_string();
+        if text.is_empty() {
+            self.fail("expected an expression");
+            return None;
+        }
+        Some((text, Span::new(from, self.prev_hi())))
+    }
+
+    /// `expr_until(')')`, stopping as well at the word `word` at the top bracket level — an
+    /// integrand ends at its `over`.
+    fn expr_until_word(&mut self, word: &str) -> Option<(String, Span)> {
+        let from = self.here().lo as usize;
+        let mut depth = 0i32;
+        while !self.done() {
+            match self.peek() {
+                Some(Tok::P('(')) | Some(Tok::P('[')) => depth += 1,
+                Some(Tok::Ident(w)) if w == word && depth == 0 => break,
                 Some(Tok::P(')')) | Some(Tok::P(']')) if depth == 0 => break,
                 Some(Tok::P(')')) | Some(Tok::P(']')) => depth -= 1,
                 Some(Tok::Nl) => break,

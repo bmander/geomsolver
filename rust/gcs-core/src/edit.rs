@@ -991,6 +991,12 @@ fn mentions(st: &Stmt, names: &std::collections::BTreeSet<String>) -> Vec<String
                 }
             }
         }
+        // an energy goes with the curves it is over (#121)
+        StmtKind::Minimize(m) => {
+            for t in &m.terms {
+                look(&t.curve);
+            }
+        }
         // a set goes with what its body names (§6.21), as a component's call goes with its
         // arguments
         StmtKind::Set(set) => {

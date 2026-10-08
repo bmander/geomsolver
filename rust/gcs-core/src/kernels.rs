@@ -121,9 +121,11 @@ pub enum K {
     DragSeen,
     // a line lying on an axis
     LineOnAxis,
+    // a free curve's gauge: two neighbouring spans equally long (#121)
+    SplineGauge,
 }
 
-pub const N_KERNELS: usize = 84;
+pub const N_KERNELS: usize = 85;
 
 #[derive(Clone, Copy)]
 pub struct Kernel {
@@ -164,6 +166,8 @@ pub enum KernelKey {
     Family { def: usize, fk: u8 },
     Dual(usize),
     SplineLength { n: usize, free: bool },
+    /// An energy's stationarity, by the constraint that leads its group (#121).
+    Stationary(u32),
 }
 
 pub fn kernel(id: K) -> &'static Kernel {
@@ -415,6 +419,37 @@ pub fn curve_tangent_kernel(n_theta: usize, n_const: usize, body: u8) -> Kernel 
         _ => ("curve_tangent_line", curve_tangent_res::<FORMULA>, curve_tangent_jac::<FORMULA>),
     };
     Kernel { name, n_res: 2, n_par: 1 + n_theta + 4, n_const, degree: 1, res, jac, const_jac: None }
+}
+
+/// The control points two neighbouring spans of a cubic read between them.
+pub const GAUGE_CTRL: usize = curve::SPAN_N + 1;
+
+/// Two neighbouring spans of a spline equally long (`CKind::SplineGauge`, #121):
+/// `(c0x, c0y, …, c4x, c4y)`, the five control points they read, over the constants of a
+/// five-point spline of their own — the nine knots the two spans' windows cover, then the five
+/// weights — so the second span's length less the first's is `integral.rs`'s, span by span.
+fn spline_gauge_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let (v, k) = gauge_instance(v, k, i);
+        let nodes = crate::integral::length_nodes(GAUGE_CTRL, k);
+        r[i] = crate::integral::span_length(&nodes, v, 1) - crate::integral::span_length(&nodes, v, 0);
+    }
+}
+
+fn spline_gauge_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let (v, k) = gauge_instance(v, k, i);
+        let row = &mut j[2 * GAUGE_CTRL * i..2 * GAUGE_CTRL * (i + 1)];
+        row.fill(0.0);
+        let nodes = crate::integral::length_nodes(GAUGE_CTRL, k);
+        crate::integral::length_grad(&nodes, v, 1.0, Some(1), row);
+        crate::integral::length_grad(&nodes, v, -1.0, Some(0), row);
+    }
+}
+
+fn gauge_instance<'a>(v: &'a [f64], k: &'a [f64], i: usize) -> (&'a [f64], &'a [f64]) {
+    let (np, nc) = (2 * GAUGE_CTRL, 2 * GAUGE_CTRL + curve::DEGREE + 1);
+    (&v[np * i..np * (i + 1)], &k[nc * i..nc * (i + 1)])
 }
 
 /// A kernel's residual or Jacobian, as the table holds it.
@@ -3571,6 +3606,7 @@ pub static KERNELS: [Kernel; N_KERNELS] = [
     Kernel { name: "plane_parallel", n_res: 2, n_par: 12, degree: 0, n_const: 6, res: plane_parallel_res, jac: plane_parallel_jac, const_jac: None },
     Kernel { name: "drag_seen", n_res: 2, n_par: 3, degree: 1, n_const: 9, res: drag_seen_res, jac: drag_seen_jac, const_jac: None },
     Kernel { name: "line_on_axis", n_res: 4, n_par: 12, degree: 1, n_const: 6, res: line_on_axis_res, jac: line_on_axis_jac, const_jac: None },
+    Kernel { name: "spline_gauge", n_res: 1, n_par: 2 * GAUGE_CTRL, degree: 1, n_const: 2 * GAUGE_CTRL + curve::DEGREE + 1, res: spline_gauge_res, jac: spline_gauge_jac, const_jac: None },
 ];
 
 /// One row of a kernel: residual and Jacobian for a single constraint's local values.  The
