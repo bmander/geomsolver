@@ -176,41 +176,32 @@ pub(super) fn constrain(
             }
         }
     }
-    // a set touched at a point is touched by a plane (#145), said at the use in its words; and
-    // what that use states besides the tangency — its apex and point on the plane — is stated
-    // only where the drawing does not draw them there
-    let touch = r.word.as_ref()
-        .filter(|w| w.word == "tangent" && !w.sets.is_empty() && !w.args.is_empty())
-        .filter(|_| r.along.is_none());
-    if let (Some(w), Some(found)) = (touch, &word) {
-        if let (Some(&op), Some((_, set))) = (found.ops.first(), w.sets.first()) {
-            if op.kind != EntKind::Plane {
-                let m = format!("a set is touched at a point by a plane, `P tangent({}) {set}`, \
-                                 not by {}", w.args, op.kind.a());
-                if !diags.iter().any(|d| d.span == w.span && d.message == m) {
-                    let stmt = Some(st.id);
-                    diags.push(Diag { code: Code::E040, span: w.span, stmt, message: m });
-                }
-                return None;
-            }
-        }
-    }
-    let touch = touch.is_some();
-    // a plane touching a set names the point it touches at: without one, the use would read the
-    // plane as a line (`l tangent S`), so none of its rows is stated
-    let bare = r.word.as_ref()
-        .filter(|w| w.word == "tangent" && !w.sets.is_empty() && w.args.is_empty());
-    if let (Some(w), Some(found)) = (bare, &word) {
-        if found.ops.first().is_some_and(|e| e.kind == EntKind::Plane) {
-            let set = w.sets.first().map_or("K", |(_, s)| s.as_str());
-            let m = format!("a plane touches a set at a point, which the word names: \
-                             `P tangent(at: m) {set}`");
+    // **a set touched by a plane names the point it is touched at, and only a plane touches a
+    // set at a point** (#145): said once at the use, in its words, and none of its rows stated.
+    // What a touch states besides the tangency — the apex and the point on the plane — is stated
+    // only where the drawing does not draw them there (below)
+    let touching = r.word.as_ref().filter(|w| w.word == "tangent" && w.sets.len() == 1);
+    if let (Some(w), Some(found)) = (touching, &word) {
+        let set = &w.sets[0].1;
+        let wrong = match (found.ops.first().map(|e| e.kind), w.args.is_empty()) {
+            (Some(EntKind::Plane), true) => Some(format!(
+                "a plane touches a set at a point, which the word names: `P tangent(at: m) {set}`"
+            )),
+            (Some(kind), false) if kind != EntKind::Plane => Some(format!(
+                "a set is touched at a point by a plane, `P tangent({}) {set}`, not by {}",
+                w.args,
+                kind.a()
+            )),
+            _ => None,
+        };
+        if let Some(m) = wrong {
             if !diags.iter().any(|d| d.span == w.span && d.message == m) {
                 diags.push(Diag { code: Code::E040, span: w.span, stmt: Some(st.id), message: m });
             }
             return None;
         }
     }
+    let touch = touching.is_some_and(|w| !w.args.is_empty());
     // a set's body row stated as its derivative at a tangency's point (§6.21)
     // — what moves its point, or the kind a line was expected in place of
     let along = r.along.as_ref().map(|a| {

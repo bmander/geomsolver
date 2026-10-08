@@ -334,14 +334,7 @@ impl<'a> Walk<'a> {
         let Some(w) = rel.form.written() else { return };
         let at = w.word.span;
         let names: Vec<String> = found.iter().map(|(k, _)| written(&w.ops[*k])).collect();
-        let point = match w.args.as_slice() {
-            [crate::syntax::OpArg::Named(n, v)] if n.text == "at" => match v {
-                crate::syntax::Arg::Ref(r) => Some(r.clone()),
-                crate::syntax::Arg::Word(x) => Some(local(x.clone(), n.span)),
-                _ => None,
-            },
-            _ => None,
-        };
+        let point = at_point(w);
         let spell = |m: &str| format!("`{} tangent(at: {m}) {}`", names[0], names[1]);
         let Some(point) = point else {
             let m = format!("two sets touch at a point, which the word names: {}", spell("m"));
@@ -418,14 +411,7 @@ impl<'a> Walk<'a> {
         let at = w.word.span;
         let set = self.set_written(&w.ops[k]);
         let spell = |m: &str| format!("`P tangent(at: {m}) {set}`");
-        let point = match w.args.as_slice() {
-            [crate::syntax::OpArg::Named(n, v)] if n.text == "at" => match v {
-                crate::syntax::Arg::Ref(r) => Some(r.clone()),
-                crate::syntax::Arg::Word(x) => Some(local(x.clone(), n.span)),
-                _ => None,
-            },
-            _ => None,
-        };
+        let point = at_point(w);
         let Some(point) = point else {
             let m = format!("a plane touches a set at a point, which the word names: {}",
                 spell("m"));
@@ -485,7 +471,8 @@ impl<'a> Walk<'a> {
             relation("coincident", vec![apex, plane.clone()], Vec::new()),
             relation("coincident", vec![point, plane], Vec::new()),
         ] {
-            let made = Stmt { id: st.id, kind: StmtKind::Relation(r), span: st.span, chained: Chained::No };
+            let kind = StmtKind::Relation(r);
+            let made = Stmt { id: st.id, kind, span: st.span, chained: Chained::No };
             self.out.push((made, path.to_vec(), open.clone()));
         }
     }
@@ -551,6 +538,18 @@ fn makes_points(lit: &SetLit) -> Option<String> {
         }
     }
     None
+}
+
+/// The point a tangency names, `tangent(at: m)` — `None` where its parentheses hold anything else.
+fn at_point(w: &crate::syntax::Written) -> Option<Ref> {
+    match w.args.as_slice() {
+        [crate::syntax::OpArg::Named(n, v)] if n.text == "at" => match v {
+            crate::syntax::Arg::Ref(r) => Some(r.clone()),
+            crate::syntax::Arg::Word(x) => Some(local(x.clone(), n.span)),
+            _ => None,
+        },
+        _ => None,
+    }
 }
 
 /// Whether a written relation is one a set may be used by: `coincident` or `tangent` between
