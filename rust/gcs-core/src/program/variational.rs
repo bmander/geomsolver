@@ -37,12 +37,8 @@ pub(super) fn state(
             ));
             continue;
         }
-        if let Err(why) = crate::variational::integrand(&t.body, sk.units) {
-            diags.push(err(Code::E103, t.body_span, why));
-            continue;
-        }
-        let d = match crate::variational::integrand_degree(&t.body, sk.units) {
-            Ok(d) => d,
+        let d = match crate::variational::integrand(&t.body, sk.units) {
+            Ok(f) => f.degree,
             Err(why) => {
                 diags.push(err(Code::E103, t.body_span, why));
                 continue;

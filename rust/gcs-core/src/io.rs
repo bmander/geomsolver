@@ -1917,7 +1917,7 @@ pub fn describe_with(c: &Constraint, name: &dyn Fn(EntRef) -> Option<String>) ->
     // under the names the integrand is stated in (#121)
     if c.kind == CKind::Stationary {
         let (Arg::Str(text), Arg::Ent(e)) = (&c.args[2], &c.args[0]) else { return String::new() };
-        let verb = if matches!(c.args[4], Arg::Bool(true)) { "maximize" } else { "minimize" };
+        let verb = if crate::variational::maximizes(c) { "maximize" } else { "minimize" };
         let w = c.args[1].num();
         let w = if w == 1.0 { String::new() } else { format!("{} * ", reading(SpecKind::Float, w)) };
         let over = if text.contains("t.") { "(p, t)" } else { "p" };

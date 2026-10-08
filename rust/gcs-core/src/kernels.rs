@@ -274,9 +274,7 @@ impl<'a> DualRow<'a> {
     /// The row's Taylor coefficients along `x + wε`, into `r`; `false` where it has no form.
     /// `path` is scratch, its constant terms the row's columns.
     fn along(&self, w: &[f64], path: &mut Vec<Jet>, r: &mut [Jet], jrow: &mut Vec<f64>) -> bool {
-        path.clear();
-        path.extend(self.x.iter().zip(w).map(|(&x, &d)| Jet::from(&[x, d])));
-        crate::taylor::residual(self.kid, path, self.kc, r, jrow)
+        crate::taylor::along(self.kid, self.x, w, self.kc, path, r, jrow)
     }
 }
 
@@ -421,52 +419,21 @@ pub fn curve_tangent_kernel(n_theta: usize, n_const: usize, body: u8) -> Kernel 
     Kernel { name, n_res: 2, n_par: 1 + n_theta + 4, n_const, degree: 1, res, jac, const_jac: None }
 }
 
-/// The control points two neighbouring spans of a cubic read between them.
-pub const GAUGE_CTRL: usize = curve::SPAN_N + 1;
-
-/// Two neighbouring spans of a spline equally long (`CKind::SplineGauge`, #121):
-/// `(c0x, c0y, …, c4x, c4y)`, the five control points they read, over the constants of a
-/// five-point spline of their own — the nine knots the two spans' windows cover, then the five
-/// weights — so the second span's length less the first's is `integral.rs`'s, span by span.
-fn spline_gauge_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
-    for i in 0..n {
-        let (v, k) = gauge_instance(v, k, i);
-        let nodes = crate::integral::length_nodes(GAUGE_CTRL, k);
-        r[i] = crate::integral::span_length(&nodes, v, 1) - crate::integral::span_length(&nodes, v, 0);
-    }
-}
-
-fn spline_gauge_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
-    for i in 0..n {
-        let (v, k) = gauge_instance(v, k, i);
-        let row = &mut j[2 * GAUGE_CTRL * i..2 * GAUGE_CTRL * (i + 1)];
-        row.fill(0.0);
-        let nodes = crate::integral::length_nodes(GAUGE_CTRL, k);
-        crate::integral::length_grad(&nodes, v, 1.0, Some(1), row);
-        crate::integral::length_grad(&nodes, v, -1.0, Some(0), row);
-    }
-}
-
-fn gauge_instance<'a>(v: &'a [f64], k: &'a [f64], i: usize) -> (&'a [f64], &'a [f64]) {
-    let (np, nc) = (2 * GAUGE_CTRL, 2 * GAUGE_CTRL + curve::DEGREE + 1);
-    (&v[np * i..np * (i + 1)], &k[nc * i..nc * (i + 1)])
-}
-
 /// A kernel's residual or Jacobian, as the table holds it.
 type KernelFn = fn(usize, &[f64], &[f64], &mut [f64]);
 
 /// A spline's whole length (`length(L) s`, #121): `(c0x, c0y, …, c(n−1)x, c(n−1)y[, a])` over
-/// the constants `integral::length_consts`, `Σ w |C'| − L` by Gauss–Legendre per span
-/// (`integral.rs`) — or `− (m·a + c)` where an unknown sets the length.  Every control point is
-/// a column, so the kernel is built per count, as a curve family's is per definition.  A
-/// signed length, so degree 1.
+/// the constants `integral::length_consts` — what it states, then the spline's quadrature nodes —
+/// `Σ w |C'| − L` by Gauss–Legendre per span (`integral.rs`), or `− (m·a + c)` where an unknown
+/// sets the length.  Every control point is a column, so the kernel is built per count, as a curve
+/// family's is per definition.  A signed length, so degree 1.
 pub fn spline_length_kernel(n: usize, free: bool) -> Kernel {
     let stated = if free { 2 } else { 1 };
     Kernel {
         name: "spline_length",
         n_res: 1,
         n_par: 2 * n + free as usize,
-        n_const: 2 * n + curve::DEGREE + 1 + stated,
+        n_const: stated + crate::integral::NODE_W * crate::integral::most_nodes(n),
         degree: 1,
         res: spline_length_res,
         jac: spline_length_jac,
@@ -479,10 +446,9 @@ fn spline_length_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
     let (m, free) = crate::integral::length_widths(n_par);
     for i in 0..n {
         let (v, k) = (&v[n_par * i..n_par * (i + 1)], &k[n_const * i..n_const * (i + 1)]);
-        let nodes = crate::integral::length_nodes(m, k);
-        let stated = &k[2 * m + curve::DEGREE + 1..];
+        let (stated, nodes) = crate::integral::length_parts(free, k);
         let target = if free { stated[0] * v[2 * m] + stated[1] } else { stated[0] };
-        r[i] = crate::integral::length(&nodes, &v[..2 * m]) - target;
+        r[i] = crate::integral::length(&nodes, &v[..2 * m], None) - target;
     }
 }
 
@@ -493,12 +459,46 @@ fn spline_length_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
         let (v, k) = (&v[n_par * i..n_par * (i + 1)], &k[n_const * i..n_const * (i + 1)]);
         let row = &mut j[n_par * i..n_par * (i + 1)];
         row.fill(0.0);
-        let nodes = crate::integral::length_nodes(m, k);
+        let (stated, nodes) = crate::integral::length_parts(free, k);
         crate::integral::length_grad(&nodes, &v[..2 * m], 1.0, None, &mut row[..2 * m]);
         if free {
-            row[2 * m] = -k[2 * m + curve::DEGREE + 1];
+            row[2 * m] = -stated[0];
         }
     }
+}
+
+/// The control points two neighbouring spans of a cubic read between them.
+pub const GAUGE_CTRL: usize = curve::SPAN_N + 1;
+
+/// The constants of one gauge row: the two spans' nodes, over their five control points.
+pub const GAUGE_CONST: usize = 2 * crate::integral::PER_SPAN * crate::integral::NODE_W;
+
+/// Two neighbouring spans of a spline equally long (`CKind::SplineGauge`, #121):
+/// `(c0x, c0y, …, c4x, c4y)`, the five control points they read, over the two spans' quadrature
+/// nodes (`integral::write_nodes`, span 0 and span 1 of a five-point spline of their own) — the
+/// second span's length less the first's.
+fn spline_gauge_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let (v, k) = gauge_instance(v, k, i);
+        let nodes = crate::integral::read_nodes(k);
+        r[i] = crate::integral::length(&nodes, v, Some(1)) - crate::integral::length(&nodes, v, Some(0));
+    }
+}
+
+fn spline_gauge_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    for i in 0..n {
+        let (v, k) = gauge_instance(v, k, i);
+        let row = &mut j[2 * GAUGE_CTRL * i..2 * GAUGE_CTRL * (i + 1)];
+        row.fill(0.0);
+        let nodes = crate::integral::read_nodes(k);
+        crate::integral::length_grad(&nodes, v, 1.0, Some(1), row);
+        crate::integral::length_grad(&nodes, v, -1.0, Some(0), row);
+    }
+}
+
+fn gauge_instance<'a>(v: &'a [f64], k: &'a [f64], i: usize) -> (&'a [f64], &'a [f64]) {
+    let np = 2 * GAUGE_CTRL;
+    (&v[np * i..np * (i + 1)], &k[GAUGE_CONST * i..GAUGE_CONST * (i + 1)])
 }
 
 /// A circle osculating a curve written in the language: `(u, θ…, cx, cy, r)` — the three rows
@@ -3606,7 +3606,7 @@ pub static KERNELS: [Kernel; N_KERNELS] = [
     Kernel { name: "plane_parallel", n_res: 2, n_par: 12, degree: 0, n_const: 6, res: plane_parallel_res, jac: plane_parallel_jac, const_jac: None },
     Kernel { name: "drag_seen", n_res: 2, n_par: 3, degree: 1, n_const: 9, res: drag_seen_res, jac: drag_seen_jac, const_jac: None },
     Kernel { name: "line_on_axis", n_res: 4, n_par: 12, degree: 1, n_const: 6, res: line_on_axis_res, jac: line_on_axis_jac, const_jac: None },
-    Kernel { name: "spline_gauge", n_res: 1, n_par: 2 * GAUGE_CTRL, degree: 1, n_const: 2 * GAUGE_CTRL + curve::DEGREE + 1, res: spline_gauge_res, jac: spline_gauge_jac, const_jac: None },
+    Kernel { name: "spline_gauge", n_res: 1, n_par: 2 * GAUGE_CTRL, degree: 1, n_const: GAUGE_CONST, res: spline_gauge_res, jac: spline_gauge_jac, const_jac: None },
 ];
 
 /// One row of a kernel: residual and Jacobian for a single constraint's local values.  The

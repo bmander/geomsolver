@@ -270,6 +270,17 @@ pub fn has_form(kid: usize) -> bool {
     form_of(kid).is_some()
 }
 
+/// One row of kernel `kid` along `x + wε`, into `r` (`n_res` jets) — the path built into `path`,
+/// scratch the caller keeps; `false` where the kernel has no form.  What a derivative row and an
+/// energy's Hessian both read a row's second order through (`kernels::dual_kernel`,
+/// `variational`).
+pub fn along(kid: usize, x: &[f64], w: &[f64], k: &[f64], path: &mut Vec<Jet>, r: &mut [Jet],
+             jrow: &mut Vec<f64>) -> bool {
+    path.clear();
+    path.extend(x.iter().zip(w).map(|(&xi, &wi)| Jet::from(&[xi, wi])));
+    residual(kid, path, k, r, jrow)
+}
+
 /// One row of kernel `kid` over the path `v` (a `Jet` per column), into `r` (`n_res` jets).
 /// `false` where the kernel has no form; `jrow` is scratch an affine form's Jacobian is read into.
 pub fn residual(kid: usize, v: &[Jet], k: &[f64], r: &mut [Jet], jrow: &mut Vec<f64>) -> bool {

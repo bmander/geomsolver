@@ -631,36 +631,23 @@ impl<'a> P<'a> {
 
     /// The source up to `end` at the top bracket level, as written.
     fn expr_until(&mut self, end: char) -> Option<(String, Span)> {
+        self.expr_until_or(end, None)
+    }
+
+    /// `expr_until(')')`, stopping as well at the word `word` at the top bracket level — an
+    /// integrand ends at its `over`.
+    fn expr_until_word(&mut self, word: &str) -> Option<(String, Span)> {
+        self.expr_until_or(')', Some(word))
+    }
+
+    fn expr_until_or(&mut self, end: char, word: Option<&str>) -> Option<(String, Span)> {
         let from = self.here().lo as usize;
         let mut depth = 0i32;
         while !self.done() {
             match self.peek() {
                 Some(Tok::P('(')) | Some(Tok::P('[')) => depth += 1,
                 Some(Tok::P(c)) if *c == end && depth == 0 => break,
-                Some(Tok::P(')')) | Some(Tok::P(']')) if depth == 0 => break,
-                Some(Tok::P(')')) | Some(Tok::P(']')) => depth -= 1,
-                Some(Tok::Nl) => break,
-                _ => {}
-            }
-            self.i += 1;
-        }
-        let text = self.text_from(from).trim().to_string();
-        if text.is_empty() {
-            self.fail("expected an expression");
-            return None;
-        }
-        Some((text, Span::new(from, self.prev_hi())))
-    }
-
-    /// `expr_until(')')`, stopping as well at the word `word` at the top bracket level — an
-    /// integrand ends at its `over`.
-    fn expr_until_word(&mut self, word: &str) -> Option<(String, Span)> {
-        let from = self.here().lo as usize;
-        let mut depth = 0i32;
-        while !self.done() {
-            match self.peek() {
-                Some(Tok::P('(')) | Some(Tok::P('[')) => depth += 1,
-                Some(Tok::Ident(w)) if w == word && depth == 0 => break,
+                Some(Tok::Ident(w)) if depth == 0 && word == Some(w.as_str()) => break,
                 Some(Tok::P(')')) | Some(Tok::P(']')) if depth == 0 => break,
                 Some(Tok::P(')')) | Some(Tok::P(']')) => depth -= 1,
                 Some(Tok::Nl) => break,

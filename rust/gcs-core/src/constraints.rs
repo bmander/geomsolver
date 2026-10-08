@@ -2531,13 +2531,16 @@ impl Constraint {
     }
 
     fn own_consts_on(&self, sk: &Sketch, span: Option<usize>) -> Vec<f64> {
-        // the two spans' own five-point spline: their knots' window and their points' weights
+        // the two spans' nodes, over a five-point spline of their own: their knots' window and
+        // their points' weights
         if self.kind == CKind::SplineGauge {
             let sp = &sk.splines[self.args[0].ent().i()];
             let s = self.args[1].num() as usize;
             let d = crate::curve::DEGREE;
-            let mut k = sp.knots[s - d..=s + d + 2].to_vec();
-            k.extend((s - d..=s + 1).map(|c| sp.weights.as_ref().map_or(1.0, |w| w[c])));
+            let w: Option<Vec<f64>> = sp.weights.as_ref().map(|w| w[s - d..=s + 1].to_vec());
+            let nodes = crate::integral::nodes(&sp.knots[s - d..=s + d + 2], w.as_deref(), d + 2);
+            let mut k = Vec::with_capacity(kernels::GAUGE_CONST);
+            crate::integral::write_nodes(&nodes, 2 * crate::integral::PER_SPAN, &mut k);
             return k;
         }
         if self.kind == CKind::Stationary {
@@ -2922,8 +2925,6 @@ impl Constraint {
             | CKind::ParallelDistance
             | CKind::EqualLength => [ln(0), ln(1)].concat(),
             CKind::EqualAngle => [ln(0), ln(1), ln(2), ln(3)].concat(),
-            // the centre, the two ends and the radius: the sweep is read off the ends, the
-            // length is the radius times it
             // every control point: the length reads the whole curve
             CKind::SplineLength => sk.entity_params(e(0)),
             // the five control points two neighbouring spans read
@@ -2933,6 +2934,8 @@ impl Constraint {
                 ctrl[s - crate::curve::DEGREE..=s + 1].iter().flat_map(|&p| pt_at(p)).collect()
             }
             CKind::Stationary => crate::variational::columns(sk, self.id),
+            // the centre, the two ends and the radius: the sweep is read off the ends, the
+            // length is the radius times it
             CKind::ArcLength => {
                 let a = &sk.arcs[e(0).i()];
                 [pt_at(a.center), pt_at(a.start), pt_at(a.end), vec![rad(0)]].concat()

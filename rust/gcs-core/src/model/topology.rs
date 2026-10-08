@@ -197,20 +197,18 @@ impl Sketch {
             // swapping one free name for another, which leaves the parameter vector exactly as
             // it was.  Not the constants (a dimension's `m` and `c`): a compiled system re-reads
             // those without being rebuilt.
-            if c.kind.contact_slots().is_some() || c.free.is_some() {
+            // So do the kinds whose kernel is built from the sketch (#121): an energy's columns are
+            // its group's — and its integrand's tapes are the length of its constants, so the text
+            // is written too.
+            if c.kind.contact_slots().is_some() || c.free.is_some() || c.kind.built() {
                 for p in c.params(self) {
                     let _ = write!(s, "{p}.");
                 }
             }
-            // an energy's columns are its group's, and its integrand's tapes are the length of
-            // its constants (#121)
-            if c.kind == crate::constraints::CKind::Stationary {
-                if let crate::constraints::Arg::Str(text) = &c.args[2] {
-                    let _ = write!(s, "[{text}]");
-                }
-                for p in c.params(self) {
-                    let _ = write!(s, "{p}.");
-                }
+            if let (crate::constraints::CKind::Stationary, Some(crate::constraints::Arg::Str(text))) =
+                (c.kind, c.args.get(2))
+            {
+                let _ = write!(s, "[{text}]");
             }
         }
         s.push('|');

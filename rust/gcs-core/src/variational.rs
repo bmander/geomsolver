@@ -32,8 +32,9 @@
 use crate::fmath::Det;
 use crate::constraints::{Arg, CKind, Constraint};
 use crate::expr::{Ast, Op};
-use crate::integral;
+use crate::integral::{self, Node};
 use crate::kernels::{self, Kernel, KernelKey, KERNELS, K};
+use crate::linalg::Mat;
 use crate::model::{EntRef, Sketch};
 use crate::taylor::Jet;
 use crate::tape::{self, Tape};
@@ -54,11 +55,25 @@ pub struct Group {
     pub splines: Vec<usize>,
     /// The free coordinates varied: each spline's interior control points', in order.
     pub y: Vec<u32>,
-    /// Every hard row that reads one, in sketch order.
-    pub rows: Vec<u32>,
+    /// Every hard row that reads one, in sketch order, with how many residuals it has.
+    pub rows: Vec<(u32, usize)>,
     /// The kernel's columns: `y`, then everything else the terms and rows read, then the
-    /// multipliers, row by row.
+    /// multipliers, row by row from `lam0`.
     pub cols: Vec<u32>,
+    pub lam0: usize,
+    /// Each term, its integrand compiled once (`integrand`).
+    pub terms: Vec<Term>,
+    /// The power of length the terms' integrands carry: the rows' degree.
+    pub degree: u32,
+}
+
+/// One term of an energy: `coef · ∫ F ds` along a spline, `coef` signed as the energy is
+/// minimised (a `maximize` turns it), `F` as four tapes (`Integrand`).
+#[derive(Clone, Debug, Default)]
+pub struct Term {
+    pub spline: usize,
+    pub coef: f64,
+    pub tapes: [Vec<f64>; 4],
 }
 
 /* -- integrands --------------------------------------------------------------------------- */
@@ -66,11 +81,20 @@ pub struct Group {
 /// The integrand's variables, in the order a node hands them over: the point, then `C'`.
 const VARS: [&str; 4] = ["cx", "cy", "dx", "dy"];
 
+/// The variables in the order the `k`th tape reads them: the `k`th first, so the tape's series
+/// differentiates in it (`tape::Series`), then the rest in order.
+const ORDER: [[usize; 4]; 4] = [[0, 1, 2, 3], [1, 0, 2, 3], [2, 0, 1, 3], [3, 0, 1, 2]];
+
+/// What an integrand may read: the point, and the unit tangent there.
+pub const BOUND: [&str; 4] = ["p.x", "p.y", "t.x", "t.y"];
+
 /// An integrand compiled: `F(C, C') = f(C, C'/|C'|)·|C'|`, so `∫ F dt` is `∫ f ds`, as four tapes,
-/// the `k`th over the variables with the `k`th first — `tape::Series` differentiates in the first,
-/// so its gradient of the first order is the Hessian's `k`th row.
+/// the `k`th over the variables in `ORDER[k]` — `tape::Series` differentiates in the first, so its
+/// gradient of the first order is the Hessian's `k`th row — and the power of length it carries
+/// (`degree`).
 pub struct Integrand {
     pub tapes: [Tape; 4],
+    pub degree: u32,
 }
 
 /// `text` over `p.x`, `p.y`, `t.x`, `t.y` (`flatten::values::settle_integrand`) compiled.
@@ -89,16 +113,19 @@ pub fn integrand(text: &str, units: crate::units::Units) -> Result<Integrand, St
             Ast::Neg(x) => Ast::Neg(Box::new(rewrite(x, speed))),
             Ast::Bin(o, x, y) => Ast::Bin(*o, Box::new(rewrite(x, speed)), Box::new(rewrite(y, speed))),
             Ast::Call(f, xs) => Ast::Call(f.clone(), xs.iter().map(|x| rewrite(x, speed)).collect()),
+            // a number, or a measurement (refused before a text gets here)
             other => other.clone(),
         }
     }
     let f = Ast::Bin(Op::Mul, Box::new(rewrite(&parsed.body, &speed)), Box::new(speed()));
     let tape = |k: usize| {
-        let mut vars = vec![VARS[k].to_string()];
-        vars.extend(VARS.iter().filter(|v| **v != VARS[k]).map(|v| v.to_string()));
+        let vars: Vec<String> = ORDER[k].iter().map(|&j| VARS[j].to_string()).collect();
         Tape::compile(&f, &vars)
     };
-    Ok(Integrand { tapes: [tape(0)?, tape(1)?, tape(2)?, tape(3)?] })
+    Ok(Integrand {
+        tapes: [tape(0)?, tape(1)?, tape(2)?, tape(3)?],
+        degree: degree(&parsed.body, units)?,
+    })
 }
 
 /// The power of length an integrand carries — `p.y` is one, a length's integrand none — so the
@@ -107,26 +134,26 @@ pub fn integrand(text: &str, units: crate::units::Units) -> Result<Integrand, St
 /// integrand is dimension-checked, refused where it is no whole power or mixes dimensions; where
 /// it names none every number is plain, and the degree is read off how the integrand grows with
 /// the point.
-pub fn integrand_degree(text: &str, units: crate::units::Units) -> Result<u32, String> {
-    let parsed = crate::expr::parse_in(text, units)?;
-    let at = |s: f64, dim: crate::units::Dim| -> Result<crate::expr::Aff, String> {
-        let env: BTreeMap<String, crate::expr::Aff> = [
-            ("p.x", crate::expr::Aff::of_dim(1.3 * s, dim)),
-            ("p.y", crate::expr::Aff::of_dim(0.7 * s, dim)),
-            ("t.x", crate::expr::Aff::num(0.6)),
-            ("t.y", crate::expr::Aff::num(0.8)),
-        ]
-        .into_iter()
-        .map(|(k, v)| (k.to_string(), v))
-        .collect();
-        crate::expr::eval(&parsed.body, &env)
+fn degree(body: &Ast, units: crate::units::Units) -> Result<u32, String> {
+    let at = |s: f64| -> Result<crate::expr::Aff, String> {
+        let dim = units.read_length();
+        let env: BTreeMap<String, crate::expr::Aff> = BOUND
+            .iter()
+            .zip([
+                crate::expr::Aff::of_dim(1.3 * s, dim),
+                crate::expr::Aff::of_dim(0.7 * s, dim),
+                crate::expr::Aff::num(0.6),
+                crate::expr::Aff::num(0.8),
+            ])
+            .map(|(k, v)| (k.to_string(), v))
+            .collect();
+        crate::expr::eval(body, &env)
     };
     if units.length.is_none() {
-        let (a, b) = (at(1.0, units.read_length())?, at(2.0, units.read_length())?);
-        let d = (b.c / a.c).abs().log2().round();
+        let d = (at(2.0)?.c / at(1.0)?.c).abs().log2().round();
         return Ok(if d.is_finite() { d.clamp(0.0, 4.0) as u32 } else { 1 });
     }
-    let a = at(1.0, units.read_length())?;
+    let a = at(1.0)?;
     if !a.dim.ang.is_zero() {
         return Err("an integrand is a length or a power of one, never an angle".into());
     }
@@ -134,6 +161,11 @@ pub fn integrand_degree(text: &str, units: crate::units::Units) -> Result<u32, S
         Some(n) if n >= 0 => Ok(n as u32),
         _ => Err("an integrand is a whole power of length".into()),
     }
+}
+
+/// Whether an energy constraint is a `maximize`'s term.
+pub fn maximizes(c: &Constraint) -> bool {
+    matches!(c.args[4], Arg::Bool(true))
 }
 
 /* -- groups ------------------------------------------------------------------------------- */
@@ -171,74 +203,64 @@ impl Sketch {
             y_of.insert(s, ys);
         }
         // splines read by one row are one energy, as two terms over one spline are
-        let mut root: BTreeMap<usize, usize> = varied.iter().map(|&s| (s, s)).collect();
-        fn find(root: &BTreeMap<usize, usize>, mut s: usize) -> usize {
-            while root[&s] != s {
-                s = root[&s];
-            }
-            s
-        }
-        let mut reading: Vec<(u32, BTreeSet<usize>)> = Vec::new();
+        let mut sets = crate::graph::UnionFind::new(self.splines.len());
+        let mut reading: Vec<(u32, usize, usize)> = Vec::new();
         for c in &self.constraints {
             if !c.acts() || c.kind == CKind::Stationary {
                 continue;
             }
             let touched: BTreeSet<usize> =
                 c.params_on(self, None).iter().filter_map(|p| owner.get(p).copied()).collect();
-            if touched.is_empty() {
-                continue;
-            }
+            let Some(&first) = touched.first() else { continue };
             if let Err(why) = hessian_tag(self, c) {
                 faults.push((c.id, why));
             }
-            let mut it = touched.iter();
-            let first = find(&root, *it.next().unwrap());
-            for &s in it {
-                let r = find(&root, s);
-                root.insert(r, first);
+            for &s in &touched {
+                sets.union(first, s);
             }
-            reading.push((c.id, touched));
+            reading.push((c.id, c.rows_in(self), first));
         }
         let mut groups: BTreeMap<usize, Group> = BTreeMap::new();
         for &i in &stat {
             let c = &self.constraints[i];
-            let g = groups.entry(find(&root, c.args[0].ent().i())).or_default();
+            let s = c.args[0].ent().i();
+            let g = groups.entry(sets.find(s)).or_default();
             g.members.push(c.id);
+            let Arg::Str(text) = &c.args[2] else { continue };
+            // refused at elaboration; a document read carries what it was given, so a text
+            // that does not compile is an integrand of nothing rather than a panic
+            let f = integrand(text, self.units).ok();
+            let sign = if maximizes(c) { -1.0 } else { 1.0 };
+            g.degree = f.as_ref().map_or(g.degree, |f| f.degree);
+            g.terms.push(Term {
+                spline: s,
+                coef: sign * c.args[1].num(),
+                tapes: f.map(|f| f.tapes.map(|t| t.flat)).unwrap_or_default(),
+            });
         }
         for (&s, ys) in &y_of {
-            let g = groups.get_mut(&find(&root, s)).expect("a varied spline is in a group");
+            let g = groups.get_mut(&sets.find(s)).expect("a varied spline is in a group");
             g.splines.push(s);
             g.y.extend(ys);
         }
-        for (id, touched) in &reading {
-            let g = groups.get_mut(&find(&root, *touched.iter().next().unwrap())).unwrap();
-            g.rows.push(*id);
+        for &(id, n, s) in &reading {
+            groups.get_mut(&sets.find(s)).expect("a row read is in a group").rows.push((id, n));
         }
-        // the multipliers, one per row the group reads, kept where they were
+        // the columns, and the multipliers — one per residual of each row the group reads, kept
+        // where they were
         let mut used = BTreeSet::new();
         let mut out = Vec::with_capacity(groups.len());
         for (_, mut g) in groups {
-            g.members.sort();
-            g.leader = g.members[0];
-            let ys: BTreeSet<u32> = g.y.iter().copied().collect();
+            g.leader = *g.members.iter().min().expect("a group has an energy");
             let mut cols = g.y.clone();
-            let mut seen = ys.clone();
-            let mut more = |ps: Vec<u32>, cols: &mut Vec<u32>| {
-                for p in ps {
-                    if seen.insert(p) {
-                        cols.push(p);
-                    }
-                }
-            };
-            for &s in &g.splines {
-                more(self.entity_params(EntRef::spline(s)), &mut cols);
+            let mut seen: BTreeSet<u32> = g.y.iter().copied().collect();
+            let read = g.splines.iter().map(|&s| self.entity_params(EntRef::spline(s)))
+                .chain(g.rows.iter().filter_map(|&(r, _)| self.constraint(r)).map(|c| c.params_on(self, None)));
+            for ps in read.collect::<Vec<_>>() {
+                cols.extend(ps.into_iter().filter(|&p| seen.insert(p)));
             }
-            for &r in &g.rows {
-                let c = self.constraint(r).expect("a row read is in the sketch");
-                more(c.params_on(self, None), &mut cols);
-            }
-            for &r in &g.rows {
-                let n = self.constraint(r).map_or(0, |c| c.rows_in(self));
+            g.lam0 = cols.len();
+            for &(r, n) in &g.rows {
                 for k in 0..n {
                     let key = (g.leader, r, k as u8);
                     let p = match self.multipliers.get(&key) {
@@ -335,73 +357,50 @@ pub fn rows(sk: &Sketch, cid: u32) -> usize {
 /// The kernel of the group constraint `cid` leads: `rows` × `columns`, over `pack`'s constants,
 /// of the degree its terms' integrands carry.
 pub fn kernel(sk: &Sketch, cid: u32) -> Kernel {
-    let n_res = rows(sk, cid);
-    let degree = sk.constraint(cid).map_or(0, |c| c.args[3].num() as u32);
+    let g = sk.leads(cid);
     Kernel {
         name: "stationary",
-        n_res,
-        n_par: columns(sk, cid).len(),
-        n_const: if n_res == 0 { 0 } else { pack(sk, cid).len() },
-        degree,
+        n_res: g.map_or(0, |g| g.y.len()),
+        n_par: g.map_or(0, |g| g.cols.len()),
+        n_const: pack(sk, cid).len(),
+        degree: g.map_or(0, |g| g.degree),
         res: stationary_res,
         jac: stationary_jac,
         const_jac: None,
     }
 }
 
-/// Where each of `ps` stands among the group's columns.
-fn colmap(index: &BTreeMap<u32, usize>, ps: &[u32]) -> Vec<f64> {
-    ps.iter().map(|p| index.get(p).map_or(-1.0, |&i| i as f64)).collect()
-}
-
-/// Everything the group's kernel reads besides its columns: a header `[n_y, n_cols, n_terms,
-/// n_rows]`; per term `[coef, n, colmap (2n), knots (n + 4), weights (n), 4 × (len, tape…)]`; per
-/// row `[tag, n_res, n_par, n_const, λ at, colmap (n_par), constants (n_const)]`.
+/// Everything the group's kernel reads besides its columns: a header `[n_y, n_terms, n_rows]`;
+/// per term `[coef, n, colmap (2n), n_nodes, nodes (n_nodes × NODE_W), 4 × (len, tape…)]`; per
+/// row `[tag, n_res, n_par, n_const, λ at, colmap (n_par), constants (n_const)]` — a column map
+/// being where each column stands among the group's.
 pub fn pack(sk: &Sketch, cid: u32) -> Vec<f64> {
     let Some(g) = sk.leads(cid) else { return Vec::new() };
     let index: BTreeMap<u32, usize> = g.cols.iter().enumerate().map(|(i, &p)| (p, i)).collect();
-    let terms: Vec<&Constraint> =
-        g.members.iter().filter_map(|&m| sk.constraint(m)).collect();
-    let mut k = vec![g.y.len() as f64, g.cols.len() as f64, terms.len() as f64, g.rows.len() as f64];
-    for c in &terms {
-        let s = c.args[0].ent().i();
-        let sp = &sk.splines[s];
-        let n = sp.ctrl.len();
-        let sign = if matches!(c.args[4], Arg::Bool(true)) { -1.0 } else { 1.0 };
-        k.push(sign * c.args[1].num());
-        k.push(n as f64);
-        k.extend(colmap(&index, &sk.entity_params(EntRef::spline(s))));
-        k.extend_from_slice(&sp.knots);
-        match &sp.weights {
-            Some(w) => k.extend_from_slice(w),
-            None => k.extend(std::iter::repeat_n(1.0, n)),
-        }
-        let Arg::Str(text) = &c.args[2] else { unreachable!("an energy's integrand is text") };
-        match integrand(text, sk.units) {
-            Ok(f) => {
-                for t in &f.tapes {
-                    k.push(t.flat.len() as f64);
-                    k.extend_from_slice(&t.flat);
-                }
-            }
-            // refused at elaboration; a document read carries what it was given, so a text that
-            // no longer compiles reads as an integrand of nothing rather than a panic
-            Err(_) => k.extend([0.0; 4]),
+    let colmap = |ps: Vec<u32>| ps.into_iter().map(|p| index[&p] as f64);
+    let mut k = vec![g.y.len() as f64, g.terms.len() as f64, g.rows.len() as f64];
+    for t in &g.terms {
+        let sp = &sk.splines[t.spline];
+        let nodes = integral::nodes(&sp.knots, sp.weights.as_deref(), sp.ctrl.len());
+        k.extend([t.coef, sp.ctrl.len() as f64]);
+        k.extend(colmap(sk.entity_params(EntRef::spline(t.spline))));
+        k.push(nodes.len() as f64);
+        integral::write_nodes(&nodes, 0, &mut k);
+        for tape in &t.tapes {
+            k.push(tape.len() as f64);
+            k.extend_from_slice(tape);
         }
     }
-    // the multipliers are the last columns, row by row
-    let n_lam: usize = g.rows.iter().map(|&r| sk.constraint(r).map_or(0, |c| c.rows_in(sk))).sum();
-    let mut at = g.cols.len() - n_lam;
-    for &r in &g.rows {
+    let mut at = g.lam0;
+    for &(r, n) in &g.rows {
         let c = sk.constraint(r).expect("a row read is in the sketch");
-        let kn = c.kernel_in(sk);
         let ps = c.params_on(sk, None);
         let consts = c.consts_on(sk, None);
         k.push(hessian_tag(sk, c).unwrap_or(f64::NAN));
-        k.extend([kn.n_res as f64, kn.n_par as f64, consts.len() as f64, at as f64]);
-        k.extend(colmap(&index, &ps));
+        k.extend([n as f64, ps.len() as f64, consts.len() as f64, at as f64]);
+        k.extend(colmap(ps));
         k.extend(consts);
-        at += kn.n_res;
+        at += n;
     }
     k
 }
@@ -409,12 +408,10 @@ pub fn pack(sk: &Sketch, cid: u32) -> Vec<f64> {
 /* -- evaluation --------------------------------------------------------------------------- */
 
 /// One energy term, read back out of the constants.
-struct Term<'a> {
+struct TermIn<'a> {
     coef: f64,
-    n: usize,
     map: &'a [f64],
-    knots: &'a [f64],
-    weights: &'a [f64],
+    nodes: Vec<Node>,
     tapes: [&'a [f64]; 4],
 }
 
@@ -429,7 +426,7 @@ struct Row<'a> {
 
 struct Packed<'a> {
     n_y: usize,
-    terms: Vec<Term<'a>>,
+    terms: Vec<TermIn<'a>>,
     rows: Vec<Row<'a>>,
 }
 
@@ -440,21 +437,21 @@ fn read(k: &[f64]) -> Option<Packed<'_>> {
         at += n;
         Some(s)
     };
-    let h = take(4)?;
-    let (n_y, n_terms, n_rows) = (h[0] as usize, h[2] as usize, h[3] as usize);
+    let h = take(3)?;
+    let (n_y, n_terms, n_rows) = (h[0] as usize, h[1] as usize, h[2] as usize);
     let mut terms = Vec::with_capacity(n_terms);
     for _ in 0..n_terms {
         let h = take(2)?;
         let (coef, n) = (h[0], h[1] as usize);
         let map = take(2 * n)?;
-        let knots = take(n + crate::curve::DEGREE + 1)?;
-        let weights = take(n)?;
+        let n_nodes = take(1)?[0] as usize;
+        let nodes = integral::read_nodes(take(n_nodes * integral::NODE_W)?);
         let mut tapes: [&[f64]; 4] = [&[]; 4];
         for t in tapes.iter_mut() {
             let len = take(1)?[0] as usize;
             *t = take(len)?;
         }
-        terms.push(Term { coef, n, map, knots, weights, tapes });
+        terms.push(TermIn { coef, map, nodes, tapes });
     }
     let mut rows = Vec::with_capacity(n_rows);
     for _ in 0..n_rows {
@@ -468,16 +465,9 @@ fn read(k: &[f64]) -> Option<Packed<'_>> {
     Some(Packed { n_y, terms, rows })
 }
 
-impl Term<'_> {
-    fn nodes(&self) -> Vec<integral::Node> {
-        let weighted = self.weights.iter().any(|&w| w != 1.0);
-        integral::nodes(self.knots, weighted.then_some(self.weights), self.n)
-    }
-
-    /// The control points' values, from the group's columns.
-    fn points(&self, v: &[f64]) -> Vec<f64> {
-        self.map.iter().map(|&c| v[c as usize]).collect()
-    }
+/// The values of the group's columns `map` names.
+fn gather(map: &[f64], v: &[f64]) -> Vec<f64> {
+    map.iter().map(|&c| v[c as usize]).collect()
 }
 
 impl Row<'_> {
@@ -490,52 +480,71 @@ impl Row<'_> {
         }
     }
 
-    fn values(&self, v: &[f64]) -> Vec<f64> {
-        self.map.iter().map(|&c| v[c as usize]).collect()
+    /// The row's Jacobian at the group's columns `v` (`n_res × n_par`).
+    fn jacobian(&self, v: &[f64]) -> Vec<f64> {
+        let kn = self.kernel();
+        let mut j = vec![0.0; kn.n_res * kn.n_par];
+        kn.jac_into(&gather(self.map, v), self.consts, &mut j);
+        j
     }
 }
 
-/// Add `f` into the stationarity row of column `c`, where `c` is a varied coordinate.
-fn into_row(r: &mut [f64], n_y: usize, c: f64, f: f64) {
-    if c >= 0.0 && (c as usize) < n_y {
-        r[c as usize] += f;
-    }
+/// The varied coordinate column `c` is, if it is one.
+fn varied(n_y: usize, c: f64) -> Option<usize> {
+    (c as usize).lt(&n_y).then_some(c as usize)
 }
 
-fn stationary_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
-    if n != 1 {
-        r.fill(f64::NAN);
-        return;
-    }
-    let Some(p) = read(k) else {
-        r.fill(f64::NAN);
-        return;
-    };
-    r.fill(0.0);
+/// `∂E/∂y` at the group's columns `v`, into `r` (`n_y`).
+fn energy_gradient(p: &Packed, v: &[f64], r: &mut [f64]) {
     let mut s = tape::Scratch::new();
     for t in &p.terms {
-        let pts = t.points(v);
-        for q in t.nodes() {
+        let pts = gather(t.map, v);
+        for q in &t.nodes {
             let (c, d) = q.frame(&pts);
             let val = tape::eval_flat(t.tapes[0], 4, &[c[0], c[1], d[0], d[1]], &mut s);
             for a in 0..crate::curve::SPAN_N {
                 for i in 0..2 {
-                    let col = t.map[2 * (q.first + a) + i];
-                    into_row(r, p.n_y, col, t.coef * q.w * (q.b[a] * val.d[i] + q.d[a] * val.d[2 + i]));
+                    if let Some(y) = varied(p.n_y, t.map[2 * (q.first + a) + i]) {
+                        r[y] += t.coef * q.w * (q.b[a] * val.d[i] + q.d[a] * val.d[2 + i]);
+                    }
                 }
             }
         }
     }
+}
+
+/// `∂g/∂y` of every row, a row per residual in multiplier order (`n_λ × n_y`).
+fn constraint_gradient(p: &Packed, v: &[f64]) -> Mat {
+    let n_lam: usize = p.rows.iter().map(|r| r.n_res).sum();
+    let mut g = Mat::zeros(n_lam, p.n_y);
+    let mut l = 0;
     for row in &p.rows {
-        let kn = row.kernel();
-        let x = row.values(v);
-        let mut j = vec![0.0; kn.n_res * kn.n_par];
-        kn.jac_into(&x, row.consts, &mut j);
+        let j = row.jacobian(v);
+        let m = row.map.len();
         for kk in 0..row.n_res {
-            let lam = v[row.lam + kk];
             for (c, &col) in row.map.iter().enumerate() {
-                into_row(r, p.n_y, col, lam * j[kk * kn.n_par + c]);
+                if let Some(y) = varied(p.n_y, col) {
+                    g.data[(l + kk) * p.n_y + y] += j[kk * m + c];
+                }
             }
+        }
+        l += row.n_res;
+    }
+    g
+}
+
+fn stationary_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    let Some(p) = read(k).filter(|_| n == 1) else {
+        r.fill(f64::NAN);
+        return;
+    };
+    r.fill(0.0);
+    energy_gradient(&p, v, r);
+    let g = constraint_gradient(&p, v);
+    let lam0 = p.rows.first().map_or(v.len(), |row| row.lam);
+    for l in 0..g.rows {
+        for y in 0..p.n_y {
+            r[y] += v[lam0 + l] * g.data[l * p.n_y + y];
         }
     }
 }
@@ -548,26 +557,23 @@ fn stationary_jac(n: usize, v: &[f64], k: &[f64], out: &mut [f64]) {
         return;
     };
     let n_y = p.n_y;
-    let mut add = |row: f64, col: f64, f: f64| {
-        if row >= 0.0 && (row as usize) < n_y && col >= 0.0 {
-            out[row as usize * n_par + col as usize] += f;
+    let mut add = |row: f64, col: usize, f: f64| {
+        if let Some(y) = varied(n_y, row) {
+            out[y * n_par + col] += f;
         }
     };
     // the energy's Hessian, node by node: the integrand's in (C, C') by the chain rule, each a
     // sum of the control points times the basis there
     let mut s = tape::Scratch::new();
     for t in &p.terms {
-        let pts = t.points(v);
-        for q in t.nodes() {
+        let pts = gather(t.map, v);
+        for q in &t.nodes {
             let (c, d) = q.frame(&pts);
             let x = [c[0], c[1], d[0], d[1]];
             let mut h = [[0.0; 4]; 4];
             for (kv, row) in h.iter_mut().enumerate() {
-                let mut xs = vec![x[kv]];
-                xs.extend((0..4).filter(|&j| j != kv).map(|j| x[j]));
-                let ser = tape::eval_series_flat(t.tapes[kv], 4, &xs, &mut s);
-                let order: Vec<usize> = std::iter::once(kv).chain((0..4).filter(|&j| j != kv)).collect();
-                for (jj, &var) in order.iter().enumerate() {
+                let ser = tape::eval_series_flat(t.tapes[kv], 4, &ORDER[kv].map(|j| x[j]), &mut s);
+                for (jj, &var) in ORDER[kv].iter().enumerate() {
                     row[var] = ser.g[1][jj];
                 }
             }
@@ -579,7 +585,8 @@ fn stationary_jac(n: usize, v: &[f64], k: &[f64], out: &mut [f64]) {
                                 + q.b[a] * q.d[b] * h[i][2 + jx]
                                 + q.d[a] * q.b[b] * h[2 + i][jx]
                                 + q.d[a] * q.d[b] * h[2 + i][2 + jx];
-                            add(t.map[2 * (q.first + a) + i], t.map[2 * (q.first + b) + jx], t.coef * q.w * f);
+                            let col = t.map[2 * (q.first + b) + jx] as usize;
+                            add(t.map[2 * (q.first + a) + i], col, t.coef * q.w * f);
                         }
                     }
                 }
@@ -588,23 +595,21 @@ fn stationary_jac(n: usize, v: &[f64], k: &[f64], out: &mut [f64]) {
     }
     // each row: its gradient where its multiplier is, and its multipliers' Hessian
     for row in &p.rows {
-        let kn = row.kernel();
-        let x = row.values(v);
-        let m = kn.n_par;
-        let mut j = vec![0.0; kn.n_res * m];
-        kn.jac_into(&x, row.consts, &mut j);
+        let x = gather(row.map, v);
+        let m = x.len();
+        let j = row.jacobian(v);
         for kk in 0..row.n_res {
             for (c, &col) in row.map.iter().enumerate() {
-                add(col, (row.lam + kk) as f64, j[kk * m + c]);
+                add(col, row.lam + kk, j[kk * m + c]);
             }
         }
-        let lam: Vec<f64> = (0..row.n_res).map(|kk| v[row.lam + kk]).collect();
-        let need: Vec<bool> = row.map.iter().map(|&c| c >= 0.0 && (c as usize) < n_y).collect();
+        let lam = &v[row.lam..row.lam + row.n_res];
+        let need: Vec<bool> = row.map.iter().map(|&c| varied(n_y, c).is_some()).collect();
         let mut hl = vec![0.0; m * m];
-        row_hessian(row.tag, &x, row.consts, &lam, &need, &mut hl);
+        row_hessian(row.tag, &x, row.consts, lam, &need, &mut hl);
         for a in (0..m).filter(|&a| need[a]) {
             for b in 0..m {
-                add(row.map[a], row.map[b], hl[a * m + b]);
+                add(row.map[a], row.map[b] as usize, hl[a * m + b]);
             }
         }
     }
@@ -615,15 +620,14 @@ fn row_hessian(tag: f64, x: &[f64], kc: &[f64], lam: &[f64], need: &[bool], h: &
     let m = x.len();
     if tag < 0.0 {
         // a spline's length: the free column, where there is one, enters linearly
-        let (n, _) = integral::length_widths(m);
-        let nodes = integral::length_nodes(n, kc);
+        let (n, free) = integral::length_widths(m);
+        let (_, nodes) = integral::length_parts(free, kc);
         integral::length_hess(&nodes, &x[..2 * n], lam[0], None, h, m);
         return;
     }
     let kid = tag as usize;
     if kid == K::SplineGauge as usize {
-        let n = kernels::GAUGE_CTRL;
-        let nodes = integral::length_nodes(n, kc);
+        let nodes = integral::read_nodes(kc);
         integral::length_hess(&nodes, x, lam[0], Some(1), h, m);
         integral::length_hess(&nodes, x, -lam[0], Some(0), h, m);
         return;
@@ -636,9 +640,7 @@ fn row_hessian(tag: f64, x: &[f64], kc: &[f64], lam: &[f64], need: &[bool], h: &
     let nr = KERNELS[kid].n_res;
     let (mut path, mut r, mut jrow) = (Vec::with_capacity(m), vec![Jet::default(); nr], Vec::new());
     let mut s = |w: &[f64]| -> f64 {
-        path.clear();
-        path.extend(x.iter().zip(w).map(|(&xi, &wi)| Jet::from(&[xi, wi])));
-        if !crate::taylor::residual(kid, &path, kc, &mut r, &mut jrow) {
+        if !crate::taylor::along(kid, x, w, kc, &mut path, &mut r, &mut jrow) {
             return f64::NAN;
         }
         (0..nr).map(|k| lam[k] * r[k].0[2]).sum()
@@ -653,6 +655,11 @@ fn row_hessian(tag: f64, x: &[f64], kc: &[f64], lam: &[f64], need: &[bool], h: &
     for a in (0..m).filter(|&a| need[a]) {
         h[a * m + a] = 2.0 * one[a];
         for b in (0..m).filter(|&b| b != a) {
+            // symmetric: an entry another needed row already has is read, not worked out again
+            if b < a && need[b] {
+                h[a * m + b] = h[b * m + a];
+                continue;
+            }
             w[a] = 1.0;
             w[b] = 1.0;
             h[a * m + b] = s(&w) - one[a] - one[b];
@@ -662,38 +669,36 @@ fn row_hessian(tag: f64, x: &[f64], kc: &[f64], lam: &[f64], need: &[bool], h: &
     }
 }
 
+/// A group's leading constraint's constants, unpacked, and its columns' values at the sketch's
+/// pose — what the seed and the verdict read the stationarity through.
+fn at_pose(sk: &Sketch, g: &Group) -> Option<(Vec<f64>, Vec<f64>)> {
+    if g.y.is_empty() {
+        return None;
+    }
+    let v = g.cols.iter().map(|&p| sk.params[p as usize].value).collect();
+    Some((pack(sk, g.leader), v))
+}
+
 /* -- multipliers -------------------------------------------------------------------------- */
 
 /// Each group's multipliers where they best answer its stationarity at the current pose: the
 /// least-squares `λ` of `∂E/∂y + (∂g/∂y)ᵀ λ = 0` — the multipliers *are* a function of the pose at
 /// a solution, so this is the start a solve deserves, and zero (the gradient alone) is far from it.
+/// Gradients only: no Hessian is asked for.
 pub fn seed_multipliers(sk: &mut Sketch) {
     for g in sk.variational.clone() {
-        let Some(c) = sk.constraint(g.leader).cloned() else { continue };
-        let n_y = g.y.len();
-        if n_y == 0 {
+        let Some((k, v)) = at_pose(sk, &g) else { continue };
+        let Some(p) = read(&k) else { continue };
+        let mut grad = vec![0.0; p.n_y];
+        energy_gradient(&p, &v, &mut grad);
+        if grad.iter().any(|x| !x.is_finite()) {
             continue;
         }
-        let n_lam: usize = g.rows.iter().map(|&r| sk.constraint(r).map_or(0, |c| c.rows_in(sk))).sum();
-        let lam0 = g.cols.len() - n_lam;
-        let mut v: Vec<f64> = g.cols.iter().map(|&p| sk.params[p as usize].value).collect();
-        v[lam0..].fill(0.0);
-        let kn = c.kernel_in(sk);
-        let (r, j) = kernels::eval_with(&kn, &v, &c.consts(sk));
-        if r.iter().any(|x| !x.is_finite()) {
-            continue;
-        }
-        let mut a = crate::linalg::Mat::zeros(n_y, n_lam);
-        for i in 0..n_y {
-            for l in 0..n_lam {
-                a.data[i * n_lam + l] = j[i * kn.n_par + lam0 + l];
-            }
-        }
-        let b: Vec<f64> = r.iter().map(|x| -x).collect();
-        let (lam, _) = crate::linalg::min_norm_solve(&a, &b, 1e-12);
-        for (l, &p) in g.cols[lam0..].iter().enumerate() {
+        let b: Vec<f64> = grad.iter().map(|x| -x).collect();
+        let (lam, _) = crate::linalg::min_norm_solve(&constraint_gradient(&p, &v).transpose(), &b, 1e-12);
+        for (l, &q) in g.cols[g.lam0..].iter().enumerate() {
             if lam[l].is_finite() {
-                sk.params[p as usize].value = lam[l];
+                sk.params[q as usize].value = lam[l];
             }
         }
     }
@@ -702,24 +707,17 @@ pub fn seed_multipliers(sk: &mut Sketch) {
 /* -- a free curve's start ----------------------------------------------------------------- */
 
 /// The energy a group's terms come to at the sketch's pose.
-fn energy(sk: &Sketch, members: &[u32]) -> f64 {
+fn energy(sk: &Sketch, g: &Group) -> f64 {
+    let Some((k, v)) = at_pose(sk, g) else { return 0.0 };
+    let Some(p) = read(&k) else { return 0.0 };
     let mut s = tape::Scratch::new();
-    let mut e = 0.0;
-    for c in members.iter().filter_map(|&m| sk.constraint(m)) {
-        let sp = &sk.splines[c.args[0].ent().i()];
-        let Arg::Str(text) = &c.args[2] else { continue };
-        let Ok(f) = integrand(text, sk.units) else { continue };
-        let sign = if matches!(c.args[4], Arg::Bool(true)) { -1.0 } else { 1.0 };
-        let pts: Vec<f64> = sk.entity_params(EntRef::spline(c.args[0].ent().i()))
-            .iter().map(|&p| sk.params[p as usize].value).collect();
-        let nodes = integral::nodes(&sp.knots, sp.weights.as_deref(), sp.ctrl.len());
-        for q in nodes {
-            let (cc, d) = q.frame(&pts);
-            let v = tape::eval_flat(&f.tapes[0].flat, 4, &[cc[0], cc[1], d[0], d[1]], &mut s);
-            e += sign * c.args[1].num() * q.w * v.v;
-        }
-    }
-    e
+    p.terms.iter().map(|t| {
+        let pts = gather(t.map, &v);
+        t.nodes.iter().map(|q| {
+            let (c, d) = q.frame(&pts);
+            t.coef * q.w * tape::eval_flat(t.tapes[0], 4, &[c[0], c[1], d[0], d[1]], &mut s).v
+        }).sum::<f64>()
+    }).sum()
 }
 
 /// Where a free curve's interior starts (`spline(a, b)`): on its chord, bowed off it as far as its
@@ -758,9 +756,9 @@ pub fn seed_free(sk: &mut Sketch) {
                 }
             };
             place(sk, 1.0);
-            let left = energy(sk, &g.members);
+            let left = energy(sk, &g);
             place(sk, -1.0);
-            let right = energy(sk, &g.members);
+            let right = energy(sk, &g);
             if left < right {
                 place(sk, 1.0);
             }
@@ -808,42 +806,29 @@ impl Extremum {
 /// those motions (Sylvester), so neither the units nor the basis decide it.  `None` where the rows
 /// leave the curve no motion at all, and so nothing for the energy to choose.
 pub fn verdict(sk: &Sketch, g: &Group) -> Option<Extremum> {
-    let c = sk.constraint(g.leader)?;
-    let n_y = g.y.len();
-    if n_y == 0 {
-        return None;
-    }
-    let n_lam: usize = g.rows.iter().map(|&r| sk.constraint(r).map_or(0, |c| c.rows_in(sk))).sum();
-    let lam0 = g.cols.len() - n_lam;
-    let v: Vec<f64> = g.cols.iter().map(|&p| sk.params[p as usize].value).collect();
-    let kn = c.kernel_in(sk);
-    let (_, j) = kernels::eval_with(&kn, &v, &c.consts(sk));
+    let (k, v) = at_pose(sk, g)?;
+    let p = read(&k)?;
+    let n_y = p.n_y;
+    let mut j = vec![0.0; n_y * v.len()];
+    stationary_jac(1, &v, &k, &mut j);
     if j.iter().any(|x| !x.is_finite()) {
         return None;
     }
-    let mut gm = crate::linalg::Mat::zeros(n_lam, n_y);
-    for l in 0..n_lam {
-        for i in 0..n_y {
-            gm.data[l * n_y + i] = j[i * kn.n_par + lam0 + l];
-        }
-    }
-    let z = crate::linalg::rank_and_nullspace(&gm, 1e-10).null();
-    let k = z.cols;
-    if k == 0 {
+    let z = crate::linalg::rank_and_nullspace(&constraint_gradient(&p, &v), 1e-10).null();
+    let dim = z.cols;
+    if dim == 0 {
         return None;
     }
-    // the y block, made symmetric: the energy's and each row's Hessian are, up to rounding
-    let h = |a: usize, b: usize| 0.5 * (j[a * kn.n_par + b] + j[b * kn.n_par + a]);
-    let mut hz = vec![0.0; n_y * k];
-    for a in 0..n_y {
-        for col in 0..k {
-            hz[a * k + col] = (0..n_y).map(|b| h(a, b) * z.data[b * k + col]).sum();
-        }
-    }
-    let mut m = crate::linalg::Mat::zeros(k, k);
-    for p in 0..k {
-        for q in 0..k {
-            m.data[p * k + q] = (0..n_y).map(|a| z.data[a * k + p] * hz[a * k + q]).sum();
+    // `Zᵀ H Z` over the y block, made symmetric: the energy's and each row's Hessian are, up to
+    // rounding
+    let h = |a: usize, b: usize| 0.5 * (j[a * v.len() + b] + j[b * v.len() + a]);
+    let hz: Vec<f64> = (0..n_y * dim)
+        .map(|i| (0..n_y).map(|b| h(i / dim, b) * z.data[b * dim + i % dim]).sum())
+        .collect();
+    let mut m = Mat::zeros(dim, dim);
+    for p in 0..dim {
+        for q in 0..dim {
+            m.data[p * dim + q] = (0..n_y).map(|a| z.data[a * dim + p] * hz[a * dim + q]).sum();
         }
     }
     let ev = crate::linalg::sym_eigenvalues(&m);
@@ -852,8 +837,8 @@ pub fn verdict(sk: &Sketch, g: &Group) -> Option<Extremum> {
     let (pos, neg) = (ev.iter().filter(|&&e| e > tol).count(), ev.iter().filter(|&&e| e < -tol).count());
     Some(match (pos, neg) {
         (_, _) if big == 0.0 => Extremum::Degenerate,
-        (p, 0) if p == k => Extremum::Minimum,
-        (0, q) if q == k => Extremum::Maximum,
+        (p, 0) if p == dim => Extremum::Minimum,
+        (0, q) if q == dim => Extremum::Maximum,
         (p, q) if p > 0 && q > 0 => Extremum::Saddle,
         _ => Extremum::Degenerate,
     })
@@ -866,7 +851,7 @@ pub fn extrema(sk: &Sketch) -> Vec<(u32, Extremum)> {
     for g in &sk.variational {
         let Some(v) = verdict(sk, g) else { continue };
         for &m in &g.members {
-            let max = sk.constraint(m).is_some_and(|c| matches!(c.args[4], Arg::Bool(true)));
+            let max = sk.constraint(m).is_some_and(maximizes);
             out.push((m, if max { v.turned() } else { v }));
         }
     }
@@ -875,8 +860,8 @@ pub fn extrema(sk: &Sketch) -> Vec<(u32, Extremum)> {
 
 /// What energy constraint `cid`'s statement asked for: a minimum, or — `maximize` — a maximum.
 pub fn asked(sk: &Sketch, cid: u32) -> Extremum {
-    match sk.constraint(cid).map(|c| &c.args[4]) {
-        Some(Arg::Bool(true)) => Extremum::Maximum,
-        _ => Extremum::Minimum,
+    match sk.constraint(cid).is_some_and(maximizes) {
+        true => Extremum::Maximum,
+        false => Extremum::Minimum,
     }
 }

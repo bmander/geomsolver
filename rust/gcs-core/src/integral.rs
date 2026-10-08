@@ -1,13 +1,17 @@
-//! Integrals over a whole spline (#121): its length, and later an energy along it.
+//! Integrals over a whole spline (#121): its length, and an energy along it.
 //!
 //! A contact reads one span of a curve; an integral reads all of them, so its row's columns are
 //! every control point's coordinates and its kernel is built per control-point count
 //! (`kernels::spline_length_kernel`), as a curve family's is per definition.  The quadrature is
-//! Gauss–Legendre on equal pieces of each non-empty span (`nodes`): the curve is linear in its control points
-//! over a fixed basis, so a node is the basis there and nothing else — its value, gradient and
-//! Hessian in the control points follow from the integrand's in `C` and `C'` by the chain rule,
-//! exactly.  Not exact in the integral: `|C'|` is no polynomial, so the length is good to the
-//! rule's order per span, which on a drawing's splines is far below the solve's tolerance.
+//! Gauss–Legendre on equal pieces of each non-empty span (`nodes`): the curve is linear in its
+//! control points over a fixed basis, so a node is the basis there and nothing else — its value,
+//! gradient and Hessian in the control points follow from the integrand's in `C` and `C'` by the
+//! chain rule, exactly.  Not exact in the integral: `|C'|` is no polynomial, so the length is good
+//! to the rule's order per span, which on a drawing's splines is far below the solve's tolerance.
+//!
+//! The nodes are document data — the knots and weights are — so they are worked out once, where a
+//! kernel's constants are written (`write_nodes`), and read back on every evaluation
+//! (`read_nodes`) rather than run through the basis again.
 
 #[allow(unused_imports)]
 use crate::fmath::Det;
@@ -25,6 +29,14 @@ pub const GAUSS8: [(f64, f64); 8] = [
     (0.9602898564975363, 0.1012285362903763),
 ];
 
+/// Equal pieces each span's rule runs on.  One is not enough where a span bends hard: `|C'|`
+/// is no polynomial, and a single Bézier with a tight turn reads ~1e-4 of its length off by
+/// eight points, against 2e-10 on four pieces.
+pub const PIECES: usize = 4;
+
+/// The nodes one span is integrated over.
+pub const PER_SPAN: usize = PIECES * GAUSS8.len();
+
 /// One quadrature node of a spline: the span's first control point, the basis there and its
 /// derivative in t (rational where the spline is weighted), the node's weight in t, and the
 /// span it is on (counting non-empty spans from 0).
@@ -37,15 +49,10 @@ pub struct Node {
     pub span: usize,
 }
 
-/// Equal pieces each span's rule runs on.  One is not enough where a span bends hard: `|C'|`
-/// is no polynomial, and a single Bézier with a tight turn reads ~1e-4 of its length off by
-/// eight points, against 2e-10 on four pieces.
-pub const PIECES: usize = 4;
-
 /// Every node of a spline of `n` control points over `knots` (and `weights`, all 1 when
 /// `None`), span by span in parameter order.
 pub fn nodes(knots: &[f64], weights: Option<&[f64]>, n: usize) -> Vec<Node> {
-    let mut out = Vec::with_capacity(PIECES * GAUSS8.len() * n.saturating_sub(DEGREE));
+    let mut out = Vec::with_capacity(PER_SPAN * n.saturating_sub(DEGREE));
     let mut k = 0;
     for s in DEGREE..n {
         let (t0, t1) = (knots[s], knots[s + 1]);
@@ -70,10 +77,43 @@ pub fn nodes(knots: &[f64], weights: Option<&[f64]>, n: usize) -> Vec<Node> {
     out
 }
 
-/// The non-empty spans of a spline of `n` control points over `knots`.
-pub fn n_spans(knots: &[f64], n: usize) -> usize {
-    (DEGREE..n).filter(|&s| knots[s + 1] > knots[s]).count()
+/* -- nodes as constants ------------------------------------------------------------------- */
+
+/// How many numbers one node is in a kernel's constants: `[first, span, b…, d…, w]`.
+pub const NODE_W: usize = 3 + 2 * SPAN_N;
+
+/// The nodes into `out`, then as many empty ones (weight 0, read back as none) as it takes to
+/// make `room` — a kernel's constants are one width for every spline of its count.
+pub fn write_nodes(nodes: &[Node], room: usize, out: &mut Vec<f64>) {
+    for q in nodes {
+        out.extend([q.first as f64, q.span as f64]);
+        out.extend(q.b);
+        out.extend(q.d);
+        out.push(q.w);
+    }
+    out.extend(std::iter::repeat_n(0.0, NODE_W * room.saturating_sub(nodes.len())));
 }
+
+/// The nodes `write_nodes` wrote, the empty ones left out.
+pub fn read_nodes(k: &[f64]) -> Vec<Node> {
+    k.chunks_exact(NODE_W)
+        .filter(|c| c[NODE_W - 1] != 0.0)
+        .map(|c| Node {
+            first: c[0] as usize,
+            span: c[1] as usize,
+            b: c[2..2 + SPAN_N].try_into().expect("a node's basis"),
+            d: c[2 + SPAN_N..2 + 2 * SPAN_N].try_into().expect("a node's derivative"),
+            w: c[NODE_W - 1],
+        })
+        .collect()
+}
+
+/// The most nodes a spline of `n` control points has: every span non-empty.
+pub fn most_nodes(n: usize) -> usize {
+    PER_SPAN * n.saturating_sub(DEGREE)
+}
+
+/* -- length ------------------------------------------------------------------------------- */
 
 /// Below this speed the tangent is no direction, and a node reads its speed as this instead —
 /// a curve collapsed to a point has no length to differentiate.
@@ -94,24 +134,23 @@ impl Node {
     }
 }
 
-/// A spline's length over control points `p` (2n numbers), from its nodes.
-pub fn length(nodes: &[Node], p: &[f64]) -> f64 {
-    nodes.iter().map(|q| q.w * speed(q.frame(p).1)).sum()
-}
-
-/// The length of the nodes' span `k` alone.
-pub fn span_length(nodes: &[Node], p: &[f64], k: usize) -> f64 {
-    nodes.iter().filter(|q| q.span == k).map(|q| q.w * speed(q.frame(p).1)).sum()
-}
-
 fn speed(d: [f64; 2]) -> f64 {
     d[0].dhypot(d[1]).max(MIN_SPEED)
 }
 
-/// The length's gradient in the control points, added into `g` (2n), scaled by `s`.  Where only
-/// the nodes of span `only` are read when it is given.
+/// The nodes of span `only`, or all of them.
+fn of_span(nodes: &[Node], only: Option<usize>) -> impl Iterator<Item = &Node> {
+    nodes.iter().filter(move |q| only.is_none_or(|k| q.span == k))
+}
+
+/// A spline's length over control points `p` (2n numbers) — span `only`'s, where it is given.
+pub fn length(nodes: &[Node], p: &[f64], only: Option<usize>) -> f64 {
+    of_span(nodes, only).map(|q| q.w * speed(q.frame(p).1)).sum()
+}
+
+/// The length's gradient in the control points, scaled by `s`, added into `g` (2n).
 pub fn length_grad(nodes: &[Node], p: &[f64], s: f64, only: Option<usize>, g: &mut [f64]) {
-    for q in nodes.iter().filter(|q| only.is_none_or(|k| q.span == k)) {
+    for q in of_span(nodes, only) {
         let d = q.frame(p).1;
         let v = speed(d);
         let (ux, uy) = (d[0] / v, d[1] / v);
@@ -127,7 +166,7 @@ pub fn length_grad(nodes: &[Node], p: &[f64], s: f64, only: Option<usize>, g: &m
 /// major, `stride` columns a row): per node `w · d_a d_b (I − ûûᵀ) / |C'|`.
 pub fn length_hess(nodes: &[Node], p: &[f64], s: f64, only: Option<usize>, h: &mut [f64],
                    stride: usize) {
-    for q in nodes.iter().filter(|q| only.is_none_or(|k| q.span == k)) {
+    for q in of_span(nodes, only) {
         let d = q.frame(p).1;
         let v = speed(d);
         let (ux, uy) = (d[0] / v, d[1] / v);
@@ -145,32 +184,25 @@ pub fn length_hess(nodes: &[Node], p: &[f64], s: f64, only: Option<usize>, h: &m
     }
 }
 
-/* -- the length row's constants ---------------------------------------------- */
+/* -- the length row's constants ----------------------------------------------------------- */
 
-/// A spline length row's constants for `n` control points: the knots (`n + DEGREE + 1`), then
-/// the weights (`n`, all 1 where the spline has none), then what it states — `L`, or `(m, c)`
-/// for a length an unknown sets.
+/// A spline length row's constants for `n` control points: what it states — `L`, or `(m, c)`
+/// for a length an unknown sets — then the spline's nodes, as many as its count allows.
 pub fn length_consts(knots: &[f64], weights: Option<&[f64]>, n: usize, stated: &[f64]) -> Vec<f64> {
-    let mut k = Vec::with_capacity(2 * n + DEGREE + 1 + stated.len());
-    k.extend_from_slice(knots);
-    match weights {
-        Some(w) => k.extend_from_slice(w),
-        None => k.extend(std::iter::repeat_n(1.0, n)),
-    }
+    let mut k = Vec::with_capacity(stated.len() + NODE_W * most_nodes(n));
     k.extend_from_slice(stated);
+    write_nodes(&nodes(knots, weights, n), most_nodes(n), &mut k);
     k
 }
 
-/// The control-point count and whether the length is free, read off one instance's widths:
-/// `n_par` is `2n` (`2n + 1` with the unknown's column) and `n_const` `2n + 4` plus 1 or 2.
+/// The control-point count and whether the length is free, read off one instance's columns:
+/// `2n`, or `2n + 1` with the unknown's.
 pub fn length_widths(n_par: usize) -> (usize, bool) {
     (n_par / 2, n_par % 2 == 1)
 }
 
-/// The nodes one instance's constants describe.
-pub fn length_nodes(n: usize, k: &[f64]) -> Vec<Node> {
-    let nk = n + DEGREE + 1;
-    let w = &k[nk..nk + n];
-    let weighted = w.iter().any(|&x| x != 1.0);
-    nodes(&k[..nk], weighted.then_some(w), n)
+/// What one instance's constants state (`L`, or `(m, c)`), and its nodes.
+pub fn length_parts(free: bool, k: &[f64]) -> (&[f64], Vec<Node>) {
+    let (stated, nodes) = k.split_at(if free { 2 } else { 1 });
+    (stated, read_nodes(nodes))
 }

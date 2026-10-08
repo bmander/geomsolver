@@ -213,13 +213,14 @@ pub(crate) fn settle_integrand(
         })
     };
     let fault = std::cell::RefCell::new(None);
+    let number = of_vals(vals, units);
     let text = substitute_with(&t.body, |w| match bound(w) {
         Some(Ok(c)) => Some(c),
         Some(Err(e)) => {
             fault.borrow_mut().get_or_insert(e);
             None
         }
-        None => of_vals(vals, units)(w),
+        None => number(w),
     });
     if let Some(e) = fault.into_inner() {
         return Err(e);
@@ -230,8 +231,7 @@ pub(crate) fn settle_integrand(
                     the solved drawing"
             .to_string());
     }
-    let known = ["p.x", "p.y", "t.x", "t.y"];
-    if let Some(d) = parsed.body.deps().iter().find(|d| !known.contains(&d.as_str())) {
+    if let Some(d) = parsed.body.deps().iter().find(|d| !crate::variational::BOUND.contains(&d.as_str())) {
         return Err(format!(
             "`{d}` is no number in scope: an integrand reads the point `{}` it runs along{} and \
              numbers",

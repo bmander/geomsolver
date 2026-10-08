@@ -507,8 +507,9 @@ impl System {
         let spans = crate::curve::contact_spans(sk);
         let mut by_kernel: BTreeMap<KernelKey, Vec<usize>> = BTreeMap::new();
         for (i, c) in sk.constraints.iter().enumerate() {
-            // an energy compiles its rows once, at the constraint leading its group (#121)
-            if c.claim || (c.kind == crate::constraints::CKind::Stationary && c.rows_in(sk) == 0) {
+            // a constraint with no rows here compiles none: an energy's are carried once, by the
+            // constraint leading its group (#121)
+            if c.claim || c.rows_in(sk) == 0 {
                 continue;
             }
             by_kernel.entry(c.kernel_key(sk)).or_default().push(i);
