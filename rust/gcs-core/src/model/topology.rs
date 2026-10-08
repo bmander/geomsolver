@@ -180,9 +180,9 @@ impl Sketch {
             // a claim compiles to no rows, so claiming a relation and stating it are different
             // topologies even though the constraint list reads the same
             let _ = write!(s, "{}:{}{},", c.id, c.type_name(), if c.claim { "?" } else { "" });
-            // a linearisation is another kernel over more columns (§6.21)
-            if let Some(a) = c.along {
-                let _ = write!(s, "~{}.{},", a.point, a.line);
+            // a derivative is another kernel over more columns (§6.21)
+            if let Some(d) = c.along {
+                let _ = write!(s, "~{d}.{:?},", self.duals[d].toward);
             }
             // A constraint whose columns are not fixed by its entities alone writes them out:
             // which span of a spline a contact sits on, and which unknown a dimension written in

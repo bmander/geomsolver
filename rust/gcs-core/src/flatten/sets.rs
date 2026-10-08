@@ -21,7 +21,7 @@
 use super::*;
 use crate::program::public_path;
 use super::apply::{local, Application, Use};
-use crate::syntax::{Along, Chained, Relation, RelationForm, SetLit, Worded};
+use crate::syntax::{Along, AlongBy, Chained, Relation, RelationForm, SetLit, Worded};
 
 /// Where a set stands: its literal, the scope its body reads names in (an instance's, with its
 /// formals bound, for a family's), and how deep the walk was there.  A use's expansion stands
@@ -147,17 +147,6 @@ impl<'a> Walk<'a> {
         }
         let site = &self.sets[abs];
         let (lit, depth, closure) = (site.lit.clone(), site.depth, site.scope.clone());
-        if tangent {
-            if let Some(what) = makes_points(&lit) {
-                let m = format!(
-                    "`{word} {name}` is the set's body at a contact and its linearisation \
-                     along the line, and `{what}` in its body is geometry of its own, whose \
-                     motion along the set the linearisation would need as well"
-                );
-                self.once(Code::E040, at, m);
-                return;
-            }
-        }
         let u = Use { st, rel, path, scope: sc, at };
         let app = self.begin(&u, &closure);
         let other = w.ops[1 - k].clone();
@@ -168,7 +157,9 @@ impl<'a> Walk<'a> {
         let walks = if tangent {
             self.bind_to_use(&app, "#line", other.clone(), &u);
             self.contact(&app, st, &bound, at, path);
-            vec![None, Some(Along { point: local(&bound, at), line: local("#line", at) })]
+            let toward = AlongBy::Line(local("#line", at));
+            let key = app.prefix().to_string();
+            vec![None, Some(Along { point: local(&bound, at), toward, key })]
         } else {
             self.bind_to_use(&app, &bound, other.clone(), &u);
             vec![self.inherited_twin(&app, &u)]

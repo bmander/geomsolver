@@ -398,10 +398,12 @@ pub fn elaborate(p: &Program) -> Elaborated {
     // held number is its own seed, so nothing that holds one needs a `hint` saying it again — an
     // axis along a line, a motion, a place reading a held point all read where it is held, and
     // a seed never writes a held number (`settle_deferred`)
+    // each tangency's derivative, by the key the flattener gave its use (§6.21)
+    let mut duals = BTreeMap::new();
     for st in &stating {
         let StmtKind::Relation(r) = &st.kind else { continue };
         if relations::is_fix(r) {
-            constrain(&mut sk, &res, r, st, p, &map, &mut diags);
+            constrain(&mut sk, &res, r, st, p, &map, &mut duals, &mut diags);
         }
     }
     // a plane whose axes are held stands where they meet (#84), and one held elsewhere takes
@@ -437,7 +439,7 @@ pub fn elaborate(p: &Program) -> Elaborated {
         if relations::is_fix(r) {
             continue;
         }
-        if let Some(id) = constrain(&mut sk, &res, r, st, p, &map, &mut diags) {
+        if let Some(id) = constrain(&mut sk, &res, r, st, p, &map, &mut duals, &mut diags) {
             map.record(st, Made::Con(id));
             if let Some(place) = r.place {
                 sk.placements.insert(id, place);

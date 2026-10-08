@@ -336,9 +336,9 @@ pub fn to_json(sk: &Sketch) -> Json {
             if c.claim {
                 o.set("claim", Json::Bool(true));
             }
-            // a set's linearised row (§6.21): its contact and line, by index
-            if let Some(a) = c.along {
-                o.set("along", Json::Arr(vec![Json::Num(a.point as f64), Json::Num(a.line as f64)]));
+            // a set's derivative row (§6.21): its use's derivative, by index into `duals`
+            if let Some(d) = c.along {
+                o.set("along", Json::Int(d as i64));
             }
             if !c.class.is_empty() {
                 o.set("class", Json::Arr(c.class.0.iter().map(|s| Json::Str(s.clone())).collect()));
@@ -402,7 +402,59 @@ pub fn to_json(sk: &Sketch) -> Json {
     if !axes.is_empty() {
         doc.set("axes", Json::Arr(axes));
     }
+    // each tangency's derivative, only when there is one (§6.21): the point it moves, what moves
+    // it and the geometry the use made
+    let duals: Vec<Json> = sk.duals.iter().map(dual_json).collect();
+    if !duals.is_empty() {
+        doc.set("duals", Json::Arr(duals));
+    }
     doc
+}
+
+fn dual_json(d: &crate::model::Dual) -> Json {
+    use crate::model::Toward;
+    let mut o = object([
+        ("point", Json::Int(d.point as i64)),
+        ("owned", Json::Arr(d.owned.iter().map(|&e| ref_json(e)).collect())),
+    ]);
+    match d.toward {
+        Toward::Line(l) => o.set("line", Json::Int(l as i64)),
+        Toward::Chart { k, axis } => o.set("chart", Json::Arr(vec![
+            Json::Int(k as i64),
+            axis.map_or(Json::Null, |c| Json::Int(c as i64)),
+        ])),
+    }
+    o
+}
+
+/// A tangency's derivative, read from a document (§6.21).
+fn dual_from_json(sk: &Sketch, j: &Json) -> Result<(usize, crate::model::Toward, Vec<EntRef>), String> {
+    use crate::model::Toward;
+    let point = index(j.get("point").map_or(-1, |v| v.as_i64()), sk.points.len(), "dual point")?;
+    let toward = match (j.get("line"), j.get("chart")) {
+        (Some(l), _) => Toward::Line(index(l.as_i64(), sk.lines.len(), "dual line")?),
+        (None, Some(c)) => {
+            let c = c.arr();
+            let k = c.first().map_or(-1, |v| v.as_i64());
+            if !(0..=1).contains(&k) {
+                return Err("a dual's chart is the first or the second".to_string());
+            }
+            let axis = match c.get(1) {
+                Some(a) if !omitted(Some(a)) => Some(index(a.as_i64(), 3, "dual chart axis")? as u8),
+                _ => None,
+            };
+            Toward::Chart { k: k as u8, axis }
+        }
+        (None, None) => return Err("a dual moves its point along a line or in a chart".to_string()),
+    };
+    let mut owned = Vec::new();
+    for e in j.get("owned").map(|v| v.arr()).unwrap_or_default() {
+        let a = e.arr();
+        let kind = a.first().and_then(|k| EntKind::parse(k.as_str())).ok_or("unknown dual entity kind")?;
+        let i = index(a.get(1).map_or(-1, |v| v.as_i64()), sk.count(kind), "dual entity")?;
+        owned.push(EntRef::new(kind, i));
+    }
+    Ok((point, toward, owned))
 }
 
 pub fn from_json(d: &Json) -> Result<Sketch, String> {
@@ -523,6 +575,11 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
                 sk.set_plane(i, Some(index(v.as_i64(), sk.planes.len(), "point.plane")?));
             }
         }
+    }
+    // the derivatives before the rows that read them
+    for j in d.get("duals").unwrap_or(&empty).arr() {
+        let (point, toward, owned) = dual_from_json(&sk, j)?;
+        sk.add_dual(point, toward, owned);
     }
     let mut ids = Vec::new();
     for c in d.get("constraints").unwrap_or(&empty).arr() {
@@ -1255,6 +1312,21 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
     for (&e, &roles) in &src.roles {
         if let Some(target) = remap(e) { dst.roles.insert(target, roles); }
     }
+    // each tangency's derivative, while its point and its line came along, with the geometry
+    // the use made that did (§6.21)
+    let mut dual_map: Vec<Option<usize>> = vec![None; src.duals.len()];
+    for (i, d) in src.duals.iter().enumerate() {
+        let Some(point) = remap(EntRef::point(d.point)) else { continue };
+        let toward = match d.toward {
+            crate::model::Toward::Line(l) => match remap(EntRef::line(l)) {
+                Some(l) => crate::model::Toward::Line(l.i()),
+                None => continue,
+            },
+            chart => chart,
+        };
+        let owned = d.owned.iter().filter_map(|&e| remap(e)).collect();
+        dual_map[i] = Some(dst.add_dual(point.i(), toward, owned));
+    }
     let mut expr = false;
     for c in src.user_constraints() {
         if drop_c.contains(&c.id) {
@@ -1291,12 +1363,10 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
                 let ops = w.ops.iter().map(|&e| remap(e)).collect::<Option<Vec<_>>>()?;
                 Some(crate::constraints::WordUse { ops, ..w.clone() })
             });
-            // a linearisation comes with its contact and its line, or not at all (§6.21)
-            if let Some(a) = c.along {
-                let p = remap(EntRef::point(a.point));
-                let l = remap(EntRef::new(EntKind::Line, a.line));
-                let (Some(p), Some(l)) = (p, l) else { continue };
-                nc.along = Some(crate::constraints::Along { point: p.i(), line: l.i() });
+            // a derivative comes with its dual, or not at all (§6.21)
+            if let Some(d) = c.along {
+                let Some(d) = dual_map[d] else { continue };
+                nc.along = Some(d);
             }
             let id = dst.add_quiet(nc);
             if let Some(&place) = src.placements.get(&c.id) {
@@ -1794,17 +1864,13 @@ pub fn dimension_text(c: &Constraint) -> Option<String> {
     })
 }
 
-/// A linearised row's contact and line, read from a document (§6.21) and held to the rule the
-/// elaborator's are (`Constraint::linearisable`).
-fn along_from_json(sk: &Sketch, c: &Constraint, j: &Json) -> Result<crate::constraints::Along, String> {
-    let a = j.arr();
-    let at = |k: usize| a.get(k).map_or(-1, |v| v.as_i64());
-    let point = index(at(0), sk.points.len(), "along point")?;
-    let line = index(at(1), sk.lines.len(), "along line")?;
-    let along = crate::constraints::Along { point, line };
-    match c.linearisable(sk, along)? {
-        true => Ok(along),
-        false => Err(format!("`along` on a {} that does not read its point", c.type_name())),
+/// A derivative row's dual, read from a document (§6.21) and held to the rule the elaborator's
+/// are (`Constraint::linearisable`).
+fn along_from_json(sk: &Sketch, c: &Constraint, j: &Json) -> Result<usize, String> {
+    let d = index(j.as_i64(), sk.duals.len(), "along")?;
+    match c.linearisable(sk, d)? {
+        true => Ok(d),
+        false => Err(format!("`along` on a {} that reads nothing its use moves", c.type_name())),
     }
 }
 

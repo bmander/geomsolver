@@ -77,7 +77,7 @@ fn every_taylor_form_is_its_kernel() {
         }
         checked += 1;
     }
-    assert!(checked >= 30, "only {checked} kernels have forms");
+    assert!(checked >= 75, "only {checked} kernels have forms");
     assert_eq!(ORDER, 5);
 }
 
@@ -101,6 +101,19 @@ fn the_planar_kernels_have_forms() {
         let kid = KERNELS.iter().position(|k| k.name == name).unwrap_or_else(|| panic!("{name}"));
         assert!(has_form(kid), "{name} has no Taylor form");
     }
+}
+
+/// Every kernel a body can state has a form, in space as on the page — so the derivative row a
+/// tangency states of each (`kernels::dual_kernel`) is exact.  What has none is a soft drag, which
+/// no body states, and a point on a spline, a curve contact.
+#[test]
+fn every_kernel_a_body_states_has_a_form() {
+    let formless: Vec<&str> =
+        (0..KERNELS.len()).filter(|&k| !has_form(k)).map(|k| KERNELS[k].name).collect();
+    assert_eq!(
+        formless,
+        ["drag", "point_on_spline", "spline_tangent_line", "spline_curvature", "drag_seen"]
+    );
 }
 
 /// The arithmetic itself, against closed forms: `sqrt`, `atan2` and a quotient along a line.

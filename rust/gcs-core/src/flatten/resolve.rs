@@ -530,10 +530,12 @@ fn rewrite(
                     }
                 }
             }
-            // a set's linearised row: its contact and the line it is taken along (§6.21)
+            // a set's derivative row: its point and the line it is taken along (§6.21)
             if let Some(a) = rel.along.as_mut() {
                 fix(&mut a.point, bad);
-                fix(&mut a.line, bad);
+                if let crate::syntax::AlongBy::Line(l) = &mut a.toward {
+                    fix(l, bad);
+                }
             }
             for a in rel.form.canonical_args_mut().iter_mut().flatten() {
                 if let crate::syntax::Arg::Ref(r) = a {

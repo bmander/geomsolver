@@ -17,7 +17,7 @@
 //! too, at the same contact along the same line.
 
 use super::*;
-use crate::syntax::{Along, OpArg, Relation, Worded};
+use crate::syntax::{Along, AlongBy, OpArg, Relation, Worded};
 
 /// A predicate's use, as the statement wrote it.
 pub(super) struct Use<'u> {
@@ -90,8 +90,14 @@ impl<'a> Walk<'a> {
     pub(super) fn inherited_twin(&mut self, app: &Application, u: &Use) -> Option<Along> {
         let t = u.rel.along.clone().or_else(|| u.scope.twin.clone())?;
         self.bind_to_use(app, "#along.p", t.point, u);
-        self.bind_to_use(app, "#line", t.line, u);
-        Some(Along { point: local("#along.p", u.at), line: local("#line", u.at) })
+        let toward = match t.toward {
+            AlongBy::Line(l) => {
+                self.bind_to_use(app, "#line", l, u);
+                AlongBy::Line(local("#line", u.at))
+            }
+            chart => chart,
+        };
+        Some(Along { point: local("#along.p", u.at), toward, key: t.key })
     }
 
     /// The body walked once per entry of `walks` — as itself (`None`) or as its linearisation —

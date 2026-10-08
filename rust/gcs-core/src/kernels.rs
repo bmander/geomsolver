@@ -180,131 +180,148 @@ pub fn curve_kernel(n_theta: usize, n_const: usize) -> Kernel {
     }
 }
 
-/// **A row's linearisation** (§6.21): the twin of static kernel `inner` that a set's body row
-/// is stated as for `l tangent S` — the row's derivative as the contact moves along the line,
-/// `J(x)·ẋ`, where `ẋ` is the line's direction `b − a` in the contact's columns and 0 in every
-/// other (the set's own numbers are held while its point moves on it).  The columns are the
-/// row's and then the line's ends in space; the constants the row's kernel, its constants, and
-/// which component of the direction moves each column (`Constraint::consts_on`).
+/// **A row's derivative** (§6.21): the twin of static kernel `inner` that a set's body row is
+/// stated as for `l tangent S` — `J(x)·ẋ`, the row's rate as the use's geometry moves along the
+/// set, where `ẋ` is, column by column, a component of the line's direction `b − a` (the
+/// contact's place in space), a **tangent unknown** of its own (geometry the use made privately,
+/// or a contact whose direction is solved for), or 0 (a number the set was given, held).  The
+/// columns are the row's, then a tangent column for each (the fixed zero where it has none), then
+/// the line's ends in space; the constants the row's kernel, its constants, and how each column
+/// moves (`Constraint::consts_on`): 0 held, 1 to 3 a component of the direction, `TANGENT` its
+/// tangent column.
 ///
-/// Of the same degree as the row: a Jacobian of degree `g − 1` times a length.  The Jacobian
-/// over the row's columns is the derivative of `J` along `ẋ` (the Hessian is symmetric, so
-/// `∂(Jẋ)/∂x = d/dh J(x + hẋ)`), by a central difference of the row's own exact Jacobian; over
-/// the line's ends it is the row's Jacobian, read off the columns the direction moves.
-pub fn linearised_kernel(inner: usize) -> Kernel {
+/// Of the same degree as the row: a Jacobian of degree `g − 1` times a length.  Every number is
+/// read from the row's Taylor form (`taylor::residual`), along `x + ẋε`: the residual is the first
+/// coefficient, and its derivative in `x` the Hessian along `ẋ`, `ẋᵀH e_c`, by polarisation of
+/// the second, `[c₂(ẋ + s e_c) − c₂(ẋ − s e_c)] / 2s` — exact, no step.  In `ẋ` and the line's
+/// ends it is the row's own Jacobian, routed by how each column moves.
+pub fn dual_kernel(inner: usize) -> Kernel {
     let kn = &KERNELS[inner];
     Kernel {
-        name: "linearised",
+        name: "dual",
         n_res: kn.n_res,
-        n_par: kn.n_par + 6,
+        n_par: 2 * kn.n_par + 6,
         n_const: 1 + kn.n_const + kn.n_par,
         degree: kn.degree,
-        res: linearised_res,
-        jac: linearised_jac,
+        res: dual_row_res,
+        jac: dual_row_jac,
         const_jac: None,
     }
 }
 
-/// One linearisation's parts: the row's kernel, its columns, its constants, which direction
-/// component moves each column, and the direction.
-struct Linearised<'a> {
+/// How a dual row's column moves that has a tangent column of its own (`dual_kernel`).
+pub const TANGENT: usize = 4;
+
+/// One derivative row's parts: the row's kernel id and kernel, its columns, its tangent columns,
+/// its constants, how each column moves, and the line's direction.
+struct DualRow<'a> {
+    kid: usize,
     kn: &'static Kernel,
     x: &'a [f64],
+    t: &'a [f64],
     kc: &'a [f64],
     mask: &'a [f64],
     dir: [f64; 3],
 }
 
-impl<'a> Linearised<'a> {
-    fn read(v: &'a [f64], k: &'a [f64]) -> Option<Linearised<'a>> {
-        let kn = KERNELS.get(*k.first()? as usize)?;
+impl<'a> DualRow<'a> {
+    fn read(v: &'a [f64], k: &'a [f64]) -> Option<DualRow<'a>> {
+        let kid = *k.first()? as usize;
+        let kn = KERNELS.get(kid)?;
         let m = kn.n_par;
-        if v.len() != m + 6 || k.len() != 1 + kn.n_const + m {
+        if v.len() != 2 * m + 6 || k.len() != 1 + kn.n_const + m {
             return None;
         }
-        let (a, b) = (&v[m..m + 3], &v[m + 3..m + 6]);
-        Some(Linearised {
+        let (a, b) = (&v[2 * m..2 * m + 3], &v[2 * m + 3..2 * m + 6]);
+        Some(DualRow {
+            kid,
             kn,
             x: &v[..m],
+            t: &v[m..2 * m],
             kc: &k[1..1 + kn.n_const],
             mask: &k[1 + kn.n_const..],
             dir: [b[0] - a[0], b[1] - a[1], b[2] - a[2]],
         })
     }
 
-    /// `ẋ`: the direction in the columns it moves.
+    /// `ẋ`, column by column.
     fn xdot(&self) -> Vec<f64> {
-        self.mask
-            .iter()
-            .map(|&c| match c as usize {
-                c @ 1..=3 => self.dir[c - 1],
+        (0..self.x.len())
+            .map(|c| match self.mask[c] as usize {
+                d @ 1..=3 => self.dir[d - 1],
+                TANGENT => self.t[c],
                 _ => 0.0,
             })
             .collect()
     }
 
-    /// The row's Jacobian at `x`, into `j`.
-    fn jac_at(&self, x: &[f64], j: &mut Vec<f64>) {
-        j.resize(self.kn.n_res * self.kn.n_par, 0.0);
-        self.kn.jac_into(x, self.kc, j);
+    /// The row's Taylor coefficients along `x + wε`, into `r`; `false` where it has no form.
+    fn along(&self, w: &[f64], r: &mut [crate::taylor::Jet], jrow: &mut Vec<f64>) -> bool {
+        use crate::taylor::Jet;
+        let path: Vec<Jet> = self.x.iter().zip(w).map(|(&x, &d)| Jet::from(&[x, d])).collect();
+        crate::taylor::residual(self.kid, &path, self.kc, r, jrow)
     }
 }
 
-fn linearised_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+fn dual_row_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
     let (n_par, n_const) = curve_widths(n, v, k);
-    let mut j = Vec::new();
+    let (mut jets, mut jrow) = (Vec::new(), Vec::new());
     for i in 0..n {
-        let Some(l) = Linearised::read(&v[n_par * i..n_par * (i + 1)], &k[n_const * i..n_const * (i + 1)])
+        let Some(d) = DualRow::read(&v[n_par * i..n_par * (i + 1)], &k[n_const * i..n_const * (i + 1)])
         else {
             continue;
         };
-        let (m, nr) = (l.kn.n_par, l.kn.n_res);
-        let xd = l.xdot();
-        l.jac_at(l.x, &mut j);
+        let nr = d.kn.n_res;
+        jets.resize(nr, crate::taylor::Jet::default());
+        let ok = d.along(&d.xdot(), &mut jets, &mut jrow);
         for row in 0..nr {
-            r[nr * i + row] = (0..m).map(|c| j[row * m + c] * xd[c]).sum();
+            r[nr * i + row] = if ok { jets[row].0[1] } else { f64::NAN };
         }
     }
 }
 
-fn linearised_jac(n: usize, v: &[f64], k: &[f64], out: &mut [f64]) {
+fn dual_row_jac(n: usize, v: &[f64], k: &[f64], out: &mut [f64]) {
     let (n_par, n_const) = curve_widths(n, v, k);
-    let (mut j, mut jp, mut jm, mut step) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+    let (mut j, mut plus, mut minus, mut jrow) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
     for i in 0..n {
-        let Some(l) = Linearised::read(&v[n_par * i..n_par * (i + 1)], &k[n_const * i..n_const * (i + 1)])
+        let Some(d) = DualRow::read(&v[n_par * i..n_par * (i + 1)], &k[n_const * i..n_const * (i + 1)])
         else {
             continue;
         };
-        let (m, nr) = (l.kn.n_par, l.kn.n_res);
+        let (m, nr) = (d.kn.n_par, d.kn.n_res);
         let o = nr * n_par * i;
         out[o..o + nr * n_par].iter_mut().for_each(|e| *e = 0.0);
-        let xd = l.xdot();
-        l.jac_at(l.x, &mut j);
-        // over the line's ends: the row's Jacobian where the direction moves a column
+        j.resize(nr * m, 0.0);
+        d.kn.jac_into(d.x, d.kc, &mut j);
+        // over the tangent columns and the line's ends: the row's Jacobian where each moves one
         for row in 0..nr {
             for c in 0..m {
-                let comp = l.mask[c] as usize;
-                if (1..=3).contains(&comp) {
-                    out[o + row * n_par + m + 3 + comp - 1] += j[row * m + c];
-                    out[o + row * n_par + m + comp - 1] -= j[row * m + c];
+                let g = j[row * m + c];
+                match d.mask[c] as usize {
+                    comp @ 1..=3 => {
+                        out[o + row * n_par + 2 * m + 3 + comp - 1] += g;
+                        out[o + row * n_par + 2 * m + comp - 1] -= g;
+                    }
+                    TANGENT => out[o + row * n_par + m + c] = g,
+                    _ => {}
                 }
             }
         }
-        // over the row's columns: `J` differentiated along `ẋ`
-        let speed = xd.iter().map(|d| d * d).sum::<f64>().sqrt();
-        if speed == 0.0 {
-            continue;
-        }
-        let scale = l.x.iter().fold(1.0f64, |s, x| s.max(x.abs()));
-        let h = 1e-6 * scale / speed;
-        for (s, jac) in [(h, &mut jp), (-h, &mut jm)] {
-            step.clear();
-            step.extend(l.x.iter().zip(&xd).map(|(x, d)| x + s * d));
-            l.jac_at(&step, jac);
-        }
-        for row in 0..nr {
-            for c in 0..m {
-                out[o + row * n_par + c] = (jp[row * m + c] - jm[row * m + c]) / (2.0 * h);
+        // over the row's columns: the Hessian along `ẋ`, by polarisation of the second order
+        let xd = d.xdot();
+        let s = xd.iter().map(|x| x * x).sum::<f64>().sqrt().max(1.0);
+        plus.resize(nr, crate::taylor::Jet::default());
+        minus.resize(nr, crate::taylor::Jet::default());
+        let mut w = xd.clone();
+        for c in 0..m {
+            w[c] = xd[c] + s;
+            let ok = d.along(&w, &mut plus, &mut jrow);
+            w[c] = xd[c] - s;
+            let ok = ok && d.along(&w, &mut minus, &mut jrow);
+            w[c] = xd[c];
+            for row in 0..nr {
+                out[o + row * n_par + c] =
+                    if ok { (plus[row].0[2] - minus[row].0[2]) / (2.0 * s) } else { f64::NAN };
             }
         }
     }
@@ -2592,29 +2609,78 @@ impl<const N: usize> std::ops::Div for Dual<N> {
     }
 }
 
-type V3<const N: usize> = [Dual<N>; 3];
-
-fn dvec<const N: usize>(v: &[f64], at: usize) -> V3<N> {
-    [0, 1, 2].map(|t| Dual::var(v[at + t], at + t))
+/// A number a kernel written once is read over: a `Dual` for its residual and its row, a
+/// Taylor `Jet` for its form (`taylor.rs`), so the form and the kernel are one expression.
+pub(crate) trait Num:
+    Copy
+    + std::ops::Add<Output = Self>
+    + std::ops::Sub<Output = Self>
+    + std::ops::Mul<Output = Self>
+    + std::ops::Div<Output = Self>
+{
+    /// A constant.
+    fn cst(v: f64) -> Self;
+    /// The value, where a branch reads it.
+    fn val(self) -> f64;
+    /// The root, its derivatives taken as zero where it is zero.
+    fn sqrt(self) -> Self;
+    fn cos(self) -> Self;
 }
 
-fn dsub<const N: usize>(a: V3<N>, b: V3<N>) -> V3<N> {
+impl<const N: usize> Num for Dual<N> {
+    fn cst(v: f64) -> Self {
+        Dual { v, g: [0.0; N] }
+    }
+    fn val(self) -> f64 {
+        self.v
+    }
+    fn sqrt(self) -> Self {
+        Dual::sqrt(self)
+    }
+    fn cos(self) -> Self {
+        self.map(self.v.dcos(), -self.v.dsin())
+    }
+}
+
+impl Num for crate::taylor::Jet {
+    fn cst(v: f64) -> Self {
+        crate::taylor::Jet::constant(v)
+    }
+    fn val(self) -> f64 {
+        self.0[0]
+    }
+    fn sqrt(self) -> Self {
+        if self.0[0] > 0.0 { crate::taylor::Jet::sqrt(self) } else { Self::cst(0.0) }
+    }
+    fn cos(self) -> Self {
+        self.sin_cos().1
+    }
+}
+
+pub(crate) type V3<T> = [T; 3];
+
+/// Columns `at..at + 3` as a vector.
+fn vec3<T: Num>(v: &[T], at: usize) -> V3<T> {
+    [v[at], v[at + 1], v[at + 2]]
+}
+
+fn vsub<T: Num>(a: V3<T>, b: V3<T>) -> V3<T> {
     [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
 }
 
-fn ddot<const N: usize>(a: V3<N>, b: V3<N>) -> Dual<N> {
+fn vdot<T: Num>(a: V3<T>, b: V3<T>) -> T {
     a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 }
 
-fn dcross<const N: usize>(a: V3<N>, b: V3<N>) -> V3<N> {
+fn vcross<T: Num>(a: V3<T>, b: V3<T>) -> V3<T> {
     [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
 }
 
 /// The unit vector along `a`; a vector shorter than `MIN_LINE_LEN` is divided by that instead,
 /// as every kernel above guards a degenerate line.
-fn dunit<const N: usize>(a: V3<N>) -> V3<N> {
-    let l = ddot(a, a).sqrt();
-    let l = if l.v > MIN_LINE_LEN { l } else { Dual { v: MIN_LINE_LEN, g: [0.0; N] } };
+fn vunit<T: Num>(a: V3<T>) -> V3<T> {
+    let l = vdot(a, a).sqrt();
+    let l = if l.val() > MIN_LINE_LEN { l } else { T::cst(MIN_LINE_LEN) };
     a.map(|x| x / l)
 }
 
@@ -2629,22 +2695,22 @@ fn dunit<const N: usize>(a: V3<N>) -> V3<N> {
  */
 
 /// The frame of a plane over its axes: `û` along `du`, `v̂` what is left of `dv`, `n̂ = û × v̂`.
-fn dframe<const N: usize>(du: V3<N>, dv: V3<N>) -> (V3<N>, V3<N>, V3<N>) {
-    let u = dunit(du);
-    let a = ddot(dv, u);
-    let v = dunit(dsub(dv, u.map(|t| t * a)));
-    let n = dcross(u, v);
+fn frame<T: Num>(du: V3<T>, dv: V3<T>) -> (V3<T>, V3<T>, V3<T>) {
+    let u = vunit(du);
+    let a = vdot(dv, u);
+    let v = vunit(vsub(dv, u.map(|t| t * a)));
+    let n = vcross(u, v);
     (u, v, n)
 }
 
-/// A constant with no gradient.
-fn dconst<const N: usize>(v: f64) -> Dual<N> {
-    Dual { v, g: [0.0; N] }
+/// Three constants from `k[at..at + 3]`, a vector with no gradient.
+fn cst3<T: Num>(k: &[f64], at: usize) -> V3<T> {
+    [T::cst(k[at]), T::cst(k[at + 1]), T::cst(k[at + 2])]
 }
 
-/// Three constants from `k[at..at + 3]`, a vector with no gradient.
-fn dconst3<const N: usize>(k: &[f64], at: usize) -> V3<N> {
-    [dconst(k[at]), dconst(k[at + 1]), dconst(k[at + 2])]
+/// One instance's columns, each a variable of the block.
+fn seeded<const N: usize>(v: &[f64]) -> [Dual<N>; N] {
+    std::array::from_fn(|c| Dual::var(v[c], c))
 }
 
 /// The values of a kernel written once over `Dual`s, `R` rows of `N` columns and `C` constants
@@ -2654,10 +2720,10 @@ fn dual_res<const N: usize, const R: usize, const C: usize>(
     v: &[f64],
     k: &[f64],
     r: &mut [f64],
-    f: fn(&[f64], &[f64]) -> [Dual<N>; R],
+    f: fn(&[Dual<N>], &[f64]) -> [Dual<N>; R],
 ) {
     for i in 0..n {
-        let rows = f(&v[N * i..N * (i + 1)], &k[C * i..C * (i + 1)]);
+        let rows = f(&seeded(&v[N * i..N * (i + 1)]), &k[C * i..C * (i + 1)]);
         for t in 0..R {
             r[R * i + t] = rows[t].v;
         }
@@ -2670,10 +2736,10 @@ fn dual_jac<const N: usize, const R: usize, const C: usize>(
     v: &[f64],
     k: &[f64],
     j: &mut [f64],
-    f: fn(&[f64], &[f64]) -> [Dual<N>; R],
+    f: fn(&[Dual<N>], &[f64]) -> [Dual<N>; R],
 ) {
     for i in 0..n {
-        let rows = f(&v[N * i..N * (i + 1)], &k[C * i..C * (i + 1)]);
+        let rows = f(&seeded(&v[N * i..N * (i + 1)]), &k[C * i..C * (i + 1)]);
         for t in 0..R {
             j[(R * i + t) * N..(R * i + t + 1) * N].copy_from_slice(&rows[t].g);
         }
@@ -2683,11 +2749,11 @@ fn dual_jac<const N: usize, const R: usize, const C: usize>(
 /// Columns of `lift`: (X, p, o, du, dv) — a hidden point, the point it lifts as drawn in its
 /// plane, and the plane.  `X − (o + p.x·û + p.y·v̂)`: three rows over the hidden point's three
 /// Params, so net nothing.  Degree 1.
-fn lift_rows(v: &[f64], _k: &[f64]) -> [Dual<14>; 3] {
-    let x = dvec::<14>(v, 0);
-    let (a, b) = (Dual::var(v[3], 3), Dual::var(v[4], 4));
-    let o = dvec(v, 5);
-    let (u, w, _) = dframe(dvec(v, 8), dvec(v, 11));
+fn lift_rows<T: Num>(v: &[T], _k: &[f64]) -> [T; 3] {
+    let x = vec3(v, 0);
+    let (a, b) = (v[3], v[4]);
+    let o = vec3(v, 5);
+    let (u, w, _) = frame(vec3(v, 8), vec3(v, 11));
     [0, 1, 2].map(|t| x[t] - (o[t] + a * u[t] + b * w[t]))
 }
 
@@ -2700,9 +2766,9 @@ fn lift_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
 }
 
 /// Columns of `point_on_plane`: (X, o, du, dv).  `(X − o)·n̂`: a point on a plane in space.
-fn point_on_plane_rows(v: &[f64], _k: &[f64]) -> [Dual<12>; 1] {
-    let (_, _, n) = dframe(dvec(v, 6), dvec(v, 9));
-    [ddot(dsub(dvec(v, 0), dvec(v, 3)), n)]
+fn point_on_plane_rows<T: Num>(v: &[T], _k: &[f64]) -> [T; 1] {
+    let (_, _, n) = frame(vec3(v, 6), vec3(v, 9));
+    [vdot(vsub(vec3(v, 0), vec3(v, 3)), n)]
 }
 
 fn point_on_plane_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
@@ -2714,10 +2780,10 @@ fn point_on_plane_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
 }
 
 /// Columns of `line_on_plane`: (A, B, o, du, dv).  Both ends on the plane: two rows.
-fn line_on_plane_rows(v: &[f64], _k: &[f64]) -> [Dual<15>; 2] {
-    let o = dvec(v, 6);
-    let (_, _, n) = dframe(dvec(v, 9), dvec(v, 12));
-    [ddot(dsub(dvec(v, 0), o), n), ddot(dsub(dvec(v, 3), o), n)]
+fn line_on_plane_rows<T: Num>(v: &[T], _k: &[f64]) -> [T; 2] {
+    let o = vec3(v, 6);
+    let (_, _, n) = frame(vec3(v, 9), vec3(v, 12));
+    [vdot(vsub(vec3(v, 0), o), n), vdot(vsub(vec3(v, 3), o), n)]
 }
 
 fn line_on_plane_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
@@ -2732,10 +2798,10 @@ fn line_on_plane_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
 /// and its radius, and the plane it is drawn in.  `|X − C| − r` and `n̂·(X − C)`: on the sphere
 /// of the circle's radius about its centre, and on its plane.  The radius row is the magnitude
 /// form, a length like the plane row.  Both degree 1.
-fn point_on_circle3_rows(v: &[f64], _k: &[f64]) -> [Dual<13>; 2] {
-    let d = dsub(dvec(v, 0), dvec(v, 3));
-    let (_, _, n) = dframe(dvec(v, 7), dvec(v, 10));
-    [ddot(d, d).sqrt() - Dual::var(v[6], 6), ddot(n, d)]
+fn point_on_circle3_rows<T: Num>(v: &[T], _k: &[f64]) -> [T; 2] {
+    let d = vsub(vec3(v, 0), vec3(v, 3));
+    let (_, _, n) = frame(vec3(v, 7), vec3(v, 10));
+    [vdot(d, d).sqrt() - v[6], vdot(n, d)]
 }
 
 fn point_on_circle3_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
@@ -2749,10 +2815,10 @@ fn point_on_circle3_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
 /// Columns of `project_solved`: (X_A, X_B, du_A, dv_A, du_B, dv_B) — two images' hidden points
 /// and their planes.  `(n̂_A × n̂_B)·(X_A − X_B)`: the projector rule in space, the two images on
 /// one line square to the fold.  Degree 1.
-fn project_solved_rows(v: &[f64], _k: &[f64]) -> [Dual<18>; 1] {
-    let (_, _, na) = dframe(dvec(v, 6), dvec(v, 9));
-    let (_, _, nb) = dframe(dvec(v, 12), dvec(v, 15));
-    [ddot(dcross(na, nb), dsub(dvec(v, 0), dvec(v, 3)))]
+fn project_solved_rows<T: Num>(v: &[T], _k: &[f64]) -> [T; 1] {
+    let (_, _, na) = frame(vec3(v, 6), vec3(v, 9));
+    let (_, _, nb) = frame(vec3(v, 12), vec3(v, 15));
+    [vdot(vcross(na, nb), vsub(vec3(v, 0), vec3(v, 3)))]
 }
 
 fn project_solved_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
@@ -2792,21 +2858,21 @@ fn project_jac(n: usize, _v: &[f64], k: &[f64], j: &mut [f64]) {
 
 /// Columns of `ordinate_line`: (p, q, a, b) in one view, K = (D).  `(q − p)·(b − a)/|b − a| − D`:
 /// along the line `a → b` drawn where the points are.
-fn ordinate_line_gap<const N: usize>(v: &[f64]) -> Dual<N> {
-    let d = |i: usize| Dual::<N>::var(v[i], i);
+fn ordinate_line_gap<T: Num>(v: &[T]) -> T {
+    let d = |i: usize| v[i];
     let (px, py, qx, qy) = (d(0), d(1), d(2), d(3));
     let (ax, ay, bx, by) = (d(4), d(5), d(6), d(7));
-    let t = dunit([bx - ax, by - ay, dconst(0.0)]);
+    let t = vunit([bx - ax, by - ay, T::cst(0.0)]);
     (qx - px) * t[0] + (qy - py) * t[1]
 }
 
-fn ordinate_line_rows(v: &[f64], k: &[f64]) -> [Dual<8>; 1] {
-    [ordinate_line_gap(v) - dconst(k[0])]
+fn ordinate_line_rows<T: Num>(v: &[T], k: &[f64]) -> [T; 1] {
+    [ordinate_line_gap(v) - T::cst(k[0])]
 }
 
 /// The free twin's columns: (p, q, a, b, n), K = (m, c) — the number `m·n + c`.
-fn ordinate_line_free_rows(v: &[f64], k: &[f64]) -> [Dual<9>; 1] {
-    [ordinate_line_gap(v) - (Dual::var(v[8], 8) * dconst(k[0]) + dconst(k[1]))]
+fn ordinate_line_free_rows<T: Num>(v: &[T], k: &[f64]) -> [T; 1] {
+    [ordinate_line_gap(v) - (v[8] * T::cst(k[0]) + T::cst(k[1]))]
 }
 
 fn ordinate_line_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
@@ -2828,57 +2894,57 @@ fn ordinate_line_free_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
 /// Columns of `ordinate_space`: (X, Y, A, B), K = (D).  `(Y − X)·(B − A)/|B − A| − D`: how far
 /// `Y` stands from `X` along the line `A → B` in space — a drawn line's lifted ends, or an axis
 /// as the segment from the origin to its direction.
-fn ordinate_space_rows(v: &[f64], k: &[f64]) -> [Dual<12>; 1] {
-    let t = dunit(dsub(dvec(v, 9), dvec(v, 6)));
-    [ddot(dsub(dvec(v, 3), dvec(v, 0)), t) - dconst(k[0])]
+fn ordinate_space_rows<T: Num>(v: &[T], k: &[f64]) -> [T; 1] {
+    let t = vunit(vsub(vec3(v, 9), vec3(v, 6)));
+    [vdot(vsub(vec3(v, 3), vec3(v, 0)), t) - T::cst(k[0])]
 }
 
 /// (X, Y, A, B, n), K = (m, c).
-fn ordinate_space_free_rows(v: &[f64], k: &[f64]) -> [Dual<13>; 1] {
-    let t = dunit(dsub(dvec(v, 9), dvec(v, 6)));
-    let d = Dual::var(v[12], 12) * dconst(k[0]) + dconst(k[1]);
-    [ddot(dsub(dvec(v, 3), dvec(v, 0)), t) - d]
+fn ordinate_space_free_rows<T: Num>(v: &[T], k: &[f64]) -> [T; 1] {
+    let t = vunit(vsub(vec3(v, 9), vec3(v, 6)));
+    let d = v[12] * T::cst(k[0]) + T::cst(k[1]);
+    [vdot(vsub(vec3(v, 3), vec3(v, 0)), t) - d]
 }
 
 /// Columns of `ordinate_frame_u`: (X, o, du, dv), K = (D).  `(X − o)·û − D`: how far a point
 /// stands from a plane's origin along the plane's `û` — `q distance(d, along: u) P` with `q` drawn
 /// in no plane of `P`'s — and `_v` along its `v̂`, `_n` along its normal `n̂`.  Over the plane's
 /// own columns, so its frame is the one its points are drawn in (`dframe`).
-fn ordinate_frame_rows(v: &[f64], k: &[f64], axis: usize) -> [Dual<12>; 1] {
-    let (u, w, n) = dframe(dvec(v, 6), dvec(v, 9));
+fn ordinate_frame_rows<T: Num>(v: &[T], k: &[f64], axis: usize) -> [T; 1] {
+    let (u, w, n) = frame(vec3(v, 6), vec3(v, 9));
     let t = [u, w, n][axis];
-    [ddot(dsub(dvec(v, 0), dvec(v, 3)), t) - dconst(k[0])]
+    [vdot(vsub(vec3(v, 0), vec3(v, 3)), t) - T::cst(k[0])]
 }
 
-fn ordinate_frame_u_rows(v: &[f64], k: &[f64]) -> [Dual<12>; 1] {
+fn ordinate_frame_u_rows<T: Num>(v: &[T], k: &[f64]) -> [T; 1] {
     ordinate_frame_rows(v, k, 0)
 }
 
-fn ordinate_frame_v_rows(v: &[f64], k: &[f64]) -> [Dual<12>; 1] {
+fn ordinate_frame_v_rows<T: Num>(v: &[T], k: &[f64]) -> [T; 1] {
     ordinate_frame_rows(v, k, 1)
 }
 
-fn ordinate_frame_n_rows(v: &[f64], k: &[f64]) -> [Dual<12>; 1] {
+fn ordinate_frame_n_rows<T: Num>(v: &[T], k: &[f64]) -> [T; 1] {
     ordinate_frame_rows(v, k, 2)
 }
 
 /// (X, o, du, dv, a), K = (m, c): the number `m·a + c`.
-fn ordinate_frame_free_rows(v: &[f64], k: &[f64], axis: usize) -> [Dual<13>; 1] {
-    let (u, w, n) = dframe(dvec(v, 6), dvec(v, 9));
+fn ordinate_frame_free_rows<T: Num>(v: &[T], k: &[f64], axis: usize) -> [T; 1] {
+    let (u, w, n) = frame(vec3(v, 6), vec3(v, 9));
     let t = [u, w, n][axis];
-    let d = Dual::var(v[12], 12) * dconst(k[0]) + dconst(k[1]);
-    [ddot(dsub(dvec(v, 0), dvec(v, 3)), t) - d]
+    let d = v[12] * T::cst(k[0]) + T::cst(k[1]);
+    [vdot(vsub(vec3(v, 0), vec3(v, 3)), t) - d]
 }
 
-fn ordinate_frame_u_free_rows(v: &[f64], k: &[f64]) -> [Dual<13>; 1] {
+fn ordinate_frame_u_free_rows<T: Num>(v: &[T], k: &[f64]) -> [T; 1] {
     ordinate_frame_free_rows(v, k, 0)
 }
 
-fn ordinate_frame_v_free_rows(v: &[f64], k: &[f64]) -> [Dual<13>; 1] {
+fn ordinate_frame_v_free_rows<T: Num>(v: &[T], k: &[f64]) -> [T; 1] {
     ordinate_frame_free_rows(v, k, 1)
 }
 
-fn ordinate_frame_n_free_rows(v: &[f64], k: &[f64]) -> [Dual<13>; 1] {
+fn ordinate_frame_n_free_rows<T: Num>(v: &[T], k: &[f64]) -> [T; 1] {
     ordinate_frame_free_rows(v, k, 2)
 }
 
@@ -2949,12 +3015,12 @@ fn ordinate_frame_n_free_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
 /// Columns of `axis_on_plane`: (a, d, o, du, dv), K = (L) — an axis's place and direction, and the
 /// plane.  `(a − o)·n̂` and `(a + L·d − o)·n̂`: two points on the axis a drawing's extent `L` apart,
 /// each on the plane, so both rows are lengths and weigh alike.  Degree 1.
-fn axis_on_plane_rows(v: &[f64], k: &[f64]) -> [Dual<15>; 2] {
-    let (a, d, o) = (dvec(v, 0), dvec(v, 3), dvec(v, 6));
-    let (_, _, n) = dframe(dvec(v, 9), dvec(v, 12));
-    let l = dconst(k[0]);
+fn axis_on_plane_rows<T: Num>(v: &[T], k: &[f64]) -> [T; 2] {
+    let (a, d, o) = (vec3(v, 0), vec3(v, 3), vec3(v, 6));
+    let (_, _, n) = frame(vec3(v, 9), vec3(v, 12));
+    let l = T::cst(k[0]);
     let far = [a[0] + d[0] * l, a[1] + d[1] * l, a[2] + d[2] * l];
-    [ddot(dsub(a, o), n), ddot(dsub(far, o), n)]
+    [vdot(vsub(a, o), n), vdot(vsub(far, o), n)]
 }
 
 fn axis_on_plane_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
@@ -2969,13 +3035,13 @@ fn axis_on_plane_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
 /// first axis's as it stood when compiled or refreshed, and a drawing's extent.  One line, either
 /// way: `L·(d̂₂ × d̂₁)·e_k`, the second running along the first (the sense free, as `parallel3`'s),
 /// and `((a₂ − a₁) × d̂₁)·e_k`, the second's place on the first.  All four lengths.  Degree 1.
-fn axis_coincident_rows(v: &[f64], k: &[f64]) -> [Dual<12>; 4] {
-    let (a1, d1, a2, d2) = (dvec(v, 0), dunit(dvec(v, 3)), dvec(v, 6), dunit(dvec(v, 9)));
-    let e = |t: usize| dconst3(k, 3 * t);
-    let l = dconst(k[6]);
-    let along = dcross(d2, d1);
-    let off = dcross(dsub(a2, a1), d1);
-    [ddot(along, e(0)) * l, ddot(along, e(1)) * l, ddot(off, e(0)), ddot(off, e(1))]
+fn axis_coincident_rows<T: Num>(v: &[T], k: &[f64]) -> [T; 4] {
+    let (a1, d1, a2, d2) = (vec3(v, 0), vunit(vec3(v, 3)), vec3(v, 6), vunit(vec3(v, 9)));
+    let e = |t: usize| cst3(k, 3 * t);
+    let l = T::cst(k[6]);
+    let along = vcross(d2, d1);
+    let off = vcross(vsub(a2, a1), d1);
+    [vdot(along, e(0)) * l, vdot(along, e(1)) * l, vdot(off, e(0)), vdot(off, e(1))]
 }
 
 fn axis_coincident_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
@@ -2989,11 +3055,11 @@ fn axis_coincident_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
 /// Columns of `line_on_axis`: (A, B, a, d), K = (e₁, e₂) — two directions across the axis as it
 /// stood when compiled or refreshed.  Both ends on the axis's line, `point_on_axis`'s two rows
 /// for each: `((X − a) × d̂)·e_k`.  A line of no length is still on it.  Degree 1.
-fn line_on_axis_rows(v: &[f64], k: &[f64]) -> [Dual<12>; 4] {
-    let (p, q, a, d) = (dvec(v, 0), dvec(v, 3), dvec(v, 6), dunit(dvec(v, 9)));
-    let e = |t: usize| dconst3(k, 3 * t);
-    let (wp, wq) = (dcross(dsub(p, a), d), dcross(dsub(q, a), d));
-    [ddot(wp, e(0)), ddot(wp, e(1)), ddot(wq, e(0)), ddot(wq, e(1))]
+fn line_on_axis_rows<T: Num>(v: &[T], k: &[f64]) -> [T; 4] {
+    let (p, q, a, d) = (vec3(v, 0), vec3(v, 3), vec3(v, 6), vunit(vec3(v, 9)));
+    let e = |t: usize| cst3(k, 3 * t);
+    let (wp, wq) = (vcross(vsub(p, a), d), vcross(vsub(q, a), d));
+    [vdot(wp, e(0)), vdot(wp, e(1)), vdot(wq, e(0)), vdot(wq, e(1))]
 }
 
 fn line_on_axis_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
@@ -3005,9 +3071,9 @@ fn line_on_axis_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
 }
 
 /// Columns of `axis_parallel_plane`: (d, du, dv).  `d̂·n̂`: square to the plane's normal.  Degree 0.
-fn axis_parallel_plane_rows(v: &[f64], _k: &[f64]) -> [Dual<9>; 1] {
-    let (_, _, n) = dframe(dvec(v, 3), dvec(v, 6));
-    [ddot(dunit(dvec(v, 0)), n)]
+fn axis_parallel_plane_rows<T: Num>(v: &[T], _k: &[f64]) -> [T; 1] {
+    let (_, _, n) = frame(vec3(v, 3), vec3(v, 6));
+    [vdot(vunit(vec3(v, 0)), n)]
 }
 
 fn axis_parallel_plane_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
@@ -3021,11 +3087,11 @@ fn axis_parallel_plane_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
 /// Columns of `axis_perpendicular_plane`: (d, du, dv), K = (e₁, e₂) — two directions across the
 /// plane's normal as it stood when compiled or refreshed, `parallel3`'s device.
 /// `(d̂ × n̂)·e_k`: along the normal, either way.  Degree 0.
-fn axis_perpendicular_plane_rows(v: &[f64], k: &[f64]) -> [Dual<9>; 2] {
-    let (_, _, n) = dframe(dvec(v, 3), dvec(v, 6));
-    let x = dcross(dunit(dvec(v, 0)), n);
-    let e = |t: usize| dconst3(k, 3 * t);
-    [ddot(x, e(0)), ddot(x, e(1))]
+fn axis_perpendicular_plane_rows<T: Num>(v: &[T], k: &[f64]) -> [T; 2] {
+    let (_, _, n) = frame(vec3(v, 3), vec3(v, 6));
+    let x = vcross(vunit(vec3(v, 0)), n);
+    let e = |t: usize| cst3(k, 3 * t);
+    [vdot(x, e(0)), vdot(x, e(1))]
 }
 
 fn axis_perpendicular_plane_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
@@ -3039,12 +3105,12 @@ fn axis_perpendicular_plane_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
 /// Columns of `plane_parallel`: (du_P, dv_P, du_Q, dv_Q), K = (e₁, e₂), two directions across
 /// `P`'s normal as it stood when compiled or refreshed.  `(n̂_Q × n̂_P)·e_k`: the normals alike,
 /// either way.  Degree 0.
-fn plane_parallel_rows(v: &[f64], k: &[f64]) -> [Dual<12>; 2] {
-    let (_, _, np) = dframe(dvec(v, 0), dvec(v, 3));
-    let (_, _, nq) = dframe(dvec(v, 6), dvec(v, 9));
-    let x = dcross(nq, np);
-    let e = |t: usize| dconst3(k, 3 * t);
-    [ddot(x, e(0)), ddot(x, e(1))]
+fn plane_parallel_rows<T: Num>(v: &[T], k: &[f64]) -> [T; 2] {
+    let (_, _, np) = frame(vec3(v, 0), vec3(v, 3));
+    let (_, _, nq) = frame(vec3(v, 6), vec3(v, 9));
+    let x = vcross(nq, np);
+    let e = |t: usize| cst3(k, 3 * t);
+    [vdot(x, e(0)), vdot(x, e(1))]
 }
 
 fn plane_parallel_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
@@ -3057,9 +3123,9 @@ fn plane_parallel_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
 
 /// Columns of `plane_distance`: (o_P, du_P, dv_P, o_Q), K = (D).  `(o_Q − o_P)·n̂_P − D`: how far
 /// `Q`'s origin stands along `P`'s normal.  Degree 1.
-fn plane_distance_rows(v: &[f64], k: &[f64]) -> [Dual<12>; 1] {
-    let (_, _, n) = dframe(dvec(v, 3), dvec(v, 6));
-    [ddot(dsub(dvec(v, 9), dvec(v, 0)), n) - dconst(k[0])]
+fn plane_distance_rows<T: Num>(v: &[T], k: &[f64]) -> [T; 1] {
+    let (_, _, n) = frame(vec3(v, 3), vec3(v, 6));
+    [vdot(vsub(vec3(v, 9), vec3(v, 0)), n) - T::cst(k[0])]
 }
 
 fn plane_distance_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
@@ -3071,10 +3137,10 @@ fn plane_distance_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
 }
 
 /// (o_P, du_P, dv_P, o_Q, a), K = (m, c): the gap `m·a + c`.
-fn plane_distance_free_rows(v: &[f64], k: &[f64]) -> [Dual<13>; 1] {
-    let (_, _, n) = dframe(dvec(v, 3), dvec(v, 6));
-    let d = Dual::var(v[12], 12) * dconst(k[0]) + dconst(k[1]);
-    [ddot(dsub(dvec(v, 9), dvec(v, 0)), n) - d]
+fn plane_distance_free_rows<T: Num>(v: &[T], k: &[f64]) -> [T; 1] {
+    let (_, _, n) = frame(vec3(v, 3), vec3(v, 6));
+    let d = v[12] * T::cst(k[0]) + T::cst(k[1]);
+    [vdot(vsub(vec3(v, 9), vec3(v, 0)), n) - d]
 }
 
 fn plane_distance_free_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
@@ -3083,6 +3149,186 @@ fn plane_distance_free_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
 
 fn plane_distance_free_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
     dual_jac::<13, 1, 2>(n, v, k, j, plane_distance_free_rows)
+}
+
+/* -- the hand-written kernels in space, read over `Num` --------------------------------------
+ *
+ * The kernels above whose rows were derived by hand keep their `f64` code; each is written again
+ * here over `Num`, once, as the Taylor form a body's derivative row reads (`taylor.rs`,
+ * `kernels::dual_kernel`).  `tests/taylor.rs` holds every form to its kernel. */
+
+/// `|a|`, floored as the kernels floor a line's length.
+fn vlen<T: Num>(a: V3<T>, floor: f64) -> T {
+    let l = vdot(a, a).sqrt();
+    if l.val() >= floor { l } else { T::cst(floor) }
+}
+
+/// The free twin's number `m·a + c`, from its column and constants (m, c).
+fn free_num<T: Num>(a: T, k: &[f64]) -> T {
+    a * T::cst(k[0]) + T::cst(k[1])
+}
+
+fn distance3_rows<T: Num>(v: &[T], k: &[f64]) -> [T; 1] {
+    let d = vsub(vec3(v, 0), vec3(v, 3));
+    [vdot(d, d) - T::cst(k[0] * k[0])]
+}
+
+fn distance3_free_rows<T: Num>(v: &[T], k: &[f64]) -> [T; 1] {
+    let d = vsub(vec3(v, 0), vec3(v, 3));
+    let n = free_num(v[6], k);
+    [vdot(d, d) - n * n]
+}
+
+fn point_line3_gap_of<T: Num>(v: &[T]) -> T {
+    let (w, e) = (vsub(vec3(v, 0), vec3(v, 3)), vsub(vec3(v, 6), vec3(v, 3)));
+    vlen(vcross(w, e), 0.0) / vlen(e, MIN_LINE_LEN)
+}
+
+fn point_line3_rows<T: Num>(v: &[T], k: &[f64]) -> [T; 1] {
+    [point_line3_gap_of(v) - T::cst(k[0])]
+}
+
+fn point_line3_free_rows<T: Num>(v: &[T], k: &[f64]) -> [T; 1] {
+    [point_line3_gap_of(v) - free_num(v[9], k)]
+}
+
+fn skew_gap_of<T: Num>(v: &[T]) -> T {
+    let (a, b, c, d) = (vec3(v, 0), vec3(v, 3), vec3(v, 6), vec3(v, 9));
+    let m = vcross(vsub(b, a), vsub(d, c));
+    vdot(m, vsub(c, a)) / vlen(m, MIN_LINE_LEN * MIN_LINE_LEN)
+}
+
+fn line_line3_rows<T: Num>(v: &[T], k: &[f64]) -> [T; 1] {
+    [skew_gap_of(v) - T::cst(k[0])]
+}
+
+fn line_line3_free_rows<T: Num>(v: &[T], k: &[f64]) -> [T; 1] {
+    [skew_gap_of(v) - free_num(v[12], k)]
+}
+
+/// The two lines' directions, (B − A, D − C).
+fn two_dirs<T: Num>(v: &[T]) -> (V3<T>, V3<T>) {
+    (vsub(vec3(v, 3), vec3(v, 0)), vsub(vec3(v, 9), vec3(v, 6)))
+}
+
+fn cos3_of<T: Num>(v: &[T]) -> T {
+    let (a, b) = two_dirs(v);
+    vdot(a, b) / (vlen(a, MIN_LINE_LEN) * vlen(b, MIN_LINE_LEN))
+}
+
+fn angle3_rows<T: Num>(v: &[T], k: &[f64]) -> [T; 1] {
+    [cos3_of(v) - T::cst(k[0].dcos())]
+}
+
+fn angle3_free_rows<T: Num>(v: &[T], k: &[f64]) -> [T; 1] {
+    [cos3_of(v) - free_num(v[12], k).cos()]
+}
+
+fn perpendicular3_rows<T: Num>(v: &[T], _k: &[f64]) -> [T; 1] {
+    [cos3_of(v)]
+}
+
+fn parallel3_rows<T: Num>(v: &[T], k: &[f64]) -> [T; 2] {
+    let (a, b) = two_dirs(v);
+    let p = vlen(a, MIN_LINE_LEN) * vlen(b, MIN_LINE_LEN);
+    let x = vcross(a, b);
+    [vdot(x, cst3(k, 0)) / p, vdot(x, cst3(k, 3)) / p]
+}
+
+fn axis_unit_rows<T: Num>(v: &[T], _k: &[f64]) -> [T; 1] {
+    let d = vec3(v, 0);
+    [vdot(d, d) - T::cst(1.0)]
+}
+
+fn axis_foot_rows<T: Num>(v: &[T], _k: &[f64]) -> [T; 1] {
+    [vdot(vec3(v, 0), vec3(v, 3))]
+}
+
+/// `((X − a) × e)·e_k / |e|`, the two components across a line of a point on it.
+fn across<T: Num>(w: V3<T>, e: V3<T>, k: &[f64]) -> [T; 2] {
+    let le = vlen(e, MIN_LINE_LEN);
+    let c = vcross(w, e);
+    [vdot(c, cst3(k, 0)) / le, vdot(c, cst3(k, 3)) / le]
+}
+
+fn point_on_axis_rows<T: Num>(v: &[T], k: &[f64]) -> [T; 2] {
+    across(vsub(vec3(v, 0), vec3(v, 3)), vec3(v, 6), k)
+}
+
+fn point_on_line3_rows<T: Num>(v: &[T], k: &[f64]) -> [T; 2] {
+    across(vsub(vec3(v, 0), vec3(v, 3)), vsub(vec3(v, 6), vec3(v, 3)), k)
+}
+
+fn equal_length3_rows<T: Num>(v: &[T], _k: &[f64]) -> [T; 1] {
+    let (a, b) = two_dirs(v);
+    [vdot(a, a) - vdot(b, b)]
+}
+
+fn symmetric3_rows<T: Num>(v: &[T], _k: &[f64]) -> [T; 3] {
+    let (p, q, a, b) = (vec3(v, 0), vec3(v, 3), vec3(v, 6), vec3(v, 9));
+    let e = vsub(b, a);
+    let le = vdot(e, e).sqrt();
+    if le.val() == 0.0 {
+        return [T::cst(f64::NAN); 3];
+    }
+    let eh = e.map(|t| t / le);
+    let s = vdot(vsub(p, a), eh);
+    let two = T::cst(2.0);
+    [0, 1, 2].map(|t| q[t] + p[t] - two * a[t] - two * s * eh[t])
+}
+
+/// A kernel's Taylor form, its rows over `Jet`s into `r`.
+pub(crate) type JetForm = fn(&[crate::taylor::Jet], &[f64], &mut [crate::taylor::Jet]);
+
+/// The form of a kernel written over `Num`, by the name it is registered under: its rows read
+/// over `Jet`s.
+pub(crate) fn num_form(name: &str) -> Option<JetForm> {
+    use crate::taylor::Jet;
+    macro_rules! form {
+        ($rows:ident) => {
+            Some(|v: &[Jet], k: &[f64], r: &mut [Jet]| r.copy_from_slice(&$rows(v, k)))
+        };
+    }
+    match name {
+        "lift" => form!(lift_rows),
+        "distance3" => form!(distance3_rows),
+        "distance3_free" => form!(distance3_free_rows),
+        "point_line3" => form!(point_line3_rows),
+        "point_line3_free" => form!(point_line3_free_rows),
+        "line_line3" => form!(line_line3_rows),
+        "line_line3_free" => form!(line_line3_free_rows),
+        "angle3" => form!(angle3_rows),
+        "angle3_free" => form!(angle3_free_rows),
+        "perpendicular3" => form!(perpendicular3_rows),
+        "parallel3" => form!(parallel3_rows),
+        "point_on_plane" => form!(point_on_plane_rows),
+        "point_on_circle3" => form!(point_on_circle3_rows),
+        "project_solved" => form!(project_solved_rows),
+        "point_on_line3" => form!(point_on_line3_rows),
+        "equal_length3" => form!(equal_length3_rows),
+        "line_on_plane" => form!(line_on_plane_rows),
+        "symmetric3" => form!(symmetric3_rows),
+        "axis_unit" => form!(axis_unit_rows),
+        "axis_foot" => form!(axis_foot_rows),
+        "point_on_axis" => form!(point_on_axis_rows),
+        "ordinate_space" => form!(ordinate_space_rows),
+        "ordinate_space_free" => form!(ordinate_space_free_rows),
+        "ordinate_frame_u" => form!(ordinate_frame_u_rows),
+        "ordinate_frame_u_free" => form!(ordinate_frame_u_free_rows),
+        "ordinate_frame_v" => form!(ordinate_frame_v_rows),
+        "ordinate_frame_v_free" => form!(ordinate_frame_v_free_rows),
+        "ordinate_frame_n" => form!(ordinate_frame_n_rows),
+        "ordinate_frame_n_free" => form!(ordinate_frame_n_free_rows),
+        "axis_on_plane" => form!(axis_on_plane_rows),
+        "axis_parallel_plane" => form!(axis_parallel_plane_rows),
+        "axis_perpendicular_plane" => form!(axis_perpendicular_plane_rows),
+        "plane_distance" => form!(plane_distance_rows),
+        "plane_distance_free" => form!(plane_distance_free_rows),
+        "axis_coincident" => form!(axis_coincident_rows),
+        "plane_parallel" => form!(plane_parallel_rows),
+        "line_on_axis" => form!(line_on_axis_rows),
+        _ => None,
+    }
 }
 
 /* -- two directed angles equal, and an arc's length --------------------------------------- */

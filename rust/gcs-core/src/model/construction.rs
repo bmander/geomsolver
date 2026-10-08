@@ -547,11 +547,16 @@ impl Sketch {
         for p in c.lifted_points(self) {
             self.lift_point(p);
         }
-        // and a linearisation reads its line's ends there too (§6.21)
-        if let Some(a) = c.along {
-            for p in a.ends(self) {
-                self.lift_point(p);
+        // and a derivative reads its line's ends there too, and a tangent column for every
+        // column its use moves by one (§6.21)
+        if let Some(d) = c.along {
+            if let super::Toward::Line(l) = self.duals[d].toward {
+                for p in [self.lines[l].p1, self.lines[l].p2] {
+                    self.lift_point(p as usize);
+                }
             }
+            let cols = c.row_params(self);
+            self.mint_tangents(d, &cols);
         }
         // a relation that reads where an axis is gives the axis its place
         for r in c.axes_placed_by() {
@@ -602,6 +607,8 @@ impl Sketch {
             c.args[i] = Arg::Param(p as u32);
         }
         self.constraints.push(c);
+        // the private geometry's own row, moving as the use does
+        self.twin_new_intrinsic(self.constraints.len() - 1);
         id
     }
 
@@ -614,6 +621,7 @@ impl Sketch {
             .map_or((false, Vec::new()), |c| (crate::expr::has_expr(&c.args), c.aux_params()));
         let placed: Vec<usize> =
             self.constraint(id).map(|c| c.axes_placed_by().collect()).unwrap_or_default();
+        let dual = self.constraint(id).and_then(|c| c.along);
         self.constraints.retain(|c| c.id != id);
         // an axis whose place nothing reads now is held again: its place is no freedom
         for r in placed {
@@ -627,6 +635,9 @@ impl Sketch {
             if !shared || !self.constraints.iter().any(|c| c.owns(p)) {
                 self.params[p as usize].fixed = true;
             }
+        }
+        if let Some(d) = dual {
+            self.retire_tangents(d);
         }
         self.placements.remove(&id);
         if expr {

@@ -4,9 +4,9 @@ use super::resolve::{follow, Resolver};
 use super::{Code, Diag, SourceMap};
 use crate::constraints::{Arg as CArg, CKind, Constraint, SpecKind};
 use crate::ir::{PathStep, Relation, ResolvedRelation, Statement as Stmt};
-use crate::model::{EntKind, EntRef, Sketch};
+use crate::model::{EntKind, EntRef, Sketch, Toward};
 use crate::syntax::{Arg, Ref, RelationForm, Span, StmtId};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use crate::fmath::Det;
 use crate::{decompose, expr, io};
 
@@ -139,6 +139,7 @@ pub(super) fn constrain(
     st: &Stmt,
     doc: &crate::syntax::Program,
     map: &SourceMap,
+    duals: &mut BTreeMap<String, usize>,
     diags: &mut Vec<Diag>,
 ) -> Option<u32> {
     // **a word that relates two solids is a claim, judged and never solved** (§9.8).  Picked up
@@ -174,10 +175,14 @@ pub(super) fn constrain(
             }
         }
     }
-    // a set's body row stated as its linearisation at a tangency's contact (§6.21)
+    // a set's body row stated as its derivative at a tangency's point (§6.21)
     let along = r.along.as_ref().map(|a| {
         let ent = |x: &Ref| res.lookup(x).and_then(|e| follow(sk, e, &x.path).ok());
-        (ent(&a.point), ent(&a.line))
+        let toward = match &a.toward {
+            crate::syntax::AlongBy::Line(l) => Some(ent(l)),
+            crate::syntax::AlongBy::Chart(_) => None,
+        };
+        (ent(&a.point), toward, a)
     });
     let r = match r
         .resolve(&|r| res.lookup(r).and_then(|e| follow(sk, e, &r.path).ok()).map(|e| e.kind))
@@ -435,15 +440,24 @@ pub(super) fn constrain(
                 diags.push(Diag { code: Code::E040, span: at, stmt: Some(st.id), message: m });
             }
         };
-        let (Some(p), Some(l)) = found else { return None };
-        if l.kind != EntKind::Line {
-            say(format!("a set is touched by a line, not {}", l.kind.a()));
-            return None;
-        }
-        let a = crate::constraints::Along { point: p.i(), line: l.i() };
-        match c.linearisable(sk, a) {
-            Ok(true) => c.along = Some(a),
-            // a row that does not read the contact holds still as it moves: no linearisation
+        let (Some(p), toward, a) = found else { return None };
+        let toward = match (toward, &a.toward) {
+            (Some(Some(l)), _) if l.kind == EntKind::Line => Toward::Line(l.i()),
+            (Some(Some(l)), _) => {
+                say(format!("a set is touched by a line, not {}", l.kind.a()));
+                return None;
+            }
+            (_, crate::syntax::AlongBy::Chart(k)) => Toward::Chart { k: *k, axis: None },
+            _ => return None,
+        };
+        // one derivative per use: the geometry the use made, under its key, moves with it
+        let d = *duals.entry(a.key.clone()).or_insert_with(|| {
+            let owned = map.ents_under(&a.key).into_iter().filter(|&e| e != p).collect();
+            sk.add_dual(p.i(), toward, owned)
+        });
+        match c.linearisable(sk, d) {
+            Ok(true) => c.along = Some(d),
+            // a row that reads nothing the use moves holds still as it moves: no derivative
             Ok(false) => return None,
             Err(m) => {
                 say(m);

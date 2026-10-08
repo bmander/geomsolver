@@ -88,13 +88,26 @@ pub struct SetDecl {
     pub lit: SetLit,
 }
 
-/// **A relation stated as its linearisation** (§6.21): the flattener's twin of a set's body row
-/// for `l tangent S` — the row's derivative as `point` moves along `line`'s direction, every
-/// other number of the row held.  Never written; the references are the expansion's own.
+/// **A relation stated as its derivative** (§6.21): the flattener's twin of a set's body row for
+/// a tangency — the row's rate as `point` moves (along a line's direction, or in a chart), the
+/// geometry the use made moving with it and every other number of the row held.  `key` names the
+/// use's derivative, one per tangency (one per chart direction of a tangency at a point), and is
+/// the prefix the use's own geometry is made under.  Never written; the references are the
+/// expansion's own.
 #[derive(Clone, Debug)]
 pub struct Along {
     pub point: Ref,
-    pub line: Ref,
+    pub toward: AlongBy,
+    pub key: String,
+}
+
+/// What moves an `Along`'s point.
+#[derive(Clone, Debug)]
+pub enum AlongBy {
+    /// `l tangent S`: the line's direction.
+    Line(Ref),
+    /// `S1 tangent(at: m) S2`: the `k`th of two directions solved for.
+    Chart(u8),
 }
 
 /// **A relation word defined in the language** (§9.9): `a horizontal b := a level(up) b`, `flat
