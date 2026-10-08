@@ -194,3 +194,24 @@ fn a_dragged_end_writes_its_hint() {
     assert!(seeds.text.contains("b := point hint((90, -10))"), "{}", seeds.text);
     assert_eq!(seeds.text.matches("hint").count(), 1, "{}", seeds.text);
 }
+
+/// A line tangent to the rope: a contact has no second derivative for the energy to vary the rope
+/// by, so a tool's statement of one is refused, saying why — and one added past that check leaves
+/// the energy stating nothing rather than a wrong stationarity, and the solve standing.
+#[test]
+fn a_contact_on_a_rope_is_refused_and_never_breaks_the_solve() {
+    use gcs_core::constraints::{validate, Constraint};
+    use gcs_core::model::EntRef;
+    let mut e = solved(ROPE);
+    let sk = &mut e.sketch;
+    let p = sk.point(20.0, -80.0, false, "lp");
+    let q = sk.point(90.0, -80.0, false, "lq");
+    let l = sk.line(p, q);
+    let c = Constraint::spline_tangent_line(sk, EntRef::spline(0), EntRef::line(l));
+    let why = validate(sk, c.kind, &c.args, &|e| format!("{e:?}")).unwrap_err();
+    assert!(why.contains("energy") && why.contains("second derivative"), "{why}");
+    sk.add(c);
+    assert!(sk.variational.iter().all(|g| g.refused));
+    let r = gcs_core::solve::solve(sk, gcs_core::solve::SolveOpts::default());
+    assert!(r.success, "{}", r.message);
+}

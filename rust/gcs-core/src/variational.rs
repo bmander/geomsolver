@@ -65,6 +65,9 @@ pub struct Group {
     pub terms: Vec<Term>,
     /// The power of length the terms' integrands carry: the rows' degree.
     pub degree: u32,
+    /// A row reads a varied coordinate with no second derivative to take (`hessian_tag`): the
+    /// group states no stationarity at all, rather than a wrong one.
+    pub refused: bool,
 }
 
 /// One term of an energy: `coef · ∫ F ds` along a spline, `coef` signed as the energy is
@@ -204,7 +207,7 @@ impl Sketch {
         }
         // splines read by one row are one energy, as two terms over one spline are
         let mut sets = crate::graph::UnionFind::new(self.splines.len());
-        let mut reading: Vec<(u32, usize, usize)> = Vec::new();
+        let mut reading: Vec<(u32, usize, usize, bool)> = Vec::new();
         for c in &self.constraints {
             if !c.acts() || c.kind == CKind::Stationary {
                 continue;
@@ -212,13 +215,14 @@ impl Sketch {
             let touched: BTreeSet<usize> =
                 c.params_on(self, None).iter().filter_map(|p| owner.get(p).copied()).collect();
             let Some(&first) = touched.first() else { continue };
-            if let Err(why) = hessian_tag(self, c) {
-                faults.push((c.id, why));
-            }
+            let tag = hessian_tag(self, c);
             for &s in &touched {
                 sets.union(first, s);
             }
-            reading.push((c.id, c.rows_in(self), first));
+            reading.push((c.id, c.rows_in(self), first, tag.is_err()));
+            if let Err(why) = tag {
+                faults.push((c.id, why));
+            }
         }
         let mut groups: BTreeMap<usize, Group> = BTreeMap::new();
         for &i in &stat {
@@ -243,8 +247,10 @@ impl Sketch {
             g.splines.push(s);
             g.y.extend(ys);
         }
-        for &(id, n, s) in &reading {
-            groups.get_mut(&sets.find(s)).expect("a row read is in a group").rows.push((id, n));
+        for &(id, n, s, refused) in &reading {
+            let g = groups.get_mut(&sets.find(s)).expect("a row read is in a group");
+            g.rows.push((id, n));
+            g.refused |= refused;
         }
         // the columns, and the multipliers — one per residual of each row the group reads, kept
         // where they were
@@ -318,10 +324,51 @@ impl Sketch {
         }
     }
 
-    /// The group whose rows constraint `cid` carries, when it leads one.
+    /// The group whose rows constraint `cid` carries, when it leads one that states any.
     pub fn leads(&self, cid: u32) -> Option<&Group> {
-        self.variational.iter().find(|g| g.leader == cid)
+        self.variational.iter().find(|g| g.leader == cid && !g.refused)
     }
+}
+
+/// Whether a constraint of `kind` over `args` may be added beside the energies the sketch holds:
+/// one reading a coordinate an energy varies must have a second derivative to vary it by — the
+/// rule `hessian_tag` states of a row already there, asked before the row is made, so a tool's
+/// statement is refused with its reason rather than leaving the energy nothing to say.
+pub fn admits(sk: &Sketch, kind: CKind, args: &[Arg], name: &dyn Fn(EntRef) -> String)
+    -> Result<(), String> {
+    if sk.variational.is_empty() || kind == CKind::Stationary || kind.gauge() {
+        return Ok(());
+    }
+    let formed = kind.built() || kind == CKind::SplineGauge
+        || (kind.family_kernel().is_none() && crate::taylor::has_form(kind.kernel() as usize));
+    if formed {
+        return Ok(());
+    }
+    let varied: BTreeSet<usize> = sk.variational.iter().flat_map(|g| g.splines.iter().copied()).collect();
+    let interior = |p: usize| varied.iter().copied().find(|&s| {
+        let ctrl = &sk.splines[s].ctrl;
+        ctrl[1..ctrl.len() - 1].contains(&(p as u32))
+    });
+    let spec = kind.spec();
+    for ((_, k), a) in spec.iter().zip(args) {
+        let Arg::Ent(e) = a else { continue };
+        if !k.is_entity() {
+            continue;
+        }
+        let hit = match e.kind {
+            crate::model::EntKind::Spline => varied.contains(&e.i()).then_some(e.i()),
+            crate::model::EntKind::Point => interior(e.i()),
+            _ => None,
+        };
+        if let Some(s) = hit {
+            return Err(format!(
+                "{} is shaped by an energy, and {} has no second derivative to vary it by",
+                name(EntRef::spline(s)),
+                crate::model::article(&crate::syntax::snake(kind.name()))
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// How a row's second derivative is taken inside a stationarity (`pack`'s tag): its static
