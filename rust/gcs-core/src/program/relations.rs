@@ -4,9 +4,9 @@ use super::resolve::{follow, Resolver};
 use super::{Code, Diag, SourceMap};
 use crate::constraints::{Arg as CArg, CKind, Constraint, SpecKind};
 use crate::ir::{PathStep, Relation, ResolvedRelation, Statement as Stmt};
-use crate::model::{EntKind, EntRef, Sketch};
+use crate::model::{EntKind, EntRef, Sketch, Toward};
 use crate::syntax::{Arg, Ref, RelationForm, Span, StmtId};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use crate::fmath::Det;
 use crate::{decompose, expr, io};
 
@@ -139,6 +139,7 @@ pub(super) fn constrain(
     st: &Stmt,
     doc: &crate::syntax::Program,
     map: &SourceMap,
+    duals: &mut BTreeMap<String, usize>,
     diags: &mut Vec<Diag>,
 ) -> Option<u32> {
     // **a word that relates two solids is a claim, judged and never solved** (§9.8).  Picked up
@@ -155,14 +156,14 @@ pub(super) fn constrain(
             word: w.word.clone(),
             ops: ops.collect::<Option<Vec<EntRef>>>()?,
             args: w.args.clone(),
-            set: w.set.clone(),
+            sets: w.sets.clone(),
         })
     });
     // a set's points are points: `coincident` puts one on it, and nothing else (§6.21)
     // — said at the use, where the statement was written
-    let used = r.word.as_ref().filter(|w| w.set.is_some()).map(|w| w.span);
+    let used = r.word.as_ref().filter(|w| !w.sets.is_empty()).map(|w| w.span);
     if let (Some(w), Some(found)) = (r.word.as_ref().filter(|w| w.word == "coincident"), &word) {
-        if let (Some(&op), Some((_, set))) = (found.ops.first(), &w.set) {
+        if let (Some(&op), Some((_, set))) = (found.ops.first(), w.sets.first()) {
             if op.kind != EntKind::Point {
                 let at = w.span;
                 let m = format!("`{set}` is a set of points, and `coincident` puts a point on it, not {}",
@@ -174,10 +175,18 @@ pub(super) fn constrain(
             }
         }
     }
-    // a set's body row stated as its linearisation at a tangency's contact (§6.21)
+    // a set's body row stated as its derivative at a tangency's point (§6.21)
+    // — what moves its point, or the kind a line was expected in place of
     let along = r.along.as_ref().map(|a| {
         let ent = |x: &Ref| res.lookup(x).and_then(|e| follow(sk, e, &x.path).ok());
-        (ent(&a.point), ent(&a.line))
+        let toward = match &a.toward {
+            crate::syntax::AlongBy::Line(l) => ent(l).map(|l| match l.kind {
+                EntKind::Line => Ok(Toward::Line(l.i())),
+                kind => Err(kind),
+            }),
+            crate::syntax::AlongBy::Chart(k) => Some(Ok(Toward::Chart { k: *k, axis: None })),
+        };
+        (ent(&a.point), toward, a)
     });
     let r = match r
         .resolve(&|r| res.lookup(r).and_then(|e| follow(sk, e, &r.path).ok()).map(|e| e.kind))
@@ -435,15 +444,22 @@ pub(super) fn constrain(
                 diags.push(Diag { code: Code::E040, span: at, stmt: Some(st.id), message: m });
             }
         };
-        let (Some(p), Some(l)) = found else { return None };
-        if l.kind != EntKind::Line {
-            say(format!("a set is touched by a line, not {}", l.kind.a()));
-            return None;
-        }
-        let a = crate::constraints::Along { point: p.i(), line: l.i() };
-        match c.linearisable(sk, a) {
-            Ok(true) => c.along = Some(a),
-            // a row that does not read the contact holds still as it moves: no linearisation
+        let (Some(p), Some(toward), a) = found else { return None };
+        let toward = match toward {
+            Ok(t) => t,
+            Err(kind) => {
+                say(format!("a set is touched by a line, not {}", kind.a()));
+                return None;
+            }
+        };
+        // one derivative per use: the geometry the use made, under its prefix, moves with it
+        let d = *duals.entry(a.key.clone()).or_insert_with(|| {
+            let made = a.made.iter().flat_map(|m| map.ents_under(m));
+            sk.add_dual(p.i(), toward, made.filter(|&e| e != p).collect())
+        });
+        match c.differentiable(sk, d) {
+            Ok(true) => c.along = Some(d),
+            // a row that reads nothing the use moves holds still as it moves: no derivative
             Ok(false) => return None,
             Err(m) => {
                 say(m);

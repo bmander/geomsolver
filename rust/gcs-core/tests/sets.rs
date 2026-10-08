@@ -1,10 +1,11 @@
 //! **Sets** (§6.21): a shape written as the points that satisfy a predicate — `{ p | p
 //! distance(r) c }`, and the library's sphere, cylinder and cone as families of them — with `q
-//! coincident S` the body at `q`, and `l tangent S` the body at a contact on `l` with its
-//! linearisation along `l`.  Held to closed forms (a sphere's radius from its centre, a
-//! cylinder's common perpendicular, a cone's half-angle and its tangent plane), to the count a
-//! tangency must add (one condition, regular), to the derivative the linearised kernel writes,
-//! through a document, and to every refusal at its span.
+//! coincident S` the body at `q`, `l tangent S` the body at a contact on `l` with its derivative
+//! along `l` — a body with geometry of its own included — and `S1 tangent(at: m) S2` their
+//! derivatives at `m` along two directions both share.  Held to closed forms (a sphere's radius
+//! from its centre, a cylinder's common perpendicular, a cone's half-angle and its tangent
+//! plane), to the count a tangency must add (one condition, regular), to the exact Jacobian the
+//! derivative kernel writes, through a document, and to every refusal at its span.
 use gcs_core::diagnose::{diagnose, DiagnoseOptions};
 use gcs_core::io;
 use gcs_core::model::Sketch;
@@ -217,7 +218,7 @@ fn a_line_tangent_to_a_cone_touches_without_crossing() {
 }
 
 /// A line held still and tangent to a cone whose half-angle is left unbound finds the half-angle:
-/// the linearisation reads the row's free twin, its unknown held while the contact moves.
+/// the derivative reads the row's free twin, its unknown held while the contact moves.
 #[test]
 fn a_tangency_finds_an_unbound_half_angle() {
     let src = format!(
@@ -234,6 +235,97 @@ fn a_tangency_finds_an_unbound_half_angle() {
     fd_jacobian(&sk, 1e-5);
 }
 
+/// A cylinder of radius 4 about `sx`, a line slanting up the front, written with a foot of its
+/// own: the point `q` on the axis square across from `p`, which slides along the axis as `p`
+/// moves.  `in` draws the foot in a view.
+fn footed(view: &str) -> String {
+    format!(
+        "in std.front {{\n  sx := line\n  fix((0, 0)) sx.p1\n  fix((50, 50)) sx.p2\n}}\n\
+         foot := {{ p |\n  q := point hint((10, 10)){view}\n  q coincident sx\n  \
+         g := line(p, q)\n  g perpendicular sx\n  p distance(4) q\n}}\n"
+    )
+}
+
+/// A set whose body makes a point of its own is tangent to a line: the foot's motion along the
+/// set is an unknown of the tangency, solved with everything else — the same tangency as the
+/// cylinder's, its radius from the axis along their common perpendicular, one condition and a
+/// regular one, whether the foot stands in space or is drawn in a view (its lift's row moving
+/// with it).
+#[test]
+fn a_set_with_geometry_of_its_own_is_tangent_to_a_line() {
+    for view in ["", " in std.front"] {
+        let src = with(&format!("{}l tangent foot", footed(view)));
+        let e = read(&src);
+        let sk = solved(&e);
+        let (p, q) = ends(&sk, ent(&e, "sx"));
+        let (a, b) = ends(&sk, ent(&e, "l"));
+        let m = cross(sub(q, p), sub(b, a));
+        let gap = dot(unit(m), sub(a, p)).abs();
+        assert!((gap - 4.0).abs() < 1e-9, "{view:?}: {gap}");
+        assert_eq!(dof(&with(&footed(view))) - dof(&src), 1, "{view:?}");
+        let mut sk = sk;
+        let d = diagnose(&mut sk, DiagnoseOptions::default());
+        assert!(d.over.is_empty() && d.implied.is_empty() && d.warnings.is_empty(), "{view:?}: {d:?}");
+        // the foot's motion is unknown: its tangent columns are free, and moved by the solve —
+        // the foot slides along the axis as the contact runs along the line
+        let moved = sk.duals.iter().flat_map(|d| d.tangent.values()).any(|&t| {
+            let p = &sk.params[t as usize];
+            !p.fixed && p.value.abs() > 1e-6
+        });
+        assert!(moved, "{view:?}: the foot holds still");
+        // and drawn in a view, its lift's row moves with it
+        let lifted = sk.constraints.iter().any(|c| c.intrinsic && c.along.is_some());
+        assert_eq!(lifted, !view.is_empty(), "{view:?}");
+        let said = described(&e);
+        assert!(said.iter().all(|s| s == "l tangent foot"), "{said:?}");
+    }
+}
+
+/// Two cones tangent at a point, written as one word: their tangent planes there are one, two
+/// conditions — the hypoid's pitch cones, which `std.TangentCones` now states this way, and
+/// which `spatial_surfaces.rs` holds to the fold construction.  The chart its two directions are
+/// gauged in rises along the pitch plane's normal, and every row's Jacobian is exact.
+#[test]
+fn two_sets_tangent_at_a_point() {
+    let src = include_str!("../../examples/hypoid_pitch_cones.sv")
+        .replace("std.TangentCones(gc, pc, M)", "gc tangent(at: M) pc");
+    let e = read(&src);
+    assert!(described(&e).contains(&"gc tangent(at: M) pc".to_string()), "{:?}", described(&e));
+    let mut sk = solved(&e);
+    let d = diagnose(&mut sk, DiagnoseOptions::default());
+    assert_eq!(d.dof, 0, "{d:?}");
+    assert!(d.over.is_empty() && d.warnings.is_empty(), "{d:?}");
+    // two directions, each gauged along y, the front's normal
+    let charts: Vec<_> = sk.duals.iter().map(|d| d.toward).collect();
+    assert_eq!(
+        charts,
+        [0, 1].map(|k| gcs_core::model::Toward::Chart { k, axis: Some(1) }).to_vec(),
+    );
+    // the two cones' normals at M agree: the pinion's apex comes out on the pitch plane
+    let (m, apex) = (at(&sk, &e, "M"), ends(&sk, ent(&e, "pax")).0);
+    assert!(sub(apex, m)[1].abs() < 1e-9, "{apex:?}");
+    fd_jacobian(&e.sketch, 1e-5);
+    fd_jacobian(&sk, 1e-5);
+    // and a document carries it
+    let back = io::from_json(&io::to_json(&sk)).expect("reads back");
+    assert_eq!(io::dumps(&back, None), io::dumps(&sk, None));
+}
+
+/// A tangency's derivative rows deleted, its tangent unknowns are no freedom: each is held again.
+#[test]
+fn a_tangencys_unknowns_go_with_its_rows() {
+    let mut sk = solved(&read(&with(&format!("{}l tangent foot", footed("")))));
+    let rows: Vec<u32> = sk.constraints.iter().filter(|c| c.along.is_some() && !c.intrinsic)
+        .map(|c| c.id).collect();
+    let free = |sk: &Sketch| sk.duals.iter().flat_map(|d| d.tangent.values())
+        .filter(|&&t| !sk.params[t as usize].fixed).count();
+    assert!(free(&sk) > 0);
+    for id in rows {
+        sk.remove(id);
+    }
+    assert_eq!(free(&sk), 0);
+}
+
 /// A tangency is one condition and a regular one: the diagnosis sees no redundancy, no shaky
 /// motion, and the numeric rank agrees with the structural.
 #[test]
@@ -246,46 +338,68 @@ fn a_tangency_adds_one_regular_condition() {
     }
 }
 
-/// The linearised kernel's Jacobian is its residual's derivative: every column of the assembled
-/// system, at a solution and away from one.
+/// A derivative row's Jacobian is its residual's derivative: every column of the assembled
+/// system, at a solution and away from one — the row's own Hessian along the motion, the
+/// tangent columns and the line's ends, read exactly from the row's Taylor form.
 #[test]
-fn the_linearisations_jacobian_is_its_derivative() {
-    for set in ["ball", "rod", "kc"] {
-        let e = read(&with(&format!("l tangent {set}")));
-        assert!(e.sketch.constraints.iter().any(|c| c.along.is_some()), "{set}");
+fn the_derivatives_jacobian_is_its_derivative() {
+    let footed: Vec<String> =
+        ["", " in std.front"].iter().map(|v| format!("{}l tangent foot", footed(v))).collect();
+    let sets = ["l tangent ball", "l tangent rod", "l tangent kc"];
+    for src in sets.iter().map(|s| s.to_string()).chain(footed) {
+        let e = read(&with(&src));
+        assert!(e.sketch.constraints.iter().any(|c| c.along.is_some()), "{src}");
         fd_jacobian(&e.sketch, 1e-5);
         fd_jacobian(&solved(&e), 1e-5);
     }
 }
 
-/// A linearised row travels through a document and a graft with its contact and its line.
+/// A derivative row travels through a document and a graft with its use's derivative.
 #[test]
 fn a_tangency_travels_through_a_document() {
-    let sk = solved(&read(&with("l tangent rod")));
-    let along = |s: &Sketch| s.constraints.iter().filter_map(|c| c.along).collect::<Vec<_>>();
-    assert!(!along(&sk).is_empty());
-    let copy = io::copy(&sk, &sk.primitives());
-    for back in [io::from_json(&io::to_json(&sk)).expect("reads back"), copy] {
-        assert_eq!(along(&back), along(&sk));
-        assert_eq!(io::dumps(&back, None), io::dumps(&sk, None));
+    for src in ["l tangent rod".to_string(), format!("{}l tangent foot", footed(" in std.front"))] {
+        let sk = solved(&read(&with(&src)));
+        let along = |s: &Sketch| s.constraints.iter().filter_map(|c| c.along).collect::<Vec<_>>();
+        assert!(!along(&sk).is_empty());
+        let copy = io::copy(&sk, &sk.primitives());
+        for mut back in [io::from_json(&io::to_json(&sk)).expect("reads back"), copy] {
+            assert_eq!(along(&back), along(&sk), "{src}");
+            assert_eq!(back.duals.len(), sk.duals.len(), "{src}");
+            assert_eq!(io::dumps(&back, None), io::dumps(&sk, None), "{src}");
+            // and what came back is the tangency still
+            let r = solve(&mut back, SolveOpts::default());
+            assert!(r.success, "{src}: {}", r.message);
+            assert_eq!(dof_of(&mut back), dof_of(&mut sk.clone()), "{src}");
+        }
     }
+}
+
+fn dof_of(sk: &mut Sketch) -> i64 {
+    diagnose(sk, DiagnoseOptions::default()).dof
 }
 
 #[test]
 fn what_a_set_refuses() {
     refused(&with("radius(5) ball"), "E040", "`ball` is a set", "ball");
-    refused(&with("ball coincident rod"), "E040", "not to another set", "ball coincident rod");
+    refused(&with("ball coincident rod"), "E040", "or to another set at a point", "ball coincident rod");
+    // two sets touch at a point the word names, stated and not claimed, and each body is read at
+    // the point, so neither may make geometry of its own
+    refused(&with("k tangent kc"), "E040", "which the word names", "tangent");
+    // a tangency at a point reads where it stands in space, so not a row over its place in a
+    // view: `c` and `ax` both drawn in the front read `k`'s angle on the page
+    refused(&with("k tangent(at: c) kc"), "E040", "reads it in its view", "tangent(at: c)");
+    refused(&with("claim k tangent(at: a) kc"), "E040", "stated, not claimed", "tangent");
+    refused(
+        &with(&format!("{}k tangent(at: a) foot", footed(""))),
+        "E040",
+        "`k tangent(at: a) foot` reads each set's body at the point, where `foot`'s makes `q`",
+        "tangent(at: a)",
+    );
     refused(&with("l coincident ball"), "E040", "puts a point on it, not a line", "coincident");
     refused(
         &with("kk := circle(center: a) hint(r: 3) in side\nkk tangent ball"),
         "E040",
         "touched by a line, not a circle",
-        "tangent",
-    );
-    refused(
-        &with("own := { p |\n  q := point hint((1, 1))\n  p distance(5) q\n}\nl tangent own"),
-        "E040",
-        "geometry of its own",
         "tangent",
     );
     refused(&with("claim l tangent ball"), "E040", "stated, not claimed", "tangent");

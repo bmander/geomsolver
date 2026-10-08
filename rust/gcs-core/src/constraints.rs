@@ -1925,27 +1925,13 @@ pub struct Constraint {
     /// b` reaches the sketch as the `Level` its body states, and is described as written.
     /// Presentation, like `class`; `graft` carries it while its operands survive.
     pub word: Option<WordUse>,
-    /// **Stated as its linearisation** (§6.21): this row's derivative as one point moves along a
-    /// line's direction, every other number it reads held — what `l tangent S` makes of each row
-    /// of a set's body, at the contact on `l`.  `None` for every constraint stated as itself.
-    /// Not presentation: it picks the kernel (`kernels::linearised_kernel`) and appends the
-    /// line's ends to the columns, as `free` appends its column.
-    pub along: Option<Along>,
-}
-
-/// A linearisation's point and line, by index — see `Constraint::along`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Along {
-    pub point: usize,
-    pub line: usize,
-}
-
-impl Along {
-    /// The line's two ends, which the linearisation reads lifted.
-    pub fn ends(&self, sk: &Sketch) -> [usize; 2] {
-        let l = &sk.lines[self.line];
-        [l.p1 as usize, l.p2 as usize]
-    }
+    /// **Stated as its derivative** (§6.21): this row's rate as a tangency's use moves along the
+    /// set — the index of its `Sketch::duals` entry, which says what moves each column it reads.
+    /// What `l tangent S` makes of each row of a set's body, at the contact on `l`.  `None` for
+    /// every constraint stated as itself.  Not presentation: it picks the kernel
+    /// (`kernels::dual_kernel`) and appends a tangent column per column and the line's ends to
+    /// the columns, as `free` appends its column.
+    pub along: Option<usize>,
 }
 
 /// A line's two ends lifted, three columns each.
@@ -1969,8 +1955,8 @@ pub struct WordUse {
     pub ops: Vec<EntRef>,
     /// The parentheses' text as written (`d: 5mm`), or empty.
     pub args: String,
-    /// The operand that is a set, by its place among the operands and its name as written.
-    pub set: Option<(usize, String)>,
+    /// The operands that are sets, each by its place among the operands and its name as written.
+    pub sets: Vec<(usize, String)>,
 }
 
 /// `+1` and `−1` as the words a statement writes them with — the one place the two meet, read by
@@ -2193,7 +2179,7 @@ impl Constraint {
     /// cannot share a block — and the definition is only reachable through the sketch.  The ids
     /// run on past the static ones, which is what lets `System` hold a table of both.
     pub fn kernel_id_in(&self, sk: &Sketch) -> usize {
-        // a linearisation's kernel is its row's kernel's twin, past the families' (§6.21)
+        // a derivative's kernel is its row's kernel's twin, past the families' (§6.21)
         if self.along.is_some() {
             return kernels::N_KERNELS
                 + FamilyKernel::ALL.len() * sk.curve_defs.len()
@@ -2449,17 +2435,20 @@ impl Constraint {
     /// The same, for a curve contact read on a *given* span — see `params_on`.
     pub fn consts_on(&self, sk: &Sketch, span: Option<usize>) -> Vec<f64> {
         let inner = self.own_consts_on(sk, span);
-        let Some(a) = self.along else { return inner };
-        // a linearisation's: its row's kernel, the row's own constants, then which component
-        // of the line's direction moves each of the row's columns — the point's coordinates in
-        // space, 1 to 3, and 0 for every other number the row reads, held (§6.21)
-        let at = sk.lift_of(a.point).map(|k| sk.lifts[k].x);
+        let Some(d) = self.along else { return inner };
+        // a derivative's: its row's kernel, the row's own constants, then how each of the row's
+        // columns moves — held, by a component of the line's direction, or by a tangent column
+        // of its own (§6.21)
+        let moves = sk.dual_moves(d);
         let mut k = Vec::with_capacity(1 + inner.len() + 8);
         k.push(self.kernel_id() as f64);
         k.extend(inner);
         for p in self.params_on_row(sk, span) {
-            let c = at.and_then(|x| x.iter().position(|&q| q == p)).map_or(0, |c| c + 1);
-            k.push(c as f64);
+            k.push(match moves.of(p) {
+                crate::model::Move::Held => 0.0,
+                crate::model::Move::Dir(c) => (c + 1) as f64,
+                crate::model::Move::Tangent => kernels::TANGENT as f64,
+            });
         }
         k
     }
@@ -2700,30 +2689,77 @@ impl Constraint {
     /// compiled block cannot end up with one span's columns and another's knots.
     pub fn params_on(&self, sk: &Sketch, span: Option<usize>) -> Vec<u32> {
         let mut ps = self.params_on_row(sk, span);
-        // a linearisation reads the row's columns and then the ends of the line it is taken
-        // along, in space (§6.21)
-        if let Some(a) = self.along {
-            ps.extend(lifted_ends(sk, a.line));
+        // a derivative reads the row's columns, a tangent column for each (the fixed zero where
+        // it has none), and the ends of the line it is taken along, in space (§6.21)
+        if let Some(d) = self.along {
+            let tangents: Vec<u32> = ps.iter().map(|&p| sk.tangent_col(d, p)).collect();
+            ps.extend(tangents);
+            match sk.duals[d].toward {
+                crate::model::Toward::Line(l) => ps.extend(lifted_ends(sk, l)),
+                crate::model::Toward::Chart { .. } => ps.extend([sk.zero_col(); 6]),
+            }
         }
         ps
     }
 
-    /// Whether this row may be stated as its linearisation at `a` (§6.21) — `Ok(false)` where it
-    /// does not read the point, so its linearisation is nothing — or why it may not.  The one
-    /// rule the elaborator and a document reader share.
-    pub fn linearisable(&self, sk: &Sketch, a: Along) -> Result<bool, String> {
-        if !a.ends(sk).iter().all(|&e| sk.has_place(e)) {
-            return Err("a line touching a set stands in space, or in a plane: this one is a 2D \
-                        sketch's"
-                .to_string());
+    /// The columns the row reads as itself, before a derivative's — what a use's tangent
+    /// columns are minted for (`Sketch::mint_tangents`).
+    pub(crate) fn row_params(&self, sk: &Sketch) -> Vec<u32> {
+        self.params_on_row(sk, None)
+    }
+
+    /// The constants the row reads as itself, before a derivative's.
+    pub(crate) fn row_consts(&self, sk: &Sketch) -> Vec<f64> {
+        self.own_consts_on(sk, None)
+    }
+
+    /// Whether this row may be stated as its derivative under dual `d` (§6.21) — `Ok(false)`
+    /// where it reads nothing the use moves, so its derivative is nothing — or why it may not.
+    /// The one rule the elaborator and a document reader share.  Asked before the row is added,
+    /// so it reads entities, not columns: the dual's point, or geometry of the use's own that
+    /// owns a number.
+    pub fn differentiable(&self, sk: &Sketch, d: usize) -> Result<bool, String> {
+        let dual = &sk.duals[d];
+        if let crate::model::Toward::Line(l) = dual.toward {
+            if !sk.line_ends(l).iter().all(|&e| sk.has_place(e)) {
+                return Err("a line touching a set stands in space, or in a plane: this one is a \
+                            2D sketch's"
+                    .to_string());
+            }
         }
-        if self.kind.family_kernel().is_some() {
+        let what = || crate::model::article(&crate::syntax::snake(self.kind.name()));
+        if self.kind.family_kernel().is_some() || !crate::taylor::has_form(self.kernel_id()) {
             return Err(format!(
-                "a set whose body states {} has no linearisation yet, so nothing is tangent to it",
-                crate::model::article(&crate::syntax::snake(self.kind.name()))
+                "a set whose body states {} has no derivative yet, so nothing is tangent to it",
+                what()
             ));
         }
-        Ok(self.reads_space() && self.lifted_points(sk).contains(&a.point))
+        // everything the row reads, children and all
+        let mut read = self.entities();
+        let mut i = 0;
+        while i < read.len() {
+            let more = sk.children(read[i]);
+            read.extend(more.into_iter().filter(|c| c.kind != EntKind::Curve));
+            i += 1;
+        }
+        let point = EntRef::point(dual.point);
+        // a point drawn in a view moves in it; a direction solved for in space is read where the
+        // point stands, so a row over its place in the view would read it held
+        if matches!(dual.toward, crate::model::Toward::Chart { .. })
+            && !self.reads_space()
+            && read.contains(&point)
+            && sk.plane_of(dual.point).is_some()
+        {
+            return Err(format!(
+                "a tangency at a point reads each set where the point stands in space, and {} \
+                 reads it in its view",
+                what()
+            ));
+        }
+        let moves = |e: &EntRef| {
+            *e == point || (dual.owned.contains(e) && !sk.own_params(*e).is_empty())
+        };
+        Ok(read.iter().any(moves))
     }
 
     /// The columns the row reads as itself — its own, and a free twin's after them.
@@ -3082,10 +3118,10 @@ impl Constraint {
     }
 
     /// The residual and Jacobian at `v`, by the kernel this row runs: its own, or its
-    /// linearisation's (§6.21).
+    /// derivative's (§6.21).
     fn eval(&self, sk: &Sketch, v: &[f64]) -> (Vec<f64>, Vec<f64>) {
         match self.along {
-            Some(_) => kernels::eval_with(&kernels::linearised_kernel(self.kernel_id()), v, &self.consts(sk)),
+            Some(_) => kernels::eval_with(&kernels::dual_kernel(self.kernel_id()), v, &self.consts(sk)),
             None => kernels::eval_one(self.kernel_id(), v, &self.consts(sk)),
         }
     }
@@ -3522,7 +3558,7 @@ pub fn same_relation(a: &Constraint, b: &Constraint) -> bool {
 }
 
 fn matches(a: &Constraint, b: &Constraint, want: impl Fn(SpecKind) -> bool + Copy) -> bool {
-    // a row and its linearisation are two equations about the same entities
+    // a row and its derivative are two equations about the same entities
     if a.kind != b.kind || a.along != b.along {
         return false;
     }

@@ -1,6 +1,13 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.50 — October 2026**
+**Specification, Draft 0.51 — October 2026**
+
+**[0.51] Tangencies, differentiated.** `l tangent S` states each row of the set's body again as
+its **derivative** along `l`, and what the body makes of its own — a foot point, a lift — moves
+with the contact by a tangent unknown of its own, solved with the rest: a set whose body declares
+geometry is now tangent to a line (§6.21). Two sets may touch at a point, `S1 tangent(at: m) S2`:
+their tangent spaces there are one, two conditions for two surfaces. `std.TangentCones` is that
+word.
 
 **[0.50] Predicates, applied.** A relation word and a set are one thing: a body over
 **parameters**, given where it is called (`Sphere(c, r: 12mm)`, `above(d: 5mm)`), and **bound
@@ -9,7 +16,7 @@ variables**, written where it is defined (`{ p | … }`, `a above(d) b`) and fil
 may hold several statements and declare the geometry they need (`l1 flush(d) l2 := { l1
 parallel l2; l2.p1 distance(d) l1 }`), each use making its own; a set may be written where it is
 used (`q coincident { p | p distance(5mm) c }`, `l tangent std.Cylinder(ax, r: 8mm)`); a word may
-use a set and a set write a word, and a tangency linearises through both. An operand that names
+use a set and a set write a word, and a tangency differentiates through both. An operand that names
 nothing is said once, where it is written.
 
 **[0.49] Sets.** A shape may be written as the points that satisfy a predicate: `ball := { p |
@@ -132,7 +139,7 @@ sense is the regular statement.
 point or a line to whatever `on` related it to — a line, a circle or arc, a spline, a curve, a
 plane, a sphere, a cone, a cylinder — and a circle to a sphere (§9.2). What it means is the kinds
 of its operands, as before; one word fewer, and no idea spelled twice. `on(t == 20)` is
-`coincident(t == 20)`.
+`coincident(t == 20)`. (*The sphere, cone and cylinder are sets in 0.49, §6.21.*)
 
 **[0.41] An unknown is declared.** `param` marks one of the document's inputs (§6.3): `param bore:
 Length := 50mm` is a value a host may give another, and `param beta: Angle hint(30deg)`, with no
@@ -253,13 +260,16 @@ all in space (§9.2, §9.3). `F against G` with a solved view is a placement whe
 planes turn together — one derived from the other, or both from one, with no fold — and a row
 of the solve where the datum's offset is solved; two views that turn apart are E066 (§6.10). A
 basis given outright may say where it stands: `u: (…), v: (…), o: (…)` (§6.7). (*`against`, E066
-and the written basis are withdrawn in 0.42.*)
+and the written basis are withdrawn in 0.42. The cone and the cylinder are library sets in 0.49
+(§6.21), their numbers read by the instance's name; `k1 tangent(M) k2` is `k1 tangent(at: M) k2`
+in 0.51.*)
 
 **[0.25] A circle on a sphere, and the midpoint and the mirror in space.** `c on s` puts every
 point of a circle (or an arc's circle) drawn in a view on a sphere: the sphere's centre on the
 circle's axis and `√(‖S − C‖² + r²) = R` (§9.3). `s tangent c` is refused, since a circle and a
 sphere may touch at a point or all the way round. `midpoint` and `symmetry` across views are the
 midpoint of a line in space and the half turn about a line in space — on a page, the mirror.
+(*The sphere is a library set in 0.49 (§6.21); a circle on one is `std.CircleOnSphere`.*)
 
 **[0.24] A relation across views is a relation in space.** The same words, with no selector:
 `gax angle(90deg) pax` between lines drawn in two views is the angle between them in space, and
@@ -270,7 +280,8 @@ no meaning in space across views is **E062**; `sense:` and `side:` there are E04
 `l on P` and `p distance(d, along: n) P` relate a point or a line to a plane in space whatever
 view it is drawn in. A **sphere** (`s := sphere(center: p) hint(r: …)`, §3.1) takes `radius`, `on`
 and `tangent` in space. A solved view's place on the sheet is held silently (§6.7). (*The role
-rule and the held place are withdrawn in 0.42: a plane has no place on the sheet.*)
+rule and the held place are withdrawn in 0.42: a plane has no place on the sheet. The sphere entity
+is withdrawn in 0.49: `std.Sphere` is a set, §6.21.*)
 
 **[0.23] A view may be a workplane solved for.** A plane is fixed unless its brackets name an
 unknown (§6.7): `fold: beta` over a name nothing defines solves the fold, `fold: along l` folds
@@ -379,9 +390,6 @@ MUST, MUST NOT, SHOULD, SHOULD NOT, and MAY are used as in RFC 2119. Text marked
 | `Line` | segment between two `Point`s; its infinite carrier is what constraints read **[0.2]** | 0 of its own (4 through its ends) |
 | `Circle` | center + radius | 3 |
 | `Arc` | center + radius, its start and end on that circle | 5 |
-| `Sphere` | a center drawn in some view, or standing in space, + a radius, on no sheet **[0.24]** | 1 of its own (`r`), beyond its center's |
-| `Cone` | an axis `Line` drawn in some view or standing in space — the apex its start, opening toward its end — + a half-angle, on no sheet **[0.26]** | 1 of its own (`half`), beyond its axis's |
-| `Cylinder` | an axis `Line` drawn in some view or standing in space + a radius, on no sheet **[0.26]** | 1 of its own (`r`), beyond its axis's |
 | `Axis` | a directed line in space with no start, drawn in no view **[0.42]** | 2 (its direction), and 2 more once a relation reads where it is |
 | `Plane` | **[0.42]** a plane in space: its attitude two axes `u`, `v` through its origin **[0.43]**, and where it stands; a **view**, the points drawn in it having its own coordinates (§6.7) | 3 of its own (where it stands), beyond its axes'; a bare `plane` is 7 with the axes it mints **[0.43]** |
 | `Path` | directed piecewise boundary curve | 0 (derived object) |
@@ -411,11 +419,6 @@ Compound entities expose sub-entities by field access. Sub-entities are ordinary
 | `Circle` | `.r` | `Length` |
 | `Arc` | `.center`, `.start`, `.end` | `Point` |
 | `Arc` | `.r` | `Length` |
-| `Sphere` | `.center` | `Point` — drawn in whichever view the declaration is `in` **[0.24]** |
-| `Sphere` | `.r` | `Length` **[0.24]** |
-| `Cone`, `Cylinder` | `.about` | `Line` — named in the brackets, never minted: it is what places the surface in space **[0.26]** **[0.49]** |
-| `Cone` | `.half` | `Angle` — written in degrees in `hint(half: …)`, stated by `angle(θ) k` **[0.26]** |
-| `Cylinder` | `.r` | `Length` **[0.26]** |
 | `Axis` | `.x`, `.y`, `.z` | its unit direction — seeded by `hint(dir: (…, …, …))` (normalised) and held by `fix(dir == (…, …, …))` **[0.42]** **[0.45]** |
 | `Axis` | `.px`, `.py`, `.pz` | `Length` — where it stands: its point nearest the world origin, held by `fix(origin == (…, …, …))` once a relation reads it **[0.43]** **[0.45]** |
 | `Plane` | `.u`, `.v` | `Axis` — its axes, through its origin **[0.42]**; minted where the slot is not written (`P.u`, `P.v`) **[0.43]** |
@@ -1211,7 +1214,7 @@ a curve of the drawing (§6.15.1), with `o`'s coordinates among that curve's col
 
 **[0.27] A motion's numbers may measure the solved drawing.** A motion is read after the solve,
 so `ratio:`, `phase:` and `advance:` may call `length(l)` (a line's length, or an arc's along
-itself), `radius(c)` (a circle, arc, sphere or cylinder), `distance(a, b)` (two points, or a point
+itself), `radius(c)` (a circle or an arc), `distance(a, b)` (two points, or a point
 and a line produced) and `angle(l1, l2)` (between two lines' directions, 0° to 180°), all in
 space: `pinion := motion(about: axis, ratio: -length(wheel_r) / length(pinion_r))`. The arguments
 are references, resolved as any reference in the statement's scope; a length reads as a `Length`
@@ -1599,28 +1602,39 @@ said where it is used, by two words:
   — the cone's generator — is made once for each use. `q` MUST be a point (**E040**).
 - `l tangent S` (either way round), `l` a line: a **contact** point standing in space, on `l`,
   is minted for the use and the body is stated at it; and each relation of the body is stated a
-  second time as its **linearisation** there — the relation's derivative as the contact moves
-  along `l`'s direction, every other number it reads (the set's own) held. So `l`'s direction
-  lies in the set's tangent space at the contact: for a surface, one condition (the contact's
-  three unknowns against its two rows on `l`, the body's one and the linearisation's one), the
-  same count `distance(r)` from a sphere's centre states, and regular, the contact being an
-  unknown of its own rather than a double root of the line's distance. The contact starts at
-  `l`'s middle. A body that declares geometry of its own — a point, or a line not between points
-  it was given — has a motion along the set the linearisation would need too, and a tangency to
-  it is **E040**; so is `tangent` to a set from anything but a line, and a claimed tangency.
+  second time as its **derivative** there **[0.51]** — the relation's rate as the contact moves
+  along `l`'s direction, the numbers the set was given held. What the body declares of its own —
+  a point, or a line not between points it was given — moves with the contact, by a **tangent
+  unknown** of its own (its rows, a lift's among them, differentiated too), solved with
+  everything else. So `l`'s direction lies in the set's tangent space at the contact: for a
+  surface, one condition (the contact's three unknowns against its two rows on `l`, the body's
+  rows against the geometry it declares, and the derivatives' against the tangents), the same
+  count `distance(r)` from a sphere's centre states, and regular, the contact being an unknown
+  of its own rather than a double root of the line's distance. The contact starts at `l`'s
+  middle. `tangent` to a set from anything but a line or a set is **E040**, and so is a claimed
+  tangency.
+- `S1 tangent(at: m) S2` **[0.51]**, two sets: their **tangent spaces at `m` are one** — every
+  direction along `S1` there is along `S2`. Two directions are solved for at `m`, in a chart the
+  elaborator picks once (each rises along the world axis the sets' normal there is most along),
+  and each body is stated as its derivative along both: two conditions for two surfaces, the
+  directions' two unknowns against four rows. `m` on each is said beside it (`m coincident S1`);
+  the word reads each body only at `m`, so a body that declares geometry of its own is **E040**
+  here, and the word without `at:` is **E040**.
 
 Every relation a use states is **described as the statement wrote it** (`l tangent shaft`, §9.9),
 its placement and classes the statement's; a dimension the body states is drawn as a component
-body's is, and its linearisation draws nothing. A set named anywhere else a reference stands —
-`radius(5) ball`, a face's loop — is **E040**; `coincident` or `tangent` between two sets is
-**E040**, with parentheses **E040**; a set whose body uses itself, however indirectly, is
+body's is, and its derivative draws nothing. A set named anywhere else a reference stands —
+`radius(5) ball`, a face's loop — is **E040**; `coincident` between two sets is **E040**, with
+parentheses **E040**; a set whose body uses itself, however indirectly, is
 **E003**. A set may be handed to a component as a `group` formal, as an instance is, and used
 there by the formal's name (`std.CircleOnSphere(k, ball, view)`).
 
 *Non-normative:* `std.Sphere`, `std.Cylinder` and `std.Cone` are sets. A circle written as a set
 — `{ p | p coincident P; p distance(r) o }`, lowered to the `Circle` kernel where the elaborator
-recognises it — the tangency of two sets at a point, a set drawn by tracing its points, and sets
-bounded by inequalities (arcs, segments, rays) are not part of this draft (#101).
+recognises it — a set drawn by tracing its points, and sets bounded by inequalities (arcs,
+segments, rays) are not part of this draft (#101). A derivative row has no flat spelling, so a
+program lifted from a sketch (`to_program`) keeps a tangency's contact and says nothing of the
+tangency.
 
 ## 7. Ports **[0.13]**
 
@@ -1734,25 +1748,24 @@ What goes in the parentheses is a short list:
 
 | word | fixity | operands → constraint |
 |---|---|---|
-| `coincident` | infix | **[0.42]** (point, point); (point, line \| circle \| arc \| spline \| curve) — incidence, where 0.41 and before wrote `on`; **[0.24]** (point, plane), (line, plane), (point, sphere) in space; **[0.25]** (circle \| arc, sphere), the whole circle on the sphere; **[0.26]** (point, cone), (point, cylinder); **[0.42]** (point, axis), (axis, plane); **[0.43]** (axis, axis), one line either way round; **[0.44]** (line, axis), both ends on it; **[0.38]** (point, the envelope of a prism's side), from any view (§6.15.2). Read either way round: `P coincident p` is `p coincident P`. **[0.32]** Not (solid, solid): the body rule's union is `union` (§6.9) |
+| `coincident` | infix | **[0.42]** (point, point); (point, line \| circle \| arc \| spline \| curve) — incidence, where 0.41 and before wrote `on`; **[0.24]** (point, plane), (line, plane) in space; **[0.49]** (point, set), the set's body at the point (§6.21); **[0.42]** (point, axis), (axis, plane); **[0.43]** (axis, axis), one line either way round; **[0.44]** (line, axis), both ends on it; **[0.38]** (point, the envelope of a prism's side), from any view (§6.15.2). Read either way round: `P coincident p` is `p coincident P`. **[0.32]** Not (solid, solid): the body rule's union is `union` (§6.9) |
 | `cut` | infix | **[0.18]** (solid, solid) — the body rule's other half (§6.9), and no constraint at all |
 | `distance` | infix | (p, p); **[0.46]** +`along:` an ordinate — an axis or a line, or the view's `x`/`y` for the run and the rise (`right`/`left`/`up`/`down` with the sign said); (p, line); (line, line); (circle, circle); (p, plane) with `along: u`/`v` for signed ordinates from the plane's origin, or **[0.24]** `along: n` for the signed distance along the plane's normal, in space; **[0.42]** (plane, plane), the second's origin along the first's normal (§6.10) |
 | `distance` | prefix | on a line: the distance between its own ends |
-| `tangent` | infix | (line, circle); +`at:` for a tangency at a named end; (circle, circle); (arc, line); (spline, line); (curve, line), §6.5 — **six**; **[0.24]** (sphere, line), (sphere, sphere), in space; **[0.26]** (cylinder, line), and (cone, cone) with the contact point in the parentheses, `k1 tangent(M) k2` |
+| `tangent` | infix | (line, circle); +`at:` for a tangency at a named end; (circle, circle); (arc, line); (spline, line); (curve, line), §6.5 — **six**; **[0.49]** (line, set), a contact on the line in the set and the body's derivative along the line; **[0.51]** (set, set) with the point in the parentheses, `k1 tangent(at: M) k2`, one tangent space there (§6.21) |
 | `equal` | infix | (line, line) a length; (circle, circle) a radius |
 | `curvature` | infix | (spline, circle), (curve, circle) |
 | `horizontal`, `vertical` | prefix | a line. **[0.48]** Between a pair of points they are the standard library's relation words (§9.9), `level(up)` and `level(right)`: `use std (horizontal, vertical)` |
 | `level` | infix | **[0.46]** (p, p), the direction in the parentheses — an axis, a line, or the view's word; (p, plane) with `u`/`v`, from the plane's origin |
 | `angle` | infix | (line, line); **[0.27]** (line, line) with a second pair in the parentheses, `l1 angle(l3, l4) l2` (§9.4); **[0.42]** (axis, axis \| line), (line, axis), the unsigned angle in space |
-| `radius` | prefix | a circle or an arc; **[0.24]** a sphere; **[0.26]** a cylinder |
+| `radius` | prefix | a circle or an arc |
 | `length` | prefix | **[0.27]** an arc: its length along itself |
-| `angle` | prefix | **[0.26]** a cone: its half-angle (between two lines `angle` is infix) |
 | `midpoint`, `parallel`, `perpendicular`, `symmetry` | infix | one each; **[0.42]** `parallel` and `perpendicular` also take an axis beside an axis or a line, in space, and (axis, plane) — along the plane, and square to it — either way round; **[0.43]** `parallel` takes (plane, plane): the two face alike, either way (two rows over their normals; neither's place nor its turn within itself) |
 | `project` | infix | (point, point), each `in` a plane — the two planes are read off the memberships and never written (§6.7) **[0.10]** |
 | `fix` | prefix | the gauge (§13): an entity, and its own numbers pinned whole or by member — `fix((0, 0)) p`, `fix(x == 0) p`, `fix(r == 25) c`, `fix(dir == (0, 0, 1)) t` **[0.34]** **[0.45]** |
 | `ccw`, `cw` | call | three points, all in the parentheses (§9.6) |
 
-The collapses are where the saving is: **`coincident` is sixteen constraints, `distance` six, `tangent` ten**, and `horizontal`/`vertical` are two each with the **fixity** doing the work — a line prefixed, a pair of points infixed, the second **[0.46]** a `level` along the view's own axis. `angle` and `radius` keep their own words rather than folding into `distance`, because over two lines a length means a parallel distance and an angle means an angle, and nothing but the number's unit could separate them.
+The collapses are where the saving is: **`coincident` is fifteen constraints, `distance` nine, `tangent` six** (in space included, and a set's uses besides, §6.21), and `horizontal`/`vertical` are two each with the **fixity** doing the work — a line prefixed, a pair of points infixed, the second **[0.46]** a `level` along the view's own axis. `angle` and `radius` keep their own words rather than folding into `distance`, because over two lines a length means a parallel distance and an angle means an angle, and nothing but the number's unit could separate them.
 
 **Operand order carries meaning.** `arc tangent line` is a tangency at the arc's end; `line tangent circle` is the ordinary one. Each named itself before and the order was decoration; as an operator, which side the arc is written on picks the constraint.
 
@@ -1805,15 +1818,9 @@ Residual conventions: points are ℝ²; `×` is the scalar 2D cross product; `�
 | `coincident(t: Axis, s: Axis)` **[0.43]** | two components of (d̂_s × d̂_t) across `t`, scaled by L; two components of (A_s − A_t) × d̂_t across `t` | 4 | one line, either sense; L the drawing's extent |
 | `parallel(P: Plane, Q: Plane)` **[0.43]** | two components of n̂_Q × n̂_P across n̂_P | 2 | either way round; neither plane's place nor its turn within itself |
 | `coincident(L, P: Plane)` **[0.24]** | n̂_P·(A − o_P), n̂_P·(B − o_P) | 2 | A, B the line's two ends, lifted |
-| `coincident(p, S: Sphere)` **[0.24]** | ‖X − C‖ − S.r | 1 | C the centre's lift |
-| `tangent(S, L)` **[0.24]** | ‖(C − A) × (B − A)‖ / ‖B − A‖ − S.r | 1 | the line's distance from the centre, in space |
-| `coincident(c, S: Sphere)` **[0.25]** | u·(S − C), v·(S − C), √(‖S − C‖² + r²) − S.r | 3 | C the circle's centre lifted, (u, v) its view's axes; `S tangent c` is refused (a point or a whole circle of contact) |
-| `coincident(p, K: Cone)` **[0.26]** | ρ cos α − h sin α | 1 | X the point's lift, A the apex and ê the axis (both lifted), h = (X − A)·ê, ρ = ‖(X − A) − h ê‖: X's distance from the generator in its meridian half-plane, zero on the nappe ê points into |
-| `coincident(p, C: Cylinder)` **[0.26]** | ‖(X − A) × (B − A)‖ / ‖B − A‖ − C.r | 1 | the axis A → B lifted |
-| `angle(K: Cone) == θ` **[0.26]** | K.half − θ | 1 | degree 0 |
-| `tangent(C: Cylinder, L)` **[0.26]** | the signed common perpendicular of the axis and L − s·C.r | 1 | s the side the seed stands on, as a skew distance's; parallel lines are refused |
-| `tangent(K1, K2, at: M)` **[0.26]** | n₂·g₁, n₂·c₁ | 2 | at M, a cone's normal is n = û cos α − ê sin α, its generator g = ê cos α + û sin α and its circle c = ê × û (û the unit radial direction); one tangent plane at M. That M is on each is `M coincident K` beside it |
-| `tangent(S1, S2)` **[0.24]** | ‖C1 − C2‖ − (r1 + r2) *or* ‖C1 − C2‖ − \|r1 − r2\| | 1 | `external:` inferred from the seed, as two circles' is |
+| `coincident(q, S)` **[0.49]** | the rows F of S's body, with q for its point | as many as the body states | §6.21; the geometry the body declares is made once per use |
+| `tangent(L, S)` **[0.49]** **[0.51]** | F at a contact X on L (two rows putting X on L), and F_x·ẋ: ẋ the direction B − A in X's columns, a **tangent unknown** in the columns of what the body made, 0 in the set's own | 1 for a surface | the derivative read exactly from each row's form (its Jacobian, and its Hessian along ẋ); the body's own rows (a lift) differentiated too |
+| `tangent(S1, S2, at: m)` **[0.51]** | F₁,ₓ·wₖ and F₂,ₓ·wₖ at m, k = 0, 1, with w₀ = e_a + s₀ e_c and w₁ = e_b + s₁ e_c | 2 for two surfaces (four rows over s₀, s₁) | e_c the world axis the sets' normal at m runs most along, chosen once; `m coincident S1`, `m coincident S2` beside it |
 | *across views* **[0.24]** | the relation over the lifts X, Y of its points: X − Y (3); ‖X − Y‖² − e² (1); the point–line magnitude (1); the signed common perpendicular (1); two components of (X − A) × (B − A) across the line (2, `coincident` a line); â·b̂ − cos e (1); â·b̂ (1); (â × b̂) across â (2, `parallel`); ‖B − A‖² − ‖D − C‖² (1, `equal`); ‖X − C‖ − r and n·(X − C) (2, `coincident` a circle); **[0.25]** X − (A + B)/2 (3, `midpoint`); Q + P − 2F, F the foot of P on the line (3, `symmetry`) | as listed | §9.2 |
 | `project(p, q)` **[0.10]** **[0.42]** | d_A·p − d_B·q + d·(o_A − o_B); over a plane solved for, (n̂_A × n̂_B)·(X_A − X_B) | 1 | the planes A, B inferred from `p`, `q`'s memberships; d the fold line they share, §6.7 |
 
@@ -2091,7 +2098,7 @@ fix(r == 25) c                        // holds one of an entity's own numbers: r
 
 **[0.34]** A `fix` names an entity and states each number of its own it holds, pinned with `==`
 under the field it is (`x`, `y` of a point, **[0.42]** and `z` of one standing in space; `r` of a
-circle, arc, sphere or cylinder; `half` of a cone, in degrees; **[0.42]** `x`, `y`, `z` of a plane's
+circle or arc; **[0.42]** `x`, `y`, `z` of a plane's
 place and of an axis's direction, **[0.43]** and `px`, `py`, `pz` of an axis's place). The values are expressions over the parameters in scope, with units, and MAY
 NOT read geometry. A `fix` is a gauge: it takes the numbers out of the solve at the values stated
 and adds no equation, so it never takes part in a conflict set. It is applied before the seeds
@@ -2551,7 +2558,7 @@ element        = ekw [ "(" ctor_arg { "," ctor_arg } ")" ] { trailer }
                | "point" "(" "x" ":" expr "," "y" ":" expr ")"   (* a computed point, §6.5 [0.13] *)
                | face_decl | solid_decl ;
 ekw            = "point" | "line" | "circle" | "arc" | "spline" | "plane" | "axis"  (* axis [0.42] *)
-               | "sphere" | "cone" | "cylinder" | "face" | "solid"          (* §6.8, §6.9 [0.18] *)
+               | "face" | "solid"                                            (* §6.8, §6.9 [0.18] *)
                | "surface" | "motion" | "envelope" | "patch"                (* §6.13–§6.16 *)
                | "seam" | "vertex" | "edge" ;                               (* §6.17–§6.19 *)
 (* the trailing clauses are order-free: `hint(…)`, `knots […]`, `in REF`.  A

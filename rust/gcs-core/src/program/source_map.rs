@@ -48,6 +48,19 @@ impl SourceMap {
         self.by_name.get(n).copied()
     }
 
+    /// Every entity named under `prefix` — what one use of a set made (§6.21).
+    pub(crate) fn ents_under(&self, prefix: &str) -> Vec<EntRef> {
+        let mut out: Vec<EntRef> = self
+            .by_name
+            .range(prefix.to_string()..)
+            .take_while(|(n, _)| n.starts_with(prefix))
+            .map(|(_, &e)| e)
+            .collect();
+        out.sort();
+        out.dedup();
+        out
+    }
+
     /// Resolve an externally authored path, including repeated members and entity fields.
     /// The longest entity prefix wins; `line.p1` can refer to an unnamed endpoint.
     pub fn is_private_path(&self, name: &str) -> bool {

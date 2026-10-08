@@ -24,6 +24,7 @@ mod measure;
 mod topology;
 mod attitude;
 mod turns;
+mod duals;
 
 pub use entities::{
     Param, EntKind, Field, EntRef, PointE, LineE, CircleE, AxisE, ArcE, SplineE,
@@ -38,6 +39,7 @@ pub use spatial::{
 };
 pub use construction::{ThreePointArc, three_point_arc};
 pub use turns::{Turn, Derivation};
+pub use duals::{Dual, Move, Moves, Toward};
 pub use geometry::{Box2, grow};
 pub use topology::{edge_ends, expand};
 pub(crate) use measure::polyline_distance;
@@ -79,6 +81,10 @@ pub struct Sketch {
     /// The hidden points in space a spatial relation reads — see `LiftE`.  Derived state,
     /// re-minted rather than saved.
     pub lifts: Vec<LiftE>,
+    /// Each tangency's derivative (§6.21): the point it moves, what moves it and the geometry the
+    /// use made — see `Dual`.  Document state, saved and grafted; its tangent columns are minted
+    /// by the rows that read them.
+    pub duals: Vec<Dual>,
     pub curves: Vec<CurveE>,
     /// The faces and solids the document names (§6.8, §6.9).  Built after every other kind,
     /// since a face is written over edges and a solid over faces and solids; evaluated after

@@ -77,7 +77,7 @@ fn every_taylor_form_is_its_kernel() {
         }
         checked += 1;
     }
-    assert!(checked >= 30, "only {checked} kernels have forms");
+    assert!(checked >= 75, "only {checked} kernels have forms");
     assert_eq!(ORDER, 5);
 }
 
@@ -101,6 +101,68 @@ fn the_planar_kernels_have_forms() {
         let kid = KERNELS.iter().position(|k| k.name == name).unwrap_or_else(|| panic!("{name}"));
         assert!(has_form(kid), "{name} has no Taylor form");
     }
+}
+
+/// Every kernel a body can state has a form, in space as on the page — so the derivative row a
+/// tangency states of each (`kernels::dual_kernel`) is exact.  What has none is a soft drag, which
+/// no body states, and a point on a spline, a curve contact.
+#[test]
+fn every_kernel_a_body_states_has_a_form() {
+    let formless: Vec<&str> =
+        (0..KERNELS.len()).filter(|&k| !has_form(k)).map(|k| KERNELS[k].name).collect();
+    assert_eq!(
+        formless,
+        ["drag", "point_on_spline", "spline_tangent_line", "spline_curvature", "drag_seen"]
+    );
+}
+
+/// **Every derivative row is exact** (`kernels::dual_kernel`): over every kernel with a form, its
+/// columns, tangent columns and a line's ends random, each column moving at random — held, by a
+/// component of the line's direction, or by its tangent column — the Jacobian it writes is the
+/// derivative of its residual, column by column, against a central difference.
+#[test]
+fn every_derivative_rows_jacobian_is_its_derivative() {
+    use gcs_core::kernels::{dual_kernel, eval_with, TANGENT};
+    let mut checked = 0;
+    for kid in 0..KERNELS.len() {
+        if !has_form(kid) {
+            continue;
+        }
+        let (inner, dual) = (&KERNELS[kid], dual_kernel(kid));
+        let m = inner.n_par;
+        for seed in 0..4u32 {
+            let mut rng = Rng::new(7000 * kid as u32 + seed + 1);
+            let v: Vec<f64> = (0..dual.n_par)
+                .map(|_| {
+                    let s = if rng.uniform(0.0, 1.0) < 0.5 { -1.0 } else { 1.0 };
+                    s * rng.uniform(1.0, 10.0)
+                })
+                .collect();
+            let mut k = vec![kid as f64];
+            k.extend((0..inner.n_const).map(|_| rng.uniform(0.5, 2.0)));
+            k.extend((0..m).map(|_| [0, 1, 2, 3, TANGENT][rng.uniform(0.0, 4.999) as usize] as f64));
+            let (r0, jac) = eval_with(&dual, &v, &k);
+            let h = 1e-6;
+            for c in 0..dual.n_par {
+                let (mut vp, mut vm) = (v.clone(), v.clone());
+                vp[c] += h;
+                vm[c] -= h;
+                let (rp, rm) = (eval_with(&dual, &vp, &k).0, eval_with(&dual, &vm, &k).0);
+                for t in 0..dual.n_res {
+                    let fd = (rp[t] - rm[t]) / (2.0 * h);
+                    let got = jac[t * dual.n_par + c];
+                    let scale = 1.0 + r0[t].abs() + fd.abs();
+                    assert!(
+                        (got - fd).abs() <= 1e-5 * scale,
+                        "{} seed {seed} row {t} column {c}: {got} against {fd}",
+                        inner.name
+                    );
+                }
+            }
+        }
+        checked += 1;
+    }
+    assert!(checked >= 75, "{checked}");
 }
 
 /// The arithmetic itself, against closed forms: `sqrt`, `atan2` and a quotient along a line.

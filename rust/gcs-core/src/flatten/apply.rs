@@ -13,11 +13,11 @@
 //! is a parameter keeps its argument's place, where its callout reads and edits it.  Declarations
 //! stay the definition's, at the use's path.
 //!
-//! A use inside a body walked for its linearisation (`Scope::twin`, `l tangent S`) is linearised
+//! A use inside a body walked for its derivative (`Scope::twin`, `l tangent S`) is differentiated
 //! too, at the same contact along the same line.
 
 use super::*;
-use crate::syntax::{Along, OpArg, Relation, Worded};
+use crate::syntax::{Along, AlongBy, OpArg, Relation, Worded};
 
 /// A predicate's use, as the statement wrote it.
 pub(super) struct Use<'u> {
@@ -28,6 +28,22 @@ pub(super) struct Use<'u> {
     pub scope: &'u Scope,
     /// The word as written, where every place in the expansion goes.
     pub at: Span,
+}
+
+/// One walk of a predicate's body (`Walk::apply`): as itself, for only what it makes, or as its
+/// derivative.
+#[derive(Clone, Debug, Default)]
+pub(super) enum Pass {
+    #[default]
+    Itself,
+    Made,
+    Along(Along),
+}
+
+impl From<Option<Along>> for Pass {
+    fn from(a: Option<Along>) -> Pass {
+        a.map_or(Pass::Itself, Pass::Along)
+    }
 }
 
 /// One use's application in progress: the prefix its names are made under, the scope its body is
@@ -61,13 +77,19 @@ impl<'a> Walk<'a> {
     /// stands in a ring's copy and dressed in its classes.  What the walk makes from here on is
     /// the use's.
     pub(super) fn begin(&self, u: &Use, closure: &Scope) -> Application {
-        let prefix = format!("{}#{}.0.", u.scope.prefix(), u.st.id.0);
+        self.begin_nth(u, closure, 0)
+    }
+
+    /// `begin`, the `n`th of several applications one use makes (`S1 tangent(at: m) S2`, one per
+    /// set), each under a prefix of its own.
+    pub(super) fn begin_nth(&self, u: &Use, closure: &Scope, n: usize) -> Application {
+        let prefix = format!("{}#{}.{n}.", u.scope.prefix(), u.st.id.0);
         let mut scope = closure.clone();
         scope.prefixes.insert(0, prefix.clone());
         scope.copies = true;
         scope.anonymous = true;
         scope.cyc = None;
-        scope.twin = None;
+        scope.pass = Pass::Itself;
         scope.ring = u.scope.ring.clone();
         for c in u.scope.in_class.0.iter().chain(&u.rel.class.0) {
             if !scope.in_class.has(c) {
@@ -84,17 +106,23 @@ impl<'a> Walk<'a> {
         self.aliases.push((key, r, u.scope.clone()));
     }
 
-    /// The linearisation a use inherits — the line and contact of a body being walked for one,
+    /// The derivative a use inherits — the line and contact of a body being walked for one,
     /// whether the use was written in it (`Scope::twin`) or set aside from it (`Relation::along`)
     /// — read again under the application's prefix.
     pub(super) fn inherited_twin(&mut self, app: &Application, u: &Use) -> Option<Along> {
-        let t = u.rel.along.clone().or_else(|| u.scope.twin.clone())?;
+        let t = u.rel.along.clone().or_else(|| u.scope.twin().cloned())?;
         self.bind_to_use(app, "#along.p", t.point, u);
-        self.bind_to_use(app, "#line", t.line, u);
-        Some(Along { point: local("#along.p", u.at), line: local("#line", u.at) })
+        let toward = match t.toward {
+            AlongBy::Line(l) => {
+                self.bind_to_use(app, "#line", l, u);
+                AlongBy::Line(local("#line", u.at))
+            }
+            chart => chart,
+        };
+        Some(Along { point: local("#along.p", u.at), toward, ..t })
     }
 
-    /// The body walked once per entry of `walks` — as itself (`None`) or as its linearisation —
+    /// The body walked once per entry of `walks` — as itself, for only what it makes, or as its derivative —
     /// under the use's path, and everything the application made stamped as the use's.  `dims`
     /// is where a dimension that is a parameter was given, by the parameter's name (`dims_at`).
     pub(super) fn apply(
@@ -103,7 +131,7 @@ impl<'a> Walk<'a> {
         app: Application,
         mut body: Vec<Stmt>,
         dims: &BTreeMap<String, Span>,
-        walks: &[Option<Along>],
+        walks: &[Pass],
         worded: Worded,
         depth: usize,
     ) {
@@ -119,8 +147,8 @@ impl<'a> Walk<'a> {
         dims_at(&mut body, dims, u.at);
         let mut path = u.path.to_vec();
         path.push(PathStep::Instance(u.st.id));
-        for twin in walks {
-            scope.twin = twin.clone();
+        for pass in walks {
+            scope.pass = pass.clone();
             let mut vals = scope.vals.clone();
             self.body(&body, &scope, &mut vals, &path, depth + 1);
         }

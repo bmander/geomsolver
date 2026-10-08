@@ -225,7 +225,8 @@ fn form(kn: &Kernel) -> Option<Form> {
     Some(match kn.name {
         "coincident" | "midpoint" | "horizontal" | "vertical" | "radius" | "equal_radius"
         | "ordinate_u" | "ordinate_v" | "annular_distance" | "radius_free"
-        | "ordinate_u_free" | "ordinate_v_free" | "annular_distance_free" => Affine,
+        | "ordinate_u_free" | "ordinate_v_free" | "annular_distance_free" | "coincident3"
+        | "midpoint3" | "project" => Affine,
         "distance" => Jet(distance),
         "distance_free" => Jet(distance_free),
         "parallel" => Jet(parallel),
@@ -251,8 +252,16 @@ fn form(kn: &Kernel) -> Option<Form> {
         "ordinate_line" => Jet(ordinate_line),
         "ordinate_line_free" => Jet(ordinate_line_free),
         "arc_length_free" => Jet(arc_length_free),
-        _ => return None,
+        "equal_angle" => Jet(equal_angle),
+        // the kernels in space are written once over `Num`, their forms with them
+        name => return crate::kernels::num_form(name).map(Jet),
     })
+}
+
+/// Whether kernel `kid`'s form is affine: its second order is zero, so a derivative of it along
+/// any motion has no Hessian to read (`kernels::dual_kernel`).
+pub fn is_affine(kid: usize) -> bool {
+    matches!(form_of(kid), Some(Form::Affine))
 }
 
 /// Whether kernel `kid` has a form — what a trace's rows are asked before a curvature is stated
@@ -325,10 +334,15 @@ fn free_dim(v: &[Jet], k: &[f64], at: usize) -> Jet {
     (v[at] * k[0]).shift(k[1])
 }
 
-fn angle_gap(v: &[Jet], theta: Jet) -> Jet {
+/// The directed angle from the first line's direction to the second's, unwrapped.
+fn bearing_gap(v: &[Jet]) -> Jet {
     let (d1x, d1y, d2x, d2y) = dirs(v);
     let (dot, cross) = (d1x * d2x + d1y * d2y, d1x * d2y - d1y * d2x);
-    wrap_turn(Jet::atan2(cross, dot) - theta)
+    Jet::atan2(cross, dot)
+}
+
+fn angle_gap(v: &[Jet], theta: Jet) -> Jet {
+    wrap_turn(bearing_gap(v) - theta)
 }
 
 fn parallel_gap(v: &[Jet]) -> Jet {
@@ -390,6 +404,10 @@ fn angle(v: &[Jet], k: &[f64], r: &mut [Jet]) {
 
 fn angle_free(v: &[Jet], k: &[f64], r: &mut [Jet]) {
     r[0] = angle_gap(v, free_dim(v, k, 8));
+}
+
+fn equal_angle(v: &[Jet], k: &[f64], r: &mut [Jet]) {
+    r[0] = wrap_turn(bearing_gap(v) - bearing_gap(&v[8..]) * k[0]);
 }
 
 fn equal_length(v: &[Jet], _k: &[f64], r: &mut [Jet]) {

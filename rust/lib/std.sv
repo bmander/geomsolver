@@ -178,22 +178,12 @@ component Cone(about: line, half: Angle) := { p |
 }
 
 // Two cones `k1` and `k2` touching at `m` with one tangent plane there, `m` on each beside it
-// (`m coincident k1`).  Each cone's tangent plane at `m` is the one through its generator square to
-// its meridian plane, so the two are one when the plane through both generators stands square to
-// both meridian planes: its normal, `n`, lies in each.  Two equations.  What a hypoid's pitch
-// cones do at the mean point.
+// (`m coincident k1`): every direction along one cone at `m` is along the other (`k1
+// tangent(at: m) k2`, §6.21).  Two equations.  What a hypoid's pitch cones do at the mean point.
 //
 //   std.TangentCones(gc, pc, M)
 component TangentCones(k1: group, k2: group, m: point) {
-  private construction g1 := line(k1.about.p1, m)
-  private construction g2 := line(k2.about.p1, m)
-  private t := plane(u: g1, v: g2)
-  private m1 := plane(u: k1.about, v: g1)
-  private m2 := plane(u: k2.about, v: g2)
-  private n := axis
-  n perpendicular t
-  n parallel m1
-  n parallel m2
+  k1 tangent(at: m) k2
 }
 
 // An ellipse, as a curve: the point at eccentric angle `u` on the ellipse of semi-axes `a` and

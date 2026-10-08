@@ -97,9 +97,8 @@ module path (`relations::unqualified`).
 centre or a line and one number (`std.Sphere(c, r)`, `std.Cylinder(about, r)`, `std.Cone(about,
 half)`, apex at the line's start; the line is `.about`, since `axis` is an element's word a body
 cannot name bare), nothing drawn, no entity kind, kernel or `CKind` of their own.  A point on one
-is `p coincident S`, a line touching one `l tangent S` (below); `std.TangentCones(k1, k2, m)`
-(each meridian plane square to the plane through both generators: hidden planes and an axis) and
-`std.CircleOnSphere(k, s, view)` stay components.  An unbound number is the instance's unknown
+is `p coincident S`, a line touching one `l tangent S` (below); `std.TangentCones(k1, k2, m)` is
+`k1 tangent(at: m) k2` (below, #104) and `std.CircleOnSphere(k, s, view)` stays a component.  An unbound number is the instance's unknown
 (`pc.half`, an angle in degrees); `edit::unknown_seeds` writes it back into the call's `hint(…)`
 (`InstVal::Hint` carries the span).  A lifted program declares it under a name it can write
 (`lift::declarable`: `pc_half`, apart from every other unknown's) and every dimension reading
@@ -114,28 +113,45 @@ reads `{ NAME |` after `:=` as a body, not a group) and `component Name(F) := { 
 use's own prefix (`{use scope prefix}#{stmt}.0.`, path + `Instance(stmt)`), the bound name an
 alias of `q`; `l tangent S` declares the contact at the bound name (in space, seeded at `l`'s
 middle), states it `coincident l`, walks the body, then walks it again with `Scope::twin` set —
-relations only, each with `Relation::along` (`syntax::Along`, refs resolved in `rewrite`).  Every
-relation made carries `Worded { set: Some((k, name)), span }`, so `describe` reads `l tangent
-shaft` (`WordUse::set`).  `program::relations::constrain` turns `along` into `Constraint::along`
-(`Along { point, line }`), dropping a row that does not read the contact
-(`Constraint::linearisable`, the one rule `io::from_json` shares); it picks
-`kernels::linearised_kernel(inner)` (ids past the curve families, `kernel_id_in`; built in
-`kernel_table` when any row has one): `J(x)·ẋ`, `ẋ` the line's direction in the contact's lift
-columns (`consts_on`: kernel id, row consts, a column mask), its Jacobian a central difference of
-the row's exact `jac` along `ẋ`.  `params_on` appends the line's lifted ends (minted in
-`Sketch::add`).  `along` travels through `graft`, JSON (`"along": [point, line]`) and
+relations only, each with `Relation::along` (`syntax::Along { point, toward: AlongBy::Line,
+key, made }`, `key` the use's derivative, `made` the prefix its geometry is under; refs resolved
+in `rewrite`).  Every relation made carries
+`Worded { sets: [(k, name)], span }`, so `describe` reads `l tangent shaft` (`WordUse::sets`).
+**Differentiated at elaboration (#104):** `program::relations::constrain` registers one
+`model::Dual` per key (`Sketch::add_dual`: the point, `Toward::Line(l)` or `Chart`, `owned` =
+`SourceMap::ents_under(made)` but the point) and sets `Constraint::along` to its index, dropping a
+row that reads nothing the use moves (`Constraint::differentiable`, entity-level, the one rule
+`io::from_json` shares; refuses a kernel with no Taylor form).  The kernel is
+`kernels::dual_kernel(inner)` (ids past the curve families, `kernel_id_in`; in `kernel_table`
+when any row has one): columns `[x, ẋ, a, b]`, consts `[kid, row consts, mask]` (`Move`: 0 held,
+1–3 the line's direction `b − a`, `TANGENT` its own tangent column), residual `J·ẋ` and Jacobian
+— the Hessian along `ẋ` by polarisation of the ε² coefficient, then `J` routed by the mask — all
+read from `taylor::residual`, exact.  The use's own geometry (its `own_params` and lifts) moves by
+**tangent unknowns** `Sketch::mint_tangents` mints in `add` (`Dual::tangent`, `{name}.d`, seeded
+0, never saved; `retire_tangents` on `remove`); its intrinsic rows (a lift) are stated as
+derivatives too (`twin_intrinsics`, at `add_dual` and at each later intrinsic add) — never the
+point's own.  **`S1 tangent(at: m) S2`** (`expand_pair`): each body applied under
+`begin_nth` (`#{stmt}.{n}.`), walked `Pass::Made` (declarations only; `Scope::pass` is the walk's `Pass`) then
+`Pass::Along` along `Chart(0)` and `Chart(1)` (keys `#{stmt}.t{k}.`, shared by both sets); a
+chart's point tangent is `e_a + s·e_c`, two components held (`set_chart`), `c` the world axis
+the rows' gradient at the seed runs most along (`Sketch::choose_charts`, after phase 3 and at
+`from_json`).  Refused there: a body making geometry (`sets::makes_points`), no `at:`, a claim,
+inside a derivative.  `along` and `duals` travel through `graft` (duals first, remapped; one
+missing its point or line is dropped with its rows), JSON (`"duals"`, `"along": index`) and
 `topology_key`; `cgraph` leaves it to the residual, the witness never jitters it, callouts skip
-it, `to_program` drops it (a flat program cannot spell it).  Refused: a set named as an entity
-(E040 in `rewrite`), two sets, parentheses, a non-point `coincident`, a non-line or claimed
-`tangent`, a tangency to a body that declares geometry of its own (`sets::makes_points`).
-`tests/sets.rs` is the gate.
+it, `to_program` drops it (a flat program cannot spell it).  Every static kernel but the drags
+and the spline contacts has a Taylor form: the spatial `*_rows` are generic over
+`kernels::Num` (`Dual<N>` for res/jac, `Jet` for the form, `kernels::num_form`), the
+hand-written spatial kernels have generic twins held to them by `tests/taylor.rs`.  Refused: a
+set named as an entity (E040 in `rewrite`), `coincident` between two sets, parentheses, a
+non-point `coincident`, a non-line or claimed `tangent`.  `tests/sets.rs` is the gate.
 
 **Predicates, applied (§9.9, §6.21, 0.50, #103):** a relation word and a set are one predicate —
 parameters given at the call, **bound variables** (a word's operands, a set's point) filled at
 the use — applied by one routine, `flatten/apply.rs`: `begin` (an `Application`: the closure
 under the use's prefix `{scope}#{stmt}.0.`, and where its output starts), `bind_to_use` (each
 bound variable an alias of the use's operand; one naming nothing is E101 once at the operand,
-`use_aliases`/`failed` in `resolve`), `inherited_twin` (linearised already where the use is),
+`use_aliases`/`failed` in `resolve`), `inherited_twin` (differentiated already where the use is),
 `apply` (a dimension that is a parameter put at its argument for `written` and
 `edit::word_dimension`, every other at an empty span; the body walked per `walks`; every relation
 the application made stamped with the use's id/span/path, claim, placement when it makes one
@@ -1112,7 +1128,7 @@ Conventions:
   place a slot is spelled, read by both printers, as `hint_of` is for the clause around it.
   **The shape is the library's**: every user-facing kind has one or two entity slots, always first
   in spec order, with `Symmetric` the single three-slot exception.  Several kinds share a word —
-  **`coincident` is nineteen kinds, `distance` fifteen, `tangent` ten** (twins in space included) — and `horizontal`/`vertical` are
+  **`coincident` is fifteen kinds, `distance` nine, `tangent` six** (twins in space included; a set's uses besides) — and `horizontal`/`vertical` are
   two each with the *fixity* doing the work.
   **What a word means is the kinds of its operands, and a name does not carry its kind until
   elaboration** — so the parser resolves *nothing*: it produces a `syntax::Written` and

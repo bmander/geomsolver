@@ -121,12 +121,21 @@ struct Scope {
     /// The file the body being walked was written in — the document (`None`) or a module — which
     /// is what a call's component name is resolved from (`Program::resolve_component`).
     module: Option<usize>,
-    /// Walking a set's body a second time for `l tangent S` (§6.21): each relation is emitted as
-    /// its linearisation at the contact along the line, and nothing else is made again.
-    twin: Option<crate::syntax::Along>,
+    /// How a predicate's body is being walked (§6.21): as itself; for what it makes and nothing
+    /// it states (the geometry a tangency at a point reads its derivatives over); or a second
+    /// time for a tangency, each relation emitted as its derivative and nothing made again.
+    pass: apply::Pass,
 }
 
 impl Scope {
+    /// The derivative a body walked for a tangency states its relations as (§6.21).
+    fn twin(&self) -> Option<&crate::syntax::Along> {
+        match &self.pass {
+            apply::Pass::Along(a) => Some(a),
+            apply::Pass::Itself | apply::Pass::Made => None,
+        }
+    }
+
     /// The innermost prefix — what a name declared here is put under.
     fn prefix(&self) -> &str {
         self.prefixes.first().map(String::as_str).unwrap_or("")

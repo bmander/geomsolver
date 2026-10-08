@@ -934,8 +934,22 @@ several up to the `}`. It adds nothing to the drawing; what it means is said whe
   std.Cylinder(ax, r: 8mm)` (on the right of the word).
 - `l tangent near`, `l` a line: the solve finds a contact on `l` in the set, and `l`'s direction
   is in the set's tangent plane there — the body's rows differentiated along `l`, derived from
-  the definition. One condition for a surface. Refused for a set whose body makes points of its
-  own.
+  the definition. One condition for a surface. A body may make points of its own (a foot on an
+  axis, drawn in a view or in space): their motion along the set is solved for too —
+
+  ```
+  foot := { p |              // a cylinder of radius 4 about `ax`, by its foot point
+    q := point
+    q coincident ax
+    g := line(p, q)
+    g perpendicular ax
+    p distance(4mm) q
+  }
+  l tangent foot
+  ```
+- `S1 tangent(at: m) S2`, two sets: they touch at `m`, one tangent plane there — two
+  conditions. State `m coincident S1` and `m coincident S2` beside it. Refused for a set whose
+  body makes points of its own.
 - A family of sets is a component whose body is one: `component Ball(center: point, r: Length)
   := { p | p distance(r) center }`; an instance is the set, its formals read by its name.
 - A culprit reads as the statement (`l tangent shaft`), never as the body's rows.
@@ -961,8 +975,8 @@ the line is the instance's `.about` (`axis` is an element's word, which a body c
   `p coincident gc` puts a point on the nappe the axis points into (one angle at the apex;
   within the axis's own view it is the page's directed angle, so the generator counter-clockwise
   of the axis); `l tangent gc` makes a line touch it.
-- `std.TangentCones(gc, pc, M)`: two cones share one tangent plane at M. State
-  `M coincident gc` and `M coincident pc` beside it.
+- `std.TangentCones(gc, pc, M)`: two cones share one tangent plane at M — `gc tangent(at: M)
+  pc`, the library's name for it. State `M coincident gc` and `M coincident pc` beside it.
 - Leave `r` or `half` unbound (`half: hint(30deg)`) and it is an unknown of the drawing; a solve
   writes what it found back into the `hint(…)`.
 
@@ -1991,8 +2005,8 @@ gax angle(90deg) pax
 gax distance(E) pax
 ```
 
-`99 params, 99 equations, structural rank 99; DOF 0` (the library's cones touch through hidden
-planes and an axis). Here the contact is stated rather than constructed: the gear's apex on P
+`44 params, 44 equations, structural rank 44; DOF 0` (the library's cones touch by `gc
+tangent(at: M) pc`: each cone's body differentiated along two directions at M). Here the contact is stated rather than constructed: the gear's apex on P
 makes P the gear cone's tangent plane at M, and `std.TangentCones(gc, pc, M)` makes it the
 pinion's, so the pinion's apex lands on P unasked. The pinion's
 plane stands on two axes the solve turns, held square to each other, with its origin at M;

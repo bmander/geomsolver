@@ -398,7 +398,7 @@ fn align(sk: &mut Sketch) {
 /// The axes held along drawn lines, and their lines.
 fn along(sk: &Sketch) -> Vec<(usize, usize)> {
     sk.constraints.iter()
-        .filter(|c| c.intrinsic && c.kind == CKind::Parallel3)
+        .filter(|c| c.intrinsic && c.along.is_none() && c.kind == CKind::Parallel3)
         .filter_map(|c| match (c.args[0].ent(), c.args[1].ent()) {
             (r, l) if r.kind == EntKind::Axis && l.kind == EntKind::Line => Some((r.i(), l.i())),
             _ => None,

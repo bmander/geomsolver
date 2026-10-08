@@ -277,12 +277,12 @@ impl<'a> Walk<'a> {
         for (operand, given) in def.operands.iter().zip(&used.ops) {
             self.bind_to_use(&app, &operand.text, given.clone(), &u);
         }
-        let walks = [self.inherited_twin(&app, &u)];
+        let walks = [self.inherited_twin(&app, &u).into()];
         let worded = Worded {
             word: used.word.text.clone(),
             ops: used.ops.clone(),
             args: crate::syntax::written_parts(&used.args).0.join(", "),
-            set: None,
+            sets: Vec::new(),
             span: at,
         };
         self.applying_words.push((k, outer));
