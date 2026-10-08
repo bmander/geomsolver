@@ -1128,7 +1128,7 @@ Conventions:
   place a slot is spelled, read by both printers, as `hint_of` is for the clause around it.
   **The shape is the library's**: every user-facing kind has one or two entity slots, always first
   in spec order, with `Symmetric` the single three-slot exception.  Several kinds share a word —
-  **`coincident` is nineteen kinds, `distance` fifteen, `tangent` ten** (twins in space included) — and `horizontal`/`vertical` are
+  **`coincident` is fifteen kinds, `distance` nine, `tangent` six** (twins in space included; a set's uses besides) — and `horizontal`/`vertical` are
   two each with the *fixity* doing the work.
   **What a word means is the kinds of its operands, and a name does not carry its kind until
   elaboration** — so the parser resolves *nothing*: it produces a `syntax::Written` and

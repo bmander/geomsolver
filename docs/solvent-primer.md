@@ -935,7 +935,18 @@ several up to the `}`. It adds nothing to the drawing; what it means is said whe
 - `l tangent near`, `l` a line: the solve finds a contact on `l` in the set, and `l`'s direction
   is in the set's tangent plane there — the body's rows differentiated along `l`, derived from
   the definition. One condition for a surface. A body may make points of its own (a foot on an
-  axis, drawn in a view or in space): their motion along the set is solved for too.
+  axis, drawn in a view or in space): their motion along the set is solved for too —
+
+  ```
+  foot := { p |              // a cylinder of radius 4 about `ax`, by its foot point
+    q := point
+    q coincident ax
+    g := line(p, q)
+    g perpendicular ax
+    p distance(4mm) q
+  }
+  l tangent foot
+  ```
 - `S1 tangent(at: m) S2`, two sets: they touch at `m`, one tangent plane there — two
   conditions. State `m coincident S1` and `m coincident S2` beside it. Refused for a set whose
   body makes points of its own.
