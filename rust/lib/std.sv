@@ -69,7 +69,7 @@ a turned(theta) b := {
 // falls.  What it comes to is the catenary, which nothing here says.
 hangs(L) k := {
   length(L) k
-  minimize integral(p.y over p in k)
+  k minimizes integral(p.y over p)
 }
 
 // The standard axes and planes, which every document that says `use std` has — as a CAD part

@@ -1,7 +1,7 @@
-//! `minimize` and `maximize` (#121), lowered: one `Stationary` constraint per term, its curve
-//! resolved, its integrand compiled once here so a bad one is refused where it was written.  The
-//! groups, gauges and multipliers are the sketch's (`Sketch::settle_variational`), worked out
-//! once every row is stated.
+//! `k minimizes …` and `k maximizes …` (#121), lowered: one `Stationary` constraint per term over
+//! the statement's curve, its integrand compiled once here so a bad one is refused where it was
+//! written.  The groups, gauges and multipliers are the sketch's (`Sketch::settle_variational`),
+//! worked out once every row is stated.
 
 use super::resolve::{follow, Resolver};
 use super::{Code, Diag, Made, SourceMap};
@@ -18,25 +18,25 @@ pub(super) fn state(
     map: &mut SourceMap,
     diags: &mut Vec<Diag>,
 ) {
+    let err = |code: Code, span, message: String| Diag { code, span, stmt: Some(st.id), message };
+    let Some(e) = res.lookup(&m.curve).and_then(|e| follow(sk, e, &m.curve.path).ok()) else {
+        diags.push(err(Code::E101, m.curve.span, format!("`{}` names nothing", m.curve.root.text)));
+        return;
+    };
+    if e.kind != EntKind::Spline {
+        diags.push(err(
+            Code::E040,
+            m.curve.span,
+            format!(
+                "an energy varies a spline's shape, and `{}` is {}",
+                m.curve.root.text,
+                e.kind.a()
+            ),
+        ));
+        return;
+    }
     let mut degree = None;
     for t in &m.terms {
-        let err = |code: Code, span, message: String| Diag { code, span, stmt: Some(st.id), message };
-        let Some(e) = res.lookup(&t.curve).and_then(|e| follow(sk, e, &t.curve.path).ok()) else {
-            diags.push(err(Code::E101, t.curve.span, format!("`{}` names nothing", t.curve.root.text)));
-            continue;
-        };
-        if e.kind != EntKind::Spline {
-            diags.push(err(
-                Code::E040,
-                t.curve.span,
-                format!(
-                    "an energy varies a spline's shape, and `{}` is {}",
-                    t.curve.root.text,
-                    e.kind.a()
-                ),
-            ));
-            continue;
-        }
         let d = match crate::variational::integrand(&t.body, sk.units) {
             Ok(f) => f.degree,
             Err(why) => {

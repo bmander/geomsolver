@@ -166,7 +166,7 @@ pub fn diagnosis_json(sk: &Sketch, d: &Diagnosis) -> Json {
         ("claimsViolated", ids(&d.claims_violated)),
         ("claimsConsuming", ids(&d.claims_consuming)),
         // each energy's verdict, by its terms' constraints (#121): `[id, "minimum", asked]`, the
-        // last whether it is what the statement asked for — a minimum of a `minimize`
+        // last whether it is what the statement asked for — a minimum of a `minimizes`
         (
             "extrema",
             Json::Arr(

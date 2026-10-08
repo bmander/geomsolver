@@ -1,4 +1,4 @@
-//! **Variational curves** (#121): `minimize` compiled to stationarity.
+//! **Variational curves** (#121): `k minimizes …` compiled to stationarity.
 //!
 //! An energy `E` is a sum of integrals over splines, `c · ∫ f(p, t) ds`.  "The curve that
 //! minimises `E` subject to the drawing" is, at a regular point, where `E`'s gradient in the
@@ -11,7 +11,7 @@
 //! one row per free coordinate `y` of the curve's **interior** control points, `g_r` every row of
 //! the drawing that reads one, and `λ_r` a multiplier per such row — an unknown of its own
 //! (`Sketch::multipliers`, minted here, never saved).  The ends are not varied: they are what the
-//! curve hangs between, so they keep the freedom they had, and a `minimize` closes exactly the
+//! curve hangs between, so they keep the freedom they had, and an energy closes exactly the
 //! curve's own.  Several statements over one curve are one energy: the group's first
 //! `Stationary` constraint carries the rows, the rest none.
 //!
@@ -73,7 +73,7 @@ pub struct Group {
 }
 
 /// One term of an energy: `coef · ∫ F ds` along a spline, `coef` signed as the energy is
-/// minimised (a `maximize` turns it), `F` as four tapes (`Integrand`).
+/// minimised (a `maximizes` turns it), `F` as four tapes (`Integrand`).
 #[derive(Clone, Debug, Default)]
 pub struct Term {
     pub spline: usize,
@@ -168,7 +168,7 @@ fn degree(body: &Ast, units: crate::units::Units) -> Result<u32, String> {
     }
 }
 
-/// Whether an energy constraint is a `maximize`'s term.
+/// Whether an energy constraint is a `maximizes`'s term.
 pub fn maximizes(c: &Constraint) -> bool {
     matches!(c.args[4], Arg::Bool(true))
 }
@@ -828,7 +828,7 @@ impl Extremum {
         }
     }
 
-    /// The same verdict read for the energy's negation — what a `maximize` asked about.
+    /// The same verdict read for the energy's negation — what a `maximizes` asked about.
     fn turned(self) -> Extremum {
         match self {
             Extremum::Minimum => Extremum::Maximum,
@@ -883,7 +883,7 @@ pub fn verdict(sk: &Sketch, g: &Group) -> Option<Extremum> {
     })
 }
 
-/// Every energy statement's verdict, by constraint, as each asked it: a `maximize` that found a
+/// Every energy statement's verdict, by constraint, as each asked it: a `maximizes` that found a
 /// maximum is answered `maximum`.
 pub fn extrema(sk: &Sketch) -> Vec<(u32, Extremum)> {
     let mut out = Vec::new();
@@ -897,7 +897,7 @@ pub fn extrema(sk: &Sketch) -> Vec<(u32, Extremum)> {
     out
 }
 
-/// What energy constraint `cid`'s statement asked for: a minimum, or — `maximize` — a maximum.
+/// What energy constraint `cid`'s statement asked for: a minimum, or — `maximizes` — a maximum.
 pub fn asked(sk: &Sketch, cid: u32) -> Extremum {
     match sk.constraint(cid).is_some_and(maximizes) {
         true => Extremum::Maximum,

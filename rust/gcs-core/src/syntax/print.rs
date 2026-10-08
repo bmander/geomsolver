@@ -200,7 +200,8 @@ fn write_stmt(out: &mut String, k: &StmtKind) {
             out.push_str(" }");
         }
         StmtKind::Minimize(m) => {
-            out.push_str(if m.maximize { "maximize " } else { "minimize " });
+            write_ref(out, &m.curve);
+            out.push_str(if m.maximize { " maximizes " } else { " minimizes " });
             for (i, t) in m.terms.iter().enumerate() {
                 let c = if i == 0 { t.coef } else { t.coef.abs() };
                 if i > 0 {
@@ -215,9 +216,7 @@ fn write_stmt(out: &mut String, k: &StmtKind) {
                     Some(tn) => format!("({}, {})", t.point.text, tn.text),
                     None => t.point.text.clone(),
                 };
-                out.push_str(&format!("integral({} over {over} in ", t.body));
-                write_ref(out, &t.curve);
-                out.push(')');
+                out.push_str(&format!("integral({} over {over})", t.body));
             }
         }
         StmtKind::Block(_) | StmtKind::ClaimOver(_) | StmtKind::Chain(_) | StmtKind::Set(_) => {

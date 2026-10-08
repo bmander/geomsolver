@@ -108,7 +108,7 @@ pub struct Diagnosis {
     pub claims_theorem: Vec<u32>,
     pub claims_violated: Vec<u32>,
     pub claims_consuming: Vec<u32>,
-    /// Each `minimize`'s and `maximize`'s verdict (#121), by its terms' constraints: minimum,
+    /// Each `minimizes`'s and `maximizes`'s verdict (#121), by its terms' constraints: minimum,
     /// maximum, saddle or degenerate, read off the reduced Hessian at the pose diagnosed — told,
     /// never enforced: a stationary point the solve reached is the drawing's, and the verdict says
     /// which kind it is.

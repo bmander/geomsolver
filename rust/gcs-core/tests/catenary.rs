@@ -29,7 +29,7 @@ in std.front {
   rope := spline(a, b)
   length(150) rope
 }
-minimize integral(p.y over p in rope)
+rope minimizes integral(p.y over p)
 ";
 
 /// The free rope hangs as the catenary `a cosh((x − 50)/a) + c` through its ends, its interior
@@ -53,7 +53,7 @@ fn the_rope_is_a_minimum_and_the_arch_a_maximum() {
     let d = gcs_core::diagnose::diagnose(&mut e.sketch, gcs_core::diagnose::DiagnoseOptions::default());
     let names: Vec<&str> = d.extrema.iter().map(|(_, v)| v.name()).collect();
     assert_eq!(names, ["minimum"]);
-    let mut arch = solved(&ROPE.replace("minimize", "maximize"));
+    let mut arch = solved(&ROPE.replace("minimizes", "maximizes"));
     let d = gcs_core::diagnose::diagnose(&mut arch.sketch, gcs_core::diagnose::DiagnoseOptions::default());
     let names: Vec<&str> = d.extrema.iter().map(|(_, v)| v.name()).collect();
     assert_eq!(names, ["maximum"]);
@@ -119,8 +119,8 @@ fn dragging_an_end_rehangs_the_rope() {
 #[test]
 fn didos_curve_is_the_circular_arc() {
     let src = ROPE.replace("length(150) rope", "length(130) rope").replace(
-        "minimize integral(p.y over p in rope)",
-        "maximize integral((p.x * t.y - p.y * t.x) / 2 over (p, t) in rope)",
+        "rope minimizes integral(p.y over p)",
+        "rope maximizes integral((p.x * t.y - p.y * t.x) / 2 over (p, t))",
     );
     let mut e = solved(&src);
     let (mut lo, mut hi): (f64, f64) = (1e-6, std::f64::consts::PI - 1e-9);
@@ -153,7 +153,7 @@ fn the_library_word_hangs_the_same_rope() {
     let src = ROPE
         .replace("use std\n", "use std (hangs)\n")
         .replace("  length(150) rope\n", "  hangs(L: 150) rope\n")
-        .replace("minimize integral(p.y over p in rope)\n", "");
+        .replace("rope minimizes integral(p.y over p)\n", "");
     let mut e = solved(&src);
     for (i, &p) in e.sketch.splines[0].ctrl.iter().enumerate() {
         let (x, y) = e.sketch.point_xy(p as usize);

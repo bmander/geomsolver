@@ -1,4 +1,4 @@
-//! `minimize` compiled to stationarity (#121): the KKT rows' Jacobian against finite
+//! `k minimizes …` compiled to stationarity (#121): the KKT rows' Jacobian against finite
 //! differences, the multipliers' seed, the group's leading rule, and the refusals.
 
 use gcs_core::constraints::CKind;
@@ -26,7 +26,7 @@ pub fn rope(n: usize, l: f64) -> String {
     }
     names.push("b".into());
     s += &format!("rope := spline({})\nlength({l}) rope\n}}\n", names.join(", "));
-    s += "minimize integral(p.y over p in rope)\n";
+    s += "rope minimizes integral(p.y over p)\n";
     s
 }
 
@@ -114,8 +114,8 @@ fn the_multipliers_seed_where_the_solve_left_them() {
 fn two_energies_over_one_curve_add() {
     let whole = solved(&rope(10, 150.0));
     let halves = rope(10, 150.0).replace(
-        "minimize integral(p.y over p in rope)",
-        "minimize 0.5 * integral(p.y over p in rope)\nminimize integral(p.y / 2 over p in rope)",
+        "rope minimizes integral(p.y over p)",
+        "rope minimizes 0.5 * integral(p.y over p)\nrope minimizes integral(p.y / 2 over p)",
     );
     let mut e = solved(&halves);
     assert!(same(&points(&whole), &points(&e)) < 1e-6);
@@ -167,8 +167,10 @@ fn energies_refused() {
     };
     let base = rope(8, 150.0);
     // a circle has no shape to vary
-    refused(&base.replace("}\nminimize", "o := point\nc := circle(o) hint(r: 5)\n}\nminimize")
-        .replace("in rope)", "in c)"), "E040");
+    refused(&base.replace("}\nrope minimizes", "o := point\nc := circle(o) hint(r: 5)\n}\nc minimizes"),
+            "E040");
+    // nor a curve nothing declares
+    refused(&base.replace("rope minimizes", "cord minimizes"), "E101");
     // a name no scope declares
     refused(&base.replace("p.y over", "p.y + h over"), "E101");
     // and a point's own field that is not one
@@ -184,8 +186,8 @@ fn energies_refused() {
 fn an_integrand_reads_the_scope() {
     let whole = solved(&rope(10, 150.0));
     let e = solved(&rope(10, 150.0).replace(
-        "minimize integral(p.y over p in rope)",
-        "h := 7\nminimize integral(q.y - h over q in rope)",
+        "rope minimizes integral(p.y over p)",
+        "h := 7\nrope minimizes integral(q.y - h over q)",
     ));
     // a constant added to the height is the length's multiplier moved, not the shape
     assert!(same(&points(&whole), &points(&e)) < 1e-6);
@@ -198,8 +200,8 @@ fn an_integrand_reads_the_scope() {
 fn a_tangent_reading_energy_differentiates_exactly() {
     let src = rope(9, 150.0)
         .replace("length(150) rope", "length(L) rope")
-        .replace("minimize integral(p.y over p in rope)",
-                 "param L: Length hint(150)\nmaximize integral((p.x * t.y - p.y * t.x) / 2 over (p, t) in rope) + integral(p.y over p in rope)");
+        .replace("rope minimizes integral(p.y over p)",
+                 "param L: Length hint(150)\nrope maximizes integral((p.x * t.y - p.y * t.x) / 2 over (p, t)) + integral(p.y over p)");
     let (mut e, d) = read(&src);
     assert!(e.ok(), "{d:?}");
     gcs_core::variational::seed_multipliers(&mut e.sketch);
@@ -213,10 +215,10 @@ fn an_energy_goes_with_its_curve() {
     let e = solved(&rope(8, 150.0));
     let out = gcs_core::edit::remove(&e, &e.program, &e.sketch, &[gcs_core::model::EntRef::spline(0)], &[]);
     assert!(out.refused.is_none(), "{:?}", out.refused);
-    assert!(!out.text.contains("minimize") && !out.text.contains("length("), "{}", out.text);
+    assert!(!out.text.contains("minimizes") && !out.text.contains("length("), "{}", out.text);
     let stat = e.sketch.constraints.iter().find(|c| c.kind == CKind::Stationary).unwrap().id;
     let out = gcs_core::edit::remove(&e, &e.program, &e.sketch, &[], &[stat]);
-    assert!(!out.text.contains("minimize") && out.text.contains("length(150) rope"), "{}", out.text);
+    assert!(!out.text.contains("minimizes") && out.text.contains("length(150) rope"), "{}", out.text);
     let (e2, d) = read(&out.text);
     assert!(e2.ok(), "{d:?}");
     assert!(!e2.sketch.constraints.iter().any(|c| c.kind == CKind::SplineGauge));
@@ -225,11 +227,24 @@ fn an_energy_goes_with_its_curve() {
 /// The statement prints as it was written, so a document lifted from the drawing keeps it.
 #[test]
 fn an_energy_prints_as_written() {
-    let src = "minimize 2 * integral(p.y over p in rope) - integral((p.x * t.y) over (p, t) in rope)";
+    let src = "rope minimizes 2 * integral(p.y over p) - integral((p.x * t.y) over (p, t))";
     let (prog, errs) = parse(src);
     assert!(errs.is_empty(), "{:?}", errs.iter().map(|e| &e.message).collect::<Vec<_>>());
     let st = &prog.root().body[0];
     let mut out = String::new();
     gcs_core::syntax::write_stmt_to(&mut out, &st.kind).unwrap();
     assert_eq!(out, src);
+}
+
+/// The word stands after the curve it is about, a dotted one too, and is no name.
+#[test]
+fn an_energy_is_said_of_its_curve() {
+    let src = "inst.rope maximizes integral(p.x over p)";
+    let (prog, errs) = parse(src);
+    assert!(errs.is_empty(), "{:?}", errs.iter().map(|e| &e.message).collect::<Vec<_>>());
+    let mut out = String::new();
+    gcs_core::syntax::write_stmt_to(&mut out, &prog.root().body[0].kind).unwrap();
+    assert_eq!(out, src);
+    assert!(!gcs_core::syntax::is_name("minimizes") && !gcs_core::syntax::is_name("maximizes"));
+    assert!(!parse("minimize integral(p.y over p)").1.is_empty());
 }

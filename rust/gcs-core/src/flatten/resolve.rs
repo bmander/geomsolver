@@ -506,12 +506,8 @@ fn rewrite(
                 }
             }
         }
-        // an energy names the curves its integrals run over (#121)
-        StmtKind::Minimize(m) => {
-            for t in &mut m.terms {
-                fix(&mut t.curve, bad);
-            }
-        }
+        // an energy names the curve it is over (#121)
+        StmtKind::Minimize(m) => fix(&mut m.curve, bad),
         // `bore cut body` names two solids, and inside a component both wear the prefix
         StmtKind::SolidRel(r) => {
             fix(&mut r.what, bad);

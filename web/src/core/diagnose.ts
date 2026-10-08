@@ -38,7 +38,7 @@ export interface Diagnosis {
   claimsTheorem: Constraint[];     /* `claim ...` statements: hold, and add no rank */
   claimsViolated: Constraint[];    /* do not hold at this solution */
   claimsConsuming: Constraint[];   /* hold only by the pose; enforcing one would take a DOF */
-  /* each `minimize`/`maximize` term: what its stationary curve is, and whether that is what the
+  /* each `k minimizes`/`k maximizes` term: what its stationary curve is, and whether that is what the
    * statement asked for */
   extrema: { constraint: Constraint; verdict: string; asked: boolean }[];
   underParams: Param[];            /* what can move at the configuration diagnosed */

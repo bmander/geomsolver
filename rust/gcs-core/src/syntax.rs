@@ -332,8 +332,8 @@ pub enum StmtKind {
     Unit(Name),
     /// `ball := { p | p distance(12mm) c }` — a set (§6.21), see `SetLit`.
     Set(SetDecl),
-    /// `minimize integral(p.y over p in rope)` — a term of the document's one energy (#121):
-    /// the curves its integrals run over take the shape that makes it stationary.
+    /// `rope minimizes integral(p.y over p)` — an energy over a curve (#121): the curve takes
+    /// the shape that makes it stationary.
     Minimize(Minimize),
 }
 
@@ -373,23 +373,25 @@ pub struct StyleRule {
     pub span: Span,
 }
 
-/// `minimize TERM + TERM …` (or `maximize`, the same with every term's sign turned): a sum of
-/// integrals over curves, each with a constant coefficient (#121).
+/// `k minimizes TERM + TERM …` (or `maximizes`): a sum of integrals along the curve `k`, each
+/// with a constant coefficient (#121).  A statement of what the curve is, not an instruction: its
+/// shape is stationary for the energy, and that the stationary shape is the extremum the word
+/// names is judged, as a claim is (`Diagnosis::extrema`).
 #[derive(Clone, Debug)]
 pub struct Minimize {
+    pub curve: Ref,
     pub maximize: bool,
     pub terms: Vec<Integral>,
     pub span: Span,
 }
 
-/// `c * integral(EXPR over p in k)` or `… over (p, t) in k`: `EXPR` read at the point `p`
-/// running along `k` (and `t`, its unit tangent there), weighted by arc length.
+/// `c * integral(EXPR over p)` or `… over (p, t)`: `EXPR` read at the point `p` running along
+/// the statement's curve (and `t`, its unit tangent there), weighted by arc length.
 #[derive(Clone, Debug)]
 pub struct Integral {
     pub coef: f64,
     pub point: Name,
     pub tangent: Option<Name>,
-    pub curve: Ref,
     pub body: String,
     pub body_span: Span,
     pub span: Span,

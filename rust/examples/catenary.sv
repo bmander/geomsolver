@@ -2,8 +2,8 @@
 // its potential energy least. Not its formula, `a cosh((x - x0) / a) + c` — its principle.
 //
 // `spline(a, b)` is a free curve: its ends are the two points written, and its shape is the
-// drawing's to find. `length(150mm) rope` fixes how long it is, and `minimize` says what it does
-// with the rest of its freedom: it hangs, lowering its height integrated along its length. The
+// drawing's to find. `length(150mm) rope` fixes how long it is, and `rope minimizes` says what it
+// does with the rest of its freedom: it hangs, lowering its height integrated along its length. The
 // solve finds the shape where that energy is stationary among every shape of that length, and
 // the report says the stationary shape is a minimum.
 //
@@ -20,4 +20,4 @@ in std.front {
   rope := spline(a, b)
   length(150mm) rope
 }
-minimize integral(p.y over p in rope)
+rope minimizes integral(p.y over p)

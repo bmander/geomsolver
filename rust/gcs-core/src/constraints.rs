@@ -56,10 +56,10 @@ pub enum CKind {
     /// **A free curve's gauge** (#121): span `k`'s length is span `k + 1`'s.  A spline's control
     /// points can slide along it without moving its shape, so an energy over its shape alone has
     /// no minimum among them — the stationarity is a saddle, and the solve wanders.  Minted, one
-    /// row per pair of neighbouring spans, for every spline a `minimize` varies; intrinsic, never
+    /// row per pair of neighbouring spans, for every spline an energy varies; intrinsic, never
     /// written.  The span is the knot index its first span starts at.
     SplineGauge,
-    /// **Stationarity of an energy** (`minimize …`, #121): one term of the document's energy, an
+    /// **Stationarity of an energy** (`k minimizes …`, #121): one term of the document's energy, an
     /// integral over a spline with a coefficient.  The terms over one curve are one group, and
     /// the group's first constraint carries its rows — `∂E/∂y + Σ λ ∂g/∂y = 0`, one per free
     /// coordinate `y` of the curve's interior control points, `g` every row that reads one and

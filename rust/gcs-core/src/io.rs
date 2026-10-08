@@ -1917,12 +1917,12 @@ pub fn describe_with(c: &Constraint, name: &dyn Fn(EntRef) -> Option<String>) ->
     // under the names the integrand is stated in (#121)
     if c.kind == CKind::Stationary {
         let (Arg::Str(text), Arg::Ent(e)) = (&c.args[2], &c.args[0]) else { return String::new() };
-        let verb = if crate::variational::maximizes(c) { "maximize" } else { "minimize" };
+        let verb = if crate::variational::maximizes(c) { "maximizes" } else { "minimizes" };
         let w = c.args[1].num();
         let w = if w == 1.0 { String::new() } else { format!("{} * ", reading(SpecKind::Float, w)) };
         let over = if text.contains("t.") { "(p, t)" } else { "p" };
         let curve = name(*e).unwrap_or_else(|| entity_name(*e));
-        return format!("{verb} {w}integral({text} over {over} in {curve})");
+        return format!("{curve} {verb} {w}integral({text} over {over})");
     }
     // **the operator, as a document writes it** (spec §9.1) — `syntax::operator_text` is the one
     // place a constraint becomes its spelling, so the drawing, the constraint list and the

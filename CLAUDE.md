@@ -147,9 +147,10 @@ hand-written spatial kernels have generic twins held to them by `tests/taylor.rs
 set named as an entity (E040 in `rewrite`), `coincident` between two sets, parentheses, a
 non-point `coincident`, a non-line or claimed `tangent`.  `tests/sets.rs` is the gate.
 
-**Variational curves (§9.10, §6.1, 0.52, #121, `variational.rs`):** `minimize`/`maximize` (`StmtKind::Minimize`,
-`parser/minimize.rs`) is a sum of `c * integral(EXPR over p in k)` (or `over (p, t) in k`, `t` the
-unit tangent), ds-weighted; `flatten::values::settle_integrand` writes the scope's numbers in and
+**Variational curves (§9.10, §6.1, 0.52, #121, `variational.rs`):** `k minimizes E` / `k maximizes
+E` (`StmtKind::Minimize`, `parser/minimize.rs`; indicative, a statement about `k` read by the word
+past its ref, as the body words are — never an imperative opener) with `E` a sum of `c *
+integral(EXPR over p)` (or `over (p, t)`, `t` the unit tangent) along `k`, ds-weighted; `flatten::values::settle_integrand` writes the scope's numbers in and
 renames the binders `p`/`t`, so the sketch holds text over `p.x p.y t.x t.y`. Each term is a
 `CKind::Stationary` constraint (`[spline, weight, integrand, degree, maximize]`); `Sketch::
 settle_variational` (at `add`/`remove`, the end of `graft`, `from_json`, after elaboration's
@@ -177,7 +178,7 @@ points (`FREE_CTRL`), the interior minted nameless, skipped by `commit_seeds`, s
 insertion refuses it. The verdict (`variational::verdict`: reduced Hessian on `null(∂g/∂y)`,
 inertia by `linalg::sym_eigenvalues`) is `Diagnosis::extrema`, reported by the CLI, the JSON
 (`[id, verdict, asked]`) and the app's `.extremum-asked`/`.extremum-other` marks. `std.hangs(L) k`
-is a word whose body states a `minimize`. `tests/{spline_length,minimize,catenary}.rs` are the
+is a word whose body states `k minimizes …`. `tests/{spline_length,minimize,catenary}.rs` are the
 gates.
 
 **Predicates, applied (§9.9, §6.21, 0.50, #103):** a relation word and a set are one predicate —

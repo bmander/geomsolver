@@ -136,7 +136,7 @@ pub struct Sketch {
     /// is what a rebuild (`io::graft`) and the document writer read the name back from.
     pub shared: BTreeMap<String, SharedPlace>,
     /// Each energy's multipliers (#121), by (the group's leading constraint, the row's, the
-    /// residual's index in it) — unknowns `settle_variational` mints for every row a `minimize`'s
+    /// residual's index in it) — unknowns `settle_variational` mints for every row an energy's
     /// curve is held by, and retires when the row goes.  Derived state, never saved.
     pub multipliers: BTreeMap<(u32, u32, u8), u32>,
     /// The energies' groups as `settle_variational` last read them — what a stationarity's

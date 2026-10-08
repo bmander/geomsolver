@@ -1464,7 +1464,7 @@ test('an energy is told what its stationary curve is', () => {
   const [x] = d.extrema;
   assert.equal(x.verdict, 'minimum');
   assert.ok(x.asked);
-  assert.ok(io.describe(x.constraint).startsWith('minimize integral(p.y over p in '), io.describe(x.constraint));
+  assert.ok(io.describe(x.constraint).endsWith(' minimizes integral(p.y over p)'), io.describe(x.constraint));
   // its rows are its group's, as wide as the curve: the binding asks the core, not a table
   assert.equal(x.constraint.nResiduals, 28);
   sk.dispose();

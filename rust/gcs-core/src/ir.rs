@@ -38,7 +38,7 @@ pub enum Operation {
     SolidRel(syntax::SolidRel),
     ClaimOver(ClaimOver),
     Derived(syntax::DerivedDecl),
-    /// `minimize …` (#121): its integrals' curves, resolved, and their integrands as text over
+    /// `k minimizes …` (#121): its curve, resolved, and its integrands as text over
     /// `p.x`, `p.y`, `t.x`, `t.y`.
     Minimize(syntax::Minimize),
 }
