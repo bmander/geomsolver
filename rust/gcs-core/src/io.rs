@@ -1522,7 +1522,8 @@ impl Part {
         let prims = sk.primitives();
         // who contains a point, and which constraints name an entity
         let mut parents: Vec<Vec<EntRef>> = vec![Vec::new(); sk.points.len()];
-        // a curve is no primitive, but a free curve's ends are points it moves with (#144)
+        // a curve is no primitive, but it moves with the points it is written over — a free
+        // curve's ends among them (#144)
         let curves = (0..sk.curves.len()).map(|i| EntRef::new(EntKind::Curve, i));
         for e in prims.iter().copied().chain(curves) {
             for c in sk.children(e).into_iter().filter(|c| c.kind == EntKind::Point) {
@@ -1627,7 +1628,7 @@ impl Part {
         let mut sketch = Sketch::new();
         let mut made = graft(&mut sketch, sk, &|e| keep.contains(&e), &[], (0.0, 0.0));
         // `graft` makes entities kind by kind in document order, which is `primitives` order,
-        // then the curves a contact named, which own no parameter of their own
+        // then the curves, paired below
         let srcs: Vec<EntRef> = prims.into_iter().filter(|e| keep.contains(e)).collect();
         made.truncate(srcs.len());
         debug_assert!(srcs.iter().zip(&made).all(|(s, m)| s.kind == m.kind));
@@ -1655,18 +1656,22 @@ impl Part {
         }
         // and a constraint's own unknowns (a contact's place along its curve) with its copy's:
         // the constraint of the same kind over the same entities, each copy paired once
-        let mut taken = vec![false; sketch.constraints.len()];
-        for c in sk.constraints.iter().filter(|c| !c.aux_params().is_empty()) {
+        let mut copies: Vec<Option<(CKind, Vec<EntRef>, Vec<u32>)>> = sketch
+            .constraints
+            .iter()
+            .map(|c| Some((c.kind, c.entities(), c.aux_params())).filter(|(_, _, own)| !own.is_empty()))
+            .collect();
+        for c in &sk.constraints {
+            let own = c.aux_params();
+            if own.is_empty() {
+                continue;
+            }
             let Some(over) = c.entities().iter().map(|e| ent.get(e).copied()).collect::<Option<Vec<_>>>() else {
                 continue;
             };
-            let found = (0..sketch.constraints.len())
-                .find(|&j| !taken[j] && sketch.constraints[j].kind == c.kind && sketch.constraints[j].entities() == over);
-            if let Some(j) = found {
-                taken[j] = true;
-                for (a, b) in sketch.constraints[j].aux_params().into_iter().zip(c.aux_params()) {
-                    params.push((a as usize, b as usize));
-                }
+            let found = copies.iter_mut().find(|k| k.as_ref().is_some_and(|(kind, ents, _)| *kind == c.kind && *ents == over));
+            if let Some((_, _, theirs)) = found.and_then(Option::take) {
+                params.extend(theirs.into_iter().zip(own).map(|(a, b)| (a as usize, b as usize)));
             }
         }
         // and a hidden point moves with the view point it lifts
