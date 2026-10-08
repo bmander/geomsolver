@@ -76,6 +76,7 @@ mod io;
 mod interval;
 mod jacobians;
 mod jansen;
+mod json_escapes;
 mod linalg;
 mod language_pipeline;
 mod mesh;

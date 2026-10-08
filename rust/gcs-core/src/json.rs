@@ -361,6 +361,22 @@ impl Parser {
         }
     }
 
+    /// Four hex digits at `at`, if they are there.
+    fn hex4_at(&self, at: usize) -> Option<u32> {
+        let hex: String = self.b.get(at..at + 4)?.iter().collect();
+        if hex.len() != 4 || !hex.chars().all(|c| c.is_ascii_hexdigit()) {
+            return None;
+        }
+        u32::from_str_radix(&hex, 16).ok()
+    }
+
+    /// The four hex digits of a `\u` escape, consumed.
+    fn hex4(&mut self) -> Result<u32, String> {
+        let cp = self.hex4_at(self.i).ok_or_else(|| format!("bad \\u escape at {}", self.i))?;
+        self.i += 4;
+        Ok(cp)
+    }
+
     fn string(&mut self) -> Result<String, String> {
         self.expect('"')?;
         let mut out = String::new();
@@ -379,12 +395,19 @@ impl Parser {
                         'b' => '\u{8}',
                         'f' => '\u{c}',
                         'u' => {
-                            let hex: String = self.b[self.i..(self.i + 4).min(self.b.len())]
-                                .iter()
-                                .collect();
-                            self.i += 4;
-                            let cp = u32::from_str_radix(&hex, 16).map_err(|e| e.to_string())?;
-                            char::from_u32(cp).unwrap_or('\u{fffd}')
+                            let hi = self.hex4()?;
+                            let low = (0xD800..0xDC00).contains(&hi)
+                                && self.b.get(self.i) == Some(&'\\')
+                                && self.b.get(self.i + 1) == Some(&'u');
+                            let lo = if low { self.hex4_at(self.i + 2) } else { None };
+                            match lo.filter(|lo| (0xDC00..0xE000).contains(lo)) {
+                                Some(lo) => {
+                                    self.i += 6;
+                                    char::from_u32(0x10000 + ((hi - 0xD800) << 10) + (lo - 0xDC00))
+                                        .unwrap_or('\u{fffd}')
+                                }
+                                None => char::from_u32(hi).unwrap_or('\u{fffd}'),
+                            }
                         }
                         other => other,
                     });
