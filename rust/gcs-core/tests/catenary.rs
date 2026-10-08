@@ -320,3 +320,16 @@ fn a_copied_rope_hangs_again() {
 }
 
 
+
+/// A rope shorter than the distance between its ends has no shape.  No row reads its shape — the
+/// curve is a function of its ends and length, and here there is none — so the verdict says it:
+/// the statement is answered `unsolved`, and the rope draws nothing.  Never a crash, never a shape
+/// made up.
+#[test]
+fn a_rope_too_short_to_reach_is_unsolved() {
+    let (mut e, d) = read(&ROPE.replace("length(150) rope", "length(90) rope"));
+    assert!(e.ok(), "{d:?}");
+    let _ = solve(&mut e.sketch, SolveOpts::default());
+    assert_eq!(verdicts(&mut e), ["unsolved"]);
+    assert!(e.sketch.curve_polyline(0).is_empty());
+}
