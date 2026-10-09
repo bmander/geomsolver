@@ -1,6 +1,13 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.55 — October 2026**
+**Specification, Draft 0.56 — October 2026**
+
+**[0.56] A free curve's length is the drawing's first.** With no `length` stated, a free curve's
+length is solved for wherever the rest of the drawing determines it — a point placed below the
+span that the rope passes, a held deck it touches — and is where the energy is stationary in it
+only when nothing else holds it (§9.10). So a span and a sag give the rope the length it needs.
+A held line or circle touching a free curve whose length nothing states is what sets that length,
+no longer refused; and a length that nothing holds and no stationarity settles is said (**W114**).
 
 **[0.55] A free curve is the solution of its energy.** `rope := curve(a, b)` is a curve from `a`
 to `b` whose shape its energy states (§6.1, §9.10): the solution of that energy's Euler–Lagrange
@@ -670,7 +677,7 @@ Where an unnamed and unseeded coordinate *starts* is not the language's business
 
 A **list** child slot — a spline's control polygon, a curve's arguments — has no arity to conjure children from, so a bare `s := spline` remains **E103**.
 
-**[0.53] A free curve** **[0.55]** is written with the two points it runs between, `rope := curve(a, b)`: the curve runs from `a` to `b` and its shape is the drawing's to find — what an energy over it (§9.10) settles, the solution of that energy's Euler–Lagrange equation. It has no control points: how the implementation solves the equation is its own business (§15), so long as the answer is the curve the statements describe to the accuracy it reports. It owns one number, its **length**, held by `length(L) rope` or, with none stated, where the energy is stationary in it. It is drawn in the plane its ends are in (**E060** for ends in space). A free curve no energy is stated over has no shape (**E040**). **[0.55]** `spline(a, b)` is a spline of two control points, refused as too short.
+**[0.53] A free curve** **[0.55]** is written with the two points it runs between, `rope := curve(a, b)`: the curve runs from `a` to `b` and its shape is the drawing's to find — what an energy over it (§9.10) settles, the solution of that energy's Euler–Lagrange equation. It has no control points: how the implementation solves the equation is its own business (§15), so long as the answer is the curve the statements describe to the accuracy it reports. It owns one number, its **length**, held by `length(L) rope`, or **[0.56]** solved for where the rest of the drawing determines it, or else where the energy is stationary in it. It is drawn in the plane its ends are in (**E060** for ends in space). A free curve no energy is stated over has no shape (**E040**). **[0.55]** `spline(a, b)` is a spline of two control points, refused as too short.
 
 ### 6.2 Constructor declarations
 
@@ -2023,7 +2030,7 @@ rope minimizes 2 * integral(p.y over p) - integral(p.x over p)
 `k minimizes E` states that **`k` has the shape that makes `E` stationary** among every shape from its start to its end of its length: **[0.55]** the solution of `E`'s Euler–Lagrange equation — in arc length `s`, with the tangent at angle `θ`, the Hamiltonian `H = f(p, t) + λ·t` stationary in the direction, `p' = t`, `λ' = −f_p`. `k maximizes E` is `k minimizes -E`. The curve's **ends** are what it hangs between, so they keep the freedom they have: the curve is a function of its ends and its length, and adds no freedom of its own to the drawing (§16.3). Several energy statements over one curve are **one energy**, their terms added: order-free (P2), as a body's operations are. What is solved for is stationarity; that the stationary shape is the extremum the word names is **judged**, as a claim is (§9.7, below).
 
 - **What it is over.** **[0.55]** An energy is over a free curve (§6.1); over anything else it is **E040**.
-- **Its length.** Held by `length(L) k`, the length is that. With none, it is where `E` is stationary in it too — transversality, `H = 0` at the end: two points and an energy with no length is a geodesic of the weight `f`.
+- **Its length.** Held by `length(L) k`, the length is that. **[0.56]** With none, the rest of the drawing may determine it — with the curve's ends and what the drawing places without the curve held, no motion left changes it: a placed point the curve passes (a span and a sag), a held line it touches — and it is solved for like any unknown. Where nothing does, it is where `E` is stationary in it too — transversality, `H = 0` at the end: two points and an energy with no length is a geodesic of the weight `f`. A free point on the curve moves with it and determines nothing. A length nothing holds and no stationarity settles — a hanging rope only lowers its energy as it lengthens — SHOULD be said at the energy (**W114**).
 - **A peg presses; a drawing relation yields.** A relation between the curve and other geometry that is still free is satisfied by that geometry: a line drawn tangent to a hanging rope moves onto it. **[0.55]** A held point the curve is stated to pass (`peg coincident rope`, `peg` held) is a **peg**: the curve's problem passes it, its costate free to jump there — a point force — and its direction with it: the rope drapes over the peg in a corner, the place along the rope where it does solved too. Any other relation whose every operand but the curve is held is **E040**: a held line pressed against the curve meets it at a corner, so no smooth tangency to it is stationary.
 - **The solution set is the stationary points (P3).** A stationary curve may be a minimum, a maximum or a saddle, and the seed decides which the solve reaches. The diagnosis MUST say which — **[0.55]** by Legendre's condition (the Hamiltonian's sign in the direction along the curve), Jacobi's (no point conjugate to an arc's start before its end), and, with pegs or a free length, the energy's Hessian in where they are — and SHOULD say it where the statement is written, as a claim's verdict is (§9.7): `minimum`, `maximum`, `saddle`, `degenerate` where the second order cannot tell, or `unsolved` where no stationary shape was found. A `maximizes` answered `maximum` found what it asked for. A non-minimum is reported, not refused.
 - A relation word's body may state an energy over its operand: `std.hangs(L) k := { length(L) k; k minimizes integral(p.y over p) }`.
@@ -2462,6 +2469,7 @@ The numerical method is unspecified. Whatever the method, a conforming solver:
 | W110 | an expression that cannot be computed: the last number stands |
 | W112 | a `param`, formal or block binder declared over a built-in name (§3.3, §5) — the built-in is what an expression reads **[0.17]** |
 | W113 | two planes lying on one another, with a relation reading points drawn in each: one plane in space, read twice (§6.7) **[0.42]** |
+| W114 | a free curve whose length nothing holds and no length makes its energy stationary in (§9.10) **[0.56]** |
 
 ### 16.3 DOF ledger
 

@@ -11,11 +11,14 @@
 //!   point held) is part of its problem — a peg, a corner there — and its row is absorbed (it
 //!   compiles none).  A row reading the curve and geometry still free is the drawing's, read
 //!   through the curve's contract like any curve's: a free line tangent to a hanging rope moves
-//!   onto it.  A row whose every other operand is held and is not a peg is refused: a held line
-//!   pushed against the rope meets it at a corner, so no smooth tangency to it is a minimiser.
+//!   onto it.  A row whose every other operand is held and is not a peg is refused where the
+//!   curve's length is held: a held line pushed against the rope meets it at a corner, so no
+//!   smooth tangency to it is a minimiser.  Where nothing holds the length, it is what sets it.
 //! - **Its length**: the curve's own unknown (`CurveE::length`).  Held by a `length` row it is
-//!   that; read by nothing that holds it, it is wherever the energy is stationary in it —
-//!   transversality, `H = 0` at the end, the row the energy's first statement carries.
+//!   that; determined by the rest of the drawing — a placed point the curve passes, a held line
+//!   it touches — it is solved for (`lengths_held`); left free by everything, it is wherever the
+//!   energy is stationary in it — transversality, `H = 0` at the end, the row the energy's first
+//!   statement carries.
 //! - **The verdict**: minimum, maximum, saddle or degenerate (`extremal::verdict`), or none found.
 
 #[allow(unused_imports)]
@@ -136,7 +139,8 @@ impl Sketch {
             en.degree = c.args[3].num() as u32;
             terms.entry(e.i()).or_default().push((c.args[1].num(), text.clone()));
         }
-        // what reads each free curve: its length, a peg, the drawing — or a held row refused
+        // what reads each free curve: its length, a peg, the drawing — or a held row pressing it
+        let mut pressing = Vec::new();
         for c in &self.constraints {
             if !c.acts() || c.kind == CKind::Stationary {
                 continue;
@@ -165,13 +169,20 @@ impl Sketch {
                         en.pegs.push((c.id, p.idx));
                     }
                 }
-                _ if others_held => faults.push((
-                    c.id,
-                    "a held line or circle pushed against a free curve meets it at a corner, so it \
-                     cannot be tangent there; a held point the curve passes is a peg"
-                        .into(),
-                )),
+                _ if others_held => pressing.push((c.id, e.i())),
                 _ => {}
+            }
+        }
+        // a held line or circle against a curve of held length presses it into a corner; against
+        // one whose length nothing holds, it is what may set the length (`lengths_held`)
+        for (cid, i) in pressing {
+            if !energies[&i].free_len {
+                faults.push((
+                    cid,
+                    "a held line or circle pushed against a free curve of held length meets it at a \
+                     corner, so it cannot be tangent there; a held point the curve passes is a peg"
+                        .into(),
+                ));
             }
         }
         // each curve's definition, compiled once per energy as written
@@ -202,7 +213,112 @@ impl Sketch {
                 .collect();
         }
         self.variational = energies.into_values().collect();
+        self.settle_free_lengths();
         faults
+    }
+
+    /// Whether each length no row holds is free: where the drawing determines it — a point placed
+    /// below the span that the rope passes, a held deck it touches — it is solved for like any
+    /// unknown, and only where the drawing leaves it free is it where the energy is stationary in
+    /// it (`lengths_held`).  Judged with no transversality row stated, at a pose where every such
+    /// curve has a shape.
+    fn settle_free_lengths(&mut self) {
+        let cand: Vec<usize> =
+            (0..self.variational.len()).filter(|&k| self.variational[k].free_len && !self.variational[k].members.is_empty()).collect();
+        if cand.is_empty() {
+            return;
+        }
+        for &k in &cand {
+            self.variational[k].free_len = false;
+            let i = self.variational[k].curve;
+            // a length seeded before the ends were placed may not reach: the build's seed again
+            if let (Some(l), Some(path)) = (self.curves[i].length, self.chord_through(i)) {
+                let len = &mut self.params[l as usize].value;
+                if !(*len > path * (1.0 + 1e-9)) {
+                    *len = crate::extremal::shoot::EASY * path;
+                }
+            }
+        }
+        // and its contacts' places where it now passes, so each reads what it will
+        self.seed_free_contacts();
+        let curves: Vec<usize> = cand.iter().map(|&k| self.variational[k].curve).collect();
+        let held = self.lengths_held(&curves);
+        for (j, &k) in cand.iter().enumerate() {
+            self.variational[k].free_len = !held.as_ref().is_some_and(|h| h[j]);
+        }
+    }
+
+    /// For each free curve of `curves`, whether the drawing determines its length: at the present
+    /// pose, with every row but the length's stationarity, hold what the rows reading no free curve
+    /// determine and the curve's own ends (its inputs, the drawing's to move), and ask whether any
+    /// motion left changes the length.  A point on the curve that is itself free moves with it and
+    /// holds nothing; a point the drawing places holds it.  A rank question, since what a structural
+    /// count sees cannot tell a deck's slide along itself from a freedom of the length.  `None`
+    /// where it cannot be asked (no shape at the pose, or past `NUMERIC_MAX` unknowns): every such
+    /// length is then free, as it was.
+    fn lengths_held(&self, curves: &[usize]) -> Option<Vec<bool>> {
+        use crate::system::RANK_TOL;
+        /// A null vector's component below this is no motion of the column.
+        const STILL: f64 = 1e-7;
+        let mut sys = crate::system::System::new(self);
+        let n = sys.n_free;
+        if n > crate::diagnose::NUMERIC_MAX {
+            return None;
+        }
+        let z = sys.z0(self);
+        let jac = sys.conditioned(&z);
+        if z.iter().chain(&jac.as_mat().data).any(|v| !v.is_finite()) {
+            return None;
+        }
+        let col = |p: u32| -> Option<usize> { usize::try_from(sys.col_of[p as usize]).ok() };
+        // the rows reading no free curve, and the columns they determine
+        let lengths: Vec<usize> = (0..self.curves.len())
+            .filter(|&i| self.curve_extremal(i))
+            .filter_map(|i| col(self.curves[i].length?))
+            .collect();
+        let (adj, _) = sys.structure();
+        let apart: Vec<usize> = (0..adj.len()).filter(|&r| !adj[r].iter().any(|c| lengths.contains(c))).collect();
+        // which columns no motion the rows of `m` leave moves
+        let still = |m: &crate::linalg::Mat| -> Option<Vec<bool>> {
+            let rn = crate::linalg::rank_and_nullspace_with(m, crate::linalg::Tol::Abs(RANK_TOL));
+            let null = rn.converged.then(|| rn.null())?;
+            Some((0..m.cols).map(|c| (0..null.cols).all(|k| null.data[c * null.cols + k].abs() <= STILL)).collect())
+        };
+        let determined = still(jac.select_rows(&apart).as_mat())?;
+        curves
+            .iter()
+            .map(|&i| {
+                let Some(l) = self.curves[i].length.and_then(col) else { return Some(false) };
+                let mut held = determined.clone();
+                for e in &self.curves[i].args {
+                    for p in self.entity_params(*e) {
+                        if let Some(c) = col(p) {
+                            held[c] = true;
+                        }
+                    }
+                }
+                held[l] = false;
+                let keep: Vec<usize> = (0..n).filter(|&c| !held[c]).collect();
+                let m = jac.as_mat();
+                let mut sub = crate::linalg::Mat::zeros(m.rows, keep.len());
+                for r in 0..m.rows {
+                    for (k, &c) in keep.iter().enumerate() {
+                        sub.data[r * keep.len() + k] = m.data[r * m.cols + c];
+                    }
+                }
+                Some(still(&sub)?[keep.iter().position(|&c| c == l).expect("the length is kept")])
+            })
+            .collect()
+    }
+
+    /// The path a free curve must at least cover: from its start through its pegs to its end.
+    fn chord_through(&self, i: usize) -> Option<f64> {
+        let v = self.curve_vars(i, 0.0);
+        let mut path = vec![(v[1], v[2])];
+        path.extend(self.curves[i].pegs.iter().map(|&p| self.point_xy(p as usize)));
+        path.push((v[3], v[4]));
+        let chord: f64 = path.windows(2).map(|w| (w[1].0 - w[0].0).dhypot(w[1].1 - w[0].1)).sum();
+        (chord > 0.0).then_some(chord)
     }
 
     /// Seed what was seeded before the free curves had a shape — elaboration's last word on them,
@@ -212,26 +328,45 @@ impl Sketch {
     /// - a length nothing holds, where the energy is stationary in it (`H = 0` at the end,
     ///   `stationary_length`).  Near the chord the curve is taut and `H` steep, and under it no
     ///   curve is that short, so a Newton step from a guess is no seed;
+    /// - a length the drawing determines (`lengths_held`), a gentle sag over the path, for the
+    ///   solve to find;
     /// - a contact's place along a free curve that had no place to start (the curve had no shape
     ///   when the contact was stated: `curve_nearest_by` said NaN), where the curve now passes
     ///   nearest.
-    pub fn seed_extremals(&mut self) {
+    ///
+    /// Returns the curves whose length is free and settles nowhere: no length makes their energy
+    /// stationary (a hanging rope only lowers its energy as it lengthens).
+    pub fn seed_extremals(&mut self) -> Vec<usize> {
+        let mut unsettled = Vec::new();
         for k in 0..self.variational.len() {
             let e = &self.variational[k];
             let (i, stated) = (e.curve, e.stated);
             let Some(l) = self.curves[i].length else { continue };
-            // its length where a row says, else where the energy is stationary in it — the
+            // its length where a row says, else where the energy is stationary in it, else — the
+            // drawing determining it — a gentle sag over the path, for the solve to find; the
             // seed it was built with read its ends before they were placed
             match stated {
                 Some(d) if d > 0.0 => self.params[l as usize].value = d,
-                _ if e.free_len && !e.members.is_empty() => {
-                    if let Some(len) = self.stationary_length(i) {
-                        self.params[l as usize].value = len;
+                _ if e.members.is_empty() => {}
+                _ if e.free_len => match self.stationary_length(i) {
+                    Some(len) => self.params[l as usize].value = len,
+                    None => unsettled.push(i),
+                },
+                _ => {
+                    if let Some(path) = self.chord_through(i) {
+                        self.params[l as usize].value = crate::extremal::shoot::EASY * path;
                     }
                 }
-                _ => {}
             }
         }
+        self.seed_free_contacts();
+        unsettled
+    }
+
+    /// A contact's place along a free curve that had no place to start (the curve had no shape
+    /// when the contact was stated: `curve_nearest_by` said NaN), where the curve now passes
+    /// nearest.
+    fn seed_free_contacts(&mut self) {
         let reseed: Vec<(usize, u32)> = (0..self.constraints.len())
             .filter_map(|j| {
                 let (e, t) = self.constraints[j].family_contact()?;
@@ -251,13 +386,7 @@ impl Sketch {
     fn stationary_length(&self, i: usize) -> Option<f64> {
         let k = self.extremal_consts(i)?;
         let v = self.curve_vars(i, 0.0);
-        let mut path = vec![(v[1], v[2])];
-        path.extend(self.curves[i].pegs.iter().map(|&p| self.point_xy(p as usize)));
-        path.push((v[3], v[4]));
-        let chord: f64 = path.windows(2).map(|w| (w[1].0 - w[0].0).dhypot(w[1].1 - w[0].1)).sum();
-        if !(chord > 0.0) {
-            return None;
-        }
+        let chord = self.chord_through(i)?;
         let h_at = |len: f64| -> Option<f64> {
             let ends = crate::extremal::Ends::of(&[v[1], v[2], v[3], v[4], len]);
             let (lag, sh) = crate::extremal::shape_for(&k, &ends)?;
