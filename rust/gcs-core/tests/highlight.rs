@@ -271,3 +271,208 @@ fn an_input_is_coloured_like_a_formal() {
     assert_eq!(tint_of(src, "Angle"), Some(Tint::Type));
     assert_eq!(tint_of(src, "bore"), Some(Tint::Def));
 }
+
+/// An energy (§9.10) is read by its words: `minimizes`, `integral`, and the `over` naming the
+/// point the integrand is taken at — a binder, as a set's point is.
+#[test]
+fn an_energy_is_coloured() {
+    let src = "rope minimizes integral(p.y over p)\n\
+               k maximizes integral((p.x * t.y - p.y * t.x) / 2 over (p, t))\n";
+    assert_eq!(tint_of(src, "minimizes"), Some(Tint::Relation));
+    assert_eq!(tint_of(src, "integral(p"), Some(Tint::Word));
+    assert_eq!(tint_of(src, "over p"), Some(Tint::Word));
+    assert_eq!(tint_of(src, "p)\n"), Some(Tint::Def), "the binder");
+    assert_eq!(tint_of(src, "p.y over"), None, "the integrand reads it plainly");
+    assert_eq!(tint_of(src, "p, t)"), Some(Tint::Def));
+    assert_eq!(tint_of(src, "t))"), Some(Tint::Def));
+    assert_eq!(tint_of(src, "2 over"), Some(Tint::Num));
+}
+
+/// **A relation word's definition declares the word** (§9.9): the word is the name the statement
+/// gives, its operands and parameters are the body's to read, and where the file uses it — or a
+/// file importing it by name — it reads as the relation it is.
+#[test]
+fn a_relation_word_is_coloured_where_defined_and_used() {
+    let src = "\
+a horizontal b := a level(up) b
+b right_of(d) a := {
+  a distance(d, along: right) b
+}
+flat(d) l := l distance(d, along: up) l
+p right_of(d: 5) q
+flat l
+";
+    assert_eq!(tint_of(src, "horizontal b"), Some(Tint::Def));
+    assert_eq!(tint_of(src, "b :="), None, "an operand is not what the statement declares");
+    assert_eq!(tint_of(src, "level(up)"), Some(Tint::Relation));
+    assert_eq!(tint_of(src, "right_of(d) a"), Some(Tint::Def));
+    assert_eq!(tint_of(src, "a := {"), None);
+    assert_eq!(tint_of(src, "flat(d) l :="), Some(Tint::Def));
+    assert_eq!(tint_of(src, "right_of(d: 5)"), Some(Tint::Relation));
+    assert_eq!(tint_of(src, "d: 5"), Some(Tint::Label));
+    assert_eq!(tint_of(src, "flat l\n"), Some(Tint::Relation));
+    // an imported word, and the module it comes from
+    let src = "use std (right_of)\ncentre right_of(d: ring) std.origin\nx := Turned(o, t)\n";
+    assert_eq!(tint_of(src, "std ("), Some(Tint::Type));
+    assert_eq!(tint_of(src, "right_of)"), None);
+    assert_eq!(tint_of(src, "right_of(d"), Some(Tint::Relation));
+    assert_eq!(tint_of(src, "Turned"), Some(Tint::Type), "a component call is still a call");
+    let src = "use engine.parts\n";
+    assert_eq!(tint_of(src, "engine"), Some(Tint::Type));
+    assert_eq!(tint_of(src, "parts"), Some(Tint::Type));
+}
+
+/// A set's point is the name its body binds (§6.21), however the set is written.
+#[test]
+fn a_set_binds_its_point() {
+    let src = "S := { p | p distance(5) c }\n\
+               component Ball(c: point, r: Length) := { q | q distance(r) c }\n";
+    assert_eq!(tint_of(src, "p |"), Some(Tint::Def));
+    assert_eq!(tint_of(src, "distance(5)"), Some(Tint::Relation));
+    assert_eq!(tint_of(src, "q |"), Some(Tint::Def));
+}
+
+/// The smaller words a statement is shaped by: a ring's centre, the copy after this one, a
+/// spline's weights and a curve's stretch.
+#[test]
+fn the_shaping_words_are_coloured() {
+    let src = "\
+ring n about c {
+  v := point
+  e := line(v, next.v)
+}
+k := spline(a, b, c, d) weights [1, w, w, 1]
+f := face(e from lo to hi, -> close)
+x := Cylinder(about: l, r: 5)
+";
+    assert_eq!(tint_of(src, "ring"), Some(Tint::Word));
+    assert_eq!(tint_of(src, "about c"), Some(Tint::Word));
+    assert_eq!(tint_of(src, "next.v"), Some(Tint::Word));
+    assert_eq!(tint_of(src, "weights"), Some(Tint::Word));
+    assert_eq!(tint_of(src, "from lo"), Some(Tint::Word));
+    assert_eq!(tint_of(src, "to hi"), Some(Tint::Word));
+    assert_eq!(tint_of(src, "about: l"), Some(Tint::Label), "a label is a label");
+    // and `about`, `to` used as names stay names
+    let src = "c := Cylinder(about, r: 5)\nm := line(a, to)\n";
+    assert_eq!(tint_of(src, "about,"), None);
+    assert_eq!(tint_of(src, "to)"), None);
+}
+
+/// A unit written against its number is one literal to the parser, and is coloured as one: a
+/// seed's unit is a seed's.
+#[test]
+fn a_unit_is_coloured_with_its_number() {
+    let src = "unit mm\nw := 20mm\np := point hint(at: o, bearing: 90deg)\nh := 1' 6\"\nt := 3in\n";
+    let runs = highlight(src);
+    let run = |what: &str| {
+        let lo = src.find(what).expect("in the text");
+        let (t, s) = *runs.iter().find(|(_, s)| s.lo as usize == lo)?;
+        Some((t, &src[s.lo as usize..s.hi as usize]))
+    };
+    assert_eq!(run("20mm"), Some((Tint::Num, "20mm")));
+    assert_eq!(run("90deg"), Some((Tint::Seed, "90deg")));
+    assert_eq!(run("1'"), Some((Tint::Num, "1'")));
+    assert_eq!(run("6\""), Some((Tint::Num, "6\"")));
+    assert_eq!(run("3in"), Some((Tint::Num, "3in")));
+    assert_eq!(tint_of(src, "mm\nw"), Some(Tint::Type), "the document's unit");
+}
+
+/// What an expression knows by name is coloured built in, from `expr`'s own tables.
+#[test]
+fn a_builtin_is_coloured() {
+    let src = "\
+Rr := max(R - 2, Rb * (1 + clear))
+r := sqrt(3) * pi
+q := point hint(at: o, toward: t, turn: 90deg)
+k := motion(about: o, ratio: -length(a) / length(b))
+length(150mm) rope
+";
+    assert_eq!(tint_of(src, "max("), Some(Tint::Builtin));
+    assert_eq!(tint_of(src, "sqrt"), Some(Tint::Builtin));
+    assert_eq!(tint_of(src, "pi"), Some(Tint::Builtin));
+    assert_eq!(tint_of(src, "turn:"), Some(Tint::Label));
+    assert_eq!(tint_of(src, "length(a)"), Some(Tint::Builtin));
+    assert_eq!(tint_of(src, "length(b)"), Some(Tint::Builtin));
+    assert_eq!(tint_of(src, "length(150mm)"), Some(Tint::Relation), "a relation is a relation");
+}
+
+/// Every model in the library and the standard library is coloured end to end, the spans tiling
+/// the text: the colouring is asked of whatever the corpus writes.
+#[test]
+fn the_corpus_tiles() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    let mut files = Vec::new();
+    let mut dirs = vec![root.join("examples"), root.join("lib")];
+    while let Some(d) = dirs.pop() {
+        for e in std::fs::read_dir(&d).expect("a directory") {
+            let p = e.expect("an entry").path();
+            if p.is_dir() {
+                dirs.push(p);
+            } else if matches!(p.extension().and_then(|x| x.to_str()), Some("sv" | "svd")) {
+                files.push(p);
+            }
+        }
+    }
+    assert!(files.len() > 100, "the corpus is there");
+    for f in files {
+        let src = std::fs::read_to_string(&f).expect("readable");
+        let drawing = f.extension().is_some_and(|x| x == "svd");
+        let runs =
+            if drawing { gcs_core::drawing::highlight(&src) } else { highlight(&src) };
+        let mut end = 0usize;
+        for (tint, s) in runs {
+            assert!(s.lo as usize >= end && s.lo < s.hi, "{f:?}: {tint:?} at {}", s.lo);
+            assert!(s.hi as usize <= src.len());
+            end = s.hi as usize;
+        }
+    }
+}
+
+/// A drawing is coloured by its own grammar: its statements, the names they declare, strings,
+/// page lengths and its style rules.
+#[test]
+fn a_drawing_is_coloured() {
+    let src = "\
+// presentation
+model m from \"nurbs.sv\"
+sheet nurbs {
+  size A3
+  label \"RATIONAL\" at (14mm, 18mm)
+  view dome(m.dome) from isometric at (215mm, 120mm) scale 1.4
+  sketch top(m) from m.std.top at (80mm, 90mm)
+  measure distance(m.o, m.bead) in dome offset 4mm
+  dimensions in top
+  style m.toe_r { color: #7a7a7a; dash: 3 3 }
+}
+";
+    let tint = |what: &str| {
+        let lo = src.find(what).expect("in the text");
+        let runs = gcs_core::drawing::highlight(src);
+        runs.into_iter().find(|(_, s)| s.lo as usize == lo).map(|r| r.0)
+    };
+    assert_eq!(tint("// presentation"), Some(Tint::Comment));
+    assert_eq!(tint("model"), Some(Tint::Word));
+    assert_eq!(tint("m from"), Some(Tint::Def));
+    assert_eq!(tint("from \""), Some(Tint::Word));
+    assert_eq!(tint("\"nurbs.sv\""), Some(Tint::Str));
+    assert_eq!(tint("sheet"), Some(Tint::Word));
+    assert_eq!(tint("nurbs {"), Some(Tint::Def));
+    assert_eq!(tint("A3"), Some(Tint::Type));
+    assert_eq!(tint("label"), Some(Tint::Word));
+    assert_eq!(tint("14mm"), Some(Tint::Num));
+    assert_eq!(tint("dome("), Some(Tint::Def));
+    assert_eq!(tint("m.dome"), None, "a reference into the model");
+    assert_eq!(tint("isometric"), Some(Tint::Type));
+    assert_eq!(tint("m.std.top"), None);
+    assert_eq!(tint("1.4"), Some(Tint::Num));
+    assert_eq!(tint("distance"), Some(Tint::Relation));
+    assert_eq!(tint("offset"), Some(Tint::Word));
+    assert_eq!(tint("in top"), Some(Tint::Word));
+    assert_eq!(tint("m.toe_r"), Some(Tint::Class));
+    assert_eq!(tint("color"), Some(Tint::Label));
+    assert_eq!(tint("#7a7a7a"), Some(Tint::Num));
+    // a drawing half-typed is coloured as far as it goes
+    let half = "model m from \"open";
+    let runs = gcs_core::drawing::highlight(half);
+    assert_eq!(runs.last().map(|r| r.0), Some(Tint::Str));
+}

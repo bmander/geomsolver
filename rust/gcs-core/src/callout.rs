@@ -88,8 +88,9 @@ macro_rules! undrawn {
             | CKind::Level
             | CKind::Project
             | CKind::Lift
-            // an energy states no number on the figure
+            // an energy states no number on the figure, nor does a touch
             | CKind::Stationary
+            | CKind::CurveTouchesLine
             // a relation in space states a number of no one view, so it has no figure on one
             | CKind::Coincident3
             | CKind::Distance3

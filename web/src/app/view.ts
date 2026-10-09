@@ -41,9 +41,17 @@ import * as underlay from './underlay.js';
 import type { Bitmap, Underlay } from './underlay.js';
 import {
   NOWHERE, PAGE, boundsSeen, calloutSeen, lookOf, maps, nearestSeen, ofView, panesSeen, pickSeen,
-  placeOf, spacePoints, workspace,
+  pickSolidSeen, placeOf, spacePoints, workspace,
 } from '../core/workspace.js';
 import type { View, Workspace } from '../core/workspace.js';
+
+/** A solid picked in the workspace: which (its name, and its index in the current sketch) and the
+ *  face the click landed on, named where it was made. */
+export interface SolidPick {
+  name: string;
+  index: number;
+  face: string;
+}
 
 /* A dimension being written belongs to `dimension`, but it is the view a caller holds, so the
  * two types are published from here as well. */
@@ -141,12 +149,20 @@ export class SketchView {
   get selected(): Primitive[] { return this._selected; }
   set selected(prims: Primitive[]) {
     this._selected = prims;
+    // assigning the drawing's selection, even to nothing, lets the solids go: a press on a
+    // callout or on the constraint list selects that instead
+    this._solids = [];
     if (prims.length) this.dropImage();
     // picking a view is choosing where to draw: a plane selected on its own becomes the current
     // one, and stays so past the selection — the point drawn next is in it
     if (prims.length === 1 && prims[0] instanceof Plane) this.plane = prims[0];
   }
   private _selected: Primitive[] = [];
+  /** The solids selected, each by the face the click landed on — the third selection, exclusive
+   *  with the other two for the picture's reason: a solid is not a `Primitive`, nothing
+   *  constrains one beside a point, and holding both would leave Delete ambiguous. */
+  get selectedSolids(): readonly SolidPick[] { return this._solids; }
+  private _solids: SolidPick[] = [];
   /** **The current plane**: the view every point a tool mints is drawn in, or null for the
    *  page.  A proxy of the current sketch, carried across a re-elaboration by name like the
    *  selection, and let go when the name no longer resolves — a deleted plane, or a load. */
@@ -557,6 +573,7 @@ export class SketchView {
   private swap(next: Document, fit: boolean, carry = false): void {
     this.settle();                    // before the swap: nothing in flight may reach the new sketch
     const held = carry ? this.namesOf(this.selected) : [];
+    const heldSolids = carry ? this._solids : [];
     const heldPlane = carry && this.plane ? this.doc.nameOf(this.plane) : undefined;
     const old = this.doc;
     this.doc = next;
@@ -568,6 +585,14 @@ export class SketchView {
     // what the swap carries is the answer — otherwise a plane still selected but deliberately
     // *not* current (`choosePlane`) would be re-armed by the rebind
     this.selected = carry ? this.rebind(held) : [];
+    // a solid crosses by name too; the face path is the source's words and needs no rebinding
+    if (heldSolids.length) {
+      const solids = new Map(this.doc.solids().map((s) => [s.name, s.index]));
+      this._solids = heldSolids.flatMap((s) => {
+        const index = solids.get(s.name);
+        return index === undefined ? [] : [{ ...s, index }];
+      });
+    }
     const again = heldPlane ? this.doc.entity(heldPlane) : undefined;
     this.plane = again instanceof Plane ? again : null;
     this.drawOnFront();
@@ -912,6 +937,24 @@ export class SketchView {
   pick(sx: number, sy: number): Primitive | null {
     const { az, el } = this.orbit;
     return pickSeen(this.sketch, this.unit, az, el, ...this.eye(sx, sy), this.world(PICK_PX));
+  }
+
+  /** The object face under the canvas point, nearest the eye, and the solid it is a face of. */
+  solidAt(sx: number, sy: number): SolidPick | null {
+    const { az, el } = this.orbit;
+    const hit = pickSolidSeen(this.sketch, az, el, ...this.eye(sx, sy));
+    if (!hit) return null;
+    const name = this.doc.solids().find((s) => s.index === hit.solid)?.name;
+    return name ? { name, index: hit.solid, face: hit.face } : null;
+  }
+
+  /** Select a solid, or with `add` toggle it in the selection.  It lets the drawing's selection
+   *  and the picture go, as selecting either of them lets the solids go. */
+  pickSolid(pick: SolidPick, add = false): void {
+    const others = this._solids.filter((s) => s.index !== pick.index);
+    this._solids = !add ? [pick] : others.length < this._solids.length ? others : [...others, pick];
+    this._selected = [];
+    this.dropImage();
   }
 
   /** The plane whose pane is under the canvas point, nearest the eye, as the chooser names it — a

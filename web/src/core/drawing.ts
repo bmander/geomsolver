@@ -1,5 +1,6 @@
 /** Solvent Drawing binding. Parsing, solving, reference checks, and rendering stay in Rust. */
 import { core, takeJson, withJson, withStr } from './wasm.js';
+import { coloured, type Run } from './program.js';
 
 export interface DrawingBundle { source: string; files: Record<string, string> }
 
@@ -15,4 +16,9 @@ export function render(text: string, source: string, files: Record<string, strin
     takeJson<{ svg?: string; error?: string }>(core().gcs_drawing_svg(p, n)));
   if (!result?.svg) throw new Error(result?.error ?? 'Could not render drawing');
   return result.svg;
+}
+
+/** Colour a drawing: the drawing lexer's own scan, as `program.highlight` is the parser's. */
+export function highlight(text: string): Run[] {
+  return coloured(text, (p, n) => core().gcs_drawing_highlight(p, n));
 }

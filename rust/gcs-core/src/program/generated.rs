@@ -188,6 +188,7 @@ fn profile(sk: &mut Sketch, d: &Decl, tool: EntRef, motion: usize) -> Result<Cur
         extrusion: false,
         length: None,
         pegs: Vec::new(),
+        slides: Vec::new(),
     })
 }
 

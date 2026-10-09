@@ -27,6 +27,7 @@ use crate::model::{grow, Box2, EntKind, EntRef, Sketch};
 use crate::plane::{dot, Basis};
 use std::collections::BTreeMap;
 
+pub mod region;
 pub mod workspace;
 
 /// The rank tolerance a corner is placed at, relative to the largest singular value of its four
@@ -750,11 +751,7 @@ fn in_outline(pts: &[[f64; 3]], n: [f64; 3], x: [f64; 3]) -> bool {
 /// lose the corner between them, which is the whole thing a shaded picture is for.
 fn lambert(n: [f64; 3], eye: &([f64; 3], [f64; 3])) -> f64 {
     let (right, up) = *eye;
-    let dir = [
-        right[1] * up[2] - right[2] * up[1],
-        right[2] * up[0] - right[0] * up[2],
-        right[0] * up[1] - right[1] * up[0],
-    ];
+    let dir = crate::plane::cross(right, up);
     let l = [
         dir[0] - 0.45 * right[0] + 0.35 * up[0],
         dir[1] - 0.45 * right[1] + 0.35 * up[1],

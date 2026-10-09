@@ -36,6 +36,13 @@ const surface = (provisional: boolean): FieldSurface => ({
 
 const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
+/** Wait until `done`, or `ms` have passed. The throttle spaces surfaces by how long the page was
+ *  busy after the last, which counts any stall of the thread — V8 swapping in optimised code for
+ *  the core is one, a tenth of a second — so a fixed sleep says how fast this machine is. */
+async function until(done: () => boolean, ms = 2000): Promise<void> {
+  for (const end = performance.now() + ms; !done() && performance.now() < end;) await wait(10);
+}
+
 function preview(): { fp: FieldPreview; stub: Stub; arrived: (string | undefined)[] } {
   const stub = new Stub();
   const arrived: (string | undefined)[] = [];
@@ -77,7 +84,7 @@ test('frames of an old job are ignored, and surfaces are applied no faster than 
   // the next waits for the redraw the first began
   stub.send({ id: job.id, solid, key, surface: surface(false) });
   assert.equal(arrived.length, 1);
-  await wait(150);
+  await until(() => arrived.length > 1);
   assert.equal(arrived.length, 2);
   assert.ok(!provisional(doc.sketch, solid));
   // a new elaboration of the same drawing is given the finished surface, and nothing is asked

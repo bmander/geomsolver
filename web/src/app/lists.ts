@@ -199,9 +199,7 @@ export function refreshPanel(): void {
   if (!subject.length) {
     // the traced picture is picked the way an entity is, so it says so where an entity does —
     // it has no constraints on it and so no window, only the line that names what you hold
-    const u = view.underlay;
-    componentEl.textContent = u?.picked
-      ? `image ${u.name} — ${Math.round(u.opacity * 100)}%   |   ` : '';
+    componentEl.textContent = heldLine();
     return;
   }
   const ix = new io.Index(view.sketch);
@@ -212,6 +210,16 @@ export function refreshPanel(): void {
   // status line is one line and the descriptions do not fit across it
   componentEl.textContent = `${subject.length === 1 ? describeEntity(subject[0], ix)
     : `${subject.length} components: ${names}`}   |   `;
+}
+/** The status line for a selection that is not the drawing's: the traced picture, or solids —
+ *  neither has constraints on it, so no window, only the line naming what you hold. */
+function heldLine(): string {
+  const u = view.underlay;
+  if (u?.picked) return `image ${u.name} — ${Math.round(u.opacity * 100)}%   |   `;
+  const solids = view.selectedSolids;
+  if (solids.length === 1) return `solid ${solids[0].name} · face ${solids[0].face}   |   `;
+  if (solids.length) return `${solids.length} solids: ${solids.map((s) => s.name).join(' ')}   |   `;
+  return '';
 }
 // where the window sits is the user's, not the layout's
 dragWindow(cpanel, cpanelTitle);

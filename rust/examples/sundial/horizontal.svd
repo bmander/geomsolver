@@ -1,0 +1,18 @@
+// Presentation of horizontal.sv. Model geometry is independent of this drawing.
+model m from "horizontal.sv"
+
+sheet drawing {
+  size A4
+  scale 0.7
+  label "HORIZONTAL SUNDIAL" at (14mm, 18mm)
+  label "Hour lines from the sun; dashed, midsummer's first and last light" at (14mm, 28mm)
+  label "DIAL" at (14mm, 48mm)
+  sketch dial(m) from m.std.top at (105mm, 130mm)
+  label "GNOMON" at (14mm, 214mm)
+  sketch gnomon(m) from m.std.side at (80mm, 275mm)
+  dimensions in dial
+  dimensions in gnomon
+  dimension m.base in gnomon at (0, -12)
+  style m.first_light { color: #b8860b; dash: 6 3 }
+  style m.last_light { color: #b8860b; dash: 6 3 }
+}

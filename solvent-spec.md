@@ -1,11 +1,18 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.59 — October 2026**
+**Specification, Draft 0.60 — October 2026**
 
-**[0.59] A bound chooses the root.** A dimension's number may be a bound, `distance(>= d)`,
+**[0.60] A bound chooses the root.** A dimension's number may be a bound, `distance(>= d)`,
 `distance(<= d)` or `distance(in: (a, b))`, and `p inside P` / `p outside P` say which side of a
 plane a point is on. A bound adds no row: it says which of the equations' solutions is meant,
 checked on the solution, and a solve is steered to the one where it holds (§9.6).
+
+**[0.59] A free curve touches a held line where it chooses.** `rope touches rod` holds the rope
+to a held line somewhere along it, with nothing along the line holding it: the rope bends there in
+a corner, and where the corner stands on the line is the rope's problem's, one more unknown with
+one more condition — no force along the line (§9.10). A ring sliding on a rod; a rope of an
+integrand of the point alone leaves the line at the angle it met it. Where it already crosses the
+line, it presses nothing.
 
 **[0.58] A point drawn in two planes.** `O := point in P, G` draws `O` in both planes, so on the
 line where they meet: what a layout draws in two views and ties by `project` is said once, and
@@ -1072,7 +1079,7 @@ A minted run is an ordinary line of the drawing carrying the class **`.closure`*
 
 Three restrictions keep the shorthand from swallowing a mistake. An interior gap between two **edges** is still E080: a point in a list can mean nothing else, while two edges that do not meet are edges listed out of order. And **an edge MUST meet at least one of its neighbours**, since that is what says which way it is walked — `bad := face(a, bc, d, -> close)` has two readings and states neither, and is E080 naming the edge. A straight loop with fewer than three corners is E080 for the same reason a prism swept nowhere is. A single item is a loop only as a circle, or as an edge with two ends closed by `-> close`, which mints its chord **[0.28]**.
 
-**A face may have holes.** After its outer boundary, `holes:` introduces one or more circles or named closed loops, separated by commas. Each entry is a complete inner boundary; an open chain is refused (E080). All boundaries MUST lie in the same plane. After solving, every hole MUST be simple, nonzero and strictly inside the outer boundary, and holes MUST be mutually disjoint: touching, crossing, overlapping and nested holes are refused. Loop direction does not determine whether it is a hole; `holes:` does. The final `-> close`, when present, closes only the outer boundary.
+**A face may have holes.** After its outer boundary, `holes:` introduces one or more circles, named closed loops or faces, separated by commas. Each entry is a complete inner boundary; an open chain is refused (E080). A face is a loop, so it is a hole as it stands — its outer loop, which is how a hole of loose edges is written (`h := face(e, f, g, k)`, then `face(a, b, c, d, holes: h)`); a face with holes of its own is refused, and the hole's face is declared before the face it is cut from. All boundaries MUST lie in the same plane. After solving, every hole MUST be simple, nonzero and strictly inside the outer boundary, and holes MUST be mutually disjoint: touching, crossing, overlapping and nested holes are refused. Loop direction does not determine whether it is a hole; `holes:` does. The final `-> close`, when present, closes only the outer boundary.
 
 ```solvent
 annulus := face(barrel, holes: core)
@@ -1927,6 +1934,7 @@ Residual conventions: points are ℝ²; `×` is the scalar 2D cross product; `�
 | `coincident(q, S)` **[0.49]** | the rows F of S's body, with q for its point | as many as the body states | §6.21; the geometry the body declares is made once per use |
 | `tangent(L, S)` **[0.49]** **[0.51]** | F at a contact X on L (two rows putting X on L), and F_x·ẋ: ẋ the direction B − A in X's columns, a **tangent unknown** in the columns of what the body made, 0 in the set's own | 1 for a surface | the derivative read exactly from each row's form (its Jacobian, and its Hessian along ẋ); the body's own rows (a lift) differentiated too |
 | `tangent(S1, S2, at: m)` **[0.51]** | F₁,ₓ·wₖ and F₂,ₓ·wₖ at m, k = 0, 1, with w₀ = e_a + s₀ e_c and w₁ = e_b + s₁ e_c | 2 for two surfaces (four rows over s₀, s₁) | e_c the world axis the sets' normal at m runs most along, chosen once; `m coincident S1`, `m coincident S2` beside it |
+| `touches(k: free curve, L: Line)` **[0.59]** | inside `k`'s problem (§9.10): its arc ends at o + σ·d̂ on `L`, `H` unbroken there, and (λ⁺ − λ⁻)·d̂ | 0 in the drawing | σ and the place along `k` the problem's own; `L` held; written `k touches L` |
 | *across views* **[0.24]** | the relation over the lifts X, Y of its points: X − Y (3); ‖X − Y‖² − e² (1); the point–line magnitude (1); the signed common perpendicular (1); two components of (X − A) × (B − A) across the line (2, `coincident` a line); â·b̂ − cos e (1); â·b̂ (1); (â × b̂) across â (2, `parallel`); ‖B − A‖² − ‖D − C‖² (1, `equal`); ‖X − C‖ − r and n·(X − C) (2, `coincident` a circle); **[0.25]** X − (A + B)/2 (3, `midpoint`); Q + P − 2F, F the foot of P on the line (3, `symmetry`) | as listed | §9.2 |
 | `project(p, q)` **[0.10]** **[0.42]** | d_A·p − d_B·q + d·(o_A − o_B); over a plane solved for, (n̂_A × n̂_B)·(X_A − X_B) | 1 | the planes A, B inferred from `p`, `q`'s memberships; d the fold line they share, §6.7 |
 
@@ -1959,7 +1967,7 @@ A selector left unwritten is read off the seed (§9.2): the branch the seeded po
 
 Inequalities contribute no equations; they select among the discrete solution components of the equality system. Solvers MUST verify them on candidate solutions and MUST NOT report a solution violating one. There are two kinds: the orientation predicates (`ccw`, `cw`), and bounds.
 
-**A bound** **[0.59]** is a dimension whose number says how far the measure may go rather than what it is:
+**A bound** **[0.60]** is a dimension whose number says how far the measure may go rather than what it is:
 
 ```
 a distance(>= 0, along: up) p     // p at or above a
@@ -2082,7 +2090,7 @@ rope minimizes 2 * integral(p.y over p) - integral(p.x over p)
 
 - **What it is over.** **[0.55]** An energy is over a free curve (§6.1); over anything else it is **E040**.
 - **Its length.** Held by `length(L) k`, the length is that. **[0.57]** With none, the rest of the drawing may determine it — with the curve's ends and what the drawing places without the curve held, no motion left changes it: a placed point the curve passes (a span and a sag), a held line it touches — and it is solved for like any unknown. Where nothing does, it is where `E` is stationary in it too — transversality, `H = 0` at the end: two points and an energy with no length is a geodesic of the weight `f`. A free point on the curve moves with it and determines nothing. A length nothing holds and no stationarity settles — a hanging rope only lowers its energy as it lengthens — is left a freedom of the drawing, no row seeking a length that is not there, and SHOULD be said at the energy (**W114**).
-- **A peg presses; a drawing relation yields.** A relation between the curve and other geometry that is still free is satisfied by that geometry: a line drawn tangent to a hanging rope moves onto it. **[0.55]** A held point the curve is stated to pass (`peg coincident rope`, `peg` held) is a **peg**: the curve's problem passes it, its costate free to jump there — a point force — and its direction with it: the rope drapes over the peg in a corner, the place along the rope where it does solved too. Any other relation whose every operand but the curve is held is **E040**: a held line pressed against the curve meets it at a corner, so no smooth tangency to it is stationary.
+- **A peg presses; a drawing relation yields.** A relation between the curve and other geometry that is still free is satisfied by that geometry: a line drawn tangent to a hanging rope moves onto it. **[0.55]** A held point the curve is stated to pass (`peg coincident rope`, `peg` held) is a **peg**: the curve's problem passes it, its costate free to jump there — a point force — and its direction with it: the rope drapes over the peg in a corner, the place along the rope where it does solved too. Any other relation whose every operand but the curve is held is **E040**: a held line pressed against the curve meets it at a corner, so no smooth tangency to it is stationary. **[0.59]** That corner is `k touches L`, `L` a held line: the curve's problem passes the line at a place on it its own, the costate's jump — the force the line bears — square to the line, so nothing holds it along the line, and `H` unbroken. The place on the line is solved with the place along the curve; the verdict's Hessian takes both. Where the curve crosses the line the force is none and the curve as it would be. `touches` over a curve that is not free, or a line not held, is **E040**; it holds no length.
 - **The solution set is the stationary points (P3).** A stationary curve may be a minimum, a maximum or a saddle, and the seed decides which the solve reaches. The diagnosis MUST say which — **[0.55]** by Legendre's condition (the Hamiltonian's sign in the direction along the curve), Jacobi's (no point conjugate to an arc's start before its end), and, with pegs or a free length, the energy's Hessian in where they are — and SHOULD say it where the statement is written, as a claim's verdict is (§9.7): `minimum`, `maximum`, `saddle`, `degenerate` where the second order cannot tell, or `unsolved` where no stationary shape was found. A `maximizes` answered `maximum` found what it asked for. A non-minimum is reported, not refused.
 - A relation word's body may state an energy over its operand: `std.hangs(L) k := { length(L) k; k minimizes integral(p.y over p) }`.
 

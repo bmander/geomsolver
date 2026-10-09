@@ -42,6 +42,7 @@ const DOCS: &[(&str, Shape, i64, State)] = &[
     ("catenary", (7, 0, 0, 0), 2, State::Under),
     ("dido", (7, 1, 0, 0), 0, State::Well),
     ("sag", (8, 0, 0, 0), 0, State::Well),
+    ("ring", (9, 1, 0, 0), 2, State::Under),
     ("fisheye", (7, 0, 0, 0), 2, State::Under),
     ("projectile", (7, 0, 0, 0), 0, State::Well),
     ("hyperbolic", (7, 0, 0, 0), 2, State::Under),

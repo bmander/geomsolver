@@ -58,15 +58,7 @@ impl FacePoly {
     }
 
     pub fn area(&self) -> f64 {
-        let n = self.pts.len();
-        let mut a = 0.0;
-        let Some(&(ox, oy)) = self.pts.first() else { return 0.0 };
-        for i in 0..n {
-            let (x0, y0) = (self.pts[i].0 - ox, self.pts[i].1 - oy);
-            let (x1, y1) = (self.pts[(i + 1) % n].0 - ox, self.pts[(i + 1) % n].1 - oy);
-            a += x0 * y1 - x1 * y0;
-        }
-        a / 2.0
+        ring_area(&self.pts)
     }
 
     /// The loop, turned counter-clockwise in view coordinates — the winding every sweep below
@@ -322,4 +314,18 @@ fn tessellate_arc(c: (f64, f64), r: f64, from: f64, sweep: f64, unit: f64) -> Ve
             (c.0 + r * a.dcos(), c.1 + r * a.dsin())
         })
         .collect()
+}
+
+/// A closed ring's signed area, positive counter-clockwise: the shoelace about its first point,
+/// so a ring far from the origin keeps its digits.
+pub(crate) fn ring_area(pts: &[(f64, f64)]) -> f64 {
+    let n = pts.len();
+    let Some(&(ox, oy)) = pts.first() else { return 0.0 };
+    let mut a = 0.0;
+    for i in 0..n {
+        let (x0, y0) = (pts[i].0 - ox, pts[i].1 - oy);
+        let (x1, y1) = (pts[(i + 1) % n].0 - ox, pts[(i + 1) % n].1 - oy);
+        a += x0 * y1 - x1 * y0;
+    }
+    a / 2.0
 }

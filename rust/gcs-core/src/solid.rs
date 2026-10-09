@@ -39,6 +39,8 @@ mod profile;
 mod primitive;
 mod document;
 pub use profile::{FacePoly,face_poly};
+pub(crate) use profile::ring_area;
+pub(crate) use section::inside_ring;
 use profile::loop_poly;
 pub use primitive::{prism,revolve};
 pub(crate) use primitive::area_vector;
@@ -218,6 +220,24 @@ impl Box3 {
     }
     pub fn is_empty(&self) -> bool {
         self.lo[0] > self.hi[0]
+    }
+    /// Whether the line `p + t·d`, for `t` past `near`, passes through the box (the slab test):
+    /// a ray from `p` with `near` 0, the whole line with −∞.
+    pub fn meets(&self, p: [f64; 3], d: [f64; 3], near: f64) -> bool {
+        if self.is_empty() { return false }
+        let (mut near, mut far) = (near, f64::INFINITY);
+        for k in 0..3 {
+            if d[k] == 0.0 {
+                if p[k] < self.lo[k] || p[k] > self.hi[k] { return false }
+            } else {
+                let a = (self.lo[k] - p[k]) / d[k];
+                let z = (self.hi[k] - p[k]) / d[k];
+                near = near.max(a.min(z));
+                far = far.min(a.max(z));
+                if far < near { return false }
+            }
+        }
+        true
     }
 }
 

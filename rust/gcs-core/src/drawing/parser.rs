@@ -3,7 +3,7 @@ use super::*;
 use std::collections::BTreeSet;
 
 #[derive(Clone)]
-struct Token { text: String, quoted: bool, span: Span }
+pub(super) struct Token { pub(super) text: String, pub(super) quoted: bool, pub(super) span: Span }
 struct P { tokens: Vec<Token>, i: usize }
 type Result<T> = std::result::Result<T, Error>;
 
@@ -199,12 +199,22 @@ impl P {
 }
 
 fn lex(s: &str) -> Result<Vec<Token>> {
-    let mut out = Vec::new(); let mut i = 0;
+    let (tokens, _, error) = scan(s);
+    match error { Some(e) => Err(e), None => Ok(tokens) }
+}
+
+/// The tokens as far as they read, the comments, and the error that stopped the scan if one did:
+/// `parse` refuses at the error, and `highlight` colours what came before it.
+pub(super) fn scan(s: &str) -> (Vec<Token>, Vec<Span>, Option<Error>) {
+    let mut out = Vec::new(); let mut comments = Vec::new(); let mut i = 0;
     while i < s.len() {
         let c = s[i..].chars().next().unwrap();
         if c.is_whitespace() { i += c.len_utf8(); continue }
         if s[i..].starts_with("//") {
-            i += s[i..].find('\n').unwrap_or(s.len() - i); continue;
+            let lo = i;
+            i += s[i..].find('\n').unwrap_or(s.len() - i);
+            comments.push(Span::new(lo, i));
+            continue;
         }
         let lo = i;
         let quoted = c == '"';
@@ -217,10 +227,18 @@ fn lex(s: &str) -> Result<Vec<Token>> {
                     let Some(c) = s[i..].chars().next() else { break };
                     i += c.len_utf8();
                     match c { '"' | '\\' => value.push(c), 'n' => value.push('\n'),
-                        _ => return Err(Error { span: Span::new(lo, i), message: "unsupported string escape".into() }) }
+                        _ => {
+                            out.push(Token { text: value, quoted, span: Span::new(lo, i) });
+                            let e = Error { span: Span::new(lo, i), message: "unsupported string escape".into() };
+                            return (out, comments, Some(e));
+                        } }
                 } else { value.push(c); }
             }
-            if !closed { return Err(Error { span: Span::new(lo, i), message: "unterminated string".into() }) }
+            if !closed {
+                out.push(Token { text: value, quoted, span: Span::new(lo, i) });
+                let e = Error { span: Span::new(lo, i), message: "unterminated string".into() };
+                return (out, comments, Some(e));
+            }
             value
         } else if "{}(),:;".contains(c) { i += 1; c.to_string() }
         else {
@@ -233,8 +251,9 @@ fn lex(s: &str) -> Result<Vec<Token>> {
         };
         out.push(Token { text, quoted, span: Span::new(lo, i) });
         if out.len() > crate::syntax::MAX_STMTS * 32 {
-            return Err(Error { span: Span::new(lo, i), message: "too many drawing tokens".into() });
+            let e = Error { span: Span::new(lo, i), message: "too many drawing tokens".into() };
+            return (out, comments, Some(e));
         }
     }
-    Ok(out)
+    (out, comments, None)
 }

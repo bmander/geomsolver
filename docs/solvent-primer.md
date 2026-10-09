@@ -728,8 +728,14 @@ same with the sign turned. Several statements over one curve add up.
 - **Pegs.** A held point the curve is stated to pass, `peg coincident rope` with `peg` held,
   presses on it: the rope drapes over the peg in a corner, two arcs of the one equation. A held
   line or circle pressed against a curve of held length is E040 — it would meet the curve at a
-  corner, so it cannot be tangent there; draw the touch as a held point. With no length stated,
-  the held line is what sets the length (above).
+  corner, so it cannot be tangent there. With no length stated, the held line is what sets the
+  length (above).
+- **A held line it touches where it chooses.** `rope touches rod`, with `rod`'s ends held, is
+  that corner on the line: the rope is held to the line somewhere, nothing along the line holding
+  it, so the corner slides to where the rope's pull along the line balances (a ring on a rod,
+  `ring.sv`). A rope weighted by its height alone leaves the line at the angle it met it. Where it
+  already crosses the line it presses nothing. Over a curve that is not free, or a line not held,
+  E040; it sets no length.
 - **Under a `unit`** the point is a length and the integrand is dimension-checked: `p.y + 1` is
   E103, `p.y + 1mm` is fine. Any power of length is an energy — a speed `sqrt(h - p.y)` (a throw,
   `projectile.sv`), a weight `10mm / p.y` (the hyperbolic plane, `hyperbolic.sv`), a refractive
@@ -1149,8 +1155,10 @@ block.sv: solved
 
 The face and solid added nothing to the rectangle's six unknowns and six equations.
 
-- **Holes**: `face(barrel, holes: core)` or `holes: first, second` — circles or named closed
-  loops, strictly inside the outer boundary on the same plane, not touching each other. Works for
+- **Holes**: `face(barrel, holes: core)` or `holes: first, second` — circles, named closed
+  loops or faces, strictly inside the outer boundary on the same plane, not touching each other.
+  A face is a hole as it stands, so a hole of loose edges is `h := face(e, f, g, k)` then
+  `face(a, b, c, d, holes: h)` (declared first; a face with holes of its own is refused). Works for
   extrusions and revolutions. A hole *through a part* is usually better as a solid that `cut`s the
   body, which keeps the section simple and names the bore's wall.
 - **Named chains**: `profile := (ab := line(a, b)) -> … -> close` binds the traversal, so
@@ -2264,7 +2272,7 @@ first; `gear_trace.sv` is the deepest; `engine.sv` and its `engine/` modules are
 | guided sweeps and lofts | [elbow](../rust/examples/solid_elbow.sv), [loft](../rust/examples/solid_loft.sv) |
 | a reusable solid with a preview | [cylinder component](../rust/examples/vtwin/components/cylinder.sv), [its drawing](../rust/examples/vtwin/cylinder.svd) |
 | views and projection | [bracket](../rust/examples/bracket.sv) |
-| layouts in space | [skew axes](../rust/examples/skew_axes.sv), [spatial surfaces](../rust/examples/sphere_cone_cylinder.sv), [hypoid pitch cones](../rust/examples/hypoid_pitch_cones.sv) |
+| layouts in space | [skew axes](../rust/examples/skew_axes.sv), [spatial surfaces](../rust/examples/sphere_cone_cylinder.sv), [hypoid pitch cones](../rust/examples/hypoid_pitch_cones.sv), [sundials](../rust/examples/sundial/horizontal.sv) |
 | motions and generated solids | [indexed pattern](../rust/examples/solid_indexed_pattern.sv), [lantern generation](../rust/examples/lantern_generation.sv) |
 | a point's envelope, an inner envelope and a claim over a motion | [Wankel](../rust/examples/wankel/wankel.sv) |
 | a modular assembly | [engine](../rust/examples/engine.sv) |
