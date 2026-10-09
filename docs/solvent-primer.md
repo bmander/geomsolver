@@ -731,7 +731,9 @@ same with the sign turned. Several statements over one curve add up.
   corner, so it cannot be tangent there; draw the touch as a held point. With no length stated,
   the held line is what sets the length (above).
 - **Under a `unit`** the point is a length and the integrand is dimension-checked: `p.y + 1` is
-  E103, `p.y + 1mm` is fine. Without one every number is plain.
+  E103, `p.y + 1mm` is fine. Any power of length is an energy — a speed `sqrt(h - p.y)` (a throw,
+  `projectile.sv`), a weight `10mm / p.y` (the hyperbolic plane, `hyperbolic.sv`), a refractive
+  index (`fisheye.sv`). Without a unit every number is plain.
 - **The verdict.** A stationary curve may be a minimum, a maximum or a saddle — by Legendre's
   condition and Jacobi's (a point conjugate to the start before the end makes a saddle). The CLI
   prints `minimum: rope minimizes integral(p.y over p)`, and the app washes the statement green

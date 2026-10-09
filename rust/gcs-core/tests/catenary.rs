@@ -510,3 +510,61 @@ fn a_rope_with_no_length_to_settle_on_is_said_so() {
     assert_eq!(dof(&mut e), 3);
 }
 
+
+
+/* -- the library's energies ------------------------------------------------------------------ */
+
+/// A library document solved, with its curve's ends.
+fn library(key: &str) -> (Elaborated, (f64, f64), (f64, f64)) {
+    let mut e = solved(gcs_core::examples::source(key).unwrap());
+    let (a, b) = (e.sketch.curves[0].args[0].i(), e.sketch.curves[0].args[1].i());
+    assert_eq!(verdicts(&mut e), ["minimum"], "{key}");
+    let (a, b) = (e.sketch.point_xy(a), e.sketch.point_xy(b));
+    (e, a, b)
+}
+
+/// `sag.sv`: no length stated, the low point placed — the catenary of that sag, and its length.
+#[test]
+fn the_library_sag_is_the_catenary_of_its_sag() {
+    let (e, ..) = library("sag");
+    let (y, len) = sagging(30.0);
+    let o = off(&e.sketch, 0, y);
+    assert!(o < 1e-9, "off the catenary by {o}");
+    assert!((length_of(&e) - len).abs() < 1e-9, "{}", length_of(&e));
+}
+
+/// `fisheye.sv`: a ray in Maxwell's fish-eye, `n = 2 / (1 + r² / R²)`, is the circle through its
+/// ends with `|c|² + R² = ρ²` — linear in the centre, `p·p − 2p·c = R²` at each end.
+#[test]
+fn the_library_fisheye_ray_is_a_circle() {
+    let (e, a, b) = library("fisheye");
+    let r2 = 50.0f64 * 50.0;
+    let (m11, m12, m21, m22) = (2.0 * a.0, 2.0 * a.1, 2.0 * b.0, 2.0 * b.1);
+    let (k1, k2) = (a.0 * a.0 + a.1 * a.1 - r2, b.0 * b.0 + b.1 * b.1 - r2);
+    let det = m11 * m22 - m12 * m21;
+    let c = ((k1 * m22 - m12 * k2) / det, (m11 * k2 - m21 * k1) / det);
+    let rho = (r2 + c.0 * c.0 + c.1 * c.1).sqrt();
+    let o = samples(&e.sketch, 0).into_iter().map(|(x, y)| ((x - c.0).hypot(y - c.1) - rho).abs()).fold(0.0, f64::max);
+    assert!(o < 1e-9, "off the circle by {o}");
+}
+
+/// `projectile.sv`: speed `√(2g(h − y))` from `a`, so the range is `2h sin 2α`; 80 of a possible
+/// 100 is `sin 2α = 0.8`, and the line drive, the lower angle, is the minimum.
+#[test]
+fn the_library_throw_is_the_line_drive_parabola() {
+    let (e, ..) = library("projectile");
+    let al = 0.5 * 0.8f64.asin();
+    let o = off(&e.sketch, 0, |x| x * al.tan() - x * x / (4.0 * 50.0 * al.cos().powi(2)));
+    assert!(o < 1e-9, "off the parabola by {o}");
+}
+
+/// `hyperbolic.sv`: in Poincaré's half-plane the shortest path is the circle through the ends
+/// centred on `y = 0`.
+#[test]
+fn the_library_hyperbolic_path_is_a_semicircle_arc() {
+    let (e, a, b) = library("hyperbolic");
+    let x0 = (b.0 * b.0 + b.1 * b.1 - a.0 * a.0 - a.1 * a.1) / (2.0 * (b.0 - a.0));
+    let rho = (a.0 - x0).hypot(a.1);
+    let o = samples(&e.sketch, 0).into_iter().map(|(x, y)| ((x - x0).hypot(y) - rho).abs()).fold(0.0, f64::max);
+    assert!(o < 1e-9, "off the arc by {o}");
+}

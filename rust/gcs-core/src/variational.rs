@@ -41,9 +41,11 @@ pub fn integrand(text: &str, units: crate::units::Units) -> Result<u32, String> 
 
 /// The power of length an integrand carries — `p.y` is one, a length's integrand none — so the
 /// transversality row is of that degree.  Where the document names a unit the point is a length
-/// (`Units::read_length`) and the integrand is dimension-checked, refused where it is no whole
-/// power or mixes dimensions; where it names none every number is plain, and the degree is read
-/// off how the integrand grows with the point.
+/// (`Units::read_length`) and the integrand is dimension-checked, refused where it mixes
+/// dimensions or is an angle; any power of length is an energy (a speed `sqrt(h - p.y)`, a
+/// slowness `1 / sqrt(h - p.y)`, a hyperbolic weight `1 / p.y`), and the row's tolerance takes
+/// the nearest whole one, none under zero.  Where it names none every number is plain, and the
+/// degree is read off how the integrand grows with the point.
 fn degree(body: &Ast, units: crate::units::Units) -> Result<u32, String> {
     let at = |s: f64| -> Result<crate::expr::Aff, String> {
         let dim = units.read_length();
@@ -67,10 +69,7 @@ fn degree(body: &Ast, units: crate::units::Units) -> Result<u32, String> {
     if !a.dim.ang.is_zero() {
         return Err("an integrand is a length or a power of one, never an angle".into());
     }
-    match a.dim.len.whole() {
-        Some(n) if n >= 0 => Ok(n as u32),
-        _ => Err("an integrand is a whole power of length".into()),
-    }
+    Ok(a.dim.len.value().round().max(0.0) as u32)
 }
 
 /// Whether an energy constraint is a `maximizes`'s term.

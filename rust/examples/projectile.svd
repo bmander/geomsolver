@@ -1,0 +1,10 @@
+// Presentation of projectile.sv. Model geometry is independent of this drawing.
+model m from "projectile.sv"
+
+sheet drawing {
+  size A4
+  label "A THROW BY LEAST ACTION" at (14mm, 18mm)
+  label "The path whose speed integrated along it is stationary: a parabola" at (14mm, 28mm)
+  sketch throw(m) at (60mm, 110mm)
+  dimensions in throw
+}

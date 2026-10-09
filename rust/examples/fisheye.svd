@@ -1,0 +1,10 @@
+// Presentation of fisheye.sv. Model geometry is independent of this drawing.
+model m from "fisheye.sv"
+
+sheet drawing {
+  size A4
+  label "MAXWELL'S FISH-EYE" at (14mm, 18mm)
+  label "A ray through a lens of index 2 / (1 + r^2 / R^2) by Fermat's principle: an arc of a circle" at (14mm, 28mm)
+  sketch ray(m) at (105mm, 110mm)
+  dimensions in ray
+}

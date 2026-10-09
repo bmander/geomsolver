@@ -1,0 +1,10 @@
+// Presentation of hyperbolic.sv. Model geometry is independent of this drawing.
+model m from "hyperbolic.sv"
+
+sheet drawing {
+  size A4
+  label "THE HYPERBOLIC PLANE" at (14mm, 18mm)
+  label "Length measured as ds / y: the shortest path is an arc centred on the line y = 0" at (14mm, 28mm)
+  sketch path(m) at (80mm, 110mm)
+  dimensions in path
+}
