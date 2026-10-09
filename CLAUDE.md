@@ -23,7 +23,8 @@ with neither plane nor `z` is only a 2D sketch's (JSON, hand-built tests), with 
 (`t := axis hint(dir: (x, y, z))`, `AxisE` a[3], d[3]; intrinsics `axis_unit`, `axis_foot` once a
 relation reads its place) is a directed line with no start; a drawn line reads as one. A plane
 over a line holds a hidden axis that is the line (`entities::axes_along`: intrinsic `Parallel3`
-and `PointOnAxis` at its `p1`, or at the end it shares with the plane's other line, where the
+and `PointOnAxis` at its `p1`, or at the end it shares with the plane's other line — each
+line's own image of it, a twin's included (`Sketch::twinned`) — where the
 plane's two `PlaneAxis` rows give way to one intrinsic `Coincident3` of origin and end — four
 rows over three unknowns would be a dependency the structural count cannot see, #88). The lift
 writes both rows (`r parallel l`, `p coincident r`).
@@ -71,7 +72,10 @@ relations, ties each (`planes::tie_twins`, E040 a plane twice; `planes::parallel
 built along (`axes_along`'s `Parallel3`) ends at the point or has it stated on it, a dependency the
 structural count cannot see (#88). The gear's folds are square so. A point is read where its reader
 is drawn: `planes::memberships` puts a twin in a drawn element's slot (`Sketch::twin_in`,
-`replace_point`), `reading::read_twins` in a relation's before `in_space`. JSON `"twins"`, `graft`,
+`replace_point`), `reading::read_twins` in a relation's before `in_space`. A twin goes by its
+point's name (`SourceMap::twin_of`, read by `name_of`/`writable_name`; never filed in `names`, so
+`--where` lists the point once), and a sheet's view selects a point with its twins
+(`drawing/render.rs`). JSON `"twins"`, `graft`,
 `lift` (prints `in P, G`, never a twin) and `edit::remove` (keeps the other planes) carry it.
 `tests/two_planes.rs` is the gate.
 

@@ -31,6 +31,14 @@ impl Sketch {
             .find(|&q| self.plane_of(q) == Some(plane))
     }
 
+    /// Whether `a` and `b` are one point: the same, or images of one point drawn in two planes
+    /// (`Sketch::twins`, §6.7).
+    pub fn twinned(&self, a: usize, b: usize) -> bool {
+        a == b || self.twins.iter().any(|(&q, ts)| {
+            (q == a || ts.contains(&a)) && (q == b || ts.contains(&b))
+        })
+    }
+
     /// Point `t`, drawn in a further plane, made `p`'s twin (§6.7): recorded, and tied to it by
     /// two intrinsic rows — `t` on `p`'s plane, and the two on one line square to the fold the
     /// planes meet on (`Project`) — so `t` is where `p` stands on the fold.  That `p` is on `t`'s

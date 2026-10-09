@@ -2241,7 +2241,7 @@ first; `gear_trace.sv` is the deepest; `engine.sv` and its `engine/` modules are
 | guided sweeps and lofts | [elbow](../rust/examples/solid_elbow.sv), [loft](../rust/examples/solid_loft.sv) |
 | a reusable solid with a preview | [cylinder component](../rust/examples/vtwin/components/cylinder.sv), [its drawing](../rust/examples/vtwin/cylinder.svd) |
 | views and projection | [bracket](../rust/examples/bracket.sv) |
-| layouts in space | [skew axes](../rust/examples/skew_axes.sv), [spatial surfaces](../rust/examples/sphere_cone_cylinder.sv), [hypoid pitch cones](../rust/examples/hypoid_pitch_cones.sv) |
+| layouts in space | [skew axes](../rust/examples/skew_axes.sv), [spatial surfaces](../rust/examples/sphere_cone_cylinder.sv), [hypoid pitch cones](../rust/examples/hypoid_pitch_cones.sv), [sundials](../rust/examples/sundial/horizontal.sv) |
 | motions and generated solids | [indexed pattern](../rust/examples/solid_indexed_pattern.sv), [lantern generation](../rust/examples/lantern_generation.sv) |
 | a point's envelope, an inner envelope and a claim over a motion | [Wankel](../rust/examples/wankel/wankel.sv) |
 | a modular assembly | [engine](../rust/examples/engine.sv) |
