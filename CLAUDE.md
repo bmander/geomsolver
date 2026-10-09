@@ -160,16 +160,17 @@ hand-written spatial kernels have generic twins held to them by `tests/taylor.rs
 set named as an entity (E040 in `rewrite`), `coincident` between two sets, parentheses, a
 non-point `coincident`, a non-line or claimed `tangent`.  `tests/sets.rs` is the gate.
 **Regions (§6.21, §9.6, 0.60, #145 F1):** a set whose body bounds a number is a region
-(`flatten::sets::region`). `q inside S` / `q outside S` are set uses (`may_use`): `expand_use`
-rewrites the body before the walk (`region_body`) — its one number (a relation with an
-`OpArg::Dim`) gains `OpArg::Bound` `Le`/`Ge`, a region's own is kept or turned round, a body of
-only uses (a conjunction) is applied as written by `inside` and refused by `outside` (a union), as
-are an interval `outside`, several numbers and none (E040). A tangency to a region (`expand_use`,
-`expand_touch`, `expand_pair`) is E040; the derivative pass drops `inside`/`outside` a plane with
-the bounds. `boundable` adds `PointLine3` (a cylinder in space) and `Angle3` (a cone), the latter
+(`flatten::sets::region`, over `Written::states_bound`). `q inside S` / `q outside S` are set
+uses (`may_use`): `expand_use` rewrites the body in place before the walk (`region_body`, its
+side from `plane_side_word`) — its one number (a relation with an `OpArg::Dim`) gains
+`OpArg::Bound` `Le`/`Ge`, a region's own is kept or turned round, a body of only uses (a
+conjunction) is applied as written by `inside` and refused by `outside` (a union), as are an
+interval `outside`, several numbers and none (E040). A tangency to a region is E040, once, in
+`expand_set_uses`; the derivative pass drops whatever `states_bound`. `boundable` adds `PointLine3` (a cylinder in space) and `Angle3` (a cone), the latter
 read straight off its cosine (`Constraint::reading`); an angle in a view is refused (signed: a
-half-plane). `Constraint::reading_range` keeps `Bound::aims` — the mirror, then two, four and
-eight times as far past the edge — within what the reading can be (a distance above 0); `across`
+half-plane). `Constraint::reading_range` (`magnitude()` without a `side:`, or `Angle3`'s half
+turn) keeps `Bound::aims` — the mirror, then two, four and eight times as far past the edge,
+stopping where one clamps; an interval's middle alone — within what the reading can be; `across`
 finds the measured point among the operands' own points too (a cone's angle is between two lines)
 and nudges a point off a stationary reading (the cone's axis). `tests/regions.rs` is the gate.
 **`P tangent(at: m) S`, a plane tangent to a set (#145, #148, 0.56):** `sets::expand_touch`

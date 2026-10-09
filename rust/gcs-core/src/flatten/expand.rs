@@ -328,9 +328,7 @@ impl<'a> Walk<'a> {
                         // — `inside` or `outside` a plane among the bounds, lowered later
                         let (gauge, bound) = match r2.form.written() {
                             Some(w) => (crate::constraints::gauge_op(&w.word.text).is_some(),
-                                        w.bound().is_some()
-                                            || crate::constraints::plane_side_word(&w.word.text)
-                                                .is_some()),
+                                        w.states_bound()),
                             None => (false, false),
                         };
                         if r2.claim || gauge || bound {

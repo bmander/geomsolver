@@ -593,17 +593,20 @@ fn bound_of(
         crate::syntax::OpArg::Bound { span, .. } => Some(*span),
         _ => None,
     }));
-    // an angle in a view is signed: bounded, it would be a half-plane, not a cone's wedge
-    if ckind == CKind::Angle {
-        return Err((at, "an angle bounds a region in space, where it is unsigned (a cone's): in a \
-                         view it is signed, and bounded would be a half-plane"
-            .to_string()));
-    }
-    if !ckind.boundable() {
-        return Err((at, format!(
-            "a bound is read off a distance or an ordinate, and `{}` states a number it holds",
-            crate::syntax::snake(ckind.name())
-        )));
+    match ckind {
+        // an angle in a view is signed: bounded, it would be a half-plane, not a cone's wedge
+        CKind::Angle => {
+            return Err((at, "an angle bounds a region in space, where it is unsigned (a \
+                             cone's): in a view it is signed, and bounded would be a half-plane"
+                .to_string()))
+        }
+        k if !k.boundable() => {
+            return Err((at, format!(
+                "a bound is read off a distance or an ordinate, and `{}` states a number it holds",
+                crate::syntax::snake(k.name())
+            )))
+        }
+        _ => {}
     }
     if r.claim {
         let m = "a bound chooses which solution is meant, and a claim asks about the one there \
@@ -613,7 +616,7 @@ fn bound_of(
     let hi = match hi {
         None => None,
         // in the number's own kind: an angle's in radians
-        Some(a) => match to_arg(sk, res, ckind.dimension_slot().map_or(SpecKind::Length, |i| ckind.spec()[i].1), a) {
+        Some(a) => match to_arg(sk, res, ckind.dimension_kind(), a) {
             Ok(CArg::Num(v)) => Some(v),
             Ok(CArg::Expr(e)) => Some(e.value),
             _ => {
