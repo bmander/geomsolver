@@ -36,6 +36,9 @@ pub struct SourceMap {
     /// The points a `coincident` drew in a plane (§6.7, #105), to the plane: their membership is
     /// that statement's, and no clause of their declarations says it.
     pub(crate) drawn: BTreeMap<usize, usize>,
+    /// Each twin of a point drawn in several planes (§6.7), to the point: a twin is called by the
+    /// point's name, and written by it, since a statement naming the point reads it there.
+    pub(crate) twin_of: BTreeMap<EntRef, EntRef>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -129,13 +132,18 @@ impl SourceMap {
 
     /// What the source calls an entity, where it calls it anything.
     pub fn name_of(&self, e: EntRef) -> Option<&String> {
-        self.names.get(&e)?.first()
+        self.names.get(&self.called(e))?.first()
     }
 
     /// The same, where a statement may also be **written** with it — so `None` for one copy of a
     /// block, which the source calls `#3.0.p` and cannot say.
     pub(crate) fn writable_name(&self, e: EntRef) -> Option<&String> {
-        self.writable.contains(&e).then(|| self.name_of(e)).flatten()
+        self.writable.contains(&self.called(e)).then(|| self.name_of(e)).flatten()
+    }
+
+    /// The entity whose name `e` goes by: the point a twin is of, else `e`.
+    fn called(&self, e: EntRef) -> EntRef {
+        self.twin_of.get(&e).copied().unwrap_or(e)
     }
 
     /// Every entity a statement made, in the order `program::build` made them — the declaration's

@@ -646,12 +646,15 @@ pub(super) fn axes_along(sk: &mut Sketch, deferred: &[Deferred]) {
     for p in 0..sk.planes.len() {
         let (u, v) = (sk.planes[p].u as usize, sk.planes[p].v as usize);
         let (lu, lv) = (along.get(&u).copied(), along.get(&v).copied());
-        // the end the two lines share, if they meet at one
+        // the end the two lines share, if they meet at one: each line's own image of it, which
+        // for a point drawn in two planes may be its twin (§6.7)
         let shared = match (lu, lv) {
-            (Some(a), Some(b)) => ends(sk, a).into_iter().find(|x| ends(sk, b).contains(x)),
+            (Some(a), Some(b)) => ends(sk, a).into_iter().find_map(|x| {
+                ends(sk, b).into_iter().find(|&y| sk.twinned(x, y)).map(|y| [x, y])
+            }),
             _ => None,
         };
-        for (axis, line) in [(u, lu), (v, lv)] {
+        for (k, (axis, line)) in [(u, lu), (v, lv)].into_iter().enumerate() {
             let Some(line) = line else { continue };
             sk.turn_axis_along(axis, line);
             let mut c = Constraint::two_line(
@@ -661,7 +664,7 @@ pub(super) fn axes_along(sk: &mut Sketch, deferred: &[Deferred]) {
             );
             c.intrinsic = true;
             sk.add(c);
-            let at = shared.unwrap_or(sk.lines[line].p1 as usize);
+            let at = shared.map_or(sk.lines[line].p1 as usize, |ends| ends[k]);
             let x = sk.world_point(at);
             sk.stand_axis_through(axis, x);
             let mut c = Constraint::new(
@@ -673,7 +676,11 @@ pub(super) fn axes_along(sk: &mut Sketch, deferred: &[Deferred]) {
         }
         // both axes on one point, which is drawn elsewhere: the plane stands at it
         let origin = sk.planes[p].origin as usize;
-        let Some(at) = shared.filter(|&x| sk.points[x].plane != Some(p as u32)) else { continue };
+        let Some([at, _]) = shared
+            .filter(|ends| ends.iter().all(|&x| sk.points[x].plane != Some(p as u32)))
+        else {
+            continue;
+        };
         let rows: Vec<u32> = sk.constraints.iter()
             .filter(|c| c.intrinsic && c.kind == CKind::PlaneAxis && c.args[0].ent() == EntRef::plane(p))
             .map(|c| c.id)

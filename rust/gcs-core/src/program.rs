@@ -410,6 +410,7 @@ fn elaborate_in(p: &Program, refused: &BTreeSet<String>) -> Result<Elaborated, B
     for (point, twin) in &expansion.twins {
         if let (Some(p), Some(t)) = (res.of.get(point), res.of.get(twin)) {
             sk.twins.entry(p.i()).or_default().push(t.i());
+            map.twin_of.insert(*t, *p);
         }
     }
     // memberships, once every kind is built and before anything reads one: `point a in top`

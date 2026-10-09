@@ -67,6 +67,54 @@ fn a_solid_in_the_second_plane_turns_about_a_line_through_it() {
     assert_eq!(e.sketch.solids.len(), 1);
 }
 
+/// A plane on two lines that meet at the point, each through its own image of it — here one drawn
+/// in a plane, one standing in space — stands at it as at any shared end: one tie of its origin,
+/// not the two axes' rows over it, which say the origin twice (the sundial's equator, on a ray
+/// east along the dial and one toward the noon sun, both from the dial's centre).
+#[test]
+fn a_plane_on_two_lines_through_the_point_stands_at_it_once() {
+    let src = "unit mm\nuse std\nO := point in std.top, std.side\nfix(y == 0) O\n\
+               in std.side {\n  T := point hint((40, 50))\n  style := line(O, T)\n}\n\
+               fix((40, 50)) T\nS := point hint((-20, -30, 30))\nfix((-20, -30, 30)) S\n\
+               ray := line(O, S)\nH := plane(u: style, v: ray)\n";
+    let mut e = solved(src);
+    let (style, ray) = (ent(&e, "style").i(), ent(&e, "ray").i());
+    let (a, b) = (e.sketch.lines[style].p1 as usize, e.sketch.lines[ray].p1 as usize);
+    assert_ne!(a, b, "each line reads its own image of O");
+    let d = diagnose(&mut e.sketch, DiagnoseOptions::default());
+    assert_eq!((d.dof, d.status), (0, State::Well));
+    assert_eq!(d.n_params, d.n_equations, "nothing said twice");
+    let h = ent(&e, "H").i();
+    let o = e.sketch.planes[h].o.map(|q| e.sketch.params[q as usize].value);
+    assert!(o.iter().all(|x| x.abs() < 1e-9), "H stands at O: {o:?}");
+}
+
+/// A twin goes by its point's name: a relation read in the second plane names `O`, and a sheet
+/// sketching that plane draws its dimension.
+#[test]
+fn a_twin_is_called_by_its_points_name() {
+    let src = format!(
+        "{FOLDED}O := point hint((0, 0)) in std.top, G\nfix(x == 0) O\n\
+         F := point hint((20, 0)) in std.top, G\n\
+         in G {{\n  base := line(O, F)\n  distance(20) base\n}}\n"
+    );
+    let e = solved(&src);
+    let c = e.sketch.user_constraints().into_iter().find(|c| c.kind == CKind::Distance).unwrap();
+    let said = gcs_core::io::describe_with(c, &|r| e.map.name_of(r).cloned());
+    assert_eq!(said, "O distance(20) F");
+    let doc = gcs_core::drawing::parse(
+        "model m from \"x.sv\"\nsheet s {\n  sketch g(m) from m.G at (50mm, 50mm)\n  \
+         dimensions in g\n}\n",
+    )
+    .unwrap();
+    let models = std::collections::BTreeMap::from([(
+        "m".into(),
+        gcs_core::drawing::Model { sketch: &e.sketch, names: &e.map },
+    )]);
+    let svg = gcs_core::drawing::render(&doc, &models, None).unwrap();
+    assert!(svg.contains(">20<"), "the dimension is drawn: {svg}");
+}
+
 /// A plane built through the point — folded along a line of the first plane through it — holds
 /// it already: one of the tie's three rows is what the fold says, found by the rank and said
 /// nowhere.  The drawing is as determined as it is.
