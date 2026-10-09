@@ -146,3 +146,22 @@ fn a_region_is_said_of_one_number() {
                       p inside funnel\n"), "E040", "in space", "inside");
 }
 
+
+/// A point in a region is a bound on it: a program lifted from the drawing says the bound the
+/// region put there, and the document keeps it.
+#[test]
+fn a_region_use_is_kept_as_its_bound() {
+    let e = solved(&format!("{CROSSING}near := std.Sphere(c, r: 2)\np inside near\n"));
+    let lifted = gcs_core::program::to_program(&e.sketch).text().to_string();
+    assert!(lifted.contains("distance(<= 2mm)"), "{lifted}");
+    let doc = gcs_core::io::from_json(&gcs_core::io::to_json(&e.sketch)).unwrap();
+    assert_eq!(doc.constraints.iter().filter(|c| c.bound.is_some()).count(), 1);
+}
+
+/// No path touches a region: a plane at a point, as a line is refused above.
+#[test]
+fn a_plane_touches_no_region() {
+    refused(&format!("{CROSSING}ball := {{ q | q distance(<= 2) c }}\n\
+                      P := plane(u: std.x, v: std.y)\nP tangent(at: c) ball\n"),
+            "E040", "is a region", "tangent(at: c)");
+}
