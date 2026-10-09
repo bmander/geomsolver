@@ -176,7 +176,7 @@ walked again as a set (`elaborate` loops over `elaborate_in`, `flatten::expand_w
 Lowering is a representation, never a meaning: the solutions are the same either way.
 `tests/membership.rs` is the gate.
 
-**Variational curves (§9.10, §6.1, 0.53–0.55, #121, #144, `variational.rs`, `extremal.rs`):**
+**Variational curves (§9.10, §6.1, 0.53–0.57, #121, #144, `variational.rs`, `extremal.rs`):**
 `k minimizes E` / `k maximizes E` (`StmtKind::Minimize`, `parser/minimize.rs`; indicative, read by
 the word past its ref, as the body words are) with `E` a sum of `c * integral(EXPR over p)` (or
 `over (p, t)`, `t` the unit tangent) along `k`, ds-weighted; `flatten::values::settle_integrand`
@@ -198,9 +198,15 @@ passes, warm starts walked along `dq` (`walk`). The drawing sees a curve of colu
 `extremal::kernel_eval`/`kernel_frame`, gradients by the implicit function theorem; `∇C''` and
 `C'''` by differences), the shape memoised by its constants' content (`extremal::shape_for`,
 shared with `Sketch::curve_shape` and drawing). `length(L) rope` is `CKind::CurveLength` (the
-radius kernel on `L`); with none holding it the energy's first statement carries the
-transversality row `H = 0` (`variational::rows`/`kernel`, `KernelKey::Stationary`). A held row
-pressing the curve that is not a peg is E040 (a corner, never a tangency). `Sketch::
+radius kernel on `L`); with none holding it, the length is the drawing's when the drawing
+determines it (`Sketch::lengths_held`, a rank question at the pose, contacts seeded first: hold the
+columns the rows reading no free curve determine and the curve's ends, and ask whether a null
+vector still moves `L` — a structural count cannot tell a deck's slide from the length's
+freedom), and only otherwise does the energy's first statement carry the transversality row
+`H = 0` (`variational::rows`/`kernel`, `KernelKey::Stationary`) — when `stationary_length` finds
+one (`Energy::stationary`); else the length is `unsettled`, stated no row (one sent the solve after
+ever longer ropes) and left a freedom, W114. A held row pressing a curve of held length that is not a peg is E040 (a corner,
+never a tangency); with the length free it is what sets it. `Sketch::
 settle_variational` (at `add`/`remove`, the end of `graft`, `from_json`, elaboration) compiles each
 curve's definition (keyed by its terms and peg count), its pegs and free length into
 `Sketch::variational`; `seed_extremals` then seeds lengths (a row's number, else `H = 0` by

@@ -100,6 +100,9 @@ pub enum Code {
     /// two planes lying on one another, each with geometry drawn in it: one plane in space
     /// (§6.7, `docs/planes-plan.md`)
     W113,
+    /// a free curve whose length nothing holds and no length makes its energy stationary in: it
+    /// has no shape to settle on (§9.10)
+    W114,
 }
 
 impl Code {
@@ -139,12 +142,13 @@ impl Code {
             Code::W110 => "W110",
             Code::W112 => "W112",
             Code::W113 => "W113",
+            Code::W114 => "W114",
         }
     }
 
     pub fn severity(self) -> Severity {
         match self {
-            Code::W110 | Code::W112 | Code::W113 => Severity::Warning,
+            Code::W110 | Code::W112 | Code::W113 | Code::W114 => Severity::Warning,
             _ => Severity::Error,
         }
     }
