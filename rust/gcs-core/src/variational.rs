@@ -99,8 +99,15 @@ pub struct Energy {
     /// (`Sketch::free_indices`) — kept out of the solve, never marked held, so nothing a copy or
     /// a save reads changes.
     pub held: Vec<u32>,
-    /// No row holds its length: it is where the energy is stationary in it.
+    /// Nothing in the drawing holds its length: it is where the energy is stationary in it, the
+    /// transversality row the energy's first statement carries.
     pub free_len: bool,
+    /// That length, where the energy has one (`stationary_length`, at the pose it was settled at).
+    pub stationary: Option<f64>,
+    /// Nothing holds its length and no length makes the energy stationary (a hanging rope only
+    /// lowers its energy as it lengthens): no row is stated for it, since one would send the
+    /// solve after a length that is not there, and the length is left a freedom (W114).
+    pub unsettled: bool,
     /// The number a row holding its length states, if one does.
     pub stated: Option<f64>,
     pub degree: u32,
@@ -220,8 +227,8 @@ impl Sketch {
     /// Whether each length no row holds is free: where the drawing determines it — a point placed
     /// below the span that the rope passes, a held deck it touches — it is solved for like any
     /// unknown, and only where the drawing leaves it free is it where the energy is stationary in
-    /// it (`lengths_held`).  Judged with no transversality row stated, at a pose where every such
-    /// curve has a shape.
+    /// it (`lengths_held`) — if the energy has such a length at all (`unsettled` where not).
+    /// Judged with no transversality row stated, at a pose where every such curve has a shape.
     fn settle_free_lengths(&mut self) {
         let cand: Vec<usize> =
             (0..self.variational.len()).filter(|&k| self.variational[k].free_len && !self.variational[k].members.is_empty()).collect();
@@ -244,7 +251,16 @@ impl Sketch {
         let curves: Vec<usize> = cand.iter().map(|&k| self.variational[k].curve).collect();
         let held = self.lengths_held(&curves);
         for (j, &k) in cand.iter().enumerate() {
-            self.variational[k].free_len = !held.as_ref().is_some_and(|h| h[j]);
+            if held.as_ref().is_some_and(|h| h[j]) {
+                continue;
+            }
+            match self.stationary_length(self.variational[k].curve) {
+                Some(len) => {
+                    self.variational[k].free_len = true;
+                    self.variational[k].stationary = Some(len);
+                }
+                None => self.variational[k].unsettled = true,
+            }
         }
     }
 
@@ -348,10 +364,12 @@ impl Sketch {
             match stated {
                 Some(d) if d > 0.0 => self.params[l as usize].value = d,
                 _ if e.members.is_empty() => {}
-                _ if e.free_len => match self.stationary_length(i) {
-                    Some(len) => self.params[l as usize].value = len,
-                    None => unsettled.push(i),
-                },
+                _ if e.free_len => {
+                    if let Some(len) = e.stationary {
+                        self.params[l as usize].value = len;
+                    }
+                }
+                _ if e.unsettled => unsettled.push(i),
                 _ => {
                     if let Some(path) = self.chord_through(i) {
                         self.params[l as usize].value = crate::extremal::shoot::EASY * path;

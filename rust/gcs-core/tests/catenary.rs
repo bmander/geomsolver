@@ -492,9 +492,21 @@ fn a_free_point_on_a_free_length_curve_leaves_it_stationary() {
 }
 
 /// A rope with nothing holding its length and no length its energy is stationary in — a hanging
-/// rope only lowers its energy as it lengthens — is said so where its energy is stated.
+/// rope only lowers its energy as it lengthens — is said so where its energy is stated, and no
+/// row sends the solve after the length that is not there: the length is left a freedom, the
+/// rope hangs at the one it has, and the solve and the diagnosis come back at once (they once ran
+/// on, the rope ever longer).
 #[test]
 fn a_rope_with_no_length_to_settle_on_is_said_so() {
-    let (_, d) = read(&ROPE.replace("  length(150) rope\n", ""));
+    let (mut e, d) = read(&ROPE.replace("  length(150) rope\n", ""));
     assert!(d.iter().any(|m| m.starts_with("W114") && m.contains("nothing holds")), "{d:?}");
+    let r = solve(&mut e.sketch, SolveOpts::default());
+    assert!(r.success, "{}", r.message);
+    assert_eq!(dof(&mut e), 1);
+    // and the example with its length deleted, its far end free, as the app is left
+    let (mut e, _) = read(&include_str!("../../examples/catenary.sv").replace("  length(150mm) rope\n", ""));
+    let r = solve(&mut e.sketch, SolveOpts::default());
+    assert!(r.success, "{}", r.message);
+    assert_eq!(dof(&mut e), 3);
 }
+

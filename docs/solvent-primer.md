@@ -721,7 +721,7 @@ same with the sign turned. Several statements over one curve add up.
   the energy is stationary in it too: two points and `k minimizes integral(f over p)` with no
   length is a geodesic of the weight `f`. A free point on the curve moves with it and holds
   nothing. A hanging rope with nothing holding its length has no such length (it only lowers its
-  energy as it lengthens): W114 says so at the energy.
+  energy as it lengthens): its length is left free, and W114 says so at the energy.
 - **Contacts and drawing.** A relation between the curve and other geometry that is still free
   moves that geometry: `rope tangent floor` with `floor` free puts the line on the hanging rope,
   which hangs as before.
