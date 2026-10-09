@@ -22,6 +22,55 @@ impl Sketch {
 
     /// Put a point on a plane, or take it off (`None`).  A membership and not a constraint:
     /// nothing moves, and only `Project` reads it.
+    /// Point `p` as drawn in `plane`: itself where it is drawn there, else its twin there, or
+    /// the point a twin is of and its other twins (`Sketch::twins`, §6.7).
+    pub fn twin_in(&self, p: usize, plane: usize) -> Option<usize> {
+        if self.plane_of(p) == Some(plane) {
+            return Some(p);
+        }
+        let group = self.twins.iter().find(|(&q, ts)| q == p || ts.contains(&p))?;
+        std::iter::once(*group.0).chain(group.1.iter().copied())
+            .find(|&q| self.plane_of(q) == Some(plane))
+    }
+
+    /// Point `t`, drawn in a further plane, made `p`'s twin (§6.7): recorded, and tied to it in
+    /// space by an intrinsic `Coincident3` — the one place a tie is made, by the elaborator, a
+    /// document reader and `graft` alike.
+    pub fn tie_twin(&mut self, p: usize, t: usize) {
+        use crate::constraints::{Arg, CKind, Constraint};
+        let ts = self.twins.entry(p).or_default();
+        if !ts.contains(&t) {
+            ts.push(t);
+        }
+        let ends = vec![Arg::Ent(EntRef::point(p)), Arg::Ent(EntRef::point(t))];
+        let mut tie = Constraint::new(CKind::Coincident3, ends);
+        tie.intrinsic = true;
+        self.add_quiet(tie);
+    }
+
+    /// Entity `e` made over point `to` where it was made over `from` — a reader drawn in a plane
+    /// taking the twin drawn there (§6.7).
+    pub fn replace_point(&mut self, e: EntRef, from: usize, to: usize) {
+        let (from, to) = (from as u32, to as u32);
+        let swap = |x: &mut u32| if *x == from { *x = to };
+        match e.kind {
+            EntKind::Line => {
+                let l = &mut self.lines[e.i()];
+                swap(&mut l.p1);
+                swap(&mut l.p2);
+            }
+            EntKind::Circle => swap(&mut self.circles[e.i()].center),
+            EntKind::Arc => {
+                let a = &mut self.arcs[e.i()];
+                swap(&mut a.center);
+                swap(&mut a.start);
+                swap(&mut a.end);
+            }
+            EntKind::Spline => self.splines[e.i()].ctrl.iter_mut().for_each(swap),
+            _ => {}
+        }
+    }
+
     pub fn set_plane(&mut self, point: usize, plane: Option<usize>) {
         debug_assert!(plane.map_or(true, |p| p < self.planes.len()));
         self.points[point].plane = plane.map(|p| p as u32);

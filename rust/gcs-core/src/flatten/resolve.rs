@@ -480,6 +480,9 @@ fn rewrite(
                     _ => fix(r, bad),
                 }
             }
+            for r in d.membership.also_mut() {
+                fix(r, bad);
+            }
             // a revolution's axis is a line of the body like any other name it writes
             if let Some(r) = d.sweep.as_mut().and_then(|s| s.reference_mut()) {
                 fix(r, bad);

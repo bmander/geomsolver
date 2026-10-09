@@ -192,6 +192,8 @@ pub struct Expansion {
     pub rings: Vec<RingInfo>,
     /// Every set drawn as an element, for the elaborator to judge (`lowering`, #105).
     pub lowered: Vec<Lowered>,
+    /// Every point drawn in further planes and each of its twins, by absolute key (§6.7).
+    pub twins: Vec<(String, String)>,
 }
 
 /// One instance, as bound: which component, under what prefix, given what.
@@ -313,6 +315,8 @@ struct Walk<'a> {
     unlowered: &'a BTreeSet<String>,
     /// Whether the uses of sets are being applied, so a set made now is made inside one.
     applying_sets: bool,
+    /// Every point drawn in further planes and each of its twins — see `Expansion::twins`.
+    twins: Vec<(String, String)>,
 }
 
 /// Expand a program's root component into a flat list of declarations, constraints, gauges and
@@ -422,6 +426,7 @@ impl<'a> Walk<'a> {
             lowered: BTreeMap::new(),
             unlowered: &NONE,
             applying_sets: false,
+            twins: Vec::new(),
         }
     }
 
@@ -475,6 +480,7 @@ impl<'a> Walk<'a> {
             unknowns: self.unknowns,
             rings: self.ring_infos,
             lowered,
+            twins: self.twins,
         }
     }
 }

@@ -925,6 +925,9 @@ impl Decl {
 #[derive(Clone, Debug, Default)]
 pub struct Membership {
     plane: Option<Ref>,
+    /// The further planes a point is drawn in (`point in P, G`, §6.7): it is on each, so where
+    /// they meet, and drawn in each by a twin of its own (`Sketch::twins`).
+    also: Vec<Ref>,
     /// Where the clause is, or an empty span where one would go — `class_span`'s idiom.
     span: Span,
     from: Source,
@@ -945,7 +948,22 @@ pub enum Source {
 impl Membership {
     /// The statement's own clause, as parsed.
     pub fn written_at(plane: Ref, span: Span) -> Membership {
-        Membership { plane: Some(plane), span, from: Source::Written }
+        Membership { plane: Some(plane), also: Vec::new(), span, from: Source::Written }
+    }
+
+    /// The same, on further planes too (`in P, G`).
+    pub fn written_on(plane: Ref, also: Vec<Ref>, span: Span) -> Membership {
+        Membership { also, ..Membership::written_at(plane, span) }
+    }
+
+    /// The further planes, after the first (`in P, G`'s `G`).
+    pub fn also(&self) -> &[Ref] {
+        &self.also
+    }
+
+    /// The same, to rescope.
+    pub fn also_mut(&mut self) -> &mut [Ref] {
+        &mut self.also
     }
 
     /// A membership a *lift* gives a statement it is about to print — written, so it prints,

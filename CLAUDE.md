@@ -40,6 +40,15 @@ shared axes it would sit on them. `P.origin coincident p`, `P coincident p`, `P 
 rows; no plane–plane angle yet); `fix(origin == (x, y, z)) P`. A plane's child slot takes a seed,
 `plane(u: hint(dir: (x, y, z)))` (`KidSeed` carries x, y, z; a point's refuses z), and
 `commit_seeds` writes a minted axis's direction back there.
+**A point drawn in two planes** (0.57, #145): `O := point in P, G` (`Membership::also`). The
+flattener declares a hidden **twin** per further plane beside it (`Walk::twins_of`, key `O@1`,
+`hint(at: O)`, `Expansion::twins`); the elaborator records them (`Sketch::twins`) and ties each by
+an intrinsic `Coincident3` (`Sketch::tie_twin`, `planes::tie_twins`, E040 a plane twice;
+`planes::parallel_twins` E061 after `views::place`). A point is read where its reader is drawn:
+`planes::memberships` puts a twin in a drawn element's slot (`Sketch::twin_in`, `replace_point`),
+`reading::read_twins` in a relation's before `in_space`. JSON `"twins"`, `graft`, `lift` (prints
+`in P, G`, never a twin) and `edit::remove` (keeps the other planes) carry it.
+`tests/two_planes.rs` is the gate.
 An origin already on one axis is placed in fewer rows than three (`P.origin coincident
 std.front`), or the structural count sees a redundancy. W113 warns of two planes lying on one
 another. `views::place`

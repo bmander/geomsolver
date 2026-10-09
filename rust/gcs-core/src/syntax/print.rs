@@ -326,6 +326,10 @@ fn write_decl(out: &mut String, d: &Decl) {
     if let Some(p) = d.membership.written() {
         out.push_str(" in ");
         write_ref(out, p);
+        for q in d.membership.also() {
+            out.push_str(", ");
+            write_ref(out, q);
+        }
     }
 }
 

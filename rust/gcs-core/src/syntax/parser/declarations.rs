@@ -598,7 +598,23 @@ impl<'a> P<'a> {
                 let lo = self.here().lo as usize;
                 self.i += 1;
                 let r = self.refr()?;
-                membership = Membership::written_at(r, Span::new(lo, self.prev_hi()));
+                // `in P, G` — on every plane named, so where they meet, and drawn in each (§6.7)
+                let mut also = Vec::new();
+                while self.peek() == Some(&Tok::P(','))
+                    && matches!(self.t.get(self.i + 1).map(|(t, _)| t), Some(Tok::Ident(_)))
+                {
+                    self.i += 1;
+                    also.push(self.refr()?);
+                }
+                if !also.is_empty() && kind != EntKind::Point {
+                    self.fail(&format!(
+                        "a point is drawn in several planes, where they meet; {} is drawn in \
+                         one, and on two its points are",
+                        kind.a()
+                    ));
+                    return None;
+                }
+                membership = Membership::written_on(r, also, Span::new(lo, self.prev_hi()));
             } else if self.peek_word("hint") || self.peek_word("at") {
                 // the retired spellings — `hint at (0, 0)` and a bare `at (0, 0)` for a pair of
                 // coordinates, `hint at REF [bearing (…)]` for a place (#47.2) — are what every

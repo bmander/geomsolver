@@ -415,6 +415,15 @@ pub fn to_json(sk: &Sketch) -> Json {
     if !duals.is_empty() {
         doc.set("duals", Json::Arr(duals));
     }
+    // each point drawn in further planes, by its twins (§6.7): `[point, twin]`, re-tied on load
+    let twins: Vec<Json> = sk.twins.iter()
+        .flat_map(|(&p, ts)| {
+            ts.iter().map(move |&t| Json::Arr(vec![Json::Int(p as i64), Json::Int(t as i64)]))
+        })
+        .collect();
+    if !twins.is_empty() {
+        doc.set("twins", Json::Arr(twins));
+    }
     doc
 }
 
@@ -587,6 +596,13 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
     for j in d.get("duals").unwrap_or(&empty).arr() {
         let (point, toward, owned) = dual_from_json(&sk, j)?;
         sk.add_dual(point, toward, owned);
+    }
+    // and each twin tied to its point, once both are drawn in their planes (§6.7)
+    for j in d.get("twins").unwrap_or(&empty).arr() {
+        let pair = j.arr();
+        let at = |k: usize| index(pair.get(k).map_or(-1, |v| v.as_i64()), sk.points.len(), "twin");
+        let (p, t) = (at(0)?, at(1)?);
+        sk.tie_twin(p, t);
     }
     let mut ids = Vec::new();
     for c in d.get("constraints").unwrap_or(&empty).arr() {
@@ -1345,6 +1361,15 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         };
         let owned = d.owned.iter().filter_map(|&e| remap(e)).collect();
         dual_map[i] = Some(dst.add_dual(point.i(), toward, owned));
+    }
+    // each twin that came along with its point, tied again (§6.7)
+    for (&p, ts) in &src.twins {
+        let Some(p) = remap(EntRef::point(p)) else { continue };
+        for &t in ts {
+            if let Some(t) = remap(EntRef::point(t)) {
+                dst.tie_twin(p.i(), t.i());
+            }
+        }
     }
     let mut expr = false;
     for c in src.user_constraints() {

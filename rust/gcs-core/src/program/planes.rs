@@ -16,7 +16,17 @@ pub(super) fn memberships(
     skip: &BTreeSet<StmtId>,
     diags: &mut Vec<Diag>,
 ) {
-    for st in body {
+    // a point drawn in several planes and its twins first (§6.7), so a reader drawn in one of
+    // them that names the point finds it there, whatever order they are written in
+    let imaged: BTreeSet<usize> =
+        sk.twins.iter().flat_map(|(&p, ts)| std::iter::once(p).chain(ts.iter().copied())).collect();
+    let first = |st: &&&Stmt| match &st.kind {
+        StmtKind::Decl(d) => res.of.get(&d.name.key().text)
+            .is_some_and(|e| e.kind == EntKind::Point && imaged.contains(&e.i())),
+        _ => false,
+    };
+    let order = body.iter().filter(first).chain(body.iter().filter(|st| !first(st)));
+    for st in order {
         let StmtKind::Decl(d) = &st.kind else { continue };
         let Some(r) = d.membership.plane() else { continue };
         if skip.contains(&st.id) {
@@ -48,6 +58,13 @@ pub(super) fn memberships(
         };
         for p in points {
             match sk.plane_of(p) {
+                // a point drawn in this plane too is read here by its twin (§6.7)
+                Some(q) if q != plane && me.kind != EntKind::Point
+                    && sk.twin_in(p, plane).is_some() =>
+                {
+                    let t = sk.twin_in(p, plane).expect("just asked");
+                    sk.replace_point(me, p, t);
+                }
                 Some(q) if q != plane => {
                     let who =
                         |e: EntRef| map.name_of(e).cloned().unwrap_or_else(|| io::entity_name(e));
@@ -64,6 +81,63 @@ pub(super) fn memberships(
                 }
                 _ => sk.set_plane(p, Some(plane)),
             }
+        }
+    }
+}
+
+/// Each point drawn in further planes tied to its twins in space (§6.7): one intrinsic
+/// `Coincident3` a twin, so the point has the one freedom of the line its planes meet on.  A
+/// point drawn twice in one plane is refused where it is declared.
+pub(super) fn tie_twins(sk: &mut Sketch, map: &SourceMap, diags: &mut Vec<Diag>) {
+    let twins: Vec<(usize, Vec<usize>)> = sk.twins.iter().map(|(&p, t)| (p, t.clone())).collect();
+    for (p, ts) in twins {
+        let mut planes: Vec<Option<usize>> = vec![sk.plane_of(p)];
+        for t in ts {
+            let plane = sk.plane_of(t);
+            if plane.is_none() || planes.contains(&plane) {
+                let site = map.site_of(EntRef::point(p));
+                let who = map.name_of(EntRef::point(p)).cloned()
+                    .unwrap_or_else(|| io::entity_name(EntRef::point(p)));
+                diags.push(Diag {
+                    code: Code::E040,
+                    span: site.map(|s| s.span).unwrap_or_default(),
+                    stmt: site.map(|s| s.stmt),
+                    message: format!("`{who}` is drawn in each plane it names once"),
+                });
+                continue;
+            }
+            planes.push(plane);
+            sk.tie_twin(p, t);
+        }
+    }
+}
+
+/// A point drawn in two planes that are parallel, where they stand once placed: they meet on no
+/// line, so the point can be on both only were they one (E061, the rule `project` states).
+pub(super) fn parallel_twins(sk: &Sketch, map: &SourceMap, diags: &mut Vec<Diag>) {
+    for (&p, ts) in &sk.twins {
+        let Some(first) = sk.plane_of(p) else { continue };
+        let n = sk.basis(first).normal();
+        for &t in ts {
+            let Some(other) = sk.plane_of(t).filter(|&q| q != first) else { continue };
+            let m = sk.basis(other).normal();
+            let across = crate::space::cross(n, m);
+            if crate::space::dot(across, across).sqrt() > 1e-9 {
+                continue;
+            }
+            let site = map.site_of(EntRef::point(p));
+            let name = |e: EntRef| map.name_of(e).cloned().unwrap_or_else(|| io::entity_name(e));
+            diags.push(Diag {
+                code: Code::E061,
+                span: site.map(|s| s.span).unwrap_or_default(),
+                stmt: site.map(|s| s.stmt),
+                message: format!(
+                    "`{}` and `{}` are parallel, and meet on no line `{}` could be on",
+                    name(EntRef::plane(first)),
+                    name(EntRef::plane(other)),
+                    name(EntRef::point(p)),
+                ),
+            });
         }
     }
 }

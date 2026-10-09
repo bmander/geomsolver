@@ -881,6 +881,12 @@ it is drawn there). `l coincident P` puts both ends in. The first plane wins; a 
 space. A point whose seed has a `z`, whose three numbers a `fix` holds, or that is claimed on the
 plane stays in space, held there by a row.
 
+**A point may be drawn in two planes**: `O := point in P, G` is on both, so on the line where they
+meet, and each plane's geometry reads it as its own — `arc(center: O)` drawn in `G`, `line(O, T)`
+in `G`, `O distance(5) q` with `q` in `G` are `G`'s. It is what a two-view layout draws twice and
+ties by `project`, said once. The same plane twice is E040, parallel planes E061, and only a
+point takes several (a line's ends do).
+
 **An axis** is a directed line in space with no start, drawn in no plane: a direction, and a place
 once something reads it.
 

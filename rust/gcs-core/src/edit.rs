@@ -869,9 +869,20 @@ pub fn remove(
         // only a clause this statement wrote has a span here to take out; a block's comes out
         // with the block's own header below
         let (Some(p), at) = (m.written(), m.span()) else { continue };
-        if names.contains(&p.root.text) && !at.is_empty() {
-            clauses.push(clause_splice(prog.text(), at, None));
+        if at.is_empty() {
+            continue;
         }
+        // a point drawn in several planes keeps the ones that stay (§6.7)
+        let planes: Vec<&crate::syntax::Ref> = std::iter::once(p).chain(m.also()).collect();
+        let kept: Vec<String> = planes.iter()
+            .filter(|r| !names.contains(&r.root.text))
+            .map(|r| crate::syntax::ref_text(r))
+            .collect();
+        if kept.len() == planes.len() {
+            continue;
+        }
+        let with = (!kept.is_empty()).then(|| format!("in {}", kept.join(", ")));
+        clauses.push(clause_splice(prog.text(), at, with));
     }
     // and an `in PLANE { … }` block whose plane goes: the header and its brace come out, and
     // the statements stay — points in space now, exactly as a clause's point stays.  The block's
