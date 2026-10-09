@@ -1631,6 +1631,16 @@ impl Part {
                 }
             }
             if wall(e) {
+                // a held entity is followed no further, but it is rebuilt over what it is made of
+                // — a held spline over its control points (#134) — and those are held with it, so
+                // they stop here in turn, each with its plane.  A plane's own are kept below.
+                if e.kind != EntKind::Plane && !sk.entity_params(e).is_empty() {
+                    for c in sk.children(e) {
+                        if keep.insert(c) {
+                            queue.push(c);
+                        }
+                    }
+                }
                 continue;
             }
             let mut next = sk.children(e);
