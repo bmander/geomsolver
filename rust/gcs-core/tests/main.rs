@@ -12,6 +12,7 @@
 mod common;
 mod bounds;
 mod regions;
+mod region_blank;
 mod region_solids;
 mod evaluated_solid;
 mod renderer;

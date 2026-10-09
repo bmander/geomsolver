@@ -76,14 +76,20 @@ impl<'a> Walk<'a> {
     /// the use's own (`{where the use stands}#{statement}.0.`), turned with the use where it
     /// stands in a ring's copy and dressed in its classes.  What the walk makes from here on is
     /// the use's.
-    pub(super) fn begin(&self, u: &Use, closure: &Scope) -> Application {
+    pub(super) fn begin(&mut self, u: &Use, closure: &Scope) -> Application {
         self.begin_nth(u, closure, 0)
     }
 
     /// `begin`, the `n`th of several applications one use makes (`S1 tangent(at: m) S2`, one per
-    /// set), each under a prefix of its own.
-    pub(super) fn begin_nth(&self, u: &Use, closure: &Scope, n: usize) -> Application {
-        let prefix = format!("{}#{}.{n}.", u.scope.prefix(), u.st.id.0);
+    /// set), each under a prefix of its own.  Two uses standing in one place under one statement
+    /// — two sets used in one body, every relation of which carries the outer use's statement —
+    /// take the next numbers there, or what each makes would be named alike.
+    pub(super) fn begin_nth(&mut self, u: &Use, closure: &Scope, n: usize) -> Application {
+        let base = format!("{}#{}", u.scope.prefix(), u.st.id.0);
+        let taken = self.applied.entry((base.clone(), n)).or_insert(0);
+        let k = n + *taken * 2;
+        *taken += 1;
+        let prefix = format!("{base}.{k}.");
         let mut scope = closure.clone();
         scope.prefixes.insert(0, prefix.clone());
         scope.copies = true;

@@ -104,3 +104,17 @@ fn a_region_solid_is_bounded_on_one_axis() {
     refused(&format!("{FRAME}rail := {{ p | p coincident up; p distance(5) c }}\nr := solid(rail)\n"),
             "E040", "bounds nothing", "r := solid(rail)");
 }
+
+/// Two sets with declarations of their own in one body (two cones, each drawing the line from its
+/// apex to the point): each use is applied under a prefix of its own, or the second cone's line
+/// is named as the first's and never built.
+#[test]
+fn two_cones_in_one_region() {
+    let e = solved(&format!("{FRAME}wide := std.Cone(up, half: 30deg)\n\
+                             narrow := std.Cone(up, half: 15deg)\n\
+                             shade := {{ p | p inside wide; p outside narrow; p inside lid }}\n\
+                             lamp := solid(shade)\n"));
+    let (t30, t15) = ((30f64).to_radians().tan(), (15f64).to_radians().tan());
+    let want = PI * 1000.0 * (t30 * t30 - t15 * t15) / 3.0;
+    holds(&e, "lamp", want, &[[4.0, 0.0, 9.0]], &[[0.5, 0.0, 9.0], [7.0, 0.0, 9.0]]);
+}

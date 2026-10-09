@@ -321,6 +321,9 @@ struct Walk<'a> {
     twins: Vec<(String, String)>,
     /// Every region solid's probe — see `Expansion::probes`.
     probes: Vec<String>,
+    /// How many applications have begun under each use's place and statement, by the number the
+    /// use asked for (`begin_nth`): what keeps two uses there apart.
+    applied: BTreeMap<(String, usize), usize>,
 }
 
 /// Expand a program's root component into a flat list of declarations, constraints, gauges and
@@ -432,6 +435,7 @@ impl<'a> Walk<'a> {
             applying_sets: false,
             twins: Vec::new(),
             probes: Vec::new(),
+            applied: BTreeMap::new(),
         }
     }
 

@@ -1,6 +1,10 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.60 — October 2026**
+**Specification, Draft 0.61 — October 2026**
+
+**[0.61] A region is a solid.** `blank := solid(R)`, `R` a set, is the solid of the points inside
+it: a ball, a shell, a cone met with a ball, the hypoid's blank — `{ p | p inside tip; p inside
+heel; p outside toe; p outside back }` — built exactly as one revolution of its meridian (§6.9).
 
 **[0.60] Regions.** A set whose body bounds a number is a region, and `p inside S` / `p outside S`
 put a point in or out of any set, its one number read as at most or at least what it says: inside a
@@ -1103,7 +1107,21 @@ lug := solid(lug_f, about: ax, sweep: 90deg, sense: cw)
 body := solid(block)                              // a body, whose stock is `block`
 bore cut body                              //   ... less the bore
 boss union body                                //   ... plus the boss
+blank := solid(R)                                 // a region: the points inside the set R
 ```
+
+**A region is a solid** **[0.61]**. `solid(R)`, its one operand a set, is the solid of the points
+inside `R` (§6.21): `R`'s body applied to a point, each number it bounds there a bound of the
+solid — a distance from a point a ball, from a line a cylinder, an angle from a line seen from its
+start a cone, an ordinate along a plane's normal a half-space. So `solid(std.Sphere(c, r: 5))` is
+the ball, and `solid({ p | p inside tip; p inside heel; p outside toe; p outside back })` the
+hypoid's blank. Its bounds must share one axis — balls centred on it, cylinders and cones about it,
+planes square to it — and enclose material all round; it is then one revolution of a region in the
+half-plane through that axis, built exactly (planes, cylinders, cones, spheres, tori). That is
+judged where the solid is evaluated, on the solved drawing, as a face's loop is: a cylinder alone,
+a ball off the axis, or bounds with no point in common are refused there. A set whose body states
+anything but bounds (a disc's plane) is **E040**. A region solid is a solid like any: `cut`,
+`bound`, `union`, swept and placed.
 
 **The brackets are what the thing is made of** (§4.3, §6.2), so the sweep stands in them beside the face: `from:`, `to:`, `depth:`, `through:`, `along:`, `about:`, `sweep:` and `sense:` are labels of the constructor and are neither seeds nor constraints. A mixture of sweep forms, a half-written prism (`from:` with no `to:`), `from:`/`to:` beside `depth:`, and `sweep:` or `sense:` with no `about:` are each refused where they are written, with the shapes a solid has.
 
@@ -1994,7 +2012,7 @@ p outside P                       // in front of it
 - **Closed:** `>=`, `<=` and `in:` include their edge, where a solution may stand. `>` and `<` are refused.
 - **Its number:** zero may be written, unlike an ordinate's equality, which zero makes a `level` (§9.2). It may not read an unknown, and a bound may not be a `claim` (**E040**): a bound chooses which solution is meant, and a claim asks about the one there is.
 - **Meaning:** outside a set body, a bound **chooses the root**. It adds no row and no freedom, and is drawn as no callout. It does the work a seed did when the seed only picked a side, so it is read on the seeds first: a point whose seed breaks a bound is carried across its edge, to the mirror of its reading, as if it had been seeded there, and everything seeded from it or placed through it follows. The solver then checks it on the solution. Where it still does not hold, the solver looks for the root where it does, from the seeds and from the solution, and fails the solve where none is found (`a bound does not hold`). The diagnosis tells which bounds are violated, and which hold with the solution on their edge (*active*).
-- **Inside a set body** a bound makes the set a region, and `inside`/`outside` put a point in one (§6.21) **[0.60]**. A region as a solid is to come (#145, F2–F3).
+- **Inside a set body** a bound makes the set a region, and `inside`/`outside` put a point in one (§6.21) **[0.60]**. `solid(R)` is a region's solid (§6.9) **[0.61]**.
 - `inside` between two solids remains the claim of §9.8; which one a statement is follows from its operands.
 
 ### 9.7 Claims **[0.5]**

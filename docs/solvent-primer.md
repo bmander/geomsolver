@@ -1406,6 +1406,25 @@ sheet's to state.
 | `x cut y` and `y cut x` | E041 — "`x` is made of itself" |
 | `h cut h` | E080 — "`h` is cut itself" |
 
+
+**A region is a solid** (0.61): `solid(R)`, `R` a set, is the points inside it.
+
+```sv
+big := std.Sphere(c, r: 5)
+small := std.Sphere(c, r: 3)
+ball := solid(big)
+skin := { p | p inside big; p outside small }        // a shell
+shell := solid(skin)
+tube := std.Cylinder(up, r: 2)
+can := { p | p inside tube; p outside std.top; p inside lid }   // capped by two planes
+tin := solid(can)
+```
+
+Every bound must share one axis (balls centred on it; cylinders, cones about it; planes square to
+it) and close the material all round; the solid is then one revolution of its meridian, built
+exactly. A cylinder alone, or a ball off the axis, is refused where the solid is evaluated. Cut,
+bound, union, sweep and place it as any solid.
+
 ### 1.15 Spatial geometry read after the solve
 
 These declarations name exact geometry derived from solved entities. Except for envelopes in the

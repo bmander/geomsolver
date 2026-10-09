@@ -173,6 +173,21 @@ turn) keeps `Bound::aims` — the mirror, then two, four and eight times as far 
 stopping where one clamps; an interval's middle alone — within what the reading can be; `across`
 finds the measured point among the operands' own points too (a cone's angle is between two lines)
 and nudges a point off a stationary reading (the cone's axis). `tests/regions.rs` is the gate.
+**A region is a solid (§6.9, 0.61, #145 F2/F3):** `blank := solid(R)`, R a set, is `SolidDef::Region
+{ probe, terms }`. The flattener (`Walk::region_of`) rewrites `solid(R)`'s `Sweep::Body` over a set
+to `Sweep::Region { probe }`, declares the probe `{solid}#probe` (in space, seeded off the axis,
+`Expansion::probes` → `Sketch::probes`) and states `probe inside R`; `constrain` takes every bound
+landing on a probe as a `RegionTerm` instead of a row (`probe_of`, `region_term`: by kind —
+`Distance(3)` a ball, `PointLine(Distance|3)` a cylinder, `Angle3` from a line's start a cone, an
+`Ordinate` along a plane's `n` a half-space; numbers by `settled_number`), and the build moves them
+into the solid and holds the probe. `solid::region::meridian` folds the terms' (r, z) regions in a
+box by `brep::planar::boolean` (coaxial, bounded, nonempty, else refused where evaluated); every
+evaluator reads it — the recipe a `revolve` (`recipe::region_profile`, `Profile::to_json`), the field
+`RevolvedRegion::of_meridian` (also `read`, so patches trim by it), facets `region::face_polys`
+turned by `primitive::revolve`, admission `Turns::Line`/`Ball` and `tool()`. Two uses standing in
+one place under one statement take distinct prefixes (`Walk::applied`, `begin_nth`).
+`tests/region_solids.rs` and `tests/region_blank.rs` (the blank as a region against today's, both
+designs, both members) are the gates.
 **`P tangent(at: m) S`, a plane tangent to a set (#145, #148, 0.56):** `sets::expand_touch`
 applies the body at `m` and walks it `Pass::Made` then `Pass::Along` toward `P.u` and `P.v`
 (`model::Toward::Axis`: the axis's `d` columns fed where a line's ends go, `dual_kernel`
