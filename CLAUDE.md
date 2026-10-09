@@ -193,7 +193,7 @@ walked again as a set (`elaborate` loops over `elaborate_in`, `flatten::expand_w
 Lowering is a representation, never a meaning: the solutions are the same either way.
 `tests/membership.rs` is the gate.
 
-**Variational curves (§9.10, §6.1, 0.53–0.57, #121, #144, `variational.rs`, `extremal.rs`):**
+**Variational curves (§9.10, §6.1, 0.53–0.59, #121, #144, #149, `variational.rs`, `extremal.rs`):**
 `k minimizes E` / `k maximizes E` (`StmtKind::Minimize`, `parser/minimize.rs`; indicative, read by
 the word past its ref, as the body words are) with `E` a sum of `c * integral(EXPR over p)` (or
 `over (p, t)`, `t` the unit tangent) along `k`, ds-weighted; `flatten::values::settle_integrand`
@@ -223,15 +223,25 @@ freedom), and only otherwise does the energy's first statement carry the transve
 `H = 0` (`variational::rows`/`kernel`, `KernelKey::Stationary`) — when `stationary_length` finds
 one (`Energy::stationary`); else the length is `unsettled`, stated no row (one sent the solve after
 ever longer ropes) and left a freedom, W114. A held row pressing a curve of held length that is not a peg is E040 (a corner,
-never a tangency); with the length free it is what sets it. `Sketch::
+never a tangency); with the length free it is what sets it. **The corner on a held line is
+`rope touches rod`** (#149, `CKind::CurveTouchesLine`, `built`, 0 rows, refused a claim): a
+**slide** (`shoot::Stop::Slide { o, d }`, a peg is `Stop::Peg`; `CurveE::slides`,
+`Energy::slides`, `Sketch::slide_line`), its place on the line `σ` one more unknown of the BVP and
+`(λ⁺ − λ⁻)·d = 0` (no force along it) one more row; E040 where the line's ends are not held or the
+curve is not free. Never walked in from the corner-free shape touching a moved line (a fork:
+sliding along the line and the curve are one motion there): `pressed` pins it as a peg at the
+foot of the free curve's nearest point, then `release` eases the force along the line it bore to
+none (`Problem::pull`). The verdict's Hessian takes `σ` (gradient the costate's jump along `d`);
+a free curve's polyline samples each stop's place, so a corner draws sharp. `tests/slide.rs`,
+`ring.sv`. `Sketch::
 settle_variational` (at `add`/`remove`, the end of `graft`, `from_json`, elaboration) compiles each
-curve's definition (keyed by its terms and peg count), its pegs and free length into
+curve's definition (keyed by its terms and peg and slide counts), its stops and free length into
 `Sketch::variational`; `seed_extremals` then seeds lengths (a row's number, else `H = 0` by
 bracketing above the chord) and contacts left at 0. The verdict (`extremal::verdict`: Legendre,
 conjugate points as sign changes of `det ∂p/∂λ₀`, the Hessian in pegs' places and a free length)
 is `Diagnosis::extrema` (`unsolved` where no shape is found), reported by the CLI, the JSON
 (`[id, verdict, asked]`) and the app's marks. `length(L) s` on a spline stays `SplineLength`
-(`integral.rs`). `std.hangs(L) k` is a word. `tests/{extremal,catenary,minimize,spline_length}.rs`
+(`integral.rs`). `std.hangs(L) k` is a word. `tests/{extremal,catenary,slide,minimize,spline_length}.rs`
 are the gates.
 
 **Predicates, applied (§9.9, §6.21, 0.50, #103):** a relation word and a set are one predicate —

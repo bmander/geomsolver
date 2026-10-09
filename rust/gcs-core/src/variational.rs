@@ -9,11 +9,13 @@
 //!   terms summed into the curve's definition (`CurveBody::Extremal`), compiled once per text.
 //! - **What presses it**: a held point the curve is stated to pass (`peg coincident rope`, the
 //!   point held) is part of its problem — a peg, a corner there — and its row is absorbed (it
-//!   compiles none).  A row reading the curve and geometry still free is the drawing's, read
-//!   through the curve's contract like any curve's: a free line tangent to a hanging rope moves
-//!   onto it.  A row whose every other operand is held and is not a peg is refused where the
-//!   curve's length is held: a held line pushed against the rope meets it at a corner, so no
-//!   smooth tangency to it is a minimiser.  Where nothing holds the length, it is what sets it.
+//!   compiles none).  A held line the curve is stated to touch (`rope touches floor`, #149) is
+//!   part of it too — a slide, a corner on the line where the curve chooses, no force along the
+//!   line.  A row reading the curve and geometry still free is the drawing's, read through the
+//!   curve's contract like any curve's: a free line tangent to a hanging rope moves onto it.  A
+//!   row whose every other operand is held and is neither is refused where the curve's length is
+//!   held: a held line pushed against the rope meets it at a corner, so no smooth tangency to it
+//!   is a minimiser (`touches` says so).  Where nothing holds the length, it is what sets it.
 //! - **Its length**: the curve's own unknown (`CurveE::length`).  Held by a `length` row it is
 //!   that; determined by the rest of the drawing — a placed point the curve passes, a held line
 //!   it touches — it is solved for (`lengths_held`); left free by everything, it is wherever the
@@ -78,10 +80,10 @@ pub fn maximizes(c: &Constraint) -> bool {
 }
 
 /// The definition key an energy's Lagrangian is shared under: its terms as written, signed, and
-/// how many pegs its curves pass (which sets its contacts' constant widths).
-fn key_of(terms: &[(f64, String)], maximize: bool, pegs: usize) -> String {
+/// how many pegs its curves pass and lines they touch (which set its contacts' constant widths).
+fn key_of(terms: &[(f64, String)], maximize: bool, pegs: usize, slides: usize) -> String {
     let t: Vec<String> = terms.iter().map(|(c, s)| format!("{c}*({s})")).collect();
-    format!("extremal:{}:{pegs}:{}", if maximize { "max" } else { "min" }, t.join("+"))
+    format!("extremal:{}:{pegs}:{slides}:{}", if maximize { "max" } else { "min" }, t.join("+"))
 }
 
 /// One free curve's energy, as `Sketch::settle_variational` last read it.
@@ -93,6 +95,8 @@ pub struct Energy {
     pub maximize: bool,
     /// The held points it passes: the rows that state each, and the point.
     pub pegs: Vec<(u32, u32)>,
+    /// The held lines it touches (`touches`, #149): the rows that state each, and the line.
+    pub slides: Vec<(u32, u32)>,
     /// The pegs' places along the curve (their contacts' own unknowns): the curve's problem says
     /// where they are, so while it has the peg they are no column of the drawing's
     /// (`Sketch::free_indices`) — kept out of the solve, never marked held, so nothing a copy or
@@ -123,7 +127,7 @@ impl Sketch {
     /// expressions are (`add`, `remove`, `graft`, a document read, the end of elaboration): its
     /// definition compiled from its terms, its pegs, whether its length is free.  Returns what is
     /// refused, by constraint id: an energy over anything but a free curve, a held row pressing
-    /// one that is not a peg.
+    /// one that is not a peg, a touch of anything but a held line by a free curve.
     pub fn settle_variational(&mut self) -> Vec<(u32, String)> {
         let free: Vec<usize> = (0..self.curves.len()).filter(|&i| self.curve_extremal(i)).collect();
         let mut faults = Vec::new();
@@ -155,6 +159,10 @@ impl Sketch {
                 Arg::Ent(e) if e.kind == EntKind::Curve && energies.contains_key(&e.i()) => Some(*e),
                 _ => None,
             }) else {
+                if c.kind == CKind::CurveTouchesLine {
+                    let why = "only a free curve, `curve(a, b)`, is pressed onto a line where it chooses";
+                    faults.push((c.id, why.into()));
+                }
                 continue;
             };
             let own = self.entity_params(e);
@@ -175,6 +183,11 @@ impl Sketch {
                         en.pegs.push((c.id, p.idx));
                     }
                 }
+                CKind::CurveTouchesLine if others_held => en.slides.push((c.id, c.args[1].ent().idx)),
+                CKind::CurveTouchesLine => faults.push((
+                    c.id,
+                    "a free curve touches a held line, where the curve chooses: hold the line's ends".into(),
+                )),
                 _ if others_held => pressing.push((c.id, e.i())),
                 _ => {}
             }
@@ -186,7 +199,8 @@ impl Sketch {
                 faults.push((
                     cid,
                     "a held line or circle pushed against a free curve of held length meets it at a \
-                     corner, so it cannot be tangent there; a held point the curve passes is a peg"
+                     corner, so it cannot be tangent there; a held point the curve passes is a peg, \
+                     and a held line it touches where it chooses is `curve touches line`"
                         .into(),
                 ));
             }
@@ -194,7 +208,7 @@ impl Sketch {
         // each curve's definition, compiled once per energy as written
         for (&i, en) in &energies {
             let ts = terms.get(&i).cloned().unwrap_or_default();
-            let key = key_of(&ts, en.maximize, en.pegs.len());
+            let key = key_of(&ts, en.maximize, en.pegs.len(), en.slides.len());
             let def = match self.curve_defs.iter().position(|d| d.name == key) {
                 Some(d) => d,
                 None => {
@@ -204,12 +218,13 @@ impl Sketch {
                         let refs: Vec<(f64, &str)> = ts.iter().map(|(c, s)| (*c, s.as_str())).collect();
                         crate::extremal::Lagrangian::compile(&refs, en.maximize, self.units).ok()
                     };
-                    self.curve_defs.push(crate::model::extremal_def(key, lag, en.pegs.len()));
+                    self.curve_defs.push(crate::model::extremal_def(key, lag, en.pegs.len(), en.slides.len()));
                     self.curve_defs.len() - 1
                 }
             };
             self.curves[i].def = def as u32;
             self.curves[i].pegs = en.pegs.iter().map(|&(_, p)| p).collect();
+            self.curves[i].slides = en.slides.iter().map(|&(_, l)| l).collect();
         }
         for en in energies.values_mut() {
             en.held = en

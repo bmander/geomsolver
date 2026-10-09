@@ -728,8 +728,14 @@ same with the sign turned. Several statements over one curve add up.
 - **Pegs.** A held point the curve is stated to pass, `peg coincident rope` with `peg` held,
   presses on it: the rope drapes over the peg in a corner, two arcs of the one equation. A held
   line or circle pressed against a curve of held length is E040 — it would meet the curve at a
-  corner, so it cannot be tangent there; draw the touch as a held point. With no length stated,
-  the held line is what sets the length (above).
+  corner, so it cannot be tangent there. With no length stated, the held line is what sets the
+  length (above).
+- **A held line it touches where it chooses.** `rope touches rod`, with `rod`'s ends held, is
+  that corner on the line: the rope is held to the line somewhere, nothing along the line holding
+  it, so the corner slides to where the rope's pull along the line balances (a ring on a rod,
+  `ring.sv`). A rope weighted by its height alone leaves the line at the angle it met it. Where it
+  already crosses the line it presses nothing. Over a curve that is not free, or a line not held,
+  E040; it sets no length.
 - **Under a `unit`** the point is a length and the integrand is dimension-checked: `p.y + 1` is
   E103, `p.y + 1mm` is fine. Any power of length is an energy — a speed `sqrt(h - p.y)` (a throw,
   `projectile.sv`), a weight `10mm / p.y` (the hyperbolic plane, `hyperbolic.sv`), a refractive

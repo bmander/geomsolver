@@ -102,12 +102,12 @@ fn every_constraint_type_is_printable() {
         if kind.soft_by_default() {
             continue; // soft, and never in a document — `user_constraints` filters it
         }
-        if matches!(kind, CKind::PointOnCurve | CKind::PointOnExtrusion | CKind::CurveTangentLine | CKind::CurveCurvature | CKind::CurveLength | CKind::Stationary) {
+        if matches!(kind, CKind::PointOnCurve | CKind::PointOnExtrusion | CKind::CurveTangentLine | CKind::CurveCurvature | CKind::CurveLength | CKind::Stationary | CKind::CurveTouchesLine) {
             // a curve's contacts print, but the curve they name lifts as an instance of a
             // component the sketch does not hold the text of, so there is nothing for them to
             // round-trip against here; `tests/curve_contact.rs` prints them from a document (and
             // `tests/extruded_envelope.rs` the point on an extrusion; a free curve's length and energy,
-            // `tests/catenary.rs`)
+            // `tests/catenary.rs`, and its touch, `tests/slide.rs`)
             continue;
         }
         let (sk, c) = fixture(kind);
