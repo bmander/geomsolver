@@ -100,7 +100,7 @@ fn build_free_curve(sk: &mut Sketch, res: &Resolver, d: &Decl, st: &Stmt, diags:
     let def = match sk.curve_defs.iter().position(|c| c.name == "extremal:") {
         Some(k) => k,
         None => {
-            sk.curve_defs.push(crate::model::extremal_def("extremal:".into(), None, 0));
+            sk.curve_defs.push(crate::model::extremal_def("extremal:".into(), None, 0, 0));
             sk.curve_defs.len() - 1
         }
     };
@@ -117,6 +117,7 @@ fn build_free_curve(sk: &mut Sketch, res: &Resolver, d: &Decl, st: &Stmt, diags:
         extrusion: false,
         length: Some(length),
         pegs: Vec::new(),
+        slides: Vec::new(),
     });
     Some(EntRef::new(EntKind::Curve, sk.curves.len() - 1))
 }

@@ -1007,6 +1007,7 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             extrusion: cv.extrusion,
             length,
             pegs: Vec::new(),
+            slides: Vec::new(),
         });
         curve_map[i] = Some(dst.curves.len() - 1);
         made.push(EntRef::new(EntKind::Curve, dst.curves.len() - 1));

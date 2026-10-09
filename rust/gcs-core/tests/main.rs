@@ -170,3 +170,4 @@ mod spline_length;
 mod minimize;
 mod catenary;
 mod extremal;
+mod slide;

@@ -2,7 +2,7 @@
 //! Euler–Lagrange flow integrates to, against closed forms, its derivatives against
 //! differences, and the verdict.
 
-use gcs_core::extremal::{self, shoot, Ends, Lagrangian};
+use gcs_core::extremal::{self, shoot, Ends, Lagrangian, Stop};
 use gcs_core::units::Units;
 use gcs_core::variational::Extremum;
 
@@ -114,7 +114,7 @@ fn a_peg_makes_a_corner_of_two_catenaries() {
     let l = lag("p.y", false);
     let ends = Ends { a: [0.0, 0.0], b: [100.0, 0.0], len: 150.0 };
     let peg = [50.0, -40.0];
-    let sh = shoot::solve(&l, &ends, &[peg], None).expect("a shape");
+    let sh = shoot::solve(&l, &ends, &[Stop::Peg(peg)], None).expect("a shape");
     assert!((sh.places[1] - 75.0).abs() < 1e-9, "the peg halves the rope: {}", sh.places[1]);
     let left = catenary_through([0.0, 0.0], peg, 75.0);
     let right = catenary_through(peg, [100.0, 0.0], 75.0);
@@ -167,7 +167,7 @@ fn a_great_circle_is_a_minimum_short_of_the_antipode_and_a_saddle_past_it() {
 #[test]
 fn the_shapes_derivatives_are_its_differences() {
     let l = lag("p.y", false);
-    for pegs in [vec![], vec![[45.0, -40.0]]] {
+    for pegs in [vec![], vec![Stop::Peg([45.0, -40.0])]] {
         let ends = Ends { a: [0.0, 0.0], b: [100.0, 5.0], len: 150.0 };
         let sh = shoot::solve(&l, &ends, &pegs, None).expect("a shape");
         for u in [0.13, 0.6] {

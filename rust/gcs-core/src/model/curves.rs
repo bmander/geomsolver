@@ -91,23 +91,27 @@ pub enum CurveBody {
 }
 
 /// A free curve's definition: its energy's Lagrangian — `None` until an energy is stated — and how
-/// many pegs its curves pass, which sets its contacts' constant widths.
+/// many pegs its curves pass and held lines they touch, which set its contacts' constant widths.
 #[derive(Clone, Debug)]
 pub struct Extremal {
     pub lag: Option<crate::extremal::Lagrangian>,
     pub pegs: usize,
+    pub slides: usize,
 }
 
 impl Extremal {
-    /// A contact's constants on this definition: the Lagrangian, then the pegs (`extremal::write`).
+    /// A contact's constants on this definition: the Lagrangian, then the pegs and the slides
+    /// (`extremal::write`).
     pub fn n_const(&self) -> usize {
-        self.lag.as_ref().map_or(4 + 2 * self.pegs, |l| crate::extremal::width(l, self.pegs))
+        self.lag
+            .as_ref()
+            .map_or(5 + 2 * self.pegs + 4 * self.slides, |l| crate::extremal::width(l, self.pegs, self.slides))
     }
 }
 
 /// A free curve's definition under `name` (`variational::key_of`): over its two ends, swept in
 /// `u` from 0 to 1, its columns the ends and its length.
-pub fn extremal_def(name: String, lag: Option<crate::extremal::Lagrangian>, pegs: usize) -> CurveDef {
+pub fn extremal_def(name: String, lag: Option<crate::extremal::Lagrangian>, pegs: usize, slides: usize) -> CurveDef {
     CurveDef {
         name,
         component: String::new(),
@@ -118,7 +122,7 @@ pub fn extremal_def(name: String, lag: Option<crate::extremal::Lagrangian>, pegs
         param: "u".into(),
         turns: false,
         vars: ["u", "a.x", "a.y", "b.x", "b.y", "length"].map(String::from).to_vec(),
-        body: CurveBody::Extremal(Extremal { lag, pegs }),
+        body: CurveBody::Extremal(Extremal { lag, pegs, slides }),
         pose_of: Vec::new(),
     }
 }
@@ -161,6 +165,8 @@ pub struct CurveE {
     /// The held points a free curve passes — its pegs, in its problem — as
     /// `Sketch::settle_variational` last read them.
     pub pegs: Vec<u32>,
+    /// The held lines it touches where it chooses (`rope touches floor`, #149) — its slides.
+    pub slides: Vec<u32>,
 }
 
 /// Where a trimmed curve runs: along curve `of`, from point `from` to point `to`, each held on
@@ -251,13 +257,25 @@ impl Sketch {
     }
 
     /// A free curve's problem as its contacts' constants carry it (`extremal::write`): its
-    /// Lagrangian and where its pegs are.
+    /// Lagrangian, where its pegs are, and its slides' lines.
     pub fn extremal_consts(&self, i: usize) -> Option<Vec<f64>> {
         let lag = self.extremal_lagrangian(i)?;
         let pegs: Vec<[f64; 2]> = self.curves[i].pegs.iter().map(|&p| self.point_xy(p as usize).into()).collect();
+        let slides: Vec<[f64; 4]> = self.curves[i].slides.iter().map(|&l| self.slide_line(l)).collect();
         let mut k = Vec::new();
-        crate::extremal::write(lag, &pegs, &mut k);
+        crate::extremal::write(lag, &pegs, &slides, &mut k);
         Some(k)
+    }
+
+    /// Line `l` as a slide reads it: its start and unit direction (`[NaN; 4]` where it has none).
+    pub fn slide_line(&self, l: u32) -> [f64; 4] {
+        let ln = &self.lines[l as usize];
+        let (a, b) = (self.point_xy(ln.p1 as usize), self.point_xy(ln.p2 as usize));
+        let n = (b.0 - a.0).dhypot(b.1 - a.1);
+        if !(n > 0.0) {
+            return [f64::NAN; 4];
+        }
+        [a.0, a.1, (b.0 - a.0) / n, (b.1 - a.1) / n]
     }
 
     /// A free curve's shape where its ends and length are now, through its pegs — the one solve
@@ -367,7 +385,16 @@ impl Sketch {
     /// (`Sketch::seed_extremals` seeds a free curve's once its energy has given it a shape).
     pub fn curve_nearest_by(&self, i: usize, dist: impl Fn(f64, f64) -> f64) -> f64 {
         let (a, b) = self.curve_domain(i);
-        let poly = self.curve_polyline(i);
+        // evenly in the parameter: a free curve's drawn polyline has its corners besides
+        let poly = if self.curve_extremal(i) {
+            let mut p = self.curve_sweep(i, a.min(b), a.max(b), CURVE_STEPS);
+            if a > b {
+                p.reverse();
+            }
+            p
+        } else {
+            self.curve_polyline(i)
+        };
         let n = poly.len().saturating_sub(1).max(1);
         poly.iter()
             .enumerate()
@@ -412,6 +439,7 @@ impl Sketch {
             let (x, y) = self.point_xy(p as usize);
             [x, y]
         }));
+        key.extend(self.curves[i].slides.iter().flat_map(|&l| self.slide_line(l)));
         key.extend(self.curve_pose(i).unwrap_or_default());
         if let Some((k, poly)) = self.polyline_cache.borrow().get(&i) {
             if *k == key {
@@ -488,6 +516,24 @@ impl Sketch {
     }
 
     fn curve_polyline_uncached(&self, i: usize, a: f64, b: f64) -> Vec<(f64, f64)> {
-        self.curve_sweep(i, a, b, CURVE_STEPS)
+        let mut poly = self.curve_sweep(i, a, b, CURVE_STEPS);
+        // a free curve's corners, at its pegs and slides, drawn where they are rather than cut
+        // across between two samples
+        if let (CurveBody::Extremal(_), Some((lag, sh))) =
+            (&self.curve_defs[self.curves[i].def as usize].body, self.curve_shape(i))
+        {
+            if poly.len() == CURVE_STEPS + 1 && b > a {
+                for s in sh.places[1..sh.places.len() - 1].iter().rev() {
+                    let u = s / sh.ends.len;
+                    if u > a && u < b {
+                        let k = (((u - a) / (b - a) * CURVE_STEPS as f64).floor() as usize + 1).min(CURVE_STEPS);
+                        if let Some(p) = crate::extremal::shoot::position(&lag, &sh, u) {
+                            poly.insert(k, (p[0], p[1]));
+                        }
+                    }
+                }
+            }
+        }
+        poly
     }
 }
