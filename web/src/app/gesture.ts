@@ -16,7 +16,7 @@ import { COL } from './paint.js';
 import { insertControl } from './edit.js';
 import { cancelTool, toolClick } from './tools.js';
 import { bodyAt, grabBody, grabHandle, handleAt } from './underlay.js';
-import type { SketchView } from './view.js';
+import type { SketchView, SolidPick } from './view.js';
 
 /** One pointer gesture in progress.  `move` gets canvas coordinates; `end` and `paint` are
  *  optional because pan needs neither and the rubber band needs both. */
@@ -168,8 +168,18 @@ export function onPointerDown(v: SketchView, e: PointerEvent): void {
     v.draw();
     return;
   }
+  if (at.kind === 'solid') {
+    v.pickSolid(at.pick, e.shiftKey);
+    v.onSelect();
+    v.onChanged();
+    v.draw();
+    return;
+  }
   v.dropImage();
   const ent = at.kind === 'entity' ? at.ent : null;
+  // a press on the drawing, or on nothing without shift, lets the solids go — a shift-click
+  // grows the drawing's selection in place, past the setter that would
+  if (ent || !e.shiftKey) v.dropSolids();
   if (!ent) {
     // nothing under the cursor: start a rubber band.  A press with no drag still just
     // clears the selection, because an empty box selects nothing.
@@ -409,6 +419,7 @@ type Target =
   | { kind: 'handle'; corner: number }
   | { kind: 'callout'; callout: Constraint }
   | { kind: 'entity'; ent: Primitive }
+  | { kind: 'solid'; pick: SolidPick }
   | { kind: 'image' }
   | { kind: 'none' };
 
@@ -419,6 +430,9 @@ function whatIsAt(v: SketchView, sp: [number, number]): Target {
   if (callout) return { kind: 'callout', callout };
   const ent = v.pick(sp[0], sp[1]);
   if (ent) return { kind: 'entity', ent };
+  // beneath the drawing: an object's face, where the eye sees it
+  const pick = v.solidAt(sp[0], sp[1]);
+  if (pick) return { kind: 'solid', pick };
   if (bodyAt(v, sp)) return { kind: 'image' };
   return { kind: 'none' };
 }

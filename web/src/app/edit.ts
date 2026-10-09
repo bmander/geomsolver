@@ -111,6 +111,14 @@ export function deleteSelected(v: SketchView): void {
     v.removeImage();          // which says so itself, so the menu item and this agree
     return;
   }
+  // the solids, when they are what is selected — the selections being exclusive, again
+  const solids = v.selectedSolids;
+  if (solids.length) {
+    const refs = solids.map((s) => ({ ref: ['solid', s.index] as [string, number] }));
+    const what = solids.length === 1 ? solids[0].name : `${solids.length} solids`;
+    if (v.apply(v.doc.remove(refs), `deleted ${what}`)) v.onSelect();
+    return;
+  }
   if (!v.selected.length) return;
   const n = v.selected.length;
   if (v.apply(v.doc.remove(v.selected), `deleted ${n} entities`)) v.onSelect();

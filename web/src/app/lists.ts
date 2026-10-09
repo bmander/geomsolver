@@ -200,8 +200,13 @@ export function refreshPanel(): void {
     // the traced picture is picked the way an entity is, so it says so where an entity does —
     // it has no constraints on it and so no window, only the line that names what you hold
     const u = view.underlay;
+    const solids = view.selectedSolids;
     componentEl.textContent = u?.picked
-      ? `image ${u.name} — ${Math.round(u.opacity * 100)}%   |   ` : '';
+      ? `image ${u.name} — ${Math.round(u.opacity * 100)}%   |   `
+      // a solid has no constraints on it either: the line names it and the face clicked
+      : solids.length === 1 ? `solid ${solids[0].name} · face ${solids[0].face}   |   `
+      : solids.length ? `${solids.length} solids: ${solids.map((s) => s.name).join(' ')}   |   `
+      : '';
     return;
   }
   const ix = new io.Index(view.sketch);

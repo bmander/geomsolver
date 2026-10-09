@@ -2289,6 +2289,25 @@ pub unsafe extern "C" fn gcs_workspace_pick(h: *mut Sketch, unit: f64, az: f64, 
     })
 }
 
+/// The object face the eye's ray through (x, y) meets nearest the viewer: `{solid, face, depth}`,
+/// or `null` — `workspace::pick_solid`.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_workspace_pick_solid_json(h: *mut Sketch, az: f64, el: f64,
+                                                       x: f64, y: f64) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || {
+        let s = sk(h);
+        let proj = gcs_core::overview::workspace::Projection::new(s, az, el);
+        out_json(match gcs_core::overview::workspace::pick_solid(s, &proj, (x, y)) {
+            Some(hit) => json::object([
+                ("solid", Json::Int(hit.solid as i64)),
+                ("face", Json::Str(hit.face)),
+                ("depth", Json::Num(hit.depth)),
+            ]),
+            None => Json::Null,
+        })
+    })
+}
+
 /// The planes whose panes (x, y) on the eye's picture plane falls inside, nearest the eye first:
 /// writes up to `cap` plane indices and returns how many there are.
 #[no_mangle]

@@ -360,8 +360,10 @@ export class Document {
     );
   }
 
-  /** Take out the statements that declare these, and every statement that named one. */
-  remove(entities: Iterable<Primitive> = [], constraints: Iterable<Constraint> = []): Edit {
+  /** Take out the statements that declare these, and every statement that named one.  An entity
+   *  is anything with a `[kind, index]` ref — a proxy, or a solid, which has none. */
+  remove(entities: Iterable<{ ref: readonly [string, number] }> = [],
+         constraints: Iterable<Constraint> = []): Edit {
     const ents = [...entities].map((e) => e.ref);
     const cons = [...constraints].map((c) => c.id);
     return edit(

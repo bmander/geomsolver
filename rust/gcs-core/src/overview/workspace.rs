@@ -210,6 +210,11 @@ impl Projection {
         (dot(self.right, x), dot(self.up, x))
     }
 
+    /// Toward the viewer: the direction the eye's ray runs back along.
+    pub fn toward(&self) -> [f64; 3] {
+        super::cross(self.right, self.up)
+    }
+
     /// The map of a view — `None` is the page.
     pub fn map(&self, view: Option<usize>) -> &Map {
         &self.maps[slot(view)]
@@ -310,9 +315,7 @@ const EDGE_ON: f64 = 1e6;
 pub fn panes_at(sk: &Sketch, proj: &Projection, at: (f64, f64)) -> Vec<usize> {
     let views = super::views(sk);
     let least = sk.extent() * super::LEAST_SIDE;
-    // toward the viewer: `right × up`
-    let (r, u) = (proj.right, proj.up);
-    let toward = [r[1] * u[2] - r[2] * u[1], r[2] * u[0] - r[0] * u[2], r[0] * u[1] - r[1] * u[0]];
+    let toward = proj.toward();
     let mut hits: Vec<(f64, usize)> = Vec::new();
     for i in 0..sk.planes.len() {
         let m = proj.map(Some(i));
@@ -332,6 +335,89 @@ pub fn panes_at(sk: &Sketch, proj: &Projection, at: (f64, f64)) -> Vec<usize> {
     }
     hits.sort_by(|a, b| b.0.total_cmp(&a.0).then(a.1.cmp(&b.1)));
     hits.into_iter().map(|(_, i)| i).collect()
+}
+
+/// A face of an object the eye's ray meets: which object (an index into `sketch.solids`), the
+/// face's path, and how far toward the viewer it stands.  The path names the face where it was
+/// made, which may be an operand (`bore.wall` on `body`), so the object is said beside it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SolidHit {
+    pub solid: usize,
+    pub face: String,
+    pub depth: f64,
+}
+
+/// The object face the eye's ray through `at` meets nearest the viewer — what a click on a solid
+/// picks.  Asked of each object's mesh (`ApproximationPolicy::Mesh`, the box's own), culled by its
+/// box: the ray is a line, since the eye is orthographic and stands outside everything.
+pub fn pick_solid(sk: &Sketch, proj: &Projection, at: (f64, f64)) -> Option<SolidHit> {
+    let toward = proj.toward();
+    let foot = [0, 1, 2].map(|k| at.0 * proj.right[k] + at.1 * proj.up[k]);
+    let mut best: Option<SolidHit> = None;
+    for i in super::objects(sk) {
+        let Ok(solid) = sk.evaluated_solid(i, crate::solid::ApproximationPolicy::Mesh) else { continue };
+        let w = solid.world_bounds();
+        if w.is_empty() || !line_meets_box(foot, toward, w.lo, w.hi) {
+            continue;
+        }
+        let o = solid.to_local(crate::solid::WorldPoint(foot)).0;
+        let m = solid.mesh();
+        for group in &m.groups {
+            for t in group.start..group.start + group.count {
+                let Some(depth) = line_meets_triangle(o, toward, &m.positions[9 * t..9 * t + 9]) else {
+                    continue;
+                };
+                if best.as_ref().is_none_or(|b| depth > b.depth) {
+                    best = Some(SolidHit { solid: i, face: group.path.clone(), depth });
+                }
+            }
+        }
+    }
+    best
+}
+
+/// Whether the line `o + t·d` passes through the box `lo`–`hi` (the slab test, over all `t`).
+fn line_meets_box(o: [f64; 3], d: [f64; 3], lo: [f64; 3], hi: [f64; 3]) -> bool {
+    let (mut t0, mut t1) = (f64::NEG_INFINITY, f64::INFINITY);
+    for k in 0..3 {
+        let pad = 1e-9 * (hi[k] - lo[k]).abs().max(1.0);
+        let (a, b) = (lo[k] - pad, hi[k] + pad);
+        if d[k] == 0.0 {
+            if o[k] < a || o[k] > b {
+                return false;
+            }
+            continue;
+        }
+        let (u, v) = ((a - o[k]) / d[k], (b - o[k]) / d[k]);
+        t0 = t0.max(u.min(v));
+        t1 = t1.min(u.max(v));
+    }
+    t0 <= t1
+}
+
+/// Where the line `o + t·d` crosses the triangle `p` (nine doubles), as `t` — either side, its
+/// edges included (Möller–Trumbore).  `None` for a miss or a line in the triangle's plane.
+fn line_meets_triangle(o: [f64; 3], d: [f64; 3], p: &[f64]) -> Option<f64> {
+    let v0 = [p[0], p[1], p[2]];
+    let e1 = [p[3] - p[0], p[4] - p[1], p[5] - p[2]];
+    let e2 = [p[6] - p[0], p[7] - p[1], p[8] - p[2]];
+    let h = super::cross(d, e2);
+    let a = dot(e1, h);
+    if a == 0.0 || !a.is_finite() {
+        return None;
+    }
+    let f = 1.0 / a;
+    let s = [o[0] - v0[0], o[1] - v0[1], o[2] - v0[2]];
+    let u = f * dot(s, h);
+    if !(0.0..=1.0).contains(&u) {
+        return None;
+    }
+    let q = super::cross(s, e1);
+    let v = f * dot(d, q);
+    if v < 0.0 || u + v > 1.0 {
+        return None;
+    }
+    Some(f * dot(e2, q))
 }
 
 /// Every entity whose whole figure lies inside the box `lo`–`hi` on the eye's picture plane — a

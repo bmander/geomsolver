@@ -95,6 +95,22 @@ export function pickSeen(sk: Sketch, unit: number, az: number, el: number,
   });
 }
 
+/** A face of an object the eye's ray meets: the solid (an index into the sketch's solids), the
+ *  face's path where it was made — an operand's, perhaps (`bore.wall` on `body`) — and how far
+ *  toward the viewer it stands. */
+export interface SolidHit {
+  solid: number;
+  face: string;
+  depth: number;
+}
+
+/** The object face the eye's ray through `(x, y)` on the picture plane meets nearest the viewer
+ *  — what a click on a solid picks — or null. */
+export function pickSolidSeen(sk: Sketch, az: number, el: number,
+                              x: number, y: number): SolidHit | null {
+  return takeJson<SolidHit | null>(core().gcs_workspace_pick_solid_json(sk.handle, az, el, x, y));
+}
+
 /** The planes whose panes `(x, y)` on the eye's picture plane falls inside, nearest the eye
  *  first. */
 export function panesSeen(sk: Sketch, az: number, el: number, x: number, y: number): Plane[] {

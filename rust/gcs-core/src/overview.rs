@@ -750,11 +750,7 @@ fn in_outline(pts: &[[f64; 3]], n: [f64; 3], x: [f64; 3]) -> bool {
 /// lose the corner between them, which is the whole thing a shaded picture is for.
 fn lambert(n: [f64; 3], eye: &([f64; 3], [f64; 3])) -> f64 {
     let (right, up) = *eye;
-    let dir = [
-        right[1] * up[2] - right[2] * up[1],
-        right[2] * up[0] - right[0] * up[2],
-        right[0] * up[1] - right[1] * up[0],
-    ];
+    let dir = cross(right, up);
     let l = [
         dir[0] - 0.45 * right[0] + 0.35 * up[0],
         dir[1] - 0.45 * right[1] + 0.35 * up[1],
@@ -762,6 +758,11 @@ fn lambert(n: [f64; 3], eye: &([f64; 3], [f64; 3])) -> f64 {
     ];
     let l = crate::plane::unit(l).unwrap_or(dir);
     crate::plane::dot(n, l).clamp(0.0, 1.0)
+}
+
+/// `a × b`: toward the viewer is `right × up`.
+pub(crate) fn cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
+    [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
 }
 
 pub(crate) fn eye(az: f64, el: f64) -> ([f64; 3], [f64; 3]) {
