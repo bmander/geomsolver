@@ -48,9 +48,7 @@ fn near(a: [f64; 3], b: [f64; 3]) -> bool {
 fn an_axis_through_two_points_is_seeded_their_way_and_holds_both() {
     let e = build(DRAWN);
     let on = AxisOn::Points("a".into(), "c".into());
-    let dir = edit::axis_direction(&e, &e.sketch, &on).unwrap();
-    assert!(near(dir, [0.6, 0.0, 0.8]), "{dir:?}");
-    let out = edit::add_axis(&e.program, &on, dir, None);
+    let out = edit::add_axis(&e, &e.sketch, &on, None);
     assert_eq!((out.refused.as_deref(), out.kind, out.names.clone()), (None, Kind::Structural, vec!["x0".into()]));
     assert!(out.text.ends_with("x0 := axis hint(dir: (0.6, 0, 0.8))\na coincident x0\nc coincident x0\n"),
         "{}", out.text);
@@ -62,9 +60,7 @@ fn an_axis_through_two_points_is_seeded_their_way_and_holds_both() {
 #[test]
 fn an_axis_along_a_line_lies_on_it() {
     let e = build(DRAWN);
-    let on = AxisOn::Line("ab".into());
-    let dir = edit::axis_direction(&e, &e.sketch, &on).unwrap();
-    let out = edit::add_axis(&e.program, &on, dir, Some("hinge"));
+    let out = edit::add_axis(&e, &e.sketch, &AxisOn::Line("ab".into()), Some("hinge"));
     assert!(out.text.ends_with("hinge := axis hint(dir: (1, 0, 0))\nab coincident hinge\n"), "{}", out.text);
     let (d, off) = solved_axis(&out.text, "hinge", &["a", "b"]);
     assert!(near(d, [1.0, 0.0, 0.0]), "{d:?}");
@@ -75,10 +71,10 @@ fn an_axis_along_a_line_lies_on_it() {
 fn an_axis_along_a_planes_normal_stands_square_to_it_through_the_point() {
     let e = build(DRAWN);
     let on = AxisOn::Normal { plane: "std.front".into(), point: "c".into() };
-    let dir = edit::axis_direction(&e, &e.sketch, &on).unwrap();
-    assert!(near(dir, [0.0, 1.0, 0.0]), "{dir:?}");
-    let out = edit::add_axis(&e.program, &on, dir, None);
-    assert!(out.text.contains("x0 perpendicular std.front\nc coincident x0\n"), "{}", out.text);
+    let out = edit::add_axis(&e, &e.sketch, &on, None);
+    // seeded toward the front's viewer, its normal
+    assert!(out.text.contains("x0 := axis hint(dir: (0, -1, 0))\nx0 perpendicular std.front\n\
+        c coincident x0\n"), "{}", out.text);
     let (d, off) = solved_axis(&out.text, "x0", &["c"]);
     assert!(near(d, [0.0, 1.0, 0.0]), "{d:?}");
     assert!(off[0] < 1e-7, "{off:?}");
@@ -87,13 +83,14 @@ fn an_axis_along_a_planes_normal_stands_square_to_it_through_the_point() {
 #[test]
 fn an_axis_without_a_direction_or_over_the_wrong_kind_is_refused() {
     let e = build(DRAWN);
-    let none = edit::axis_direction(&e, &e.sketch, &AxisOn::Points("a".into(), "a".into()));
-    assert!(none.unwrap_err().contains("no direction"));
-    let wrong = edit::axis_direction(&e, &e.sketch, &AxisOn::Line("a".into()));
-    assert!(wrong.unwrap_err().contains("is not a line"));
-    // a name taken, refused before anything is written
-    let out = edit::add_axis(&e.program, &AxisOn::Line("ab".into()), [1.0, 0.0, 0.0], Some("ab"));
-    assert!(out.refused.is_some_and(|m| m.contains("already a name")));
+    let refused = |on: AxisOn, name: Option<&str>| {
+        let out = edit::add_axis(&e, &e.sketch, &on, name);
+        assert_eq!(out.text, e.program.text());
+        out.refused.unwrap_or_default()
+    };
+    assert!(refused(AxisOn::Points("a".into(), "a".into()), None).contains("no direction"));
+    assert!(refused(AxisOn::Line("a".into()), None).contains("is not a line"));
+    assert!(refused(AxisOn::Line("ab".into()), Some("ab")).contains("already a name"));
 }
 
 #[test]

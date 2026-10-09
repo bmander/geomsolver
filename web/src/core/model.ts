@@ -15,12 +15,16 @@ import './constraints.js';
 export type Box = [number, number, number, number];
 
 export type Kind = 'point' | 'line' | 'circle' | 'arc' | 'spline' | 'curve' | 'plane' | 'axis';
-/** Every kind with a proxy here. */
-export const KINDS: Kind[] =
-  ['point', 'line', 'circle', 'arc', 'spline', 'curve', 'plane', 'axis'];
-/** The core's kind ids (`kind_id` in the ABI): an axis is 16, past kinds with no proxy. */
+/** The core's kind ids (`kind_id` in the ABI), one per kind with a proxy here — the one table:
+ *  an axis is 16, past kinds that have none. */
 export const KIND_ID: Record<Kind, number> =
   { point: 0, line: 1, circle: 2, arc: 3, spline: 4, curve: 5, plane: 6, axis: 16 };
+/** Every kind with a proxy here. */
+export const KINDS = Object.keys(KIND_ID) as Kind[];
+
+/** Where each kind's count sits in `gcs_sketch_counts` — appended to, never reordered. */
+const COUNT_SLOT: Record<Kind, number> =
+  { point: 1, line: 2, circle: 3, arc: 4, spline: 6, curve: 8, plane: 10, axis: 11 };
 
 /** The kind a core kind id names, or undefined for one with no proxy — how a pick is decoded. */
 export function kindOf(id: number): Kind | undefined {
@@ -637,35 +641,35 @@ export class Sketch {
   }
 
   get points(): Point[] {
-    return this.list<Point>('point', this.counts()[1]);
+    return this.entities('point') as Point[];
   }
 
   get lines(): Line[] {
-    return this.list<Line>('line', this.counts()[2]);
+    return this.entities('line') as Line[];
   }
 
   get circles(): Circle[] {
-    return this.list<Circle>('circle', this.counts()[3]);
+    return this.entities('circle') as Circle[];
   }
 
   get arcs(): Arc[] {
-    return this.list<Arc>('arc', this.counts()[4]);
+    return this.entities('arc') as Arc[];
   }
 
   get splines(): Spline[] {
-    return this.list<Spline>('spline', this.counts()[6]);
+    return this.entities('spline') as Spline[];
   }
 
   get curves(): Curve[] {
-    return this.list<Curve>('curve', this.counts()[8]);
+    return this.entities('curve') as Curve[];
   }
 
   get planes(): Plane[] {
-    return this.list<Plane>('plane', this.counts()[10]);
+    return this.entities('plane') as Plane[];
   }
 
   get axes(): Axis[] {
-    return this.list<Axis>('axis', this.counts()[11]);
+    return this.entities('axis') as Axis[];
   }
 
   /** How many points the document has — the size a control-polygon buffer has to allow for. */
@@ -685,13 +689,11 @@ export class Sketch {
   }
 
   entities(kind: Kind): Primitive[] {
-    return (kind === 'point' ? this.points : kind === 'line' ? this.lines
-      : kind === 'circle' ? this.circles : kind === 'spline' ? this.splines
-      : kind === 'curve' ? this.curves
-      : kind === 'plane' ? this.planes : kind === 'axis' ? this.axes : this.arcs) as Primitive[];
+    return this.list<Primitive>(kind, this.counts()[COUNT_SLOT[kind]]);
   }
 
-  /** Every entity, in creation order per kind. */
+  /** Every point, figure and view, in creation order per kind — a curve and an axis are not
+   *  among them, and what a copy counts relies on that. */
   primitives(): Primitive[] {
     return [...this.points, ...this.lines, ...this.circles, ...this.arcs, ...this.splines,
             ...this.planes];

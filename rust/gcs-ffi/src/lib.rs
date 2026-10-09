@@ -1082,10 +1082,10 @@ fn kind_id(k: EntKind) -> i32 {
         EntKind::Circle => 2,
         EntKind::Arc => 3,
         EntKind::Spline => 4,
-        // the ids stay contiguous — the binding decodes one by indexing its list — so the
-        // ellipse's (5) and the frame's (7) were taken up when those kinds went (#47), and the
-        // sphere's, the cone's and the cylinder's when they became library components
-        // (`std.Sphere`, `std.Cone`, `std.Cylinder`)
+        // the binding decodes an id through its own table (`model.ts`'s `KIND_ID`), so an id
+        // keeps its number for good: the ellipse's (5) and the frame's (7) were taken up when
+        // those kinds went (#47), and the sphere's, the cone's and the cylinder's when they
+        // became library components (`std.Sphere`, `std.Cone`, `std.Cylinder`)
         EntKind::Curve => 5,
         EntKind::Plane => 6,
         EntKind::Face => 7,
@@ -4133,11 +4133,7 @@ pub unsafe extern "C" fn gcs_elab_add_axis(h: *mut Elaborated, s: *mut Sketch, p
                 return std::ptr::null_mut();
             }
         };
-        let prog = &(*h).program;
-        out_edit(match edit::axis_direction(&*h, sk(s), &on) {
-            Ok(dir) => edit::add_axis(prog, &on, dir, text("name").as_deref()),
-            Err(why) => edit::Edit::refused(prog, why),
-        })
+        out_edit(edit::add_axis(&*h, sk(s), &on, text("name").as_deref()))
     })
 }
 

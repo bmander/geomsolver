@@ -1523,8 +1523,8 @@ Conventions:
   elaborator); the **Axis** tool (`x`) writes `x0 := axis hint(dir: …)` and the relations that
   place it in one splice (`edit::add_axis`, `AxisOn`: along a line; through two points; a
   point, then the pane it stands square to), seeded by `edit::axis_direction` off the live
-  drawing.  A datum tool's first pick is held by name (`planeAxis`, `axisFrom`), lit
-  (`toolPicks`), and let go by Escape.
+  drawing.  A datum tool's first pick is held by name (`firstPick`), lit (`SketchView.lit`, the
+  one set canvas and box both colour by), and let go by Escape.
   Points in space stand in no view: seen where they are (`Projection::point`; per frame
   `workspace::space_points`, `gcs_workspace_space_points`, stroked through the eye's own
   camera), drawn and picked, and dragged where the eye sees them (`PlanDrag::seen`, numeric:

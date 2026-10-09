@@ -1707,11 +1707,11 @@ test('the toolbar plane tool takes two axes, says what to click, and Escape lets
   assert.ok(said.some((m) => /line or axis/.test(m)), said.join('\n'));
   const x = seenAt(view, [-20, 0, 0]);
   click3(view, x);
-  assert.equal(view.planeAxis, 'std.x');
-  assert.deepEqual(view.toolPicks(), [view.doc.entity('std.x')], 'the first pick is lit');
+  assert.equal(view.firstPick, 'std.x');
+  assert.ok(view.lit().has(view.doc.entity('std.x')!), 'the first pick is lit');
   // Escape lets the pick go and keeps the tool
   view.cancelTool();
-  assert.equal(view.planeAxis, null);
+  assert.equal(view.firstPick, null);
   assert.equal(view.tool, 'plane');
   click3(view, x);
   click3(view, seenAt(view, [0, 20, 0]));
@@ -1734,7 +1734,7 @@ test('the axis tool writes an axis along a line, through two points, and square 
   assert.equal(view.tool, 'axis', 'the tool stays down for the next');
   // two points: the first waits, lit, for the second
   click(view, 10, 0);
-  assert.equal(view.axisFrom, 'a');
+  assert.equal(view.firstPick, 'a');
   click(view, 40, 30);
   // seeded along a→c, (30, 0, 30); the solve writes back where it settled
   assert.ok(/x1 := axis hint\(dir: \(0\.70710678\d*, 0, 0\.70710678\d*\)/.test(view.source),

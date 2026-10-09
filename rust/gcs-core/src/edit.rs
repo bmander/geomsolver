@@ -42,11 +42,6 @@ pub struct Edit {
 }
 
 impl Edit {
-    /// The document as it stands, and why a gesture could not be written into it.
-    pub fn refused(prog: &Program, why: impl Into<String>) -> Edit {
-        Edit::none(prog, Some(why.into()))
-    }
-
     fn none(prog: &Program, why: Option<String>) -> Edit {
         Edit {
             text: prog.text().to_string(),
@@ -684,8 +679,13 @@ pub fn add_entity(prog: &Program, kind: EntKind, args: &[String], seed: &[f64]) 
 /// A plane over two axes or drawn lines, `args` their names — `plane(u: a, v: b)` — and, when
 /// the caller has one, the name it asked for.  A name already in use is refused rather than
 /// silently renamed: the caller is about to refer to it.
+///
+/// Held to the elaborator, as every datum a gesture writes is: two axes that do not meet, or run
+/// alike, make no plane (E067), and the gesture is refused in those words.
 pub fn add_plane(prog: &Program, args: &[String], name: Option<&str>) -> Edit {
-    add_entity_with(prog, EntKind::Plane, args, &[], name)
+    entity_decl(prog, EntKind::Plane, args, &[], name)
+        .and_then(|(d, name)| append_checked(prog, &[StmtKind::Decl(d)], vec![name]))
+        .unwrap_or_else(|e| Edit::none(prog, Some(e)))
 }
 
 fn add_entity_with(
@@ -695,13 +695,25 @@ fn add_entity_with(
     seed: &[f64],
     name: Option<&str>,
 ) -> Edit {
-    if kind == EntKind::Point || kind == EntKind::Curve {
-        return Edit::none(prog, Some(format!("{} is not built this way", kind.a())));
+    match entity_decl(prog, kind, args, seed, name) {
+        Ok((d, name)) => append(prog, StmtKind::Decl(d), vec![name]),
+        Err(e) => Edit::none(prog, Some(e)),
     }
-    let name = match chosen_name(&mut taken_names(prog), name, kind) {
-        Ok(n) => n,
-        Err(e) => return Edit::none(prog, Some(e)),
-    };
+}
+
+/// The declaration a gesture writes over names, and its name: each child slot takes the next
+/// name, a list the rest.
+fn entity_decl(
+    prog: &Program,
+    kind: EntKind,
+    args: &[String],
+    seed: &[f64],
+    name: Option<&str>,
+) -> Result<(Decl, String), String> {
+    if kind == EntKind::Point || kind == EntKind::Curve {
+        return Err(format!("{} is not built this way", kind.a()));
+    }
+    let name = chosen_name(&mut taken_names(prog), name, kind)?;
     let mut children: Vec<Vec<syntax::Kid>> = Vec::new();
     let mut taken = 0usize;
     for (_, f) in kind.fields() {
@@ -717,8 +729,7 @@ fn add_entity_with(
             crate::model::Field::Scalar => {}
         }
     }
-    let d = gesture_decl(kind, &name, children, seed);
-    append_checked(prog, &[StmtKind::Decl(d)], vec![name]).unwrap_or_else(|e| Edit::none(prog, Some(e)))
+    Ok((gesture_decl(kind, &name, children, seed), name))
 }
 
 /// The name a gesture asked for, or a fresh one: a name already spoken for, or one no statement
@@ -900,9 +911,13 @@ pub enum AxisOn {
 }
 
 /// An axis drawn by a gesture, `x0 := axis hint(dir: …)` with its relations, as one splice held to
-/// the elaborator.  `dir` seeds the direction (`axis_direction` reads it off the drawing).
-pub fn add_axis(prog: &Program, on: &AxisOn, dir: [f64; 3], name: Option<&str>) -> Edit {
-    axis_edit(prog, on, dir, name).unwrap_or_else(|e| Edit::none(prog, Some(e)))
+/// the elaborator, seeded with the direction the drawing `sk` already has there.  Refused, with
+/// the cause, for a name that is not the kind its place asks for, or two points in one place.
+pub fn add_axis(e: &Elaborated, sk: &Sketch, on: &AxisOn, name: Option<&str>) -> Edit {
+    let prog = &e.program;
+    axis_direction(e, sk, on)
+        .and_then(|dir| axis_edit(prog, on, dir, name))
+        .unwrap_or_else(|why| Edit::none(prog, Some(why)))
 }
 
 fn axis_edit(prog: &Program, on: &AxisOn, dir: [f64; 3], name: Option<&str>) -> Result<Edit, String> {
@@ -929,10 +944,8 @@ fn axis_edit(prog: &Program, on: &AxisOn, dir: [f64; 3], name: Option<&str>) -> 
     append_checked(prog, &stmts, vec![name])
 }
 
-/// The direction an axis drawn `on` this runs, read off the drawing as it stands — what
-/// `add_axis` seeds it with.  Refused, with the cause, for a name that is not the kind its place
-/// asks for, or two points in one place.
-pub fn axis_direction(e: &Elaborated, sk: &Sketch, on: &AxisOn) -> Result<[f64; 3], String> {
+/// The direction an axis drawn `on` this runs, read off the drawing as it stands.
+fn axis_direction(e: &Elaborated, sk: &Sketch, on: &AxisOn) -> Result<[f64; 3], String> {
     let of = |n: &str, kind: EntKind| {
         e.map.ent_named(n).filter(|r| r.kind == kind)
             .ok_or_else(|| format!("`{n}` is not {} in this drawing", kind.a()))
@@ -946,8 +959,7 @@ pub fn axis_direction(e: &Elaborated, sk: &Sketch, on: &AxisOn) -> Result<[f64; 
         AxisOn::Points(p, q) => between(of(p, EntKind::Point)?.i(), of(q, EntKind::Point)?.i()),
         AxisOn::Normal { plane, point } => {
             of(point, EntKind::Point)?;
-            let b = sk.basis(of(plane, EntKind::Plane)?.i());
-            crate::plane::cross(b.u, b.v)
+            sk.basis(of(plane, EntKind::Plane)?.i()).normal()
         }
     };
     crate::plane::unit(d).ok_or_else(|| "the axis has no direction: its two points are one".into())

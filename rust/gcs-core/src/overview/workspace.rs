@@ -314,14 +314,15 @@ pub fn pick(sk: &Sketch, proj: &Projection, at: (f64, f64), tol: f64, unit: f64)
 /// The axis whose drawn line, seen, passes nearest `at` within `tol`.  Two lying on one another
 /// (`std.back` is `std.x` reversed) are one distance but for rounding, so the first declared wins.
 fn nearest_axis(sk: &Sketch, proj: &Projection, at: (f64, f64), tol: f64) -> Option<EntRef> {
+    let reach = super::axis_reach(sk);
     let mut best: Option<(f64, usize)> = None;
     for i in 0..sk.axes.len() {
-        let Some((tail, tip)) = super::axis_segment(sk, i) else { continue };
+        let Some((tail, tip, _)) = super::axis_segment(sk, i, reach) else { continue };
         let (a, b) = (proj.seen(tail), proj.seen(tip));
         if (b.0 - a.0).dhypot(b.1 - a.1) < 2.0 * tol {
             continue;
         }
-        let d = polyline_distance(&[a, b], at.0, at.1);
+        let d = crate::model::seg_distance(at, a, b);
         if d <= tol && best.is_none_or(|(e, _)| d < e - 1e-9 * tol) {
             best = Some((d, i));
         }

@@ -172,10 +172,9 @@ export class SketchView {
   pendingPlane: string | null = null;
   /** What the plane tool will write when its two clicks land. */
   planeSpec: PlaneSpec | null = null;
-  /** The line the plane tool's first click picked, by name: the one the plane runs along. */
-  planeAxis: string | null = null;
-  /** The point the axis tool's first click picked, by name: the one the axis passes through. */
-  axisFrom: string | null = null;
+  /** What a datum tool's first click picked, by name, until its second lands: the line or axis
+   *  a plane runs along, the point an axis passes through. */
+  firstPick: string | null = null;
   highlight: Primitive[] = [];
   pending: Point[] = [];
   /** Where the fit tool has been told the curve must pass, before there is a curve.  Places
@@ -479,8 +478,7 @@ export class SketchView {
     this.pending = [];
     this.pendingFit = [];
     this.planeSpec = null;
-    this.planeAxis = null;
-    this.axisFrom = null;
+    this.firstPick = null;
   }
 
   /** Frame everything the workspace shows — figures and solids, as the eye now sees them. */
@@ -942,13 +940,10 @@ export class SketchView {
     return pickSeen(this.sketch, this.unit, az, el, ...this.eye(sx, sy), this.world(PICK_PX));
   }
 
-  /** What a datum tool's first click picked, lit until the second lands — by name, as the tools
-   *  hold it. */
-  toolPicks(): Primitive[] {
-    return [this.planeAxis, this.axisFrom].flatMap((n) => {
-      const e = n ? this.doc.entity(n) : undefined;
-      return e ? [e] : [];
-    });
+  /** What the canvas and the box light: the hover, and a datum tool's first pick until its
+   *  second lands. */
+  lit(): Set<Primitive> {
+    return new Set([...this.highlight, ...this.rebind(this.firstPick ? [this.firstPick] : [])]);
   }
 
   /** The object face under the canvas point, nearest the eye, and the solid it is a face of. */

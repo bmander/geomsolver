@@ -81,7 +81,7 @@ export function paint(v: SketchView): void {
 
   const sk = v.sketch;
   const sel = new Set(v.selected);
-  const hl = new Set([...v.highlight, ...v.toolPicks()]);
+  const hl = v.lit();
   const strokeFor = (base: string, ent: Primitive, st?: Style): [string, number] =>
     strokeOf(v, sel, hl, base, ent, st);
 

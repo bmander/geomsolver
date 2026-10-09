@@ -78,12 +78,14 @@ const toolButtons = new Map<Tool, HTMLButtonElement>();
 view.onTool = (t) => {
   for (const [k, b] of toolButtons) b.setAttribute('aria-pressed', String(k === t));
 };
-for (const [label, tool, key] of [
+/** The drawing tools, with the key each is taken up by — `TOOL_KEYS` is read off this. */
+const TOOLS: [string, Tool, string][] = [
   ['Point', 'point', 'p'], ['Line', 'line', 'l'], ['Rect', 'rect', 'r'],
   ['Circle', 'circle', 'c'], ['Arc', 'arc', 'a'], ['Arc 3-pt', 'arc3', '3'],
   ['Spline', 'spline', 's'], ['Spline fit', 'splinefit', 'w'],
   ['Plane', 'plane', 'n'], ['Axis', 'axis', 'x'],
-] as [string, Tool, string][]) {
+];
+for (const [label, tool, key] of TOOLS) {
   toolButtons.set(tool, addButton(barTools, {
     label, key, toggle: true, title: 'Click again to put the tool down and go back to selecting',
     onClick: () => view.setTool(view.tool === tool ? 'select' : tool),
@@ -410,10 +412,8 @@ aboutBadge.addEventListener('click', () => void about());
 
 /* -- keyboard ------------------------------------------------------------------- */
 
-const TOOL_KEYS: Record<string, Tool> = {
-  p: 'point', l: 'line', r: 'rect', c: 'circle', a: 'arc', 3: 'arc3', s: 'spline',
-  w: 'splinefit', n: 'plane', x: 'axis',
-};
+const TOOL_KEYS: Record<string, Tool> =
+  Object.fromEntries(TOOLS.map(([, tool, key]) => [key, tool]));
 /** Every accelerator in the app, read off the buttons and menu items themselves so there is
  *  one list and not two.  The token is the chip the control prints, lowercased: '⇧l', '⌘z'. */
 const ACTION_KEYS = new Map<string, () => void>(
