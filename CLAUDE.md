@@ -1148,20 +1148,24 @@ Conventions:
   Parsed as `OpArg::Bound { cmp: syntax::Cmp, hi }` before the number's `OpArg::Dim`, which every
   number reader keeps reading; `RelationForm::bound`, `ResolvedRelation::bound`, the canonical
   form's `bound`; checked by `relations::bound_of` (`CKind::boundable`: ordinate, distances; not a
-  claim; E040). `Constraint::bound` compiles **no row** — `acts()` is false, and the seams that
-  spell claims out inline (`System::new`, `n_equations`, `cgraph`, `witness`, callouts,
-  `io::Part`) skip it too; `topology_key` marks it `~`. `Constraint::reading` is the number that
-  would make the row hold (secant along the number). **It chooses the seed's side first**:
-  `program::elaborate` reads the bounds on a pass's seeds (`solve::cross_bounds`: the measured
-  point, the last point operand with a free coordinate, carried by Newton steps on the reading to
-  its mirror, `Bound::aim`, its lift and twins with it — `across`) and elaborates again with those
+  claim; E040). `Constraint::bound` compiles **no row**: `Constraint::states_rows()` (false for a
+  claim or a bound) is what every seam that compiles, counts or welds rows asks (`System::new`,
+  `n_residuals`, `cgraph`, `witness`, `io::Part`), and `acts()` is `!soft && states_rows()`;
+  callouts skip it, the witness drops it, `topology_key` marks it `~`. `Constraint::reading` is the number that
+  would make the row hold (secant along the number); `solve::bound_reading` (with `bound_tol`) is
+  the one verdict — holds, edge, aim — the steering, the elaborator and the diagnosis share.
+  **It chooses the seed's side first**: `program::elaborate` reads the bounds on a pass's seeds
+  (`solve::cross_bounds`: the measured point, the last point operand with a coordinate the solve
+  moves, carried by Newton steps on the reading to its mirror, `Bound::aim`, its twins —
+  `Sketch::twin_group` — and lifts with it: `across`) and elaborates again with those
   numbers written over the point's seed right after `entities::places` (`crossed_seeds`; held from
   `settle_deferred`), so `axes_along`, the views folded through it and every seed read through
   them stand as if the source had seeded it so — patching placement in place does not reproduce
   `views::place`. Then `System::solve` ends in `steer`: with `retry`, a bound still broken is
   crossed from the start pose (accumulating) and then the solution, and solved again, kept only if
-  it holds; else `success` false, status `BOUND_BROKEN`. A drag (`retry` off) and a drawing
-  whose seeds keep their bounds solve to the same bits. `Diagnosis::bounds_violated`/`bounds_active`, report `boundsViolated`/
+  it holds; else `success` false, status `BOUND_BROKEN` (named by the diagnosis, the CLI's `bound
+  broken`). `PlanSolver::solve` falls back to it where the plan's root breaks a bound. A drag
+  (`retry` off) and a drawing whose seeds keep their bounds solve to the same bits. `Diagnosis::bounds_violated`/`bounds_active`, report `boundsViolated`/
   `boundsActive`; JSON `"bound": {cmp, hi}`; `graft`, `lift`, `describe` (`syntax::bounded`).
   A free name in one is E040 (`expr::Fault::ClaimFree`). `ccw` on the sheet is still unchecked.
   `tests/bounds.rs` is the gate.

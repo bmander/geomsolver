@@ -495,7 +495,16 @@ pub(super) fn constrain(
     };
     let mut c = Constraint::new(ckind, args);
     c.claim = r.claim;
-    c.bound = bound;
+    // an interval runs upward from its low end, the number as settled
+    if let (Some((b, at)), Some(i)) = (bound, ckind.dimension_slot()) {
+        if b.hi.is_some_and(|hi| hi < c.args[i].num()) {
+            let message = "an interval runs from its low end to its high end".to_string();
+            let span = at.unwrap_or(st.span);
+            diags.push(Diag { code: Code::E040, span, stmt: Some(st.id), message });
+            return None;
+        }
+    }
+    c.bound = bound.map(|(b, _)| b);
     c.class = r.class.clone();
     c.written = written(&r.args, r.kind.spec(), st, doc);
     c.word = word;
@@ -565,15 +574,16 @@ pub(in crate::program) fn point_and_plane(
         if kind(p) == Some(EntKind::Point) && kind(plane) == Some(EntKind::Plane))
 }
 
-/// The bound a relation's number is, where it is one (§9.6), checked: a kind whose reading a
-/// solve can be steered along (`CKind::boundable`), not a claim, an interval running upward, its
-/// high end a number.  The low end is the constraint's own number, read as any dimension is.
+/// The bound a relation's number is, where it is one (§9.6), and where it is written, checked: a
+/// kind whose reading a solve can be steered along (`CKind::boundable`), not a claim, its
+/// interval's high end a number.  The low end is the constraint's own number, read as any
+/// dimension is.
 fn bound_of(
     sk: &Sketch,
     res: &Resolver,
     r: &ResolvedRelation<'_>,
     ckind: CKind,
-) -> Result<Option<crate::constraints::Bound>, (Option<Span>, String)> {
+) -> Result<Option<(crate::constraints::Bound, Option<Span>)>, (Option<Span>, String)> {
     let Some((cmp, hi)) = &r.bound else { return Ok(None) };
     let cmp = *cmp;
     let at = r.written.and_then(|w| w.args.iter().find_map(|a| match a {
@@ -602,17 +612,7 @@ fn bound_of(
             }
         },
     };
-    let bound = crate::constraints::Bound { cmp, hi };
-    let lo = r.args.iter().flatten().find_map(|a| match a {
-        Arg::Dim { text, .. } => expr::literal(text),
-        _ => None,
-    });
-    if let (Some(lo), Some(hi)) = (lo, hi) {
-        if hi < lo {
-            return Err((at, "an interval runs from its low end to its high end".to_string()));
-        }
-    }
-    Ok(Some(bound))
+    Ok(Some((crate::constraints::Bound { cmp, hi }, at)))
 }
 
 /// **An ordinate's operands, read** (`docs/ordinate-plan.md`): a plane's own direction is

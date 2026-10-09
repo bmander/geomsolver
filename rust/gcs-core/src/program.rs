@@ -176,9 +176,9 @@ pub fn elaborate(p: &Program) -> Elaborated {
     let mut crossed = BTreeMap::new();
     loop {
         match elaborate_in(p, &refused, &crossed) {
-            Ok(mut e) => {
+            Ok(e) => {
                 if crossed.is_empty() {
-                    crossed = crossed_seeds(&mut e);
+                    crossed = crossed_seeds(&e);
                     if !crossed.is_empty() {
                         continue;
                     }
@@ -192,7 +192,13 @@ pub fn elaborate(p: &Program) -> Elaborated {
 
 /// The points whose seeds break a bound, carried across (`solve::cross_bounds`): each by the key
 /// it is bound under, with the numbers it now has.
-fn crossed_seeds(e: &mut Elaborated) -> BTreeMap<String, Vec<f64>> {
+fn crossed_seeds(e: &Elaborated) -> BTreeMap<String, Vec<f64>> {
+    // read before anything is copied: most drawings' seeds break none
+    let tol = crate::solve::bound_tol(&e.sketch);
+    let reads = |c| crate::solve::bound_reading(&e.sketch, c, tol);
+    if !e.sketch.constraints.iter().any(|c| reads(c).is_some_and(|r| !r.holds)) {
+        return BTreeMap::new();
+    }
     let mut sk = e.sketch.clone();
     let moved = crate::solve::cross_bounds(&mut sk);
     moved.into_iter().filter_map(|p| {

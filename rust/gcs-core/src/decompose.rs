@@ -1498,7 +1498,11 @@ impl PlanSolver {
         let mut rel = self.system.max_relative_residual(&z);
         let mut numeric = None;
         let mut fell_back = false;
-        if rel > tol && fallback {
+        // a root the plan chose that breaks a bound is steered by the numeric solve, as any
+        // document solve is (§9.6)
+        let bounded = fallback && sk.constraints.iter().any(|c| c.bound.is_some())
+            && !crate::solve::bounds_hold(sk);
+        if (rel > tol || bounded) && fallback {
             fell_back = true;
             // `System::solve` re-homes any curve contact and rebuilds itself if one moved to
             // another span, so this system is current whatever the fallback did
@@ -1511,8 +1515,11 @@ impl PlanSolver {
         for (k, v) in self.plan.branches() {
             sk.branches.insert(k, v);
         }
+        let kept = numeric.as_ref().map_or(true, |r: &crate::solve::SolveResult| {
+            r.status != crate::solve::BOUND_BROKEN
+        });
         PlanResult {
-            success: rel <= 1e-6,
+            success: rel <= 1e-6 && kept,
             max_residual: mx,
             fell_back,
             numeric,

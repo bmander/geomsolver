@@ -1482,6 +1482,11 @@ impl CKind {
     /// The kinds whose number may be a bound (§9.6): those reading a signed or unsigned measure
     /// a solve can be steered along — an ordinate (and so `inside`/`outside` a plane), a
     /// distance between points, a point's or a parallel line's distance from a line.
+    /// Where its number stands, if it states one: a kind has at most one dimension slot.
+    pub fn dimension_slot(self) -> Option<usize> {
+        self.spec().iter().position(|(_, k)| k.is_dimension())
+    }
+
     pub fn boundable(self) -> bool {
         matches!(
             self,
@@ -2095,7 +2100,14 @@ impl Constraint {
     /// about the drawing rather than part of it, and neither is something a consumer asking for
     /// the constraints that determine the figure wants back.
     pub fn acts(&self) -> bool {
-        !self.soft && !self.claim && self.bound.is_none()
+        !self.soft && self.states_rows()
+    }
+
+    /// Whether it states rows at all: a claim (§9.7) is judged and a bound (§9.6) read, never
+    /// solved for, so neither compiles one — the question every seam that compiles, counts or
+    /// welds rows asks, where `acts` also leaves out the soft rows a drag does compile.
+    pub fn states_rows(&self) -> bool {
+        !self.claim && self.bound.is_none()
     }
 
     /// The number the drawing reads where this constraint's stands: the one that would make its
@@ -2108,10 +2120,10 @@ impl Constraint {
         if !self.kind.boundable() {
             return None;
         }
-        let at = self.kind.spec().iter().position(|(_, k)| k.is_dimension())?;
+        let at = self.kind.dimension_slot()?;
         let v = self.local_values(sk);
-        let residual = |d: f64| {
-            let mut c = self.clone();
+        let mut c = self.clone();
+        let mut residual = |d: f64| {
             c.args[at] = Arg::Num(d);
             c.residual(sk, &v)[0]
         };
@@ -2119,7 +2131,7 @@ impl Constraint {
         let (mut d0, mut d1) = (d, d + d.abs().max(1.0));
         let (mut r0, mut r1) = (residual(d0), residual(d1));
         for _ in 0..40 {
-            if r1 == r0 || !r1.is_finite() {
+            if r1 == r0 || r1 == 0.0 || !r1.is_finite() {
                 break;
             }
             let d2 = d1 - r1 * (d1 - d0) / (r1 - r0);
@@ -2532,6 +2544,8 @@ impl Constraint {
     }
 
     /// The (index, name, kind) of this constraint's dimension values.
+    /// Every dimension slot, by index, name and kind — a kind has at most one
+    /// (`CKind::dimension_slot`).
     pub fn dimensions(&self) -> Vec<(usize, &'static str, SpecKind)> {
         self.kind
             .spec()

@@ -577,7 +577,7 @@ impl System {
             // a constraint with no rows here compiles none: an energy's are carried once, by the
             // constraint leading its group (#121)
             // — nor a claim or a bound, which state no row at all (§9.6, §9.7)
-            if c.claim || c.bound.is_some() || c.rows_in(sk) == 0 {
+            if !c.states_rows() || c.rows_in(sk) == 0 {
                 continue;
             }
             by_kernel.entry(c.kernel_key(sk)).or_default().push(i);

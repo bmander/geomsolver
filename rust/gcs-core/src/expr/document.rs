@@ -257,20 +257,14 @@ fn write_value(
     if !kind.is_dimension() || (k.free_kernel().is_none() && !k.built()) {
         return Err(format!("`{name}` is free, and this is not a dimension it can be").into());
     }
-    // a claim compiles to no rows, so an unknown bound here would sit in no equation at all — a
-    // degree of freedom minted by a statement that promised to add nothing
-    if sk.constraints[ci].claim {
+    // a claim and a bound compile to no rows, so an unknown read here would sit in no equation
+    // at all — a degree of freedom minted by a statement that promised to add nothing
+    let c = &sk.constraints[ci];
+    if !c.states_rows() {
+        let what = if c.claim { "a claim" } else { "a bound" };
         return Err(ExprError::new(
             Fault::ClaimFree,
-            format!("`{name}` is free, and a claim may not bind an unknown"),
-        ));
-    }
-    // nor a bound, which compiles to no rows either: it chooses among the solutions, and an
-    // unknown it read would be one no equation settles (§9.6)
-    if sk.constraints[ci].bound.is_some() {
-        return Err(ExprError::new(
-            Fault::ClaimFree,
-            format!("`{name}` is free, and a bound may not bind an unknown"),
+            format!("`{name}` is free, and {what} may not bind an unknown"),
         ));
     }
     // one name is one unknown: a place contacts share along a curve (`t == s`) is not a number a

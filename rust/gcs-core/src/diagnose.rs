@@ -692,10 +692,11 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
     // the whole of the rest of it.  The residual is `Constraint::error`, which needs no system at
     // all.
     let (mut bounds_violated, mut bounds_active) = (Vec::new(), Vec::new());
-    for c in &sk.constraints {
-        match crate::solve::bound_reading(sk, c) {
-            Some((false, _)) => bounds_violated.push(c.id),
-            Some((true, true)) => bounds_active.push(c.id),
+    let tol = crate::solve::bound_tol(sk);
+    for c in sk.constraints.iter().filter(|c| c.bound.is_some()) {
+        match crate::solve::bound_reading(sk, c, tol) {
+            Some(r) if !r.holds => bounds_violated.push(c.id),
+            Some(r) if r.edge => bounds_active.push(c.id),
             _ => {}
         }
     }

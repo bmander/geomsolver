@@ -325,11 +325,12 @@ impl<'a> Walk<'a> {
                     if let Some(twin) = scope.twin() {
                         // a claim, a gauge and a bound state no row, so they have no
                         // derivative
-                        let gauge = r2.form.written().is_some_and(|w| {
-                            crate::constraints::gauge_op(&w.word.text).is_some()
-                                || w.bound().is_some()
-                        });
-                        if r2.claim || gauge {
+                        let (gauge, bound) = match r2.form.written() {
+                            Some(w) => (crate::constraints::gauge_op(&w.word.text).is_some(),
+                                        w.bound().is_some()),
+                            None => (false, false),
+                        };
+                        if r2.claim || gauge || bound {
                             continue;
                         }
                         r2.along = Some(twin.clone());

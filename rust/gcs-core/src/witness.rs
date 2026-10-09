@@ -127,7 +127,7 @@ pub fn make_witness(sk: &mut Sketch, seed: u32, jitter: f64, tol: f64) -> Vec<f6
         // number is not an input either — no system reads it, so a jitter would measure nothing.
         // a set's derivative row (§6.21) reads its row's number only to differentiate it, so a
         // jitter of it would only make it and its row disagree
-        if c.soft || c.claim || c.bound.is_some() || c.free.is_some() || c.along.is_some() {
+        if c.soft || !c.states_rows() || c.free.is_some() || c.along.is_some() {
             continue;
         }
         for (ai, _, kind) in c.dimensions() {
@@ -143,7 +143,9 @@ pub fn make_witness(sk: &mut Sketch, seed: u32, jitter: f64, tol: f64) -> Vec<f6
     for &(ci, ai, nv) in &edits {
         sk.constraints[ci].args[ai] = crate::constraints::Arg::Num(nv);
     }
-    sk.constraints.retain(|c| !c.soft);
+    // nor a bound, which a witness's pose is free to break: it chooses the drawing's root, and a
+    // witness solves for any (§9.6)
+    sk.constraints.retain(|c| !c.soft && c.bound.is_none());
     let mut sys = System::new(sk);
     let res = sys.solve(sk, SolveOpts { max_iter: 60, ..SolveOpts::default() });
     let z = sys.z0(sk);

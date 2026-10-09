@@ -105,9 +105,11 @@ fn a_bound_no_root_keeps_fails_the_solve() {
     let mut e = read(&format!("{CROSSING}a distance(>= 10, along: up) p\n"));
     let r = solve(&mut e.sketch, SolveOpts::default());
     assert!(!r.success && r.status == BOUND_BROKEN, "{r:?}");
-    assert!(r.message.contains("distance(>= 10"), "{}", r.message);
     let d = diagnose(&mut e.sketch, DiagnoseOptions::default());
     assert_eq!(d.bounds_violated.len(), 1);
+    let c = e.sketch.constraint(d.bounds_violated[0]).expect("the bound");
+    let said = gcs_core::io::describe_with(c, &|r| e.map.name_of(r).cloned());
+    assert_eq!(said, "a distance(>= 10, along: up) p");
     let mut e = solved(&format!("{CROSSING}a distance(>= 4, along: up) p\n"));
     let d = diagnose(&mut e.sketch, DiagnoseOptions::default());
     assert!(d.bounds_violated.is_empty() && d.bounds_active.len() == 1, "{d:?}");

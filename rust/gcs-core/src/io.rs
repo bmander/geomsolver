@@ -1601,7 +1601,7 @@ impl Part {
         for (ci, c) in sk.constraints.iter().enumerate() {
             // a claim constrains nothing, so it welds nothing: two figures a claim spans stay
             // two parts, and a drag of one costs the other nothing — nor does a bound (§9.6)
-            if c.claim || c.bound.is_some() {
+            if !c.states_rows() {
                 continue;
             }
             for e in c.entities() {
