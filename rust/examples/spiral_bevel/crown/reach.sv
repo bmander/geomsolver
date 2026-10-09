@@ -25,6 +25,7 @@ component CutterReach(p: plane, n: plane, apex: point, normal: line, ax: line, r
   to_apex angle(0deg) past
   distance(reach) past
   radial coincident normal
+  normal.p1 distance(<= 0, along: normal) radial
   cap_radius equal reach_line
   in n {
     // Seed: the axis's run along from `radial`.
