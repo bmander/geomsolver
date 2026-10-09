@@ -16,7 +16,8 @@
 #[allow(unused_imports)]
 use crate::fmath::Det;
 use crate::model::{grow, polyline_distance, Box2, EntKind, EntRef, Sketch};
-use crate::plane::{dot, Basis};
+use crate::plane::{cross, dot, Basis};
+use crate::space::sub;
 
 use super::{drawable, eye, views};
 
@@ -212,7 +213,7 @@ impl Projection {
 
     /// Toward the viewer: the direction the eye's ray runs back along.
     pub fn toward(&self) -> [f64; 3] {
-        super::cross(self.right, self.up)
+        cross(self.right, self.up)
     }
 
     /// The map of a view — `None` is the page.
@@ -357,7 +358,7 @@ pub fn pick_solid(sk: &Sketch, proj: &Projection, at: (f64, f64)) -> Option<Soli
     for i in super::objects(sk) {
         let Ok(solid) = sk.evaluated_solid(i, crate::solid::ApproximationPolicy::Mesh) else { continue };
         let w = solid.world_bounds();
-        if w.is_empty() || !line_meets_box(foot, toward, w.lo, w.hi) {
+        if !w.meets(foot, toward, f64::NEG_INFINITY) {
             continue;
         }
         let o = solid.to_local(crate::solid::WorldPoint(foot)).0;
@@ -376,43 +377,24 @@ pub fn pick_solid(sk: &Sketch, proj: &Projection, at: (f64, f64)) -> Option<Soli
     best
 }
 
-/// Whether the line `o + t·d` passes through the box `lo`–`hi` (the slab test, over all `t`).
-fn line_meets_box(o: [f64; 3], d: [f64; 3], lo: [f64; 3], hi: [f64; 3]) -> bool {
-    let (mut t0, mut t1) = (f64::NEG_INFINITY, f64::INFINITY);
-    for k in 0..3 {
-        let pad = 1e-9 * (hi[k] - lo[k]).abs().max(1.0);
-        let (a, b) = (lo[k] - pad, hi[k] + pad);
-        if d[k] == 0.0 {
-            if o[k] < a || o[k] > b {
-                return false;
-            }
-            continue;
-        }
-        let (u, v) = ((a - o[k]) / d[k], (b - o[k]) / d[k]);
-        t0 = t0.max(u.min(v));
-        t1 = t1.min(u.max(v));
-    }
-    t0 <= t1
-}
-
 /// Where the line `o + t·d` crosses the triangle `p` (nine doubles), as `t` — either side, its
 /// edges included (Möller–Trumbore).  `None` for a miss or a line in the triangle's plane.
 fn line_meets_triangle(o: [f64; 3], d: [f64; 3], p: &[f64]) -> Option<f64> {
     let v0 = [p[0], p[1], p[2]];
-    let e1 = [p[3] - p[0], p[4] - p[1], p[5] - p[2]];
-    let e2 = [p[6] - p[0], p[7] - p[1], p[8] - p[2]];
-    let h = super::cross(d, e2);
+    let e1 = sub([p[3], p[4], p[5]], v0);
+    let e2 = sub([p[6], p[7], p[8]], v0);
+    let h = cross(d, e2);
     let a = dot(e1, h);
     if a == 0.0 || !a.is_finite() {
         return None;
     }
     let f = 1.0 / a;
-    let s = [o[0] - v0[0], o[1] - v0[1], o[2] - v0[2]];
+    let s = sub(o, v0);
     let u = f * dot(s, h);
     if !(0.0..=1.0).contains(&u) {
         return None;
     }
-    let q = super::cross(s, e1);
+    let q = cross(s, e1);
     let v = f * dot(d, q);
     if v < 0.0 || u + v > 1.0 {
         return None;

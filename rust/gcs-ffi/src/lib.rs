@@ -4060,10 +4060,7 @@ pub unsafe extern "C" fn gcs_elab_add_entity(
             set_error("unknown entity kind");
             return std::ptr::null_mut();
         };
-        let args: Vec<String> = v
-            .get("args")
-            .map(|a| a.arr().iter().map(|x| x.as_str().to_string()).collect())
-            .unwrap_or_default();
+        let args: Vec<String> = v.get("args").map(strings).unwrap_or_default();
         let seed: Vec<f64> =
             v.get("seed").map(|a| a.arr().iter().map(|x| x.as_f64()).collect()).unwrap_or_default();
         // a plane over two axes or lines, `args` their names, and the name asked for
@@ -4075,15 +4072,19 @@ pub unsafe extern "C" fn gcs_elab_add_entity(
     })
 }
 
+/// A JSON array of strings, as names; anything not a string reads as the empty name.
+fn strings(a: &Json) -> Vec<String> {
+    a.arr().iter().map(|x| x.as_str().to_string()).collect()
+}
+
 /// A face over drawn edges by name, `{edges: [..], holes: [[..]], name?}`: `edit::add_face`.
 #[no_mangle]
 pub unsafe extern "C" fn gcs_elab_add_face(h: *mut Elaborated, ptr: *const u8, len: usize) -> *mut u8 {
     guard(std::ptr::null_mut(), move || {
         let v = as_json(ptr, len);
-        let names = |a: &Json| a.arr().iter().map(|x| x.as_str().to_string()).collect::<Vec<_>>();
-        let edges = v.get("edges").map(names).unwrap_or_default();
+        let edges = v.get("edges").map(strings).unwrap_or_default();
         let holes: Vec<Vec<String>> =
-            v.get("holes").map(|a| a.arr().iter().map(names).collect()).unwrap_or_default();
+            v.get("holes").map(|a| a.arr().iter().map(strings).collect()).unwrap_or_default();
         let name = v.get("name").map(|n| n.as_str().to_string());
         out_edit(gcs_core::edit::add_face(&(*h).program, &edges, &holes, name.as_deref()))
     })
@@ -4117,14 +4118,12 @@ pub unsafe extern "C" fn gcs_elab_add_body_word(h: *mut Elaborated, ptr: *const 
     guard(std::ptr::null_mut(), move || {
         let v = as_json(ptr, len);
         let text = |k: &str| v.get(k).map(|x| x.as_str()).unwrap_or_default();
-        let word = match text("word") {
-            "union" => gcs_core::syntax::BodyWord::Union,
-            "cut" => gcs_core::syntax::BodyWord::Cut,
-            "bound" => gcs_core::syntax::BodyWord::Bound,
-            w => {
-                set_error(&format!("`{w}` is not a body word: union, cut or bound"));
-                return std::ptr::null_mut();
-            }
+        use gcs_core::syntax::BodyWord;
+        let Some(word) = [BodyWord::Union, BodyWord::Cut, BodyWord::Bound].into_iter()
+            .find(|w| w.as_str() == text("word"))
+        else {
+            set_error(format!("`{}` is not a body word: union, cut or bound", text("word")));
+            return std::ptr::null_mut();
         };
         out_edit(gcs_core::edit::add_body_word(&(*h).program, word, text("what"), text("body")))
     })

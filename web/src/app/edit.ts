@@ -114,7 +114,7 @@ export function deleteSelected(v: SketchView): void {
   // the solids, when they are what is selected — the selections being exclusive, again
   const solids = v.selectedSolids;
   if (solids.length) {
-    const refs = solids.map((s) => ({ ref: ['solid', s.index] as [string, number] }));
+    const refs = solids.map((s) => ({ ref: ['solid', s.index] as const }));
     const what = solids.length === 1 ? solids[0].name : `${solids.length} solids`;
     if (v.apply(v.doc.remove(refs), `deleted ${what}`)) v.onSelect();
     return;

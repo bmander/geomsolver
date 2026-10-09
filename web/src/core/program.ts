@@ -52,7 +52,6 @@ export interface SourceMap {
 /** What an edit costs. */
 export type EditKind = 'structural' | 'numeric' | 'none';
 
-/** A proposed new source.  Nothing has happened yet: `text` is what the document would say. */
 /** How a face is swept (Solvent §6.9): along its normal (`depth`, or `from` and `to`), through a
  *  body, or turned `about` a line in its plane. */
 export interface SolidSpec {
@@ -77,6 +76,7 @@ export interface Region {
   rings: [number, number][][];
 }
 
+/** A proposed new source.  Nothing has happened yet: `text` is what the document would say. */
 export interface Edit {
   text: string;
   kind: EditKind;
@@ -372,7 +372,7 @@ export class Document {
    *  the outer loop's edges and each hole's, by the names a face is written with, and their
    *  rings to wash — or null where no loop encloses it, or `{ refused }` with the cause. */
   regionAt(plane: Plane | null, x: number, y: number, unit: number): Region | { refused: string } | null {
-    const i = plane ? this.sketch.planes.indexOf(plane) : -1;
+    const i = plane ? plane.index : -1;
     return takeJson(core().gcs_elab_region_json(this.h, this.sketch.handle, i, x, y, unit));
   }
 

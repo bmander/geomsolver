@@ -350,7 +350,10 @@ impl StmtKind {
             StmtKind::Param(d) => Some(&d.name),
             StmtKind::Group(g) => Some(&g.name),
             StmtKind::Set(d) => Some(&d.name),
-            _ => None,
+            StmtKind::Derived(d) => Some(d.name.key()),
+            StmtKind::Relation(_) | StmtKind::Branch(_) | StmtKind::Block(_) | StmtKind::Style(_)
+            | StmtKind::SolidRel(_) | StmtKind::ClaimOver(_) | StmtKind::Unit(_)
+            | StmtKind::Minimize(_) => None,
         }
     }
 }

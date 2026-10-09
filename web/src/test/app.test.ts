@@ -1240,6 +1240,11 @@ test('a click on a solid selects it by the face it lands on, apart from the draw
   cv.fire('pointerdown', pointer(...top, { shiftKey: true }));
   cv.fire('pointerup', pointer(...top, { shiftKey: true }));
   assert.deepEqual(view.selectedSolids, []);
+  // assigning the drawing's selection by any route lets it go, even to nothing — a press on a
+  // callout or a constraint's row selects that instead
+  drag(view, top, top);
+  view.selected = [];
+  assert.deepEqual(view.selectedSolids, []);
   // a press on nothing lets it go too
   drag(view, top, top);
   const away = seenAt(view, [10, 80, 0]);

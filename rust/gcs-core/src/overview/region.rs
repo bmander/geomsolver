@@ -11,8 +11,10 @@
 
 use super::workspace::Views;
 use super::drawable;
+use crate::graph::UnionFind;
 use crate::model::{edge_ends, EntKind, EntRef, Sketch};
 use crate::program::SourceMap;
+use crate::solid::{inside_ring as contains, ring_area as signed_area};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// A region: its outer loop and its holes, each the edges in walk order, and their rings — the
@@ -29,7 +31,8 @@ struct Cycle {
     edges: Vec<EntRef>,
     ring: Vec<(f64, f64)>,
     area: f64,
-    /// Which connected piece of the drawing it belongs to.
+    /// Which connected piece of the drawing it belongs to: a point's root among the joined
+    /// edges, or past every point for a loop standing alone.
     piece: usize,
 }
 
@@ -54,7 +57,7 @@ pub fn region_at(
 ) -> Result<Option<Region>, String> {
     let views = Views::new(sk);
     let place = views.place(plane);
-    let mut edges: Vec<EntRef> = Vec::new();
+    let mut edges: Vec<(EntRef, (u32, u32))> = Vec::new();
     let mut closed: Vec<Cycle> = Vec::new();
     for e in sk.drawn() {
         let drawable_edge = matches!(e.kind,
@@ -72,26 +75,22 @@ pub fn region_at(
             _ => ends.is_some_and(|(a, b)| a == b),
         };
         if whole {
-            let ring: Vec<(f64, f64)> = drawable(sk, e, unit).into_iter().flatten().collect();
-            let area = signed_area(&ring);
-            let piece = usize::MAX - closed.len();   // a piece of its own
-            closed.push(Cycle { edges: vec![e], ring, area, piece });
-        } else if ends.is_some() {
-            edges.push(e);
+            // a lone loop bounds what it encloses, whichever way it was drawn, and is its own
+            // outline: counter-clockwise for the one, clockwise for the other
+            let mut ring: Vec<(f64, f64)> = drawable(sk, e, unit).into_iter().flatten().collect();
+            if signed_area(&ring) < 0.0 {
+                ring.reverse();
+            }
+            let piece = sk.points.len() + closed.len();
+            let back: Vec<(f64, f64)> = ring.iter().rev().copied().collect();
+            closed.push(Cycle { edges: vec![e], area: signed_area(&ring), ring, piece });
+            closed.push(Cycle { edges: vec![e], area: signed_area(&back), ring: back, piece });
+        } else if let Some(ends) = ends {
+            edges.push((e, ends));
         }
     }
     let mut cycles = walk(sk, &edges, unit);
-    for mut c in closed {
-        // a lone loop bounds what it encloses, whichever way it was drawn; its outline is itself
-        if c.area < 0.0 {
-            c.ring.reverse();
-            c.area = -c.area;
-        }
-        let outline = Cycle { edges: c.edges.clone(), ring: c.ring.iter().rev().copied().collect(),
-            area: -c.area, piece: c.piece };
-        cycles.push(c);
-        cycles.push(outline);
-    }
+    cycles.extend(closed);
     // the outer loop: the smallest bounded face holding `at`
     let Some(outer) = cycles.iter()
         .filter(|c| c.area > 0.0 && contains(&c.ring, at))
@@ -152,8 +151,8 @@ fn once_each(edges: &[EntRef]) -> Result<(), String> {
 
 /// Every loop of the graph the edges make, pruned of what dangles: the bounded faces counter-
 /// clockwise (positive area), each piece's outline clockwise (negative).
-fn walk(sk: &Sketch, edges: &[EntRef], unit: f64) -> Vec<Cycle> {
-    let ends: Vec<(u32, u32)> = edges.iter().map(|&e| edge_ends(sk, e).unwrap()).collect();
+fn walk(sk: &Sketch, edges: &[(EntRef, (u32, u32))], unit: f64) -> Vec<Cycle> {
+    let ends: Vec<(u32, u32)> = edges.iter().map(|&(_, ends)| ends).collect();
     // prune: an edge with an end nothing else meets bounds nothing, to a fixed point
     let mut alive = vec![true; edges.len()];
     loop {
@@ -174,18 +173,13 @@ fn walk(sk: &Sketch, edges: &[EntRef], unit: f64) -> Vec<Cycle> {
         }
     }
     // the pieces: points joined by a live edge are one
-    let mut piece: BTreeMap<u32, u32> = BTreeMap::new();
-    fn root(piece: &mut BTreeMap<u32, u32>, p: u32) -> u32 {
-        let up = *piece.entry(p).or_insert(p);
-        if up == p { p } else { let r = root(piece, up); piece.insert(p, r); r }
-    }
+    let mut piece = UnionFind::new(sk.points.len());
     for (&(a, b), _) in ends.iter().zip(&alive).filter(|(_, live)| **live) {
-        let (ra, rb) = (root(&mut piece, a), root(&mut piece, b));
-        piece.insert(ra, rb);
+        piece.union(a as usize, b as usize);
     }
     // two halves an edge, `2k` from its first end and `2k + 1` back
     let mut halves: Vec<Half> = Vec::new();
-    for (k, &e) in edges.iter().enumerate() {
+    for (k, &(e, _)) in edges.iter().enumerate() {
         let pts: Vec<(f64, f64)> = drawable(sk, e, unit).into_iter().flatten().collect();
         let (a, b) = ends[k];
         let back: Vec<(f64, f64)> = pts.iter().rev().copied().collect();
@@ -228,9 +222,8 @@ fn walk(sk: &Sketch, edges: &[EntRef], unit: f64) -> Vec<Cycle> {
             ring.extend(if ring.is_empty() { &pts[..] } else { &pts[1..] });
         }
         let area = signed_area(&ring);
-        let p = root(&mut piece, halves[start].from) as usize;
-        cycles.push(Cycle { edges: walked.iter().map(|&w| edges[halves[w].edge]).collect(), ring,
-            area, piece: p });
+        cycles.push(Cycle { edges: walked.iter().map(|&w| edges[halves[w].edge].0).collect(), ring,
+            area, piece: piece.find(halves[start].from as usize) });
     }
     cycles
 }
@@ -240,26 +233,4 @@ fn leaving(pts: &[(f64, f64)]) -> f64 {
     let p = pts[0];
     let q = pts.iter().skip(1).find(|q| q.0 != p.0 || q.1 != p.1).copied().unwrap_or(p);
     (q.1 - p.1).atan2(q.0 - p.0)
-}
-
-/// The shoelace area, positive counter-clockwise.
-fn signed_area(ring: &[(f64, f64)]) -> f64 {
-    let n = ring.len();
-    (0..n).map(|i| {
-        let (a, b) = (ring[i], ring[(i + 1) % n]);
-        a.0 * b.1 - b.0 * a.1
-    }).sum::<f64>() / 2.0
-}
-
-/// Whether `p` lies inside the closed ring, by the parity of the crossings of a ray to its right.
-fn contains(ring: &[(f64, f64)], p: (f64, f64)) -> bool {
-    let n = ring.len();
-    let mut inside = false;
-    for i in 0..n {
-        let (a, b) = (ring[i], ring[(i + 1) % n]);
-        if (a.1 > p.1) != (b.1 > p.1) && p.0 < a.0 + (p.1 - a.1) / (b.1 - a.1) * (b.0 - a.0) {
-            inside = !inside;
-        }
-    }
-    inside
 }

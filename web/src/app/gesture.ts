@@ -177,18 +177,15 @@ export function onPointerDown(v: SketchView, e: PointerEvent): void {
   }
   v.dropImage();
   const ent = at.kind === 'entity' ? at.ent : null;
-  // a press on the drawing, or on nothing without shift, lets the solids go — a shift-click
-  // grows the drawing's selection in place, past the setter that would
-  if (ent || !e.shiftKey) v.dropSolids();
   if (!ent) {
     // nothing under the cursor: start a rubber band.  A press with no drag still just
     // clears the selection, because an empty box selects nothing.
     if (!e.shiftKey) v.selected = [];
     v.gesture = bandGesture(v, sp);
   } else if (e.shiftKey) {
-    const i = v.selected.indexOf(ent);
-    if (i >= 0) v.selected.splice(i, 1);
-    else v.selected.push(ent);
+    // assigned, never grown in place: the setter is where the other selections are let go
+    v.selected = v.selected.includes(ent)
+      ? v.selected.filter((p) => p !== ent) : [...v.selected, ent];
   } else {
     if (!v.selected.includes(ent)) v.selected = [ent];
     // a point in space stands in no view, so it is dragged **where the eye sees it**: across the
@@ -423,7 +420,7 @@ type Target =
   | { kind: 'image' }
   | { kind: 'none' };
 
-function whatIsAt(v: SketchView, sp: [number, number]): Target {
+function whatIsAt(v: SketchView, sp: [number, number], solids = true): Target {
   const corner = handleAt(v, sp);
   if (corner >= 0) return { kind: 'handle', corner };
   const callout = v.pickCallout(sp[0], sp[1]);
@@ -431,7 +428,7 @@ function whatIsAt(v: SketchView, sp: [number, number]): Target {
   const ent = v.pick(sp[0], sp[1]);
   if (ent) return { kind: 'entity', ent };
   // beneath the drawing: an object's face, where the eye sees it
-  const pick = v.solidAt(sp[0], sp[1]);
+  const pick = solids ? v.solidAt(sp[0], sp[1]) : null;
   if (pick) return { kind: 'solid', pick };
   if (bodyAt(v, sp)) return { kind: 'image' };
   return { kind: 'none' };
@@ -440,7 +437,8 @@ function whatIsAt(v: SketchView, sp: [number, number]): Target {
 /** Cursor affordance: what a press here would grab. */
 export function hover(v: SketchView, sp: [number, number]): void {
   if (v.tool !== 'select') return;
-  const at = whatIsAt(v, sp);
+  // a solid promises no cursor of its own, so a pointer move does not cast a ray for one
+  const at = whatIsAt(v, sp, false);
   v.canvas.style.cursor =
       at.kind === 'handle' ? (at.corner % 2 ? 'nesw-resize' : 'nwse-resize')
     : at.kind === 'callout' || at.kind === 'image' ? 'move'

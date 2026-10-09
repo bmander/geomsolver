@@ -149,10 +149,10 @@ export class SketchView {
   get selected(): Primitive[] { return this._selected; }
   set selected(prims: Primitive[]) {
     this._selected = prims;
-    if (prims.length) {
-      this.dropImage();
-      this._solids = [];
-    }
+    // assigning the drawing's selection, even to nothing, lets the solids go: a press on a
+    // callout or on the constraint list selects that instead
+    this._solids = [];
+    if (prims.length) this.dropImage();
     // picking a view is choosing where to draw: a plane selected on its own becomes the current
     // one, and stays so past the selection — the point drawn next is in it
     if (prims.length === 1 && prims[0] instanceof Plane) this.plane = prims[0];
@@ -586,11 +586,13 @@ export class SketchView {
     // *not* current (`choosePlane`) would be re-armed by the rebind
     this.selected = carry ? this.rebind(held) : [];
     // a solid crosses by name too; the face path is the source's words and needs no rebinding
-    const solids = new Map(this.doc.solids().map((s) => [s.name, s.index]));
-    this._solids = heldSolids.flatMap((s) => {
-      const index = solids.get(s.name);
-      return index === undefined ? [] : [{ ...s, index }];
-    });
+    if (heldSolids.length) {
+      const solids = new Map(this.doc.solids().map((s) => [s.name, s.index]));
+      this._solids = heldSolids.flatMap((s) => {
+        const index = solids.get(s.name);
+        return index === undefined ? [] : [{ ...s, index }];
+      });
+    }
     const again = heldPlane ? this.doc.entity(heldPlane) : undefined;
     this.plane = again instanceof Plane ? again : null;
     this.drawOnFront();
@@ -941,8 +943,9 @@ export class SketchView {
   solidAt(sx: number, sy: number): SolidPick | null {
     const { az, el } = this.orbit;
     const hit = pickSolidSeen(this.sketch, az, el, ...this.eye(sx, sy));
-    const name = hit && this.doc.solids().find((s) => s.index === hit.solid)?.name;
-    return hit && name ? { name, index: hit.solid, face: hit.face } : null;
+    if (!hit) return null;
+    const name = this.doc.solids().find((s) => s.index === hit.solid)?.name;
+    return name ? { name, index: hit.solid, face: hit.face } : null;
   }
 
   /** Select a solid, or with `add` toggle it in the selection.  It lets the drawing's selection
@@ -952,10 +955,6 @@ export class SketchView {
     this._solids = !add ? [pick] : others.length < this._solids.length ? others : [...others, pick];
     this._selected = [];
     this.dropImage();
-  }
-
-  dropSolids(): void {
-    this._solids = [];
   }
 
   /** The plane whose pane is under the canvas point, nearest the eye, as the chooser names it — a
@@ -1052,7 +1051,6 @@ export class SketchView {
     if (!this.underlay) return;
     this.underlay.picked = true;
     this.selected = [];
-    this._solids = [];
   }
 
   /** And the other way: anything that selects geometry lets the picture go. */
