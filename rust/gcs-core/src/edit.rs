@@ -1662,7 +1662,24 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
                 ),
             );
         }
-        let Some(d) = decl_of(prog, site) else { continue };
+        // Made by a statement that is no declaration — a set drawn as its element (#105) — so
+        // there is no `name := ` to put on it: refused with the cause, where carrying on wrote
+        // the sketch's own label (`c0`), which resolves to nothing (#142).
+        let Some(d) = decl_of(prog, site) else {
+            let st = prog.stmt(site.stmt);
+            let in_place = st.is_some_and(|s| matches!(s.chained, syntax::Chained::Link)
+                && matches!(s.kind, StmtKind::Set(_) | StmtKind::Instance(_)));
+            // a named call's geometry is writable and never reaches here: an unnamed one's is
+            return Edit::none(prog, Some(if in_place {
+                "that is a set written in place, so no statement can name it; define the set \
+                 by name (`k := { p | … }`) and use it by that name".into()
+            } else if matches!(st.map(|s| &s.kind), Some(StmtKind::Instance(_))) {
+                "give the component call a name before referring to its geometry".into()
+            } else {
+                "no declaration made that, so no statement can name it; give it a name in the \
+                 source first".into()
+            }));
+        };
         if d.name.shown().is_some() {
             continue; // named since the map was made
         }
