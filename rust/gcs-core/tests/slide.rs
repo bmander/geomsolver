@@ -18,6 +18,12 @@ fn hanging() -> Lagrangian {
     Lagrangian::compile(&[(1.0, "p.y")], false, Units::default()).unwrap()
 }
 
+/// Ends `a` to `b`, `len` long, touching the line through `o` along `d` (a point 30 along it the
+/// line's second).
+fn touching(a: [f64; 2], b: [f64; 2], len: f64, o: [f64; 2], d: [f64; 2]) -> Ends {
+    Ends { a, b, len, lines: vec![[o[0], o[1], o[0] + 30.0 * d[0], o[1] + 30.0 * d[1]]] }
+}
+
 /// The catenary `y = y0 + a cosh((x − x0)/a)` through `p` and `q` of length `len`: `(a, x0, y0)`.
 fn catenary_of(p: [f64; 2], q: [f64; 2], len: f64) -> (f64, f64, f64) {
     let (dx, dy) = (q[0] - p[0], q[1] - p[1]);
@@ -41,9 +47,8 @@ fn corner(l: &Lagrangian, sh: &shoot::Shape) -> ([f64; 2], f64, f64, f64) {
 #[test]
 fn a_rope_pressed_onto_a_level_line_rests_symmetric_about_the_corner() {
     let l = hanging();
-    let ends = Ends { a: [0.0, 0.0], b: [100.0, 0.0], len: 150.0 };
-    let line = Stop::Slide { o: [20.0, -52.0], d: [1.0, 0.0] };
-    let sh = shoot::solve(&l, &ends, &[line], None).expect("a shape");
+    let ends = touching([0.0, 0.0], [100.0, 0.0], 150.0, [20.0, -52.0], [1.0, 0.0]);
+    let sh = shoot::solve(&l, &ends, &[Stop::Slide(0)], None).expect("a shape");
     let (p, s, into, out) = corner(&l, &sh);
     assert!((p[0] - 50.0).abs() < 1e-9 && (p[1] + 52.0).abs() < 1e-9, "the corner at {p:?}");
     assert!((s - 75.0).abs() < 1e-9, "the corner halves the rope: {s}");
@@ -69,9 +74,8 @@ fn a_rope_pressed_onto_a_level_line_rests_symmetric_about_the_corner() {
 #[test]
 fn the_two_arcs_are_catenaries_of_one_directrix() {
     let l = hanging();
-    let ends = Ends { a: [0.0, 0.0], b: [100.0, 15.0], len: 150.0 };
-    let line = Stop::Slide { o: [0.0, -47.0], d: [1.0, 0.0] };
-    let sh = shoot::solve(&l, &ends, &[line], None).expect("a shape");
+    let ends = touching([0.0, 0.0], [100.0, 15.0], 150.0, [0.0, -47.0], [1.0, 0.0]);
+    let sh = shoot::solve(&l, &ends, &[Stop::Slide(0)], None).expect("a shape");
     let (p, s, into, out) = corner(&l, &sh);
     assert!((p[1] + 47.0).abs() < 1e-9, "the corner on the line: {p:?}");
     assert!(p[0] > 40.0 && p[0] < 50.0, "nearer the lower end: {p:?}");
@@ -97,10 +101,9 @@ fn the_two_arcs_are_catenaries_of_one_directrix() {
 #[test]
 fn on_a_sloping_line_the_rope_leaves_at_the_angle_it_met() {
     let l = hanging();
-    let ends = Ends { a: [0.0, 0.0], b: [100.0, 0.0], len: 150.0 };
     let phi = 12f64.to_radians();
-    let line = Stop::Slide { o: [0.0, -64.0], d: [phi.cos(), phi.sin()] };
-    let sh = shoot::solve(&l, &ends, &[line], None).expect("a shape");
+    let ends = touching([0.0, 0.0], [100.0, 0.0], 150.0, [0.0, -64.0], [phi.cos(), phi.sin()]);
+    let sh = shoot::solve(&l, &ends, &[Stop::Slide(0)], None).expect("a shape");
     let (p, _, into, out) = corner(&l, &sh);
     let gap = (p[0] - 0.0) * phi.sin() - (p[1] + 64.0) * phi.cos();
     assert!(gap.abs() < 1e-9, "the corner on the line: {gap}");
@@ -114,9 +117,9 @@ fn on_a_sloping_line_the_rope_leaves_at_the_angle_it_met() {
 #[test]
 fn a_line_the_rope_crosses_presses_nothing() {
     let l = hanging();
-    let ends = Ends { a: [0.0, 0.0], b: [100.0, 0.0], len: 150.0 };
-    let free = shoot::solve(&l, &ends, &[], None).unwrap();
-    let sh = shoot::solve(&l, &ends, &[Stop::Slide { o: [0.0, -40.0], d: [1.0, 0.0] }], None).unwrap();
+    let ends = touching([0.0, 0.0], [100.0, 0.0], 150.0, [0.0, -40.0], [1.0, 0.0]);
+    let free = shoot::solve(&l, &Ends { lines: vec![], ..ends.clone() }, &[], None).unwrap();
+    let sh = shoot::solve(&l, &ends, &[Stop::Slide(0)], None).unwrap();
     let (p, _, into, out) = corner(&l, &sh);
     assert!((p[1] + 40.0).abs() < 1e-9 && (into - out).abs() < 1e-8, "no corner: {p:?} {into} {out}");
     let e = (0..=100)
@@ -129,29 +132,30 @@ fn a_line_the_rope_crosses_presses_nothing() {
     assert!(e < 1e-9, "the rope moved by {e}");
 }
 
-/// The derivatives a drawing reads off the shape — in the ends and the length — against central
-/// differences of solves, the corner sliding along its line between them.
+/// The derivatives a drawing reads off the shape — in the ends, the length and the line's two
+/// points — against central differences of solves, the corner sliding along its line between them.
 #[test]
 fn a_touched_shapes_derivatives_are_its_differences() {
     let l = hanging();
-    let ends = Ends { a: [0.0, 0.0], b: [100.0, 5.0], len: 150.0 };
-    let stops = [Stop::Slide { o: [0.0, -56.0], d: [0.98f64.sqrt(), 0.02f64.sqrt()] }];
+    let ends = touching([0.0, 0.0], [100.0, 5.0], 150.0, [0.0, -56.0], [0.98f64.sqrt(), 0.02f64.sqrt()]);
+    let stops = [Stop::Slide(0)];
     let sh = shoot::solve(&l, &ends, &stops, None).expect("a shape");
     for u in [0.2, 0.7] {
         let at = shoot::at(&l, &sh, u, true).unwrap();
         let o = ends.outer();
-        for c in 0..5 {
+        assert_eq!(at.stride, 1 + o.len());
+        for c in 0..o.len() {
             let h = 1e-5;
             let z = |sign: f64| {
-                let mut oo = o;
+                let mut oo = o.clone();
                 oo[c] += sign * h;
-                let s = shoot::solve(&l, &Ends::of(&oo), &stops, Some(&sh)).unwrap();
+                let s = shoot::solve(&l, &Ends::of(&oo, 1), &stops, Some(&sh)).unwrap();
                 shoot::at(&l, &s, u, false).unwrap().z
             };
             let (p, m) = (z(1.0), z(-1.0));
             for i in 0..4 {
                 let fd = (p[i] - m[i]) / (2.0 * h);
-                let got = at.dz[i * 6 + 1 + c];
+                let got = at.dz[i * at.stride + 1 + c];
                 assert!((fd - got).abs() <= 1e-5 * (1.0 + fd.abs()), "u {u} z{i} / o{c}: {got} against {fd}");
             }
         }
@@ -236,14 +240,56 @@ fn a_copied_touch_drapes_again() {
     }
 }
 
-/// What a touch is not: a rail the drawing does not hold (the rope would push it anywhere), and
-/// a curve that is not free (its shape is its formula's, not pressed into a corner).  And the
-/// tangency a held line refuses says what to write instead.
+/// The rail need not be held: its points are the rope's columns, so dragging an end of it — by
+/// the drag the app makes (`PlanDrag`) — tilts the rail and the ring slides up it, every frame
+/// the rope meeting and leaving the rail at one angle as the rail now lies.
+#[test]
+fn dragging_the_rail_slides_the_ring_along_it() {
+    let src = touched()
+        .replace("  fix((90, -52)) r1\n", "")
+        .replace("  r1 := point\n", "  r1 := point hint((90, -52))\n");
+    let mut e = solved(&src);
+    assert_eq!(dof(&mut e), (2, vec!["minimum"]));
+    let r1 = (0..e.sketch.points.len())
+        .find(|&i| {
+            let (x, y) = e.sketch.point_xy(i);
+            (x - 90.0).abs() < 1e-9 && (y + 52.0).abs() < 1e-9
+        })
+        .unwrap();
+    let l = hanging();
+    let mut drag = gcs_core::decompose::PlanDrag::new(&e.sketch, r1, 90.0, -52.0, None, 0.05);
+    let mut xs = Vec::new();
+    for k in 1..=6 {
+        let y = -52.0 - k as f64;
+        let r = drag.move_to(&mut e.sketch, None, 90.0, y);
+        assert!(r.success, "frame {k}: {r:?}");
+        let (rx, ry) = e.sketch.point_xy(r1);
+        assert!((rx - 90.0).abs() < 1e-6 && (ry - y).abs() < 1e-6, "frame {k}: the rail's end at ({rx}, {ry})");
+        let (_, sh) = e.sketch.curve_shape(0).expect("a shape");
+        let (p, _, into, out) = corner(&l, &sh);
+        let phi = (y + 52.0).atan2(70.0);
+        let gap = (p[0] - 20.0) * phi.sin() - (p[1] + 52.0) * phi.cos();
+        assert!(gap.abs() < 1e-8, "frame {k}: the corner off the rail by {gap}");
+        assert!(((into - phi).cos() - (out - phi).cos()).abs() < 1e-8, "frame {k}: {into} {out} on {phi}");
+        assert!((into - out).abs() > 0.05, "frame {k}: a corner, {into} {out}");
+        xs.push(p[0]);
+    }
+    drag.end();
+    // the rope pulls the ring towards its ends, above: up the rail as the rail tilts
+    assert!(xs.windows(2).all(|w| w[1] < w[0]), "the ring slides up the rail: {xs:?}");
+}
+
+/// What a touch is not: of a curve that is not free (its shape is its formula's, not pressed into
+/// a corner), nor of more lines than a curve's columns hold.  And the tangency a held line refuses
+/// says what to write instead.
 #[test]
 fn a_touch_is_refused_where_it_cannot_press() {
-    let loose = touched().replace("  fix((90, -52)) r1\n", "");
-    let (_, d) = read(&loose);
-    assert!(d.iter().any(|m| m.starts_with("E040") && m.contains("hold the line")), "{d:?}");
+    let three = touched().replace(
+        "  rope touches rail\n",
+        "  rope touches rail\n  rope touches rail\n  rope touches rail\n",
+    );
+    let (_, d) = read(&three);
+    assert!(d.iter().any(|m| m.starts_with("E040") && m.contains("at most 2")), "{d:?}");
     let src = "use std\n\
                component Wheel(c: point, u: Angle) {\n  p := point(x: c.x + 50 * cos(u), y: c.y + 50 * sin(u))\n}\n\
                in std.front {\n  o := point\n  fix((0, 0)) o\n  r0 := point\n  r1 := point\n  \

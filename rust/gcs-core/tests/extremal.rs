@@ -40,7 +40,7 @@ fn off(lag: &Lagrangian, sh: &shoot::Shape, y: impl Fn(f64) -> f64) -> f64 {
 fn a_rope_hangs_as_the_catenary() {
     let l = lag("p.y", false);
     for (d, len) in [(100.0, 150.0), (20.0, 150.0)] {
-        let ends = Ends { a: [0.0, 0.0], b: [d, 0.0], len };
+        let ends = Ends { a: [0.0, 0.0], b: [d, 0.0], len, lines: vec![] };
         let sh = shoot::solve(&l, &ends, &[], None).expect("a shape");
         let e = off(&l, &sh, catenary(d, len));
         assert!(e < 1e-9, "chord {d}: off the catenary by {e}");
@@ -67,7 +67,7 @@ fn bisect(mut lo: f64, mut hi: f64, f: impl Fn(f64) -> f64) -> f64 {
 #[test]
 fn didos_strip_is_the_circular_arc() {
     let l = lag("(p.x * t.y - p.y * t.x) / 2", true);
-    let ends = Ends { a: [0.0, 0.0], b: [100.0, 0.0], len: 130.0 };
+    let ends = Ends { a: [0.0, 0.0], b: [100.0, 0.0], len: 130.0, lines: vec![] };
     let sh = shoot::solve(&l, &ends, &[], None).expect("a shape");
     let alpha = bisect(1e-6, std::f64::consts::PI - 1e-9, |a| a.sin() / a - 100.0 / 130.0);
     let r = 65.0 / alpha;
@@ -89,7 +89,7 @@ fn didos_strip_is_the_circular_arc() {
 #[test]
 fn the_arch_is_the_catenary_turned_over() {
     let l = lag("p.y", true);
-    let ends = Ends { a: [0.0, 0.0], b: [100.0, 0.0], len: 150.0 };
+    let ends = Ends { a: [0.0, 0.0], b: [100.0, 0.0], len: 150.0, lines: vec![] };
     let sh = shoot::solve(&l, &ends, &[], None).expect("a shape");
     let cat = catenary(100.0, 150.0);
     let e = off(&l, &sh, |x| -cat(x));
@@ -112,7 +112,7 @@ fn catenary_through(p: [f64; 2], q: [f64; 2], len: f64) -> impl Fn(f64) -> f64 {
 #[test]
 fn a_peg_makes_a_corner_of_two_catenaries() {
     let l = lag("p.y", false);
-    let ends = Ends { a: [0.0, 0.0], b: [100.0, 0.0], len: 150.0 };
+    let ends = Ends { a: [0.0, 0.0], b: [100.0, 0.0], len: 150.0, lines: vec![] };
     let peg = [50.0, -40.0];
     let sh = shoot::solve(&l, &ends, &[Stop::Peg(peg)], None).expect("a shape");
     assert!((sh.places[1] - 75.0).abs() < 1e-9, "the peg halves the rope: {}", sh.places[1]);
@@ -143,7 +143,7 @@ fn a_great_circle_is_a_minimum_short_of_the_antipode_and_a_saddle_past_it() {
     let mut verdicts = Vec::new();
     for deg in (10..=70).step_by(5) {
         let sweep = (deg as f64).to_radians();
-        let ends = Ends { a: on(pa), b: on(pa + sweep), len: rho * sweep };
+        let ends = Ends { a: on(pa), b: on(pa + sweep), len: rho * sweep, lines: vec![] };
         let next = shoot::solve(&l, &ends, &[], sh.as_ref()).unwrap_or_else(|| panic!("a shape at {deg}°"));
         let e = (0..=100)
             .map(|i| {
@@ -168,7 +168,7 @@ fn a_great_circle_is_a_minimum_short_of_the_antipode_and_a_saddle_past_it() {
 fn the_shapes_derivatives_are_its_differences() {
     let l = lag("p.y", false);
     for pegs in [vec![], vec![Stop::Peg([45.0, -40.0])]] {
-        let ends = Ends { a: [0.0, 0.0], b: [100.0, 5.0], len: 150.0 };
+        let ends = Ends { a: [0.0, 0.0], b: [100.0, 5.0], len: 150.0, lines: vec![] };
         let sh = shoot::solve(&l, &ends, &pegs, None).expect("a shape");
         for u in [0.13, 0.6] {
             let at = shoot::at(&l, &sh, u, true).unwrap();
@@ -176,15 +176,15 @@ fn the_shapes_derivatives_are_its_differences() {
             for c in 0..5 {
                 let h = 1e-5;
                 let z = |sign: f64| {
-                    let mut oo = o;
+                    let mut oo = o.clone();
                     oo[c] += sign * h;
-                    let s = shoot::solve(&l, &Ends::of(&oo), &pegs, Some(&sh)).unwrap();
+                    let s = shoot::solve(&l, &Ends::of(&oo, 0), &pegs, Some(&sh)).unwrap();
                     shoot::at(&l, &s, u, true).unwrap().z
                 };
                 let (p, m) = (z(1.0), z(-1.0));
                 for i in 0..4 {
                     let fd = (p[i] - m[i]) / (2.0 * h);
-                    let got = at.dz[i * 6 + 1 + c];
+                    let got = at.dz[i * at.stride + 1 + c];
                     assert!((fd - got).abs() <= 1e-5 * (1.0 + fd.abs()), "pegs {pegs:?} u {u} z{i} / o{c}: {got} against {fd}");
                 }
             }
@@ -192,7 +192,7 @@ fn the_shapes_derivatives_are_its_differences() {
             let (p, m) = (shoot::at(&l, &sh, u + du, true).unwrap().z, shoot::at(&l, &sh, u - du, true).unwrap().z);
             for i in 0..4 {
                 let fd = (p[i] - m[i]) / (2.0 * du);
-                assert!((fd - at.dz[i * 6]).abs() <= 1e-5 * (1.0 + fd.abs()), "z{i} / u: {} against {fd}", at.dz[i * 6]);
+                assert!((fd - at.dz[i * at.stride]).abs() <= 1e-5 * (1.0 + fd.abs()), "z{i} / u: {} against {fd}", at.dz[i * at.stride]);
             }
         }
     }
