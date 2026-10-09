@@ -107,6 +107,7 @@ mod membership;
 mod plane_tangent;
 mod numeric_parts;
 mod two_planes;
+mod sundial;
 mod shared_contact;
 mod sheet;
 mod smoke;
