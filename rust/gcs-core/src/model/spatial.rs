@@ -276,6 +276,67 @@ pub enum SolidDef {
     /// other order names the intermediate, and then there are two solids because there are
     /// two things.
     Body { stock: u32, on: Vec<u32>, through: Vec<u32>, bound: Vec<u32> },
+    /// **A region as a solid** (§6.9, §6.21): `solid(R)`, the points `inside` the set `R` — its
+    /// body applied to a hidden `probe` point, each bound it put there one of `terms`.  Its terms
+    /// share one axis, so it is a revolution of one meridian region (`solid::region`).
+    Region { probe: u32, terms: Vec<RegionTerm> },
+}
+
+/// What a region solid's term bounds (§6.21): the measure a bound on its probe reads, recognised
+/// by the constraint's kind and never by the set it came from.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum RegionShape {
+    /// A distance from a point: a ball about it.
+    Ball { center: u32 },
+    /// A distance from a line: a cylinder about it.
+    Cylinder { line: u32 },
+    /// An angle from a line's direction, seen from its start: a cone, apex the line's `p1`.
+    Cone { axis: u32 },
+    /// An ordinate along a plane's normal, from a point: a half-space.  `sign` is -1 where the
+    /// probe is the ordinate's first operand, read back from it.
+    Plane { plane: u32, from: u32, sign: f64 },
+}
+
+impl RegionShape {
+    /// The entities its measure reads.
+    pub fn entities(&self) -> Vec<EntRef> {
+        match *self {
+            RegionShape::Ball { center } => vec![EntRef::point(center as usize)],
+            RegionShape::Cylinder { line } | RegionShape::Cone { axis: line } => {
+                vec![EntRef::line(line as usize)]
+            }
+            RegionShape::Plane { plane, from, .. } => {
+                vec![EntRef::plane(plane as usize), EntRef::point(from as usize)]
+            }
+        }
+    }
+
+    /// The same measure over the entities `map` renumbers them to, or `None` where one went.
+    pub fn remapped(&self, map: &dyn Fn(EntRef) -> Option<EntRef>) -> Option<RegionShape> {
+        let i = |e: EntRef| map(e).map(|e| e.i() as u32);
+        Some(match *self {
+            RegionShape::Ball { center } => RegionShape::Ball { center: i(EntRef::point(center as usize))? },
+            RegionShape::Cylinder { line } => RegionShape::Cylinder { line: i(EntRef::line(line as usize))? },
+            RegionShape::Cone { axis } => RegionShape::Cone { axis: i(EntRef::line(axis as usize))? },
+            RegionShape::Plane { plane, from, sign } => RegionShape::Plane {
+                plane: i(EntRef::plane(plane as usize))?,
+                from: i(EntRef::point(from as usize))?,
+                sign,
+            },
+        })
+    }
+}
+
+/// One bound of a region solid: its measure, which way, and its numbers (a length or an angle in
+/// radians) — the low end and an interval's high.  `name` is the set the bound came from, where
+/// it came from one: what the faces it makes are called.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RegionTerm {
+    pub shape: RegionShape,
+    pub cmp: crate::syntax::Cmp,
+    pub lo: f64,
+    pub hi: Option<f64>,
+    pub name: String,
 }
 
 /// A solid, as the document names it.
@@ -411,7 +472,8 @@ impl SolidE {
     pub fn operands(&self) -> Vec<u32> {
         match &self.def {
             SolidDef::Placed { source, .. } | SolidDef::Swept { source, .. } => vec![*source],
-            SolidDef::Prism { .. } | SolidDef::Revolve { .. } | SolidDef::Through { .. } | SolidDef::Loft { .. } => Vec::new(),
+            SolidDef::Prism { .. } | SolidDef::Revolve { .. } | SolidDef::Through { .. } | SolidDef::Loft { .. }
+                | SolidDef::Region { .. } => Vec::new(),
             SolidDef::Body { stock, on, through, bound } => {
                 let mut v = vec![*stock];
                 v.extend(on.iter().copied());
@@ -426,7 +488,8 @@ impl SolidE {
     pub fn face(&self) -> Option<u32> {
         match &self.def {
             SolidDef::Prism { face, .. } | SolidDef::Revolve { face, .. } | SolidDef::Through { face, .. } | SolidDef::Loft { face, .. } => Some(*face),
-            SolidDef::Body { .. } | SolidDef::Placed { .. } | SolidDef::Swept { .. } => None,
+            SolidDef::Body { .. } | SolidDef::Placed { .. } | SolidDef::Swept { .. }
+                | SolidDef::Region { .. } => None,
         }
     }
 }

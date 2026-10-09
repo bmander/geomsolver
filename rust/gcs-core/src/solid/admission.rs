@@ -263,6 +263,18 @@ fn revolution_turns(sk: &Sketch,id: usize,tolerance: f64) -> Option<Vec<Turns>> 
             } }
             Some(vec![match ball { Some((c,_)) if round => Turns::Ball(c),_ => Turns::Line(a,d) }])
         }
+        // a region: a revolution of its meridian about its axis — or, balls about one centre
+        // alone, the same under every turn about it
+        SolidDef::Region {terms,..} => {
+            let m = super::region::meridian(sk,id).ok()?;
+            let one = |t: &crate::model::RegionTerm| match t.shape {
+                crate::model::RegionShape::Ball {center} => Some(sk.world_point(center as usize)),
+                _ => None,
+            };
+            let centres: Option<Vec<V>> = terms.iter().map(one).collect();
+            let alike = centres.as_ref().is_some_and(|c| c.iter().all(|&x| norm(sub(x,c[0])) <= tolerance));
+            Some(vec![if alike { Turns::Ball(m.origin) } else { Turns::Line(m.origin,m.axis) }])
+        }
         SolidDef::Placed {source,motion,at} => {
             let pose = crate::motion::Family::read(sk,*motion as usize).ok()?.at(at.value).ok()?;
             Some(revolution_turns(sk,*source as usize,tolerance)?.into_iter().map(|t| match t {
@@ -329,6 +341,8 @@ fn tool(sk: &Sketch,id: usize) -> Result<(),String> {
         SolidDef::Revolve {sweep,..} => if (sweep.value.abs()-TAU).abs() > 1e-9 {
             Err(format!("`{}` is a partial revolution",solid.name)) } else { Ok(()) },
         SolidDef::Placed {source,..} => tool(sk,*source as usize),
+        // a region is a full revolution of its meridian
+        SolidDef::Region {..} => super::region::meridian(sk,id).map(|_| ()),
         SolidDef::Body {stock,on,through,bound} => {
             if !on.is_empty() { return Err(format!("`{}` adds solids together; only intersections are in the class",solid.name)); }
             if !through.is_empty() { return Err(format!("`{}` cuts solids; only intersections are in the class",solid.name)); }

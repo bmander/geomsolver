@@ -222,17 +222,34 @@ pub fn meridian_region(recipe: &Json,seam: V) -> Result<Result<(Profile,V,V),Str
     }
     let root = regions.remove(&field(recipe,"root")?.as_i64()).ok_or("recipe: no root")?;
     if root.loops.is_empty() { return Ok(Err("the meridian region is empty".into())) }
-    // back into the half-plane's space, the outer loop first (the one enclosing most)
+    Ok(Ok((region_profile(&root,origin,seam,axis,&|_| String::new()),origin,axis)))
+}
+
+/// A meridian region as the profile a revolution turns: back into the half-plane through `origin`
+/// along `axis`, towards `seam`, the outer loop first (the one enclosing most), each edge named by
+/// its step's tag.
+pub(crate) fn region_profile(
+    root: &super::planar::Region,
+    origin: V,
+    seam: V,
+    axis: V,
+    name: &dyn Fn(u32) -> String,
+) -> Profile {
+    use crate::space::{add,cross,scale};
+    use super::build::ProfileEdge;
+    use super::geom::Frame;
+    use super::planar::{Region,Seg};
     let at = |p: [f64;2]| add(origin,add(scale(seam,p[0]),scale(axis,p[1])));
     let normal = cross(seam,axis);
-    let mut loops: Vec<(f64,Vec<ProfileEdge>)> = root.loops.iter().map(|l| {
+    let mut loops: Vec<(f64,Vec<ProfileEdge>,Vec<String>)> = root.loops.iter().map(|l| {
         let area = Region {loops:vec![l.clone()]}.area().abs();
         (area,l.iter().map(|s| match s.seg {
             Seg::Line {a,b} => ProfileEdge::Line {a:at(a),b:at(b)},
             Seg::Arc {c,r,a0,sweep} => ProfileEdge::Arc {frame:Frame::new(at(c),normal,seam),r,
                 span:Some(if sweep > 0. { [a0,a0+sweep] } else { [a0+sweep,a0] })},
-        }).collect())
+        }).collect(),l.iter().map(|s| name(s.tag)).collect())
     }).collect();
     loops.sort_by(|a,b| b.0.total_cmp(&a.0));
-    Ok(Ok((Profile {origin,normal,loops:loops.into_iter().map(|l| l.1).collect(),names:Vec::new()},origin,axis)))
+    let names = loops.iter().map(|l| l.2.clone()).collect();
+    Profile {origin,normal,loops:loops.into_iter().map(|l| l.1).collect(),names}
 }

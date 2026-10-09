@@ -35,6 +35,7 @@ pub use curves::{CURVE_STEPS, CurveDef, CurveBody, CurveE, Extremal, Home, Trim,
 pub use spatial::{
     FaceLoop, FaceSupport, FaceE, Length, SolidRequirement, SolidClaim, SolidBearing, Sweep,
     DerivedE, Extent, Sense, SolidDef, SolidE, SeamE, EdgeE, VertexE, PatchE, EnvelopeE, SurfaceE,
+    RegionShape, RegionTerm,
     MotionDef, MotionE,
 };
 pub use construction::{ThreePointArc, three_point_arc};
@@ -85,6 +86,11 @@ pub struct Sketch {
     /// use made — see `Dual`.  Document state, saved and grafted; its tangent columns are minted
     /// by the rows that read them.
     pub duals: Vec<Dual>,
+    /// The hidden points a region solid's body is applied to (`solid(R)`, §6.21), each with the
+    /// bounds it put there, gathered as relations are stated and taken by the solid when it is
+    /// built (`SolidDef::Region`).  Never a row: a probe's bound describes material, and chooses
+    /// no root.
+    pub probes: BTreeMap<usize, Vec<RegionTerm>>,
     /// The points drawn in further planes (`point in P, G`, §6.7), each with its **twins**: a
     /// point of its own in each further plane, tied to it in space (`Sketch::tie_twin`,
     /// `hold_twins`).  A reader drawn in a plane reads the point there by its twin

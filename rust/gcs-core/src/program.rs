@@ -451,6 +451,12 @@ fn elaborate_in(
             sk.twins.entry(p.i()).or_default().push(t.i());
         }
     }
+    // the points region solids' sets are applied to, whose bounds are the solids' terms (§6.21)
+    for key in &expansion.probes {
+        if let Some(p) = res.of.get(key) {
+            sk.probes.insert(p.i(), Vec::new());
+        }
+    }
     // memberships, once every kind is built and before anything reads one: `point a in top`
     // names a plane built after the point, and `project` infers its planes from these — and then
     // every point no `in` reached stands in space (`places`), and a plane written over a drawn

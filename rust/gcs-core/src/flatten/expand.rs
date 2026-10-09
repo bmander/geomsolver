@@ -198,9 +198,15 @@ impl<'a> Walk<'a> {
                     }
                     self.stamp_scope_plane(&mut d2, scope);
                     let twins = self.twins_of(&d2, &d.name.key().text);
+                    let region = self.region_of(&mut d2, &d.name.key().text, scope);
                     self.emit(StmtKind::Decl(d2), st, scope, path);
                     for twin in twins {
                         self.emit(StmtKind::Decl(twin), st, scope, path);
+                    }
+                    // a region solid's probe, and its set applied to it
+                    if let Some((probe, inside)) = region {
+                        self.emit(StmtKind::Decl(probe), st, scope, path);
+                        self.emit(StmtKind::Relation(inside), st, scope, path);
                     }
                 }
                 StmtKind::Param(_) | StmtKind::Group(_) => {} // worked out above, before the walk
@@ -697,5 +703,47 @@ impl Walk<'_> {
             twin.membership = crate::syntax::Membership::written_at(plane.clone(), at);
             twin
         }).collect()
+    }
+}
+
+impl Walk<'_> {
+    /// **A region as a solid** (§6.21): `blank := solid(R)`, its one operand a set, is the points
+    /// inside it — the solid made `Sweep::Region` over a hidden point keyed `{solid}#probe` (held,
+    /// in space), and `probe inside R` stated beside it, so the set's body is applied to the probe
+    /// as any use applies it and the bounds it puts there are the solid's terms (`constrain`).
+    /// `None` for any other declaration.
+    fn region_of(&mut self, d: &mut Decl, local: &str, sc: &Scope) -> Option<(Decl, crate::syntax::Relation)> {
+        if d.kind != crate::model::EntKind::Solid || !matches!(d.sweep, Some(crate::syntax::Sweep::Body)) {
+            return None;
+        }
+        let [Kid::Ref(set)] = d.children.first().map(Vec::as_slice).unwrap_or(&[]) else {
+            return None;
+        };
+        let alias = self.alias_table();
+        let found = super::resolve::lookup_raw(set, sc, &self.names, &alias, self.units);
+        let Some((abs, rest)) = found else { return None };
+        if !rest.is_empty() || !self.sets.contains_key(&abs) {
+            return None;
+        }
+        let set = set.clone();
+        let at = Span::new(d.name.span().lo as usize, d.name.span().lo as usize);
+        let key = format!("{}#probe", d.name.key().text);
+        self.names.insert(key.clone());
+        self.probes.push(key.clone());
+        let probe = format!("{local}#probe");
+        d.children.clear();
+        d.sweep = Some(crate::syntax::Sweep::Region { probe: Ref::new(&probe) });
+        // held where nothing is likely to be, so no line from a cone's apex to it is none
+        let mut point = Decl::point(crate::syntax::DeclName::Key(Name { text: key, span: at }), [0.0; 2], None);
+        point.seed = vec![0.7548776662, 0.5698402910, 0.4301597090];
+        point.seed_text = vec![None; 3];
+        let inside = crate::syntax::Written {
+            word: Name { text: "inside".to_string(), span: set.span },
+            fixity: crate::constraints::Fixity::Infix,
+            ops: vec![Ref::new(&probe), set],
+            args: Vec::new(),
+            span: at,
+        };
+        Some((point, crate::syntax::Relation::of(crate::syntax::RelationForm::Written(inside))))
     }
 }

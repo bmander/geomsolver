@@ -1215,6 +1215,22 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
                     bound: bound.iter().map(sol).collect(),
                 }
             }
+            // a region's probe and the entities its terms read, which retention kept with it
+            crate::model::SolidDef::Region { probe, terms } => {
+                let ent = |e: EntRef| match e.kind {
+                    EntKind::Point => pt_index(e.i()).map(EntRef::point),
+                    EntKind::Line => line_map[e.i()].map(EntRef::line),
+                    EntKind::Plane => plane_map[e.i()].map(EntRef::plane),
+                    _ => None,
+                };
+                crate::model::SolidDef::Region {
+                    probe: pt_index(*probe as usize).expect("a region's probe comes with it") as u32,
+                    terms: terms.iter().map(|t| crate::model::RegionTerm {
+                        shape: t.shape.remapped(&ent).expect("a region's terms come with it"),
+                        ..t.clone()
+                    }).collect(),
+                }
+            }
         };
         dst.solids.push(crate::model::SolidE {
             def,
