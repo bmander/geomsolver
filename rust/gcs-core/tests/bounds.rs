@@ -47,6 +47,36 @@ fn a_bound_chooses_the_root_the_seed_did_not() {
     }
 }
 
+/// A bound is read on the seeds first: a point seeded on the wrong side is carried across, as if
+/// it had been seeded there, and a seed read from it follows — before anything is solved.
+#[test]
+fn a_bound_chooses_the_seeds_side() {
+    let src = format!("{CROSSING}a distance(>= 0, along: up) p\n\
+                       in std.front {{\n  q := point hint(at: p)\n}}\nq distance(1) p\n");
+    let e = read(&src);
+    let (p, q) = (p_at(&e), e.sketch.world_point(ent(&e, "q").i()));
+    assert!((p[2] - 2.0).abs() < 1e-9, "carried to the mirror of its seed: {p:?}");
+    assert!((q[2] - p[2]).abs() < 1e-9, "and what is seeded from it with it: {q:?}");
+}
+
+/// And on the solution: a pose put on the wrong side after the seeds were read is steered back,
+/// reflected and solved again — and a drag, which keeps the branch it is on, is not.
+#[test]
+fn a_solve_is_steered_where_the_seeds_were_not() {
+    let below = |e: &mut Elaborated| {
+        let own = e.sketch.own_params(ent(e, "p"));
+        e.sketch.params[own[1] as usize].value = -2.0;
+    };
+    let mut e = read(&format!("{CROSSING}a distance(>= 0, along: up) p\n"));
+    below(&mut e);
+    let r = solve(&mut e.sketch, SolveOpts::default());
+    assert!(r.success && (p_at(&e)[2] - 4.0).abs() < 1e-9, "{r:?} {:?}", p_at(&e));
+    let mut e = read(&format!("{CROSSING}a distance(>= 0, along: up) p\n"));
+    below(&mut e);
+    let r = solve(&mut e.sketch, SolveOpts { retry: false, ..SolveOpts::default() });
+    assert!(r.success && (p_at(&e)[2] + 4.0).abs() < 1e-9, "{r:?} {:?}", p_at(&e));
+}
+
 /// A bound adds no row: the same unknowns, the same equations and the same freedoms as the
 /// drawing without it — and a drawing whose bound holds solves to the same bits.
 #[test]
