@@ -309,7 +309,7 @@ fn walk_edge(
 
 /// A circle or arc as chords no further from it than the sheet's own flatness — `overview::round`'s
 /// rule, said here in page coordinates so the solid and the drawing round a corner alike.
-fn tessellate_arc(c: (f64, f64), r: f64, from: f64, sweep: f64, unit: f64) -> Vec<(f64, f64)> {
+pub(super) fn tessellate_arc(c: (f64, f64), r: f64, from: f64, sweep: f64, unit: f64) -> Vec<(f64, f64)> {
     let tol = crate::curve::flatness(unit);
     // Bound angular error too: below the absolute flatness a circle still needs a region,
     // with the same relative area accuracy as a larger circular profile.

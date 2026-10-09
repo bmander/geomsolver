@@ -163,8 +163,7 @@ pub fn meridian_region(recipe: &Json,seam: V) -> Result<Result<(Profile,V,V),Str
                     if !on_line(c) { return Ok(Err(format!("`{name}` is a ball off the line"))) }
                     // its half-disc: from the axis round through the half-plane and back along it
                     let z = dot(sub(c,origin),axis);
-                    Region::plain(vec![vec![Seg::Arc {c:[0.,z],r,a0:-std::f64::consts::FRAC_PI_2,sweep:std::f64::consts::PI},
-                        Seg::Line {a:[0.,z+r],b:[0.,z-r]}]])
+                    Region::half_disc(z,r)
                 } else {
                     let (o,a) = (vec3(field(n,"origin")?),unit(vec3(field(n,"axis")?)));
                     if norm(cross(a,axis)) > 1e-12 || !on_line(o) { return Ok(Err(format!("`{name}` is a revolution about another line"))) }
@@ -238,18 +237,15 @@ pub(crate) fn region_profile(
     use crate::space::{add,cross,scale};
     use super::build::ProfileEdge;
     use super::geom::Frame;
-    use super::planar::{Region,Seg};
+    use super::planar::Seg;
     let at = |p: [f64;2]| add(origin,add(scale(seam,p[0]),scale(axis,p[1])));
     let normal = cross(seam,axis);
-    let mut loops: Vec<(f64,Vec<ProfileEdge>,Vec<String>)> = root.loops.iter().map(|l| {
-        let area = Region {loops:vec![l.clone()]}.area().abs();
-        (area,l.iter().map(|s| match s.seg {
-            Seg::Line {a,b} => ProfileEdge::Line {a:at(a),b:at(b)},
-            Seg::Arc {c,r,a0,sweep} => ProfileEdge::Arc {frame:Frame::new(at(c),normal,seam),r,
-                span:Some(if sweep > 0. { [a0,a0+sweep] } else { [a0+sweep,a0] })},
-        }).collect(),l.iter().map(|s| name(s.tag)).collect())
-    }).collect();
-    loops.sort_by(|a,b| b.0.total_cmp(&a.0));
-    let names = loops.iter().map(|l| l.2.clone()).collect();
-    Profile {origin,normal,loops:loops.into_iter().map(|l| l.1).collect(),names}
+    let loops = root.outer_first();
+    let names = loops.iter().map(|l| l.iter().map(|s| name(s.tag)).collect()).collect();
+    let loops = loops.iter().map(|l| l.iter().map(|s| match s.seg {
+        Seg::Line {a,b} => ProfileEdge::Line {a:at(a),b:at(b)},
+        Seg::Arc {c,r,a0,sweep} => ProfileEdge::Arc {frame:Frame::new(at(c),normal,seam),r,
+            span:Some(if sweep > 0. { [a0,a0+sweep] } else { [a0+sweep,a0] })},
+    }).collect()).collect();
+    Profile {origin,normal,loops,names}
 }

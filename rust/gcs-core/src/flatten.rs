@@ -129,6 +129,10 @@ struct Scope {
     /// it states (the geometry a tangency at a point reads its derivatives over); or a second
     /// time for a tangency, each relation emitted as its derivative and nothing made again.
     pass: apply::Pass,
+    /// The statement a relation made by a predicate's use was written as in the body, kept when
+    /// the application stamps the use's own over it (`apply`): what a set used there is applied
+    /// under (`begin_nth`), so two uses in one body stand apart by what the source wrote.
+    written: Option<crate::syntax::StmtId>,
 }
 
 impl Scope {
@@ -321,9 +325,6 @@ struct Walk<'a> {
     twins: Vec<(String, String)>,
     /// Every region solid's probe — see `Expansion::probes`.
     probes: Vec<String>,
-    /// How many applications have begun under each use's place and statement, by the number the
-    /// use asked for (`begin_nth`): what keeps two uses there apart.
-    applied: BTreeMap<(String, usize), usize>,
 }
 
 /// Expand a program's root component into a flat list of declarations, constraints, gauges and
@@ -435,7 +436,6 @@ impl<'a> Walk<'a> {
             applying_sets: false,
             twins: Vec::new(),
             probes: Vec::new(),
-            applied: BTreeMap::new(),
         }
     }
 

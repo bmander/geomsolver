@@ -86,11 +86,6 @@ pub struct Sketch {
     /// use made — see `Dual`.  Document state, saved and grafted; its tangent columns are minted
     /// by the rows that read them.
     pub duals: Vec<Dual>,
-    /// The hidden points a region solid's body is applied to (`solid(R)`, §6.21), each with the
-    /// bounds it put there, gathered as relations are stated and taken by the solid when it is
-    /// built (`SolidDef::Region`).  Never a row: a probe's bound describes material, and chooses
-    /// no root.
-    pub probes: BTreeMap<usize, Vec<RegionTerm>>,
     /// The points drawn in further planes (`point in P, G`, §6.7), each with its **twins**: a
     /// point of its own in each further plane, tied to it in space (`Sketch::tie_twin`,
     /// `hold_twins`).  A reader drawn in a plane reads the point there by its twin
@@ -172,6 +167,11 @@ pub struct Sketch {
     /// again for each one the evaluated solids above ask for.
     pub exact_cache:
         std::cell::RefCell<BTreeMap<usize, (Vec<f64>, Result<std::rc::Rc<crate::solid::Exact>, String>)>>,
+    /// Each region solid's meridian (`solid::region::meridian`), against `solid::reads`: every
+    /// evaluator, the validation and admission read it, and it is a fold of exact Booleans.
+    pub meridian_cache: std::cell::RefCell<
+        BTreeMap<usize, (Vec<f64>, Result<std::rc::Rc<crate::solid::region::Meridian>, String>)>,
+    >,
     /// Swept solids' surfaces a host meshed elsewhere (`supply_field`), each against the
     /// `solid::reads` it was supplied under, so a moved drawing reads none.
     pub field_surfaces: std::cell::RefCell<BTreeMap<usize, (Vec<f64>, std::rc::Rc<crate::solid::FieldSurface>)>>,

@@ -315,8 +315,12 @@ impl RegionShape {
     pub fn remapped(&self, map: &dyn Fn(EntRef) -> Option<EntRef>) -> Option<RegionShape> {
         let i = |e: EntRef| map(e).map(|e| e.i() as u32);
         Some(match *self {
-            RegionShape::Ball { center } => RegionShape::Ball { center: i(EntRef::point(center as usize))? },
-            RegionShape::Cylinder { line } => RegionShape::Cylinder { line: i(EntRef::line(line as usize))? },
+            RegionShape::Ball { center } => {
+                RegionShape::Ball { center: i(EntRef::point(center as usize))? }
+            }
+            RegionShape::Cylinder { line } => {
+                RegionShape::Cylinder { line: i(EntRef::line(line as usize))? }
+            }
             RegionShape::Cone { axis } => RegionShape::Cone { axis: i(EntRef::line(axis as usize))? },
             RegionShape::Plane { plane, from, sign } => RegionShape::Plane {
                 plane: i(EntRef::plane(plane as usize))?,
@@ -472,8 +476,8 @@ impl SolidE {
     pub fn operands(&self) -> Vec<u32> {
         match &self.def {
             SolidDef::Placed { source, .. } | SolidDef::Swept { source, .. } => vec![*source],
-            SolidDef::Prism { .. } | SolidDef::Revolve { .. } | SolidDef::Through { .. } | SolidDef::Loft { .. }
-                | SolidDef::Region { .. } => Vec::new(),
+            SolidDef::Prism { .. } | SolidDef::Revolve { .. } | SolidDef::Through { .. }
+                | SolidDef::Loft { .. } | SolidDef::Region { .. } => Vec::new(),
             SolidDef::Body { stock, on, through, bound } => {
                 let mut v = vec![*stock];
                 v.extend(on.iter().copied());

@@ -41,7 +41,9 @@ pub fn reads(sk: &Sketch, si: usize, unit: f64) -> Vec<f64> {
             SolidDef::Region { terms, .. } => {
                 v.push(7.0);
                 for t in terms {
-                    v.extend([t.cmp as u8 as f64, t.lo, t.hi.unwrap_or(f64::NAN)]);
+                    // no NaN for an end not written: a key must equal itself
+                    let hi = [f64::from(t.hi.is_some()), t.hi.unwrap_or(0.0)];
+                    v.extend([t.cmp as u8 as f64, t.lo, hi[0], hi[1]]);
                     for e in t.shape.entities() {
                         match e.kind {
                             crate::model::EntKind::Point => v.extend(sk.world_point(e.i())),
@@ -415,9 +417,8 @@ fn build(
     if let SolidDef::Region { .. } = sol.def {
         let Ok(m) = super::region::meridian(sk, si as usize) else { return Term::Empty };
         let mut term = Term::Empty;
+        let (axis, full) = (((0.0, 0.0), (0.0, 1.0)), std::f64::consts::TAU);
         for (i, p) in super::region::face_polys(&m, unit).into_iter().map(local).enumerate() {
-            let axis = ((0.0, 0.0), (0.0, 1.0));
-            let full = std::f64::consts::TAU;
             let Some(prim) = revolve(&p, axis, full, crate::model::Sense::Ccw, unit, &name) else {
                 return Term::Empty;
             };
@@ -472,8 +473,8 @@ fn build(
                 let (a, b) = (sk.point_xy(l.p1 as usize), sk.point_xy(l.p2 as usize));
                 revolve(&p, (a, b), sweep.value, *sense, unit, &name)
             }
-            SolidDef::Body { .. } | SolidDef::Loft { .. } | SolidDef::Placed { .. } | SolidDef::Swept { .. }
-                | SolidDef::Region { .. } => unreachable!(),
+            SolidDef::Body { .. } | SolidDef::Loft { .. } | SolidDef::Placed { .. }
+                | SolidDef::Swept { .. } | SolidDef::Region { .. } => unreachable!(),
         };
         let Some(p) = built else { return Term::Empty };
         prims.push(p);

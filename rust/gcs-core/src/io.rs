@@ -1224,7 +1224,8 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
                     _ => None,
                 };
                 crate::model::SolidDef::Region {
-                    probe: pt_index(*probe as usize).expect("a region's probe comes with it") as u32,
+                    probe: pt_index(*probe as usize).expect("a region's probe comes with it")
+                        as u32,
                     terms: terms.iter().map(|t| crate::model::RegionTerm {
                         shape: t.shape.remapped(&ent).expect("a region's terms come with it"),
                         ..t.clone()

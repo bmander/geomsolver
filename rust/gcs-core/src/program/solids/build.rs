@@ -7,6 +7,7 @@ pub(super) fn build_solid(
     res: &Resolver,
     d: &Decl,
     st: &Stmt,
+    probes: &mut super::super::relations::Probes,
     diags: &mut Vec<Diag>,
 ) -> Option<usize> {
     let kids = d.children.first().map(Vec::as_slice).unwrap_or(&[]);
@@ -84,13 +85,15 @@ pub(super) fn build_solid(
         // a region: the bounds its set put on the probe, gathered as they were stated (§6.21)
         crate::syntax::Sweep::Region { probe } => {
             let Some(p) = res.lookup(probe).filter(|e| e.kind == EntKind::Point) else {
-                say(Code::E080, st.span, "a region solid lost the point its set was applied to".into());
+                let m = "a region solid lost the point its set was applied to";
+                say(Code::E080, st.span, m.into());
                 return None;
             };
-            let terms = sk.probes.remove(&p.i()).unwrap_or_default();
+            let terms = probes.remove(&p.i()).unwrap_or_default();
             if terms.is_empty() {
-                say(Code::E080, st.span, "a solid is a region: a set whose body bounds a number, or \
-                                          a set its `inside` reads one of".into());
+                let m = "a solid is a region: a set whose body bounds a number, or a set its \
+                         `inside` reads one of";
+                say(Code::E080, st.span, m.into());
                 return None;
             }
             for q in sk.own_params(p) {

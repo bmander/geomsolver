@@ -256,6 +256,7 @@ impl<'a> Walk<'a> {
                         // and its body's calls name components from the file it was written in
                         module: comp.module,
                         pass: Pass::Itself,
+                        written: None,
                     };
                     // a component reached again while it is still being expanded is a cycle:
                     // said once, at the call that closes it, and not walked
@@ -633,6 +634,7 @@ impl<'a> Walk<'a> {
                 sides: scope.sides.clone(),
                 module: scope.module,
                 pass: scope.pass.clone(),
+                written: None,
             };
             let mut p2 = path.to_vec();
             p2.push(PathStep::Copy { block: st.id, index: k as u32 });
@@ -708,12 +710,15 @@ impl Walk<'_> {
 
 impl Walk<'_> {
     /// **A region as a solid** (§6.21): `blank := solid(R)`, its one operand a set, is the points
-    /// inside it — the solid made `Sweep::Region` over a hidden point keyed `{solid}#probe` (held,
-    /// in space), and `probe inside R` stated beside it, so the set's body is applied to the probe
-    /// as any use applies it and the bounds it puts there are the solid's terms (`constrain`).
+    /// inside it — the solid made `Sweep::Region` over a hidden point keyed `{solid}#probe`
+    /// (held, in space), and `probe inside R` stated beside it, so the set's body is applied to
+    /// the probe as any use applies it and the bounds it puts there are the solid's terms
+    /// (`constrain`).
     /// `None` for any other declaration.
-    fn region_of(&mut self, d: &mut Decl, local: &str, sc: &Scope) -> Option<(Decl, crate::syntax::Relation)> {
-        if d.kind != crate::model::EntKind::Solid || !matches!(d.sweep, Some(crate::syntax::Sweep::Body)) {
+    fn region_of(&mut self, d: &mut Decl, local: &str, sc: &Scope)
+        -> Option<(Decl, crate::syntax::Relation)> {
+        use crate::syntax::{DeclName, Sweep};
+        if d.kind != crate::model::EntKind::Solid || !matches!(d.sweep, Some(Sweep::Body)) {
             return None;
         }
         let [Kid::Ref(set)] = d.children.first().map(Vec::as_slice).unwrap_or(&[]) else {
@@ -732,9 +737,12 @@ impl Walk<'_> {
         self.probes.push(key.clone());
         let probe = format!("{local}#probe");
         d.children.clear();
-        d.sweep = Some(crate::syntax::Sweep::Region { probe: Ref::new(&probe) });
-        // held where nothing is likely to be, so no line from a cone's apex to it is none
-        let mut point = Decl::point(crate::syntax::DeclName::Key(Name { text: key, span: at }), [0.0; 2], None);
+        d.sweep = Some(Sweep::Region { probe: Ref::new(&probe) });
+        // held at a place no drawing chooses (irrational, off every axis and plane through the
+        // origin), so a cone's line from an apex there to it has a length; where it stands
+        // decides nothing else — its bounds are terms, never rows.  Not `scatter`'s unseeded
+        // place: an empty hint span would be written back into the solid's statement
+        let mut point = Decl::point(DeclName::Key(Name { text: key, span: at }), [0.0; 2], None);
         point.seed = vec![0.7548776662, 0.5698402910, 0.4301597090];
         point.seed_text = vec![None; 3];
         let inside = crate::syntax::Written {

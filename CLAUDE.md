@@ -175,17 +175,21 @@ finds the measured point among the operands' own points too (a cone's angle is b
 and nudges a point off a stationary reading (the cone's axis). `tests/regions.rs` is the gate.
 **A region is a solid (§6.9, 0.61, #145 F2/F3):** `blank := solid(R)`, R a set, is `SolidDef::Region
 { probe, terms }`. The flattener (`Walk::region_of`) rewrites `solid(R)`'s `Sweep::Body` over a set
-to `Sweep::Region { probe }`, declares the probe `{solid}#probe` (in space, seeded off the axis,
-`Expansion::probes` → `Sketch::probes`) and states `probe inside R`; `constrain` takes every bound
-landing on a probe as a `RegionTerm` instead of a row (`probe_of`, `region_term`: by kind —
-`Distance(3)` a ball, `PointLine(Distance|3)` a cylinder, `Angle3` from a line's start a cone, an
-`Ordinate` along a plane's `n` a half-space; numbers by `settled_number`), and the build moves them
-into the solid and holds the probe. `solid::region::meridian` folds the terms' (r, z) regions in a
-box by `brep::planar::boolean` (coaxial, bounded, nonempty, else refused where evaluated); every
-evaluator reads it — the recipe a `revolve` (`recipe::region_profile`, `Profile::to_json`), the field
-`RevolvedRegion::of_meridian` (also `read`, so patches trim by it), facets `region::face_polys`
-turned by `primitive::revolve`, admission `Turns::Line`/`Ball` and `tool()`. Two uses standing in
-one place under one statement take distinct prefixes (`Walk::applied`, `begin_nth`).
+to `Sweep::Region { probe }`, declares the probe `{solid}#probe` (in space, held at a fixed
+irrational place; `Expansion::probes` → elaboration's `relations::Probes`) and states `probe inside
+R`; `constrain` takes every bound landing on a probe as a `RegionTerm` instead of a row
+(`probe_of`, `region_term`: by kind — `Distance(3)` a ball, `PointLine(Distance|3)` a cylinder,
+`Angle3` from a line's start a cone, an `Ordinate` along a plane's `n` a half-space; numbers by
+`settled_number`, a closed text valued by `to_arg` at birth), and `build_solid` moves them into the
+solid and holds the probe. `solid::region::meridian` folds the terms' (r, z) regions in a box by
+`brep::planar::boolean` (coaxial, bounded, nonempty, else refused where evaluated), memoised
+against `solid::reads` (`Sketch::meridian_cache`); every evaluator reads it — the recipe a `revolve`
+(`recipe::region_profile`, `Profile::to_json`), the field `RevolvedRegion::of_meridian` (also
+`read`, so patches trim by it), facets `region::face_polys` turned by `primitive::revolve`,
+admission `Turns::Line`/`Ball` and `tool()` — its loops `Region::outer_first`, a ball's
+`Region::half_disc`. A set used in a predicate's body is applied under the statement it was
+written as there (`Scope::written`, kept when `apply` stamps the use's over it; `begin_nth`), so
+two uses in one body stand apart.
 `tests/region_solids.rs` and `tests/region_blank.rs` (the blank as a region against today's, both
 designs, both members) are the gates.
 **`P tangent(at: m) S`, a plane tangent to a set (#145, #148, 0.56):** `sets::expand_touch`

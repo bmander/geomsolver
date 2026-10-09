@@ -22,6 +22,7 @@ pub(super) fn solids(
     map: &mut SourceMap,
     body: &[&Stmt],
     skip: &BTreeSet<StmtId>,
+    probes: &mut super::relations::Probes,
     diags: &mut Vec<Diag>,
 ) {
     let has = body.iter().any(|st| {
@@ -85,7 +86,7 @@ pub(super) fn solids(
         let name = d.name.key().text.clone();
         let first_face = sk.faces.len();
         let first_line = sk.lines.len();
-        match build_solid(sk, res, d, st, diags) {
+        match build_solid(sk, res, d, st, probes, diags) {
             Some(i) => {
                 let e = EntRef::solid(i);
                 map.bind(&name, e, d.name.named());
