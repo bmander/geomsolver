@@ -1023,6 +1023,10 @@ several up to the `}`. It adds nothing to the drawing; what it means is said whe
 - `S1 tangent(at: m) S2`, two sets: they touch at `m`, one tangent plane there — two
   conditions. State `m coincident S1` and `m coincident S2` beside it. Refused for a set whose
   body makes points of its own.
+- `P tangent(at: m) S`, a plane and a set: `P` is the set's tangent plane at `m` — a pitch
+  plane touching a pitch cone, with no view drawn square to it. State `m coincident S` beside it;
+  `m` is put on `P` where the drawing does not draw it there. A cone touched so has its apex on
+  `P` without saying it.
 - A family of sets is a component whose body is one: `component Ball(center: point, r: Length)
   := { p | p distance(r) center }`; an instance is the set, its formals read by its name.
 - A culprit reads as the statement (`l tangent shaft`), never as the body's rows.

@@ -24,6 +24,7 @@ use super::*;
 use crate::program::public_path;
 use super::apply::{local, Application, Pass, Use};
 use crate::lowering::{self, Lowered, Radius, Shape};
+use crate::constraints::Fixity::{Infix, Prefix};
 use crate::syntax::{Along, AlongBy, Chained, DeclName, Relation, RelationForm, SetLit, Worded};
 
 /// Where a set stands: its literal, the scope its body reads names in (an instance's, with its
@@ -113,13 +114,8 @@ impl<'a> Walk<'a> {
         // comes to
         let span = radius.at(call).unwrap_or(Span::new(st.span.lo as usize, st.span.lo as usize));
         let word = radius.word.span;
-        let stated = Relation::of(RelationForm::Written(crate::syntax::Written {
-            word: Name { text: "radius".to_string(), span: word },
-            fixity: crate::constraints::Fixity::Prefix,
-            ops: vec![local(abs, word)],
-            args: vec![crate::syntax::OpArg::Dim(radius.text.to_string(), span)],
-            span: st.span,
-        }));
+        let dim = crate::syntax::OpArg::Dim(radius.text.to_string(), span);
+        let stated = relation(("radius", word), Prefix, vec![local(abs, word)], vec![dim], st.span);
         if let Some(r) = self.settle_relation(&stated, &sc.vals, sc) {
             // the circle by its absolute name, which the body's scope may be closed to
             let named = Scope { prefixes: vec![String::new()], closed: false, ..sc.clone() };
@@ -133,23 +129,25 @@ impl<'a> Walk<'a> {
     /// Every set drawn as an element, what its shape names resolved where its body reads it —
     /// for the elaborator to judge (`lowering::refused`).
     pub(super) fn to_judge(&self, alias: &BTreeMap<String, String>) -> Vec<Lowered> {
-        // a reference the body reads, absolute — `None` where it names a set or nothing
-        let absolute = |r: &Ref, site: &Site| {
-            let (abs, rest) = lookup(r, &site.scope, &self.names, alias, self.units)?;
-            if rest.is_empty() && self.sets.contains_key(&abs) {
-                return None;
-            }
-            let path = rest.into_iter().map(|f| Seg::Field(Name::new(f))).collect();
-            Some(Ref { root: Name { text: abs, span: r.span }, path, span: r.span })
-        };
         self.lowered.iter().map(|(key, form)| {
             let site = &self.sets[key];
             let mut form = form.clone();
             for r in form.refs() {
-                *r = r.take().and_then(|r| absolute(&r, site));
+                *r = r.take().and_then(|r| self.absolute(&r, &site.scope, alias));
             }
             Lowered { key: key.clone(), form }
         }).collect()
+    }
+
+    /// A reference read where `sc` reads it, made absolute — `None` where it names a set or
+    /// nothing.
+    fn absolute(&self, r: &Ref, sc: &Scope, alias: &BTreeMap<String, String>) -> Option<Ref> {
+        let (abs, rest) = lookup(r, sc, &self.names, alias, self.units)?;
+        if rest.is_empty() && self.sets.contains_key(&abs) {
+            return None;
+        }
+        let path = rest.into_iter().map(|f| Seg::Field(Name::new(f))).collect();
+        Some(Ref { root: Name { text: abs, span: r.span }, path, span: r.span })
     }
 
     /// A statement's use of a set: the relation, which operand names the set and the sets its
@@ -229,11 +227,18 @@ impl<'a> Walk<'a> {
                     continue;
                 }
                 self.held = next.len() + rest.len();
+                // one set touched at a point: by a plane, the one thing that can be
+                let touch = !pair && rel.form.written()
+                    .is_some_and(|w| w.word.text == "tangent" && !w.args.is_empty());
                 if pair {
                     self.expand_pair(&st, rel, &path, &sc, &found);
                 } else {
                     let (k, abs) = found.into_iter().next().unwrap();
-                    self.expand_use(&st, rel, &path, &sc, k, &abs);
+                    if touch {
+                        self.expand_touch(&st, rel, &path, &sc, k, &abs);
+                    } else {
+                        self.expand_use(&st, rel, &path, &sc, k, &abs);
+                    }
                 }
                 next.append(&mut self.out);
                 self.held = 0;
@@ -325,14 +330,7 @@ impl<'a> Walk<'a> {
         let Some(w) = rel.form.written() else { return };
         let at = w.word.span;
         let names: Vec<String> = found.iter().map(|(k, _)| written(&w.ops[*k])).collect();
-        let point = match w.args.as_slice() {
-            [crate::syntax::OpArg::Named(n, v)] if n.text == "at" => match v {
-                crate::syntax::Arg::Ref(r) => Some(r.clone()),
-                crate::syntax::Arg::Word(x) => Some(local(x.clone(), n.span)),
-                _ => None,
-            },
-            _ => None,
-        };
+        let point = at_point(w);
         let spell = |m: &str| format!("`{} tangent(at: {m}) {}`", names[0], names[1]);
         let Some(point) = point else {
             let m = format!("two sets touch at a point, which the word names: {}", spell("m"));
@@ -387,6 +385,84 @@ impl<'a> Walk<'a> {
         }
     }
 
+    /// A plane tangent to a set at a point, `P tangent(at: m) S` (§6.21, #148): `P` is `S`'s
+    /// tangent plane at `m` — the body differentiated at `m` along each of `P`'s axes, as two
+    /// sets' tangency is along its charts, and `m` on `P` (a row only where the drawing does not
+    /// draw it there, `program::relations`).  `m` on `S` is stated beside it, as for two sets.
+    /// What the body already says along the plane — a cone's along its generator, where the
+    /// apex is on `P` — makes the two derivatives dependent: the system's rank finds that
+    /// (`diagnose`), and nothing here knows a shape.
+    fn expand_touch(
+        &mut self,
+        st: &Stmt,
+        rel: &Relation,
+        path: &[PathStep],
+        sc: &Scope,
+        k: usize,
+        abs: &str,
+    ) {
+        let Some(w) = rel.form.written() else { return };
+        let at = w.word.span;
+        let set = self.set_written(&w.ops[k]);
+        let spell = |m: &str| format!("`P tangent(at: {m}) {set}`");
+        let Some(point) = at_point(w) else {
+            let m = format!("a plane touches a set at a point, which the word names: {}",
+                spell("m"));
+            self.once(Code::E040, at, m);
+            return;
+        };
+        if rel.claim || rel.along.is_some() || sc.twin().is_some() {
+            let m = format!("a plane's tangency to a set is stated, and never inside a set's \
+                             body: {}", spell(&written(&point)));
+            self.once(Code::E040, at, m);
+            return;
+        }
+        if let Some(what) = makes_points(&self.sets[abs].lit) {
+            let m = format!(
+                "{} reads the set's body at the point, where `{set}`'s makes `{what}` of its \
+                 own, which only the point on it would place",
+                spell(&written(&point))
+            );
+            self.once(Code::E040, at, m);
+            return;
+        }
+        let plane = w.ops[1 - k].clone();
+        let worded = Worded {
+            word: w.word.text.clone(),
+            ops: vec![plane.clone()],
+            args: format!("at: {}", written(&point)),
+            sets: vec![(k, set)],
+            span: at,
+        };
+        let u = Use { st, rel, path, scope: sc, at };
+        let site = &self.sets[abs];
+        let (lit, depth, closure) = (site.lit.clone(), site.depth, site.scope.clone());
+        let app = self.begin(&u, &closure);
+        let bound = lit.bound.text.clone();
+        self.bind_to_use(&app, &bound, point.clone(), &u);
+        // the plane's own two directions, each a derivative of its own
+        let mut walks = vec![Pass::Made];
+        for (n, axis) in ["u", "v"].into_iter().enumerate() {
+            let mut r = plane.clone();
+            r.path.push(Seg::Field(Name { text: axis.to_string(), span: at }));
+            let name = format!("#{axis}");
+            self.bind_to_use(&app, &name, r, &u);
+            walks.push(Pass::Along(Along {
+                point: local(&bound, at),
+                toward: AlongBy::Line(local(&name, at)),
+                key: format!("{}#{}.a{n}.", sc.prefix(), st.id.0),
+                made: None,
+            }));
+        }
+        self.apply(&u, app, lit.body, &BTreeMap::new(), &walks, worded.clone(), depth);
+        // and the point on the plane
+        let mut on = relation(("coincident", at), Infix, vec![point, plane], Vec::new(), st.span);
+        on.word = Some(worded);
+        let kind = StmtKind::Relation(on);
+        let made = Stmt { id: st.id, kind, span: st.span, chained: Chained::No };
+        self.out.push((made, path.to_vec(), sc.clone()));
+    }
+
     /// A set as the statement wrote it: its name, or — written in place — its text, on one line.
     fn set_written(&self, r: &Ref) -> String {
         match self.prog.span_text(r.span).filter(|_| r.root.text.starts_with('#')) {
@@ -418,13 +494,8 @@ impl<'a> Walk<'a> {
         };
         let key = Name { text: abs, span: Span::new(at.lo as usize, at.lo as usize) };
         let decl = Decl::point(crate::syntax::DeclName::Key(key), [0.0; 2], Some(seed_at));
-        let on = Relation::of(RelationForm::Written(crate::syntax::Written {
-            word: Name { text: "coincident".to_string(), span: at },
-            fixity: crate::constraints::Fixity::Infix,
-            ops: vec![local(bound, at), line],
-            args: Vec::new(),
-            span: st.span,
-        }));
+        let ops = vec![local(bound, at), line];
+        let on = relation(("coincident", at), Infix, ops, Vec::new(), st.span);
         for kind in [StmtKind::Decl(decl), StmtKind::Relation(on)] {
             let made = Stmt { id: st.id, kind, span: st.span, chained: Chained::No };
             self.out.push((made, path.to_vec(), app.scope().clone()));
@@ -448,6 +519,31 @@ fn makes_points(lit: &SetLit) -> Option<String> {
         }
     }
     None
+}
+
+/// A relation a set's use states, written as the source would: its word and where the word is
+/// said, its fixity, operands and parentheses, and the statement's span.
+fn relation(
+    (word, at): (&str, Span),
+    fixity: crate::constraints::Fixity,
+    ops: Vec<Ref>,
+    args: Vec<crate::syntax::OpArg>,
+    span: Span,
+) -> Relation {
+    let word = Name { text: word.to_string(), span: at };
+    Relation::of(RelationForm::Written(crate::syntax::Written { word, fixity, ops, args, span }))
+}
+
+/// The point a tangency names, `tangent(at: m)` — `None` where its parentheses hold anything else.
+fn at_point(w: &crate::syntax::Written) -> Option<Ref> {
+    match w.args.as_slice() {
+        [crate::syntax::OpArg::Named(n, v)] if n.text == "at" => match v {
+            crate::syntax::Arg::Ref(r) => Some(r.clone()),
+            crate::syntax::Arg::Word(x) => Some(local(x.clone(), n.span)),
+            _ => None,
+        },
+        _ => None,
+    }
 }
 
 /// Whether a written relation is one a set may be used by: `coincident` or `tangent` between

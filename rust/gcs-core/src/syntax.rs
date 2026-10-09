@@ -1362,7 +1362,13 @@ impl Written {
         let mut next = ents.into_iter();
         for (i, (name, sk)) in spec.iter().enumerate() {
             out[i] = if sk.takes_ref() {
-                next.next().map(Arg::Ref)
+                // a reference given by its slot's name (`at: m`) fills that slot; the operands
+                // and the unlabelled references fill the rest in order
+                let named = self.args.iter().find_map(|a| match a {
+                    OpArg::Named(n, Arg::Ref(r)) if n.text == *name => Some(Arg::Ref(r.clone())),
+                    _ => None,
+                });
+                named.or_else(|| next.next().map(Arg::Ref))
             } else if sk.is_param() {
                 let slot = || self.slots().filter(|(key, _)| key.text == *name).map(|(_, arg)| arg);
                 // a shared parameter is pinned to an unknown and seeded where the unknown is

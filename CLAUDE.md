@@ -146,6 +146,16 @@ the basis about `t₀` a cubic in the jet `τ`, over `Σ wB` by the quotient rul
 hand-written spatial kernels have generic twins held to them by `tests/taylor.rs`.  Refused: a
 set named as an entity (E040 in `rewrite`), `coincident` between two sets, parentheses, a
 non-point `coincident`, a non-line or claimed `tangent`.  `tests/sets.rs` is the gate.
+**`P tangent(at: m) S`, a plane tangent to a set (#145, #148, 0.56):** `sets::expand_touch`
+applies the body at `m` and walks it `Pass::Made` then `Pass::Along` toward `P.u` and `P.v`
+(`model::Toward::Axis`: the axis's `d` columns fed where a line's ends go, `dual_kernel`
+unchanged), plus `m coincident P`, dropped in `relations::constrain` where `m` is drawn in `P`.
+**No shape in Rust:** where the drawing already says what the body says along `P` (a cone's apex
+drawn on it, a cylinder's axis parallel to it), the two derivatives are dependent, and the
+diagnosis finds it by rank — a derivative row counts as a relation, and a plane touch's own
+derivative rows found removable are `Diagnosis::expected`, out of `implied`/`over`, never
+painted. A non-plane or no `at:`, E040; a labelled reference fills its slot
+(`Written::assemble`). `tests/plane_tangent.rs` is the gate.
 
 **Membership is one rule (§6.7, §6.21, 0.54, #105):** a plane is a set and `in` membership of
 it. `q coincident P` (or `l coincident P`, its ends) of a point standing in space is lowered to
@@ -166,7 +176,7 @@ walked again as a set (`elaborate` loops over `elaborate_in`, `flatten::expand_w
 Lowering is a representation, never a meaning: the solutions are the same either way.
 `tests/membership.rs` is the gate.
 
-**Variational curves (§9.10, §6.1, 0.53–0.56, #121, #144, `variational.rs`, `extremal.rs`):**
+**Variational curves (§9.10, §6.1, 0.53–0.57, #121, #144, `variational.rs`, `extremal.rs`):**
 `k minimizes E` / `k maximizes E` (`StmtKind::Minimize`, `parser/minimize.rs`; indicative, read by
 the word past its ref, as the body words are) with `E` a sum of `c * integral(EXPR over p)` (or
 `over (p, t)`, `t` the unit tangent) along `k`, ds-weighted; `flatten::values::settle_integrand`
@@ -1134,8 +1144,15 @@ Conventions:
   diagnosis all do).
 - Diagnosis is structural (matching/DM); numeric rank cross-check is the only thing that sees
   theorem-type dependencies — that residue is Stage 4's corpus, keep logging it
-  (`Diagnosis.warnings`).  It is skipped above `NUMERIC_MAX` (300) free parameters because it
-  runs after every edit.  A consistent dependency is `over` ("remove one") only when a
+  (`Diagnosis.warnings`).  Above `NUMERIC_MAX` (300) free parameters the whole SVD is not
+  taken, since it runs after every edit: the rank is read **part by part** (#88,
+  `diagnose/parts.rs`, `Diagnosis::by_parts`) over `System::block_order` — over part first,
+  square blocks in solve order, under part last — each factored alone (pivoted QR where it is
+  only asked for a null space, `linalg::null_full_row_rank` for the under part, SVD otherwise),
+  every part's null vectors carried into later parts by minimum-norm solves and checked against
+  the rows a part could not make up: exact, not a bound (`tests/numeric_parts.rs` holds it to the
+  whole SVD over the library; the large cases in the slow tier).  The second-order screen runs
+  on its null space as on the whole's.  The V-twin (925) reads in ~0.2 s.  A consistent dependency is `over` ("remove one") only when a
   dimension takes part in it — editing that dimension is the next conflict; one among pure
   relations is a theorem that nothing can break, so its wholly-implied constraints are
   `implied`: noted, never painted as an error.
