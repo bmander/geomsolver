@@ -288,20 +288,25 @@ fn qrp(m: usize, n: usize, a: &mut [f64], tol: Tol) -> (Vec<f64>, Vec<i32>, usiz
 /// B (m*nrhs) <- Qᵀ B, using the reflectors left in `a` by `qrp`.
 fn apply_qt(m: usize, n: usize, k: usize, a: &[f64], tau: &[f64], b: &mut [f64], nrhs: usize) {
     for p in 0..k {
-        let t = tau[p];
-        if t == 0.0 {
-            continue;
+        reflect(m, n, p, a, tau[p], b, nrhs);
+    }
+}
+
+/// `qrp`'s `p`th reflector, `I − τ v vᵀ`, applied to the columns of `b` (it is its own
+/// transpose: `apply_qt` takes them in order, `apply_q` backwards).
+fn reflect(m: usize, n: usize, p: usize, a: &[f64], t: f64, b: &mut [f64], nrhs: usize) {
+    if t == 0.0 {
+        return;
+    }
+    for j in 0..nrhs {
+        let mut w = b[p * nrhs + j];
+        for i in p + 1..m {
+            w += a[i * n + p] * b[i * nrhs + j];
         }
-        for j in 0..nrhs {
-            let mut w = b[p * nrhs + j];
-            for i in p + 1..m {
-                w += a[i * n + p] * b[i * nrhs + j];
-            }
-            w *= t;
-            b[p * nrhs + j] -= w;
-            for i in p + 1..m {
-                b[i * nrhs + j] -= w * a[i * n + p];
-            }
+        w *= t;
+        b[p * nrhs + j] -= w;
+        for i in p + 1..m {
+            b[i * nrhs + j] -= w * a[i * n + p];
         }
     }
 }
@@ -309,21 +314,7 @@ fn apply_qt(m: usize, n: usize, k: usize, a: &[f64], tau: &[f64], b: &mut [f64],
 /// `Q` (not its transpose) applied to the columns of `b`: `qrp`'s reflectors in reverse.
 fn apply_q(m: usize, n: usize, k: usize, a: &[f64], tau: &[f64], b: &mut [f64], nrhs: usize) {
     for p in (0..k).rev() {
-        let t = tau[p];
-        if t == 0.0 {
-            continue;
-        }
-        for j in 0..nrhs {
-            let mut w = b[p * nrhs + j];
-            for i in p + 1..m {
-                w += a[i * n + p] * b[i * nrhs + j];
-            }
-            w *= t;
-            b[p * nrhs + j] -= w;
-            for i in p + 1..m {
-                b[i * nrhs + j] -= w * a[i * n + p];
-            }
-        }
+        reflect(m, n, p, a, tau[p], b, nrhs);
     }
 }
 

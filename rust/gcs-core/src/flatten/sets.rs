@@ -24,6 +24,7 @@ use super::*;
 use crate::program::public_path;
 use super::apply::{local, Application, Pass, Use};
 use crate::lowering::{self, Lowered, Radius, Shape};
+use crate::constraints::Fixity::{Infix, Prefix};
 use crate::syntax::{Along, AlongBy, Chained, DeclName, Relation, RelationForm, SetLit, Worded};
 
 /// Where a set stands: its literal, the scope its body reads names in (an instance's, with its
@@ -113,13 +114,8 @@ impl<'a> Walk<'a> {
         // comes to
         let span = radius.at(call).unwrap_or(Span::new(st.span.lo as usize, st.span.lo as usize));
         let word = radius.word.span;
-        let stated = Relation::of(RelationForm::Written(crate::syntax::Written {
-            word: Name { text: "radius".to_string(), span: word },
-            fixity: crate::constraints::Fixity::Prefix,
-            ops: vec![local(abs, word)],
-            args: vec![crate::syntax::OpArg::Dim(radius.text.to_string(), span)],
-            span: st.span,
-        }));
+        let dim = crate::syntax::OpArg::Dim(radius.text.to_string(), span);
+        let stated = relation(("radius", word), Prefix, vec![local(abs, word)], vec![dim], st.span);
         if let Some(r) = self.settle_relation(&stated, &sc.vals, sc) {
             // the circle by its absolute name, which the body's scope may be closed to
             let named = Scope { prefixes: vec![String::new()], closed: false, ..sc.clone() };
@@ -236,12 +232,13 @@ impl<'a> Walk<'a> {
                     .is_some_and(|w| w.word.text == "tangent" && !w.args.is_empty());
                 if pair {
                     self.expand_pair(&st, rel, &path, &sc, &found);
-                } else if touch {
-                    let (k, abs) = found.into_iter().next().unwrap();
-                    self.expand_touch(&st, rel, &path, &sc, k, &abs);
                 } else {
                     let (k, abs) = found.into_iter().next().unwrap();
-                    self.expand_use(&st, rel, &path, &sc, k, &abs);
+                    if touch {
+                        self.expand_touch(&st, rel, &path, &sc, k, &abs);
+                    } else {
+                        self.expand_use(&st, rel, &path, &sc, k, &abs);
+                    }
                 }
                 next.append(&mut self.out);
                 self.held = 0;
@@ -459,13 +456,7 @@ impl<'a> Walk<'a> {
         }
         self.apply(&u, app, lit.body, &BTreeMap::new(), &walks, worded.clone(), depth);
         // and the point on the plane
-        let mut on = Relation::of(RelationForm::Written(crate::syntax::Written {
-            word: Name { text: "coincident".to_string(), span: at },
-            fixity: crate::constraints::Fixity::Infix,
-            ops: vec![point, plane],
-            args: Vec::new(),
-            span: st.span,
-        }));
+        let mut on = relation(("coincident", at), Infix, vec![point, plane], Vec::new(), st.span);
         on.word = Some(worded);
         let kind = StmtKind::Relation(on);
         let made = Stmt { id: st.id, kind, span: st.span, chained: Chained::No };
@@ -503,13 +494,8 @@ impl<'a> Walk<'a> {
         };
         let key = Name { text: abs, span: Span::new(at.lo as usize, at.lo as usize) };
         let decl = Decl::point(crate::syntax::DeclName::Key(key), [0.0; 2], Some(seed_at));
-        let on = Relation::of(RelationForm::Written(crate::syntax::Written {
-            word: Name { text: "coincident".to_string(), span: at },
-            fixity: crate::constraints::Fixity::Infix,
-            ops: vec![local(bound, at), line],
-            args: Vec::new(),
-            span: st.span,
-        }));
+        let ops = vec![local(bound, at), line];
+        let on = relation(("coincident", at), Infix, ops, Vec::new(), st.span);
         for kind in [StmtKind::Decl(decl), StmtKind::Relation(on)] {
             let made = Stmt { id: st.id, kind, span: st.span, chained: Chained::No };
             self.out.push((made, path.to_vec(), app.scope().clone()));
@@ -533,6 +519,19 @@ fn makes_points(lit: &SetLit) -> Option<String> {
         }
     }
     None
+}
+
+/// A relation a set's use states, written as the source would: its word and where the word is
+/// said, its fixity, operands and parentheses, and the statement's span.
+fn relation(
+    (word, at): (&str, Span),
+    fixity: crate::constraints::Fixity,
+    ops: Vec<Ref>,
+    args: Vec<crate::syntax::OpArg>,
+    span: Span,
+) -> Relation {
+    let word = Name { text: word.to_string(), span: at };
+    Relation::of(RelationForm::Written(crate::syntax::Written { word, fixity, ops, args, span }))
 }
 
 /// The point a tangency names, `tangent(at: m)` — `None` where its parentheses hold anything else.

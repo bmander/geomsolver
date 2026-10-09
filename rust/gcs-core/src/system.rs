@@ -242,19 +242,43 @@ impl SparseConditioned {
 
     /// The given rows against the given columns, dense, in the given orders.
     pub fn dense(&self, rows: &[usize], cols: &[usize]) -> Mat {
-        let mut local = BTreeMap::new();
+        let mut local = vec![usize::MAX; self.n_cols];
         for (k, &c) in cols.iter().enumerate() {
-            local.insert(c, k);
+            local[c] = k;
         }
         let mut m = Mat::zeros(rows.len(), cols.len());
         for (i, &r) in rows.iter().enumerate() {
             for (c, v) in self.row(r) {
-                if let Some(&k) = local.get(&c) {
-                    m.data[i * cols.len() + k] = v;
+                if local[c] != usize::MAX {
+                    m.data[i * cols.len() + local[c]] = v;
                 }
             }
         }
         m
+    }
+
+    /// The transpose: a row per column, a column per row.
+    pub fn transpose(&self) -> SparseConditioned {
+        let n_rows = self.n_rows();
+        let mut indptr = vec![0i32; self.n_cols + 1];
+        for &c in &self.indices {
+            indptr[c as usize + 1] += 1;
+        }
+        for c in 0..self.n_cols {
+            indptr[c + 1] += indptr[c];
+        }
+        let mut at = indptr.clone();
+        let mut indices = vec![0i32; self.indices.len()];
+        let mut data = vec![0.0; self.data.len()];
+        for r in 0..n_rows {
+            for (c, v) in self.row(r) {
+                let p = at[c] as usize;
+                indices[p] = r as i32;
+                data[p] = v;
+                at[c] += 1;
+            }
+        }
+        SparseConditioned { n_cols: n_rows, indptr, indices, data }
     }
 }
 
@@ -825,8 +849,7 @@ impl System {
         }
         self.compute_csr(z);
         for (i, &r) in rows.iter().enumerate() {
-            // the CSR row is already over `row_scale`; conditioning wants it over `jac_scale`
-            let inv = if condition { self.row_scale[r] / self.jac_scale[r] } else { 1.0 };
+            let inv = if condition { self.conditioning(r) } else { 1.0 };
             for p in self.csr_indptr[r]..self.csr_indptr[r + 1] {
                 m.data[i * self.n_free + self.csr_indices[p as usize] as usize] =
                     self.csr_data[p as usize] * inv;
@@ -1022,13 +1045,18 @@ impl System {
         j.indices = self.csr_indices.clone();
         j.data = self.csr_data.clone();
         for r in 0..self.n_res {
-            // the CSR row is already over `row_scale`; conditioning wants it over `jac_scale`
-            let inv = self.row_scale[r] / self.jac_scale[r];
+            let inv = self.conditioning(r);
             for p in j.indptr[r]..j.indptr[r + 1] {
                 j.data[p as usize] *= inv;
             }
         }
         j
+    }
+
+    /// What a CSR row is multiplied by to be conditioned: it is already over `row_scale`, and
+    /// conditioning wants it over `jac_scale`.
+    fn conditioning(&self, r: usize) -> f64 {
+        self.row_scale[r] / self.jac_scale[r]
     }
 
     fn condition(&mut self, z: &[f64], rows: &[usize]) -> Conditioned {

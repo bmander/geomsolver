@@ -132,6 +132,13 @@ pub(super) fn is_fix(r: &Relation) -> bool {
     }
 }
 
+/// An E040 said once at its span, however many of a use's rows find it.
+fn say_once(diags: &mut Vec<Diag>, span: Span, stmt: StmtId, message: String) {
+    if !diags.iter().any(|d| d.span == span && d.message == message) {
+        diags.push(Diag { code: Code::E040, span, stmt: Some(stmt), message });
+    }
+}
+
 pub(super) fn constrain(
     sk: &mut Sketch,
     res: &Resolver,
@@ -169,9 +176,7 @@ pub(super) fn constrain(
                 let at = w.span;
                 let m = format!("`{set}` is a set of points, and `coincident` puts a point on it, not {}",
                     op.kind.a());
-                if !diags.iter().any(|d| d.span == at && d.message == m) {
-                    diags.push(Diag { code: Code::E040, span: at, stmt: Some(st.id), message: m });
-                }
+                say_once(diags, at, st.id, m);
                 return None;
             }
         }
@@ -195,9 +200,7 @@ pub(super) fn constrain(
             _ => None,
         };
         if let Some(m) = wrong {
-            if !diags.iter().any(|d| d.span == w.span && d.message == m) {
-                diags.push(Diag { code: Code::E040, span: w.span, stmt: Some(st.id), message: m });
-            }
+            say_once(diags, w.span, st.id, m);
             return None;
         }
     }
@@ -474,12 +477,7 @@ pub(super) fn constrain(
     c.word = word;
     if let Some(found) = along {
         // said once at the use, however many of the body's rows find it
-        let mut say = |m: String| {
-            let at = used.unwrap_or(st.span);
-            if !diags.iter().any(|d| d.span == at && d.message == m) {
-                diags.push(Diag { code: Code::E040, span: at, stmt: Some(st.id), message: m });
-            }
-        };
+        let mut say = |m: String| say_once(diags, used.unwrap_or(st.span), st.id, m);
         let (Some(p), Some(toward), a) = found else { return None };
         let toward = match toward {
             Ok(t) => t,

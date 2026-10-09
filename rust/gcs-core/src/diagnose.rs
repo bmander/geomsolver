@@ -302,6 +302,68 @@ fn duplicated(sk: &Sketch, c: u32) -> bool {
     })
 }
 
+/// The second-order screen on a numeric reading's null space, as both readings take it: where
+/// the Jacobian claims motions the matching cannot account for, settle-test them — a tangency at
+/// its own contact is a double root whose "motion" walks back.  `screen` owns both guards (only
+/// at a solution, never more than the discrepancy, so a motion the matching also sees is safe).
+/// The rank screened, the motions left, and how many it blocked.
+fn screened(
+    sk: &mut Sketch,
+    sys: &mut System,
+    z: &[f64],
+    null: Mat,
+    rank: usize,
+    structural: usize,
+    warnings: &mut Vec<String>,
+) -> (usize, Mat, usize) {
+    let (null, blocked) = screen(sk, sys, z, null, structural.saturating_sub(rank));
+    if blocked > 0 {
+        warnings.push(shaky_warning(blocked));
+    }
+    (rank + blocked, null, blocked)
+}
+
+/// `implied` and `over` from a numeric reading's dependencies, by whichever reading found them.
+/// W is every dependency at this configuration, so it outranks the matching here exactly as the
+/// numeric rank does: the structural over-block is generic, and where a theorem tips the count it
+/// blames a whole block — a rectangle with three surplus perpendiculars indicts its two side
+/// lengths — so `over` is rebuilt from W's reading alone.  `implied` is what the relations alone
+/// already say; an exact duplicate is never a theorem (two Horizontals on one line match two
+/// variables, so the graph passes them, but a copy is a surplus whatever it is made of).
+#[allow(clippy::too_many_arguments)]
+fn dependencies(
+    sk: &Sketch,
+    removable: Vec<u32>,
+    removable_rel: Vec<u32>,
+    rank: usize,
+    structural: usize,
+    implied: &mut Vec<u32>,
+    over: &mut Vec<u32>,
+    over_set: &mut BTreeSet<u32>,
+    warnings: &mut Vec<String>,
+) {
+    *implied = removable_rel.into_iter().filter(|&c| !duplicated(sk, c)).collect();
+    over.clear();
+    over_set.clear();
+    for c in removable {
+        if !implied.contains(&c) && over_set.insert(c) {
+            over.push(c);
+        }
+    }
+    if rank < structural {
+        warnings.push(format!(
+            "structural rank {structural} but numeric rank {rank}: a dependency the graph cannot \
+             see (theorem-induced or degenerate configuration) — Stage 4"
+        ));
+    }
+}
+
+/// A row that states no number anyone edits — a relation, or a derivative row whatever its row
+/// states (#148) — so a dependency through it is no surplus: the `implied` side of the line.
+fn states_no_number(c: &Constraint) -> bool {
+    !c.kind.has_dimension() || c.along.is_some()
+}
+
 /// What the parts say together (`parts`, #88): the whole Jacobian's rank and null space, and the
 /// constraints wholly implied — by any rows, and by relations alone.
 struct ByParts {
@@ -312,10 +374,9 @@ struct ByParts {
     removable_rel: Vec<u32>,
 }
 
-fn numeric_by_parts(sk: &Sketch, sys: &mut System) -> ByParts {
+fn numeric_by_parts(sk: &Sketch, sys: &mut System, row_c: &[u32], z: &[f64]) -> ByParts {
     use parts::Part;
     let order = sys.block_order();
-    let (_, row_c) = sys.structure();
     let mut of_row = vec![u32::MAX; sys.n_res];
     for (i, r) in sys.hard_rows().into_iter().enumerate() {
         of_row[r] = row_c[i];
@@ -324,26 +385,15 @@ fn numeric_by_parts(sk: &Sketch, sys: &mut System) -> ByParts {
     let mut all = vec![Part { rows: order.over_rows.clone(), cols: order.over_cols.clone() }];
     all.extend(order.blocks.iter().map(|b| Part { rows: b.rows.clone(), cols: b.cols.clone() }));
     all.push(Part { rows: order.under_rows.clone(), cols: order.under_cols.clone() });
-    // a derivative row is a relation whatever its row states (#148), as in the whole reading
-    let relation = |r: &usize| {
-        sk.constraint(of_row[*r]).is_some_and(|c| !c.kind.has_dimension() || c.along.is_some())
-    };
+    let relation = |r: &usize| sk.constraint(of_row[*r]).is_some_and(states_no_number);
     let rel: Vec<Part> = all.iter().map(|p| Part {
         rows: p.rows.iter().copied().filter(relation).collect(),
         cols: p.cols.clone(),
     }).collect();
-    let z = sys.z0(sk);
-    let j = sys.conditioned_sparse(&z);
+    let j = sys.conditioned_sparse(z);
     let null = parts::right_null(&j, &all);
-    let as_cols = |vs: &[Vec<f64>], n: usize| {
-        let mut m = Mat::zeros(n, vs.len());
-        for (k, v) in vs.iter().enumerate() {
-            for (i, x) in v.iter().enumerate() {
-                m.data[i * vs.len() + k] = *x;
-            }
-        }
-        m
-    };
+    // vectors as the columns of a matrix
+    let as_cols = |vs: &[Vec<f64>], n: usize| Mat::from_vec(vs.len(), n, vs.concat()).transpose();
     // the rows a left null space reaches, and the constraints it may name
     let removable = |w: &[Vec<f64>]| {
         let rows: Vec<usize> = (0..sys.n_res).filter(|&r| w.iter().any(|v| v[r] != 0.0)).collect();
@@ -355,10 +405,10 @@ fn numeric_by_parts(sk: &Sketch, sys: &mut System) -> ByParts {
     // only where there is one among all the rows
     let rank = sys.n_free - null.len();
     let rows: usize = all.iter().map(|p| p.rows.len()).sum();
-    let all_rows = if rank < rows { parts::left_null(&j, &all, sys.n_res) } else { Vec::new() };
+    let all_rows = if rank < rows { parts::left_null(&j, &all) } else { Vec::new() };
     let rel_rows = match all_rows.is_empty() {
         true => Vec::new(),
-        false => parts::left_null(&j, &rel, sys.n_res),
+        false => parts::left_null(&j, &rel),
     };
     ByParts {
         rank,
@@ -515,17 +565,10 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
                 let rn = c.rank_and_nullspace(RANK_TOL);
                 cond = Some(c);
                 if rn.converged {
-                    // where the Jacobian claims motions the matching cannot account for, settle-
-                    // test them: a tangency at its own contact is a double root whose "motion"
-                    // walks back.  `screen` owns both guards — only at a solution, and never
-                    // more than the discrepancy, so a motion the matching also sees is safe.
-                    let deficit = dm.rank.saturating_sub(rn.rank);
-                    let (null, blocked) = screen(sk, sys, &z, rn.null(), deficit);
+                    let (rank, null, blocked) =
+                        screened(sk, sys, &z, rn.null(), rn.rank, dm.rank, &mut warnings);
                     shaky = blocked;
-                    numeric_rank = Some(rn.rank + blocked);
-                    if blocked > 0 {
-                        warnings.push(shaky_warning(blocked));
-                    }
+                    numeric_rank = Some(rank);
                     movable = movable_columns(&null, RTOL);
                 } else {
                     // no rank at all, rather than the zero a failed SVD leaves behind — which
@@ -565,13 +608,8 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
             // deficiency survives jittered dimensions) because this runs after every edit.  An
             // exact duplicate is never a theorem: two Horizontals on one line match two variables,
             // so the graph passes them, but a copy is a surplus whatever it is made of.
-            // a derivative row is a relation whatever its row states: its number is no one's to
-            // edit, so a dependency through it is no surplus (#148)
             let rel_rows: Vec<usize> = (0..j.rows())
-                .filter(|&r| {
-                    sk.constraint(row_c[r])
-                        .is_some_and(|c| !c.kind.has_dimension() || c.along.is_some())
-                })
+                .filter(|&r| sk.constraint(row_c[r]).is_some_and(states_no_number))
                 .collect();
             let w_rel = if rel_rows.len() == j.rows() {
                 w.clone()
@@ -579,30 +617,23 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
                 j.select_rows(&rel_rows).left_nullspace(RANK_TOL).null()
             };
             let row_c_rel: Vec<u32> = rel_rows.iter().map(|&r| row_c[r]).collect();
-            implied = removable_constraints(sk, &w_rel, &row_c_rel, RTOL)
-                .into_iter()
-                .filter(|&c| !duplicated(sk, c))
-                .collect();
-            // W is every dependency at this configuration, so it outranks the matching here
-            // exactly as the numeric rank does below: the structural over-block is generic, and
-            // where a theorem tips the count it blames a whole block — a rectangle with three
-            // surplus perpendiculars indicts its two side lengths.  Rebuild `over` from W's
-            // reading alone; the structural seeds stand only where no W was computed.
-            over.clear();
-            over_set.clear();
-            for c in removable_constraints(sk, &w, &row_c, RTOL) {
-                if !implied.contains(&c) && over_set.insert(c) {
-                    over.push(c);
-                }
-            }
-            if numeric_rank.is_some_and(|r| r < dm.rank) {
-                warnings.push(format!(
-                    "structural rank {} but numeric rank {}: a dependency the graph cannot see \
-                     (theorem-induced or degenerate configuration) — Stage 4",
-                    dm.rank,
-                    numeric_rank.unwrap()
-                ));
-            }
+            let removable = removable_constraints(sk, &w, &row_c, RTOL);
+            let removable_rel = removable_constraints(sk, &w_rel, &row_c_rel, RTOL);
+            let rank = numeric_rank.unwrap_or(dm.rank);
+            let (o, i, w) = (&mut over, &mut implied, &mut warnings);
+            dependencies(sk, removable, removable_rel, rank, dm.rank, i, o, &mut over_set, w);
+        }
+    } else if by_parts {
+        // past the dense limit, the same reading part by part (#88)
+        let z = sys.z0(sk);
+        let p = numeric_by_parts(sk, sys, &row_c, &z);
+        let (rank, null, blocked) = screened(sk, sys, &z, p.null, p.rank, dm.rank, &mut warnings);
+        shaky = blocked;
+        numeric_rank = Some(rank);
+        under_params = movable_columns(&null, RTOL).iter().map(|&j| free_params[j]).collect();
+        if rank < adj.len() {
+            let (o, i, w) = (&mut over, &mut implied, &mut warnings);
+            dependencies(sk, p.removable, p.removable_rel, rank, dm.rank, i, o, &mut over_set, w);
         }
     }
 
@@ -738,39 +769,6 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
         // is what a stray dimension on it contradicts — but it is nobody's statement and
         // nothing anyone can remove, so the culprits named are the document's own (#45.6)
         conflict_set = Some(set.into_iter().filter(|c| !intrinsic.contains(c)).collect());
-    }
-    // past the dense limit, the same reading part by part (#88): the rank the parts add up to,
-    // what moves, and what each part's rows already say among themselves
-    if by_parts {
-        let p = numeric_by_parts(sk, sys);
-        // a tangency at its own contact is a double root whose first-order motion walks back,
-        // settle-tested as the whole reading does (`screen`)
-        let z = sys.z0(sk);
-        let (null, blocked) = screen(sk, sys, &z, p.null, dm.rank.saturating_sub(p.rank));
-        shaky = blocked;
-        if blocked > 0 {
-            warnings.push(shaky_warning(blocked));
-        }
-        let rank = p.rank + blocked;
-        numeric_rank = Some(rank);
-        under_params = movable_columns(&null, RTOL).iter().map(|&j| free_params[j]).collect();
-        if rank < adj.len() {
-            implied = p.removable_rel.iter().copied().filter(|&c| !duplicated(sk, c)).collect();
-            over.clear();
-            over_set.clear();
-            for c in p.removable {
-                if !implied.contains(&c) && over_set.insert(c) {
-                    over.push(c);
-                }
-            }
-        }
-        if rank < dm.rank {
-            warnings.push(format!(
-                "structural rank {} but numeric rank {rank}: a dependency the graph cannot see \
-                 (theorem-induced or degenerate configuration) — Stage 4",
-                dm.rank
-            ));
-        }
     }
     // a dependency whose rows do not hold is no theorem: two tangencies of one pair that
     // cannot both be true are dependent in W and carry no dimension, so W's reading files them

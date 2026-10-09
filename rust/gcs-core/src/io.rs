@@ -443,13 +443,10 @@ fn dual_json(d: &crate::model::Dual) -> Json {
 fn dual_from_json(sk: &Sketch, j: &Json) -> Result<(usize, crate::model::Toward, Vec<EntRef>), String> {
     use crate::model::Toward;
     let point = index(j.get("point").map_or(-1, |v| v.as_i64()), sk.points.len(), "dual point")?;
-    let toward = match (j.get("line"), j.get("chart")) {
-        (Some(l), _) => Toward::Line(index(l.as_i64(), sk.lines.len(), "dual line")?),
-        (None, None) if j.get("axis").is_some() => {
-            let a = j.get("axis").map_or(-1, |v| v.as_i64());
-            Toward::Axis(index(a, sk.axes.len(), "dual axis")?)
-        }
-        (None, Some(c)) => {
+    let toward = match (j.get("line"), j.get("axis"), j.get("chart")) {
+        (Some(l), ..) => Toward::Line(index(l.as_i64(), sk.lines.len(), "dual line")?),
+        (None, Some(a), _) => Toward::Axis(index(a.as_i64(), sk.axes.len(), "dual axis")?),
+        (None, None, Some(c)) => {
             let c = c.arr();
             let k = c.first().map_or(-1, |v| v.as_i64());
             if !(0..=1).contains(&k) {
@@ -461,7 +458,7 @@ fn dual_from_json(sk: &Sketch, j: &Json) -> Result<(usize, crate::model::Toward,
             };
             Toward::Chart { k: k as u8, axis }
         }
-        (None, None) => {
+        (None, None, None) => {
             return Err("a dual moves its point along a line, an axis or in a chart".to_string())
         }
     };
