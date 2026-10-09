@@ -137,6 +137,7 @@ export interface Abi {
   gcs_sketch_preview(h: number, plane: number): void;
   gcs_drawing_svg(ptr: number, len: number): number;
   gcs_drawing_info(ptr: number, len: number): number;
+  gcs_drawing_highlight(ptr: number, len: number): number;
   gcs_style_named(h: number, name: number, len: number): number;
   gcs_style_epoch(h: number): number;
   gcs_entity_bounds(h: number, kind: number, idx: number, out: number): void;

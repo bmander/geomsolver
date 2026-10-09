@@ -4,7 +4,7 @@
 use super::P;
 use crate::constraints::{is_operator, Fixity};
 use crate::syntax::lexer::Tok;
-use crate::syntax::words::{past_args, MODIFIERS};
+use crate::syntax::words::{past_args, word_definition_at, MODIFIERS};
 use crate::syntax::{reserved_word, Arg, Chained, Name, OpArg, Span, StmtKind, WordDef};
 
 impl<'a> P<'a> {
@@ -23,23 +23,9 @@ impl<'a> P<'a> {
     }
 
     /// **`a word(params) b :=` or `word(params) l :=` at the head of a statement** — a relation
-    /// word being defined (§9.9): its fixity, or `None` and nothing eaten.  Names and a word,
-    /// with at most one parenthesised list after the word, then `:=`; a modifier in front
-    /// (`param w := …`, `construction c := …`) is a definition of another kind.
+    /// word being defined (§9.9): its fixity, or `None` and nothing eaten.
     pub(super) fn word_definition_ahead(&self) -> Option<Fixity> {
-        let first = self.word_at(self.i)?;
-        if MODIFIERS.contains(&first) {
-            return None;
-        }
-        // the word at `w`: its parameters, if any, then the last operand and `:=`
-        let tail = |w: usize| {
-            let j = past_args(&self.t, w);
-            self.word_at(j).is_some() && self.t.get(j + 1).map(|(t, _)| t) == Some(&Tok::Define)
-        };
-        if self.word_at(self.i + 1).is_some() && tail(self.i + 1) {
-            return Some(Fixity::Infix);
-        }
-        tail(self.i).then_some(Fixity::Prefix)
+        word_definition_at(&self.t, self.i)
     }
 
     /// `a horizontal b := a level(up) b` — the head's names, the word and its parameters, and

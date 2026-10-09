@@ -3818,19 +3818,30 @@ pub unsafe extern "C" fn gcs_program_uses(ptr: *const u8, len: usize) -> *mut u8
 /// typing — which never elaborates and is exactly the program being looked at.
 #[no_mangle]
 pub unsafe extern "C" fn gcs_program_highlight(ptr: *const u8, len: usize) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || out_runs(syntax::highlight(as_str(ptr, len))))
+}
+
+/// Colour a drawing (`.svd`), as `gcs_program_highlight` colours a program: the drawing lexer's
+/// own scan, in the same `[[class, lo, hi], …]`.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_drawing_highlight(ptr: *const u8, len: usize) -> *mut u8 {
     guard(std::ptr::null_mut(), move || {
-        let runs: Vec<Json> = syntax::highlight(as_str(ptr, len))
-            .into_iter()
-            .map(|(t, s)| {
-                Json::Arr(vec![
-                    Json::Str(t.as_str().to_string()),
-                    Json::Int(s.lo as i64),
-                    Json::Int(s.hi as i64),
-                ])
-            })
-            .collect();
-        out_json(Json::Arr(runs))
+        out_runs(gcs_core::drawing::highlight(as_str(ptr, len)))
     })
+}
+
+fn out_runs(runs: Vec<(syntax::Tint, syntax::Span)>) -> *mut u8 {
+    let runs: Vec<Json> = runs
+        .into_iter()
+        .map(|(t, s)| {
+            Json::Arr(vec![
+                Json::Str(t.as_str().to_string()),
+                Json::Int(s.lo as i64),
+                Json::Int(s.hi as i64),
+            ])
+        })
+        .collect();
+    out_json(Json::Arr(runs))
 }
 
 #[no_mangle]

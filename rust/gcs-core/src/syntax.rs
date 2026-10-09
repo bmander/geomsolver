@@ -11,6 +11,7 @@ mod source;
 mod words;
 
 pub use highlight::{highlight, Tint};
+pub(crate) use highlight::with_comments;
 pub use names::{camel, entity_name, hidden, kind_initial, num, one_of, snake};
 pub use parser::{parse, parse_from, parse_legacy, parse_with_limits, ParseLimits};
 pub use print::{operator_text, render_flat, write_stmt_to, PrintError};
