@@ -171,3 +171,17 @@ fn a_region_written_and_swept_is_the_solid_its_area_says() {
     let expected = 2.0 * (3600.0 - 400.0 - 25.0 * std::f64::consts::PI);
     assert!((v / expected - 1.0).abs() < 1e-3, "{v} {expected}");
 }
+
+#[test]
+fn a_region_is_asked_of_one_plane_and_another_planes_lines_are_not_in_it() {
+    // the same square drawn on the front and on the top, at the same coordinates
+    let src = format!("unit mm\nuse std\nin std.front {{\n{}}}\nin std.top {{\n{}}}\n",
+        square("f", 0.0, 0.0, 10.0), square("t", 0.0, 0.0, 10.0));
+    let e = build(&src);
+    let (outer, _) = names_at(&e, (5.0, 5.0)).unwrap().unwrap();
+    assert_eq!(set(&outer), of(&["f1", "f2", "f3", "f4"]));
+    let top = e.map.ent_named("std.top").map(|p| p.i());
+    let r = region_at(&e.sketch, top, (5.0, 5.0), 0.05).unwrap().unwrap();
+    let (outer, _) = written(&e.map, &r).unwrap();
+    assert_eq!(set(&outer), of(&["t1", "t2", "t3", "t4"]));
+}
