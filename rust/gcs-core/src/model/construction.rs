@@ -680,7 +680,10 @@ impl Sketch {
     }
 
     pub fn n_residuals(&self) -> usize {
-        self.constraints.iter().filter(|c| !c.claim).map(|c| c.rows_in(self)).sum()
+        self.constraints.iter()
+            .filter(|c| !c.claim && c.bound.is_none())
+            .map(|c| c.rows_in(self))
+            .sum()
     }
 
     /// Constraints the user added (excludes intrinsic and soft/transient ones).

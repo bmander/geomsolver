@@ -127,7 +127,7 @@ pub fn make_witness(sk: &mut Sketch, seed: u32, jitter: f64, tol: f64) -> Vec<f6
         // number is not an input either — no system reads it, so a jitter would measure nothing.
         // a set's derivative row (§6.21) reads its row's number only to differentiate it, so a
         // jitter of it would only make it and its row disagree
-        if c.soft || c.claim || c.free.is_some() || c.along.is_some() {
+        if c.soft || c.claim || c.bound.is_some() || c.free.is_some() || c.along.is_some() {
             continue;
         }
         for (ai, _, kind) in c.dimensions() {
@@ -253,7 +253,7 @@ pub fn screen(
 ) -> (Mat, usize) {
     if cap == 0
         || null.cols == 0
-        || !sk.constraints.iter().any(|c| !c.claim && c.kind.is_tangency())
+        || !sk.constraints.iter().any(|c| c.acts() && c.kind.is_tangency())
         || sys.max_relative_residual(z0) > SCREEN_SOLVED
     {
         return (null, 0);

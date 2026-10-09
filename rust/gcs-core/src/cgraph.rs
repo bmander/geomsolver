@@ -413,7 +413,7 @@ pub fn build(sk: &Sketch) -> ConstraintGraph {
     for c in &sk.constraints {
         // A claim is skipped outright — not even `unsupported`, which would hand it to the
         // numeric residual and have the plan enforce a statement that promised to add nothing.
-        if c.claim {
+        if c.claim || c.bound.is_some() {
             continue;
         }
         // A dimension written in terms of a free variable states no length: it states a

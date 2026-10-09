@@ -1,6 +1,11 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.58 — October 2026**
+**Specification, Draft 0.59 — October 2026**
+
+**[0.59] A bound chooses the root.** A dimension's number may be a bound, `distance(>= d)`,
+`distance(<= d)` or `distance(in: (a, b))`, and `p inside P` / `p outside P` say which side of a
+plane a point is on. A bound adds no row: it says which of the equations' solutions is meant,
+checked on the solution, and a solve is steered to the one where it holds (§9.6).
 
 **[0.58] A point drawn in two planes.** `O := point in P, G` draws `O` in both planes, so on the
 line where they meet: what a layout draws in two views and ties by `project` is said once, and
@@ -1732,8 +1737,9 @@ is not expressible**: a set says what its points satisfy, never what they do not
 
 *Non-normative:* `std.Sphere`, `std.Cylinder` and `std.Cone` are sets. A set drawn by tracing its
 points, other recognised shapes (a line as two planes met), and sets bounded by inequalities (arcs,
-segments, rays) are not part of this draft (#101). A derivative row has no flat spelling, so a
-program lifted from a sketch (`to_program`) keeps a tangency's contact and says nothing of the
+segments, rays) are not part of this draft (#101): a bound outside a set body chooses a root (§9.6),
+and one inside a body, making the set a region, is to come. A derivative row has no flat spelling,
+so a program lifted from a sketch (`to_program`) keeps a tangency's contact and says nothing of the
 tangency.
 
 ## 7. Ports **[0.13]**
@@ -1951,7 +1957,24 @@ A selector left unwritten is read off the seed (§9.2): the branch the seeded po
 
 ### 9.6 Inequalities
 
-Orientation predicates (`ccw`, `cw`) are the only inequalities in this draft. They contribute no equations; they select among the discrete solution components of the equality system. Solvers MUST verify them on candidate solutions and MUST NOT report a solution violating one.
+Inequalities contribute no equations; they select among the discrete solution components of the equality system. Solvers MUST verify them on candidate solutions and MUST NOT report a solution violating one. There are two kinds: the orientation predicates (`ccw`, `cw`), and bounds.
+
+**A bound** **[0.59]** is a dimension whose number says how far the measure may go rather than what it is:
+
+```
+a distance(>= 0, along: up) p     // p at or above a
+p distance(<= 6) q                // within 6 of q
+a distance(in: (1, 9), along: up) p
+p inside P                        // behind P's normal: p distance(<= 0, along: n) P
+p outside P                       // in front of it
+```
+
+- **What takes one:** a measure a solve can be steered along — an ordinate (so `inside` and `outside` a plane, the point's ordinate along the plane's normal from its origin), a distance between points, and a point's or a parallel line's distance from a line. A bound on any other kind is **E040**.
+- **Closed:** `>=`, `<=` and `in:` include their edge, where a solution may stand. `>` and `<` are refused.
+- **Its number:** zero may be written, unlike an ordinate's equality, which zero makes a `level` (§9.2). It may not read an unknown, and a bound may not be a `claim` (**E040**): a bound chooses which solution is meant, and a claim asks about the one there is.
+- **Meaning:** outside a set body, a bound **chooses the root**. It adds no row and no freedom, and is drawn as no callout. A solver checks it on the solution. Where it does not hold, the solver looks for the root where it does — for a pair of roots mirrored across the bound's edge (a point on two circles, a point on either side of a fold), the measure's mirror — and fails the solve where none is found (`a bound does not hold`). The diagnosis tells which bounds are violated, and which hold with the solution on their edge (*active*).
+- **Not yet:** a bound inside a set body, where it would make the set a region, and `p inside S` for a set (#145, F1).
+- `inside` between two solids remains the claim of §9.8; which one a statement is follows from its operands.
 
 ### 9.7 Claims **[0.5]**
 

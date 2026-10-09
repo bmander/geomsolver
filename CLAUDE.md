@@ -1142,6 +1142,23 @@ Conventions:
   tints and **never changes the face** (background/box-shadow/outline, not border/padding).  Run
   `npm run overlay` (headless Chrome, the real `CodeEditor`) when you touch `editor.ts`;
   `make test` cannot.
+- A **bound** (Solvent §9.6, 0.59, #109) *chooses the root*: `distance(>= d)`, `distance(<= d)`,
+  `distance(in: (a, b))` and `p inside P` / `p outside P` (point, plane: the ordinate along `n`
+  from `P.origin`, `<=`/`>=` 0, lowered by `relations::side_of_plane`; `plane_side_word`).
+  Parsed as `OpArg::Bound { cmp: syntax::Cmp, hi }` before the number's `OpArg::Dim`, which every
+  number reader keeps reading; `RelationForm::bound`, `ResolvedRelation::bound`, the canonical
+  form's `bound`; checked by `relations::bound_of` (`CKind::boundable`: ordinate, distances; not a
+  claim; E040). `Constraint::bound` compiles **no row** — `acts()` is false, and the seams that
+  spell claims out inline (`System::new`, `n_equations`, `cgraph`, `witness`, callouts,
+  `io::Part`) skip it too; `topology_key` marks it `~`. `Constraint::reading` is the number that
+  would make the row hold (secant along the number). `System::solve` ends in `steer`: with
+  `retry`, a broken bound (`solve::bound_reading`) is aimed at its mirror (`Bound::aim`) on a
+  scratch compile, the document polished from there, kept only if it holds; else `success`
+  false, status `BOUND_BROKEN`. A drag (`retry` off) and a drawing whose bounds hold solve to the
+  same bits. `Diagnosis::bounds_violated`/`bounds_active`, report `boundsViolated`/
+  `boundsActive`; JSON `"bound": {cmp, hi}`; `graft`, `lift`, `describe` (`syntax::bounded`).
+  A free name in one is E040 (`expr::Fault::ClaimFree`). `ccw` on the sheet is still unchecked.
+  `tests/bounds.rs` is the gate.
 - `same_constraint` is "says exactly the same thing"; `same_relation` is the same *without* the
   numbers.  A repeated *relation* is refused by the app (`edit::applyConstraints`): equations
   without rank.  A **dimension is never deduped by the UI**: redundant or contradictory is the

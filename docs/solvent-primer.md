@@ -745,6 +745,27 @@ same with the sign turned. Several statements over one curve add up.
   loop runs counter-clockwise.
 - `use std (hangs)` gives `hangs(L: 150mm) rope`, the length and the energy in one word.
 
+### 1.10.2 Bounds: which root is meant
+
+A dimension's number may be a **bound**. It adds no row; it says which of the solutions the rest
+of the drawing has is meant, so it does the job a seed was doing when the seed only picked a side.
+
+```sv
+a distance(>= 0, along: up) p          // p at or above a
+p distance(<= 6) q                     // within 6 of q
+a distance(in: (1, 9), along: up) p
+foot inside p                          // behind the plane p's normal
+foot outside p                         // in front of it
+```
+
+- **Takes one:** an ordinate (and so `inside`/`outside` a plane, the point's ordinate along its
+  normal), a point–point distance, a distance from a line. Anything else is E040.
+- **Closed:** `>=`, `<=`, `in:`; `>` and `<` don't parse. Zero is fine in a bound.
+- **Solving:** checked on the solution. Off it, the solve looks for the root where it holds (the
+  mirror of a pair of roots, which is the usual case) and fails with `a bound does not hold` if
+  there is none. The diagnosis lists violated bounds and *active* ones (solution on the edge).
+- **Not:** a `claim`, an unknown's reader, or (yet) a bound inside a set body.
+
 ### 1.11 Datums
 
 **A plane is the datum.** A point drawn `in P` has `P`'s own coordinates, so a dimension within `P`

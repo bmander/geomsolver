@@ -323,9 +323,11 @@ impl<'a> Walk<'a> {
                     }
                     let Some(mut r2) = self.settle_relation(rel, vals, scope) else { continue };
                     if let Some(twin) = scope.twin() {
-                        // a claim and a gauge state no row, so they have no derivative
+                        // a claim, a gauge and a bound state no row, so they have no
+                        // derivative
                         let gauge = r2.form.written().is_some_and(|w| {
                             crate::constraints::gauge_op(&w.word.text).is_some()
+                                || w.bound().is_some()
                         });
                         if r2.claim || gauge {
                             continue;
@@ -407,10 +409,11 @@ impl<'a> Walk<'a> {
                         }
                     }
                     crate::syntax::OpArg::Named(_, arg) => self.settle_arg(arg, vals, scope),
-                    crate::syntax::OpArg::Dim(text, span) => {
+                    crate::syntax::OpArg::Dim(text, span)
+                    | crate::syntax::OpArg::Bound { hi: Some((text, span)), .. } => {
                         self.settle_dim(text, *span, vals, scope)
                     }
-                    crate::syntax::OpArg::Ent(_) => {}
+                    crate::syntax::OpArg::Ent(_) | crate::syntax::OpArg::Bound { .. } => {}
                 }
             }
         }

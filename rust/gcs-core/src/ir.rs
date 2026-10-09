@@ -131,6 +131,8 @@ pub(crate) struct ResolvedRelation<'a> {
     pub written: Option<&'a Written>,
     pub claim: bool,
     pub class: &'a Classes,
+    /// The bound its number is, where it is one (§9.6): `RelationForm::bound`.
+    pub bound: Option<(syntax::Cmp, Option<Arg>)>,
 }
 
 #[derive(Clone, Debug)]

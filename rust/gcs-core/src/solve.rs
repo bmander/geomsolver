@@ -17,6 +17,33 @@ use crate::newton::{self, Info, Method, TrustRegion};
 use crate::sparse::Ata;
 use crate::system::{Subset, System, DENSE_MAX};
 
+/// A `SolveResult::status` of its own: every row holds, and a bound does not (§9.6).
+pub const BOUND_BROKEN: i32 = 5;
+
+/// How many bounds one solve steers, each once (`System::steer`).
+const STEER_ROUNDS: usize = 4;
+
+/// How far past its edge, as a fraction of the drawing's extent, a bound still holds: the
+/// solve's own relative tolerance, so a bound the solution stands on holds.
+const STEER_TOL: f64 = 1e-6;
+
+/// How a bound reads on the drawing (§9.6): whether it holds, and whether the solution stands
+/// on its edge — within the solve's own relative tolerance, so one standing there holds.  `None`
+/// for a constraint that is no bound.  The one reader the steering and the diagnosis share.
+pub fn bound_reading(sk: &Sketch, c: &crate::constraints::Constraint) -> Option<(bool, bool)> {
+    let b = c.bound?;
+    let m = c.reading(sk)?;
+    let lo = c.args[number_slot(c)].num();
+    let tol = STEER_TOL * sk.extent();
+    let edge = (m - lo).abs() <= tol || b.hi.is_some_and(|hi| (m - hi).abs() <= tol);
+    Some((b.holds(lo, m, tol), edge))
+}
+
+/// Where a bounded constraint's number stands: its kind's dimension slot.
+fn number_slot(c: &crate::constraints::Constraint) -> usize {
+    c.kind.spec().iter().position(|(_, k)| k.is_dimension()).expect("a bound is on a dimension")
+}
+
 #[derive(Clone, Debug)]
 pub struct SolveResult {
     /// Hard residuals satisfy the caller's acceptance tolerance. This is independent
@@ -150,6 +177,69 @@ impl System {
     /// This is the one place the rule lives, so every caller gets it — the one-shot `solve`, the
     /// plan solver's fallback and a front end that compiled a system for itself alike.
     pub fn solve(&mut self, sk: &mut Sketch, opts: SolveOpts) -> SolveResult {
+        let res = self.solve_unsteered(sk, opts);
+        self.steer(sk, opts, res)
+    }
+
+    /// **A bound chooses the root** (§9.6): read on the solution, and where one does not hold,
+    /// the solve is steered to the root where it does — the bound stated as an acting equality
+    /// at its mirror (`Bound::aim`) on a scratch copy, which a mirror-symmetric pair of roots
+    /// (two circles crossing, a point either side of a fold) makes consistent at the other
+    /// root, then the document's own system from there.  Kept only where it solves and the
+    /// bound holds; a bound still broken fails the solve (status `BOUND_BROKEN`), since a solver
+    /// may not report a solution violating one.  A document solve's step (`retry`): a drag
+    /// keeps the branch it is on.  Nothing is solved again where every bound holds, so a
+    /// drawing with none, or with all kept, solves to the same bits as before.
+    fn steer(&mut self, sk: &mut Sketch, opts: SolveOpts, mut res: SolveResult) -> SolveResult {
+        if !opts.retry || !opts.writeback || !res.success
+            || !sk.constraints.iter().any(|c| c.bound.is_some())
+        {
+            return res;
+        }
+        let broken = |sk: &Sketch| {
+            sk.constraints.iter().position(|c| bound_reading(sk, c).is_some_and(|(h, _)| !h))
+        };
+        let mut steered = Vec::new();
+        while let Some(ci) = broken(sk) {
+            if steered.contains(&ci) || steered.len() >= STEER_ROUNDS {
+                break;
+            }
+            steered.push(ci);
+            let c = &sk.constraints[ci];
+            let (b, at) = (c.bound.expect("broken is bounded"), number_slot(c));
+            let aim = b.aim(c.args[at].num(), c.reading(sk).expect("broken reads"));
+            let mut scratch = sk.clone();
+            let sc = &mut scratch.constraints[ci];
+            sc.bound = None;
+            sc.args[at] = crate::constraints::Arg::Num(aim);
+            let mut aimed = System::new(&scratch);
+            aimed.solve_unsteered(&mut scratch, opts);
+            let kept: Vec<f64> = sk.params.iter().map(|p| p.value).collect();
+            for (p, q) in sk.params.iter_mut().zip(&scratch.params) {
+                p.value = q.value;
+            }
+            let again = self.solve_unsteered(sk, opts);
+            let holds = bound_reading(sk, &sk.constraints[ci]).is_some_and(|(h, _)| h);
+            if again.success && holds {
+                res = again;
+            } else {
+                for (p, v) in sk.params.iter_mut().zip(kept) {
+                    p.value = v;
+                }
+                let _ = self.solve_unsteered(sk, opts);
+                break;
+            }
+        }
+        if let Some(ci) = broken(sk) {
+            res.success = false;
+            res.status = BOUND_BROKEN;
+            let said = crate::io::describe(&sk.constraints[ci]);
+            res.message = format!("a bound does not hold: {said}");
+        }
+        res
+    }
+
+    fn solve_unsteered(&mut self, sk: &mut Sketch, opts: SolveOpts) -> SolveResult {
         if !opts.acceptance_tol.is_finite() || opts.acceptance_tol <= 0. {
             let mut result = SolveResult::plain(opts.method.as_str(),false,f64::INFINITY,0);
             result.status = -1;

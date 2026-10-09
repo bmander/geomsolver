@@ -117,6 +117,12 @@ pub struct Diagnosis {
     pub claims_theorem: Vec<u32>,
     pub claims_violated: Vec<u32>,
     pub claims_consuming: Vec<u32>,
+    /// The bounds (§9.6), read on the solution: a bound is no equation either, and chooses which
+    /// root is meant.  *Violated*: it does not hold, which a solve reports as a failure.
+    /// *Active*: it holds with the solution on its edge — told, not painted.  One that holds
+    /// with room is in neither.
+    pub bounds_violated: Vec<u32>,
+    pub bounds_active: Vec<u32>,
     /// Each `minimizes`'s and `maximizes`'s verdict (#121), by its terms' constraints: minimum,
     /// maximum, saddle or degenerate, read off the reduced Hessian at the pose diagnosed — told,
     /// never enforced: a stationary point the solve reached is the drawing's, and the verdict says
@@ -685,6 +691,14 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
     // `peaucellier`, a traced document that ends on a claim, 834 µs a diagnosis against 45 µs for
     // the whole of the rest of it.  The residual is `Constraint::error`, which needs no system at
     // all.
+    let (mut bounds_violated, mut bounds_active) = (Vec::new(), Vec::new());
+    for c in &sk.constraints {
+        match crate::solve::bound_reading(sk, c) {
+            Some((false, _)) => bounds_violated.push(c.id),
+            Some((true, true)) => bounds_active.push(c.id),
+            _ => {}
+        }
+    }
     let mut claims_theorem: Vec<u32> = Vec::new();
     let mut claims_violated: Vec<u32> = Vec::new();
     let mut claims_consuming: Vec<u32> = Vec::new();
@@ -894,6 +908,8 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
         claims_theorem,
         claims_violated,
         claims_consuming,
+        bounds_violated,
+        bounds_active,
         extrema: crate::variational::extrema(sk),
         // **judged, at the very end, and never compiled.**  A solid claim reads the solved pose
         // and the terms over it; it enters no system, so nothing above this line can see it and

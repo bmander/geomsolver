@@ -13,7 +13,7 @@ mod words;
 pub use highlight::{highlight, Tint};
 pub use names::{camel, entity_name, hidden, kind_initial, num, one_of, snake};
 pub use parser::{parse, parse_from, parse_legacy, parse_with_limits, ParseLimits};
-pub use print::{operator_text, render_flat, write_stmt_to, PrintError};
+pub use print::{bounded, operator_text, render_flat, write_stmt_to, PrintError};
 pub(crate) use print::{sel_text, written_parts};
 pub use source::{line_col, Module, Name, Program, Span, StmtId, SynErr, Use, MAX_STMTS, MAX_TEXT};
 pub use words::{equal_kind, is_name, reserved_word};
@@ -1275,6 +1275,36 @@ pub enum OpArg {
     Vector { key: Option<Name>, parts: Vec<Arg>, span: Span },
     /// the number, as written — `80`, `x = 7`, `h = w / 2`, `1' 3"`
     Dim(String, Span),
+    /// The number beside it is a **bound** (§9.6): `distance(>= 5)`, `distance(<= d)`, or the
+    /// low end of `distance(in: (a, b))`, whose high end is `hi`.  `span` is the `>=` or `in:`
+    /// written.  Outside a set body a bound is a branch choice: no row, checked on the solution.
+    Bound { cmp: Cmp, span: Span, hi: Option<(String, Span)> },
+}
+
+/// Which way a bound runs (§9.6).  Closed, every one: a solution may stand on its edge.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Cmp {
+    /// `>= d`
+    Ge,
+    /// `<= d`
+    Le,
+    /// `in: (a, b)`
+    In,
+}
+
+impl Cmp {
+    /// As written, and as a document stores it.
+    pub fn text(self) -> &'static str {
+        match self {
+            Cmp::Ge => ">=",
+            Cmp::Le => "<=",
+            Cmp::In => "in",
+        }
+    }
+
+    pub fn of(text: &str) -> Option<Cmp> {
+        [Cmp::Ge, Cmp::Le, Cmp::In].into_iter().find(|c| c.text() == text)
+    }
 }
 
 /// An operator spelling retained through resolution, with operands and arguments
@@ -1291,6 +1321,15 @@ pub struct Written {
 }
 
 impl Written {
+    /// The bound the number is, where it is one (§9.6): its direction and an interval's high
+    /// end.
+    pub fn bound(&self) -> Option<(Cmp, Option<&(String, Span)>)> {
+        self.args.iter().find_map(|a| match a {
+            OpArg::Bound { cmp, hi, .. } => Some((*cmp, hi.as_ref())),
+            _ => None,
+        })
+    }
+
     /// One selector by name — what `constraints::infix_op` reads to tell `distance … along: x`
     /// from a plain one, and a tangency at a named end from the bare pair.
     pub fn sel(&self, name: &str) -> Option<String> {
@@ -1542,10 +1581,22 @@ impl Relation {
 #[derive(Clone, Debug)]
 pub enum RelationForm {
     Written(Written),
-    Canonical { kind: CKind, args: Vec<Option<Arg>> },
+    /// `bound`: the number is a bound (§9.6), its direction and an interval's high end.
+    Canonical { kind: CKind, args: Vec<Option<Arg>>, bound: Option<(Cmp, Option<Arg>)> },
 }
 
 impl RelationForm {
+    /// The bound its number is, where it is one (§9.6), in either form: an interval's high end
+    /// as the text written, or the number lifted.
+    pub fn bound(&self) -> Option<(Cmp, Option<Arg>)> {
+        match self {
+            Self::Written(w) => w.bound().map(|(cmp, hi)| {
+                (cmp, hi.map(|(text, span)| Arg::Dim { text: text.clone(), span: *span }))
+            }),
+            Self::Canonical { bound, .. } => bound.clone(),
+        }
+    }
+
     pub fn written(&self) -> Option<&Written> {
         match self {
             Self::Written(w) => Some(w),

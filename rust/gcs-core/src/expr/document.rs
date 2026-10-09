@@ -265,6 +265,14 @@ fn write_value(
             format!("`{name}` is free, and a claim may not bind an unknown"),
         ));
     }
+    // nor a bound, which compiles to no rows either: it chooses among the solutions, and an
+    // unknown it read would be one no equation settles (§9.6)
+    if sk.constraints[ci].bound.is_some() {
+        return Err(ExprError::new(
+            Fault::ClaimFree,
+            format!("`{name}` is free, and a bound may not bind an unknown"),
+        ));
+    }
     // one name is one unknown: a place contacts share along a curve (`t == s`) is not a number a
     // dimension can be written in, and two unknowns under one name would be told apart nowhere
     if sk.shared.contains_key(&name) {
