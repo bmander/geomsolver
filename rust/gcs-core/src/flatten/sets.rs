@@ -395,8 +395,15 @@ impl<'a> Walk<'a> {
     /// What the body already says along the plane — a cone's along its generator, where the
     /// apex is on `P` — makes the two derivatives dependent: the system's rank finds that
     /// (`diagnose`), and nothing here knows a shape.
-    fn expand_touch(&mut self, st: &Stmt, rel: &Relation, path: &[PathStep], sc: &Scope, k: usize,
-                    abs: &str) {
+    fn expand_touch(
+        &mut self,
+        st: &Stmt,
+        rel: &Relation,
+        path: &[PathStep],
+        sc: &Scope,
+        k: usize,
+        abs: &str,
+    ) {
         let Some(w) = rel.form.written() else { return };
         let at = w.word.span;
         let set = self.set_written(&w.ops[k]);
@@ -460,7 +467,8 @@ impl<'a> Walk<'a> {
             span: st.span,
         }));
         on.word = Some(worded);
-        let made = Stmt { id: st.id, kind: StmtKind::Relation(on), span: st.span, chained: Chained::No };
+        let kind = StmtKind::Relation(on);
+        let made = Stmt { id: st.id, kind, span: st.span, chained: Chained::No };
         self.out.push((made, path.to_vec(), sc.clone()));
     }
 

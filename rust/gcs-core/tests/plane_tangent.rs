@@ -3,7 +3,6 @@
 //! the set.  Nothing here knows a shape: where the drawing already says what the body says along
 //! the plane (a cone's apex drawn on it, a cylinder's axis parallel to it), one derivative is what
 //! the other says, and the system's rank finds that — `Diagnosis::expected`, said nowhere.
-use gcs_core::constraints::CKind;
 use gcs_core::diagnose::{diagnose, DiagnoseOptions, Diagnosis, State};
 use gcs_core::io;
 use gcs_core::model::Toward;
@@ -142,8 +141,9 @@ fn a_plane_touches_a_sphere() {
 /// one of the two derivatives what the other says — found by the rank, as for the cone.
 #[test]
 fn a_plane_touches_a_cylinder_lying_along_it() {
-    let mut e = solved("unit mm\nuse std\nux := axis\nfix(dir == (1, 0, 0), origin == (0, 0, 20)) ux\n\
-        vy := axis\nfix(dir == (0, 1, 0), origin == (0, 0, 20)) vy\nup := plane(u: ux, v: vy)\n\
+    let mut e = solved("unit mm\nuse std\nux := axis\n\
+        fix(dir == (1, 0, 0), origin == (0, 0, 20)) ux\nvy := axis\n\
+        fix(dir == (0, 1, 0), origin == (0, 0, 20)) vy\nup := plane(u: ux, v: vy)\n\
         A := point in up\nfix((0, 0)) A\n\
         B := point hint((50, 10)) in up\nax := line(A, B)\ndistance(60) ax\n\
         M := point in std.top\nfix((40, 0)) M\nshaft := std.Cylinder(ax, r: hint(15))\n\
@@ -165,5 +165,4 @@ fn a_plane_touches_a_set_at_a_point() {
     refused(&src("std.top tangent gc"), "E040", "which the word names", "tangent");
     refused(&src("std.top tangent(at: M) gax"), "E040", "does not relate a plane to a line",
             "tangent(at: M)");
-    let _ = CKind::PointOnPlane;
 }
