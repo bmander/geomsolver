@@ -288,21 +288,33 @@ fn qrp(m: usize, n: usize, a: &mut [f64], tol: Tol) -> (Vec<f64>, Vec<i32>, usiz
 /// B (m*nrhs) <- Qᵀ B, using the reflectors left in `a` by `qrp`.
 fn apply_qt(m: usize, n: usize, k: usize, a: &[f64], tau: &[f64], b: &mut [f64], nrhs: usize) {
     for p in 0..k {
-        let t = tau[p];
-        if t == 0.0 {
-            continue;
+        reflect(m, n, p, a, tau[p], b, nrhs);
+    }
+}
+
+/// `qrp`'s `p`th reflector, `I − τ v vᵀ`, applied to the columns of `b` (it is its own
+/// transpose: `apply_qt` takes them in order, `apply_q` backwards).
+fn reflect(m: usize, n: usize, p: usize, a: &[f64], t: f64, b: &mut [f64], nrhs: usize) {
+    if t == 0.0 {
+        return;
+    }
+    for j in 0..nrhs {
+        let mut w = b[p * nrhs + j];
+        for i in p + 1..m {
+            w += a[i * n + p] * b[i * nrhs + j];
         }
-        for j in 0..nrhs {
-            let mut w = b[p * nrhs + j];
-            for i in p + 1..m {
-                w += a[i * n + p] * b[i * nrhs + j];
-            }
-            w *= t;
-            b[p * nrhs + j] -= w;
-            for i in p + 1..m {
-                b[i * nrhs + j] -= w * a[i * n + p];
-            }
+        w *= t;
+        b[p * nrhs + j] -= w;
+        for i in p + 1..m {
+            b[i * nrhs + j] -= w * a[i * n + p];
         }
+    }
+}
+
+/// `Q` (not its transpose) applied to the columns of `b`: `qrp`'s reflectors in reverse.
+fn apply_q(m: usize, n: usize, k: usize, a: &[f64], tau: &[f64], b: &mut [f64], nrhs: usize) {
+    for p in (0..k).rev() {
+        reflect(m, n, p, a, tau[p], b, nrhs);
     }
 }
 
@@ -385,6 +397,33 @@ pub(crate) fn rrqr_with(a: &Mat, tol: Tol) -> (usize, Vec<i32>) {
     let mut w = a.data.clone();
     let (_, piv, rank) = qrp(m, n, &mut w, tol);
     (rank, piv)
+}
+
+/// The null space of a matrix of full row rank, from a pivoted QR of its transpose: `Aᵀ = Q R`,
+/// and `Q`'s columns past the rank span what `A` sends to zero — one per column, `n − m` of them.
+/// `None` where `A` is short of full row rank by `tol`, for an SVD to read instead.  Several times
+/// cheaper than the SVD on a wide matrix, which is the case it is for (a drawing's under part).
+pub fn null_full_row_rank(a: &Mat, tol: Tol) -> Option<Mat> {
+    let (m, n) = (a.rows, a.cols);
+    if m > n {
+        return None;
+    }
+    if m == 0 {
+        return Some(Mat::identity(n));
+    }
+    let mut w = a.transpose().data;
+    let (tau, _, rank) = qrp(n, m, &mut w, tol);
+    if rank < m {
+        return None;
+    }
+    // Q's columns past the rank: Q applied to those unit vectors, and only to those
+    let k = n - m;
+    let mut q = Mat::zeros(n, k);
+    for j in 0..k {
+        q.data[(m + j) * k + j] = 1.0;
+    }
+    apply_q(n, m, m, &w, &tau, &mut q.data, k);
+    Some(q)
 }
 
 pub fn rank_rrqr(a: &Mat, rcond: f64) -> usize {

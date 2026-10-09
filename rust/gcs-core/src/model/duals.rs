@@ -22,6 +22,8 @@ use std::collections::BTreeSet;
 pub enum Toward {
     /// `l tangent S`: the line's direction, `b − a`.
     Line(usize),
+    /// An axis's direction `d`: one of a plane's own, `P tangent(at: m) S` (#148).
+    Axis(usize),
     /// A direction in the tangent space solved for, the `k`th of two (`S1 tangent(at: m) S2`),
     /// gauged by a chart: one along `e_a`, the other along `e_b`, each rising along `e_c` by an
     /// unknown — `axis` is `c`, once chosen (`program::views::charts`).
@@ -60,7 +62,7 @@ impl Moves {
     pub fn of(&self, p: u32) -> Move {
         if let Some(k) = self.point.and_then(|x| x.iter().position(|&q| q == p)) {
             return match self.toward {
-                Toward::Line(_) => Move::Dir(k),
+                Toward::Line(_) | Toward::Axis(_) => Move::Dir(k),
                 Toward::Chart { .. } => Move::Tangent,
             };
         }

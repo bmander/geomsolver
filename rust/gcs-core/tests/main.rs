@@ -104,6 +104,8 @@ mod seeds;
 mod sets;
 mod applied;
 mod membership;
+mod plane_tangent;
+mod numeric_parts;
 mod shared_contact;
 mod sheet;
 mod smoke;

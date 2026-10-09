@@ -1,6 +1,11 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.55 — October 2026**
+**Specification, Draft 0.56 — October 2026**
+
+**[0.56] A plane tangent to a set.** `P tangent(at: m) S` says `P` is the set's tangent plane at
+`m`, for any set — what a hypoid's pitch plane is to each pitch cone, said without drawing the
+cone's axis in a view square to the plane (§6.21). It knows no shape: where the drawing already
+says what the set's body says along the plane, the redundancy is the system's rank's to find.
 
 **[0.55] A free curve is the solution of its energy.** `rope := curve(a, b)` is a curve from `a`
 to `b` whose shape its energy states (§6.1, §9.10): the solution of that energy's Euler–Lagrange
@@ -1680,6 +1685,14 @@ said where it is used, by two words:
   directions' two unknowns against four rows. `m` on each is said beside it (`m coincident S1`);
   the word reads each body only at `m`, so a body that declares geometry of its own is **E040**
   here, and the word without `at:` is **E040**.
+- `P tangent(at: m) S` **[0.56]**, a plane and a set: `P` is **`S`'s tangent plane at `m`** —
+  `m` on `P`, and the body at `m` stationary along each of `P`'s directions. `m` on `S` is said
+  beside it, as for two sets. Anything but a plane before it is **E040**, as is the word without
+  `at:`. Where the drawing already says what the body says along `P` — a cone's apex drawn on
+  `P` (a cone's body is stationary along its generator), a cylinder's axis parallel to it — one of
+  the conditions is the other: the statement is no surplus, and the diagnosis reads the
+  dependency as how the tangency is made, said nowhere. *Non-normative:* an implementation finds
+  that dependency by rank, not by knowing the shape; a set's library body carries no shape.
 
 Every relation a use states is **described as the statement wrote it** (`l tangent shaft`, §9.9),
 its placement and classes the statement's; a dimension the body states is drawn as a component

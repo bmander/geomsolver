@@ -2792,6 +2792,11 @@ impl Constraint {
             ps.extend(tangents);
             match sk.duals[d].toward {
                 crate::model::Toward::Line(l) => ps.extend(lifted_ends(sk, l)),
+                // the axis's direction where a line's ends go, from a held zero
+                crate::model::Toward::Axis(a) => {
+                    ps.extend([sk.zero_col(); 3]);
+                    ps.extend(sk.axes[a].d);
+                }
                 crate::model::Toward::Chart { .. } => ps.extend([sk.zero_col(); 6]),
             }
         }

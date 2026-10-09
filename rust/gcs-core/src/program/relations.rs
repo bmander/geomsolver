@@ -132,6 +132,13 @@ pub(super) fn is_fix(r: &Relation) -> bool {
     }
 }
 
+/// An E040 said once at its span, however many of a use's rows find it.
+fn say_once(diags: &mut Vec<Diag>, span: Span, stmt: StmtId, message: String) {
+    if !diags.iter().any(|d| d.span == span && d.message == message) {
+        diags.push(Diag { code: Code::E040, span, stmt: Some(stmt), message });
+    }
+}
+
 pub(super) fn constrain(
     sk: &mut Sketch,
     res: &Resolver,
@@ -169,13 +176,35 @@ pub(super) fn constrain(
                 let at = w.span;
                 let m = format!("`{set}` is a set of points, and `coincident` puts a point on it, not {}",
                     op.kind.a());
-                if !diags.iter().any(|d| d.span == at && d.message == m) {
-                    diags.push(Diag { code: Code::E040, span: at, stmt: Some(st.id), message: m });
-                }
+                say_once(diags, at, st.id, m);
                 return None;
             }
         }
     }
+    // **a set touched by a plane names the point it is touched at, and only a plane touches a
+    // set at a point** (#145): said once at the use, in its words, and none of its rows stated.
+    // What a touch states besides the tangency — the apex and the point on the plane — is stated
+    // only where the drawing does not draw them there (below)
+    let touching = r.word.as_ref().filter(|w| w.word == "tangent" && w.sets.len() == 1);
+    if let (Some(w), Some(found)) = (touching, &word) {
+        let set = &w.sets[0].1;
+        let wrong = match (found.ops.first().map(|e| e.kind), w.args.is_empty()) {
+            (Some(EntKind::Plane), true) => Some(format!(
+                "a plane touches a set at a point, which the word names: `P tangent(at: m) {set}`"
+            )),
+            (Some(kind), false) if kind != EntKind::Plane => Some(format!(
+                "a set is touched at a point by a plane, `P tangent({}) {set}`, not by {}",
+                w.args,
+                kind.a()
+            )),
+            _ => None,
+        };
+        if let Some(m) = wrong {
+            say_once(diags, w.span, st.id, m);
+            return None;
+        }
+    }
+    let touch = touching.is_some_and(|w| !w.args.is_empty());
     // a set's body row stated as its derivative at a tangency's point (§6.21)
     // — what moves its point, or the kind a line was expected in place of
     let along = r.along.as_ref().map(|a| {
@@ -183,6 +212,7 @@ pub(super) fn constrain(
         let toward = match &a.toward {
             crate::syntax::AlongBy::Line(l) => ent(l).map(|l| match l.kind {
                 EntKind::Line => Ok(Toward::Line(l.i())),
+                EntKind::Axis => Ok(Toward::Axis(l.i())),
                 kind => Err(kind),
             }),
             crate::syntax::AlongBy::Chart(k) => Some(Ok(Toward::Chart { k: *k, axis: None })),
@@ -280,6 +310,14 @@ pub(super) fn constrain(
                     stmt: Some(st.id),
                     message: format!("{}: {msg}", name),
                 });
+                return None;
+            }
+        }
+    }
+    // the point a plane touches a set at, drawn on the plane already: no row
+    if touch && along.is_none() && ckind == CKind::PointOnPlane {
+        if let [CArg::Ent(p), CArg::Ent(plane)] = args.as_slice() {
+            if sk.plane_of(p.i()) == Some(plane.i()) {
                 return None;
             }
         }
@@ -439,12 +477,7 @@ pub(super) fn constrain(
     c.word = word;
     if let Some(found) = along {
         // said once at the use, however many of the body's rows find it
-        let mut say = |m: String| {
-            let at = used.unwrap_or(st.span);
-            if !diags.iter().any(|d| d.span == at && d.message == m) {
-                diags.push(Diag { code: Code::E040, span: at, stmt: Some(st.id), message: m });
-            }
-        };
+        let mut say = |m: String| say_once(diags, used.unwrap_or(st.span), st.id, m);
         let (Some(p), Some(toward), a) = found else { return None };
         let toward = match toward {
             Ok(t) => t,
