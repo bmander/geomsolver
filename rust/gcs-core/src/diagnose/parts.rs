@@ -39,6 +39,11 @@ impl Factored {
     /// row rank (a drawing's under part), its null space is in a QR of its transpose — a few
     /// times cheaper than the SVD.
     fn of(a: &Mat, solves: bool) -> Factored {
+        // columns no row reads are free, each one (the SVD of no rows says nothing useful)
+        if a.rows == 0 {
+            let null = (0..a.cols).map(|k| (0..a.cols).map(|i| f64::from(i == k)).collect());
+            return Factored { rank: 0, null: null.collect(), svd: None };
+        }
         if !solves && a.cols <= a.rows && a.cols > 0 {
             let (rank, _) = rrqr_with(a, Tol::Abs(RANK_TOL));
             if rank == a.cols {
