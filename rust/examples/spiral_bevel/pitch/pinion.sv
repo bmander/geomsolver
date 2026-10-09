@@ -19,35 +19,31 @@ use pitch.trace
 component PinionCone(p: plane, q: plane, gear: group, foot: line, design: group,
                      pinion_angle: Angle) {
   // Seeds only, rough: A and V the offset aside of O and back from it, and in Q the bevel
-  // pinion's cone, its apex the offset along its pitch line.
+  // pinion's cone.
   r := design.cone_distance
   d := design.offset
+  // A and V lie on the line where P and Q meet, so each is drawn in both. M is the gear's, drawn
+  // in P and G, and its image in Q is `mean`.
+  A := point hint((-0.75 * d, 1.25 * d)) in p, q
+  V := point hint((-0.75 * d, 1.25 * d)) in p, q
   in p {
-    A := point hint((-0.75 * d, 1.25 * d))
-    V := point hint((-0.75 * d, 1.25 * d))
     hinge := line(gear.M, A)
   }
   V coincident hinge
   V coincident foot
   in q {
-    apex := point hint((d, 0))
     mean := point hint((-r, 0))
-    virtual := point hint((d, 0))
     tip := point hint(x: d - r * design.gear_teeth / design.crown_teeth,
                       y: -r * design.pinion_teeth / design.crown_teeth)
     virtual_tip := point hint(at: tip)
-    pitch_line := line(apex, mean)
-    ax := line(apex, tip)
-    virtual_line := line(virtual, mean)
-    virtual_axis := line(virtual, virtual_tip)
+    pitch_line := line(A, mean)
+    ax := line(A, tip)
+    virtual_line := line(V, mean)
+    virtual_axis := line(V, virtual_tip)
     pitch_radius := circle(center: mean) hint(r: r * design.pinion_teeth / design.crown_teeth)
   }
-  apex coincident p
   mean coincident p
-  virtual coincident p
-  A project apex
   gear.M project mean
-  V project virtual
   ax equal pitch_line
   virtual_axis equal virtual_line
   ax tangent(side: right) pitch_radius

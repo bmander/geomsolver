@@ -10,13 +10,13 @@ use crown.tooth
 use crown.mate
 
 // The cap: in the pitch plane, the point `reach` past the apex on the axis from C through it,
-// carried onto the trace normal beyond C; and its image in N, drawn there along the cutter's
-// `axis`.
+// carried onto the trace normal beyond C, and drawn in N along the cutter's `axis` from there.
 component CutterReach(p: plane, n: plane, apex: point, normal: line, ax: line, reach: Length) {
+  // Seeds, rough: as far beyond the apex as C is short of it, and twice |CM| beyond C. The
+  // radial's end lies on the line where P and N meet, so it is drawn in both.
+  radial := point hint(at: normal.p1, toward: normal.p2, by: -2) in p, n
   in p {
-    // Seeds, rough: as far beyond the apex as C is short of it, and twice |CM| beyond C.
     beyond := point hint(at: apex, toward: normal.p1, by: -1)
-    radial := point hint(at: normal.p1, toward: normal.p2, by: -2)
     private to_apex := line(normal.p1, apex)
     private past := line(apex, beyond)
     private reach_line := line(normal.p1, beyond)
@@ -24,16 +24,13 @@ component CutterReach(p: plane, n: plane, apex: point, normal: line, ax: line, r
   }
   to_apex angle(0deg) past
   distance(reach) past
-  normal angle(180deg) cap_radius
+  radial coincident normal
   cap_radius equal reach_line
   in n {
-    // Seeds: the image of `radial`, and the axis's run along from it.
-    foot := point hint(at: radial)
-    end := point hint(at: foot, along: ax)
-    cap := line(foot, end)
+    // Seed: the axis's run along from `radial`.
+    end := point hint(at: radial, along: ax)
+    cap := line(radial, end)
   }
-  foot coincident p
-  radial project foot
   cap turned(theta: 0deg) ax
 }
 

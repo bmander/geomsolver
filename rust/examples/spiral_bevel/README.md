@@ -12,7 +12,9 @@ says what it constructs. The plan is
 The layout is drawn in four views through M (`views.sv`): the pitch plane P, `std.top`, with the
 gear apex O at its origin, and three views folded square to it about lines through M, so none needs
 an angle of its own — G, the gear's axial view, along O → M; Q, the pinion's, along M → its apex A;
-and N, the normal section, along the trace normal C → M.
+and N, the normal section, along the trace normal C → M. A point on a fold is drawn in both views
+it lies in (`O := point in p, g`), so G's triangle is over O and M themselves; a point another
+module declares is drawn again in the later view and tied by `project`.
 
 | Step | Module | Constructs |
 |---|---|---|

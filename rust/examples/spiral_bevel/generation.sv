@@ -16,9 +16,9 @@ use crown.thickness
 component Generation(gear: group, pinion: group, thickness: group) {
   crown_roll := motion(about: gear.crown_axis)
   pinion_roll := motion(about: pinion.ax,
-    ratio: distance(gear.apex, gear.mean) / distance(gear.apex, gear.foot))
+    ratio: distance(gear.O, gear.M) / distance(gear.O, gear.foot))
   gear_roll := motion(about: gear.ax,
-    ratio: -distance(gear.apex, gear.mean) / distance(gear.mean, gear.ax))
+    ratio: -distance(gear.O, gear.M) / distance(gear.M, gear.ax))
   pinion_generation := motion(crown_roll, relative_to: pinion_roll)
   gear_generation := motion(crown_roll, relative_to: gear_roll)
   pinion_index := motion(about: pinion.ax)
