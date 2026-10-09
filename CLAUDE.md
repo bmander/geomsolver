@@ -1434,6 +1434,15 @@ Conventions:
   A name whose face a boolean ate is a *fact the report carries*, never an error.
   E080 a face that is not a loop on one plane, E081 a revolution's axis, E082 a face a body no
   longer has, E084 a section cut across its own view.
+- **A gesture writes a solid** (#162 F0): `edit::add_face`, `add_solid` (`SolidSweep`, extents
+  as text into `Arg::Dim`, mixtures refused by the parser's own `sweep_of`) and `add_body_word`
+  append over names (FFI `gcs_elab_add_face`/`_solid`/`_body_word`, `Document.addFace`/
+  `addSolid`/`addBodyWord`), each **held to the elaborator before it is handed back**
+  (`append_checked`: an error inside the appended text refuses the edit in its words; one
+  elsewhere was there before the gesture).  A hole loop that is not one circle is written as a
+  face first: **a face is a hole as it stands** (`holes: h`, its outer loop; one holed itself, or
+  declared after, is E080).  `edit::remove` dooms a body word or a sweep naming a gone solid.
+  Fresh names pass every bound name (`taken_names`).  `tests/edit_solids.rs` is the gate.
 - **A chain is a named traversal** (§6.6; issue #49, item 3). `profile := line -> … -> close`
   records a `NamedChain` beside the usual desugared declarations and constraints. The flattener
   scopes the binding and its links like ordinary component members; edges stay `boss.ab`, the

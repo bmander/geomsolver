@@ -427,6 +427,34 @@ fn build_loop(
 
 /// Read each boundary without allocating intermediate faces. `owner` is the containing
 /// declaration's name, so inline and named sections use the same relative source paths.
+/// The outer loop of a face named as another face's hole.  One already holed, or spatial, or
+/// declared after the face it is cut from, is refused: a hole is one loop on the face's plane.
+fn hole_of_face(
+    sk: &Sketch,
+    f: EntRef,
+    r: &crate::syntax::Ref,
+    stmt: StmtId,
+    diags: &mut Vec<Diag>,
+) -> Option<(crate::model::FaceLoop, Option<u32>)> {
+    let mut refuse = |m: String| {
+        diags.push(Diag { code: Code::E080, span: r.span, stmt: Some(stmt), message: m });
+        None
+    };
+    let name = crate::syntax::ref_text(r);
+    let Some(face) = sk.faces.get(f.i()) else {
+        return refuse(format!("`{name}` is cut as a hole before it is declared: declare the \
+                               hole's face before the face it is cut from"));
+    };
+    if !face.holes.is_empty() {
+        return refuse(format!("`{name}` has holes of its own: a hole is one loop"));
+    }
+    let crate::model::FaceSupport::Plane(plane) = face.support else {
+        return refuse(format!("`{name}` is a spatial face: a hole lies in its face's plane"));
+    };
+    Some((crate::model::FaceLoop { edges: face.edges.clone(), edge_names: face.edge_names.clone() },
+        plane))
+}
+
 pub(super) fn build_face(
     sk: &mut Sketch,
     res: &Resolver,
@@ -466,20 +494,26 @@ fn build_face_whole(
         let reference = match kid {
             Kid::Ref(r) if r.path.is_empty() => {
                 let chain = res.chains.get(&r.root.text).is_some_and(|c| c.closed);
-                let circle = res.lookup(r).is_some_and(|e| e.kind == EntKind::Circle);
-                (chain || circle).then_some((r, chain))
+                let found = res.lookup(r);
+                let circle = found.is_some_and(|e| e.kind == EntKind::Circle);
+                let face = found.filter(|e| e.kind == EntKind::Face);
+                (chain || circle || face.is_some()).then_some((r, chain || face.is_some(), face))
             }
             _ => None,
         };
-        let Some((r, chain)) = reference else {
+        let Some((r, named_edges, face)) = reference else {
             diags.push(Diag { code: Code::E080, span, stmt: Some(stmt),
-                message: "a hole is a circle or named closed loop".into() });
+                message: "a hole is a circle, a named closed loop or a face".into() });
             return None;
         };
-        let (mut hole, hole_plane) = build_loop(sk, res, std::slice::from_ref(kid), false, stmt, span, diags)?;
+        let (mut hole, hole_plane) = match face {
+            // a face is a loop, so it is a hole as it stands: its outer loop, on its plane
+            Some(f) => hole_of_face(sk, f, r, stmt, diags)?,
+            None => build_loop(sk, res, std::slice::from_ref(kid), false, stmt, span, diags)?,
+        };
         let prefix = boundary_path(&r.root.text, scope.as_deref());
         for name in &mut hole.edge_names {
-            *name = if chain { format!("{prefix}.{name}") } else { prefix.clone() };
+            *name = if named_edges { format!("{prefix}.{name}") } else { prefix.clone() };
         }
         if hole_plane != plane {
             diags.push(Diag { code: Code::E080, span: r.span, stmt: Some(stmt),

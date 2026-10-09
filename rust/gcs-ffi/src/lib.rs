@@ -4056,6 +4056,61 @@ pub unsafe extern "C" fn gcs_elab_add_entity(
     })
 }
 
+/// A face over drawn edges by name, `{edges: [..], holes: [[..]], name?}`: `edit::add_face`.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_elab_add_face(h: *mut Elaborated, ptr: *const u8, len: usize) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || {
+        let v = as_json(ptr, len);
+        let names = |a: &Json| a.arr().iter().map(|x| x.as_str().to_string()).collect::<Vec<_>>();
+        let edges = v.get("edges").map(names).unwrap_or_default();
+        let holes: Vec<Vec<String>> =
+            v.get("holes").map(|a| a.arr().iter().map(names).collect()).unwrap_or_default();
+        let name = v.get("name").map(|n| n.as_str().to_string());
+        out_edit(gcs_core::edit::add_face(&(*h).program, &edges, &holes, name.as_deref()))
+    })
+}
+
+/// A solid swept from a face by name, `{face, depth?, from?, to?, through?, about?, sweep?,
+/// sense?, name?}`, every extent the text written: `edit::add_solid`.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_elab_add_solid(h: *mut Elaborated, ptr: *const u8, len: usize) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || {
+        let v = as_json(ptr, len);
+        let text = |k: &str| v.get(k).map(|x| x.as_str().to_string());
+        let sense = match v.get("sense").map(|x| x.as_str()) {
+            Some("cw") => Some(gcs_core::syntax::Sense::Cw),
+            Some("ccw") => Some(gcs_core::syntax::Sense::Ccw),
+            _ => None,
+        };
+        let how = gcs_core::edit::SolidSweep {
+            depth: text("depth"), from: text("from"), to: text("to"), through: text("through"),
+            about: text("about"), sweep: text("sweep"), sense,
+        };
+        let face = text("face").unwrap_or_default();
+        let name = text("name");
+        out_edit(gcs_core::edit::add_solid(&(*h).program, &face, &how, name.as_deref()))
+    })
+}
+
+/// The body rule, `{word: "union" | "cut" | "bound", what, body}`: `edit::add_body_word`.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_elab_add_body_word(h: *mut Elaborated, ptr: *const u8, len: usize) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || {
+        let v = as_json(ptr, len);
+        let text = |k: &str| v.get(k).map(|x| x.as_str()).unwrap_or_default();
+        let word = match text("word") {
+            "union" => gcs_core::syntax::BodyWord::Union,
+            "cut" => gcs_core::syntax::BodyWord::Cut,
+            "bound" => gcs_core::syntax::BodyWord::Bound,
+            w => {
+                set_error(&format!("`{w}` is not a body word: union, cut or bound"));
+                return std::ptr::null_mut();
+            }
+        };
+        out_edit(gcs_core::edit::add_body_word(&(*h).program, word, text("what"), text("body")))
+    })
+}
+
 /// One constraint, in `report::constraint_from_json`'s shape but with entities by *name* — the
 /// document's own way of saying which, rather than an index into a sketch it is about to replace.
 #[no_mangle]

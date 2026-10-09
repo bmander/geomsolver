@@ -12,17 +12,17 @@ use crate::syntax::{
 
 /// A solid's sweep arguments while the bracket list is being read.
 #[derive(Default)]
-struct SweepParts {
-    under: Option<Ref>,
-    at: Option<Arg>,
-    from: Option<Arg>,
-    to: Option<Arg>,
-    depth: Option<Arg>,
-    about: Option<Ref>,
-    through: Option<Ref>,
-    along: Option<Ref>,
-    sweep: Option<Arg>,
-    sense: Option<Sense>,
+pub(crate) struct SweepParts {
+    pub(crate) under: Option<Ref>,
+    pub(crate) at: Option<Arg>,
+    pub(crate) from: Option<Arg>,
+    pub(crate) to: Option<Arg>,
+    pub(crate) depth: Option<Arg>,
+    pub(crate) about: Option<Ref>,
+    pub(crate) through: Option<Ref>,
+    pub(crate) along: Option<Ref>,
+    pub(crate) sweep: Option<Arg>,
+    pub(crate) sense: Option<Sense>,
 }
 
 /// The labels a solid's brackets may carry beside the face or the operands.
@@ -32,7 +32,7 @@ fn sweep_label(l: &str) -> bool {
 
 /// What the sweep arguments a bracket list carried come to.  A solid is a prism, a revolution,
 /// or a body over other solids — and a mixture is none of the three.
-fn sweep_of(p: SweepParts) -> Result<Sweep, String> {
+pub(crate) fn sweep_of(p: SweepParts) -> Result<Sweep, String> {
     if p.under.is_some() || p.at.is_some() {
         if p.depth.is_some() || p.about.is_some() || p.through.is_some()
             || p.along.is_some() || p.sweep.is_some() || p.sense.is_some() {

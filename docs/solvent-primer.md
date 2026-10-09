@@ -1126,8 +1126,10 @@ block.sv: solved
 
 The face and solid added nothing to the rectangle's six unknowns and six equations.
 
-- **Holes**: `face(barrel, holes: core)` or `holes: first, second` — circles or named closed
-  loops, strictly inside the outer boundary on the same plane, not touching each other. Works for
+- **Holes**: `face(barrel, holes: core)` or `holes: first, second` — circles, named closed
+  loops or faces, strictly inside the outer boundary on the same plane, not touching each other.
+  A face is a hole as it stands, so a hole of loose edges is `h := face(e, f, g, k)` then
+  `face(a, b, c, d, holes: h)` (declared first; a face with holes of its own is refused). Works for
   extrusions and revolutions. A hole *through a part* is usually better as a solid that `cut`s the
   body, which keeps the section simple and names the bore's wall.
 - **Named chains**: `profile := (ab := line(a, b)) -> … -> close` binds the traversal, so
