@@ -1151,11 +1151,17 @@ Conventions:
   claim; E040). `Constraint::bound` compiles **no row** — `acts()` is false, and the seams that
   spell claims out inline (`System::new`, `n_equations`, `cgraph`, `witness`, callouts,
   `io::Part`) skip it too; `topology_key` marks it `~`. `Constraint::reading` is the number that
-  would make the row hold (secant along the number). `System::solve` ends in `steer`: with
-  `retry`, a broken bound (`solve::bound_reading`) is aimed at its mirror (`Bound::aim`) on a
-  scratch compile, the document polished from there, kept only if it holds; else `success`
-  false, status `BOUND_BROKEN`. A drag (`retry` off) and a drawing whose bounds hold solve to the
-  same bits. `Diagnosis::bounds_violated`/`bounds_active`, report `boundsViolated`/
+  would make the row hold (secant along the number). **It chooses the seed's side first**:
+  `program::elaborate` reads the bounds on a pass's seeds (`solve::cross_bounds`: the measured
+  point, the last point operand with a free coordinate, carried by Newton steps on the reading to
+  its mirror, `Bound::aim`, its lift and twins with it — `across`) and elaborates again with those
+  numbers written over the point's seed right after `entities::places` (`crossed_seeds`; held from
+  `settle_deferred`), so `axes_along`, the views folded through it and every seed read through
+  them stand as if the source had seeded it so — patching placement in place does not reproduce
+  `views::place`. Then `System::solve` ends in `steer`: with `retry`, a bound still broken is
+  crossed from the start pose (accumulating) and then the solution, and solved again, kept only if
+  it holds; else `success` false, status `BOUND_BROKEN`. A drag (`retry` off) and a drawing
+  whose seeds keep their bounds solve to the same bits. `Diagnosis::bounds_violated`/`bounds_active`, report `boundsViolated`/
   `boundsActive`; JSON `"bound": {cmp, hi}`; `graft`, `lift`, `describe` (`syntax::bounded`).
   A free name in one is E040 (`expr::Fault::ClaimFree`). `ccw` on the sheet is still unchecked.
   `tests/bounds.rs` is the gate.

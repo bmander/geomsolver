@@ -761,9 +761,11 @@ foot outside p                         // in front of it
 - **Takes one:** an ordinate (and so `inside`/`outside` a plane, the point's ordinate along its
   normal), a point–point distance, a distance from a line. Anything else is E040.
 - **Closed:** `>=`, `<=`, `in:`; `>` and `<` don't parse. Zero is fine in a bound.
-- **Solving:** checked on the solution. Off it, the solve looks for the root where it holds (the
-  mirror of a pair of roots, which is the usual case) and fails with `a bound does not hold` if
-  there is none. The diagnosis lists violated bounds and *active* ones (solution on the edge).
+- **Solving:** read on the seeds first: a point seeded on the wrong side is carried across, as
+  if you had seeded it there, and everything seeded from it follows. Then checked on the
+  solution; off it, the solve looks for the root where it holds and fails with `a bound does not
+  hold` if there is none. The diagnosis lists violated bounds and *active* ones (solution on the
+  edge).
 - **Not:** a `claim`, an unknown's reader, or (yet) a bound inside a set body.
 
 ### 1.11 Datums

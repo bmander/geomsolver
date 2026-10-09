@@ -39,6 +39,93 @@ pub fn bound_reading(sk: &Sketch, c: &crate::constraints::Constraint) -> Option<
     Some((b.holds(lo, m, tol), edge))
 }
 
+/// **A bound chooses the seed's side** (§9.6): each bound the pose breaks has the point it
+/// measures carried across its edge, to the mirror of its reading (`Bound::aim`) — what the
+/// elaborator asks of the seeds, before what is seeded from them is read.  The points carried.
+pub(crate) fn cross_bounds(sk: &mut Sketch) -> Vec<usize> {
+    let mut out = Vec::new();
+    for ci in 0..sk.constraints.len() {
+        if !bound_reading(sk, &sk.constraints[ci]).is_some_and(|(h, _)| !h) {
+            continue;
+        }
+        let c = &sk.constraints[ci];
+        let lo = c.args[number_slot(c)].num();
+        let Some(aim) = c.bound.zip(c.reading(sk)).map(|(b, m)| b.aim(lo, m)) else { continue };
+        out.extend(across(sk, ci, aim));
+    }
+    out
+}
+
+/// Carry the point bound `ci` measures across its edge, to where the bound reads `aim`: the last of
+/// its point operands with a coordinate free, moved by Newton steps on the reading alone over its
+/// own coordinates (by differences, so a reading through a lift or a squared kernel is the same
+/// question), its lift and its twins brought to where it stands. What a seed on the bound's side
+/// would have been.  The point moved, or `None` where none can be, or the reading will not come
+/// round.
+fn across(sk: &mut Sketch, ci: usize, aim: f64) -> Option<usize> {
+    let c = sk.constraints[ci].clone();
+    let free = |sk: &Sketch, p: EntRef| -> Vec<usize> {
+        sk.own_params(p).into_iter().map(|i| i as usize).filter(|&i| !sk.params[i].fixed).collect()
+    };
+    let points = c.entities().into_iter().filter(|e| e.kind == crate::model::EntKind::Point);
+    let q = points.rev().find(|&p| !free(sk, p).is_empty())?;
+    let cols = free(sk, q);
+    // the point's lift where it now stands, and each of its twins (§6.7) where it does, seen in
+    // the twin's plane: the same point, drawn there
+    let place = |sk: &mut Sketch| {
+        let at = sk.world_point(q.i());
+        let group: Vec<usize> = sk.twins.iter()
+            .find(|(&p, ts)| p == q.i() || ts.contains(&q.i()))
+            .map(|(&p, ts)| std::iter::once(p).chain(ts.iter().copied()).collect())
+            .unwrap_or_else(|| vec![q.i()]);
+        for t in group {
+            if t != q.i() {
+                let (u, v) = sk.on_view_sheet(at, sk.plane_of(t));
+                let own = sk.own_params(EntRef::point(t));
+                for (&i, x) in own.iter().zip([u, v]) {
+                    sk.params[i as usize].value = x;
+                }
+            }
+            if let Some(k) = sk.lift_of(t) {
+                for (x, v) in sk.lifts[k].x.into_iter().zip(at) {
+                    sk.params[x as usize].value = v;
+                }
+            }
+        }
+    };
+    let h = 1e-7 * sk.extent();
+    let near = |sk: &Sketch| {
+        c.reading(sk).is_some_and(|m| (m - aim).abs() <= STEER_TOL * sk.extent())
+    };
+    for _ in 0..ACROSS_STEPS {
+        let m = c.reading(sk)?;
+        if near(sk) {
+            return Some(q.i());
+        }
+        let mut g = Vec::with_capacity(cols.len());
+        for &i in &cols {
+            sk.params[i].value += h;
+            place(sk);
+            g.push((c.reading(sk).unwrap_or(m) - m) / h);
+            sk.params[i].value -= h;
+        }
+        place(sk);
+        let gg: f64 = g.iter().map(|x| x * x).sum();
+        if !(gg > 0.0) {
+            return None;
+        }
+        for (&i, gi) in cols.iter().zip(&g) {
+            sk.params[i].value += (aim - m) * gi / gg;
+        }
+        place(sk);
+    }
+    near(sk).then_some(q.i())
+}
+
+/// How many Newton steps `across` takes the reading: one for an ordinate's, a few for a
+/// distance's.
+const ACROSS_STEPS: usize = 8;
+
 /// Where a bounded constraint's number stands: its kind's dimension slot.
 fn number_slot(c: &crate::constraints::Constraint) -> usize {
     c.kind.spec().iter().position(|(_, k)| k.is_dimension()).expect("a bound is on a dimension")
@@ -177,20 +264,29 @@ impl System {
     /// This is the one place the rule lives, so every caller gets it — the one-shot `solve`, the
     /// plan solver's fallback and a front end that compiled a system for itself alike.
     pub fn solve(&mut self, sk: &mut Sketch, opts: SolveOpts) -> SolveResult {
+        let start: Vec<f64> = sk.params.iter().map(|p| p.value).collect();
         let res = self.solve_unsteered(sk, opts);
-        self.steer(sk, opts, res)
+        self.steer(sk, opts, &start, res)
     }
 
-    /// **A bound chooses the root** (§9.6): read on the solution, and where one does not hold,
-    /// the solve is steered to the root where it does — the bound stated as an acting equality
-    /// at its mirror (`Bound::aim`) on a scratch copy, which a mirror-symmetric pair of roots
-    /// (two circles crossing, a point either side of a fold) makes consistent at the other
-    /// root, then the document's own system from there.  Kept only where it solves and the
-    /// bound holds; a bound still broken fails the solve (status `BOUND_BROKEN`), since a solver
-    /// may not report a solution violating one.  A document solve's step (`retry`): a drag
-    /// keeps the branch it is on.  Nothing is solved again where every bound holds, so a
-    /// drawing with none, or with all kept, solves to the same bits as before.
-    fn steer(&mut self, sk: &mut Sketch, opts: SolveOpts, mut res: SolveResult) -> SolveResult {
+    /// **A bound chooses the root** (§9.6) — the second line, the elaborator having chosen the
+    /// seeds' side (`program::elaborate`): read on the solution, and where one does not hold, the
+    /// solve is steered to the root where it does, by reflect and re-solve as a traced body's
+    /// orientation predicate is (`locus`).  The point the bound measures is carried across its edge
+    /// to the mirror of the solution's reading (`Bound::aim`) in the pose the solve started from —
+    /// carrying with it every bound steered before, or it would undo them — and the drawing solved
+    /// again from there; failing that, from the solution.  Kept only where it solves and the bound
+    /// holds; a bound still broken fails the solve (status `BOUND_BROKEN`), since a solver may not
+    /// report a solution violating one.  A document solve's step (`retry`): a drag keeps the branch
+    /// it is on.  Nothing is solved again where every bound holds, so a drawing with none, or with
+    /// all kept, solves to the same bits as before.
+    fn steer(
+        &mut self,
+        sk: &mut Sketch,
+        opts: SolveOpts,
+        start: &[f64],
+        mut res: SolveResult,
+    ) -> SolveResult {
         if !opts.retry || !opts.writeback || !res.success
             || !sk.constraints.iter().any(|c| c.bound.is_some())
         {
@@ -199,35 +295,44 @@ impl System {
         let broken = |sk: &Sketch| {
             sk.constraints.iter().position(|c| bound_reading(sk, c).is_some_and(|(h, _)| !h))
         };
+        // where the solve began, with every bound steered so far carried across: the next one
+        // steered from it starts on their sides as well, or would undo them
+        let mut start = start.to_vec();
         let mut steered = Vec::new();
         while let Some(ci) = broken(sk) {
             if steered.contains(&ci) || steered.len() >= STEER_ROUNDS {
                 break;
             }
             steered.push(ci);
-            let c = &sk.constraints[ci];
-            let (b, at) = (c.bound.expect("broken is bounded"), number_slot(c));
-            let aim = b.aim(c.args[at].num(), c.reading(sk).expect("broken reads"));
-            let mut scratch = sk.clone();
-            let sc = &mut scratch.constraints[ci];
-            sc.bound = None;
-            sc.args[at] = crate::constraints::Arg::Num(aim);
-            let mut aimed = System::new(&scratch);
-            aimed.solve_unsteered(&mut scratch, opts);
             let kept: Vec<f64> = sk.params.iter().map(|p| p.value).collect();
-            for (p, q) in sk.params.iter_mut().zip(&scratch.params) {
-                p.value = q.value;
+            let c = &sk.constraints[ci];
+            let lo = c.args[number_slot(c)].num();
+            let Some(aim) = c.bound.zip(c.reading(sk)).map(|(b, m)| b.aim(lo, m)) else { break };
+            let mut found = None;
+            for (from_start, from) in [(true, &start), (false, &kept)] {
+                for (p, &v) in sk.params.iter_mut().zip(from) {
+                    p.value = v;
+                }
+                if across(sk, ci, aim).is_none() {
+                    continue;
+                }
+                let crossed: Vec<f64> = sk.params.iter().map(|p| p.value).collect();
+                let again = self.solve_unsteered(sk, opts);
+                if again.success && bound_reading(sk, &sk.constraints[ci]).is_some_and(|(h, _)| h) {
+                    found = Some((again, from_start.then_some(crossed)));
+                    break;
+                }
             }
-            let again = self.solve_unsteered(sk, opts);
-            let holds = bound_reading(sk, &sk.constraints[ci]).is_some_and(|(h, _)| h);
-            if again.success && holds {
-                res = again;
-            } else {
+            let Some((again, crossed)) = found else {
                 for (p, v) in sk.params.iter_mut().zip(kept) {
                     p.value = v;
                 }
-                let _ = self.solve_unsteered(sk, opts);
+                let _ = self.solve_unsteered(sk, opts); // back in step with the pose kept
                 break;
+            };
+            res = again;
+            if let Some(crossed) = crossed {
+                start = crossed;
             }
         }
         if let Some(ci) = broken(sk) {

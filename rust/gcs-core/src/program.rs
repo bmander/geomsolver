@@ -167,17 +167,50 @@ pub fn elaborate(p: &Program) -> Elaborated {
     // draws, so it is judged after the expansion, and a pass ends at the judgment, before any
     // constraint is stated.  Each pass refuses at least one more set, and a refusal is final
     let mut refused = BTreeSet::new();
+    // **a bound chooses the seed's side** (§9.6): where the seeds break one, the point it
+    // measures is carried across its edge and the document elaborated again from there, its
+    // numbers written over its seed — as if the source had seeded it on the bound's side, so
+    // what is seeded from it, the views folded through it and every seed read through those
+    // views stand where they would have.  Once: a seed is where a solve begins, and the solve
+    // steers what is left (`System::steer`)
+    let mut crossed = BTreeMap::new();
     loop {
-        match elaborate_in(p, &refused) {
-            Ok(e) => return e,
+        match elaborate_in(p, &refused, &crossed) {
+            Ok(mut e) => {
+                if crossed.is_empty() {
+                    crossed = crossed_seeds(&mut e);
+                    if !crossed.is_empty() {
+                        continue;
+                    }
+                }
+                return e;
+            }
             Err(more) => refused.extend(more),
         }
     }
 }
 
+/// The points whose seeds break a bound, carried across (`solve::cross_bounds`): each by the key
+/// it is bound under, with the numbers it now has.
+fn crossed_seeds(e: &mut Elaborated) -> BTreeMap<String, Vec<f64>> {
+    let mut sk = e.sketch.clone();
+    let moved = crate::solve::cross_bounds(&mut sk);
+    moved.into_iter().filter_map(|p| {
+        let ent = EntRef::point(p);
+        let key = e.map.keys().find(|&(_, x)| x == ent).map(|(k, _)| k.clone())?;
+        Some((key, sk.own_params(ent).iter().map(|&i| sk.params[i as usize].value).collect()))
+    }).collect()
+}
+
 /// `elaborate`, with the sets in `refused` walked as sets — or `Err` naming the sets drawn as
 /// elements that are none, for another pass.
-fn elaborate_in(p: &Program, refused: &BTreeSet<String>) -> Result<Elaborated, BTreeSet<String>> {
+/// `crossed`: points a bound carried across in a pass before, by key, and the numbers that pass
+/// gave them, written over their seeds (`elaborate`).
+fn elaborate_in(
+    p: &Program,
+    refused: &BTreeSet<String>,
+    crossed: &BTreeMap<String, Vec<f64>>,
+) -> Result<Elaborated, BTreeSet<String>> {
     let mut diags: Vec<Diag> = Vec::new();
     let mut map = SourceMap::default();
     let mut sk = Sketch::new();
@@ -428,6 +461,16 @@ fn elaborate_in(p: &Program, refused: &BTreeSet<String>) -> Result<Elaborated, B
         return Err(more);
     }
     entities::places(&mut sk, &deferred, &mut diags);
+    // a point a bound carried across in a pass before stands where it was carried, whatever its
+    // own seed says — before anything is placed through it or seeded from it (§9.6, `elaborate`)
+    let mut held = BTreeSet::new();
+    for (key, values) in crossed {
+        let Some(e) = map.ent_named(key) else { continue };
+        for (q, &v) in sk.own_params(e).into_iter().zip(values) {
+            sk.params[q as usize].value = v;
+            held.insert(q);
+        }
+    }
     // the numbers `fix` holds, once every point has its place and before anything reads one: a
     // held number is its own seed, so nothing that holds one needs a `hint` saying it again — an
     // axis along a line, a motion, a place reading a held point all read where it is held, and
@@ -463,7 +506,7 @@ fn elaborate_in(p: &Program, refused: &BTreeSet<String>) -> Result<Elaborated, B
     // seeds named by geometry, once every entity has a seed to be read: in statement order, so
     // a seed that reads a seed read from a third is settled after both (§6.4)
     let first = diags.len();
-    settle_deferred(&mut sk, &res, &deferred, &mut diags);
+    settle_deferred(&mut sk, &res, &deferred, &held, &mut diags);
     let mut settled = first..diags.len();
 
     // a prism's side generating under a motion that keeps its view stands for a surface the
@@ -515,7 +558,7 @@ fn elaborate_in(p: &Program, refused: &BTreeSet<String>) -> Result<Elaborated, B
             let before: Vec<f64> = sk.params.iter().map(|p| p.value).collect();
             // each reading's findings stand where the first's did
             let mut again = Vec::new();
-            settle_deferred(&mut sk, &res, &deferred, &mut again);
+            settle_deferred(&mut sk, &res, &deferred, &held, &mut again);
             let found = settled.start..settled.start + again.len();
             diags.splice(settled, again);
             settled = found;
