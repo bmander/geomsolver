@@ -2,9 +2,19 @@
  * A tool that makes geometry as it goes takes its undo snapshot on the first click of a run;
  * the fit tool makes nothing until it finishes and takes its own there. */
 import * as C from '../core/constraints.js';
-import { Line, Plane, Point, distanceBetween, onRadius } from '../core/model.js';
+import { Axis, Line, Plane, Point, distanceBetween, onRadius } from '../core/model.js';
+import type { AxisOn } from '../core/program.js';
 import { PICK_PX } from './view.js';
 import type { Place, SketchView, Tool } from './view.js';
+
+/** What the datum tools ask for, said when one is taken up: they draw nothing until it is
+ *  given, so the status line is the only place that says what a click will do. */
+const HINTS: Partial<Record<Tool, string>> = {
+  plane: 'click the line or axis the plane runs along, then the one that says which way is up '
+    + 'in it',
+  axis: 'click a line for an axis along it, or a point — then another point, or the plane the '
+    + 'axis stands square to',
+};
 
 export function setTool(v: SketchView, tool: Tool): void {
   v.tool = tool;
@@ -12,9 +22,12 @@ export function setTool(v: SketchView, tool: Tool): void {
   v.pendingFit = [];
   if (tool !== 'plane') v.planeSpec = null;      // armed for one plane, and it was not drawn
   v.planeAxis = null;
+  v.axisFrom = null;
   v.canvas.classList.toggle('select', tool === 'select');
   v.canvas.style.cursor = '';                // drop any hover affordance
   v.onTool(tool);
+  const hint = HINTS[tool];
+  if (hint) v.onStatus(hint);
   v.draw();
 }
 
@@ -97,9 +110,12 @@ export function cancelTool(v: SketchView): void {
     v.stopAnimation();
     return;
   }
-  if (v.pending.length || v.pendingFit.length) {
+  // a first click a datum tool is holding: let it go and keep the tool, as a curve's points are
+  if (v.pending.length || v.pendingFit.length || v.planeAxis || v.axisFrom) {
     v.pending = [];
     v.pendingFit = [];
+    v.planeAxis = null;
+    v.axisFrom = null;
     v.draw();
     return;
   }
@@ -175,26 +191,82 @@ function placePlane(v: SketchView, u: string, w: string): void {
  *  along, then the one that says which way is up in it. */
 function planeClick(v: SketchView, sp: [number, number]): void {
   const picked = v.pick(sp[0], sp[1]);
-  if (!(picked instanceof Line)) {
-    v.onStatus('a plane is picked over two lines: click a line');
+  if (!(picked instanceof Line || picked instanceof Axis)) {
+    v.onStatus('a plane is picked over two lines or axes: click one');
     return;
   }
   const name = v.doc.nameOf(picked);
   if (!name) {
-    v.onStatus('that line has no name in the source to write the plane over: name it first');
+    v.onStatus(`that ${picked.kind} has no name in the source to write the plane over: name it `
+      + 'first');
     return;
   }
   if (!v.planeAxis) {
     v.planeAxis = name;
-    v.onStatus(`the plane runs along ${name}: now click the line that says which way is up`);
+    v.onStatus(`the plane runs along ${name}: now click the line or axis that says which way `
+      + 'is up');
     v.draw();
   } else if (v.planeAxis === name) {
-    v.onStatus('a plane needs two lines: click another');
+    v.onStatus('a plane needs two lines or axes: click another');
   } else {
     const u = v.planeAxis;
     v.planeAxis = null;
     placePlane(v, u, name);
   }
+}
+
+/** The axis tool: a line is an axis along it at once; a point waits for a second click — another
+ *  point, for the axis through both, or anywhere else, for the axis through it square to the
+ *  plane there (the pane under the pointer, else the one being drawn on). */
+function axisClick(v: SketchView, sp: [number, number]): void {
+  const picked = v.pick(sp[0], sp[1]);
+  const name = picked ? v.doc.nameOf(picked) : undefined;
+  if (picked && !name && (picked instanceof Line || picked instanceof Point)) {
+    v.onStatus(`that ${picked.kind} has no name in the source to write the axis over: name it `
+      + 'first');
+    return;
+  }
+  const from = v.axisFrom;
+  if (!from) {
+    if (picked instanceof Line && name) {
+      placeAxis(v, { line: name });
+    } else if (picked instanceof Point && name) {
+      v.axisFrom = name;
+      v.onStatus(`the axis passes through ${name}: now click another point, or the plane it stands `
+        + 'square to');
+      v.draw();
+    } else {
+      v.onStatus('an axis runs along a line or through a point: click one');
+    }
+    return;
+  }
+  if (picked instanceof Point && name) {
+    if (name === from) {
+      v.onStatus('an axis through two points needs another: click it, or the plane instead');
+      return;
+    }
+    v.axisFrom = null;
+    placeAxis(v, { points: [from, name] });
+    return;
+  }
+  const plane = v.paneAt(sp[0], sp[1]) ?? (v.plane ? v.doc.nameOf(v.plane) : undefined);
+  if (!plane) {
+    v.onStatus('there is no plane here for the axis to stand square to: click a pane, or a point');
+    return;
+  }
+  v.axisFrom = null;
+  placeAxis(v, { plane, point: from });
+}
+
+/** Write the axis the clicks said, and select it.  The tool stays down for the next one. */
+function placeAxis(v: SketchView, on: AxisOn): void {
+  const e = v.doc.addAxis(on);
+  if (!v.apply(e, `axis ${e.names[0]}`)) return;
+  const made = v.doc.entity(e.names[0]);
+  if (made instanceof Axis) v.selected = [made];
+  v.onSelect();
+  v.onChanged();
+  v.draw();
 }
 
 export function toolClick(v: SketchView, sp: [number, number]): void {
@@ -203,6 +275,11 @@ export function toolClick(v: SketchView, sp: [number, number]): void {
   // the plane tool picks lines where they are seen, and draws nothing on a plane
   if (v.tool === 'plane') {
     planeClick(v, sp);
+    return;
+  }
+  // and so does the axis tool: it picks what is drawn and writes a statement over it
+  if (v.tool === 'axis') {
+    axisClick(v, sp);
     return;
   }
   if (!v.ensurePlane()) return;

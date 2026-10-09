@@ -147,8 +147,7 @@ export async function insertPlane(): Promise<void> {
             'What the statement calls the plane — blank to have one minted');
   });
   if (!ok) return;
-  view.insertPlane({ name: name.trim() || undefined });
-  toast('click the line the plane runs along, then the line that says which way is up in it');
+  view.insertPlane({ name: name.trim() || undefined });   // which says what to click
 }
 
 /* -- Stage 5: root selection ---------------------------------------------------- */

@@ -10,7 +10,7 @@ import * as C from '../core/constraints.js';
 import { Constraint } from '../core/constraints.js';
 import * as examples from '../core/examples.js';
 import * as io from '../core/io.js';
-import { Plane, Point, Sketch } from '../core/model.js';
+import { Axis, Plane, Point, Sketch } from '../core/model.js';
 import { Document, fromSketch } from '../core/program.js';
 import type { Diagnosis } from '../core/diagnose.js';
 import { callouts, pairOf } from '../core/callout.js';
@@ -1053,7 +1053,7 @@ test('the plane tool picks two lines, writes the plane over them, and makes it c
   assert.equal(view.tool, 'plane');
   // a click on nothing is no line
   click(view, 20, 20);
-  assert.ok(said.some((m) => /click a line/.test(m)), said.join('\n'));
+  assert.ok(said.some((m) => /lines or axes: click one/.test(m)), said.join('\n'));
   const planes = view.sketch.planes.length;
   click(view, 20, 0);
   assert.equal(view.sketch.planes.length, planes, 'the first line is half a plane');
@@ -1680,3 +1680,90 @@ test('a point in space is drawn and picked where it stands, whichever way the ey
   assert.equal(view.pick(...view.seen(p)), p, 'a click on it picks it');
   view.doc.dispose();
 });
+
+/* -- the datum tools (#162 F1) --------------------------------------------------------- */
+
+/** On the front: `a` at (10, 0), `c` at (40, 30), `ab` along x to (40, 0) — and far enough out
+ *  that the standard axes, drawn across the drawing's reach, reach past where they are clicked. */
+const DATUMS = `use std
+in std.front {
+a := point hint((10, 0))
+b := point hint((40, 0))
+c := point hint((40, 30))
+ab := line(a, b)
+fix((10, 0)) a
+fix((40, 0)) b
+fix((40, 30)) c
+}
+`;
+
+test('the toolbar plane tool takes two axes, says what to click, and Escape lets a pick go', () => {
+  const view = docView(DATUMS);
+  assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
+  view.orbit = { az: 0.6, el: 0.5 };
+  const said: string[] = [];
+  view.onStatus = (m) => said.push(m);
+  view.setTool('plane');
+  assert.ok(said.some((m) => /line or axis/.test(m)), said.join('\n'));
+  const x = seenAt(view, [-20, 0, 0]);
+  click3(view, x);
+  assert.equal(view.planeAxis, 'std.x');
+  assert.deepEqual(view.toolPicks(), [view.doc.entity('std.x')], 'the first pick is lit');
+  // Escape lets the pick go and keeps the tool
+  view.cancelTool();
+  assert.equal(view.planeAxis, null);
+  assert.equal(view.tool, 'plane');
+  click3(view, x);
+  click3(view, seenAt(view, [0, 20, 0]));
+  assert.ok(view.source.includes('v0 := plane(u: std.x, v: std.y)'), view.source);
+  const made = view.doc.entity('v0');
+  assert.ok(made instanceof Plane);
+  assert.equal(view.plane, made);
+  assert.equal(view.tool, 'select');
+});
+
+test('the axis tool writes an axis along a line, through two points, and square to a plane', () => {
+  const view = docView(DATUMS);
+  view.setTool('axis');
+  // a line: at once
+  click(view, 25, 0);
+  assert.ok(view.source.includes('x0 := axis hint(dir: (1, 0, 0))\nab coincident x0'), view.source);
+  const x0 = view.doc.entity('x0');
+  assert.ok(x0 instanceof Axis);
+  assert.deepEqual(view.selected, [x0]);
+  assert.equal(view.tool, 'axis', 'the tool stays down for the next');
+  // two points: the first waits, lit, for the second
+  click(view, 10, 0);
+  assert.equal(view.axisFrom, 'a');
+  click(view, 40, 30);
+  // seeded along a→c, (30, 0, 30); the solve writes back where it settled
+  assert.ok(/x1 := axis hint\(dir: \(0\.70710678\d*, 0, 0\.70710678\d*\)/.test(view.source),
+            view.source);
+  assert.ok(view.source.includes('a coincident x1\nc coincident x1'), view.source);
+  // a point, then the plane under the pointer: square to it, through the point
+  click(view, 40, 30);
+  click(view, 25, 15);
+  assert.ok(view.source.includes('x2 perpendicular std.front\nc coincident x2'), view.source);
+  assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
+});
+
+test('an axis is picked with the select tool where the box draws it, and Delete takes it out', () => {
+  const view = docView(`${DATUMS}t := axis hint(dir: (0, 1, 0))\n`
+                       + 'fix(dir == (0, 1, 0), origin == (20, 0, 20)) t\n');
+  view.orbit = { az: 0.6, el: 0.5 };
+  const on = seenAt(view, [20, 25, 20]);
+  drag(view, on, on);
+  const t = view.doc.entity('t');
+  assert.ok(t instanceof Axis);
+  assert.deepEqual(view.selected, [t]);
+  view.deleteSelected();
+  assert.ok(!view.source.includes('t :='), view.source);
+  assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
+});
+
+/** A click at a canvas point with a tool down — where `click` takes a place on the page. */
+function click3(view: SketchView, at: [number, number]): void {
+  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  cv.fire('pointerdown', pointer(...at));
+  cv.fire('pointerup', pointer(...at));
+}

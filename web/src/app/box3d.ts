@@ -228,7 +228,7 @@ export class Box3D {
    *  as on the canvas above. */
   private chrome(v: SketchView): void {
     const sel = new Set(v.selected);
-    const hl = new Set(v.highlight);
+    const hl = new Set([...v.highlight, ...v.toolPicks()]);
     for (const { it, line } of this.frames) {
       const m = line.material as THREE.LineBasicMaterial;
       const ent = v.entityOf(it);

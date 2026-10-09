@@ -14,12 +14,18 @@ import './constraints.js';
 /** (xmin, ymin, xmax, ymax) */
 export type Box = [number, number, number, number];
 
-export type Kind = 'point' | 'line' | 'circle' | 'arc' | 'spline' | 'curve' | 'plane';
-// in kind-id order: `pick` decodes the core's answer by indexing this list
+export type Kind = 'point' | 'line' | 'circle' | 'arc' | 'spline' | 'curve' | 'plane' | 'axis';
+/** Every kind with a proxy here. */
 export const KINDS: Kind[] =
-  ['point', 'line', 'circle', 'arc', 'spline', 'curve', 'plane'];
+  ['point', 'line', 'circle', 'arc', 'spline', 'curve', 'plane', 'axis'];
+/** The core's kind ids (`kind_id` in the ABI): an axis is 16, past kinds with no proxy. */
 export const KIND_ID: Record<Kind, number> =
-  { point: 0, line: 1, circle: 2, arc: 3, spline: 4, curve: 5, plane: 6 };
+  { point: 0, line: 1, circle: 2, arc: 3, spline: 4, curve: 5, plane: 6, axis: 16 };
+
+/** The kind a core kind id names, or undefined for one with no proxy — how a pick is decoded. */
+export function kindOf(id: number): Kind | undefined {
+  return KINDS.find((k) => KIND_ID[k] === id);
+}
 
 export class Param {
   constructor(readonly sketch: Sketch, readonly index: number) {}
@@ -403,11 +409,17 @@ export class Plane extends Styled {
   }
 }
 
-export type Primitive = Point | Line | Circle | Arc | Spline | Curve | Plane;
+/** An axis: a directed line in space with no start (`t := axis`, `std.x`), drawn across the
+ *  drawing's reach in the workspace and picked there.  A datum, not a figure: nothing on a page. */
+export class Axis extends Styled {
+  readonly kind = 'axis' as const;
+}
+
+export type Primitive = Point | Line | Circle | Arc | Spline | Curve | Plane | Axis;
 
 const CLASSES =
   { point: Point, line: Line, circle: Circle, arc: Arc, spline: Spline,
-    curve: Curve, plane: Plane } as const;
+    curve: Curve, plane: Plane, axis: Axis } as const;
 
 /** The CCW arc through three points: centre, radius, and the sweep that passes through the
  *  third point.  `swapped` is true when that sweep runs from the *second* given point. */
@@ -436,7 +448,7 @@ export class Sketch {
   private params_: Param[] = [];
   private ents: Record<Kind, Entity[]> =
     { point: [], line: [], circle: [], arc: [], spline: [], curve: [],
-      plane: [] };
+      plane: [], axis: [] };
   private cons: Constraint[] = [];
   /** Constraint id → its proxy, so identity survives every round trip. */
   readonly byId = new Map<number, Constraint>();
@@ -652,6 +664,10 @@ export class Sketch {
     return this.list<Plane>('plane', this.counts()[10]);
   }
 
+  get axes(): Axis[] {
+    return this.list<Axis>('axis', this.counts()[11]);
+  }
+
   /** How many points the document has — the size a control-polygon buffer has to allow for. */
   get pointCount(): number {
     return this.counts()[1];
@@ -672,7 +688,7 @@ export class Sketch {
     return (kind === 'point' ? this.points : kind === 'line' ? this.lines
       : kind === 'circle' ? this.circles : kind === 'spline' ? this.splines
       : kind === 'curve' ? this.curves
-      : kind === 'plane' ? this.planes : this.arcs) as Primitive[];
+      : kind === 'plane' ? this.planes : kind === 'axis' ? this.axes : this.arcs) as Primitive[];
   }
 
   /** Every entity, in creation order per kind. */
@@ -785,7 +801,8 @@ export class Sketch {
   pick(x: number, y: number, tol: number): Primitive | null {
     return withBuf(2, 8, (b) => {
       if (!core().gcs_sketch_pick(this.handle, x, y, tol, b.ptr)) return null;
-      return this.entities(KINDS[b.f64[0]])[b.f64[1]];
+      const kind = kindOf(b.f64[0]);
+      return kind ? this.entities(kind)[b.f64[1]] ?? null : null;
     });
   }
 

@@ -82,6 +82,7 @@ for (const [label, tool, key] of [
   ['Point', 'point', 'p'], ['Line', 'line', 'l'], ['Rect', 'rect', 'r'],
   ['Circle', 'circle', 'c'], ['Arc', 'arc', 'a'], ['Arc 3-pt', 'arc3', '3'],
   ['Spline', 'spline', 's'], ['Spline fit', 'splinefit', 'w'],
+  ['Plane', 'plane', 'n'], ['Axis', 'axis', 'x'],
 ] as [string, Tool, string][]) {
   toolButtons.set(tool, addButton(barTools, {
     label, key, toggle: true, title: 'Click again to put the tool down and go back to selecting',
@@ -411,7 +412,7 @@ aboutBadge.addEventListener('click', () => void about());
 
 const TOOL_KEYS: Record<string, Tool> = {
   p: 'point', l: 'line', r: 'rect', c: 'circle', a: 'arc', 3: 'arc3', s: 'spline',
-  w: 'splinefit',
+  w: 'splinefit', n: 'plane', x: 'axis',
 };
 /** Every accelerator in the app, read off the buttons and menu items themselves so there is
  *  one list and not two.  The token is the chip the control prints, lowercased: '⇧l', '⌘z'. */

@@ -68,6 +68,13 @@ export interface SolidSpec {
 
 export type BodyWord = 'union' | 'cut' | 'bound';
 
+/** Where an axis drawn by a gesture runs, by the names the source writes: along a line, through
+ *  two points, or along a plane's normal through a point. */
+export type AxisOn =
+  | { line: string }
+  | { points: [string, string] }
+  | { plane: string; point: string };
+
 /** A region of the drawing (`Document.regionAt`): the edges of its outer loop and of each hole in
  *  walk order, by name, and the rings — outer first — in the plane's own coordinates. */
 export interface Region {
@@ -359,6 +366,13 @@ export class Document {
   /** A solid swept from a face, each extent the text written (`'20'`, `'20mm'`, `'90deg'`). */
   addSolid(spec: SolidSpec): Edit {
     return edit(withJson(spec, (p, n) => core().gcs_elab_add_solid(this.h, p, n)));
+  }
+
+  /** An axis and the relations that place it, seeded with the direction the drawing has there
+   *  (the core reads it off the live sketch). */
+  addAxis(on: AxisOn, name?: string): Edit {
+    return edit(withJson({ ...on, name },
+      (p, n) => core().gcs_elab_add_axis(this.h, this.sketch.handle, p, n)));
   }
 
   /** The body rule: `what union body`, `what cut body`, `what bound body`. */

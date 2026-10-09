@@ -81,7 +81,7 @@ export function paint(v: SketchView): void {
 
   const sk = v.sketch;
   const sel = new Set(v.selected);
-  const hl = new Set(v.highlight);
+  const hl = new Set([...v.highlight, ...v.toolPicks()]);
   const strokeFor = (base: string, ent: Primitive, st?: Style): [string, number] =>
     strokeOf(v, sel, hl, base, ent, st);
 
@@ -460,13 +460,6 @@ export function paintPreview(v: SketchView): void {
     // the first click is a place rather than a point, so the band starts from `pendingFit`
     const a = v.pendingFit.length ? v.w2s(...v.pendingFit[0].at) : p0;
     ctx.strokeRect(a[0], a[1], cur[0] - a[0], cur[1] - a[1]);
-  } else if (v.tool === 'plane') {
-    // the chord being laid down, from the first place to the cursor
-    const a = v.pendingFit.length ? v.w2s(...v.pendingFit[0].at) : p0;
-    ctx.beginPath();
-    ctx.moveTo(a[0], a[1]);
-    ctx.lineTo(cur[0], cur[1]);
-    ctx.stroke();
   } else if (v.tool === 'circle') {
     const c = v.pending[0].xy;
     const w = v.s2w(cur[0], cur[1]);

@@ -1516,7 +1516,15 @@ Conventions:
   was made, so the object index rides beside it), beneath the drawing in `whatIsAt`'s order.  A
   solid picked is a **third selection** (`SketchView.selectedSolids`, `pickSolid`), exclusive
   with `selected` and the picture, carried across an edit by name; Delete removes it, `box3d`
-  lights the face and washes the rest.  The plane tool picks two drawn lines and writes `plane(u:, v:)`.
+  lights the face and washes the rest.  **Axes are picked where the box draws them**
+  (`overview::axis_segment`, one rule for both), beneath every drawn figure and never seen end
+  on; the TS `Axis` proxy is kind id 16 (`kindOf` decodes a pick).  The **Plane** tool (`n`)
+  picks two named lines or axes and writes `plane(u:, v:)` (`add_plane`, held to the
+  elaborator); the **Axis** tool (`x`) writes `x0 := axis hint(dir: …)` and the relations that
+  place it in one splice (`edit::add_axis`, `AxisOn`: along a line; through two points; a
+  point, then the pane it stands square to), seeded by `edit::axis_direction` off the live
+  drawing.  A datum tool's first pick is held by name (`planeAxis`, `axisFrom`), lit
+  (`toolPicks`), and let go by Escape.
   Points in space stand in no view: seen where they are (`Projection::point`; per frame
   `workspace::space_points`, `gcs_workspace_space_points`, stroked through the eye's own
   camera), drawn and picked, and dragged where the eye sees them (`PlanDrag::seen`, numeric:

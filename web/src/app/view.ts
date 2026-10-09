@@ -103,7 +103,7 @@ export interface Place {
 
 export type Tool =
   'select' | 'point' | 'line' | 'rect' | 'circle' | 'arc' | 'arc3' | 'spline' | 'splinefit'
-  | 'plane';
+  | 'plane' | 'axis';
 
 /** What the plane tool is armed with: the name the statement is to be given, if any.  Which way
  *  the plane faces is the two lines its clicks pick. */
@@ -174,6 +174,8 @@ export class SketchView {
   planeSpec: PlaneSpec | null = null;
   /** The line the plane tool's first click picked, by name: the one the plane runs along. */
   planeAxis: string | null = null;
+  /** The point the axis tool's first click picked, by name: the one the axis passes through. */
+  axisFrom: string | null = null;
   highlight: Primitive[] = [];
   pending: Point[] = [];
   /** Where the fit tool has been told the curve must pass, before there is a curve.  Places
@@ -478,6 +480,7 @@ export class SketchView {
     this.pendingFit = [];
     this.planeSpec = null;
     this.planeAxis = null;
+    this.axisFrom = null;
   }
 
   /** Frame everything the workspace shows — figures and solids, as the eye now sees them. */
@@ -937,6 +940,15 @@ export class SketchView {
   pick(sx: number, sy: number): Primitive | null {
     const { az, el } = this.orbit;
     return pickSeen(this.sketch, this.unit, az, el, ...this.eye(sx, sy), this.world(PICK_PX));
+  }
+
+  /** What a datum tool's first click picked, lit until the second lands — by name, as the tools
+   *  hold it. */
+  toolPicks(): Primitive[] {
+    return [this.planeAxis, this.axisFrom].flatMap((n) => {
+      const e = n ? this.doc.entity(n) : undefined;
+      return e ? [e] : [];
+    });
   }
 
   /** The object face under the canvas point, nearest the eye, and the solid it is a face of. */
