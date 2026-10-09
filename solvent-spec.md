@@ -2,10 +2,10 @@
 
 **Specification, Draft 0.55 — October 2026**
 
-**[0.55] A plane tangent to a cone.** `P tangent(at: m) K`, with `K` a cone (`std.Cone`), says
-`P` is the cone's tangent plane at `m` — what a hypoid's pitch plane is to each pitch cone, said
-without drawing the cone's axis in a view square to the plane (§6.21). One condition where the
-apex and `m` are drawn on `P`, as a tangent plane of a cone always holds its apex.
+**[0.55] A plane tangent to a set.** `P tangent(at: m) S` says `P` is the set's tangent plane at
+`m`, for any set — what a hypoid's pitch plane is to each pitch cone, said without drawing the
+cone's axis in a view square to the plane (§6.21). It knows no shape: where the drawing already
+says what the set's body says along the plane, the redundancy is the system's rank's to find.
 
 **[0.54] Membership is one rule.** A plane is a set of points, and `in` is membership of it:
 `p coincident P`, said of a point standing in space, draws the point in `P` as `p := point in P`
@@ -1676,15 +1676,14 @@ said where it is used, by two words:
   directions' two unknowns against four rows. `m` on each is said beside it (`m coincident S1`);
   the word reads each body only at `m`, so a body that declares geometry of its own is **E040**
   here, and the word without `at:` is **E040**.
-- `P tangent(at: m) K` **[0.55]**, a plane and a cone (`std.Cone`): `P` is **`K`'s tangent plane
-  at `m`**. Every tangent plane of a cone holds the generator through the point, apex included,
-  so the statement is the apex and `m` on `P` and one condition more — the cone's axis in the
-  plane through the generator square to `P` — and each of the first two adds nothing where the
-  drawing already draws the point on `P`. `m` on `K` is said beside it, as for two sets. Any
-  other set after a plane's `tangent(at:)` is **E040**, as is a line or anything but a plane
-  before it. *Non-normative:* stated as the body's derivatives along `P`, the condition would be
-  two rows that are one and its multiple wherever the apex is on `P`, a cone's body being
-  stationary along its generator.
+- `P tangent(at: m) S` **[0.55]**, a plane and a set: `P` is **`S`'s tangent plane at `m`** —
+  `m` on `P`, and the body at `m` stationary along each of `P`'s directions. `m` on `S` is said
+  beside it, as for two sets. Anything but a plane before it is **E040**, as is the word without
+  `at:`. Where the drawing already says what the body says along `P` — a cone's apex drawn on
+  `P` (a cone's body is stationary along its generator), a cylinder's axis parallel to it — one of
+  the conditions is the other: the statement is no surplus, and the diagnosis reads the
+  dependency as how the tangency is made, said nowhere. *Non-normative:* an implementation finds
+  that dependency by rank, not by knowing the shape; a set's library body carries no shape.
 
 Every relation a use states is **described as the statement wrote it** (`l tangent shaft`, §9.9),
 its placement and classes the statement's; a dimension the body states is drawn as a component

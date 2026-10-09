@@ -215,6 +215,49 @@ impl BlockOrder {
     }
 }
 
+/// The conditioned Jacobian as sparse rows (`System::conditioned_sparse`).
+pub struct SparseConditioned {
+    pub n_cols: usize,
+    indptr: Vec<i32>,
+    indices: Vec<i32>,
+    data: Vec<f64>,
+}
+
+impl SparseConditioned {
+    /// How many rows: the full residual vector's.
+    pub fn n_rows(&self) -> usize {
+        self.indptr.len() - 1
+    }
+
+    /// Row `r`'s entries, `(column, value)`.
+    pub fn row(&self, r: usize) -> impl Iterator<Item = (usize, f64)> + '_ {
+        let (a, b) = (self.indptr[r] as usize, self.indptr[r + 1] as usize);
+        self.indices[a..b].iter().zip(&self.data[a..b]).map(|(&c, &v)| (c as usize, v))
+    }
+
+    /// Row `r` against a whole column vector.
+    pub fn row_dot(&self, r: usize, x: &[f64]) -> f64 {
+        self.row(r).map(|(c, v)| v * x[c]).sum()
+    }
+
+    /// The given rows against the given columns, dense, in the given orders.
+    pub fn dense(&self, rows: &[usize], cols: &[usize]) -> Mat {
+        let mut local = BTreeMap::new();
+        for (k, &c) in cols.iter().enumerate() {
+            local.insert(c, k);
+        }
+        let mut m = Mat::zeros(rows.len(), cols.len());
+        for (i, &r) in rows.iter().enumerate() {
+            for (c, v) in self.row(r) {
+                if let Some(&k) = local.get(&c) {
+                    m.data[i * cols.len() + k] = v;
+                }
+            }
+        }
+        m
+    }
+}
+
 /// Some of a system's constraint instances, evaluated on their own over some of its columns
 /// (`System::subset`): their residual rows, and a CSR Jacobian of those rows against the chosen
 /// columns only, every other column read from `z` and held.  Each number is the one the whole
@@ -959,6 +1002,33 @@ impl System {
             }
         }
         (Conditioned { m }, row_c)
+    }
+
+    /// `conditioned`'s numbers as sparse rows, never made dense: what the diagnosis reads a
+    /// system past the dense limit by, part by part (`diagnose::parts`, #88).  Rows are of the
+    /// full residual vector, columns free columns.
+    pub fn conditioned_sparse(&mut self, z: &[f64]) -> SparseConditioned {
+        let mut j = SparseConditioned {
+            n_cols: self.n_free,
+            indptr: vec![0; self.n_res + 1],
+            indices: Vec::new(),
+            data: Vec::new(),
+        };
+        if self.n_free == 0 || self.n_res == 0 {
+            return j;
+        }
+        self.compute_csr(z);
+        j.indptr = self.csr_indptr.clone();
+        j.indices = self.csr_indices.clone();
+        j.data = self.csr_data.clone();
+        for r in 0..self.n_res {
+            // the CSR row is already over `row_scale`; conditioning wants it over `jac_scale`
+            let inv = self.row_scale[r] / self.jac_scale[r];
+            for p in j.indptr[r]..j.indptr[r + 1] {
+                j.data[p as usize] *= inv;
+            }
+        }
+        j
     }
 
     fn condition(&mut self, z: &[f64], rows: &[usize]) -> Conditioned {

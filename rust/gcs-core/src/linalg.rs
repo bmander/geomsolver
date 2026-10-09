@@ -306,6 +306,27 @@ fn apply_qt(m: usize, n: usize, k: usize, a: &[f64], tau: &[f64], b: &mut [f64],
     }
 }
 
+/// `Q` (not its transpose) applied to the columns of `b`: `qrp`'s reflectors in reverse.
+fn apply_q(m: usize, n: usize, k: usize, a: &[f64], tau: &[f64], b: &mut [f64], nrhs: usize) {
+    for p in (0..k).rev() {
+        let t = tau[p];
+        if t == 0.0 {
+            continue;
+        }
+        for j in 0..nrhs {
+            let mut w = b[p * nrhs + j];
+            for i in p + 1..m {
+                w += a[i * n + p] * b[i * nrhs + j];
+            }
+            w *= t;
+            b[p * nrhs + j] -= w;
+            for i in p + 1..m {
+                b[i * nrhs + j] -= w * a[i * n + p];
+            }
+        }
+    }
+}
+
 /// RZ factorization of the k*n trapezoid in `a` (k <= n): [R11 R12] Z = [T11 0].
 fn tzrz(k: usize, n: usize, a: &mut [f64]) -> Vec<f64> {
     let mut ztau = vec![0.0; k.max(1)];
@@ -385,6 +406,33 @@ pub(crate) fn rrqr_with(a: &Mat, tol: Tol) -> (usize, Vec<i32>) {
     let mut w = a.data.clone();
     let (_, piv, rank) = qrp(m, n, &mut w, tol);
     (rank, piv)
+}
+
+/// The null space of a matrix of full row rank, from a pivoted QR of its transpose: `Aᵀ = Q R`,
+/// and `Q`'s columns past the rank span what `A` sends to zero — one per column, `n − m` of them.
+/// `None` where `A` is short of full row rank by `tol`, for an SVD to read instead.  Several times
+/// cheaper than the SVD on a wide matrix, which is the case it is for (a drawing's under part).
+pub fn null_full_row_rank(a: &Mat, tol: Tol) -> Option<Mat> {
+    let (m, n) = (a.rows, a.cols);
+    if m > n {
+        return None;
+    }
+    if m == 0 {
+        return Some(Mat::identity(n));
+    }
+    let mut w = a.transpose().data;
+    let (tau, _, rank) = qrp(n, m, &mut w, tol);
+    if rank < m {
+        return None;
+    }
+    // Q's columns past the rank: Q applied to those unit vectors, and only to those
+    let k = n - m;
+    let mut q = Mat::zeros(n, k);
+    for j in 0..k {
+        q.data[(m + j) * k + j] = 1.0;
+    }
+    apply_q(n, m, m, &w, &tau, &mut q.data, k);
+    Some(q)
 }
 
 pub fn rank_rrqr(a: &Mat, rcond: f64) -> usize {
