@@ -405,6 +405,13 @@ fn elaborate_in(p: &Program, refused: &BTreeSet<String>) -> Result<Elaborated, B
         }
     }
 
+    // the points drawn in further planes, each with its twins (§6.7): read by the memberships
+    // below, so a reader drawn in one of those planes takes the point's twin there
+    for (point, twin) in &expansion.twins {
+        if let (Some(p), Some(t)) = (res.of.get(point), res.of.get(twin)) {
+            sk.twins.entry(p.i()).or_default().push(t.i());
+        }
+    }
     // memberships, once every kind is built and before anything reads one: `point a in top`
     // names a plane built after the point, and `project` infers its planes from these — and then
     // every point no `in` reached stands in space (`places`), and a plane written over a drawn
@@ -485,6 +492,11 @@ fn elaborate_in(p: &Program, refused: &BTreeSet<String>) -> Result<Elaborated, B
         }
     }
 
+    // each point drawn in further planes tied to its twins, once the holds say which planes are
+    // fixed and the relations what else holds it on each (§6.7)
+    planes::tie_twins(&mut sk, &map, &mut diags);
+    sk.hold_twins();
+
     rings::contacts(&sk, &map, &mut diags);
     // a tangency at a point gauges its directions where the point stands (§6.21)
     sk.choose_charts();
@@ -496,6 +508,8 @@ fn elaborate_in(p: &Program, refused: &BTreeSet<String>) -> Result<Elaborated, B
     // A plane placed over seeds read through another plane is read through in turn, so the two
     // alternate until the seeds stand still — a few rounds, one per plane a chain of them crosses.
     views::place(&mut sk);
+    // a point drawn in planes that never meet is on none of them at once (§6.7)
+    planes::parallel_twins(&sk, &map, &mut diags);
     if crosses_views(&sk, &res, &deferred) {
         for _ in 0..4 {
             let before: Vec<f64> = sk.params.iter().map(|p| p.value).collect();

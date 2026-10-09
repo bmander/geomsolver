@@ -1,6 +1,10 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.57 — October 2026**
+**Specification, Draft 0.58 — October 2026**
+
+**[0.58] A point drawn in two planes.** `O := point in P, G` draws `O` in both planes, so on the
+line where they meet: what a layout draws in two views and ties by `project` is said once, and
+each plane's own geometry reads `O` there (§6.7).
 
 **[0.57] A free curve's length is the drawing's first.** With no `length` stated, a free curve's
 length is solved for wherever the rest of the drawing determines it — a point placed below the
@@ -901,6 +905,16 @@ statements say it stands in space stays there and the plane holds it by a row: o
 height (`hint(z: …)`), one whose three numbers a `fix` holds, the point a tangency differentiates
 at (§6.21), a `ring`'s (§12.4), and any under a `claim`. Which representation stands is the
 elaborator's; what the drawing means is the statement's either way.
+
+**A point may be drawn in several planes** **[0.58]**. `O := point in P, G` draws `O` in `P` and
+in `G`, so on the line where they meet: one freedom along it where both planes stand. Each
+plane's geometry reads `O` as its own point — `arc(center: O)` drawn in `G` is centred there,
+`line(O, T)` in `G` ends there, `O distance(5) q` with `q` in `G` is `G`'s distance — so what a
+descriptive layout draws twice and ties by `project` is one point. A plane named twice is
+**E040**; two planes that are parallel meet on no line, **E061**. Only a point is drawn in
+several planes (a line is, when its ends are; **E040** otherwise). Where a plane is itself built
+along a line `O` is on — an end of it, or stated on it — the plane already holds `O`, and the
+elaborator states nothing more.
 
 **An axis** (§3.1) is a directed line in space with no start. `t := axis hint(dir: (0, 0, 1))`
 seeds its direction, and relations place it: `t parallel s`, `t perpendicular s` and `t angle(θ)
@@ -2683,7 +2697,7 @@ ekw            = "point" | "line" | "circle" | "arc" | "spline" | "plane" | "axi
    `l.p1`.  A slot is a name, a seed, or implicit; only an overfull list is E103. *)
 trailer        = hint_clause
                | "knots" "[" number { "," number } "]"
-               | "in" ref ;                                (* membership of a plane, §6.7 *)
+               | "in" ref { "," ref } ;      (* membership of a plane, §6.7; several: a point [0.58] *)
 hint_clause    = ( "hint" | "~" ) "(" ( expr | hint_item { "," hint_item } ) ")" ;
                  (* SEEDS, §4.3; `~` [0.44]; one keyless expr seeds an unknown, §6.3 [0.41] *)
 hint_item      = member_key ":" ( expr | vector ) | vector  (* `(3, 4)`, `dir: (1, 0, 0)` [0.45] *)

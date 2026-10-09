@@ -197,7 +197,11 @@ impl<'a> Walk<'a> {
                         for a in motion.args_mut() { self.settle_arg(a, vals, scope); }
                     }
                     self.stamp_scope_plane(&mut d2, scope);
+                    let twins = self.twins_of(&d2, &d.name.key().text);
                     self.emit(StmtKind::Decl(d2), st, scope, path);
+                    for twin in twins {
+                        self.emit(StmtKind::Decl(twin), st, scope, path);
+                    }
                 }
                 StmtKind::Param(_) | StmtKind::Group(_) => {} // worked out above, before the walk
                 StmtKind::Instance(inst) => {
@@ -666,5 +670,27 @@ impl<'a> Walk<'a> {
     fn emit(&mut self, kind: StmtKind, st: &Stmt, scope: &Scope, path: &[PathStep]) {
         let stmt = Stmt { id: st.id, kind, span: st.span, chained: st.chained };
         self.out.push((stmt, path.to_vec(), scope.clone()));
+    }
+}
+
+impl Walk<'_> {
+    /// A point drawn in further planes (`point in P, G`, §6.7) is drawn in each by a **twin**: a
+    /// point of its own there, keyed `{point}@{k}` and called by the point's name, seeded where
+    /// the point is (`hint(at: point)`, read in space and seen in the twin's plane).  The
+    /// elaborator ties each to the point in space (`Expansion::twins`).  `local` is the point's
+    /// name as its scope reads it.
+    fn twins_of(&mut self, d: &Decl, local: &str) -> Vec<Decl> {
+        let point = d.name.key().text.clone();
+        let at = Span::new(d.name.span().lo as usize, d.name.span().lo as usize);
+        d.membership.also().iter().enumerate().map(|(k, plane)| {
+            let key = format!("{point}@{}", k + 1);
+            self.names.insert(key.clone());
+            self.twins.push((point.clone(), key.clone()));
+            let seed = crate::syntax::AtRef::at(Ref::new(local));
+            let name = crate::syntax::DeclName::Key(Name { text: key, span: at });
+            let mut twin = Decl::point(name, [0.0; 2], Some(seed));
+            twin.membership = crate::syntax::Membership::written_at(plane.clone(), at);
+            twin
+        }).collect()
     }
 }

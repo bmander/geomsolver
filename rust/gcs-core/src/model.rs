@@ -85,6 +85,11 @@ pub struct Sketch {
     /// use made — see `Dual`.  Document state, saved and grafted; its tangent columns are minted
     /// by the rows that read them.
     pub duals: Vec<Dual>,
+    /// The points drawn in further planes (`point in P, G`, §6.7), each with its **twins**: a
+    /// point of its own in each further plane, tied to it in space (`Sketch::tie_twin`,
+    /// `hold_twins`).  A reader drawn in a plane reads the point there by its twin
+    /// (`Sketch::twin_in`).
+    pub twins: BTreeMap<usize, Vec<usize>>,
     pub curves: Vec<CurveE>,
     /// The faces and solids the document names (§6.8, §6.9).  Built after every other kind,
     /// since a face is written over edges and a solid over faces and solids; evaluated after

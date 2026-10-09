@@ -17,8 +17,17 @@ fn name(sk: &Sketch, e: EntRef) -> String {
         if let Some(i) = sk.plane_of_origin(e.i()) {
             return format!("{}.origin", crate::syntax::entity_name(EntRef::plane(i)));
         }
+        // a twin is its point, drawn in a further plane: written by the point's name (§6.7)
+        if let Some(p) = twin_of(sk, e.i()) {
+            return crate::syntax::entity_name(EntRef::point(p));
+        }
     }
     crate::syntax::entity_name(e)
+}
+
+/// The point `t` is a twin of, where it is one (`Sketch::twins`).
+fn twin_of(sk: &Sketch, t: usize) -> Option<usize> {
+    sk.twins.iter().find(|(_, ts)| ts.contains(&t)).map(|(&p, _)| p)
 }
 
 /// The canonical program for a sketch.
@@ -60,6 +69,8 @@ pub fn to_program(sk: &Sketch) -> Program {
     for e in sk.primitives() {
         match e.kind {
             EntKind::Plane => continue,
+            // a twin is said by its point's `in` (§6.7)
+            EntKind::Point if twin_of(sk, e.i()).is_some() => continue,
             EntKind::Point => match sk.plane_of_origin(e.i()) {
                 Some(pl) => p.push(StmtKind::Decl(lift_decl(sk, EntRef::plane(pl)))),
                 None => p.push(StmtKind::Decl(lift_decl(sk, e))),
@@ -84,7 +95,8 @@ pub fn to_program(sk: &Sketch) -> Program {
     }
     // every held number is said, with what it is held at; a plane's origin is not, since the
     // plane holds it at its own `(0, 0)` and no `fix` says so (`holds`)
-    for e in sk.primitives() {
+    let twin = |e: &EntRef| e.kind == EntKind::Point && twin_of(sk, e.i()).is_some();
+    for e in sk.primitives().into_iter().filter(|e| !twin(e)) {
         let held = holds(sk, e);
         if !held.is_empty() {
             p.push(StmtKind::Relation(lift_gauge(&name(sk, e), e.kind, point_len(sk, e), &held)));
@@ -293,8 +305,14 @@ fn lift_curve(sk: &Sketch, i: usize) -> crate::syntax::CurveSpec {
 /// statement writes.  A point with none, or a line whose ends are on two planes (which no one
 /// statement can say), lifts without one.
 pub(crate) fn lift_plane(sk: &Sketch, e: EntRef) -> crate::syntax::Membership {
+    let plane = |p: usize| Ref::new(name(sk, EntRef::plane(p)));
     match plane_of_entity(sk, e) {
-        Some(p) => crate::syntax::Membership::lifted(Ref::new(name(sk, EntRef::plane(p)))),
+        // and a point drawn in further planes names each, its twins' (§6.7)
+        Some(p) if e.kind == EntKind::Point && sk.twins.contains_key(&e.i()) => {
+            let also = sk.twins[&e.i()].iter().filter_map(|&t| sk.plane_of(t)).map(plane).collect();
+            crate::syntax::Membership::written_on(plane(p), also, Span::default())
+        }
+        Some(p) => crate::syntax::Membership::lifted(plane(p)),
         None => Default::default(),
     }
 }

@@ -23,6 +23,42 @@ fn operand_points(sk: &Sketch, e: EntRef) -> Vec<usize> {
     }
 }
 
+/// **A point is read where its reader is drawn** (§6.7): an operand point drawn in further
+/// planes too is taken by its twin in the plane every other operand is drawn in, so `O distance(5)
+/// q`, with `q` drawn in `G` and `O` in `P, G`, is `G`'s own distance and not one in space.  A
+/// relation whose operands cannot all be read in one plane so is left as it is, for `in_space`.
+pub(super) fn read_twins(sk: &Sketch, args: &mut [Arg]) {
+    if sk.twins.is_empty() {
+        return;
+    }
+    let ents: Vec<EntRef> = args.iter().filter_map(|a| match a {
+        Arg::Ent(e) => Some(*e),
+        _ => None,
+    }).collect();
+    let mut planes: Vec<usize> = ents.iter()
+        .flat_map(|&e| operand_points(sk, e))
+        .filter_map(|p| sk.plane_of(p))
+        .collect();
+    planes.sort_unstable();
+    planes.dedup();
+    if planes.len() < 2 {
+        return;
+    }
+    // the one plane every operand is drawn in, a point by its twin where it has one there
+    let reads = |x: usize| ents.iter().all(|&e| match e.kind {
+        EntKind::Point => sk.twin_in(e.i(), x).is_some(),
+        _ => operand_points(sk, e).iter().all(|&p| sk.plane_of(p) == Some(x)),
+    });
+    let Some(x) = planes.into_iter().find(|&x| reads(x)) else { return };
+    for a in args.iter_mut() {
+        if let Arg::Ent(e) = a {
+            if e.kind == EntKind::Point {
+                *e = EntRef::point(sk.twin_in(e.i(), x).expect("reads in x"));
+            }
+        }
+    }
+}
+
 /// The points a relation of this kind reads in a plane, and whether it is a kind whose operands'
 /// planes decide what it means.  A radius, two equal radii and a ring's width read only radii,
 /// which the lift carries unchanged, and a projection relates two planes by definition; a

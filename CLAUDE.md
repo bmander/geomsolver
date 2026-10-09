@@ -62,6 +62,19 @@ components.dims.vtwin_dims)` (`vtwin/components/cylinder.sv`'s preview). Retired
 datum rotor, `toward:`, `from:`, `fold:`, `offset:`, `through:`, `attitude: free`, quaternions,
 hinges, `against`, the role rule, page placement, `std.ThreeViews`.
 
+**A point drawn in two planes** (0.58, #145): `O := point in P, G` (`Membership::also`). The
+flattener declares a hidden **twin** per further plane beside it (`Walk::twins_of`, key `O@1`,
+`hint(at: O)`, `Expansion::twins`); the elaborator records them (`Sketch::twins`) and, after the
+relations, ties each (`planes::tie_twins`, E040 a plane twice; `planes::parallel_twins` E061 after
+`views::place`): `Sketch::tie_twin`'s two intrinsic rows, the twin on the point's plane and
+`Project`, then `Sketch::hold_twins`' point on the twin's plane — left out where a line the plane is
+built along (`axes_along`'s `Parallel3`) ends at the point or has it stated on it, a dependency the
+structural count cannot see (#88). The gear's folds are square so. A point is read where its reader
+is drawn: `planes::memberships` puts a twin in a drawn element's slot (`Sketch::twin_in`,
+`replace_point`), `reading::read_twins` in a relation's before `in_space`. JSON `"twins"`, `graft`,
+`lift` (prints `in P, G`, never a twin) and `edit::remove` (keeps the other planes) carry it.
+`tests/two_planes.rs` is the gate.
+
 **Nothing is imported bare unless the `use` names it (Solvent §14.4, [0.30], [0.48], #94):** a
 used module's component, relation word, param or group is written by full path —
 `engine.parts.Rod(…)`, `hardware.nut14_af`, `components.dims.vtwin_dims` — only through the
