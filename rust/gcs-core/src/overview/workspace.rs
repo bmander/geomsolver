@@ -302,8 +302,31 @@ pub fn nearest_point(sk: &Sketch, proj: &Projection, at: (f64, f64)) -> (Option<
 /// What a click at `at` on the eye's picture plane picks: `model::pick`'s rule, asked of the
 /// figures where the eye sees them.  `unit` is the eye length of one screen pixel, which refines a
 /// round figure.
+///
+/// **The drawing outranks a datum**: an axis, which has no figure, is picked only where nothing
+/// drawn is in reach — along the line the box draws it as, and never seen end on, where it
+/// would read as a dot under everything else.
 pub fn pick(sk: &Sketch, proj: &Projection, at: (f64, f64), tol: f64, unit: f64) -> Option<EntRef> {
     crate::model::pick_by(sk, nearest_point(sk, proj, at), tol, |e| proj.reach(sk, e, at, tol, unit))
+        .or_else(|| nearest_axis(sk, proj, at, tol))
+}
+
+/// The axis whose drawn line, seen, passes nearest `at` within `tol`.  Two lying on one another
+/// (`std.back` is `std.x` reversed) are one distance but for rounding, so the first declared wins.
+fn nearest_axis(sk: &Sketch, proj: &Projection, at: (f64, f64), tol: f64) -> Option<EntRef> {
+    let mut best: Option<(f64, usize)> = None;
+    for i in 0..sk.axes.len() {
+        let Some((tail, tip)) = super::axis_segment(sk, i) else { continue };
+        let (a, b) = (proj.seen(tail), proj.seen(tip));
+        if (b.0 - a.0).dhypot(b.1 - a.1) < 2.0 * tol {
+            continue;
+        }
+        let d = polyline_distance(&[a, b], at.0, at.1);
+        if d <= tol && best.is_none_or(|(e, _)| d < e - 1e-9 * tol) {
+            best = Some((d, i));
+        }
+    }
+    best.map(|(_, i)| EntRef::new(EntKind::Axis, i))
 }
 
 /// How foreshortened a pane may be and still be landed on: `ViewCam::readable`'s default, a pane

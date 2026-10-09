@@ -342,3 +342,28 @@ fn a_click_on_a_solid_picks_the_face_nearest_the_eye() {
     let hit = pick_solid(sk, &under, seen([10.0, 5.0, -30.0], az, -0.5)).expect("the bottom block");
     assert_eq!(hit.solid, solid("bottom"));
 }
+
+/// Axes on a drawing that reaches 50 out: a line along part of `std.x`, and an axis parallel to
+/// `std.y` through (10, 0, 10) — seen end on from the front.
+const AXES: &str = "unit mm\nuse std\nin std.front {\n\
+    a := point hint((5, 0))\nb := point hint((25, 0))\nfar := point hint((40, 30))\n\
+    on_x := line(a, b)\nfix((5, 0)) a\nfix((25, 0)) b\nfix((40, 30)) far\n}\n\
+    t := axis hint(dir: (0, 1, 0))\nfix(dir == (0, 1, 0), origin == (10, 0, 10)) t\n";
+
+/// An axis is picked along the line the box draws it as, under anything drawn, never end on.
+#[test]
+fn an_axis_is_picked_where_it_is_drawn_and_the_drawing_outranks_it() {
+    let e = build(AXES);
+    let sk = &e.sketch;
+    let axis = |n: &str| Some(e.map.ent_named(n).unwrap());
+    let (az, el) = (0.6, 0.5);
+    let proj = Projection::new(sk, az, el);
+    // along std.x past the drawn line: the axis; on the line: the line
+    assert_eq!(pick(sk, &proj, seen([35.0, 0.0, 0.0], az, el), 0.5, 0.01), axis("std.x"));
+    assert_eq!(pick(sk, &proj, seen([15.0, 0.0, 0.0], az, el), 0.5, 0.01), axis("on_x"));
+    // the drawn axis, from three quarters
+    assert_eq!(pick(sk, &proj, seen([10.0, 20.0, 10.0], az, el), 0.5, 0.01), axis("t"));
+    // from the front it is seen end on, a dot: not picked
+    let front = Projection::new(sk, -FRAC_PI_2, 0.0);
+    assert_eq!(pick(sk, &front, seen([10.0, 0.0, 10.0], -FRAC_PI_2, 0.0), 0.5, 0.01), None);
+}

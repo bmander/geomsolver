@@ -330,16 +330,12 @@ pub fn scene3d(sk: &Sketch, unit: f64) -> Vec<Item3> {
         // an axis is in space and in no view: its line across the drawing's reach, and a head at
         // the end it points to
         if e.kind == EntKind::Axis {
-            use crate::space::{across, add, normalised, scale};
-            let r = &sk.axes[e.i()];
-            let p = r.a.map(|q| sk.params[q as usize].value);
-            let Some(d) = normalised(r.d.map(|q| sk.params[q as usize].value)) else { continue };
-            let reach = sk.extent().max(1.0);
-            let tip = add(p, scale(d, reach));
-            items.push(Item3 { of: Some(e), in_plane: None, what: Part::Drawn,
-                pts: vec![add(p, scale(d, -reach)), tip] });
+            use crate::space::{across, add, normalised, scale, sub};
+            let Some((tail, tip)) = axis_segment(sk, e.i()) else { continue };
+            items.push(Item3 { of: Some(e), in_plane: None, what: Part::Drawn, pts: vec![tail, tip] });
+            let Some(d) = normalised(sub(tip, tail)) else { continue };
             let u = across(d).0;
-            let head = reach * 0.04;
+            let head = sk.extent().max(1.0) * 0.04;
             for sgn in [1.0, -1.0] {
                 let back = add(tip, add(scale(d, -head), scale(u, sgn * head * 0.5)));
                 items.push(Item3 { of: Some(e), in_plane: None, what: Part::Drawn, pts: vec![tip, back] });
@@ -759,6 +755,17 @@ fn lambert(n: [f64; 3], eye: &([f64; 3], [f64; 3])) -> f64 {
     ];
     let l = crate::plane::unit(l).unwrap_or(dir);
     crate::plane::dot(n, l).clamp(0.0, 1.0)
+}
+
+/// Where axis `i` is drawn: its line across the drawing's reach either side of its foot, tail
+/// then tip — the one segment the box draws and a click picks by.  `None` for no direction.
+pub(crate) fn axis_segment(sk: &Sketch, i: usize) -> Option<([f64; 3], [f64; 3])> {
+    use crate::space::{add, normalised, scale};
+    let r = &sk.axes[i];
+    let p = r.a.map(|q| sk.params[q as usize].value);
+    let d = normalised(r.d.map(|q| sk.params[q as usize].value))?;
+    let reach = sk.extent().max(1.0);
+    Some((add(p, scale(d, -reach)), add(p, scale(d, reach))))
 }
 
 pub(crate) fn eye(az: f64, el: f64) -> ([f64; 3], [f64; 3]) {

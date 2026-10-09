@@ -339,7 +339,7 @@ pub unsafe extern "C" fn gcs_counts_len() -> i32 {
     N_COUNTS as i32
 }
 
-const N_COUNTS: usize = 11;
+const N_COUNTS: usize = 12;
 
 #[no_mangle]
 pub unsafe extern "C" fn gcs_sketch_counts(h: *mut Sketch, out: *mut i32) {
@@ -360,6 +360,7 @@ pub unsafe extern "C" fn gcs_sketch_counts(h: *mut Sketch, out: *mut i32) {
             // appended, never inserted: the positions above are what the bindings hard-code
             0,
             s.planes.len(),
+            s.axes.len(),
         ];
         debug_assert_eq!(v.len(), N_COUNTS, "gcs_counts_len is what callers size their buffer by");
         for (i, x) in v.iter().enumerate() {
@@ -4109,6 +4110,34 @@ pub unsafe extern "C" fn gcs_elab_add_solid(h: *mut Elaborated, ptr: *const u8, 
         let face = text("face").unwrap_or_default();
         let name = text("name");
         out_edit(gcs_core::edit::add_solid(&(*h).program, &face, &how, name.as_deref()))
+    })
+}
+
+/// An axis drawn by a gesture — `{line}`, `{points: [p, q]}` or `{plane, point}`, and `name?` —
+/// seeded with the direction the live drawing `s` has there: `edit::add_axis`.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_elab_add_axis(h: *mut Elaborated, s: *mut Sketch, ptr: *const u8,
+                                           len: usize) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || {
+        use gcs_core::edit::{self, AxisOn};
+        let v = as_json(ptr, len);
+        let text = |k: &str| v.get(k).map(|x| x.as_str().to_string());
+        let points = v.get("points").map(strings).unwrap_or_default();
+        let on = match (text("line"), text("plane"), text("point"), points.as_slice()) {
+            (Some(line), ..) => AxisOn::Line(line),
+            (None, Some(plane), Some(point), _) => AxisOn::Normal { plane, point },
+            (None, None, None, [p, q]) => AxisOn::Points(p.clone(), q.clone()),
+            _ => {
+                set_error("an axis runs along a line, through two points, or along a plane's \
+                           normal through a point");
+                return std::ptr::null_mut();
+            }
+        };
+        let prog = &(*h).program;
+        out_edit(match edit::axis_direction(&*h, sk(s), &on) {
+            Ok(dir) => edit::add_axis(prog, &on, dir, text("name").as_deref()),
+            Err(why) => edit::Edit::refused(prog, why),
+        })
     })
 }
 

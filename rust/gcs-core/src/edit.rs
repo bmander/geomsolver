@@ -42,6 +42,11 @@ pub struct Edit {
 }
 
 impl Edit {
+    /// The document as it stands, and why a gesture could not be written into it.
+    pub fn refused(prog: &Program, why: impl Into<String>) -> Edit {
+        Edit::none(prog, Some(why.into()))
+    }
+
     fn none(prog: &Program, why: Option<String>) -> Edit {
         Edit {
             text: prog.text().to_string(),
@@ -713,7 +718,7 @@ fn add_entity_with(
         }
     }
     let d = gesture_decl(kind, &name, children, seed);
-    append(prog, StmtKind::Decl(d), vec![name])
+    append_checked(prog, &[StmtKind::Decl(d)], vec![name]).unwrap_or_else(|e| Edit::none(prog, Some(e)))
 }
 
 /// The name a gesture asked for, or a fresh one: a name already spoken for, or one no statement
@@ -881,6 +886,71 @@ fn solid_edit(prog: &Program, face: &str, how: &SolidSweep, name: Option<&str>) 
     let mut d = gesture_decl(EntKind::Solid, &name, vec![refs([face])], &[]);
     d.sweep = Some(sweep);
     append_checked(prog, &[StmtKind::Decl(d)], vec![name])
+}
+
+/// Where a gesture's axis runs: along a drawn line, through two points, or along a plane's normal
+/// through a point.  Each is the axis and the relations that say so — `l coincident x0`;
+/// `p coincident x0`, `q coincident x0`; `x0 perpendicular P`, `p coincident x0` — names as the
+/// source writes them.
+#[derive(Clone, Debug)]
+pub enum AxisOn {
+    Line(String),
+    Points(String, String),
+    Normal { plane: String, point: String },
+}
+
+/// An axis drawn by a gesture, `x0 := axis hint(dir: …)` with its relations, as one splice held to
+/// the elaborator.  `dir` seeds the direction (`axis_direction` reads it off the drawing).
+pub fn add_axis(prog: &Program, on: &AxisOn, dir: [f64; 3], name: Option<&str>) -> Edit {
+    axis_edit(prog, on, dir, name).unwrap_or_else(|e| Edit::none(prog, Some(e)))
+}
+
+fn axis_edit(prog: &Program, on: &AxisOn, dir: [f64; 3], name: Option<&str>) -> Result<Edit, String> {
+    use crate::constraints::CKind;
+    let name = chosen_name(&mut taken_names(prog), name, EntKind::Axis)?;
+    let relation = |kind: CKind, a: &str, b: &str| {
+        let mut args = vec![None; kind.spec().len()];
+        args[0] = Some(syntax::Arg::Ref(syntax::Ref::new(a.to_string())));
+        args[1] = Some(syntax::Arg::Ref(syntax::Ref::new(b.to_string())));
+        StmtKind::Relation(syntax::Relation::of(syntax::RelationForm::Canonical { kind, args }))
+    };
+    let mut stmts = vec![StmtKind::Decl(gesture_decl(EntKind::Axis, &name, Vec::new(), &dir))];
+    match on {
+        AxisOn::Line(l) => stmts.push(relation(CKind::LineOnAxis, l, &name)),
+        AxisOn::Points(p, q) => {
+            stmts.push(relation(CKind::PointOnAxis, p, &name));
+            stmts.push(relation(CKind::PointOnAxis, q, &name));
+        }
+        AxisOn::Normal { plane, point } => {
+            stmts.push(relation(CKind::AxisPerpendicularPlane, &name, plane));
+            stmts.push(relation(CKind::PointOnAxis, point, &name));
+        }
+    }
+    append_checked(prog, &stmts, vec![name])
+}
+
+/// The direction an axis drawn `on` this runs, read off the drawing as it stands — what
+/// `add_axis` seeds it with.  Refused, with the cause, for a name that is not the kind its place
+/// asks for, or two points in one place.
+pub fn axis_direction(e: &Elaborated, sk: &Sketch, on: &AxisOn) -> Result<[f64; 3], String> {
+    let of = |n: &str, kind: EntKind| {
+        e.map.ent_named(n).filter(|r| r.kind == kind)
+            .ok_or_else(|| format!("`{n}` is not {} in this drawing", kind.a()))
+    };
+    let between = |p: usize, q: usize| crate::space::sub(sk.world_point(q), sk.world_point(p));
+    let d = match on {
+        AxisOn::Line(l) => {
+            let line = &sk.lines[of(l, EntKind::Line)?.i()];
+            between(line.p1 as usize, line.p2 as usize)
+        }
+        AxisOn::Points(p, q) => between(of(p, EntKind::Point)?.i(), of(q, EntKind::Point)?.i()),
+        AxisOn::Normal { plane, point } => {
+            of(point, EntKind::Point)?;
+            let b = sk.basis(of(plane, EntKind::Plane)?.i());
+            crate::plane::cross(b.u, b.v)
+        }
+    };
+    crate::plane::unit(d).ok_or_else(|| "the axis has no direction: its two points are one".into())
 }
 
 /// `what union body`, `what cut body`, `what bound body` — the body rule, one statement (§6.9).
