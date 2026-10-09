@@ -325,9 +325,12 @@ impl<'a> Walk<'a> {
                     if let Some(twin) = scope.twin() {
                         // a claim, a gauge and a bound state no row, so they have no
                         // derivative
+                        // — `inside` or `outside` a plane among the bounds, lowered later
                         let (gauge, bound) = match r2.form.written() {
                             Some(w) => (crate::constraints::gauge_op(&w.word.text).is_some(),
-                                        w.bound().is_some()),
+                                        w.bound().is_some()
+                                            || crate::constraints::plane_side_word(&w.word.text)
+                                                .is_some()),
                             None => (false, false),
                         };
                         if r2.claim || gauge || bound {

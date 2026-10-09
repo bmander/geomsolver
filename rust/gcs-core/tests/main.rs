@@ -11,6 +11,7 @@
 
 mod common;
 mod bounds;
+mod regions;
 mod evaluated_solid;
 mod renderer;
 

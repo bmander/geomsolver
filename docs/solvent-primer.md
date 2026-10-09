@@ -766,7 +766,8 @@ foot outside p                         // in front of it
   solution; off it, the solve looks for the root where it holds and fails with `a bound does not
   hold` if there is none. The diagnosis lists violated bounds and *active* ones (solution on the
   edge).
-- **Not:** a `claim`, an unknown's reader, or (yet) a bound inside a set body.
+- **Not:** a `claim` or an unknown's reader. Inside a set body a bound makes a region (below,
+  sets).
 
 ### 1.11 Datums
 
@@ -1067,8 +1068,15 @@ several up to the `}`. It adds nothing to the drawing; what it means is said whe
   the body's number. `q coincident k` is a point on the circle. Where the plane is no plane or `o`
   stands off it, the set is a set again (a sphere met with a plane off its centre), drawn as nothing.
 - **Sets compose by conjunction**: two statements in one body are the points on both (an
-  intersection). A union is a choice of root (`ccw`, `branch`), not a body; a difference cannot be
-  written.
+  intersection). A union is a choice of root (`ccw`, `branch`), not a body; a difference of loci
+  cannot be written.
+- **Regions** (0.60): a body that bounds a number is a region, `ball := { p | p distance(<= 5) c
+  }`. `q inside S` / `q outside S` put a point in or out of any set, its one number read as at most
+  / at least: `q inside std.Sphere(c, r: 5)`, `q inside std.Cylinder(l, r: 2)`, `q inside
+  std.Cone(l, half: 30deg)` (in space only), the disc `{ p | p coincident P; p distance(5) o }`.
+  Regions meet by conjunction, and `outside` gives a difference: `{ p | p inside heel; p outside
+  toe }`. Refused: `outside` a conjunction or an interval, a set of several numbers, a line inside
+  a set, a tangency to a region. A point in a region is a bound on it, so a choice of root.
 
 **Spheres** are the library's set: `ball := std.Sphere(c, r: 12mm)` is a centre and a radius, and
 nothing drawn; the centre may be drawn in a view or stand in space.

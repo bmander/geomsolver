@@ -412,7 +412,7 @@ fn rewrite(
             r.span,
             format!(
                 "`{}` is a set, the points its body holds: a point is put on it by `coincident` \
-                 and a line touches it by `tangent`",
+                 or `inside` and `outside` it, and a line touches it by `tangent`",
                 written(r)
             ),
         )),

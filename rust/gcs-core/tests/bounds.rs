@@ -152,11 +152,3 @@ fn a_bound_is_kept() {
         assert_eq!(b3.bound, c.bound);
     }
 }
-
-/// A bound in a set's body is a region, which is slice 2 (#145, F1): a point is put on a set by
-/// `coincident`, and `inside` a set is not yet said.
-#[test]
-fn inside_a_set_is_not_yet_said() {
-    refused(&format!("{CROSSING}ball := {{ q | q distance(5) a }}\np inside ball\n"),
-            "E040", "set", "ball");
-}

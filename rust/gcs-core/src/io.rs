@@ -2035,7 +2035,8 @@ pub fn describe_with(c: &Constraint, name: &dyn Fn(EntRef) -> Option<String>) ->
         }
     }
     // a bound is said as one (§9.6)
-    let hi = c.bound.and_then(|b| b.hi).map(crate::syntax::Arg::Num);
+    let unit = c.kind.dimension_slot().map_or(crate::constraints::SpecKind::Length, |i| c.kind.spec()[i].1);
+    let hi = c.bound.and_then(|b| b.hi).map(|h| crate::syntax::Arg::Num(expr::to_user_units(unit, h)));
     let args = crate::syntax::bounded(c.kind, &args, c.bound.map(|b| (b.cmp, hi.as_ref())));
     let text = crate::syntax::operator_text(c.kind, &args);
     // a claim is a different statement from the relation it is written over — it is judged, not

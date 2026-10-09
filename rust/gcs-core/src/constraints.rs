@@ -1481,7 +1481,9 @@ impl CKind {
 
     /// The kinds whose number may be a bound (§9.6): those reading a signed or unsigned measure
     /// a solve can be steered along — an ordinate (and so `inside`/`outside` a plane), a
-    /// distance between points, a point's or a parallel line's distance from a line.
+    /// distance between points, a point's or a parallel line's distance from a line, in a view
+    /// or in space, and the unsigned angle in space (a cone's region, §6.21).  Not the angle in
+    /// a view, which is signed: bounded, it would be a half-plane and not a wedge.
     /// Where its number stands, if it states one: a kind has at most one dimension slot.
     pub fn dimension_slot(self) -> Option<usize> {
         self.spec().iter().position(|(_, k)| k.is_dimension())
@@ -1494,7 +1496,9 @@ impl CKind {
                 | CKind::Distance
                 | CKind::Distance3
                 | CKind::PointLineDistance
+                | CKind::PointLine3
                 | CKind::ParallelDistance
+                | CKind::Angle3
         )
     }
 
@@ -2047,14 +2051,27 @@ impl Bound {
         }
     }
 
-    /// Where a solve steering a reading `m` back across the bound aims: its mirror in the
-    /// bound's edge, which is where the other root of a mirror-symmetric pair reads, or an
-    /// interval's middle.
-    pub fn aim(&self, lo: f64, m: f64) -> f64 {
-        match self.cmp {
+    /// Where a solve steering a reading `m` back across the bound aims, nearest first: its mirror
+    /// in the bound's edge, which is where the other root of a mirror-symmetric pair reads (or an
+    /// interval's middle), then twice, four and eight times as far past the edge — the other
+    /// root of a pair mirrored in some other measure reads farther off.  Each kept within what
+    /// the reading can come to (`range`): halfway from the edge to its limit where it would
+    /// pass it, so a distance never aims below zero.
+    pub fn aims(&self, lo: f64, m: f64, range: (f64, f64)) -> [f64; 4] {
+        let first = match self.cmp {
             crate::syntax::Cmp::In => (lo + self.hi.unwrap_or(lo)) / 2.0,
             _ => 2.0 * lo - m,
-        }
+        };
+        [1.0, 2.0, 4.0, 8.0].map(|k| {
+            let aim = lo + (first - lo) * k;
+            if aim < range.0 {
+                (range.0 + lo) / 2.0
+            } else if aim > range.1 {
+                (range.1 + lo) / 2.0
+            } else {
+                aim
+            }
+        })
     }
 }
 
@@ -2110,6 +2127,20 @@ impl Constraint {
         !self.claim && self.bound.is_none()
     }
 
+    /// What `reading` can come to: a magnitude's at least zero (a distance between points, a
+    /// point's from a line read either side), an unsigned angle's within half a turn, a signed
+    /// measure's anything.
+    pub fn reading_range(&self) -> (f64, f64) {
+        match self.kind {
+            CKind::Distance | CKind::Distance3 | CKind::PointLine3 => (0.0, f64::INFINITY),
+            CKind::PointLineDistance | CKind::ParallelDistance if self.side().is_none() => {
+                (0.0, f64::INFINITY)
+            }
+            CKind::Angle3 => (0.0, std::f64::consts::PI),
+            _ => (f64::NEG_INFINITY, f64::INFINITY),
+        }
+    }
+
     /// The number the drawing reads where this constraint's stands: the one that would make its
     /// row hold now, as the statement measures it (its word's sign, `side:`, `along:`) — what a
     /// bound is checked against (§9.6).  Found along the number from the one stated by secant
@@ -2122,6 +2153,12 @@ impl Constraint {
         }
         let at = self.kind.dimension_slot()?;
         let v = self.local_values(sk);
+        // the unsigned angle in space is read by its cosine (`cos3 - cos θ`), which is even and
+        // periodic in θ: read straight off it, never searched along it
+        if self.kind == CKind::Angle3 {
+            let d = self.args[at].num();
+            return Some((self.residual(sk, &v)[0] + d.dcos()).clamp(-1.0, 1.0).dacos());
+        }
         let mut c = self.clone();
         let mut residual = |d: f64| {
             c.args[at] = Arg::Num(d);
