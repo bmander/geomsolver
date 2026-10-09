@@ -304,6 +304,26 @@ fn a_set_circles_text_stands_through_a_solve_and_a_gesture() {
     assert_eq!(read(&out.text).sketch.topology_key(), e.sketch.topology_key());
 }
 
+/// A circle-shaped set written **in place** has no declaration a name could be put on: a gesture
+/// that must name it is refused with the cause, never written with a name that resolves to
+/// nothing (#142).
+#[test]
+fn a_gesture_naming_an_in_place_set_circle_is_refused() {
+    let mut e = read("unit mm\nuse std\no := point in std.front\nfix((0, 0)) o\n\
+        q := point hint((20, 10)) in std.front\n\
+        q coincident { p | p coincident std.front; p distance(25) o }\n");
+    let mut sk = solved(&e);
+    assert_eq!(sk.circles.len(), 1, "the in-place set is drawn as a circle");
+    let r = sk.circles[0].radius as usize;
+    sk.params[r].fixed = true;
+    let before = e.program.text().to_string();
+    let out = edit::reconcile(&mut e, &sk);
+    assert_eq!(out.kind, edit::Kind::None, "{}", out.text);
+    assert_eq!(out.text, before);
+    let why = out.refused.expect("refused, and says why");
+    assert!(why.contains("in place"), "{why}");
+}
+
 /// A circle-shaped set written in a component is one circle per instance, and one per copy of a
 /// block, each under its own name.
 #[test]
