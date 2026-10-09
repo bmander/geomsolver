@@ -59,7 +59,7 @@ export class CodeEditor {
    *  colouring behind it is this class's business alone. */
   readonly box: HTMLTextAreaElement;
   private readonly copy: HTMLPreElement;
-  private readonly colour: (text: string) => Run[];
+  private colour: (text: string) => Run[];
   /** The ranges a caller has asked to be marked, in no particular order and possibly overlapping.
    *
    *  Marked with a class and **never with a weight**.  The box in front of this copy is one
@@ -76,6 +76,14 @@ export class CodeEditor {
   /** Show the text uncoloured.  The colouring is the core's reading of Solvent, and prose read
    *  as statements — a README beside the sources — would be tinted at random. */
   plain = false;
+
+  /** What colours the text — a program's scan or a drawing's, as the file shown is one or the
+   *  other.  Changing it drops the last runs, which were the other language's reading. */
+  set colouring(colour: (text: string) => Run[]) {
+    if (colour === this.colour) return;
+    this.colour = colour;
+    this.lastRuns = null;
+  }
 
   /** Build the two layers inside `host`, which is expected to be positioned (the stylesheet makes
    *  `#pcode` so).  The copy goes first so the box paints over it and takes the clicks. */

@@ -14,9 +14,9 @@
  * made elsewhere; `dimbox.ts` will not overwrite a box somebody is in.  A panel that reprinted on
  * every solve would take the line out from under the cursor. */
 import type { Mark } from './editor.js';
-import type { Diagnostic, SourceMap, SourceSpan } from '../core/program.js';
+import { highlight, type Diagnostic, type SourceMap, type SourceSpan } from '../core/program.js';
 import * as modules from '../core/modules.js';
-import type { DrawingBundle } from '../core/drawing.js';
+import { highlight as drawingHighlight, type DrawingBundle } from '../core/drawing.js';
 import { drawingActive, pickDrawingFolder, renderDrawing, showDrawing } from './drawing.js';
 import { currentConstraint, pdiags, ped, ppanel, ppanelState, psplit, view } from './shell.js';
 import { download, toast } from './ui.js';
@@ -302,6 +302,7 @@ export function refreshProgram(): void {
   shown = text;
   const quiet = imported || drawingActive() || showingText();
   ped.plain = showingText();
+  ped.colouring = activeFile.endsWith('.svd') ? drawingHighlight : highlight;
   ped.setText(text, quiet ? [] : marks());
   ppanel.classList.remove('dirty');
   ppanelState.textContent = imported ? ' — imported file, read only' : '';

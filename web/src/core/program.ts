@@ -363,8 +363,14 @@ export interface Run { cls: string; lo: number; hi: number }
  *  half-typed, which does not elaborate.  The core's own scan, so what a colour says a word is and
  *  what the parser makes of it are the same answer. */
 export function highlight(text: string): Run[] {
-  const runs = withStr(text, (p, n) => core().gcs_program_highlight(p, n));
-  if (!runs) throw new Error(lastError() || 'the program could not be coloured');
+  return coloured(text, (p, n) => core().gcs_program_highlight(p, n));
+}
+
+/** A colouring entry's runs, crossed onto the string the browser holds — the program's here, and
+ *  a drawing's (`drawing.highlight`) through the same seam. */
+export function coloured(text: string, entry: (p: number, n: number) => number): Run[] {
+  const runs = withStr(text, entry);
+  if (!runs) throw new Error(lastError() || 'the text could not be coloured');
   const at = new Offsets(text);
   return takeJson<[string, number, number][]>(runs)
     .map(([cls, lo, hi]) => ({ cls, lo: at.at(lo), hi: at.at(hi) }));

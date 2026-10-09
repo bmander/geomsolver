@@ -5,12 +5,14 @@
 mod parser;
 mod render;
 mod compile;
+mod highlight;
 
 use crate::style::Style;
 use crate::syntax::Span;
 pub use parser::parse;
 pub use render::{render, Model};
 pub use compile::compile;
+pub use highlight::highlight;
 
 #[derive(Clone, Debug)]
 pub struct Error {

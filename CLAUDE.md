@@ -1689,6 +1689,10 @@ Conventions:
   TypeScript, so a colour and the parser cannot disagree.  `Tint` names the classes and the
   stylesheet says what they look like; the front end writes one element per run, parsing nothing.
   A function of the *text*, not of an `Elaborated`, since the program is usually half-typed.
+  A `.svd` is coloured by `drawing::highlight`, the drawing lexer's own scan (`gcs_drawing_highlight`,
+  `core/drawing.ts`); the panel picks one by the file shown (`CodeEditor.colouring`).  Relation
+  words are known by the text: those it defines or names in a `use (…)` (`relation_words`); units
+  join their number's run; `expr`'s functions, constants and measures are `builtin`.
 - Offsets cross the ABI in **UTF-8 bytes** and index a **UTF-16 string** on the other side
   (`gear.sv` has an em dash).  `core/program.ts::Offsets` is the conversion and `Document.adopt`
   is the **one seam** every report crosses: diagnostics, source map and coloured runs are string

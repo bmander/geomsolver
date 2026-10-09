@@ -26,6 +26,7 @@ import { mesh, objects, stl, glb } from '../core/mesh.js';
 import { FieldMesher, deferFields, fieldJobs, supplyField, unpaired } from '../core/field.js';
 import { overview } from '../core/overview.js';
 import { Document, fromSketch, highlight } from '../core/program.js';
+import { highlight as drawingHighlight } from '../core/drawing.js';
 import { Drag, RadiusDrag, System, solve } from '../core/system.js';
 import { analyze } from '../core/witness.js';
 import { core, initCore } from '../core/wasm.js';
@@ -2295,6 +2296,19 @@ test('a program half-typed is still coloured', () => {
   const runs = highlight('point p hint(x: 0,\ncircle c(center: p, r');
   assert.equal(runs[0].cls, 'word');
   assert.ok(runs.some((r) => r.cls === 'label'), 'the labels of an unfinished call');
+});
+
+/* A drawing is coloured by its own scan through the same seam, so a run past a non-ASCII
+ * character in a label still lands on the word it names. */
+test('a drawing is coloured by its own grammar, indexing the string', () => {
+  const text = 'model m from "a.sv"\nsheet s {\n'
+    + '  label "Ø 20 — bore" at (1mm, 2mm)\n  scale 2\n}\n';
+  const runs = drawingHighlight(text);
+  const at = (cls: string, word: string) =>
+    runs.some((r) => r.cls === cls && text.slice(r.lo, r.hi) === word);
+  assert.ok(at('word', 'model') && at('def', 'm') && at('string', '"a.sv"'));
+  assert.ok(at('string', '"Ø 20 — bore"'), 'a string past nothing but ASCII');
+  assert.ok(at('word', 'scale') && at('number', '2'), 'and the words past the em dash');
 });
 
 test('dragging the gear does not rewrite the gear', () => {

@@ -36,6 +36,10 @@
   /* a class names presentation, which is a different statement from what the drawing is — muted,
      because a sheet is a remark about the drawing and not part of it */
   --syn-class: #9c5d00;
+  /* what an expression knows before the document says anything — `sqrt`, `pi`, `length(…)` */
+  --syn-builtin: #3a5a99;
+  /* a quoted string, which only a drawing (.svd) has */
+  --syn-string: #2e7d32;
 }
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }
@@ -435,6 +439,8 @@ dialog input[type=search] {
 /* a class is presentation, which is a different statement from what the drawing is — so it
    reads as one, and not as the geometry it qualifies */
 .code-copy .class { color: var(--syn-class); }
+.code-copy .builtin { color: var(--syn-builtin); }
+.code-copy .string { color: var(--syn-string); }
 
 #pdiags {
   flex: none; max-height: 34%; overflow: auto; list-style: none; margin: 0; padding: 0;
