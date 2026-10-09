@@ -303,10 +303,6 @@ pub fn to_json(sk: &Sketch) -> Json {
             if let Some(w) = &s.weights {
                 o.set("weights", Json::Arr(w.iter().map(|&x| Json::Num(x)).collect()));
             }
-            // and a free curve says so, its interior the drawing's (#121)
-            if s.free {
-                o.set("free", Json::Bool(true));
-            }
             o
         })
         .collect();
@@ -541,7 +537,6 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
             )
         })?;
         sk.splines[si].class = read_class(s);
-        sk.splines[si].free = matches!(s.get("free"), Some(Json::Bool(true)));
     }
     // an ellipse is a library component now (`use std`, `curve e = Ellipse(f, a: …, b: …).p
     // over u in (0, 360)` — issue #47, item 4) and a sketch document cannot say so, so one that
@@ -721,7 +716,7 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
     sk.settle_turns();
     // a chart a document did not gauge is gauged where its point stands (§6.21)
     sk.choose_charts();
-    // an energy's gauge rows and multipliers, which a document never carries (#121)
+    // each free curve's energy, read again from the statements (#121, #144)
     sk.settle_variational();
     Ok(sk)
 }
@@ -867,7 +862,6 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         let class = sp.class.clone();
         let Some(ni) = dst.spline_weighted(&ctrl, Some(knots), weights) else { continue };
         dst.splines[ni].class = class;
-        dst.splines[ni].free = sp.free;
         spline_map[i] = Some(ni);
         made.push(EntRef::spline(ni));
     }
@@ -976,6 +970,12 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
                     .map(|r| (r, j))
             })
             .collect();
+        // a free curve's length is its own number, and comes as a circle's radius does; its
+        // pegs are the energy's to settle again
+        let length = cv.length.map(|l| {
+            let p = &src.params[l as usize];
+            dst.param(p.value, p.fixed, &p.name) as u32
+        });
         dst.curves.push(crate::model::CurveE {
             def: at as u32,
             args,
@@ -987,6 +987,8 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             class: cv.class.clone(),
             trim,
             extrusion: cv.extrusion,
+            length,
+            pegs: Vec::new(),
         });
         curve_map[i] = Some(dst.curves.len() - 1);
         made.push(EntRef::new(EntKind::Curve, dst.curves.len() - 1));
@@ -1423,7 +1425,7 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         }
     }
     dst.settle_turns();
-    // an energy's gauge rows and multipliers are minted, not copied (#121)
+    // each free curve's energy, its pegs and its definition, read again from what came (#144)
     dst.settle_variational();
     made
 }
@@ -1528,7 +1530,10 @@ impl Part {
         let prims = sk.primitives();
         // who contains a point, and which constraints name an entity
         let mut parents: Vec<Vec<EntRef>> = vec![Vec::new(); sk.points.len()];
-        for &e in &prims {
+        // a curve is no primitive, but it moves with the points it is written over — a free
+        // curve's ends among them (#144)
+        let curves = (0..sk.curves.len()).map(|i| EntRef::new(EntKind::Curve, i));
+        for e in prims.iter().copied().chain(curves) {
             for c in sk.children(e).into_iter().filter(|c| c.kind == EntKind::Point) {
                 parents[c.i()].push(e);
             }
@@ -1631,7 +1636,7 @@ impl Part {
         let mut sketch = Sketch::new();
         let mut made = graft(&mut sketch, sk, &|e| keep.contains(&e), &[], (0.0, 0.0));
         // `graft` makes entities kind by kind in document order, which is `primitives` order,
-        // then the curves a contact named, which own no parameter of their own
+        // then the curves, paired below
         let srcs: Vec<EntRef> = prims.into_iter().filter(|e| keep.contains(e)).collect();
         made.truncate(srcs.len());
         debug_assert!(srcs.iter().zip(&made).all(|(s, m)| s.kind == m.kind));
@@ -1645,6 +1650,36 @@ impl Part {
             }
             for (a, b) in sketch.entity_params(m).into_iter().zip(sk.entity_params(s)) {
                 params.push((a as usize, b as usize));
+            }
+        }
+        // a free curve's length is its own number (#144): the curves come after the primitives,
+        // the ones kept in document order
+        let mut ent: BTreeMap<EntRef, EntRef> = srcs.iter().copied().zip(made.iter().copied()).collect();
+        let kept = (0..sk.curves.len()).filter(|&i| keep.contains(&EntRef::new(EntKind::Curve, i)));
+        for (doc, part) in kept.zip(0..sketch.curves.len()) {
+            ent.insert(EntRef::new(EntKind::Curve, doc), EntRef::new(EntKind::Curve, part));
+            if let (Some(a), Some(b)) = (sketch.curves[part].length, sk.curves[doc].length) {
+                params.push((a as usize, b as usize));
+            }
+        }
+        // and a constraint's own unknowns (a contact's place along its curve) with its copy's:
+        // the constraint of the same kind over the same entities, each copy paired once
+        let mut copies: Vec<Option<(CKind, Vec<EntRef>, Vec<u32>)>> = sketch
+            .constraints
+            .iter()
+            .map(|c| Some((c.kind, c.entities(), c.aux_params())).filter(|(_, _, own)| !own.is_empty()))
+            .collect();
+        for c in &sk.constraints {
+            let own = c.aux_params();
+            if own.is_empty() {
+                continue;
+            }
+            let Some(over) = c.entities().iter().map(|e| ent.get(e).copied()).collect::<Option<Vec<_>>>() else {
+                continue;
+            };
+            let found = copies.iter_mut().find(|k| k.as_ref().is_some_and(|(kind, ents, _)| *kind == c.kind && *ents == over));
+            if let Some((_, _, theirs)) = found.and_then(Option::take) {
+                params.extend(theirs.into_iter().zip(own).map(|(a, b)| (a as usize, b as usize)));
             }
         }
         // and a hidden point moves with the view point it lifts

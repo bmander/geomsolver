@@ -27,6 +27,8 @@ fn tool_of(sk: &Sketch, e: EntRef) -> Result<Tool, String> {
                                                   tool is a point, line, circle or arc".into()),
             CurveBody::Trace(_) => return Err("a tool curve is one written as a computed point or \
                                                generated; a traced curve cannot cut yet".into()),
+            CurveBody::Extremal(_) => return Err("a tool curve is one written as a computed point or \
+                                                  generated; a free curve cannot cut".into()),
         },
         k => return Err(format!("{} cannot cut a profile in the plane", k.a())),
     })
@@ -143,7 +145,7 @@ fn profile(sk: &mut Sketch, d: &Decl, tool: EntRef, motion: usize) -> Result<Cur
                 CurveBody::Envelope(g) => ToolBody::Envelope {
                     n_theta, flat: &g.flat, values: &cv.values, anchor: sk.curve_home(tool.i()), domain,
                 },
-                CurveBody::Trace(_) => unreachable!("refused by tool_of"),
+                CurveBody::Trace(_) | CurveBody::Extremal(_) => unreachable!("refused by tool_of"),
             }
         }
         _ => ToolBody::None,
@@ -184,6 +186,8 @@ fn profile(sk: &mut Sketch, d: &Decl, tool: EntRef, motion: usize) -> Result<Cur
         class: d.class.clone(),
         trim: None,
         extrusion: false,
+        length: None,
+        pegs: Vec::new(),
     })
 }
 

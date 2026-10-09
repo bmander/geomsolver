@@ -17,7 +17,7 @@ in std.front {
   fix((0mm, 0mm)) a
   fix((100mm, 0mm)) b
   shore := line(a, b)
-  strip := spline(a, b)
+  strip := curve(a, b)
   length(130mm) strip
 }
 strip maximizes integral((p.x * t.y - p.y * t.x) / 2 over (p, t))

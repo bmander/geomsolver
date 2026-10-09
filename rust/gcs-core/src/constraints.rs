@@ -53,17 +53,16 @@ pub enum CKind {
     /// is built per count (`KernelKey::SplineLength`).  A magnitude, degree 1; a belt's, a
     /// cable's, a hanging rope's length.
     SplineLength,
-    /// **A free curve's gauge** (#121): span `k`'s length is span `k + 1`'s.  A spline's control
-    /// points can slide along it without moving its shape, so an energy over its shape alone has
-    /// no minimum among them — the stationarity is a saddle, and the solve wanders.  Minted, one
-    /// row per pair of neighbouring spans, for every spline an energy varies; intrinsic, never
-    /// written.  The span is the knot index its first span starts at.
-    SplineGauge,
-    /// **Stationarity of an energy** (`k minimizes …`, #121): one term of the document's energy, an
-    /// integral over a spline with a coefficient.  The terms over one curve are one group, and
-    /// the group's first constraint carries its rows — `∂E/∂y + Σ λ ∂g/∂y = 0`, one per free
-    /// coordinate `y` of the curve's interior control points, `g` every row that reads one and
-    /// `λ` its multiplier (`variational.rs`).  Its kernel is built per group.
+    /// **A free curve's length** (`length(L) rope`, #144): the curve's own number, `L − d` over
+    /// that one column (the radius kernel's), the interval its energy's equation is integrated
+    /// over.  A magnitude, degree 1.
+    CurveLength,
+    /// **An energy's term** (`k minimizes …`, #121, #144): one integral along a free curve with a
+    /// coefficient.  The terms over one curve are its energy, compiled into its definition
+    /// (`Sketch::settle_variational`), whose shape is the solution of its Euler–Lagrange
+    /// equation (`extremal.rs`).  It compiles no row, but the first of a curve's terms carries
+    /// one where nothing holds the curve's length: transversality, `H = 0` at the end — the
+    /// energy stationary in the length too.  Its kernel is built from the curve.
     Stationary,
     ParallelDistance,
     EqualLength,
@@ -316,7 +315,7 @@ pub const ALL_KINDS: [CKind; 65] = [
     CKind::PlaneDistance,
     CKind::DragSeen,
     CKind::SplineLength,
-    CKind::SplineGauge,
+    CKind::CurveLength,
     CKind::Stationary,
 ];
 
@@ -668,8 +667,9 @@ pub fn prefix_op(word: &str, on: EntKind) -> Option<CKind> {
         ("radius", Circle | Arc) => CKind::Radius,
         // an arc's length along itself: the other way a round thing is dimensioned
         ("length", Arc) => CKind::ArcLength,
-        // and a spline's, along the whole of it
+        // and a spline's, along the whole of it, and a free curve's, its own
         ("length", Spline) => CKind::SplineLength,
+        ("length", EntKind::Curve) => CKind::CurveLength,
         ("distance", Line) => CKind::Distance,
         _ => return None,
     })
@@ -929,7 +929,7 @@ impl CKind {
             CKind::EqualAngle => "EqualAngle",
             CKind::ArcLength => "ArcLength",
             CKind::SplineLength => "SplineLength",
-            CKind::SplineGauge => "SplineGauge",
+            CKind::CurveLength => "CurveLength",
             CKind::Stationary => "Stationary",
             CKind::ParallelDistance => "ParallelDistance",
             CKind::EqualLength => "EqualLength",
@@ -1053,9 +1053,9 @@ impl CKind {
             ],
             CKind::ArcLength => &[("arc", S::Arc), ("l", S::Length)],
             CKind::SplineLength => &[("spline", S::Spline), ("l", S::Length)],
-            CKind::SplineGauge => &[("spline", S::Spline), ("span", S::Int)],
+            CKind::CurveLength => &[("curve", S::Curve), ("l", S::Length)],
             CKind::Stationary => &[
-                ("spline", S::Spline),
+                ("curve", S::Curve),
                 ("weight", S::Float),
                 ("integrand", S::Str),
                 ("degree", S::Int),
@@ -1257,7 +1257,7 @@ impl CKind {
             // another angle rather than as a number
             CKind::EqualAngle => ("angle", Infix),
             CKind::Radius => ("radius", Prefix),
-            CKind::ArcLength | CKind::SplineLength => ("length", Prefix),
+            CKind::ArcLength | CKind::SplineLength | CKind::CurveLength => ("length", Prefix),
             CKind::Coincident => ("coincident", Infix),
             CKind::Midpoint => ("midpoint", Infix),
             CKind::Parallel => ("parallel", Infix),
@@ -1289,8 +1289,7 @@ impl CKind {
             CKind::DragTarget
             | CKind::DragSeen
             | CKind::Lift
-            // a free curve's own algebra, and an energy, which is a statement of its own
-            | CKind::SplineGauge
+            // an energy, which is a statement of its own
             | CKind::Stationary
             // an axis's own algebra
             | CKind::AxisUnit
@@ -1461,6 +1460,7 @@ impl CKind {
                 | CKind::LineLine3
                 | CKind::ArcLength
                 | CKind::SplineLength
+                | CKind::CurveLength
         )
     }
 
@@ -1472,7 +1472,7 @@ impl CKind {
     /// names the entity and which holds the parameter along it.  Read off the spec, so a new
     /// kind of contact is covered by declaring one — there is no table of kinds here to forget
     /// to extend.
-    fn contact_on(self, of: SpecKind) -> Option<(usize, usize)> {
+    pub(crate) fn contact_on(self, of: SpecKind) -> Option<(usize, usize)> {
         let spec = self.spec();
         let e = spec.iter().position(|&(_, k)| k == of)?;
         let t = spec.iter().position(|&(_, k)| k.is_param())?;
@@ -1541,7 +1541,7 @@ impl CKind {
             | CKind::EqualAngle
             | CKind::ArcLength
             | CKind::SplineLength
-            | CKind::SplineGauge
+            | CKind::CurveLength
             | CKind::Stationary
             | CKind::ParallelDistance
             | CKind::EqualLength
@@ -1636,8 +1636,8 @@ impl CKind {
                 panic!("a curve contact's kernel belongs to its definition, not its type")
             }
             CKind::SplineLength => panic!("a spline length's kernel belongs to its spline's count"),
-            CKind::Stationary => panic!("an energy's kernel belongs to its group"),
-            CKind::SplineGauge => K::SplineGauge,
+            CKind::Stationary => panic!("an energy's kernel belongs to its curve"),
+            CKind::CurveLength => K::Radius,
             CKind::Coincident => K::Coincident,
             CKind::Distance => K::Distance,
             CKind::Midpoint => K::Midpoint,
@@ -1742,7 +1742,8 @@ impl CKind {
             CKind::ArcLength => K::ArcLengthFree,
             // its free twin is built beside it, at the spline's count (`KernelKey::SplineLength`)
             CKind::SplineLength => return None,
-            CKind::SplineGauge | CKind::Stationary => return None,
+            CKind::CurveLength => K::RadiusFree,
+            CKind::Stationary => return None,
             CKind::ParallelDistance => K::ParallelDistanceFree,
             CKind::PointLineDistance => K::PointLineDistanceFree,
             CKind::AnnularDistance => K::AnnularDistanceFree,
@@ -2259,11 +2260,13 @@ impl Constraint {
     }
 
     /// Rows this constraint compiles to, when the sketch is at hand: `n_residuals` for every kind
-    /// whose rows are a fact about it, and an energy's — one per coordinate its group varies,
-    /// carried by the group's first constraint (`variational.rs`).
+    /// whose rows are a fact about it; an energy's — its curve's length stationary, one row on its
+    /// first statement where nothing holds the length — and a peg's, none (`variational.rs`).
     pub fn rows_in(&self, sk: &Sketch) -> usize {
         match self.kind {
             CKind::Stationary => crate::variational::rows(sk, self.id),
+            // a held point a free curve passes is its problem's, not a row of the drawing's
+            CKind::PointOnCurve if sk.is_peg(self.id) => 0,
             _ => self.n_residuals(),
         }
     }
@@ -2384,7 +2387,7 @@ impl Constraint {
         match self.kind.family_kernel() {
             Some(fk) => fk.n_res(),
             None if self.kind == CKind::SplineLength => 1,
-            // its group's, which only the sketch can say: `rows_in`
+            // its curve's, which only the sketch can say: `rows_in`
             None if self.kind == CKind::Stationary => 0,
             None => kernels::kernel(self.kernel()).n_res,
         }
@@ -2531,18 +2534,6 @@ impl Constraint {
     }
 
     fn own_consts_on(&self, sk: &Sketch, span: Option<usize>) -> Vec<f64> {
-        // the two spans' nodes, over a five-point spline of their own: their knots' window and
-        // their points' weights
-        if self.kind == CKind::SplineGauge {
-            let sp = &sk.splines[self.args[0].ent().i()];
-            let s = self.args[1].num() as usize;
-            let d = crate::curve::DEGREE;
-            let w: Option<Vec<f64>> = sp.weights.as_ref().map(|w| w[s - d..=s + 1].to_vec());
-            let nodes = crate::integral::nodes(&sp.knots[s - d..=s + d + 2], w.as_deref(), d + 2);
-            let mut k = Vec::with_capacity(kernels::GAUGE_CONST);
-            crate::integral::write_nodes(&nodes, 2 * crate::integral::PER_SPAN, &mut k);
-            return k;
-        }
         if self.kind == CKind::Stationary {
             return crate::variational::pack(sk, self.id);
         }
@@ -2624,6 +2615,10 @@ impl Constraint {
                 // a generated profile carries the roll its root is chosen at, then the
                 // numbers its motion was given, then its tool and motion
                 crate::model::CurveBody::Envelope(g) => g.contact_consts(sk, curve.i()),
+                // a free curve's problem: its Lagrangian and where its pegs are
+                crate::model::CurveBody::Extremal(x) => {
+                    sk.extremal_consts(curve.i()).unwrap_or_else(|| vec![0.0; x.n_const()])
+                }
             };
             // a point in space reads the curve's plane first: its basis in space, `u`, `v`, `o`
             if self.kind == CKind::PointOnExtrusion {
@@ -2660,7 +2655,7 @@ impl Constraint {
             CKind::Angle => vec![self.sense() * self.args[2].num()],
             // the sign the second pair's angle is read with: `sense: cw` is its mirror image
             CKind::EqualAngle => vec![self.sense()],
-            CKind::ArcLength => vec![self.args[1].num()],
+            CKind::ArcLength | CKind::CurveLength => vec![self.args[1].num()],
             CKind::AnnularDistance => vec![self.args[2].num()],
             CKind::Radius => vec![self.args[1].num()],
             // the word times the radius: the centre stands off the line on the side it names
@@ -2932,12 +2927,8 @@ impl Constraint {
             CKind::EqualAngle => [ln(0), ln(1), ln(2), ln(3)].concat(),
             // every control point: the length reads the whole curve
             CKind::SplineLength => sk.entity_params(e(0)),
-            // the five control points two neighbouring spans read
-            CKind::SplineGauge => {
-                let s = self.args[1].num() as usize;
-                let ctrl = &sk.splines[e(0).i()].ctrl;
-                ctrl[s - crate::curve::DEGREE..=s + 1].iter().flat_map(|&p| pt_at(p)).collect()
-            }
+            // the curve's own number
+            CKind::CurveLength => sk.curves[e(0).i()].length.into_iter().collect(),
             CKind::Stationary => crate::variational::columns(sk, self.id),
             // the centre, the two ends and the radius: the sweep is read off the ends, the
             // length is the radius times it
@@ -3280,6 +3271,11 @@ pub fn seed_param(sk: &Sketch, kind: CKind, args: &[Arg], i: usize) -> f64 {
             let (cx, cy) = sk.point_xy(sk.round_center(args[1].ent()));
             sk.curve_nearest_by(args[0].ent().i(), |px, py| (px - cx).dhypot(py - cy))
         }
+        // a point on a curve starts where the curve passes nearest it
+        (CKind::PointOnCurve, 2) => {
+            let (x, y) = sk.point_xy(args[0].ent().i());
+            sk.curve_nearest_by(args[1].ent().i(), |px, py| (px - x).dhypot(py - y))
+        }
         // an osculating circle sits centred a radius off the curve, so the curve point nearest
         // the centre it already has is the place it is asking about
         (CKind::SplineCurvature, 2) => {
@@ -3618,7 +3614,7 @@ pub fn param_scale(sk: &Sketch, kind: CKind, args: &[Arg], i: usize) -> f64 {
     // Whichever family the contact runs along, the question is the same one, so it is asked once
     // and answered by the entity the slot actually names.  A hidden unknown that runs along
     // nothing is a length already.
-    match kind.contact_slots() {
+    match kind.contact_slots().or_else(|| kind.contact_on(SpecKind::Curve)) {
         Some((e, t)) if t == i => contact_speed(sk, args[e].ent()),
         _ => 1.0,
     }
@@ -3628,7 +3624,11 @@ pub fn param_scale(sk: &Sketch, kind: CKind, args: &[Arg], i: usize) -> f64 {
 /// — the one answer, so the seed `Sketch::add` records and the scale `System::new` compiles
 /// against cannot come from two different rules.
 pub fn contact_speed(sk: &Sketch, e: EntRef) -> f64 {
-    crate::curve::speed(sk, e.i())
+    match e.kind {
+        // a free curve runs over [0, 1] at its length's speed; another curve's parameter is its own
+        EntKind::Curve => sk.curves[e.i()].length.map_or(1.0, |l| sk.params[l as usize].value.abs().max(1e-9)),
+        _ => crate::curve::speed(sk, e.i()),
+    }
 }
 
 fn same_args(a: &Constraint, b: &Constraint, swap: bool, want: impl Fn(SpecKind) -> bool)

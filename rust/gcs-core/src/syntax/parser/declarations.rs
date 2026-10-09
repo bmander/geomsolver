@@ -124,11 +124,14 @@ impl<'a> P<'a> {
         let head = || decl_head(kind, &name);
         if kind == EntKind::Motion { return self.motion_decl(name); }
         if kind == EntKind::Envelope { return self.envelope_decl(name); }
-        // a curve is what `over` makes a definition's value: `k := leg.toe over u in (a, b)`
-        if kind == EntKind::Curve {
+        // a curve is what `over` makes a definition's value, `k := leg.toe over u in (a, b)` — or,
+        // with the two points it runs between, a free curve whose shape its energy states
+        // (`rope := curve(a, b)`, #144), read as any declaration's brackets are
+        if kind == EntKind::Curve && self.peek() != Some(&Tok::P('(')) {
             self.fail(
-                "a curve is `name := instance.point over formal in (a, b)`, or \
-                 `name := Component(args).point over formal in (a, b)`",
+                "a curve is `name := instance.point over formal in (a, b)`, \
+                 `name := Component(args).point over formal in (a, b)`, or a free curve between \
+                 two points, `name := curve(a, b)`",
             );
             return None;
         }

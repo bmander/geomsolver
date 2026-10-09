@@ -1465,8 +1465,9 @@ test('an energy is told what its stationary curve is', () => {
   assert.equal(x.verdict, 'minimum');
   assert.ok(x.asked);
   assert.ok(io.describe(x.constraint).endsWith(' minimizes integral(p.y over p)'), io.describe(x.constraint));
-  // its rows are its group's, as wide as the curve: the binding asks the core, not a table
-  assert.equal(x.constraint.nResiduals, 28);
+  // the rope's shape is solved inside it and its length is held, so the energy compiles no row:
+  // the binding asks the core, not a table
+  assert.equal(x.constraint.nResiduals, 0);
   sk.dispose();
 });
 

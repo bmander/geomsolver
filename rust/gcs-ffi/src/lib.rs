@@ -1576,7 +1576,8 @@ pub unsafe extern "C" fn gcs_constraint_widths(h: *mut Sketch, id: i32, out: *mu
         let s = sk(h);
         let Some(c) = s.constraint(id as u32) else { return 0 };
         let k = c.kernel_in(s);
-        *out = k.n_res as i32;
+        // the rows it compiles: an energy's or a peg's may be none, whatever its kernel's width
+        *out = c.rows_in(s) as i32;
         *out.add(1) = k.n_par as i32;
         2
     })
@@ -1615,12 +1616,14 @@ pub unsafe extern "C" fn gcs_constraint_eval(
         let Some(c) = s.constraint(id as u32) else { return 0 };
         let k = c.kernel_in(s);
         let vals = std::slice::from_raw_parts(v, k.n_par);
+        // as many rows as it compiles (`gcs_constraint_widths`), which the caller sized for
+        let rows = c.rows_in(s).min(k.n_res);
         let r = c.residual(s, vals);
         let j = c.jacobian(s, vals);
-        for (i, x) in r.iter().enumerate() {
+        for (i, x) in r.iter().take(rows).enumerate() {
             *r_out.add(i) = *x;
         }
-        for (i, x) in j.iter().enumerate() {
+        for (i, x) in j.iter().take(rows * k.n_par).enumerate() {
             *j_out.add(i) = *x;
         }
         k.n_par as i32

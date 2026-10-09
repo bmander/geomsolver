@@ -59,6 +59,68 @@ fn shown(sk: &Sketch, d: &Decl) -> String {
         Some(n) => n.text.clone(),
     }
 }
+/// **A free curve** (#144), `rope := curve(a, b)`: from its first point to its second, its shape
+/// the drawing's to find — the solution of the energy stated over it (`extremal.rs`), until one is
+/// stated a curve of no shape.  It owns one number, its length, seeded a gentle sag over the chord
+/// (a `length` row holds it, or the energy's stationarity in it sets it).
+fn build_free_curve(sk: &mut Sketch, res: &Resolver, d: &Decl, st: &Stmt, diags: &mut Vec<Diag>) -> Option<EntRef> {
+    let err = |diags: &mut Vec<Diag>, code, span, message: String| {
+        diags.push(Diag { code, span, stmt: Some(st.id), message });
+        None
+    };
+    let mut ends = Vec::with_capacity(2);
+    for kid in d.children.iter().flatten() {
+        let Kid::Ref(r) = kid else {
+            return err(diags, Code::E040, st.span, "a free curve runs between two points it names, `curve(a, b)`".into());
+        };
+        let Some(e) = res.lookup(r) else {
+            return err(diags, Code::E101, r.span, format!("no such entity: `{}`", r.root.text));
+        };
+        let e = match follow_building(sk, res, e, r) {
+            Ok(e) => e,
+            Err(msg) => return err(diags, Code::E040, r.span, msg),
+        };
+        if e.kind != EntKind::Point {
+            return err(diags, Code::E040, r.span, format!("`{}` is {}, and a free curve runs between points", r.root.text, e.kind.a()));
+        }
+        ends.push(EntRef::point(e.i()));
+    }
+    if ends.len() != 2 {
+        return err(
+            diags,
+            Code::E103,
+            st.span,
+            format!("a free curve runs between two points, `curve(a, b)`, and {} were given", ends.len()),
+        );
+    }
+    let (a, b) = (sk.point_xy(ends[0].i()), sk.point_xy(ends[1].i()));
+    // a gentle sag over the chord, until `Sketch::seed_extremals` seeds it once the ends are placed
+    let chord = (b.0 - a.0).dhypot(b.1 - a.1);
+    let length = sk.param((crate::extremal::shoot::EASY * chord).max(1.0), false, &format!("{}.length", shown(sk, d))) as u32;
+    let def = match sk.curve_defs.iter().position(|c| c.name == "extremal:") {
+        Some(k) => k,
+        None => {
+            sk.curve_defs.push(crate::model::extremal_def("extremal:".into(), None, 0));
+            sk.curve_defs.len() - 1
+        }
+    };
+    sk.curves.push(crate::model::CurveE {
+        def: def as u32,
+        args: ends,
+        unknowns: Vec::new(),
+        values: Vec::new(),
+        domain: (0.0, 1.0),
+        home: crate::model::Home::At(0.0),
+        pose: Vec::new(),
+        class: d.class.clone(),
+        trim: None,
+        extrusion: false,
+        length: Some(length),
+        pegs: Vec::new(),
+    });
+    Some(EntRef::new(EntKind::Curve, sk.curves.len() - 1))
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(super) fn build(
     sk: &mut Sketch,
@@ -74,6 +136,9 @@ pub(super) fn build(
     // a curve is the one kind whose arguments need not be points, so it is built before the
     // walk that insists they are
     if d.kind == EntKind::Curve {
+        if d.curve.is_none() {
+            return build_free_curve(sk, res, d, st, diags);
+        }
         return build_curve(sk, res, d, st, diags, prog, insts);
     }
     // and a plane's are two axes, and its origin is its own
@@ -317,28 +382,8 @@ pub(super) fn build(
                 });
                 return None;
             }
-            // **a free curve** (#121): two ends written and nothing between, so its interior is
-            // minted — on the chord for now, bowed where an energy is over it once the drawing is
-            // stated (`variational::seed_free`)
-            let free = kids.len() == 2 && d.knots.is_none() && d.weights.is_none();
-            if free {
-                let (a, b) = (sk.point_xy(kids[0]), sk.point_xy(kids[1]));
-                let n = crate::variational::FREE_CTRL;
-                let base = shown(sk, d);
-                let inner: Vec<usize> = (1..n - 1)
-                    .map(|i| {
-                        let u = i as f64 / (n - 1) as f64;
-                        let p = (a.0 + u * (b.0 - a.0), a.1 + u * (b.1 - a.1));
-                        sk.point(p.0, p.1, false, &format!("{base}.k{i}"))
-                    })
-                    .collect();
-                kids.splice(1..1, inner);
-            }
             match sk.spline_weighted(&kids, d.knots.clone(), d.weights.clone()) {
-                Some(si) => {
-                    sk.splines[si].free = free;
-                    si
-                }
+                Some(si) => si,
                 None => {
                     let message = if d.weights.as_ref().is_some_and(|w| !curve::weights_valid(w, kids.len())) {
                         format!("a curve's weights are one per control point ({}), each a positive number", kids.len())
@@ -558,7 +603,8 @@ pub(super) fn places(sk: &mut Sketch, deferred: &[Deferred], diags: &mut Vec<Dia
 pub(super) fn drawn_in_planes(sk: &Sketch, map: &super::SourceMap, diags: &mut Vec<Diag>) {
     let curves = (0..sk.circles.len()).map(EntRef::circle)
         .chain((0..sk.arcs.len()).map(EntRef::arc))
-        .chain((0..sk.splines.len()).map(EntRef::spline));
+        .chain((0..sk.splines.len()).map(EntRef::spline))
+        .chain((0..sk.curves.len()).filter(|&i| sk.curve_extremal(i)).map(|i| EntRef::new(EntKind::Curve, i)));
     for e in curves {
         let Some(&p) = sk.children(e).iter().find(|k| sk.plane_of(k.i()).is_none()) else { continue };
         let Some(site) = map.site_of(e) else { continue };
@@ -569,7 +615,12 @@ pub(super) fn drawn_in_planes(sk: &Sketch, map: &super::SourceMap, diags: &mut V
             stmt: Some(site.stmt),
             message: format!(
                 "{} is drawn in a plane, and `{}` stands in space: draw it `in` one",
-                match e.kind { EntKind::Arc => "an arc", EntKind::Circle => "a circle", _ => "a spline" },
+                match e.kind {
+                    EntKind::Arc => "an arc",
+                    EntKind::Circle => "a circle",
+                    EntKind::Curve => "a free curve",
+                    _ => "a spline",
+                },
                 who(p)
             ),
         });

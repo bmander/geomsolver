@@ -804,5 +804,7 @@ fn curve_entity(
         class: d.class.clone(),
         trim: None,
         extrusion: false,
+        length: None,
+        pegs: Vec::new(),
     }))
 }

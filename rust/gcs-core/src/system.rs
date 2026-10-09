@@ -493,11 +493,11 @@ pub fn build_kernel(sk: &Sketch, key: KernelKey) -> Kernel {
                 crate::model::CurveBody::Envelope(g) => {
                     (2 + d.values.len() + g.flat.len(), kernels::ENVELOPE, true)
                 }
+                crate::model::CurveBody::Extremal(x) => (x.n_const(), kernels::EXTREMAL, true),
             };
             match (FamilyKernel::ALL[fk as usize], body) {
-                (FamilyKernel::Contact, kernels::TRACE) => kernels::trace_kernel(n_theta, n_const),
-                (FamilyKernel::Contact, kernels::ENVELOPE) => kernels::envelope_kernel(n_theta, n_const),
-                (FamilyKernel::Contact, _) => kernels::curve_kernel(n_theta, n_const),
+                (FamilyKernel::Contact, kernels::FORMULA) => kernels::curve_kernel(n_theta, n_const),
+                (FamilyKernel::Contact, _) => kernels::point_on_body_kernel(n_theta, n_const, body),
                 (FamilyKernel::Tangent, _) => kernels::curve_tangent_kernel(n_theta, n_const, body),
                 (FamilyKernel::Curvature, _) => {
                     kernels::curve_curvature_kernel(n_theta, n_const, body, formed)
@@ -545,7 +545,7 @@ impl System {
         let mut speed: BTreeMap<EntRef, f64> = BTreeMap::new();
         let mut scale_of: BTreeMap<u32, f64> = BTreeMap::new();
         for c in &sk.constraints {
-            if let Some((e, t)) = c.parametric_contact() {
+            if let Some((e, t)) = c.parametric_contact().or_else(|| c.family_contact()) {
                 let v = *speed
                     .entry(e)
                     .or_insert_with(|| crate::constraints::contact_speed(sk, e));

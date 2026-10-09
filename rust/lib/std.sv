@@ -65,7 +65,7 @@ a turned(theta) b := {
 }
 
 // A rope hanging (#121): a curve `L` long that makes its height, integrated along it, least —
-// `hangs(L: 150mm) rope` of a free curve `rope := spline(a, b)`.  The view's down is the way it
+// `hangs(L: 150mm) rope` of a free curve `rope := curve(a, b)`.  The view's down is the way it
 // falls.  What it comes to is the catenary, which nothing here says.
 hangs(L) k := {
   length(L) k
