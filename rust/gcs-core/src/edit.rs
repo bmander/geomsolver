@@ -518,17 +518,11 @@ pub fn mint(prog: &Program, kind: EntKind) -> String {
     next_name(&mut taken_names(prog), kind)
 }
 
-/// Every name a declaration in the program already binds — component bodies included, and the
-/// `#a…` keys anonymous declarations carry among them.  What "already spoken for" means, said
+/// Every name a statement in the program already binds — declarations, values, instances and
+/// groups, component bodies included, and the `#a…` keys anonymous declarations carry among them.  What "already spoken for" means, said
 /// once, beside the loop that consumes it.
 fn taken_names(prog: &Program) -> std::collections::BTreeSet<String> {
-    prog.stmts()
-        .filter_map(|s| match &s.kind {
-            StmtKind::Decl(d) => Some(d.name.key().text.clone()),
-            StmtKind::Chain(c) => Some(c.name.key().text.clone()),
-            _ => None,
-        })
-        .collect()
+    prog.stmts().filter_map(|s| s.kind.bound_name().map(|n| n.text.clone())).collect()
 }
 
 /// The next name `taken` does not hold, in the kind's own alphabet — and now taken.  The one
@@ -546,17 +540,22 @@ fn next_name(taken: &mut std::collections::BTreeSet<String>, kind: EntKind) -> S
 
 /// Append one statement, whatever it is.
 fn append(prog: &Program, kind: StmtKind, names: Vec<String>) -> Edit {
+    match appended(prog, &[kind]) {
+        Ok((text, _)) => Edit { text, kind: Kind::Structural, names, refused: None },
+        Err(e) => Edit::none(prog, Some(e)),
+    }
+}
+
+/// The text with statements appended, one splice, and where in it they went.
+fn appended(prog: &Program, stmts: &[StmtKind]) -> Result<(String, Span), String> {
     let (at, lead) = append_at(prog);
-    let mut line = lead;
-    if let Err(e) = syntax::write_stmt_to(&mut line, &kind) {
-        return Edit::none(prog, Some(e.to_string()));
+    let mut with = lead;
+    for (i, k) in stmts.iter().enumerate() {
+        if i > 0 { with.push('\n'); }
+        syntax::write_stmt_to(&mut with, k).map_err(|e| e.to_string())?;
     }
-    Edit {
-        text: splice(prog.text(), vec![Splice { at, with: line }]),
-        kind: Kind::Structural,
-        names,
-        refused: None,
-    }
+    let span = Span::new(at.lo as usize, at.lo as usize + with.len());
+    Ok((splice(prog.text(), vec![Splice { at, with }]), span))
 }
 
 /// `use NAME`, so the document reaches a module it did not — the workspace adds `use std` when
@@ -694,45 +693,57 @@ fn add_entity_with(
     if kind == EntKind::Point || kind == EntKind::Curve {
         return Edit::none(prog, Some(format!("{} is not built this way", kind.a())));
     }
-    let name = match name {
-        Some(n) if taken_names(prog).contains(n) => {
-            return Edit::none(prog, Some(format!("`{n}` is already a name in this document")));
-        }
-        Some(n) if !crate::syntax::is_name(n) => {
-            return Edit::none(prog, Some(format!("`{n}` is not a name a statement can say")));
-        }
-        Some(n) => n.to_string(),
-        None => mint(prog, kind),
+    let name = match chosen_name(&mut taken_names(prog), name, kind) {
+        Ok(n) => n,
+        Err(e) => return Edit::none(prog, Some(e)),
     };
     let mut children: Vec<Vec<syntax::Kid>> = Vec::new();
     let mut taken = 0usize;
     for (_, f) in kind.fields() {
         match f {
             crate::model::Field::Child => {
-                children.push(
-                    args.get(taken)
-                        .map(|a| vec![syntax::Kid::Ref(syntax::Ref::new(a.clone()))])
-                        .unwrap_or_default(),
-                );
+                children.push(refs(args.get(taken)));
                 taken += 1;
             }
             crate::model::Field::List => {
-                children.push(
-                    args[taken.min(args.len())..]
-                        .iter()
-                        .map(|a| syntax::Kid::Ref(syntax::Ref::new(a.clone())))
-                        .collect(),
-                );
+                children.push(refs(&args[taken.min(args.len())..]));
                 taken = args.len();
             }
             crate::model::Field::Scalar => {}
         }
     }
+    let d = gesture_decl(kind, &name, children, seed);
+    append(prog, StmtKind::Decl(d), vec![name])
+}
+
+/// The name a gesture asked for, or a fresh one: a name already spoken for, or one no statement
+/// can say, is refused rather than silently changed, since the caller is about to refer to it.
+fn chosen_name(
+    taken: &mut std::collections::BTreeSet<String>,
+    name: Option<&str>,
+    kind: EntKind,
+) -> Result<String, String> {
+    match name {
+        Some(n) if taken.contains(n) => Err(format!("`{n}` is already a name in this document")),
+        Some(n) if !crate::syntax::is_name(n) => {
+            Err(format!("`{n}` is not a name a statement can say"))
+        }
+        Some(n) => {
+            taken.insert(n.to_string());
+            Ok(n.to_string())
+        }
+        None => Ok(next_name(taken, kind)),
+    }
+}
+
+/// A declaration as a gesture writes it: a name, what it is made of, the seeds of its scalars,
+/// and nothing a person adds by hand.
+fn gesture_decl(kind: EntKind, name: &str, children: Vec<Vec<syntax::Kid>>, seed: &[f64]) -> Decl {
     let n_scalar = kind.fields().iter().filter(|(_, f)| *f == crate::model::Field::Scalar).count();
-    let d = Decl {
+    Decl {
         annotations: Default::default(),
         kind,
-        name: syntax::DeclName::Written(syntax::Name::new(name.clone())),
+        name: syntax::DeclName::Written(syntax::Name::new(name)),
         children,
         seed: (0..n_scalar).map(|i| seed.get(i).copied().unwrap_or(0.0)).collect(),
         seed_text: vec![None; n_scalar],
@@ -746,15 +757,142 @@ fn add_entity_with(
         class_span: Span::default(),
         seed_at: None,
         seed_names: Vec::new(),
-        // a gesture never draws a solid: the sheet is where the drawing is, and a solid is
-        // written over what is drawn there
         sweep: None, motion: None, angular_span: None,
         membership: Default::default(),
         list_span: Span::default(),
         close: None,
         mint_close: None,
+    }
+}
+
+fn refs<S: ToString>(names: impl IntoIterator<Item = S>) -> Vec<syntax::Kid> {
+    names.into_iter().map(|n| syntax::Kid::Ref(syntax::Ref::new(n.to_string()))).collect()
+}
+
+/// Append several statements as one splice, then hold the result to the elaborator: the edit is
+/// refused, with the elaborator's words, when anything it appended is an error.  An error
+/// elsewhere in the document was there before the gesture and is not its fault.
+fn append_checked(prog: &Program, stmts: &[StmtKind], names: Vec<String>) -> Result<Edit, String> {
+    let (text, ours) = appended(prog, stmts)?;
+    let (mut next, errs) = syntax::parse(&text);
+    if let Some(e) = errs.iter().find(|e| ours.contains(e.span.lo)) {
+        return Err(e.message.clone());
+    }
+    crate::modules::relink(&mut next, prog);
+    let e = crate::program::elaborate(&next);
+    let in_ours = |d: &crate::program::Diag| {
+        ours.contains(d.span.lo) || d.stmt.is_some_and(|id| {
+            next.stmts().find(|s| s.id == id).is_some_and(|s| ours.contains(s.span.lo))
+        })
     };
-    append(prog, StmtKind::Decl(d), vec![name])
+    let refused = e.errors().find(|d| in_ours(d)).map(|d| d.message.clone());
+    match refused {
+        Some(why) => Err(why),
+        None => Ok(Edit { text, kind: Kind::Structural, names, refused: None }),
+    }
+}
+
+/// A face bounded by drawn edges, `edges` in walk order, with holes.  A hole that is one circle
+/// is named as it stands; any other loop is written first as a face of its own (`f1 :=
+/// face(e, f, g, h)`), since a face is a hole as it stands (§6.8).  `names` is the face, then
+/// each hole face written for it.
+pub fn add_face(
+    prog: &Program,
+    edges: &[String],
+    holes: &[Vec<String>],
+    name: Option<&str>,
+) -> Edit {
+    face_edit(prog, edges, holes, name).unwrap_or_else(|e| Edit::none(prog, Some(e)))
+}
+
+fn face_edit(
+    prog: &Program,
+    edges: &[String],
+    holes: &[Vec<String>],
+    name: Option<&str>,
+) -> Result<Edit, String> {
+    if edges.is_empty() || holes.iter().any(Vec::is_empty) {
+        return Err("a face and each of its holes name the edges they are bounded by".into());
+    }
+    let mut taken = taken_names(prog);
+    let face = chosen_name(&mut taken, name, EntKind::Face)?;
+    let mut stmts = Vec::new();
+    let mut names = vec![face.clone()];
+    let mut hole_refs = Vec::new();
+    for hole in holes {
+        // a lone edge is a whole loop — a circle, a closed curve — and a hole as it stands
+        if hole.len() == 1 {
+            hole_refs.push(hole[0].clone());
+            continue;
+        }
+        let h = next_name(&mut taken, EntKind::Face);
+        stmts.push(StmtKind::Decl(gesture_decl(EntKind::Face, &h, vec![refs(hole)], &[])));
+        names.push(h.clone());
+        hole_refs.push(h);
+    }
+    let d = gesture_decl(EntKind::Face, &face, vec![refs(edges), refs(&hole_refs), Vec::new()], &[]);
+    stmts.push(StmtKind::Decl(d));
+    append_checked(prog, &stmts, names)
+}
+
+/// How a gesture sweeps a face: along its normal (`depth`, or `from` and `to`), through a body,
+/// or turned `about` a line (`sweep` and `sense` beside it).  Extents are the text written —
+/// `"20"`, `"20mm"`, `"90deg"` — so a document without a `unit` stays without one.
+#[derive(Clone, Debug, Default)]
+pub struct SolidSweep {
+    pub depth: Option<String>,
+    pub from: Option<String>,
+    pub to: Option<String>,
+    pub through: Option<String>,
+    pub about: Option<String>,
+    pub sweep: Option<String>,
+    pub sense: Option<syntax::Sense>,
+}
+
+/// A solid swept from `face`: `b0 := solid(f0, depth: 20)`.  A mixture of sweeps is refused in
+/// the parser's own words (`sweep_of`), and a sweep the elaborator refuses (E080, E081) in its.
+pub fn add_solid(prog: &Program, face: &str, how: &SolidSweep, name: Option<&str>) -> Edit {
+    solid_edit(prog, face, how, name).unwrap_or_else(|e| Edit::none(prog, Some(e)))
+}
+
+fn solid_edit(prog: &Program, face: &str, how: &SolidSweep, name: Option<&str>) -> Result<Edit, String> {
+    let dim = |t: &Option<String>| {
+        t.as_ref().map(|text| syntax::Arg::Dim { text: text.clone(), span: Span::default() })
+    };
+    let reference = |t: &Option<String>| t.as_ref().map(|n| syntax::Ref::new(n.clone()));
+    let parts = syntax::SweepParts {
+        from: dim(&how.from),
+        to: dim(&how.to),
+        depth: dim(&how.depth),
+        about: reference(&how.about),
+        through: reference(&how.through),
+        sweep: dim(&how.sweep),
+        sense: how.sense,
+        ..Default::default()
+    };
+    let sweep = match syntax::sweep_of(parts)? {
+        syntax::Sweep::Body => {
+            return Err("a solid swept from a face says how: `depth:`, `from:`/`to:`, `through:` \
+                        or `about:`".into());
+        }
+        s => s,
+    };
+    let name = chosen_name(&mut taken_names(prog), name, EntKind::Solid)?;
+    let mut d = gesture_decl(EntKind::Solid, &name, vec![refs([face])], &[]);
+    d.sweep = Some(sweep);
+    append_checked(prog, &[StmtKind::Decl(d)], vec![name])
+}
+
+/// `what union body`, `what cut body`, `what bound body` — the body rule, one statement (§6.9).
+pub fn add_body_word(prog: &Program, word: syntax::BodyWord, what: &str, body: &str) -> Edit {
+    let rel = syntax::SolidRel {
+        word,
+        what: syntax::Ref::new(what.to_string()),
+        body: syntax::Ref::new(body.to_string()),
+        span: Span::default(),
+    };
+    append_checked(prog, &[StmtKind::SolidRel(rel)], Vec::new())
+        .unwrap_or_else(|e| Edit::none(prog, Some(e)))
 }
 
 /// One constraint, written the way the registry names it.
@@ -1002,6 +1140,15 @@ fn mentions(st: &Stmt, names: &std::collections::BTreeSet<String>) -> Vec<String
                     }
                 }
             }
+            // a solid goes with what it is swept about, through, along or under
+            if let Some(r) = d.sweep.as_ref().and_then(syntax::Sweep::reference) {
+                look(r);
+            }
+        }
+        // the body rule goes with either solid it names
+        StmtKind::SolidRel(rel) => {
+            look(&rel.what);
+            look(&rel.body);
         }
         // an energy goes with the curve it is over (#121)
         StmtKind::Minimize(m) => look(&m.curve),
@@ -1033,7 +1180,16 @@ fn mentions(st: &Stmt, names: &std::collections::BTreeSet<String>) -> Vec<String
                 }
             }
         }
-        _ => {}
+        // a view or a section of a solid goes with it, and with the plane it is drawn in
+        StmtKind::Derived(dv) => {
+            look(&dv.solid);
+            look(&dv.plane);
+            if let Some(at) = &dv.at {
+                look(at);
+            }
+        }
+        StmtKind::Branch(_) | StmtKind::Instance(_) | StmtKind::Param(_) | StmtKind::Block(_)
+        | StmtKind::Style(_) | StmtKind::ClaimOver(_) | StmtKind::Unit(_) => {}
     }
     hit
 }

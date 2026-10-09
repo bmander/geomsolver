@@ -15,7 +15,7 @@
  * column.
  */
 import { Constraint } from './constraints.js';
-import { Kind, KINDS, Primitive, Sketch } from './model.js';
+import { Kind, KINDS, Plane, Primitive, Sketch } from './model.js';
 import { core, lastError, takeJson, takeStr, withJson, withStr } from './wasm.js';
 
 /** Where a statement sits in the program text, plus the line and column the core worked out, so
@@ -51,6 +51,30 @@ export interface SourceMap {
 
 /** What an edit costs. */
 export type EditKind = 'structural' | 'numeric' | 'none';
+
+/** How a face is swept (Solvent §6.9): along its normal (`depth`, or `from` and `to`), through a
+ *  body, or turned `about` a line in its plane. */
+export interface SolidSpec {
+  face: string;
+  name?: string;
+  depth?: string;
+  from?: string;
+  to?: string;
+  through?: string;
+  about?: string;
+  sweep?: string;
+  sense?: 'cw' | 'ccw';
+}
+
+export type BodyWord = 'union' | 'cut' | 'bound';
+
+/** A region of the drawing (`Document.regionAt`): the edges of its outer loop and of each hole in
+ *  walk order, by name, and the rings — outer first — in the plane's own coordinates. */
+export interface Region {
+  outer: string[];
+  holes: string[][];
+  rings: [number, number][][];
+}
 
 /** A proposed new source.  Nothing has happened yet: `text` is what the document would say. */
 export interface Edit {
@@ -325,8 +349,37 @@ export class Document {
     return edit(withJson({ type, args }, (p, n) => core().gcs_elab_add_relation(this.h, p, n)));
   }
 
-  /** Take out the statements that declare these, and every statement that named one. */
-  remove(entities: Iterable<Primitive> = [], constraints: Iterable<Constraint> = []): Edit {
+  /** A face over drawn edges, `edges` in walk order.  A hole that is one circle is named as it
+   *  stands; any other loop is written first as a face of its own, since a face is a hole as it
+   *  stands.  `names` is the face, then each hole face. */
+  addFace(edges: string[], holes: string[][] = [], name?: string): Edit {
+    return edit(withJson({ edges, holes, name }, (p, n) => core().gcs_elab_add_face(this.h, p, n)));
+  }
+
+  /** A solid swept from a face, each extent the text written (`'20'`, `'20mm'`, `'90deg'`). */
+  addSolid(spec: SolidSpec): Edit {
+    return edit(withJson(spec, (p, n) => core().gcs_elab_add_solid(this.h, p, n)));
+  }
+
+  /** The body rule: `what union body`, `what cut body`, `what bound body`. */
+  addBodyWord(word: BodyWord, what: string, body: string): Edit {
+    return edit(
+      withJson({ word, what, body }, (p, n) => core().gcs_elab_add_body_word(this.h, p, n)),
+    );
+  }
+
+  /** The region of the drawing on `plane` (null the page) around `(x, y)` in its coordinates:
+   *  the outer loop's edges and each hole's, by the names a face is written with, and their
+   *  rings to wash — or null where no loop encloses it, or `{ refused }` with the cause. */
+  regionAt(plane: Plane | null, x: number, y: number, unit: number): Region | { refused: string } | null {
+    const i = plane ? plane.index : -1;
+    return takeJson(core().gcs_elab_region_json(this.h, this.sketch.handle, i, x, y, unit));
+  }
+
+  /** Take out the statements that declare these, and every statement that named one.  An entity
+   *  is anything with a `[kind, index]` ref — a proxy, or a solid, which has none. */
+  remove(entities: Iterable<{ ref: readonly [string, number] }> = [],
+         constraints: Iterable<Constraint> = []): Edit {
     const ents = [...entities].map((e) => e.ref);
     const cons = [...constraints].map((c) => c.id);
     return edit(

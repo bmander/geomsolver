@@ -16,7 +16,7 @@ import { COL } from './paint.js';
 import { insertControl } from './edit.js';
 import { cancelTool, toolClick } from './tools.js';
 import { bodyAt, grabBody, grabHandle, handleAt } from './underlay.js';
-import type { SketchView } from './view.js';
+import type { SketchView, SolidPick } from './view.js';
 
 /** One pointer gesture in progress.  `move` gets canvas coordinates; `end` and `paint` are
  *  optional because pan needs neither and the rubber band needs both. */
@@ -168,6 +168,13 @@ export function onPointerDown(v: SketchView, e: PointerEvent): void {
     v.draw();
     return;
   }
+  if (at.kind === 'solid') {
+    v.pickSolid(at.pick, e.shiftKey);
+    v.onSelect();
+    v.onChanged();
+    v.draw();
+    return;
+  }
   v.dropImage();
   const ent = at.kind === 'entity' ? at.ent : null;
   if (!ent) {
@@ -176,9 +183,9 @@ export function onPointerDown(v: SketchView, e: PointerEvent): void {
     if (!e.shiftKey) v.selected = [];
     v.gesture = bandGesture(v, sp);
   } else if (e.shiftKey) {
-    const i = v.selected.indexOf(ent);
-    if (i >= 0) v.selected.splice(i, 1);
-    else v.selected.push(ent);
+    // assigned, never grown in place: the setter is where the other selections are let go
+    v.selected = v.selected.includes(ent)
+      ? v.selected.filter((p) => p !== ent) : [...v.selected, ent];
   } else {
     if (!v.selected.includes(ent)) v.selected = [ent];
     // a point in space stands in no view, so it is dragged **where the eye sees it**: across the
@@ -409,16 +416,20 @@ type Target =
   | { kind: 'handle'; corner: number }
   | { kind: 'callout'; callout: Constraint }
   | { kind: 'entity'; ent: Primitive }
+  | { kind: 'solid'; pick: SolidPick }
   | { kind: 'image' }
   | { kind: 'none' };
 
-function whatIsAt(v: SketchView, sp: [number, number]): Target {
+function whatIsAt(v: SketchView, sp: [number, number], solids = true): Target {
   const corner = handleAt(v, sp);
   if (corner >= 0) return { kind: 'handle', corner };
   const callout = v.pickCallout(sp[0], sp[1]);
   if (callout) return { kind: 'callout', callout };
   const ent = v.pick(sp[0], sp[1]);
   if (ent) return { kind: 'entity', ent };
+  // beneath the drawing: an object's face, where the eye sees it
+  const pick = solids ? v.solidAt(sp[0], sp[1]) : null;
+  if (pick) return { kind: 'solid', pick };
   if (bodyAt(v, sp)) return { kind: 'image' };
   return { kind: 'none' };
 }
@@ -426,7 +437,8 @@ function whatIsAt(v: SketchView, sp: [number, number]): Target {
 /** Cursor affordance: what a press here would grab. */
 export function hover(v: SketchView, sp: [number, number]): void {
   if (v.tool !== 'select') return;
-  const at = whatIsAt(v, sp);
+  // a solid promises no cursor of its own, so a pointer move does not cast a ray for one
+  const at = whatIsAt(v, sp, false);
   v.canvas.style.cursor =
       at.kind === 'handle' ? (at.corner % 2 ? 'nesw-resize' : 'nwse-resize')
     : at.kind === 'callout' || at.kind === 'image' ? 'move'

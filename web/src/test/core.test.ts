@@ -1932,6 +1932,58 @@ test('the overview folds the views into the box, and is flat looked at square on
   sk.dispose();
 });
 
+test('a face, its solid and the body rule are written through the edit API by name', () => {
+  const d = Document.read('use std\nin std.front {\na := point hint((0, 0))\n'
+                          + 'b := point hint((60, 0))\nc := point hint((60, 40))\n'
+                          + 'd := point hint((0, 40))\nab := line(a, b)\nbc := line(b, c)\n'
+                          + 'cd := line(c, d)\nda := line(d, a)\no := point hint((30, 20))\n'
+                          + 'hole := circle(center: o) hint(r: 5)\n}\n');
+  assert.ok(d.ok, JSON.stringify(d.diagnostics));
+  const face = d.addFace(['ab', 'bc', 'cd', 'da']);
+  assert.equal(face.kind, 'structural');
+  assert.deepEqual(face.names, ['f0']);
+  assert.ok(face.text.endsWith('f0 := face(ab, bc, cd, da)\n'), face.text);
+  const withFace = Document.read(face.text);
+  const solid = withFace.addSolid({ face: 'f0', depth: '8' });
+  assert.deepEqual(solid.names, ['b0']);
+  assert.ok(solid.text.endsWith('b0 := solid(f0, depth: 8)\n'), solid.text);
+  const withSolid = Document.read(solid.text);
+  assert.ok(withSolid.ok, JSON.stringify(withSolid.diagnostics));
+  assert.deepEqual(withSolid.solids().map((s) => s.name), ['b0']);
+  const hf = Document.read(withSolid.addFace(['hole'], [], 'hf').text);
+  const made = hf.addSolid({ face: 'hf', through: 'b0', name: 'bore' });
+  assert.equal(made.refused, null);
+  const bore = Document.read(made.text);
+  const cut = bore.addBodyWord('cut', 'bore', 'b0');
+  assert.equal(cut.refused, null);
+  assert.ok(cut.text.endsWith('bore cut b0\n'), cut.text);
+  assert.ok(Document.read(cut.text).ok);
+  // refused with the cause, the text untouched: a mixture, and what the elaborator refuses
+  assert.ok(withFace.addSolid({ face: 'f0', depth: '8', about: 'da' }).refused);
+  assert.ok(withFace.addSolid({ face: 'nothing', depth: '8' }).refused);
+  assert.ok(bore.addBodyWord('cut', 'b0', 'b0').refused);
+});
+
+test('the region around a place is named for a face, its holes beside it', () => {
+  const d = Document.read('use std\nin std.front {\na := point hint((0, 0))\n'
+                          + 'b := point hint((60, 0))\nc := point hint((60, 40))\n'
+                          + 'd := point hint((0, 40))\nab := line(a, b)\nbc := line(b, c)\n'
+                          + 'cd := line(c, d)\nda := line(d, a)\no := point hint((30, 20))\n'
+                          + 'hole := circle(center: o) hint(r: 5)\n}\n');
+  const front = d.entity('std.front');
+  assert.ok(front instanceof Plane);
+  const r = d.regionAt(front, 5, 5, 0.05);
+  assert.ok(r && !('refused' in r), JSON.stringify(r));
+  assert.deepEqual([...r.outer].sort(), ['ab', 'bc', 'cd', 'da']);
+  assert.deepEqual(r.holes, [['hole']]);
+  assert.equal(r.rings.length, 2, 'the outer ring and the hole\'s');
+  assert.equal(d.regionAt(front, 80, 5, 0.05), null, 'outside every loop');
+  const face = d.addFace(r.outer, r.holes);
+  assert.equal(face.refused, null);
+  assert.ok(face.text.includes('holes: hole'), face.text);
+  assert.ok(Document.read(face.text).ok);
+});
+
 test('a plane is written through the edit API over two lines, and its origin answers by name', () => {
   const d = Document.read('use std\nin std.front {\na := point hint((0, 0))\n'
                           + 'b := point hint((40, 0))\nc := point hint((0, 30))\n'

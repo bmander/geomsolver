@@ -21,7 +21,7 @@ import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js
 import { mesh, objects } from '../core/mesh.js';
 import { overview3 } from '../core/overview.js';
 import type { Item3 } from '../core/overview.js';
-import { chromeOf } from './paint.js';
+import { COL, chromeOf } from './paint.js';
 import type { SketchView } from './view.js';
 
 /** The box's own ink.  Chrome, as the 2D painter's palette is: the core says how squarely a face
@@ -65,6 +65,8 @@ export class Box3D {
   private readonly frames: { it: Item3; line: THREE.LineSegments }[] = [];
   /** Each pane's frame, apart from `frames` because it is a fat line with a width to write. */
   private readonly panes: { it: Item3; line: LineSegments2 }[] = [];
+  /** Each object face's mesh, by the solid it is a face of and its path, for `chrome` to light. */
+  private readonly faces: { solid: number; path: string; mesh: THREE.Mesh }[] = [];
 
   constructor(readonly canvas: HTMLCanvasElement | null) {
     this.scene.background = new THREE.Color(INK.bg);
@@ -215,6 +217,7 @@ export class Box3D {
         face.name = f.path;
         face.userData.face = f.path;
         this.content.add(face);
+        this.faces.push({ solid: o.index, path: f.path, mesh: face });
       }
     }
   }
@@ -242,6 +245,14 @@ export class Box3D {
       m.opacity = current ? 0.8 : 0.35;
       m.linewidth = current ? FRAME_PX.current : FRAME_PX.plain;
       m.resolution.set(v.width, v.height);
+    }
+    // a solid picked: the face the click landed on in the selection's ink, the rest of it washed
+    const picked = v.selectedSolids;
+    for (const { solid, path, mesh: face } of this.faces) {
+      const m = face.material as THREE.MeshStandardMaterial;
+      const pick = picked.find((s) => s.index === solid);
+      m.emissive.set(pick ? COL.sel : 0x000000);
+      m.emissiveIntensity = !pick ? 0 : pick.face === path ? 0.55 : 0.18;
     }
   }
 
@@ -288,6 +299,7 @@ export class Box3D {
   private dispose(): void {
     this.frames.length = 0;
     this.panes.length = 0;
+    this.faces.length = 0;
     for (const o of [...this.content.children]) {
       this.content.remove(o);
       const any = o as THREE.Mesh;

@@ -1434,6 +1434,21 @@ Conventions:
   A name whose face a boolean ate is a *fact the report carries*, never an error.
   E080 a face that is not a loop on one plane, E081 a revolution's axis, E082 a face a body no
   longer has, E084 a section cut across its own view.
+- **A gesture writes a solid** (#162 F0): `edit::add_face`, `add_solid` (`SolidSweep`, extents
+  as text into `Arg::Dim`, mixtures refused by the parser's own `sweep_of`) and `add_body_word`
+  append over names (FFI `gcs_elab_add_face`/`_solid`/`_body_word`, `Document.addFace`/
+  `addSolid`/`addBodyWord`), each **held to the elaborator before it is handed back**
+  (`append_checked`: an error inside the appended text refuses the edit in its words; one
+  elsewhere was there before the gesture).  A hole loop that is not one circle is written as a
+  face first: **a face is a hole as it stands** (`holes: h`, its outer loop; one holed itself, or
+  declared after, is E080).  `edit::remove` dooms a body word or a sweep naming a gone solid.
+  Fresh names pass every bound name (`taken_names`).  `tests/edit_solids.rs` is the gate.
+  **The region under the cursor** is `overview::region::region_at` (FFI `gcs_elab_region_json`,
+  `Document.regionAt`): the graph of a plane's drawn edges joined **by shared point identity**
+  (what a face's walk accepts), dangling edges pruned, faces walked turning least right; the
+  smallest bounded loop holding the place is the outer, other pieces' outlines inside it (not
+  inside one another) its holes; a loop along an edge twice is refused.  `region::written` names
+  it by the source.  `tests/regions.rs` is the gate.
 - **A chain is a named traversal** (§6.6; issue #49, item 3). `profile := line -> … -> close`
   records a `NamedChain` beside the usual desugared declarations and constraints. The flattener
   scopes the binding and its links like ordinary component members; edges stay `boss.ab`, the
@@ -1496,7 +1511,12 @@ Conventions:
   overlap but are apart in space, so nothing is picked in view coordinates.  `w2s`/`s2w` read the
   view being worked in — the painter's (`inView`), else the current plane's; a drag reads the
   dragged point's view, a callout its dimension's (`calloutView`).  A view seen edge on refuses a
-  press (`ViewCam::readable`).  The plane tool picks two drawn lines and writes `plane(u:, v:)`.
+  press (`ViewCam::readable`).  **An object's face is picked where the eye's ray meets it**
+  (`workspace::pick_solid`, nearest the viewer over each object's mesh; the path is where the face
+  was made, so the object index rides beside it), beneath the drawing in `whatIsAt`'s order.  A
+  solid picked is a **third selection** (`SketchView.selectedSolids`, `pickSolid`), exclusive
+  with `selected` and the picture, carried across an edit by name; Delete removes it, `box3d`
+  lights the face and washes the rest.  The plane tool picks two drawn lines and writes `plane(u:, v:)`.
   Points in space stand in no view: seen where they are (`Projection::point`; per frame
   `workspace::space_points`, `gcs_workspace_space_points`, stroked through the eye's own
   camera), drawn and picked, and dragged where the eye sees them (`PlanDrag::seen`, numeric:

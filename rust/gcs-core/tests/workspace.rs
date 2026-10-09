@@ -296,3 +296,49 @@ flank := envelope(bore, under: housing_turn, from: 10deg, to: 170deg)
         }
     }
 }
+
+/// A 20 × 10 block on `std.top`, 5 deep below it, and a second one under it — seen from above,
+/// the upper hides the lower — and a third with a bore cut through it, at x = 40.
+const BLOCKS: &str = "unit mm\nuse std\n\
+    component Slab(x: Length) {\n\
+      a := point hint((x, 0))\nb := point hint((x + 20mm, 0))\n\
+      c := point hint((x + 20mm, 10))\nd := point hint((x, 10))\n\
+      ab := line(a, b)\nbc := line(b, c)\ncd := line(c, d)\nda := line(d, a)\n\
+      sec := face(ab, bc, cd, da)\n\
+    }\n\
+    in std.top {\nupper := Slab(x: 0mm)\nlower := Slab(x: 0mm)\nholed := Slab(x: 40mm)\n\
+    o := point hint((50, 5))\nhole := circle(center: o) hint(r: 3)\n}\n\
+    top := solid(upper.sec, depth: 5)\n\
+    bottom := solid(lower.sec, from: -30, to: -20)\n\
+    stock := solid(holed.sec, depth: 5)\nbody := solid(stock)\n\
+    bore := solid(face(hole), through: body)\nbore cut body\n";
+
+#[test]
+fn a_click_on_a_solid_picks_the_face_nearest_the_eye() {
+    use gcs_core::overview::workspace::pick_solid;
+    let e = build(BLOCKS);
+    let sk = &e.sketch;
+    let solid = |n: &str| e.map.ent_named(n).unwrap().i();
+    let (az, el) = (0.6, 0.5);
+    let proj = Projection::new(sk, az, el);
+    // the middle of the top block's upper face: the ray meets it there, before the lower block
+    let hit = pick_solid(sk, &proj, seen([10.0, 5.0, 0.0], az, el)).expect("the top block");
+    assert_eq!(hit.solid, solid("top"));
+    let toward = [az.cos() * el.cos(), az.sin() * el.cos(), el.sin()];
+    let expected = 10.0 * toward[0] + 5.0 * toward[1];
+    assert!((hit.depth - expected).abs() < 1e-9, "{} {expected}", hit.depth);
+    assert!(hit.face.starts_with("top."), "{}", hit.face);
+    // past every object, nothing
+    assert_eq!(pick_solid(sk, &proj, seen([10.0, 80.0, 0.0], az, el)), None);
+    // a face of a body is named where it was made — the stock's — and the object is the body
+    let hit = pick_solid(sk, &proj, seen([43.0, 5.0, 0.0], az, el)).expect("the body");
+    assert_eq!(hit.solid, solid("body"));
+    assert!(hit.face.starts_with("stock."), "{}", hit.face);
+    // and from overhead, down the bore, the ray passes through the hole
+    let overhead = Projection::new(sk, az, 1.5);
+    assert_eq!(pick_solid(sk, &overhead, seen([50.0, 5.0, 0.0], az, 1.5)), None);
+    // the box beneath: the lower block alone, from below
+    let under = Projection::new(sk, az, -0.5);
+    let hit = pick_solid(sk, &under, seen([10.0, 5.0, -30.0], az, -0.5)).expect("the bottom block");
+    assert_eq!(hit.solid, solid("bottom"));
+}

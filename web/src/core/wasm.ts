@@ -88,6 +88,11 @@ export interface Abi {
   gcs_elab_add_rectangle(h: number, w: number, hh: number, plane: number, planeLen: number): number;
   gcs_elab_add_entity(h: number, p: number, n: number): number;
   gcs_elab_add_relation(h: number, p: number, n: number): number;
+  gcs_elab_add_face(h: number, p: number, n: number): number;
+  gcs_elab_add_solid(h: number, p: number, n: number): number;
+  gcs_elab_add_body_word(h: number, p: number, n: number): number;
+  gcs_elab_region_json(h: number, s: number, plane: number, x: number, y: number,
+                       unit: number): number;
   gcs_elab_remove(h: number, sk: number, p: number, n: number): number;
   gcs_elab_set_dimension(h: number, cid: number, ap: number, an: number,
                          tp: number, tn: number): number;
@@ -220,6 +225,7 @@ export interface Abi {
                      tol: number, out: number): number;
   gcs_workspace_panes_at(h: number, az: number, el: number, x: number, y: number,
                          out: number, cap: number): number;
+  gcs_workspace_pick_solid_json(h: number, az: number, el: number, x: number, y: number): number;
   gcs_workspace_nearest_point(h: number, az: number, el: number, x: number, y: number,
                               outDist: number): number;
   gcs_workspace_inside_json(h: number, unit: number, az: number, el: number,
