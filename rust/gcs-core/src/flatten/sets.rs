@@ -483,14 +483,9 @@ impl<'a> Walk<'a> {
             r
         };
         let seed_at = crate::syntax::AtRef {
-            what: end("p1"),
-            bearing: None,
             toward: Some(end("p2")),
-            along: None,
             by: Some(("0.5".to_string(), at)),
-            turn: None,
-            x: None,
-            y: None,
+            ..crate::syntax::AtRef::at(end("p1"))
         };
         let key = Name { text: abs, span: Span::new(at.lo as usize, at.lo as usize) };
         let decl = Decl::point(crate::syntax::DeclName::Key(key), [0.0; 2], Some(seed_at));

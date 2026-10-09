@@ -597,13 +597,6 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
         let (point, toward, owned) = dual_from_json(&sk, j)?;
         sk.add_dual(point, toward, owned);
     }
-    // and each twin tied to its point, once both are drawn in their planes (§6.7)
-    for j in d.get("twins").unwrap_or(&empty).arr() {
-        let pair = j.arr();
-        let at = |k: usize| index(pair.get(k).map_or(-1, |v| v.as_i64()), sk.points.len(), "twin");
-        let (p, t) = (at(0)?, at(1)?);
-        sk.tie_twin(p, t);
-    }
     let mut ids = Vec::new();
     for c in d.get("constraints").unwrap_or(&empty).arr() {
         let name = c.get("type").map(|v| v.as_str().to_string()).unwrap_or_default();
@@ -665,6 +658,15 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
         }
         ids.push(id);
     }
+    // each twin tied to its point after the relations, as the elaborator ties it (§6.7), and held
+    // on its plane where nothing read above holds it
+    for j in d.get("twins").unwrap_or(&empty).arr() {
+        let pair = j.arr();
+        let at = |k: usize| index(pair.get(k).map_or(-1, |v| v.as_i64()), sk.points.len(), "twin");
+        let (p, t) = (at(0)?, at(1)?);
+        sk.tie_twin(p, t);
+    }
+    sk.hold_twins();
     expr::evaluate(&mut sk);   // every expression against the whole document, in order
     // a document written before §13.1: placements in a table of their own, keyed by position in
     // the constraint list.  Read, never written — a document does not have to be re-saved to be
@@ -1362,15 +1364,6 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         let owned = d.owned.iter().filter_map(|&e| remap(e)).collect();
         dual_map[i] = Some(dst.add_dual(point.i(), toward, owned));
     }
-    // each twin that came along with its point, tied again (§6.7)
-    for (&p, ts) in &src.twins {
-        let Some(p) = remap(EntRef::point(p)) else { continue };
-        for &t in ts {
-            if let Some(t) = remap(EntRef::point(t)) {
-                dst.tie_twin(p.i(), t.i());
-            }
-        }
-    }
     let mut expr = false;
     for c in src.user_constraints() {
         if drop_c.contains(&c.id) {
@@ -1418,6 +1411,16 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             }
         }
     }
+    // each twin that came along with its point, tied again after the relations (§6.7)
+    for (&p, ts) in &src.twins {
+        let Some(p) = remap(EntRef::point(p)) else { continue };
+        for &t in ts {
+            if let Some(t) = remap(EntRef::point(t)) {
+                dst.tie_twin(p.i(), t.i());
+            }
+        }
+    }
+    dst.hold_twins();
     if expr {
         expr::evaluate(dst);
     }

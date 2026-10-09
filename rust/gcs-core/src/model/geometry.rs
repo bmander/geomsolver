@@ -20,8 +20,6 @@ impl Sketch {
         self.points[point].plane.map(|p| p as usize)
     }
 
-    /// Put a point on a plane, or take it off (`None`).  A membership and not a constraint:
-    /// nothing moves, and only `Project` reads it.
     /// Point `p` as drawn in `plane`: itself where it is drawn there, else its twin there, or
     /// the point a twin is of and its other twins (`Sketch::twins`, §6.7).
     pub fn twin_in(&self, p: usize, plane: usize) -> Option<usize> {
@@ -33,19 +31,77 @@ impl Sketch {
             .find(|&q| self.plane_of(q) == Some(plane))
     }
 
-    /// Point `t`, drawn in a further plane, made `p`'s twin (§6.7): recorded, and tied to it in
-    /// space by an intrinsic `Coincident3` — the one place a tie is made, by the elaborator, a
-    /// document reader and `graft` alike.
+    /// Point `t`, drawn in a further plane, made `p`'s twin (§6.7): recorded, and tied to it by
+    /// two intrinsic rows — `t` on `p`'s plane, and the two on one line square to the fold the
+    /// planes meet on (`Project`) — so `t` is where `p` stands on the fold.  That `p` is on `t`'s
+    /// plane is `hold_twins`'s, once what else holds it is known.  The one place a tie is made, by
+    /// the elaborator, a document reader and `graft` alike.  Planes fixed parallel make no fold
+    /// line, and no row (the elaborator says so, E061).
     pub fn tie_twin(&mut self, p: usize, t: usize) {
         use crate::constraints::{Arg, CKind, Constraint};
         let ts = self.twins.entry(p).or_default();
         if !ts.contains(&t) {
             ts.push(t);
         }
-        let ends = vec![Arg::Ent(EntRef::point(p)), Arg::Ent(EntRef::point(t))];
-        let mut tie = Constraint::new(CKind::Coincident3, ends);
-        tie.intrinsic = true;
-        self.add_quiet(tie);
+        let Some(plane) = self.plane_of(p) else { return };
+        let mut on = Constraint::new(
+            CKind::PointOnPlane,
+            vec![Arg::Ent(EntRef::point(t)), Arg::Ent(EntRef::plane(plane))],
+        );
+        on.intrinsic = true;
+        self.add_quiet(on);
+        if let Ok(mut fold) = Constraint::project(self, EntRef::point(p), EntRef::point(t)) {
+            fold.intrinsic = true;
+            self.add_quiet(fold);
+        }
+    }
+
+    /// Each point with twins held on each twin's plane (§6.7), but where the plane already holds
+    /// it: a plane built along a line (`entities::axes_along`'s intrinsic `Parallel3`) holds the
+    /// line's ends and any point stated on it, and a row saying so again would be a dependency
+    /// the structural count cannot see (#88), as `axes_along` keeps its own from being.  Asked
+    /// once the drawing's relations are in; a second asking adds nothing.
+    pub fn hold_twins(&mut self) {
+        use crate::constraints::{Arg, CKind, Constraint};
+        let pairs: Vec<(usize, usize)> = self.twins.iter()
+            .flat_map(|(&p, ts)| ts.iter().map(move |&t| (p, t)))
+            .collect();
+        for (p, t) in pairs {
+            let Some(plane) = self.plane_of(t) else { continue };
+            let point = EntRef::point(p);
+            let held = self.constraints.iter().any(|c| {
+                c.kind == CKind::PointOnPlane && c.args[0].ent() == point
+                    && c.args[1].ent() == EntRef::plane(plane)
+            });
+            if held || self.built_through(p, plane) {
+                continue;
+            }
+            let mut on = Constraint::new(
+                CKind::PointOnPlane,
+                vec![Arg::Ent(point), Arg::Ent(EntRef::plane(plane))],
+            );
+            on.intrinsic = true;
+            self.add_quiet(on);
+        }
+    }
+
+    /// Whether `plane` is built along a line point `p` is on: an end of it, or stated on it.
+    fn built_through(&self, p: usize, plane: usize) -> bool {
+        use crate::constraints::CKind;
+        let axes = [self.planes[plane].u as usize, self.planes[plane].v as usize];
+        let on = |l: usize| {
+            let line = &self.lines[l];
+            line.p1 as usize == p || line.p2 as usize == p
+                || self.constraints.iter().any(|c| {
+                    c.acts() && c.kind == CKind::PointOnLine
+                        && c.args[0].ent() == EntRef::point(p) && c.args[1].ent() == EntRef::line(l)
+                })
+        };
+        self.constraints.iter().any(|c| {
+            c.intrinsic && c.kind == CKind::Parallel3
+                && c.args[0].ent().kind == EntKind::Axis && axes.contains(&c.args[0].ent().i())
+                && c.args[1].ent().kind == EntKind::Line && on(c.args[1].ent().i())
+        })
     }
 
     /// Entity `e` made over point `to` where it was made over `from` — a reader drawn in a plane
@@ -71,6 +127,8 @@ impl Sketch {
         }
     }
 
+    /// Put a point on a plane, or take it off (`None`).  A membership and not a constraint:
+    /// nothing moves, and only `Project` reads it.
     pub fn set_plane(&mut self, point: usize, plane: Option<usize>) {
         debug_assert!(plane.map_or(true, |p| p < self.planes.len()));
         self.points[point].plane = plane.map(|p| p as u32);

@@ -1231,6 +1231,20 @@ pub struct AtRef {
 }
 
 impl AtRef {
+    /// The place `what` stands, with no step from it.
+    pub fn at(what: Ref) -> AtRef {
+        AtRef {
+            what,
+            bearing: None,
+            toward: None,
+            along: None,
+            by: None,
+            turn: None,
+            x: None,
+            y: None,
+        }
+    }
+
     /// The texts the place reads numbers from — a bearing, a fraction, a turn, a plane's
     /// coordinates — for the walks that resolve and substitute them.
     pub fn texts_mut(&mut self) -> impl Iterator<Item = &mut (String, Span)> {

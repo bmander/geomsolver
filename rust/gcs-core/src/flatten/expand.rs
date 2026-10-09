@@ -686,16 +686,7 @@ impl Walk<'_> {
             let key = format!("{point}@{}", k + 1);
             self.names.insert(key.clone());
             self.twins.push((point.clone(), key.clone()));
-            let seed = crate::syntax::AtRef {
-                what: Ref::new(local),
-                bearing: None,
-                toward: None,
-                along: None,
-                by: None,
-                turn: None,
-                x: None,
-                y: None,
-            };
+            let seed = crate::syntax::AtRef::at(Ref::new(local));
             let name = crate::syntax::DeclName::Key(Name { text: key, span: at });
             let mut twin = Decl::point(name, [0.0; 2], Some(seed));
             twin.membership = crate::syntax::Membership::written_at(plane.clone(), at);

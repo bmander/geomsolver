@@ -72,14 +72,30 @@ fn a_solid_in_the_second_plane_turns_about_a_line_through_it() {
 /// nowhere.  The drawing is as determined as it is.
 #[test]
 fn a_plane_built_through_the_point_says_nothing_more() {
-    let mut e = solved(
-        "unit mm\nuse std\nin std.top {\n  M := point hint((40, 0))\n}\nfix((40, 0)) M\n\
-         gen := line(std.origin, M)\nF := plane(u: gen, v: std.z)\n\
-         O := point hint((20, 0)) in std.top, F\nO distance(15) M\n",
+    // O on F's line, by a relation, and O at its end: F's axis along `gen` already holds O on F,
+    // so the tie says only where O meets the fold, and the structural count is square as the
+    // rank is
+    // F folded along `gen` as the gear's views are (`views.FoldedView`)
+    let folded = "F := plane(u: gen, v: hint(dir: (0, 0, -1)))\nstd.top perpendicular F.v\n\
+                  std.top.origin project F.origin\n";
+    let on = format!(
+        "unit mm\nuse std\nin std.top {{\n  o := point hint((0, 0))\n  M := point hint((40, 0))\n  \
+         gen := line(o, M)\n}}\nfix((0, 0)) o\nfix((40, 0)) M\n{folded}\
+         O := point hint((20, 0)) in std.top, F\nO distance(15) M\nO coincident gen\n"
     );
-    let d = diagnose(&mut e.sketch, DiagnoseOptions::default());
-    assert_eq!((d.dof, d.status), (0, State::Well), "{:?}", d.warnings);
-    assert!(d.implied.is_empty() && d.over.is_empty(), "{:?} {:?}", d.implied, d.over);
+    let end = format!(
+        "unit mm\nuse std\no := point hint((0, 0)) in std.top\nfix((0, 0)) o\n\
+         O := point hint((40, 0)) in std.top, F\nfix((40, 0)) O\ngen := line(o, O)\n{folded}"
+    );
+    for text in [on, end] {
+        let mut e = solved(&text);
+        let mut sys = gcs_core::system::System::new(&e.sketch);
+        let order = sys.block_order();
+        assert!(order.over_rows.is_empty() && order.under_cols.is_empty(), "{text}");
+        let d = diagnose(&mut e.sketch, DiagnoseOptions::default());
+        assert_eq!((d.dof, d.status), (0, State::Well), "{text}: {:?}", d.warnings);
+        assert!(d.implied.is_empty() && d.over.is_empty(), "{:?} {:?}", d.implied, d.over);
+    }
 }
 
 #[test]

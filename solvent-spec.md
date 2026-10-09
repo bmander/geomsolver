@@ -905,8 +905,8 @@ plane's geometry reads `O` as its own point — `arc(center: O)` drawn in `G` is
 descriptive layout draws twice and ties by `project` is one point. A plane named twice is
 **E040**; two planes that are parallel meet on no line, **E061**. Only a point is drawn in
 several planes (a line is, when its ends are; **E040** otherwise). Where a plane is itself built
-through the point (its axis along a line from `O`), its row there says nothing new, and the
-system's rank finds it (§16).
+along a line `O` is on — an end of it, or stated on it — the plane already holds `O`, and the
+elaborator states nothing more.
 
 **An axis** (§3.1) is a directed line in space with no start. `t := axis hint(dir: (0, 0, 1))`
 seeds its direction, and relations place it: `t parallel s`, `t perpendicular s` and `t angle(θ)

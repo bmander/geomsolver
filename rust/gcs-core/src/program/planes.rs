@@ -57,13 +57,11 @@ pub(super) fn memberships(
             _ => sk.children(me).into_iter().map(|k| k.i()).collect(),
         };
         for p in points {
+            // a point drawn in this plane too is read here by its twin (§6.7)
+            let twin = if me.kind == EntKind::Point { None } else { sk.twin_in(p, plane) };
             match sk.plane_of(p) {
-                // a point drawn in this plane too is read here by its twin (§6.7)
-                Some(q) if q != plane && me.kind != EntKind::Point
-                    && sk.twin_in(p, plane).is_some() =>
-                {
-                    let t = sk.twin_in(p, plane).expect("just asked");
-                    sk.replace_point(me, p, t);
+                Some(q) if q != plane && twin.is_some() => {
+                    sk.replace_point(me, p, twin.expect("matched"));
                 }
                 Some(q) if q != plane => {
                     let who =
@@ -85,9 +83,9 @@ pub(super) fn memberships(
     }
 }
 
-/// Each point drawn in further planes tied to its twins in space (§6.7): one intrinsic
-/// `Coincident3` a twin, so the point has the one freedom of the line its planes meet on.  A
-/// point drawn twice in one plane is refused where it is declared.
+/// Each point drawn in further planes tied to its twins in space (§6.7, `Sketch::tie_twin`), so
+/// the point has the one freedom of the line its planes meet on.  A point drawn twice in one
+/// plane is refused where it is declared.
 pub(super) fn tie_twins(sk: &mut Sketch, map: &SourceMap, diags: &mut Vec<Diag>) {
     let twins: Vec<(usize, Vec<usize>)> = sk.twins.iter().map(|(&p, t)| (p, t.clone())).collect();
     for (p, ts) in twins {
@@ -121,8 +119,7 @@ pub(super) fn parallel_twins(sk: &Sketch, map: &SourceMap, diags: &mut Vec<Diag>
         for &t in ts {
             let Some(other) = sk.plane_of(t).filter(|&q| q != first) else { continue };
             let m = sk.basis(other).normal();
-            let across = crate::space::cross(n, m);
-            if crate::space::dot(across, across).sqrt() > 1e-9 {
+            if crate::space::norm(crate::space::cross(n, m)) > crate::plane::PARALLEL_TOL {
                 continue;
             }
             let site = map.site_of(EntRef::point(p));
