@@ -1443,6 +1443,12 @@ Conventions:
   face first: **a face is a hole as it stands** (`holes: h`, its outer loop; one holed itself, or
   declared after, is E080).  `edit::remove` dooms a body word or a sweep naming a gone solid.
   Fresh names pass every bound name (`taken_names`).  `tests/edit_solids.rs` is the gate.
+  **The region under the cursor** is `overview::region::region_at` (FFI `gcs_elab_region_json`,
+  `Document.regionAt`): the graph of a plane's drawn edges joined **by shared point identity**
+  (what a face's walk accepts), dangling edges pruned, faces walked turning least right; the
+  smallest bounded loop holding the place is the outer, other pieces' outlines inside it (not
+  inside one another) its holes; a loop along an edge twice is refused.  `region::written` names
+  it by the source.  `tests/regions.rs` is the gate.
 - **A chain is a named traversal** (§6.6; issue #49, item 3). `profile := line -> … -> close`
   records a `NamedChain` beside the usual desugared declarations and constraints. The flattener
   scopes the binding and its links like ordinary component members; edges stay `boss.ab`, the

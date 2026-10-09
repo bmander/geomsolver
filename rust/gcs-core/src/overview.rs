@@ -27,6 +27,7 @@ use crate::model::{grow, Box2, EntKind, EntRef, Sketch};
 use crate::plane::{dot, Basis};
 use std::collections::BTreeMap;
 
+pub mod region;
 pub mod workspace;
 
 /// The rank tolerance a corner is placed at, relative to the largest singular value of its four

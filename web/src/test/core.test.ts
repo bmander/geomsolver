@@ -1964,6 +1964,26 @@ test('a face, its solid and the body rule are written through the edit API by na
   assert.ok(bore.addBodyWord('cut', 'b0', 'b0').refused);
 });
 
+test('the region around a place is named for a face, its holes beside it', () => {
+  const d = Document.read('use std\nin std.front {\na := point hint((0, 0))\n'
+                          + 'b := point hint((60, 0))\nc := point hint((60, 40))\n'
+                          + 'd := point hint((0, 40))\nab := line(a, b)\nbc := line(b, c)\n'
+                          + 'cd := line(c, d)\nda := line(d, a)\no := point hint((30, 20))\n'
+                          + 'hole := circle(center: o) hint(r: 5)\n}\n');
+  const front = d.entity('std.front');
+  assert.ok(front instanceof Plane);
+  const r = d.regionAt(front, 5, 5, 0.05);
+  assert.ok(r && !('refused' in r), JSON.stringify(r));
+  assert.deepEqual([...r.outer].sort(), ['ab', 'bc', 'cd', 'da']);
+  assert.deepEqual(r.holes, [['hole']]);
+  assert.equal(r.rings.length, 2, 'the outer ring and the hole\'s');
+  assert.equal(d.regionAt(front, 80, 5, 0.05), null, 'outside every loop');
+  const face = d.addFace(r.outer, r.holes);
+  assert.equal(face.refused, null);
+  assert.ok(face.text.includes('holes: hole'), face.text);
+  assert.ok(Document.read(face.text).ok);
+});
+
 test('a plane is written through the edit API over two lines, and its origin answers by name', () => {
   const d = Document.read('use std\nin std.front {\na := point hint((0, 0))\n'
                           + 'b := point hint((40, 0))\nc := point hint((0, 30))\n'

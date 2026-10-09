@@ -15,7 +15,7 @@
  * column.
  */
 import { Constraint } from './constraints.js';
-import { Kind, KINDS, Primitive, Sketch } from './model.js';
+import { Kind, KINDS, Plane, Primitive, Sketch } from './model.js';
 import { core, lastError, takeJson, takeStr, withJson, withStr } from './wasm.js';
 
 /** Where a statement sits in the program text, plus the line and column the core worked out, so
@@ -68,6 +68,14 @@ export interface SolidSpec {
 }
 
 export type BodyWord = 'union' | 'cut' | 'bound';
+
+/** A region of the drawing (`Document.regionAt`): the edges of its outer loop and of each hole in
+ *  walk order, by name, and the rings — outer first — in the plane's own coordinates. */
+export interface Region {
+  outer: string[];
+  holes: string[][];
+  rings: [number, number][][];
+}
 
 export interface Edit {
   text: string;
@@ -358,6 +366,14 @@ export class Document {
     return edit(
       withJson({ word, what, body }, (p, n) => core().gcs_elab_add_body_word(this.h, p, n)),
     );
+  }
+
+  /** The region of the drawing on `plane` (null the page) around `(x, y)` in its coordinates:
+   *  the outer loop's edges and each hole's, by the names a face is written with, and their
+   *  rings to wash — or null where no loop encloses it, or `{ refused }` with the cause. */
+  regionAt(plane: Plane | null, x: number, y: number, unit: number): Region | { refused: string } | null {
+    const i = plane ? this.sketch.planes.indexOf(plane) : -1;
+    return takeJson(core().gcs_elab_region_json(this.h, this.sketch.handle, i, x, y, unit));
   }
 
   /** Take out the statements that declare these, and every statement that named one.  An entity

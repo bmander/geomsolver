@@ -4130,6 +4130,35 @@ pub unsafe extern "C" fn gcs_elab_add_body_word(h: *mut Elaborated, ptr: *const 
     })
 }
 
+/// The region of the drawing on plane `plane` (-1 the page) around (x, y) in its coordinates:
+/// `{outer: [names], holes: [[names]], rings: [[[x, y]…]…]}`, `null` where no loop encloses it,
+/// or `{refused}` with the cause — `overview::region::region_at`, named by the source.  The live
+/// sketch is `s`, the elaboration's own having been taken out into it.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_elab_region_json(h: *mut Elaborated, s: *mut Sketch, plane: i32,
+                                              x: f64, y: f64, unit: f64) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || {
+        use gcs_core::overview::region;
+        let plane = usize::try_from(plane).ok();
+        let names = |n: Vec<String>| Json::Arr(n.into_iter().map(Json::Str).collect());
+        let refused = |why: String| json::object([("refused", Json::Str(why))]);
+        out_json(match region::region_at(sk(s), plane, (x, y), unit) {
+            Ok(None) => Json::Null,
+            Err(why) => refused(why),
+            Ok(Some(r)) => match region::written(&(*h).map, &r) {
+                Err(why) => refused(why),
+                Ok((outer, holes)) => json::object([
+                    ("outer", names(outer)),
+                    ("holes", Json::Arr(holes.into_iter().map(names).collect())),
+                    ("rings", Json::Arr(r.rings.iter().map(|ring| Json::Arr(ring.iter()
+                        .map(|&(a, b)| Json::Arr(vec![Json::Num(a), Json::Num(b)]))
+                        .collect())).collect())),
+                ]),
+            },
+        })
+    })
+}
+
 /// One constraint, in `report::constraint_from_json`'s shape but with entities by *name* — the
 /// document's own way of saying which, rather than an index into a sketch it is about to replace.
 #[no_mangle]
