@@ -80,7 +80,22 @@ pub(super) fn settle(sk: &mut Sketch, map: &SourceMap, diags: &mut Vec<Diag>) {
             message: why,
         });
     }
-    sk.seed_extremals();
+    // a free curve whose length nothing holds and settles nowhere: said where its energy is
+    for i in sk.seed_extremals() {
+        let Some(lead) = sk.energy_of(i).and_then(|e| e.leader()) else { continue };
+        let Some(site) = map.site_of_constraint(lead) else { continue };
+        let e = crate::model::EntRef::new(EntKind::Curve, i);
+        let name = map.name_of(e).cloned().unwrap_or_else(|| "the curve".into());
+        diags.push(Diag {
+            code: Code::W114,
+            span: site.span,
+            stmt: Some(site.stmt),
+            message: format!(
+                "nothing holds `{name}`'s length and no length makes its energy stationary: state its \
+                 length, or something that fixes it (a point it passes, a line it touches)"
+            ),
+        });
+    }
     // a free curve whose shape nothing states
     for i in 0..sk.curves.len() {
         if !sk.curve_extremal(i) || sk.energy_of(i).is_some() {

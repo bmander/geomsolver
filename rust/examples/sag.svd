@@ -1,0 +1,10 @@
+// Presentation of sag.sv. Model geometry is independent of this drawing.
+model m from "sag.sv"
+
+sheet drawing {
+  size A4
+  label "SPAN AND SAG" at (14mm, 18mm)
+  label "A rope 100 across, its lowest point 30 down: the length it needs, found" at (14mm, 28mm)
+  sketch rope(m) at (55mm, 70mm)
+  dimensions in rope
+}

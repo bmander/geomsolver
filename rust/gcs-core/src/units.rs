@@ -74,6 +74,11 @@ impl Rat {
         self.n == 0
     }
 
+    /// Its value.
+    pub fn value(self) -> f64 {
+        self.n as f64 / self.d as f64
+    }
+
     /// The whole number this is, if it is one.
     pub fn whole(self) -> Option<i32> {
         (self.d == 1).then_some(self.n)
