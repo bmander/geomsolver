@@ -55,13 +55,18 @@ component ToothSide(flank: patch, round: patch, root: patch, blank: group, ax: l
   transition := face(round_toe_span, join_span, round_heel_span, root_span, on: round)
 }
 
-// `refs` is a HypoidLayout.
-component ReferenceFaces(refs: group) {
+// `refs` is a HypoidLayout, and each member's limits are drawn for the checks
+// (blank/limits.sv): the blank's walls and the root cone.
+component ReferenceFaces(refs: group, pinion_limits: group, gear_limits: group) {
   // The roll the envelopes are verified over; the gear's removal sweep (members.sv) rolls further.
   roll_span := 35deg
 
-  pinion_ends := BlankEnds(refs.pinion_blank)
-  gear_ends := BlankEnds(refs.gear_blank)
+  pinion_ends := BlankEnds(pinion_limits)
+  gear_ends := BlankEnds(gear_limits)
+  pinion_trims := {tip: pinion_limits.tip.wall.solid, heel: pinion_limits.heel.wall.solid,
+    root: pinion_limits.root.wall.solid, toe: pinion_limits.toe.wall.solid}
+  gear_trims := {tip: gear_limits.tip.wall.solid, heel: gear_limits.heel.wall.solid,
+    root: gear_limits.root.wall.solid, toe: gear_limits.toe.wall.solid}
 
   // One envelope per edge of each crown section, copy k on the profile's k-th edge: the edge's
   // crown surface over the semicircle holding the trace (in N the trace stands at 180deg),
@@ -70,19 +75,19 @@ component ReferenceFaces(refs: group) {
     pinion := surface(refs.tooth.crown, e, from: 90deg, to: 270deg)
     pinion_envelope := envelope(pinion, under: refs.generation.pinion_generation,
       from: -roll_span, to: roll_span)
-    pinion_region := ToothRegion(pinion_envelope, limits: refs.pinion_design)
+    pinion_region := ToothRegion(pinion_envelope, limits: pinion_trims)
   }
   repeat e in refs.mate.outer.profile {
     gear_outer := surface(refs.mate.outer_crown, e, from: 90deg, to: 270deg)
     gear_outer_envelope := envelope(gear_outer, under: refs.generation.gear_generation,
       from: -roll_span, to: roll_span)
-    gear_outer_region := ToothRegion(gear_outer_envelope, limits: refs.gear_design)
+    gear_outer_region := ToothRegion(gear_outer_envelope, limits: gear_trims)
   }
   repeat e in refs.mate.inner.profile {
     gear_inner := surface(refs.mate.inner_crown, e, from: 90deg, to: 270deg)
     gear_inner_envelope := envelope(gear_inner, under: refs.generation.gear_generation,
       from: -roll_span, to: roll_span)
-    gear_inner_region := ToothRegion(gear_inner_envelope, limits: refs.gear_design)
+    gear_inner_region := ToothRegion(gear_inner_envelope, limits: gear_trims)
   }
 
   // Each section's edges by where they stand in its walk after the base: the tooth's run
@@ -96,13 +101,13 @@ component ReferenceFaces(refs: group) {
 
   // The four sides that work: the pinion tooth's two, and the gear's two facing them.
   pinion_outer := ToothSide(pinion_region[first].bounded, pinion_region[first_round].bounded,
-    pinion_region[tip].bounded, refs.pinion_blank, refs.pinion.ax)
+    pinion_region[tip].bounded, pinion_limits, refs.pinion.ax)
   pinion_inner := ToothSide(pinion_region[last].bounded, pinion_region[last_round].bounded,
-    pinion_region[tip].bounded, refs.pinion_blank, refs.pinion.ax)
+    pinion_region[tip].bounded, pinion_limits, refs.pinion.ax)
   gear_outer_inner := ToothSide(gear_outer_region[first].bounded,
-    gear_outer_region[first_round].bounded, gear_outer_region[tip].bounded, refs.gear_blank,
+    gear_outer_region[first_round].bounded, gear_outer_region[tip].bounded, gear_limits,
     refs.gear.ax)
   gear_inner_outer := ToothSide(gear_inner_region[last].bounded,
-    gear_inner_region[last_round].bounded, gear_inner_region[tip].bounded, refs.gear_blank,
+    gear_inner_region[last_round].bounded, gear_inner_region[tip].bounded, gear_limits,
     refs.gear.ax)
 }

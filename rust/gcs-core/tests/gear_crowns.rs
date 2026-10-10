@@ -232,17 +232,24 @@ fn the_end_relief_chamfers_each_tip_corner() {
     for member in ["pinion","gear"] {
         let limits = format!("pair.reference.{member}_blank");
         let apex = sk.world_point(sk.lines[entity(&format!("pair.reference.{member}.pitch_line"))].p1 as usize);
-        let solid = |part: &str| field(&format!("{limits}.{part}.carrier"));
-        let [heel,tip,toe,back] = ["heel","tip","toe","back"].map(solid);
-        // the blank before its ends are relieved: the heel within the tip, less the toe and the back
-        let blank = |p| value(&heel,p).max(value(&tip,p)).max(-value(&toe,p)).max(-value(&back,p));
-        for (end,sphere,inward) in [("toe",&toe,1.),("heel",&heel,-1.)] {
+        // the blank before its ends are relieved: its region (within the tip cone and the heel
+        // sphere, outside the toe sphere and the back cone)
+        let region = field(&format!("{limits}.material"));
+        let blank = |p| value(&region,p);
+        // the tip cone's meridian in the member's axial view, from its apex through `p`
+        let (tip_apex,tip_p) = (world(&format!("{limits}.tip.apex")),world(&format!("{limits}.tip.p")));
+        let off_tip = |p: [f64;3]| {
+            let (d,w) = (sub(tip_p,tip_apex),sub(p,tip_apex));
+            let c = [d[1]*w[2]-d[2]*w[1],d[2]*w[0]-d[0]*w[2],d[0]*w[1]-d[1]*w[0]];
+            (c[0]*c[0]+c[1]*c[1]+c[2]*c[2]).sqrt()/dist(tip_p,tip_apex)
+        };
+        for (end,inward) in [("toe",1.),("heel",-1.)] {
             let at = |point: &str| world(&copied(&limits,end,point));
             let (corner,along,down) = (at("corner"),at("along_tip"),at("down_end"));
             let radius = dist(world(&format!("{limits}.span.{end}")),apex);
-            for p in [corner,down] { worst = worst.max((dist(p,apex)-radius).abs()).max(value(sphere,p).abs()); }
-            for p in [corner,along] { worst = worst.max(value(&tip,p).abs()); }
-            worst = worst.max((inward*(dist(along,apex)-radius)-size).abs()).max((value(&tip,down)+size).abs());
+            for p in [corner,down] { worst = worst.max((dist(p,apex)-radius).abs()); }
+            for p in [corner,along] { worst = worst.max(off_tip(p)); }
+            worst = worst.max((inward*(dist(along,apex)-radius)-size).abs()).max((off_tip(down)-size).abs());
             let ring = field(&copied(&limits,end,"ring"));
             let (a,d) = (sub(along,corner),sub(down,corner));
             for i in -15..=25 { for j in -15..=25 {

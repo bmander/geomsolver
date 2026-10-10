@@ -184,8 +184,8 @@ irrational place; `Expansion::probes` → elaboration's `relations::Probes`) and
 R`; `constrain` takes every bound landing on a probe as a `RegionTerm` instead of a row
 (`probe_of`, `region_term`: by kind — `Distance(3)` a ball, `PointLine(Distance|3)` a cylinder,
 `Angle3` from a line's start a cone, an `Ordinate` along a plane's `n` a half-space; numbers by
-`settled_number`, a closed text valued by `to_arg` at birth), and `build_solid` moves them into the
-solid and holds the probe. `solid::region::meridian` folds the terms' (r, z) regions in a box by
+`term_number`: stated, or affine in one unknown read when evaluated, a cone's half folded
+unsigned), and `build_solid` moves them into the solid and holds the probe. `solid::region::meridian` folds the terms' (r, z) regions in a box by
 `brep::planar::boolean` (coaxial, bounded, nonempty, else refused where evaluated), memoised
 against `solid::reads` (`Sketch::meridian_cache`); every evaluator reads it — the recipe a `revolve`
 (`recipe::region_profile`, `Profile::to_json`), the field `RevolvedRegion::of_meridian` (also
@@ -450,7 +450,12 @@ stock, plus `union`, minus what `cut`s it, within what `bound`s it. `SolidDef::B
 `bound`; `Term::Inter`; facets, fields and the CAD recipe (`"bound"`, `BRepAlgoAPI_Common`) all
 evaluate it. Union first; `cut` and `bound` commute; a swept solid may only be `cut`. `bound` and
 `union` (0.32) are body words, not names; `coincident` between two solids is refused. Spiral bevel:
-blank `heel` bound by `tip`; modules `design.sv`, `views.sv`, `pitch/`, `blank/`, `crown/`,
+each member's blank is a region (`blank/member.sv`, `MemberBlank`: `std.Cone`s offset from the
+pitch generator to where they meet the axis, `std.Sphere`s through the face span, sized by the
+solved layout — a region term reads an unknown, `model::TermNumber`); `pair.sv` draws the same
+limits as revolved sections for the checks' walls (`blank/limits.sv`), `tests/region_blank.rs` the
+gate between them; each crown section bounds its tip land (`distance(>= 0.01 * design.module) tip`)
+so a collapsed tip is no root. Modules `design.sv`, `views.sv`, `pitch/`, `blank/`, `crown/`,
 `generation.sv`, `layout.sv` (`HypoidLayout`), `members.sv` (`HypoidPair`) (README walks them).
 `gears.sv` is the pair; `pair.sv` adds faces for checks (`verification.sv`, `ReferenceFaces`).
 `configuration.sv` states `shaft_angle`, `offset` (E = 0 is bevel); the pinion's cone solves

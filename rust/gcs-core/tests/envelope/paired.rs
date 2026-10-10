@@ -88,10 +88,10 @@ impl Pair {
         let motion_families = ["pair.generation.pinion_generation","pair.generation.gear_generation"].map(|name|
             gcs_core::motion::Family::read(&model.sketch,model.map.ent_named(name).unwrap().i()).unwrap());
         let read_boundary = |name: &str| RevolvedSurface::named(&model.sketch,
-            model.map.ent_named(&format!("pair.{name}.wall")).unwrap().i()).unwrap();
-        let ends = ["toe","heel"].map(|end| read_boundary(&format!("gear_blank.{end}")));
+            model.map.ent_named(&format!("{name}.wall")).unwrap().i()).unwrap();
+        let ends = ["toe","heel"].map(|end| read_boundary(&format!("gear_limits.{end}")));
         let limits = ["pinion","gear"].map(|member| ["tip","root","back"].map(|role|
-            read_boundary(&format!("{member}_blank.{role}"))));
+            read_boundary(&format!("{member}_limits.{role}"))));
         let regions = model.sketch.patches.iter().enumerate().map(|(i,p)|
             (p.name.clone(),gcs_core::patch::TrimmedPatch::named(&model.sketch,i,module*1e-10).unwrap()))
             .collect();
@@ -566,13 +566,13 @@ fn declared_boundaries_match_independent_spheres_and_parallel_pitch_cones() {
         for module in [0.2,2.,25.4] {
             let pair = Pair::read(teeth,module);
             let read = |name: &str| RevolvedSurface::named(&pair.model.sketch,
-                pair.model.map.ent_named(&format!("pair.{name}.wall")).unwrap().i()).unwrap();
+                pair.model.map.ent_named(&format!("{name}.wall")).unwrap().i()).unwrap();
             let material = |name: &str| {
-                let e = pair.model.map.ent_named(&format!("pair.{name}.wall")).unwrap();
+                let e = pair.model.map.ent_named(&format!("{name}.wall")).unwrap();
                 gcs_core::solid::RevolvedRegion::read(&pair.model.sketch,
                     pair.model.sketch.surfaces[e.i()].solid as usize,module*1e-10).unwrap()
             };
-            for (name,fraction) in [("gear_blank.toe",0.9),("gear_blank.heel",1.1)] {
+            for (name,fraction) in [("gear_limits.toe",0.9),("gear_limits.heel",1.1)] {
                 let s = read(name);
                 let projector = s.projector().unwrap();
                 let region = material(name);
@@ -595,9 +595,9 @@ fn declared_boundaries_match_independent_spheres_and_parallel_pitch_cones() {
                 let member_name = if member == 0 { "pinion" } else { "gear" };
                 let d = pair.delta[member];
                 for (role,depth) in [("tip",1.),("root",-1.25),("back",-4.)] {
-                    let s = read(&format!("{member_name}_blank.{role}"));
+                    let s = read(&format!("{member_name}_limits.{role}"));
                     let projector = s.projector().unwrap();
-                    let region = material(&format!("{member_name}_blank.{role}"));
+                    let region = material(&format!("{member_name}_limits.{role}"));
                     for u in [0.,0.3,0.8,1.] {
                         for v in [0.,0.2,0.6,1.] {
                             let sample = s.at(u,v).unwrap();
@@ -658,7 +658,7 @@ fn named_boundary_intersections_find_tooth_corners_and_refuse_surface_continuati
                 if member == 0 && side == 0 && end == 0 {
                     // Same sphere equation, but a narrow angular patch away from the corner.
                     let mut sk = pair.model.sketch.clone();
-                    let e = pair.model.map.ent_named("pair.gear_blank.toe.wall").unwrap();
+                    let e = pair.model.map.ent_named("gear_limits.toe.wall").unwrap();
                     let solid = sk.surfaces[e.i()].solid as usize;
                     let gcs_core::model::SolidDef::Revolve {sweep,..} = &mut sk.solids[solid].def else { unreachable!() };
                     sweep.value = 0.001;

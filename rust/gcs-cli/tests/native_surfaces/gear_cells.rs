@@ -13,8 +13,8 @@ use std::f64::consts::PI;
 pub(super) fn read_gears_with(base: &Path,rewrite: &mut dyn FnMut(&str,String) -> String) -> program::Elaborated {
     let source = std::fs::read_to_string(base.join("gears.sv")).unwrap();
     fixtures::gear::read_with(&source,base,&mut |name,text| {
-        let text = if name == "members" { fixtures::gear::publish_blank(&text,"  construction single := solid(design.heel)\n  \
-            design.tip bound single\n  design.toe cut single\n  design.back cut single\n  removal cut single\n") } else { text };
+        let text = if name == "members" { fixtures::gear::publish_blank(&text,"  construction single := solid(design.blank)\n  \
+            removal cut single\n") } else { text };
         rewrite(name,text)
     })
 }
@@ -207,13 +207,15 @@ fn the_static_recipe_lists_swept_cuts_with_their_poses() {
     let recipe = gcs_core::solid::cad::recipe_static(&e.sketch,body).unwrap();
     assert_eq!(recipe.sweeps.len(),24);
     assert!(recipe.sweeps.iter().all(|s| s.swept == removal));
-    // The static remainder is the blank: no sweep node, and the body's cuts and
-    // bounds are only the boundary solids (toe and back cut, the tip cone bounds).
+    // The static remainder is the blank: no sweep node, the body nothing but its stock, and the
+    // stock the blank's region, one revolution of its meridian.
     let nodes = recipe.recipe.get("nodes").unwrap().arr();
     assert!(nodes.iter().all(|n| n.get("kind").unwrap().as_str() != "swept"));
-    let blank = nodes.iter().find(|n| n.get("id").unwrap().as_i64() as usize == body).unwrap();
-    assert_eq!(blank.get("cut").unwrap().arr().len(),2);
-    assert_eq!(blank.get("bound").unwrap().arr().len(),1);
+    let node = |id: usize| nodes.iter().find(|n| n.get("id").unwrap().as_i64() as usize == id).unwrap();
+    let blank = node(body);
+    assert!(blank.get("cut").unwrap().arr().is_empty() && blank.get("bound").unwrap().arr().is_empty());
+    let stock = node(blank.get("stock").unwrap().as_i64() as usize);
+    assert_eq!(stock.get("kind").unwrap().as_str(),"revolve");
     assert!(gcs_core::solid::cad::recipe(&e.sketch,body).unwrap_err().contains("continuous motion sweeps"));
 }
 
