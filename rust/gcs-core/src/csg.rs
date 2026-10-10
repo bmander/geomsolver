@@ -1130,7 +1130,8 @@ fn crossings(p: &Prim, q: &Prim, out: &mut Vec<Edge>) {
 }
 
 /// A point on both planes, nearest the origin along the shared direction.
-fn meet(n1: [f64; 3], d1: f64, n2: [f64; 3], d2: f64, dir: [f64; 3]) -> Option<[f64; 3]> {
+pub(crate) fn meet(n1: [f64; 3], d1: f64, n2: [f64; 3], d2: f64, dir: [f64; 3])
+    -> Option<[f64; 3]> {
     let m = [n1, n2, dir];
     let det = m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1])
         - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])

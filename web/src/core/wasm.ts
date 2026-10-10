@@ -91,6 +91,7 @@ export interface Abi {
   gcs_elab_add_face(h: number, p: number, n: number): number;
   gcs_elab_add_solid(h: number, p: number, n: number): number;
   gcs_elab_add_body_word(h: number, p: number, n: number): number;
+  gcs_elab_add_datum(h: number, s: number, p: number, n: number): number;
   gcs_elab_region_json(h: number, s: number, plane: number, x: number, y: number,
                        unit: number): number;
   gcs_elab_remove(h: number, sk: number, p: number, n: number): number;
@@ -184,7 +185,7 @@ export interface Abi {
   gcs_constraint_stating(h: number, p: number, n: number): number;
   gcs_describe(h: number, id: number): number;
   gcs_overview_json(h: number, unit: number, az: number, el: number, shaded: number): number;
-  gcs_overview3d_json(h: number, unit: number): number;
+  gcs_overview3d_json(h: number, unit: number, layer: number): number;
   gcs_callouts_json(h: number, unit: number): number;
   gcs_selected_callouts_json(h: number, unit: number, ids: number, count: number): number;
   gcs_derived_json(h: number, unit: number): number;

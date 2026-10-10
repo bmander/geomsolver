@@ -68,6 +68,7 @@ export interface SolidSpec {
 
 export type BodyWord = 'union' | 'cut' | 'bound';
 
+
 /** A region of the drawing (`Document.regionAt`): the edges of its outer loop and of each hole in
  *  walk order, by name, and the rings — outer first — in the plane's own coordinates. */
 export interface Region {
@@ -359,6 +360,14 @@ export class Document {
   /** A solid swept from a face, each extent the text written (`'20'`, `'20mm'`, `'90deg'`). */
   addSolid(spec: SolidSpec): Edit {
     return edit(withJson(spec, (p, n) => core().gcs_elab_add_solid(this.h, p, n)));
+  }
+
+  /** A plane or an axis dropped by a button, constrained to what `from` names (the selection)
+   *  by the core's table, and seeded off the live drawing; `current` is the plane being drawn
+   *  on, which a datum with nothing selected is set off. */
+  addDatum(kind: 'plane' | 'axis', from: string[], current?: string, name?: string): Edit {
+    return edit(withJson({ kind, from, current, name },
+      (p, n) => core().gcs_elab_add_datum(this.h, this.sketch.handle, p, n)));
   }
 
   /** The body rule: `what union body`, `what cut body`, `what bound body`. */

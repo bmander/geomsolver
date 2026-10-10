@@ -70,6 +70,10 @@ export interface Item3 extends Omit<Item, 'pts' | 'shade'> {
  *  A `unit` of 0 asks for the **object's own scale** rather than the sheet's zoom, which is what
  *  a scene handed to a renderer with its own camera wants: refined that way, zooming moves the
  *  camera and re-evaluates nothing.  `mesh()` takes the same 0 for the same reason. */
-export function overview3(sk: Sketch, unit: number): Item3[] {
-  return takeJson<Item3[]>(core().gcs_overview3d_json(sk.handle, unit));
+/** `layer` asks for one part of the scene: the datums (panes, their axes, axes in space), which a
+ *  drag that moves them redraws every frame, or the objects' creases. */
+export function overview3(sk: Sketch, unit: number,
+                          layer: 'all' | 'datums' | 'objects' = 'all'): Item3[] {
+  const n = layer === 'datums' ? 1 : layer === 'objects' ? 2 : 0;
+  return takeJson<Item3[]>(core().gcs_overview3d_json(sk.handle, unit, n));
 }

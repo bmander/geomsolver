@@ -14,12 +14,22 @@ import './constraints.js';
 /** (xmin, ymin, xmax, ymax) */
 export type Box = [number, number, number, number];
 
-export type Kind = 'point' | 'line' | 'circle' | 'arc' | 'spline' | 'curve' | 'plane';
-// in kind-id order: `pick` decodes the core's answer by indexing this list
-export const KINDS: Kind[] =
-  ['point', 'line', 'circle', 'arc', 'spline', 'curve', 'plane'];
+export type Kind = 'point' | 'line' | 'circle' | 'arc' | 'spline' | 'curve' | 'plane' | 'axis';
+/** The core's kind ids (`kind_id` in the ABI), one per kind with a proxy here — the one table:
+ *  an axis is 16, past kinds that have none. */
 export const KIND_ID: Record<Kind, number> =
-  { point: 0, line: 1, circle: 2, arc: 3, spline: 4, curve: 5, plane: 6 };
+  { point: 0, line: 1, circle: 2, arc: 3, spline: 4, curve: 5, plane: 6, axis: 16 };
+/** Every kind with a proxy here. */
+export const KINDS = Object.keys(KIND_ID) as Kind[];
+
+/** Where each kind's count sits in `gcs_sketch_counts` — appended to, never reordered. */
+const COUNT_SLOT: Record<Kind, number> =
+  { point: 1, line: 2, circle: 3, arc: 4, spline: 6, curve: 8, plane: 10, axis: 11 };
+
+/** The kind a core kind id names, or undefined for one with no proxy — how a pick is decoded. */
+export function kindOf(id: number): Kind | undefined {
+  return KINDS.find((k) => KIND_ID[k] === id);
+}
 
 export class Param {
   constructor(readonly sketch: Sketch, readonly index: number) {}
@@ -403,11 +413,17 @@ export class Plane extends Styled {
   }
 }
 
-export type Primitive = Point | Line | Circle | Arc | Spline | Curve | Plane;
+/** An axis: a directed line in space with no start (`t := axis`, `std.x`), drawn across the
+ *  drawing's reach in the workspace and picked there.  A datum, not a figure: nothing on a page. */
+export class Axis extends Styled {
+  readonly kind = 'axis' as const;
+}
+
+export type Primitive = Point | Line | Circle | Arc | Spline | Curve | Plane | Axis;
 
 const CLASSES =
   { point: Point, line: Line, circle: Circle, arc: Arc, spline: Spline,
-    curve: Curve, plane: Plane } as const;
+    curve: Curve, plane: Plane, axis: Axis } as const;
 
 /** The CCW arc through three points: centre, radius, and the sweep that passes through the
  *  third point.  `swapped` is true when that sweep runs from the *second* given point. */
@@ -436,7 +452,7 @@ export class Sketch {
   private params_: Param[] = [];
   private ents: Record<Kind, Entity[]> =
     { point: [], line: [], circle: [], arc: [], spline: [], curve: [],
-      plane: [] };
+      plane: [], axis: [] };
   private cons: Constraint[] = [];
   /** Constraint id → its proxy, so identity survives every round trip. */
   readonly byId = new Map<number, Constraint>();
@@ -625,31 +641,35 @@ export class Sketch {
   }
 
   get points(): Point[] {
-    return this.list<Point>('point', this.counts()[1]);
+    return this.entities('point') as Point[];
   }
 
   get lines(): Line[] {
-    return this.list<Line>('line', this.counts()[2]);
+    return this.entities('line') as Line[];
   }
 
   get circles(): Circle[] {
-    return this.list<Circle>('circle', this.counts()[3]);
+    return this.entities('circle') as Circle[];
   }
 
   get arcs(): Arc[] {
-    return this.list<Arc>('arc', this.counts()[4]);
+    return this.entities('arc') as Arc[];
   }
 
   get splines(): Spline[] {
-    return this.list<Spline>('spline', this.counts()[6]);
+    return this.entities('spline') as Spline[];
   }
 
   get curves(): Curve[] {
-    return this.list<Curve>('curve', this.counts()[8]);
+    return this.entities('curve') as Curve[];
   }
 
   get planes(): Plane[] {
-    return this.list<Plane>('plane', this.counts()[10]);
+    return this.entities('plane') as Plane[];
+  }
+
+  get axes(): Axis[] {
+    return this.entities('axis') as Axis[];
   }
 
   /** How many points the document has — the size a control-polygon buffer has to allow for. */
@@ -669,13 +689,16 @@ export class Sketch {
   }
 
   entities(kind: Kind): Primitive[] {
-    return (kind === 'point' ? this.points : kind === 'line' ? this.lines
-      : kind === 'circle' ? this.circles : kind === 'spline' ? this.splines
-      : kind === 'curve' ? this.curves
-      : kind === 'plane' ? this.planes : this.arcs) as Primitive[];
+    return this.list<Primitive>(kind, this.counts()[COUNT_SLOT[kind]]);
   }
 
-  /** Every entity, in creation order per kind. */
+  /** Every entity with a proxy, of every kind — curves and axes included. */
+  allEntities(): Primitive[] {
+    return KINDS.flatMap((k) => this.entities(k));
+  }
+
+  /** Every point, figure and view, in creation order per kind — a curve and an axis are not
+   *  among them, and what a copy counts relies on that. */
   primitives(): Primitive[] {
     return [...this.points, ...this.lines, ...this.circles, ...this.arcs, ...this.splines,
             ...this.planes];
@@ -785,7 +808,8 @@ export class Sketch {
   pick(x: number, y: number, tol: number): Primitive | null {
     return withBuf(2, 8, (b) => {
       if (!core().gcs_sketch_pick(this.handle, x, y, tol, b.ptr)) return null;
-      return this.entities(KINDS[b.f64[0]])[b.f64[1]];
+      const kind = kindOf(b.f64[0]);
+      return kind ? this.entities(kind)[b.f64[1]] ?? null : null;
     });
   }
 

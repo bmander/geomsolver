@@ -1501,7 +1501,11 @@ Conventions:
   point (a sagitta of zero hangs the tab).  `tests/mesh.rs` asks it of all three.
   **The glass box asks with 0, and that is why zooming is free**: `unit` (a screen pixel) is
   wrong for a scene with its own camera.  `overview::scene3d` asks the same way (`SCENE_PX` for
-  drawn polylines, `0` for the object's edges), so `Box3D`'s rebuild key omits the zoom.
+  drawn polylines, `0` for the object's edges), so `Box3D`'s rebuild key omits the zoom.  **It
+  includes the pose** (a fingerprint of the parameters): a drag moves numbers inside one sketch,
+  so the datums (`overview::Layer::Datums`: panes, their axes, axes in space) are rebuilt every
+  frame the pose moves, and the objects (`Layer::Objects`, creases and meshes) once it settles —
+  no gesture or wobble in flight.
 - **A face is one loop and a solid's faces are named by path** (§6.8).  A face is a closed loop of
   edges on the one plane every point agrees about — *read* off the memberships, never written on
   the face.  There are **no holes**: a hole is a solid that `cut`s the body.  An `in` block leaves
@@ -1594,7 +1598,20 @@ Conventions:
   was made, so the object index rides beside it), beneath the drawing in `whatIsAt`'s order.  A
   solid picked is a **third selection** (`SketchView.selectedSolids`, `pickSolid`), exclusive
   with `selected` and the picture, carried across an edit by name; Delete removes it, `box3d`
-  lights the face and washes the rest.  The plane tool picks two drawn lines and writes `plane(u:, v:)`.
+  lights the face and washes the rest.  **Axes are picked where the box draws them**
+  (`overview::axis_segment`, one rule for both), beneath every drawn figure and never seen end
+  on; the TS `Axis` proxy is kind id 16 (`kindOf` decodes a pick).  **Plane (`n`) and Axis
+  (`x`) are buttons that drop a datum at once** (`SketchView.addDatum` → `edit::add_datum`, one
+  checked splice): free with nothing selected (set off the plane being drawn on), else
+  constrained to the selection by the table on `add_datum` — a plane through a point, three
+  points, a point square to a ray, two rays, parallel to a plane; an axis through a point or
+  two, along a line, a plane's normal, where two planes meet — every relation an ordinary
+  statement, seeds read off the live drawing; a line square to a plane is said against the
+  plane's own axes (`v0.u`, `v0.v`).  The constraint bar relates them as anything else:
+  `app/relate.ts` sorts the selection into bins (`axes` beside `planes`; a `direction` slot is a
+  ray, a line or an axis) and tries `INCIDENCE`, `PARALLEL`, `PERPENDICULAR` in order, the 2D
+  kinds first.  With colour by state on, the box inks the drawing's own axes and planes by state
+  (`paint::inkOf`, the one ink rule: selected, highlighted, state), std's keeping their quiet ink.
   Points in space stand in no view: seen where they are (`Projection::point`; per frame
   `workspace::space_points`, `gcs_workspace_space_points`, stroked through the eye's own
   camera), drawn and picked, and dragged where the eye sees them (`PlanDrag::seen`, numeric:

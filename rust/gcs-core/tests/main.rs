@@ -53,6 +53,7 @@ mod describe;
 mod diagnose;
 mod drag;
 mod edit;
+mod edit_datums;
 mod edit_solids;
 mod ellipse;
 mod envelope;

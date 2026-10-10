@@ -2,15 +2,13 @@
  * A tool that makes geometry as it goes takes its undo snapshot on the first click of a run;
  * the fit tool makes nothing until it finishes and takes its own there. */
 import * as C from '../core/constraints.js';
-import { Line, Plane, Point, distanceBetween, onRadius } from '../core/model.js';
+import { Line, Point, distanceBetween, onRadius } from '../core/model.js';
 import type { Place, SketchView, Tool } from './view.js';
 
 export function setTool(v: SketchView, tool: Tool): void {
   v.tool = tool;
   v.pending = [];
   v.pendingFit = [];
-  if (tool !== 'plane') v.planeSpec = null;      // armed for one plane, and it was not drawn
-  v.planeAxis = null;
   v.canvas.classList.toggle('select', tool === 'select');
   v.canvas.style.cursor = '';                // drop any hover affordance
   v.onTool(tool);
@@ -155,55 +153,9 @@ export function seedNamed(v: SketchView, name: string, x: number, y: number): vo
   }
 }
 
-/** Write a fresh plane over the two lines picked — `plane(u: a, v: b)`, right along the first and
- *  up along what is left of the second — then make it the plane being drawn in.  Where it
- *  stands is its origin's, which floats until something places it. */
-function placePlane(v: SketchView, u: string, w: string): void {
-  const spec = v.planeSpec;
-  const e = v.doc.addEntity('plane', [u, w], [], spec?.name);
-  if (!v.apply(e, `plane ${e.names[0]}`)) return;
-  const made = v.doc.entity(e.names[0]);
-  if (made instanceof Plane) v.selected = [made];     // and so current: the setter says so
-  setTool(v, 'select');            // armed for this one plane; a second would reuse its name
-  v.onSelect();
-  v.onChanged();
-  v.draw();
-}
-
-/** The plane tool's two clicks pick lines already drawn and named: the one the plane runs
- *  along, then the one that says which way is up in it. */
-function planeClick(v: SketchView, sp: [number, number]): void {
-  const picked = v.pick(sp[0], sp[1]);
-  if (!(picked instanceof Line)) {
-    v.onStatus('a plane is picked over two lines: click a line');
-    return;
-  }
-  const name = v.doc.nameOf(picked);
-  if (!name) {
-    v.onStatus('that line has no name in the source to write the plane over: name it first');
-    return;
-  }
-  if (!v.planeAxis) {
-    v.planeAxis = name;
-    v.onStatus(`the plane runs along ${name}: now click the line that says which way is up`);
-    v.draw();
-  } else if (v.planeAxis === name) {
-    v.onStatus('a plane needs two lines: click another');
-  } else {
-    const u = v.planeAxis;
-    v.planeAxis = null;
-    placePlane(v, u, name);
-  }
-}
-
 export function toolClick(v: SketchView, sp: [number, number]): void {
   // a standard plane chosen before the document had it is brought in by the first press: the
   // document gains `use std`, and what the press makes is drawn on the plane it now has
-  // the plane tool picks lines where they are seen, and draws nothing on a plane
-  if (v.tool === 'plane') {
-    planeClick(v, sp);
-    return;
-  }
   if (!v.ensurePlane()) return;
   // a plane seen edge on has no place on it under the pointer (`toolView` is the one read)
   if (!v.viewCam().readable()) {

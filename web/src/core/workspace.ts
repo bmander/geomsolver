@@ -6,7 +6,7 @@
  * into a place on a plane by inverting a 2×2 — `app/camera.ts`'s whole job.  Every question about
  * what is under the pointer is asked here, of the figures where the eye sees them: views that lie
  * on top of one another on the page are nowhere near one another in space. */
-import { KINDS, Plane, Point, Primitive, Sketch } from './model.js';
+import { KINDS, Plane, Point, Primitive, Sketch, kindOf } from './model.js';
 import type { Kind } from './model.js';
 import { core, takeJson, withBuf } from './wasm.js';
 
@@ -91,7 +91,8 @@ export function pickSeen(sk: Sketch, unit: number, az: number, el: number,
                          x: number, y: number, tol: number): Primitive | null {
   return withBuf(2, 8, (b) => {
     if (!core().gcs_workspace_pick(sk.handle, unit, az, el, x, y, tol, b.ptr)) return null;
-    return sk.entities(KINDS[b.f64[0]])[b.f64[1]] ?? null;
+    const kind = kindOf(b.f64[0]);
+    return kind ? sk.entities(kind)[b.f64[1]] ?? null : null;
   });
 }
 

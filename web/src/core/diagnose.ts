@@ -112,7 +112,8 @@ function fromRaw(sk: Sketch, d: RawDiagnosis): Diagnosis {
     v.map((i) => sk.constraintById(i)).filter((c): c is Constraint => c !== undefined);
   const prm = (v: number[]): Param[] => v.map((i) => sk.paramAt(i));
   const ents = new Map<string, Primitive>();
-  for (const e of sk.primitives()) ents.set(`${e.kind}:${e.index}`, e);
+  // axes and curves included: the core states each one's freedom
+  for (const e of sk.allEntities()) ents.set(`${e.kind}:${e.index}`, e);
   return {
     nParams: d.nParams,
     nEquations: d.nEquations,
