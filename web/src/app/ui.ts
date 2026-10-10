@@ -167,9 +167,6 @@ export interface ToolbarButton {
   key?: string;
   toggle?: boolean;
   title?: string;
-  /** The topic the button folds under when its bar runs out of room (`addTopic`); buttons with
-   *  none stand on the bar whatever its width. */
-  topic?: string;
 }
 
 export function addButton(bar: HTMLElement, spec: ToolbarButton): HTMLButtonElement {
@@ -271,8 +268,9 @@ export function addSelect(bar: HTMLElement, label: string, options: string[], va
  *  under one button named for the topic when it has not (`fitBar`).  The buttons are the same
  *  elements either way, so whatever holds one — a tool's pressed state — keeps holding it.
  *  Folded, the topic drops its buttons as a menu does, and shares the menu bar's one open menu.
- *  Returns where the topic's buttons go. */
-export function addTopic(bar: HTMLElement, label: string): HTMLElement {
+ *  Returns the buttons, in the order of the table. */
+export function addTopic(bar: HTMLElement, label: string,
+                         specs: ToolbarButton[]): HTMLButtonElement[] {
   const wrap = document.createElement('div');
   wrap.className = 'topic';
   const top = document.createElement('button');
@@ -282,12 +280,13 @@ export function addTopic(bar: HTMLElement, label: string): HTMLElement {
   top.setAttribute('aria-haspopup', 'true');
   const items = document.createElement('div');
   items.className = 'topic-items';
-  // dropped, the list hangs from the head's left edge unless that runs it off the screen
+  // dropped, the list hangs from the head's left edge unless that runs it off the screen, and
+  // reaches no lower than the screen does: past that it scrolls
   dropsOn(top, () => {
     wrap.classList.remove('flip');
-    if (items.getBoundingClientRect().right > document.documentElement.clientWidth) {
-      wrap.classList.add('flip');
-    }
+    const at = items.getBoundingClientRect();
+    if (at.right > document.documentElement.clientWidth) wrap.classList.add('flip');
+    items.style.maxHeight = `${Math.max(120, window.innerHeight - at.top - 8)}px`;
   });
   // a choice made from the dropped list is the list done with
   items.addEventListener('click', (e) => {
@@ -297,19 +296,7 @@ export function addTopic(bar: HTMLElement, label: string): HTMLElement {
   });
   wrap.append(top, items);
   bar.append(wrap);
-  return items;
-}
-
-/** The buttons of a table on a bar, each topic's run under its own head.  A topic is gathered
- *  where its first button stands, so a table lists its buttons in the order they are read. */
-export function addButtons(bar: HTMLElement, specs: ToolbarButton[]): HTMLButtonElement[] {
-  const topics = new Map<string, HTMLElement>();
-  return specs.map((spec) => {
-    if (!spec.topic) return addButton(bar, spec);
-    let into = topics.get(spec.topic);
-    if (!into) topics.set(spec.topic, into = addTopic(bar, spec.topic));
-    return addButton(into, spec);
-  });
+  return specs.map((spec) => addButton(items, spec));
 }
 
 /** The width each bar was last fitted to: a bar's height changes as it folds and wraps, and only

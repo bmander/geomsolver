@@ -62,8 +62,8 @@ import {
   planeSelect, view, initialExample,
 } from './shell.js';
 import {
-  MenuItem, ToolbarButton, addButtons, addMenu, addSeparator, askChoice, closeMenus, download,
-  fitBars, openImage, refining, toast,
+  MenuItem, ToolbarButton, addButton, addMenu, addSeparator, addTopic, askChoice, closeMenus,
+  download, fitBars, openImage, refining, toast,
 } from './ui.js';
 import { objectName, type Refining } from './field-preview.js';
 import { Tool } from './view.js';
@@ -79,16 +79,14 @@ const toolButtons = new Map<Tool, HTMLButtonElement>();
 view.onTool = (t) => {
   for (const [k, b] of toolButtons) b.setAttribute('aria-pressed', String(k === t));
 };
-/* Each tool's topic is what it folds under on a bar too narrow to hold them all (`fitBar`). */
+/* Every element tool folds under one head, Elements, on a bar too narrow for them (`fitBar`). */
 const TOOLS = [
-  ['Point', 'point', 'p', 'Draw'], ['Line', 'line', 'l', 'Draw'], ['Rect', 'rect', 'r', 'Draw'],
-  ['Circle', 'circle', 'c', 'Round'], ['Arc', 'arc', 'a', 'Round'],
-  ['Arc 3-pt', 'arc3', '3', 'Round'],
-  ['Spline', 'spline', 's', 'Curve'], ['Spline fit', 'splinefit', 'w', 'Curve'],
-] as [string, Tool, string, string][];
-addButtons(barTools, TOOLS.map(([label, tool, key, topic]): ToolbarButton => ({
-  label, key, topic, toggle: true,
-  title: 'Click again to put the tool down and go back to selecting',
+  ['Point', 'point', 'p'], ['Line', 'line', 'l'], ['Rect', 'rect', 'r'],
+  ['Circle', 'circle', 'c'], ['Arc', 'arc', 'a'], ['Arc 3-pt', 'arc3', '3'],
+  ['Spline', 'spline', 's'], ['Spline fit', 'splinefit', 'w'],
+] as [string, Tool, string][];
+addTopic(barTools, 'Elements', TOOLS.map(([label, tool, key]): ToolbarButton => ({
+  label, key, toggle: true, title: 'Click again to put the tool down and go back to selecting',
   onClick: () => view.setTool(view.tool === tool ? 'select' : tool),
 }))).forEach((b, i) => toolButtons.set(TOOLS[i][1], b));
 view.setTool('select');
@@ -100,8 +98,8 @@ const TOOL_BUTTONS: ToolbarButton[] = [
   { label: 'Construction', key: 'g', onClick: () => view.toggleConstructionSelected(),
     title: 'Draw the selected lines/circles/arcs dashed as reference geometry (they still constrain)' },
 ];
-addButtons(barTools, TOOL_BUTTONS);
-addButtons(barConstraints, CONSTRAINT_BUTTONS);
+for (const b of TOOL_BUTTONS) addButton(barTools, b);
+addTopic(barConstraints, 'Constraints', CONSTRAINT_BUTTONS);
 fitBars([barTools, barConstraints]);
 
 /* -- menu bar ------------------------------------------------------------------- */

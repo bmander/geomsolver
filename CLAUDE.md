@@ -759,9 +759,9 @@ Currently: **Stage 5 done, and Stage 7a/7b — solids**, in **one** implementati
   `SketchView` keeps a one-line delegator for each verb the shell calls.  The *shell*: `shell.ts`,
   `commands` (constraints bar), `dialogs`, `lists`, `dimbox` (a dimension's number), `program` over
   `editor` (knows nothing of Solvent), `ui`, `main.ts` (only wiring). `index.html` is structure and
-  `app.css` the whole of the styling.  **A phone**: a bar's buttons keep their size and fold by
-  `ToolbarButton::topic` under a head (`ui::addButtons`/`fitBar`, last topic first, wrapping only
-  past that); under 720px the program is a drawer above the footer, opened folded
+  `app.css` the whole of the styling.  **A phone**: a bar's buttons keep their size, and where they do not fit
+  fold under one head (`ui::addTopic`/`fitBar`: every element tool under Elements, every
+  constraint under Constraints; a bar wraps only past that); under 720px the program is a drawer above the footer, opened folded
   (`program.ts::bindDrawer`), its head carrying Compile (`applyProgram`, what ⌘↵ does); a finger
   picks within `TOUCH_PICK_PX` (`SketchView::pickPx`, set per press by `pointerType`).
 
