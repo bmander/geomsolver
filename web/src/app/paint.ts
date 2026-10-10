@@ -42,28 +42,32 @@ const COL_STATE: Record<string, string> = {
   well: '#2ca02c', under: '#e69500', over: '#d62728', conflict: '#d62728',
 };
 
+/** The ink colour-by-state gives an entity, or null where the view does not colour by state. */
+function stateInk(v: SketchView, ent: Primitive): string | null {
+  return v.colorByState ? COL_STATE[v.stateOf(ent)] : null;
+}
+
+/** The app's ink for an entity over the document's: selected, then highlighted, then its
+ *  constraint state — or null where the document's ink shows through.  The one statement of that
+ *  order, read by the sheet's stroke and by the box's datum marks alike. */
+export function inkOf(v: SketchView, sel: Set<Primitive>, hl: Set<Primitive>,
+                      ent: Primitive): string | null {
+  return chromeOf(sel, hl, ent)?.[0] ?? stateInk(v, ent);
+}
+
 /* What to stroke an entity with.  The *document's* half — dash, weight, ink — is resolved in the
  * core from its style sheet and arrives as a `Style`; the app's own chrome — selection,
  * highlight, colour-by-state — is layered over it here, because that is a view toggle and not a
  * statement in the document.  `paint` knows what a class is nowhere.
  *
- * Module-level rather than a closure so the three.js layer inks by the same rule (`chromeOf`): a
+ * Module-level rather than a closure so the three.js layer inks by the same rule (`inkOf`): a
  * thing picked is lit the same way wherever it is drawn. */
-/** What a datum in space is inked with by its constraint state, where the view colours by state:
- *  `quiet` leaves a fully held one its own ink, so std's panes stay in the background. */
-export function stateInk(v: SketchView, ent: Primitive, quiet = false): string | null {
-  if (!v.colorByState) return null;
-  const st = v.stateOf(ent);
-  return quiet && st === 'well' ? null : COL_STATE[st];
-}
-
 function strokeOf(v: SketchView, sel: Set<Primitive>, hl: Set<Primitive>,
                   base: string, ent: Primitive, st?: Style): [string, number] {
   const lw = st?.width ?? 1.8;   // the other copy is `svg::PLAIN_PX`; the two must agree
   const chrome = chromeOf(sel, hl, ent);
   if (chrome) return [chrome[0], lw + chrome[1]];
-  if (v.colorByState) return [COL_STATE[v.stateOf(ent)], lw];
-  return [st?.color ?? base, lw];
+  return [stateInk(v, ent) ?? st?.color ?? base, lw];
 }
 
 /** The app's own layer over the document's ink — selected, then highlighted — as a colour and
@@ -187,8 +191,7 @@ export function paint(v: SketchView): void {
   for (const p of sk.points) {
     if (hidePoints && !sel.has(p) && !hl.has(p)) continue;
     const [sx, sy] = v.seen(p);
-    const col = sel.has(p) ? COL.sel : hl.has(p) ? COL.highlight : p.isFixed ? COL.fixed
-      : v.colorByState ? COL_STATE[v.stateOf(p)] : COL.point;
+    const col = chromeOf(sel, hl, p)?.[0] ?? (p.isFixed ? COL.fixed : stateInk(v, p) ?? COL.point);
     ctx.fillStyle = col;
     if (p.isFixed) {
       ctx.fillRect(sx - 4, sy - 4, 8, 8);

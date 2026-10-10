@@ -926,7 +926,6 @@ export class SketchView {
     return pickSeen(this.sketch, this.unit, az, el, ...this.eye(sx, sy), this.world(PICK_PX));
   }
 
-
   /** The object face under the canvas point, nearest the eye, and the solid it is a face of. */
   solidAt(sx: number, sy: number): SolidPick | null {
     const { az, el } = this.orbit;
@@ -1077,6 +1076,9 @@ export class SketchView {
    *  or, with nothing selected, free, set off the plane being drawn on.  It is constrained further
    *  like anything else; the new one is selected, and a plane so becomes the current one. */
   addDatum(kind: 'plane' | 'axis', name?: string): boolean {
+    // a standard plane chosen before the document had it is brought in first, as a tool's press
+    // brings it in, so the datum is set off the plane chosen
+    if (!this.ensurePlane()) return false;
     const from = this.namesOf(this.selected);
     if (from.length < this.selected.length) {
       this.onStatus('something selected has no name in the source to constrain to: name it first');

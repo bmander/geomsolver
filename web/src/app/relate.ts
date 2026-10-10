@@ -10,7 +10,7 @@ export type Sel = {
   pts: Point[]; lines: Line[]; circles: (Circle | Arc)[]; splines: Spline[];
   curves: Curve[]; planes: Plane[]; axes: Axis[];
 };
-type Bin = keyof Sel;
+export type Bin = keyof Sel;
 /** A spec slot's bin, or `rays`: a direction, which a line or an axis fills. */
 type Slot = Bin | 'rays';
 
@@ -41,7 +41,7 @@ function binOf(kind: string): Slot | null {
   return ENTITY_KINDS.has(kind) ? 'circles' : null;   // a circle or an arc, whichever is picked
 }
 
-export const BINS: Bin[] = ['pts', 'lines', 'circles', 'splines', 'curves', 'planes', 'axes'];
+const BINS: Bin[] = ['pts', 'lines', 'circles', 'splines', 'curves', 'planes', 'axes'];
 const SLOTS: Slot[] = [...BINS, 'rays'];
 const BIN_WORD: Record<Slot, string> = {
   pts: 'point(s)', lines: 'line(s)', circles: 'circle(s)/arc(s)', splines: 'spline(s)',
@@ -69,11 +69,16 @@ function perLine(w: Record<Slot, number>): boolean {
   return w.lines === 1 && SLOTS.every((b) => b === 'lines' || w[b] === 0);
 }
 
+/** Whether nothing is selected outside this bin. */
+export function only(s: Sel, bin: Bin): boolean {
+  return BINS.every((b) => b === bin || !s[b].length);
+}
+
 /** Whether the selection is what the class wants: each bin exactly, the lines and axes left
  *  over from their own slots exactly filling its rays. */
 export function fitsSelection(cls: C.ConstraintCtor, s: Sel): boolean {
   const w = wanted(cls);
-  if (perLine(w)) return s.lines.length >= 1 && BINS.every((b) => b === 'lines' || !s[b].length);
+  if (perLine(w)) return s.lines.length >= 1 && only(s, 'lines');
   const spare = (b: 'lines' | 'axes') => s[b].length - w[b];
   return BINS.every((b) => b === 'lines' || b === 'axes' || s[b].length === w[b])
     && spare('lines') >= 0 && spare('axes') >= 0 && spare('lines') + spare('axes') === w.rays;

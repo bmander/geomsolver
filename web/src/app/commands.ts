@@ -7,7 +7,7 @@ import {
   Arc, Circle, Curve, Line, Point, Spline, angleBetween, distanceBetween, signedPointToLine,
 } from '../core/model.js';
 import {
-  BINS, INCIDENCE, PARALLEL, PERPENDICULAR, firstFit, fitsSelection, sortSelection, stated,
+  INCIDENCE, PARALLEL, PERPENDICULAR, firstFit, fitsSelection, only, sortSelection, stated,
   wantedText,
 } from './relate.js';
 import type { Sel } from './relate.js';
@@ -16,33 +16,25 @@ import { ToolbarButton, toast } from './ui.js';
 import type { PairDimension } from '../core/callout.js';
 import type { DimAlt } from './view.js';
 
-/* constraints whose arguments are just entities: (label, class, shortcut).  What each wants
- * selected is not restated here — it is counted off the class's own spec (`wanted`), so a kind
- * added to the language is one filter in `sel()` and not a column in every table. */
-type Simple = [string, C.ConstraintCtor, string?];
-const SIMPLE: Simple[] = [
-  ['Midpoint', C.Midpoint, '⇧m'],
-];
+/* What each button wants selected is not restated here — it is counted off the class's own spec
+ * (`relate.ts`), so a kind added to the language is one bin there and not a column in every
+ * table. */
+
 /* Level and plumb read the selection too.  A pair of points says exactly what a line through
  * them would — that the segment between them is level — and wanting that without drawing the
  * line is the common case: two corners of a shape that share no edge.  Between points it is
  * `level` along the view's `up` or `right`, which the source spells `a level(up) b` (`std`'s
  * `a horizontal b` is a word a file imports, §9.9). */
-const LEVEL: Simple[] = [
-  ['Horizontal', C.Horizontal],
-  ['Vertical', C.Vertical],
-];
 const LEVEL_WORD = { Horizontal: 'up', Vertical: 'right' } as const;
 
 function cLevel(label: 'Horizontal' | 'Vertical'): void {
-  const hit = LEVEL.find(([l, cls]) => l === label && fits(cls));
-  if (hit) {
-    applySimple(hit);
+  const s = sel();
+  const cls = label === 'Horizontal' ? C.Horizontal : C.Vertical;
+  if (fitsSelection(cls, s)) {
+    view.addConstraints(...stated(cls, s));
     return;
   }
-  const s = sel();
-  const pair = s.pts.length === 2 && BINS.every((b) => b === 'pts' || s[b].length === 0);
-  if (!need(pair, 'one or more lines, or two points')) return;
+  if (!need(s.pts.length === 2 && only(s, 'pts'), 'one or more lines, or two points')) return;
   // the direction is the word's: the core reads the axis off the view the two are drawn in
   view.addConstraints(C.build('Level', [s.pts[0], s.pts[1], null, LEVEL_WORD[label]]));
 }
@@ -69,7 +61,7 @@ export const CONSTRAINT_BUTTONS: ToolbarButton[] = [
   { label: 'Perpendicular', key: '⇧l',
     onClick: () => applyFirst(PERPENDICULAR, 'two lines, or a line or axis and an axis or plane'),
     title: 'Two lines · in space, a line or an axis and another, an axis and a plane' },
-  ...SIMPLE.map((c): ToolbarButton => ({ label: c[0], key: c[2], onClick: () => applySimple(c) })),
+  { label: 'Midpoint', key: '⇧m', onClick: () => applyFirst(['Midpoint'], wantedText(C.Midpoint)) },
   { label: 'Equal', key: 'e', onClick: () => cEqual() },
   { label: 'Tangent', key: 't', onClick: () => cTangent(),
     title: 'A line or a circle tangent to a circle/arc · a line tangent to a curve '
@@ -86,9 +78,6 @@ export const CONSTRAINT_BUTTONS: ToolbarButton[] = [
 /** The selection, sorted into the bins a constraint's slots are filled from. */
 const sel = (): Sel => sortSelection(view.selected);
 
-/** Whether the selection is what the class wants. */
-const fits = (cls: C.ConstraintCtor, s = sel()): boolean => fitsSelection(cls, s);
-
 /** The first of several classes the selection fits, applied — one button, several meanings. */
 function applyFirst(cands: readonly string[], what: string): void {
   const s = sel();
@@ -100,14 +89,6 @@ function applyFirst(cands: readonly string[], what: string): void {
 function need(ok: boolean, what: string): boolean {
   if (!ok) toast(`select ${what} first`);
   return ok;
-}
-
-/** Generic applier: checks the selection has the required counts and passes the entities in
- *  spec order.  Single-line constraints (Horizontal/Vertical) apply to every selected line. */
-function applySimple([, cls]: Simple): void {
-  const s = sel();
-  if (!need(fits(cls, s), wantedText(cls))) return;
-  view.addConstraints(...stated(cls, s));
 }
 
 /** The single incidence button: read the selection and pick the constraint that fits it. */

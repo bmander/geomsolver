@@ -4121,13 +4121,10 @@ pub unsafe extern "C" fn gcs_elab_add_datum(h: *mut Elaborated, s: *mut Sketch, 
     guard(std::ptr::null_mut(), move || {
         let v = as_json(ptr, len);
         let text = |k: &str| v.get(k).map(|x| x.as_str().to_string());
-        let kind = match text("kind").as_deref() {
-            Some("plane") => EntKind::Plane,
-            Some("axis") => EntKind::Axis,
-            _ => {
-                set_error("a datum is a plane or an axis");
-                return std::ptr::null_mut();
-            }
+        let kind = EntKind::parse(text("kind").as_deref().unwrap_or_default());
+        let Some(kind) = kind.filter(|k| matches!(k, EntKind::Plane | EntKind::Axis)) else {
+            set_error("a datum is a plane or an axis");
+            return std::ptr::null_mut();
         };
         let from = v.get("from").map(strings).unwrap_or_default();
         out_edit(gcs_core::edit::add_datum(&*h, sk(s), kind, &from, text("current").as_deref(),

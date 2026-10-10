@@ -692,6 +692,11 @@ export class Sketch {
     return this.list<Primitive>(kind, this.counts()[COUNT_SLOT[kind]]);
   }
 
+  /** Every entity with a proxy, of every kind — curves and axes included. */
+  allEntities(): Primitive[] {
+    return KINDS.flatMap((k) => this.entities(k));
+  }
+
   /** Every point, figure and view, in creation order per kind — a curve and an axis are not
    *  among them, and what a copy counts relies on that. */
   primitives(): Primitive[] {

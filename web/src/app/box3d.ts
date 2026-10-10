@@ -21,7 +21,7 @@ import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js
 import { mesh, objects } from '../core/mesh.js';
 import { overview3 } from '../core/overview.js';
 import type { Item3 } from '../core/overview.js';
-import { COL, chromeOf, stateInk } from './paint.js';
+import { COL, chromeOf, inkOf } from './paint.js';
 import type { SketchView } from './view.js';
 
 /** The box's own ink.  Chrome, as the 2D painter's palette is: the core says how squarely a face
@@ -229,17 +229,20 @@ export class Box3D {
   private chrome(v: SketchView): void {
     const sel = new Set(v.selected);
     const hl = new Set(v.highlight);
-    for (const { it, line } of this.frames) {
-      const m = line.material as THREE.LineBasicMaterial;
+    // std's datums are the document's frame of reference, held outright: they keep their quiet
+    // ink, so only what the drawing adds is coloured by its state
+    const ink = (it: Item3, base: string | number): string | number => {
       const ent = v.entityOf(it);
-      const chrome = ent ? chromeOf(sel, hl, ent) : null;
-      m.color.set(chrome ? chrome[0] : (ent && stateInk(v, ent)) || INK.drawn);
+      if (!ent) return base;
+      const own = !v.doc.nameOf(ent)?.startsWith('std.');
+      return (own ? inkOf(v, sel, hl, ent) : chromeOf(sel, hl, ent)?.[0]) ?? base;
+    };
+    for (const { it, line } of this.frames) {
+      (line.material as THREE.LineBasicMaterial).color.set(ink(it, INK.drawn));
     }
     for (const { it, line } of this.panes) {
       const m = line.material;
-      const ent = v.entityOf(it);
-      const chrome = ent ? chromeOf(sel, hl, ent) : null;
-      m.color.set(chrome ? chrome[0] : (ent && stateInk(v, ent, true)) || INK.pane);
+      m.color.set(ink(it, INK.pane));
       // the plane being drawn on: its frame bolds, so where the next thing goes is in sight
       const current = v.planeOf(it) === v.plane;
       m.opacity = current ? 0.8 : 0.35;

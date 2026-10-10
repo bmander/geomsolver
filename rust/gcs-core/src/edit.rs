@@ -680,8 +680,9 @@ pub fn add_entity(prog: &Program, kind: EntKind, args: &[String], seed: &[f64]) 
 /// the caller has one, the name it asked for.  A name already in use is refused rather than
 /// silently renamed: the caller is about to refer to it.
 ///
-/// Held to the elaborator, as every datum a gesture writes is: two axes that do not meet, or run
-/// alike, make no plane (E067), and the gesture is refused in those words.
+/// Held to the elaborator: two axes that do not meet, or run alike, make no plane (E067), and the
+/// edit is refused in those words.  The language's own form — a gesture drops one by
+/// `add_datum` instead, constrained to what is selected.
 pub fn add_plane(prog: &Program, args: &[String], name: Option<&str>) -> Edit {
     entity_decl(prog, EntKind::Plane, args, &[], name)
         .and_then(|(d, name)| append_checked(prog, &[StmtKind::Decl(d)], vec![name]))
@@ -899,12 +900,17 @@ fn solid_edit(prog: &Program, face: &str, how: &SolidSweep, name: Option<&str>) 
     append_checked(prog, &[StmtKind::Decl(d)], vec![name])
 }
 
-/// One relation between two names, as the registry's kind says it (`p coincident v0`).
-fn relation(kind: crate::constraints::CKind, a: &str, b: &str) -> StmtKind {
-    let mut args = vec![None; kind.spec().len()];
-    args[0] = Some(syntax::Arg::Ref(syntax::Ref::new(a.to_string())));
-    args[1] = Some(syntax::Arg::Ref(syntax::Ref::new(b.to_string())));
-    StmtKind::Relation(syntax::Relation::of(syntax::RelationForm::Canonical { kind, args }))
+/// `a word b`, written as the source says it: the elaborator reads which relation the word means
+/// off the operands' kinds (`infix_op`), as it does for anything typed.
+fn written(a: &str, word: &str, b: &str) -> StmtKind {
+    let form = syntax::Written {
+        word: syntax::Name::new(word),
+        fixity: crate::constraints::Fixity::Infix,
+        ops: vec![syntax::Ref::new(a.to_string()), syntax::Ref::new(b.to_string())],
+        args: Vec::new(),
+        span: Span::default(),
+    };
+    StmtKind::Relation(syntax::Relation::of(syntax::RelationForm::Written(form)))
 }
 
 /// A line or an axis, where it is in space: a point on it and its direction.
@@ -925,9 +931,9 @@ struct Selection {
 impl Selection {
     fn read(e: &Elaborated, sk: &Sketch, names: &[String]) -> Result<Selection, String> {
         let mut out = Selection { points: Vec::new(), rays: Vec::new(), planes: Vec::new() };
+        let param = |q: u32| sk.params[q as usize].value;
         for n in names {
             let r = e.map.ent_named(n).ok_or_else(|| format!("`{n}` is nothing in this drawing"))?;
-            let param = |q: u32| sk.params[q as usize].value;
             match r.kind {
                 EntKind::Point => out.points.push((n.clone(), sk.world_point(r.i()))),
                 EntKind::Line => {
@@ -948,25 +954,29 @@ impl Selection {
     }
 }
 
+/// A relation a datum is dropped with, `(a, word, b)`: `p coincident v0`.
+type Said = (String, &'static str, String);
+
 /// A datum dropped by a button (#162 F1): a free plane or axis, constrained to what is selected.
 ///
-/// | selected          | a plane `v0`                          | an axis `x0`                       |
-/// |-------------------|---------------------------------------|------------------------------------|
-/// | nothing           | free, parallel to `current`, set off  | free, square to `current`          |
-/// | a point           | through it                            | through it, square to `current`    |
-/// | two points        | —                                     | through both                       |
-/// | three points      | through all three                     | —                                  |
-/// | a line            | —                                     | along it                           |
-/// | a point and a ray | through the point, square to the ray  | —                                  |
-/// | two rays          | holding both                          | —                                  |
-/// | a plane           | parallel to it, set off               | its normal through its origin      |
-/// | a point, a plane  | —                                     | its normal through the point       |
-/// | two planes        | —                                     | where they meet                    |
+/// | selected          | a plane `v0`                         | an axis `x0`                     |
+/// |-------------------|--------------------------------------|----------------------------------|
+/// | nothing           | free, parallel to `current`, set off | free, square to `current`        |
+/// | a point           | through it                           | through it, square to `current`  |
+/// | two points        | —                                    | through both                     |
+/// | three points      | through all three                    | —                                |
+/// | a line or an axis | —                                    | along it                         |
+/// | a point and a ray | through the point, square to the ray | —                                |
+/// | two rays          | holding both                         | —                                |
+/// | a plane           | parallel to it, set off              | its normal through its origin    |
+/// | a point, a plane  | —                                    | its normal through the point     |
+/// | two planes        | —                                    | where they meet                  |
 ///
 /// A ray is a drawn line or an axis.  Every relation is an ordinary statement (`p coincident v0`,
-/// `t perpendicular v0`), so the datum is constrained further like anything else; the seeds are
-/// read off the drawing `sk`, so the first solve starts at the answer meant.  `current` is the
-/// plane being drawn on (`None` the page).  One splice, held to the elaborator.
+/// `t perpendicular v0`), its kind the elaborator's to read off the operands, so the datum is
+/// constrained further like anything else; the seeds are read off the drawing `sk`, so the first
+/// solve starts at the answer meant.  `current` is the plane being drawn on (`None` the page).
+/// One splice, held to the elaborator.
 pub fn add_datum(
     e: &Elaborated,
     sk: &Sketch,
@@ -975,8 +985,8 @@ pub fn add_datum(
     current: Option<&str>,
     name: Option<&str>,
 ) -> Edit {
-    let prog = &e.program;
-    datum_edit(e, sk, kind, from, current, name).unwrap_or_else(|why| Edit::none(prog, Some(why)))
+    datum_edit(e, sk, kind, from, current, name)
+        .unwrap_or_else(|why| Edit::none(&e.program, Some(why)))
 }
 
 fn datum_edit(
@@ -987,8 +997,6 @@ fn datum_edit(
     current: Option<&str>,
     name: Option<&str>,
 ) -> Result<Edit, String> {
-    use crate::constraints::CKind;
-    use crate::space::{across, add, cross, dot, scale, sub};
     let sel = Selection::read(e, sk, from)?;
     let current = match current {
         Some(n) => match e.map.ent_named(n) {
@@ -997,142 +1005,151 @@ fn datum_edit(
         },
         None => crate::plane::Basis::page(),
     };
-    // a datum with nothing to stand on is set off what it is parallel to, by a round fifth of the
-    // drawing's reach, so it is not lying on it (W113)
-    let off = {
-        let x = crate::overview::axis_reach(sk) / 5.0;
-        let k = 10f64.powf(x.log10().floor());
-        (x / k).round() * k
-    };
-    let unit = |v: [f64; 3], why: &str| crate::plane::unit(v).ok_or_else(|| why.to_string());
-    // `b` with its part along unit `a` taken out, as a unit — `None` where it runs along `a`
-    let square = |a: [f64; 3], b: [f64; 3]| crate::plane::unit(sub(b, scale(a, dot(a, b))));
-    let (points, rays, planes) = (&sel.points, &sel.rays, &sel.planes);
-    let mut taken = taken_names(&e.program);
-    let name = chosen_name(&mut taken, name, kind)?;
-    let mut stmts = Vec::new();
-    if kind == EntKind::Plane {
-        // the frame it is seeded with — u, v, origin — and what holds it
-        let (u, v, o): ([f64; 3], [f64; 3], [f64; 3]) = match (points.len(), rays.len(), planes.len()) {
-            (0, 0, 0) => (current.u, current.v, add(current.o, scale(current.normal(), off))),
-            (1, 0, 0) => (current.u, current.v, points[0].1),
-            (3, 0, 0) => {
-                let (p, q, r) = (points[0].1, points[1].1, points[2].1);
-                let u = unit(sub(q, p), "two of the points are in one place: they make no plane")?;
-                let v = square(u, sub(r, p))
-                    .ok_or("the three points lie on a line: they make no single plane")?;
-                (u, v, p)
-            }
-            (1, 1, 0) => {
-                let n = unit(rays[0].dir, "the line has no length: it says no direction")?;
-                let (u, v) = across(n);
-                (u, v, points[0].1)
-            }
-            (0, 2, 0) => {
-                let u = unit(rays[0].dir, "a line has no length: it says no direction")?;
-                // along the second, or — where the two run alike — across the gap between them
-                let v = square(u, rays[1].dir).or_else(|| square(u, sub(rays[1].at, rays[0].at)))
-                    .ok_or("the two lie along one line: they make no single plane")?;
-                (u, v, rays[0].at)
-            }
-            (0, 0, 1) => {
-                let b = &planes[0].1;
-                (b.u, b.v, add(b.o, scale(b.normal(), off)))
-            }
-            _ => return Err("a plane is dropped with nothing selected, or through a point, three \
-                             points, a point and a line or axis, two lines or axes, or a plane"
-                .into()),
-        };
-        for (p, _) in points {
-            stmts.push(relation(CKind::PointOnPlane, p, &name));
-        }
-        match (points.len(), rays.as_slice()) {
-            // through a point, square to a ray: an axis says so outright, a drawn line by standing
-            // square to both of the plane's own axes
-            (1, [r]) if r.axis => stmts.push(relation(CKind::AxisPerpendicularPlane, &r.name, &name)),
-            (1, [r]) => {
-                for a in ["u", "v"] {
-                    stmts.push(relation(CKind::Perpendicular3, &r.name, &format!("{name}.{a}")));
-                }
-            }
-            (_, rays) => {
-                for r in rays {
-                    let on = if r.axis { CKind::AxisOnPlane } else { CKind::LineOnPlane };
-                    stmts.push(relation(on, &r.name, &name));
-                }
-            }
-        }
-        for (q, _) in planes {
-            stmts.push(relation(CKind::PlaneParallel, &name, q));
-        }
-        let seed = |d: [f64; 3]| vec![syntax::Kid::Hint(syntax::KidSeed { v: tidy(d), axis: true,
-            ..Default::default() })];
-        let d = gesture_decl(EntKind::Plane, &name, vec![seed(u), seed(v), Vec::new()], &tidy(o));
-        stmts.insert(0, StmtKind::Decl(d));
+    let name = chosen_name(&mut taken_names(&e.program), name, kind)?;
+    let (decl, said) = if kind == EntKind::Plane {
+        plane_datum(sk, &sel, &current, &name)?
     } else {
-        // the direction it is seeded along, and a point it passes through
-        let (dir, at): ([f64; 3], [f64; 3]) = match (points.len(), rays.len(), planes.len()) {
-            (0, 0, 0) => (current.normal(), add(current.o, scale(current.u, off))),
-            (1, 0, 0) => (current.normal(), points[0].1),
-            (2, 0, 0) => (unit(sub(points[1].1, points[0].1),
-                "the two points are in one place: they say no direction")?, points[0].1),
-            (0, 1, 0) if !rays[0].axis => (unit(rays[0].dir, "the line has no length")?, rays[0].at),
-            (1, 0, 1) => (planes[0].1.normal(), points[0].1),
-            (0, 0, 1) => (planes[0].1.normal(), planes[0].1.o),
-            (0, 0, 2) => {
-                let (a, b) = (&planes[0].1, &planes[1].1);
-                let d = unit(cross(a.normal(), b.normal()), "the two planes are parallel: they do \
-                                                            not meet")?;
-                // where they meet, nearest the first's origin: the second's height above it, met
-                // along the first across the line
-                let across_line = cross(d, a.normal());
-                let t = dot(sub(b.o, a.o), b.normal()) / dot(across_line, b.normal());
-                (d, add(a.o, scale(across_line, t)))
-            }
-            _ => return Err("an axis is dropped with nothing selected, or through a point, two \
-                             points, along a line, square to a plane, a plane through a point, or \
-                             where two planes meet"
-                .into()),
-        };
-        for (p, _) in points {
-            stmts.push(relation(CKind::PointOnAxis, p, &name));
-        }
-        if let [r] = rays.as_slice() {
-            stmts.push(relation(CKind::LineOnAxis, &r.name, &name));
-        }
-        match planes.as_slice() {
-            [(p, _)] => {
-                stmts.push(relation(CKind::AxisPerpendicularPlane, &name, p));
-                if points.is_empty() {
-                    stmts.push(relation(CKind::PointOnAxis, &format!("{p}.origin"), &name));
-                }
-            }
-            planes => {
-                for (p, _) in planes {
-                    stmts.push(relation(CKind::AxisOnPlane, &name, p));
-                }
-            }
-        }
-        // an axis's place is the point on it nearest the world's origin
-        let foot = sub(at, scale(dir, dot(at, dir)));
-        let mut seed = tidy(dir).to_vec();
-        seed.extend(tidy(foot));
-        stmts.insert(0, StmtKind::Decl(gesture_decl(EntKind::Axis, &name, Vec::new(), &seed)));
-    }
+        axis_datum(sk, &sel, &current, &name)?
+    };
+    let mut stmts = vec![StmtKind::Decl(decl)];
+    stmts.extend(said.iter().map(|(a, word, b)| written(a, word, b)));
     append_checked(&e.program, &stmts, vec![name])
+}
+
+/// How far a datum with nothing to stand on is set off what it is parallel to: a round fifth of
+/// the drawing's reach, so it is not lying on it (W113).
+fn set_off(sk: &Sketch) -> f64 {
+    round_sig(crate::overview::axis_reach(sk) / 5.0, 1)
+}
+
+/// `p coincident x`, for each of the points.
+fn through(points: &[(String, [f64; 3])], x: &str) -> Vec<Said> {
+    points.iter().map(|(p, _)| (p.clone(), "coincident", x.to_string())).collect()
+}
+
+/// The plane's row of `add_datum`'s table: its declaration, seeded with the frame the rule reads
+/// off the drawing, and what it is said to hold.
+fn plane_datum(sk: &Sketch, sel: &Selection, current: &crate::plane::Basis, name: &str)
+    -> Result<(Decl, Vec<Said>), String> {
+    use crate::plane::Basis;
+    use crate::space::{across, add, scale, sub};
+    let Selection { points, rays, planes } = sel;
+    let off = |b: &Basis| Basis { o: add(b.o, scale(b.normal(), set_off(sk))), ..*b };
+    let (frame, mut said): (Basis, Vec<Said>) = match (points.len(), rays.len(), planes.len()) {
+        (0, 0, 0) => (off(current), Vec::new()),
+        (1, 0, 0) => (Basis { o: points[0].1, ..*current }, Vec::new()),
+        (3, 0, 0) => {
+            let (p, q, r) = (points[0].1, points[1].1, points[2].1);
+            crate::plane::unit(sub(q, p))
+                .ok_or("two of the points are in one place: they make no plane")?;
+            let b = Basis::explicit(sub(q, p), sub(r, p))
+                .ok_or("the three points lie on a line: they make no single plane")?;
+            (Basis { o: p, ..b }, Vec::new())
+        }
+        (1, 1, 0) => {
+            let r = &rays[0];
+            let n = crate::plane::unit(r.dir)
+                .ok_or("the line has no length: it says no direction")?;
+            let (u, v) = across(n);
+            // square to an axis outright; to a drawn line by standing square to both the plane's
+            // own axes, there being no line-square-to-a-plane relation
+            let square = if r.axis {
+                vec![(r.name.clone(), "perpendicular", name.to_string())]
+            } else {
+                let to = |a: &str| (r.name.clone(), "perpendicular", format!("{name}.{a}"));
+                vec![to("u"), to("v")]
+            };
+            (Basis { u, v, o: points[0].1 }, square)
+        }
+        (0, 2, 0) => {
+            // along the second, or — where the two run alike — across the gap between them
+            let (a, b) = (&rays[0], &rays[1]);
+            let f = Basis::explicit(a.dir, b.dir)
+                .or_else(|| Basis::explicit(a.dir, sub(b.at, a.at)))
+                .ok_or("the two lie along one line: they make no single plane")?;
+            let held = rays.iter().map(|r| (r.name.clone(), "coincident", name.to_string()));
+            (Basis { o: a.at, ..f }, held.collect())
+        }
+        (0, 0, 1) => (off(&planes[0].1), vec![(name.to_string(), "parallel", planes[0].0.clone())]),
+        _ => return Err("a plane is dropped with nothing selected, or through a point, three \
+                         points, a point and a line or axis, two lines or axes, or a plane"
+            .into()),
+    };
+    // the points the plane passes through come first, as they are selected
+    let mut all = through(points, name);
+    all.append(&mut said);
+    let seed = |d: [f64; 3]| vec![syntax::Kid::Hint(syntax::KidSeed { v: seed_round(d), axis: true,
+        ..Default::default() })];
+    let decl = gesture_decl(EntKind::Plane, name, vec![seed(frame.u), seed(frame.v), Vec::new()],
+        &seed_round(frame.o));
+    Ok((decl, all))
+}
+
+/// The axis's row of `add_datum`'s table: its declaration, seeded with the direction and a place
+/// the rule reads off the drawing, and what it is said to pass through or stand square to.
+fn axis_datum(sk: &Sketch, sel: &Selection, current: &crate::plane::Basis, name: &str)
+    -> Result<(Decl, Vec<Said>), String> {
+    use crate::space::{add, cross, dot, scale, sub};
+    let Selection { points, rays, planes } = sel;
+    let unit = |v: [f64; 3], why: &'static str| crate::plane::unit(v).ok_or(why);
+    let n = name.to_string();
+    type Row = ([f64; 3], [f64; 3], Vec<Said>);
+    let (dir, at, said): Row = match (points.len(), rays.len(), planes.len()) {
+        (0, 0, 0) => (current.normal(), add(current.o, scale(current.u, set_off(sk))), Vec::new()),
+        (1, 0, 0) => (current.normal(), points[0].1, Vec::new()),
+        (2, 0, 0) => {
+            let d = unit(sub(points[1].1, points[0].1),
+                "the two points are in one place: they say no direction")?;
+            (d, points[0].1, Vec::new())
+        }
+        (0, 1, 0) => {
+            let r = &rays[0];
+            let along = vec![(r.name.clone(), "coincident", n.clone())];
+            (unit(r.dir, "the line has no length")?, r.at, along)
+        }
+        (1, 0, 1) => (planes[0].1.normal(), points[0].1,
+            vec![(n.clone(), "perpendicular", planes[0].0.clone())]),
+        (0, 0, 1) => {
+            let (p, b) = &planes[0];
+            (b.normal(), b.o, vec![(n.clone(), "perpendicular", p.clone()),
+                                   (format!("{p}.origin"), "coincident", n.clone())])
+        }
+        (0, 0, 2) => {
+            let (a, b) = (&planes[0].1, &planes[1].1);
+            let d = unit(cross(a.normal(), b.normal()),
+                "the two planes are parallel: they do not meet")?;
+            let at = crate::csg::meet(a.normal(), a.along_normal(), b.normal(), b.along_normal(), d)
+                .ok_or("the two planes are parallel: they do not meet")?;
+            (d, at, planes.iter().map(|(p, _)| (n.clone(), "coincident", p.clone())).collect())
+        }
+        _ => return Err("an axis is dropped with nothing selected, or through a point, two points, \
+                         along a line or an axis, square to a plane, a plane through a point, or \
+                         where two planes meet"
+            .into()),
+    };
+    let mut all = through(points, name);
+    all.extend(said);
+    // an axis's place is the point on it nearest the world's origin
+    let foot = sub(at, scale(dir, dot(at, dir)));
+    let mut seed = seed_round(dir).to_vec();
+    seed.extend(seed_round(foot));
+    Ok((gesture_decl(EntKind::Axis, name, Vec::new(), &seed), all))
+}
+
+/// `x` to `digits` significant digits.
+fn round_sig(x: f64, digits: i32) -> f64 {
+    if x == 0.0 || !x.is_finite() {
+        return x;
+    }
+    let k = 10f64.powi(digits - 1 - x.abs().log10().floor() as i32);
+    (x * k).round() / k
 }
 
 /// A seed as the source should read it: a part a millionth of the whole is zero, and the rest
 /// keeps nine significant digits — a direction off the drawing is no more exact than that.
-fn tidy(v: [f64; 3]) -> [f64; 3] {
+fn seed_round(v: [f64; 3]) -> [f64; 3] {
     let big = v.iter().fold(0f64, |m, x| m.max(x.abs()));
-    v.map(|x| {
-        if x.abs() <= 1e-6 * big {
-            return 0.0;
-        }
-        let k = 10f64.powi(8 - x.abs().log10().floor() as i32);
-        (x * k).round() / k
-    })
+    v.map(|x| if x.abs() <= 1e-6 * big { 0.0 } else { round_sig(x, 9) })
 }
 
 /// `what union body`, `what cut body`, `what bound body` — the body rule, one statement (§6.9).

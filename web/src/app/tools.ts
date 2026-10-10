@@ -154,9 +154,6 @@ export function seedNamed(v: SketchView, name: string, x: number, y: number): vo
   }
 }
 
-/** Write a fresh plane over the two lines picked — `plane(u: a, v: b)`, right along the first and
- *  up along what is left of the second — then make it the plane being drawn in.  Where it
- *  stands is its origin's, which floats until something places it. */
 export function toolClick(v: SketchView, sp: [number, number]): void {
   // a standard plane chosen before the document had it is brought in by the first press: the
   // document gains `use std`, and what the press makes is drawn on the plane it now has

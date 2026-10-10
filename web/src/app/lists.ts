@@ -127,7 +127,7 @@ export function refreshRows(): void {
   // the focused constraint has left the document — a row of the window is not where that is
   // noticed any more, since the window holds only the ones reaching what is picked
   if (currentConstraint && !all.includes(currentConstraint)) clearFocus();
-  subject = panelSubject(new Set(sk.primitives()));
+  subject = panelSubject(new Set(sk.allEntities()));
   const next = holding(all, subject);
   if (stale || !sameList(next, rows)) { stale = false; rebuildRows(next); }
 

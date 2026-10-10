@@ -1673,7 +1673,7 @@ test('a point in space is drawn and picked where it stands, whichever way the ey
   view.doc.dispose();
 });
 
-/* -- the datum tools (#162 F1) --------------------------------------------------------- */
+/* -- the datum buttons (#162 F1) ------------------------------------------------------- */
 
 /** On the front: `a` at (10, 0), `c` at (40, 30), `ab` along x to (40, 0) — and far enough out
  *  that the standard axes, drawn across the drawing's reach, reach past where they are clicked. */
