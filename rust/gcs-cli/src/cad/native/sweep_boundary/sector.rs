@@ -199,7 +199,7 @@ pub(super) fn construct(session: &Session,sk: &Sketch,body: usize,recipe: &cad::
             tools.len(),session.solids(partition)?.len(),clock.elapsed()));
         mark(Stage::Split);
         let clock = std::time::Instant::now();
-        let (kept,removed) = classify(session,partition,&body_field)?;
+        let (kept,removed) = classify(session,partition,&body_field,scale)?;
         stage(&format!("classified {} material and {} removed cells ({:?})",kept.len(),removed.len(),clock.elapsed()));
         if kept.is_empty() { return Err("no cell of the sector is material".into()); }
         let volumes = |cells: &[Cell]| cells.iter().map(|c| contracts::CellVolume {volume:c.volume,point:c.point}).collect::<Vec<_>>();

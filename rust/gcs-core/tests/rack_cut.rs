@@ -155,6 +155,37 @@ fn a_racks_tooth_space_is_built() {
     }
 }
 
+/// **A drawing in centimetres cuts the same space**: the fixture written with `unit cm`, every
+/// bare coordinate a tenth of the millimetre one. The kernel builds in millimetres while the
+/// material field reads the document's own units, so the cells it judges are asked of the field
+/// at their places divided by the document's millimetres per unit — read in millimetres, each
+/// sample stood ten times farther out than the cell it judges.
+#[test]
+fn a_racks_tooth_space_in_centimetres_is_built() {
+    use gcs_core::brep::{export, sweep::Say};
+    let cm = SPACE.replace("unit mm", "unit cm")
+        .replace("hint(r: 22)", "hint(r: 2.2)")
+        .replace("fix((20, 0))", "fix((2, 0))").replace("hint((20, 0))", "hint((2, 0))")
+        .replace("fix((20, 10))", "fix((2, 1))").replace("hint((20, 10))", "hint((2, 1))")
+        .replace("hint((18, -0.84))", "hint((1.8, -0.084))").replace("hint((18, 0.84))", "hint((1.8, 0.084))")
+        .replace("hint((24, 3.03))", "hint((2.4, 0.303))").replace("hint((24, -3.03))", "hint((2.4, -0.303))")
+        .replace("fix((18, -0.842856))", "fix((1.8, -0.0842856))").replace("fix((18, 0.842856))", "fix((1.8, 0.0842856))")
+        .replace("fix((24, 3.026666))", "fix((2.4, 0.3026666))").replace("fix((24, -3.026666))", "fix((2.4, -0.3026666))");
+    let mut e = build(&cm);
+    let r = gcs_core::solve::solve(&mut e.sketch, gcs_core::solve::SolveOpts::default());
+    assert!(r.success, "{}", r.message);
+    let gear = e.map.ent_named("gear").unwrap().i();
+    let say = Say { stage: &|l: &str| eprintln!("{l}"), mark: &|_| {} };
+    let exact = match export::exact(&e.sketch, gear, None, None, &say) {
+        Ok(x) => x,
+        Err(r) => panic!("refused at {:?}: {}", r.stage, r.message),
+    };
+    // the exact solid is in millimetres whatever the document's unit
+    let removed = PI * 22. * 22. * 6. - gcs_core::brep::props::volume(&exact.solid);
+    let want = 6. * space_area(400, 4000);
+    assert!((removed - want).abs() < 0.03, "removed {removed:.5} mm³, the space being {want:.5}");
+}
+
 /// **The rack's sheet is its profile's planar envelope extruded** (issue #70, part 1): the prism
 /// under a motion keeping its profile's plane meets every station in the same curve, so the sheet
 /// is the planar envelope of the tooth's flanks, tip and tip corners (`generate`, exact) extruded

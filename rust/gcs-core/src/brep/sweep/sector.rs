@@ -107,14 +107,16 @@ struct Cell { index: usize,point: V,volume: f64 }
 /// Cells of the given volumes judged by the material field at their interior samples (points with
 /// a lower bound on their distance from the cell's boundary, deepest first): every sample far
 /// enough from its cell's boundary is probed, at half that distance (at most 0.05 mm), and all of a
-/// cell's must agree. An unresolved probe or a cell reading both ways refuses.
-fn judge(volumes: &[f64],sampled: Vec<Vec<(V,f64)>>,field: &MaterialField) -> Result<(Vec<Cell>,Vec<Cell>),String> {
+/// cell's must agree. An unresolved probe or a cell reading both ways refuses. The cells are in
+/// millimetres and the field in the document's units, `scale_mm` millimetres each.
+fn judge(volumes: &[f64],sampled: Vec<Vec<(V,f64)>>,field: &MaterialField,scale_mm: f64)
+    -> Result<(Vec<Cell>,Vec<Cell>),String> {
     let (mut kept,mut removed) = (Vec::new(),Vec::new());
     let asked: Vec<(V,f64)> = sampled.iter().flatten().map(|&(p,b)| (p,(b*0.5).min(0.05))).filter(|&(_,d)| d > 1e-4).collect();
     let answers = crate::par::indices_with(asked.len(),|| field.evaluator(cad::POSE_CACHE),|material,i| {
         let (point,distance) = asked[i];
-        material.probe(point.map(|x| Interval::point(x).unwrap()),[1.,0.,0.],distance,
-            Options {value_tolerance:distance/4.,max_evaluations:40000}).map_err(|e| format!("{e:?}"))
+        material.probe(point.map(|x| Interval::point(x/scale_mm).unwrap()),[1.,0.,0.],distance/scale_mm,
+            Options {value_tolerance:distance/scale_mm/4.,max_evaluations:40000}).map_err(|e| format!("{e:?}"))
     });
     let mut answers = answers.into_iter();
     for (k,(&volume,samples)) in volumes.iter().zip(sampled).enumerate() {
@@ -148,8 +150,10 @@ fn judge(volumes: &[f64],sampled: Vec<Vec<(V,f64)>>,field: &MaterialField) -> Re
 }
 
 /// What a sector is cut from once its premises hold: the placements' turn, the two sides, a sheet
-/// of each sweep placed in the sector, and the body's material field.
-pub struct Premises { frame: Frame,n: usize,pitch: f64,across: f64,side: Brep,other: Brep,tools: Vec<Brep>,body_field: MaterialField }
+/// of each sweep placed in the sector, and the body's material field (in the document's units,
+/// `scale_mm` millimetres each).
+pub struct Premises { frame: Frame,n: usize,pitch: f64,across: f64,side: Brep,other: Brep,tools: Vec<Brep>,body_field: MaterialField,
+    scale_mm: f64 }
 
 /// Whether `body` can be built as one sector, and what it is cut from, or why not — the placements
 /// not turns of one about one axis, the blank not alike under the turn, no side clear of the cuts
@@ -229,13 +233,13 @@ pub fn premises(sk: &Sketch,body: usize,recipe: &StaticRecipe,blank: &Brep,field
     let other = side.moved(&placed(turn,scale_mm));
     // the blank made again about the axis, its faces' parameters starting opposite the sector
     let across = chosen.angle_at((chosen.span[0]+chosen.span[1])/2.)+indexing.pitch()/2.+std::f64::consts::PI;
-    Ok(Premises {frame,n,pitch:indexing.pitch(),across,side,other,tools,body_field})
+    Ok(Premises {frame,n,pitch:indexing.pitch(),across,side,other,tools,body_field,scale_mm})
 }
 
 /// The sector its premises describe: the blank made about the axis, split by the two sides into the
 /// sector and it by the sheets, its cells judged by the material field and the one material cell kept.
 pub fn construct(recipe: &StaticRecipe,distinct: &[usize],premises: Premises,say: &Say) -> Result<Sector,String> {
-    let Premises {frame,n,pitch,across,side,other,tools,body_field} = premises;
+    let Premises {frame,n,pitch,across,side,other,tools,body_field,scale_mm} = premises;
     let clock = crate::clock::Instant::now();
     let turned = blank_from(&recipe.recipe,frame.origin,frame.axis,frame.radial(across))?;
     let whole = volume(&turned);
@@ -259,7 +263,7 @@ pub fn construct(recipe: &StaticRecipe,distinct: &[usize],premises: Premises,say
     (say.mark)(crate::solid::export::Stage::Split);
     let clock = crate::clock::Instant::now();
     let sampled = crate::par::map(&cells,|c| interior(c,4)).into_iter().collect::<Result<Vec<_>,_>>()?;
-    let (kept,removed) = judge(&volumes,sampled,&body_field)?;
+    let (kept,removed) = judge(&volumes,sampled,&body_field,scale_mm)?;
     (say.stage)(&format!("classified {} material and {} removed cells ({:?})",kept.len(),removed.len(),clock.elapsed()));
     let measured = |cells: &[Cell]| cells.iter().map(|c| contracts::CellVolume {volume:c.volume,point:c.point}).collect::<Vec<_>>();
     contracts::cells(&measured(&kept),&measured(&removed),&vec![1;distinct.len()])?;
@@ -312,7 +316,7 @@ pub fn whole(sk: &Sketch,body: usize,recipe: &StaticRecipe,blank: &Brep,distinct
     let clock = crate::clock::Instant::now();
     let body_field = MaterialField::read(sk,body,cad::AXIS_TOLERANCE)?;
     let sampled = crate::par::map(&cells,|c| interior(c,4)).into_iter().collect::<Result<Vec<_>,_>>()?;
-    let (kept,removed) = judge(&volumes,sampled,&body_field)?;
+    let (kept,removed) = judge(&volumes,sampled,&body_field,scale_mm)?;
     (say.stage)(&format!("classified {} material and {} removed cells ({:?})",kept.len(),removed.len(),clock.elapsed()));
     let measured = |cells: &[Cell]| cells.iter().map(|c| contracts::CellVolume {volume:c.volume,point:c.point}).collect::<Vec<_>>();
     contracts::cells(&measured(&kept),&measured(&removed),&placements)?;

@@ -50,7 +50,8 @@ fn tracing() -> bool {
 /// an unresolved point or a cell that a leaking sheet failed to separate
 /// refuses the build instead of guessing. The probes run on every core, an evaluator a thread,
 /// and are read in the cells' order, so the first refusal is the one the cells taken in turn give.
-pub(crate) fn classify(session: &Session,partition: c_int,field: &MaterialField)
+/// The cells are in millimetres and the field in the document's units, `scale` millimetres each.
+pub(crate) fn classify(session: &Session,partition: c_int,field: &MaterialField,scale: f64)
     -> Result<(Vec<Cell>,Vec<Cell>),String> {
     // Each cell's volume was measured when the partition was validated; its point is the
     // deepest interior sample measured here, every cell's on its own core.
@@ -59,7 +60,7 @@ pub(crate) fn classify(session: &Session,partition: c_int,field: &MaterialField)
     let sampled = session.samples_of(&solids,4,12)?;
     let sampling = clock.elapsed().as_secs_f64();
     let volumes = solids.iter().map(|&s| session.volume(s)).collect::<Result<Vec<_>,_>>()?;
-    let (kept,removed) = judge(&volumes,sampled,field,sampling)?;
+    let (kept,removed) = judge(&volumes,sampled,field,scale,sampling)?;
     let native = |c: Cell| Cell {solid:solids[c.solid as usize],..c};
     Ok((kept.into_iter().map(native).collect(),removed.into_iter().map(native).collect()))
 }
@@ -67,8 +68,9 @@ pub(crate) fn classify(session: &Session,partition: c_int,field: &MaterialField)
 /// Cells of the given volumes judged by the material field at their interior samples (points with
 /// a lower bound on their distance from the cell's boundary, deepest first): each `Cell`'s `solid`
 /// is its index. Every sample far enough from its cell's boundary is probed, at half that distance
-/// (at most 0.05 mm), on every core, an evaluator a thread, and read in the cells' order.
-pub(crate) fn judge(volumes: &[f64],sampled: Vec<Vec<([f64;3],f64)>>,field: &MaterialField,sampling: f64)
+/// (at most 0.05 mm), on every core, an evaluator a thread, and read in the cells' order: a sample
+/// in millimetres asked of the field at its place in the document's units, `scale` millimetres each.
+pub(crate) fn judge(volumes: &[f64],sampled: Vec<Vec<([f64;3],f64)>>,field: &MaterialField,scale: f64,sampling: f64)
     -> Result<(Vec<Cell>,Vec<Cell>),String> {
     let (mut kept,mut removed) = (Vec::new(),Vec::new());
     let asked: Vec<([f64;3],f64)> = sampled.iter().flatten().map(|&(point,boundary)| (point,(boundary*0.5).min(0.05)))
@@ -76,8 +78,8 @@ pub(crate) fn judge(volumes: &[f64],sampled: Vec<Vec<([f64;3],f64)>>,field: &Mat
     let clock = std::time::Instant::now();
     let answers = gcs_core::par::indices_with(asked.len(),|| field.evaluator(cad::POSE_CACHE),|material,i| {
         let (point,distance) = asked[i];
-        material.probe(point.map(|x| Interval::point(x).unwrap()),[1.,0.,0.],distance,
-            Options {value_tolerance:distance/4.,max_evaluations:40000}).map_err(|e| format!("{e:?}"))
+        material.probe(point.map(|x| Interval::point(x/scale).unwrap()),[1.,0.,0.],distance/scale,
+            Options {value_tolerance:distance/scale/4.,max_evaluations:40000}).map_err(|e| format!("{e:?}"))
     });
     let probing = clock.elapsed().as_secs_f64();
     let mut answers = answers.into_iter();
@@ -482,7 +484,7 @@ pub(crate) fn construct_swept_body(session: &Session,sk: &Sketch,body: usize,rec
     let started = std::time::Instant::now();
     let classified = || -> Result<(Vec<Cell>,Vec<Cell>),String> {
         let material = MaterialField::read(sk,body,cad::AXIS_TOLERANCE)?;
-        let (kept,removed) = classify(session,partition,&material)?;
+        let (kept,removed) = classify(session,partition,&material,scale)?;
         stage(&format!("classified {} material and {} removed cells ({:?})",kept.len(),removed.len(),started.elapsed()));
         if kept.is_empty() { return Err("no cell of the blank is material".into()); }
         let volumes = |cells: &[Cell]| cells.iter().map(|c| contracts::CellVolume {volume:c.volume,point:c.point}).collect::<Vec<_>>();
