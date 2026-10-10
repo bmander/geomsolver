@@ -62,8 +62,7 @@ import {
   planeSelect, view, initialExample,
 } from './shell.js';
 import {
-  MenuItem, ToolbarButton, addButton, addMenu, addSeparator, askChoice, closeMenus, download, openImage,
-  refining, toast,
+  MenuItem, ToolbarButton, addMenu, addTopic, askChoice, closeMenus, download, fitBars, openImage, refining, toast,
 } from './ui.js';
 import { objectName, type Refining } from './field-preview.js';
 import { Tool } from './view.js';
@@ -79,27 +78,30 @@ const toolButtons = new Map<Tool, HTMLButtonElement>();
 view.onTool = (t) => {
   for (const [k, b] of toolButtons) b.setAttribute('aria-pressed', String(k === t));
 };
-for (const [label, tool, key] of [
+/* The element tools, then past a divider what the geometry you drew is *for*, as against the
+ * constraints that hold it — all under one head, Elements, on a bar too narrow for them
+ * (`fitBar`).  A table like the constraints bar's, so the chip and the accelerator stay one
+ * string — see ACTION_KEYS. */
+const TOOLS = [
   ['Point', 'point', 'p'], ['Line', 'line', 'l'], ['Rect', 'rect', 'r'],
   ['Circle', 'circle', 'c'], ['Arc', 'arc', 'a'], ['Arc 3-pt', 'arc3', '3'],
   ['Spline', 'spline', 's'], ['Spline fit', 'splinefit', 'w'],
-] as [string, Tool, string][]) {
-  toolButtons.set(tool, addButton(barTools, {
-    label, key, toggle: true, title: 'Click again to put the tool down and go back to selecting',
-    onClick: () => view.setTool(view.tool === tool ? 'select' : tool),
-  }));
-}
-view.setTool('select');
-addSeparator(barTools);
-/* Beside the tools, past the divider: what the geometry you drew is *for*, as against the
- * constraints that hold it.  A table like the constraints bar's, so the chip and the
- * accelerator stay one string — see ACTION_KEYS. */
+] as [string, Tool, string][];
 const TOOL_BUTTONS: ToolbarButton[] = [
   { label: 'Construction', key: 'g', onClick: () => view.toggleConstructionSelected(),
     title: 'Draw the selected lines/circles/arcs dashed as reference geometry (they still constrain)' },
 ];
-for (const b of TOOL_BUTTONS) addButton(barTools, b);
-for (const b of CONSTRAINT_BUTTONS) addButton(barConstraints, b);
+addTopic(barTools, 'Elements', [
+  ...TOOLS.map(([label, tool, key]): ToolbarButton => ({
+    label, key, toggle: true, title: 'Click again to put the tool down and go back to selecting',
+    onClick: () => view.setTool(view.tool === tool ? 'select' : tool),
+  })),
+  null,
+  ...TOOL_BUTTONS,
+]).slice(0, TOOLS.length).forEach((b, i) => toolButtons.set(TOOLS[i][1], b));
+view.setTool('select');
+addTopic(barConstraints, 'Constraints', CONSTRAINT_BUTTONS);
+fitBars(document.querySelector('header')!, [barTools, barConstraints]);
 
 /* -- menu bar ------------------------------------------------------------------- */
 

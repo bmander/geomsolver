@@ -2,7 +2,9 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- the page never zooms: the canvas pinches its own camera, and a phone zooming in on a text
+     field it focuses would leave the drawing half off screen -->
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <title>gcs sketcher</title>
 <link rel="stylesheet" href="./app.css">
 </head>
@@ -62,7 +64,19 @@
         </button></h2>
         <nav id="project-tree" aria-label="Project files"></nav>
       </section>
-      <h2>program<span id="ppanel-state"></span></h2>
+      <!-- the program's head: on a narrow screen the panel is a drawer above the footer, and the
+           head is what folds it (`program.ts::bindDrawer`) -->
+      <div id="ppanel-head">
+        <h2><button id="ppanel-fold" type="button" aria-expanded="true" aria-controls="pcode"
+                    title="Fold the program away">
+          <svg class="project-disclosure" aria-hidden="true" viewBox="0 0 24 24">
+            <path d="m9 5 7 7-7 7"/>
+          </svg>
+          program<span id="ppanel-state"></span>
+        </button></h2>
+        <button id="program-compile" type="button"
+                title="Compile the source and solve it again (⌘↵ while typing in it)">Compile</button>
+      </div>
       <div id="program-name" hidden></div>
       <label id="program-files" hidden>File
         <select id="program-file" aria-label="Project file"></select>

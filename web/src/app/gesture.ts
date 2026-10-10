@@ -48,6 +48,7 @@ export function bindEvents(v: SketchView): void {
   // to a system gesture — so those have to finish it too.  A finger is `touch`'s: a second one
   // is a pinch, which it settles the first one's gesture to start.
   cv.addEventListener('pointerdown', (e) => {
+    v.finger = e.pointerType === 'touch';
     if (e.pointerType === 'touch') {
       touch.down(e);
       return;
@@ -58,6 +59,7 @@ export function bindEvents(v: SketchView): void {
     onPointerDown(v, e);
   });
   cv.addEventListener('pointermove', (e) => {
+    v.finger = e.pointerType === 'touch';
     if (e.pointerType === 'touch') {
       touch.move(e);
       return;
