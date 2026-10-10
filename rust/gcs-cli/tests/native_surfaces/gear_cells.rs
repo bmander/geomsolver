@@ -13,8 +13,8 @@ use std::f64::consts::PI;
 pub(super) fn read_gears_with(base: &Path,rewrite: &mut dyn FnMut(&str,String) -> String) -> program::Elaborated {
     let source = std::fs::read_to_string(base.join("gears.sv")).unwrap();
     fixtures::gear::read_with(&source,base,&mut |name,text| {
-        let text = if name == "members" { fixtures::gear::publish_blank(&text,"  construction single := solid(design.blank)\n  \
-            removal cut single\n") } else { text };
+        let single = "  construction single := solid(design.blank)\n  removal cut single\n";
+        let text = if name == "members" { fixtures::gear::publish_blank(&text,single) } else { text };
         rewrite(name,text)
     })
 }
@@ -211,10 +211,11 @@ fn the_static_recipe_lists_swept_cuts_with_their_poses() {
     // stock the blank's region, one revolution of its meridian.
     let nodes = recipe.recipe.get("nodes").unwrap().arr();
     assert!(nodes.iter().all(|n| n.get("kind").unwrap().as_str() != "swept"));
-    let node = |id: usize| nodes.iter().find(|n| n.get("id").unwrap().as_i64() as usize == id).unwrap();
+    let id = |n: &gcs_core::json::Json,key: &str| n.get(key).unwrap().as_i64() as usize;
+    let node = |want: usize| nodes.iter().find(|n| id(n,"id") == want).unwrap();
     let blank = node(body);
-    assert!(blank.get("cut").unwrap().arr().is_empty() && blank.get("bound").unwrap().arr().is_empty());
-    let stock = node(blank.get("stock").unwrap().as_i64() as usize);
+    assert!(["cut","bound"].iter().all(|k| blank.get(k).unwrap().arr().is_empty()));
+    let stock = node(id(blank,"stock"));
     assert_eq!(stock.get("kind").unwrap().as_str(),"revolve");
     assert!(gcs_core::solid::cad::recipe(&e.sketch,body).unwrap_err().contains("continuous motion sweeps"));
 }

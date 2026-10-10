@@ -97,12 +97,14 @@ fn read_limits(e: &Elaborated) -> Reading {
     for member in ["gear","pinion"] {
         for cone in &LIMITS[..3] {
             for c in ["a","b","p","q"] {
-                out.point(&format!("{member} {cone} cone {c}"),point(&format!("{member}_limits.{cone}.{c}")));
+                let p = point(&format!("{member}_limits.{cone}.{c}"));
+                out.point(&format!("{member} {cone} cone {c}"),p);
             }
         }
         for sphere in &LIMITS[3..] {
             for c in ["top","bottom"] {
-                out.point(&format!("{member} {sphere} {c}"),point(&format!("{member}_limits.{sphere}.{c}")));
+                let p = point(&format!("{member}_limits.{sphere}.{c}"));
+                out.point(&format!("{member} {sphere} {c}"),p);
             }
         }
     }
@@ -238,7 +240,8 @@ fn the_layout_reproduces_the_pairs_named_quantities() {
         let reading = design.read_all(&e,scale);
         assert_eq!(reading.values.len(),rows.len());
         for (name,v) in &reading.values {
-            let values = recorded.get(name.as_str()).unwrap_or_else(|| panic!("`{name}` is not recorded"));
+            let values = recorded.get(name.as_str())
+                .unwrap_or_else(|| panic!("`{name}` is not recorded"));
             // a length relative to the cone distance; an angle in degrees, a direction's
             // component, a ratio and a phase in radians as they are
             let plain = ["angle","ratio","phase","ax."].iter().any(|w| name.contains(w));
@@ -695,19 +698,17 @@ fn a_stop_on_the_iteration_limit_is_rescued_onto_the_recorded_pair() {
     let (_,rows) = recorded();
     let (k,mut e) = solved_design("28x49 m25.4");
     let reference = e.sketch.clone();
-    for seed in [10] {
-        let start = crate::common::jittered(&reference,0.002,seed);
-        e.sketch = start.clone();
-        let stop = solve::solve(&mut e.sketch,SolveOpts {blocks:BlockMode::Off,..SolveOpts::default()});
-        let (short,_) = off_recorded(&read_pair(&e,rows[0].1[k]),&rows,k);
-        assert!(stop.success && stop.status == 4 && short > 1e-9,"seed {seed}: {short:e} off, {stop:?}");
-        e.sketch = start;
-        let res = solve::solve(&mut e.sketch,SolveOpts::default());
-        assert!(res.settled() && res.method == "blocks","seed {seed}: {res:?}");
-        let (d,at) = off_recorded(&read_pair(&e,rows[0].1[k]),&rows,k);
-        println!("seed {seed}: stopped {short:.1e} off, settled {d:.1e} off at {at}");
-        assert!(d <= 1e-9,"seed {seed}: {d:e} off the recorded pair at {at}");
-    }
+    let start = crate::common::jittered(&reference,0.002,10);
+    e.sketch = start.clone();
+    let stop = solve::solve(&mut e.sketch,SolveOpts {blocks:BlockMode::Off,..SolveOpts::default()});
+    let (short,_) = off_recorded(&read_pair(&e,rows[0].1[k]),&rows,k);
+    assert!(stop.success && stop.status == 4 && short > 1e-9,"{short:e} off, {stop:?}");
+    e.sketch = start;
+    let res = solve::solve(&mut e.sketch,SolveOpts::default());
+    assert!(res.settled() && res.method == "blocks","{res:?}");
+    let (d,at) = off_recorded(&read_pair(&e,rows[0].1[k]),&rows,k);
+    println!("stopped {short:.1e} off, settled {d:.1e} off at {at}");
+    assert!(d <= 1e-9,"{d:e} off the recorded pair at {at}");
 }
 
 /// **A stop in a basin with no solution is restarted in block order**: the 28x49 bevel at module
@@ -715,8 +716,8 @@ fn a_stop_on_the_iteration_limit_is_rescued_onto_the_recorded_pair() {
 /// iterations with a crown section's tip narrowing past its bound (status 5, the tip collapsing).
 /// Finished from the stop, the block pass stalls again (short of the tolerance, in the basin
 /// where a crown section's narrow tip collapses); so the pass runs from the start, and the
-/// default solve lands where the block path held to 1e-12 does.  (The layout's own seeds started a design or two there once; seeded by places they no
-/// longer do, so the start is made.)
+/// default solve lands where the block path held to 1e-12 does.  (The layout's own seeds started
+/// a design or two there once; seeded by places they no longer do, so the start is made.)
 #[test]
 fn a_stop_that_stalls_again_is_restarted_in_block_order() {
     use gcs_core::solve::{self,BlockMode,SolveOpts};
@@ -751,8 +752,9 @@ fn a_stop_the_rescue_cannot_settle_keeps_its_pose() {
     let (_,reference) = solved_design("bevel");
     let start = crate::common::jittered(&reference.sketch,0.01,0);
     let (mut off,mut on) = (start.clone(),start);
-    let a = solve::solve(&mut off,SolveOpts {blocks:BlockMode::Off,max_iter:12,..SolveOpts::default()});
-    let b = solve::solve(&mut on,SolveOpts {max_iter:12,..SolveOpts::default()});
+    let limited = SolveOpts {max_iter:12,..SolveOpts::default()};
+    let a = solve::solve(&mut off,SolveOpts {blocks:BlockMode::Off,..limited});
+    let b = solve::solve(&mut on,limited);
     assert!(a.success && a.status == 4,"{a:?}");
     assert_eq!(crate::common::bits(&off),crate::common::bits(&on));
     assert_eq!((a.success,a.status,a.max_residual.to_bits(),a.nfev,a.iterations,a.method),

@@ -237,7 +237,8 @@ fn the_end_relief_chamfers_each_tip_corner() {
         let region = field(&format!("{limits}.material"));
         let blank = |p| value(&region,p);
         // the tip cone's meridian in the member's axial view, from its apex through `p`
-        let (tip_apex,tip_p) = (world(&format!("{limits}.tip.apex")),world(&format!("{limits}.tip.p")));
+        let tip_apex = world(&format!("{limits}.tip.apex"));
+        let tip_p = world(&format!("{limits}.tip.p"));
         let off_tip = |p: [f64;3]| crate::common::off_line(p,tip_apex,sub(tip_p,tip_apex));
         for (end,inward) in [("toe",1.),("heel",-1.)] {
             let at = |point: &str| world(&copied(&limits,end,point));
@@ -245,7 +246,8 @@ fn the_end_relief_chamfers_each_tip_corner() {
             let radius = dist(world(&format!("{limits}.span.{end}")),apex);
             for p in [corner,down] { worst = worst.max((dist(p,apex)-radius).abs()); }
             for p in [corner,along] { worst = worst.max(off_tip(p)); }
-            worst = worst.max((inward*(dist(along,apex)-radius)-size).abs()).max((off_tip(down)-size).abs());
+            worst = worst.max((inward*(dist(along,apex)-radius)-size).abs());
+            worst = worst.max((off_tip(down)-size).abs());
             let ring = field(&copied(&limits,end,"ring"));
             let (a,d) = (sub(along,corner),sub(down,corner));
             for i in -15..=25 { for j in -15..=25 {

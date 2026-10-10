@@ -1,6 +1,7 @@
-// Step 3, a member's cones: a meridian parallel to the pitch generator, a stated offset off it,
-// spanning half to one and a half cone distances, its caps square to the axis and its spine on
-// the axis. Revolved, it is the tip, root or back cone.
+// Step 3, a member's cones drawn for the checks (blank/limits.sv): a meridian parallel to the
+// pitch generator, a stated offset off it, spanning half to one and a half cone distances, its
+// caps square to the axis and its spine on the axis. Revolved, it is the tip, root or back cone,
+// its meridian a named wall.
 use std
 
 // Half and one and a half of `generator` (apex -> mean point) from the apex, `near` and `far`,
@@ -24,7 +25,7 @@ component ConeSpan(generator: line, ax: line) {
 
 // The meridian stands `offset` off `generator` along each rib, turned `lean` from the direction
 // toward the axis: 0deg for the root and the back, 180deg for the tip. Its ends `p` and `q` are
-// public for the end relief (blank/ends.sv).
+// public, a meridian the end relief can read (blank/ends.sv's preview).
 component ConeBoundary(generator: line, ax: line, offset: Length, lean: Angle) {
   private span := ConeSpan(generator, ax)
   // Seeds, rough: a step along each rib turned `lean`, as the meridian stands, and the feet of
