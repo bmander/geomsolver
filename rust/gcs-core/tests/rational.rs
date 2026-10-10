@@ -290,3 +290,38 @@ fn a_plane_square_to_a_rational_sweep_meets_it_in_its_weighed_curve() {
     close(volume(&kept),PI*r*r*h/4.,1e-11);
 }
 
+
+
+/// A rod swept from one closed B-spline, cut by a block's face square to it: the face meets its side
+/// in that whole closed curve, one B-spline with no period, which once made no edge (the side was
+/// never split, and `check` found the cap's new edge used one way only). Each Boolean is its volume,
+/// the curve exact or polynomial, its join at the side's seam or turned off it.
+#[test]
+fn a_closed_spline_sweep_is_cut_round_its_whole_curve() {
+    use gcs_core::brep::boolean::{boolean,Op};
+    let (r,h) = (2.,5.);
+    let line = |a: V,b: V| ProfileEdge::Line {a,b};
+    let boxed = |lo: V,hi: V| prism(&Profile {names:vec![],origin:[0.;3],normal:XY,loops:vec![vec![line([lo[0],lo[1],0.],[hi[0],lo[1],0.]),
+        line([hi[0],lo[1],0.],[hi[0],hi[1],0.]),line([hi[0],hi[1],0.],[lo[0],hi[1],0.]),line([lo[0],hi[1],0.],[lo[0],lo[1],0.])]]},lo[2],hi[2]).unwrap();
+    let n = 24;
+    let pts: Vec<V> = (0..=n).map(|k| { let t = TAU*k as f64/n as f64; [1.+r*t.cos(),2.+r*t.sin(),0.] }).collect();
+    let ts: Vec<f64> = (0..=n).map(|k| k as f64/n as f64).collect();
+    let poly = gcs_core::brep::nurbs::interpolate(&pts,&ts,3).unwrap();
+    for (what,profile) in [("rational",arc(&Frame::new([1.,2.,0.],XY,[1.,0.,0.]),r,[0.,TAU])),("polynomial",poly),
+        ("turned",arc(&Frame::new([1.,2.,0.],XY,[1.,0.,0.]),r,[1.,1.+TAU]))] {
+        let rod = prism(&Profile {names:vec![],origin:[1.,2.,0.],normal:XY,loops:vec![vec![ProfileEdge::Spline(Arc::new(profile))]]},0.,h).unwrap();
+        let whole = volume(&rod);
+        let area = whole/h;
+        for (name,b,parts) in [("whole",boxed([-5.,-5.,h/2.],[5.,5.,2.*h]),[whole/2.,whole/2.,100.*1.5*h+whole/2.]),
+            ("half",boxed([1.,-5.,h/2.],[5.,5.,2.*h]),[whole-area/2.*h/2.,area/2.*h/2.,0.])] {
+            for (op,want) in [(Op::Cut,parts[0]),(Op::Common,parts[1]),(Op::Union,parts[2])] {
+                // (an interpolated "circle" is not halved exactly by a plane through its centre)
+                if want == 0. || (what == "polynomial" && name == "half") { continue }
+                let got = boolean(&rod,&b,op,1e-9).unwrap_or_else(|e| panic!("{what} {name} {op:?}: {e}"));
+                got.check(1e-8).unwrap_or_else(|e| panic!("{what} {name} {op:?}: {e}"));
+                let v = volume(&got);
+                assert!((v-want).abs() <= 1e-9*want,"{what} {name} {op:?}: {v} against {want}");
+            }
+        }
+    }
+}

@@ -295,6 +295,13 @@ fn arrange<'a>(a: &'a Brep,b: &'a Brep,tol: f64) -> Result<Arranged<'a>,String> 
                 }
                 let closed = c.period().is_some();
                 let period = c.period().unwrap_or(TAU);
+                let joined = match &c {
+                    super::geom::Curve::BSpline(b) => {
+                        let [t0,t1] = b.domain();
+                        (distance(b.point(t0),b.point(t1)) <= tol).then_some([t0,t1])
+                    }
+                    _ => None,
+                };
                 let mut spans: Vec<([f64;2],[u32;2])> = Vec::new();
                 if closed {
                     for t in &mut ts { t.0 = around(t.0,0.,period); }
@@ -311,12 +318,21 @@ fn arrange<'a>(a: &'a Brep,b: &'a Brep,tol: f64) -> Result<Arranged<'a>,String> 
                         }
                     }
                 } else {
+                    // a B-spline whose ends meet (the whole profile a plane square to its sweep cuts)
+                    // runs round once with no period: its join a vertex at both ends of its domain,
+                    // so the points on it split it into stretches covering it all
+                    if let Some([t0,t1]) = joined {
+                        let v = pool.at(c.point(t0));
+                        ts.retain(|&(_,w)| w != v);
+                        ts.extend([(t0,v),(t1,v)]);
+                    }
                     ts.sort_by(|x,y| x.0.total_cmp(&y.0));
                     for w in ts.windows(2) { spans.push(([w[0].0,w[1].0],[w[0].1,w[1].1])); }
                 }
                 if debug { eprintln!("brep:   {} with {} point(s) on it: {:?}",c.kind(),ts.len(),ts.iter().map(|x| pool.pts[x.1 as usize]).collect::<Vec<_>>()); }
                 for (t,v) in spans {
-                    if (t[1]-t[0])*c.speed() <= tol || (v[0] == v[1] && !closed) { continue }
+                    // (a stretch from a vertex back to it is the whole of a loop, or nothing)
+                    if (t[1]-t[0])*c.speed() <= tol || (v[0] == v[1] && !closed && joined != Some(t)) { continue }
                     let m = c.point((t[0]+t[1])/2.);
                     let places = (located[0].face_place(fa,m),located[1].face_place(fb,m));
                     if debug { eprintln!("brep:     span {t:?} from {:?} to {:?}: middle {m:?} {places:?}",pool.pts[v[0] as usize],pool.pts[v[1] as usize]); }
