@@ -35,6 +35,7 @@ mod field_mesh;
 pub use field_mesh::{FieldMesher, FieldMeshing, FieldProgress, FieldSurface, ExactFaces, FieldJob, field_key, FINENESS as FIELD_FINENESS};
 pub use field_mesh::{first_pass as field_first_pass, creases as field_creases};
 pub mod cad;
+pub mod region;
 mod profile;
 mod primitive;
 mod document;
@@ -478,6 +479,11 @@ fn validate_at(sk: &Sketch, si: usize, unit: f64) -> Result<std::collections::BT
                 continue;
             }
             SolidDef::Body { .. } => { pending.extend(s.operands().into_iter().rev().map(|o| (o as usize, false))); continue; }
+            // its terms on one axis, bounded all round: what its meridian says
+            SolidDef::Region { .. } => {
+                region::meridian(sk, i).map_err(|m| fail(&m))?;
+                continue;
+            }
         };
         let polys = face_polys(sk, face as usize, unit).map_err(|m| fail(&m))?;
         let poly = &polys[0];

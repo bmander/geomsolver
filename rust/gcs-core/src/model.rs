@@ -35,6 +35,7 @@ pub use curves::{CURVE_STEPS, CurveDef, CurveBody, CurveE, Extremal, Home, Trim,
 pub use spatial::{
     FaceLoop, FaceSupport, FaceE, Length, SolidRequirement, SolidClaim, SolidBearing, Sweep,
     DerivedE, Extent, Sense, SolidDef, SolidE, SeamE, EdgeE, VertexE, PatchE, EnvelopeE, SurfaceE,
+    RegionShape, RegionTerm,
     MotionDef, MotionE,
 };
 pub use construction::{ThreePointArc, three_point_arc};
@@ -166,6 +167,11 @@ pub struct Sketch {
     /// again for each one the evaluated solids above ask for.
     pub exact_cache:
         std::cell::RefCell<BTreeMap<usize, (Vec<f64>, Result<std::rc::Rc<crate::solid::Exact>, String>)>>,
+    /// Each region solid's meridian (`solid::region::meridian`), against `solid::reads`: every
+    /// evaluator, the validation and admission read it, and it is a fold of exact Booleans.
+    pub meridian_cache: std::cell::RefCell<
+        BTreeMap<usize, (Vec<f64>, Result<std::rc::Rc<crate::solid::region::Meridian>, String>)>,
+    >,
     /// Swept solids' surfaces a host meshed elsewhere (`supply_field`), each against the
     /// `solid::reads` it was supplied under, so a moved drawing reads none.
     pub field_surfaces: std::cell::RefCell<BTreeMap<usize, (Vec<f64>, std::rc::Rc<crate::solid::FieldSurface>)>>,

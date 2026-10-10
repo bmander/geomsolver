@@ -97,6 +97,10 @@ impl Sketch {
                         v.push(EntRef::line(*axis as usize));
                     }
                     SolidDef::Body { .. } => {}
+                    SolidDef::Region { probe, terms } => {
+                        v.push(EntRef::point(*probe as usize));
+                        v.extend(terms.iter().flat_map(|t| t.shape.entities()));
+                    }
                 }
                 v.extend(s.operands().into_iter().map(|i| EntRef::solid(i as usize)));
                 v

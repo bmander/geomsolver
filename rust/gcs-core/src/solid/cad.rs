@@ -152,6 +152,17 @@ fn recipe_with(sk: &Sketch,root: usize,static_only: bool) -> Result<StaticRecipe
                 ("kind","body".into()),("stock",(*stock).into()),
                 ("on",ids(on)),("cut",ids(through)),("bound",ids(bound)),
             ]),
+            // a region: its meridian turned once about its axis (§6.21)
+            SolidDef::Region {..} => {
+                let m = super::region::meridian(sk,i)?;
+                let name = |t: u32| m.name(t);
+                let p = crate::brep::recipe::region_profile(&m.region,m.origin,m.seam,m.axis,&name);
+                object([
+                    ("kind","revolve".into()),("profile",p.to_json(scale)?),
+                    ("origin",vector(m.origin.map(|v| v*scale))),("axis",vector(m.axis)),
+                    ("angle",std::f64::consts::TAU.into()),
+                ])
+            }
             SolidDef::Prism {face,from,to} => object([
                 ("kind","prism".into()),("profile",profile(sk,*face as usize,scale)?),
                 ("from",(from.value*scale).into()),("to",(to.value*scale).into()),

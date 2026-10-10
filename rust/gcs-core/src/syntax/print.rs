@@ -354,7 +354,8 @@ fn sweep_parts(s: &Sweep) -> Vec<String> {
             write_ref(&mut text,motion);
             vec![text,format!("at: {}",dim(at))]
         }
-        Sweep::Body => Vec::new(),
+        // a region's operand is the set the flattener applied to its probe: nothing to print
+        Sweep::Body | Sweep::Region { .. } => Vec::new(),
         Sweep::Along { guide } => {
             let mut text = String::from("along: ");
             write_ref(&mut text, guide);

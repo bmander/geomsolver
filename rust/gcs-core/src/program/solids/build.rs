@@ -7,6 +7,7 @@ pub(super) fn build_solid(
     res: &Resolver,
     d: &Decl,
     st: &Stmt,
+    probes: &mut super::super::relations::Probes,
     diags: &mut Vec<Diag>,
 ) -> Option<usize> {
     let kids = d.children.first().map(Vec::as_slice).unwrap_or(&[]);
@@ -81,6 +82,25 @@ pub(super) fn build_solid(
             Ok(Extent { text: text.trim().to_string(), value: v.c })
         };
     let def = match sweep {
+        // a region: the bounds its set put on the probe, gathered as they were stated (§6.21)
+        crate::syntax::Sweep::Region { probe } => {
+            let Some(p) = res.lookup(probe).filter(|e| e.kind == EntKind::Point) else {
+                let m = "a region solid lost the point its set was applied to";
+                say(Code::E080, st.span, m.into());
+                return None;
+            };
+            let terms = probes.remove(&p.i()).unwrap_or_default();
+            if terms.is_empty() {
+                let m = "a solid is a region: a set whose body bounds a number, or a set its \
+                         `inside` reads one of";
+                say(Code::E080, st.span, m.into());
+                return None;
+            }
+            for q in sk.own_params(p) {
+                sk.params[q as usize].fixed = true;
+            }
+            SolidDef::Region { probe: p.idx, terms }
+        }
         crate::syntax::Sweep::Placed { motion, .. } | crate::syntax::Sweep::Swept { motion, .. } => {
             if ops.len() != 1 || ops[0].kind != EntKind::Solid {
                 say(Code::E080,st.span,"a named motion needs one source solid".into());

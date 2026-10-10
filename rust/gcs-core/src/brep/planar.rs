@@ -344,6 +344,18 @@ impl Region {
         best.map(|b| b.1)
     }
     pub fn area(&self) -> f64 { self.loops.iter().map(|l| signed_area(&polygon(l))).sum() }
+    /// The loops, the one enclosing most first (a profile's outer loop, then its holes).
+    pub fn outer_first(&self) -> Vec<&[Step]> {
+        let mut loops: Vec<(f64,&[Step])> = self.loops.iter().map(|l| (signed_area(&polygon(l)).abs(),&l[..])).collect();
+        loops.sort_by(|a,b| b.0.total_cmp(&a.0));
+        loops.into_iter().map(|l| l.1).collect()
+    }
+    /// A ball's meridian: the half-disc of radius `r` about `[0, z]`, from the axis round through
+    /// the half-plane and back along it.
+    pub fn half_disc(z: f64,r: f64) -> Region {
+        Region::plain(vec![vec![Seg::Arc {c:[0.,z],r,a0:-std::f64::consts::FRAC_PI_2,sweep:std::f64::consts::PI},
+            Seg::Line {a:[0.,z+r],b:[0.,z-r]}]])
+    }
 }
 
 /// A loop's steps as a polygon, each arc in steps of at most a sixty-fourth of a turn, a charted

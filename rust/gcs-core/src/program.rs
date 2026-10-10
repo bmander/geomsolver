@@ -452,6 +452,10 @@ fn elaborate_in(
             map.twin_of.insert(*t, *p);
         }
     }
+    // the points region solids' sets are applied to, whose bounds are the solids' terms (§6.21)
+    let mut probes: relations::Probes =
+        expansion.probes.iter().filter_map(|key| res.of.get(key)).map(|p| (p.i(), Vec::new()))
+            .collect();
     // memberships, once every kind is built and before anything reads one: `point a in top`
     // names a plane built after the point, and `project` infers its planes from these — and then
     // every point no `in` reached stands in space (`places`), and a plane written over a drawn
@@ -490,7 +494,8 @@ fn elaborate_in(
     for st in &stating {
         let StmtKind::Relation(r) = &st.kind else { continue };
         if relations::is_fix(r) {
-            constrain(&mut sk, &res, r, st, p, &map, &mut duals, &mut gauges, &mut diags);
+            let (d, g) = (&mut duals, &mut gauges);
+            constrain(&mut sk, &res, r, st, p, &map, d, g, &mut probes, &mut diags);
         }
     }
     gauges.hold_all(&mut sk, &mut diags);
@@ -532,7 +537,8 @@ fn elaborate_in(
         if relations::is_fix(r) || drawn.contains(&i) {
             continue;
         }
-        let made = constrain(&mut sk, &res, r, st, p, &map, &mut duals, &mut gauges, &mut diags);
+        let (d, g) = (&mut duals, &mut gauges);
+        let made = constrain(&mut sk, &res, r, st, p, &map, d, g, &mut probes, &mut diags);
         if let Some(id) = made {
             map.record(st, Made::Con(id));
             if let Some(place) = r.place {
@@ -587,7 +593,7 @@ fn elaborate_in(
     // either is an unknown.  This is the stratification as a phase: everything above it is the
     // drawing, everything below reads what the drawing came to.
     // (Motions were built with the primitives: solids retain their indices.)
-    solids(&mut sk, &mut res, &mut map, &body, &skip, &mut diags);
+    solids(&mut sk, &mut res, &mut map, &body, &skip, &mut probes, &mut diags);
     surfaces::surfaces(&mut sk, &mut res, &mut map, &body, &skip, &mut diags);
     let spatial: BTreeSet<StmtId> = skip.iter().chain(&planar).chain(&extruded).copied().collect();
     envelopes::envelopes(&mut sk, &mut res, &mut map, &body, &spatial, &mut diags);

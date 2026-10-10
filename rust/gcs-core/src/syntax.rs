@@ -1105,6 +1105,10 @@ pub enum Sweep {
     /// `body := solid(block)` — a stock, or a term: what it is made of is in the list, and the
     /// `union`/`cut`/`bound` statements say the rest.
     Body,
+    /// `blank := solid(R)`, R a set — the points inside it (§6.21): written as a `Body` over the
+    /// set, and made this by the flattener, which applies the set to the hidden `probe` point
+    /// (`probe inside R`) and whose bounds the elaborator reads as the solid's terms.
+    Region { probe: Ref },
 }
 
 impl Sweep {
@@ -1118,7 +1122,9 @@ impl Sweep {
             Sweep::Prism { from, to } => vec![from, to],
             Sweep::Depth { depth } => vec![depth],
             Sweep::Revolve { sweep, .. } => sweep.iter_mut().collect(),
-            Sweep::Body | Sweep::Through { .. } | Sweep::Along { .. } => Vec::new(),
+            Sweep::Body | Sweep::Through { .. } | Sweep::Along { .. } | Sweep::Region { .. } => {
+                Vec::new()
+            }
         }
     }
 
@@ -1129,6 +1135,7 @@ impl Sweep {
             Sweep::Revolve { axis, .. } => Some(axis),
             Sweep::Through { body } => Some(body),
             Sweep::Along { guide } => Some(guide),
+            Sweep::Region { probe } => Some(probe),
             Sweep::Prism { .. } | Sweep::Depth { .. } | Sweep::Body => None,
         }
     }
@@ -1139,6 +1146,7 @@ impl Sweep {
             Sweep::Revolve { axis, .. } => Some(axis),
             Sweep::Through { body } => Some(body),
             Sweep::Along { guide } => Some(guide),
+            Sweep::Region { probe } => Some(probe),
             Sweep::Prism { .. } | Sweep::Depth { .. } | Sweep::Body => None,
         }
     }
