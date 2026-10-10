@@ -73,10 +73,9 @@ fn single_space(member: &str,expected: f64) {
     eprintln!("{member}: sheet {}x{} in {:?}, withheld error {error:e} mm",sheet.rows,sheet.columns,started.elapsed());
     assert!(error < 0.02,"withheld contact error {error}");
     let partition = cad.0.split_solid(blank,&[face]).unwrap();
-    let field = gcs_core::solid::MaterialField::read(&e.sketch,single_id,1e-10).unwrap();
-    let mut material = field.evaluator(4096);
-    let asked = Millimetres::<gcs_core::solid::MaterialField>::read(&e.sketch,single_id,1e-10).unwrap();
-    let (kept,removed) = native::sweep_boundary::classify(&cad.0,partition,&asked).unwrap();
+    let field = Millimetres::<gcs_core::solid::MaterialField>::read(&e.sketch,single_id,1e-10).unwrap();
+    let mut material = field.in_model_units().evaluator(4096);
+    let (kept,removed) = native::sweep_boundary::classify(&cad.0,partition,&field).unwrap();
     let cell_total: f64 = kept.iter().chain(&removed).map(|c| c.volume).sum();
     assert!((cell_total-blank_volume).abs() < 1e-5*blank_volume);
     assert_eq!(removed.len(),1,"one tooth space");
@@ -120,10 +119,9 @@ fn the_native_space_at_an_offset_against_its_field() {
     };
     eprintln!("offset {offset}: sheet {}x{} in {:?}, withheld error {error:e} mm",sheet.rows,sheet.columns,started.elapsed());
     let partition = cad.0.split_solid(blank,&[face]).unwrap();
-    let field = gcs_core::solid::MaterialField::read(&e.sketch,id("single"),1e-10).unwrap();
-    let mut material = field.evaluator(4096);
-    let asked = Millimetres::<gcs_core::solid::MaterialField>::read(&e.sketch,id("single"),1e-10).unwrap();
-    let (kept,removed) = match native::sweep_boundary::classify(&cad.0,partition,&asked) {
+    let field = Millimetres::<gcs_core::solid::MaterialField>::read(&e.sketch,id("single"),1e-10).unwrap();
+    let mut material = field.in_model_units().evaluator(4096);
+    let (kept,removed) = match native::sweep_boundary::classify(&cad.0,partition,&field) {
         Ok(c) => c,
         Err(refusal) => { eprintln!("offset {offset}: classification refused: {refusal}"); return; }
     };

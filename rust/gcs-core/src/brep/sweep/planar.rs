@@ -18,7 +18,7 @@ pub fn all(prepared: &Prepared) -> bool { prepared.classes.iter().all(|c| matche
 
 /// The body: its blank kept in common with each planar sweep's envelope prism, at each placement.
 pub fn cut(sk: &Sketch,body: usize,recipe: &StaticRecipe,prepared: &Prepared,tolerance: Option<Tolerance>,say: &Say) -> Result<Brep,ExportRefusal> {
-    let scale = prepared.scale;
+    let scale = prepared.field.scale();
     // as a curve in a static profile is fitted, within the tolerance's share for the fit when finer
     let fit = tolerance.map_or(cad::FIT_MM,|t| t.fit().min(cad::FIT_MM))/scale;
     let mut solid = prepared.blank.clone();

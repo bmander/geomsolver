@@ -16,7 +16,7 @@
 //! `sections`', and the fit contract a sheet passes before it is placed is `fit`'s.
 use super::*;
 use super::kernel::{Cell,Patterned};
-use gcs_core::{interval::minimum::Options,model::{Sketch,SolidDef},motion::Family,
+use gcs_core::{model::{Sketch,SolidDef},motion::Family,
     solid::{admission::Admission,cad,contracts,MaterialField,Millimetres,ProbeState,SpatialField,SweepContacts}};
 use gcs_core::solid::contact_trace::{Band,Columns,Layout,Sample,Station,TraceError,Tracer,Withheld,marked};
 pub(crate) use gcs_core::solid::contact_trace::{Inside,Sheet};
@@ -76,7 +76,7 @@ pub(crate) fn judge(volumes: &[f64],sampled: Vec<Vec<([f64;3],f64)>>,field: &Mil
     let clock = std::time::Instant::now();
     let answers = gcs_core::par::indices_with(asked.len(),|| field.evaluator(cad::POSE_CACHE),|material,i| {
         let (point,distance) = asked[i];
-        material.probe(point,[1.,0.,0.],distance,Options {value_tolerance:distance/4.,max_evaluations:40000})
+        material.ball(point,distance)
     });
     let probing = clock.elapsed().as_secs_f64();
     let mut answers = answers.into_iter();
@@ -403,19 +403,19 @@ pub(crate) fn construct_swept_body(session: &Session,sk: &Sketch,body: usize,rec
     if let Admitted::Already(admission) = admitted { presented(admission)?; }
     // What the sketch says of the blank and the cuts, read here; where it cannot be read, an
     // admission to be made is made first, and its refusal is the one reported.
-    let read = || -> Result<(f64,Millimetres<SpatialField>,Vec<usize>,Vec<SweptCut>),ExportRefusal> {
-        let scale = cad::millimetres(sk).at(Stage::Blank)?;
+    let read = || -> Result<(Millimetres<SpatialField>,Vec<usize>,Vec<SweptCut>),ExportRefusal> {
         let (field,_) = Millimetres::static_remainder(sk,body,cad::AXIS_TOLERANCE).at(Stage::Blank)?;
         let mut distinct: Vec<usize> = recipe.sweeps.iter().map(|s| s.swept).collect();
         distinct.sort(); distinct.dedup();
         let cuts = distinct.iter().map(|&swept| SweptCut::read(sk,swept)).collect::<Result<Vec<_>,_>>()?;
-        Ok((scale,field,distinct,cuts))
+        Ok((field,distinct,cuts))
     };
-    let (scale,field,distinct,cuts) = match (read(),&admitted) {
+    let (field,distinct,cuts) = match (read(),&admitted) {
         (Ok(read),_) => read,
         (Err(refusal),Admitted::Beside(admit)) => { presented(&admit()?)?; return Err(refusal) }
         (Err(refusal),Admitted::Already(_)) => return Err(refusal),
     };
+    let scale = field.scale();
     let name = &sk.solids[body].name;
     let operations = recipe.recipe.get("nodes").unwrap().arr().len();
     // The blank, then each sweep's sheet on a thread of its own, what each says said in order once
@@ -457,7 +457,7 @@ pub(crate) fn construct_swept_body(session: &Session,sk: &Sketch,body: usize,rec
     if asked == Construction::Sector {
         let whole = |reason: String| stage(&format!("`{}` is built whole: the sector construction does not apply ({reason})",
             sk.solids[body].name));
-        match sector::construct(session,sk,body,recipe,blank,meridian,&field,&distinct,&sheets,scale) {
+        match sector::construct(session,sk,body,recipe,blank,meridian,&field,&distinct,&sheets) {
             Ok((sector,union)) if defer => return Ok(Built {solid:-1,how:Construction::Sector,sector:Some(sector),
                 unchecked:Some(union)}),
             Ok((sector,union)) => match union.make(session).and_then(|made| union.check(session,made)) {

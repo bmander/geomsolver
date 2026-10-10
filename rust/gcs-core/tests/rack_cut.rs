@@ -159,17 +159,15 @@ fn a_racks_tooth_space_is_built() {
 /// millimetre one (a number naming its unit, `6mm`, stands as written; the bore's seed only where
 /// there is a bore).
 fn in_centimetres(src: &str) -> String {
-    [("unit mm","unit cm"),("hint(r: 22)","hint(r: 2.2)"),("hint(r: 6)","hint(r: 0.6)"),
+    [("unit mm","unit cm"),("hint(r: 22)","hint(r: 2.2)"),
         ("fix((20, 0))","fix((2, 0))"),("hint((20, 0))","hint((2, 0))"),
         ("fix((20, 10))","fix((2, 1))"),("hint((20, 10))","hint((2, 1))"),
         ("hint((18, -0.84))","hint((1.8, -0.084))"),("hint((18, 0.84))","hint((1.8, 0.084))"),
         ("hint((24, 3.03))","hint((2.4, 0.303))"),("hint((24, -3.03))","hint((2.4, -0.303))"),
         ("fix((18, -0.842856))","fix((1.8, -0.0842856))"),("fix((18, 0.842856))","fix((1.8, 0.0842856))"),
         ("fix((24, 3.026666))","fix((2.4, 0.3026666))"),("fix((24, -3.026666))","fix((2.4, -0.3026666))")]
-        .iter().fold(src.to_string(),|s,(mm,cm)| {
-            assert!(s.contains(mm) || mm.contains("r: 6"),"{mm}");
-            s.replace(mm,cm)
-        })
+        .iter().fold(src.to_string(),|s,(mm,cm)| { assert!(s.contains(mm),"{mm}"); s.replace(mm,cm) })
+        .replace("hint(r: 6)","hint(r: 0.6)")
 }
 
 /// **A drawing in centimetres cuts the same space and the same gear**: the kernel builds in

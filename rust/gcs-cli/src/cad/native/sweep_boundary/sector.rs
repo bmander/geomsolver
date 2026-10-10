@@ -59,9 +59,10 @@ pub(super) fn debug_faces(session: &Session,what: &str,solid: c_int) {
 /// the order of `distinct`.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn construct(session: &Session,sk: &Sketch,body: usize,recipe: &cad::StaticRecipe,blank: c_int,
-    meridian: Option<super::super::Meridian>,field: &Millimetres<SpatialField>,distinct: &[usize],sheets: &[Fitted],scale: f64)
+    meridian: Option<super::super::Meridian>,field: &Millimetres<SpatialField>,distinct: &[usize],sheets: &[Fitted])
     -> Result<(Patterned,Union),String> {
     let started = std::time::Instant::now();
+    let scale = field.scale();
     let poses: Vec<Vec<Motion>> = distinct.iter().map(|&s| recipe.sweeps.iter().filter(|c| c.swept == s).map(|c| c.pose).collect()).collect();
     let bounds = session.bounds(&[blank])?;
     let size = distance(bounds[0],bounds[1]);
@@ -144,7 +145,7 @@ pub(super) fn construct(session: &Session,sk: &Sketch,body: usize,recipe: &cad::
         let probed_at: Vec<[f64;3]> = deep.iter().copied().step_by(step).collect();
         // each probe on its own core, an evaluator a thread; the first to fail, in order, is the reason
         let probes = gcs_core::par::indices_with(probed_at.len(),|| body_field.evaluator(cad::POSE_CACHE),|material,i| {
-            material.probe(probed_at[i],[1.,0.,0.],radius,Options {value_tolerance:radius/4.,max_evaluations:40000})
+            material.ball(probed_at[i],radius)
         });
         let mut probed = 0;
         for (&p,probe) in probed_at.iter().zip(probes) {

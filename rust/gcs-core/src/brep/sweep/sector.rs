@@ -13,7 +13,6 @@ use crate::brep::props::volume;
 use crate::brep::query::interior;
 use crate::brep::topo::Brep;
 use crate::envelope::Motion;
-use crate::interval::minimum::Options;
 use crate::json::Json;
 use crate::model::Sketch;
 use crate::solid::cad::{self,StaticRecipe};
@@ -113,7 +112,7 @@ fn judge(volumes: &[f64],sampled: Vec<Vec<(V,f64)>>,field: &Millimetres<Material
     let asked: Vec<(V,f64)> = sampled.iter().flatten().map(|&(p,b)| (p,(b*0.5).min(0.05))).filter(|&(_,d)| d > 1e-4).collect();
     let answers = crate::par::indices_with(asked.len(),|| field.evaluator(cad::POSE_CACHE),|material,i| {
         let (point,distance) = asked[i];
-        material.probe(point,[1.,0.,0.],distance,Options {value_tolerance:distance/4.,max_evaluations:40000})
+        material.ball(point,distance)
     });
     let mut answers = answers.into_iter();
     for (k,(&volume,samples)) in volumes.iter().zip(sampled).enumerate() {
@@ -154,12 +153,13 @@ pub struct Premises { frame: Frame,n: usize,pitch: f64,across: f64,side: Brep,ot
 /// Whether `body` can be built as one sector, and what it is cut from, or why not — the placements
 /// not turns of one about one axis, the blank not alike under the turn, no side clear of the cuts
 /// through their gaps, a side the field reads as removed. `sheets` are the distinct sweeps' fitted
-/// sheets in the order of `distinct`; `blank` the static blank (mm), `field` its analytic field;
-/// `scale_mm` the millimetres in a model unit, which the placements' motions are read in.
+/// sheets in the order of `distinct`; `blank` the static blank (mm), `field` its analytic field, whose
+/// scale the placements' motions are read by.
 #[allow(clippy::too_many_arguments)]
 pub fn premises(sk: &Sketch,body: usize,recipe: &StaticRecipe,blank: &Brep,field: &Millimetres<SpatialField>,distinct: &[usize],
-    sheets: &[Fitted],scale_mm: f64,say: &Say) -> Result<Premises,String> {
+    sheets: &[Fitted],say: &Say) -> Result<Premises,String> {
     let started = crate::clock::Instant::now();
+    let scale_mm = field.scale();
     let poses: Vec<Vec<Motion>> = distinct.iter().map(|&s| recipe.sweeps.iter().filter(|c| c.swept == s).map(|c| c.pose).collect()).collect();
     let (lo,hi) = blank.bounds();
     let bounds = [lo,hi];
@@ -217,7 +217,7 @@ pub fn premises(sk: &Sketch,body: usize,recipe: &StaticRecipe,blank: &Brep,field
     let step = deep.len().div_ceil(PROBES).max(1);
     let probed_at: Vec<V> = deep.iter().copied().step_by(step).collect();
     let probes = crate::par::indices_with(probed_at.len(),|| body_field.evaluator(cad::POSE_CACHE),|material,i| {
-        material.probe(probed_at[i],[1.,0.,0.],radius,Options {value_tolerance:radius/4.,max_evaluations:40000})
+        material.ball(probed_at[i],radius)
     });
     for (&p,probe) in probed_at.iter().zip(probes) {
         if probe? != ProbeState::InteriorBall {

@@ -5,7 +5,6 @@
 //! itself, asked at the same numbers, stands 15 cm out and reads the disc as missed.
 use crate::common::build;
 use gcs_core::solid::{MaterialField,Millimetres,ProbeState,SpatialField};
-use gcs_core::interval::minimum::Options;
 
 const DISC: &str = "\
 unit cm
@@ -42,9 +41,8 @@ fn a_field_asked_in_millimetres_is_the_field_asked_in_its_own_units() {
     // the whole material field probed in millimetres, a ball of 1 mm about each point
     let material = Millimetres::<MaterialField>::read(&e.sketch,blank,1e-10).unwrap();
     let mut probe = material.evaluator(64);
-    let options = Options {value_tolerance:0.25,max_evaluations:40000};
-    assert_eq!(probe.probe([15.,y,0.],[1.,0.,0.],1.,options).unwrap(),ProbeState::InteriorBall);
-    assert_eq!(probe.probe([25.,y,0.],[1.,0.,0.],1.,options).unwrap(),ProbeState::ExteriorBall);
+    assert_eq!(probe.ball([15.,y,0.],1.).unwrap(),ProbeState::InteriorBall);
+    assert_eq!(probe.ball([25.,y,0.],1.).unwrap(),ProbeState::ExteriorBall);
     // a ball reaching past the rim is neither: its radius is read in millimetres too
-    assert!(!matches!(probe.probe([19.5,y,0.],[1.,0.,0.],1.,options).unwrap(),ProbeState::InteriorBall|ProbeState::ExteriorBall));
+    assert!(!matches!(probe.ball([19.5,y,0.],1.).unwrap(),ProbeState::InteriorBall|ProbeState::ExteriorBall));
 }
