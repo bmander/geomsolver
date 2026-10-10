@@ -5,6 +5,7 @@
 //! field on both sides of every sheet node, a closed-form fixture and refusals.
 use super::*;
 use gcs_core::{program,interval::Interval};
+use gcs_core::solid::{Millimetres,SpatialField};
 use std::f64::consts::PI;
 
 /// Link the gear project with the member component also publishing its blank
@@ -68,14 +69,14 @@ fn single_space(member: &str,expected: f64) {
     let blank = cad.0.construct(&gcs_core::solid::cad::recipe(&e.sketch,blank_id).unwrap()).unwrap();
     let blank_volume = cad.0.volume(blank).unwrap();
     let started = std::time::Instant::now();
-    let (face,sheet,error) = native::sweep_boundary::swept_sheet(&cad.0,&e.sketch,removal,blank,&gcs_core::solid::SpatialField::read(&e.sketch,blank_id,1e-10).unwrap(),None).unwrap();
+    let (face,sheet,error) = native::sweep_boundary::swept_sheet(&cad.0,&e.sketch,removal,blank,&Millimetres::<SpatialField>::read(&e.sketch,blank_id,1e-10).unwrap(),None).unwrap();
     eprintln!("{member}: sheet {}x{} in {:?}, withheld error {error:e} mm",sheet.rows,sheet.columns,started.elapsed());
     assert!(error < 0.02,"withheld contact error {error}");
     let partition = cad.0.split_solid(blank,&[face]).unwrap();
     let field = gcs_core::solid::MaterialField::read(&e.sketch,single_id,1e-10).unwrap();
     let mut material = field.evaluator(4096);
-    let scale = gcs_core::solid::cad::millimetres(&e.sketch).unwrap();
-    let (kept,removed) = native::sweep_boundary::classify(&cad.0,partition,&field,scale).unwrap();
+    let asked = Millimetres::<gcs_core::solid::MaterialField>::read(&e.sketch,single_id,1e-10).unwrap();
+    let (kept,removed) = native::sweep_boundary::classify(&cad.0,partition,&asked).unwrap();
     let cell_total: f64 = kept.iter().chain(&removed).map(|c| c.volume).sum();
     assert!((cell_total-blank_volume).abs() < 1e-5*blank_volume);
     assert_eq!(removed.len(),1,"one tooth space");
@@ -112,7 +113,7 @@ fn the_native_space_at_an_offset_against_its_field() {
     let blank = cad.0.construct(&gcs_core::solid::cad::recipe(&e.sketch,id("blank")).unwrap()).unwrap();
     let blank_volume = cad.0.volume(blank).unwrap();
     let started = std::time::Instant::now();
-    let built = native::sweep_boundary::swept_sheet(&cad.0,&e.sketch,id("removal"),blank,&gcs_core::solid::SpatialField::read(&e.sketch,id("blank"),1e-10).unwrap(),None);
+    let built = native::sweep_boundary::swept_sheet(&cad.0,&e.sketch,id("removal"),blank,&Millimetres::<SpatialField>::read(&e.sketch,id("blank"),1e-10).unwrap(),None);
     let (face,sheet,error) = match built {
         Ok(b) => b,
         Err(refusal) => { eprintln!("offset {offset}: sheet refused: {refusal}"); return; }
@@ -121,8 +122,8 @@ fn the_native_space_at_an_offset_against_its_field() {
     let partition = cad.0.split_solid(blank,&[face]).unwrap();
     let field = gcs_core::solid::MaterialField::read(&e.sketch,id("single"),1e-10).unwrap();
     let mut material = field.evaluator(4096);
-    let scale = gcs_core::solid::cad::millimetres(&e.sketch).unwrap();
-    let (kept,removed) = match native::sweep_boundary::classify(&cad.0,partition,&field,scale) {
+    let asked = Millimetres::<gcs_core::solid::MaterialField>::read(&e.sketch,id("single"),1e-10).unwrap();
+    let (kept,removed) = match native::sweep_boundary::classify(&cad.0,partition,&asked) {
         Ok(c) => c,
         Err(refusal) => { eprintln!("offset {offset}: classification refused: {refusal}"); return; }
     };
@@ -194,7 +195,7 @@ fn a_roll_that_leaves_the_cutter_in_the_blank_is_refused() {
     let blank_id = e.map.ent_named("pair.gear.blank").unwrap().i();
     let cad = Cad::new();
     let blank = cad.0.construct(&gcs_core::solid::cad::recipe(&e.sketch,blank_id).unwrap()).unwrap();
-    let error = native::sweep_boundary::swept_sheet(&cad.0,&e.sketch,removal,blank,&gcs_core::solid::SpatialField::read(&e.sketch,blank_id,1e-10).unwrap(),None).unwrap_err();
+    let error = native::sweep_boundary::swept_sheet(&cad.0,&e.sketch,removal,blank,&Millimetres::<SpatialField>::read(&e.sketch,blank_id,1e-10).unwrap(),None).unwrap_err();
     eprintln!("{error}");
     assert!(error.message.contains("leaves the cutter inside the blank") && error.message.contains("35.0 degrees"));
     assert_eq!(error.stage,gcs_core::solid::export::Stage::Clearance);
@@ -290,7 +291,7 @@ fn where_a_sheet_misses_its_contacts() {
     let id = |n: &str| e.map.ent_named(&format!("pair.{member}.{n}")).unwrap().i();
     let cad = Cad::new();
     let blank = cad.0.construct(&gcs_core::solid::cad::recipe(&e.sketch,id("blank")).unwrap()).unwrap();
-    let field = gcs_core::solid::SpatialField::read(&e.sketch,id("blank"),1e-10).unwrap();
+    let field = Millimetres::<SpatialField>::read(&e.sketch,id("blank"),1e-10).unwrap();
     let (_face,sheet,error) = native::sweep_boundary::swept_sheet(&cad.0,&e.sketch,id("removal"),blank,&field,None).unwrap();
     eprintln!("sheet {}x{}, withheld error {error:.4}",sheet.rows,sheet.columns);
     // Each grid cell's own normal (from its diagonals) against the contact normals at its

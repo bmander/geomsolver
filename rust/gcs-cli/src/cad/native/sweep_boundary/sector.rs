@@ -59,7 +59,7 @@ pub(super) fn debug_faces(session: &Session,what: &str,solid: c_int) {
 /// the order of `distinct`.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn construct(session: &Session,sk: &Sketch,body: usize,recipe: &cad::StaticRecipe,blank: c_int,
-    meridian: Option<super::super::Meridian>,field: &gcs_core::solid::SpatialField,distinct: &[usize],sheets: &[Fitted],scale: f64)
+    meridian: Option<super::super::Meridian>,field: &Millimetres<SpatialField>,distinct: &[usize],sheets: &[Fitted],scale: f64)
     -> Result<(Patterned,Union),String> {
     let started = std::time::Instant::now();
     let poses: Vec<Vec<Motion>> = distinct.iter().map(|&s| recipe.sweeps.iter().filter(|c| c.swept == s).map(|c| c.pose).collect()).collect();
@@ -70,14 +70,14 @@ pub(super) fn construct(session: &Session,sk: &Sketch,body: usize,recipe: &cad::
     // Millimetres: the frame and the turns as the kernel is given them.
     let frame = Frame::new(indexing.origin.map(|x| x*scale),indexing.axis);
     let mm = |m: Motion,p: [f64;3]| m.point(p.map(|x| x/scale)).map(|x| x*scale);
-    let inside = |p: [f64;3]| field.value(p.map(|x| x/scale)) < 0.;
+    let inside = |p: [f64;3]| field.value(p) < 0.;
     // The blank reads alike under one pitch's turn, at points spread over its box.
     let turn = indexing.turn(1);
     let mut rng = gcs_core::rng::Rng::new(0x5ec7);
     for _ in 0..256 {
         let p: [f64;3] = std::array::from_fn(|k| rng.uniform(bounds[0][k],bounds[1][k]));
-        let (a,b) = (field.value(p.map(|x| x/scale)),field.value(mm(turn,p).map(|x| x/scale)));
-        if (a-b).abs()*scale > 1e-9*size {
+        let (a,b) = (field.value(p),field.value(mm(turn,p)));
+        if (a-b).abs() > 1e-9*size {
             return Err(format!("the blank does not read alike turned by one pitch (at {p:?}, {a} against {b})"));
         }
     }
@@ -137,21 +137,20 @@ pub(super) fn construct(session: &Session,sk: &Sketch,body: usize,recipe: &cad::
         let read: Vec<[f64;3]> = session.surface_grid(side,READ_BACK*rows,READ_BACK*COLUMNS)?.into_iter().map(|(p,_)| p).filter(|&p| inside(p)).collect();
         let clear = chosen.clearance_of(&read)?;
         if clear < margin { return Err(format!("the side as built passes {clear:.4} mm from a cut, under {margin:.4} mm")); }
-        let body_field = MaterialField::read(sk,body,cad::AXIS_TOLERANCE)?;
+        let body_field = Millimetres::<MaterialField>::read(sk,body,cad::AXIS_TOLERANCE)?;
         let radius = margin/2.;
-        let deep: Vec<[f64;3]> = read.iter().copied().filter(|p| field.value(p.map(|x| x/scale))*scale < -radius).collect();
+        let deep: Vec<[f64;3]> = read.iter().copied().filter(|&p| field.value(p) < -radius).collect();
         let step = deep.len().div_ceil(PROBES).max(1);
         let probed_at: Vec<[f64;3]> = deep.iter().copied().step_by(step).collect();
         // each probe on its own core, an evaluator a thread; the first to fail, in order, is the reason
         let probes = gcs_core::par::indices_with(probed_at.len(),|| body_field.evaluator(cad::POSE_CACHE),|material,i| {
-            material.probe(probed_at[i].map(|x| Interval::point(x/scale).unwrap()),[1.,0.,0.],radius/scale,
-                Options {value_tolerance:radius/scale/4.,max_evaluations:40000}).map_err(|e| format!("{e:?}"))
+            material.probe(probed_at[i],[1.,0.,0.],radius,Options {value_tolerance:radius/4.,max_evaluations:40000})
         });
         let mut probed = 0;
         for (&p,probe) in probed_at.iter().zip(probes) {
             let probe = probe?;
-            if probe.state != ProbeState::InteriorBall {
-                return Err(format!("the material field reads the side at {:?} as {:?}, not material",p.map(|x| (x*1e3).round()/1e3),probe.state));
+            if probe != ProbeState::InteriorBall {
+                return Err(format!("the material field reads the side at {:?} as {:?}, not material",p.map(|x| (x*1e3).round()/1e3),probe));
             }
             probed += 1;
         }
@@ -199,7 +198,7 @@ pub(super) fn construct(session: &Session,sk: &Sketch,body: usize,recipe: &cad::
             tools.len(),session.solids(partition)?.len(),clock.elapsed()));
         mark(Stage::Split);
         let clock = std::time::Instant::now();
-        let (kept,removed) = classify(session,partition,&body_field,scale)?;
+        let (kept,removed) = classify(session,partition,&body_field)?;
         stage(&format!("classified {} material and {} removed cells ({:?})",kept.len(),removed.len(),clock.elapsed()));
         if kept.is_empty() { return Err("no cell of the sector is material".into()); }
         let volumes = |cells: &[Cell]| cells.iter().map(|c| contracts::CellVolume {volume:c.volume,point:c.point}).collect::<Vec<_>>();

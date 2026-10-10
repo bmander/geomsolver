@@ -511,7 +511,10 @@ times from `SweepContacts::at_point_normal_over` (`PointContactError`), sheets t
 resampled by the core (`solid::contact_trace`, fed section samples and nothing else; rows stop
 outside the blank before a time leaps: `charted`; fall by walk length, or by length in space where
 that fit misses or folds: `Rows`), indexed by the declared motion, blank split (fuzzy 1e-5 mm),
-cells judged by `MaterialEvaluator::probe`.
+cells judged by `MaterialEvaluator::probe`. The construction is in mm, a field in the document's
+units: every field it asks is a `solid::Millimetres` (points, values, a probe's radius in mm; its
+constructors read the scale), never a bare `SpatialField`/`MaterialField` and a hand `x/scale`
+(`tests/millimetres.rs`).
 `UnifySameDomain` widens shared tolerances: unify a copy. `solid::agreement` probes 0.1 mm each
 side (a one-sided disagreement withdrawn only where the centroid reads on the boundary); nothing
 is written unless it agrees: outputs go through `cad::output::Staged`; native swept

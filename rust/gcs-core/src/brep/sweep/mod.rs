@@ -16,6 +16,7 @@ use crate::model::Sketch;
 use crate::solid::admission::Admission;
 use crate::solid::cad::{self,StaticRecipe};
 use crate::solid::export::{AtStage,ExportRefusal,Stage,Tolerance};
+use crate::solid::{Millimetres,SpatialField};
 
 /// How the pipeline speaks: a line of progress, and the stage just passed.
 pub struct Say<'a> { pub stage: &'a (dyn Fn(&str)+Sync),pub mark: &'a (dyn Fn(Stage)+Sync) }
@@ -33,10 +34,10 @@ impl Built {
 /// take them for one (mm): the far side is the near one turned, so they agree to rounding.
 const PATTERN_MATCH: f64 = 1e-6;
 
-/// What every stage of a swept body's build reads: millimetres a model unit, the static
-/// remainder's analytic field and the box it lies in (model units), the distinct sweeps, their cuts and
-/// the class each was admitted to, and the blank (mm).
-pub struct Prepared { scale: f64,field: crate::solid::SpatialField,bounds: Option<([f64;3],[f64;3])>,distinct: Vec<usize>,
+/// What every stage of a swept body's build reads: millimetres a model unit (for its motions), the
+/// static remainder's analytic field (asked in mm) and the box it lies in (model units), the distinct
+/// sweeps, their cuts and the class each was admitted to, and the blank (mm).
+pub struct Prepared { scale: f64,field: Millimetres<SpatialField>,bounds: Option<([f64;3],[f64;3])>,distinct: Vec<usize>,
     cuts: Vec<sheet::SweptCut>,classes: Vec<crate::solid::admission::Class>,blank: crate::brep::topo::Brep }
 
 impl Prepared {
@@ -46,10 +47,10 @@ impl Prepared {
     pub fn sweep_name<'a>(&self,sk: &'a Sketch,k: usize) -> &'a str { &sk.solids[self.distinct[k]].name }
     /// Which points (mm) the static blank holds, as every sheet asks.
     fn inside(&self,points: &[[f64;3]]) -> Result<Vec<bool>,String> {
-        Ok(points.iter().map(|p| self.field.value(p.map(|x| x/self.scale)) < 0.).collect())
+        Ok(points.iter().map(|&p| self.field.value(p) < 0.).collect())
     }
     /// The static blank's field at a point, in mm.
-    fn near(&self,p: [f64;3]) -> f64 { self.field.value(p.map(|x| x/self.scale))*self.scale }
+    fn near(&self,p: [f64;3]) -> f64 { self.field.value(p) }
 }
 
 /// The first stage: the body's field, its sweeps and its blank, by its meridian where it is a solid
@@ -60,14 +61,14 @@ pub fn prepare(sk: &Sketch,body: usize,recipe: &StaticRecipe,admission: &Admissi
         return Err(ExportRefusal::at(Stage::Admission,format!("`{name}`: the admission presented is another body's")))
     }
     let scale = cad::millimetres(sk).at(Stage::Blank)?;
-    let (field,_) = crate::solid::admission::static_remainder(sk,body,cad::AXIS_TOLERANCE).at(Stage::Blank)?;
+    let (field,_) = Millimetres::static_remainder(sk,body,cad::AXIS_TOLERANCE).at(Stage::Blank)?;
     let mut distinct: Vec<usize> = recipe.sweeps.iter().map(|s| s.swept).collect();
     distinct.sort(); distinct.dedup();
     let cuts = distinct.iter().map(|&swept| sheet::SweptCut::read(sk,swept)).collect::<Result<Vec<_>,_>>()?;
     let classes = distinct.iter().map(|&swept| admission.sweeps().iter().find(|e| e.sweep == swept).map(|e| e.class.clone())
         .ok_or_else(|| ExportRefusal::at(Stage::Admission,format!("`{name}`: `{}` was not admitted",sk.solids[swept].name))))
         .collect::<Result<Vec<_>,_>>()?;
-    let bounds = field.support_bounds().ok().flatten().map(|b| (b.map(|x| x.bounds()[0]),b.map(|x| x.bounds()[1])));
+    let bounds = field.support_bounds_in_model_units();
     let started = crate::clock::Instant::now();
     let blank = match crate::brep::recipe::meridian(&recipe.recipe,[1.,0.,0.]).at(Stage::Blank)? {
         Ok((b,..)) => b,

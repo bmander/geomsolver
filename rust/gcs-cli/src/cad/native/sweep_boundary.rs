@@ -16,8 +16,8 @@
 //! `sections`', and the fit contract a sheet passes before it is placed is `fit`'s.
 use super::*;
 use super::kernel::{Cell,Patterned};
-use gcs_core::{interval::{Interval,minimum::Options},model::{Sketch,SolidDef},motion::Family,
-    solid::{admission::Admission,cad,contracts,MaterialField,ProbeState,SweepContacts}};
+use gcs_core::{interval::minimum::Options,model::{Sketch,SolidDef},motion::Family,
+    solid::{admission::Admission,cad,contracts,MaterialField,Millimetres,ProbeState,SpatialField,SweepContacts}};
 use gcs_core::solid::contact_trace::{Band,Columns,Layout,Sample,Station,TraceError,Tracer,Withheld,marked};
 pub(crate) use gcs_core::solid::contact_trace::{Inside,Sheet};
 use gcs_core::solid::contact_trace::Rows;
@@ -50,8 +50,7 @@ fn tracing() -> bool {
 /// an unresolved point or a cell that a leaking sheet failed to separate
 /// refuses the build instead of guessing. The probes run on every core, an evaluator a thread,
 /// and are read in the cells' order, so the first refusal is the one the cells taken in turn give.
-/// The cells are in millimetres and the field in the document's units, `scale` millimetres each.
-pub(crate) fn classify(session: &Session,partition: c_int,field: &MaterialField,scale: f64)
+pub(crate) fn classify(session: &Session,partition: c_int,field: &Millimetres<MaterialField>)
     -> Result<(Vec<Cell>,Vec<Cell>),String> {
     // Each cell's volume was measured when the partition was validated; its point is the
     // deepest interior sample measured here, every cell's on its own core.
@@ -60,7 +59,7 @@ pub(crate) fn classify(session: &Session,partition: c_int,field: &MaterialField,
     let sampled = session.samples_of(&solids,4,12)?;
     let sampling = clock.elapsed().as_secs_f64();
     let volumes = solids.iter().map(|&s| session.volume(s)).collect::<Result<Vec<_>,_>>()?;
-    let (kept,removed) = judge(&volumes,sampled,field,scale,sampling)?;
+    let (kept,removed) = judge(&volumes,sampled,field,sampling)?;
     let native = |c: Cell| Cell {solid:solids[c.solid as usize],..c};
     Ok((kept.into_iter().map(native).collect(),removed.into_iter().map(native).collect()))
 }
@@ -68,9 +67,8 @@ pub(crate) fn classify(session: &Session,partition: c_int,field: &MaterialField,
 /// Cells of the given volumes judged by the material field at their interior samples (points with
 /// a lower bound on their distance from the cell's boundary, deepest first): each `Cell`'s `solid`
 /// is its index. Every sample far enough from its cell's boundary is probed, at half that distance
-/// (at most 0.05 mm), on every core, an evaluator a thread, and read in the cells' order: a sample
-/// in millimetres asked of the field at its place in the document's units, `scale` millimetres each.
-pub(crate) fn judge(volumes: &[f64],sampled: Vec<Vec<([f64;3],f64)>>,field: &MaterialField,scale: f64,sampling: f64)
+/// (at most 0.05 mm), on every core, an evaluator a thread, and read in the cells' order.
+pub(crate) fn judge(volumes: &[f64],sampled: Vec<Vec<([f64;3],f64)>>,field: &Millimetres<MaterialField>,sampling: f64)
     -> Result<(Vec<Cell>,Vec<Cell>),String> {
     let (mut kept,mut removed) = (Vec::new(),Vec::new());
     let asked: Vec<([f64;3],f64)> = sampled.iter().flatten().map(|&(point,boundary)| (point,(boundary*0.5).min(0.05)))
@@ -78,8 +76,7 @@ pub(crate) fn judge(volumes: &[f64],sampled: Vec<Vec<([f64;3],f64)>>,field: &Mat
     let clock = std::time::Instant::now();
     let answers = gcs_core::par::indices_with(asked.len(),|| field.evaluator(cad::POSE_CACHE),|material,i| {
         let (point,distance) = asked[i];
-        material.probe(point.map(|x| Interval::point(x/scale).unwrap()),[1.,0.,0.],distance/scale,
-            Options {value_tolerance:distance/scale/4.,max_evaluations:40000}).map_err(|e| format!("{e:?}"))
+        material.probe(point,[1.,0.,0.],distance,Options {value_tolerance:distance/4.,max_evaluations:40000})
     });
     let probing = clock.elapsed().as_secs_f64();
     let mut answers = answers.into_iter();
@@ -91,7 +88,7 @@ pub(crate) fn judge(volumes: &[f64],sampled: Vec<Vec<([f64;3],f64)>>,field: &Mat
         for (point,boundary) in samples {
             if (boundary*0.5).min(0.05) <= 1e-4 { continue; }
             let probe = answers.next().expect("an answer a probe asked")?;
-            let inside = match probe.state {
+            let inside = match probe {
                 ProbeState::InteriorBall => true,
                 ProbeState::ExteriorBall => false,
                 state => return Err(format!("the material at {point:?} ({boundary:.3} mm from a cell boundary) is {state:?}")),
@@ -290,7 +287,7 @@ impl SweptCut {
 /// The candidate sheet of one swept solid against a native blank (`sheet_beside`), read from the
 /// sketch here.
 #[cfg(test)]
-pub(crate) fn swept_sheet(session: &Session,sk: &Sketch,swept: usize,blank: c_int,field: &gcs_core::solid::SpatialField,
+pub(crate) fn swept_sheet(session: &Session,sk: &Sketch,swept: usize,blank: c_int,field: &Millimetres<SpatialField>,
     tolerance: Option<Tolerance>) -> Result<Fitted,ExportRefusal> {
     sheet_beside(session,&SweptCut::read(sk,swept)?,&|| Ok(blank),field,tolerance)
 }
@@ -305,13 +302,13 @@ pub(crate) fn swept_sheet(session: &Session,sk: &Sketch,swept: usize,blank: c_in
 /// built, then the clearance asked, and what the two said said in that order — only the
 /// clearance's where it refuses, as asking it first would have.
 fn sheet_beside(session: &Session,cut: &SweptCut,blank: &dyn Fn() -> Result<c_int,ExportRefusal>,
-    field: &gcs_core::solid::SpatialField,tolerance: Option<Tolerance>) -> Result<Fitted,ExportRefusal> {
+    field: &Millimetres<SpatialField>,tolerance: Option<Tolerance>) -> Result<Fitted,ExportRefusal> {
     let (name,scale) = (&cut.name,cut.scale);
     let clock = std::time::Instant::now();
     let cutter = session.cutter(&cut.recipe).at(Stage::Clearance)?;
     if std::env::var_os("SOLVENT_SECTOR_DEBUG").is_some() { eprintln!("sheet: `{name}`: the cutter built in {:?}",clock.elapsed()); }
-    let inside = |points: &[[f64;3]]| Ok(points.iter().map(|p| field.value(p.map(|x| x/scale)) < 0.).collect());
-    let near = |p: [f64;3]| field.value(p.map(|x| x/scale))*scale;
+    let inside = |points: &[[f64;3]]| Ok(points.iter().map(|&p| field.value(p) < 0.).collect());
+    let near = |p: [f64;3]| field.value(p);
     // Rows by walk length first, the placement the bevel pair and the pinion were recorded with;
     // by length where that fit misses or folds.
     let (sheet,said) = holding(|| swept_sheets(session,cut,&cutter,&inside,&[Rows::Walk,Rows::Length],tolerance,
@@ -406,9 +403,9 @@ pub(crate) fn construct_swept_body(session: &Session,sk: &Sketch,body: usize,rec
     if let Admitted::Already(admission) = admitted { presented(admission)?; }
     // What the sketch says of the blank and the cuts, read here; where it cannot be read, an
     // admission to be made is made first, and its refusal is the one reported.
-    let read = || -> Result<(f64,gcs_core::solid::SpatialField,Vec<usize>,Vec<SweptCut>),ExportRefusal> {
+    let read = || -> Result<(f64,Millimetres<SpatialField>,Vec<usize>,Vec<SweptCut>),ExportRefusal> {
         let scale = cad::millimetres(sk).at(Stage::Blank)?;
-        let (field,_) = gcs_core::solid::admission::static_remainder(sk,body,cad::AXIS_TOLERANCE).at(Stage::Blank)?;
+        let (field,_) = Millimetres::static_remainder(sk,body,cad::AXIS_TOLERANCE).at(Stage::Blank)?;
         let mut distinct: Vec<usize> = recipe.sweeps.iter().map(|s| s.swept).collect();
         distinct.sort(); distinct.dedup();
         let cuts = distinct.iter().map(|&swept| SweptCut::read(sk,swept)).collect::<Result<Vec<_>,_>>()?;
@@ -483,8 +480,8 @@ pub(crate) fn construct_swept_body(session: &Session,sk: &Sketch,body: usize,rec
     mark(Stage::Split);
     let started = std::time::Instant::now();
     let classified = || -> Result<(Vec<Cell>,Vec<Cell>),String> {
-        let material = MaterialField::read(sk,body,cad::AXIS_TOLERANCE)?;
-        let (kept,removed) = classify(session,partition,&material,scale)?;
+        let material = Millimetres::<MaterialField>::read(sk,body,cad::AXIS_TOLERANCE)?;
+        let (kept,removed) = classify(session,partition,&material)?;
         stage(&format!("classified {} material and {} removed cells ({:?})",kept.len(),removed.len(),started.elapsed()));
         if kept.is_empty() { return Err("no cell of the blank is material".into()); }
         let volumes = |cells: &[Cell]| cells.iter().map(|c| contracts::CellVolume {volume:c.volume,point:c.point}).collect::<Vec<_>>();

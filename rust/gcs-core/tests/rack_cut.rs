@@ -155,35 +155,47 @@ fn a_racks_tooth_space_is_built() {
     }
 }
 
-/// **A drawing in centimetres cuts the same space**: the fixture written with `unit cm`, every
-/// bare coordinate a tenth of the millimetre one. The kernel builds in millimetres while the
-/// material field reads the document's own units, so the cells it judges are asked of the field
-/// at their places divided by the document's millimetres per unit — read in millimetres, each
-/// sample stood ten times farther out than the cell it judges.
+/// A fixture written in centimetres: `unit cm`, every bare coordinate and seed a tenth of the
+/// millimetre one (a number naming its unit, `6mm`, stands as written; the bore's seed only where
+/// there is a bore).
+fn in_centimetres(src: &str) -> String {
+    [("unit mm","unit cm"),("hint(r: 22)","hint(r: 2.2)"),("hint(r: 6)","hint(r: 0.6)"),
+        ("fix((20, 0))","fix((2, 0))"),("hint((20, 0))","hint((2, 0))"),
+        ("fix((20, 10))","fix((2, 1))"),("hint((20, 10))","hint((2, 1))"),
+        ("hint((18, -0.84))","hint((1.8, -0.084))"),("hint((18, 0.84))","hint((1.8, 0.084))"),
+        ("hint((24, 3.03))","hint((2.4, 0.303))"),("hint((24, -3.03))","hint((2.4, -0.303))"),
+        ("fix((18, -0.842856))","fix((1.8, -0.0842856))"),("fix((18, 0.842856))","fix((1.8, 0.0842856))"),
+        ("fix((24, 3.026666))","fix((2.4, 0.3026666))"),("fix((24, -3.026666))","fix((2.4, -0.3026666))")]
+        .iter().fold(src.to_string(),|s,(mm,cm)| {
+            assert!(s.contains(mm) || mm.contains("r: 6"),"{mm}");
+            s.replace(mm,cm)
+        })
+}
+
+/// **A drawing in centimetres cuts the same space and the same gear**: the kernel builds in
+/// millimetres while the material field reads the document's units, so every cell it judges, and
+/// the sector's side, is asked of the field through `solid::Millimetres` — read in millimetres
+/// unconverted, each sample stood ten times farther out than the cell it judges, and the space was
+/// refused. One space is built whole (`sector::whole`), twenty as a sector (`premises`,
+/// `construct`); the exact solid is in millimetres whatever the document's unit.
 #[test]
-fn a_racks_tooth_space_in_centimetres_is_built() {
+fn a_rack_cut_in_centimetres_is_built() {
     use gcs_core::brep::{export, sweep::Say};
-    let cm = SPACE.replace("unit mm", "unit cm")
-        .replace("hint(r: 22)", "hint(r: 2.2)")
-        .replace("fix((20, 0))", "fix((2, 0))").replace("hint((20, 0))", "hint((2, 0))")
-        .replace("fix((20, 10))", "fix((2, 1))").replace("hint((20, 10))", "hint((2, 1))")
-        .replace("hint((18, -0.84))", "hint((1.8, -0.084))").replace("hint((18, 0.84))", "hint((1.8, 0.084))")
-        .replace("hint((24, 3.03))", "hint((2.4, 0.303))").replace("hint((24, -3.03))", "hint((2.4, -0.303))")
-        .replace("fix((18, -0.842856))", "fix((1.8, -0.0842856))").replace("fix((18, 0.842856))", "fix((1.8, 0.0842856))")
-        .replace("fix((24, 3.026666))", "fix((2.4, 0.3026666))").replace("fix((24, -3.026666))", "fix((2.4, -0.3026666))");
-    let mut e = build(&cm);
-    let r = gcs_core::solve::solve(&mut e.sketch, gcs_core::solve::SolveOpts::default());
-    assert!(r.success, "{}", r.message);
-    let gear = e.map.ent_named("gear").unwrap().i();
     let say = Say { stage: &|l: &str| eprintln!("{l}"), mark: &|_| {} };
-    let exact = match export::exact(&e.sketch, gear, None, None, &say) {
-        Ok(x) => x,
-        Err(r) => panic!("refused at {:?}: {}", r.stage, r.message),
-    };
-    // the exact solid is in millimetres whatever the document's unit
-    let removed = PI * 22. * 22. * 6. - gcs_core::brep::props::volume(&exact.solid);
-    let want = 6. * space_area(400, 4000);
-    assert!((removed - want).abs() < 0.03, "removed {removed:.5} mm³, the space being {want:.5}");
+    for (src,teeth,blank) in [(SPACE.to_string(),1.,PI*22.*22.*6.),(gear(20),20.,PI*(22.*22.-6.*6.)*6.)] {
+        let mut e = build(&in_centimetres(&src));
+        let r = gcs_core::solve::solve(&mut e.sketch, gcs_core::solve::SolveOpts::default());
+        assert!(r.success, "{}", r.message);
+        let gear = e.map.ent_named("gear").unwrap().i();
+        let exact = match export::exact(&e.sketch, gear, None, None, &say) {
+            Ok(x) => x,
+            Err(r) => panic!("{teeth} spaces refused at {:?}: {}", r.stage, r.message),
+        };
+        assert_eq!(exact.pattern.is_some(), teeth > 1., "a sector for the gear, whole for one space");
+        let removed = blank - gcs_core::brep::props::volume(&exact.solid);
+        let want = teeth * 6. * space_area(400, 4000);
+        assert!((removed - want).abs() < 0.03 * teeth, "removed {removed:.5} mm³, the spaces being {want:.5}");
+    }
 }
 
 /// **The rack's sheet is its profile's planar envelope extruded** (issue #70, part 1): the prism

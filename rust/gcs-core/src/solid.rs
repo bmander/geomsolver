@@ -54,6 +54,7 @@ use document::{frame_origin,resolve_at};
 mod field;
 pub use field::{PlanarField,RevolvedField,ExtrudedField,SpatialField,SweptField,SweepEvaluator,SweepError,CHORD_SLACK};
 pub use field::{MaterialField,MaterialEvaluator,MaterialBounds,MaterialSweepQuery,SIDE_EVALUATIONS};
+pub use field::{Millimetres,MillimetreEvaluator};
 pub use field::{OperandId,Query,Reading,Source,Want,Resolution,crease};
 pub use field::{MaterialProbe,ProbeState};
 pub use field::{BoundaryOptions,BoundaryError,BoundaryStage,FieldBoundary,BoundaryCell,BoundaryPoint,BoundaryCrossing};
