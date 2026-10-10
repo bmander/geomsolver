@@ -152,10 +152,10 @@ fn cross2(a: Meridian,b: Meridian,tol: f64) -> Option<Vec<[f64;2]>> {
 }
 
 /// Whether two swept curves are one curve once `seen` takes out the motion that sweeps them: the
-/// same degree and knots and poles within `tol`, or else equal outright.
+/// same degree, knots and weights and poles within `tol`, or else equal outright.
 fn same_curve(c: &Curve,d: &Curve,tol: f64,seen: &dyn Fn(V) -> V) -> bool {
     match (c,d) {
-        (Curve::BSpline(a),Curve::BSpline(b)) => a.degree == b.degree && a.knots == b.knots
+        (Curve::BSpline(a),Curve::BSpline(b)) => a.degree == b.degree && a.knots == b.knots && a.weights == b.weights
             && a.poles.len() == b.poles.len() && a.poles.iter().zip(&b.poles).all(|(&p,&q)| norm(sub(seen(p),seen(q))) <= tol),
         _ => c == d,
     }
@@ -270,10 +270,9 @@ pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi {
             let Surface::Extrusion(e,c) = ex else { unreachable!() };
             let lift = |p: V| add(p,scale(e.z,dot(pl.z,sub(pl.o,p))/dot(pl.z,e.z)));
             match &**c {
-                Curve::BSpline(sp) => match super::nurbs::BSpline::new(sp.degree,sp.knots.clone(),sp.poles.iter().map(|&p| lift(p)).collect()) {
-                    Ok(moved) => Ssi::Curves(vec![Curve::BSpline(std::sync::Arc::new(moved))]),
-                    Err(_) => Ssi::Traced,
-                },
+                // the same knots and weights, its poles moved: a rational profile stays weighed
+                Curve::BSpline(sp) => Ssi::Curves(vec![Curve::BSpline(std::sync::Arc::new(super::nurbs::BSpline {
+                    poles:sp.poles.iter().map(|&p| lift(p)).collect(),..(**sp).clone()}))]),
                 Curve::Line {p,d} => Ssi::Curves(vec![Curve::Line {p:lift(*p),d:*d}]),
                 Curve::Circle(fr,r) => Ssi::Curves(vec![Curve::Circle(Frame::new(lift(fr.o),fr.z,fr.x),*r)]),
                 _ => Ssi::Traced,

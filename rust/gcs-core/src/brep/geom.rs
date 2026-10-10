@@ -799,7 +799,7 @@ pub enum Curve {
     Ellipse(Frame,f64,f64),
     /// A traced intersection, its parameter counting its points.
     Traced(std::sync::Arc<Traced>),
-    /// A non-rational B-spline over its knots' domain.
+    /// A B-spline over its knots' domain, rational where it carries weights.
     BSpline(Arc<BSpline>),
     /// A loft face's rail: its blend at `u` as `v` runs, the curve's parameter `v`.
     Iso(Arc<Blend>,f64),

@@ -255,3 +255,38 @@ fn a_cylinder_read_with_a_rational_side_is_its_closed_form() {
     assert!(bad != cylinder_json(r,h));
     assert!(gcs_core::brep::json::read(&bad).is_err());
 }
+
+#[test]
+fn a_plane_square_to_a_rational_sweep_meets_it_in_its_weighed_curve() {
+    use gcs_core::brep::geom::{Curve,Surface};
+    use gcs_core::brep::ssi::{intersect,Ssi};
+    // a cylinder swept from an exact circle, cut by a plane square to the sweep: the circle itself,
+    // weights and all (without them the polynomial through the same poles bulges off it)
+    let r = 2.;
+    let circle = arc(&Frame::new([1.,2.,0.],XY,[1.,0.,0.]),r,[0.,TAU]);
+    let side = Surface::Extrusion(Frame::new([0.;3],XY,[1.,0.,0.]),Arc::new(Curve::BSpline(Arc::new(circle))));
+    let cap = Surface::Plane(Frame::new([0.,0.,1.5],XY,[1.,0.,0.]));
+    for (a,b) in [(&side,&cap),(&cap,&side)] {
+        let Ssi::Curves(cs) = intersect(a,b,1e-9) else { panic!("no closed form") };
+        assert_eq!(cs.len(),1);
+        for k in 0..=64 {
+            let p = cs[0].point(TAU*k as f64/64.);
+            close(dist(p,[1.,2.,1.5]),r,1e-14);
+            assert!(side.implicit(p).abs() <= 1e-12 && cap.implicit(p).abs() <= 1e-12,"{p:?} off the surfaces");
+        }
+    }
+    // and a half rod of it cut through by a block's face square to its axis keeps the half below
+    // (with the polynomial curve for the cut, an edge stood 0.07 off the side it bounds)
+    use gcs_core::brep::boolean::{boolean,Op};
+    let h = 5.;
+    let line = |a: V,b: V| ProfileEdge::Line {a,b};
+    let half = arc(&Frame::new([1.,2.,0.],XY,[1.,0.,0.]),r,[0.,PI]);
+    let rod = prism(&Profile {names:vec![],origin:[1.,2.,0.],normal:XY,
+        loops:vec![vec![ProfileEdge::Spline(Arc::new(half)),line([-1.,2.,0.],[3.,2.,0.])]]},0.,h).unwrap();
+    let square = vec![line([-5.,-5.,0.],[5.,-5.,0.]),line([5.,-5.,0.],[5.,5.,0.]),line([5.,5.,0.],[-5.,5.,0.]),line([-5.,5.,0.],[-5.,-5.,0.])];
+    let block = prism(&Profile {names:vec![],origin:[0.;3],normal:XY,loops:vec![square]},h/2.,2.*h).unwrap();
+    let kept = boolean(&rod,&block,Op::Cut,1e-9).unwrap_or_else(|e| panic!("{e}"));
+    kept.check(1e-8).unwrap_or_else(|e| panic!("{e}"));
+    close(volume(&kept),PI*r*r*h/4.,1e-11);
+}
+
