@@ -2,7 +2,7 @@
 //! orthographic eye, with what is under the pointer asked where the eye sees it — because views
 //! that lie on top of one another on the page are nowhere near one another in space.
 use gcs_core::model::{EntKind, EntRef, Sketch};
-use gcs_core::overview::workspace::{apply, inside, look_at, nearest_point, panes_at, pick, Projection};
+use gcs_core::overview::workspace::{apply, look_at, nearest_point, overlapping, panes_at, pick, Projection};
 use gcs_core::{callout, library, program};
 use std::f64::consts::{FRAC_PI_2, PI};
 
@@ -121,8 +121,37 @@ fn a_pick_tells_apart_views_that_overlap_on_the_page() {
     assert!(got == named("f") || got == named("p"), "{got:?}");
     // a band round where the side's point is seen holds it and nothing of the other views
     let (cx, cy) = seen([0.0, 10.0, 4.0], az, el);
-    let held = inside(sk, &proj, (cx - 0.5, cy - 0.5), (cx + 0.5, cy + 0.5), 0.01);
+    let held = overlapping(sk, &proj, (cx - 0.5, cy - 0.5), (cx + 0.5, cy + 0.5), 0.01);
     assert_eq!(held, vec![named("s")]);
+}
+
+/// A band takes whatever it touches — "crossing" selection — and only what is drawn: a line
+/// through it with both ends outside, a circle whose rim passes through it, never a circle round
+/// it, nor a line beside it.
+#[test]
+fn a_band_takes_what_it_touches() {
+    let e = build("unit mm\nuse std\nin std.front {\n\
+        a := point hint((0, 0))\nfix((0, 0)) a\nb := point hint((20, 0))\nfix((20, 0)) b\n\
+        across := line(a, b)\n\
+        c := point hint((0, 10))\nfix((0, 10)) c\nd := point hint((20, 10))\nfix((20, 10)) d\n\
+        beside := line(c, d)\n\
+        o := point hint((50, 0))\nfix((50, 0)) o\nring := circle(center: o) hint(r: 10)\n\
+        radius(10) ring\n}\n");
+    let sk = &e.sketch;
+    let named = |n: &str| e.map.ent_named(n).unwrap();
+    let proj = Projection::new(sk, -FRAC_PI_2, 0.0);
+    // over the middle of `across`, short of `beside` and either end
+    assert_eq!(overlapping(sk, &proj, (8.0, -2.0), (12.0, 2.0), 0.01), vec![named("across")]);
+    // the same box drawn from its other corner is the same box
+    assert_eq!(overlapping(sk, &proj, (12.0, 2.0), (8.0, -2.0), 0.01), vec![named("across")]);
+    // across the circle's rim, inside its centre's reach: the rim and the centre
+    let mut held = overlapping(sk, &proj, (48.0, -2.0), (62.0, 2.0), 0.01);
+    held.sort();
+    let mut want = vec![named("o"), named("ring")];
+    want.sort();
+    assert_eq!(held, want);
+    // wholly inside the rim, off the centre: nothing is drawn there
+    assert!(overlapping(sk, &proj, (53.0, 3.0), (55.0, 5.0), 0.01).is_empty());
 }
 
 /// A pane answers over its whole face, the nearest the eye first: seen from above and in front,

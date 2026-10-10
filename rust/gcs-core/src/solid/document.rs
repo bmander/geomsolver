@@ -37,6 +37,31 @@ pub fn reads(sk: &Sketch, si: usize, unit: f64) -> Vec<f64> {
                     Err(_) => v.push(f64::NAN),
                 }
             }
+            // a region: each term's numbers and where what it measures stands
+            SolidDef::Region { terms, .. } => {
+                v.push(7.0);
+                for t in terms {
+                    // no NaN for an end not written: a key must equal itself
+                    let hi = [f64::from(t.hi.is_some()), t.hi.unwrap_or(0.0)];
+                    v.extend([t.cmp as u8 as f64, t.lo, hi[0], hi[1]]);
+                    for e in t.shape.entities() {
+                        match e.kind {
+                            crate::model::EntKind::Point => v.extend(sk.world_point(e.i())),
+                            crate::model::EntKind::Line => {
+                                let l = &sk.lines[e.i()];
+                                v.extend(sk.world_point(l.p1 as usize));
+                                v.extend(sk.world_point(l.p2 as usize));
+                            }
+                            _ => {
+                                let b = sk.basis(e.i());
+                                v.extend(b.o);
+                                v.extend(b.u);
+                                v.extend(b.v);
+                            }
+                        }
+                    }
+                }
+            }
             SolidDef::Loft { face, end, guide } => {
                 v.extend([4.0, end.map_or(-1.0, |f| f as f64)]);
                 face_reads(sk, *face, &mut v);
@@ -388,6 +413,21 @@ fn build(
         prims.push(loft.primitive(origin, &name));
         return Term::Prim(prims.len()-1);
     }
+    // a region: its meridian's loops turned once about its axis, the holes taken out
+    if let SolidDef::Region { .. } = sol.def {
+        let Ok(m) = super::region::meridian(sk, si as usize) else { return Term::Empty };
+        let mut term = Term::Empty;
+        let (axis, full) = (((0.0, 0.0), (0.0, 1.0)), std::f64::consts::TAU);
+        for (i, p) in super::region::face_polys(&m, unit).into_iter().map(local).enumerate() {
+            let Some(prim) = revolve(&p, axis, full, crate::model::Sense::Ccw, unit, &name) else {
+                return Term::Empty;
+            };
+            prims.push(prim);
+            let next = Term::Prim(prims.len() - 1);
+            term = if i == 0 { next } else { Term::Diff(Box::new(term), Box::new(next)) };
+        }
+        return term;
+    }
     let Some(face) = sol.face() else { return Term::Empty };
     let Ok(polys) = face_polys(sk, face as usize, unit) else { return Term::Empty };
     let through_extent = if let SolidDef::Through { body, .. } = sol.def {
@@ -433,7 +473,8 @@ fn build(
                 let (a, b) = (sk.point_xy(l.p1 as usize), sk.point_xy(l.p2 as usize));
                 revolve(&p, (a, b), sweep.value, *sense, unit, &name)
             }
-            SolidDef::Body { .. } | SolidDef::Loft { .. } | SolidDef::Placed { .. } | SolidDef::Swept { .. } => unreachable!(),
+            SolidDef::Body { .. } | SolidDef::Loft { .. } | SolidDef::Placed { .. }
+                | SolidDef::Swept { .. } | SolidDef::Region { .. } => unreachable!(),
         };
         let Some(p) = built else { return Term::Empty };
         prims.push(p);

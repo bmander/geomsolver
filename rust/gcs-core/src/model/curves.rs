@@ -90,24 +90,27 @@ pub enum CurveBody {
     Extremal(Extremal),
 }
 
-/// A free curve's definition: its energy's Lagrangian — `None` until an energy is stated — and how
-/// many pegs its curves pass, which sets its contacts' constant widths.
+/// A free curve's definition: its energy's Lagrangian — `None` until an energy is stated — how many
+/// pegs its curves pass, which sets its contacts' constant widths, and how many lines they touch,
+/// which sets their columns.
 #[derive(Clone, Debug)]
 pub struct Extremal {
     pub lag: Option<crate::extremal::Lagrangian>,
     pub pegs: usize,
+    pub slides: usize,
 }
 
 impl Extremal {
-    /// A contact's constants on this definition: the Lagrangian, then the pegs (`extremal::write`).
+    /// A contact's constants on this definition: the Lagrangian, then the pegs and how many
+    /// slides (`extremal::write`).
     pub fn n_const(&self) -> usize {
-        self.lag.as_ref().map_or(4 + 2 * self.pegs, |l| crate::extremal::width(l, self.pegs))
+        self.lag.as_ref().map_or(5 + 2 * self.pegs, |l| crate::extremal::width(l, self.pegs))
     }
 }
 
 /// A free curve's definition under `name` (`variational::key_of`): over its two ends, swept in
-/// `u` from 0 to 1, its columns the ends and its length.
-pub fn extremal_def(name: String, lag: Option<crate::extremal::Lagrangian>, pegs: usize) -> CurveDef {
+/// `u` from 0 to 1, its columns the ends, its length and each touched line's two points.
+pub fn extremal_def(name: String, lag: Option<crate::extremal::Lagrangian>, pegs: usize, slides: usize) -> CurveDef {
     CurveDef {
         name,
         component: String::new(),
@@ -117,8 +120,12 @@ pub fn extremal_def(name: String, lag: Option<crate::extremal::Lagrangian>, pegs
         values: Vec::new(),
         param: "u".into(),
         turns: false,
-        vars: ["u", "a.x", "a.y", "b.x", "b.y", "length"].map(String::from).to_vec(),
-        body: CurveBody::Extremal(Extremal { lag, pegs }),
+        vars: ["u", "a.x", "a.y", "b.x", "b.y", "length"]
+            .map(String::from)
+            .into_iter()
+            .chain((0..slides).flat_map(|k| ["p1.x", "p1.y", "p2.x", "p2.y"].map(|c| format!("line{k}.{c}"))))
+            .collect(),
+        body: CurveBody::Extremal(Extremal { lag, pegs, slides }),
         pose_of: Vec::new(),
     }
 }
@@ -161,6 +168,9 @@ pub struct CurveE {
     /// The held points a free curve passes — its pegs, in its problem — as
     /// `Sketch::settle_variational` last read them.
     pub pegs: Vec<u32>,
+    /// The lines it touches where it chooses (`rope touches floor`, #149) — its slides, whose
+    /// points are its columns after its length.
+    pub slides: Vec<u32>,
 }
 
 /// Where a trimmed curve runs: along curve `of`, from point `from` to point `to`, each held on
@@ -251,20 +261,25 @@ impl Sketch {
     }
 
     /// A free curve's problem as its contacts' constants carry it (`extremal::write`): its
-    /// Lagrangian and where its pegs are.
+    /// Lagrangian, where its pegs are, and how many lines it touches.
     pub fn extremal_consts(&self, i: usize) -> Option<Vec<f64>> {
         let lag = self.extremal_lagrangian(i)?;
         let pegs: Vec<[f64; 2]> = self.curves[i].pegs.iter().map(|&p| self.point_xy(p as usize).into()).collect();
         let mut k = Vec::new();
-        crate::extremal::write(lag, &pegs, &mut k);
+        crate::extremal::write(lag, &pegs, self.curves[i].slides.len(), &mut k);
         Some(k)
+    }
+
+    /// A free curve's ends as its problem reads them, from its columns now.
+    pub fn extremal_ends(&self, i: usize) -> crate::extremal::Ends {
+        crate::extremal::Ends::of(&self.curve_vars(i, 0.0)[1..], self.curves[i].slides.len())
     }
 
     /// A free curve's shape where its ends and length are now, through its pegs — the one solve
     /// its contacts and its drawing share (`extremal::shape_for`) — with its Lagrangian.
     pub fn curve_shape(&self, i: usize) -> Option<(crate::extremal::Lagrangian, crate::extremal::Shape)> {
         let k = self.extremal_consts(i)?;
-        crate::extremal::shape_for(&k, &crate::extremal::Ends::of(&self.curve_vars(i, 0.0)[1..]))
+        crate::extremal::shape_for(&k, &self.extremal_ends(i))
     }
 
     /// The interval a curve is drawn over: the one written, or for a trim the parameters of its
@@ -367,7 +382,16 @@ impl Sketch {
     /// (`Sketch::seed_extremals` seeds a free curve's once its energy has given it a shape).
     pub fn curve_nearest_by(&self, i: usize, dist: impl Fn(f64, f64) -> f64) -> f64 {
         let (a, b) = self.curve_domain(i);
-        let poly = self.curve_polyline(i);
+        // evenly in the parameter: a free curve's drawn polyline has its corners besides
+        let poly = if self.curve_extremal(i) {
+            let mut p = self.curve_sweep(i, a.min(b), a.max(b), CURVE_STEPS);
+            if a > b {
+                p.reverse();
+            }
+            p
+        } else {
+            self.curve_polyline(i)
+        };
         let n = poly.len().saturating_sub(1).max(1);
         poly.iter()
             .enumerate()
@@ -488,6 +512,24 @@ impl Sketch {
     }
 
     fn curve_polyline_uncached(&self, i: usize, a: f64, b: f64) -> Vec<(f64, f64)> {
-        self.curve_sweep(i, a, b, CURVE_STEPS)
+        let mut poly = self.curve_sweep(i, a, b, CURVE_STEPS);
+        // a free curve's corners, at its pegs and slides, drawn where they are rather than cut
+        // across between two samples
+        if let (CurveBody::Extremal(_), Some((lag, sh))) =
+            (&self.curve_defs[self.curves[i].def as usize].body, self.curve_shape(i))
+        {
+            if poly.len() == CURVE_STEPS + 1 && b > a {
+                for s in sh.places[1..sh.places.len() - 1].iter().rev() {
+                    let u = s / sh.ends.len;
+                    if u > a && u < b {
+                        let k = (((u - a) / (b - a) * CURVE_STEPS as f64).floor() as usize + 1).min(CURVE_STEPS);
+                        if let Some(p) = crate::extremal::shoot::position(&lag, &sh, u) {
+                            poly.insert(k, (p[0], p[1]));
+                        }
+                    }
+                }
+            }
+        }
+        poly
     }
 }

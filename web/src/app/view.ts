@@ -58,6 +58,10 @@ export interface SolidPick {
 export type { DimAlt, LiveDim } from './dimension.js';
 
 export const PICK_PX = 8;
+/** The same tolerance for a finger: a fingertip covers some 7–10 mm of glass, and the thing it
+ *  means is anywhere under it — so a tap reaches as far as half the 44-pixel target a touch
+ *  screen's guidelines ask of a control.  Nearest still wins within it. */
+export const TOUCH_PICK_PX = 22;
 
 /** The planes every workspace offers, whether or not the document has them yet — a CAD part's
  *  origin planes.  `std.front` is the page itself seen in space, so geometry drawn on it with no
@@ -244,6 +248,9 @@ export class SketchView {
   gesture: Gesture | null = null;
   /** The pointer that owns `gesture`; a second one is ignored until it lets go. */
   gesturePointer: number | null = null;
+  /** Whether the last pointer over the canvas was a finger — what the pick tolerance is sized
+   *  to (`pickPx`).  Set by every press and move, so a pen or a mouse taking over takes it back. */
+  finger = false;
   /** `underParams` as a set, rebuilt when the diagnosis it came from is replaced. */
   movable: { owner: Diagnosis; set: Set<Param> } | null = null;
   /** A gesture moved geometry, so the null space no longer describes the pose on screen. */
@@ -915,7 +922,10 @@ export class SketchView {
    * standing on its own plane.  Views that lie on top of one another on the page are nowhere near
    * one another in space, which is why none of this is asked of page coordinates any more. */
 
-  pickPoint(sx: number, sy: number, tol = PICK_PX): Point | null {
+  /** How near, in pixels, a press must be to what it picks: a finger's reach or a cursor's. */
+  get pickPx(): number { return this.finger ? TOUCH_PICK_PX : PICK_PX; }
+
+  pickPoint(sx: number, sy: number, tol = this.pickPx): Point | null {
     const { az, el } = this.orbit;
     const { point, dist } = nearestSeen(this.sketch, az, el, ...this.eye(sx, sy));
     return point && dist < this.world(tol) ? point : null;
@@ -923,7 +933,7 @@ export class SketchView {
 
   pick(sx: number, sy: number): Primitive | null {
     const { az, el } = this.orbit;
-    return pickSeen(this.sketch, this.unit, az, el, ...this.eye(sx, sy), this.world(PICK_PX));
+    return pickSeen(this.sketch, this.unit, az, el, ...this.eye(sx, sy), this.world(this.pickPx));
   }
 
   /** The object face under the canvas point, nearest the eye, and the solid it is a face of. */
@@ -982,7 +992,7 @@ export class SketchView {
   pickCallout(sx: number, sy: number): Constraint | null {
     if (!this.showDimensions) return null;
     const { az, el } = this.orbit;
-    const hit = calloutSeen(this.sketch, this.unit, az, el, ...this.eye(sx, sy), PICK_PX);
+    const hit = calloutSeen(this.sketch, this.unit, az, el, ...this.eye(sx, sy), this.pickPx);
     const c = hit && (this.sketch.constraintById(hit.id) ?? null);
     // only a callout that is drawn answers a press
     return c && (c === this.litConstraint || this.showsCallouts(hit.view)) ? c : null;

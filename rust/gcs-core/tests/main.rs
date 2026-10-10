@@ -10,6 +10,10 @@
 //! `every_file_is_a_module` fails the suite when one is forgotten.
 
 mod common;
+mod bounds;
+mod set_regions;
+mod region_blank;
+mod region_solids;
 mod evaluated_solid;
 mod renderer;
 
@@ -173,3 +177,4 @@ mod spline_length;
 mod minimize;
 mod catenary;
 mod extremal;
+mod slide;

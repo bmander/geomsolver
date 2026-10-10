@@ -4,7 +4,7 @@ use super::P;
 use crate::constraints::{builtin_word, call_word, is_operator, Fixity};
 use crate::style::Classes;
 use crate::syntax::lexer::Tok;
-use crate::syntax::{seed_arg, Arg, Name, OpArg, Ref, Relation, Span, Written};
+use crate::syntax::{seed_arg, Arg, Cmp, Name, OpArg, Ref, Relation, Span, Written};
 
 impl<'a> P<'a> {
     /// Parse an operator relation (§9.1), preserving its written operands and arguments
@@ -147,6 +147,16 @@ impl<'a> P<'a> {
                 _ if self.tuple_ahead() || self.member_end(&Tok::EqEq).is_some() => {
                     out.push(self.pin()?)
                 }
+                // a bound's interval, `in: (a, b)` (§9.6): its low end the number, its high end
+                // the bound's own
+                (Some(Tok::Ident(n)), Some(Tok::P(':'))) if n == "in" => {
+                    let at = self.here();
+                    self.i += 2;
+                    let span = Span::new(at.lo as usize, self.prev_hi());
+                    let [(a, a_span), hi] = self.pair()?;
+                    out.push(OpArg::Bound { cmp: Cmp::In, span, hi: Some(hi) });
+                    out.push(OpArg::Dim(a, a_span));
+                }
                 (Some(Tok::Ident(n)), Some(Tok::P(':'))) => {
                     let name = Name { text: n, span: self.here() };
                     self.i += 2;
@@ -160,29 +170,28 @@ impl<'a> P<'a> {
                     out.push(OpArg::Named(name, v));
                 }
                 _ if takes_entity => out.push(OpArg::Ent(self.refr()?)),
-                _ => {
-                    let from = self.here().lo as usize;
-                    let first = self.i;
-                    let mut depth = 0i32;
-                    while !self.done() {
-                        match self.peek() {
-                            Some(Tok::P('(')) | Some(Tok::P('[')) => depth += 1,
-                            Some(Tok::P(')')) | Some(Tok::P(']')) if depth == 0 => break,
-                            Some(Tok::P(')')) | Some(Tok::P(']')) => depth -= 1,
-                            Some(Tok::P(',')) if depth == 0 => break,
-                            Some(Tok::Nl) => break,
-                            _ => {}
-                        }
-                        self.i += 1;
-                    }
-                    let text = self.text_from(from).trim().to_string();
-                    if text.is_empty() {
-                        self.fail("expected the number this states");
+                // a bound, `>= d` or `<= d` (§9.6): closed, since a solution may stand on its
+                // edge, so `>` and `<` alone are refused
+                (Some(Tok::P(c @ ('>' | '<'))), next) => {
+                    let at = self.here();
+                    if next != Some(Tok::P('=')) {
+                        self.fail(&format!(
+                            "a bound is closed, `{c}=`: a solution may stand on its edge"
+                        ));
                         return None;
                     }
-                    let hi = self.prev_hi();
+                    self.i += 2;
+                    let cmp = if c == '>' { Cmp::Ge } else { Cmp::Le };
+                    let span = Span::new(at.lo as usize, self.prev_hi());
+                    out.push(OpArg::Bound { cmp, span, hi: None });
+                    let (text, span) = self.raw_number()?;
+                    out.push(OpArg::Dim(text, span));
+                }
+                _ => {
+                    let first = self.i;
+                    let (text, span) = self.raw_number()?;
                     texts.push((out.len(), first, self.i));
-                    out.push(OpArg::Dim(text, Span::new(from, hi)));
+                    out.push(OpArg::Dim(text, span));
                 }
             }
             if !self.eat_p(',') && self.peek() != Some(&Tok::P(')')) {
@@ -209,6 +218,29 @@ impl<'a> P<'a> {
             self.i = end;
         }
         Some(out)
+    }
+
+    /// The number an operator states, as written, up to the `,` or `)` that ends it.
+    fn raw_number(&mut self) -> Option<(String, Span)> {
+        let from = self.here().lo as usize;
+        let mut depth = 0i32;
+        while !self.done() {
+            match self.peek() {
+                Some(Tok::P('(')) | Some(Tok::P('[')) => depth += 1,
+                Some(Tok::P(')')) | Some(Tok::P(']')) if depth == 0 => break,
+                Some(Tok::P(')')) | Some(Tok::P(']')) => depth -= 1,
+                Some(Tok::P(',')) if depth == 0 => break,
+                Some(Tok::Nl) => break,
+                _ => {}
+            }
+            self.i += 1;
+        }
+        let text = self.text_from(from).trim().to_string();
+        if text.is_empty() {
+            self.fail("expected the number this states");
+            return None;
+        }
+        Some((text, Span::new(from, self.prev_hi())))
     }
 
     /// A pin: `t == 0.4`, one member of a vector, `dir.x == 1`, a vector the entity has,

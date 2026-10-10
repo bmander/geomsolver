@@ -31,6 +31,8 @@ component PinionCone(p: plane, q: plane, gear: group, foot: line, design: group,
   }
   V coincident hinge
   V coincident foot
+  // The offset's hand: the pinion's apex on P's v side of the gear's generator.
+  A distance(>= 0, along: v) p
   in q {
     mean := point hint((-r, 0))
     tip := point hint(x: d - r * design.gear_teeth / design.crown_teeth,

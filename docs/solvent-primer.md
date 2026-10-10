@@ -728,8 +728,15 @@ same with the sign turned. Several statements over one curve add up.
 - **Pegs.** A held point the curve is stated to pass, `peg coincident rope` with `peg` held,
   presses on it: the rope drapes over the peg in a corner, two arcs of the one equation. A held
   line or circle pressed against a curve of held length is E040 — it would meet the curve at a
-  corner, so it cannot be tangent there; draw the touch as a held point. With no length stated,
-  the held line is what sets the length (above).
+  corner, so it cannot be tangent there. With no length stated, the held line is what sets the
+  length (above).
+- **A line it touches where it chooses.** `rope touches rod` is that corner on the line: the
+  rope is held to the line somewhere, nothing along the line holding it, so the corner slides to
+  where the rope's pull along the line balances (a ring on a rod, `ring.sv`). A rope weighted by
+  its height alone leaves the line at the angle it met it. Where it already crosses the line it
+  presses nothing. The rod need not be held: its points are the rope's to read, as its ends are,
+  so dragging either end of it tilts it and the ring slides. Over a curve that is not free, or
+  more than two lines on one curve, E040; it sets no length.
 - **Under a `unit`** the point is a length and the integrand is dimension-checked: `p.y + 1` is
   E103, `p.y + 1mm` is fine. Any power of length is an energy — a speed `sqrt(h - p.y)` (a throw,
   `projectile.sv`), a weight `10mm / p.y` (the hyperbolic plane, `hyperbolic.sv`), a refractive
@@ -744,6 +751,30 @@ same with the sign turned. Several statements over one curve add up.
   t))` is the area between `k` and the chord back from its end to its start, positive when that
   loop runs counter-clockwise.
 - `use std (hangs)` gives `hangs(L: 150mm) rope`, the length and the energy in one word.
+
+### 1.10.2 Bounds: which root is meant
+
+A dimension's number may be a **bound**. It adds no row; it says which of the solutions the rest
+of the drawing has is meant, so it does the job a seed was doing when the seed only picked a side.
+
+```sv
+a distance(>= 0, along: up) p          // p at or above a
+p distance(<= 6) q                     // within 6 of q
+a distance(in: (1, 9), along: up) p
+foot inside p                          // behind the plane p's normal
+foot outside p                         // in front of it
+```
+
+- **Takes one:** an ordinate (and so `inside`/`outside` a plane, the point's ordinate along its
+  normal), a point–point distance, a distance from a line. Anything else is E040.
+- **Closed:** `>=`, `<=`, `in:`; `>` and `<` don't parse. Zero is fine in a bound.
+- **Solving:** read on the seeds first: a point seeded on the wrong side is carried across, as
+  if you had seeded it there, and everything seeded from it follows. Then checked on the
+  solution; off it, the solve looks for the root where it holds and fails with `a bound does not
+  hold` if there is none. The diagnosis lists violated bounds and *active* ones (solution on the
+  edge).
+- **Not:** a `claim` or an unknown's reader. Inside a set body a bound makes a region (below,
+  sets).
 
 ### 1.11 Datums
 
@@ -1044,8 +1075,15 @@ several up to the `}`. It adds nothing to the drawing; what it means is said whe
   the body's number. `q coincident k` is a point on the circle. Where the plane is no plane or `o`
   stands off it, the set is a set again (a sphere met with a plane off its centre), drawn as nothing.
 - **Sets compose by conjunction**: two statements in one body are the points on both (an
-  intersection). A union is a choice of root (`ccw`, `branch`), not a body; a difference cannot be
-  written.
+  intersection). A union is a choice of root (`ccw`, `branch`), not a body; a difference of loci
+  cannot be written.
+- **Regions** (0.61): a body that bounds a number is a region, `ball := { p | p distance(<= 5) c
+  }`. `q inside S` / `q outside S` put a point in or out of any set, its one number read as at most
+  / at least: `q inside std.Sphere(c, r: 5)`, `q inside std.Cylinder(l, r: 2)`, `q inside
+  std.Cone(l, half: 30deg)` (in space only), the disc `{ p | p coincident P; p distance(5) o }`.
+  Regions meet by conjunction, and `outside` gives a difference: `{ p | p inside heel; p outside
+  toe }`. Refused: `outside` a conjunction or an interval, a set of several numbers, a line inside
+  a set, a tangency to a region. A point in a region is a bound on it, so a choice of root.
 
 **Spheres** are the library's set: `ball := std.Sphere(c, r: 12mm)` is a centre and a radius, and
 nothing drawn; the centre may be drawn in a view or stand in space.
@@ -1376,6 +1414,25 @@ sheet's to state.
 | `bad := solid(sec, depth: 3mm, about: ax)` | E001 — "a solid is a face swept along its normal (`from:`/`to:`, `depth:`) or turned about a line (`about:`), not both" |
 | `x cut y` and `y cut x` | E041 — "`x` is made of itself" |
 | `h cut h` | E080 — "`h` is cut itself" |
+
+
+**A region is a solid** (0.62): `solid(R)`, `R` a set, is the points inside it.
+
+```sv
+big := std.Sphere(c, r: 5)
+small := std.Sphere(c, r: 3)
+ball := solid(big)
+skin := { p | p inside big; p outside small }        // a shell
+shell := solid(skin)
+tube := std.Cylinder(up, r: 2)
+can := { p | p inside tube; p outside std.top; p inside lid }   // capped by two planes
+tin := solid(can)
+```
+
+Every bound must share one axis (balls centred on it; cylinders, cones about it; planes square to
+it) and close the material all round; the solid is then one revolution of its meridian, built
+exactly. A cylinder alone, or a ball off the axis, is refused where the solid is evaluated. Cut,
+bound, union, sweep and place it as any solid.
 
 ### 1.15 Spatial geometry read after the solve
 

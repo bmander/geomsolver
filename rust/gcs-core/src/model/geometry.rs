@@ -23,12 +23,15 @@ impl Sketch {
     /// Point `p` as drawn in `plane`: itself where it is drawn there, else its twin there, or
     /// the point a twin is of and its other twins (`Sketch::twins`, §6.7).
     pub fn twin_in(&self, p: usize, plane: usize) -> Option<usize> {
-        if self.plane_of(p) == Some(plane) {
-            return Some(p);
-        }
-        let group = self.twins.iter().find(|(&q, ts)| q == p || ts.contains(&p))?;
-        std::iter::once(*group.0).chain(group.1.iter().copied())
-            .find(|&q| self.plane_of(q) == Some(plane))
+        self.twin_group(p).into_iter().find(|&q| self.plane_of(q) == Some(plane))
+    }
+
+    /// Point `p` and its twins (§6.7): the point drawn in several planes and each of its twins,
+    /// whichever of them `p` is — or `p` alone.
+    pub fn twin_group(&self, p: usize) -> Vec<usize> {
+        self.twins.iter().find(|(&q, ts)| q == p || ts.contains(&p))
+            .map(|(&q, ts)| std::iter::once(q).chain(ts.iter().copied()).collect())
+            .unwrap_or_else(|| vec![p])
     }
 
     /// Whether `a` and `b` are one point: the same, or images of one point drawn in two planes

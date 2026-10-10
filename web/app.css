@@ -50,12 +50,49 @@ body {
   overflow: hidden;
 }
 #app { display: flex; flex-direction: column; height: 100%; }
+/* a phone's toolbars come and go over the page: the height left between them, not the largest */
+@supports (height: 100dvh) { #app { height: 100dvh; } }
 
 header { border-bottom: 1px solid var(--line); background: var(--panel); flex: none; }
 .bar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 5px 8px; }
 .bar > * { flex: none; }        /* wrap onto a new row rather than shrinking to a sliver */
 .bar + .bar { border-top: 1px solid var(--line); }
 .bar .sep { width: 1px; height: 20px; background: var(--line); margin: 0 6px; }
+.bar button { white-space: nowrap; }
+
+/* A bar that folds its topics (`ui::fitBar`): one row while folding can make it one, and it
+   wraps only where folding every topic cannot.  Open, a topic is its buttons standing on the bar;
+   folded, a head named for it, dropping them as a menu does.  The head reads as pressed while a
+   tool it holds is the one down, so a folded bar still says what the pointer will do. */
+.bar.fitted { flex-wrap: nowrap; }
+.bar.fitted.wrapping { flex-wrap: wrap; }
+.topic { position: relative; display: flex; }
+.topic-items { display: flex; align-items: center; gap: 4px; }
+.topic > .topic-head { display: none; }
+.topic.folded > .topic-head { display: block; }
+.topic-head::after { content: ' ▾'; color: var(--muted); }
+.topic-head[aria-expanded="true"] { background: var(--accent-soft); border-color: var(--accent); }
+.topic.folded:has(> .topic-items > button[aria-pressed="true"]) > .topic-head {
+  background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600;
+}
+.topic.folded > .topic-items {
+  display: none; position: absolute; top: calc(100% + 2px); left: 0; z-index: 20;
+  flex-direction: column; align-items: stretch; min-width: 170px; padding: 4px; overflow-y: auto;
+  background: var(--bg); border: 1px solid var(--line); border-radius: 7px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.18);
+}
+/* a list that would run off the right of the screen hangs from its head's right edge instead */
+.topic.folded.flip > .topic-items { left: auto; right: 0; }
+.topic.folded:has(> .topic-head[aria-expanded="true"]) > .topic-items { display: flex; }
+.topic.folded > .topic-items > button {
+  display: flex; justify-content: space-between; gap: 24px; text-align: left;
+}
+.topic.folded > .topic-items > .sep { width: auto; height: 1px; margin: 4px 2px; }
+/* Every bar folded to its heads: they share one row under the menu bar (`ui::fitBars`). */
+header.compact { display: flex; flex-wrap: wrap; }
+header.compact > .menubar { flex: 1 0 100%; border-bottom: 1px solid var(--line); }
+header.compact > .bar + .bar { border-top: 0; }
+header.compact > .bar.fitted + .bar.fitted { padding-left: 0; }
 
 button, select {
   font: inherit; color: inherit;
@@ -357,6 +394,17 @@ dialog input[type=search] {
 #psplit:hover, #psplit:focus-visible, #psplit.dragging { background: var(--accent-soft); }
 #psplit:focus-visible { outline: none; }
 #psplit[hidden] { display: none; }
+/* The program's head: its name (the fold, on a narrow screen) and the compile button. */
+#ppanel-head { flex: none; display: flex; align-items: center; gap: 6px; padding-right: 6px;
+  border-bottom: 1px solid var(--line); }
+#ppanel #ppanel-head h2 { flex: 1; min-width: 0; padding: 0; border-bottom: 0; }
+#ppanel-fold { display: flex; align-items: center; gap: 6px; width: 100%; padding: 7px 10px 6px;
+  border: 0; border-radius: 0; background: transparent; color: inherit; font: inherit;
+  text-transform: inherit; letter-spacing: inherit; text-align: left; cursor: default;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#ppanel-fold .project-disclosure { display: none; }
+#ppanel-fold[aria-expanded="true"] .project-disclosure { transform: rotate(90deg); }
+#program-compile { flex: none; padding: 1px 8px; font-size: 12px; }
 #ppanel h2 {
   font-size: 11px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted);
   margin: 0; padding: 7px 10px 6px; border-bottom: 1px solid var(--line); flex: none;
@@ -450,3 +498,44 @@ dialog input[type=search] {
 #pdiags li { padding: 3px 10px; cursor: pointer; white-space: pre; }
 #pdiags li.error { color: var(--danger); background: var(--danger-bg); }
 #pdiags li.warn { color: var(--warn); background: var(--warn-bg); }
+
+/* -- a narrow screen ------------------------------------------------------------------------
+
+   The drawing takes the width, and the program is a drawer under it, above the footer: its head
+   folds it (`program.ts::bindDrawer`), and it opens folded.  The partition has nothing to divide
+   across, and a width the handle set on a wide screen is the column's, not the drawer's. */
+@media (max-width: 720px) {
+  main { flex-direction: column; }
+  #canvas-wrap { min-height: 0; }
+  #psplit { display: none; }
+  #ppanel { width: auto !important; min-width: 0; max-width: none; height: 45%;
+    border-left: 0; border-top: 1px solid var(--line); }
+  #ppanel-head { order: -1; }
+  #ppanel-fold { cursor: pointer; }
+  #ppanel-fold:hover { background: var(--accent-soft); }
+  #ppanel-fold .project-disclosure { display: inline-block; }
+  #ppanel.folded { height: auto; }
+  #ppanel.folded > :not(#ppanel-head) { display: none; }
+  #ppanel.folded #ppanel-head { border-bottom: 0; }
+  #project-pane { max-height: 35%; }
+  #plane-pick > span { display: none; }
+}
+
+/* -- a finger -------------------------------------------------------------------------------
+
+   A control a fingertip can land on: every button and chooser grows to a tap's height, and the
+   keyboard chips go, since a touch screen has no keys to name.  The sizes stay constant: a bar
+   short of room folds its topics (`ui::fitBar`) rather than shrink them. */
+@media (pointer: coarse) {
+  button, select { min-height: 36px; padding: 6px 12px; }
+  .bar { gap: 6px; }
+  .menu > button { padding: 6px 12px; }
+  .menu li > button, .topic.folded > .topic-items > button { padding: 10px 12px; }
+  .menubar .brand { padding: 6px 10px; }
+  #program-compile { min-height: 32px; padding: 4px 12px; font-size: 13px; }
+  #ppanel-fold { min-height: 40px; }
+  #pdiags li, #clist li { padding: 8px 10px; }
+}
+@media (hover: none) and (pointer: coarse) {
+  button kbd { display: none; }
+}

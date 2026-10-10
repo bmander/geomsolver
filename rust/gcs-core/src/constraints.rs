@@ -64,6 +64,12 @@ pub enum CKind {
     /// one where nothing holds the curve's length: transversality, `H = 0` at the end — the
     /// energy stationary in the length too.  Its kernel is built from the curve.
     Stationary,
+    /// **A free curve pressed onto a held line where it chooses** (`rope touches floor`, #149):
+    /// a corner on the line, the curve two arcs there, its place along the line where no force
+    /// runs along it (frictionless).  Part of the curve's problem, like a peg — a slide
+    /// (`extremal::Stop`): one more unknown and one more row inside the curve's solve, so it
+    /// compiles no row of the drawing's (`Sketch::settle_variational`).
+    CurveTouchesLine,
     ParallelDistance,
     EqualLength,
     PointOnLine,
@@ -251,7 +257,7 @@ impl FamilyKernel {
 }
 
 /// Every concrete constraint type, in the order the registry lists them.
-pub const ALL_KINDS: [CKind; 65] = [
+pub const ALL_KINDS: [CKind; 66] = [
     CKind::Coincident,
     CKind::Distance,
     CKind::Midpoint,
@@ -317,6 +323,7 @@ pub const ALL_KINDS: [CKind; 65] = [
     CKind::SplineLength,
     CKind::CurveLength,
     CKind::Stationary,
+    CKind::CurveTouchesLine,
 ];
 
 /// **The words a direction may be written as** (`docs/ordinate-plan.md`): `along:` an ordinate
@@ -579,6 +586,11 @@ pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option
             (Curve, k) if round(k) => CKind::CurveCurvature,
             _ => return None,
         },
+        // a free curve pressed onto a held line, a corner where it chooses (#149)
+        "touches" => match (a, b) {
+            (Curve, Line) => CKind::CurveTouchesLine,
+            _ => return None,
+        },
         // the ordinate's zero; `horizontal` and `vertical` between points are the standard
         // library's words for `level(up)` and `level(right)` (`std.sv`, §9.9)
         "level" => match (a, b) {
@@ -628,6 +640,17 @@ pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option
 /// the core's (a line's direction) and an infix word of the standard library's (two points'
 /// level), which is why the question is asked of a fixity.  Every such word is an operator, so
 /// the tables are read once, over `OPERATORS`.
+/// The words that say which side of a plane a point is on (§9.6), and the bound each is on the
+/// point's ordinate along the plane's normal: `inside` at most zero, behind the normal, and
+/// `outside` at least zero.  `inside` between solids is the claim `solid_word` reads instead.
+pub fn plane_side_word(w: &str) -> Option<crate::syntax::Cmp> {
+    match w {
+        "inside" => Some(crate::syntax::Cmp::Le),
+        "outside" => Some(crate::syntax::Cmp::Ge),
+        _ => None,
+    }
+}
+
 pub fn builtin_word(word: &str, fixity: Fixity) -> bool {
     static BUILTIN: std::sync::OnceLock<Vec<(&'static str, Fixity)>> = std::sync::OnceLock::new();
     let table = BUILTIN.get_or_init(|| {
@@ -639,6 +662,7 @@ pub fn builtin_word(word: &str, fixity: Fixity) -> bool {
             }
             Fixity::Infix => {
                 solid_word(w).is_some()
+                    || plane_side_word(w).is_some()
                     || EntKind::ALL.iter().any(|&a| {
                         EntKind::ALL.iter().any(|&b| infix_op(w, a, b, &|_| None).is_some())
                     })
@@ -680,15 +704,18 @@ pub fn prefix_op(word: &str, on: EntKind) -> Option<CKind> {
 /// table (`gauge_op`), so a class, a placement and the chain's lookahead treat them as any
 /// other word.  None of the three is a prefix word a chain can open a link with: `prefix_op`
 /// declines them, so `fix(x == 0) point p -> …` is no chain.
-pub const OPERATORS: [&str; 22] = [
+pub const OPERATORS: [&str; 24] = [
     "distance", "tangent", "equal", "curvature", "horizontal", "vertical", "level", "angle",
     "radius", "length", "coincident", "midpoint", "parallel", "perpendicular", "symmetry", "project",
-    "fix", "ccw", "cw",
+    "touches", "fix", "ccw", "cw",
     // **the words that relate two solids** (§9.8).  They are operators so that a statement
     // reads the way every other statement does; they settle to no `CKind` and compile no row,
     // because a solid is evaluated after the drawing is solved and a claim about one is judged
     // rather than enforced — `solid_claim` is where the word is read.
     "clear", "inside", "fits",
+    // and `outside`, which with `inside` also says which side of a plane a point is on: a bound
+    // (§9.6), lowered to the ordinate along the plane's normal (`program::relations`)
+    "outside",
 ];
 
 /// The words that relate two **solids**, and what each asks (§9.8).  A statement in one of them
@@ -931,6 +958,7 @@ impl CKind {
             CKind::SplineLength => "SplineLength",
             CKind::CurveLength => "CurveLength",
             CKind::Stationary => "Stationary",
+            CKind::CurveTouchesLine => "CurveTouchesLine",
             CKind::ParallelDistance => "ParallelDistance",
             CKind::EqualLength => "EqualLength",
             CKind::PointOnLine => "PointOnLine",
@@ -1054,6 +1082,7 @@ impl CKind {
             CKind::ArcLength => &[("arc", S::Arc), ("l", S::Length)],
             CKind::SplineLength => &[("spline", S::Spline), ("l", S::Length)],
             CKind::CurveLength => &[("curve", S::Curve), ("l", S::Length)],
+            CKind::CurveTouchesLine => &[("curve", S::Curve), ("line", S::Line)],
             CKind::Stationary => &[
                 ("curve", S::Curve),
                 ("weight", S::Float),
@@ -1227,6 +1256,7 @@ impl CKind {
             | CKind::PointOnExtrusion => ("coincident", Infix),
             CKind::CurveTangentLine => ("tangent", Infix),
             CKind::CurveCurvature => ("curvature", Infix),
+            CKind::CurveTouchesLine => ("touches", Infix),
             // a measured separation: told apart by the pair and by `along:`, which makes it an
             // ordinate
             CKind::Distance
@@ -1464,8 +1494,38 @@ impl CKind {
         )
     }
 
+    /// Where its number stands, if it states one: a kind has at most one dimension slot.
+    pub fn dimension_slot(self) -> Option<usize> {
+        self.spec().iter().position(|(_, k)| k.is_dimension())
+    }
+
+    /// What its number is — a length or an angle — where it states one (a length where not, the
+    /// harmless default for a number's units).
+    pub fn dimension_kind(self) -> SpecKind {
+        self.dimension_slot().map_or(SpecKind::Length, |i| self.spec()[i].1)
+    }
+
+    /// The kinds whose number may be a bound (§9.6): those reading a signed or unsigned measure
+    /// a solve can be steered along — an ordinate (and so `inside`/`outside` a plane), a
+    /// distance between points, a point's or a parallel line's distance from a line, in a view
+    /// or in space, and the unsigned angle in space (a cone's region, §6.21).  Not the angle in
+    /// a view, which is signed: bounded, it would be a half-plane and not a wedge.
+    pub fn boundable(self) -> bool {
+        matches!(
+            self,
+            CKind::Ordinate
+                | CKind::Distance
+                | CKind::Distance3
+                | CKind::PointLineDistance
+                | CKind::PointLine3
+                | CKind::ParallelDistance
+                | CKind::Angle3
+        )
+    }
+
     pub fn claimable(self) -> bool {
-        !self.gauge() && !self.spec().iter().any(|(_, k)| k.is_param())
+        // a touch is part of its curve's problem, and holds wherever the problem is solved
+        !self.gauge() && !self.spec().iter().any(|(_, k)| k.is_param()) && self != CKind::CurveTouchesLine
     }
 
     /// The spec slots a contact on a parametric entity of kind `of` is made of: which argument
@@ -1490,7 +1550,7 @@ impl CKind {
     /// spline length's control-point count) rather than registered: `Constraint::kernel_key`
     /// names it, and nothing may ask `kernel()` for it.
     pub fn built(self) -> bool {
-        matches!(self, CKind::SplineLength | CKind::Stationary)
+        matches!(self, CKind::SplineLength | CKind::Stationary | CKind::CurveTouchesLine)
     }
 
     /// The per-definition kernel this kind runs through, for the four kinds that have one.
@@ -1543,6 +1603,8 @@ impl CKind {
             | CKind::SplineLength
             | CKind::CurveLength
             | CKind::Stationary
+            // a corner, not a tangency: the curve's own problem, no row of the drawing's
+            | CKind::CurveTouchesLine
             | CKind::ParallelDistance
             | CKind::EqualLength
             | CKind::PointOnLine
@@ -1637,6 +1699,7 @@ impl CKind {
             }
             CKind::SplineLength => panic!("a spline length's kernel belongs to its spline's count"),
             CKind::Stationary => panic!("an energy's kernel belongs to its curve"),
+            CKind::CurveTouchesLine => panic!("a touch is its curve's problem, and has no kernel"),
             CKind::CurveLength => K::Radius,
             CKind::Coincident => K::Coincident,
             CKind::Distance => K::Distance,
@@ -1743,7 +1806,7 @@ impl CKind {
             // its free twin is built beside it, at the spline's count (`KernelKey::SplineLength`)
             CKind::SplineLength => return None,
             CKind::CurveLength => K::RadiusFree,
-            CKind::Stationary => return None,
+            CKind::Stationary | CKind::CurveTouchesLine => return None,
             CKind::ParallelDistance => K::ParallelDistanceFree,
             CKind::PointLineDistance => K::PointLineDistanceFree,
             CKind::AnnularDistance => K::AnnularDistanceFree,
@@ -1987,6 +2050,61 @@ pub struct Constraint {
     /// (`kernels::dual_kernel`) and appends a tangent column per column and the line's ends to
     /// the columns, as `free` appends its column.
     pub along: Option<usize>,
+    /// Its number is a **bound** (§9.6): `distance(>= d)`, `distance(<= d)`, `distance(in: (d,
+    /// hi))`.  A bound is no equation — like a claim it compiles no row, so `acts()` leaves it
+    /// out — and outside a set body it chooses a branch: read on the solution (`reading`), and
+    /// the solve steered to the root where it holds (`solve::steer`).  Travels like `claim`.
+    pub bound: Option<Bound>,
+}
+
+/// What a bound says of its constraint's number, the low end (§9.6): which way it runs, and an
+/// interval's high end, in the number's own units.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Bound {
+    pub cmp: crate::syntax::Cmp,
+    pub hi: Option<f64>,
+}
+
+impl Bound {
+    /// Whether a reading `m` keeps a bound whose low end is `lo`, within `tol`.
+    pub fn holds(&self, lo: f64, m: f64, tol: f64) -> bool {
+        use crate::syntax::Cmp;
+        match self.cmp {
+            Cmp::Ge => m >= lo - tol,
+            Cmp::Le => m <= lo + tol,
+            Cmp::In => m >= lo - tol && m <= self.hi.unwrap_or(lo) + tol,
+        }
+    }
+
+    /// Where a solve steering a reading `m` back across the bound aims, nearest first: its mirror
+    /// in the bound's edge, which is where the other root of a mirror-symmetric pair reads, then
+    /// twice, four and eight times as far past the edge — the other root of a pair mirrored in
+    /// some other measure reads farther off.  Kept within what the reading can come to (`range`):
+    /// an aim past its limit is halfway from the edge to it, and the last, since one farther
+    /// would be the same.  An interval aims at its middle alone.
+    pub fn aims(&self, lo: f64, m: f64, range: (f64, f64)) -> Vec<f64> {
+        if self.cmp == crate::syntax::Cmp::In {
+            return vec![(lo + self.hi.unwrap_or(lo)) / 2.0];
+        }
+        let first = 2.0 * lo - m;
+        let mut out = Vec::with_capacity(4);
+        for k in [1.0, 2.0, 4.0, 8.0] {
+            let aim = lo + (first - lo) * k;
+            let limit = if aim < range.0 {
+                Some(range.0)
+            } else {
+                (aim > range.1).then_some(range.1)
+            };
+            match limit {
+                Some(l) => {
+                    out.push((l + lo) / 2.0);
+                    break;
+                }
+                None => out.push(aim),
+            }
+        }
+        out
+    }
 }
 
 /// A line's two ends lifted, three columns each.
@@ -2031,7 +2149,66 @@ impl Constraint {
     /// about the drawing rather than part of it, and neither is something a consumer asking for
     /// the constraints that determine the figure wants back.
     pub fn acts(&self) -> bool {
-        !self.soft && !self.claim
+        !self.soft && self.states_rows()
+    }
+
+    /// Whether it states rows at all: a claim (§9.7) is judged and a bound (§9.6) read, never
+    /// solved for, so neither compiles one — the question every seam that compiles, counts or
+    /// welds rows asks, where `acts` also leaves out the soft rows a drag does compile.
+    pub fn states_rows(&self) -> bool {
+        !self.claim && self.bound.is_none()
+    }
+
+    /// What `reading` can come to: a magnitude's at least zero (a distance between points, a
+    /// point's from a line read either side), an unsigned angle's within half a turn, a signed
+    /// measure's anything.
+    pub fn reading_range(&self) -> (f64, f64) {
+        match self.kind {
+            CKind::Angle3 => (0.0, std::f64::consts::PI),
+            k if k.magnitude() && self.side().is_none() => (0.0, f64::INFINITY),
+            _ => (f64::NEG_INFINITY, f64::INFINITY),
+        }
+    }
+
+    /// The number the drawing reads where this constraint's stands: the one that would make its
+    /// row hold now, as the statement measures it (its word's sign, `side:`, `along:`) — what a
+    /// bound is checked against (§9.6).  Found along the number from the one stated by secant
+    /// steps, exact in one for the kinds whose residual is affine in it (an ordinate, a distance
+    /// from a line) and a few for a point–point distance's squared form.  `None` for a kind
+    /// outside `CKind::boundable`.
+    pub fn reading(&self, sk: &Sketch) -> Option<f64> {
+        if !self.kind.boundable() {
+            return None;
+        }
+        let at = self.kind.dimension_slot()?;
+        let v = self.local_values(sk);
+        // the unsigned angle in space is read by its cosine (`cos3 - cos θ`), which is even and
+        // periodic in θ: read straight off it, never searched along it
+        if self.kind == CKind::Angle3 {
+            let d = self.args[at].num();
+            return Some((self.residual(sk, &v)[0] + d.dcos()).clamp(-1.0, 1.0).dacos());
+        }
+        let mut c = self.clone();
+        let mut residual = |d: f64| {
+            c.args[at] = Arg::Num(d);
+            c.residual(sk, &v)[0]
+        };
+        let d = self.args[at].num();
+        let (mut d0, mut d1) = (d, d + d.abs().max(1.0));
+        let (mut r0, mut r1) = (residual(d0), residual(d1));
+        for _ in 0..40 {
+            if r1 == r0 || r1 == 0.0 || !r1.is_finite() {
+                break;
+            }
+            let d2 = d1 - r1 * (d1 - d0) / (r1 - r0);
+            (d0, r0) = (d1, r1);
+            d1 = d2;
+            r1 = residual(d1);
+            if (d1 - d0).abs() <= 1e-15 * d1.abs().max(1.0) {
+                break;
+            }
+        }
+        Some(d1)
     }
 
     /// A constraint of `kind` over the arguments given, **and the defaults for any the caller
@@ -2061,6 +2238,7 @@ impl Constraint {
             repeated: false,
             word: None,
             along: None,
+            bound: None,
         }
     }
 
@@ -2245,7 +2423,8 @@ impl Constraint {
             let n = sk.splines[self.args[0].ent().i()].ctrl.len();
             return Key::SplineLength { n, free: self.free.is_some() };
         }
-        if self.kind == CKind::Stationary {
+        // a touch compiles no row (`rows_in`), and is keyed with its curve's energy
+        if matches!(self.kind, CKind::Stationary | CKind::CurveTouchesLine) {
             return Key::Stationary(self.id);
         }
         match (self.kind.family_kernel(), self.curve_of()) {
@@ -2389,6 +2568,8 @@ impl Constraint {
             None if self.kind == CKind::SplineLength => 1,
             // its curve's, which only the sketch can say: `rows_in`
             None if self.kind == CKind::Stationary => 0,
+            // its curve's problem's: never a row of the drawing's
+            None if self.kind == CKind::CurveTouchesLine => 0,
             None => kernels::kernel(self.kernel()).n_res,
         }
     }
@@ -2432,6 +2613,8 @@ impl Constraint {
     }
 
     /// The (index, name, kind) of this constraint's dimension values.
+    /// Every dimension slot, by index, name and kind — a kind has at most one
+    /// (`CKind::dimension_slot`).
     pub fn dimensions(&self) -> Vec<(usize, &'static str, SpecKind)> {
         self.kind
             .spec()
@@ -2930,6 +3113,17 @@ impl Constraint {
             // the curve's own number
             CKind::CurveLength => sk.curves[e(0).i()].length.into_iter().collect(),
             CKind::Stationary => crate::variational::columns(sk, self.id),
+            // what its curve's problem reads: the curve's columns, the line's points among them
+            // once the curve has the slide
+            CKind::CurveTouchesLine => {
+                let mut v = sk.entity_params(e(0));
+                for p in ln(1) {
+                    if !v.contains(&p) {
+                        v.push(p);
+                    }
+                }
+                v
+            }
             // the centre, the two ends and the radius: the sweep is read off the ends, the
             // length is the radius times it
             CKind::ArcLength => {
@@ -3673,8 +3867,9 @@ pub fn same_relation(a: &Constraint, b: &Constraint) -> bool {
 }
 
 fn matches(a: &Constraint, b: &Constraint, want: impl Fn(SpecKind) -> bool + Copy) -> bool {
-    // a row and its derivative are two equations about the same entities
-    if a.kind != b.kind || a.along != b.along {
+    // a row and its derivative are two equations about the same entities, and a bound is no
+    // equation at all (§9.6)
+    if a.kind != b.kind || a.along != b.along || a.bound != b.bound {
         return false;
     }
     same_args(a, b, false, want) || (a.kind.commutative() && same_args(a, b, true, want))

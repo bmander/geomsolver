@@ -139,6 +139,12 @@ fn say_once(diags: &mut Vec<Diag>, span: Span, stmt: StmtId, message: String) {
     }
 }
 
+/// The hidden points region solids' bodies are applied to (`solid(R)`, §6.21), each with the
+/// bounds stated on it: gathered as relations are stated, taken by each solid as it is built
+/// (`SolidDef::Region`).  Never a row: a probe's bound describes material and chooses no root.
+pub(super) type Probes = BTreeMap<usize, Vec<crate::model::RegionTerm>>;
+
+#[allow(clippy::too_many_arguments)]
 pub(super) fn constrain(
     sk: &mut Sketch,
     res: &Resolver,
@@ -148,13 +154,27 @@ pub(super) fn constrain(
     map: &SourceMap,
     duals: &mut BTreeMap<String, usize>,
     gauges: &mut Gauges,
+    probes: &mut Probes,
     diags: &mut Vec<Diag>,
 ) -> Option<u32> {
+    // **a point inside or outside a plane is a bound** (§9.6): the point's ordinate along the
+    // plane's normal from its origin, at most or at least zero
+    if let Some(lowered) = r.form.written().and_then(|w| side_of_plane(sk, res, r, w)) {
+        return constrain(sk, res, &lowered, st, doc, map, duals, gauges, probes, diags);
+    }
     // **a word that relates two solids is a claim, judged and never solved** (§9.8).  Picked up
     // by the solids phase: nothing here has a kernel, and saying so twice would report one
     // statement twice.
-    if r.form.written().is_some_and(|w| crate::constraints::solid_word(&w.word.text).is_some()) {
-        return None;
+    if let Some(w) = r.form.written() {
+        if w.word.text == "outside" {
+            let m = "`outside` says which side of a plane a point is on: `p outside P`";
+            let message = m.to_string();
+            diags.push(Diag { code: Code::E040, span: st.span, stmt: Some(st.id), message });
+            return None;
+        }
+        if crate::constraints::solid_word(&w.word.text).is_some() {
+            return None;
+        }
     }
     // the defined word it was written with, its operands the entities they name (§9.9)
     // — but for a set (§6.21), which is no entity and is named as written
@@ -167,15 +187,18 @@ pub(super) fn constrain(
             sets: w.sets.clone(),
         })
     });
-    // a set's points are points: `coincident` puts one on it, and nothing else (§6.21)
-    // — said at the use, where the statement was written
+    // a set's points are points: `coincident` puts one on it, `inside` and `outside` one in it
+    // or out of it, and nothing else (§6.21) — said at the use, where the statement was written
     let used = r.word.as_ref().filter(|w| !w.sets.is_empty()).map(|w| w.span);
-    if let (Some(w), Some(found)) = (r.word.as_ref().filter(|w| w.word == "coincident"), &word) {
+    let point_word = |w: &&crate::syntax::Worded| {
+        matches!(w.word.as_str(), "coincident" | "inside" | "outside")
+    };
+    if let (Some(w), Some(found)) = (r.word.as_ref().filter(point_word), &word) {
         if let (Some(&op), Some((_, set))) = (found.ops.first(), w.sets.first()) {
             if op.kind != EntKind::Point {
                 let at = w.span;
-                let m = format!("`{set}` is a set of points, and `coincident` puts a point on it, not {}",
-                    op.kind.a());
+                let m = format!("`{set}` is a set of points, and `{}` puts a point on it, not {}",
+                    w.word, op.kind.a());
                 say_once(diags, at, st.id, m);
                 return None;
             }
@@ -472,8 +495,26 @@ pub(super) fn constrain(
         diags.push(Diag { code: Code::E061, span: st.span, stmt: Some(st.id), message });
         return None;
     }
+    let bound = match bound_of(sk, res, &r, ckind) {
+        Ok(b) => b,
+        Err((span, message)) => {
+            let span = span.unwrap_or(st.span);
+            diags.push(Diag { code: Code::E040, span, stmt: Some(st.id), message });
+            return None;
+        }
+    };
     let mut c = Constraint::new(ckind, args);
     c.claim = r.claim;
+    // an interval runs upward from its low end, the number as settled
+    if let (Some((b, at)), Some(i)) = (bound, ckind.dimension_slot()) {
+        if b.hi.is_some_and(|hi| hi < c.args[i].num()) {
+            let message = "an interval runs from its low end to its high end".to_string();
+            let span = at.unwrap_or(st.span);
+            diags.push(Diag { code: Code::E040, span, stmt: Some(st.id), message });
+            return None;
+        }
+    }
+    c.bound = bound.map(|(b, _)| b);
     c.class = r.class.clone();
     c.written = written(&r.args, r.kind.spec(), st, doc);
     c.word = word;
@@ -503,7 +544,176 @@ pub(super) fn constrain(
             }
         }
     }
+    // a bound a set put on a region solid's probe is a term of the solid, never a row (§6.21)
+    if let Some(probe) = probe_of(sk, &c, probes) {
+        match region_term(sk, &c, probe) {
+            Ok(t) => probes.get_mut(&probe).expect("a probe's terms").push(t),
+            Err(message) => {
+                diags.push(Diag { code: Code::E040, span: st.span, stmt: Some(st.id), message })
+            }
+        }
+        return None;
+    }
     Some(sk.add_quiet(c))
+}
+
+/// The region solid's probe a constraint reads, where it reads one: an operand, or a line's end.
+fn probe_of(sk: &Sketch, c: &Constraint, probes: &Probes) -> Option<usize> {
+    if probes.is_empty() {
+        return None;
+    }
+    c.entities().into_iter().flat_map(|e| match e.kind {
+        EntKind::Point => vec![e.i()],
+        _ => crate::model::edge_ends(sk, e)
+            .map_or(Vec::new(), |(a, b)| vec![a as usize, b as usize]),
+    }).find(|p| probes.contains_key(p))
+}
+
+/// What a bound on a region solid's probe bounds (§6.21), read off the constraint's **kind** and
+/// never the set it came from: a distance from a point is a ball, from a line a cylinder, the
+/// angle from a line seen from its start a cone, an ordinate along a plane's normal a half-space.
+fn region_term(sk: &Sketch, c: &Constraint, probe: usize)
+    -> Result<crate::model::RegionTerm, String> {
+    use crate::model::{RegionShape, RegionTerm};
+    let kind = crate::syntax::snake(c.kind.name());
+    let Some(b) = c.bound else {
+        return Err(format!(
+            "a region solid's set states `{kind}`, which bounds nothing: its body bounds numbers"
+        ));
+    };
+    let at = c.kind.dimension_slot().expect("a bound is on a number");
+    let lo = settled_number(&c.args[at], sk)
+        .ok_or("a region's numbers are stated, and this one reads an unknown")?;
+    let ent = |i: usize| c.args[i].ent();
+    let other =
+        |a: EntRef, b: EntRef| if a.i() == probe && a.kind == EntKind::Point { b } else { a };
+    let shape = match c.kind {
+        CKind::Distance | CKind::Distance3 => {
+            RegionShape::Ball { center: other(ent(0), ent(1)).i() as u32 }
+        }
+        CKind::PointLineDistance | CKind::PointLine3 => {
+            RegionShape::Cylinder { line: ent(1).i() as u32 }
+        }
+        CKind::Angle3 => {
+            let ends = |l: EntRef| [sk.lines[l.i()].p1 as usize, sk.lines[l.i()].p2 as usize];
+            let (a, g) = (ent(0), ent(1));
+            let (axis, seen) = if ends(g).contains(&probe) { (a, g) } else { (g, a) };
+            let apex = ends(seen).into_iter().find(|&p| p != probe);
+            if apex != Some(ends(axis)[0]) {
+                return Err("a cone's angle is seen from its axis's start: the line to the point \
+                            begins where the axis does"
+                    .to_string());
+            }
+            RegionShape::Cone { axis: axis.i() as u32 }
+        }
+        CKind::Ordinate => {
+            let from = ent(0);
+            let along = matches!(&c.args[4], CArg::Str(w) if w == "n");
+            match sk.plane_of_origin(from.i()).filter(|_| along) {
+                Some(plane) => RegionShape::Plane {
+                    plane: plane as u32,
+                    from: from.i() as u32,
+                    sign: if ent(1).i() == probe { 1.0 } else { -1.0 },
+                },
+                None => {
+                    return Err("a region's ordinate is along a plane's normal (`inside`/`outside` \
+                                the plane)"
+                        .to_string())
+                }
+            }
+        }
+        _ => {
+            return Err(format!("a region solid bounds distances, angles and planes, not `{kind}`"))
+        }
+    };
+    let name =
+        c.word.as_ref().and_then(|w| w.sets.first()).map(|(_, n)| n.clone()).unwrap_or_default();
+    Ok(RegionTerm { shape, cmp: b.cmp, lo, hi: b.hi, name })
+}
+
+/// `p inside P` / `p outside P` between a point and a plane, as what it says (§9.6): the point's
+/// ordinate along `P`'s normal from `P.origin`, at most zero (behind the normal) or at least
+/// zero.  `None` for any other word or operands — `inside` between solids is a claim.
+fn side_of_plane(
+    sk: &Sketch,
+    res: &Resolver,
+    r: &Relation,
+    w: &crate::syntax::Written,
+) -> Option<Relation> {
+    use crate::syntax::{Arg as A, Name, OpArg, RelationForm, Written};
+    let cmp = crate::constraints::plane_side_word(&w.word.text)?;
+    if !point_and_plane(sk, res, w) {
+        return None;
+    }
+    let at = w.word.span;
+    let name = |t: &str| Name { text: t.to_string(), span: at };
+    let args = vec![
+        OpArg::Bound { cmp, span: at, hi: None },
+        OpArg::Dim("0".to_string(), at),
+        OpArg::Named(name("along"), A::Word("n".to_string())),
+    ];
+    let written = Written { word: name("distance"), args, ..w.clone() };
+    Some(Relation { form: RelationForm::Written(written), ..r.clone() })
+}
+
+/// Whether a written relation's operands are a point and a plane, in that order: what makes
+/// `inside` a side of a plane (§9.6) rather than a claim about solids (§9.8).
+pub(in crate::program) fn point_and_plane(
+    sk: &Sketch,
+    res: &Resolver,
+    w: &crate::syntax::Written,
+) -> bool {
+    let kind = |o: &Ref| res.lookup(o).and_then(|e| follow(sk, e, &o.path).ok()).map(|e| e.kind);
+    matches!(w.ops.as_slice(), [p, plane]
+        if kind(p) == Some(EntKind::Point) && kind(plane) == Some(EntKind::Plane))
+}
+
+/// The bound a relation's number is, where it is one (§9.6), and where it is written, checked: a
+/// kind whose reading a solve can be steered along (`CKind::boundable`), not a claim, its
+/// interval's high end a number.  The low end is the constraint's own number, read as any
+/// dimension is.
+fn bound_of(
+    sk: &Sketch,
+    res: &Resolver,
+    r: &ResolvedRelation<'_>,
+    ckind: CKind,
+) -> Result<Option<(crate::constraints::Bound, Option<Span>)>, (Option<Span>, String)> {
+    let Some((cmp, hi)) = &r.bound else { return Ok(None) };
+    let cmp = *cmp;
+    let at = r.written.and_then(|w| w.args.iter().find_map(|a| match a {
+        crate::syntax::OpArg::Bound { span, .. } => Some(*span),
+        _ => None,
+    }));
+    match ckind {
+        // an angle in a view is signed: bounded, it would be a half-plane, not a cone's wedge
+        CKind::Angle => {
+            return Err((at, "an angle bounds a region in space, where it is unsigned (a \
+                             cone's): in a view it is signed, and bounded would be a half-plane"
+                .to_string()))
+        }
+        k if !k.boundable() => {
+            return Err((at, format!(
+                "a bound is read off a distance or an ordinate, and `{}` states a number it holds",
+                crate::syntax::snake(k.name())
+            )))
+        }
+        _ => {}
+    }
+    if r.claim {
+        let m = "a bound chooses which solution is meant, and a claim asks about the one there \
+                 is: write one or the other";
+        return Err((at, m.to_string()));
+    }
+    let hi = match hi {
+        None => None,
+        // in the number's own kind: an angle's in radians
+        Some(a) => {
+            let not = || (arg_span(a), format!("`{}` is not a number", crate::syntax::sel_text(a)));
+            let v = to_arg(sk, res, ckind.dimension_kind(), a).ok();
+            Some(v.and_then(|v| settled_number(&v, sk)).ok_or_else(not)?)
+        }
+    };
+    Ok(Some((crate::constraints::Bound { cmp, hi }, at)))
 }
 
 /// **An ordinate's operands, read** (`docs/ordinate-plan.md`): a plane's own direction is
@@ -592,8 +802,9 @@ fn ordinate_operands(
         }
         _ => {}
     }
-    // zero, written so: the two are level, which is a relation and draws no number
-    if !level {
+    // zero, written so: the two are level, which is a relation and draws no number — but for
+    // a bound, whose edge zero may be (§9.6)
+    if !level && r.bound.is_none() {
         if let Some(Arg::Dim { span, .. }) = r.args.get(3).and_then(|a| a.as_ref()) {
             let text = doc.span_text(*span).unwrap_or_default();
             if written_zero(text, sk.units) {
@@ -795,9 +1006,14 @@ fn to_arg(sk: &Sketch, res: &Resolver, kind: SpecKind, a: &Arg) -> Result<CArg, 
                 Some(n) => CArg::Num(expr::to_arg_units(k, n)),
                 None => {
                     // in the *document's* units: `80mm` is a number here only where the document
-                    // said what a number is, and saying so is `unit mm` (spec §3.3)
-                    expr::parse_in(text, sk.units).map_err(|e| (Code::E040, e.to_string()))?;
-                    CArg::Expr(expr::Expr::new(text.trim().to_string(), 0.0))
+                    // said what a number is, and saying so is `unit mm` (spec §3.3).  Valued now
+                    // where it reads no unknown, so a reader before `expr::evaluate` (a bound's
+                    // interval, a region solid's term) reads the number written
+                    let parsed = expr::parse_in(text, sk.units)
+                        .map_err(|e| (Code::E040, e.to_string()))?;
+                    let value = expr::eval(&parsed.body, &Default::default()).ok()
+                        .and_then(|a| a.number()).map_or(0.0, |v| expr::to_arg_units(k, v));
+                    CArg::Expr(expr::Expr::new(text.trim().to_string(), value))
                 }
             }
         }
@@ -1052,7 +1268,7 @@ impl Relation {
     ) -> Result<ResolvedRelation<'_>, (Span, String)> {
         let (kind, args) = match &self.form {
             RelationForm::Written(w) => settle(w, kind_of)?,
-            RelationForm::Canonical { kind, args } => (*kind, args.clone()),
+            RelationForm::Canonical { kind, args, .. } => (*kind, args.clone()),
         };
         Ok(ResolvedRelation {
             kind,
@@ -1060,7 +1276,18 @@ impl Relation {
             written: self.form.written(),
             claim: self.claim,
             class: &self.class,
+            bound: self.form.bound(),
         })
+    }
+}
+
+/// A number as the kernels read it (an angle in radians) where it is one before `expr::evaluate`:
+/// a literal, or a text reading no unknown (`to_arg` values it).  `None` where it reads one.
+fn settled_number(a: &CArg, sk: &Sketch) -> Option<f64> {
+    match a {
+        CArg::Num(v) => Some(*v),
+        CArg::Expr(e) => written_number(a, sk).map(|_| e.value),
+        _ => None,
     }
 }
 

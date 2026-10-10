@@ -181,6 +181,119 @@ test('a point in space is dragged where the eye sees it', (t) => {
   assert.ok(Math.hypot(fx - sx - 40, fy - sy - 25) < 1e-6, 'and the source says where it went');
 });
 
+/* -- navigating: pinch, trackpad ------------------------------------------------------- */
+
+const finger = (x: number, y: number, id: number): Record<string, unknown> =>
+  pointer(x, y, { pointerId: id, pointerType: 'touch' });
+
+test('two fingers pinch the workspace about their middle and carry it with them', () => {
+  const sk = pinnedApex();
+  const view = viewOn(sk);
+  view.setTool('point');                     // a press would add a point: a pinch must not
+  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  const before = view.source;
+  const scale = view.cam.scale;
+  const anchor = view.cam.s2w(400, 300);
+
+  cv.fire('pointerdown', finger(350, 300, 1));
+  cv.fire('pointerdown', finger(450, 300, 2));
+  cv.fire('pointermove', finger(300, 300, 1));
+  cv.fire('pointermove', finger(500, 300, 2));
+  assert.ok(Math.abs(view.cam.scale / scale - 2) < 1e-12, 'twice the spread is twice the zoom');
+  const still = view.cam.s2w(400, 300);
+  assert.ok(Math.hypot(still[0] - anchor[0], still[1] - anchor[1]) < 1e-9,
+    'what is between the fingers stays between them');
+
+  cv.fire('pointermove', finger(330, 340, 1));
+  cv.fire('pointermove', finger(530, 340, 2));
+  const carried = view.cam.s2w(430, 340);
+  assert.ok(Math.hypot(carried[0] - anchor[0], carried[1] - anchor[1]) < 1e-9,
+    'and moving them together pans');
+
+  cv.fire('pointerup', finger(330, 340, 1));
+  cv.fire('pointermove', finger(560, 360, 2));   // the finger left down does nothing
+  cv.fire('pointerup', finger(560, 360, 2));
+  assert.equal(view.source, before, 'the first finger\'s press was the pinch\'s, not the tool\'s');
+  assert.equal(PlanDrag.live, 0);
+  assert.equal(view.gesturePointer, null);
+});
+
+test('a lone finger is a pointer: it drags, and a second finger settles the drag', () => {
+  const sk = pinnedApex();
+  const view = viewOn(sk);
+  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  const apex = view.sketch.points[2];
+  const [sx, sy] = view.w2s(...apex.xy);
+
+  cv.fire('pointerdown', finger(sx, sy, 1));
+  assert.equal(PlanDrag.live, 0, 'held back until it is sure to be one finger');
+  cv.fire('pointermove', finger(sx + 20, sy, 1));
+  assert.equal(PlanDrag.live, 1, 'moved past the slop, the press is the drag\'s');
+  assert.deepEqual(view.selected, [apex]);
+
+  const scale = view.cam.scale;
+  cv.fire('pointerdown', finger(sx + 200, sy, 2));
+  assert.equal(PlanDrag.live, 0, 'the second finger ended the drag, freeing its handle');
+  cv.fire('pointermove', finger(sx + 300, sy, 2));
+  assert.ok(view.cam.scale > scale, 'and the two pinch');
+  cv.fire('pointerup', finger(sx + 20, sy, 1));
+  cv.fire('pointerup', finger(sx + 300, sy, 2));
+  assert.equal(PlanDrag.live, 0);
+});
+
+test('a tap is a click', () => {
+  const sk = pinnedApex();
+  const view = viewOn(sk);
+  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  const apex = view.sketch.points[2];
+  const [sx, sy] = view.w2s(...apex.xy);
+  cv.fire('pointerdown', finger(sx, sy, 1));
+  cv.fire('pointerup', finger(sx, sy, 1));
+  assert.deepEqual(view.selected, [apex]);
+  assert.equal(PlanDrag.live, 0);
+  assert.equal(view.gesturePointer, null);
+});
+
+test('a tap reaches as far as a fingertip covers, and a cursor only its own tolerance', () => {
+  const sk = pinnedApex();
+  const view = viewOn(sk);
+  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  const apex = view.sketch.points[2];
+  const [sx, sy] = view.w2s(...apex.xy);
+  const near = sy - 16;                       // past a cursor's 8 px, inside a finger's 22
+  cv.fire('pointerdown', pointer(sx, near, { pointerType: 'mouse' }));
+  cv.fire('pointerup', pointer(sx, near, { pointerType: 'mouse' }));
+  assert.deepEqual(view.selected, [], 'a click that far off picks nothing');
+  cv.fire('pointerdown', finger(sx, near, 1));
+  cv.fire('pointerup', finger(sx, near, 1));
+  assert.deepEqual(view.selected, [apex], 'a tap there lands on the point');
+  cv.fire('pointermove', pointer(sx, near, { pointerType: 'mouse', buttons: 0 }));
+  assert.equal(view.pickPx, 8, 'and the mouse coming back takes its own tolerance back');
+});
+
+test('a trackpad pinches by ctrl and its wheel, and pans by scrolling', () => {
+  const view = viewOn(pinnedApex());
+  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  const wheel = (init: Record<string, unknown>): void => cv.fire('wheel',
+    { clientX: 400, clientY: 300, deltaX: 0, deltaY: 0, deltaMode: 0, ctrlKey: false, ...init });
+  const at = (): [number, number] => view.cam.s2w(400, 300);
+
+  const scale = view.cam.scale, anchor = at();
+  wheel({ ctrlKey: true, deltaY: -10 });
+  assert.ok(view.cam.scale > scale, 'pinching out zooms in');
+  assert.ok(Math.hypot(at()[0] - anchor[0], at()[1] - anchor[1]) < 1e-9, 'about the cursor');
+
+  const zoomed = view.cam.scale, x = view.cam.originX, y = view.cam.originY;
+  wheel({ deltaX: 12, deltaY: 5 });
+  assert.equal(view.cam.scale, zoomed, 'a scroll does not zoom');
+  assert.deepEqual([view.cam.originX, view.cam.originY], [x - 12, y - 5]);
+  wheel({ deltaY: 7, wheelDeltaY: -21 });       // straight down, as only a trackpad reports it
+  assert.deepEqual([view.cam.originX, view.cam.originY], [x - 12, y - 12]);
+
+  wheel({ deltaY: -100, wheelDeltaY: 120 });    // a wheel's notch still zooms
+  assert.ok(view.cam.scale > zoomed);
+});
+
 /* -- dimension callouts ---------------------------------------------------------------- */
 
 /** A dimensioned span, drawn: two points 60 apart with a Distance on them. */
@@ -1557,6 +1670,22 @@ test('a click picks what is seen under it, though another view lies there on the
   cv.fire('pointermove', pointer(x + 6, y + 6));
   cv.fire('pointerup', pointer(x + 6, y + 6));
   assert.deepEqual(view.selected, [s]);
+});
+
+test('a band takes whatever it touches, though neither end of a line is inside it', () => {
+  const view = docView('use std\nin std.front {\na := point hint((0, 0))\nfix((0, 0)) a\n'
+    + 'b := point hint((100, 0))\nfix((100, 0)) b\nab := line(a, b)\n'
+    + 'c := point hint((0, 60))\nfix((0, 60)) c\nd := point hint((100, 60))\nfix((100, 60)) d\n'
+    + 'cd := line(c, d)\n}\n');
+  view.orbit = { ...FRONT };
+  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  const [x0, y] = view.seen(pointNamed(view, 'a'));
+  const [x1] = view.seen(pointNamed(view, 'b'));
+  const x = (x0 + x1) / 2;
+  cv.fire('pointerdown', pointer(x - 4, y - 4));
+  cv.fire('pointermove', pointer(x + 4, y + 4));
+  cv.fire('pointerup', pointer(x + 4, y + 4));
+  assert.deepEqual(view.selected, [view.doc.entity('ab')]);
 });
 
 test('a fit frames everything the workspace shows, solids included', () => {

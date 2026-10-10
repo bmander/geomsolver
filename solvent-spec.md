@@ -1,6 +1,28 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.58 — October 2026**
+**Specification, Draft 0.62 — October 2026**
+
+**[0.62] A region is a solid.** `blank := solid(R)`, `R` a set, is the solid of the points inside
+it: a ball, a shell, a cone met with a ball, the hypoid's blank — `{ p | p inside tip; p inside
+heel; p outside toe; p outside back }` — built exactly as one revolution of its meridian (§6.9).
+
+**[0.61] Regions.** A set whose body bounds a number is a region, and `p inside S` / `p outside S`
+put a point in or out of any set, its one number read as at most or at least what it says: inside a
+sphere, a cylinder, a cone, a disc. Regions meet by conjunction, and `outside` says a difference
+(§6.21, §9.6).
+
+**[0.60] A bound chooses the root.** A dimension's number may be a bound, `distance(>= d)`,
+`distance(<= d)` or `distance(in: (a, b))`, and `p inside P` / `p outside P` say which side of a
+plane a point is on. A bound adds no row: it says which of the equations' solutions is meant,
+checked on the solution, and a solve is steered to the one where it holds (§9.6).
+
+**[0.59] A free curve touches a line where it chooses.** `rope touches rod` holds the rope to a
+line somewhere along it, with nothing along the line holding it: the rope bends there in a corner,
+and where the corner stands on the line is the rope's problem's, one more unknown with one more
+condition — no force along the line (§9.10). The line's points are the rope's to read as its ends
+are, so the line need not be held: drag it and the rope follows. A ring sliding on a rod; a rope of
+an integrand of the point alone leaves the line at the angle it met it. Where it already crosses
+the line, it presses nothing.
 
 **[0.58] A point drawn in two planes.** `O := point in P, G` draws `O` in both planes, so on the
 line where they meet: what a layout draws in two views and ties by `project` is said once, and
@@ -1093,7 +1115,21 @@ lug := solid(lug_f, about: ax, sweep: 90deg, sense: cw)
 body := solid(block)                              // a body, whose stock is `block`
 bore cut body                              //   ... less the bore
 boss union body                                //   ... plus the boss
+blank := solid(R)                                 // a region: the points inside the set R
 ```
+
+**A region is a solid** **[0.62]**. `solid(R)`, its one operand a set, is the solid of the points
+inside `R` (§6.21): `R`'s body applied to a point, each number it bounds there a bound of the
+solid — a distance from a point a ball, from a line a cylinder, an angle from a line seen from its
+start a cone, an ordinate along a plane's normal a half-space. So `solid(std.Sphere(c, r: 5))` is
+the ball, and `solid({ p | p inside tip; p inside heel; p outside toe; p outside back })` the
+hypoid's blank. Its bounds must share one axis — balls centred on it, cylinders and cones about it,
+planes square to it — and enclose material all round; it is then one revolution of a region in the
+half-plane through that axis, built exactly (planes, cylinders, cones, spheres, tori). That is
+judged where the solid is evaluated, on the solved drawing, as a face's loop is: a cylinder alone,
+a ball off the axis, or bounds with no point in common are refused there. A set whose body states
+anything but bounds (a disc's plane) is **E040**. A region solid is a solid like any: `cut`,
+`bound`, `union`, swept and placed.
 
 **The brackets are what the thing is made of** (§4.3, §6.2), so the sweep stands in them beside the face: `from:`, `to:`, `depth:`, `through:`, `along:`, `about:`, `sweep:` and `sense:` are labels of the constructor and are neither seeds nor constraints. A mixture of sweep forms, a half-written prism (`from:` with no `to:`), `from:`/`to:` beside `depth:`, and `sweep:` or `sense:` with no `about:` are each refused where they are written, with the shapes a solid has.
 
@@ -1728,11 +1764,28 @@ there by the formal's name (`std.CircleOnSphere(k, ball, view)`).
 conjunction**: `on_both := { p | p coincident ball; p coincident shaft }` is the points on both, and
 the circle above is a plane met with a sphere. **Union is a choice**: a point on `A` or on `B` is
 on one of them, which a root choice says (`ccw`, `branch`, §13) and a body cannot. **Difference
-is not expressible**: a set says what its points satisfy, never what they do not.
+is not expressible** of a locus: a set says what its points satisfy, never what they do not.
+
+**Regions** **[0.61]**. A set whose body bounds a number (§9.6) is a **region**: `ball := { p | p
+distance(<= 5) c }` is the points within 5 of `c`. `q inside S` and `q outside S` put a point in or
+out of any set: its body applied to `q`, as `coincident` applies it, with its **one number** read as
+a bound — at most what it says (`inside`), at least (`outside`) — and every other statement as
+written. So `q inside std.Sphere(c, r: 5)` is within 5 of `c`, `q inside std.Cylinder(l, r: 2)`
+within 2 of the line, `q inside std.Cone(l, half: 30deg)` within 30° of its axis seen from its apex
+(read in space: in a view the cone is a ray and its angle signed, **E040**), and `q inside { p | p
+coincident P; p distance(5) o }` the disc. A region's own bound is kept by `inside` and turned
+round by `outside`. A region is met by conjunction too, so `blank := { p | p inside tip; p inside
+heel; p outside toe }` is the three at once, and **`outside` says a difference** for regions: inside
+`heel` and outside `toe`. Refused (**E040**): `outside` a set stating no one number — a conjunction,
+whose outside is a union, a choice of root — or an interval (`in:`); `inside` or `outside` a set
+stating several numbers; anything but a point inside a set; a tangency to a region, which has no
+surface to touch. A point in a region is bound, so the use chooses the root (§9.6) and adds no row
+but what the body states besides its number (the disc's plane).
 
 *Non-normative:* `std.Sphere`, `std.Cylinder` and `std.Cone` are sets. A set drawn by tracing its
 points, other recognised shapes (a line as two planes met), and sets bounded by inequalities (arcs,
-segments, rays) are not part of this draft (#101). A derivative row has no flat spelling, so a
+segments, rays) are not part of this draft (#101): a bound outside a set body chooses a root (§9.6),
+and one inside a body makes the set a region (above). A derivative row has no flat spelling, so a
 program lifted from a sketch (`to_program`) keeps a tangency's contact and says nothing of the
 tangency.
 
@@ -1921,6 +1974,7 @@ Residual conventions: points are ℝ²; `×` is the scalar 2D cross product; `�
 | `coincident(q, S)` **[0.49]** | the rows F of S's body, with q for its point | as many as the body states | §6.21; the geometry the body declares is made once per use |
 | `tangent(L, S)` **[0.49]** **[0.51]** | F at a contact X on L (two rows putting X on L), and F_x·ẋ: ẋ the direction B − A in X's columns, a **tangent unknown** in the columns of what the body made, 0 in the set's own | 1 for a surface | the derivative read exactly from each row's form (its Jacobian, and its Hessian along ẋ); the body's own rows (a lift) differentiated too |
 | `tangent(S1, S2, at: m)` **[0.51]** | F₁,ₓ·wₖ and F₂,ₓ·wₖ at m, k = 0, 1, with w₀ = e_a + s₀ e_c and w₁ = e_b + s₁ e_c | 2 for two surfaces (four rows over s₀, s₁) | e_c the world axis the sets' normal at m runs most along, chosen once; `m coincident S1`, `m coincident S2` beside it |
+| `touches(k: free curve, L: Line)` **[0.59]** | inside `k`'s problem (§9.10): its arc ends at o + σ·d̂ on `L`, `H` unbroken there, and (λ⁺ − λ⁻)·d̂ | 0 in the drawing | σ and the place along `k` the problem's own; `L`'s points columns of `k`, as its ends are; written `k touches L` |
 | *across views* **[0.24]** | the relation over the lifts X, Y of its points: X − Y (3); ‖X − Y‖² − e² (1); the point–line magnitude (1); the signed common perpendicular (1); two components of (X − A) × (B − A) across the line (2, `coincident` a line); â·b̂ − cos e (1); â·b̂ (1); (â × b̂) across â (2, `parallel`); ‖B − A‖² − ‖D − C‖² (1, `equal`); ‖X − C‖ − r and n·(X − C) (2, `coincident` a circle); **[0.25]** X − (A + B)/2 (3, `midpoint`); Q + P − 2F, F the foot of P on the line (3, `symmetry`) | as listed | §9.2 |
 | `project(p, q)` **[0.10]** **[0.42]** | d_A·p − d_B·q + d·(o_A − o_B); over a plane solved for, (n̂_A × n̂_B)·(X_A − X_B) | 1 | the planes A, B inferred from `p`, `q`'s memberships; d the fold line they share, §6.7 |
 
@@ -1951,7 +2005,24 @@ A selector left unwritten is read off the seed (§9.2): the branch the seeded po
 
 ### 9.6 Inequalities
 
-Orientation predicates (`ccw`, `cw`) are the only inequalities in this draft. They contribute no equations; they select among the discrete solution components of the equality system. Solvers MUST verify them on candidate solutions and MUST NOT report a solution violating one.
+Inequalities contribute no equations; they select among the discrete solution components of the equality system. Solvers MUST verify them on candidate solutions and MUST NOT report a solution violating one. There are two kinds: the orientation predicates (`ccw`, `cw`), and bounds.
+
+**A bound** **[0.60]** is a dimension whose number says how far the measure may go rather than what it is:
+
+```
+a distance(>= 0, along: up) p     // p at or above a
+p distance(<= 6) q                // within 6 of q
+a distance(in: (1, 9), along: up) p
+p inside P                        // behind P's normal: p distance(<= 0, along: n) P
+p outside P                       // in front of it
+```
+
+- **What takes one:** a measure a solve can be steered along — an ordinate (so `inside` and `outside` a plane, the point's ordinate along the plane's normal from its origin), a distance between points, and a point's or a parallel line's distance from a line. A bound on any other kind is **E040**.
+- **Closed:** `>=`, `<=` and `in:` include their edge, where a solution may stand. `>` and `<` are refused.
+- **Its number:** zero may be written, unlike an ordinate's equality, which zero makes a `level` (§9.2). It may not read an unknown, and a bound may not be a `claim` (**E040**): a bound chooses which solution is meant, and a claim asks about the one there is.
+- **Meaning:** outside a set body, a bound **chooses the root**. It adds no row and no freedom, and is drawn as no callout. It does the work a seed did when the seed only picked a side, so it is read on the seeds first: a point whose seed breaks a bound is carried across its edge, to the mirror of its reading, as if it had been seeded there, and everything seeded from it or placed through it follows. The solver then checks it on the solution. Where it still does not hold, the solver looks for the root where it does, from the seeds and from the solution, and fails the solve where none is found (`a bound does not hold`). The diagnosis tells which bounds are violated, and which hold with the solution on their edge (*active*).
+- **Inside a set body** a bound makes the set a region, and `inside`/`outside` put a point in one (§6.21) **[0.61]**. `solid(R)` is a region's solid (§6.9) **[0.62]**.
+- `inside` between two solids remains the claim of §9.8; which one a statement is follows from its operands.
 
 ### 9.7 Claims **[0.5]**
 
@@ -2059,11 +2130,11 @@ rope minimizes 2 * integral(p.y over p) - integral(p.x over p)
 
 - **What it is over.** **[0.55]** An energy is over a free curve (§6.1); over anything else it is **E040**.
 - **Its length.** Held by `length(L) k`, the length is that. **[0.57]** With none, the rest of the drawing may determine it — with the curve's ends and what the drawing places without the curve held, no motion left changes it: a placed point the curve passes (a span and a sag), a held line it touches — and it is solved for like any unknown. Where nothing does, it is where `E` is stationary in it too — transversality, `H = 0` at the end: two points and an energy with no length is a geodesic of the weight `f`. A free point on the curve moves with it and determines nothing. A length nothing holds and no stationarity settles — a hanging rope only lowers its energy as it lengthens — is left a freedom of the drawing, no row seeking a length that is not there, and SHOULD be said at the energy (**W114**).
-- **A peg presses; a drawing relation yields.** A relation between the curve and other geometry that is still free is satisfied by that geometry: a line drawn tangent to a hanging rope moves onto it. **[0.55]** A held point the curve is stated to pass (`peg coincident rope`, `peg` held) is a **peg**: the curve's problem passes it, its costate free to jump there — a point force — and its direction with it: the rope drapes over the peg in a corner, the place along the rope where it does solved too. Any other relation whose every operand but the curve is held is **E040**: a held line pressed against the curve meets it at a corner, so no smooth tangency to it is stationary.
+- **A peg presses; a drawing relation yields.** A relation between the curve and other geometry that is still free is satisfied by that geometry: a line drawn tangent to a hanging rope moves onto it. **[0.55]** A held point the curve is stated to pass (`peg coincident rope`, `peg` held) is a **peg**: the curve's problem passes it, its costate free to jump there — a point force — and its direction with it: the rope drapes over the peg in a corner, the place along the rope where it does solved too. Any other relation whose every operand but the curve is held is **E040**: a held line pressed against the curve meets it at a corner, so no smooth tangency to it is stationary. **[0.59]** That corner is `k touches L`, `L` a line: the curve's problem passes the line at a place on it its own, the costate's jump — the force the line bears — square to the line, so nothing holds it along the line, and `H` unbroken. The place on the line is solved with the place along the curve; the verdict's Hessian takes both. The line's points are the curve's to read, as its ends are: held or not, the curve is a function of where the line is, so a line the drawing leaves free moves (a drag) and the curve with it. Where the curve crosses the line the force is none and the curve as it would be. `touches` over a curve that is not free is **E040**, and an implementation MAY bound how many lines one curve touches (**E040** past it); it holds no length.
 - **The solution set is the stationary points (P3).** A stationary curve may be a minimum, a maximum or a saddle, and the seed decides which the solve reaches. The diagnosis MUST say which — **[0.55]** by Legendre's condition (the Hamiltonian's sign in the direction along the curve), Jacobi's (no point conjugate to an arc's start before its end), and, with pegs or a free length, the energy's Hessian in where they are — and SHOULD say it where the statement is written, as a claim's verdict is (§9.7): `minimum`, `maximum`, `saddle`, `degenerate` where the second order cannot tell, or `unsolved` where no stationary shape was found. A `maximizes` answered `maximum` found what it asked for. A non-minimum is reported, not refused.
 - A relation word's body may state an energy over its operand: `std.hangs(L) k := { length(L) k; k minimizes integral(p.y over p) }`.
 
-*Open, non-normative:* an integral as a constraint of its own (`integral(…) == A`), an integrand reading other geometry or the curvature (the elastica, #136), a natural end condition (an end free to slide, varied with the curve), a held line touched at a point the curve chooses (a corner on the line), and a free curve in space.
+*Open, non-normative:* an integral as a constraint of its own (`integral(…) == A`), an integrand reading other geometry or the curvature (the elastica, #136), a natural end condition (an end free to slide, varied with the curve), and a free curve in space.
 
 ---
 

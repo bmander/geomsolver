@@ -194,7 +194,8 @@ fn read(sk: &Sketch,solid: usize,axis_tolerance: f64) -> Result<Snapshot,String>
             let get = |i: u32| done[&(i as usize)].clone();
             let error = |e| format!("material field: {e:?}");
             Ok(match &s.def {
-                SolidDef::Revolve {..} => Snapshot::Static(RevolvedRegion::read(sk,i,axis_tolerance)?.field()?.into()),
+                SolidDef::Revolve {..} | SolidDef::Region {..} =>
+                    Snapshot::Static(RevolvedRegion::read(sk,i,axis_tolerance)?.field()?.into()),
                 SolidDef::Prism {face,from,to} =>
                     Snapshot::Static(extruded(sk,*face as usize,[from.value,to.value])?.into()),
                 SolidDef::Through {face,..} => {

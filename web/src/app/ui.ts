@@ -262,6 +262,82 @@ export function addSelect(bar: HTMLElement, label: string, options: string[], va
   return s;
 }
 
+/* -- topics ----------------------------------------------------------------------- */
+
+/** A topic on a bar: buttons standing side by side while the bar has room for them, and folded
+ *  under one button named for the topic when it has not (`fitBar`).  The buttons are the same
+ *  elements either way, so whatever holds one — a tool's pressed state — keeps holding it.
+ *  Folded, the topic drops its buttons as a menu does, and shares the menu bar's one open menu.
+ *  `null` in the table is a divider.  Returns the buttons, in the order of the table. */
+export function addTopic(bar: HTMLElement, label: string,
+                         specs: (ToolbarButton | null)[]): HTMLButtonElement[] {
+  const wrap = document.createElement('div');
+  wrap.className = 'topic';
+  const top = document.createElement('button');
+  top.className = 'topic-head';
+  top.textContent = label;
+  top.setAttribute('aria-expanded', 'false');
+  top.setAttribute('aria-haspopup', 'true');
+  const items = document.createElement('div');
+  items.className = 'topic-items';
+  // dropped, the list hangs from the head's left edge unless that runs it off the screen, and
+  // reaches no lower than the screen does: past that it scrolls
+  dropsOn(top, () => {
+    wrap.classList.remove('flip');
+    const at = items.getBoundingClientRect();
+    if (at.right > document.documentElement.clientWidth) wrap.classList.add('flip');
+    items.style.maxHeight = `${Math.max(120, window.innerHeight - at.top - 8)}px`;
+  });
+  // a choice made from the dropped list is the list done with
+  items.addEventListener('click', (e) => {
+    if (wrap.classList.contains('folded') && (e.target as HTMLElement).closest('button')) {
+      closeMenus();
+    }
+  });
+  wrap.append(top, items);
+  bar.append(wrap);
+  return specs.flatMap((spec) => {
+    if (spec) return [addButton(items, spec)];
+    addSeparator(items);
+    return [];
+  });
+}
+
+/** Fold a bar's topics, last first, until its buttons fit on one row — and where folding every
+ *  topic is not enough, let the row wrap.  The buttons keep their size: a bar short of room
+ *  says less, never smaller. */
+function fitBar(bar: HTMLElement): void {
+  const topics = [...bar.children].filter((c): c is HTMLElement => c.classList.contains('topic'));
+  const before = topics.map((t) => t.classList.contains('folded'));
+  bar.classList.remove('wrapping');
+  for (const t of topics) t.classList.remove('folded');
+  const over = (): boolean => bar.scrollWidth > bar.clientWidth;
+  for (let i = topics.length - 1; i >= 0 && over(); i -= 1) topics[i].classList.add('folded');
+  if (over()) bar.classList.add('wrapping');
+  // a list dropped from a head that is now standing open, or folded away, has nothing under it
+  if (topics.some((t, i) => t.classList.contains('folded') !== before[i])) closeMenus();
+}
+
+/** Keep each bar fitted to the room it has, and where every bar has folded down to its heads,
+ *  stand them side by side on one row (`compact` on the host).  Each bar is fitted standing on
+ *  its own row, the width it will have when it unfolds; only the host's width decides, so the
+ *  row the bars share, and the height a fold or a wrap changes, ask nothing again. */
+export function fitBars(host: HTMLElement, bars: HTMLElement[]): void {
+  const heads = (b: HTMLElement): boolean => [...b.children]
+    .every((c) => c.classList.contains('topic') && c.classList.contains('folded'));
+  let width = -1;
+  const fit = (): void => {
+    if (host.clientWidth === width) return;
+    width = host.clientWidth;
+    host.classList.remove('compact');
+    for (const b of bars) fitBar(b);
+    host.classList.toggle('compact', bars.every(heads));
+  };
+  for (const b of bars) b.classList.add('fitted');
+  new ResizeObserver(fit).observe(host);
+  fit();
+}
+
 /* -- menu bar ------------------------------------------------------------------- */
 
 /** A menu item is a button that happens to live in a list, so it is described the same way —
@@ -281,18 +357,14 @@ export function closeMenus(): boolean {
   return true;
 }
 
-/** One menu on the bar: a name, and the items under it with `null` for a dividing rule.
- *  Once one menu is open the others take over on hover, the way a desktop menu bar behaves. */
-export function addMenu(bar: HTMLElement, label: string, items: (MenuItem | null)[]): void {
-  const wrap = document.createElement('div');
-  wrap.className = 'menu';
-  const top = document.createElement('button');
-  top.textContent = label;
-  top.setAttribute('aria-expanded', 'false');
+/** Make a button the head of a list that drops from it: the menu bar's menus and a folded
+ *  topic's.  The one open list is `openMenu`, whichever kind it is. */
+function dropsOn(top: HTMLButtonElement, dropped?: () => void): void {
   const drop = (): void => {
     closeMenus();
     top.setAttribute('aria-expanded', 'true');
     openMenu = top;
+    dropped?.();
   };
   // pointerdown rather than click, so the menu is up under the finger that opened it, and
   // default-prevented so the focus stays wherever it was and the key handler keeps working
@@ -301,7 +373,21 @@ export function addMenu(bar: HTMLElement, label: string, items: (MenuItem | null
     if (openMenu === top) closeMenus();
     else drop();
   });
-  top.addEventListener('pointerenter', () => { if (openMenu && openMenu !== top) drop(); });
+  top.addEventListener('pointerenter', (e) => {
+    // a finger has no hover: its press is what reaches pointerdown, which decides
+    if (e.pointerType !== 'touch' && openMenu && openMenu !== top) drop();
+  });
+}
+
+/** One menu on the bar: a name, and the items under it with `null` for a dividing rule.
+ *  Once one menu is open the others take over on hover, the way a desktop menu bar behaves. */
+export function addMenu(bar: HTMLElement, label: string, items: (MenuItem | null)[]): void {
+  const wrap = document.createElement('div');
+  wrap.className = 'menu';
+  const top = document.createElement('button');
+  top.textContent = label;
+  top.setAttribute('aria-expanded', 'false');
+  dropsOn(top);
   const list = document.createElement('ul');
   for (const item of items) {
     const li = document.createElement('li');
@@ -316,7 +402,7 @@ export function addMenu(bar: HTMLElement, label: string, items: (MenuItem | null
 /* A press anywhere else puts the menu away — including on the canvas, where the same press
  * goes on to do whatever it was going to do. */
 document.addEventListener('pointerdown', (e) => {
-  if (openMenu && !(e.target as HTMLElement).closest('.menu')) closeMenus();
+  if (openMenu && !(e.target as HTMLElement).closest('.menu, .topic')) closeMenus();
 });
 
 /** What a downloaded file is, by what it is called.  The name already states the format, so a

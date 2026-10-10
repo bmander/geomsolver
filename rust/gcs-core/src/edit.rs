@@ -122,7 +122,7 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
     // and claims, which do not determine it, and preserve hints the author wrote explicitly.
     let dimensioned_radii: std::collections::BTreeSet<EntRef> = sk.constraints.iter()
         .filter(|c| c.kind == crate::constraints::CKind::Radius
-            && !c.claim && !c.soft && c.free.is_none())
+            && c.acts() && c.free.is_none())
         .map(|c| c.args[0].ent()).collect();
     let mut edits = Vec::new();
     // and a `ring`'s body at the root: one statement however many copies, but the copies are
@@ -1202,7 +1202,8 @@ pub fn remove(
             return Edit::none(
                 prog,
                 Some(
-                    "that comes from a component, so deleting it would edit the component and                      everything else drawn from it"
+                    "that comes from a component, so deleting it would edit the component and \
+                     everything else drawn from it"
                         .into(),
                 ),
             );
@@ -1635,7 +1636,7 @@ pub fn set_dimension(e: &Elaborated, prog: &Program, cid: u32, attr: &str, text:
                 syntax::OpArg::Dim(text, span) => Some((*span, text.clone())),
                 _ => None,
             }).or_else(|| word_dimension(prog, w)),
-            syntax::RelationForm::Canonical { kind, args } => kind
+            syntax::RelationForm::Canonical { kind, args, .. } => kind
                 .spec()
                 .iter()
                 .position(|(n, _)| *n == attr)
@@ -1931,7 +1932,24 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
                 ),
             );
         }
-        let Some(d) = decl_of(prog, site) else { continue };
+        // Made by a statement that is no declaration — a set drawn as its element (#105) — so
+        // there is no `name := ` to put on it: refused with the cause, where carrying on wrote
+        // the sketch's own label (`c0`), which resolves to nothing (#142).
+        let Some(d) = decl_of(prog, site) else {
+            let st = prog.stmt(site.stmt);
+            let in_place = st.is_some_and(|s| matches!(s.chained, syntax::Chained::Link)
+                && matches!(s.kind, StmtKind::Set(_) | StmtKind::Instance(_)));
+            // a named call's geometry is writable and never reaches here: an unnamed one's is
+            return Edit::none(prog, Some(if in_place {
+                "that is a set written in place, so no statement can name it; define the set \
+                 by name (`k := { p | … }`) and use it by that name".into()
+            } else if matches!(st.map(|s| &s.kind), Some(StmtKind::Instance(_))) {
+                "give the component call a name before referring to its geometry".into()
+            } else {
+                "no declaration made that, so no statement can name it; give it a name in the \
+                 source first".into()
+            }));
+        };
         if d.name.shown().is_some() {
             continue; // named since the map was made
         }
@@ -2174,7 +2192,7 @@ fn gauge_key(r: &syntax::Relation) -> Option<GaugeKey> {
             let fields: Vec<syntax::Name> = w.slots().map(|(key, _)| key).collect();
             Some(gauge_key_of(syntax::ref_text(w.ops.first()?), fields.iter().map(|k| k.text.as_str())))
         }
-        syntax::RelationForm::Canonical { kind: CKind::Fix, args } => {
+        syntax::RelationForm::Canonical { kind: CKind::Fix, args, .. } => {
             let Some(Some(syntax::Arg::Ref(rf))) = args.first() else { return None };
             let spec = CKind::Fix.spec();
             let fields = args.iter().enumerate().skip(1)

@@ -173,7 +173,7 @@ pub fn jansen() -> Sketch {
 pub fn example(name: &str) -> Option<Sketch> {
     Some(match name {
         "solid_flange" | "solid_pulley" | "solid_elbow" | "solid_tray" | "solid_loft" | "nurbs"
-        | "catenary" | "dido" | "sag" | "fisheye" | "projectile" | "hyperbolic" => {
+        | "catenary" | "dido" | "sag" | "ring" | "fisheye" | "projectile" | "hyperbolic" => {
             document(source(name)?, name)
         }
         "rect_fillets" => rect_fillets(100.0, 60.0, 10.0, 0.0),
@@ -265,7 +265,7 @@ pub fn bracket() -> Sketch {
 }
 
 /// The case library shown in the app: (label, key, one-line description).
-pub const CASES: [(&str, &str, &str); 50] = [
+pub const CASES: [(&str, &str, &str); 51] = [
     ("Mounting flange · solids", "solid_flange", "One stepped radial section turned about its axis, then a circular pattern of through holes; editable dimensions and three solid views."),
     ("V-belt pulley · solids", "solid_pulley", "A full revolution of a stepped section, with a revolved V-groove cutter and a shaft bore."),
     ("Hollow duct elbow · solids", "solid_elbow", "A hollow square section swept along a constrained circular arc; edit the guide angle, bend radius, or wall thickness."),
@@ -295,6 +295,7 @@ pub const CASES: [(&str, &str, &str); 50] = [
     ("Hanging rope · catenary from its principle", "catenary", "a free curve `curve(a, b)` 150 long between two points, and `rope minimizes integral(p.y over p)`: the shape whose height integrated along it is least among every shape that long — the catenary, though nothing says so, and the report calls it a minimum.  Drag `b` and the rope hangs again"),
     ("Dido's problem · most area for its length", "dido", "a strip 130 long on a shore 100 wide, and `strip maximizes` the area the two enclose, written as a line integral of the point and its tangent along the strip: the arc of a circle, reported a maximum"),
     ("Span and sag · a rope's length found", "sag", "a rope hung from two points with no length stated, and its lowest point placed half way across and 30 below them: the point is on the rope, so the drawing determines how long it is, and the solve finds the length a catenary needs to sag that far.  Edit the span or the sag and the rope hangs again"),
+    ("A ring on a rod · a corner where the rope chooses", "ring", "a rope 160 long threaded through a ring that slides on a sloping rod below it: `rope touches rod` holds the rope to the rod somewhere, with nothing along the rod holding it, so the rope bends there in a corner, two catenaries, and the ring slides to where the rope's pull along the rod balances — the rope leaving the rod at the angle it met it.  Drag `b` or either end of the rod and the ring slides"),
     ("Maxwell's fish-eye · light in a lens", "fisheye", "a lens whose refractive index falls off from its centre as 2 / (1 + r² / R²), and a ray `minimizes` the index integrated along it — Fermat's principle, its length free: every ray is an arc of a circle, though nothing says so, and every ray from a point meets again opposite it.  Drag `b` and the ray bends to it"),
     ("A throw · least action, not a parabola", "projectile", "a ball thrown from `a` lands at `b`, its path the curve that makes its speed, `sqrt(h - p.y)`, integrated along it stationary — Jacobi's form of least action: a parabola, though nothing says so, the low line drive a minimum.  The high lob through the same points is a saddle"),
     ("Hyperbolic plane · the shortest path", "hyperbolic", "Poincaré's half-plane, where length is `ds / y`: the curve from `a` to `b` that makes it least is an arc of a circle centred on the line `y = 0` — the hyperbolic plane's straight line, found from the principle alone.  Drag `b` and the arc swings round, meeting the line square on"),
@@ -418,6 +419,7 @@ pub fn source(key: &str) -> Option<&'static str> {
         "catenary" => Some(include_str!("../../examples/catenary.sv")),
         "dido" => Some(include_str!("../../examples/dido.sv")),
         "sag" => Some(include_str!("../../examples/sag.sv")),
+        "ring" => Some(include_str!("../../examples/ring.sv")),
         "fisheye" => Some(include_str!("../../examples/fisheye.sv")),
         "projectile" => Some(include_str!("../../examples/projectile.sv")),
         "hyperbolic" => Some(include_str!("../../examples/hyperbolic.sv")),

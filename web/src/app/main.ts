@@ -28,7 +28,8 @@
  *             Ctrl+X/C/V cut, copy, paste the selection
  *   workspace one scene in space: every sketch stands on its own plane and solids are drawn
  *             under them.  Right-drag orbits, middle-drag (or ⇧ right-drag) pans, the wheel
- *             zooms.  The chooser in the viewport's upper right is the plane the next thing is
+ *             zooms; a trackpad pinches to zoom and scrolls to pan, and two fingers on a touch
+ *             screen pinch and pan together.  The chooser in the viewport's upper right is the plane the next thing is
  *             drawn on — std.front, std.side, std.top and every plane the document names — and
  *             choosing one turns the view square on to it.  Plane (N) and Axis (X) drop a datum
  *             constrained to the selection, and Insert ▸ Plane… names the plane first; J
@@ -61,8 +62,7 @@ import {
   planeSelect, view, initialExample,
 } from './shell.js';
 import {
-  MenuItem, ToolbarButton, addButton, addMenu, addSeparator, askChoice, closeMenus, download, openImage,
-  refining, toast,
+  MenuItem, ToolbarButton, addMenu, addTopic, askChoice, closeMenus, download, fitBars, openImage, refining, toast,
 } from './ui.js';
 import { objectName, type Refining } from './field-preview.js';
 import { Tool } from './view.js';
@@ -78,23 +78,15 @@ const toolButtons = new Map<Tool, HTMLButtonElement>();
 view.onTool = (t) => {
   for (const [k, b] of toolButtons) b.setAttribute('aria-pressed', String(k === t));
 };
-/** The drawing tools, with the key each is taken up by — `TOOL_KEYS` is read off this. */
-const TOOLS: [string, Tool, string][] = [
+/* The element tools, then past a divider what the geometry you drew is *for*, as against the
+ * constraints that hold it — all under one head, Elements, on a bar too narrow for them
+ * (`fitBar`).  A table like the constraints bar's, so the chip and the accelerator stay one
+ * string — see ACTION_KEYS. */
+const TOOLS = [
   ['Point', 'point', 'p'], ['Line', 'line', 'l'], ['Rect', 'rect', 'r'],
   ['Circle', 'circle', 'c'], ['Arc', 'arc', 'a'], ['Arc 3-pt', 'arc3', '3'],
   ['Spline', 'spline', 's'], ['Spline fit', 'splinefit', 'w'],
-];
-for (const [label, tool, key] of TOOLS) {
-  toolButtons.set(tool, addButton(barTools, {
-    label, key, toggle: true, title: 'Click again to put the tool down and go back to selecting',
-    onClick: () => view.setTool(view.tool === tool ? 'select' : tool),
-  }));
-}
-view.setTool('select');
-addSeparator(barTools);
-/* Beside the tools, past the divider: what the geometry you drew is *for*, as against the
- * constraints that hold it.  A table like the constraints bar's, so the chip and the
- * accelerator stay one string — see ACTION_KEYS. */
+] as [string, Tool, string][];
 const TOOL_BUTTONS: ToolbarButton[] = [
   { label: 'Construction', key: 'g', onClick: () => view.toggleConstructionSelected(),
     title: 'Draw the selected lines/circles/arcs dashed as reference geometry (they still constrain)' },
@@ -107,8 +99,17 @@ const TOOL_BUTTONS: ToolbarButton[] = [
          + '· square to a plane, through a point or its origin · where two planes meet · with '
          + 'nothing selected, free, square to the plane being drawn on' },
 ];
-for (const b of TOOL_BUTTONS) addButton(barTools, b);
-for (const b of CONSTRAINT_BUTTONS) addButton(barConstraints, b);
+addTopic(barTools, 'Elements', [
+  ...TOOLS.map(([label, tool, key]): ToolbarButton => ({
+    label, key, toggle: true, title: 'Click again to put the tool down and go back to selecting',
+    onClick: () => view.setTool(view.tool === tool ? 'select' : tool),
+  })),
+  null,
+  ...TOOL_BUTTONS,
+]).slice(0, TOOLS.length).forEach((b, i) => toolButtons.set(TOOLS[i][1], b));
+view.setTool('select');
+addTopic(barConstraints, 'Constraints', CONSTRAINT_BUTTONS);
+fitBars(document.querySelector('header')!, [barTools, barConstraints]);
 
 /* -- menu bar ------------------------------------------------------------------- */
 

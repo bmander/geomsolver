@@ -29,7 +29,6 @@
  * coordinate maps are pure functions of the placement and can be exercised without a browser;
  * only `paint` and the loader need one.
  */
-import { PICK_PX } from './view.js';
 import { PAGE } from '../core/workspace.js';
 import type { ViewCam } from './camera.js';
 import { COL, polyPath } from './paint.js';
@@ -158,7 +157,7 @@ export function handleAt(v: SketchView, sp: [number, number]): number {
   const cam = page(v);
   return corners(u).findIndex(([x, y]) => {
     const s = cam.w2s(x, y);
-    return Math.hypot(s[0] - sp[0], s[1] - sp[1]) < PICK_PX + HANDLE;
+    return Math.hypot(s[0] - sp[0], s[1] - sp[1]) < v.pickPx + HANDLE;
   });
 }
 
@@ -171,7 +170,7 @@ export function bodyAt(v: SketchView, sp: [number, number]): boolean {
   const at = cam.s2w(sp[0], sp[1]);
   if (u.picked) return contains(u, at[0], at[1]);
   const pts = corners(u).map(([x, y]) => cam.w2s(x, y));
-  return pts.some((p, i) => segmentDistance(sp, p, pts[(i + 1) % 4]) <= PICK_PX);
+  return pts.some((p, i) => segmentDistance(sp, p, pts[(i + 1) % 4]) <= v.pickPx);
 }
 
 /** Distance from a point to a segment, in whatever units all three are in — the frame's own

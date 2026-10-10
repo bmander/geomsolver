@@ -148,6 +148,9 @@ pub fn pick_by(
     best.map(|(e, _)| e)
 }
 
+/// `measure_order`'s rank for the kinds no distance is measured to.
+const OFF_SHEET: u8 = 5;
+
 fn measure_order(k: EntKind) -> u8 {
     match k {
         EntKind::Point => 0,
@@ -157,7 +160,7 @@ fn measure_order(k: EntKind) -> u8 {
         EntKind::Curve => 4,
         // never measured against anything: a face and a solid are not on the sheet
         EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Patch | EntKind::Seam | EntKind::Vertex | EntKind::Edge
-        | EntKind::Axis => 5,
+        | EntKind::Axis => OFF_SHEET,
         // last, so any pair with a datum in it puts the datum second and one arm catches it
         EntKind::Plane => 6,
     }
@@ -201,6 +204,7 @@ pub fn on_radius(cx: f64, cy: f64, tx: f64, ty: f64, r: f64) -> Option<(f64, f64
 fn swept(sk: &Sketch, e: EntRef) -> Vec<(f64, f64)> {
     match e.kind {
         EntKind::Spline => crate::curve::sample(sk, e.i(), 64),
+        EntKind::Curve => sk.curve_polyline(e.i()),
         // a datum is not a figure: the one place it stands at
         EntKind::Plane => vec![(0.0, 0.0)],
         _ => Vec::new(),
@@ -208,8 +212,13 @@ fn swept(sk: &Sketch, e: EntRef) -> Vec<(f64, f64)> {
 }
 
 /// Shortest distance between two entities, as a sketcher measures it.  Lines are treated as
-/// infinite; arcs are measured as the whole circle they lie on.
+/// infinite; arcs are measured as the whole circle they lie on.  Total over every pair of kinds,
+/// since any two things selected are asked: one that is on no sheet (an axis, a face, a solid)
+/// has no distance to measure, and answers NaN.
 pub fn distance_between(sk: &Sketch, first: EntRef, second: EntRef) -> f64 {
+    if measure_order(first.kind) == OFF_SHEET || measure_order(second.kind) == OFF_SHEET {
+        return f64::NAN;
+    }
     let (a, b) = if measure_order(first.kind) > measure_order(second.kind) {
         (second, first)
     } else {
@@ -220,9 +229,9 @@ pub fn distance_between(sk: &Sketch, first: EntRef, second: EntRef) -> f64 {
             let (ax, ay) = sk.point_xy(a.i());
             point_to(sk, ax, ay, b)
         }
-        // A curve and an ellipse have no closed form against any of the others, so both are
+        // A spline and a curve have no closed form against any of the others, so both are
         // measured by sweeping what is drawn — close enough to measure by, and honestly the best
-        // a sampled answer can be.  A frame joins them with a single sample, its origin: not for
+        // a sampled answer can be.  A plane joins them with a single sample, its origin: not for
         // want of a closed form but because a datum is measured where it stands.  All three sort
         // after everything they could be paired with, so the swept one is always `b`, and the
         // exact point case has already short-circuited above.
@@ -232,7 +241,7 @@ pub fn distance_between(sk: &Sketch, first: EntRef, second: EntRef) -> f64 {
         // would ask a curve for a centre it does not have.
         _ if matches!(
             b.kind,
-            EntKind::Spline | EntKind::Plane
+            EntKind::Spline | EntKind::Curve | EntKind::Plane
         ) => swept(sk, b)
             .into_iter()
             .map(|(x, y)| point_to(sk, x, y, a))

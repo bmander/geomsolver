@@ -7,7 +7,7 @@ use design
 use views
 
 component GearCone(p: plane, g: plane, design: group) {
-  // Seeds only, rough: F on the side of OM the pitch angle opens to.
+  // Seeds only, rough.
   r := design.cone_distance
   // O and M lie on the line where P and G meet, so each is drawn in both.
   O := point hint((0, 0)) in p, g
@@ -28,6 +28,8 @@ component GearCone(p: plane, g: plane, design: group) {
     crown_axis := line(O, top)
     opposite := line(O, mirror)
   }
+  // The gear's axis runs down from the pitch plane.
+  foot inside p
   to_foot perpendicular ax
   M distance(design.gear_teeth * design.module / 2) foot
   O distance(design.pinion_teeth * design.module / 2) foot

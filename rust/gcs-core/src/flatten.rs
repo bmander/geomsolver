@@ -129,6 +129,10 @@ struct Scope {
     /// it states (the geometry a tangency at a point reads its derivatives over); or a second
     /// time for a tangency, each relation emitted as its derivative and nothing made again.
     pass: apply::Pass,
+    /// The statement a relation made by a predicate's use was written as in the body, kept when
+    /// the application stamps the use's own over it (`apply`): what a set used there is applied
+    /// under (`begin_nth`), so two uses in one body stand apart by what the source wrote.
+    written: Option<crate::syntax::StmtId>,
 }
 
 impl Scope {
@@ -194,6 +198,8 @@ pub struct Expansion {
     pub lowered: Vec<Lowered>,
     /// Every point drawn in further planes and each of its twins, by absolute key (§6.7).
     pub twins: Vec<(String, String)>,
+    /// Every region solid's probe, by absolute key: the point its set is applied to (§6.21).
+    pub probes: Vec<String>,
 }
 
 /// One instance, as bound: which component, under what prefix, given what.
@@ -317,6 +323,8 @@ struct Walk<'a> {
     applying_sets: bool,
     /// Every point drawn in further planes and each of its twins — see `Expansion::twins`.
     twins: Vec<(String, String)>,
+    /// Every region solid's probe — see `Expansion::probes`.
+    probes: Vec<String>,
 }
 
 /// Expand a program's root component into a flat list of declarations, constraints, gauges and
@@ -427,6 +435,7 @@ impl<'a> Walk<'a> {
             unlowered: &NONE,
             applying_sets: false,
             twins: Vec::new(),
+            probes: Vec::new(),
         }
     }
 
@@ -481,6 +490,7 @@ impl<'a> Walk<'a> {
             rings: self.ring_infos,
             lowered,
             twins: self.twins,
+            probes: self.probes,
         }
     }
 }

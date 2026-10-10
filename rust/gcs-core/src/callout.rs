@@ -88,8 +88,9 @@ macro_rules! undrawn {
             | CKind::Level
             | CKind::Project
             | CKind::Lift
-            // an energy states no number on the figure
+            // an energy states no number on the figure, nor does a touch
             | CKind::Stationary
+            | CKind::CurveTouchesLine
             // a relation in space states a number of no one view, so it has no figure on one
             | CKind::Coincident3
             | CKind::Distance3
@@ -296,10 +297,11 @@ pub fn layout_selected(sk: &Sketch, unit: f64, ids: Option<&[u32]>) -> Vec<Callo
         // a drag target is a number, not a dimension, and an arc's own definition is not
         // something the drawing states twice — nor is a block's dimension, once per copy,
         // unless that copy is the one asked for, nor a set's row stated as its derivative
-        // (§6.21), whose number is its row's
+        // (§6.21), whose number is its row's, nor a bound, which says which root and states no
+        // size (§9.6)
         let asked = ids.map(|ids| ids.contains(&c.id));
-        if asked == Some(false) || (c.repeated && asked.is_none())
-            || c.soft || c.intrinsic || c.along.is_some() || !style_of(sk, c).dimensioned() {
+        if asked == Some(false) || (c.repeated && asked.is_none()) || c.soft || c.intrinsic
+            || c.along.is_some() || c.bound.is_some() || !style_of(sk, c).dimensioned() {
             continue;
         }
         if let Some(k) = pen.one(c) {

@@ -163,6 +163,39 @@ the basis about `t₀` a cubic in the jet `τ`, over `Σ wB` by the quotient rul
 hand-written spatial kernels have generic twins held to them by `tests/taylor.rs`.  Refused: a
 set named as an entity (E040 in `rewrite`), `coincident` between two sets, parentheses, a
 non-point `coincident`, a non-line or claimed `tangent`.  `tests/sets.rs` is the gate.
+**Regions (§6.21, §9.6, 0.61, #145 F1):** a set whose body bounds a number is a region
+(`flatten::sets::region`, over `Written::states_bound`). `q inside S` / `q outside S` are set
+uses (`may_use`): `expand_use` rewrites the body in place before the walk (`region_body`, its
+side from `plane_side_word`) — its one number (a relation with an `OpArg::Dim`) gains
+`OpArg::Bound` `Le`/`Ge`, a region's own is kept or turned round, a body of only uses (a
+conjunction) is applied as written by `inside` and refused by `outside` (a union), as are an
+interval `outside`, several numbers and none (E040). A tangency to a region is E040, once, in
+`expand_set_uses`; the derivative pass drops whatever `states_bound`. `boundable` adds `PointLine3` (a cylinder in space) and `Angle3` (a cone), the latter
+read straight off its cosine (`Constraint::reading`); an angle in a view is refused (signed: a
+half-plane). `Constraint::reading_range` (`magnitude()` without a `side:`, or `Angle3`'s half
+turn) keeps `Bound::aims` — the mirror, then two, four and eight times as far past the edge,
+stopping where one clamps; an interval's middle alone — within what the reading can be; `across`
+finds the measured point among the operands' own points too (a cone's angle is between two lines)
+and nudges a point off a stationary reading (the cone's axis). `tests/set_regions.rs` is the gate.
+**A region is a solid (§6.9, 0.62, #145 F2/F3):** `blank := solid(R)`, R a set, is `SolidDef::Region
+{ probe, terms }`. The flattener (`Walk::region_of`) rewrites `solid(R)`'s `Sweep::Body` over a set
+to `Sweep::Region { probe }`, declares the probe `{solid}#probe` (in space, held at a fixed
+irrational place; `Expansion::probes` → elaboration's `relations::Probes`) and states `probe inside
+R`; `constrain` takes every bound landing on a probe as a `RegionTerm` instead of a row
+(`probe_of`, `region_term`: by kind — `Distance(3)` a ball, `PointLine(Distance|3)` a cylinder,
+`Angle3` from a line's start a cone, an `Ordinate` along a plane's `n` a half-space; numbers by
+`settled_number`, a closed text valued by `to_arg` at birth), and `build_solid` moves them into the
+solid and holds the probe. `solid::region::meridian` folds the terms' (r, z) regions in a box by
+`brep::planar::boolean` (coaxial, bounded, nonempty, else refused where evaluated), memoised
+against `solid::reads` (`Sketch::meridian_cache`); every evaluator reads it — the recipe a `revolve`
+(`recipe::region_profile`, `Profile::to_json`), the field `RevolvedRegion::of_meridian` (also
+`read`, so patches trim by it), facets `region::face_polys` turned by `primitive::revolve`,
+admission `Turns::Line`/`Ball` and `tool()` — its loops `Region::outer_first`, a ball's
+`Region::half_disc`. A set used in a predicate's body is applied under the statement it was
+written as there (`Scope::written`, kept when `apply` stamps the use's over it; `begin_nth`), so
+two uses in one body stand apart.
+`tests/region_solids.rs` and `tests/region_blank.rs` (the blank as a region against today's, both
+designs, both members) are the gates.
 **`P tangent(at: m) S`, a plane tangent to a set (#145, #148, 0.56):** `sets::expand_touch`
 applies the body at `m` and walks it `Pass::Made` then `Pass::Along` toward `P.u` and `P.v`
 (`model::Toward::Axis`: the axis's `d` columns fed where a line's ends go, `dual_kernel`
@@ -193,7 +226,7 @@ walked again as a set (`elaborate` loops over `elaborate_in`, `flatten::expand_w
 Lowering is a representation, never a meaning: the solutions are the same either way.
 `tests/membership.rs` is the gate.
 
-**Variational curves (§9.10, §6.1, 0.53–0.57, #121, #144, `variational.rs`, `extremal.rs`):**
+**Variational curves (§9.10, §6.1, 0.53–0.59, #121, #144, #149, `variational.rs`, `extremal.rs`):**
 `k minimizes E` / `k maximizes E` (`StmtKind::Minimize`, `parser/minimize.rs`; indicative, read by
 the word past its ref, as the body words are) with `E` a sum of `c * integral(EXPR over p)` (or
 `over (p, t)`, `t` the unit tangent) along `k`, ds-weighted; `flatten::values::settle_integrand`
@@ -223,15 +256,28 @@ freedom), and only otherwise does the energy's first statement carry the transve
 `H = 0` (`variational::rows`/`kernel`, `KernelKey::Stationary`) — when `stationary_length` finds
 one (`Energy::stationary`); else the length is `unsettled`, stated no row (one sent the solve after
 ever longer ropes) and left a freedom, W114. A held row pressing a curve of held length that is not a peg is E040 (a corner,
-never a tangency); with the length free it is what sets it. `Sketch::
+never a tangency); with the length free it is what sets it. **The corner on a held line is
+`rope touches rod`** (#149, `CKind::CurveTouchesLine`, `built`, 0 rows, refused a claim): a
+**slide** (`shoot::Stop::Slide(k)`, a peg is `Stop::Peg`; `CurveE::slides`, `Energy::slides`), its
+place on the line `σ` one more unknown of the BVP and `(λ⁺ − λ⁻)·d = 0` (no force along it) one
+more row. The line's two points are the curve's **columns** after its length (`entity_params`,
+`Ends::lines`, `extremal_def`'s `line{k}.p1.x`…; the constants carry only the count), the BVP's
+outer Jacobian carried through them (`turn`: `∂d/∂p₂ = (I − ddᵀ)/ℓ`), so a rod held or not is
+dragged and the rope follows; at most `variational::MAX_SLIDES` (2, `tape::MAX_VARS`) a curve, E040
+past it or where the curve is not free. Never walked in from the corner-free shape touching a moved line (a fork:
+sliding along the line and the curve are one motion there): `pressed` pins it as a peg at the
+foot of the free curve's nearest point, then `release` eases the force along the line it bore to
+none (`Problem::pull`). The verdict's Hessian takes `σ` (gradient the costate's jump along `d`);
+a free curve's polyline samples each stop's place, so a corner draws sharp. `tests/slide.rs`,
+`ring.sv`. `Sketch::
 settle_variational` (at `add`/`remove`, the end of `graft`, `from_json`, elaboration) compiles each
-curve's definition (keyed by its terms and peg count), its pegs and free length into
+curve's definition (keyed by its terms and peg and slide counts), its stops and free length into
 `Sketch::variational`; `seed_extremals` then seeds lengths (a row's number, else `H = 0` by
 bracketing above the chord) and contacts left at 0. The verdict (`extremal::verdict`: Legendre,
 conjugate points as sign changes of `det ∂p/∂λ₀`, the Hessian in pegs' places and a free length)
 is `Diagnosis::extrema` (`unsolved` where no shape is found), reported by the CLI, the JSON
 (`[id, verdict, asked]`) and the app's marks. `length(L) s` on a spline stays `SplineLength`
-(`integral.rs`). `std.hangs(L) k` is a word. `tests/{extremal,catenary,minimize,spline_length}.rs`
+(`integral.rs`). `std.hangs(L) k` is a word. `tests/{extremal,catenary,slide,minimize,spline_length}.rs`
 are the gates.
 
 **Predicates, applied (§9.9, §6.21, 0.50, #103):** a relation word and a set are one predicate —
@@ -746,7 +792,12 @@ Currently: **Stage 5 done, and Stage 7a/7b — solids**, in **one** implementati
   `SketchView` keeps a one-line delegator for each verb the shell calls.  The *shell*: `shell.ts`,
   `commands` (constraints bar), `dialogs`, `lists`, `dimbox` (a dimension's number), `program` over
   `editor` (knows nothing of Solvent), `ui`, `main.ts` (only wiring). `index.html` is structure and
-  `app.css` the whole of the styling.
+  `app.css` the whole of the styling.  **A phone**: a bar's buttons keep their size, and where they do not fit
+  fold under one head (`ui::addTopic`/`fitBars`: every element tool and Construction under
+  Elements, every constraint under Constraints; a bar wraps only past that), and bars folded to
+  their heads share one row (`header.compact`); under 720px the program is a drawer above the footer, opened folded
+  (`program.ts::bindDrawer`), its head carrying Compile (`applyProgram`, what ⌘↵ does); a finger
+  picks within `TOUCH_PICK_PX` (`SketchView::pickPx`, set per press by `pointerType`).
 
 Commands:
 `make` (native `build/libgcs.dylib`), `make solventc` (`build/solventc`),
@@ -1146,6 +1197,33 @@ Conventions:
   tints and **never changes the face** (background/box-shadow/outline, not border/padding).  Run
   `npm run overlay` (headless Chrome, the real `CodeEditor`) when you touch `editor.ts`;
   `make test` cannot.
+- A **bound** (Solvent §9.6, 0.60, #109) *chooses the root*: `distance(>= d)`, `distance(<= d)`,
+  `distance(in: (a, b))` and `p inside P` / `p outside P` (point, plane: the ordinate along `n`
+  from `P.origin`, `<=`/`>=` 0, lowered by `relations::side_of_plane`; `plane_side_word`).
+  Parsed as `OpArg::Bound { cmp: syntax::Cmp, hi }` before the number's `OpArg::Dim`, which every
+  number reader keeps reading; `RelationForm::bound`, `ResolvedRelation::bound`, the canonical
+  form's `bound`; checked by `relations::bound_of` (`CKind::boundable`: ordinate, distances; not a
+  claim; E040). `Constraint::bound` compiles **no row**: `Constraint::states_rows()` (false for a
+  claim or a bound) is what every seam that compiles, counts or welds rows asks (`System::new`,
+  `n_residuals`, `cgraph`, `witness`, `io::Part`), and `acts()` is `!soft && states_rows()`;
+  callouts skip it, the witness drops it, `topology_key` marks it `~`. `Constraint::reading` is the number that
+  would make the row hold (secant along the number); `solve::bound_reading` (with `bound_tol`) is
+  the one verdict — holds, edge, aim — the steering, the elaborator and the diagnosis share.
+  **It chooses the seed's side first**: `program::elaborate` reads the bounds on a pass's seeds
+  (`solve::cross_bounds`: the measured point, the last point operand with a coordinate the solve
+  moves, carried by Newton steps on the reading to its mirror, `Bound::aim`, its twins —
+  `Sketch::twin_group` — and lifts with it: `across`) and elaborates again with those
+  numbers written over the point's seed right after `entities::places` (`crossed_seeds`; held from
+  `settle_deferred`), so `axes_along`, the views folded through it and every seed read through
+  them stand as if the source had seeded it so — patching placement in place does not reproduce
+  `views::place`. Then `System::solve` ends in `steer`: with `retry`, a bound still broken is
+  crossed from the start pose (accumulating) and then the solution, and solved again, kept only if
+  it holds; else `success` false, status `BOUND_BROKEN` (named by the diagnosis, the CLI's `bound
+  broken`). `PlanSolver::solve` falls back to it where the plan's root breaks a bound. A drag
+  (`retry` off) and a drawing whose seeds keep their bounds solve to the same bits. `Diagnosis::bounds_violated`/`bounds_active`, report `boundsViolated`/
+  `boundsActive`; JSON `"bound": {cmp, hi}`; `graft`, `lift`, `describe` (`syntax::bounded`).
+  A free name in one is E040 (`expr::Fault::ClaimFree`). `ccw` on the sheet is still unchecked.
+  `tests/bounds.rs` is the gate.
 - `same_constraint` is "says exactly the same thing"; `same_relation` is the same *without* the
   numbers.  A repeated *relation* is refused by the app (`edit::applyConstraints`): equations
   without rank.  A **dimension is never deduped by the UI**: redundant or contradictory is the
@@ -1511,7 +1589,7 @@ Conventions:
   (`workspace::Projection`: `Basis::lift`, the orthographic `overview::eye`), so
   `camera.ts` composes it with the eye's similarity (`Camera::through` → `ViewCam`) and no 3D
   arithmetic exists above the ABI.  **What is under the pointer is asked where the eye sees it**
-  (`workspace::pick`, `nearest_point`, `inside`, `callout::pick_seen`): two views' coordinates
+  (`workspace::pick`, `nearest_point`, `overlapping`, `callout::pick_seen`): two views' coordinates
   overlap but are apart in space, so nothing is picked in view coordinates.  `w2s`/`s2w` read the
   view being worked in — the painter's (`inView`), else the current plane's; a drag reads the
   dragged point's view, a callout its dimension's (`calloutView`).  A view seen edge on refuses a
@@ -1552,7 +1630,10 @@ Conventions:
   plane without turning the eye (`choosePlane(name, false)`): `workspace::panes_at` lists them
   nearest the eye first, `paneAt` takes the first the chooser offers.  Callouts are drawn for the
   current plane's place only (`showsCallouts`), and the one being written or focused.  Right-drag
-  orbits, middle or ⇧right-drag pans, the wheel zooms.  A flat document opens square on to the
+  orbits, middle or ⇧right-drag pans, the wheel zooms; a trackpad's pinch (ctrl-wheel, Safari's
+  `gesturechange`) zooms and its scroll pans (`gesture::scrolled`), and two touch fingers pinch
+  and pan (`touchNavigation`: a lone finger's press waits `TOUCH_HOLD_MS` or `TOUCH_SLOP_PX`, so
+  a pinch neither clicks a tool nor drags).  A flat document opens square on to the
   front, one with a solid or off-front geometry from three quarters (`homeOrbit`);
   `workspace::bounds` frames figures and solids.  The orbit is view state (never saved, exported,
   solved or undone).  `tests/workspace.rs` and `app.test.ts` are the gates.

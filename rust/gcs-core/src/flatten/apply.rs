@@ -76,15 +76,19 @@ impl<'a> Walk<'a> {
     /// the use's own (`{where the use stands}#{statement}.0.`), turned with the use where it
     /// stands in a ring's copy and dressed in its classes.  What the walk makes from here on is
     /// the use's.
-    pub(super) fn begin(&self, u: &Use, closure: &Scope) -> Application {
+    pub(super) fn begin(&mut self, u: &Use, closure: &Scope) -> Application {
         self.begin_nth(u, closure, 0)
     }
 
     /// `begin`, the `n`th of several applications one use makes (`S1 tangent(at: m) S2`, one per
-    /// set), each under a prefix of its own.
-    pub(super) fn begin_nth(&self, u: &Use, closure: &Scope, n: usize) -> Application {
-        let prefix = format!("{}#{}.{n}.", u.scope.prefix(), u.st.id.0);
+    /// set), each under a prefix of its own.  The statement is the one the use was written as —
+    /// in a body, its own and not the outer use's it carries (`Scope::written`), so two sets used
+    /// in one body are applied apart.
+    pub(super) fn begin_nth(&mut self, u: &Use, closure: &Scope, n: usize) -> Application {
+        let id = u.scope.written.unwrap_or(u.st.id);
+        let prefix = format!("{}#{}.{n}.", u.scope.prefix(), id.0);
         let mut scope = closure.clone();
+        scope.written = None;
         scope.prefixes.insert(0, prefix.clone());
         scope.copies = true;
         scope.anonymous = true;
@@ -167,7 +171,7 @@ impl<'a> Walk<'a> {
             ([one], _) | (_, [one]) => Some(*one),
             _ => None,
         };
-        for (i, (st, p, _)) in self.out.iter_mut().enumerate().skip(from) {
+        for (i, (st, p, sc)) in self.out.iter_mut().enumerate().skip(from) {
             // an energy the word states is the use's statement, as its relations are (#121)
             if let StmtKind::Minimize(_) = &st.kind {
                 st.id = u.st.id;
@@ -176,6 +180,7 @@ impl<'a> Walk<'a> {
                 continue;
             }
             let StmtKind::Relation(r) = &mut st.kind else { continue };
+            sc.written.get_or_insert(st.id);
             st.id = u.st.id;
             st.span = u.st.span;
             st.chained = u.st.chained;
@@ -199,6 +204,7 @@ impl<'a> Walk<'a> {
                                 k.span = u.at;
                             }
                         }
+                        OpArg::Bound { span, .. } => *span = u.at,
                         OpArg::Ent(_) | OpArg::Dim(..) => {}
                     }
                 }

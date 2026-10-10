@@ -70,6 +70,34 @@ impl Profile {
         Ok(Profile {origin:vec3(&field(j,"origin")?),normal:unit(vec3(&field(j,"normal")?)),loops,names})
     }
 
+    /// As a recipe writes it (`from_json`'s inverse), its lengths times `scale`: lines and arcs,
+    /// each named where it is; a spline is not written here (a meridian has none).
+    pub fn to_json(&self,scale: f64) -> Result<Json,String> {
+        use crate::json::object;
+        let v = |p: V,s: f64| Json::Arr(p.iter().map(|&x| Json::from(x*s)).collect());
+        let mut loops = Vec::new();
+        for (l,edges) in self.loops.iter().enumerate() {
+            let mut out = Vec::new();
+            for (k,e) in edges.iter().enumerate() {
+                let mut j = match *e {
+                    ProfileEdge::Line {a,b} => object([("kind","line".into()),("start",v(a,scale)),("end",v(b,scale))]),
+                    ProfileEdge::Arc {frame,r,span} => {
+                        let mut o = object([("kind","circle".into()),("center",v(frame.o,scale)),
+                            ("normal",v(frame.z,1.)),("x_dir",v(frame.x,1.)),("radius",(r*scale).into())]);
+                        if let Some([a0,a1]) = span { o.set("angles",Json::Arr(vec![a0.into(),a1.into()])); }
+                        o
+                    }
+                    ProfileEdge::Spline(_) => return Err("profile: a spline is not written as a recipe here".into()),
+                };
+                let name = self.name(l,k);
+                if !name.is_empty() { j.set("name",name.into()); }
+                out.push(j);
+            }
+            loops.push(Json::Arr(out));
+        }
+        Ok(object([("origin",v(self.origin,scale)),("normal",v(self.normal,1.)),("loops",Json::Arr(loops))]))
+    }
+
     /// A length the profile's tolerances are taken against.
     fn size(&self) -> f64 {
         let mut s: f64 = 0.;

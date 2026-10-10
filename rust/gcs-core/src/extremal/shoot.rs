@@ -1,14 +1,19 @@
 //! The boundary-value problem a curve's shape is the solution of (#144): integrated from its
-//! start, landing on its end, through every peg pressing it.
+//! start, landing on its end, through every stop pressing it.
 //!
-//! The curve is cut into **arcs** at its pegs, and each arc into `SEGMENTS` equal pieces, each
+//! The curve is cut into **arcs** at its stops, and each arc into `SEGMENTS` equal pieces, each
 //! integrated from a state of its own (multiple shooting: a piece's error grows only over the
 //! piece, and a seed sets every piece's start).  The unknowns are the costate at the start, each
-//! piece's starting state, and at each peg its place along the curve and the costate leaving
-//! it; the rows join the pieces, put each peg's arc end on the peg with `H` unbroken across it
-//! (the place is free), and put the last arc's end on `b`.  So the costate may jump at a peg —
+//! piece's starting state, and at each stop its place along the curve and the costate leaving
+//! it; the rows join the pieces, put each stop's arc end on the stop with `H` unbroken across it
+//! (the place is free), and put the last arc's end on `b`.  So the costate may jump at a stop —
 //! a point force — and the direction with it: a corner.  Square, solved by a damped Newton over
 //! its dense Jacobian, which the pieces' sensitivities give exactly.
+//!
+//! A stop is a **peg**, a held point, or a **slide** (#149), a held line the curve touches where
+//! it chooses: there the place on the line is one more unknown, and the force along the line
+//! none one more row — the jump in the costate (the gradient of the energy in where the corner
+//! is) square to the line.
 
 #[allow(unused_imports)]
 use crate::fmath::Det;
@@ -17,28 +22,91 @@ use super::flow::{self, Flow, Lagrangian};
 /// Pieces per arc.
 pub const SEGMENTS: usize = 4;
 
-/// What a curve's shape is asked for: its ends and its length.
+/// What a curve's shape is asked for: its ends, its length, and the lines it touches.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Ends {
     pub a: [f64; 2],
     pub b: [f64; 2],
     pub len: f64,
+    /// Each slide's line (#149), by its two points: `[p1.x, p1.y, p2.x, p2.y]` — columns of the
+    /// curve's like its ends, so a line the drawing does not hold moves with the solve.
+    pub lines: Vec<[f64; 4]>,
 }
 
 impl Ends {
-    /// The outer columns, in the curve's order: `a`, `b`, the length.
-    pub fn outer(&self) -> [f64; 5] {
-        [self.a[0], self.a[1], self.b[0], self.b[1], self.len]
+    /// The outer columns, in the curve's order: `a`, `b`, the length, then each line's points.
+    pub fn outer(&self) -> Vec<f64> {
+        let mut o = vec![self.a[0], self.a[1], self.b[0], self.b[1], self.len];
+        o.extend(self.lines.iter().flatten());
+        o
     }
 
-    /// The ends from the curve's columns, `a`, `b`, the length (five numbers or more).
-    pub fn of(o: &[f64]) -> Ends {
-        Ends { a: [o[0], o[1]], b: [o[2], o[3]], len: o[4] }
+    /// How many outer columns there are.
+    pub fn width(&self) -> usize {
+        5 + 4 * self.lines.len()
+    }
+
+    /// The ends from the curve's columns, `a`, `b`, the length and `slides` lines' points.
+    pub fn of(o: &[f64], slides: usize) -> Ends {
+        let lines = (0..slides).map(|k| std::array::from_fn(|c| o[5 + 4 * k + c])).collect();
+        Ends { a: [o[0], o[1]], b: [o[2], o[3]], len: o[4], lines }
+    }
+
+    /// Line `k`: its start, its unit direction, and its length (no direction where it has none).
+    pub fn line(&self, k: usize) -> ([f64; 2], [f64; 2], f64) {
+        let l = self.lines[k];
+        let n = (l[2] - l[0]).dhypot(l[3] - l[1]);
+        ([l[0], l[1]], [(l[2] - l[0]) / n, (l[3] - l[1]) / n], n)
     }
 
     /// A length to measure positions against.
     fn scale(&self) -> f64 {
         self.len.abs().max((self.b[0] - self.a[0]).dhypot(self.b[1] - self.a[1])).max(1e-9)
+    }
+}
+
+/// Where a curve is pressed: at a held point it passes (a peg), or somewhere along a line it
+/// touches (a slide, #149) — line `k` of its `Ends`, the corner at `o + σd` on it with `σ` the
+/// problem's to find.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Stop {
+    Peg([f64; 2]),
+    Slide(usize),
+}
+
+impl Stop {
+    pub fn slides(&self) -> bool {
+        matches!(self, Stop::Slide(_))
+    }
+
+    /// The corner, `σ` along a slide's line (a peg is where it is).
+    pub fn at(&self, ends: &Ends, sigma: f64) -> [f64; 2] {
+        match *self {
+            Stop::Peg(p) => p,
+            Stop::Slide(k) => {
+                let (o, d, _) = ends.line(k);
+                [o[0] + sigma * d[0], o[1] + sigma * d[1]]
+            }
+        }
+    }
+
+    /// How far apart two stops of one kind are, to pair them across solves: a slide is its line,
+    /// whichever way the line has moved; none between kinds.
+    fn far(&self, other: &Stop) -> Option<f64> {
+        match (self, other) {
+            (Stop::Peg(p), Stop::Peg(q)) => Some((p[0] - q[0]).dhypot(p[1] - q[1])),
+            (Stop::Slide(i), Stop::Slide(j)) => (i == j).then_some(0.0),
+            _ => None,
+        }
+    }
+
+    /// The stop `f` of the way to `to` (of its kind): a peg along the segment; a slide's line
+    /// moves with the ends.
+    fn toward(&self, to: &Stop, f: f64) -> Stop {
+        match (*self, *to) {
+            (Stop::Peg(p), Stop::Peg(q)) => Stop::Peg([p[0] + f * (q[0] - p[0]), p[1] + f * (q[1] - p[1])]),
+            _ => *to,
+        }
     }
 }
 
@@ -128,12 +196,13 @@ pub fn within(lag: &Lagrangian, piece: &Piece, s: f64, scale_len: f64, sens: boo
 
 /* -- the problem's unknowns --------------------------------------------------------------- */
 
-/// Where the unknowns sit, for `k` pegs: arc 0's starting costate, then per arc after a peg its
-/// place and starting costate, and per arc each later piece's starting state.  With `held`
-/// places (the verdict's re-solves) a place is no unknown and its `H` row is not stated.
-#[derive(Clone, Copy, Debug)]
+/// Where the unknowns sit, for its stops (`slides[j]` whether stop `j` is a slide): arc 0's
+/// starting costate, then per arc after a stop its place, its place on a slide's line and its
+/// starting costate, and per arc each later piece's starting state.  With `held` places (the
+/// verdict's re-solves) neither place is an unknown and their rows are not stated.
+#[derive(Clone, Debug)]
 pub struct Layout {
-    pub pegs: usize,
+    pub slides: Vec<bool>,
     pub held: bool,
 }
 
@@ -145,12 +214,25 @@ enum Var {
 }
 
 impl Layout {
+    /// The layout over `stops`.
+    pub fn of(stops: &[Stop], held: bool) -> Layout {
+        Layout { slides: stops.iter().map(Stop::slides).collect(), held }
+    }
+
+    pub fn stops(&self) -> usize {
+        self.slides.len()
+    }
+
+    /// The places heading arc `j ≥ 1` that are unknowns: along the curve, and along a slide's line.
+    fn places_at(&self, j: usize) -> usize {
+        if self.held { 0 } else { 1 + usize::from(self.slides[j - 1]) }
+    }
+
     fn arc_start(&self, j: usize) -> usize {
         if j == 0 {
             0
         } else {
-            let per = if self.held { 2 } else { 3 };
-            2 + 4 * (SEGMENTS - 1) + (j - 1) * (per + 4 * (SEGMENTS - 1))
+            (1..j).map(|i| 2 + self.places_at(i) + 4 * (SEGMENTS - 1)).sum::<usize>() + 2 + 4 * (SEGMENTS - 1)
         }
     }
 
@@ -159,9 +241,14 @@ impl Layout {
         (j >= 1 && !self.held).then(|| self.arc_start(j))
     }
 
+    /// Arc `j`'s place on its slide's line (j ≥ 1), when it is an unknown.
+    fn sigma(&self, j: usize) -> Option<usize> {
+        (j >= 1 && !self.held && self.slides[j - 1]).then(|| self.arc_start(j) + 1)
+    }
+
     /// Arc `j`'s starting costate.
     fn lambda(&self, j: usize) -> usize {
-        self.arc_start(j) + if j == 0 || self.held { 0 } else { 1 }
+        self.arc_start(j) + if j == 0 { 0 } else { self.places_at(j) }
     }
 
     /// Piece `m ≥ 1` of arc `j`'s starting state.
@@ -170,7 +257,7 @@ impl Layout {
     }
 
     pub fn len(&self) -> usize {
-        self.arc_start(self.pegs + 1)
+        self.arc_start(self.stops() + 1)
     }
 }
 
@@ -180,10 +267,12 @@ impl Layout {
 #[derive(Clone, Debug)]
 pub struct Shape {
     pub ends: Ends,
-    pub pegs: Vec<[f64; 2]>,
+    pub stops: Vec<Stop>,
     pub q: Vec<f64>,
     /// Each arc's start along the curve, then the length: `0, s₁ … s_k, L`.
     pub places: Vec<f64>,
+    /// Each stop's place on its line, `σ` (0 for a peg).
+    pub sigmas: Vec<f64>,
     pub pieces: Vec<Piece>,
     pub dq: Vec<f64>,
 }
@@ -200,8 +289,11 @@ struct Eval {
     w: Vec<f64>,
     jq: Vec<f64>,
     jo: Vec<f64>,
+    /// How many outer columns `jo` is wide.
+    wo: usize,
     pieces: Vec<Piece>,
     places: Vec<f64>,
+    sigmas: Vec<f64>,
 }
 
 impl Eval {
@@ -215,7 +307,7 @@ impl Eval {
             for (v, f) in deps {
                 match v {
                     Var::Q(i) => self.jq[row * n + i] += f,
-                    Var::O(i) => self.jo[row * 5 + i] += f,
+                    Var::O(i) => self.jo[row * self.wo + i] += f,
                 }
             }
         }
@@ -226,76 +318,126 @@ impl Eval {
 struct Problem<'a> {
     lag: &'a Lagrangian,
     ends: &'a Ends,
-    pegs: &'a [[f64; 2]],
+    stops: &'a [Stop],
     lay: Layout,
-    /// Places held, where `lay.held`.
-    held: &'a [f64],
+    /// Each stop's places held — along the curve, and along a slide's line — where `lay.held`.
+    held: &'a [[f64; 2]],
+    /// The force along each slide's line its row asks for (none where empty): only while a
+    /// pinned corner is let go (`release`).
+    pull: &'a [f64],
+}
+
+/// What one of a piece's starting components moves with, and how much: unknowns and outer
+/// columns (a slide's corner moves along its line with its place there, and with the line).
+type Dep = Vec<(Var, f64)>;
+
+/// How a unit direction `d` turns as the end of a line `l` long moves: `(I − ddᵀ)/l`.
+fn turn(d: [f64; 2], l: f64) -> [[f64; 2]; 2] {
+    [[(1.0 - d[0] * d[0]) / l, -d[0] * d[1] / l], [-d[0] * d[1] / l, (1.0 - d[1] * d[1]) / l]]
 }
 
 impl<'a> Problem<'a> {
-    /// The problem with every peg's place free.
-    fn free(lag: &'a Lagrangian, ends: &'a Ends, pegs: &'a [[f64; 2]]) -> Problem<'a> {
-        Problem { lag, ends, pegs, lay: Layout { pegs: pegs.len(), held: false }, held: &[] }
+    /// The problem with every stop's place free.
+    fn free(lag: &'a Lagrangian, ends: &'a Ends, stops: &'a [Stop]) -> Problem<'a> {
+        Problem { lag, ends, stops, lay: Layout::of(stops, false), held: &[], pull: &[] }
     }
 
     fn places(&self, q: &[f64]) -> Vec<f64> {
-        let k = self.lay.pegs;
+        let k = self.lay.stops();
         let mut p = Vec::with_capacity(k + 2);
         p.push(0.0);
         for j in 1..=k {
             p.push(match self.lay.place(j) {
                 Some(i) => q[i],
-                None => self.held[j - 1],
+                None => self.held[j - 1][0],
             });
         }
         p.push(self.ends.len);
         p
     }
 
+    /// Stop `j`'s (j ≥ 1) place on its line: 0 for a peg.
+    fn sigma(&self, q: &[f64], j: usize) -> f64 {
+        match (self.lay.sigma(j), self.stops[j - 1].slides()) {
+            (Some(i), _) => q[i],
+            (None, true) => self.held[j - 1][1],
+            (None, false) => 0.0,
+        }
+    }
+
     /// The place `j` and what it is (0 and the length are a constant and an outer column).
     fn place_var(&self, j: usize) -> Option<Var> {
         if j == 0 {
             None
-        } else if j == self.lay.pegs + 1 {
+        } else if j == self.lay.stops() + 1 {
             Some(Var::O(4))
         } else {
             self.lay.place(j).map(Var::Q)
         }
     }
 
+    /// Stop `j`'s (j ≥ 1) corner, and what each coordinate moves with: a slide's, its place on
+    /// the line, and the line's two points — `o + σd`, `d` the unit `(p₂ − p₁)/ℓ`, so `∂/∂p₁ =
+    /// I − σM` and `∂/∂p₂ = σM`, `M = (I − ddᵀ)/ℓ`.
+    fn corner(&self, q: &[f64], j: usize) -> ([f64; 2], [Dep; 2]) {
+        let stop = &self.stops[j - 1];
+        let sigma = self.sigma(q, j);
+        let p = stop.at(self.ends, sigma);
+        let Stop::Slide(k) = *stop else { return (p, [Vec::new(), Vec::new()]) };
+        let (_, d, l) = self.ends.line(k);
+        let m = turn(d, l);
+        let base = 5 + 4 * k;
+        let dep = |c: usize| -> Dep {
+            let mut v = Vec::with_capacity(5);
+            if let Some(i) = self.lay.sigma(j) {
+                v.push((Var::Q(i), d[c]));
+            }
+            for r in 0..2 {
+                let one = if r == c { 1.0 } else { 0.0 };
+                v.push((Var::O(base + r), one - sigma * m[c][r]));
+                v.push((Var::O(base + 2 + r), sigma * m[c][r]));
+            }
+            v
+        };
+        (p, [dep(0), dep(1)])
+    }
+
     /// Piece `(j, m)`'s starting state and what each component depends on: arc 0's start point
-    /// on `a`, a later arc's on its peg, its costate an unknown; a later piece's all four.
-    fn start(&self, q: &[f64], j: usize, m: usize) -> ([f64; 4], [Option<Var>; 4]) {
+    /// on `a`, a later arc's on its stop, its costate an unknown; a later piece's all four.
+    fn start(&self, q: &[f64], j: usize, m: usize) -> ([f64; 4], [Dep; 4]) {
         if m == 0 {
-            let (p, dp) = match j {
-                0 => (self.ends.a, [Some(Var::O(0)), Some(Var::O(1))]),
-                _ => (self.pegs[j - 1], [None, None]),
+            let (p, [dx, dy]) = match j {
+                0 => (self.ends.a, [vec![(Var::O(0), 1.0)], vec![(Var::O(1), 1.0)]]),
+                _ => self.corner(q, j),
             };
             let l = self.lay.lambda(j);
-            ([p[0], p[1], q[l], q[l + 1]], [dp[0], dp[1], Some(Var::Q(l)), Some(Var::Q(l + 1))])
+            ([p[0], p[1], q[l], q[l + 1]], [dx, dy, vec![(Var::Q(l), 1.0)], vec![(Var::Q(l + 1), 1.0)]])
         } else {
             let n = self.lay.node(j, m);
-            ([q[n], q[n + 1], q[n + 2], q[n + 3]], std::array::from_fn(|c| Some(Var::Q(n + c))))
+            ([q[n], q[n + 1], q[n + 2], q[n + 3]], std::array::from_fn(|c| vec![(Var::Q(n + c), 1.0)]))
         }
     }
 
     fn eval(&self, q: &[f64], thetas: &[f64], jac: bool) -> Option<Eval> {
         let n = self.lay.len();
-        let k = self.lay.pegs;
+        let k = self.lay.stops();
         let places = self.places(q);
         let scale_len = self.ends.scale();
+        let wo = self.ends.width();
         let mut e = Eval {
             r: Vec::with_capacity(n),
             w: Vec::with_capacity(n),
             jq: vec![0.0; if jac { n * n } else { 0 }],
-            jo: vec![0.0; if jac { n * 5 } else { 0 }],
+            jo: vec![0.0; if jac { n * wo } else { 0 }],
+            wo,
             pieces: Vec::with_capacity((k + 1) * SEGMENTS),
             places: Vec::new(),
+            sigmas: (1..=k).map(|j| self.sigma(q, j)).collect(),
         };
         let lam_scale = (0..=k)
             .map(|j| q[self.lay.lambda(j)].dhypot(q[self.lay.lambda(j) + 1]))
             .fold(1e-300, f64::max);
-        // each `H` row (the arc before a peg's end), and the arc after's start, filled in below
+        // each `H` row (the arc before a stop's end), and the arc after's start, filled in below
         let mut h_rows = Vec::with_capacity(k);
         let mut h_starts = Vec::with_capacity(k);
         for j in 0..=k {
@@ -308,18 +450,22 @@ impl<'a> Problem<'a> {
             let dh = [(self.place_var(j), -1.0 / SEGMENTS as f64), (self.place_var(j + 1), 1.0 / SEGMENTS as f64)];
             for m in 0..SEGMENTS {
                 let (z0, dz0) = self.start(q, j, m);
+                let dz0 = &dz0;
                 let th = thetas.get(j * SEGMENTS + m).copied().unwrap_or(0.0);
                 let piece = integrate(self.lag, places[j] + h * m as f64, z0, th, h, scale_len, jac)?;
                 if m == 0 && j > 0 && !self.lay.held {
                     let p = Flow::new(self.lag, piece.nodes[0].theta).at(&z0, false)?;
-                    h_starts.push((p.h, p.h_z(), dz0));
+                    h_starts.push((p.h, p.h_z(), dz0.clone()));
                 }
                 let end = *piece.nodes.last().expect("a node");
                 let pe = Flow::new(self.lag, end.theta).at(&end.z, false)?;
                 // the end's derivative: through the piece's start, and its length (the flow there)
                 let fz = pe.flow();
                 let dend = |c: usize| {
-                    let start = dz0.iter().enumerate().filter_map(move |(cc, d)| d.map(|v| (v, end.phi[c * 4 + cc])));
+                    let start = dz0
+                        .iter()
+                        .enumerate()
+                        .flat_map(move |(cc, d)| d.iter().map(move |&(v, w)| (v, w * end.phi[c * 4 + cc])));
                     let length = dh.into_iter().filter_map(move |(pv, f)| pv.map(|v| (v, fz[c] * f)));
                     start.chain(length)
                 };
@@ -327,17 +473,33 @@ impl<'a> Problem<'a> {
                     let (z1, dz1) = self.start(q, j, m + 1);
                     let scales = [scale_len, scale_len, lam_scale, lam_scale];
                     for c in 0..4 {
-                        e.push(n, end.z[c] - z1[c], scales[c], dend(c).chain(dz1[c].map(|v| (v, -1.0))));
+                        e.push(n, end.z[c] - z1[c], scales[c], dend(c).chain(dz1[c].iter().map(|&(v, w)| (v, -w))));
                     }
                 } else if j < k {
+                    let (p, dp) = self.corner(q, j + 1);
                     for c in 0..2 {
-                        e.push(n, end.z[c] - self.pegs[j][c], scale_len, dend(c));
+                        e.push(n, end.z[c] - p[c], scale_len, dend(c).chain(dp[c].iter().map(|&(v, w)| (v, -w))));
                     }
-                    // H unbroken across the peg, where its place is free: −H at this end here
+                    // H unbroken across the stop, where its place is free: −H at this end here
                     if !self.lay.held {
                         let hz = pe.h_z();
                         let deps = (0..4).flat_map(|c| dend(c).map(move |(v, f)| (v, -hz[c] * f)));
                         h_rows.push(e.push(n, -pe.h, lam_scale.max(pe.h.abs()), deps));
+                    }
+                    // and, where its place on a slide's line is free, no force along the line:
+                    // the costate's jump square to it — turning with the line, `∂d/∂p₂ = M`
+                    if let (Stop::Slide(k), Some(_)) = (self.stops[j], self.lay.sigma(j + 1)) {
+                        let (_, d, ll) = self.ends.line(k);
+                        let l = self.lay.lambda(j + 1);
+                        let dl = [q[l] - end.z[2], q[l + 1] - end.z[3]];
+                        let jump = dl[0] * d[0] + dl[1] * d[1] - self.pull.get(j).copied().unwrap_or(0.0);
+                        let m = turn(d, ll);
+                        let md = [m[0][0] * dl[0] + m[0][1] * dl[1], m[1][0] * dl[0] + m[1][1] * dl[1]];
+                        let base = 5 + 4 * k;
+                        let before = (0..2).flat_map(|c| dend(2 + c).map(move |(v, f)| (v, -d[c] * f)));
+                        let after = (0..2).map(|c| (Var::Q(l + c), d[c]));
+                        let line = (0..2).flat_map(|r| [(Var::O(base + r), -md[r]), (Var::O(base + 2 + r), md[r])]);
+                        e.push(n, jump, lam_scale, before.chain(after).chain(line));
                     }
                 } else {
                     for c in 0..2 {
@@ -347,15 +509,16 @@ impl<'a> Problem<'a> {
                 e.pieces.push(piece);
             }
         }
-        // the H rows' other side: the arc after each peg, where it starts
+        // the H rows' other side: the arc after each stop, where it starts
         for (&row, (h, hz, dz)) in h_rows.iter().zip(h_starts) {
             e.r[row] += h;
             if jac {
                 for c in 0..4 {
-                    match dz[c] {
-                        Some(Var::Q(i)) => e.jq[row * n + i] += hz[c],
-                        Some(Var::O(i)) => e.jo[row * 5 + i] += hz[c],
-                        None => {}
+                    for &(v, w) in &dz[c] {
+                        match v {
+                            Var::Q(i) => e.jq[row * n + i] += hz[c] * w,
+                            Var::O(i) => e.jo[row * wo + i] += hz[c] * w,
+                        }
                     }
                 }
             }
@@ -435,18 +598,27 @@ fn shape(pb: &Problem, q: Vec<f64>, e: Eval) -> Option<Shape> {
     if !crate::linalg::lu_factor(n, &mut a, &mut piv) {
         return None;
     }
-    let mut dq = vec![0.0; n * 5];
+    let wo = e.wo;
+    let mut dq = vec![0.0; n * wo];
     let mut col = vec![0.0; n];
-    for c in 0..5 {
+    for c in 0..wo {
         for i in 0..n {
-            col[i] = -e.jo[i * 5 + c];
+            col[i] = -e.jo[i * wo + c];
         }
         crate::linalg::lu_apply(n, &a, &piv, &mut col);
         for i in 0..n {
-            dq[i * 5 + c] = col[i];
+            dq[i * wo + c] = col[i];
         }
     }
-    Some(Shape { ends: pb.ends.clone(), pegs: pb.pegs.to_vec(), q, places: e.places, pieces: e.pieces, dq })
+    Some(Shape {
+        ends: pb.ends.clone(),
+        stops: pb.stops.to_vec(),
+        q,
+        places: e.places,
+        sigmas: e.sigmas,
+        pieces: e.pieces,
+        dq,
+    })
 }
 
 /// Newton on `pb` from `q`, and the shape it comes to, with whether it reached `DONE`.
@@ -455,23 +627,22 @@ fn settle(pb: &Problem, q: Vec<f64>, thetas: &[f64], most: usize) -> Option<(Sha
     Some((shape(pb, q, e)?, done))
 }
 
-/// The shape of a curve from `ends`, through `pegs`: warm from `prev` where there is one, else
+/// The shape of a curve from `ends`, through `stops`: warm from `prev` where there is one, else
 /// from the seed of a gently sagging curve (`EASY`), its length walked out to this one's
 /// (`walk`) — an arc seed for a long curve between close ends is nothing like its answer (a long
 /// rope is two strands and a tight bend), and from it Newton may find another stationary curve
 /// (one with a loop); walked out, the curve stays on the branch it started on.
-pub fn solve(lag: &Lagrangian, ends: &Ends, pegs: &[[f64; 2]], prev: Option<&Shape>) -> Option<Shape> {
-    if let Some(p) = prev.filter(|p| p.pegs.len() == pegs.len()) {
-        let pegs = paired(&p.pegs, pegs);
-        if p.ends == *ends && p.pegs == pegs {
+pub fn solve(lag: &Lagrangian, ends: &Ends, stops: &[Stop], prev: Option<&Shape>) -> Option<Shape> {
+    if let Some((p, stops)) = prev.and_then(|p| Some((p, paired(&p.stops, stops)?))) {
+        if p.ends == *ends && p.stops == stops {
             return Some(p.clone());
         }
-        if let Some(s) = walk(lag, p, ends, &pegs) {
+        if let Some(s) = walk(lag, p, ends, &stops) {
             return Some(s);
         }
     }
-    if !pegs.is_empty() {
-        return pegged(lag, ends, pegs);
+    if !stops.is_empty() {
+        return pressed(lag, ends, stops);
     }
     let chord = (ends.b[0] - ends.a[0]).dhypot(ends.b[1] - ends.a[1]);
     let short = chord * EASY;
@@ -482,39 +653,62 @@ pub fn solve(lag: &Lagrangian, ends: &Ends, pegs: &[[f64; 2]], prev: Option<&Sha
     walk(lag, &easy, ends, &[])
 }
 
-/// `pegs` in the order `before` had them along the curve, each paired with the nearest of the
-/// last solve's (pegs move a little between solves; their order along the curve does not).
-fn paired(before: &[[f64; 2]], pegs: &[[f64; 2]]) -> Vec<[f64; 2]> {
-    let mut left: Vec<[f64; 2]> = pegs.to_vec();
+/// `stops` in the order `before` had them along the curve, each paired with the nearest of the
+/// last solve's of its kind (stops move a little between solves; their order along the curve
+/// does not) — none where the two do not pair.
+fn paired(before: &[Stop], stops: &[Stop]) -> Option<Vec<Stop>> {
+    if before.len() != stops.len() {
+        return None;
+    }
+    let mut left: Vec<Stop> = stops.to_vec();
     before
         .iter()
         .map(|b| {
-            let d = |p: &[f64; 2]| (p[0] - b[0]).dhypot(p[1] - b[1]);
-            let i = (0..left.len()).min_by(|&i, &j| d(&left[i]).total_cmp(&d(&left[j]))).expect("as many pegs");
-            left.remove(i)
+            let (i, _) = left
+                .iter()
+                .enumerate()
+                .filter_map(|(i, s)| Some((i, b.far(s)?)))
+                .min_by(|x, y| x.1.total_cmp(&y.1))?;
+            Some(left.remove(i))
         })
         .collect()
 }
 
-/// A curve through pegs, from nothing: the curve without them, each peg first put where that
-/// curve already passes nearest it — a shape the pegs press with no force, exactly solved — and
-/// then walked to where it is.  Their order along the curve is that curve's.
-fn pegged(lag: &Lagrangian, ends: &Ends, pegs: &[[f64; 2]]) -> Option<Shape> {
+/// A curve through stops, from nothing: the curve without them, each stop first put where that
+/// curve already passes nearest it — a shape the stops press with no force, exactly solved — and
+/// then walked to where it is.  Their order along the curve is that curve's.  A slide is first
+/// pinned, a peg where the curve's nearest point falls on its line (`foot`), and then let go
+/// along the line (`release`): where the line misses the curve, the corner-free shape touching
+/// a line moved onto it is a fork of the problem (sliding along the line and along the curve
+/// are one motion there), so a slide is never walked in from one.
+fn pressed(lag: &Lagrangian, ends: &Ends, stops: &[Stop]) -> Option<Shape> {
     let free = solve(lag, ends, &[], None)?;
-    let mut near: Vec<(f64, [f64; 2])> = pegs.iter().map(|&p| (nearest(lag, &free, p), p)).collect();
+    let mut near: Vec<(f64, Stop)> = stops.iter().map(|&p| (nearest(lag, &free, &p), p)).collect();
     near.sort_by(|a, b| a.0.total_cmp(&b.0));
     if near.windows(2).any(|w| w[1].0 <= w[0].0) || near.iter().any(|n| n.0 <= 0.0 || n.0 >= 1.0) {
         return None;
     }
     let len = ends.len;
-    let lay = Layout { pegs: pegs.len(), held: false };
+    let real: Vec<Stop> = near.iter().map(|n| n.1).collect();
+    let mut pins = Vec::with_capacity(real.len());
+    for &(u, s) in &near {
+        pins.push(match s {
+            Stop::Peg(_) => s,
+            Stop::Slide(k) => {
+                let c = position(lag, &free, u)?;
+                let (o, d, _) = ends.line(k);
+                Stop::Peg(s.at(ends, (c[0] - o[0]) * d[0] + (c[1] - o[1]) * d[1]))
+            }
+        });
+    }
+    let lay = Layout::of(&pins, false);
     let mut q = vec![0.0; lay.len()];
-    let mut thetas = Vec::with_capacity((pegs.len() + 1) * SEGMENTS);
-    let mut virtual_pegs = Vec::with_capacity(pegs.len());
+    let mut thetas = Vec::with_capacity((stops.len() + 1) * SEGMENTS);
+    let mut virtual_pegs = Vec::with_capacity(stops.len());
     let mut places = vec![0.0];
     places.extend(near.iter().map(|n| n.0 * len));
     places.push(len);
-    for j in 0..=pegs.len() {
+    for j in 0..=stops.len() {
         let h = (places[j + 1] - places[j]) / SEGMENTS as f64;
         for m in 0..SEGMENTS {
             let at = at(lag, &free, (places[j] + h * m as f64) / len, false)?;
@@ -522,7 +716,7 @@ fn pegged(lag: &Lagrangian, ends: &Ends, pegs: &[[f64; 2]]) -> Option<Shape> {
             if m == 0 {
                 if j > 0 {
                     q[lay.place(j).expect("a place")] = places[j];
-                    virtual_pegs.push([at.z[0], at.z[1]]);
+                    virtual_pegs.push(Stop::Peg([at.z[0], at.z[1]]));
                 }
                 let l = lay.lambda(j);
                 q[l..l + 2].copy_from_slice(&at.z[2..]);
@@ -533,15 +727,82 @@ fn pegged(lag: &Lagrangian, ends: &Ends, pegs: &[[f64; 2]]) -> Option<Shape> {
         }
     }
     let (start, _) = settle(&Problem::free(lag, ends, &virtual_pegs), q, &thetas, NEWTON_MAX)?;
-    let real: Vec<[f64; 2]> = near.iter().map(|n| n.1).collect();
-    walk(lag, &start, ends, &real)
+    let pinned = walk(lag, &start, ends, &pins)?;
+    if !real.iter().any(Stop::slides) {
+        return Some(pinned);
+    }
+    release(lag, &pinned, &real)
 }
 
-/// Where along `sh` (in `u`) it passes nearest `p`: the best of an even sampling, refined by
-/// Brent's minimisation between its neighbours.
-fn nearest(lag: &Lagrangian, sh: &Shape, p: [f64; 2]) -> f64 {
+/// A shape pinned at pegs let go along its slides' lines (`stops`, a slide where `pinned` has
+/// a peg on its line): first the pinned shape itself, each slide holding the force along its
+/// line the peg bore, then that force walked down to none — a corner on a line pushed along it
+/// and eased off.
+fn release(lag: &Lagrangian, pinned: &Shape, stops: &[Stop]) -> Option<Shape> {
+    let (old, lay) = (Layout::of(&pinned.stops, false), Layout::of(stops, false));
+    let k = stops.len();
+    let mut q = vec![0.0; lay.len()];
+    let mut pull = vec![0.0; k];
+    q[..2].copy_from_slice(&pinned.q[..2]);
+    for j in 0..=k {
+        if j > 0 {
+            q[lay.place(j)?] = pinned.q[old.place(j)?];
+            let (l0, l1) = (old.lambda(j), lay.lambda(j));
+            q[l1..l1 + 2].copy_from_slice(&pinned.q[l0..l0 + 2]);
+            if let (Stop::Slide(k), Stop::Peg(p)) = (stops[j - 1], pinned.stops[j - 1]) {
+                let (o, d, _) = pinned.ends.line(k);
+                q[lay.sigma(j)?] = (p[0] - o[0]) * d[0] + (p[1] - o[1]) * d[1];
+                let before = *pinned.pieces[j * SEGMENTS - 1].nodes.last()?;
+                pull[j - 1] = (q[l1] - before.z[2]) * d[0] + (q[l1 + 1] - before.z[3]) * d[1];
+            }
+        }
+        for m in 1..SEGMENTS {
+            let (n0, n1) = (old.node(j, m), lay.node(j, m));
+            q[n1..n1 + 4].copy_from_slice(&pinned.q[n0..n0 + 4]);
+        }
+    }
+    let mut from = thetas(&pinned.pieces);
+    let (mut done, mut step) = (0.0f64, 1.0f64);
+    let mut last: Option<(Shape, bool)> = None;
+    while done < 1.0 {
+        if step < 1.0 / 256.0 {
+            return None;
+        }
+        let f = (done + step).min(1.0);
+        let eased: Vec<f64> = pull.iter().map(|p| (1.0 - f) * p).collect();
+        let problem = Problem { pull: &eased, ..Problem::free(lag, &pinned.ends, stops) };
+        match settle(&problem, q.clone(), &from, CORRECT_MAX) {
+            Some((s, d)) => {
+                q = s.q.clone();
+                from = thetas(&s.pieces);
+                last = Some((s, d));
+                done = f;
+                step *= 1.5;
+            }
+            None => step *= 0.5,
+        }
+    }
+    let (s, d) = last?;
+    if d {
+        return Some(s);
+    }
+    Some(settle(&Problem::free(lag, &s.ends, stops), s.q.clone(), &from, NEWTON_MAX)?.0)
+}
+
+/// Where along `sh` (in `u`) it passes nearest stop `p` — a slide's line where it passes nearest
+/// it (the first it would touch, moved square to itself; where it crosses, the crossing): the
+/// best of an even sampling, refined by Brent's minimisation between its neighbours.
+fn nearest(lag: &Lagrangian, sh: &Shape, p: &Stop) -> f64 {
     const N: usize = 256;
-    let d = |u: f64| position(lag, sh, u).map_or(f64::INFINITY, |c| (c[0] - p[0]).dhypot(c[1] - p[1]));
+    let d = |u: f64| {
+        position(lag, sh, u).map_or(f64::INFINITY, |c| match *p {
+            Stop::Peg(p) => (c[0] - p[0]).dhypot(c[1] - p[1]),
+            Stop::Slide(k) => {
+                let (o, d, _) = sh.ends.line(k);
+                ((c[0] - o[0]) * d[1] - (c[1] - o[1]) * d[0]).abs()
+            }
+        })
+    };
     let best = (0..=N).map(|i| (d(i as f64 / N as f64), i)).min_by(|a, b| a.0.total_cmp(&b.0)).map_or(0, |b| b.1);
     let (lo, hi) = (((best as f64 - 1.0) / N as f64).max(0.0), ((best as f64 + 1.0) / N as f64).min(1.0));
     crate::roots::brent(&d, lo, hi, 1e-13, 100, |_, _| false).1
@@ -550,23 +811,26 @@ fn nearest(lag: &Lagrangian, sh: &Shape, p: [f64; 2]) -> f64 {
 /// A length over the chord whose arc seed lies near its answer: a gentle sag.
 pub const EASY: f64 = 1.2;
 
-/// A curve with no pegs from its seed.
+/// A curve with no stops from its seed.
 fn cold(lag: &Lagrangian, ends: &Ends) -> Option<Shape> {
     let (q, thetas) = seed(lag, ends)?;
     Some(settle(&Problem::free(lag, ends, &[]), q, &thetas, NEWTON_MAX)?.0)
 }
 
-/// From `p` to `ends` along the straight path between their outer columns (the pegs alike),
+/// From `p` to `ends` along the straight path between their outer columns (the stops alike),
 /// each step predicted along the last shape's derivative and corrected, the step halved where a
 /// correction fails and grown where it succeeds; the last taken to `DONE` if its correction
 /// stopped at `GOOD`.
-fn walk(lag: &Lagrangian, p: &Shape, ends: &Ends, pegs: &[[f64; 2]]) -> Option<Shape> {
+fn walk(lag: &Lagrangian, p: &Shape, ends: &Ends, stops: &[Stop]) -> Option<Shape> {
     let o0 = p.ends.outer();
     let o1 = ends.outer();
-    let at = |f: f64| -> (Ends, Vec<[f64; 2]>) {
-        let o: [f64; 5] = std::array::from_fn(|c| o0[c] + f * (o1[c] - o0[c]));
-        let pg = p.pegs.iter().zip(pegs).map(|(a, b)| [a[0] + f * (b[0] - a[0]), a[1] + f * (b[1] - a[1])]).collect();
-        (Ends::of(&o), pg)
+    if o0.len() != o1.len() {
+        return None;
+    }
+    let at = |f: f64| -> (Ends, Vec<Stop>) {
+        let o: Vec<f64> = o0.iter().zip(&o1).map(|(a, b)| a + f * (b - a)).collect();
+        let st = p.stops.iter().zip(stops).map(|(a, b)| a.toward(b, f)).collect();
+        (Ends::of(&o, ends.lines.len()), st)
     };
     let mut cur = p.clone();
     let mut done_last = true;
@@ -576,8 +840,8 @@ fn walk(lag: &Lagrangian, p: &Shape, ends: &Ends, pegs: &[[f64; 2]]) -> Option<S
             return None;
         }
         let f = (done + step).min(1.0);
-        let (e, pg) = at(f);
-        match correct(lag, &cur, &e, &pg) {
+        let (e, st) = at(f);
+        match correct(lag, &cur, &e, &st) {
             Some((s, d)) => {
                 cur = s;
                 done_last = d;
@@ -590,28 +854,32 @@ fn walk(lag: &Lagrangian, p: &Shape, ends: &Ends, pegs: &[[f64; 2]]) -> Option<S
     if done_last {
         return Some(cur);
     }
-    let pb = Problem::free(lag, &cur.ends, &cur.pegs);
+    let pb = Problem::free(lag, &cur.ends, &cur.stops);
     Some(settle(&pb, cur.q.clone(), &thetas(&cur.pieces), NEWTON_MAX)?.0)
 }
 
 /// `cur`'s unknowns predicted to `ends` along its derivative, and corrected there.
-fn correct(lag: &Lagrangian, cur: &Shape, ends: &Ends, pegs: &[[f64; 2]]) -> Option<(Shape, bool)> {
+fn correct(lag: &Lagrangian, cur: &Shape, ends: &Ends, stops: &[Stop]) -> Option<(Shape, bool)> {
     let (o, oc) = (ends.outer(), cur.ends.outer());
+    let w = oc.len();
+    if o.len() != w {
+        return None;
+    }
     let q: Vec<f64> = (0..cur.q.len())
-        .map(|r| cur.q[r] + (0..5).map(|c| cur.dq[r * 5 + c] * (o[c] - oc[c])).sum::<f64>())
+        .map(|r| cur.q[r] + (0..w).map(|c| cur.dq[r * w + c] * (o[c] - oc[c])).sum::<f64>())
         .collect();
-    settle(&Problem::free(lag, ends, pegs), q, &thetas(&cur.pieces), CORRECT_MAX)
+    settle(&Problem::free(lag, ends, stops), q, &thetas(&cur.pieces), CORRECT_MAX)
 }
 
-/// The shape re-solved with its pegs' places held at `held` — the verdict's question of how the
-/// energy changes as they move.
-pub fn solve_held(lag: &Lagrangian, from: &Shape, held: &[f64]) -> Option<Shape> {
-    let lay = Layout { pegs: from.pegs.len(), held: true };
-    let pb = Problem { lag, ends: &from.ends, pegs: &from.pegs, lay, held };
+/// The shape re-solved with its stops' places held at `held` — along the curve, and along a
+/// slide's line — the verdict's question of how the energy changes as they move.
+pub fn solve_held(lag: &Lagrangian, from: &Shape, held: &[[f64; 2]]) -> Option<Shape> {
+    let pb = Problem { lag, ends: &from.ends, stops: &from.stops, lay: Layout::of(&from.stops, true), held, pull: &[] };
     // the free layout's unknowns less the places
-    let free = Layout { pegs: from.pegs.len(), held: false };
+    let free = Layout::of(&from.stops, false);
+    let k = from.stops.len();
     let q: Vec<f64> = (0..from.q.len())
-        .filter(|&i| !(1..=from.pegs.len()).any(|j| free.place(j) == Some(i)))
+        .filter(|&i| !(1..=k).any(|j| free.place(j) == Some(i) || free.sigma(j) == Some(i)))
         .map(|i| from.q[i])
         .collect();
     Some(settle(&pb, q, &thetas(&from.pieces), CORRECT_MAX)?.0)
@@ -649,7 +917,7 @@ fn on_arc(p: [f64; 2], th0: f64, k: f64, s: f64) -> ([f64; 2], f64) {
 
 const SEED_SAMPLES: usize = 256;
 
-/// The seed of a curve with no pegs (a pegged one starts from it, `pegged`): the circular arc of
+/// The seed of a curve with no stops (a pressed one starts from it, `pressed`): the circular arc of
 /// its length through its ends, bowed to the side of less energy, the costate at its start by
 /// least squares on `H_θ = 0` along it (the costate is its start less `∫ f_p`, so the rows are
 /// linear in it), each piece's start read off it.
@@ -695,7 +963,7 @@ fn seed(lag: &Lagrangian, ends: &Ends) -> Option<(Vec<f64>, Vec<f64>)> {
     if !(lam0[0].is_finite() && lam0[1].is_finite()) {
         return None;
     }
-    let lay = Layout { pegs: 0, held: false };
+    let lay = Layout::of(&[], false);
     let mut q = vec![0.0; lay.len()];
     q[..2].copy_from_slice(&lam0[..2]);
     let mut thetas = Vec::with_capacity(SEGMENTS);
@@ -717,8 +985,10 @@ fn seed(lag: &Lagrangian, ends: &Ends) -> Option<(Vec<f64>, Vec<f64>)> {
 pub struct At {
     pub z: [f64; 4],
     pub theta: f64,
-    /// `dz/d[u, a.x, a.y, b.x, b.y, L]`, 4 × 6, row-major (zero where not asked for).
-    pub dz: [f64; 24],
+    /// `dz/d[u, a.x, a.y, b.x, b.y, L, lines…]`, 4 × `stride`, row-major (zero where not asked).
+    pub dz: Vec<f64>,
+    /// One more than the outer columns: `u` and them.
+    pub stride: usize,
     /// The flow there.
     pub f: [f64; 4],
     pub point: flow::Point,
@@ -728,7 +998,7 @@ pub struct At {
 fn locate(sh: &Shape, u: f64) -> (f64, usize, usize) {
     let len = sh.ends.len;
     let s = (u * len).clamp(0.0, len);
-    let j = (1..=sh.pegs.len()).rev().find(|&j| s >= sh.places[j]).unwrap_or(0);
+    let j = (1..=sh.stops.len()).rev().find(|&j| s >= sh.places[j]).unwrap_or(0);
     let h = (sh.places[j + 1] - sh.places[j]) / SEGMENTS as f64;
     (s, j, (((s - sh.places[j]) / h).floor() as usize).min(SEGMENTS - 1))
 }
@@ -740,32 +1010,34 @@ pub fn at(lag: &Lagrangian, sh: &Shape, u: f64, deriv: bool) -> Option<At> {
     let node = within(lag, piece, s, sh.ends.scale(), deriv)?;
     let p = Flow::new(lag, node.theta).at(&node.z, false)?;
     let f = p.flow();
-    let mut dz = [0.0f64; 24];
+    let wo = sh.ends.width();
+    let stride = 1 + wo;
+    let mut dz = vec![0.0f64; 4 * stride];
     if deriv {
-        let pb = Problem::free(lag, &sh.ends, &sh.pegs);
+        let pb = Problem::free(lag, &sh.ends, &sh.stops);
         let (_, dz0) = pb.start(&sh.q, j, m);
         // the piece's start moves with the places it lies between: −f per unit
         let wts = [(pb.place_var(j), 1.0 - m as f64 / SEGMENTS as f64), (pb.place_var(j + 1), m as f64 / SEGMENTS as f64)];
         for i in 0..4 {
-            let row = &mut dz[i * 6..i * 6 + 6];
+            let row = &mut dz[i * stride..(i + 1) * stride];
             row[0] = f[i] * len;
             // and s = uL itself moves with the length
             row[5] += f[i] * u;
-            let deps = dz0.iter().enumerate().filter_map(|(c, d)| d.map(|v| (v, node.phi[i * 4 + c])));
+            let deps = dz0.iter().enumerate().flat_map(|(c, d)| d.iter().map(move |&(v, w)| (v, w * node.phi[i * 4 + c])));
             let places = wts.iter().filter_map(|&(pv, wt)| pv.map(|v| (v, -f[i] * wt)));
             for (v, x) in deps.chain(places) {
                 match v {
                     Var::O(c) => row[1 + c] += x,
                     Var::Q(r) => {
-                        for c in 0..5 {
-                            row[1 + c] += x * sh.dq[r * 5 + c];
+                        for c in 0..wo {
+                            row[1 + c] += x * sh.dq[r * wo + c];
                         }
                     }
                 }
             }
         }
     }
-    Some(At { z: node.z, theta: p.theta, dz, f, point: p })
+    Some(At { z: node.z, theta: p.theta, dz, stride, f, point: p })
 }
 
 /// Where the shape is at `u`, alone — one step from the node before it, no sensitivities.

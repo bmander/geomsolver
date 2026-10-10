@@ -149,6 +149,10 @@ impl RevolvedRegion {
             return Err("an axis tolerance must be finite and nonnegative".into());
         }
         let s = sk.solids.get(solid).ok_or("no such solid")?;
+        // a region is a revolution of its meridian (§6.21)
+        if let SolidDef::Region {..} = s.def {
+            return Ok(Self::of_meridian(&*crate::solid::region::meridian(sk,solid)?,axis_tolerance));
+        }
         let SolidDef::Revolve {face,ref sweep,..} = s.def else {
             return Err("analytic material membership requires an unmodified revolution".into());
         };
@@ -203,6 +207,17 @@ impl RevolvedRegion {
             }
         }
         Ok(Self {origin,axis,loops,axis_tolerance})
+    }
+
+    /// A region solid's meridian as analytic membership: its loops' lines and arcs in (radius,
+    /// height), the loop enclosing most first, its sides on the axis marked as such.
+    pub(crate) fn of_meridian(m: &crate::solid::region::Meridian,axis_tolerance: f64) -> Self {
+        use crate::brep::planar::Seg;
+        let loops = m.region.outer_first().into_iter().map(|l| l.iter().map(|step| match step.seg {
+            Seg::Line {a,b} => Edge::Line {a,b,axis:a[0].abs() <= axis_tolerance && b[0].abs() <= axis_tolerance},
+            Seg::Arc {c,r,a0,sweep} => Edge::Arc {center:c,radius:r,start:a0,sweep,ends:[step.start(),step.end()]},
+        }).collect()).collect();
+        Self {origin:m.origin,axis:m.axis,loops,axis_tolerance}
     }
 
     /// Classify using an explicit boundary band in model length units. Axis edges
