@@ -728,11 +728,11 @@ pub fn workspace_json(sk: &Sketch) -> Json {
     ])
 }
 
-/// The entities a rubber band from `lo` to `hi` on the eye's picture plane holds whole, as
+/// The entities a rubber band from `lo` to `hi` on the eye's picture plane touches, as
 /// `[kind, index]` pairs.
-pub fn workspace_inside_json(sk: &Sketch, unit: f64, az: f64, el: f64, lo: (f64, f64), hi: (f64, f64)) -> Json {
+pub fn workspace_overlapping_json(sk: &Sketch, unit: f64, az: f64, el: f64, lo: (f64, f64), hi: (f64, f64)) -> Json {
     let proj = crate::overview::workspace::Projection::new(sk, az, el);
-    Json::Arr(crate::overview::workspace::inside(sk, &proj, lo, hi, unit).into_iter().map(ent_json).collect())
+    Json::Arr(crate::overview::workspace::overlapping(sk, &proj, lo, hi, unit).into_iter().map(ent_json).collect())
 }
 
 pub fn overview3d_json(sk: &Sketch, unit: f64) -> Json {

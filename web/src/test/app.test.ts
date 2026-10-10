@@ -1662,6 +1662,22 @@ test('a click picks what is seen under it, though another view lies there on the
   assert.deepEqual(view.selected, [s]);
 });
 
+test('a band takes whatever it touches, though neither end of a line is inside it', () => {
+  const view = docView('use std\nin std.front {\na := point hint((0, 0))\nfix((0, 0)) a\n'
+    + 'b := point hint((100, 0))\nfix((100, 0)) b\nab := line(a, b)\n'
+    + 'c := point hint((0, 60))\nfix((0, 60)) c\nd := point hint((100, 60))\nfix((100, 60)) d\n'
+    + 'cd := line(c, d)\n}\n');
+  view.orbit = { ...FRONT };
+  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  const [x0, y] = view.seen(pointNamed(view, 'a'));
+  const [x1] = view.seen(pointNamed(view, 'b'));
+  const x = (x0 + x1) / 2;
+  cv.fire('pointerdown', pointer(x - 4, y - 4));
+  cv.fire('pointermove', pointer(x + 4, y + 4));
+  cv.fire('pointerup', pointer(x + 4, y + 4));
+  assert.deepEqual(view.selected, [view.doc.entity('ab')]);
+});
+
 test('a fit frames everything the workspace shows, solids included', () => {
   const view = docView(examples.source('solid_flange'));
   assert.ok(solve(view.sketch).success);

@@ -1520,7 +1520,7 @@ Conventions:
   (`workspace::Projection`: `Basis::lift`, the orthographic `overview::eye`), so
   `camera.ts` composes it with the eye's similarity (`Camera::through` → `ViewCam`) and no 3D
   arithmetic exists above the ABI.  **What is under the pointer is asked where the eye sees it**
-  (`workspace::pick`, `nearest_point`, `inside`, `callout::pick_seen`): two views' coordinates
+  (`workspace::pick`, `nearest_point`, `overlapping`, `callout::pick_seen`): two views' coordinates
   overlap but are apart in space, so nothing is picked in view coordinates.  `w2s`/`s2w` read the
   view being worked in — the painter's (`inView`), else the current plane's; a drag reads the
   dragged point's view, a callout its dimension's (`calloutView`).  A view seen edge on refuses a

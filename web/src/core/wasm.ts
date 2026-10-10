@@ -228,8 +228,8 @@ export interface Abi {
   gcs_workspace_pick_solid_json(h: number, az: number, el: number, x: number, y: number): number;
   gcs_workspace_nearest_point(h: number, az: number, el: number, x: number, y: number,
                               outDist: number): number;
-  gcs_workspace_inside_json(h: number, unit: number, az: number, el: number,
-                            x0: number, y0: number, x1: number, y1: number): number;
+  gcs_workspace_overlapping_json(h: number, unit: number, az: number, el: number,
+                                 x0: number, y0: number, x1: number, y1: number): number;
   gcs_workspace_callout_pick(h: number, unit: number, az: number, el: number,
                              x: number, y: number, tolPx: number, outView: number): number;
   gcs_callout_grab(h: number, id: number, unit: number, x: number, y: number,

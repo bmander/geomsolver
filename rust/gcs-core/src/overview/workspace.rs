@@ -402,19 +402,45 @@ fn line_meets_triangle(o: [f64; 3], d: [f64; 3], p: &[f64]) -> Option<f64> {
     Some(f * dot(e2, q))
 }
 
-/// Every entity whose whole figure lies inside the box `lo`–`hi` on the eye's picture plane — a
-/// rubber band's "window" selection, asked where the figures are seen.
-pub fn inside(sk: &Sketch, proj: &Projection, lo: (f64, f64), hi: (f64, f64), unit: f64) -> Vec<EntRef> {
-    let (x0, x1) = (lo.0.min(hi.0), lo.0.max(hi.0));
-    let (y0, y1) = (lo.1.min(hi.1), lo.1.max(hi.1));
-    let within = |p: &(f64, f64)| p.0 >= x0 && p.0 <= x1 && p.1 >= y0 && p.1 <= y1;
+/// Every entity whose figure touches the box `lo`–`hi` on the eye's picture plane — a rubber
+/// band's "crossing" selection, asked where the figures are seen: a point inside it, or a stroke
+/// passing through it.  What counts is what is drawn, so a box inside a circle's rim takes nothing.
+pub fn overlapping(sk: &Sketch, proj: &Projection, lo: (f64, f64), hi: (f64, f64), unit: f64) -> Vec<EntRef> {
+    let b = (lo.0.min(hi.0), lo.1.min(hi.1), lo.0.max(hi.0), lo.1.max(hi.1));
     sk.drawn()
         .into_iter()
         .filter(|&e| {
-            let fig = proj.figure(sk, e, unit);
-            !fig.is_empty() && fig.iter().flatten().all(within)
+            proj.figure(sk, e, unit).iter().any(|poly| match poly.as_slice() {
+                [p] => segment_meets_box(*p, *p, b),
+                ps => ps.windows(2).any(|w| segment_meets_box(w[0], w[1], b)),
+            })
         })
         .collect()
+}
+
+/// Whether the segment `p`–`q` meets the box `(x0, y0, x1, y1)`, edges included: the segment
+/// clipped to each slab in turn (Liang–Barsky), met while some stretch of it is left.  A figure
+/// with no finite place meets nothing.
+fn segment_meets_box(p: (f64, f64), q: (f64, f64), (x0, y0, x1, y1): Box2) -> bool {
+    if ![p.0, p.1, q.0, q.1].iter().all(|v| v.is_finite()) {
+        return false;
+    }
+    let (mut t0, mut t1) = (0.0f64, 1.0f64);
+    for (a, d, lo, hi) in [(p.0, q.0 - p.0, x0, x1), (p.1, q.1 - p.1, y0, y1)] {
+        if d == 0.0 {
+            if a < lo || a > hi {
+                return false;
+            }
+            continue;
+        }
+        let (s, u) = ((lo - a) / d, (hi - a) / d);
+        t0 = t0.max(s.min(u));
+        t1 = t1.min(s.max(u));
+        if t0 > t1 {
+            return false;
+        }
+    }
+    true
 }
 
 /// The extent of everything the workspace shows, on the eye's picture plane — every drawn figure,
