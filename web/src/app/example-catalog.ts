@@ -50,6 +50,15 @@ const projects: Example[] = [{
     + 'what each shows.',
   target: { kind: 'directory', path: 'generation', entry: 'stride.sv' },
 }, {
+  label: 'Sundials · hour lines from the sun', key: 'sundial',
+  description: 'A horizontal dial and a polar one, their hour lines found rather than tabled: the '
+    + 'equinox sun is a ring of 24 hourly places about the style (sun.sv), and each hour line is '
+    + 'where the plane through the style and that hour\'s sun meets the dial. The horizontal dial '
+    + 'comes out at tan θ = sin(latitude) · tan(h) and marks midsummer\'s first and last light; '
+    + 'the polar dial, the one for the equator, at height · tan(h). Edit `latitude`, `hours` or '
+    + '`height`, and orbit (right-drag) to see the sun\'s ring square to the style.',
+  target: { kind: 'directory', path: 'sundial', entry: 'horizontal.svd' },
+}, {
   label: 'Skew axes · views solved in space', key: 'skew_axes',
   description: 'Two shafts that do not meet, one drawn in the front view and one in a side view whose '
     + 'fold nobody states: the shaft angle and the offset between them are relations in space, and '

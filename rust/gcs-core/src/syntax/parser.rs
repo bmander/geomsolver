@@ -7,6 +7,8 @@ mod minimize;
 mod relations;
 mod statements;
 
+pub(crate) use declarations::{sweep_of, SweepParts};
+
 use super::lexer::{lex, Tok};
 use super::names::write_ref;
 use super::{

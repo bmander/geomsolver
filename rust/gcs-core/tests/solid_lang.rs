@@ -1069,6 +1069,42 @@ fn section_holes_accept_multiple_component_loops_and_revolutions() {
     }
 }
 
+/// A 10 × 10 square of loose lines at (25, 15) inside `RECT`, as the face `h`.
+const SQUARE_HOLE: &str = "\
+in std.front {
+p := point hint((25, 15))
+q := point hint((35, 15))
+r := point hint((35, 25))
+s := point hint((25, 25))
+pq := line(p, q)
+qr := line(q, r)
+rs := line(r, s)
+sp := line(s, p)
+}
+h := face(pq, qr, rs, sp)
+";
+
+#[test]
+fn a_face_is_a_hole_as_it_stands() {
+    // a hole of loose lines is written as a face: the plate is 2400 − 100 over a depth of 3
+    let e = read(&format!("{RECT}{SQUARE_HOLE}plate := face(ab, bc, cd, da, holes: h)
+\
+        slab := solid(plate, depth: 3mm)\n"));
+    let slab = e.sketch.evaluated_solid(e.map.ent_named("slab").unwrap().i(),
+        gcs_core::solid::ApproximationPolicy::Report).unwrap();
+    assert!((slab.volume() - 6900.0).abs() < 1e-7, "{}", slab.volume());
+    assert!(slab.surviving_faces().contains("slab.h.pq"), "{:?}", slab.surviving_faces());
+}
+
+#[test]
+fn a_hole_face_is_one_loop_on_the_face_plane_declared_first() {
+    refused(&format!("{RECT}plate := face(ab, bc, cd, da, holes: h)\n{SQUARE_HOLE}"),
+        Code::E080, "declare the hole's face before the face it is cut from");
+    refused(&format!("{RECT}{HOLE}{SQUARE_HOLE}\
+        holed := face(pq, qr, rs, sp, holes: hole)\nplate := face(ab, bc, cd, da, holes: holed)\n"),
+        Code::E080, "has holes of its own");
+}
+
 #[test]
 fn section_holes_refuse_invalid_boundaries() {
     use gcs_core::solid::ApproximationPolicy::Report;
@@ -1086,7 +1122,7 @@ fn section_holes_refuse_invalid_boundaries() {
         let err = e.sketch.evaluated_solid(0, Report).err().expect("invalid section must be refused");
         assert!(err.contains(message), "{src}\n{err}");
     }
-    refused(&format!("{ANNULUS}bad := line(center, center)\nbadface := face(outer, holes: bad)\n"), Code::E080, "circle or named closed loop");
+    refused(&format!("{ANNULUS}bad := line(center, center)\nbadface := face(outer, holes: bad)\n"), Code::E080, "a named closed loop or a face");
     refused("unit mm\nuse std\nother := plane\nin std.front {\no := point\nouter := circle(center: o) hint(r: 10)\n}\nin other { h := point\ninner := circle(center: h) hint(r: 2) }\nbad := face(outer, holes: inner)\n", Code::E080, "one plane");
 }
 

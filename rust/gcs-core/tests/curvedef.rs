@@ -62,6 +62,7 @@ fn involute_sketch() -> (Sketch, usize) {
         extrusion: false,
         length: None,
         pegs: Vec::new(),
+        slides: Vec::new(),
     });
     let p = sk.point(20.0, 20.0, false, "p");
     sk.add(Constraint::new(
@@ -201,6 +202,7 @@ fn two_curve_families_get_their_own_kernels() {
         extrusion: false,
         length: None,
         pegs: Vec::new(),
+        slides: Vec::new(),
     });
     let q = sk.point(0.0, 30.0, false, "q");
     sk.add(Constraint::new(

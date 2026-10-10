@@ -122,6 +122,12 @@ pub fn render(doc: &Document, models: &BTreeMap<String, Model<'_>>, sheet: Optio
     for v in &s.views {
         let (alias, path, model) = split(&v.target, models, v.span)?;
         let mut selected = entities(model, path);
+        // a point drawn in several planes is selected with its twins, its images there (§6.7)
+        let twins: Vec<EntRef> = model.sketch.twins.iter()
+            .filter(|(&p, _)| selected.contains(&EntRef::point(p)))
+            .flat_map(|(_, ts)| ts.iter().map(|&t| EntRef::point(t)))
+            .collect();
+        selected.extend(twins);
         if v.sketch {
             // a sketch draws one plane's geometry in that plane's own coordinates: `from` names
             // it, and the front plane is `std.front` where the model has one

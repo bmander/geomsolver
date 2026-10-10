@@ -449,6 +449,7 @@ fn elaborate_in(
     for (point, twin) in &expansion.twins {
         if let (Some(p), Some(t)) = (res.of.get(point), res.of.get(twin)) {
             sk.twins.entry(p.i()).or_default().push(t.i());
+            map.twin_of.insert(*t, *p);
         }
     }
     // the points region solids' sets are applied to, whose bounds are the solids' terms (§6.21)

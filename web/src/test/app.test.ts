@@ -1191,6 +1191,80 @@ test('selecting the picture and selecting geometry are exclusive', () => {
   assert.ok(!u.picked, 'selecting geometry by any route should let the picture go');
 });
 
+const BLOCK = `unit mm
+use std
+in std.top {
+a := point hint((0, 0))
+b := point hint((20, 0))
+c := point hint((20, 10))
+d := point hint((0, 10))
+ab := line(a, b)
+bc := line(b, c)
+cd := line(c, d)
+da := line(d, a)
+}
+block := solid(face(ab, bc, cd, da), depth: 5)
+`;
+
+/** The canvas point where the eye, from the view's orbit, sees a point in space. */
+function seenAt(view: SketchView, x: [number, number, number]): [number, number] {
+  const { az, el } = view.orbit;
+  const right = [-Math.sin(az), Math.cos(az), 0];
+  const up = [-Math.cos(az) * Math.sin(el), -Math.sin(az) * Math.sin(el), Math.cos(el)];
+  const dot = (a: number[]) => a[0] * x[0] + a[1] * x[1] + a[2] * x[2];
+  return [view.cam.originX + dot(right) * view.cam.scale,
+          view.cam.originY - dot(up) * view.cam.scale];
+}
+
+test('a click on a solid selects it by the face it lands on, apart from the drawing', () => {
+  const view = docView(BLOCK);
+  assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
+  view.orbit = { az: 0.6, el: 0.5 };
+  const top = seenAt(view, [10, 5, 0]);
+  drag(view, top, top);
+  assert.equal(view.selectedSolids.length, 1);
+  const [pick] = view.selectedSolids;
+  assert.equal(pick.name, 'block');
+  assert.ok(pick.face.startsWith('block.'), pick.face);
+  assert.deepEqual(view.selected, []);
+  // the drawing outranks what is beneath it, and taking hold of it lets the solid go
+  const edge = seenAt(view, [10, 0, 0]);
+  drag(view, edge, edge);
+  assert.deepEqual(view.selected, [view.doc.entity('ab')]);
+  assert.deepEqual(view.selectedSolids, []);
+  // and back: picking the solid lets the drawing go; shift toggles it out again
+  drag(view, top, top);
+  assert.deepEqual(view.selected, []);
+  assert.equal(view.selectedSolids.length, 1);
+  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  cv.fire('pointerdown', pointer(...top, { shiftKey: true }));
+  cv.fire('pointerup', pointer(...top, { shiftKey: true }));
+  assert.deepEqual(view.selectedSolids, []);
+  // assigning the drawing's selection by any route lets it go, even to nothing — a press on a
+  // callout or a constraint's row selects that instead
+  drag(view, top, top);
+  view.selected = [];
+  assert.deepEqual(view.selectedSolids, []);
+  // a press on nothing lets it go too
+  drag(view, top, top);
+  const away = seenAt(view, [10, 80, 0]);
+  drag(view, away, away);
+  assert.deepEqual(view.selectedSolids, []);
+});
+
+test('a solid selected crosses an edit by name, and Delete takes its statement out', () => {
+  const view = docView(BLOCK);
+  view.orbit = { az: 0.6, el: 0.5 };
+  const top = seenAt(view, [10, 5, 0]);
+  drag(view, top, top);
+  assert.ok(view.apply(view.doc.addEntity('line', ['a', 'c'])));
+  assert.deepEqual(view.selectedSolids.map((s) => s.name), ['block'], 'still held, by name');
+  view.deleteSelected();
+  assert.ok(!view.source.includes('block :='), view.source);
+  assert.deepEqual(view.selectedSolids, []);
+  assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
+});
+
 test('the drawing outranks the picture: a line across it is what a click on the line picks', () => {
   const view = traced();
   const u = view.underlay!;

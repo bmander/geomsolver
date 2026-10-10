@@ -1,0 +1,15 @@
+// Presentation of polar.sv. Model geometry is independent of this drawing.
+model m from "polar.sv"
+
+sheet drawing {
+  size A4
+  scale 0.8
+  label "POLAR SUNDIAL · THE EQUATOR" at (14mm, 18mm)
+  label "The style on a fin: hour lines parallel to noon, height · tan(h) out" at (14mm, 28mm)
+  label "DIAL" at (14mm, 48mm)
+  sketch dial(m) from m.std.top at (105mm, 160mm)
+  label "FIN" at (14mm, 185mm)
+  sketch fin(m) from m.std.side at (57mm, 235mm)
+  dimensions in dial
+  dimensions in fin
+}

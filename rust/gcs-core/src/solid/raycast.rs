@@ -67,18 +67,5 @@ impl RayIndex {
 }
 
 fn intersects(b: Box3, p: [f64; 3], d: [f64; 3]) -> bool {
-    if b.is_empty() { return false }
-    let (mut near, mut far) = (0.0f64, f64::INFINITY);
-    for k in 0..3 {
-        if d[k] == 0.0 {
-            if p[k] < b.lo[k] || p[k] > b.hi[k] { return false }
-        } else {
-            let a = (b.lo[k] - p[k]) / d[k];
-            let z = (b.hi[k] - p[k]) / d[k];
-            near = near.max(a.min(z));
-            far = far.min(a.max(z));
-            if far < near { return false }
-        }
-    }
-    true
+    b.meets(p, d, 0.0)
 }

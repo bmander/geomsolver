@@ -64,6 +64,12 @@ pub enum CKind {
     /// one where nothing holds the curve's length: transversality, `H = 0` at the end — the
     /// energy stationary in the length too.  Its kernel is built from the curve.
     Stationary,
+    /// **A free curve pressed onto a held line where it chooses** (`rope touches floor`, #149):
+    /// a corner on the line, the curve two arcs there, its place along the line where no force
+    /// runs along it (frictionless).  Part of the curve's problem, like a peg — a slide
+    /// (`extremal::Stop`): one more unknown and one more row inside the curve's solve, so it
+    /// compiles no row of the drawing's (`Sketch::settle_variational`).
+    CurveTouchesLine,
     ParallelDistance,
     EqualLength,
     PointOnLine,
@@ -251,7 +257,7 @@ impl FamilyKernel {
 }
 
 /// Every concrete constraint type, in the order the registry lists them.
-pub const ALL_KINDS: [CKind; 65] = [
+pub const ALL_KINDS: [CKind; 66] = [
     CKind::Coincident,
     CKind::Distance,
     CKind::Midpoint,
@@ -317,6 +323,7 @@ pub const ALL_KINDS: [CKind; 65] = [
     CKind::SplineLength,
     CKind::CurveLength,
     CKind::Stationary,
+    CKind::CurveTouchesLine,
 ];
 
 /// **The words a direction may be written as** (`docs/ordinate-plan.md`): `along:` an ordinate
@@ -579,6 +586,11 @@ pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option
             (Curve, k) if round(k) => CKind::CurveCurvature,
             _ => return None,
         },
+        // a free curve pressed onto a held line, a corner where it chooses (#149)
+        "touches" => match (a, b) {
+            (Curve, Line) => CKind::CurveTouchesLine,
+            _ => return None,
+        },
         // the ordinate's zero; `horizontal` and `vertical` between points are the standard
         // library's words for `level(up)` and `level(right)` (`std.sv`, §9.9)
         "level" => match (a, b) {
@@ -692,10 +704,10 @@ pub fn prefix_op(word: &str, on: EntKind) -> Option<CKind> {
 /// table (`gauge_op`), so a class, a placement and the chain's lookahead treat them as any
 /// other word.  None of the three is a prefix word a chain can open a link with: `prefix_op`
 /// declines them, so `fix(x == 0) point p -> …` is no chain.
-pub const OPERATORS: [&str; 23] = [
+pub const OPERATORS: [&str; 24] = [
     "distance", "tangent", "equal", "curvature", "horizontal", "vertical", "level", "angle",
     "radius", "length", "coincident", "midpoint", "parallel", "perpendicular", "symmetry", "project",
-    "fix", "ccw", "cw",
+    "touches", "fix", "ccw", "cw",
     // **the words that relate two solids** (§9.8).  They are operators so that a statement
     // reads the way every other statement does; they settle to no `CKind` and compile no row,
     // because a solid is evaluated after the drawing is solved and a claim about one is judged
@@ -946,6 +958,7 @@ impl CKind {
             CKind::SplineLength => "SplineLength",
             CKind::CurveLength => "CurveLength",
             CKind::Stationary => "Stationary",
+            CKind::CurveTouchesLine => "CurveTouchesLine",
             CKind::ParallelDistance => "ParallelDistance",
             CKind::EqualLength => "EqualLength",
             CKind::PointOnLine => "PointOnLine",
@@ -1069,6 +1082,7 @@ impl CKind {
             CKind::ArcLength => &[("arc", S::Arc), ("l", S::Length)],
             CKind::SplineLength => &[("spline", S::Spline), ("l", S::Length)],
             CKind::CurveLength => &[("curve", S::Curve), ("l", S::Length)],
+            CKind::CurveTouchesLine => &[("curve", S::Curve), ("line", S::Line)],
             CKind::Stationary => &[
                 ("curve", S::Curve),
                 ("weight", S::Float),
@@ -1242,6 +1256,7 @@ impl CKind {
             | CKind::PointOnExtrusion => ("coincident", Infix),
             CKind::CurveTangentLine => ("tangent", Infix),
             CKind::CurveCurvature => ("curvature", Infix),
+            CKind::CurveTouchesLine => ("touches", Infix),
             // a measured separation: told apart by the pair and by `along:`, which makes it an
             // ordinate
             CKind::Distance
@@ -1509,7 +1524,8 @@ impl CKind {
     }
 
     pub fn claimable(self) -> bool {
-        !self.gauge() && !self.spec().iter().any(|(_, k)| k.is_param())
+        // a touch is part of its curve's problem, and holds wherever the problem is solved
+        !self.gauge() && !self.spec().iter().any(|(_, k)| k.is_param()) && self != CKind::CurveTouchesLine
     }
 
     /// The spec slots a contact on a parametric entity of kind `of` is made of: which argument
@@ -1534,7 +1550,7 @@ impl CKind {
     /// spline length's control-point count) rather than registered: `Constraint::kernel_key`
     /// names it, and nothing may ask `kernel()` for it.
     pub fn built(self) -> bool {
-        matches!(self, CKind::SplineLength | CKind::Stationary)
+        matches!(self, CKind::SplineLength | CKind::Stationary | CKind::CurveTouchesLine)
     }
 
     /// The per-definition kernel this kind runs through, for the four kinds that have one.
@@ -1587,6 +1603,8 @@ impl CKind {
             | CKind::SplineLength
             | CKind::CurveLength
             | CKind::Stationary
+            // a corner, not a tangency: the curve's own problem, no row of the drawing's
+            | CKind::CurveTouchesLine
             | CKind::ParallelDistance
             | CKind::EqualLength
             | CKind::PointOnLine
@@ -1681,6 +1699,7 @@ impl CKind {
             }
             CKind::SplineLength => panic!("a spline length's kernel belongs to its spline's count"),
             CKind::Stationary => panic!("an energy's kernel belongs to its curve"),
+            CKind::CurveTouchesLine => panic!("a touch is its curve's problem, and has no kernel"),
             CKind::CurveLength => K::Radius,
             CKind::Coincident => K::Coincident,
             CKind::Distance => K::Distance,
@@ -1787,7 +1806,7 @@ impl CKind {
             // its free twin is built beside it, at the spline's count (`KernelKey::SplineLength`)
             CKind::SplineLength => return None,
             CKind::CurveLength => K::RadiusFree,
-            CKind::Stationary => return None,
+            CKind::Stationary | CKind::CurveTouchesLine => return None,
             CKind::ParallelDistance => K::ParallelDistanceFree,
             CKind::PointLineDistance => K::PointLineDistanceFree,
             CKind::AnnularDistance => K::AnnularDistanceFree,
@@ -2404,7 +2423,8 @@ impl Constraint {
             let n = sk.splines[self.args[0].ent().i()].ctrl.len();
             return Key::SplineLength { n, free: self.free.is_some() };
         }
-        if self.kind == CKind::Stationary {
+        // a touch compiles no row (`rows_in`), and is keyed with its curve's energy
+        if matches!(self.kind, CKind::Stationary | CKind::CurveTouchesLine) {
             return Key::Stationary(self.id);
         }
         match (self.kind.family_kernel(), self.curve_of()) {
@@ -2548,6 +2568,8 @@ impl Constraint {
             None if self.kind == CKind::SplineLength => 1,
             // its curve's, which only the sketch can say: `rows_in`
             None if self.kind == CKind::Stationary => 0,
+            // its curve's problem's: never a row of the drawing's
+            None if self.kind == CKind::CurveTouchesLine => 0,
             None => kernels::kernel(self.kernel()).n_res,
         }
     }
@@ -3091,6 +3113,8 @@ impl Constraint {
             // the curve's own number
             CKind::CurveLength => sk.curves[e(0).i()].length.into_iter().collect(),
             CKind::Stationary => crate::variational::columns(sk, self.id),
+            // what its curve's problem reads: the curve's columns, and the line it presses
+            CKind::CurveTouchesLine => [sk.entity_params(e(0)), ln(1)].concat(),
             // the centre, the two ends and the radius: the sweep is read off the ends, the
             // length is the radius times it
             CKind::ArcLength => {

@@ -223,3 +223,21 @@ fn the_case_proves_its_circle_and_turns_a_hemisphere() {
     assert!(text.contains("RATIONAL_B_SPLINE_CURVE"));
     gcs_core::brep::step_check::verify(&text, &gcs_core::brep::step_check::Solid::of(&b)).unwrap();
 }
+
+#[test]
+fn a_drag_on_a_weighted_curve_rides_the_circle() {
+    // issue #134: the drag's part of the document is grafted, and its entities paired with the
+    // document's by kind and order; the weighted quarter must come out as what went in
+    let (prog, perr, lerr) = gcs_core::library::parse_linked(gcs_core::examples::source("nurbs").unwrap());
+    assert!(perr.is_empty() && lerr.is_empty());
+    let e = elaborate(&prog);
+    assert!(e.ok(), "{:?}", e.errors().map(|d| d.message.clone()).collect::<Vec<_>>());
+    let mut sk = e.sketch;
+    assert!(gcs_core::solve::solve(&mut sk, Default::default()).success);
+    let bead = e.map.ent_named("bead").unwrap().i();
+    let (x, y) = sk.point_xy(bead);
+    let mut d = gcs_core::decompose::PlanDrag::new(&sk, bead, x, y, None, 0.05);
+    assert!(d.move_to(&mut sk, None, 5.0, 40.0).success);
+    let (x, y) = sk.point_xy(bead);
+    assert!((x.hypot(y) - R).abs() < 1e-6, "the bead left the circle: ({x}, {y})");
+}
