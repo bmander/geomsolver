@@ -184,6 +184,9 @@ export function paint(v: SketchView): void {
   ctx.setLineDash([]);
   // a tool's preview is where its clicks are read (`toolView`)
   if (v.pending.length || v.pendingFit.length) v.inView(v.toolView, () => paintPreview(v));
+  // the region a click would extrude, washed where it is drawn
+  const region = v.tool === 'extrude' ? v.hoverRegion : null;
+  if (region && !('refused' in region)) v.inView(v.toolView, () => paintRegion(v, region.rings));
   if (v.diagnosis?.conflicts?.length) paintConflicts(v);
 
   // one read for every point: a point's style is the sheet's `.point` rule and nothing else
@@ -207,7 +210,8 @@ export function paint(v: SketchView): void {
   // nobody finds — and the canvas's own selected/hovered colours otherwise
   paintFrame(v);
   v.gesture?.paint?.(ctx);
-  if (v.tool !== 'select') {                 // snap indicator
+  paintExtentArrow(v);
+  if (v.tool !== 'select' && v.tool !== 'extrude') {   // snap indicator
     const sp = v.pickPoint(...v.cursor);
     if (sp) {
       const [sx, sy] = v.seen(sp);
@@ -519,4 +523,56 @@ export function polyPath(v: SketchView, pts: readonly (readonly [number, number]
     if (i) ctx.lineTo(s[0], s[1]);
     else ctx.moveTo(s[0], s[1]);
   });
+}
+
+/** A region's wash: its outer ring and its holes as one path, filled even-odd so the holes stay
+ *  clear — the rings in the plane's own coordinates, under `inView`. */
+function paintRegion(v: SketchView, rings: [number, number][][]): void {
+  const ctx = v.ctx;
+  ctx.beginPath();
+  for (const ring of rings) {
+    ring.forEach(([x, y], i) => {
+      const [sx, sy] = v.w2s(x, y);
+      if (i === 0) ctx.moveTo(sx, sy);
+      else ctx.lineTo(sx, sy);
+    });
+    ctx.closePath();
+  }
+  ctx.save();
+  ctx.globalAlpha = 0.18;
+  ctx.fillStyle = COL.highlight;
+  ctx.fill('evenodd');
+  ctx.restore();
+}
+
+/** The arrow an extrusion being sized is dragged by: from its face's middle to its far end, a
+ *  head and a ring at the tip that a press takes hold of. */
+function paintExtentArrow(v: SketchView): void {
+  const a = v.extentArrow();
+  if (!a) return;
+  const ctx = v.ctx;
+  const [bx, by] = a.base;
+  const [tx, ty] = a.tip;
+  const len = Math.hypot(tx - bx, ty - by) || 1;
+  const [ux, uy] = [(tx - bx) / len, (ty - by) / len];
+  ctx.save();
+  ctx.strokeStyle = COL.sel;
+  ctx.fillStyle = COL.sel;
+  ctx.lineWidth = 2;
+  ctx.setLineDash([]);
+  ctx.beginPath();
+  ctx.moveTo(bx, by);
+  ctx.lineTo(tx, ty);
+  ctx.stroke();
+  const head = 10;
+  ctx.beginPath();
+  ctx.moveTo(tx, ty);
+  ctx.lineTo(tx - head * ux - head * 0.45 * uy, ty - head * uy + head * 0.45 * ux);
+  ctx.lineTo(tx - head * ux + head * 0.45 * uy, ty - head * uy - head * 0.45 * ux);
+  ctx.closePath();
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(tx, ty, 6, 0, 2 * Math.PI);
+  ctx.stroke();
+  ctx.restore();
 }

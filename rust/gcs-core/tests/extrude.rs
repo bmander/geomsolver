@@ -174,7 +174,10 @@ fn the_arrow_runs_from_the_face_to_its_far_end_and_reads_a_drag_back() {
         let got = extent_at(&e.sketch, &proj, block, at).unwrap();
         assert!((got - t).abs() < 1e-9, "{got} {t}");
     }
-    // from the front the normal is the line of sight: no arrow to drag
+    assert!(h.readable);
+    // from the front the normal is the line of sight: no arrow to drag, though the extents stand
     let front = Projection::new(&e.sketch, -std::f64::consts::FRAC_PI_2, 0.0);
-    assert_eq!(extrude_handle(&e.sketch, &front, block), None);
+    let h = extrude_handle(&e.sketch, &front, block).unwrap();
+    assert!(!h.readable && (h.from, h.to) == (-5.0, 0.0));
+    assert_eq!(extent_at(&e.sketch, &front, block, (30.0, 20.0)), None);
 }

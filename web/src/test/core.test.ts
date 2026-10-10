@@ -1964,6 +1964,27 @@ test('a face, its solid and the body rule are written through the edit API by na
   assert.ok(bore.addBodyWord('cut', 'b0', 'b0').refused);
 });
 
+test('an extrusion is written by name through the edit API, and resized in place', () => {
+  const d = Document.read('use std\nin std.front {\na := point\nb := point\nc := point\n'
+                          + 'k := point\nab := line(a, b)\nbc := line(b, c)\nck := line(c, k)\n'
+                          + 'ka := line(k, a)\nfix((0, 0)) a\nfix((60, 0)) b\nfix((60, 40)) c\n'
+                          + 'fix((0, 40)) k\n}\n');
+  assert.ok(d.ok, JSON.stringify(d.diagnostics));
+  const e = d.extrude(['ab', 'bc', 'ck', 'ka'], []);
+  assert.equal(e.refused, null);
+  assert.deepEqual(e.names, ['b0', 'f0']);
+  assert.ok(/f0 := face\(ab, bc, ck, ka\)\nb0 := solid\(f0, depth: [\d.]+\)\n$/.test(e.text),
+            e.text);
+  const next = Document.read(e.text);
+  const b0 = next.solids().find((s) => s.name === 'b0')!.index;
+  const wider = next.setSweep(b0, { from: '0', to: '7' });
+  assert.ok(wider.text.includes('b0 := solid(f0, from: 0, to: 7)'), wider.text);
+  assert.ok(next.setSweep(b0, { depth: '7', about: 'ab' }).refused);
+  assert.ok(next.sketch.setPrism(b0, -3, 3));
+  const cut = d.extrude(['ab', 'bc', 'ck', 'ka'], [], { word: 'cut', body: 'nothing' });
+  assert.match(cut.refused ?? '', /nothing/);
+});
+
 test('a datum is dropped by name through the edit API, and refused with the cause', () => {
   const d = Document.read('use std\nin std.front {\na := point hint((0, 0))\n'
                           + 'c := point hint((30, 40))\nfix((0, 0)) a\nfix((30, 40)) c\n}\n');

@@ -9,6 +9,8 @@ export function setTool(v: SketchView, tool: Tool): void {
   v.tool = tool;
   v.pending = [];
   v.pendingFit = [];
+  v.hoverRegion = null;
+  v.endExtent();                             // an extrusion being sized is done with the tool
   v.canvas.classList.toggle('select', tool === 'select');
   v.canvas.style.cursor = '';                // drop any hover affordance
   v.onTool(tool);
@@ -100,6 +102,12 @@ export function cancelTool(v: SketchView): void {
     v.draw();
     return;
   }
+  // an extrusion being sized: done sizing, the tool still down for the next
+  if (v.liveExtent) {
+    v.endExtent();
+    v.draw();
+    return;
+  }
   if (v.tool !== 'select') setTool(v, 'select');
 }
 export function snapOrNew(v: SketchView, sp: [number, number]): Point {
@@ -153,13 +161,21 @@ export function seedNamed(v: SketchView, name: string, x: number, y: number): vo
   }
 }
 
-export function toolClick(v: SketchView, sp: [number, number]): void {
+/** A press with a tool down.  `alt` and `shift` are the press's modifiers: an extrusion with a
+ *  body selected cuts it with ⌥, and cuts through all of it with ⌥⇧. */
+export function toolClick(v: SketchView, sp: [number, number],
+                          mods: { alt?: boolean; shift?: boolean } = {}): void {
   // a standard plane chosen before the document had it is brought in by the first press: the
   // document gains `use std`, and what the press makes is drawn on the plane it now has
   if (!v.ensurePlane()) return;
   // a plane seen edge on has no place on it under the pointer (`toolView` is the one read)
   if (!v.viewCam().readable()) {
     v.onStatus(`${v.planeName} is seen edge on — turn the view, or choose the plane again to face it`);
+    return;
+  }
+  // an extrusion writes its statements through `apply`, which takes its own undo step
+  if (v.tool === 'extrude') {
+    v.extrudeAt(sp[0], sp[1], { cut: mods.alt && !mods.shift, through: mods.alt && mods.shift });
     return;
   }
   const sk = v.sketch;

@@ -54,9 +54,13 @@ export type EditKind = 'structural' | 'numeric' | 'none';
 
 /** How a face is swept (Solvent §6.9): along its normal (`depth`, or `from` and `to`), through a
  *  body, or turned `about` a line in its plane. */
-export interface SolidSpec {
+export interface SolidSpec extends SweepSpec {
   face: string;
   name?: string;
+}
+
+/** A sweep alone, each extent the text written. */
+export interface SweepSpec {
   depth?: string;
   from?: string;
   to?: string;
@@ -368,6 +372,20 @@ export class Document {
   addDatum(kind: 'plane' | 'axis', from: string[], current?: string, name?: string): Edit {
     return edit(withJson({ kind, from, current, name },
       (p, n) => core().gcs_elab_add_datum(this.h, this.sketch.handle, p, n)));
+  }
+
+  /** **Extrude** the region a click found — its loops by name — as one splice: the face, the
+   *  solid swept from it at a round default depth (or `through` the body), and with a body the
+   *  body rule.  `names` is the solid, then the faces. */
+  extrude(outer: string[], holes: string[][],
+          with_?: { word: BodyWord; body: string; through?: boolean }): Edit {
+    const req = { outer, holes, word: with_?.word, body: with_?.body, through: with_?.through };
+    return edit(withJson(req, (p, n) => core().gcs_elab_extrude(this.h, this.sketch.handle, p, n)));
+  }
+
+  /** Rewrite how solid `solid` (its index) is swept, over the same face. */
+  setSweep(solid: number, spec: SweepSpec): Edit {
+    return edit(withJson(spec, (p, n) => core().gcs_elab_set_sweep(this.h, solid, p, n)));
   }
 
   /** The body rule: `what union body`, `what cut body`, `what bound body`. */

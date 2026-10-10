@@ -291,8 +291,13 @@ export function onPointerDown(v: SketchView, e: PointerEvent): void {
     placeDimension(v);
     return;
   }
+  // the arrow of an extrusion being sized: taking hold of it sizes it
+  if (v.liveExtent && onExtentArrow(v, sp)) {
+    v.gesture = extentGesture(v);
+    return;
+  }
   if (v.tool !== 'select') {
-    toolClick(v, sp);
+    toolClick(v, sp, { alt: e.altKey, shift: e.shiftKey });
     return;
   }
   // a number still being written, on a pair that can be measured three ways: taking hold of
@@ -380,6 +385,7 @@ export function onPointerDown(v: SketchView, e: PointerEvent): void {
 export function onPointerMove(v: SketchView, e: PointerEvent): void {
   const sp = local(v, e);
   v.cursor = sp;
+  v.shiftDown = e.shiftKey;
   if (v.liveDim?.placing) moveDimension(v, sp);
   else if (v.gesture) v.gesture.move(sp);
   else hover(v, sp);
@@ -598,8 +604,35 @@ function whatIsAt(v: SketchView, sp: [number, number], solids = true): Target {
   return { kind: 'none' };
 }
 
+/** Whether a canvas point is on the arrow tip of the extrusion being sized. */
+function onExtentArrow(v: SketchView, sp: [number, number]): boolean {
+  const a = v.extentArrow();
+  return !!a && Math.hypot(a.tip[0] - sp[0], a.tip[1] - sp[1]) < v.pickPx + 4;
+}
+
+/** Dragging an extrusion's arrow: it is sized where the eye sees the pointer along its normal,
+ *  both ways with ⇧, and written when it is let go — one edit, joining the extrusion's own undo
+ *  step. */
+function extentGesture(v: SketchView): Gesture {
+  return {
+    transient: true,
+    move: (at) => v.sizeExtent(at[0], at[1]),
+    end: () => {
+      const why = v.commitExtent();
+      if (why) v.onStatus(why);
+    },
+  };
+}
+
 /** Cursor affordance: what a press here would grab. */
 export function hover(v: SketchView, sp: [number, number]): void {
+  // the Extrude tool shows what a click would extrude, and offers its arrow
+  if (v.tool === 'extrude') {
+    const grab = !!v.liveExtent && onExtentArrow(v, sp);
+    v.hoverRegion = grab ? null : v.regionAt(sp[0], sp[1]);
+    v.canvas.style.cursor = grab ? 'grab' : '';
+    return;
+  }
   if (v.tool !== 'select') return;
   // a solid promises no cursor of its own, so a pointer move does not cast a ray for one
   const at = whatIsAt(v, sp, false);

@@ -434,6 +434,9 @@ pub struct ExtrudeHandle {
     pub tip: (f64, f64),
     pub from: f64,
     pub to: f64,
+    /// False where the eye looks straight down the normal: an arrow along it is a dot, and there
+    /// is nothing to drag — the extents still say how thick it is.
+    pub readable: bool,
 }
 
 /// Where prism `solid`'s face sits and which way it is swept: the face's middle and its plane's
@@ -469,18 +472,19 @@ fn centroid(pts: &[(f64, f64)]) -> (f64, f64) {
     (pts.iter().map(|p| p.0).sum::<f64>() / k, pts.iter().map(|p| p.1).sum::<f64>() / k)
 }
 
-/// The arrow prism `solid` is sized by, seen: `None` for a solid that is not a prism, or one whose
-/// normal the eye looks straight down, where an arrow along it would be a dot.
+/// The arrow prism `solid` is sized by, seen: `None` for a solid that is not a prism.
 pub fn extrude_handle(sk: &Sketch, proj: &Projection, solid: usize) -> Option<ExtrudeHandle> {
     let (base, n, from, to) = prism_frame(sk, solid)?;
     let along = |t: f64| proj.seen([0, 1, 2].map(|k| base[k] + t * n[k]));
     let (b, one) = (along(0.0), along(1.0));
-    if (one.0 - b.0).dhypot(one.1 - b.1) < 0.05 {
-        return None;
-    }
+    let readable = (one.0 - b.0).dhypot(one.1 - b.1) >= EDGE_ON_NORMAL;
     let far = if to.abs() >= from.abs() { to } else { from };
-    Some(ExtrudeHandle { base: b, tip: along(far), from, to })
+    Some(ExtrudeHandle { base: b, tip: along(far), from, to, readable })
 }
+
+/// How short a unit normal may look and still be dragged along: under it, the eye is looking
+/// down the normal.
+const EDGE_ON_NORMAL: f64 = 0.05;
 
 /// How far along prism `solid`'s normal the point under `at` is, as the eye sees it: the signed
 /// distance from its face of the point on the normal through the face's middle that the eye's
@@ -491,7 +495,8 @@ pub fn extent_at(sk: &Sketch, proj: &Projection, solid: usize, at: (f64, f64)) -
     let one = proj.seen([0, 1, 2].map(|k| base[k] + n[k]));
     let d = (one.0 - b.0, one.1 - b.1);
     let len2 = d.0 * d.0 + d.1 * d.1;
-    (len2 > 0.05 * 0.05).then(|| ((at.0 - b.0) * d.0 + (at.1 - b.1) * d.1) / len2)
+    let along = (at.0 - b.0) * d.0 + (at.1 - b.1) * d.1;
+    (len2 >= EDGE_ON_NORMAL * EDGE_ON_NORMAL).then(|| along / len2)
 }
 
 /// Every entity whose figure touches the box `lo`–`hi` on the eye's picture plane — a rubber

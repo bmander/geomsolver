@@ -2313,7 +2313,7 @@ pub unsafe extern "C" fn gcs_workspace_pick_solid_json(h: *mut Sketch, az: f64, 
 }
 
 /// The arrow prism `solid` is sized by, seen by the eye at `az`, `el`: `{base: [x, y], tip: [x, y],
-/// from, to}`, or `null` for no prism or one seen straight down its normal.
+/// from, to, readable}` — not readable seen straight down its normal — or `null` for no prism.
 #[no_mangle]
 pub unsafe extern "C" fn gcs_workspace_extrude_handle_json(h: *mut Sketch, az: f64, el: f64,
                                                            solid: i32) -> *mut u8 {
@@ -2328,6 +2328,7 @@ pub unsafe extern "C" fn gcs_workspace_extrude_handle_json(h: *mut Sketch, az: f
                 ("tip", pt(k.tip)),
                 ("from", Json::Num(k.from)),
                 ("to", Json::Num(k.to)),
+                ("readable", Json::Bool(k.readable)),
             ]),
             None => Json::Null,
         })

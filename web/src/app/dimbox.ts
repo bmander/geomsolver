@@ -8,7 +8,7 @@ import { editDimension } from './commands.js';
 import { invalidateRows } from './lists.js';
 import { view } from './shell.js';
 import { toast } from './ui.js';
-import type { LiveDim } from './view.js';
+import type { LiveDim, LiveExtent } from './view.js';
 
 /** A dimension's number as a person reads and writes it: what it was written as if it was
  *  written (`w` for a `param`, which is also what its callout says), else what the drawing says
@@ -60,26 +60,36 @@ function sizeDimBox(box: HTMLInputElement): void {
   box.style.width = `${Math.max(4, box.value.length + 1)}ch`;
 }
 
-function openDimBox(): HTMLInputElement {
+/** The one number editor's element, on the canvas: Enter accepts and keeps it open on a refusal,
+ *  Esc takes it back, clicking away accepts — the way a cell in a sheet does.  `finish` is the
+ *  caller's: the dimension's or the extrusion's. */
+function numberBox(title: string, typed: () => void,
+                   finish: (commit: boolean, keepOpen?: boolean) => void): HTMLInputElement {
   const box = document.createElement('input');
   box.type = 'text';
   box.className = 'dim';
   box.spellcheck = false;
-  box.title = 'a number, or an expression over the document\'s numbers — `w / 2` reads `w := 80`,\nand a declared unknown (`param a: Length`) ties the dimensions that read it.\nEnter to accept, Esc to take it back';
-  dimTyped = false;
-  box.addEventListener('input', () => { dimTyped = true; sizeDimBox(box); });
+  box.title = title;
+  box.addEventListener('input', () => { typed(); sizeDimBox(box); });
   box.addEventListener('keydown', (e) => {
     e.stopPropagation();
-    if (e.key === 'Enter') { e.preventDefault(); finishDim(true, true); }
-    if (e.key === 'Escape') { e.preventDefault(); finishDim(false); }
+    if (e.key === 'Enter') { e.preventDefault(); finish(true, true); }
+    if (e.key === 'Escape') { e.preventDefault(); finish(false); }
   });
-  // clicking away accepts it, the way a cell in a sheet does.  The click that *plants* the
-  // callout is not a click away: the canvas refuses the focus for exactly that reason
-  box.addEventListener('blur', () => finishDim(true));
+  // the click that *plants* a callout is not a click away: the canvas refuses the focus for
+  // exactly that reason
+  box.addEventListener('blur', () => finish(true));
   (document.getElementById('canvas-wrap') as HTMLElement).append(box);
-  dimBox = box;
   box.focus();
   return box;
+}
+
+function openDimBox(): HTMLInputElement {
+  dimTyped = false;
+  dimBox = numberBox('a number, or an expression over the document\'s numbers — `w / 2` reads '
+    + '`w := 80`,\nand a declared unknown (`param a: Length`) ties the dimensions that read it.'
+    + '\nEnter to accept, Esc to take it back', () => { dimTyped = true; }, finishDim);
+  return dimBox;
 }
 
 function closeDimBox(): void {
@@ -138,6 +148,60 @@ export function onDimension(live: LiveDim | null, at: [number, number] | null): 
   }
   if (at) {
     box.style.left = `${at[0]}px`;
+    box.style.top = `${at[1]}px`;
+  }
+}
+
+let extentBox: HTMLInputElement | null = null;
+let extentTyped = false;
+
+function closeExtentBox(): void {
+  const box = extentBox;
+  extentBox = null;                 // first, so the blur that removing it may fire does nothing
+  box?.remove();
+}
+
+/** Done typing an extrusion's thickness: accepted, it is written over the solid (`commitExtent`)
+ *  and the box stays on the arrow for more; taken back, the sizing ends where it was last
+ *  written.  A thickness the core will not have keeps the box open on Enter. */
+function finishExtent(commit: boolean, keepOpen = false): void {
+  if (!extentBox) return;
+  const text = extentTyped ? extentBox.value.trim() : '';
+  if (commit && text) {
+    const why = view.commitExtent(text);
+    if (why !== null) {
+      toast(why);
+      if (keepOpen) return;
+    }
+    extentTyped = false;
+    if (keepOpen) return;
+  }
+  closeExtentBox();
+  if (!commit) view.endExtent();
+}
+
+/** The view is sizing an extrusion, and this is where its number is on screen — or nulls when
+ *  it is done.  Wired onto the view in `main`. */
+export function onExtent(live: LiveExtent | null, at: [number, number] | null): void {
+  if (!live) return closeExtentBox();
+  if (!extentBox) {
+    extentTyped = false;
+    extentBox = numberBox('how thick: a number, or an expression over the document\'s numbers.'
+      + '\nDrag the arrow to size it — past its face for the other side, with ⇧ both ways.'
+      + '\nEnter to accept, Esc to stop sizing', () => { extentTyped = true; }, finishExtent);
+  }
+  const box = extentBox;
+  if (!extentTyped) {
+    const text = String(Number(live.d.toPrecision(6)));
+    if (box.value !== text) {
+      box.value = text;
+      sizeDimBox(box);
+      box.select();
+    }
+  }
+  box.style.display = at ? '' : 'none';
+  if (at) {
+    box.style.left = `${at[0] + 12}px`;
     box.style.top = `${at[1]}px`;
   }
 }

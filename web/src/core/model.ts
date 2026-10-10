@@ -801,6 +801,12 @@ export class Sketch {
     core().gcs_sketch_perturb(this.handle, sigma, seed >>> 0);
   }
 
+  /** Re-extrude prism `i` where it stands, `from`/`to` along its face's normal — the preview an
+   *  extrusion being sized shows before the source says it.  False for a solid no prism. */
+  setPrism(i: number, from: number, to: number): boolean {
+    return core().gcs_sketch_set_prism(this.handle, i, from, to) !== 0;
+  }
+
   /** What a click at (x, y) picks: the nearest entity whose *drawn* figure comes within `tol`,
    *  a world length — so a front end passes `PICK_PX * unit` and keeps no geometry of its own.
    *  The core measures against what it drew, which is what makes clicking a thing and

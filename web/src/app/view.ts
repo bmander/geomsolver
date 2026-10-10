@@ -26,6 +26,7 @@ import { PlanResult, PlanSolver, asSolveResult } from '../core/decompose.js';
 import { Diagnosis, diagnose } from '../core/diagnose.js';
 import { Param, Plane, Point, Primitive, Sketch } from '../core/model.js';
 import { Document, Edit, fromSketch } from '../core/program.js';
+import type { Region, SweepSpec } from '../core/program.js';
 import { Method, SolveResult, System } from '../core/system.js';
 import type { Item } from '../core/overview.js';
 import { Motion, WitnessReport, analyze } from '../core/witness.js';
@@ -40,9 +41,10 @@ import * as tools from './tools.js';
 import * as underlay from './underlay.js';
 import type { Bitmap, Underlay } from './underlay.js';
 import {
-  NOWHERE, PAGE, boundsSeen, calloutSeen, lookOf, maps, nearestSeen, ofView, panesSeen, pickSeen,
-  pickSolidSeen, placeOf, spacePoints, workspace,
+  NOWHERE, PAGE, boundsSeen, calloutSeen, extentAt, extrudeHandle, lookOf, maps, nearestSeen,
+  ofView, panesSeen, pickSeen, pickSolidSeen, placeOf, spacePoints, workspace,
 } from '../core/workspace.js';
+import type { ExtrudeHandle } from '../core/workspace.js';
 import type { View, Workspace } from '../core/workspace.js';
 
 /** A solid picked in the workspace: which (its name, and its index in the current sketch) and the
@@ -51,6 +53,25 @@ export interface SolidPick {
   name: string;
   index: number;
   face: string;
+}
+
+/** An extrusion being sized (#162 F2): which solid, which way it is swept from its face — behind
+ *  it (`depth: d`), in front of it (`from: 0, to: d`), or both ways (`from: -d/2, to: d/2`) — and
+ *  how thick, in all.  Open from the click that made it until the tool is put down. */
+export interface LiveExtent {
+  solid: string;
+  mode: 'behind' | 'front' | 'symmetric';
+  d: number;
+}
+
+/** Where an extrusion being sized runs along its face's normal, from and to. */
+function extents(x: LiveExtent): [number, number] {
+  return x.mode === 'behind' ? [-x.d, 0] : x.mode === 'front' ? [0, x.d] : [-x.d / 2, x.d / 2];
+}
+
+/** A thickness as an extrusion writes it: shortest round-trip, no unit. */
+function extentText(x: number): string {
+  return String(Number(x.toPrecision(12)));
 }
 
 /* A dimension being written belongs to `dimension`, but it is the view a caller holds, so the
@@ -106,7 +127,8 @@ export interface Place {
 }
 
 export type Tool =
-  'select' | 'point' | 'line' | 'rect' | 'circle' | 'arc' | 'arc3' | 'spline' | 'splinefit';
+  'select' | 'point' | 'line' | 'rect' | 'circle' | 'arc' | 'arc3' | 'spline' | 'splinefit'
+  | 'extrude';
 
 
 export class SketchView {
@@ -212,6 +234,16 @@ export class SketchView {
 
   /** The dimension being written, if any — see `startDimension`. */
   liveDim: LiveDim | null = null;
+  /** An extrusion is being sized, and this is where its number is on screen — the shell puts an
+   *  editor there; nulls when there is none. */
+  onExtent: (live: LiveExtent | null, at: [number, number] | null) => void = () => {};
+  /** The extrusion being sized, if any — see `extrudeAt`. */
+  liveExtent: LiveExtent | null = null;
+  /** The closed region under the pointer while the Extrude tool is down: what a click there
+   *  would extrude, washed on the drawing, or why it could not be. */
+  hoverRegion: Region | { refused: string } | null = null;
+  /** Whether ⇧ is held, as the last pointer event said: a drag reads it as it goes. */
+  shiftDown = false;
 
   /* -- the view's own workings.  What is not `private` here is read by the modules beside
    * this file — they are as much the view as this class is, and TypeScript has no way to say
@@ -472,6 +504,8 @@ export class SketchView {
     if (this.liveDim) this.endDimension(false);
     this.pending = [];
     this.pendingFit = [];
+    this.hoverRegion = null;
+    this.endExtent();
   }
 
   /** Frame everything the workspace shows — figures and solids, as the eye now sees them. */
@@ -1080,6 +1114,137 @@ export class SketchView {
   cancelTool(): void { tools.cancelTool(this); }
   finishCurve(): void { tools.finishCurve(this); }
   finishSplineFit(): void { tools.finishSplineFit(this); }
+
+  /** The closed region of the drawing under a canvas point, on the plane being drawn on. */
+  regionAt(sx: number, sy: number): Region | { refused: string } | null {
+    const [x, y] = this.s2wIn(this.toolView, sx, sy);
+    return this.doc.regionAt(this.plane, x, y, this.unit);
+  }
+
+  /** **Extrude** the region under a canvas point (#162 F2): the face, the solid and — with a body
+   *  selected — the body rule, written as one edit (one undo step): joined, or with `cut` cut
+   *  from it, or with `through` cut through all of it.  The new solid is selected and, unless
+   *  it goes through, opened for sizing (`liveExtent`). */
+  extrudeAt(sx: number, sy: number, how: { cut?: boolean; through?: boolean } = {}): boolean {
+    const r = this.regionAt(sx, sy);
+    if (!r) {
+      this.onStatus('there is no closed region here to extrude: click inside a loop of edges');
+      return false;
+    }
+    if ('refused' in r) {
+      this.onStatus(r.refused);
+      return false;
+    }
+    const body = this.selectedSolids[0]?.name;
+    if ((how.cut || how.through) && !body) {
+      this.onStatus('select the body to cut first');
+      return false;
+    }
+    const word = how.cut || how.through ? 'cut' : 'union';
+    const e = this.doc.extrude(r.outer, r.holes,
+      body ? { word, body, through: how.through } : undefined);
+    const solid = e.names[0];
+    if (!this.apply(e, `${solid}: extruded`)) return false;
+    this.hoverRegion = null;
+    this.pickSolidNamed(solid);
+    const h = this.extrudeHandleOf(solid);
+    if (!how.through && h) {
+      this.liveExtent = { solid, mode: 'behind', d: h.to - h.from };
+      this.tellExtent();
+    }
+    this.onSelect();
+    this.onChanged();
+    this.draw();
+    return true;
+  }
+
+  /** Select a solid by the name the source gives it. */
+  private pickSolidNamed(name: string): void {
+    const index = this.doc.solids().find((s) => s.name === name)?.index;
+    if (index !== undefined) this.pickSolid({ name, index, face: '' });
+  }
+
+  private solidIndex(name: string): number | undefined {
+    return this.doc.solids().find((s) => s.name === name)?.index;
+  }
+
+  private extrudeHandleOf(name: string): ExtrudeHandle | null {
+    const i = this.solidIndex(name);
+    const { az, el } = this.orbit;
+    return i === undefined ? null : extrudeHandle(this.sketch, az, el, i);
+  }
+
+  /** The arrow the extrusion being sized is dragged by, on screen: from its face's middle to its
+   *  far end.  Null when none is being sized, or the eye looks down its normal. */
+  extentArrow(): { base: [number, number]; tip: [number, number] } | null {
+    const h = this.liveExtent && this.extrudeHandleOf(this.liveExtent.solid);
+    if (!h?.readable) return null;
+    this.cams();
+    const eye = this.camCache!.eye;
+    return { base: eye.w2s(...h.base), tip: eye.w2s(...h.tip) };
+  }
+
+  /** Size the extrusion to where the eye sees a canvas point along its normal: in front of its
+   *  face or behind by the side the point is on, both ways with ⇧ — a preview on the sketch
+   *  (`setPrism`), written when the drag lets go (`commitExtent`). */
+  sizeExtent(sx: number, sy: number, symmetric = this.shiftDown): void {
+    const live = this.liveExtent;
+    const i = live ? this.solidIndex(live.solid) : undefined;
+    if (!live || i === undefined) return;
+    const { az, el } = this.orbit;
+    const t = extentAt(this.sketch, az, el, i, ...this.eye(sx, sy));
+    if (!Number.isFinite(t) || Math.abs(t) < 1e-9) return;
+    // two significant figures: a drag says roughly how much, the number box says exactly
+    const r = Number(Math.abs(t).toPrecision(2));
+    this.liveExtent = symmetric ? { ...live, mode: 'symmetric', d: 2 * r }
+      : { ...live, mode: t > 0 ? 'front' : 'behind', d: r };
+    const [from, to] = extents(this.liveExtent);
+    this.sketch.setPrism(i, from, to);
+    this.box3d.invalidate();
+    this.tellExtent();
+    this.draw();
+  }
+
+  /** Write the extrusion being sized into the source — at its current thickness, or at `text`
+   *  as typed — over the same face, way and solid.  The edit joins the extrusion's own undo
+   *  step.  Null when written, else why not. */
+  commitExtent(text?: string): string | null {
+    const live = this.liveExtent;
+    const i = live ? this.solidIndex(live.solid) : undefined;
+    if (!live || i === undefined) return 'nothing is being extruded';
+    const thick = text?.trim() || extentText(live.d);
+    const n = Number(thick);
+    const half = Number.isFinite(n) ? extentText(n / 2) : `(${thick}) / 2`;
+    const spec: SweepSpec = live.mode === 'behind' ? { depth: thick }
+      : live.mode === 'front' ? { from: '0', to: thick }
+      : { from: Number.isFinite(n) ? extentText(-n / 2) : `-(${thick}) / 2`, to: half };
+    const e = this.doc.setSweep(i, spec);
+    if (e.refused) return e.refused;
+    const next = Document.read(e.text);
+    // the edit swaps the document, which ends what is in flight; the extrusion being sized is
+    // carried across it, still being sized
+    this.liveExtent = null;
+    this.takeDocument(next);
+    this.liveExtent = { ...live, d: Number.isFinite(n) ? n : live.d };
+    this.pickSolidNamed(live.solid);
+    this.tellExtent();
+    this.draw();
+    return null;
+  }
+
+  /** Stop sizing the extrusion: what was last written stands. */
+  endExtent(): void {
+    if (!this.liveExtent) return;
+    this.liveExtent = null;
+    this.onExtent(null, null);
+  }
+
+  /** Tell the shell where the number of the extrusion being sized is. */
+  private tellExtent(): void {
+    const live = this.liveExtent;
+    if (!live) return this.onExtent(null, null);
+    this.onExtent(live, this.extentArrow()?.tip ?? null);
+  }
 
   /** **Drop a datum**: a plane or an axis, written at once and constrained to what is selected
    *  by the core's table (`edit::add_datum`): through a point, along a line, square to a plane —

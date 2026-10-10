@@ -112,6 +112,31 @@ export function pickSolidSeen(sk: Sketch, az: number, el: number,
   return takeJson<SolidHit | null>(core().gcs_workspace_pick_solid_json(sk.handle, az, el, x, y));
 }
 
+/** The arrow a prism is sized by, as the eye sees it: from its face's middle to its far end along
+ *  the face's normal, the extents it runs between, and whether the eye can see it as an arrow
+ *  rather than a dot. */
+export interface ExtrudeHandle {
+  base: [number, number];
+  tip: [number, number];
+  from: number;
+  to: number;
+  readable: boolean;
+}
+
+/** The arrow prism `solid` is sized by, on the eye's picture plane — or null for no prism. */
+export function extrudeHandle(sk: Sketch, az: number, el: number,
+                              solid: number): ExtrudeHandle | null {
+  return takeJson<ExtrudeHandle | null>(
+    core().gcs_workspace_extrude_handle_json(sk.handle, az, el, solid));
+}
+
+/** How far along prism `solid`'s normal the point under `(x, y)` on the eye's picture plane is —
+ *  what dragging its arrow there sizes it to — or NaN. */
+export function extentAt(sk: Sketch, az: number, el: number, solid: number,
+                         x: number, y: number): number {
+  return core().gcs_workspace_extent_at(sk.handle, az, el, solid, x, y);
+}
+
 /** The planes whose panes `(x, y)` on the eye's picture plane falls inside, nearest the eye
  *  first. */
 export function panesSeen(sk: Sketch, az: number, el: number, x: number, y: number): Plane[] {
