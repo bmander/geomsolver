@@ -238,7 +238,9 @@ function refreshMeasure(): void {
   }
   const ix = new io.Index(view.sketch);
   const rows = [`<b>${ix.name(a)} → ${ix.name(b)}</b>`];
-  rows.push(`distance  ${io.fmt(distanceBetween(a, b), 6)}`);
+  // an axis or a face is on no sheet and has no distance to anything: the core says NaN
+  const d = distanceBetween(a, b);
+  if (Number.isFinite(d)) rows.push(`distance  ${io.fmt(d, 6)}`);
   if (a instanceof Point && b instanceof Point) {
     rows.push(`Δx ${io.fmt(b.x.value - a.x.value, 6)}   Δy ${io.fmt(b.y.value - a.y.value, 6)}`);
   } else if (a instanceof Line && b instanceof Line) {
