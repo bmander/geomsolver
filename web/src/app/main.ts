@@ -28,7 +28,8 @@
  *             Ctrl+X/C/V cut, copy, paste the selection
  *   workspace one scene in space: every sketch stands on its own plane and solids are drawn
  *             under them.  Right-drag orbits, middle-drag (or ⇧ right-drag) pans, the wheel
- *             zooms.  The chooser in the viewport's upper right is the plane the next thing is
+ *             zooms; a trackpad pinches to zoom and scrolls to pan, and two fingers on a touch
+ *             screen pinch and pan together.  The chooser in the viewport's upper right is the plane the next thing is
  *             drawn on — std.front, std.side, std.top and every plane the document names — and
  *             choosing one turns the view square on to it.  Insert ▸ Plane… asks what a new
  *             view is and takes two clicks for where it sits; J projects two points, one in each

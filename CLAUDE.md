@@ -1548,7 +1548,10 @@ Conventions:
   plane without turning the eye (`choosePlane(name, false)`): `workspace::panes_at` lists them
   nearest the eye first, `paneAt` takes the first the chooser offers.  Callouts are drawn for the
   current plane's place only (`showsCallouts`), and the one being written or focused.  Right-drag
-  orbits, middle or ⇧right-drag pans, the wheel zooms.  A flat document opens square on to the
+  orbits, middle or ⇧right-drag pans, the wheel zooms; a trackpad's pinch (ctrl-wheel, Safari's
+  `gesturechange`) zooms and its scroll pans (`gesture::scrolled`), and two touch fingers pinch
+  and pan (`touchNavigation`: a lone finger's press waits `TOUCH_HOLD_MS` or `TOUCH_SLOP_PX`, so
+  a pinch neither clicks a tool nor drags).  A flat document opens square on to the
   front, one with a solid or off-front geometry from three quarters (`homeOrbit`);
   `workspace::bounds` frames figures and solids.  The orbit is view state (never saved, exported,
   solved or undone).  `tests/workspace.rs` and `app.test.ts` are the gates.
