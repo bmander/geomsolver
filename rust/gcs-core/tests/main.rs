@@ -55,6 +55,7 @@ mod drag;
 mod edit;
 mod edit_datums;
 mod edit_solids;
+mod extrude;
 mod ellipse;
 mod envelope;
 mod surfaces;

@@ -828,11 +828,22 @@ fn face_edit(
     holes: &[Vec<String>],
     name: Option<&str>,
 ) -> Result<Edit, String> {
+    let (stmts, names) = face_stmts(&mut taken_names(prog), edges, holes, name)?;
+    append_checked(prog, &stmts, names)
+}
+
+/// A face's statements — each hole loop that is not one circle written first as a face of its
+/// own — and their names, the face first.
+fn face_stmts(
+    taken: &mut std::collections::BTreeSet<String>,
+    edges: &[String],
+    holes: &[Vec<String>],
+    name: Option<&str>,
+) -> Result<(Vec<StmtKind>, Vec<String>), String> {
     if edges.is_empty() || holes.iter().any(Vec::is_empty) {
         return Err("a face and each of its holes name the edges they are bounded by".into());
     }
-    let mut taken = taken_names(prog);
-    let face = chosen_name(&mut taken, name, EntKind::Face)?;
+    let face = chosen_name(taken, name, EntKind::Face)?;
     let mut stmts = Vec::new();
     let mut names = vec![face.clone()];
     let mut hole_refs = Vec::new();
@@ -842,14 +853,14 @@ fn face_edit(
             hole_refs.push(hole[0].clone());
             continue;
         }
-        let h = next_name(&mut taken, EntKind::Face);
+        let h = next_name(taken, EntKind::Face);
         stmts.push(StmtKind::Decl(gesture_decl(EntKind::Face, &h, vec![refs(hole)], &[])));
         names.push(h.clone());
         hole_refs.push(h);
     }
     let d = gesture_decl(EntKind::Face, &face, vec![refs(edges), refs(&hole_refs), Vec::new()], &[]);
     stmts.push(StmtKind::Decl(d));
-    append_checked(prog, &stmts, names)
+    Ok((stmts, names))
 }
 
 /// How a gesture sweeps a face: along its normal (`depth`, or `from` and `to`), through a body,
@@ -873,7 +884,24 @@ pub fn add_solid(prog: &Program, face: &str, how: &SolidSweep, name: Option<&str
 }
 
 fn solid_edit(prog: &Program, face: &str, how: &SolidSweep, name: Option<&str>) -> Result<Edit, String> {
-    let dim = |t: &Option<String>| {
+    let sweep = how.sweep()?;
+    let name = chosen_name(&mut taken_names(prog), name, EntKind::Solid)?;
+    append_checked(prog, &[solid_stmt(&name, face, sweep)], vec![name])
+}
+
+/// `name := solid(face, …sweep)`.
+fn solid_stmt(name: &str, face: &str, sweep: syntax::Sweep) -> StmtKind {
+    let mut d = gesture_decl(EntKind::Solid, name, vec![refs([face])], &[]);
+    d.sweep = Some(sweep);
+    StmtKind::Decl(d)
+}
+
+impl SolidSweep {
+    /// The sweep these say, as the parser reads one (`sweep_of`): a mixture is refused in its
+    /// words, and so is none at all, since a solid swept from a face says how.
+    fn sweep(&self) -> Result<syntax::Sweep, String> {
+        let how = self;
+        let dim = |t: &Option<String>| {
         t.as_ref().map(|text| syntax::Arg::Dim { text: text.clone(), span: Span::default() })
     };
     let reference = |t: &Option<String>| t.as_ref().map(|n| syntax::Ref::new(n.clone()));
@@ -887,17 +915,93 @@ fn solid_edit(prog: &Program, face: &str, how: &SolidSweep, name: Option<&str>) 
         sense: how.sense,
         ..Default::default()
     };
-    let sweep = match syntax::sweep_of(parts)? {
-        syntax::Sweep::Body => {
-            return Err("a solid swept from a face says how: `depth:`, `from:`/`to:`, `through:` \
-                        or `about:`".into());
-        }
-        s => s,
+    match syntax::sweep_of(parts)? {
+        syntax::Sweep::Body => Err("a solid swept from a face says how: `depth:`, `from:`/`to:`, \
+                                    `through:` or `about:`".into()),
+        s => Ok(s),
+    }
+    }
+}
+
+/// **Extrude** (#162 F2): a click inside a region, as one splice — the face over its loops
+/// (`face_stmts`), the solid swept from it, and, with a body selected, the body rule:
+/// `f0 := face(…)`, `b0 := solid(f0, depth: D)`, `b0 union body`.  `with` is the word and the
+/// body; `through` sweeps the face through that body instead of to a depth (a cut through all).
+/// The depth is a round fifth of the drawing's reach, `set_off`'s, a start the gesture then
+/// sizes.  `names` is the solid, the face, then any hole faces.
+pub fn extrude(
+    e: &Elaborated,
+    sk: &Sketch,
+    outer: &[String],
+    holes: &[Vec<String>],
+    with: Option<(syntax::BodyWord, &str)>,
+    through: bool,
+) -> Edit {
+    let prog = &e.program;
+    extrude_edit(prog, sk, outer, holes, with, through).unwrap_or_else(|why| Edit::none(prog, Some(why)))
+}
+
+fn extrude_edit(
+    prog: &Program,
+    sk: &Sketch,
+    outer: &[String],
+    holes: &[Vec<String>],
+    with: Option<(syntax::BodyWord, &str)>,
+    through: bool,
+) -> Result<Edit, String> {
+    let mut taken = taken_names(prog);
+    let (mut stmts, faces) = face_stmts(&mut taken, outer, holes, None)?;
+    let solid = chosen_name(&mut taken, None, EntKind::Solid)?;
+    let sweep = match (through, with) {
+        (true, Some((_, body))) => SolidSweep { through: Some(body.to_string()), ..Default::default() },
+        (true, None) => return Err("a cut through all goes through a body: select it first".into()),
+        (false, _) => SolidSweep { depth: Some(syntax::num(set_off(sk))), ..Default::default() },
     };
-    let name = chosen_name(&mut taken_names(prog), name, EntKind::Solid)?;
-    let mut d = gesture_decl(EntKind::Solid, &name, vec![refs([face])], &[]);
-    d.sweep = Some(sweep);
-    append_checked(prog, &[StmtKind::Decl(d)], vec![name])
+    stmts.push(solid_stmt(&solid, &faces[0], sweep.sweep()?));
+    if let Some((word, body)) = with {
+        stmts.push(StmtKind::SolidRel(syntax::SolidRel {
+            word,
+            what: syntax::Ref::new(solid.clone()),
+            body: syntax::Ref::new(body.to_string()),
+            span: Span::default(),
+        }));
+    }
+    let mut names = vec![solid];
+    names.extend(faces);
+    append_checked(prog, &stmts, names)
+}
+
+/// Rewrite how a solid is swept — `depth: 12`, `from: 0, to: 12`, `from: -6, to: 6` — over the
+/// same face, its bracket list replaced and nothing else in the file touched.  The solid's own
+/// statement, at the root: one a component or a block made is no statement to rewrite.
+pub fn set_sweep(e: &Elaborated, prog: &Program, solid: usize, how: &SolidSweep) -> Edit {
+    sweep_edit(e, prog, solid, how).unwrap_or_else(|why| Edit::none(prog, Some(why)))
+}
+
+fn sweep_edit(e: &Elaborated, prog: &Program, solid: usize, how: &SolidSweep) -> Result<Edit, String> {
+    let site = e.map.of_entity.get(&EntRef::solid(solid)).ok_or("no statement makes that solid")?;
+    if !site.path.0.is_empty() || !in_root(prog, site.stmt) {
+        return Err("that solid comes from a component or a block: change it there".into());
+    }
+    let d = decl_of(prog, site).filter(|d| d.kind == EntKind::Solid && d.sweep.is_some())
+        .ok_or("that solid is made of others, not swept from a face")?;
+    let mut d2 = d.clone();
+    d2.sweep = Some(how.sweep()?);
+    let with = syntax::decl_args(&d2);
+    let text = splice(prog.text(), vec![Splice { at: d.list_span, with }]);
+    let (mut next, errs) = syntax::parse(&text);
+    if let Some(err) = errs.first() {
+        return Err(err.message.clone());
+    }
+    crate::modules::relink(&mut next, prog);
+    let elab = crate::program::elaborate(&next);
+    let stmt_span = next.stmts().find(|s| s.id == site.stmt).map(|s| s.span);
+    let ours = |dg: &crate::program::Diag| dg.stmt == Some(site.stmt)
+        || stmt_span.is_some_and(|sp| sp.contains(dg.span.lo));
+    if let Some(dg) = elab.errors().find(|dg| ours(dg)) {
+        return Err(dg.message.clone());
+    }
+    Ok(Edit { text, kind: Kind::Structural, names: Vec::new(), refused: None })
 }
 
 /// `a word b`, written as the source says it: the elaborator reads which relation the word means

@@ -675,3 +675,20 @@ impl Sketch {
             .map(|s| s.world_edges()).unwrap_or_default()
     }
 }
+
+impl Sketch {
+    /// Re-extrude a prism where it stands: `from` and `to` along its face's normal, as an
+    /// extrusion being sized previews itself before the source is written (#162 F2).  Evaluated
+    /// solids are memoised against every extent they read, so the next mesh is re-cut.  False
+    /// for a solid that is not a prism.
+    pub fn set_prism(&mut self, i: usize, from: f64, to: f64) -> bool {
+        match self.solids.get_mut(i).map(|s| &mut s.def) {
+            Some(SolidDef::Prism { from: f, to: t, .. }) => {
+                *f = Extent::at(from);
+                *t = Extent::at(to);
+                true
+            }
+            _ => false,
+        }
+    }
+}

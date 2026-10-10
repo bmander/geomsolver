@@ -426,6 +426,74 @@ fn line_meets_triangle(o: [f64; 3], d: [f64; 3], p: &[f64]) -> Option<f64> {
     Some(f * dot(e2, q))
 }
 
+/// The arrow an extrusion is sized by, as the eye sees it: from the middle of the prism's face to
+/// its far end along the face's normal, and the two extents it runs between.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ExtrudeHandle {
+    pub base: (f64, f64),
+    pub tip: (f64, f64),
+    pub from: f64,
+    pub to: f64,
+}
+
+/// Where prism `solid`'s face sits and which way it is swept: the face's middle and its plane's
+/// normal, in space, and its two extents — `None` for a solid that is not a prism.
+fn prism_frame(sk: &Sketch, solid: usize) -> Option<([f64; 3], [f64; 3], f64, f64)> {
+    let crate::model::SolidDef::Prism { face, from, to } = &sk.solids.get(solid)?.def else {
+        return None;
+    };
+    let poly = crate::solid::face_poly(sk, *face as usize, crate::solid::REPORT_UNIT)?;
+    let basis = match sk.faces[*face as usize].plane().ok()? {
+        Some(p) => sk.basis(p as usize),
+        None => Basis::page(),
+    };
+    let (cx, cy) = centroid(&poly.pts);
+    Some((basis.lift(cx, cy), basis.normal(), from.value, to.value))
+}
+
+/// The area centroid of a closed ring, or the mean of its corners where it encloses nothing.
+fn centroid(pts: &[(f64, f64)]) -> (f64, f64) {
+    let n = pts.len();
+    let (mut a, mut x, mut y) = (0.0, 0.0, 0.0);
+    for i in 0..n {
+        let (p, q) = (pts[i], pts[(i + 1) % n]);
+        let w = p.0 * q.1 - q.0 * p.1;
+        a += w;
+        x += (p.0 + q.0) * w;
+        y += (p.1 + q.1) * w;
+    }
+    if a.abs() > 0.0 {
+        return (x / (3.0 * a), y / (3.0 * a));
+    }
+    let k = n.max(1) as f64;
+    (pts.iter().map(|p| p.0).sum::<f64>() / k, pts.iter().map(|p| p.1).sum::<f64>() / k)
+}
+
+/// The arrow prism `solid` is sized by, seen: `None` for a solid that is not a prism, or one whose
+/// normal the eye looks straight down, where an arrow along it would be a dot.
+pub fn extrude_handle(sk: &Sketch, proj: &Projection, solid: usize) -> Option<ExtrudeHandle> {
+    let (base, n, from, to) = prism_frame(sk, solid)?;
+    let along = |t: f64| proj.seen([0, 1, 2].map(|k| base[k] + t * n[k]));
+    let (b, one) = (along(0.0), along(1.0));
+    if (one.0 - b.0).dhypot(one.1 - b.1) < 0.05 {
+        return None;
+    }
+    let far = if to.abs() >= from.abs() { to } else { from };
+    Some(ExtrudeHandle { base: b, tip: along(far), from, to })
+}
+
+/// How far along prism `solid`'s normal the point under `at` is, as the eye sees it: the signed
+/// distance from its face of the point on the normal through the face's middle that the eye's
+/// ray through `at` passes nearest — what dragging the arrow's tip to `at` sizes it to.
+pub fn extent_at(sk: &Sketch, proj: &Projection, solid: usize, at: (f64, f64)) -> Option<f64> {
+    let (base, n, ..) = prism_frame(sk, solid)?;
+    let b = proj.seen(base);
+    let one = proj.seen([0, 1, 2].map(|k| base[k] + n[k]));
+    let d = (one.0 - b.0, one.1 - b.1);
+    let len2 = d.0 * d.0 + d.1 * d.1;
+    (len2 > 0.05 * 0.05).then(|| ((at.0 - b.0) * d.0 + (at.1 - b.1) * d.1) / len2)
+}
+
 /// Every entity whose figure touches the box `lo`–`hi` on the eye's picture plane — a rubber
 /// band's "crossing" selection, asked where the figures are seen: a point inside it, or a stroke
 /// passing through it.  What counts is what is drawn, so a box inside a circle's rim takes nothing.
