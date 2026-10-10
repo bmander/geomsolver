@@ -2226,10 +2226,13 @@ pub unsafe extern "C" fn gcs_solid_mesh_unit(h: *mut Sketch, idx: i32) -> f64 {
 
 /// **The overview in space**: the glass box's panes, axes and drawn geometry as 3D polylines,
 /// with no orbit applied.  A front end with a depth buffer takes this and the solids' meshes and
-/// does its own projecting; one without takes `gcs_overview_json`, which flattens.
+/// does its own projecting; one without takes `gcs_overview_json`, which flattens.  `layer` 0 is
+/// the whole scene, 1 the datums (panes, their axes, axes in space), 2 the objects' creases.
 #[no_mangle]
-pub unsafe extern "C" fn gcs_overview3d_json(h: *mut Sketch, unit: f64) -> *mut u8 {
-    guard(std::ptr::null_mut(), move || out_json(report::overview3d_json(sk(h), unit)))
+pub unsafe extern "C" fn gcs_overview3d_json(h: *mut Sketch, unit: f64, layer: i32) -> *mut u8 {
+    use gcs_core::overview::Layer;
+    let layer = match layer { 1 => Layer::Datums, 2 => Layer::Objects, _ => Layer::All };
+    guard(std::ptr::null_mut(), move || out_json(report::overview3d_json(sk(h), unit, layer)))
 }
 
 /* -- the workspace: every view standing on its plane, seen by one orthographic eye --------- */

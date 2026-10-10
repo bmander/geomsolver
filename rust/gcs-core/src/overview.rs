@@ -301,6 +301,22 @@ pub struct Item3 {
 /// `mesh::grouped` rather than the hidden-line edge set `scene` computes for a canvas that has no
 /// way to occlude anything.  That is the whole saving of doing this in 3D.
 pub fn scene3d(sk: &Sketch, unit: f64) -> Vec<Item3> {
+    scene3d_of(sk, unit, Layer::All)
+}
+
+/// Which of the scene a renderer asks for.  The datums — panes, their axes, the axes in space —
+/// follow every frame of a drag that moves them, and cost little; the objects' creases are
+/// re-cut once a pose settles; the rest of what is drawn is the sheet's to stroke, asked only for
+/// the whole scene.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Layer {
+    All,
+    Datums,
+    Objects,
+}
+
+/// The scene3d, or one layer of it.
+pub fn scene3d_of(sk: &Sketch, unit: f64, layer: Layer) -> Vec<Item3> {
     // **Nothing in the box follows the sheet's zoom.**  `unit` is the world length of one screen
     // pixel, which is the right refinement for a drawing being looked at on a page — and this is
     // not that: it is a scene handed to a renderer with a camera and a depth buffer of its own,
@@ -310,9 +326,10 @@ pub fn scene3d(sk: &Sketch, unit: f64) -> Vec<Item3> {
     // gets the scale-free rule `mesh_unit` already states for the mesh: refine to the object.
     let unit = if unit > 0.0 { unit } else { (sk.extent() / SCENE_PX).max(crate::solid::REPORT_UNIT) };
     let mut items: Vec<Item3> = Vec::new();
+    let (datums, objects_too) = (layer != Layer::Objects, layer != Layer::Datums);
     let views = views(sk);
     let least = sk.extent() * LEAST_SIDE;
-    for i in 0..sk.planes.len() {
+    for i in (0..sk.planes.len()).filter(|_| datums) {
         let of = Some(EntRef::plane(i));
         let basis = sk.basis(i);
         let rect = pane(sk, i, &views, least);
@@ -321,8 +338,11 @@ pub fn scene3d(sk: &Sketch, unit: f64) -> Vec<Item3> {
             items.push(Item3 { of, in_plane: of, what: Part::Axis, pts: arm.to_vec() });
         }
     }
-    for e in sk.drawn() {
+    for e in sk.drawn().into_iter().filter(|_| datums) {
         if matches!(e.kind, EntKind::Point | EntKind::Plane) {
+            continue;
+        }
+        if layer == Layer::Datums && e.kind != EntKind::Axis {
             continue;
         }
         let plane = entity_view(sk, e, &views);
@@ -375,7 +395,7 @@ pub fn scene3d(sk: &Sketch, unit: f64) -> Vec<Item3> {
     // than tested against an eye direction, and no edge is hidden-line removed either — a depth
     // buffer settles that per pixel, which is the whole of why this path exists.
     //
-    for i in objects(sk) {
+    for i in objects(sk).into_iter().filter(|_| objects_too) {
         let Ok(solid) = sk.evaluated_solid(i, crate::solid::ApproximationPolicy::Mesh) else { continue };
         for e in solid.world_edges() {
             if e.smooth {

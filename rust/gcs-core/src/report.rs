@@ -735,8 +735,8 @@ pub fn workspace_inside_json(sk: &Sketch, unit: f64, az: f64, el: f64, lo: (f64,
     Json::Arr(crate::overview::workspace::inside(sk, &proj, lo, hi, unit).into_iter().map(ent_json).collect())
 }
 
-pub fn overview3d_json(sk: &Sketch, unit: f64) -> Json {
-    let items: Vec<Json> = crate::overview::scene3d(sk, unit)
+pub fn overview3d_json(sk: &Sketch, unit: f64, layer: crate::overview::Layer) -> Json {
+    let items: Vec<Json> = crate::overview::scene3d_of(sk, unit, layer)
         .iter()
         .map(|it| {
             let pts: Vec<Json> = it

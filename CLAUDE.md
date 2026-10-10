@@ -1423,7 +1423,11 @@ Conventions:
   point (a sagitta of zero hangs the tab).  `tests/mesh.rs` asks it of all three.
   **The glass box asks with 0, and that is why zooming is free**: `unit` (a screen pixel) is
   wrong for a scene with its own camera.  `overview::scene3d` asks the same way (`SCENE_PX` for
-  drawn polylines, `0` for the object's edges), so `Box3D`'s rebuild key omits the zoom.
+  drawn polylines, `0` for the object's edges), so `Box3D`'s rebuild key omits the zoom.  **It
+  includes the pose** (a fingerprint of the parameters): a drag moves numbers inside one sketch,
+  so the datums (`overview::Layer::Datums`: panes, their axes, axes in space) are rebuilt every
+  frame the pose moves, and the objects (`Layer::Objects`, creases and meshes) once it settles —
+  no gesture or wobble in flight.
 - **A face is one loop and a solid's faces are named by path** (§6.8).  A face is a closed loop of
   edges on the one plane every point agrees about — *read* off the memberships, never written on
   the face.  There are **no holes**: a hole is a solid that `cut`s the body.  An `in` block leaves

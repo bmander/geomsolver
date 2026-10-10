@@ -367,3 +367,23 @@ fn an_axis_is_picked_where_it_is_drawn_and_the_drawing_outranks_it() {
     let front = Projection::new(sk, -FRAC_PI_2, 0.0);
     assert_eq!(pick(sk, &front, seen([10.0, 0.0, 10.0], -FRAC_PI_2, 0.0), 0.5, 0.01), None);
 }
+
+/// The box asks for the scene in layers: the datums every frame a drag moves them, the objects'
+/// creases once the pose settles.  Each layer is its part of the whole scene and nothing else.
+#[test]
+fn the_scene_comes_in_a_datum_layer_and_an_object_layer() {
+    use gcs_core::overview::{scene3d, scene3d_of, Layer};
+    let e = build(BLOCKS);
+    let sk = &e.sketch;
+    let part = |it: &gcs_core::overview::Item3| format!("{:?}", it.what);
+    let all = scene3d(sk, 0.0);
+    let datums = scene3d_of(sk, 0.0, Layer::Datums);
+    let objects = scene3d_of(sk, 0.0, Layer::Objects);
+    assert!(datums.iter().any(|it| part(it) == "Face") && datums.iter().any(|it| part(it) == "Axis"));
+    // the axes in space are datums; the sheet's own drawing and the creases are not
+    assert!(datums.iter().all(|it| part(it) != "Solid"));
+    assert!(datums.iter().filter(|it| part(it) == "Drawn").all(|it| it.of.unwrap().kind == EntKind::Axis));
+    assert!(!objects.is_empty() && objects.iter().all(|it| part(it) == "Solid"));
+    let creases = |s: &[gcs_core::overview::Item3]| s.iter().filter(|it| part(it) == "Solid").count();
+    assert_eq!(creases(&objects), creases(&all));
+}

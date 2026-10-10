@@ -43,20 +43,37 @@ const FRAME_PX = { plain: 1, current: 2.5 };
 /** The kinds that stand in space and on no one plane, so are this renderer's to draw. */
 const IN_SPACE = new Set(['axis']);
 
-/** What the scene was built from, so a repaint that changes nothing rebuilds nothing.  The box is
- *  read-only, so between edits only the camera moves — and rebuilding a mesh on every pointer
- *  move is the one way to make a depth buffer slower than the painter it replaced.  The zoom is
- *  not in it either: the box is cut to the object rather than to the screen. */
+/** What the scene was built from, so a repaint that changes nothing rebuilds nothing.  Between
+ *  edits mostly the camera moves — and rebuilding a mesh on every pointer move is the one way to
+ *  make a depth buffer slower than the painter it replaced.  The zoom is not in it either: the box
+ *  is cut to the object rather than to the screen.  **The pose is**: a drag moves numbers inside
+ *  the same sketch, and a plane held to a dragged point moves with it, so the datums follow the
+ *  pose every frame and the objects once the gesture is let go. */
 interface Built {
   sketch: unknown;
   solid: boolean;
+  /** The pose the datums were built at, and the one the objects were. */
+  datums: number;
+  objects: number;
+}
+
+/** A fingerprint of where everything is: FNV-1a over the parameters' bits.  A drag frame changes
+ *  it; a camera move does not. */
+function poseOf(x: Float64Array): number {
+  const w = new Uint32Array(x.buffer, x.byteOffset, x.length * 2);
+  let h = 0x811c9dc5;
+  for (let i = 0; i < w.length; i++) h = Math.imul(h ^ w[i], 0x01000193);
+  return h >>> 0;
 }
 
 export class Box3D {
   private renderer: THREE.WebGLRenderer | null = null;
   private readonly scene = new THREE.Scene();
   private readonly camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -1e4, 1e4);
-  private readonly content = new THREE.Group();
+  /** The panes, the axes and what stands in space — rebuilt as the pose moves. */
+  private readonly datums = new THREE.Group();
+  /** The objects' meshes and creases — rebuilt once the pose has settled. */
+  private readonly objects = new THREE.Group();
   private built: Built | null = null;
   /** The panes' outlines and the views' geometry, kept by what they are *of* — because the two
    *  things the app says about them change with the pointer and not with the drawing: which pane
@@ -70,7 +87,7 @@ export class Box3D {
 
   constructor(readonly canvas: HTMLCanvasElement | null) {
     this.scene.background = new THREE.Color(INK.bg);
-    this.scene.add(this.content);
+    this.scene.add(this.datums, this.objects);
     // a headlight and a soft fill: the object is read for its shape, so the light follows the
     // eye rather than standing somewhere in the world and leaving half of it dark
     this.scene.add(new THREE.AmbientLight(0xffffff, 1.6));
@@ -90,9 +107,19 @@ export class Box3D {
     // (`0`), so a wheel tick moves the camera and rebuilds nothing.  Asked at the sheet's zoom
     // this re-evaluated the whole term on every tick — and finer without bound as you zoomed in,
     // since a screen pixel is a smaller world length the closer you get
-    if (!this.built || this.built.sketch !== v.sketch || this.built.solid !== v.showSolid) {
-      this.build(v);
-      this.built = { sketch: v.sketch, solid: v.showSolid };
+    const pose = poseOf(v.sketch.getX());
+    const fresh = !this.built || this.built.sketch !== v.sketch || this.built.solid !== v.showSolid;
+    const datums = fresh || this.built!.datums !== pose;
+    // an object is re-cut once the pose settles, not under every frame of a drag or a wobble
+    const objects = fresh || (this.built!.objects !== pose && !v.gesture && !v.anim);
+    if (datums || objects) {
+      if (datums) this.buildDatums(overview3(v.sketch, 0, 'datums'));
+      if (objects) this.buildObjects(v, overview3(v.sketch, 0, 'objects'));
+      this.built = {
+        sketch: v.sketch, solid: v.showSolid,
+        datums: datums ? pose : this.built!.datums,
+        objects: objects ? pose : this.built!.objects,
+      };
     }
     this.aim(v);
     this.chrome(v);
@@ -162,15 +189,17 @@ export class Box3D {
     c.updateMatrixWorld();
   }
 
-  /** The scene, from what the core says is in the box. */
-  private build(v: SketchView): void {
-    this.dispose();
-    const items = overview3(v.sketch, 0);
+  /** The datums, from what the core says is in the box: the panes, their axes, and what is drawn
+   *  in space. */
+  private buildDatums(items: Item3[]): void {
+    this.frames.length = 0;
+    this.panes.length = 0;
+    release(this.datums);
     // the panes, translucent and double-sided: geometry on the far side of one must read through
     for (const it of items.filter((i) => i.part === 'face')) {
       const g = fanned(it.pts);
       if (!g) continue;
-      this.content.add(new THREE.Mesh(g, new THREE.MeshBasicMaterial({
+      this.datums.add(new THREE.Mesh(g, new THREE.MeshBasicMaterial({
         color: INK.pane,
         transparent: true,
         opacity: 0.07,
@@ -181,15 +210,21 @@ export class Box3D {
       // cursor — the rule everything on this canvas is picked by, and the wash is never it
       this.panes.push({ it, line: this.frame(it) });
     }
-    this.lines(items.filter((i) => i.part === 'axis'), INK.axis, 0.55);
+    this.lines(this.datums, items.filter((i) => i.part === 'axis'), INK.axis, 0.55);
     // of what is drawn, only what stands in space: a sketch on a plane is stroked on the canvas
     // above, through its plane's camera, with the selection and the state colours it carries
     for (const it of items.filter((i) => i.part === 'drawn' && IN_SPACE.has(i.kind ?? ''))) {
-      this.frames.push({ it, line: this.lines([it], INK.drawn, 1)! });
+      this.frames.push({ it, line: this.lines(this.datums, [it], INK.drawn, 1)! });
     }
-    // the object's creases, which stand whether or not its surfaces are drawn: with the
-    // surfaces they are the corners of a shaded part, and without them they are the wireframe
-    this.lines(items.filter((i) => i.part === 'solid'), INK.edge, 1);
+  }
+
+  /** The objects: their creases, which stand whether or not their surfaces are drawn — with the
+   *  surfaces they are the corners of a shaded part, and without them the wireframe — and, shown,
+   *  the surfaces. */
+  private buildObjects(v: SketchView, items: Item3[]): void {
+    this.faces.length = 0;
+    release(this.objects);
+    this.lines(this.objects, items.filter((i) => i.part === 'solid'), INK.edge, 1);
     if (!v.showSolid) return;
     // **the object itself, as a mesh** — every face of it a named child, so a later selection has
     // something to name.  The normals are the core's: averaged across a round face and flat
@@ -216,7 +251,7 @@ export class Box3D {
         }));
         face.name = f.path;
         face.userData.face = f.path;
-        this.content.add(face);
+        this.objects.add(face);
         this.faces.push({ solid: o.index, path: f.path, mesh: face });
       }
     }
@@ -275,11 +310,12 @@ export class Box3D {
       transparent: true,
       opacity: 0.35,
     }));
-    this.content.add(line);
+    this.datums.add(line);
     return line;
   }
 
-  private lines(items: Item3[], color: number, opacity: number): THREE.LineSegments | null {
+  private lines(into: THREE.Group, items: Item3[], color: number,
+                opacity: number): THREE.LineSegments | null {
     const pts: number[] = [];
     for (const it of items) {
       const n = it.pts.length;
@@ -293,24 +329,30 @@ export class Box3D {
       transparent: true,   // the chrome pass writes an opacity, so every line carries one
       opacity,
     }));
-    this.content.add(line);
+    into.add(line);
     return line;
   }
 
-  /** Free every buffer and material the last scene made.  A `Group` emptied is not a `Group`
-   *  released: WebGL resources outlive the tree that named them. */
+  /** Free every buffer and material the last scene made. */
   private dispose(): void {
     this.frames.length = 0;
     this.panes.length = 0;
     this.faces.length = 0;
-    for (const o of [...this.content.children]) {
-      this.content.remove(o);
-      const any = o as THREE.Mesh;
-      any.geometry?.dispose?.();
-      const m = any.material;
-      if (Array.isArray(m)) m.forEach((x) => x.dispose());
-      else m?.dispose?.();
-    }
+    release(this.datums);
+    release(this.objects);
+  }
+}
+
+/** Empty a group and free what it held.  A `Group` emptied is not a `Group` released: WebGL
+ *  resources outlive the tree that named them. */
+function release(g: THREE.Group): void {
+  for (const o of [...g.children]) {
+    g.remove(o);
+    const any = o as THREE.Mesh;
+    any.geometry?.dispose?.();
+    const m = any.material;
+    if (Array.isArray(m)) m.forEach((x) => x.dispose());
+    else m?.dispose?.();
   }
 }
 

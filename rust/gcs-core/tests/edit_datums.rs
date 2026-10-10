@@ -171,3 +171,32 @@ fn a_selection_no_rule_takes_or_that_says_nothing_is_refused_with_the_cause() {
     assert!(refused(EntKind::Axis, &["a", "b", "c"]).contains("an axis is dropped"));
     assert!(refused(EntKind::Plane, &["nothing"]).contains("nothing in this drawing"));
 }
+
+/// The user's sketch (#170): a plane through a free point, square to the line from the front's
+/// origin to it.  Dragging the point carries the plane — through the point, square to the line —
+/// at every frame.
+#[test]
+fn dragging_a_point_carries_a_plane_held_to_it() {
+    use gcs_core::decompose::PlanDrag;
+    let src = "use std\np0 := point hint((0.235, 0.18)) in std.front\n\
+        l0 := line(std.front.origin, p0) in std.front\n\
+        v0 := plane(u: hint(dir: (-0.608, 0, 0.794)), v: hint(dir: (0, -1, 0))) \
+        hint(origin: (0.235, 0, 0.18))\np0 coincident v0\nl0 perpendicular v0.u\n\
+        l0 perpendicular v0.v\n";
+    let mut e = build(src);
+    assert!(solve::solve(&mut e.sketch, Default::default()).success);
+    let p = e.map.ent_named("p0").unwrap().i();
+    let (x0, y0) = e.sketch.point_xy(p);
+    let mut drag = PlanDrag::new(&e.sketch, p, x0, y0, None, 0.05);
+    for k in 1..=10 {
+        let (x, y) = (x0 + 0.1 * k as f64, y0 + 0.05 * k as f64);
+        let res = drag.move_to(&mut e.sketch, None, x, y);
+        assert!(res.success, "frame {k}: {res:?}");
+        let at = e.sketch.point_xy(p);
+        assert!((at.0 - x).hypot(at.1 - y) < 1e-6, "frame {k}: the point lags the cursor: {at:?}");
+        let world = e.sketch.world_point(p);
+        assert!(on_plane(&e, "v0", world), "frame {k}: the plane stayed behind");
+        assert!(along(plane(&e, "v0").0, world), "frame {k}: the plane is not square to the line");
+    }
+    drag.end();
+}
