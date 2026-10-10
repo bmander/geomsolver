@@ -87,6 +87,12 @@ header { border-bottom: 1px solid var(--line); background: var(--panel); flex: n
 .topic.folded > .topic-items > button {
   display: flex; justify-content: space-between; gap: 24px; text-align: left;
 }
+.topic.folded > .topic-items > .sep { width: auto; height: 1px; margin: 4px 2px; }
+/* Every bar folded to its heads: they share one row under the menu bar (`ui::fitBars`). */
+header.compact { display: flex; flex-wrap: wrap; }
+header.compact > .menubar { flex: 1 0 100%; border-bottom: 1px solid var(--line); }
+header.compact > .bar + .bar { border-top: 0; }
+header.compact > .bar.fitted + .bar.fitted { padding-left: 0; }
 
 button, select {
   font: inherit; color: inherit;

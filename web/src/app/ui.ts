@@ -268,9 +268,9 @@ export function addSelect(bar: HTMLElement, label: string, options: string[], va
  *  under one button named for the topic when it has not (`fitBar`).  The buttons are the same
  *  elements either way, so whatever holds one — a tool's pressed state — keeps holding it.
  *  Folded, the topic drops its buttons as a menu does, and shares the menu bar's one open menu.
- *  Returns the buttons, in the order of the table. */
+ *  `null` in the table is a divider.  Returns the buttons, in the order of the table. */
 export function addTopic(bar: HTMLElement, label: string,
-                         specs: ToolbarButton[]): HTMLButtonElement[] {
+                         specs: (ToolbarButton | null)[]): HTMLButtonElement[] {
   const wrap = document.createElement('div');
   wrap.className = 'topic';
   const top = document.createElement('button');
@@ -296,20 +296,17 @@ export function addTopic(bar: HTMLElement, label: string,
   });
   wrap.append(top, items);
   bar.append(wrap);
-  return specs.map((spec) => addButton(items, spec));
+  return specs.flatMap((spec) => {
+    if (spec) return [addButton(items, spec)];
+    addSeparator(items);
+    return [];
+  });
 }
-
-/** The width each bar was last fitted to: a bar's height changes as it folds and wraps, and only
- *  its width decides what it can hold, so a resize that kept the width asks nothing again. */
-const fitted = new WeakMap<HTMLElement, number>();
 
 /** Fold a bar's topics, last first, until its buttons fit on one row — and where folding every
  *  topic is not enough, let the row wrap.  The buttons keep their size: a bar short of room
  *  says less, never smaller. */
-export function fitBar(bar: HTMLElement): void {
-  const width = bar.clientWidth;
-  if (fitted.get(bar) === width) return;
-  fitted.set(bar, width);
+function fitBar(bar: HTMLElement): void {
   const topics = [...bar.children].filter((c): c is HTMLElement => c.classList.contains('topic'));
   const before = topics.map((t) => t.classList.contains('folded'));
   bar.classList.remove('wrapping');
@@ -321,14 +318,23 @@ export function fitBar(bar: HTMLElement): void {
   if (topics.some((t, i) => t.classList.contains('folded') !== before[i])) closeMenus();
 }
 
-/** Keep each bar fitted to the room it has. */
-export function fitBars(bars: HTMLElement[]): void {
-  const fit = (): void => { for (const b of bars) fitBar(b); };
-  const watch = new ResizeObserver(fit);
-  for (const b of bars) {
-    b.classList.add('fitted');
-    watch.observe(b);
-  }
+/** Keep each bar fitted to the room it has, and where every bar has folded down to its heads,
+ *  stand them side by side on one row (`compact` on the host).  Each bar is fitted standing on
+ *  its own row, the width it will have when it unfolds; only the host's width decides, so the
+ *  row the bars share, and the height a fold or a wrap changes, ask nothing again. */
+export function fitBars(host: HTMLElement, bars: HTMLElement[]): void {
+  const heads = (b: HTMLElement): boolean => [...b.children]
+    .every((c) => c.classList.contains('topic') && c.classList.contains('folded'));
+  let width = -1;
+  const fit = (): void => {
+    if (host.clientWidth === width) return;
+    width = host.clientWidth;
+    host.classList.remove('compact');
+    for (const b of bars) fitBar(b);
+    host.classList.toggle('compact', bars.every(heads));
+  };
+  for (const b of bars) b.classList.add('fitted');
+  new ResizeObserver(fit).observe(host);
   fit();
 }
 
