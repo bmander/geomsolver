@@ -126,3 +126,16 @@ fn two_cones_in_one_region() {
     let want = PI * 1000.0 * (t30 * t30 - t15 * t15) / 3.0;
     holds(&e, "lamp", want, &[[4.0, 0.0, 9.0]], &[[0.5, 0.0, 9.0], [7.0, 0.0, 9.0]]);
 }
+
+/// A region's number may be an unknown of the drawing, read once it is solved: a sphere whose
+/// radius the point stated on it sets — and refused where nothing sets it.
+#[test]
+fn a_region_reads_an_unknown_the_drawing_solves() {
+    let e = solved(&format!("{FRAME}q := point hint((4, 0, 3))\nfix((4, 0, 3)) q\n\
+                             big := std.Sphere(c, r: hint(2mm))\nq coincident big\n\
+                             ball := solid(big)\n"));
+    holds(&e, "ball", 4.0 / 3.0 * PI * 125.0, &[[4.5, 0.0, 0.0]], &[[5.5, 0.0, 0.0]]);
+    let e = solved(&format!("{FRAME}big := std.Sphere(c, r: hint(2mm))\nball := solid(big)\n"));
+    let m = gcs_core::solid::validate(&e.sketch, ent(&e, "ball").i()).expect_err("ball");
+    assert!(m.contains("nothing determines"), "{m}");
+}

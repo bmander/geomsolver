@@ -163,6 +163,30 @@ impl RevolvedSurface {
         Ok(patch)
     }
 
+    /// A region solid's faces (§6.21): each step of its meridian turned once about its axis,
+    /// named by the term it came from — and whether it is a line, which on the axis turns to no
+    /// face.
+    pub(crate) fn of_meridian(m: &super::region::Meridian,solid: &str) -> Vec<(Self,bool)> {
+        use crate::brep::planar::Seg;
+        let at = |q: [f64;2]| add(m.origin,add(scale(m.seam,q[0]),scale(m.axis,q[1])));
+        let vector = |q: [f64;2]| add(scale(m.seam,q[0]),scale(m.axis,q[1]));
+        m.region.loops.iter().flatten().map(|step| {
+            let meridian = match step.seg {
+                Seg::Line {a,b} => Meridian::Line {start: at(a),delta: sub(at(b),at(a))},
+                // a round edge runs counter-clockwise from its start
+                Seg::Arc {c,r,a0,sweep} => {
+                    let start = if sweep < 0. { a0+sweep } else { a0 };
+                    let (s,co) = start.dsin_cos();
+                    Meridian::Round {center: at(c),a: vector([r*co,r*s]),b: vector([-r*s,r*co]),
+                        sweep: sweep.abs()}
+                }
+            };
+            let name = format!("{solid}.{}",m.name(step.tag));
+            (Self {name,meridian,origin: m.origin,axis: m.axis,sweep: std::f64::consts::TAU,
+                v_domain: [0.,1.]},matches!(step.seg,Seg::Line {..}))
+        }).collect()
+    }
+
     /// Original source parameters: an angular span restricts v without renumbering it.
     pub fn domain(&self) -> [[f64;2];2] { [[0.,1.],self.v_domain] }
 

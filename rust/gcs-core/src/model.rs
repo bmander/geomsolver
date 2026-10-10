@@ -35,7 +35,7 @@ pub use curves::{CURVE_STEPS, CurveDef, CurveBody, CurveE, Extremal, Home, Trim,
 pub use spatial::{
     FaceLoop, FaceSupport, FaceE, Length, SolidRequirement, SolidClaim, SolidBearing, Sweep,
     DerivedE, Extent, Sense, SolidDef, SolidE, SeamE, EdgeE, VertexE, PatchE, EnvelopeE, SurfaceE,
-    RegionShape, RegionTerm,
+    RegionShape, RegionTerm, TermNumber,
     MotionDef, MotionE,
 };
 pub use construction::{ThreePointArc, three_point_arc};

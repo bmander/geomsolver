@@ -582,8 +582,8 @@ fn region_term(sk: &Sketch, c: &Constraint, probe: usize)
         ));
     };
     let at = c.kind.dimension_slot().expect("a bound is on a number");
-    let lo = settled_number(&c.args[at], sk)
-        .ok_or("a region's numbers are stated, and this one reads an unknown")?;
+    let lo = term_number(&c.args[at], sk, c.kind.dimension_kind())
+        .ok_or("a region's number is stated or reads one unknown of the drawing")?;
     let ent = |i: usize| c.args[i].ent();
     let other =
         |a: EntRef, b: EntRef| if a.i() == probe && a.kind == EntKind::Point { b } else { a };
@@ -1279,6 +1279,22 @@ impl Relation {
             bound: self.form.bound(),
         })
     }
+}
+
+/// A region term's number (§6.21): a literal or a text reading no unknown as it stands, else one
+/// affine in an unknown of the drawing, read once it is solved (`TermNumber::value`).  `None` for
+/// a text that is neither.
+fn term_number(a: &CArg, sk: &Sketch, kind: SpecKind) -> Option<crate::model::TermNumber> {
+    use crate::model::TermNumber;
+    if let Some(v) = settled_number(a, sk) {
+        return Some(TermNumber::stated(v));
+    }
+    let CArg::Expr(e) = a else { return None };
+    let parsed = expr::parse_in(&e.text, sk.units).ok()?;
+    let a = expr::eval(&parsed.body, &Default::default()).ok()?;
+    let name = a.free.clone()?;
+    let m = expr::to_arg_units(kind, a.m);
+    Some(TermNumber { c: expr::to_arg_units(kind, a.c), free: Some((name, m)) })
 }
 
 /// A number as the kernels read it (an angle in radians) where it is one before `expr::evaluate`:
