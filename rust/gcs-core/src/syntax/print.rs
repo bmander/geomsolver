@@ -634,7 +634,11 @@ fn write_relation(out: &mut String, r: &Relation) {
     }
     match &r.form {
         super::RelationForm::Written(w) => write_written(out, w),
-        super::RelationForm::Canonical { kind, args } => out.push_str(&operator_text(*kind, args)),
+        super::RelationForm::Canonical { kind, args, bound } => {
+            let hi = bound.as_ref().and_then(|(_, hi)| hi.as_ref());
+            let args = bounded(*kind, args, bound.as_ref().map(|(cmp, _)| (*cmp, hi)));
+            out.push_str(&operator_text(*kind, &args))
+        }
     }
 
     if !r.class.is_empty() {
@@ -650,8 +654,10 @@ fn write_relation(out: &mut String, r: &Relation) {
 pub(crate) fn written_parts(args: &[OpArg]) -> (Vec<String>, Vec<String>) {
     let mut parts: Vec<String> = Vec::new();
     let mut hints: Vec<String> = Vec::new();
+    let mut bound = None;
     for a in args {
         match a {
+            OpArg::Bound { cmp, hi, .. } => bound = Some((*cmp, hi.as_ref().map(|h| &h.0))),
             OpArg::Named(n, v) => parts.push(format!("{}: {}", n.text, sel_text(v))),
             OpArg::Ent(r) => {
                 let mut s = String::new();
@@ -676,7 +682,36 @@ pub(crate) fn written_parts(args: &[OpArg]) -> (Vec<String>, Vec<String>) {
             }
         }
     }
+    // a bound is said before its number, which leads the parentheses (§9.6)
+    if let (Some((cmp, hi)), Some(d)) = (bound, parts.first_mut()) {
+        *d = bound_text(cmp, d, hi.map(|h| h.as_str()));
+    }
     (parts, hints)
+}
+
+/// A bound as written (§9.6): `>= d`, `<= d`, `in: (d, hi)`.
+fn bound_text(cmp: super::Cmp, lo: &str, hi: Option<&str>) -> String {
+    match (cmp, hi) {
+        (super::Cmp::In, Some(hi)) => format!("in: ({lo}, {hi})"),
+        _ => format!("{} {lo}", cmp.text()),
+    }
+}
+
+/// A kind's arguments with its number said as the bound it is, where it is one (§9.6) — what
+/// `operator_text` is handed to print a bounded constraint, by a printer and `io::describe`.
+pub fn bounded(
+    kind: CKind,
+    args: &[Option<Arg>],
+    bound: Option<(super::Cmp, Option<&Arg>)>,
+) -> Vec<Option<Arg>> {
+    let mut args = args.to_vec();
+    let Some((cmp, hi)) = bound else { return args };
+    let at = kind.spec().iter().position(|(_, k)| k.is_dimension());
+    if let Some(a) = at.and_then(|i| args.get_mut(i)).and_then(|a| a.as_mut()) {
+        let text = bound_text(cmp, &dim_text(a), hi.map(dim_text).as_deref());
+        *a = Arg::Dim { text, span: Span::default() };
+    }
+    args
 }
 
 fn write_written(out: &mut String, w: &Written) {

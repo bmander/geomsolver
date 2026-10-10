@@ -10,6 +10,7 @@
 //! `every_file_is_a_module` fails the suite when one is forgotten.
 
 mod common;
+mod bounds;
 mod evaluated_solid;
 mod renderer;
 

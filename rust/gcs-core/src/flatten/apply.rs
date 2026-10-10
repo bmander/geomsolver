@@ -199,6 +199,7 @@ impl<'a> Walk<'a> {
                                 k.span = u.at;
                             }
                         }
+                        OpArg::Bound { span, .. } => *span = u.at,
                         OpArg::Ent(_) | OpArg::Dim(..) => {}
                     }
                 }

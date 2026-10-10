@@ -185,7 +185,9 @@ impl Sketch {
         for c in &self.constraints {
             // a claim compiles to no rows, so claiming a relation and stating it are different
             // topologies even though the constraint list reads the same
-            let _ = write!(s, "{}:{}{},", c.id, c.type_name(), if c.claim { "?" } else { "" });
+            // a claim or a bound compiles no row, so the key tells it from the equation (§9.6)
+            let flag = if c.claim { "?" } else if c.bound.is_some() { "~" } else { "" };
+            let _ = write!(s, "{}:{}{flag},", c.id, c.type_name());
             // a derivative is another kernel over more columns (§6.21)
             if let Some(d) = c.along {
                 let _ = write!(s, "~{d}.{:?},", self.duals[d].toward);

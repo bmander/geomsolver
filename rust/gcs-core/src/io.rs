@@ -343,6 +343,14 @@ pub fn to_json(sk: &Sketch) -> Json {
             if c.claim {
                 o.set("claim", Json::Bool(true));
             }
+            // a bound (§9.6): its direction and an interval's high end, in the number's units
+            if let Some(b) = c.bound {
+                let mut j = object([("cmp", b.cmp.text().into())]);
+                if let Some(hi) = b.hi {
+                    j.set("hi", Json::Num(hi));
+                }
+                o.set("bound", j);
+            }
             // a set's derivative row (§6.21): its use's derivative, by index into `duals`
             if let Some(d) = c.along {
                 o.set("along", Json::Int(d as i64));
@@ -640,6 +648,13 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
         // a document is untrusted input: a claim on a kind that owns an unknown would mint a
         // degree of freedom no equation mentions, so the flag is dropped rather than honoured
         nc.claim = c.get("claim").map(|v| v.as_bool()).unwrap_or(false) && kind.claimable();
+        // and a bound on a kind no reading steers along is dropped, as such a claim is
+        if let Some(b) = c.get("bound").filter(|_| kind.boundable() && !nc.claim) {
+            if let Some(cmp) = b.get("cmp").and_then(|v| crate::syntax::Cmp::of(v.as_str())) {
+                let hi = b.get("hi").map(|v| v.as_f64());
+                nc.bound = Some(crate::constraints::Bound { cmp, hi });
+            }
+        }
         if let Some(a) = c.get("along") {
             nc.along = Some(along_from_json(&sk, &nc, a)?);
         }
@@ -1393,6 +1408,7 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             // `add_quiet`: the walk evaluates once at the end, not once per constraint
             let mut nc = Constraint::new(c.kind, args);
             nc.claim = c.claim;
+            nc.bound = c.bound;
             nc.class = c.class.clone();
             nc.written = c.written.clone();
             nc.repeated = c.repeated;
@@ -1585,8 +1601,8 @@ impl Part {
         }
         for (ci, c) in sk.constraints.iter().enumerate() {
             // a claim constrains nothing, so it welds nothing: two figures a claim spans stay
-            // two parts, and a drag of one costs the other nothing
-            if c.claim {
+            // two parts, and a drag of one costs the other nothing — nor does a bound (§9.6)
+            if !c.states_rows() {
                 continue;
             }
             for e in c.entities() {
@@ -2029,6 +2045,9 @@ pub fn describe_with(c: &Constraint, name: &dyn Fn(EntRef) -> Option<String>) ->
             }
         }
     }
+    // a bound is said as one (§9.6)
+    let hi = c.bound.and_then(|b| b.hi).map(crate::syntax::Arg::Num);
+    let args = crate::syntax::bounded(c.kind, &args, c.bound.map(|b| (b.cmp, hi.as_ref())));
     let text = crate::syntax::operator_text(c.kind, &args);
     // a claim is a different statement from the relation it is written over — it is judged, not
     // solved for — so it says so wherever a constraint is read out, in the word the document

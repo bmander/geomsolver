@@ -1164,6 +1164,33 @@ Conventions:
   tints and **never changes the face** (background/box-shadow/outline, not border/padding).  Run
   `npm run overlay` (headless Chrome, the real `CodeEditor`) when you touch `editor.ts`;
   `make test` cannot.
+- A **bound** (Solvent §9.6, 0.60, #109) *chooses the root*: `distance(>= d)`, `distance(<= d)`,
+  `distance(in: (a, b))` and `p inside P` / `p outside P` (point, plane: the ordinate along `n`
+  from `P.origin`, `<=`/`>=` 0, lowered by `relations::side_of_plane`; `plane_side_word`).
+  Parsed as `OpArg::Bound { cmp: syntax::Cmp, hi }` before the number's `OpArg::Dim`, which every
+  number reader keeps reading; `RelationForm::bound`, `ResolvedRelation::bound`, the canonical
+  form's `bound`; checked by `relations::bound_of` (`CKind::boundable`: ordinate, distances; not a
+  claim; E040). `Constraint::bound` compiles **no row**: `Constraint::states_rows()` (false for a
+  claim or a bound) is what every seam that compiles, counts or welds rows asks (`System::new`,
+  `n_residuals`, `cgraph`, `witness`, `io::Part`), and `acts()` is `!soft && states_rows()`;
+  callouts skip it, the witness drops it, `topology_key` marks it `~`. `Constraint::reading` is the number that
+  would make the row hold (secant along the number); `solve::bound_reading` (with `bound_tol`) is
+  the one verdict — holds, edge, aim — the steering, the elaborator and the diagnosis share.
+  **It chooses the seed's side first**: `program::elaborate` reads the bounds on a pass's seeds
+  (`solve::cross_bounds`: the measured point, the last point operand with a coordinate the solve
+  moves, carried by Newton steps on the reading to its mirror, `Bound::aim`, its twins —
+  `Sketch::twin_group` — and lifts with it: `across`) and elaborates again with those
+  numbers written over the point's seed right after `entities::places` (`crossed_seeds`; held from
+  `settle_deferred`), so `axes_along`, the views folded through it and every seed read through
+  them stand as if the source had seeded it so — patching placement in place does not reproduce
+  `views::place`. Then `System::solve` ends in `steer`: with `retry`, a bound still broken is
+  crossed from the start pose (accumulating) and then the solution, and solved again, kept only if
+  it holds; else `success` false, status `BOUND_BROKEN` (named by the diagnosis, the CLI's `bound
+  broken`). `PlanSolver::solve` falls back to it where the plan's root breaks a bound. A drag
+  (`retry` off) and a drawing whose seeds keep their bounds solve to the same bits. `Diagnosis::bounds_violated`/`bounds_active`, report `boundsViolated`/
+  `boundsActive`; JSON `"bound": {cmp, hi}`; `graft`, `lift`, `describe` (`syntax::bounded`).
+  A free name in one is E040 (`expr::Fault::ClaimFree`). `ccw` on the sheet is still unchecked.
+  `tests/bounds.rs` is the gate.
 - `same_constraint` is "says exactly the same thing"; `same_relation` is the same *without* the
   numbers.  A repeated *relation* is refused by the app (`edit::applyConstraints`): equations
   without rank.  A **dimension is never deduped by the UI**: redundant or contradictory is the

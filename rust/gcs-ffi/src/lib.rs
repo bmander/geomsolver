@@ -4205,7 +4205,11 @@ pub unsafe extern "C" fn gcs_elab_add_relation(
         out_edit(gcs_core::edit::add_relation(
             &(*h).program,
             // the app states constraints; a claim is written in the program panel
-            gcs_core::syntax::Relation::of(gcs_core::syntax::RelationForm::Canonical { kind, args }),
+            gcs_core::syntax::Relation::of(gcs_core::syntax::RelationForm::Canonical {
+                kind,
+                args,
+                bound: None,
+            }),
         ))
     })
 }

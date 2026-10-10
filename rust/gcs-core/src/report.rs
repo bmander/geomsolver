@@ -167,6 +167,8 @@ pub fn diagnosis_json(sk: &Sketch, d: &Diagnosis) -> Json {
         ("claimsTheorem", ids(&d.claims_theorem)),
         ("claimsViolated", ids(&d.claims_violated)),
         ("claimsConsuming", ids(&d.claims_consuming)),
+        ("boundsViolated", ids(&d.bounds_violated)),
+        ("boundsActive", ids(&d.bounds_active)),
         // each energy's verdict, by its terms' constraints (#121): `[id, "minimum", asked]`, the
         // last whether it is what the statement asked for — a minimum of a `minimizes`
         (

@@ -376,7 +376,7 @@ pub(crate) fn point_len(sk: &Sketch, e: EntRef) -> usize {
 
 /// A relation somebody built rather than wrote: the kind and its arguments, and nothing else.
 fn built(kind: CKind, args: Vec<Option<Arg>>) -> Relation {
-    Relation::of(crate::syntax::RelationForm::Canonical { kind, args })
+    Relation::of(crate::syntax::RelationForm::Canonical { kind, args, bound: None })
 }
 
 pub(crate) fn lift_relation(sk: &Sketch, c: &Constraint) -> Relation {
@@ -385,7 +385,15 @@ pub(crate) fn lift_relation(sk: &Sketch, c: &Constraint) -> Relation {
     for (i, (_, kind)) in spec.iter().enumerate() {
         args.push(lift_arg(sk, *kind, &c.args[i]));
     }
-    Relation { claim: c.claim, ..built(c.kind, args) }
+    let mut rel = Relation { claim: c.claim, ..built(c.kind, args) };
+    // a bound is said as one (§9.6), its interval's high end in the document's units
+    let form = &mut rel.form;
+    if let (Some(b), crate::syntax::RelationForm::Canonical { bound, .. }) = (c.bound, form) {
+        let kind = c.kind.dimension_slot().map_or(SpecKind::Length, |i| spec[i].1);
+        let hi = b.hi.and_then(|h| lift_arg(sk, kind, &CArg::Num(h)));
+        *bound = Some((b.cmp, hi));
+    }
+    rel
 }
 
 fn lift_arg(sk: &Sketch, kind: SpecKind, a: &CArg) -> Option<Arg> {

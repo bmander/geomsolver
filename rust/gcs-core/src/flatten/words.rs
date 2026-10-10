@@ -49,7 +49,10 @@ pub(super) fn texts_mut(w: &mut Written) -> Vec<(&mut String, &mut Span)> {
     let mut out = Vec::new();
     for a in w.args.iter_mut() {
         match a {
-            OpArg::Dim(text, span) => out.push((text, span)),
+            OpArg::Dim(text, span) | OpArg::Bound { hi: Some((text, span)), .. } => {
+                out.push((text, span))
+            }
+            OpArg::Bound { .. } => {}
             OpArg::Named(_, v) | OpArg::Slot { arg: v, .. } => out.extend(arg(v)),
             OpArg::Vector { parts, .. } => out.extend(parts.iter_mut().filter_map(arg)),
             OpArg::Ent(_) => {}

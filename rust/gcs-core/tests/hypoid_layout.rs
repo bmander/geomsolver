@@ -483,6 +483,40 @@ fn scaled(text: &str,f: f64) -> String {
     }).collect()
 }
 
+/// **A bound says which root** (§9.6, #109): the gear's axis below the pitch plane, the
+/// pinion's offset hand and the reach's cap beyond C were said by the side their seeds stood
+/// on, and are now stated (`foot inside p`, `A distance(>= 0, along: v) p`, `normal.p1
+/// distance(<= 0, along: normal) radial`).  Every design, seeded on the wrong side of all
+/// three, lands on the recorded pair.
+#[test]
+fn seeds_on_the_wrong_side_land_on_the_recorded_pair() {
+    let (_,rows) = recorded();
+    let flips = [
+        ("foot := point hint((r / 4, r / 2))","foot := point hint((r / 4, -r / 2))"),
+        ("A := point hint((-0.75 * d, 1.25 * d))","A := point hint((-0.75 * d, -1.25 * d))"),
+        ("radial := point hint(at: normal.p1, toward: normal.p2, by: -2)",
+         "radial := point hint(at: normal.p1, toward: normal.p2, by: 2)"),
+    ];
+    for (k,design) in designs().into_iter().enumerate() {
+        let mut flipped = 0;
+        let e = fixtures::read_beside(&fixtures::gear::source(),&fixtures::gear::project(),
+            &mut |name,text| {
+                if name == "configuration" { return design.configuration.clone() }
+                let mut text = text;
+                for (from,to) in flips {
+                    if text.contains(from) {
+                        text = text.replace(from,to);
+                        flipped += 1;
+                    }
+                }
+                text
+            });
+        assert_eq!(flipped,flips.len(),"{}: every seed found",design.label);
+        let (d,at) = off_recorded(&read_pair(&e,rows[0].1[k]),&rows,k);
+        assert!(d <= 1e-9,"{}: {d:e} off the recorded pair at {at}",design.label);
+    }
+}
+
 /// **The layout solves from rough seeds in block-triangular order** (docs/block-triangular-solve-
 /// plan.md, phase 2).  Every design's equations, started from the seeds the same layout computes
 /// at two fifths and at two and a half times its size (the mean module and the offset scaled):

@@ -782,30 +782,31 @@ fn seed_eval(
 
 /// Seeds that read geometry, worked out in statement order — never over a number a `fix` holds,
 /// which was applied first.
+/// `held`: the parameters left where they stand — a point a bound carried across (§9.6), whose
+/// own seed would put it back.
 pub(super) fn settle_deferred(
     sk: &mut Sketch,
     res: &Resolver,
     deferred: &[Deferred],
+    held: &std::collections::BTreeSet<u32>,
     diags: &mut Vec<Diag>,
 ) {
+    let write = |sk: &mut Sketch, p: u32, v: f64| {
+        let q = &mut sk.params[p as usize];
+        if !q.fixed && !held.contains(&p) {
+            q.value = v;
+        }
+    };
     for d in deferred {
         let (span, stmt, result) = match d {
             Deferred::Text { param, text, names, span, stmt } => {
-                let r = seed_eval(sk, res, text, names).map(|v| {
-                    let p = &mut sk.params[*param as usize];
-                    if !p.fixed {
-                        p.value = v;
-                    }
-                });
+                let r = seed_eval(sk, res, text, names).map(|v| write(sk, *param, v));
                 (*span, *stmt, r.map_err(|e| format!("`{text}`: {e}")))
             }
             Deferred::At { point, at, names, span, stmt } => {
                 let r = place_of(sk, res, *point, at, names).map(|place| {
                     for (p, v) in sk.point_all_params(*point).into_iter().zip(place) {
-                        let p = &mut sk.params[p as usize];
-                        if !p.fixed {
-                            p.value = v;
-                        }
+                        write(sk, p, v);
                     }
                 });
                 (*span, *stmt, r)
@@ -813,12 +814,7 @@ pub(super) fn settle_deferred(
             Deferred::Height { point, text: Some(text), names, span, stmt, .. } => {
                 // refused already where the point is drawn in a plane (`places`)
                 let Some(param) = sk.points[*point].z else { continue };
-                let r = seed_eval(sk, res, text, names).map(|v| {
-                    let p = &mut sk.params[param as usize];
-                    if !p.fixed {
-                        p.value = v;
-                    }
-                });
+                let r = seed_eval(sk, res, text, names).map(|v| write(sk, param, v));
                 (*span, *stmt, r.map_err(|e| format!("`{text}`: {e}")))
             }
             Deferred::Along { .. } | Deferred::Height { .. } => continue,

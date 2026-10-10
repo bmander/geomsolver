@@ -49,6 +49,10 @@ fn solid_claim(
     let Some(word) = crate::constraints::solid_word(&w.word.text) else {
         return;
     };
+    // a point inside a plane is a bound, not a claim about solids (§9.6, `constrain`)
+    if crate::program::relations::point_and_plane(sk, res, w) {
+        return;
+    }
     let mut say = |code: Code, span: Span, m: String| {
         diags.push(Diag {
             code,

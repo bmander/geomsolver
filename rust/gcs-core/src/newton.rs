@@ -58,6 +58,7 @@ pub fn status_message(status: i32) -> &'static str {
         2 => "gradient below gtol",
         3 => "trust region collapsed / damping exhausted",
         4 => "max iterations reached",
+        5 => "a bound does not hold",
         -1 => "failed",
         _ => "unknown",
     }

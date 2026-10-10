@@ -258,7 +258,7 @@ pub fn coincident_classes(sk: &Sketch) -> (Vec<usize>, Vec<Vec<usize>>) {
         // a *claimed* coincidence holds nothing together: it is a question about the drawing,
         // not part of it; nor does one with a ring's turned copy, which moves with its
         // representative rather than with the class (`build` leaves it to the numeric residual)
-        if c.kind == CKind::Coincident && !c.claim && !touches(sk, &derived, c) {
+        if c.kind == CKind::Coincident && c.states_rows() && !touches(sk, &derived, c) {
             uf.union(c.args[0].ent().i(), c.args[1].ent().i());
         }
     }
@@ -413,7 +413,7 @@ pub fn build(sk: &Sketch) -> ConstraintGraph {
     for c in &sk.constraints {
         // A claim is skipped outright — not even `unsupported`, which would hand it to the
         // numeric residual and have the plan enforce a statement that promised to add nothing.
-        if c.claim {
+        if !c.states_rows() {
             continue;
         }
         // A dimension written in terms of a free variable states no length: it states a

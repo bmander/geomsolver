@@ -640,6 +640,17 @@ pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option
 /// the core's (a line's direction) and an infix word of the standard library's (two points'
 /// level), which is why the question is asked of a fixity.  Every such word is an operator, so
 /// the tables are read once, over `OPERATORS`.
+/// The words that say which side of a plane a point is on (§9.6), and the bound each is on the
+/// point's ordinate along the plane's normal: `inside` at most zero, behind the normal, and
+/// `outside` at least zero.  `inside` between solids is the claim `solid_word` reads instead.
+pub fn plane_side_word(w: &str) -> Option<crate::syntax::Cmp> {
+    match w {
+        "inside" => Some(crate::syntax::Cmp::Le),
+        "outside" => Some(crate::syntax::Cmp::Ge),
+        _ => None,
+    }
+}
+
 pub fn builtin_word(word: &str, fixity: Fixity) -> bool {
     static BUILTIN: std::sync::OnceLock<Vec<(&'static str, Fixity)>> = std::sync::OnceLock::new();
     let table = BUILTIN.get_or_init(|| {
@@ -651,6 +662,7 @@ pub fn builtin_word(word: &str, fixity: Fixity) -> bool {
             }
             Fixity::Infix => {
                 solid_word(w).is_some()
+                    || plane_side_word(w).is_some()
                     || EntKind::ALL.iter().any(|&a| {
                         EntKind::ALL.iter().any(|&b| infix_op(w, a, b, &|_| None).is_some())
                     })
@@ -692,7 +704,7 @@ pub fn prefix_op(word: &str, on: EntKind) -> Option<CKind> {
 /// table (`gauge_op`), so a class, a placement and the chain's lookahead treat them as any
 /// other word.  None of the three is a prefix word a chain can open a link with: `prefix_op`
 /// declines them, so `fix(x == 0) point p -> …` is no chain.
-pub const OPERATORS: [&str; 23] = [
+pub const OPERATORS: [&str; 24] = [
     "distance", "tangent", "equal", "curvature", "horizontal", "vertical", "level", "angle",
     "radius", "length", "coincident", "midpoint", "parallel", "perpendicular", "symmetry", "project",
     "touches", "fix", "ccw", "cw",
@@ -701,6 +713,9 @@ pub const OPERATORS: [&str; 23] = [
     // because a solid is evaluated after the drawing is solved and a claim about one is judged
     // rather than enforced — `solid_claim` is where the word is read.
     "clear", "inside", "fits",
+    // and `outside`, which with `inside` also says which side of a plane a point is on: a bound
+    // (§9.6), lowered to the ordinate along the plane's normal (`program::relations`)
+    "outside",
 ];
 
 /// The words that relate two **solids**, and what each asks (§9.8).  A statement in one of them
@@ -1479,6 +1494,25 @@ impl CKind {
         )
     }
 
+    /// The kinds whose number may be a bound (§9.6): those reading a signed or unsigned measure
+    /// a solve can be steered along — an ordinate (and so `inside`/`outside` a plane), a
+    /// distance between points, a point's or a parallel line's distance from a line.
+    /// Where its number stands, if it states one: a kind has at most one dimension slot.
+    pub fn dimension_slot(self) -> Option<usize> {
+        self.spec().iter().position(|(_, k)| k.is_dimension())
+    }
+
+    pub fn boundable(self) -> bool {
+        matches!(
+            self,
+            CKind::Ordinate
+                | CKind::Distance
+                | CKind::Distance3
+                | CKind::PointLineDistance
+                | CKind::ParallelDistance
+        )
+    }
+
     pub fn claimable(self) -> bool {
         // a touch is part of its curve's problem, and holds wherever the problem is solved
         !self.gauge() && !self.spec().iter().any(|(_, k)| k.is_param()) && self != CKind::CurveTouchesLine
@@ -2006,6 +2040,41 @@ pub struct Constraint {
     /// (`kernels::dual_kernel`) and appends a tangent column per column and the line's ends to
     /// the columns, as `free` appends its column.
     pub along: Option<usize>,
+    /// Its number is a **bound** (§9.6): `distance(>= d)`, `distance(<= d)`, `distance(in: (d,
+    /// hi))`.  A bound is no equation — like a claim it compiles no row, so `acts()` leaves it
+    /// out — and outside a set body it chooses a branch: read on the solution (`reading`), and
+    /// the solve steered to the root where it holds (`solve::steer`).  Travels like `claim`.
+    pub bound: Option<Bound>,
+}
+
+/// What a bound says of its constraint's number, the low end (§9.6): which way it runs, and an
+/// interval's high end, in the number's own units.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Bound {
+    pub cmp: crate::syntax::Cmp,
+    pub hi: Option<f64>,
+}
+
+impl Bound {
+    /// Whether a reading `m` keeps a bound whose low end is `lo`, within `tol`.
+    pub fn holds(&self, lo: f64, m: f64, tol: f64) -> bool {
+        use crate::syntax::Cmp;
+        match self.cmp {
+            Cmp::Ge => m >= lo - tol,
+            Cmp::Le => m <= lo + tol,
+            Cmp::In => m >= lo - tol && m <= self.hi.unwrap_or(lo) + tol,
+        }
+    }
+
+    /// Where a solve steering a reading `m` back across the bound aims: its mirror in the
+    /// bound's edge, which is where the other root of a mirror-symmetric pair reads, or an
+    /// interval's middle.
+    pub fn aim(&self, lo: f64, m: f64) -> f64 {
+        match self.cmp {
+            crate::syntax::Cmp::In => (lo + self.hi.unwrap_or(lo)) / 2.0,
+            _ => 2.0 * lo - m,
+        }
+    }
 }
 
 /// A line's two ends lifted, three columns each.
@@ -2050,7 +2119,49 @@ impl Constraint {
     /// about the drawing rather than part of it, and neither is something a consumer asking for
     /// the constraints that determine the figure wants back.
     pub fn acts(&self) -> bool {
-        !self.soft && !self.claim
+        !self.soft && self.states_rows()
+    }
+
+    /// Whether it states rows at all: a claim (§9.7) is judged and a bound (§9.6) read, never
+    /// solved for, so neither compiles one — the question every seam that compiles, counts or
+    /// welds rows asks, where `acts` also leaves out the soft rows a drag does compile.
+    pub fn states_rows(&self) -> bool {
+        !self.claim && self.bound.is_none()
+    }
+
+    /// The number the drawing reads where this constraint's stands: the one that would make its
+    /// row hold now, as the statement measures it (its word's sign, `side:`, `along:`) — what a
+    /// bound is checked against (§9.6).  Found along the number from the one stated by secant
+    /// steps, exact in one for the kinds whose residual is affine in it (an ordinate, a distance
+    /// from a line) and a few for a point–point distance's squared form.  `None` for a kind
+    /// outside `CKind::boundable`.
+    pub fn reading(&self, sk: &Sketch) -> Option<f64> {
+        if !self.kind.boundable() {
+            return None;
+        }
+        let at = self.kind.dimension_slot()?;
+        let v = self.local_values(sk);
+        let mut c = self.clone();
+        let mut residual = |d: f64| {
+            c.args[at] = Arg::Num(d);
+            c.residual(sk, &v)[0]
+        };
+        let d = self.args[at].num();
+        let (mut d0, mut d1) = (d, d + d.abs().max(1.0));
+        let (mut r0, mut r1) = (residual(d0), residual(d1));
+        for _ in 0..40 {
+            if r1 == r0 || r1 == 0.0 || !r1.is_finite() {
+                break;
+            }
+            let d2 = d1 - r1 * (d1 - d0) / (r1 - r0);
+            (d0, r0) = (d1, r1);
+            d1 = d2;
+            r1 = residual(d1);
+            if (d1 - d0).abs() <= 1e-15 * d1.abs().max(1.0) {
+                break;
+            }
+        }
+        Some(d1)
     }
 
     /// A constraint of `kind` over the arguments given, **and the defaults for any the caller
@@ -2080,6 +2191,7 @@ impl Constraint {
             repeated: false,
             word: None,
             along: None,
+            bound: None,
         }
     }
 
@@ -2454,6 +2566,8 @@ impl Constraint {
     }
 
     /// The (index, name, kind) of this constraint's dimension values.
+    /// Every dimension slot, by index, name and kind — a kind has at most one
+    /// (`CKind::dimension_slot`).
     pub fn dimensions(&self) -> Vec<(usize, &'static str, SpecKind)> {
         self.kind
             .spec()
@@ -3706,8 +3820,9 @@ pub fn same_relation(a: &Constraint, b: &Constraint) -> bool {
 }
 
 fn matches(a: &Constraint, b: &Constraint, want: impl Fn(SpecKind) -> bool + Copy) -> bool {
-    // a row and its derivative are two equations about the same entities
-    if a.kind != b.kind || a.along != b.along {
+    // a row and its derivative are two equations about the same entities, and a bound is no
+    // equation at all (§9.6)
+    if a.kind != b.kind || a.along != b.along || a.bound != b.bound {
         return false;
     }
     same_args(a, b, false, want) || (a.kind.commutative() && same_args(a, b, true, want))
