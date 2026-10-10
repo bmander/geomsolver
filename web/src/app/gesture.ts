@@ -40,22 +40,36 @@ export function local(v: SketchView, e: MouseEvent): [number, number] {
 
 export function bindEvents(v: SketchView): void {
   const cv = v.canvas;
+  const touch = touchNavigation(v);
   // One pointer owns the gesture until it lets go.  A second finger starting one on top would
   // drop the live gesture on the floor: its `end` never runs, so the core's drag handle leaks
   // and the soft drag target it added stays in the sketch, quietly compromising every later
   // solve.  And a gesture can end without a `pointerup` — a cancelled touch, or capture lost
-  // to a system gesture — so those have to finish it too.
+  // to a system gesture — so those have to finish it too.  A finger is `touch`'s: a second one
+  // is a pinch, which it settles the first one's gesture to start.
   cv.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'touch') {
+      touch.down(e);
+      return;
+    }
     if (v.gesture) return;
     cv.setPointerCapture(e.pointerId);
     v.gesturePointer = e.pointerId;
     onPointerDown(v, e);
   });
   cv.addEventListener('pointermove', (e) => {
+    if (e.pointerType === 'touch') {
+      touch.move(e);
+      return;
+    }
     if (v.gesture && e.pointerId !== v.gesturePointer) return;
     onPointerMove(v, e);
   });
   const finish = (e: PointerEvent): void => {
+    if (e.pointerType === 'touch') {
+      touch.up(e);
+      return;
+    }
     if (v.gesturePointer !== null && e.pointerId !== v.gesturePointer) return;
     v.gesturePointer = null;
     onPointerUp(v);
@@ -96,11 +110,158 @@ export function bindEvents(v: SketchView): void {
   cv.addEventListener('wheel', (e) => {
     e.preventDefault();
     const [sx, sy] = local(v, e);
-    const f = 1.0015 ** (-e.deltaY * (e.deltaMode === 1 ? 16 : 1));
-    v.cam.zoomAt(sx, sy, f);       // about the cursor, so what is under it stays under it
+    // a pinch on a trackpad comes as a wheel with ctrl held, in small steps; two fingers slid
+    // across one, as a scroll, which slides the workspace as a pan does; a wheel's notches zoom.
+    // All about the cursor, so what is under it stays under it
+    if (e.ctrlKey) {
+      const d = Math.max(-PINCH_STEP_MAX, Math.min(PINCH_STEP_MAX, e.deltaY * wheelUnit(e)));
+      v.cam.zoomAt(sx, sy, Math.exp(-d * PINCH_PER_PX));
+    } else if (scrolled(e)) {
+      v.cam.panBy(-e.deltaX, -e.deltaY);
+    } else {
+      v.cam.zoomAt(sx, sy, 1.0015 ** (-e.deltaY * wheelUnit(e)));
+    }
     v.draw();
   }, { passive: false });
+  // Safari tells a trackpad's pinch as a gesture with a running scale and no wheel.  On a touch
+  // screen it tells a pinch so too, beside the fingers' own events, which `touch` reads instead
+  let scale = 1;
+  const pinched = (e: Event): SafariGesture | null => {
+    e.preventDefault();               // or the page zooms
+    return touch.fingers() ? null : e as SafariGesture;
+  };
+  cv.addEventListener('gesturestart', (e) => {
+    if (pinched(e)) scale = 1;
+  });
+  cv.addEventListener('gesturechange', (e) => {
+    const g = pinched(e);
+    if (!g || !(g.scale > 0)) return;
+    v.cam.zoomAt(...local(v, g), g.scale / scale);
+    scale = g.scale;
+    v.draw();
+  });
+  cv.addEventListener('gestureend', pinched);
 }
+
+/** Safari's `GestureEvent`, which no other browser has and so no type library declares. */
+type SafariGesture = MouseEvent & { scale: number };
+
+/** How fast a trackpad's pinch zooms, per pixel of its wheel delta, and the most one event may
+ *  count: ctrl and a mouse's wheel come as the same event, a notch as a hundred pixels. */
+const PINCH_PER_PX = 0.01;
+const PINCH_STEP_MAX = 25;
+
+/** A wheel's delta in pixels per unit: Firefox counts a mouse's notches in lines. */
+function wheelUnit(e: WheelEvent): number {
+  return e.deltaMode === 1 ? 16 : 1;
+}
+
+/** Is this wheel event two fingers sliding on a trackpad rather than a mouse's wheel turning?
+ *  Nothing says so outright, so it is read off what a wheel does not do: count in pixels and
+ *  move sideways — or, where the browser keeps the legacy `wheelDeltaY`, report it as exactly
+ *  three times the delta, which a trackpad does and a wheel's notches do not. */
+function scrolled(e: WheelEvent): boolean {
+  if (e.deltaMode !== 0) return false;
+  if (e.deltaX !== 0) return true;
+  const legacy = (e as WheelEvent & { wheelDeltaY?: number }).wheelDeltaY;
+  return legacy !== undefined && legacy !== 0 && legacy === -3 * e.deltaY;
+}
+
+/** How long a lone finger is held before its press is the canvas's, and how far it may wander
+ *  meanwhile: a second finger down in that time makes the two a pinch, so the first one's press
+ *  neither clicked a tool nor started a drag. */
+const TOUCH_HOLD_MS = 120;
+const TOUCH_SLOP_PX = 8;
+
+/** Fingers on the glass.  One alone is a pointer like any other — once it has been held or
+ *  moved long enough to be sure no second is coming, or lifted as a tap.  Two are a pinch: their
+ *  middle carries the workspace with it and their spread zooms it about that middle.  Camera only,
+ *  as a pan is; a gesture the first finger started is settled (ended, never dropped: see
+ *  `bindEvents`) when the second comes down, and after a pinch a finger left down does nothing
+ *  until it is lifted. */
+function touchNavigation(v: SketchView) {
+  const cv = v.canvas;
+  const fingers = new Map<number, [number, number]>();   // every finger down, where it is now
+  let held: { e: PointerEvent; at: [number, number]; timer: ReturnType<typeof setTimeout> } | null
+    = null;
+  let pinch: { mid: [number, number]; span: number } | null = null;
+
+  const spread = (): { mid: [number, number]; span: number } => {
+    const [a, b] = [...fingers.values()];
+    return {
+      mid: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2],
+      span: Math.hypot(b[0] - a[0], b[1] - a[1]),
+    };
+  };
+  /** The lone finger is sure to be one: its press goes to the canvas as a mouse's would. */
+  const press = (): void => {
+    if (!held) return;
+    const { e, timer } = held;
+    held = null;
+    clearTimeout(timer);
+    if (v.gesture) return;
+    v.gesturePointer = e.pointerId;
+    onPointerDown(v, e);
+  };
+  return {
+    fingers: (): number => fingers.size,
+    down(e: PointerEvent): void {
+      const at = local(v, e);
+      fingers.set(e.pointerId, at);
+      cv.setPointerCapture(e.pointerId);
+      if (pinch) {
+        pinch = spread();               // a finger joined: carry on from where they all are
+        return;
+      }
+      if (fingers.size === 1) {
+        if (!v.gesture) held = { e, at, timer: setTimeout(press, TOUCH_HOLD_MS) };
+        return;
+      }
+      // a second finger: a pinch, unless a mouse owns the live gesture
+      const owner = v.gesturePointer;
+      if (v.gesture && (owner === null || !fingers.has(owner))) return;
+      if (held) {
+        clearTimeout(held.timer);
+        held = null;
+      }
+      if (owner !== null && fingers.has(owner)) {
+        v.gesturePointer = null;
+        endGesture(v);
+      }
+      pinch = spread();
+    },
+    move(e: PointerEvent): void {
+      if (!fingers.has(e.pointerId)) return;
+      const at = local(v, e);
+      fingers.set(e.pointerId, at);
+      if (pinch) {
+        const now = spread();
+        v.cam.panBy(now.mid[0] - pinch.mid[0], now.mid[1] - pinch.mid[1]);
+        if (pinch.span > 0 && now.span > 0) v.cam.zoomAt(...now.mid, now.span / pinch.span);
+        pinch = now;
+        v.draw();
+        return;
+      }
+      if (held?.e.pointerId === e.pointerId) {
+        if (Math.hypot(at[0] - held.at[0], at[1] - held.at[1]) < TOUCH_SLOP_PX) return;
+        press();
+      }
+      if (e.pointerId === v.gesturePointer) onPointerMove(v, e);
+    },
+    up(e: PointerEvent): void {
+      if (!fingers.delete(e.pointerId)) return;
+      if (held?.e.pointerId === e.pointerId) press();   // a tap: the press, then its release
+      if (pinch) {
+        pinch = fingers.size >= 2 ? spread() : null;
+        return;
+      }
+      if (e.pointerId !== v.gesturePointer) return;
+      v.gesturePointer = null;
+      onPointerUp(v);
+    },
+  };
+}
+
 
 export function onPointerDown(v: SketchView, e: PointerEvent): void {
   v.stopAnimation();
