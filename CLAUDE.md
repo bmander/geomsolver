@@ -1528,8 +1528,8 @@ Conventions:
   plane's own axes (`v0.u`, `v0.v`).  The constraint bar relates them as anything else:
   `app/relate.ts` sorts the selection into bins (`axes` beside `planes`; a `direction` slot is a
   ray, a line or an axis) and tries `INCIDENCE`, `PARALLEL`, `PERPENDICULAR` in order, the 2D
-  kinds first.  With colour by state on, the box inks axes and an unsettled plane's frame by
-  state (`paint::stateInk`).
+  kinds first.  With colour by state on, the box inks the drawing's own axes and planes by state
+  (`paint::inkOf`, the one ink rule: selected, highlighted, state), std's keeping their quiet ink.
   Points in space stand in no view: seen where they are (`Projection::point`; per frame
   `workspace::space_points`, `gcs_workspace_space_points`, stroked through the eye's own
   camera), drawn and picked, and dragged where the eye sees them (`PlanDrag::seen`, numeric:
