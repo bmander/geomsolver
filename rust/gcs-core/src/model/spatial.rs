@@ -676,16 +676,64 @@ impl Sketch {
     }
 }
 
+/// Which way an extrusion runs from its face, and how thick it is the language's way to say: behind
+/// it (`depth: d`, the material the view looks at), in front of it (`from: 0, to: d`), or both
+/// ways (`from: -d/2, to: d/2`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Way {
+    Behind,
+    Front,
+    Both,
+}
+
+impl Way {
+    /// Where an extrusion `d` thick runs along its face's normal, from and to.
+    pub fn extents(self, d: f64) -> (f64, f64) {
+        match self {
+            Way::Behind => (-d, 0.0),
+            Way::Front => (0.0, d),
+            Way::Both => (-d / 2.0, d / 2.0),
+        }
+    }
+
+    /// The way and thickness a prism's extents say, where they say one of the three.
+    pub fn of(from: f64, to: f64) -> Option<(Way, f64)> {
+        if to == 0.0 && from < 0.0 {
+            Some((Way::Behind, -from))
+        } else if from == 0.0 && to > 0.0 {
+            Some((Way::Front, to))
+        } else if from == -to && to > 0.0 {
+            Some((Way::Both, 2.0 * to))
+        } else {
+            None
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Way::Behind => "behind",
+            Way::Front => "front",
+            Way::Both => "both",
+        }
+    }
+
+    pub fn parse(w: &str) -> Option<Way> {
+        [Way::Behind, Way::Front, Way::Both].into_iter().find(|x| x.as_str() == w)
+    }
+}
+
 impl Sketch {
-    /// Re-extrude a prism where it stands: `from` and `to` along its face's normal, as an
-    /// extrusion being sized previews itself before the source is written (#162 F2).  Evaluated
-    /// solids are memoised against every extent they read, so the next mesh is re-cut.  False
-    /// for a solid that is not a prism.
-    pub fn set_prism(&mut self, i: usize, from: f64, to: f64) -> bool {
+    /// Re-extrude a prism where it stands, `d` thick the `way` it runs — the preview an
+    /// extrusion being sized shows before the source says it (#162 F2).  Evaluated solids are
+    /// memoised against every extent they read, so the next mesh is re-cut, and `shape_epoch`
+    /// says so to a binding.  False for a solid that is not a prism.
+    pub fn set_prism(&mut self, i: usize, way: Way, d: f64) -> bool {
+        let (from, to) = way.extents(d);
         match self.solids.get_mut(i).map(|s| &mut s.def) {
             Some(SolidDef::Prism { from: f, to: t, .. }) => {
                 *f = Extent::at(from);
                 *t = Extent::at(to);
+                self.shape_epoch = self.shape_epoch.wrapping_add(1);
                 true
             }
             _ => false,

@@ -791,6 +791,13 @@ fn refs<S: ToString>(names: impl IntoIterator<Item = S>) -> Vec<syntax::Kid> {
 /// elsewhere in the document was there before the gesture and is not its fault.
 fn append_checked(prog: &Program, stmts: &[StmtKind], names: Vec<String>) -> Result<Edit, String> {
     let (text, ours) = appended(prog, stmts)?;
+    checked(prog, text, ours, names)
+}
+
+/// A spliced text held to the elaborator: refused, in its words, for a parse error or an error
+/// the elaborator raises inside `ours` (or at a statement that starts there) — the text the edit
+/// wrote.  An error elsewhere was there before the edit and is not its fault.
+fn checked(prog: &Program, text: String, ours: Span, names: Vec<String>) -> Result<Edit, String> {
     let (mut next, errs) = syntax::parse(&text);
     if let Some(e) = errs.iter().find(|e| ours.contains(e.span.lo)) {
         return Err(e.message.clone());
@@ -900,26 +907,45 @@ impl SolidSweep {
     /// The sweep these say, as the parser reads one (`sweep_of`): a mixture is refused in its
     /// words, and so is none at all, since a solid swept from a face says how.
     fn sweep(&self) -> Result<syntax::Sweep, String> {
-        let how = self;
         let dim = |t: &Option<String>| {
-        t.as_ref().map(|text| syntax::Arg::Dim { text: text.clone(), span: Span::default() })
-    };
-    let reference = |t: &Option<String>| t.as_ref().map(|n| syntax::Ref::new(n.clone()));
-    let parts = syntax::SweepParts {
-        from: dim(&how.from),
-        to: dim(&how.to),
-        depth: dim(&how.depth),
-        about: reference(&how.about),
-        through: reference(&how.through),
-        sweep: dim(&how.sweep),
-        sense: how.sense,
-        ..Default::default()
-    };
-    match syntax::sweep_of(parts)? {
-        syntax::Sweep::Body => Err("a solid swept from a face says how: `depth:`, `from:`/`to:`, \
-                                    `through:` or `about:`".into()),
-        s => Ok(s),
+            t.as_ref().map(|text| syntax::Arg::Dim { text: text.clone(), span: Span::default() })
+        };
+        let reference = |t: &Option<String>| t.as_ref().map(|n| syntax::Ref::new(n.clone()));
+        let parts = syntax::SweepParts {
+            from: dim(&self.from),
+            to: dim(&self.to),
+            depth: dim(&self.depth),
+            about: reference(&self.about),
+            through: reference(&self.through),
+            sweep: dim(&self.sweep),
+            sense: self.sense,
+            ..Default::default()
+        };
+        match syntax::sweep_of(parts)? {
+            syntax::Sweep::Body => Err("a solid swept from a face says how: `depth:`, \
+                                        `from:`/`to:`, `through:` or `about:`".into()),
+            s => Ok(s),
+        }
     }
+
+    /// An extrusion `thick` thick (the text written) the `way` it runs from its face: `depth:`
+    /// behind, `from: 0, to:` in front, or half each way — halved as a number where it is one,
+    /// else as the expression `(thick) / 2`.
+    pub fn thick(way: crate::model::Way, thick: &str) -> SolidSweep {
+        use crate::model::Way;
+        let (thick, n) = (thick.trim(), thick.trim().parse::<f64>().ok().filter(|n| n.is_finite()));
+        let half = |sign: f64| match n {
+            Some(n) => num(sign * n / 2.0),
+            None => format!("{}({thick}) / 2", if sign < 0.0 { "-" } else { "" }),
+        };
+        let text = |t: &str| Some(t.to_string());
+        match way {
+            Way::Behind => SolidSweep { depth: text(thick), ..Default::default() },
+            Way::Front => SolidSweep { from: text("0"), to: text(thick), ..Default::default() },
+            Way::Both => {
+                SolidSweep { from: Some(half(-1.0)), to: Some(half(1.0)), ..Default::default() }
+            }
+        }
     }
 }
 
@@ -930,14 +956,13 @@ impl SolidSweep {
 /// The depth is a round fifth of the drawing's reach, `set_off`'s, a start the gesture then
 /// sizes.  `names` is the solid, the face, then any hole faces.
 pub fn extrude(
-    e: &Elaborated,
+    prog: &Program,
     sk: &Sketch,
     outer: &[String],
     holes: &[Vec<String>],
     with: Option<(syntax::BodyWord, &str)>,
     through: bool,
 ) -> Edit {
-    let prog = &e.program;
     extrude_edit(prog, sk, outer, holes, with, through).unwrap_or_else(|why| Edit::none(prog, Some(why)))
 }
 
@@ -988,20 +1013,12 @@ fn sweep_edit(e: &Elaborated, prog: &Program, solid: usize, how: &SolidSweep) ->
     let mut d2 = d.clone();
     d2.sweep = Some(how.sweep()?);
     let with = syntax::decl_args(&d2);
+    // the statement in the new text: where it was, longer or shorter by what the list became
+    let stmt = prog.stmt(site.stmt).map(|s| s.span).ok_or("no statement makes that solid")?;
+    let grown = with.len() as i64 - (d.list_span.hi as i64 - d.list_span.lo as i64);
+    let ours = Span::new(stmt.lo as usize, (stmt.hi as i64 + grown) as usize);
     let text = splice(prog.text(), vec![Splice { at: d.list_span, with }]);
-    let (mut next, errs) = syntax::parse(&text);
-    if let Some(err) = errs.first() {
-        return Err(err.message.clone());
-    }
-    crate::modules::relink(&mut next, prog);
-    let elab = crate::program::elaborate(&next);
-    let stmt_span = next.stmts().find(|s| s.id == site.stmt).map(|s| s.span);
-    let ours = |dg: &crate::program::Diag| dg.stmt == Some(site.stmt)
-        || stmt_span.is_some_and(|sp| sp.contains(dg.span.lo));
-    if let Some(dg) = elab.errors().find(|dg| ours(dg)) {
-        return Err(dg.message.clone());
-    }
-    Ok(Edit { text, kind: Kind::Structural, names: Vec::new(), refused: None })
+    checked(prog, text, ours, Vec::new())
 }
 
 /// `a word b`, written as the source says it: the elaborator reads which relation the word means

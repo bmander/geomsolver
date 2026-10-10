@@ -426,77 +426,61 @@ fn line_meets_triangle(o: [f64; 3], d: [f64; 3], p: &[f64]) -> Option<f64> {
     Some(f * dot(e2, q))
 }
 
-/// The arrow an extrusion is sized by, as the eye sees it: from the middle of the prism's face to
-/// its far end along the face's normal, and the two extents it runs between.
+/// The arrow an extrusion is sized by, as the eye sees it, and what it says: from the middle of the
+/// prism's face to its far end along the face's normal — no tip where the eye looks down the
+/// normal, an arrow there being a dot — which way it runs, and how thick it is.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ExtrudeHandle {
     pub base: (f64, f64),
-    pub tip: (f64, f64),
-    pub from: f64,
-    pub to: f64,
-    /// False where the eye looks straight down the normal: an arrow along it is a dot, and there
-    /// is nothing to drag — the extents still say how thick it is.
-    pub readable: bool,
-}
-
-/// Where prism `solid`'s face sits and which way it is swept: the face's middle and its plane's
-/// normal, in space, and its two extents — `None` for a solid that is not a prism.
-fn prism_frame(sk: &Sketch, solid: usize) -> Option<([f64; 3], [f64; 3], f64, f64)> {
-    let crate::model::SolidDef::Prism { face, from, to } = &sk.solids.get(solid)?.def else {
-        return None;
-    };
-    let poly = crate::solid::face_poly(sk, *face as usize, crate::solid::REPORT_UNIT)?;
-    let basis = match sk.faces[*face as usize].plane().ok()? {
-        Some(p) => sk.basis(p as usize),
-        None => Basis::page(),
-    };
-    let (cx, cy) = centroid(&poly.pts);
-    Some((basis.lift(cx, cy), basis.normal(), from.value, to.value))
-}
-
-/// The area centroid of a closed ring, or the mean of its corners where it encloses nothing.
-fn centroid(pts: &[(f64, f64)]) -> (f64, f64) {
-    let n = pts.len();
-    let (mut a, mut x, mut y) = (0.0, 0.0, 0.0);
-    for i in 0..n {
-        let (p, q) = (pts[i], pts[(i + 1) % n]);
-        let w = p.0 * q.1 - q.0 * p.1;
-        a += w;
-        x += (p.0 + q.0) * w;
-        y += (p.1 + q.1) * w;
-    }
-    if a.abs() > 0.0 {
-        return (x / (3.0 * a), y / (3.0 * a));
-    }
-    let k = n.max(1) as f64;
-    (pts.iter().map(|p| p.0).sum::<f64>() / k, pts.iter().map(|p| p.1).sum::<f64>() / k)
-}
-
-/// The arrow prism `solid` is sized by, seen: `None` for a solid that is not a prism.
-pub fn extrude_handle(sk: &Sketch, proj: &Projection, solid: usize) -> Option<ExtrudeHandle> {
-    let (base, n, from, to) = prism_frame(sk, solid)?;
-    let along = |t: f64| proj.seen([0, 1, 2].map(|k| base[k] + t * n[k]));
-    let (b, one) = (along(0.0), along(1.0));
-    let readable = (one.0 - b.0).dhypot(one.1 - b.1) >= EDGE_ON_NORMAL;
-    let far = if to.abs() >= from.abs() { to } else { from };
-    Some(ExtrudeHandle { base: b, tip: along(far), from, to, readable })
+    pub tip: Option<(f64, f64)>,
+    /// `None` for extents none of the three ways say (`from: 2, to: 7`, written by hand).
+    pub way: Option<crate::model::Way>,
+    pub thick: f64,
 }
 
 /// How short a unit normal may look and still be dragged along: under it, the eye is looking
 /// down the normal.
 const EDGE_ON_NORMAL: f64 = 0.05;
 
+/// Prism `solid` as the eye sees it: its face's middle, one unit of its face's normal (seeing is
+/// linear, so a point `t` along it is seen at `base + t·step`), and its extents — `None` for a
+/// solid that is not a prism.
+fn seen_prism(sk: &Sketch, proj: &Projection, solid: usize)
+    -> Option<((f64, f64), (f64, f64), f64, f64)> {
+    let crate::model::SolidDef::Prism { face, from, to } = &sk.solids.get(solid)?.def else {
+        return None;
+    };
+    // fine enough to place an arrow by, not a volume: a round face is no finer than it need be
+    let unit = (sk.extent() / 256.0).max(crate::solid::REPORT_UNIT);
+    let poly = crate::solid::face_poly(sk, *face as usize, unit)?;
+    let (cx, cy) = crate::solid::ring_centroid(&poly.pts);
+    let base = proj.seen(poly.basis.lift(cx, cy));
+    Some((base, proj.seen(poly.basis.normal()), from.value, to.value))
+}
+
+fn readable(step: (f64, f64)) -> bool {
+    step.0.dhypot(step.1) >= EDGE_ON_NORMAL
+}
+
+/// The arrow prism `solid` is sized by, seen: `None` for a solid that is not a prism.
+pub fn extrude_handle(sk: &Sketch, proj: &Projection, solid: usize) -> Option<ExtrudeHandle> {
+    let (base, step, from, to) = seen_prism(sk, proj, solid)?;
+    let far = if to.abs() >= from.abs() { to } else { from };
+    let tip = readable(step).then(|| (base.0 + far * step.0, base.1 + far * step.1));
+    let (way, thick) = match crate::model::Way::of(from, to) {
+        Some((way, d)) => (Some(way), d),
+        None => (None, to - from),
+    };
+    Some(ExtrudeHandle { base, tip, way, thick })
+}
+
 /// How far along prism `solid`'s normal the point under `at` is, as the eye sees it: the signed
 /// distance from its face of the point on the normal through the face's middle that the eye's
 /// ray through `at` passes nearest — what dragging the arrow's tip to `at` sizes it to.
 pub fn extent_at(sk: &Sketch, proj: &Projection, solid: usize, at: (f64, f64)) -> Option<f64> {
-    let (base, n, ..) = prism_frame(sk, solid)?;
-    let b = proj.seen(base);
-    let one = proj.seen([0, 1, 2].map(|k| base[k] + n[k]));
-    let d = (one.0 - b.0, one.1 - b.1);
-    let len2 = d.0 * d.0 + d.1 * d.1;
+    let (b, d, ..) = seen_prism(sk, proj, solid)?;
     let along = (at.0 - b.0) * d.0 + (at.1 - b.1) * d.1;
-    (len2 >= EDGE_ON_NORMAL * EDGE_ON_NORMAL).then(|| along / len2)
+    readable(d).then(|| along / (d.0 * d.0 + d.1 * d.1))
 }
 
 /// Every entity whose figure touches the box `lo`–`hi` on the eye's picture plane — a rubber

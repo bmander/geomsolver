@@ -1978,7 +1978,7 @@ test('the Extrude tool washes the region under the pointer, and a click drops a 
             view.source);
   assert.deepEqual(view.selectedSolids.map((s) => s.name), ['b0']);
   assert.equal(view.liveExtent?.solid, 'b0');
-  assert.equal(view.liveExtent?.mode, 'behind');
+  assert.equal(view.liveExtent?.way, 'behind');
   assert.equal(view.tool, 'extrude', 'the tool stays down for the next');
   // Escape: done sizing, the tool still down; again, the tool goes
   view.cancelTool();
@@ -1999,7 +1999,7 @@ test('a thickness typed or dragged rewrites the solid in place, in the click\'s 
   // dragged from three quarters: in front of the face (the front's −y), then both ways with ⇧
   view.orbit = { az: 0.6, el: 0.5 };
   const arrow = view.extentArrow();
-  assert.ok(arrow, 'the arrow is seen from three quarters');
+  assert.ok(arrow?.tip, 'the arrow is seen from three quarters');
   const cv = view.canvas as ReturnType<typeof fakeCanvas>;
   const to = seenAt(view, [85, -15, 5]);
   cv.fire('pointerdown', pointer(...arrow.tip));
@@ -2007,7 +2007,7 @@ test('a thickness typed or dragged rewrites the solid in place, in the click\'s 
   assert.ok(view.source.includes('depth: 12'), 'nothing is written while it is dragged');
   cv.fire('pointerup', pointer(...to));
   assert.ok(view.source.includes('b0 := solid(f0, from: 0, to: 15)'), view.source);
-  const tip = view.extentArrow()!.tip;
+  const tip = view.extentArrow()!.tip!;
   cv.fire('pointerdown', pointer(...tip, { shiftKey: true }));
   cv.fire('pointermove', pointer(...to, { shiftKey: true }));
   cv.fire('pointerup', pointer(...to, { shiftKey: true }));

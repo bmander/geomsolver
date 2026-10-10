@@ -21,7 +21,8 @@ import type { SketchView, SolidPick } from './view.js';
 /** One pointer gesture in progress.  `move` gets canvas coordinates; `end` and `paint` are
  *  optional because pan needs neither and the rubber band needs both. */
 export interface Gesture {
-  move(sp: [number, number]): void;
+  /** The pointer moved; `mods` says what it held, for a gesture a modifier changes. */
+  move(sp: [number, number], mods?: { shift: boolean }): void;
   /** Finish and commit whatever the gesture produced. */
   end?(): void;
   /** Drop it without committing — the sketch was replaced underneath. */
@@ -292,7 +293,7 @@ export function onPointerDown(v: SketchView, e: PointerEvent): void {
     return;
   }
   // the arrow of an extrusion being sized: taking hold of it sizes it
-  if (v.liveExtent && onExtentArrow(v, sp)) {
+  if (onExtentArrow(v, sp)) {
     v.gesture = extentGesture(v);
     return;
   }
@@ -385,9 +386,8 @@ export function onPointerDown(v: SketchView, e: PointerEvent): void {
 export function onPointerMove(v: SketchView, e: PointerEvent): void {
   const sp = local(v, e);
   v.cursor = sp;
-  v.shiftDown = e.shiftKey;
   if (v.liveDim?.placing) moveDimension(v, sp);
-  else if (v.gesture) v.gesture.move(sp);
+  else if (v.gesture) v.gesture.move(sp, { shift: e.shiftKey });
   else hover(v, sp);
   v.draw();
 }
@@ -606,8 +606,8 @@ function whatIsAt(v: SketchView, sp: [number, number], solids = true): Target {
 
 /** Whether a canvas point is on the arrow tip of the extrusion being sized. */
 function onExtentArrow(v: SketchView, sp: [number, number]): boolean {
-  const a = v.extentArrow();
-  return !!a && Math.hypot(a.tip[0] - sp[0], a.tip[1] - sp[1]) < v.pickPx + 4;
+  const tip = v.extentArrow()?.tip;
+  return !!tip && Math.hypot(tip[0] - sp[0], tip[1] - sp[1]) < v.pickPx + 4;
 }
 
 /** Dragging an extrusion's arrow: it is sized where the eye sees the pointer along its normal,
@@ -616,7 +616,7 @@ function onExtentArrow(v: SketchView, sp: [number, number]): boolean {
 function extentGesture(v: SketchView): Gesture {
   return {
     transient: true,
-    move: (at) => v.sizeExtent(at[0], at[1]),
+    move: (at, mods) => v.sizeExtent(at[0], at[1], mods?.shift),
     end: () => {
       const why = v.commitExtent();
       if (why) v.onStatus(why);
@@ -628,7 +628,7 @@ function extentGesture(v: SketchView): Gesture {
 export function hover(v: SketchView, sp: [number, number]): void {
   // the Extrude tool shows what a click would extrude, and offers its arrow
   if (v.tool === 'extrude') {
-    const grab = !!v.liveExtent && onExtentArrow(v, sp);
+    const grab = onExtentArrow(v, sp);
     v.hoverRegion = grab ? null : v.regionAt(sp[0], sp[1]);
     v.canvas.style.cursor = grab ? 'grab' : '';
     return;

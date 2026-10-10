@@ -175,7 +175,7 @@ export function toolClick(v: SketchView, sp: [number, number],
   }
   // an extrusion writes its statements through `apply`, which takes its own undo step
   if (v.tool === 'extrude') {
-    v.extrudeAt(sp[0], sp[1], { cut: mods.alt && !mods.shift, through: mods.alt && mods.shift });
+    v.extrudeAt(sp[0], sp[1], mods.alt, mods.alt && mods.shift);
     return;
   }
   const sk = v.sketch;

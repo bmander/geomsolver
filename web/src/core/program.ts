@@ -16,6 +16,7 @@
  */
 import { Constraint } from './constraints.js';
 import { Kind, KINDS, Plane, Primitive, Sketch } from './model.js';
+import type { Way } from './model.js';
 import { core, lastError, takeJson, takeStr, withJson, withStr } from './wasm.js';
 
 /** Where a statement sits in the program text, plus the line and column the core worked out, so
@@ -383,8 +384,10 @@ export class Document {
     return edit(withJson(req, (p, n) => core().gcs_elab_extrude(this.h, this.sketch.handle, p, n)));
   }
 
-  /** Rewrite how solid `solid` (its index) is swept, over the same face. */
-  setSweep(solid: number, spec: SweepSpec): Edit {
+  /** Rewrite how solid `solid` (its index) is swept, over the same face: an extrusion's
+   *  thickness the way it runs (`{ way, thick }`, the core writing `depth:` or `from:`/`to:`), or
+   *  a sweep outright. */
+  setSweep(solid: number, spec: SweepSpec | { way: Way; thick: string }): Edit {
     return edit(withJson(spec, (p, n) => core().gcs_elab_set_sweep(this.h, solid, p, n)));
   }
 

@@ -1535,13 +1535,15 @@ Conventions:
   (`SketchView.hoverRegion`, `regionAt`) and a click writes the face, the solid at a round
   default depth (`set_off`) and — with a body selected — `union`, or with ⌥ `cut`, or with ⌥⇧
   `through:` + `cut`, as one splice and one undo step (`edit::extrude`).  The new solid is then
-  **sized** (`SketchView.liveExtent`): typed in the number box at its arrow (`dimbox`'s
-  `numberBox`, shared with dimensions) or dragged by the arrow the eye sees along its face's
-  normal (`workspace::extrude_handle`, `extent_at` reading the drag), in front of the face
-  (`from: 0, to: d`), behind it (`depth: d`) or both ways with ⇧.  A drag previews on the sketch
-  (`Sketch::set_prism`, the box invalidated) and writes once at release; every rewrite is
-  `edit::set_sweep` (the bracket list replaced) taken without an undo push, so it joins the
-  click's step.  `tests/extrude.rs` is the gate.
+  **sized** (`SketchView.liveExtent`, carried across an edit by the solid's name): typed in the
+  number box at its arrow (`dimbox`'s `NumberBox`, which dimensions use too) or dragged by the
+  arrow the eye sees along its face's normal (`workspace::extrude_handle`, no tip seen down the
+  normal; `extent_at` reading the drag).  **Which way it runs is the core's** (`model::Way`:
+  behind, `depth: d`; front, `from: 0, to: d`; both, `from: -d/2, to: d/2`, ⇧): the drag previews
+  by `Sketch::set_prism(i, way, d)`, which bumps `shape_epoch` (the box re-cuts objects on it,
+  gesture or no), and writes once at release through `edit::set_sweep` with
+  `SolidSweep::thick(way, text)` (the bracket list replaced, `checked` as every gesture edit),
+  taken without an undo push so it joins the click's step.  `tests/extrude.rs` is the gate.
 - **A chain is a named traversal** (§6.6; issue #49, item 3). `profile := line -> … -> close`
   records a `NamedChain` beside the usual desugared declarations and constraints. The flattener
   scopes the binding and its links like ordinary component members; edges stay `boss.ab`, the

@@ -323,9 +323,12 @@ export function paintCallouts(v: SketchView): void {
  *  barbs `barb` of that half-width.  Both numbers come from the layout, so the drawing style
  *  is the core's and not this front end's. */
 export function paintArrow(v: SketchView, at: Pt, dir: Pt, size: number, barb: number): void {
-  const ctx = v.ctx;
-  const [tx, ty] = v.w2s(at[0], at[1]);
-  const [dx, dy] = v.viewCam().dir(dir[0], dir[1]);
+  arrowHead(v.ctx, v.w2s(at[0], at[1]), v.viewCam().dir(dir[0], dir[1]), size, barb);
+}
+
+/** The head itself, on screen: the tip at `tip`, pointing along the unit `dir`. */
+function arrowHead(ctx: CanvasRenderingContext2D, [tx, ty]: Pt, [dx, dy]: Pt, size: number,
+                   barb: number): void {
   const [bx, by] = [tx - dx * size, ty - dy * size];
   const [px, py] = [-dy * size * barb, dx * size * barb];
   ctx.beginPath();
@@ -515,9 +518,10 @@ export function paintPreview(v: SketchView): void {
 
 /** A world-coordinate polyline as a screen path — a curve's tessellation, a control polygon,
  *  a callout label's box. */
-export function polyPath(v: SketchView, pts: readonly (readonly [number, number])[]): void {
+export function polyPath(v: SketchView, pts: readonly (readonly [number, number])[],
+                         begin = true): void {
   const ctx = v.ctx;
-  ctx.beginPath();
+  if (begin) ctx.beginPath();
   pts.forEach((p, i) => {
     const s = v.w2s(p[0], p[1]);
     if (i) ctx.lineTo(s[0], s[1]);
@@ -531,11 +535,7 @@ function paintRegion(v: SketchView, rings: [number, number][][]): void {
   const ctx = v.ctx;
   ctx.beginPath();
   for (const ring of rings) {
-    ring.forEach(([x, y], i) => {
-      const [sx, sy] = v.w2s(x, y);
-      if (i === 0) ctx.moveTo(sx, sy);
-      else ctx.lineTo(sx, sy);
-    });
+    polyPath(v, ring, false);
     ctx.closePath();
   }
   ctx.save();
@@ -545,16 +545,18 @@ function paintRegion(v: SketchView, rings: [number, number][][]): void {
   ctx.restore();
 }
 
+/** How long the head of an extrusion's arrow is, in screen pixels. */
+const ARROW_PX = 10;
+
 /** The arrow an extrusion being sized is dragged by: from its face's middle to its far end, a
  *  head and a ring at the tip that a press takes hold of. */
 function paintExtentArrow(v: SketchView): void {
   const a = v.extentArrow();
-  if (!a) return;
+  if (!a?.tip) return;
   const ctx = v.ctx;
   const [bx, by] = a.base;
   const [tx, ty] = a.tip;
   const len = Math.hypot(tx - bx, ty - by) || 1;
-  const [ux, uy] = [(tx - bx) / len, (ty - by) / len];
   ctx.save();
   ctx.strokeStyle = COL.sel;
   ctx.fillStyle = COL.sel;
@@ -564,13 +566,7 @@ function paintExtentArrow(v: SketchView): void {
   ctx.moveTo(bx, by);
   ctx.lineTo(tx, ty);
   ctx.stroke();
-  const head = 10;
-  ctx.beginPath();
-  ctx.moveTo(tx, ty);
-  ctx.lineTo(tx - head * ux - head * 0.45 * uy, ty - head * uy + head * 0.45 * ux);
-  ctx.lineTo(tx - head * ux + head * 0.45 * uy, ty - head * uy - head * 0.45 * ux);
-  ctx.closePath();
-  ctx.fill();
+  arrowHead(ctx, [tx, ty], [(tx - bx) / len, (ty - by) / len], ARROW_PX, 0.45);
   ctx.beginPath();
   ctx.arc(tx, ty, 6, 0, 2 * Math.PI);
   ctx.stroke();

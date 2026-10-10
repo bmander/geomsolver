@@ -2312,8 +2312,9 @@ pub unsafe extern "C" fn gcs_workspace_pick_solid_json(h: *mut Sketch, az: f64, 
     })
 }
 
-/// The arrow prism `solid` is sized by, seen by the eye at `az`, `el`: `{base: [x, y], tip: [x, y],
-/// from, to, readable}` — not readable seen straight down its normal — or `null` for no prism.
+/// The arrow prism `solid` is sized by, seen by the eye at `az`, `el`: `{base: [x, y], tip: [x, y]
+/// | null, way: "behind" | "front" | "both" | null, thick}` — no tip seen straight down its
+/// normal — or `null` for no prism.
 #[no_mangle]
 pub unsafe extern "C" fn gcs_workspace_extrude_handle_json(h: *mut Sketch, az: f64, el: f64,
                                                            solid: i32) -> *mut u8 {
@@ -2325,10 +2326,9 @@ pub unsafe extern "C" fn gcs_workspace_extrude_handle_json(h: *mut Sketch, az: f
         out_json(match extrude_handle(s, &proj, solid.max(0) as usize) {
             Some(k) => json::object([
                 ("base", pt(k.base)),
-                ("tip", pt(k.tip)),
-                ("from", Json::Num(k.from)),
-                ("to", Json::Num(k.to)),
-                ("readable", Json::Bool(k.readable)),
+                ("tip", k.tip.map_or(Json::Null, pt)),
+                ("way", k.way.map_or(Json::Null, |w| Json::Str(w.as_str().into()))),
+                ("thick", Json::Num(k.thick)),
             ]),
             None => Json::Null,
         })
@@ -4165,35 +4165,57 @@ fn sweep_of(v: &Json) -> gcs_core::edit::SolidSweep {
 pub unsafe extern "C" fn gcs_elab_extrude(h: *mut Elaborated, s: *mut Sketch, ptr: *const u8,
                                           len: usize) -> *mut u8 {
     guard(std::ptr::null_mut(), move || {
-        use gcs_core::syntax::BodyWord;
         let v = as_json(ptr, len);
         let outer = v.get("outer").map(strings).unwrap_or_default();
         let holes: Vec<Vec<String>> =
             v.get("holes").map(|a| a.arr().iter().map(strings).collect()).unwrap_or_default();
         let body = v.get("body").map(|x| x.as_str().to_string());
-        let word = v.get("word").and_then(|w| [BodyWord::Union, BodyWord::Cut, BodyWord::Bound]
-            .into_iter().find(|b| b.as_str() == w.as_str()));
-        let with = word.zip(body.as_deref());
+        let with = match (v.get("word").map(|w| w.as_str()), body.as_deref()) {
+            (None, _) => None,
+            (Some(w), body) => match (gcs_core::syntax::BodyWord::parse(w), body) {
+                (Some(word), Some(body)) => Some((word, body)),
+                _ => {
+                    set_error(format!("`{w}` with a body is the body rule: union, cut or bound"));
+                    return std::ptr::null_mut();
+                }
+            },
+        };
         let through = v.get("through").is_some_and(|x| x.as_bool());
-        out_edit(gcs_core::edit::extrude(&*h, sk(s), &outer, &holes, with, through))
+        out_edit(gcs_core::edit::extrude(&(*h).program, sk(s), &outer, &holes, with, through))
     })
 }
 
-/// Rewrite how solid `solid` is swept, `{depth?, from?, to?, …}`: `edit::set_sweep`.
+/// Rewrite how solid `solid` is swept — `{way: "behind" | "front" | "both", thick}`, an
+/// extrusion's thickness the way it runs, or a sweep outright, `{depth?, from?, to?, …}`:
+/// `edit::set_sweep`.
 #[no_mangle]
 pub unsafe extern "C" fn gcs_elab_set_sweep(h: *mut Elaborated, solid: i32, ptr: *const u8,
                                             len: usize) -> *mut u8 {
     guard(std::ptr::null_mut(), move || {
         let v = as_json(ptr, len);
-        out_edit(gcs_core::edit::set_sweep(&*h, &(*h).program, solid.max(0) as usize, &sweep_of(&v)))
+        let way = v.get("way").and_then(|w| gcs_core::model::Way::parse(w.as_str()));
+        let how = match (way, v.get("thick")) {
+            (Some(way), Some(t)) => gcs_core::edit::SolidSweep::thick(way, t.as_str()),
+            _ => sweep_of(&v),
+        };
+        out_edit(gcs_core::edit::set_sweep(&*h, &(*h).program, solid.max(0) as usize, &how))
     })
 }
 
-/// Re-extrude prism `i` where it stands, `from`/`to` along its normal — the preview an extrusion
-/// being sized shows before the source is written: `Sketch::set_prism`.  1 done, 0 not a prism.
+/// Re-extrude prism `i` where it stands, `d` thick the way `way` says (0 behind, 1 in front, 2
+/// both) — the preview an extrusion being sized shows before the source is written:
+/// `Sketch::set_prism`.  1 done, 0 not a prism.
 #[no_mangle]
-pub unsafe extern "C" fn gcs_sketch_set_prism(h: *mut Sketch, i: i32, from: f64, to: f64) -> i32 {
-    guard(0, move || i32::from(i >= 0 && sk(h).set_prism(i as usize, from, to)))
+pub unsafe extern "C" fn gcs_sketch_set_prism(h: *mut Sketch, i: i32, way: i32, d: f64) -> i32 {
+    use gcs_core::model::Way;
+    let way = match way { 1 => Way::Front, 2 => Way::Both, _ => Way::Behind };
+    guard(0, move || i32::from(i >= 0 && sk(h).set_prism(i as usize, way, d)))
+}
+
+/// Bumped whenever a solid's shape changes in place (`set_prism`): what a cached mesh keys on.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_sketch_shape_epoch(h: *mut Sketch) -> u32 {
+    guard(0, move || sk(h).shape_epoch)
 }
 
 /// A datum dropped by a button — `{kind: "plane" | "axis", from: [names], current?, name?}`,
@@ -4221,10 +4243,7 @@ pub unsafe extern "C" fn gcs_elab_add_body_word(h: *mut Elaborated, ptr: *const 
     guard(std::ptr::null_mut(), move || {
         let v = as_json(ptr, len);
         let text = |k: &str| v.get(k).map(|x| x.as_str()).unwrap_or_default();
-        use gcs_core::syntax::BodyWord;
-        let Some(word) = [BodyWord::Union, BodyWord::Cut, BodyWord::Bound].into_iter()
-            .find(|w| w.as_str() == text("word"))
-        else {
+        let Some(word) = gcs_core::syntax::BodyWord::parse(text("word")) else {
             set_error(format!("`{}` is not a body word: union, cut or bound", text("word")));
             return std::ptr::null_mut();
         };

@@ -1980,7 +1980,9 @@ test('an extrusion is written by name through the edit API, and resized in place
   const wider = next.setSweep(b0, { from: '0', to: '7' });
   assert.ok(wider.text.includes('b0 := solid(f0, from: 0, to: 7)'), wider.text);
   assert.ok(next.setSweep(b0, { depth: '7', about: 'ab' }).refused);
-  assert.ok(next.sketch.setPrism(b0, -3, 3));
+  const epoch = next.sketch.shapeEpoch;
+  assert.ok(next.sketch.setPrism(b0, 'both', 6));
+  assert.notEqual(next.sketch.shapeEpoch, epoch, 'a cached mesh is told');
   const cut = d.extrude(['ab', 'bc', 'ck', 'ka'], [], { word: 'cut', body: 'nothing' });
   assert.match(cut.refused ?? '', /nothing/);
 });
