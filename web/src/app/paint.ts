@@ -49,6 +49,14 @@ const COL_STATE: Record<string, string> = {
  *
  * Module-level rather than a closure so the three.js layer inks by the same rule (`chromeOf`): a
  * thing picked is lit the same way wherever it is drawn. */
+/** What a datum in space is inked with by its constraint state, where the view colours by state:
+ *  `quiet` leaves a fully held one its own ink, so std's panes stay in the background. */
+export function stateInk(v: SketchView, ent: Primitive, quiet = false): string | null {
+  if (!v.colorByState) return null;
+  const st = v.stateOf(ent);
+  return quiet && st === 'well' ? null : COL_STATE[st];
+}
+
 function strokeOf(v: SketchView, sel: Set<Primitive>, hl: Set<Primitive>,
                   base: string, ent: Primitive, st?: Style): [string, number] {
   const lw = st?.width ?? 1.8;   // the other copy is `svg::PLAIN_PX`; the two must agree
@@ -81,7 +89,7 @@ export function paint(v: SketchView): void {
 
   const sk = v.sketch;
   const sel = new Set(v.selected);
-  const hl = v.lit();
+  const hl = new Set(v.highlight);
   const strokeFor = (base: string, ent: Primitive, st?: Style): [string, number] =>
     strokeOf(v, sel, hl, base, ent, st);
 

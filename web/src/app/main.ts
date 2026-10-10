@@ -30,9 +30,9 @@
  *             under them.  Right-drag orbits, middle-drag (or ⇧ right-drag) pans, the wheel
  *             zooms.  The chooser in the viewport's upper right is the plane the next thing is
  *             drawn on — std.front, std.side, std.top and every plane the document names — and
- *             choosing one turns the view square on to it.  Insert ▸ Plane… asks what a new
- *             view is and takes two clicks for where it sits; J projects two points, one in each
- *             of two views, onto one point in space
+ *             choosing one turns the view square on to it.  Plane (N) and Axis (X) drop a datum
+ *             constrained to the selection, and Insert ▸ Plane… names the plane first; J
+ *             projects two points, one in each of two views, onto one point in space
  *   menus     File/Edit/Insert/Solution hold everything that is not a tool or a constraint;
  *             the solver's own switches are behind Solution ▸ Options
  *
@@ -83,7 +83,6 @@ const TOOLS: [string, Tool, string][] = [
   ['Point', 'point', 'p'], ['Line', 'line', 'l'], ['Rect', 'rect', 'r'],
   ['Circle', 'circle', 'c'], ['Arc', 'arc', 'a'], ['Arc 3-pt', 'arc3', '3'],
   ['Spline', 'spline', 's'], ['Spline fit', 'splinefit', 'w'],
-  ['Plane', 'plane', 'n'], ['Axis', 'axis', 'x'],
 ];
 for (const [label, tool, key] of TOOLS) {
   toolButtons.set(tool, addButton(barTools, {
@@ -99,6 +98,14 @@ addSeparator(barTools);
 const TOOL_BUTTONS: ToolbarButton[] = [
   { label: 'Construction', key: 'g', onClick: () => view.toggleConstructionSelected(),
     title: 'Draw the selected lines/circles/arcs dashed as reference geometry (they still constrain)' },
+  { label: 'Plane', key: 'n', onClick: () => view.addDatum('plane'),
+    title: 'A plane, constrained to the selection: through a point · three points · a point, '
+         + 'square to a line or axis · holding two lines or axes · parallel to a plane · '
+         + 'with nothing selected, free, beside the plane being drawn on' },
+  { label: 'Axis', key: 'x', onClick: () => view.addDatum('axis'),
+    title: 'An axis, constrained to the selection: through a point · two points · along a line '
+         + '· square to a plane, through a point or its origin · where two planes meet · with '
+         + 'nothing selected, free, square to the plane being drawn on' },
 ];
 for (const b of TOOL_BUTTONS) addButton(barTools, b);
 for (const b of CONSTRAINT_BUTTONS) addButton(barConstraints, b);
@@ -378,8 +385,7 @@ const MENUS: [string, (MenuItem | null)[]][] = [
   ]],
   ['Insert', [
     { label: 'Plane…', onClick: () => void insertPlane(),
-      title: 'A plane to draw in, over two lines: the one it runs along, then the one that says '
-        + 'which way is up in it' },
+      title: 'A named plane, constrained to the selection as the Plane button does' },
   ]],
   ['Solution', [
     { label: 'Solve', onClick: () => { view.solveNow(); reportSolve(); } },

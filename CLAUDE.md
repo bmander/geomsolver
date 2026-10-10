@@ -1518,13 +1518,18 @@ Conventions:
   with `selected` and the picture, carried across an edit by name; Delete removes it, `box3d`
   lights the face and washes the rest.  **Axes are picked where the box draws them**
   (`overview::axis_segment`, one rule for both), beneath every drawn figure and never seen end
-  on; the TS `Axis` proxy is kind id 16 (`kindOf` decodes a pick).  The **Plane** tool (`n`)
-  picks two named lines or axes and writes `plane(u:, v:)` (`add_plane`, held to the
-  elaborator); the **Axis** tool (`x`) writes `x0 := axis hint(dir: …)` and the relations that
-  place it in one splice (`edit::add_axis`, `AxisOn`: along a line; through two points; a
-  point, then the pane it stands square to), seeded by `edit::axis_direction` off the live
-  drawing.  A datum tool's first pick is held by name (`firstPick`), lit (`SketchView.lit`, the
-  one set canvas and box both colour by), and let go by Escape.
+  on; the TS `Axis` proxy is kind id 16 (`kindOf` decodes a pick).  **Plane (`n`) and Axis
+  (`x`) are buttons that drop a datum at once** (`SketchView.addDatum` → `edit::add_datum`, one
+  checked splice): free with nothing selected (set off the plane being drawn on), else
+  constrained to the selection by the table on `add_datum` — a plane through a point, three
+  points, a point square to a ray, two rays, parallel to a plane; an axis through a point or
+  two, along a line, a plane's normal, where two planes meet — every relation an ordinary
+  statement, seeds read off the live drawing; a line square to a plane is said against the
+  plane's own axes (`v0.u`, `v0.v`).  The constraint bar relates them as anything else:
+  `app/relate.ts` sorts the selection into bins (`axes` beside `planes`; a `direction` slot is a
+  ray, a line or an axis) and tries `INCIDENCE`, `PARALLEL`, `PERPENDICULAR` in order, the 2D
+  kinds first.  With colour by state on, the box inks axes and an unsettled plane's frame by
+  state (`paint::stateInk`).
   Points in space stand in no view: seen where they are (`Projection::point`; per frame
   `workspace::space_points`, `gcs_workspace_space_points`, stroked through the eye's own
   camera), drawn and picked, and dragged where the eye sees them (`PlanDrag::seen`, numeric:

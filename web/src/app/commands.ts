@@ -2,11 +2,15 @@
  * A button says what it is *for*, not which class it makes — one "these touch" button, one
  * "put a number on this" button — so the selection decides which constraint that comes to. */
 import * as C from '../core/constraints.js';
-import { Constraint, ENTITY_KINDS } from '../core/constraints.js';
+import { Constraint } from '../core/constraints.js';
 import {
-  Arc, Circle, Curve, Line, Plane, Point, Spline, angleBetween, distanceBetween,
-  signedPointToLine,
+  Arc, Circle, Curve, Line, Point, Spline, angleBetween, distanceBetween, signedPointToLine,
 } from '../core/model.js';
+import {
+  BINS, INCIDENCE, PARALLEL, PERPENDICULAR, firstFit, fitsSelection, sortSelection, stated,
+  wantedText,
+} from './relate.js';
+import type { Sel } from './relate.js';
 import { view } from './shell.js';
 import { ToolbarButton, toast } from './ui.js';
 import type { PairDimension } from '../core/callout.js';
@@ -17,8 +21,6 @@ import type { DimAlt } from './view.js';
  * added to the language is one filter in `sel()` and not a column in every table. */
 type Simple = [string, C.ConstraintCtor, string?];
 const SIMPLE: Simple[] = [
-  ['Parallel', C.Parallel, 'b'],
-  ['Perpendicular', C.Perpendicular, '⇧l'],
   ['Midpoint', C.Midpoint, '⇧m'],
 ];
 /* Level and plumb read the selection too.  A pair of points says exactly what a line through
@@ -45,18 +47,6 @@ function cLevel(label: 'Horizontal' | 'Vertical'): void {
   view.addConstraints(C.build('Level', [s.pts[0], s.pts[1], null, LEVEL_WORD[label]]));
 }
 
-/* One "these touch" button.  Which incidence it means is the selection's business, not the
- * user's: two points meet, a point sits on a line, a point sits on a circle or arc. */
-const INCIDENCE: Simple[] = [
-  ['Coincident', C.Coincident],
-  ['On line', C.PointOnLine],
-  ['On circle', C.PointOnCircle],
-  // a curve is one more row, not a branch: `applySimple` fills the spec's slots by kind, and
-  // the contact's hidden parameter is not an entity slot so it is left for the core to seed
-  ['On curve', C.PointOnSpline],
-  // a curve written in the language takes the same contact, owning its own parameter
-  ['On curve', C.PointOnCurve],
-];
 /* The constraints bar, in an order that interleaves the dimensioned constraints with the
  * entity-only ones.  `key` is both the chip printed on the button and the token the keyboard
  * handler matches — '⇧l' prints as ⇧L and fires on shift-L — so a button and its shortcut
@@ -72,6 +62,13 @@ export const CONSTRAINT_BUTTONS: ToolbarButton[] = [
     title: 'Level: one or more lines, or a pair of points with no line between them' },
   { label: 'Vertical', key: 'v', onClick: () => cLevel('Vertical'),
     title: 'Plumb: one or more lines, or a pair of points with no line between them' },
+  { label: 'Parallel', key: 'b',
+    onClick: () => applyFirst(PARALLEL, 'two lines, or lines, axes and planes in a pair'),
+    title: 'Two lines · in space, a line or an axis and another, an axis and a plane, two '
+         + 'planes' },
+  { label: 'Perpendicular', key: '⇧l',
+    onClick: () => applyFirst(PERPENDICULAR, 'two lines, or a line or axis and an axis or plane'),
+    title: 'Two lines · in space, a line or an axis and another, an axis and a plane' },
   ...SIMPLE.map((c): ToolbarButton => ({ label: c[0], key: c[2], onClick: () => applySimple(c) })),
   { label: 'Equal', key: 'e', onClick: () => cEqual() },
   { label: 'Tangent', key: 't', onClick: () => cTangent(),
@@ -86,63 +83,18 @@ export const CONSTRAINT_BUTTONS: ToolbarButton[] = [
 
 /* -- selection helpers -------------------------------------------------------- */
 
-type Sel = {
-  pts: Point[]; lines: Line[]; circles: (Circle | Arc)[]; splines: Spline[];
-  curves: Curve[]; planes: Plane[];
-};
-type Bin = keyof Sel;
-
-function sel(): Sel {
-  const s = view.selected;
-  return {
-    pts: s.filter((e): e is Point => e instanceof Point),
-    lines: s.filter((e): e is Line => e instanceof Line),
-    circles: s.filter((e): e is Circle | Arc => e instanceof Circle || e instanceof Arc),
-    splines: s.filter((e): e is Spline => e instanceof Spline),
-    curves: s.filter((e): e is Curve => e instanceof Curve),
-    planes: s.filter((e): e is Plane => e instanceof Plane),
-  };
-}
-
-/** The bin of the selection a spec slot of this kind is filled from — `null` for a slot that is
- *  not an entity (a number, a selector, a contact's own parameter, which the core seeds), and
- *  for an ordinate's direction, which a word names and the core reads off the view. */
-function binOf(kind: string): Bin | null {
-  if (kind === 'along') return null;
-  if (kind === 'point') return 'pts';
-  if (kind === 'line') return 'lines';
-  if (kind === 'spline') return 'splines';
-  if (kind === 'curve') return 'curves';
-  if (kind === 'plane') return 'planes';
-  return ENTITY_KINDS.has(kind) ? 'circles' : null;   // a circle or an arc, whichever is picked
-}
-
-const BINS: Bin[] = ['pts', 'lines', 'circles', 'splines', 'curves', 'planes'];
-const BIN_WORD: Record<Bin, string> = {
-  pts: 'point(s)', lines: 'line(s)', circles: 'circle(s)/arc(s)', splines: 'spline(s)',
-  curves: 'curve(s)', planes: 'plane(s)',
-};
-
-/** How many of each bin a class wants — counted off its spec, the one statement of it. */
-function wanted(cls: C.ConstraintCtor): Record<Bin, number> {
-  const n = Object.fromEntries(BINS.map((b) => [b, 0])) as Record<Bin, number>;
-  for (const [, kind] of cls.spec) {
-    const b = binOf(kind);
-    if (b) n[b]++;
-  }
-  return n;
-}
-
-/** A class on one line alone applies to every selected line at once — level and plumb. */
-function perLine(w: Record<Bin, number>): boolean {
-  return w.lines === 1 && BINS.every((b) => b === 'lines' || w[b] === 0);
-}
+/** The selection, sorted into the bins a constraint's slots are filled from. */
+const sel = (): Sel => sortSelection(view.selected);
 
 /** Whether the selection is what the class wants. */
-function fits(cls: C.ConstraintCtor, s = sel()): boolean {
-  const w = wanted(cls);
-  return BINS.every((b) => (b === 'lines' && perLine(w)) ? s.lines.length >= 1
-                                                        : s[b].length === w[b]);
+const fits = (cls: C.ConstraintCtor, s = sel()): boolean => fitsSelection(cls, s);
+
+/** The first of several classes the selection fits, applied — one button, several meanings. */
+function applyFirst(cands: readonly string[], what: string): void {
+  const s = sel();
+  const cls = firstFit(cands, s);
+  if (!need(!!cls, what)) return;
+  view.addConstraints(...stated(cls!, s));
 }
 
 function need(ok: boolean, what: string): boolean {
@@ -154,30 +106,14 @@ function need(ok: boolean, what: string): boolean {
  *  spec order.  Single-line constraints (Horizontal/Vertical) apply to every selected line. */
 function applySimple([, cls]: Simple): void {
   const s = sel();
-  const w = wanted(cls);
-  const each = perLine(w);
-  const what = BINS.filter((b) => w[b]).map((b) => `${w[b]} ${BIN_WORD[b]}`).join(', ');
-  if (!need(fits(cls, s), what)) return;
-  const made = (each ? s.lines : [null]).map((ln) => {
-    const args: unknown[] = [];
-    const taken = Object.fromEntries(BINS.map((b) => [b, 0])) as Record<Bin, number>;
-    for (const [, kind] of cls.spec) {
-      const b = binOf(kind);
-      // a `param` slot is not an entity: it is left out, and the core seeds it off the geometry
-      if (!b) continue;
-      args.push(b === 'lines' && each ? ln : s[b][taken[b]++]);
-    }
-    return new (cls as unknown as new (...a: unknown[]) => Constraint)(...args);
-  });
-  view.addConstraints(...made);
+  if (!need(fits(cls, s), wantedText(cls))) return;
+  view.addConstraints(...stated(cls, s));
 }
 
 /** The single incidence button: read the selection and pick the constraint that fits it. */
 function cCoincident(): void {
-  const hit = INCIDENCE.find(([, cls]) => fits(cls));
-  if (!need(!!hit,
-            'two points, a point and a line, or a point and a circle/arc/curve')) return;
-  applySimple(hit as Simple);
+  applyFirst(INCIDENCE, 'two points, a point and a line, a point and a circle/arc/curve, or a '
+             + 'point, line or axis and a plane or axis');
 }
 
 /** One of the three dimensions between two points, stated at what the sketch measures now.

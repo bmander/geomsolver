@@ -12,6 +12,9 @@ import * as examples from '../core/examples.js';
 import * as io from '../core/io.js';
 import { Axis, Plane, Point, Sketch } from '../core/model.js';
 import { Document, fromSketch } from '../core/program.js';
+import {
+  INCIDENCE, PARALLEL, PERPENDICULAR, firstFit, sortSelection, stated,
+} from '../app/relate.js';
 import type { Diagnosis } from '../core/diagnose.js';
 import { callouts, pairOf } from '../core/callout.js';
 import type { PairDimension } from '../core/callout.js';
@@ -1042,29 +1045,19 @@ test('the current plane survives an edit, goes with its deletion, and is dropped
   assert.equal(view.doc.nameOf(view.plane!), 'std.front');
 });
 
-test('the plane tool picks two lines, writes the plane over them, and makes it current', () => {
+test('a named plane is dropped over the selection, and becomes the one drawn in', () => {
   const view = docView(`${VIEWS}in std.front {\nab := line(hint((0, 0)), hint((40, 0)))\n`
                        + 'ac := line(hint((0, 0)), hint((0, 30)))\n}\n');
   assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
-  view.choosePlane('std.front');
-  const said: string[] = [];
-  view.onStatus = (m) => said.push(m);
-  view.insertPlane({ name: 'aux' });
-  assert.equal(view.tool, 'plane');
-  // a click on nothing is no line
-  click(view, 20, 20);
-  assert.ok(said.some((m) => /lines or axes: click one/.test(m)), said.join('\n'));
-  const planes = view.sketch.planes.length;
-  click(view, 20, 0);
-  assert.equal(view.sketch.planes.length, planes, 'the first line is half a plane');
-  click(view, 0, 15);
-  assert.equal(view.sketch.planes.length, planes + 1);
+  view.selected = [view.doc.entity('ab')!, view.doc.entity('ac')!];
+  assert.ok(view.addDatum('plane', 'aux'));
+  assert.ok(view.source.includes('aux := plane(u: hint(dir: (1, 0, 0)), v: hint(dir: (0, 0, 1)))'),
+            view.source);
+  assert.ok(view.source.includes('ab coincident aux\nac coincident aux'), view.source);
   const aux = planeNamed(view, 'aux');
   assert.equal(view.plane, aux, 'the new plane is the one being drawn in');
   assert.deepEqual(view.selected, [aux]);
-  assert.equal(view.tool, 'select', 'armed for one plane, and put down after it');
-  assert.ok(view.source.includes('aux := plane(u: ab, v: ac)'), view.source);
-  // right along `ab`, up along `ac`: the front's own attitude
+  // holding both lines: the front's own attitude
   const { u, v } = aux.basis;
   assert.ok(Math.hypot(u[0] - 1, u[1], u[2]) < 1e-9 && Math.hypot(v[0], v[1], v[2] - 1) < 1e-9,
             `${u} ${v}`);
@@ -1593,7 +1586,6 @@ test('a new document is one undo step, and takes nothing in flight with it', () 
   assert.notEqual(view.source, before, 'a fresh sheet');
   assert.deepEqual(view.pendingFit, [], 'the fit did not come along');
   assert.deepEqual(view.pending, []);
-  assert.equal(view.planeSpec, null);
   // ⌘Z is the drawing that was replaced — the *last* state of it, not an older one — and ⌘⇧Z
   // is the fresh sheet again
   view.undo();
@@ -1697,54 +1689,81 @@ fix((40, 30)) c
 }
 `;
 
-test('the toolbar plane tool takes two axes, says what to click, and Escape lets a pick go', () => {
+test('Plane and Axis drop a free datum with nothing selected, and select it', () => {
   const view = docView(DATUMS);
   assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
-  view.orbit = { az: 0.6, el: 0.5 };
-  const said: string[] = [];
-  view.onStatus = (m) => said.push(m);
-  view.setTool('plane');
-  assert.ok(said.some((m) => /line or axis/.test(m)), said.join('\n'));
-  const x = seenAt(view, [-20, 0, 0]);
-  click3(view, x);
-  assert.equal(view.firstPick, 'std.x');
-  assert.ok(view.lit().has(view.doc.entity('std.x')!), 'the first pick is lit');
-  // Escape lets the pick go and keeps the tool
-  view.cancelTool();
-  assert.equal(view.firstPick, null);
-  assert.equal(view.tool, 'plane');
-  click3(view, x);
-  click3(view, seenAt(view, [0, 20, 0]));
-  assert.ok(view.source.includes('v0 := plane(u: std.x, v: std.y)'), view.source);
-  const made = view.doc.entity('v0');
-  assert.ok(made instanceof Plane);
-  assert.equal(view.plane, made);
-  assert.equal(view.tool, 'select');
+  view.choosePlane('std.front');
+  view.selected = [];
+  assert.ok(view.addDatum('plane'));
+  assert.ok(view.source.includes('v0 := plane(u: hint(dir: (1, 0, 0)), v: hint(dir: (0, 0, 1))) '
+                                 + 'hint(origin: (0, '), view.source);
+  const v0 = view.doc.entity('v0');
+  assert.ok(v0 instanceof Plane);
+  assert.deepEqual(view.selected, [v0]);
+  assert.equal(view.plane, v0, 'a plane selected alone is the one drawn on');
+  view.selected = [];
+  assert.ok(view.addDatum('axis'));
+  assert.ok(/x0 := axis hint\(dir: \(/.test(view.source), view.source);
+  assert.ok(view.doc.entity('x0') instanceof Axis);
+  assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
 });
 
-test('the axis tool writes an axis along a line, through two points, and square to a plane', () => {
-  const view = docView(DATUMS);
-  view.setTool('axis');
-  // a line: at once
-  click(view, 25, 0);
-  assert.ok(view.source.includes('x0 := axis hint(dir: (1, 0, 0))\nab coincident x0'), view.source);
-  const x0 = view.doc.entity('x0');
-  assert.ok(x0 instanceof Axis);
-  assert.deepEqual(view.selected, [x0]);
-  assert.equal(view.tool, 'axis', 'the tool stays down for the next');
-  // two points: the first waits, lit, for the second
-  click(view, 10, 0);
-  assert.equal(view.firstPick, 'a');
-  click(view, 40, 30);
-  // seeded along a→c, (30, 0, 30); the solve writes back where it settled
-  assert.ok(/x1 := axis hint\(dir: \(0\.70710678\d*, 0, 0\.70710678\d*\)/.test(view.source),
-            view.source);
-  assert.ok(view.source.includes('a coincident x1\nc coincident x1'), view.source);
-  // a point, then the plane under the pointer: square to it, through the point
-  click(view, 40, 30);
-  click(view, 25, 15);
-  assert.ok(view.source.includes('x2 perpendicular std.front\nc coincident x2'), view.source);
+test('a datum dropped on a selection is constrained to it, and a selection no rule takes is '
+     + 'refused', () => {
+  const view = docView(`${DATUMS}in std.front {\nk := circle(center: a) hint(r: 3)\n}\n`);
+  const ent = (n: string) => view.doc.entity(n)!;
+  // three points: a plane through them
+  view.selected = [ent('a'), ent('b'), ent('c')];
+  assert.ok(view.addDatum('plane'));
+  assert.ok(view.source.includes('a coincident v0\nb coincident v0\nc coincident v0'), view.source);
+  // two points: an axis through both
+  view.selected = [ent('a'), ent('c')];
+  assert.ok(view.addDatum('axis'));
+  assert.ok(view.source.includes('a coincident x0\nc coincident x0'), view.source);
+  // a point and a plane: the plane's normal through the point
+  view.selected = [ent('c'), ent('std.top')];
+  assert.ok(view.addDatum('axis'));
+  assert.ok(view.source.includes('c coincident x1\nx1 perpendicular std.top'), view.source);
+  // a point and an axis: a plane through the point, square to the axis
+  view.selected = [ent('b'), ent('x1')];
+  assert.ok(view.addDatum('plane'));
+  assert.ok(view.source.includes('b coincident v1\nx1 perpendicular v1'), view.source);
   assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
+  // a circle places nothing: refused, the text untouched
+  const said: string[] = [];
+  view.onStatus = (m) => said.push(m);
+  const before = view.source;
+  view.selected = [ent('k')];
+  assert.equal(view.addDatum('plane'), false);
+  assert.equal(view.source, before);
+  assert.ok(said.some((m) => /does not place/.test(m)), said.join('\n'));
+});
+
+test('the constraint bar relates points, lines, axes and planes by what is selected', () => {
+  const view = docView(`${DATUMS}t := axis hint(dir: (0, 0, 1))\n`
+                       + 'fix(dir == (0, 0, 1), origin == (5, 5, 0)) t\n'
+                       + 'w := plane(u: std.x, v: std.y) hint(origin: (0, 0, 10))\n');
+  assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
+  const ent = (n: string) => view.doc.entity(n)!;
+  const meant = (names: readonly string[], ...sel: string[]): string | undefined =>
+    firstFit(names, sortSelection(sel.map(ent)))?.name;
+  assert.equal(meant(INCIDENCE, 'c', 'w'), 'PointOnPlane');
+  assert.equal(meant(INCIDENCE, 'w', 'ab'), 'LineOnPlane');
+  assert.equal(meant(INCIDENCE, 't', 'w'), 'AxisOnPlane');
+  assert.equal(meant(INCIDENCE, 'c', 't'), 'PointOnAxis');
+  assert.equal(meant(INCIDENCE, 't', 'std.z'), 'AxisCoincident');
+  assert.equal(meant(INCIDENCE, 'a', 'c'), 'Coincident', 'two points meet, as on a page');
+  assert.equal(meant(PARALLEL, 'ab', 't'), 'Parallel3');
+  assert.equal(meant(PARALLEL, 't', 'w'), 'AxisParallelPlane');
+  assert.equal(meant(PARALLEL, 'w', 'std.top'), 'PlaneParallel');
+  assert.equal(meant(PERPENDICULAR, 't', 'w'), 'AxisPerpendicularPlane');
+  assert.equal(meant(PERPENDICULAR, 't', 'std.x'), 'Perpendicular3');
+  assert.equal(meant(PARALLEL, 'c', 'w'), undefined, 'a point is parallel to nothing');
+  // stated, a ray slot takes the line before the axis; written back, each is its word
+  const [c] = stated(firstFit(PARALLEL, sortSelection([ent('t'), ent('ab')]))!,
+                     sortSelection([ent('t'), ent('ab')]));
+  view.addConstraints(c);
+  assert.ok(view.source.includes('ab parallel t'), view.source);
 });
 
 test('an axis is picked with the select tool where the box draws it, and Delete takes it out', () => {
@@ -1761,9 +1780,3 @@ test('an axis is picked with the select tool where the box draws it, and Delete 
   assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
 });
 
-/** A click at a canvas point with a tool down — where `click` takes a place on the page. */
-function click3(view: SketchView, at: [number, number]): void {
-  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
-  cv.fire('pointerdown', pointer(...at));
-  cv.fire('pointerup', pointer(...at));
-}

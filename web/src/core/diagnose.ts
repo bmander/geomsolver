@@ -4,7 +4,7 @@
  * point-distance subgraph, minimal conflict sets, and the structural-vs-numeric rank cross-check.
  * All of it runs in the core; this module presents the report. */
 import { Constraint } from './constraints.js';
-import { Param, Point, Primitive, Sketch } from './model.js';
+import { KINDS, Param, Point, Primitive, Sketch } from './model.js';
 import { System } from './system.js';
 import { WitnessReport, reportFrom } from './witness.js';
 import { core, takeJson, withJson } from './wasm.js';
@@ -112,7 +112,8 @@ function fromRaw(sk: Sketch, d: RawDiagnosis): Diagnosis {
     v.map((i) => sk.constraintById(i)).filter((c): c is Constraint => c !== undefined);
   const prm = (v: number[]): Param[] => v.map((i) => sk.paramAt(i));
   const ents = new Map<string, Primitive>();
-  for (const e of sk.primitives()) ents.set(`${e.kind}:${e.index}`, e);
+  // every kind with a proxy, axes and curves included: the core states each one's freedom
+  for (const e of KINDS.flatMap((k) => sk.entities(k))) ents.set(`${e.kind}:${e.index}`, e);
   return {
     nParams: d.nParams,
     nEquations: d.nEquations,

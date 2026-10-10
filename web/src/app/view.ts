@@ -102,14 +102,7 @@ export interface Place {
 }
 
 export type Tool =
-  'select' | 'point' | 'line' | 'rect' | 'circle' | 'arc' | 'arc3' | 'spline' | 'splinefit'
-  | 'plane' | 'axis';
-
-/** What the plane tool is armed with: the name the statement is to be given, if any.  Which way
- *  the plane faces is the two lines its clicks pick. */
-export interface PlaneSpec {
-  name?: string;
-}
+  'select' | 'point' | 'line' | 'rect' | 'circle' | 'arc' | 'arc3' | 'spline' | 'splinefit';
 
 
 export class SketchView {
@@ -170,11 +163,6 @@ export class SketchView {
   /** A standard plane chosen to draw on that the document does not have yet — it says no
    *  `use std` — named until the first press of a tool brings it in (`ensurePlane`). */
   pendingPlane: string | null = null;
-  /** What the plane tool will write when its two clicks land. */
-  planeSpec: PlaneSpec | null = null;
-  /** What a datum tool's first click picked, by name, until its second lands: the line or axis
-   *  a plane runs along, the point an axis passes through. */
-  firstPick: string | null = null;
   highlight: Primitive[] = [];
   pending: Point[] = [];
   /** Where the fit tool has been told the curve must pass, before there is a curve.  Places
@@ -477,8 +465,6 @@ export class SketchView {
     if (this.liveDim) this.endDimension(false);
     this.pending = [];
     this.pendingFit = [];
-    this.planeSpec = null;
-    this.firstPick = null;
   }
 
   /** Frame everything the workspace shows — figures and solids, as the eye now sees them. */
@@ -940,11 +926,6 @@ export class SketchView {
     return pickSeen(this.sketch, this.unit, az, el, ...this.eye(sx, sy), this.world(PICK_PX));
   }
 
-  /** What the canvas and the box light: the hover, and a datum tool's first pick until its
-   *  second lands. */
-  lit(): Set<Primitive> {
-    return new Set([...this.highlight, ...this.rebind(this.firstPick ? [this.firstPick] : [])]);
-  }
 
   /** The object face under the canvas point, nearest the eye, and the solid it is a face of. */
   solidAt(sx: number, sy: number): SolidPick | null {
@@ -1091,10 +1072,25 @@ export class SketchView {
   finishCurve(): void { tools.finishCurve(this); }
   finishSplineFit(): void { tools.finishSplineFit(this); }
 
-  /** Arm the plane tool: the next two clicks say where the view sits, and this says what it is. */
-  insertPlane(spec: PlaneSpec): void {
-    this.planeSpec = spec;
-    this.setTool('plane');
+  /** **Drop a datum**: a plane or an axis, written at once and constrained to what is selected
+   *  by the core's table (`edit::add_datum`): through a point, along a line, square to a plane —
+   *  or, with nothing selected, free, set off the plane being drawn on.  It is constrained further
+   *  like anything else; the new one is selected, and a plane so becomes the current one. */
+  addDatum(kind: 'plane' | 'axis', name?: string): boolean {
+    const from = this.namesOf(this.selected);
+    if (from.length < this.selected.length) {
+      this.onStatus('something selected has no name in the source to constrain to: name it first');
+      return false;
+    }
+    const current = this.plane ? this.doc.nameOf(this.plane) : undefined;
+    const e = this.doc.addDatum(kind, from, current, name);
+    if (!this.apply(e, `${kind} ${e.names[0]}`)) return false;
+    const made = this.doc.entity(e.names[0]);
+    if (made) this.selected = [made];
+    this.onSelect();
+    this.onChanged();
+    this.draw();
+    return true;
   }
 
   /** **The planes a sketch can be drawn on**, by name, for the workspace's chooser: the three

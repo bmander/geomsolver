@@ -137,9 +137,8 @@ export function options(): Promise<void> {
 
 /* -- views ---------------------------------------------------------------------- */
 
-/** Ask what the next plane is called, then arm the plane tool: which way it faces is the two
- *  lines it is picked over (`plane(u: a, v: b)`), and where it stands is its origin's to be
- *  placed.  **No geometry here**: the core says whether the two span a plane. */
+/** Ask what the next plane is called, then drop it as the Plane button does — constrained to the
+ *  selection by the core's table.  **No geometry here**: the core says what the selection makes. */
 export async function insertPlane(): Promise<void> {
   let name = '';
   const ok = await askFields('Insert plane', (body) => {
@@ -147,7 +146,7 @@ export async function insertPlane(): Promise<void> {
             'What the statement calls the plane — blank to have one minted');
   });
   if (!ok) return;
-  view.insertPlane({ name: name.trim() || undefined });   // which says what to click
+  view.addDatum('plane', name.trim() || undefined);
 }
 
 /* -- Stage 5: root selection ---------------------------------------------------- */

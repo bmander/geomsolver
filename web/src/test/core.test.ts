@@ -1964,11 +1964,11 @@ test('a face, its solid and the body rule are written through the edit API by na
   assert.ok(bore.addBodyWord('cut', 'b0', 'b0').refused);
 });
 
-test('an axis is written by name through the edit API, and refused with the cause', () => {
+test('a datum is dropped by name through the edit API, and refused with the cause', () => {
   const d = Document.read('use std\nin std.front {\na := point hint((0, 0))\n'
                           + 'c := point hint((30, 40))\nfix((0, 0)) a\nfix((30, 40)) c\n}\n');
   assert.ok(d.ok, JSON.stringify(d.diagnostics));
-  const e = d.addAxis({ points: ['a', 'c'] }, 'hinge');
+  const e = d.addDatum('axis', ['a', 'c'], undefined, 'hinge');
   assert.equal(e.refused, null);
   assert.deepEqual(e.names, ['hinge']);
   assert.ok(e.text.includes('hinge := axis hint(dir: (0.6, 0, 0.8))\na coincident hinge\n'
@@ -1977,11 +1977,12 @@ test('an axis is written by name through the edit API, and refused with the caus
   assert.ok(next.ok, JSON.stringify(next.diagnostics));
   assert.ok(next.entity('hinge') instanceof Axis, 'an axis has a proxy, found by its name');
   assert.ok(next.entity('std.x') instanceof Axis);
-  const square = d.addAxis({ plane: 'std.front', point: 'c' });
-  assert.ok(square.text.includes('x0 perpendicular std.front\nc coincident x0'), square.text);
-  // two points in one place have no direction; a point is no line
-  assert.match(d.addAxis({ points: ['a', 'a'] }).refused ?? '', /no direction/);
-  assert.match(d.addAxis({ line: 'a' }).refused ?? '', /is not a line/);
+  const free = d.addDatum('plane', [], 'std.top');
+  assert.ok(free.text.includes('v0 := plane(u: hint(dir: (1, 0, 0)), v: hint(dir: (0, 1, 0)))'),
+            free.text);
+  // two points in one place say no direction; a datum is a plane or an axis
+  assert.match(d.addDatum('axis', ['a', 'a']).refused ?? '', /one place/);
+  assert.match(d.addDatum('plane', ['nothing']).refused ?? '', /nothing in this drawing/);
 });
 
 test('the region around a place is named for a face, its holes beside it', () => {

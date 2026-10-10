@@ -21,7 +21,7 @@ import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js
 import { mesh, objects } from '../core/mesh.js';
 import { overview3 } from '../core/overview.js';
 import type { Item3 } from '../core/overview.js';
-import { COL, chromeOf } from './paint.js';
+import { COL, chromeOf, stateInk } from './paint.js';
 import type { SketchView } from './view.js';
 
 /** The box's own ink.  Chrome, as the 2D painter's palette is: the core says how squarely a face
@@ -228,18 +228,18 @@ export class Box3D {
    *  as on the canvas above. */
   private chrome(v: SketchView): void {
     const sel = new Set(v.selected);
-    const hl = v.lit();
+    const hl = new Set(v.highlight);
     for (const { it, line } of this.frames) {
       const m = line.material as THREE.LineBasicMaterial;
       const ent = v.entityOf(it);
       const chrome = ent ? chromeOf(sel, hl, ent) : null;
-      m.color.set(chrome ? chrome[0] : INK.drawn);
+      m.color.set(chrome ? chrome[0] : (ent && stateInk(v, ent)) || INK.drawn);
     }
     for (const { it, line } of this.panes) {
       const m = line.material;
       const ent = v.entityOf(it);
       const chrome = ent ? chromeOf(sel, hl, ent) : null;
-      m.color.set(chrome ? chrome[0] : INK.pane);
+      m.color.set(chrome ? chrome[0] : (ent && stateInk(v, ent, true)) || INK.pane);
       // the plane being drawn on: its frame bolds, so where the next thing goes is in sight
       const current = v.planeOf(it) === v.plane;
       m.opacity = current ? 0.8 : 0.35;

@@ -68,12 +68,6 @@ export interface SolidSpec {
 
 export type BodyWord = 'union' | 'cut' | 'bound';
 
-/** Where an axis drawn by a gesture runs, by the names the source writes: along a line, through
- *  two points, or along a plane's normal through a point. */
-export type AxisOn =
-  | { line: string }
-  | { points: [string, string] }
-  | { plane: string; point: string };
 
 /** A region of the drawing (`Document.regionAt`): the edges of its outer loop and of each hole in
  *  walk order, by name, and the rings — outer first — in the plane's own coordinates. */
@@ -368,11 +362,12 @@ export class Document {
     return edit(withJson(spec, (p, n) => core().gcs_elab_add_solid(this.h, p, n)));
   }
 
-  /** An axis and the relations that place it, seeded with the direction the drawing has there
-   *  (the core reads it off the live sketch). */
-  addAxis(on: AxisOn, name?: string): Edit {
-    return edit(withJson({ ...on, name },
-      (p, n) => core().gcs_elab_add_axis(this.h, this.sketch.handle, p, n)));
+  /** A plane or an axis dropped by a button, constrained to what `from` names (the selection)
+   *  by the core's table, and seeded off the live drawing; `current` is the plane being drawn
+   *  on, which a datum with nothing selected is set off. */
+  addDatum(kind: 'plane' | 'axis', from: string[], current?: string, name?: string): Edit {
+    return edit(withJson({ kind, from, current, name },
+      (p, n) => core().gcs_elab_add_datum(this.h, this.sketch.handle, p, n)));
   }
 
   /** The body rule: `what union body`, `what cut body`, `what bound body`. */
