@@ -299,8 +299,7 @@ export abstract class Constraint {
 function fromJson(sk: Sketch, v: unknown, kind: SpecKind): unknown {
   if (ENTITY_KINDS.has(kind) && Array.isArray(v)) {
     const [k, i] = v as [Kind, number];
-    // an axis has no proxy here (an ordinate's direction the core read off the view): the
-    // reference is kept as it came, and handed back the same way
+    // a kind with no proxy here: the reference is kept as it came, and handed back the same way
     if (!KINDS.includes(k)) return v;
     return sk.entities(k)[i];
   }

@@ -106,14 +106,7 @@ export interface Place {
 }
 
 export type Tool =
-  'select' | 'point' | 'line' | 'rect' | 'circle' | 'arc' | 'arc3' | 'spline' | 'splinefit'
-  | 'plane';
-
-/** What the plane tool is armed with: the name the statement is to be given, if any.  Which way
- *  the plane faces is the two lines its clicks pick. */
-export interface PlaneSpec {
-  name?: string;
-}
+  'select' | 'point' | 'line' | 'rect' | 'circle' | 'arc' | 'arc3' | 'spline' | 'splinefit';
 
 
 export class SketchView {
@@ -174,10 +167,6 @@ export class SketchView {
   /** A standard plane chosen to draw on that the document does not have yet — it says no
    *  `use std` — named until the first press of a tool brings it in (`ensurePlane`). */
   pendingPlane: string | null = null;
-  /** What the plane tool will write when its two clicks land. */
-  planeSpec: PlaneSpec | null = null;
-  /** The line the plane tool's first click picked, by name: the one the plane runs along. */
-  planeAxis: string | null = null;
   highlight: Primitive[] = [];
   pending: Point[] = [];
   /** Where the fit tool has been told the curve must pass, before there is a curve.  Places
@@ -483,8 +472,6 @@ export class SketchView {
     if (this.liveDim) this.endDimension(false);
     this.pending = [];
     this.pendingFit = [];
-    this.planeSpec = null;
-    this.planeAxis = null;
   }
 
   /** Frame everything the workspace shows — figures and solids, as the eye now sees them. */
@@ -1094,10 +1081,28 @@ export class SketchView {
   finishCurve(): void { tools.finishCurve(this); }
   finishSplineFit(): void { tools.finishSplineFit(this); }
 
-  /** Arm the plane tool: the next two clicks say where the view sits, and this says what it is. */
-  insertPlane(spec: PlaneSpec): void {
-    this.planeSpec = spec;
-    this.setTool('plane');
+  /** **Drop a datum**: a plane or an axis, written at once and constrained to what is selected
+   *  by the core's table (`edit::add_datum`): through a point, along a line, square to a plane —
+   *  or, with nothing selected, free, set off the plane being drawn on.  It is constrained further
+   *  like anything else; the new one is selected, and a plane so becomes the current one. */
+  addDatum(kind: 'plane' | 'axis', name?: string): boolean {
+    // a standard plane chosen before the document had it is brought in first, as a tool's press
+    // brings it in, so the datum is set off the plane chosen
+    if (!this.ensurePlane()) return false;
+    const from = this.namesOf(this.selected);
+    if (from.length < this.selected.length) {
+      this.onStatus('something selected has no name in the source to constrain to: name it first');
+      return false;
+    }
+    const current = this.plane ? this.doc.nameOf(this.plane) : undefined;
+    const e = this.doc.addDatum(kind, from, current, name);
+    if (!this.apply(e, `${kind} ${e.names[0]}`)) return false;
+    const made = this.doc.entity(e.names[0]);
+    if (made) this.selected = [made];
+    this.onSelect();
+    this.onChanged();
+    this.draw();
+    return true;
   }
 
   /** **The planes a sketch can be drawn on**, by name, for the workspace's chooser: the three

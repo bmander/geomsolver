@@ -339,7 +339,7 @@ pub unsafe extern "C" fn gcs_counts_len() -> i32 {
     N_COUNTS as i32
 }
 
-const N_COUNTS: usize = 11;
+const N_COUNTS: usize = 12;
 
 #[no_mangle]
 pub unsafe extern "C" fn gcs_sketch_counts(h: *mut Sketch, out: *mut i32) {
@@ -360,6 +360,7 @@ pub unsafe extern "C" fn gcs_sketch_counts(h: *mut Sketch, out: *mut i32) {
             // appended, never inserted: the positions above are what the bindings hard-code
             0,
             s.planes.len(),
+            s.axes.len(),
         ];
         debug_assert_eq!(v.len(), N_COUNTS, "gcs_counts_len is what callers size their buffer by");
         for (i, x) in v.iter().enumerate() {
@@ -1081,10 +1082,10 @@ fn kind_id(k: EntKind) -> i32 {
         EntKind::Circle => 2,
         EntKind::Arc => 3,
         EntKind::Spline => 4,
-        // the ids stay contiguous — the binding decodes one by indexing its list — so the
-        // ellipse's (5) and the frame's (7) were taken up when those kinds went (#47), and the
-        // sphere's, the cone's and the cylinder's when they became library components
-        // (`std.Sphere`, `std.Cone`, `std.Cylinder`)
+        // the binding decodes an id through its own table (`model.ts`'s `KIND_ID`), so an id
+        // keeps its number for good: the ellipse's (5) and the frame's (7) were taken up when
+        // those kinds went (#47), and the sphere's, the cone's and the cylinder's when they
+        // became library components (`std.Sphere`, `std.Cone`, `std.Cylinder`)
         EntKind::Curve => 5,
         EntKind::Plane => 6,
         EntKind::Face => 7,
@@ -2225,10 +2226,13 @@ pub unsafe extern "C" fn gcs_solid_mesh_unit(h: *mut Sketch, idx: i32) -> f64 {
 
 /// **The overview in space**: the glass box's panes, axes and drawn geometry as 3D polylines,
 /// with no orbit applied.  A front end with a depth buffer takes this and the solids' meshes and
-/// does its own projecting; one without takes `gcs_overview_json`, which flattens.
+/// does its own projecting; one without takes `gcs_overview_json`, which flattens.  `layer` 0 is
+/// the whole scene, 1 the datums (panes, their axes, axes in space), 2 the objects' creases.
 #[no_mangle]
-pub unsafe extern "C" fn gcs_overview3d_json(h: *mut Sketch, unit: f64) -> *mut u8 {
-    guard(std::ptr::null_mut(), move || out_json(report::overview3d_json(sk(h), unit)))
+pub unsafe extern "C" fn gcs_overview3d_json(h: *mut Sketch, unit: f64, layer: i32) -> *mut u8 {
+    use gcs_core::overview::Layer;
+    let layer = match layer { 1 => Layer::Datums, 2 => Layer::Objects, _ => Layer::All };
+    guard(std::ptr::null_mut(), move || out_json(report::overview3d_json(sk(h), unit, layer)))
 }
 
 /* -- the workspace: every view standing on its plane, seen by one orthographic eye --------- */
@@ -4109,6 +4113,25 @@ pub unsafe extern "C" fn gcs_elab_add_solid(h: *mut Elaborated, ptr: *const u8, 
         let face = text("face").unwrap_or_default();
         let name = text("name");
         out_edit(gcs_core::edit::add_solid(&(*h).program, &face, &how, name.as_deref()))
+    })
+}
+
+/// A datum dropped by a button — `{kind: "plane" | "axis", from: [names], current?, name?}`,
+/// constrained to what `from` selects and seeded off the live drawing `s`: `edit::add_datum`.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_elab_add_datum(h: *mut Elaborated, s: *mut Sketch, ptr: *const u8,
+                                            len: usize) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || {
+        let v = as_json(ptr, len);
+        let text = |k: &str| v.get(k).map(|x| x.as_str().to_string());
+        let kind = EntKind::parse(text("kind").as_deref().unwrap_or_default());
+        let Some(kind) = kind.filter(|k| matches!(k, EntKind::Plane | EntKind::Axis)) else {
+            set_error("a datum is a plane or an axis");
+            return std::ptr::null_mut();
+        };
+        let from = v.get("from").map(strings).unwrap_or_default();
+        out_edit(gcs_core::edit::add_datum(&*h, sk(s), kind, &from, text("current").as_deref(),
+                                           text("name").as_deref()))
     })
 }
 

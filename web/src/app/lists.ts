@@ -9,7 +9,7 @@
 import * as io from '../core/io.js';
 import { Constraint } from '../core/constraints.js';
 import {
-  Arc, Circle, Curve, Line, Plane, Point, Primitive, Spline, angleBetween, distanceBetween,
+  Arc, Axis, Circle, Curve, Line, Plane, Point, Primitive, Spline, angleBetween, distanceBetween,
   expand,
 } from '../core/model.js';
 import { expressions } from '../core/expr.js';
@@ -67,6 +67,7 @@ function describeEntity(e: Primitive, ix: io.Index): string {
     : e instanceof Plane ? `plane   @${ix.name(e.origin)}`
     // a curve written in the language is its statement; the program panel says the rest
     : e instanceof Curve ? 'curve'
+    : e instanceof Axis ? 'axis'
     : 'point';
   return `${n}${body}${tag}`;
 }
@@ -126,7 +127,7 @@ export function refreshRows(): void {
   // the focused constraint has left the document — a row of the window is not where that is
   // noticed any more, since the window holds only the ones reaching what is picked
   if (currentConstraint && !all.includes(currentConstraint)) clearFocus();
-  subject = panelSubject(new Set(sk.primitives()));
+  subject = panelSubject(new Set(sk.allEntities()));
   const next = holding(all, subject);
   if (stale || !sameList(next, rows)) { stale = false; rebuildRows(next); }
 
