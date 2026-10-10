@@ -806,5 +806,6 @@ fn curve_entity(
         extrusion: false,
         length: None,
         pegs: Vec::new(),
+        slides: Vec::new(),
     }))
 }

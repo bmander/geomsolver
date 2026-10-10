@@ -11,7 +11,7 @@
 
 mod common;
 mod bounds;
-mod regions;
+mod set_regions;
 mod evaluated_solid;
 mod renderer;
 
@@ -51,6 +51,7 @@ mod describe;
 mod diagnose;
 mod drag;
 mod edit;
+mod edit_solids;
 mod ellipse;
 mod envelope;
 mod surfaces;
@@ -98,6 +99,7 @@ mod refine;
 mod crease;
 mod rack_cut;
 mod refusals;
+mod regions;
 mod relation_words;
 mod roots;
 mod ring;
@@ -109,6 +111,7 @@ mod membership;
 mod plane_tangent;
 mod numeric_parts;
 mod two_planes;
+mod sundial;
 mod shared_contact;
 mod sheet;
 mod smoke;
@@ -171,3 +174,4 @@ mod spline_length;
 mod minimize;
 mod catenary;
 mod extremal;
+mod slide;

@@ -23,7 +23,8 @@ with neither plane nor `z` is only a 2D sketch's (JSON, hand-built tests), with 
 (`t := axis hint(dir: (x, y, z))`, `AxisE` a[3], d[3]; intrinsics `axis_unit`, `axis_foot` once a
 relation reads its place) is a directed line with no start; a drawn line reads as one. A plane
 over a line holds a hidden axis that is the line (`entities::axes_along`: intrinsic `Parallel3`
-and `PointOnAxis` at its `p1`, or at the end it shares with the plane's other line, where the
+and `PointOnAxis` at its `p1`, or at the end it shares with the plane's other line — each
+line's own image of it, a twin's included (`Sketch::twinned`) — where the
 plane's two `PlaneAxis` rows give way to one intrinsic `Coincident3` of origin and end — four
 rows over three unknowns would be a dependency the structural count cannot see, #88). The lift
 writes both rows (`r parallel l`, `p coincident r`).
@@ -71,7 +72,10 @@ relations, ties each (`planes::tie_twins`, E040 a plane twice; `planes::parallel
 built along (`axes_along`'s `Parallel3`) ends at the point or has it stated on it, a dependency the
 structural count cannot see (#88). The gear's folds are square so. A point is read where its reader
 is drawn: `planes::memberships` puts a twin in a drawn element's slot (`Sketch::twin_in`,
-`replace_point`), `reading::read_twins` in a relation's before `in_space`. JSON `"twins"`, `graft`,
+`replace_point`), `reading::read_twins` in a relation's before `in_space`. A twin goes by its
+point's name (`SourceMap::twin_of`, read by `name_of`/`writable_name`; never filed in `names`, so
+`--where` lists the point once), and a sheet's view selects a point with its twins
+(`drawing/render.rs`). JSON `"twins"`, `graft`,
 `lift` (prints `in P, G`, never a twin) and `edit::remove` (keeps the other planes) carry it.
 `tests/two_planes.rs` is the gate.
 
@@ -159,7 +163,7 @@ the basis about `t₀` a cubic in the jet `τ`, over `Σ wB` by the quotient rul
 hand-written spatial kernels have generic twins held to them by `tests/taylor.rs`.  Refused: a
 set named as an entity (E040 in `rewrite`), `coincident` between two sets, parentheses, a
 non-point `coincident`, a non-line or claimed `tangent`.  `tests/sets.rs` is the gate.
-**Regions (§6.21, §9.6, 0.60, #145 F1):** a set whose body bounds a number is a region
+**Regions (§6.21, §9.6, 0.61, #145 F1):** a set whose body bounds a number is a region
 (`flatten::sets::region`, over `Written::states_bound`). `q inside S` / `q outside S` are set
 uses (`may_use`): `expand_use` rewrites the body in place before the walk (`region_body`, its
 side from `plane_side_word`) — its one number (a relation with an `OpArg::Dim`) gains
@@ -172,7 +176,7 @@ half-plane). `Constraint::reading_range` (`magnitude()` without a `side:`, or `A
 turn) keeps `Bound::aims` — the mirror, then two, four and eight times as far past the edge,
 stopping where one clamps; an interval's middle alone — within what the reading can be; `across`
 finds the measured point among the operands' own points too (a cone's angle is between two lines)
-and nudges a point off a stationary reading (the cone's axis). `tests/regions.rs` is the gate.
+and nudges a point off a stationary reading (the cone's axis). `tests/set_regions.rs` is the gate.
 **`P tangent(at: m) S`, a plane tangent to a set (#145, #148, 0.56):** `sets::expand_touch`
 applies the body at `m` and walks it `Pass::Made` then `Pass::Along` toward `P.u` and `P.v`
 (`model::Toward::Axis`: the axis's `d` columns fed where a line's ends go, `dual_kernel`
@@ -203,7 +207,7 @@ walked again as a set (`elaborate` loops over `elaborate_in`, `flatten::expand_w
 Lowering is a representation, never a meaning: the solutions are the same either way.
 `tests/membership.rs` is the gate.
 
-**Variational curves (§9.10, §6.1, 0.53–0.57, #121, #144, `variational.rs`, `extremal.rs`):**
+**Variational curves (§9.10, §6.1, 0.53–0.59, #121, #144, #149, `variational.rs`, `extremal.rs`):**
 `k minimizes E` / `k maximizes E` (`StmtKind::Minimize`, `parser/minimize.rs`; indicative, read by
 the word past its ref, as the body words are) with `E` a sum of `c * integral(EXPR over p)` (or
 `over (p, t)`, `t` the unit tangent) along `k`, ds-weighted; `flatten::values::settle_integrand`
@@ -233,15 +237,25 @@ freedom), and only otherwise does the energy's first statement carry the transve
 `H = 0` (`variational::rows`/`kernel`, `KernelKey::Stationary`) — when `stationary_length` finds
 one (`Energy::stationary`); else the length is `unsettled`, stated no row (one sent the solve after
 ever longer ropes) and left a freedom, W114. A held row pressing a curve of held length that is not a peg is E040 (a corner,
-never a tangency); with the length free it is what sets it. `Sketch::
+never a tangency); with the length free it is what sets it. **The corner on a held line is
+`rope touches rod`** (#149, `CKind::CurveTouchesLine`, `built`, 0 rows, refused a claim): a
+**slide** (`shoot::Stop::Slide { o, d }`, a peg is `Stop::Peg`; `CurveE::slides`,
+`Energy::slides`, `Sketch::slide_line`), its place on the line `σ` one more unknown of the BVP and
+`(λ⁺ − λ⁻)·d = 0` (no force along it) one more row; E040 where the line's ends are not held or the
+curve is not free. Never walked in from the corner-free shape touching a moved line (a fork:
+sliding along the line and the curve are one motion there): `pressed` pins it as a peg at the
+foot of the free curve's nearest point, then `release` eases the force along the line it bore to
+none (`Problem::pull`). The verdict's Hessian takes `σ` (gradient the costate's jump along `d`);
+a free curve's polyline samples each stop's place, so a corner draws sharp. `tests/slide.rs`,
+`ring.sv`. `Sketch::
 settle_variational` (at `add`/`remove`, the end of `graft`, `from_json`, elaboration) compiles each
-curve's definition (keyed by its terms and peg count), its pegs and free length into
+curve's definition (keyed by its terms and peg and slide counts), its stops and free length into
 `Sketch::variational`; `seed_extremals` then seeds lengths (a row's number, else `H = 0` by
 bracketing above the chord) and contacts left at 0. The verdict (`extremal::verdict`: Legendre,
 conjugate points as sign changes of `det ∂p/∂λ₀`, the Hessian in pegs' places and a free length)
 is `Diagnosis::extrema` (`unsolved` where no shape is found), reported by the CLI, the JSON
 (`[id, verdict, asked]`) and the app's marks. `length(L) s` on a spline stays `SplineLength`
-(`integral.rs`). `std.hangs(L) k` is a word. `tests/{extremal,catenary,minimize,spline_length}.rs`
+(`integral.rs`). `std.hangs(L) k` is a word. `tests/{extremal,catenary,slide,minimize,spline_length}.rs`
 are the gates.
 
 **Predicates, applied (§9.9, §6.21, 0.50, #103):** a relation word and a set are one predicate —
@@ -1156,7 +1170,7 @@ Conventions:
   tints and **never changes the face** (background/box-shadow/outline, not border/padding).  Run
   `npm run overlay` (headless Chrome, the real `CodeEditor`) when you touch `editor.ts`;
   `make test` cannot.
-- A **bound** (Solvent §9.6, 0.59, #109) *chooses the root*: `distance(>= d)`, `distance(<= d)`,
+- A **bound** (Solvent §9.6, 0.60, #109) *chooses the root*: `distance(>= d)`, `distance(<= d)`,
   `distance(in: (a, b))` and `p inside P` / `p outside P` (point, plane: the ordinate along `n`
   from `P.origin`, `<=`/`>=` 0, lowered by `relations::side_of_plane`; `plane_side_word`).
   Parsed as `OpArg::Bound { cmp: syntax::Cmp, hi }` before the number's `OpArg::Dim`, which every
@@ -1471,6 +1485,21 @@ Conventions:
   A name whose face a boolean ate is a *fact the report carries*, never an error.
   E080 a face that is not a loop on one plane, E081 a revolution's axis, E082 a face a body no
   longer has, E084 a section cut across its own view.
+- **A gesture writes a solid** (#162 F0): `edit::add_face`, `add_solid` (`SolidSweep`, extents
+  as text into `Arg::Dim`, mixtures refused by the parser's own `sweep_of`) and `add_body_word`
+  append over names (FFI `gcs_elab_add_face`/`_solid`/`_body_word`, `Document.addFace`/
+  `addSolid`/`addBodyWord`), each **held to the elaborator before it is handed back**
+  (`append_checked`: an error inside the appended text refuses the edit in its words; one
+  elsewhere was there before the gesture).  A hole loop that is not one circle is written as a
+  face first: **a face is a hole as it stands** (`holes: h`, its outer loop; one holed itself, or
+  declared after, is E080).  `edit::remove` dooms a body word or a sweep naming a gone solid.
+  Fresh names pass every bound name (`taken_names`).  `tests/edit_solids.rs` is the gate.
+  **The region under the cursor** is `overview::region::region_at` (FFI `gcs_elab_region_json`,
+  `Document.regionAt`): the graph of a plane's drawn edges joined **by shared point identity**
+  (what a face's walk accepts), dangling edges pruned, faces walked turning least right; the
+  smallest bounded loop holding the place is the outer, other pieces' outlines inside it (not
+  inside one another) its holes; a loop along an edge twice is refused.  `region::written` names
+  it by the source.  `tests/regions.rs` is the gate.
 - **A chain is a named traversal** (§6.6; issue #49, item 3). `profile := line -> … -> close`
   records a `NamedChain` beside the usual desugared declarations and constraints. The flattener
   scopes the binding and its links like ordinary component members; edges stay `boss.ab`, the
@@ -1533,7 +1562,12 @@ Conventions:
   overlap but are apart in space, so nothing is picked in view coordinates.  `w2s`/`s2w` read the
   view being worked in — the painter's (`inView`), else the current plane's; a drag reads the
   dragged point's view, a callout its dimension's (`calloutView`).  A view seen edge on refuses a
-  press (`ViewCam::readable`).  The plane tool picks two drawn lines and writes `plane(u:, v:)`.
+  press (`ViewCam::readable`).  **An object's face is picked where the eye's ray meets it**
+  (`workspace::pick_solid`, nearest the viewer over each object's mesh; the path is where the face
+  was made, so the object index rides beside it), beneath the drawing in `whatIsAt`'s order.  A
+  solid picked is a **third selection** (`SketchView.selectedSolids`, `pickSolid`), exclusive
+  with `selected` and the picture, carried across an edit by name; Delete removes it, `box3d`
+  lights the face and washes the rest.  The plane tool picks two drawn lines and writes `plane(u:, v:)`.
   Points in space stand in no view: seen where they are (`Projection::point`; per frame
   `workspace::space_points`, `gcs_workspace_space_points`, stroked through the eye's own
   camera), drawn and picked, and dragged where the eye sees them (`PlanDrag::seen`, numeric:
@@ -1726,6 +1760,10 @@ Conventions:
   TypeScript, so a colour and the parser cannot disagree.  `Tint` names the classes and the
   stylesheet says what they look like; the front end writes one element per run, parsing nothing.
   A function of the *text*, not of an `Elaborated`, since the program is usually half-typed.
+  A `.svd` is coloured by `drawing::highlight`, the drawing lexer's own scan (`gcs_drawing_highlight`,
+  `core/drawing.ts`); the panel picks one by the file shown (`CodeEditor.colouring`).  Relation
+  words are known by the text: those it defines or names in a `use (…)` (`relation_words`); units
+  join their number's run; `expr`'s functions, constants and measures are `builtin`.
 - Offsets cross the ABI in **UTF-8 bytes** and index a **UTF-16 string** on the other side
   (`gear.sv` has an em dash).  `core/program.ts::Offsets` is the conversion and `Document.adopt`
   is the **one seam** every report crosses: diagnostics, source map and coloured runs are string

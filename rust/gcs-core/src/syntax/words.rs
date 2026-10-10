@@ -2,7 +2,7 @@
 
 use super::lexer::{ident_char, ident_start, Tok};
 use super::Span;
-use crate::constraints::{is_operator, CKind};
+use crate::constraints::{is_operator, CKind, Fixity};
 use crate::model::EntKind;
 
 // `port`, `frame` and `ellipse` are retired and `ring` is not yet (bmander/geomsolver#47), and
@@ -109,6 +109,26 @@ pub(super) fn past_args(toks: &[(Tok, Span)], i: usize) -> usize {
         }
         j += 1;
     }
+}
+
+/// **`a word(params) b :=` or `word(params) l :=` at `i`** — a relation word being defined
+/// (§9.9): its fixity, or `None`.  Names and a word, with at most one parenthesised list after
+/// the word, then `:=`; a modifier in front (`param w := …`, `construction c := …`) is a
+/// definition of another kind.  The parser and the colouring both ask it.
+pub(super) fn word_definition_at(toks: &[(Tok, Span)], i: usize) -> Option<Fixity> {
+    let first = word_at(toks, i)?;
+    if MODIFIERS.contains(&first) {
+        return None;
+    }
+    // the word at `w`: its parameters, if any, then the last operand and `:=`
+    let tail = |w: usize| {
+        let j = past_args(toks, w);
+        word_at(toks, j).is_some() && toks.get(j + 1).map(|(t, _)| t) == Some(&Tok::Define)
+    };
+    if word_at(toks, i + 1).is_some() && tail(i + 1) {
+        return Some(Fixity::Infix);
+    }
+    tail(i).then_some(Fixity::Prefix)
 }
 
 /// `(name := line …)` — a chain link named where it stands.  The kind keyword after `:=` is what

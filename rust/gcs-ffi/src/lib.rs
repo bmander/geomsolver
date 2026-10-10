@@ -2289,6 +2289,25 @@ pub unsafe extern "C" fn gcs_workspace_pick(h: *mut Sketch, unit: f64, az: f64, 
     })
 }
 
+/// The object face the eye's ray through (x, y) meets nearest the viewer: `{solid, face, depth}`,
+/// or `null` — `workspace::pick_solid`.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_workspace_pick_solid_json(h: *mut Sketch, az: f64, el: f64,
+                                                       x: f64, y: f64) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || {
+        let s = sk(h);
+        let proj = gcs_core::overview::workspace::Projection::new(s, az, el);
+        out_json(match gcs_core::overview::workspace::pick_solid(s, &proj, (x, y)) {
+            Some(hit) => json::object([
+                ("solid", Json::Int(hit.solid as i64)),
+                ("face", Json::Str(hit.face)),
+                ("depth", Json::Num(hit.depth)),
+            ]),
+            None => Json::Null,
+        })
+    })
+}
+
 /// The planes whose panes (x, y) on the eye's picture plane falls inside, nearest the eye first:
 /// writes up to `cap` plane indices and returns how many there are.
 #[no_mangle]
@@ -3818,19 +3837,30 @@ pub unsafe extern "C" fn gcs_program_uses(ptr: *const u8, len: usize) -> *mut u8
 /// typing — which never elaborates and is exactly the program being looked at.
 #[no_mangle]
 pub unsafe extern "C" fn gcs_program_highlight(ptr: *const u8, len: usize) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || out_runs(syntax::highlight(as_str(ptr, len))))
+}
+
+/// Colour a drawing (`.svd`), as `gcs_program_highlight` colours a program: the drawing lexer's
+/// own scan, in the same `[[class, lo, hi], …]`.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_drawing_highlight(ptr: *const u8, len: usize) -> *mut u8 {
     guard(std::ptr::null_mut(), move || {
-        let runs: Vec<Json> = syntax::highlight(as_str(ptr, len))
-            .into_iter()
-            .map(|(t, s)| {
-                Json::Arr(vec![
-                    Json::Str(t.as_str().to_string()),
-                    Json::Int(s.lo as i64),
-                    Json::Int(s.hi as i64),
-                ])
-            })
-            .collect();
-        out_json(Json::Arr(runs))
+        out_runs(gcs_core::drawing::highlight(as_str(ptr, len)))
     })
+}
+
+fn out_runs(runs: Vec<(syntax::Tint, syntax::Span)>) -> *mut u8 {
+    let runs: Vec<Json> = runs
+        .into_iter()
+        .map(|(t, s)| {
+            Json::Arr(vec![
+                Json::Str(t.as_str().to_string()),
+                Json::Int(s.lo as i64),
+                Json::Int(s.hi as i64),
+            ])
+        })
+        .collect();
+    out_json(Json::Arr(runs))
 }
 
 #[no_mangle]
@@ -4030,10 +4060,7 @@ pub unsafe extern "C" fn gcs_elab_add_entity(
             set_error("unknown entity kind");
             return std::ptr::null_mut();
         };
-        let args: Vec<String> = v
-            .get("args")
-            .map(|a| a.arr().iter().map(|x| x.as_str().to_string()).collect())
-            .unwrap_or_default();
+        let args: Vec<String> = v.get("args").map(strings).unwrap_or_default();
         let seed: Vec<f64> =
             v.get("seed").map(|a| a.arr().iter().map(|x| x.as_f64()).collect()).unwrap_or_default();
         // a plane over two axes or lines, `args` their names, and the name asked for
@@ -4042,6 +4069,92 @@ pub unsafe extern "C" fn gcs_elab_add_entity(
             return out_edit(gcs_core::edit::add_plane(&(*h).program, &args, name.as_deref()));
         }
         out_edit(gcs_core::edit::add_entity(&(*h).program, kind, &args, &seed))
+    })
+}
+
+/// A JSON array of strings, as names; anything not a string reads as the empty name.
+fn strings(a: &Json) -> Vec<String> {
+    a.arr().iter().map(|x| x.as_str().to_string()).collect()
+}
+
+/// A face over drawn edges by name, `{edges: [..], holes: [[..]], name?}`: `edit::add_face`.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_elab_add_face(h: *mut Elaborated, ptr: *const u8, len: usize) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || {
+        let v = as_json(ptr, len);
+        let edges = v.get("edges").map(strings).unwrap_or_default();
+        let holes: Vec<Vec<String>> =
+            v.get("holes").map(|a| a.arr().iter().map(strings).collect()).unwrap_or_default();
+        let name = v.get("name").map(|n| n.as_str().to_string());
+        out_edit(gcs_core::edit::add_face(&(*h).program, &edges, &holes, name.as_deref()))
+    })
+}
+
+/// A solid swept from a face by name, `{face, depth?, from?, to?, through?, about?, sweep?,
+/// sense?, name?}`, every extent the text written: `edit::add_solid`.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_elab_add_solid(h: *mut Elaborated, ptr: *const u8, len: usize) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || {
+        let v = as_json(ptr, len);
+        let text = |k: &str| v.get(k).map(|x| x.as_str().to_string());
+        let sense = match v.get("sense").map(|x| x.as_str()) {
+            Some("cw") => Some(gcs_core::syntax::Sense::Cw),
+            Some("ccw") => Some(gcs_core::syntax::Sense::Ccw),
+            _ => None,
+        };
+        let how = gcs_core::edit::SolidSweep {
+            depth: text("depth"), from: text("from"), to: text("to"), through: text("through"),
+            about: text("about"), sweep: text("sweep"), sense,
+        };
+        let face = text("face").unwrap_or_default();
+        let name = text("name");
+        out_edit(gcs_core::edit::add_solid(&(*h).program, &face, &how, name.as_deref()))
+    })
+}
+
+/// The body rule, `{word: "union" | "cut" | "bound", what, body}`: `edit::add_body_word`.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_elab_add_body_word(h: *mut Elaborated, ptr: *const u8, len: usize) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || {
+        let v = as_json(ptr, len);
+        let text = |k: &str| v.get(k).map(|x| x.as_str()).unwrap_or_default();
+        use gcs_core::syntax::BodyWord;
+        let Some(word) = [BodyWord::Union, BodyWord::Cut, BodyWord::Bound].into_iter()
+            .find(|w| w.as_str() == text("word"))
+        else {
+            set_error(format!("`{}` is not a body word: union, cut or bound", text("word")));
+            return std::ptr::null_mut();
+        };
+        out_edit(gcs_core::edit::add_body_word(&(*h).program, word, text("what"), text("body")))
+    })
+}
+
+/// The region of the drawing on plane `plane` (-1 the page) around (x, y) in its coordinates:
+/// `{outer: [names], holes: [[names]], rings: [[[x, y]…]…]}`, `null` where no loop encloses it,
+/// or `{refused}` with the cause — `overview::region::region_at`, named by the source.  The live
+/// sketch is `s`, the elaboration's own having been taken out into it.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_elab_region_json(h: *mut Elaborated, s: *mut Sketch, plane: i32,
+                                              x: f64, y: f64, unit: f64) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || {
+        use gcs_core::overview::region;
+        let plane = usize::try_from(plane).ok();
+        let names = |n: Vec<String>| Json::Arr(n.into_iter().map(Json::Str).collect());
+        let refused = |why: String| json::object([("refused", Json::Str(why))]);
+        out_json(match region::region_at(sk(s), plane, (x, y), unit) {
+            Ok(None) => Json::Null,
+            Err(why) => refused(why),
+            Ok(Some(r)) => match region::written(&(*h).map, &r) {
+                Err(why) => refused(why),
+                Ok((outer, holes)) => json::object([
+                    ("outer", names(outer)),
+                    ("holes", Json::Arr(holes.into_iter().map(names).collect())),
+                    ("rings", Json::Arr(r.rings.iter().map(|ring| Json::Arr(ring.iter()
+                        .map(|&(a, b)| Json::Arr(vec![Json::Num(a), Json::Num(b)]))
+                        .collect())).collect())),
+                ]),
+            },
+        })
     })
 }
 

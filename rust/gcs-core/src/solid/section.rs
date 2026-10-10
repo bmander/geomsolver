@@ -27,10 +27,15 @@ pub(super) fn face_polys(sk: &Sketch, fi: usize, unit: f64) -> Result<Vec<FacePo
     Ok(polys)
 }
 
-pub(super) fn inside_loop(poly: &FacePoly, (x, y): (f64, f64)) -> bool {
+pub(super) fn inside_loop(poly: &FacePoly, at: (f64, f64)) -> bool {
+    inside_ring(&poly.pts, at)
+}
+
+/// Whether `(x, y)` lies inside the closed ring, by the parity of a ray's crossings.
+pub(crate) fn inside_ring(pts: &[(f64, f64)], (x, y): (f64, f64)) -> bool {
     let mut inside = false;
-    for i in 0..poly.pts.len() {
-        let (a, b) = (poly.pts[i], poly.pts[(i + 1) % poly.pts.len()]);
+    for i in 0..pts.len() {
+        let (a, b) = (pts[i], pts[(i + 1) % pts.len()]);
         if (a.1 > y) != (b.1 > y) && x < a.0 + (y - a.1) * (b.0 - a.0) / (b.1 - a.1) {
             inside = !inside;
         }

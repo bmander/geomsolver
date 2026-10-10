@@ -590,3 +590,59 @@ fn a_point_in_space_dragged_on_a_sphere_keeps_its_distance() {
     }
     d.end();
 }
+
+/// Issue #134: a drag's part is grafted out of the document and its entities paired with the
+/// document's by kind and order, so a held entity the walk stops at — a line, a circle, a spline
+/// over fixed points — must come along with what it is made of, or the graft drops it and every
+/// entity after it pairs with the wrong one.
+#[test]
+fn a_drag_against_held_geometry_keeps_what_it_is_made_of() {
+    let text = "use std
+in std.front {
+  a := point
+  b := point
+  fix((0, 0)) a
+  fix((40, 0)) b
+  rail := line(a, b)
+  o := point
+  fix((0, 30)) o
+  ring := circle(center: o) hint(r: 10)
+  fix(r == 10) ring
+  k0 := point
+  k1 := point
+  k2 := point
+  k3 := point
+  fix((60, 0)) k0
+  fix((70, 20)) k1
+  fix((80, -20)) k2
+  fix((90, 0)) k3
+  cam := spline(k0, k1, k2, k3)
+  p := point hint((10, 1))
+  p coincident rail
+  q := point hint((10, 30))
+  q coincident ring
+  s := point hint((75, 1))
+  s coincident cam
+}
+";
+    let (prog, perr, lerr) = gcs_core::library::parse_linked(text);
+    assert!(perr.is_empty() && lerr.is_empty(), "{perr:?} {lerr:?}");
+    let e = gcs_core::program::elaborate(&prog);
+    assert!(e.ok(), "{:?}", e.errors().map(|d| d.message.clone()).collect::<Vec<_>>());
+    let mut sk = e.sketch;
+    assert!(solve(&mut sk, SolveOpts::default()).success);
+    for (name, to) in [("p", (25.0, 5.0)), ("q", (0.0, 50.0)), ("s", (80.0, 5.0))] {
+        let i = e.map.ent_named(name).unwrap().i();
+        let (x, y) = sk.point_xy(i);
+        let mut d = PlanDrag::new(&sk, i, x, y, None, 0.05);
+        assert!(d.move_to(&mut sk, None, to.0, to.1).success, "{name}");
+        let mut sys = System::new(&sk);
+        let z = sys.z0(&sk);
+        let r = sys.max_relative_residual(&z);
+        assert!(r <= 1e-6, "{name}: residual {r} after the drag");
+    }
+    let (x, y) = sk.point_xy(e.map.ent_named("p").unwrap().i());
+    assert!((0.0..=40.0).contains(&x) && y.abs() < 1e-9, "p left the rail: ({x}, {y})");
+    let (x, y) = sk.point_xy(e.map.ent_named("q").unwrap().i());
+    assert!((x.hypot(y - 30.0) - 10.0).abs() < 1e-6, "q left the ring: ({x}, {y})");
+}

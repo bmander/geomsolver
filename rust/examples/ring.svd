@@ -1,0 +1,10 @@
+// Presentation of ring.sv. Model geometry is independent of this drawing.
+model m from "ring.sv"
+
+sheet drawing {
+  size A4
+  label "A RING ON A ROD" at (14mm, 18mm)
+  label "A rope 160 long held to a rod where it chooses: a corner, the angles equal" at (14mm, 28mm)
+  sketch rope(m) at (55mm, 80mm)
+  dimensions in rope
+}

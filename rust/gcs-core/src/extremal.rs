@@ -23,30 +23,42 @@ use crate::locus::{Frame, Val};
 use crate::tape::MAX_VARS;
 use crate::variational::Extremum;
 pub use flow::Lagrangian;
-pub use shoot::{Ends, Shape};
+pub use shoot::{Ends, Shape, Stop};
 
 /* -- the problem as a kernel's constants -------------------------------------------------- */
 
-/// A curve's problem, as its contacts' constants carry it: the Lagrangian, then the pegs.
-pub fn write(lag: &Lagrangian, pegs: &[[f64; 2]], out: &mut Vec<f64>) {
+/// A curve's problem, as its contacts' constants carry it: the Lagrangian, then the pegs (each
+/// where it is), then the slides (each line's point and unit direction).
+pub fn write(lag: &Lagrangian, pegs: &[[f64; 2]], slides: &[[f64; 4]], out: &mut Vec<f64>) {
     lag.write(out);
     out.push(pegs.len() as f64);
     for p in pegs {
         out.extend_from_slice(p);
     }
+    out.push(slides.len() as f64);
+    for s in slides {
+        out.extend_from_slice(s);
+    }
 }
 
 /// How many numbers `write` writes.
-pub fn width(lag: &Lagrangian, pegs: usize) -> usize {
-    3 + lag.tapes.iter().map(Vec::len).sum::<usize>() + 1 + 2 * pegs
+pub fn width(lag: &Lagrangian, pegs: usize, slides: usize) -> usize {
+    3 + lag.tapes.iter().map(Vec::len).sum::<usize>() + 2 + 2 * pegs + 4 * slides
 }
 
-/// What `write` wrote.
-pub fn read(k: &[f64]) -> Option<(Lagrangian, Vec<[f64; 2]>)> {
+/// What `write` wrote: the Lagrangian and the stops, pegs first.
+pub fn read(k: &[f64]) -> Option<(Lagrangian, Vec<Stop>)> {
     let (lag, rest) = Lagrangian::read(k)?;
     let n = *rest.first()? as usize;
-    let pegs = (0..n).map(|i| Some([*rest.get(1 + 2 * i)?, *rest.get(2 + 2 * i)?])).collect::<Option<Vec<_>>>()?;
-    Some((lag, pegs))
+    let at = |i: usize| rest.get(i).copied();
+    let mut stops = (0..n).map(|i| Some(Stop::Peg([at(1 + 2 * i)?, at(2 + 2 * i)?]))).collect::<Option<Vec<_>>>()?;
+    let base = 1 + 2 * n;
+    let m = at(base)? as usize;
+    for i in 0..m {
+        let s = base + 1 + 4 * i;
+        stops.push(Stop::Slide { o: [at(s)?, at(s + 1)?], d: [at(s + 2)?, at(s + 3)?] });
+    }
+    Some((lag, stops))
 }
 
 /* -- the memo ----------------------------------------------------------------------------- */
@@ -68,7 +80,7 @@ const KEEP: usize = 4;
 /// The shape a curve's problem (its constants, `write`'s) and ends come to, warm from the
 /// nearest remembered — with the problem's Lagrangian, read off the constants.
 pub fn shape_for(k: &[f64], ends: &Ends) -> Option<(Lagrangian, Shape)> {
-    let (lag, pegs) = read(k)?;
+    let (lag, stops) = read(k)?;
     let key: Vec<u64> = k.iter().map(|v| v.to_bits()).collect();
     let o = ends.outer();
     let far = |sh: &Shape| sh.ends.outer().iter().zip(&o).map(|(a, b)| (a - b).abs()).fold(0.0, f64::max);
@@ -80,7 +92,7 @@ pub fn shape_for(k: &[f64], ends: &Ends) -> Option<(Lagrangian, Shape)> {
     if let Some(p) = prev.as_ref().filter(|p| p.ends == *ends) {
         return Some((lag, p.clone()));
     }
-    let sh = shoot::solve(&lag, ends, &pegs, prev.as_ref())?;
+    let sh = shoot::solve(&lag, ends, &stops, prev.as_ref())?;
     SEEN.with(|s| {
         let mut s = s.borrow_mut();
         if s.len() >= SEEN_MAX {
@@ -196,7 +208,7 @@ pub fn kernel_frame(k: &[f64], u: f64, theta: &[f64], need: u8) -> Frame {
             let at = |sign: f64| -> Option<[f64; 2]> {
                 let mut oo = o;
                 oo[c] += sign * h;
-                let s = shoot::solve(&lag, &Ends::of(&oo), &sh.pegs, Some(&sh))?;
+                let s = shoot::solve(&lag, &Ends::of(&oo), &sh.stops, Some(&sh))?;
                 Some(read_at(&lag, &s, u, false)?.c[2])
             };
             if let (Some(p), Some(m)) = (at(1.0), at(-1.0)) {
@@ -258,9 +270,11 @@ pub fn points(lag: &Lagrangian, sh: &Shape, a: f64, b: f64, n: usize) -> Vec<(f6
 /// - **Jacobi**: no point conjugate to an arc's start before its end — where `det ∂p(s)/∂λ(start)`
 ///   changes sign, a neighbouring extremal from the start crosses this one again, and the arc
 ///   can be shortened in energy past it;
-/// - **the places**: with the curve's pegs (and its length, where `free_len`) moving, the energy
-///   as a function of where they are, its Hessian by central differences of `∂V/∂s` — the jump
-///   in `H` at each peg, and `H` at the end for the length — re-solved with the places held.
+/// - **the places**: with the curve's stops (and its length, where `free_len`) moving, the
+///   energy as a function of where they are, its Hessian by central differences of its gradient
+///   — the jump in `H` at each stop for its place along the curve, the costate's jump along a
+///   slide's line for its place on the line, and `H` at the end for the length — re-solved with
+///   the places held.
 ///
 /// The Morse index is the conjugate points counted and the places' negative directions; a
 /// minimum has none and Legendre's sign positive, a maximum none of the opposite.
@@ -268,7 +282,7 @@ pub fn verdict(lag: &Lagrangian, sh: &Shape, free_len: bool) -> Extremum {
     let legendre = legendre(lag, sh);
     let Some(sign) = legendre else { return Extremum::Degenerate };
     let mut index = 0usize;
-    let k = sh.pegs.len();
+    let k = sh.stops.len();
     for j in 0..=k {
         match conjugate(lag, sh, j) {
             Some(n) => index += n,
@@ -365,42 +379,52 @@ fn conjugate(lag: &Lagrangian, sh: &Shape, j: usize) -> Option<usize> {
     (end.abs() > 1e-8).then_some(changes)
 }
 
-/// The eigenvalues of the energy's Hessian in the curve's places — its pegs', and its length's
-/// where `free_len` — or none to have where there are none.
+/// The eigenvalues of the energy's Hessian in the curve's places — each stop's along the curve
+/// and a slide's along its line, and its length's where `free_len` — or none to have where there
+/// are none.
 fn places(lag: &Lagrangian, sh: &Shape, free_len: bool) -> Option<Vec<f64>> {
-    let k = sh.pegs.len();
-    let n = k + usize::from(free_len);
+    let k = sh.stops.len();
+    // the places, in order: each stop's along the curve, then a slide's along its line
+    let vars: Vec<(usize, bool)> =
+        (0..k).flat_map(|j| std::iter::once((j, false)).chain(sh.stops[j].slides().then_some((j, true)))).collect();
+    let n = vars.len() + usize::from(free_len);
     if n == 0 {
         return Some(Vec::new());
     }
     // ∂V/∂(places): an arc's energy grows with its length as its `H` (the length's multiplier),
-    // so moving a peg along the curve is the jump in `H` there, and the length `H` at the end
+    // so moving a stop along the curve is the jump in `H` there, and the length `H` at the end;
+    // and with its end as its costate there (falling with its start as it), so moving a corner
+    // along its line is the costate's jump along the line
     let gradient = |s: &Shape| -> Option<Vec<f64>> {
-        let h_at = |piece: usize, last: bool| -> Option<f64> {
+        let node = |piece: usize, last: bool| -> Option<shoot::Node> {
             let nodes = &s.pieces[piece].nodes;
-            let nd = if last { nodes.last()? } else { nodes.first()? };
-            Some(flow::Flow::new(lag, nd.theta).at(&nd.z, false)?.h)
+            if last { nodes.last().copied() } else { nodes.first().copied() }
         };
+        let h_of = |nd: shoot::Node| -> Option<f64> { Some(flow::Flow::new(lag, nd.theta).at(&nd.z, false)?.h) };
         let mut g = Vec::with_capacity(n);
-        for j in 1..=k {
-            g.push(h_at(j * shoot::SEGMENTS - 1, true)? - h_at(j * shoot::SEGMENTS, false)?);
+        for &(j, along) in &vars {
+            let before = node((j + 1) * shoot::SEGMENTS - 1, true)?;
+            let after = node((j + 1) * shoot::SEGMENTS, false)?;
+            g.push(match (along, s.stops[j]) {
+                (true, Stop::Slide { d, .. }) => (after.z[2] - before.z[2]) * d[0] + (after.z[3] - before.z[3]) * d[1],
+                _ => h_of(before)? - h_of(after)?,
+            });
         }
         if free_len {
-            g.push(h_at(s.pieces.len() - 1, true)?);
+            g.push(h_of(node(s.pieces.len() - 1, true)?)?);
         }
         Some(g)
     };
-    let held: Vec<f64> = sh.places[1..=k].to_vec();
+    let held: Vec<[f64; 2]> = (0..k).map(|j| [sh.places[j + 1], sh.sigmas[j]]).collect();
     let h = 1e-5 * sh.ends.len.abs().max(1e-9);
     let mut hess = vec![0.0; n * n];
     for c in 0..n {
         let solve = |sign: f64| -> Option<Vec<f64>> {
             let mut pl = held.clone();
             let mut from = sh.clone();
-            if c < k {
-                pl[c] += sign * h;
-            } else {
-                from.ends.len += sign * h;
+            match vars.get(c) {
+                Some(&(j, along)) => pl[j][usize::from(along)] += sign * h,
+                None => from.ends.len += sign * h,
             }
             let s = shoot::solve_held(lag, &from, &pl)?;
             gradient(&s)
