@@ -29,14 +29,15 @@ const STEER_TOL: f64 = 1e-6;
 
 /// A bound as the drawing reads it (§9.6): what the steering, the elaborator and the diagnosis
 /// all ask, from one reading.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct BoundReading {
     /// Whether it holds — within the solve's own tolerance, so one the solution stands on does.
     pub holds: bool,
     /// Whether the solution stands on its edge.
     pub edge: bool,
-    /// Where a point carried across it aims (`Bound::aim`): the mirror of the reading.
-    pub aim: f64,
+    /// Where a point carried across it aims, nearest first (`Bound::aims`): the mirror of the
+    /// reading, then farther past the edge.
+    pub aims: Vec<f64>,
 }
 
 /// How bound `c` reads on the drawing, `tol` the solve's own (`bound_tol`); `None` for a
@@ -50,7 +51,8 @@ pub fn bound_reading(
     let m = c.reading(sk)?;
     let lo = c.args[c.kind.dimension_slot()?].num();
     let edge = (m - lo).abs() <= tol || b.hi.is_some_and(|hi| (m - hi).abs() <= tol);
-    Some(BoundReading { holds: b.holds(lo, m, tol), edge, aim: b.aim(lo, m) })
+    let aims = b.aims(lo, m, c.reading_range());
+    Some(BoundReading { holds: b.holds(lo, m, tol), edge, aims })
 }
 
 /// How far past its edge a bound still holds: the solve's own relative tolerance, over the
@@ -61,22 +63,30 @@ pub fn bound_tol(sk: &Sketch) -> f64 {
 
 /// Whether every bound holds on the drawing as it stands (§9.6).
 pub fn bounds_hold(sk: &Sketch) -> bool {
-    broken(sk).is_empty()
+    let tol = bound_tol(sk);
+    sk.constraints.iter().all(|c| bound_reading(sk, c, tol).is_none_or(|r| r.holds))
 }
 
-/// Every bound the drawing breaks, by index, with where its point aims.
-fn broken(sk: &Sketch) -> Vec<(usize, f64)> {
+/// Every bound the drawing breaks, by index, with where its point aims, nearest first.
+fn broken(sk: &Sketch) -> Vec<(usize, Vec<f64>)> {
     let tol = bound_tol(sk);
     sk.constraints.iter().enumerate()
-        .filter_map(|(i, c)| bound_reading(sk, c, tol).filter(|r| !r.holds).map(|r| (i, r.aim)))
+        .filter_map(|(i, c)| bound_reading(sk, c, tol).filter(|r| !r.holds).map(|r| (i, r.aims)))
         .collect()
+}
+
+/// The parameters a solve moves, the ones `across` may step: asked once a pass, since nothing
+/// carried changes which they are.
+fn movable(sk: &Sketch) -> std::collections::BTreeSet<u32> {
+    sk.free_indices().into_iter().map(|i| i as u32).collect()
 }
 
 /// **A bound chooses the seed's side** (§9.6): each bound the pose breaks has the point it
 /// measures carried across its edge (`across`) — what the elaborator asks of the seeds, before
 /// what is seeded from them is read.  The points carried.
 pub(crate) fn cross_bounds(sk: &mut Sketch) -> Vec<usize> {
-    broken(sk).into_iter().filter_map(|(ci, aim)| across(sk, ci, aim)).collect()
+    let free = movable(sk);
+    broken(sk).into_iter().filter_map(|(ci, aims)| across(sk, ci, aims[0], &free)).collect()
 }
 
 /// Carry the point bound `ci` measures across its edge, to where the bound reads `aim`: the last
@@ -85,15 +95,26 @@ pub(crate) fn cross_bounds(sk: &mut Sketch) -> Vec<usize> {
 /// the same question), its twins and their lifts brought to where it stands.  What a seed on the
 /// bound's side would have been.  The point moved, or `None` where none can be, or the reading
 /// will not come round.
-fn across(sk: &mut Sketch, ci: usize, aim: f64) -> Option<usize> {
+fn across(
+    sk: &mut Sketch,
+    ci: usize,
+    aim: f64,
+    free: &std::collections::BTreeSet<u32>,
+) -> Option<usize> {
     let c = sk.constraints[ci].clone();
-    let free: std::collections::BTreeSet<u32> =
-        sk.free_indices().into_iter().map(|i| i as u32).collect();
     let own = |sk: &Sketch, p: EntRef| -> Vec<usize> {
         sk.own_params(p).into_iter().filter(|i| free.contains(i)).map(|i| i as usize).collect()
     };
-    let points = c.entities().into_iter().filter(|e| e.kind == crate::model::EntKind::Point);
-    let q = points.rev().find(|&p| !own(sk, p).is_empty())?;
+    // the point operands, last first, then the other operands' points — a cone's angle is
+    // between two lines, and the point it measures is the end of the second
+    let is_point = |e: &EntRef| e.kind == crate::model::EntKind::Point;
+    let (pts, others): (Vec<EntRef>, Vec<EntRef>) =
+        c.entities().into_iter().rev().partition(is_point);
+    let mut points = pts;
+    for e in others {
+        points.extend(sk.children(e).into_iter().rev().filter(is_point));
+    }
+    let q = points.into_iter().find(|&p| !own(sk, p).is_empty())?;
     let cols = own(sk, q);
     // the point's twins (§6.7), each seen where it stands in the twin's plane, and every lift
     // among them, found once
@@ -115,7 +136,9 @@ fn across(sk: &mut Sketch, ci: usize, aim: f64) -> Option<usize> {
             }
         }
     };
-    let (tol, h) = (bound_tol(sk), 1e-7 * sk.extent());
+    let extent = sk.extent();
+    let (tol, h) = (STEER_TOL * extent, 1e-7 * extent);
+    let mut nudged = false;
     for _ in 0..ACROSS_STEPS {
         let m = c.reading(sk)?;
         if (m - aim).abs() <= tol {
@@ -129,9 +152,19 @@ fn across(sk: &mut Sketch, ci: usize, aim: f64) -> Option<usize> {
             sk.params[i].value -= h;
         }
         let gg: f64 = g.iter().map(|x| x * x).sum();
-        if !(gg > 0.0) {
+        // where the reading is stationary — a point on a cone's axis, whose angle is alike all
+        // round it — the point is nudged off it once, and stepped from there
+        if !(gg > STEER_TOL * STEER_TOL) {
+            if nudged {
+                place(sk);
+                return None;
+            }
+            nudged = true;
+            for &i in &cols {
+                sk.params[i].value += 1e-3 * extent;
+            }
             place(sk);
-            return None;
+            continue;
         }
         for (&i, gi) in cols.iter().zip(&g) {
             sk.params[i].value += (aim - m) * gi / gg;
@@ -310,16 +343,19 @@ impl System {
         // each bound once, at most `STEER_ROUNDS` of them: a budget, so a drawing breaking many
         // does not pay a solve for each
         let mut steered = Vec::new();
-        while let Some(&(ci, aim)) = broken(sk).first() {
+        let free = movable(sk);
+        while let Some((ci, aims)) = broken(sk).into_iter().next() {
             if steered.contains(&ci) || steered.len() >= STEER_ROUNDS {
                 break;
             }
             steered.push(ci);
             let kept = sk.get_x();
+            // each aim, nearest first, from where the solve began and then from the solution
+            let attempts = aims.iter().flat_map(|&aim| [(aim, true), (aim, false)]);
             let mut found = None;
-            for (from_start, from) in [(true, &start), (false, &kept)] {
-                sk.set_x(from);
-                if across(sk, ci, aim).is_none() {
+            for (aim, from_start) in attempts {
+                sk.set_x(if from_start { &start } else { &kept });
+                if across(sk, ci, aim, &free).is_none() {
                     continue;
                 }
                 let crossed = sk.get_x();

@@ -389,8 +389,7 @@ pub(crate) fn lift_relation(sk: &Sketch, c: &Constraint) -> Relation {
     // a bound is said as one (§9.6), its interval's high end in the document's units
     let form = &mut rel.form;
     if let (Some(b), crate::syntax::RelationForm::Canonical { bound, .. }) = (c.bound, form) {
-        let kind = c.kind.dimension_slot().map_or(SpecKind::Length, |i| spec[i].1);
-        let hi = b.hi.and_then(|h| lift_arg(sk, kind, &CArg::Num(h)));
+        let hi = b.hi.and_then(|h| lift_arg(sk, c.kind.dimension_kind(), &CArg::Num(h)));
         *bound = Some((b.cmp, hi));
     }
     rel

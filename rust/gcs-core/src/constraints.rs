@@ -1494,14 +1494,22 @@ impl CKind {
         )
     }
 
-    /// The kinds whose number may be a bound (§9.6): those reading a signed or unsigned measure
-    /// a solve can be steered along — an ordinate (and so `inside`/`outside` a plane), a
-    /// distance between points, a point's or a parallel line's distance from a line.
     /// Where its number stands, if it states one: a kind has at most one dimension slot.
     pub fn dimension_slot(self) -> Option<usize> {
         self.spec().iter().position(|(_, k)| k.is_dimension())
     }
 
+    /// What its number is — a length or an angle — where it states one (a length where not, the
+    /// harmless default for a number's units).
+    pub fn dimension_kind(self) -> SpecKind {
+        self.dimension_slot().map_or(SpecKind::Length, |i| self.spec()[i].1)
+    }
+
+    /// The kinds whose number may be a bound (§9.6): those reading a signed or unsigned measure
+    /// a solve can be steered along — an ordinate (and so `inside`/`outside` a plane), a
+    /// distance between points, a point's or a parallel line's distance from a line, in a view
+    /// or in space, and the unsigned angle in space (a cone's region, §6.21).  Not the angle in
+    /// a view, which is signed: bounded, it would be a half-plane and not a wedge.
     pub fn boundable(self) -> bool {
         matches!(
             self,
@@ -1509,7 +1517,9 @@ impl CKind {
                 | CKind::Distance
                 | CKind::Distance3
                 | CKind::PointLineDistance
+                | CKind::PointLine3
                 | CKind::ParallelDistance
+                | CKind::Angle3
         )
     }
 
@@ -2066,14 +2076,34 @@ impl Bound {
         }
     }
 
-    /// Where a solve steering a reading `m` back across the bound aims: its mirror in the
-    /// bound's edge, which is where the other root of a mirror-symmetric pair reads, or an
-    /// interval's middle.
-    pub fn aim(&self, lo: f64, m: f64) -> f64 {
-        match self.cmp {
-            crate::syntax::Cmp::In => (lo + self.hi.unwrap_or(lo)) / 2.0,
-            _ => 2.0 * lo - m,
+    /// Where a solve steering a reading `m` back across the bound aims, nearest first: its mirror
+    /// in the bound's edge, which is where the other root of a mirror-symmetric pair reads, then
+    /// twice, four and eight times as far past the edge — the other root of a pair mirrored in
+    /// some other measure reads farther off.  Kept within what the reading can come to (`range`):
+    /// an aim past its limit is halfway from the edge to it, and the last, since one farther
+    /// would be the same.  An interval aims at its middle alone.
+    pub fn aims(&self, lo: f64, m: f64, range: (f64, f64)) -> Vec<f64> {
+        if self.cmp == crate::syntax::Cmp::In {
+            return vec![(lo + self.hi.unwrap_or(lo)) / 2.0];
         }
+        let first = 2.0 * lo - m;
+        let mut out = Vec::with_capacity(4);
+        for k in [1.0, 2.0, 4.0, 8.0] {
+            let aim = lo + (first - lo) * k;
+            let limit = if aim < range.0 {
+                Some(range.0)
+            } else {
+                (aim > range.1).then_some(range.1)
+            };
+            match limit {
+                Some(l) => {
+                    out.push((l + lo) / 2.0);
+                    break;
+                }
+                None => out.push(aim),
+            }
+        }
+        out
     }
 }
 
@@ -2129,6 +2159,17 @@ impl Constraint {
         !self.claim && self.bound.is_none()
     }
 
+    /// What `reading` can come to: a magnitude's at least zero (a distance between points, a
+    /// point's from a line read either side), an unsigned angle's within half a turn, a signed
+    /// measure's anything.
+    pub fn reading_range(&self) -> (f64, f64) {
+        match self.kind {
+            CKind::Angle3 => (0.0, std::f64::consts::PI),
+            k if k.magnitude() && self.side().is_none() => (0.0, f64::INFINITY),
+            _ => (f64::NEG_INFINITY, f64::INFINITY),
+        }
+    }
+
     /// The number the drawing reads where this constraint's stands: the one that would make its
     /// row hold now, as the statement measures it (its word's sign, `side:`, `along:`) — what a
     /// bound is checked against (§9.6).  Found along the number from the one stated by secant
@@ -2141,6 +2182,12 @@ impl Constraint {
         }
         let at = self.kind.dimension_slot()?;
         let v = self.local_values(sk);
+        // the unsigned angle in space is read by its cosine (`cos3 - cos θ`), which is even and
+        // periodic in θ: read straight off it, never searched along it
+        if self.kind == CKind::Angle3 {
+            let d = self.args[at].num();
+            return Some((self.residual(sk, &v)[0] + d.dcos()).clamp(-1.0, 1.0).dacos());
+        }
         let mut c = self.clone();
         let mut residual = |d: f64| {
             c.args[at] = Arg::Num(d);

@@ -180,15 +180,18 @@ pub(super) fn constrain(
             sets: w.sets.clone(),
         })
     });
-    // a set's points are points: `coincident` puts one on it, and nothing else (§6.21)
-    // — said at the use, where the statement was written
+    // a set's points are points: `coincident` puts one on it, `inside` and `outside` one in it
+    // or out of it, and nothing else (§6.21) — said at the use, where the statement was written
     let used = r.word.as_ref().filter(|w| !w.sets.is_empty()).map(|w| w.span);
-    if let (Some(w), Some(found)) = (r.word.as_ref().filter(|w| w.word == "coincident"), &word) {
+    let point_word = |w: &&crate::syntax::Worded| {
+        matches!(w.word.as_str(), "coincident" | "inside" | "outside")
+    };
+    if let (Some(w), Some(found)) = (r.word.as_ref().filter(point_word), &word) {
         if let (Some(&op), Some((_, set))) = (found.ops.first(), w.sets.first()) {
             if op.kind != EntKind::Point {
                 let at = w.span;
-                let m = format!("`{set}` is a set of points, and `coincident` puts a point on it, not {}",
-                    op.kind.a());
+                let m = format!("`{set}` is a set of points, and `{}` puts a point on it, not {}",
+                    w.word, op.kind.a());
                 say_once(diags, at, st.id, m);
                 return None;
             }
@@ -590,11 +593,20 @@ fn bound_of(
         crate::syntax::OpArg::Bound { span, .. } => Some(*span),
         _ => None,
     }));
-    if !ckind.boundable() {
-        return Err((at, format!(
-            "a bound is read off a distance or an ordinate, and `{}` states a number it holds",
-            crate::syntax::snake(ckind.name())
-        )));
+    match ckind {
+        // an angle in a view is signed: bounded, it would be a half-plane, not a cone's wedge
+        CKind::Angle => {
+            return Err((at, "an angle bounds a region in space, where it is unsigned (a \
+                             cone's): in a view it is signed, and bounded would be a half-plane"
+                .to_string()))
+        }
+        k if !k.boundable() => {
+            return Err((at, format!(
+                "a bound is read off a distance or an ordinate, and `{}` states a number it holds",
+                crate::syntax::snake(k.name())
+            )))
+        }
+        _ => {}
     }
     if r.claim {
         let m = "a bound chooses which solution is meant, and a claim asks about the one there \
@@ -603,7 +615,8 @@ fn bound_of(
     }
     let hi = match hi {
         None => None,
-        Some(a) => match to_arg(sk, res, SpecKind::Length, a) {
+        // in the number's own kind: an angle's in radians
+        Some(a) => match to_arg(sk, res, ckind.dimension_kind(), a) {
             Ok(CArg::Num(v)) => Some(v),
             Ok(CArg::Expr(e)) => Some(e.value),
             _ => {

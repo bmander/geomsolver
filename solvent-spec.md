@@ -1,6 +1,11 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.60 — October 2026**
+**Specification, Draft 0.61 — October 2026**
+
+**[0.61] Regions.** A set whose body bounds a number is a region, and `p inside S` / `p outside S`
+put a point in or out of any set, its one number read as at most or at least what it says: inside a
+sphere, a cylinder, a cone, a disc. Regions meet by conjunction, and `outside` says a difference
+(§6.21, §9.6).
 
 **[0.60] A bound chooses the root.** A dimension's number may be a bound, `distance(>= d)`,
 `distance(<= d)` or `distance(in: (a, b))`, and `p inside P` / `p outside P` say which side of a
@@ -1741,13 +1746,29 @@ there by the formal's name (`std.CircleOnSphere(k, ball, view)`).
 conjunction**: `on_both := { p | p coincident ball; p coincident shaft }` is the points on both, and
 the circle above is a plane met with a sphere. **Union is a choice**: a point on `A` or on `B` is
 on one of them, which a root choice says (`ccw`, `branch`, §13) and a body cannot. **Difference
-is not expressible**: a set says what its points satisfy, never what they do not.
+is not expressible** of a locus: a set says what its points satisfy, never what they do not.
+
+**Regions** **[0.61]**. A set whose body bounds a number (§9.6) is a **region**: `ball := { p | p
+distance(<= 5) c }` is the points within 5 of `c`. `q inside S` and `q outside S` put a point in or
+out of any set: its body applied to `q`, as `coincident` applies it, with its **one number** read as
+a bound — at most what it says (`inside`), at least (`outside`) — and every other statement as
+written. So `q inside std.Sphere(c, r: 5)` is within 5 of `c`, `q inside std.Cylinder(l, r: 2)`
+within 2 of the line, `q inside std.Cone(l, half: 30deg)` within 30° of its axis seen from its apex
+(read in space: in a view the cone is a ray and its angle signed, **E040**), and `q inside { p | p
+coincident P; p distance(5) o }` the disc. A region's own bound is kept by `inside` and turned
+round by `outside`. A region is met by conjunction too, so `blank := { p | p inside tip; p inside
+heel; p outside toe }` is the three at once, and **`outside` says a difference** for regions: inside
+`heel` and outside `toe`. Refused (**E040**): `outside` a set stating no one number — a conjunction,
+whose outside is a union, a choice of root — or an interval (`in:`); `inside` or `outside` a set
+stating several numbers; anything but a point inside a set; a tangency to a region, which has no
+surface to touch. A point in a region is bound, so the use chooses the root (§9.6) and adds no row
+but what the body states besides its number (the disc's plane).
 
 *Non-normative:* `std.Sphere`, `std.Cylinder` and `std.Cone` are sets. A set drawn by tracing its
 points, other recognised shapes (a line as two planes met), and sets bounded by inequalities (arcs,
 segments, rays) are not part of this draft (#101): a bound outside a set body chooses a root (§9.6),
-and one inside a body, making the set a region, is to come. A derivative row has no flat spelling,
-so a program lifted from a sketch (`to_program`) keeps a tangency's contact and says nothing of the
+and one inside a body makes the set a region (above). A derivative row has no flat spelling, so a
+program lifted from a sketch (`to_program`) keeps a tangency's contact and says nothing of the
 tangency.
 
 ## 7. Ports **[0.13]**
@@ -1982,7 +2003,7 @@ p outside P                       // in front of it
 - **Closed:** `>=`, `<=` and `in:` include their edge, where a solution may stand. `>` and `<` are refused.
 - **Its number:** zero may be written, unlike an ordinate's equality, which zero makes a `level` (§9.2). It may not read an unknown, and a bound may not be a `claim` (**E040**): a bound chooses which solution is meant, and a claim asks about the one there is.
 - **Meaning:** outside a set body, a bound **chooses the root**. It adds no row and no freedom, and is drawn as no callout. It does the work a seed did when the seed only picked a side, so it is read on the seeds first: a point whose seed breaks a bound is carried across its edge, to the mirror of its reading, as if it had been seeded there, and everything seeded from it or placed through it follows. The solver then checks it on the solution. Where it still does not hold, the solver looks for the root where it does, from the seeds and from the solution, and fails the solve where none is found (`a bound does not hold`). The diagnosis tells which bounds are violated, and which hold with the solution on their edge (*active*).
-- **Not yet:** a bound inside a set body, where it would make the set a region, and `p inside S` for a set (#145, F1).
+- **Inside a set body** a bound makes the set a region, and `inside`/`outside` put a point in one (§6.21) **[0.61]**. A region as a solid is to come (#145, F2–F3).
 - `inside` between two solids remains the claim of §9.8; which one a statement is follows from its operands.
 
 ### 9.7 Claims **[0.5]**

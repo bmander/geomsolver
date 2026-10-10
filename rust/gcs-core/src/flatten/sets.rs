@@ -221,9 +221,18 @@ impl<'a> Walk<'a> {
                 let pair = found.len() == 2
                     && rel.form.written().is_some_and(|w| w.word.text == "tangent");
                 if found.len() > 1 && !pair {
-                    let m = "`coincident` relates a set to a point, and `tangent` a set to a line \
-                             or to another set at a point";
+                    let m = "`coincident`, `inside` and `outside` relate a set to a point, and \
+                             `tangent` a set to a line or to another set at a point";
                     self.once(Code::E040, st.span, m);
+                    continue;
+                }
+                // a region has no surface to touch (§6.21) — by a line, a plane or a set alike
+                let tangent = rel.form.written().filter(|w| w.word.text == "tangent");
+                let bounded = found.iter().find(|(_, abs)| region(&self.sets[abs].lit));
+                if let (Some(w), Some((_, abs))) = (tangent, bounded) {
+                    let m = format!("`{}` is a region, and has no surface to touch: touch the set \
+                                     it is bounded by", public_path(abs));
+                    self.once(Code::E040, w.word.span, m);
                     continue;
                 }
                 self.held = next.len() + rest.len();
@@ -283,7 +292,14 @@ impl<'a> Walk<'a> {
             return;
         }
         let site = &self.sets[abs];
-        let (lit, depth, closure) = (site.lit.clone(), site.depth, site.scope.clone());
+        let (mut lit, depth, closure) = (site.lit.clone(), site.depth, site.scope.clone());
+        // **inside or outside a set** (§9.6): its body with its one number a bound
+        if let Some(side) = crate::constraints::plane_side_word(word) {
+            if let Err(m) = region_body(&mut lit.body, side, word, at, &name) {
+                self.once(Code::E040, at, m);
+                return;
+            }
+        }
         let u = Use { st, rel, path, scope: sc, at };
         let app = self.begin(&u, &closure);
         let other = w.ops[1 - k].clone();
@@ -541,8 +557,86 @@ fn at_point(w: &crate::syntax::Written) -> Option<Ref> {
     }
 }
 
-/// Whether a written relation is one a set may be used by: `coincident` or `tangent` between
-/// two operands.
+/// Whether a written relation is one a set may be used by: `coincident`, `tangent`, `inside` or
+/// `outside` between two operands.
 fn may_use(w: &crate::syntax::Written) -> bool {
-    matches!(w.word.text.as_str(), "coincident" | "tangent") && w.ops.len() == 2
+    matches!(w.word.text.as_str(), "coincident" | "tangent" | "inside" | "outside")
+        && w.ops.len() == 2
+}
+
+/// Whether a set is a **region** (§6.21, §9.6): its body bounds a number, or says its point is
+/// inside or outside something — so it has no surface to touch.
+fn region(lit: &SetLit) -> bool {
+    lit.body.iter().filter_map(written_of).any(|w| w.states_bound())
+}
+
+/// A statement's written relation, where it is one.
+fn written_of(st: &Stmt) -> Option<&crate::syntax::Written> {
+    match &st.kind {
+        StmtKind::Relation(r) => r.form.written(),
+        _ => None,
+    }
+}
+
+/// A set's body as `inside` or `outside` reads it (§6.21, §9.6), rewritten in place: its **one
+/// dimension** a bound running `side` (`inside` at most its number, `outside` at least), a
+/// region's own bound kept or turned round, and every other statement as written, so a disc is
+/// its circle's plane and a bound.  A body stating no number of its own, a conjunction of uses,
+/// is read as written by `inside` and is no complement `outside` can say: that is a union, a
+/// choice of root.  `at` is the use's word, where the bound is written.
+fn region_body(
+    body: &mut [Stmt],
+    side: crate::syntax::Cmp,
+    word: &str,
+    at: Span,
+    name: &str,
+) -> Result<(), String> {
+    use crate::syntax::{Cmp, OpArg};
+    let is_dim = |a: &OpArg| matches!(a, OpArg::Dim(..));
+    let dims: Vec<usize> = (0..body.len())
+        .filter(|&i| written_of(&body[i]).is_some_and(|w| w.args.iter().any(is_dim)))
+        .collect();
+    let [i] = dims[..] else {
+        let uses = body.iter().filter_map(written_of).any(may_use);
+        return match (dims.len(), uses, side) {
+            (0, true, Cmp::Le) => Ok(()),
+            (0, true, _) => Err(format!(
+                "`{name}` is where several things hold, and what is outside it is where any one \
+                 fails: a choice of root, not a region `outside` can say"
+            )),
+            (0, false, _) => Err(format!("`{name}` states no number for `{word}` to bound")),
+            (n, _, _) => Err(format!(
+                "`{name}` states {n} numbers, and `{word}` bounds one: say which with a set of one"
+            )),
+        };
+    };
+    let StmtKind::Relation(r) = &mut body[i].kind else {
+        unreachable!("a dimension is a relation")
+    };
+    let w = r.form.written_mut().expect("a dimension is written");
+    let bound = w.args.iter_mut().find_map(|a| match a {
+        OpArg::Bound { cmp, .. } => Some(cmp),
+        _ => None,
+    });
+    match (bound, side) {
+        // a region already: `inside` keeps its bound, `outside` turns it round
+        (Some(_), Cmp::Le) => {}
+        (Some(cmp), _) => {
+            *cmp = match *cmp {
+                Cmp::Ge => Cmp::Le,
+                Cmp::Le => Cmp::Ge,
+                Cmp::In => {
+                    return Err(format!(
+                        "outside `{name}`'s interval is either side of it: a choice of root, not \
+                         a region `outside` can say"
+                    ))
+                }
+            };
+        }
+        (None, side) => {
+            let k = w.args.iter().position(is_dim).expect("a dimension's number");
+            w.args.insert(k, OpArg::Bound { cmp: side, span: at, hi: None });
+        }
+    }
+    Ok(())
 }

@@ -1335,6 +1335,12 @@ impl Written {
         })
     }
 
+    /// Whether it states a bound (§9.6): its number is one, or it is `inside` / `outside` a
+    /// plane, lowered to one later — either way no row, and no derivative.
+    pub fn states_bound(&self) -> bool {
+        self.bound().is_some() || crate::constraints::plane_side_word(&self.word.text).is_some()
+    }
+
     /// One selector by name — what `constraints::infix_op` reads to tell `distance … along: x`
     /// from a plain one, and a tangency at a named end from the bare pair.
     pub fn sel(&self, name: &str) -> Option<String> {
