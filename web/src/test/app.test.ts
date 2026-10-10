@@ -1980,6 +1980,12 @@ test('the Extrude tool washes the region under the pointer, and a click drops a 
   assert.equal(view.liveExtent?.solid, 'b0');
   assert.equal(view.liveExtent?.mode, 'behind');
   assert.equal(view.tool, 'extrude', 'the tool stays down for the next');
+  // Escape: done sizing, the tool still down; again, the tool goes
+  view.cancelTool();
+  assert.equal(view.liveExtent, null);
+  assert.equal(view.tool, 'extrude');
+  view.cancelTool();
+  assert.equal(view.tool, 'select');
   view.undo();
   assert.equal(view.source, before, 'the click is one undo step');
 });
