@@ -200,6 +200,38 @@ fn distance_between_covers_every_pair_of_kinds() {
     assert!(close(d(EntRef::circle(c1), EntRef::circle(over)), 0.0));
 }
 
+/// Any two things a person can select are asked their distance (the status bar's readout, as a
+/// rubber band sweeps), so every pair answers: a curve by its drawn figure, and a kind on no
+/// sheet (an axis) NaN — never a panic, which in wasm takes the whole core down.
+#[test]
+fn distance_between_answers_every_pair_including_curves_and_axes() {
+    let src = "use std\nin std.front {\no := point\nfix((10, 5)) o\n\
+        q := point hint((30, 5))\nl := line(o, q)\nk := circle(center: q) hint(r: 2)\n\
+        a := arc(center: o) hint(r: 4)\n}\n\
+        e := std.Ellipse(o, a: 8, b: 3, tilt: 0deg).p over u in (0, 360)\n\
+        t := axis hint(dir: (0, 0, 1))\n";
+    let (prog, errs, _) = gcs_core::library::parse_linked(src);
+    assert!(errs.is_empty(), "{:?}", errs.iter().map(|e| &e.message).collect::<Vec<_>>());
+    let mut e = gcs_core::program::elaborate(&prog);
+    assert!(e.ok(), "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
+    assert!(solve(&mut e.sketch, SolveOpts::default()).success);
+    let sk = &e.sketch;
+    let named = |n: &str| e.map.ent_named(n).unwrap();
+    let mut ents = sk.drawn();
+    ents.push(named("t"));
+    ents.push(named("std.front"));
+    for &x in &ents {
+        for &y in &ents {
+            let d = distance_between(sk, x, y);
+            let off = [x, y].iter().any(|r| r.kind == EntKind::Axis);
+            assert!(if off { d.is_nan() } else { d >= 0.0 }, "{x:?} {y:?}: {d}");
+        }
+    }
+    // the rim reaches 8 along x from its centre at (10, 5): 12 short of q = (30, 5)
+    let d = distance_between(sk, named("e"), named("q"));
+    assert!((d - 12.0).abs() < 1e-2, "{d}");
+}
+
 #[test]
 fn every_constraint_type_round_trips_through_its_spec() {
     for kind in gcs_core::constraints::ALL_KINDS {
