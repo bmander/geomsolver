@@ -4113,27 +4113,25 @@ pub unsafe extern "C" fn gcs_elab_add_solid(h: *mut Elaborated, ptr: *const u8, 
     })
 }
 
-/// An axis drawn by a gesture — `{line}`, `{points: [p, q]}` or `{plane, point}`, and `name?` —
-/// seeded with the direction the live drawing `s` has there: `edit::add_axis`.
+/// A datum dropped by a button — `{kind: "plane" | "axis", from: [names], current?, name?}`,
+/// constrained to what `from` selects and seeded off the live drawing `s`: `edit::add_datum`.
 #[no_mangle]
-pub unsafe extern "C" fn gcs_elab_add_axis(h: *mut Elaborated, s: *mut Sketch, ptr: *const u8,
-                                           len: usize) -> *mut u8 {
+pub unsafe extern "C" fn gcs_elab_add_datum(h: *mut Elaborated, s: *mut Sketch, ptr: *const u8,
+                                            len: usize) -> *mut u8 {
     guard(std::ptr::null_mut(), move || {
-        use gcs_core::edit::{self, AxisOn};
         let v = as_json(ptr, len);
         let text = |k: &str| v.get(k).map(|x| x.as_str().to_string());
-        let points = v.get("points").map(strings).unwrap_or_default();
-        let on = match (text("line"), text("plane"), text("point"), points.as_slice()) {
-            (Some(line), ..) => AxisOn::Line(line),
-            (None, Some(plane), Some(point), _) => AxisOn::Normal { plane, point },
-            (None, None, None, [p, q]) => AxisOn::Points(p.clone(), q.clone()),
+        let kind = match text("kind").as_deref() {
+            Some("plane") => EntKind::Plane,
+            Some("axis") => EntKind::Axis,
             _ => {
-                set_error("an axis runs along a line, through two points, or along a plane's \
-                           normal through a point");
+                set_error("a datum is a plane or an axis");
                 return std::ptr::null_mut();
             }
         };
-        out_edit(edit::add_axis(&*h, sk(s), &on, text("name").as_deref()))
+        let from = v.get("from").map(strings).unwrap_or_default();
+        out_edit(gcs_core::edit::add_datum(&*h, sk(s), kind, &from, text("current").as_deref(),
+                                           text("name").as_deref()))
     })
 }
 
