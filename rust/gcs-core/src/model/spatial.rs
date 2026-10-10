@@ -361,12 +361,17 @@ impl TermNumber {
     /// What it reads as the drawing stands: refused where it reads an unknown no row of the
     /// drawing holds, which nothing then determines.
     pub fn value(&self, sk: &Sketch) -> Result<f64, String> {
-        let Some((name, m)) = &self.free else { return Ok(self.c) };
-        let held = sk.free_vars.get(name).map(|&p| &sk.params[p as usize]).filter(|p| !p.fixed);
-        let x = held.ok_or_else(|| {
+        self.read(sk).ok_or_else(|| {
+            let name = self.free.as_ref().map_or("", |(n, _)| n.as_str());
             format!("`{name}` is an unknown nothing determines: state a point on the set it sizes")
-        })?;
-        Ok(self.c + m * x.value)
+        })
+    }
+
+    /// `value`, `None` where nothing determines it.
+    pub fn read(&self, sk: &Sketch) -> Option<f64> {
+        let Some((name, m)) = &self.free else { return Some(self.c) };
+        let x = sk.free_vars.get(name).map(|&p| &sk.params[p as usize]).filter(|p| !p.fixed)?;
+        Some(self.c + m * x.value)
     }
 }
 

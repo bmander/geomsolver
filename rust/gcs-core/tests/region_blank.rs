@@ -46,11 +46,8 @@ fn drawn(e: &mut Elaborated, m: &str) -> usize {
 
 #[test]
 fn the_blank_is_its_region() {
-    let project = fixtures::gear::project();
-    let pair = std::fs::read_to_string(project.join("pair.sv")).unwrap();
     for (label, configuration) in fixtures::gear::designs().into_iter().take(2) {
-        let mut e = fixtures::read_beside(&pair, &project,
-            &mut |name, text| if name == "configuration" { configuration.clone() } else { text });
+        let mut e = fixtures::gear::read_file("pair.sv", &configuration);
         for (m, apex) in [("gear", "gear.O"), ("pinion", "pinion.A")] {
             let made = drawn(&mut e, m);
             let region = named(&e, &format!("pair.{m}_blank.material"));

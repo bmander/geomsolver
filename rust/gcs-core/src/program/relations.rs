@@ -1286,15 +1286,19 @@ impl Relation {
 /// a text that is neither.
 fn term_number(a: &CArg, sk: &Sketch, kind: SpecKind) -> Option<crate::model::TermNumber> {
     use crate::model::TermNumber;
-    if let Some(v) = settled_number(a, sk) {
-        return Some(TermNumber::stated(v));
-    }
-    let CArg::Expr(e) = a else { return None };
-    let parsed = expr::parse_in(&e.text, sk.units).ok()?;
-    let a = expr::eval(&parsed.body, &Default::default()).ok()?;
-    let name = a.free.clone()?;
-    let m = expr::to_arg_units(kind, a.m);
-    Some(TermNumber { c: expr::to_arg_units(kind, a.c), free: Some((name, m)) })
+    let e = match a {
+        CArg::Num(v) => return Some(TermNumber::stated(*v)),
+        CArg::Expr(e) => e,
+        _ => return None,
+    };
+    let read = written_aff(a, sk)?;
+    Some(match read.free {
+        None => TermNumber::stated(e.value),
+        Some(name) => TermNumber {
+            c: expr::to_arg_units(kind, read.c),
+            free: Some((name, expr::to_arg_units(kind, read.m))),
+        },
+    })
 }
 
 /// A number as the kernels read it (an angle in radians) where it is one before `expr::evaluate`:
@@ -1310,8 +1314,13 @@ fn settled_number(a: &CArg, sk: &Sketch) -> Option<f64> {
 /// What a dimension's text comes to as written, in the document's units (degrees for an angle):
 /// `None` for a number with no text, or a text that reads an unknown.
 fn written_number(a: &CArg, sk: &Sketch) -> Option<f64> {
+    written_aff(a, sk).and_then(|a| a.number())
+}
+
+/// A dimension's text worked out over no scope, in the document's units: a number, or affine in
+/// the one unknown it reads.  `None` for a number with no text, or a text that is neither.
+fn written_aff(a: &CArg, sk: &Sketch) -> Option<expr::Aff> {
     let CArg::Expr(e) = a else { return None };
-    expr::parse_in(&e.text, sk.units).ok()
-        .and_then(|p| expr::eval(&p.body, &Default::default()).ok())
-        .and_then(|a| a.number())
+    let parsed = expr::parse_in(&e.text, sk.units).ok()?;
+    expr::eval(&parsed.body, &Default::default()).ok()
 }

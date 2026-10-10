@@ -41,14 +41,16 @@ impl Design {
         Design { label, configuration }
     }
     /// The pair (`gears.sv`), its modules beside it, the configuration replaced.
-    fn read(&self) -> Elaborated { self.read_document("gears.sv") }
+    fn read(&self) -> Elaborated { fixtures::gear::read_file("gears.sv",&self.configuration) }
     /// The checks' document (`pair.sv`): the layout with each member's limits drawn as revolved
     /// sections (`blank/limits.sv`), which the members' region blank stands for.
-    fn read_checks(&self) -> Elaborated { self.read_document("pair.sv") }
-    fn read_document(&self,file: &str) -> Elaborated {
-        let text = std::fs::read_to_string(fixtures::gear::project().join(file)).unwrap();
-        fixtures::read_beside(&text,&fixtures::gear::project(),&mut |name,text|
-            if name == "configuration" { self.configuration.clone() } else { text })
+    fn read_checks(&self) -> Elaborated { fixtures::gear::read_file("pair.sv",&self.configuration) }
+    /// Every recorded quantity of the pair `e` at scale `probe`: the layout's, and the limits'
+    /// from the checks.
+    fn read_all(&self,e: &Elaborated,probe: f64) -> Reading {
+        let mut reading = read_pair(e,probe);
+        reading.values.extend(read_limits(&self.read_checks()).values);
+        reading
     }
 }
 
@@ -226,16 +228,15 @@ fn the_layout_reproduces_the_pairs_named_quantities() {
     let all = designs();
     assert_eq!(labels,all.iter().map(|d| d.label.clone()).collect::<Vec<_>>());
     let mut worst: std::collections::BTreeMap<String,(f64,String)> = Default::default();
+    let recorded: std::collections::BTreeMap<&str,&Vec<f64>> =
+        rows.iter().map(|(name,values)| (name.as_str(),values)).collect();
     for (k,design) in all.iter().enumerate() {
         let e = design.read();
         // the motions carry points at the pair's own scale, the recorded R
         let scale = rows[0].1[k];
         assert_eq!(rows[0].0,"R");
-        let mut reading = read_pair(&e,scale);
-        reading.values.extend(read_limits(&design.read_checks()).values);
+        let reading = design.read_all(&e,scale);
         assert_eq!(reading.values.len(),rows.len());
-        let recorded: std::collections::BTreeMap<&str,&Vec<f64>> =
-            rows.iter().map(|(name,values)| (name.as_str(),values)).collect();
         for (name,v) in &reading.values {
             let values = recorded.get(name.as_str()).unwrap_or_else(|| panic!("`{name}` is not recorded"));
             // a length relative to the cone distance; an angle in degrees, a direction's
@@ -363,8 +364,7 @@ fn record() {
     for (k,design) in designs().into_iter().enumerate() {
         if !wanted.split(',').any(|w| w == design.label) { continue; }
         let e = design.read();
-        let mut reading = read_pair(&e,rows[0].1[k]);
-        reading.values.extend(read_limits(&design.read_checks()).values);
+        let reading = design.read_all(&e,rows[0].1[k]);
         println!("column\t{}",design.label);
         for (name,_) in &rows {
             let v = reading.values.iter().find(|(n,_)| n == name).map_or(f64::NAN,|(_,v)| *v);
@@ -814,4 +814,3 @@ fn design_sweep() {
     }}}}}
     println!("{bad} of {n} designs");
 }
-

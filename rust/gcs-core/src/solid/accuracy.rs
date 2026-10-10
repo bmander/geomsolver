@@ -334,11 +334,7 @@ fn turned_faces(sk: &Sketch,id: usize,pose: Motion,out: &mut Vec<RevolvedSurface
         SolidDef::Body {..} => for o in solid.operands() { turned_faces(sk,o as usize,pose,out)? },
         SolidDef::Region {..} => {
             let m = super::region::meridian(sk,id)?;
-            for (surface,line) in RevolvedSurface::of_meridian(&m,&solid.name) {
-                let surface = surface.placed(pose);
-                if line && on_axis(&surface)? { continue; }
-                out.push(surface);
-            }
+            out.extend(RevolvedSurface::of_meridian(&m,&solid.name).into_iter().map(|s| s.placed(pose)));
         }
         _ => return Err(format!("`{}`: the accuracy meter reads turned blanks only",solid.name)),
     }

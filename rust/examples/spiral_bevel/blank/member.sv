@@ -13,9 +13,9 @@ use blank.ends
 // off it at the mean point, turned `lean` from the direction toward the axis (0deg for the back,
 // 180deg for the tip). `p` is the meridian's point across from the mean point and `apex` where
 // it meets the axis. The cone turns about a line from the apex to a point held in space on the
-// axis, so its angle is read in space, unsigned; its half is the drawing's to solve.
-component OffsetCone(cone: line, ax: line, view: plane, offset: Length, lean: Angle,
-                     normal_module: Length) {
+// axis, `offset` along it, so its angle is read in space, unsigned; its half is the drawing's to
+// solve.
+component OffsetCone(cone: line, ax: line, view: plane, offset: Length, lean: Angle) {
   in view {
     // Seeds, rough: the rib's foot at the axis's far end, the meridian's point a step along the
     // rib turned `lean`, the apex at the axis's start.
@@ -34,7 +34,7 @@ component OffsetCone(cone: line, ax: line, view: plane, offset: Length, lean: An
   apex coincident ax
   private far := point hint(at: ax.p2)
   far coincident ax
-  apex distance(normal_module, along: ax) far
+  apex distance(offset, along: ax) far
   private about := line(apex, far)
   nappe := std.Cone(about, half: hint(45deg))
   p coincident nappe
@@ -50,10 +50,8 @@ component MemberBlank(generator: line, cone: line, ax: line, view: plane, design
   heel := std.Sphere(generator.p1, r: hint(design.cone_distance))
   span.toe coincident toe
   span.heel coincident heel
-  tip := OffsetCone(cone, ax, view, offset: design.addendum * normal_module, lean: 180deg,
-    normal_module: normal_module)
-  back := OffsetCone(cone, ax, view, offset: design.back * normal_module, lean: 0deg,
-    normal_module: normal_module)
+  tip := OffsetCone(cone, ax, view, offset: design.addendum * normal_module, lean: 180deg)
+  back := OffsetCone(cone, ax, view, offset: design.back * normal_module, lean: 0deg)
   region := { p | p inside tip.nappe; p inside heel; p outside toe; p outside back.nappe }
   material := solid(region)
   repeat design.ends_relieved {

@@ -10,7 +10,7 @@ use crate::brep::planar::{boolean, Op, Region, Seg};
 use crate::model::{RegionShape, RegionTerm, Sketch, SolidDef};
 use crate::space::{across, cross, dot, norm, normalised, scale, sub};
 use crate::syntax::Cmp;
-use std::f64::consts::{FRAC_PI_2, PI, TAU};
+use std::f64::consts::{FRAC_PI_2, PI};
 use std::rc::Rc;
 
 type V = [f64; 3];
@@ -104,17 +104,10 @@ fn fold(sk: &Sketch, solid: usize) -> Result<Meridian, String> {
         }
         RegionShape::Plane { from, .. } => vec![point(from)],
     };
-    // each term's low end as the drawing stands (an unknown's, solved); a cone's half is the
-    // unsigned angle its row reads through a cosine, so a half solved to `30deg + 360deg · k` or
-    // its mirror is the cone of 30deg
-    let unsigned = |a: f64| {
-        let a = a.rem_euclid(TAU);
-        if a > PI { TAU - a } else { a }
-    };
-    let lows = terms.iter().map(|t| {
-        let v = t.lo.value(sk).map_err(|m| format!("{}: {m}", s.name))?;
-        Ok(if matches!(t.shape, RegionShape::Cone { .. }) { unsigned(v) } else { v })
-    }).collect::<Result<Vec<f64>, String>>()?;
+    // each term's low end as the drawing stands (an unknown's, solved; a cone's half within the
+    // half turn its row reads, `expr::sync_free`)
+    let lows = terms.iter().map(|t| t.lo.value(sk).map_err(|m| format!("{}: {m}", s.name)))
+        .collect::<Result<Vec<f64>, String>>()?;
     // how far everything stands from the origin, for the tolerances and the box
     let mut size: f64 = 1.0;
     for (t, lo) in terms.iter().zip(&lows) {

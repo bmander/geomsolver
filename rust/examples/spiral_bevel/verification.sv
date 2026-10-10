@@ -4,10 +4,10 @@
 // trimmed to the member's limits and bounded by one face loop.
 
 // A generated surface's material: within the tip cone and the heel sphere, outside the root
-// cone and the toe sphere.
+// cone and the toe sphere (`limits` a member's, blank/limits.sv).
 component ToothRegion(source: envelope, limits: group) {
-  bounded := patch(source, inside: limits.tip, inside: limits.heel,
-                   outside: limits.root, outside: limits.toe)
+  bounded := patch(source, inside: limits.tip.wall.solid, inside: limits.heel.wall.solid,
+                   outside: limits.root.wall.solid, outside: limits.toe.wall.solid)
 }
 
 // Where `wall` meets a member's toe and heel spheres.
@@ -63,10 +63,6 @@ component ReferenceFaces(refs: group, pinion_limits: group, gear_limits: group) 
 
   pinion_ends := BlankEnds(pinion_limits)
   gear_ends := BlankEnds(gear_limits)
-  pinion_trims := {tip: pinion_limits.tip.wall.solid, heel: pinion_limits.heel.wall.solid,
-    root: pinion_limits.root.wall.solid, toe: pinion_limits.toe.wall.solid}
-  gear_trims := {tip: gear_limits.tip.wall.solid, heel: gear_limits.heel.wall.solid,
-    root: gear_limits.root.wall.solid, toe: gear_limits.toe.wall.solid}
 
   // One envelope per edge of each crown section, copy k on the profile's k-th edge: the edge's
   // crown surface over the semicircle holding the trace (in N the trace stands at 180deg),
@@ -75,19 +71,19 @@ component ReferenceFaces(refs: group, pinion_limits: group, gear_limits: group) 
     pinion := surface(refs.tooth.crown, e, from: 90deg, to: 270deg)
     pinion_envelope := envelope(pinion, under: refs.generation.pinion_generation,
       from: -roll_span, to: roll_span)
-    pinion_region := ToothRegion(pinion_envelope, limits: pinion_trims)
+    pinion_region := ToothRegion(pinion_envelope, limits: pinion_limits)
   }
   repeat e in refs.mate.outer.profile {
     gear_outer := surface(refs.mate.outer_crown, e, from: 90deg, to: 270deg)
     gear_outer_envelope := envelope(gear_outer, under: refs.generation.gear_generation,
       from: -roll_span, to: roll_span)
-    gear_outer_region := ToothRegion(gear_outer_envelope, limits: gear_trims)
+    gear_outer_region := ToothRegion(gear_outer_envelope, limits: gear_limits)
   }
   repeat e in refs.mate.inner.profile {
     gear_inner := surface(refs.mate.inner_crown, e, from: 90deg, to: 270deg)
     gear_inner_envelope := envelope(gear_inner, under: refs.generation.gear_generation,
       from: -roll_span, to: roll_span)
-    gear_inner_region := ToothRegion(gear_inner_envelope, limits: gear_trims)
+    gear_inner_region := ToothRegion(gear_inner_envelope, limits: gear_limits)
   }
 
   // Each section's edges by where they stand in its walk after the base: the tooth's run

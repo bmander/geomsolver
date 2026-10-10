@@ -25,6 +25,16 @@ enum Meridian {
     Round { center: V, a: V, b: V, sweep: f64 },
 }
 
+impl Meridian {
+    /// An arc of radius `r` about `center`, from `start` counter-clockwise through `sweep` in the
+    /// plane whose directions are `u` and `v`.
+    fn round(center: V,u: V,v: V,r: f64,start: f64,sweep: f64) -> Meridian {
+        let (s,c) = start.dsin_cos();
+        let at = |x: f64,y: f64| add(scale(u,x),scale(v,y));
+        Meridian::Round { center,a: at(r*c,r*s),b: at(-r*s,r*c),sweep }
+    }
+}
+
 /// A snapshot of one named side of a revolution. `u` traverses the source edge from
 /// 0 to 1; `v` traverses the declared revolution from 0 to 1. A named angular span
 /// restricts this original chart; `domain()` gives its retained bounds. Tangents follow the source
@@ -124,7 +134,6 @@ impl RevolvedSurface {
             sk.basis(p as usize)
         } else { Basis::page() };
         let lift = |q: (f64,f64)| basis.lift(q.0,q.1);
-        let vector = |q: (f64,f64)| add(scale(basis.u,q.0),scale(basis.v,q.1));
         let axis = sk.lines.get(*axis as usize).ok_or("no revolution axis")?;
         let origin = lift(sk.point_xy(axis.p1 as usize));
         let delta = sub(lift(sk.point_xy(axis.p2 as usize)),origin);
@@ -149,9 +158,7 @@ impl RevolvedSurface {
                 if !r.is_finite() || r <= 0. || !sweep.is_finite() || sweep <= 0. {
                     return Err("a round profile edge needs positive finite radius and sweep".into());
                 }
-                let (s,c) = start.dsin_cos();
-                Meridian::Round { center: lift(sk.point_xy(center as usize)),
-                    a: vector((r*c,r*s)),b: vector((-r*s,r*c)),sweep }
+                Meridian::round(lift(sk.point_xy(center as usize)),basis.u,basis.v,r,start,sweep)
             }
             _ => return Err("exact revolved patches currently require lines, arcs or circles".into()),
         };
@@ -164,26 +171,23 @@ impl RevolvedSurface {
     }
 
     /// A region solid's faces (§6.21): each step of its meridian turned once about its axis,
-    /// named by the term it came from — and whether it is a line, which on the axis turns to no
-    /// face.
-    pub(crate) fn of_meridian(m: &super::region::Meridian,solid: &str) -> Vec<(Self,bool)> {
+    /// named by the term it came from — but a line on the axis, which turns to no face.
+    pub(crate) fn of_meridian(m: &super::region::Meridian,solid: &str) -> Vec<Self> {
         use crate::brep::planar::Seg;
-        let at = |q: [f64;2]| add(m.origin,add(scale(m.seam,q[0]),scale(m.axis,q[1])));
-        let vector = |q: [f64;2]| add(scale(m.seam,q[0]),scale(m.axis,q[1]));
-        m.region.loops.iter().flatten().map(|step| {
+        let basis = Basis { u: m.seam,v: m.axis,o: m.origin };
+        let at = |q: [f64;2]| basis.lift(q[0],q[1]);
+        let on_axis = |q: [f64;2]| q[0].abs() <= crate::solid::cad::AXIS_TOLERANCE;
+        m.region.loops.iter().flatten().filter_map(|step| {
             let meridian = match step.seg {
+                Seg::Line {a,b} if on_axis(a) && on_axis(b) => return None,
                 Seg::Line {a,b} => Meridian::Line {start: at(a),delta: sub(at(b),at(a))},
                 // a round edge runs counter-clockwise from its start
-                Seg::Arc {c,r,a0,sweep} => {
-                    let start = if sweep < 0. { a0+sweep } else { a0 };
-                    let (s,co) = start.dsin_cos();
-                    Meridian::Round {center: at(c),a: vector([r*co,r*s]),b: vector([-r*s,r*co]),
-                        sweep: sweep.abs()}
-                }
+                Seg::Arc {c,r,a0,sweep} => Meridian::round(at(c),m.seam,m.axis,r,
+                    if sweep < 0. { a0+sweep } else { a0 },sweep.abs()),
             };
             let name = format!("{solid}.{}",m.name(step.tag));
-            (Self {name,meridian,origin: m.origin,axis: m.axis,sweep: std::f64::consts::TAU,
-                v_domain: [0.,1.]},matches!(step.seg,Seg::Line {..}))
+            Some(Self {name,meridian,origin: m.origin,axis: m.axis,sweep: std::f64::consts::TAU,
+                v_domain: [0.,1.]})
         }).collect()
     }
 

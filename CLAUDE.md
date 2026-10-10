@@ -184,10 +184,12 @@ irrational place; `Expansion::probes` → elaboration's `relations::Probes`) and
 R`; `constrain` takes every bound landing on a probe as a `RegionTerm` instead of a row
 (`probe_of`, `region_term`: by kind — `Distance(3)` a ball, `PointLine(Distance|3)` a cylinder,
 `Angle3` from a line's start a cone, an `Ordinate` along a plane's `n` a half-space; numbers by
-`term_number`: stated, or affine in one unknown read when evaluated, a cone's half folded
-unsigned), and `build_solid` moves them into the solid and holds the probe. `solid::region::meridian` folds the terms' (r, z) regions in a box by
-`brep::planar::boolean` (coaxial, bounded, nonempty, else refused where evaluated), memoised
-against `solid::reads` (`Sketch::meridian_cache`); every evaluator reads it — the recipe a `revolve`
+`term_number`: stated, or affine in one unknown read when evaluated; an angle unknown read only
+as unsigned, a cone's half, is kept within a half turn by `expr::sync_free`), and `build_solid`
+moves them into the solid and holds the probe. `solid::region::meridian` folds the terms' (r, z)
+regions in a box by `brep::planar::boolean` (coaxial, bounded, nonempty, else refused where
+evaluated), memoised against `solid::reads` (`Sketch::meridian_cache`); every evaluator reads it —
+the recipe a `revolve`
 (`recipe::region_profile`, `Profile::to_json`), the field `RevolvedRegion::of_meridian` (also
 `read`, so patches trim by it), facets `region::face_polys` turned by `primitive::revolve`,
 admission `Turns::Line`/`Ball` and `tool()` — its loops `Region::outer_first`, a ball's

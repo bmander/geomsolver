@@ -9,6 +9,14 @@ pub fn project() -> PathBuf { PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..
 /// The pair's entry document, `gears.sv`.
 pub fn source() -> String { std::fs::read_to_string(project().join("gears.sv")).unwrap() }
 
+/// One of the project's documents (`gears.sv`, `pair.sv`) read with its modules beside it, the
+/// configuration module replaced by `configuration`.
+pub fn read_file(file: &str,configuration: &str) -> program::Elaborated {
+    let text = std::fs::read_to_string(project().join(file)).unwrap();
+    crate::read_beside(&text,&project(),&mut |name,text|
+        if name == "configuration" { configuration.to_string() } else { text })
+}
+
 /// One of the project's modules (a dotted name in a subdirectory), or the library's.
 pub fn module(name: &str) -> Option<String> { crate::module(&project(),name) }
 

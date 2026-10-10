@@ -238,11 +238,7 @@ fn the_end_relief_chamfers_each_tip_corner() {
         let blank = |p| value(&region,p);
         // the tip cone's meridian in the member's axial view, from its apex through `p`
         let (tip_apex,tip_p) = (world(&format!("{limits}.tip.apex")),world(&format!("{limits}.tip.p")));
-        let off_tip = |p: [f64;3]| {
-            let (d,w) = (sub(tip_p,tip_apex),sub(p,tip_apex));
-            let c = [d[1]*w[2]-d[2]*w[1],d[2]*w[0]-d[0]*w[2],d[0]*w[1]-d[1]*w[0]];
-            (c[0]*c[0]+c[1]*c[1]+c[2]*c[2]).sqrt()/dist(tip_p,tip_apex)
-        };
+        let off_tip = |p: [f64;3]| crate::common::off_line(p,tip_apex,sub(tip_p,tip_apex));
         for (end,inward) in [("toe",1.),("heel",-1.)] {
             let at = |point: &str| world(&copied(&limits,end,point));
             let (corner,along,down) = (at("corner"),at("along_tip"),at("down_end"));
