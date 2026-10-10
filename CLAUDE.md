@@ -1531,6 +1531,19 @@ Conventions:
   smallest bounded loop holding the place is the outer, other pieces' outlines inside it (not
   inside one another) its holes; a loop along an edge twice is refused.  `region::written` names
   it by the source.  `tests/regions.rs` is the gate.
+- **Extrude** (#162 F2): the `extrude` tool (`u`) washes the region under the pointer
+  (`SketchView.hoverRegion`, `regionAt`) and a click writes the face, the solid at a round
+  default depth (`set_off`) and — with a body selected — `union`, or with ⌥ `cut`, or with ⌥⇧
+  `through:` + `cut`, as one splice and one undo step (`edit::extrude`).  The new solid is then
+  **sized** (`SketchView.liveExtent`, carried across an edit by the solid's name): typed in the
+  number box at its arrow (`dimbox`'s `NumberBox`, which dimensions use too) or dragged by the
+  arrow the eye sees along its face's normal (`workspace::extrude_handle`, no tip seen down the
+  normal; `extent_at` reading the drag).  **Which way it runs is the core's** (`model::Way`:
+  behind, `depth: d`; front, `from: 0, to: d`; both, `from: -d/2, to: d/2`, ⇧): the drag previews
+  by `Sketch::set_prism(i, way, d)`, which bumps `shape_epoch` (the box re-cuts objects on it,
+  gesture or no), and writes once at release through `edit::set_sweep` with
+  `SolidSweep::thick(way, text)` (the bracket list replaced, `checked` as every gesture edit),
+  taken without an undo push so it joins the click's step.  `tests/extrude.rs` is the gate.
 - **A chain is a named traversal** (§6.6; issue #49, item 3). `profile := line -> … -> close`
   records a `NamedChain` beside the usual desugared declarations and constraints. The flattener
   scopes the binding and its links like ordinary component members; edges stay `boss.ab`, the

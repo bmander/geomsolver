@@ -40,7 +40,7 @@ mod profile;
 mod primitive;
 mod document;
 pub use profile::{FacePoly,face_poly};
-pub(crate) use profile::ring_area;
+pub(crate) use profile::{ring_area, ring_centroid};
 pub(crate) use section::inside_ring;
 use profile::loop_poly;
 pub use primitive::{prism,revolve};

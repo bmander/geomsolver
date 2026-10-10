@@ -35,7 +35,7 @@ pub use curves::{CURVE_STEPS, CurveDef, CurveBody, CurveE, Extremal, Home, Trim,
 pub use spatial::{
     FaceLoop, FaceSupport, FaceE, Length, SolidRequirement, SolidClaim, SolidBearing, Sweep,
     DerivedE, Extent, Sense, SolidDef, SolidE, SeamE, EdgeE, VertexE, PatchE, EnvelopeE, SurfaceE,
-    RegionShape, RegionTerm,
+    RegionShape, RegionTerm, Way,
     MotionDef, MotionE,
 };
 pub use construction::{ThreePointArc, three_point_arc};
@@ -193,6 +193,10 @@ pub struct Sketch {
     /// against it.  Geometry moves every frame and presentation almost never does; the counter
     /// is what lets the second be read at the second's rate.
     pub style_epoch: u32,
+    /// Bumped whenever a solid's shape is changed in place — an extrusion being sized
+    /// (`set_prism`) — which neither re-elaborates nor moves a parameter, so a binding caching a
+    /// mesh keys on it too.
+    pub shape_epoch: u32,
     next_cid: u32,
 }
 

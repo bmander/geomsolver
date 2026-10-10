@@ -329,3 +329,24 @@ pub(crate) fn ring_area(pts: &[(f64, f64)]) -> f64 {
     }
     a / 2.0
 }
+
+/// A closed ring's area centroid, measured about its first point as `ring_area` is, or the mean
+/// of its corners where it encloses nothing.
+pub(crate) fn ring_centroid(pts: &[(f64, f64)]) -> (f64, f64) {
+    let n = pts.len();
+    let Some(&(ox, oy)) = pts.first() else { return (0.0, 0.0) };
+    let (mut a, mut x, mut y) = (0.0, 0.0, 0.0);
+    for i in 0..n {
+        let (x0, y0) = (pts[i].0 - ox, pts[i].1 - oy);
+        let (x1, y1) = (pts[(i + 1) % n].0 - ox, pts[(i + 1) % n].1 - oy);
+        let w = x0 * y1 - x1 * y0;
+        a += w;
+        x += (x0 + x1) * w;
+        y += (y0 + y1) * w;
+    }
+    if a != 0.0 {
+        return (ox + x / (3.0 * a), oy + y / (3.0 * a));
+    }
+    let k = n as f64;
+    (pts.iter().map(|p| p.0).sum::<f64>() / k, pts.iter().map(|p| p.1).sum::<f64>() / k)
+}

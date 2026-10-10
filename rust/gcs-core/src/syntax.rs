@@ -443,6 +443,11 @@ pub enum BodyWord {
 }
 
 impl BodyWord {
+    /// The word as written, or `None` for one that is not a body word.
+    pub fn parse(w: &str) -> Option<BodyWord> {
+        [BodyWord::Union, BodyWord::Cut, BodyWord::Bound].into_iter().find(|b| b.as_str() == w)
+    }
+
     pub fn as_str(self) -> &'static str {
         match self {
             BodyWord::Union => "union",
