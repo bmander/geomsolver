@@ -3,7 +3,6 @@
  * the fit tool makes nothing until it finishes and takes its own there. */
 import * as C from '../core/constraints.js';
 import { Line, Plane, Point, distanceBetween, onRadius } from '../core/model.js';
-import { PICK_PX } from './view.js';
 import type { Place, SketchView, Tool } from './view.js';
 
 export function setTool(v: SketchView, tool: Tool): void {
@@ -288,7 +287,7 @@ export function toolClick(v: SketchView, sp: [number, number]): void {
     const place = pickPlace(v, sp);
     const last = v.pendingFit[v.pendingFit.length - 1];
     const near = last
-      && Math.hypot(place.at[0] - last.at[0], place.at[1] - last.at[1]) < v.world(PICK_PX);
+      && Math.hypot(place.at[0] - last.at[0], place.at[1] - last.at[1]) < v.world(v.pickPx);
     if (near) {
       finishSplineFit(v);
       return;

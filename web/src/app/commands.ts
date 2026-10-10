@@ -15,11 +15,11 @@ import type { DimAlt } from './view.js';
 /* constraints whose arguments are just entities: (label, class, shortcut).  What each wants
  * selected is not restated here — it is counted off the class's own spec (`wanted`), so a kind
  * added to the language is one filter in `sel()` and not a column in every table. */
-type Simple = [string, C.ConstraintCtor, string?];
+type Simple = [string, C.ConstraintCtor, string?, string?];
 const SIMPLE: Simple[] = [
-  ['Parallel', C.Parallel, 'b'],
-  ['Perpendicular', C.Perpendicular, '⇧l'],
-  ['Midpoint', C.Midpoint, '⇧m'],
+  ['Parallel', C.Parallel, 'b', 'Orient'],
+  ['Perpendicular', C.Perpendicular, '⇧l', 'Orient'],
+  ['Midpoint', C.Midpoint, '⇧m', 'Match'],
 ];
 /* Level and plumb read the selection too.  A pair of points says exactly what a line through
  * them would — that the segment between them is level — and wanting that without drawing the
@@ -57,30 +57,32 @@ const INCIDENCE: Simple[] = [
   // a curve written in the language takes the same contact, owning its own parameter
   ['On curve', C.PointOnCurve],
 ];
-/* The constraints bar, in an order that interleaves the dimensioned constraints with the
- * entity-only ones.  `key` is both the chip printed on the button and the token the keyboard
- * handler matches — '⇧l' prints as ⇧L and fires on shift-L — so a button and its shortcut
- * cannot drift apart. */
+/* The constraints bar, gathered by topic — what folds together when the bar runs out of room
+ * (`ui::fitBar`): what touches, the number, which way, what matches, and the hold.  `key` is
+ * both the chip printed on the button and the token the keyboard handler matches — '⇧l' prints
+ * as ⇧L and fires on shift-L — so a button and its shortcut cannot drift apart. */
 export const CONSTRAINT_BUTTONS: ToolbarButton[] = [
-  { label: 'Coincident', key: 'i', onClick: () => cCoincident(),
+  { label: 'Coincident', key: 'i', topic: 'Touch', onClick: () => cCoincident(),
     title: 'Two points meet · a point on a line · a point on a circle, arc or curve' },
+  { label: 'Tangent', key: 't', topic: 'Touch', onClick: () => cTangent(),
+    title: 'A line or a circle tangent to a circle/arc · a line tangent to a curve '
+         + '· a circle taking a curve\'s own radius where it touches' },
+  { label: 'Project', key: 'j', topic: 'Touch', onClick: () => cProject(),
+    title: 'Two points, each drawn in a view, are images of one point in space: what they '
+         + 'share along the fold line between their views agrees' },
   { label: 'Dimension', key: 'd', onClick: () => cDimension(),
     title: 'Put a number on the selection, then place it and type · a length, a radius, an '
          + 'offset, a ring · on two points, above them is the run and beside them the rise '
          + '· two lines take their gap when parallel and their angle when not' },
-  { label: 'Horizontal', key: 'h', onClick: () => cLevel('Horizontal'),
+  { label: 'Horizontal', key: 'h', topic: 'Orient', onClick: () => cLevel('Horizontal'),
     title: 'Level: one or more lines, or a pair of points with no line between them' },
-  { label: 'Vertical', key: 'v', onClick: () => cLevel('Vertical'),
+  { label: 'Vertical', key: 'v', topic: 'Orient', onClick: () => cLevel('Vertical'),
     title: 'Plumb: one or more lines, or a pair of points with no line between them' },
-  ...SIMPLE.map((c): ToolbarButton => ({ label: c[0], key: c[2], onClick: () => applySimple(c) })),
-  { label: 'Equal', key: 'e', onClick: () => cEqual() },
-  { label: 'Tangent', key: 't', onClick: () => cTangent(),
-    title: 'A line or a circle tangent to a circle/arc · a line tangent to a curve '
-         + '· a circle taking a curve\'s own radius where it touches' },
-  { label: 'Symmetric', key: '⇧q', onClick: () => cSymmetric() },
-  { label: 'Project', key: 'j', onClick: () => cProject(),
-    title: 'Two points, each drawn in a view, are images of one point in space: what they '
-         + 'share along the fold line between their views agrees' },
+  ...SIMPLE.map((c): ToolbarButton => ({
+    label: c[0], key: c[2], topic: c[3], onClick: () => applySimple(c),
+  })),
+  { label: 'Equal', key: 'e', topic: 'Match', onClick: () => cEqual() },
+  { label: 'Symmetric', key: '⇧q', topic: 'Match', onClick: () => cSymmetric() },
   { label: 'Fix', key: 'f', onClick: () => view.toggleFixSelected() },
 ];
 

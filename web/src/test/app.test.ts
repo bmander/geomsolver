@@ -251,6 +251,23 @@ test('a tap is a click', () => {
   assert.equal(view.gesturePointer, null);
 });
 
+test('a tap reaches as far as a fingertip covers, and a cursor only its own tolerance', () => {
+  const sk = pinnedApex();
+  const view = viewOn(sk);
+  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  const apex = view.sketch.points[2];
+  const [sx, sy] = view.w2s(...apex.xy);
+  const near = sy - 16;                       // past a cursor's 8 px, inside a finger's 22
+  cv.fire('pointerdown', pointer(sx, near, { pointerType: 'mouse' }));
+  cv.fire('pointerup', pointer(sx, near, { pointerType: 'mouse' }));
+  assert.deepEqual(view.selected, [], 'a click that far off picks nothing');
+  cv.fire('pointerdown', finger(sx, near, 1));
+  cv.fire('pointerup', finger(sx, near, 1));
+  assert.deepEqual(view.selected, [apex], 'a tap there lands on the point');
+  cv.fire('pointermove', pointer(sx, near, { pointerType: 'mouse', buttons: 0 }));
+  assert.equal(view.pickPx, 8, 'and the mouse coming back takes its own tolerance back');
+});
+
 test('a trackpad pinches by ctrl and its wheel, and pans by scrolling', () => {
   const view = viewOn(pinnedApex());
   const cv = view.canvas as ReturnType<typeof fakeCanvas>;

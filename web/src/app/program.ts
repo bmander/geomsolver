@@ -36,6 +36,11 @@ let typed = false;
 const filePicker = document.getElementById('program-file') as HTMLSelectElement;
 const fileBar = document.getElementById('program-files') as HTMLElement;
 const programName = document.getElementById('program-name')!;
+const compileButton = document.getElementById('program-compile') as HTMLButtonElement;
+const foldButton = document.getElementById('ppanel-fold') as HTMLButtonElement;
+/** Narrow enough that the program is a drawer above the footer rather than a column beside the
+ *  drawing — the stylesheet's own breakpoint, asked of the same media query. */
+const narrow = matchMedia('(max-width: 720px)');
 const explorer = new ProjectExplorer(document.getElementById('project-pane')!,
   document.getElementById('project-tree')!, document.getElementById('project-title')!,
   (p) => void chooseFile(p));
@@ -288,6 +293,7 @@ export function refreshProgram(): void {
   programName.textContent = activeFile;
   const imported = !project && activeFile !== '';
   ptext.readOnly = imported;
+  compileButton.disabled = imported;
   ptext.setAttribute('aria-label', project ? activeFile
     : activeFile ? modules.pathOf(activeFile) : 'Main drawing source');
   markStatement();              // the pick may have moved even where the text has not
@@ -338,7 +344,8 @@ export function applyProgram(): boolean {
   } else {
     toast('program applied');
   }
-  view.pushUndo(undo);
+  // compiling the text the drawing already came from is a fresh solve, and nothing to undo
+  if (text !== undo) view.pushUndo(undo);
   typed = false;
   shown = text;
   ppanel.classList.remove('dirty');
@@ -468,10 +475,48 @@ function lineAt(off: number): number {
   return line;
 }
 
+/** The drawer a narrow screen keeps the program in, above the footer: folded to its head it
+ *  leaves the drawing the screen, and it opens folded there.  On a wide one the panel is the
+ *  column beside the drawing and the head folds nothing.  The canvas is watched by a
+ *  `ResizeObserver` (`main.ts`), so the view hears the room it gained or lost. */
+function bindDrawer(): void {
+  const fold = (folded: boolean): void => {
+    ppanel.classList.toggle('folded', folded);
+    foldButton.setAttribute('aria-expanded', String(!folded));
+    foldButton.title = folded ? 'Show the program' : 'Fold the program away';
+  };
+  fold(narrow.matches);
+  foldButton.addEventListener('click', () => {
+    if (!narrow.matches) return;
+    const folding = !ppanel.classList.contains('folded');
+    // a draft folded away is applied as a blur would apply it: out of sight is not undone
+    if (folding && typed) applyProgram();
+    fold(folding);
+  });
+}
+
+/** The compile button: what ⌘↵ does, for a screen with no keyboard to say it on.  Pressing it
+ *  keeps the focus where it was, so a draft is applied once — by the click, not first by the
+ *  blur — and a finger's press then puts the keyboard away so the drawing it made shows. */
+function bindCompile(): void {
+  let finger = false;
+  compileButton.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    finger = e.pointerType === 'touch';
+  });
+  compileButton.addEventListener('click', () => {
+    applyProgram();
+    if (finger && document.activeElement === ptext) ptext.blur();
+    finger = false;
+  });
+}
+
 /** Wire the box up.  Called once, from `main`, so this module is reached the way `lists` is and
  *  the view never has to import the shell. */
 export function bindProgramPanel(): void {
   bindPartition();
+  bindDrawer();
+  bindCompile();
   document.getElementById('drawing-render')!.addEventListener('click', () => applyProgram());
   filePicker.addEventListener('change', () => void chooseFile(filePicker.value));
   ptext.addEventListener('input', () => {
