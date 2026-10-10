@@ -6,8 +6,9 @@
 // along the rod balances. It comes away from the rod at the angle it met it, as light leaves a
 // mirror, and the report says the shape is a minimum.
 //
-// Drag `b` and the ring slides along the rod. Raise the rod until the rope would cross it, and
-// the ring slides to the crossing, holding nothing: the rope hangs as if it were not there.
+// Drag `b`, or either end of the rod, and the ring slides along it: tilt the rod and the rope
+// pulls the ring up it. Raise the rod until the rope would cross it, and the ring slides to the
+// crossing, holding nothing: the rope hangs as if it were not there.
 unit mm
 use std
 
@@ -15,10 +16,8 @@ in std.front {
   a := point
   b := point hint((100, 0))
   fix((0mm, 0mm)) a
-  r0 := point
-  r1 := point
-  fix((0mm, -68mm)) r0
-  fix((100mm, -52mm)) r1
+  r0 := point hint((0, -68))
+  r1 := point hint((100, -52))
   rod := line(r0, r1)
   rope := curve(a, b)
   length(160mm) rope

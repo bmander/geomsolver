@@ -90,8 +90,9 @@ pub enum CurveBody {
     Extremal(Extremal),
 }
 
-/// A free curve's definition: its energy's Lagrangian — `None` until an energy is stated — and how
-/// many pegs its curves pass and held lines they touch, which set its contacts' constant widths.
+/// A free curve's definition: its energy's Lagrangian — `None` until an energy is stated — how many
+/// pegs its curves pass, which sets its contacts' constant widths, and how many lines they touch,
+/// which sets their columns.
 #[derive(Clone, Debug)]
 pub struct Extremal {
     pub lag: Option<crate::extremal::Lagrangian>,
@@ -100,17 +101,15 @@ pub struct Extremal {
 }
 
 impl Extremal {
-    /// A contact's constants on this definition: the Lagrangian, then the pegs and the slides
-    /// (`extremal::write`).
+    /// A contact's constants on this definition: the Lagrangian, then the pegs and how many
+    /// slides (`extremal::write`).
     pub fn n_const(&self) -> usize {
-        self.lag
-            .as_ref()
-            .map_or(5 + 2 * self.pegs + 4 * self.slides, |l| crate::extremal::width(l, self.pegs, self.slides))
+        self.lag.as_ref().map_or(5 + 2 * self.pegs, |l| crate::extremal::width(l, self.pegs))
     }
 }
 
 /// A free curve's definition under `name` (`variational::key_of`): over its two ends, swept in
-/// `u` from 0 to 1, its columns the ends and its length.
+/// `u` from 0 to 1, its columns the ends, its length and each touched line's two points.
 pub fn extremal_def(name: String, lag: Option<crate::extremal::Lagrangian>, pegs: usize, slides: usize) -> CurveDef {
     CurveDef {
         name,
@@ -121,7 +120,11 @@ pub fn extremal_def(name: String, lag: Option<crate::extremal::Lagrangian>, pegs
         values: Vec::new(),
         param: "u".into(),
         turns: false,
-        vars: ["u", "a.x", "a.y", "b.x", "b.y", "length"].map(String::from).to_vec(),
+        vars: ["u", "a.x", "a.y", "b.x", "b.y", "length"]
+            .map(String::from)
+            .into_iter()
+            .chain((0..slides).flat_map(|k| ["p1.x", "p1.y", "p2.x", "p2.y"].map(|c| format!("line{k}.{c}"))))
+            .collect(),
         body: CurveBody::Extremal(Extremal { lag, pegs, slides }),
         pose_of: Vec::new(),
     }
@@ -165,7 +168,8 @@ pub struct CurveE {
     /// The held points a free curve passes — its pegs, in its problem — as
     /// `Sketch::settle_variational` last read them.
     pub pegs: Vec<u32>,
-    /// The held lines it touches where it chooses (`rope touches floor`, #149) — its slides.
+    /// The lines it touches where it chooses (`rope touches floor`, #149) — its slides, whose
+    /// points are its columns after its length.
     pub slides: Vec<u32>,
 }
 
@@ -257,32 +261,25 @@ impl Sketch {
     }
 
     /// A free curve's problem as its contacts' constants carry it (`extremal::write`): its
-    /// Lagrangian, where its pegs are, and its slides' lines.
+    /// Lagrangian, where its pegs are, and how many lines it touches.
     pub fn extremal_consts(&self, i: usize) -> Option<Vec<f64>> {
         let lag = self.extremal_lagrangian(i)?;
         let pegs: Vec<[f64; 2]> = self.curves[i].pegs.iter().map(|&p| self.point_xy(p as usize).into()).collect();
-        let slides: Vec<[f64; 4]> = self.curves[i].slides.iter().map(|&l| self.slide_line(l)).collect();
         let mut k = Vec::new();
-        crate::extremal::write(lag, &pegs, &slides, &mut k);
+        crate::extremal::write(lag, &pegs, self.curves[i].slides.len(), &mut k);
         Some(k)
     }
 
-    /// Line `l` as a slide reads it: its start and unit direction (`[NaN; 4]` where it has none).
-    pub fn slide_line(&self, l: u32) -> [f64; 4] {
-        let ln = &self.lines[l as usize];
-        let (a, b) = (self.point_xy(ln.p1 as usize), self.point_xy(ln.p2 as usize));
-        let n = (b.0 - a.0).dhypot(b.1 - a.1);
-        if !(n > 0.0) {
-            return [f64::NAN; 4];
-        }
-        [a.0, a.1, (b.0 - a.0) / n, (b.1 - a.1) / n]
+    /// A free curve's ends as its problem reads them, from its columns now.
+    pub fn extremal_ends(&self, i: usize) -> crate::extremal::Ends {
+        crate::extremal::Ends::of(&self.curve_vars(i, 0.0)[1..], self.curves[i].slides.len())
     }
 
     /// A free curve's shape where its ends and length are now, through its pegs — the one solve
     /// its contacts and its drawing share (`extremal::shape_for`) — with its Lagrangian.
     pub fn curve_shape(&self, i: usize) -> Option<(crate::extremal::Lagrangian, crate::extremal::Shape)> {
         let k = self.extremal_consts(i)?;
-        crate::extremal::shape_for(&k, &crate::extremal::Ends::of(&self.curve_vars(i, 0.0)[1..]))
+        crate::extremal::shape_for(&k, &self.extremal_ends(i))
     }
 
     /// The interval a curve is drawn over: the one written, or for a trim the parameters of its
@@ -439,7 +436,6 @@ impl Sketch {
             let (x, y) = self.point_xy(p as usize);
             [x, y]
         }));
-        key.extend(self.curves[i].slides.iter().flat_map(|&l| self.slide_line(l)));
         key.extend(self.curve_pose(i).unwrap_or_default());
         if let Some((k, poly)) = self.polyline_cache.borrow().get(&i) {
             if *k == key {

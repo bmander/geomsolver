@@ -2952,8 +2952,17 @@ impl Constraint {
             // the curve's own number
             CKind::CurveLength => sk.curves[e(0).i()].length.into_iter().collect(),
             CKind::Stationary => crate::variational::columns(sk, self.id),
-            // what its curve's problem reads: the curve's columns, and the line it presses
-            CKind::CurveTouchesLine => [sk.entity_params(e(0)), ln(1)].concat(),
+            // what its curve's problem reads: the curve's columns, the line's points among them
+            // once the curve has the slide
+            CKind::CurveTouchesLine => {
+                let mut v = sk.entity_params(e(0));
+                for p in ln(1) {
+                    if !v.contains(&p) {
+                        v.push(p);
+                    }
+                }
+                v
+            }
             // the centre, the two ends and the radius: the sweep is read off the ends, the
             // length is the radius times it
             CKind::ArcLength => {

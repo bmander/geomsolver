@@ -28,7 +28,7 @@ use crate::fmath::Det;
 use crate::constraints::{Arg, CKind, Constraint};
 use crate::expr::Ast;
 use crate::kernels::Kernel;
-use crate::model::{EntKind, Sketch};
+use crate::model::{EntKind, EntRef, Sketch};
 use std::collections::BTreeMap;
 
 /// What an integrand may read: the point, and the unit tangent there.
@@ -78,6 +78,10 @@ fn degree(body: &Ast, units: crate::units::Units) -> Result<u32, String> {
 pub fn maximizes(c: &Constraint) -> bool {
     matches!(c.args[4], Arg::Bool(true))
 }
+
+/// The most lines one free curve touches (`touches`): their points are its columns, four a line,
+/// after `u`, its ends and its length, and a kernel reads at most `tape::MAX_VARS` of them.
+pub const MAX_SLIDES: usize = (crate::tape::MAX_VARS - 6) / 4;
 
 /// The definition key an energy's Lagrangian is shared under: its terms as written, signed, and
 /// how many pegs its curves pass and lines they touch (which set its contacts' constant widths).
@@ -183,10 +187,14 @@ impl Sketch {
                         en.pegs.push((c.id, p.idx));
                     }
                 }
-                CKind::CurveTouchesLine if others_held => en.slides.push((c.id, c.args[1].ent().idx)),
+                // a line held or not: its points are the curve's columns, so the curve moves with
+                // it — up to what one kernel's columns hold
+                CKind::CurveTouchesLine if en.slides.len() < MAX_SLIDES => {
+                    en.slides.push((c.id, c.args[1].ent().idx))
+                }
                 CKind::CurveTouchesLine => faults.push((
                     c.id,
-                    "a free curve touches a held line, where the curve chooses: hold the line's ends".into(),
+                    format!("a free curve touches at most {MAX_SLIDES} lines where it chooses"),
                 )),
                 _ if others_held => pressing.push((c.id, e.i())),
                 _ => {}
@@ -320,11 +328,10 @@ impl Sketch {
             .map(|&i| {
                 let Some(l) = self.curves[i].length.and_then(col) else { return Some(false) };
                 let mut held = determined.clone();
-                for e in &self.curves[i].args {
-                    for p in self.entity_params(*e) {
-                        if let Some(c) = col(p) {
-                            held[c] = true;
-                        }
+                // its inputs: its ends, and the points of the lines it touches
+                for p in self.entity_params(EntRef::new(EntKind::Curve, i)) {
+                    if let Some(c) = col(p) {
+                        held[c] = true;
                     }
                 }
                 held[l] = false;
@@ -417,10 +424,10 @@ impl Sketch {
     /// by Illinois' regula falsi (`roots::bracketed_root`).
     fn stationary_length(&self, i: usize) -> Option<f64> {
         let k = self.extremal_consts(i)?;
-        let v = self.curve_vars(i, 0.0);
+        let at = self.extremal_ends(i);
         let chord = self.chord_through(i)?;
         let h_at = |len: f64| -> Option<f64> {
-            let ends = crate::extremal::Ends::of(&[v[1], v[2], v[3], v[4], len]);
+            let ends = crate::extremal::Ends { len, ..at.clone() };
             let (lag, sh) = crate::extremal::shape_for(&k, &ends)?;
             Some(crate::extremal::shoot::at(&lag, &sh, 1.0, false)?.point.h)
         };
@@ -480,7 +487,7 @@ pub fn pack(sk: &Sketch, cid: u32) -> Vec<f64> {
     sk.constraint(cid).and_then(|c| sk.extremal_consts(c.args[0].ent().i())).unwrap_or_default()
 }
 
-/// Its kernel: `H` at the curve's end over `[a, b, L]`, of the integrand's degree.
+/// Its kernel: `H` at the curve's end over `[a, b, L, lines…]`, of the integrand's degree.
 pub fn kernel(sk: &Sketch, cid: u32) -> Kernel {
     let curve = sk.constraint(cid).map(|c| c.args[0].ent().i());
     let degree = curve.and_then(|i| sk.energy_of(i)).map_or(1, |e| e.degree);
@@ -491,7 +498,7 @@ pub fn kernel(sk: &Sketch, cid: u32) -> Kernel {
     Kernel {
         name: "transversal",
         n_res: 1,
-        n_par: 5,
+        n_par: curve.map_or(5, |i| sk.entity_params(EntRef::new(EntKind::Curve, i)).len()),
         n_const,
         degree,
         res: crate::extremal::transversal_res,

@@ -225,10 +225,13 @@ one (`Energy::stationary`); else the length is `unsettled`, stated no row (one s
 ever longer ropes) and left a freedom, W114. A held row pressing a curve of held length that is not a peg is E040 (a corner,
 never a tangency); with the length free it is what sets it. **The corner on a held line is
 `rope touches rod`** (#149, `CKind::CurveTouchesLine`, `built`, 0 rows, refused a claim): a
-**slide** (`shoot::Stop::Slide { o, d }`, a peg is `Stop::Peg`; `CurveE::slides`,
-`Energy::slides`, `Sketch::slide_line`), its place on the line `σ` one more unknown of the BVP and
-`(λ⁺ − λ⁻)·d = 0` (no force along it) one more row; E040 where the line's ends are not held or the
-curve is not free. Never walked in from the corner-free shape touching a moved line (a fork:
+**slide** (`shoot::Stop::Slide(k)`, a peg is `Stop::Peg`; `CurveE::slides`, `Energy::slides`), its
+place on the line `σ` one more unknown of the BVP and `(λ⁺ − λ⁻)·d = 0` (no force along it) one
+more row. The line's two points are the curve's **columns** after its length (`entity_params`,
+`Ends::lines`, `extremal_def`'s `line{k}.p1.x`…; the constants carry only the count), the BVP's
+outer Jacobian carried through them (`turn`: `∂d/∂p₂ = (I − ddᵀ)/ℓ`), so a rod held or not is
+dragged and the rope follows; at most `variational::MAX_SLIDES` (2, `tape::MAX_VARS`) a curve, E040
+past it or where the curve is not free. Never walked in from the corner-free shape touching a moved line (a fork:
 sliding along the line and the curve are one motion there): `pressed` pins it as a peg at the
 foot of the free curve's nearest point, then `release` eases the force along the line it bore to
 none (`Problem::pull`). The verdict's Hessian takes `σ` (gradient the costate's jump along `d`);

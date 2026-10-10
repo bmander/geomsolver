@@ -264,8 +264,13 @@ impl Sketch {
                 }
                 // the numbers left unknown, once the expression graph has allocated them
                 v.extend(cv.unknowns.iter().filter_map(|n| self.free_vars.get(n).copied()));
-                // and a free curve's length, its own
+                // and a free curve's length, its own, then the points of the lines it touches
                 v.extend(cv.length);
+                for &l in &cv.slides {
+                    let ln = &self.lines[l as usize];
+                    v.extend(self.point_params(ln.p1 as usize));
+                    v.extend(self.point_params(ln.p2 as usize));
+                }
                 v
             }
         }
