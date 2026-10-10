@@ -126,3 +126,30 @@ fn two_cones_in_one_region() {
     let want = PI * 1000.0 * (t30 * t30 - t15 * t15) / 3.0;
     holds(&e, "lamp", want, &[[4.0, 0.0, 9.0]], &[[0.5, 0.0, 9.0], [7.0, 0.0, 9.0]]);
 }
+
+/// A region's number may be an unknown of the drawing, read once it is solved: a sphere whose
+/// radius the point stated on it sets — and refused where nothing sets it.
+#[test]
+fn a_region_reads_an_unknown_the_drawing_solves() {
+    let e = solved(&format!("{FRAME}q := point hint((4, 0, 3))\nfix((4, 0, 3)) q\n\
+                             big := std.Sphere(c, r: hint(2mm))\nq coincident big\n\
+                             ball := solid(big)\n"));
+    holds(&e, "ball", 4.0 / 3.0 * PI * 125.0, &[[4.5, 0.0, 0.0]], &[[5.5, 0.0, 0.0]]);
+    let e = solved(&format!("{FRAME}big := std.Sphere(c, r: hint(2mm))\nball := solid(big)\n"));
+    let m = gcs_core::solid::validate(&e.sketch, ent(&e, "ball").i()).expect_err("ball");
+    assert!(m.contains("nothing determines"), "{m}");
+}
+
+/// A cone's half left to the drawing reads within the half turn its angle row spans, however far
+/// past it the solve carries it: seeded at 400deg, the cone through a point 30deg off its axis is
+/// the 30deg cone, as an unknown of the drawing and as a solid.
+#[test]
+fn a_cones_unknown_half_reads_within_a_half_turn() {
+    let x = 10.0 * (30f64).to_radians().tan();
+    let e = solved(&format!("{FRAME}q := point hint(({x:.17}, 0, 10))\nfix(({x:.17}, 0, 10)) q\n\
+                             funnel := std.Cone(up, half: hint(400deg))\nq coincident funnel\n\
+                             cup := {{ p | p inside funnel; p inside lid }}\ncone := solid(cup)\n"));
+    let half = e.sketch.params[e.sketch.free_vars["funnel.half"] as usize].value;
+    assert!((half - 30.0).abs() < 1e-9, "{half}");
+    holds(&e, "cone", PI * x * x * 10.0 / 3.0, &[[0.0, 0.0, 5.0]], &[[4.0, 0.0, 5.0]]);
+}

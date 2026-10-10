@@ -9,6 +9,14 @@ pub fn project() -> PathBuf { PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..
 /// The pair's entry document, `gears.sv`.
 pub fn source() -> String { std::fs::read_to_string(project().join("gears.sv")).unwrap() }
 
+/// One of the project's documents (`gears.sv`, `pair.sv`) read with its modules beside it, the
+/// configuration module replaced by `configuration`.
+pub fn read_file(file: &str,configuration: &str) -> program::Elaborated {
+    let text = std::fs::read_to_string(project().join(file)).unwrap();
+    crate::read_beside(&text,&project(),&mut |name,text|
+        if name == "configuration" { configuration.to_string() } else { text })
+}
+
 /// One of the project's modules (a dotted name in a subdirectory), or the library's.
 pub fn module(name: &str) -> Option<String> { crate::module(&project(),name) }
 
@@ -66,15 +74,12 @@ pub fn one_space(text: &str) -> String {
     text.replace("repeat teeth as i {","repeat 1 as i {")
 }
 
-/// The `members` module with each member also publishing its blank (`blank`: the heel bounded
-/// by the tip, less the toe and the back) and `extra` after it. The member's own blank term
-/// gives up its instance name to the solid.
+/// The `members` module with each member also publishing its blank (`blank`: a body over the
+/// blank's region, `design.blank`) and `extra` after it.
 pub fn publish_blank(text: &str,extra: &str) -> String {
-    let member = "  body := solid(design.heel)\n  blank := blank.member.MemberBlank(body, design)\n";
-    assert!(text.contains(member),"the member's body is the heel under its blank term");
-    text.replace(member,&format!("  body := solid(design.heel)\n  \
-        body_blank := blank.member.MemberBlank(body, design)\n  construction blank := solid(design.heel)\n  \
-        published := blank.member.MemberBlank(blank, design)\n{extra}"))
+    let member = "  body := solid(design.blank)\n";
+    assert!(text.contains(member),"the member's body is its blank");
+    text.replace(member,&format!("{member}  construction blank := solid(design.blank)\n{extra}"))
 }
 
 /// The `design` module with each member's roll limit in degrees (`pinion_roll`, `gear_roll`).

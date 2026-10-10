@@ -111,13 +111,13 @@ fn the_over_and_under_determined_parts_stand_apart() {
 /// The configured hypoid's layout as recorded, with no backlash or tip relief; the relief's own
 /// geometry is `the_tip_relief_orders_whole`'s.
 #[test]
-fn the_hypoid_layout_is_118_blocks_13_deep() {
+fn the_hypoid_layout_is_94_blocks_13_deep() {
     let e = fixtures::gear::read_configured_with(&mut |name, text| fixtures::gear::design(name, text, 25., 12.5, 25.));
     let mut sys = System::new(&e.sketch);
     let order = sys.block_order();
-    assert_eq!((sys.hard_rows().len(), sys.n_free), (372, 372));
+    assert_eq!((sys.hard_rows().len(), sys.n_free), (324, 324));
     assert!(order.over_rows.is_empty() && order.under_cols.is_empty());
-    assert_eq!(order.blocks.len(), 118);
+    assert_eq!(order.blocks.len(), 94);
     assert_eq!(order.depth(), 13);
     let mut sizes = std::collections::BTreeMap::new();
     for b in &order.blocks {
@@ -125,7 +125,7 @@ fn the_hypoid_layout_is_118_blocks_13_deep() {
         *sizes.entry(b.rows.len()).or_insert(0) += 1;
     }
     // a plane's origin where its two axes meet is a block of three
-    let want = [(1, 18), (2, 69), (3, 15), (4, 6), (5, 4), (6, 1), (16, 3), (28, 1), (45, 1)];
+    let want = [(1, 22), (2, 33), (3, 27), (4, 2), (5, 4), (6, 1), (16, 3), (28, 1), (45, 1)];
     assert_eq!(sizes.into_iter().collect::<Vec<_>>(), want);
     // every block reads only the blocks before it: a column a block's rows touch that is not its
     // own is an earlier block's

@@ -1,6 +1,11 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.62 — October 2026**
+**Specification, Draft 0.63 — October 2026**
+
+**[0.63] A region's numbers may be the drawing's.** A region solid's bound may read an unknown of
+the drawing — a sphere's radius left for a point stated on it to set, a cone's half its
+generator's — and the solid reads it once the drawing is solved (§6.9). The hypoid's blank is
+stated so, sized by the layout it stands in.
 
 **[0.62] A region is a solid.** `blank := solid(R)`, `R` a set, is the solid of the points inside
 it: a ball, a shell, a cone met with a ball, the hypoid's blank — `{ p | p inside tip; p inside
@@ -1129,7 +1134,10 @@ half-plane through that axis, built exactly (planes, cylinders, cones, spheres, 
 judged where the solid is evaluated, on the solved drawing, as a face's loop is: a cylinder alone,
 a ball off the axis, or bounds with no point in common are refused there. A set whose body states
 anything but bounds (a disc's plane) is **E040**. A region solid is a solid like any: `cut`,
-`bound`, `union`, swept and placed.
+`bound`, `union`, swept and placed. **[0.63]** A bound's number may read one unknown of the drawing
+(`std.Sphere(c, r: hint(50mm))` with `q coincident` it): the solid reads it as solved, and refuses one
+nothing determines. A cone's half is the unsigned angle its row reads, so one solved past a half
+turn is the cone it reads as.
 
 **The brackets are what the thing is made of** (§4.3, §6.2), so the sweep stands in them beside the face: `from:`, `to:`, `depth:`, `through:`, `along:`, `about:`, `sweep:` and `sense:` are labels of the constructor and are neither seeds nor constraints. A mixture of sweep forms, a half-written prism (`from:` with no `to:`), `from:`/`to:` beside `depth:`, and `sweep:` or `sense:` with no `about:` are each refused where they are written, with the shapes a solid has.
 

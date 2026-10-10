@@ -42,6 +42,10 @@ component RackSection(lp: point, rp: point, design: group, normal_module: Length
   // Each flank a quarter of the backlash outside its shared line.
   lp distance(design.backlash / 4, side: left) inner
   rp distance(design.backlash / 4, side: left) outer
+  // The tip is a land: the rounds meeting in a point satisfy the section's rows too, and are
+  // not the section (§9.6). A hundredth of a module; the narrowest land, the configured
+  // hypoid's, is a sixth.
+  distance(>= 0.01 * design.module) tip
   rounding := crown.rounding.TipRounding(pitch, base, tip, outer_round, inner_round, design,
     normal_module: normal_module)
 }
@@ -51,7 +55,7 @@ preview {
   // The 24:48 pair's crown at module 2, symmetric, revolved about the page's y axis at eight
   // tenths of the cone distance; crown.svd draws it.
   pitch_radius := 0.8 * 2mm * hypot(24, 48) / 2
-  proportions := {pressure: 20deg, shift: 0deg,
+  proportions := {pressure: 20deg, shift: 0deg, module: 2mm,
                        base: 1, dedendum: 1, rounding: 0.3, backlash: 0mm}
   in std.front {
     lp := point

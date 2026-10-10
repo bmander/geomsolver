@@ -382,6 +382,7 @@ pub fn sync_free(sk: &mut Sketch) {
     if sk.free_vars.is_empty() {
         return; // a document with no free variable in it pays nothing
     }
+    unsigned_angles(sk);
     let Sketch { constraints, params, .. } = sk;
     for c in constraints {
         let Some(f) = c.free else { continue };
@@ -390,6 +391,30 @@ pub fn sync_free(sk: &mut Sketch) {
         // that is what having one means
         if let Some(Arg::Expr(e)) = c.args.iter_mut().find(|a| matches!(a, Arg::Expr(_))) {
             e.value = v;
+        }
+    }
+}
+
+/// An angle unknown every row reads as an unsigned angle, through its cosine (`Angle3`, all alike
+/// in it), solves as well a whole turn on or mirrored: it is brought into the half turn the
+/// reading spans, so the drawing shows, a seed is written back and a region's cone is read at the
+/// angle meant (`30deg`, not `750deg`).  One already there keeps its bits.
+fn unsigned_angles(sk: &mut Sketch) {
+    use std::f64::consts::{PI, TAU};
+    // each unknown's one reading, where every row binding it is an unsigned angle read alike
+    let mut readers: BTreeMap<u32, Option<(f64, f64)>> = BTreeMap::new();
+    for c in &sk.constraints {
+        let Some(f) = c.free else { continue };
+        let mine = (c.kind == crate::constraints::CKind::Angle3).then_some((f.m, f.c));
+        readers.entry(f.param).and_modify(|r| if *r != mine { *r = None }).or_insert(mine);
+    }
+    for (p, read) in readers {
+        let Some((m, c)) = read.filter(|(m, _)| *m != 0.0) else { continue };
+        let y = m * sk.params[p as usize].value + c;
+        let a = y.rem_euclid(TAU);
+        let folded = if a > PI { TAU - a } else { a };
+        if folded != y {
+            sk.params[p as usize].value = (folded - c) / m;
         }
     }
 }
