@@ -47,22 +47,22 @@ impl Out {
             }
             Surface::Blend(..) | Surface::BSpline(..) => {
                 let net = match s { Surface::Blend(_,b) => blend_net(b)?,Surface::BSpline(_,n) => (**n).clone(),_ => unreachable!() };
-                let rows: Vec<String> = net.poles.iter().map(|col| {
+                let rows: Vec<String> = net.poles().iter().map(|col| {
                     let ids: Vec<String> = col.iter().map(|&p| format!("#{}",self.point(p))).collect();
                     format!("({})",ids.join(","))
                 }).collect();
-                let (uk,vk) = (super::nurbs::distinct(&net.uknots),super::nurbs::distinct(&net.vknots));
+                let (uk,vk) = (super::nurbs::distinct(net.uknots()),super::nurbs::distinct(net.vknots()));
                 let list = |k: &[(f64,usize)],f: &dyn Fn(&(f64,usize)) -> String| k.iter().map(f).collect::<Vec<_>>().join(",");
-                if let Some(w) = &net.weights {
+                if let Some(w) = net.weights() {
                     let w: Vec<String> = w.iter().map(|r| format!("({})",r.iter().map(|&w| real(w)).collect::<Vec<_>>().join(","))).collect();
                     return Ok(self.add(format!("( BOUNDED_SURFACE() B_SPLINE_SURFACE({},{},({}),.UNSPECIFIED.,.F.,.F.,.F.) \
                         B_SPLINE_SURFACE_WITH_KNOTS(({}),({}),({}),({}),.UNSPECIFIED.) GEOMETRIC_REPRESENTATION_ITEM() \
                         RATIONAL_B_SPLINE_SURFACE(({})) REPRESENTATION_ITEM('') SURFACE() )",
-                        net.du,net.dv,rows.join(","),list(&uk,&|k| k.1.to_string()),list(&vk,&|k| k.1.to_string()),
+                        net.du(),net.dv(),rows.join(","),list(&uk,&|k| k.1.to_string()),list(&vk,&|k| k.1.to_string()),
                         list(&uk,&|k| real(k.0)),list(&vk,&|k| real(k.0)),w.join(","))))
                 }
                 return Ok(self.add(format!("B_SPLINE_SURFACE_WITH_KNOTS('',{},{},({}),.UNSPECIFIED.,.F.,.F.,.F.,({}),({}),({}),({}),.UNSPECIFIED.)",
-                    net.du,net.dv,rows.join(","),list(&uk,&|k| k.1.to_string()),list(&vk,&|k| k.1.to_string()),
+                    net.du(),net.dv(),rows.join(","),list(&uk,&|k| k.1.to_string()),list(&vk,&|k| k.1.to_string()),
                     list(&uk,&|k| real(k.0)),list(&vk,&|k| real(k.0)))))
             }
             Surface::Revolution(f,c) => {
@@ -94,8 +94,8 @@ impl Out {
     /// The curve a swept surface sweeps (a B-spline, as a profile gives one).
     fn swept(&mut self,c: &Curve) -> usize {
         let Curve::BSpline(b) = c else { unreachable!("a swept surface's curve is a profile's B-spline") };
-        let ids: Vec<String> = b.poles.iter().map(|&p| format!("#{}",self.point(p))).collect();
-        spline(self,b.degree,&ids,&b.knots,b.weights.as_deref())
+        let ids: Vec<String> = b.poles().iter().map(|&p| format!("#{}",self.point(p))).collect();
+        spline(self,b.degree(),&ids,b.knots(),b.weights())
     }
 }
 
@@ -154,13 +154,13 @@ pub fn blend_net(b: &super::geom::Blend) -> Result<super::nurbs::Net,String> {
 /// its net, its distinct knots' counts, whether rational, the knots and their multiplicities along
 /// `u` then `v`, then its poles by `u` then `v`, and a rational one's weights in the same order.
 pub fn net_numbers(net: &super::nurbs::Net) -> Vec<f64> {
-    let (uk,vk) = (super::nurbs::distinct(&net.uknots),super::nurbs::distinct(&net.vknots));
+    let (uk,vk) = (super::nurbs::distinct(net.uknots()),super::nurbs::distinct(net.vknots()));
     let rational = if net.is_rational() { 1. } else { 0. };
-    let mut out = vec![net.du as f64,net.dv as f64,net.poles.len() as f64,net.poles[0].len() as f64,uk.len() as f64,vk.len() as f64,rational];
+    let mut out = vec![net.du() as f64,net.dv() as f64,net.poles().len() as f64,net.poles()[0].len() as f64,uk.len() as f64,vk.len() as f64,rational];
     out.extend(uk.iter().map(|k| k.0)); out.extend(uk.iter().map(|k| k.1 as f64));
     out.extend(vk.iter().map(|k| k.0)); out.extend(vk.iter().map(|k| k.1 as f64));
-    for col in &net.poles { for p in col { out.extend(p); } }
-    if let Some(w) = &net.weights { for col in w { out.extend(col); } }
+    for col in net.poles() { for p in col { out.extend(p); } }
+    if let Some(w) = net.weights() { for col in w { out.extend(col); } }
     out
 }
 
@@ -272,9 +272,9 @@ fn pcurve(o: &mut Out,b: &Brep,fi: usize,u: &super::topo::Coedge,surface: usize,
         // a kernel's own curve in the face's parameters (`brep::json`): its poles, exactly
         (Pcurve::Curve(pc),_,_) if matches!(**pc,Curve::BSpline(_)) => {
             let Curve::BSpline(bs) = &**pc else { unreachable!() };
-            let ids: Vec<String> = bs.poles.iter().map(|q| format!("#{}",p2(o,step_uv(&f.surface,[q[0],q[1]])))).collect();
-            let knots: Vec<f64> = bs.knots.iter().map(|k| k-shift).collect();
-            spline(o,bs.degree,&ids,&knots,bs.weights.as_deref())
+            let ids: Vec<String> = bs.poles().iter().map(|q| format!("#{}",p2(o,step_uv(&f.surface,[q[0],q[1]])))).collect();
+            let knots: Vec<f64> = bs.knots().iter().map(|k| k-shift).collect();
+            spline(o,bs.degree(),&ids,&knots,bs.weights())
         }
         (_,Surface::Plane(pl),Curve::Line {p,d}) => {
             let (l,dl) = (pl.local(*p),pl.dir_local(*d));
@@ -289,8 +289,8 @@ fn pcurve(o: &mut Out,b: &Brep,fi: usize,u: &super::topo::Coedge,surface: usize,
         }
         // a plane's parameters are an affine image of space: a B-spline's poles carried over
         (_,Surface::Plane(pl),Curve::BSpline(bs)) => {
-            let ids: Vec<String> = bs.poles.iter().map(|&q| { let l = pl.local(q); format!("#{}",p2(o,[l[0],l[1]])) }).collect();
-            spline(o,bs.degree,&ids,&bs.knots,bs.weights.as_deref())
+            let ids: Vec<String> = bs.poles().iter().map(|&q| { let l = pl.local(q); format!("#{}",p2(o,[l[0],l[1]])) }).collect();
+            spline(o,bs.degree(),&ids,bs.knots(),bs.weights())
         }
         // a cubic in the edge's parameter through its parameters at evenly spaced points, doubled
         // until it maps within a tenth of `FIT` of the edge between them (a chordal pcurve within
@@ -361,8 +361,8 @@ pub fn write(b: &Brep,name: &str,tol: f64) -> Result<String,String> {
             Curve::Circle(f,r) => { let a = o.placement(f); o.add(format!("CIRCLE('',#{a},{})",real(*r))) }
             Curve::Ellipse(f,a,bb) => { let p = o.placement(f); o.add(format!("ELLIPSE('',#{p},{},{})",real(*a),real(*bb))) }
             Curve::BSpline(bs) => {
-                let ids: Vec<String> = bs.poles.iter().map(|&p| format!("#{}",o.point(p))).collect();
-                spline(&mut o,bs.degree,&ids,&bs.knots,bs.weights.as_deref())
+                let ids: Vec<String> = bs.poles().iter().map(|&p| format!("#{}",o.point(p))).collect();
+                spline(&mut o,bs.degree(),&ids,bs.knots(),bs.weights())
             }
             // a loft's rail: the cubic through it, fitted within `FIT`, its parameter the rail's
             Curve::Iso(bl,u) => {
@@ -371,8 +371,8 @@ pub fn write(b: &Brep,name: &str,tol: f64) -> Result<String,String> {
                     Some((_,err)) => return Err(format!("a loft's rail is fitted no nearer than {err:.3e} mm, past the file's {FIT:e}")),
                     None => return Err("a loft's rail could not be fitted (it is degenerate)".into()),
                 };
-                let ids: Vec<String> = fit.poles.iter().map(|&p| format!("#{}",o.point(p))).collect();
-                spline(&mut o,fit.degree,&ids,&fit.knots,None)
+                let ids: Vec<String> = fit.poles().iter().map(|&p| format!("#{}",o.point(p))).collect();
+                spline(&mut o,fit.degree(),&ids,fit.knots(),fit.weights())
             }
             Curve::Traced(_) => {
                 let ts = samples(c,e.t,tol,&|a,z| distance(c.point((a+z)/2.),crate::space::lerp(c.point(a),c.point(z),0.5)));

@@ -13,8 +13,12 @@ const W: usize = MAX_DEGREE+1;
 /// The degrees evaluated with a small table, the cubics and their like (most of what is read).
 const SMALL: usize = 10;
 
+/// A curve: its fields are its own, so that its weights go wherever its poles go. It is made weighed
+/// or not by name (`polynomial`, `rational`), moved by `mapped` and compared by `same_as`, and no
+/// code outside rebuilds one from its parts — which is how a rational curve once came back as the
+/// polynomial through its poles.
 #[derive(Clone,Debug,PartialEq)]
-pub struct BSpline { pub degree: usize,pub knots: Vec<f64>,pub poles: Vec<V>,pub weights: Option<Vec<f64>> }
+pub struct BSpline { degree: usize,knots: Vec<f64>,poles: Vec<V>,weights: Option<Vec<f64>> }
 
 /// Whether `weights` may weigh `count` poles: one each, every one finite and positive (a weight at
 /// or below zero lets the curve leave its poles' hull, or pass through infinity).
@@ -30,21 +34,41 @@ fn quotient(a: [V;3],w: [f64;3]) -> (V,V,V) {
 }
 
 impl BSpline {
-    /// A curve from its parts, refused unless its knots are non-decreasing and one more than its
-    /// poles and degree.
-    pub fn new(degree: usize,knots: Vec<f64>,poles: Vec<V>) -> Result<BSpline,String> {
+    /// A polynomial curve from its parts, refused unless its knots are non-decreasing and one more
+    /// than its poles and degree.
+    pub fn polynomial(degree: usize,knots: Vec<f64>,poles: Vec<V>) -> Result<BSpline,String> {
         if degree == 0 || degree > MAX_DEGREE || poles.len() <= degree || knots.len() != poles.len()+degree+1
             || knots.windows(2).any(|w| !(w[1] >= w[0])) || !(knots[degree] < knots[poles.len()]) {
             return Err(format!("a B-spline needs a degree from 1 to {MAX_DEGREE}, more poles than its degree and non-decreasing knots, one more than both"))
         }
         Ok(BSpline {degree,knots,poles,weights:None})
     }
-    /// A rational curve from its parts, refused as `new` refuses and unless each pole has a finite
-    /// positive weight.
+    /// A rational curve from its parts, refused as `polynomial` refuses and unless each pole has a
+    /// finite positive weight.
     pub fn rational(degree: usize,knots: Vec<f64>,poles: Vec<V>,weights: Vec<f64>) -> Result<BSpline,String> {
-        let s = BSpline::new(degree,knots,poles)?;
+        let s = BSpline::polynomial(degree,knots,poles)?;
         if !weighs(&weights,s.poles.len()) { return Err("a rational B-spline needs a finite positive weight for each pole".into()) }
         Ok(BSpline {weights:Some(weights),..s})
+    }
+    pub fn degree(&self) -> usize { self.degree }
+    pub fn knots(&self) -> &[f64] { &self.knots }
+    pub fn poles(&self) -> &[V] { &self.poles }
+    /// Each pole's weight, or none for a polynomial curve.
+    pub fn weights(&self) -> Option<&[f64]> { self.weights.as_deref() }
+    /// The same curve with every pole moved by `f`, its knots and weights kept: exactly the curve
+    /// moved by `f` where `f` is affine (a rigid motion, a step along a direction, a projection
+    /// along one onto a plane), which is all it may be — a weighed sum is moved by an affine map
+    /// as its poles are, and by no other.
+    pub fn mapped(&self,f: impl Fn(V) -> V) -> BSpline {
+        BSpline {poles:self.poles.iter().map(|&p| f(p)).collect(),..self.clone()}
+    }
+    /// Whether `other` is this curve once `seen` takes a motion out of both: the same degree, knots
+    /// and weights, and poles within `tol` of one another.
+    pub fn same_as(&self,other: &BSpline,tol: f64,seen: impl Fn(V) -> V) -> bool {
+        // every field named, so that one added must be compared here
+        let BSpline {degree,knots,poles,weights} = self;
+        *degree == other.degree && *knots == other.knots && *weights == other.weights && poles.len() == other.poles.len()
+            && poles.iter().zip(&other.poles).all(|(&p,&q)| crate::space::norm(crate::space::sub(seen(p),seen(q))) <= tol)
     }
     pub fn is_rational(&self) -> bool { self.weights.is_some() }
     /// Where the curve is defined.
@@ -327,15 +351,29 @@ fn segment<const N: usize>(knots: &[f64],poles: &[Vec<[f64;N]>],p: usize,a: f64,
 }
 
 /// A tensor-product B-spline surface: `poles[i][j]` the pole at `u` index `i` and `v` index `j`, and
-/// for a rational one `weights[i][j]` its weight.
+/// for a rational one `weights[i][j]` its weight. Its fields are its own, as a curve's are: made
+/// weighed or not by name, moved by `mapped`, its boundary curves handed out weighed (`row`,
+/// `column`).
 #[derive(Clone,Debug,PartialEq)]
-pub struct Net { pub du: usize,pub dv: usize,pub uknots: Vec<f64>,pub vknots: Vec<f64>,pub poles: Vec<Vec<V>>,pub weights: Option<Vec<Vec<f64>>> }
+pub struct Net { du: usize,dv: usize,uknots: Vec<f64>,vknots: Vec<f64>,poles: Vec<Vec<V>>,weights: Option<Vec<Vec<f64>>> }
 
 impl Net {
-    /// Refused unless its degrees are from 1 to `MAX_DEGREE`, its net is a grid with more poles each
-    /// way than its degree, its knots are non-decreasing and one more than both, and a rational
-    /// one's weights are a grid alike, each finite and positive.
-    pub fn check(&self) -> Result<(),String> {
+    /// A polynomial surface from its parts, refused unless its degrees are from 1 to `MAX_DEGREE`,
+    /// its net is a grid with more poles each way than its degree, and its knots are non-decreasing
+    /// and one more than both.
+    pub fn polynomial(du: usize,dv: usize,uknots: Vec<f64>,vknots: Vec<f64>,poles: Vec<Vec<V>>) -> Result<Net,String> {
+        let n = Net {du,dv,uknots,vknots,poles,weights:None};
+        n.check()?;
+        Ok(n)
+    }
+    /// A rational surface from its parts, refused as `polynomial` refuses and unless its weights are
+    /// a grid alike, each finite and positive.
+    pub fn rational(du: usize,dv: usize,uknots: Vec<f64>,vknots: Vec<f64>,poles: Vec<Vec<V>>,weights: Vec<Vec<f64>>) -> Result<Net,String> {
+        let n = Net {du,dv,uknots,vknots,poles,weights:Some(weights)};
+        n.check()?;
+        Ok(n)
+    }
+    fn check(&self) -> Result<(),String> {
         let (nu,nv) = (self.poles.len(),self.poles.first().map_or(0,Vec::len));
         let knots = |k: &[f64],d: usize,n: usize| k.len() == n+d+1 && k.windows(2).all(|w| w[1] >= w[0]) && k[d] < k[n];
         if self.du == 0 || self.dv == 0 || self.du > MAX_DEGREE || self.dv > MAX_DEGREE || nu <= self.du || nv <= self.dv
@@ -346,6 +384,28 @@ impl Net {
             if w.len() != nu || w.iter().any(|r| !weighs(r,nv)) { return Err("a rational B-spline surface needs a finite positive weight for each pole".into()) }
         }
         Ok(())
+    }
+    pub fn du(&self) -> usize { self.du }
+    pub fn dv(&self) -> usize { self.dv }
+    pub fn uknots(&self) -> &[f64] { &self.uknots }
+    pub fn vknots(&self) -> &[f64] { &self.vknots }
+    pub fn poles(&self) -> &[Vec<V>] { &self.poles }
+    /// Each pole's weight, or none for a polynomial surface.
+    pub fn weights(&self) -> Option<&[Vec<f64>]> { self.weights.as_deref() }
+    /// The same surface with every pole moved by `f`, knots and weights kept (`BSpline::mapped`:
+    /// exact for an affine `f`, and meant for no other).
+    pub fn mapped(&self,f: impl Fn(V) -> V) -> Net {
+        Net {poles:self.poles.iter().map(|row| row.iter().map(|&p| f(p)).collect()).collect(),..self.clone()}
+    }
+    /// The curve along `v` of `u` index `i` — at the domain's ends, the surface's edge there —
+    /// weighed as the net weighs it.
+    pub fn row(&self,i: usize) -> BSpline {
+        BSpline {degree:self.dv,knots:self.vknots.clone(),poles:self.poles[i].clone(),weights:self.weights.as_ref().map(|w| w[i].clone())}
+    }
+    /// The curve along `u` of `v` index `j`, weighed as the net weighs it.
+    pub fn column(&self,j: usize) -> BSpline {
+        BSpline {degree:self.du,knots:self.uknots.clone(),poles:self.poles.iter().map(|r| r[j]).collect(),
+            weights:self.weights.as_ref().map(|w| w.iter().map(|r| r[j]).collect())}
     }
     pub fn is_rational(&self) -> bool { self.weights.is_some() }
     /// Where the surface is defined, in `u` and in `v`.

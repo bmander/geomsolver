@@ -580,7 +580,9 @@ agrees with OCCT (volume 1e-9, faces by kind) but for named refusals of self-tou
 parameters since OCCT's wire explorer misreads a closed edge) and writes STEP/STL by ours.
 `Surface::BSpline` is a `nurbs::Net`, **rational where it carries weights** (`BSpline`/`Net`
 `weights: Option<…>`, finite and positive; `None` divides nothing, so polynomial exports keep their
-bytes; `nurbs::arc` is a circle exactly; STEP's `RATIONAL_B_SPLINE_*` complex entities;
+bytes; **fields private, so weights go where poles go**: made by `polynomial`/`rational`, moved by
+`mapped` (affine maps only), compared by `same_as`, a net's edges by `row`/`column`, never rebuilt
+from parts outside `nurbs.rs`; `nurbs::arc` is a circle exactly; STEP's `RATIONAL_B_SPLINE_*` complex entities;
 `tests/rational.rs`, `brep_oracle.rs`'s OCCT round trip); `Pcurve::Curve` written exactly; `Edge::tol` is
 measured and `check` honours it, so it no longer proves pcurves meet edges: a reader holds
 tolerances to a bar itself. `props::fluxes` tables a polynomial B-spline face's `G` per span (a

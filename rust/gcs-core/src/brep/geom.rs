@@ -341,7 +341,7 @@ fn net_inverse(n: &super::nurbs::Net,p: V) -> Uv {
         let greville = |k: &[f64],d: usize,i: usize| k[i+1..=i+d].iter().sum::<f64>()/d as f64;
         // from the nearest poles' Greville points, the nearest first, then the grid
         let mut nearest = [(f64::INFINITY,(0,0));4];
-        for (i,row) in n.poles.iter().enumerate() { for (j,&q) in row.iter().enumerate() {
+        for (i,row) in n.poles().iter().enumerate() { for (j,&q) in row.iter().enumerate() {
             let e = sub(q,p);
             let d = dot(e,e);
             if d < nearest[3].0 {
@@ -350,7 +350,7 @@ fn net_inverse(n: &super::nurbs::Net,p: V) -> Uv {
             }
         } }
         nearest.iter().filter(|c| c.0.is_finite())
-            .find_map(|&(_,at)| net_newton(n,p,[greville(&n.uknots,n.du,at.0),greville(&n.vknots,n.dv,at.1)]))
+            .find_map(|&(_,at)| net_newton(n,p,[greville(n.uknots(),n.du(),at.0),greville(n.vknots(),n.dv(),at.1)]))
             .unwrap_or_else(|| net_grid_inverse(n,p))
     });
     // this sheet's foot first, the rest after it, the oldest dropped
@@ -365,7 +365,7 @@ fn net_inverse(n: &super::nurbs::Net,p: V) -> Uv {
 fn net_grid_inverse(n: &super::nurbs::Net,p: V) -> Uv {
     let [[u0,u1],[v0,v1]] = n.domain();
     // a sample or two per span, at least sixteen a side and at most sixty-four
-    let (su,sv) = ((n.poles.len()-n.du).clamp(16,64),(n.poles[0].len()-n.dv).clamp(16,64));
+    let (su,sv) = ((n.poles().len()-n.du()).clamp(16,64),(n.poles()[0].len()-n.dv()).clamp(16,64));
     let mut best = (f64::INFINITY,[u0,v0]);
     for i in 0..=su { for j in 0..=sv {
         let uv = [u0+(u1-u0)*i as f64/su as f64,v0+(v1-v0)*j as f64/sv as f64];
@@ -686,7 +686,7 @@ impl Surface {
             Surface::Blend(_,ref b) => b.feature(),
             // a length a sheet turns over: a sixteenth of its poles' spread
             Surface::BSpline(_,ref n) => {
-                let (lo,hi) = hull(n.poles.iter().flatten().copied());
+                let (lo,hi) = hull(n.poles().iter().flatten().copied());
                 (crate::space::distance(lo,hi)/16.).max(f64::MIN_POSITIVE)
             }
         }
@@ -701,8 +701,7 @@ impl Surface {
             Surface::Extrusion(f,ref c) => Surface::Extrusion(f.moved(m),Arc::new(c.moved(m))),
             Surface::Revolution(f,ref c) => Surface::Revolution(f.moved(m),Arc::new(c.moved(m))),
             Surface::Blend(f,ref b) => Surface::Blend(f.moved(m),Arc::new(b.moved(m))),
-            Surface::BSpline(f,ref n) => Surface::BSpline(f.moved(m),Arc::new(super::nurbs::Net {
-                poles:n.poles.iter().map(|row| row.iter().map(|&p| m.point(p)).collect()).collect(),..(**n).clone()})),
+            Surface::BSpline(f,ref n) => Surface::BSpline(f.moved(m),Arc::new(n.mapped(|p| m.point(p)))),
         }
     }
     /// Where, strictly inside `[a, b]` of parameter `k` (0 for u, 1 for v), the surface stops
@@ -1022,7 +1021,7 @@ impl Curve {
             Curve::Ellipse(f,a,b) => Curve::Ellipse(f.moved(m),a,b),
             Curve::Traced(ref c) => Curve::Traced(std::sync::Arc::new(Traced {a:c.a.moved(m),b:c.b.moved(m),
                 pts:c.pts.iter().map(|&p| m.point(p)).collect(),closed:c.closed})),
-            Curve::BSpline(ref b) => Curve::BSpline(Arc::new(BSpline {poles:b.poles.iter().map(|&p| m.point(p)).collect(),..(**b).clone()})),
+            Curve::BSpline(ref b) => Curve::BSpline(Arc::new(b.mapped(|p| m.point(p)))),
             Curve::Iso(ref b,u) => Curve::Iso(Arc::new(b.moved(m)),u),
         }
     }

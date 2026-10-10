@@ -297,7 +297,7 @@ pub fn fit_sampled(sweep: &dyn Fn(f64,f64,usize) -> Vec<(f64,f64)>,(a,b): (f64,f
         }
         let fractions = (0..=n).map(|k| k as f64/n as f64).collect();
         let (ctrl,knots,t) = crate::curve::interpolating_ctrl_at(&through,fractions)?;
-        let s = BSpline::new(crate::curve::DEGREE,knots.clone(),ctrl.iter().map(|&(x,y)| [x,y,0.]).collect()).ok()?;
+        let s = BSpline::polynomial(crate::curve::DEGREE,knots.clone(),ctrl.iter().map(|&(x,y)| [x,y,0.]).collect()).ok()?;
         // each halfway sample's distance to the fit, from the fit's own halfway parameter
         let err = (0..n).map(|k| {
             let q = [fine[2*k+1].0,fine[2*k+1].1,0.];

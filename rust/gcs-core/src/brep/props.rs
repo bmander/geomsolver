@@ -82,10 +82,10 @@ impl<'a> Prefix<'a> {
         let [du,dv] = net.domain();
         let knots = |k: usize,[a,b]: [f64;2]| { let mut x = vec![a]; x.extend(net.breaks(k,[a,b])); x.push(b); x };
         let (us,vs) = (knots(0,du),knots(1,dv));
-        let m = 3*net.dv;
+        let m = 3*net.dv();
         let nodes = (0..m).map(|k| (std::f64::consts::PI*k as f64/(m-1) as f64).dcos()).collect();
         let cols = vec![None;vs.len()-1];
-        Prefix {net,us,vs,ru:rule((3*net.du).div_ceil(2)+1),nodes,cols}
+        Prefix {net,us,vs,ru:rule((3*net.du()).div_ceil(2)+1),nodes,cols}
     }
     fn g(&self,u: f64,v: f64) -> f64 { let (x,su,sv) = self.net.d1(u,v); dot(x,cross(su,sv)) }
     fn across(&self,a: f64,b: f64,v: f64) -> f64 {

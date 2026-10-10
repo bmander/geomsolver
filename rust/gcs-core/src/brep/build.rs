@@ -58,7 +58,7 @@ impl Profile {
                         let degree = field(e,"degree")?.as_f64() as usize;
                         let b = match e.get("weights") {
                             Some(w) => BSpline::rational(degree,knots,poles,w.arr().iter().map(|x| x.as_f64()).collect()),
-                            None => BSpline::new(degree,knots,poles),
+                            None => BSpline::polynomial(degree,knots,poles),
                         };
                         ProfileEdge::Spline(Arc::new(b.map_err(|m| format!("profile: {m}"))?))
                     }
@@ -76,7 +76,7 @@ impl Profile {
         for l in &self.loops { for e in l { match *e {
             ProfileEdge::Line {a,b} => s = s.max(norm(sub(a,self.origin))).max(norm(sub(b,self.origin))),
             ProfileEdge::Arc {frame,r,..} => s = s.max(norm(sub(frame.o,self.origin))+r),
-            ProfileEdge::Spline(ref b) => for &q in &b.poles { s = s.max(norm(sub(q,self.origin))) },
+            ProfileEdge::Spline(ref b) => for &q in b.poles() { s = s.max(norm(sub(q,self.origin))) },
         } } }
         s.max(1e-300)
     }
@@ -229,7 +229,7 @@ pub fn revolve(p: &Profile,origin: V,axis: V,angle: f64) -> Result<Brep,String> 
             let [a0,a1] = span.unwrap_or([0.,TAU]);
             (0..=16).map(|k| { let t = a0+(a1-a0)*k as f64/16.; add(frame.o,add(scale(frame.x,r*t.dcos()),scale(frame.y,r*t.dsin()))) }).collect()
         }
-        ProfileEdge::Spline(ref b) => b.poles.clone(),
+        ProfileEdge::Spline(ref b) => b.poles().to_vec(),
     }).map(|q| dot(sub(q,origin),x)).fold(0.,|m: f64,v| if v.abs() > m.abs() { v } else { m });
     if far < 0. { x = scale(x,-1.); }
     let f = Frame::new(origin,z,x);
@@ -575,12 +575,9 @@ fn analytic_ruled(a: &Seg,z: &Seg,e: V,outward: V,tol: f64) -> Option<(Surface,b
 /// (each its net's outermost row or column of poles, exactly), its sense the net's own.
 pub fn sheet(net: crate::brep::nurbs::Net) -> Result<Brep,String> {
     let [[u0,u1],[v0,v1]] = net.domain();
-    // a rational net's boundary rows and columns weighed as the net weighs them
-    let row = |i: usize| -> Curve { Curve::BSpline(Arc::new(BSpline {degree:net.dv,knots:net.vknots.clone(),poles:net.poles[i].clone(),
-        weights:net.weights.as_ref().map(|w| w[i].clone())})) };
-    let column = |j: usize| -> Curve { Curve::BSpline(Arc::new(BSpline {degree:net.du,knots:net.uknots.clone(),poles:net.poles.iter().map(|r| r[j]).collect(),
-        weights:net.weights.as_ref().map(|w| w.iter().map(|r| r[j]).collect())})) };
-    let (last_u,last_v) = (net.poles.len()-1,net.poles[0].len()-1);
+    let row = |i: usize| Curve::BSpline(Arc::new(net.row(i)));
+    let column = |j: usize| Curve::BSpline(Arc::new(net.column(j)));
+    let (last_u,last_v) = (net.poles().len()-1,net.poles()[0].len()-1);
     let mut b = Brep::default();
     let corner = [net.point(u0,v0),net.point(u1,v0),net.point(u1,v1),net.point(u0,v1)];
     let vs: Vec<u32> = corner.iter().map(|&p| b.vertex(p)).collect();

@@ -436,7 +436,7 @@ fn cubic(poles: &[V],interior: &[f64]) -> std::sync::Arc<gcs_core::brep::geom::B
     let mut knots = vec![0.;4];
     knots.extend(interior);
     knots.extend([1.;4]);
-    std::sync::Arc::new(gcs_core::brep::geom::BSpline::new(3,knots,poles.to_vec()).unwrap())
+    std::sync::Arc::new(gcs_core::brep::geom::BSpline::polynomial(3,knots,poles.to_vec()).unwrap())
 }
 /// `∫ f` over each knot span of `s` by ten-point Gauss–Legendre (exact on a polynomial of degree
 /// nineteen or less, which every integrand here is between knots).
@@ -517,7 +517,7 @@ fn splines_swept_and_turned_are_their_closed_forms() {
     assert!((volume(&r)-pappus(1.)/2.).abs() <= 1e-8*pappus(1.),"{} against {}",volume(&r),pappus(1.)/2.);
     // lofted to itself at half the size along z: every section the plate scaled by 1 − t/2, so the
     // volume is h A ∫(1 − t/2)² dt = 7 h A / 12; the lines join in planes, the splines in a blend
-    let half = cubic(&lobe.poles.iter().map(|p| [p[0]/2.,p[1]/2.,6.]).collect::<Vec<_>>(),&[0.4]);
+    let half = cubic(&lobe.poles().iter().map(|p| [p[0]/2.,p[1]/2.,6.]).collect::<Vec<_>>(),&[0.4]);
     let top = Profile {names:vec![],origin:[0.,0.,6.],normal:XY,loops:vec![vec![line([0.,0.,6.],[5.,0.,6.]),spline(&half),line([0.,5.,6.],[0.,0.,6.])]]};
     let lofted = gcs_core::brep::build::loft(&plate,Some(&top),&gcs_core::brep::build::Guide::Line {delta:[0.,0.,6.]}).unwrap();
     lofted.check(1e-9).unwrap();
@@ -632,7 +632,7 @@ fn a_net_segmented_is_the_same_surface() {
         let (x,y) = (i as f64,j as f64);
         [x+0.3*(x*y).sin(),y-0.2*x*x,0.1*x*y+(x+2.*y).cos()]
     }).collect()).collect();
-    let net = Net {du:3,dv:2,uknots,vknots,poles,weights:None};
+    let net = Net::polynomial(3,2,uknots,vknots,poles).unwrap();
     for (bu,bv) in [([0.1,0.7],[-0.5,1.2]),([0.,0.4],[0.5,2.]),([0.3,0.45],[-1.,0.2])] {
         let cut = net.segment(bu,bv);
         assert_eq!(cut.domain(),[bu,bv]);
@@ -643,7 +643,7 @@ fn a_net_segmented_is_the_same_surface() {
                 assert!((0..3).all(|c| (p[c]-q[c]).abs() <= 1e-11),"{bu:?} {bv:?} at ({u}, {v}): {p:?} against {q:?}");
             }
         } }
-        assert!(cut.poles.len() <= net.poles.len()+3 && cut.poles[0].len() <= net.poles[0].len()+2);
+        assert!(cut.poles().len() <= net.poles().len()+3 && cut.poles()[0].len() <= net.poles()[0].len()+2);
     }
 }
 
@@ -704,7 +704,7 @@ fn a_grid_interpolated_passes_through_it_and_makes_a_sheet() {
     })).collect();
     for kind in [Parametrization::Even,Parametrization::ChordLength,Parametrization::Centripetal] {
         let net = interpolate_net(&pts,rows,cols,kind).unwrap();
-        assert_eq!((net.du,net.dv),(3,3));
+        assert_eq!((net.du(),net.dv()),(3,3));
         // through every grid point at the parameters it was given: found again by the surface's inverse
         let s = gcs_core::brep::geom::Surface::BSpline(gcs_core::brep::geom::Frame::new([0.;3],[0.,0.,1.],[1.,0.,0.]),std::sync::Arc::new(net.clone()));
         for &p in &pts {

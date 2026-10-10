@@ -66,11 +66,9 @@ fn iso_pcurve(surface: &super::geom::Surface,curve: &super::geom::Curve,t: [f64;
     use super::geom::{Curve,Surface};
     let (Surface::Extrusion(f,c),Curve::BSpline(e)) = (surface,curve) else { return None };
     let Curve::BSpline(c) = &**c else { return None };
-    if c.degree != e.degree || c.knots != e.knots || c.weights != e.weights || c.poles.len() != e.poles.len() { return None }
-    let lift = crate::space::dot(crate::space::sub(e.poles[0],c.poles[0]),f.z);
-    let scale = 1.+c.poles.iter().map(|&p| norm(p)).fold(0.,f64::max);
-    c.poles.iter().zip(&e.poles).all(|(&p,&q)| norm(crate::space::sub(q,crate::space::add(p,crate::space::scale(f.z,lift)))) <= 1e-12*scale)
-        .then(|| ([t[0],lift],[t[1],lift]))
+    let lift = crate::space::dot(crate::space::sub(e.poles()[0],c.poles()[0]),f.z);
+    let scale = 1.+c.poles().iter().map(|&p| norm(p)).fold(0.,f64::max);
+    c.mapped(|p| crate::space::add(p,crate::space::scale(f.z,lift))).same_as(e,1e-12*scale,|p| p).then(|| ([t[0],lift],[t[1],lift]))
 }
 
 /// `a` combined with `b` by `op`, to `tol` (a length).

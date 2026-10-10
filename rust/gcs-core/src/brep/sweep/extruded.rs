@@ -316,8 +316,8 @@ fn build(cut: &SweptCut,walks: &[Vec<Seg>],convex: &[Vec<bool>],extent: [f64;2],
         }
     }
     knots.push(u);
-    let net = Net {du:3,dv:1,uknots:knots,vknots:vec![extent[0],extent[0],extent[1],extent[1]],
-        poles:poles.iter().map(|&p| vec![lift(p,extent[0]),lift(p,extent[1])]).collect(),weights:None};
+    let net = Net::polynomial(3,1,knots,vec![extent[0],extent[0],extent[1],extent[1]],
+        poles.iter().map(|&p| vec![lift(p,extent[0]),lift(p,extent[1])]).collect()).at(Stage::Fit)?;
     let face = crate::brep::build::sheet(net).at(Stage::Fit)?;
     (say.mark)(Stage::Fit);
     // the contacts the sheet carries, for what reads it: its nodes at each station, and the

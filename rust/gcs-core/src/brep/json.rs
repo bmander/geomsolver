@@ -40,7 +40,7 @@ fn curve(j: &Json) -> Result<Curve,String> {
             let poles = field(j,"poles")?.arr().iter().map(vec3).collect();
             Curve::BSpline(Arc::new(match j.get("weights") {
                 Some(w) => BSpline::rational(degree,knots,poles,reals(w))?,
-                None => BSpline::new(degree,knots,poles)?,
+                None => BSpline::polynomial(degree,knots,poles)?,
             }))
         }
         k => return Err(format!("brep json: a curve of kind `{k}`")),
@@ -54,9 +54,12 @@ fn surface(j: &Json) -> Result<(Surface,bool),String> {
     if kind == "bspline" {
         let poles: Vec<Vec<V>> = field(j,"poles")?.arr().iter().map(|row| row.arr().iter().map(vec3).collect()).collect();
         let weights = j.get("weights").map(|w| w.arr().iter().map(reals).collect());
-        let net = Net {du:field(j,"du")?.as_f64() as usize,dv:field(j,"dv")?.as_f64() as usize,
-            uknots:reals(field(j,"uknots")?),vknots:reals(field(j,"vknots")?),poles,weights};
-        net.check().map_err(|m| format!("brep json: {m}"))?;
+        let (du,dv) = (field(j,"du")?.as_f64() as usize,field(j,"dv")?.as_f64() as usize);
+        let (uknots,vknots) = (reals(field(j,"uknots")?),reals(field(j,"vknots")?));
+        let net = match weights {
+            Some(w) => Net::rational(du,dv,uknots,vknots,poles,w),
+            None => Net::polynomial(du,dv,uknots,vknots,poles),
+        }.map_err(|m| format!("brep json: {m}"))?;
         return Ok((Surface::BSpline(Frame::new([0.;3],[0.,0.,1.],[1.,0.,0.]),Arc::new(net)),false))
     }
     let (f,right) = axes(j)?;
@@ -86,7 +89,7 @@ fn pcurve(j: &Json,flip: bool) -> Result<Pcurve,String> {
         let neg = |p: V| [-p[0],p[1],p[2]];
         c = match c {
             Curve::Line {p,d} => Curve::Line {p:neg(p),d:neg(d)},
-            Curve::BSpline(b) => Curve::BSpline(Arc::new(BSpline {poles:b.poles.iter().map(|&p| neg(p)).collect(),..(*b).clone()})),
+            Curve::BSpline(b) => Curve::BSpline(Arc::new(b.mapped(neg))),
             other => other,
         };
     }

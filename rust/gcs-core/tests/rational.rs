@@ -28,7 +28,7 @@ fn an_arc_is_its_circle_exactly() {
     let r = 2.5;
     for span in [[0.,TAU],[0.3,1.2],[-1.,2.5],[0.,FRAC_PI_2],[0.,PI]] {
         let c = arc(&f,r,span);
-        assert!(c.is_rational() && c.degree == 2);
+        assert!(c.is_rational() && c.degree() == 2);
         assert_eq!(c.domain(),span);
         // every point on the circle, and at each knot the point at that angle
         let [a,z] = span;
@@ -38,14 +38,14 @@ fn an_arc_is_its_circle_exactly() {
             let l = f.local(p);
             assert!(l[2].abs() <= 1e-14,"off its plane by {}",l[2]);
         }
-        for &t in &c.knots {
+        for &t in c.knots() {
             near(c.point(t),[0,1,2].map(|k| f.o[k]+r*(t.cos()*f.x[k]+t.sin()*f.y[k])),1e-14,"a knot");
         }
         // its derivatives are its points' differences: the tangent along the circle, C'' too
         let h = 1e-5;
         for k in 1..40 {
             let t = a+(z-a)*k as f64/40.;
-            if c.knots.iter().any(|&kn| (kn-t).abs() < 2.*h) { continue }
+            if c.knots().iter().any(|&kn| (kn-t).abs() < 2.*h) { continue }
             let (p,d,dd) = c.d2(t);
             let (p0,p1) = (c.point(t-h),c.point(t+h));
             near(d,[0,1,2].map(|k| (p1[k]-p0[k])/(2.*h)),1e-8,"C'");
@@ -68,7 +68,7 @@ fn an_arc_is_its_circle_exactly() {
 fn weights_of_one_are_the_polynomial_spline() {
     let knots = vec![0.,0.,0.,0.,0.4,1.,1.,1.,1.];
     let poles: Vec<V> = (0..5).map(|i| { let x = i as f64; [x,(x*1.3).sin(),0.2*x*x] }).collect();
-    let plain = BSpline::new(3,knots.clone(),poles.clone()).unwrap();
+    let plain = BSpline::polynomial(3,knots.clone(),poles.clone()).unwrap();
     let ones = BSpline::rational(3,knots,poles,vec![1.;5]).unwrap();
     for k in 0..=20 {
         let t = k as f64/20.;
@@ -82,14 +82,16 @@ fn weights_that_are_not_finite_and_positive_are_refused() {
     let c = unit_circle();
     for bad in [vec![1.;8],vec![1.,0.,1.,1.,1.,1.,1.,1.,1.],vec![1.,-0.5,1.,1.,1.,1.,1.,1.,1.],vec![1.,f64::NAN,1.,1.,1.,1.,1.,1.,1.],
         vec![1.,f64::INFINITY,1.,1.,1.,1.,1.,1.,1.]] {
-        assert!(BSpline::rational(2,c.knots.clone(),c.poles.clone(),bad.clone()).is_err(),"{bad:?}");
+        assert!(BSpline::rational(2,c.knots().to_vec(),c.poles().to_vec(),bad.clone()).is_err(),"{bad:?}");
     }
-    let mut net = sphere(1.);
-    assert!(net.check().is_ok());
-    net.weights.as_mut().unwrap()[2][1] = 0.;
-    assert!(net.check().is_err());
-    net.weights.as_mut().unwrap()[2].pop();
-    assert!(net.check().is_err());
+    let net = sphere(1.);
+    let weighed = |w: &[Vec<f64>]| Net::rational(net.du(),net.dv(),net.uknots().to_vec(),net.vknots().to_vec(),net.poles().to_vec(),w.to_vec());
+    let mut w = net.weights().unwrap().to_vec();
+    assert!(weighed(&w).is_ok());
+    w[2][1] = 0.;
+    assert!(weighed(&w).is_err());
+    w[2].pop();
+    assert!(weighed(&w).is_err());
 }
 
 /// The surface of revolution of the meridian `m` (its poles `(ρ, 0, z)`) about z, a whole turn: the
@@ -97,10 +99,10 @@ fn weights_that_are_not_finite_and_positive_are_refused() {
 /// to its `z`, weighed by both (Piegl and Tiller A8.1).
 fn turned(m: &BSpline) -> Net {
     let c = unit_circle();
-    let (cw,mw) = (c.weights.as_ref().unwrap(),m.weights.as_ref().unwrap());
-    let poles = c.poles.iter().map(|q| m.poles.iter().map(|p| [q[0]*p[0],q[1]*p[0],p[2]]).collect()).collect();
+    let (cw,mw) = (c.weights().unwrap(),m.weights().unwrap());
+    let poles = c.poles().iter().map(|q| m.poles().iter().map(|p| [q[0]*p[0],q[1]*p[0],p[2]]).collect()).collect();
     let weights = cw.iter().map(|&a| mw.iter().map(|&b| a*b).collect()).collect();
-    Net {du:2,dv:2,uknots:c.knots.clone(),vknots:m.knots.clone(),poles,weights:Some(weights)}
+    Net::rational(2,2,c.knots().to_vec(),m.knots().to_vec(),poles,weights).unwrap()
 }
 /// The sphere of radius `r` about the origin: its meridian a half-circle from the south pole up.
 fn sphere(r: f64) -> Net { turned(&arc(&Frame::new([0.;3],[0.,-1.,0.],[1.,0.,0.]),r,[-FRAC_PI_2,FRAC_PI_2])) }
@@ -114,7 +116,7 @@ fn derivatives_are_differences(n: &Net,what: &str) {
     let interior = |t: f64,k: &[f64]| k.iter().all(|&x| (x-t).abs() > 2.*h);
     for i in 1..12 { for j in 1..12 {
         let (u,v) = (u0+(u1-u0)*i as f64/12.+1e-3,v0+(v1-v0)*j as f64/12.+1e-3);
-        if !interior(u,&n.uknots) || !interior(v,&n.vknots) { continue }
+        if !interior(u,n.uknots()) || !interior(v,n.vknots()) { continue }
         let [s,su,sv,suu,suv,svv] = n.d2(u,v);
         let (s1,su1,sv1) = n.d1(u,v);
         near(s,s1,1e-14,what); near(su,su1,1e-12,what); near(sv,sv1,1e-12,what);
@@ -151,7 +153,8 @@ fn a_rational_net_cut_is_the_same_surface() {
     for (bu,bv) in [([0.4,2.],[0.3,4.]),([0.,FRAC_PI_2],[PI,TAU]),([1.,1.3],[2.,2.2])] {
         let cut = t.segment(bu,bv);
         assert!(cut.is_rational());
-        assert!(cut.check().is_ok());
+        assert!(Net::rational(cut.du(),cut.dv(),cut.uknots().to_vec(),cut.vknots().to_vec(),cut.poles().to_vec(),
+            cut.weights().unwrap().to_vec()).is_ok());
         assert_eq!(cut.domain(),[bu,bv]);
         for i in 0..=6 { for j in 0..=6 {
             let (u,v) = (bu[0]+(bu[1]-bu[0])*i as f64/6.,bv[0]+(bv[1]-bv[0])*j as f64/6.);
@@ -219,13 +222,13 @@ fn solids_swept_and_turned_from_exact_arcs_are_their_closed_forms() {
 /// net's circles, its caps planes whose pcurves are those circles in the plane's coordinates.
 fn cylinder_json(r: f64,h: f64) -> String {
     let c = arc(&Frame::new([0.;3],XY,[1.,0.,0.]),r,[0.,TAU]);
-    let w = c.weights.as_ref().unwrap();
+    let w = c.weights().unwrap();
     let list = |x: &[f64]| format!("[{}]",x.iter().map(|v| format!("{v:?}")).collect::<Vec<_>>().join(","));
     let v3 = |p: V| list(&p);
     let rim = |z: f64| format!("{{\"kind\":\"bspline\",\"degree\":2,\"knots\":{},\"poles\":[{}],\"weights\":{}}}",
-        list(&c.knots),c.poles.iter().map(|p| v3([p[0],p[1],z])).collect::<Vec<_>>().join(","),list(w));
+        list(c.knots()),c.poles().iter().map(|p| v3([p[0],p[1],z])).collect::<Vec<_>>().join(","),list(w));
     let side = format!("{{\"kind\":\"bspline\",\"du\":2,\"dv\":1,\"uknots\":{},\"vknots\":[0,0,{h:?},{h:?}],\"poles\":[{}],\"weights\":[{}]}}",
-        list(&c.knots),c.poles.iter().map(|p| format!("[{},{}]",v3([p[0],p[1],0.]),v3([p[0],p[1],h]))).collect::<Vec<_>>().join(","),
+        list(c.knots()),c.poles().iter().map(|p| format!("[{},{}]",v3([p[0],p[1],0.]),v3([p[0],p[1],h]))).collect::<Vec<_>>().join(","),
         w.iter().map(|&x| list(&[x,x])).collect::<Vec<_>>().join(","));
     let line = |p: [f64;2],d: [f64;2]| format!("{{\"kind\":\"line\",\"p\":[{:?},{:?},0],\"d\":[{:?},{:?},0]}}",p[0],p[1],d[0],d[1]);
     let plane = |z: f64| format!("{{\"kind\":\"plane\",\"frame\":{{\"o\":[0,0,{z:?}],\"x\":[1,0,0],\"y\":[0,1,0],\"z\":[0,0,1]}}}}");
