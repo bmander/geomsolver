@@ -9,7 +9,7 @@ import {
   Arc, Circle, Param, Plane, Point, Primitive, Spline,
 } from '../core/model.js';
 import { RadiusDrag } from '../core/system.js';
-import { insideSeen } from '../core/workspace.js';
+import { overlappingSeen } from '../core/workspace.js';
 import type { View } from '../core/workspace.js';
 import { moveDimension, placeDimension } from './dimension.js';
 import { COL } from './paint.js';
@@ -554,11 +554,12 @@ export function bandGesture(v: SketchView, from: [number, number]): Gesture {
   };
 }
 
-/** Entities lying entirely inside the box — "window" selection — asked of the core where the eye
- *  sees each figure, so a band drawn over one plane takes nothing standing on another. */
+/** Entities the box touches — "crossing" selection, a point inside it or a stroke through it —
+ *  asked of the core where the eye sees each figure, so a band drawn over one plane takes nothing
+ *  standing on another. */
 export function boxContents(v: SketchView, from: [number, number], to: [number, number]): Primitive[] {
   const { az, el } = v.orbit;
-  return insideSeen(v.sketch, v.unit, az, el, v.cam.s2w(...from), v.cam.s2w(...to))
+  return overlappingSeen(v.sketch, v.unit, az, el, v.cam.s2w(...from), v.cam.s2w(...to))
     .filter((e) => !(e instanceof Plane));
 }
 

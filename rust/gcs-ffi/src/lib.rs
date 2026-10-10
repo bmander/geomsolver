@@ -2355,12 +2355,12 @@ pub unsafe extern "C" fn gcs_workspace_bounds(h: *mut Sketch, unit: f64, az: f64
     })
 }
 
-/// The entities a rubber band from (x0, y0) to (x1, y1) on the eye's picture plane holds whole.
+/// The entities a rubber band from (x0, y0) to (x1, y1) on the eye's picture plane touches.
 #[no_mangle]
-pub unsafe extern "C" fn gcs_workspace_inside_json(h: *mut Sketch, unit: f64, az: f64, el: f64,
-                                                   x0: f64, y0: f64, x1: f64, y1: f64) -> *mut u8 {
+pub unsafe extern "C" fn gcs_workspace_overlapping_json(h: *mut Sketch, unit: f64, az: f64, el: f64,
+                                                             x0: f64, y0: f64, x1: f64, y1: f64) -> *mut u8 {
     guard(std::ptr::null_mut(), move || {
-        out_json(report::workspace_inside_json(sk(h), unit, az, el, (x0, y0), (x1, y1)))
+        out_json(report::workspace_overlapping_json(sk(h), unit, az, el, (x0, y0), (x1, y1)))
     })
 }
 

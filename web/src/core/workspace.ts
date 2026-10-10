@@ -131,11 +131,11 @@ export function nearestSeen(sk: Sketch, az: number, el: number,
   });
 }
 
-/** The entities a rubber band between two places on the eye's picture plane holds whole. */
-export function insideSeen(sk: Sketch, unit: number, az: number, el: number,
-                           a: [number, number], b: [number, number]): Primitive[] {
+/** The entities a rubber band between two places on the eye's picture plane touches. */
+export function overlappingSeen(sk: Sketch, unit: number, az: number, el: number,
+                                a: [number, number], b: [number, number]): Primitive[] {
   const hits = takeJson<[string, number][]>(
-    core().gcs_workspace_inside_json(sk.handle, unit, az, el, a[0], a[1], b[0], b[1]));
+    core().gcs_workspace_overlapping_json(sk.handle, unit, az, el, a[0], a[1], b[0], b[1]));
   return hits
     .map(([kind, index]) => (KINDS as string[]).includes(kind)
       ? sk.entities(kind as Kind)[index] : undefined)
