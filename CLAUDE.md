@@ -201,8 +201,9 @@ two uses in one body stand apart.
 designs, both members) are the gates.
 **Distance from a set, offsets (§6.21, 0.64, #145 F4):** `p distance(d, side: outside|inside) S`
 (`distance` is a set use, `may_use`), `p inside(d) S` / `p outside(d) S` and `std.Offset(S, d)` are
-one bound on the signed distance from `S`'s surface (`Reach`: cmp toward the outside, a grow `±d`,
-`reach_of`/`grown_side`), applied by `sets::expand_reach` in three representations: a body whose
+one bound on the signed distance from `S`'s surface (`Reach`: cmp toward the outside, whether
+the offset grows it, `reach_of`/`grown_side`; only a `distance` with `side: outside|inside` is a
+set use, `sets::reaches`), applied by `sets::expand_reach` in three representations: a body whose
 one relation is a `distance` gets its number moved (`(r) + #grow`, the grow settled in the use's
 scope and given to the application, `Application::give`); otherwise, at a region solid's probe
 (`Walk::probes` through the alias table), the bound carries it (`OpArg::Bound::grow`, `Written::grow`,
@@ -210,12 +211,13 @@ read by `constrain` into `RegionTerm::grow`, a `TermNumber`; a grow off a probe 
 `solid/region.rs::fold` builds the exact offset (`within(t, v, g)` is `{sd ≤ g}`; `narrow`: a cone
 shrunk is its apex moved `-g / sin`, grown is the shifted generator plus an arc about the apex, one
 loop; wider than square the opposite cone shrunk); otherwise a drawn point's **foot**, declared at
-the body's point under the application (`hint(at: p)`), the body walked `Itself` then along
+the body's point under the application (`hidden_point`, as a tangency's contact; `hint(at: p)`),
+the body walked `Itself` then along
 `Chart(0)`/`Chart(1)` (keys `{prefix}t{k}.`), with `p distance(#reach) foot` (its derivative is the
 sphere about `p`'s), `p outside S` (the side) and `foot inside S` (so the seed crossing puts the
-foot across the surface from `p`) appended to the body under synthetic ids (`u32::MAX - k`, so
-`Scope::written` keeps their uses apart). `region_body` ignores a grown side when counting a
-body's numbers. `tests/offsets.rs` is the gate.
+foot across the surface from `p`) appended to the body under synthetic ids (`FOOT_STATEMENTS`
+down, so `Scope::written` keeps their uses apart). `region_body` counts no grown side of another
+set among a body's numbers (a distance from one is `std.Offset`'s). `tests/offsets.rs` is the gate.
 **`P tangent(at: m) S`, a plane tangent to a set (#145, #148, 0.56):** `sets::expand_touch`
 applies the body at `m` and walks it `Pass::Made` then `Pass::Along` toward `P.u` and `P.v`
 (`model::Toward::Axis`: the axis's `d` columns fed where a line's ends go, `dual_kernel`
@@ -1253,7 +1255,7 @@ Conventions:
   broken`). `PlanSolver::solve` falls back to it where the plan's root breaks a bound. A drag
   (`retry` off) and a drawing whose seeds keep their bounds solve to the same bits. `Diagnosis::bounds_violated`/`bounds_active`, report `boundsViolated`/
   `boundsActive`; JSON `"bound": {cmp, hi}`; `graft`, `lift`, `describe` (`syntax::bounded`).
-  A free name in one is E040 (`expr::Fault::ClaimFree`) unless the drawing's rows bind it already:
+  A free name in one is E040 (`expr::Fault::ClaimFree`) unless a row of the drawing reads it too:
   `expr::evaluate` asks the bounds last, binding `Constraint::free` without minting (0.64). `ccw` on the sheet is still unchecked.
   `tests/bounds.rs` is the gate.
 - `same_constraint` is "says exactly the same thing"; `same_relation` is the same *without* the

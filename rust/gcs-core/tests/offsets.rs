@@ -226,7 +226,7 @@ fn what_a_distance_from_a_set_refuses() {
     let point = "p := point hint((4, 0, 5))\nfix(y == 0, z == 5) p\n";
     // each refused at its word, with its parentheses as the parser spans them
     for (said, why, at) in [
-        ("p distance(1) funnel", "two sides", "distance(1)"),
+        ("p distance(1) funnel", "side: outside", "funnel"),
         ("p distance(0, side: outside) funnel", "is on it", "distance(0, side: outside)"),
         ("p distance(<= 1, side: outside) funnel", "chooses among roots",
          "distance(<= 1, side: outside)"),

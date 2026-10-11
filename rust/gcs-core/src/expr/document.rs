@@ -134,15 +134,12 @@ pub fn evaluate(sk: &mut Sketch) -> Vec<ExprItem> {
     // a `Length` dimension and an `Angle` one is an error naming both — the one genuinely new
     // piece of analysis units bring, and the only place a dimension is deduced rather than read.
     let mut free_dim: BTreeMap<String, (Dim, &'static str)> = BTreeMap::new();
-    // the bounds last, so one reads an unknown the rows have bound this time round
-    let mut order: Vec<usize> = (0..nodes.len()).collect();
-    order.sort_by_key(|&k| {
-        let c = &sk.constraints[nodes[k].ci];
-        !c.states_rows() && !c.claim
-    });
+    // what states no row last, so a bound reads an unknown the rows have bound this time round
+    let (rows, rest): (Vec<usize>, Vec<usize>) =
+        (0..nodes.len()).partition(|&k| sk.constraints[nodes[k].ci].states_rows());
     let mut items: Vec<Option<ExprItem>> = (0..nodes.len()).map(|_| None).collect();
-    for nd in order.into_iter().map(|k| (k, &nodes[k])) {
-        let (k, nd) = nd;
+    for k in rows.into_iter().chain(rest) {
+        let nd = &nodes[k];
         let mut value = to_user_units(nd.kind, sk.constraints[nd.ci].args[nd.ai].num());
         let mut free = Vec::new();
         let mut deps = Vec::new();
@@ -268,21 +265,17 @@ fn write_value(
     // at all — a degree of freedom minted by a statement that promised to add nothing.  A bound
     // may read one the drawing's rows bind already (a cone's half, its side chosen, §9.6): it
     // reads it as solved, and mints nothing — `evaluate` asks the bounds last for that
-    let c = &sk.constraints[ci];
-    if !c.states_rows() {
-        let param = sk.free_vars.get(&name).copied().filter(|_| bound.contains_key(&name));
-        let (Some(param), false) = (param, c.claim) else {
-            let what = if c.claim { "a claim" } else { "a bound" };
+    let con = &sk.constraints[ci];
+    let reader = !con.states_rows();
+    if reader {
+        let read = sk.free_vars.contains_key(&name) && bound.contains_key(&name);
+        if con.claim || !read {
+            let what = if con.claim { "a claim" } else { "a bound" };
             return Err(ExprError::new(
                 Fault::ClaimFree,
                 format!("`{name}` is free, and {what} may not bind an unknown"),
             ));
-        };
-        let (m, c) = (to_arg_units(kind, a.m), to_arg_units(kind, a.c));
-        let value = a.at(sk.params[param as usize].value);
-        sk.constraints[ci].free = Some(Free { param, m, c });
-        sk.constraints[ci].args[ai] = Arg::Expr(Expr::new(text, to_arg_units(kind, value)));
-        return Ok(value);
+        }
     }
     // one name is one unknown: a place contacts share along a curve (`t == s`) is not a number a
     // dimension can be written in, and two unknowns under one name would be told apart nowhere
@@ -307,9 +300,16 @@ fn write_value(
     // one unit of the variable is worth this much world length through this dimension: an angle
     // in degrees moves the drawing by the arm it turns, everything else is a length already
     let reach = m.abs() * if kind == SpecKind::Angle { sk.extent().max(1.0) } else { 1.0 };
+    let free = Free { param, m, c };
+    // a bound reads the unknown the rows bound: it neither scales nor seeds it
+    if reader {
+        let value = a.at(sk.params[param as usize].value);
+        sk.constraints[ci].free = Some(free);
+        sk.constraints[ci].args[ai] = Arg::Expr(Expr::new(text, to_arg_units(kind, value)));
+        return Ok(value);
+    }
     let was = bound.entry(name).or_insert(0.0);
     *was = was.max(reach);
-    let free = Free { param, m, c };
     if fresh && stated == 0.0 && declared.is_none() {
         // the bound copy is what `settle` measures through: the columns and the constants it
         // asks for are the ones this constraint selects once the binding is in

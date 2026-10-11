@@ -133,18 +133,6 @@ fn fold(sk: &Sketch, solid: usize) -> Result<Meridian, String> {
     let what = |t: &RegionTerm| {
         if t.name.is_empty() { "a bound".to_string() } else { format!("`{}`", t.name) }
     };
-    // a loop of straight steps through `pts`, turned counter-clockwise
-    let polygon = |mut pts: Vec<[f64; 2]>| {
-        let twice: f64 = (0..pts.len()).map(|k| {
-            let (p, q) = (pts[k], pts[(k + 1) % pts.len()]);
-            p[0] * q[1] - q[0] * p[1]
-        }).sum();
-        if twice < 0.0 {
-            pts.reverse();
-        }
-        let n = pts.len();
-        Region::plain(vec![(0..n).map(|k| Seg::Line { a: pts[k], b: pts[(k + 1) % n] }).collect()])
-    };
     // a cone narrower than square, apex at `za` on the axis, opening along `s`: the points no
     // more than `g` outside its surface (§6.21, F4) — shrunk (`g < 0`) the cone whose surface
     // stands `-g` within, its apex further along; grown, the cone standing `g` without, its apex
@@ -158,7 +146,10 @@ fn fold(sk: &Sketch, solid: usize) -> Result<Meridian, String> {
             if width <= 0.0 {
                 return Region { loops: Vec::new() };
             }
-            return polygon(vec![[0.0, apex], [width, far], [0.0, far]]);
+            // a loop either way round: `Region::plain` turns it
+            let pts = [[0.0, apex], [width, far], [0.0, far]];
+            return Region::plain(vec![(0..3).map(|k| Seg::Line { a: pts[k], b: pts[(k + 1) % 3] })
+                .collect()]);
         }
         let (sin, cos) = (half.dsin(), half.dcos());
         // where the grown surface leaves the ball, square to the generator from the apex
@@ -187,13 +178,10 @@ fn fold(sk: &Sketch, solid: usize) -> Result<Meridian, String> {
                 _ => format!("{} is about a line other than the region's axis", what(t)),
             });
         }
-        let cone = matches!(t.shape, RegionShape::Cone { .. });
-        // a distance's offset is its number moved: the surface `g` without is where it reads
-        // `v + g`
-        let v = if cone { v } else { v + g };
-        // a measure from a point or a line is never less than nothing
+        // a measure from a point or a line is never less than nothing (a distance's offset is its
+        // number moved before it gets here: only a cone's is `g`, `region_term`)
         if !plane && v <= 0.0 {
-            if cone && g != 0.0 {
+            if g != 0.0 {
                 return Err(format!("{} is a cone of no width, which has no offset", what(t)));
             }
             return Ok(Region { loops: Vec::new() });

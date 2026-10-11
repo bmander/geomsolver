@@ -7,7 +7,7 @@ signed distance `d` from the surface of a set `S`, `std.Offset(S, d)` the set `d
 `p inside(d) S` / `p outside(d) S` that side of `S` grown by `d` (§6.21). A sphere's or a
 cylinder's offset is its number moved; a region solid's cone offset is exact, a cone with its apex
 rounded by a ball where it grows (§6.9); a drawn point stands at its foot on the set. A bound may
-read an unknown the drawing's rows determine (§9.6). The hypoid's blank is its pitch cone grown by
+read an unknown the drawing's rows read (§9.6). The hypoid's blank is its pitch cone grown by
 the addendum and the outside grown by the back depth, and the end chamfers put their corners on
 the tip as a set.
 
@@ -2061,7 +2061,7 @@ p outside P                       // in front of it
 
 - **What takes one:** a measure a solve can be steered along — an ordinate (so `inside` and `outside` a plane, the point's ordinate along the plane's normal from its origin), a distance between points, and a point's or a parallel line's distance from a line. A bound on any other kind is **E040**.
 - **Closed:** `>=`, `<=` and `in:` include their edge, where a solution may stand. `>` and `<` are refused.
-- **Its number:** zero may be written, unlike an ordinate's equality, which zero makes a `level` (§9.2). A bound may not be a `claim` (**E040**): a bound chooses which solution is meant, and a claim asks about the one there is. It may read an unknown only where the drawing's rows determine it (**[0.64]**, a cone's half its side is chosen against), read as it stands: on the seeds its seed, on the solution its solution; one nothing else reads is **E040**, since a bound adds no freedom.
+- **Its number:** zero may be written, unlike an ordinate's equality, which zero makes a `level` (§9.2). A bound may not be a `claim` (**E040**): a bound chooses which solution is meant, and a claim asks about the one there is. It may read an unknown only where a row of the drawing reads it too (**[0.64]**, a cone's half its side is chosen against), read as it stands: on the seeds its seed, on the solution its solution; one nothing else reads is **E040**, since a bound adds no freedom.
 - **Meaning:** outside a set body, a bound **chooses the root**. It adds no row and no freedom, and is drawn as no callout. It does the work a seed did when the seed only picked a side, so it is read on the seeds first: a point whose seed breaks a bound is carried across its edge, to the mirror of its reading, as if it had been seeded there, and everything seeded from it or placed through it follows. The solver then checks it on the solution. Where it still does not hold, the solver looks for the root where it does, from the seeds and from the solution, and fails the solve where none is found (`a bound does not hold`). The diagnosis tells which bounds are violated, and which hold with the solution on their edge (*active*).
 - **Inside a set body** a bound makes the set a region, and `inside`/`outside` put a point in one (§6.21) **[0.61]**. `solid(R)` is a region's solid (§6.9) **[0.62]**. `inside(d)` and `outside(d)` grow a side by `d` (§6.21) **[0.64]**.
 - `inside` between two solids remains the claim of §9.8; which one a statement is follows from its operands.

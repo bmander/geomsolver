@@ -1325,6 +1325,16 @@ impl Cmp {
     pub fn of(text: &str) -> Option<Cmp> {
         [Cmp::Ge, Cmp::Le, Cmp::In].into_iter().find(|c| c.text() == text)
     }
+
+    /// The other way: a bound on a measure, read on its negative.  `None` for an interval, which
+    /// is either side of it.
+    pub fn turned(self) -> Option<Cmp> {
+        match self {
+            Cmp::Ge => Some(Cmp::Le),
+            Cmp::Le => Some(Cmp::Ge),
+            Cmp::In => None,
+        }
+    }
 }
 
 /// An operator spelling retained through resolution, with operands and arguments

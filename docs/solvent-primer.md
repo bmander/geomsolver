@@ -773,7 +773,7 @@ foot outside p                         // in front of it
   solution; off it, the solve looks for the root where it holds and fails with `a bound does not
   hold` if there is none. The diagnosis lists violated bounds and *active* ones (solution on the
   edge).
-- **Not:** a `claim`, or the only reader of an unknown (one the rows determine it may read, as it
+- **Not:** a `claim`, or the only reader of an unknown (one the rows read it may read too, as it
   stands: a cone's half, 0.64). Inside a set body a bound makes a region (below, sets).
 
 ### 1.11 Datums

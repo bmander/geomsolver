@@ -240,11 +240,7 @@ impl<'a> Walk<'a> {
                 let touch = !pair && rel.form.written()
                     .is_some_and(|w| w.word.text == "tangent" && !w.args.is_empty());
                 // a distance from a set, or a side of one grown (F4)
-                let reach = rel.form.written().is_some_and(|w| {
-                    w.word.text == "distance"
-                        || crate::constraints::plane_side_word(&w.word.text).is_some()
-                            && !w.args.is_empty()
-                });
+                let reach = rel.form.written().is_some_and(reaches);
                 if pair {
                     self.expand_pair(&st, rel, &path, &sc, &found);
                 } else {
@@ -398,12 +394,7 @@ impl<'a> Walk<'a> {
             let app = self.begin_nth(&u, &closure, n);
             let bound = lit.bound.text.clone();
             self.bind_to_use(&app, &bound, point.clone(), &u);
-            let along = |k: u8| Pass::Along(Along {
-                point: local(&bound, at),
-                toward: AlongBy::Chart(k),
-                key: keys[k as usize].clone(),
-                made: None,
-            });
+            let along = |k: u8| charted(local(&bound, at), k, keys[k as usize].clone());
             let walks = [Pass::Made, along(0), along(1)];
             self.apply(&u, app, lit.body, &BTreeMap::new(), &walks, worded.clone(), depth);
         }
@@ -518,50 +509,48 @@ impl<'a> Walk<'a> {
         let set = self.set_written(&w.ops[k]);
         let point = w.ops[1 - k].clone();
         let reach = if word == "distance" { reach_of(w, &set) } else { grown_side(w, &set) };
-        let Reach { cmp, text, outside, args } = match reach {
+        let Reach { cmp, text, grows, args } = match reach {
             Ok(r) => r,
             Err(m) => return self.once(Code::E040, at, m),
         };
-        let site = &self.sets[abs];
-        let (mut lit, depth, closure) = (site.lit.clone(), site.depth, site.scope.clone());
-        if region(&lit) {
+        let lit = &self.sets[abs].lit;
+        if region(lit) {
             let m = format!("`{set}` is a region, with no surface to measure from: measure from \
                              the set it is bounded by");
             return self.once(Code::E040, at, m);
         }
         // the one relation of its point, holding the number its surface is at
+        let is_dim = |a: &OpArg| matches!(a, OpArg::Dim(..));
         let relations: Vec<usize> = (0..lit.body.len())
             .filter(|&i| matches!(lit.body[i].kind, StmtKind::Relation(_)))
             .collect();
-        let is_dim = |a: &OpArg| matches!(a, OpArg::Dim(..));
-        let numbered =
-            |i: &usize| written_of(&lit.body[*i]).is_some_and(|w| w.args.iter().any(is_dim));
         let [i] = relations[..] else {
             let m = format!("a distance is measured from a surface, and `{set}` says {} things of \
                              its point",
                 relations.len());
             return self.once(Code::E040, at, m);
         };
-        if !numbered(&i) {
+        if !written_of(&lit.body[i]).is_some_and(|w| w.args.iter().any(is_dim)) {
             let m = format!("`{set}` holds no number its surface is at, to measure from");
             return self.once(Code::E040, at, m);
         }
-        // the distance, read where the use is: unsigned, and signed toward the outside
-        let mut d = match value_aff(&text, &sc.vals, self.units) {
-            Ok(d) => d,
+        // the distance, read where the use is — a length, which a bare number is taken as where
+        // one is wanted (§3.3) — and signed toward the outside
+        let d = match value_aff(&text, &sc.vals, self.units) {
+            Ok(d) if d.dim.fits(crate::units::Dim::LENGTH) => d.as_dim(crate::units::Dim::LENGTH),
+            Ok(_) => {
+                let m = format!("`{text}` is a distance from `{set}`, a length");
+                return self.once(Code::E103, at, m);
+            }
             Err(e) => return self.once(Code::E103, at, format!("`{text}`: {e}")),
         };
-        // a length, which a bare number is taken as where one is wanted (§3.3)
-        if !d.dim.fits(crate::units::Dim::LENGTH) {
-            let m = format!("`{text}` is a distance from `{set}`, a length");
-            return self.once(Code::E103, at, m);
-        }
-        d.dim = crate::units::Dim::LENGTH;
         if d.number() == Some(0.0) && word == "distance" {
             let m = format!("a point at no distance from `{set}` is on it: `coincident`");
             return self.once(Code::E040, at, m);
         }
-        let grow = if outside { d.clone() } else { Aff { m: -d.m, c: -d.c, ..d.clone() } };
+        let offset = if grows { d.clone() } else { Aff { m: -d.m, c: -d.c, ..d.clone() } };
+        let site = &self.sets[abs];
+        let (mut lit, depth, closure) = (site.lit.clone(), site.depth, site.scope.clone());
         let StmtKind::Relation(r) = &mut lit.body[i].kind else { unreachable!("a relation") };
         let measured = r.form.written_mut().expect("a number is written");
         let distance = measured.word.text == "distance";
@@ -583,15 +572,16 @@ impl<'a> Walk<'a> {
                 return self.once(Code::E040, at, m);
             }
             let n = measured.args.iter().position(is_dim).expect("a number");
-            if let (true, OpArg::Dim(t, _)) = (distance, &mut measured.args[n]) {
+            if distance {
+                let OpArg::Dim(t, _) = &mut measured.args[n] else { unreachable!("a number") };
                 *t = format!("({t}) + #grow");
             }
             if let Some(cmp) = cmp {
-                let grow = (!distance).then(|| ("#grow".to_string(), at));
-                measured.args.insert(n, OpArg::Bound { cmp, span: at, hi: None, grow });
+                let carried = (!distance).then(|| ("#grow".to_string(), at));
+                measured.args.insert(n, OpArg::Bound { cmp, span: at, hi: None, grow: carried });
             }
             let mut app = self.begin(&u, &closure);
-            app.give("#grow", grow);
+            app.give("#grow", offset);
             self.bind_to_use(&app, &bound, point, &u);
             let walks = vec![self.inherited_twin(&app, &u).into()];
             return self.apply(&u, app, lit.body, &BTreeMap::new(), &walks, worded, depth);
@@ -621,38 +611,27 @@ impl<'a> Walk<'a> {
         self.bind_to_use(&app, "#p", point, &u);
         self.bind_to_use(&app, "#set", w.ops[k].clone(), &u);
         // the foot, at the body's point, where the point is to start
-        let foot = format!("{}{bound}", app.prefix());
-        self.names.insert(foot.clone());
-        let key = Name { text: foot, span: Span::new(at.lo as usize, at.lo as usize) };
-        let seed = crate::syntax::AtRef::at(local("#p", at));
-        let decl = Decl::point(DeclName::Key(key), [0.0; 2], Some(seed));
-        let kind = StmtKind::Decl(decl);
-        let made = Stmt { id: st.id, kind, span: st.span, chained: Chained::No };
-        self.out.push((made, path.to_vec(), app.scope().clone()));
+        self.hidden_point(&app, st, &bound, crate::syntax::AtRef::at(local("#p", at)), at, path);
         // the point at the distance from it, on the side named — and the foot, which stands on
-        // the surface, seeded on its other side, so the two start apart the way they end
+        // the surface, seeded on its other side, so the two start apart the way they end; each
+        // a statement of the body of its own, so the uses among them are applied apart
+        // (`Scope::written`), stamped as the use's once walked
         let dim = OpArg::Dim("#reach".to_string(), at);
         let ops = vec![local("#p", at), local(&bound, at)];
-        let (side, other) = if outside { ("outside", "inside") } else { ("inside", "outside") };
+        let (side, other) = if grows { ("outside", "inside") } else { ("inside", "outside") };
         let set = local("#set", at);
-        for r in [
+        let made = [
             relation(("distance", at), Infix, ops, vec![dim], st.span),
             relation((side, at), Infix, vec![local("#p", at), set.clone()], Vec::new(), st.span),
             relation((other, at), Infix, vec![local(&bound, at), set], Vec::new(), st.span),
-        ].into_iter().enumerate() {
-            // each a statement of the body of its own, so the uses among them are applied apart
-            // (`Scope::written`); stamped as the use's once walked
-            let id = crate::syntax::StmtId(u32::MAX - r.0 as u32);
-            let kind = StmtKind::Relation(r.1);
+        ];
+        for (n, r) in made.into_iter().enumerate() {
+            let id = crate::syntax::StmtId(FOOT_STATEMENTS - n as u32);
+            let kind = StmtKind::Relation(r);
             lit.body.push(Stmt { id, kind, span: st.span, chained: Chained::No });
         }
         // the body at the foot, then it and the distance along two directions there
-        let along = |k: u8| Pass::Along(Along {
-            point: local(&bound, at),
-            toward: AlongBy::Chart(k),
-            key: format!("{}t{k}.", app.prefix()),
-            made: None,
-        });
+        let along = |k: u8| charted(local(&bound, at), k, format!("{}t{k}.", app.prefix()));
         let walks = [Pass::Itself, along(0), along(1)];
         self.apply(&u, app, lit.body, &BTreeMap::new(), &walks, worded, depth);
     }
@@ -668,8 +647,6 @@ impl<'a> Walk<'a> {
     /// `l tangent S`'s contact: a point standing in space, on the line, seeded at its middle —
     /// declared at the bound name under the use's prefix, so the body reads it as its point.
     fn contact(&mut self, app: &Application, st: &Stmt, bound: &str, at: Span, path: &[PathStep]) {
-        let abs = format!("{}{bound}", app.prefix());
-        self.names.insert(abs.clone());
         let line = local("#line", at);
         let end = |e: &str| {
             let mut r = line.clone();
@@ -681,14 +658,32 @@ impl<'a> Walk<'a> {
             by: Some(("0.5".to_string(), at)),
             ..crate::syntax::AtRef::at(end("p1"))
         };
-        let key = Name { text: abs, span: Span::new(at.lo as usize, at.lo as usize) };
-        let decl = Decl::point(crate::syntax::DeclName::Key(key), [0.0; 2], Some(seed_at));
+        self.hidden_point(app, st, bound, seed_at, at, path);
         let ops = vec![local(bound, at), line];
         let on = relation(("coincident", at), Infix, ops, Vec::new(), st.span);
-        for kind in [StmtKind::Decl(decl), StmtKind::Relation(on)] {
-            let made = Stmt { id: st.id, kind, span: st.span, chained: Chained::No };
-            self.out.push((made, path.to_vec(), app.scope().clone()));
-        }
+        let kind = StmtKind::Relation(on);
+        let made = Stmt { id: st.id, kind, span: st.span, chained: Chained::No };
+        self.out.push((made, path.to_vec(), app.scope().clone()));
+    }
+
+    /// A point standing in space at the bound name under the use's prefix — a tangency's contact,
+    /// a distance's foot — so the body reads it as its point, seeded at `seed`.
+    fn hidden_point(
+        &mut self,
+        app: &Application,
+        st: &Stmt,
+        bound: &str,
+        seed: crate::syntax::AtRef,
+        at: Span,
+        path: &[PathStep],
+    ) {
+        let abs = format!("{}{bound}", app.prefix());
+        self.names.insert(abs.clone());
+        let key = Name { text: abs, span: Span::new(at.lo as usize, at.lo as usize) };
+        let decl = Decl::point(DeclName::Key(key), [0.0; 2], Some(seed));
+        let kind = StmtKind::Decl(decl);
+        let made = Stmt { id: st.id, kind, span: st.span, chained: Chained::No };
+        self.out.push((made, path.to_vec(), app.scope().clone()));
     }
 }
 
@@ -735,11 +730,22 @@ fn at_point(w: &crate::syntax::Written) -> Option<Ref> {
     }
 }
 
-/// Whether a written relation is one a set may be used by: `coincident`, `tangent`, `inside`,
-/// `outside` or `distance` between two operands.
+/// Whether a written relation is one a set may be used by: `coincident`, `tangent`, `inside` or
+/// `outside` between two operands, or a distance from one (`reaches`).
 fn may_use(w: &crate::syntax::Written) -> bool {
-    matches!(w.word.text.as_str(), "coincident" | "tangent" | "inside" | "outside" | "distance")
-        && w.ops.len() == 2
+    w.ops.len() == 2
+        && (matches!(w.word.text.as_str(), "coincident" | "tangent" | "inside" | "outside")
+            || reaches(w))
+}
+
+/// Whether a written relation measures from a set's surface (F4): a distance with a side only a
+/// surface has (`side: outside`), or a side of one grown (`inside(d)`) — so a plain distance
+/// never enters the walk of a set's uses.
+fn reaches(w: &crate::syntax::Written) -> bool {
+    match w.word.text.as_str() {
+        "distance" => matches!(w.sel("side").as_deref(), Some("outside" | "inside")),
+        word => crate::constraints::plane_side_word(word).is_some() && !w.args.is_empty(),
+    }
 }
 
 /// Whether a set is a **region** (§6.21, §9.6): its body bounds a number, or says its point is
@@ -771,11 +777,12 @@ fn region_body(
 ) -> Result<(), String> {
     use crate::syntax::{Cmp, OpArg};
     let is_dim = |a: &OpArg| matches!(a, OpArg::Dim(..));
-    // a side of another set grown (`p inside(d) S`) is a use of it, not a number of this one's
+    // a side of another set grown (`p inside(d) S`) is a use of it, not a number of this one's;
+    // a distance from one is (`std.Offset`'s body)
+    let grown = |w: &crate::syntax::Written| crate::constraints::plane_side_word(&w.word.text)
+        .is_some();
     let dims: Vec<usize> = (0..body.len())
-        .filter(|&i| written_of(&body[i]).is_some_and(|w| {
-            w.args.iter().any(is_dim) && crate::constraints::plane_side_word(&w.word.text).is_none()
-        }))
+        .filter(|&i| written_of(&body[i]).is_some_and(|w| w.args.iter().any(is_dim) && !grown(w)))
         .collect();
     let [i] = dims[..] else {
         let uses = body.iter().filter_map(written_of).any(may_use);
@@ -803,16 +810,10 @@ fn region_body(
         // a region already: `inside` keeps its bound, `outside` turns it round
         (Some(_), Cmp::Le) => {}
         (Some(cmp), _) => {
-            *cmp = match *cmp {
-                Cmp::Ge => Cmp::Le,
-                Cmp::Le => Cmp::Ge,
-                Cmp::In => {
-                    return Err(format!(
-                        "outside `{name}`'s interval is either side of it: a choice of root, not \
-                         a region `outside` can say"
-                    ))
-                }
-            };
+            *cmp = cmp.turned().ok_or_else(|| format!(
+                "outside `{name}`'s interval is either side of it: a choice of root, not a region \
+                 `outside` can say"
+            ))?;
         }
         (None, side) => {
             let k = w.args.iter().position(is_dim).expect("a dimension's number");
@@ -822,21 +823,31 @@ fn region_body(
     Ok(())
 }
 
+/// The statement ids a distance's foot gives what it adds to the set's body (`expand_reach`), so
+/// each is applied under a prefix of its own: past any a program numbers.
+const FOOT_STATEMENTS: u32 = u32::MAX;
+
+/// A set's body walked along the `k`th of two directions solved for at `point` (`Toward::Chart`).
+fn charted(point: Ref, k: u8, key: String) -> Pass {
+    Pass::Along(Along { point, toward: AlongBy::Chart(k), key, made: None })
+}
+
 /// What a distance from a set, or a side of one grown, says (§6.21, F4): the bound on the signed
 /// distance from its surface toward its outside (`None` an equation), the distance as written,
-/// whether it is signed toward the outside, and its parentheses as the culprit reads them.
+/// whether the offset grows the set (toward its outside) or shrinks it, and its parentheses as
+/// the culprit reads them.
 struct Reach {
     cmp: Option<crate::syntax::Cmp>,
     text: String,
-    outside: bool,
+    grows: bool,
     args: String,
 }
 
 /// `p distance(d, side: outside) S`, `p distance(<= d, side: inside) S`, … — `side:` said,
-/// since a surface has two.
+/// since a surface has two (`reaches`).
 fn reach_of(w: &crate::syntax::Written, set: &str) -> Result<Reach, String> {
-    use crate::syntax::{Arg, Cmp, OpArg};
-    let (mut cmp, mut text, mut side) = (None, None, None);
+    use crate::syntax::{Arg, OpArg};
+    let (mut cmp, mut text) = (None, None);
     for a in &w.args {
         match a {
             OpArg::Bound { hi: Some(_), .. } => {
@@ -844,11 +855,7 @@ fn reach_of(w: &crate::syntax::Written, set: &str) -> Result<Reach, String> {
             }
             OpArg::Bound { cmp: c, .. } => cmp = Some(*c),
             OpArg::Dim(t, _) => text = Some(t.clone()),
-            OpArg::Named(n, Arg::Word(v))
-                if n.text == "side" && matches!(v.as_str(), "outside" | "inside") =>
-            {
-                side = Some(v.clone())
-            }
+            OpArg::Named(n, Arg::Word(_)) if n.text == "side" => {}
             _ => {
                 return Err(format!("a distance from `{set}` takes its number and `side: \
                                     outside` or `side: inside`"))
@@ -856,22 +863,15 @@ fn reach_of(w: &crate::syntax::Written, set: &str) -> Result<Reach, String> {
         }
     }
     let Some(text) = text else { return Err(format!("a distance from `{set}` states a number")) };
-    let Some(side) = side else {
-        return Err(format!("a surface has two sides: `side: outside` or `side: inside` of `{set}`"))
-    };
-    let outside = side == "outside";
-    // the bound on the distance inside is the other way on the distance outside
-    let turned = |c: Cmp| match c {
-        Cmp::Le => Cmp::Ge,
-        Cmp::Ge => Cmp::Le,
-        Cmp::In => Cmp::In,
-    };
-    let said = cmp.map_or(String::new(), |c: Cmp| format!("{} ", c.text()));
+    let grows = w.sel("side").as_deref() == Some("outside");
+    // a bound on the distance inside is the other way on the distance outside
+    let said = cmp.map_or(String::new(), |c| format!("{} ", c.text()));
+    let side = if grows { "outside" } else { "inside" };
     Ok(Reach {
-        cmp: cmp.map(|c| if outside { c } else { turned(c) }),
+        cmp: if grows { cmp } else { cmp.and_then(|c| c.turned()) },
         args: format!("{said}{text}, side: {side}"),
         text,
-        outside,
+        grows,
     })
 }
 
@@ -883,11 +883,6 @@ fn grown_side(w: &crate::syntax::Written, set: &str) -> Result<Reach, String> {
     let [OpArg::Dim(text, _)] = w.args.as_slice() else {
         return Err(format!("`{word}` grows `{set}` by one distance: `{word}(d) {set}`"));
     };
-    let inside = word == "inside";
-    Ok(Reach {
-        cmp: Some(if inside { Cmp::Le } else { Cmp::Ge }),
-        text: text.clone(),
-        outside: inside,
-        args: text.clone(),
-    })
+    let cmp = crate::constraints::plane_side_word(word).expect("a side");
+    Ok(Reach { cmp: Some(cmp), text: text.clone(), grows: cmp == Cmp::Le, args: text.clone() })
 }
