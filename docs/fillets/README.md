@@ -285,3 +285,136 @@ All seven tests run in 0.04 s.
   it in the meridian needs offsets of a planar region.
 - **Spec:** finding 7's decision now has a recommendation (finding 4: from the other face).
 
+## X2: the definition, by brute force (2026-10-11)
+
+**Verdict: (a + v).** The pairwise opening plus a corner term where three named edges meet
+reproduces every closed form the Rust stack checks its fixtures by, convex and concave. (a) alone
+leaves material at such corners. (b) rounds edges nobody named. X2 also settles two rules the
+issue's candidates left open:
+- **What a term reaches:** the ball of a point of the body's edge.
+- **How a run ends on a face that isn't named:** that face cuts it off.
+
+The test is [`rust/gcs-core/tests/fillet_definition.rs`](../../rust/gcs-core/tests/fillet_definition.rs).
+It reads nothing of the core:
+- each body is a Boolean of planes and cylinders, each with its exact signed distance;
+- each candidate is a classifier of points;
+- each volume is integrated over an octree pruned by Lipschitz bounds, down to `r / 32`, every
+  last cell read at one point placed in it at random.
+
+It agrees with the closed forms to about 1e-3, against differences between the candidates of 1%
+and more. The volume tests are in the slow tier (about 2.5 CPU minutes); the two point tests run
+by default.
+
+### What the candidates gave
+
+Each entry is the volume's relative difference from the closed form.
+
+| case | stack | closed form | (a) | (a + v) | (b) |
+|---|---|---|---|---|---|
+| block rounded all over | #93 | Steiner | −1.1e-2 | −4e-6 | −4e-6 |
+| block's top rim alone | #99 | mitre | +3.6e-4 | +3.6e-4 | +1.18 |
+| triangular prism rounded all over | #93 | Steiner | −1.8e-2 | −1.2e-4 | −1.2e-4 |
+| its cap alone (an obtuse, two acute corners) | #99 | mitre | −2.9e-4 | −2.9e-4 | +3.47 |
+| pocket rounded inside (concave) | #93 | runs and ball patches | −1.4e-2 | +1.6e-4 | +1.6e-4 |
+| its floor alone (concave) | #99 | mitre | +8e-5 | +8e-5 | +0.23 |
+| rounded boss's foot (a tangent chain) | #90 | runs and a ring | +9e-4 | | |
+| half a bore's rim (convex, runs out into the void) | #85, #110 | #85's quadrature | +9e-5 | | |
+| half a tee's crotch (concave, runs out onto a face) | #85, #110 | #85's quadrature | +7.6e-4 | | |
+| half a boss's root on a slope (concave, runs out) | #110 | #85's quadrature | −6.9e-4 | | |
+
+The last four are rounds of one pair of faces, where the three candidates are one term.
+
+### Findings
+
+1. **The issue's hypothesis holds.**
+   - (a) gives OCCT's mitre wherever the third edge is sharp: the block's rim, the triangle's
+     obtuse and acute corners, and the pocket's floor, concave as convex.
+   - Where three named edges meet, (a) leaves material. The point `(−0.3, −0.3, −0.3) r` from a
+     square corner is kept by every pair (0.99 r from each run's ball centre) and taken by the
+     corner (1.21 r from its ball's), as hand-calculated (`a_corner_point_…`).
+   - In volume (a) falls short by 1.1% on the block, 1.8% on the prism and 1.4% on the pocket.
+2. **(b) is (a + v)'s special case, not an alternative.** Where every edge among the named faces
+   is named (each "all over" case), the two agree. Where one is not, (b) rounds it anyway: the
+   block's upright edges under a top rim rounded alone.
+3. **The corner is an explicit term.** It is the patch of the ball touching all three faces, at
+   square and slanted corners, convex and concave. Mitres and tangent chains are consequences.
+4. **A term reaches only the edge it rounds.** Two carriers meet in more places than the body's
+   edge, so the wedge's opening alone makes material where there is none:
+   - the tee's cylinders meet again under the main pipe;
+   - a cutter's cap, eaten by the cut, meets its walls in the air;
+   - the rounded boss's crossed pieces meet the plate inside the boss;
+   - a wall's plane carries on past its tangent seam.
+
+   The rule that holds everywhere: a term acts where its nearest ball is the ball of a point of
+   the edge. The faces' meeting point nearest the ball's centre must be on the boundary, with both
+   faces really there beside it. Two rules were tried and rejected:
+   - **Every contact of the ball on its faces** loses 6.4% of the prism cap's mitre. At an acute
+     corner the ball's contact on the cap leaves the cap, but OCCT and the stack still take the
+     material.
+   - **Any ball on the faces' sides** makes the material above.
+5. **A run ending on a face that is not named is cut off by that face** (the stack's, OCCT's and
+   `x0/runout.sv`'s reading).
+   - Where the face cuts the edge square, as in the three halves, the alternative (the run ends
+     with its edge, square to it) is the same by symmetry.
+   - Oblique (the boss standing 3 in from the near face, the edge ending at the face at a slant),
+     the square end hangs 0.58 mm³ (2.3% of the round) past the face, in the air beside the
+     overhanging boss. Within the face it is the face's cut to 1e-4.
+   - Convex, the body clips a removal, so the two agree there too.
+6. **Tangent chains are seamless.** At a seam a straight run's ball and a corner ring's ball are
+   one ball. Each run ends at its seam by finding 4's rule, and their union is the stack's closed
+   form.
+7. **A round wider than its face is no full round** (X0's finding 9, X1's finding 6). On a plate 3
+   thick rounded all over by 2:
+   - (a + v) leaves a ridge where the top's and the bottom's rounds cross: half a radius in from
+     the edge's middle, a point is kept;
+   - (b) leaves nothing, since no ball of 2 fits in 3;
+   - neither is what a draughtsman means. At exactly half the thickness both give the full round.
+
+   **Recommendation:** refuse by name, as X1's prototype and the stack's E085 do. A full round, if
+   wanted, is another word.
+8. **Not decided here: the stratum** (X4). Each round here acts on the finished body, and no later
+   term crosses one.
+
+### Proposed spec text
+
+For §6.9, where L5 and L6 land:
+
+> **Rounds.** `A round(r) B` rounds every edge where a face of `A` meets a face of `B` at an
+> angle. `round(r) X` rounds every edge among `X`'s faces. Where two faces meet tangent there is
+> no edge. `r` is a Length, and `round(0)` is the identity.
+>
+> For an edge between faces `a` and `b`, let `Hₐ` and `H_b` be the material sides of their
+> surfaces.
+> - Where the body beside the edge is `Hₐ ∩ H_b` (the edge is convex), the round removes the
+>   points of the body that no ball of radius `r` within `Hₐ ∩ H_b` covers.
+> - Where the body beside it is `Hₐ ∪ H_b` (concave), the round adds the points outside both that
+>   no ball of radius `r` outside both covers.
+> - Either way, only where the nearest such ball is the ball of a point of the edge.
+>
+> Where three rounded edges meet at a corner, the same holds of the three faces' sides: the
+> corner is a patch of the ball touching all three. Where an edge ends on a face that is not
+> rounded, the round carries on past the end along `a` and `b`, and that face cuts it off.
+>
+> Two rounded edges meeting at a corner whose third edge is sharp cross (a mitre), and rounded
+> edges meeting tangent are one round. Whether an edge is convex or concave is read off the
+> geometry, never said.
+>
+> A round whose ball cannot pass between two of its edges on one face is an error naming the
+> face.
+
+### What X2 hands on
+
+- **L5 and L7:**
+  - a run is a canal (a cylinder or a torus where the spine allows);
+  - a corner where three named edges meet is a sphere's patch;
+  - a mitre is two runs' material unioned;
+  - a run-out is a run cut by the face it ends on.
+
+  The lowering entries are exactly these; nothing else is a term.
+- **L1:** finding 4's rule needs a face to be both a carrier (for the balls) and a patch (to tell
+  an edge from two carriers' meeting). This is X0's finding 12 settled the same way for rounds.
+- **X5:** this test's classifier is the field's reference. A field leaf for one run is the pair
+  term with finding 4's reach, and a corner leaf is the three-face term.
+- **X4:** the stratum, and finding 5 of X0 (a round against a round over the same edges), are
+  still open.
+
