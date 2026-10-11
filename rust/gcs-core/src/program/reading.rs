@@ -146,9 +146,9 @@ pub(super) fn in_space(
     let one_plane =
         views.first().is_some_and(|v| v.is_some()) && views.iter().all(|v| *v == views[0]);
     let chosen = |i: usize| matches!(args.get(i), Some(Arg::Str(w)) if !w.is_empty());
-    // the plane's kind says which way where it is an angle or names a side or a sense, which a
-    // set's body, in space, does not
-    let says_which_way = kind == CKind::Angle || chosen(3);
+    // the plane's kind says which way where it is an angle or names a side or a sense
+    // (`CKind::side_slot`), which a set's body, in space, does not
+    let says_which_way = kind == CKind::Angle || kind.side_slot().is_some_and(chosen);
     let in_space = match reader {
         Reader::Drawn => !one_plane,
         Reader::Set => !one_plane || says_which_way,

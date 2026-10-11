@@ -305,7 +305,7 @@ impl<'a> Walk<'a> {
             }
         }
         let u = Use { st, rel, path, scope: sc, at };
-        let app = self.begin(&u, &closure);
+        let app = self.begin(&u, &closure).of_set();
         let other = w.ops[1 - k].clone();
         let bound = lit.bound.text.clone();
         // a tangency: the body at a contact on the line, then differentiated along it; else the
@@ -391,7 +391,7 @@ impl<'a> Walk<'a> {
         for (n, (_, abs)) in found.iter().enumerate() {
             let site = &self.sets[abs];
             let (lit, depth, closure) = (site.lit.clone(), site.depth, site.scope.clone());
-            let app = self.begin_nth(&u, &closure, n);
+            let app = self.begin_nth(&u, &closure, n).of_set();
             let bound = lit.bound.text.clone();
             self.bind_to_use(&app, &bound, point.clone(), &u);
             let along = |k: u8| charted(local(&bound, at), k, keys[k as usize].clone());
@@ -452,7 +452,7 @@ impl<'a> Walk<'a> {
         let u = Use { st, rel, path, scope: sc, at };
         let site = &self.sets[abs];
         let (lit, depth, closure) = (site.lit.clone(), site.depth, site.scope.clone());
-        let app = self.begin(&u, &closure);
+        let app = self.begin(&u, &closure).of_set();
         let bound = lit.bound.text.clone();
         self.bind_to_use(&app, &bound, point.clone(), &u);
         // the plane's own two directions, each a derivative of its own
@@ -580,7 +580,7 @@ impl<'a> Walk<'a> {
                 let carried = (!distance).then(|| ("#grow".to_string(), at));
                 measured.args.insert(n, OpArg::Bound { cmp, span: at, hi: None, grow: carried });
             }
-            let mut app = self.begin(&u, &closure);
+            let mut app = self.begin(&u, &closure).of_set();
             app.give("#grow", offset);
             self.bind_to_use(&app, &bound, point, &u);
             let walks = vec![self.inherited_twin(&app, &u).into()];
@@ -606,7 +606,7 @@ impl<'a> Walk<'a> {
         if let Some(m) = refusal {
             return self.once(Code::E040, at, m);
         }
-        let mut app = self.begin(&u, &closure);
+        let mut app = self.begin(&u, &closure).of_set();
         app.give("#reach", d);
         self.bind_to_use(&app, "#p", point, &u);
         self.bind_to_use(&app, "#set", w.ops[k].clone(), &u);

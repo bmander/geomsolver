@@ -144,6 +144,14 @@ fn a_region_is_said_of_one_number() {
                       l tangent ball\n"), "E040", "is a region", "tangent");
 }
 
+/// An angle written between lines in one view is signed, so a bound on it would be a half-plane:
+/// refused, naming the cone, whose body is read in space.
+#[test]
+fn an_angle_bound_in_a_view_is_refused() {
+    refused(&format!("{CROSSING}up := line(a, c)\nrim := line(a, p)\nup angle(<= 30deg) rim\n"),
+            "E040", "half-plane", "<=");
+}
+
 /// A cone about a line drawn in the point's own view is a region there too (§6.21): its body is
 /// read in space, unsigned, so inside it is the root within 30° of `a → c` on either side — here
 /// (3, 4), clockwise of it, seeded on the other root's side — and outside it the other.

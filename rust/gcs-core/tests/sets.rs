@@ -175,6 +175,13 @@ fn a_set_is_read_in_space_in_the_view_its_point_is_drawn_in() {
     let b = at(&sk, &e, "b");
     assert!((angle(sub(b, apex), sub(q, apex)) - 30.0).abs() < 1e-9, "{b:?}");
     assert!(b[0] > 0.0, "clockwise of the axis, where it was seeded: {b:?}");
+    // a program lifted from it says the angle the way the pose turns, so it stays there
+    let lifted = gcs_core::program::to_program(&sk).text().to_string();
+    assert!(lifted.contains("sense: cw"), "{lifted}");
+    let again = solved(&read(&lifted));
+    for i in 0..sk.points.len() {
+        assert!(norm(sub(sk.world_point(i), again.world_point(i))) < 1e-7, "p{i}\n{lifted}");
+    }
     // a sphere's distance in the plane is the distance in space: the plane's kind
     let e = read(&with("b := point hint((20, 40)) in std.front\nb coincident ball"));
     let kinds: Vec<_> = e.sketch.user_constraints().iter().map(|c| c.kind).collect();
@@ -183,6 +190,49 @@ fn a_set_is_read_in_space_in_the_view_its_point_is_drawn_in() {
     refused(&with("wall := { q | q distance(5, side: left) ax }\nb := point hint((20, 40)) in \
                    std.front\nb coincident wall"), "E040", "in space a line has no sides",
             "coincident");
+}
+
+/// The mark goes with the set, not with how it was reached: a set used in a relation word's body
+/// is read in space as one used outright, and a word used in a set's body too.
+#[test]
+fn a_set_through_a_word_is_read_in_space() {
+    let point = "b := point hint((20, 40)) in std.front\nfix(y == 40) b\n";
+    for more in [
+        format!("a opens(h) l := a coincident std.Cone(l, half: h)\n{point}b opens(h: 30deg) ax"),
+        format!("a sees(h) l := {{\n  private construction g := line(l.p1, a)\n  l angle(h) g\n}}\n\
+                 wedge := {{ p | p sees(h: 30deg) ax }}\n{point}b coincident wedge"),
+    ] {
+        let e = read(&with(&more));
+        let kinds: Vec<_> = e.sketch.user_constraints().iter().map(|c| c.kind).collect();
+        assert_eq!(kinds, [gcs_core::constraints::CKind::Angle3], "{more}");
+        let b = at(&solved(&e), &e, "b");
+        assert!(b[0] > 0.0, "{more}: {b:?}");
+    }
+    // a sense, which an angle in space turns neither way, is refused where the set is used
+    refused(&with("fan := { q | ax angle(30deg, sense: cw) (g := line(ax.p1, q)) }\n\
+                   b := point hint((20, 40)) in std.front\nb coincident fan"), "E040",
+            "turn neither way", "coincident");
+}
+
+/// A tangency at a point drawn in the view both spheres' centres are drawn in: each body on its
+/// own is the plane's distance, the same statement, but its derivative moves the point out of the
+/// plane, so it is read in space.
+#[test]
+fn a_derivative_at_a_point_drawn_in_a_view_is_read_in_space() {
+    let src = "unit mm\nuse std\nin std.front {\n  c1 := point\n  fix((0, 0)) c1\n  \
+               c2 := point\n  fix((10, 0)) c2\n  m := point hint((3, 1))\n}\n\
+               s1 := std.Sphere(c1, r: 4)\ns2 := std.Sphere(c2, r: hint(5))\n\
+               m coincident s1\nm coincident s2\ns1 tangent(at: m) s2\n";
+    let e = read(src);
+    use gcs_core::constraints::CKind;
+    let derived: Vec<_> = e.sketch.constraints.iter().filter(|c| c.along.is_some())
+        .map(|c| c.kind).collect();
+    assert!(!derived.is_empty() && derived.iter().all(|&k| k == CKind::Distance3), "{derived:?}");
+    let sk = solved(&e);
+    let m = at(&sk, &e, "m");
+    assert!(norm(sub(m, [4.0, 0.0, 0.0])) < 1e-9, "{m:?}");
+    assert!((sk.params[sk.free_vars["s2.r"] as usize].value - 6.0).abs() < 1e-9);
+    fd_jacobian(&sk, 1e-5);
 }
 
 /// Two cones tangent at a point drawn in the gear cone's own view, `G`: its body is read where

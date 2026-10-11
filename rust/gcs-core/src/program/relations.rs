@@ -243,11 +243,14 @@ pub(super) fn constrain(
         (ent(&a.point), toward, a)
     });
     // what reads the operands' planes: a set's body (§6.21), its derivative along a chart moving
-    // its point out of any plane
-    let reader = match (r.space, &along) {
-        (true, Some((_, Some(Ok(Toward::Chart { .. })), _))) => super::reading::Reader::Moved,
-        (true, _) => super::reading::Reader::Set,
-        (false, _) => super::reading::Reader::Drawn,
+    // its point out of any plane (only a set's body is stated as one)
+    let chart = r.along.as_ref().is_some_and(|a| matches!(a.toward, crate::syntax::AlongBy::Chart(_)));
+    let reader = if chart {
+        super::reading::Reader::Moved
+    } else if r.space {
+        super::reading::Reader::Set
+    } else {
+        super::reading::Reader::Drawn
     };
     let r = match r
         .resolve(&|r| res.lookup(r).and_then(|e| follow(sk, e, &r.path).ok()).map(|e| e.kind))
@@ -728,10 +731,12 @@ fn bound_of(
         _ => None,
     }));
     match ckind {
-        // an angle in a view is signed: bounded, it would be a half-plane, not a cone's wedge
+        // an angle written in a view is signed: bounded, it would be a half-plane, not a cone's
+        // wedge, which a set's body says (read in space, §6.21)
         CKind::Angle => {
-            return Err((at, "an angle bounds a region in space, where it is unsigned (a \
-                             cone's): in a view it is signed, and bounded would be a half-plane"
+            return Err((at, "an angle in a view is signed, and bounded would be a half-plane: a \
+                             region within an angle of a line is a cone's, `std.Cone`, whose \
+                             angle is read in space, unsigned"
                 .to_string()))
         }
         k if !k.boundable() => {
