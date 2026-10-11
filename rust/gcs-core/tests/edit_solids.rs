@@ -157,7 +157,7 @@ fn what_the_elaborator_refuses_is_refused_at_the_gesture() {
     let refusals = [
         edit::add_solid(&prog, "nothing", &depth("4"), None),
         edit::add_face(&prog, &edges(&["ab", "cd"]), &[], None),
-        edit::add_body_word(&prog, BodyWord::Cut, "body", "body"),
+        edit::add_body_word(&prog, BodyWord::Cut, &["body"], "body"),
     ];
     for out in refusals {
         assert!(out.refused.is_some(), "{}", out.text);
@@ -177,7 +177,7 @@ fn an_error_already_in_the_document_is_not_the_gestures() {
 fn a_body_word_cuts_and_a_removed_solid_takes_its_word_with_it() {
     let src = format!("{PLATE}sec := face(ab, bc, cd, da)\nstock := solid(sec, depth: 4)\n\
         body := solid(stock)\nbore := solid(face(hole), through: body)\n");
-    let text = taken(edit::add_body_word(&prog_of(&src), BodyWord::Cut, "bore", "body"));
+    let text = taken(edit::add_body_word(&prog_of(&src), BodyWord::Cut, &["bore"], "body"));
     assert!(text.ends_with("bore cut body\n"), "{text}");
     let e = read(&text);
     let expected = 4.0 * (2400.0 - 25.0 * std::f64::consts::PI);

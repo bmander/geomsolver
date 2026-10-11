@@ -227,6 +227,24 @@ pub(crate) fn evaluation_operands(sk: &Sketch, i: usize) -> Result<Vec<u32>, Str
     }
 }
 
+/// Does `from` reach `goal` through its operands?  The guard on the term walk, and the one thing
+/// a document can write that has no object behind it.
+pub(crate) fn reaches(sk: &Sketch, from: u32, goal: u32) -> bool {
+    let mut pending = vec![from];
+    let mut seen = std::collections::BTreeSet::new();
+    while let Some(i) = pending.pop() {
+        if !seen.insert(i) { continue; }
+        if sk.solids.get(i as usize).is_some() {
+            let Ok(operands) = evaluation_operands(sk, i as usize) else { return true };
+            for o in operands {
+                if o == goal { return true; }
+                pending.push(o);
+            }
+        }
+    }
+    false
+}
+
 /// **Resolve a solid into primitives and a term.**  The term walk: a body is its stock, plus
 /// everything in `union` with it, minus everything that `cut`s it, each operand resolved the
 /// same way.

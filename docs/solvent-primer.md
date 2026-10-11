@@ -1460,7 +1460,7 @@ sheet's to state.
 | `bad := solid(sec, about: a)` | E081 — "a face turns about a line or an axis, and `a` is a point" |
 | `bad := solid(sec, about: std.y)` (a face on `std.front`) | E081 — "`std.y` does not lie in the face's own plane" |
 | `bad := solid(sec, depth: 3mm, about: ax)` | E001 — "a solid is a face swept along its normal (`from:`/`to:`, `depth:`) or turned about a line (`about:`), not both" |
-| `x cut y` and `y cut x` | E041 — "`x` is made of itself" |
+| `x cut y` and `y cut x` | E041 at the second — "`x` would be made of itself: `y` is made of it" |
 | `h cut h` | E080 — "`h` is cut itself" |
 
 

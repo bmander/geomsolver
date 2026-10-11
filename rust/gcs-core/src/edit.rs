@@ -1422,16 +1422,19 @@ fn seed_round(v: [f64; 3]) -> [f64; 3] {
     v.map(|x| if x.abs() <= 1e-6 * big { 0.0 } else { round_sig(x, 9) })
 }
 
-/// `what union body`, `what cut body`, `what bound body` — the body rule, one statement (§6.9).
-pub fn add_body_word(prog: &Program, word: syntax::BodyWord, what: &str, body: &str) -> Edit {
-    let rel = syntax::SolidRel {
+/// `what union body`, `what cut body`, `what bound body` — the body rule, a statement for each
+/// solid in `what`, written as one splice (§6.9): a Boolean gesture joins several tools at once.
+pub fn add_body_word(prog: &Program, word: syntax::BodyWord, what: &[&str], body: &str) -> Edit {
+    if what.is_empty() {
+        return Edit::none(prog, Some(format!("nothing to {} `{body}`", word.as_str())));
+    }
+    let stmts: Vec<StmtKind> = what.iter().map(|w| StmtKind::SolidRel(syntax::SolidRel {
         word,
-        what: syntax::Ref::new(what.to_string()),
+        what: syntax::Ref::new(w.to_string()),
         body: syntax::Ref::new(body.to_string()),
         span: Span::default(),
-    };
-    append_checked(prog, &[StmtKind::SolidRel(rel)], Vec::new())
-        .unwrap_or_else(|e| Edit::none(prog, Some(e)))
+    })).collect();
+    append_checked(prog, &stmts, Vec::new()).unwrap_or_else(|e| Edit::none(prog, Some(e)))
 }
 
 /// One constraint, written the way the registry names it.

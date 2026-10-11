@@ -3,6 +3,7 @@
  * the fit tool makes nothing until it finishes and takes its own there. */
 import * as C from '../core/constraints.js';
 import { Line, Point, distanceBetween, onRadius } from '../core/model.js';
+import { combines } from './view.js';
 import type { Place, SketchView, Tool } from './view.js';
 
 export function setTool(v: SketchView, tool: Tool): void {
@@ -25,11 +26,13 @@ export function setTool(v: SketchView, tool: Tool): void {
  *  arc strikes with its third click.  What comes back is an ordinary curve with an ordinary
  *  control polygon, so everything that edits a drawn one edits this one; a user who wants it
  *  to *keep* passing through somewhere says so with a point and the Coincident button. */
-/** Commit whichever curve tool is collecting — Enter, for the two tools whose click count is
- *  not known in advance.  Which one it is lives here, with the pending state. */
+/** Commit whichever tool is collecting — Enter, for the tools whose click count is not known in
+ *  advance: the two curve tools, and a Boolean's tools.  Which one it is lives here, with the
+ *  pending state. */
 export function finishCurve(v: SketchView): void {
   if (v.tool === 'spline') finishSpline(v);
   else if (v.tool === 'splinefit') finishSplineFit(v);
+  else if (combines(v.tool)) v.finishCombine();
 }
 
 /** Every point minted since there were `n0` is drawn in the current plane.  Called at the two
@@ -111,6 +114,16 @@ export function cancelTool(v: SketchView): void {
     v.draw();
     return;
   }
+  // a Boolean's bodies: its tools let go, then its target, the tool still down
+  if (combines(v.tool) && v.selectedSolids.length) {
+    const [target, ...tools] = v.selectedSolids;
+    if (tools.length) v.pickSolid(target);
+    else v.selected = [];
+    v.onSelect();
+    v.onChanged();
+    v.draw();
+    return;
+  }
   // an extrusion being sized: done sizing, the tool still down for the next
   if (v.liveExtent) {
     v.endExtent();
@@ -175,6 +188,11 @@ export function seedNamed(v: SketchView, name: string, x: number, y: number): vo
  *  ⌥⇧. */
 export function toolClick(v: SketchView, sp: [number, number],
                           mods: { alt?: boolean; shift?: boolean } = {}): void {
+  // a Boolean picks bodies where the eye sees them, on no plane
+  if (combines(v.tool)) {
+    v.combineAt(sp[0], sp[1]);
+    return;
+  }
   // a standard plane chosen before the document had it is brought in by the first press: the
   // document gains `use std`, and what the press makes is drawn on the plane it now has
   if (!v.ensurePlane()) return;

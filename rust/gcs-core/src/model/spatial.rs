@@ -283,6 +283,20 @@ pub enum SolidDef {
     Region { probe: u32, terms: Vec<RegionTerm> },
 }
 
+impl SolidDef {
+    /// The set of a body's that `word` fills — `union`'s, `cut`'s or `bound`'s — or `None` for a
+    /// solid that is not a body.
+    pub fn body_set(&mut self, word: crate::syntax::BodyWord) -> Option<&mut Vec<u32>> {
+        use crate::syntax::BodyWord;
+        match (self, word) {
+            (SolidDef::Body { on, .. }, BodyWord::Union) => Some(on),
+            (SolidDef::Body { through, .. }, BodyWord::Cut) => Some(through),
+            (SolidDef::Body { bound, .. }, BodyWord::Bound) => Some(bound),
+            _ => None,
+        }
+    }
+}
+
 /// What a region solid's term bounds (§6.21): the measure a bound on its probe reads, recognised
 /// by the constraint's kind and never by the set it came from.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -572,6 +586,65 @@ impl Sketch {
     pub fn solid(&mut self, def: SolidDef, name: &str) -> usize {
         self.solids.push(SolidE { def, name: name.to_string(), class: Classes::default() });
         self.solids.len() - 1
+    }
+
+    /// Solid `i` as a body, so the body rule can fill it: a body as it stands, and any other
+    /// solid made the body over its own sweep — the name keeps its index, so everything reading
+    /// it reads the whole object, and the sweep moves to a stock of the same name past the last,
+    /// whose index is returned (`None` where `i` was a body already).
+    pub fn as_body(&mut self, i: usize) -> Option<usize> {
+        if matches!(self.solids[i].def, SolidDef::Body { .. }) {
+            return None;
+        }
+        let stock = self.solids.len();
+        self.solids.push(self.solids[i].clone());
+        self.solids[i].def =
+            SolidDef::Body { stock: stock as u32, on: Vec::new(), through: Vec::new(), bound: Vec::new() };
+        Some(stock)
+    }
+
+    /// **`tool word body`, one statement of the body rule** (§6.9): `tool` joins the set of
+    /// `body`'s that `word` fills (`body` made a body first, `as_body`).  Refused, with the cause
+    /// and leaving the sets as they were, for a solid joined to itself and for a statement that
+    /// would close a cycle (E041) — asked once the tool is in, since a `through:` reads only what
+    /// its body adds.  The elaborator states each statement by it and `preview_body` each tool.
+    pub fn join_body(&mut self, body: usize, word: crate::syntax::BodyWord, tool: usize)
+        -> Result<(), String> {
+        let name = |sk: &Sketch, i: usize| sk.solids[i].name.clone();
+        if tool == body {
+            return Err(format!("`{}` is {} itself", name(self, body), word.as_str()));
+        }
+        self.as_body(body);
+        self.solids[body].def.body_set(word).expect("a body").push(tool as u32);
+        if crate::solid::reaches(self, body as u32, body as u32) {
+            self.solids[body].def.body_set(word).expect("a body").pop();
+            return Err(format!("`{}` would be made of itself: `{}` is made of it",
+                               name(self, body), name(self, tool)));
+        }
+        Ok(())
+    }
+
+    /// **What the body rule would make of `target`** with `tools` joined to it by `word` (#162
+    /// F4), and nothing written: each tool joined by `join_body` — the elaborator's own step, so
+    /// the preview is what the statements make and is refused where they would be — on a copy of
+    /// the drawing, and the target evaluated there.  The copy keeps what the caches already know
+    /// of every operand.  Refused, with the cause, for an index out of range, no tool, a refused
+    /// statement and wherever evaluation refuses — a body with a swept operand among them, whose
+    /// surface is meshed elsewhere and never for a preview.
+    pub fn preview_body(&self, target: usize, word: crate::syntax::BodyWord, tools: &[usize])
+        -> Result<std::rc::Rc<crate::solid::EvaluatedSolid>, String> {
+        let n = self.solids.len();
+        if target >= n || tools.iter().any(|&t| t >= n) {
+            return Err("a Boolean to preview names no solid of this drawing".into());
+        }
+        if tools.is_empty() {
+            return Err(format!("nothing to {} `{}`", word.as_str(), self.solids[target].name));
+        }
+        let mut copy = self.clone();
+        for &t in tools {
+            copy.join_body(target, word, t)?;
+        }
+        copy.evaluated_solid(target, crate::solid::ApproximationPolicy::from_unit(0.0))
     }
 
     /// What the document calls a solid.

@@ -158,20 +158,14 @@ pub(super) fn solids(
         // its index, so everything already reading it (a `through:` extent, a body's operand, a
         // view) reads the whole object, and the sweep moves to a stock of the same name, so a
         // face is called what it was (`plate.near`) whether or not anything stands on it
-        if sk.solids.get(b.i()).is_some_and(|s| !matches!(s.def, SolidDef::Body { .. })) {
-            let swept = sk.solids[b.i()].clone();
-            let stock = sk.solids.len() as u32;
-            sk.solids.push(swept);
-            sk.solids[b.i()].def =
-                SolidDef::Body { stock, on: Vec::new(), through: Vec::new(), bound: Vec::new() };
-            map.also_made(b, EntRef::solid(stock as usize));
+        if let Some(stock) = sk.as_body(b.i()) {
+            map.also_made(b, EntRef::solid(stock));
         }
-        let Some(SolidDef::Body { on, through, bound, .. }) =
-            sk.solids.get_mut(b.i()).map(|s| &mut s.def) else { continue };
-        match word {
-            crate::syntax::BodyWord::Union => on.push(a.idx),
-            crate::syntax::BodyWord::Cut => through.push(a.idx),
-            crate::syntax::BodyWord::Bound => bound.push(a.idx),
+        // **the statement that would close a cycle is the one refused**, where it is written —
+        // so a gesture writing it is refused at the gesture (#162 F4) — and the body is left as
+        // the statements before it made it
+        if let Err(why) = sk.join_body(b.i(), word, a.i()) {
+            diags.push(Diag { code: Code::E041, span: at, stmt: Some(st.id), message: why });
         }
     }
     // -- the pictures the document asks for (§6.11) ---------------------------
@@ -249,7 +243,7 @@ pub(super) fn solids(
     // **a body may not be made of itself** — the term walk would not terminate, and the
     // document says something that is not about any object (§6.9)
     for i in 0..sk.solids.len() {
-        if reaches(sk, i as u32, i as u32) {
+        if crate::solid::reaches(sk, i as u32, i as u32) {
             let name = sk.solids[i].name.clone();
             let at = body
                 .iter()
@@ -270,24 +264,6 @@ pub(super) fn solids(
                 SolidDef::Body { stock: i as u32, on: Vec::new(), through: Vec::new(), bound: Vec::new() };
         }
     }
-}
-
-/// Does `from` reach `goal` through its operands?  The guard on the term walk, and the one thing
-/// a document can write that has no object behind it.
-fn reaches(sk: &Sketch, from: u32, goal: u32) -> bool {
-    let mut pending = vec![from];
-    let mut seen = BTreeSet::new();
-    while let Some(i) = pending.pop() {
-        if !seen.insert(i) { continue; }
-        if sk.solids.get(i as usize).is_some() {
-            let Ok(operands) = crate::solid::evaluation_operands(sk, i as usize) else { return true };
-            for o in operands {
-                if o == goal { return true; }
-                pending.push(o);
-            }
-        }
-    }
-    false
 }
 
 /// Unbind a failed declaration and names that resolve to the same entity, so later

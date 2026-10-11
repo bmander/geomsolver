@@ -18,11 +18,12 @@ import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';
 
-import { mesh, objects } from '../core/mesh.js';
+import { mesh, objects, preview } from '../core/mesh.js';
+import type { Face, Mesh } from '../core/mesh.js';
 import { overview3 } from '../core/overview.js';
 import type { Item3 } from '../core/overview.js';
 import { COL, chromeOf, inkOf } from './paint.js';
-import type { SketchView } from './view.js';
+import type { Combining, SketchView } from './view.js';
 
 /** The box's own ink.  Chrome, as the 2D painter's palette is: the core says how squarely a face
  *  meets the light and what kind of thing each polyline is, and what colour that is belongs
@@ -34,7 +35,14 @@ const INK = {
   drawn: 0x1f77b4,
   edge: 0x3a3f45,
   solid: 0xb0b3b8,
+  /** A Boolean's tools, ghosted in the colour of what they do to the body (#162 F4). */
+  union: 0x2ca02c,
+  cut: 0xd62728,
+  bound: 0x1f77b4,
 };
+
+/** How much of a Boolean's tool shows through as a ghost. */
+const GHOST = 0.4;
 
 /** A pane's frame, in screen pixels: the plane being drawn on is bold.  WebGL draws every
  *  `LineBasicMaterial` one pixel wide whatever it is asked, so a frame is a fat line. */
@@ -87,10 +95,18 @@ export class Box3D {
   private readonly panes: { it: Item3; line: LineSegments2 }[] = [];
   /** Each object face's mesh, by the solid it is a face of and its path, for `chrome` to light. */
   private readonly faces: { solid: number; path: string; mesh: THREE.Mesh }[] = [];
+  /** **What a Boolean being picked would make of its target** (#162 F4), shown in the target's
+   *  place before anything is written: the core's preview of the body rule, rebuilt when the
+   *  bodies picked change or the objects are re-cut, and nothing while no Boolean is pending. */
+  private readonly previewed = new THREE.Group();
+  /** The Boolean the preview is of — word, target and tools — and whether the core gave one: a
+   *  refused preview (a body with a swept operand, never previewed) leaves the target standing
+   *  and the tools as ghosts, which say as much. */
+  private preview: { key: string | null; shown: boolean } = { key: null, shown: false };
 
   constructor(readonly canvas: HTMLCanvasElement | null) {
     this.scene.background = new THREE.Color(INK.bg);
-    this.scene.add(this.datums, this.objects);
+    this.scene.add(this.datums, this.objects, this.previewed);
     // a headlight and a soft fill: the object is read for its shape, so the light follows the
     // eye rather than standing somewhere in the world and leaving half of it dark
     this.scene.add(new THREE.AmbientLight(0xffffff, 1.6));
@@ -120,7 +136,10 @@ export class Box3D {
       || (this.built!.objects !== pose && !v.gesture && !v.anim);
     if (datums || objects) {
       if (datums) this.buildDatums(overview3(v.sketch, 0, 'datums'));
-      if (objects) this.buildObjects(v, overview3(v.sketch, 0, 'objects'));
+      if (objects) {
+        this.buildObjects(v, overview3(v.sketch, 0, 'objects'));
+        this.preview.key = null;          // a preview is of the objects as they stood
+      }
       this.built = {
         sketch: v.sketch, solid: v.showSolid,
         datums: datums ? pose : this.built!.datums,
@@ -128,8 +147,11 @@ export class Box3D {
         shape,
       };
     }
+    const c = v.showSolid ? v.combining : null;
+    const key = c && `${c.word} ${c.target.index} ${c.tools.map((t) => t.index).join(' ')}`;
+    if (key !== this.preview.key) this.buildPreview(v, c, key);
     this.aim(v);
-    this.chrome(v);
+    this.chrome(v, c);
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     if (gl.getPixelRatio() !== dpr) gl.setPixelRatio(dpr);
     gl.setSize(v.width, v.height, false);
@@ -234,8 +256,7 @@ export class Box3D {
     this.lines(this.objects, items.filter((i) => i.part === 'solid'), INK.edge, 1);
     if (!v.showSolid) return;
     // **the object itself, as a mesh** — every face of it a named child, so a later selection has
-    // something to name.  The normals are the core's: averaged across a round face and flat
-    // across a corner, so a bore's wall shades round with no smoothing pass here
+    // something to name
     for (const o of objects(v.sketch)) {
       // **cut to the object and not to the zoom** — `0` asks the core for `solid::mesh_unit`,
       // a sagitta a fixed fraction of the solid's own diagonal.  Handed `v.unit` this re-cut the
@@ -243,32 +264,40 @@ export class Box3D {
       // on the V-twin cylinder locked the tab for the better part of a minute
       const m = mesh(v.sketch, o.index, 0);
       for (const f of m.faces) {
-        const from = f.start * 9;
-        const to = from + f.count * 9;
-        const g = new THREE.BufferGeometry();
-        g.setAttribute('position', new THREE.Float32BufferAttribute(
-          Float32Array.from(m.positions.subarray(from, to)), 3));
-        g.setAttribute('normal', new THREE.Float32BufferAttribute(
-          Float32Array.from(m.normals.subarray(from, to)), 3));
-        const face = new THREE.Mesh(g, new THREE.MeshStandardMaterial({
-          color: INK.solid,
-          metalness: 0.1,
-          roughness: 0.65,
-          flatShading: !f.smooth,
-        }));
-        face.name = f.path;
-        face.userData.face = f.path;
+        const face = faceMesh(m, f);
         this.objects.add(face);
         this.faces.push({ solid: o.index, path: f.path, mesh: face });
       }
     }
   }
 
+  /** The result of the Boolean being picked, from the core, standing where its target does. */
+  private buildPreview(v: SketchView, c: Combining | null, key: string | null): void {
+    release(this.previewed);
+    this.preview = { key, shown: false };
+    if (!c) return;
+    let m: Mesh;
+    try {
+      m = preview(v.sketch, c.target.index, c.word, c.tools.map((t) => t.index));
+    } catch {
+      return;
+    }
+    for (const f of m.faces) {
+      const face = faceMesh(m, f);
+      // lit as its target is, being what the selected body will be
+      const mat = face.material as THREE.MeshStandardMaterial;
+      mat.emissive.set(COL.sel);
+      mat.emissiveIntensity = 0.18;
+      this.previewed.add(face);
+    }
+    this.preview.shown = true;
+  }
+
   /** **What the app says about the scene, written per frame.**  The selection and the plane being
    *  drawn on change without the drawing changing, so they are a material write and never a
    *  rebuild: the ink rule itself is `paint.ts`'s, so a thing picked is lit the same colour here
    *  as on the canvas above. */
-  private chrome(v: SketchView): void {
+  private chrome(v: SketchView, c: Combining | null): void {
     const sel = new Set(v.selected);
     const hl = new Set(v.highlight);
     // std's datums are the document's frame of reference, held outright: they keep their quiet
@@ -291,13 +320,19 @@ export class Box3D {
       m.linewidth = current ? FRAME_PX.current : FRAME_PX.plain;
       m.resolution.set(v.width, v.height);
     }
-    // a solid picked: the face the click landed on in the selection's ink, the rest of it washed
+    // a solid picked: the face the click landed on in the selection's ink, the rest of it washed.
+    // A Boolean being picked shows its result in its target's place, and its tools as ghosts in
+    // the colour of what they do
     const picked = v.selectedSolids;
     for (const { solid, path, mesh: face } of this.faces) {
       const m = face.material as THREE.MeshStandardMaterial;
+      const tool = c?.tools.some((t) => t.index === solid);
+      face.visible = !(c && this.preview.shown && c.target.index === solid);
+      ghost(m, !!tool);
       const pick = picked.find((s) => s.index === solid);
-      m.emissive.set(pick ? COL.sel : 0x000000);
-      m.emissiveIntensity = !pick ? 0 : pick.face === path ? 0.55 : 0.18;
+      m.color.set(tool ? INK[c!.word] : INK.solid);
+      m.emissive.set(tool ? INK[c!.word] : pick ? COL.sel : 0x000000);
+      m.emissiveIntensity = tool ? 0.35 : !pick ? 0 : pick.face === path ? 0.55 : 0.18;
     }
   }
 
@@ -347,6 +382,8 @@ export class Box3D {
     this.faces.length = 0;
     release(this.datums);
     release(this.objects);
+    release(this.previewed);
+    this.preview = { key: null, shown: false };
   }
 }
 
@@ -361,6 +398,38 @@ function release(g: THREE.Group): void {
     if (Array.isArray(m)) m.forEach((x) => x.dispose());
     else m?.dispose?.();
   }
+}
+
+/** One face of an object's mesh as a three.js mesh, named by its path.  The normals are the
+ *  core's: averaged across a round face and flat across a corner, so a bore's wall shades round
+ *  with no smoothing pass here. */
+function faceMesh(m: Mesh, f: Face): THREE.Mesh {
+  const from = f.start * 9;
+  const to = from + f.count * 9;
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(
+    Float32Array.from(m.positions.subarray(from, to)), 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(
+    Float32Array.from(m.normals.subarray(from, to)), 3));
+  const face = new THREE.Mesh(g, new THREE.MeshStandardMaterial({
+    color: INK.solid,
+    metalness: 0.1,
+    roughness: 0.65,
+    flatShading: !f.smooth,
+  }));
+  face.name = f.path;
+  face.userData.face = f.path;
+  return face;
+}
+
+/** A face drawn as a ghost — see-through, and hiding nothing behind it — or solid again.  A
+ *  material compiles anew when it changes whether it is transparent, so only then is it told. */
+function ghost(m: THREE.MeshStandardMaterial, on: boolean): void {
+  if (m.transparent === on) return;
+  m.transparent = on;
+  m.opacity = on ? GHOST : 1;
+  m.depthWrite = !on;
+  m.needsUpdate = true;
 }
 
 /** A convex polygon as a triangle fan, which is what a pane is.  The one place this file makes a

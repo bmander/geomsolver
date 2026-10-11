@@ -50,7 +50,7 @@ use primitive::{facet_normal,finish};
 pub use document::{reads,resolve};
 mod static_boundary;
 pub use static_boundary::{static_solid,indexed,indexed_faces,primitive_triangles,StaticSolid,static_solid_at_unit};
-pub(crate) use document::{evaluation_operands,operand_paths};
+pub(crate) use document::{evaluation_operands,operand_paths,reaches};
 use document::{frame_origin,resolve_at};
 mod field;
 pub use field::{PlanarField,RevolvedField,ExtrudedField,SpatialField,SweptField,SweepEvaluator,SweepError,CHORD_SLACK};

@@ -27,7 +27,7 @@ import { Diagnosis, diagnose } from '../core/diagnose.js';
 import { Axis, Line, Param, Plane, Point, Primitive, Sketch } from '../core/model.js';
 import type { Way } from '../core/model.js';
 import { Document, Edit, fromSketch } from '../core/program.js';
-import type { Region } from '../core/program.js';
+import type { BodyWord, Region } from '../core/program.js';
 import { Method, SolveResult, System } from '../core/system.js';
 import type { Item } from '../core/overview.js';
 import { Motion, WitnessReport, analyze } from '../core/witness.js';
@@ -132,12 +132,32 @@ export interface Place {
 
 export type Tool =
   'select' | 'point' | 'line' | 'rect' | 'circle' | 'arc' | 'arc3' | 'spline' | 'splinefit'
-  | 'extrude' | 'revolve';
+  | 'extrude' | 'revolve' | 'union' | 'cut' | 'bound';
 
 /** Whether a tool makes a solid of the closed region a click is inside (Extrude, Revolve): it
  *  washes the region under the pointer, and draws no snap. */
 export function sweepsRegion(tool: Tool): boolean {
   return tool === 'extrude' || tool === 'revolve';
+}
+
+/** The body word a Boolean tool writes (Union, Cut, Intersect — #162 F4), or null for any other
+ *  tool.  Intersect is the body rule's `bound`. */
+export function combines(tool: Tool): BodyWord | null {
+  return tool === 'union' || tool === 'cut' || tool === 'bound' ? tool : null;
+}
+
+/** What a Boolean tool's status line asks for next, by its word: the target, then its tools. */
+const COMBINE = {
+  union: { target: 'the body to join others to', tools: 'join to it', done: 'joined' },
+  cut: { target: 'the body to cut', tools: 'cut it with', done: 'cut' },
+  bound: { target: 'the body to intersect', tools: 'intersect it with', done: 'intersected' },
+} as const;
+
+/** A Boolean about to be written: the body it is written on, its word and the tools it joins. */
+export interface Combining {
+  target: SolidPick;
+  word: BodyWord;
+  tools: SolidPick[];
 }
 
 
@@ -1087,7 +1107,11 @@ export class SketchView {
    * The work is next door; these are the names the rest of the app knows it by, so a caller
    * holds one object and never has to know which module a verb lives in. */
 
-  setTool(tool: Tool): void { tools.setTool(this, tool); }
+  setTool(tool: Tool): void {
+    tools.setTool(this, tool);
+    // a Boolean tool starts from the bodies already selected: the first is the target
+    this.tellCombine();
+  }
 
   /* The picture traced over, if there is one.  It is view state and not document state, so
    * none of this goes near `afterEdit`, the undo stack or the source — a repaint is the whole
@@ -1201,6 +1225,68 @@ export class SketchView {
       const h = this.turnHandleOf(solid);
       return h ? { kind: 'turn', solid, d: h.turn } : null;
     });
+  }
+
+  /** **Union, Cut, Intersect** (#162 F4): a click with a Boolean tool down.  The first body
+   *  clicked is the target, and each after it a tool — clicked again, let go; a click back on the
+   *  target writes the Boolean (`finishCombine`, as Enter does).  **The selection is the
+   *  gesture's state**, in the order it was clicked, so bodies selected before the tool was taken
+   *  up are where it starts, and the box previews what it would write (`combining`). */
+  combineAt(sx: number, sy: number): void {
+    const pick = this.solidAt(sx, sy);
+    const [target] = this.selectedSolids;
+    if (!pick) {
+      this.tellCombine();
+      return;
+    }
+    if (target && pick.index === target.index) {
+      this.finishCombine();
+      return;
+    }
+    this.pickSolid(pick, !!target);
+    this.tellCombine();
+    this.onSelect();
+    this.onChanged();
+    this.draw();
+  }
+
+  /** The Boolean the selection would write while a Boolean tool is down — the target, the word
+   *  and the tools — or null until there is a tool to join. */
+  get combining(): Combining | null {
+    const word = combines(this.tool);
+    const [target, ...tools] = this.selectedSolids;
+    return word && target && tools.length ? { target, word, tools } : null;
+  }
+
+  /** Write the Boolean: `tool word target` for every tool, one splice and one undo step, the
+   *  target left selected for the next.  Refused, in the core's words, where the language would
+   *  refuse it — a body made of itself (E041). */
+  finishCombine(): void {
+    const c = this.combining;
+    if (!c) {
+      this.tellCombine();
+      return;
+    }
+    const tools = c.tools.map((t) => t.name);
+    const e = this.doc.addBodyWord(c.word, tools, c.target.name);
+    if (!this.apply(e, `${c.target.name}: ${COMBINE[c.word].done} by ${tools.join(', ')}`)) return;
+    // the tools are the target's now, and no objects of their own: only the target stays picked
+    this.pickSolidNamed(c.target.name);
+    this.onSelect();
+    this.onChanged();
+    this.draw();
+  }
+
+  /** Say what a Boolean tool wants next. */
+  private tellCombine(): void {
+    const word = combines(this.tool);
+    if (!word) return;
+    const [target, ...tools] = this.selectedSolids;
+    this.onStatus(!target ? `click ${COMBINE[word].target}`
+      : !tools.length ? `${target.name}: now click the bodies to ${COMBINE[word].tools} — Esc to `
+                        + 'choose another'
+      : `${tools.map((t) => t.name).join(', ')} ${word} ${target.name} — click ${target.name} `
+        + 'again, or Enter, to write it');
   }
 
   /** The name of what a revolution may turn about — a line or an axis, as the source calls it —
