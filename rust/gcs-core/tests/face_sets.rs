@@ -163,3 +163,26 @@ fn the_reach_of_an_edge_and_where_it_ends_are_one_slab() {
     }
 }
 
+
+/// What a ball rolled along a convex edge cannot reach, written over F1–F3, F7 and F9 (#183 X3's
+/// `Run`), on one edge of the block: `r²(1 − π/4)` along its 40.
+const RUN: &str = "component Run(a: face, b: face, r: Length) := { p |\n\
+    p inside a\n    p inside b\n    angle(a, b, at: p) <= 180deg\n\
+    centres := { c | c inside a; c distance(>= r) a.surface; c inside b; c distance(>= r) b.surface }\n\
+    crease := { q | q coincident a; q coincident b }\n\
+    meeting := { q | q coincident a.surface; q coincident b.surface }\n\
+    distance(p, centres) >= r\n\
+    distance(p, crease) <= distance(p, meeting)\n\
+    p inside crease.ends\n}\n";
+
+#[test]
+fn a_run_along_one_edge() {
+    let e = solved(&format!("{BLOCK}{RUN}run := Run(block.near, block.south, r: 3mm)\n\
+                             taken := solid(run)\n"));
+    let field = MaterialField::read(&e.sketch, ent(&e, "taken").i(), 1e-10).unwrap();
+    let want = 9.0 * (1.0 - PI / 4.0) * 40.0;
+    // the edge runs along x at y = z = 0; its round within 3 of it
+    let got = field_volume(&field, [-1.0, -4.0, -4.0], [41.0, 4.0, 4.0], 3.0 / 64.0);
+    assert!((got - want).abs() < 2e-3 * want, "{got} against {want}");
+}
+

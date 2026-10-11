@@ -328,8 +328,11 @@ impl<'a> Walk<'a> {
         }
         let mut out = Vec::new();
         let mut named: BTreeMap<String, String> = BTreeMap::new();
+        // the statement as written, which an application's stamp does not hide: two statements
+        // of one body stamped alike stay apart
+        let id = sc.written.unwrap_or(st.id).0;
         for (k, name) in sets.iter().enumerate() {
-            let local = format!("#{}.m{k}", st.id.0);
+            let local = format!("#{id}.m{k}");
             let key = format!("{}{local}", sc.prefix());
             self.names.insert(key.clone());
             self.probes.push(key.clone());
@@ -355,7 +358,7 @@ impl<'a> Walk<'a> {
             // applied under a prefix of its own, so two sets one statement measures from bind
             // their points apart
             let mut usc = sc.clone();
-            usc.prefixes.insert(0, format!("{}#{}.m{k}.", sc.prefix(), st.id.0));
+            usc.prefixes.insert(0, format!("{}#{id}.m{k}.", sc.prefix()));
             out.push((Stmt { kind: StmtKind::Relation(rel), ..st.clone() }, path.to_vec(), usc));
             named.insert(name.clone(), local);
         }
