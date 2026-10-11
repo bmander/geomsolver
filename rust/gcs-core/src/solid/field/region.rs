@@ -53,7 +53,7 @@ pub struct Term {
 impl Term {
     /// The signed distance from the surface where the measure reads `v`, positive where it reads
     /// more (outside a ball, a cylinder, a cone; past a plane along its normal).
-    fn from_surface(&self, p: P3, v: f64) -> f64 {
+    pub fn from_surface(&self, p: P3, v: f64) -> f64 {
         match &self.measure {
             Measure::Point(c) => norm(sub(p, *c)) - v,
             Measure::Line { a, d } => {

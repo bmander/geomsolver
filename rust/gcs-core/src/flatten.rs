@@ -203,6 +203,8 @@ pub struct Expansion {
     /// The solids a block runs over the faces of, whose faces were not given (#183 F4): the
     /// elaborator names them once it has built the solids, and expands again.
     pub face_repeats: BTreeSet<String>,
+    /// The points of sets measured from (#183 F2), by absolute key.
+    pub inner_probes: Vec<String>,
 }
 
 /// One instance, as bound: which component, under what prefix, given what.
@@ -332,6 +334,7 @@ struct Walk<'a> {
     /// (#183 F4) — see `Expansion::face_repeats`.
     faces: BTreeMap<String, Vec<String>>,
     face_repeats: BTreeSet<String>,
+    inner_probes: Vec<String>,
 }
 
 /// Expand a program's root component into a flat list of declarations, constraints, gauges and
@@ -456,6 +459,7 @@ impl<'a> Walk<'a> {
             probes: Vec::new(),
             faces: BTreeMap::new(),
             face_repeats: BTreeSet::new(),
+            inner_probes: Vec::new(),
         }
     }
 
@@ -512,6 +516,7 @@ impl<'a> Walk<'a> {
             twins: self.twins,
             probes: self.probes,
             face_repeats: self.face_repeats,
+            inner_probes: self.inner_probes,
         }
     }
 }

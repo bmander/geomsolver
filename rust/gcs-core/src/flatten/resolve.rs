@@ -827,7 +827,8 @@ impl<'a> Walk<'a> {
             }
         }
         for (key, span) in self.group_bindings.clone() {
-            if !alias.get(&key).is_some_and(|target| self.group_names.contains(target)) {
+            // a set fills a group formal too (#183: a region's bounding sets, `std.Rounded`)
+            if !alias.get(&key).is_some_and(|target| self.group_names.contains(target) || self.sets.contains_key(target)) {
                 self.err(Code::E103, span, format!("`{key}` wants a group or layout instance"));
             }
         }

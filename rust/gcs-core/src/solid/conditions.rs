@@ -165,9 +165,49 @@ fn conditions(sk: &Sketch, t: &RegionTerm, read: &mut Read) -> Result<Vec<Cond>,
             };
             Ok(held(m))
         }
-        _ => Err("a set measured from is on faces, within their sides or at distances from \
-                  their surfaces or from points"
-            .to_string()),
+        // a ball's, a cylinder's, a cone's or a half-space's: its measure's signed distance
+        // from the surface its number makes, by differences
+        shape => {
+            use crate::solid::field::region::{Measure, Term};
+            let point = |i: u32| sk.world_point(i as usize);
+            let line = |l: u32| {
+                let l = &sk.lines[l as usize];
+                let (a, b) = (point(l.p1), point(l.p2));
+                (a, crate::space::normalised(sub(b, a)).unwrap_or([0.0, 0.0, 1.0]))
+            };
+            let measure = match *shape {
+                RegionShape::Ball { center } => Measure::Point(point(center)),
+                RegionShape::Cylinder { line: l } => { let (a, d) = line(l); Measure::Line { a, d } }
+                RegionShape::Cone { axis } => { let (a, d) = line(axis); Measure::Cone { a, d } }
+                RegionShape::Plane { plane, from, sign } => Measure::Ordinate {
+                    o: point(from),
+                    n: scale(sk.basis(plane as usize).normal(), sign),
+                },
+                _ => return Err("a set measured from is on faces, within their sides or at \
+                                 distances from their surfaces, from points or from its own \
+                                 bounds".to_string()),
+            };
+            let term = Arc::new(Term { measure, cmp: t.cmp, lo, hi: t.hi, grow });
+            let numeric = |f: Arc<dyn Fn(V) -> f64 + Send + Sync>| -> Fv {
+                Arc::new(move |x: V| {
+                    let h = 1e-6 * (1.0 + norm(x));
+                    let g: V = std::array::from_fn(|k| {
+                        let (mut a, mut b) = (x, x);
+                        a[k] += h;
+                        b[k] -= h;
+                        (f(a) - f(b)) / (2.0 * h)
+                    });
+                    (f(x), g)
+                })
+            };
+            Ok(if t.cmp == Cmp::In && hi == lo {
+                let t2 = term.clone();
+                vec![Cond { f: numeric(Arc::new(move |x| t2.from_surface(x, lo))), eq: true }]
+            } else {
+                let t2 = term.clone();
+                vec![Cond { f: numeric(Arc::new(move |x| t2.value(x))), eq: false }]
+            })
+        }
     }
 }
 

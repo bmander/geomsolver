@@ -7,7 +7,6 @@
 //! **The stratum** (F6): a region that reads a body's faces and is a term of that body reads the
 //! body as made by the terms that do not read it, so a round never reads its own faces or
 //! another round's over the same body.
-use super::cad;
 use crate::brep::geom::V;
 use crate::brep::query::{Located, Place};
 use crate::brep::topo::EdgeCurve;
@@ -21,6 +20,8 @@ use std::f64::consts::PI;
 pub struct BodyFaces {
     loc: Located<'static>,
     mm: f64,
+    /// Where the boundary is built about (model units): a point of space is `(p − origin)·mm`.
+    origin: V,
     name: String,
     /// Each edge's material angle at its middle, where it bounds two faces: under a half turn
     /// where the material is the faces' sides' common part (convex).
@@ -66,12 +67,12 @@ impl BodyFaces {
             stratum = without(sk, &readers)?;
             &stratum
         };
-        let b = crate::brep::recipe::build(&cad::recipe(from, body)?)
-            .map_err(|e| format!("`{name}`'s faces: {e}"))?;
-        let tol = 1e-9 * b.size().max(1.0);
-        let loc = Located::owned(b, tol);
-        let mm = cad::millimetres(sk)?;
-        let mut faces = BodyFaces { loc, mm, name, convex: Vec::new() };
+        // each face named by its document path (`pocket.near`), as `solid::exact` names them
+        let ex = super::exact::build(from, body).map_err(|e| format!("`{name}`'s faces: {e}"))?;
+        let tol = 1e-9 * ex.brep.size().max(1.0);
+        let (mm, origin) = (ex.mm, ex.origin);
+        let loc = Located::owned(ex.brep, tol);
+        let mut faces = BodyFaces { loc, mm, origin, name, convex: Vec::new() };
         faces.convex = (0..faces.loc.b.edges.len()).map(|e| faces.edge_convex(e as u32)).collect();
         Ok(faces)
     }
@@ -81,7 +82,6 @@ impl BodyFaces {
     pub fn faces(&self, f: &FaceRef) -> Vec<usize> {
         let path = f.path.as_str();
         let own = format!("{}.{path}", self.name);
-        let last = path.rsplit('.').next().unwrap_or(path);
         self.loc.b.faces.iter().enumerate().filter(|(_, face)| {
             let n = face.name.as_str();
             path.is_empty()
@@ -89,13 +89,18 @@ impl BodyFaces {
                 || n == own
                 || n.starts_with(&format!("{path}."))
                 || n.starts_with(&format!("{own}."))
-                || path.ends_with(&format!(".{n}"))
+                // an operand an instance made, named by its absolute path (`pad.plate.near`)
                 || (path.contains('.') && n.ends_with(&format!(".{path}")))
-                || (path.contains('.') && n.starts_with(&format!("{last}.")))
         }).map(|(i, _)| i).collect()
     }
 
-    fn q(&self, p: V) -> V { scale(p, self.mm) }
+    fn q(&self, p: V) -> V { scale(sub(p, self.origin), self.mm) }
+
+    /// A point of the boundary's space back in the model's.
+    fn back(&self, q: V) -> V { add(scale(q, 1.0 / self.mm), self.origin) }
+
+    /// Each face's name, in order.
+    pub fn names(&self) -> Vec<String> { self.loc.b.faces.iter().map(|f| f.name.clone()).collect() }
 
     /// Face `fi`'s outward unit normal at `q` (millimetres), pointing away from the material.
     fn outward(&self, fi: usize, q: V) -> V {
@@ -245,7 +250,7 @@ impl Reading {
         let crate::brep::geom::Surface::Plane(frame) = &f.surface else { return None };
         let sign = if f.reversed { -1.0 } else { 1.0 };
         let n = scale(frame.z, sign);
-        Some((n, dot(n, frame.o) / self.body.mm))
+        Some((n, dot(n, self.body.back(frame.o))))
     }
 }
 
@@ -268,7 +273,7 @@ impl BodyFaces {
         for g in &groups[1..] {
             common = common.intersection(&of(g)).copied().collect();
         }
-        common.into_iter().map(|v| scale(self.loc.b.vertices[v as usize].p, 1.0 / self.mm)).collect()
+        common.into_iter().map(|v| self.back(self.loc.b.vertices[v as usize].p)).collect()
     }
 
     /// Where a run of edges ends: each vertex only one of `es` reaches (model units), with the
@@ -294,7 +299,7 @@ impl BodyFaces {
                 d = scale(d, -1.0);
             }
             let d = crate::space::normalised(d)?;
-            Some((scale(self.loc.b.vertices[v as usize].p, 1.0 / self.mm), d, v))
+            Some((self.back(self.loc.b.vertices[v as usize].p), d, v))
         }).collect()
     }
 

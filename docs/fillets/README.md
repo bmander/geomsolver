@@ -541,3 +541,68 @@ are the field's (X5): the evaluator, not the language.
 
 The hypoid's tip rounding and end relief come at step 6, written in a region's body.
 
+
+## Steps 1–7: the language, `std.sv` and the lowering (2026-10-11)
+
+**`round` and `chamfer` are words of [`rust/lib/std.sv`](../../rust/lib/std.sv).** What they mean
+is written there in Solvent; Rust gained only general language features, general evaluators and
+one lowering entry. [`x3/std.sv`](x3/std.sv) is the paper they were written from; the differences
+are listed below.
+
+### The features, as implemented
+
+| | spelling | evaluated by | gate |
+|---|---|---|---|
+| F3 | `distance(p, f1) + distance(p, f2) <= 10mm`, a statement of a set's body (closed, `<=`/`>=`; a sum of measurements times numbers) | the field (`RegionField`, divided through by Σ\|cᵢ\|) | an ellipsoid by its foci, a Voronoi cell (`region_general.rs`) |
+| F1 | `p inside block.near`, `p distance(<= d) block.near`, `distance(p, pad.plate.near.surface)`; a face path is a solid and the fields past it | the solid's exact boundary (`solid::faces`), names as `solid::exact` gives them | a face's patch grown, a half ball, a slice (`face_sets.rs`) |
+| F9 | `angle(a, b, at: p) <= 180deg` | a gate: whether it holds at the edge's point nearest `p` | convex and concave edges of a block and an L |
+| F2 | `distance(p, S)` for a set `S`, and `S.surface` | a hidden point per set; its conditions' nearest point (the boundary's edges and vertices where `S` is on faces' patches) | a weld's capsule, a clearance (Steiner), a reach slab |
+| F7 | `p inside S.ends` | the faces at each end of the run of edges `S` is | the same slab |
+| F4, F8 | `repeat a in A if c in B and c != a { … }` over a solid's faces | the flattener, once the elaborator has named the faces (a second pass) | `round` over one edge |
+| F5 | a relation word's body makes solids, sets and body statements; `A.body` | | |
+| F6 | the stratum: a body's terms that read its faces are left out of what they read, and applied last | `faces::readers_of` | the pocket, whose fills follow its cut |
+
+### What `std.sv` says
+
+- `Run`, `Fill`, `Corner`, `CornerFill`, `Flat`, `FlatFill`: sets over faces, X3's definitions.
+- `A round(r: 3mm) B`, `round(r: 3mm) X`, `A chamfer(d: 1mm) B`, `chamfer(d: 1mm) X`.
+- In a region's body: `p inside std.Rounded(a, b, r: 2mm)`, `p inside std.Chamfered(a, b, la: 1mm,
+  lb: 1mm)`, over two of the region's own sets.
+
+### Held to
+
+| case | closed form | by | result |
+|---|---|---|---|
+| one edge of a block, written as `Run` | `r²(1 − π/4) L` | the field | within 2e-3 |
+| the same by the word `round` | | the field | within 2e-3 |
+| a block's rim rounded alone (X2's lid) | the stack's mitre | the field | within 2e-3 |
+| a block rounded all over | Steiner's rounded box | the field (slow tier, ~10 min) | within 2e-3 |
+| a block chamfered all over | `2d²(l + w + h) − 6d³` | the field (slow tier) | within 2e-3 |
+| a boss's root (concave, plane–cylinder) | the stack's ring (Pappus) | the field (slow tier) | within 2e-3 |
+| a pocket rounded inside (concave runs and corners) | X2's | the field (slow tier) | within 2e-3 |
+| a disc's rim rounded and chamfered in its region's body | Pappus | the field, and the meridian | within 3e-3; lowered, 1e-9 |
+
+### Findings
+
+1. **Parameters are given by label.** X0 wrote `round(3mm)`; the language gives a defined word's
+   numbers by label (§4.1, E004), so it is `round(r: 3mm)`. Whether a word of one number should take
+   it bare, as the built-in words do, is a spec question.
+2. **`edge` and `seam` are element keywords**, so `std.sv` calls the edge set `crease`.
+3. **The reach is degenerate as a field and the same set read past the edge is not.** `distance(p,
+   E) <= distance(p, M)` with `E` inside `M` holds with the two equal, so its difference is nothing
+   wherever it holds and no field can read a region from it. Read as `distance(p, E) <=
+   distance(p, rest)`, `rest` the meeting's points off the edge (where `E` ends, and `M`'s nearest
+   point when off it), it is the same points with a negative inside (`conditions::Rest`).
+4. **A corner term needs the ends of its three edges.** Without them X2's corner term carries its
+   edges' runs on past their far ends — harmless for a cut, wrong for a fill beyond the body. `Corner`
+   keeps within `ab.ends`, `bc.ends` and `ca.ends`.
+5. **The stratum orders the body rule.** A fill at a concave edge a cut made is added after the cut,
+   or the cut takes it away again: the field applies a body's own readers last.
+6. **A region-body round is a component, not a word.** A word's body cannot name the set's point,
+   so in a region's body the spelling is `p inside std.Rounded(tip, toe, r: …)`, not `tip
+   round(r: …) toe`.
+7. **The field is the reference and slow.** A block rounded all over takes about ten minutes to
+   integrate; the lowering entries are what an exact construction is made by. The first, X1's
+   meridian, builds a region's round or chamfer at the corner of two of its own bounds; a flat
+   between curved steps is not lowered (the sum of distances bows there, X1's finding), nor is a
+   corner on an offset cone (a charted step).

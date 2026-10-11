@@ -335,11 +335,6 @@ impl<'a> Walk<'a> {
                         return None;
                     }
                 }
-                // a word of one parameter takes it as a built-in word takes its number,
-                // unlabelled: `A round(3mm) B` (#183)
-                OpArg::Dim(text, span) if def.params.len() == 1 && given.args.len() == 1 => {
-                    values.insert(def.params[0].text.clone(), (text.clone(), *span));
-                }
                 OpArg::Dim(text, span) => {
                     let p = def.params.first().map_or("p", |p| p.text.as_str());
                     let m = format!(

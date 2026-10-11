@@ -465,9 +465,11 @@ fn elaborate_in(
         }
     }
     // the points region solids' sets are applied to, whose bounds are the solids' terms (§6.21)
-    let mut probes: relations::Probes =
-        expansion.probes.iter().filter_map(|key| res.of.get(key)).map(|p| (p.i(), Vec::new()))
-            .collect();
+    let mut probes = relations::Probes {
+        terms: expansion.probes.iter().filter_map(|key| res.of.get(key)).map(|p| (p.i(), Vec::new()))
+            .collect(),
+        inner: expansion.inner_probes.iter().filter_map(|key| res.of.get(key)).map(|p| p.i()).collect(),
+    };
     // memberships, once every kind is built and before anything reads one: `point a in top`
     // names a plane built after the point, and `project` infers its planes from these — and then
     // every point no `in` reached stands in space (`places`), and a plane written over a drawn

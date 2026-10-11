@@ -358,7 +358,7 @@ component FlatFill(a: face, b: face, la: Length, lb: Length) := { p |
   p inside crease.ends
 }
 
-// `A round(r) B`: every edge where a face of `A` meets a face of `B` rounded by a ball of radius
+// `A round(r: 3mm) B`: every edge where a face of `A` meets a face of `B` rounded by a ball of radius
 // `r` — taken away where it is convex, filled where it is concave, read off the geometry — and
 // where three such edges meet, the ball touching all three.  Faces that do not meet make
 // nothing.  Its material acts on the body the faces are of, as made by the terms that do not
@@ -383,7 +383,7 @@ A round(r) B := {
     }
   }
 }
-round(r) X := X round(r) X
+round(r) X := X round(r: r) X
 
 // `A chamfer(d) B`: every edge where a face of `A` meets one of `B` cut by a flat `d` along each
 // face, measured from the other; where three meet, their flats meet in a point.
@@ -399,4 +399,25 @@ A chamfer(d) B := {
     }
   }
 }
-chamfer(d) X := X chamfer(d) X
+chamfer(d) X := X chamfer(d: d) X
+
+// -- in a region's body ---------------------------------------------------------------------------
+//
+// A region is a conjunction, so every edge where two of its bounds meet is convex, and a round or
+// a chamfer there is one more bound on its point: no solid, no body.  `a` and `b` are two of the
+// sets the region is within, as it states them (`{ q | q outside toe }` for the side outside a
+// toe it bounds).
+//
+//   disc := { p | p inside wall; p inside top; p inside bottom; p inside std.Rounded(wall, top, r: 2mm) }
+
+// Within reach of a ball of radius `r` lying within both `a` and `b`.
+component Rounded(a: group, b: group, r: Length) := { p |
+  centres := { c | c distance(>= r, side: inside) a; c distance(>= r, side: inside) b }
+  distance(p, centres) <= r
+}
+
+// Short of the flat through each set's point `la` (on `a`) and `lb` (on `b`) from the other's
+// surface.
+component Chamfered(a: group, b: group, la: Length, lb: Length) := { p |
+  distance(p, a.surface) / lb + distance(p, b.surface) / la >= 1
+}

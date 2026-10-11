@@ -251,6 +251,28 @@ patches of the faces `M` is on the surfaces of is read as `d(p, E) − d(p, rest
 nearest point when off `E`, and where `E`'s run ends), the same points with a negative inside.
 `ends` is `max σ·side` over the faces at each end of the run (σ the side it runs on); a closed run
 ends nowhere. `edge` and `seam` are element keywords: a set may not be called so.
+**Rounds and chamfers are words of `std.sv`** (#183 steps 4–7). `repeat a in X` over a solid (a
+face path) runs over its faces (F4): set aside, and where the faces are not given the elaborator
+names them once the solids are built (`solid::faces::face_paths`, structural: a primitive's own,
+a body's every primitive's `{prim}.{face}`) and elaborates again (`program::Again::Faces`,
+`flatten::expand_faces`, `Walk::face_links`); `if f in X and f != g` keeps a copy (F8,
+`syntax::When`). A relation word's body may hold blocks, instances, sets and body statements (F5,
+`parser/definitions.rs`); `A.body` in a body statement is the solid a face path is of. **The
+stratum** (F6): a body's terms that read its faces (`faces::readers_of`) are left out of the
+boundary they read and applied last by the field (`document.rs`: fills, then cuts). A face path
+is matched against `solid::exact`'s names (`BodyFaces` is built from `exact::build`, shifted to its
+origin; cached in `Sketch::faces_cache`); one naming nothing holds nowhere, and a region over it is
+`RegionField::empty`, no term of a body. `std.sv`: `Run`, `Fill`, `Corner`, `CornerFill`, `Flat`,
+`FlatFill` (sets over faces) and the words `A round(r: …) B`, `round(r: …) X`, `A chamfer(d: …) B`,
+`chamfer(d: …) X`; in a region's body `std.Rounded(a, b, r)` and `std.Chamfered(a, b, la, lb)`
+over two of its own sets (a set fills a `group` formal; `p inside S(…)` may be written in place).
+A set's `S.surface` is the set with its bound made an equality (`sets::surface_of`); a distance
+from a one-bound region's surface reads it (`sets::one_bound`); an inner point's equalities are
+terms (`Probes::inner`). **Lowering** (step 7, `solid::region::lowering`): a `Rounded`/`Chamfered`
+term whose sets are two of the region's own bounds (same measure, at its level, moved in by the
+radius for a round's centres) is built in the meridian by X1's construction (`brep::corners`,
+moved from `tests/fillet_meridian.rs`), refused (and read by the field) at a charted corner or a
+flat between curved steps. `tests/rounds.rs` is the gate (X2's closed forms in the slow tier).
 **Distance from a set, offsets (§6.21, 0.64, #145 F4):** `p distance(d, side: outside|inside) S`
 (`distance` is a set use, `may_use`), `p inside(d) S` / `p outside(d) S` and `std.Offset(S, d)` are
 one bound on the signed distance from `S`'s surface (`Reach`: cmp toward the outside, whether

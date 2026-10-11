@@ -206,7 +206,7 @@ fn a_word_rounds_an_edge() {
     let sharp = solved(&format!("{BLOCK}"));
     let before = field_volume(&MaterialField::read(&sharp.sketch, ent(&sharp, "block").i(), 1e-10).unwrap(),
                               box_.0, box_.1, 3.0 / 64.0);
-    let e = solved(&format!("{BLOCK}{RUN}{ROUND}block.near round(3mm) block.south\n"));
+    let e = solved(&format!("{BLOCK}{RUN}{ROUND}block.near round(r: 3mm) block.south\n"));
     let field = MaterialField::read(&e.sketch, ent(&e, "block").i(), 1e-10).unwrap();
     let after = field_volume(&field, box_.0, box_.1, 3.0 / 64.0);
     let want = 9.0 * (1.0 - PI / 4.0) * 40.0;

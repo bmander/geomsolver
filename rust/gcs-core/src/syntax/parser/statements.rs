@@ -945,7 +945,7 @@ impl<'a> P<'a> {
             return false;
         }
         let Some(j) = self.past_ref(self.i) else { return false };
-        if !matches!(self.word_at(j), Some("coincident" | "tangent")) {
+        if !matches!(self.word_at(j), Some("coincident" | "tangent" | "inside" | "outside")) {
             return false;
         }
         // a call is a component's: not a word of the language's own (`hint(…)`)

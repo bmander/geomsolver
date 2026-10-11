@@ -1,3 +1,6 @@
+// Superseded by `rust/lib/std.sv` (#183 steps 1–7): what follows is the paper it was written
+// from; docs/fillets/README.md lists the differences.
+//
 // X3 (#183): rounds and chamfers as they would stand in `rust/lib/std.sv`, written in Solvent over
 // words the language does not have yet. Does not parse. Each line that needs a missing feature is
 // marked [F1]–[F9]; docs/fillets/README.md (X3) lists the features, each with a use that has

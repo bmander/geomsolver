@@ -62,7 +62,10 @@ fn fold(sk: &Sketch, solid: usize) -> Result<Meridian, String> {
     if terms.is_empty() {
         return Err(format!("`{}` bounds nothing: a solid is a region", s.name));
     }
-    if terms.iter().any(|t| point_by_point(&t.shape)) {
+    // a round or a chamfer in the region's own body is built in the meridian where it is one of
+    // two of the region's bounds (`lowering`, #183): any other term read point by point is none
+    let lowered: Vec<Option<Lowering>> = terms.iter().map(|t| lowering(sk, terms, t)).collect();
+    if terms.iter().zip(&lowered).any(|(t, l)| point_by_point(&t.shape) && l.is_none()) {
         return Err(format!("`{}` bounds a sum of measurements or reads faces, which no meridian \
                             folds", s.name));
     }
@@ -223,7 +226,8 @@ fn fold(sk: &Sketch, solid: usize) -> Result<Meridian, String> {
                 }
                 // the ordinate, `sign · n · (x - from)`, along the axis
                 let k = sign * dot(n, axis).signum();
-                let edge = z(point(from)) + k * v;
+                // a half-space grown moves its plane (#183: a region's own bound, kept off)
+                let edge = z(point(from)) + k * (v + g);
                 if k > 0.0 { rect(0.0, reach, -reach, edge) } else { rect(0.0, reach, edge, reach) }
             }
             _ => unreachable!("refused before the fold"),
@@ -231,6 +235,9 @@ fn fold(sk: &Sketch, solid: usize) -> Result<Meridian, String> {
     };
     let mut region = rect(0.0, reach, -reach, reach);
     for (k, ((t, &lo), &g)) in terms.iter().zip(&lows).zip(&grows).enumerate() {
+        if lowered[k].is_some() {
+            continue;
+        }
         let tag = k as u32 + 1;
         let fold = |region: &Region, v: f64, op: Op| -> Result<Region, String> {
             boolean(region, &within(t, v, g)?.tagged(&|_, _| tag), op, tol)
@@ -244,6 +251,33 @@ fn fold(sk: &Sketch, solid: usize) -> Result<Meridian, String> {
                 fold(&hi, lo, Op::Cut)?
             }
         };
+    }
+    // each round and chamfer, at every corner of its two bounds (`brep::corners`, X1)
+    for (k, l) in lowered.iter().enumerate() {
+        let Some(l) = l else { continue };
+        let tag = k as u32 + 1;
+        let (a, b) = (l.a as u32 + 1, l.b as u32 + 1);
+        // exact only where it builds what the set says: no corner of a charted step (an offset
+        // cone), and a flat only between straight steps
+        for lp in &region.loops {
+            for i in 0..lp.len() {
+                let (st, nx) = (&lp[i], &lp[(i + 1) % lp.len()]);
+                let named = (st.tag == a && nx.tag == b) || (st.tag == b && nx.tag == a);
+                let curved = |x: &crate::brep::planar::Step| matches!(x.seg, Seg::Arc { .. });
+                if named && (st.chart.is_some() || nx.chart.is_some()
+                    || (matches!(l.kind, Lower::Flat { .. }) && (curved(st) || curved(nx)))) {
+                    return Err(format!("`{}`: a round or a flat at a curved or offset corner is read \
+                                        point by point", s.name));
+                }
+            }
+        }
+        region = match l.kind {
+            Lower::Round { r } => crate::brep::corners::round(&region, &[a], &[b], r, tag),
+            Lower::Flat { la, lb } => {
+                use crate::brep::corners::Leg;
+                crate::brep::corners::chamfer(&region, &[a], &[b], [Leg::FromOther(la), Leg::FromOther(lb)], tag)
+            }
+        }.map_err(|e| format!("`{}`: {e}", s.name))?;
     }
     if region.loops.is_empty() || region.area().abs() <= tol * tol {
         return Err(format!("`{}` leaves no material: its bounds have no point in common", s.name));
@@ -294,6 +328,80 @@ pub(super) fn face_polys(m: &Meridian, unit: f64) -> Vec<super::profile::FacePol
 
 /// Why a meridian refused that no reading in general position answers either: a region with no
 /// material or none bounded (`fold`'s own words), which is the same region however it is read.
+/// **A lowering entry** (#183 step 7): a term a region's body states that the meridian builds
+/// exactly — `std.Rounded(a, b, r)`, within reach of a ball of `r` lying `r` within both of two of
+/// the region's own bounds, and `std.Chamfered(a, b, la, lb)`, short of the flat between their
+/// surfaces — at the bounds `a` and `b` (their indices among the terms).
+struct Lowering {
+    a: usize,
+    b: usize,
+    kind: Lower,
+}
+
+enum Lower {
+    Round { r: f64 },
+    Flat { la: f64, lb: f64 },
+}
+
+/// The lowering a term is, where it is one: its sets each the region's own bound (a shape it
+/// states, at its level — moved in by the ball's radius for a round's centres), never what the
+/// set is for.
+fn lowering(sk: &Sketch, terms: &[RegionTerm], t: &RegionTerm) -> Option<Lowering> {
+    use crate::model::Target;
+    let RegionShape::Measured { of } = &t.shape else { return None };
+    let lo = t.lo.read(sk)?;
+    let level = |u: &RegionTerm| -> Option<(f64, f64)> {
+        Some((u.lo.read(sk)?, u.grow.as_ref().map_or(Some(0.0), |g| g.read(sk))?))
+    };
+    // the outer bound with the same measure whose surface stands `want` outward of `u`'s (a
+    // slab's two sides share a measure)
+    let outer = |u: &RegionTerm, want: f64| -> Option<(usize, f64)> {
+        let gap = |o: &RegionTerm| -> Option<f64> {
+            let ((lo_o, g_o), (lo_u, g_u)) = (level(o)?, level(u)?);
+            // the gap from the outer surface to `u`'s, toward the inside of the outer bound
+            let inward = if o.cmp == Cmp::Le { 1.0 } else { -1.0 };
+            match o.shape {
+                RegionShape::Cone { .. } => {
+                    if (lo_o - lo_u).abs() > 1e-12 * (1.0 + lo_o.abs()) { return None; }
+                    Some(inward * (g_o - g_u))
+                }
+                _ => Some(inward * ((lo_o + g_o) - (lo_u + g_u))),
+            }
+        };
+        terms.iter().enumerate()
+            .filter(|(_, o)| o.shape == u.shape && !point_by_point(&o.shape) && o.cmp != Cmp::In)
+            .filter_map(|(k, o)| gap(o).map(|g| (k, g)))
+            .min_by(|x, y| (x.1 - want).abs().total_cmp(&(y.1 - want).abs()))
+    };
+    let tol = |x: f64| 1e-9 * (1.0 + x.abs());
+    match (of.as_slice(), t.cmp) {
+        // within `r` of the centres: a round
+        ([(Target::Set { terms: inner, .. }, c)], Cmp::Le) if *c > 0.0 && inner.len() == 2 => {
+            let r = lo / c;
+            let (ka, ga) = outer(&inner[0], r)?;
+            let (kb, gb) = outer(&inner[1], r)?;
+            let side = |u: &RegionTerm, k: usize| u.cmp == terms[k].cmp;
+            (ka != kb && side(&inner[0], ka) && side(&inner[1], kb) && r > 0.0
+                && (ga - r).abs() <= tol(r) && (gb - r).abs() <= tol(r))
+                .then_some(Lowering { a: ka, b: kb, kind: Lower::Round { r } })
+        }
+        // at least one from the flat between two surfaces: a chamfer
+        ([(Target::Set { terms: sa, .. }, ca), (Target::Set { terms: sb, .. }, cb)], Cmp::Ge)
+            if *ca > 0.0 && *cb > 0.0 && lo > 0.0 && sa.len() == 1 && sb.len() == 1 =>
+        {
+            let surface = |u: &RegionTerm| u.cmp == Cmp::In && u.hi.is_some_and(|h| u.lo.read(sk) == Some(h));
+            if !surface(&sa[0]) || !surface(&sb[0]) {
+                return None;
+            }
+            let (ka, ga) = outer(&sa[0], 0.0)?;
+            let (kb, gb) = outer(&sb[0], 0.0)?;
+            (ka != kb && ga.abs() <= tol(lo) && gb.abs() <= tol(lo))
+                .then_some(Lowering { a: ka, b: kb, kind: Lower::Flat { la: lo / cb, lb: lo / ca } })
+        }
+        _ => None,
+    }
+}
+
 /// Whether a term is read only point by point: a sum of measurements, or a face's (#183).
 fn point_by_point(shape: &RegionShape) -> bool {
     matches!(shape, RegionShape::Measured { .. } | RegionShape::FaceSide { .. }

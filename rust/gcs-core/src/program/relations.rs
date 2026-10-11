@@ -142,7 +142,22 @@ fn say_once(diags: &mut Vec<Diag>, span: Span, stmt: StmtId, message: String) {
 /// The hidden points region solids' bodies are applied to (`solid(R)`, §6.21), each with the
 /// bounds stated on it: gathered as relations are stated, taken by each solid as it is built
 /// (`SolidDef::Region`).  Never a row: a probe's bound describes material and chooses no root.
-pub(super) type Probes = BTreeMap<usize, Vec<crate::model::RegionTerm>>;
+#[derive(Default)]
+pub(super) struct Probes {
+    pub terms: BTreeMap<usize, Vec<crate::model::RegionTerm>>,
+    /// The points of sets measured from (#183 F2), whose equalities are terms too: a set's
+    /// surface, a curve where two meet.
+    pub inner: BTreeSet<usize>,
+}
+
+impl std::ops::Deref for Probes {
+    type Target = BTreeMap<usize, Vec<crate::model::RegionTerm>>;
+    fn deref(&self) -> &Self::Target { &self.terms }
+}
+
+impl std::ops::DerefMut for Probes {
+    fn deref_mut(&mut self) -> &mut Self::Target { &mut self.terms }
+}
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn constrain(
@@ -585,7 +600,7 @@ pub(super) fn constrain(
     };
     // a bound a set put on a region solid's probe is a term of the solid, never a row (§6.21)
     if let Some(probe) = probe_of(sk, &c, probes) {
-        match region_term(sk, &c, probe, grow) {
+        match region_term(sk, &c, probe, grow, probes.inner.contains(&probe)) {
             Ok(t) => probes.get_mut(&probe).expect("a probe's terms").push(t),
             Err(message) => {
                 diags.push(Diag { code: Code::E040, span: st.span, stmt: Some(st.id), message })
@@ -618,11 +633,17 @@ fn probe_of(sk: &Sketch, c: &Constraint, probes: &Probes) -> Option<usize> {
 /// What a bound on a region solid's probe bounds (§6.21), read off the constraint's **kind** and
 /// never the set it came from: a distance from a point is a ball, from a line a cylinder, the
 /// angle from a line seen from its start a cone, an ordinate along a plane's normal a half-space.
-fn region_term(sk: &Sketch, c: &Constraint, probe: usize, grow: Option<crate::model::TermNumber>)
+fn region_term(sk: &Sketch, c: &Constraint, probe: usize, grow: Option<crate::model::TermNumber>,
+               inner: bool)
     -> Result<crate::model::RegionTerm, String> {
     use crate::model::{RegionShape, RegionTerm};
     let kind = crate::syntax::snake(c.kind.name());
-    let Some(b) = c.bound else {
+    // a set measured from may hold its point to a number, a surface (#183 F2)
+    let equal = c.kind.dimension_slot().filter(|_| inner && c.bound.is_none()).and_then(|at| {
+        let v = term_number(&c.args[at], sk, c.kind.dimension_kind())?;
+        Some(crate::constraints::Bound { cmp: crate::syntax::Cmp::In, hi: Some(v.c) })
+    });
+    let Some(b) = c.bound.or(equal) else {
         return Err(format!(
             "a region solid's set states `{kind}`, which bounds nothing: its body bounds numbers"
         ));
@@ -675,8 +696,8 @@ fn region_term(sk: &Sketch, c: &Constraint, probe: usize, grow: Option<crate::mo
     };
     let name =
         c.word.as_ref().and_then(|w| w.sets.first()).map(|(_, n)| n.clone()).unwrap_or_default();
-    if grow.is_some() && (b.hi.is_some() || !matches!(shape, RegionShape::Cone { .. })) {
-        return Err("an offset is of a cone's surface, on one side of it".to_string());
+    if grow.is_some() && (b.hi.is_some() || !matches!(shape, RegionShape::Cone { .. } | RegionShape::Plane { .. })) {
+        return Err("an offset is of a cone's surface or a plane's, on one side of it".to_string());
     }
     Ok(RegionTerm { shape, cmp: b.cmp, lo, hi: b.hi, grow, name })
 }
