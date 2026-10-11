@@ -206,7 +206,7 @@ fn surfaces_meet_in_curves_on_both() {
         }
     }
     // two extrusions along one direction share it, but two spline sections have no closed
-    // form; one along another direction shares no twist
+    // form; one along another direction is swept by nothing the other is
     let shifted = Surface::Extrusion(f([1.,1.,0.],z,x),std::sync::Arc::new(Curve::BSpline(cubic(&lobe.poles.iter()
         .map(|p| [p[0]+1.,p[1]+1.,0.]).collect::<Vec<_>>(),&[0.4]))));
     assert_eq!(intersect(&swept,&shifted,1e-9),Ssi::Traced);

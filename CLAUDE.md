@@ -636,17 +636,16 @@ intersections), `topo` (`Brep`: oriented uses with pcurves, degenerate poles; `c
 `build` (prisms, revolutions, lofts of line/arc/circle/spline profiles), `props` (volume by Green's
 theorem), `query`, `ssi` (closed forms, else traced), `boolean` (split, arrange, classify,
 assemble), `mesh` (constrained Delaunay refined to a measured sag), `step` (AP214 with pcurves and
-seam curves), `recipe`. **Two surfaces one twist carries onto themselves meet in its orbits**
-(`twist`): every analytic surface is a curve swept by a twist, and the kernel's two are named for
-what they make, `Twist::Turn` (about an axis) and `Twist::Extrude` (along a direction); a cylinder
-and a plane are both (`Surface::twists`, a plane and a sphere lending one against another surface:
-`twist::shared`). `ssi::intersect` crosses the two sections in the plane of orbits
-(`Surface::section`: the meridian `(ρ, z)` of a turn, the plane square to an extrusion) and lifts
-each point to its circle or line; `ssi::same` reads a swept curve's poles in that plane too. A
-screw (orbits helices) has no surface kind yet: the flutes' sheets are fitted (`sweep::helical`).
-Two spline sections are traced. A traced pair is seeded where edges cross faces; between analytic
-surfaces `ssi::unseen` then searches one face for curves no edge reaches (cells proved clear by
-the signed distance's Lipschitz and second-order bounds, else beside a known curve, else seeded),
+seam curves), `recipe`. **Two surfaces swept alike meet along their paths** (`swept_by`):
+every analytic surface is a curve swept by a turn about an axis or an extrusion along a direction
+(`SweptBy::Turn`, `SweptBy::Extrusion`; a cylinder and a plane by both — `Surface::swept_by`, a
+plane and a sphere lending a turn against another surface: `swept_by::shared`). `ssi::intersect`
+crosses the two sections (`Surface::section`: the meridian `(ρ, z)` of a turn, the plane square
+to an extrusion) and lifts each point to the circle or line it is swept along (`SweptBy::path`);
+`ssi::same` reads a swept curve's poles in that plane too. A screw would sweep helices and has no
+surface kind yet: the flutes' sheets are fitted (`sweep::helical`). Two spline sections are
+traced. A traced pair is seeded where edges cross faces; between analytic surfaces `ssi::unseen`
+then searches one face for curves no edge reaches (cells proved clear by the signed distance's Lipschitz and second-order bounds, else beside a known curve, else seeded),
 refusing what it cannot resolve: an untraced meeting is never read as none (issue #58).
 `Brep::bounds` encloses (issue #59; `through:` cutters, tool culls): `Curve::bounds` exact for
 lines and conics, the poles reaching a B-spline's range, a trace by its measured sagitta; a face bulges

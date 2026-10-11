@@ -1,14 +1,13 @@
 //! Where two surfaces meet, in closed form where it has one: two planes in a line; two surfaces
-//! one twist carries onto themselves (`twist::shared`: a turn about one axis, or an extrusion along
-//! one direction) in its orbits, circles about the axis or lines along the extrusion, through
-//! where their sections cross in the plane of orbits; a plane and a cylinder otherwise in an
-//! ellipse; a plane square to an extrusion in its curve. The rest is left to be traced
+//! swept by the same turn or extrusion (`swept_by::shared`) in the paths, circles about the axis or
+//! lines along the extrusion, through where their sections cross; a plane and a cylinder otherwise
+//! in an ellipse; a plane square to an extrusion in its curve. The rest is left to be traced
 //! (`Ssi::Traced`) from seeds, and between analytic surfaces a curve no seed reaches is searched
 //! for (`unseen`).
 #[allow(unused_imports)]
 use crate::fmath::Det;
 use super::geom::{Curve,Frame,Surface,V};
-use super::twist::{Section,Twist};
+use super::swept_by::{Section,SweptBy};
 use crate::space::{add,cross,dot,norm,scale,sub};
 
 fn unit(a: V) -> V { scale(a,1./norm(a)) }
@@ -24,11 +23,11 @@ pub enum Ssi {
     Traced,
 }
 
-/// Where a spline section crosses or touches another (not a spline) in the plane of `twist`'s
-/// orbits: every sign change of the other's distance along it, refined, and every sampled minimum
-/// of its size that comes within `tol`.
-fn spline_cross(s: &super::nurbs::BSpline,twist: &Twist,other: &Section,tol: f64) -> Vec<[f64;2]> {
-    let rz = |t: f64| twist.section(s.point(t));
+/// Where a spline section crosses or touches another (not a spline) in `by`'s section plane: every
+/// sign change of the other's distance along it, refined, and every sampled minimum of its size
+/// that comes within `tol`.
+fn spline_cross(s: &super::nurbs::BSpline,by: &SweptBy,other: &Section,tol: f64) -> Vec<[f64;2]> {
+    let rz = |t: f64| by.in_section(s.point(t));
     let g = |t: f64| other.implicit(rz(t));
     let [a,b] = s.domain();
     let mut cuts = vec![a];
@@ -55,7 +54,7 @@ fn spline_cross(s: &super::nurbs::BSpline,twist: &Twist,other: &Section,tol: f64
     out
 }
 
-/// Where two sections cross in the plane of orbits; `None` where they coincide.
+/// Where two sections cross in their section plane; `None` where they coincide.
 fn cross2(a: Section,b: Section,tol: f64) -> Option<Vec<[f64;2]>> {
     use Section::*;
     let line_line = |p: [f64;2],d: [f64;2],q: [f64;2],e: [f64;2]| -> Option<Vec<[f64;2]>> {
@@ -133,11 +132,11 @@ pub fn same(a: &Surface,b: &Surface,tol: f64) -> bool {
         // a curve swept along one direction, or turned about one axis, as the other is (a face
         // of the same profile, copied or cut): the same curve and the same line (moved along the
         // sweep, or turned about the axis, a B-spline's poles are where they were with that
-        // motion taken out: in the twist's section)
+        // motion taken out: in the section plane)
         (Surface::Extrusion(_,c),Surface::Extrusion(_,d)) => parallel
-            && same_curve(&c,&d,tol,&|p| { let [x,y] = Twist::Extrude(*f).section(p); [x,y,0.] }),
+            && same_curve(&c,&d,tol,&|p| { let [x,y] = SweptBy::Extrusion(*f).in_section(p); [x,y,0.] }),
         (Surface::Revolution(_,c),Surface::Revolution(_,d)) => parallel && on_axis
-            && same_curve(&c,&d,tol,&|p| { let [x,y] = Twist::Turn(*f).section(p); [x,y,0.] }),
+            && same_curve(&c,&d,tol,&|p| { let [x,y] = SweptBy::Turn(*f).in_section(p); [x,y,0.] }),
         _ => false,
     }
 }
@@ -158,26 +157,26 @@ pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi {
         let p = solve3(m,rhs);
         return Ssi::Curves(vec![Curve::Line {p,d}])
     }
-    // a twist carrying both onto themselves: they meet in its orbits through where their sections cross
-    for (twist,sa,sb) in super::twist::shared(a,b,tol) {
+    // swept by the same turn or extrusion: they meet in the paths through where their sections cross
+    for (by,sa,sb) in super::swept_by::shared(a,b,tol) {
         let points = match (&sa,&sb) {
             // two spline sections have no closed-form crossing: traced
             (Section::Spline(..),Section::Spline(..)) => continue,
-            (Section::Spline(sp),m) | (m,Section::Spline(sp)) => spline_cross(sp,&twist,m,tol),
+            (Section::Spline(sp),m) | (m,Section::Spline(sp)) => spline_cross(sp,&by,m,tol),
             _ => {
                 let Some(points) = cross2(sa,sb,tol) else { return Ssi::Same };
                 points
             }
         };
         // (a circle of no radius is a point on the axis: a touch, not a curve)
-        return Ssi::Curves(points.into_iter().filter(|&q| twist.reaches(q,tol)).filter_map(|q| twist.orbit(q,tol)).collect())
+        return Ssi::Curves(points.into_iter().filter(|&q| by.holds(q,tol)).filter_map(|q| by.path(q,tol)).collect())
     }
     match (a.clone(),b.clone()) {
         (Surface::Plane(_),Surface::Cylinder(..)) | (Surface::Cylinder(..),Surface::Plane(_)) => {
             let (pl,cy) = if matches!(a,Surface::Plane(_)) { (f,b.clone()) } else { (g,a.clone()) };
             let Surface::Cylinder(c,r) = cy else { unreachable!() };
             let (n,h) = (pl.z,dot(pl.z,pl.o));
-            // oblique (square to the axis, or along it, the plane shares a twist with it): an
+            // oblique (square to the axis, or along it, one turn or extrusion sweeps both): an
             // ellipse about where the axis pierces the plane, its minor axis the radius square to both
             let cos = dot(n,c.z);
             let minor = cross(c.z,n);
