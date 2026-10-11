@@ -13,13 +13,12 @@ use crate::brep::props::volume;
 use crate::brep::query::interior;
 use crate::brep::topo::Brep;
 use crate::envelope::Motion;
-use crate::interval::{Interval,minimum::Options};
 use crate::json::Json;
 use crate::model::Sketch;
 use crate::solid::cad::{self,StaticRecipe};
 use crate::solid::contracts;
 use crate::solid::sector::{self,Boundary,Frame,Slices};
-use crate::solid::{MaterialField,ProbeState,SpatialField};
+use crate::solid::{MaterialField,Millimetres,ProbeState,SpatialField};
 use crate::space::{cross,distance,dot,norm,scale,sub};
 
 type V = [f64;3];
@@ -108,13 +107,12 @@ struct Cell { index: usize,point: V,volume: f64 }
 /// a lower bound on their distance from the cell's boundary, deepest first): every sample far
 /// enough from its cell's boundary is probed, at half that distance (at most 0.05 mm), and all of a
 /// cell's must agree. An unresolved probe or a cell reading both ways refuses.
-fn judge(volumes: &[f64],sampled: Vec<Vec<(V,f64)>>,field: &MaterialField) -> Result<(Vec<Cell>,Vec<Cell>),String> {
+fn judge(volumes: &[f64],sampled: Vec<Vec<(V,f64)>>,field: &Millimetres<MaterialField>) -> Result<(Vec<Cell>,Vec<Cell>),String> {
     let (mut kept,mut removed) = (Vec::new(),Vec::new());
     let asked: Vec<(V,f64)> = sampled.iter().flatten().map(|&(p,b)| (p,(b*0.5).min(0.05))).filter(|&(_,d)| d > 1e-4).collect();
     let answers = crate::par::indices_with(asked.len(),|| field.evaluator(cad::POSE_CACHE),|material,i| {
         let (point,distance) = asked[i];
-        material.probe(point.map(|x| Interval::point(x).unwrap()),[1.,0.,0.],distance,
-            Options {value_tolerance:distance/4.,max_evaluations:40000}).map_err(|e| format!("{e:?}"))
+        material.ball(point,distance)
     });
     let mut answers = answers.into_iter();
     for (k,(&volume,samples)) in volumes.iter().zip(sampled).enumerate() {
@@ -125,7 +123,7 @@ fn judge(volumes: &[f64],sampled: Vec<Vec<(V,f64)>>,field: &MaterialField) -> Re
         for (point,boundary) in samples {
             if (boundary*0.5).min(0.05) <= 1e-4 { continue }
             let probe = answers.next().expect("an answer a probe asked")?;
-            let inside = match probe.state {
+            let inside = match probe {
                 ProbeState::InteriorBall => true,
                 ProbeState::ExteriorBall => false,
                 state => return Err(format!("the material at {point:?} ({boundary:.3} mm from a cell boundary) is {state:?}")),
@@ -149,16 +147,19 @@ fn judge(volumes: &[f64],sampled: Vec<Vec<(V,f64)>>,field: &MaterialField) -> Re
 
 /// What a sector is cut from once its premises hold: the placements' turn, the two sides, a sheet
 /// of each sweep placed in the sector, and the body's material field.
-pub struct Premises { frame: Frame,n: usize,pitch: f64,across: f64,side: Brep,other: Brep,tools: Vec<Brep>,body_field: MaterialField }
+pub struct Premises { frame: Frame,n: usize,pitch: f64,across: f64,side: Brep,other: Brep,tools: Vec<Brep>,
+    body_field: Millimetres<MaterialField> }
 
 /// Whether `body` can be built as one sector, and what it is cut from, or why not — the placements
 /// not turns of one about one axis, the blank not alike under the turn, no side clear of the cuts
 /// through their gaps, a side the field reads as removed. `sheets` are the distinct sweeps' fitted
-/// sheets in the order of `distinct`; `blank` the static blank (mm), `field` its analytic field.
+/// sheets in the order of `distinct`; `blank` the static blank (mm), `field` its analytic field, whose
+/// scale the placements' motions are read by.
 #[allow(clippy::too_many_arguments)]
-pub fn premises(sk: &Sketch,body: usize,recipe: &StaticRecipe,blank: &Brep,field: &SpatialField,distinct: &[usize],sheets: &[Fitted],
-    scale_mm: f64,say: &Say) -> Result<Premises,String> {
+pub fn premises(sk: &Sketch,body: usize,recipe: &StaticRecipe,blank: &Brep,field: &Millimetres<SpatialField>,distinct: &[usize],
+    sheets: &[Fitted],say: &Say) -> Result<Premises,String> {
     let started = crate::clock::Instant::now();
+    let scale_mm = field.scale();
     let poses: Vec<Vec<Motion>> = distinct.iter().map(|&s| recipe.sweeps.iter().filter(|c| c.swept == s).map(|c| c.pose).collect()).collect();
     let (lo,hi) = blank.bounds();
     let bounds = [lo,hi];
@@ -167,14 +168,14 @@ pub fn premises(sk: &Sketch,body: usize,recipe: &StaticRecipe,blank: &Brep,field
     let n = indexing.count;
     let frame = Frame::new(indexing.origin.map(|x| x*scale_mm),indexing.axis);
     let mm = |m: Motion,p: V| m.point(p.map(|x| x/scale_mm)).map(|x| x*scale_mm);
-    let inside = |p: V| field.value(p.map(|x| x/scale_mm)) < 0.;
+    let inside = |p: V| field.value(p) < 0.;
     // the blank reads alike under one pitch's turn, at points spread over its box
     let turn = indexing.turn(1);
     let mut rng = crate::rng::Rng::new(0x5ec7);
     for _ in 0..256 {
         let p: V = std::array::from_fn(|k| rng.uniform(bounds[0][k],bounds[1][k]));
-        let (a,b) = (field.value(p.map(|x| x/scale_mm)),field.value(mm(turn,p).map(|x| x/scale_mm)));
-        if (a-b).abs()*scale_mm > 1e-9*size { return Err(format!("the blank does not read alike turned by one pitch (at {p:?}, {a} against {b})")) }
+        let (a,b) = (field.value(p),field.value(mm(turn,p)));
+        if (a-b).abs() > 1e-9*size { return Err(format!("the blank does not read alike turned by one pitch (at {p:?}, {a} against {b})")) }
     }
     // each sweep's contacts in the blank at its first placement
     let cuts: Vec<Vec<V>> = sheets.iter().enumerate()
@@ -210,17 +211,16 @@ pub fn premises(sk: &Sketch,body: usize,recipe: &StaticRecipe,blank: &Brep,field
     let read: Vec<V> = surface_grid(&side,READ_BACK*rows,READ_BACK*COLUMNS).into_iter().map(|(p,_)| p).filter(|&p| inside(p)).collect();
     let clear = chosen.clearance_of(&read)?;
     if clear < margin { return Err(format!("the side as built passes {clear:.4} mm from a cut, under {margin:.4} mm")) }
-    let body_field = MaterialField::read(sk,body,cad::AXIS_TOLERANCE)?;
+    let body_field = Millimetres::<MaterialField>::read(sk,body,cad::AXIS_TOLERANCE)?;
     let radius = margin/2.;
-    let deep: Vec<V> = read.iter().copied().filter(|p| field.value(p.map(|x| x/scale_mm))*scale_mm < -radius).collect();
+    let deep: Vec<V> = read.iter().copied().filter(|&p| field.value(p) < -radius).collect();
     let step = deep.len().div_ceil(PROBES).max(1);
     let probed_at: Vec<V> = deep.iter().copied().step_by(step).collect();
     let probes = crate::par::indices_with(probed_at.len(),|| body_field.evaluator(cad::POSE_CACHE),|material,i| {
-        material.probe(probed_at[i].map(|x| Interval::point(x/scale_mm).unwrap()),[1.,0.,0.],radius/scale_mm,
-            Options {value_tolerance:radius/scale_mm/4.,max_evaluations:40000}).map_err(|e| format!("{e:?}"))
+        material.ball(probed_at[i],radius)
     });
     for (&p,probe) in probed_at.iter().zip(probes) {
-        if probe?.state != ProbeState::InteriorBall {
+        if probe? != ProbeState::InteriorBall {
             return Err(format!("the material field reads the side at {:?} as not material",p.map(|x| (x*1e3).round()/1e3)))
         }
     }
@@ -310,7 +310,7 @@ pub fn whole(sk: &Sketch,body: usize,recipe: &StaticRecipe,blank: &Brep,distinct
         clock.elapsed()));
     (say.mark)(crate::solid::export::Stage::Split);
     let clock = crate::clock::Instant::now();
-    let body_field = MaterialField::read(sk,body,cad::AXIS_TOLERANCE)?;
+    let body_field = Millimetres::<MaterialField>::read(sk,body,cad::AXIS_TOLERANCE)?;
     let sampled = crate::par::map(&cells,|c| interior(c,4)).into_iter().collect::<Result<Vec<_>,_>>()?;
     let (kept,removed) = judge(&volumes,sampled,&body_field)?;
     (say.stage)(&format!("classified {} material and {} removed cells ({:?})",kept.len(),removed.len(),clock.elapsed()));

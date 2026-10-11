@@ -16,6 +16,7 @@ use crate::model::Sketch;
 use crate::solid::admission::Admission;
 use crate::solid::cad::{self,StaticRecipe};
 use crate::solid::export::{AtStage,ExportRefusal,Stage,Tolerance};
+use crate::solid::{Millimetres,SpatialField};
 
 /// How the pipeline speaks: a line of progress, and the stage just passed.
 pub struct Say<'a> { pub stage: &'a (dyn Fn(&str)+Sync),pub mark: &'a (dyn Fn(Stage)+Sync) }
@@ -33,10 +34,10 @@ impl Built {
 /// take them for one (mm): the far side is the near one turned, so they agree to rounding.
 const PATTERN_MATCH: f64 = 1e-6;
 
-/// What every stage of a swept body's build reads: millimetres a model unit, the static
-/// remainder's analytic field and the box it lies in (model units), the distinct sweeps, their cuts and
-/// the class each was admitted to, and the blank (mm).
-pub struct Prepared { scale: f64,field: crate::solid::SpatialField,bounds: Option<([f64;3],[f64;3])>,distinct: Vec<usize>,
+/// What every stage of a swept body's build reads: the static remainder's analytic field (asked in
+/// mm, its scale what the motions are read by) and the box it lies in (model units), the distinct
+/// sweeps, their cuts and the class each was admitted to, and the blank (mm).
+pub struct Prepared { field: Millimetres<SpatialField>,bounds: Option<([f64;3],[f64;3])>,distinct: Vec<usize>,
     cuts: Vec<sheet::SweptCut>,classes: Vec<crate::solid::admission::Class>,blank: crate::brep::topo::Brep }
 
 impl Prepared {
@@ -46,10 +47,8 @@ impl Prepared {
     pub fn sweep_name<'a>(&self,sk: &'a Sketch,k: usize) -> &'a str { &sk.solids[self.distinct[k]].name }
     /// Which points (mm) the static blank holds, as every sheet asks.
     fn inside(&self,points: &[[f64;3]]) -> Result<Vec<bool>,String> {
-        Ok(points.iter().map(|p| self.field.value(p.map(|x| x/self.scale)) < 0.).collect())
+        Ok(points.iter().map(|&p| self.field.value(p) < 0.).collect())
     }
-    /// The static blank's field at a point, in mm.
-    fn near(&self,p: [f64;3]) -> f64 { self.field.value(p.map(|x| x/self.scale))*self.scale }
 }
 
 /// The first stage: the body's field, its sweeps and its blank, by its meridian where it is a solid
@@ -59,15 +58,14 @@ pub fn prepare(sk: &Sketch,body: usize,recipe: &StaticRecipe,admission: &Admissi
     if admission.body() != body {
         return Err(ExportRefusal::at(Stage::Admission,format!("`{name}`: the admission presented is another body's")))
     }
-    let scale = cad::millimetres(sk).at(Stage::Blank)?;
-    let (field,_) = crate::solid::admission::static_remainder(sk,body,cad::AXIS_TOLERANCE).at(Stage::Blank)?;
+    let (field,_) = Millimetres::static_remainder(sk,body,cad::AXIS_TOLERANCE).at(Stage::Blank)?;
     let mut distinct: Vec<usize> = recipe.sweeps.iter().map(|s| s.swept).collect();
     distinct.sort(); distinct.dedup();
     let cuts = distinct.iter().map(|&swept| sheet::SweptCut::read(sk,swept)).collect::<Result<Vec<_>,_>>()?;
     let classes = distinct.iter().map(|&swept| admission.sweeps().iter().find(|e| e.sweep == swept).map(|e| e.class.clone())
         .ok_or_else(|| ExportRefusal::at(Stage::Admission,format!("`{name}`: `{}` was not admitted",sk.solids[swept].name))))
         .collect::<Result<Vec<_>,_>>()?;
-    let bounds = field.support_bounds().ok().flatten().map(|b| (b.map(|x| x.bounds()[0]),b.map(|x| x.bounds()[1])));
+    let bounds = field.in_model_units().support_bounds().ok().flatten().map(|b| (b.map(|x| x.bounds()[0]),b.map(|x| x.bounds()[1])));
     let started = crate::clock::Instant::now();
     let blank = match crate::brep::recipe::meridian(&recipe.recipe,[1.,0.,0.]).at(Stage::Blank)? {
         Ok((b,..)) => b,
@@ -76,7 +74,7 @@ pub fn prepare(sk: &Sketch,body: usize,recipe: &StaticRecipe,admission: &Admissi
     (say.stage)(&format!("`{name}`: the static blank by this kernel: {:.6} mm³, {} faces ({:?})",crate::brep::props::volume(&blank),
         blank.faces.len(),started.elapsed()));
     (say.mark)(Stage::Blank);
-    Ok(Prepared {scale,field,bounds,distinct,cuts,classes,blank})
+    Ok(Prepared {field,bounds,distinct,cuts,classes,blank})
 }
 
 /// Sweep `k`'s sheet fitted against the blank: a prism's under a motion keeping its profile's
@@ -84,7 +82,7 @@ pub fn prepare(sk: &Sketch,body: usize,recipe: &StaticRecipe,admission: &Admissi
 /// relative rotation (`sheet::swept_sheet`); or its characteristic carried, under a screw
 /// (`helical::helical_sheet`).
 pub fn sheet(prepared: &Prepared,k: usize,tolerance: Option<Tolerance>,say: &Say) -> Result<sheet::Fitted,ExportRefusal> {
-    let (inside,near) = (|p: &[[f64;3]]| prepared.inside(p),|p: [f64;3]| prepared.near(p));
+    let (inside,near) = (|p: &[[f64;3]]| prepared.inside(p),|p: [f64;3]| prepared.field.value(p));
     match &prepared.classes[k] {
         crate::solid::admission::Class::Generating => match extruded::planar_sheet(&prepared.cuts[k],&inside,tolerance,say) {
             Some(fitted) => fitted,
@@ -103,7 +101,7 @@ pub fn sheet(prepared: &Prepared,k: usize,tolerance: Option<Tolerance>,say: &Say
 /// Sweep `k`'s sheet traced, as every generating sweep but a prism's under a motion keeping its
 /// profile's plane is built (kept for that one too, so that the two can be compared).
 pub fn traced(prepared: &Prepared,k: usize,tolerance: Option<Tolerance>,say: &Say) -> Result<sheet::Fitted,ExportRefusal> {
-    sheet::swept_sheet(&prepared.cuts[k],&|p: &[[f64;3]]| prepared.inside(p),&|p| prepared.near(p),tolerance,say)
+    sheet::swept_sheet(&prepared.cuts[k],&|p: &[[f64;3]]| prepared.inside(p),&|p| prepared.field.value(p),tolerance,say)
 }
 
 /// How the body is cut from its blank: as one sector, its premises holding, or whole, and why.
@@ -112,7 +110,7 @@ pub enum Plan { Sector(sector::Premises),Whole(String) }
 /// Whether the body's sweeps are turns of one placement about one axis with a side through their
 /// gaps (`sector::premises`), or it is built whole.
 pub fn plan(sk: &Sketch,body: usize,recipe: &StaticRecipe,prepared: &Prepared,sheets: &[sheet::Fitted],say: &Say) -> Plan {
-    match sector::premises(sk,body,recipe,&prepared.blank,&prepared.field,&prepared.distinct,sheets,prepared.scale,say) {
+    match sector::premises(sk,body,recipe,&prepared.blank,&prepared.field,&prepared.distinct,sheets,say) {
         Ok(premises) => Plan::Sector(premises),
         Err(why) => { (say.stage)(&format!("built whole, not as one sector: {why}")); Plan::Whole(why) }
     }
@@ -124,7 +122,7 @@ pub fn cut(sk: &Sketch,body: usize,recipe: &StaticRecipe,prepared: &Prepared,she
     -> Result<Cut,ExportRefusal> {
     Ok(match plan {
         Plan::Sector(premises) => Cut::Sector(sector::construct(recipe,&prepared.distinct,premises,say).at(Stage::Split)?),
-        Plan::Whole(_) => Cut::Whole(sector::whole(sk,body,recipe,&prepared.blank,&prepared.distinct,sheets,prepared.scale,say)
+        Plan::Whole(_) => Cut::Whole(sector::whole(sk,body,recipe,&prepared.blank,&prepared.distinct,sheets,prepared.field.scale(),say)
             .at(Stage::Split)?),
     })
 }

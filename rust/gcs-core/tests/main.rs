@@ -111,6 +111,7 @@ mod seeds;
 mod sets;
 mod applied;
 mod membership;
+mod millimetres;
 mod plane_tangent;
 mod numeric_parts;
 mod two_planes;

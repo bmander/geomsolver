@@ -19,6 +19,8 @@ mod adf;
 mod memo;
 mod probe;
 pub use probe::{MaterialProbe,ProbeState};
+mod millimetres;
+pub use millimetres::{Millimetres,MillimetreEvaluator};
 mod boundary;
 pub use boundary::{BoundaryOptions,BoundaryError,BoundaryStage,FieldBoundary,BoundaryCell,BoundaryPoint,BoundaryCrossing};
 pub use boundary::BoundaryComponent;
