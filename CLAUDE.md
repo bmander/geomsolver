@@ -645,8 +645,9 @@ to an extrusion) and lifts each point to the circle or line it is swept along (`
 `ssi::same` reads a swept curve's poles in that plane too. A screw would sweep helices and has no
 surface kind yet: the flutes' sheets are fitted (`sweep::helical`). Two spline sections are
 traced. A traced pair is seeded where edges cross faces; between analytic surfaces `ssi::unseen`
-then searches one face for curves no edge reaches (cells proved clear by the signed distance's Lipschitz and second-order bounds, else beside a known curve, else seeded),
-refusing what it cannot resolve: an untraced meeting is never read as none (issue #58).
+then searches one face for curves no edge reaches (cells proved clear by the signed distance's
+Lipschitz and second-order bounds, else beside a known curve, else seeded), refusing what it cannot
+resolve: an untraced meeting is never read as none (issue #58).
 `Brep::bounds` encloses (issue #59; `through:` cutters, tool culls): `Curve::bounds` exact for
 lines and conics, the poles reaching a B-spline's range, a trace by its measured sagitta; a face bulges
 past its edges only off a `ruled` surface (`Surface::bounds_over`: meridians at each axis's
