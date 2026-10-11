@@ -12,6 +12,7 @@ pub mod step;
 pub mod step_check;
 pub mod query;
 pub mod ssi;
+pub mod twist;
 pub mod recipe;
 pub mod json;
 pub mod pattern;

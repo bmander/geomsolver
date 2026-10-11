@@ -599,6 +599,32 @@ fn analytic_ruled(a: &Seg,z: &Seg,e: V,outward: V,tol: f64) -> Option<(Surface,b
     }
 }
 
+/// A sheet slid along `frame.z`: `curve` (lying in the plane of `frame`'s `x` and `y`) extruded
+/// from height `v[0]` to `v[1]` as one face, bounded by the curve at both heights and the lines its
+/// ends slide along; its sense `C' × z`, as a net extruded linearly would have it.
+pub fn extruded_sheet(frame: Frame,curve: BSpline,[v0,v1]: [f64;2]) -> Result<Brep,String> {
+    let [u0,u1] = curve.domain();
+    let at = |h: f64| -> Curve { Curve::BSpline(Arc::new(BSpline {poles:curve.poles.iter().map(|&p| add(p,scale(frame.z,h))).collect(),..curve.clone()})) };
+    let side = |u: f64| -> Curve { Curve::Line {p:curve.point(u),d:frame.z} };
+    let mut b = Brep::default();
+    let up = |u: f64,h: f64| add(curve.point(u),scale(frame.z,h));
+    let vs: Vec<u32> = [up(u0,v0),up(u1,v0),up(u1,v1),up(u0,v1)].iter().map(|&p| b.vertex(p)).collect();
+    // the loop u0v0 → u1v0 → u1v1 → u0v1 → back, counter-clockwise in (u, v)
+    let e0 = b.edge(EdgeCurve::Curve(at(v0)),[u0,u1],[vs[0],vs[1]]);
+    let e1 = b.edge(EdgeCurve::Curve(side(u1)),[v0,v1],[vs[1],vs[2]]);
+    let e2 = b.edge(EdgeCurve::Curve(at(v1)),[u0,u1],[vs[3],vs[2]]);
+    let e3 = b.edge(EdgeCurve::Curve(side(u0)),[v0,v1],[vs[0],vs[3]]);
+    let line = |a: [f64;2],z: [f64;2]| Pcurve::Line {a,b:z};
+    let lp = vec![
+        Coedge {edge:e0,reversed:false,pcurve:line([u0,v0],[u1,v0])},
+        Coedge {edge:e1,reversed:false,pcurve:line([u1,v0],[u1,v1])},
+        Coedge {edge:e2,reversed:true,pcurve:line([u0,v1],[u1,v1])},
+        Coedge {edge:e3,reversed:true,pcurve:line([u0,v0],[u0,v1])},
+    ];
+    b.faces.push(Face {surface:Surface::Extrusion(frame,Arc::new(Curve::BSpline(Arc::new(curve)))),reversed:false,loops:vec![lp],name:String::new()});
+    Ok(b)
+}
+
 /// A sheet: the whole of a B-spline surface as one face, bounded by its four boundary curves
 /// (each its net's outermost row or column of poles, exactly), its sense the net's own.
 pub fn sheet(net: crate::brep::nurbs::Net) -> Result<Brep,String> {

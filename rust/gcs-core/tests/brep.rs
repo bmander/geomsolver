@@ -183,6 +183,34 @@ fn surfaces_meet_in_curves_on_both() {
             }
         }
     }
+    // an extrusion and what slides along it with it: a plane along the sweep, a parallel
+    // cylinder, meet it in lines along the sweep through where their sections cross its curve
+    let lobe = cubic(&[[10.,0.,0.],[12.,8.,0.],[9.,13.,0.],[6.,14.,0.],[0.,10.,0.]],&[0.4]);
+    let swept = Surface::Extrusion(f([0.,0.,0.],z,x),std::sync::Arc::new(Curve::BSpline(lobe.clone())));
+    let tall = |s: &Surface| (-5..=5).map(|i| [lobe.point(0.5)[0],lobe.point(0.5)[1],i as f64]).all(|p| s.implicit(p).abs() < 1e-9);
+    assert!(tall(&swept));
+    for (other,n) in [(Surface::Plane(f([5.,0.,0.],x,y)),1),(Surface::Plane(f([0.,12.,0.],y,x)),2),
+        (Surface::Cylinder(f([lobe.point(0.5)[0],lobe.point(0.5)[1],-4.],z,x),1.5),2),
+        (Surface::Cylinder(f([40.,0.,0.],scale3(z,-1.),x),1.5),0)] {
+        for (a,b) in [(&swept,&other),(&other,&swept)] {
+            let Ssi::Curves(cs) = intersect(a,b,1e-9) else { panic!("{other:?}: not in closed form") };
+            assert_eq!(cs.len(),n,"{other:?}: {cs:?}");
+            for c in &cs {
+                let Curve::Line {d,..} = c else { panic!("{c:?}: not a line") };
+                assert!(d.iter().zip(z).all(|(a,b)| (a.abs()-b).abs() <= 1e-12));
+                for t in (-5..=5).map(|i| i as f64) {
+                    let p = c.point(t);
+                    assert!(a.implicit(p).abs() < 1e-9 && b.implicit(p).abs() < 1e-9,"{other:?} {c:?} at {t}");
+                }
+            }
+        }
+    }
+    // two extrusions along one direction slide together, but two spline sections have no closed
+    // form; one along another direction shares no twist
+    let shifted = Surface::Extrusion(f([1.,1.,0.],z,x),std::sync::Arc::new(Curve::BSpline(cubic(&lobe.poles.iter()
+        .map(|p| [p[0]+1.,p[1]+1.,0.]).collect::<Vec<_>>(),&[0.4]))));
+    assert_eq!(intersect(&swept,&shifted,1e-9),Ssi::Traced);
+    assert_eq!(intersect(&swept,&Surface::Cylinder(f([10.,8.,0.],x,y),1.5),1e-9),Ssi::Traced);
     // perpendicular cylinders have no closed form
     assert_eq!(intersect(&Surface::Cylinder(f([0.,0.,0.],z,x),2.),&Surface::Cylinder(f([0.,0.,0.],x,y),1.),1e-9),Ssi::Traced);
     // the same surface, written from another frame
@@ -431,6 +459,10 @@ fn dump(b: &gcs_core::brep::topo::Brep) {
     }
 }
 
+/// How many of a solid's edges are curves of `kind`.
+fn kinds(b: &gcs_core::brep::topo::Brep,kind: &str) -> usize {
+    b.edges.iter().filter(|e| matches!(&e.curve,gcs_core::brep::topo::EdgeCurve::Curve(c) if c.kind() == kind)).count()
+}
 /// A B-spline of degree three over `knots`' interior (clamped at 0 and 1) through `poles`.
 fn cubic(poles: &[V],interior: &[f64]) -> std::sync::Arc<gcs_core::brep::geom::BSpline> {
     let mut knots = vec![0.;4];
@@ -490,10 +522,23 @@ fn splines_swept_and_turned_are_their_closed_forms() {
     let (a2,mut a1) = (angle(t2),angle(t1));
     while a1 < a2 { a1 += TAU; }
     let arc = (rr*rr*(a1-a2)+rr*c[0]*(a1.sin()-a2.sin())-rr*c[1]*(a1.cos()-a2.cos()))/2.;
+    // (the rod slides along the plate's sweep with it, so its wall meets the spline side in lines)
     let r = boolean(&b,&rod([c[0],c[1],0.],rr,[-1.,4.]),Op::Common,1e-9).unwrap();
     r.check(1e-8).unwrap();
+    assert_eq!(kinds(&r,"traced"),0);
+    assert_eq!(kinds(&r,"bspline"),2,"only the caps' stretches of the spline");
     let want = 3.*(along+arc);
-    assert!((volume(&r)-want).abs() <= 1e-8*want,"{} against {want}",volume(&r));
+    assert!((volume(&r)-want).abs() <= 1e-10*want,"{} against {want}",volume(&r));
+    // cut by a box whose side x = 5 runs along the sweep: the side meets the spline in a line,
+    // and what is left right of it is the plate's area there, by Green's theorem: the spline up
+    // to where it crosses x = 5, and the side back down to the base
+    let at5 = { let (mut lo,mut hi) = (0.5,1.); for _ in 0..200 { let m = (lo+hi)/2.; if lobe.point(m)[0] > 5. { lo = m } else { hi = m } } (lo+hi)/2. };
+    let right = over_spans(&lobe,[0.,at5],|t| { let (p,d,_) = lobe.d2(t); (p[0]*d[1]-p[1]*d[0])/2. })-5.*lobe.point(at5)[1]/2.;
+    let r = boolean(&b,&block([5.,-5.,-1.],[20.,20.,4.]),Op::Common,1e-9).unwrap();
+    if let Err(e) = r.check(1e-8) { dump(&r); panic!("{e}") }
+    assert_eq!(kinds(&r,"traced"),0);
+    assert_eq!(kinds(&r,"bspline"),2,"only the caps' stretches of the spline");
+    assert!((volume(&r)-3.*right).abs() <= 1e-10*right,"{} against {}",volume(&r),3.*right);
     // a vase: a foot, a spline wall and a rim, turned about z
     let wall = cubic(&[[12.,0.,0.],[20.,0.,12.],[2.,0.,24.],[10.,0.,36.]],&[]);
     let vase = Profile {names:vec![],origin:[0.;3],normal:XZ,loops:vec![vec![line([0.,0.,0.],[12.,0.,0.]),spline(&wall),

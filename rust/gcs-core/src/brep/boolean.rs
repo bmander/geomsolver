@@ -212,8 +212,9 @@ fn arrange<'a>(a: &'a Brep,b: &'a Brep,tol: f64) -> Result<Arranged<'a>,String> 
                     let (lo,hi): (V,V) = (std::array::from_fn(|k| boxes[0][fa].0[k].max(boxes[1][fb].0[k])),
                         std::array::from_fn(|k| boxes[0][fa].1[k].min(boxes[1][fb].1[k])));
                     let started = crate::clock::Instant::now();
-                    let grid = if matches!(sb,super::geom::Surface::BSpline(..)) { grid_seeds(b,fb,sa,tol) }
-                        else if matches!(sa,super::geom::Surface::BSpline(..)) { grid_seeds(a,fa,sb,tol) } else { Vec::new() };
+                    // (a sheet is a net or a swept curve, as an extruded envelope's is)
+                    let sheet = |s: &super::geom::Surface| matches!(s,super::geom::Surface::BSpline(..) | super::geom::Surface::Extrusion(..));
+                    let grid = if sheet(sb) { grid_seeds(b,fb,sa,tol) } else if sheet(sa) { grid_seeds(a,fa,sb,tol) } else { Vec::new() };
                     t_grid += started.elapsed().as_secs_f64();
                     // (only where both faces may be: a seed beyond their shared box traces nothing on them)
                     seeds.extend(grid.into_iter().filter(|p| (0..3).all(|k| p[k] >= lo[k]-pad && p[k] <= hi[k]+pad)));

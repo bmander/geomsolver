@@ -1,12 +1,13 @@
-//! Where two surfaces meet, in closed form where it has one: two planes in a line; surfaces of
-//! revolution about one axis (a plane square to it, a cylinder, a cone, a sphere centred on it, a
-//! torus) in circles, found where their meridians cross in one half-plane; a plane and a cylinder
-//! in lines or an ellipse; a plane and a sphere in a circle; parallel cylinders in lines. The
-//! rest is left to be traced (`Ssi::Traced`) from seeds, and between analytic surfaces a curve no
-//! seed reaches is searched for (`unseen`).
+//! Where two surfaces meet, in closed form where it has one: two planes in a line; two surfaces
+//! one twist carries onto themselves (`twist::shared`: turned about one axis, or slid along one
+//! direction) in its orbits, circles about the axis or lines along the slide, through where their
+//! sections cross in the plane of orbits; a plane and a cylinder otherwise in an ellipse; a plane
+//! square to an extrusion in its curve. The rest is left to be traced (`Ssi::Traced`) from seeds,
+//! and between analytic surfaces a curve no seed reaches is searched for (`unseen`).
 #[allow(unused_imports)]
 use crate::fmath::Det;
 use super::geom::{Curve,Frame,Surface,V};
+use super::twist::{Section,Twist};
 use crate::space::{add,cross,dot,norm,scale,sub};
 
 fn unit(a: V) -> V { scale(a,1./norm(a)) }
@@ -22,37 +23,11 @@ pub enum Ssi {
     Traced,
 }
 
-/// A meridian: a surface of revolution's section in the half-plane `ρ ≥ 0` of its axis, in
-/// `(ρ, z)` with `z` measured along the shared axis from a shared origin.
-#[derive(Clone,Debug)]
-enum Meridian {
-    /// `z := h`: a plane square to the axis.
-    Level(f64),
-    /// The ray from `p` along the unit `d` (`d[1] > 0` or a vertical line `ρ = r`), both ways.
-    Line { p: [f64;2],d: [f64;2] },
-    /// A circle about `c` of radius `r`.
-    Circle { c: [f64;2],r: f64 },
-    /// A B-spline turned about the axis, and the point and direction that axis runs through.
-    Spline(std::sync::Arc<super::nurbs::BSpline>,V,V),
-}
-
-impl Meridian {
-    /// A signed distance in `(ρ, z)` whose zero set is this meridian (not a spline's).
-    fn implicit(&self,[r,z]: [f64;2]) -> f64 {
-        match *self {
-            Meridian::Level(h) => z-h,
-            Meridian::Line {p,d} => (r-p[0])*d[1]-(z-p[1])*d[0],
-            Meridian::Circle {c,r: rad} => (r-c[0]).dhypot(z-c[1])-rad,
-            Meridian::Spline(..) => unreachable!("a spline meridian has no closed-form distance"),
-        }
-    }
-}
-
-/// Where a spline meridian crosses or touches another (not a spline), in `(ρ, z)`: every sign
-/// change of the other's distance along it, refined, and every sampled minimum of its size that
-/// comes within `tol`.
-fn spline_cross(s: &super::nurbs::BSpline,o: V,z: V,other: &Meridian,tol: f64) -> Vec<[f64;2]> {
-    let rz = |t: f64| { let q = sub(s.point(t),o); let h = dot(q,z); [norm(sub(q,scale(z,h))),h] };
+/// Where a spline section crosses or touches another (not a spline) in the plane of `twist`'s
+/// orbits: every sign change of the other's distance along it, refined, and every sampled minimum
+/// of its size that comes within `tol`.
+fn spline_cross(s: &super::nurbs::BSpline,twist: &Twist,other: &Section,tol: f64) -> Vec<[f64;2]> {
+    let rz = |t: f64| twist.section(s.point(t));
     let g = |t: f64| other.implicit(rz(t));
     let [a,b] = s.domain();
     let mut cuts = vec![a];
@@ -79,32 +54,9 @@ fn spline_cross(s: &super::nurbs::BSpline,o: V,z: V,other: &Meridian,tol: f64) -
     out
 }
 
-/// A surface's meridian about the axis through `o` along the unit `z`, where it is a surface of
-/// revolution about that axis (to `tol`).
-fn meridian(s: &Surface,o: V,z: V,tol: f64) -> Option<Meridian> {
-    let f = s.frame();
-    let height = |p: V| dot(sub(p,o),z);
-    let on_axis = |p: V| norm(cross(sub(p,o),z)) <= tol;
-    let aligned = norm(cross(f.z,z)) <= 1e-12;
-    let sign = dot(f.z,z).signum();
-    match *s {
-        Surface::Plane(_) => aligned.then(|| Meridian::Level(height(f.o))),
-        Surface::Sphere(_,r) => on_axis(f.o).then(|| Meridian::Circle {c:[0.,height(f.o)],r}),
-        _ if !(aligned && on_axis(f.o)) => None,
-        Surface::Cylinder(_,r) => Some(Meridian::Line {p:[r,height(f.o)],d:[0.,1.]}),
-        Surface::Cone(_,r,a) => {
-            // (r + v sin α, v cos α) in the cone's own (ρ, z); its z may run against the axis
-            Some(Meridian::Line {p:[r,height(f.o)],d:[a.dsin(),a.dcos()*sign]})
-        }
-        Surface::Torus(_,big,r) => Some(Meridian::Circle {c:[big,height(f.o)],r}),
-        Surface::Revolution(_,ref c) => match &**c { Curve::BSpline(b) => Some(Meridian::Spline(b.clone(),o,z)),_ => None },
-        Surface::Extrusion(..) | Surface::Blend(..) | Surface::BSpline(..) => None,
-    }
-}
-
-/// Where two meridians cross in `ρ ≥ −tol`, as `(ρ, z)`; `None` where they coincide.
-fn cross2(a: Meridian,b: Meridian,tol: f64) -> Option<Vec<[f64;2]>> {
-    use Meridian::*;
+/// Where two sections cross in the plane of orbits; `None` where they coincide.
+fn cross2(a: Section,b: Section,tol: f64) -> Option<Vec<[f64;2]>> {
+    use Section::*;
     let line_line = |p: [f64;2],d: [f64;2],q: [f64;2],e: [f64;2]| -> Option<Vec<[f64;2]>> {
         let det = d[0]*e[1]-d[1]*e[0];
         let w = [q[0]-p[0],q[1]-p[1]];
@@ -129,10 +81,7 @@ fn cross2(a: Meridian,b: Meridian,tol: f64) -> Option<Vec<[f64;2]>> {
         [-bb-root,-bb+root].iter().map(|s| [p[0]+s*d[0],p[1]+s*d[1]]).collect()
     };
     let pts = match (a,b) {
-        (Spline(..),_) | (_,Spline(..)) => unreachable!("a spline meridian is crossed by `spline_cross`"),
-        (Level(h),Level(k)) => return if (h-k).abs() <= tol { None } else { Some(vec![]) },
-        (Level(h),Line {p,d}) | (Line {p,d},Level(h)) => line_line([0.,h],[1.,0.],p,d)?,
-        (Level(h),Circle {c,r}) | (Circle {c,r},Level(h)) => line_circle([0.,h],[1.,0.],c,r),
+        (Spline(..),_) | (_,Spline(..)) => unreachable!("a spline section is crossed by `spline_cross`"),
         (Line {p,d},Line {p: q,d: e}) => line_line(p,d,q,e)?,
         (Line {p,d},Circle {c,r}) | (Circle {c,r},Line {p,d}) => line_circle(p,d,c,r),
         (Circle {c,r},Circle {c: k,r: s}) => {
@@ -148,7 +97,7 @@ fn cross2(a: Meridian,b: Meridian,tol: f64) -> Option<Vec<[f64;2]>> {
             }
         }
     };
-    Some(pts.into_iter().filter(|q| q[0] >= -tol).collect())
+    Some(pts)
 }
 
 /// Whether two swept curves are one curve once `seen` takes out the motion that sweeps them: the
@@ -181,13 +130,13 @@ pub fn same(a: &Surface,b: &Surface,tol: f64) -> bool {
                 && dot(opens(f,a1),opens(g,a2)) > 0.
         }
         // a curve swept along one direction, or turned about one axis, as the other is (a face
-        // of the same profile, copied or cut): the same curve and the same line
-        // (moved along the sweep, or turned about the axis, a B-spline's poles are where they were
-        // with that motion taken out: along the direction, or to their meridian (ρ, z))
+        // of the same profile, copied or cut): the same curve and the same line (moved along the
+        // sweep, or turned about the axis, a B-spline's poles are where they were with that
+        // motion taken out: in the twist's section)
         (Surface::Extrusion(_,c),Surface::Extrusion(_,d)) => parallel
-            && same_curve(&c,&d,tol,&|p| sub(p,scale(f.z,dot(p,f.z)))),
+            && same_curve(&c,&d,tol,&|p| { let [x,y] = Twist::Slide(*f).section(p); [x,y,0.] }),
         (Surface::Revolution(_,c),Surface::Revolution(_,d)) => parallel && on_axis
-            && same_curve(&c,&d,tol,&|p| { let q = sub(p,f.o); let h = dot(q,f.z); [norm(sub(q,scale(f.z,h))),h,0.] }),
+            && same_curve(&c,&d,tol,&|p| { let [x,y] = Twist::Turn(*f).section(p); [x,y,0.] }),
         _ => false,
     }
 }
@@ -208,60 +157,34 @@ pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi {
         let p = solve3(m,rhs);
         return Ssi::Curves(vec![Curve::Line {p,d}])
     }
-    // one axis for both: a surface of revolution's, or a plane's normal through the other's
-    for (s,t) in [(a,b),(b,a)] {
-        let Some((o,z)) = axis_of(s,t) else { continue };
-        let (Some(ma),Some(mb)) = (meridian(s,o,z,tol),meridian(t,o,z,tol)) else { continue };
-        let points = match (&ma,&mb) {
-            // two spline meridians have no closed-form crossing: traced
-            (Meridian::Spline(..),Meridian::Spline(..)) => continue,
-            (Meridian::Spline(sp,o,z),m) | (m,Meridian::Spline(sp,o,z)) => spline_cross(sp,*o,*z,m,tol),
+    // a twist carrying both onto themselves: they meet in its orbits through where their sections cross
+    for (twist,sa,sb) in super::twist::shared(a,b,tol) {
+        let points = match (&sa,&sb) {
+            // two spline sections have no closed-form crossing: traced
+            (Section::Spline(..),Section::Spline(..)) => continue,
+            (Section::Spline(sp),m) | (m,Section::Spline(sp)) => spline_cross(sp,&twist,m,tol),
             _ => {
-                let Some(points) = cross2(ma,mb,tol) else { return Ssi::Same };
+                let Some(points) = cross2(sa,sb,tol) else { return Ssi::Same };
                 points
             }
         };
-        let mut out = Vec::new();
-        for [rho,h] in points {
-            // a circle of no radius is a point on the axis: a touch, not a curve
-            if rho <= tol { continue }
-            out.push(Curve::Circle(Frame::about(add(o,scale(z,h)),z),rho));
-        }
-        return Ssi::Curves(out)
+        // (a circle of no radius is a point on the axis: a touch, not a curve)
+        return Ssi::Curves(points.into_iter().filter(|&q| twist.reaches(q,tol)).filter_map(|q| twist.orbit(q,tol)).collect())
     }
     match (a.clone(),b.clone()) {
         (Surface::Plane(_),Surface::Cylinder(..)) | (Surface::Cylinder(..),Surface::Plane(_)) => {
             let (pl,cy) = if matches!(a,Surface::Plane(_)) { (f,b.clone()) } else { (g,a.clone()) };
             let Surface::Cylinder(c,r) = cy else { unreachable!() };
             let (n,h) = (pl.z,dot(pl.z,pl.o));
+            // oblique (square to the axis, or along it, the plane shares a twist with it): an
+            // ellipse about where the axis pierces the plane, its minor axis the radius square to both
             let cos = dot(n,c.z);
-            if cos.abs() <= 1e-12 {
-                // the plane along the axis: lines at the chord's ends
-                let dist = h-dot(n,c.o);
-                if dist.abs() > r+tol { return Ssi::Curves(vec![]) }
-                let foot = add(c.o,scale(n,dist));
-                let w = unit(cross(c.z,n));
-                let half = (r*r-dist*dist).max(0.).sqrt();
-                if half <= tol { return Ssi::Curves(vec![Curve::Line {p:foot,d:c.z}]) }
-                return Ssi::Curves(vec![Curve::Line {p:add(foot,scale(w,half)),d:c.z},Curve::Line {p:sub(foot,scale(w,half)),d:c.z}])
-            }
-            // oblique: an ellipse about where the axis pierces the plane, its minor axis the
-            // radius square to both
-            let centre = add(c.o,scale(c.z,(h-dot(n,c.o))/cos));
             let minor = cross(c.z,n);
-            if norm(minor) <= 1e-12 { return Ssi::Curves(vec![Curve::Circle(Frame::new(centre,c.z,c.x),r)]) }
+            if cos.abs() <= 1e-12 || norm(minor) <= 1e-12 { return Ssi::Traced }
+            let centre = add(c.o,scale(c.z,(h-dot(n,c.o))/cos));
             let minor = unit(minor);
             let major = cross(minor,n);
             Ssi::Curves(vec![Curve::Ellipse(Frame::new(centre,cross(major,minor),major),r/cos.abs(),r)])
-        }
-        (Surface::Plane(_),Surface::Sphere(..)) | (Surface::Sphere(..),Surface::Plane(_)) => {
-            let (pl,sp) = if matches!(a,Surface::Plane(_)) { (f,b.clone()) } else { (g,a.clone()) };
-            let Surface::Sphere(c,r) = sp else { unreachable!() };
-            let dist = dot(pl.z,sub(c.o,pl.o));
-            if dist.abs() > r+tol { return Ssi::Curves(vec![]) }
-            let rho = (r*r-dist*dist).max(0.).sqrt();
-            if rho <= tol { return Ssi::Curves(vec![]) }
-            Ssi::Curves(vec![Curve::Circle(Frame::new(sub(c.o,scale(pl.z,dist)),pl.z,pl.x),rho)])
         }
         (Surface::Plane(_),Surface::Extrusion(..)) | (Surface::Extrusion(..),Surface::Plane(_))
             if norm(cross(f.z,g.z)) <= 1e-12 => {
@@ -279,39 +202,8 @@ pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi {
                 _ => Ssi::Traced,
             }
         }
-        (Surface::Cylinder(_,r),Surface::Cylinder(_,s)) if norm(cross(f.z,g.z)) <= 1e-12 => {
-            // parallel axes: the sections' circles meet in the lines' feet
-            let w = sub(g.o,f.o);
-            let w = sub(w,scale(f.z,dot(w,f.z)));
-            let d = norm(w);
-            if d > r+s+tol || d < (r-s).abs()-tol || d <= tol { return Ssi::Curves(vec![]) }
-            let u = unit(w);
-            let v = cross(f.z,u);
-            let a = ((r*r-s*s+d*d)/(2.*d)).clamp(-r,r);
-            let h = (r*r-a*a).max(0.).sqrt();
-            let m = add(f.o,scale(u,a));
-            if h <= tol { return Ssi::Curves(vec![Curve::Line {p:m,d:f.z}]) }
-            Ssi::Curves(vec![Curve::Line {p:add(m,scale(v,h)),d:f.z},Curve::Line {p:sub(m,scale(v,h)),d:f.z}])
-        }
         _ => Ssi::Traced,
     }
-}
-
-/// An axis both surfaces may turn about: a surface of revolution's own (a sphere lends the other's),
-/// or a plane's normal through the other's centre.
-fn axis_of(s: &Surface,t: &Surface) -> Option<(V,V)> {
-    match (s,t) {
-        (Surface::Plane(_),_) | (Surface::Sphere(..),_) => None,
-        _ => { let f = s.frame(); Some((f.o,f.z)) }
-    }.or_else(|| match (s,t) {
-        (Surface::Plane(p),Surface::Sphere(c,_)) => Some((c.o,p.z)),
-        (Surface::Sphere(c,_),Surface::Sphere(d,_)) => {
-            let w = sub(d.o,c.o);
-            (norm(w) > 0.).then(|| (c.o,unit(w)))
-        }
-        (Surface::Sphere(c,_),Surface::Plane(p)) => Some((c.o,p.z)),
-        _ => None,
-    })
 }
 
 /// `m x = rhs` for a 3×3 system by Cramer's rule.

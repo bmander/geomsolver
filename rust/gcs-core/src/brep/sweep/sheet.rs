@@ -77,8 +77,18 @@ pub fn surface_grid(face: &Brep,nu: usize,nv: usize) -> Vec<(V,V)> {
     }).collect()
 }
 
+/// The sheet face's parameters: a net's domain, or the box its loop's straight pcurves span (an
+/// extruded sheet's, `build::extruded_sheet`).
 fn domain(face: &Brep) -> [[f64;2];2] {
-    match &face.faces[0].surface { Surface::BSpline(_,n) => n.domain(),_ => [[0.,1.],[0.,1.]] }
+    let f = &face.faces[0];
+    if let Surface::BSpline(_,n) = &f.surface { return n.domain() }
+    let (mut lo,mut hi) = ([f64::INFINITY;2],[f64::NEG_INFINITY;2]);
+    for c in f.loops.iter().flatten() {
+        if let crate::brep::topo::Pcurve::Line {a,b} = c.pcurve {
+            for k in 0..2 { lo[k] = lo[k].min(a[k].min(b[k])); hi[k] = hi[k].max(a[k].max(b[k])); }
+        }
+    }
+    if lo[0] < hi[0] && lo[1] < hi[1] { [[lo[0],hi[0]],[lo[1],hi[1]]] } else { [[0.,1.],[0.,1.]] }
 }
 
 /// For each point, its foot on the sheet face: the unoriented normal there and the distance to
