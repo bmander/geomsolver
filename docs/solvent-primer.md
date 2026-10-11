@@ -1347,6 +1347,43 @@ before `body := solid(stock)` gives the same number: both sides of the body rule
   `P distance(d) Q` with an axis through both origins (1.13); a part's thickness is the distance
   stated, so the stack keeps its numbers in step. There is no mate word.
 
+#### Sketching on a face
+
+A face of a solid names a **set**: the surface it lies on, carried past its edges. For a prism
+these are:
+
+- `b0.near` and `b0.far`, the caps at its higher and lower extent;
+- `b0.ab`, the side swept from the straight edge `ab`;
+- `body.b0.near` for the same cap reached through a body.
+
+A point is put on one as on any set, and a plane lies on one by touching it at its own origin.
+That is what sketching on a face says:
+
+```
+b0 := solid(f0, depth: 20)
+v1 := plane(u: hint(dir: (1, 0, 0)), v: hint(dir: (0, 0, 1))) hint(origin: (10, 20, 10))
+v1.origin coincident b0.far
+v1 tangent(at: v1.origin) b0.far
+```
+
+Draw on `v1` (`in v1 { … }`) and extrude again.
+
+The set is written over the solid's own extent and profile. Change `depth: 20` and `v1`, with
+everything drawn on it, goes with the face.
+
+`v1` keeps four freedoms: where its origin sits on the face, and how its axes turn there. Hold
+them like anything else (`v1.origin coincident p`, `v1.u parallel ab`).
+
+Double-clicking a face in the workspace writes these three statements. If a plane already lies
+on the face, it chooses that one instead (a cap on the profile is the profile's own plane).
+
+Refused, at the face's name (**E040**):
+
+- a curved side, over an arc or a circle;
+- a `through:` solid's caps, whose extent is known only after the solve;
+- an edge with no name to call its side by;
+- the faces of a revolution, a loft or a sweep, which are not sets yet.
+
 #### Writing a part
 
 The statement follows from where the part's axis lies relative to its section. The V-twin piston
