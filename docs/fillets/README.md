@@ -115,6 +115,9 @@ Solid statements (`solid(…)`, body words, rounds), the drawing aside:
      between the faces there, so `gear_cells.rs`'s recorded volumes would move.
    - Decide a leg's one measure (from the edge, in the face) and re-record, or give the word a key
      for it.
+
+   *X1 corrects this: today's chamfer measures both legs one way, from the other face, and
+   `gear_cells.rs` records no end relief. See X1's finding 3.*
 8. **A round names the sets the body bounds by, as stated.**
    - #145's `Tooth` bounds by `outside(grow) a` and rounds `a round(r) hi`. But `a` is not a bound
      of the region; `a` shrunk by `grow` is.
@@ -171,3 +174,114 @@ Solid statements (`solid(…)`, body words, rounds), the drawing aside:
   it; finding 5 is what it does not yet decide.
 - **Spec, before L1:** findings 1 (no side), 3 (prefix form) and 6 (edges by faces) are settled by
   the programs; 2, 4, 5, 7, 8, 9 and 10 are decisions.
+
+## X1: rounds and chamfers of a coaxial region, in the meridian (2026-10-11)
+
+**Verdict: the cheapest slice is real.** A round or a chamfer at a corner of a coaxial part is a
+2D construction on its meridian, made of the planar kernel's own lines and arcs. Turned, the arcs
+are tori and spheres and the segments are cones and planes, which every reader of a region solid
+already revolves exactly. Every fixture below agrees to 1e-9, and nothing three-dimensional was
+written.
+
+The prototype is [`rust/gcs-core/tests/fillet_meridian.rs`](../../rust/gcs-core/tests/fillet_meridian.rs):
+about 250 lines over `brep::planar`'s `Region`, `Seg` and `Step`, kept in the test file because
+L5's spelling is not settled. It works like this:
+- **A round** is the opening's `−r` then `+r`, read at one corner. The ball's centre is where the
+  two faces' carriers cross, each offset `r` toward the ball, in closed form for line–line,
+  line–circle and circle–circle. The corner is replaced by the arc between the two feet.
+- **Which side the ball is on** comes from the turn of the boundary at the corner (the material is
+  on its left). The ball sits inside the material at a convex corner and outside it at a concave
+  one. One routine covers both, and no word says which.
+- **A chamfer** is the segment between a point on each face. Each leg is measured one of two ways:
+  from the edge (a straight distance from the corner), or from the other face (the point of this
+  face at that distance from the other face's surface).
+- **What is refused:**
+  - a cut whose foot falls past the far end of a face;
+  - two cuts meeting within one face.
+- **What is skipped:** a corner where the faces meet tangent (a seam). A round of radius zero is
+  the region as it was.
+
+### What it was held to
+
+| case | against | worst |
+|---|---|---|
+| #79's boss root ring, then a bore drilled after | the stack's `root_ring` (Pappus) | 1e-9 rel. |
+| #79's frustum: foot (concave, r 3) and rim (convex, r 1) | the stack's `turned_wedge` | 1e-9 rel. |
+| the same two rounds, the other way about | each other | 1e-9 rel. |
+| #83's knob: root (plane–cylinder) and neck (cylinder–sphere) | the stack's closed forms | 1e-9 rel. |
+| a chamfer of the frustum's rim, both measures and two legs | the triangle turned (Pappus) | 1e-9 rel. |
+| #145's crown tip rounding (`crown/rounding.sv`'s preview) | `TipRounding`'s drawn arcs: centres, radii, feet | < 1e-9 mm |
+| #145's end relief (`blank/member.sv`'s preview) | `EndChamfer`'s drawn ends; the kernel's exact volume of the blank less the drawn rings | < 1e-9 mm, 1e-9 rel. |
+
+The end relief is the strongest of these:
+- the meridian is the one the core folds from the region's terms (`solid::region::meridian`), not
+  one drawn for the test;
+- the volume it is held to is the kernel's B-rep of the body rule (`exact_solid`,
+  `brep::props::volume`), not a formula.
+
+All seven tests run in 0.04 s.
+
+### Findings
+
+1. **One routine, both sides.** The ball's side is the sign of the boundary's turn, so X0's finding
+   1 (no `side:`) holds in code as well as in the programs.
+2. **The meridian rounds joins too.** Finding 11 says a region cannot say a join. That is true of
+   the language, but not of the representation. The pad, the frustum on its disc and the knob are
+   all unions, and the meridian of a union of revolutions about one line is still one planar
+   region. So the knob's neck and the frustum's foot are this same construction.
+   - L5 (rounds in a region's body) and L6's coaxial cases (rounds on a body whose operands all
+     revolve about one line) lower to one routine.
+   - Only the spelling differs. Folding such a body into a meridian is the step L6 would add.
+3. **Finding 7 was wrong about today's chamfer.** `EndChamfer` measures both legs one way: **from
+   the other face**.
+   - Its end on the tip is `size` inside the sphere: cone distance `R ± size`, which is the
+     distance from the sphere's surface, not a length along the tip.
+   - Its end on the sphere is `size` below the tip cone.
+   - `gear_crowns.rs::the_end_relief_chamfers_each_tip_corner` asserts exactly that, and the
+     prototype's from-the-other-face legs reproduce it to 1e-9.
+   - Measured from the edge, each leg is shorter by `sin θ`, `θ` the corner's angle (about 88°
+     here). The chamfers take 1.5e-3 less material, which is 7.3e-7 of the preview's blank.
+   - **No recorded volume moves either way.** `gear_cells.rs` reads `fixtures::gear::design`,
+     which pins end relief and backlash to zero. Only the as-configured checks see the end relief.
+4. **From the other face is the measure the language already has.** A leg's end is
+   `{ p | p coincident A; p distance(d) B }`: a point of one set at a distance from another, which
+   0.64 says today. Measuring from the edge needs distance from a curve (L2). It also matches the
+   round, which reads the same offset carriers.
+   - **Recommendation:** a chamfer's leg is measured from the other face, so `chamfer(d)` is the
+     segment between the faces' offsets.
+   - At a square corner the two measures agree, which is the conventional CAD case. A key for the
+     other measure can wait until a program needs one.
+5. **A meridian cannot yet tell its faces apart by name.** `Meridian::names` reads `region` for
+   every one of `member.sv`'s four terms: each term is named for the region, not for the set it was
+   written as. The test tells tip, toe and heel apart by shape and side. For L5, each
+   `RegionTerm` must carry the set it came from (finding 8's question), so that `tip chamfer(d)
+   toe` resolves to the meridian's tags.
+6. **A round that consumes a face is beyond a corner-local construction** (finding 9). The
+   prototype refuses a ball whose foot falls past a face's far end, and two cuts that meet within a
+   face, naming the faces.
+   - Under the definition both have answers. The opening of the whole meridian is still exact in
+     2D: offset the region by `−r`, then by `+r`.
+   - But the planar kernel has no offset of a region. The tooth's full round (finding 9) needs one.
+   - So L5 either refuses these (by name, as the prototype does) or adds `planar` offsets. That
+     choice is X2's.
+7. **Rounds on different corners commute**, tested both ways. Rounds on corners that share a face
+   commute unless they meet within it (finding 6's refusal). So in a region's body, the order of
+   statements needs no rule.
+8. **A size of zero is the identity**, decided by value in the lowering (finding 10's half for
+   rounds). 0.64's refusal of `distance(0, side: inside)` is in the language and untouched here.
+
+### What X1 hands on
+
+- **L5's lowering:**
+  - move `round`, `chamfer` and their corner walk into `brep::planar`, beside `boolean`;
+  - call them from `solid::region::fold` after the terms are folded, the new steps tagged as the
+    round's own faces.
+  - The recipe (`recipe::region_profile`), the field (`RevolvedRegion::of_meridian`) and the
+    facets all read the meridian, so they follow with no change.
+  - First, `RegionTerm` needs the name of its set (finding 5).
+- **L6:** a body whose operands all revolve about one line folds to a meridian the same way
+  (finding 2). That is the cheapest L6 slice, before X3/L4.
+- **X2:** decide whether a round that consumes a face is refused or computed (finding 6). Computing
+  it in the meridian needs offsets of a planar region.
+- **Spec:** finding 7's decision now has a recommendation (finding 4: from the other face).
+

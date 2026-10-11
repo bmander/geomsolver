@@ -13,6 +13,7 @@ mod common;
 mod bounds;
 mod set_regions;
 mod region_blank;
+mod fillet_meridian;
 mod region_solids;
 mod offsets;
 mod evaluated_solid;
