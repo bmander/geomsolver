@@ -161,8 +161,11 @@ impl<'a> P<'a> {
                     let name = Name { text: n, span: self.here() };
                     self.i += 2;
                     // a direction is a word (`along: x`) or what it names (`along: std.x`): a
-                    // word of the table is a word, unless it opens a path
-                    let v = if name.text == "along" && self.reference_ahead() {
+                    // word of the table is a word, unless it opens a path — as is a tangency's
+                    // point where it is a path, `tangent(at: v1.origin)` (a bare `at: start` is
+                    // the word's selector, and a bare point is read as a word by its reader)
+                    let point = name.text == "at" && word == "tangent" && self.path_ahead();
+                    let v = if point || (name.text == "along" && self.reference_ahead()) {
                         Arg::Ref(self.refr()?)
                     } else {
                         self.sel_value()?
@@ -273,8 +276,13 @@ impl<'a> P<'a> {
     /// name outside `constraints::ALONG`, or any name a path goes on from.
     fn reference_ahead(&self) -> bool {
         let Some(Tok::Ident(n)) = self.peek() else { return false };
-        let path = matches!(self.t.get(self.i + 1).map(|(t, _)| t), Some(Tok::P('.' | '[')));
-        path || crate::constraints::Toward::of(n).is_none()
+        self.path_ahead() || crate::constraints::Toward::of(n).is_none()
+    }
+
+    /// A name that opens a path: `v1.origin`, `s[0]`.
+    fn path_ahead(&self) -> bool {
+        matches!(self.peek(), Some(Tok::Ident(_)))
+            && matches!(self.t.get(self.i + 1).map(|(t, _)| t), Some(Tok::P('.' | '[')))
     }
 
     fn sel_value(&mut self) -> Option<Arg> {

@@ -243,3 +243,53 @@ pub(crate) fn plane_of_entity_by(
     let first = at(kids.first()?.i())?;
     kids.iter().all(|k| at(k.i()) == Some(first)).then_some(first)
 }
+
+/// **The plane each face used as a set is drawn in** (`flatten::faces`, #162 F5): bound under the
+/// hidden name its carrier reads (`{face}#plane`), once memberships are in and before any
+/// relation reads it — the plane every item of the face agrees about, the rule a face is built
+/// by.  And each side's hidden axis seeded square to its edge within that plane, so the solve
+/// starts where the side is.
+pub(super) fn face_planes(
+    sk: &mut Sketch,
+    res: &mut Resolver,
+    planes: &[crate::flatten::FacePlane],
+    axes: &[crate::flatten::FaceAxis],
+    diags: &mut Vec<Diag>,
+) {
+    fn ent(sk: &Sketch, res: &Resolver, name: &str) -> Option<EntRef> {
+        let segs: Vec<&str> = name.split('.').collect();
+        res.dotted(&segs).and_then(|(e, path)| super::resolve::follow(sk, e, &path).ok())
+    }
+    for f in planes {
+        let views: Vec<Option<usize>> =
+            f.edges.iter().map(|n| ent(sk, res, n).and_then(|e| plane_of_entity(sk, e))).collect();
+        match views.first().copied().flatten() {
+            Some(p) if views.iter().all(|v| *v == Some(p)) => {
+                res.of.insert(f.key.clone(), EntRef::new(EntKind::Plane, p));
+            }
+            _ => diags.push(Diag {
+                code: Code::E040,
+                span: f.span,
+                stmt: None,
+                message: format!("`{}` is drawn in no one plane, so a solid swept from it has \
+                                  no faces to draw on", f.face),
+            }),
+        }
+    }
+    for a in axes {
+        let (Some(m), Some(e), Some(p)) =
+            (ent(sk, res, &a.key), ent(sk, res, &a.edge), res.of.get(&a.plane).copied())
+        else {
+            continue;
+        };
+        let (EntKind::Axis, EntKind::Line) = (m.kind, e.kind) else { continue };
+        let l = &sk.lines[e.i()];
+        let d = crate::space::sub(sk.world_point(l.p2 as usize), sk.world_point(l.p1 as usize));
+        let Some(dir) = crate::plane::unit(crate::space::cross(sk.basis(p.i()).normal(), d)) else {
+            continue;
+        };
+        for (q, v) in sk.axes[m.i()].d.into_iter().zip(dir) {
+            sk.params[q as usize].value = v;
+        }
+    }
+}

@@ -521,6 +521,10 @@ fn elaborate_in(
     settle_deferred(&mut sk, &res, &deferred, &held, &mut diags);
     let mut settled = first..diags.len();
 
+    // the plane each face of a solid used as a set is drawn in, and its sides' axes (§6.21)
+    planes::face_planes(&mut sk, &mut res, &expansion.face_planes, &expansion.face_axes,
+                        &mut diags);
+
     // a prism's side generating under a motion that keeps its view stands for a surface the
     // solve can hold a point to: built with the drawing, once the memberships say the view
     let extruded = generated::extruded_envelopes(&mut sk, &mut res, &mut map, &body, &skip, &mut diags);

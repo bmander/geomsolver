@@ -36,6 +36,13 @@ pub(super) struct Site {
     depth: usize,
 }
 
+impl Site {
+    /// A set made other than by a statement the walk met: a face of a solid (`faces`).
+    pub(super) fn new(lit: SetLit, scope: Scope, depth: usize) -> Site {
+        Site { lit, scope, depth }
+    }
+}
+
 /// Where the walk made a set: the statement that made it — the set written in place, or an
 /// instance of a family — at its path, and the scope that statement stands in.
 pub(super) struct Made<'m> {
@@ -167,6 +174,11 @@ impl<'a> Walk<'a> {
             .enumerate()
             .filter_map(|(i, r)| match lookup_raw(r, sc, &self.names, alias, self.units) {
                 Some((abs, rest)) if rest.is_empty() && self.sets.contains_key(&abs) => Some((i, abs)),
+                // a face of a solid, made a set under its whole path (`faces`)
+                Some((abs, rest)) if !rest.is_empty() => {
+                    let face = format!("{abs}.{}", rest.join("."));
+                    self.sets.contains_key(&face).then_some((i, face))
+                }
                 _ => None,
             })
             .collect();
@@ -559,7 +571,7 @@ fn at_point(w: &crate::syntax::Written) -> Option<Ref> {
 
 /// Whether a written relation is one a set may be used by: `coincident`, `tangent`, `inside` or
 /// `outside` between two operands.
-fn may_use(w: &crate::syntax::Written) -> bool {
+pub(super) fn may_use(w: &crate::syntax::Written) -> bool {
     matches!(w.word.text.as_str(), "coincident" | "tangent" | "inside" | "outside")
         && w.ops.len() == 2
 }
