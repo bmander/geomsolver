@@ -157,6 +157,16 @@ pub(super) fn constrain(
     probes: &mut Probes,
     diags: &mut Vec<Diag>,
 ) -> Option<u32> {
+    // **a region's point against a face** (#183 F1): a term of the region, read off the body
+    if let Some(made) = face_relation(sk, res, r, probes) {
+        match made {
+            Ok((probe, t)) => probes.get_mut(&probe).expect("a probe's terms").push(t),
+            Err(message) => {
+                diags.push(Diag { code: Code::E040, span: st.span, stmt: Some(st.id), message })
+            }
+        }
+        return None;
+    }
     // **a point inside or outside a plane is a bound** (§9.6): the point's ordinate along the
     // plane's normal from its origin, at most or at least zero
     if let Some(lowered) = r.form.written().and_then(|w| side_of_plane(sk, res, r, w)) {
@@ -1445,13 +1455,49 @@ pub(super) fn measured_term(
     let mut terms = lhs.0;
     terms.extend(rhs.0.into_iter().map(|(m, c)| (m, -c)));
     let k = rhs.1 - lhs.1;
-    let ent = |name: &str| -> Option<EntRef> {
+    use crate::model::Target;
+    let target = |name: &str| -> Option<Target> {
         let segs: Vec<&str> = name.split('.').collect();
         let (e, path) = res.dotted(&segs)?;
-        follow(sk, e, &path).ok()
+        if e.kind == EntKind::Solid {
+            return Some(Target::Face(face_ref(e, &path)));
+        }
+        follow(sk, e, &path).ok().map(Target::Ent)
     };
+    let probe_at = |t: &Option<Target>| match t {
+        Some(Target::Ent(e)) if e.kind == EntKind::Point && probes.contains_key(&e.i()) => Some(e.i()),
+        _ => None,
+    };
+    // the material's angle where two faces meet, at the point of their edge nearest the region's
+    // point (#183 F9): a bound of its own
+    if let [((expr::Measure::Angle, args), c)] = terms.as_slice() {
+        let [a, b, at] = args.as_slice() else {
+            return refuse("a region's angle is between two faces, read `at:` its point: \
+                           `angle(a, b, at: p)`".to_string());
+        };
+        let face = |n: &str| match target(n) {
+            Some(Target::Face(f)) if !f.surface => Some(f),
+            _ => None,
+        };
+        let (Some(fa), Some(fb), Some(p)) = (face(a), face(b), probe_at(&target(at))) else {
+            return refuse("a region's angle is between two faces, read `at:` its point: \
+                           `angle(a, b, at: p)`".to_string());
+        };
+        let cmp = if *c > 0.0 { m.cmp } else { m.cmp.turned().expect("one-sided") };
+        let lo = expr::to_arg_units(SpecKind::Angle, k / c);
+        let term = crate::model::RegionTerm {
+            shape: crate::model::RegionShape::Angle { a: fa, b: fb },
+            cmp,
+            lo: crate::model::TermNumber::stated(lo),
+            hi: None,
+            grow: None,
+            name: String::new(),
+        };
+        probes.get_mut(&p).expect("a probe's terms").push(term);
+        return;
+    }
     let mut probe = None;
-    let mut of: Vec<(EntRef, f64)> = Vec::new();
+    let mut of: Vec<(Target, f64)> = Vec::new();
     for ((measure, args), c) in terms {
         if measure != expr::Measure::Distance {
             return refuse(format!(
@@ -1459,34 +1505,35 @@ pub(super) fn measured_term(
                 measure.name()
             ));
         }
-        let ends: Vec<Option<EntRef>> = args.iter().map(|a| ent(a)).collect();
-        let Some(at) = ends.iter().position(|e| {
-            e.is_some_and(|e| e.kind == EntKind::Point && probes.contains_key(&e.i()))
-        }) else {
+        let ends: Vec<Option<Target>> = args.iter().map(|a| target(a)).collect();
+        // the point the set is about is the first operand where both are such points
+        let Some(at) = (0..ends.len()).find(|&k| probe_at(&ends[k]).is_some()) else {
             return refuse(format!(
                 "`{}` measures nothing of a region solid's point: a bound on measurements is read \
                  where a set is applied to one (`solid(S)`)",
                 measure.text(&args)
             ));
         };
-        let p = ends[at].expect("found").i();
+        let p = probe_at(&ends[at]).expect("found");
         if probe.is_some_and(|q| q != p) {
             return refuse("a bound on measurements reads one point".to_string());
         }
         probe = Some(p);
-        let Some(target) = ends[1 - at] else {
+        let Some(to) = ends[1 - at].clone() else {
             return refuse(format!("`{}` names nothing to measure from", args[1 - at]));
         };
-        if !matches!(target.kind, EntKind::Point | EntKind::Line | EntKind::Axis | EntKind::Plane) {
-            return refuse(format!(
-                "a region's bound measures the distance from a point, a line, an axis or a plane, \
-                 not {}",
-                target.kind.a()
-            ));
+        if let Target::Ent(e) = &to {
+            if !matches!(e.kind, EntKind::Point | EntKind::Line | EntKind::Axis | EntKind::Plane) {
+                return refuse(format!(
+                    "a region's bound measures the distance from a point, a line, an axis, a \
+                     plane, a face or a set, not {}",
+                    e.kind.a()
+                ));
+            }
         }
-        match of.iter_mut().find(|(e, _)| *e == target) {
+        match of.iter_mut().find(|(e, _)| *e == to) {
             Some((_, x)) => *x += c,
-            None => of.push((target, c)),
+            None => of.push((to, c)),
         }
     }
     of.retain(|&(_, c)| c != 0.0);
@@ -1503,4 +1550,102 @@ pub(super) fn measured_term(
         name: String::new(),
     };
     probes.get_mut(&p).expect("a probe's terms").push(term);
+}
+
+/// A face reference from a solid and the fields written past it (#183 F1): `pad.plate.near` is
+/// solid `pad`, path `plate.near`; a last `surface` reads the face's whole surface.
+pub(super) fn face_ref(solid: EntRef, path: &[crate::syntax::Seg]) -> crate::model::FaceRef {
+    let mut fields: Vec<String> = path.iter().filter_map(|s| match s {
+        crate::syntax::Seg::Field(n) => Some(n.text.clone()),
+        _ => None,
+    }).collect();
+    let surface = fields.last().is_some_and(|f| f == "surface");
+    if surface {
+        fields.pop();
+    }
+    crate::model::FaceRef { solid: solid.i() as u32, path: fields.join("."), surface }
+}
+
+/// `p inside F`, `p outside(d) F`, `p distance(<= d) F`, `p coincident F.surface` …, `p` a region
+/// solid's point and `F` a face path of a solid (#183 F1): the term it is, or why not; `None`
+/// where the relation is not between those.
+fn face_relation(sk: &Sketch, res: &Resolver, r: &Relation, probes: &Probes)
+    -> Option<Result<(usize, crate::model::RegionTerm), String>> {
+    use crate::model::{RegionShape, RegionTerm, Target, TermNumber};
+    use crate::syntax::{Cmp, OpArg};
+    let w = r.form.written()?;
+    let [p, f] = w.ops.as_slice() else { return None };
+    if !matches!(w.word.text.as_str(), "inside" | "outside" | "distance" | "coincident") {
+        return None;
+    }
+    let point = res.lookup(p).and_then(|e| follow(sk, e, &p.path).ok())
+        .filter(|e| e.kind == EntKind::Point)?;
+    let solid = res.lookup(f).filter(|e| e.kind == EntKind::Solid)?;
+    if !probes.contains_key(&point.i()) {
+        return Some(Err(format!(
+            "`{}` is a drawn point: a point is read against a face where a set is applied to a \
+             region solid's point (`solid(S)`)",
+            p.root.text
+        )));
+    }
+    let probe = point.i();
+    let face = face_ref(solid, &f.path);
+    let word = w.word.text.as_str();
+    let number = |text: &str, span: Span| -> Result<TermNumber, String> {
+        let arg = Arg::Dim { text: text.to_string(), span };
+        to_arg(sk, res, SpecKind::Length, &arg).ok().as_ref()
+            .and_then(|a| term_number(a, sk, SpecKind::Length))
+            .ok_or_else(|| format!("`{text}` is no length"))
+    };
+    let dim = w.args.iter().find_map(|a| match a {
+        OpArg::Dim(t, sp) => Some((t.clone(), *sp)),
+        _ => None,
+    });
+    let bound = w.args.iter().find_map(|a| match a {
+        OpArg::Bound { cmp, hi, .. } => Some((*cmp, hi.clone())),
+        _ => None,
+    });
+    let term = |shape, cmp, lo, hi| RegionTerm { shape, cmp, lo, hi, grow: None, name: String::new() };
+    let made = (|| -> Result<RegionTerm, String> {
+        match word {
+            "inside" | "outside" => {
+                if face.surface {
+                    return Err(format!("`{word}` reads a face's side: name the face, not its surface"));
+                }
+                let d = match &dim {
+                    Some((t, sp)) => number(t, *sp)?,
+                    None => TermNumber::stated(0.0),
+                };
+                let (cmp, lo) = if word == "inside" {
+                    (Cmp::Le, d)
+                } else {
+                    (Cmp::Ge, TermNumber { c: -d.c, free: d.free.map(|(n, m)| (n, -m)) })
+                };
+                Ok(term(RegionShape::FaceSide { face: face.clone() }, cmp, lo, None))
+            }
+            "distance" => {
+                let Some((t, sp)) = &dim else { return Err("a distance states a number".to_string()) };
+                let lo = number(t, *sp)?;
+                let of = vec![(Target::Face(face.clone()), 1.0)];
+                Ok(match &bound {
+                    Some((Cmp::In, Some(hi))) => {
+                        let hi = number(&hi.0, hi.1)?;
+                        term(RegionShape::Measured { of }, Cmp::In, lo, Some(hi.c))
+                    }
+                    Some((cmp, _)) => term(RegionShape::Measured { of }, *cmp, lo, None),
+                    None => {
+                        let at = lo.c;
+                        term(RegionShape::Measured { of }, Cmp::In, lo, Some(at))
+                    }
+                })
+            }
+            "coincident" => {
+                let of = vec![(Target::Face(face.clone()), 1.0)];
+                Ok(term(RegionShape::Measured { of }, Cmp::Le, TermNumber::stated(0.0), None))
+            }
+            _ => Err(format!("a region's point is `inside`, `outside`, `coincident` with or at a \
+                              `distance` from a face, not `{word}`")),
+        }
+    })();
+    Some(made.map(|t| (probe, t)))
 }

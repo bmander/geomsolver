@@ -17,6 +17,7 @@ mod fillet_meridian;
 mod fillet_definition;
 mod region_solids;
 mod region_general;
+mod face_sets;
 mod offsets;
 mod evaluated_solid;
 mod renderer;

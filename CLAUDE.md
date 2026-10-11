@@ -223,6 +223,20 @@ keeps it, `outside` turns it, and a body of bounds only is all of them under `in
 by `relations::measured_term` into `RegionShape::Measured` (Σ cᵢ·distance from a point, line,
 axis or plane; `linear`: affine only, one probe) on the probe, else E040; read by the field
 (`region::measured`, divided by Σ|cᵢ|), never the meridian.
+**Faces as sets** (#183 F1, F9): in a set's body a solid and the fields past it are a face
+reference (`relations::face_ref` → `model::FaceRef { solid, path, surface }`: `pad.plate.near`,
+`pad.boss` every face `boss` gave `pad`, `block`, a last `.surface` its whole surface).
+`relations::face_relation` makes `p inside/outside[(d)] F` a `RegionShape::FaceSide` (signed
+distance from the surface, positive away from the material), `p distance(… d) F` and `p coincident
+F` a `Measured` over `Target::Face`; `distance(p, F)` in a sum the same; `angle(a, b, at: p)` (the
+one labelled measurement, `expr` `Tok::Colon`) a `RegionShape::Angle`, the material's angle at
+the nearest point of the edges `a` and `b` share, read as a **gate** (`region::GATE`: ±1e30 by
+whether it holds; convexity per edge at its middle by `solid_place`). Claims skip a point against a
+solid. Read by `solid::faces::BodyFaces` off `brep::recipe::build(cad::recipe(…))` (millimetres,
+unshifted; face names matched by `faces`), **the stratum**: a body read by regions that are its
+own terms (`readers_of`) is read with them taken out of every body (`without`, a cloned sketch).
+A region reading faces may have no support (`RegionField` with `None`): a cut needs none.
+`reads` pushes a read solid. `tests/face_sets.rs` is the gate.
 **Distance from a set, offsets (§6.21, 0.64, #145 F4):** `p distance(d, side: outside|inside) S`
 (`distance` is a set use, `may_use`), `p inside(d) S` / `p outside(d) S` and `std.Offset(S, d)` are
 one bound on the signed distance from `S`'s surface (`Reach`: cmp toward the outside, whether

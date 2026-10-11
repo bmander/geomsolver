@@ -56,6 +56,12 @@ pub fn reads(sk: &Sketch, si: usize, unit: f64) -> Vec<f64> {
                                 v.extend(sk.world_point(l.p1 as usize));
                                 v.extend(sk.world_point(l.p2 as usize));
                             }
+                            crate::model::EntKind::Axis => {
+                                let x = &sk.axes[e.i()];
+                                v.extend(x.a.iter().chain(&x.d).map(|&p| sk.params[p as usize].value));
+                            }
+                            // a body whose faces it reads (#183 F1): read as the body is
+                            crate::model::EntKind::Solid => stack.push(e.i() as u32),
                             _ => {
                                 let b = sk.basis(e.i());
                                 v.extend(b.o);

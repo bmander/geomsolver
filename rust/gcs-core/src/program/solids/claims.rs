@@ -53,6 +53,12 @@ fn solid_claim(
     if crate::program::relations::point_and_plane(sk, res, w) {
         return;
     }
+    // and a point against a solid's face is a region's term (#183 F1, `constrain`)
+    let kind = |o: &crate::syntax::Ref| res.lookup(o).map(|e| e.kind);
+    if matches!(w.word.text.as_str(), "inside" | "outside")
+        && matches!(w.ops.as_slice(), [p, f] if kind(p) == Some(EntKind::Point) && kind(f) == Some(EntKind::Solid)) {
+        return;
+    }
     let mut say = |code: Code, span: Span, m: String| {
         diags.push(Diag {
             code,

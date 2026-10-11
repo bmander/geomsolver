@@ -12,6 +12,7 @@ enum Tok {
     LParen,
     RParen,
     Comma,
+    Colon,
     End,
 }
 
@@ -235,6 +236,7 @@ fn tokenize(text: &str, units: Units) -> Result<Vec<(Tok, usize)>, String> {
             '(' => Tok::LParen,
             ')' => Tok::RParen,
             ',' => Tok::Comma,
+            ':' => Tok::Colon,
             _ => return Err(format!("unexpected `{c}` at {}", at + 1)),
         };
         out.push((t, at));
@@ -353,7 +355,18 @@ impl Parser {
                     let mut args = Vec::new();
                     loop {
                         match self.next() {
-                            Tok::Ident(a) => args.push(a),
+                            // the point an angle between faces is read nearest (#183 F9), the one
+                            // label a measurement takes: `angle(a, b, at: p)`
+                            Tok::Ident(l) if l == "at" && *self.peek() == Tok::Colon
+                                && m == super::Measure::Angle && args.len() == 2 => {
+                                self.next();
+                                match self.next() {
+                                    Tok::Ident(a) => args.push(a),
+                                    _ => return Err(format!("`{name}` is read `at:` a point")),
+                                }
+                            }
+                            Tok::Ident(a) if args.len() < n => args.push(a),
+                            Tok::Ident(_) => return Err(format!("`{name}` takes {n} argument(s)")),
                             _ => return Err(format!("`{name}` measures geometry: its arguments are names")),
                         }
                         match self.next() {
@@ -362,7 +375,7 @@ impl Parser {
                             _ => return Err(format!("expected `,` or `)` at {}", self.here())),
                         }
                     }
-                    if args.len() != n {
+                    if args.len() != n && !(m == super::Measure::Angle && args.len() == 3) {
                         return Err(format!("`{name}` takes {n} argument(s)"));
                     }
                     return Ok(Ast::Measure(m, args));
@@ -438,6 +451,7 @@ fn tok_text(t: &Tok) -> String {
         Tok::LParen => "(".to_string(),
         Tok::RParen => ")".to_string(),
         Tok::Comma => ",".to_string(),
+        Tok::Colon => ":".to_string(),
         Tok::End => "end".to_string(),
     }
 }
