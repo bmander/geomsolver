@@ -6,26 +6,26 @@
 // it removes the corner and nothing else.
 use std
 use blank.sphere
-use blank.cone
 
-// The chamfer at one end: `size` along the cone distance from the corner on the `tip` cone (its
-// meridian through `tip.p` and `tip.q`, two of its points in the axial view), and `size` down
-// from it on the sphere. `apex` is the member's apex, `rim` the
-// sphere's point on the pitch generator and `rim_in` the point `size` from it toward the tooth;
-// `cone_line` is the generator the cones are drawn on (apex -> mean point, or its mirror across
-// the axis for the gear). Each point meets a line and a circle about the apex whose other
-// crossing is across the apex, so the seeds need only start on the tooth's side of it.
+// The chamfer at one end: `size` along the cone distance from the corner on the `tip` cone (a
+// set: the pitch cone offset by the addendum), and `size` down from it on the sphere. `apex` is
+// the member's apex, `rim` the sphere's point on the pitch generator and `rim_in` the point
+// `size` from it toward the tooth; `cone_line` is the generator the cones are drawn on (apex ->
+// mean point, or its mirror across the axis for the gear). The corner and the chamfer's end on
+// the tip are put on it where the axial view cuts it, on the cone line's side: seeded off the
+// cone line's mean point away from the axis, each meets a circle about the apex whose other
+// crossing is across the apex.
 component EndChamfer(apex: point, rim: point, rim_in: point, cone_line: line, tip: group,
                      ax: line, size: Length) {
-  private tip_line := line(tip.p, tip.q)
   private to_rim := line(apex, rim)
   private to_rim_in := line(apex, rim_in)
   // On the tip: the corner, as far from the apex as the rim, and the chamfer's end, as far as
   // `rim_in`.
-  corner := point hint(at: tip.p, toward: tip.q, by: 0.5)
-  along_tip := point hint(at: corner)
-  corner coincident tip_line
-  along_tip coincident tip_line
+  corner := point hint(at: cone_line.p2, toward: ax.p2, by: -0.05)
+  along_tip := point hint(at: corner, toward: apex, by: 0.02)
+  corner coincident tip
+  along_tip coincident tip
+  private tip_line := line(corner, along_tip)
   private to_corner := line(apex, corner)
   private to_along := line(apex, along_tip)
   to_corner equal to_rim
@@ -34,7 +34,7 @@ component EndChamfer(apex: point, rim: point, rim_in: point, cone_line: line, ti
   // the corner toward its `foot` on the cone line.
   private foot := point hint(at: cone_line.p2)
   private mark := point hint(at: corner, toward: foot, by: 0.5)
-  private beneath := point hint(at: tip.q)
+  private beneath := point hint(at: mark, toward: cone_line.p2, by: 0.5)
   foot coincident cone_line
   private drop := line(corner, foot)
   drop perpendicular cone_line
@@ -89,8 +89,17 @@ preview {
     inner := blank.sphere.FaceSpan(generator, width: 9mm)
     toe := blank.sphere.SphericalBoundary(std.origin, generator, span.toe)
     heel := blank.sphere.SphericalBoundary(std.origin, generator, span.heel)
-    tip := blank.cone.ConeBoundary(generator, ax, offset: 2mm, lean: 180deg)
-    toe_end := EndChamfer(std.origin, span.toe, inner.toe, generator, tip, ax, size: 0.5mm)
-    heel_end := EndChamfer(std.origin, span.heel, inner.heel, generator, tip, ax, size: 0.5mm)
   }
+  // the pitch cone, about a line held in space along the axis, and the tip 2mm outside it
+  far := point hint(at: foot)
+  far coincident ax
+  std.origin distance(10mm, along: ax) far
+  about := line(std.origin, far)
+  pitch := std.Cone(about)
+  mean coincident pitch
+  tip := std.Offset(pitch, d: 2mm)
+  toe_end := EndChamfer(std.origin, span.toe, inner.toe, generator, tip, ax,
+    size: 0.5mm) in std.front
+  heel_end := EndChamfer(std.origin, span.heel, inner.heel, generator, tip, ax,
+    size: 0.5mm) in std.front
 }

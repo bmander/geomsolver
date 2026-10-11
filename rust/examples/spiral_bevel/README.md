@@ -22,8 +22,8 @@ module declares is drawn again in the later view and tied by `project`.
 | 2 | `pitch/gear.sv` | the gear's pitch cone: the right triangle O–M–F in G |
 | 2 | `pitch/trace.sv` | the tooth trace about the cutter centre C, and the normal module |
 | 2 | `pitch/pinion.sv` | the pinion's cone, solved against the gear's by the shafts and equal normal pitch |
-| 3 | `blank/member.sv` | a member's blank, one region: within its tip cone and heel sphere, outside its toe sphere and back cone, sized by the solved layout |
-| 3 | `blank/ends.sv` | the end relief: the tip's toe and heel corners chamfered |
+| 3 | `blank/member.sv` | a member's blank, one region: within its pitch cone grown by the addendum (`std.Offset`) and its heel sphere, outside its toe sphere and its pitch cone shrunk by the back depth (`outside(d)`), sized by the solved layout |
+| 3 | `blank/ends.sv` | the end relief: the tip's toe and heel corners chamfered, each corner put on the tip as a set |
 | 3 | `blank/limits.sv`, `blank/sphere.sv`, `blank/cone.sv` | the same limits and the root cone drawn as revolved sections, for the checks' named walls |
 | 4 | `crown/thickness.sv` | the crown tooth's pitch points, a quarter pitch either side of M |
 | 4 | `crown/section.sv`, `crown/rounding.sv` | the rack section: straight flanks, base, tip and tip roundings |
