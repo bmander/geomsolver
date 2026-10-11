@@ -130,3 +130,15 @@ fn a_curved_side_is_refused() {
                m := point hint((5, 3, 5))\nm coincident b0.k\n";
     refused(src, "E040", "curved side", "b0.k");
 }
+
+/// A solid swept from a face written in place has the same faces: `solid(face(ab, …), …)`.
+#[test]
+fn a_face_written_in_place_is_a_set_too() {
+    let inline = PROFILE.replace("f0 := face(ab, bc, cd, da)\n", "");
+    let mut e = read(&format!("{inline}b0 := solid(face(ab, bc, cd, da), depth: 20)\n\
+        m := point hint((5, 3, 5))\nm coincident b0.far\n\
+        q := point hint((5, 3, 25))\nq coincident b0.cd\n"));
+    assert!(solve(&mut e.sketch, SolveOpts::default()).success);
+    assert!((at(&e, "m")[1] - 20.0).abs() < 1e-9);
+    assert!((at(&e, "q")[2] - 30.0).abs() < 1e-9);
+}

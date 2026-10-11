@@ -201,11 +201,6 @@ impl Walk<'_> {
                                 operands' — `{}.<operand>.{face}`", public_path(&solid),
                                public_path(&solid)));
         };
-        let profile = match decl.children.first().map(Vec::as_slice) {
-            Some([Kid::Ref(r)]) => r.clone(),
-            _ => return Err(format!("`{said}`: a face of a solid swept from a face written in \
-                                     place is not yet a set: name the face")),
-        };
         let (from, to) = match &decl.sweep {
             Some(Sweep::Depth { depth }) => (format!("-({})", arg_text(depth)), "0".to_string()),
             Some(Sweep::Prism { from, to }) => (arg_text(from), arg_text(to)),
@@ -218,13 +213,28 @@ impl Walk<'_> {
                                     a loft's and a sweep's are not"));
             }
         };
-        let face_abs = lookup_raw(&profile, sc, &self.names, &self.alias_table(), self.units)
-            .filter(|(_, r)| r.is_empty())
-            .map(|(a, _)| a)
-            .ok_or_else(|| format!("`{said}`: `{}` names no face", written(&profile)))?;
-        let Some((items, face_sc)) = t.faces.get(&face_abs) else {
-            return Err(format!("`{said}`: `{}` is not a face", written(&profile)));
+        // the face swept: one named, or one written in place, `solid(face(ab, bc, …), …)`
+        let alias = self.alias_table();
+        let (face_abs, items, face_sc, plane) = match decl.children.first().map(Vec::as_slice) {
+            Some([Kid::Ref(r)]) => {
+                let face_abs = lookup_raw(r, sc, &self.names, &alias, self.units)
+                    .filter(|(_, rest)| rest.is_empty())
+                    .map(|(a, _)| a)
+                    .ok_or_else(|| format!("`{said}`: `{}` names no face", written(r)))?;
+                let Some((items, face_sc)) = t.faces.get(&face_abs) else {
+                    return Err(format!("`{said}`: `{}` is not a face", written(r)));
+                };
+                (face_abs, items.clone(), face_sc.clone(), suffixed(r, "#plane", at))
+            }
+            Some([Kid::Face { decl: f, .. }]) => {
+                let items = f.children.first().into_iter().flatten().filter_map(Kid::as_ref);
+                let face_abs = format!("{solid}#face");
+                let plane = local(format!("{face_abs}#plane"), at);
+                (face_abs, items.cloned().collect(), sc.clone(), plane)
+            }
+            _ => return Err(format!("`{said}`: its profile is no face to draw on")),
         };
+        let (items, face_sc) = (&items, &face_sc);
         // the plane the face is drawn in, under a name only the elaborator binds
         let plane_key = format!("{face_abs}#plane");
         if self.names.insert(plane_key.clone()) {
@@ -238,7 +248,6 @@ impl Walk<'_> {
             let face = public_path(&face_abs);
             self.face_planes.push(FacePlane { key: plane_key.clone(), edges, span: at, face });
         }
-        let plane = suffixed(&profile, "#plane", at);
         let p = local("p", at);
         let body = match face.as_str() {
             "near" | "far" => {

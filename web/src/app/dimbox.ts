@@ -167,9 +167,10 @@ export function onDimension(live: LiveDim | null, at: [number, number] | null): 
   dimBox.place(at);
 }
 
-const extentBox = new NumberBox('how thick: a number, or an expression over the document\'s '
-  + 'numbers.\nDrag the arrow to size it — past its face for the other side, with ⇧ both ways.'
-  + '\nEnter to accept, Esc to stop sizing', (commit, keepOpen) => finishExtent(commit, keepOpen));
+const extentBox = new NumberBox('how thick, or how far a plane is set off: a number, or an '
+  + 'expression over the document\'s numbers.\nDrag the arrow to size it — past its face for the '
+  + 'other side, an extrusion with ⇧ both ways.\nEnter to accept, Esc to stop sizing',
+  (commit, keepOpen) => finishExtent(commit, keepOpen));
 
 /** Done typing an extrusion's thickness: accepted, it is written over the solid (`commitExtent`)
  *  and the box stays on the arrow for more; taken back, the sizing ends where it was last

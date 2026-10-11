@@ -43,7 +43,8 @@ import * as underlay from './underlay.js';
 import type { Bitmap, Underlay } from './underlay.js';
 import {
   NOWHERE, PAGE, boundsSeen, calloutSeen, extentAt, extrudeHandle, lookOf, maps, nearestSeen,
-  ofView, panesSeen, pickSeen, pickSolidSeen, placeOf, spacePoints, workspace,
+  offsetAt, offsetHandle, ofView, panesSeen, pickSeen, pickSolidSeen, placeOf, spacePoints,
+  workspace,
 } from '../core/workspace.js';
 import type { ExtrudeHandle } from '../core/workspace.js';
 import type { View, Workspace } from '../core/workspace.js';
@@ -54,16 +55,18 @@ export interface SolidPick {
   name: string;
   index: number;
   face: string;
+  /** Where in space the click met the face, for a sketch on it to start at. */
+  at?: [number, number, number];
 }
 
-/** An extrusion being sized (#162 F2): which solid, which way it runs from its face (the core's
- *  `Way`: behind it, in front of it, both ways) and how thick, in all.  Open from the click that
- *  made it until the tool is put down; carried across an edit by the solid's name. */
-export interface LiveExtent {
-  solid: string;
-  way: Way;
-  d: number;
-}
+/** A thing being sized by its arrow: an extrusion (#162 F2) — which solid, which way it runs
+ *  from its face (the core's `Way`: behind it, in front of it, both ways) and how thick, in all —
+ *  or an offset plane (F5), by the plane's name, and how far it is set off.  Open from the
+ *  gesture that made it until the tool is put down or the next click; carried across an edit by
+ *  name. */
+export type LiveExtent =
+  | { kind: 'extrusion'; solid: string; way: Way; d: number }
+  | { kind: 'offset'; plane: string; d: number };
 
 /* A dimension being written belongs to `dimension`, but it is the view a caller holds, so the
  * two types are published from here as well. */
@@ -631,7 +634,7 @@ export class SketchView {
         return index === undefined ? [] : [{ ...s, index }];
       });
     }
-    if (this.liveExtent && this.solidIndex(this.liveExtent.solid) === undefined) this.endExtent();
+    if (this.liveExtent && !this.liveHandle()) this.endExtent();
     const again = heldPlane ? this.doc.entity(heldPlane) : undefined;
     this.plane = again instanceof Plane ? again : null;
     this.drawOnFront();
@@ -987,7 +990,7 @@ export class SketchView {
     const hit = pickSolidSeen(this.sketch, az, el, ...this.eye(sx, sy));
     if (!hit) return null;
     const name = this.doc.solids().find((s) => s.index === hit.solid)?.name;
-    return name ? { name, index: hit.solid, face: hit.face } : null;
+    return name ? { name, index: hit.solid, face: hit.face, at: hit.at } : null;
   }
 
   /** Select a solid, or with `add` toggle it in the selection.  It lets the drawing's selection
@@ -1157,7 +1160,7 @@ export class SketchView {
     this.pickSolidNamed(solid);
     const h = through ? null : this.extrudeHandleOf(solid);
     if (h?.way) {
-      this.liveExtent = { solid, way: h.way, d: h.thick };
+      this.liveExtent = { kind: 'extrusion', solid, way: h.way, d: h.thick };
       this.tellExtent();
     }
     this.onSelect();
@@ -1179,10 +1182,30 @@ export class SketchView {
     return i === undefined ? null : extrudeHandle(this.sketch, az, el, i);
   }
 
-  /** The arrow the extrusion being sized is dragged by, on screen: from its face's middle to its
-   *  far end — no tip where the eye looks down its normal.  Null when none is being sized. */
+  /** The plane distance an offset plane is set off by: `P distance(d) plane`. */
+  private offsetOf(plane: string): Constraint | undefined {
+    const p = this.doc.entity(plane);
+    if (!(p instanceof Plane)) return undefined;
+    return this.sketch.constraints.find((c) => c.typeName === 'PlaneDistance'
+      && c.entities().some((e, i) => i === 1 && e instanceof Plane && e.index === p.index));
+  }
+
+  /** The arrow of what is being sized, on the eye's picture plane: an extrusion's or an offset
+   *  plane's.  Null when nothing is, or it is gone. */
+  private liveHandle(): { base: [number, number]; tip: [number, number] | null } | null {
+    const live = this.liveExtent;
+    if (!live) return null;
+    if (live.kind === 'extrusion') return this.extrudeHandleOf(live.solid);
+    const c = this.offsetOf(live.plane);
+    const { az, el } = this.orbit;
+    return c ? offsetHandle(this.sketch, az, el, c.id) : null;
+  }
+
+  /** The arrow what is being sized is dragged by, on screen: an extrusion's from its face's
+   *  middle to its far end, an offset plane's from the plane it is set off — no tip where the eye
+   *  looks down the normal.  Null when nothing is being sized. */
   extentArrow(): { base: [number, number]; tip: [number, number] | null } | null {
-    const h = this.liveExtent && this.extrudeHandleOf(this.liveExtent.solid);
+    const h = this.liveHandle();
     if (!h) return null;
     this.cams();
     const eye = this.camCache!.eye;
@@ -1193,6 +1216,7 @@ export class SketchView {
    *  face or behind by the side the point is on, both ways with `both` — a preview on the sketch
    *  (`setPrism`), written when the drag lets go (`commitExtent`). */
   sizeExtent(sx: number, sy: number, both = false): void {
+    if (this.liveExtent?.kind === 'offset') return this.sizeOffset(sx, sy);
     const live = this.liveExtent;
     const i = live ? this.solidIndex(live.solid) : undefined;
     if (!live || i === undefined) return;
@@ -1214,6 +1238,7 @@ export class SketchView {
    *  as typed — over the same face and solid, the way it runs; the core writes the sweep.  The
    *  edit joins the extrusion's own undo step.  Null when written, else why not. */
   commitExtent(text?: string): string | null {
+    if (this.liveExtent?.kind === 'offset') return this.commitOffset(text);
     const live = this.liveExtent;
     const i = live ? this.solidIndex(live.solid) : undefined;
     if (!live || i === undefined) return 'nothing is being extruded';
@@ -1223,6 +1248,53 @@ export class SketchView {
     // a swap carries the extrusion being sized across, by the solid's name
     this.takeDocument(Document.read(e.text));
     const n = Number(thick);
+    if (this.liveExtent && Number.isFinite(n)) this.liveExtent = { ...this.liveExtent, d: n };
+    this.tellExtent();
+    this.draw();
+    return null;
+  }
+
+  /** Set the offset plane being sized off where the eye sees a canvas point along the normal it
+   *  is set off by — either side — previewed on the sketch, written when the drag lets go. */
+  private sizeOffset(sx: number, sy: number): void {
+    const live = this.liveExtent;
+    const c = live?.kind === 'offset' ? this.offsetOf(live.plane) : undefined;
+    const [attr] = c?.dimensions()[0] ?? [];
+    if (!live || !c || !attr) return;
+    const { az, el } = this.orbit;
+    const t = offsetAt(this.sketch, az, el, c.id, ...this.eye(sx, sy));
+    if (!Number.isFinite(t) || Math.abs(t) < 1e-9) return;
+    const d = Number(t.toPrecision(2));
+    if (d === live.d) return;
+    this.liveExtent = { ...live, d };
+    c.setDimension(attr, String(d));
+    this.solveNow();
+    this.tellExtent();
+  }
+
+  /** Write how far the offset plane being sized is set off into its statement — at the drag's
+   *  distance, or `text` as typed.  Joins the plane's own undo step.  Null when written. */
+  private commitOffset(text?: string): string | null {
+    const live = this.liveExtent;
+    const c = live?.kind === 'offset' ? this.offsetOf(live.plane) : undefined;
+    const [attr] = c?.dimensions()[0] ?? [];
+    if (!live || !c || !attr) return 'no plane is being set off';
+    const d = text ?? String(live.d);
+    const e = this.doc.setDimension(c.id, attr, d);
+    if (e.refused) return e.refused;
+    let numeric = e.kind === 'numeric';
+    try {
+      if (numeric) numeric = c.setDimension(attr, d) === null;
+    } catch {
+      numeric = false;
+    }
+    if (numeric && this.doc.retext(e.text)) {
+      this.afterEdit();
+      this.onProgram();
+    } else {
+      this.takeDocument(Document.read(e.text));
+    }
+    const n = Number(d);
     if (this.liveExtent && Number.isFinite(n)) this.liveExtent = { ...this.liveExtent, d: n };
     this.tellExtent();
     this.draw();
@@ -1263,8 +1335,37 @@ export class SketchView {
     if (!this.apply(e, `${kind} ${e.names[0]}`)) return false;
     const made = this.doc.entity(e.names[0]);
     if (made) this.selected = [made];
+    // a plane set off another is sized at once, as an extrusion is: by its arrow or its number
+    this.endExtent();
+    if (made instanceof Plane && this.offsetOf(e.names[0])) {
+      this.liveExtent = { kind: 'offset', plane: e.names[0], d: 0 };
+      const c = this.offsetOf(e.names[0])!;
+      const { az, el } = this.orbit;
+      this.liveExtent.d = offsetHandle(this.sketch, az, el, c.id)?.distance ?? 0;
+      this.tellExtent();
+    }
     this.onSelect();
     this.onChanged();
+    this.draw();
+    return true;
+  }
+
+  /** **Sketch on a face** (#162 F5): the plane already lying on it chosen, or a plane written
+   *  lying on it — its origin where the click met the face, touching the face there, so it
+   *  follows the solid — and chosen.  One edit, one undo step. */
+  sketchOnFace(pick: SolidPick): boolean {
+    if (!pick.face) {
+      this.onStatus('click a face of the solid to sketch on it');
+      return false;
+    }
+    const there = this.doc.facePlane(pick.index, pick.face);
+    if (there) {
+      this.choosePlane(there, false);
+      return true;
+    }
+    const e = this.doc.sketchOnFace(pick.index, pick.face, pick.at);
+    if (!this.apply(e, `sketching on ${pick.face}`)) return false;
+    this.choosePlane(e.names[0], false);
     this.draw();
     return true;
   }

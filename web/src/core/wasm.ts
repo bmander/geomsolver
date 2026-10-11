@@ -99,6 +99,11 @@ export interface Abi {
   gcs_workspace_extrude_handle_json(h: number, az: number, el: number, solid: number): number;
   gcs_workspace_extent_at(h: number, az: number, el: number, solid: number,
                           x: number, y: number): number;
+  gcs_workspace_offset_handle_json(h: number, az: number, el: number, id: number): number;
+  gcs_workspace_offset_at(h: number, az: number, el: number, id: number,
+                          x: number, y: number): number;
+  gcs_elab_sketch_on_face(h: number, s: number, p: number, n: number): number;
+  gcs_elab_face_plane_json(h: number, s: number, solid: number, p: number, n: number): number;
   gcs_elab_region_json(h: number, s: number, plane: number, x: number, y: number,
                        unit: number): number;
   gcs_elab_remove(h: number, sk: number, p: number, n: number): number;

@@ -2524,3 +2524,24 @@ test('a swept solid is refined in steps, and a deferring sketch draws only what 
   page.dispose();
   worker.dispose();
 });
+
+test('a sketch on a face is written by name through the edit API, and a plane already there is '
+     + 'found', () => {
+  const d = Document.read('use std\nin std.front {\na := point\nb := point\nc := point\n'
+                          + 'k := point\nab := line(a, b)\nbc := line(b, c)\nck := line(c, k)\n'
+                          + 'ka := line(k, a)\nfix((0, 0)) a\nfix((60, 0)) b\nfix((60, 40)) c\n'
+                          + 'fix((0, 40)) k\n}\nb0 := solid(face(ab, bc, ck, ka), depth: 10)\n');
+  assert.ok(d.ok, JSON.stringify(d.diagnostics));
+  const [b0] = d.solids();
+  assert.equal(d.facePlane(b0.index, 'b0.near'), 'std.front', 'the cap on the profile');
+  assert.equal(d.facePlane(b0.index, 'b0.far'), null);
+  const e = d.sketchOnFace(b0.index, 'b0.far', [20, 4, 10]);
+  assert.equal(e.refused, null);
+  assert.deepEqual(e.names, ['v0']);
+  assert.ok(e.text.endsWith('v0.origin coincident b0.far\nv0 tangent(at: v0.origin) b0.far\n'),
+            e.text);
+  const on = Document.read(e.text);
+  assert.ok(on.ok, JSON.stringify(on.diagnostics));
+  assert.equal(on.facePlane(b0.index, 'b0.far'), 'v0');
+  assert.ok(d.sketchOnFace(b0.index, 'b0.nothing').refused);
+});
