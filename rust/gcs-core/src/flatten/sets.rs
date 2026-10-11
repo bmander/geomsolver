@@ -752,6 +752,7 @@ fn reaches(w: &crate::syntax::Written) -> bool {
 /// inside or outside something — so it has no surface to touch.
 fn region(lit: &SetLit) -> bool {
     lit.body.iter().filter_map(written_of).any(|w| w.states_bound())
+        || lit.body.iter().any(|st| matches!(st.kind, StmtKind::Measured(_)))
 }
 
 /// A statement's written relation, where it is one.
@@ -781,9 +782,17 @@ fn region_body(
     // a distance from one is (`std.Offset`'s body)
     let grown = |w: &crate::syntax::Written| crate::constraints::plane_side_word(&w.word.text)
         .is_some();
+    // a bound on measurements is a number of this one's, a bound already (#183 F3)
+    let measured = |st: &Stmt| matches!(st.kind, StmtKind::Measured(_));
     let dims: Vec<usize> = (0..body.len())
-        .filter(|&i| written_of(&body[i]).is_some_and(|w| w.args.iter().any(is_dim) && !grown(w)))
+        .filter(|&i| measured(&body[i])
+            || written_of(&body[i]).is_some_and(|w| w.args.iter().any(is_dim) && !grown(w)))
         .collect();
+    // every number a bound already: `inside` is where all of them hold, as written
+    let bounded = |st: &Stmt| measured(st) || written_of(st).is_some_and(|w| w.states_bound());
+    if dims.len() > 1 && side == Cmp::Le && dims.iter().all(|&i| bounded(&body[i])) {
+        return Ok(());
+    }
     let [i] = dims[..] else {
         let uses = body.iter().filter_map(written_of).any(may_use);
         return match (dims.len(), uses, side) {
@@ -798,6 +807,12 @@ fn region_body(
             )),
         };
     };
+    if let StmtKind::Measured(m) = &mut body[i].kind {
+        if side != Cmp::Le {
+            m.cmp = m.cmp.turned().expect("a bound on measurements is one-sided");
+        }
+        return Ok(());
+    }
     let StmtKind::Relation(r) = &mut body[i].kind else {
         unreachable!("a dimension is a relation")
     };

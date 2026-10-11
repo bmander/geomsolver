@@ -337,6 +337,9 @@ pub enum StmtKind {
     /// `rope minimizes integral(p.y over p)` — an energy over a curve (#121): the curve takes
     /// the shape that makes it stationary.
     Minimize(Minimize),
+    /// `distance(p, f1) + distance(p, f2) <= 10mm` — a bound on an expression of measurements
+    /// (§6.21, #183 F3), see `Measured`.
+    Measured(Measured),
 }
 
 impl StmtKind {
@@ -353,7 +356,7 @@ impl StmtKind {
             StmtKind::Derived(d) => Some(d.name.key()),
             StmtKind::Relation(_) | StmtKind::Branch(_) | StmtKind::Block(_) | StmtKind::Style(_)
             | StmtKind::SolidRel(_) | StmtKind::ClaimOver(_) | StmtKind::Unit(_)
-            | StmtKind::Minimize(_) => None,
+            | StmtKind::Minimize(_) | StmtKind::Measured(_) => None,
         }
     }
 }
@@ -387,6 +390,20 @@ pub struct Minimize {
     pub curve: Ref,
     pub maximize: bool,
     pub terms: Vec<Integral>,
+    pub span: Span,
+}
+
+/// `distance(p, f1) + distance(p, f2) <= 10mm` — a bound on an expression of measurements
+/// (§6.21, #183 F3): in a set's body, where the point the set is about may be, as the distances
+/// from it say.  Each side stays text, read by `expr`: the flattener writes the scope's numbers in
+/// and resolves what each measurement names (`rescope_measures`).  Closed, as every bound is.
+#[derive(Clone, Debug)]
+pub struct Measured {
+    pub lhs: String,
+    pub lhs_span: Span,
+    pub cmp: Cmp,
+    pub rhs: String,
+    pub rhs_span: Span,
     pub span: Span,
 }
 

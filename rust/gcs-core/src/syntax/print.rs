@@ -199,6 +199,9 @@ fn write_stmt(out: &mut String, k: &StmtKind) {
             out.push_str(&parts.join("; "));
             out.push_str(" }");
         }
+        StmtKind::Measured(m) => {
+            out.push_str(&format!("{} {} {}", m.lhs, m.cmp.text(), m.rhs));
+        }
         StmtKind::Minimize(m) => {
             write_ref(out, &m.curve);
             out.push_str(if m.maximize { " maximizes " } else { " minimizes " });

@@ -1543,6 +1543,15 @@ fn mentions(st: &Stmt, names: &std::collections::BTreeSet<String>) -> Vec<String
         }
         // an energy goes with the curve it is over (#121)
         StmtKind::Minimize(m) => look(&m.curve),
+        // a bound on measurements goes with what it measures (#183 F3)
+        StmtKind::Measured(m) => {
+            for name in [&m.lhs, &m.rhs].into_iter().flat_map(|t| crate::expr::measured_names(t)) {
+                let root = name.split('.').next().unwrap_or(&name);
+                if names.contains(root) {
+                    hit.push(root.to_string());
+                }
+            }
+        }
         // a set goes with what its body names (§6.21), as a component's call goes with its
         // arguments
         StmtKind::Set(set) => {

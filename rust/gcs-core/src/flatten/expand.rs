@@ -102,7 +102,8 @@ impl<'a> Walk<'a> {
             match scope.pass {
                 Pass::Along(_) if !relation => continue,
                 Pass::Made
-                    if relation || matches!(st.kind, StmtKind::ClaimOver(_) | StmtKind::Minimize(_)) =>
+                    if relation
+                        || matches!(st.kind, StmtKind::ClaimOver(_) | StmtKind::Minimize(_) | StmtKind::Measured(_)) =>
                 {
                     continue
                 }
@@ -368,6 +369,14 @@ impl<'a> Walk<'a> {
                     if ok {
                         self.emit(StmtKind::Minimize(m2), st, scope, path);
                     }
+                }
+                // a bound on measurements: the scope's numbers written in, what it measures
+                // resolved with the references (`rescope_measures`) (#183 F3)
+                StmtKind::Measured(m) => {
+                    let mut m2 = m.clone();
+                    m2.lhs = super::values::substitute(&m.lhs, vals, self.units);
+                    m2.rhs = super::values::substitute(&m.rhs, vals, self.units);
+                    self.emit(StmtKind::Measured(m2), st, scope, path);
                 }
                 // a claim over an interval: its numbers and its relations' worked out as above
                 StmtKind::ClaimOver(c) => {

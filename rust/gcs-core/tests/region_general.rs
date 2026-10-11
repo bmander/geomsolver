@@ -149,3 +149,57 @@ fn a_region_with_no_end_is_refused() {
     let t = ent(&e, "t").i();
     assert!(gcs_core::solid::validate(&e.sketch, t).is_err_and(|m| m.contains("no end")));
 }
+
+/// **A bound on measurements** (#183 F3): an ellipsoid of revolution by its foci, the points whose
+/// distances from the two sum to at most 10 — semi-axes 5 and 4 about foci 3 from its centre.
+#[test]
+fn an_ellipsoid_by_its_foci() {
+    let e = solved(&format!("{AXES}f1 := point hint((3, 0, 0))\nfix((3, 0, 0)) f1\n\
+                             f2 := point hint((-3, 0, 0))\nfix((-3, 0, 0)) f2\n\
+                             egg := {{ p | distance(p, f1) + distance(p, f2) <= 10mm }}\n\
+                             s := solid(egg)\n"));
+    let s = ent(&e, "s").i();
+    assert!(gcs_core::solid::region::in_general(&e.sketch, s));
+    let field = MaterialField::read(&e.sketch, s, 1e-10).unwrap();
+    for (p, inside) in [([4.9, 0.0, 0.0], true), ([5.1, 0.0, 0.0], false), ([0.0, 3.9, 0.0], true),
+                        ([0.0, 0.0, 4.1], false), ([3.0, 2.0, 2.0], true), ([4.0, 2.0, 2.0], false)] {
+        assert_eq!(field.side(p) < 0.0, inside, "{p:?}");
+    }
+    let want = 4.0 / 3.0 * std::f64::consts::PI * 5.0 * 4.0 * 4.0;
+    let got = field_volume(&field, [-5.0, -4.0, -4.0], [5.0, 4.0, 4.0], 5.0 / 64.0);
+    assert!((got - want).abs() < 2e-3 * want, "{got} against {want}");
+}
+
+/// A Voronoi cell within a ball: the points of the ball nearer one centre than the other, the
+/// half of it on that centre's side; and the bound turned round, the other half.
+#[test]
+fn a_voronoi_cell_is_half_a_ball() {
+    let e = solved(&format!("{AXES}a := point hint((2, 0, 0))\nfix((2, 0, 0)) a\n\
+                             b := point hint((-2, 0, 0))\nfix((-2, 0, 0)) b\n\
+                             ball := std.Sphere(c, r: 5)\n\
+                             near_a := {{ p | p inside ball; distance(p, a) <= distance(p, b) }}\n\
+                             near_b := {{ p | p inside ball; distance(p, a) >= distance(p, b) }}\n\
+                             sa := solid(near_a)\nsb := solid(near_b)\n"));
+    let half = 2.0 / 3.0 * std::f64::consts::PI * 125.0;
+    for (name, x) in [("sa", 1.0), ("sb", -1.0)] {
+        let s = ent(&e, name).i();
+        let field = MaterialField::read(&e.sketch, s, 1e-10).unwrap();
+        assert!(field.side([x, 0.5, 0.5]) < 0.0 && field.side([-x, 0.5, 0.5]) > 0.0, "{name}");
+        let got = field_volume(&field, [-5.0; 3], [5.0; 3], 5.0 / 64.0);
+        assert!((got - half).abs() < 2e-3 * half, "{name}: {got} against {half}");
+    }
+}
+
+/// A bound on measurements stands only where a region solid's point is measured, and only as a
+/// sum of measurements times numbers.
+#[test]
+fn a_bound_on_measurements_is_refused_off_a_region_and_off_a_sum() {
+    crate::common::refused(&format!("{AXES}f1 := point hint((3, 0, 0))\nfix((3, 0, 0)) f1\n\
+                                     egg := {{ p | distance(p, f1) * distance(p, c) <= 10mm }}\n\
+                                     s := solid(egg)\n"),
+                           "E040", "two measured are not multiplied", "s := solid(egg)");
+    crate::common::refused(&format!("{AXES}f1 := point hint((3, 0, 0))\nfix((3, 0, 0)) f1\n\
+                                     distance(c, f1) <= 10mm\n"),
+                           "E040", "measures nothing of a region solid's point",
+                           "distance(c, f1) <= 10mm");
+}

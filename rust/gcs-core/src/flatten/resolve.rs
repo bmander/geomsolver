@@ -512,6 +512,11 @@ fn rewrite(
         }
         // an energy names the curve it is over (#121)
         StmtKind::Minimize(m) => fix(&mut m.curve, bad),
+        // a bound on measurements names what it measures, as a motion's numbers do (#183 F3)
+        StmtKind::Measured(m) => {
+            rescope_measures(&mut m.lhs, m.lhs_span, sc, names, alias, units, bad);
+            rescope_measures(&mut m.rhs, m.rhs_span, sc, names, alias, units, bad);
+        }
         // `bore cut body` names two solids, and inside a component both wear the prefix
         StmtKind::SolidRel(r) => {
             fix(&mut r.what, bad);

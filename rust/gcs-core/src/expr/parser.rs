@@ -180,6 +180,17 @@ fn tokenize(text: &str, units: Units) -> Result<Vec<(Tok, usize)>, String> {
             while i < chars.len() && (chars[i].is_ascii_alphanumeric() || chars[i] == '_') {
                 i += 1;
             }
+            // and a hidden point's key after its owner's name (`blank#probe`, a region solid's
+            // point, which a bound on measurements reads, #183 F3)
+            while chars.get(i) == Some(&'#')
+                && chars.get(i + 1).is_some_and(|d| d.is_ascii_alphanumeric() || *d == '_')
+            {
+                key = true;
+                i += 1;
+                while i < chars.len() && (chars[i].is_ascii_alphanumeric() || chars[i] == '_') {
+                    i += 1;
+                }
+            }
             // A dot *between* identifier characters is part of the name: `c.center.x` is one
             // coordinate a curve is written over, not a name and a decimal point.  Only there —
             // `a.5` and a trailing `a.` are left alone, so `.5` is still the number it always was

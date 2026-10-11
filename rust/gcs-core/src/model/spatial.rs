@@ -284,7 +284,7 @@ pub enum SolidDef {
 
 /// What a region solid's term bounds (§6.21): the measure a bound on its probe reads, recognised
 /// by the constraint's kind and never by the set it came from.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum RegionShape {
     /// A distance from a point: a ball about it.
     Ball { center: u32 },
@@ -295,6 +295,10 @@ pub enum RegionShape {
     /// An ordinate along a plane's normal, from a point: a half-space.  `sign` is -1 where the
     /// probe is the ordinate's first operand, read back from it.
     Plane { plane: u32, from: u32, sign: f64 },
+    /// A sum of measurements of the probe, each times its number (§6.21, #183 F3): `distance(p,
+    /// f1) + distance(p, f2) <= 10mm` is `[(f1, 1), (f2, 1)]` against 10.  Each is the distance
+    /// from what it names: a point, a line produced, an axis, a plane.
+    Measured { of: Vec<(EntRef, f64)> },
 }
 
 impl RegionShape {
@@ -308,6 +312,7 @@ impl RegionShape {
             RegionShape::Plane { plane, from, .. } => {
                 vec![EntRef::plane(plane as usize), EntRef::point(from as usize)]
             }
+            RegionShape::Measured { ref of } => of.iter().map(|&(e, _)| e).collect(),
         }
     }
 
@@ -326,6 +331,9 @@ impl RegionShape {
                 plane: i(EntRef::plane(plane as usize))?,
                 from: i(EntRef::point(from as usize))?,
                 sign,
+            },
+            RegionShape::Measured { ref of } => RegionShape::Measured {
+                of: of.iter().map(|&(e, c)| map(e).map(|e| (e, c))).collect::<Option<_>>()?,
             },
         })
     }

@@ -533,6 +533,11 @@ fn elaborate_in(
             variational::state(&mut sk, &res, m, st, &mut map, &mut diags);
             continue;
         }
+        // a bound on measurements is a term of the region solid whose point it reads (#183 F3)
+        if let StmtKind::Measured(m) = &st.kind {
+            relations::measured_term(&sk, &res, m, st, &mut probes, &mut diags);
+            continue;
+        }
         let StmtKind::Relation(r) = &st.kind else { continue };
         if relations::is_fix(r) || drawn.contains(&i) {
             continue;

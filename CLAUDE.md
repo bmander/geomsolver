@@ -215,6 +215,14 @@ designs, both members) are the gates.
 the centre's value within its half-diagonal), its support the box of the planes every term lies
 within (`polytope_box`, refused unbounded). Evaluated as sweeps are (`sweeps_among`: the field's
 surface); no exact construction yet (`cad.rs` says so). `tests/region_general.rs` is the gate.
+**A bound on measurements** (#183 F3): `distance(p, f1) + distance(p, f2) <= 10mm` in a set's
+body is `StmtKind::Measured` (sides kept as text; parsed where a statement opens on a measurement
+and compares outside every bracket, `compared_ahead`; numbers written in by the walk, names by
+`rescope_measures`; the expr lexer reads `s#probe` as one name). A region (`sets::region`); `inside`
+keeps it, `outside` turns it, and a body of bounds only is all of them under `inside`. Elaborated
+by `relations::measured_term` into `RegionShape::Measured` (Σ cᵢ·distance from a point, line,
+axis or plane; `linear`: affine only, one probe) on the probe, else E040; read by the field
+(`region::measured`, divided by Σ|cᵢ|), never the meridian.
 **Distance from a set, offsets (§6.21, 0.64, #145 F4):** `p distance(d, side: outside|inside) S`
 (`distance` is a set use, `may_use`), `p inside(d) S` / `p outside(d) S` and `std.Offset(S, d)` are
 one bound on the signed distance from `S`'s surface (`Reach`: cmp toward the outside, whether

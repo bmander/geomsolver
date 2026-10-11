@@ -185,6 +185,11 @@ impl<'a> P<'a> {
                 r.claim = true;
                 Some(StmtKind::Relation(r))
             }
+            // `distance(p, f1) + distance(p, f2) <= 10mm` — a bound on measurements (#183 F3),
+            // told from a relation by a comparison outside every bracket
+            m if crate::expr::MEASURES.iter().any(|f| f.0 == m) && self.compared_ahead() => {
+                self.measured().map(StmtKind::Measured)
+            }
             // `view(cyl.body) in views.right` — a picture asked of a solid (§6.11).  The
             // brackets are what it is a picture of, `in` is the trailer it already is
             "view" | "section" | "dimensions" => {
@@ -240,6 +245,69 @@ impl<'a> P<'a> {
             }
             _ => self.relation().map(StmtKind::Relation),
         }
+    }
+
+    /// Whether the statement from here compares two sides outside every bracket (`<` or `>`).
+    fn compared_ahead(&self) -> bool {
+        let mut depth = 0i32;
+        for (t, _) in &self.t[self.i..] {
+            match t {
+                Tok::P('(') | Tok::P('[') | Tok::P('{') => depth += 1,
+                Tok::P(')') | Tok::P(']') | Tok::P('}') if depth == 0 => return false,
+                Tok::P(')') | Tok::P(']') | Tok::P('}') => depth -= 1,
+                Tok::P('<') | Tok::P('>') if depth == 0 => return true,
+                Tok::Nl => return false,
+                _ => {}
+            }
+        }
+        false
+    }
+
+    /// `LHS <= RHS` or `LHS >= RHS`, each side an expression kept as text.
+    fn measured(&mut self) -> Option<crate::syntax::Measured> {
+        use crate::syntax::Cmp;
+        let lo = self.here().lo as usize;
+        let side = |p: &mut Self, stop_at_cmp: bool| -> Option<(String, Span)> {
+            let from = p.here().lo as usize;
+            let mut depth = 0i32;
+            while !p.done() {
+                match p.peek() {
+                    Some(Tok::P('(')) | Some(Tok::P('[')) | Some(Tok::P('{')) => depth += 1,
+                    Some(Tok::P(')')) | Some(Tok::P(']')) | Some(Tok::P('}')) if depth == 0 => break,
+                    Some(Tok::P(')')) | Some(Tok::P(']')) | Some(Tok::P('}')) => depth -= 1,
+                    Some(Tok::P('<')) | Some(Tok::P('>')) if depth == 0 && stop_at_cmp => break,
+                    Some(Tok::Nl) => break,
+                    _ => {}
+                }
+                p.i += 1;
+            }
+            let text = p.text_from(from).trim().to_string();
+            if text.is_empty() {
+                p.fail("expected an expression");
+                return None;
+            }
+            Some((text, Span::new(from, p.prev_hi())))
+        };
+        let (lhs, lhs_span) = side(self, true)?;
+        let at = self.here();
+        let cmp = match (self.peek().cloned(), self.t.get(self.i + 1).map(|(t, _)| t.clone())) {
+            (Some(Tok::P(c @ ('<' | '>'))), Some(Tok::P('='))) => {
+                if c == '<' { Cmp::Le } else { Cmp::Ge }
+            }
+            (Some(Tok::P(c)), _) => {
+                self.fail(&format!("a bound is closed, `{c}=`: a solution may stand on its edge"));
+                return None;
+            }
+            _ => {
+                self.fail("a bound on measurements compares two sides, `<=` or `>=`");
+                return None;
+            }
+        };
+        let _ = at;
+        self.i += 2;
+        let (rhs, rhs_span) = side(self, false)?;
+        self.end_of_stmt();
+        Some(crate::syntax::Measured { lhs, lhs_span, cmp, rhs, rhs_span, span: Span::new(lo, self.prev_hi()) })
     }
 
     /// `view(cyl.body) in views.right` — a picture asked of a solid (§6.11).  The brackets are
