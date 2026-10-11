@@ -338,9 +338,41 @@ impl RegionShape {
 pub struct RegionTerm {
     pub shape: RegionShape,
     pub cmp: crate::syntax::Cmp,
-    pub lo: f64,
+    pub lo: TermNumber,
     pub hi: Option<f64>,
     pub name: String,
+}
+
+/// A region term's number (§6.21): stated, or affine in one of the drawing's unknowns — `c + m ·
+/// x` in the kernels' units, `x` the unknown by its name — read once the drawing is solved, as a
+/// sphere's radius is where a point stated on it sets it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TermNumber {
+    pub c: f64,
+    pub free: Option<(String, f64)>,
+}
+
+impl TermNumber {
+    /// A stated number.
+    pub fn stated(c: f64) -> TermNumber {
+        TermNumber { c, free: None }
+    }
+
+    /// What it reads as the drawing stands: refused where it reads an unknown no row of the
+    /// drawing holds, which nothing then determines.
+    pub fn value(&self, sk: &Sketch) -> Result<f64, String> {
+        self.read(sk).ok_or_else(|| {
+            let name = self.free.as_ref().map_or("", |(n, _)| n.as_str());
+            format!("`{name}` is an unknown nothing determines: state a point on the set it sizes")
+        })
+    }
+
+    /// `value`, `None` where nothing determines it.
+    pub fn read(&self, sk: &Sketch) -> Option<f64> {
+        let Some((name, m)) = &self.free else { return Some(self.c) };
+        let x = sk.free_vars.get(name).map(|&p| &sk.params[p as usize]).filter(|p| !p.fixed)?;
+        Some(self.c + m * x.value)
+    }
 }
 
 /// A solid, as the document names it.

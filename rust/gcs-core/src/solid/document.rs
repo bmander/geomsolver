@@ -43,7 +43,10 @@ pub fn reads(sk: &Sketch, si: usize, unit: f64) -> Vec<f64> {
                 for t in terms {
                     // no NaN for an end not written: a key must equal itself
                     let hi = [f64::from(t.hi.is_some()), t.hi.unwrap_or(0.0)];
-                    v.extend([t.cmp as u8 as f64, t.lo, hi[0], hi[1]]);
+                    // an unknown's as solved; one nothing determines reads as a number no other
+                    // key holds, and the solid refuses it where it is evaluated
+                    let lo = t.lo.read(sk).unwrap_or(f64::MAX);
+                    v.extend([t.cmp as u8 as f64, lo, hi[0], hi[1]]);
                     for e in t.shape.entities() {
                         match e.kind {
                             crate::model::EntKind::Point => v.extend(sk.world_point(e.i())),

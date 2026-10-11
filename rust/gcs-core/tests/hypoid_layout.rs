@@ -41,9 +41,16 @@ impl Design {
         Design { label, configuration }
     }
     /// The pair (`gears.sv`), its modules beside it, the configuration replaced.
-    fn read(&self) -> Elaborated {
-        fixtures::read_beside(&fixtures::gear::source(),&fixtures::gear::project(),&mut |name,text|
-            if name == "configuration" { self.configuration.clone() } else { text })
+    fn read(&self) -> Elaborated { fixtures::gear::read_file("gears.sv",&self.configuration) }
+    /// The checks' document (`pair.sv`): the layout with each member's limits drawn as revolved
+    /// sections (`blank/limits.sv`), which the members' region blank stands for.
+    fn read_checks(&self) -> Elaborated { fixtures::gear::read_file("pair.sv",&self.configuration) }
+    /// Every recorded quantity of the pair `e` at scale `probe`: the layout's, and the limits'
+    /// from the checks.
+    fn read_all(&self,e: &Elaborated,probe: f64) -> Reading {
+        let mut reading = read_pair(e,probe);
+        reading.values.extend(read_limits(&self.read_checks()).values);
+        reading
     }
 }
 
@@ -80,6 +87,28 @@ fn motion(e: &Elaborated,name: &str) -> usize {
     let name = format!("{REF}.generation.{name}");
     e.sketch.motions.iter().position(|m| m.name == name)
         .unwrap_or_else(|| panic!("no motion `{name}`"))
+}
+
+/// The blank limits, read off the checks' document (`Design::read_checks`), where they are drawn:
+/// each cone's quadrilateral and each sphere's poles, in space.
+fn read_limits(e: &Elaborated) -> Reading {
+    let mut out = Reading { values: Vec::new() };
+    let point = |name: &str| e.sketch.world_point(index(e,name));
+    for member in ["gear","pinion"] {
+        for cone in &LIMITS[..3] {
+            for c in ["a","b","p","q"] {
+                let p = point(&format!("{member}_limits.{cone}.{c}"));
+                out.point(&format!("{member} {cone} cone {c}"),p);
+            }
+        }
+        for sphere in &LIMITS[3..] {
+            for c in ["top","bottom"] {
+                let p = point(&format!("{member}_limits.{sphere}.{c}"));
+                out.point(&format!("{member} {sphere} {c}"),p);
+            }
+        }
+    }
+    out
 }
 
 /// What the plan's gate compares, read off one elaborated pair: numbers with a name.
@@ -165,21 +194,6 @@ fn read_pair(e: &Elaborated,probe: f64) -> Reading {
             out.push(&format!("space {side} {end} height"),h);
         }
     }
-    // The blank limits: each cone's quadrilateral and each sphere's poles, in space.
-    for member in ["gear","pinion"] {
-        for cone in &LIMITS[..3] {
-            for c in ["a","b","p","q"] {
-                let p = point(e,&format!("{member}_blank.{cone}.{c}"));
-                out.point(&format!("{member} {cone} cone {c}"),p);
-            }
-        }
-        for sphere in &LIMITS[3..] {
-            for c in ["top","bottom"] {
-                let p = point(e,&format!("{member}_blank.{sphere}.{c}"));
-                out.point(&format!("{member} {sphere} {c}"),p);
-            }
-        }
-    }
     // The motions: their numbers, and where they carry three points at two angles.
     for label in MOTIONS {
         let i = motion(e,label);
@@ -216,15 +230,18 @@ fn the_layout_reproduces_the_pairs_named_quantities() {
     let all = designs();
     assert_eq!(labels,all.iter().map(|d| d.label.clone()).collect::<Vec<_>>());
     let mut worst: std::collections::BTreeMap<String,(f64,String)> = Default::default();
+    let recorded: std::collections::BTreeMap<&str,&Vec<f64>> =
+        rows.iter().map(|(name,values)| (name.as_str(),values)).collect();
     for (k,design) in all.iter().enumerate() {
         let e = design.read();
         // the motions carry points at the pair's own scale, the recorded R
         let scale = rows[0].1[k];
         assert_eq!(rows[0].0,"R");
-        let reading = read_pair(&e,scale);
+        let reading = design.read_all(&e,scale);
         assert_eq!(reading.values.len(),rows.len());
-        for ((name,v),(recorded,values)) in reading.values.iter().zip(&rows) {
-            assert_eq!(name,recorded);
+        for (name,v) in &reading.values {
+            let values = recorded.get(name.as_str())
+                .unwrap_or_else(|| panic!("`{name}` is not recorded"));
             // a length relative to the cone distance; an angle in degrees, a direction's
             // component, a ratio and a phase in radians as they are
             let plain = ["angle","ratio","phase","ax."].iter().any(|w| name.contains(w));
@@ -245,13 +262,21 @@ fn the_layout_reproduces_the_pairs_named_quantities() {
     assert!(failed.is_empty(),"{failed:#?}");
 }
 
-/// The static solids, by the names the layout gives them under `REF`: the crowns, the gear's
-/// space cutter and every blank limit's carrier.
+/// The static solids: the crowns and the gear's space cutter by the names the layout gives them
+/// under `REF`, and every blank limit's carrier by the checks' (`Design::read_checks`).
 const SOLIDS: [&str;14] = ["tooth.crown","mate.outer_crown","mate.inner_crown","gear_space.body",
-    "gear_blank.tip.carrier","gear_blank.root.carrier","gear_blank.back.carrier",
-    "gear_blank.toe.carrier","gear_blank.heel.carrier","pinion_blank.tip.carrier",
-    "pinion_blank.root.carrier","pinion_blank.back.carrier","pinion_blank.toe.carrier",
-    "pinion_blank.heel.carrier"];
+    "gear_limits.tip.carrier","gear_limits.root.carrier","gear_limits.back.carrier",
+    "gear_limits.toe.carrier","gear_limits.heel.carrier","pinion_limits.tip.carrier",
+    "pinion_limits.root.carrier","pinion_limits.back.carrier","pinion_limits.toe.carrier",
+    "pinion_limits.heel.carrier"];
+
+/// One of `SOLIDS` as a field, from the pair `e` or the checks `checks`.
+fn static_field(e: &Elaborated,checks: &Elaborated,name: &str,r: f64) -> MaterialField {
+    let (doc,full) = if name.contains("_limits.") { (checks,name.to_string()) }
+        else { (e,format!("{REF}.{name}")) };
+    MaterialField::read(&doc.sketch,fixtures::solid(doc,&full),1e-10*r)
+        .unwrap_or_else(|err| panic!("{name}: {err}"))
+}
 
 /// A grid of `n` points a side over the box `lo`..`hi`.
 fn grid(lo: V,hi: V,n: usize) -> Vec<V> {
@@ -291,8 +316,9 @@ fn the_layout_makes_the_pairs_material() {
         let points = material_points(r);
         let values = |name: &str| &recorded[&(design.label.clone(),name.to_string())];
         // Every static solid, its value over the whole of both members and over the teeth.
+        let checks = design.read_checks();
         for name in SOLIDS {
-            let (field,want) = (read(&format!("{REF}.{name}")),values(name));
+            let (field,want) = (static_field(&e,&checks,name,r),values(name));
             assert_eq!(want.len(),points.len());
             let worst = points.iter().zip(want).map(|(&p,w)| (field.side(p)-w).abs())
                 .fold(0.,f64::max);
@@ -341,9 +367,12 @@ fn record() {
     for (k,design) in designs().into_iter().enumerate() {
         if !wanted.split(',').any(|w| w == design.label) { continue; }
         let e = design.read();
-        let reading = read_pair(&e,rows[0].1[k]);
+        let reading = design.read_all(&e,rows[0].1[k]);
         println!("column\t{}",design.label);
-        for (name,v) in &reading.values { println!("{name}\t{v:.12e}"); }
+        for (name,_) in &rows {
+            let v = reading.values.iter().find(|(n,_)| n == name).map_or(f64::NAN,|(_,v)| *v);
+            println!("{name}\t{v:.12e}");
+        }
         if k >= 2 { continue; }
         let r = reading.values[0].1;
         let points = material_points(r);
@@ -351,8 +380,9 @@ fn record() {
             MaterialField::read(&e.sketch,fixtures::solid(&e,name),1e-10*r).unwrap();
         let row = |name: &str,values: Vec<f64>| println!("material\t{}\t{name}\t{}",design.label,
             values.iter().map(|v| format!("{v:.12e}")).collect::<Vec<_>>().join("\t"));
+        let checks = design.read_checks();
         for name in SOLIDS {
-            let field = read(&format!("{REF}.{name}"));
+            let field = static_field(&e,&checks,name,r);
             row(name,points.iter().map(|&p| field.side(p)).collect());
         }
         for member in ["pair.pinion.body","pair.gear.body"] {
@@ -444,8 +474,9 @@ fn the_true_hypoid_is_square_offset_on_one_pitch_plane_and_rolls_at_the_tooth_ra
 fn off_recorded(reading: &Reading,rows: &[(String,Vec<f64>)],k: usize) -> (f64,String) {
     let scale = rows[0].1[k];
     let mut worst = (0.,String::new());
-    for ((name,v),(recorded,values)) in reading.values.iter().zip(rows) {
-        assert_eq!(name,recorded);
+    for (name,v) in &reading.values {
+        let values = &rows.iter().find(|(recorded,_)| recorded == name)
+            .unwrap_or_else(|| panic!("`{name}` is not recorded")).1;
         let plain = ["angle","ratio","phase","ax."].iter().any(|w| name.contains(w));
         let d = (v-values[k]).abs()/if plain { 1. } else { scale };
         if !(d <= worst.0) { worst = (d,name.clone()); }
@@ -652,42 +683,41 @@ fn solved_design(label: &str) -> (usize,Elaborated) {
 }
 
 /// **A solve that stops on its iteration limit is rescued** (docs/iteration-limit-rescue-plan.md).
-/// A design solved as solventc solves it and then jittered by a thousandth of its extent (the
+/// A design solved as solventc solves it and then jittered by two thousandths of its extent (the
 /// jittered `common::rough_starts`) is back under the interactive acceptance within the DogLeg's
 /// hundred iterations and not at its solution: without the block rescue (`BlockMode::Off`) the
 /// solve succeeds on status 4, short of the recorded pair.  By default that stop is not
 /// *settled*, the block rescue runs, and the pose it settles on is the recorded pair's to the
-/// 1e-9 the named-quantities gate asks.  Not from every such jitter: of the first 16 seeds, 7
-/// stop on the limit and 5 of those settle a mate or tooth section on another root, so the seeds
-/// here are the two that stop and settle.
+/// 1e-9 the named-quantities gate asks.  Not from every such jitter: of the first 48 seeds of the
+/// 28x49 bevel at module 25.4, 7 stop on the limit and all but this one settle a mate or tooth
+/// section on another root, or none (most jitters that stop run toward a collapsed tip, and the
+/// sections' tip bound turns them into failures, which the rescue meets from the start).
 #[test]
 fn a_stop_on_the_iteration_limit_is_rescued_onto_the_recorded_pair() {
     use gcs_core::solve::{self,BlockMode,SolveOpts};
     let (_,rows) = recorded();
-    let (k,mut e) = solved_design("24x48 m25.4");
+    let (k,mut e) = solved_design("28x49 m25.4");
     let reference = e.sketch.clone();
-    for seed in [5,13] {
-        let start = crate::common::jittered(&reference,0.001,seed);
-        e.sketch = start.clone();
-        let stop = solve::solve(&mut e.sketch,SolveOpts {blocks:BlockMode::Off,..SolveOpts::default()});
-        let (short,_) = off_recorded(&read_pair(&e,rows[0].1[k]),&rows,k);
-        assert!(stop.success && stop.status == 4 && short > 1e-9,"seed {seed}: {short:e} off, {stop:?}");
-        e.sketch = start;
-        let res = solve::solve(&mut e.sketch,SolveOpts::default());
-        assert!(res.settled() && res.method == "blocks","seed {seed}: {res:?}");
-        let (d,at) = off_recorded(&read_pair(&e,rows[0].1[k]),&rows,k);
-        println!("seed {seed}: stopped {short:.1e} off, settled {d:.1e} off at {at}");
-        assert!(d <= 1e-9,"seed {seed}: {d:e} off the recorded pair at {at}");
-    }
+    let start = crate::common::jittered(&reference,0.002,10);
+    e.sketch = start.clone();
+    let stop = solve::solve(&mut e.sketch,SolveOpts {blocks:BlockMode::Off,..SolveOpts::default()});
+    let (short,_) = off_recorded(&read_pair(&e,rows[0].1[k]),&rows,k);
+    assert!(stop.success && stop.status == 4 && short > 1e-9,"{short:e} off, {stop:?}");
+    e.sketch = start;
+    let res = solve::solve(&mut e.sketch,SolveOpts::default());
+    assert!(res.settled() && res.method == "blocks","{res:?}");
+    let (d,at) = off_recorded(&read_pair(&e,rows[0].1[k]),&rows,k);
+    println!("stopped {short:.1e} off, settled {d:.1e} off at {at}");
+    assert!(d <= 1e-9,"{d:e} off the recorded pair at {at}");
 }
 
 /// **A stop in a basin with no solution is restarted in block order**: the 28x49 bevel at module
 /// 25.4, solved and jittered by a thousandth of its extent, whose whole-system DogLeg runs out of
-/// iterations under the interactive acceptance.  Finished from the stop, the block pass stalls
-/// again (short of the tolerance, in the basin where a crown section's narrow tip collapses); so
-/// the pass runs from the start, and the default solve lands where the block path held to 1e-12
-/// does.  (The layout's own seeds started a design or two there once; seeded by places they no
-/// longer do, so the start is made.)
+/// iterations with a crown section's tip narrowing past its bound (status 5, the tip collapsing).
+/// Finished from the stop, the block pass stalls again (short of the tolerance, in the basin
+/// where a crown section's narrow tip collapses); so the pass runs from the start, and the
+/// default solve lands where the block path held to 1e-12 does.  (The layout's own seeds started
+/// a design or two there once; seeded by places they no longer do, so the start is made.)
 #[test]
 fn a_stop_that_stalls_again_is_restarted_in_block_order() {
     use gcs_core::solve::{self,BlockMode,SolveOpts};
@@ -695,10 +725,10 @@ fn a_stop_that_stalls_again_is_restarted_in_block_order() {
     let mut held = design.unsolved().sketch;
     let accurate = SolveOpts {blocks:BlockMode::First,..fixtures::accurate()};
     assert!(solve::solve(&mut held,accurate).success);
-    let start = crate::common::jittered(&held,0.001,13);
+    let start = crate::common::jittered(&held,0.001,7);
     let mut stop = start.clone();
     let a = solve::solve(&mut stop,SolveOpts {blocks:BlockMode::Off,..SolveOpts::default()});
-    assert!(a.success && a.status == 4 && a.method == "dogleg","{a:?}");
+    assert!(!a.success && a.status == solve::BOUND_BROKEN && a.method == "dogleg","{a:?}");
     let mut finished = stop.clone();
     let f = solve::solve(&mut finished,SolveOpts {retry:false,blocks:BlockMode::First,..SolveOpts::default()});
     assert!(f.status != 0 && f.max_residual > 1e-12,"{f:?}");
@@ -711,19 +741,20 @@ fn a_stop_that_stalls_again_is_restarted_in_block_order() {
     assert!(apart(&stop) > 1e-5 && apart(&sk) < 1e-8,"{:e} apart",apart(&sk));
 }
 
-/// **A stop the rescue cannot settle keeps its pose**: the bevel pair solved and then shrunk to
-/// 0.37 about its centroid succeeds on its iteration limit, and the block pass from there does not
-/// settle (its polish stops on the limit too, far off), so the default solve returns the stop
-/// exactly as a solve without the rescue does — the same bits, status, success, residual, counts
-/// and method.
+/// **A stop the rescue cannot settle keeps its pose**: the bevel pair solved, jittered by a
+/// hundredth of its extent and solved under a twelve-iteration limit succeeds on that limit, and
+/// the block pass under it does not settle, from the stop or from the start, so the default solve
+/// returns the stop exactly as a solve without the rescue does — the same bits, status, success,
+/// residual, counts and method.
 #[test]
 fn a_stop_the_rescue_cannot_settle_keeps_its_pose() {
     use gcs_core::solve::{self,BlockMode,SolveOpts};
     let (_,reference) = solved_design("bevel");
-    let start = crate::common::scaled(&reference.sketch,0.37);
+    let start = crate::common::jittered(&reference.sketch,0.01,0);
     let (mut off,mut on) = (start.clone(),start);
-    let a = solve::solve(&mut off,SolveOpts {blocks:BlockMode::Off,..SolveOpts::default()});
-    let b = solve::solve(&mut on,SolveOpts::default());
+    let limited = SolveOpts {max_iter:12,..SolveOpts::default()};
+    let a = solve::solve(&mut off,SolveOpts {blocks:BlockMode::Off,..limited});
+    let b = solve::solve(&mut on,limited);
     assert!(a.success && a.status == 4,"{a:?}");
     assert_eq!(crate::common::bits(&off),crate::common::bits(&on));
     assert_eq!((a.success,a.status,a.max_residual.to_bits(),a.nfev,a.iterations,a.method),

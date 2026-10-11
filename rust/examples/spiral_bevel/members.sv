@@ -3,13 +3,11 @@
 use std
 use design
 use layout
-use blank.member
 use blank.ends
 
 // A member: its blank less `tool` swept under its generating roll and indexed at every tooth.
 component GeneratedMember(design: group, tool: solid, teeth: Int, roll_limit: Angle) {
-  body := solid(design.heel)
-  blank := blank.member.MemberBlank(body, design)
+  body := solid(design.blank)
   private construction removal := solid(tool, under: design.generation,
     from: -roll_limit, to: roll_limit)
   repeat teeth as i {

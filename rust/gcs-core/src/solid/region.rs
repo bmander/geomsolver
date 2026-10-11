@@ -104,10 +104,14 @@ fn fold(sk: &Sketch, solid: usize) -> Result<Meridian, String> {
         }
         RegionShape::Plane { from, .. } => vec![point(from)],
     };
+    // each term's low end as the drawing stands (an unknown's, solved; a cone's half within the
+    // half turn its row reads, `expr::sync_free`)
+    let lows = terms.iter().map(|t| t.lo.value(sk).map_err(|m| format!("{}: {m}", s.name)))
+        .collect::<Result<Vec<f64>, String>>()?;
     // how far everything stands from the origin, for the tolerances and the box
     let mut size: f64 = 1.0;
-    for t in terms {
-        size = size.max(t.lo.abs()).max(t.hi.unwrap_or(0.0).abs());
+    for (t, lo) in terms.iter().zip(&lows) {
+        size = size.max(lo.abs()).max(t.hi.unwrap_or(0.0).abs());
         size = stands(t).into_iter().fold(size, |s, p| s.max(norm(sub(p, origin))));
     }
     let tol = 1e-7 * size;
@@ -181,18 +185,18 @@ fn fold(sk: &Sketch, solid: usize) -> Result<Meridian, String> {
         })
     };
     let mut region = rect(0.0, reach, -reach, reach);
-    for (k, t) in terms.iter().enumerate() {
+    for (k, (t, &lo)) in terms.iter().zip(&lows).enumerate() {
         let tag = k as u32 + 1;
         let fold = |region: &Region, v: f64, op: Op| -> Result<Region, String> {
             boolean(region, &within(t, v)?.tagged(&|_, _| tag), op, tol)
                 .map_err(|e| format!("{}: {e}", what(t)))
         };
         region = match t.cmp {
-            Cmp::Le => fold(&region, t.lo, Op::Common)?,
-            Cmp::Ge => fold(&region, t.lo, Op::Cut)?,
+            Cmp::Le => fold(&region, lo, Op::Common)?,
+            Cmp::Ge => fold(&region, lo, Op::Cut)?,
             Cmp::In => {
-                let hi = fold(&region, t.hi.unwrap_or(t.lo), Op::Common)?;
-                fold(&hi, t.lo, Op::Cut)?
+                let hi = fold(&region, t.hi.unwrap_or(lo), Op::Common)?;
+                fold(&hi, lo, Op::Cut)?
             }
         };
     }

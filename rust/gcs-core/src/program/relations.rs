@@ -582,8 +582,8 @@ fn region_term(sk: &Sketch, c: &Constraint, probe: usize)
         ));
     };
     let at = c.kind.dimension_slot().expect("a bound is on a number");
-    let lo = settled_number(&c.args[at], sk)
-        .ok_or("a region's numbers are stated, and this one reads an unknown")?;
+    let lo = term_number(&c.args[at], sk, c.kind.dimension_kind())
+        .ok_or("a region's number is stated or reads one unknown of the drawing")?;
     let ent = |i: usize| c.args[i].ent();
     let other =
         |a: EntRef, b: EntRef| if a.i() == probe && a.kind == EntKind::Point { b } else { a };
@@ -1281,6 +1281,26 @@ impl Relation {
     }
 }
 
+/// A region term's number (§6.21): a literal or a text reading no unknown as it stands, else one
+/// affine in an unknown of the drawing, read once it is solved (`TermNumber::value`).  `None` for
+/// a text that is neither.
+fn term_number(a: &CArg, sk: &Sketch, kind: SpecKind) -> Option<crate::model::TermNumber> {
+    use crate::model::TermNumber;
+    let e = match a {
+        CArg::Num(v) => return Some(TermNumber::stated(*v)),
+        CArg::Expr(e) => e,
+        _ => return None,
+    };
+    let read = written_aff(a, sk)?;
+    Some(match read.free {
+        None => TermNumber::stated(e.value),
+        Some(name) => TermNumber {
+            c: expr::to_arg_units(kind, read.c),
+            free: Some((name, expr::to_arg_units(kind, read.m))),
+        },
+    })
+}
+
 /// A number as the kernels read it (an angle in radians) where it is one before `expr::evaluate`:
 /// a literal, or a text reading no unknown (`to_arg` values it).  `None` where it reads one.
 fn settled_number(a: &CArg, sk: &Sketch) -> Option<f64> {
@@ -1294,8 +1314,13 @@ fn settled_number(a: &CArg, sk: &Sketch) -> Option<f64> {
 /// What a dimension's text comes to as written, in the document's units (degrees for an angle):
 /// `None` for a number with no text, or a text that reads an unknown.
 fn written_number(a: &CArg, sk: &Sketch) -> Option<f64> {
+    written_aff(a, sk).and_then(|a| a.number())
+}
+
+/// A dimension's text worked out over no scope, in the document's units: a number, or affine in
+/// the one unknown it reads.  `None` for a number with no text, or a text that is neither.
+fn written_aff(a: &CArg, sk: &Sketch) -> Option<expr::Aff> {
     let CArg::Expr(e) = a else { return None };
-    expr::parse_in(&e.text, sk.units).ok()
-        .and_then(|p| expr::eval(&p.body, &Default::default()).ok())
-        .and_then(|a| a.number())
+    let parsed = expr::parse_in(&e.text, sk.units).ok()?;
+    expr::eval(&parsed.body, &Default::default()).ok()
 }

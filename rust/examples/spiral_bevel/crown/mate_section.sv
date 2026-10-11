@@ -39,6 +39,10 @@ component MateSection(lp: point, rp: point, inner_along: line, outer_along: line
   // Each flank a quarter of the backlash outside its shared line.
   lp distance(design.backlash / 4, side: left) inner
   rp distance(design.backlash / 4, side: left) outer
+  // The tip is a land: the rounds meeting in a point satisfy the section's rows too, and are
+  // not the section (§9.6). A hundredth of a module; the narrowest land, the configured
+  // hypoid's, is a sixth.
+  distance(>= 0.01 * design.module) tip
   rounding := crown.rounding.TipRounding(pitch, base, tip, inner_round, outer_round, design,
     normal_module: normal_module)
 }
@@ -47,7 +51,7 @@ preview {
   unit mm
   // The preview crown section's outer mate: the tooth one width outward on its flanks.
   pitch_radius := 0.8 * 2mm * hypot(24, 48) / 2
-  proportions := {pressure: 20deg, shift: 0deg,
+  proportions := {pressure: 20deg, shift: 0deg, module: 2mm,
                        base: 1, dedendum: 1, rounding: 0.3, backlash: 0mm}
   in std.front {
     lp := point

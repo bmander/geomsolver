@@ -8,8 +8,9 @@ use std
 use blank.sphere
 use blank.cone
 
-// The chamfer at one end: `size` along the cone distance from the corner on the `tip` cone (a
-// ConeBoundary), and `size` down from it on the sphere. `apex` is the member's apex, `rim` the
+// The chamfer at one end: `size` along the cone distance from the corner on the `tip` cone (its
+// meridian through `tip.p` and `tip.q`, two of its points in the axial view), and `size` down
+// from it on the sphere. `apex` is the member's apex, `rim` the
 // sphere's point on the pitch generator and `rim_in` the point `size` from it toward the tooth;
 // `cone_line` is the generator the cones are drawn on (apex -> mean point, or its mirror across
 // the axis for the gear). Each point meets a line and a circle about the apex whose other

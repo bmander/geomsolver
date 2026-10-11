@@ -1434,6 +1434,15 @@ it) and close the material all round; the solid is then one revolution of its me
 exactly. A cylinder alone, or a ball off the axis, is refused where the solid is evaluated. Cut,
 bound, union, sweep and place it as any solid.
 
+Its numbers may be the drawing's (0.63): leave a radius unbound and state a point on the set, and
+the solid reads the radius as solved — how the hypoid's blank is sized by its layout
+(`spiral_bevel/blank/member.sv`).
+
+```sv
+heel := std.Sphere(apex, r: hint(50mm))
+span.heel coincident heel                     // the radius is the drawing's
+```
+
 ### 1.15 Spatial geometry read after the solve
 
 These declarations name exact geometry derived from solved entities. Except for envelopes in the
