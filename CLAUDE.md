@@ -1587,6 +1587,22 @@ Conventions:
   gesture or no), and writes once at release through `edit::set_sweep` with
   `SolidSweep::thick(way, text)` (the bracket list replaced, `checked` as every gesture edit),
   taken without an undo push so it joins the click's step.  `tests/extrude.rs` is the gate.
+- **A face of a solid is a set** (#162 F5, [0.66]): `b0.near`, `b0.far`, a straight side `b0.ab`
+  and `body.b0.near` name the face's carrier, made by the flattener from the solid's own text
+  before the uses are expanded (`flatten/faces.rs`, `Walk::face_sets`; a face written in place
+  too): a cap `{ p | p distance(D, along: n) f0#plane }` (`coincident` at 0), a side `{ p | p
+  level(M) e.p1 }` over a hidden axis `M` square to the edge, parallel to the plane.  `f0#plane`
+  is a name the source cannot write, bound by the elaborator to the plane the face's edges are
+  drawn in before the constraints (`planes::face_planes`, `Expansion::face_planes`, which seeds
+  `M` too).  Refused at the use (E040): a curved side, a `through:` solid's caps, a non-prism.
+  **Sketching on a face** is `v1.origin coincident b0.near` + `v1 tangent(at: v1.origin)
+  b0.near` (`at:` takes a path), written by `edit::sketch_on_face` seeded on the numeric twin
+  `solid::carrier` where the eye's ray met it (`SolidHit::at`); `edit::face_plane` finds a plane
+  already lying there, which the app chooses instead (a double-click on a face, or Solids ▸
+  Sketch on face, `k`).  A plane dropped from a plane states `P distance(d) v` and is sized as an
+  extrusion is (`LiveExtent` kind `offset`, `workspace::offset_handle`/`offset_at`; previewed by
+  the constraint's number and a solve, written once by `set_dimension`).  `tests/face_sets.rs`
+  and `tests/edit_datums.rs` are the gates.
 - **A chain is a named traversal** (§6.6; issue #49, item 3). `profile := line -> … -> close`
   records a `NamedChain` beside the usual desugared declarations and constraints. The flattener
   scopes the binding and its links like ordinary component members; edges stay `boss.ab`, the

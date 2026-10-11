@@ -375,6 +375,21 @@ export class Document {
       (p, n) => core().gcs_elab_add_datum(this.h, this.sketch.handle, p, n)));
   }
 
+  /** **Sketch on a face**: a plane lying on face `face` (its path, `b0.near`) of object `solid`
+   *  (its index), its origin where the eye's ray met it (`at`, in space) or the face's middle,
+   *  touching the face there — so it follows the solid.  `names[0]` is the plane. */
+  sketchOnFace(solid: number, face: string, at?: [number, number, number], name?: string): Edit {
+    return edit(withJson({ face, at, name },
+      (p, n) => core().gcs_elab_sketch_on_face(this.h, this.sketch.handle, solid, p, n)));
+  }
+
+  /** The plane already lying on face `face` of object `solid`, by name — the profile's own for a
+   *  cap on it — or null. */
+  facePlane(solid: number, face: string): string | null {
+    return takeJson<string | null>(withStr(face,
+      (p, n) => core().gcs_elab_face_plane_json(this.h, this.sketch.handle, solid, p, n)));
+  }
+
   /** **Extrude** the region a click found — its loops by name — as one splice: the face, the
    *  solid swept from it at a round default depth (or `through` the body), and with a body the
    *  body rule.  `names` is the solid, then the faces. */

@@ -370,6 +370,8 @@ pub struct SolidHit {
     pub solid: usize,
     pub face: String,
     pub depth: f64,
+    /// Where in space the eye's ray met the face.
+    pub at: [f64; 3],
 }
 
 /// The object face the eye's ray through `at` meets nearest the viewer — what a click on a solid
@@ -393,7 +395,8 @@ pub fn pick_solid(sk: &Sketch, proj: &Projection, at: (f64, f64)) -> Option<Soli
                     continue;
                 };
                 if best.as_ref().is_none_or(|b| depth > b.depth) {
-                    best = Some(SolidHit { solid: i, face: group.path.clone(), depth });
+                    let at = std::array::from_fn(|k| foot[k] + depth * toward[k]);
+                    best = Some(SolidHit { solid: i, face: group.path.clone(), depth, at });
                 }
             }
         }
@@ -479,8 +482,47 @@ pub fn extrude_handle(sk: &Sketch, proj: &Projection, solid: usize) -> Option<Ex
 /// ray through `at` passes nearest — what dragging the arrow's tip to `at` sizes it to.
 pub fn extent_at(sk: &Sketch, proj: &Projection, solid: usize, at: (f64, f64)) -> Option<f64> {
     let (b, d, ..) = seen_prism(sk, proj, solid)?;
-    let along = (at.0 - b.0) * d.0 + (at.1 - b.1) * d.1;
-    readable(d).then(|| along / (d.0 * d.0 + d.1 * d.1))
+    along_seen(b, d, at)
+}
+
+/// How far along the seen line `base + t·step` the eye's ray through `at` passes nearest: `t`, or
+/// `None` where the eye looks down the line.
+fn along_seen(base: (f64, f64), step: (f64, f64), at: (f64, f64)) -> Option<f64> {
+    let along = (at.0 - base.0) * step.0 + (at.1 - base.1) * step.1;
+    readable(step).then(|| along / (step.0 * step.0 + step.1 * step.1))
+}
+
+/// The arrow an offset plane is sized by (#162 F5), seen: from the plane it is set off to that
+/// plane's normal times the distance — no tip where the eye looks down the normal — and the
+/// distance.
+#[derive(Clone, Debug, PartialEq)]
+pub struct OffsetHandle {
+    pub base: (f64, f64),
+    pub tip: Option<(f64, f64)>,
+    pub distance: f64,
+}
+
+/// `P distance(d) Q`, the constraint `id`, as the eye sees its arrow: `P`'s origin, one unit of
+/// `P`'s normal, and `d` — `None` for any other constraint.
+fn seen_offset(sk: &Sketch, proj: &Projection, id: u32) -> Option<((f64, f64), (f64, f64), f64)> {
+    let c = sk.constraint(id).filter(|c| c.kind == crate::constraints::CKind::PlaneDistance)?;
+    let p = c.entities().first()?.i();
+    let b = sk.basis(p);
+    Some((proj.seen(b.o), proj.seen(b.normal()), c.args.get(2)?.value(sk)))
+}
+
+/// The arrow the plane distance `id` is sized by, seen: `None` for any other constraint.
+pub fn offset_handle(sk: &Sketch, proj: &Projection, id: u32) -> Option<OffsetHandle> {
+    let (base, step, distance) = seen_offset(sk, proj, id)?;
+    let tip = readable(step).then(|| (base.0 + distance * step.0, base.1 + distance * step.1));
+    Some(OffsetHandle { base, tip, distance })
+}
+
+/// What dragging the plane distance `id`'s arrow to `at` sizes it to: `extent_at` for a plane set
+/// off another.
+pub fn offset_at(sk: &Sketch, proj: &Projection, id: u32, at: (f64, f64)) -> Option<f64> {
+    let (base, step, _) = seen_offset(sk, proj, id)?;
+    along_seen(base, step, at)
 }
 
 /// Every entity whose figure touches the box `lo`–`hi` on the eye's picture plane — a rubber

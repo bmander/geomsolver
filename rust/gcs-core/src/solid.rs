@@ -36,6 +36,7 @@ pub use field_mesh::{FieldMesher, FieldMeshing, FieldProgress, FieldSurface, Exa
 pub use field_mesh::{first_pass as field_first_pass, creases as field_creases};
 pub mod cad;
 pub mod region;
+pub mod carrier;
 mod profile;
 mod primitive;
 mod document;

@@ -1977,8 +1977,8 @@ test('the Extrude tool washes the region under the pointer, and a click drops a 
   assert.ok(view.source.includes('f0 := face(pq, qr, rs, sp)\nb0 := solid(f0, depth: '),
             view.source);
   assert.deepEqual(view.selectedSolids.map((s) => s.name), ['b0']);
-  assert.equal(view.liveExtent?.solid, 'b0');
-  assert.equal(view.liveExtent?.way, 'behind');
+  assert.deepEqual(view.liveExtent && { ...view.liveExtent, d: 0 },
+                   { kind: 'extrusion', solid: 'b0', way: 'behind', d: 0 });
   assert.equal(view.tool, 'extrude', 'the tool stays down for the next');
   // Escape: done sizing, the tool still down; again, the tool goes
   view.cancelTool();
@@ -2055,4 +2055,65 @@ test('in orbit mode a drag turns the workspace, whatever tool is down, and draws
   view.setOrbitMode(false);
   click(view, 10, 10);
   assert.equal(view.sketch.points.length, points + 1, 'out of orbit mode the tool draws again');
+});
+
+/** A double-click at a canvas point. */
+function dblclickAt(view: SketchView, at: [number, number]): void {
+  (view.canvas as ReturnType<typeof fakeCanvas>).fire('dblclick', { clientX: at[0], clientY: at[1] });
+}
+
+test('double-clicking a face of a solid draws on it: a plane written lying on it, or the one '
+     + 'already there', () => {
+  const view = docView(BLOCK);
+  assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
+  view.orbit = { az: 0.6, el: 0.5 };
+  // the side over `cd`, at y = 10, faces the eye from here: a plane is written on it
+  const before = view.source;
+  const side = seenAt(view, [10, 10, -2.5]);
+  dblclickAt(view, side);
+  assert.ok(view.source.endsWith('v0.origin coincident block.cd\n'
+                                 + 'v0 tangent(at: v0.origin) block.cd\n'), view.source);
+  assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
+  assert.equal(view.planeName, 'v0', 'and drawn on');
+  assert.ok(Math.abs(planeNamed(view, 'v0').frame3.o[1] - 10) < 1e-9, 'on the side, at y = 10');
+  // again, off the new plane's origin and axes: the plane lying there is chosen, nothing written
+  view.choosePlane('std.front', false);
+  const written = view.source;
+  dblclickAt(view, seenAt(view, [5, 10, -4.5]));
+  assert.equal(view.planeName, 'v0');
+  assert.equal(view.source, written);
+  view.undo();
+  assert.equal(view.source, before, 'the sketch on the face is one undo step');
+  // the top cap lies on std.top, the plane the block was drawn on: that is chosen
+  dblclickAt(view, seenAt(view, [10, 5, 0]));
+  assert.equal(view.planeName, 'std.top');
+  assert.equal(view.source, before);
+});
+
+test('a plane set off another is sized by its arrow, written once, in the plane\'s undo step',
+     () => {
+  const view = docView(DATUMS);
+  assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
+  view.selected = [view.doc.entity('std.top')!];
+  assert.ok(view.addDatum('plane'));
+  assert.ok(/v0 parallel std\.top\nstd\.top distance\([\d.]+\) v0\n/.test(view.source),
+            view.source);
+  assert.equal(view.liveExtent?.kind, 'offset');
+  view.orbit = { az: 0.6, el: 0.5 };
+  const tip = view.extentArrow()?.tip;
+  assert.ok(tip, 'an arrow to take hold of');
+  const programs: string[] = [];
+  view.onProgram = () => programs.push(view.source);
+  drag(view, tip, seenAt(view, [0, 0, 30]));
+  assert.ok(view.source.includes('std.top distance(30) v0\n'), view.source);
+  assert.equal(new Set(programs).size, 1, 'written once, at the release');
+  assert.ok(Math.abs(planeNamed(view, 'v0').frame3.o[2] - 30) < 1e-9, 'set off to 30');
+  // typed instead
+  assert.equal(view.commitExtent('12'), null);
+  assert.ok(view.source.includes('std.top distance(12) v0\n'), view.source);
+  // a press elsewhere is done with it
+  click(view, 200, 200);
+  assert.equal(view.liveExtent, null);
+  view.undo();
+  assert.ok(!view.source.includes('v0'), `the plane and its sizing are one undo step\n${view.source}`);
 });

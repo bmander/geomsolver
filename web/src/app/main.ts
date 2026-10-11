@@ -116,7 +116,16 @@ const toolTopic = (label: string, tools: [string, Tool, string][], rest: Toolbar
   addTopic(barTools, label, [...tools.map(toolButton), ...(rest.length ? [null, ...rest] : [])])
     .slice(0, tools.length).forEach((b, i) => toolButtons.set(tools[i][1], b));
 toolTopic('Elements', ELEMENT_TOOLS, TOOL_BUTTONS);
-toolTopic('Solids', SOLID_TOOLS);
+toolTopic('Solids', SOLID_TOOLS, [
+  { label: 'Sketch on face', key: 'k',
+    onClick: () => {
+      const [pick] = view.selectedSolids;
+      if (pick) view.sketchOnFace(pick);
+      else toast('select a face of a solid first — or double-click it');
+    },
+    title: 'Draw on the selected face of a solid: the plane lying there, or a plane written onto '
+         + 'it that follows the solid (double-click a face does the same)' },
+]);
 /* The workspace's own buttons, in its corner: orbit mode, where one finger turns the view, and
  * delete, which a phone has no key for. */
 const VIEW_BUTTONS: ToolbarButton[] = [

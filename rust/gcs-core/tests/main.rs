@@ -114,6 +114,7 @@ mod sets;
 mod applied;
 mod membership;
 mod millimetres;
+mod face_sets;
 mod plane_tangent;
 mod numeric_parts;
 mod two_planes;

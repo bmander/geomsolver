@@ -104,6 +104,12 @@ export function bindEvents(v: SketchView): void {
       insertControl(v, hit, ...v.s2wIn(v.viewOf(hit.ctrl[0]), ...sp));
       return;
     }
+    // on a solid's face, the face drawn on (#162 F5): the plane lying there chosen, or written
+    const face = hit ? null : v.solidAt(...sp);
+    if (face) {
+      v.sketchOnFace(face);
+      return;
+    }
     // and on a pane, with nothing drawn under the pointer, it is that plane chosen: the next thing
     // is drawn there.  The eye stays where it is — the pane was double-clicked where it was seen
     const pane = hit ? null : v.paneAt(...sp);
@@ -297,11 +303,13 @@ export function onPointerDown(v: SketchView, e: PointerEvent): void {
     v.gesture = orbitGesture(v, sp);
     return;
   }
-  // the arrow of an extrusion being sized: taking hold of it sizes it
+  // the arrow of an extrusion or an offset plane being sized: taking hold of it sizes it, and a
+  // press anywhere else is done with an offset plane's
   if (onExtentArrow(v, sp)) {
     v.gesture = extentGesture(v);
     return;
   }
+  if (v.liveExtent?.kind === 'offset') v.endExtent();
   if (v.tool !== 'select') {
     toolClick(v, sp, { alt: e.altKey, shift: e.shiftKey });
     return;
@@ -618,9 +626,9 @@ function onExtentArrow(v: SketchView, sp: [number, number]): boolean {
   return !!tip && Math.hypot(tip[0] - sp[0], tip[1] - sp[1]) < v.pickPx + 4;
 }
 
-/** Dragging an extrusion's arrow: it is sized where the eye sees the pointer along its normal,
- *  both ways with ⇧, and written when it is let go — one edit, joining the extrusion's own undo
- *  step. */
+/** Dragging an extrusion's or an offset plane's arrow: it is sized where the eye sees the pointer
+ *  along its normal (an extrusion both ways with ⇧), and written when it is let go — one edit,
+ *  joining the undo step that made it. */
 function extentGesture(v: SketchView): Gesture {
   return {
     transient: true,
@@ -646,6 +654,10 @@ export function hover(v: SketchView, sp: [number, number]): void {
     return;
   }
   if (v.tool !== 'select') return;
+  if (onExtentArrow(v, sp)) {
+    v.canvas.style.cursor = 'grab';
+    return;
+  }
   // a solid promises no cursor of its own, so a pointer move does not cast a ray for one
   const at = whatIsAt(v, sp, false);
   v.canvas.style.cursor =

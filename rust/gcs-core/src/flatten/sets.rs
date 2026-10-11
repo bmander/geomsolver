@@ -36,6 +36,13 @@ pub(super) struct Site {
     depth: usize,
 }
 
+impl Site {
+    /// A set made other than by a statement the walk met: a face of a solid (`faces`).
+    pub(super) fn new(lit: SetLit, scope: Scope, depth: usize) -> Site {
+        Site { lit, scope, depth }
+    }
+}
+
 /// Where the walk made a set: the statement that made it — the set written in place, or an
 /// instance of a family — at its path, and the scope that statement stands in.
 pub(super) struct Made<'m> {
@@ -707,7 +714,7 @@ fn makes_points(lit: &SetLit) -> Option<String> {
 
 /// A relation a set's use states, written as the source would: its word and where the word is
 /// said, its fixity, operands and parentheses, and the statement's span.
-fn relation(
+pub(super) fn relation(
     (word, at): (&str, Span),
     fixity: crate::constraints::Fixity,
     ops: Vec<Ref>,
@@ -732,7 +739,7 @@ fn at_point(w: &crate::syntax::Written) -> Option<Ref> {
 
 /// Whether a written relation is one a set may be used by: `coincident`, `tangent`, `inside` or
 /// `outside` between two operands, or a distance from one (`reaches`).
-fn may_use(w: &crate::syntax::Written) -> bool {
+pub(super) fn may_use(w: &crate::syntax::Written) -> bool {
     w.ops.len() == 2
         && (matches!(w.word.text.as_str(), "coincident" | "tangent" | "inside" | "outside")
             || reaches(w))

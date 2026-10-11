@@ -2306,6 +2306,7 @@ pub unsafe extern "C" fn gcs_workspace_pick_solid_json(h: *mut Sketch, az: f64, 
                 ("solid", Json::Int(hit.solid as i64)),
                 ("face", Json::Str(hit.face)),
                 ("depth", Json::Num(hit.depth)),
+                ("at", Json::Arr(hit.at.iter().map(|&x| Json::Num(x)).collect())),
             ]),
             None => Json::Null,
         })
@@ -2345,6 +2346,40 @@ pub unsafe extern "C" fn gcs_workspace_extent_at(h: *mut Sketch, az: f64, el: f6
         let s = sk(h);
         let proj = Projection::new(s, az, el);
         extent_at(s, &proj, solid.max(0) as usize, (x, y)).unwrap_or(f64::NAN)
+    })
+}
+
+/// The arrow the plane distance `id` is sized by, seen by the eye at `az`, `el`: `{base: [x, y],
+/// tip: [x, y] | null, distance}` — or `null` for any other constraint: `workspace::offset_handle`.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_workspace_offset_handle_json(h: *mut Sketch, az: f64, el: f64,
+                                                          id: u32) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || {
+        use gcs_core::overview::workspace::{offset_handle, Projection};
+        let s = sk(h);
+        let proj = Projection::new(s, az, el);
+        let pt = |p: (f64, f64)| Json::Arr(vec![Json::Num(p.0), Json::Num(p.1)]);
+        out_json(match offset_handle(s, &proj, id) {
+            Some(k) => json::object([
+                ("base", pt(k.base)),
+                ("tip", k.tip.map_or(Json::Null, pt)),
+                ("distance", Json::Num(k.distance)),
+            ]),
+            None => Json::Null,
+        })
+    })
+}
+
+/// What dragging the plane distance `id`'s arrow to (x, y) sizes it to, or NaN:
+/// `workspace::offset_at`.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_workspace_offset_at(h: *mut Sketch, az: f64, el: f64, id: u32,
+                                                 x: f64, y: f64) -> f64 {
+    guard(f64::NAN, move || {
+        use gcs_core::overview::workspace::{offset_at, Projection};
+        let s = sk(h);
+        let proj = Projection::new(s, az, el);
+        offset_at(s, &proj, id, (x, y)).unwrap_or(f64::NAN)
     })
 }
 
@@ -4234,6 +4269,40 @@ pub unsafe extern "C" fn gcs_elab_add_datum(h: *mut Elaborated, s: *mut Sketch, 
         let from = v.get("from").map(strings).unwrap_or_default();
         out_edit(gcs_core::edit::add_datum(&*h, sk(s), kind, &from, text("current").as_deref(),
                                            text("name").as_deref()))
+    })
+}
+
+/// Sketch on a face of object `solid`, `{face, at?: [x, y, z], name?}` — a plane lying on face
+/// `face`, seeded where the eye's ray met it on the live drawing `s`: `edit::sketch_on_face`.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_elab_sketch_on_face(h: *mut Elaborated, s: *mut Sketch, solid: i32,
+                                                 ptr: *const u8, len: usize) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || {
+        let v = as_json(ptr, len);
+        let face = v.get("face").map(|x| x.as_str().to_string()).unwrap_or_default();
+        let at = v.get("at").and_then(|a| match a.arr() {
+            [x, y, z] => Some([x.as_f64(), y.as_f64(), z.as_f64()]),
+            _ => None,
+        });
+        let name = v.get("name").map(|x| x.as_str().to_string());
+        let Ok(solid) = usize::try_from(solid) else {
+            set_error("no solid to sketch on");
+            return std::ptr::null_mut();
+        };
+        out_edit(gcs_core::edit::sketch_on_face(&*h, sk(s), solid, &face, at, name.as_deref()))
+    })
+}
+
+/// The plane already lying on face `face` of object `solid`, by name, or `null`:
+/// `edit::face_plane`.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_elab_face_plane_json(h: *mut Elaborated, s: *mut Sketch, solid: i32,
+                                                  ptr: *const u8, len: usize) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || {
+        let face = std::str::from_utf8(std::slice::from_raw_parts(ptr, len)).unwrap_or_default();
+        let found = usize::try_from(solid).ok()
+            .and_then(|i| gcs_core::edit::face_plane(&*h, sk(s), i, face));
+        out_json(found.map_or(Json::Null, Json::Str))
     })
 }
 
