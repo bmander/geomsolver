@@ -2074,8 +2074,8 @@ pub unsafe extern "C" fn gcs_field_mesher_free(m: *mut Mesher) {
 /// **What a Boolean would make of a body, before it is written** (#162 F4): `{target, word:
 /// "union" | "cut" | "bound", tools: [index…]}` in, `Sketch::preview_body`'s mesh out as `{faces,
 /// positions, normals}` — the shape `gcs_solid_mesh`'s three calls give apart, in world
-/// coordinates.  One JSON answer rather than three buffers: it is asked once a pick, not per
-/// frame, and nothing else would read a memo of it.  Null with the cause where it is refused.
+/// coordinates, in one JSON answer: it is asked once a pick, never per frame.  Null with the
+/// cause where it is refused.
 #[no_mangle]
 pub unsafe extern "C" fn gcs_solid_preview_json(h: *mut Sketch, ptr: *const u8, len: usize) -> *mut u8 {
     guard(std::ptr::null_mut(), move || {
@@ -2092,19 +2092,10 @@ pub unsafe extern "C" fn gcs_solid_preview_json(h: *mut Sketch, ptr: *const u8, 
             Err(message) => { set_error(message); return std::ptr::null_mut(); }
         };
         let m = solid.world_mesh();
-        let nums = |xs: &[f64]| Json::Arr(xs.iter().map(|&x| Json::Num(x)).collect());
         out_json(Json::Obj(vec![
-            ("faces".into(), Json::Arr(m.groups.iter().map(|g| {
-                let mut o = Json::Obj(vec![
-                    ("path".into(), Json::Str(g.path.clone())),
-                    ("start".into(), Json::Int(g.start as i64)),
-                    ("count".into(), Json::Int(g.count as i64)),
-                ]);
-                if g.smooth { o.set("smooth", Json::Bool(true)); }
-                o
-            }).collect())),
-            ("positions".into(), nums(&m.positions)),
-            ("normals".into(), nums(&m.normals)),
+            ("faces".into(), face_groups(&m)),
+            ("positions".into(), Json::from(m.positions)),
+            ("normals".into(), Json::from(m.normals)),
         ]))
     })
 }
@@ -2119,24 +2110,24 @@ pub unsafe extern "C" fn gcs_solid_faces_json(h: *mut Sketch, idx: i32, unit: f6
             Ok(s) => s,
             Err(message) => { set_error(message); return std::ptr::null_mut(); }
         };
-        let m = solid.mesh();
-        out_json(gcs_core::json::Json::Arr(
-            m.groups
-                .iter()
-                .map(|g| {
-                    let mut o = gcs_core::json::Json::Obj(vec![
-                        ("path".into(), gcs_core::json::Json::Str(g.path.clone())),
-                        ("start".into(), gcs_core::json::Json::Int(g.start as i64)),
-                        ("count".into(), gcs_core::json::Json::Int(g.count as i64)),
-                    ]);
-                    if g.smooth {
-                        o.set("smooth", gcs_core::json::Json::Bool(true));
-                    }
-                    o
-                })
-                .collect(),
-        ))
+        out_json(face_groups(solid.mesh()))
     })
+}
+
+/// A mesh's faces as `[{ "path", "start", "count", "smooth" }]` — what `gcs_solid_faces_json`
+/// and a preview's `faces` say, one shape for `core/mesh.ts`'s one `Face`.
+fn face_groups(m: &gcs_core::mesh::Mesh) -> Json {
+    Json::Arr(m.groups.iter().map(|g| {
+        let mut o = Json::Obj(vec![
+            ("path".into(), Json::Str(g.path.clone())),
+            ("start".into(), Json::Int(g.start as i64)),
+            ("count".into(), Json::Int(g.count as i64)),
+        ]);
+        if g.smooth {
+            o.set("smooth", Json::Bool(true));
+        }
+        o
+    }).collect())
 }
 
 /// **A solid as a `.glb`**: binary glTF, every face of the object a named node, positions in
@@ -4425,8 +4416,8 @@ pub unsafe extern "C" fn gcs_elab_face_plane_json(h: *mut Elaborated, s: *mut Sk
     })
 }
 
-/// The body rule, `{word: "union" | "cut" | "bound", what, body}`, `what` one solid's name or a
-/// list of them, a statement each in one splice: `edit::add_body_word`.
+/// The body rule, `{word: "union" | "cut" | "bound", what: [..], body}`, a statement for each
+/// solid in `what`, in one splice: `edit::add_body_word`.
 #[no_mangle]
 pub unsafe extern "C" fn gcs_elab_add_body_word(h: *mut Elaborated, ptr: *const u8, len: usize) -> *mut u8 {
     guard(std::ptr::null_mut(), move || {
@@ -4436,11 +4427,7 @@ pub unsafe extern "C" fn gcs_elab_add_body_word(h: *mut Elaborated, ptr: *const 
             set_error(format!("`{}` is not a body word: union, cut or bound", text("word")));
             return std::ptr::null_mut();
         };
-        let what = match v.get("what") {
-            Some(Json::Str(one)) => vec![one.clone()],
-            Some(list) => strings(list),
-            None => Vec::new(),
-        };
+        let what = v.get("what").map(strings).unwrap_or_default();
         let what: Vec<&str> = what.iter().map(String::as_str).collect();
         out_edit(gcs_core::edit::add_body_word(&(*h).program, word, &what, text("body")))
     })

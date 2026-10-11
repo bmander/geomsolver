@@ -1955,14 +1955,14 @@ test('a face, its solid and the body rule are written through the edit API by na
   const made = hf.addSolid({ face: 'hf', through: 'b0', name: 'bore' });
   assert.equal(made.refused, null);
   const bore = Document.read(made.text);
-  const cut = bore.addBodyWord('cut', 'bore', 'b0');
+  const cut = bore.addBodyWord('cut', ['bore'], 'b0');
   assert.equal(cut.refused, null);
   assert.ok(cut.text.endsWith('bore cut b0\n'), cut.text);
   assert.ok(Document.read(cut.text).ok);
   // refused with the cause, the text untouched: a mixture, and what the elaborator refuses
   assert.ok(withFace.addSolid({ face: 'f0', depth: '8', about: 'da' }).refused);
   assert.ok(withFace.addSolid({ face: 'nothing', depth: '8' }).refused);
-  assert.ok(bore.addBodyWord('cut', 'b0', 'b0').refused);
+  assert.ok(bore.addBodyWord('cut', ['b0'], 'b0').refused);
 });
 
 test('a Boolean is previewed by the core before it is written, and written as one splice', () => {
@@ -1990,7 +1990,7 @@ test('a Boolean is previewed by the core before it is written, and written as on
   assert.deepEqual(span('bound', [boss]), [35, 45, 15, 25], 'what the two share');
   assert.deepEqual(span('cut', [boss]), [0, 60, 0, 40]);
   const before = d.solids().length;
-  assert.throws(() => preview(d.sketch, plate, 'cut', [plate]), /made of itself/);
+  assert.throws(() => preview(d.sketch, plate, 'cut', [plate]), /cut itself/);
   assert.equal(d.solids().length, before, 'a preview writes nothing');
   const both = d.addBodyWord('union', ['boss', 'pin'], 'plate');
   assert.equal(both.refused, null);

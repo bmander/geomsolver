@@ -45,8 +45,9 @@ export function mesh(sk: Sketch, idx: number, unit: number): Mesh {
 
 /** **What a Boolean would make of `target`** (indices into the sketch's solids): its mesh with
  *  `tools` joined by `word`, as the statements would make it, written nowhere — the core's
- *  `Sketch::preview_body`.  Throws with the cause where it is refused: a tool that is the target
- *  or made of it, or a solid with no surface to show yet. */
+ *  `Sketch::preview_body`.  Throws with the cause where it is refused: where the statements
+ *  would be (a tool that is the target or made of it), or a body with a swept operand, whose
+ *  surface is meshed elsewhere and never for a preview. */
 export function preview(sk: Sketch, target: number, word: BodyWord, tools: number[]): Mesh {
   const m = takeJson<{ faces: Face[]; positions: number[]; normals: number[] } | null>(
     withJson({ target, word, tools }, (p, n) => core().gcs_solid_preview_json(sk.handle, p, n)));

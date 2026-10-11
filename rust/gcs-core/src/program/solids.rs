@@ -158,31 +158,14 @@ pub(super) fn solids(
         // its index, so everything already reading it (a `through:` extent, a body's operand, a
         // view) reads the whole object, and the sweep moves to a stock of the same name, so a
         // face is called what it was (`plate.near`) whether or not anything stands on it
-        if sk.solids.get(b.i()).is_some_and(|s| !matches!(s.def, SolidDef::Body { .. })) {
-            let swept = sk.solids[b.i()].clone();
-            let stock = sk.solids.len() as u32;
-            sk.solids.push(swept);
-            sk.solids[b.i()].def =
-                SolidDef::Body { stock, on: Vec::new(), through: Vec::new(), bound: Vec::new() };
-            map.also_made(b, EntRef::solid(stock as usize));
+        if let Some(stock) = sk.as_body(b.i()) {
+            map.also_made(b, EntRef::solid(stock));
         }
-        let Some(set) = sk.solids.get_mut(b.i()).and_then(|s| s.def.body_set(word)) else { continue };
-        set.push(a.idx);
         // **the statement that would close a cycle is the one refused**, where it is written —
         // so a gesture writing it is refused at the gesture (#162 F4) — and the body is left as
-        // the statements before it made it.  Asked once the operand is in, since a `through:`
-        // reads only what its body adds
-        if crate::solid::reaches(sk, b.idx, b.idx) {
-            sk.solids[b.i()].def.body_set(word).and_then(Vec::pop);
-            diags.push(Diag {
-                code: Code::E041,
-                span: at,
-                stmt: Some(st.id),
-                message: format!(
-                    "`{}` would be made of itself: `{}` is made of it",
-                    into.root.text, what.root.text
-                ),
-            });
+        // the statements before it made it
+        if let Err(why) = sk.join_body(b.i(), word, a.i()) {
+            diags.push(Diag { code: Code::E041, span: at, stmt: Some(st.id), message: why });
         }
     }
     // -- the pictures the document asks for (§6.11) ---------------------------

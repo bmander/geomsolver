@@ -100,8 +100,8 @@ export class Box3D {
    *  bodies picked change or the objects are re-cut, and nothing while no Boolean is pending. */
   private readonly previewed = new THREE.Group();
   /** The Boolean the preview is of — word, target and tools — and whether the core gave one: a
-   *  refused preview (a swept body still meshing) leaves the target standing and the tools as
-   *  ghosts, which say as much. */
+   *  refused preview (a body with a swept operand, never previewed) leaves the target standing
+   *  and the tools as ghosts, which say as much. */
   private preview: { key: string | null; shown: boolean } = { key: null, shown: false };
 
   constructor(readonly canvas: HTMLCanvasElement | null) {

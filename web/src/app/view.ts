@@ -1110,7 +1110,7 @@ export class SketchView {
   setTool(tool: Tool): void {
     tools.setTool(this, tool);
     // a Boolean tool starts from the bodies already selected: the first is the target
-    if (combines(tool)) this.tellCombine();
+    this.tellCombine();
   }
 
   /* The picture traced over, if there is one.  It is view state and not document state, so
@@ -1233,13 +1233,10 @@ export class SketchView {
    *  gesture's state**, in the order it was clicked, so bodies selected before the tool was taken
    *  up are where it starts, and the box previews what it would write (`combining`). */
   combineAt(sx: number, sy: number): void {
-    const word = combines(this.tool);
-    if (!word) return;
     const pick = this.solidAt(sx, sy);
     const [target] = this.selectedSolids;
     if (!pick) {
-      this.onStatus(target ? `click a body to ${COMBINE[word].tools}, or ${target.name} again to `
-                             + `write it` : `click ${COMBINE[word].target}`);
+      this.tellCombine();
       return;
     }
     if (target && pick.index === target.index) {

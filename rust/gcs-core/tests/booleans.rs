@@ -1,13 +1,13 @@
 //! **Union, Cut, Intersect** (#162 F4): a target body and one or more tool bodies picked in the
 //! workspace, written `tool union|cut|bound target` as one splice — and shown before it is written
-//! by `Sketch::preview_body`, which evaluates what the statements would make of the target and
-//! leaves the drawing as it was.
+//! by `Sketch::preview_body`, which joins the tools by the elaborator's own step on a copy of the
+//! drawing and leaves the drawing as it was.
 
 use gcs_core::edit::{self, Kind};
-use gcs_core::program::{elaborate, Elaborated};
+use gcs_core::program::Elaborated;
 use gcs_core::solid::ApproximationPolicy::Report;
 use gcs_core::syntax::{BodyWord, Program};
-use crate::common::parse;
+use crate::common::{ent, parse, read};
 use std::f64::consts::PI;
 
 /// A 60 × 40 plate 4 deep behind the front, a 10 × 10 boss standing through it from 8 behind to
@@ -62,14 +62,8 @@ fn prog_of(src: &str) -> Program {
     p
 }
 
-fn read(src: &str) -> Elaborated {
-    let e = elaborate(&prog_of(src));
-    assert!(e.ok(), "{:?}\n{src}", e.errors().map(|d| d.message.clone()).collect::<Vec<_>>());
-    e
-}
-
 fn index(e: &Elaborated, name: &str) -> usize {
-    e.map.ent_named(name).unwrap_or_else(|| panic!("no `{name}`")).i()
+    ent(e, name).i()
 }
 
 fn volume(e: &Elaborated, name: &str) -> f64 {
@@ -82,7 +76,7 @@ fn near(got: f64, want: f64, what: &str) {
 }
 
 /// The preview of `tools` joined to `target` by `word`, by volume.
-fn previewed(e: &mut Elaborated, target: &str, word: BodyWord, tools: &[&str]) -> f64 {
+fn previewed(e: &Elaborated, target: &str, word: BodyWord, tools: &[&str]) -> f64 {
     let tools: Vec<usize> = tools.iter().map(|t| index(e, t)).collect();
     let target = index(e, target);
     e.sketch.preview_body(target, word, &tools).unwrap().volume()
@@ -106,8 +100,8 @@ fn the_preview_is_what_the_statements_make() {
     ];
     for (word, tools, want) in cases {
         let what = format!("{tools:?} {}", word.as_str());
-        let mut e = read(PARTS);
-        near(previewed(&mut e, "plate", word, &tools), want, &format!("{what}, previewed"));
+        let e = read(PARTS);
+        near(previewed(&e, "plate", word, &tools), want, &format!("{what}, previewed"));
         let text = written(PARTS, word, &tools, "plate");
         let said: String = tools.iter().map(|t| format!("{t} {} plate\n", word.as_str())).collect();
         assert!(text.ends_with(&said), "{what}: one splice, a statement a tool\n{text}");
@@ -117,11 +111,11 @@ fn the_preview_is_what_the_statements_make() {
 
 #[test]
 fn a_preview_leaves_the_drawing_as_it_was() {
-    let mut e = read(PARTS);
+    let e = read(PARTS);
     let (n, objects) = (e.sketch.solids.len(), gcs_core::overview::objects(&e.sketch));
     let before = volume(&e, "plate");
-    previewed(&mut e, "plate", BodyWord::Cut, &["boss", "bore"]);
-    assert_eq!(e.sketch.solids.len(), n, "the scratch solid is taken out again");
+    previewed(&e, "plate", BodyWord::Cut, &["boss", "bore"]);
+    assert_eq!(e.sketch.solids.len(), n, "nothing is added to the drawing");
     assert_eq!(gcs_core::overview::objects(&e.sketch), objects);
     assert_eq!(volume(&e, "plate"), before, "the target is untouched");
     // and a refusal leaves it so too
@@ -134,10 +128,23 @@ fn a_preview_leaves_the_drawing_as_it_was() {
 fn a_body_that_already_cuts_takes_the_tool_into_its_own_sets() {
     // union comes first: a plug joined inside the bore is cut away with it, as the statement says
     let src = format!("{PARTS}bore cut plate\nplug := solid(face(hole), from: -3, to: -1)\n");
-    let mut e = read(&src);
+    let e = read(&src);
     let want = PLATE - BORE_IN;
-    near(previewed(&mut e, "plate", BodyWord::Union, &["plug"]), want, "previewed");
+    near(previewed(&e, "plate", BodyWord::Union, &["plug"]), want, "previewed");
     let text = written(&src, BodyWord::Union, &["plug"], "plate");
+    near(volume(&read(&text), "plate"), want, "written");
+}
+
+#[test]
+fn a_union_is_drilled_by_the_through_cutter_the_body_already_has() {
+    // `drill` runs through the plate's additive material, so a cap joined over the hole is
+    // drilled too — the preview reads it as the written statement does, not the plate as it was
+    let src = format!("{PARTS}drill := solid(face(hole), through: plate)\ndrill cut plate\n\
+        cap := solid(face(hole), from: 0, to: 6)\n");
+    let e = read(&src);
+    let want = PLATE - BORE_IN;
+    near(previewed(&e, "plate", BodyWord::Union, &["cap"]), want, "previewed");
+    let text = written(&src, BodyWord::Union, &["cap"], "plate");
     near(volume(&read(&text), "plate"), want, "written");
 }
 
@@ -145,9 +152,9 @@ fn a_body_that_already_cuts_takes_the_tool_into_its_own_sets() {
 fn a_tool_through_the_body_reads_its_material_and_closes_no_cycle() {
     // `through: plate` reads the plate's sweep, which the statement moves to a stock: no cycle
     let src = format!("{PARTS}drill := solid(face(hole), through: plate)\n");
-    let mut e = read(&src);
+    let e = read(&src);
     let want = PLATE - BORE_IN;
-    near(previewed(&mut e, "plate", BodyWord::Cut, &["drill"]), want, "previewed");
+    near(previewed(&e, "plate", BodyWord::Cut, &["drill"]), want, "previewed");
     let text = written(&src, BodyWord::Cut, &["drill"], "plate");
     near(volume(&read(&text), "plate"), want, "written");
 }
@@ -155,7 +162,7 @@ fn a_tool_through_the_body_reads_its_material_and_closes_no_cycle() {
 #[test]
 fn a_solid_made_of_itself_is_refused_at_the_gesture() {
     let src = format!("{PARTS}wrap := solid(plate)\n");
-    let mut e = read(&src);
+    let e = read(&src);
     let (plate, wrap) = (index(&e, "plate"), index(&e, "wrap"));
     for tools in [vec![plate], vec![wrap], vec![]] {
         let why = e.sketch.preview_body(plate, BodyWord::Cut, &tools).err();

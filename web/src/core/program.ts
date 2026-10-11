@@ -425,9 +425,9 @@ export class Document {
     return edit(withStr(angle, (p, n) => core().gcs_elab_set_turn(this.h, solid, p, n)));
   }
 
-  /** The body rule: `what union body`, `what cut body`, `what bound body` — `what` one solid or
-   *  several, a statement each in one splice (a Boolean gesture's tools). */
-  addBodyWord(word: BodyWord, what: string | string[], body: string): Edit {
+  /** The body rule: `what union body`, `what cut body`, `what bound body` — a statement for each
+   *  solid in `what`, in one splice (a Boolean gesture's tools). */
+  addBodyWord(word: BodyWord, what: string[], body: string): Edit {
     return edit(
       withJson({ word, what, body }, (p, n) => core().gcs_elab_add_body_word(this.h, p, n)),
     );
