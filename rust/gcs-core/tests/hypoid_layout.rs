@@ -683,22 +683,24 @@ fn solved_design(label: &str) -> (usize,Elaborated) {
 }
 
 /// **A solve that stops on its iteration limit is rescued** (docs/iteration-limit-rescue-plan.md).
-/// A design solved as solventc solves it and then jittered by two thousandths of its extent (the
-/// jittered `common::rough_starts`) is back under the interactive acceptance within the DogLeg's
-/// hundred iterations and not at its solution: without the block rescue (`BlockMode::Off`) the
-/// solve succeeds on status 4, short of the recorded pair.  By default that stop is not
-/// *settled*, the block rescue runs, and the pose it settles on is the recorded pair's to the
-/// 1e-9 the named-quantities gate asks.  Not from every such jitter: of the first 48 seeds of the
-/// 28x49 bevel at module 25.4, 7 stop on the limit and all but this one settle a mate or tooth
-/// section on another root, or none (most jitters that stop run toward a collapsed tip, and the
-/// sections' tip bound turns them into failures, which the rescue meets from the start).
+/// A design solved as solventc solves it and then jittered by three thousandths of its extent is
+/// back under the interactive acceptance within the DogLeg's hundred iterations and not at its
+/// solution: without the block rescue (`BlockMode::Off`) the solve succeeds on status 4, short of
+/// the recorded pair.  By default that stop is not *settled*, the block rescue runs, and the pose
+/// it settles on is the recorded pair's to the 1e-9 the named-quantities gate asks.  Not from
+/// every such jitter: of the first 64 seeds at each of one, two and three thousandths, across the
+/// bevel pair, the 28x49 pair at modules 2 and 25.4, the 32x32 and the 24x48, five stop on the
+/// limit and settle on the pair, all at three thousandths, this among them; the others that stop
+/// settle a mate or tooth section on another root, or none (most jitters that stop run toward a
+/// collapsed tip, and the sections' tip bound turns them into failures, which the rescue meets
+/// from the start).
 #[test]
 fn a_stop_on_the_iteration_limit_is_rescued_onto_the_recorded_pair() {
     use gcs_core::solve::{self,BlockMode,SolveOpts};
     let (_,rows) = recorded();
-    let (k,mut e) = solved_design("28x49 m25.4");
+    let (k,mut e) = solved_design("bevel");
     let reference = e.sketch.clone();
-    let start = crate::common::jittered(&reference,0.002,10);
+    let start = crate::common::jittered(&reference,0.003,26);
     e.sketch = start.clone();
     let stop = solve::solve(&mut e.sketch,SolveOpts {blocks:BlockMode::Off,..SolveOpts::default()});
     let (short,_) = off_recorded(&read_pair(&e,rows[0].1[k]),&rows,k);
@@ -725,7 +727,7 @@ fn a_stop_that_stalls_again_is_restarted_in_block_order() {
     let mut held = design.unsolved().sketch;
     let accurate = SolveOpts {blocks:BlockMode::First,..fixtures::accurate()};
     assert!(solve::solve(&mut held,accurate).success);
-    let start = crate::common::jittered(&held,0.001,7);
+    let start = crate::common::jittered(&held,0.001,1);
     let mut stop = start.clone();
     let a = solve::solve(&mut stop,SolveOpts {blocks:BlockMode::Off,..SolveOpts::default()});
     assert!(!a.success && a.status == solve::BOUND_BROKEN && a.method == "dogleg","{a:?}");
@@ -750,7 +752,7 @@ fn a_stop_that_stalls_again_is_restarted_in_block_order() {
 fn a_stop_the_rescue_cannot_settle_keeps_its_pose() {
     use gcs_core::solve::{self,BlockMode,SolveOpts};
     let (_,reference) = solved_design("bevel");
-    let start = crate::common::jittered(&reference.sketch,0.01,0);
+    let start = crate::common::jittered(&reference.sketch,0.01,30);
     let (mut off,mut on) = (start.clone(),start);
     let limited = SolveOpts {max_iter:12,..SolveOpts::default()};
     let a = solve::solve(&mut off,SolveOpts {blocks:BlockMode::Off,..limited});

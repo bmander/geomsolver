@@ -115,7 +115,8 @@ centre or a line and one number (`std.Sphere(c, r)`, `std.Cylinder(about, r)`, `
 half)`, apex at the line's start; the line is `.about`, since `axis` is an element's word a body
 cannot name bare), nothing drawn, no entity kind, kernel or `CKind` of their own.  A point on one
 is `p coincident S`, a line touching one `l tangent S` (below); `std.TangentCones(k1, k2, m)` is
-`k1 tangent(at: m) k2` (below, #104) and `std.CircleOnSphere(k, s, view)` stays a component.  An unbound number is the instance's unknown
+`k1 tangent(at: m) k2` (below, #104), `std.Offset(S, d)` is the set `d` outside one (F4, below)
+and `std.CircleOnSphere(k, s, view)` stays a component.  An unbound number is the instance's unknown
 (`pc.half`, an angle in degrees); `edit::unknown_seeds` writes it back into the call's `hint(…)`
 (`InstVal::Hint` carries the span).  A lifted program declares it under a name it can write
 (`lift::declarable`: `pc_half`, apart from every other unknown's) and every dimension reading
@@ -198,6 +199,25 @@ written as there (`Scope::written`, kept when `apply` stamps the use's over it; 
 two uses in one body stand apart.
 `tests/region_solids.rs` and `tests/region_blank.rs` (the blank as a region against today's, both
 designs, both members) are the gates.
+**Distance from a set, offsets (§6.21, 0.64, #145 F4):** `p distance(d, side: outside|inside) S`
+(`distance` is a set use, `may_use`), `p inside(d) S` / `p outside(d) S` and `std.Offset(S, d)` are
+one bound on the signed distance from `S`'s surface (`Reach`: cmp toward the outside, whether
+the offset grows it, `reach_of`/`grown_side`; only a `distance` with `side: outside|inside` is a
+set use, `sets::reaches`), applied by `sets::expand_reach` in three representations: a body whose
+one relation is a `distance` gets its number moved (`(r) + #grow`, the grow settled in the use's
+scope and given to the application, `Application::give`); otherwise, at a region solid's probe
+(`Walk::probes` through the alias table), the bound carries it (`OpArg::Bound::grow`, `Written::grow`,
+read by `constrain` into `RegionTerm::grow`, a `TermNumber`; a grow off a probe is E040) and
+`solid/region.rs::fold` builds the exact offset (`within(t, v, g)` is `{sd ≤ g}`; `narrow`: a cone
+shrunk is its apex moved `-g / sin`, grown is the shifted generator plus an arc about the apex, one
+loop; wider than square the opposite cone shrunk); otherwise a drawn point's **foot**, declared at
+the body's point under the application (`hidden_point`, as a tangency's contact; `hint(at: p)`),
+the body walked `Itself` then along
+`Chart(0)`/`Chart(1)` (keys `{prefix}t{k}.`), with `p distance(#reach) foot` (its derivative is the
+sphere about `p`'s), `p outside S` (the side) and `foot inside S` (so the seed crossing puts the
+foot across the surface from `p`) appended to the body under synthetic ids (`FOOT_STATEMENTS`
+down, so `Scope::written` keeps their uses apart). `region_body` counts no grown side of another
+set among a body's numbers (a distance from one is `std.Offset`'s). `tests/offsets.rs` is the gate.
 **`P tangent(at: m) S`, a plane tangent to a set (#145, #148, 0.56):** `sets::expand_touch`
 applies the body at `m` and walks it `Pass::Made` then `Pass::Along` toward `P.u` and `P.v`
 (`model::Toward::Axis`: the axis's `d` columns fed where a line's ends go, `dual_kernel`
@@ -452,9 +472,12 @@ stock, plus `union`, minus what `cut`s it, within what `bound`s it. `SolidDef::B
 `bound`; `Term::Inter`; facets, fields and the CAD recipe (`"bound"`, `BRepAlgoAPI_Common`) all
 evaluate it. Union first; `cut` and `bound` commute; a swept solid may only be `cut`. `bound` and
 `union` (0.32) are body words, not names; `coincident` between two solids is refused. Spiral bevel:
-each member's blank is a region (`blank/member.sv`, `MemberBlank`: `std.Cone`s offset from the
-pitch generator to where they meet the axis, `std.Sphere`s through the face span, sized by the
-solved layout — a region term reads an unknown, `model::TermNumber`); `pair.sv` draws the same
+each member's blank is a region (`blank/member.sv`, `MemberBlank`: the pitch cone, a `std.Cone`
+about a line held in space so its half reads unsigned and left unseeded so it settles from the
+pose, grown by the addendum (`std.Offset`) and its outside by the back depth (`outside(d)`),
+`std.Sphere`s through the face span, sized by the solved layout — a region term reads an unknown,
+`model::TermNumber`; `EndChamfer` puts its corners on the tip set, seeded off the cone line's mean
+point); `pair.sv` draws the same
 limits as revolved sections for the checks' walls (`blank/limits.sv`), `tests/region_blank.rs` the
 gate between them; each crown section bounds its tip land (`distance(>= 0.01 * design.module) tip`)
 so a collapsed tip is no root. Modules `design.sv`, `views.sv`, `pitch/`, `blank/`, `crown/`,
@@ -1232,7 +1255,8 @@ Conventions:
   broken`). `PlanSolver::solve` falls back to it where the plan's root breaks a bound. A drag
   (`retry` off) and a drawing whose seeds keep their bounds solve to the same bits. `Diagnosis::bounds_violated`/`bounds_active`, report `boundsViolated`/
   `boundsActive`; JSON `"bound": {cmp, hi}`; `graft`, `lift`, `describe` (`syntax::bounded`).
-  A free name in one is E040 (`expr::Fault::ClaimFree`). `ccw` on the sheet is still unchecked.
+  A free name in one is E040 (`expr::Fault::ClaimFree`) unless a row of the drawing reads it too:
+  `expr::evaluate` asks the bounds last, binding `Constraint::free` without minting (0.64). `ccw` on the sheet is still unchecked.
   `tests/bounds.rs` is the gate.
 - `same_constraint` is "says exactly the same thing"; `same_relation` is the same *without* the
   numbers.  A repeated *relation* is refused by the app (`edit::applyConstraints`): equations

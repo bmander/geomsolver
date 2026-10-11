@@ -1,6 +1,15 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.63 — October 2026**
+**Specification, Draft 0.64 — October 2026**
+
+**[0.64] A point's distance from a set, and offsets.** `p distance(d, side: outside) S` is `p` the
+signed distance `d` from the surface of a set `S`, `std.Offset(S, d)` the set `d` outside it, and
+`p inside(d) S` / `p outside(d) S` that side of `S` grown by `d` (§6.21). A sphere's or a
+cylinder's offset is its number moved; a region solid's cone offset is exact, a cone with its apex
+rounded by a ball where it grows (§6.9); a drawn point stands at its foot on the set. A bound may
+read an unknown the drawing's rows read (§9.6). The hypoid's blank is its pitch cone grown by
+the addendum and the outside grown by the back depth, and the end chamfers put their corners on
+the tip as a set.
 
 **[0.63] A region's numbers may be the drawing's.** A region solid's bound may read an unknown of
 the drawing — a sphere's radius left for a point stated on it to set, a cone's half its
@@ -1137,7 +1146,11 @@ anything but bounds (a disc's plane) is **E040**. A region solid is a solid like
 `bound`, `union`, swept and placed. **[0.63]** A bound's number may read one unknown of the drawing
 (`std.Sphere(c, r: hint(50mm))` with `q coincident` it): the solid reads it as solved, and refuses one
 nothing determines. A cone's half is the unsigned angle its row reads, so one solved past a half
-turn is the cone it reads as.
+turn is the cone it reads as. **[0.64]** A bound offset (`p inside(d) S`, §6.21) is the set's surface
+grown by `d`, or shrunk where `d` is taken off: a ball's or a cylinder's radius moved, a plane moved
+along its normal, and a cone's offset exactly — the cone whose surface stands `d` from it, its apex
+further back where it grows, rounded there by the ball of radius `d` about the apex (the points
+nearest it), further along where it shrinks.
 
 **The brackets are what the thing is made of** (§4.3, §6.2), so the sweep stands in them beside the face: `from:`, `to:`, `depth:`, `through:`, `along:`, `about:`, `sweep:` and `sense:` are labels of the constructor and are neither seeds nor constraints. A mixture of sweep forms, a half-written prism (`from:` with no `to:`), `from:`/`to:` beside `depth:`, and `sweep:` or `sense:` with no `about:` are each refused where they are written, with the shapes a solid has.
 
@@ -1790,6 +1803,27 @@ stating several numbers; anything but a point inside a set; a tangency to a regi
 surface to touch. A point in a region is bound, so the use chooses the root (§9.6) and adds no row
 but what the body states besides its number (the disc's plane).
 
+**A point's distance from a set, and offsets** **[0.64]**. A set whose body states one relation of
+its point, holding one number, has a **surface**: where that relation holds. The **signed
+distance** from it is the distance to the surface, positive on its outside (where the measure
+exceeds its number). `p distance(d, side: outside) S` is `p` at signed distance `d`, and `side:
+inside` at `-d`; `<=`, `>=` bound it (§9.6). `side:` is said: a surface has two. `std.Offset(S, d)
+:= { p | p distance(d, side: outside) S }` is the set `d` outside `S`, so `p inside
+std.Offset(S, d)` is within `S` grown by `d`, written `p inside(d) S`; `p outside(d) S` is within
+the outside of `S` grown by `d`, outside `S` shrunk by it. A plane takes the same words (`p
+inside(2mm) P`, the ordinate along its normal). One meaning, said by what the body measures and
+where the point is: a **distance** (a sphere, a cylinder, a level) is the measure less its number,
+so the offset moves the number, anywhere; at a region solid's point the bound carries the offset,
+and a cone's is exact (§6.9); a **drawn point** has a **foot**, a point on `S` found by the solve,
+`p` at `d` from it on the side named and `p − foot` square to `S` there — `S` tangent at the foot
+to the sphere about `p` through it, stated as two sets' tangency is. The foot is seeded on the far
+side of the surface from `p`, so the two start apart the way they end; it stands where `S` is
+smooth (a cone's apex is not). Refused (**E040**): no `side:`; a distance of zero (`coincident`);
+a region, which has no surface; a set saying more than one thing of its point (a circle in a
+plane); an interval; `inside(d)` or `outside(d)` a conjunction; a bound on a drawn point's
+distance from a set with no closed form (its foot cannot say which root), a claim of one, or one
+inside a body walked for its derivative (a tangency to an offset of a cone).
+
 *Non-normative:* `std.Sphere`, `std.Cylinder` and `std.Cone` are sets. A set drawn by tracing its
 points, other recognised shapes (a line as two planes met), and sets bounded by inequalities (arcs,
 segments, rays) are not part of this draft (#101): a bound outside a set body chooses a root (§9.6),
@@ -2027,9 +2061,9 @@ p outside P                       // in front of it
 
 - **What takes one:** a measure a solve can be steered along — an ordinate (so `inside` and `outside` a plane, the point's ordinate along the plane's normal from its origin), a distance between points, and a point's or a parallel line's distance from a line. A bound on any other kind is **E040**.
 - **Closed:** `>=`, `<=` and `in:` include their edge, where a solution may stand. `>` and `<` are refused.
-- **Its number:** zero may be written, unlike an ordinate's equality, which zero makes a `level` (§9.2). It may not read an unknown, and a bound may not be a `claim` (**E040**): a bound chooses which solution is meant, and a claim asks about the one there is.
+- **Its number:** zero may be written, unlike an ordinate's equality, which zero makes a `level` (§9.2). A bound may not be a `claim` (**E040**): a bound chooses which solution is meant, and a claim asks about the one there is. It may read an unknown only where a row of the drawing reads it too (**[0.64]**, a cone's half its side is chosen against), read as it stands: on the seeds its seed, on the solution its solution; one nothing else reads is **E040**, since a bound adds no freedom.
 - **Meaning:** outside a set body, a bound **chooses the root**. It adds no row and no freedom, and is drawn as no callout. It does the work a seed did when the seed only picked a side, so it is read on the seeds first: a point whose seed breaks a bound is carried across its edge, to the mirror of its reading, as if it had been seeded there, and everything seeded from it or placed through it follows. The solver then checks it on the solution. Where it still does not hold, the solver looks for the root where it does, from the seeds and from the solution, and fails the solve where none is found (`a bound does not hold`). The diagnosis tells which bounds are violated, and which hold with the solution on their edge (*active*).
-- **Inside a set body** a bound makes the set a region, and `inside`/`outside` put a point in one (§6.21) **[0.61]**. `solid(R)` is a region's solid (§6.9) **[0.62]**.
+- **Inside a set body** a bound makes the set a region, and `inside`/`outside` put a point in one (§6.21) **[0.61]**. `solid(R)` is a region's solid (§6.9) **[0.62]**. `inside(d)` and `outside(d)` grow a side by `d` (§6.21) **[0.64]**.
 - `inside` between two solids remains the claim of §9.8; which one a statement is follows from its operands.
 
 ### 9.7 Claims **[0.5]**

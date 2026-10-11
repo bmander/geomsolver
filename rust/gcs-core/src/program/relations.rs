@@ -544,14 +544,39 @@ pub(super) fn constrain(
             }
         }
     }
+    // an offset a set put on its number (§6.21, F4): a region's term, and nothing a row states
+    let grow = match r.written.and_then(|w| w.grow()) {
+        None => None,
+        Some((text, span)) => {
+            let arg = crate::syntax::Arg::Dim { text: text.clone(), span: *span };
+            let read = to_arg(sk, res, SpecKind::Length, &arg).ok();
+            match read.as_ref().and_then(|a| term_number(a, sk, SpecKind::Length)) {
+                Some(g) => Some(g),
+                None => {
+                    let message = "an offset is stated or reads one unknown of the drawing";
+                    diags.push(Diag {
+                        code: Code::E040, span: st.span, stmt: Some(st.id), message: message.into()
+                    });
+                    return None;
+                }
+            }
+        }
+    };
     // a bound a set put on a region solid's probe is a term of the solid, never a row (§6.21)
     if let Some(probe) = probe_of(sk, &c, probes) {
-        match region_term(sk, &c, probe) {
+        match region_term(sk, &c, probe, grow) {
             Ok(t) => probes.get_mut(&probe).expect("a probe's terms").push(t),
             Err(message) => {
                 diags.push(Diag { code: Code::E040, span: st.span, stmt: Some(st.id), message })
             }
         }
+        return None;
+    }
+    if grow.is_some() {
+        let message = "an offset of a cone is a region solid's: a point is put at a distance from \
+                       one by its foot on it"
+            .to_string();
+        diags.push(Diag { code: Code::E040, span: st.span, stmt: Some(st.id), message });
         return None;
     }
     Some(sk.add_quiet(c))
@@ -572,7 +597,7 @@ fn probe_of(sk: &Sketch, c: &Constraint, probes: &Probes) -> Option<usize> {
 /// What a bound on a region solid's probe bounds (§6.21), read off the constraint's **kind** and
 /// never the set it came from: a distance from a point is a ball, from a line a cylinder, the
 /// angle from a line seen from its start a cone, an ordinate along a plane's normal a half-space.
-fn region_term(sk: &Sketch, c: &Constraint, probe: usize)
+fn region_term(sk: &Sketch, c: &Constraint, probe: usize, grow: Option<crate::model::TermNumber>)
     -> Result<crate::model::RegionTerm, String> {
     use crate::model::{RegionShape, RegionTerm};
     let kind = crate::syntax::snake(c.kind.name());
@@ -628,7 +653,10 @@ fn region_term(sk: &Sketch, c: &Constraint, probe: usize)
     };
     let name =
         c.word.as_ref().and_then(|w| w.sets.first()).map(|(_, n)| n.clone()).unwrap_or_default();
-    Ok(RegionTerm { shape, cmp: b.cmp, lo, hi: b.hi, name })
+    if grow.is_some() && (b.hi.is_some() || !matches!(shape, RegionShape::Cone { .. })) {
+        return Err("an offset is of a cone's surface, on one side of it".to_string());
+    }
+    Ok(RegionTerm { shape, cmp: b.cmp, lo, hi: b.hi, grow, name })
 }
 
 /// `p inside P` / `p outside P` between a point and a plane, as what it says (§9.6): the point's
@@ -647,9 +675,16 @@ fn side_of_plane(
     }
     let at = w.word.span;
     let name = |t: &str| Name { text: t.to_string(), span: at };
+    // grown by a distance (§6.21, F4): `inside(d)` at most `d` before it, `outside(d)` at most
+    // `d` behind it
+    let level = match w.args.as_slice() {
+        [OpArg::Dim(d, _)] if cmp == crate::syntax::Cmp::Le => d.clone(),
+        [OpArg::Dim(d, _)] => format!("-({d})"),
+        _ => "0".to_string(),
+    };
     let args = vec![
-        OpArg::Bound { cmp, span: at, hi: None },
-        OpArg::Dim("0".to_string(), at),
+        OpArg::Bound { cmp, span: at, hi: None, grow: None },
+        OpArg::Dim(level, at),
         OpArg::Named(name("along"), A::Word("n".to_string())),
     ];
     let written = Written { word: name("distance"), args, ..w.clone() };

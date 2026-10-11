@@ -14,6 +14,7 @@ mod bounds;
 mod set_regions;
 mod region_blank;
 mod region_solids;
+mod offsets;
 mod evaluated_solid;
 mod renderer;
 

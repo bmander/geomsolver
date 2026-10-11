@@ -134,8 +134,12 @@ pub fn evaluate(sk: &mut Sketch) -> Vec<ExprItem> {
     // a `Length` dimension and an `Angle` one is an error naming both — the one genuinely new
     // piece of analysis units bring, and the only place a dimension is deduced rather than read.
     let mut free_dim: BTreeMap<String, (Dim, &'static str)> = BTreeMap::new();
-    let mut items = Vec::with_capacity(nodes.len());
-    for nd in &nodes {
+    // what states no row last, so a bound reads an unknown the rows have bound this time round
+    let (rows, rest): (Vec<usize>, Vec<usize>) =
+        (0..nodes.len()).partition(|&k| sk.constraints[nodes[k].ci].states_rows());
+    let mut items: Vec<Option<ExprItem>> = (0..nodes.len()).map(|_| None).collect();
+    for k in rows.into_iter().chain(rest) {
+        let nd = &nodes[k];
         let mut value = to_user_units(nd.kind, sk.constraints[nd.ci].args[nd.ai].num());
         let mut free = Vec::new();
         let mut deps = Vec::new();
@@ -163,7 +167,7 @@ pub fn evaluate(sk: &mut Sketch) -> Vec<ExprItem> {
             }
         };
         let c = &sk.constraints[nd.ci];
-        items.push(ExprItem {
+        items[k] = Some(ExprItem {
             id: c.id,
             attr: c.spec()[nd.ai].0,
             text: match &c.args[nd.ai] {
@@ -182,7 +186,7 @@ pub fn evaluate(sk: &mut Sketch) -> Vec<ExprItem> {
         .filter(|(name, _)| bound.contains_key(name))
         .map(|(name, (dim, _))| (name, dim))
         .collect();
-    items
+    items.into_iter().flatten().collect()
 }
 
 /// Check expression dimensions against the argument slot and infer a consistent
@@ -258,14 +262,20 @@ fn write_value(
         return Err(format!("`{name}` is free, and this is not a dimension it can be").into());
     }
     // a claim and a bound compile to no rows, so an unknown read here would sit in no equation
-    // at all — a degree of freedom minted by a statement that promised to add nothing
-    let c = &sk.constraints[ci];
-    if !c.states_rows() {
-        let what = if c.claim { "a claim" } else { "a bound" };
-        return Err(ExprError::new(
-            Fault::ClaimFree,
-            format!("`{name}` is free, and {what} may not bind an unknown"),
-        ));
+    // at all — a degree of freedom minted by a statement that promised to add nothing.  A bound
+    // may read one the drawing's rows bind already (a cone's half, its side chosen, §9.6): it
+    // reads it as solved, and mints nothing — `evaluate` asks the bounds last for that
+    let con = &sk.constraints[ci];
+    let reader = !con.states_rows();
+    if reader {
+        let read = sk.free_vars.contains_key(&name) && bound.contains_key(&name);
+        if con.claim || !read {
+            let what = if con.claim { "a claim" } else { "a bound" };
+            return Err(ExprError::new(
+                Fault::ClaimFree,
+                format!("`{name}` is free, and {what} may not bind an unknown"),
+            ));
+        }
     }
     // one name is one unknown: a place contacts share along a curve (`t == s`) is not a number a
     // dimension can be written in, and two unknowns under one name would be told apart nowhere
@@ -290,9 +300,16 @@ fn write_value(
     // one unit of the variable is worth this much world length through this dimension: an angle
     // in degrees moves the drawing by the arm it turns, everything else is a length already
     let reach = m.abs() * if kind == SpecKind::Angle { sk.extent().max(1.0) } else { 1.0 };
+    let free = Free { param, m, c };
+    // a bound reads the unknown the rows bound: it neither scales nor seeds it
+    if reader {
+        let value = a.at(sk.params[param as usize].value);
+        sk.constraints[ci].free = Some(free);
+        sk.constraints[ci].args[ai] = Arg::Expr(Expr::new(text, to_arg_units(kind, value)));
+        return Ok(value);
+    }
     let was = bound.entry(name).or_insert(0.0);
     *was = was.max(reach);
-    let free = Free { param, m, c };
     if fresh && stated == 0.0 && declared.is_none() {
         // the bound copy is what `settle` measures through: the columns and the constants it
         // asks for are the ones this constraint selects once the binding is in

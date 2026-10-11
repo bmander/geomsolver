@@ -236,16 +236,21 @@ fn the_end_relief_chamfers_each_tip_corner() {
         // sphere, outside the toe sphere and the back cone)
         let region = field(&format!("{limits}.material"));
         let blank = |p| value(&region,p);
-        // the tip cone's meridian in the member's axial view, from its apex through `p`
-        let tip_apex = world(&format!("{limits}.tip.apex"));
-        let tip_p = world(&format!("{limits}.tip.p"));
-        let off_tip = |p: [f64;3]| crate::common::off_line(p,tip_apex,sub(tip_p,tip_apex));
+        // the generator the ends are drawn on in the member's axial view (the gear's across its
+        // axis)
+        let drawn = if member == "gear" { "gear.opposite" } else { "pinion.pitch_line" };
+        let cone_line = &sk.lines[entity(&format!("pair.reference.{drawn}"))];
+        let along_cone = sub(sk.world_point(cone_line.p2 as usize),sk.world_point(cone_line.p1 as usize));
         for (end,inward) in [("toe",1.),("heel",-1.)] {
             let at = |point: &str| world(&copied(&limits,end,point));
             let (corner,along,down) = (at("corner"),at("along_tip"),at("down_end"));
+            // the tip cone's meridian through the corner, parallel to the pitch generator: the
+            // chamfer's end on the tip on it, both on the blank's surface
+            let off_tip = |p: [f64;3]| crate::common::off_line(p,corner,along_cone);
             let radius = dist(world(&format!("{limits}.span.{end}")),apex);
             for p in [corner,down] { worst = worst.max((dist(p,apex)-radius).abs()); }
-            for p in [corner,along] { worst = worst.max(off_tip(p)); }
+            for p in [corner,along] { worst = worst.max(blank(p).abs()); }
+            worst = worst.max(off_tip(along));
             worst = worst.max((inward*(dist(along,apex)-radius)-size).abs());
             worst = worst.max((off_tip(down)-size).abs());
             let ring = field(&copied(&limits,end,"ring"));

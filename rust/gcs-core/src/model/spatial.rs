@@ -333,13 +333,17 @@ impl RegionShape {
 
 /// One bound of a region solid: its measure, which way, and its numbers (a length or an angle in
 /// radians) — the low end and an interval's high.  `name` is the set the bound came from, where
-/// it came from one: what the faces it makes are called.
+/// it came from one: what the faces it makes are called.  `grow` is an offset (§6.21, F4): the
+/// bound is on the signed distance from the surface the measure's number makes, positive where
+/// the measure exceeds it, compared with `grow` — the set grown by it, or shrunk where it is
+/// negative.  Only a cone's is kept as one; a distance's is its number moved by it.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RegionTerm {
     pub shape: RegionShape,
     pub cmp: crate::syntax::Cmp,
     pub lo: TermNumber,
     pub hi: Option<f64>,
+    pub grow: Option<TermNumber>,
     pub name: String,
 }
 
