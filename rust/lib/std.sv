@@ -173,10 +173,9 @@ component Cylinder(about: line, r: Length) := { p | p distance(r) about }
 // angle between the axis and every generator: the points whose generator from the apex makes
 // that angle with the axis (§6.21) — on the nappe the axis points into — a set and nothing drawn.
 // A point on it is `p coincident k`, a line touching it `l tangent k`, two cones touching at a
-// point `TangentCones`.  Across views the angle is the angle in space; with the point in the
-// axis's own view it is the page's directed angle, so the point is on the generator
-// counter-clockwise of the axis.  Leave `half` unbound (`half: hint(30deg)`) and it is an unknown
-// of the drawing.
+// point `TangentCones`.  The angle is the angle in space wherever the point is drawn, as every
+// set's body is read (§6.21): with the point in the axis's own view, on either generator there.
+// Leave `half` unbound (`half: hint(30deg)`) and it is an unknown of the drawing.
 //
 //   gc := std.Cone(gax, half: 60deg)
 //   M coincident gc

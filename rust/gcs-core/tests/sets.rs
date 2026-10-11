@@ -159,6 +159,102 @@ fn a_point_on_a_cylinder_and_on_a_cone() {
     assert!((half - angle(sub(at(&sk, &e, "a"), apex), sub(q, apex))).abs() < 1e-9, "{half}");
 }
 
+/// **A set's body is read in space wherever its point is drawn** (§6.21): a cone about a line
+/// drawn in the front is both its generators there, so a point drawn beside the axis lands on
+/// the side it is seeded on — the clockwise one, which the page's angle, turning counter-clockwise,
+/// could not reach — read as the angle in space.  A number that says the same in the plane keeps
+/// the plane's kind.
+#[test]
+fn a_set_is_read_in_space_in_the_view_its_point_is_drawn_in() {
+    let src = with("b := point hint((20, 40)) in std.front\nfix(y == 40) b\nb coincident k");
+    let e = read(&src);
+    let kinds: Vec<_> = e.sketch.user_constraints().iter().map(|c| c.kind).collect();
+    assert_eq!(kinds, [gcs_core::constraints::CKind::Angle3]);
+    let sk = solved(&e);
+    let (apex, q) = ends(&sk, ent(&e, "ax"));
+    let b = at(&sk, &e, "b");
+    assert!((angle(sub(b, apex), sub(q, apex)) - 30.0).abs() < 1e-9, "{b:?}");
+    assert!(b[0] > 0.0, "clockwise of the axis, where it was seeded: {b:?}");
+    // a program lifted from it says the angle the way the pose turns, so it stays there
+    let lifted = gcs_core::program::to_program(&sk).text().to_string();
+    assert!(lifted.contains("sense: cw"), "{lifted}");
+    let again = solved(&read(&lifted));
+    for i in 0..sk.points.len() {
+        assert!(norm(sub(sk.world_point(i), again.world_point(i))) < 1e-7, "p{i}\n{lifted}");
+    }
+    // a sphere's distance in the plane is the distance in space: the plane's kind
+    let e = read(&with("b := point hint((20, 40)) in std.front\nb coincident ball"));
+    let kinds: Vec<_> = e.sketch.user_constraints().iter().map(|c| c.kind).collect();
+    assert_eq!(kinds, [gcs_core::constraints::CKind::Distance]);
+    // and a side, which a line in space has none of, is refused where the set is used
+    refused(&with("wall := { q | q distance(5, side: left) ax }\nb := point hint((20, 40)) in \
+                   std.front\nb coincident wall"), "E040", "in space a line has no sides",
+            "coincident");
+}
+
+/// The mark goes with the set, not with how it was reached: a set used in a relation word's body
+/// is read in space as one used outright, and a word used in a set's body too.
+#[test]
+fn a_set_through_a_word_is_read_in_space() {
+    let point = "b := point hint((20, 40)) in std.front\nfix(y == 40) b\n";
+    for more in [
+        format!("a opens(h) l := a coincident std.Cone(l, half: h)\n{point}b opens(h: 30deg) ax"),
+        format!("a sees(h) l := {{\n  private construction g := line(l.p1, a)\n  l angle(h) g\n}}\n\
+                 wedge := {{ p | p sees(h: 30deg) ax }}\n{point}b coincident wedge"),
+    ] {
+        let e = read(&with(&more));
+        let kinds: Vec<_> = e.sketch.user_constraints().iter().map(|c| c.kind).collect();
+        assert_eq!(kinds, [gcs_core::constraints::CKind::Angle3], "{more}");
+        let b = at(&solved(&e), &e, "b");
+        assert!(b[0] > 0.0, "{more}: {b:?}");
+    }
+    // a sense, which an angle in space turns neither way, is refused where the set is used
+    refused(&with("fan := { q | ax angle(30deg, sense: cw) (g := line(ax.p1, q)) }\n\
+                   b := point hint((20, 40)) in std.front\nb coincident fan"), "E040",
+            "turn neither way", "coincident");
+}
+
+/// A tangency at a point drawn in the view both spheres' centres are drawn in: each body on its
+/// own is the plane's distance, the same statement, but its derivative moves the point out of the
+/// plane, so it is read in space.
+#[test]
+fn a_derivative_at_a_point_drawn_in_a_view_is_read_in_space() {
+    let src = "unit mm\nuse std\nin std.front {\n  c1 := point\n  fix((0, 0)) c1\n  \
+               c2 := point\n  fix((10, 0)) c2\n  m := point hint((3, 1))\n}\n\
+               s1 := std.Sphere(c1, r: 4)\ns2 := std.Sphere(c2, r: hint(5))\n\
+               m coincident s1\nm coincident s2\ns1 tangent(at: m) s2\n";
+    let e = read(src);
+    use gcs_core::constraints::CKind;
+    let derived: Vec<_> = e.sketch.constraints.iter().filter(|c| c.along.is_some())
+        .map(|c| c.kind).collect();
+    assert!(!derived.is_empty() && derived.iter().all(|&k| k == CKind::Distance3), "{derived:?}");
+    let sk = solved(&e);
+    let m = at(&sk, &e, "m");
+    assert!(norm(sub(m, [4.0, 0.0, 0.0])) < 1e-9, "{m:?}");
+    assert!((sk.params[sk.free_vars["s2.r"] as usize].value - 6.0).abs() < 1e-9);
+    fd_jacobian(&sk, 1e-5);
+}
+
+/// Two cones tangent at a point drawn in the gear cone's own view, `G`: its body is read where
+/// the point stands in space, as across views, so the pair stands as it does with the point
+/// drawn in the front.
+#[test]
+fn two_sets_tangent_at_a_point_drawn_in_one_of_their_views() {
+    let src = include_str!("../../examples/hypoid_pitch_cones.sv");
+    let drawn = src.replace("M := point in std.front", "M := point in G");
+    assert_ne!(drawn, src);
+    let (a, b) = (read(src), read(&drawn));
+    let (sa, sb) = (solved(&a), solved(&b));
+    for n in ["M", "gax.p2", "pax.p1", "pax.p2"] {
+        let (pa, pb) = (at(&sa, &a, n), at(&sb, &b, n));
+        assert!(norm(sub(pa, pb)) < 1e-6, "{n}: {pa:?} {pb:?}");
+    }
+    let mut sb = sb;
+    let d = diagnose(&mut sb, DiagnoseOptions::default());
+    assert_eq!(d.dof, 0, "{d:?}");
+    fd_jacobian(&sb, 1e-5);
+}
+
 /// A line tangent to a sphere passes the centre at the radius: the contact is the foot of the
 /// perpendicular from the centre, on the line and on the sphere.
 #[test]
@@ -386,8 +482,10 @@ fn what_a_set_refuses() {
     // the point, so neither may make geometry of its own
     refused(&with("k tangent kc"), "E040", "which the word names", "tangent");
     // a tangency at a point reads where it stands in space, so not a row over its place in a
-    // view: `c` and `ax` both drawn in the front read `k`'s angle on the page
-    refused(&with("k tangent(at: c) kc"), "E040", "reads it in its view", "tangent(at: c)");
+    // view: a level along the front's own `up` has no kind in space to read it in
+    refused(&with("shelf := { q | c distance(5, along: up) q }\nm := point hint((3, 35)) in \
+                   std.front\nshelf tangent(at: m) k"), "E040", "reads it in its view",
+            "tangent(at: m)");
     refused(&with("claim k tangent(at: a) kc"), "E040", "stated, not claimed", "tangent");
     refused(
         &with(&format!("{}k tangent(at: a) foot", footed(""))),

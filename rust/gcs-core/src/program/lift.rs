@@ -379,7 +379,34 @@ fn built(kind: CKind, args: Vec<Option<Arg>>) -> Relation {
     Relation::of(crate::syntax::RelationForm::Canonical { kind, args, bound: None })
 }
 
+/// An angle in space between two lines drawn in one plane — a set's body, read in space (§6.21) —
+/// said as the plane's angle turning the way the pose does: a program has no unsigned angle in a
+/// plane, and written bare the plane's turns counter-clockwise, so read back the drawing would
+/// move to the mirror.  `None` for any other relation.
+fn in_plane_angle(sk: &Sketch, c: &Constraint) -> Option<Constraint> {
+    use crate::space::{cross, dot, sub};
+    let [CArg::Ent(a), CArg::Ent(b), theta] = c.args.as_slice() else { return None };
+    if c.kind != CKind::Angle3 || c.bound.is_some() || [a, b].iter().any(|l| l.kind != EntKind::Line) {
+        return None;
+    }
+    let ends = [sk.line_ends(a.i()), sk.line_ends(b.i())];
+    let plane = sk.plane_of(ends[0][0])?;
+    if ends.iter().flatten().any(|&p| sk.plane_of(p) != Some(plane)) {
+        return None;
+    }
+    let run = |[p, q]: [usize; 2]| sub(sk.world_point(q), sk.world_point(p));
+    let turn = dot(cross(run(ends[0]), run(ends[1])), sk.basis(plane).normal());
+    let sense = if turn < 0.0 { CArg::Str("cw".into()) } else { CKind::Angle.default_arg(3) };
+    Some(Constraint {
+        kind: CKind::Angle,
+        args: vec![CArg::Ent(*a), CArg::Ent(*b), theta.clone(), sense],
+        ..c.clone()
+    })
+}
+
 pub(crate) fn lift_relation(sk: &Sketch, c: &Constraint) -> Relation {
+    let angle = in_plane_angle(sk, c);
+    let c = angle.as_ref().unwrap_or(c);
     let spec = c.kind.spec();
     let mut args: Vec<Option<Arg>> = Vec::with_capacity(spec.len());
     for (i, (_, kind)) in spec.iter().enumerate() {

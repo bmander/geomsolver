@@ -119,6 +119,7 @@ impl<'a> P<'a> {
             class_span,
             word: None,
             along: None,
+            space: false,
         })
     }
 

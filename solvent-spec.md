@@ -1,12 +1,19 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.65 — October 2026**
+**Specification, Draft 0.66 — October 2026**
 
-**[0.65] A face of a solid is a set.** `b0.near`, `b0.far` and a straight side `b0.ab` (and
+**[0.66] A face of a solid is a set.** `b0.near`, `b0.far` and a straight side `b0.ab` (and
 through a body, `body.b0.near`) name the surface the face lies on, written over the solid's own
 extent and profile. So a point is put on one as on any set, and `v1 tangent(at: v1.origin)
 b0.near` is a plane lying on it — sketching on a face (§6.9, §6.21). A tangency's point may be a
 path (`at: v1.origin`).
+
+**[0.65] A set's body is read in space wherever its point is drawn.** A set is points in space,
+so what its body states is the relation in space even where every operand is drawn in one view
+(§6.21): a cone about a line drawn in a view is both its generators there, its angle unsigned,
+and a region over one is no longer refused. In one view a body's distance or incidence says what
+it says in space; a side or a sense says nothing there and is **E040**. The hypoid's pitch cone is
+about the member's axis, with no point held in space to make its angle unsigned.
 
 **[0.64] A point's distance from a set, and offsets.** `p distance(d, side: outside) S` is `p` the
 signed distance `d` from the surface of a set `S`, `std.Offset(S, d)` the set `d` outside it, and
@@ -523,7 +530,7 @@ Compound entities expose sub-entities by field access. Sub-entities are ordinary
 | `Solid` | `.start`, `.end` | a partial revolution's two caps **[0.18]** |
 | `Solid` | `.volume`, `.area`, `.bounds.x0`… | what a report measures off it (§16.3) **[0.18]** |
 
-**[0.18] A solid's derived names are *paths*, and a path is not a sub-entity.** A face of a solid carries no coordinates, joins no alias class and is no operand of a relation over entities — but **[0.65]** a prism's face path names a **set**, the surface it lies on (§6.21): a cap the profile's plane at its extent, a straight side the plane through its edge along the profile's normal, so `p coincident b0.near` and `v1 tangent(at: v1.origin) b0.near` read it as any set; a curved side, a `through:` solid's caps and a revolution's or a loft's faces are not sets yet (**E040**). Otherwise the path is what a report writes a number under (`block.side_l.area`) and what a derived picture labels a stroke with. A guided loft/sweep has `.start` and `.end` caps and walls named by the start section’s source edges, including hole boundaries. Through a body the operand keeps its own name, so a face of `block` inside `body` is `body.block.near` — a path never renames, which is the naming problem every history-based kernel has and this one does not, because a boolean cannot renumber a name. The *sub-entities* a solid does have are the ones its declaration is written over: the face it is swept from, a revolution's axis line, and the solids of its term. Those are ordinary entities, and deleting one takes the solid with it.
+**[0.18] A solid's derived names are *paths*, and a path is not a sub-entity.** A face of a solid carries no coordinates, joins no alias class and is no operand of a relation over entities — but **[0.66]** a prism's face path names a **set**, the surface it lies on (§6.21): a cap the profile's plane at its extent, a straight side the plane through its edge along the profile's normal, so `p coincident b0.near` and `v1 tangent(at: v1.origin) b0.near` read it as any set; a curved side, a `through:` solid's caps and a revolution's or a loft's faces are not sets yet (**E040**). Otherwise the path is what a report writes a number under (`block.side_l.area`) and what a derived picture labels a stroke with. A guided loft/sweep has `.start` and `.end` caps and walls named by the start section’s source edges, including hole boundaries. Through a body the operand keeps its own name, so a face of `block` inside `body` is `body.block.near` — a path never renames, which is the naming problem every history-based kernel has and this one does not, because a boolean cannot renumber a name. The *sub-entities* a solid does have are the ones its declaration is written over: the face it is swept from, a revolution's axis line, and the solids of its term. Those are ordinary entities, and deleting one takes the solid with it.
 
 **[0.42] A plane is two axes and a place.** `P := plane(u: r1, v: r2)` aliases two axes (or
 drawn lines, each read as the axis from its `p1` toward its `p2`) and owns three numbers of its
@@ -1779,6 +1786,15 @@ said where it is used, by two words:
   dependency as how the tangency is made, said nowhere. *Non-normative:* an implementation finds
   that dependency by rank, not by knowing the shape; a set's library body carries no shape.
 
+**A set's body is read in space wherever its point is drawn** **[0.65]**. A set is points in space,
+so each relation its body states is the relation in space (§9.2) even where every operand is drawn
+in one view — not that view's own: `q coincident std.Cone(ax, half: 30deg)`, `q` and `ax` both
+drawn in the front, puts `q` on either generator there, 30° from the axis in space, where the
+view's directed angle (§9.4) would turn one way only. A distance, an incidence and the rest say in
+one view what they say in space; `side:` and `sense:` say nothing in space and are **E040**, as
+across views. A body stated as its derivative at a point (`S1 tangent(at: m) S2`) is read where
+`m` stands in space, whatever view `m` is drawn in.
+
 Every relation a use states is **described as the statement wrote it** (`l tangent shaft`, §9.9),
 its placement and classes the statement's; a dimension the body states is drawn as a component
 body's is, and its derivative draws nothing. A set named anywhere else a reference stands —
@@ -1799,7 +1815,7 @@ out of any set: its body applied to `q`, as `coincident` applies it, with its **
 a bound — at most what it says (`inside`), at least (`outside`) — and every other statement as
 written. So `q inside std.Sphere(c, r: 5)` is within 5 of `c`, `q inside std.Cylinder(l, r: 2)`
 within 2 of the line, `q inside std.Cone(l, half: 30deg)` within 30° of its axis seen from its apex
-(read in space: in a view the cone is a ray and its angle signed, **E040**), and `q inside { p | p
+(in space, on either side of the axis in a view too **[0.65]**), and `q inside { p | p
 coincident P; p distance(5) o }` the disc. A region's own bound is kept by `inside` and turned
 round by `outside`. A region is met by conjunction too, so `blank := { p | p inside tip; p inside
 heel; p outside toe }` is the three at once, and **`outside` says a difference** for regions: inside

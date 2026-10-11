@@ -52,6 +52,8 @@ pub(super) struct Application {
     prefix: String,
     scope: Scope,
     from: usize,
+    /// A set's (§6.21): what it makes is a relation in space (`Relation::space`).
+    set: bool,
 }
 
 impl Application {
@@ -63,6 +65,12 @@ impl Application {
     /// The scope the body is walked in.
     pub(super) fn scope(&self) -> &Scope {
         &self.scope
+    }
+
+    /// The application a set's use makes: its body's relations are in space (§6.21).
+    pub(super) fn of_set(mut self) -> Application {
+        self.set = true;
+        self
     }
 
     /// A number the body reads by a name only the walk writes (`#grow`), worked out where the
@@ -106,7 +114,7 @@ impl<'a> Walk<'a> {
                 scope.in_class.0.push(c.clone());
             }
         }
-        Application { prefix, scope, from: self.out.len() }
+        Application { prefix, scope, from: self.out.len(), set: false }
     }
 
     /// A name of the body, under the application's prefix, standing for what the use wrote.
@@ -153,7 +161,7 @@ impl<'a> Walk<'a> {
             local(format!("#word.{i}"), r.span)
         }).collect();
         let stamp = Worded { ops, ..worded };
-        let Application { mut scope, from, .. } = app;
+        let Application { mut scope, from, set, .. } = app;
         dims_at(&mut body, dims, u.at);
         let mut path = u.path.to_vec();
         path.push(PathStep::Instance(u.st.id));
@@ -192,6 +200,8 @@ impl<'a> Walk<'a> {
             st.chained = u.st.chained;
             *p = u.path.to_vec();
             r.word = Some(stamp.clone());
+            // in space, a set's body (§6.21), which no later stamp undoes
+            r.space |= set;
             r.claim |= u.rel.claim;
             if placed == Some(i) {
                 r.place = u.rel.place;

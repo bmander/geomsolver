@@ -18,13 +18,8 @@ component MemberBlank(generator: line, cone: line, ax: line, view: plane, design
   heel := std.Sphere(generator.p1, r: hint(design.cone_distance))
   span.toe coincident toe
   span.heel coincident heel
-  // The pitch cone, turned about a line from the apex to a point held in space on the axis, so
-  // its angle is read in space, unsigned; its half is the drawing's to solve.
-  private far := point hint(at: ax.p2)
-  far coincident ax
-  ax.p1 distance(normal_module, along: ax) far
-  private about := line(ax.p1, far)
-  pitch := std.Cone(about)
+  // The pitch cone, about the member's axis; its half is the drawing's to solve.
+  pitch := std.Cone(ax)
   generator.p2 coincident pitch
   tip := std.Offset(pitch, d: design.addendum * normal_module)
   region := { p | p inside tip; p inside heel; p outside toe;

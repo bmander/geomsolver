@@ -1602,6 +1602,10 @@ pub struct Relation {
     pub word: Option<Worded>,
     /// Set by the flattener on a set's body row stated as its derivative (§6.21).
     pub along: Option<Along>,
+    /// Set by the flattener on every relation a set's body made (§6.21): a set is points in
+    /// space, so the relation is the one in space wherever its operands are drawn
+    /// (`program::reading::in_space`).
+    pub space: bool,
 }
 
 impl Relation {
@@ -1617,6 +1621,7 @@ impl Relation {
             class_span: Span::default(),
             word: None,
             along: None,
+            space: false,
         }
     }
 }
