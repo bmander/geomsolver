@@ -34,6 +34,9 @@
  *             choosing one turns the view square on to it.  Plane (N) and Axis (X) drop a datum
  *             constrained to the selection, and Insert ▸ Plane… names the plane first; J
  *             projects two points, one in each of two views, onto one point in space
+ *   solids    U extrude and Q revolve the region under a click; M union, Z cut and Y intersect
+ *             take the body to change, then the bodies to change it with — the box shows the
+ *             result before it is written — and a click back on the first (or Enter) writes it
  *   menus     File/Edit/Insert/Solution hold everything that is not a tool or a constraint;
  *             the solver's own switches are behind Solution ▸ Options
  *
@@ -88,14 +91,20 @@ const ELEMENT_TOOLS = [
   ['Circle', 'circle', 'c'], ['Arc', 'arc', 'a'], ['Arc 3-pt', 'arc3', '3'],
   ['Spline', 'spline', 's'], ['Spline fit', 'splinefit', 'w'],
 ] as [string, Tool, string][];
-/* What makes solids of the drawing, under its own head beside the elements: extrude and revolve
- * now, and the Boolean operations as they come. */
+/* What makes solids of the drawing, under its own head beside the elements: extrude and
+ * revolve, then the Boolean operations — the body to change, then the bodies to change it with. */
+const BOOLEAN = 'click the body to change, then each body to change it with; click the first '
+  + 'again, or Enter, to write it.  ';
 const SOLID_TOOLS = [
   ['Extrude', 'extrude', 'u'], ['Revolve', 'revolve', 'q'],
-] as [string, Tool, string][];
+  ['Union', 'union', 'm', `Join bodies: ${BOOLEAN}`],
+  ['Cut', 'cut', 'z', `Cut a body with others: ${BOOLEAN}`],
+  ['Intersect', 'bound', 'y', `Keep what bodies share (bound): ${BOOLEAN}`],
+] as [string, Tool, string, string?][];
 const TOOLS = [...ELEMENT_TOOLS, ...SOLID_TOOLS];
-const toolButton = ([label, tool, key]: [string, Tool, string]): ToolbarButton => ({
-  label, key, toggle: true, title: 'Click again to put the tool down and go back to selecting',
+const toolButton = ([label, tool, key, what]: [string, Tool, string, string?]): ToolbarButton => ({
+  label, key, toggle: true,
+  title: `${what ?? ''}Click again to put the tool down and go back to selecting`,
   onClick: () => view.setTool(view.tool === tool ? 'select' : tool),
 });
 const TOOL_BUTTONS: ToolbarButton[] = [
@@ -112,7 +121,8 @@ const TOOL_BUTTONS: ToolbarButton[] = [
 ];
 /** A head over tools, and past a divider any other buttons; the tools' buttons are the ones
  *  `onTool` presses. */
-const toolTopic = (label: string, tools: [string, Tool, string][], rest: ToolbarButton[] = []) =>
+const toolTopic = (label: string, tools: [string, Tool, string, string?][],
+                   rest: ToolbarButton[] = []) =>
   addTopic(barTools, label, [...tools.map(toolButton), ...(rest.length ? [null, ...rest] : [])])
     .slice(0, tools.length).forEach((b, i) => toolButtons.set(tools[i][1], b));
 toolTopic('Elements', ELEMENT_TOOLS, TOOL_BUTTONS);
@@ -485,8 +495,8 @@ window.addEventListener('keydown', (e) => {
   }
   const k = e.key.toLowerCase();
   if (k === 'escape') { if (!closeMenus()) view.cancelTool(); return; }
-  // the curve tools collect as many points as the user wants, so they need a way to say "that
-  // is the curve" — the only tools whose click count is not known in advance
+  // the curve tools collect as many points as the user wants, and a Boolean as many bodies, so
+  // they need a way to say "that is all" — the only tools whose click count is not known
   if (k === 'enter') { e.preventDefault(); view.finishCurve(); return; }
   if (k === 'delete' || k === 'backspace') {
     e.preventDefault();

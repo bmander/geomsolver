@@ -2071,6 +2071,44 @@ pub unsafe extern "C" fn gcs_field_mesher_free(m: *mut Mesher) {
     })
 }
 
+/// **What a Boolean would make of a body, before it is written** (#162 F4): `{target, word:
+/// "union" | "cut" | "bound", tools: [index…]}` in, `Sketch::preview_body`'s mesh out as `{faces,
+/// positions, normals}` — the shape `gcs_solid_mesh`'s three calls give apart, in world
+/// coordinates.  One JSON answer rather than three buffers: it is asked once a pick, not per
+/// frame, and nothing else would read a memo of it.  Null with the cause where it is refused.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_solid_preview_json(h: *mut Sketch, ptr: *const u8, len: usize) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || {
+        let v = as_json(ptr, len);
+        let index = |x: &Json| usize::try_from(x.as_i64()).unwrap_or(usize::MAX);
+        let Some(word) = gcs_core::syntax::BodyWord::parse(v.get("word").map_or("", |w| w.as_str())) else {
+            set_error("a preview's word is the body rule's: union, cut or bound".to_string());
+            return std::ptr::null_mut();
+        };
+        let target = v.get("target").map_or(usize::MAX, index);
+        let tools: Vec<usize> = v.get("tools").map(|t| t.arr().iter().map(index).collect()).unwrap_or_default();
+        let solid = match sk(h).preview_body(target, word, &tools) {
+            Ok(s) => s,
+            Err(message) => { set_error(message); return std::ptr::null_mut(); }
+        };
+        let m = solid.world_mesh();
+        let nums = |xs: &[f64]| Json::Arr(xs.iter().map(|&x| Json::Num(x)).collect());
+        out_json(Json::Obj(vec![
+            ("faces".into(), Json::Arr(m.groups.iter().map(|g| {
+                let mut o = Json::Obj(vec![
+                    ("path".into(), Json::Str(g.path.clone())),
+                    ("start".into(), Json::Int(g.start as i64)),
+                    ("count".into(), Json::Int(g.count as i64)),
+                ]);
+                if g.smooth { o.set("smooth", Json::Bool(true)); }
+                o
+            }).collect())),
+            ("positions".into(), nums(&m.positions)),
+            ("normals".into(), nums(&m.normals)),
+        ]))
+    })
+}
+
 /// **The faces of that mesh**, as the document names them: `[{ "path", "start", "count",
 /// "smooth" }]`, where `start` and `count` are triangles.  A viewer selects and shades by these
 /// — `body.bore.wall` and not a triangle index.
@@ -4387,7 +4425,8 @@ pub unsafe extern "C" fn gcs_elab_face_plane_json(h: *mut Elaborated, s: *mut Sk
     })
 }
 
-/// The body rule, `{word: "union" | "cut" | "bound", what, body}`: `edit::add_body_word`.
+/// The body rule, `{word: "union" | "cut" | "bound", what, body}`, `what` one solid's name or a
+/// list of them, a statement each in one splice: `edit::add_body_word`.
 #[no_mangle]
 pub unsafe extern "C" fn gcs_elab_add_body_word(h: *mut Elaborated, ptr: *const u8, len: usize) -> *mut u8 {
     guard(std::ptr::null_mut(), move || {
@@ -4397,7 +4436,13 @@ pub unsafe extern "C" fn gcs_elab_add_body_word(h: *mut Elaborated, ptr: *const 
             set_error(format!("`{}` is not a body word: union, cut or bound", text("word")));
             return std::ptr::null_mut();
         };
-        out_edit(gcs_core::edit::add_body_word(&(*h).program, word, text("what"), text("body")))
+        let what = match v.get("what") {
+            Some(Json::Str(one)) => vec![one.clone()],
+            Some(list) => strings(list),
+            None => Vec::new(),
+        };
+        let what: Vec<&str> = what.iter().map(String::as_str).collect();
+        out_edit(gcs_core::edit::add_body_word(&(*h).program, word, &what, text("body")))
     })
 }
 

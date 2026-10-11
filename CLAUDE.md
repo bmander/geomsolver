@@ -1603,6 +1603,20 @@ Conventions:
   turn as no `sweep:`): previewed by `Sketch::set_turn`, written by `edit::set_turn` (the
   statement's own `about:` kept; an expression written whole the way it already turns).
   `tests/revolve.rs` is the gate.
+- **Union, Cut, Intersect** (#162 F4): Boolean tools (`m`, `z`, `y`; `view.ts::combines`, Intersect
+  is `bound`) over **the solid selection, in click order**: the first body clicked is the target,
+  each after it a tool (clicked again, let go), a click back on the target or Enter
+  (`finishCombine`) writes `tool word target` for every tool in one splice
+  (`edit::add_body_word` takes a list), the target left picked; Escape lets the tools go, then the
+  target.  **Shown before it is written**: `Sketch::preview_body` evaluates the target as the
+  statements would leave it (a body's own sets take the tools, so union stays first) as a scratch
+  solid past the last, taken out with its cache entries however evaluation ends, refusing a body
+  made of itself as the elaborator would (the target's sweep a stock, so `through:` closes none; FFI
+  `gcs_solid_preview_json`, one JSON, asked once a pick; `core/mesh.ts::preview`), and `box3d`
+  draws it in the target's place, the tools as ghosts in their word's ink (`SketchView.combining`
+  is the key).  A body word closing a cycle is E041 **at that statement** (`program/solids.rs`,
+  `solid::reaches` asked once the operand is in, since a `through:` reads only what its body
+  adds), so the gesture is refused in its words.  `tests/booleans.rs` is the gate.
 - **A face of a solid is a set** (#162 F5, [0.66]): `b0.near`, `b0.far`, a straight side `b0.ab`
   and `body.b0.near` name the face's carrier, made by the flattener from the solid's own text
   before the uses are expanded (`flatten/faces.rs`, `Walk::face_sets`; a face written in place

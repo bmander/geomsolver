@@ -283,6 +283,20 @@ pub enum SolidDef {
     Region { probe: u32, terms: Vec<RegionTerm> },
 }
 
+impl SolidDef {
+    /// The set of a body's that `word` fills — `union`'s, `cut`'s or `bound`'s — or `None` for a
+    /// solid that is not a body.
+    pub fn body_set(&mut self, word: crate::syntax::BodyWord) -> Option<&mut Vec<u32>> {
+        use crate::syntax::BodyWord;
+        match (self, word) {
+            (SolidDef::Body { on, .. }, BodyWord::Union) => Some(on),
+            (SolidDef::Body { through, .. }, BodyWord::Cut) => Some(through),
+            (SolidDef::Body { bound, .. }, BodyWord::Bound) => Some(bound),
+            _ => None,
+        }
+    }
+}
+
 /// What a region solid's term bounds (§6.21): the measure a bound on its probe reads, recognised
 /// by the constraint's kind and never by the set it came from.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -572,6 +586,71 @@ impl Sketch {
     pub fn solid(&mut self, def: SolidDef, name: &str) -> usize {
         self.solids.push(SolidE { def, name: name.to_string(), class: Classes::default() });
         self.solids.len() - 1
+    }
+
+    /// **What the body rule would make of `target`** with `tools` joined to it by `word` (#162
+    /// F4): solid `target` evaluated as `tool word target` for each tool would leave it, and
+    /// nothing written.  A body's own sets take the tools (union first, then cut and bound, in
+    /// either order), so a tool joined to a body that already cuts is cut too, as the statement
+    /// would have it; any other solid is the stock.  Evaluated as a scratch solid past the last,
+    /// taken out again — with what the caches learned of it — however the evaluation ends.
+    /// Refused, with the cause, for an index out of range, no tool, a body the statements would
+    /// make of itself (E041, asked as the elaborator asks it) and wherever evaluation refuses.
+    pub fn preview_body(
+        &mut self, target: usize, word: crate::syntax::BodyWord, tools: &[usize],
+    ) -> Result<std::rc::Rc<crate::solid::EvaluatedSolid>, String> {
+        let n = self.solids.len();
+        let name = self.solids.get(target).map(|s| s.name.clone())
+            .ok_or("the body to preview is no solid of this drawing")?;
+        if tools.is_empty() { return Err(format!("nothing to {} `{name}`", word.as_str())); }
+        if tools.iter().any(|&t| t >= n) { return Err("a tool to preview is no solid of this drawing".into()); }
+        let swept = !matches!(self.solids[target].def, SolidDef::Body { .. });
+        // the body the statements make: over the target's own sets, or over the target as stock
+        let body = |stock: usize, of: &SolidDef| {
+            let mut def = if swept {
+                SolidDef::Body { stock: stock as u32, on: Vec::new(), through: Vec::new(), bound: Vec::new() }
+            } else {
+                of.clone()
+            };
+            def.body_set(word).expect("a body").extend(tools.iter().map(|&t| t as u32));
+            def
+        };
+        /// The scratch solid goes, and what every cache learned of it, and the target's own
+        /// definition comes back — even past a panic.
+        struct Scratch<'a>(&'a mut Sketch, usize, Option<(usize, SolidDef)>);
+        impl Drop for Scratch<'_> {
+            fn drop(&mut self) {
+                let (sk, n) = (&mut *self.0, self.1);
+                if let Some((i, def)) = self.2.take() { sk.solids[i].def = def; }
+                sk.solids.truncate(n);
+                sk.solid_cache.borrow_mut().retain(|(i, _), _| *i != n);
+                sk.exact_cache.borrow_mut().remove(&n);
+                sk.meridian_cache.borrow_mut().remove(&n);
+                sk.field_surfaces.borrow_mut().remove(&n);
+            }
+        }
+        // **made of itself?**  Asked of the drawing as the elaborator would build it: the target the
+        // body, its sweep moved to a stock past the last — so a `through:` tool reads that stock's
+        // material, and only a tool that is the target or is made of it closes a cycle
+        {
+            let def = body(n, &self.solids[target].def);
+            let mut scratch = Scratch(self, n, None);
+            if swept {
+                let stock = scratch.0.solids[target].clone();
+                scratch.0.solids.push(stock);
+            }
+            scratch.2 = Some((target, std::mem::replace(&mut scratch.0.solids[target].def, def)));
+            let culprit = tools.iter().find(|&&t| t == target
+                || crate::solid::reaches(scratch.0, t as u32, target as u32));
+            if let Some(&t) = culprit {
+                return Err(format!("`{name}` would be made of itself: `{}` is made of it",
+                                   scratch.0.solids[t].name));
+            }
+        }
+        let def = body(target, &self.solids[target].def);
+        let scratch = Scratch(self, n, None);
+        scratch.0.solid(def, &name);
+        scratch.0.evaluated_solid(n, crate::solid::ApproximationPolicy::from_unit(0.0))
     }
 
     /// What the document calls a solid.

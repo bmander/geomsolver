@@ -2167,6 +2167,103 @@ test('with a body selected a revolution joins it, or cuts it with ⌥', () => {
   assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
 });
 
+/* -- union, cut, intersect (#162 F4) ------------------------------------------------------ */
+
+/** EXTRUDING's rectangle as `block`, 5 behind the front; a peg through it on its circle, standing
+ *  10 out either side; and its square, beside it, as `side`.  Seen square on to the front. */
+function combining(more = ''): SketchView {
+  const view = docView(`${EXTRUDING}block := solid(face(ab, bc, cd, da), depth: 5)\n`
+                       + 'peg := solid(face(hole), from: -10, to: 10)\n'
+                       + `side := solid(face(pq, qr, rs, sp), depth: 5)\n${more}`);
+  assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
+  view.orbit = { az: -Math.PI / 2, el: 0 };
+  return view;
+}
+
+/** A click where the eye sees a place in space. */
+function clickSeen(view: SketchView, x: [number, number, number]): void {
+  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  cv.fire('pointerdown', pointer(...seenAt(view, x)));
+  cv.fire('pointerup', pointer(...seenAt(view, x)));
+}
+
+test('a Boolean tool takes the body to change, then its tools, and writes them as one step', () => {
+  const view = combining();
+  const said: string[] = [];
+  view.onStatus = (m) => said.push(m);
+  view.setTool('cut');
+  assert.ok(said.some((m) => /click the body to cut/.test(m)), said.join('\n'));
+  const before = view.source;
+  const names = () => view.selectedSolids.map((s) => s.name);
+  const pending = () => view.combining;
+  clickSeen(view, [10, 0, 10]);
+  assert.deepEqual(names(), ['block'], 'the first body clicked is the target');
+  assert.equal(pending(), null, 'nothing to preview without a tool');
+  clickSeen(view, [30, 0, 20]);
+  clickSeen(view, [85, 0, 5]);
+  assert.deepEqual(names(), ['block', 'peg', 'side']);
+  const c = pending();
+  assert.deepEqual(c && [c.target.name, c.word, c.tools.map((t) => t.name)],
+                   ['block', 'cut', ['peg', 'side']], 'the preview is of what would be written');
+  clickSeen(view, [85, 0, 5]);
+  assert.deepEqual(names(), ['block', 'peg'], 'a tool clicked again is let go');
+  assert.equal(view.source, before, 'nothing is written while bodies are picked');
+  // a click back on the target writes the Boolean, and leaves it selected for the next
+  clickSeen(view, [10, 0, 10]);
+  assert.ok(view.source.endsWith('peg cut block\n'), view.source);
+  assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
+  assert.deepEqual(names(), ['block']);
+  assert.equal(view.tool, 'cut', 'the tool stays down for the next');
+  view.undo();
+  assert.equal(view.source, before, 'the Boolean is one undo step');
+  // Escape lets the tools go, then the target, then puts the tool down
+  view.pickSolid(view.solidAt(...seenAt(view, [10, 0, 10]))!);
+  clickSeen(view, [30, 0, 20]);
+  view.cancelTool();
+  assert.deepEqual(names(), ['block']);
+  view.cancelTool();
+  assert.deepEqual(names(), []);
+  assert.equal(view.tool, 'cut');
+  view.cancelTool();
+  assert.equal(view.tool, 'select');
+});
+
+test('a Boolean starts from the bodies selected, and Enter writes it; Intersect is `bound`', () => {
+  const view = combining();
+  view.pickSolid(view.solidAt(...seenAt(view, [10, 0, 10]))!);
+  view.pickSolid(view.solidAt(...seenAt(view, [30, 0, 20]))!, true);
+  view.pickSolid(view.solidAt(...seenAt(view, [85, 0, 5]))!, true);
+  view.setTool('union');
+  assert.deepEqual(view.combining?.tools.map((t) => t.name), ['peg', 'side']);
+  view.finishCurve();                       // Enter
+  assert.ok(view.source.endsWith('peg union block\nside union block\n'), view.source);
+  assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
+  view.undo();
+  view.setTool('bound');
+  clickSeen(view, [10, 0, 10]);
+  clickSeen(view, [30, 0, 20]);
+  view.finishCurve();
+  assert.ok(view.source.endsWith('peg bound block\n'), view.source);
+  assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
+});
+
+test('a Boolean the language refuses is refused at the gesture, in its words', () => {
+  // `shell` is made of `block`: cutting it from `block` would make `block` of itself (E041)
+  const view = combining('shell := solid(block)\n');
+  const at = (name: string): SolidPick => ({
+    name, index: view.doc.solids().find((s) => s.name === name)!.index, face: '',
+  });
+  const said: string[] = [];
+  view.onStatus = (m) => said.push(m);
+  view.pickSolid(at('block'));
+  view.pickSolid(at('shell'), true);
+  view.setTool('cut');
+  const before = view.source;
+  view.finishCurve();
+  assert.equal(view.source, before);
+  assert.ok(said.some((m) => /made of itself/.test(m)), said.join('\n'));
+});
+
 test('in orbit mode a drag turns the workspace, whatever tool is down, and draws nothing', () => {
   const view = docView('use std\nin std.front {\na := point hint((0, 0))\n}\n');
   view.setTool('line');
