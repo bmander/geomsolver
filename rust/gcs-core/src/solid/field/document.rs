@@ -194,6 +194,9 @@ fn read(sk: &Sketch,solid: usize,axis_tolerance: f64) -> Result<Snapshot,String>
             let get = |i: u32| done[&(i as usize)].clone();
             let error = |e| format!("material field: {e:?}");
             Ok(match &s.def {
+                // a region whose terms share no axis, read point by point (§6.21)
+                SolidDef::Region {..} if crate::solid::region::in_general(sk,i) =>
+                    Snapshot::Static(crate::solid::region::general(sk,i)?.into()),
                 SolidDef::Revolve {..} | SolidDef::Region {..} =>
                     Snapshot::Static(RevolvedRegion::read(sk,i,axis_tolerance)?.field()?.into()),
                 SolidDef::Prism {face,from,to} =>

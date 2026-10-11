@@ -209,6 +209,12 @@ written as there (`Scope::written`, kept when `apply` stamps the use's over it; 
 two uses in one body stand apart.
 `tests/region_solids.rs` and `tests/region_blank.rs` (the blank as a region against today's, both
 designs, both members) are the gates.
+**A region in general position** (#183): one whose terms share no axis (the meridian refuses it,
+`region::readable`/`in_general`) is read point by point by `solid::field::RegionField`, a
+`SpatialField` leaf (each term its surface's exact signed distance, the largest; a box's enclosure
+the centre's value within its half-diagonal), its support the box of the planes every term lies
+within (`polytope_box`, refused unbounded). Evaluated as sweeps are (`sweeps_among`: the field's
+surface); no exact construction yet (`cad.rs` says so). `tests/region_general.rs` is the gate.
 **Distance from a set, offsets (§6.21, 0.64, #145 F4):** `p distance(d, side: outside|inside) S`
 (`distance` is a set use, `may_use`), `p inside(d) S` / `p outside(d) S` and `std.Offset(S, d)` are
 one bound on the signed distance from `S`'s surface (`Reach`: cmp toward the outside, whether

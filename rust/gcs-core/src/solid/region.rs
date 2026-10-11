@@ -285,3 +285,114 @@ pub(super) fn face_polys(m: &Meridian, unit: f64) -> Vec<super::profile::FacePol
         super::profile::FacePoly { pts, of, names, basis, curved }
     }).collect()
 }
+
+/// Why a meridian refused that no reading in general position answers either: a region with no
+/// material or none bounded (`fold`'s own words), which is the same region however it is read.
+fn refused_outright(why: &str) -> bool { why.contains("leaves no material") || why.contains("has no end") }
+
+/// Region solid `solid` read point by point (`solid::field::RegionField`): its terms in general
+/// position, each the exact signed distance from its surface.  Its support is the box of the
+/// planes every term lies within — a ball's six, a cylinder's four about its line, a cone's four
+/// about its axis, a half-space's own — and refused where they close nothing.
+pub fn general(sk: &Sketch, solid: usize) -> Result<crate::solid::field::RegionField, String> {
+    use crate::solid::field::region::{polytope_box, Measure, Term};
+    let s = sk.solids.get(solid).ok_or("no such solid")?;
+    let SolidDef::Region { terms, .. } = &s.def else {
+        return Err(format!("`{}` is not a region", s.name));
+    };
+    let point = |i: u32| sk.world_point(i as usize);
+    let line = |l: u32| {
+        let l = &sk.lines[l as usize];
+        (point(l.p1), point(l.p2))
+    };
+    let mut out = Vec::new();
+    let mut planes: Vec<(V, f64)> = Vec::new();
+    // two directions square to `d`
+    let square = |d: V| {
+        let (_, e1) = across(d);
+        let e2 = cross(d, e1);
+        (e1, e2)
+    };
+    for t in terms {
+        let lo = t.lo.value(sk).map_err(|m| format!("{}: {m}", s.name))?;
+        let grow = t.grow.as_ref().map_or(Ok(0.0), |g| g.value(sk)).map_err(|m| format!("{}: {m}", s.name))?;
+        let reach = t.hi.unwrap_or(lo).max(lo);
+        let within = t.cmp != Cmp::Ge;
+        let measure = match t.shape {
+            RegionShape::Ball { center } => {
+                let c = point(center);
+                if within {
+                    for k in 0..3 {
+                        let mut n = [0.0; 3];
+                        n[k] = 1.0;
+                        planes.push((n, c[k] + reach));
+                        n[k] = -1.0;
+                        planes.push((n, -c[k] + reach));
+                    }
+                }
+                Measure::Point(c)
+            }
+            RegionShape::Cylinder { line: l } => {
+                let (a, b) = line(l);
+                let d = normalised(sub(b, a)).ok_or("a cylinder about no line")?;
+                if within {
+                    let (e1, e2) = square(d);
+                    for e in [e1, e2, scale(e1, -1.0), scale(e2, -1.0)] {
+                        planes.push((e, dot(e, a) + reach));
+                    }
+                }
+                Measure::Line { a, d }
+            }
+            RegionShape::Cone { axis: l } => {
+                let (a, b) = line(l);
+                let d = normalised(sub(b, a)).ok_or("a cone about no line")?;
+                if within && reach + 1e-12 < FRAC_PI_2 && grow <= 0.0 {
+                    // within the four planes through the apex leaning `reach` off the axis
+                    let (e1, e2) = square(d);
+                    let tan = reach.tan();
+                    for e in [e1, e2, scale(e1, -1.0), scale(e2, -1.0)] {
+                        let n = sub(e, scale(d, tan));
+                        planes.push((n, dot(n, a)));
+                    }
+                }
+                Measure::Cone { a, d }
+            }
+            RegionShape::Plane { plane, from, sign } => {
+                let n = scale(sk.basis(plane as usize).normal(), sign);
+                let o = point(from);
+                // the ordinate `n · (x - o)` against its number
+                match t.cmp {
+                    Cmp::Le => planes.push((n, lo + dot(n, o))),
+                    Cmp::Ge => planes.push((scale(n, -1.0), -(lo + dot(n, o)))),
+                    Cmp::In => {
+                        planes.push((n, t.hi.unwrap_or(lo) + dot(n, o)));
+                        planes.push((scale(n, -1.0), -(lo + dot(n, o))));
+                    }
+                }
+                Measure::Ordinate { o, n }
+            }
+        };
+        out.push(Term { measure, cmp: t.cmp, lo, hi: t.hi, grow });
+    }
+    let support = polytope_box(&planes)
+        .ok_or_else(|| format!("`{}` has no end: bound it all round (a ball, two planes, …)", s.name))?;
+    Ok(crate::solid::field::RegionField::new(out, Some(support)))
+}
+
+/// Whether region solid `solid` is read in general position: its meridian refused for a reason
+/// a reading point by point answers (its terms share no axis), and that reading made.
+pub fn in_general(sk: &Sketch, solid: usize) -> bool {
+    matches!(sk.solids.get(solid).map(|s| &s.def), Some(SolidDef::Region { .. }))
+        && meridian(sk, solid).is_err_and(|why| !refused_outright(&why))
+        && general(sk, solid).is_ok()
+}
+
+/// A region solid's reading as `validate` asks it: its meridian, or else its reading in general
+/// position, or the meridian's refusal.
+pub fn readable(sk: &Sketch, solid: usize) -> Result<(), String> {
+    match meridian(sk, solid) {
+        Ok(_) => Ok(()),
+        Err(why) if refused_outright(&why) => Err(why),
+        Err(_) => general(sk, solid).map(|_| ()),
+    }
+}

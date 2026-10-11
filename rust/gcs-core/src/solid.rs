@@ -432,10 +432,11 @@ pub(crate) fn has_sweep(sk: &Sketch, si: usize) -> bool {
     validate_at(sk, si, REPORT_UNIT).map(|ops| sweeps_among(sk, &ops)).unwrap_or(false)
 }
 
-/// Whether a continuous motion sweep is among `operands` (`validate_at`'s): the one test, asked by
+/// Whether a continuous motion sweep, or a region read in general position (`region::in_general`),
+/// is among `operands` (`validate_at`'s): their boundary is the field's.  The one test, asked by
 /// `has_sweep` and by an evaluation that has validated the operands already at its own unit.
 fn sweeps_among(sk: &Sketch, operands: &std::collections::BTreeSet<usize>) -> bool {
-    operands.iter().any(|&i| matches!(sk.solids[i].def, SolidDef::Swept { .. }))
+    operands.iter().any(|&i| matches!(sk.solids[i].def, SolidDef::Swept { .. }) || region::in_general(sk, i))
 }
 
 fn validate_at(sk: &Sketch, si: usize, unit: f64) -> Result<std::collections::BTreeSet<usize>, String> {
@@ -480,9 +481,10 @@ fn validate_at(sk: &Sketch, si: usize, unit: f64) -> Result<std::collections::BT
                 continue;
             }
             SolidDef::Body { .. } => { pending.extend(s.operands().into_iter().rev().map(|o| (o as usize, false))); continue; }
-            // its terms on one axis, bounded all round: what its meridian says
+            // its terms on one axis, bounded all round: what its meridian says; else in general
+            // position, bounded all round
             SolidDef::Region { .. } => {
-                region::meridian(sk, i).map_err(|m| fail(&m))?;
+                region::readable(sk, i).map_err(|m| fail(&m))?;
                 continue;
             }
         };
