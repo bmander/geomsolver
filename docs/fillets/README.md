@@ -496,7 +496,8 @@ are the field's (X5): the evaluator, not the language.
    oblique run-out that hangs 2.6% past the face, in the air. Cut off by the face it ends on, it
    is the stack's and OCCT's result (to 1.9e-4), with nothing carried past. That needs the faces
    an edge ends on (F7).
-   - Without F7, the square end is the definition, and it differs from OCCT at oblique run-outs.
+   - **Decided (2026-10-11): keep the convention.** A run is cut off by the face it ends on, so
+     F7 is a language step. The square end is not the definition.
 3. **Which way an edge turns is not in a set's terms.** X2 read it off the Boolean that joined
    the faces. A set cannot, and the reach does not separate the two forms: at a convex edge, the
    concave form's wedge (outside both faces) is the opposite quadrant, whose cusp also touches the
