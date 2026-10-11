@@ -1023,12 +1023,12 @@ fn sweep_edit(e: &Elaborated, prog: &Program, solid: usize, how: &SolidSweep) ->
 
 /// `a word b`, written as the source says it: the elaborator reads which relation the word means
 /// off the operands' kinds (`infix_op`), as it does for anything typed.
-fn written(a: &str, word: &str, b: &str) -> StmtKind {
+fn written(a: &str, word: &str, args: Vec<syntax::OpArg>, b: &str) -> StmtKind {
     let form = syntax::Written {
         word: syntax::Name::new(word),
         fixity: crate::constraints::Fixity::Infix,
         ops: vec![syntax::Ref::new(a.to_string()), syntax::Ref::new(b.to_string())],
-        args: Vec::new(),
+        args,
         span: Span::default(),
     };
     StmtKind::Relation(syntax::Relation::of(syntax::RelationForm::Written(form)))
@@ -1075,8 +1075,18 @@ impl Selection {
     }
 }
 
-/// A relation a datum is dropped with, `(a, word, b)`: `p coincident v0`.
-type Said = (String, &'static str, String);
+/// A relation a datum is dropped with: `p coincident v0`, `v0 distance(20) v1`.
+struct Said {
+    a: String,
+    word: &'static str,
+    args: Vec<syntax::OpArg>,
+    b: String,
+}
+
+/// `a word b`, with nothing in the word's parentheses.
+fn said(a: impl Into<String>, word: &'static str, b: impl Into<String>) -> Said {
+    Said { a: a.into(), word, args: Vec::new(), b: b.into() }
+}
 
 /// A datum dropped by a button (#162 F1): a free plane or axis, constrained to what is selected.
 ///
@@ -1133,7 +1143,7 @@ fn datum_edit(
         axis_datum(sk, &sel, &current, &name)?
     };
     let mut stmts = vec![StmtKind::Decl(decl)];
-    stmts.extend(said.iter().map(|(a, word, b)| written(a, word, b)));
+    stmts.extend(said.into_iter().map(|s| written(&s.a, s.word, s.args, &s.b)));
     append_checked(&e.program, &stmts, vec![name])
 }
 
@@ -1145,7 +1155,7 @@ fn set_off(sk: &Sketch) -> f64 {
 
 /// `p coincident x`, for each of the points.
 fn through(points: &[(String, [f64; 3])], x: &str) -> Vec<Said> {
-    points.iter().map(|(p, _)| (p.clone(), "coincident", x.to_string())).collect()
+    points.iter().map(|(p, _)| said(p.clone(), "coincident", x)).collect()
 }
 
 /// The plane's row of `add_datum`'s table: its declaration, seeded with the frame the rule reads
@@ -1175,9 +1185,9 @@ fn plane_datum(sk: &Sketch, sel: &Selection, current: &crate::plane::Basis, name
             // square to an axis outright; to a drawn line by standing square to both the plane's
             // own axes, there being no line-square-to-a-plane relation
             let square = if r.axis {
-                vec![(r.name.clone(), "perpendicular", name.to_string())]
+                vec![said(r.name.clone(), "perpendicular", name)]
             } else {
-                let to = |a: &str| (r.name.clone(), "perpendicular", format!("{name}.{a}"));
+                let to = |a: &str| said(r.name.clone(), "perpendicular", format!("{name}.{a}"));
                 vec![to("u"), to("v")]
             };
             (Basis { u, v, o: points[0].1 }, square)
@@ -1188,10 +1198,16 @@ fn plane_datum(sk: &Sketch, sel: &Selection, current: &crate::plane::Basis, name
             let f = Basis::explicit(a.dir, b.dir)
                 .or_else(|| Basis::explicit(a.dir, sub(b.at, a.at)))
                 .ok_or("the two lie along one line: they make no single plane")?;
-            let held = rays.iter().map(|r| (r.name.clone(), "coincident", name.to_string()));
+            let held = rays.iter().map(|r| said(r.name.clone(), "coincident", name));
             (Basis { o: a.at, ..f }, held.collect())
         }
-        (0, 0, 1) => (off(&planes[0].1), vec![(name.to_string(), "parallel", planes[0].0.clone())]),
+        // parallel, and as far off as it is set: the offset stated, so it is sized at once
+        (0, 0, 1) => {
+            let (p, b) = &planes[0];
+            let mut apart = said(p.clone(), "distance", name);
+            apart.args = vec![syntax::OpArg::Dim(syntax::num(set_off(sk)), Span::default())];
+            (off(b), vec![said(name, "parallel", p.clone()), apart])
+        }
         _ => return Err("a plane is dropped with nothing selected, or through a point, three \
                          points, a point and a line or axis, two lines or axes, or a plane"
             .into()),
@@ -1225,15 +1241,15 @@ fn axis_datum(sk: &Sketch, sel: &Selection, current: &crate::plane::Basis, name:
         }
         (0, 1, 0) => {
             let r = &rays[0];
-            let along = vec![(r.name.clone(), "coincident", n.clone())];
+            let along = vec![said(r.name.clone(), "coincident", n.clone())];
             (unit(r.dir, "the line has no length")?, r.at, along)
         }
         (1, 0, 1) => (planes[0].1.normal(), points[0].1,
-            vec![(n.clone(), "perpendicular", planes[0].0.clone())]),
+            vec![said(n.clone(), "perpendicular", planes[0].0.clone())]),
         (0, 0, 1) => {
             let (p, b) = &planes[0];
-            (b.normal(), b.o, vec![(n.clone(), "perpendicular", p.clone()),
-                                   (format!("{p}.origin"), "coincident", n.clone())])
+            (b.normal(), b.o, vec![said(n.clone(), "perpendicular", p.clone()),
+                                   said(format!("{p}.origin"), "coincident", n.clone())])
         }
         (0, 0, 2) => {
             let (a, b) = (&planes[0].1, &planes[1].1);
@@ -1241,7 +1257,7 @@ fn axis_datum(sk: &Sketch, sel: &Selection, current: &crate::plane::Basis, name:
                 "the two planes are parallel: they do not meet")?;
             let at = crate::csg::meet(a.normal(), a.along_normal(), b.normal(), b.along_normal(), d)
                 .ok_or("the two planes are parallel: they do not meet")?;
-            (d, at, planes.iter().map(|(p, _)| (n.clone(), "coincident", p.clone())).collect())
+            (d, at, planes.iter().map(|(p, _)| said(n.clone(), "coincident", p.clone())).collect())
         }
         _ => return Err("an axis is dropped with nothing selected, or through a point, two points, \
                          along a line or an axis, square to a plane, a plane through a point, or \
@@ -1255,6 +1271,75 @@ fn axis_datum(sk: &Sketch, sel: &Selection, current: &crate::plane::Basis, name:
     let mut seed = seed_round(dir).to_vec();
     seed.extend(seed_round(foot));
     Ok((gesture_decl(EntKind::Axis, name, Vec::new(), &seed), all))
+}
+
+/// **Sketch on a face** (#162 F5): a plane lying on the face `face` of object `solid` (the path
+/// the face is named by, `b0.near`), its origin on the face and the plane touching it there —
+///
+/// ```text
+/// v1 := plane(u: hint(dir: …), v: hint(dir: …)) hint(origin: …)
+/// v1.origin coincident b0.near
+/// v1 tangent(at: v1.origin) b0.near
+/// ```
+///
+/// — so it follows the face wherever the solid's extents and profile take it, and keeps the
+/// freedom to slide and turn on it (constrained further like anything else).  Seeded on the
+/// face's carrier (`solid::carrier`) where the eye's ray met the face (`at`), else at its middle.
+/// One splice, held to the elaborator.
+pub fn sketch_on_face(
+    e: &Elaborated,
+    sk: &Sketch,
+    solid: usize,
+    face: &str,
+    at: Option<[f64; 3]>,
+    name: Option<&str>,
+) -> Edit {
+    on_face_edit(e, sk, solid, face, at, name)
+        .unwrap_or_else(|why| Edit::none(&e.program, Some(why)))
+}
+
+fn on_face_edit(
+    e: &Elaborated,
+    sk: &Sketch,
+    solid: usize,
+    face: &str,
+    at: Option<[f64; 3]>,
+    name: Option<&str>,
+) -> Result<Edit, String> {
+    use crate::space::{dot, scale, sub};
+    let c = crate::solid::carrier::carrier(sk, solid, face)?;
+    let n = c.basis.normal();
+    let origin = at.map_or(c.middle, |p| sub(p, scale(n, dot(sub(p, c.basis.o), n))));
+    let name = chosen_name(&mut taken_names(&e.program), name, EntKind::Plane)?;
+    let seed = |d: [f64; 3]| vec![syntax::Kid::Hint(syntax::KidSeed { v: seed_round(d), axis: true,
+        ..Default::default() })];
+    let decl = gesture_decl(EntKind::Plane, &name, vec![seed(c.basis.u), seed(c.basis.v), Vec::new()],
+        &seed_round(origin));
+    let point = format!("{name}.origin");
+    let touch = syntax::OpArg::Named(syntax::Name::new("at"),
+                                     syntax::Arg::Ref(syntax::Ref::new(point.clone())));
+    let stmts = [
+        StmtKind::Decl(decl),
+        written(&point, "coincident", Vec::new(), face),
+        written(&name, "tangent", vec![touch], face),
+    ];
+    append_checked(&e.program, &stmts, vec![name])
+}
+
+/// The plane already lying on the face `face` of object `solid`, by name — the profile's own for
+/// a cap on it, `std.front` included — so a sketch on the face is drawn there rather than on a
+/// second plane lying on the first (W113).  `None` where none does, or the face has no carrier.
+pub fn face_plane(e: &Elaborated, sk: &Sketch, solid: usize, face: &str) -> Option<String> {
+    use crate::space::{cross, dot, sub};
+    let c = crate::solid::carrier::carrier(sk, solid, face).ok()?;
+    let n = c.basis.normal();
+    let tol = 1e-9 * sk.extent().max(1.0);
+    (0..sk.planes.len()).find_map(|i| {
+        let b = sk.basis(i);
+        let lies = dot(cross(n, b.normal()), cross(n, b.normal())).sqrt() < 1e-9
+            && dot(sub(b.o, c.basis.o), n).abs() < tol;
+        lies.then(|| e.map.name_of(EntRef::new(EntKind::Plane, i)).cloned()).flatten()
+    })
 }
 
 /// `x` to `digits` significant digits.
