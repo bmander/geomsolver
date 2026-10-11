@@ -129,10 +129,14 @@ Measured again with the rule in place (`limit_stops`'s `default` column), the 26
 **Tests.** `block_solve::a_stop_on_the_iteration_limit_is_finished_where_it_stopped` — the
 triangle chain given eight iterations stops on the limit, is settled by the pass from the stop on
 the full solve's pose to 1e-12 of the extent, and the pass from the start alone lands on another
-orientation. `hypoid_layout::a_stop_on_the_iteration_limit_is_rescued_onto_the_recorded_pair` —
-24×48 at module 25.4 solved and jittered three times stops on the limit up to 8.1e-4 off the
-recorded pair (relative to the cone distance) without the rescue, and settles on it to 8.1e-11 with
-it. `hypoid_layout::a_stop_that_stalls_again_is_restarted_in_block_order` — one of the sweep's
+orientation. `hypoid_layout::a_stop_on_the_iteration_limit_is_rescued` — 24×48 at module 25.4
+solved and jittered three times stopped on the limit up to 8.1e-4 off the recorded pair (relative
+to the cone distance) without the rescue, and settled on it to 8.1e-11 with it. *Since #145's
+layout changes (2026-10),* the three hypoid tests find their own start (`first_start`): each
+walks fixed jitters and seeds, checks the rescue's promise at every stop it meets (settled, the
+stop bit for bit, or a bound broken after it) and ends at the first start its scenario holds at;
+the limit stop's claim is now that the block pass settles it, whichever root (which root is the
+rough starts' gate). `hypoid_layout::a_stop_that_stalls_again_is_restarted_in_block_order` — one of the sweep's
 seven: the pass from the stop stalls (status 1, 6e-10), and the default solve lands 2.5e-15 of the
 extent from the block path held to 1e-12. `hypoid_layout::a_stop_the_rescue_cannot_settle_keeps_
 its_pose` — the halved bevel pair comes out of the default solve with the same bits, status,
