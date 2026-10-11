@@ -195,6 +195,8 @@ export class SketchView {
   onChanged: () => void = () => {};
   /** The active tool changed (including when Escape backs out of one). */
   onTool: (tool: Tool) => void = () => {};
+  /** Orbit mode was put up or down — see `setOrbitMode`. */
+  onOrbitMode: (on: boolean) => void = () => {};
   /** A pointer interaction changed the canvas selection — so the canvas now has the focus,
    *  and whatever else was focused (a constraint row) no longer does. */
   onSelect: () => void = () => {};
@@ -228,6 +230,11 @@ export class SketchView {
   /** An extrusion is being sized, and this is where its number is on screen — the shell puts an
    *  editor there; nulls when there is none. */
   onExtent: (live: LiveExtent | null, at: [number, number] | null) => void = () => {};
+  /** **Orbit mode**: a press with the primary button — one finger, on a phone — turns the
+   *  workspace about rather than reaching the tool or the selection, so the view can be turned
+   *  with the one gesture a touch screen has.  View state, toggled from the workspace's corner;
+   *  a pinch still zooms and pans.  Written through `setOrbitMode`. */
+  orbitMode = false;
   /** The extrusion being sized, if any — see `extrudeAt`. */
   liveExtent: LiveExtent | null = null;
   /** The closed region under the pointer while the Extrude tool is down: what a click there
@@ -466,6 +473,17 @@ export class SketchView {
     if (this.showSolid === on) return;
     this.showSolid = on;
     this.draw();               // the flat scene does not carry it: the box's own build does
+  }
+
+  setOrbitMode(on: boolean): void {
+    if (this.orbitMode === on) return;
+    this.orbitMode = on;
+    this.onOrbitMode(on);
+    // a press no longer reaches the tool, so the Extrude tool's wash promises nothing
+    if (this.hoverRegion) {
+      this.hoverRegion = null;
+      this.draw();
+    }
   }
 
   /** The entity a scene item is drawn from, where one is — the one decode of the wire's

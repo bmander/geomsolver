@@ -62,7 +62,8 @@ import {
   planeSelect, view, initialExample,
 } from './shell.js';
 import {
-  MenuItem, ToolbarButton, addMenu, addTopic, askChoice, closeMenus, download, fitBars, openImage, refining, toast,
+  MenuItem, ToolbarButton, addButton, addMenu, addTopic, askChoice, closeMenus, download, fitBars,
+  openImage, refining, toast,
 } from './ui.js';
 import { objectName, type Refining } from './field-preview.js';
 import { Tool } from './view.js';
@@ -82,11 +83,21 @@ view.onTool = (t) => {
  * constraints that hold it — all under one head, Elements, on a bar too narrow for them
  * (`fitBar`).  A table like the constraints bar's, so the chip and the accelerator stay one
  * string — see ACTION_KEYS. */
-const TOOLS = [
+const ELEMENT_TOOLS = [
   ['Point', 'point', 'p'], ['Line', 'line', 'l'], ['Rect', 'rect', 'r'],
   ['Circle', 'circle', 'c'], ['Arc', 'arc', 'a'], ['Arc 3-pt', 'arc3', '3'],
-  ['Spline', 'spline', 's'], ['Spline fit', 'splinefit', 'w'], ['Extrude', 'extrude', 'u'],
+  ['Spline', 'spline', 's'], ['Spline fit', 'splinefit', 'w'],
 ] as [string, Tool, string][];
+/* What makes solids of the drawing, under its own head beside the elements: extrude now, and the
+ * lathe and the Boolean operations as they come. */
+const SOLID_TOOLS = [
+  ['Extrude', 'extrude', 'u'],
+] as [string, Tool, string][];
+const TOOLS = [...ELEMENT_TOOLS, ...SOLID_TOOLS];
+const toolButton = ([label, tool, key]: [string, Tool, string]): ToolbarButton => ({
+  label, key, toggle: true, title: 'Click again to put the tool down and go back to selecting',
+  onClick: () => view.setTool(view.tool === tool ? 'select' : tool),
+});
 const TOOL_BUTTONS: ToolbarButton[] = [
   { label: 'Construction', key: 'g', onClick: () => view.toggleConstructionSelected(),
     title: 'Draw the selected lines/circles/arcs dashed as reference geometry (they still constrain)' },
@@ -99,14 +110,30 @@ const TOOL_BUTTONS: ToolbarButton[] = [
          + '· square to a plane, through a point or its origin · where two planes meet · with '
          + 'nothing selected, free, square to the plane being drawn on' },
 ];
-addTopic(barTools, 'Elements', [
-  ...TOOLS.map(([label, tool, key]): ToolbarButton => ({
-    label, key, toggle: true, title: 'Click again to put the tool down and go back to selecting',
-    onClick: () => view.setTool(view.tool === tool ? 'select' : tool),
-  })),
-  null,
-  ...TOOL_BUTTONS,
-]).slice(0, TOOLS.length).forEach((b, i) => toolButtons.set(TOOLS[i][1], b));
+/** A head over tools, and past a divider any other buttons; the tools' buttons are the ones
+ *  `onTool` presses. */
+const toolTopic = (label: string, tools: [string, Tool, string][], rest: ToolbarButton[] = []) =>
+  addTopic(barTools, label, [...tools.map(toolButton), ...(rest.length ? [null, ...rest] : [])])
+    .slice(0, tools.length).forEach((b, i) => toolButtons.set(tools[i][1], b));
+toolTopic('Elements', ELEMENT_TOOLS, TOOL_BUTTONS);
+toolTopic('Solids', SOLID_TOOLS);
+/* The workspace's own buttons, in its corner: orbit mode, where one finger turns the view, and
+ * delete, which a phone has no key for. */
+const VIEW_BUTTONS: ToolbarButton[] = [
+  { label: 'Orbit', key: 'o', toggle: true,
+    title: 'Orbit mode: a drag turns the workspace about, rather than drawing or selecting — one '
+         + 'finger on a phone.  Click again to put it down',
+    onClick: () => {
+      view.setOrbitMode(!view.orbitMode);
+      toast(view.orbitMode ? 'orbit: drag to turn the view' : 'orbit off');
+    } },
+  { label: 'Delete', onClick: () => view.deleteSelected(),
+    title: 'Delete what is selected (Delete)' },
+];
+const [orbitButton] = VIEW_BUTTONS.map((b) => addButton(
+  document.getElementById('view-buttons') as HTMLElement, b));
+/** The Orbit button follows the view, as the tools' do. */
+view.onOrbitMode = (on) => orbitButton.setAttribute('aria-pressed', String(on));
 view.setTool('select');
 addTopic(barConstraints, 'Constraints', CONSTRAINT_BUTTONS);
 fitBars(document.querySelector('header')!, [barTools, barConstraints]);
@@ -424,7 +451,7 @@ const TOOL_KEYS: Record<string, Tool> =
 /** Every accelerator in the app, read off the buttons and menu items themselves so there is
  *  one list and not two.  The token is the chip the control prints, lowercased: '⇧l', '⌘z'. */
 const ACTION_KEYS = new Map<string, () => void>(
-  [...TOOL_BUTTONS, ...CONSTRAINT_BUTTONS, ...MENUS.flatMap(([, items]) => items)]
+  [...TOOL_BUTTONS, ...VIEW_BUTTONS, ...CONSTRAINT_BUTTONS, ...MENUS.flatMap(([, items]) => items)]
     .flatMap((b) => (b?.key ? [[b.key, b.onClick] as [string, () => void]] : [])));
 
 window.addEventListener('keydown', (e) => {
