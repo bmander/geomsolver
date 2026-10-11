@@ -88,10 +88,10 @@ const ELEMENT_TOOLS = [
   ['Circle', 'circle', 'c'], ['Arc', 'arc', 'a'], ['Arc 3-pt', 'arc3', '3'],
   ['Spline', 'spline', 's'], ['Spline fit', 'splinefit', 'w'],
 ] as [string, Tool, string][];
-/* What makes solids of the drawing, under its own head beside the elements: extrude now, and the
- * lathe and the Boolean operations as they come. */
+/* What makes solids of the drawing, under its own head beside the elements: extrude and revolve
+ * now, and the Boolean operations as they come. */
 const SOLID_TOOLS = [
-  ['Extrude', 'extrude', 'u'],
+  ['Extrude', 'extrude', 'u'], ['Revolve', 'revolve', 'q'],
 ] as [string, Tool, string][];
 const TOOLS = [...ELEMENT_TOOLS, ...SOLID_TOOLS];
 const toolButton = ([label, tool, key]: [string, Tool, string]): ToolbarButton => ({

@@ -85,16 +85,13 @@ pub fn reads(sk: &Sketch, si: usize, unit: f64) -> Vec<f64> {
                 stack.push(*body);
             }
             SolidDef::Revolve { face, axis, sweep, sense } => {
-                v.extend([1.0, *axis as f64]);
+                v.extend([1.0, axis.kind as u8 as f64, axis.i() as f64]);
                 v.push(sweep.value);
                 v.push(if *sense == Sense::Cw { -1.0 } else { 1.0 });
                 face_reads(sk, *face, &mut v);
-                if let Some(l) = sk.lines.get(*axis as usize) {
-                    for p in [l.p1, l.p2] {
-                        let q = sk.point_xy(p as usize);
-                        v.push(q.0);
-                        v.push(q.1);
-                    }
+                match sk.revolve_axis(*face, *axis) {
+                    Some((a, b)) => v.extend([a.0, a.1, b.0, b.1]),
+                    None => v.push(f64::NAN),
                 }
             }
             SolidDef::Body { stock, on, through, bound } => {
@@ -472,10 +469,9 @@ fn build(
                 let (lo, hi) = through_extent.expect("through extent was resolved before sweeping");
                 prism(&p, lo, hi, &name)
             }
-            SolidDef::Revolve { axis, sweep, sense, .. } => {
-                let Some(l) = sk.lines.get(*axis as usize) else { return Term::Empty };
-                let (a, b) = (sk.point_xy(l.p1 as usize), sk.point_xy(l.p2 as usize));
-                revolve(&p, (a, b), sweep.value, *sense, unit, &name)
+            SolidDef::Revolve { face, axis, sweep, sense } => {
+                let Some(ab) = sk.revolve_axis(*face, *axis) else { return Term::Empty };
+                revolve(&p, ab, sweep.value, *sense, unit, &name)
             }
             SolidDef::Body { .. } | SolidDef::Loft { .. } | SolidDef::Placed { .. }
                 | SolidDef::Swept { .. } | SolidDef::Region { .. } => unreachable!(),

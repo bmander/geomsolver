@@ -2349,6 +2349,43 @@ pub unsafe extern "C" fn gcs_workspace_extent_at(h: *mut Sketch, az: f64, el: f6
     })
 }
 
+/// The handle revolution `solid` is sized by, seen by the eye at `az`, `el`: `{base: [x, y], arc:
+/// [[x, y], …], tip: [x, y] | null, turn}` — the arc its profile's middle turns through, no tip
+/// seen along the turning plane, `turn` in degrees, positive right-handed about the axis — or
+/// `null` for no revolution: `workspace::turn_handle`.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_workspace_turn_handle_json(h: *mut Sketch, az: f64, el: f64,
+                                                        solid: i32) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || {
+        use gcs_core::overview::workspace::{turn_handle, Projection};
+        let s = sk(h);
+        let proj = Projection::new(s, az, el);
+        let pt = |p: (f64, f64)| Json::Arr(vec![Json::Num(p.0), Json::Num(p.1)]);
+        out_json(match turn_handle(s, &proj, solid.max(0) as usize) {
+            Some(k) => json::object([
+                ("base", pt(k.base)),
+                ("arc", Json::Arr(k.arc.into_iter().map(pt).collect())),
+                ("tip", k.tip.map_or(Json::Null, pt)),
+                ("turn", Json::Num(k.turn)),
+            ]),
+            None => Json::Null,
+        })
+    })
+}
+
+/// How far revolution `solid` turns, in signed degrees, where its handle is dragged to (x, y) on
+/// the eye's picture plane, the whole turns round nearest `near` — or NaN: `workspace::turn_at`.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_workspace_turn_at(h: *mut Sketch, az: f64, el: f64, solid: i32,
+                                               x: f64, y: f64, near: f64) -> f64 {
+    guard(f64::NAN, move || {
+        use gcs_core::overview::workspace::{turn_at, Projection};
+        let s = sk(h);
+        let proj = Projection::new(s, az, el);
+        turn_at(s, &proj, solid.max(0) as usize, (x, y), near).unwrap_or(f64::NAN)
+    })
+}
+
 /// The arrow the plane distance `id` is sized by, seen by the eye at `az`, `el`: `{base: [x, y],
 /// tip: [x, y] | null, distance}` — or `null` for any other constraint: `workspace::offset_handle`.
 #[no_mangle]
@@ -4205,23 +4242,48 @@ pub unsafe extern "C" fn gcs_elab_extrude(h: *mut Elaborated, s: *mut Sketch, pt
         let holes: Vec<Vec<String>> =
             v.get("holes").map(|a| a.arr().iter().map(strings).collect()).unwrap_or_default();
         let body = v.get("body").map(|x| x.as_str().to_string());
-        let with = match (v.get("word").map(|w| w.as_str()), body.as_deref()) {
-            (None, _) => None,
-            (Some(w), body) => match (gcs_core::syntax::BodyWord::parse(w), body) {
-                (Some(word), Some(body)) => Some((word, body)),
-                _ => {
-                    set_error(format!("`{w}` with a body is the body rule: union, cut or bound"));
-                    return std::ptr::null_mut();
-                }
-            },
-        };
+        let Ok(with) = body_rule(&v, body.as_deref()) else { return std::ptr::null_mut() };
         let through = v.get("through").is_some_and(|x| x.as_bool());
         out_edit(gcs_core::edit::extrude(&(*h).program, sk(s), &outer, &holes, with, through))
     })
 }
 
+/// The body rule a region's solid joins with — `word` and `body`, or neither — or `Err` with the
+/// error set, for a word that is not one.
+fn body_rule<'b>(v: &Json, body: Option<&'b str>)
+    -> Result<Option<(gcs_core::syntax::BodyWord, &'b str)>, ()> {
+    match (v.get("word").map(|w| w.as_str()), body) {
+        (None, _) => Ok(None),
+        (Some(w), body) => match (gcs_core::syntax::BodyWord::parse(w), body) {
+            (Some(word), Some(body)) => Ok(Some((word, body))),
+            _ => {
+                set_error(format!("`{w}` with a body is the body rule: union, cut or bound"));
+                Err(())
+            }
+        },
+    }
+}
+
+/// A revolution of the region a click found about a line or an axis — `{outer: [..], holes:
+/// [[..]], about, word?: "union" | "cut", body?}` — the face, the solid and the body rule in one
+/// splice: `edit::revolve`.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_elab_revolve(h: *mut Elaborated, ptr: *const u8, len: usize) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || {
+        let v = as_json(ptr, len);
+        let outer = v.get("outer").map(strings).unwrap_or_default();
+        let holes: Vec<Vec<String>> =
+            v.get("holes").map(|a| a.arr().iter().map(strings).collect()).unwrap_or_default();
+        let about = v.get("about").map(|x| x.as_str().to_string()).unwrap_or_default();
+        let body = v.get("body").map(|x| x.as_str().to_string());
+        let Ok(with) = body_rule(&v, body.as_deref()) else { return std::ptr::null_mut() };
+        out_edit(gcs_core::edit::revolve(&(*h).program, &outer, &holes, &about, with))
+    })
+}
+
 /// Rewrite how solid `solid` is swept — `{way: "behind" | "front" | "both", thick}`, an
-/// extrusion's thickness the way it runs, or a sweep outright, `{depth?, from?, to?, …}`:
+/// extrusion's thickness the way it runs, `{turn, sense?}`, a revolution's angle in degrees about
+/// what it already turns about, or a sweep outright, `{depth?, from?, to?, …}`:
 /// `edit::set_sweep`.
 #[no_mangle]
 pub unsafe extern "C" fn gcs_elab_set_sweep(h: *mut Elaborated, solid: i32, ptr: *const u8,
@@ -4229,8 +4291,10 @@ pub unsafe extern "C" fn gcs_elab_set_sweep(h: *mut Elaborated, solid: i32, ptr:
     guard(std::ptr::null_mut(), move || {
         let v = as_json(ptr, len);
         let way = v.get("way").and_then(|w| gcs_core::model::Way::parse(w.as_str()));
-        let how = match (way, v.get("thick")) {
-            (Some(way), Some(t)) => gcs_core::edit::SolidSweep::thick(way, t.as_str()),
+        let how = match (way, v.get("thick"), v.get("turn")) {
+            (Some(way), Some(t), _) => gcs_core::edit::SolidSweep::thick(way, t.as_str()),
+            (_, _, Some(t)) => gcs_core::edit::SolidSweep::turn(t.as_str(),
+                sweep_of(&v).sense.unwrap_or(gcs_core::syntax::Sense::Ccw)),
             _ => sweep_of(&v),
         };
         out_edit(gcs_core::edit::set_sweep(&*h, &(*h).program, solid.max(0) as usize, &how))
@@ -4247,7 +4311,18 @@ pub unsafe extern "C" fn gcs_sketch_set_prism(h: *mut Sketch, i: i32, way: i32, 
     guard(0, move || i32::from(i >= 0 && sk(h).set_prism(i as usize, way, d)))
 }
 
-/// Bumped whenever a solid's shape changes in place (`set_prism`): what a cached mesh keys on.
+/// Re-turn revolution `i` where it stands through `sweep` radians, clockwise about its axis where
+/// `cw` is nonzero — the preview a revolution being sized shows before the source is written:
+/// `Sketch::set_turn`.  1 done, 0 not a revolution.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_sketch_set_turn(h: *mut Sketch, i: i32, sweep: f64, cw: i32) -> i32 {
+    use gcs_core::model::Sense;
+    let sense = if cw != 0 { Sense::Cw } else { Sense::Ccw };
+    guard(0, move || i32::from(i >= 0 && sk(h).set_turn(i as usize, sweep, sense)))
+}
+
+/// Bumped whenever a solid's shape changes in place (`set_prism`, `set_turn`): what a cached mesh
+/// keys on.
 #[no_mangle]
 pub unsafe extern "C" fn gcs_sketch_shape_epoch(h: *mut Sketch) -> u32 {
     guard(0, move || sk(h).shape_epoch)

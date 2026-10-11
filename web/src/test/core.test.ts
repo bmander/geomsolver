@@ -29,6 +29,7 @@ import { Document, fromSketch, highlight } from '../core/program.js';
 import { highlight as drawingHighlight } from '../core/drawing.js';
 import { Drag, RadiusDrag, System, solve } from '../core/system.js';
 import { analyze } from '../core/witness.js';
+import { turnAt, turnHandle } from '../core/workspace.js';
 import { core, initCore } from '../core/wasm.js';
 
 await initCore();
@@ -1985,6 +1986,34 @@ test('an extrusion is written by name through the edit API, and resized in place
   assert.notEqual(next.sketch.shapeEpoch, epoch, 'a cached mesh is told');
   const cut = d.extrude(['ab', 'bc', 'ck', 'ka'], [], { word: 'cut', body: 'nothing' });
   assert.match(cut.refused ?? '', /nothing/);
+});
+
+test('a revolution is written by name through the edit API, and re-turned in place', () => {
+  const d = Document.read('use std\nin std.front {\na := point\nb := point\nc := point\n'
+                          + 'k := point\nab := line(a, b)\nbc := line(b, c)\nck := line(c, k)\n'
+                          + 'ka := line(k, a)\nfix((10, 2)) a\nfix((14, 2)) b\nfix((14, 6)) c\n'
+                          + 'fix((10, 6)) k\n}\n');
+  assert.ok(d.ok, JSON.stringify(d.diagnostics));
+  const e = d.revolve(['ab', 'bc', 'ck', 'ka'], [], 'std.z');
+  assert.equal(e.refused, null);
+  assert.deepEqual(e.names, ['b0', 'f0']);
+  assert.ok(e.text.endsWith('f0 := face(ab, bc, ck, ka)\nb0 := solid(f0, about: std.z)\n'), e.text);
+  const next = Document.read(e.text);
+  assert.ok(next.ok, JSON.stringify(next.diagnostics));
+  const b0 = next.solids().find((s) => s.name === 'b0')!.index;
+  const quarter = next.setSweep(b0, { turn: '90', sense: 'cw' });
+  assert.ok(quarter.text.includes('b0 := solid(f0, about: std.z, sweep: 90, sense: cw)'),
+            quarter.text);
+  const epoch = next.sketch.shapeEpoch;
+  assert.ok(next.sketch.setTurn(b0, 90, true));
+  assert.notEqual(next.sketch.shapeEpoch, epoch, 'a cached mesh is told');
+  // the handle runs a quarter turn clockwise about z, seen from three quarters
+  const h = turnHandle(next.sketch, 0.6, 0.5, b0);
+  assert.ok(h?.tip && Math.abs(h.turn + 90) < 1e-9, JSON.stringify(h));
+  assert.ok(Math.abs(turnAt(next.sketch, 0.6, 0.5, b0, ...h.tip, -80) + 90) < 1e-9);
+  // `std.y` runs square to the front
+  assert.match(d.revolve(['ab', 'bc', 'ck', 'ka'], [], 'std.y').refused ?? '',
+               /does not lie in the face's own plane/);
 });
 
 test('a datum is dropped by name through the edit API, and refused with the cause', () => {

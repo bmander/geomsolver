@@ -1146,7 +1146,11 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             && match s.def {
                 crate::model::SolidDef::Placed { motion, .. } | crate::model::SolidDef::Swept { motion, .. } =>
                     motion_map[motion as usize].is_some(),
-                crate::model::SolidDef::Revolve { axis, .. } => line_map[axis as usize].is_some(),
+                crate::model::SolidDef::Revolve { axis, .. } => match axis.kind {
+                    EntKind::Line => line_map[axis.i()].is_some(),
+                    EntKind::Axis => axis_map[axis.i()].is_some(),
+                    _ => false,
+                },
                 crate::model::SolidDef::Loft { end, guide, .. } =>
                     end.is_none_or(|f| face_map[f as usize].is_some()) && match guide.kind {
                         EntKind::Line => line_map[guide.i()].is_some(),
@@ -1205,7 +1209,10 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             }
             crate::model::SolidDef::Revolve { face: f, axis, sweep, sense } => {
                 crate::model::SolidDef::Revolve {
-                    face: face(*f), axis: line_map[*axis as usize].unwrap() as u32,
+                    face: face(*f), axis: match axis.kind {
+                        EntKind::Line => EntRef::line(line_map[axis.i()].unwrap()),
+                        _ => EntRef::new(EntKind::Axis, axis_map[axis.i()].unwrap()),
+                    },
                     sweep: sweep.clone(), sense: *sense,
                 }
             }

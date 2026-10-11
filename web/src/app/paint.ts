@@ -185,7 +185,7 @@ export function paint(v: SketchView): void {
   // a tool's preview is where its clicks are read (`toolView`)
   if (v.pending.length || v.pendingFit.length) v.inView(v.toolView, () => paintPreview(v));
   // the region a click would extrude, washed where it is drawn
-  const region = v.tool === 'extrude' ? v.hoverRegion : null;
+  const region = v.tool === 'extrude' || v.tool === 'revolve' ? v.hoverRegion : null;
   if (region && !('refused' in region)) v.inView(v.toolView, () => paintRegion(v, region.rings));
   if (v.diagnosis?.conflicts?.length) paintConflicts(v);
 
@@ -211,7 +211,7 @@ export function paint(v: SketchView): void {
   paintFrame(v);
   v.gesture?.paint?.(ctx);
   paintExtentArrow(v);
-  if (v.tool !== 'select' && v.tool !== 'extrude') {   // snap indicator
+  if (v.tool !== 'select' && v.tool !== 'extrude' && v.tool !== 'revolve') {   // snap indicator
     const sp = v.pickPoint(...v.cursor);
     if (sp) {
       const [sx, sy] = v.seen(sp);
@@ -554,7 +554,9 @@ function paintExtentArrow(v: SketchView): void {
   const a = v.extentArrow();
   if (!a?.tip) return;
   const ctx = v.ctx;
-  const [bx, by] = a.base;
+  // a straight arrow from the base, or round a turn's arc, its head along the arc's last step
+  const path = a.arc && a.arc.length > 1 ? a.arc : [a.base, a.tip];
+  const [bx, by] = path[path.length - 2];
   const [tx, ty] = a.tip;
   const len = Math.hypot(tx - bx, ty - by) || 1;
   ctx.save();
@@ -563,8 +565,7 @@ function paintExtentArrow(v: SketchView): void {
   ctx.lineWidth = 2;
   ctx.setLineDash([]);
   ctx.beginPath();
-  ctx.moveTo(bx, by);
-  ctx.lineTo(tx, ty);
+  path.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
   ctx.stroke();
   arrowHead(ctx, [tx, ty], [(tx - bx) / len, (ty - by) / len], ARROW_PX, 0.45);
   ctx.beginPath();

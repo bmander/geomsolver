@@ -525,6 +525,94 @@ pub fn offset_at(sk: &Sketch, proj: &Projection, id: u32, at: (f64, f64)) -> Opt
     along_seen(base, step, at)
 }
 
+/// The handle a revolution is sized by (#162 F3), seen: the middle of its profile, the arc that
+/// middle turns through — a whole circle for a whole turn — and its end, which a press takes
+/// hold of (no end where the eye looks along the turning plane, the arc there being a line), and
+/// how far it turns: degrees, positive right-handed about the axis (`sense: ccw`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct TurnHandle {
+    pub base: (f64, f64),
+    pub arc: Vec<(f64, f64)>,
+    pub tip: Option<(f64, f64)>,
+    pub turn: f64,
+}
+
+/// A revolution's turning frame in space: the foot on the axis of its profile's middle, the
+/// middle less that foot, the same turned a right angle about the axis, and how far it turns,
+/// signed (radians) — `None` for a solid that is not a revolution, or one whose middle is on
+/// its axis.
+fn turning(sk: &Sketch, solid: usize) -> Option<([f64; 3], [f64; 3], [f64; 3], f64)> {
+    let crate::model::SolidDef::Revolve { face, axis, sweep, sense } = &sk.solids.get(solid)?.def
+    else {
+        return None;
+    };
+    let unit = (sk.extent() / 256.0).max(crate::solid::REPORT_UNIT);
+    let poly = crate::solid::face_poly(sk, *face as usize, unit)?;
+    let (cx, cy) = crate::solid::ring_centroid(&poly.pts);
+    let c = poly.basis.lift(cx, cy);
+    let (a, b) = sk.revolve_axis(*face, *axis)?;
+    let a = poly.basis.lift(a.0, a.1);
+    let d = crate::plane::unit(sub(poly.basis.lift(b.0, b.1), a))?;
+    let along = dot(sub(c, a), d);
+    let foot: [f64; 3] = std::array::from_fn(|k| a[k] + along * d[k]);
+    let e1 = sub(c, foot);
+    if !(dot(e1, e1) > 0.0) {
+        return None;
+    }
+    let sign = if *sense == crate::model::Sense::Cw { -1.0 } else { 1.0 };
+    Some((foot, e1, cross(d, e1), sign * sweep.value))
+}
+
+/// Where a revolution's turning frame is seen: its foot, and its two arms (seeing is linear).
+fn seen_turning(proj: &Projection, foot: [f64; 3], e1: [f64; 3], e2: [f64; 3])
+    -> ((f64, f64), (f64, f64), (f64, f64)) {
+    (proj.seen(foot), proj.seen(e1), proj.seen(e2))
+}
+
+/// Whether a turn whose arms are seen as `p`, `q` (each `r` long in space) reads as more than a
+/// line: the eye looks along the turning plane where they are seen nearly parallel.
+fn turn_readable(p: (f64, f64), q: (f64, f64), r2: f64) -> bool {
+    (p.0 * q.1 - p.1 * q.0).abs() >= EDGE_ON_NORMAL * r2
+}
+
+/// How finely a turn handle's arc is drawn: steps a whole turn.
+const TURN_STEPS: usize = 96;
+
+/// The handle revolution `solid` is sized by, seen: `None` for a solid that is not a revolution.
+pub fn turn_handle(sk: &Sketch, proj: &Projection, solid: usize) -> Option<TurnHandle> {
+    let (foot, e1, e2, turn) = turning(sk, solid)?;
+    let (f, p, q) = seen_turning(proj, foot, e1, e2);
+    let at = |phi: f64| {
+        let (sn, cs) = phi.dsin_cos();
+        (f.0 + cs * p.0 + sn * q.0, f.1 + cs * p.1 + sn * q.1)
+    };
+    let steps = ((turn.abs() / std::f64::consts::TAU * TURN_STEPS as f64).ceil() as usize).max(2);
+    let arc = (0..=steps).map(|k| at(turn * k as f64 / steps as f64)).collect();
+    let tip = turn_readable(p, q, dot(e1, e1)).then(|| at(turn));
+    Some(TurnHandle { base: at(0.0), arc, tip, turn: turn.to_degrees() })
+}
+
+/// How far revolution `solid` turns where the eye sees its handle's end dragged to `at`, in signed
+/// degrees (positive right-handed about the axis): the angle of the point of its turning plane
+/// the eye's ray through `at` meets, taken the whole turns round nearest `near` and within a whole
+/// turn either way — so a drag carried back past the start turns it the other way.  `None` where
+/// the eye looks along the turning plane.
+pub fn turn_at(sk: &Sketch, proj: &Projection, solid: usize, at: (f64, f64), near: f64)
+    -> Option<f64> {
+    let (foot, e1, e2, _) = turning(sk, solid)?;
+    let (f, p, q) = seen_turning(proj, foot, e1, e2);
+    let det = p.0 * q.1 - p.1 * q.0;
+    if !turn_readable(p, q, dot(e1, e1)) {
+        return None;
+    }
+    // the point's coordinates along the two arms, by Cramer's rule
+    let (x, y) = (at.0 - f.0, at.1 - f.1);
+    let (c, s) = ((x * q.1 - y * q.0) / det, (p.0 * y - p.1 * x) / det);
+    let phi = s.datan2(c).to_degrees();
+    let k = ((near - phi) / 360.0).round();
+    Some((phi + 360.0 * k).clamp(-360.0, 360.0))
+}
+
 /// Every entity whose figure touches the box `lo`–`hi` on the eye's picture plane — a rubber
 /// band's "crossing" selection, asked where the figures are seen: a point inside it, or a stroke
 /// passing through it.  What counts is what is drawn, so a box inside a circle's rim takes nothing.

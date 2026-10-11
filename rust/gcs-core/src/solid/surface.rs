@@ -124,6 +124,8 @@ impl RevolvedSurface {
         if !sweep.value.is_finite() || sweep.value <= 0. {
             return Err("a revolution needs a finite positive sweep".into());
         }
+        let (a2, b2) = sk.revolve_axis(*face, *axis)
+            .ok_or("the revolution axis does not lie in the profile's plane")?;
         let face = sk.faces.get(*face as usize).ok_or("no such profile")?;
         let name = face.edges.iter().zip(&face.edge_names)
             .chain(face.holes.iter().flat_map(|h| h.edges.iter().zip(&h.edge_names)))
@@ -134,9 +136,8 @@ impl RevolvedSurface {
             sk.basis(p as usize)
         } else { Basis::page() };
         let lift = |q: (f64,f64)| basis.lift(q.0,q.1);
-        let axis = sk.lines.get(*axis as usize).ok_or("no revolution axis")?;
-        let origin = lift(sk.point_xy(axis.p1 as usize));
-        let delta = sub(lift(sk.point_xy(axis.p2 as usize)),origin);
+        let origin = lift(a2);
+        let delta = sub(lift(b2),origin);
         let len = delta[0].dhypot(delta[1]).dhypot(delta[2]);
         if !len.is_finite() || len == 0. { return Err("degenerate revolution axis".into()); }
         let meridian = match edge.kind {

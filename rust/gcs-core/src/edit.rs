@@ -928,6 +928,25 @@ impl SolidSweep {
         }
     }
 
+    /// A turn through `angle` degrees (the text written) the `sense` it runs — a full turn, which
+    /// the language writes as no `sweep:` at all, where it is a number of a whole turn or more,
+    /// and `sense:` written only for `cw` — about what the solid already turns about
+    /// (`set_sweep`), or `about` where given.
+    pub fn turn(angle: &str, sense: syntax::Sense) -> SolidSweep {
+        let angle = angle.trim();
+        let full = angle.parse::<f64>().is_ok_and(|n| n >= 360.0);
+        SolidSweep {
+            sweep: (!full).then(|| angle.to_string()),
+            sense: (sense == syntax::Sense::Cw).then_some(sense),
+            ..Default::default()
+        }
+    }
+
+    /// Whether these say only a turn's angle and sense, and nothing else of a sweep.
+    fn is_turn(&self) -> bool {
+        [&self.depth, &self.from, &self.to, &self.through, &self.about].iter().all(|t| t.is_none())
+    }
+
     /// An extrusion `thick` thick (the text written) the `way` it runs from its face: `depth:`
     /// behind, `from: 0, to:` in front, or half each way — halved as a number where it is one,
     /// else as the expression `(thick) / 2`.
@@ -974,15 +993,42 @@ fn extrude_edit(
     with: Option<(syntax::BodyWord, &str)>,
     through: bool,
 ) -> Result<Edit, String> {
-    let mut taken = taken_names(prog);
-    let (mut stmts, faces) = face_stmts(&mut taken, outer, holes, None)?;
-    let solid = chosen_name(&mut taken, None, EntKind::Solid)?;
     let sweep = match (through, with) {
         (true, Some((_, body))) => SolidSweep { through: Some(body.to_string()), ..Default::default() },
         (true, None) => return Err("a cut through all goes through a body: select it first".into()),
         (false, _) => SolidSweep { depth: Some(syntax::num(set_off(sk))), ..Default::default() },
     };
-    stmts.push(solid_stmt(&solid, &faces[0], sweep.sweep()?));
+    region_solid(prog, outer, holes, &sweep, with)
+}
+
+/// **Revolve** (#162 F3): a click inside a region and the line or axis to turn it about, as one
+/// splice — `f0 := face(…)`, `b0 := solid(f0, about: l)`, a full turn, and with a body selected
+/// the body rule, as `extrude` writes it.  An axis that does not lie in the face's plane, or a
+/// line drawn in another, is refused in the elaborator's words (E081).  `names` is the solid, the
+/// face, then any hole faces.
+pub fn revolve(
+    prog: &Program,
+    outer: &[String],
+    holes: &[Vec<String>],
+    about: &str,
+    with: Option<(syntax::BodyWord, &str)>,
+) -> Edit {
+    let how = SolidSweep { about: Some(about.to_string()), ..Default::default() };
+    region_solid(prog, outer, holes, &how, with).unwrap_or_else(|why| Edit::none(prog, Some(why)))
+}
+
+/// A region's face, the solid swept from it `how`, and the body rule `with` says, in one splice.
+fn region_solid(
+    prog: &Program,
+    outer: &[String],
+    holes: &[Vec<String>],
+    how: &SolidSweep,
+    with: Option<(syntax::BodyWord, &str)>,
+) -> Result<Edit, String> {
+    let mut taken = taken_names(prog);
+    let (mut stmts, faces) = face_stmts(&mut taken, outer, holes, None)?;
+    let solid = chosen_name(&mut taken, None, EntKind::Solid)?;
+    stmts.push(solid_stmt(&solid, &faces[0], how.sweep()?));
     if let Some((word, body)) = with {
         stmts.push(StmtKind::SolidRel(syntax::SolidRel {
             word,
@@ -1011,7 +1057,14 @@ fn sweep_edit(e: &Elaborated, prog: &Program, solid: usize, how: &SolidSweep) ->
     let d = decl_of(prog, site).filter(|d| d.kind == EntKind::Solid && d.sweep.is_some())
         .ok_or("that solid is made of others, not swept from a face")?;
     let mut d2 = d.clone();
-    d2.sweep = Some(how.sweep()?);
+    // a turn rewritten keeps what it turns about where the gesture does not say
+    let kept = match (&d.sweep, &how.about) {
+        (Some(syntax::Sweep::Revolve { axis, .. }), None) if how.is_turn() => {
+            SolidSweep { about: Some(syntax::ref_text(axis)), ..how.clone() }
+        }
+        _ => how.clone(),
+    };
+    d2.sweep = Some(kept.sweep()?);
     let with = syntax::decl_args(&d2);
     // the statement in the new text: where it was, longer or shorter by what the list became
     let stmt = prog.stmt(site.stmt).map(|s| s.span).ok_or("no statement makes that solid")?;

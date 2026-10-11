@@ -1587,6 +1587,21 @@ Conventions:
   gesture or no), and writes once at release through `edit::set_sweep` with
   `SolidSweep::thick(way, text)` (the bracket list replaced, `checked` as every gesture edit),
   taken without an undo push so it joins the click's step.  `tests/extrude.rs` is the gate.
+- **Revolve** (#162 F3): `about:` takes an **axis** lying in the face's plane as well as a line
+  drawn there (`SolidDef::Revolve::axis` an `EntRef`; every reader goes through
+  `Sketch::revolve_axis`, the axis in the profile plane's coordinates, `None` off the plane, within
+  `AXIS_IN_PLANE`).  `build_solid` refuses E081 only what it can judge (`axis_may_lie_in`: the
+  plane's own axes pass; an axis and plane wholly held are read now); one the solve places is
+  refused where evaluated.  The `revolve` tool (`q`) washes a region; its click waits
+  (`SketchView.pendingRevolve`) for a click on a line or axis (lit under the pointer), or takes one
+  already selected, and writes face, `solid(f, about: …)` (a whole turn) and with a body `union`
+  (⌥ `cut`) as one splice (`edit::revolve`, shared with `extrude` by `region_solid`).  Its turn is
+  sized as an extrusion's thickness (`LiveExtent` kind `turn`, signed degrees, negative `cw`): the
+  arc its profile's middle turns through (`workspace::turn_handle`, no tip seen along the turning
+  plane), dragged by `turn_at` (the whole turns nearest the last, so back past the start turns it
+  the other way), previewed by `Sketch::set_turn`, written by `set_sweep` with
+  `SolidSweep::turn(angle, sense)` (a whole turn writes no `sweep:`, the axis kept from the
+  statement).  `tests/revolve.rs` is the gate.
 - **A face of a solid is a set** (#162 F5, [0.66]): `b0.near`, `b0.far`, a straight side `b0.ab`
   and `body.b0.near` name the face's carrier, made by the flattener from the solid's own text
   before the uses are expanded (`flatten/faces.rs`, `Walk::face_sets`; a face written in place

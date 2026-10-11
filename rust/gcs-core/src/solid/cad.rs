@@ -176,10 +176,10 @@ fn recipe_with(sk: &Sketch,root: usize,static_only: bool) -> Result<StaticRecipe
                 // evaluator does; a line need not have its own plane membership.
                 let p = super::face_poly(sk,*face as usize,super::REPORT_UNIT)
                     .ok_or("invalid revolution profile")?;
-                let lift = |i| { let q = sk.point_xy(i); p.basis.lift(q.0,q.1) };
-                let line = &sk.lines[*axis as usize];
-                let a = lift(line.p1 as usize);
-                let b = lift(line.p2 as usize);
+                let (a2,b2) = sk.revolve_axis(*face,*axis)
+                    .ok_or("the revolution axis does not lie in the profile's plane")?;
+                let a = p.basis.lift(a2.0,a2.1);
+                let b = p.basis.lift(b2.0,b2.1);
                 object([
                     ("kind","revolve".into()),("profile",profile(sk,*face as usize,scale)?),
                     ("origin",vector(a.map(|v| v*scale))),

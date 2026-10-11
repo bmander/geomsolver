@@ -94,7 +94,7 @@ impl Sketch {
                     }
                     SolidDef::Revolve { face, axis, .. } => {
                         v.push(EntRef::face(*face as usize));
-                        v.push(EntRef::line(*axis as usize));
+                        v.push(*axis);
                     }
                     SolidDef::Body { .. } => {}
                     SolidDef::Region { probe, terms } => {

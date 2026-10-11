@@ -60,6 +60,7 @@ mod extrude;
 mod ellipse;
 mod envelope;
 mod surfaces;
+mod revolve;
 mod revolved_regions;
 mod functional_solids;
 mod extruded_fields;

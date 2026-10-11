@@ -240,8 +240,8 @@ fn revolution_turns(sk: &Sketch,id: usize,tolerance: f64) -> Option<Vec<Turns>> 
             // the axis's two points lifted through the profile's frame, as the recipe lifts them
             let p = super::face_poly(sk,*face as usize,super::REPORT_UNIT)?;
             let lift = |i: usize| { let q = sk.point_xy(i); p.basis.lift(q.0,q.1) };
-            let line = &sk.lines[*axis as usize];
-            let (a,b) = (lift(line.p1 as usize),lift(line.p2 as usize));
+            let (a2,b2) = sk.revolve_axis(*face,*axis)?;
+            let (a,b) = (p.basis.lift(a2.0,a2.1),p.basis.lift(b2.0,b2.1));
             let d = sub(b,a);
             if !(norm(d) > 0.) { return None; }
             let on_axis = |x: V| norm(cross(sub(x,a),d))/norm(d) <= tolerance;

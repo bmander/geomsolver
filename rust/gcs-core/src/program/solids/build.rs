@@ -200,32 +200,38 @@ pub(super) fn build_solid(
         }
         crate::syntax::Sweep::Revolve { axis, sweep, sense } => {
             let Some(face) = one_face(&ops, st, &mut say) else { return None };
-            let Some(ax) = res.lookup(axis) else {
+            let found = res.lookup(axis)
+                .and_then(|e| super::super::resolve::follow(sk, e, &axis.path).ok());
+            let Some(ax) = found else {
                 say(Code::E101, axis.span, format!("no such entity: `{}`", axis.root.text));
                 return None;
             };
-            if ax.kind != EntKind::Line {
-                say(
-                    Code::E081,
-                    axis.span,
-                    format!(
-                        "a face turns about a line, and `{}` is {}",
-                        axis.root.text,
-                        ax.kind.a()
-                    ),
-                );
-                return None;
-            }
-            // **the axis lies in the face's own plane**: a line in another view names a
-            // direction this face knows nothing about
             let fp = sk.faces[face as usize].plane().ok()?;
-            for p in [sk.lines[ax.i()].p1, sk.lines[ax.i()].p2] {
-                if sk.plane_of(p as usize).map(|x| x as u32) != fp {
-                    say(
-                        Code::E081,
-                        axis.span,
-                        format!("`{}` is not in the face's own plane", axis.root.text),
-                    );
+            match ax.kind {
+                // **the line lies in the face's own plane**: a line in another view names a
+                // direction this face knows nothing about
+                EntKind::Line => {
+                    for p in [sk.lines[ax.i()].p1, sk.lines[ax.i()].p2] {
+                        if sk.plane_of(p as usize).map(|x| x as u32) != fp {
+                            say(Code::E081, axis.span,
+                                format!("`{}` is not in the face's own plane", axis.root.text));
+                            return None;
+                        }
+                    }
+                }
+                // an axis in space lies in the plane where the plane's own axes say so, or where
+                // what holds both says so now; one the solve moves is read where it is evaluated
+                EntKind::Axis => {
+                    if !axis_may_lie_in(sk, fp, ax.i()) {
+                        say(Code::E081, axis.span,
+                            format!("`{}` does not lie in the face's own plane", axis.root.text));
+                        return None;
+                    }
+                }
+                _ => {
+                    say(Code::E081, axis.span,
+                        format!("a face turns about a line or an axis, and `{}` is {}",
+                            axis.root.text, ax.kind.a()));
                     return None;
                 }
             }
@@ -252,7 +258,7 @@ pub(super) fn build_solid(
                 crate::syntax::Sense::Cw => Sense::Cw,
                 crate::syntax::Sense::Ccw => Sense::Ccw,
             };
-            SolidDef::Revolve { face, axis: ax.idx, sweep: turn, sense }
+            SolidDef::Revolve { face, axis: ax, sweep: turn, sense }
         }
         crate::syntax::Sweep::Body => {
             let mut solids = Vec::new();
@@ -310,4 +316,18 @@ fn one_face(
             None
         }
     }
+}
+
+/// Whether axis `ax` may lie in plane `plane` (a face's, `None` the page): it is one of the plane's
+/// own axes; or nothing the solve moves places either, and it lies there now; or the solve may
+/// put it there, which the evaluation reads (`Sketch::revolve_axis`).
+fn axis_may_lie_in(sk: &Sketch, plane: Option<u32>, ax: usize) -> bool {
+    let own = plane.map(|p| &sk.planes[p as usize]);
+    if own.is_some_and(|pl| [pl.u, pl.v].contains(&(ax as u32))) {
+        return true;
+    }
+    let x = &sk.axes[ax];
+    let held = |q: &u32| sk.params[*q as usize].fixed;
+    let still = x.d.iter().chain(&x.a).all(held) && plane.is_none_or(|p| sk.plane_fixed(p as usize));
+    !still || sk.axis_in(plane, ax).is_some()
 }
