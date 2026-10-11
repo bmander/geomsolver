@@ -184,6 +184,9 @@ export function paint(v: SketchView): void {
   ctx.setLineDash([]);
   // a tool's preview is where its clicks are read (`toolView`)
   if (v.pending.length || v.pendingFit.length) v.inView(v.toolView, () => paintPreview(v));
+  // the region a click would extrude, washed where it is drawn
+  const region = v.tool === 'extrude' ? v.hoverRegion : null;
+  if (region && !('refused' in region)) v.inView(v.toolView, () => paintRegion(v, region.rings));
   if (v.diagnosis?.conflicts?.length) paintConflicts(v);
 
   // one read for every point: a point's style is the sheet's `.point` rule and nothing else
@@ -207,7 +210,8 @@ export function paint(v: SketchView): void {
   // nobody finds — and the canvas's own selected/hovered colours otherwise
   paintFrame(v);
   v.gesture?.paint?.(ctx);
-  if (v.tool !== 'select') {                 // snap indicator
+  paintExtentArrow(v);
+  if (v.tool !== 'select' && v.tool !== 'extrude') {   // snap indicator
     const sp = v.pickPoint(...v.cursor);
     if (sp) {
       const [sx, sy] = v.seen(sp);
@@ -319,9 +323,12 @@ export function paintCallouts(v: SketchView): void {
  *  barbs `barb` of that half-width.  Both numbers come from the layout, so the drawing style
  *  is the core's and not this front end's. */
 export function paintArrow(v: SketchView, at: Pt, dir: Pt, size: number, barb: number): void {
-  const ctx = v.ctx;
-  const [tx, ty] = v.w2s(at[0], at[1]);
-  const [dx, dy] = v.viewCam().dir(dir[0], dir[1]);
+  arrowHead(v.ctx, v.w2s(at[0], at[1]), v.viewCam().dir(dir[0], dir[1]), size, barb);
+}
+
+/** The head itself, on screen: the tip at `tip`, pointing along the unit `dir`. */
+function arrowHead(ctx: CanvasRenderingContext2D, [tx, ty]: Pt, [dx, dy]: Pt, size: number,
+                   barb: number): void {
   const [bx, by] = [tx - dx * size, ty - dy * size];
   const [px, py] = [-dy * size * barb, dx * size * barb];
   ctx.beginPath();
@@ -511,12 +518,57 @@ export function paintPreview(v: SketchView): void {
 
 /** A world-coordinate polyline as a screen path — a curve's tessellation, a control polygon,
  *  a callout label's box. */
-export function polyPath(v: SketchView, pts: readonly (readonly [number, number])[]): void {
+export function polyPath(v: SketchView, pts: readonly (readonly [number, number])[],
+                         begin = true): void {
   const ctx = v.ctx;
-  ctx.beginPath();
+  if (begin) ctx.beginPath();
   pts.forEach((p, i) => {
     const s = v.w2s(p[0], p[1]);
     if (i) ctx.lineTo(s[0], s[1]);
     else ctx.moveTo(s[0], s[1]);
   });
+}
+
+/** A region's wash: its outer ring and its holes as one path, filled even-odd so the holes stay
+ *  clear — the rings in the plane's own coordinates, under `inView`. */
+function paintRegion(v: SketchView, rings: [number, number][][]): void {
+  const ctx = v.ctx;
+  ctx.beginPath();
+  for (const ring of rings) {
+    polyPath(v, ring, false);
+    ctx.closePath();
+  }
+  ctx.save();
+  ctx.globalAlpha = 0.18;
+  ctx.fillStyle = COL.highlight;
+  ctx.fill('evenodd');
+  ctx.restore();
+}
+
+/** How long the head of an extrusion's arrow is, in screen pixels. */
+const ARROW_PX = 10;
+
+/** The arrow an extrusion being sized is dragged by: from its face's middle to its far end, a
+ *  head and a ring at the tip that a press takes hold of. */
+function paintExtentArrow(v: SketchView): void {
+  const a = v.extentArrow();
+  if (!a?.tip) return;
+  const ctx = v.ctx;
+  const [bx, by] = a.base;
+  const [tx, ty] = a.tip;
+  const len = Math.hypot(tx - bx, ty - by) || 1;
+  ctx.save();
+  ctx.strokeStyle = COL.sel;
+  ctx.fillStyle = COL.sel;
+  ctx.lineWidth = 2;
+  ctx.setLineDash([]);
+  ctx.beginPath();
+  ctx.moveTo(bx, by);
+  ctx.lineTo(tx, ty);
+  ctx.stroke();
+  arrowHead(ctx, [tx, ty], [(tx - bx) / len, (ty - by) / len], ARROW_PX, 0.45);
+  ctx.beginPath();
+  ctx.arc(tx, ty, 6, 0, 2 * Math.PI);
+  ctx.stroke();
+  ctx.restore();
 }

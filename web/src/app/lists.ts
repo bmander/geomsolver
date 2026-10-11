@@ -218,7 +218,10 @@ function heldLine(): string {
   const u = view.underlay;
   if (u?.picked) return `image ${u.name} — ${Math.round(u.opacity * 100)}%   |   `;
   const solids = view.selectedSolids;
-  if (solids.length === 1) return `solid ${solids[0].name} · face ${solids[0].face}   |   `;
+  if (solids.length === 1) {
+    const face = solids[0].face ? ` · face ${solids[0].face}` : '';
+    return `solid ${solids[0].name}${face}   |   `;
+  }
   if (solids.length) return `${solids.length} solids: ${solids.map((s) => s.name).join(' ')}   |   `;
   return '';
 }

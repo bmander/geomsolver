@@ -15,6 +15,11 @@ import './constraints.js';
 export type Box = [number, number, number, number];
 
 export type Kind = 'point' | 'line' | 'circle' | 'arc' | 'spline' | 'curve' | 'plane' | 'axis';
+/** Which way an extrusion runs from its face: behind it (`depth:`), in front of it (`from: 0,
+ *  to:`), or both ways — the core's words, and in this order its numbers. */
+export const WAYS = ['behind', 'front', 'both'] as const;
+export type Way = typeof WAYS[number];
+
 /** The core's kind ids (`kind_id` in the ABI), one per kind with a proxy here — the one table:
  *  an axis is 16, past kinds that have none. */
 export const KIND_ID: Record<Kind, number> =
@@ -799,6 +804,17 @@ export class Sketch {
   /** Seeded Gaussian noise on every free parameter (warm starts, witness construction). */
   perturb(sigma: number, seed = 0): void {
     core().gcs_sketch_perturb(this.handle, sigma, seed >>> 0);
+  }
+
+  /** Re-extrude prism `i` where it stands, `d` thick the way it runs from its face — the preview
+   *  an extrusion being sized shows before the source says it.  False for a solid no prism. */
+  setPrism(i: number, way: Way, d: number): boolean {
+    return core().gcs_sketch_set_prism(this.handle, i, WAYS.indexOf(way), d) !== 0;
+  }
+
+  /** Bumped whenever a solid's shape changes in place (`setPrism`): what a cached mesh keys on. */
+  get shapeEpoch(): number {
+    return core().gcs_sketch_shape_epoch(this.handle);
   }
 
   /** What a click at (x, y) picks: the nearest entity whose *drawn* figure comes within `tol`,

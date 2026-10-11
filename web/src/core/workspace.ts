@@ -7,7 +7,7 @@
  * what is under the pointer is asked here, of the figures where the eye sees them: views that lie
  * on top of one another on the page are nowhere near one another in space. */
 import { KINDS, Plane, Point, Primitive, Sketch, kindOf } from './model.js';
-import type { Kind } from './model.js';
+import type { Kind, Way } from './model.js';
 import { core, takeJson, withBuf } from './wasm.js';
 
 /** A view's page onto the eye's picture plane: `(x, y) ↦ (m0·x + m1·y + m2, m3·x + m4·y + m5)`. */
@@ -110,6 +110,30 @@ export interface SolidHit {
 export function pickSolidSeen(sk: Sketch, az: number, el: number,
                               x: number, y: number): SolidHit | null {
   return takeJson<SolidHit | null>(core().gcs_workspace_pick_solid_json(sk.handle, az, el, x, y));
+}
+
+/** The arrow a prism is sized by, as the eye sees it, and what it says: from its face's middle to
+ *  its far end along the face's normal — no tip where the eye looks down the normal — which way
+ *  it runs (null for extents none of the three ways say), and how thick it is. */
+export interface ExtrudeHandle {
+  base: [number, number];
+  tip: [number, number] | null;
+  way: Way | null;
+  thick: number;
+}
+
+/** The arrow prism `solid` is sized by, on the eye's picture plane — or null for no prism. */
+export function extrudeHandle(sk: Sketch, az: number, el: number,
+                              solid: number): ExtrudeHandle | null {
+  return takeJson<ExtrudeHandle | null>(
+    core().gcs_workspace_extrude_handle_json(sk.handle, az, el, solid));
+}
+
+/** How far along prism `solid`'s normal the point under `(x, y)` on the eye's picture plane is —
+ *  what dragging its arrow there sizes it to — or NaN. */
+export function extentAt(sk: Sketch, az: number, el: number, solid: number,
+                         x: number, y: number): number {
+  return core().gcs_workspace_extent_at(sk.handle, az, el, solid, x, y);
 }
 
 /** The planes whose panes `(x, y)` on the eye's picture plane falls inside, nearest the eye

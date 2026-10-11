@@ -21,6 +21,7 @@ import type { PairDimension } from '../core/callout.js';
 import { PlanDrag } from '../core/decompose.js';
 import { solve } from '../core/system.js';
 import { DimAlt, SketchView } from '../app/view.js';
+import type { SolidPick } from '../app/view.js';
 import { contains, corners, toImage, toWorld } from '../app/underlay.js';
 import type { Bitmap } from '../app/underlay.js';
 import { initCore } from '../core/wasm.js';
@@ -1909,3 +1910,134 @@ test('an axis is picked with the select tool where the box draws it, and Delete 
   assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
 });
 
+
+/* -- extrude (#162 F2) ------------------------------------------------------------------- */
+
+/** On the front: a 60 × 40 rectangle `ab…da` swept 5 behind as `block`, a circle `hole` inside it
+ *  and a 10 × 10 square `pq…sp` beside it. */
+const EXTRUDING = `use std
+in std.front {
+a := point
+b := point
+c := point
+d := point
+ab := line(a, b)
+bc := line(b, c)
+cd := line(c, d)
+da := line(d, a)
+o := point
+hole := circle(center: o)
+p := point
+q := point
+r := point
+s := point
+pq := line(p, q)
+qr := line(q, r)
+rs := line(r, s)
+sp := line(s, p)
+fix((0, 0)) a
+fix((60, 0)) b
+fix((60, 40)) c
+fix((0, 40)) d
+fix((30, 20)) o
+fix(r == 5) hole
+fix((80, 0)) p
+fix((90, 0)) q
+fix((90, 10)) r
+fix((80, 10)) s
+}
+`;
+
+function extruding(body = ''): SketchView {
+  const view = docView(EXTRUDING + body);
+  assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
+  view.choosePlane('std.front');
+  view.setTool('extrude');
+  return view;
+}
+
+/** A press and release at a place on the page, with modifiers held. */
+function clickWith(view: SketchView, x: number, y: number, mods: Record<string, boolean>): void {
+  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  cv.fire('pointerdown', pointer(...view.w2s(x, y), mods));
+  cv.fire('pointerup', pointer(...view.w2s(x, y), mods));
+}
+
+test('the Extrude tool washes the region under the pointer, and a click drops a solid', () => {
+  const view = extruding();
+  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  cv.fire('pointermove', pointer(...view.w2s(85, 5)));
+  const r = view.hoverRegion;
+  assert.ok(r && !('refused' in r), JSON.stringify(r));
+  assert.deepEqual([...r.outer].sort(), ['pq', 'qr', 'rs', 'sp']);
+  cv.fire('pointermove', pointer(...view.w2s(85, 50)));
+  assert.equal(view.hoverRegion, null, 'outside every loop');
+  const before = view.source;
+  click(view, 85, 5);
+  assert.ok(view.source.includes('f0 := face(pq, qr, rs, sp)\nb0 := solid(f0, depth: '),
+            view.source);
+  assert.deepEqual(view.selectedSolids.map((s) => s.name), ['b0']);
+  assert.equal(view.liveExtent?.solid, 'b0');
+  assert.equal(view.liveExtent?.way, 'behind');
+  assert.equal(view.tool, 'extrude', 'the tool stays down for the next');
+  // Escape: done sizing, the tool still down; again, the tool goes
+  view.cancelTool();
+  assert.equal(view.liveExtent, null);
+  assert.equal(view.tool, 'extrude');
+  view.cancelTool();
+  assert.equal(view.tool, 'select');
+  view.undo();
+  assert.equal(view.source, before, 'the click is one undo step');
+});
+
+test('a thickness typed or dragged rewrites the solid in place, in the click\'s undo step', () => {
+  const view = extruding();
+  const before = view.source;
+  click(view, 85, 5);
+  assert.equal(view.commitExtent('12'), null);
+  assert.ok(view.source.includes('b0 := solid(f0, depth: 12)'), view.source);
+  // dragged from three quarters: in front of the face (the front's −y), then both ways with ⇧
+  view.orbit = { az: 0.6, el: 0.5 };
+  const arrow = view.extentArrow();
+  assert.ok(arrow?.tip, 'the arrow is seen from three quarters');
+  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  const to = seenAt(view, [85, -15, 5]);
+  cv.fire('pointerdown', pointer(...arrow.tip));
+  cv.fire('pointermove', pointer(...to));
+  assert.ok(view.source.includes('depth: 12'), 'nothing is written while it is dragged');
+  cv.fire('pointerup', pointer(...to));
+  assert.ok(view.source.includes('b0 := solid(f0, from: 0, to: 15)'), view.source);
+  const tip = view.extentArrow()!.tip!;
+  cv.fire('pointerdown', pointer(...tip, { shiftKey: true }));
+  cv.fire('pointermove', pointer(...to, { shiftKey: true }));
+  cv.fire('pointerup', pointer(...to, { shiftKey: true }));
+  assert.ok(view.source.includes('b0 := solid(f0, from: -15, to: 15)'), view.source);
+  assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
+  view.undo();
+  assert.equal(view.source, before, 'the sizing joined the extrusion\'s own undo step');
+});
+
+test('with a body selected an extrusion joins it, cuts it with ⌥, and cuts through with ⌥⇧', () => {
+  const view = extruding('block := solid(face(ab, bc, cd, da), depth: 5)\n');
+  const block = (): SolidPick => ({
+    name: 'block', index: view.doc.solids().find((s) => s.name === 'block')!.index, face: '',
+  });
+  view.pickSolid(block());
+  click(view, 85, 5);
+  assert.ok(view.source.includes('b0 union block'), view.source);
+  view.pickSolid(block());
+  clickWith(view, 30, 20, { altKey: true });
+  assert.ok(view.source.includes('b1 := solid(f1, depth: '), view.source);
+  assert.ok(view.source.includes('b1 cut block'), view.source);
+  view.pickSolid(block());
+  clickWith(view, 30, 20, { altKey: true, shiftKey: true });
+  assert.ok(view.source.includes('b2 := solid(f2, through: block)\nb2 cut block'), view.source);
+  assert.equal(view.liveExtent, null, 'a cut through all has no depth to size');
+  assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
+  // a cut with nothing selected says what it wants
+  const said: string[] = [];
+  view.onStatus = (m) => said.push(m);
+  view.selected = [];
+  clickWith(view, 85, 5, { altKey: true });
+  assert.ok(said.some((m) => /select the body/.test(m)), said.join('\n'));
+});

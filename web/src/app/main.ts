@@ -53,7 +53,7 @@ import {
   about, alternatives, doOpen, flipBranch, insertPlane, leaveExample, openCase, openExample, options,
   report, reportSolve, showDiagnosis,
 } from './dialogs.js';
-import { editValue, onDimension } from './dimbox.js';
+import { editValue, onDimension, onExtent } from './dimbox.js';
 import { bindProgramPanel, openDrawing, refreshProgram, resetProgramFiles, saveProjectFile,
   showStatementFor, toggleProgramPanel } from './program.js';
 import { closePanel, openPanel, refresh, refreshPanel, refreshStatus } from './lists.js';
@@ -85,7 +85,7 @@ view.onTool = (t) => {
 const TOOLS = [
   ['Point', 'point', 'p'], ['Line', 'line', 'l'], ['Rect', 'rect', 'r'],
   ['Circle', 'circle', 'c'], ['Arc', 'arc', 'a'], ['Arc 3-pt', 'arc3', '3'],
-  ['Spline', 'spline', 's'], ['Spline fit', 'splinefit', 'w'],
+  ['Spline', 'spline', 's'], ['Spline fit', 'splinefit', 'w'], ['Extrude', 'extrude', 'u'],
 ] as [string, Tool, string][];
 const TOOL_BUTTONS: ToolbarButton[] = [
   { label: 'Construction', key: 'g', onClick: () => view.toggleConstructionSelected(),
@@ -511,6 +511,7 @@ planeSelect.addEventListener('change', () => {
   planeSelect.blur();              // the keys are the drawing's again: a tool letter, Escape
 });
 view.onDimension = onDimension;
+view.onExtent = onExtent;
 view.onChanged = () => { refresh(); refreshProgram(); refreshPlanes(); };
 view.onPicked = refreshPanel;
 // the source changed without the drawing's structure doing so — a drag wrote its seeds back, or a

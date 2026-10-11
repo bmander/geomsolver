@@ -55,6 +55,9 @@ interface Built {
   /** The pose the datums were built at, and the one the objects were. */
   datums: number;
   objects: number;
+  /** The sketch's `shapeEpoch` the objects were built at: a solid re-shaped in place (an
+   *  extrusion being sized) is re-cut at once, gesture or no. */
+  shape: number;
 }
 
 /** A fingerprint of where everything is: FNV-1a over the parameters' bits.  A drag frame changes
@@ -109,9 +112,12 @@ export class Box3D {
     // since a screen pixel is a smaller world length the closer you get
     const pose = poseOf(v.sketch.getX());
     const fresh = !this.built || this.built.sketch !== v.sketch || this.built.solid !== v.showSolid;
+    const shape = v.sketch.shapeEpoch;
     const datums = fresh || this.built!.datums !== pose;
-    // an object is re-cut once the pose settles, not under every frame of a drag or a wobble
-    const objects = fresh || (this.built!.objects !== pose && !v.gesture && !v.anim);
+    // an object is re-cut once the pose settles, not under every frame of a drag or a wobble —
+    // but at once where its shape was changed in place, which is what that gesture is for
+    const objects = fresh || this.built!.shape !== shape
+      || (this.built!.objects !== pose && !v.gesture && !v.anim);
     if (datums || objects) {
       if (datums) this.buildDatums(overview3(v.sketch, 0, 'datums'));
       if (objects) this.buildObjects(v, overview3(v.sketch, 0, 'objects'));
@@ -119,6 +125,7 @@ export class Box3D {
         sketch: v.sketch, solid: v.showSolid,
         datums: datums ? pose : this.built!.datums,
         objects: objects ? pose : this.built!.objects,
+        shape,
       };
     }
     this.aim(v);

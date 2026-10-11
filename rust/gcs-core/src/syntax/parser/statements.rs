@@ -212,7 +212,7 @@ impl<'a> P<'a> {
                     self.fail("Boolean `through` is now `cut`: write `X cut B`; `through:` specifies a cutter's extent");
                     return None;
                 }
-                let word = match w.as_str() { "cut" => BodyWord::Cut, "union" => BodyWord::Union, _ => BodyWord::Bound };
+                let word = BodyWord::parse(&w).unwrap_or(BodyWord::Bound);
                 self.i += 1;
                 let body = self.refr()?;
                 self.end_of_stmt();
