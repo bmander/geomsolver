@@ -639,6 +639,63 @@ impl<'a> Walk<'a> {
         })
     }
 
+    /// Whether the walk declared a solid by this absolute name.
+    fn solid_named(&self, abs: &str) -> bool {
+        self.out.iter().any(|(st, _, _)| matches!(&st.kind,
+            StmtKind::Decl(d) if d.kind == crate::model::EntKind::Solid && d.name.key().text == abs))
+    }
+
+    /// The faces a set-aside block runs over (#183 F4), where it runs over a solid's (`repeat a
+    /// in pad.boss`) and the elaborator has named that solid's: each a reference to the face
+    /// (`pad.boss.near`), those its conditions keep (F8).
+    fn face_links(
+        &self,
+        p: &Pending,
+        alias: &BTreeMap<String, String>,
+    ) -> Option<(Vec<(Ref, Scope)>, bool)> {
+        let StmtKind::Block(b) = &p.st.kind else { return None };
+        let over = b.over.as_ref()?;
+        let sc = self.pending_scope(p);
+        let faces_of = |r: &Ref| -> Option<Vec<String>> {
+            let (abs, rest) = lookup(r, &sc, &self.names, alias, self.units)?;
+            let all = self.faces.get(&abs)?;
+            let rest = rest.join(".");
+            Some(all.iter().filter(|f| {
+                rest.is_empty() || **f == rest || f.starts_with(&format!("{rest}."))
+                    || f.ends_with(&format!(".{rest}")) || f.contains(&format!(".{rest}."))
+            }).map(|f| format!("{abs}.{f}")).collect())
+        };
+        let all = faces_of(&over.chain)?;
+        // what a name in a condition stands for: the face itself, or as its reference resolves
+        let stands = |name: &Ref, me: &str| -> Option<String> {
+            if name.path.is_empty() && name.root.text == over.var.text {
+                return Some(me.to_string());
+            }
+            let (abs, rest) = lookup(name, &sc, &self.names, alias, self.units)?;
+            Some(std::iter::once(abs).chain(rest).collect::<Vec<_>>().join("."))
+        };
+        let keeps = |face: &str| over.when.iter().all(|w| {
+            let var = Ref { root: w.var.clone(), path: Vec::new(), span: w.var.span };
+            let Some(me) = stands(&var, face) else { return false };
+            if w.within {
+                faces_of(&w.other).is_some_and(|fs| fs.iter().any(|f| *f == me))
+            } else {
+                stands(&w.other, face).is_some_and(|other| other != me)
+            }
+        });
+        let links = all.iter().filter(|f| keeps(f)).map(|f| {
+            let segs: Vec<&str> = f.split('.').collect();
+            let r = Ref {
+                root: Name { text: segs[0].to_string(), span: over.chain.span },
+                path: segs[1..].iter().map(|s| Seg::Field(Name { text: s.to_string(), span: over.chain.span })).collect(),
+                span: over.chain.span,
+            };
+            // an absolute name, read from the document's root
+            (r, Scope { prefixes: vec![String::new()], access: sc.access.clone(), ..Scope::default() })
+        }).collect();
+        Some((links, false))
+    }
+
     /// Expand every block over a chain's edges (`repeat e in rack.profile { … }`), each where
     /// the walk met it, once its chain can be found.  A copy may itself hold such a block, or
     /// make the instance holding another's chain, so this runs until nothing more resolves; what
@@ -653,7 +710,9 @@ impl<'a> Walk<'a> {
                 .pending
                 .iter()
                 .enumerate()
-                .find_map(|(i, p)| self.chain_of(p, &alias).map(|c| (i, c)));
+                .find_map(|(i, p)| {
+                    self.chain_of(p, &alias).or_else(|| self.face_links(p, &alias)).map(|c| (i, c))
+                });
             let Some((i, (links, closed))) = found else { break };
             let p = self.pending.remove(i);
             self.expand_edges(p, links, closed);
@@ -665,6 +724,14 @@ impl<'a> Walk<'a> {
             let Some(over) = &b.over else { continue };
             let sc = self.pending_scope(&p);
             let r = &over.chain;
+            // a block over a solid's faces, whose faces the elaborator names once it has built
+            // the solid (#183 F4): none made this pass
+            if let Some((abs, _)) = lookup(r, &sc, &self.names, &alias, self.units)
+                .filter(|(abs, _)| self.solid_named(abs))
+            {
+                self.face_repeats.insert(abs);
+                continue;
+            }
             match lookup(r, &sc, &self.names, &alias, self.units) {
                 Some(_) => self.err(
                     Code::E103,

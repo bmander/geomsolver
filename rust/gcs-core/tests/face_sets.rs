@@ -102,12 +102,13 @@ fn the_material_angle_at_an_edge_says_which_way_it_turns() {
     assert!(!filled("s5"));
 }
 
-/// A face path names a face the solid has, and a term about a face stands only in a region.
+/// A face path naming no face of the solid (or one a boolean ate) is no point: a set within its
+/// side holds nowhere.
 #[test]
-fn a_face_path_names_a_face() {
+fn a_face_path_naming_no_face_holds_nowhere() {
     let e = read(&format!("{BLOCK}nowhere := {{ p | p inside block.top }}\nsn := solid(nowhere)\n"));
-    let field = MaterialField::read(&e.sketch, ent(&e, "sn").i(), 1e-10);
-    assert!(field.is_err_and(|m| m.contains("names no face")));
+    let field = MaterialField::read(&e.sketch, ent(&e, "sn").i(), 1e-10).unwrap();
+    assert!(field.side([20.0, 6.0, 12.0]) > 0.0 && field.side([0.0; 3]) > 0.0);
 }
 
 /// The edge where the near face meets the south face, and the faces' surfaces' meeting.
@@ -186,3 +187,28 @@ fn a_run_along_one_edge() {
     assert!((got - want).abs() < 2e-3 * want, "{got} against {want}");
 }
 
+
+/// **A word that makes solids** (#183 F4, F5, F8): `round` over two face groups, a run per pair
+/// of faces cut from the body the faces are of — here one pair, the block's near and south faces,
+/// so the block loses `r²(1 − π/4)` along its 40.
+const ROUND: &str = "A round(r) B := {\n\
+    repeat a in A {\n\
+      repeat b in B if b != a {\n\
+        run := Run(a, b, r: r)\n\
+        taken := solid(run)\n\
+        taken cut A.body\n\
+      }\n\
+    }\n}\n";
+
+#[test]
+fn a_word_rounds_an_edge() {
+    let box_ = ([-1.0, -4.0, -4.0], [41.0, 4.0, 4.0]);
+    let sharp = solved(&format!("{BLOCK}"));
+    let before = field_volume(&MaterialField::read(&sharp.sketch, ent(&sharp, "block").i(), 1e-10).unwrap(),
+                              box_.0, box_.1, 3.0 / 64.0);
+    let e = solved(&format!("{BLOCK}{RUN}{ROUND}block.near round(3mm) block.south\n"));
+    let field = MaterialField::read(&e.sketch, ent(&e, "block").i(), 1e-10).unwrap();
+    let after = field_volume(&field, box_.0, box_.1, 3.0 / 64.0);
+    let want = 9.0 * (1.0 - PI / 4.0) * 40.0;
+    assert!((before - after - want).abs() < 2e-3 * want, "{} against {want}", before - after);
+}

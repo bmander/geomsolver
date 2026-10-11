@@ -89,6 +89,7 @@ impl BodyFaces {
                 || n.starts_with(&format!("{path}."))
                 || n.starts_with(&format!("{own}."))
                 || path.ends_with(&format!(".{n}"))
+                || (path.contains('.') && n.ends_with(&format!(".{path}")))
                 || (path.contains('.') && n.starts_with(&format!("{last}.")))
         }).map(|(i, _)| i).collect()
     }
@@ -202,11 +203,8 @@ pub fn reading(sk: &Sketch, f: &FaceRef, read: &mut Vec<(u32, std::sync::Arc<Bod
             b
         }
     };
+    // a face a boolean ate, or none of that name, is no point: what reads it holds nowhere
     let faces = body.faces(f);
-    if faces.is_empty() {
-        let at = if f.path.is_empty() { String::new() } else { format!(".{}", f.path) };
-        return Err(format!("`{}{at}` names no face of `{}`", body.name, body.name));
-    }
     Ok(Reading { body, faces })
 }
 
@@ -308,8 +306,70 @@ impl Reading {
     /// The side of the face whose patch is nearest `p`, and its gradient.
     pub fn side_grad(&self, p: V) -> (f64, V) {
         let near = self.faces.iter().copied()
-            .min_by(|&a, &b| self.body.patch_distance(a, p).total_cmp(&self.body.patch_distance(b, p)))
-            .expect("a reading names a face");
-        self.body.side_grad(near, p)
+            .min_by(|&a, &b| self.body.patch_distance(a, p).total_cmp(&self.body.patch_distance(b, p)));
+        near.map_or((f64::INFINITY, [0.0, 0.0, 1.0]), |fi| self.body.side_grad(fi, p))
+    }
+}
+
+/// **The faces of a solid by the paths they are named by from it** (#183 F4): a primitive's own
+/// (`near`, `far`, one per edge of its section; `start` and `end` of a partial turn), a body's
+/// every primitive's under that primitive's name (`plate.near`), as its boundary names them
+/// (`solid::exact`) — read off the definitions, so a face a boolean ate is still listed, and
+/// reads as nothing.
+pub fn face_paths(sk: &Sketch, i: usize) -> Vec<String> {
+    fn own(sk: &Sketch, i: usize) -> Vec<String> {
+        let names = |face: u32| -> Vec<String> {
+            sk.faces.get(face as usize).map_or(Vec::new(), |f| {
+                f.boundaries().flat_map(|(_, n)| n.iter().cloned()).collect()
+            })
+        };
+        let mut out = match &sk.solids[i].def {
+            SolidDef::Prism { face, .. } | SolidDef::Through { face, .. } => {
+                let mut v = names(*face);
+                v.extend(["near".to_string(), "far".to_string()]);
+                v
+            }
+            SolidDef::Revolve { face, sweep, .. } => {
+                let mut v = names(*face);
+                if sweep.value.abs() < 2.0 * PI - 1e-9 {
+                    v.extend(["start".to_string(), "end".to_string()]);
+                }
+                v
+            }
+            SolidDef::Loft { face, .. } => {
+                let mut v = names(*face);
+                v.extend(["start".to_string(), "end".to_string()]);
+                v
+            }
+            _ => Vec::new(),
+        };
+        out.dedup();
+        out
+    }
+    fn primitives(sk: &Sketch, i: usize, depth: usize, out: &mut Vec<usize>) {
+        if depth > 64 {
+            return;
+        }
+        match &sk.solids[i].def {
+            SolidDef::Body { .. } => {
+                for o in sk.solids[i].operands() {
+                    primitives(sk, o as usize, depth + 1, out);
+                }
+            }
+            _ if !out.contains(&i) => out.push(i),
+            _ => {}
+        }
+    }
+    match &sk.solids.get(i).map(|s| &s.def) {
+        Some(SolidDef::Body { .. }) => {
+            let mut prims = Vec::new();
+            primitives(sk, i, 0, &mut prims);
+            prims.into_iter().flat_map(|p| {
+                let name = sk.solids[p].name.clone();
+                own(sk, p).into_iter().map(move |f| format!("{name}.{f}"))
+            }).collect()
+        }
+        Some(_) => own(sk, i),
+        None => Vec::new(),
     }
 }

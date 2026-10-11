@@ -217,6 +217,14 @@ fn tokenize(text: &str, units: Units) -> Result<Vec<(Tok, usize)>, String> {
                 while i < chars.len() && (chars[i].is_ascii_alphanumeric() || chars[i] == '_') {
                     i += 1;
                 }
+                // a hidden point's key within a path too (`#3.0.blank#probe`)
+                while copy(i) {
+                    key = true;
+                    i += 1;
+                    while i < chars.len() && (chars[i].is_ascii_alphanumeric() || chars[i] == '_') {
+                        i += 1;
+                    }
+                }
             }
             out.push((Tok::Ident(chars[start..i].iter().collect()), at));
             continue;

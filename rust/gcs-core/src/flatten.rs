@@ -200,6 +200,9 @@ pub struct Expansion {
     pub twins: Vec<(String, String)>,
     /// Every region solid's probe, by absolute key: the point its set is applied to (§6.21).
     pub probes: Vec<String>,
+    /// The solids a block runs over the faces of, whose faces were not given (#183 F4): the
+    /// elaborator names them once it has built the solids, and expands again.
+    pub face_repeats: BTreeSet<String>,
 }
 
 /// One instance, as bound: which component, under what prefix, given what.
@@ -325,6 +328,10 @@ struct Walk<'a> {
     twins: Vec<(String, String)>,
     /// Every region solid's probe — see `Expansion::probes`.
     probes: Vec<String>,
+    /// Each solid's faces, by the path they are named by from it, where the elaborator has said
+    /// (#183 F4) — see `Expansion::face_repeats`.
+    faces: BTreeMap<String, Vec<String>>,
+    face_repeats: BTreeSet<String>,
 }
 
 /// Expand a program's root component into a flat list of declarations, constraints, gauges and
@@ -336,8 +343,19 @@ pub fn expand(prog: &Program, units: Units) -> Expansion {
 /// `expand`, with the sets named in `unlowered` walked as sets though their bodies are elements'
 /// — those the elaborator refused (`lowering::refused`).
 pub fn expand_with(prog: &Program, units: Units, unlowered: &BTreeSet<String>) -> Expansion {
+    expand_faces(prog, units, unlowered, &BTreeMap::new())
+}
+
+/// `expand_with`, each solid a block runs over the faces of given its faces (#183 F4).
+pub fn expand_faces(
+    prog: &Program,
+    units: Units,
+    unlowered: &BTreeSet<String>,
+    faces: &BTreeMap<String, Vec<String>>,
+) -> Expansion {
     let mut w = Walk::new(prog, units, None);
     w.unlowered = unlowered;
+    w.faces = faces.clone();
     let root = prog.root();
     // A definitions-only file has nothing to expand. In particular, imported parameters must
     // not be evaluated in a unit system that only an eventual instantiating model will supply.
@@ -436,6 +454,8 @@ impl<'a> Walk<'a> {
             applying_sets: false,
             twins: Vec::new(),
             probes: Vec::new(),
+            faces: BTreeMap::new(),
+            face_repeats: BTreeSet::new(),
         }
     }
 
@@ -491,6 +511,7 @@ impl<'a> Walk<'a> {
             lowered,
             twins: self.twins,
             probes: self.probes,
+            face_repeats: self.face_repeats,
         }
     }
 }

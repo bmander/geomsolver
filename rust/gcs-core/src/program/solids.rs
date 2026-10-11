@@ -131,8 +131,15 @@ pub(super) fn solids(
             });
             continue;
         };
-        let resolved = super::resolve::follow_building(sk,res,a,what)
-            .and_then(|a| super::resolve::follow_building(sk,res,b,into).map(|b| (a,b)));
+        // `A.body`: the solid a face path is of (#183 F5), `pad.boss.body` is `pad`
+        let of_body = |e: EntRef, r: &crate::syntax::Ref| e.kind == EntKind::Solid
+            && matches!(r.path.last(), Some(crate::syntax::Seg::Field(n)) if n.text == "body");
+        let follow = |e: EntRef, r: &crate::syntax::Ref| if of_body(e, r) {
+            Ok(e)
+        } else {
+            super::resolve::follow_building(sk,res,e,r)
+        };
+        let resolved = follow(a,what).and_then(|a| follow(b,into).map(|b| (a,b)));
         let (a,b) = match resolved {
             Ok(pair) => pair,
             Err(message) => { say(at,message); continue; }

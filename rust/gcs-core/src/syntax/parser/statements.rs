@@ -1053,12 +1053,32 @@ impl<'a> P<'a> {
             let var = self.ident()?;
             self.i += 1;
             let chain = self.refr()?;
+            // `if c in B and c != a` (#183 F8)
+            let mut when = Vec::new();
+            if self.eat_word("if") {
+                loop {
+                    let var = self.ident()?;
+                    let within = if self.eat_word("in") {
+                        true
+                    } else if self.eat_p('!') && self.eat_p('=') {
+                        false
+                    } else {
+                        self.fail("a condition on a copy is `f in X` or `f != g`");
+                        return None;
+                    };
+                    let other = self.refr()?;
+                    when.push(crate::syntax::When { var, within, other });
+                    if !self.eat_word("and") {
+                        break;
+                    }
+                }
+            }
             let binder = if self.eat_word("as") { Some(self.ident()?) } else { None };
             let (body, joint) = self.braced_body(next_id)?;
             return Some(Block {
                 kind,
                 count: String::new(),
-                over: Some(EdgesOf { var, chain }),
+                over: Some(EdgesOf { var, chain, when }),
                 binder,
                 body,
                 joint,

@@ -174,8 +174,11 @@ pub fn elaborate(p: &Program) -> Elaborated {
     // views stand where they would have.  Once: a seed is where a solve begins, and the solve
     // steers what is left (`System::steer`)
     let mut crossed = BTreeMap::new();
+    // **a block over a solid's faces** (#183 F4) runs over them once the solid is built: its
+    // faces named, and the document elaborated again
+    let mut faces = BTreeMap::new();
     loop {
-        match elaborate_in(p, &refused, &crossed) {
+        match elaborate_in(p, &refused, &crossed, &faces) {
             Ok(e) => {
                 if crossed.is_empty() {
                     crossed = crossed_seeds(&e);
@@ -185,9 +188,17 @@ pub fn elaborate(p: &Program) -> Elaborated {
                 }
                 return e;
             }
-            Err(more) => refused.extend(more),
+            Err(Again::Refused(more)) => refused.extend(more),
+            Err(Again::Faces(more)) => faces.extend(more),
         }
     }
+}
+
+/// Why a pass of `elaborate` ends before a drawing is made: sets drawn as elements that are
+/// none, or solids a block runs over the faces of, named.
+enum Again {
+    Refused(BTreeSet<String>),
+    Faces(BTreeMap<String, Vec<String>>),
 }
 
 /// The points whose seeds break a bound, carried across (`solve::cross_bounds`): each by the key
@@ -216,7 +227,8 @@ fn elaborate_in(
     p: &Program,
     refused: &BTreeSet<String>,
     crossed: &BTreeMap<String, Vec<f64>>,
-) -> Result<Elaborated, BTreeSet<String>> {
+    faces: &BTreeMap<String, Vec<String>>,
+) -> Result<Elaborated, Again> {
     let mut diags: Vec<Diag> = Vec::new();
     let mut map = SourceMap::default();
     let mut sk = Sketch::new();
@@ -259,7 +271,7 @@ fn elaborate_in(
 
     // -- phase 1: names, in one pre-pass.  Indices come from declaration order within a kind,
     // which is `primitives()` order, which is the order phase 2 builds in.
-    let mut expansion = crate::flatten::expand_with(p, sk.units, refused);
+    let mut expansion = crate::flatten::expand_faces(p, sk.units, refused, faces);
     map.private_names = expansion.private_names.clone();
     // the unknowns the source declared — a solved fold and the expression graph read their
     // seeds and dimensions as they are built
@@ -469,7 +481,7 @@ fn elaborate_in(
     };
     let more = crate::lowering::refused(&sk, &expansion.lowered, ent, |k| res.of.get(k).copied());
     if !more.is_empty() {
-        return Err(more);
+        return Err(Again::Refused(more));
     }
     entities::places(&mut sk, &deferred, &mut diags);
     // a point a bound carried across in a pass before stands where it was carried, whatever its
@@ -599,6 +611,15 @@ fn elaborate_in(
     // drawing, everything below reads what the drawing came to.
     // (Motions were built with the primitives: solids retain their indices.)
     solids(&mut sk, &mut res, &mut map, &body, &skip, &mut probes, &mut diags);
+    // the faces of the solids a block runs over, named for the next pass (#183 F4)
+    let unnamed: BTreeMap<String, Vec<String>> = expansion.face_repeats.iter()
+        .filter(|abs| !faces.contains_key(*abs))
+        .filter_map(|abs| res.of.get(abs).filter(|e| e.kind == EntKind::Solid && e.i() < sk.solids.len())
+            .map(|e| (abs.clone(), crate::solid::faces::face_paths(&sk, e.i()))))
+        .collect();
+    if !unnamed.is_empty() {
+        return Err(Again::Faces(unnamed));
+    }
     surfaces::surfaces(&mut sk, &mut res, &mut map, &body, &skip, &mut diags);
     let spatial: BTreeSet<StmtId> = skip.iter().chain(&planar).chain(&extruded).copied().collect();
     envelopes::envelopes(&mut sk, &mut res, &mut map, &body, &spatial, &mut diags);
