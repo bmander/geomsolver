@@ -393,7 +393,10 @@ export function onPointerMove(v: SketchView, e: PointerEvent): void {
   v.cursor = sp;
   if (v.liveDim?.placing) moveDimension(v, sp);
   else if (v.gesture) v.gesture.move(sp, { shift: e.shiftKey });
-  else hover(v, sp);
+  else {
+    hover(v, sp);
+    if (v.orbitMode) return;   // nothing a hover paints is offered in orbit mode
+  }
   v.draw();
 }
 

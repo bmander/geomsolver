@@ -110,10 +110,13 @@ const TOOL_BUTTONS: ToolbarButton[] = [
          + '· square to a plane, through a point or its origin · where two planes meet · with '
          + 'nothing selected, free, square to the plane being drawn on' },
 ];
-addTopic(barTools, 'Elements', [...ELEMENT_TOOLS.map(toolButton), null, ...TOOL_BUTTONS])
-  .slice(0, ELEMENT_TOOLS.length).forEach((b, i) => toolButtons.set(ELEMENT_TOOLS[i][1], b));
-addTopic(barTools, 'Solids', SOLID_TOOLS.map(toolButton))
-  .forEach((b, i) => toolButtons.set(SOLID_TOOLS[i][1], b));
+/** A head over tools, and past a divider any other buttons; the tools' buttons are the ones
+ *  `onTool` presses. */
+const toolTopic = (label: string, tools: [string, Tool, string][], rest: ToolbarButton[] = []) =>
+  addTopic(barTools, label, [...tools.map(toolButton), ...(rest.length ? [null, ...rest] : [])])
+    .slice(0, tools.length).forEach((b, i) => toolButtons.set(tools[i][1], b));
+toolTopic('Elements', ELEMENT_TOOLS, TOOL_BUTTONS);
+toolTopic('Solids', SOLID_TOOLS);
 /* The workspace's own buttons, in its corner: orbit mode, where one finger turns the view, and
  * delete, which a phone has no key for. */
 const VIEW_BUTTONS: ToolbarButton[] = [
@@ -121,16 +124,16 @@ const VIEW_BUTTONS: ToolbarButton[] = [
     title: 'Orbit mode: a drag turns the workspace about, rather than drawing or selecting — one '
          + 'finger on a phone.  Click again to put it down',
     onClick: () => {
-      view.orbitMode = !view.orbitMode;
-      orbitButton.setAttribute('aria-pressed', String(view.orbitMode));
+      view.setOrbitMode(!view.orbitMode);
       toast(view.orbitMode ? 'orbit: drag to turn the view' : 'orbit off');
-      view.draw();
     } },
   { label: 'Delete', onClick: () => view.deleteSelected(),
     title: 'Delete what is selected (Delete)' },
 ];
 const [orbitButton] = VIEW_BUTTONS.map((b) => addButton(
   document.getElementById('view-buttons') as HTMLElement, b));
+/** The Orbit button follows the view, as the tools' do. */
+view.onOrbitMode = (on) => orbitButton.setAttribute('aria-pressed', String(on));
 view.setTool('select');
 addTopic(barConstraints, 'Constraints', CONSTRAINT_BUTTONS);
 fitBars(document.querySelector('header')!, [barTools, barConstraints]);
