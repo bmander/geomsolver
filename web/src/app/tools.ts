@@ -10,6 +10,8 @@ export function setTool(v: SketchView, tool: Tool): void {
   v.pending = [];
   v.pendingFit = [];
   v.hoverRegion = null;
+  v.pendingRevolve = null;
+  v.highlight = [];
   v.endExtent();                             // an extrusion being sized is done with the tool
   v.canvas.classList.toggle('select', tool === 'select');
   v.canvas.style.cursor = '';                // drop any hover affordance
@@ -102,6 +104,13 @@ export function cancelTool(v: SketchView): void {
     v.draw();
     return;
   }
+  // a region waiting for the line to turn it about: let it go, the tool still down
+  if (v.pendingRevolve) {
+    v.pendingRevolve = null;
+    v.highlight = [];
+    v.draw();
+    return;
+  }
   // an extrusion being sized: done sizing, the tool still down for the next
   if (v.liveExtent) {
     v.endExtent();
@@ -161,8 +170,9 @@ export function seedNamed(v: SketchView, name: string, x: number, y: number): vo
   }
 }
 
-/** A press with a tool down.  `alt` and `shift` are the press's modifiers: an extrusion with a
- *  body selected cuts it with ⌥, and cuts through all of it with ⌥⇧. */
+/** A press with a tool down.  `alt` and `shift` are the press's modifiers: an extrusion or a
+ *  revolution with a body selected cuts it with ⌥, and an extrusion cuts through all of it with
+ *  ⌥⇧. */
 export function toolClick(v: SketchView, sp: [number, number],
                           mods: { alt?: boolean; shift?: boolean } = {}): void {
   // a standard plane chosen before the document had it is brought in by the first press: the
@@ -176,6 +186,10 @@ export function toolClick(v: SketchView, sp: [number, number],
   // an extrusion writes its statements through `apply`, which takes its own undo step
   if (v.tool === 'extrude') {
     v.extrudeAt(sp[0], sp[1], mods.alt, mods.alt && mods.shift);
+    return;
+  }
+  if (v.tool === 'revolve') {
+    v.revolveAt(sp[0], sp[1], mods.alt);
     return;
   }
   const sk = v.sketch;

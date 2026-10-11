@@ -54,7 +54,7 @@ export interface SourceMap {
 export type EditKind = 'structural' | 'numeric' | 'none';
 
 /** How a face is swept (Solvent §6.9): along its normal (`depth`, or `from` and `to`), through a
- *  body, or turned `about` a line in its plane. */
+ *  body, or turned `about` a line or an axis in its plane. */
 export interface SolidSpec extends SweepSpec {
   face: string;
   name?: string;
@@ -68,8 +68,11 @@ export interface SweepSpec {
   through?: string;
   about?: string;
   sweep?: string;
-  sense?: 'cw' | 'ccw';
+  sense?: Sense;
 }
+
+/** Which way a revolution turns about its axis: right-handed (`ccw`, the default) or not. */
+export type Sense = 'cw' | 'ccw';
 
 export type BodyWord = 'union' | 'cut' | 'bound';
 
@@ -399,11 +402,27 @@ export class Document {
     return edit(withJson(req, (p, n) => core().gcs_elab_extrude(this.h, this.sketch.handle, p, n)));
   }
 
+  /** **Revolve** the region a click found — its loops by name — about the line or axis `about`
+   *  (a name: `ax`, `std.z`, `v0.u`) as one splice: the face, the solid turned a whole turn about
+   *  it, and with a body the body rule.  `names` is the solid, then the faces. */
+  revolve(outer: string[], holes: string[][], about: string,
+          with_?: { word: BodyWord; body: string }): Edit {
+    const req = { outer, holes, about, word: with_?.word, body: with_?.body };
+    return edit(withJson(req, (p, n) => core().gcs_elab_revolve(this.h, p, n)));
+  }
+
   /** Rewrite how solid `solid` (its index) is swept, over the same face: an extrusion's
    *  thickness the way it runs (`{ way, thick }`, the core writing `depth:` or `from:`/`to:`), or
    *  a sweep outright. */
   setSweep(solid: number, spec: SweepSpec | { way: Way; thick: string }): Edit {
     return edit(withJson(spec, (p, n) => core().gcs_elab_set_sweep(this.h, solid, p, n)));
+  }
+
+  /** Rewrite how far revolution `solid` (its index) turns about what it turns about: `angle` in
+   *  degrees as written — a number signed, negative clockwise, a whole turn written as none; an
+   *  expression the way it already turns. */
+  setTurn(solid: number, angle: string): Edit {
+    return edit(withStr(angle, (p, n) => core().gcs_elab_set_turn(this.h, solid, p, n)));
   }
 
   /** The body rule: `what union body`, `what cut body`, `what bound body`. */

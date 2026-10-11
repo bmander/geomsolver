@@ -2313,6 +2313,11 @@ pub unsafe extern "C" fn gcs_workspace_pick_solid_json(h: *mut Sketch, az: f64, 
     })
 }
 
+/// A point on the eye's picture plane, `[x, y]`.
+fn pt(p: (f64, f64)) -> Json {
+    Json::Arr(vec![Json::Num(p.0), Json::Num(p.1)])
+}
+
 /// The arrow prism `solid` is sized by, seen by the eye at `az`, `el`: `{base: [x, y], tip: [x, y]
 /// | null, way: "behind" | "front" | "both" | null, thick}` — no tip seen straight down its
 /// normal — or `null` for no prism.
@@ -2323,7 +2328,6 @@ pub unsafe extern "C" fn gcs_workspace_extrude_handle_json(h: *mut Sketch, az: f
         use gcs_core::overview::workspace::{extrude_handle, Projection};
         let s = sk(h);
         let proj = Projection::new(s, az, el);
-        let pt = |p: (f64, f64)| Json::Arr(vec![Json::Num(p.0), Json::Num(p.1)]);
         out_json(match extrude_handle(s, &proj, solid.max(0) as usize) {
             Some(k) => json::object([
                 ("base", pt(k.base)),
@@ -2349,6 +2353,42 @@ pub unsafe extern "C" fn gcs_workspace_extent_at(h: *mut Sketch, az: f64, el: f6
     })
 }
 
+/// The handle revolution `solid` is sized by, seen by the eye at `az`, `el`: `{base: [x, y], arc:
+/// [[x, y], …], tip: [x, y] | null, turn}` — the arc its profile's middle turns through, no tip
+/// seen along the turning plane, `turn` in degrees, positive right-handed about the axis — or
+/// `null` for no revolution: `workspace::turn_handle`.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_workspace_turn_handle_json(h: *mut Sketch, az: f64, el: f64,
+                                                        solid: i32) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || {
+        use gcs_core::overview::workspace::{turn_handle, Projection};
+        let s = sk(h);
+        let proj = Projection::new(s, az, el);
+        out_json(match turn_handle(s, &proj, solid.max(0) as usize) {
+            Some(k) => json::object([
+                ("base", pt(k.base)),
+                ("arc", Json::Arr(k.arc.into_iter().map(pt).collect())),
+                ("tip", k.tip.map_or(Json::Null, pt)),
+                ("turn", Json::Num(k.turn)),
+            ]),
+            None => Json::Null,
+        })
+    })
+}
+
+/// How far revolution `solid` turns, in signed degrees, where its handle is dragged to (x, y) on
+/// the eye's picture plane, the whole turns round nearest `near` — or NaN: `workspace::turn_at`.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_workspace_turn_at(h: *mut Sketch, az: f64, el: f64, solid: i32,
+                                               x: f64, y: f64, near: f64) -> f64 {
+    guard(f64::NAN, move || {
+        use gcs_core::overview::workspace::{turn_at, Projection};
+        let s = sk(h);
+        let proj = Projection::new(s, az, el);
+        turn_at(s, &proj, solid.max(0) as usize, (x, y), near).unwrap_or(f64::NAN)
+    })
+}
+
 /// The arrow the plane distance `id` is sized by, seen by the eye at `az`, `el`: `{base: [x, y],
 /// tip: [x, y] | null, distance}` — or `null` for any other constraint: `workspace::offset_handle`.
 #[no_mangle]
@@ -2358,7 +2398,6 @@ pub unsafe extern "C" fn gcs_workspace_offset_handle_json(h: *mut Sketch, az: f6
         use gcs_core::overview::workspace::{offset_handle, Projection};
         let s = sk(h);
         let proj = Projection::new(s, az, el);
-        let pt = |p: (f64, f64)| Json::Arr(vec![Json::Num(p.0), Json::Num(p.1)]);
         out_json(match offset_handle(s, &proj, id) {
             Some(k) => json::object([
                 ("base", pt(k.base)),
@@ -4201,22 +4240,44 @@ pub unsafe extern "C" fn gcs_elab_extrude(h: *mut Elaborated, s: *mut Sketch, pt
                                           len: usize) -> *mut u8 {
     guard(std::ptr::null_mut(), move || {
         let v = as_json(ptr, len);
-        let outer = v.get("outer").map(strings).unwrap_or_default();
-        let holes: Vec<Vec<String>> =
-            v.get("holes").map(|a| a.arr().iter().map(strings).collect()).unwrap_or_default();
-        let body = v.get("body").map(|x| x.as_str().to_string());
-        let with = match (v.get("word").map(|w| w.as_str()), body.as_deref()) {
-            (None, _) => None,
-            (Some(w), body) => match (gcs_core::syntax::BodyWord::parse(w), body) {
-                (Some(word), Some(body)) => Some((word, body)),
-                _ => {
-                    set_error(format!("`{w}` with a body is the body rule: union, cut or bound"));
-                    return std::ptr::null_mut();
-                }
-            },
-        };
+        let Some((outer, holes, body)) = region_request(&v) else { return std::ptr::null_mut() };
+        let with = body.as_ref().map(|(w, b)| (*w, b.as_str()));
         let through = v.get("through").is_some_and(|x| x.as_bool());
         out_edit(gcs_core::edit::extrude(&(*h).program, sk(s), &outer, &holes, with, through))
+    })
+}
+
+/// What a region's solid is asked: its outer loop and holes by name, and the body rule it joins
+/// with — `word` and `body`, or neither — or `None` with the error set, for a word that is not
+/// one.
+fn region_request(v: &Json)
+    -> Option<(Vec<String>, Vec<Vec<String>>, Option<(gcs_core::syntax::BodyWord, String)>)> {
+    let outer = v.get("outer").map(strings).unwrap_or_default();
+    let holes = v.get("holes").map(|a| a.arr().iter().map(strings).collect()).unwrap_or_default();
+    let body = match (v.get("word").map(|w| w.as_str()), v.get("body").map(|b| b.as_str())) {
+        (None, _) => None,
+        (Some(w), body) => match (gcs_core::syntax::BodyWord::parse(w), body) {
+            (Some(word), Some(body)) => Some((word, body.to_string())),
+            _ => {
+                set_error(format!("`{w}` with a body is the body rule: union, cut or bound"));
+                return None;
+            }
+        },
+    };
+    Some((outer, holes, body))
+}
+
+/// A revolution of the region a click found about a line or an axis — `{outer: [..], holes:
+/// [[..]], about, word?: "union" | "cut", body?}` — the face, the solid and the body rule in one
+/// splice: `edit::revolve`.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_elab_revolve(h: *mut Elaborated, ptr: *const u8, len: usize) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || {
+        let v = as_json(ptr, len);
+        let Some((outer, holes, body)) = region_request(&v) else { return std::ptr::null_mut() };
+        let with = body.as_ref().map(|(w, b)| (*w, b.as_str()));
+        let about = v.get("about").map(|x| x.as_str().to_string()).unwrap_or_default();
+        out_edit(gcs_core::edit::revolve(&(*h).program, &outer, &holes, &about, with))
     })
 }
 
@@ -4237,6 +4298,17 @@ pub unsafe extern "C" fn gcs_elab_set_sweep(h: *mut Elaborated, solid: i32, ptr:
     })
 }
 
+/// Rewrite how far revolution `solid` turns about what it turns about — `angle` the text, in
+/// degrees, a number signed (negative clockwise): `edit::set_turn`.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_elab_set_turn(h: *mut Elaborated, solid: i32, ptr: *const u8,
+                                           len: usize) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || {
+        let angle = as_str(ptr, len);
+        out_edit(gcs_core::edit::set_turn(&*h, &(*h).program, solid.max(0) as usize, angle))
+    })
+}
+
 /// Re-extrude prism `i` where it stands, `d` thick the way `way` says (0 behind, 1 in front, 2
 /// both) — the preview an extrusion being sized shows before the source is written:
 /// `Sketch::set_prism`.  1 done, 0 not a prism.
@@ -4247,7 +4319,16 @@ pub unsafe extern "C" fn gcs_sketch_set_prism(h: *mut Sketch, i: i32, way: i32, 
     guard(0, move || i32::from(i >= 0 && sk(h).set_prism(i as usize, way, d)))
 }
 
-/// Bumped whenever a solid's shape changes in place (`set_prism`): what a cached mesh keys on.
+/// Re-turn revolution `i` where it stands through `degrees`, signed (negative clockwise about its
+/// axis) — the preview a revolution being sized shows before the source is written:
+/// `Sketch::set_turn`.  1 done, 0 not a revolution.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_sketch_set_turn(h: *mut Sketch, i: i32, degrees: f64) -> i32 {
+    guard(0, move || i32::from(i >= 0 && sk(h).set_turn(i as usize, degrees)))
+}
+
+/// Bumped whenever a solid's shape changes in place (`set_prism`, `set_turn`): what a cached mesh
+/// keys on.
 #[no_mangle]
 pub unsafe extern "C" fn gcs_sketch_shape_epoch(h: *mut Sketch) -> u32 {
     guard(0, move || sk(h).shape_epoch)

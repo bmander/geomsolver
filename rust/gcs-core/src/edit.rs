@@ -974,15 +974,42 @@ fn extrude_edit(
     with: Option<(syntax::BodyWord, &str)>,
     through: bool,
 ) -> Result<Edit, String> {
-    let mut taken = taken_names(prog);
-    let (mut stmts, faces) = face_stmts(&mut taken, outer, holes, None)?;
-    let solid = chosen_name(&mut taken, None, EntKind::Solid)?;
     let sweep = match (through, with) {
         (true, Some((_, body))) => SolidSweep { through: Some(body.to_string()), ..Default::default() },
         (true, None) => return Err("a cut through all goes through a body: select it first".into()),
         (false, _) => SolidSweep { depth: Some(syntax::num(set_off(sk))), ..Default::default() },
     };
-    stmts.push(solid_stmt(&solid, &faces[0], sweep.sweep()?));
+    region_solid(prog, outer, holes, &sweep, with)
+}
+
+/// **Revolve** (#162 F3): a click inside a region and the line or axis to turn it about, as one
+/// splice — `f0 := face(…)`, `b0 := solid(f0, about: l)`, a full turn, and with a body selected
+/// the body rule, as `extrude` writes it.  An axis that does not lie in the face's plane, or a
+/// line drawn in another, is refused in the elaborator's words (E081).  `names` is the solid, the
+/// face, then any hole faces.
+pub fn revolve(
+    prog: &Program,
+    outer: &[String],
+    holes: &[Vec<String>],
+    about: &str,
+    with: Option<(syntax::BodyWord, &str)>,
+) -> Edit {
+    let how = SolidSweep { about: Some(about.to_string()), ..Default::default() };
+    region_solid(prog, outer, holes, &how, with).unwrap_or_else(|why| Edit::none(prog, Some(why)))
+}
+
+/// A region's face, the solid swept from it `how`, and the body rule `with` says, in one splice.
+fn region_solid(
+    prog: &Program,
+    outer: &[String],
+    holes: &[Vec<String>],
+    how: &SolidSweep,
+    with: Option<(syntax::BodyWord, &str)>,
+) -> Result<Edit, String> {
+    let mut taken = taken_names(prog);
+    let (mut stmts, faces) = face_stmts(&mut taken, outer, holes, None)?;
+    let solid = chosen_name(&mut taken, None, EntKind::Solid)?;
+    stmts.push(solid_stmt(&solid, &faces[0], how.sweep()?));
     if let Some((word, body)) = with {
         stmts.push(StmtKind::SolidRel(syntax::SolidRel {
             word,
@@ -1004,6 +1031,48 @@ pub fn set_sweep(e: &Elaborated, prog: &Program, solid: usize, how: &SolidSweep)
 }
 
 fn sweep_edit(e: &Elaborated, prog: &Program, solid: usize, how: &SolidSweep) -> Result<Edit, String> {
+    resweep(e, prog, solid, |_| how.sweep())
+}
+
+/// Rewrite how far revolution `solid` turns, about what it turns about: `angle` the text written,
+/// in degrees.  A number is signed, positive right-handed about the axis, and read by
+/// `model::turn_of` — `-90` is `sweep: 90, sense: cw`, a whole turn or more no `sweep:` at all;
+/// an expression is written whole, the way the solid already turns.
+pub fn set_turn(e: &Elaborated, prog: &Program, solid: usize, angle: &str) -> Edit {
+    turn_edit(e, prog, solid, angle).unwrap_or_else(|why| Edit::none(prog, Some(why)))
+}
+
+fn turn_edit(e: &Elaborated, prog: &Program, solid: usize, angle: &str) -> Result<Edit, String> {
+    let angle = angle.trim();
+    resweep(e, prog, solid, |was| {
+        let syntax::Sweep::Revolve { axis, sense, .. } = was else {
+            return Err("that solid is not turned about anything".into());
+        };
+        let (sweep, sense) = match angle.parse::<f64>() {
+            Ok(n) => {
+                let (how_far, sense) = crate::model::turn_of(n).ok_or("a turn turns some way")?;
+                let sense = match sense {
+                    crate::model::Sense::Cw => syntax::Sense::Cw,
+                    crate::model::Sense::Ccw => syntax::Sense::Ccw,
+                };
+                (how_far.map(num), sense)
+            }
+            Err(_) => (Some(angle.to_string()), *sense),
+        };
+        let sweep = sweep.map(|text| syntax::Arg::Dim { text, span: Span::default() });
+        Ok(syntax::Sweep::Revolve { axis: axis.clone(), sweep, sense })
+    })
+}
+
+/// Solid `solid`'s own statement, its sweep replaced by what `with` makes of the one written —
+/// its bracket list rewritten and nothing else in the file touched.  At the root: one a component
+/// or a block made is no statement to rewrite.
+fn resweep(
+    e: &Elaborated,
+    prog: &Program,
+    solid: usize,
+    with: impl FnOnce(&syntax::Sweep) -> Result<syntax::Sweep, String>,
+) -> Result<Edit, String> {
     let site = e.map.of_entity.get(&EntRef::solid(solid)).ok_or("no statement makes that solid")?;
     if !site.path.0.is_empty() || !in_root(prog, site.stmt) {
         return Err("that solid comes from a component or a block: change it there".into());
@@ -1011,13 +1080,13 @@ fn sweep_edit(e: &Elaborated, prog: &Program, solid: usize, how: &SolidSweep) ->
     let d = decl_of(prog, site).filter(|d| d.kind == EntKind::Solid && d.sweep.is_some())
         .ok_or("that solid is made of others, not swept from a face")?;
     let mut d2 = d.clone();
-    d2.sweep = Some(how.sweep()?);
-    let with = syntax::decl_args(&d2);
+    d2.sweep = Some(with(d.sweep.as_ref().expect("a swept solid"))?);
+    let args = syntax::decl_args(&d2);
     // the statement in the new text: where it was, longer or shorter by what the list became
     let stmt = prog.stmt(site.stmt).map(|s| s.span).ok_or("no statement makes that solid")?;
-    let grown = with.len() as i64 - (d.list_span.hi as i64 - d.list_span.lo as i64);
+    let grown = args.len() as i64 - (d.list_span.hi as i64 - d.list_span.lo as i64);
     let ours = Span::new(stmt.lo as usize, (stmt.hi as i64 + grown) as usize);
-    let text = splice(prog.text(), vec![Splice { at: d.list_span, with }]);
+    let text = splice(prog.text(), vec![Splice { at: d.list_span, with: args }]);
     checked(prog, text, ours, Vec::new())
 }
 

@@ -16,6 +16,7 @@ import { COL } from './paint.js';
 import { insertControl } from './edit.js';
 import { cancelTool, toolClick } from './tools.js';
 import { bodyAt, grabBody, grabHandle, handleAt } from './underlay.js';
+import { sweepsRegion } from './view.js';
 import type { SketchView, SolidPick } from './view.js';
 
 /** One pointer gesture in progress.  `move` gets canvas coordinates; `end` and `paint` are
@@ -303,8 +304,8 @@ export function onPointerDown(v: SketchView, e: PointerEvent): void {
     v.gesture = orbitGesture(v, sp);
     return;
   }
-  // the arrow of an extrusion or an offset plane being sized: taking hold of it sizes it, and a
-  // press anywhere else is done with an offset plane's
+  // the handle of an extrusion, a revolution or an offset plane being sized: taking hold of it
+  // sizes it, and a press anywhere else is done with an offset plane's
   if (onExtentArrow(v, sp)) {
     v.gesture = extentGesture(v);
     return;
@@ -620,15 +621,15 @@ function whatIsAt(v: SketchView, sp: [number, number], solids = true): Target {
   return { kind: 'none' };
 }
 
-/** Whether a canvas point is on the arrow tip of the extrusion being sized. */
+/** Whether a canvas point is on the tip of the handle of what is being sized. */
 function onExtentArrow(v: SketchView, sp: [number, number]): boolean {
   const tip = v.extentArrow()?.tip;
   return !!tip && Math.hypot(tip[0] - sp[0], tip[1] - sp[1]) < v.pickPx + 4;
 }
 
-/** Dragging an extrusion's or an offset plane's arrow: it is sized where the eye sees the pointer
- *  along its normal (an extrusion both ways with ⇧), and written when it is let go — one edit,
- *  joining the undo step that made it. */
+/** Dragging an extrusion's or an offset plane's arrow, or a revolution's handle: it is sized where
+ *  the eye sees the pointer along its normal (an extrusion both ways with ⇧) or round its turn,
+ *  and written when it is let go — one edit, joining the undo step that made it. */
 function extentGesture(v: SketchView): Gesture {
   return {
     transient: true,
@@ -646,10 +647,16 @@ export function hover(v: SketchView, sp: [number, number]): void {
     v.canvas.style.cursor = 'grab';
     return;
   }
-  // the Extrude tool shows what a click would extrude, and offers its arrow
-  if (v.tool === 'extrude') {
+  // the Extrude and Revolve tools show what a click would sweep, and offer its handle; with a
+  // region chosen, Revolve lights the line or axis a click would turn it about
+  if (sweepsRegion(v.tool)) {
     const grab = onExtentArrow(v, sp);
-    v.hoverRegion = grab ? null : v.regionAt(sp[0], sp[1]);
+    if (v.pendingRevolve) {
+      const e = grab ? null : v.pick(sp[0], sp[1]);
+      v.highlight = e && v.turnsAbout(e) ? [e] : [];
+    } else {
+      v.hoverRegion = grab ? null : v.regionAt(sp[0], sp[1]);
+    }
     v.canvas.style.cursor = grab ? 'grab' : '';
     return;
   }

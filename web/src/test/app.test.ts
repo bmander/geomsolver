@@ -2042,6 +2042,131 @@ test('with a body selected an extrusion joins it, cuts it with ⌥, and cuts thr
   assert.ok(said.some((m) => /select the body/.test(m)), said.join('\n'));
 });
 
+/* -- revolve (#162 F3) ------------------------------------------------------------------- */
+
+/** On the front: a 4 × 4 square `ab…da` from (10, 2) to (14, 6), and a line `ax` up x = 20. */
+const REVOLVING = `use std
+in std.front {
+a := point
+b := point
+c := point
+d := point
+ab := line(a, b)
+bc := line(b, c)
+cd := line(c, d)
+da := line(d, a)
+q0 := point
+q1 := point
+ax := line(q0, q1)
+fix((10, 2)) a
+fix((14, 2)) b
+fix((14, 6)) c
+fix((10, 6)) d
+fix((20, 0)) q0
+fix((20, 10)) q1
+}
+`;
+
+function revolving(body = ''): SketchView {
+  const view = docView(REVOLVING + body);
+  assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
+  view.choosePlane('std.front');
+  view.setTool('revolve');
+  return view;
+}
+
+test('the Revolve tool takes a region, then the line to turn it about, as one undo step', () => {
+  const view = revolving();
+  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  cv.fire('pointermove', pointer(...view.w2s(12, 4)));
+  const r = view.hoverRegion;
+  assert.ok(r && !('refused' in r), JSON.stringify(r));
+  assert.deepEqual([...r.outer].sort(), ['ab', 'bc', 'cd', 'da']);
+  const before = view.source;
+  click(view, 12, 4);
+  assert.equal(view.source, before, 'a region alone writes nothing');
+  assert.ok(view.pendingRevolve);
+  // the region chosen stays, washed, and the line a click would turn it about is lit
+  cv.fire('pointermove', pointer(...view.w2s(20, 5)));
+  assert.deepEqual(view.pendingRevolve?.outer, r.outer, 'the region chosen stays');
+  assert.deepEqual(view.highlight.map((e) => view.doc.nameOf(e)), ['ax']);
+  // a click on nothing to turn about says what it wants, and waits
+  const said: string[] = [];
+  view.onStatus = (m) => said.push(m);
+  click(view, 30, 30);
+  assert.ok(said.some((m) => /line .* or an axis/.test(m)), said.join('\n'));
+  assert.equal(view.source, before);
+  click(view, 20, 5);
+  assert.ok(view.source.endsWith('f0 := face(ab, bc, cd, da)\nb0 := solid(f0, about: ax)\n'),
+            view.source);
+  assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
+  assert.deepEqual(view.selectedSolids.map((s) => s.name), ['b0']);
+  assert.deepEqual(view.liveExtent, { kind: 'turn', solid: 'b0', d: 360 });
+  assert.equal(view.pendingRevolve, null);
+  assert.equal(view.tool, 'revolve', 'the tool stays down for the next');
+  view.cancelTool();
+  assert.equal(view.liveExtent, null);
+  view.undo();
+  assert.equal(view.source, before, 'the two clicks are one undo step');
+  // Escape with a region chosen lets it go, the tool still down
+  click(view, 12, 4);
+  view.cancelTool();
+  assert.equal(view.pendingRevolve, null);
+  assert.equal(view.tool, 'revolve');
+});
+
+test('about an axis already selected a click revolves at once, and its turn is typed or dragged',
+     () => {
+  const view = revolving();
+  const z = view.doc.entity('std.z');
+  assert.ok(z instanceof Axis);
+  view.selected = [z];
+  const before = view.source;
+  click(view, 12, 4);
+  assert.ok(view.source.endsWith('b0 := solid(f0, about: std.z)\n'), view.source);
+  assert.equal(view.commitExtent('90'), null);
+  assert.ok(view.source.includes('b0 := solid(f0, about: std.z, sweep: 90)'), view.source);
+  // dragged from three quarters: the square's middle (12, 0, 4) turns about z toward +y, so a
+  // half turn is over at (−12, 0, 4)
+  view.orbit = { az: 0.6, el: 0.5 };
+  const arrow = view.extentArrow();
+  assert.ok(arrow?.tip && arrow.arc && arrow.arc.length > 2, 'the handle is seen from here');
+  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  const to = seenAt(view, [-12, 0, 4]);
+  cv.fire('pointerdown', pointer(...arrow.tip));
+  cv.fire('pointermove', pointer(...seenAt(view, [-8.5, 8.5, 4])));
+  cv.fire('pointermove', pointer(...to));
+  assert.ok(view.source.includes('sweep: 90)'), 'nothing is written while it is dragged');
+  cv.fire('pointerup', pointer(...to));
+  assert.ok(view.source.includes('b0 := solid(f0, about: std.z, sweep: 180)'), view.source);
+  // a minus typed turns it the other way, and a whole turn is written as none
+  assert.equal(view.commitExtent('-45'), null);
+  assert.ok(view.source.includes('b0 := solid(f0, about: std.z, sweep: 45, sense: cw)'),
+            view.source);
+  assert.deepEqual(view.liveExtent, { kind: 'turn', solid: 'b0', d: -45 });
+  assert.equal(view.commitExtent('360'), null);
+  assert.ok(view.source.endsWith('b0 := solid(f0, about: std.z)\n'), view.source);
+  assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
+  view.undo();
+  assert.equal(view.source, before, 'the sizing joined the revolution\'s own undo step');
+});
+
+test('with a body selected a revolution joins it, or cuts it with ⌥', () => {
+  const view = revolving('block := solid(face(ab, bc, cd, da), depth: 5)\n');
+  const block = (): SolidPick => ({
+    name: 'block', index: view.doc.solids().find((s) => s.name === 'block')!.index, face: '',
+  });
+  view.pickSolid(block());
+  click(view, 12, 4);
+  click(view, 20, 5);
+  assert.ok(view.source.endsWith('b0 := solid(f0, about: ax)\nb0 union block\n'), view.source);
+  view.pickSolid(block());
+  clickWith(view, 12, 4, { altKey: true });
+  clickWith(view, 20, 5, { altKey: true });
+  assert.ok(view.source.endsWith('b1 := solid(f1, about: ax)\nb1 cut block\n'), view.source);
+  assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
+});
+
 test('in orbit mode a drag turns the workspace, whatever tool is down, and draws nothing', () => {
   const view = docView('use std\nin std.front {\na := point hint((0, 0))\n}\n');
   view.setTool('line');

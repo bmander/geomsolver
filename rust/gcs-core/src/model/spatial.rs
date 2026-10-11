@@ -265,9 +265,10 @@ pub enum SolidDef {
     Loft { face: u32, end: Option<u32>, guide: EntRef },
     /// A prism spanning the target's additive material, evaluated after solving.
     Through { face: u32, body: u32 },
-    /// A face swept about a line **in its own plane**, through `sweep` (a full turn where the
-    /// document writes none), right-handed about the line's own `p1 → p2` unless `sense: cw`.
-    Revolve { face: u32, axis: u32, sweep: Extent, sense: Sense },
+    /// A face swept about a line or an axis **in its own plane**, through `sweep` (a full turn
+    /// where the document writes none), right-handed about the line's own `p1 → p2` (an axis's
+    /// own direction) unless `sense: cw`.  Read through `Sketch::revolve_axis`.
+    Revolve { face: u32, axis: EntRef, sweep: Extent, sense: Sense },
     /// **The body rule, and the whole of it**: its stock, plus everything in `union` with it,
     /// minus everything that `cut`s it, within everything that `bound`s it.  All three are sets, so
     /// the statements that fill them may be written anywhere in any order (P2) — which is what
@@ -774,5 +775,78 @@ impl Sketch {
             }
             _ => false,
         }
+    }
+
+    /// Re-turn a revolution where it stands through `degrees`, signed (positive right-handed
+    /// about its axis, `turn_of`'s reading) — the preview a revolution being sized shows before
+    /// the source says it (#162 F3), as `set_prism` is an extrusion's.  False for a solid that is
+    /// not one, or no turn.
+    pub fn set_turn(&mut self, i: usize, degrees: f64) -> bool {
+        let Some((how_far, sense)) = turn_of(degrees) else { return false };
+        match self.solids.get_mut(i).map(|s| &mut s.def) {
+            Some(SolidDef::Revolve { sweep, sense: s, .. }) => {
+                *sweep = match how_far {
+                    None => Extent { text: String::new(), value: std::f64::consts::TAU },
+                    Some(d) => Extent { text: crate::syntax::num(d), value: d.to_radians() },
+                };
+                *s = sense;
+                self.shape_epoch = self.shape_epoch.wrapping_add(1);
+                true
+            }
+            _ => false,
+        }
+    }
+}
+
+/// A turn said as signed degrees, positive right-handed about its axis, as the language says one:
+/// how far in degrees — `None` for a whole turn, at 360 or past it, which a revolution writes as
+/// no `sweep:` — and which way.  `None` for no turn at all.  The one reading, shared by the
+/// preview (`Sketch::set_turn`) and the edit (`edit::set_turn`).
+pub fn turn_of(degrees: f64) -> Option<(Option<f64>, Sense)> {
+    if !degrees.is_finite() || degrees == 0.0 {
+        return None;
+    }
+    let sense = if degrees < 0.0 { Sense::Cw } else { Sense::Ccw };
+    Some(((degrees.abs() < 360.0).then_some(degrees.abs()), sense))
+}
+
+/// How far off its profile's plane a revolution's axis may lie and still be read as in it: a
+/// direction's sine, and a place's distance over the drawing's reach.  Coarser than `views`'
+/// `ON_PLANE`, which judges held datums: this one judges an axis a solve may have placed.
+const AXIS_IN_PLANE: f64 = 1e-7;
+
+impl Sketch {
+    /// A revolution's axis in its profile's own plane coordinates, from and toward: a line's two
+    /// points as drawn there, or an axis's foot and one unit along it, projected — `None` where
+    /// an axis does not lie in the plane (a line is held to it by membership, at elaboration).
+    pub fn revolve_axis(&self, face: u32, axis: EntRef) -> Option<((f64, f64), (f64, f64))> {
+        match axis.kind {
+            EntKind::Line => {
+                let l = self.lines.get(axis.i())?;
+                Some((self.point_xy(l.p1 as usize), self.point_xy(l.p2 as usize)))
+            }
+            EntKind::Axis => self.axis_in(self.faces.get(face as usize)?.plane().ok()?, axis.i()),
+            _ => None,
+        }
+    }
+
+    /// Axis `ax` in plane `plane`'s own coordinates (`None` the page), from its foot toward one
+    /// unit along it — `None` where it does not lie in the plane.
+    pub fn axis_in(&self, plane: Option<u32>, ax: usize) -> Option<((f64, f64), (f64, f64))> {
+        use crate::space::{add, dot, normalised, sub};
+        let x = self.axes.get(ax)?;
+        let value = |q: [u32; 3]| q.map(|q| self.params[q as usize].value);
+        let (d, a) = (value(x.d), value(x.a));
+        let basis = match plane {
+            Some(p) => { self.planes.get(p as usize)?; self.basis(p as usize) }
+            None => crate::plane::Basis::page(),
+        };
+        let n = basis.normal();
+        let unit = normalised(d)?;
+        if dot(unit, n).abs() > AXIS_IN_PLANE
+            || dot(sub(a, basis.o), n).abs() > AXIS_IN_PLANE * self.extent() {
+            return None;
+        }
+        Some((basis.view_coords(a), basis.view_coords(add(a, unit))))
     }
 }

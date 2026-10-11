@@ -138,6 +138,29 @@ export function extentAt(sk: Sketch, az: number, el: number, solid: number,
   return core().gcs_workspace_extent_at(sk.handle, az, el, solid, x, y);
 }
 
+/** The handle a revolution is sized by, as the eye sees it: its profile's middle, the arc that
+ *  middle turns through (a whole circle for a whole turn), its end — none where the eye looks
+ *  along the turning plane — and how far it turns, in degrees, positive right-handed about the
+ *  axis. */
+export interface TurnHandle {
+  base: [number, number];
+  arc: [number, number][];
+  tip: [number, number] | null;
+  turn: number;
+}
+
+/** The handle revolution `solid` is sized by, on the eye's picture plane — or null for none. */
+export function turnHandle(sk: Sketch, az: number, el: number, solid: number): TurnHandle | null {
+  return takeJson<TurnHandle | null>(core().gcs_workspace_turn_handle_json(sk.handle, az, el, solid));
+}
+
+/** How far revolution `solid` turns where its handle is dragged to `(x, y)` on the eye's picture
+ *  plane, in signed degrees, the whole turns round nearest `near` — or NaN. */
+export function turnAt(sk: Sketch, az: number, el: number, solid: number,
+                       x: number, y: number, near: number): number {
+  return core().gcs_workspace_turn_at(sk.handle, az, el, solid, x, y, near);
+}
+
 /** The arrow an offset plane is sized by, as the eye sees it: from the plane it is set off along
  *  that plane's normal by the distance — no tip where the eye looks down the normal. */
 export interface OffsetHandle {

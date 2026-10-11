@@ -151,7 +151,7 @@ fn a_revolution_is_pappus() {
     let full = sk.solid(
         SolidDef::Revolve {
             face: f as u32,
-            axis: ax as u32,
+            axis: EntRef::line(ax),
             sweep: Extent::at(std::f64::consts::TAU),
             sense: Sense::Ccw,
         },
@@ -165,7 +165,7 @@ fn a_revolution_is_pappus() {
     let quarter = sk.solid(
         SolidDef::Revolve {
             face: f as u32,
-            axis: ax as u32,
+            axis: EntRef::line(ax),
             sweep: Extent::at(std::f64::consts::FRAC_PI_2),
             sense: Sense::Ccw,
         },
@@ -208,7 +208,7 @@ fn partial_revolutions_keep_both_caps_on_either_side_of_the_axis() {
                             let si = sk.solid(
                                 SolidDef::Revolve {
                                     face: f as u32,
-                                    axis: ax as u32,
+                                    axis: EntRef::line(ax),
                                     sweep: Extent::at(sweep),
                                     sense,
                                 },
@@ -417,7 +417,7 @@ fn revolution_collapses_axis_roundoff_without_leaving_a_microscopic_tube() {
         let a = sk.point(0.0, 0.0, true, "a");
         let b = sk.point(0.0, 10.0, true, "b");
         let axis = sk.line(a, b);
-        let i = sk.solid(SolidDef::Revolve { face: face as u32, axis: axis as u32,
+        let i = sk.solid(SolidDef::Revolve { face: face as u32, axis: EntRef::line(axis),
             sweep: Extent::at(std::f64::consts::TAU), sense: Sense::Ccw }, "turned");
         let solid = sk.evaluated_solid(i, solid::ApproximationPolicy::View { unit: 0.02 }).unwrap();
         assert!(solid.contains_world(solid::WorldPoint([0.0, 0.0, 5.0])), "ax error={error}");

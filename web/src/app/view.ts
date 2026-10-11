@@ -24,7 +24,7 @@ import * as dim from '../core/callout.js';
 import { Constraint } from '../core/constraints.js';
 import { PlanResult, PlanSolver, asSolveResult } from '../core/decompose.js';
 import { Diagnosis, diagnose } from '../core/diagnose.js';
-import { Param, Plane, Point, Primitive, Sketch } from '../core/model.js';
+import { Axis, Line, Param, Plane, Point, Primitive, Sketch } from '../core/model.js';
 import type { Way } from '../core/model.js';
 import { Document, Edit, fromSketch } from '../core/program.js';
 import type { Region } from '../core/program.js';
@@ -44,9 +44,9 @@ import type { Bitmap, Underlay } from './underlay.js';
 import {
   NOWHERE, PAGE, boundsSeen, calloutSeen, extentAt, extrudeHandle, lookOf, maps, nearestSeen,
   offsetAt, offsetHandle, ofView, panesSeen, pickSeen, pickSolidSeen, placeOf, spacePoints,
-  workspace,
+  turnAt, turnHandle, workspace,
 } from '../core/workspace.js';
-import type { ExtrudeHandle } from '../core/workspace.js';
+import type { ExtrudeHandle, TurnHandle } from '../core/workspace.js';
 import type { View, Workspace } from '../core/workspace.js';
 
 /** A solid picked in the workspace: which (its name, and its index in the current sketch) and the
@@ -61,12 +61,22 @@ export interface SolidPick {
 
 /** A thing being sized by its arrow: an extrusion (#162 F2) — which solid, which way it runs
  *  from its face (the core's `Way`: behind it, in front of it, both ways) and how thick, in all —
- *  or an offset plane (F5), by the plane's name, and how far it is set off.  Open from the
+ *  a revolution (F3), which solid and how far it turns, in degrees, negative clockwise about its
+ *  axis — or an offset plane (F5), by the plane's name, and how far it is set off.  Open from the
  *  gesture that made it until the tool is put down or the next click; carried across an edit by
  *  name. */
 export type LiveExtent =
   | { kind: 'extrusion'; solid: string; way: Way; d: number }
+  | { kind: 'turn'; solid: string; d: number }
   | { kind: 'offset'; plane: string; d: number };
+
+/** A sizing handle on the eye's picture plane or on screen: where it starts, the tip a press takes
+ *  hold of (none where it cannot be read) and, for a turn, the arc it runs along. */
+export interface Handle {
+  base: [number, number];
+  tip: [number, number] | null;
+  arc?: [number, number][];
+}
 
 /* A dimension being written belongs to `dimension`, but it is the view a caller holds, so the
  * two types are published from here as well. */
@@ -122,7 +132,13 @@ export interface Place {
 
 export type Tool =
   'select' | 'point' | 'line' | 'rect' | 'circle' | 'arc' | 'arc3' | 'spline' | 'splinefit'
-  | 'extrude';
+  | 'extrude' | 'revolve';
+
+/** Whether a tool makes a solid of the closed region a click is inside (Extrude, Revolve): it
+ *  washes the region under the pointer, and draws no snap. */
+export function sweepsRegion(tool: Tool): boolean {
+  return tool === 'extrude' || tool === 'revolve';
+}
 
 
 export class SketchView {
@@ -243,6 +259,9 @@ export class SketchView {
   /** The closed region under the pointer while the Extrude tool is down: what a click there
    *  would extrude, washed on the drawing, or why it could not be. */
   hoverRegion: Region | { refused: string } | null = null;
+  /** The region the Revolve tool's first click found, waiting for the line or axis to turn it
+   *  about. */
+  pendingRevolve: Region | null = null;
 
 
   /* -- the view's own workings.  What is not `private` here is read by the modules beside
@@ -516,6 +535,7 @@ export class SketchView {
     this.pending = [];
     this.pendingFit = [];
     this.hoverRegion = null;
+    this.pendingRevolve = null;
     // an extrusion being sized is named, not a proxy: an edit carries it (`swap`), a new document
     // ends it
     if (!carry) this.endExtent();
@@ -1140,29 +1160,84 @@ export class SketchView {
    *  from it, or with `through` cut through all of it.  The new solid is selected and, unless
    *  it goes through, opened for sizing (`liveExtent`). */
   extrudeAt(sx: number, sy: number, cut = false, through = false): void {
-    const r = this.regionAt(sx, sy);
-    if (!r || 'refused' in r) {
-      this.onStatus(r?.refused
-        ?? 'there is no closed region here to extrude: click inside a loop of edges');
-      return;
-    }
-    const body = this.selectedSolids[0]?.name;
+    const r = this.regionHere(sx, sy, 'extrude');
     const cutting = cut || through;
-    if (cutting && !body) {
-      this.onStatus('select the body to cut first');
-      return;
-    }
+    const body = r && this.cutting(cutting);
+    if (!r || body === false) return;
     const e = this.doc.extrude(r.outer, r.holes,
       body ? { word: cutting ? 'cut' : 'union', body, through } : undefined);
+    this.madeSolid(e, 'extruded', (solid) => {
+      const h = through ? null : this.extrudeHandleOf(solid);
+      return h?.way ? { kind: 'extrusion', solid, way: h.way, d: h.thick } : null;
+    });
+  }
+
+  /** **Revolve** (#162 F3): the region under a canvas point, then the line or axis to turn it
+   *  about — the second click, or one already selected — written as one edit (one undo step):
+   *  the face, the solid a whole turn about it and, with a body selected, the body rule (joined,
+   *  or with `cut` cut from it).  The new solid is selected and opened for sizing its turn. */
+  revolveAt(sx: number, sy: number, cut = false): void {
+    const held = this.selected.length === 1 ? this.turnsAbout(this.selected[0]) : null;
+    const region = this.pendingRevolve ?? this.regionHere(sx, sy, 'revolve');
+    if (!region) return;
+    const about = this.pendingRevolve ? this.turnsAbout(this.pick(sx, sy)) : held;
+    if (!about && !this.pendingRevolve) {
+      this.pendingRevolve = region;
+      this.onStatus('now click the line or axis to turn it about — Esc to choose another region');
+      this.draw();
+      return;
+    }
+    if (!about) {
+      this.onStatus('click a line in the region\'s plane, or an axis lying in it, to turn about');
+      return;
+    }
+    const body = this.cutting(cut);
+    if (body === false) return;
+    const e = this.doc.revolve(region.outer, region.holes, about,
+      body ? { word: cut ? 'cut' : 'union', body } : undefined);
+    this.pendingRevolve = null;
+    this.highlight = [];
+    this.madeSolid(e, `revolved about ${about}`, (solid) => {
+      const h = this.turnHandleOf(solid);
+      return h ? { kind: 'turn', solid, d: h.turn } : null;
+    });
+  }
+
+  /** The name of what a revolution may turn about — a line or an axis, as the source calls it —
+   *  or null for anything else. */
+  turnsAbout(e: Primitive | null | undefined): string | null {
+    return e instanceof Line || e instanceof Axis ? this.doc.nameOf(e) ?? null : null;
+  }
+
+  /** The closed region under a canvas point, or null having said why there is none to `verb`. */
+  private regionHere(sx: number, sy: number, verb: string): Region | null {
+    const r = this.regionAt(sx, sy);
+    if (r && !('refused' in r)) return r;
+    this.onStatus(r?.refused
+      ?? `there is no closed region here to ${verb}: click inside a loop of edges`);
+    return null;
+  }
+
+  /** The body a solid tool's new solid joins or cuts: the selected one (undefined for none), or
+   *  false having said that a cut wants one. */
+  private cutting(cut: boolean): string | undefined | false {
+    const body = this.selectedSolids[0]?.name;
+    if (cut && !body) {
+      this.onStatus('select the body to cut first');
+      return false;
+    }
+    return body;
+  }
+
+  /** A solid tool's edit applied (one undo step), the new solid selected and — where `live`
+   *  says how — opened for sizing. */
+  private madeSolid(e: Edit, what: string, live: (solid: string) => LiveExtent | null): void {
     const solid = e.names[0];
-    if (!this.apply(e, `${solid}: extruded`)) return;
+    if (!this.apply(e, `${solid}: ${what}`)) return;
     this.endExtent();                 // the one before is done with: this one is sized now
     this.pickSolidNamed(solid);
-    const h = through ? null : this.extrudeHandleOf(solid);
-    if (h?.way) {
-      this.liveExtent = { kind: 'extrusion', solid, way: h.way, d: h.thick };
-      this.tellExtent();
-    }
+    this.liveExtent = live(solid);
+    this.tellExtent();
     this.onSelect();
   }
 
@@ -1180,6 +1255,12 @@ export class SketchView {
     const i = this.solidIndex(name);
     const { az, el } = this.orbit;
     return i === undefined ? null : extrudeHandle(this.sketch, az, el, i);
+  }
+
+  private turnHandleOf(name: string): TurnHandle | null {
+    const i = this.solidIndex(name);
+    const { az, el } = this.orbit;
+    return i === undefined ? null : turnHandle(this.sketch, az, el, i);
   }
 
   /** The plane distance an offset plane is set off by: `P distance(d) plane`. */
@@ -1200,36 +1281,92 @@ export class SketchView {
     return live && c && attr ? { live, c, attr } : null;
   }
 
-  /** The arrow of what is being sized, on the eye's picture plane: an extrusion's or an offset
-   *  plane's.  Null when nothing is, or it is gone. */
-  private liveHandle(): { base: [number, number]; tip: [number, number] | null } | null {
+  /** The arrow of what is being sized, on the eye's picture plane: an extrusion's, a
+   *  revolution's (with the arc it turns along) or an offset plane's.  Null when nothing is, or
+   *  it is gone. */
+  private liveHandle(): Handle | null {
     const live = this.liveExtent;
-    if (!live) return null;
-    if (live.kind === 'extrusion') return this.extrudeHandleOf(live.solid);
-    const c = this.offsetOf(live.plane);
-    const { az, el } = this.orbit;
-    return c ? offsetHandle(this.sketch, az, el, c.id) : null;
+    switch (live?.kind) {
+      case undefined: return null;
+      case 'extrusion': return this.extrudeHandleOf(live.solid);
+      case 'turn': return this.turnHandleOf(live.solid);
+      case 'offset': {
+        const c = this.offsetOf(live.plane);
+        const { az, el } = this.orbit;
+        return c ? offsetHandle(this.sketch, az, el, c.id) : null;
+      }
+    }
   }
 
   /** The arrow what is being sized is dragged by, on screen: an extrusion's from its face's
    *  middle to its far end, an offset plane's from the plane it is set off — no tip where the eye
-   *  looks down the normal.  Null when nothing is being sized. */
-  extentArrow(): { base: [number, number]; tip: [number, number] | null } | null {
+   *  looks down the normal — and a revolution's round the arc its profile's middle turns
+   *  through, no tip where the eye looks along that.  Null when nothing is being sized. */
+  extentArrow(): Handle | null {
     const h = this.liveHandle();
     if (!h) return null;
     this.cams();
     const eye = this.camCache!.eye;
-    return { base: eye.w2s(...h.base), tip: h.tip && eye.w2s(...h.tip) };
+    return {
+      base: eye.w2s(...h.base), tip: h.tip && eye.w2s(...h.tip),
+      arc: h.arc?.map((p) => eye.w2s(...p)),
+    };
+  }
+
+  /** Size what is being sized to where the eye sees a canvas point — an extrusion along its
+   *  normal, a revolution round its turn, an offset plane along the normal it is set off by — a
+   *  preview, written when the drag lets go (`commitExtent`). */
+  sizeExtent(sx: number, sy: number, both = false): void {
+    switch (this.liveExtent?.kind) {
+      case 'extrusion': return this.sizePrism(sx, sy, both);
+      case 'turn': return this.sizeTurn(sx, sy);
+      case 'offset': return this.sizeOffset(sx, sy);
+    }
+  }
+
+  /** Write what is being sized into the source — at the drag's number, or at `text` as typed —
+   *  joining the undo step that made it.  Null when written, else why not. */
+  commitExtent(text?: string): string | null {
+    switch (this.liveExtent?.kind) {
+      case 'extrusion': return this.commitPrism(text);
+      case 'turn': return this.commitTurn(text);
+      case 'offset': return this.commitOffset(text);
+      case undefined: return 'nothing is being sized';
+    }
+  }
+
+  /** The solid being sized, of `kind`, and its index in the sketch — or null. */
+  private liveSolid(kind: 'extrusion')
+    : { live: Extract<LiveExtent, { kind: 'extrusion' }>; i: number } | null;
+  private liveSolid(kind: 'turn')
+    : { live: Extract<LiveExtent, { kind: 'turn' }>; i: number } | null;
+  private liveSolid(kind: LiveExtent['kind']): { live: LiveExtent; i: number } | null {
+    const live = this.liveExtent;
+    const i = live?.kind === kind && 'solid' in live ? this.solidIndex(live.solid) : undefined;
+    return live && i !== undefined ? { live, i } : null;
+  }
+
+  /** A sizing edit taken — the document read again, carrying what is being sized across by
+   *  name (`swap`) and the edit into the gesture's undo step — and its number `d` now, read off
+   *  what was written.  Null when taken, else why not. */
+  private resized(e: Edit, d: () => number | undefined): string | null {
+    if (e.refused) return e.refused;
+    this.takeDocument(Document.read(e.text));
+    const n = d();
+    if (this.liveExtent && n !== undefined && Number.isFinite(n)) {
+      this.liveExtent = { ...this.liveExtent, d: n };
+    }
+    this.tellExtent();
+    this.draw();
+    return null;
   }
 
   /** Size the extrusion to where the eye sees a canvas point along its normal: in front of its
-   *  face or behind by the side the point is on, both ways with `both` — a preview on the sketch
-   *  (`setPrism`), written when the drag lets go (`commitExtent`). */
-  sizeExtent(sx: number, sy: number, both = false): void {
-    if (this.liveExtent?.kind === 'offset') return this.sizeOffset(sx, sy);
-    const live = this.liveExtent;
-    const i = live ? this.solidIndex(live.solid) : undefined;
-    if (!live || i === undefined) return;
+   *  face or behind by the side the point is on, both ways with `both` (`setPrism`). */
+  private sizePrism(sx: number, sy: number, both: boolean): void {
+    const got = this.liveSolid('extrusion');
+    if (!got) return;
+    const { live, i } = got;
     const { az, el } = this.orbit;
     const t = extentAt(this.sketch, az, el, i, ...this.eye(sx, sy));
     if (!Number.isFinite(t) || Math.abs(t) < 1e-9) return;
@@ -1244,24 +1381,38 @@ export class SketchView {
     this.draw();
   }
 
-  /** Write the extrusion being sized into the source — at its current thickness, or at `text`
-   *  as typed — over the same face and solid, the way it runs; the core writes the sweep.  The
-   *  edit joins the extrusion's own undo step.  Null when written, else why not. */
-  commitExtent(text?: string): string | null {
-    if (this.liveExtent?.kind === 'offset') return this.commitOffset(text);
-    const live = this.liveExtent;
-    const i = live ? this.solidIndex(live.solid) : undefined;
-    if (!live || i === undefined) return 'nothing is being extruded';
-    const thick = text ?? String(live.d);
-    const e = this.doc.setSweep(i, { way: live.way, thick });
-    if (e.refused) return e.refused;
-    // a swap carries the extrusion being sized across, by the solid's name
-    this.takeDocument(Document.read(e.text));
-    const n = Number(thick);
-    if (this.liveExtent && Number.isFinite(n)) this.liveExtent = { ...this.liveExtent, d: n };
+  /** Write the extrusion's thickness over the same face and solid, the way it runs; the core
+   *  writes the sweep. */
+  private commitPrism(text?: string): string | null {
+    const got = this.liveSolid('extrusion');
+    if (!got) return 'nothing is being extruded';
+    const thick = text ?? String(got.live.d);
+    return this.resized(this.doc.setSweep(got.i, { way: got.live.way, thick }),
+      () => Number(thick));
+  }
+
+  /** Turn the revolution being sized to where the eye sees a canvas point on its turning plane,
+   *  in whole degrees, signed: carried back past its start it turns the other way (`setTurn`). */
+  private sizeTurn(sx: number, sy: number): void {
+    const got = this.liveSolid('turn');
+    if (!got) return;
+    const { live, i } = got;
+    const { az, el } = this.orbit;
+    const t = Math.round(turnAt(this.sketch, az, el, i, ...this.eye(sx, sy), live.d));
+    if (!Number.isFinite(t) || t === 0 || t === live.d) return;
+    this.liveExtent = { ...live, d: t };
+    this.sketch.setTurn(i, t);
     this.tellExtent();
     this.draw();
-    return null;
+  }
+
+  /** Write how far the revolution turns about what it turns about — degrees as the core reads
+   *  them (a number signed, negative clockwise) — and read back the turn it now has. */
+  private commitTurn(text?: string): string | null {
+    const got = this.liveSolid('turn');
+    if (!got) return 'nothing is being revolved';
+    return this.resized(this.doc.setTurn(got.i, text ?? String(got.live.d)),
+      () => this.turnHandleOf(got.live.solid)?.turn);
   }
 
   /** Set the offset plane being sized off where the eye sees a canvas point along the normal it
