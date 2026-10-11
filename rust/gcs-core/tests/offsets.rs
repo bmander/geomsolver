@@ -32,7 +32,8 @@ fn holds(e: &Elaborated, name: &str, want: f64, inside: &[[f64; 3]], outside: &[
     let x = e.sketch.exact_solid(s).unwrap_or_else(|m| panic!("`{name}`: {m}"));
     let exact = gcs_core::brep::props::volume(&x.brep);
     assert!((exact - want).abs() <= 1e-9 * want, "`{name}` exactly: {exact} against {want}");
-    let field = MaterialField::read(&e.sketch, s, 1e-10).unwrap_or_else(|m| panic!("`{name}`: {m}"));
+    let field =
+        MaterialField::read(&e.sketch, s, 1e-10).unwrap_or_else(|m| panic!("`{name}`: {m}"));
     for p in inside {
         assert!(field.side(*p) < 0.0, "`{name}` at {p:?}: {}", field.side(*p));
     }
@@ -90,7 +91,8 @@ fn a_cone_shrunk_is_the_cone_further_along() {
 /// A cone wider than square is all but the cone the other way: grown, that one shrinks.
 #[test]
 fn a_wide_cone_grown() {
-    let e = solved(&format!("{FRAME}wide := std.Cone(up, half: 120deg)\nbig := std.Sphere(c, r: 5)\n\
+    let e = solved(&format!("{FRAME}wide := std.Cone(up, half: 120deg)\n\
+                             big := std.Sphere(c, r: 5)\n\
                              cap := {{ p | p inside(1) wide; p inside big }}\nw := solid(cap)\n"));
     let field = MaterialField::read(&e.sketch, ent(&e, "w").i(), 1e-10).unwrap();
     // the other way's apex 1 / sin 60° below
@@ -134,6 +136,35 @@ fn a_distance_set_moves_its_number() {
           &[[7.1, 0.0, 5.0], [1.0, 0.0, -2.1], [1.0, 0.0, 12.1]]);
 }
 
+/// A bound on the distance inside is the other way on the distance outside: within 1 of a ball's
+/// surface on its inside is outside the ball 1 smaller — and in a region, a shell.
+#[test]
+fn a_bound_inside_turns_round() {
+    let e = solved(&format!("{FRAME}big := std.Sphere(c, r: 3)\n\
+                             rind := {{ p | p inside big; p distance(<= 1, side: inside) big }}\n\
+                             r := solid(rind)\n"));
+    holds(&e, "r", 4.0 / 3.0 * PI * (27.0 - 8.0), &[[2.5, 0.0, 0.0]], &[[1.5, 0.0, 0.0]]);
+}
+
+/// A plane's side grown by a distance chooses a drawn point's root as its side does: the axis
+/// meets a ball of radius 1 at heights 1 and -1, and within `std.top`'s side grown by 2 both
+/// stand, so the seed's is kept — where the side alone carries it across.
+#[test]
+fn a_planes_side_grown_chooses_a_root() {
+    for (said, seed, want) in [
+        ("p inside(2) std.top", 0.8, 1.0),
+        ("p outside(2) std.top", -0.8, -1.0),
+        ("p inside std.top", 0.8, -1.0),
+        ("p outside std.top", -0.8, 1.0),
+    ] {
+        let e = solved(&format!("{FRAME}ball := std.Sphere(c, r: 1)\n\
+                                 p := point hint((0, 0, {seed}))\nfix(x == 0, y == 0) p\n\
+                                 p coincident ball\n{said}\n"));
+        let z = e.sketch.world_point(ent(&e, "p").i())[2];
+        assert!((z - want).abs() <= 1e-9, "{said}: {z}");
+    }
+}
+
 /// A point at a distance from a ball: its centre's distance moved.
 #[test]
 fn a_point_at_a_distance_from_a_ball() {
@@ -146,8 +177,8 @@ fn a_point_at_a_distance_from_a_ball() {
 }
 
 /// A point at a distance from a cone, by its foot on it: at height 5 the surface stands 5 tan
-/// 30° out, and a point 1 from it 1 / cos 30° further, or nearer — standing in space, drawn in a
-/// view, or put on the cone's offset.
+/// 30° out, and a point 1 from it 1 / cos 30° further, or nearer — standing in space, drawn in
+/// a view, or put on the cone's offset.
 #[test]
 fn a_point_at_a_distance_from_a_cone() {
     let surface = 5.0 * tan30();
