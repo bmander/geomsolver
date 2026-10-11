@@ -242,6 +242,13 @@ pub(super) fn constrain(
         };
         (ent(&a.point), toward, a)
     });
+    // what reads the operands' planes: a set's body (§6.21), its derivative along a chart moving
+    // its point out of any plane
+    let reader = match (r.space, &along) {
+        (true, Some((_, Some(Ok(Toward::Chart { .. })), _))) => super::reading::Reader::Moved,
+        (true, _) => super::reading::Reader::Set,
+        (false, _) => super::reading::Reader::Drawn,
+    };
     let r = match r
         .resolve(&|r| res.lookup(r).and_then(|e| follow(sk, e, &r.path).ok()).map(|e| e.kind))
     {
@@ -364,7 +371,7 @@ pub(super) fn constrain(
     }
     // a point drawn in several planes is read in the one its reader is drawn in (§6.7)
     super::reading::read_twins(sk, &mut args);
-    let (ckind, spec, mut args, left_out) = match super::reading::in_space(sk, ckind, &args) {
+    let (ckind, spec, mut args, left_out) = match super::reading::in_space(sk, ckind, &args, reader) {
         Ok(None) => (ckind, spec, args, left_out),
         Ok(Some((k, a, l))) => (k, k.spec(), a, l),
         Err((selector, message)) => {
@@ -623,8 +630,9 @@ fn region_term(sk: &Sketch, c: &Constraint, probe: usize, grow: Option<crate::mo
             let ends = |l: EntRef| [sk.lines[l.i()].p1 as usize, sk.lines[l.i()].p2 as usize];
             let (a, g) = (ent(0), ent(1));
             let (axis, seen) = if ends(g).contains(&probe) { (a, g) } else { (g, a) };
+            // the apex one point, though the axis drawn in a view takes its twin there (§6.7)
             let apex = ends(seen).into_iter().find(|&p| p != probe);
-            if apex != Some(ends(axis)[0]) {
+            if !apex.is_some_and(|p| sk.twinned(p, ends(axis)[0])) {
                 return Err("a cone's angle is seen from its axis's start: the line to the point \
                             begins where the axis does"
                     .to_string());

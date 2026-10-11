@@ -122,6 +122,8 @@ pub struct Relation {
     pub word: Option<syntax::Worded>,
     /// A set's body row stated as its derivative (§6.21) — see `syntax::Relation::along`.
     pub along: Option<syntax::Along>,
+    /// Made by a set's body (§6.21) — see `syntax::Relation::space`.
+    pub space: bool,
 }
 
 /// An operator selected against the declared entity kinds, before argument validation.
@@ -155,7 +157,7 @@ impl Statement {
             S::Decl(d) => Operation::Decl(Box::new(d.into())),
             S::Relation(r) => Operation::Relation(Relation {
                 form: r.form, place: r.place, claim: r.claim, class: r.class, word: r.word,
-                along: r.along,
+                along: r.along, space: r.space,
             }),
             S::Branch(b) => Operation::Branch(b),
             S::Style(s) => Operation::Style(s),

@@ -159,6 +159,52 @@ fn a_point_on_a_cylinder_and_on_a_cone() {
     assert!((half - angle(sub(at(&sk, &e, "a"), apex), sub(q, apex))).abs() < 1e-9, "{half}");
 }
 
+/// **A set's body is read in space wherever its point is drawn** (§6.21): a cone about a line
+/// drawn in the front is both its generators there, so a point drawn beside the axis lands on
+/// the side it is seeded on — the clockwise one, which the page's angle, turning counter-clockwise,
+/// could not reach — read as the angle in space.  A number that says the same in the plane keeps
+/// the plane's kind.
+#[test]
+fn a_set_is_read_in_space_in_the_view_its_point_is_drawn_in() {
+    let src = with("b := point hint((20, 40)) in std.front\nfix(y == 40) b\nb coincident k");
+    let e = read(&src);
+    let kinds: Vec<_> = e.sketch.user_constraints().iter().map(|c| c.kind).collect();
+    assert_eq!(kinds, [gcs_core::constraints::CKind::Angle3]);
+    let sk = solved(&e);
+    let (apex, q) = ends(&sk, ent(&e, "ax"));
+    let b = at(&sk, &e, "b");
+    assert!((angle(sub(b, apex), sub(q, apex)) - 30.0).abs() < 1e-9, "{b:?}");
+    assert!(b[0] > 0.0, "clockwise of the axis, where it was seeded: {b:?}");
+    // a sphere's distance in the plane is the distance in space: the plane's kind
+    let e = read(&with("b := point hint((20, 40)) in std.front\nb coincident ball"));
+    let kinds: Vec<_> = e.sketch.user_constraints().iter().map(|c| c.kind).collect();
+    assert_eq!(kinds, [gcs_core::constraints::CKind::Distance]);
+    // and a side, which a line in space has none of, is refused where the set is used
+    refused(&with("wall := { q | q distance(5, side: left) ax }\nb := point hint((20, 40)) in \
+                   std.front\nb coincident wall"), "E040", "in space a line has no sides",
+            "coincident");
+}
+
+/// Two cones tangent at a point drawn in the gear cone's own view, `G`: its body is read where
+/// the point stands in space, as across views, so the pair stands as it does with the point
+/// drawn in the front.
+#[test]
+fn two_sets_tangent_at_a_point_drawn_in_one_of_their_views() {
+    let src = include_str!("../../examples/hypoid_pitch_cones.sv");
+    let drawn = src.replace("M := point in std.front", "M := point in G");
+    assert_ne!(drawn, src);
+    let (a, b) = (read(src), read(&drawn));
+    let (sa, sb) = (solved(&a), solved(&b));
+    for n in ["M", "gax.p2", "pax.p1", "pax.p2"] {
+        let (pa, pb) = (at(&sa, &a, n), at(&sb, &b, n));
+        assert!(norm(sub(pa, pb)) < 1e-6, "{n}: {pa:?} {pb:?}");
+    }
+    let mut sb = sb;
+    let d = diagnose(&mut sb, DiagnoseOptions::default());
+    assert_eq!(d.dof, 0, "{d:?}");
+    fd_jacobian(&sb, 1e-5);
+}
+
 /// A line tangent to a sphere passes the centre at the radius: the contact is the foot of the
 /// perpendicular from the centre, on the line and on the sphere.
 #[test]
@@ -386,8 +432,10 @@ fn what_a_set_refuses() {
     // the point, so neither may make geometry of its own
     refused(&with("k tangent kc"), "E040", "which the word names", "tangent");
     // a tangency at a point reads where it stands in space, so not a row over its place in a
-    // view: `c` and `ax` both drawn in the front read `k`'s angle on the page
-    refused(&with("k tangent(at: c) kc"), "E040", "reads it in its view", "tangent(at: c)");
+    // view: a level along the front's own `up` has no kind in space to read it in
+    refused(&with("shelf := { q | c distance(5, along: up) q }\nm := point hint((3, 35)) in \
+                   std.front\nshelf tangent(at: m) k"), "E040", "reads it in its view",
+            "tangent(at: m)");
     refused(&with("claim k tangent(at: a) kc"), "E040", "stated, not claimed", "tangent");
     refused(
         &with(&format!("{}k tangent(at: a) foot", footed(""))),

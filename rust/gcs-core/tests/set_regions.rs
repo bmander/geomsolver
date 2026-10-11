@@ -142,8 +142,22 @@ fn a_region_is_said_of_one_number() {
             "E040", "puts a point on it", "inside");
     refused(&format!("{CROSSING}ball := {{ q | q distance(<= 2) c }}\nl := line(a, b)\n\
                       l tangent ball\n"), "E040", "is a region", "tangent");
-    refused(&format!("{CROSSING}up := line(a, c)\nfunnel := std.Cone(up, half: 30deg)\n\
-                      p inside funnel\n"), "E040", "in space", "inside");
+}
+
+/// A cone about a line drawn in the point's own view is a region there too (§6.21): its body is
+/// read in space, unsigned, so inside it is the root within 30° of `a → c` on either side — here
+/// (3, 4), clockwise of it, seeded on the other root's side — and outside it the other.
+#[test]
+fn a_cone_drawn_in_the_points_view_is_a_region() {
+    let funnel = format!("{CROSSING}up := line(a, c)\nfunnel := std.Cone(up, half: 30deg)\n");
+    let e = solved(&format!("{funnel}p inside funnel\n"));
+    assert!((p_at(&e)[2] - 4.0).abs() < 1e-9, "{:?}", p_at(&e));
+    let bounds: Vec<_> = e.sketch.constraints.iter().filter(|c| c.bound.is_some())
+        .map(|c| c.kind).collect();
+    assert_eq!(bounds, [gcs_core::constraints::CKind::Angle3]);
+    let above = funnel.replace("hint((3, -2))", "hint((3, 2))");
+    let e = solved(&format!("{above}p outside funnel\n"));
+    assert!((p_at(&e)[2] + 4.0).abs() < 1e-9, "{:?}", p_at(&e));
 }
 
 

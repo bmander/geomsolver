@@ -145,6 +145,9 @@ impl<'a> Walk<'a> {
         worded: Worded,
         depth: usize,
     ) {
+        // a set's use names the set among its operands, a word's none: what a set's body makes
+        // is a relation in space (§6.21), which no later stamp undoes
+        let space = !worded.sets.is_empty();
         // the statement every relation made reads as: the use's own, or — a use inside another's
         // expansion — the outermost one, stamped over this when that one's application ends
         let worded = u.rel.word.clone().unwrap_or(worded);
@@ -192,6 +195,7 @@ impl<'a> Walk<'a> {
             st.chained = u.st.chained;
             *p = u.path.to_vec();
             r.word = Some(stamp.clone());
+            r.space |= space;
             r.claim |= u.rel.claim;
             if placed == Some(i) {
                 r.place = u.rel.place;
