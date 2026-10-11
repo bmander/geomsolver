@@ -172,6 +172,11 @@ pub struct Sketch {
     pub meridian_cache: std::cell::RefCell<
         BTreeMap<usize, (Vec<f64>, Result<std::rc::Rc<crate::solid::region::Meridian>, String>)>,
     >,
+    /// Each body's faces as regions read them (`solid::faces::BodyFaces`, #183), against
+    /// `solid::reads`: every round over one body reads the same stratum.
+    pub faces_cache: std::cell::RefCell<
+        BTreeMap<usize, (Vec<f64>, Result<std::sync::Arc<crate::solid::faces::BodyFaces>, String>)>,
+    >,
     /// Swept solids' surfaces a host meshed elsewhere (`supply_field`), each against the
     /// `solid::reads` it was supplied under, so a moved drawing reads none.
     pub field_surfaces: std::cell::RefCell<BTreeMap<usize, (Vec<f64>, std::rc::Rc<crate::solid::FieldSurface>)>>,

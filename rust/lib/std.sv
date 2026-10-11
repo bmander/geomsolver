@@ -247,3 +247,156 @@ component Polygon(c: point, ref: line, n: Int, r: Length, phase: Angle) {
 component Hex(c: point, ref: line, af: Length, phase: Angle) {
   p := Polygon(c, ref, n: 6, r: af / sqrt(3), phase: phase)
 }
+
+// -- rounds and chamfers (#183) -----------------------------------------------------------------
+//
+// What a round or a chamfer means is said here, over the language's own words: faces as sets (a
+// face is its patch, `q coincident a`; `a.surface` the whole surface it lies on; `p inside a` the
+// surface's material side), the distance from a set, a bound on measurements, where an edge ends,
+// the material's angle at an edge, words that repeat over faces and make solids.  An evaluator
+// reads the sets (the field); a lowering may build an exact surface for a shape it recognises, and
+// says nothing these do not.
+
+// What a ball of radius `r` rolled along the convex edge of faces `a` and `b` cannot reach: the
+// points within both faces' sides that no such ball within both covers; only where the point's
+// nearest point of the faces' meeting is on the edge (so surfaces meeting where the body has no
+// edge make nothing); cut off by the faces the edge ends on.
+component Run(a: face, b: face, r: Length) := { p |
+  p inside a
+  p inside b
+  angle(a, b, at: p) <= 180deg
+  centres := { c | c inside a; c distance(>= r) a.surface; c inside b; c distance(>= r) b.surface }
+  crease := { q | q coincident a; q coincident b }
+  meeting := { q | q coincident a.surface; q coincident b.surface }
+  distance(p, centres) >= r
+  distance(p, crease) <= distance(p, meeting)
+  p inside crease.ends
+}
+
+// The same at a concave edge, every side turned round: what the ball rolled outside both faces
+// cannot reach, added.
+component Fill(a: face, b: face, r: Length) := { p |
+  p outside a
+  p outside b
+  angle(a, b, at: p) >= 180deg
+  centres := { c | c outside a; c distance(>= r) a.surface; c outside b; c distance(>= r) b.surface }
+  crease := { q | q coincident a; q coincident b }
+  meeting := { q | q coincident a.surface; q coincident b.surface }
+  distance(p, centres) >= r
+  distance(p, crease) <= distance(p, meeting)
+  p inside crease.ends
+}
+
+// Where three rounded convex edges meet at a corner of the body: what the ball touching all three
+// faces cannot reach, within the three edges' extents.
+component Corner(a: face, b: face, c: face, r: Length) := { p |
+  p inside a
+  p inside b
+  p inside c
+  angle(a, b, at: p) <= 180deg
+  angle(b, c, at: p) <= 180deg
+  angle(c, a, at: p) <= 180deg
+  centres := { o | o inside a; o distance(>= r) a.surface; o inside b; o distance(>= r) b.surface
+               o inside c; o distance(>= r) c.surface }
+  vertex := { q | q coincident a; q coincident b; q coincident c }
+  meeting := { q | q coincident a.surface; q coincident b.surface; q coincident c.surface }
+  ab := { q | q coincident a; q coincident b }
+  bc := { q | q coincident b; q coincident c }
+  ca := { q | q coincident c; q coincident a }
+  distance(p, centres) >= r
+  distance(p, vertex) <= distance(p, meeting)
+  p inside ab.ends
+  p inside bc.ends
+  p inside ca.ends
+}
+
+// `Corner` at a concave corner, every side turned round.
+component CornerFill(a: face, b: face, c: face, r: Length) := { p |
+  p outside a
+  p outside b
+  p outside c
+  angle(a, b, at: p) >= 180deg
+  angle(b, c, at: p) >= 180deg
+  angle(c, a, at: p) >= 180deg
+  centres := { o | o outside a; o distance(>= r) a.surface; o outside b; o distance(>= r) b.surface
+               o outside c; o distance(>= r) c.surface }
+  vertex := { q | q coincident a; q coincident b; q coincident c }
+  meeting := { q | q coincident a.surface; q coincident b.surface; q coincident c.surface }
+  ab := { q | q coincident a; q coincident b }
+  bc := { q | q coincident b; q coincident c }
+  ca := { q | q coincident c; q coincident a }
+  distance(p, centres) >= r
+  distance(p, vertex) <= distance(p, meeting)
+  p inside ab.ends
+  p inside bc.ends
+  p inside ca.ends
+}
+
+// A chamfer's flat at a convex edge: the points within both faces nearer them than the flat
+// through each face's point its leg from the other face — `la` on `a`, `lb` on `b` (#183 X1's
+// finding 4).  Between planes the flat, about an axis a cone.
+component Flat(a: face, b: face, la: Length, lb: Length) := { p |
+  p inside a
+  p inside b
+  angle(a, b, at: p) <= 180deg
+  distance(p, a.surface) / lb + distance(p, b.surface) / la <= 1
+  crease := { q | q coincident a; q coincident b }
+  meeting := { q | q coincident a.surface; q coincident b.surface }
+  distance(p, crease) <= distance(p, meeting)
+  p inside crease.ends
+}
+
+// `Flat` at a concave edge, every side turned round: what the flat adds.
+component FlatFill(a: face, b: face, la: Length, lb: Length) := { p |
+  p outside a
+  p outside b
+  angle(a, b, at: p) >= 180deg
+  distance(p, a.surface) / lb + distance(p, b.surface) / la <= 1
+  crease := { q | q coincident a; q coincident b }
+  meeting := { q | q coincident a.surface; q coincident b.surface }
+  distance(p, crease) <= distance(p, meeting)
+  p inside crease.ends
+}
+
+// `A round(r) B`: every edge where a face of `A` meets a face of `B` rounded by a ball of radius
+// `r` — taken away where it is convex, filled where it is concave, read off the geometry — and
+// where three such edges meet, the ball touching all three.  Faces that do not meet make
+// nothing.  Its material acts on the body the faces are of, as made by the terms that do not
+// read it.  `round(r) X` is every edge among `X`'s faces.
+A round(r) B := {
+  repeat a in A {
+    repeat b in B if b != a {
+      run := Run(a, b, r: r)
+      taken := solid(run)
+      taken cut A.body
+      fill := Fill(a, b, r: r)
+      filled := solid(fill)
+      filled union A.body
+      repeat c in A if c in B and c != a and c != b {
+        corner := Corner(a, b, c, r: r)
+        cornered := solid(corner)
+        cornered cut A.body
+        corner_fill := CornerFill(a, b, c, r: r)
+        corner_filled := solid(corner_fill)
+        corner_filled union A.body
+      }
+    }
+  }
+}
+round(r) X := X round(r) X
+
+// `A chamfer(d) B`: every edge where a face of `A` meets one of `B` cut by a flat `d` along each
+// face, measured from the other; where three meet, their flats meet in a point.
+A chamfer(d) B := {
+  repeat a in A {
+    repeat b in B if b != a {
+      flat := Flat(a, b, la: d, lb: d)
+      taken := solid(flat)
+      taken cut A.body
+      flat_fill := FlatFill(a, b, la: d, lb: d)
+      filled := solid(flat_fill)
+      filled union A.body
+    }
+  }
+}
+chamfer(d) X := X chamfer(d) X

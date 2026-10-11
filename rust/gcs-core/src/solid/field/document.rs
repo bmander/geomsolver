@@ -180,6 +180,8 @@ fn through_range(basis: &Basis,supports: &[Option<V>]) -> Result<[f64;2],String>
 fn read(sk: &Sketch,solid: usize,axis_tolerance: f64) -> Result<Snapshot,String> {
     crate::solid::validate(sk,solid)?;
     let mut done: BTreeMap<usize,Snapshot> = BTreeMap::new();
+    // the regions that hold nowhere (#183: a round over faces that never meet), no term of a body
+    let mut empty: std::collections::BTreeSet<usize> = Default::default();
     let mut pending = vec![(solid,false)];
     while let Some((i,ready)) = pending.pop() {
         if done.contains_key(&i) { continue; }
@@ -195,8 +197,11 @@ fn read(sk: &Sketch,solid: usize,axis_tolerance: f64) -> Result<Snapshot,String>
             let error = |e| format!("material field: {e:?}");
             Ok(match &s.def {
                 // a region whose terms share no axis, read point by point (§6.21)
-                SolidDef::Region {..} if crate::solid::region::in_general(sk,i) =>
-                    Snapshot::Static(crate::solid::region::general(sk,i)?.into()),
+                SolidDef::Region {..} if crate::solid::region::in_general(sk,i) => {
+                    let f = crate::solid::region::general(sk,i)?;
+                    if f.is_empty() { empty.insert(i); }
+                    Snapshot::Static(f.into())
+                }
                 SolidDef::Revolve {..} | SolidDef::Region {..} =>
                     Snapshot::Static(RevolvedRegion::read(sk,i,axis_tolerance)?.field()?.into()),
                 SolidDef::Prism {face,from,to} =>
@@ -216,6 +221,8 @@ fn read(sk: &Sketch,solid: usize,axis_tolerance: f64) -> Result<Snapshot,String>
                     I::new(from.value,to.value).map_err(error)?).into()),
                 SolidDef::Body {stock,on,through,bound} => {
                     let mut body = get(*stock);
+                    let on = on.iter().filter(|&&i| !empty.contains(&(i as usize)));
+                    let through: Vec<u32> = through.iter().copied().filter(|&i| !empty.contains(&(i as usize))).collect();
                     for &i in on { body = body.combine(get(i),BodyWord::Union).map_err(error)?; }
                     // Everything that cuts is one union, subtracted once: the same field as the
                     // cuts taken away in turn, max(max(s, -a), -b) being max(s, -min(a, b)), with

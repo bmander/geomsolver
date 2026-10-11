@@ -91,6 +91,8 @@ impl Term {
 /// A region in general position: its terms, and a box holding its material where one is known.
 #[derive(Clone, Debug)]
 pub struct RegionField {
+    /// Holds nowhere (#183): a set over faces that never meet.
+    empty: bool,
     terms: Vec<Term>,
     support: Option<[[f64; 2]; 3]>,
     /// The size of what it reads: a rounding allowance for enclosures.
@@ -101,8 +103,15 @@ impl RegionField {
     /// The region of `terms`, its support the box `support` (or none known).
     pub fn new(terms: Vec<Term>, support: Option<[[f64; 2]; 3]>) -> Self {
         let size = support.map_or(1.0, |b| b.iter().fold(1.0f64, |m, [a, z]| m.max(a.abs()).max(z.abs())));
-        Self { terms, support, size }
+        Self { empty: false, terms, support, size }
     }
+    /// The region that holds nowhere.
+    pub fn empty() -> Self {
+        let never = Term { measure: Measure::Signed(Signed(Arc::new(|_| 1e30))), cmp: Cmp::Le, lo: 0.0,
+                           hi: None, grow: 0.0 };
+        Self { empty: true, terms: vec![never], support: None, size: 1.0 }
+    }
+    pub fn is_empty(&self) -> bool { self.empty }
     pub fn value(&self, p: P3) -> f64 { self.value_piece(p).0 }
     /// The value and the term that decides it.
     pub fn value_piece(&self, p: P3) -> (f64, usize) {

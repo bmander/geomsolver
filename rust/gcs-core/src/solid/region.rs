@@ -337,6 +337,9 @@ pub fn general(sk: &Sketch, solid: usize) -> Result<crate::solid::field::RegionF
         reads_faces |= super::faces::reads_faces(&t.shape);
         let measure = match t.shape {
             RegionShape::Measured { ref of } => {
+                if t.cmp != Cmp::In && never(sk, of, t.cmp, &mut read) {
+                    return Ok(crate::solid::field::RegionField::empty());
+                }
                 let m = measured(sk, of, &mut read)?;
                 // a sum of distances, each from a point, with no number below nothing, is within
                 // the ball about each point whose distance alone reaches the bound
@@ -382,6 +385,12 @@ pub fn general(sk: &Sketch, solid: usize) -> Result<crate::solid::field::RegionF
                 let body = ra.body.clone();
                 let (cmp, lo, hi) = (t.cmp, lo, t.hi.unwrap_or(lo));
                 reads_faces = true;
+                // which way an edge turns is the edge's: against a half turn, a gate no edge
+                // passes holds nowhere
+                let half = (lo - std::f64::consts::PI).abs() < 1e-12 && cmp != Cmp::In;
+                if half && !edges.iter().any(|&e| body.convex(e).is_some_and(|c| c == (cmp == Cmp::Le))) {
+                    return Ok(crate::solid::field::RegionField::empty());
+                }
                 // a gate: the field reads whether it holds, never how near it is to failing
                 let gate = move |p: V| -> f64 {
                     let holds = body.angle(&edges, p).is_some_and(|a| match cmp {
@@ -551,8 +560,28 @@ fn measured(sk: &Sketch, of: &[(crate::model::Target, f64)],
         reads.push((d, c / n));
     }
     Ok(Measure::Signed(Signed(std::sync::Arc::new(move |p| {
-        reads.iter().map(|(m, c)| c * m(p)).sum()
+        let v: f64 = reads.iter().map(|(m, c)| c * m(p)).sum();
+        // a distance from a set that holds nowhere is past every number: what it bounds fails
+        if v.is_nan() { GATE } else { v.clamp(-GATE, GATE) }
     }))))
+}
+
+/// Whether a sum of measurements can hold nowhere: it bounds from above a distance from a set
+/// that is empty (faces that do not meet), with nothing to take it back.
+fn never(sk: &Sketch, of: &[(crate::model::Target, f64)], cmp: Cmp,
+         read: &mut Vec<(u32, std::sync::Arc<super::faces::BodyFaces>)>) -> bool {
+    use super::conditions::SetDistance;
+    let empty = |t: &crate::model::Target, read: &mut Vec<_>| match t {
+        crate::model::Target::Set { terms, .. } => match SetDistance::of(sk, terms, read) {
+            Ok(SetDistance::Edges { edges, .. }) => edges.is_empty(),
+            Ok(SetDistance::Points(ps)) => ps.is_empty(),
+            Ok(SetDistance::Patch(r)) => r.faces.is_empty(),
+            _ => false,
+        },
+        _ => false,
+    };
+    let up = |c: f64| if cmp == Cmp::Ge { -c } else { c };
+    of.iter().any(|(t, c)| up(*c) > 0.0 && empty(t, read))
 }
 
 /// What a gate's term reads where it holds and where it fails: far past any distance, so the

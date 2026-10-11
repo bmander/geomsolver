@@ -17,6 +17,7 @@ use std::collections::BTreeSet;
 use std::f64::consts::PI;
 
 /// A body's exact boundary, located, in millimetres (`mm` of them a model unit), its name.
+#[derive(Debug)]
 pub struct BodyFaces {
     loc: Located<'static>,
     mm: f64,
@@ -175,6 +176,9 @@ impl BodyFaces {
         }
     }
 
+    /// Whether edge `e` is convex, where it is a corner.
+    pub fn convex(&self, e: u32) -> Option<bool> { self.convex.get(e as usize).copied().flatten() }
+
     /// The material's angle at the point of edges `es` nearest `p` (radians), or `None` where
     /// there is no edge or it is no corner.
     pub fn angle(&self, es: &[u32], p: V) -> Option<f64> {
@@ -198,7 +202,7 @@ pub fn reading(sk: &Sketch, f: &FaceRef, read: &mut Vec<(u32, std::sync::Arc<Bod
     let body = match read.iter().find(|(s, _)| *s == f.solid) {
         Some((_, b)) => b.clone(),
         None => {
-            let b = std::sync::Arc::new(BodyFaces::read(sk, f.solid as usize)?);
+            let b = cached(sk, f.solid as usize)?;
             read.push((f.solid, b.clone()));
             b
         }
@@ -372,4 +376,17 @@ pub fn face_paths(sk: &Sketch, i: usize) -> Vec<String> {
         Some(_) => own(sk, i),
         None => Vec::new(),
     }
+}
+
+/// `BodyFaces::read`, remembered against what it reads (`Sketch::faces_cache`).
+pub fn cached(sk: &Sketch, body: usize) -> Result<std::sync::Arc<BodyFaces>, String> {
+    let key = super::reads(sk, body, 0.0);
+    if let Some((old, b)) = sk.faces_cache.borrow().get(&body) {
+        if *old == key {
+            return b.clone();
+        }
+    }
+    let b = BodyFaces::read(sk, body).map(std::sync::Arc::new);
+    sk.faces_cache.borrow_mut().insert(body, (key, b.clone()));
+    b
 }

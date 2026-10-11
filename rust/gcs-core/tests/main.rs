@@ -18,6 +18,7 @@ mod fillet_definition;
 mod region_solids;
 mod region_general;
 mod face_sets;
+mod rounds;
 mod offsets;
 mod evaluated_solid;
 mod renderer;
