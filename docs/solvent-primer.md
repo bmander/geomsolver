@@ -773,8 +773,8 @@ foot outside p                         // in front of it
   solution; off it, the solve looks for the root where it holds and fails with `a bound does not
   hold` if there is none. The diagnosis lists violated bounds and *active* ones (solution on the
   edge).
-- **Not:** a `claim` or an unknown's reader. Inside a set body a bound makes a region (below,
-  sets).
+- **Not:** a `claim`, or the only reader of an unknown (one the rows determine it may read, as it
+  stands: a cone's half, 0.64). Inside a set body a bound makes a region (below, sets).
 
 ### 1.11 Datums
 
@@ -1084,6 +1084,12 @@ several up to the `}`. It adds nothing to the drawing; what it means is said whe
   Regions meet by conjunction, and `outside` gives a difference: `{ p | p inside heel; p outside
   toe }`. Refused: `outside` a conjunction or an interval, a set of several numbers, a line inside
   a set, a tangency to a region. A point in a region is a bound on it, so a choice of root.
+- **Distance from a set, offsets** (0.64): `p distance(4mm, side: outside) k` puts `p` 4mm off
+  the surface of `k` (`side:` is required); `tip := std.Offset(pitch, d: 2mm)` is the set 2mm
+  outside, `p inside(2mm) pitch` within it, `p outside(4mm) pitch` within the outside grown by 4mm.
+  A sphere's or cylinder's offset moves its number; in `solid(R)` a cone's is exact (apex rounded
+  where it grows); a drawn point gets a foot on the set, found by the solve. Not: a bound on a
+  drawn point's distance from a cone, a region, a circle, `inside(d)` a conjunction.
 
 **Spheres** are the library's set: `ball := std.Sphere(c, r: 12mm)` is a centre and a radius, and
 nothing drawn; the centre may be drawn in a view or stand in space.

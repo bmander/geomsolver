@@ -108,10 +108,14 @@ fn fold(sk: &Sketch, solid: usize) -> Result<Meridian, String> {
     // half turn its row reads, `expr::sync_free`)
     let lows = terms.iter().map(|t| t.lo.value(sk).map_err(|m| format!("{}: {m}", s.name)))
         .collect::<Result<Vec<f64>, String>>()?;
+    // and each offset, a signed distance from the surface the term's number makes (F4)
+    let grows = terms.iter().map(|t| {
+        t.grow.as_ref().map_or(Ok(0.0), |g| g.value(sk).map_err(|m| format!("{}: {m}", s.name)))
+    }).collect::<Result<Vec<f64>, String>>()?;
     // how far everything stands from the origin, for the tolerances and the box
     let mut size: f64 = 1.0;
-    for (t, lo) in terms.iter().zip(&lows) {
-        size = size.max(lo.abs()).max(t.hi.unwrap_or(0.0).abs());
+    for ((t, lo), g) in terms.iter().zip(&lows).zip(&grows) {
+        size = size.max(lo.abs()).max(t.hi.unwrap_or(0.0).abs()).max(g.abs());
         size = stands(t).into_iter().fold(size, |s, p| s.max(norm(sub(p, origin))));
     }
     let tol = 1e-7 * size;
@@ -129,8 +133,53 @@ fn fold(sk: &Sketch, solid: usize) -> Result<Meridian, String> {
     let what = |t: &RegionTerm| {
         if t.name.is_empty() { "a bound".to_string() } else { format!("`{}`", t.name) }
     };
-    // the points a term reads at most `v` at, in the half-plane
-    let within = |t: &RegionTerm, v: f64| -> Result<Region, String> {
+    // a loop of straight steps through `pts`, turned counter-clockwise
+    let polygon = |mut pts: Vec<[f64; 2]>| {
+        let twice: f64 = (0..pts.len()).map(|k| {
+            let (p, q) = (pts[k], pts[(k + 1) % pts.len()]);
+            p[0] * q[1] - q[0] * p[1]
+        }).sum();
+        if twice < 0.0 {
+            pts.reverse();
+        }
+        let n = pts.len();
+        Region::plain(vec![(0..n).map(|k| Seg::Line { a: pts[k], b: pts[(k + 1) % n] }).collect()])
+    };
+    // a cone narrower than square, apex at `za` on the axis, opening along `s`: the points no
+    // more than `g` outside its surface (§6.21, F4) — shrunk (`g < 0`) the cone whose surface
+    // stands `-g` within, its apex further along; grown, the cone standing `g` without, its apex
+    // rounded by the ball of radius `g` about the apex, where the nearest point of the surface
+    // is the apex (the Minkowski sum)
+    let narrow = |s: f64, half: f64, za: f64, g: f64| -> Region {
+        let far = za + s * reach;
+        if g <= 0.0 {
+            let apex = za - s * g / half.dsin();
+            let width = s * (far - apex) * half.dtan();
+            if width <= 0.0 {
+                return Region { loops: Vec::new() };
+            }
+            return polygon(vec![[0.0, apex], [width, far], [0.0, far]]);
+        }
+        let (sin, cos) = (half.dsin(), half.dcos());
+        // where the grown surface leaves the ball, square to the generator from the apex
+        let tangent = [g * cos, za - s * g * sin];
+        let width = tangent[0] + s * (far - tangent[1]) * half.dtan();
+        let line = |a: [f64; 2], b: [f64; 2]| Seg::Line { a, b };
+        let steps = if s > 0.0 {
+            // up the axis from below the apex: the ball's rim to the surface, out along it
+            let arc = Seg::Arc { c: [0.0, za], r: g, a0: -FRAC_PI_2, sweep: FRAC_PI_2 - half };
+            vec![arc, line(tangent, [width, far]), line([width, far], [0.0, far]),
+                 line([0.0, far], [0.0, za - g])]
+        } else {
+            let arc = Seg::Arc { c: [0.0, za], r: g, a0: half, sweep: FRAC_PI_2 - half };
+            vec![line([0.0, far], [width, far]), line([width, far], tangent), arc,
+                 line([0.0, za + g], [0.0, far])]
+        };
+        Region::plain(vec![steps])
+    };
+    // the points a term reads at most `v` at, or with an offset `g`, no more than `g` outside
+    // the surface where it reads `v` — in the half-plane
+    let within = |t: &RegionTerm, v: f64, g: f64| -> Result<Region, String> {
         let plane = matches!(t.shape, RegionShape::Plane { .. });
         if !plane && stands(t).into_iter().any(|p| off(p) > tol) {
             return Err(match t.shape {
@@ -138,8 +187,15 @@ fn fold(sk: &Sketch, solid: usize) -> Result<Meridian, String> {
                 _ => format!("{} is about a line other than the region's axis", what(t)),
             });
         }
+        let cone = matches!(t.shape, RegionShape::Cone { .. });
+        // a distance's offset is its number moved: the surface `g` without is where it reads
+        // `v + g`
+        let v = if cone { v } else { v + g };
         // a measure from a point or a line is never less than nothing
         if !plane && v <= 0.0 {
+            if cone && g != 0.0 {
+                return Err(format!("{} is a cone of no width, which has no offset", what(t)));
+            }
             return Ok(Region { loops: Vec::new() });
         }
         Ok(match t.shape {
@@ -149,27 +205,22 @@ fn fold(sk: &Sketch, solid: usize) -> Result<Meridian, String> {
                 let (a, b) = line(l);
                 let s = dot(sub(b, a), axis).signum();
                 let za = z(a);
-                let wedge = |s: f64, half: f64| {
-                    let far = za + s * reach;
-                    let width = reach * half.dtan();
-                    let pts = if s > 0.0 {
-                        [[0.0, za], [width, far], [0.0, far]]
-                    } else {
-                        [[0.0, za], [0.0, far], [width, far]]
-                    };
-                    Region::plain(vec![(0..3).map(|k| Seg::Line { a: pts[k], b: pts[(k + 1) % 3] })
-                        .collect()])
-                };
                 if v < FRAC_PI_2 - 1e-12 {
-                    wedge(s, v)
+                    narrow(s, v, za, g)
                 } else if v >= PI {
                     rect(0.0, reach, -reach, reach)
                 } else if (v - FRAC_PI_2).abs() <= 1e-12 {
-                    if s > 0.0 { rect(0.0, reach, za, reach) } else { rect(0.0, reach, -reach, za) }
+                    // the side the axis points into, `g` further back
+                    if s > 0.0 {
+                        rect(0.0, reach, za - g, reach)
+                    } else {
+                        rect(0.0, reach, -reach, za + g)
+                    }
                 } else {
-                    // wider than square: all but the cone the other way, of what is left of half
-                    // a turn
-                    boolean(&rect(0.0, reach, -reach, reach), &wedge(-s, PI - v), Op::Cut, tol)?
+                    // wider than square: all but the cone the other way — whose outside it is —
+                    // of what is left of half a turn, that one shrunk as this one grows
+                    boolean(&rect(0.0, reach, -reach, reach), &narrow(-s, PI - v, za, -g), Op::Cut,
+                        tol)?
                 }
             }
             RegionShape::Plane { plane, from, sign } => {
@@ -185,10 +236,10 @@ fn fold(sk: &Sketch, solid: usize) -> Result<Meridian, String> {
         })
     };
     let mut region = rect(0.0, reach, -reach, reach);
-    for (k, (t, &lo)) in terms.iter().zip(&lows).enumerate() {
+    for (k, ((t, &lo), &g)) in terms.iter().zip(&lows).zip(&grows).enumerate() {
         let tag = k as u32 + 1;
         let fold = |region: &Region, v: f64, op: Op| -> Result<Region, String> {
-            boolean(region, &within(t, v)?.tagged(&|_, _| tag), op, tol)
+            boolean(region, &within(t, v, g)?.tagged(&|_, _| tag), op, tol)
                 .map_err(|e| format!("{}: {e}", what(t)))
         };
         region = match t.cmp {
