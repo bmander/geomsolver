@@ -2001,11 +2001,11 @@ test('a revolution is written by name through the edit API, and re-turned in pla
   const next = Document.read(e.text);
   assert.ok(next.ok, JSON.stringify(next.diagnostics));
   const b0 = next.solids().find((s) => s.name === 'b0')!.index;
-  const quarter = next.setSweep(b0, { turn: '90', sense: 'cw' });
+  const quarter = next.setTurn(b0, '-90');
   assert.ok(quarter.text.includes('b0 := solid(f0, about: std.z, sweep: 90, sense: cw)'),
             quarter.text);
   const epoch = next.sketch.shapeEpoch;
-  assert.ok(next.sketch.setTurn(b0, 90, true));
+  assert.ok(next.sketch.setTurn(b0, -90));
   assert.notEqual(next.sketch.shapeEpoch, epoch, 'a cached mesh is told');
   // the handle runs a quarter turn clockwise about z, seen from three quarters
   const h = turnHandle(next.sketch, 0.6, 0.5, b0);

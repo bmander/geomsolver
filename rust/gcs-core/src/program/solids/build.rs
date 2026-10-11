@@ -326,8 +326,8 @@ fn axis_may_lie_in(sk: &Sketch, plane: Option<u32>, ax: usize) -> bool {
     if own.is_some_and(|pl| [pl.u, pl.v].contains(&(ax as u32))) {
         return true;
     }
-    let x = &sk.axes[ax];
-    let held = |q: &u32| sk.params[*q as usize].fixed;
-    let still = x.d.iter().chain(&x.a).all(held) && plane.is_none_or(|p| sk.plane_fixed(p as usize));
+    let (x, held) = (&sk.axes[ax], super::super::views::held);
+    let still = held(sk, &x.d) && held(sk, &x.a)
+        && plane.is_none_or(|p| sk.plane_fixed(p as usize));
     !still || sk.axis_in(plane, ax).is_some()
 }

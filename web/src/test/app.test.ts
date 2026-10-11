@@ -2086,9 +2086,9 @@ test('the Revolve tool takes a region, then the line to turn it about, as one un
   click(view, 12, 4);
   assert.equal(view.source, before, 'a region alone writes nothing');
   assert.ok(view.pendingRevolve);
-  // the region stays washed, and the line a click would turn it about is lit
+  // the region chosen stays, washed, and the line a click would turn it about is lit
   cv.fire('pointermove', pointer(...view.w2s(20, 5)));
-  assert.equal(view.hoverRegion, view.pendingRevolve);
+  assert.deepEqual(view.pendingRevolve?.outer, r.outer, 'the region chosen stays');
   assert.deepEqual(view.highlight.map((e) => view.doc.nameOf(e)), ['ax']);
   // a click on nothing to turn about says what it wants, and waits
   const said: string[] = [];

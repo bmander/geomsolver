@@ -107,7 +107,6 @@ export function cancelTool(v: SketchView): void {
   // a region waiting for the line to turn it about: let it go, the tool still down
   if (v.pendingRevolve) {
     v.pendingRevolve = null;
-    v.hoverRegion = null;
     v.highlight = [];
     v.draw();
     return;

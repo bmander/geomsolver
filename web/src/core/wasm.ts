@@ -96,7 +96,8 @@ export interface Abi {
   gcs_elab_set_sweep(h: number, solid: number, p: number, n: number): number;
   gcs_sketch_set_prism(h: number, i: number, way: number, d: number): number;
   gcs_elab_revolve(h: number, p: number, n: number): number;
-  gcs_sketch_set_turn(h: number, i: number, sweep: number, cw: number): number;
+  gcs_sketch_set_turn(h: number, i: number, degrees: number): number;
+  gcs_elab_set_turn(h: number, solid: number, p: number, n: number): number;
   gcs_workspace_turn_handle_json(h: number, az: number, el: number, solid: number): number;
   gcs_workspace_turn_at(h: number, az: number, el: number, solid: number,
                         x: number, y: number, near: number): number;

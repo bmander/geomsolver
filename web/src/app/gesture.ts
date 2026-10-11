@@ -6,7 +6,7 @@ import * as dim from '../core/callout.js';
 import { Constraint } from '../core/constraints.js';
 import { PlanDrag } from '../core/decompose.js';
 import {
-  Arc, Axis, Circle, Line, Param, Plane, Point, Primitive, Spline,
+  Arc, Circle, Param, Plane, Point, Primitive, Spline,
 } from '../core/model.js';
 import { RadiusDrag } from '../core/system.js';
 import { overlappingSeen } from '../core/workspace.js';
@@ -16,6 +16,7 @@ import { COL } from './paint.js';
 import { insertControl } from './edit.js';
 import { cancelTool, toolClick } from './tools.js';
 import { bodyAt, grabBody, grabHandle, handleAt } from './underlay.js';
+import { sweepsRegion } from './view.js';
 import type { SketchView, SolidPick } from './view.js';
 
 /** One pointer gesture in progress.  `move` gets canvas coordinates; `end` and `paint` are
@@ -648,12 +649,11 @@ export function hover(v: SketchView, sp: [number, number]): void {
   }
   // the Extrude and Revolve tools show what a click would sweep, and offer its handle; with a
   // region chosen, Revolve lights the line or axis a click would turn it about
-  if (v.tool === 'extrude' || v.tool === 'revolve') {
+  if (sweepsRegion(v.tool)) {
     const grab = onExtentArrow(v, sp);
     if (v.pendingRevolve) {
       const e = grab ? null : v.pick(sp[0], sp[1]);
-      v.highlight = e instanceof Line || e instanceof Axis ? [e] : [];
-      v.hoverRegion = v.pendingRevolve;
+      v.highlight = e && v.turnsAbout(e) ? [e] : [];
     } else {
       v.hoverRegion = grab ? null : v.regionAt(sp[0], sp[1]);
     }

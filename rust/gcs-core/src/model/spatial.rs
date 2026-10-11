@@ -777,17 +777,17 @@ impl Sketch {
         }
     }
 
-    /// Re-turn a revolution where it stands, through `sweep` radians (a whole turn at τ or past
-    /// it) the way `sense` says — the preview a revolution being sized shows before the source
-    /// says it (#162 F3), as `set_prism` is an extrusion's.  False for a solid that is not one.
-    pub fn set_turn(&mut self, i: usize, sweep: f64, sense: Sense) -> bool {
-        let full = sweep >= std::f64::consts::TAU;
+    /// Re-turn a revolution where it stands through `degrees`, signed (positive right-handed
+    /// about its axis, `turn_of`'s reading) — the preview a revolution being sized shows before
+    /// the source says it (#162 F3), as `set_prism` is an extrusion's.  False for a solid that is
+    /// not one, or no turn.
+    pub fn set_turn(&mut self, i: usize, degrees: f64) -> bool {
+        let Some((how_far, sense)) = turn_of(degrees) else { return false };
         match self.solids.get_mut(i).map(|s| &mut s.def) {
-            Some(SolidDef::Revolve { sweep: w, sense: s, .. }) if sweep > 0.0 => {
-                *w = if full {
-                    Extent { text: String::new(), value: std::f64::consts::TAU }
-                } else {
-                    Extent { text: crate::syntax::num(sweep.to_degrees()), value: sweep }
+            Some(SolidDef::Revolve { sweep, sense: s, .. }) => {
+                *sweep = match how_far {
+                    None => Extent { text: String::new(), value: std::f64::consts::TAU },
+                    Some(d) => Extent { text: crate::syntax::num(d), value: d.to_radians() },
                 };
                 *s = sense;
                 self.shape_epoch = self.shape_epoch.wrapping_add(1);
@@ -798,8 +798,21 @@ impl Sketch {
     }
 }
 
+/// A turn said as signed degrees, positive right-handed about its axis, as the language says one:
+/// how far in degrees — `None` for a whole turn, at 360 or past it, which a revolution writes as
+/// no `sweep:` — and which way.  `None` for no turn at all.  The one reading, shared by the
+/// preview (`Sketch::set_turn`) and the edit (`edit::set_turn`).
+pub fn turn_of(degrees: f64) -> Option<(Option<f64>, Sense)> {
+    if !degrees.is_finite() || degrees == 0.0 {
+        return None;
+    }
+    let sense = if degrees < 0.0 { Sense::Cw } else { Sense::Ccw };
+    Some(((degrees.abs() < 360.0).then_some(degrees.abs()), sense))
+}
+
 /// How far off its profile's plane a revolution's axis may lie and still be read as in it: a
-/// direction's sine, and a place's distance over the drawing's reach.
+/// direction's sine, and a place's distance over the drawing's reach.  Coarser than `views`'
+/// `ON_PLANE`, which judges held datums: this one judges an axis a solve may have placed.
 const AXIS_IN_PLANE: f64 = 1e-7;
 
 impl Sketch {
@@ -820,21 +833,20 @@ impl Sketch {
     /// Axis `ax` in plane `plane`'s own coordinates (`None` the page), from its foot toward one
     /// unit along it — `None` where it does not lie in the plane.
     pub fn axis_in(&self, plane: Option<u32>, ax: usize) -> Option<((f64, f64), (f64, f64))> {
+        use crate::space::{add, dot, normalised, sub};
         let x = self.axes.get(ax)?;
-        let (d, a) = (x.d.map(|q| self.params[q as usize].value),
-                      x.a.map(|q| self.params[q as usize].value));
+        let value = |q: [u32; 3]| q.map(|q| self.params[q as usize].value);
+        let (d, a) = (value(x.d), value(x.a));
         let basis = match plane {
             Some(p) => { self.planes.get(p as usize)?; self.basis(p as usize) }
             None => crate::plane::Basis::page(),
         };
         let n = basis.normal();
-        let len = crate::plane::norm(d);
-        let off = [a[0] - basis.o[0], a[1] - basis.o[1], a[2] - basis.o[2]];
-        if !(len > 0.0) || crate::plane::dot(d, n).abs() > AXIS_IN_PLANE * len
-            || crate::plane::dot(off, n).abs() > AXIS_IN_PLANE * self.extent() {
+        let unit = normalised(d)?;
+        if dot(unit, n).abs() > AXIS_IN_PLANE
+            || dot(sub(a, basis.o), n).abs() > AXIS_IN_PLANE * self.extent() {
             return None;
         }
-        let b = std::array::from_fn(|k| a[k] + d[k] / len);
-        Some((basis.view_coords(a), basis.view_coords(b)))
+        Some((basis.view_coords(a), basis.view_coords(add(a, unit))))
     }
 }

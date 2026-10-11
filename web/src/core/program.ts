@@ -412,12 +412,17 @@ export class Document {
   }
 
   /** Rewrite how solid `solid` (its index) is swept, over the same face: an extrusion's
-   *  thickness the way it runs (`{ way, thick }`, the core writing `depth:` or `from:`/`to:`), a
-   *  revolution's angle in degrees the way it turns about what it already turns about (`{ turn,
-   *  sense }`, a whole turn written as none), or a sweep outright. */
-  setSweep(solid: number,
-           spec: SweepSpec | { way: Way; thick: string } | { turn: string; sense: Sense }): Edit {
+   *  thickness the way it runs (`{ way, thick }`, the core writing `depth:` or `from:`/`to:`), or
+   *  a sweep outright. */
+  setSweep(solid: number, spec: SweepSpec | { way: Way; thick: string }): Edit {
     return edit(withJson(spec, (p, n) => core().gcs_elab_set_sweep(this.h, solid, p, n)));
+  }
+
+  /** Rewrite how far revolution `solid` (its index) turns about what it turns about: `angle` in
+   *  degrees as written — a number signed, negative clockwise, a whole turn written as none; an
+   *  expression the way it already turns. */
+  setTurn(solid: number, angle: string): Edit {
+    return edit(withStr(angle, (p, n) => core().gcs_elab_set_turn(this.h, solid, p, n)));
   }
 
   /** The body rule: `what union body`, `what cut body`, `what bound body`. */

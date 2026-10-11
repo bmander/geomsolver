@@ -1,16 +1,15 @@
 //! **Revolve** (#162 F3): `about:` takes an axis lying in the face's plane as well as a line drawn
 //! there (`std.z` on `std.front`); a click inside a region and the line or axis to turn it about
 //! writes the face, the solid and — with a body selected — the body rule, as one splice
-//! (`edit::revolve`); the turn is then sized by re-sweeping it in place (`set_sweep`,
-//! `SolidSweep::turn`), previewed before the source is written (`set_turn`), by a handle the eye
-//! sees on the arc the profile's middle turns through (`turn_handle`, `turn_at`).
+//! (`edit::revolve`); the turn is then sized in signed degrees, rewritten in place
+//! (`edit::set_turn`), previewed before the source is written (`Sketch::set_turn`), by a handle
+//! the eye sees on the arc the profile's middle turns through (`turn_handle`, `turn_at`).
 
-use gcs_core::edit::{self, Kind, SolidSweep};
-use gcs_core::model::Sense;
+use gcs_core::edit::{self, Kind};
 use gcs_core::overview::workspace::{turn_at, turn_handle, Projection};
 use gcs_core::program::{self, Elaborated};
 use gcs_core::solid::ApproximationPolicy::Report;
-use gcs_core::syntax::{self, BodyWord};
+use gcs_core::syntax::BodyWord;
 use gcs_core::{library, solve};
 use std::f64::consts::PI;
 
@@ -161,27 +160,33 @@ fn an_axis_off_the_plane_or_a_missing_one_refuses_the_gesture() {
 
 #[test]
 fn a_turn_is_resized_in_place_keeping_its_axis() {
-    let e = build(&format!("{DRAWN}ring := solid(face(ab, bc, cd, da), about: std.z)\n"));
-    let ring = e.map.ent_named("ring").unwrap().i();
+    let ring_in =
+        |how: &str| build(&format!("{DRAWN}ring := solid(face(ab, bc, cd, da), {how})\n"));
+    // a number is signed, a whole turn is written as none; an expression keeps the way it turns
     let cases = [
-        ("90", Sense::Ccw, "about: std.z, sweep: 90", PI / 2.0),
-        ("90deg", Sense::Cw, "about: std.z, sweep: 90deg, sense: cw", PI / 2.0),
-        ("360", Sense::Cw, "about: std.z, sense: cw", 2.0 * PI),
-        ("400", Sense::Ccw, "about: std.z", 2.0 * PI),
+        ("about: std.z", "90", "about: std.z, sweep: 90", PI / 2.0),
+        ("about: std.z", "-90", "about: std.z, sweep: 90, sense: cw", PI / 2.0),
+        ("about: std.z", "-360", "about: std.z, sense: cw", 2.0 * PI),
+        ("about: std.z, sense: cw", "400", "about: std.z", 2.0 * PI),
+        ("about: std.z, sense: cw", "45deg * 2", "about: std.z, sweep: 45deg * 2, sense: cw",
+            PI / 2.0),
     ];
-    for (angle, sense, said, turn) in cases {
-        let sense = match sense { Sense::Cw => syntax::Sense::Cw, Sense::Ccw => syntax::Sense::Ccw };
-        let out = edit::set_sweep(&e, &e.program, ring, &SolidSweep::turn(angle, sense));
+    for (was, angle, said, turn) in cases {
+        let e = ring_in(was);
+        let ring = e.map.ent_named("ring").unwrap().i();
+        let out = edit::set_turn(&e, &e.program, ring, angle);
         assert_eq!(out.refused, None, "{said}");
         assert!(out.text.contains(&format!("ring := solid(face(ab, bc, cd, da), {said})\n")),
             "{}", out.text);
         assert!(near(volume(&build(&out.text), "ring"), pappus(12.0, turn), 2e-3), "{said}");
     }
-    // a turn's angle on a prism is no sweep the parser reads
+    // a prism turns about nothing, and no turn is no sweep
     let block = build(&format!("{DRAWN}block := solid(face(ab, bc, cd, da), depth: 2)\n"));
     let i = block.map.ent_named("block").unwrap().i();
-    let out = edit::set_sweep(&block, &block.program, i, &SolidSweep::turn("90", syntax::Sense::Ccw));
-    assert!(out.refused.is_some(), "{}", out.text);
+    assert!(edit::set_turn(&block, &block.program, i, "90").refused.is_some());
+    let e = ring_in("about: std.z");
+    let ring = e.map.ent_named("ring").unwrap().i();
+    assert!(edit::set_turn(&e, &e.program, ring, "0").refused.is_some());
 }
 
 #[test]
@@ -190,15 +195,15 @@ fn a_revolution_previews_a_new_turn_before_the_source_says_it() {
         block := solid(face(ab, bc, cd, da), depth: 2)\n"));
     let ring = e.map.ent_named("ring").unwrap().i();
     let epoch = e.sketch.shape_epoch;
-    assert!(e.sketch.set_turn(ring, PI / 3.0, Sense::Cw));
+    assert!(e.sketch.set_turn(ring, -60.0));
     assert!(near(volume(&e, "ring"), pappus(12.0, PI / 3.0), 2e-3));
     assert_ne!(e.sketch.shape_epoch, epoch, "a binding caching a mesh is told");
-    assert!(e.sketch.set_turn(ring, 2.0 * PI, Sense::Ccw));
+    assert!(e.sketch.set_turn(ring, 360.0));
     assert!(near(volume(&e, "ring"), pappus(12.0, 2.0 * PI), 2e-3));
     // a prism is no revolution, and no turn is nothing
     let block = e.map.ent_named("block").unwrap().i();
-    assert!(!e.sketch.set_turn(block, 1.0, Sense::Ccw));
-    assert!(!e.sketch.set_turn(ring, 0.0, Sense::Ccw));
+    assert!(!e.sketch.set_turn(block, 60.0));
+    assert!(!e.sketch.set_turn(ring, 0.0));
 }
 
 /// The eye's picture-plane coordinates of a point in space (`overview::eye`'s convention).
@@ -231,7 +236,7 @@ fn the_handle_runs_round_the_arc_and_reads_a_drag_back() {
     assert!((at([0.0, -12.0, 4.0], 250.0) - 270.0).abs() < 1e-9);
     assert!((at([12.0, 0.0, 4.0], 700.0) - 360.0).abs() < 1e-9);
     // `sense: cw` turns it the other way, and the handle says so
-    assert!(e.sketch.set_turn(ring, PI / 2.0, Sense::Cw));
+    assert!(e.sketch.set_turn(ring, -90.0));
     let h = turn_handle(&e.sketch, &proj, ring).unwrap();
     assert!(close(h.tip.unwrap(), seen([0.0, -12.0, 4.0], az, el)) && (h.turn + 90.0).abs() < 1e-9);
     // square on to the front the turn is seen edge on: nothing to drag

@@ -11,6 +11,7 @@ import {
 } from '../core/model.js';
 import { tellDimension } from './dimension.js';
 import { paintFrame, paintUnderlay } from './underlay.js';
+import { sweepsRegion } from './view.js';
 import type { SketchView } from './view.js';
 
 export const COL = {
@@ -185,7 +186,8 @@ export function paint(v: SketchView): void {
   // a tool's preview is where its clicks are read (`toolView`)
   if (v.pending.length || v.pendingFit.length) v.inView(v.toolView, () => paintPreview(v));
   // the region a click would extrude, washed where it is drawn
-  const region = v.tool === 'extrude' || v.tool === 'revolve' ? v.hoverRegion : null;
+  // (the Revolve tool's, once a click chose it, while the line to turn it about is found)
+  const region = sweepsRegion(v.tool) ? v.pendingRevolve ?? v.hoverRegion : null;
   if (region && !('refused' in region)) v.inView(v.toolView, () => paintRegion(v, region.rings));
   if (v.diagnosis?.conflicts?.length) paintConflicts(v);
 
@@ -211,7 +213,7 @@ export function paint(v: SketchView): void {
   paintFrame(v);
   v.gesture?.paint?.(ctx);
   paintExtentArrow(v);
-  if (v.tool !== 'select' && v.tool !== 'extrude' && v.tool !== 'revolve') {   // snap indicator
+  if (v.tool !== 'select' && !sweepsRegion(v.tool)) {   // snap indicator
     const sp = v.pickPoint(...v.cursor);
     if (sp) {
       const [sx, sy] = v.seen(sp);

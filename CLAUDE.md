@@ -1599,9 +1599,10 @@ Conventions:
   sized as an extrusion's thickness (`LiveExtent` kind `turn`, signed degrees, negative `cw`): the
   arc its profile's middle turns through (`workspace::turn_handle`, no tip seen along the turning
   plane), dragged by `turn_at` (the whole turns nearest the last, so back past the start turns it
-  the other way), previewed by `Sketch::set_turn`, written by `set_sweep` with
-  `SolidSweep::turn(angle, sense)` (a whole turn writes no `sweep:`, the axis kept from the
-  statement).  `tests/revolve.rs` is the gate.
+  the other way).  Signed degrees end to end, read once by `model::turn_of` (sense, and a whole
+  turn as no `sweep:`): previewed by `Sketch::set_turn`, written by `edit::set_turn` (the
+  statement's own `about:` kept; an expression written whole the way it already turns).
+  `tests/revolve.rs` is the gate.
 - **A face of a solid is a set** (#162 F5, [0.66]): `b0.near`, `b0.far`, a straight side `b0.ab`
   and `body.b0.near` name the face's carrier, made by the flattener from the solid's own text
   before the uses are expanded (`flatten/faces.rs`, `Walk::face_sets`; a face written in place

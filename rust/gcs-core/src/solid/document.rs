@@ -89,10 +89,8 @@ pub fn reads(sk: &Sketch, si: usize, unit: f64) -> Vec<f64> {
                 v.push(sweep.value);
                 v.push(if *sense == Sense::Cw { -1.0 } else { 1.0 });
                 face_reads(sk, *face, &mut v);
-                match sk.revolve_axis(*face, *axis) {
-                    Some((a, b)) => v.extend([a.0, a.1, b.0, b.1]),
-                    None => v.push(f64::NAN),
-                }
+                // a line's ends or an axis's direction and foot; the plane is the face's, read
+                v.extend(sk.entity_params(*axis).iter().map(|&p| sk.params[p as usize].value));
             }
             SolidDef::Body { stock, on, through, bound } => {
                 v.extend([2.0, *stock as f64, on.len() as f64]);

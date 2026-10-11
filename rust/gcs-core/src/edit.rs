@@ -928,25 +928,6 @@ impl SolidSweep {
         }
     }
 
-    /// A turn through `angle` degrees (the text written) the `sense` it runs — a full turn, which
-    /// the language writes as no `sweep:` at all, where it is a number of a whole turn or more,
-    /// and `sense:` written only for `cw` — about what the solid already turns about
-    /// (`set_sweep`), or `about` where given.
-    pub fn turn(angle: &str, sense: syntax::Sense) -> SolidSweep {
-        let angle = angle.trim();
-        let full = angle.parse::<f64>().is_ok_and(|n| n >= 360.0);
-        SolidSweep {
-            sweep: (!full).then(|| angle.to_string()),
-            sense: (sense == syntax::Sense::Cw).then_some(sense),
-            ..Default::default()
-        }
-    }
-
-    /// Whether these say only a turn's angle and sense, and nothing else of a sweep.
-    fn is_turn(&self) -> bool {
-        [&self.depth, &self.from, &self.to, &self.through, &self.about].iter().all(|t| t.is_none())
-    }
-
     /// An extrusion `thick` thick (the text written) the `way` it runs from its face: `depth:`
     /// behind, `from: 0, to:` in front, or half each way — halved as a number where it is one,
     /// else as the expression `(thick) / 2`.
@@ -1050,6 +1031,48 @@ pub fn set_sweep(e: &Elaborated, prog: &Program, solid: usize, how: &SolidSweep)
 }
 
 fn sweep_edit(e: &Elaborated, prog: &Program, solid: usize, how: &SolidSweep) -> Result<Edit, String> {
+    resweep(e, prog, solid, |_| how.sweep())
+}
+
+/// Rewrite how far revolution `solid` turns, about what it turns about: `angle` the text written,
+/// in degrees.  A number is signed, positive right-handed about the axis, and read by
+/// `model::turn_of` — `-90` is `sweep: 90, sense: cw`, a whole turn or more no `sweep:` at all;
+/// an expression is written whole, the way the solid already turns.
+pub fn set_turn(e: &Elaborated, prog: &Program, solid: usize, angle: &str) -> Edit {
+    turn_edit(e, prog, solid, angle).unwrap_or_else(|why| Edit::none(prog, Some(why)))
+}
+
+fn turn_edit(e: &Elaborated, prog: &Program, solid: usize, angle: &str) -> Result<Edit, String> {
+    let angle = angle.trim();
+    resweep(e, prog, solid, |was| {
+        let syntax::Sweep::Revolve { axis, sense, .. } = was else {
+            return Err("that solid is not turned about anything".into());
+        };
+        let (sweep, sense) = match angle.parse::<f64>() {
+            Ok(n) => {
+                let (how_far, sense) = crate::model::turn_of(n).ok_or("a turn turns some way")?;
+                let sense = match sense {
+                    crate::model::Sense::Cw => syntax::Sense::Cw,
+                    crate::model::Sense::Ccw => syntax::Sense::Ccw,
+                };
+                (how_far.map(num), sense)
+            }
+            Err(_) => (Some(angle.to_string()), *sense),
+        };
+        let sweep = sweep.map(|text| syntax::Arg::Dim { text, span: Span::default() });
+        Ok(syntax::Sweep::Revolve { axis: axis.clone(), sweep, sense })
+    })
+}
+
+/// Solid `solid`'s own statement, its sweep replaced by what `with` makes of the one written —
+/// its bracket list rewritten and nothing else in the file touched.  At the root: one a component
+/// or a block made is no statement to rewrite.
+fn resweep(
+    e: &Elaborated,
+    prog: &Program,
+    solid: usize,
+    with: impl FnOnce(&syntax::Sweep) -> Result<syntax::Sweep, String>,
+) -> Result<Edit, String> {
     let site = e.map.of_entity.get(&EntRef::solid(solid)).ok_or("no statement makes that solid")?;
     if !site.path.0.is_empty() || !in_root(prog, site.stmt) {
         return Err("that solid comes from a component or a block: change it there".into());
@@ -1057,20 +1080,13 @@ fn sweep_edit(e: &Elaborated, prog: &Program, solid: usize, how: &SolidSweep) ->
     let d = decl_of(prog, site).filter(|d| d.kind == EntKind::Solid && d.sweep.is_some())
         .ok_or("that solid is made of others, not swept from a face")?;
     let mut d2 = d.clone();
-    // a turn rewritten keeps what it turns about where the gesture does not say
-    let kept = match (&d.sweep, &how.about) {
-        (Some(syntax::Sweep::Revolve { axis, .. }), None) if how.is_turn() => {
-            SolidSweep { about: Some(syntax::ref_text(axis)), ..how.clone() }
-        }
-        _ => how.clone(),
-    };
-    d2.sweep = Some(kept.sweep()?);
-    let with = syntax::decl_args(&d2);
+    d2.sweep = Some(with(d.sweep.as_ref().expect("a swept solid"))?);
+    let args = syntax::decl_args(&d2);
     // the statement in the new text: where it was, longer or shorter by what the list became
     let stmt = prog.stmt(site.stmt).map(|s| s.span).ok_or("no statement makes that solid")?;
-    let grown = with.len() as i64 - (d.list_span.hi as i64 - d.list_span.lo as i64);
+    let grown = args.len() as i64 - (d.list_span.hi as i64 - d.list_span.lo as i64);
     let ours = Span::new(stmt.lo as usize, (stmt.hi as i64 + grown) as usize);
-    let text = splice(prog.text(), vec![Splice { at: d.list_span, with }]);
+    let text = splice(prog.text(), vec![Splice { at: d.list_span, with: args }]);
     checked(prog, text, ours, Vec::new())
 }
 
