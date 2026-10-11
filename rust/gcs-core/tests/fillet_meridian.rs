@@ -401,3 +401,103 @@ fn the_end_relief_as_a_sum_of_distances_bows_on_the_sphere() {
     }
     assert!(worst_end < 1e-12, "the sum's edge leaves the legs' ends by {worst_end:e}");
 }
+
+/// **The hypoid's end relief stated in its blank's own region** (#183 step 6): `std.Chamfered` at
+/// the tip's toe and heel corners, each leg 0.2 from the other face, is today's `EndChamfer` body —
+/// the blank less the two drawn rings — wherever a point is farther from either boundary than the
+/// sum of distances bows off the straight chamfer on the sphere (7e-5 mm, X3).  Read by the field:
+/// a chamfer on an offset cone is not lowered.
+#[test]
+fn the_end_relief_stated_in_the_region_is_end_chamfers() {
+    let text = include_str!("../../examples/spiral_bevel/blank/member.sv");
+    let close = text.rfind('}').unwrap();
+    let stated = "  toe_side := { q | q outside member.toe }\n\
+                  relieved := { p | p inside member.tip; p inside member.heel; p outside member.toe\n\
+                    p outside(8mm) member.pitch\n\
+                    p inside std.Chamfered(member.tip, toe_side, la: 0.2mm, lb: 0.2mm)\n\
+                    p inside std.Chamfered(member.tip, member.heel, la: 0.2mm, lb: 0.2mm) }\n\
+                  stated := solid(relieved)\n";
+    let text = format!("{}{stated}{}", &text[..close], &text[close..]);
+    let e = fixtures::gear::read(&text, &fixtures::gear::project());
+    let sk = &e.sketch;
+    let m = gcs_core::solid::region::meridian(sk, entity(&e, "member.material")).unwrap();
+    let ours = gcs_core::solid::MaterialField::read(sk, entity(&e, "stated"), 1e-10).unwrap();
+    let theirs = gcs_core::solid::MaterialField::read(sk, entity(&e, "body"), 1e-10).unwrap();
+    // the tip's corners with the spheres, in the meridian, and points about each
+    let SolidDef::Region { terms, .. } = &sk.solids[entity(&e, "member.material")].def else { panic!() };
+    let tip = terms.iter().position(|t| matches!(t.shape, RegionShape::Cone { .. }) && t.cmp == Cmp::Le)
+        .unwrap() as u32 + 1;
+    let corners: Vec<P> = m.region.loops.iter().flat_map(|l| {
+        (0..l.len()).filter(move |&i| (l[i].tag == tip) != (l[(i + 1) % l.len()].tag == tip))
+            .map(move |i| l[i].end())
+    }).collect();
+    assert_eq!(corners.len(), 2, "the tip meets each sphere once");
+    let lift = |q: P| -> [f64; 3] {
+        std::array::from_fn(|k| m.origin[k] + q[0] * m.seam[k] + q[1] * m.axis[k])
+    };
+    let (mut checked, mut seen_cut) = (0, 0);
+    for c in corners {
+        for i in 0..=40 {
+            for j in 0..=40 {
+                // off the corner's own ordinate: a ray level with a vertex is the parity rule's
+                // edge (its arc's end and its line's start a unit in the last place apart)
+                let q = [c[0] + (i as f64 - 20.0) * 0.02 + 1.37e-3, c[1] + (j as f64 - 20.0) * 0.02 + 2.91e-3];
+                let p = lift(q);
+                let (a, b) = (ours.side(p), theirs.side(p));
+                if a.abs() < 2e-4 || b.abs() < 2e-4 {
+                    continue;
+                }
+                assert_eq!(a < 0.0, b < 0.0, "at {q:?} (corner {c:?}): {a} against {b}");
+                checked += 1;
+                // inside the sharp blank and cut by the relief
+                if b > 0.0 && m.region.contains(q) {
+                    seen_cut += 1;
+                }
+            }
+        }
+    }
+    assert!(checked > 2000 && seen_cut > 10, "{checked} points, {seen_cut} in the reliefs");
+}
+
+
+/// **The crown's tip rounding by the word** (#183 step 6): the section drawn sharp from the same
+/// carriers, swept a little either side of its view, its tip's two edges rounded by `round` — the
+/// field's boundary passes through `TipRounding`'s drawn arcs, and a point a twentieth of the
+/// radius either side of an arc is on that side.
+#[test]
+fn the_crown_tip_rounding_is_the_words() {
+    let text = include_str!("../../examples/spiral_bevel/crown/rounding.sv").replacen("use std\n", "use std (round)\n", 1);
+    let close = text.rfind('}').unwrap();
+    let more = "  in std.front {\n\
+                    c1 := point hint((6.5, 2.5))\n    c2 := point hint((-0.5, 2.5))\n\
+                    c1 coincident outer\n    c1 coincident tip\n    c2 coincident tip\n    c2 coincident inner\n\
+                    (sb := line(bi, bo)) -> (so := line(bo, c1)) -> (st := line(c1, c2)) -> (si := line(c2, bi)) -> close\n\
+                    sharp := face(sb, so, st, si)\n  }\n\
+                  tooth := solid(sharp, from: -1mm, to: 1mm)\n\
+                  tooth.st round(r: 0.6mm) tooth.so\n\
+                  tooth.st round(r: 0.6mm) tooth.si\n";
+    let text = format!("{}{more}{}", &text[..close], &text[close..]);
+    let e = fixtures::read(&text);
+    let sk = &e.sketch;
+    let field = gcs_core::solid::MaterialField::read(sk, entity(&e, "tooth"), 1e-10).unwrap();
+    let r = 0.6;
+    // what the sharp corners had, a little in from each toward its arc's centre, is taken away
+    for (corner, name) in [("c1", "outer_round"), ("c2", "inner_round")] {
+        let (p, c) = (sk.world_point(entity(&e, corner)), sk.world_point(sk.arcs[entity(&e, name)].center as usize));
+        let q: [f64; 3] = std::array::from_fn(|k| p[k] + 0.05 * (c[k] - p[k]));
+        assert!(field.side(q) > 0.0, "{corner}: {}", field.side(q));
+    }
+    for name in ["outer_round", "inner_round"] {
+        let arc = &sk.arcs[entity(&e, name)];
+        let c = sk.world_point(arc.center as usize);
+        let (s, t) = (sk.world_point(arc.start as usize), sk.world_point(arc.end as usize));
+        // the arc's middle, in the view (y = 0), and its outward normal there
+        let mid: [f64; 3] = std::array::from_fn(|k| (s[k] + t[k]) / 2.0 - c[k]);
+        let n = 1.0 / norm3(mid);
+        let out: [f64; 3] = mid.map(|x| x * n);
+        let on: [f64; 3] = std::array::from_fn(|k| c[k] + r * out[k]);
+        let off = |d: f64| field.side(std::array::from_fn(|k| on[k] + d * out[k]));
+        assert!(off(0.0).abs() < 1e-7, "{name}: the field at the drawn arc reads {}", off(0.0));
+        assert!(off(-r / 20.0) < 0.0 && off(r / 20.0) > 0.0, "{name}");
+    }
+}

@@ -389,13 +389,16 @@ fn lowering(sk: &Sketch, terms: &[RegionTerm], t: &RegionTerm) -> Option<Lowerin
         ([(Target::Set { terms: sa, .. }, ca), (Target::Set { terms: sb, .. }, cb)], Cmp::Ge)
             if *ca > 0.0 && *cb > 0.0 && lo > 0.0 && sa.len() == 1 && sb.len() == 1 =>
         {
-            let surface = |u: &RegionTerm| u.cmp == Cmp::In && u.hi.is_some_and(|h| u.lo.read(sk) == Some(h));
-            if !surface(&sa[0]) || !surface(&sb[0]) {
-                return None;
-            }
+            // each set the outside of one of the region's bounds (or that bound's surface): the
+            // distance from it is from the bound's surface, within the region
             let (ka, ga) = outer(&sa[0], 0.0)?;
             let (kb, gb) = outer(&sb[0], 0.0)?;
-            (ka != kb && ga.abs() <= tol(lo) && gb.abs() <= tol(lo))
+            let across = |u: &RegionTerm, k: usize| match u.cmp {
+                Cmp::In => u.hi.is_some_and(|h| u.lo.read(sk) == Some(h)),
+                c => Some(c) == terms[k].cmp.turned(),
+            };
+            (ka != kb && across(&sa[0], ka) && across(&sb[0], kb)
+                && ga.abs() <= tol(lo) && gb.abs() <= tol(lo))
                 .then_some(Lowering { a: ka, b: kb, kind: Lower::Flat { la: lo / cb, lb: lo / ca } })
         }
         _ => None,

@@ -417,7 +417,10 @@ component Rounded(a: group, b: group, r: Length) := { p |
 }
 
 // Short of the flat through each set's point `la` (on `a`) and `lb` (on `b`) from the other's
-// surface.
+// surface: for a point within both, its distance from each surface is its distance from what is
+// outside that set.
 component Chamfered(a: group, b: group, la: Length, lb: Length) := { p |
-  distance(p, a.surface) / lb + distance(p, b.surface) / la >= 1
+  out_a := { q | q outside a }
+  out_b := { q | q outside b }
+  distance(p, out_a) / lb + distance(p, out_b) / la >= 1
 }

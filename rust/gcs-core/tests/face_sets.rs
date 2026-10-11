@@ -212,3 +212,28 @@ fn a_word_rounds_an_edge() {
     let want = 9.0 * (1.0 - PI / 4.0) * 40.0;
     assert!((before - after - want).abs() < 2e-3 * want, "{} against {want}", before - after);
 }
+
+/// **A library feature written in Solvent** (#183 step 4's gate): a word that makes a solid and cuts
+/// it from the body its operands are faces of — an edge relief, the points within `d` of both
+/// faces' patches — over each pair of faces it names: the block loses `d²` along its 40.
+#[test]
+fn a_word_makes_a_relief() {
+    let word = "A relieved(d) B := {\n\
+                  repeat a in A {\n\
+                    repeat b in B if b != a {\n\
+                      groove := { p | p distance(<= d) a; p distance(<= d) b; p inside a; p inside b }\n\
+                      relief := solid(groove)\n\
+                      relief cut A.body\n\
+                    }\n\
+                  }\n\
+                }\n";
+    let box_ = ([-1.0, -2.0, -2.0], [41.0, 2.0, 2.0]);
+    let sharp = solved(BLOCK);
+    let before = field_volume(&MaterialField::read(&sharp.sketch, ent(&sharp, "block").i(), 1e-10).unwrap(),
+                              box_.0, box_.1, 1.0 / 32.0);
+    let e = solved(&format!("{BLOCK}{word}block.near relieved(d: 1mm) block.south\n"));
+    let after = field_volume(&MaterialField::read(&e.sketch, ent(&e, "block").i(), 1e-10).unwrap(),
+                             box_.0, box_.1, 1.0 / 32.0);
+    let want = 40.0;
+    assert!((before - after - want).abs() < 2e-3 * want, "{} against {want}", before - after);
+}

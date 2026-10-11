@@ -965,6 +965,24 @@ fn region_body(
     if dims.len() > 1 && side == Cmp::Le && dims.iter().all(|&i| bounded(&body[i])) {
         return Ok(());
     }
+    // the outside of a set of one use is the use turned round: outside `{ q | q outside toe }` is
+    // inside `toe` (#183, a region's own side as `std.Chamfered` takes it)
+    if dims.is_empty() && side == Cmp::Ge {
+        let uses: Vec<usize> = (0..body.len()).filter(|&i| written_of(&body[i]).is_some_and(may_use)).collect();
+        let others = body.iter().filter(|st| matches!(st.kind, StmtKind::Relation(_) | StmtKind::Measured(_))).count();
+        if let ([i], 1) = (uses.as_slice(), others) {
+            if let StmtKind::Relation(r) = &mut body[*i].kind {
+                if let Some(w) = r.form.written_mut() {
+                    if let Some(turned) = match w.word.text.as_str() { "inside" => Some("outside"), "outside" => Some("inside"), _ => None } {
+                        if w.args.is_empty() {
+                            w.word.text = turned.to_string();
+                            return Ok(());
+                        }
+                    }
+                }
+            }
+        }
+    }
     let [i] = dims[..] else {
         let uses = body.iter().filter_map(written_of).any(may_use);
         return match (dims.len(), uses, side) {

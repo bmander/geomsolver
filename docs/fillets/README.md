@@ -581,6 +581,9 @@ are listed below.
 | a boss's root (concave, plane–cylinder) | the stack's ring (Pappus) | the field (slow tier) | within 2e-3 |
 | a pocket rounded inside (concave runs and corners) | X2's | the field (slow tier) | within 2e-3 |
 | a disc's rim rounded and chamfered in its region's body | Pappus | the field, and the meridian | within 3e-3; lowered, 1e-9 |
+| the hypoid's end relief, `std.Chamfered` in the blank's own region | today's `EndChamfer` body | the field (an offset cone is not lowered) | the same points wherever farther than 2e-4 mm from either boundary (the sum bows 7e-5 mm) |
+| the crown's tip rounding, the sharp section's tip edges by `round` | `TipRounding`'s drawn arcs | the field | the boundary on the arcs to 1e-7 |
+| an edge relief, a word written in a test (`A relieved(d) B`) | `d²L` | the field | within 2e-3 |
 
 ### Findings
 
@@ -606,3 +609,11 @@ are listed below.
    meridian, builds a region's round or chamfer at the corner of two of its own bounds; a flat
    between curved steps is not lowered (the sum of distances bows there, X1's finding), nor is a
    corner on an offset cone (a charted step).
+8. **`std.Chamfered` measures from each bound's outside.** For a point within both of a region's
+   sets its distance from a set's surface is its distance from what is outside that set, which
+   needs no surface of an offset cone (the hypoid's tip): `outside` complements a set of one use by
+   turning the use round.
+9. **The revolved field's ray parity has an edge** (pre-existing, `solid/surface/region.rs`): a
+   point exactly level with a meridian's vertex, between the arc's computed end ordinate and the
+   line's start a unit in the last place apart, is counted across twice. The tests keep their
+   grids off vertices; the rule itself is untouched.

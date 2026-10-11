@@ -203,3 +203,4 @@ fn a_bound_on_measurements_is_refused_off_a_region_and_off_a_sum() {
                            "E040", "measures nothing of a region solid's point",
                            "distance(c, f1) <= 10mm");
 }
+
