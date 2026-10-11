@@ -196,6 +196,7 @@ impl<'a> Walk<'a> {
             // no word a set is used by, no table to build: the last round is usually this
             let words = |st: &Stmt| match &st.kind {
                 StmtKind::Relation(r) => r.form.written().is_some_and(may_use),
+                StmtKind::Measured(_) => true,
                 _ => false,
             };
             if !self.out.iter().any(|(st, _, _)| words(st)) {
@@ -207,6 +208,12 @@ impl<'a> Walk<'a> {
             let mut any = false;
             let mut rest = out.into_iter();
             while let Some((st, path, sc)) = rest.next() {
+                // a set measured from, or where one ends (#183 F2, F7): a point of its own
+                if let Some(made) = self.measured_sets(&st, &path, &sc, &alias) {
+                    any = true;
+                    next.extend(made);
+                    continue;
+                }
                 let Some((rel, found)) = self.set_use(&st, &sc, &alias) else {
                     next.push((st, path, sc));
                     continue;
@@ -261,6 +268,114 @@ impl<'a> Walk<'a> {
                 return;
             }
         }
+    }
+
+    /// **A set measured from** (#183 F2): `distance(p, S)` in a bound on measurements, and `p
+    /// inside S.ends` (F7), each set given a hidden point of its own, keyed by the statement and
+    /// the set (`#{stmt}.m{k}`), where `S`'s body is applied (`inner coincident S`) — so its
+    /// bounds are the set's conditions, a term of the region it is measured in reads them
+    /// (`model::Target::Set`), and the measurement names the point in the set's place.  `None`
+    /// where the statement measures no set.
+    fn measured_sets(
+        &mut self,
+        st: &Stmt,
+        path: &[PathStep],
+        sc: &Scope,
+        alias: &BTreeMap<String, String>,
+    ) -> Option<Vec<(Stmt, Vec<PathStep>, Scope)>> {
+        let set_of = |me: &Self, name: &str| -> Option<(String, Vec<String>)> {
+            let segs: Vec<&str> = name.split('.').collect();
+            let r = Ref {
+                root: Name::new(segs[0]),
+                path: segs[1..].iter().map(|f| crate::syntax::Seg::Field(Name::new(*f))).collect(),
+                span: st.span,
+            };
+            let (abs, rest) = lookup_raw(&r, sc, &me.names, alias, me.units)?;
+            me.sets.contains_key(&abs).then_some((abs, rest))
+        };
+        // the sets the statement reads: a measurement's argument, or the operand `S.ends`
+        let mut sets: Vec<String> = Vec::new();
+        match &st.kind {
+            StmtKind::Measured(m) => {
+                for text in [&m.lhs, &m.rhs] {
+                    let Ok(parsed) = crate::expr::parse_in(text, self.units) else { continue };
+                    for (_, args) in parsed.body.measures() {
+                        for a in args {
+                            if set_of(self, &a).is_some_and(|(_, rest)| rest.is_empty()) && !sets.contains(&a) {
+                                sets.push(a);
+                            }
+                        }
+                    }
+                }
+            }
+            StmtKind::Relation(r) => {
+                let w = r.form.written()?;
+                let [_, s] = w.ops.as_slice() else { return None };
+                let ends = s.path.last().is_some_and(|f| matches!(f, crate::syntax::Seg::Field(n) if n.text == "ends"));
+                if !ends || crate::constraints::plane_side_word(&w.word.text).is_none() {
+                    return None;
+                }
+                let mut set = s.clone();
+                set.path.pop();
+                let text = crate::syntax::ref_text(&set);
+                set_of(self, &text).filter(|(_, rest)| rest.is_empty())?;
+                sets.push(text);
+            }
+            _ => return None,
+        }
+        if sets.is_empty() {
+            return None;
+        }
+        let mut out = Vec::new();
+        let mut named: BTreeMap<String, String> = BTreeMap::new();
+        for (k, name) in sets.iter().enumerate() {
+            let local = format!("#{}.m{k}", st.id.0);
+            let key = format!("{}{local}", sc.prefix());
+            self.names.insert(key.clone());
+            self.probes.push(key.clone());
+            let at = st.span;
+            let mut point = Decl::point(DeclName::Key(Name { text: key, span: Span::new(at.lo as usize, at.lo as usize) }), [0.0; 2], None);
+            point.seed = vec![0.7548776662, 0.5698402910, 0.4301597090];
+            point.seed_text = vec![None; 3];
+            out.push((Stmt { kind: StmtKind::Decl(point), ..st.clone() }, path.to_vec(), sc.clone()));
+            let segs: Vec<&str> = name.split('.').collect();
+            let set = Ref {
+                root: Name { text: segs[0].to_string(), span: at },
+                path: segs[1..].iter().map(|f| crate::syntax::Seg::Field(Name::new(*f))).collect(),
+                span: at,
+            };
+            let on = crate::syntax::Written {
+                word: Name { text: "coincident".to_string(), span: at },
+                fixity: Infix,
+                ops: vec![Ref::new(&local), set],
+                args: Vec::new(),
+                span: at,
+            };
+            let rel = Relation::of(RelationForm::Written(on));
+            // applied under a prefix of its own, so two sets one statement measures from bind
+            // their points apart
+            let mut usc = sc.clone();
+            usc.prefixes.insert(0, format!("{}#{}.m{k}.", sc.prefix(), st.id.0));
+            out.push((Stmt { kind: StmtKind::Relation(rel), ..st.clone() }, path.to_vec(), usc));
+            named.insert(name.clone(), local);
+        }
+        let mut st = st.clone();
+        match &mut st.kind {
+            StmtKind::Measured(m) => {
+                for text in [&mut m.lhs, &mut m.rhs] {
+                    *text = super::values::map_measured(text, |w| named.get(w).cloned());
+                }
+            }
+            StmtKind::Relation(r) => {
+                if let Some(w) = r.form.written_mut() {
+                    let local = named.values().next().expect("one set").clone();
+                    w.ops[1] = Ref::field(local, "ends");
+                }
+            }
+            _ => {}
+        }
+        out.push((st, path.to_vec(), sc.clone()));
+        Some(out)
     }
 
     /// One use of the set `abs`, operand `k` of the statement `st` (§6.21).

@@ -157,8 +157,9 @@ pub(super) fn constrain(
     probes: &mut Probes,
     diags: &mut Vec<Diag>,
 ) -> Option<u32> {
-    // **a region's point against a face** (#183 F1): a term of the region, read off the body
-    if let Some(made) = face_relation(sk, res, r, probes) {
+    // **a region's point against a face** (#183 F1), or where an edge ends (F7): a term of the
+    // region, read off the body
+    if let Some(made) = face_relation(sk, res, r, probes).or_else(|| ends_relation(sk, res, r, probes)) {
         match made {
             Ok((probe, t)) => probes.get_mut(&probe).expect("a probe's terms").push(t),
             Err(message) => {
@@ -1519,9 +1520,13 @@ pub(super) fn measured_term(
             return refuse("a bound on measurements reads one point".to_string());
         }
         probe = Some(p);
-        let Some(to) = ends[1 - at].clone() else {
+        let Some(mut to) = ends[1 - at].clone() else {
             return refuse(format!("`{}` names nothing to measure from", args[1 - at]));
         };
+        // a set measured from has a point of its own, whose bounds it is (#183 F2)
+        if let Some(q) = probe_at(&ends[1 - at]) {
+            to = Target::Set { probe: q as u32, terms: Vec::new() };
+        }
         if let Target::Ent(e) = &to {
             if !matches!(e.kind, EntKind::Point | EntKind::Line | EntKind::Axis | EntKind::Plane) {
                 return refuse(format!(
@@ -1648,4 +1653,66 @@ fn face_relation(sk: &Sketch, res: &Resolver, r: &Relation, probes: &Probes)
         }
     })();
     Some(made.map(|t| (probe, t)))
+}
+
+/// `p inside S.ends` (#183 F7), `S` a set measured from at its own point (`flatten::sets`): `p`
+/// on the side the edge `S` is runs on of each face it ends on.  `None` for any other relation.
+fn ends_relation(sk: &Sketch, res: &Resolver, r: &Relation, probes: &Probes)
+    -> Option<Result<(usize, crate::model::RegionTerm), String>> {
+    use crate::model::{RegionShape, RegionTerm, Target, TermNumber};
+    let w = r.form.written()?;
+    let [p, e] = w.ops.as_slice() else { return None };
+    let ends = matches!(e.path.as_slice(), [crate::syntax::Seg::Field(n)] if n.text == "ends");
+    if !ends {
+        return None;
+    }
+    let edge = res.lookup(e).filter(|x| x.kind == EntKind::Point && probes.contains_key(&x.i()))?;
+    let point = res.lookup(p).and_then(|x| follow(sk, x, &p.path).ok())
+        .filter(|x| x.kind == EntKind::Point && probes.contains_key(&x.i()))?;
+    let cmp = crate::constraints::plane_side_word(&w.word.text)?;
+    if cmp != crate::syntax::Cmp::Le {
+        return Some(Err("past where an edge ends is no region: say `inside S.ends`".to_string()));
+    }
+    let shape = RegionShape::Ends {
+        edge: Box::new(Target::Set { probe: edge.i() as u32, terms: Vec::new() }),
+    };
+    let t = RegionTerm { shape, cmp, lo: TermNumber::stated(0.0), hi: None, grow: None, name: String::new() };
+    Some(Ok((point.i(), t)))
+}
+
+/// The terms of the sets a region's terms measure from (#183 F2, F7), from the points their
+/// bodies were applied to, those points held (they stand for no place); `Err` for a set measured
+/// in terms of itself.
+pub(super) fn fill_sets(sk: &mut Sketch, terms: &mut [crate::model::RegionTerm], probes: &Probes,
+                        depth: usize) -> Result<(), String> {
+    use crate::model::{RegionShape, Target};
+    if depth > 16 {
+        return Err("a set measured from is measured in terms of itself".to_string());
+    }
+    let fill = |t: &mut Target, sk: &mut Sketch| -> Result<(), String> {
+        if let Target::Set { probe, terms } = t {
+            let mut inner = probes.get(&(*probe as usize)).cloned().unwrap_or_default();
+            if inner.is_empty() {
+                return Err("a set measured from states nothing of its point".to_string());
+            }
+            fill_sets(sk, &mut inner, probes, depth + 1)?;
+            for q in sk.own_params(EntRef::point(*probe as usize)) {
+                sk.params[q as usize].fixed = true;
+            }
+            *terms = inner;
+        }
+        Ok(())
+    };
+    for t in terms.iter_mut() {
+        match &mut t.shape {
+            RegionShape::Measured { of } => {
+                for (target, _) in of.iter_mut() {
+                    fill(target, sk)?;
+                }
+            }
+            RegionShape::Ends { edge } => fill(edge, sk)?,
+            _ => {}
+        }
+    }
+    Ok(())
 }

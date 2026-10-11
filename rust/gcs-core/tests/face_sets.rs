@@ -109,3 +109,57 @@ fn a_face_path_names_a_face() {
     let field = MaterialField::read(&e.sketch, ent(&e, "sn").i(), 1e-10);
     assert!(field.is_err_and(|m| m.contains("names no face")));
 }
+
+/// The edge where the near face meets the south face, and the faces' surfaces' meeting.
+const EDGE: &str = "crease := { q | q coincident block.near; q coincident block.south }\n\
+                    meeting := { q | q coincident block.near.surface; q coincident block.south.surface }\n";
+
+/// **The distance from a set** (#183 F2): a weld's reach, the points within 1 of the block's edge
+/// 40 long, a capsule `πr²L + 4πr³/3`.
+#[test]
+fn a_reach_from_an_edge_is_a_capsule() {
+    let e = solved(&format!("{BLOCK}{EDGE}weld := {{ p | distance(p, crease) <= 1mm }}\n\
+                             s := solid(weld)\n"));
+    let (lo, hi) = block_box(&e);
+    let field = MaterialField::read(&e.sketch, ent(&e, "s").i(), 1e-10).unwrap();
+    let want = PI * 40.0 + 4.0 / 3.0 * PI;
+    let got = field_volume(&field, lo.map(|x| x - 2.0), hi.map(|x| x + 2.0), 1.0 / 32.0);
+    assert!((got - want).abs() < 2e-3 * want, "{got} against {want}");
+}
+
+/// A clearance envelope: the points within 1 of the block, a set of six faces' sides, is the block
+/// grown (Steiner): `abc + 2(ab + bc + ca)r + πr²(a + b + c) + 4πr³/3`.
+#[test]
+fn a_clearance_is_a_set_grown() {
+    let e = solved(&format!("{BLOCK}held := {{ c | c inside block.near; c inside block.far; \
+                             c inside block.south; c inside block.north; c inside block.east; \
+                             c inside block.west }}\n\
+                             clear := {{ p | distance(p, held) <= 1mm }}\ns := solid(clear)\n"));
+    let (lo, hi) = block_box(&e);
+    let field = MaterialField::read(&e.sketch, ent(&e, "s").i(), 1e-10).unwrap();
+    let (a, b, c, r) = (40.0, 24.0, 12.0, 1.0);
+    let want = a * b * c + 2.0 * (a * b + b * c + c * a) * r + PI * r * r * (a + b + c)
+        + 4.0 / 3.0 * PI * r.powi(3);
+    let got = field_volume(&field, lo.map(|x| x - 2.0), hi.map(|x| x + 2.0), 1.0 / 8.0);
+    assert!((got - want).abs() < 2e-3 * want, "{got} against {want}");
+}
+
+/// The points whose nearest point of the faces' meeting is on their edge: the slab across the
+/// edge's 40, within a ball of 30 about its middle `π(2hR² − 2h³/3)`, h = 20; and the same slab as
+/// the side of each face the edge ends on it runs on (#183 F7).
+#[test]
+fn the_reach_of_an_edge_and_where_it_ends_are_one_slab() {
+    let e = solved(&format!("{BLOCK}{EDGE}c := point hint((20, 6, 0))\nball := std.Sphere(c, r: 30)\n\
+                             reach := {{ p | p inside ball; distance(p, crease) <= distance(p, meeting) }}\n\
+                             ended := {{ p | p inside ball; p inside crease.ends }}\n\
+                             sr := solid(reach)\nse := solid(ended)\n"));
+    let (r, h): (f64, f64) = (30.0, 20.0);
+    let want = PI * (2.0 * h * r * r - 2.0 * h.powi(3) / 3.0);
+    for name in ["sr", "se"] {
+        let field = MaterialField::read(&e.sketch, ent(&e, name).i(), 1e-10).unwrap();
+        assert!(field.side([20.0, 6.0, 25.0]) < 0.0 && field.side([45.0, 6.0, 0.0]) > 0.0, "{name}");
+        let got = field_volume(&field, [-10.0, -24.0, -30.0], [50.0, 36.0, 30.0], 30.0 / 128.0);
+        assert!((got - want).abs() < 2e-3 * want, "{name}: {got} against {want}");
+    }
+}
+

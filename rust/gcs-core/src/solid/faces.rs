@@ -246,3 +246,70 @@ impl Reading {
         Some((n, dot(n, frame.o) / self.body.mm))
     }
 }
+
+impl BodyFaces {
+    /// Face `fi`'s side and its gradient at `p` (model units; the gradient a unit vector).
+    pub fn side_grad(&self, fi: usize, p: V) -> (f64, V) {
+        let f = &self.loc.b.faces[fi];
+        let q = self.q(p);
+        let (s, g) = (f.surface.implicit(q) / self.mm, f.surface.gradient(q));
+        if f.reversed { (-s, scale(g, -1.0)) } else { (s, g) }
+    }
+
+    /// The vertices three groups of faces share: where a face of each meets.
+    pub fn vertices_among(&self, groups: &[&[usize]]) -> Vec<V> {
+        let of = |fs: &[usize]| -> BTreeSet<u32> {
+            fs.iter().flat_map(|&fi| self.loc.b.faces[fi].loops.iter().flatten())
+                .flat_map(|c| self.loc.b.edges[c.edge as usize].v).collect()
+        };
+        let mut common = of(groups[0]);
+        for g in &groups[1..] {
+            common = common.intersection(&of(g)).copied().collect();
+        }
+        common.into_iter().map(|v| scale(self.loc.b.vertices[v as usize].p, 1.0 / self.mm)).collect()
+    }
+
+    /// Where a run of edges ends: each vertex only one of `es` reaches (model units), with the
+    /// unit direction the edge runs from it.  A closed run has none.
+    pub fn run_ends(&self, es: &[u32]) -> Vec<(V, V, u32)> {
+        let mut count: std::collections::BTreeMap<u32, Vec<(u32, usize)>> = Default::default();
+        for &e in es {
+            let edge = &self.loc.b.edges[e as usize];
+            if edge.v[0] == edge.v[1] {
+                continue;
+            }
+            for (k, v) in edge.v.iter().enumerate() {
+                count.entry(*v).or_default().push((e, k));
+            }
+        }
+        count.into_iter().filter(|(_, at)| at.len() == 1).filter_map(|(v, at)| {
+            let (e, k) = at[0];
+            let edge = &self.loc.b.edges[e as usize];
+            let EdgeCurve::Curve(c) = &edge.curve else { return None };
+            let t = edge.t[k];
+            let mut d = c.tangent(t);
+            if k == 1 {
+                d = scale(d, -1.0);
+            }
+            let d = crate::space::normalised(d)?;
+            Some((scale(self.loc.b.vertices[v as usize].p, 1.0 / self.mm), d, v))
+        }).collect()
+    }
+
+    /// The faces at vertex `v` other than `not`.
+    pub fn faces_at(&self, v: u32, not: &[usize]) -> Vec<usize> {
+        self.loc.b.faces.iter().enumerate().filter(|(fi, f)| {
+            !not.contains(fi) && f.loops.iter().flatten().any(|c| self.loc.b.edges[c.edge as usize].v.contains(&v))
+        }).map(|(i, _)| i).collect()
+    }
+}
+
+impl Reading {
+    /// The side of the face whose patch is nearest `p`, and its gradient.
+    pub fn side_grad(&self, p: V) -> (f64, V) {
+        let near = self.faces.iter().copied()
+            .min_by(|&a, &b| self.body.patch_distance(a, p).total_cmp(&self.body.patch_distance(b, p)))
+            .expect("a reading names a face");
+        self.body.side_grad(near, p)
+    }
+}

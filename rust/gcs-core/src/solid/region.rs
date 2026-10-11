@@ -395,8 +395,19 @@ pub fn general(sk: &Sketch, solid: usize) -> Result<crate::solid::field::RegionF
                                 lo: 0.0, hi: None, grow: 0.0 });
                 continue;
             }
-            RegionShape::Ends { .. } => {
-                return Err(format!("{}: where an edge ends is not read yet", s.name));
+            RegionShape::Ends { ref edge } => {
+                let crate::model::Target::Set { terms: inner, .. } = edge.as_ref() else {
+                    return Err(format!("{}: where an edge ends is read of a set", s.name));
+                };
+                let set = super::conditions::SetDistance::of(sk, inner, &mut read)
+                    .map_err(|m| format!("{}: {m}", s.name))?;
+                let within = super::conditions::ends(&set).map_err(|m| format!("{}: {m}", s.name))?;
+                reads_faces = true;
+                // a run that ends nowhere is cut off by nothing
+                let f = move |p: V| { let v = within(p); if v == f64::NEG_INFINITY { -GATE } else { v } };
+                out.push(Term { measure: Measure::Signed(Signed(std::sync::Arc::new(f))), cmp: Cmp::Le,
+                                lo: 0.0, hi: None, grow: 0.0 });
+                continue;
             }
             RegionShape::Ball { center } => {
                 let c = point(center);
@@ -479,8 +490,22 @@ fn measured(sk: &Sketch, of: &[(crate::model::Target, f64)],
         return Err("a bound on measurements measures something".to_string());
     }
     let mut reads: Vec<(Dist, f64)> = Vec::new();
-    for (target, c) in of {
+    // a set compared with one it lies in: the larger read past the smaller (`conditions::Rest`)
+    let mut rest: Vec<Option<std::sync::Arc<super::conditions::Rest>>> = vec![None; of.len()];
+    for (ti, ci) in of {
+        for (j, (tj, cj)) in of.iter().enumerate() {
+            let (Target::Set { terms: e, .. }, Target::Set { terms: m, .. }) = (ti, tj) else { continue };
+            if *ci > 0.0 && (ci + cj).abs() <= 1e-12 * ci.abs() && rest[j].is_none() {
+                rest[j] = super::conditions::Rest::of(sk, e, m, read).map(std::sync::Arc::new);
+            }
+        }
+    }
+    for (k, (target, c)) in of.iter().enumerate() {
         let d: Dist = match target {
+            Target::Set { .. } if rest[k].is_some() => {
+                let r = rest[k].clone().expect("checked");
+                Box::new(move |p| r.distance(p))
+            }
             Target::Ent(e) => {
                 let m = match e.kind {
                     EntKind::Point => Measure::Point(sk.world_point(e.i())),
@@ -518,7 +543,10 @@ fn measured(sk: &Sketch, of: &[(crate::model::Target, f64)],
                 let surface = f.surface;
                 Box::new(move |p| r.distance(p, surface))
             }
-            Target::Set { .. } => return Err("a distance from a set is not measured yet".to_string()),
+            Target::Set { terms, .. } => {
+                let set = super::conditions::SetDistance::of(sk, terms, read)?;
+                Box::new(move |p| set.distance(p))
+            }
         };
         reads.push((d, c / n));
     }

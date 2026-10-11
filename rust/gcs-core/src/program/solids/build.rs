@@ -89,7 +89,11 @@ pub(super) fn build_solid(
                 say(Code::E080, st.span, m.into());
                 return None;
             };
-            let terms = probes.remove(&p.i()).unwrap_or_default();
+            let mut terms = probes.remove(&p.i()).unwrap_or_default();
+            if let Err(m) = super::super::relations::fill_sets(sk, &mut terms, probes, 0) {
+                say(Code::E040, st.span, m);
+                return None;
+            }
             if terms.is_empty() {
                 let m = "a solid is a region: a set whose body bounds a number, or a set its \
                          `inside` reads one of";

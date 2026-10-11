@@ -237,6 +237,20 @@ unshifted; face names matched by `faces`), **the stratum**: a body read by regio
 own terms (`readers_of`) is read with them taken out of every body (`without`, a cloned sketch).
 A region reading faces may have no support (`RegionField` with `None`): a cut needs none.
 `reads` pushes a read solid. `tests/face_sets.rs` is the gate.
+**The distance from a set** (#183 F2) and **where an edge ends** (F7): a set a measurement names,
+or `p inside S.ends`, gets a hidden point of its own (`sets::measured_sets`: key
+`{prefix}#{stmt}.m{k}`, a probe, `inner coincident S` applied under a prefix of its own so two
+sets of one statement bind apart); the measurement then names that point, elaborated as
+`Target::Set { probe, terms }` (`relations::ends_relation`: `RegionShape::Ends`), the terms filled
+and the point held when the solid is built (`relations::fill_sets`). Read by
+`solid::conditions::SetDistance`: points on two faces' patches are the boundary's shared edges, on
+three its vertices, on one its patch; any other conjunction (a face's side, `|side|` bounds, `on
+F.surface`, a distance from a point) is the nearest point by sequential projection onto the
+conditions linearised (each step a ≤3-active QP, exact). `d(p, E) <= d(p, M)` with `E` on the
+patches of the faces `M` is on the surfaces of is read as `d(p, E) − d(p, rest)` (`Rest`: `M`'s
+nearest point when off `E`, and where `E`'s run ends), the same points with a negative inside.
+`ends` is `max σ·side` over the faces at each end of the run (σ the side it runs on); a closed run
+ends nowhere. `edge` and `seam` are element keywords: a set may not be called so.
 **Distance from a set, offsets (§6.21, 0.64, #145 F4):** `p distance(d, side: outside|inside) S`
 (`distance` is a set use, `may_use`), `p inside(d) S` / `p outside(d) S` and `std.Offset(S, d)` are
 one bound on the signed distance from `S`'s surface (`Reach`: cmp toward the outside, whether
