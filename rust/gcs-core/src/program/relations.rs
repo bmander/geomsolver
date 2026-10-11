@@ -242,6 +242,16 @@ pub(super) fn constrain(
         };
         (ent(&a.point), toward, a)
     });
+    // what reads the operands' planes: a set's body (§6.21), its derivative along a chart moving
+    // its point out of any plane (only a set's body is stated as one)
+    let chart = r.along.as_ref().is_some_and(|a| matches!(a.toward, crate::syntax::AlongBy::Chart(_)));
+    let reader = if chart {
+        super::reading::Reader::Moved
+    } else if r.space {
+        super::reading::Reader::Set
+    } else {
+        super::reading::Reader::Drawn
+    };
     let r = match r
         .resolve(&|r| res.lookup(r).and_then(|e| follow(sk, e, &r.path).ok()).map(|e| e.kind))
     {
@@ -364,7 +374,7 @@ pub(super) fn constrain(
     }
     // a point drawn in several planes is read in the one its reader is drawn in (§6.7)
     super::reading::read_twins(sk, &mut args);
-    let (ckind, spec, mut args, left_out) = match super::reading::in_space(sk, ckind, &args) {
+    let (ckind, spec, mut args, left_out) = match super::reading::in_space(sk, ckind, &args, reader) {
         Ok(None) => (ckind, spec, args, left_out),
         Ok(Some((k, a, l))) => (k, k.spec(), a, l),
         Err((selector, message)) => {
@@ -623,8 +633,9 @@ fn region_term(sk: &Sketch, c: &Constraint, probe: usize, grow: Option<crate::mo
             let ends = |l: EntRef| [sk.lines[l.i()].p1 as usize, sk.lines[l.i()].p2 as usize];
             let (a, g) = (ent(0), ent(1));
             let (axis, seen) = if ends(g).contains(&probe) { (a, g) } else { (g, a) };
+            // the apex one point, though the axis drawn in a view takes its twin there (§6.7)
             let apex = ends(seen).into_iter().find(|&p| p != probe);
-            if apex != Some(ends(axis)[0]) {
+            if !apex.is_some_and(|p| sk.twinned(p, ends(axis)[0])) {
                 return Err("a cone's angle is seen from its axis's start: the line to the point \
                             begins where the axis does"
                     .to_string());
@@ -720,10 +731,12 @@ fn bound_of(
         _ => None,
     }));
     match ckind {
-        // an angle in a view is signed: bounded, it would be a half-plane, not a cone's wedge
+        // an angle written in a view is signed: bounded, it would be a half-plane, not a cone's
+        // wedge, which a set's body says (read in space, §6.21)
         CKind::Angle => {
-            return Err((at, "an angle bounds a region in space, where it is unsigned (a \
-                             cone's): in a view it is signed, and bounded would be a half-plane"
+            return Err((at, "an angle in a view is signed, and bounded would be a half-plane: a \
+                             region within an angle of a line is a cone's, `std.Cone`, whose \
+                             angle is read in space, unsigned"
                 .to_string()))
         }
         k if !k.boundable() => {

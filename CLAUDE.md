@@ -173,11 +173,21 @@ conjunction) is applied as written by `inside` and refused by `outside` (a union
 interval `outside`, several numbers and none (E040). A tangency to a region is E040, once, in
 `expand_set_uses`; the derivative pass drops whatever `states_bound`. `boundable` adds `PointLine3` (a cylinder in space) and `Angle3` (a cone), the latter
 read straight off its cosine (`Constraint::reading`); an angle in a view is refused (signed: a
-half-plane). `Constraint::reading_range` (`magnitude()` without a `side:`, or `Angle3`'s half
+half-plane), but a set's body never reads one (below). `Constraint::reading_range` (`magnitude()` without a `side:`, or `Angle3`'s half
 turn) keeps `Bound::aims` — the mirror, then two, four and eight times as far past the edge,
 stopping where one clamps; an interval's middle alone — within what the reading can be; `across`
 finds the measured point among the operands' own points too (a cone's angle is between two lines)
 and nudges a point off a stationary reading (the cone's axis). `tests/set_regions.rs` is the gate.
+**A set's body is read in space wherever its point is drawn** (§6.21, 0.65): `apply` marks every
+relation a set's application makes `Relation::space` (`Application::of_set`, every set use in
+`sets.rs`; no later stamp clears it, so a set inside a word's body keeps it), and `reading::in_space` reads it by `Reader::Set` — in space even with
+every operand in one plane where the plane's kind says which way (`Angle`, directed, becomes
+`Angle3`; a `side:`/`sense:` refused as across views), the plane's kind kept where it says the same
+(drags and `cgraph` keep their edges) — or `Reader::Moved`, a derivative along a chart, always in
+space (`Constraint::differentiable` refuses only a row with no kind there). So `std.Cone(ax)` about
+a line drawn in a view is both generators; a region term's cone apex is compared by
+`Sketch::twinned`; `lift::in_plane_angle` writes such an `Angle3` as the plane's `angle` with the
+pose's `sense:`, so a lifted program keeps the root.
 **A region is a solid (§6.9, 0.62, #145 F2/F3):** `blank := solid(R)`, R a set, is `SolidDef::Region
 { probe, terms }`. The flattener (`Walk::region_of`) rewrites `solid(R)`'s `Sweep::Body` over a set
 to `Sweep::Region { probe }`, declares the probe `{solid}#probe` (in space, held at a fixed
@@ -473,8 +483,7 @@ stock, plus `union`, minus what `cut`s it, within what `bound`s it. `SolidDef::B
 evaluate it. Union first; `cut` and `bound` commute; a swept solid may only be `cut`. `bound` and
 `union` (0.32) are body words, not names; `coincident` between two solids is refused. Spiral bevel:
 each member's blank is a region (`blank/member.sv`, `MemberBlank`: the pitch cone, a `std.Cone`
-about a line held in space so its half reads unsigned and left unseeded so it settles from the
-pose, grown by the addendum (`std.Offset`) and its outside by the back depth (`outside(d)`),
+about the member's axis, its half left unseeded so it settles from the pose, grown by the addendum (`std.Offset`) and its outside by the back depth (`outside(d)`),
 `std.Sphere`s through the face span, sized by the solved layout — a region term reads an unknown,
 `model::TermNumber`; `EndChamfer` puts its corners on the tip set, seeded off the cone line's mean
 point); `pair.sv` draws the same

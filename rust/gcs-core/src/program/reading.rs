@@ -1,8 +1,12 @@
 //! **Which plane a relation is read in** (`docs/planes-plan.md`): a relation whose points are
 //! all drawn in one plane is the 2D relation it always was — which, the lift being rigid, is the
-//! same statement as the one in space — and any other is the relation in space, over the points'
-//! places there.  No selector says so; the operands' planes do.  A point in space is in no plane,
-//! so a relation naming one is in space.
+//! same statement as the one in space but where the plane's says which way (an angle turns
+//! counter-clockwise, a `side:` is a side) — and any other is the relation in space, over the
+//! points' places there.  No selector says so; the operands' planes do.  A point in space is in
+//! no plane, so a relation naming one is in space.  **A set's body is the relation in space
+//! wherever its operands are drawn** (§6.21, `Relation::space`): in one plane it keeps the
+//! plane's kind only where that says the same, so a cone about a line drawn in a view is both
+//! its generators there.
 
 use crate::constraints::{Arg, CKind};
 use crate::model::{EntKind, EntRef, Sketch};
@@ -93,8 +97,21 @@ fn view_points(sk: &Sketch, kind: CKind, args: &[Arg]) -> Option<Vec<usize>> {
     Some(pts)
 }
 
-/// What a settled relation means once its operands' planes are read: `Ok(None)` is the kind as
-/// written, in one plane; `Ok(Some((k, args, left_out)))` the relation in space it is otherwise,
+/// What a relation is read as, written or a set's (§6.21).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(super) enum Reader {
+    /// Written: its operands' planes decide.
+    Drawn,
+    /// A set's body: in space, and in one plane the plane's kind where it says the same.
+    Set,
+    /// A set's body stated as its derivative along a chart: its point moves in space, out of
+    /// any plane, so the relation in space wherever it has one.
+    Moved,
+}
+
+/// What a settled relation means once its operands' planes are read — and, a set's, once what
+/// the plane's kind says beyond the one in space is: `Ok(None)` is the kind as written, in one
+/// plane; `Ok(Some((k, args, left_out)))` the relation in space it is otherwise,
 /// its arguments in `k`'s spec order with the inferred slots left for `io::seed_omitted`; `Err`
 /// a word that has no meaning in space, or a selector that says nothing there, as (E040 or
 /// E062, the message).
@@ -102,6 +119,7 @@ pub(super) fn in_space(
     sk: &Sketch,
     kind: CKind,
     args: &[Arg],
+    reader: Reader,
 ) -> Result<Option<(CKind, Vec<Arg>, Vec<bool>)>, (bool, String)> {
     // an ordinate is one statement in a view and in space — its form says which kernel reads it
     // (`constraints::OrdinateForm`) — but a direction said as a view's own word is an axis of
@@ -127,11 +145,19 @@ pub(super) fn in_space(
     // one plane, the 2D relation
     let one_plane =
         views.first().is_some_and(|v| v.is_some()) && views.iter().all(|v| *v == views[0]);
-    if pts.is_empty() || one_plane {
+    let chosen = |i: usize| matches!(args.get(i), Some(Arg::Str(w)) if !w.is_empty());
+    // the plane's kind says which way where it is an angle or names a side or a sense
+    // (`CKind::side_slot`), which a set's body, in space, does not
+    let says_which_way = kind == CKind::Angle || kind.side_slot().is_some_and(chosen);
+    let in_space = match reader {
+        Reader::Drawn => !one_plane,
+        Reader::Set => !one_plane || says_which_way,
+        Reader::Moved => true,
+    };
+    if pts.is_empty() || !in_space {
         return Ok(None);
     }
     let word = kind.operator().map(|(w, _)| w).unwrap_or("this");
-    let chosen = |i: usize| matches!(args.get(i), Some(Arg::Str(w)) if !w.is_empty());
     let k3 = match kind {
         CKind::Coincident => CKind::Coincident3,
         CKind::Distance => CKind::Distance3,
@@ -158,6 +184,9 @@ pub(super) fn in_space(
             }
             CKind::Angle3
         }
+        // a set's row in one plane with no kind in space stays the plane's, for its derivative
+        // to refuse (`Constraint::differentiable`)
+        _ if one_plane => return Ok(None),
         _ => {
             return Err((false, format!(
                 "`{word}` relates its operands in one plane, and these are not drawn in one: it \

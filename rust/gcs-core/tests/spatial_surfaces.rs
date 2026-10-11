@@ -97,8 +97,9 @@ fn the_words_on_a_cone_and_a_cylinder() {
     assert_eq!(settles("b := point hint((4, 4)) in std.front\nb coincident c"),
                CKind::PointLineDistance);
     assert_eq!(settles("c.about distance(c.r) l"), CKind::LineLine3);
-    // an angle at the apex
+    // an angle at the apex, in space within one view too: the page's turns one way (§6.21)
     assert_eq!(settles("a coincident k"), CKind::Angle3);
+    assert_eq!(settles("b := point hint((4, 4)) in std.front\nb coincident k"), CKind::Angle3);
     // and the words are gone: `cone` and `cylinder` are names like any other
     refused(&format!("{VIEWS}k := cone(axis: ax)\n"), "E103", "no component named `cone`", "cone");
 }

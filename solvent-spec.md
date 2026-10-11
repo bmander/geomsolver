@@ -1,6 +1,13 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.64 — October 2026**
+**Specification, Draft 0.65 — October 2026**
+
+**[0.65] A set's body is read in space wherever its point is drawn.** A set is points in space,
+so what its body states is the relation in space even where every operand is drawn in one view
+(§6.21): a cone about a line drawn in a view is both its generators there, its angle unsigned,
+and a region over one is no longer refused. In one view a body's distance or incidence says what
+it says in space; a side or a sense says nothing there and is **E040**. The hypoid's pitch cone is
+about the member's axis, with no point held in space to make its angle unsigned.
 
 **[0.64] A point's distance from a set, and offsets.** `p distance(d, side: outside) S` is `p` the
 signed distance `d` from the surface of a set `S`, `std.Offset(S, d)` the set `d` outside it, and
@@ -1773,6 +1780,15 @@ said where it is used, by two words:
   dependency as how the tangency is made, said nowhere. *Non-normative:* an implementation finds
   that dependency by rank, not by knowing the shape; a set's library body carries no shape.
 
+**A set's body is read in space wherever its point is drawn** **[0.65]**. A set is points in space,
+so each relation its body states is the relation in space (§9.2) even where every operand is drawn
+in one view — not that view's own: `q coincident std.Cone(ax, half: 30deg)`, `q` and `ax` both
+drawn in the front, puts `q` on either generator there, 30° from the axis in space, where the
+view's directed angle (§9.4) would turn one way only. A distance, an incidence and the rest say in
+one view what they say in space; `side:` and `sense:` say nothing in space and are **E040**, as
+across views. A body stated as its derivative at a point (`S1 tangent(at: m) S2`) is read where
+`m` stands in space, whatever view `m` is drawn in.
+
 Every relation a use states is **described as the statement wrote it** (`l tangent shaft`, §9.9),
 its placement and classes the statement's; a dimension the body states is drawn as a component
 body's is, and its derivative draws nothing. A set named anywhere else a reference stands —
@@ -1793,7 +1809,7 @@ out of any set: its body applied to `q`, as `coincident` applies it, with its **
 a bound — at most what it says (`inside`), at least (`outside`) — and every other statement as
 written. So `q inside std.Sphere(c, r: 5)` is within 5 of `c`, `q inside std.Cylinder(l, r: 2)`
 within 2 of the line, `q inside std.Cone(l, half: 30deg)` within 30° of its axis seen from its apex
-(read in space: in a view the cone is a ray and its angle signed, **E040**), and `q inside { p | p
+(in space, on either side of the axis in a view too **[0.65]**), and `q inside { p | p
 coincident P; p distance(5) o }` the disc. A region's own bound is kept by `inside` and turned
 round by `outside`. A region is met by conjunction too, so `blank := { p | p inside tip; p inside
 heel; p outside toe }` is the three at once, and **`outside` says a difference** for regions: inside
