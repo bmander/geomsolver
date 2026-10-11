@@ -3,6 +3,16 @@
 The record of #183, the epic to write chamfers and fillets in Solvent rather than in Rust. Each
 experiment adds its section here as it reports.
 
+**The rule every step is held to** (after X2; posted on #183): what a round or a chamfer *means*
+is written in Solvent, in `rust/lib/std.sv`. Rust grows only three kinds of things:
+- general language features, each with a use outside fillets;
+- general evaluators of sets, such as the field;
+- lowering entries, which recognise a shape a set already describes and build it exactly. They
+  never change what the set says, and the field gates each one.
+
+X1's meridian construction is such a lowering, built last. X2's classifier is the reference the
+Solvent definition must match.
+
 ## X0: the target programs (2026-10-11)
 
 Thirteen programs in the proposed syntax, in [`x0/`](x0/). **None of them parses yet**, and nothing
@@ -417,4 +427,116 @@ For §6.9, where L5 and L6 land:
   term with finding 4's reach, and a corner leaf is the three-face term.
 - **X4:** the stratum, and finding 5 of X0 (a round against a round over the same edges), are
   still open.
+
+## X3: rounds and chamfers in Solvent, on paper (2026-10-11)
+
+This replaces the issue's X3 (faces as sets, from the drawing), under the rule above.
+
+**Verdict: both words can be written in `std.sv` over nine general features**, none of them
+about fillets. Two of X2's rules needed restating, since a set cannot read a ball's centre or an
+operand's Boolean structure:
+- **The reach, said in the point's own distances,** does exactly as well as X2's: every closed
+  form, to the brute force's resolution.
+- **A chamfer is a bound on a sum of two distances.** It is the flat between planes and the cone
+  about an axis, and holds its closed forms.
+
+Two things X2 read off the bodies' Booleans become features in their own right:
+- which way an edge turns (F9);
+- the faces a run ends on (F7).
+
+The programs:
+- [`x3/std.sv`](x3/std.sv): `round` and `chamfer` as they would stand in `std.sv`, every line
+  needing a missing feature marked.
+- [`x3/uses.sv`](x3/uses.sv): each feature used where nothing is rounded.
+
+The checks are in `rust/gcs-core/tests/fillet_definition.rs`, slow tier
+(`the_reach_said_in_the_points_own_distances`, `a_chamfer_is_a_sum_of_two_distances`), and
+`fillet_meridian.rs` (`the_end_relief_as_a_sum_of_distances_bows_on_the_sphere`).
+
+### The features
+
+| | feature | in the words | outside fillets | step |
+|---|---|---|---|---|
+| F1 | a face is a set: its patch (`q coincident a`) and its surface (`a.surface`); `inside a` the surface's material side | the edge, the meeting, the wedge, the ball centres | a hole's centre on a face; a part standing on another's face; a dimension to a face | L1 |
+| F2 | distance from a set of several conditions: a curve (two surfaces met), a region | the opening (`std.Offset` of the centres), the reach | a weld's reach from its edge; a clearance envelope (Minkowski); a cutter's tool path | L2, L3 |
+| F3 | a bound on an expression of measurements in a set's body | the reach; a chamfer's flat | an ellipse by its foci; a Voronoi cell (nearer this bore than that); a cable's reach | new |
+| F4 | repetition over a body's faces | every pair of faces | a hole in every face; a claim or a class per face | new |
+| F5 | a word that makes solids and adds them to a body's terms; the body a face is of | `taken cut A.body` | library features in Solvent: a bore, a counterbore, a slot | new |
+| F6 | the stratum: a term that reads a body acts on the body as made by the terms it reads | a round reads its body's edges | drilling through whatever is there; a sheet's finished faces | X4 |
+| F7 | the faces an edge ends on | a run-out cut off by its face | a weld bead stopped where its edge stops | new |
+| F8 | repetition with a condition | corner terms, where all three pairs are named | every face facing up | new |
+| F9 | the material's angle at an edge | taken where convex, filled where concave | the sheet's crease rule; a claim that an edge is convex | new |
+
+Also needed: an offset of zero is the identity (X0's finding 10). Region solids over general sets
+are the field's (X5): the evaluator, not the language.
+
+### What the checks found
+
+| the reach | X2's ten closed forms | the oblique run-out, against the face's cut |
+|---|---|---|
+| X2's: the ball centre's nearest point of the faces' meeting is on the edge | all, to 1e-3 | +2.6e-2 (ends square) |
+| **Edge**: `distance(p, edge) <= distance(p, meeting)` | **all, identical to X2's** | +2.6e-2 (ends square) |
+| Faces: `distance(p, a) <= distance(p, a.surface)`, for each face | the tee's crotch −0.32, the root on the slope −0.10, the triangle −4.6e-3 | −0.11 |
+| **Edge, cut by the face it ends on** | | **−1.9e-4** |
+
+| chamfer as `distance(p, a) + distance(p, b) < d` | closed form | brute force |
+|---|---|---|
+| block chamfered all over (three flats meet at each corner) | `2d²(l + w + h) − 6d³` | −1.4e-4 |
+| block's top rim alone (a mitre) | `P d²/2 − Σ cot(θ/2) d³/3` | −3.6e-4 |
+| a boss's foot (concave, a cone) | `π (R + d/3) d²` | +5.2e-4 |
+
+### Findings
+
+1. **The reach can be said in Solvent.** "The point's nearest point where the faces' surfaces
+   meet lies on the edge" is a comparison of two distances (F2, F3). It reproduces every closed
+   form X2's ball-centre rule does.
+   - The other rule that is easy to say, "the point lies over each face", fails where a concave
+     corner is acute: its fill's sliver beside one face lies over the other face's neighbour.
+2. **Ending runs needs one more word.** Said in distances, a run ends square to its edge. At an
+   oblique run-out that hangs 2.6% past the face, in the air. Cut off by the face it ends on, it
+   is the stack's and OCCT's result (to 1.9e-4), with nothing carried past. That needs the faces
+   an edge ends on (F7).
+   - Without F7, the square end is the definition, and it differs from OCCT at oblique run-outs.
+3. **Which way an edge turns is not in a set's terms.** X2 read it off the Boolean that joined
+   the faces. A set cannot, and the reach does not separate the two forms: at a convex edge, the
+   concave form's wedge (outside both faces) is the opposite quadrant, whose cusp also touches the
+   edge. The material's angle at an edge (F9) separates them.
+   - It is geometry, not structure. A union always makes concave edges, but one operand's own
+     edges (an L-shaped prism's) can be either.
+4. **In a region's body every edge is convex.** A region is a conjunction, an intersection, so the
+   words there are one more bound, `p outside Run(…)`. No solid, no body (`x3/std.sv`). That is the
+   hypoid's case (#145 F5). X0's finding 11 holds: concave edges come from unions, which are
+   bodies.
+5. **A chamfer is a bound on a sum of two distances**, with its legs measured from the other face
+   (X1's finding 4): `distance(p, a)/l_b + distance(p, b)/l_a < 1`.
+   - Between planes it is the flat; about an axis it is the cone. It holds the block, the mitre
+     and the boss's foot.
+   - Where three chamfered edges meet, three flats meet in a point, so a chamfer needs no corner
+     term. Whether that is the convention to keep is for L7's comparison with OCCT.
+   - On the hypoid's sphere the sum's edge bows off the straight chamfer by 7e-5 mm at most (of a
+     0.2 mm leg), changing the chamfer's material by about ±6.7e-4. The recorded gear volumes
+     carry no end relief (X1's finding 3), so nothing recorded moves.
+6. **X0's finding 12 is settled.** A face path is its patch (`coincident`); `a.surface` is its
+   carrier; `inside a` is the surface's material side. Both readings are needed, by different
+   lines of `Run`.
+7. **A round against a round over the same edges** (X0's finding 5) is the stratum's question
+   (F6) and stays with X4. Under the rule a round reads the body as made by the terms that make
+   its faces, so two rounds over one edge never see each other's faces.
+
+### What X3 hands on: the language steps, in order
+
+1. **Faces as sets** (F1) and **the material's angle at an edge** (F9). Gate: a hole on a face,
+   a claim on an edge.
+2. **Distance from a set of several conditions** (F2): curves first (an edge), then regions.
+   Gate: a weld's reach from an edge, a clearance envelope.
+3. **Bounds on expressions of measurements in a set's body** (F3). Gate: an ellipse by its foci,
+   a Voronoi cell.
+4. **Repetition over faces, with a condition** (F4, F8), and **words that make solids** (F5),
+   with the stratum (F6, X4). Gate: a library bore written in Solvent.
+5. **The faces an edge ends on** (F7). Gate: a weld bead stopped at its edge's end.
+6. **`round` and `chamfer` in `std.sv`**, evaluated by the field (X5), held to X2's closed forms.
+7. **Lowering entries** (L7), each gated by the field: X1's meridian, then cylinders, tori,
+   spheres and planar flats.
+
+The hypoid's tip rounding and end relief come at step 6, written in a region's body.
 

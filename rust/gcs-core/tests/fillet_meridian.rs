@@ -562,3 +562,69 @@ fn the_end_relief_is_a_chamfer_from_the_other_face() {
                mm³ less ({of_chamfers:.3e} of the chamfers', {of_blank:.3e} of the blank)");
     assert!(short > 0.0 && short / taken < 1e-2, "{short} of {taken}");
 }
+
+/// X3 of #183: the end relief as a chamfer said in Solvent's own terms, the points of the blank
+/// nearer the tip and the sphere than `size` in all (`distance(p, tip) + distance(p, toe) <
+/// size`).  Its edge passes through the drawn chamfer's two ends (legs from the other face, X1's
+/// finding 3), and between them bows off the straight chamfer by the sphere's curvature: by how
+/// much, against the chamfer's own material.
+#[test]
+fn the_end_relief_as_a_sum_of_distances_bows_on_the_sphere() {
+    let e = fixtures::gear::read(include_str!("../../examples/spiral_bevel/blank/member.sv"),
+        &fixtures::gear::project());
+    let sk = &e.sketch;
+    let solid = entity(&e, "member.material");
+    let m = gcs_core::solid::region::meridian(sk, solid).unwrap();
+    let SolidDef::Region { terms, .. } = &sk.solids[solid].def else { panic!("a region") };
+    let tag = |ball: bool, cmp: Cmp| terms.iter().position(|t| {
+        matches!(t.shape, RegionShape::Ball { .. }) == ball && t.cmp == cmp
+            && matches!(t.shape, RegionShape::Ball { .. } | RegionShape::Cone { .. })
+    }).unwrap() as u32 + 1;
+    let (tip, toe, heel) = (tag(false, Cmp::Le), tag(true, Cmp::Ge), tag(true, Cmp::Le));
+    let size = 0.2;
+    let step = |t: u32| m.region.loops.iter().flatten().find(|s| s.tag == t).unwrap().seg;
+    let Seg::Line { a: ta, b: tb } = step(tip) else { panic!("the tip is a line") };
+    // signed distances, positive in the material (on a step's left)
+    let to_tip = |q: P| cross(sub(tb, ta), sub(q, ta)) / dist(ta, tb);
+    let mut worst_end: f64 = 0.0;
+    for (end, t) in [(toe, 100), (heel, 101)] {
+        let Seg::Arc { c, r, sweep, .. } = step(end) else { panic!("an end is an arc") };
+        let to_sphere = |q: P| sweep.signum() * (r - dist(q, c));
+        let one = chamfer(&m.region, &[tip], &[end], [Leg::FromOther(size); 2], t).unwrap();
+        let taken = turned(&m.region) - turned(&one);
+        let flat = one.loops.iter().flatten().find(|s| s.tag == t).unwrap().seg;
+        let (a, b) = (flat.start(), flat.end());
+        // the corner: where the tip meets the sphere, beyond the chord
+        let off = |q: &P| to_sphere(*q).abs();
+        let corner = [ta, tb].into_iter().min_by(|p, q| off(p).total_cmp(&off(q))).unwrap();
+        let mut n = unit(left(sub(b, a)));
+        if dot(n, sub(corner, a)) < 0.0 {
+            n = scale(n, -1.0);
+        }
+        // where the sum reaches `size` along the chord's normal, toward the corner
+        let edge_at = |u: f64| {
+            let q0 = add(a, scale(sub(b, a), u));
+            let f = |s: f64| { let q = add(q0, scale(n, s)); to_tip(q) + to_sphere(q) - size };
+            let (mut lo, mut hi) = (-size / 2.0, size / 2.0);
+            for _ in 0..100 {
+                let mid = 0.5 * (lo + hi);
+                if (f(mid) > 0.0) == (f(lo) > 0.0) { lo = mid } else { hi = mid }
+            }
+            (q0, 0.5 * (lo + hi))
+        };
+        worst_end = worst_end.max(edge_at(0.0).1.abs()).max(edge_at(1.0).1.abs());
+        // the material between the chord and the sum's edge, turned: a midpoint sum
+        let k = 2000;
+        let (mut bow, mut widest): (f64, f64) = (0.0, 0.0);
+        for i in 0..k {
+            let (q0, s) = edge_at((i as f64 + 0.5) / k as f64);
+            widest = widest.max(s.abs());
+            bow += 2.0 * PI * s * (q0[0] + 0.5 * s * n[0]) * dist(a, b) / k as f64;
+        }
+        eprintln!("end relief ({}): the chamfer takes {taken:.6} mm³; the sum's edge stands off \
+                   its chord {widest:.2e} mm at most, {:+.2e} of the chamfer's material",
+            if end == toe { "toe" } else { "heel" }, -bow / taken);
+        assert!(widest > 0.0 && widest < 1e-3 * size && bow.abs() < 1e-3 * taken);
+    }
+    assert!(worst_end < 1e-12, "the sum's edge leaves the legs' ends by {worst_end:e}");
+}

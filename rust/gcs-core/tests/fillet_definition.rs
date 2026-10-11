@@ -19,6 +19,10 @@
 //! - **(a + v):** (a), plus a term of three faces at each vertex where three named edges meet.
 //! - **(b), joint:** one term of every named face at once.
 //!
+//! **X3** (the words in Solvent, on paper) asks the same cases two more questions: whether the
+//! reach can be said in the point's own distances (`Reach`), as a set must say it, and whether a
+//! chamfer is a bound on a sum of two distances (`Round::chamfer`).
+//!
 //! Volumes are integrated over an octree pruned by each term's 1-Lipschitz bound (`Round::at`)
 //! and cut to a thirty-second of the radius, each last cell read at one point placed in it at
 //! random (by a hash of where it is).
@@ -341,6 +345,23 @@ struct Term {
     sides: Vec<Surf>,
     offsets: Option<Vec<Surf>>,
     sign: f64,
+    /// A chamfer's (X3): no ball, the flat through the points of each face its leg from the
+    /// other — `[on a, on b]`.
+    flat: Option<[f64; 2]>,
+}
+
+/// How far a term reaches.  X2's rule reads the ball's centre, which Solvent has no word for;
+/// X3 asks whether one stated by the point's own distances does as well.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Reach {
+    /// X2's: the faces' meeting point nearest the ball's centre is a point of the edge.
+    Ball,
+    /// The faces' meeting point nearest `p` is a point of the edge: `distance(p, edge) <=
+    /// distance(p, meeting)`, the edge `{ q | q coincident a; q coincident b }`.
+    Edge,
+    /// `p` lies over each face: its nearest point on each face's surface is on the face,
+    /// `distance(p, a) <= distance(p, a.surface)`.
+    Faces,
 }
 
 impl Term {
@@ -350,7 +371,63 @@ impl Term {
             if convex { s } else { s.flip() }
         }).collect();
         let offsets = sides.iter().map(|s| s.offset(r)).collect();
-        Term { faces, sides, offsets, sign: if convex { 1.0 } else { -1.0 } }
+        Term { faces, sides, offsets, sign: if convex { 1.0 } else { -1.0 }, flat: None }
+    }
+    /// A chamfer's term between faces `a` and `b`: the points nearer both than the flat through
+    /// the points of `a` its leg `legs[0]` from `b` and of `b` its leg `legs[1]` from `a` —
+    /// `g_a / legs[1] + g_b / legs[0] < 1`, the flat itself where the faces are planes.
+    fn flat(body: &Body, faces: [usize; 2], convex: bool, legs: [f64; 2]) -> Term {
+        let mut t = Term::new(body, faces.to_vec(), convex, legs[0].min(legs[1]));
+        t.offsets = None;
+        t.flat = Some(legs);
+        t
+    }
+    /// Whether the meeting of faces `k` and `l` at `x` is the body's edge: a step along each face
+    /// away from the other is on the boundary, material on its side.
+    fn edge_at(&self, body: &Body, x: V, k: usize, l: usize, size: f64, lifted: &[usize]) -> bool {
+        let s = |p: V| body.s_with(p, lifted);
+        // along the face, then a thousandth of that across it (a face is narrow by an acute
+        // corner)
+        let step = 1e-5 * size.max(1e-3);
+        let across = step * 1e-3;
+        [(k, l), (l, k)].iter().all(|&(a, b)| {
+            let (na, nb) = (unit(self.sides[a].grad(x)), self.sides[b].grad(x));
+            let along = sub(nb, scale(na, dot(nb, na)));
+            if norm(along) < 1e-9 {
+                return false;
+            }
+            let y = add(x, scale(unit(along), step));
+            let inward = unit(body.leaves[self.faces[a]].grad(x));
+            s(add(y, scale(inward, across))) > 0.0 && s(sub(y, scale(inward, across))) < 0.0
+        })
+    }
+    /// The term at `p`, its ball centred at `c` on the centres' carriers `active`, reaches by
+    /// `rule`.
+    fn reaches_by(&self, body: &Body, p: V, c: V, active: &[usize], lifted: &[usize], rule: Reach)
+        -> bool {
+        let at = match rule {
+            Reach::Ball if self.flat.is_none() => c,
+            Reach::Faces => {
+                return self.faces.iter().all(|&f| {
+                    let leaf = body.leaves[f];
+                    let Some(q) = leaf.foot(p) else { return false };
+                    let n = scale(unit(leaf.grad(q)), 1e-8 * norm(sub(p, q)).max(1e-3));
+                    let s = |x: V| body.s_with(x, lifted);
+                    s(add(q, n)) > 0.0 && s(sub(q, n)) < 0.0
+                });
+            }
+            _ => p,
+        };
+        let pair = if self.faces.len() == 2 { &[0, 1][..] } else { active };
+        match *pair {
+            [] | [_] => true,
+            [k, l] => {
+                let nearest = curve_nearest(at, self.sides[k], self.sides[l]).into_iter()
+                    .min_by(|a, b| norm(sub(*a, at)).total_cmp(&norm(sub(*b, at))));
+                nearest.is_some_and(|x| self.edge_at(body, x, k, l, norm(sub(at, x)), lifted))
+            }
+            _ => self.reaches(body, at, active, lifted),
+        }
     }
     /// Whether the ball centred at `c`, on the centres' carriers `active`, is the ball of a point
     /// of the body's edge where those faces meet: at the point of their meeting nearest `c`, each
@@ -404,6 +481,7 @@ struct Round {
     r: f64,
     lifted: Vec<usize>,
     clips: Vec<Surf>,
+    reach: Reach,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -471,7 +549,24 @@ impl Round {
                 }
             }
         }
-        Round { body, terms, r, lifted: Vec::new(), clips: Vec::new() }
+        Round { body, terms, r, lifted: Vec::new(), clips: Vec::new(), reach: Reach::Ball }
+    }
+
+    /// `A chamfer(d) B`, its legs measured from the other face (X1's finding 4): one flat per
+    /// named edge, and nothing at a corner.
+    fn chamfer(body: Body, a: &[usize], b: &[usize], d: f64) -> Round {
+        let mut round = Round::new(body, a, b, d, Candidate::Pairwise);
+        round.terms = round.terms.iter().map(|t| {
+            Term::flat(&round.body, [t.faces[0], t.faces[1]], t.sign > 0.0, [d, d])
+        }).collect();
+        round.reach = Reach::Edge;
+        round
+    }
+
+    /// The same, reaching by `rule`.
+    fn reaching(mut self, rule: Reach) -> Round {
+        self.reach = rule;
+        self
     }
 
     /// A run that ends at `ends` carried on past them along its carriers, and cut off by them.
@@ -491,6 +586,18 @@ impl Round {
             let mut v = (t.sign * s).min(clip);
             for side in &t.sides {
                 v = v.min(side.g(p));
+            }
+            if let Some([la, lb]) = t.flat {
+                let (ga, gb) = (t.sides[0].g(p), t.sides[1].g(p));
+                v = v.min((1.0 - ga / lb - gb / la) / (1.0 / lb + 1.0 / la));
+                if v <= reached {
+                    continue;
+                }
+                upper = upper.max(v);
+                if t.reaches_by(&self.body, p, p, &[0, 1], &self.lifted, self.reach) {
+                    reached = v;
+                }
+                continue;
             }
             // no ball on one face alone may cover the point: where the ball centre nearest `p` on
             // one face's offset is among the centres, `p` is within `r` of it, unless `p` stands
@@ -516,7 +623,9 @@ impl Round {
             upper = upper.max(lip);
             if lip > reached {
                 let reach = match &near {
-                    Some((_, c, active)) => t.reaches(&self.body, *c, active, &self.lifted),
+                    Some((_, c, active)) => {
+                        t.reaches_by(&self.body, p, *c, active, &self.lifted, self.reach)
+                    }
                     None => true,
                 };
                 if reach {
@@ -1040,4 +1149,194 @@ fn a_round_wider_than_its_face_is_no_full_round() {
     assert!(!pairs.takes(ridge) && joint.takes(ridge));
     // the plate's middle: the joint takes it all
     assert!(!pairs.takes([10.0, 10.0, 1.5]) && joint.takes([10.0, 10.0, 1.5]));
+}
+
+// -- X3: the definition said in the point's own distances --------------------------------------
+
+/// One of X2's cases: the body, the round's two face lists, its radius, the box its material is
+/// in, its closed form, and where a run is carried past and cut off.
+struct Case {
+    name: &'static str,
+    body: fn() -> Body,
+    a: Vec<usize>,
+    b: Vec<usize>,
+    r: f64,
+    lo: V,
+    hi: V,
+    want: f64,
+}
+
+fn block_case() -> Body { block([60.0, 40.0, 10.0]) }
+fn prism_case() -> Body { prism([[10.0, 5.0], [50.0, 5.0], [5.0, 20.0]], 10.0) }
+fn tray_case() -> Body { tray(6.0) }
+fn boss_case() -> Body { rounded_boss(4.0) }
+
+/// The solid pipe drilled from z = 0 up, halved at x = 0 (X2's).
+fn drilled() -> Body {
+    let pipe = Surf::Cyl { a: [0.0; 3], u: [1.0, 0.0, 0.0], r: 10.0, inside: true };
+    let bore = Surf::Cyl { a: [0.0; 3], u: [0.0, 0.0, 1.0], r: 6.0, inside: false };
+    Body {
+        leaves: vec![pipe, plane([-1.0, 0.0, 0.0], 0.0), plane([1.0, 0.0, 0.0], 30.0), bore,
+            plane([0.0, 0.0, 1.0], 0.0), plane([0.0, 0.0, -1.0], -20.0)],
+        tree: Node::And(vec![and(0..3), or(3..6)]),
+    }
+}
+
+/// The tee halved at x = 0 (X2's).
+fn tee() -> Body {
+    let pipe = Surf::Cyl { a: [0.0; 3], u: [1.0, 0.0, 0.0], r: 10.0, inside: true };
+    let stem = Surf::Cyl { a: [0.0; 3], u: [0.0, 0.0, 1.0], r: 6.0, inside: true };
+    Body {
+        leaves: vec![pipe, plane([-1.0, 0.0, 0.0], 30.0), plane([1.0, 0.0, 0.0], 30.0), stem,
+            plane([0.0, 0.0, -1.0], 0.0), plane([0.0, 0.0, 1.0], 25.0),
+            plane([-1.0, 0.0, 0.0], 0.0)],
+        tree: Node::And(vec![Node::Or(vec![and(0..3), and(3..6)]), Node::Leaf(6)]),
+    }
+}
+
+/// The wedge and its boss about (20, `cy`) (X2's).
+fn wedge(cy: f64) -> Body {
+    Body {
+        leaves: vec![plane([-1.0, 0.0, 0.0], 0.0), plane([1.0, 0.0, 0.0], 40.0),
+            plane([0.0, -1.0, 0.0], 0.0), plane([0.0, 1.0, 0.0], 24.0),
+            plane([0.0, 0.0, -1.0], 0.0), plane([0.25, 0.0, 1.0], 20.0),
+            Surf::Cyl { a: [20.0, cy, 0.0], u: [0.0, 0.0, 1.0], r: 6.0, inside: true },
+            plane([0.0, 0.0, -1.0], 0.0), plane([0.0, 0.0, 1.0], 30.0)],
+        tree: Node::Or(vec![and(0..6), and(6..9)]),
+    }
+}
+
+/// X2's cases with a closed form, each by (a + v).
+fn x2_cases() -> Vec<Case> {
+    let (tri, h) = ([[10.0, 5.0], [50.0, 5.0], [5.0, 20.0]], 10.0);
+    let (perimeter, area, cots) = triangle(tri);
+    let inradius = 2.0 * area / perimeter;
+    let steiner = |r: f64| {
+        let s = (inradius - r) / inradius;
+        let (a2, p2, h2) = (s * s * area, s * perimeter, h - 2.0 * r);
+        area * h - (a2 * h2 + (2.0 * a2 + p2 * h2) * r + PI * r * r / 2.0 * p2 + PI * r * r * h2
+            + 4.0 * PI * r * r * r / 3.0)
+    };
+    let (pr, run) = (1.5, (1.0 - PI / 4.0) * 1.5 * 1.5);
+    let size = [60.0, 40.0, 10.0];
+    vec![
+        Case { name: "block rounded all over", body: block_case, a: (0..6).collect(),
+            b: (0..6).collect(), r: 2.0, lo: [0.0; 3], hi: size,
+            want: 24000.0 - rounded_box(size, 2.0) },
+        Case { name: "block's top rim", body: block_case, a: vec![5], b: (0..6).collect(), r: 2.0,
+            lo: [0.0; 3], hi: size, want: mitred(200.0, 4.0, 2.0) },
+        Case { name: "triangular prism all over", body: prism_case, a: (0..5).collect(),
+            b: (0..5).collect(), r: 2.0, lo: [5.0, 5.0, 0.0], hi: [50.0, 20.0, h],
+            want: steiner(2.0) },
+        Case { name: "triangular prism's cap", body: prism_case, a: vec![4], b: (0..5).collect(),
+            r: 1.5, lo: [5.0, 5.0, 0.0], hi: [50.0, 20.0, h], want: mitred(perimeter, cots, 1.5) },
+        Case { name: "pocket rounded inside", body: tray_case, a: (6..11).collect(),
+            b: (6..11).collect(), r: pr, lo: [14.0, 9.0, -7.0], hi: [46.0, 31.0, 1.0],
+            want: 4.0 * run * (6.0 - pr) + run * (2.0 * (30.0 - 2.0 * pr) + 2.0 * (20.0 - 2.0 * pr))
+                + 4.0 * (pr * pr * pr - PI * pr * pr * pr / 6.0) },
+        Case { name: "pocket's floor", body: tray_case, a: vec![10], b: (6..11).collect(), r: pr,
+            lo: [14.0, 9.0, -7.0], hi: [46.0, 31.0, 1.0], want: mitred(100.0, 4.0, pr) },
+        Case { name: "rounded boss's foot", body: boss_case, a: (6..30).collect(), b: vec![5],
+            r: 2.0, lo: [12.0, 7.0, -1.0], hi: [48.0, 33.0, 3.0],
+            want: (1.0 - PI / 4.0) * 4.0 * (2.0 * 22.0 + 2.0 * 12.0) + root_ring(4.0, 2.0) },
+        Case { name: "half a bore's rim", body: drilled, a: vec![0], b: vec![3], r: 1.0,
+            lo: [-4.0, -10.0, 0.0], hi: [10.0, 10.0, 11.0], want: bore_rim(10.0, 6.0, 1.0) / 2.0 },
+        Case { name: "half a tee's crotch", body: tee, a: vec![0], b: vec![3], r: 2.0,
+            lo: [-4.0, -10.0, 4.0], hi: [10.0, 10.0, 14.0],
+            want: tee_crotch(10.0, 6.0, 2.0) / 2.0 },
+        Case { name: "half a boss's root on a slope", body: || wedge(0.0), a: vec![6], b: vec![5],
+            r: 2.0, lo: [10.0, -8.0, 9.0], hi: [30.0, 14.0, 21.0],
+            want: sloped_root(6.0, [20.0, 0.0], [20.0, 0.25], 2.0) / 2.0 },
+    ]
+}
+
+/// X2's reach reads the ball's centre, which Solvent cannot say.  Stated by the point's own
+/// distances instead — its nearest point of the faces' meeting on the edge (`Reach::Edge`), or
+/// its nearest point on each face's surface on the face (`Reach::Faces`) — each against X2's
+/// closed forms, and the oblique run-out against the face's cut.
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 50 s: X2's cases by two more rules")]
+fn the_reach_said_in_the_points_own_distances() {
+    let cases = x2_cases();
+    let got: Vec<[f64; 2]> = std::thread::scope(|scope| {
+        let handles: Vec<_> = cases.iter().map(|c| scope.spawn(move || {
+            [Reach::Edge, Reach::Faces].map(|rule| {
+                Round::new((c.body)(), &c.a, &c.b, c.r, Candidate::PairwiseVertices).reaching(rule)
+                    .volume(c.lo, c.hi)
+            })
+        })).collect();
+        handles.into_iter().map(|h| h.join().unwrap()).collect()
+    });
+    let mut off = [Vec::new(), Vec::new()];
+    for (c, g) in cases.iter().zip(&got) {
+        let rel = g.map(|v| (v - c.want) / c.want);
+        eprintln!("{}: Edge {:+.2e}, Faces {:+.2e}", c.name, rel[0], rel[1]);
+        for k in 0..2 {
+            if !agrees(g[k], c.want, TOL) {
+                off[k].push(c.name);
+            }
+        }
+    }
+    // the oblique run-out, against the face's cut
+    let (lo, hi) = ([10.0, -8.0, 9.0], [30.0, 14.0, 21.0]);
+    let flush = Round::new(wedge(3.0), &[6], &[5], 2.0, Candidate::Pairwise).carried_past(&[2])
+        .volume(lo, hi);
+    let by = [Reach::Edge, Reach::Faces].map(|rule| {
+        Round::new(wedge(3.0), &[6], &[5], 2.0, Candidate::Pairwise).reaching(rule).volume(lo, hi)
+    });
+    // the edge's own end, then cut off by the face it ends on (that face's side kept, nothing
+    // carried past)
+    let mut clipped = Round::new(wedge(3.0), &[6], &[5], 2.0, Candidate::Pairwise)
+        .reaching(Reach::Edge);
+    clipped.clips = vec![clipped.body.leaves[2]];
+    let clipped = clipped.volume(lo, hi);
+    let rel = |v: f64| (v - flush) / flush;
+    eprintln!("oblique run-out: cut by the face {flush:.6}; Edge {:+.2e}, Faces {:+.2e}, Edge cut \
+               by the face {:+.2e}", rel(by[0]), rel(by[1]), rel(clipped));
+    eprintln!("off by more than {TOL}: Edge {:?}, Faces {:?}", off[0], off[1]);
+    assert!(off[0].is_empty(), "the point's nearest point of the edge does as well as X2's");
+    assert!(off[1].contains(&"half a tee's crotch"), "lying over both faces loses a sliver");
+    assert!(by[0] > flush * (1.0 + 10.0 * TOL), "ended with its edge, the run hangs past the face");
+    assert!(agrees(clipped, flush, TOL), "cut by the face it ends on, it is the face's cut");
+}
+
+/// `A chamfer(d) B` as a bound on a sum of two distances (X3): the points of the wedge nearer
+/// both faces than `d` in all, `distance(p, a) + distance(p, b) < d` — through the points of each
+/// face `d` from the other, the legs X1 recommends.  Between planes it is the flat; about an
+/// axis (a boss's foot) the cone.  A block chamfered all over by inclusion and exclusion (three
+/// flats meet at each corner, nothing more), its top rim alone mitred, and a boss's foot.
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 20 s: three chamfers")]
+fn a_chamfer_is_a_sum_of_two_distances() {
+    let (size, d) = ([60.0, 40.0, 10.0], 2.0);
+    let all: Vec<usize> = (0..6).collect();
+    let boss = || Body {
+        leaves: {
+            let mut l = boxed([0.0, 0.0, -10.0], [60.0, 40.0, 0.0]);
+            l.push(Surf::Cyl { a: [30.0, 20.0, 0.0], u: [0.0, 0.0, 1.0], r: 8.0, inside: true });
+            l.push(plane([0.0, 0.0, -1.0], 0.0));
+            l.push(plane([0.0, 0.0, 1.0], 20.0));
+            l
+        },
+        tree: Node::Or(vec![and(0..6), and(6..9)]),
+    };
+    let cases: Vec<(&str, f64, f64)> = std::thread::scope(|scope| {
+        let all = &all;
+        let jobs = vec![
+            scope.spawn(move || ("block chamfered all over",
+                Round::chamfer(block(size), all, all, d).volume([0.0; 3], size),
+                2.0 * d * d * (size[0] + size[1] + size[2]) - 6.0 * d * d * d)),
+            scope.spawn(move || ("block's top rim chamfered",
+                Round::chamfer(block(size), &[5], all, d).volume([0.0; 3], size),
+                2.0 * (size[0] + size[1]) * d * d / 2.0 - 4.0 * d * d * d / 3.0)),
+            scope.spawn(move || ("boss's foot chamfered",
+                Round::chamfer(boss(), &[6], &[5], d).volume([20.0, 10.0, -1.0], [40.0, 30.0, 3.0]),
+                2.0 * PI * (8.0 + d / 3.0) * d * d / 2.0)),
+        ];
+        jobs.into_iter().map(|h| h.join().unwrap()).collect()
+    });
+    for (name, got, want) in cases {
+        eprintln!("{name}: closed form {want:.6}, {:+.2e}", (got - want) / want);
+        assert!(agrees(got, want, TOL), "{name}");
+    }
 }
