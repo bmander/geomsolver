@@ -228,6 +228,11 @@ export class SketchView {
   /** An extrusion is being sized, and this is where its number is on screen — the shell puts an
    *  editor there; nulls when there is none. */
   onExtent: (live: LiveExtent | null, at: [number, number] | null) => void = () => {};
+  /** **Orbit mode**: a press with the primary button — one finger, on a phone — turns the
+   *  workspace about rather than reaching the tool or the selection, so the view can be turned
+   *  with the one gesture a touch screen has.  View state, toggled from the workspace's corner;
+   *  a pinch still zooms and pans. */
+  orbitMode = false;
   /** The extrusion being sized, if any — see `extrudeAt`. */
   liveExtent: LiveExtent | null = null;
   /** The closed region under the pointer while the Extrude tool is down: what a click there

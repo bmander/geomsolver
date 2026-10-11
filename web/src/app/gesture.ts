@@ -292,6 +292,11 @@ export function onPointerDown(v: SketchView, e: PointerEvent): void {
     placeDimension(v);
     return;
   }
+  // in orbit mode the primary button turns the workspace, whatever is under it
+  if (v.orbitMode) {
+    v.gesture = orbitGesture(v, sp);
+    return;
+  }
   // the arrow of an extrusion being sized: taking hold of it sizes it
   if (onExtentArrow(v, sp)) {
     v.gesture = extentGesture(v);
@@ -626,6 +631,10 @@ function extentGesture(v: SketchView): Gesture {
 
 /** Cursor affordance: what a press here would grab. */
 export function hover(v: SketchView, sp: [number, number]): void {
+  if (v.orbitMode) {
+    v.canvas.style.cursor = 'grab';
+    return;
+  }
   // the Extrude tool shows what a click would extrude, and offers its arrow
   if (v.tool === 'extrude') {
     const grab = onExtentArrow(v, sp);

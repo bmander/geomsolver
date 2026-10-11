@@ -2041,3 +2041,18 @@ test('with a body selected an extrusion joins it, cuts it with ⌥, and cuts thr
   clickWith(view, 85, 5, { altKey: true });
   assert.ok(said.some((m) => /select the body/.test(m)), said.join('\n'));
 });
+
+test('in orbit mode a drag turns the workspace, whatever tool is down, and draws nothing', () => {
+  const view = docView('use std\nin std.front {\na := point hint((0, 0))\n}\n');
+  view.setTool('line');
+  view.orbitMode = true;
+  const before = { ...view.orbit };
+  const points = view.sketch.points.length;
+  drag(view, [200, 200], [260, 230]);
+  assert.notDeepEqual(view.orbit, before, 'the view turned');
+  assert.equal(view.sketch.points.length, points, 'the line tool drew nothing');
+  assert.equal(view.tool, 'line', 'the tool is still down for when orbit mode is put down');
+  view.orbitMode = false;
+  click(view, 10, 10);
+  assert.equal(view.sketch.points.length, points + 1, 'out of orbit mode the tool draws again');
+});

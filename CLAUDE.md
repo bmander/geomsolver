@@ -1656,8 +1656,11 @@ Conventions:
   orbits, middle or ⇧right-drag pans, the wheel zooms; a trackpad's pinch (ctrl-wheel, Safari's
   `gesturechange`) zooms and its scroll pans (`gesture::scrolled`), and two touch fingers pinch
   and pan (`touchNavigation`: a lone finger's press waits `TOUCH_HOLD_MS` or `TOUCH_SLOP_PX`, so
-  a pinch neither clicks a tool nor drags).  A flat document opens square on to the
-  front, one with a solid or off-front geometry from three quarters (`homeOrbit`);
+  a pinch neither clicks a tool nor drags).  **Orbit mode** (`SketchView.orbitMode`, the Orbit
+  button `o` in the workspace's lower-right corner, beside Delete) makes a primary-button press —
+  one finger on a phone — an orbit, whatever tool is down; a pinch still zooms and pans.  A flat
+  document opens square on to the front, one with a solid or off-front geometry from three
+  quarters (`homeOrbit`);
   `workspace::bounds` frames figures and solids.  The orbit is view state (never saved, exported,
   solved or undone).  `tests/workspace.rs` and `app.test.ts` are the gates.
 - The **glass box scene** (`overview.rs`) folds a multiview drawing into space: each view on its
