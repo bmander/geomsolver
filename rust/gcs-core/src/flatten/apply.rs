@@ -64,6 +64,12 @@ impl Application {
     pub(super) fn scope(&self) -> &Scope {
         &self.scope
     }
+
+    /// A number the body reads by a name only the walk writes (`#grow`), worked out where the
+    /// use is.
+    pub(super) fn give(&mut self, name: &str, value: Aff) {
+        self.scope.vals.insert(name.to_string(), value);
+    }
 }
 
 /// A reference standing for a name the application made under its prefix.

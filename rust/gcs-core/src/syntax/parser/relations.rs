@@ -154,7 +154,7 @@ impl<'a> P<'a> {
                     self.i += 2;
                     let span = Span::new(at.lo as usize, self.prev_hi());
                     let [(a, a_span), hi] = self.pair()?;
-                    out.push(OpArg::Bound { cmp: Cmp::In, span, hi: Some(hi) });
+                    out.push(OpArg::Bound { cmp: Cmp::In, span, hi: Some(hi), grow: None });
                     out.push(OpArg::Dim(a, a_span));
                 }
                 (Some(Tok::Ident(n)), Some(Tok::P(':'))) => {
@@ -185,7 +185,7 @@ impl<'a> P<'a> {
                     self.i += 2;
                     let cmp = if c == '>' { Cmp::Ge } else { Cmp::Le };
                     let span = Span::new(at.lo as usize, self.prev_hi());
-                    out.push(OpArg::Bound { cmp, span, hi: None });
+                    out.push(OpArg::Bound { cmp, span, hi: None, grow: None });
                     let (text, span) = self.raw_number()?;
                     out.push(OpArg::Dim(text, span));
                 }

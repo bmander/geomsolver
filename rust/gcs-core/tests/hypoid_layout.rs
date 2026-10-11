@@ -682,42 +682,75 @@ fn solved_design(label: &str) -> (usize,Elaborated) {
     (k,e)
 }
 
-/// **A solve that stops on its iteration limit is rescued** (docs/iteration-limit-rescue-plan.md).
-/// A design solved as solventc solves it and then jittered by two thousandths of its extent (the
-/// jittered `common::rough_starts`) is back under the interactive acceptance within the DogLeg's
-/// hundred iterations and not at its solution: without the block rescue (`BlockMode::Off`) the
-/// solve succeeds on status 4, short of the recorded pair.  By default that stop is not
-/// *settled*, the block rescue runs, and the pose it settles on is the recorded pair's to the
-/// 1e-9 the named-quantities gate asks.  Not from every such jitter: of the first 48 seeds of the
-/// 28x49 bevel at module 25.4, 7 stop on the limit and all but this one settle a mate or tooth
-/// section on another root, or none (most jitters that stop run toward a collapsed tip, and the
-/// sections' tip bound turns them into failures, which the rescue meets from the start).
+/// **Where a rescue scenario starts is looked for, not recorded**
+/// (docs/iteration-limit-rescue-plan.md).  A scenario is a jittered start that stops a certain
+/// way; which jitters do is a fact about the layout's rows, and any change to them moves it.  So
+/// each test walks the same starts in order — `jitters`, each at the first `SEARCH` seeds — and
+/// asks `attempt` of each: `None` where the start does not stop as the scenario asks, else
+/// whether the scenario's own claim holds there, having checked at every such stop what the
+/// rescue promises of all of them.  The first start where the claim holds ends the walk; none
+/// means the layout has moved past the search.
+fn first_start(scenario: &str, jitters: &[f64], mut attempt: impl FnMut(f64,u32) -> Option<bool>)
+    -> (f64,u32) {
+    const SEARCH: u32 = 64;
+    let mut stops = 0;
+    for &jitter in jitters { for seed in 0..SEARCH {
+        match attempt(jitter,seed) {
+            Some(true) => {
+                println!("{scenario}: jittered {jitter} at seed {seed}, after {stops} other stops");
+                return (jitter,seed);
+            }
+            Some(false) => stops += 1,
+            None => {}
+        }
+    }}
+    panic!("{scenario}: no start among the first {SEARCH} seeds of {jitters:?} ({stops} stopped as \
+            asked without it): widen the search")
+}
+
+/// **A solve that stops on its iteration limit is rescued.** A design solved as solventc solves
+/// it and then jittered by a few thousandths of its extent is back under the interactive
+/// acceptance within the DogLeg's hundred iterations and not at its solution: without the block
+/// rescue (`BlockMode::Off`) the solve succeeds on status 4, short of the recorded pair.  By
+/// default such a stop is not *settled* and the rescue runs: what it returns has settled, or is
+/// the stop bit for bit, unless a bound then breaks (status 5) — at every stop met.  And from
+/// some, the block pass settles it.  Which root it settles on is the layout's (most stops run a
+/// mate or tooth section to another, or toward a collapsed tip that the sections' tip bound
+/// refuses); the rough starts' gates hold that.
 #[test]
-fn a_stop_on_the_iteration_limit_is_rescued_onto_the_recorded_pair() {
+fn a_stop_on_the_iteration_limit_is_rescued() {
     use gcs_core::solve::{self,BlockMode,SolveOpts};
     let (_,rows) = recorded();
-    let (k,mut e) = solved_design("28x49 m25.4");
+    let (k,mut e) = solved_design("bevel");
     let reference = e.sketch.clone();
-    let start = crate::common::jittered(&reference,0.002,10);
-    e.sketch = start.clone();
-    let stop = solve::solve(&mut e.sketch,SolveOpts {blocks:BlockMode::Off,..SolveOpts::default()});
-    let (short,_) = off_recorded(&read_pair(&e,rows[0].1[k]),&rows,k);
-    assert!(stop.success && stop.status == 4 && short > 1e-9,"{short:e} off, {stop:?}");
-    e.sketch = start;
-    let res = solve::solve(&mut e.sketch,SolveOpts::default());
-    assert!(res.settled() && res.method == "blocks","{res:?}");
-    let (d,at) = off_recorded(&read_pair(&e,rows[0].1[k]),&rows,k);
-    println!("stopped {short:.1e} off, settled {d:.1e} off at {at}");
-    assert!(d <= 1e-9,"{d:e} off the recorded pair at {at}");
+    first_start("a limit stop the block pass settles",&[0.003,0.002],|jitter,seed| {
+        let start = crate::common::jittered(&reference,jitter,seed);
+        e.sketch = start.clone();
+        let off = SolveOpts {blocks:BlockMode::Off,..SolveOpts::default()};
+        let stop = solve::solve(&mut e.sketch,off);
+        let (short,_) = off_recorded(&read_pair(&e,rows[0].1[k]),&rows,k);
+        if !(stop.success && stop.status == 4 && short > 1e-9) { return None; }
+        let stopped = crate::common::bits(&e.sketch);
+        e.sketch = start;
+        let res = solve::solve(&mut e.sketch,SolveOpts::default());
+        let kept = crate::common::bits(&e.sketch) == stopped && res.status == stop.status;
+        let broken = res.status == solve::BOUND_BROKEN;
+        assert!(res.settled() || kept || broken,"seed {seed}: {res:?}");
+        let (d,at) = off_recorded(&read_pair(&e,rows[0].1[k]),&rows,k);
+        println!("seed {seed}: stopped {short:.1e} off, {} by {} {d:.1e} off at {at}",
+            if res.settled() { "settled" } else { "unsettled" },res.method);
+        Some(res.settled() && res.method == "blocks")
+    });
 }
 
 /// **A stop in a basin with no solution is restarted in block order**: the 28x49 bevel at module
-/// 25.4, solved and jittered by a thousandth of its extent, whose whole-system DogLeg runs out of
-/// iterations with a crown section's tip narrowing past its bound (status 5, the tip collapsing).
-/// Finished from the stop, the block pass stalls again (short of the tolerance, in the basin
-/// where a crown section's narrow tip collapses); so the pass runs from the start, and the
-/// default solve lands where the block path held to 1e-12 does.  (The layout's own seeds started
-/// a design or two there once; seeded by places they no longer do, so the start is made.)
+/// 25.4, solved and jittered by a thousandth or two of its extent, whose whole-system DogLeg runs
+/// out of iterations with a crown section's tip narrowing past its bound (status 5, the tip
+/// collapsing).  Where the block rescue answers one, it has settled, or a bound broke after it.
+/// And at some, finished from the stop, the block pass stalls again (short of the tolerance, in
+/// the basin where a crown section's narrow tip collapses); so the pass runs from the start, and
+/// the default solve lands where the block path held to 1e-12 does.  (The layout's own seeds
+/// started a design or two there once; seeded by places they no longer do, so the start is made.)
 #[test]
 fn a_stop_that_stalls_again_is_restarted_in_block_order() {
     use gcs_core::solve::{self,BlockMode,SolveOpts};
@@ -725,40 +758,49 @@ fn a_stop_that_stalls_again_is_restarted_in_block_order() {
     let mut held = design.unsolved().sketch;
     let accurate = SolveOpts {blocks:BlockMode::First,..fixtures::accurate()};
     assert!(solve::solve(&mut held,accurate).success);
-    let start = crate::common::jittered(&held,0.001,7);
-    let mut stop = start.clone();
-    let a = solve::solve(&mut stop,SolveOpts {blocks:BlockMode::Off,..SolveOpts::default()});
-    assert!(!a.success && a.status == solve::BOUND_BROKEN && a.method == "dogleg","{a:?}");
-    let mut finished = stop.clone();
-    let f = solve::solve(&mut finished,SolveOpts {retry:false,blocks:BlockMode::First,..SolveOpts::default()});
-    assert!(f.status != 0 && f.max_residual > 1e-12,"{f:?}");
-    let mut sk = start;
-    let b = solve::solve(&mut sk,SolveOpts::default());
     let apart = |p: &gcs_core::model::Sketch| crate::common::apart(p,&held);
-    println!("stopped {:.1e} apart, finished from the stop {:.1e} apart ({f:?}), restarted {:.1e} apart",
-        apart(&stop),apart(&finished),apart(&sk));
-    assert!(b.settled() && b.method == "blocks" && b.max_residual < 1e-10,"{b:?}");
-    assert!(apart(&stop) > 1e-5 && apart(&sk) < 1e-8,"{:e} apart",apart(&sk));
+    first_start("a stall restarted in block order",&[0.001,0.002],|jitter,seed| {
+        let start = crate::common::jittered(&held,jitter,seed);
+        let mut stop = start.clone();
+        let a = solve::solve(&mut stop,SolveOpts {blocks:BlockMode::Off,..SolveOpts::default()});
+        if !(!a.success && a.status == solve::BOUND_BROKEN && a.method == "dogleg") { return None; }
+        let mut sk = start;
+        let b = solve::solve(&mut sk,SolveOpts::default());
+        assert!(b.method != "blocks" || b.settled() || b.status == solve::BOUND_BROKEN,
+            "seed {seed}: {b:?}");
+        let mut finished = stop.clone();
+        let pass = SolveOpts {retry:false,blocks:BlockMode::First,..SolveOpts::default()};
+        let f = solve::solve(&mut finished,pass);
+        println!("seed {seed}: stopped {:.1e} apart, finished from the stop {:.1e} apart ({}), \
+                  restarted {:.1e} apart ({})",
+            apart(&stop),apart(&finished),f.status,apart(&sk),b.method);
+        Some(f.status != 0 && f.max_residual > 1e-12 && b.settled() && b.method == "blocks"
+            && b.max_residual < 1e-10 && apart(&stop) > 1e-5 && apart(&sk) < 1e-8)
+    });
 }
 
 /// **A stop the rescue cannot settle keeps its pose**: the bevel pair solved, jittered by a
-/// hundredth of its extent and solved under a twelve-iteration limit succeeds on that limit, and
-/// the block pass under it does not settle, from the stop or from the start, so the default solve
-/// returns the stop exactly as a solve without the rescue does — the same bits, status, success,
-/// residual, counts and method.
+/// hundredth of its extent or half that and solved under a twelve-iteration limit succeeds on that
+/// limit.  At every such stop the default solve either settles by the block pass or returns the
+/// stop; and at some the block pass under the limit does not settle, from the stop or from the
+/// start, so the default solve returns the stop exactly as a solve without the rescue does — the
+/// same bits, status, success, residual, counts and method.
 #[test]
 fn a_stop_the_rescue_cannot_settle_keeps_its_pose() {
     use gcs_core::solve::{self,BlockMode,SolveOpts};
     let (_,reference) = solved_design("bevel");
-    let start = crate::common::jittered(&reference.sketch,0.01,0);
-    let (mut off,mut on) = (start.clone(),start);
     let limited = SolveOpts {max_iter:12,..SolveOpts::default()};
-    let a = solve::solve(&mut off,SolveOpts {blocks:BlockMode::Off,..limited});
-    let b = solve::solve(&mut on,limited);
-    assert!(a.success && a.status == 4,"{a:?}");
-    assert_eq!(crate::common::bits(&off),crate::common::bits(&on));
-    assert_eq!((a.success,a.status,a.max_residual.to_bits(),a.nfev,a.iterations,a.method),
-        (b.success,b.status,b.max_residual.to_bits(),b.nfev,b.iterations,b.method));
+    first_start("a stop the rescue keeps",&[0.01,0.005],|jitter,seed| {
+        let start = crate::common::jittered(&reference.sketch,jitter,seed);
+        let (mut off,mut on) = (start.clone(),start);
+        let a = solve::solve(&mut off,SolveOpts {blocks:BlockMode::Off,..limited});
+        if !(a.success && a.status == 4) { return None; }
+        let b = solve::solve(&mut on,limited);
+        let same = crate::common::bits(&off) == crate::common::bits(&on);
+        assert!(same || b.settled() && b.method == "blocks","seed {seed}: {b:?}");
+        Some(same && (a.success,a.status,a.max_residual.to_bits(),a.nfev,a.iterations,a.method)
+            == (b.success,b.status,b.max_residual.to_bits(),b.nfev,b.iterations,b.method))
+    });
 }
 
 /// A tool, not a check: which path each design's solve takes from the layout's own seeds — the

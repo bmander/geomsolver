@@ -185,6 +185,15 @@ component Cone(about: line, half: Angle) := { p |
   about angle(half) g
 }
 
+// The set `S` offset by `d`: the points `d` outside its surface (§6.21) — a sphere's, a
+// cylinder's or a cone's grown by `d` — a set and nothing drawn.  `p inside std.Offset(S, d)` is
+// `p inside(d) S`, within `S` grown by `d`; a point on it is `p coincident tip`, its foot on `S`
+// found by the solve.  A cone's offset is a cone, its apex rounded by a ball where it grows.
+//
+//   tip := std.Offset(pitch, d: 2mm)
+//   region := { p | p inside tip; p outside(4mm) pitch }
+component Offset(S: group, d: Length) := { p | p distance(d, side: outside) S }
+
 // Two cones `k1` and `k2` touching at `m` with one tangent plane there, `m` on each beside it
 // (`m coincident k1`): every direction along one cone at `m` is along the other (`k1
 // tangent(at: m) k2`, §6.21).  Two equations.  What a hypoid's pitch cones do at the mean point.

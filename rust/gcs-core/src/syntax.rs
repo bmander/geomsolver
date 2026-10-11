@@ -1296,7 +1296,9 @@ pub enum OpArg {
     /// The number beside it is a **bound** (§9.6): `distance(>= 5)`, `distance(<= d)`, or the
     /// low end of `distance(in: (a, b))`, whose high end is `hi`.  `span` is the `>=` or `in:`
     /// written.  Outside a set body a bound is a branch choice: no row, checked on the solution.
-    Bound { cmp: Cmp, span: Span, hi: Option<(String, Span)> },
+    /// `grow` is an offset no source writes: a set's use (`p inside(d) S`, §6.21) puts it on a
+    /// cone's number, so the bound is on the distance from its surface (`model::RegionTerm`).
+    Bound { cmp: Cmp, span: Span, hi: Option<(String, Span)>, grow: Option<(String, Span)> },
 }
 
 /// Which way a bound runs (§9.6).  Closed, every one: a solution may stand on its edge.
@@ -1323,6 +1325,16 @@ impl Cmp {
     pub fn of(text: &str) -> Option<Cmp> {
         [Cmp::Ge, Cmp::Le, Cmp::In].into_iter().find(|c| c.text() == text)
     }
+
+    /// The other way: a bound on a measure, read on its negative.  `None` for an interval, which
+    /// is either side of it.
+    pub fn turned(self) -> Option<Cmp> {
+        match self {
+            Cmp::Ge => Some(Cmp::Le),
+            Cmp::Le => Some(Cmp::Ge),
+            Cmp::In => None,
+        }
+    }
 }
 
 /// An operator spelling retained through resolution, with operands and arguments
@@ -1344,6 +1356,14 @@ impl Written {
     pub fn bound(&self) -> Option<(Cmp, Option<&(String, Span)>)> {
         self.args.iter().find_map(|a| match a {
             OpArg::Bound { cmp, hi, .. } => Some((*cmp, hi.as_ref())),
+            _ => None,
+        })
+    }
+
+    /// The offset its bound carries, where a set's use put one (§6.21).
+    pub fn grow(&self) -> Option<&(String, Span)> {
+        self.args.iter().find_map(|a| match a {
+            OpArg::Bound { grow, .. } => grow.as_ref(),
             _ => None,
         })
     }

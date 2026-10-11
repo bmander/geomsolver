@@ -418,11 +418,15 @@ impl<'a> Walk<'a> {
                         }
                     }
                     crate::syntax::OpArg::Named(_, arg) => self.settle_arg(arg, vals, scope),
-                    crate::syntax::OpArg::Dim(text, span)
-                    | crate::syntax::OpArg::Bound { hi: Some((text, span)), .. } => {
+                    crate::syntax::OpArg::Dim(text, span) => {
                         self.settle_dim(text, *span, vals, scope)
                     }
-                    crate::syntax::OpArg::Ent(_) | crate::syntax::OpArg::Bound { .. } => {}
+                    crate::syntax::OpArg::Bound { hi, grow, .. } => {
+                        for (text, span) in hi.iter_mut().chain(grow.iter_mut()) {
+                            self.settle_dim(text, *span, vals, scope)
+                        }
+                    }
+                    crate::syntax::OpArg::Ent(_) => {}
                 }
             }
         }
