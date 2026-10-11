@@ -1109,9 +1109,10 @@ the line is the instance's `.about` (`axis` is an element's word, which a body c
   shaft` makes a line touch it. `shaft.about distance(shaft.r) l` states the touch directly, as
   their common perpendicular (the side read from the seed).
 - `gc := std.Cone(gax, half: 60deg)`: the apex is the axis's start, opening toward its end.
-  `p coincident gc` puts a point on the nappe the axis points into (one angle at the apex;
-  within the axis's own view it is the page's directed angle, so the generator counter-clockwise
-  of the axis); `l tangent gc` makes a line touch it.
+  `p coincident gc` puts a point on the nappe the axis points into (one angle at the apex, in
+  space wherever the point is drawn: within the axis's own view, either generator, the seed
+  picking); `l tangent gc` makes a line touch it. A set's body is always read in space (spec
+  §6.21), so a `side:` or `sense:` in one is an error.
 - `std.TangentCones(gc, pc, M)`: two cones share one tangent plane at M — `gc tangent(at: M)
   pc`, the library's name for it. State `M coincident gc` and `M coincident pc` beside it.
 - Leave `r` or `half` unbound (`half: hint(30deg)`) and it is an unknown of the drawing; a solve

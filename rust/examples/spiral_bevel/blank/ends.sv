@@ -90,12 +90,8 @@ preview {
     toe := blank.sphere.SphericalBoundary(std.origin, generator, span.toe)
     heel := blank.sphere.SphericalBoundary(std.origin, generator, span.heel)
   }
-  // the pitch cone, about a line held in space along the axis, and the tip 2mm outside it
-  far := point hint(at: foot)
-  far coincident ax
-  std.origin distance(10mm, along: ax) far
-  about := line(std.origin, far)
-  pitch := std.Cone(about)
+  // the pitch cone about the axis, and the tip 2mm outside it
+  pitch := std.Cone(ax)
   mean coincident pitch
   tip := std.Offset(pitch, d: 2mm)
   toe_end := EndChamfer(std.origin, span.toe, inner.toe, generator, tip, ax,
