@@ -599,9 +599,9 @@ fn analytic_ruled(a: &Seg,z: &Seg,e: V,outward: V,tol: f64) -> Option<(Surface,b
     }
 }
 
-/// A sheet slid along `frame.z`: `curve` (lying in the plane of `frame`'s `x` and `y`) extruded
-/// from height `v[0]` to `v[1]` as one face, bounded by the curve at both heights and the lines its
-/// ends slide along; its sense `C' × z`, as a net extruded linearly would have it.
+/// A sheet extruded along `frame.z`: `curve` (lying in the plane of `frame`'s `x` and `y`) from
+/// height `v[0]` to `v[1]` as one face, bounded by the curve at both heights and the lines its ends
+/// run along; its sense `C' × z`, as a net extruded linearly would have it.
 pub fn extruded_sheet(frame: Frame,curve: BSpline,[v0,v1]: [f64;2]) -> Result<Brep,String> {
     let [u0,u1] = curve.domain();
     let at = |h: f64| -> Curve { Curve::BSpline(Arc::new(BSpline {poles:curve.poles.iter().map(|&p| add(p,scale(frame.z,h))).collect(),..curve.clone()})) };

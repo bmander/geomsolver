@@ -433,9 +433,10 @@ marked `CurveE::extrusion`, the face in a view that stands where drawn. `p coinc
 flank` from any view is `CKind::PointOnExtrusion` (`FamilyKernel::Extrusion`, consts
 `kernels::EXTRUSION_FRAME` then the contact's; `Sketch::extrusion_frame`). The export builds a
 prism cutter's sheet the same way: `brep::sweep::extruded` (edges as lines/arcs, convex corners as
-points over their fans, `generate::cut_at`, Hermite spans, slid as one `Extrusion` face,
-`build::extruded_sheet`, so it meets the blank's walls along its slide in closed form;
-`Family::in_frame`), else traced (`sweep::traced` kept to compare). `tests/extruded_envelope.rs`, `rack_cut.rs`.
+points over their fans, `generate::cut_at`, Hermite spans, extruded as one `Extrusion` face,
+`build::extruded_sheet`, so it meets the blank's walls along it in closed form;
+`Family::in_frame`), else traced (`sweep::traced` kept to compare). `tests/extruded_envelope.rs`,
+`rack_cut.rs`.
 **Named envelopes:** `flank := envelope(source, under: generating, from: -35deg, to: 35deg)`: a
 zero-normal-velocity locus over a finite increasing roll interval (ABI kind 11).
 `GeneratedEnvelope` intersects it with two section equations via the shared DogLeg loop. A nonzero
@@ -636,12 +637,14 @@ intersections), `topo` (`Brep`: oriented uses with pcurves, degenerate poles; `c
 theorem), `query`, `ssi` (closed forms, else traced), `boolean` (split, arrange, classify,
 assemble), `mesh` (constrained Delaunay refined to a measured sag), `step` (AP214 with pcurves and
 seam curves), `recipe`. **Two surfaces one twist carries onto themselves meet in its orbits**
-(`twist`): every analytic surface is a curve turned about an axis, slid along a direction, or both
-(`Surface::twists`, a plane and a sphere lending one against another surface: `twist::shared`), and
-`ssi::intersect` crosses the two sections in the plane of orbits (`Surface::section`, `(ρ, z)`
-for a turn, square to a slide) and lifts each point to its circle or line; `ssi::same` reads a
-swept curve's poles in that plane too. A screw (orbits helices) has no surface kind yet: the
-flutes' sheets are fitted (`sweep::helical`). Two spline sections are traced. A traced pair is seeded where edges cross faces; between analytic
+(`twist`): every analytic surface is a curve swept by a twist, and the kernel's two are named for
+what they make, `Twist::Turn` (about an axis) and `Twist::Extrude` (along a direction); a cylinder
+and a plane are both (`Surface::twists`, a plane and a sphere lending one against another surface:
+`twist::shared`). `ssi::intersect` crosses the two sections in the plane of orbits
+(`Surface::section`: the meridian `(ρ, z)` of a turn, the plane square to an extrusion) and lifts
+each point to its circle or line; `ssi::same` reads a swept curve's poles in that plane too. A
+screw (orbits helices) has no surface kind yet: the flutes' sheets are fitted (`sweep::helical`).
+Two spline sections are traced. A traced pair is seeded where edges cross faces; between analytic
 surfaces `ssi::unseen` then searches one face for curves no edge reaches (cells proved clear by
 the signed distance's Lipschitz and second-order bounds, else beside a known curve, else seeded),
 refusing what it cannot resolve: an untraced meeting is never read as none (issue #58).

@@ -183,7 +183,7 @@ fn surfaces_meet_in_curves_on_both() {
             }
         }
     }
-    // an extrusion and what slides along it with it: a plane along the sweep, a parallel
+    // an extrusion and what extrudes along it with it: a plane along the sweep, a parallel
     // cylinder, meet it in lines along the sweep through where their sections cross its curve
     let lobe = cubic(&[[10.,0.,0.],[12.,8.,0.],[9.,13.,0.],[6.,14.,0.],[0.,10.,0.]],&[0.4]);
     let swept = Surface::Extrusion(f([0.,0.,0.],z,x),std::sync::Arc::new(Curve::BSpline(lobe.clone())));
@@ -205,7 +205,7 @@ fn surfaces_meet_in_curves_on_both() {
             }
         }
     }
-    // two extrusions along one direction slide together, but two spline sections have no closed
+    // two extrusions along one direction share it, but two spline sections have no closed
     // form; one along another direction shares no twist
     let shifted = Surface::Extrusion(f([1.,1.,0.],z,x),std::sync::Arc::new(Curve::BSpline(cubic(&lobe.poles.iter()
         .map(|p| [p[0]+1.,p[1]+1.,0.]).collect::<Vec<_>>(),&[0.4]))));
@@ -522,7 +522,7 @@ fn splines_swept_and_turned_are_their_closed_forms() {
     let (a2,mut a1) = (angle(t2),angle(t1));
     while a1 < a2 { a1 += TAU; }
     let arc = (rr*rr*(a1-a2)+rr*c[0]*(a1.sin()-a2.sin())-rr*c[1]*(a1.cos()-a2.cos()))/2.;
-    // (the rod slides along the plate's sweep with it, so its wall meets the spline side in lines)
+    // (the rod extrudes along the plate's sweep with it, so its wall meets the spline side in lines)
     let r = boolean(&b,&rod([c[0],c[1],0.],rr,[-1.,4.]),Op::Common,1e-9).unwrap();
     r.check(1e-8).unwrap();
     assert_eq!(kinds(&r,"traced"),0);

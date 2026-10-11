@@ -298,9 +298,9 @@ fn build(cut: &SweptCut,walks: &[Vec<Seg>],convex: &[Vec<bool>],extent: [f64;2],
     (say.stage)(&format!("`{name}`: the envelope's curve in {spans} spans, within {error:.2e} mm and {turned:.3} degrees of it at their \
         quarter points ({:?})",started.elapsed()));
     (say.mark)(Stage::Sheet);
-    // the Hermite spans as one cubic B-spline, a piece's parameter running with its roll, slid
-    // over the prism (an extrusion, carried onto itself along the prism as the blank's walls about
-    // a parallel axis are): knots of multiplicity three, the poles each span's Bézier's
+    // the Hermite spans as one cubic B-spline, a piece's parameter running with its roll, extruded
+    // over the prism (an `Extrusion`, carried onto itself along the prism as the blank's walls
+    // about a parallel axis are): knots of multiplicity three, the poles each span's Bézier's
     let mut knots = vec![0.;4];
     let mut poles: Vec<P> = vec![ends[0]];
     let mut u = 0.;

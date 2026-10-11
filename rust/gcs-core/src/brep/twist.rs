@@ -1,29 +1,32 @@
 //! The motions a surface is carried onto itself by, and the plane of its orbits. Every analytic
-//! surface here is a curve swept by a one-parameter group of rigid motions: turned about an axis
-//! (a revolution, cone, sphere, torus), slid along a direction (an extrusion), or both (a cylinder,
-//! a plane). Two surfaces one motion carries onto themselves meet in orbits of it — circles about
-//! the axis, lines along the slide — through the points where their sections cross in the plane
-//! of orbits: a meridian half-plane `(ρ, z)` for a turn, the plane square to a slide. So two
-//! surfaces sharing a motion meet in closed form wherever their sections do (`ssi::intersect`),
-//! and are one surface where their sections are one curve (`ssi::same`).
+//! surface here is a curve swept by a one-parameter group of rigid motions — a twist — and the two
+//! the kernel builds with are named for what they make: a **turn** about an axis (a revolution,
+//! cone, sphere, torus) and an **extrusion** along a direction (an `Extrusion`); a cylinder and a
+//! plane are both. Two surfaces one motion carries onto themselves meet in orbits of it — circles
+//! about the axis, lines along the extrusion — through the points where their sections cross in
+//! the plane of orbits: the meridian half-plane `(ρ, z)` of a turn, the plane square to an
+//! extrusion. So two surfaces sharing a motion meet in closed form wherever their sections do
+//! (`ssi::intersect`), and are one surface where their sections are one curve (`ssi::same`).
 //!
-//! A screw (a turn advancing along its axis) is the group between the two, whose orbits are
-//! helices; no surface kind is swept by one yet.
+//! A screw (a turn advancing along its axis; the turn its pitch 0, the extrusion its pitch
+//! without end) is the twist between the two, whose orbits are helices; no surface kind is swept by
+//! one yet.
 #[allow(unused_imports)]
 use crate::fmath::Det;
 use super::geom::{Curve,Frame,Surface,V};
 use crate::space::{add,cross,dot,norm,scale,sub};
 use std::sync::Arc;
 
-/// A one-parameter group of rigid motions, and the coordinates of the plane of its orbits.
+/// A one-parameter group of rigid motions, and the coordinates of the plane of its orbits: one of
+/// the two degenerate twists, each by its own name.
 #[derive(Clone,Copy,Debug,PartialEq)]
 pub enum Twist {
     /// Turns about the axis through `o` along `z`: a point's orbit is a circle about the axis, its
     /// section `(ρ, h)`, distance from the axis and height along it from `o`.
     Turn(Frame),
-    /// Slides along `z`: a point's orbit is a line along `z`, its section `(x, y)` in the plane
+    /// Extrudes along `z`: a point's orbit is a line along `z`, its section `(x, y)` in the plane
     /// through `o` square to `z`.
-    Slide(Frame),
+    Extrude(Frame),
 }
 
 /// A surface's section in the plane of a twist's orbits, in its coordinates.
@@ -38,7 +41,7 @@ pub enum Section {
 }
 
 impl Twist {
-    pub fn frame(&self) -> &Frame { match self { Twist::Turn(f) | Twist::Slide(f) => f } }
+    pub fn frame(&self) -> &Frame { match self { Twist::Turn(f) | Twist::Extrude(f) => f } }
     /// Where `p`'s orbit crosses the plane of orbits.
     pub fn section(&self,p: V) -> [f64;2] {
         match self {
@@ -47,17 +50,17 @@ impl Twist {
                 let h = dot(q,f.z);
                 [norm(sub(q,scale(f.z,h))),h]
             }
-            Twist::Slide(f) => { let q = sub(p,f.o); [dot(q,f.x),dot(q,f.y)] }
+            Twist::Extrude(f) => { let q = sub(p,f.o); [dot(q,f.x),dot(q,f.y)] }
         }
     }
     /// Whether the plane of orbits holds `q` (`ρ ≥ −tol` for a turn).
     pub fn reaches(&self,q: [f64;2],tol: f64) -> bool { !matches!(self,Twist::Turn(_)) || q[0] >= -tol }
     /// The orbit through the section's point `q`: a circle about the axis (none within `tol` of
-    /// it, where the orbit is a point), or a line along the slide.
+    /// it, where the orbit is a point), or a line along the extrusion.
     pub fn orbit(&self,[a,b]: [f64;2],tol: f64) -> Option<Curve> {
         match self {
             Twist::Turn(f) => (a > tol).then(|| Curve::Circle(Frame::about(add(f.o,scale(f.z,b)),f.z),a)),
-            Twist::Slide(f) => Some(Curve::Line {p:add(f.o,add(scale(f.x,a),scale(f.y,b))),d:f.z}),
+            Twist::Extrude(f) => Some(Curve::Line {p:add(f.o,add(scale(f.x,a),scale(f.y,b))),d:f.z}),
         }
     }
 }
@@ -74,15 +77,15 @@ impl Section {
 }
 
 impl Surface {
-    /// The twists this surface alone fixes and is carried onto itself by: turns about its axis,
-    /// slides along its generators. A plane and a sphere are carried by more than they fix, so
+    /// The twists this surface alone fixes and is carried onto itself by: the turn about its axis,
+    /// the extrusion along its generators. A plane and a sphere are carried by more than they fix, so
     /// they lend a twist only against another surface (`shared`).
     pub fn twists(&self) -> Vec<Twist> {
         let f = *self.frame();
         match self {
-            Surface::Cylinder(..) => vec![Twist::Turn(f),Twist::Slide(f)],
+            Surface::Cylinder(..) => vec![Twist::Turn(f),Twist::Extrude(f)],
             Surface::Cone(..) | Surface::Torus(..) | Surface::Revolution(..) => vec![Twist::Turn(f)],
-            Surface::Extrusion(..) => vec![Twist::Slide(f)],
+            Surface::Extrusion(..) => vec![Twist::Extrude(f)],
             Surface::Plane(_) | Surface::Sphere(..) | Surface::Blend(..) | Surface::BSpline(..) => vec![],
         }
     }
@@ -107,18 +110,18 @@ impl Surface {
                     Surface::Extrusion(..) | Surface::Blend(..) | Surface::BSpline(..) => None,
                 }
             }
-            (Twist::Slide(_),Surface::Plane(_)) => (dot(f.z,z).abs() <= 1e-12).then(|| {
+            (Twist::Extrude(_),Surface::Plane(_)) => (dot(f.z,z).abs() <= 1e-12).then(|| {
                 let w = cross(z,f.z);
                 let w = scale(w,1./norm(w));
                 let [p,q] = [f.o,add(f.o,w)].map(|x| t.section(x));
                 Section::Line {p,d:[q[0]-p[0],q[1]-p[1]]}
             }),
-            (Twist::Slide(_),Surface::Cylinder(_,r)) => aligned.then(|| Section::Circle {c:t.section(f.o),r:*r}),
-            (Twist::Slide(_),Surface::Extrusion(_,c)) if aligned => match &**c {
+            (Twist::Extrude(_),Surface::Cylinder(_,r)) => aligned.then(|| Section::Circle {c:t.section(f.o),r:*r}),
+            (Twist::Extrude(_),Surface::Extrusion(_,c)) if aligned => match &**c {
                 Curve::BSpline(b) => Some(Section::Spline(b.clone())),
                 _ => None,
             },
-            (Twist::Slide(_),_) => None,
+            (Twist::Extrude(_),_) => None,
         }
     }
 }

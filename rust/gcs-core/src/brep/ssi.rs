@@ -1,9 +1,10 @@
 //! Where two surfaces meet, in closed form where it has one: two planes in a line; two surfaces
-//! one twist carries onto themselves (`twist::shared`: turned about one axis, or slid along one
-//! direction) in its orbits, circles about the axis or lines along the slide, through where their
-//! sections cross in the plane of orbits; a plane and a cylinder otherwise in an ellipse; a plane
-//! square to an extrusion in its curve. The rest is left to be traced (`Ssi::Traced`) from seeds,
-//! and between analytic surfaces a curve no seed reaches is searched for (`unseen`).
+//! one twist carries onto themselves (`twist::shared`: a turn about one axis, or an extrusion along
+//! one direction) in its orbits, circles about the axis or lines along the extrusion, through
+//! where their sections cross in the plane of orbits; a plane and a cylinder otherwise in an
+//! ellipse; a plane square to an extrusion in its curve. The rest is left to be traced
+//! (`Ssi::Traced`) from seeds, and between analytic surfaces a curve no seed reaches is searched
+//! for (`unseen`).
 #[allow(unused_imports)]
 use crate::fmath::Det;
 use super::geom::{Curve,Frame,Surface,V};
@@ -134,7 +135,7 @@ pub fn same(a: &Surface,b: &Surface,tol: f64) -> bool {
         // sweep, or turned about the axis, a B-spline's poles are where they were with that
         // motion taken out: in the twist's section)
         (Surface::Extrusion(_,c),Surface::Extrusion(_,d)) => parallel
-            && same_curve(&c,&d,tol,&|p| { let [x,y] = Twist::Slide(*f).section(p); [x,y,0.] }),
+            && same_curve(&c,&d,tol,&|p| { let [x,y] = Twist::Extrude(*f).section(p); [x,y,0.] }),
         (Surface::Revolution(_,c),Surface::Revolution(_,d)) => parallel && on_axis
             && same_curve(&c,&d,tol,&|p| { let [x,y] = Twist::Turn(*f).section(p); [x,y,0.] }),
         _ => false,
