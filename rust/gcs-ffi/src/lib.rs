@@ -4272,27 +4272,24 @@ pub unsafe extern "C" fn gcs_elab_add_datum(h: *mut Elaborated, s: *mut Sketch, 
     })
 }
 
-/// Sketch on a face, `{solid, face, at?: [x, y, z], name?}` — a plane lying on face `face` of
-/// object `solid`, seeded where the eye's ray met it on the live drawing `s`:
-/// `edit::sketch_on_face`.
+/// Sketch on a face of object `solid`, `{face, at?: [x, y, z], name?}` — a plane lying on face
+/// `face`, seeded where the eye's ray met it on the live drawing `s`: `edit::sketch_on_face`.
 #[no_mangle]
-pub unsafe extern "C" fn gcs_elab_sketch_on_face(h: *mut Elaborated, s: *mut Sketch,
+pub unsafe extern "C" fn gcs_elab_sketch_on_face(h: *mut Elaborated, s: *mut Sketch, solid: i32,
                                                  ptr: *const u8, len: usize) -> *mut u8 {
     guard(std::ptr::null_mut(), move || {
         let v = as_json(ptr, len);
-        let solid = v.get("solid").map(|x| x.as_f64()).unwrap_or(-1.0);
         let face = v.get("face").map(|x| x.as_str().to_string()).unwrap_or_default();
         let at = v.get("at").and_then(|a| match a.arr() {
             [x, y, z] => Some([x.as_f64(), y.as_f64(), z.as_f64()]),
             _ => None,
         });
         let name = v.get("name").map(|x| x.as_str().to_string());
-        if solid < 0.0 {
+        let Ok(solid) = usize::try_from(solid) else {
             set_error("no solid to sketch on");
             return std::ptr::null_mut();
-        }
-        out_edit(gcs_core::edit::sketch_on_face(&*h, sk(s), solid as usize, &face, at,
-                                                name.as_deref()))
+        };
+        out_edit(gcs_core::edit::sketch_on_face(&*h, sk(s), solid, &face, at, name.as_deref()))
     })
 }
 

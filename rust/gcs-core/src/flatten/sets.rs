@@ -174,11 +174,6 @@ impl<'a> Walk<'a> {
             .enumerate()
             .filter_map(|(i, r)| match lookup_raw(r, sc, &self.names, alias, self.units) {
                 Some((abs, rest)) if rest.is_empty() && self.sets.contains_key(&abs) => Some((i, abs)),
-                // a face of a solid, made a set under its whole path (`faces`)
-                Some((abs, rest)) if !rest.is_empty() => {
-                    let face = format!("{abs}.{}", rest.join("."));
-                    self.sets.contains_key(&face).then_some((i, face))
-                }
                 _ => None,
             })
             .collect();
@@ -546,7 +541,7 @@ fn makes_points(lit: &SetLit) -> Option<String> {
 
 /// A relation a set's use states, written as the source would: its word and where the word is
 /// said, its fixity, operands and parentheses, and the statement's span.
-fn relation(
+pub(super) fn relation(
     (word, at): (&str, Span),
     fixity: crate::constraints::Fixity,
     ops: Vec<Ref>,

@@ -161,11 +161,10 @@ impl<'a> P<'a> {
                     let name = Name { text: n, span: self.here() };
                     self.i += 2;
                     // a direction is a word (`along: x`) or what it names (`along: std.x`): a
-                    // word of the table is a word, unless it opens a path — as is a tangency's
-                    // point where it is a path, `tangent(at: v1.origin)` (a bare `at: start` is
-                    // the word's selector, and a bare point is read as a word by its reader)
-                    let point = name.text == "at" && word == "tangent" && self.path_ahead();
-                    let v = if point || (name.text == "along" && self.reference_ahead()) {
+                    // word of the table is a word, unless it opens a path — and no selector word
+                    // is a path, so a path is a reference whatever its key (`at: v1.origin`)
+                    let along = name.text == "along" && self.reference_ahead();
+                    let v = if self.path_ahead() || along {
                         Arg::Ref(self.refr()?)
                     } else {
                         self.sel_value()?

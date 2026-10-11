@@ -28,9 +28,7 @@ pub fn carrier(sk: &Sketch, solid: usize, path: &str) -> Result<Carrier, String>
     let mut steps = through.iter();
     loop {
         let s = &sk.solids[at];
-        let SolidDef::Body { stock, on, through: cut, bound } = &s.def else { break };
-        let leaf = |o: &&u32| sk.solids[**o as usize].name.rsplit('.').next();
-        let operands = || std::iter::once(stock).chain(on).chain(cut).chain(bound);
+        let SolidDef::Body { stock, .. } = &s.def else { break };
         if sk.solids[*stock as usize].name == s.name {
             at = *stock as usize;
             continue;
@@ -38,7 +36,8 @@ pub fn carrier(sk: &Sketch, solid: usize, path: &str) -> Result<Carrier, String>
         let Some(seg) = steps.next() else {
             return Err(format!("`{path}` names no face: `{}` is a body", s.name));
         };
-        at = *operands().find(|o| leaf(o) == Some(*seg))
+        let leaf = |o: &u32| sk.solids[*o as usize].name.rsplit('.').next() == Some(*seg);
+        at = s.operands().into_iter().find(leaf)
             .ok_or_else(|| format!("`{path}` names no face: no `{seg}` in `{}`", s.name))? as usize;
     }
     if steps.next().is_some() {

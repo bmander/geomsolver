@@ -1186,8 +1186,18 @@ export class SketchView {
   private offsetOf(plane: string): Constraint | undefined {
     const p = this.doc.entity(plane);
     if (!(p instanceof Plane)) return undefined;
-    return this.sketch.constraints.find((c) => c.typeName === 'PlaneDistance'
-      && c.entities().some((e, i) => i === 1 && e instanceof Plane && e.index === p.index));
+    return this.sketch.constraints.find((c) => {
+      const set = c.typeName === 'PlaneDistance' ? c.entities()[1] : undefined;
+      return set instanceof Plane && set.index === p.index;
+    });
+  }
+
+  /** The offset plane being sized, its distance and the slot its number is in — or null. */
+  private liveOffset(): { live: LiveExtent; c: Constraint; attr: string } | null {
+    const live = this.liveExtent;
+    const c = live?.kind === 'offset' ? this.offsetOf(live.plane) : undefined;
+    const attr = c?.dimensions()[0]?.[0];
+    return live && c && attr ? { live, c, attr } : null;
   }
 
   /** The arrow of what is being sized, on the eye's picture plane: an extrusion's or an offset
@@ -1257,10 +1267,9 @@ export class SketchView {
   /** Set the offset plane being sized off where the eye sees a canvas point along the normal it
    *  is set off by — either side — previewed on the sketch, written when the drag lets go. */
   private sizeOffset(sx: number, sy: number): void {
-    const live = this.liveExtent;
-    const c = live?.kind === 'offset' ? this.offsetOf(live.plane) : undefined;
-    const [attr] = c?.dimensions()[0] ?? [];
-    if (!live || !c || !attr) return;
+    const o = this.liveOffset();
+    if (!o) return;
+    const { live, c, attr } = o;
     const { az, el } = this.orbit;
     const t = offsetAt(this.sketch, az, el, c.id, ...this.eye(sx, sy));
     if (!Number.isFinite(t) || Math.abs(t) < 1e-9) return;
@@ -1268,17 +1277,18 @@ export class SketchView {
     if (d === live.d) return;
     this.liveExtent = { ...live, d };
     c.setDimension(attr, String(d));
-    this.solveNow();
+    // the plane moves by a solve; the lists and the source wait for the release
+    this.lastResult = this.solveOnce();
     this.tellExtent();
+    this.draw();
   }
 
   /** Write how far the offset plane being sized is set off into its statement — at the drag's
    *  distance, or `text` as typed.  Joins the plane's own undo step.  Null when written. */
   private commitOffset(text?: string): string | null {
-    const live = this.liveExtent;
-    const c = live?.kind === 'offset' ? this.offsetOf(live.plane) : undefined;
-    const [attr] = c?.dimensions()[0] ?? [];
-    if (!live || !c || !attr) return 'no plane is being set off';
+    const o = this.liveOffset();
+    if (!o) return 'no plane is being set off';
+    const { live, c, attr } = o;
     const d = text ?? String(live.d);
     const e = this.doc.setDimension(c.id, attr, d);
     if (e.refused) return e.refused;
@@ -1292,7 +1302,9 @@ export class SketchView {
       this.afterEdit();
       this.onProgram();
     } else {
-      this.takeDocument(Document.read(e.text));
+      const next = dimension.readWhole(e.text);
+      if (typeof next === 'string') return next;
+      this.takeDocument(next);
     }
     const n = Number(d);
     if (this.liveExtent && Number.isFinite(n)) this.liveExtent = { ...this.liveExtent, d: n };
@@ -1337,11 +1349,11 @@ export class SketchView {
     if (made) this.selected = [made];
     // a plane set off another is sized at once, as an extrusion is: by its arrow or its number
     this.endExtent();
-    if (made instanceof Plane && this.offsetOf(e.names[0])) {
-      this.liveExtent = { kind: 'offset', plane: e.names[0], d: 0 };
-      const c = this.offsetOf(e.names[0])!;
+    const c = made instanceof Plane ? this.offsetOf(e.names[0]) : undefined;
+    if (c) {
       const { az, el } = this.orbit;
-      this.liveExtent.d = offsetHandle(this.sketch, az, el, c.id)?.distance ?? 0;
+      const d = offsetHandle(this.sketch, az, el, c.id)?.distance ?? 0;
+      this.liveExtent = { kind: 'offset', plane: e.names[0], d };
       this.tellExtent();
     }
     this.onSelect();

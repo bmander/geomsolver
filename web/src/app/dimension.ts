@@ -174,9 +174,21 @@ export function rewriteDimension(v: SketchView, text: string): string | null {
       return null;
     }
   }
+  const next = readWhole(e.text);
+  if (typeof next === 'string') return next;
+  // no longer live before the swap, whose settling would end it uncommitted
+  v.liveDim = null;
+  v.takeDocument(next);
+  finish();
+  return null;
+}
+
+/** A dimension's text written into the source, read whole: the document, or — where the text
+ *  does not elaborate — the core's own words, nothing taken. */
+export function readWhole(text: string): Document | string {
   let next: Document;
   try {
-    next = Document.read(e.text);
+    next = Document.read(text);
   } catch (err) {
     return (err as Error).message;
   }
@@ -185,11 +197,7 @@ export function rewriteDimension(v: SketchView, text: string): string | null {
     next.dispose();
     return bad.message;
   }
-  // no longer live before the swap, whose settling would end it uncommitted
-  v.liveDim = null;
-  v.takeDocument(next);
-  finish();
-  return null;
+  return next;
 }
 
 /** Where the live dimension's number was just painted, so the shell can put its editor on

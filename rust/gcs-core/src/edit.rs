@@ -1023,12 +1023,12 @@ fn sweep_edit(e: &Elaborated, prog: &Program, solid: usize, how: &SolidSweep) ->
 
 /// `a word b`, written as the source says it: the elaborator reads which relation the word means
 /// off the operands' kinds (`infix_op`), as it does for anything typed.
-fn written(a: &str, word: &str, args: Vec<syntax::OpArg>, b: &str) -> StmtKind {
+fn written(s: Said) -> StmtKind {
     let form = syntax::Written {
-        word: syntax::Name::new(word),
+        word: syntax::Name::new(s.word),
         fixity: crate::constraints::Fixity::Infix,
-        ops: vec![syntax::Ref::new(a.to_string()), syntax::Ref::new(b.to_string())],
-        args,
+        ops: vec![syntax::Ref::new(s.a), syntax::Ref::new(s.b)],
+        args: s.args,
         span: Span::default(),
     };
     StmtKind::Relation(syntax::Relation::of(syntax::RelationForm::Written(form)))
@@ -1143,7 +1143,7 @@ fn datum_edit(
         axis_datum(sk, &sel, &current, &name)?
     };
     let mut stmts = vec![StmtKind::Decl(decl)];
-    stmts.extend(said.into_iter().map(|s| written(&s.a, s.word, s.args, &s.b)));
+    stmts.extend(said.into_iter().map(written));
     append_checked(&e.program, &stmts, vec![name])
 }
 
@@ -1204,8 +1204,8 @@ fn plane_datum(sk: &Sketch, sel: &Selection, current: &crate::plane::Basis, name
         // parallel, and as far off as it is set: the offset stated, so it is sized at once
         (0, 0, 1) => {
             let (p, b) = &planes[0];
-            let mut apart = said(p.clone(), "distance", name);
-            apart.args = vec![syntax::OpArg::Dim(syntax::num(set_off(sk)), Span::default())];
+            let d = syntax::OpArg::Dim(syntax::num(set_off(sk)), Span::default());
+            let apart = Said { args: vec![d], ..said(p.clone(), "distance", name) };
             (off(b), vec![said(name, "parallel", p.clone()), apart])
         }
         _ => return Err("a plane is dropped with nothing selected, or through a point, three \
@@ -1306,10 +1306,11 @@ fn on_face_edit(
     at: Option<[f64; 3]>,
     name: Option<&str>,
 ) -> Result<Edit, String> {
-    use crate::space::{dot, scale, sub};
     let c = crate::solid::carrier::carrier(sk, solid, face)?;
-    let n = c.basis.normal();
-    let origin = at.map_or(c.middle, |p| sub(p, scale(n, dot(sub(p, c.basis.o), n))));
+    let origin = at.map_or(c.middle, |p| {
+        let (a, b) = c.basis.view_coords(p);
+        c.basis.lift(a, b)
+    });
     let name = chosen_name(&mut taken_names(&e.program), name, EntKind::Plane)?;
     let seed = |d: [f64; 3]| vec![syntax::Kid::Hint(syntax::KidSeed { v: seed_round(d), axis: true,
         ..Default::default() })];
@@ -1320,8 +1321,8 @@ fn on_face_edit(
                                      syntax::Arg::Ref(syntax::Ref::new(point.clone())));
     let stmts = [
         StmtKind::Decl(decl),
-        written(&point, "coincident", Vec::new(), face),
-        written(&name, "tangent", vec![touch], face),
+        written(said(point, "coincident", face)),
+        written(Said { args: vec![touch], ..said(name.clone(), "tangent", face) }),
     ];
     append_checked(&e.program, &stmts, vec![name])
 }
@@ -1330,16 +1331,10 @@ fn on_face_edit(
 /// a cap on it, `std.front` included — so a sketch on the face is drawn there rather than on a
 /// second plane lying on the first (W113).  `None` where none does, or the face has no carrier.
 pub fn face_plane(e: &Elaborated, sk: &Sketch, solid: usize, face: &str) -> Option<String> {
-    use crate::space::{cross, dot, sub};
     let c = crate::solid::carrier::carrier(sk, solid, face).ok()?;
-    let n = c.basis.normal();
     let tol = 1e-9 * sk.extent().max(1.0);
-    (0..sk.planes.len()).find_map(|i| {
-        let b = sk.basis(i);
-        let lies = dot(cross(n, b.normal()), cross(n, b.normal())).sqrt() < 1e-9
-            && dot(sub(b.o, c.basis.o), n).abs() < tol;
-        lies.then(|| e.map.name_of(EntRef::new(EntKind::Plane, i)).cloned()).flatten()
-    })
+    (0..sk.planes.len()).filter(|&i| sk.basis(i).coplanar(&c.basis, tol))
+        .find_map(|i| e.map.name_of(EntRef::new(EntKind::Plane, i)).cloned())
 }
 
 /// `x` to `digits` significant digits.

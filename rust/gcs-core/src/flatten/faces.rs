@@ -25,7 +25,7 @@ use super::apply::local;
 use crate::model::EntKind;
 use crate::program::public_path;
 use crate::constraints::Fixity::Infix;
-use crate::syntax::{Arg, Chained, DeclName, OpArg, Relation, RelationForm, SetLit, Sweep};
+use crate::syntax::{Arg, Chained, DeclName, OpArg, Relation, SetLit, Sweep};
 
 /// The plane a face of a solid is drawn in, by the hidden name its carriers read it under — see
 /// `Expansion::face_planes`.
@@ -70,15 +70,26 @@ impl Walk<'_> {
     /// once, under `{solid}.{path}` — and a statement naming one that cannot be dropped, said
     /// once at the operand.
     pub(super) fn face_sets(&mut self) {
+        // nothing to look up unless a solid is made and a set's word names a path
+        let solid = |st: &Stmt| matches!(&st.kind, StmtKind::Decl(d) if d.kind == EntKind::Solid);
+        let dotted = |st: &Stmt| match &st.kind {
+            StmtKind::Relation(r) => r.form.written()
+                .is_some_and(|w| sets::may_use(w) && w.ops.iter().any(|o| !o.path.is_empty())),
+            _ => false,
+        };
+        if !self.out.iter().any(|(st, ..)| solid(st)) || !self.out.iter().any(|(st, ..)| dotted(st))
+        {
+            return;
+        }
         let alias = self.alias_table();
-        let mut wanted: Vec<(Ref, String, Vec<String>)> = Vec::new();
+        let mut wanted: Vec<(Span, String, Vec<String>)> = Vec::new();
         for (st, _, sc) in &self.out {
             let StmtKind::Relation(r) = &st.kind else { continue };
             let Some(w) = r.form.written().filter(|w| sets::may_use(w)) else { continue };
             for op in &w.ops {
                 if let Some((abs, rest)) = lookup_raw(op, sc, &self.names, &alias, self.units) {
                     if !rest.is_empty() && !self.sets.contains_key(&abs) {
-                        wanted.push((op.clone(), abs, rest));
+                        wanted.push((op.span, abs, rest));
                     }
                 }
             }
@@ -87,38 +98,26 @@ impl Walk<'_> {
             return;
         }
         let table = self.table(&alias);
-        let mut refused = BTreeSet::new();
-        for (op, abs, rest) in wanted {
+        for (span, abs, rest) in wanted {
             if !table.solids.contains_key(&abs) && !table.operands.contains_key(&abs) {
                 continue; // not a solid: whatever it is, it is someone else's to read
             }
+            // the set is named by the whole path, which then resolves to it as any set's name
             let key = format!("{abs}.{}", rest.join("."));
-            if self.sets.contains_key(&key) || refused.contains(&key) {
+            if self.sets.contains_key(&key) {
                 continue;
             }
-            match self.carrier(&table, &abs, &rest, op.span) {
+            match self.carrier(&table, &alias, &abs, &rest, span) {
                 Ok(site) => {
+                    self.names.insert(key.clone());
                     self.sets.insert(key, site);
                 }
+                // and a statement over it says nothing more: it was said at the operand
                 Err(m) => {
-                    self.once(Code::E040, op.span, m);
-                    refused.insert(key);
+                    self.once(Code::E040, span, m);
+                    self.refused.push(span);
                 }
             }
-        }
-        // a statement over a face refused says nothing more: it was said at the operand
-        if !refused.is_empty() {
-            let units = self.units;
-            let names = &self.names;
-            self.out.retain(|(st, _, sc)| {
-                let StmtKind::Relation(r) = &st.kind else { return true };
-                let Some(w) = r.form.written() else { return true };
-                !w.ops.iter().any(|op| {
-                    lookup_raw(op, sc, names, &alias, units).is_some_and(|(abs, rest)| {
-                        refused.contains(&format!("{abs}.{}", rest.join(".")))
-                    })
-                })
-            });
         }
     }
 
@@ -181,7 +180,8 @@ impl Walk<'_> {
 
     /// The set `{solid}.{path}` is: the solid the path reaches through bodies' operands, and the
     /// carrier of its face — or why there is none.
-    fn carrier(&mut self, t: &Table, abs: &str, rest: &[String], at: Span)
+    fn carrier(&mut self, t: &Table, alias: &BTreeMap<String, String>, abs: &str, rest: &[String],
+               at: Span)
         -> Result<sets::Site, String> {
         let said = format!("{}.{}", public_path(abs), rest.join("."));
         // through bodies, operand by operand, by the name each kept (§6.9 [0.18])
@@ -214,10 +214,9 @@ impl Walk<'_> {
             }
         };
         // the face swept: one named, or one written in place, `solid(face(ab, bc, …), …)`
-        let alias = self.alias_table();
         let (face_abs, items, face_sc, plane) = match decl.children.first().map(Vec::as_slice) {
             Some([Kid::Ref(r)]) => {
-                let face_abs = lookup_raw(r, sc, &self.names, &alias, self.units)
+                let face_abs = lookup_raw(r, sc, &self.names, alias, self.units)
                     .filter(|(_, rest)| rest.is_empty())
                     .map(|(a, _)| a)
                     .ok_or_else(|| format!("`{said}`: `{}` names no face", written(r)))?;
@@ -234,13 +233,11 @@ impl Walk<'_> {
             }
             _ => return Err(format!("`{said}`: its profile is no face to draw on")),
         };
-        let (items, face_sc) = (&items, &face_sc);
         // the plane the face is drawn in, under a name only the elaborator binds
         let plane_key = format!("{face_abs}#plane");
         if self.names.insert(plane_key.clone()) {
-            let alias = self.alias_table();
             let edges = items.iter().filter_map(|r| {
-                lookup_raw(r, face_sc, &self.names, &alias, self.units).map(|(a, rest)| {
+                lookup_raw(r, &face_sc, &self.names, alias, self.units).map(|(a, rest)| {
                     std::iter::once(a).chain(rest).collect::<Vec<_>>().join(".")
                 })
             });
@@ -252,12 +249,12 @@ impl Walk<'_> {
         let body = match face.as_str() {
             "near" | "far" => {
                 // which end is nearer the viewer is the ordinates', where both are numbers here
-                let (lo, hi) = match (number(&from), number(&to)) {
+                let (lo, hi) = match (crate::expr::literal(&from), crate::expr::literal(&to)) {
                     (Some(a), Some(b)) if a > b => (to, from),
                     _ => (from, to),
                 };
                 let d = if face == "near" { hi } else { lo };
-                if number(&d) == Some(0.0) {
+                if crate::expr::literal(&d) == Some(0.0) {
                     vec![relation("coincident", vec![p, plane], Vec::new(), at)]
                 } else {
                     let along = OpArg::Named(Name { text: "along".into(), span: at },
@@ -271,8 +268,7 @@ impl Walk<'_> {
                     return Err(format!("`{said}` names no face: `{}` has `near`, `far` and a side \
                                         for each edge it names", public_path(&solid)));
                 };
-                let alias = self.alias_table();
-                let e_abs = lookup_raw(e, face_sc, &self.names, &alias, self.units)
+                let e_abs = lookup_raw(e, &face_sc, &self.names, alias, self.units)
                     .filter(|(_, r)| r.is_empty())
                     .map(|(a, _)| a);
                 if !e_abs.as_ref().is_some_and(|a| t.lines.contains(a)) {
@@ -301,7 +297,7 @@ impl Walk<'_> {
                         plane: plane_key.clone(),
                     });
                 }
-                let start = suffixed(e, ".p1", at);
+                let start = field(e, "p1", at);
                 let level = vec![OpArg::Ent(local(&m_key, at))];
                 vec![relation("level", vec![p, start], level, at)]
             }
@@ -317,20 +313,30 @@ impl Walk<'_> {
     }
 }
 
-/// `r` with `tail` on its last name: `f0` → `f0#plane`, `e` → `e.p1`.
+/// `r` with `tail` on its last name: `f0` → `f0#plane`.
 fn suffixed(r: &Ref, tail: &str, at: Span) -> Ref {
-    let mut text = written(r);
-    text.push_str(tail);
-    let mut segs = text.split('.');
-    let root = Name { text: segs.next().unwrap().to_string(), span: at };
-    let path = segs.map(|s| Seg::Field(Name { text: s.to_string(), span: at })).collect();
-    Ref { root, path, span: at }
+    let mut r = r.clone();
+    match r.path.iter_mut().rev().find_map(|s| match s {
+        Seg::Field(f) => Some(f),
+        Seg::Index(_) => None,
+    }) {
+        Some(f) => f.text.push_str(tail),
+        None => r.root.text.push_str(tail),
+    }
+    r.span = at;
+    r
+}
+
+/// `r.field`: an edge's `p1`.
+fn field(r: &Ref, f: &str, at: Span) -> Ref {
+    let mut r = r.clone();
+    r.path.push(Seg::Field(Name { text: f.to_string(), span: at }));
+    r.span = at;
+    r
 }
 
 fn relation(word: &str, ops: Vec<Ref>, args: Vec<OpArg>, at: Span) -> Relation {
-    let word = Name { text: word.to_string(), span: at };
-    let w = crate::syntax::Written { word, fixity: Infix, ops, args, span: at };
-    Relation::of(RelationForm::Written(w))
+    sets::relation((word, at), Infix, ops, args, at)
 }
 
 /// An extent as text, as the flattener settled it.
@@ -342,9 +348,4 @@ fn arg_text(a: &Arg) -> String {
         // no extent is written otherwise; a number nothing reads is refused where it is built
         _ => "0".to_string(),
     }
-}
-
-/// An extent's number, where its text is one.
-fn number(text: &str) -> Option<f64> {
-    text.trim().parse::<f64>().ok()
 }

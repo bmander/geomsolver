@@ -379,8 +379,8 @@ export class Document {
    *  (its index), its origin where the eye's ray met it (`at`, in space) or the face's middle,
    *  touching the face there — so it follows the solid.  `names[0]` is the plane. */
   sketchOnFace(solid: number, face: string, at?: [number, number, number], name?: string): Edit {
-    return edit(withJson({ solid, face, at, name },
-      (p, n) => core().gcs_elab_sketch_on_face(this.h, this.sketch.handle, p, n)));
+    return edit(withJson({ face, at, name },
+      (p, n) => core().gcs_elab_sketch_on_face(this.h, this.sketch.handle, solid, p, n)));
   }
 
   /** The plane already lying on face `face` of object `solid`, by name — the profile's own for a
