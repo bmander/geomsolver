@@ -1,6 +1,6 @@
 //! Tokenize and parse dimension expressions and unit notation.
 
-use super::{Ast, Op, Parsed, FUNCTIONS, MAX_DEPTH, MAX_TEXT, MEASURES};
+use super::{Ast, Cmp, Cond, Op, Parsed, FUNCTIONS, MAX_DEPTH, MAX_TEXT, MEASURES};
 use crate::units::{unit, Dim, Units};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -12,6 +12,9 @@ enum Tok {
     LParen,
     RParen,
     Comma,
+    /// A comparison, which only a condition reads (`parse_condition_in`); in a number it stops
+    /// the parse where it stands.
+    Cmp(Cmp),
     End,
 }
 
@@ -221,6 +224,23 @@ fn tokenize(text: &str, units: Units) -> Result<Vec<(Tok, usize)>, String> {
                 }
             }
             '^' => Tok::Pow,
+            '<' | '>' => {
+                let eq = chars.get(i) == Some(&'=');
+                if eq {
+                    i += 1;
+                }
+                Tok::Cmp(match (c, eq) {
+                    ('<', false) => Cmp::Lt,
+                    ('<', true) => Cmp::Le,
+                    ('>', false) => Cmp::Gt,
+                    _ => Cmp::Ge,
+                })
+            }
+            // `==` and `!=`; a lone `=` or `!` is nothing the language writes
+            '=' | '!' if chars.get(i) == Some(&'=') => {
+                i += 1;
+                Tok::Cmp(if c == '=' { Cmp::Eq } else { Cmp::Ne })
+            }
             '(' => Tok::LParen,
             ')' => Tok::RParen,
             ',' => Tok::Comma,
@@ -265,6 +285,87 @@ impl Parser {
 
     fn leave(&mut self) {
         self.depth -= 1;
+    }
+
+    /// The word `w` (`and`, `or`, `not`), taken if it is next.
+    fn word(&mut self, w: &str) -> bool {
+        if matches!(self.peek(), Tok::Ident(s) if s == w) {
+            self.next();
+            true
+        } else {
+            false
+        }
+    }
+
+    /// A condition: `or` binds loosest, then `and`, then `not`, then a comparison.
+    fn cond(&mut self) -> Result<Cond, String> {
+        self.enter()?;
+        let mut lhs = self.conj()?;
+        while self.word("or") {
+            let rhs = self.conj()?;
+            lhs = Cond::Or(Box::new(lhs), Box::new(rhs));
+        }
+        self.leave();
+        Ok(lhs)
+    }
+
+    fn conj(&mut self) -> Result<Cond, String> {
+        let mut lhs = self.negation()?;
+        while self.word("and") {
+            let rhs = self.negation()?;
+            lhs = Cond::And(Box::new(lhs), Box::new(rhs));
+        }
+        Ok(lhs)
+    }
+
+    fn negation(&mut self) -> Result<Cond, String> {
+        self.enter()?;
+        let r = if self.word("not") { Cond::Not(Box::new(self.negation()?)) } else { self.comparison()? };
+        self.leave();
+        Ok(r)
+    }
+
+    /// Two numbers and how they compare, or a condition in parentheses.  A `(` may open either —
+    /// `(a + b) > c`, `(a > 0 or b > 0) and …` — so the comparison is tried first and the
+    /// parenthesised condition after it, and of two failures the one that read further is said.
+    fn comparison(&mut self) -> Result<Cond, String> {
+        let (start, depth) = (self.pos, self.depth);
+        let compared = self.compared();
+        let Err(first) = compared else { return compared };
+        if self.toks[start].0 != Tok::LParen {
+            return Err(first);
+        }
+        let reached = self.pos;
+        self.pos = start + 1;
+        self.depth = depth;
+        let inner = self.cond().and_then(|c| match self.next() {
+            Tok::RParen => Ok(c),
+            _ => Err(format!("expected `)` at {}", self.toks[self.pos.saturating_sub(1)].1 + 1)),
+        });
+        match inner {
+            Ok(c) => Ok(c),
+            Err(e) if self.pos > reached => Err(e),
+            Err(_) => Err(first),
+        }
+    }
+
+    fn compared(&mut self) -> Result<Cond, String> {
+        let lhs = self.expr()?;
+        let Tok::Cmp(op) = *self.peek() else {
+            return Err(format!(
+                "expected a comparison (`<`, `<=`, `>`, `>=`, `==` or `!=`) at {}",
+                self.here()
+            ));
+        };
+        self.next();
+        let rhs = self.expr()?;
+        if let Tok::Cmp(_) = self.peek() {
+            return Err(format!(
+                "a comparison is between two numbers: write `a < b and b < c`, not a chain, at {}",
+                self.here()
+            ));
+        }
+        Ok(Cond::Cmp(op, lhs, rhs))
     }
 
     fn expr(&mut self) -> Result<Ast, String> {
@@ -419,6 +520,22 @@ pub fn parse_in(text: &str, units: Units) -> Result<Parsed, String> {
     Ok(Parsed { body })
 }
 
+/// Parse a condition (#210): comparisons of numbers joined by `and`, `or` and `not`, in the
+/// document's units.  A number alone is no condition: `when n { … }` is refused, since what a
+/// number's truth would be is a convention the language does not keep.
+pub fn parse_condition_in(text: &str, units: Units) -> Result<Cond, String> {
+    if text.len() > MAX_TEXT {
+        return Err(format!("condition longer than {MAX_TEXT} characters"));
+    }
+    let toks = tokenize(text, units)?;
+    let mut p = Parser { toks, pos: 0, depth: 0 };
+    let body = p.cond()?;
+    if *p.peek() != Tok::End {
+        return Err(format!("unexpected `{}` at {}", tok_text(p.peek()), p.here()));
+    }
+    Ok(body)
+}
+
 fn tok_text(t: &Tok) -> String {
     match t {
         Tok::Num(v, _) => format!("{v}"),
@@ -428,6 +545,7 @@ fn tok_text(t: &Tok) -> String {
         Tok::LParen => "(".to_string(),
         Tok::RParen => ")".to_string(),
         Tok::Comma => ",".to_string(),
+        Tok::Cmp(c) => c.text().to_string(),
         Tok::End => "end".to_string(),
     }
 }

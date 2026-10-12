@@ -192,3 +192,4 @@ mod minimize;
 mod catenary;
 mod extremal;
 mod slide;
+mod when;

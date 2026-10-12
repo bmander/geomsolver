@@ -477,6 +477,17 @@ what a ring cannot turn (`rings.rs`). The ring's own turn is gauged outside (`hu
 tip[0]`). `std.Polygon`, `gear.sv`, `gear_trace.sv`, `ngon.sv` and the Wankel rotor are rings;
 `tests/ring.rs` and `tests/turns.rs` are the gates.
 
+**`when COND { … }`, a block made or not (§12.9, 0.72, #210):** `BlockKind::When`, the condition
+in `Block::count` (`head` its span). The flattener decides it over the scope's `vals`
+(`flatten::values::condition`: E101 a name nothing gives a number, E040 one that is or reads an
+unknown, E103 two dimensions, E107 a measurement) and walks the body once in the enclosing scope
+with its own copy of `vals` — no `PathStep`, no prefix, so names are the scope's (`q`, `t.tip`).
+`expr::Cond` (`Cmp` `<`…`!=`, `and`/`or`/`not`) is made only by `expr::parse_condition_in` and
+read by `expr::decide`; no `Ast` holds one, and its sides agree as `+`'s (`> 0mm`, never `> 0`).
+The parser refuses `as`, a trailing joint and `when e in X`; the measured-bound sniff skips a
+statement an opener word starts. `commit_seeds` writes into a root `when`'s body. The hypoid's
+tip relief is one (`layout.sv`, `members.sv`). `tests/when.rs` is the gate.
+
 **Axes** (`docs/planes-plan.md`, #81): `t := axis hint(dir: (x, y, z))` is a directed line in space,
 `AxisE { d, a, placed }`: a unit direction (`axis_unit`, intrinsic, held like `quat_unit` when `fix`
 holds all three) and the point nearest the origin, fixed — no freedom — until a relation reads it

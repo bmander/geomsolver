@@ -12,6 +12,9 @@ use crate::syntax::{
     Ty, Use,
 };
 
+/// What a `when` is, said where one is written otherwise (#210).
+const WHEN: &str = "a `when` is decided by comparing numbers: `when d > 0mm { … }`";
+
 /// Apply block membership recursively. Faces and solids inherit their geometry's plane;
 /// instances carry membership into expansion. Conflicting clauses are diagnosed here.
 fn stamp_plane(stmts: &mut [Stmt], plane: &Ref, errs: &mut Vec<SynErr>) {
@@ -54,8 +57,10 @@ fn stamp_plane(stmts: &mut [Stmt], plane: &Ref, errs: &mut Vec<SynErr>) {
 impl<'a> P<'a> {
     fn stmt(&mut self, next_id: &mut u32) -> Option<StmtKind> {
         // `distance(p, f1) + distance(p, f2) <= 10mm`, `2 * distance(p, a) >= …` — a bound on
-        // measurements (#183 F3), told from a relation by a comparison outside every bracket
-        if self.compared_ahead() && self.measures_ahead() {
+        // measurements (#183 F3), told from a relation by a comparison outside every bracket —
+        // and from a block's header, `when length(l) > 0mm { … }` (#210)
+        let block = matches!(self.peek(), Some(Tok::Ident(w)) if BLOCKS.contains(&w.as_str()));
+        if !block && self.compared_ahead() && self.measures_ahead() {
             return self.measured().map(StmtKind::Measured);
         }
         let Some(Tok::Ident(w)) = self.peek().cloned() else {
@@ -144,6 +149,7 @@ impl<'a> P<'a> {
                 let kind = match w.as_str() {
                     "repeat" => BlockKind::Repeat,
                     "ring" => BlockKind::Ring,
+                    "when" => BlockKind::When,
                     _ => BlockKind::Cycle,
                 };
                 self.block(kind, next_id).map(StmtKind::Block)
@@ -1008,12 +1014,18 @@ impl<'a> P<'a> {
         Some(SetLit { bound, body, span: Span::new(lo, self.prev_hi()) })
     }
 
+    /// `repeat`, `cycle`, `ring` and `when`: a header, then a braced body.
     fn block(&mut self, kind: BlockKind, next_id: &mut u32) -> Option<Block> {
         let lo = self.prev_hi();
         // `repeat e in rack.profile` — the block runs over a chain's edges; a ring is counted,
         // since its turn is a fraction of a whole one
         if kind == BlockKind::Ring && over_chain(&self.t, self.i) {
             self.fail("a `ring` is counted and turned about a centre: `ring N about C { … }`");
+            self.skip_block();
+            return None;
+        }
+        if kind == BlockKind::When && over_chain(&self.t, self.i) {
+            self.fail(WHEN);
             self.skip_block();
             return None;
         }
@@ -1046,6 +1058,7 @@ impl<'a> P<'a> {
             return Some(Block {
                 kind,
                 count: String::new(),
+                head: Span::new(lo, lo),
                 over: Some(EdgesOf { var, chain, when }),
                 binder,
                 body,
@@ -1070,6 +1083,12 @@ impl<'a> P<'a> {
             self.i += 1;
         }
         let count = self.text_from(from).trim().to_string();
+        let head = Span::new(from, self.prev_hi().max(from));
+        if kind == BlockKind::When && count.is_empty() {
+            self.fail(WHEN);
+            self.skip_block();
+            return None;
+        }
         // a ring names what its copies turn about, and only a ring does
         let about = if self.eat_word("about") {
             let r = self.refr()?;
@@ -1084,8 +1103,14 @@ impl<'a> P<'a> {
             None
         };
         let binder = if self.eat_word("as") { Some(self.ident()?) } else { None };
+        if let (BlockKind::When, Some(b)) = (kind, &binder) {
+            self.fail_at(b.span, "a `when` is made once or not at all, so it has no index to name");
+        }
         let body_at = self.i;
-        let (body, joint) = self.braced_body(next_id)?;
+        let (body, mut joint) = self.braced_body(next_id)?;
+        if kind == BlockKind::When {
+            self.no_open_joint(joint.take(), "a `when`");
+        }
         // a ring's index read in its body: a name token spelled as the binder, not a field
         // (`t.k`) nor a key (`k: …`)
         let mut index_reads = Vec::new();
@@ -1100,7 +1125,7 @@ impl<'a> P<'a> {
             }
         }
         let span = Span::new(lo, self.prev_hi());
-        Some(Block { kind, count, over: None, binder, body, joint, about, index_reads, span })
+        Some(Block { kind, count, head, over: None, binder, body, joint, about, index_reads, span })
     }
 
     /// Step over a refused block: the rest of its header line and, where one opens there, the

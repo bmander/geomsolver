@@ -42,6 +42,43 @@ fn out_of_reach(name: &str, vals: &BTreeMap<String, Aff>, scope: &Scope) -> Opti
     None
 }
 
+/// Whether a `when`'s condition holds over the numbers in scope (#210), or the code and the
+/// words for why it cannot be decided: a name nothing in scope gives a number is E101, one that
+/// is or reads an unknown of the drawing E040 (the block is made or not before there is a solve
+/// to give it a number), two dimensions compared E103, a measurement E107.
+pub(super) fn condition(
+    text: &str,
+    env: &BTreeMap<String, Aff>,
+    scope: &Scope,
+    units: Units,
+) -> Result<bool, (Code, String)> {
+    let c = expr::parse_condition_in(text, units).map_err(|e| (Code::E103, format!("`{text}`: {e}")))?;
+    for name in c.deps() {
+        match env.get(&name).map(|a| a.free.as_deref()) {
+            None => {
+                let why = out_of_reach(&name, env, scope)
+                    .unwrap_or_else(|| format!("`{name}` is not a number here — nothing in scope gives it one"));
+                return Err((Code::E101, why));
+            }
+            Some(Some(u)) => {
+                let what = if u == name { format!("`{name}` is") } else { format!("`{name}` reads `{u}`,") };
+                return Err((Code::E040, format!(
+                    "{what} an unknown of the drawing, and a `when` is decided before the solve: \
+                     compare numbers the document states"
+                )));
+            }
+            Some(None) => {}
+        }
+    }
+    expr::decide(&c, env).map_err(|e| {
+        let code = match e.fault {
+            expr::Fault::Measure => Code::E107,
+            _ => Code::E103,
+        };
+        (code, format!("`{text}`: {}", e.message))
+    })
+}
+
 /// A number worked out while elaborating.
 ///
 /// The language's angle is the degree — `sin(90)` is 1, and every dimension a person reads is in
