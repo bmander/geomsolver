@@ -1244,7 +1244,9 @@ std.Rounded(wall, top, r: 2mm)`, `p inside std.Chamfered(wall, bottom, la: 1mm, 
 along the first, `lb` along the second). Where the two are bounds the region states, at its
 level and about its axis, the round or the flat is built exactly in the region's revolution (a
 torus, a cone); elsewhere it is read point by point. *Non-normative:* both readings are one
-meaning: a round lowered into the revolution is the region the point-by-point reading reads.
+meaning: a round lowered into the revolution is the region the point-by-point reading reads. So
+is a round over a body's faces an implementation recognises by its set and builds exactly (a
+prism, a ring, a ball's corner), held to that reading.
 
 **The brackets are what the thing is made of** (§4.3, §6.2), so the sweep stands in them beside the face: `from:`, `to:`, `depth:`, `through:`, `along:`, `about:`, `sweep:` and `sense:` are labels of the constructor and are neither seeds nor constraints. A mixture of sweep forms, a half-written prism (`from:` with no `to:`), `from:`/`to:` beside `depth:`, and `sweep:` or `sense:` with no `about:` are each refused where they are written, with the shapes a solid has.
 

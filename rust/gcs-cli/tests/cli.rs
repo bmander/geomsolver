@@ -175,6 +175,29 @@ fn the_wankel_rotor_and_housing_export_and_measure_within_their_tolerance() {
     std::fs::remove_dir_all(dir).unwrap();
 }
 
+/// The rounds series (`rounds/`, #194): each round and chamfer the lowering table builds is written
+/// by the Rust kernel as STEP and STL within 10 µm and measured so against its exact faces —
+/// `boss.sv`'s ring, `pocket.sv`'s filled corners, the block's mitred rims and the round written by
+/// hand.
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about ten seconds: the rounds exported and measured")]
+fn the_rounds_export_and_measure_within_their_tolerance() {
+    let dir = std::env::temp_dir().join(format!("solventc-rounds-{}",std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    for name in ["block","by_hand","pocket","boss"] {
+        let source = doc(&format!("rounds/{name}.sv"));
+        let (stl,step) = (dir.join(format!("{name}.stl")),dir.join(format!("{name}.step")));
+        let (stl,step) = (stl.to_str().unwrap(),step.to_str().unwrap());
+        let result = run(&[&source,"--stl",stl,"--step",step,"--tolerance","0.01mm","--no-diagnose"]);
+        assert_eq!(result.status.code(),Some(0),"{name}: {}",String::from_utf8_lossy(&result.stderr));
+        let measured = run(&[&source,"--measure",stl,"--tolerance","0.01mm","--no-diagnose"]);
+        let stdout = String::from_utf8_lossy(&measured.stdout);
+        assert_eq!(measured.status.code(),Some(0),"{name}: {stdout}{}",String::from_utf8_lossy(&measured.stderr));
+        assert!(stdout.contains("tolerance 10.000 µm: every exact face within it"),"{name}: {stdout}");
+    }
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
 #[test]
 fn a_tolerance_is_a_positive_length_for_a_native_export() {
     let output = run(&[&doc("swept_torus.sv"),"--tolerance","3furlongs","--step","x.step"]);

@@ -14,7 +14,7 @@ pub fn millimetres(sk: &Sketch) -> Result<f64,String> {
     Ok(sk.units.length.ok_or("CAD export requires an explicit model length unit")?.1)
 }
 
-fn vector(v: [f64;3]) -> Json { Json::Arr(v.into_iter().map(Json::from).collect()) }
+pub(super) fn vector(v: [f64;3]) -> Json { Json::Arr(v.into_iter().map(Json::from).collect()) }
 fn ids(v: &[u32]) -> Json { Json::Arr(v.iter().copied().map(Json::from).collect()) }
 
 /// Row-major 3x4 native placement. Rotation is dimensionless; only the
@@ -104,31 +104,64 @@ fn recipe_with(sk: &Sketch,root: usize,static_only: bool) -> Result<StaticRecipe
     let mut seen = BTreeSet::new();
     let mut nodes = Vec::new();
     let mut sweeps = Vec::new();
+    // how many solids take each as an operand, and the lowered regions each stands for
+    let mut users: std::collections::BTreeMap<u32,usize> = Default::default();
+    for s in &sk.solids { for o in s.operands() { *users.entry(o).or_default() += 1; } }
+    let mut groups: std::collections::BTreeMap<usize,Vec<u32>> = Default::default();
+    // each region's lowering (#194), asked once a recipe
+    let lowerings = std::cell::RefCell::new(std::collections::BTreeMap::new());
+    let lowered = |o: usize| lowerings.borrow_mut().entry(o).or_insert_with(|| super::lowering::lowered(sk,o)).clone();
+    let pieces_of = |o: u32| match lowered(o as usize) { Some(Ok(p)) => p,_ => Default::default() };
+    // a region lowered to nothing is a term of no body: a round over faces that never meet
+    let nowhere = |o: &u32| matches!(lowered(*o as usize),Some(Ok(p)) if p.is_empty());
+    // each body's sets, read on its first visit and written on its second
+    let mut bodies: std::collections::BTreeMap<usize,([Vec<u32>;4],Vec<SweptCut>)> = Default::default();
     while let Some((i,ready)) = pending.pop() {
         if seen.contains(&i) { continue; }
-        let mut dependencies = super::evaluation_operands(sk,i)?;
-        // The static remainder of a body: its swept cuts are listed, not built.
-        let mut kept_cuts = None;
-        if static_only { if let SolidDef::Body {stock,on,through,bound} = &sk.solids[i].def {
-            if contains_sweep(sk,*stock as usize) {
-                return Err(format!("`{}`: a body's stock may not contain a continuous sweep",sk.solids[i].name));
-            }
-            if let Some(&o) = on.iter().chain(bound).find(|&&o| contains_sweep(sk,o as usize)) {
-                return Err(format!("`{}`: only a `cut` may hold swept material for now (`{}`)",
-                    sk.solids[i].name,sk.solids[o as usize].name));
-            }
-            let mut kept = Vec::new();
-            for &cut in through {
-                match swept_cut(sk,cut as usize)? {
-                    // The node is visited twice (dependencies first); list each
-                    // sweep once, on the emitting visit.
-                    Some(sweep) => if ready { sweeps.push(sweep) },
-                    None => kept.push(cut),
+        let dependencies = match &sk.solids[i].def {
+            SolidDef::Body {stock,on,through,bound} if !ready => {
+                if let Some(o) = std::iter::once(stock).chain(bound).find(|&o| nowhere(o)) {
+                    return Err(format!("`{}`: `{}` holds nowhere, so the body has no material",sk.solids[i].name,
+                        sk.solid_name(*o as usize)));
                 }
+                let mut cut: Vec<u32> = through.iter().copied().filter(|o| !nowhere(o)).collect();
+                // The static remainder of a body: its swept cuts are listed, not built.
+                let mut swept = Vec::new();
+                if static_only {
+                    if contains_sweep(sk,*stock as usize) {
+                        return Err(format!("`{}`: a body's stock may not contain a continuous sweep",sk.solids[i].name));
+                    }
+                    if let Some(&o) = on.iter().chain(bound).find(|&&o| contains_sweep(sk,o as usize)) {
+                        return Err(format!("`{}`: only a `cut` may hold swept material for now (`{}`)",
+                            sk.solids[i].name,sk.solids[o as usize].name));
+                    }
+                    let mut kept = Vec::new();
+                    for c in cut {
+                        match swept_cut(sk,c as usize)? { Some(sweep) => swept.push(sweep),None => kept.push(c) }
+                    }
+                    cut = kept;
+                }
+                // **the stratum** (#183 F6): what reads the body's faces acts on the body its other
+                // terms make, after them, fills then cuts, as the field applies them
+                let [on,cut,on_late,cut_late] = super::faces::stratum(sk,i,on.iter().copied().filter(|o| !nowhere(o)),cut);
+                // its lowered regions in each late set built as one (`lowering::assemble`): the first
+                // stands for the rest, which are no operands of their own
+                let mut lump = |v: Vec<u32>| -> Vec<u32> {
+                    let low: BTreeSet<u32> = v.iter().copied()
+                        .filter(|&o| users.get(&o) == Some(&1) && !pieces_of(o).is_empty()).collect();
+                    let Some(&first) = low.first().filter(|_| low.len() > 1) else { return v };
+                    groups.insert(first as usize,low.iter().copied().collect());
+                    v.into_iter().filter(|o| *o == first || !low.contains(o)).collect()
+                };
+                let (on_late,cut_late) = (lump(on_late),lump(cut_late));
+                let dependencies = std::iter::once(*stock).chain(on.iter().copied()).chain(cut.iter().copied())
+                    .chain(bound.iter().copied()).chain(on_late.iter().copied()).chain(cut_late.iter().copied()).collect();
+                bodies.insert(i,([on,cut,on_late,cut_late],swept));
+                dependencies
             }
-            dependencies.retain(|d| !through.contains(d) || kept.contains(d));
-            kept_cuts = Some(kept);
-        } }
+            SolidDef::Body {..} => Vec::new(),
+            _ => super::evaluation_operands(sk,i)?,
+        };
         if !ready {
             pending.push((i,true));
             pending.extend(dependencies.iter().rev().map(|&i| (i as usize,false)));
@@ -138,25 +171,46 @@ fn recipe_with(sk: &Sketch,root: usize,static_only: bool) -> Result<StaticRecipe
         let mut node = match &solid.def {
             SolidDef::Swept {..} => return Err(format!(
                 "`{}`: native CAD boundary construction for continuous motion sweeps is not yet supported",solid.name)),
-            SolidDef::Body {stock,on,through,bound} if kept_cuts.is_some() => object([
-                ("kind","body".into()),("stock",(*stock).into()),
-                ("on",ids(on)),("cut",ids(kept_cuts.as_deref().unwrap_or(through))),("bound",ids(bound)),
-            ]),
             SolidDef::Placed { source, motion, at } => {
                 let pose = crate::motion::Family::read(sk,*motion as usize)?.at(at.value)?;
                 let matrix = placement_matrix(pose,scale).into_iter().map(Json::from).collect();
                 object([("kind","placed".into()),("source",(*source).into()),
                     ("matrix",Json::Arr(matrix))])
             }
-            SolidDef::Body {stock,on,through,bound} => object([
-                ("kind","body".into()),("stock",(*stock).into()),
-                ("on",ids(on)),("cut",ids(through)),("bound",ids(bound)),
-            ]),
+            SolidDef::Body {stock,bound,..} => {
+                let ([on,cut,on_late,cut_late],swept) = bodies.remove(&i).expect("a body's sets, read on its first visit");
+                // (each sweep listed once, on the emitting visit)
+                sweeps.extend(swept);
+                let mut node = object([
+                    ("kind","body".into()),("stock",(*stock).into()),
+                    ("on",ids(&on)),("cut",ids(&cut)),("bound",ids(bound)),
+                ]);
+                if !on_late.is_empty() || !cut_late.is_empty() {
+                    node.set("on_late",ids(&on_late));
+                    node.set("cut_late",ids(&cut_late));
+                }
+                node
+            }
+            // a region over a body's faces that an entry of the lowering table builds (#194): its
+            // pieces, with those of the regions it stands for in its body's set
+            SolidDef::Region {..} if let Some(l) = lowered(i) => {
+                if l.map_err(|e| format!("`{}`: {e}",sk.solid_name(i)))?.is_empty() {
+                    return Err(format!("`{}` holds nowhere",sk.solid_name(i)))
+                }
+                let members = groups.get(&i).cloned().unwrap_or_else(|| vec![i as u32]);
+                let pieces: Vec<_> = members.into_iter().map(pieces_of).collect();
+                super::lowering::assemble(pieces.iter().flat_map(|p| p.iter())).node(scale)?
+            }
             // a region: its meridian turned once about its axis (§6.21)
-            SolidDef::Region {..} => {
+            SolidDef::Region {terms,..} => {
                 if super::region::in_general(sk,i) {
-                    return Err(format!("`{}`: a region whose terms share no axis is read by the field; \
-                                        no exact construction is made of it yet",sk.solid_name(i)));
+                    let what = if terms.iter().any(|t| super::faces::reads_faces(&t.shape)) {
+                        "a region over a body's faces that no entry of the lowering table builds"
+                    } else {
+                        "a region whose terms share no axis"
+                    };
+                    return Err(format!("`{}`: {what} is read by the field; no exact construction is made of it yet",
+                        sk.solid_name(i)));
                 }
                 let m = super::region::meridian(sk,i)?;
                 let name = |t: u32| m.name(t);

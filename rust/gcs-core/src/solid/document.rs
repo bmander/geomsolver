@@ -19,11 +19,22 @@ pub fn reads(sk: &Sketch, si: usize, unit: f64) -> Vec<f64> {
 /// (`faces::cached`).
 pub fn reads_except(sk: &Sketch, si: usize, unit: f64, skip: &std::collections::BTreeSet<usize>)
     -> Vec<f64> {
+    reads_where(sk, si, unit, &|s| skip.contains(&s))
+}
+
+/// What solid `si` reads of its own, following no other solid it names: a region's terms read
+/// apart from the body whose faces they read (`lowering::lowered`, which keys that body apart).
+pub fn reads_own(sk: &Sketch, si: usize, unit: f64) -> Vec<f64> {
+    reads_where(sk, si, unit, &|_| true)
+}
+
+/// `reads`, leaving out every solid but `si` that `skip` says and what only they reach.
+fn reads_where(sk: &Sketch, si: usize, unit: f64, skip: &dyn Fn(usize) -> bool) -> Vec<f64> {
     let mut v = vec![unit];
     let mut seen = std::collections::BTreeSet::new();
     let mut stack = vec![si as u32];
     while let Some(s) = stack.pop() {
-        if !seen.insert(s) || (s as usize != si && skip.contains(&(s as usize))) {
+        if !seen.insert(s) || (s as usize != si && skip(s as usize)) {
             continue;
         }
         let Some(sol) = sk.solids.get(s as usize) else { continue };
