@@ -134,6 +134,19 @@ and `std.CircleOnSphere(k, s, view)` stays a component.  An unbound number is th
 it says so (`flatten::substitute_with`).  `tests/spatial_surfaces.rs` and `tests/spatial_lang.rs` are the
 gates.
 
+**Crown regions (#209, 0.76):** a family's body is split by its point at the instance
+(`flatten::sets::instance_part`, called where `comp.set` makes the set): declarations and written
+relations reading nothing of the bound point, directly or through a declaration that does, are
+walked once as the instance's body, the rest is the set — so `std.ConeThrough(about, q, lean)`
+owns `.apex`/`.spine` (an ordinate of `lean / abs(lean)` along `about`, the cone opening the way it
+leans, half `abs(lean)`), one per instance, and a region reading it shares the `Cone` term's line.
+`std.Level(o, along, d)` is an ordinate along a line: `RegionShape::Plane { along: EntRef }` takes
+a plane (its `n`), a line or an axis (`RegionShape::normal`). A reach to `{ q | q outside S }`
+measures from `S`, sides turned (`Walk::side_of_set`, in `expand_reach`), so `std.Rounded(beyond,
+tip, r)` lowers. A region tool's faces are its meridian's steps (`RevolvedSurface::meridian_loops`,
+`SweepContacts::read`'s `Region` arm); the cutter reads its `revolve` recipe as any. A region's tip
+land is a bound between its land's ends drawn on the tip, the flanks through them.
+`tests/crown_regions.rs` is the gate (a crown tooth region cutting a region blank within 10 µm).
 **Sets (§6.21, 0.49, #101):** `S := { p | BODY }` (`StmtKind::Set`, `syntax::SetLit`; the lexer
 reads `{ NAME |` after `:=` as a body, not a group) and `component Name(F) := { p | … }`
 (`Component::set`, an empty body: the instance *is* the set).  Making one makes nothing

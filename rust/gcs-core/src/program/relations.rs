@@ -678,18 +678,22 @@ fn region_term(sk: &Sketch, c: &Constraint, probe: usize, grow: Option<crate::mo
         }
         CKind::Ordinate => {
             let from = ent(0);
-            let along = matches!(&c.args[4], CArg::Str(w) if w == "n");
-            match sk.plane_of_origin(from.i()).filter(|_| along) {
-                Some(plane) => RegionShape::Plane {
-                    plane: plane as u32,
-                    from: from.i() as u32,
-                    sign: if ent(1).i() == probe { 1.0 } else { -1.0 },
-                },
-                None => {
-                    return Err("a region's ordinate is along a plane's normal (`inside`/`outside` \
-                                the plane)"
-                        .to_string())
-                }
+            let normal = matches!(&c.args[4], CArg::Str(w) if w == "n");
+            // along a plane's normal from its origin (`inside`/`outside` the plane), or along a
+            // line or an axis from any point (`std.Level`)
+            let along = match c.args[2] {
+                CArg::Ent(t) if matches!(t.kind, EntKind::Line | EntKind::Axis) => Some(t),
+                _ => sk.plane_of_origin(from.i()).filter(|_| normal).map(EntRef::plane),
+            };
+            let Some(along) = along else {
+                return Err("a region's ordinate is along a plane's normal (`inside`/`outside` \
+                            the plane), a line or an axis"
+                    .to_string());
+            };
+            RegionShape::Plane {
+                along,
+                from: from.i() as u32,
+                sign: if ent(1).i() == probe { 1.0 } else { -1.0 },
             }
         }
         _ => {

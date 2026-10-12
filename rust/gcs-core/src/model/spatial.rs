@@ -307,9 +307,10 @@ pub enum RegionShape {
     Cylinder { line: u32 },
     /// An angle from a line's direction, seen from its start: a cone, apex the line's `p1`.
     Cone { axis: u32 },
-    /// An ordinate along a plane's normal, from a point: a half-space.  `sign` is -1 where the
-    /// probe is the ordinate's first operand, read back from it.
-    Plane { plane: u32, from: u32, sign: f64 },
+    /// An ordinate from a point along a plane's normal or a line's direction (`along`, a plane,
+    /// a line or an axis: `RegionShape::normal`): a half-space.  `sign` is -1 where the probe is
+    /// the ordinate's first operand, read back from it.
+    Plane { along: EntRef, from: u32, sign: f64 },
     /// A sum of measurements of the probe, each times its number (§6.21, #183 F3): `distance(p,
     /// f1) + distance(p, f2) <= 10mm` is `[(f1, 1), (f2, 1)]` against 10.  Each is the distance
     /// from what it names (`Target`).
@@ -327,6 +328,25 @@ pub enum RegionShape {
 }
 
 impl RegionShape {
+    /// A half-space's unit normal as the drawing stands: its plane's `n`, its line's or its
+    /// axis's direction — `None` for another shape, or a line of no length.
+    pub fn normal(&self, sk: &Sketch) -> Option<[f64; 3]> {
+        let RegionShape::Plane { along, .. } = *self else { return None };
+        match along.kind {
+            EntKind::Plane => Some(sk.basis(along.i()).normal()),
+            EntKind::Line => {
+                let l = sk.lines.get(along.i())?;
+                let (a, b) = (sk.world_point(l.p1 as usize), sk.world_point(l.p2 as usize));
+                crate::space::normalised(crate::space::sub(b, a))
+            }
+            EntKind::Axis => {
+                let d = sk.axes.get(along.i())?.d.map(|q| sk.params[q as usize].value);
+                crate::space::normalised(d)
+            }
+            _ => None,
+        }
+    }
+
     /// The entities its measure reads.
     pub fn entities(&self) -> Vec<EntRef> {
         match *self {
@@ -334,9 +354,7 @@ impl RegionShape {
             RegionShape::Cylinder { line } | RegionShape::Cone { axis: line } => {
                 vec![EntRef::line(line as usize)]
             }
-            RegionShape::Plane { plane, from, .. } => {
-                vec![EntRef::plane(plane as usize), EntRef::point(from as usize)]
-            }
+            RegionShape::Plane { along, from, .. } => vec![along, EntRef::point(from as usize)],
             RegionShape::Measured { ref of } => of.iter().flat_map(|(t, _)| t.entities()).collect(),
             RegionShape::FaceSide { ref face } => vec![EntRef::solid(face.solid as usize)],
             RegionShape::Angle { ref a, ref b } => {
@@ -357,8 +375,8 @@ impl RegionShape {
                 RegionShape::Cylinder { line: i(EntRef::line(line as usize))? }
             }
             RegionShape::Cone { axis } => RegionShape::Cone { axis: i(EntRef::line(axis as usize))? },
-            RegionShape::Plane { plane, from, sign } => RegionShape::Plane {
-                plane: i(EntRef::plane(plane as usize))?,
+            RegionShape::Plane { along, from, sign } => RegionShape::Plane {
+                along: map(along)?,
                 from: i(EntRef::point(from as usize))?,
                 sign,
             },

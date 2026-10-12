@@ -109,9 +109,9 @@ fn fold(sk: &Sketch, solid: usize) -> Result<Meridian, Refusal> {
         _ => None,
     });
     let normal = terms.iter().find_map(|t| match t.shape {
-        RegionShape::Plane { plane, from, .. } => {
+        RegionShape::Plane { from, .. } => {
             let at = terms.iter().find_map(ball).unwrap_or(point(from));
-            Some((at, sk.basis(plane as usize).normal()))
+            Some((at, t.shape.normal(sk)?))
         }
         _ => None,
     });
@@ -240,8 +240,8 @@ fn fold(sk: &Sketch, solid: usize) -> Result<Meridian, Refusal> {
                         tol)?
                 }
             }
-            RegionShape::Plane { plane, from, sign } => {
-                let n = sk.basis(plane as usize).normal();
+            RegionShape::Plane { from, sign, .. } => {
+                let n = t.shape.normal(sk).ok_or_else(|| format!("{} has no normal", what(t)))?;
                 if norm(cross(n, axis)) > 1e-9 {
                     return Err(format!("{}'s plane is not square to the region's axis", what(t)).into());
                 }
@@ -656,9 +656,9 @@ pub(super) fn measure_of(sk: &Sketch, shape: &RegionShape)
         RegionShape::Ball { center } => Measure::Point(point(center)),
         RegionShape::Cylinder { line: l } => { let (a, d) = line(l, "cylinder")?; Measure::Line { a, d } }
         RegionShape::Cone { axis } => { let (a, d) = line(axis, "cone")?; Measure::Cone { a, d } }
-        RegionShape::Plane { plane, from, sign } => Measure::Ordinate {
+        RegionShape::Plane { from, sign, .. } => Measure::Ordinate {
             o: point(from),
-            n: scale(sk.basis(plane as usize).normal(), sign),
+            n: scale(shape.normal(sk).ok_or("a half-space along a line of no length")?, sign),
         },
         _ => return Ok(None),
     }))

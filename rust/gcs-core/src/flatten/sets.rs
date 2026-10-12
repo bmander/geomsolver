@@ -667,6 +667,27 @@ impl<'a> Walk<'a> {
         self.out.push((made, path.to_vec(), sc.clone()));
     }
 
+    /// The set a set is one side of, by absolute name, and whether it is the outside: `{ q | q
+    /// outside S }` (its body one bounded use of `S`, no number of its own) — `None` for any
+    /// other.
+    fn side_of_set(&self, abs: &str, alias: &BTreeMap<String, String>) -> Option<(String, bool)> {
+        let site = self.sets.get(abs)?;
+        let [st] = site.lit.body.as_slice() else { return None };
+        let w = written_of(st)?;
+        if !may_use(w) || w.args.iter().any(|a| matches!(a, crate::syntax::OpArg::Dim(..))) {
+            return None;
+        }
+        let (cmp, _) = w.bound()?;
+        let bound = &site.lit.bound.text;
+        let other = match (&w.ops[0], &w.ops[1]) {
+            (q, s) | (s, q) if q.path.is_empty() && q.root.text == *bound => s,
+            _ => return None,
+        };
+        let (abs, rest) = lookup_raw(other, &site.scope, &self.names, alias, self.units)?;
+        let outside = cmp == crate::syntax::Cmp::Ge;
+        (rest.is_empty() && self.sets.contains_key(&abs)).then_some((abs, outside))
+    }
+
     /// **A point's distance from a set, and a side of a set grown** (§6.21, F4): `p distance(d,
     /// side: outside) S` is `p` the signed distance `d` from `S`'s surface, positive on its
     /// outside, where its measure exceeds its number; `p inside(d) S` is within `S` grown by `d`
@@ -703,6 +724,22 @@ impl<'a> Walk<'a> {
         if lowered.word.text != "distance" {
             let m = format!("`{word}` grows `{set}` by one distance: `{word}(d) {set}`");
             return self.once(Code::E040, at, m);
+        }
+        // a distance from one side of another set is from that set's surface (#209): from `{ q |
+        // q outside S }` the sides turned round, from `{ q | q inside S }` as they are
+        if let Some((other, outside)) = self.side_of_set(abs, alias) {
+            let mut turned = lowered.clone();
+            if outside {
+                for a in turned.args.iter_mut() {
+                    if let OpArg::Named(n, crate::syntax::Arg::Word(x)) = a {
+                        if n.text == "side" {
+                            *x = if x == "outside" { "inside".into() } else { "outside".into() };
+                        }
+                    }
+                }
+            }
+            let rel = Relation { form: RelationForm::Written(turned), ..rel.clone() };
+            return self.expand_reach(st, &rel, path, sc, k, &other, alias);
         }
         let Reach { cmp, text, grows, args } = match reach_of(&lowered, &set) {
             Ok(r) => r,
@@ -967,6 +1004,71 @@ fn reaches(w: &crate::syntax::Written) -> bool {
 fn region(lit: &SetLit) -> bool {
     lit.body.iter().filter_map(written_of).any(|w| w.states_bound())
         || lit.body.iter().any(|st| matches!(st.kind, StmtKind::Measured(_)))
+}
+
+/// **A family's body, split by its point** (§6.21, F3): what reads the bound point — through
+/// the declarations that read it — is the set, and what reads none of it is the instance's,
+/// made once where the instance is rather than at each use (`std.ConeThrough`'s apex, placed by
+/// the point it is given).  Only declarations and written relations are judged; anything else
+/// stays with the set.  Each part keeps the order written.
+pub(super) fn instance_part(lit: &SetLit) -> (Vec<Stmt>, SetLit) {
+    use crate::syntax::{Arg, OpArg};
+    // the names a statement reads, by their roots, and the name it defines — `None` for one
+    // the split does not judge
+    fn reads(st: &Stmt) -> Option<(Vec<&str>, Option<&str>)> {
+        match &st.kind {
+            StmtKind::Decl(d) if d.computed.is_none() && d.curve.is_none() => {
+                let mut out: Vec<&str> = Vec::new();
+                for kid in d.children.iter().flatten() {
+                    match kid {
+                        Kid::Ref(r) => out.push(&r.root.text),
+                        Kid::Hint(_) => {}
+                        _ => return None,
+                    }
+                }
+                if let Some(at) = &d.seed_at {
+                    out.extend([Some(&at.what), at.toward.as_ref(), at.along.as_ref()]
+                        .into_iter().flatten().map(|r| r.root.text.as_str()));
+                }
+                out.extend(d.membership.plane().into_iter().chain(d.membership.also())
+                    .map(|r| r.root.text.as_str()));
+                Some((out, Some(&d.name.key().text)))
+            }
+            StmtKind::Relation(r) => {
+                let w = r.form.written()?;
+                let mut out: Vec<&str> = w.ops.iter().map(|r| r.root.text.as_str()).collect();
+                for a in &w.args {
+                    match a {
+                        OpArg::Ent(r) | OpArg::Named(_, Arg::Ref(r))
+                        | OpArg::Slot { arg: Arg::Ref(r), .. } => out.push(&r.root.text),
+                        OpArg::Named(_, Arg::Word(x)) => out.push(x),
+                        _ => {}
+                    }
+                }
+                Some((out, None))
+            }
+            _ => None,
+        }
+    }
+    let judged: Vec<_> = lit.body.iter().map(reads).collect();
+    // the names that read the point, grown until no statement adds one
+    let mut reading: BTreeSet<&str> = BTreeSet::from([lit.bound.text.as_str()]);
+    let mut set = vec![false; lit.body.len()];
+    let mut grew = true;
+    while grew {
+        grew = false;
+        for (k, j) in judged.iter().enumerate() {
+            let on_point = |(ns, _): &(Vec<&str>, _)| ns.iter().any(|n| reading.contains(n));
+            if !set[k] && j.as_ref().is_none_or(on_point) {
+                set[k] = true;
+                grew = true;
+                reading.extend(j.as_ref().and_then(|(_, d)| *d));
+            }
+        }
+    }
+    let (body, own): (Vec<_>, Vec<_>) = lit.body.iter().cloned().zip(set).partition(|(_, s)| *s);
+    let stmts = |v: Vec<(Stmt, bool)>| v.into_iter().map(|(st, _)| st).collect();
+    (stmts(own), SetLit { bound: lit.bound.clone(), body: stmts(body), span: lit.span })
 }
 
 /// A statement's written relation, where it is one.

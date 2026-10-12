@@ -200,6 +200,17 @@ impl SweepContacts {
                         loops.push(order);
                     }
                 }
+                // a region's faces, each step of its meridian turned (§6.21): its profile is the
+                // meridian, read as a revolution's
+                SolidDef::Region {..} => {
+                    let m = super::region::meridian(sk,id)?;
+                    for lp in RevolvedSurface::meridian_loops(&m,&sk.solids[id].name) {
+                        loops.push(lp.into_iter().map(|s| s.map(|s| {
+                            patches.push(ToolSurface::Revolved(s.placed(pose)));
+                            patches.len()-1
+                        })).collect());
+                    }
+                }
                 // a prism's sides, one an edge of its profile; its caps, square to the extrusion,
                 // are admission's to keep out of the blank (`admission::check`)
                 SolidDef::Prism {face,..} => {
