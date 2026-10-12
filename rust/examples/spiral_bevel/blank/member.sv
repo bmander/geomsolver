@@ -22,8 +22,8 @@ component MemberBlank(generator: line, cone: line, ax: line, view: plane, design
   pitch := std.Cone(ax)
   generator.p2 coincident pitch
   tip := std.Offset(pitch, d: design.addendum * normal_module)
-  region := { p | p inside tip; p inside heel; p outside toe;
-                  p outside(design.back * normal_module) pitch }
+  back := { q | q outside(design.back * normal_module) pitch }
+  region := { p | p inside tip; p inside heel; p outside toe; p inside back }
   material := solid(region)
   repeat design.ends_relieved {
     // the chamfers' ends on the tip: the face width less the relief at each end

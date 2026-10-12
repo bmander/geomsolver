@@ -151,6 +151,9 @@ pub struct Worded {
     /// statement wrote it — `ball` in `q coincident ball`, both in `gc tangent(at: m) pc`: no
     /// entity, so they stand outside `ops`, described by the name and never resolved.
     pub sets: Vec<(usize, String)>,
+    /// The sets the relation was applied through, outermost first, each as its use wrote it
+    /// (#212): `region`, then `tip` for a bound `p inside tip` states in `region`'s body.
+    pub through: Vec<String>,
     /// The word as the statement wrote it, where a fault in what it expanded to is said.
     pub span: Span,
 }

@@ -66,6 +66,9 @@ impl SurfaceSeam {
             second:SurfaceProjector::named(sk,s.second.i())?})
     }
 
+    /// Two finite analytic surfaces meeting, made of their parts (#212).
+    pub fn new(name: String,first: RevolvedSurface,second: SurfaceProjector) -> Self { Self {name,first,second} }
+
     pub fn domain(&self) -> [[f64;2];2] { self.first.domain() }
     pub fn domains(&self) -> [[[f64;2];2];2] { [self.first.domain(),self.second.surface().domain()] }
 

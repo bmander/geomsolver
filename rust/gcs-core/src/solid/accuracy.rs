@@ -145,8 +145,12 @@ impl Exact {
         Ok(Self {located:crate::brep::query::Located::owned(b,tol),mm:cad::millimetres(sk)?})
     }
     fn names(&self) -> Vec<Surface> {
-        self.located.b.faces.iter().enumerate().map(|(i,f)| Surface {generated:false,
-            name:if f.name.is_empty() { format!("{} {i}",f.surface.kind()) } else { f.name.clone() }}).collect()
+        // a face by its own name, the primitive the recipe's build keys it under left out
+        self.located.b.faces.iter().enumerate().map(|(i,f)| {
+            let own = crate::brep::recipe::named_parts(&f.name);
+            let name = if own.1.is_empty() { own.0 } else { own.1 };
+            Surface {generated:false,name:if name.is_empty() { format!("{} {i}",f.surface.kind()) } else { name.to_string() }}
+        }).collect()
     }
     /// The nearest point of the boundary: a face's foot within its trims, or an edge's.
     fn nearest(&self,p: V) -> Option<Nearest> {

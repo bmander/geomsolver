@@ -28,7 +28,7 @@
 #[allow(unused_imports)]
 use crate::fmath::Det;
 mod evaluated;
-mod exact;
+pub(crate) mod exact;
 pub use exact::Exact;
 pub(crate) use exact::build as build_exact;
 mod field_mesh;

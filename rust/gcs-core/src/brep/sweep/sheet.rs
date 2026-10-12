@@ -44,6 +44,9 @@ pub struct SweptCut {
     pub limits: [f64;2],
     /// The contacts, whose failure to read is the reach's.
     pub contacts: Result<SweepContacts,String>,
+    /// The route to each primitive of the cutter (`document::operand_paths`), by the key its
+    /// faces are named under: a cut face is named by the cutter's face that made it (#212).
+    pub routes: std::collections::BTreeMap<String,String>,
 }
 
 impl SweptCut {
@@ -56,12 +59,43 @@ impl SweptCut {
         let recipe = cad::recipe(sk,*source as usize).at(Stage::Clearance)?;
         let family = Family::read(sk,*motion as usize).at(Stage::Clearance)?;
         let contacts = SweepContacts::read(sk,swept,cad::AXIS_TOLERANCE);
-        Ok(SweptCut {name,scale,recipe,family,limits:[from.value,to.value],contacts})
+        let routes = crate::solid::operand_paths(sk,*source as usize);
+        Ok(SweptCut {name,scale,recipe,family,limits:[from.value,to.value],contacts,routes})
     }
 }
 
-/// A fitted sheet: the surface as a one-face B-rep, its grid, and its withheld error.
-pub struct Fitted { pub face: Brep,pub sheet: Sheet,pub error: f64 }
+/// A fitted sheet: the surface as a one-face B-rep, its grid, and its withheld error; and the
+/// sheet as the faces the cutter's faces made (#212), each a stretch of the surface between the
+/// rows where one face of the cutter meets the next (`Sheet::bands`), named by that face's path
+/// in the cutter (`outer_crown.flank`) — one face, unnamed, where the stations name none.
+pub struct Fitted { pub face: Brep,pub sheet: Sheet,pub error: f64,pub faces: Brep }
+
+impl Fitted {
+    /// A fit whose faces are its one face.
+    pub fn whole(face: Brep,sheet: Sheet,error: f64) -> Fitted { let faces = face.clone(); Fitted {face,sheet,error,faces} }
+
+    /// The sheet cut where the cutter's faces meet (`Sheet::bands`), each band named by `name`
+    /// (`UNNAMED`'s empty): segments of the fitted net between the rows' parameters as `kind`
+    /// spread them, which are the fit's.
+    fn named(&self,kind: Parametrization,name: &dyn Fn(u32) -> String) -> Result<Brep,String> {
+        let bands = &self.sheet.bands;
+        let Some(Surface::BSpline(_,net)) = self.face.faces.first().map(|f| &f.surface) else { return Ok(self.face.clone()) };
+        if bands.len() < 2 {
+            let mut faces = self.face.clone();
+            faces.faces[0].name = bands.first().map_or(String::new(),|b| name(b.1));
+            return Ok(faces)
+        }
+        let (tu,_) = crate::brep::nurbs::net_parameters(&self.sheet.points,self.sheet.rows,self.sheet.columns,kind)
+            .ok_or("the sheet's rows have no parameters")?;
+        let [[a,z],v] = net.domain();
+        let at = |r: usize| a+(z-a)*tu[r];
+        let nets = bands.iter().enumerate().map(|(i,&(start,tag))| {
+            let (lo,hi) = (if i == 0 { a } else { at(start) },bands.get(i+1).map_or(z,|b| at(b.0)));
+            (net.segment([lo,hi],v),name(tag))
+        }).collect();
+        crate::brep::build::sheets(nets)
+    }
+}
 
 /// A sheet face's points and outward normals on an `nu × nv` grid of its parameters, row-major.
 pub fn surface_grid(face: &Brep,nu: usize,nv: usize) -> Vec<(V,V)> {
@@ -126,7 +160,7 @@ fn fit(sheet: &Sheet,kind: Parametrization) -> Result<Brep,String> {
 
 /// A fitted sheet's verdict at its withheld contacts: it fits, or, held to a tolerance, it misses
 /// at the contacts marked, which a finer grid may mend.
-enum Judged { Fits(Brep,f64),Misses {over: Vec<bool>,refusal: ExportRefusal} }
+enum Judged { Fits(Brep,f64,Parametrization),Misses {over: Vec<bool>,refusal: ExportRefusal} }
 
 /// The fit contract (as the native host's): at every withheld contact near the blank the face
 /// passes near the true contact and its normal agrees with the contact's, and nowhere in the blank
@@ -159,7 +193,7 @@ fn judged(name: &str,sheet: &Sheet,scale: f64,near: &(dyn Fn(V) -> f64+Sync),tol
         // by centripetal parameters, and where that fit leaves its contacts or folds, by chord length
         // (the two fail on different sheets: centripetal where rows are evenly spaced and a corner is
         // sharp, chord length where they are not)
-        let gross = |kind: Parametrization| -> Result<(Brep,f64),ExportRefusal> {
+        let gross = |kind: Parametrization| -> Result<(Brep,f64,Parametrization),ExportRefusal> {
         let face = fit(sheet,kind).at(Stage::Fit)?;
         (say.stage)(&format!("`{name}`: fitted the sheet ({kind:?}); measuring {} withheld contacts against it",sheet.withheld.len()));
         (say.mark)(Stage::Fit);
@@ -183,14 +217,14 @@ fn judged(name: &str,sheet: &Sheet,scale: f64,near: &(dyn Fn(V) -> f64+Sync),tol
                 against {FIT_DISTANCE} mm and {FIT_TURN} degrees",at(worst),at(turned))})
         }
         folds(grid)?;
-        Ok((face,error))
+        Ok((face,error,kind))
         };
-        let (face,error) = match gross(Parametrization::Centripetal) {
+        let (face,error,kind) = match gross(Parametrization::Centripetal) {
             Ok(fitted) => fitted,
             Err(first) => match gross(Parametrization::ChordLength) { Ok(fitted) => fitted,Err(_) => return Err(first) },
         };
         (say.mark)(Stage::Withheld);
-        return Ok(Judged::Fits(face,error))
+        return Ok(Judged::Fits(face,error,kind))
     };
     let held: Vec<usize> = (0..sheet.withheld.len()).filter(|&i| near(sheet.withheld[i]) < 0.5).collect();
     let points: Vec<V> = held.iter().map(|&i| sheet.withheld[i]).collect();
@@ -235,7 +269,7 @@ fn judged(name: &str,sheet: &Sheet,scale: f64,near: &(dyn Fn(V) -> f64+Sync),tol
     }
     (say.stage)(&format!("`{name}`: the {kind:?} fit holds"));
     (say.mark)(Stage::Withheld);
-    Ok(Judged::Fits(face,error))
+    Ok(Judged::Fits(face,error,kind))
 }
 
 /// The sheet of one swept cut against the blank `inside` describes: its contacts reach the blank
@@ -264,7 +298,8 @@ pub fn swept_sheet(cut: &SweptCut,inside: Inside,near: &(dyn Fn(V) -> f64+Sync),
             .ok_or("no section loop carries the profile at a station of the band")?;
         let window = Cutter::range(&profile,&reach,0.)?;
         let cutter = &cutter;
-        Ok(Station {length:profile.augmented_length(),window,sample:Box::new(move |s| cutter.sample(&profile,s))})
+        let starts = profile.starts();
+        Ok(Station {length:profile.augmented_length(),window,sample:Box::new(move |s| cutter.sample(&profile,s)),starts})
     };
     let band = Band {stations:reach.stations,radius:reach.radius,limit:cutter.station_limit()};
     let columns: std::cell::RefCell<Option<((f64,f64),Columns)>> = std::cell::RefCell::new(None);
@@ -320,7 +355,18 @@ pub fn swept_sheet(cut: &SweptCut,inside: Inside,near: &(dyn Fn(V) -> f64+Sync),
         (say.mark)(Stage::Sheet);
         let lay = |grid: &Grid| layout.sheet(grid,Withheld::Sides).map_err(String::from);
         match settle(name,scale,first,&layout.grid,&lay,inside,near,tolerance,&format!("rows by {by}"),say)? {
-            Ok(fitted) => return Ok(fitted),
+            Ok((mut fitted,kind)) => {
+                // each band named by the cutter's face that made it, by its path in the cutter
+                let face_name = |tag: u32| -> String {
+                    let Some((key,face)) = (tag != crate::solid::contact_trace::UNNAMED).then(|| cutter.face_of(tag)).flatten()
+                        else { return String::new() };
+                    crate::solid::faces::FacePath::new(cut.routes.get(&key).map_or("",String::as_str),&face).text()
+                };
+                fitted.faces = fitted.named(kind,&face_name).at(Stage::Fit)?;
+                (say.stage)(&format!("`{name}`: the sheet's faces, by the cutter's: {}",
+                    fitted.faces.faces.iter().map(|f| if f.name.is_empty() { "(unnamed)" } else { f.name.as_str() }).collect::<Vec<_>>().join(", ")));
+                return Ok(fitted)
+            }
             Err(refusal) => refused = Some(refusal),
         }
     }
@@ -333,10 +379,11 @@ pub fn swept_sheet(cut: &SweptCut,inside: Inside,near: &(dyn Fn(V) -> f64+Sync),
 /// layout may fit), anything else the outer. `how` says how the grid was laid, for the refusal.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn settle(name: &str,scale: f64,first: Sheet,grid: &Grid,lay: &(dyn Fn(&Grid) -> Result<Sheet,String>+Sync),inside: Inside,
-    near: &(dyn Fn(V) -> f64+Sync),tolerance: Option<Tolerance>,how: &str,say: &Say) -> Result<Result<Fitted,ExportRefusal>,ExportRefusal> {
+    near: &(dyn Fn(V) -> f64+Sync),tolerance: Option<Tolerance>,how: &str,say: &Say)
+    -> Result<Result<(Fitted,Parametrization),ExportRefusal>,ExportRefusal> {
     if tolerance.is_none() {
         return match judged(name,&first,scale,near,None,say) {
-            Ok(Judged::Fits(face,error)) => Ok(Ok(Fitted {face,sheet:first,error})),
+            Ok(Judged::Fits(face,error,kind)) => Ok(Ok((Fitted::whole(face,first,error),kind))),
             Ok(Judged::Misses {refusal,..}) => Ok(Err(refusal)),
             Err(refusal) if refusal.stage == Stage::Withheld => Ok(Err(refusal)),
             Err(refusal) => Err(refusal),
@@ -350,7 +397,7 @@ pub(super) fn settle(name: &str,scale: f64,first: Sheet,grid: &Grid,lay: &(dyn F
             return Err(ExportRefusal::at(Stage::Sheet,format!("`{name}`: the refined sheet is not one regular chart: {fault}")))
         }
         let (over,mut refusal) = match judged(name,&sheet,scale,near,tolerance,say) {
-            Ok(Judged::Fits(face,error)) => return Ok(Ok(Fitted {face,sheet,error})),
+            Ok(Judged::Fits(face,error,kind)) => return Ok(Ok((Fitted::whole(face,sheet,error),kind))),
             Ok(Judged::Misses {over,refusal}) => (over,refusal),
             Err(refusal) if refusal.stage == Stage::Withheld => return Ok(Err(refusal)),
             Err(refusal) => return Err(refusal),

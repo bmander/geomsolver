@@ -20,9 +20,13 @@ fn field<'a>(j: &'a Json,k: &str) -> Result<&'a Json,String> { j.get(k).ok_or(fo
 fn unit(a: V) -> V { scale(a,1./norm(a)) }
 
 /// One revolution: a point of its line and its direction (`±` the section's), and its meridian
-/// region in its own `(r, z)` (radius about its line, distance along it from that point).
+/// region in its own `(r, z)` (radius about its line, distance along it from that point), each
+/// step tagged by its profile edge (`edge_tag`); the recipe node's name, and its edges' (#212).
 #[derive(Clone,Debug)]
-struct Leaf { o: V,a: V,region: Region }
+struct Leaf { o: V,a: V,region: Region,name: String,edges: Vec<Vec<String>> }
+
+/// A profile edge's place, loop `l` and edge `k`, as a leaf's steps carry it and `tag` packs it.
+fn edge_tag(l: usize,k: usize) -> u32 { ((l as u32) << 10) | k as u32 }
 
 /// What each recipe node is: a revolution (by its index among the leaves), or a body.
 #[derive(Clone,Debug)]
@@ -48,7 +52,7 @@ impl Sectioned {
         // each node's leaf (a revolution, as placed so far)
         // each revolution's line as placed, and the line and profile it was drawn with
         let mut placed: BTreeMap<i64,usize> = BTreeMap::new();
-        let mut profiles: Vec<(V,V,V,V,Profile)> = Vec::new();
+        let mut profiles: Vec<(V,V,V,V,Profile,String)> = Vec::new();
         let mut out: Vec<(i64,Node)> = Vec::new();
         for n in nodes {
             let (id,name) = (field(n,"id")?.as_i64(),n.get("name").map_or("",|j| j.as_str()));
@@ -56,7 +60,7 @@ impl Sectioned {
                 "revolve" => {
                     if (field(n,"angle")?.as_f64().abs()-std::f64::consts::TAU).abs() > 1e-9 { return Ok(Err(format!("`{name}` is a partial revolution"))) }
                     let (o,a) = (vec3(field(n,"origin")?),unit(vec3(field(n,"axis")?)));
-                    profiles.push((o,a,o,a,Profile::from_json(field(n,"profile")?)?));
+                    profiles.push((o,a,o,a,Profile::from_json(field(n,"profile")?)?,name.to_string()));
                     placed.insert(id,profiles.len()-1);
                     out.push((id,Node::Leaf(profiles.len()-1)));
                 }
@@ -65,8 +69,8 @@ impl Sectioned {
                     let Some(&k) = placed.get(&src) else { return Ok(Err(format!("`{name}` places something not a revolution"))) };
                     let mm: Vec<f64> = field(n,"matrix")?.arr().iter().map(Json::as_f64).collect();
                     let m = Rigid::from_rows(&mm);
-                    let (o,a,so,sa,p) = profiles[k].clone();
-                    profiles.push((m.point(o),m.vector(a),so,sa,p));
+                    let (o,a,so,sa,p,_) = profiles[k].clone();
+                    profiles.push((m.point(o),m.vector(a),so,sa,p,name.to_string()));
                     placed.insert(id,profiles.len()-1);
                     out.push((id,Node::Leaf(profiles.len()-1)));
                 }
@@ -82,7 +86,7 @@ impl Sectioned {
         }
         let Some(&(origin,axis,..)) = profiles.first() else { return Ok(Err("no revolution".into())) };
         let mut leaves = Vec::new();
-        for (o,a,so,sa,profile) in profiles {
+        for (o,a,so,sa,profile,name) in profiles {
             if norm(cross(a,axis)) > 1e-12 { return Ok(Err("a revolution about a line not parallel to the first's".into())) }
             // the meridian in its own (r, z): the side of its line every point of the profile is on
             let arc_at = |f: &super::geom::Frame,r: f64,w: f64| add(f.o,add(scale(f.x,r*w.dcos()),scale(f.y,r*w.dsin())));
@@ -105,7 +109,7 @@ impl Sectioned {
             // (read where it was drawn: a placement is rigid, and moves only the line)
             let Some(side) = side else { return Ok(Err("a profile on its line".into())) };
             let q = |p: V| { let d = sub(p,so); [dot(d,side),dot(d,sa)] };
-            let region = Region::plain(profile.loops.iter().map(|l| l.iter().map(|e| match *e {
+            let region = Region::new(profile.loops.iter().enumerate().map(|(li,l)| l.iter().enumerate().map(|(k,e)| (k,match *e {
                 ProfileEdge::Line {a: p,b: r} => Seg::Line {a:q(p),b:q(r)},
                 ProfileEdge::Arc {frame,r,span} => {
                     let [w0,w1] = span.unwrap_or([0.,std::f64::consts::TAU]);
@@ -115,10 +119,9 @@ impl Sectioned {
                     Seg::Arc {c,r,a0:(p0[1]-c[1]).datan2(p0[0]-c[0]),sweep:(x[0]*y[1]-x[1]*y[0]).signum()*(w1-w0)}
                 }
                 ProfileEdge::Spline(_) => unreachable!("refused above"),
-            }).collect()).collect());
-            leaves.push((o,a,region));
+            })).map(|(k,seg)| Step {seg,chart:None,tag:edge_tag(li,k)}).collect()).collect());
+            leaves.push(Leaf {o,a,region,name,edges:profile.names.clone()});
         }
-        let leaves = leaves.into_iter().map(|(o,a,region)| Leaf {o,a,region}).collect();
         Ok(Ok(Sectioned {origin,axis,leaves,nodes:out,root:field(recipe,"root")?.as_i64(),tol}))
     }
 
@@ -134,7 +137,8 @@ impl Sectioned {
                     let along = dot(d,self.axis);
                     let perp = sub(d,scale(self.axis,along));
                     let sign = dot(leaf.a,self.axis).signum();
-                    let t = |l: usize,k: usize| tag(*i,l,k);
+                    // each step its revolution's and its profile edge's (`edge_tag`)
+                    let t = |l: usize,k: usize| tag(*i,0,0) | leaf.region.loops[l][k].tag;
                     if norm(perp) <= self.tol && sign > 0. && along.abs() <= self.tol { leaf.region.tagged(&t) }
                     else { leaf.region.charted(Chart {beta:dot(side,perp),delta2:dot(perp,perp),shift:along,sign},&t) }
                 }
@@ -149,6 +153,14 @@ impl Sectioned {
             regions.insert(*id,region);
         }
         regions.remove(&self.root).ok_or("recipe: no root".into())
+    }
+
+    /// The face a section step's tag bounds (`tag`, its meeting bits aside): the recipe node of its
+    /// revolution, by name, and its profile edge's name — empty where the profile names none.
+    pub fn face_of(&self,tag: u32) -> Option<(String,String)> {
+        let leaf = self.leaves.get((((tag >> 16) & 0x3ff) as usize).checked_sub(1)?)?;
+        let (l,k) = (((tag >> 10) & 0x3f) as usize,(tag & 0x3ff) as usize);
+        Some((leaf.name.clone(),leaf.edges.get(l).and_then(|e| e.get(k)).cloned().unwrap_or_default()))
     }
 
     /// A section step's point at `t` in space, and its revolution's outward normal there.

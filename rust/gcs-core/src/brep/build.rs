@@ -599,6 +599,45 @@ fn analytic_ruled(a: &Seg,z: &Seg,e: V,outward: V,tol: f64) -> Option<(Surface,b
     }
 }
 
+/// A sheet of several faces (#212): B-spline surfaces one after another along `u`, each face's
+/// last iso-`u` curve the next one's first (each a segment of one net, `Net::segment`, at a shared
+/// `v` domain), each named. The faces share those edges and their ends — the first's curve standing
+/// for both — so a split by it never meets their seams; each face's sense is its net's own.
+pub fn sheets(nets: Vec<(crate::brep::nurbs::Net,String)>) -> Result<Brep,String> {
+    let Some((first,_)) = nets.first() else { return Err("a sheet of no faces".into()) };
+    let [_,[v0,v1]] = first.domain();
+    let row = |net: &crate::brep::nurbs::Net,i: usize| -> Curve { Curve::BSpline(Arc::new(BSpline {degree:net.dv,knots:net.vknots.clone(),
+        poles:net.poles[i].clone(),weights:net.weights.as_ref().map(|w| w[i].clone())})) };
+    let column = |net: &crate::brep::nurbs::Net,j: usize| -> Curve { Curve::BSpline(Arc::new(BSpline {degree:net.du,knots:net.uknots.clone(),
+        poles:net.poles.iter().map(|r| r[j]).collect(),weights:net.weights.as_ref().map(|w| w.iter().map(|r| r[j]).collect())})) };
+    let mut b = Brep::default();
+    let [u0,_] = first.domain()[0];
+    // the first face's first iso-u edge and its ends
+    let mut low = [b.vertex(first.point(u0,v0)),b.vertex(first.point(u0,v1))];
+    let mut iso = b.edge(EdgeCurve::Curve(row(first,0)),[v0,v1],low);
+    let line = |a: [f64;2],z: [f64;2]| Pcurve::Line {a,b:z};
+    for (net,name) in nets {
+        let [[u0,u1],[w0,w1]] = net.domain();
+        if (w0-v0).abs() > 1e-12*(1.+v0.abs()) || (w1-v1).abs() > 1e-12*(1.+v1.abs()) {
+            return Err("a sheet's faces must share their v domain".into())
+        }
+        let (last_u,last_v) = (net.poles.len()-1,net.poles[0].len()-1);
+        let high = [b.vertex(net.point(u1,v0)),b.vertex(net.point(u1,v1))];
+        let e0 = b.edge(EdgeCurve::Curve(column(&net,0)),[u0,u1],[low[0],high[0]]);
+        let e1 = b.edge(EdgeCurve::Curve(row(&net,last_u)),[v0,v1],high);
+        let e2 = b.edge(EdgeCurve::Curve(column(&net,last_v)),[u0,u1],[low[1],high[1]]);
+        let lp = vec![
+            Coedge {edge:e0,reversed:false,pcurve:line([u0,v0],[u1,v0])},
+            Coedge {edge:e1,reversed:false,pcurve:line([u1,v0],[u1,v1])},
+            Coedge {edge:e2,reversed:true,pcurve:line([u0,v1],[u1,v1])},
+            Coedge {edge:iso,reversed:true,pcurve:line([u0,v0],[u0,v1])},
+        ];
+        b.faces.push(Face {surface:Surface::BSpline(Frame::new([0.;3],[0.,0.,1.],[1.,0.,0.]),Arc::new(net)),reversed:false,loops:vec![lp],name});
+        (low,iso) = (high,e1);
+    }
+    Ok(b)
+}
+
 /// A sheet: the whole of a B-spline surface as one face, bounded by its four boundary curves
 /// (each its net's outermost row or column of poles, exactly), its sense the net's own.
 pub fn sheet(net: crate::brep::nurbs::Net) -> Result<Brep,String> {

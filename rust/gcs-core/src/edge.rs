@@ -31,8 +31,9 @@ pub struct EdgePoint {
     pub parameters: [f64;3],
 }
 
+/// The seam an edge is a stretch of: a generating face against a finite boundary, or a junction.
 #[derive(Clone,Debug)]
-enum Source { Boundary(BoundarySeam), Junction(EnvelopeSeam) }
+pub enum Source { Boundary(BoundarySeam), Junction(EnvelopeSeam) }
 
 impl Source {
     fn evaluate(&self,p: [f64;3],t: BoundarySeamTolerance) -> Result<Contact,Error> {
@@ -120,6 +121,33 @@ impl SpatialEdge {
             return Err("edge endpoints need distinct positions along the slicing line".into());
         }
         Ok(Self {name:e.name.clone(),vertices,endpoints,source,direction,span,tolerance:t})
+    }
+
+    /// A stretch of `source` between two corners, made of its parts (#212): `vertices` the
+    /// corners' identities (a caller's numbering), `endpoints` each corner in the seam's own chart
+    /// (a junction's second face's `u` already put in where the corner is read on that face), and
+    /// the slicing line's `direction`. Each endpoint is checked on the seam, as `named` does.
+    pub fn new(name: String,source: Source,vertices: [usize;2],endpoints: [EdgePoint;2],direction: [f64;3],
+        t: EdgeTolerance) -> Result<Self,String> {
+        for v in [t.junction.position,t.junction.normal,t.junction.axis,
+            t.point.normal_velocity,t.point.incidence,t.point.trim] {
+            check_tolerance(v).map_err(|_| "an edge needs finite nonnegative tolerances")?;
+        }
+        if vertices[0] == vertices[1] { return Err("an edge needs two distinct named vertices".into()); }
+        let n = length(direction);
+        if !n.is_finite() || n == 0. { return Err("an edge needs a finite nondegenerate along line".into()); }
+        let direction = direction.map(|x| x/n);
+        for p in &endpoints {
+            let c = source.evaluate(p.parameters,t.point).map_err(|e| format!("invalid edge endpoint: {e:?}"))?;
+            if length(delta(c.position,p.position)) > t.junction.position {
+                return Err("the edge and its named vertex disagree in position".into());
+            }
+        }
+        let span = dot(delta(endpoints[1].position,endpoints[0].position),direction);
+        if !span.is_finite() || span.abs()/2. <= t.point.incidence {
+            return Err("edge endpoints need distinct positions along the slicing line".into());
+        }
+        Ok(Self {name,vertices,endpoints,source,direction,span,tolerance:t})
     }
 
     pub fn vertices(&self) -> [usize;2] { self.vertices }

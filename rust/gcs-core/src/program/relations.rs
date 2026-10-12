@@ -209,6 +209,10 @@ pub(super) fn constrain(
             sets: w.sets.clone(),
         })
     });
+    // a region's term is named by the set the region's body used, where it used one (#212):
+    // `tip` for `p inside tip` in `region`'s body, else the region's own name
+    let term_name = r.word.as_ref().and_then(|w| w.through.get(1).or(w.through.first()))
+        .cloned().unwrap_or_default();
     // a set's points are points: `coincident` puts one on it, `inside` and `outside` one in it
     // or out of it, and nothing else (§6.21) — said at the use, where the statement was written
     let used = r.word.as_ref().filter(|w| !w.sets.is_empty()).map(|w| w.span);
@@ -596,7 +600,7 @@ pub(super) fn constrain(
     };
     // a bound a set put on a region solid's probe is a term of the solid, never a row (§6.21)
     if let Some(probe) = probe_of(sk, &c, probes) {
-        match region_term(sk, &c, probe, grow) {
+        match region_term(sk, &c, probe, grow, term_name) {
             Ok(t) => probes.terms.get_mut(&probe).expect("a probe's terms").push(t),
             Err(message) => {
                 diags.push(Diag { code: Code::E040, span: st.span, stmt: Some(st.id), message })
@@ -629,8 +633,8 @@ fn probe_of(sk: &Sketch, c: &Constraint, probes: &Probes) -> Option<usize> {
 /// What a bound on a region solid's probe bounds (§6.21), read off the constraint's **kind** and
 /// never the set it came from: a distance from a point is a ball, from a line a cylinder, the
 /// angle from a line seen from its start a cone, an ordinate along a plane's normal a half-space.
-fn region_term(sk: &Sketch, c: &Constraint, probe: usize, grow: Option<crate::model::TermNumber>)
-    -> Result<crate::model::RegionTerm, String> {
+fn region_term(sk: &Sketch, c: &Constraint, probe: usize, grow: Option<crate::model::TermNumber>,
+    name: String) -> Result<crate::model::RegionTerm, String> {
     use crate::model::{RegionShape, RegionTerm};
     let kind = crate::syntax::snake(c.kind.name());
     // a set measured from holds its point's equalities as bounds too, `in: (d, d)`: the
@@ -686,8 +690,6 @@ fn region_term(sk: &Sketch, c: &Constraint, probe: usize, grow: Option<crate::mo
             return Err(format!("a region solid bounds distances, angles and planes, not `{kind}`"))
         }
     };
-    let name =
-        c.word.as_ref().and_then(|w| w.sets.first()).map(|(_, n)| n.clone()).unwrap_or_default();
     if grow.is_some() && (b.hi.is_some() || !matches!(shape, RegionShape::Cone { .. } | RegionShape::Plane { .. })) {
         return Err("an offset is of a cone's surface or a plane's, on one side of it".to_string());
     }

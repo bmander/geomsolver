@@ -41,6 +41,11 @@ impl BoundarySeam {
             boundary:SurfaceProjector::named(sk,s.second.i())?})
     }
 
+    /// A generating face meeting a finite boundary surface, made of its parts (#212).
+    pub fn new(name: String,face: &crate::patch::TrimmedPatch,boundary: SurfaceProjector) -> Result<Self,String> {
+        Ok(Self {name,face:face.envelope_patch()?.clone(),boundary})
+    }
+
     /// A search domain, not a rectangular parameterization of the curve itself.
     pub fn domain(&self) -> [[f64;2];3] { self.face.envelope().domain() }
 

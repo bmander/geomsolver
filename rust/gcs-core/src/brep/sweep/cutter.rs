@@ -28,6 +28,8 @@ const ON_AXIS: f64 = 1e-5;
 const SAMPLES_PER_PIECE: usize = 64;
 /// Where a piece's face id keeps which meeting of its face it is, above the section's own tag.
 const OCCURRENCE: u32 = 26;
+/// A convex corner's fan as `Loop::starts` tags it: the face before it, with this bit.
+pub const FAN: u32 = 1 << 31;
 
 fn unit(a: V) -> Result<V,String> {
     let n = norm(a);
@@ -93,6 +95,17 @@ impl Loop {
         Place::Piece {index:self.pieces.len()-1,s:self.pieces.last().unwrap().length()}
     }
     pub fn index_of(&self,face: u32) -> Option<usize> { self.pieces.iter().position(|p| p.face == face) }
+    /// Where along the walk each piece starts, and each convex corner's fan (`FAN` and the face
+    /// before it), with its face: what a contact at a walk length was made by (#212).
+    pub fn starts(&self) -> Vec<(f64,u32)> {
+        let mut out = Vec::new();
+        for k in 0..self.pieces.len() {
+            let start = self.start_of(k);
+            out.push((start,self.pieces[k].face));
+            if self.corners[k].angle > 0. { out.push((start+self.pieces[k].length(),FAN | self.pieces[k].face)); }
+        }
+        out
+    }
     /// Whether the corner after each piece is convex: where the walk turns left, carrying a fan.
     pub fn convex(&self) -> Vec<bool> { self.corners.iter().map(|c| c.angle > 0.).collect() }
     fn resolve(&self,anchor: Anchor) -> Result<f64,String> {
@@ -171,6 +184,13 @@ impl Cutter {
     /// and the extrusion's extent from that plane; none for a cutter of revolutions.
     pub fn prism_profile(&self) -> Option<(&[Vec<Seg>],[f64;2])> {
         match &self.kind { Kind::Extruded(x) => Some((&x.walks,x.extent)),Kind::Revolved {..} => None }
+    }
+    /// The face a piece's tag (`Loop::starts`) is a stretch of: its recipe node's name and its
+    /// own (#212), whichever meeting of it; none for a fan, which is no face of the cutter's, or a
+    /// prism's side (its walk's order is not its profile's).
+    pub fn face_of(&self,tag: u32) -> Option<(String,String)> {
+        if tag & FAN != 0 { return None }
+        match &self.kind { Kind::Revolved {sec,..} => sec.face_of(tag & ((1 << OCCURRENCE)-1)),Kind::Extruded(_) => None }
     }
     /// Whether a station is an angle about the axis (else a distance along a prism).
     pub fn revolved(&self) -> bool { matches!(self.kind,Kind::Revolved {..}) }

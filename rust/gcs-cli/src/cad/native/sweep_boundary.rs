@@ -150,7 +150,7 @@ fn swept_sheets(session: &Session,cut: &SweptCut,cutter: &Cutter,inside: Inside,
             .ok_or("no section loop carries the profile at a station of the band")?;
         let window = Session::range(&profile,&reach,0.)?;
         let cutter = &cutter;
-        Ok(Station {length:profile.augmented_length(),window,sample:Box::new(move |s| session.sample(cutter,&profile,s))})
+        Ok(Station {length:profile.augmented_length(),window,sample:Box::new(move |s| session.sample(cutter,&profile,s)),starts:Vec::new()})
     };
     let band = Band {stations:reach.stations,radius:reach.radius,limit:std::f64::consts::TAU};
     // The columns traced at a pair of margins, which a second row placement at the same margins lays

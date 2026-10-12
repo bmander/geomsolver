@@ -139,6 +139,11 @@ impl BoundaryVertex {
         Ok(Self {name:v.name.clone(),face:EnvelopePatch::read(sk,face,axis_tolerance)?,boundaries:[a?,b?]})
     }
 
+    /// A generating face meeting two finite surfaces, made of its parts (#212).
+    pub fn new(name: String,face: &crate::patch::TrimmedPatch,boundaries: [SurfaceProjector;2]) -> Result<Self,String> {
+        Ok(Self {name,face:face.envelope_patch()?.clone(),boundaries})
+    }
+
     pub fn domain(&self) -> [[f64;2];3] { self.face.envelope().domain() }
 
     pub fn position(&self,p: [f64;3],tolerance: BoundarySeamTolerance) -> Result<[f64;3],Error> {
@@ -178,6 +183,13 @@ impl JunctionVertex {
         };
         Ok(Self {name:v.name.clone(),junction:EnvelopeSeam::named(sk,seam,tolerance)?,
             boundary:SurfaceProjector::named(sk,boundary)?,boundary_face:face})
+    }
+
+    /// A generating junction meeting a finite surface on its face `boundary_face` (0 or 1, in the
+    /// junction's operand order), made of its parts (#212).
+    pub fn new(name: String,junction: EnvelopeSeam,boundary: SurfaceProjector,boundary_face: usize) -> Result<Self,String> {
+        if boundary_face > 1 { return Err("a junction has two faces".into()); }
+        Ok(Self {name,junction,boundary,boundary_face})
     }
 
     /// Original chart of the junction's first face, with its u fixed structurally.

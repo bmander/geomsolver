@@ -7,9 +7,8 @@ use super::*;
 use crate::brep::topo::Brep;
 use std::collections::BTreeSet;
 
-/// Between a face's solid and its own name while the recipe is built: a placement renames the
-/// solid half and leaves the face half alone, and neither half may hold it.
-const SEP: char = '\u{1}';
+/// Between a face's solid and its own name while the recipe is built (`brep::recipe::NAMED`).
+const SEP: char = crate::brep::recipe::NAMED;
 
 /// A static solid's exact B-rep, in millimetres (`mm` of them a model unit, `cad::millimetres`)
 /// about `origin` (model units, the point the facet term is evaluated about too), each face named
@@ -74,12 +73,31 @@ pub(crate) fn build(sk: &Sketch, si: usize) -> Result<Exact, String> {
         }
         built.insert(id, b);
     }
-    let mut brep = built.remove(&field(&recipe, "root")?.as_i64()).ok_or("recipe: no root")?;
+    let brep = built.remove(&field(&recipe, "root")?.as_i64()).ok_or("recipe: no root")?;
+    Ok(named(brep, mm, origin, leading))
+}
+
+/// A B-rep whose faces a build named in two halves (`SEP`: a recipe's, a swept body's), as an
+/// `Exact`: each face's halves in `named`, and its name the two joined by a dot.
+pub(crate) fn named(mut brep: Brep, mm: f64, origin: [f64; 3], leading: BTreeSet<String>) -> Exact {
     let mut named = Vec::with_capacity(brep.faces.len());
     for f in &mut brep.faces {
         let (of, face) = f.name.split_once(SEP).unwrap_or((f.name.as_str(), ""));
         named.push((of.to_string(), face.to_string()));
         f.name = if face.is_empty() { of.to_string() } else { format!("{of}.{face}") };
     }
-    Ok(Exact { brep, mm, origin, leading, named })
+    Exact { brep, mm, origin, leading, named }
+}
+
+/// Swept body `si`'s exact B-rep as this kernel builds it (`brep::export::exact`, at the gross
+/// bars), about the origin, each face named as `build` names a static solid's (#212): the blank's
+/// by its primitive, a cut's by the placement that cuts it and the cutter's face that made it.
+pub(crate) fn swept(sk: &Sketch, si: usize) -> Result<Exact, String> {
+    let mm = cad::millimetres(sk)?;
+    if let Some(x) = sk.supplied_exact_solid(si).filter(|x| !x.named.is_empty()) {
+        return Ok((*x).clone());
+    }
+    let say = crate::brep::sweep::Say { stage: &|_: &str| {}, mark: &|_| {} };
+    let built = crate::brep::export::exact(sk, si, None, None, &say).map_err(|r| r.message)?;
+    Ok(named(built.solid, mm, [0.0; 3], BTreeSet::new()))
 }

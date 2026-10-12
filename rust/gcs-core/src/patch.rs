@@ -13,7 +13,7 @@ enum Source {
 /// Material tests do not establish source incidence. Keep this internal so every
 /// retained-point API must check its surface/envelope before applying the trims.
 #[derive(Clone,Debug,Default)]
-struct MaterialTrims {
+pub(crate) struct MaterialTrims {
     inside: Vec<RevolvedRegion>,
     outside: Vec<RevolvedRegion>,
 }
@@ -106,6 +106,22 @@ impl TrimmedPatch {
             _ => return Err("a patch source must be a surface or envelope".into()),
         };
         Ok(Self {name:p.name.clone(),source})
+    }
+
+    /// An envelope's points within every region of `inside` and outside every one of `outside`,
+    /// made of its parts rather than read off a declaration (#212): a body's cut face, its trims
+    /// the body's own material.
+    pub fn of_envelope(name: String,source: GeneratedEnvelope,inside: Vec<RevolvedRegion>,outside: Vec<RevolvedRegion>) -> Self {
+        Self {name,source:Source::Envelope(EnvelopePatch {source,trims:MaterialTrims {inside,outside}})}
+    }
+
+    /// The envelope this patch trims, where it is one.
+    pub fn envelope(&self) -> Option<&GeneratedEnvelope> {
+        match &self.source { Source::Envelope(e) => Some(&e.source),Source::Surface {..} => None }
+    }
+
+    pub(crate) fn envelope_patch(&self) -> Result<&EnvelopePatch,String> {
+        match &self.source { Source::Envelope(e) => Ok(e),Source::Surface {..} => Err("a generating face needs an envelope source".into()) }
     }
 
     pub fn surface_at(&self,u: f64,v: f64,trim_tolerance: f64) -> Result<SurfacePoint,Error> {

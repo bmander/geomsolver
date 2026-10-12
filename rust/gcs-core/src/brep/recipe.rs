@@ -10,6 +10,16 @@ use crate::json::Json;
 use std::collections::BTreeMap;
 
 fn vec3(j: &Json) -> V { let a = j.arr(); [a[0].as_f64(),a[1].as_f64(),a[2].as_f64()] }
+
+/// Between a face's solid and its own name while a recipe is built (`build`, `meridian`,
+/// `solid::exact`): the solid half keyed as `document::operand_primitives` keys it, the face half
+/// as its primitive names it (`pocket` and `near`). A placement renames the solid half and leaves
+/// the face half alone, and neither half may hold it.
+pub const NAMED: char = '\u{1}';
+
+/// The key of a face's solid and its own name, as a recipe's build names it (`NAMED`): the whole
+/// name and nothing where it was not built so.
+pub fn named_parts(name: &str) -> (&str,&str) { name.split_once(NAMED).unwrap_or((name,"")) }
 fn field<'a>(j: &'a Json,k: &str) -> Result<&'a Json,String> { j.get(k).ok_or(format!("recipe: no `{k}`")) }
 
 /// One step of the body rule: `solid` combined with `operand` by `op`, to a tolerance of the two's
@@ -132,14 +142,34 @@ pub fn node_named(n: &Json,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64
     }
 }
 
-/// The recipe's root, built.
+/// The recipe's root, built, each face named by its node (`NAMED`): a primitive's by the node's
+/// name, a placement's copies by the placement's (and the primitive's own last word where the
+/// placed source is a body), as `solid::exact` names them.
 pub fn build(recipe: &Json) -> Result<Brep,String> {
     let mut built = BTreeMap::new();
     for n in field(recipe,"nodes")?.arr() {
-        let b = node(n,&built).map_err(|e| format!("`{}`: {e}",n.get("name").map_or("",|j| j.as_str())))?;
+        let name = n.get("name").map_or("",|j| j.as_str());
+        let mut b = node(n,&built).map_err(|e| format!("`{name}`: {e}"))?;
+        match field(n,"kind")?.as_str() {
+            "body" | "lowered" => {}
+            "placed" => for f in &mut b.faces {
+                let (of,face) = named_parts(&f.name);
+                let source = recipe_name(recipe,field(n,"source")?.as_i64());
+                let key = if source.as_deref() == Some(of) { name.to_string() }
+                    else { format!("{name}.{}",of.rsplit('.').next().unwrap_or(of)) };
+                f.name = format!("{key}{NAMED}{face}");
+            },
+            _ => for f in &mut b.faces { f.name = format!("{name}{NAMED}{}",f.name); },
+        }
         built.insert(field(n,"id")?.as_i64(),b);
     }
     built.remove(&field(recipe,"root")?.as_i64()).ok_or("recipe: no root".into())
+}
+
+/// The name of the recipe's node `id`.
+fn recipe_name(recipe: &Json,id: i64) -> Option<String> {
+    recipe.get("nodes")?.arr().iter().find(|n| n.get("id").is_some_and(|i| i.as_i64() == id))
+        .and_then(|n| n.get("name")).map(|j| j.as_str().to_string())
 }
 
 /// A recipe whose every operand is a whole revolution about one line, or a ball centred on it,
@@ -199,6 +229,9 @@ pub fn meridian_region(recipe: &Json,seam: V) -> Result<Result<(Profile,V,V),Str
     let seam = unit(sub(seam,scale(axis,dot(seam,axis))));
     // the half-plane's coordinates: along `seam` from the line, and along it
     let mut regions: BTreeMap<i64,Region> = BTreeMap::new();
+    // each step tagged by its face's name (`NAMED`), one past its place here: the Booleans keep a
+    // step's tag
+    let mut names: Vec<String> = Vec::new();
     for n in nodes {
         let name = n.get("name").map_or("",|j| j.as_str());
         let region = match field(n,"kind")?.as_str() {
@@ -208,7 +241,12 @@ pub fn meridian_region(recipe: &Json,seam: V) -> Result<Result<(Profile,V,V),Str
                     if !on_line(c) { return Ok(Err(format!("`{name}` is a ball off the line"))) }
                     // its half-disc: from the axis round through the half-plane and back along it
                     let z = dot(sub(c,origin),axis);
-                    Region::half_disc(z,r)
+                    let profile = Profile::from_json(field(n,"profile")?)?;
+                    let arc = (0..profile.loops.len()).flat_map(|l| (0..profile.loops[l].len()).map(move |k| (l,k)))
+                        .find(|&(l,k)| matches!(profile.loops[l][k],ProfileEdge::Arc {..})).map_or(String::new(),|(l,k)| profile.name(l,k));
+                    names.push(format!("{name}{NAMED}{arc}"));
+                    let tag = names.len() as u32;
+                    Region::half_disc(z,r).tagged(&|_,_| tag)
                 } else {
                     let (o,a) = (vec3(field(n,"origin")?),unit(vec3(field(n,"axis")?)));
                     if norm(cross(a,axis)) > 1e-12 || !on_line(o) { return Ok(Err(format!("`{name}` is a revolution about another line"))) }
@@ -235,7 +273,12 @@ pub fn meridian_region(recipe: &Json,seam: V) -> Result<Result<(Profile,V,V),Str
                     }
                     let Some(side) = side else { return Ok(Err(format!("`{name}` has no section off its axis"))) };
                     let q = |p: V| { let d = sub(p,origin); [dot(d,side),dot(d,axis)] };
-                    Region::plain(profile.loops.iter().map(|l| l.iter().map(|e| match *e {
+                    let first = names.len() as u32+1;
+                    for (l,edges) in profile.loops.iter().enumerate() {
+                        for k in 0..edges.len() { names.push(format!("{name}{NAMED}{}",profile.name(l,k))); }
+                    }
+                    let mut tag = first;
+                    Region::new(profile.loops.iter().map(|l| l.iter().map(|e| match *e {
                         ProfileEdge::Line {a: p,b: r} => Seg::Line {a:q(p),b:q(r)},
                         ProfileEdge::Arc {frame,r,span} => {
                             let [w0,w1] = span.unwrap_or([0.,std::f64::consts::TAU]);
@@ -247,7 +290,7 @@ pub fn meridian_region(recipe: &Json,seam: V) -> Result<Result<(Profile,V,V),Str
                             Seg::Arc {c,r,a0:(p0[1]-c[1]).datan2(p0[0]-c[0]),sweep:sense*(w1-w0)}
                         }
                         ProfileEdge::Spline(_) => unreachable!("refused above"),
-                    }).collect()).collect())
+                    }).map(|seg| { let step = super::planar::Step {seg,chart:None,tag}; tag += 1; step }).collect()).collect())
                 }
             }
             "body" => {
@@ -266,7 +309,8 @@ pub fn meridian_region(recipe: &Json,seam: V) -> Result<Result<(Profile,V,V),Str
     }
     let root = regions.remove(&field(recipe,"root")?.as_i64()).ok_or("recipe: no root")?;
     if root.loops.is_empty() { return Ok(Err("the meridian region is empty".into())) }
-    Ok(Ok((region_profile(&root,origin,seam,axis,&|_| String::new()),origin,axis)))
+    let name = |t: u32| if t == 0 { String::new() } else { names.get(t as usize-1).cloned().unwrap_or_default() };
+    Ok(Ok((region_profile(&root,origin,seam,axis,&name),origin,axis)))
 }
 
 /// A meridian region as the profile a revolution turns: back into the half-plane through `origin`

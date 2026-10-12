@@ -114,7 +114,22 @@ impl EnvelopeSeam {
         let faces = [seam.first,seam.second];
         let ends = junction(sk,faces)?;
         let [a,b] = faces.map(|e| EnvelopePatch::read(sk,e,tolerance.axis));
-        let faces = [a?,b?];
+        Self::between(seam.name.clone(),[a?,b?],ends,tolerance)
+    }
+
+    /// Two generating faces meeting where their sources do (#212), made of their parts: `ends`
+    /// each face's source edge's `u` at the vertex the two share, which the caller knows from the
+    /// cutter's profile — checked coincident and tangent there, never found by proximity.
+    pub fn new(name: String,faces: [&crate::patch::TrimmedPatch;2],ends: [f64;2],tolerance: SeamTolerance) -> Result<Self,String> {
+        if [tolerance.position,tolerance.normal,tolerance.axis].iter()
+            .any(|x| !x.is_finite() || *x < 0.) || tolerance.normal >= 1. {
+            return Err("a seam needs finite nonnegative tolerances and normal tolerance below one".into());
+        }
+        let [a,b] = faces.map(|f| f.envelope_patch().cloned());
+        Self::between(name,[a?,b?],ends,tolerance)
+    }
+
+    fn between(name: String,faces: [EnvelopePatch;2],ends: [f64;2],tolerance: SeamTolerance) -> Result<Self,String> {
         let domains = faces.each_ref().map(|f| f.envelope().domain());
         let domain = [[ends[0],ends[0]],
             [domains[0][1][0].max(domains[1][1][0]),domains[0][1][1].min(domains[1][1][1])],
@@ -133,9 +148,9 @@ impl EnvelopeSeam {
             b.map_err(|e| format!("invalid seam junction: {e:?}"))?];
         Self::check_pair(a,b,tolerance).map_err(|_| format!(
             "`{}`: the source junction must be coincident and tangent; position error {:e} (limit {:e}), normal-plane error {:e} (limit {:e})",
-            seam.name,distance(a.position,b.position),tolerance.position,
+            name,distance(a.position,b.position),tolerance.position,
             distance(a.normal,b.normal).min(distance(a.normal,b.normal.map(|x| -x))),tolerance.normal))?;
-        Ok(Self {name:seam.name.clone(),faces,ends,domain,tolerance})
+        Ok(Self {name,faces,ends,domain,tolerance})
     }
 
     fn check_pair(a: Contact,b: Contact,t: SeamTolerance) -> Result<(),Error> {
