@@ -6,11 +6,11 @@ fn end_circles_match_independent_cone_sphere_sections_for_every_pair_configurati
     for teeth in [[24,48],[32,32],[28,49]] {
         for module in [0.2,2.,25.4] {
             let pair = Pair::read(teeth,module);
-            assert_eq!(pair.surface_seams.len(),12);
+            assert_eq!(pair.surface_seams.len(),8);
             for member in 0..2 {
                 let name = ["pinion","gear"][member];
                 let frame = pair.local_frame(member);
-                for (role,depth) in [("tip",1.),("root",-1.25),("back",-4.)] {
+                for (role,depth) in [("tip",1.),("back",-4.)] {
                     let d = depth*module*35f64.to_radians().cos();
                     for (end,fraction) in [("near",0.9),("far",1.1)] {
                         let rho = fraction*pair.rm;

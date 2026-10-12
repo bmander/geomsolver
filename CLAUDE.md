@@ -233,6 +233,24 @@ of them under `inside`. Elaborated
 by `relations::measured_term` into `RegionShape::Measured` (Σ cᵢ·distance from a point, line,
 axis or plane; `linear`: affine only, one probe) on the probe, else E040; read by the field
 (`region::measured`, divided by Σ|cᵢ|), never the meridian.
+**A swept cut's faces are named by the cutter's faces that made them** (#212): a traced sheet's
+contacts each know the cutter piece they came from (`contact_trace::Station::starts`, `Loop::starts`,
+a convex corner's fan `cutter::FAN`, unnamed), the rows are laid band by band so every column that
+reaches the blank crosses from one cutter face to the next on one row (`Anchors`, `Rows::Walk` only;
+a margin column crossing otherwise keeps walk-length rows), and the fitted net is cut there
+(`Fitted::faces`, `build::sheets`, edges shared) — `Fitted::face` stays the one judged fit. Each
+band is named by its face's path in the cutter (`Cutter::face_of` → `Sectioned::face_of`, a step
+tagged by its profile edge; routes `SweptCut::routes`) and each placed copy keyed by its placement
+(`cad::SweptCut::key`, `brep::recipe::NAMED`); a boolean never renames. The meridian blank and
+`recipe::build` name faces by node too. `BodyFaces::read` reads a swept body (`solid::exact::swept`,
+`exact::named`), `face_paths` lists a sweep's cutter faces and a region's terms, a region's term is
+named by the set its body used (`Worded::through`), and `faces::face_source` reads a path back to its
+analytic surface: a term's or a revolution's face (`RevolvedSurface`, `moved` by placements), or a
+cutter face's envelope under the sweep (`FaceSource::Swept`, `within` the cutter's own placement).
+The analytic snapshots are made of parts too (`GeneratedEnvelope::new`, `TrimmedPatch::of_envelope`,
+`EnvelopeSeam::new` with structural ends, `BoundarySeam::new`, `SurfaceSeam::new`,
+`BoundaryVertex::new`, `JunctionVertex::new`, `SpatialEdge::new`, `SpatialFaceBoundary::new`).
+`tests/swept_faces.rs` is the gate.
 **Faces as sets** (#183 F1, F9): in a set's body a solid and the fields past it are a face
 reference (`model::FaceRef { solid, path, surface }`: `pad.plate.near`, `pad.boss` every face
 `boss` gave `pad`, `block`, `.surface` its whole surface).
@@ -615,12 +633,17 @@ each member's blank is a region (`blank/member.sv`, `MemberBlank`: the pitch con
 about the member's axis, its half left unseeded so it settles from the pose, grown by the addendum (`std.Offset`) and its outside by the back depth (`outside(d)`),
 `std.Sphere`s through the face span, sized by the solved layout — a region term reads an unknown,
 `model::TermNumber`; `EndChamfer` puts its corners on the tip set, seeded off the cone line's mean
-point); `pair.sv` draws the same
-limits as revolved sections for the checks' walls (`blank/limits.sv`), `tests/region_blank.rs` the
-gate between them; each crown section bounds its tip land (`distance(>= 0.01 * design.module) tip`)
+point); its faces are `tip`, `heel`, `toe`, `back` (the sets its body uses), and
+`tests/region_blank.rs` holds the region to their closed forms read off the layout's points (faces,
+volume, material); each crown section bounds its tip land (`distance(>= 0.01 * design.module) tip`)
 so a collapsed tip is no root. Modules `design.sv`, `views.sv`, `pitch/`, `blank/`, `crown/`,
 `generation.sv`, `layout.sv` (`HypoidLayout`), `members.sv` (`HypoidPair`) (README walks them).
-`gears.sv` is the pair; `pair.sv` adds faces for checks (`verification.sv`, `ReferenceFaces`).
+`gears.sv` is the pair; `pair.sv` the layout alone. `tests/envelope/paired.rs` reads the members
+built at one tooth space each (`gears.sv`, `fixtures::gear::one_space`; their topology read at 2 mm
+by tooth counts, the design being proportional to its module) and holds each face to the analytic
+envelope its name says (`face_source`), its seams, corners, edges and face loops made of their
+parts where the built member says the faces meet; the gear's inner mate is read unplaced, one tooth
+over (its space cutter's `neighbor` is the inner crown a crown pitch round).
 `configuration.sv` states `shaft_angle`, `offset` (E = 0 is bevel); the pinion's cone solves
 against the gear's (`pitch/pinion.sv`); members roll at `N_c / N` off the gear's triangle, not
 `1 / sin`. `tests/hypoid_layout.rs` is the gate. The mesh export refuses a sheet a placement

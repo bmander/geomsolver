@@ -3,7 +3,8 @@
 // offset by the addendum and by the back depth (`std.Offset`, `outside(d)`); the spheres are
 // about its apex through the face span's ends. Their sizes are the layout's, solved. Where the
 // design relieves the ends, the tip's toe and heel corners are chamfered too (blank/ends.sv).
-// The checks draw the same limits as revolved sections (blank/limits.sv), for their named walls.
+// Each set the region's body uses names the blank's face it bounds: a member built from the
+// blank has faces `material.tip`, `.heel`, `.toe` and `.back`, which the checks read.
 use std
 use blank.sphere
 use blank.ends

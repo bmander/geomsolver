@@ -43,8 +43,9 @@ carry that relationship. The browser's `surfaceSample` API reads positions and e
 derivatives through the same core evaluator. This supplies generating surfaces to the
 envelope evaluator, but does not yet add a generated gear solid to the model.
 
-`blank/cone.sv` and `blank/sphere.sv` define the conical and spherical boundary components,
-drawn in each member's axial view by `blank/member.sv`. The layout declares spherical toe and
+`blank/member.sv` states each member's blank as one region, its faces the toe and heel spheres
+and the tip and back cones (`blank/cone.sv`, which drew the cones as revolved sections for the
+checks, and `blank/limits.sv` are retired: the checks read the region's own faces, #212). The layout declares spherical toe and
 heel at `R_mean ± face_width/2`, with the current `face_width = 0.2 R_mean`. Each member has
 tip, root and back cones at signed pitch-normal offsets `+m_n`, `-1.25 m_n` and `-4 m_n`. A
 meridian's generator coordinate spans `[0.5 R_mean, 1.5 R_mean]`; the separately declared
@@ -436,8 +437,9 @@ Keep gear knowledge in components. The reusable language capabilities needed are
     pass this gate. This proves local differential regularity of the nominal map, while
     source error transfer, global injectivity/interference and final analytic face assembly
     remain unfinished. See [Whole-interval geometry bounds](interval-geometry.md).
-12. **Supported analytic face boundaries implemented:** the source uses `ToothSide`
-    to declare the eight working/transition faces with the existing `face` construct and
+12. **Supported analytic face boundaries implemented:** the checks make the eight
+    working/transition faces (once `verification.sv`'s `ToothSide`; since #212 of their parts,
+    where a member built at one tooth space says its faces meet) with the existing `face` construct and
     explicit `on:` support. Their ordered finite edges share corners and traverse every
     flank/fillet join in opposite directions. Face samples map the support chart and retain
     the shared edge position, with independent checks at 1,440 boundary points across the

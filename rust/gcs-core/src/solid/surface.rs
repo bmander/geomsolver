@@ -103,15 +103,7 @@ impl RevolvedSurface {
         let s = sk.surfaces.get(surface).ok_or("no such surface")?;
         let mut patch = Self::read(sk,s.solid as usize,s.edge)?;
         patch.name = s.name.clone();
-        if let Some(span) = s.span {
-            let sweep = patch.sweep.abs();
-            if !span.iter().all(|v| v.is_finite()) || span[0] < 0. || span[0] >= span[1]
-                || span[1] > sweep {
-                return Err("a surface needs increasing angular bounds within its source sweep".into());
-            }
-            patch.v_domain = span.map(|a| a/sweep);
-        }
-        Ok(patch)
+        match s.span { Some(span) => patch.spanned(span),None => Ok(patch) }
     }
 
     /// Read a line, arc or circle of a revolution's profile, including hole boundaries.
@@ -190,6 +182,16 @@ impl RevolvedSurface {
             Some(Self {name,meridian,origin: m.origin,axis: m.axis,sweep: std::f64::consts::TAU,
                 v_domain: [0.,1.]})
         }).collect()
+    }
+
+    /// The surface over an angular span of its revolution (radians from its chart's start), as a
+    /// declaration's `from:`/`to:` restricts it (#212).
+    pub fn spanned(&self,span: [f64;2]) -> Result<Self,String> {
+        let sweep = self.sweep.abs();
+        if !span.iter().all(|v| v.is_finite()) || span[0] < 0. || span[0] >= span[1] || span[1] > sweep {
+            return Err("a surface needs increasing angular bounds within its source sweep".into());
+        }
+        Ok(Self {v_domain:span.map(|a| a/sweep),..self.clone()})
     }
 
     /// The same surface carried by a rigid motion (#212): a placed copy of a revolution's face.

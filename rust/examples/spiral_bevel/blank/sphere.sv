@@ -1,7 +1,8 @@
-// Step 3, a member's ends: the face width centred on the mean point along the pitch generator,
-// and the toe and heel spheres about the apex through its ends, drawn for the checks
-// (blank/limits.sv). A sphere's meridian runs pole to pole through the rim, its poles square to
-// the generator, so it turns about its diameter clear of the cones.
+// Step 3, a member's ends: the face width centred on the mean point along the pitch generator
+// (`FaceSpan`, which the blank's end spheres pass through, blank/member.sv), and an end sphere
+// drawn about the apex through one of its ends (`SphericalBoundary`, as the end relief's preview
+// draws them, blank/ends.sv). A sphere's meridian runs pole to pole through the rim, its poles
+// square to the generator, so it turns about its diameter clear of the cones.
 use std
 
 // The face width along `generator` (apex -> mean point), centred on the mean point.

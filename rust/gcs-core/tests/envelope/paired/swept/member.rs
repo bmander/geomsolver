@@ -23,7 +23,7 @@ struct Blank {field:SpatialField,angular:SpatialField,definition:String,radii:[f
 
 fn blank_parts(pair: &Pair,member: usize) -> Blank {
     let name = ["pinion","gear"][member];
-    let (origin,axis) = axis(pair,&format!("pair.{name}.ax"));
+    let (origin,axis) = axis(pair,&format!("{REF}.{name}.ax"));
     let length = axis[0].hypot(axis[1]).hypot(axis[2]);
     let unit = axis.map(|v| v/length);
     let coordinates = |p: [f64;3]| {
@@ -32,18 +32,28 @@ fn blank_parts(pair: &Pair,member: usize) -> Blank {
         let radial: [f64;3] = std::array::from_fn(|k| q[k]-z*unit[k]);
         [radial[0].hypot(radial[1]).hypot(radial[2]),z]
     };
-    let cone = |role: usize| {
-        let surface = &pair.limits[member][role];
+    // a point of the blank: midway between its cones at the middle of its face
+    let inside = {
+        let at = |role: &str| { let s = pair.wall(member,role); coordinates(s.at(0.5,s.domain()[1][0]).unwrap().position) };
+        let (t,b) = (at("tip"),at("back"));
+        [(t[0]+b[0])/2.,(t[1]+b[1])/2.]
+    };
+    // each cone's half-plane holds the material it bounds: the tip's the blank, the back's what
+    // the blank is outside of
+    let cone = |role: &str| {
+        let surface = pair.wall(member,role);
         let a = coordinates(surface.at(0.,surface.domain()[1][0]).unwrap().position);
         let b = coordinates(surface.at(1.,surface.domain()[1][0]).unwrap().position);
         let normal = [b[1]-a[1],a[0]-b[0]];
+        let holds = (inside[0]-a[0])*normal[0]+(inside[1]-a[1])*normal[1] < 0.;
+        let normal = if holds == (role == "tip") { normal } else { normal.map(|x| -x) };
         (PlanarField::half_plane(a,normal).unwrap(),format!("{{\"half_plane\":{{\"through\":{a:?},\"normal\":{normal:?}}}}}"))
     };
-    let radii = pair.ends.each_ref().map(|s| {
+    let radii = ["toe","heel"].map(|w| pair.wall(member,w)).map(|s| {
         let p = coordinates(s.at(0.5,0.).unwrap().position); p[0].hypot(p[1])
     });
     assert!(radii[0] < radii[1]);
-    let (tip,tip_def) = cone(0); let (back,back_def) = cone(2);
+    let (tip,tip_def) = cone("tip"); let (back,back_def) = cone("back");
     let [toe,heel] = radii;
     let angular = SpatialField::from(RevolvedField::new(tip.clone().difference(back.clone()).unwrap(),origin,axis).unwrap());
     let section = PlanarField::disk([0.;2],heel).unwrap()
@@ -99,10 +109,10 @@ impl Member {
             (SpatialField::from(field),definition)
         } else { let space = closure::GearSpace::read(pair); (space.field,space.definition) };
         let name = ["pinion","gear"][member];
-        let id = pair.model.map.ent_named(&format!("pair.generation.{name}_roll")).unwrap().i();
+        let id = pair.model.map.ent_named(&format!("{REF}.generation.{name}_roll")).unwrap().i();
         let mut sk = pair.model.sketch.clone();
         let mut index_definitions = vec![];
-        let (origin,axis) = axis(pair,&format!("pair.{name}.ax"));
+        let (origin,axis) = axis(pair,&format!("{REF}.{name}.ax"));
         let indices: Vec<_> = (0..pair.teeth[member] as usize).map(|index| {
             let gcs_core::model::MotionDef::Rotation {ratio,phase,..} = &mut sk.motions[id].def else { panic!() };
             *ratio = 0.; *phase = TAU*index as f64/pair.teeth[member];
@@ -354,8 +364,7 @@ fn complete_members_bound_material_across_flanks_blanks_and_indexing() {
             let tip = pair.tip(member,&flank,pair.rm,pair.analytic(member,&flank,0.5,pair.rm).parameters);
             let join = pair.seam(&flank,false).endpoint_parameters()[0];
             let c = pair.analytic(member,&flank,(tip.parameters[0]+join)/2.,pair.rm);
-            let s = pair.model.map.ent_named(&flank.name).unwrap().i();
-            let region = RevolvedRegion::read(&pair.model.sketch,pair.model.sketch.surfaces[s].solid as usize,pair.module*1e-10).unwrap();
+            let region = RevolvedRegion::read(&pair.model.sketch,pair.crown_of(&flank),pair.module*1e-10).unwrap();
             let plus = std::array::from_fn(|k| c.contact.position[k]+displacement*c.contact.normal[k]);
             let sign = region.classify(pair.motion_families[member].at(c.parameters[2]).unwrap().inverse().point(frame.point(plus)),0.).unwrap().signed_distance.signum();
             for offset in [-displacement,displacement] {

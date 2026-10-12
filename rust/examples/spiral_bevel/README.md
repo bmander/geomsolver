@@ -22,9 +22,8 @@ module declares is drawn again in the later view and tied by `project`.
 | 2 | `pitch/gear.sv` | the gear's pitch cone: the right triangle O–M–F in G |
 | 2 | `pitch/trace.sv` | the tooth trace about the cutter centre C, and the normal module |
 | 2 | `pitch/pinion.sv` | the pinion's cone, solved against the gear's by the shafts and equal normal pitch |
-| 3 | `blank/member.sv` | a member's blank, one region: within its pitch cone grown by the addendum (`std.Offset`) and its heel sphere, outside its toe sphere and its pitch cone shrunk by the back depth (`outside(d)`), sized by the solved layout |
+| 3 | `blank/member.sv`, `blank/sphere.sv` | a member's blank, one region: within its pitch cone grown by the addendum (`std.Offset`) and its heel sphere, outside its toe sphere and its pitch cone shrunk by the back depth (`back`), sized by the solved layout; its faces `tip`, `heel`, `toe` and `back` |
 | 3 | `blank/ends.sv` | the end relief: the tip's toe and heel corners chamfered, each corner put on the tip as a set |
-| 3 | `blank/limits.sv`, `blank/sphere.sv`, `blank/cone.sv` | the same limits and the root cone drawn as revolved sections, for the checks' named walls |
 | 4 | `crown/thickness.sv` | the crown tooth's pitch points, a quarter pitch either side of M |
 | 4 | `crown/section.sv`, `crown/rounding.sv` | the rack section: straight flanks, base, tip and tip roundings |
 | 4 | `crown/tooth.sv` | the pinion's generator: the section in N, revolved about the cutter's axis |
@@ -44,12 +43,19 @@ is what the test suites record (`fixtures::gear` rewrites the configuration for 
 
 Two entry points: **`gears.sv`**, the pair (`pair.pinion.body`, `pair.gear.body`; the layout
 is `pair.reference`), which the app opens as the example `spiral_bevel` and the glass box (⌘B)
-shows refining from its material fields; and **`pair.sv`**, the layout alone with each member's
-limits drawn (`blank/limits.sv`) and `verification.sv`'s analytic faces — each generated flank as
-an envelope of its crown surface trimmed to its member's limits, with the seams, corners and edges
-of its face loop — which the generating-system checks (`gcs-core/tests/envelope/paired.rs`) read
-and the exports do not. `gcs-core/tests/region_blank.rs` holds the members' region blank to the
-drawn limits.
+shows refining from its material fields; and **`pair.sv`**, the layout alone, which the layout's
+checks read (`gcs-core/tests/hypoid_layout.rs`, and `gcs-core/tests/region_blank.rs`, which holds
+each member's region blank to its own faces).
+
+A built member's faces are named, as any body's are: its blank's by the sets its region's body
+uses (`pair.pinion.body`'s `material.tip`, `material.heel`, `material.toe`, `material.back`), and
+each face a tooth space leaves by the crown face that made it (`indexed.outer`,
+`indexed.outer_round`, `indexed.tip`; the gear's by its space cutter's, `indexed.outer_crown.inner`
+and `indexed.neighbor.outer`). The generating-system checks (`gcs-core/tests/envelope/paired.rs`)
+read those faces off the members built at one tooth space each, and hold each flank to the
+analytic envelope of the crown face its name says — with the seams, corners and edges of its face
+loop solved on the analytic faces where the built member says they meet, never on the kernel's
+fit.
 
 ## Making the pair
 

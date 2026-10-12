@@ -608,7 +608,7 @@ impl Tracer<'_> {
         let stations = stations.into_iter().zip(traces).map(Arc::new).collect();
         Ok(Columns {tracer:self,station_at,margin,angles:(0..columns).map(|c| angle_of(c as f64)).collect(),
             column_mids:(0..columns-1).map(|c| angle_of(c as f64+0.5)).collect(),stations,beside,taus,columns_data,first_row,last,middles,
-            span:[lo_tau,hi_tau]})
+            span:[lo_tau,hi_tau],reached:first.iter().map(Option::is_some).collect()})
     }
 }
 
@@ -628,6 +628,8 @@ pub struct Columns<'t,'s> {
     last: usize,
     middles: Vec<f64>,
     span: [f64;2],
+    /// Which columns have a contact in the blank.
+    reached: Vec<bool>,
 }
 
 impl<'t,'s> Columns<'t,'s> {
@@ -665,27 +667,31 @@ impl<'t,'s> Columns<'t,'s> {
             beside:self.beside.clone(),stations:Mutex::new(traced),nodes:Mutex::new(nodes),grid,anchors,warps:Default::default()})
     }
 
-    /// Where every column of the first grid crosses from one of the cutter's faces to the next
-    /// inside the rows' span, if each crosses the same faces in the same order: each crossing's
-    /// mean unfolded walk length, and the faces between them. None where the stations name no
-    /// faces, or the columns disagree.
+    /// Where every column of the first grid reaching the blank crosses from one of the cutter's
+    /// faces to the next inside the rows' span, if each crosses the same faces in the same order:
+    /// each crossing's mean unfolded walk length, and the faces between them. None where the
+    /// stations name no faces, or those columns disagree.
     fn anchors(&self) -> Option<Anchors> {
         let [lo,hi] = self.span;
         let crossings: Vec<Vec<(f64,u32,u32)>> = self.stations.iter().map(|entry| {
             let (station,traced) = &**entry;
             station.crossings(&traced.curve).into_iter().filter(|c| c.0 > lo && c.0 < hi).collect()
         }).collect();
-        let first = crossings.first()?;
+        let first = crossings.iter().zip(&self.reached).find(|(_,r)| **r)?.0;
         let order: Vec<(u32,u32)> = first.iter().map(|c| (c.1,c.2)).collect();
+        // only the columns reaching the blank leave faces of the cut: one carrying the sheet's
+        // edge out may cross the cutter's faces otherwise (a face run out to nothing), and keeps
+        // its rows at the walk's own lengths (`Anchors::walk`)
+        let crossings: Vec<Vec<(f64,u32,u32)>> = crossings.into_iter().zip(&self.reached).filter(|(_,r)| **r).map(|(c,_)| c).collect();
         if crossings.iter().any(|c| c.iter().map(|c| (c.1,c.2)).ne(order.iter().copied())) { return None }
         if order.windows(2).any(|w| w[0].1 != w[1].0) { return None }
         let at: Vec<f64> = (0..order.len()).map(|k| crossings.iter().map(|c| c[k].0).sum::<f64>()/crossings.len() as f64).collect();
         if at.windows(2).any(|w| !(w[1] > w[0])) { return None }
         let faces = match order.first() {
             Some(&(face,_)) => std::iter::once(face).chain(order.iter().map(|o| o.1)).collect(),
-            // one face over the whole span: the one the middle of the first column was made by
+            // one face over the whole span: the one the middle of the first reaching column was made by
             None => {
-                let (station,traced) = &*self.stations[0];
+                let (station,traced) = &*self.stations[self.reached.iter().position(|r| *r)?];
                 let mid = traced.curve.iter().min_by(|a,b| (a.tau-(lo+hi)/2.).abs().total_cmp(&(b.tau-(lo+hi)/2.).abs()))?;
                 vec![station.face_at(mid.s)?]
             }

@@ -145,8 +145,8 @@ m[0] distance(1mm) m[1]
     assert_eq!(ends, want);
 }
 
-/// A revolved profile, one surface per edge — the pattern `spiral_bevel/verification.sv` wrote
-/// out by hand.  The chain is reached through an instance (`r.profile`), through a component's
+/// A revolved profile, one surface per edge — the pattern the spiral bevel's checks once wrote
+/// out by hand (they read a built member's faces now, #212).  The chain is reached through an instance (`r.profile`), through a component's
 /// group formal, and through a group bundling it, and each way gives one surface per link on
 /// that link.
 #[test]

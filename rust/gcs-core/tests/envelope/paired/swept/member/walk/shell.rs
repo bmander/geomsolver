@@ -142,10 +142,7 @@ impl Chart<'_> {
         self.walk.rho = toe*(1.-u)+heel*u;
         let phi = TAU*v;
         let back = *self.back.entry(u.to_bits()).or_insert_with(|| {
-            let points = self.walk.pair.limits[self.walk.member][2]
-                .line_on_sphere([0.;3],self.walk.rho,0.).unwrap();
-            assert_eq!(points.len(),1);
-            let p = self.walk.pair.local_frame(self.walk.member).point(points[0].position);
+            let p = self.walk.pair.local_frame(self.walk.member).point(self.walk.pair.cone_on_sphere(self.walk.member,"back",self.walk.rho));
             p[0].hypot(p[1]).atan2(p[2])
         });
         if w == 0. {

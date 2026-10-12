@@ -58,10 +58,11 @@ enum Source {
 #[derive(Clone,Debug)]
 pub enum Support { Envelope(crate::patch::TrimmedPatch),Surface(RevolvedSurface) }
 
-/// One use of an edge in a face made of its parts: the edge, which way the loop walks it, and
-/// where its seam's chart is the other face's of a junction, this face's `u` there.
+/// One use of an edge in a face made of its parts: the edge and its identity (a caller's
+/// numbering, shared by the faces it bounds), which way the loop walks it, and where its seam's
+/// chart is the other face's of a junction, this face's `u` there.
 #[derive(Clone,Debug)]
-pub struct Use { pub edge: SpatialEdge,pub direction: Direction,pub endpoint_u: Option<f64> }
+pub struct Use { pub edge: SpatialEdge,pub id: usize,pub direction: Direction,pub endpoint_u: Option<f64> }
 
 /// One boundary point, retaining the shared edge position and the support chart.
 /// `incidence_error` is the distance to the support evaluated in that chart.
@@ -137,7 +138,7 @@ impl SpatialFaceBoundary {
             Support::Surface(surface) => Source::Surface {projector:surface.projector()?,domain:surface.domain()},
             Support::Envelope(patch) => Source::Envelope(patch.envelope_patch()?.clone()),
         };
-        let edge_uses = uses.iter().enumerate().map(|(i,u)| EdgeUse {edge:i,direction:u.direction}).collect();
+        let edge_uses = uses.iter().map(|u| EdgeUse {edge:u.id,direction:u.direction}).collect();
         let endpoint_u = uses.iter().map(|u| u.endpoint_u).collect();
         let edges = uses.into_iter().map(|u| u.edge).collect();
         Self::checked(Self {name,support:None,source,uses:edge_uses,edges,endpoint_u,tolerance})
