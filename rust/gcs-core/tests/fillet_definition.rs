@@ -808,7 +808,7 @@ fn rolled(c: &dyn Fn(f64) -> V, toward: [&dyn Fn(V) -> V; 2], hit: [&dyn Fn(V, V
 
 /// The stack's tee crotch: the main pipe of radius `big` about x, a branch of radius `small`
 /// about z standing on it, the ball of radius `r` rolled round where they meet.
-fn tee_crotch(big: f64, small: f64, r: f64) -> f64 {
+pub(crate) fn tee_crotch(big: f64, small: f64, r: f64) -> f64 {
     let (rb, rs) = (big + r, small + r);
     rolled(
         &|phi: f64| {
@@ -824,7 +824,7 @@ fn tee_crotch(big: f64, small: f64, r: f64) -> f64 {
 
 /// The stack's bore rim: a bore of radius `small` about z drilled into a solid pipe of radius
 /// `big` about x, its rim rolled off.
-fn bore_rim(big: f64, small: f64, r: f64) -> f64 {
+pub(crate) fn bore_rim(big: f64, small: f64, r: f64) -> f64 {
     rolled(
         &|phi: f64| {
             let (s, co) = phi.sin_cos();
@@ -840,7 +840,7 @@ fn bore_rim(big: f64, small: f64, r: f64) -> f64 {
 
 /// The stack's root of a boss of radius `big` about `(cx, cy)` standing through the plane
 /// `z = h0 − s x`, the whole way round.
-fn sloped_root(big: f64, [cx, cy]: [f64; 2], [h0, s]: [f64; 2], r: f64) -> f64 {
+pub(crate) fn sloped_root(big: f64, [cx, cy]: [f64; 2], [h0, s]: [f64; 2], r: f64) -> f64 {
     let n = unit([s, 0.0, 1.0]);
     let lift = r / n[2];
     rolled(

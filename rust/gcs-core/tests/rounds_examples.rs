@@ -80,6 +80,29 @@ fn the_knobs_root_and_neck_are_filled() {
           &[[5.5, 0.0, 9.5], [4.6, 0.0, 36.6], [10.0, 0.0, 20.0]]);
 }
 
+/// `tee.sv`: the crotch filled where the branch (about z) stands on the main pipe (about x), the
+/// ball's own place still empty; `bore.sv`: the bore's rim taken away, the ball's place kept.
+#[test]
+fn the_tees_crotch_is_filled_and_the_bores_rim_rounded() {
+    holds(include_str!("../../examples/rounds/tee.sv"), "tee",
+          &[[6.2, 0.0, 10.2], [0.0, 0.0, 20.0], [20.0, 0.0, 0.0]],
+          &[[7.5, 0.0, 11.5], [10.0, 0.0, 15.0]]);
+    holds(include_str!("../../examples/rounds/bore.sv"), "pipe",
+          &[[7.0, 0.0, 9.5], [0.0, 0.0, -5.0], [20.0, 0.0, 9.5]],
+          &[[6.2, 0.0, 9.8], [0.0, 0.0, 5.0]]);
+}
+
+/// `runout.sv`: the boss's root filled behind it on the slope, the hole's rim taken away where it
+/// meets the slope, each wedge whole elsewhere.
+#[test]
+fn the_runouts_root_is_filled_and_rim_rounded() {
+    let src = include_str!("../../examples/rounds/runout.sv");
+    holds(src, "lug", &[[20.0, -9.2, 15.2], [10.0, -12.0, 5.0], [20.0, -3.0, 25.0]],
+          &[[20.0, -10.5, 16.5], [10.0, -12.0, 19.0]]);
+    holds(src, "vent", &[[90.0, -12.0, 5.0], [93.0, -12.0, 10.0]],
+          &[[93.85, -12.0, 11.4], [98.0, -12.0, 5.0]]);
+}
+
 /// `pad.sv`: the boss's root filled, two of the plate's near edges rounded and the other two
 /// sharp, the bore through it all.
 #[test]

@@ -199,7 +199,20 @@ fn recipe_with(sk: &Sketch,root: usize,static_only: bool) -> Result<StaticRecipe
                 }
                 let members = groups.get(&i).cloned().unwrap_or_else(|| vec![i as u32]);
                 let pieces: Vec<_> = members.into_iter().map(pieces_of).collect();
-                super::lowering::assemble(pieces.iter().flat_map(|p| p.iter())).node(scale)?
+                let assembly = super::lowering::assemble(pieces.iter().flat_map(|p| p.iter()));
+                let mut node = assembly.node(scale)?;
+                // a ball rolled along a traced run is rolled against the body as its terms but the
+                // late ones make it, all built before this (they come first in its dependencies)
+                if !assembly.rolled.is_empty() {
+                    let late = |b: &([Vec<u32>;4],Vec<SweptCut>)| b.0[2].contains(&(i as u32)) || b.0[3].contains(&(i as u32));
+                    let Some((&b,(sets,_))) = bodies.iter().find(|(_,b)| late(b)) else {
+                        return Err(format!("`{}`: a rolled round is built against the body it rounds",sk.solid_name(i)));
+                    };
+                    let SolidDef::Body {stock,bound,..} = &sk.solids[b].def else { unreachable!("a body's sets") };
+                    node.set("stratum",object([("stock",(*stock).into()),("on",ids(&sets[0])),("cut",ids(&sets[1])),
+                        ("bound",ids(bound))]));
+                }
+                node
             }
             // a region: its meridian turned once about its axis (§6.21)
             SolidDef::Region {terms,..} => {

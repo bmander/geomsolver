@@ -28,7 +28,8 @@ between planes, or between a plane and a cylinder along it, is a prism whose fac
 (cut off by the faces its edge ends on, square or at a slant), a run round a circle where a
 plane, a cylinder, a cone or a sphere meet about one axis is a ring whose face is a torus (a
 stretch of one where the circle goes on tangent into a flat side), a corner where three square
-faces meet is the ball's patch, a flat is a plane. Those bodies show as exact solids and export by `solventc --step` and
+faces meet is the ball's patch, a flat is a plane, and a round along any other edge is the ball
+rolled along it, traced, its canal fitted. Those bodies show as exact solids and export by `solventc --step` and
 `--stl`; a region no entry builds is meshed by the page in the background, and its export is
 refused, naming why.
 
@@ -44,6 +45,9 @@ Read them in this order:
 | `slot.sv` | **Rounds along tangent chains.** An obround boss's foot filled and a pocket's rim rounded off, each along flat sides and round the half circles or corners they go on into. Where two faces meet tangent there is no corner, so nothing ends a round there. Built exactly: runs and stretches of rings, glued where they meet. |
 | `rail.sv` | **A round beside a cylinder, over a face in pieces.** A rod half sunk along a plate, filled on both sides where it stands. The rod splits the plate's top in two, so the round is a run along each line where a piece meets the rod; in a section the rod is a circle the ball rolls against. Built exactly: 26306.866 mm³. |
 | `knob.sv` | **A section with a curved side.** A knob turned about one axis: a rod on a disc, a ball on the rod. The rod's root is filled against the disc and its neck against the ball; in a section through the axis the sphere is a circle, so the neck's section is a line and two arcs. Built exactly: two rings whose faces are tori, 26224.398 mm³. |
+| `tee.sv` | **A round no line or circle carries.** A pipe tee, its crotch filled where the branch meets the main pipe on a saddle. The ball is rolled along that loop, traced, its arc swept into a canal fitted as a B-spline surface. Built exactly: its volume #85's quadrature's to 1e-11. |
+| `bore.sv` | **A rolled round taken away.** A bore drilled into a solid pipe's wall, its rim rounded off: convex, along a saddle, rolled against the pipe as the cut leaves it. |
+| `runout.sv` | **Rounds that run out onto a face.** A boss's root against a sloped top, ending obliquely at the near face, and a hole's rim breaking out of a wedge's low end: each rolled on past where its edge ends and cut off by the face there. |
 | `disc.sv` | **A round in a region's own body, built exactly.** A disc defined as a set, its top rim rounded and its bottom rim chamfered by `std.Rounded` and `std.Chamfered`. Lowered into the meridian, so `solventc --step` writes a torus and a cone (1196.946 mm³, the closed form's). |
 | `regions.sv` | **Regions in general position.** An ellipsoid by its foci, Steinmetz's bicylinder, and a Voronoi cell of a ball, each read point by point. |
 

@@ -325,7 +325,12 @@ another **glued** at their shared section. A face going on tangent from one of a
 end is no end (`BodyFaces::end_sides`, the field's and the lowering's one rule: a seam, the round
 goes on round it; else the obround's flat side cut its half circle's round short),
 `Corner` (three square planes: the cell less the ball, `brep::fillet::corner`, plus each edge's
-run); no pieces where the faces never meet or an edge turns the other way. **The gate**: the
+run), `Rolled` (along an edge no line or coaxial circle carries — a tee's crotch, a bore's rim, a
+run-out across a slope: the ball rolled along the whole run, `brep::fillet::roll`, its canal
+fitted, carried past an end and cut off by the plane there; the recipe's `"rolled"` rolled against
+the body's stratum, rebuilt from the `"stratum"` terms `cad.rs` writes beside it, the gate's
+against `BodyFaces::brep` brought back by `BodyFaces::back`); no pieces where the faces never meet
+or an edge turns the other way. **The gate**: the
 pieces' B-rep held to the region's own field (`agreement`, by area; empty only where the field
 reads empty) before anything reads them. Memoised against the region's own terms (`document::reads_own`)
 and the stratum's `Arc` (`Sketch::lowering_cache`; a key over `solid::reads` walks every round of
@@ -339,11 +344,14 @@ this needs (ported from #79–#110): edges along a face cut where they cross its
 (`query::crossings_in`), touches read to second order (`ssi::touch_near`/`touch`,
 `trace_beside`/`unseen_beside`), equal crossing cylinders' ellipses split where they cross
 (`boolean::crossings_among`), `query::line_cylinder`, `Surface::offset`, a fitted edge read at its
-own `tol`. Open: curved ends at a corner (a run-out onto a curved face, #110), corners not square,
-runs between two curved faces, a run mitred against a ring's stretch on one cylinder (the union
-of coincident cylinder faces: a groove rounded at its ends), curved sections (arcs: #83), traced canals
-(`brep::fillet::roll`, #85), the OCCT oracle.
-`tests/round_lowering.rs` is the gate (every volume the closed form's to 1e-9; `slot.sv`, `pad.sv`, `rail.sv`, `knob.sv`).
+own `tol`. `cad::shifted` (the app's exact solid, built about its own origin) moves a lowered
+node's pieces, corners and balls with the rest (`shifted_node`). Open: curved ends at a corner (a
+run-out onto a curved face, #110), corners not square, runs between two curved faces, a run
+mitred against a ring's stretch on one cylinder (the union of coincident cylinder faces: a groove
+rounded at its ends), a flat along a traced edge, a rolled round beside other pieces in one
+region, the OCCT oracle. `tests/round_lowering.rs` is the gate (every volume the closed form's to
+1e-9, a rolled one #85's quadrature's to 1e-6: `slot.sv`, `pad.sv`, `rail.sv`, `knob.sv`,
+`tee.sv`, `bore.sv`, `runout.sv`).
 **Distance from a set, offsets (§6.21, 0.64, #145 F4):** `p distance(d, side: outside|inside) S`
 (`distance` is a set use, `may_use`), `p inside(d) S` / `p outside(d) S` and `std.Offset(S, d)` are
 one bound on the signed distance from `S`'s surface (`Reach`: cmp toward the outside, whether

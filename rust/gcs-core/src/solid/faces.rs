@@ -115,10 +115,21 @@ impl BodyFaces {
         (0..self.paths.len()).filter(|&i| self.paths[i].matches(&f.path)).collect()
     }
 
-    fn q(&self, p: V) -> V { scale(sub(p, self.origin), self.mm) }
+    /// A point of the model's space in the boundary's (millimetres, about its origin).
+    pub fn q(&self, p: V) -> V { scale(sub(p, self.origin), self.mm) }
 
     /// A point of the boundary's space back in the model's.
-    fn back(&self, q: V) -> V { add(scale(q, 1.0 / self.mm), self.origin) }
+    pub fn back(&self, q: V) -> V { add(scale(q, 1.0 / self.mm), self.origin) }
+
+    /// The boundary itself (millimetres, about its origin), and how many millimetres a model unit
+    /// is.
+    pub fn brep(&self) -> (&crate::brep::topo::Brep, f64) { (&self.loc.b, self.mm) }
+
+    /// Edge `e`'s middle, by its parameter (model units).
+    pub fn middle(&self, e: u32) -> V {
+        let edge = &self.loc.b.edges[e as usize];
+        self.back(edge.point(0.5 * (edge.t[0] + edge.t[1]), &self.loc.b.vertices))
+    }
 
     /// Face `fi`'s outward unit normal at `q` (millimetres), pointing away from the material.
     fn outward(&self, fi: usize, q: V) -> V {

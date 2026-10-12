@@ -376,6 +376,74 @@ fn a_knobs_neck_turns_a_section_with_a_curved_side() {
     assert_eq!(kinds(&b).get("torus"), Some(&2));
 }
 
+/// Of a cylinder of radius `small` standing on the axis of one of radius `big` (square to it), the
+/// volume inside the bigger: `∫ 2·√(small² − y²)·√(big² − y²) dy`, with `y = small·sin θ` a smooth
+/// periodic integrand, which Gauss–Legendre takes to roundoff.
+fn inside_crossing(big: f64, small: f64) -> f64 {
+    let n = 64;
+    let mut total = 0.0;
+    for k in 0..n {
+        // the midpoint rule over a whole period of a smooth periodic integrand is spectral
+        let t = -PI / 2.0 + PI * (k as f64 + 0.5) / n as f64;
+        let (sn, cs) = t.sin_cos();
+        total += 2.0 * small * small * cs * cs * (big * big - small * small * sn * sn).sqrt();
+    }
+    total * PI / n as f64
+}
+
+/// The volume is held to the rolled pieces' closed form — #85's quadrature
+/// (`fillet_definition::rolled`) — to 1e-6, as #194 asks of a rolled piece.
+fn near_quadrature(got: f64, want: f64) {
+    eprintln!("against the quadrature: {got:.9} for {want:.9}, {:+.2e}", (got - want) / want);
+    assert!((got - want).abs() <= 1e-6 * want, "{got} against {want}");
+}
+
+/// `tee.sv` (#85's tee): a branch pipe standing square on a main pipe, the crotch filled. No line
+/// or circle carries where they meet: the ball rolls along a traced loop (`brep::fillet::roll`),
+/// against the body as its other terms make it, its canal fitted.
+#[test]
+fn a_tees_crotch_is_rolled() {
+    let e = solved(include_str!("../../examples/rounds/tee.sv"));
+    assert_eq!(lowered(&e).0, 1);
+    let b = exported(&e, "tee");
+    let want = PI * 100.0 * 60.0 + PI * 36.0 * 25.0 - inside_crossing(10.0, 6.0)
+        + crate::fillet_definition::tee_crotch(10.0, 6.0, 2.0);
+    near_quadrature(props::volume(&b), want);
+}
+
+/// `bore.sv` (#85's bore): a bore drilled square into a solid pipe's wall, its rim rounded away —
+/// convex, along a saddle, rolled against the pipe as the cut leaves it (the stratum).
+#[test]
+fn a_bores_rim_on_a_pipe_is_rolled_away() {
+    let e = solved(include_str!("../../examples/rounds/bore.sv"));
+    assert_eq!(lowered(&e).0, 1);
+    let b = exported(&e, "pipe");
+    let want = PI * 100.0 * 60.0 - inside_crossing(10.0, 6.0) - crate::fillet_definition::bore_rim(10.0, 6.0, 1.0);
+    near_quadrature(props::volume(&b), want);
+}
+
+/// `runout.sv` (#110's run-outs): a boss's root against a sloped top, ending obliquely at the
+/// wedge's near face, and a hole's rim on another's slope, breaking out of its low end — each a
+/// ball rolled along a traced run, carried on past each end and cut off by the face there, held
+/// to the field (its run stops square to its edge where that is within the face: the same). With
+/// the boss centred on the near face the face cuts the root square, and it is half of a whole
+/// boss's root on the slope (#85's quadrature).
+#[test]
+fn rounds_that_run_out_onto_a_face_are_rolled_and_cut_off() {
+    let src = include_str!("../../examples/rounds/runout.sv");
+    let e = solved(src);
+    assert_eq!(lowered(&e).0, 2);
+    let (lug, vent) = (exported(&e, "lug"), exported(&e, "vent"));
+    assert!(props::volume(&lug) > 40.0 * 15.0 * 24.0 && props::volume(&vent) < 40.0 * 15.0 * 24.0);
+    let centred = solved(&src.replace("fix((20, -3)) bc", "fix((20, 0)) bc"));
+    let b = exported(&centred, "lug");
+    // the wedge, the boss less its half within the wedge (under the slope, at its centroid's
+    // height 15), and half the root
+    let want = 40.0 * 15.0 * 24.0 + PI * 36.0 * 30.0 - 15.0 * PI * 18.0
+        + crate::fillet_definition::sloped_root(6.0, [20.0, 0.0], [20.0, 0.25], 2.0) / 2.0;
+    near_quadrature(props::volume(&b), want);
+}
+
 /// **No term left unread**: the hand-written round with one side moved off its face
 /// (`p inside(1mm) a`) is no set of the table's — every term must be one an entry reads — so it is
 /// not built, and its export says no entry builds it.

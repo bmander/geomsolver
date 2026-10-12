@@ -27,6 +27,7 @@
 //! | `Flat` / `FlatFill`: within (outside) two faces, short of the flat through the legs | a prism of the triangle (a plane face) |
 //! | `Corner` / `CornerFill`: within (outside) three faces square to one another, beyond reach of the ball touching all three | the corner's cell less the ball (a sphere's patch), and each edge's run beyond it |
 //! | `Run` / `Fill` / `Flat` round a circle (or a stretch of one between seams) where a plane, a cylinder, a cone or a sphere meet about one axis | the section turned about the axis through the circle's angle (a torus face); in the meridian a sphere is a circle |
+//! | `Run` / `Fill` along an edge no line or coaxial circle carries (two pipes' saddle, a plane across a cylinder) | the ball rolled along the run, traced, against the stratum (`brep::fillet::roll`): its canal fitted, carried past each end and cut off by the plane there |
 //! | any of them where the faces meet nowhere, or an edge turns the other way | nothing |
 //!
 //! A region is its **pieces** (`Piece`: a run along an edge, a ball's cell at a corner), and the
@@ -133,6 +134,18 @@ pub enum Piece {
     Run(Run),
     Ring(Ring),
     Corner(Corner),
+    Rolled(Rolled),
+}
+
+/// A ball rolled along a run of edges no line or coaxial circle carries — a pipe tee's crotch, a
+/// bore's rim on a pipe's wall, a boss's root across a sloped face (model units): the ball of
+/// radius `r` touching both faces, rolled from where it stands over `at` on the run, its spine
+/// traced and its canal fitted (`brep::fillet::roll`) against the body as its other terms make it
+/// (the stratum), where the recipe builds it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Rolled {
+    pub at: V,
+    pub r: f64,
 }
 
 /// The faces a region rounds or cuts at, and whether it lies within all of them (a convex edge's
@@ -201,7 +214,7 @@ pub fn lowered(sk: &Sketch, solid: usize) -> Option<Result<Rc<Vec<Piece>>, Strin
         }
     }
     let l = build(&body, &faces, section).and_then(|pieces| {
-        gate(sk, solid, &pieces)?;
+        gate(sk, solid, &pieces, &body)?;
         Ok(Rc::new(pieces))
     });
     sk.lowering_cache.borrow_mut().insert(solid, (key, body, l.clone()));
@@ -407,6 +420,16 @@ fn build(body: &super::faces::BodyFaces, f: &Faces, section: Section) -> Result<
 fn run(body: &super::faces::BodyFaces, ga: &[usize], gb: &[usize], within: bool, section: Section)
     -> Result<Vec<Piece>, String> {
     let edges = body.edges_between(ga, gb);
+    // an edge no line or circle about the faces' common axis carries: the ball rolled along the
+    // whole run of them, traced
+    let carried = |e: u32| body.segment(e).is_some() || body.circle(e).is_some_and(|(centre, axis, ..)| {
+        body.faces_of(e).iter().all(|&f| body.coaxial(f, centre, axis))
+    });
+    if let Some(&e) = edges.iter().find(|&&e| !carried(e)) {
+        let Section::Round(r) = section else { return unbuilt("a flat along a traced edge") };
+        return Ok(if body.convex(e) == Some(within) { vec![Piece::Rolled(Rolled { at: body.middle(e), r })] }
+            else { Vec::new() });
+    }
     let all: Vec<usize> = ga.iter().chain(gb).copied().collect();
     let ends = body.end_sides(&edges, &all);
     let mut pieces = Vec::new();
@@ -612,6 +635,7 @@ pub struct Assembly {
     pub rings: Vec<Ring>,
     pub corners: Vec<Corner>,
     pub joins: Vec<[usize; 2]>,
+    pub rolled: Vec<Rolled>,
 }
 
 /// The union of `pieces` as one construction (`Assembly`).
@@ -621,6 +645,7 @@ pub fn assemble<'a>(pieces: impl IntoIterator<Item = &'a Piece>) -> Assembly {
         Piece::Run(r) => norm(r.origin) + r.length,
         Piece::Ring(g) => norm(g.section.origin) + norm(g.axis_origin),
         Piece::Corner(c) => norm(c.vertex) + c.r,
+        Piece::Rolled(k) => norm(k.at) + k.r,
     }).fold(1.0, f64::max);
     let near = |p: V, q: V| distance(p, q) <= 1e-9 * size;
     let same_stroke = |a: &Stroke, b: &Stroke| match (a, b) {
@@ -643,6 +668,9 @@ pub fn assemble<'a>(pieces: impl IntoIterator<Item = &'a Piece>) -> Assembly {
                 && (h.angle - g.angle).abs() <= 1e-12) => out.rings.push(g.clone()),
             Piece::Corner(c) if !out.corners.iter().any(|d| near(c.vertex, d.vertex) && near(c.centre, d.centre)) => {
                 out.corners.push(c.clone())
+            }
+            Piece::Rolled(k) if !out.rolled.iter().any(|j| near(j.at, k.at) && (j.r - k.r).abs() <= 1e-9 * size) => {
+                out.rolled.push(k.clone());
             }
             _ => {}
         }
@@ -709,8 +737,10 @@ impl Assembly {
             ("radius", (c.r * by).into()), ("toward", Json::Arr(c.toward.iter().map(|&m| vector(m)).collect())),
         ])).collect();
         let joins = self.joins.iter().map(|j| Json::Arr(j.iter().map(|&k| k.into()).collect())).collect();
+        let rolled = self.rolled.iter()
+            .map(|k| object([("at", vector(scale(k.at, by))), ("radius", (k.r * by).into())])).collect();
         Ok(object([("kind", "lowered".into()), ("pieces", Json::Arr(pieces)), ("corners", Json::Arr(corners)),
-            ("joins", Json::Arr(joins))]))
+            ("joins", Json::Arr(joins)), ("rolled", Json::Arr(rolled))]))
     }
 
     /// Built by this kernel (lengths times `by`).
@@ -722,7 +752,7 @@ impl Assembly {
 /// **The gate**: a lowering stands only where the region's own field agrees with it — every probe
 /// a little inside the built boundary material by the field, every one a little outside not
 /// (`agreement`, sampled by area); one holding nowhere, only where the field reads it empty too.
-fn gate(sk: &Sketch, solid: usize, pieces: &[Piece]) -> Result<(), String> {
+fn gate(sk: &Sketch, solid: usize, pieces: &[Piece], body: &super::faces::BodyFaces) -> Result<(), String> {
     if pieces.is_empty() {
         let empty = super::region::in_general_position(sk, solid)
             .is_some_and(|g| g.is_ok_and(|f| f.is_empty()));
@@ -731,9 +761,26 @@ fn gate(sk: &Sketch, solid: usize, pieces: &[Piece]) -> Result<(), String> {
         };
     }
     let field = super::MaterialField::read(sk, solid, super::cad::AXIS_TOLERANCE)?;
-    let b = assemble(pieces).brep(1.0)?;
-    let size = b.size().max(f64::MIN_POSITIVE);
-    let m = crate::brep::mesh::mesh(&b, 1e-5 * size, crate::brep::export::ANGULAR)?;
+    // the pieces' boundary in model units: a rolled one rolled against the stratum (millimetres,
+    // about its origin) and brought back
+    let (b, rolled) = match pieces {
+        [Piece::Rolled(k)] => {
+            let (stratum, mm) = body.brep();
+            let tol = 1e-9 * stratum.size().max(1.0);
+            (crate::brep::fillet::roll(stratum, body.q(k.at), k.r * mm, tol)?.piece, true)
+        }
+        _ if pieces.iter().any(|p| matches!(p, Piece::Rolled(_))) => {
+            return unbuilt("a rolled round beside other pieces");
+        }
+        _ => (assemble(pieces).brep(1.0)?, false),
+    };
+    let mut m = crate::brep::mesh::mesh(&b, 1e-5 * b.size().max(f64::MIN_POSITIVE), crate::brep::export::ANGULAR)?;
+    if rolled {
+        for p in &mut m.pts {
+            *p = body.back(*p);
+        }
+    }
+    let size = b.size().max(f64::MIN_POSITIVE) / if rolled { body.brep().1 } else { 1.0 };
     let offset = 2e-3 * size;
     let options = super::agreement::Options {
         offset, confirm: offset / 4.0, value_tolerance: offset / 5.0, triangles: 400,
