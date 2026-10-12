@@ -412,7 +412,7 @@ fn the_end_relief_as_a_sum_of_distances_bows_on_the_sphere() {
 /// the tip's toe and heel corners, each leg 0.2 from the other face, is today's `EndChamfer` body —
 /// the blank less the two drawn rings — wherever a point is farther from either boundary than the
 /// sum of distances bows off the straight chamfer on the sphere (7e-5 mm, X3).  Read by the field:
-/// a chamfer on an offset cone is not lowered.
+/// a chamfer beside a sphere is not lowered (the sum bows there, #208).
 #[test]
 fn the_end_relief_stated_in_the_region_is_end_chamfers() {
     let text = include_str!("../../examples/spiral_bevel/blank/member.sv");

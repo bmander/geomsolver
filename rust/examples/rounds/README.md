@@ -39,6 +39,7 @@ Read them in this order:
 | `boss.sv` | **A round on a curved edge.** A boss filleted where it stands on a plate (`pad.boss round(r: 3mm) pad.plate`): a ring, with no special case for the circle. Built exactly, a torus's face. |
 | `by_hand.sv` | **Your own round.** The round written out in the file: a set `Rolled(a, b, r)` and a word `A rolled(r) B` that makes it a solid and cuts it, in about twenty lines. The same set as the library's, so the same entry builds it. |
 | `disc.sv` | **A round in a region's own body, built exactly.** A disc defined as a set, its top rim rounded and its bottom rim chamfered by `std.Rounded` and `std.Chamfered`. Lowered into the meridian, so `solventc --step` writes a torus and a cone (1196.946 mm³, the closed form's). |
+| `blank.sv` | **Rounds on an offset cone.** A gear blank's face as a set: the pitch cone grown by the addendum (`std.Offset`) and shrunk by the dedendum, between a toe sphere and a heel sphere, the tip's rims rounded by `std.Rounded`. The grown cone is still a line of the meridian, so the rounds are built exactly there: `solventc --step` writes two tori (1353.180 mm³, the closed form's). A chamfer beside a sphere is read point by point instead: there the sum of distances bows off the straight flat. |
 | `regions.sv` | **Regions in general position.** An ellipsoid by its foci, Steinmetz's bicylinder, and a Voronoi cell of a ball, each read point by point. |
 
 The fillet stack's examples (#195), each the stack's program written with the words:
@@ -58,4 +59,5 @@ edits included, and the stack's examples to the stack's closed forms and #85's q
 round's volume read off the field within 2e-3 (the slow tier). `tests/round_lowering.rs` holds the
 exact constructions to closed forms to 1e-9, and to their fields. `tests/rounds.rs` holds the words
 to closed forms: Steiner's formula for a block rounded all over, the mitre, Pappus for the boss's
-ring, the volume three flats take at a corner.
+ring, the volume three flats take at a corner. `tests/offset_corners.rs` holds the rounds and flats
+on an offset cone's corners, `blank.sv` among them, to Pappus over the corners worked out by hand.

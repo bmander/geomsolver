@@ -160,7 +160,8 @@ pub fn flat(s: &Seg, n: &Seg, side: f64, legs: [Leg; 2]) -> Result<Cut, String> 
 
 /// `region` with every corner where a step of `a` meets a step of `b` (either way round) cut by
 /// `cut`, the new step tagged `tag`.  A seam (the steps meeting tangent) is no corner.  Refused
-/// where the cut does not fit on a face: its foot past the far end of a step, or two cuts meeting
+/// at a charted step's corner (a section's, `brep::section`: never a meridian's), and where the
+/// cut does not fit on a face: its foot past the far end of a step, or two cuts meeting
 /// within one (a face the rounds would consume, #183 X0's finding 9).
 pub fn corners(region: &Region, a: &[u32], b: &[u32], tag: u32,
            cut: &dyn Fn(&Step, &Step, f64) -> Result<Cut, String>) -> Result<Region, String> {
@@ -174,8 +175,11 @@ pub fn corners(region: &Region, a: &[u32], b: &[u32], tag: u32,
             let (s, n) = (&l[i], &l[(i + 1) % k]);
             let named = (a.contains(&s.tag) && b.contains(&n.tag))
                 || (b.contains(&s.tag) && a.contains(&n.tag));
-            if !named || s.chart.is_some() || n.chart.is_some() {
+            if !named {
                 continue;
+            }
+            if s.chart.is_some() || n.chart.is_some() {
+                return Err(format!("the corner between faces {} and {} is charted", s.tag, n.tag));
             }
             let (ts, tn) = (unit(s.seg.tangent(1.0)), unit(n.seg.tangent(0.0)));
             let turn = cross(ts, tn);
