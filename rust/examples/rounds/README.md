@@ -24,7 +24,8 @@ turned once, and a round or chamfer between two of its own bounds is built exact
 meridian. Otherwise the field reads it point by point — and where the set is one the lowering
 table recognises (#194, `solid::lowering`), recognised from what its body says and never from the
 word's name, it is also built exactly and held to that reading: a run along a straight edge
-between planes is a prism whose face is a cylinder, a run round a circle where a plane meets a
+between planes is a prism whose face is a cylinder (cut off by the faces its edge ends on, square
+or at a slant), a run round a circle where a plane meets a
 cylinder is a ring whose face is a torus, a corner where three square faces meet is the ball's
 patch, a flat is a plane. Those bodies show as exact solids and export by `solventc --step` and
 `--stl`; a region no entry builds is meshed by the page in the background, and its export is

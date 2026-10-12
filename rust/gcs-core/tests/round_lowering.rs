@@ -190,18 +190,54 @@ fn a_bosss_root_is_a_ring_exactly() {
     assert_eq!(kinds(&b), [("cylinder", 1), ("plane", 7), ("torus", 1)].into());
 }
 
-/// **What no entry builds stays the field's**: a block whose east side leans, its near rim
-/// rounded — the run along the south edge is cut off at a slant where it meets the east face,
-/// which no entry builds yet. The export is refused, naming why, and the field still reads it.
+/// **A run-out** (#110): a run cut off by a face its edge ends on at a slant. The block's east side
+/// leans in (its top 10 short of its foot) and its west side leans out (10 past), and only its
+/// near face's south edge is rounded. At the east end the face reaches into the run's prism and
+/// cuts it off: the length kept at height `z` above the edge is `40 − (10/24)·z`, so the run takes
+/// its section's area along 40 less `(10/24)·z̄` of it, `z̄ = r(10 − 3π)/(12 − 3π)` its centroid's
+/// height. At the west end the face leans away, and the run stops square at the edge's end, as
+/// the slab its nearest point of the meeting must be on says.
+#[test]
+fn a_run_cut_off_at_a_slant_by_the_face_it_ends_on() {
+    let src = BLOCK.replace("fix((40, 24)) b2", "fix((30, 24)) b2").replace("fix((0, 24)) b3", "fix((-10, 24)) b3");
+    let e = solved(&format!("{src}block.near round(r: 2mm) block.south\n"));
+    assert_eq!(lowered(&e), (1, 1));
+    let b = exported(&e, "block");
+    let r = 2.0;
+    let area = (1.0 - PI / 4.0) * r * r;
+    let zbar = r * (10.0 - 3.0 * PI) / (12.0 - 3.0 * PI);
+    close(props::volume(&b), 40.0 * 24.0 * 12.0 - area * 40.0 + 10.0 / 24.0 * zbar * area);
+    assert_eq!(kinds(&b), [("cylinder", 1), ("plane", 7)].into());
+}
+
+/// The leaning block's whole near rim: each of the four runs cut off at a slant where it meets the
+/// next side, and the runs unioned at the corners (mitres). Held to the field by the gate; its
+/// volume between the block's and the block's less every run's whole prism.
+#[test]
+fn a_leaning_rim_runs_out_at_every_corner() {
+    let src = BLOCK.replace("fix((40, 24)) b2", "fix((30, 24)) b2");
+    let e = solved(&format!("{src}block.near round(r: 2mm) block\n"));
+    assert_eq!(lowered(&e), (4, 6));
+    let b = exported(&e, "block");
+    let (r, rim) = (2.0, 40.0 + 26.0 + 30.0 + 24.0);
+    let whole = (40.0 + 30.0) / 2.0 * 24.0 * 12.0;
+    let v = props::volume(&b);
+    assert!(v < whole && v > whole - (1.0 - PI / 4.0) * r * r * rim, "{v}");
+    assert_eq!(kinds(&b), [("cylinder", 4), ("plane", 6)].into());
+}
+
+/// **What no entry builds stays the field's**: the leaning block rounded all over — at the corners
+/// of its leaning side three faces meet not square to one another, which no entry builds yet. The
+/// export is refused, naming why, and the field still reads it.
 #[test]
 fn a_round_no_entry_builds_is_refused_by_name() {
     let src = BLOCK.replace("fix((40, 24)) b2", "fix((30, 24)) b2");
-    let e = solved(&format!("{src}block.near round(r: 2mm) block\n"));
+    let e = solved(&format!("{src}round(r: 2mm) block\n"));
     let body = ent(&e, "block").i();
     let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
     let refusal = export::exact(&e.sketch, body, None, None, &say).err().expect("refused");
-    assert!(format!("{refusal:?}").contains("an edge cut off at a slant or by a curved face: no exact construction \
-        is made of it yet"), "{refusal:?}");
+    assert!(format!("{refusal:?}").contains("a corner whose faces are not square to one another: no exact \
+        construction is made of it yet"), "{refusal:?}");
     let field = MaterialField::read(&e.sketch, body, 1e-10).unwrap();
     assert!(field.side([20.0, 0.2, 0.2]) > 0.0 && field.side([20.0, 6.0, 6.0]) < 0.0);
 }

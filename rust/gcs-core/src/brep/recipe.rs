@@ -92,8 +92,15 @@ pub fn node_named(n: &Json,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64
             // each corner the ball's patch built where it stands; those joined (a run ending in the section a
             // corner's cell begins in, meeting nowhere else) glued there, never intersected; the
             // chains unioned
-            let mut pieces = field(n,"pieces")?.arr().iter().map(|piece| node_named(piece,built,built_names,floor))
-                .collect::<Result<Vec<_>,_>>()?;
+            let mut pieces = field(n,"pieces")?.arr().iter().map(|piece| {
+                let mut b = node_named(piece,built,built_names,floor)?;
+                // a run cut off at a slant where its edge ends (a run-out): kept within each face
+                for h in piece.get("within").map_or(&[][..],|w| w.arr()) {
+                    let half = half_space(vec3(field(h,"normal")?),field(h,"offset")?.as_f64(),b.bounds())?;
+                    b = combined(&b,&half,Op::Common,floor).map_err(|e| format!("a run cut off at its end: {e}"))?;
+                }
+                Ok::<_,String>(b)
+            }).collect::<Result<Vec<_>,_>>()?;
             for c in field(n,"corners")?.arr() {
                 let (vertex,centre,radius) = (vec3(field(c,"vertex")?),vec3(field(c,"centre")?),field(c,"radius")?.as_f64());
                 let toward: Vec<V> = field(c,"toward")?.arr().iter().map(vec3).collect();
@@ -130,6 +137,21 @@ pub fn node_named(n: &Json,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64
         }
         k => Err(format!("recipe: a node of kind `{k}`")),
     }
+}
+
+/// The half-space `n·x <= d` (`n` a unit normal) where it meets the box `around`: a block standing
+/// on the plane, reaching past the box on every other side.
+fn half_space(n: V,d: f64,(lo,hi): super::geom::Box3) -> Result<Brep,String> {
+    use crate::space::{add,dot,norm,scale,sub};
+    use super::build::ProfileEdge;
+    if !lo[0].is_finite() { return Err("a half-space about nothing".into()) }
+    let centre = scale(add(lo,hi),0.5);
+    let reach = norm(sub(hi,lo))+(dot(n,centre)-d).abs()+1.;
+    let f = super::geom::Frame::about(sub(centre,scale(n,dot(n,centre)-d)),n);
+    let corner = |u: f64,v: f64| f.at([u*reach,v*reach,0.]);
+    let ring = [corner(-1.,-1.),corner(1.,-1.),corner(1.,1.),corner(-1.,1.)];
+    let edges = (0..4).map(|k| ProfileEdge::Line {a:ring[k],b:ring[(k+1)%4]}).collect();
+    prism(&Profile {origin:f.o,normal:n,loops:vec![edges],names:Vec::new()},-reach,0.)
 }
 
 /// The recipe's root, built.

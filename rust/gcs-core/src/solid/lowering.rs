@@ -10,8 +10,11 @@
 //! region's own field before anything reads it (`gate`). A region no entry recognises stays the
 //! field's, its exact export refused by name.
 //!
-//! The entries so far, over plane faces meeting in straight edges whose ends are cut off square
-//! (by the faces there):
+//! The entries so far, over plane faces meeting in straight edges, each run cut off by the plane
+//! faces its edge ends on — a run-out where one stands at a slant: the run is where its nearest
+//! point of the faces' meeting is on the edge (the slab square to it over its stretch) and on the
+//! side the edge runs on of each face at its ends, so its prism is kept within each slanted face
+//! reaching into it, and one leaning away leaves the slab's square end:
 //!
 //! | the region's body | built as |
 //! |---|---|
@@ -46,19 +49,30 @@ pub enum Stroke {
 
 /// A section swept along a straight edge (model units): the section in the plane through `origin`
 /// (the edge's first end) square to the unit `along`, its loop `strokes` (each named, the name of
-/// the face it sweeps), carried the edge's `length`.
+/// the face it sweeps), carried the edge's `length`, and kept within each half-space `n·x <= d` of
+/// `within` (`(n, d)`, `n` a unit normal): the faces an end stands at a slant to cut it off.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Run {
     pub origin: V,
     pub along: V,
     pub length: f64,
     pub strokes: Vec<(Stroke, &'static str)>,
+    pub within: Vec<(V, f64)>,
 }
 
 impl Run {
     /// A round's ball centre in the section at `origin`: its arc's.
     pub fn centre(&self) -> Option<V> {
         self.strokes.iter().find_map(|(s, _)| match *s { Stroke::Arc { centre, .. } => Some(centre), _ => None })
+    }
+
+    /// The corners of the prism over the section's hull, at both ends: every point of the run lies
+    /// within their hull (a round's arc bows in toward the edge, between the lines' ends).
+    fn hull(&self) -> Vec<V> {
+        self.strokes.iter().flat_map(|(s, _)| match *s {
+            Stroke::Line { from, to } => vec![from, to],
+            Stroke::Arc { .. } => vec![],
+        }).flat_map(|p| [p, add(p, scale(self.along, self.length))]).collect()
     }
 }
 
@@ -343,16 +357,13 @@ fn build(body: &super::faces::BodyFaces, f: &Faces, section: Section) -> Result<
         }
     }
     let size = runs.iter().map(|r| r.length).fold(r, f64::max);
-    let within = |p: V| bounds.iter().all(|&(n, d)| dot(n, p) <= d + 1e-9 * size);
-    let run_points = |r: &Run| -> Vec<V> {
-        r.strokes.iter().flat_map(|(s, _)| match *s {
-            Stroke::Line { from, to } => vec![from, to],
-            Stroke::Arc { .. } => vec![],
-        }).flat_map(|p| [p, add(p, scale(r.along, r.length))]).collect()
-    };
+    // (a run cut off at a slant by an end is within that end already)
+    let within = |p: V, own: &[(V, f64)]| bounds.iter().filter(|b| !own.contains(b))
+        .all(|&(n, d)| dot(n, p) <= d + 1e-9 * size);
     let (feet, touches) = crate::brep::fillet::corner_points(vertex, centre, r, toward);
     let cell = [vertex, centre].into_iter().chain(feet).chain(touches);
-    if !runs.iter().flat_map(run_points).chain(cell).all(within) {
+    let runs_within = runs.iter().all(|r| r.hull().into_iter().all(|p| within(p, &r.within)));
+    if !runs_within || !cell.into_iter().all(|p| within(p, &[])) {
         return unbuilt("a ball larger than the edges it rounds");
     }
     let mut pieces: Vec<Piece> = runs.into_iter().map(Piece::Run).collect();
@@ -394,19 +405,24 @@ fn run(body: &super::faces::BodyFaces, fa: usize, fb: usize, within: bool, secti
     let Some([p0, p1]) = body.segment(edge) else { return unbuilt("a curved edge") };
     let length = norm(sub(p1, p0));
     let along = scale(sub(p1, p0), 1.0 / length);
-    // cut off square at each end by every face there, as the slab of its own stretch is
-    let ends = body.run_ends(&[edge]);
-    if ends.len() != 2 {
+    // cut off at each end by every face there, on the side the edge runs on: one square to it is
+    // the slab of the edge's own stretch, one at a slant a half-space besides (a run-out)
+    if body.run_ends(&[edge]).len() != 2 {
         return unbuilt("an edge with no two ends");
     }
-    for (_, _, v) in ends {
-        for c in body.faces_at(v, &[fa, fb]) {
-            if !body.plane(c).is_some_and(|(n, _)| dot(n, along).abs() >= 1.0 - 1e-9) {
-                return unbuilt("an edge cut off at a slant or by a curved face");
-            }
+    let mut ends = Vec::new();
+    for (c, sign) in body.end_sides(&[edge], &[fa, fb]) {
+        let Some((n, o)) = body.plane(c) else { return unbuilt("an edge cut off by a curved face") };
+        if dot(n, along).abs() < 1.0 - 1e-9 {
+            ends.push((scale(n, sign), sign * dot(n, o)));
         }
     }
-    Ok(Some(Piece::Run(cut(p0, along, length, [na, nb], within, section)?)))
+    let mut run = cut(p0, along, length, [na, nb], within, section)?;
+    // only those reaching into the prism: one leaning away leaves it to the slab
+    let hull = run.hull();
+    run.within = ends.into_iter()
+        .filter(|&(n, d)| hull.iter().any(|&p| dot(n, p) > d + 1e-9 * (1.0 + length))).collect();
+    Ok(Some(Piece::Run(run)))
 }
 
 /// The section beside an edge at `p0`, in the plane square to the unit `along` there, carried
@@ -441,7 +457,7 @@ fn cut(p0: V, along: V, length: f64, [na, nb]: [V; 2], within: bool, section: Se
                  (Stroke::Line { from: qb, to: p0 }, "b")]
         }
     };
-    Ok(Run { origin: p0, along, length, strokes })
+    Ok(Run { origin: p0, along, length, strokes, within: Vec::new() })
 }
 
 /// A run's section as a profile `brep::build` reads (model units).
@@ -486,7 +502,9 @@ pub fn assemble<'a>(pieces: impl IntoIterator<Item = &'a Piece>) -> Assembly {
     };
     let same_run = |a: &Run, b: &Run| near(a.origin, b.origin) && near(a.along, b.along)
         && (a.length - b.length).abs() <= 1e-9 * size && a.strokes.len() == b.strokes.len()
-        && a.strokes.iter().zip(&b.strokes).all(|((x, _), (y, _))| same_stroke(x, y));
+        && a.strokes.iter().zip(&b.strokes).all(|((x, _), (y, _))| same_stroke(x, y))
+        && a.within.len() == b.within.len()
+        && a.within.iter().zip(&b.within).all(|(x, y)| near(x.0, y.0) && (x.1 - y.1).abs() <= 1e-9 * size);
     let mut out = Assembly::default();
     for p in pieces {
         match p {
@@ -524,13 +542,18 @@ pub fn assemble<'a>(pieces: impl IntoIterator<Item = &'a Piece>) -> Assembly {
 
 impl Assembly {
     /// As a recipe node (millimetres, `by` of them a model unit): each run a prism over its
-    /// stretch, each ring a revolution, each corner where it stands, and the joins.
+    /// stretch (within the half-spaces it is kept in), each ring a revolution, each corner where it
+    /// stands, and the joins.
     pub fn node(&self, by: f64) -> Result<Json, String> {
         use super::cad::vector;
-        let mut pieces = self.runs.iter().map(|(r, [from, to])| Ok(object([
-            ("kind", "prism".into()), ("profile", profile(r).to_json(by)?),
-            ("from", (from * by).into()), ("to", (to * by).into()),
-        ]))).collect::<Result<Vec<_>, String>>()?;
+        let mut pieces = self.runs.iter().map(|(r, [from, to])| {
+            let within = r.within.iter()
+                .map(|&(n, d)| object([("normal", vector(n)), ("offset", (d * by).into())])).collect();
+            Ok(object([
+                ("kind", "prism".into()), ("profile", profile(r).to_json(by)?),
+                ("from", (from * by).into()), ("to", (to * by).into()), ("within", Json::Arr(within)),
+            ]))
+        }).collect::<Result<Vec<_>, String>>()?;
         for g in &self.rings {
             pieces.push(object([
                 ("kind", "revolve".into()), ("profile", profile(&g.section).to_json(by)?),
