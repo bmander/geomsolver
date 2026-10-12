@@ -371,7 +371,7 @@ struct Stop { trim: Trim,t: f64,faces: Vec<usize> }
 /// The point `r` from both planes through `p` square to the unit `a` and `b`, along their bisector:
 /// a ball's centre from the corner it rounds (`a`, `b` from each face toward it), or the corner from
 /// the centre (`a`, `b` toward the touches).
-fn across(p: V,[a,b]: [V;2],r: f64) -> V { add(p,scale(add(a,b),r/(1.+dot(a,b)))) }
+pub(crate) fn across(p: V,[a,b]: [V;2],r: f64) -> V { add(p,scale(add(a,b),r/(1.+dot(a,b)))) }
 
 /// The point where `meeting` (two surfaces' meeting) crosses the plane through `o` square to `n`,
 /// from `guess`: projected onto the meeting, then along its tangent to the plane, until it stays.
@@ -783,11 +783,9 @@ fn crossing(u: &dyn Fn(f64) -> f64,target: f64,period: f64,from: f64,span: f64) 
 /// `near_bc`, `near_ca` the sections (each a neighbouring edge piece's cap), and `round`, the
 /// sphere's triangle.
 pub fn corner(vertex: V,centre: V,r: f64,toward: [V;3],tol: f64) -> Result<Brep,String> {
-    let along = sub(centre,vertex);
     let pairs = [(0,1),(1,2),(2,0)];
     let dirs = corner_sections(vertex,centre,toward);
-    let feet = dirs.map(|e| add(vertex,scale(e,dot(along,e))));
-    let touches = toward.map(|m| sub(centre,scale(m,r)));
+    let (feet,touches) = corner_points(vertex,centre,r,toward);
     let mut out = Brep::default();
     let pv = out.vertex(vertex);
     let fv = feet.map(|p| out.vertex(p));
@@ -829,6 +827,13 @@ pub fn corner(vertex: V,centre: V,r: f64,toward: [V;3],tol: f64) -> Result<Brep,
     super::json::measure(&mut out);
     out.check(10.*tol)?;
     Ok(out)
+}
+
+/// A corner's cell's points besides its vertex and centre: the centre's feet on its three edges
+/// (in `corner_sections`' order) and where the ball touches each face.
+pub fn corner_points(vertex: V,centre: V,r: f64,toward: [V;3]) -> ([V;3],[V;3]) {
+    let along = sub(centre,vertex);
+    (corner_sections(vertex,centre,toward).map(|e| add(vertex,scale(e,dot(along,e)))),toward.map(|m| sub(centre,scale(m,r))))
 }
 
 /// The directions of a corner's three edges from `vertex` toward the feet of `centre` on them —

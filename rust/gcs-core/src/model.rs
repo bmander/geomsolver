@@ -183,7 +183,7 @@ pub struct Sketch {
     /// field.
     pub(crate) lowering_cache: std::cell::RefCell<
         BTreeMap<usize, (Vec<f64>, std::sync::Arc<crate::solid::faces::BodyFaces>,
-            Result<std::rc::Rc<crate::solid::lowering::Lowered>, String>)>,
+            Result<std::rc::Rc<Vec<crate::solid::lowering::Piece>>, String>)>,
     >,
     /// Each body's faces as regions read them (`solid::faces::BodyFaces`, #183), against
     /// `solid::reads`: every round over one body reads the same stratum.

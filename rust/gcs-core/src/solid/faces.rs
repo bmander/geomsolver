@@ -45,6 +45,19 @@ pub fn readers_of(sk: &Sketch, body: usize) -> BTreeSet<usize> {
     }).collect()
 }
 
+/// **The stratum's order** (#183 F6): body `body`'s fills `on` and cuts `cut` as
+/// `[on, cut, on_late, cut_late]`, the late ones those reading its faces (`readers_of`), which act
+/// on the body the rest make, after them, fills then cuts — the order the field, the recipe and the
+/// native host apply them in.
+pub fn stratum(sk: &Sketch, body: usize, on: impl IntoIterator<Item = u32>, cut: impl IntoIterator<Item = u32>)
+    -> [Vec<u32>; 4] {
+    let readers = readers_of(sk, body);
+    let late = |o: &u32| readers.contains(&(*o as usize));
+    let (on_late, on): (Vec<u32>, Vec<u32>) = on.into_iter().partition(late);
+    let (cut_late, cut): (Vec<u32>, Vec<u32>) = cut.into_iter().partition(late);
+    [on, cut, on_late, cut_late]
+}
+
 /// The drawing with `readers` taken out of every body's terms: the stratum they read.
 fn without(sk: &Sketch, readers: &BTreeSet<usize>) -> Result<Sketch, String> {
     let mut out = sk.clone();
@@ -220,10 +233,10 @@ impl BodyFaces {
     pub fn run_ends(&self, es: &[u32]) -> Vec<(V, V, u32)> {
         let mut count: std::collections::BTreeMap<u32, Vec<(u32, usize)>> = Default::default();
         for &e in es {
-            let edge = &self.loc.b.edges[e as usize];
-            if edge.v[0] == edge.v[1] {
+            if self.closed(e) {
                 continue;
             }
+            let edge = &self.loc.b.edges[e as usize];
             for (k, v) in edge.v.iter().enumerate() {
                 count.entry(*v).or_default().push((e, k));
             }
@@ -272,10 +285,7 @@ impl BodyFaces {
     }
 
     /// Face `fi`'s unit normal at `p` (on it), away from the material.
-    pub fn normal(&self, fi: usize, p: V) -> V {
-        let n = self.outward(fi, self.q(p));
-        scale(n, 1.0 / norm(n))
-    }
+    pub fn normal(&self, fi: usize, p: V) -> V { self.side_grad(fi, p).1 }
 
     /// Whether face `fi`'s surface is turned about the line through `o` along the unit `d` with a
     /// straight meridian: a plane square to it, a cylinder or a cone about it (model units).
@@ -288,6 +298,21 @@ impl BodyFaces {
             Surface::Cylinder(f, _) | Surface::Cone(f, _, _) => along(f.z) && on(f.o),
             _ => false,
         }
+    }
+
+    /// Where a run of edges `es` (between `faces`) ends: each other face at each of its ends, and
+    /// which side of that face's surface the run runs on — `1` where it runs within it (its
+    /// material side, `side <= 0`), `-1` outside — so the run is where `σ·side <= 0` for all.
+    pub fn end_sides(&self, es: &[u32], faces: &[usize]) -> Vec<(usize, f64)> {
+        let mut sides = Vec::new();
+        for (v, d, vid) in self.run_ends(es) {
+            for c in self.faces_at(vid, faces) {
+                let step = 1e-6 * (1.0 + norm(v));
+                let s = self.side(c, add(v, scale(d, step)));
+                sides.push((c, if s <= 0.0 { 1.0 } else { -1.0 }));
+            }
+        }
+        sides
     }
 
     /// The faces at vertex `v` other than `not`.
@@ -347,11 +372,7 @@ impl Reading {
     /// (model units).
     pub fn half_space(&self) -> Option<(V, f64)> {
         let [fi] = self.faces[..] else { return None };
-        let f = &self.body.loc.b.faces[fi];
-        let crate::brep::geom::Surface::Plane(frame) = &f.surface else { return None };
-        let sign = if f.reversed { -1.0 } else { 1.0 };
-        let n = scale(frame.z, sign);
-        Some((n, dot(n, self.body.back(frame.o))))
+        self.body.plane(fi).map(|(n, o)| (n, dot(n, o)))
     }
 
     /// The side of the face whose patch is nearest `p`, and its gradient.

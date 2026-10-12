@@ -29,7 +29,7 @@
 use crate::fmath::Det;
 use crate::json::{object, Json};
 use crate::model::{FaceRef, RegionShape, RegionTerm, Sketch, SolidDef, Target};
-use crate::space::{add, cross, distance, dot, norm, scale, sub};
+use crate::space::{add, cross, distance, dot, norm, normalised, scale, sub};
 use crate::syntax::Cmp;
 use std::rc::Rc;
 
@@ -53,8 +53,13 @@ pub struct Run {
     pub along: V,
     pub length: f64,
     pub strokes: Vec<(Stroke, &'static str)>,
-    /// A round's ball centre in the section at `origin`.
-    pub centre: Option<V>,
+}
+
+impl Run {
+    /// A round's ball centre in the section at `origin`: its arc's.
+    pub fn centre(&self) -> Option<V> {
+        self.strokes.iter().find_map(|(s, _)| match *s { Stroke::Arc { centre, .. } => Some(centre), _ => None })
+    }
 }
 
 /// A ball's patch where three faces square to one another meet (model units): the corner's cell —
@@ -71,7 +76,8 @@ pub struct Corner {
 
 /// A section turned once about an axis (model units): a run round a whole circle where a plane
 /// meets a cylinder or a cone about it — the section in the meridian through `section.origin`,
-/// square to `section.along`, turned about the line through `axis_origin` along the unit `axis`.
+/// square to `section.along` (its `length` nothing), turned about the line through `axis_origin`
+/// along the unit `axis`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Ring {
     pub section: Run,
@@ -79,21 +85,14 @@ pub struct Ring {
     pub axis: V,
 }
 
+/// A piece of what a region is built as; a region is the union of its pieces, and one of none
+/// holds nowhere (its faces never meet, or an edge they meet in turns the other way from the one
+/// its gate asks).
 #[derive(Clone, Debug, PartialEq)]
 pub enum Piece {
     Run(Run),
     Ring(Ring),
     Corner(Corner),
-}
-
-/// What a region solid is built as.
-#[derive(Clone, Debug, PartialEq)]
-pub enum Lowered {
-    /// It holds nowhere: its faces never meet, or an edge they meet in turns the other way from
-    /// the one its gate asks.
-    Empty,
-    /// The union of these pieces.
-    Pieces(Vec<Piece>),
 }
 
 /// The faces a region rounds or cuts at, and whether it lies within all of them (a convex edge's
@@ -105,15 +104,16 @@ struct Faces<'a> {
 
 impl Faces<'_> {
     /// The pairs of faces meeting in an edge: one for two faces, three for three.
-    fn pairs(&self) -> Vec<[usize; 2]> {
-        if self.faces.len() == 2 { vec![[0, 1]] } else { vec![[0, 1], [1, 2], [2, 0]] }
+    fn pairs(&self) -> &'static [[usize; 2]] {
+        if self.faces.len() == 2 { &[[0, 1]] } else { &[[0, 1], [1, 2], [2, 0]] }
     }
 
-    /// The pair `p` is, either way round, as its faces' patches.
-    fn pair_of(&self, p: [&FaceRef; 2]) -> Option<usize> {
-        self.pairs().iter().position(|&[i, j]| {
-            same(self.faces[i], p[0], false) && same(self.faces[j], p[1], false)
-                || same(self.faces[i], p[1], false) && same(self.faces[j], p[0], false)
+    /// The pair `p` is, as its faces' surfaces or patches (`surface`), and whether it names them
+    /// the other way round.
+    fn pair_of(&self, p: [&FaceRef; 2], surface: bool) -> Option<(usize, bool)> {
+        self.pairs().iter().enumerate().find_map(|(k, &[i, j])| {
+            let is = |x: usize, y: usize| same(self.faces[x], p[0], surface) && same(self.faces[y], p[1], surface);
+            if is(i, j) { Some((k, false)) } else if is(j, i) { Some((k, true)) } else { None }
         })
     }
 
@@ -134,53 +134,43 @@ enum Section {
     Flat { la: f64, lb: f64 },
 }
 
-/// Region solid `solid`'s lowering: `None` where no entry recognises it (it stays the field's),
-/// else what it is built as or why the entry that recognised it refuses it. Remembered against its
-/// own terms and the stratum it reads (`Sketch::lowering_cache`): a body rounded all over has
+impl Section {
+    /// The same section, its faces named the other way round.
+    fn swapped(self) -> Section {
+        match self { Section::Flat { la, lb } => Section::Flat { la: lb, lb: la }, s => s }
+    }
+}
+
+/// Region solid `solid`'s lowering, its pieces (none where it holds nowhere): `None` where no
+/// entry recognises it (it stays the field's), else what it is built as or why the entry that
+/// recognised it refuses it. Remembered against its own terms (`document::reads_own`) and the
+/// stratum it reads, `faces::cached`'s (`Sketch::lowering_cache`): a body rounded all over has
 /// hundreds of regions, each reading one body, and a key over the body's every term would walk
 /// them all for each.
-pub fn lowered(sk: &Sketch, solid: usize) -> Option<Result<Rc<Lowered>, String>> {
+pub fn lowered(sk: &Sketch, solid: usize) -> Option<Result<Rc<Vec<Piece>>, String>> {
     let SolidDef::Region { terms, .. } = &sk.solids.get(solid)?.def else { return None };
     let (faces, section) = recognised(sk, terms)?;
     let body = match super::faces::cached(sk, faces.faces[0].solid as usize) {
         Ok(b) => b,
         Err(e) => return Some(Err(e)),
     };
-    // its own terms' numbers and places, and no solid they read: the stratum is `body`
-    let others: std::collections::BTreeSet<usize> = (0..sk.solids.len()).filter(|&s| s != solid).collect();
-    let key = super::document::reads_except(sk, solid, 0.0, &others);
+    let key = super::document::reads_own(sk, solid, 0.0);
     if let Some((old, b, l)) = sk.lowering_cache.borrow().get(&solid) {
         if *old == key && std::sync::Arc::ptr_eq(b, &body) {
             return Some(l.clone());
         }
     }
-    let l = build(&body, &faces, section).and_then(|l| {
-        gate(sk, solid, &l)?;
-        Ok(Rc::new(l))
+    let l = build(&body, &faces, section).and_then(|pieces| {
+        gate(sk, solid, &pieces)?;
+        Ok(Rc::new(pieces))
     });
     sk.lowering_cache.borrow_mut().insert(solid, (key, body, l.clone()));
     Some(l)
 }
 
-/// Whether region solid `solid` is lowered to nothing: a term of no body.
-pub fn holds_nowhere(sk: &Sketch, solid: usize) -> bool {
-    matches!(lowered(sk, solid), Some(Ok(l)) if *l == Lowered::Empty)
-}
-
-/// Region solid `solid`'s pieces, where an entry builds it and it holds somewhere.
-pub fn pieces(sk: &Sketch, solid: usize) -> Option<Vec<Piece>> {
-    match lowered(sk, solid) {
-        Some(Ok(l)) => match &*l {
-            Lowered::Pieces(p) => Some(p.clone()),
-            Lowered::Empty => None,
-        },
-        _ => None,
-    }
-}
-
 /// A term's number, where it states one and bounds it on one side, with no offset.
 fn plain(sk: &Sketch, t: &RegionTerm) -> Option<f64> {
-    (t.hi.is_none() && t.grow.is_none()).then(|| t.lo.value(sk).ok()).flatten()
+    (t.hi.is_none() && t.grow.is_none()).then(|| t.lo.read(sk)).flatten()
 }
 
 /// Whether two face references name the same faces, the second of them its surface or not.
@@ -188,13 +178,19 @@ fn same(x: &FaceRef, y: &FaceRef, surface: bool) -> bool {
     x.solid == y.solid && x.path == y.path && !x.surface && y.surface == surface
 }
 
+/// A term bounding the distance from one face (or its surface): the face, which way, its number.
+fn one_face<'a>(sk: &Sketch, t: &'a RegionTerm) -> Option<(&'a FaceRef, Cmp, f64)> {
+    let RegionShape::Measured { of } = &t.shape else { return None };
+    let [(Target::Face(f), c)] = &of[..] else { return None };
+    (*c == 1.0).then_some((f, t.cmp, plain(sk, t)?))
+}
+
 /// The faces a set is the points on (`{ q | q coincident a; q coincident b }`): each term a
 /// distance from one face (or its surface) at most nothing.
 fn on_all<'a>(sk: &Sketch, terms: &'a [RegionTerm]) -> Option<Vec<&'a FaceRef>> {
-    terms.iter().map(|t| {
-        let RegionShape::Measured { of } = &t.shape else { return None };
-        let [(Target::Face(f), c)] = &of[..] else { return None };
-        (*c == 1.0 && t.cmp == Cmp::Le && plain(sk, t)? == 0.0).then_some(f)
+    terms.iter().map(|t| match one_face(sk, t)? {
+        (f, Cmp::Le, d) if d == 0.0 => Some(f),
+        _ => None,
     }).collect()
 }
 
@@ -207,9 +203,10 @@ fn side_of<'a>(sk: &Sketch, t: &'a RegionTerm) -> Option<(&'a FaceRef, Cmp)> {
 /// The faces and the section a region's terms describe, where they are one of this table's: the
 /// faces' sides, the material's angle at each edge between two of them against a half turn, the
 /// nearest point of the faces' meeting on their common part, each edge's ends, and one bound
-/// saying the section.
+/// saying the section. A term no entry reads is no entry's region.
 fn recognised<'a>(sk: &Sketch, terms: &'a [RegionTerm]) -> Option<(Faces<'a>, Section)> {
-    let sides: Vec<(&FaceRef, Cmp)> = terms.iter().filter_map(|t| side_of(sk, t)).collect();
+    let sides: Vec<(&FaceRef, Cmp)> = terms.iter().filter(|t| matches!(t.shape, RegionShape::FaceSide { .. }))
+        .map(|t| side_of(sk, t)).collect::<Option<_>>()?;
     let cmp = sides.first()?.1;
     let faces: Vec<&FaceRef> = sides.iter().map(|s| s.0).collect();
     let distinct = faces.iter().enumerate()
@@ -222,14 +219,13 @@ fn recognised<'a>(sk: &Sketch, terms: &'a [RegionTerm]) -> Option<(Faces<'a>, Se
     let (mut angles, mut ends, mut slab, mut section) = (vec![0; n], vec![0; n], 0, None);
     for t in terms {
         match &t.shape {
-            // counted above, where it is a side at nothing of a face's patch; any other is no entry's
-            RegionShape::FaceSide { .. } => { side_of(sk, t)?; }
+            RegionShape::FaceSide { .. } => {}
             RegionShape::Angle { a, b } => {
                 let half = plain(sk, t).is_some_and(|lo| (lo - std::f64::consts::PI).abs() <= 1e-12);
                 if !half || t.cmp != cmp {
                     return None;
                 }
-                angles[faces.pair_of([a, b])?] += 1;
+                angles[faces.pair_of([a, b], false)?.0] += 1;
             }
             RegionShape::Ends { edge } => {
                 let Target::Set { terms: inner, .. } = edge.as_ref() else { return None };
@@ -237,7 +233,7 @@ fn recognised<'a>(sk: &Sketch, terms: &'a [RegionTerm]) -> Option<(Faces<'a>, Se
                 if t.cmp != Cmp::Le || plain(sk, t)? != 0.0 {
                     return None;
                 }
-                ends[faces.pair_of([x, y])?] += 1;
+                ends[faces.pair_of([x, y], false)?.0] += 1;
             }
             RegionShape::Measured { of } => match &of[..] {
                 // nearer the faces' common part than wherever else their surfaces meet
@@ -253,7 +249,7 @@ fn recognised<'a>(sk: &Sketch, terms: &'a [RegionTerm]) -> Option<(Faces<'a>, Se
                 [(Target::Set { terms: centres, .. }, c)] => {
                     let r = plain(sk, t)?;
                     if *c != 1.0 || t.cmp != Cmp::Ge || !(r > 0.0) || section.is_some()
-                        || !ball_centres(sk, centres, &faces, cmp, r) {
+                        || !ball_centres(sk, centres, &faces, r) {
                         return None;
                     }
                     section = Some(Section::Round(r));
@@ -264,15 +260,8 @@ fn recognised<'a>(sk: &Sketch, terms: &'a [RegionTerm]) -> Option<(Faces<'a>, Se
                     if t.cmp != Cmp::Le || !(l > 0.0 && *kx > 0.0 && *ky > 0.0) || section.is_some() {
                         return None;
                     }
-                    let [a, b] = [faces.faces[0], faces.faces[1]];
-                    let (ka, kb) = if same(a, x, true) && same(b, y, true) {
-                        (kx, ky)
-                    } else if same(a, y, true) && same(b, x, true) {
-                        (ky, kx)
-                    } else {
-                        return None;
-                    };
-                    section = Some(Section::Flat { la: l / kb, lb: l / ka });
+                    let flat = Section::Flat { la: l / ky, lb: l / kx };
+                    section = Some(if faces.pair_of([x, y], true)?.1 { flat.swapped() } else { flat });
                 }
                 _ => return None,
             },
@@ -284,24 +273,15 @@ fn recognised<'a>(sk: &Sketch, terms: &'a [RegionTerm]) -> Option<(Faces<'a>, Se
 }
 
 /// Whether a set is where the centre of a ball of radius `r` touching every face may stand: on
-/// the region's side of each face (`cmp`), at least `r` from its surface.
-fn ball_centres(sk: &Sketch, terms: &[RegionTerm], faces: &Faces, cmp: Cmp, r: f64) -> bool {
+/// the region's side of each face, at least `r` from its surface.
+fn ball_centres(sk: &Sketch, terms: &[RegionTerm], faces: &Faces, r: f64) -> bool {
     let (mut sides, mut reach) = (Vec::new(), Vec::new());
     for t in terms {
-        if let Some((f, c)) = side_of(sk, t) {
-            if c != cmp {
-                return false;
-            }
-            sides.push(f);
-            continue;
+        match (side_of(sk, t), one_face(sk, t)) {
+            (Some((f, c)), _) if (c == Cmp::Le) == faces.within => sides.push(f),
+            (_, Some((f, Cmp::Ge, d))) if (d - r).abs() <= 1e-12 * r => reach.push(f),
+            _ => return false,
         }
-        let RegionShape::Measured { of } = &t.shape else { return false };
-        let [(Target::Face(f), c)] = &of[..] else { return false };
-        let at = plain(sk, t);
-        if *c != 1.0 || t.cmp != Cmp::Ge || !at.is_some_and(|d| (d - r).abs() <= 1e-12 * r) {
-            return false;
-        }
-        reach.push(f);
     }
     faces.all(&sides, false) && faces.all(&reach, true)
 }
@@ -311,53 +291,56 @@ fn unbuilt<T>(why: &str) -> Result<T, String> {
     Err(format!("{why}: no exact construction is made of it yet"))
 }
 
-/// The region's faces read off its body (the stratum), and the pieces it is.
-fn build(body: &super::faces::BodyFaces, f: &Faces, section: Section) -> Result<Lowered, String> {
+/// From a face toward a region (its outward normal `n`): into the material at a convex edge, the
+/// void at a concave one.
+fn toward(n: V, within: bool) -> V { if within { scale(n, -1.0) } else { n } }
+
+/// The region's faces read off its body (the stratum), and the pieces it is (none: it holds
+/// nowhere).
+fn build(body: &super::faces::BodyFaces, f: &Faces, section: Section) -> Result<Vec<Piece>, String> {
     let mut ids = Vec::new();
     for r in &f.faces {
         match body.faces(r)[..] {
             // a face a boolean ate, or none of that name, holds nowhere
-            [] => return Ok(Lowered::Empty),
+            [] => return Ok(Vec::new()),
             [fi] => ids.push(fi),
             _ => return unbuilt("a round over several faces at once"),
         }
     }
     let mut pieces = Vec::new();
-    for [i, j] in f.pairs() {
+    for &[i, j] in f.pairs() {
         match run(body, ids[i], ids[j], f.within, section)? {
             Some(p) => pieces.push(p),
-            None => return Ok(Lowered::Empty),
+            None => return Ok(Vec::new()),
         }
     }
-    let Section::Round(r) = section else { return Ok(Lowered::Pieces(pieces)) };
-    if ids.len() == 2 {
-        return Ok(Lowered::Pieces(pieces));
-    }
+    let (Section::Round(r), 3) = (section, ids.len()) else { return Ok(pieces) };
     let runs: Vec<Run> = pieces.into_iter().map(|p| match p {
         Piece::Run(r) => Ok(r),
         _ => unbuilt("a corner where curved faces meet"),
     }).collect::<Result<_, _>>()?;
     // three faces: the ball touching all three, at the vertex they share
-    let vertices = body.vertices_among(&[&[ids[0]], &[ids[1]], &[ids[2]]]);
-    let vertex = match vertices[..] {
-        [] => return Ok(Lowered::Empty),
+    let vertex = match body.vertices_among(&[&[ids[0]], &[ids[1]], &[ids[2]]])[..] {
+        [] => return Ok(Vec::new()),
         [v] => v,
         _ => return unbuilt("three faces meeting at several corners"),
     };
-    let planes: Vec<V> = ids.iter().map(|&fi| body.plane(fi).map(|p| p.0)).collect::<Option<_>>()
-        .ok_or("a corner between plane faces".to_string())?;
-    if (0..3).any(|i| dot(planes[i], planes[(i + 1) % 3]).abs() > 1e-9) {
+    // (each a plane, or its run would have been refused)
+    let normals: Vec<V> = ids.iter().filter_map(|&fi| body.plane(fi).map(|p| p.0)).collect();
+    if (0..3).any(|i| dot(normals[i], normals[(i + 1) % 3]).abs() > 1e-9) {
         return unbuilt("a corner whose faces are not square to one another");
     }
-    let toward: [V; 3] = std::array::from_fn(|i| if f.within { scale(planes[i], -1.0) } else { planes[i] });
+    let toward: [V; 3] = std::array::from_fn(|i| toward(normals[i], f.within));
     // the centre `r` from each face: square faces, so `r` along each toward the ball
     let centre = add(vertex, scale(add(add(toward[0], toward[1]), toward[2]), r));
-    let corner = Corner { vertex, centre, r, toward };
     // every piece within each edge's ends, so the region is their union and nothing cuts them
     let mut bounds = Vec::new();
-    for [i, j] in f.pairs() {
-        let [e] = body.edges_between(&[ids[i]], &[ids[j]])[..] else { return unbuilt("faces meeting in several edges") };
-        bounds.extend(ends(body, e, &[ids[i], ids[j]]).ok_or("an edge ending on a curved face")?);
+    for &[i, j] in f.pairs() {
+        let es = body.edges_between(&[ids[i]], &[ids[j]]);
+        for (c, sign) in body.end_sides(&es, &[ids[i], ids[j]]) {
+            let (n, o) = body.plane(c).ok_or("an edge ending on a curved face")?;
+            bounds.push((scale(n, sign), sign * dot(n, o)));
+        }
     }
     let size = runs.iter().map(|r| r.length).fold(r, f64::max);
     let within = |p: V| bounds.iter().all(|&(n, d)| dot(n, p) <= d + 1e-9 * size);
@@ -367,31 +350,14 @@ fn build(body: &super::faces::BodyFaces, f: &Faces, section: Section) -> Result<
             Stroke::Arc { .. } => vec![],
         }).flat_map(|p| [p, add(p, scale(r.along, r.length))]).collect()
     };
-    let cell = [vertex, centre].into_iter().chain(toward.iter().map(|&m| sub(centre, scale(m, r))))
-        .chain(crate::brep::fillet::corner_sections(vertex, centre, toward).into_iter()
-            .map(|e| add(vertex, scale(e, dot(sub(centre, vertex), e)))));
+    let (feet, touches) = crate::brep::fillet::corner_points(vertex, centre, r, toward);
+    let cell = [vertex, centre].into_iter().chain(feet).chain(touches);
     if !runs.iter().flat_map(run_points).chain(cell).all(within) {
         return unbuilt("a ball larger than the edges it rounds");
     }
     let mut pieces: Vec<Piece> = runs.into_iter().map(Piece::Run).collect();
-    pieces.push(Piece::Corner(corner));
-    Ok(Lowered::Pieces(pieces))
-}
-
-/// Where edge `e` (between `faces`) ends, as half-spaces `n · x <= d` (model units): each other
-/// face at each end, on the side the edge runs on (`conditions::ends`'s reading); `None` where
-/// one is no plane.
-fn ends(body: &super::faces::BodyFaces, e: u32, faces: &[usize]) -> Option<Vec<(V, f64)>> {
-    let mut out = Vec::new();
-    for (v, d, vid) in body.run_ends(&[e]) {
-        for c in body.faces_at(vid, faces) {
-            let (n, o) = body.plane(c)?;
-            let step = 1e-6 * (1.0 + norm(v));
-            let sign = if dot(n, sub(add(v, scale(d, step)), o)) <= 0.0 { 1.0 } else { -1.0 };
-            out.push((scale(n, sign), sign * dot(n, o)));
-        }
-    }
-    Some(out)
+    pieces.push(Piece::Corner(Corner { vertex, centre, r, toward }));
+    Ok(pieces)
 }
 
 /// The run along the edge where faces `fa` and `fb` meet — a straight one's section swept along
@@ -400,11 +366,7 @@ fn ends(body: &super::faces::BodyFaces, e: u32, faces: &[usize]) -> Option<Vec<(
 fn run(body: &super::faces::BodyFaces, fa: usize, fb: usize, within: bool, section: Section)
     -> Result<Option<Piece>, String> {
     // the faces in the body's order, so two regions over one edge build one run
-    let (fa, fb, section) = match section {
-        Section::Flat { la, lb } if fb < fa => (fb, fa, Section::Flat { la: lb, lb: la }),
-        s if fb < fa => (fb, fa, s),
-        s => (fa, fb, s),
-    };
+    let (fa, fb, section) = if fb < fa { (fb, fa, section.swapped()) } else { (fa, fb, section) };
     let edges = body.edges_between(&[fa], &[fb]);
     let [edge] = edges[..] else {
         return if edges.is_empty() { Ok(None) } else { unbuilt("faces meeting in several edges") };
@@ -423,8 +385,7 @@ fn run(body: &super::faces::BodyFaces, fa: usize, fb: usize, within: bool, secti
             return unbuilt("a circle between faces not turned about one axis");
         }
         let p0 = add(centre, scale(x, radius));
-        let along = cross(axis, x);
-        let section = cut(p0, along, body.normal(fa, p0), body.normal(fb, p0), within, section)?;
+        let section = cut(p0, cross(axis, x), 0.0, [body.normal(fa, p0), body.normal(fb, p0)], within, section)?;
         return Ok(Some(Piece::Ring(Ring { section, axis_origin: centre, axis })));
     }
     let (Some((na, _)), Some((nb, _))) = (body.plane(fa), body.plane(fb)) else {
@@ -445,62 +406,55 @@ fn run(body: &super::faces::BodyFaces, fa: usize, fb: usize, within: bool, secti
             }
         }
     }
-    let mut run = cut(p0, along, na, nb, within, section)?;
-    run.length = length;
-    Ok(Some(Piece::Run(run)))
+    Ok(Some(Piece::Run(cut(p0, along, length, [na, nb], within, section)?)))
 }
 
-/// The section beside an edge at `p0`, in the plane square to the unit `along` there: between
-/// faces whose unit normals there, away from the material, are `na` and `nb` (each square to
-/// `along`), on the region's side of both (`within`: the material's).
-fn cut(p0: V, along: V, na: V, nb: V, within: bool, section: Section) -> Result<Run, String> {
-    // from each face toward the region: into the material at a convex edge, the void at a concave
-    let toward = |n: V| if within { scale(n, -1.0) } else { n };
-    let (ua, ub) = (toward(na), toward(nb));
-    let c = dot(ua, ub);
-    if 1.0 + c <= 1e-9 {
+/// The section beside an edge at `p0`, in the plane square to the unit `along` there, carried
+/// `length`: between faces whose unit normals there, away from the material, are `na` and `nb`
+/// (each square to `along`), on the region's side of both (`within`: the material's).
+fn cut(p0: V, along: V, length: f64, [na, nb]: [V; 2], within: bool, section: Section) -> Result<Run, String> {
+    let (ua, ub) = (toward(na, within), toward(nb, within));
+    if 1.0 + dot(ua, ub) <= 1e-9 {
         return unbuilt("faces folded back on one another");
     }
-    let (strokes, centre) = match section {
+    let strokes = match section {
         Section::Round(r) => {
             // the ball's centre `r` from both faces, the bisector's point, and where it touches each
-            let o = add(p0, scale(add(ua, ub), r / (1.0 + c)));
+            let o = crate::brep::fillet::across(p0, [ua, ub], r);
             let (ta, tb) = (sub(o, scale(ua, r)), sub(o, scale(ub, r)));
             let x = scale(sub(ta, o), 1.0 / r);
-            let y = cross(along, x);
             let to_b = sub(tb, o);
-            let phi = dot(to_b, y).datan2(dot(to_b, x));
+            let phi = dot(to_b, cross(along, x)).datan2(dot(to_b, x));
             let angles = if phi > 0.0 { [0.0, phi] } else { [phi, 0.0] };
-            (vec![(Stroke::Line { from: p0, to: ta }, "a"),
-                  (Stroke::Arc { centre: o, radius: r, x, angles }, "round"),
-                  (Stroke::Line { from: tb, to: p0 }, "b")], Some(o))
+            vec![(Stroke::Line { from: p0, to: ta }, "a"),
+                 (Stroke::Arc { centre: o, radius: r, x, angles }, "round"),
+                 (Stroke::Line { from: tb, to: p0 }, "b")]
         }
         Section::Flat { la, lb } => {
             // along each face away from the edge, to where it stands its leg from the other face
-            let inward = |n: V, u: V| { let w = sub(u, scale(n, dot(u, n))); scale(w, 1.0 / norm(w)) };
-            let (ea, eb) = (inward(na, ub), inward(nb, ua));
+            let inward = |n: V, u: V| normalised(sub(u, scale(n, dot(u, n)))).ok_or("faces lying in one plane");
+            let (ea, eb) = (inward(na, ub)?, inward(nb, ua)?);
             let qa = add(p0, scale(ea, la / dot(ub, ea)));
             let qb = add(p0, scale(eb, lb / dot(ua, eb)));
-            (vec![(Stroke::Line { from: p0, to: qa }, "a"),
-                  (Stroke::Line { from: qa, to: qb }, "flat"),
-                  (Stroke::Line { from: qb, to: p0 }, "b")], None)
+            vec![(Stroke::Line { from: p0, to: qa }, "a"),
+                 (Stroke::Line { from: qa, to: qb }, "flat"),
+                 (Stroke::Line { from: qb, to: p0 }, "b")]
         }
     };
-    Ok(Run { origin: p0, along, length: 0.0, strokes, centre })
+    Ok(Run { origin: p0, along, length, strokes })
 }
 
-/// A run's section as a profile `brep::build` reads (lengths times `by`).
-fn profile(r: &Run, by: f64) -> crate::brep::build::Profile {
+/// A run's section as a profile `brep::build` reads (model units).
+fn profile(r: &Run) -> crate::brep::build::Profile {
     use crate::brep::build::ProfileEdge;
     use crate::brep::geom::Frame;
-    let s = |p: V| scale(p, by);
     let (edges, names) = r.strokes.iter().map(|(stroke, name)| (match *stroke {
-        Stroke::Line { from, to } => ProfileEdge::Line { a: s(from), b: s(to) },
+        Stroke::Line { from, to } => ProfileEdge::Line { a: from, b: to },
         Stroke::Arc { centre, radius, x, angles } => ProfileEdge::Arc {
-            frame: Frame::new(s(centre), r.along, x), r: radius * by, span: Some(angles),
+            frame: Frame::new(centre, r.along, x), r: radius, span: Some(angles),
         },
     }, name.to_string())).unzip();
-    crate::brep::build::Profile { origin: s(r.origin), normal: r.along, loops: vec![edges], names: vec![names] }
+    crate::brep::build::Profile { origin: r.origin, normal: r.along, loops: vec![edges], names: vec![names] }
 }
 
 /// Pieces as one construction: each distinct piece once, each run with the stretch of its edge it
@@ -548,7 +502,7 @@ pub fn assemble<'a>(pieces: impl IntoIterator<Item = &'a Piece>) -> Assembly {
     // corner's section on: what lies between is the corner's cell
     let n = out.runs.len() + out.rings.len();
     for (i, (r, span)) in out.runs.iter_mut().enumerate() {
-        let Some(o) = r.centre else { continue };
+        let Some(o) = r.centre() else { continue };
         for (k, c) in out.corners.iter().enumerate() {
             let off = sub(c.centre, o);
             if norm(cross(off, r.along)) > 1e-9 * size {
@@ -572,14 +526,14 @@ impl Assembly {
     /// As a recipe node (millimetres, `by` of them a model unit): each run a prism over its
     /// stretch, each ring a revolution, each corner where it stands, and the joins.
     pub fn node(&self, by: f64) -> Result<Json, String> {
-        let vector = |v: V| Json::Arr(v.into_iter().map(Json::from).collect());
+        use super::cad::vector;
         let mut pieces = self.runs.iter().map(|(r, [from, to])| Ok(object([
-            ("kind", "prism".into()), ("profile", profile(r, by).to_json(1.0)?),
+            ("kind", "prism".into()), ("profile", profile(r).to_json(by)?),
             ("from", (from * by).into()), ("to", (to * by).into()),
         ]))).collect::<Result<Vec<_>, String>>()?;
         for g in &self.rings {
             pieces.push(object([
-                ("kind", "revolve".into()), ("profile", profile(&g.section, by).to_json(1.0)?),
+                ("kind", "revolve".into()), ("profile", profile(&g.section).to_json(by)?),
                 ("origin", vector(scale(g.axis_origin, by))), ("axis", vector(g.axis)),
                 ("angle", std::f64::consts::TAU.into()),
             ]));
@@ -602,14 +556,14 @@ impl Assembly {
 /// **The gate**: a lowering stands only where the region's own field agrees with it — every probe
 /// a little inside the built boundary material by the field, every one a little outside not
 /// (`agreement`, sampled by area); one holding nowhere, only where the field reads it empty too.
-fn gate(sk: &Sketch, solid: usize, l: &Lowered) -> Result<(), String> {
-    let Lowered::Pieces(pieces) = l else {
+fn gate(sk: &Sketch, solid: usize, pieces: &[Piece]) -> Result<(), String> {
+    if pieces.is_empty() {
         let empty = super::region::in_general_position(sk, solid)
             .is_some_and(|g| g.is_ok_and(|f| f.is_empty()));
         return if empty { Ok(()) } else {
             Err("the field reads material where the faces it reads say there is none".to_string())
         };
-    };
+    }
     let field = super::MaterialField::read(sk, solid, super::cad::AXIS_TOLERANCE)?;
     let b = assemble(pieces).brep(1.0)?;
     let size = b.size().max(f64::MIN_POSITIVE);

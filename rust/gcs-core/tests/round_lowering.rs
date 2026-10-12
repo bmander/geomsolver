@@ -7,7 +7,7 @@
 use gcs_core::brep::{export, props, sweep::Say};
 use gcs_core::brep::topo::Brep;
 use gcs_core::program::Elaborated;
-use gcs_core::solid::lowering::{self, Lowered, Piece};
+use gcs_core::solid::lowering::{self, Piece};
 use gcs_core::solid::MaterialField;
 use gcs_core::solve::{solve, SolveOpts};
 use std::f64::consts::PI;
@@ -60,7 +60,7 @@ fn lowered(e: &Elaborated) -> (usize, usize) {
     let (mut built, mut empty) = (0, 0);
     for i in 0..e.sketch.solids.len() {
         match lowering::lowered(&e.sketch, i) {
-            Some(Ok(l)) if *l == Lowered::Empty => empty += 1,
+            Some(Ok(p)) if p.is_empty() => empty += 1,
             Some(Ok(_)) => built += 1,
             Some(Err(why)) => panic!("`{}`: {why}", e.sketch.solids[i].name),
             None => {}
@@ -153,12 +153,12 @@ fn a_corners_pieces_are_its_field() {
     let e = solved(&format!("{BLOCK}round(r: 2mm) block\n"));
     let sk = &e.sketch;
     let corner = (0..sk.solids.len()).find(|&i| {
-        lowering::pieces(sk, i).is_some_and(|p| p.iter().any(|q| matches!(q, Piece::Corner(_))))
+        matches!(lowering::lowered(sk, i), Some(Ok(p)) if p.iter().any(|q| matches!(q, Piece::Corner(_))))
     }).expect("a corner lowered");
-    let pieces = lowering::pieces(sk, corner).unwrap();
+    let pieces = lowering::lowered(sk, corner).unwrap().unwrap();
     assert_eq!(pieces.len(), 4, "{pieces:?}");
     let Some(Piece::Corner(c)) = pieces.last() else { panic!() };
-    let b = lowering::assemble(&pieces).brep(1.0).unwrap();
+    let b = lowering::assemble(pieces.iter()).brep(1.0).unwrap();
     let loc = gcs_core::brep::query::Located::owned(b, 1e-9);
     let field = MaterialField::read(sk, corner, 1e-10).unwrap();
     let mut k = 0x2545f4914f6cdd1du64;

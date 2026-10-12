@@ -75,12 +75,11 @@ pub fn node_named(n: &Json,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64
             // that bounds it — in that order, as the native host combines them; then what reads
             // the faces that makes (a round's fills, then its cuts: the stratum, #183 F6)
             let mut solid = source("stock")?.clone();
-            for (key,op) in [("on",Op::Union),("cut",Op::Cut),("bound",Op::Common),("on_late",Op::Union),("cut_late",Op::Cut)] {
-                let Some(list) = n.get(key) else {
-                    if key.ends_with("_late") { continue }
-                    return Err(format!("recipe: no `{key}`"));
-                };
-                for x in list.arr() {
+            for (key,op,written) in [("on",Op::Union,true),("cut",Op::Cut,true),("bound",Op::Common,true),
+                ("on_late",Op::Union,false),("cut_late",Op::Cut,false)] {
+                // the late sets only where a body has readers of its faces
+                let list = match n.get(key) { Some(l) => l.arr(),None if !written => continue,None => field(n,key)?.arr() };
+                for x in list {
                     let operand = built.get(&x.as_i64()).ok_or(format!("recipe: an operand not built before its body"))?;
                     let name = built_names.get(&x.as_i64()).cloned().unwrap_or_default();
                     solid = combined(&solid,operand,op,floor).map_err(|e| format!("{key} `{name}`: {e}"))?;

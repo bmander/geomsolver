@@ -10,7 +10,7 @@
 //!   solved exactly by its active set): a local nearest point, from the point measured.
 use super::faces::{BodyFaces, Reading};
 use crate::model::{RegionShape, RegionTerm, Sketch, Target};
-use crate::space::{add, dot, norm, scale, sub};
+use crate::space::{dot, norm, scale, sub};
 use crate::syntax::Cmp;
 use std::sync::Arc;
 
@@ -375,14 +375,7 @@ pub fn ends(set: &SetDistance) -> Result<impl Fn(V) -> f64 + Send + Sync, String
     let SetDistance::Edges { body, edges, faces } = set else {
         return Err("where a set ends is read of an edge: a set on two faces".to_string());
     };
-    let mut sides: Vec<(usize, f64)> = Vec::new();
-    for (v, d, vid) in body.run_ends(edges) {
-        for c in body.faces_at(vid, faces) {
-            let step = 1e-6 * (1.0 + norm(v));
-            let s = body.side(c, add(v, scale(d, step)));
-            sides.push((c, if s <= 0.0 { 1.0 } else { -1.0 }));
-        }
-    }
+    let sides = body.end_sides(edges, faces);
     let body = body.clone();
     Ok(move |p: V| sides.iter().map(|&(c, sign)| sign * body.side(c, p)).fold(f64::NEG_INFINITY, f64::max))
 }

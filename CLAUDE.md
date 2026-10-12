@@ -314,16 +314,16 @@ one bound saying the section — a ball's `centres` set or a flat's sum), **neve
 straight edge between planes, its ends cut off square — else refused, `unbuilt`), `Ring` (a whole
 circle where a plane meets a coaxial cylinder or cone: the section in one meridian turned once),
 `Corner` (three square planes: the cell less the ball, `brep::fillet::corner`, plus each edge's
-run); `Lowered::Empty` where the faces never meet or an edge turns the other way. **The gate**: the
+run); no pieces where the faces never meet or an edge turns the other way. **The gate**: the
 pieces' B-rep held to the region's own field (`agreement`, by area; empty only where the field
-reads empty) before anything reads them. Memoised against the region's own terms and the
-stratum's `Arc` (`Sketch::lowering_cache`; a key over `solid::reads` walks every round of the
-body). `cad.rs` builds a body's lowered regions in one set as one recipe node, `"lowered"`
+reads empty) before anything reads them. Memoised against the region's own terms (`document::reads_own`)
+and the stratum's `Arc` (`Sketch::lowering_cache`; a key over `solid::reads` walks every round of
+the body), asked once a recipe. `cad.rs` builds a body's lowered regions in one set as one recipe node, `"lowered"`
 (`assemble`: each distinct piece once, a run cut short at a corner's section and **glued** there,
 `boolean::glued`; the rest unioned — two runs crossing are a mitre), the first region standing for
 the rest; a region lowered to nothing is no operand; a body's face readers go in `"on_late"` /
-`"cut_late"`, applied after `bound` (the stratum's order, as the field and the native host apply
-them). `sweeps_among` sends a lowered region to the exact path. Kernel rules the stack found and
+`"cut_late"`, applied after `bound` (`faces::stratum`, the one split the field and the recipe
+share; the native host applies them so too). `sweeps_among` sends a lowered region to the exact path. Kernel rules the stack found and
 this needs (ported from #79–#110): edges along a face cut where they cross its edges
 (`query::crossings_in`), touches read to second order (`ssi::touch_near`/`touch`,
 `trace_beside`/`unseen_beside`), equal crossing cylinders' ellipses split where they cross

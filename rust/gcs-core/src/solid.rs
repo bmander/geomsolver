@@ -443,7 +443,7 @@ pub(crate) fn has_sweep(sk: &Sketch, si: usize) -> bool {
 /// evaluation that has validated the operands already at its own unit.
 fn sweeps_among(sk: &Sketch, operands: &std::collections::BTreeSet<usize>) -> bool {
     operands.iter().any(|&i| matches!(sk.solids[i].def, SolidDef::Swept { .. })
-        || !matches!(lowering::lowered(sk, i), Some(Ok(_))) && region::in_general(sk, i))
+        || region::in_general(sk, i) && !matches!(lowering::lowered(sk, i), Some(Ok(_))))
 }
 
 fn validate_at(sk: &Sketch, si: usize, unit: f64) -> Result<std::collections::BTreeSet<usize>, String> {

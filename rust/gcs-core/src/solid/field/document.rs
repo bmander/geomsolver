@@ -224,11 +224,9 @@ fn read(sk: &Sketch,solid: usize,axis_tolerance: f64) -> Result<Snapshot,String>
                     // **the stratum** (#183 F6): a term reading this body's faces acts on the body
                     // as its other terms make it — a round's fill after the cut whose edge it
                     // fills — so those are applied last, fills then cuts
-                    let readers = crate::solid::faces::readers_of(sk,i);
                     let kept = |i: &u32| !empty.contains(&(*i as usize));
-                    let late = |i: &u32| readers.contains(&(*i as usize));
-                    let (on_late,on): (Vec<u32>,Vec<u32>) = on.iter().copied().filter(kept).partition(late);
-                    let (through_late,through): (Vec<u32>,Vec<u32>) = through.iter().copied().filter(kept).partition(late);
+                    let [on,through,on_late,through_late] = crate::solid::faces::stratum(sk,i,
+                        on.iter().copied().filter(kept),through.iter().copied().filter(kept));
                     for &i in &on { body = body.combine(get(i),BodyWord::Union).map_err(error)?; }
                     // Everything that cuts is one union, subtracted once: the same field as the
                     // cuts taken away in turn, max(max(s, -a), -b) being max(s, -min(a, b)), with
