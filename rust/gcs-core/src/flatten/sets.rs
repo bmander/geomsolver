@@ -203,6 +203,7 @@ impl<'a> Walk<'a> {
             // no word a set is used by, no table to build: the last round is usually this
             let words = |st: &Stmt| match &st.kind {
                 StmtKind::Relation(r) => r.form.written().is_some_and(may_use),
+                StmtKind::Measured(_) => true,
                 _ => false,
             };
             if !self.out.iter().any(|(st, _, _)| words(st)) {
@@ -214,6 +215,12 @@ impl<'a> Walk<'a> {
             let mut any = false;
             let mut rest = out.into_iter();
             while let Some((st, path, sc)) = rest.next() {
+                // a set measured from, or where one ends (#183 F2, F7): a point of its own
+                if let Some(made) = self.measured_sets(&st, &path, &sc, &alias) {
+                    any = true;
+                    next.extend(made);
+                    continue;
+                }
                 let Some((rel, found)) = self.set_use(&st, &sc, &alias) else {
                     next.push((st, path, sc));
                     continue;
@@ -268,6 +275,144 @@ impl<'a> Walk<'a> {
                 return;
             }
         }
+    }
+
+    /// **A set measured from** (#183 F2): `distance(p, S)` in a bound on measurements, and `p
+    /// inside S.ends` (F7), each set given a hidden point of its own, keyed by the statement and
+    /// the set (`#{stmt}.m{k}`), where `S`'s body is applied (`inner coincident S`) — so its
+    /// bounds are the set's conditions, a term of the region it is measured in reads them
+    /// (`model::Target::Set`), and the measurement names the point in the set's place.  `None`
+    /// where the statement measures no set.
+    fn measured_sets(
+        &mut self,
+        st: &Stmt,
+        path: &[PathStep],
+        sc: &Scope,
+        alias: &BTreeMap<String, String>,
+    ) -> Option<Vec<(Stmt, Vec<PathStep>, Scope)>> {
+        let set_of = |me: &Self, name: &str| -> Option<(String, Vec<String>)> {
+            let r = Ref::dotted(name, st.span);
+            let (abs, rest) = lookup_raw(&r, sc, &me.names, alias, me.units)?;
+            me.sets.contains_key(&abs).then_some((abs, rest))
+        };
+        // the sets the statement reads: a measurement's argument (a set, or a set's surface,
+        // `S.surface`), or the operand `S.ends`
+        let mut sets: Vec<String> = Vec::new();
+        let mut surfaces: BTreeMap<String, String> = BTreeMap::new();
+        match &st.kind {
+            StmtKind::Measured(m) => {
+                for text in [&m.lhs, &m.rhs] {
+                    let Ok(parsed) = crate::expr::parse_in(text, self.units) else { continue };
+                    for (_, args) in parsed.body.measures() {
+                        for a in args {
+                            let Some((abs, rest)) = set_of(self, &a) else { continue };
+                            let surface = rest.len() == 1 && rest[0] == "surface";
+                            if (rest.is_empty() || surface) && !sets.contains(&a) {
+                                if surface {
+                                    surfaces.insert(a.clone(), self.surface_of(&abs));
+                                }
+                                sets.push(a);
+                            }
+                        }
+                    }
+                }
+            }
+            StmtKind::Relation(r) => {
+                let w = r.form.written()?;
+                let [_, s] = w.ops.as_slice() else { return None };
+                if !s.ends_in("ends") || crate::constraints::plane_side_word(&w.word.text).is_none() {
+                    return None;
+                }
+                let mut set = s.clone();
+                set.path.pop();
+                let text = crate::syntax::ref_text(&set);
+                set_of(self, &text).filter(|(_, rest)| rest.is_empty())?;
+                sets.push(text);
+            }
+            _ => return None,
+        }
+        if sets.is_empty() {
+            return None;
+        }
+        let mut out = Vec::new();
+        let mut named: BTreeMap<String, String> = BTreeMap::new();
+        // the statement as written, which an application's stamp does not hide: two statements
+        // of one body stamped alike stay apart
+        let id = sc.written.unwrap_or(st.id).0;
+        for (k, name) in sets.iter().enumerate() {
+            let local = format!("#{id}.m{k}");
+            let key = format!("{}{local}", sc.prefix());
+            self.names.insert(key.clone());
+            self.probes.push(key.clone());
+            self.inner_probes.push(key.clone());
+            let at = st.span;
+            let mut point = Decl::point(DeclName::Key(Name { text: key, span: Span::new(at.lo as usize, at.lo as usize) }), [0.0; 2], None);
+            point.seed = vec![0.7548776662, 0.5698402910, 0.4301597090];
+            point.seed_text = vec![None; 3];
+            out.push((Stmt { kind: StmtKind::Decl(point), ..st.clone() }, path.to_vec(), sc.clone()));
+            let set = match surfaces.get(name) {
+                // a set's surface, made beside it, by its absolute name
+                Some(abs) => Ref { root: Name { text: abs.clone(), span: at }, path: Vec::new(), span: at },
+                None => Ref::dotted(name, at),
+            };
+            let on = crate::syntax::Written {
+                word: Name { text: "coincident".to_string(), span: at },
+                fixity: Infix,
+                ops: vec![Ref::new(&local), set],
+                args: Vec::new(),
+                span: at,
+            };
+            let rel = Relation::of(RelationForm::Written(on));
+            // applied under a prefix of its own, so two sets one statement measures from bind
+            // their points apart
+            let mut usc = sc.clone();
+            usc.prefixes.insert(0, format!("{}#{id}.m{k}.", sc.prefix()));
+            if !usc.prefixes.iter().any(|p| p.is_empty()) {
+                usc.prefixes.push(String::new());
+            }
+            out.push((Stmt { kind: StmtKind::Relation(rel), ..st.clone() }, path.to_vec(), usc));
+            named.insert(name.clone(), local);
+        }
+        let mut st = st.clone();
+        match &mut st.kind {
+            StmtKind::Measured(m) => {
+                for text in [&mut m.lhs, &mut m.rhs] {
+                    *text = super::values::map_measured(text, |w| named.get(w).cloned());
+                }
+            }
+            StmtKind::Relation(r) => {
+                if let Some(w) = r.form.written_mut() {
+                    let local = named.values().next().expect("one set").clone();
+                    w.ops[1] = Ref::field(local, "ends");
+                }
+            }
+            _ => {}
+        }
+        out.push((st, path.to_vec(), sc.clone()));
+        Some(out)
+    }
+
+    /// **A set's surface** (#183): the set made beside `abs` whose body is `abs`'s with each bound
+    /// made the equality at its number — a ball's sphere, a half-space's plane — by its absolute
+    /// name (`{abs}#surface`), made once.
+    fn surface_of(&mut self, abs: &str) -> String {
+        let key = format!("{abs}#surface");
+        if !self.sets.contains_key(&key) {
+            let site = &self.sets[abs];
+            let mut lit = site.lit.clone();
+            for st in lit.body.iter_mut() {
+                let StmtKind::Relation(r) = &mut st.kind else { continue };
+                let Some(w) = r.form.written_mut() else { continue };
+                w.args.retain(|a| !matches!(a, crate::syntax::OpArg::Bound { hi: None, .. }));
+                if crate::constraints::plane_side_word(&w.word.text).is_some() && w.args.is_empty() {
+                    w.word.text = "coincident".to_string();
+                }
+            }
+            let made = Site { lit, scope: site.scope.clone(), depth: site.depth };
+            self.sets.insert(key.clone(), made);
+            self.names.insert(key.clone());
+        }
+        key
     }
 
     /// One use of the set `abs`, operand `k` of the statement `st` (§6.21).
@@ -520,12 +665,28 @@ impl<'a> Walk<'a> {
             Ok(r) => r,
             Err(m) => return self.once(Code::E040, at, m),
         };
+        // a region of one bound has the surface the bound's number makes (#183): measured from,
+        // its outside the bound's (the larger side of `<=`, the smaller of `>=`)
+        let mut grows = grows;
+        let mut flipped = false;
+        let mut surface: Option<SetLit> = None;
         let lit = &self.sets[abs].lit;
         if region(lit) {
-            let m = format!("`{set}` is a region, with no surface to measure from: measure from \
-                             the set it is bounded by");
-            return self.once(Code::E040, at, m);
+            match one_bound(lit) {
+                Some((bare, ge)) => {
+                    grows ^= ge;
+                    flipped = ge;
+                    surface = Some(bare);
+                }
+                None => {
+                    let m = format!("`{set}` is a region, with no surface to measure from: \
+                                     measure from the set it is bounded by");
+                    return self.once(Code::E040, at, m);
+                }
+            }
         }
+        let lit = surface.as_ref().unwrap_or(lit);
+        let cmp = if flipped { cmp.and_then(|c| c.turned()) } else { cmp };
         // the one relation of its point, holding the number its surface is at
         let is_dim = |a: &OpArg| matches!(a, OpArg::Dim(..));
         let relations: Vec<usize> = (0..lit.body.len())
@@ -557,7 +718,7 @@ impl<'a> Walk<'a> {
         }
         let offset = if grows { d.clone() } else { Aff { m: -d.m, c: -d.c, ..d.clone() } };
         let site = &self.sets[abs];
-        let (mut lit, depth, closure) = (site.lit.clone(), site.depth, site.scope.clone());
+        let (mut lit, depth, closure) = (lit.clone(), site.depth, site.scope.clone());
         let StmtKind::Relation(r) = &mut lit.body[i].kind else { unreachable!("a relation") };
         let measured = r.form.written_mut().expect("a number is written");
         let distance = measured.word.text == "distance";
@@ -759,6 +920,7 @@ fn reaches(w: &crate::syntax::Written) -> bool {
 /// inside or outside something — so it has no surface to touch.
 fn region(lit: &SetLit) -> bool {
     lit.body.iter().filter_map(written_of).any(|w| w.states_bound())
+        || lit.body.iter().any(|st| matches!(st.kind, StmtKind::Measured(_)))
 }
 
 /// A statement's written relation, where it is one.
@@ -788,9 +950,38 @@ fn region_body(
     // a distance from one is (`std.Offset`'s body)
     let grown = |w: &crate::syntax::Written| crate::constraints::plane_side_word(&w.word.text)
         .is_some();
+    // a bound on measurements is a number of this one's, a bound already (#183 F3)
+    let measured = |st: &Stmt| matches!(st.kind, StmtKind::Measured(_));
     let dims: Vec<usize> = (0..body.len())
-        .filter(|&i| written_of(&body[i]).is_some_and(|w| w.args.iter().any(is_dim) && !grown(w)))
+        .filter(|&i| measured(&body[i])
+            || written_of(&body[i]).is_some_and(|w| w.args.iter().any(is_dim) && !grown(w)))
         .collect();
+    // every number a bound already: `inside` is where all of them hold, as written
+    let bounded = |st: &Stmt| measured(st) || written_of(st).is_some_and(|w| w.states_bound());
+    if dims.len() > 1 && side == Cmp::Le && dims.iter().all(|&i| bounded(&body[i])) {
+        return Ok(());
+    }
+    // the outside of a set of one use is the use turned round: outside `{ q | q outside toe }` is
+    // inside `toe` (#183, a region's own side as `std.Chamfered` takes it)
+    if dims.is_empty() && side == Cmp::Ge {
+        let uses: Vec<usize> = (0..body.len()).filter(|&i| written_of(&body[i]).is_some_and(may_use)).collect();
+        let others = body.iter().filter(|st| matches!(st.kind, StmtKind::Relation(_) | StmtKind::Measured(_))).count();
+        if let ([i], 1) = (uses.as_slice(), others) {
+            let w = match &mut body[*i].kind {
+                StmtKind::Relation(r) => r.form.written_mut().filter(|w| w.args.is_empty()),
+                _ => None,
+            };
+            let turned = w.as_ref().and_then(|w| match w.word.text.as_str() {
+                "inside" => Some("outside"),
+                "outside" => Some("inside"),
+                _ => None,
+            });
+            if let (Some(w), Some(turned)) = (w, turned) {
+                w.word.text = turned.to_string();
+                return Ok(());
+            }
+        }
+    }
     let [i] = dims[..] else {
         let uses = body.iter().filter_map(written_of).any(may_use);
         return match (dims.len(), uses, side) {
@@ -805,6 +996,12 @@ fn region_body(
             )),
         };
     };
+    if let StmtKind::Measured(m) = &mut body[i].kind {
+        if side != Cmp::Le {
+            m.cmp = m.cmp.turned().expect("a bound on measurements is one-sided");
+        }
+        return Ok(());
+    }
     let StmtKind::Relation(r) = &mut body[i].kind else {
         unreachable!("a dimension is a relation")
     };
@@ -828,6 +1025,22 @@ fn region_body(
         }
     }
     Ok(())
+}
+
+/// A region of one bounded relation as its surface (#183): the body with the bound taken off,
+/// and whether the bound ran `>=` (its outside the smaller side).
+fn one_bound(lit: &SetLit) -> Option<(SetLit, bool)> {
+    let relations: Vec<usize> = (0..lit.body.len())
+        .filter(|&i| matches!(lit.body[i].kind, StmtKind::Relation(_) | StmtKind::Measured(_)))
+        .collect();
+    let [i] = relations[..] else { return None };
+    let mut bare = lit.clone();
+    let StmtKind::Relation(r) = &mut bare.body[i].kind else { return None };
+    let w = r.form.written_mut()?;
+    let k = w.args.iter().position(|a| matches!(a, crate::syntax::OpArg::Bound { hi: None, grow: None, .. }))?;
+    let crate::syntax::OpArg::Bound { cmp, .. } = w.args.remove(k) else { return None };
+    w.args.iter().any(|a| matches!(a, crate::syntax::OpArg::Dim(..)))
+        .then_some((bare, cmp == crate::syntax::Cmp::Ge))
 }
 
 /// The statement ids a distance's foot gives what it adds to the set's body (`expand_reach`), so

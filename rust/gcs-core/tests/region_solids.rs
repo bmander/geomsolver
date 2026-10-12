@@ -94,7 +94,8 @@ fn a_region_solid_is_material() {
 }
 
 /// What a region solid may be made of: judged where it is evaluated, on the solved drawing — a
-/// cylinder without ends, a ball off the axis.
+/// cylinder without ends is refused; a ball off the axis is read in general position, point by
+/// point (`region_general.rs`), no longer folded into a meridian.
 #[test]
 fn a_region_solid_is_bounded_on_one_axis() {
     let refused_as = |src: String, name: &str, why: &str| {
@@ -104,10 +105,13 @@ fn a_region_solid_is_bounded_on_one_axis() {
     };
     let rod = format!("{FRAME}tube := std.Cylinder(up, r: 2)\nrod := solid(tube)\n");
     refused_as(rod, "rod", "no end");
-    refused_as(format!("{FRAME}d := point hint((1, 0, 0))\nfix((1, 0, 0)) d\n\
-                        tube := std.Cylinder(up, r: 2)\naway := std.Sphere(d, r: 1)\n\
-                        odd := {{ p | p inside tube; p inside away }}\nbad := solid(odd)\n"),
-               "bad", "off the region's axis");
+    let e = solved(&format!("{FRAME}d := point hint((1, 0, 0))\nfix((1, 0, 0)) d\n\
+                             tube := std.Cylinder(up, r: 2)\naway := std.Sphere(d, r: 1)\n\
+                             odd := {{ p | p inside tube; p inside away }}\nbad := solid(odd)\n"));
+    let bad = ent(&e, "bad").i();
+    assert!(gcs_core::solid::region::meridian(&e.sketch, bad).is_err_and(|m| m.contains("off the region's axis")));
+    assert!(gcs_core::solid::region::in_general(&e.sketch, bad));
+    gcs_core::solid::validate(&e.sketch, bad).unwrap();
     let rail = format!("{FRAME}rail := {{ p | p coincident up; p distance(5) c }}\n\
                         r := solid(rail)\n");
     refused(&rail, "E040", "bounds nothing", "r := solid(rail)");

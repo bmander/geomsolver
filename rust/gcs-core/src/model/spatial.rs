@@ -299,7 +299,7 @@ impl SolidDef {
 
 /// What a region solid's term bounds (§6.21): the measure a bound on its probe reads, recognised
 /// by the constraint's kind and never by the set it came from.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum RegionShape {
     /// A distance from a point: a ball about it.
     Ball { center: u32 },
@@ -310,6 +310,20 @@ pub enum RegionShape {
     /// An ordinate along a plane's normal, from a point: a half-space.  `sign` is -1 where the
     /// probe is the ordinate's first operand, read back from it.
     Plane { plane: u32, from: u32, sign: f64 },
+    /// A sum of measurements of the probe, each times its number (§6.21, #183 F3): `distance(p,
+    /// f1) + distance(p, f2) <= 10mm` is `[(f1, 1), (f2, 1)]` against 10.  Each is the distance
+    /// from what it names (`Target`).
+    Measured { of: Vec<(Target, f64)> },
+    /// The signed distance from a face's surface (#183 F1), positive on the side away from the
+    /// body's material: `p inside F` at most nothing, `p outside F` at least, `p inside(d) F` at
+    /// most `d`.
+    FaceSide { face: FaceRef },
+    /// The material's angle at the edge where faces `a` and `b` meet, at the point of it nearest
+    /// the probe (#183 F9), in radians: under a half turn where the edge is convex.
+    Angle { a: FaceRef, b: FaceRef },
+    /// Where an edge ends (#183 F7): on the side the edge runs on of each face it ends on.  The
+    /// edge is a set, the points on two faces (`Target::Set`), resolved when the solid is built.
+    Ends { edge: Box<Target> },
 }
 
 impl RegionShape {
@@ -323,6 +337,12 @@ impl RegionShape {
             RegionShape::Plane { plane, from, .. } => {
                 vec![EntRef::plane(plane as usize), EntRef::point(from as usize)]
             }
+            RegionShape::Measured { ref of } => of.iter().flat_map(|(t, _)| t.entities()).collect(),
+            RegionShape::FaceSide { ref face } => vec![EntRef::solid(face.solid as usize)],
+            RegionShape::Angle { ref a, ref b } => {
+                vec![EntRef::solid(a.solid as usize), EntRef::solid(b.solid as usize)]
+            }
+            RegionShape::Ends { ref edge } => edge.entities(),
         }
     }
 
@@ -342,7 +362,81 @@ impl RegionShape {
                 from: i(EntRef::point(from as usize))?,
                 sign,
             },
+            RegionShape::Measured { ref of } => RegionShape::Measured {
+                of: of.iter().map(|(t, c)| t.remapped(map).map(|t| (t, *c))).collect::<Option<_>>()?,
+            },
+            RegionShape::FaceSide { ref face } => RegionShape::FaceSide { face: face.remapped(map)? },
+            RegionShape::Angle { ref a, ref b } => {
+                RegionShape::Angle { a: a.remapped(map)?, b: b.remapped(map)? }
+            }
+            RegionShape::Ends { ref edge } => {
+                RegionShape::Ends { edge: Box::new(edge.remapped(map)?) }
+            }
         })
+    }
+}
+
+/// A face of a solid, or the faces, as a set's body names it (#183 F1): `pad.plate.near` is
+/// solid `pad`'s faces that its operand `plate` gave it as its near cap; `pad.boss` every face
+/// `boss` gave it; `block` every face of `block`.  Read off the solid's exact boundary, as the
+/// faces stand in it (a boolean never renames).  `surface` reads the face's whole surface
+/// (`F.surface`), not its patch.
+#[derive(Clone, Debug, PartialEq)]
+pub struct FaceRef {
+    pub solid: u32,
+    pub path: String,
+    pub surface: bool,
+}
+
+/// What a measurement of a region's probe measures the distance from (#183 F1–F3).
+#[derive(Clone, Debug, PartialEq)]
+pub enum Target {
+    /// A point, a line produced, an axis or a plane.
+    Ent(EntRef),
+    /// A face's patch, or its surface.
+    Face(FaceRef),
+    /// A set (#183 F2): the points its body holds, applied to a hidden point of its own whose
+    /// bounds are `terms` (filled when the solid is built).
+    Set { probe: u32, terms: Vec<RegionTerm> },
+}
+
+impl Target {
+    pub fn entities(&self) -> Vec<EntRef> {
+        match self {
+            Target::Ent(e) => vec![*e],
+            Target::Face(f) => vec![EntRef::solid(f.solid as usize)],
+            Target::Set { terms, .. } => terms.iter().flat_map(|t| t.shape.entities()).collect(),
+        }
+    }
+
+    pub fn remapped(&self, map: &dyn Fn(EntRef) -> Option<EntRef>) -> Option<Target> {
+        Some(match self {
+            Target::Ent(e) => Target::Ent(map(*e)?),
+            Target::Face(f) => Target::Face(f.remapped(map)?),
+            Target::Set { probe, terms } => Target::Set {
+                probe: map(EntRef::point(*probe as usize))?.i() as u32,
+                terms: terms.iter().map(|t| t.remapped(map)).collect::<Option<_>>()?,
+            },
+        })
+    }
+}
+
+impl FaceRef {
+    pub fn remapped(&self, map: &dyn Fn(EntRef) -> Option<EntRef>) -> Option<FaceRef> {
+        let solid = map(EntRef::solid(self.solid as usize))?.i() as u32;
+        Some(FaceRef { solid, ..self.clone() })
+    }
+}
+
+impl RegionTerm {
+    /// The one-sided bound `cmp` on `shape` at `lo`, of no set and no offset.
+    pub fn new(shape: RegionShape, cmp: crate::syntax::Cmp, lo: TermNumber) -> RegionTerm {
+        RegionTerm { shape, cmp, lo, hi: None, grow: None, name: String::new() }
+    }
+
+    /// The same term over the entities `map` renumbers them to, or `None` where one went.
+    pub fn remapped(&self, map: &dyn Fn(EntRef) -> Option<EntRef>) -> Option<RegionTerm> {
+        Some(RegionTerm { shape: self.shape.remapped(map)?, ..self.clone() })
     }
 }
 

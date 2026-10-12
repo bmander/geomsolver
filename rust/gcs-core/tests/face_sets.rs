@@ -1,7 +1,8 @@
-//! **A face of a solid is a set** (§6.9, §6.21, #162 F5): `b0.near`, `b0.far`, a side `b0.ab`
-//! and `body.b0.near` name the surface the face lies on, made from the solid's own text, so a
-//! point is put on one as on any set and a plane lies on one by touching it at its own origin —
-//! sketching on a face.  The carrier follows the extents and the profile wherever they move.
+//! **A face of a solid is a set** (§6.9, §6.21, #162 F5, [0.68]): `b0.near`, `b0.far`, a side
+//! `b0.ab` and `body.b0.near` name the face, and `.surface` the surface it lies on, made from the
+//! solid's own text, so a point is put on one as on any set and a plane lies on one by touching
+//! it at its own origin — sketching on a face.  The carrier follows the extents and the profile
+//! wherever they move.
 use gcs_core::diagnose::{diagnose, DiagnoseOptions};
 use gcs_core::program::Elaborated;
 use gcs_core::solve::{solve, SolveOpts};
@@ -34,7 +35,7 @@ fn at(e: &Elaborated, n: &str) -> [f64; 3] {
 fn a_point_on_a_cap_stands_at_its_ordinate() {
     let y = |sweep: &str, face: &str| {
         let e = solved(&format!("b0 := solid(f0, {sweep})\nm := point hint((5, 3, 5))\n\
-                                 m coincident b0.{face}\n"));
+                                 m coincident b0.{face}.surface\n"));
         at(&e, "m")[1]
     };
     assert!((y("depth: 20", "far") - 20.0).abs() < 1e-9);
@@ -49,7 +50,7 @@ fn a_point_on_a_cap_stands_at_its_ordinate() {
 #[test]
 fn the_carrier_follows_the_extent() {
     let doc = "h := 20\nb0 := solid(f0, depth: h)\nm := point hint((5, 3, 5))\n\
-               m coincident b0.far\n";
+               m coincident b0.far.surface\n";
     assert!((at(&solved(doc), "m")[1] - 20.0).abs() < 1e-9);
     let edited = doc.replace("h := 20", "h := 35");
     assert!((at(&solved(&edited), "m")[1] - 35.0).abs() < 1e-9);
@@ -62,7 +63,7 @@ fn the_carrier_follows_the_extent() {
 fn a_plane_touching_a_cap_at_its_origin_lies_on_it() {
     let mut e = solved("b0 := solid(f0, depth: 20)\n\
         v1 := plane(u: hint(dir: (1, 0, 0)), v: hint(dir: (0, 0, 1))) hint(origin: (10, 18, 10))\n\
-        v1.origin coincident b0.far\nv1 tangent(at: v1.origin) b0.far\n");
+        v1.origin coincident b0.far.surface\nv1 tangent(at: v1.origin) b0.far.surface\n");
     let n = e.sketch.basis(ent(&e, "v1").i()).normal();
     assert!(n[0].abs() < 1e-9 && n[2].abs() < 1e-9, "{n:?}");
     assert!((at(&e, "v1.origin")[1] - 20.0).abs() < 1e-9);
@@ -77,7 +78,7 @@ fn a_plane_touching_a_cap_at_its_origin_lies_on_it() {
 fn a_plane_on_a_side_holds_the_edge_and_the_normal() {
     let mut e = solved("b0 := solid(f0, depth: 20)\n\
         v1 := plane(u: hint(dir: (1, 0, 0)), v: hint(dir: (0, 1, 0))) hint(origin: (10, 8, 1))\n\
-        v1.origin coincident b0.ab\nv1 tangent(at: v1.origin) b0.ab\n");
+        v1.origin coincident b0.ab.surface\nv1 tangent(at: v1.origin) b0.ab.surface\n");
     let n = e.sketch.basis(ent(&e, "v1").i()).normal();
     assert!(n[0].abs() < 1e-9 && n[1].abs() < 1e-9, "{n:?}");
     assert!(at(&e, "v1.origin")[2].abs() < 1e-9);
@@ -88,7 +89,7 @@ fn a_plane_on_a_side_holds_the_edge_and_the_normal() {
     let slant = PROFILE.replace("vertical bc\n", "").replace("b distance(30) c\n", "");
     let mut e = read(&format!("{slant}b0 := solid(f0, depth: 20)\nfix((50, 30)) c\n\
         v1 := plane(u: hint(dir: (0, 0, 1)), v: hint(dir: (0, 1, 0))) hint(origin: (45, 8, 15))\n\
-        v1.origin coincident b0.bc\nv1 tangent(at: v1.origin) b0.bc\n"));
+        v1.origin coincident b0.bc.surface\nv1 tangent(at: v1.origin) b0.bc.surface\n"));
     assert!(solve(&mut e.sketch, SolveOpts::default()).success);
     let n = e.sketch.basis(ent(&e, "v1").i()).normal();
     let edge = gcs_core::space::sub(at(&e, "c"), at(&e, "b"));
@@ -102,11 +103,11 @@ fn a_plane_on_a_side_holds_the_edge_and_the_normal() {
 fn a_face_is_reached_through_bodies() {
     let y = |src: &str| at(&solved(src), "m")[1];
     let stock = "b0 := solid(f0, depth: 20)\nbody := solid(b0)\nm := point hint((5, 3, 5))\n";
-    assert!((y(&format!("{stock}m coincident body.b0.far\n")) - 20.0).abs() < 1e-9);
+    assert!((y(&format!("{stock}m coincident body.b0.far.surface\n")) - 20.0).abs() < 1e-9);
     let cut = "b0 := solid(f0, depth: 20)\n\
                in std.front {\n  e := point hint((10, 10))\n  r := circle(center: e) hint(r: 3)\n}\n\
                fix((10, 10)) e\nradius(3) r\ng0 := face(r)\nbore := solid(g0, depth: 30)\n\
-               bore cut b0\nm := point hint((5, 3, 5))\nm coincident b0.far\n";
+               bore cut b0\nm := point hint((5, 3, 5))\nm coincident b0.far.surface\n";
     assert!((y(cut) - 20.0).abs() < 1e-9);
 }
 
@@ -114,12 +115,25 @@ fn a_face_is_reached_through_bodies() {
 #[test]
 fn a_face_with_no_carrier_is_refused_where_it_is_named() {
     let src = |s: &str| format!("{PROFILE}b0 := solid(f0, depth: 20)\nm := point hint((5, 3, 5))\n{s}\n");
-    refused(&src("m coincident b0.top"), "E040", "names no face", "b0.top");
-    refused(&src("t := solid(f0, through: b0)\nm coincident t.near"), "E040",
-            "known only once", "t.near");
-    refused(&src("r0 := solid(f0, about: da)\nm coincident r0.end"), "E040",
-            "only a prism's faces", "r0.end");
-    refused(&src("body := solid(b0)\nm coincident body.near"), "E040", "is a body", "body.near");
+    refused(&src("m coincident b0.top.surface"), "E040", "names no face", "b0.top.surface");
+    refused(&src("t := solid(f0, through: b0)\nm coincident t.near.surface"), "E040",
+            "known only once", "t.near.surface");
+    refused(&src("r0 := solid(f0, about: da)\nm coincident r0.end.surface"), "E040",
+            "only a prism's faces", "r0.end.surface");
+    refused(&src("body := solid(b0)\nm coincident body.near.surface"), "E040", "is a body",
+            "body.near.surface");
+}
+
+/// **A face is the face** (§6.9 [0.68]): what a point or a plane is drawn on is the surface the
+/// face lies on, `b0.far.surface`, and the face itself, bounded by its edges, is refused there in
+/// words that say so — a region's point reads it (`tests/region_faces.rs`).
+#[test]
+fn a_drawn_point_is_put_on_a_faces_surface() {
+    let src = |s: &str| {
+        format!("{PROFILE}b0 := solid(f0, depth: 20)\nm := point hint((5, 3, 5))\n{s}\n")
+    };
+    refused(&src("m coincident b0.far"), "E040", "`b0.far.surface`", "b0.far");
+    refused(&src("m coincident b0.surface"), "E040", "every face of `b0`", "b0.surface");
 }
 
 /// A curved side is no set yet.
@@ -127,8 +141,8 @@ fn a_face_with_no_carrier_is_refused_where_it_is_named() {
 fn a_curved_side_is_refused() {
     let src = "use std\nin std.front {\n  o := point hint((0, 0))\n  k := circle(center: o) hint(r: 5)\n}\n\
                fix((0, 0)) o\nradius(5) k\ng0 := face(k)\nb0 := solid(g0, depth: 10)\n\
-               m := point hint((5, 3, 5))\nm coincident b0.k\n";
-    refused(src, "E040", "curved side", "b0.k");
+               m := point hint((5, 3, 5))\nm coincident b0.k.surface\n";
+    refused(src, "E040", "curved side", "b0.k.surface");
 }
 
 /// A solid swept from a face written in place has the same faces: `solid(face(ab, …), …)`.
@@ -136,8 +150,8 @@ fn a_curved_side_is_refused() {
 fn a_face_written_in_place_is_a_set_too() {
     let inline = PROFILE.replace("f0 := face(ab, bc, cd, da)\n", "");
     let mut e = read(&format!("{inline}b0 := solid(face(ab, bc, cd, da), depth: 20)\n\
-        m := point hint((5, 3, 5))\nm coincident b0.far\n\
-        q := point hint((5, 3, 25))\nq coincident b0.cd\n"));
+        m := point hint((5, 3, 5))\nm coincident b0.far.surface\n\
+        q := point hint((5, 3, 25))\nq coincident b0.cd.surface\n"));
     assert!(solve(&mut e.sketch, SolveOpts::default()).success);
     assert!((at(&e, "m")[1] - 20.0).abs() < 1e-9);
     assert!((at(&e, "q")[2] - 30.0).abs() < 1e-9);

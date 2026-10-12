@@ -337,6 +337,9 @@ pub enum StmtKind {
     /// `rope minimizes integral(p.y over p)` — an energy over a curve (#121): the curve takes
     /// the shape that makes it stationary.
     Minimize(Minimize),
+    /// `distance(p, f1) + distance(p, f2) <= 10mm` — a bound on an expression of measurements
+    /// (§6.21, #183 F3), see `Measured`.
+    Measured(Measured),
 }
 
 impl StmtKind {
@@ -353,7 +356,7 @@ impl StmtKind {
             StmtKind::Derived(d) => Some(d.name.key()),
             StmtKind::Relation(_) | StmtKind::Branch(_) | StmtKind::Block(_) | StmtKind::Style(_)
             | StmtKind::SolidRel(_) | StmtKind::ClaimOver(_) | StmtKind::Unit(_)
-            | StmtKind::Minimize(_) => None,
+            | StmtKind::Minimize(_) | StmtKind::Measured(_) => None,
         }
     }
 }
@@ -387,6 +390,20 @@ pub struct Minimize {
     pub curve: Ref,
     pub maximize: bool,
     pub terms: Vec<Integral>,
+    pub span: Span,
+}
+
+/// `distance(p, f1) + distance(p, f2) <= 10mm` — a bound on an expression of measurements
+/// (§6.21, #183 F3): in a set's body, where the point the set is about may be, as the distances
+/// from it say.  Each side stays text, read by `expr`: the flattener writes the scope's numbers in
+/// and resolves what each measurement names (`rescope_measures`).  Closed, as every bound is.
+#[derive(Clone, Debug)]
+pub struct Measured {
+    pub lhs: String,
+    pub lhs_span: Span,
+    pub cmp: Cmp,
+    pub rhs: String,
+    pub rhs_span: Span,
     pub span: Span,
 }
 
@@ -590,6 +607,18 @@ pub struct Block {
 pub struct EdgesOf {
     pub var: Name,
     pub chain: Ref,
+    /// `repeat c in A if c in B and c != a` (#183 F8): what each copy keeps to, by the faces its
+    /// names stand for; empty for a chain's.
+    pub when: Vec<When>,
+}
+
+/// One condition a block over faces keeps a copy by (#183 F8): `f != g`, two names standing for
+/// different faces, or `f in X`, a face among `X`'s.
+#[derive(Clone, Debug)]
+pub struct When {
+    pub var: Name,
+    pub within: bool,
+    pub other: Ref,
 }
 
 /// A block body that ends mid-joint — `cycle N { distance(d) line -> angle(a) }` — threads its
@@ -1739,6 +1768,19 @@ impl Ref {
 
     pub fn field(name: impl Into<String>, f: &str) -> Ref {
         Ref { root: Name::new(name), path: vec![Seg::Field(Name::new(f))], span: Span::default() }
+    }
+
+    /// A dotted name (`pad.plate.near`) as a reference, each part at `span`.
+    pub fn dotted(text: &str, span: Span) -> Ref {
+        let mut parts = text.split('.');
+        let root = Name { text: parts.next().unwrap_or_default().to_string(), span };
+        let path = parts.map(|f| Seg::Field(Name { text: f.to_string(), span })).collect();
+        Ref { root, path, span }
+    }
+
+    /// Whether the reference ends in the member `word` (`S.ends`).
+    pub fn ends_in(&self, word: &str) -> bool {
+        matches!(self.path.last(), Some(Seg::Field(n)) if n.text == word)
     }
 }
 

@@ -120,6 +120,10 @@ pub(super) fn follow_building(
 /// statement that names one is `fix`, which reads the path itself.
 pub(super) fn follow(sk: &Sketch, mut e: EntRef, path: &[Seg]) -> Result<EntRef, String> {
     for seg in path {
+        // an entity not built yet has no parts to read (a solid's, named by a face path, #183)
+        if e.i() >= sk.count(e.kind) {
+            return Err(format!("{} has no parts yet", e.kind.a()));
+        }
         let Seg::Field(f) = seg else {
             return Err("an index names a copy, not a part".to_string());
         };

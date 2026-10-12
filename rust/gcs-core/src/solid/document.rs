@@ -12,11 +12,18 @@ use super::*;
 /// comparison.  Every scalar of every edge of every face the term reaches, each plane's pose,
 /// basis and origin, and every extent.
 pub fn reads(sk: &Sketch, si: usize, unit: f64) -> Vec<f64> {
+    reads_except(sk, si, unit, &std::collections::BTreeSet::new())
+}
+
+/// `reads`, with the solids `skip` and what only they reach left out: what a stratum reads
+/// (`faces::cached`).
+pub fn reads_except(sk: &Sketch, si: usize, unit: f64, skip: &std::collections::BTreeSet<usize>)
+    -> Vec<f64> {
     let mut v = vec![unit];
     let mut seen = std::collections::BTreeSet::new();
     let mut stack = vec![si as u32];
     while let Some(s) = stack.pop() {
-        if !seen.insert(s) {
+        if !seen.insert(s) || (s as usize != si && skip.contains(&(s as usize))) {
             continue;
         }
         let Some(sol) = sk.solids.get(s as usize) else { continue };
@@ -56,6 +63,12 @@ pub fn reads(sk: &Sketch, si: usize, unit: f64) -> Vec<f64> {
                                 v.extend(sk.world_point(l.p1 as usize));
                                 v.extend(sk.world_point(l.p2 as usize));
                             }
+                            crate::model::EntKind::Axis => {
+                                let x = &sk.axes[e.i()];
+                                v.extend(x.a.iter().chain(&x.d).map(|&p| sk.params[p as usize].value));
+                            }
+                            // a body whose faces it reads (#183 F1): read as the body is
+                            crate::model::EntKind::Solid => stack.push(e.i() as u32),
                             _ => {
                                 let b = sk.basis(e.i());
                                 v.extend(b.o);

@@ -50,6 +50,15 @@ const projects: Example[] = [{
     + 'what each shows.',
   target: { kind: 'directory', path: 'generation', entry: 'stride.sv' },
 }, {
+  label: 'Rounds and chamfers · written in Solvent', key: 'rounds',
+  description: 'A block with one rim rounded and the other chamfered, a pocket rounded inside, a '
+    + 'boss filleted where it stands, and a disc whose round and chamfer are built exactly. None '
+    + 'is a kernel feature: `round` and `chamfer` are words of the standard library over faces '
+    + 'read as sets, and by_hand.sv writes its own round in twenty lines. regions.sv shows solids '
+    + 'that are sets read point by point. The README says what each shows; the surfaces refine in '
+    + 'the background as you watch.',
+  target: { kind: 'directory', path: 'rounds', entry: 'block.sv' },
+}, {
   label: 'Sundials · hour lines from the sun', key: 'sundial',
   description: 'A horizontal dial and a polar one, their hour lines found rather than tabled: the '
     + 'equinox sun is a ring of 24 hourly places about the style (sun.sv), and each hour line is '

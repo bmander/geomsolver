@@ -46,7 +46,7 @@ impl Seg {
         match *self { Seg::Line {a,b} => Seg::Line {a:b,b:a},Seg::Arc {c,r,a0,sweep} => Seg::Arc {c,r,a0:a0+sweep,sweep:-sweep} }
     }
     /// The stretch from `t0` to `t1`.
-    fn part(&self,t0: f64,t1: f64) -> Seg {
+    pub(crate) fn part(&self,t0: f64,t1: f64) -> Seg {
         match *self {
             Seg::Line {..} => Seg::Line {a:self.point(t0),b:self.point(t1)},
             Seg::Arc {c,r,a0,sweep} => Seg::Arc {c,r,a0:a0+sweep*t0,sweep:sweep*(t1-t0)},
@@ -54,7 +54,7 @@ impl Seg {
     }
     /// Where along the step a point of its line or circle is (its fraction; past the ends outside
     /// `[0, 1]`, an arc's measured on the side its sweep runs).
-    fn param(&self,p: P) -> f64 {
+    pub(crate) fn param(&self,p: P) -> f64 {
         match *self {
             Seg::Line {a,b} => { let d = sub(b,a); dot(sub(p,a),d)/dot(d,d) }
             Seg::Arc {c,a0,sweep,..} => {
@@ -117,7 +117,7 @@ impl Step {
     }
     pub fn reversed(&self) -> Step { Step {seg:self.seg.reversed(),..*self} }
     fn part(&self,t0: f64,t1: f64) -> Step { Step {seg:self.seg.part(t0,t1),..*self} }
-    fn param(&self,p: P) -> f64 { match self.chart { None => self.seg.param(p),Some(c) => self.seg.param(c.to(p)) } }
+    pub(crate) fn param(&self,p: P) -> f64 { match self.chart { None => self.seg.param(p),Some(c) => self.seg.param(c.to(p)) } }
     fn distance(&self,p: P) -> f64 {
         match self.chart {
             None => self.seg.distance(p),

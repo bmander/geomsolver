@@ -142,7 +142,13 @@ fn say_once(diags: &mut Vec<Diag>, span: Span, stmt: StmtId, message: String) {
 /// The hidden points region solids' bodies are applied to (`solid(R)`, §6.21), each with the
 /// bounds stated on it: gathered as relations are stated, taken by each solid as it is built
 /// (`SolidDef::Region`).  Never a row: a probe's bound describes material and chooses no root.
-pub(super) type Probes = BTreeMap<usize, Vec<crate::model::RegionTerm>>;
+#[derive(Default)]
+pub(super) struct Probes {
+    pub terms: BTreeMap<usize, Vec<crate::model::RegionTerm>>,
+    /// The points of sets measured from (#183 F2), whose equalities are terms too: a set's
+    /// surface, a curve where two meet.
+    pub inner: BTreeSet<usize>,
+}
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn constrain(
@@ -157,6 +163,17 @@ pub(super) fn constrain(
     probes: &mut Probes,
     diags: &mut Vec<Diag>,
 ) -> Option<u32> {
+    // **a region's point against a face** (#183 F1), or where an edge ends (F7): a term of the
+    // region, read off the body
+    if let Some(made) = face_relation(sk, res, r, probes).or_else(|| ends_relation(sk, res, r, probes)) {
+        match made {
+            Ok((probe, t)) => probes.terms.get_mut(&probe).expect("a probe's terms").push(t),
+            Err(message) => {
+                diags.push(Diag { code: Code::E040, span: st.span, stmt: Some(st.id), message })
+            }
+        }
+        return None;
+    }
     // **a point inside or outside a plane is a bound** (§9.6): the point's ordinate along the
     // plane's normal from its origin, at most or at least zero
     if let Some(lowered) = r.form.written().and_then(|w| side_of_plane(sk, res, r, w)) {
@@ -574,8 +591,8 @@ pub(super) fn constrain(
     };
     // a bound a set put on a region solid's probe is a term of the solid, never a row (§6.21)
     if let Some(probe) = probe_of(sk, &c, probes) {
-        match region_term(sk, &c, probe, grow) {
-            Ok(t) => probes.get_mut(&probe).expect("a probe's terms").push(t),
+        match region_term(sk, &c, probe, grow, probes.inner.contains(&probe)) {
+            Ok(t) => probes.terms.get_mut(&probe).expect("a probe's terms").push(t),
             Err(message) => {
                 diags.push(Diag { code: Code::E040, span: st.span, stmt: Some(st.id), message })
             }
@@ -594,24 +611,30 @@ pub(super) fn constrain(
 
 /// The region solid's probe a constraint reads, where it reads one: an operand, or a line's end.
 fn probe_of(sk: &Sketch, c: &Constraint, probes: &Probes) -> Option<usize> {
-    if probes.is_empty() {
+    if probes.terms.is_empty() {
         return None;
     }
     c.entities().into_iter().flat_map(|e| match e.kind {
         EntKind::Point => vec![e.i()],
         _ => crate::model::edge_ends(sk, e)
             .map_or(Vec::new(), |(a, b)| vec![a as usize, b as usize]),
-    }).find(|p| probes.contains_key(p))
+    }).find(|p| probes.terms.contains_key(p))
 }
 
 /// What a bound on a region solid's probe bounds (§6.21), read off the constraint's **kind** and
 /// never the set it came from: a distance from a point is a ball, from a line a cylinder, the
 /// angle from a line seen from its start a cone, an ordinate along a plane's normal a half-space.
-fn region_term(sk: &Sketch, c: &Constraint, probe: usize, grow: Option<crate::model::TermNumber>)
+fn region_term(sk: &Sketch, c: &Constraint, probe: usize, grow: Option<crate::model::TermNumber>,
+               inner: bool)
     -> Result<crate::model::RegionTerm, String> {
     use crate::model::{RegionShape, RegionTerm};
     let kind = crate::syntax::snake(c.kind.name());
-    let Some(b) = c.bound else {
+    // a set measured from may hold its point to a number, a surface (#183 F2)
+    let equal = c.kind.dimension_slot().filter(|_| inner && c.bound.is_none()).and_then(|at| {
+        let v = term_number(&c.args[at], sk, c.kind.dimension_kind())?;
+        Some(crate::constraints::Bound { cmp: crate::syntax::Cmp::In, hi: Some(v.c) })
+    });
+    let Some(b) = c.bound.or(equal) else {
         return Err(format!(
             "a region solid's set states `{kind}`, which bounds nothing: its body bounds numbers"
         ));
@@ -664,8 +687,8 @@ fn region_term(sk: &Sketch, c: &Constraint, probe: usize, grow: Option<crate::mo
     };
     let name =
         c.word.as_ref().and_then(|w| w.sets.first()).map(|(_, n)| n.clone()).unwrap_or_default();
-    if grow.is_some() && (b.hi.is_some() || !matches!(shape, RegionShape::Cone { .. })) {
-        return Err("an offset is of a cone's surface, on one side of it".to_string());
+    if grow.is_some() && (b.hi.is_some() || !matches!(shape, RegionShape::Cone { .. } | RegionShape::Plane { .. })) {
+        return Err("an offset is of a cone's surface or a plane's, on one side of it".to_string());
     }
     Ok(RegionTerm { shape, cmp: b.cmp, lo, hi: b.hi, grow, name })
 }
@@ -1371,4 +1394,323 @@ fn written_aff(a: &CArg, sk: &Sketch) -> Option<expr::Aff> {
     let CArg::Expr(e) = a else { return None };
     let parsed = expr::parse_in(&e.text, sk.units).ok()?;
     expr::eval(&parsed.body, &Default::default()).ok()
+}
+
+/// A sum of measurements and a number: `Σ cᵢ mᵢ + c`, each `mᵢ` a measurement as written (its
+/// kind and the names it reads).
+type Linear = (Vec<((expr::Measure, Vec<String>), f64)>, f64);
+
+/// What an expression of measurements comes to as a sum of them times numbers (#183 F3), or why
+/// it is not one: a product or a quotient of two measurements, or one read through a function.
+fn linear(ast: &expr::Ast) -> Result<Linear, String> {
+    use expr::{Ast, Op};
+    if ast.measures().is_empty() {
+        let v = expr::eval(ast, &Default::default())
+            .map_err(|e| e.message)?
+            .number()
+            .ok_or("a bound on measurements reads numbers stated, and no unknown")?;
+        return Ok((Vec::new(), v));
+    }
+    let scaled = |(terms, c): Linear, k: f64| -> Linear {
+        (terms.into_iter().map(|(m, x)| (m, x * k)).collect(), c * k)
+    };
+    let number = |a: &Ast| -> Option<f64> {
+        a.measures().is_empty().then(|| linear(a).ok().map(|(_, c)| c)).flatten()
+    };
+    Ok(match ast {
+        Ast::Measure(m, args) => (vec![((*m, args.clone()), 1.0)], 0.0),
+        Ast::Neg(a) => scaled(linear(a)?, -1.0),
+        Ast::Bin(op @ (Op::Add | Op::Sub), a, b) => {
+            let (mut terms, c) = linear(a)?;
+            let k = if *op == Op::Add { 1.0 } else { -1.0 };
+            let (more, d) = scaled(linear(b)?, k);
+            terms.extend(more);
+            (terms, c + d)
+        }
+        Ast::Bin(Op::Mul, a, b) => match (number(a), number(b)) {
+            (Some(k), _) => scaled(linear(b)?, k),
+            (_, Some(k)) => scaled(linear(a)?, k),
+            _ => return Err("a bound on measurements is a sum of them, each times a number: \
+                             two measured are not multiplied".to_string()),
+        },
+        Ast::Bin(Op::Div, a, b) => match number(b) {
+            Some(k) if k != 0.0 => scaled(linear(a)?, 1.0 / k),
+            _ => return Err("a bound on measurements is a sum of them, each times a number: \
+                             a measurement divides nothing".to_string()),
+        },
+        _ => return Err("a bound on measurements is a sum of them, each times a number: none is \
+                         read through a function or a power".to_string()),
+    })
+}
+
+/// `distance(p, f1) + distance(p, f2) <= 10mm` (#183 F3): a term of the region solid whose probe
+/// it measures — each measurement a distance between the probe and what else it names, the
+/// bound on their sum — or refused (E040): read only of a region solid's point.
+pub(super) fn measured_term(
+    sk: &Sketch,
+    res: &Resolver,
+    m: &crate::syntax::Measured,
+    st: &Stmt,
+    probes: &mut Probes,
+    diags: &mut Vec<Diag>,
+) {
+    let mut refuse = |message: String| {
+        diags.push(Diag { code: Code::E040, span: st.span, stmt: Some(st.id), message })
+    };
+    let side = |text: &str| -> Result<Linear, String> {
+        linear(&expr::parse_in(text, sk.units)?.body)
+    };
+    let (lhs, rhs) = match (side(&m.lhs), side(&m.rhs)) {
+        (Ok(l), Ok(r)) => (l, r),
+        (Err(e), _) | (_, Err(e)) => return refuse(e),
+    };
+    // `Σ cᵢ mᵢ cmp k`, every measurement on the left
+    let mut terms = lhs.0;
+    terms.extend(rhs.0.into_iter().map(|(m, c)| (m, -c)));
+    let k = rhs.1 - lhs.1;
+    use crate::model::Target;
+    let target = |name: &str| -> Option<Target> {
+        let segs: Vec<&str> = name.split('.').collect();
+        let (e, path) = res.dotted(&segs)?;
+        if e.kind == EntKind::Solid {
+            return Some(Target::Face(face_ref(e, &path)));
+        }
+        follow(sk, e, &path).ok().map(Target::Ent)
+    };
+    let probe_at = |t: &Option<Target>| match t {
+        Some(Target::Ent(e)) if e.kind == EntKind::Point && probes.terms.contains_key(&e.i()) => Some(e.i()),
+        _ => None,
+    };
+    // the material's angle where two faces meet, at the point of their edge nearest the region's
+    // point (#183 F9): a bound of its own
+    if let [((expr::Measure::Angle, args), c)] = terms.as_slice() {
+        let face = |n: &str| match target(n) {
+            Some(Target::Face(f)) if !f.surface => Some(f),
+            _ => None,
+        };
+        let read = match args.as_slice() {
+            [a, b, at] => face(a).zip(face(b)).zip(probe_at(&target(at))),
+            _ => None,
+        };
+        let Some(((fa, fb), p)) = read else {
+            return refuse("a region's angle is between two faces, read `at:` its point: \
+                           `angle(a, b, at: p)`".to_string());
+        };
+        let cmp = if *c > 0.0 { m.cmp } else { m.cmp.turned().expect("one-sided") };
+        let lo = expr::to_arg_units(SpecKind::Angle, k / c);
+        let term = crate::model::RegionTerm::new(
+            crate::model::RegionShape::Angle { a: fa, b: fb },
+            cmp,
+            crate::model::TermNumber::stated(lo),
+        );
+        probes.terms.get_mut(&p).expect("a probe's terms").push(term);
+        return;
+    }
+    let mut probe = None;
+    let mut of: Vec<(Target, f64)> = Vec::new();
+    for ((measure, args), c) in terms {
+        if measure != expr::Measure::Distance {
+            return refuse(format!(
+                "a region's bound measures distances from its point; `{}` is not read yet",
+                measure.name()
+            ));
+        }
+        let ends: Vec<Option<Target>> = args.iter().map(|a| target(a)).collect();
+        // the point the set is about is the first operand where both are such points
+        let Some(at) = (0..ends.len()).find(|&k| probe_at(&ends[k]).is_some()) else {
+            return refuse(format!(
+                "`{}` measures nothing of a region solid's point: a bound on measurements is read \
+                 where a set is applied to one (`solid(S)`)",
+                measure.text(&args)
+            ));
+        };
+        let p = probe_at(&ends[at]).expect("found");
+        if probe.is_some_and(|q| q != p) {
+            return refuse("a bound on measurements reads one point".to_string());
+        }
+        probe = Some(p);
+        let Some(mut to) = ends[1 - at].clone() else {
+            return refuse(format!("`{}` names nothing to measure from", args[1 - at]));
+        };
+        // a set measured from has a point of its own, whose bounds it is (#183 F2)
+        if let Some(q) = probe_at(&ends[1 - at]) {
+            to = Target::Set { probe: q as u32, terms: Vec::new() };
+        }
+        if let Target::Ent(e) = &to {
+            if !matches!(e.kind, EntKind::Point | EntKind::Line | EntKind::Axis | EntKind::Plane) {
+                return refuse(format!(
+                    "a region's bound measures the distance from a point, a line, an axis, a \
+                     plane, a face or a set, not {}",
+                    e.kind.a()
+                ));
+            }
+        }
+        match of.iter_mut().find(|(e, _)| *e == to) {
+            Some((_, x)) => *x += c,
+            None => of.push((to, c)),
+        }
+    }
+    of.retain(|&(_, c)| c != 0.0);
+    let Some(p) = probe.filter(|_| !of.is_empty()) else {
+        return refuse("a bound on measurements measures its point".to_string());
+    };
+    let shape = crate::model::RegionShape::Measured { of };
+    let term = crate::model::RegionTerm::new(shape, m.cmp, crate::model::TermNumber::stated(k));
+    probes.terms.get_mut(&p).expect("a probe's terms").push(term);
+}
+
+/// A face reference from a solid and the fields written past it (#183 F1): `pad.plate.near` is
+/// solid `pad`, path `plate.near`; a last `surface` reads the face's whole surface.
+pub(super) fn face_ref(solid: EntRef, path: &[crate::syntax::Seg]) -> crate::model::FaceRef {
+    let mut fields: Vec<String> = path.iter().filter_map(|s| match s {
+        crate::syntax::Seg::Field(n) => Some(n.text.clone()),
+        _ => None,
+    }).collect();
+    let surface = fields.last().is_some_and(|f| f == "surface");
+    if surface {
+        fields.pop();
+    }
+    crate::model::FaceRef { solid: solid.i() as u32, path: fields.join("."), surface }
+}
+
+/// `p inside F`, `p outside(d) F`, `p distance(<= d) F`, `p coincident F.surface` …, `p` a region
+/// solid's point and `F` a face path of a solid (#183 F1): the term it is, or why not; `None`
+/// where the relation is not between those.
+fn face_relation(sk: &Sketch, res: &Resolver, r: &Relation, probes: &Probes)
+    -> Option<Result<(usize, crate::model::RegionTerm), String>> {
+    use crate::model::{RegionShape, RegionTerm, Target, TermNumber};
+    use crate::syntax::{Cmp, OpArg};
+    let w = r.form.written()?;
+    let [p, f] = w.ops.as_slice() else { return None };
+    if !matches!(w.word.text.as_str(), "inside" | "outside" | "distance" | "coincident") {
+        return None;
+    }
+    let point = res.lookup(p).and_then(|e| follow(sk, e, &p.path).ok())
+        .filter(|e| e.kind == EntKind::Point)?;
+    let solid = res.lookup(f).filter(|e| e.kind == EntKind::Solid)?;
+    if !probes.terms.contains_key(&point.i()) {
+        return Some(Err(format!(
+            "`{}` is a drawn point: a point is read against a face where a set is applied to a \
+             region solid's point (`solid(S)`)",
+            p.root.text
+        )));
+    }
+    let probe = point.i();
+    let face = face_ref(solid, &f.path);
+    let word = w.word.text.as_str();
+    let number = |text: &str, span: Span| -> Result<TermNumber, String> {
+        let arg = Arg::Dim { text: text.to_string(), span };
+        to_arg(sk, res, SpecKind::Length, &arg).ok().as_ref()
+            .and_then(|a| term_number(a, sk, SpecKind::Length))
+            .ok_or_else(|| format!("`{text}` is no length"))
+    };
+    let dim = w.args.iter().find_map(|a| match a {
+        OpArg::Dim(t, sp) => Some((t.clone(), *sp)),
+        _ => None,
+    });
+    let bound = w.bound();
+    let term = |shape, cmp, lo, hi| RegionTerm { hi, ..RegionTerm::new(shape, cmp, lo) };
+    let made = (|| -> Result<RegionTerm, String> {
+        match word {
+            "inside" | "outside" => {
+                if face.surface {
+                    return Err(format!("`{word}` reads a face's side: name the face, not its surface"));
+                }
+                let d = match &dim {
+                    Some((t, sp)) => number(t, *sp)?,
+                    None => TermNumber::stated(0.0),
+                };
+                let cmp = crate::constraints::plane_side_word(word).expect("inside or outside");
+                let lo = match cmp {
+                    Cmp::Le => d,
+                    _ => TermNumber { c: -d.c, free: d.free.map(|(n, m)| (n, -m)) },
+                };
+                Ok(term(RegionShape::FaceSide { face: face.clone() }, cmp, lo, None))
+            }
+            "distance" => {
+                let Some((t, sp)) = &dim else { return Err("a distance states a number".to_string()) };
+                let lo = number(t, *sp)?;
+                let of = vec![(Target::Face(face.clone()), 1.0)];
+                Ok(match &bound {
+                    Some((Cmp::In, Some((hi, sp)))) => {
+                        let hi = number(hi, *sp)?;
+                        term(RegionShape::Measured { of }, Cmp::In, lo, Some(hi.c))
+                    }
+                    Some((cmp, _)) => term(RegionShape::Measured { of }, *cmp, lo, None),
+                    None => {
+                        let at = lo.c;
+                        term(RegionShape::Measured { of }, Cmp::In, lo, Some(at))
+                    }
+                })
+            }
+            "coincident" => {
+                let of = vec![(Target::Face(face.clone()), 1.0)];
+                Ok(term(RegionShape::Measured { of }, Cmp::Le, TermNumber::stated(0.0), None))
+            }
+            _ => Err(format!("a region's point is `inside`, `outside`, `coincident` with or at a \
+                              `distance` from a face, not `{word}`")),
+        }
+    })();
+    Some(made.map(|t| (probe, t)))
+}
+
+/// `p inside S.ends` (#183 F7), `S` a set measured from at its own point (`flatten::sets`): `p`
+/// on the side the edge `S` is runs on of each face it ends on.  `None` for any other relation.
+fn ends_relation(sk: &Sketch, res: &Resolver, r: &Relation, probes: &Probes)
+    -> Option<Result<(usize, crate::model::RegionTerm), String>> {
+    use crate::model::{RegionShape, RegionTerm, Target, TermNumber};
+    let w = r.form.written()?;
+    let [p, e] = w.ops.as_slice() else { return None };
+    if !e.ends_in("ends") {
+        return None;
+    }
+    let edge = res.lookup(e).filter(|x| x.kind == EntKind::Point && probes.terms.contains_key(&x.i()))?;
+    let point = res.lookup(p).and_then(|x| follow(sk, x, &p.path).ok())
+        .filter(|x| x.kind == EntKind::Point && probes.terms.contains_key(&x.i()))?;
+    let cmp = crate::constraints::plane_side_word(&w.word.text)?;
+    if cmp != crate::syntax::Cmp::Le {
+        return Some(Err("past where an edge ends is no region: say `inside S.ends`".to_string()));
+    }
+    let shape = RegionShape::Ends {
+        edge: Box::new(Target::Set { probe: edge.i() as u32, terms: Vec::new() }),
+    };
+    let t = RegionTerm::new(shape, cmp, TermNumber::stated(0.0));
+    Some(Ok((point.i(), t)))
+}
+
+/// The terms of the sets a region's terms measure from (#183 F2, F7), from the points their
+/// bodies were applied to, those points held (they stand for no place); `Err` for a set measured
+/// in terms of itself.
+pub(super) fn fill_sets(sk: &mut Sketch, terms: &mut [crate::model::RegionTerm], probes: &Probes,
+                        depth: usize) -> Result<(), String> {
+    use crate::model::{RegionShape, Target};
+    if depth > 16 {
+        return Err("a set measured from is measured in terms of itself".to_string());
+    }
+    let fill = |t: &mut Target, sk: &mut Sketch| -> Result<(), String> {
+        if let Target::Set { probe, terms } = t {
+            let mut inner = probes.terms.get(&(*probe as usize)).cloned().unwrap_or_default();
+            if inner.is_empty() {
+                return Err("a set measured from states nothing of its point".to_string());
+            }
+            fill_sets(sk, &mut inner, probes, depth + 1)?;
+            for q in sk.own_params(EntRef::point(*probe as usize)) {
+                sk.params[q as usize].fixed = true;
+            }
+            *terms = inner;
+        }
+        Ok(())
+    };
+    for t in terms.iter_mut() {
+        match &mut t.shape {
+            RegionShape::Measured { of } => {
+                for (target, _) in of.iter_mut() {
+                    fill(target, sk)?;
+                }
+            }
+            RegionShape::Ends { edge } => fill(edge, sk)?,
+            _ => {}
+        }
+    }
+    Ok(())
 }

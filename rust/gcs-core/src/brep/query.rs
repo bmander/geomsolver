@@ -218,7 +218,7 @@ impl<'a> Located<'a> {
     }
 
     /// The point of an edge nearest `p`: its parameter and distance.
-    fn nearest(&self,e: u32,p: V) -> (f64,f64) {
+    pub(crate) fn nearest(&self,e: u32,p: V) -> (f64,f64) {
         let e = &self.b.edges[e as usize];
         let EdgeCurve::Curve(c) = &e.curve else { return (e.t[0],distance(p,self.b.vertices[e.v[0] as usize].p)) };
         let mut t = c.inverse(p);

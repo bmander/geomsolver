@@ -187,7 +187,8 @@ impl<'a> Walk<'a> {
         };
         for (i, (st, p, sc)) in self.out.iter_mut().enumerate().skip(from) {
             // an energy the word states is the use's statement, as its relations are (#121)
-            if let StmtKind::Minimize(_) = &st.kind {
+            if let StmtKind::Minimize(_) | StmtKind::Measured(_) = &st.kind {
+                sc.written.get_or_insert(st.id);
                 st.id = u.st.id;
                 st.span = u.st.span;
                 *p = u.path.to_vec();

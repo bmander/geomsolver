@@ -35,7 +35,7 @@ pub use curves::{CURVE_STEPS, CurveDef, CurveBody, CurveE, Extremal, Home, Trim,
 pub use spatial::{
     FaceLoop, FaceSupport, FaceE, Length, SolidRequirement, SolidClaim, SolidBearing, Sweep,
     DerivedE, Extent, Sense, SolidDef, SolidE, SeamE, EdgeE, VertexE, PatchE, EnvelopeE, SurfaceE,
-    RegionShape, RegionTerm, TermNumber, Way, turn_of,
+    RegionShape, RegionTerm, TermNumber, Way, FaceRef, Target, turn_of,
     MotionDef, MotionE,
 };
 pub use construction::{ThreePointArc, three_point_arc};
@@ -170,7 +170,18 @@ pub struct Sketch {
     /// Each region solid's meridian (`solid::region::meridian`), against `solid::reads`: every
     /// evaluator, the validation and admission read it, and it is a fold of exact Booleans.
     pub meridian_cache: std::cell::RefCell<
-        BTreeMap<usize, (Vec<f64>, Result<std::rc::Rc<crate::solid::region::Meridian>, String>)>,
+        BTreeMap<usize, (Vec<f64>, Result<std::rc::Rc<crate::solid::region::Meridian>,
+            crate::solid::region::Refusal>)>,
+    >,
+    /// Each region solid's reading in general position (`solid::region::in_general_position`),
+    /// against `solid::reads`: validation, the sweep test and the field each ask it.
+    pub(crate) general_cache: std::cell::RefCell<
+        BTreeMap<usize, (Vec<f64>, Option<Result<crate::solid::RegionField, String>>)>,
+    >,
+    /// Each body's faces as regions read them (`solid::faces::BodyFaces`, #183), against
+    /// `solid::reads`: every round over one body reads the same stratum.
+    pub faces_cache: std::cell::RefCell<
+        BTreeMap<usize, (Vec<f64>, Result<std::sync::Arc<crate::solid::faces::BodyFaces>, String>)>,
     >,
     /// Swept solids' surfaces a host meshed elsewhere (`supply_field`), each against the
     /// `solid::reads` it was supplied under, so a moved drawing reads none.

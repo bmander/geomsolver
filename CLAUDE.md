@@ -209,6 +209,76 @@ written as there (`Scope::written`, kept when `apply` stamps the use's over it; 
 two uses in one body stand apart.
 `tests/region_solids.rs` and `tests/region_blank.rs` (the blank as a region against today's, both
 designs, both members) are the gates.
+**A region in general position** (#183): one whose terms share no axis (the meridian refuses it,
+`region::readable`/`in_general`) is read point by point by `solid::field::RegionField`, a
+`SpatialField` leaf (each term its surface's exact signed distance, the largest; a box's enclosure
+the centre's value within its half-diagonal), its support the box of the planes every term lies
+within (`polytope_box`, refused unbounded). Evaluated as sweeps are (`sweeps_among`: the field's
+surface); no exact construction yet (`cad.rs` says so). `tests/region_general.rs` is the gate.
+**A bound on measurements** (#183 F3): `distance(p, f1) + distance(p, f2) <= 10mm` in a set's
+body is `StmtKind::Measured` (sides kept as text; parsed where a statement opens on a measurement
+and compares outside every bracket, `compared_ahead`; numbers written in by the walk, names by
+`rescope_measures`; the expr lexer reads `s#probe` as one name). A region (`sets::region`); `inside`
+keeps it, `outside` turns it, and a body of bounds only is all of them under `inside`. Elaborated
+by `relations::measured_term` into `RegionShape::Measured` (Σ cᵢ·distance from a point, line,
+axis or plane; `linear`: affine only, one probe) on the probe, else E040; read by the field
+(`region::measured`, divided by Σ|cᵢ|), never the meridian.
+**Faces as sets** (#183 F1, F9): in a set's body a solid and the fields past it are a face
+reference (`relations::face_ref` → `model::FaceRef { solid, path, surface }`: `pad.plate.near`,
+`pad.boss` every face `boss` gave `pad`, `block`, a last `.surface` its whole surface).
+**One meaning, two representations** ([0.68]): a face path is the face, bounded by its edges,
+and `.surface` the surface it lies on, whoever reads it. A region's point reads either here,
+off the solid after the solve; a drawn point or plane reads `.surface` as #162 F5's carrier rows
+(below), made under a hidden key only its statement is pointed at, so neither ever captures the
+other (`tests/region_faces.rs::a_sketch_on_a_face_leaves_a_regions_reading_of_it`,
+`tests/rounds_examples.rs::a_sketch_on_a_rounded_face_leaves_the_round`).
+`relations::face_relation` makes `p inside/outside[(d)] F` a `RegionShape::FaceSide` (signed
+distance from the surface, positive away from the material), `p distance(… d) F` and `p coincident
+F` a `Measured` over `Target::Face`; `distance(p, F)` in a sum the same; `angle(a, b, at: p)` (the
+one labelled measurement, `expr` `Tok::Colon`) a `RegionShape::Angle`, the material's angle at
+the nearest point of the edges `a` and `b` share, read as a **gate** (`region::GATE`: ±1e30 by
+whether it holds; convexity per edge at its middle by `solid_place`). Claims skip a point against a
+solid. Read by `solid::faces::BodyFaces` off `brep::recipe::build(cad::recipe(…))` (millimetres,
+unshifted; face names matched by `faces`), **the stratum**: a body read by regions that are its
+own terms (`readers_of`) is read with them taken out of every body (`without`, a cloned sketch).
+A region reading faces may have no support (`RegionField` with `None`): a cut needs none.
+`reads` pushes a read solid. `tests/region_faces.rs` is the gate.
+**The distance from a set** (#183 F2) and **where an edge ends** (F7): a set a measurement names,
+or `p inside S.ends`, gets a hidden point of its own (`sets::measured_sets`: key
+`{prefix}#{stmt}.m{k}`, a probe, `inner coincident S` applied under a prefix of its own so two
+sets of one statement bind apart); the measurement then names that point, elaborated as
+`Target::Set { probe, terms }` (`relations::ends_relation`: `RegionShape::Ends`), the terms filled
+and the point held when the solid is built (`relations::fill_sets`). Read by
+`solid::conditions::SetDistance`: points on two faces' patches are the boundary's shared edges, on
+three its vertices, on one its patch; any other conjunction (a face's side, `|side|` bounds, `on
+F.surface`, a distance from a point) is the nearest point by sequential projection onto the
+conditions linearised (each step a ≤3-active QP, exact). `d(p, E) <= d(p, M)` with `E` on the
+patches of the faces `M` is on the surfaces of is read as `d(p, E) − d(p, rest)` (`Rest`: `M`'s
+nearest point when off `E`, and where `E`'s run ends), the same points with a negative inside.
+`ends` is `max σ·side` over the faces at each end of the run (σ the side it runs on); a closed run
+ends nowhere. `edge` and `seam` are element keywords: a set may not be called so.
+**Rounds and chamfers are words of `std.sv`** (#183 steps 4–7). `repeat a in X` over a solid (a
+face path) runs over its faces (F4): set aside, and where the faces are not given the elaborator
+names them once the solids are built (`solid::faces::face_paths`, structural: a primitive's own,
+a body's every primitive's `{prim}.{face}`) and elaborates again (`program::Again::Faces`,
+`flatten::expand_faces`, `Walk::face_links`); `if f in X and f != g` keeps a copy (F8,
+`syntax::When`). A relation word's body may hold blocks, instances, sets and body statements (F5,
+`parser/definitions.rs`); `A.body` in a body statement is the solid a face path is of. **The
+stratum** (F6): a body's terms that read its faces (`faces::readers_of`) are left out of the
+boundary they read and applied last by the field (`document.rs`: fills, then cuts). A face path
+is matched against `solid::exact`'s names (`BodyFaces` is built from `exact::build`, shifted to its
+origin; cached in `Sketch::faces_cache`); one naming nothing holds nowhere, and a region over it is
+`RegionField::empty`, no term of a body. `std.sv`: `Run`, `Fill`, `Corner`, `CornerFill`, `Flat`,
+`FlatFill` (sets over faces) and the words `A round(r: …) B`, `round(r: …) X`, `A chamfer(d: …) B`,
+`chamfer(d: …) X`; in a region's body `std.Rounded(a, b, r)` and `std.Chamfered(a, b, la, lb)`
+over two of its own sets (a set fills a `group` formal; `p inside S(…)` may be written in place).
+A set's `S.surface` is the set with its bound made an equality (`sets::surface_of`); a distance
+from a one-bound region's surface reads it (`sets::one_bound`); an inner point's equalities are
+terms (`Probes::inner`). **Lowering** (step 7, `solid::region::lowering`): a `Rounded`/`Chamfered`
+term whose sets are two of the region's own bounds (same measure, at its level, moved in by the
+radius for a round's centres) is built in the meridian by X1's construction (`brep::corners`,
+moved from `tests/fillet_meridian.rs`), refused (and read by the field) at a charted corner or a
+flat between curved steps. `tests/rounds.rs` is the gate (X2's closed forms in the slow tier).
 **Distance from a set, offsets (§6.21, 0.64, #145 F4):** `p distance(d, side: outside|inside) S`
 (`distance` is a set use, `may_use`), `p inside(d) S` / `p outside(d) S` and `std.Offset(S, d)` are
 one bound on the signed distance from `S`'s surface (`Reach`: cmp toward the outside, whether
@@ -1618,16 +1688,19 @@ Conventions:
   shared `face_groups`; `core/mesh.ts::preview`).  `box3d` draws it in the target's place, the
   tools as ghosts in their word's ink (`SketchView.combining` is the key).  `tests/booleans.rs`
   is the gate.
-- **A face of a solid is a set** (#162 F5, [0.66]): `b0.near`, `b0.far`, a straight side `b0.ab`
-  and `body.b0.near` name the face's carrier, made by the flattener from the solid's own text
-  before the uses are expanded (`flatten/faces.rs`, `Walk::face_sets`; a face written in place
-  too): a cap `{ p | p distance(D, along: n) f0#plane }` (`coincident` at 0), a side `{ p | p
+- **A face of a solid is a set** (#162 F5, [0.66], [0.68]): `b0.near`, `b0.far`, a straight side
+  `b0.ab` and `body.b0.near` name the face, and `.surface` its carrier — the one a drawn point or
+  plane reads, made by the flattener from the solid's own text before the uses are expanded
+  (`flatten/faces.rs`, `Walk::face_sets`; a face written in place too) under the hidden key
+  `{face}#surface`, the asking operand rewritten to it (`surface_of`); a bare face from a drawn
+  use is E040 naming `.surface` (a region's point reads it, #183 above): a cap `{ p | p
+  distance(D, along: n) f0#plane }` (`coincident` at 0), a side `{ p | p
   level(M) e.p1 }` over a hidden axis `M` square to the edge, parallel to the plane.  `f0#plane`
   is a name the source cannot write, bound by the elaborator to the plane the face's edges are
   drawn in before the constraints (`planes::face_planes`, `Expansion::face_planes`, which seeds
   `M` too).  Refused at the use (E040): a curved side, a `through:` solid's caps, a non-prism.
-  **Sketching on a face** is `v1.origin coincident b0.near` + `v1 tangent(at: v1.origin)
-  b0.near` (`at:` takes a path), written by `edit::sketch_on_face` seeded on the numeric twin
+  **Sketching on a face** is `v1.origin coincident b0.near.surface` + `v1 tangent(at:
+  v1.origin) b0.near.surface` (`at:` takes a path), written by `edit::sketch_on_face` seeded on the numeric twin
   `solid::carrier` where the eye's ray met it (`SolidHit::at`); `edit::face_plane` finds a plane
   already lying there, which the app chooses instead (a double-click on a face, or Solids ▸
   Sketch on face, `k`).  A plane dropped from a plane states `P distance(d) v` and is sized as an

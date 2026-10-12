@@ -5,7 +5,7 @@ use super::P;
 use crate::constraints::{is_operator, Fixity};
 use crate::syntax::lexer::Tok;
 use crate::syntax::words::{past_args, word_definition_at, MODIFIERS};
-use crate::syntax::{reserved_word, Arg, Chained, Name, OpArg, Span, StmtKind, WordDef};
+use crate::syntax::{reserved_word, Arg, Name, OpArg, Span, StmtKind, WordDef};
 
 impl<'a> P<'a> {
     /// Names separated by commas up to the `)` closing a list already opened: a word's
@@ -65,8 +65,10 @@ impl<'a> P<'a> {
                 ),
                 // and an energy over an operand, which is a statement of the drawing's (#121)
                 StmtKind::Relation(_) | StmtKind::Decl(_) | StmtKind::Minimize(_) => None,
-                // a set written in place where the body uses it
-                StmtKind::Set(_) | StmtKind::Instance(_) if st.chained == Chained::Link => None,
+                // and what a word makes of solids (#183 F5): repetitions, the sets and solids it
+                // makes and what they do to a body
+                StmtKind::Block(_) | StmtKind::Instance(_) | StmtKind::Set(_)
+                | StmtKind::SolidRel(_) => None,
                 _ => Some(
                     "a relation word's body states relations, and declares the geometry they \
                      need",

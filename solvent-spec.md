@@ -1,6 +1,29 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.67 — October 2026**
+**Specification, Draft 0.69 — October 2026**
+
+**[0.69] Rounds and chamfers are said in the language.** A region's body may read a solid's faces
+(`p inside pad.plate.near`, `distance(p, block.near) <= 1mm`), bound a sum of measurements
+(`distance(p, f1) + distance(p, f2) <= 10mm`), measure from a set (`distance(p, crease)`), bound
+the material's angle at an edge (`angle(a, b, at: p) <= 180deg`) and stop where an edge ends (`p
+inside crease.ends`) (§6.21). `repeat a in X` runs over a solid's faces, `if` keeping some copies
+(§12.8), and a relation word's body may make solids (§9.9). A region whose terms share no axis is
+read point by point (§6.9). On these the standard library says what a round and a chamfer are —
+`A round(r: 2mm) B`, `round(r: 2mm) X`, `A chamfer(d: 1mm) B`, `chamfer(d: 1mm) X`, and in a
+region's own body `std.Rounded(a, b, r: …)` and `std.Chamfered(a, b, la: …, lb: …)` — with no
+feature of the kernel's own (§6.9).
+
+**[0.68] A face is the face, and `.surface` the surface it lies on.** A face path (`b0.near`,
+`body.b0.near`, `pad.boss`) means the face as the solid has it, bounded by its edges, wherever it
+is read; `b0.near.surface` is the whole surface it lies on. What is drawn on a face is drawn on
+its surface: sketching on a face is `v1.origin coincident b0.near.surface` and `v1 tangent(at:
+v1.origin) b0.near.surface`, and a point or a plane the drawing draws on the face itself is
+**E040**, pointing at `.surface`. A region's point reads either (§6.21): `p inside b0.near`,
+`distance(p, b0.near)` from the face, `distance(p, b0.near.surface)` from its surface. One
+meaning, two representations: the solve reads a prism's flat face's surface as rows over the
+drawing's unknowns, and a region reads any face off the solid as it stands, after the solve —
+so a sketch on a face and a round of it read the same face. This replaces 0.66, where the bare
+path was the surface.
 
 **[0.67] A face turns about an axis too.** `about:` takes an `axis` lying in the face's own plane
 (`solid(f, about: std.z)` on `std.front`) as well as a line drawn there: a plane's own axes lie
@@ -535,7 +558,7 @@ Compound entities expose sub-entities by field access. Sub-entities are ordinary
 | `Solid` | `.start`, `.end` | a partial revolution's two caps **[0.18]** |
 | `Solid` | `.volume`, `.area`, `.bounds.x0`… | what a report measures off it (§16.3) **[0.18]** |
 
-**[0.18] A solid's derived names are *paths*, and a path is not a sub-entity.** A face of a solid carries no coordinates, joins no alias class and is no operand of a relation over entities — but **[0.66]** a prism's face path names a **set**, the surface it lies on (§6.21): a cap the profile's plane at its extent, a straight side the plane through its edge along the profile's normal, so `p coincident b0.near` and `v1 tangent(at: v1.origin) b0.near` read it as any set; a curved side, a `through:` solid's caps and a revolution's or a loft's faces are not sets yet (**E040**). Otherwise the path is what a report writes a number under (`block.side_l.area`) and what a derived picture labels a stroke with. A guided loft/sweep has `.start` and `.end` caps and walls named by the start section’s source edges, including hole boundaries. Through a body the operand keeps its own name, so a face of `block` inside `body` is `body.block.near` — a path never renames, which is the naming problem every history-based kernel has and this one does not, because a boolean cannot renumber a name. The *sub-entities* a solid does have are the ones its declaration is written over: the face it is swept from, a revolution's axis line (or axis), and the solids of its term. Those are ordinary entities, and deleting one takes the solid with it.
+**[0.18] A solid's derived names are *paths*, and a path is not a sub-entity.** A face of a solid carries no coordinates, joins no alias class and is no operand of a relation over entities — but **[0.66]** a face path names a **set**: **[0.68]** the face as the solid has it, bounded by its edges, and `.surface` the surface it lies on (§6.21). A prism's flat face's surface is one the solve reads — a cap the profile's plane at its extent, a straight side the plane through its edge along the profile's normal — so `p coincident b0.near.surface` and `v1 tangent(at: v1.origin) b0.near.surface` read it as any set; a point or a plane drawn on the bounded face itself, a curved side's surface, a `through:` solid's caps and a revolution's or a loft's faces are not sets the solve reads yet (**E040**). A region's point reads any face, bounded or by its surface, off the solid after the solve. Otherwise the path is what a report writes a number under (`block.side_l.area`) and what a derived picture labels a stroke with. A guided loft/sweep has `.start` and `.end` caps and walls named by the start section’s source edges, including hole boundaries. Through a body the operand keeps its own name, so a face of `block` inside `body` is `body.block.near` — a path never renames, which is the naming problem every history-based kernel has and this one does not, because a boolean cannot renumber a name. The *sub-entities* a solid does have are the ones its declaration is written over: the face it is swept from, a revolution's axis line (or axis), and the solids of its term. Those are ordinary entities, and deleting one takes the solid with it.
 
 **[0.42] A plane is two axes and a place.** `P := plane(u: r1, v: r2)` aliases two axes (or
 drawn lines, each read as the axis from its `p1` toward its `p2`) and owns three numbers of its
@@ -1156,11 +1179,12 @@ inside `R` (§6.21): `R`'s body applied to a point, each number it bounds there 
 solid — a distance from a point a ball, from a line a cylinder, an angle from a line seen from its
 start a cone, an ordinate along a plane's normal a half-space. So `solid(std.Sphere(c, r: 5))` is
 the ball, and `solid({ p | p inside tip; p inside heel; p outside toe; p outside back })` the
-hypoid's blank. Its bounds must share one axis — balls centred on it, cylinders and cones about it,
-planes square to it — and enclose material all round; it is then one revolution of a region in the
-half-plane through that axis, built exactly (planes, cylinders, cones, spheres, tori). That is
-judged where the solid is evaluated, on the solved drawing, as a face's loop is: a cylinder alone,
-a ball off the axis, or bounds with no point in common are refused there. A set whose body states
+hypoid's blank. Where its bounds share one axis — balls centred on it, cylinders and cones about
+it, planes square to it — and enclose material all round, it is one revolution of a region in the
+half-plane through that axis, built exactly (planes, cylinders, cones, spheres, tori); **[0.69]**
+where they share none it is read point by point (below). That is judged where the solid is
+evaluated, on the solved drawing, as a face's loop is: a cylinder alone, or bounds with no point in
+common, are refused there. A set whose body states
 anything but bounds (a disc's plane) is **E040**. A region solid is a solid like any: `cut`,
 `bound`, `union`, swept and placed. **[0.63]** A bound's number may read one unknown of the drawing
 (`std.Sphere(c, r: hint(50mm))` with `q coincident` it): the solid reads it as solved, and refuses one
@@ -1170,6 +1194,39 @@ grown by `d`, or shrunk where `d` is taken off: a ball's or a cylinder's radius 
 along its normal, and a cone's offset exactly — the cone whose surface stands `d` from it, its apex
 further back where it grows, rounded there by the ball of radius `d` about the apex (the points
 nearest it), further along where it shrinks.
+
+**A region in general position** **[0.69]**. A region whose bounds share no axis — a ball off a
+cylinder's line, two cylinders crossing, a bound on measurements, a face's side (§6.21) — is
+read **point by point**: each bound the signed distance from its surface, the region where the
+largest is no more than nothing (an intersection). It is a solid like any, judged where it is
+evaluated, and its material is bounded by the planes its bounds lie within (a ball's box, a
+cylinder's four planes about its line, a cone's four through its apex, a half-space); one bounded
+in no direction is refused there, unless it reads a body's faces, which bound nothing a `cut`
+needs. *Non-normative:* such a region's surface is the reading's, meshed where it is asked for; an
+exact boundary of one is not built yet, and an exact export refuses it in those words.
+
+**Rounds and chamfers** **[0.69]** are words of the standard library over §6.21's sets, not
+features of the kernel. `A round(r: 2mm) B` rounds every edge where a face of `A` (a face path,
+§6.21) meets a face of `B` by a ball of radius `r`: where the edge is convex the material the
+ball rolled along it cannot reach is cut away, where it is concave what the ball cannot reach
+outside both faces is filled, read off the solved geometry, never said; where three such edges
+meet at a corner, the ball touching all three. `round(r: 2mm) X` is `X round(r: …) X`, every
+edge among `X`'s faces. `A chamfer(d: 1mm) B` cuts every such edge by the flat `d` along each
+face, measured from the other face's surface, and `chamfer(d: 1mm) X` every edge among `X`'s.
+Faces that do not meet make nothing, so `block.near round(r: 2mm) block` rounds the near rim
+alone, its runs mitred where they cross at the corners. Each is a relation word whose body makes
+solids from sets over the faces (`std.Run`, `std.Fill`, `std.Corner`, `std.CornerFill`,
+`std.Flat`, `std.FlatFill`) and joins them to the body the faces are of (§9.9), so a document may
+define its own the same way. **The stratum**: a term of a body that reads that body's faces reads
+the body as its other terms make it — a round reads the faces as the cut it rounds left them,
+never its own or another round's — and acts on the body after them, what it adds and then what
+it takes; a body whose stock reads its own faces is refused where it is evaluated. In a region's
+own body a round or a chamfer between two of its bounds is one more bound on its point: `p inside
+std.Rounded(wall, top, r: 2mm)`, `p inside std.Chamfered(wall, bottom, la: 1mm, lb: 1mm)` (`la`
+along the first, `lb` along the second). Where the two are bounds the region states, at its
+level and about its axis, the round or the flat is built exactly in the region's revolution (a
+torus, a cone); elsewhere it is read point by point. *Non-normative:* both readings are one
+meaning: a round lowered into the revolution is the region the point-by-point reading reads.
 
 **The brackets are what the thing is made of** (§4.3, §6.2), so the sweep stands in them beside the face: `from:`, `to:`, `depth:`, `through:`, `along:`, `about:`, `sweep:` and `sense:` are labels of the constructor and are neither seeds nor constraints. A mixture of sweep forms, a half-written prism (`from:` with no `to:`), `from:`/`to:` beside `depth:`, and `sweep:` or `sense:` with no `about:` are each refused where they are written, with the shapes a solid has.
 
@@ -1745,8 +1802,9 @@ error.
 said where it is used, by two words:
 
 - **A set may be written where it is used** **[0.50]**, on the right of `coincident` or
-  `tangent`: `q coincident { p | p distance(5mm) c }`, `l tangent std.Cylinder(ax, r: 8mm)` —
-  and is described as written.
+  `tangent` (**[0.69]** and of `inside` or `outside`): `q coincident { p | p distance(5mm) c }`,
+  `l tangent std.Cylinder(ax, r: 8mm)`, `p inside std.Rounded(wall, top, r: 2mm)` — and is
+  described as written.
 - `q coincident S` (either way round) states the body with `q` for the bound point, expanded
   where the statement stands as a component's body is (§14.1). What the body declares privately
   — the cone's generator — is made once for each use. `q` MUST be a point (**E040**).
@@ -1851,6 +1909,57 @@ a region, which has no surface; a set saying more than one thing of its point (a
 plane); an interval; `inside(d)` or `outside(d)` a conjunction; a bound on a drawn point's
 distance from a set with no closed form (its foot cannot say which root), a claim of one, or one
 inside a body walked for its derivative (a tangency to an offset of a cone).
+
+**A solid's faces in a region's body** **[0.69]**. Where a region solid's point is read (`solid(R)`,
+§6.9) a face path (§6.9) is a set: the face as the solid has it after its terms, bounded by its
+edges — `pad.plate.near` the face `plate` gave `pad`, `pad.boss` every face `boss` gave it, `block`
+every face of `block` — and `F.surface` the whole surface the face lies on (**[0.68]**, one
+meaning wherever it is read). `p inside F` is within the side of `F`'s surface the material is on
+and `p outside F` the other side, each grown by `d` in `inside(d)`, `outside(d)`; `p distance(d)
+F`, with `<=`, `>=` or `in:` (§9.6), is `p` at that distance from the face, and from its surface
+with `F.surface`; `p coincident F` is on the face, `p coincident F.surface` on its surface. A face a
+Boolean ate names nothing: what reads it holds nowhere, and a region over it is no material. The
+faces are read off the solid as it stands once the drawing is solved, so a face of any kind is
+read so, curved or not. `inside` or `outside` a face's surface (the side is the face's) is
+**E040**, and so is a face read of a point the drawing draws: what is drawn on a face is drawn on
+its surface (§6.9 [0.68]).
+
+**A bound on measurements** **[0.69]**. A set's body may state `LHS <= RHS` or `LHS >= RHS` (closed,
+as every bound, §9.6: `<`, `>` alone are **E040**), each side a sum of numbers and measurements,
+each measurement times a number: `distance(p, f1) + distance(p, f2) <= 10mm` is the ellipsoid of
+revolution with foci `f1` and `f2`, `distance(p, a) <= distance(p, b)` the half-space nearer `a`.
+Each measurement is a distance from the set's point to a point, a line (produced), an axis, a
+plane, a face or its surface (above), or a set (below). It makes the set a region, read point by
+point (§6.9), and is read only where a region solid's point is: `inside` keeps it, `outside` turns
+it round, and a body of such bounds only is all of them under `inside`. A product of
+measurements, a measurement read through a function or a power, a statement reading two points,
+and one reading none of a region solid's are **E040**.
+
+**The distance from a set** **[0.69]**. A measurement may name a set, `distance(p, crease)`: the
+distance from `p` to the set's nearest point. The set is given a point of its own, which its body
+is stated of, and is read as what that body says: points on two faces (`crease := { q | q
+coincident a; q coincident b }`) are the edges they share, on three the corners, on one its
+face; and any conjunction of a face's side, a distance from a face's surface, a surface, a
+distance from a point and the set's own bounds is read for its nearest point, exactly. `S.surface`
+of a region of one bound is its surface. A body stating anything else, or a set measured in terms
+of itself, is **E040**. `distance(p, E) <= distance(p, M)`, with `E` on faces whose surfaces `M`
+is on, is the points nearer the edge than wherever else the surfaces meet: by the edge, and not
+past where it ends.
+
+**The material's angle at an edge** **[0.69]**. `angle(a, b, at: p)`, `a` and `b` faces and `p` the
+region's point, is the angle the material fills at the point nearest `p` of the edges where `a`
+meets `b`: under a half turn where the edge is convex, over one where it is concave. Bounded
+(`angle(a, b, at: p) <= 180deg`, §9.6), it says which edges a body's statements are about, and is
+read by whether it holds, never by how near it is to failing: so a region stated at a convex edge
+holds nowhere at a concave one. It is bounded alone, against a number, and `at:` is the one
+labelled argument a measurement takes; faces' surfaces, or no `at:`, are **E040**.
+
+**Where an edge ends** **[0.69]**. `p inside S.ends`, `S` a set on two faces (an edge, above), is
+the side of each face the edge ends on that the edge runs on, at each end of the run of edges `S`
+is: so a region along an edge (a round's run) stops where the edge stops, cut off by the faces it
+ends on. A run that closes on itself ends nowhere, and `p inside S.ends` holds everywhere.
+`outside` is **E040**: past where an edge ends is no region. `edge` and `seam` are element
+keywords (§19), so a set may not be called so.
 
 *Non-normative:* `std.Sphere`, `std.Cylinder` and `std.Cone` are sets. A set drawn by tracing its
 points, other recognised shapes (a line as two planes met), and sets bounded by inequalities (arcs,
@@ -2186,6 +2295,25 @@ A **relation word** is defined at the top level of a file — never inside a bod
 
 **A word and a set are one predicate** **[0.50]**: a body over parameters (in parentheses, given at the call) and bound variables (a word's operands, a set's point, written where the definition shows them and filled at the use), applied by one rule — under a name of the use's own, each bound variable the operand the use wrote, the body closed over what it was given. A component instance is the case with no bound variable, stated where it is written. An operand that names nothing is **E101** once, where it is written, and not again at each place in the body that reads it. *Open, non-normative:* a word as a value (#80). The standard library defines `horizontal` and `vertical` between two points as words (§14.4), and where one point stands from another (`b offset(dx: 30, dy: 12) a`, `b right_of(d: 30) a`, `left_of`, `above`, `below`), where a point stands in a plane's frame (`p coords(du: 20, dv: 5) P`, `p on_u(d: 20) P`, `p on_v(d: 5) P`), two lines crossed (`a skew(theta: 90deg, e: 20mm) b`) and one line turned from another (`a turned(theta: 180deg) b`). Each is two dimensions or a dimension and a level, said as the one fact they are. **[0.53]** A body may state an energy over an operand (§9.10): `std.hangs(L: 150mm) rope` is a curve that long, hanging.
 
+**A word may make solids** **[0.69]**. A body in braces may hold, beside its relations and their
+declarations, blocks (`repeat a in A { … }`, §12.8), instances, sets and body statements, so a word
+over faces can make a solid of a set and join it to a body: `taken cut A.body`, where `A.body` is
+the solid the face path `A` is a face of. Each use makes them anew, under a name of its own, as a
+body's declarations are. That is how the standard library says `round` and `chamfer` (§6.9):
+
+```
+A relieved(d) B := {
+  repeat a in A {
+    repeat b in B if b != a {
+      groove := { p | p distance(<= d) a; p distance(<= d) b; p inside a; p inside b }
+      relief := solid(groove)
+      relief cut A.body
+    }
+  }
+}
+block.near relieved(d: 1mm) block.south
+```
+
 ### 9.10 Energies: `minimizes` and `maximizes` **[0.53]**
 
 ```
@@ -2343,7 +2471,9 @@ repeat e in CHAIN as i { ... }
 cycle e in CHAIN as i { ... }
 ```
 
-One copy per link of a named chain (§6.6), in traversal order, with `e` a reference to that copy's edge — a constraint operand, a field (`e.p1`), an argument — and `as i` optional as before. The count is the chain's, so the chain MAY be declared later in the body (P2) or reached through an instance or a group. The copies are §12.1's (or §12.2's, with `next`/`prev`) in every other respect, and §12.7 holds. `cycle` over an open chain, and iteration over what is not a named chain, are errors at the reference (**E103**); a body declaration named as the edge is **E001**.
+One copy per link of a named chain (§6.6), in traversal order, with `e` a reference to that copy's edge — a constraint operand, a field (`e.p1`), an argument — and `as i` optional as before. The count is the chain's, so the chain MAY be declared later in the body (P2) or reached through an instance or a group. The copies are §12.1's (or §12.2's, with `next`/`prev`) in every other respect, and §12.7 holds. `cycle` over an open chain, and iteration over what is not a named chain or a solid, are errors at the reference (**E103**); a body declaration named as the edge is **E001**.
+
+**Over a solid's faces** **[0.69]**: `repeat a in X { … }`, `X` a solid or a face path (§6.9), makes one copy per face `X` names, `a` the face (a face path itself, §6.21): a prism's `near`, `far` and a side per edge of its section, a revolution's wall per edge and, where the turn is partial, `start` and `end`, a body's every operand's faces under the operand's name (`pad.plate.near`). The faces are read off what the solid is made of, so one a Boolean ate is listed still and names nothing (§6.21); they are known once the solids are built, so the block is expanded then. A condition keeps some copies: `repeat b in B if b != a { … }`, `repeat c in A if c in B and c != a { … }` — `f in X`, the face is one `X` names, and `f != g`, it is not that face — each joined by `and`.
 
 ---
 
@@ -2781,8 +2911,10 @@ use_decl       = "use" IDENT { "." IDENT }
                  [ "(" IDENT { "," IDENT } ")" ] ;          (* a module, and names read bare, §14.4 *)
 word_def       = ( IDENT IDENT [ "(" IDENT { "," IDENT } ")" ] IDENT  (* infix, §9.9 [0.48] *)
                  | IDENT [ "(" IDENT { "," IDENT } ")" ] IDENT )      (* prefix *)
-                 ":=" relation ;
-component      = "component" IDENT "(" [ formals ] ")" "{" { statement } "}" ;
+                 ":=" ( relation | "{" { statement } "}" ) ;  (* several, §9.9 [0.50]; solids [0.69] *)
+component      = "component" IDENT "(" [ formals ] ")"
+                 ( "{" { statement } "}" | ":=" set_lit ) ;     (* a family of sets, §6.21 [0.49] *)
+set_lit        = "{" IDENT "|" statement { ( ";" | NEWLINE ) statement } "}" ;  (* §6.21 [0.49] *)
 formals        = formal { "," formal } ;
 formal         = IDENT ":" type ;
 type           = "Int" | "Scalar" | "Length" | "Angle" | "Side"      (* §4.1 [0.17] *)
@@ -2791,7 +2923,11 @@ type           = "Int" | "Scalar" | "Length" | "Angle" | "Side"      (* §4.1 [0
                                      was folded into `Plane` in 0.15 *)
 
 statement      = definition | input | relation | gauge | branch | block | in_block
-               | unit_decl | body_rel | claim_over | energy | hint | path_decl | frag ;
+               | unit_decl | body_rel | claim_over | energy | measured | hint | path_decl | frag ;
+measured       = expr ( "<=" | ">=" ) expr ;   (* in a set's body, §6.21 [0.69]: each side a sum of
+                                                  numbers and measurements, each times a number *)
+measurement    = "distance" "(" ref "," ref ")"
+               | "angle" "(" ref "," ref "," "at" ":" ref ")" ;  (* the material's angle [0.69] *)
 energy         = ref ( "minimizes" | "maximizes" ) term { ( "+" | "-" ) term } ; (* §9.10 [0.53] *)
 term           = [ "-" ] [ NUMBER "*" ] "integral" "(" expr "over"
                  ( IDENT | "(" IDENT "," IDENT ")" ) ")" ;
@@ -2801,7 +2937,8 @@ unit_decl      = "unit" IDENT ;                                           (* §3
 (* §5 [0.29]: a name is defined by `NAME := VALUE` and in no other way, and what stands after
    `:=` says what the name is.  An element or an instance may also be written with no name. *)
 definition     = { role } [ IDENT ":=" ] ( chain | instance )
-               | IDENT ":=" ( expr | group | vector | curve ) ;   (* a value, a group, a vector, a curve *)
+               | IDENT ":=" ( expr | group | vector | curve | set_lit ) ;
+                 (* a value, a group, a vector, a curve, a set (§6.21 [0.49]) *)
 role           = "private" | "construction" | "centerline" ;      (* once each, §13.3 *)
 input          = "param" IDENT [ ":" num_type ] [ ":=" expr ] [ hint_clause ] ;
                  (* §6.3 [0.41]: with no value an unknown, its type stated, seeded by `hint(E)` *)
@@ -2920,21 +3057,24 @@ seg            = "->" | "~" ref [ "rev" ] "~" ;           (* `~` is `hint` since
 
 hint           = "hint" ref hint_clause ;                  (* §11; unimplemented *)
 
-block          = ( "repeat" | "cycle" ) ( expr | IDENT "in" ref ) [ "as" IDENT ]
+block          = ( "repeat" | "cycle" ) ( expr | IDENT "in" ref [ condition ] ) [ "as" IDENT ]
                  "{" { statement } "}"                (* IDENT "in" ref: §12.8 [0.27] *)
                | "ring"   expr "about" ref [ "as" IDENT ] "{" { statement } "}" ;
 
+condition      = "if" IDENT ( "in" | "!=" ) ref { "and" IDENT ( "in" | "!=" ) ref } ;
+                 (* which faces' copies are kept, §12.8 [0.69] *)
 ref            = ( IDENT | "next" | "prev" ) { "." IDENT | "[" expr "]" } ;
 expr           = expr addop term | term ;
 term           = term mulop factor | factor ;
 factor         = NUMBER [ UNIT ] | "tau" | "pi" | ref | call
                | "(" expr ")" | "-" factor ;
-call           = IDENT "(" [ args ] ")" ;                  (* polar, direction, angle, abs, ... *)
+call           = IDENT "(" [ args ] ")"                    (* polar, direction, angle, abs, ... *)
+               | measurement ;                             (* in a `measured` statement [0.69] *)
 addop          = "+" | "-" ;
 mulop          = "*" | "/" ;
 ```
 
-Parsing note: a statement is told by its first tokens. `NAME :=` is a definition, and the token after `:=` settles which: `{` a group, `over` in the statement a curve, a call an instance, an element keyword or a prefix word a chain, anything else a value (§6.3). `param` opens an input and `in REF {` a block of membership. A constraint word opens a prefix relation, or a call for `ccw`/`cw`, which also appear as orientation keywords after `:` in `path`, where context disambiguates. Otherwise a `ref` comes first, and the word after it, read by a lookahead past the dotted path, is a constraint word, `@`, or `cut`, `bound` [0.22] or `union` [0.32], which relate no geometry and have no residual for the operator machinery to settle them into. **[0.18]** `view`, `section` and `dimensions` open a statement and are therefore not names; **[0.20]** model source refuses them as presentation (§13.2).
+Parsing note: a statement is told by its first tokens. `NAME :=` is a definition, and the token after `:=` settles which: `{` a group, `over` in the statement a curve, a call an instance, an element keyword or a prefix word a chain, anything else a value (§6.3). `param` opens an input and `in REF {` a block of membership. A constraint word opens a prefix relation, or a call for `ccw`/`cw`, which also appear as orientation keywords after `:` in `path`, where context disambiguates. Otherwise a `ref` comes first, and the word after it, read by a lookahead past the dotted path, is a constraint word, `@`, or `cut`, `bound` [0.22] or `union` [0.32], which relate no geometry and have no residual for the operator machinery to settle them into. **[0.18]** `view`, `section` and `dimensions` open a statement and are therefore not names; **[0.20]** model source refuses them as presentation (§13.2). **[0.69]** A statement opening on a measurement, or comparing two sides by `<=` or `>=` outside every bracket, is a bound on measurements (`measured`).
 
 **[0.2] Note on a number read verbatim.** After the `:=` of a value (0.2–0.6: the `==` after a predicate's closing parenthesis, which §9.2 retired), an implementation MAY take the rest of the logical line verbatim rather than tokenizing it, and hand that text to whatever evaluates dimension expressions. This is not laziness: `3 1/2` is three and a half and `31/2` is a division, and that rule belongs to one tokenizer. Two copies of it are two rules the moment one is edited. An `==` *inside* an argument list is the pin of §4.3 and is lexed normally; the two never meet. **[0.7]** A trailing `hint(…)` ends the verbatim region, since it is a clause of the statement and not part of the number.
 

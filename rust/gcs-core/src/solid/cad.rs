@@ -154,6 +154,10 @@ fn recipe_with(sk: &Sketch,root: usize,static_only: bool) -> Result<StaticRecipe
             ]),
             // a region: its meridian turned once about its axis (§6.21)
             SolidDef::Region {..} => {
+                if super::region::in_general(sk,i) {
+                    return Err(format!("`{}`: a region whose terms share no axis is read by the field; \
+                                        no exact construction is made of it yet",sk.solid_name(i)));
+                }
                 let m = super::region::meridian(sk,i)?;
                 let name = |t: u32| m.name(t);
                 let p = crate::brep::recipe::region_profile(&m.region,m.origin,m.seam,m.axis,&name);

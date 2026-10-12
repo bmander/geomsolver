@@ -121,6 +121,10 @@ cycle N [as i] { ... }                  N copies that close; `next`, `prev` in s
 ring N about C { ... }                  N copies, each the first turned τ/N about C   (1.7)
 repeat e in CHAIN [as i] { ... }        a copy per link of a named chain
 cycle e in CHAIN [as i] { ... }         the same over a closed chain, closing
+repeat a in SOLID [if a in X and a != b] { ... }
+                                        a copy per face of a solid, some kept       (1.14)
+LHS <= RHS | LHS >= RHS                 in a set's body: a bound on a sum of
+                                        measurements, distance(p, X), angle(a, b, at: p) (1.14)
 NAME := INSTANCE.POINT over FORMAL in (A, B)          a curve                        (1.9)
 NAME := Component(ARGS).POINT over FORMAL in (A, B)
 preview { statement* }                  drawn when the file is opened, not when used (1.12)
@@ -1359,22 +1363,27 @@ before `body := solid(stock)` gives the same number: both sides of the body rule
 
 #### Sketching on a face
 
-A face of a solid names a **set**: the surface it lies on, carried past its edges. For a prism
-these are:
+A face of a solid names a **set**: the face itself, bounded by its edges. Its **`.surface`** is
+the surface it lies on, carried past its edges. For a prism the faces are:
 
 - `b0.near` and `b0.far`, the caps at its higher and lower extent;
 - `b0.ab`, the side swept from the straight edge `ab`;
 - `body.b0.near` for the same cap reached through a body.
 
-A point is put on one as on any set, and a plane lies on one by touching it at its own origin.
-That is what sketching on a face says:
+What is drawn on a face is drawn on its surface. A point is put on one as on any set, and a plane
+lies on one by touching it at its own origin. That is what sketching on a face says:
 
 ```
 b0 := solid(f0, depth: 20)
 v1 := plane(u: hint(dir: (1, 0, 0)), v: hint(dir: (0, 0, 1))) hint(origin: (10, 20, 10))
-v1.origin coincident b0.far
-v1 tangent(at: v1.origin) b0.far
+v1.origin coincident b0.far.surface
+v1 tangent(at: v1.origin) b0.far.surface
 ```
+
+A point or a plane drawn on the bare face (`b0.far`) is refused, pointing at `.surface`: the
+bounded face is read by a region's point instead, which is how rounds and chamfers name faces
+(`p inside b0.far`, `distance(p, b0.far)`; `rust/examples/rounds/`). The face is one thing to
+both: a sketch on `b0.far` and a round of it read the same face.
 
 Draw on `v1` (`in v1 { … }`) and extrude again.
 
@@ -1389,6 +1398,7 @@ on the face, it chooses that one instead (a cap on the profile is the profile's 
 
 Refused, at the face's name (**E040**):
 
+- the bare face, which is bounded by its edges: write `.surface`;
 - a curved side, over an arc or a circle;
 - a `through:` solid's caps, whose extent is known only after the solve;
 - an edge with no name to call its side by;
@@ -1477,10 +1487,14 @@ can := { p | p inside tube; p outside std.top; p inside lid }   // capped by two
 tin := solid(can)
 ```
 
-Every bound must share one axis (balls centred on it; cylinders, cones about it; planes square to
-it) and close the material all round; the solid is then one revolution of its meridian, built
-exactly. A cylinder alone, or a ball off the axis, is refused where the solid is evaluated. Cut,
-bound, union, sweep and place it as any solid.
+Where every bound shares one axis (balls centred on it; cylinders, cones about it; planes square
+to it) and closes the material all round, the solid is one revolution of its meridian, built
+exactly. Where they share none (a ball off a cylinder's line, two cylinders crossing) it is read
+**point by point** (0.69): each bound's signed distance from its surface, the material where the
+largest is no more than nothing. It shows and meshes like any solid, but nothing builds its
+exact boundary yet, so an exact export (`solventc --step`) refuses it in those words. A cylinder
+alone, or bounds with no point in common, are refused where the solid is evaluated. Cut, bound,
+union, sweep and place it as any solid.
 
 Its numbers may be the drawing's (0.63): leave a radius unbound and state a point on the set, and
 the solid reads the radius as solved — how the hypoid's blank is sized by its layout
@@ -1490,6 +1504,87 @@ the solid reads the radius as solved — how the hypoid's blank is sized by its 
 heel := std.Sphere(apex, r: hint(50mm))
 span.heel coincident heel                     // the radius is the drawing's
 ```
+
+#### Rounds and chamfers
+
+Round and chamfer edges with the standard library's words (0.69). `use std (round, chamfer)` to
+write them bare:
+
+```sv
+use std (round, chamfer)
+block := solid(outline, depth: 12mm)
+block.near round(r: 2mm) block       // every edge where the near face meets another of block's
+block.far chamfer(d: 1mm) block      // the far rim, a flat 1 along each face
+round(r: 1.5mm) dish.pocket          // every edge among the pocket's faces
+pad.boss round(r: 3mm) pad.plate     // where the boss stands on the plate
+```
+
+- `A round(r: …) B` rounds every edge where a face of `A` meets a face of `B`. A convex edge loses
+  what a ball of radius `r` rolled along it cannot reach; a concave edge is filled. Where three
+  rounded edges meet, the corner is the ball's. `round(r: …) X` is every edge among `X`'s faces.
+- `A chamfer(d: …) B` cuts each such edge flat, `d` along each face; `chamfer(d: …) X` likewise.
+- `A` and `B` are face paths: `block` (every face), `block.near` (one), `pad.boss` (every face
+  the boss gave the pad), `pad.plate.near`. Faces that do not meet make nothing, so
+  `block.near round(r: 2mm) block` is the near rim alone, its runs mitred at the corners.
+- Each word acts on the body the faces are of, after its other terms: a round reads the faces as
+  the cuts and unions left them, never its own (the *stratum*).
+
+They are written in Solvent (`rust/lib/std.sv`), and you can write your own the same way:
+`rust/examples/rounds/by_hand.sv` rounds one edge in about twenty lines. What they are built
+from, all in a region's body (`solid(S)`):
+
+| Written | Means |
+|---|---|
+| `p inside block.near`, `p outside(d) block.near` | the material's side of the face's surface (grown by `d`) |
+| `p distance(<= 1mm) block.near` | within 1 of the face itself, bounded by its edges |
+| `p distance(>= r) block.near.surface` | at least `r` from the whole surface it lies on |
+| `p coincident block.near` | on the face |
+| `distance(p, f1) + distance(p, f2) <= 10mm` | a bound on measurements: an ellipsoid by its foci |
+| `distance(p, centres) >= r` | from a set's nearest point (`centres` a set) |
+| `crease := { q \| q coincident a; q coincident b }` | the edge where faces `a` and `b` meet |
+| `distance(p, crease) <= distance(p, meeting)` | by the edge, nearer it than where the surfaces meet elsewhere |
+| `angle(a, b, at: p) <= 180deg` | at a convex edge (the material's angle there) |
+| `p inside crease.ends` | stopped by the faces the edge ends on |
+| `repeat a in A { repeat b in B if b != a { … } }` | a copy per pair of faces |
+| `taken := solid(run)` and `taken cut A.body` in a word's body | a solid made of a set, cut from the body `A`'s faces are of |
+
+A face path means the face, bounded by its edges, wherever it is read; `.surface` is the surface
+it lies on. Rounds read faces off the solid after the solve, so any face works, curved or cut by a
+Boolean; a face a Boolean ate names nothing, and what reads it holds nowhere. (Sketching on a face
+reads `.surface` as rows of the solve: 1.14, *Sketching on a face*.)
+
+**In a region's own body**, a round or a chamfer between two of its bounds is one more bound:
+
+```sv
+wall := std.Cylinder(axis_line, r: 10)
+top := { q | q distance(<= 2mm, along: n) mid }
+bottom := { q | q distance(>= -2mm, along: n) mid }
+finished := { p |
+  p inside wall
+  p inside top
+  p inside bottom
+  p inside std.Rounded(wall, top, r: 1.5mm)
+  p inside std.Chamfered(wall, bottom, la: 1mm, lb: 1mm)
+}
+disc := solid(finished)
+```
+
+Where the region is a revolution (its bounds share an axis), the round and the flat are built
+exactly in it: `solventc --step` writes a torus and a cone. Elsewhere they are read point by point.
+
+`rust/examples/rounds/` has a block, a pocket, a boss, a round written by hand, the disc and
+regions read point by point; its README walks them.
+
+Refused (**E040**):
+
+- a face read of a drawn point (`m coincident block.near` where `m` is drawn): draw on the face's
+  `.surface`;
+- `inside` or `outside` a face's surface: the side is the face's;
+- a bound on measurements outside a region's body, a product of measurements, or one reading two
+  points;
+- `angle` with no `at:`, or of faces' surfaces;
+- `p outside S.ends`;
+- a set called `edge` or `seam` (element keywords).
 
 ### 1.15 Spatial geometry read after the solve
 

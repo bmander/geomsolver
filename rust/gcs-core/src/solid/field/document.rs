@@ -180,6 +180,8 @@ fn through_range(basis: &Basis,supports: &[Option<V>]) -> Result<[f64;2],String>
 fn read(sk: &Sketch,solid: usize,axis_tolerance: f64) -> Result<Snapshot,String> {
     crate::solid::validate(sk,solid)?;
     let mut done: BTreeMap<usize,Snapshot> = BTreeMap::new();
+    // the regions that hold nowhere (#183: a round over faces that never meet), no term of a body
+    let mut empty: std::collections::BTreeSet<usize> = Default::default();
     let mut pending = vec![(solid,false)];
     while let Some((i,ready)) = pending.pop() {
         if done.contains_key(&i) { continue; }
@@ -194,6 +196,12 @@ fn read(sk: &Sketch,solid: usize,axis_tolerance: f64) -> Result<Snapshot,String>
             let get = |i: u32| done[&(i as usize)].clone();
             let error = |e| format!("material field: {e:?}");
             Ok(match &s.def {
+                // a region whose terms share no axis, read point by point (§6.21)
+                SolidDef::Region {..} if let Some(f) = crate::solid::region::in_general_position(sk,i) => {
+                    let f = f?;
+                    if f.is_empty() { empty.insert(i); }
+                    Snapshot::Static(f.into())
+                }
                 SolidDef::Revolve {..} | SolidDef::Region {..} =>
                     Snapshot::Static(RevolvedRegion::read(sk,i,axis_tolerance)?.field()?.into()),
                 SolidDef::Prism {face,from,to} =>
@@ -213,23 +221,38 @@ fn read(sk: &Sketch,solid: usize,axis_tolerance: f64) -> Result<Snapshot,String>
                     I::new(from.value,to.value).map_err(error)?).into()),
                 SolidDef::Body {stock,on,through,bound} => {
                     let mut body = get(*stock);
-                    for &i in on { body = body.combine(get(i),BodyWord::Union).map_err(error)?; }
+                    // **the stratum** (#183 F6): a term reading this body's faces acts on the body
+                    // as its other terms make it — a round's fill after the cut whose edge it
+                    // fills — so those are applied last, fills then cuts
+                    let readers = crate::solid::faces::readers_of(sk,i);
+                    let kept = |i: &u32| !empty.contains(&(*i as usize));
+                    let late = |i: &u32| readers.contains(&(*i as usize));
+                    let (on_late,on): (Vec<u32>,Vec<u32>) = on.iter().copied().filter(kept).partition(late);
+                    let (through_late,through): (Vec<u32>,Vec<u32>) = through.iter().copied().filter(kept).partition(late);
+                    for &i in &on { body = body.combine(get(i),BodyWord::Union).map_err(error)?; }
                     // Everything that cuts is one union, subtracted once: the same field as the
                     // cuts taken away in turn, max(max(s, -a), -b) being max(s, -min(a, b)), with
                     // the leaves in the same order; but the union keeps an indexed cut's copies
                     // together, where a mesher's query asks only those near it (`Spread`), and
                     // is folded in pairs, so a gear's forty-eight copies stand six unions deep.
-                    let mut cuts: Vec<Snapshot> = through.iter().map(|&i| get(i)).collect();
-                    while cuts.len() > 1 {
-                        let mut paired = Vec::with_capacity(cuts.len().div_ceil(2));
-                        let mut it = cuts.into_iter();
-                        while let Some(a) = it.next() {
-                            paired.push(match it.next() { Some(b) => a.combine(b,BodyWord::Union).map_err(error)?, None => a });
+                    let union = |ids: &[u32]| -> Result<Option<Snapshot>,String> {
+                        let mut parts: Vec<Snapshot> = ids.iter().map(|&i| get(i)).collect();
+                        while parts.len() > 1 {
+                            let mut paired = Vec::with_capacity(parts.len().div_ceil(2));
+                            let mut it = parts.into_iter();
+                            while let Some(a) = it.next() {
+                                paired.push(match it.next() { Some(b) => a.combine(b,BodyWord::Union).map_err(error)?, None => a });
+                            }
+                            parts = paired;
                         }
-                        cuts = paired;
-                    }
-                    if let Some(cut) = cuts.pop() { body = body.combine(cut,BodyWord::Cut).map_err(error)?; }
+                        Ok(parts.pop())
+                    };
+                    if let Some(cut) = union(&through)? { body = body.combine(cut,BodyWord::Cut).map_err(error)?; }
                     for &i in bound { body = body.combine(get(i),BodyWord::Bound).map_err(error)?; }
+                    // the stratum's readers as the cuts are, one union each, so a body rounded all
+                    // over stands no deeper than its terms' logarithm
+                    if let Some(fill) = union(&on_late)? { body = body.combine(fill,BodyWord::Union).map_err(error)?; }
+                    if let Some(cut) = union(&through_late)? { body = body.combine(cut,BodyWord::Cut).map_err(error)?; }
                     body
                 }
                 SolidDef::Loft {..} => return Err("material fields currently require prisms, \

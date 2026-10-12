@@ -6,6 +6,8 @@ mod profile;
 mod spatial;
 mod document;
 pub use document::CHORD_SLACK;
+pub mod region;
+pub use region::RegionField;
 pub use spatial::SpatialField;
 mod swept;
 pub use swept::{SweptField,SweepEvaluator,SweepError,SIDE_EVALUATIONS};

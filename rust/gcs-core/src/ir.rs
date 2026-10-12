@@ -41,6 +41,8 @@ pub enum Operation {
     /// `k minimizes …` (#121): its curve, resolved, and its integrands as text over
     /// `p.x`, `p.y`, `t.x`, `t.y`.
     Minimize(syntax::Minimize),
+    /// A bound on measurements (#183 F3), read where a region solid's set is applied.
+    Measured(syntax::Measured),
 }
 
 #[derive(Clone, Debug)]
@@ -165,6 +167,7 @@ impl Statement {
             S::SolidRel(r) => Operation::SolidRel(r),
             S::Derived(d) => Operation::Derived(d),
             S::Minimize(m) => Operation::Minimize(m),
+            S::Measured(m) => Operation::Measured(m),
             S::ClaimOver(c) => Operation::ClaimOver(ClaimOver {
                 formal: c.formal, from: c.from, to: c.to, span: c.span,
                 body: c.body.into_iter().map(|s| Self::lower(s, path.clone())).collect::<Result<_, _>>()?,

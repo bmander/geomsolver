@@ -185,6 +185,11 @@ impl<'a> P<'a> {
                 r.claim = true;
                 Some(StmtKind::Relation(r))
             }
+            // `distance(p, f1) + distance(p, f2) <= 10mm` — a bound on measurements (#183 F3),
+            // told from a relation by a comparison outside every bracket
+            m if crate::expr::MEASURES.iter().any(|f| f.0 == m) && self.compared_ahead() => {
+                self.measured().map(StmtKind::Measured)
+            }
             // `view(cyl.body) in views.right` — a picture asked of a solid (§6.11).  The
             // brackets are what it is a picture of, `in` is the trailer it already is
             "view" | "section" | "dimensions" => {
@@ -240,6 +245,52 @@ impl<'a> P<'a> {
             }
             _ => self.relation().map(StmtKind::Relation),
         }
+    }
+
+    /// Whether the statement from here compares two sides outside every bracket (`<` or `>`).
+    fn compared_ahead(&self) -> bool {
+        matches!(self.t.get(self.level_end(true)), Some((Tok::P('<' | '>'), _)))
+    }
+
+    /// Where the expression from here ends outside every bracket: at a closing bracket, the line's
+    /// end, or (`at_cmp`) a `<` or `>`.
+    fn level_end(&self, at_cmp: bool) -> usize {
+        let mut depth = 0i32;
+        for (j, (t, _)) in self.t.iter().enumerate().skip(self.i) {
+            match t {
+                Tok::P('(') | Tok::P('[') | Tok::P('{') => depth += 1,
+                Tok::P(')') | Tok::P(']') | Tok::P('}') if depth == 0 => return j,
+                Tok::P(')') | Tok::P(']') | Tok::P('}') => depth -= 1,
+                Tok::P('<') | Tok::P('>') if depth == 0 && at_cmp => return j,
+                Tok::Nl => return j,
+                _ => {}
+            }
+        }
+        self.t.len()
+    }
+
+    /// `LHS <= RHS` or `LHS >= RHS`, each side an expression kept as text.
+    fn measured(&mut self) -> Option<crate::syntax::Measured> {
+        let lo = self.here().lo as usize;
+        let side = |p: &mut Self, stop_at_cmp: bool| -> Option<(String, Span)> {
+            let from = p.here().lo as usize;
+            p.i = p.level_end(stop_at_cmp);
+            let text = p.text_from(from).trim().to_string();
+            if text.is_empty() {
+                p.fail("expected an expression");
+                return None;
+            }
+            Some((text, Span::new(from, p.prev_hi())))
+        };
+        let (lhs, lhs_span) = side(self, true)?;
+        if !matches!(self.peek(), Some(Tok::P('<' | '>'))) {
+            self.fail("a bound on measurements compares two sides, `<=` or `>=`");
+            return None;
+        }
+        let cmp = self.closed_cmp()?;
+        let (rhs, rhs_span) = side(self, false)?;
+        self.end_of_stmt();
+        Some(crate::syntax::Measured { lhs, lhs_span, cmp, rhs, rhs_span, span: Span::new(lo, self.prev_hi()) })
     }
 
     /// `view(cyl.body) in views.right` — a picture asked of a solid (§6.11).  The brackets are
@@ -877,7 +928,7 @@ impl<'a> P<'a> {
             return false;
         }
         let Some(j) = self.past_ref(self.i) else { return false };
-        if !matches!(self.word_at(j), Some("coincident" | "tangent")) {
+        if !matches!(self.word_at(j), Some("coincident" | "tangent" | "inside" | "outside")) {
             return false;
         }
         // a call is a component's: not a word of the language's own (`hint(…)`)
@@ -985,12 +1036,32 @@ impl<'a> P<'a> {
             let var = self.ident()?;
             self.i += 1;
             let chain = self.refr()?;
+            // `if c in B and c != a` (#183 F8)
+            let mut when = Vec::new();
+            if self.eat_word("if") {
+                loop {
+                    let var = self.ident()?;
+                    let within = if self.eat_word("in") {
+                        true
+                    } else if self.eat_p('!') && self.eat_p('=') {
+                        false
+                    } else {
+                        self.fail("a condition on a copy is `f in X` or `f != g`");
+                        return None;
+                    };
+                    let other = self.refr()?;
+                    when.push(crate::syntax::When { var, within, other });
+                    if !self.eat_word("and") {
+                        break;
+                    }
+                }
+            }
             let binder = if self.eat_word("as") { Some(self.ident()?) } else { None };
             let (body, joint) = self.braced_body(next_id)?;
             return Some(Block {
                 kind,
                 count: String::new(),
-                over: Some(EdgesOf { var, chain }),
+                over: Some(EdgesOf { var, chain, when }),
                 binder,
                 body,
                 joint,
