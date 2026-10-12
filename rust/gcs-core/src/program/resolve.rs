@@ -128,6 +128,10 @@ pub(super) fn follow(sk: &Sketch, mut e: EntRef, path: &[Seg]) -> Result<EntRef,
             return Err("an index names a copy, not a part".to_string());
         };
         let fields = e.kind.fields();
+        // a kind built after what is reading it (a solid, a face) has no parts to follow yet
+        if e.i() >= sk.count(e.kind) {
+            return Err(format!("{} is not built yet", e.kind.a()));
+        }
         let kids = sk.children(e);
         let mut at = 0usize;
         let mut found = None;

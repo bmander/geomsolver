@@ -22,13 +22,14 @@ import {
 import { checkSketch } from '../core/fdcheck.js';
 import { enumerateStep } from '../core/homotopy.js';
 import { Axis, Plane, Point, Sketch, Spline } from '../core/model.js';
-import { mesh, objects, stl, glb } from '../core/mesh.js';
+import { mesh, objects, preview, stl, glb } from '../core/mesh.js';
 import { FieldMesher, deferFields, fieldJobs, supplyField, unpaired } from '../core/field.js';
 import { overview } from '../core/overview.js';
 import { Document, fromSketch, highlight } from '../core/program.js';
 import { highlight as drawingHighlight } from '../core/drawing.js';
 import { Drag, RadiusDrag, System, solve } from '../core/system.js';
 import { analyze } from '../core/witness.js';
+import { turnAt, turnHandle } from '../core/workspace.js';
 import { core, initCore } from '../core/wasm.js';
 
 await initCore();
@@ -1954,14 +1955,47 @@ test('a face, its solid and the body rule are written through the edit API by na
   const made = hf.addSolid({ face: 'hf', through: 'b0', name: 'bore' });
   assert.equal(made.refused, null);
   const bore = Document.read(made.text);
-  const cut = bore.addBodyWord('cut', 'bore', 'b0');
+  const cut = bore.addBodyWord('cut', ['bore'], 'b0');
   assert.equal(cut.refused, null);
   assert.ok(cut.text.endsWith('bore cut b0\n'), cut.text);
   assert.ok(Document.read(cut.text).ok);
   // refused with the cause, the text untouched: a mixture, and what the elaborator refuses
   assert.ok(withFace.addSolid({ face: 'f0', depth: '8', about: 'da' }).refused);
   assert.ok(withFace.addSolid({ face: 'nothing', depth: '8' }).refused);
-  assert.ok(bore.addBodyWord('cut', 'b0', 'b0').refused);
+  assert.ok(bore.addBodyWord('cut', ['b0'], 'b0').refused);
+});
+
+test('a Boolean is previewed by the core before it is written, and written as one splice', () => {
+  const d = Document.read('use std\nin std.front {\na := point\nb := point\nc := point\n'
+                          + 'k := point\nab := line(a, b)\nbc := line(b, c)\nck := line(c, k)\n'
+                          + 'ka := line(k, a)\np := point\nq := point\nr := point\ns := point\n'
+                          + 'pq := line(p, q)\nqr := line(q, r)\nrs := line(r, s)\nsp := line(s, p)\n'
+                          + 'fix((0, 0)) a\nfix((60, 0)) b\nfix((60, 40)) c\nfix((0, 40)) k\n'
+                          + 'fix((35, 15)) p\nfix((45, 15)) q\nfix((45, 25)) r\nfix((35, 25)) s\n}\n'
+                          + 'plate := solid(face(ab, bc, ck, ka), depth: 4)\n'
+                          + 'boss := solid(face(pq, qr, rs, sp), from: -8, to: 4)\n'
+                          + 'pin := solid(face(pq, qr, rs, sp), from: 4, to: 6)\n');
+  assert.ok(d.ok, JSON.stringify(d.diagnostics));
+  assert.ok(solve(d.sketch).success);
+  const at = (name: string) => d.solids().find((s) => s.name === name)!.index;
+  const [plate, boss] = [at('plate'), at('boss')];
+  // the box of a preview along x and z, the front's own axes
+  const span = (word: 'union' | 'cut' | 'bound', tools: number[]) => {
+    const p = preview(d.sketch, plate, word, tools).positions;
+    const xs = p.filter((_, i) => i % 3 === 0);
+    const zs = p.filter((_, i) => i % 3 === 2);
+    return [Math.min(...xs), Math.max(...xs), Math.min(...zs), Math.max(...zs)].map(
+      (v) => Math.round(v * 1e6) / 1e6);
+  };
+  assert.deepEqual(span('bound', [boss]), [35, 45, 15, 25], 'what the two share');
+  assert.deepEqual(span('cut', [boss]), [0, 60, 0, 40]);
+  const before = d.solids().length;
+  assert.throws(() => preview(d.sketch, plate, 'cut', [plate]), /cut itself/);
+  assert.equal(d.solids().length, before, 'a preview writes nothing');
+  const both = d.addBodyWord('union', ['boss', 'pin'], 'plate');
+  assert.equal(both.refused, null);
+  assert.ok(both.text.endsWith('boss union plate\npin union plate\n'), both.text);
+  assert.ok(Document.read(both.text).ok);
 });
 
 test('an extrusion is written by name through the edit API, and resized in place', () => {
@@ -1985,6 +2019,34 @@ test('an extrusion is written by name through the edit API, and resized in place
   assert.notEqual(next.sketch.shapeEpoch, epoch, 'a cached mesh is told');
   const cut = d.extrude(['ab', 'bc', 'ck', 'ka'], [], { word: 'cut', body: 'nothing' });
   assert.match(cut.refused ?? '', /nothing/);
+});
+
+test('a revolution is written by name through the edit API, and re-turned in place', () => {
+  const d = Document.read('use std\nin std.front {\na := point\nb := point\nc := point\n'
+                          + 'k := point\nab := line(a, b)\nbc := line(b, c)\nck := line(c, k)\n'
+                          + 'ka := line(k, a)\nfix((10, 2)) a\nfix((14, 2)) b\nfix((14, 6)) c\n'
+                          + 'fix((10, 6)) k\n}\n');
+  assert.ok(d.ok, JSON.stringify(d.diagnostics));
+  const e = d.revolve(['ab', 'bc', 'ck', 'ka'], [], 'std.z');
+  assert.equal(e.refused, null);
+  assert.deepEqual(e.names, ['b0', 'f0']);
+  assert.ok(e.text.endsWith('f0 := face(ab, bc, ck, ka)\nb0 := solid(f0, about: std.z)\n'), e.text);
+  const next = Document.read(e.text);
+  assert.ok(next.ok, JSON.stringify(next.diagnostics));
+  const b0 = next.solids().find((s) => s.name === 'b0')!.index;
+  const quarter = next.setTurn(b0, '-90');
+  assert.ok(quarter.text.includes('b0 := solid(f0, about: std.z, sweep: 90, sense: cw)'),
+            quarter.text);
+  const epoch = next.sketch.shapeEpoch;
+  assert.ok(next.sketch.setTurn(b0, -90));
+  assert.notEqual(next.sketch.shapeEpoch, epoch, 'a cached mesh is told');
+  // the handle runs a quarter turn clockwise about z, seen from three quarters
+  const h = turnHandle(next.sketch, 0.6, 0.5, b0);
+  assert.ok(h?.tip && Math.abs(h.turn + 90) < 1e-9, JSON.stringify(h));
+  assert.ok(Math.abs(turnAt(next.sketch, 0.6, 0.5, b0, ...h.tip, -80) + 90) < 1e-9);
+  // `std.y` runs square to the front
+  assert.match(d.revolve(['ab', 'bc', 'ck', 'ka'], [], 'std.y').refused ?? '',
+               /does not lie in the face's own plane/);
 });
 
 test('a datum is dropped by name through the edit API, and refused with the cause', () => {
@@ -2523,4 +2585,25 @@ test('a swept solid is refined in steps, and a deferring sketch draws only what 
   assert.ok(stl(page.sketch, part.index).length > 84);
   page.dispose();
   worker.dispose();
+});
+
+test('a sketch on a face is written by name through the edit API, and a plane already there is '
+     + 'found', () => {
+  const d = Document.read('use std\nin std.front {\na := point\nb := point\nc := point\n'
+                          + 'k := point\nab := line(a, b)\nbc := line(b, c)\nck := line(c, k)\n'
+                          + 'ka := line(k, a)\nfix((0, 0)) a\nfix((60, 0)) b\nfix((60, 40)) c\n'
+                          + 'fix((0, 40)) k\n}\nb0 := solid(face(ab, bc, ck, ka), depth: 10)\n');
+  assert.ok(d.ok, JSON.stringify(d.diagnostics));
+  const [b0] = d.solids();
+  assert.equal(d.facePlane(b0.index, 'b0.near'), 'std.front', 'the cap on the profile');
+  assert.equal(d.facePlane(b0.index, 'b0.far'), null);
+  const e = d.sketchOnFace(b0.index, 'b0.far', [20, 4, 10]);
+  assert.equal(e.refused, null);
+  assert.deepEqual(e.names, ['v0']);
+  assert.ok(e.text.endsWith('v0.origin coincident b0.far\nv0 tangent(at: v0.origin) b0.far\n'),
+            e.text);
+  const on = Document.read(e.text);
+  assert.ok(on.ok, JSON.stringify(on.diagnostics));
+  assert.equal(on.facePlane(b0.index, 'b0.far'), 'v0');
+  assert.ok(d.sketchOnFace(b0.index, 'b0.nothing').refused);
 });

@@ -103,6 +103,8 @@ export interface SolidHit {
   solid: number;
   face: string;
   depth: number;
+  /** Where in space the ray met the face. */
+  at: [number, number, number];
 }
 
 /** The object face the eye's ray through `(x, y)` on the picture plane meets nearest the viewer
@@ -134,6 +136,48 @@ export function extrudeHandle(sk: Sketch, az: number, el: number,
 export function extentAt(sk: Sketch, az: number, el: number, solid: number,
                          x: number, y: number): number {
   return core().gcs_workspace_extent_at(sk.handle, az, el, solid, x, y);
+}
+
+/** The handle a revolution is sized by, as the eye sees it: its profile's middle, the arc that
+ *  middle turns through (a whole circle for a whole turn), its end — none where the eye looks
+ *  along the turning plane — and how far it turns, in degrees, positive right-handed about the
+ *  axis. */
+export interface TurnHandle {
+  base: [number, number];
+  arc: [number, number][];
+  tip: [number, number] | null;
+  turn: number;
+}
+
+/** The handle revolution `solid` is sized by, on the eye's picture plane — or null for none. */
+export function turnHandle(sk: Sketch, az: number, el: number, solid: number): TurnHandle | null {
+  return takeJson<TurnHandle | null>(core().gcs_workspace_turn_handle_json(sk.handle, az, el, solid));
+}
+
+/** How far revolution `solid` turns where its handle is dragged to `(x, y)` on the eye's picture
+ *  plane, in signed degrees, the whole turns round nearest `near` — or NaN. */
+export function turnAt(sk: Sketch, az: number, el: number, solid: number,
+                       x: number, y: number, near: number): number {
+  return core().gcs_workspace_turn_at(sk.handle, az, el, solid, x, y, near);
+}
+
+/** The arrow an offset plane is sized by, as the eye sees it: from the plane it is set off along
+ *  that plane's normal by the distance — no tip where the eye looks down the normal. */
+export interface OffsetHandle {
+  base: [number, number];
+  tip: [number, number] | null;
+  distance: number;
+}
+
+/** The arrow plane distance `id` (a constraint id) is sized by — or null for any other. */
+export function offsetHandle(sk: Sketch, az: number, el: number, id: number): OffsetHandle | null {
+  return takeJson<OffsetHandle | null>(core().gcs_workspace_offset_handle_json(sk.handle, az, el, id));
+}
+
+/** What dragging plane distance `id`'s arrow to `(x, y)` sizes it to, or NaN. */
+export function offsetAt(sk: Sketch, az: number, el: number, id: number,
+                         x: number, y: number): number {
+  return core().gcs_workspace_offset_at(sk.handle, az, el, id, x, y);
 }
 
 /** The planes whose panes `(x, y)` on the eye's picture plane falls inside, nearest the eye

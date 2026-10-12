@@ -5,7 +5,7 @@
 
 use gcs_core::edit::{self, Kind, SolidSweep};
 use gcs_core::model::Way;
-use gcs_core::overview::workspace::{extent_at, extrude_handle, Projection};
+use gcs_core::overview::workspace::{extent_at, extrude_handle, offset_at, offset_handle, Projection};
 use gcs_core::program::{self, Elaborated};
 use gcs_core::solid::ApproximationPolicy::Report;
 use gcs_core::syntax::BodyWord;
@@ -188,6 +188,31 @@ fn the_arrow_runs_from_the_face_to_its_far_end_and_reads_a_drag_back() {
     let h = extrude_handle(&e.sketch, &front, block).unwrap();
     assert!(h.tip.is_none() && (h.way, h.thick) == (Some(Way::Behind), 5.0));
     assert_eq!(extent_at(&e.sketch, &front, block, (30.0, 20.0)), None);
+}
+
+/// An offset plane's arrow (#162 F5): from the plane it is set off along that plane's normal by
+/// the distance, and a drag on it read back as a distance, either side.
+#[test]
+fn an_offset_planes_arrow_runs_along_the_normal_it_is_set_off_by() {
+    let e = build("unit mm\nuse std\n\
+        v0 := plane(u: hint(dir: (1, 0, 0)), v: hint(dir: (0, 1, 0))) hint(origin: (0, 0, 12))\n\
+        v0 parallel std.top\nstd.top distance(12) v0\n");
+    let sk = &e.sketch;
+    let id = sk.constraints.iter()
+        .find(|c| c.kind == gcs_core::constraints::CKind::PlaneDistance).unwrap().id;
+    let (az, el) = (0.6, 0.5);
+    let proj = Projection::new(sk, az, el);
+    let h = offset_handle(sk, &proj, id).expect("a plane distance");
+    let close = |a: (f64, f64), b: (f64, f64)| (a.0 - b.0).hypot(a.1 - b.1) < 1e-9;
+    assert!(close(h.base, seen([0.0, 0.0, 0.0], az, el)), "{h:?}");
+    assert!(close(h.tip.unwrap(), seen([0.0, 0.0, 12.0], az, el)) && h.distance == 12.0, "{h:?}");
+    for t in [7.0, -3.0] {
+        let got = offset_at(sk, &proj, id, seen([0.0, 0.0, t], az, el)).unwrap();
+        assert!((got - t).abs() < 1e-9, "{got} {t}");
+    }
+    // overhead, down the normal, there is nothing to drag
+    let over = Projection::new(sk, az, std::f64::consts::FRAC_PI_2);
+    assert!(offset_handle(sk, &over, id).unwrap().tip.is_none());
 }
 
 #[test]

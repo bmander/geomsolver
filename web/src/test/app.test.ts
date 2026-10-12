@@ -1977,8 +1977,8 @@ test('the Extrude tool washes the region under the pointer, and a click drops a 
   assert.ok(view.source.includes('f0 := face(pq, qr, rs, sp)\nb0 := solid(f0, depth: '),
             view.source);
   assert.deepEqual(view.selectedSolids.map((s) => s.name), ['b0']);
-  assert.equal(view.liveExtent?.solid, 'b0');
-  assert.equal(view.liveExtent?.way, 'behind');
+  assert.deepEqual(view.liveExtent && { ...view.liveExtent, d: 0 },
+                   { kind: 'extrusion', solid: 'b0', way: 'behind', d: 0 });
   assert.equal(view.tool, 'extrude', 'the tool stays down for the next');
   // Escape: done sizing, the tool still down; again, the tool goes
   view.cancelTool();
@@ -2042,6 +2042,228 @@ test('with a body selected an extrusion joins it, cuts it with ⌥, and cuts thr
   assert.ok(said.some((m) => /select the body/.test(m)), said.join('\n'));
 });
 
+/* -- revolve (#162 F3) ------------------------------------------------------------------- */
+
+/** On the front: a 4 × 4 square `ab…da` from (10, 2) to (14, 6), and a line `ax` up x = 20. */
+const REVOLVING = `use std
+in std.front {
+a := point
+b := point
+c := point
+d := point
+ab := line(a, b)
+bc := line(b, c)
+cd := line(c, d)
+da := line(d, a)
+q0 := point
+q1 := point
+ax := line(q0, q1)
+fix((10, 2)) a
+fix((14, 2)) b
+fix((14, 6)) c
+fix((10, 6)) d
+fix((20, 0)) q0
+fix((20, 10)) q1
+}
+`;
+
+function revolving(body = ''): SketchView {
+  const view = docView(REVOLVING + body);
+  assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
+  view.choosePlane('std.front');
+  view.setTool('revolve');
+  return view;
+}
+
+test('the Revolve tool takes a region, then the line to turn it about, as one undo step', () => {
+  const view = revolving();
+  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  cv.fire('pointermove', pointer(...view.w2s(12, 4)));
+  const r = view.hoverRegion;
+  assert.ok(r && !('refused' in r), JSON.stringify(r));
+  assert.deepEqual([...r.outer].sort(), ['ab', 'bc', 'cd', 'da']);
+  const before = view.source;
+  click(view, 12, 4);
+  assert.equal(view.source, before, 'a region alone writes nothing');
+  assert.ok(view.pendingRevolve);
+  // the region chosen stays, washed, and the line a click would turn it about is lit
+  cv.fire('pointermove', pointer(...view.w2s(20, 5)));
+  assert.deepEqual(view.pendingRevolve?.outer, r.outer, 'the region chosen stays');
+  assert.deepEqual(view.highlight.map((e) => view.doc.nameOf(e)), ['ax']);
+  // a click on nothing to turn about says what it wants, and waits
+  const said: string[] = [];
+  view.onStatus = (m) => said.push(m);
+  click(view, 30, 30);
+  assert.ok(said.some((m) => /line .* or an axis/.test(m)), said.join('\n'));
+  assert.equal(view.source, before);
+  click(view, 20, 5);
+  assert.ok(view.source.endsWith('f0 := face(ab, bc, cd, da)\nb0 := solid(f0, about: ax)\n'),
+            view.source);
+  assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
+  assert.deepEqual(view.selectedSolids.map((s) => s.name), ['b0']);
+  assert.deepEqual(view.liveExtent, { kind: 'turn', solid: 'b0', d: 360 });
+  assert.equal(view.pendingRevolve, null);
+  assert.equal(view.tool, 'revolve', 'the tool stays down for the next');
+  view.cancelTool();
+  assert.equal(view.liveExtent, null);
+  view.undo();
+  assert.equal(view.source, before, 'the two clicks are one undo step');
+  // Escape with a region chosen lets it go, the tool still down
+  click(view, 12, 4);
+  view.cancelTool();
+  assert.equal(view.pendingRevolve, null);
+  assert.equal(view.tool, 'revolve');
+});
+
+test('about an axis already selected a click revolves at once, and its turn is typed or dragged',
+     () => {
+  const view = revolving();
+  const z = view.doc.entity('std.z');
+  assert.ok(z instanceof Axis);
+  view.selected = [z];
+  const before = view.source;
+  click(view, 12, 4);
+  assert.ok(view.source.endsWith('b0 := solid(f0, about: std.z)\n'), view.source);
+  assert.equal(view.commitExtent('90'), null);
+  assert.ok(view.source.includes('b0 := solid(f0, about: std.z, sweep: 90)'), view.source);
+  // dragged from three quarters: the square's middle (12, 0, 4) turns about z toward +y, so a
+  // half turn is over at (−12, 0, 4)
+  view.orbit = { az: 0.6, el: 0.5 };
+  const arrow = view.extentArrow();
+  assert.ok(arrow?.tip && arrow.arc && arrow.arc.length > 2, 'the handle is seen from here');
+  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  const to = seenAt(view, [-12, 0, 4]);
+  cv.fire('pointerdown', pointer(...arrow.tip));
+  cv.fire('pointermove', pointer(...seenAt(view, [-8.5, 8.5, 4])));
+  cv.fire('pointermove', pointer(...to));
+  assert.ok(view.source.includes('sweep: 90)'), 'nothing is written while it is dragged');
+  cv.fire('pointerup', pointer(...to));
+  assert.ok(view.source.includes('b0 := solid(f0, about: std.z, sweep: 180)'), view.source);
+  // a minus typed turns it the other way, and a whole turn is written as none
+  assert.equal(view.commitExtent('-45'), null);
+  assert.ok(view.source.includes('b0 := solid(f0, about: std.z, sweep: 45, sense: cw)'),
+            view.source);
+  assert.deepEqual(view.liveExtent, { kind: 'turn', solid: 'b0', d: -45 });
+  assert.equal(view.commitExtent('360'), null);
+  assert.ok(view.source.endsWith('b0 := solid(f0, about: std.z)\n'), view.source);
+  assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
+  view.undo();
+  assert.equal(view.source, before, 'the sizing joined the revolution\'s own undo step');
+});
+
+test('with a body selected a revolution joins it, or cuts it with ⌥', () => {
+  const view = revolving('block := solid(face(ab, bc, cd, da), depth: 5)\n');
+  const block = (): SolidPick => ({
+    name: 'block', index: view.doc.solids().find((s) => s.name === 'block')!.index, face: '',
+  });
+  view.pickSolid(block());
+  click(view, 12, 4);
+  click(view, 20, 5);
+  assert.ok(view.source.endsWith('b0 := solid(f0, about: ax)\nb0 union block\n'), view.source);
+  view.pickSolid(block());
+  clickWith(view, 12, 4, { altKey: true });
+  clickWith(view, 20, 5, { altKey: true });
+  assert.ok(view.source.endsWith('b1 := solid(f1, about: ax)\nb1 cut block\n'), view.source);
+  assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
+});
+
+/* -- union, cut, intersect (#162 F4) ------------------------------------------------------ */
+
+/** EXTRUDING's rectangle as `block`, 5 behind the front; a peg through it on its circle, standing
+ *  10 out either side; and its square, beside it, as `side`.  Seen square on to the front. */
+function combining(more = ''): SketchView {
+  const view = docView(`${EXTRUDING}block := solid(face(ab, bc, cd, da), depth: 5)\n`
+                       + 'peg := solid(face(hole), from: -10, to: 10)\n'
+                       + `side := solid(face(pq, qr, rs, sp), depth: 5)\n${more}`);
+  assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
+  view.orbit = { az: -Math.PI / 2, el: 0 };
+  return view;
+}
+
+/** A click where the eye sees a place in space. */
+function clickSeen(view: SketchView, x: [number, number, number]): void {
+  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  cv.fire('pointerdown', pointer(...seenAt(view, x)));
+  cv.fire('pointerup', pointer(...seenAt(view, x)));
+}
+
+test('a Boolean tool takes the body to change, then its tools, and writes them as one step', () => {
+  const view = combining();
+  const said: string[] = [];
+  view.onStatus = (m) => said.push(m);
+  view.setTool('cut');
+  assert.ok(said.some((m) => /click the body to cut/.test(m)), said.join('\n'));
+  const before = view.source;
+  const names = () => view.selectedSolids.map((s) => s.name);
+  const pending = () => view.combining;
+  clickSeen(view, [10, 0, 10]);
+  assert.deepEqual(names(), ['block'], 'the first body clicked is the target');
+  assert.equal(pending(), null, 'nothing to preview without a tool');
+  clickSeen(view, [30, 0, 20]);
+  clickSeen(view, [85, 0, 5]);
+  assert.deepEqual(names(), ['block', 'peg', 'side']);
+  const c = pending();
+  assert.deepEqual(c && [c.target.name, c.word, c.tools.map((t) => t.name)],
+                   ['block', 'cut', ['peg', 'side']], 'the preview is of what would be written');
+  clickSeen(view, [85, 0, 5]);
+  assert.deepEqual(names(), ['block', 'peg'], 'a tool clicked again is let go');
+  assert.equal(view.source, before, 'nothing is written while bodies are picked');
+  // a click back on the target writes the Boolean, and leaves it selected for the next
+  clickSeen(view, [10, 0, 10]);
+  assert.ok(view.source.endsWith('peg cut block\n'), view.source);
+  assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
+  assert.deepEqual(names(), ['block']);
+  assert.equal(view.tool, 'cut', 'the tool stays down for the next');
+  view.undo();
+  assert.equal(view.source, before, 'the Boolean is one undo step');
+  // Escape lets the tools go, then the target, then puts the tool down
+  view.pickSolid(view.solidAt(...seenAt(view, [10, 0, 10]))!);
+  clickSeen(view, [30, 0, 20]);
+  view.cancelTool();
+  assert.deepEqual(names(), ['block']);
+  view.cancelTool();
+  assert.deepEqual(names(), []);
+  assert.equal(view.tool, 'cut');
+  view.cancelTool();
+  assert.equal(view.tool, 'select');
+});
+
+test('a Boolean starts from the bodies selected, and Enter writes it; Intersect is `bound`', () => {
+  const view = combining();
+  view.pickSolid(view.solidAt(...seenAt(view, [10, 0, 10]))!);
+  view.pickSolid(view.solidAt(...seenAt(view, [30, 0, 20]))!, true);
+  view.pickSolid(view.solidAt(...seenAt(view, [85, 0, 5]))!, true);
+  view.setTool('union');
+  assert.deepEqual(view.combining?.tools.map((t) => t.name), ['peg', 'side']);
+  view.finishCurve();                       // Enter
+  assert.ok(view.source.endsWith('peg union block\nside union block\n'), view.source);
+  assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
+  view.undo();
+  view.setTool('bound');
+  clickSeen(view, [10, 0, 10]);
+  clickSeen(view, [30, 0, 20]);
+  view.finishCurve();
+  assert.ok(view.source.endsWith('peg bound block\n'), view.source);
+  assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
+});
+
+test('a Boolean the language refuses is refused at the gesture, in its words', () => {
+  // `shell` is made of `block`: cutting it from `block` would make `block` of itself (E041)
+  const view = combining('shell := solid(block)\n');
+  const at = (name: string): SolidPick => ({
+    name, index: view.doc.solids().find((s) => s.name === name)!.index, face: '',
+  });
+  const said: string[] = [];
+  view.onStatus = (m) => said.push(m);
+  view.pickSolid(at('block'));
+  view.pickSolid(at('shell'), true);
+  view.setTool('cut');
+  const before = view.source;
+  view.finishCurve();
+  assert.equal(view.source, before);
+  assert.ok(said.some((m) => /made of itself/.test(m)), said.join('\n'));
+});
+
 test('in orbit mode a drag turns the workspace, whatever tool is down, and draws nothing', () => {
   const view = docView('use std\nin std.front {\na := point hint((0, 0))\n}\n');
   view.setTool('line');
@@ -2055,4 +2277,65 @@ test('in orbit mode a drag turns the workspace, whatever tool is down, and draws
   view.setOrbitMode(false);
   click(view, 10, 10);
   assert.equal(view.sketch.points.length, points + 1, 'out of orbit mode the tool draws again');
+});
+
+/** A double-click at a canvas point. */
+function dblclickAt(view: SketchView, at: [number, number]): void {
+  (view.canvas as ReturnType<typeof fakeCanvas>).fire('dblclick', { clientX: at[0], clientY: at[1] });
+}
+
+test('double-clicking a face of a solid draws on it: a plane written lying on it, or the one '
+     + 'already there', () => {
+  const view = docView(BLOCK);
+  assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
+  view.orbit = { az: 0.6, el: 0.5 };
+  // the side over `cd`, at y = 10, faces the eye from here: a plane is written on it
+  const before = view.source;
+  const side = seenAt(view, [10, 10, -2.5]);
+  dblclickAt(view, side);
+  assert.ok(view.source.endsWith('v0.origin coincident block.cd\n'
+                                 + 'v0 tangent(at: v0.origin) block.cd\n'), view.source);
+  assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
+  assert.equal(view.planeName, 'v0', 'and drawn on');
+  assert.ok(Math.abs(planeNamed(view, 'v0').frame3.o[1] - 10) < 1e-9, 'on the side, at y = 10');
+  // again, off the new plane's origin and axes: the plane lying there is chosen, nothing written
+  view.choosePlane('std.front', false);
+  const written = view.source;
+  dblclickAt(view, seenAt(view, [5, 10, -4.5]));
+  assert.equal(view.planeName, 'v0');
+  assert.equal(view.source, written);
+  view.undo();
+  assert.equal(view.source, before, 'the sketch on the face is one undo step');
+  // the top cap lies on std.top, the plane the block was drawn on: that is chosen
+  dblclickAt(view, seenAt(view, [10, 5, 0]));
+  assert.equal(view.planeName, 'std.top');
+  assert.equal(view.source, before);
+});
+
+test('a plane set off another is sized by its arrow, written once, in the plane\'s undo step',
+     () => {
+  const view = docView(DATUMS);
+  assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
+  view.selected = [view.doc.entity('std.top')!];
+  assert.ok(view.addDatum('plane'));
+  assert.ok(/v0 parallel std\.top\nstd\.top distance\([\d.]+\) v0\n/.test(view.source),
+            view.source);
+  assert.equal(view.liveExtent?.kind, 'offset');
+  view.orbit = { az: 0.6, el: 0.5 };
+  const tip = view.extentArrow()?.tip;
+  assert.ok(tip, 'an arrow to take hold of');
+  const programs: string[] = [];
+  view.onProgram = () => programs.push(view.source);
+  drag(view, tip, seenAt(view, [0, 0, 30]));
+  assert.ok(view.source.includes('std.top distance(30) v0\n'), view.source);
+  assert.equal(new Set(programs).size, 1, 'written once, at the release');
+  assert.ok(Math.abs(planeNamed(view, 'v0').frame3.o[2] - 30) < 1e-9, 'set off to 30');
+  // typed instead
+  assert.equal(view.commitExtent('12'), null);
+  assert.ok(view.source.includes('std.top distance(12) v0\n'), view.source);
+  // a press elsewhere is done with it
+  click(view, 200, 200);
+  assert.equal(view.liveExtent, null);
+  view.undo();
+  assert.ok(!view.source.includes('v0'), `the plane and its sizing are one undo step\n${view.source}`);
 });

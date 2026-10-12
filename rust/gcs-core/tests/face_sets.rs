@@ -1,239 +1,144 @@
-//! **Faces as sets** (#183 F1) and **the material's angle at an edge** (F9): a region's body names a
-//! face of a solid by its path (`block.near`), read off the solid's exact boundary: its side
-//! (`inside`), its patch (`distance(p, block.near)`), its surface (`block.near.surface`), and the
-//! angle the material makes where two faces meet.  Held to closed forms.
+//! **A face of a solid is a set** (§6.9, §6.21, #162 F5): `b0.near`, `b0.far`, a side `b0.ab`
+//! and `body.b0.near` name the surface the face lies on, made from the solid's own text, so a
+//! point is put on one as on any set and a plane lies on one by touching it at its own origin —
+//! sketching on a face.  The carrier follows the extents and the profile wherever they move.
+use gcs_core::diagnose::{diagnose, DiagnoseOptions};
 use gcs_core::program::Elaborated;
-use gcs_core::solid::MaterialField;
 use gcs_core::solve::{solve, SolveOpts};
-use std::f64::consts::PI;
+use gcs_core::space::{cross, dot};
 
-use crate::common::{ent, read};
-use crate::region_general::field_volume;
+use crate::common::{ent, read, refused};
+
+/// A 40 × 30 rectangle on the front plane (normal −y), a corner held at the origin.
+const PROFILE: &str = "use std\n\
+    in std.front {\n  a := point hint((0, 0))\n  b := point hint((40, 0))\n  \
+    c := point hint((40, 30))\n  d := point hint((0, 30))\n  ab := line(a, b)\n  \
+    bc := line(b, c)\n  cd := line(c, d)\n  da := line(d, a)\n}\n\
+    fix((0, 0)) a\nhorizontal ab\nvertical bc\nhorizontal cd\nvertical da\n\
+    a distance(40) b\nb distance(30) c\nf0 := face(ab, bc, cd, da)\n";
 
 fn solved(src: &str) -> Elaborated {
-    let mut e = read(src);
+    let mut e = read(&format!("{PROFILE}{src}"));
     let r = solve(&mut e.sketch, SolveOpts::default());
-    assert!(r.success, "{}\n{src}", r.message);
+    assert!(r.success, "{}", r.message);
     e
 }
 
-/// A block 40 × 24 × 12 drawn on the front plane (x, z), standing 12 deep along y, and an L of
-/// two such steps whose inner edge is concave.
-const BLOCK: &str = "unit mm\nuse std\nin std.front {\n\
-    b0 := point\nb1 := point\nb2 := point\nb3 := point\n\
-    fix((0, 0)) b0\nfix((40, 0)) b1\nfix((40, 24)) b2\nfix((0, 24)) b3\n\
-    (south := line(b0, b1)) -> (east := line(b1, b2)) -> (north := line(b2, b3)) -> \
-    (west := line(b3, b0)) -> close\n\
-    outline := face(south, east, north, west)\n\
-    l0 := point\nl1 := point\nl2 := point\nl3 := point\nl4 := point\nl5 := point\n\
-    fix((100, 0)) l0\nfix((120, 0)) l1\nfix((120, 10)) l2\nfix((110, 10)) l3\nfix((110, 20)) l4\n\
-    fix((100, 20)) l5\n\
-    (ls := line(l0, l1)) -> (le := line(l1, l2)) -> (lt := line(l2, l3)) -> (lr := line(l3, l4)) -> \
-    (ln := line(l4, l5)) -> (lw := line(l5, l0)) -> close\n\
-    ell := face(ls, le, lt, lr, ln, lw)\n}\n\
-    block := solid(outline, depth: 12mm)\nstep := solid(ell, depth: 12mm)\n";
-
-/// Where the block stands: its corners' box, from its own field's support.
-fn block_box(e: &Elaborated) -> ([f64; 3], [f64; 3]) {
-    let f = MaterialField::read(&e.sketch, ent(e, "block").i(), 1e-10).unwrap();
-    let b = f.support_bounds().unwrap().expect("a block's box");
-    let lo = std::array::from_fn(|k| b[k].bounds()[0]);
-    let hi = std::array::from_fn(|k| b[k].bounds()[1]);
-    (lo, hi)
+fn at(e: &Elaborated, n: &str) -> [f64; 3] {
+    e.sketch.world_point(ent(e, n).i())
 }
 
-/// The points within 1 of the block's near face: the rectangle grown by a ball,
-/// `2rA + πr²P/2 + 4πr³/3`.
+/// A point put on a cap stands at the cap's ordinate along the profile's normal (−y here):
+/// `depth: d` runs from −d to 0, so `far` is behind the profile and `near` is on it.
 #[test]
-fn the_points_near_a_face_are_its_patch_grown() {
-    let e = solved(&format!("{BLOCK}pillow := {{ p | distance(p, block.near) <= 1mm }}\n\
-                             s := solid(pillow)\n"));
-    let (lo, hi) = block_box(&e);
-    let s = ent(&e, "s").i();
-    let field = MaterialField::read(&e.sketch, s, 1e-10).unwrap();
-    let (a, perim, r) = (40.0 * 24.0, 2.0 * (40.0 + 24.0), 1.0);
-    let want = 2.0 * r * a + PI * r * r * perim / 2.0 + 4.0 / 3.0 * PI * r.powi(3);
-    let got = field_volume(&field, lo.map(|x| x - 2.0), hi.map(|x| x + 2.0), 1.0 / 32.0);
-    assert!((got - want).abs() < 2e-3 * want, "{got} against {want}");
-}
-
-/// A ball about a point of the near face: within its side, half the ball; within 2 of its whole
-/// surface, the ball's slice `π (4r² − 16/3)`; and both a face and its surface name the same
-/// plane, though the ball reaches past the patch.
-#[test]
-fn a_face_has_a_side_and_a_surface() {
-    let e = solved(&format!("{BLOCK}c := point hint((20, 0, 12))\nball := std.Sphere(c, r: 5)\n\
-                             half := {{ p | p inside ball; p inside block.near }}\n\
-                             slice := {{ p | p inside ball; p distance(<= 2mm) block.near.surface }}\n\
-                             sh := solid(half)\nss := solid(slice)\n"));
-    let (lo, hi) = block_box(&e);
-    // the ball's centre on the near face, wherever the block stands
-    let near = |f: &MaterialField| f.side([20.0, 0.0, 12.0]);
-    let _ = near;
-    let r: f64 = 5.0;
-    for (name, want) in [("sh", 2.0 / 3.0 * PI * r.powi(3)), ("ss", PI * (4.0 * r * r - 16.0 / 3.0))] {
-        let field = MaterialField::read(&e.sketch, ent(&e, name).i(), 1e-10).unwrap();
-        let got = field_volume(&field, lo.map(|x| x - 20.0), hi.map(|x| x + 20.0), 1.0 / 16.0);
-        assert!((got - want).abs() < 2e-3 * want, "{name}: {got} against {want}");
-    }
-}
-
-/// The material's angle where two faces meet: a block's edges are convex (a quarter turn), and an
-/// L's inner edge concave (three quarters), read at the point of the edge nearest.
-#[test]
-fn the_material_angle_at_an_edge_says_which_way_it_turns() {
-    let e = solved(&format!("{BLOCK}c := point hint((0, 0, 0))\nball := std.Sphere(c, r: 300)\n\
-        convex := {{ p | p inside ball; angle(block.near, block.south, at: p) <= 180deg }}\n\
-        concave := {{ p | p inside ball; angle(block.near, block.south, at: p) >= 180deg }}\n\
-        square := {{ p | p inside ball; angle(block.east, block.south, at: p) <= 91deg; \
-                         angle(block.east, block.south, at: p) >= 89deg }}\n\
-        inner := {{ p | p inside ball; angle(step.lt, step.lr, at: p) >= 269deg }}\n\
-        outer := {{ p | p inside ball; angle(step.le, step.lt, at: p) >= 180deg }}\n\
-        s1 := solid(convex)\ns2 := solid(concave)\ns3 := solid(square)\ns4 := solid(inner)\n\
-        s5 := solid(outer)\n"));
-    let filled = |name: &str| {
-        let field = MaterialField::read(&e.sketch, ent(&e, name).i(), 1e-10).unwrap();
-        field.side([1.0, 2.0, 3.0]) < 0.0
+fn a_point_on_a_cap_stands_at_its_ordinate() {
+    let y = |sweep: &str, face: &str| {
+        let e = solved(&format!("b0 := solid(f0, {sweep})\nm := point hint((5, 3, 5))\n\
+                                 m coincident b0.{face}\n"));
+        at(&e, "m")[1]
     };
-    assert!(filled("s1"));
-    assert!(!filled("s2"));
-    assert!(filled("s3"));
-    assert!(filled("s4"));
-    assert!(!filled("s5"));
+    assert!((y("depth: 20", "far") - 20.0).abs() < 1e-9);
+    assert!(y("depth: 20", "near").abs() < 1e-9);
+    assert!((y("from: 5, to: 25", "near") + 25.0).abs() < 1e-9);
+    assert!((y("from: 5, to: 25", "far") + 5.0).abs() < 1e-9);
+    // the ends written the other way round are still the nearer and the farther
+    assert!((y("from: 25, to: 5", "near") + 25.0).abs() < 1e-9);
 }
 
-/// A face path naming no face of the solid (or one a boolean ate) is no point: a set within its
-/// side holds nowhere.
+/// The carrier is written over the solid's own extent, so editing it moves what stands on it.
 #[test]
-fn a_face_path_naming_no_face_holds_nowhere() {
-    let e = read(&format!("{BLOCK}nowhere := {{ p | p inside block.top }}\nsn := solid(nowhere)\n"));
-    let field = MaterialField::read(&e.sketch, ent(&e, "sn").i(), 1e-10).unwrap();
-    assert!(field.side([20.0, 6.0, 12.0]) > 0.0 && field.side([0.0; 3]) > 0.0);
+fn the_carrier_follows_the_extent() {
+    let doc = "h := 20\nb0 := solid(f0, depth: h)\nm := point hint((5, 3, 5))\n\
+               m coincident b0.far\n";
+    assert!((at(&solved(doc), "m")[1] - 20.0).abs() < 1e-9);
+    let edited = doc.replace("h := 20", "h := 35");
+    assert!((at(&solved(&edited), "m")[1] - 35.0).abs() < 1e-9);
 }
 
-/// The edge where the near face meets the south face, and the faces' surfaces' meeting.
-const EDGE: &str = "crease := { q | q coincident block.near; q coincident block.south }\n\
-                    meeting := { q | q coincident block.near.surface; q coincident block.south.surface }\n";
-
-/// **The distance from a set** (#183 F2): a weld's reach, the points within 1 of the block's edge
-/// 40 long, a capsule `πr²L + 4πr³/3`.
+/// **Sketching on a face**: a plane touching a cap at its own origin lies on it — its normal
+/// the profile's, its origin at the cap — and keeps the freedom to slide and turn there, four,
+/// with nothing implied or over.
 #[test]
-fn a_reach_from_an_edge_is_a_capsule() {
-    let e = solved(&format!("{BLOCK}{EDGE}weld := {{ p | distance(p, crease) <= 1mm }}\n\
-                             s := solid(weld)\n"));
-    let (lo, hi) = block_box(&e);
-    let field = MaterialField::read(&e.sketch, ent(&e, "s").i(), 1e-10).unwrap();
-    let want = PI * 40.0 + 4.0 / 3.0 * PI;
-    let got = field_volume(&field, lo.map(|x| x - 2.0), hi.map(|x| x + 2.0), 1.0 / 32.0);
-    assert!((got - want).abs() < 2e-3 * want, "{got} against {want}");
+fn a_plane_touching_a_cap_at_its_origin_lies_on_it() {
+    let mut e = solved("b0 := solid(f0, depth: 20)\n\
+        v1 := plane(u: hint(dir: (1, 0, 0)), v: hint(dir: (0, 0, 1))) hint(origin: (10, 18, 10))\n\
+        v1.origin coincident b0.far\nv1 tangent(at: v1.origin) b0.far\n");
+    let n = e.sketch.basis(ent(&e, "v1").i()).normal();
+    assert!(n[0].abs() < 1e-9 && n[2].abs() < 1e-9, "{n:?}");
+    assert!((at(&e, "v1.origin")[1] - 20.0).abs() < 1e-9);
+    let d = diagnose(&mut e.sketch, DiagnoseOptions::default());
+    assert!(d.implied.is_empty() && d.over.is_empty(), "{:?} {:?}", d.implied, d.over);
+    assert_eq!(d.dof, 4, "{:?}", d.warnings);
 }
 
-/// A clearance envelope: the points within 1 of the block, a set of six faces' sides, is the block
-/// grown (Steiner): `abc + 2(ab + bc + ca)r + πr²(a + b + c) + 4πr³/3`.
+/// A side over a straight edge is the plane through the edge along the profile's normal: the
+/// bottom edge `ab` runs along x at z = 0, so a plane on `b0.ab` faces along z.
 #[test]
-fn a_clearance_is_a_set_grown() {
-    let e = solved(&format!("{BLOCK}held := {{ c | c inside block.near; c inside block.far; \
-                             c inside block.south; c inside block.north; c inside block.east; \
-                             c inside block.west }}\n\
-                             clear := {{ p | distance(p, held) <= 1mm }}\ns := solid(clear)\n"));
-    let (lo, hi) = block_box(&e);
-    let field = MaterialField::read(&e.sketch, ent(&e, "s").i(), 1e-10).unwrap();
-    let (a, b, c, r) = (40.0, 24.0, 12.0, 1.0);
-    let want = a * b * c + 2.0 * (a * b + b * c + c * a) * r + PI * r * r * (a + b + c)
-        + 4.0 / 3.0 * PI * r.powi(3);
-    let got = field_volume(&field, lo.map(|x| x - 2.0), hi.map(|x| x + 2.0), 1.0 / 8.0);
-    assert!((got - want).abs() < 2e-3 * want, "{got} against {want}");
+fn a_plane_on_a_side_holds_the_edge_and_the_normal() {
+    let mut e = solved("b0 := solid(f0, depth: 20)\n\
+        v1 := plane(u: hint(dir: (1, 0, 0)), v: hint(dir: (0, 1, 0))) hint(origin: (10, 8, 1))\n\
+        v1.origin coincident b0.ab\nv1 tangent(at: v1.origin) b0.ab\n");
+    let n = e.sketch.basis(ent(&e, "v1").i()).normal();
+    assert!(n[0].abs() < 1e-9 && n[1].abs() < 1e-9, "{n:?}");
+    assert!(at(&e, "v1.origin")[2].abs() < 1e-9);
+    let d = diagnose(&mut e.sketch, DiagnoseOptions::default());
+    assert!(d.implied.is_empty() && d.over.is_empty(), "{:?} {:?}", d.implied, d.over);
+    assert_eq!(d.dof, 4, "{:?}", d.warnings);
+    // a slanted edge: the side's normal is square to it and to the profile's normal
+    let slant = PROFILE.replace("vertical bc\n", "").replace("b distance(30) c\n", "");
+    let mut e = read(&format!("{slant}b0 := solid(f0, depth: 20)\nfix((50, 30)) c\n\
+        v1 := plane(u: hint(dir: (0, 0, 1)), v: hint(dir: (0, 1, 0))) hint(origin: (45, 8, 15))\n\
+        v1.origin coincident b0.bc\nv1 tangent(at: v1.origin) b0.bc\n"));
+    assert!(solve(&mut e.sketch, SolveOpts::default()).success);
+    let n = e.sketch.basis(ent(&e, "v1").i()).normal();
+    let edge = gcs_core::space::sub(at(&e, "c"), at(&e, "b"));
+    assert!(dot(n, edge).abs() < 1e-9 && n[1].abs() < 1e-9, "{n:?}");
+    assert!(dot(cross(n, edge), cross(n, edge)) > 1.0);
 }
 
-/// The points whose nearest point of the faces' meeting is on their edge: the slab across the
-/// edge's 40, within a ball of 30 about its middle `π(2hR² − 2h³/3)`, h = 20; and the same slab as
-/// the side of each face the edge ends on it runs on (#183 F7).
+/// Through a body the operand keeps its own name (§6.9 [0.18]), and a solid a feature made a
+/// body keeps its own sweep's faces.
 #[test]
-fn the_reach_of_an_edge_and_where_it_ends_are_one_slab() {
-    let e = solved(&format!("{BLOCK}{EDGE}c := point hint((20, 6, 0))\nball := std.Sphere(c, r: 30)\n\
-                             reach := {{ p | p inside ball; distance(p, crease) <= distance(p, meeting) }}\n\
-                             ended := {{ p | p inside ball; p inside crease.ends }}\n\
-                             sr := solid(reach)\nse := solid(ended)\n"));
-    let (r, h): (f64, f64) = (30.0, 20.0);
-    let want = PI * (2.0 * h * r * r - 2.0 * h.powi(3) / 3.0);
-    for name in ["sr", "se"] {
-        let field = MaterialField::read(&e.sketch, ent(&e, name).i(), 1e-10).unwrap();
-        assert!(field.side([20.0, 6.0, 25.0]) < 0.0 && field.side([45.0, 6.0, 0.0]) > 0.0, "{name}");
-        let got = field_volume(&field, [-10.0, -24.0, -30.0], [50.0, 36.0, 30.0], 30.0 / 128.0);
-        assert!((got - want).abs() < 2e-3 * want, "{name}: {got} against {want}");
-    }
+fn a_face_is_reached_through_bodies() {
+    let y = |src: &str| at(&solved(src), "m")[1];
+    let stock = "b0 := solid(f0, depth: 20)\nbody := solid(b0)\nm := point hint((5, 3, 5))\n";
+    assert!((y(&format!("{stock}m coincident body.b0.far\n")) - 20.0).abs() < 1e-9);
+    let cut = "b0 := solid(f0, depth: 20)\n\
+               in std.front {\n  e := point hint((10, 10))\n  r := circle(center: e) hint(r: 3)\n}\n\
+               fix((10, 10)) e\nradius(3) r\ng0 := face(r)\nbore := solid(g0, depth: 30)\n\
+               bore cut b0\nm := point hint((5, 3, 5))\nm coincident b0.far\n";
+    assert!((y(cut) - 20.0).abs() < 1e-9);
 }
 
-
-/// What a ball rolled along a convex edge cannot reach, written over F1–F3, F7 and F9 (#183 X3's
-/// `Run`), on one edge of the block: `r²(1 − π/4)` along its 40.
-const RUN: &str = "component Run(a: face, b: face, r: Length) := { p |\n\
-    p inside a\n    p inside b\n    angle(a, b, at: p) <= 180deg\n\
-    centres := { c | c inside a; c distance(>= r) a.surface; c inside b; c distance(>= r) b.surface }\n\
-    crease := { q | q coincident a; q coincident b }\n\
-    meeting := { q | q coincident a.surface; q coincident b.surface }\n\
-    distance(p, centres) >= r\n\
-    distance(p, crease) <= distance(p, meeting)\n\
-    p inside crease.ends\n}\n";
-
+/// What has no carrier yet is refused at the use, in its words.
 #[test]
-fn a_run_along_one_edge() {
-    let e = solved(&format!("{BLOCK}{RUN}run := Run(block.near, block.south, r: 3mm)\n\
-                             taken := solid(run)\n"));
-    let field = MaterialField::read(&e.sketch, ent(&e, "taken").i(), 1e-10).unwrap();
-    let want = 9.0 * (1.0 - PI / 4.0) * 40.0;
-    // the edge runs along x at y = z = 0; its round within 3 of it
-    let got = field_volume(&field, [-1.0, -4.0, -4.0], [41.0, 4.0, 4.0], 3.0 / 64.0);
-    assert!((got - want).abs() < 2e-3 * want, "{got} against {want}");
+fn a_face_with_no_carrier_is_refused_where_it_is_named() {
+    let src = |s: &str| format!("{PROFILE}b0 := solid(f0, depth: 20)\nm := point hint((5, 3, 5))\n{s}\n");
+    refused(&src("m coincident b0.top"), "E040", "names no face", "b0.top");
+    refused(&src("t := solid(f0, through: b0)\nm coincident t.near"), "E040",
+            "known only once", "t.near");
+    refused(&src("r0 := solid(f0, about: da)\nm coincident r0.end"), "E040",
+            "only a prism's faces", "r0.end");
+    refused(&src("body := solid(b0)\nm coincident body.near"), "E040", "is a body", "body.near");
 }
 
-
-/// **A word that makes solids** (#183 F4, F5, F8): `round` over two face groups, a run per pair
-/// of faces cut from the body the faces are of — here one pair, the block's near and south faces,
-/// so the block loses `r²(1 − π/4)` along its 40.
-const ROUND: &str = "A round(r) B := {\n\
-    repeat a in A {\n\
-      repeat b in B if b != a {\n\
-        run := Run(a, b, r: r)\n\
-        taken := solid(run)\n\
-        taken cut A.body\n\
-      }\n\
-    }\n}\n";
-
+/// A curved side is no set yet.
 #[test]
-fn a_word_rounds_an_edge() {
-    let box_ = ([-1.0, -4.0, -4.0], [41.0, 4.0, 4.0]);
-    let sharp = solved(&format!("{BLOCK}"));
-    let before = field_volume(&MaterialField::read(&sharp.sketch, ent(&sharp, "block").i(), 1e-10).unwrap(),
-                              box_.0, box_.1, 3.0 / 64.0);
-    let e = solved(&format!("{BLOCK}{RUN}{ROUND}block.near round(r: 3mm) block.south\n"));
-    let field = MaterialField::read(&e.sketch, ent(&e, "block").i(), 1e-10).unwrap();
-    let after = field_volume(&field, box_.0, box_.1, 3.0 / 64.0);
-    let want = 9.0 * (1.0 - PI / 4.0) * 40.0;
-    assert!((before - after - want).abs() < 2e-3 * want, "{} against {want}", before - after);
+fn a_curved_side_is_refused() {
+    let src = "use std\nin std.front {\n  o := point hint((0, 0))\n  k := circle(center: o) hint(r: 5)\n}\n\
+               fix((0, 0)) o\nradius(5) k\ng0 := face(k)\nb0 := solid(g0, depth: 10)\n\
+               m := point hint((5, 3, 5))\nm coincident b0.k\n";
+    refused(src, "E040", "curved side", "b0.k");
 }
 
-/// **A library feature written in Solvent** (#183 step 4's gate): a word that makes a solid and cuts
-/// it from the body its operands are faces of — an edge relief, the points within `d` of both
-/// faces' patches — over each pair of faces it names: the block loses `d²` along its 40.
+/// A solid swept from a face written in place has the same faces: `solid(face(ab, …), …)`.
 #[test]
-fn a_word_makes_a_relief() {
-    let word = "A relieved(d) B := {\n\
-                  repeat a in A {\n\
-                    repeat b in B if b != a {\n\
-                      groove := { p | p distance(<= d) a; p distance(<= d) b; p inside a; p inside b }\n\
-                      relief := solid(groove)\n\
-                      relief cut A.body\n\
-                    }\n\
-                  }\n\
-                }\n";
-    let box_ = ([-1.0, -2.0, -2.0], [41.0, 2.0, 2.0]);
-    let sharp = solved(BLOCK);
-    let before = field_volume(&MaterialField::read(&sharp.sketch, ent(&sharp, "block").i(), 1e-10).unwrap(),
-                              box_.0, box_.1, 1.0 / 32.0);
-    let e = solved(&format!("{BLOCK}{word}block.near relieved(d: 1mm) block.south\n"));
-    let after = field_volume(&MaterialField::read(&e.sketch, ent(&e, "block").i(), 1e-10).unwrap(),
-                             box_.0, box_.1, 1.0 / 32.0);
-    let want = 40.0;
-    assert!((before - after - want).abs() < 2e-3 * want, "{} against {want}", before - after);
+fn a_face_written_in_place_is_a_set_too() {
+    let inline = PROFILE.replace("f0 := face(ab, bc, cd, da)\n", "");
+    let mut e = read(&format!("{inline}b0 := solid(face(ab, bc, cd, da), depth: 20)\n\
+        m := point hint((5, 3, 5))\nm coincident b0.far\n\
+        q := point hint((5, 3, 25))\nq coincident b0.cd\n"));
+    assert!(solve(&mut e.sketch, SolveOpts::default()).success);
+    assert!((at(&e, "m")[1] - 20.0).abs() < 1e-9);
+    assert!((at(&e, "q")[2] - 30.0).abs() < 1e-9);
 }

@@ -2071,6 +2071,35 @@ pub unsafe extern "C" fn gcs_field_mesher_free(m: *mut Mesher) {
     })
 }
 
+/// **What a Boolean would make of a body, before it is written** (#162 F4): `{target, word:
+/// "union" | "cut" | "bound", tools: [index…]}` in, `Sketch::preview_body`'s mesh out as `{faces,
+/// positions, normals}` — the shape `gcs_solid_mesh`'s three calls give apart, in world
+/// coordinates, in one JSON answer: it is asked once a pick, never per frame.  Null with the
+/// cause where it is refused.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_solid_preview_json(h: *mut Sketch, ptr: *const u8, len: usize) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || {
+        let v = as_json(ptr, len);
+        let index = |x: &Json| usize::try_from(x.as_i64()).unwrap_or(usize::MAX);
+        let Some(word) = gcs_core::syntax::BodyWord::parse(v.get("word").map_or("", |w| w.as_str())) else {
+            set_error("a preview's word is the body rule's: union, cut or bound".to_string());
+            return std::ptr::null_mut();
+        };
+        let target = v.get("target").map_or(usize::MAX, index);
+        let tools: Vec<usize> = v.get("tools").map(|t| t.arr().iter().map(index).collect()).unwrap_or_default();
+        let solid = match sk(h).preview_body(target, word, &tools) {
+            Ok(s) => s,
+            Err(message) => { set_error(message); return std::ptr::null_mut(); }
+        };
+        let m = solid.world_mesh();
+        out_json(Json::Obj(vec![
+            ("faces".into(), face_groups(&m)),
+            ("positions".into(), Json::from(m.positions)),
+            ("normals".into(), Json::from(m.normals)),
+        ]))
+    })
+}
+
 /// **The faces of that mesh**, as the document names them: `[{ "path", "start", "count",
 /// "smooth" }]`, where `start` and `count` are triangles.  A viewer selects and shades by these
 /// — `body.bore.wall` and not a triangle index.
@@ -2081,24 +2110,24 @@ pub unsafe extern "C" fn gcs_solid_faces_json(h: *mut Sketch, idx: i32, unit: f6
             Ok(s) => s,
             Err(message) => { set_error(message); return std::ptr::null_mut(); }
         };
-        let m = solid.mesh();
-        out_json(gcs_core::json::Json::Arr(
-            m.groups
-                .iter()
-                .map(|g| {
-                    let mut o = gcs_core::json::Json::Obj(vec![
-                        ("path".into(), gcs_core::json::Json::Str(g.path.clone())),
-                        ("start".into(), gcs_core::json::Json::Int(g.start as i64)),
-                        ("count".into(), gcs_core::json::Json::Int(g.count as i64)),
-                    ]);
-                    if g.smooth {
-                        o.set("smooth", gcs_core::json::Json::Bool(true));
-                    }
-                    o
-                })
-                .collect(),
-        ))
+        out_json(face_groups(solid.mesh()))
     })
+}
+
+/// A mesh's faces as `[{ "path", "start", "count", "smooth" }]` — what `gcs_solid_faces_json`
+/// and a preview's `faces` say, one shape for `core/mesh.ts`'s one `Face`.
+fn face_groups(m: &gcs_core::mesh::Mesh) -> Json {
+    Json::Arr(m.groups.iter().map(|g| {
+        let mut o = Json::Obj(vec![
+            ("path".into(), Json::Str(g.path.clone())),
+            ("start".into(), Json::Int(g.start as i64)),
+            ("count".into(), Json::Int(g.count as i64)),
+        ]);
+        if g.smooth {
+            o.set("smooth", Json::Bool(true));
+        }
+        o
+    }).collect())
 }
 
 /// **A solid as a `.glb`**: binary glTF, every face of the object a named node, positions in
@@ -2306,10 +2335,16 @@ pub unsafe extern "C" fn gcs_workspace_pick_solid_json(h: *mut Sketch, az: f64, 
                 ("solid", Json::Int(hit.solid as i64)),
                 ("face", Json::Str(hit.face)),
                 ("depth", Json::Num(hit.depth)),
+                ("at", Json::Arr(hit.at.iter().map(|&x| Json::Num(x)).collect())),
             ]),
             None => Json::Null,
         })
     })
+}
+
+/// A point on the eye's picture plane, `[x, y]`.
+fn pt(p: (f64, f64)) -> Json {
+    Json::Arr(vec![Json::Num(p.0), Json::Num(p.1)])
 }
 
 /// The arrow prism `solid` is sized by, seen by the eye at `az`, `el`: `{base: [x, y], tip: [x, y]
@@ -2322,7 +2357,6 @@ pub unsafe extern "C" fn gcs_workspace_extrude_handle_json(h: *mut Sketch, az: f
         use gcs_core::overview::workspace::{extrude_handle, Projection};
         let s = sk(h);
         let proj = Projection::new(s, az, el);
-        let pt = |p: (f64, f64)| Json::Arr(vec![Json::Num(p.0), Json::Num(p.1)]);
         out_json(match extrude_handle(s, &proj, solid.max(0) as usize) {
             Some(k) => json::object([
                 ("base", pt(k.base)),
@@ -2345,6 +2379,75 @@ pub unsafe extern "C" fn gcs_workspace_extent_at(h: *mut Sketch, az: f64, el: f6
         let s = sk(h);
         let proj = Projection::new(s, az, el);
         extent_at(s, &proj, solid.max(0) as usize, (x, y)).unwrap_or(f64::NAN)
+    })
+}
+
+/// The handle revolution `solid` is sized by, seen by the eye at `az`, `el`: `{base: [x, y], arc:
+/// [[x, y], …], tip: [x, y] | null, turn}` — the arc its profile's middle turns through, no tip
+/// seen along the turning plane, `turn` in degrees, positive right-handed about the axis — or
+/// `null` for no revolution: `workspace::turn_handle`.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_workspace_turn_handle_json(h: *mut Sketch, az: f64, el: f64,
+                                                        solid: i32) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || {
+        use gcs_core::overview::workspace::{turn_handle, Projection};
+        let s = sk(h);
+        let proj = Projection::new(s, az, el);
+        out_json(match turn_handle(s, &proj, solid.max(0) as usize) {
+            Some(k) => json::object([
+                ("base", pt(k.base)),
+                ("arc", Json::Arr(k.arc.into_iter().map(pt).collect())),
+                ("tip", k.tip.map_or(Json::Null, pt)),
+                ("turn", Json::Num(k.turn)),
+            ]),
+            None => Json::Null,
+        })
+    })
+}
+
+/// How far revolution `solid` turns, in signed degrees, where its handle is dragged to (x, y) on
+/// the eye's picture plane, the whole turns round nearest `near` — or NaN: `workspace::turn_at`.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_workspace_turn_at(h: *mut Sketch, az: f64, el: f64, solid: i32,
+                                               x: f64, y: f64, near: f64) -> f64 {
+    guard(f64::NAN, move || {
+        use gcs_core::overview::workspace::{turn_at, Projection};
+        let s = sk(h);
+        let proj = Projection::new(s, az, el);
+        turn_at(s, &proj, solid.max(0) as usize, (x, y), near).unwrap_or(f64::NAN)
+    })
+}
+
+/// The arrow the plane distance `id` is sized by, seen by the eye at `az`, `el`: `{base: [x, y],
+/// tip: [x, y] | null, distance}` — or `null` for any other constraint: `workspace::offset_handle`.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_workspace_offset_handle_json(h: *mut Sketch, az: f64, el: f64,
+                                                          id: u32) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || {
+        use gcs_core::overview::workspace::{offset_handle, Projection};
+        let s = sk(h);
+        let proj = Projection::new(s, az, el);
+        out_json(match offset_handle(s, &proj, id) {
+            Some(k) => json::object([
+                ("base", pt(k.base)),
+                ("tip", k.tip.map_or(Json::Null, pt)),
+                ("distance", Json::Num(k.distance)),
+            ]),
+            None => Json::Null,
+        })
+    })
+}
+
+/// What dragging the plane distance `id`'s arrow to (x, y) sizes it to, or NaN:
+/// `workspace::offset_at`.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_workspace_offset_at(h: *mut Sketch, az: f64, el: f64, id: u32,
+                                                 x: f64, y: f64) -> f64 {
+    guard(f64::NAN, move || {
+        use gcs_core::overview::workspace::{offset_at, Projection};
+        let s = sk(h);
+        let proj = Projection::new(s, az, el);
+        offset_at(s, &proj, id, (x, y)).unwrap_or(f64::NAN)
     })
 }
 
@@ -4166,22 +4269,44 @@ pub unsafe extern "C" fn gcs_elab_extrude(h: *mut Elaborated, s: *mut Sketch, pt
                                           len: usize) -> *mut u8 {
     guard(std::ptr::null_mut(), move || {
         let v = as_json(ptr, len);
-        let outer = v.get("outer").map(strings).unwrap_or_default();
-        let holes: Vec<Vec<String>> =
-            v.get("holes").map(|a| a.arr().iter().map(strings).collect()).unwrap_or_default();
-        let body = v.get("body").map(|x| x.as_str().to_string());
-        let with = match (v.get("word").map(|w| w.as_str()), body.as_deref()) {
-            (None, _) => None,
-            (Some(w), body) => match (gcs_core::syntax::BodyWord::parse(w), body) {
-                (Some(word), Some(body)) => Some((word, body)),
-                _ => {
-                    set_error(format!("`{w}` with a body is the body rule: union, cut or bound"));
-                    return std::ptr::null_mut();
-                }
-            },
-        };
+        let Some((outer, holes, body)) = region_request(&v) else { return std::ptr::null_mut() };
+        let with = body.as_ref().map(|(w, b)| (*w, b.as_str()));
         let through = v.get("through").is_some_and(|x| x.as_bool());
         out_edit(gcs_core::edit::extrude(&(*h).program, sk(s), &outer, &holes, with, through))
+    })
+}
+
+/// What a region's solid is asked: its outer loop and holes by name, and the body rule it joins
+/// with — `word` and `body`, or neither — or `None` with the error set, for a word that is not
+/// one.
+fn region_request(v: &Json)
+    -> Option<(Vec<String>, Vec<Vec<String>>, Option<(gcs_core::syntax::BodyWord, String)>)> {
+    let outer = v.get("outer").map(strings).unwrap_or_default();
+    let holes = v.get("holes").map(|a| a.arr().iter().map(strings).collect()).unwrap_or_default();
+    let body = match (v.get("word").map(|w| w.as_str()), v.get("body").map(|b| b.as_str())) {
+        (None, _) => None,
+        (Some(w), body) => match (gcs_core::syntax::BodyWord::parse(w), body) {
+            (Some(word), Some(body)) => Some((word, body.to_string())),
+            _ => {
+                set_error(format!("`{w}` with a body is the body rule: union, cut or bound"));
+                return None;
+            }
+        },
+    };
+    Some((outer, holes, body))
+}
+
+/// A revolution of the region a click found about a line or an axis — `{outer: [..], holes:
+/// [[..]], about, word?: "union" | "cut", body?}` — the face, the solid and the body rule in one
+/// splice: `edit::revolve`.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_elab_revolve(h: *mut Elaborated, ptr: *const u8, len: usize) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || {
+        let v = as_json(ptr, len);
+        let Some((outer, holes, body)) = region_request(&v) else { return std::ptr::null_mut() };
+        let with = body.as_ref().map(|(w, b)| (*w, b.as_str()));
+        let about = v.get("about").map(|x| x.as_str().to_string()).unwrap_or_default();
+        out_edit(gcs_core::edit::revolve(&(*h).program, &outer, &holes, &about, with))
     })
 }
 
@@ -4202,6 +4327,17 @@ pub unsafe extern "C" fn gcs_elab_set_sweep(h: *mut Elaborated, solid: i32, ptr:
     })
 }
 
+/// Rewrite how far revolution `solid` turns about what it turns about — `angle` the text, in
+/// degrees, a number signed (negative clockwise): `edit::set_turn`.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_elab_set_turn(h: *mut Elaborated, solid: i32, ptr: *const u8,
+                                           len: usize) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || {
+        let angle = as_str(ptr, len);
+        out_edit(gcs_core::edit::set_turn(&*h, &(*h).program, solid.max(0) as usize, angle))
+    })
+}
+
 /// Re-extrude prism `i` where it stands, `d` thick the way `way` says (0 behind, 1 in front, 2
 /// both) — the preview an extrusion being sized shows before the source is written:
 /// `Sketch::set_prism`.  1 done, 0 not a prism.
@@ -4212,7 +4348,16 @@ pub unsafe extern "C" fn gcs_sketch_set_prism(h: *mut Sketch, i: i32, way: i32, 
     guard(0, move || i32::from(i >= 0 && sk(h).set_prism(i as usize, way, d)))
 }
 
-/// Bumped whenever a solid's shape changes in place (`set_prism`): what a cached mesh keys on.
+/// Re-turn revolution `i` where it stands through `degrees`, signed (negative clockwise about its
+/// axis) — the preview a revolution being sized shows before the source is written:
+/// `Sketch::set_turn`.  1 done, 0 not a revolution.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_sketch_set_turn(h: *mut Sketch, i: i32, degrees: f64) -> i32 {
+    guard(0, move || i32::from(i >= 0 && sk(h).set_turn(i as usize, degrees)))
+}
+
+/// Bumped whenever a solid's shape changes in place (`set_prism`, `set_turn`): what a cached mesh
+/// keys on.
 #[no_mangle]
 pub unsafe extern "C" fn gcs_sketch_shape_epoch(h: *mut Sketch) -> u32 {
     guard(0, move || sk(h).shape_epoch)
@@ -4237,7 +4382,42 @@ pub unsafe extern "C" fn gcs_elab_add_datum(h: *mut Elaborated, s: *mut Sketch, 
     })
 }
 
-/// The body rule, `{word: "union" | "cut" | "bound", what, body}`: `edit::add_body_word`.
+/// Sketch on a face of object `solid`, `{face, at?: [x, y, z], name?}` — a plane lying on face
+/// `face`, seeded where the eye's ray met it on the live drawing `s`: `edit::sketch_on_face`.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_elab_sketch_on_face(h: *mut Elaborated, s: *mut Sketch, solid: i32,
+                                                 ptr: *const u8, len: usize) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || {
+        let v = as_json(ptr, len);
+        let face = v.get("face").map(|x| x.as_str().to_string()).unwrap_or_default();
+        let at = v.get("at").and_then(|a| match a.arr() {
+            [x, y, z] => Some([x.as_f64(), y.as_f64(), z.as_f64()]),
+            _ => None,
+        });
+        let name = v.get("name").map(|x| x.as_str().to_string());
+        let Ok(solid) = usize::try_from(solid) else {
+            set_error("no solid to sketch on");
+            return std::ptr::null_mut();
+        };
+        out_edit(gcs_core::edit::sketch_on_face(&*h, sk(s), solid, &face, at, name.as_deref()))
+    })
+}
+
+/// The plane already lying on face `face` of object `solid`, by name, or `null`:
+/// `edit::face_plane`.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_elab_face_plane_json(h: *mut Elaborated, s: *mut Sketch, solid: i32,
+                                                  ptr: *const u8, len: usize) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || {
+        let face = std::str::from_utf8(std::slice::from_raw_parts(ptr, len)).unwrap_or_default();
+        let found = usize::try_from(solid).ok()
+            .and_then(|i| gcs_core::edit::face_plane(&*h, sk(s), i, face));
+        out_json(found.map_or(Json::Null, Json::Str))
+    })
+}
+
+/// The body rule, `{word: "union" | "cut" | "bound", what: [..], body}`, a statement for each
+/// solid in `what`, in one splice: `edit::add_body_word`.
 #[no_mangle]
 pub unsafe extern "C" fn gcs_elab_add_body_word(h: *mut Elaborated, ptr: *const u8, len: usize) -> *mut u8 {
     guard(std::ptr::null_mut(), move || {
@@ -4247,7 +4427,9 @@ pub unsafe extern "C" fn gcs_elab_add_body_word(h: *mut Elaborated, ptr: *const 
             set_error(format!("`{}` is not a body word: union, cut or bound", text("word")));
             return std::ptr::null_mut();
         };
-        out_edit(gcs_core::edit::add_body_word(&(*h).program, word, text("what"), text("body")))
+        let what = v.get("what").map(strings).unwrap_or_default();
+        let what: Vec<&str> = what.iter().map(String::as_str).collect();
+        out_edit(gcs_core::edit::add_body_word(&(*h).program, word, &what, text("body")))
     })
 }
 

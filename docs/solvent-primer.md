@@ -952,7 +952,7 @@ An axis read only as a direction counts two freedoms; `p coincident t` adds the 
 as does `l coincident t` (either way round), which also lays the line along it.
 Its `origin` is the point on it nearest the world origin. `parallel`, `perpendicular` and
 `angle` take an axis beside an axis or a drawn line, and wherever an axis is expected a drawn line
-is read as one, from `p1` toward `p2`; the reverse does not hold: a turn's `about:` and a motion's `about:`/`along:` take a drawn line, never an `axis`. A plane
+is read as one, from `p1` toward `p2`; the reverse does not hold: a motion's `about:`/`along:` takes a drawn line, never an `axis` — though a revolution's `about:` takes either (below). A plane
 over a line stands on it: `plane(u: hinge, v: …)`
 lies along the hinge and through it, and a plane over two lines that share an end stands at
 that end (`std.Turned(o, t)` stands at `o`).
@@ -1229,8 +1229,11 @@ are refused. `examples/solid_tooth.sv` is an involute tooth written this way.
   i.e. `from: -30mm, to: 0mm`; write `from:`/`to:` when the face is not at an end. `through: body`
   spans the target's stock and additions both ways along the normal, ignoring other cutters, and
   follows the solve.
-- **Revolution**, about a line **in the face's own plane**: `about: ax` is a full turn;
-  `sweep: 90deg` a partial one (caps `start` and `end`); `sense: cw` reverses it.
+- **Revolution**, about a line or an axis **in the face's own plane**: `about: ax` is a full
+  turn; `sweep: 90deg` a partial one (caps `start` and `end`); `sense: cw` reverses it. An axis
+  lies in the plane when it is one of the plane's own (`about: std.z` on `std.front`, `about:
+  v0.u`), or when the solve puts it there — an axis that ends up elsewhere refuses the solid where
+  it is evaluated (E081 at once where nothing moves it).
 - **Guided sweep or loft** along a directed line or circular arc:
   `duct := solid(section, along: guide)`, `reducer := solid(inlet.profile, outlet.profile,
   along: guide)`. The start section is perpendicular to the start tangent, an explicit end
@@ -1354,6 +1357,43 @@ before `body := solid(stock)` gives the same number: both sides of the body rule
   `P distance(d) Q` with an axis through both origins (1.13); a part's thickness is the distance
   stated, so the stack keeps its numbers in step. There is no mate word.
 
+#### Sketching on a face
+
+A face of a solid names a **set**: the surface it lies on, carried past its edges. For a prism
+these are:
+
+- `b0.near` and `b0.far`, the caps at its higher and lower extent;
+- `b0.ab`, the side swept from the straight edge `ab`;
+- `body.b0.near` for the same cap reached through a body.
+
+A point is put on one as on any set, and a plane lies on one by touching it at its own origin.
+That is what sketching on a face says:
+
+```
+b0 := solid(f0, depth: 20)
+v1 := plane(u: hint(dir: (1, 0, 0)), v: hint(dir: (0, 0, 1))) hint(origin: (10, 20, 10))
+v1.origin coincident b0.far
+v1 tangent(at: v1.origin) b0.far
+```
+
+Draw on `v1` (`in v1 { … }`) and extrude again.
+
+The set is written over the solid's own extent and profile. Change `depth: 20` and `v1`, with
+everything drawn on it, goes with the face.
+
+`v1` keeps four freedoms: where its origin sits on the face, and how its axes turn there. Hold
+them like anything else (`v1.origin coincident p`, `v1.u parallel ab`).
+
+Double-clicking a face in the workspace writes these three statements. If a plane already lies
+on the face, it chooses that one instead (a cap on the profile is the profile's own plane).
+
+Refused, at the face's name (**E040**):
+
+- a curved side, over an arc or a circle;
+- a `through:` solid's caps, whose extent is known only after the solve;
+- an edge with no name to call its side by;
+- the faces of a revolution, a loft or a sweep, which are not sets yet.
+
 #### Writing a part
 
 The statement follows from where the part's axis lies relative to its section. The V-twin piston
@@ -1417,9 +1457,10 @@ sheet's to state.
 | `bad := solid(sec)`, `sec` a face | E080 — "a body is made of solids, and this is a face" |
 | `bad := solid(sec, from: 0mm, to: 0mm)` | E080 — "a prism swept nowhere is no solid" |
 | `bad := solid(sec, about: ax, sweep: -90deg)` | E040 — "a sweep is a magnitude: which way it turns is `sense: cw`" |
-| `bad := solid(sec, about: a)` | E081 — "a face turns about a line, and `a` is a point" |
+| `bad := solid(sec, about: a)` | E081 — "a face turns about a line or an axis, and `a` is a point" |
+| `bad := solid(sec, about: std.y)` (a face on `std.front`) | E081 — "`std.y` does not lie in the face's own plane" |
 | `bad := solid(sec, depth: 3mm, about: ax)` | E001 — "a solid is a face swept along its normal (`from:`/`to:`, `depth:`) or turned about a line (`about:`), not both" |
-| `x cut y` and `y cut x` | E041 — "`x` is made of itself" |
+| `x cut y` and `y cut x` | E041 at the second — "`x` would be made of itself: `y` is made of it" |
 | `h cut h` | E080 — "`h` is cut itself" |
 
 

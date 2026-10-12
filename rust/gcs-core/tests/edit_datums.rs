@@ -119,12 +119,73 @@ fn a_plane_holds_two_rays_or_three_points() {
     }
 }
 
+/// An offset plane (#162 F5): parallel, and as far off as it is set, said — so the number is
+/// there to size.
 #[test]
-fn a_plane_from_a_plane_is_parallel_and_set_off() {
+fn a_plane_from_a_plane_is_parallel_and_set_off_by_a_stated_distance() {
     let (text, e) = drop(EntKind::Plane, &["std.top"], None);
     assert!(text.contains("v0 parallel std.top\n"), "{text}");
+    let d: f64 = text.split("std.top distance(").nth(1).and_then(|t| t.split(") v0\n").next())
+        .and_then(|t| t.parse().ok()).unwrap_or_else(|| panic!("no distance stated\n{text}"));
     let (n, o) = plane(&e, "v0");
-    assert!(along(n, [0.0, 0.0, 1.0]) && o[2].abs() > 1.0, "{n:?} {o:?}");
+    assert!(along(n, [0.0, 0.0, 1.0]) && (o[2] - d).abs() < 1e-9 && d > 1.0, "{n:?} {o:?} {d}");
+}
+
+/// A 40 × 30 block on the front plane (normal −y), 20 deep behind it.
+const BLOCK: &str = "use std\nin std.front {\n  a := point hint((0, 0))\n  b := point hint((40, 0))\n\
+    c := point hint((40, 30))\n  d := point hint((0, 30))\n  ab := line(a, b)\n\
+    bc := line(b, c)\n  cd := line(c, d)\n  da := line(d, a)\n}\n\
+    fix((0, 0)) a\nfix((40, 0)) b\nfix((40, 30)) c\nfix((0, 30)) d\n\
+    f0 := face(ab, bc, cd, da)\nb0 := solid(f0, depth: 20)\n";
+
+/// Sketch on `face` of the block where the eye's ray met it, and the document it makes, solved.
+fn on_face(face: &str, at: Option<[f64; 3]>) -> (String, Elaborated) {
+    let mut e = build(BLOCK);
+    assert!(solve::solve(&mut e.sketch, Default::default()).success);
+    let b0 = e.map.ent_named("b0").unwrap().i();
+    let out = edit::sketch_on_face(&e, &e.sketch, b0, face, at, None);
+    assert_eq!(out.refused, None, "{face}");
+    assert_eq!(out.kind, Kind::Structural);
+    let mut next = build(&out.text);
+    assert!(solve::solve(&mut next.sketch, Default::default()).success, "{}", out.text);
+    (out.text, next)
+}
+
+/// **Sketch on a face** (#162 F5): a plane lying on the face, its origin where the eye's ray met
+/// the face, said as the set the face is — and found lying there afterwards, so a second sketch
+/// on the face is drawn on it.
+#[test]
+fn sketching_on_a_cap_writes_a_plane_touching_it_where_it_was_clicked() {
+    let (text, e) = on_face("b0.far", Some([10.0, 23.0, 12.0]));
+    assert!(text.contains("v0 := plane(u: hint(dir: (1, 0, 0)), v: hint(dir: (0, 0, 1))) \
+                           hint(origin: (10, 20, 12))\n"), "{text}");
+    assert!(text.ends_with("v0.origin coincident b0.far\nv0 tangent(at: v0.origin) b0.far\n"), "{text}");
+    let (n, o) = plane(&e, "v0");
+    assert!(along(n, [0.0, 1.0, 0.0]) && (o[1] - 20.0).abs() < 1e-9, "{n:?} {o:?}");
+    let b0 = e.map.ent_named("b0").unwrap().i();
+    assert_eq!(edit::face_plane(&e, &e.sketch, b0, "b0.far").as_deref(), Some("v0"));
+    // the cap on the profile is the profile's own plane
+    assert_eq!(edit::face_plane(&e, &e.sketch, b0, "b0.near").as_deref(), Some("std.front"));
+    assert_eq!(edit::face_plane(&e, &e.sketch, b0, "b0.cd"), None);
+}
+
+/// A side is the plane through its edge along the profile's normal; with no click the sketch
+/// starts at the side's middle.
+#[test]
+fn sketching_on_a_side_starts_at_its_middle() {
+    let (text, e) = on_face("b0.cd", None);
+    assert!(text.contains("hint(origin: (20, 10, 30))"), "{text}");
+    let (n, o) = plane(&e, "v0");
+    assert!(along(n, [0.0, 0.0, 1.0]) && (o[2] - 30.0).abs() < 1e-9, "{n:?} {o:?}");
+}
+
+#[test]
+fn a_face_with_nothing_to_sketch_on_is_refused() {
+    let e = build(BLOCK);
+    let b0 = e.map.ent_named("b0").unwrap().i();
+    let out = edit::sketch_on_face(&e, &e.sketch, b0, "b0.top", None, None);
+    assert!(out.refused.is_some_and(|m| m.contains("names no face")));
+    assert_eq!(out.text, e.program.text());
 }
 
 #[test]

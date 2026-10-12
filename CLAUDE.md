@@ -226,6 +226,9 @@ axis or plane; `linear`: affine only, one probe) on the probe, else E040; read b
 **Faces as sets** (#183 F1, F9): in a set's body a solid and the fields past it are a face
 reference (`relations::face_ref` → `model::FaceRef { solid, path, surface }`: `pad.plate.near`,
 `pad.boss` every face `boss` gave `pad`, `block`, a last `.surface` its whole surface).
+Beside #162 F5's carrier (below): a set use the walk has already written (`m coincident b0.near`,
+a drawn point or a plane) is the face's carrier, made by `Walk::face_sets` before the uses are
+expanded; a face path in a set's body, walked after, is read here, its patch.
 `relations::face_relation` makes `p inside/outside[(d)] F` a `RegionShape::FaceSide` (signed
 distance from the surface, positive away from the material), `p distance(… d) F` and `p coincident
 F` a `Measured` over `Target::Face`; `distance(p, F)` in a sum the same; `angle(a, b, at: p)` (the
@@ -236,7 +239,7 @@ solid. Read by `solid::faces::BodyFaces` off `brep::recipe::build(cad::recipe(�
 unshifted; face names matched by `faces`), **the stratum**: a body read by regions that are its
 own terms (`readers_of`) is read with them taken out of every body (`without`, a cloned sketch).
 A region reading faces may have no support (`RegionField` with `None`): a cut needs none.
-`reads` pushes a read solid. `tests/face_sets.rs` is the gate.
+`reads` pushes a read solid. `tests/region_faces.rs` is the gate.
 **The distance from a set** (#183 F2) and **where an edge ends** (F7): a set a measurement names,
 or `p inside S.ends`, gets a hidden point of its own (`sets::measured_sets`: key
 `{prefix}#{stmt}.m{k}`, a probe, `inner coincident S` applied under a prefix of its own so two
@@ -1651,6 +1654,53 @@ Conventions:
   gesture or no), and writes once at release through `edit::set_sweep` with
   `SolidSweep::thick(way, text)` (the bracket list replaced, `checked` as every gesture edit),
   taken without an undo push so it joins the click's step.  `tests/extrude.rs` is the gate.
+- **Revolve** (#162 F3): `about:` takes an **axis** lying in the face's plane as well as a line
+  drawn there (`SolidDef::Revolve::axis` an `EntRef`; every reader goes through
+  `Sketch::revolve_axis`, the axis in the profile plane's coordinates, `None` off the plane, within
+  `AXIS_IN_PLANE`).  `build_solid` refuses E081 only what it can judge (`axis_may_lie_in`: the
+  plane's own axes pass; an axis and plane wholly held are read now); one the solve places is
+  refused where evaluated.  The `revolve` tool (`q`) washes a region; its click waits
+  (`SketchView.pendingRevolve`) for a click on a line or axis (lit under the pointer), or takes one
+  already selected, and writes face, `solid(f, about: …)` (a whole turn) and with a body `union`
+  (⌥ `cut`) as one splice (`edit::revolve`, shared with `extrude` by `region_solid`).  Its turn is
+  sized as an extrusion's thickness (`LiveExtent` kind `turn`, signed degrees, negative `cw`): the
+  arc its profile's middle turns through (`workspace::turn_handle`, no tip seen along the turning
+  plane), dragged by `turn_at` (the whole turns nearest the last, so back past the start turns it
+  the other way).  Signed degrees end to end, read once by `model::turn_of` (sense, and a whole
+  turn as no `sweep:`): previewed by `Sketch::set_turn`, written by `edit::set_turn` (the
+  statement's own `about:` kept; an expression written whole the way it already turns).
+  `tests/revolve.rs` is the gate.
+- **Union, Cut, Intersect** (#162 F4): Boolean tools (`m`, `z`, `y`; `view.ts::combines`, Intersect
+  is `bound`) over **the solid selection, in click order**: the first body clicked is the target,
+  each after it a tool (clicked again, let go), a click back on the target or Enter
+  (`finishCombine`) writes `tool word target` for every tool in one splice
+  (`edit::add_body_word` takes a list), the target left picked; Escape lets the tools go, then the
+  target.  **One step of the body rule**, `Sketch::join_body` (`as_body` moves a sweep to a
+  stock past the last, the tool joins `word`'s set, `solid::reaches` asked once it is in, since a
+  `through:` reads only what its body adds; a cycle popped and refused, E041 **at that
+  statement**), states each statement in `program/solids.rs` and each tool of the **preview**:
+  `Sketch::preview_body` joins them on a clone (the caches' operands kept) and evaluates the
+  target there, so it is what the statements make and refused where they are; a body with a
+  swept operand is never previewed (FFI `gcs_solid_preview_json`, one JSON a pick, faces by the
+  shared `face_groups`; `core/mesh.ts::preview`).  `box3d` draws it in the target's place, the
+  tools as ghosts in their word's ink (`SketchView.combining` is the key).  `tests/booleans.rs`
+  is the gate.
+- **A face of a solid is a set** (#162 F5, [0.66]): `b0.near`, `b0.far`, a straight side `b0.ab`
+  and `body.b0.near` name the face's carrier, made by the flattener from the solid's own text
+  before the uses are expanded (`flatten/faces.rs`, `Walk::face_sets`; a face written in place
+  too): a cap `{ p | p distance(D, along: n) f0#plane }` (`coincident` at 0), a side `{ p | p
+  level(M) e.p1 }` over a hidden axis `M` square to the edge, parallel to the plane.  `f0#plane`
+  is a name the source cannot write, bound by the elaborator to the plane the face's edges are
+  drawn in before the constraints (`planes::face_planes`, `Expansion::face_planes`, which seeds
+  `M` too).  Refused at the use (E040): a curved side, a `through:` solid's caps, a non-prism.
+  **Sketching on a face** is `v1.origin coincident b0.near` + `v1 tangent(at: v1.origin)
+  b0.near` (`at:` takes a path), written by `edit::sketch_on_face` seeded on the numeric twin
+  `solid::carrier` where the eye's ray met it (`SolidHit::at`); `edit::face_plane` finds a plane
+  already lying there, which the app chooses instead (a double-click on a face, or Solids ▸
+  Sketch on face, `k`).  A plane dropped from a plane states `P distance(d) v` and is sized as an
+  extrusion is (`LiveExtent` kind `offset`, `workspace::offset_handle`/`offset_at`; previewed by
+  the constraint's number and a solve, written once by `set_dimension`).  `tests/face_sets.rs`
+  and `tests/edit_datums.rs` are the gates.
 - **A chain is a named traversal** (§6.6; issue #49, item 3). `profile := line -> … -> close`
   records a `NamedChain` beside the usual desugared declarations and constraints. The flattener
   scopes the binding and its links like ordinary component members; edges stay `boss.ab`, the

@@ -3,6 +3,7 @@
  * the fit tool makes nothing until it finishes and takes its own there. */
 import * as C from '../core/constraints.js';
 import { Line, Point, distanceBetween, onRadius } from '../core/model.js';
+import { combines } from './view.js';
 import type { Place, SketchView, Tool } from './view.js';
 
 export function setTool(v: SketchView, tool: Tool): void {
@@ -10,6 +11,8 @@ export function setTool(v: SketchView, tool: Tool): void {
   v.pending = [];
   v.pendingFit = [];
   v.hoverRegion = null;
+  v.pendingRevolve = null;
+  v.highlight = [];
   v.endExtent();                             // an extrusion being sized is done with the tool
   v.canvas.classList.toggle('select', tool === 'select');
   v.canvas.style.cursor = '';                // drop any hover affordance
@@ -23,11 +26,13 @@ export function setTool(v: SketchView, tool: Tool): void {
  *  arc strikes with its third click.  What comes back is an ordinary curve with an ordinary
  *  control polygon, so everything that edits a drawn one edits this one; a user who wants it
  *  to *keep* passing through somewhere says so with a point and the Coincident button. */
-/** Commit whichever curve tool is collecting — Enter, for the two tools whose click count is
- *  not known in advance.  Which one it is lives here, with the pending state. */
+/** Commit whichever tool is collecting — Enter, for the tools whose click count is not known in
+ *  advance: the two curve tools, and a Boolean's tools.  Which one it is lives here, with the
+ *  pending state. */
 export function finishCurve(v: SketchView): void {
   if (v.tool === 'spline') finishSpline(v);
   else if (v.tool === 'splinefit') finishSplineFit(v);
+  else if (combines(v.tool)) v.finishCombine();
 }
 
 /** Every point minted since there were `n0` is drawn in the current plane.  Called at the two
@@ -102,6 +107,23 @@ export function cancelTool(v: SketchView): void {
     v.draw();
     return;
   }
+  // a region waiting for the line to turn it about: let it go, the tool still down
+  if (v.pendingRevolve) {
+    v.pendingRevolve = null;
+    v.highlight = [];
+    v.draw();
+    return;
+  }
+  // a Boolean's bodies: its tools let go, then its target, the tool still down
+  if (combines(v.tool) && v.selectedSolids.length) {
+    const [target, ...tools] = v.selectedSolids;
+    if (tools.length) v.pickSolid(target);
+    else v.selected = [];
+    v.onSelect();
+    v.onChanged();
+    v.draw();
+    return;
+  }
   // an extrusion being sized: done sizing, the tool still down for the next
   if (v.liveExtent) {
     v.endExtent();
@@ -161,10 +183,16 @@ export function seedNamed(v: SketchView, name: string, x: number, y: number): vo
   }
 }
 
-/** A press with a tool down.  `alt` and `shift` are the press's modifiers: an extrusion with a
- *  body selected cuts it with ⌥, and cuts through all of it with ⌥⇧. */
+/** A press with a tool down.  `alt` and `shift` are the press's modifiers: an extrusion or a
+ *  revolution with a body selected cuts it with ⌥, and an extrusion cuts through all of it with
+ *  ⌥⇧. */
 export function toolClick(v: SketchView, sp: [number, number],
                           mods: { alt?: boolean; shift?: boolean } = {}): void {
+  // a Boolean picks bodies where the eye sees them, on no plane
+  if (combines(v.tool)) {
+    v.combineAt(sp[0], sp[1]);
+    return;
+  }
   // a standard plane chosen before the document had it is brought in by the first press: the
   // document gains `use std`, and what the press makes is drawn on the plane it now has
   if (!v.ensurePlane()) return;
@@ -176,6 +204,10 @@ export function toolClick(v: SketchView, sp: [number, number],
   // an extrusion writes its statements through `apply`, which takes its own undo step
   if (v.tool === 'extrude') {
     v.extrudeAt(sp[0], sp[1], mods.alt, mods.alt && mods.shift);
+    return;
+  }
+  if (v.tool === 'revolve') {
+    v.revolveAt(sp[0], sp[1], mods.alt);
     return;
   }
   const sk = v.sketch;

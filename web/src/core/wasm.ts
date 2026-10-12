@@ -95,10 +95,21 @@ export interface Abi {
   gcs_elab_extrude(h: number, s: number, p: number, n: number): number;
   gcs_elab_set_sweep(h: number, solid: number, p: number, n: number): number;
   gcs_sketch_set_prism(h: number, i: number, way: number, d: number): number;
+  gcs_elab_revolve(h: number, p: number, n: number): number;
+  gcs_sketch_set_turn(h: number, i: number, degrees: number): number;
+  gcs_elab_set_turn(h: number, solid: number, p: number, n: number): number;
+  gcs_workspace_turn_handle_json(h: number, az: number, el: number, solid: number): number;
+  gcs_workspace_turn_at(h: number, az: number, el: number, solid: number,
+                        x: number, y: number, near: number): number;
   gcs_sketch_shape_epoch(h: number): number;
   gcs_workspace_extrude_handle_json(h: number, az: number, el: number, solid: number): number;
   gcs_workspace_extent_at(h: number, az: number, el: number, solid: number,
                           x: number, y: number): number;
+  gcs_workspace_offset_handle_json(h: number, az: number, el: number, id: number): number;
+  gcs_workspace_offset_at(h: number, az: number, el: number, id: number,
+                          x: number, y: number): number;
+  gcs_elab_sketch_on_face(h: number, s: number, solid: number, p: number, n: number): number;
+  gcs_elab_face_plane_json(h: number, s: number, solid: number, p: number, n: number): number;
   gcs_elab_region_json(h: number, s: number, plane: number, x: number, y: number,
                        unit: number): number;
   gcs_elab_remove(h: number, sk: number, p: number, n: number): number;
@@ -200,6 +211,7 @@ export interface Abi {
   gcs_solid_mesh(h: number, idx: number, unit: number, out: number, cap: number): number;
   gcs_solid_normals(h: number, idx: number, unit: number, out: number, cap: number): number;
   gcs_solid_faces_json(h: number, idx: number, unit: number): number;
+  gcs_solid_preview_json(h: number, p: number, n: number): number;
   gcs_sketch_defer_fields(h: number, on: number): void;
   gcs_sketch_field_jobs(h: number): number;
   gcs_solid_supply_field(h: number, idx: number, vertices: number, nv: number, triangles: number,

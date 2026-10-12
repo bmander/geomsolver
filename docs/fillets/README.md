@@ -554,7 +554,7 @@ are listed below.
 | | spelling | evaluated by | gate |
 |---|---|---|---|
 | F3 | `distance(p, f1) + distance(p, f2) <= 10mm`, a statement of a set's body (closed, `<=`/`>=`; a sum of measurements times numbers) | the field (`RegionField`, divided through by Σ\|cᵢ\|) | an ellipsoid by its foci, a Voronoi cell (`region_general.rs`) |
-| F1 | `p inside block.near`, `p distance(<= d) block.near`, `distance(p, pad.plate.near.surface)`; a face path is a solid and the fields past it | the solid's exact boundary (`solid::faces`), names as `solid::exact` gives them | a face's patch grown, a half ball, a slice (`face_sets.rs`) |
+| F1 | `p inside block.near`, `p distance(<= d) block.near`, `distance(p, pad.plate.near.surface)`; a face path is a solid and the fields past it | the solid's exact boundary (`solid::faces`), names as `solid::exact` gives them | a face's patch grown, a half ball, a slice (`region_faces.rs`) |
 | F9 | `angle(a, b, at: p) <= 180deg` | a gate: whether it holds at the edge's point nearest `p` | convex and concave edges of a block and an L |
 | F2 | `distance(p, S)` for a set `S`, and `S.surface` | a hidden point per set; its conditions' nearest point (the boundary's edges and vertices where `S` is on faces' patches) | a weld's capsule, a clearance (Steiner), a reach slab |
 | F7 | `p inside S.ends` | the faces at each end of the run of edges `S` is | the same slab |

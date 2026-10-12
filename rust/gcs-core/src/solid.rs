@@ -38,6 +38,7 @@ pub mod cad;
 pub mod region;
 pub mod faces;
 pub mod conditions;
+pub mod carrier;
 mod profile;
 mod primitive;
 mod document;
@@ -51,7 +52,7 @@ use primitive::{facet_normal,finish};
 pub use document::{reads,resolve};
 mod static_boundary;
 pub use static_boundary::{static_solid,indexed,indexed_faces,primitive_triangles,StaticSolid,static_solid_at_unit};
-pub(crate) use document::{evaluation_operands,operand_paths};
+pub(crate) use document::{evaluation_operands,operand_paths,reaches};
 use document::{frame_origin,resolve_at};
 mod field;
 pub use field::{PlanarField,RevolvedField,ExtrudedField,SpatialField,SweptField,SweepEvaluator,SweepError,CHORD_SLACK};
@@ -505,12 +506,12 @@ fn validate_at(sk: &Sketch, si: usize, unit: f64) -> Result<std::collections::BT
                 "edge `{name}` collides with a sweep cap; rename the source edge"
             )));
         }
-        if let SolidDef::Revolve { axis, sweep, .. } = &s.def {
+        if let SolidDef::Revolve { face, axis, sweep, .. } = &s.def {
             if !sweep.value.is_finite() || sweep.value <= 0.0 {
                 return Err(fail("a revolution needs a finite positive sweep"));
             }
-            let axis = sk.lines.get(*axis as usize).ok_or_else(|| fail("no revolution axis"))?;
-            let (a, b) = (sk.point_xy(axis.p1 as usize), sk.point_xy(axis.p2 as usize));
+            let (a, b) = sk.revolve_axis(*face, *axis)
+                .ok_or_else(|| fail("the revolution axis does not lie in the profile's plane"))?;
             let length = (b.0 - a.0).dhypot(b.1 - a.1);
             if !length.is_finite() || length <= 0.0 { return Err(fail("a revolution axis must have nonzero finite length")); }
             let distances: Vec<_> = poly.pts.iter().map(|p|

@@ -10,7 +10,8 @@
  * `gcs_entity_params` already draws: tens of thousands of numbers all of one kind go in a
  * buffer, and the ragged small thing goes in JSON.  All three calls read one memoised answer. */
 import { Sketch } from './model.js';
-import { core, lastError, takeBytes, takeJson, withBuf } from './wasm.js';
+import type { BodyWord } from './program.js';
+import { core, lastError, takeBytes, takeJson, withBuf, withJson } from './wasm.js';
 
 /** One face of the object, as a run of triangles into the mesh's buffers. */
 export interface Face {
@@ -40,6 +41,19 @@ export function mesh(sk: Sketch, idx: number, unit: number): Mesh {
   const positions = readInto(n, (p, cap) => core().gcs_solid_mesh(sk.handle, idx, unit, p, cap));
   const normals = readInto(n, (p, cap) => core().gcs_solid_normals(sk.handle, idx, unit, p, cap));
   return { positions, normals, faces };
+}
+
+/** **What a Boolean would make of `target`** (indices into the sketch's solids): its mesh with
+ *  `tools` joined by `word`, as the statements would make it, written nowhere — the core's
+ *  `Sketch::preview_body`.  Throws with the cause where it is refused: where the statements
+ *  would be (a tool that is the target or made of it), or a body with a swept operand, whose
+ *  surface is meshed elsewhere and never for a preview. */
+export function preview(sk: Sketch, target: number, word: BodyWord, tools: number[]): Mesh {
+  const m = takeJson<{ faces: Face[]; positions: number[]; normals: number[] } | null>(
+    withJson({ target, word, tools }, (p, n) => core().gcs_solid_preview_json(sk.handle, p, n)));
+  if (!m) throw new Error(lastError());
+  return { faces: m.faces, positions: Float64Array.from(m.positions),
+           normals: Float64Array.from(m.normals) };
 }
 
 /** A flat `f64` buffer out of the core, sized by what the face table already said — so the

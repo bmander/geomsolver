@@ -98,17 +98,12 @@ pub fn reads_except(sk: &Sketch, si: usize, unit: f64, skip: &std::collections::
                 stack.push(*body);
             }
             SolidDef::Revolve { face, axis, sweep, sense } => {
-                v.extend([1.0, *axis as f64]);
+                v.extend([1.0, axis.kind as u8 as f64, axis.i() as f64]);
                 v.push(sweep.value);
                 v.push(if *sense == Sense::Cw { -1.0 } else { 1.0 });
                 face_reads(sk, *face, &mut v);
-                if let Some(l) = sk.lines.get(*axis as usize) {
-                    for p in [l.p1, l.p2] {
-                        let q = sk.point_xy(p as usize);
-                        v.push(q.0);
-                        v.push(q.1);
-                    }
-                }
+                // a line's ends or an axis's direction and foot; the plane is the face's, read
+                v.extend(sk.entity_params(*axis).iter().map(|&p| sk.params[p as usize].value));
             }
             SolidDef::Body { stock, on, through, bound } => {
                 v.extend([2.0, *stock as f64, on.len() as f64]);
@@ -243,6 +238,24 @@ pub(crate) fn evaluation_operands(sk: &Sketch, i: usize) -> Result<Vec<u32>, Str
         SolidDef::Through { body, .. } => material_sources(sk, body),
         _ => Ok(s.operands()),
     }
+}
+
+/// Does `from` reach `goal` through its operands?  The guard on the term walk, and the one thing
+/// a document can write that has no object behind it.
+pub(crate) fn reaches(sk: &Sketch, from: u32, goal: u32) -> bool {
+    let mut pending = vec![from];
+    let mut seen = std::collections::BTreeSet::new();
+    while let Some(i) = pending.pop() {
+        if !seen.insert(i) { continue; }
+        if sk.solids.get(i as usize).is_some() {
+            let Ok(operands) = evaluation_operands(sk, i as usize) else { return true };
+            for o in operands {
+                if o == goal { return true; }
+                pending.push(o);
+            }
+        }
+    }
+    false
 }
 
 /// **Resolve a solid into primitives and a term.**  The term walk: a body is its stock, plus
@@ -485,10 +498,9 @@ fn build(
                 let (lo, hi) = through_extent.expect("through extent was resolved before sweeping");
                 prism(&p, lo, hi, &name)
             }
-            SolidDef::Revolve { axis, sweep, sense, .. } => {
-                let Some(l) = sk.lines.get(*axis as usize) else { return Term::Empty };
-                let (a, b) = (sk.point_xy(l.p1 as usize), sk.point_xy(l.p2 as usize));
-                revolve(&p, (a, b), sweep.value, *sense, unit, &name)
+            SolidDef::Revolve { face, axis, sweep, sense } => {
+                let Some(ab) = sk.revolve_axis(*face, *axis) else { return Term::Empty };
+                revolve(&p, ab, sweep.value, *sense, unit, &name)
             }
             SolidDef::Body { .. } | SolidDef::Loft { .. } | SolidDef::Placed { .. }
                 | SolidDef::Swept { .. } | SolidDef::Region { .. } => unreachable!(),

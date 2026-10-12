@@ -974,15 +974,42 @@ fn extrude_edit(
     with: Option<(syntax::BodyWord, &str)>,
     through: bool,
 ) -> Result<Edit, String> {
-    let mut taken = taken_names(prog);
-    let (mut stmts, faces) = face_stmts(&mut taken, outer, holes, None)?;
-    let solid = chosen_name(&mut taken, None, EntKind::Solid)?;
     let sweep = match (through, with) {
         (true, Some((_, body))) => SolidSweep { through: Some(body.to_string()), ..Default::default() },
         (true, None) => return Err("a cut through all goes through a body: select it first".into()),
         (false, _) => SolidSweep { depth: Some(syntax::num(set_off(sk))), ..Default::default() },
     };
-    stmts.push(solid_stmt(&solid, &faces[0], sweep.sweep()?));
+    region_solid(prog, outer, holes, &sweep, with)
+}
+
+/// **Revolve** (#162 F3): a click inside a region and the line or axis to turn it about, as one
+/// splice — `f0 := face(…)`, `b0 := solid(f0, about: l)`, a full turn, and with a body selected
+/// the body rule, as `extrude` writes it.  An axis that does not lie in the face's plane, or a
+/// line drawn in another, is refused in the elaborator's words (E081).  `names` is the solid, the
+/// face, then any hole faces.
+pub fn revolve(
+    prog: &Program,
+    outer: &[String],
+    holes: &[Vec<String>],
+    about: &str,
+    with: Option<(syntax::BodyWord, &str)>,
+) -> Edit {
+    let how = SolidSweep { about: Some(about.to_string()), ..Default::default() };
+    region_solid(prog, outer, holes, &how, with).unwrap_or_else(|why| Edit::none(prog, Some(why)))
+}
+
+/// A region's face, the solid swept from it `how`, and the body rule `with` says, in one splice.
+fn region_solid(
+    prog: &Program,
+    outer: &[String],
+    holes: &[Vec<String>],
+    how: &SolidSweep,
+    with: Option<(syntax::BodyWord, &str)>,
+) -> Result<Edit, String> {
+    let mut taken = taken_names(prog);
+    let (mut stmts, faces) = face_stmts(&mut taken, outer, holes, None)?;
+    let solid = chosen_name(&mut taken, None, EntKind::Solid)?;
+    stmts.push(solid_stmt(&solid, &faces[0], how.sweep()?));
     if let Some((word, body)) = with {
         stmts.push(StmtKind::SolidRel(syntax::SolidRel {
             word,
@@ -1004,6 +1031,48 @@ pub fn set_sweep(e: &Elaborated, prog: &Program, solid: usize, how: &SolidSweep)
 }
 
 fn sweep_edit(e: &Elaborated, prog: &Program, solid: usize, how: &SolidSweep) -> Result<Edit, String> {
+    resweep(e, prog, solid, |_| how.sweep())
+}
+
+/// Rewrite how far revolution `solid` turns, about what it turns about: `angle` the text written,
+/// in degrees.  A number is signed, positive right-handed about the axis, and read by
+/// `model::turn_of` — `-90` is `sweep: 90, sense: cw`, a whole turn or more no `sweep:` at all;
+/// an expression is written whole, the way the solid already turns.
+pub fn set_turn(e: &Elaborated, prog: &Program, solid: usize, angle: &str) -> Edit {
+    turn_edit(e, prog, solid, angle).unwrap_or_else(|why| Edit::none(prog, Some(why)))
+}
+
+fn turn_edit(e: &Elaborated, prog: &Program, solid: usize, angle: &str) -> Result<Edit, String> {
+    let angle = angle.trim();
+    resweep(e, prog, solid, |was| {
+        let syntax::Sweep::Revolve { axis, sense, .. } = was else {
+            return Err("that solid is not turned about anything".into());
+        };
+        let (sweep, sense) = match angle.parse::<f64>() {
+            Ok(n) => {
+                let (how_far, sense) = crate::model::turn_of(n).ok_or("a turn turns some way")?;
+                let sense = match sense {
+                    crate::model::Sense::Cw => syntax::Sense::Cw,
+                    crate::model::Sense::Ccw => syntax::Sense::Ccw,
+                };
+                (how_far.map(num), sense)
+            }
+            Err(_) => (Some(angle.to_string()), *sense),
+        };
+        let sweep = sweep.map(|text| syntax::Arg::Dim { text, span: Span::default() });
+        Ok(syntax::Sweep::Revolve { axis: axis.clone(), sweep, sense })
+    })
+}
+
+/// Solid `solid`'s own statement, its sweep replaced by what `with` makes of the one written —
+/// its bracket list rewritten and nothing else in the file touched.  At the root: one a component
+/// or a block made is no statement to rewrite.
+fn resweep(
+    e: &Elaborated,
+    prog: &Program,
+    solid: usize,
+    with: impl FnOnce(&syntax::Sweep) -> Result<syntax::Sweep, String>,
+) -> Result<Edit, String> {
     let site = e.map.of_entity.get(&EntRef::solid(solid)).ok_or("no statement makes that solid")?;
     if !site.path.0.is_empty() || !in_root(prog, site.stmt) {
         return Err("that solid comes from a component or a block: change it there".into());
@@ -1011,24 +1080,24 @@ fn sweep_edit(e: &Elaborated, prog: &Program, solid: usize, how: &SolidSweep) ->
     let d = decl_of(prog, site).filter(|d| d.kind == EntKind::Solid && d.sweep.is_some())
         .ok_or("that solid is made of others, not swept from a face")?;
     let mut d2 = d.clone();
-    d2.sweep = Some(how.sweep()?);
-    let with = syntax::decl_args(&d2);
+    d2.sweep = Some(with(d.sweep.as_ref().expect("a swept solid"))?);
+    let args = syntax::decl_args(&d2);
     // the statement in the new text: where it was, longer or shorter by what the list became
     let stmt = prog.stmt(site.stmt).map(|s| s.span).ok_or("no statement makes that solid")?;
-    let grown = with.len() as i64 - (d.list_span.hi as i64 - d.list_span.lo as i64);
+    let grown = args.len() as i64 - (d.list_span.hi as i64 - d.list_span.lo as i64);
     let ours = Span::new(stmt.lo as usize, (stmt.hi as i64 + grown) as usize);
-    let text = splice(prog.text(), vec![Splice { at: d.list_span, with }]);
+    let text = splice(prog.text(), vec![Splice { at: d.list_span, with: args }]);
     checked(prog, text, ours, Vec::new())
 }
 
 /// `a word b`, written as the source says it: the elaborator reads which relation the word means
 /// off the operands' kinds (`infix_op`), as it does for anything typed.
-fn written(a: &str, word: &str, b: &str) -> StmtKind {
+fn written(s: Said) -> StmtKind {
     let form = syntax::Written {
-        word: syntax::Name::new(word),
+        word: syntax::Name::new(s.word),
         fixity: crate::constraints::Fixity::Infix,
-        ops: vec![syntax::Ref::new(a.to_string()), syntax::Ref::new(b.to_string())],
-        args: Vec::new(),
+        ops: vec![syntax::Ref::new(s.a), syntax::Ref::new(s.b)],
+        args: s.args,
         span: Span::default(),
     };
     StmtKind::Relation(syntax::Relation::of(syntax::RelationForm::Written(form)))
@@ -1075,8 +1144,18 @@ impl Selection {
     }
 }
 
-/// A relation a datum is dropped with, `(a, word, b)`: `p coincident v0`.
-type Said = (String, &'static str, String);
+/// A relation a datum is dropped with: `p coincident v0`, `v0 distance(20) v1`.
+struct Said {
+    a: String,
+    word: &'static str,
+    args: Vec<syntax::OpArg>,
+    b: String,
+}
+
+/// `a word b`, with nothing in the word's parentheses.
+fn said(a: impl Into<String>, word: &'static str, b: impl Into<String>) -> Said {
+    Said { a: a.into(), word, args: Vec::new(), b: b.into() }
+}
 
 /// A datum dropped by a button (#162 F1): a free plane or axis, constrained to what is selected.
 ///
@@ -1133,7 +1212,7 @@ fn datum_edit(
         axis_datum(sk, &sel, &current, &name)?
     };
     let mut stmts = vec![StmtKind::Decl(decl)];
-    stmts.extend(said.iter().map(|(a, word, b)| written(a, word, b)));
+    stmts.extend(said.into_iter().map(written));
     append_checked(&e.program, &stmts, vec![name])
 }
 
@@ -1145,7 +1224,7 @@ fn set_off(sk: &Sketch) -> f64 {
 
 /// `p coincident x`, for each of the points.
 fn through(points: &[(String, [f64; 3])], x: &str) -> Vec<Said> {
-    points.iter().map(|(p, _)| (p.clone(), "coincident", x.to_string())).collect()
+    points.iter().map(|(p, _)| said(p.clone(), "coincident", x)).collect()
 }
 
 /// The plane's row of `add_datum`'s table: its declaration, seeded with the frame the rule reads
@@ -1175,9 +1254,9 @@ fn plane_datum(sk: &Sketch, sel: &Selection, current: &crate::plane::Basis, name
             // square to an axis outright; to a drawn line by standing square to both the plane's
             // own axes, there being no line-square-to-a-plane relation
             let square = if r.axis {
-                vec![(r.name.clone(), "perpendicular", name.to_string())]
+                vec![said(r.name.clone(), "perpendicular", name)]
             } else {
-                let to = |a: &str| (r.name.clone(), "perpendicular", format!("{name}.{a}"));
+                let to = |a: &str| said(r.name.clone(), "perpendicular", format!("{name}.{a}"));
                 vec![to("u"), to("v")]
             };
             (Basis { u, v, o: points[0].1 }, square)
@@ -1188,10 +1267,16 @@ fn plane_datum(sk: &Sketch, sel: &Selection, current: &crate::plane::Basis, name
             let f = Basis::explicit(a.dir, b.dir)
                 .or_else(|| Basis::explicit(a.dir, sub(b.at, a.at)))
                 .ok_or("the two lie along one line: they make no single plane")?;
-            let held = rays.iter().map(|r| (r.name.clone(), "coincident", name.to_string()));
+            let held = rays.iter().map(|r| said(r.name.clone(), "coincident", name));
             (Basis { o: a.at, ..f }, held.collect())
         }
-        (0, 0, 1) => (off(&planes[0].1), vec![(name.to_string(), "parallel", planes[0].0.clone())]),
+        // parallel, and as far off as it is set: the offset stated, so it is sized at once
+        (0, 0, 1) => {
+            let (p, b) = &planes[0];
+            let d = syntax::OpArg::Dim(syntax::num(set_off(sk)), Span::default());
+            let apart = Said { args: vec![d], ..said(p.clone(), "distance", name) };
+            (off(b), vec![said(name, "parallel", p.clone()), apart])
+        }
         _ => return Err("a plane is dropped with nothing selected, or through a point, three \
                          points, a point and a line or axis, two lines or axes, or a plane"
             .into()),
@@ -1225,15 +1310,15 @@ fn axis_datum(sk: &Sketch, sel: &Selection, current: &crate::plane::Basis, name:
         }
         (0, 1, 0) => {
             let r = &rays[0];
-            let along = vec![(r.name.clone(), "coincident", n.clone())];
+            let along = vec![said(r.name.clone(), "coincident", n.clone())];
             (unit(r.dir, "the line has no length")?, r.at, along)
         }
         (1, 0, 1) => (planes[0].1.normal(), points[0].1,
-            vec![(n.clone(), "perpendicular", planes[0].0.clone())]),
+            vec![said(n.clone(), "perpendicular", planes[0].0.clone())]),
         (0, 0, 1) => {
             let (p, b) = &planes[0];
-            (b.normal(), b.o, vec![(n.clone(), "perpendicular", p.clone()),
-                                   (format!("{p}.origin"), "coincident", n.clone())])
+            (b.normal(), b.o, vec![said(n.clone(), "perpendicular", p.clone()),
+                                   said(format!("{p}.origin"), "coincident", n.clone())])
         }
         (0, 0, 2) => {
             let (a, b) = (&planes[0].1, &planes[1].1);
@@ -1241,7 +1326,7 @@ fn axis_datum(sk: &Sketch, sel: &Selection, current: &crate::plane::Basis, name:
                 "the two planes are parallel: they do not meet")?;
             let at = crate::csg::meet(a.normal(), a.along_normal(), b.normal(), b.along_normal(), d)
                 .ok_or("the two planes are parallel: they do not meet")?;
-            (d, at, planes.iter().map(|(p, _)| (n.clone(), "coincident", p.clone())).collect())
+            (d, at, planes.iter().map(|(p, _)| said(n.clone(), "coincident", p.clone())).collect())
         }
         _ => return Err("an axis is dropped with nothing selected, or through a point, two points, \
                          along a line or an axis, square to a plane, a plane through a point, or \
@@ -1255,6 +1340,70 @@ fn axis_datum(sk: &Sketch, sel: &Selection, current: &crate::plane::Basis, name:
     let mut seed = seed_round(dir).to_vec();
     seed.extend(seed_round(foot));
     Ok((gesture_decl(EntKind::Axis, name, Vec::new(), &seed), all))
+}
+
+/// **Sketch on a face** (#162 F5): a plane lying on the face `face` of object `solid` (the path
+/// the face is named by, `b0.near`), its origin on the face and the plane touching it there —
+///
+/// ```text
+/// v1 := plane(u: hint(dir: …), v: hint(dir: …)) hint(origin: …)
+/// v1.origin coincident b0.near
+/// v1 tangent(at: v1.origin) b0.near
+/// ```
+///
+/// — so it follows the face wherever the solid's extents and profile take it, and keeps the
+/// freedom to slide and turn on it (constrained further like anything else).  Seeded on the
+/// face's carrier (`solid::carrier`) where the eye's ray met the face (`at`), else at its middle.
+/// One splice, held to the elaborator.
+pub fn sketch_on_face(
+    e: &Elaborated,
+    sk: &Sketch,
+    solid: usize,
+    face: &str,
+    at: Option<[f64; 3]>,
+    name: Option<&str>,
+) -> Edit {
+    on_face_edit(e, sk, solid, face, at, name)
+        .unwrap_or_else(|why| Edit::none(&e.program, Some(why)))
+}
+
+fn on_face_edit(
+    e: &Elaborated,
+    sk: &Sketch,
+    solid: usize,
+    face: &str,
+    at: Option<[f64; 3]>,
+    name: Option<&str>,
+) -> Result<Edit, String> {
+    let c = crate::solid::carrier::carrier(sk, solid, face)?;
+    let origin = at.map_or(c.middle, |p| {
+        let (a, b) = c.basis.view_coords(p);
+        c.basis.lift(a, b)
+    });
+    let name = chosen_name(&mut taken_names(&e.program), name, EntKind::Plane)?;
+    let seed = |d: [f64; 3]| vec![syntax::Kid::Hint(syntax::KidSeed { v: seed_round(d), axis: true,
+        ..Default::default() })];
+    let decl = gesture_decl(EntKind::Plane, &name, vec![seed(c.basis.u), seed(c.basis.v), Vec::new()],
+        &seed_round(origin));
+    let point = format!("{name}.origin");
+    let touch = syntax::OpArg::Named(syntax::Name::new("at"),
+                                     syntax::Arg::Ref(syntax::Ref::new(point.clone())));
+    let stmts = [
+        StmtKind::Decl(decl),
+        written(said(point, "coincident", face)),
+        written(Said { args: vec![touch], ..said(name.clone(), "tangent", face) }),
+    ];
+    append_checked(&e.program, &stmts, vec![name])
+}
+
+/// The plane already lying on the face `face` of object `solid`, by name — the profile's own for
+/// a cap on it, `std.front` included — so a sketch on the face is drawn there rather than on a
+/// second plane lying on the first (W113).  `None` where none does, or the face has no carrier.
+pub fn face_plane(e: &Elaborated, sk: &Sketch, solid: usize, face: &str) -> Option<String> {
+    let c = crate::solid::carrier::carrier(sk, solid, face).ok()?;
+    let tol = 1e-9 * sk.extent().max(1.0);
+    (0..sk.planes.len()).filter(|&i| sk.basis(i).coplanar(&c.basis, tol))
+        .find_map(|i| e.map.name_of(EntRef::new(EntKind::Plane, i)).cloned())
 }
 
 /// `x` to `digits` significant digits.
@@ -1273,16 +1422,19 @@ fn seed_round(v: [f64; 3]) -> [f64; 3] {
     v.map(|x| if x.abs() <= 1e-6 * big { 0.0 } else { round_sig(x, 9) })
 }
 
-/// `what union body`, `what cut body`, `what bound body` — the body rule, one statement (§6.9).
-pub fn add_body_word(prog: &Program, word: syntax::BodyWord, what: &str, body: &str) -> Edit {
-    let rel = syntax::SolidRel {
+/// `what union body`, `what cut body`, `what bound body` — the body rule, a statement for each
+/// solid in `what`, written as one splice (§6.9): a Boolean gesture joins several tools at once.
+pub fn add_body_word(prog: &Program, word: syntax::BodyWord, what: &[&str], body: &str) -> Edit {
+    if what.is_empty() {
+        return Edit::none(prog, Some(format!("nothing to {} `{body}`", word.as_str())));
+    }
+    let stmts: Vec<StmtKind> = what.iter().map(|w| StmtKind::SolidRel(syntax::SolidRel {
         word,
-        what: syntax::Ref::new(what.to_string()),
+        what: syntax::Ref::new(w.to_string()),
         body: syntax::Ref::new(body.to_string()),
         span: Span::default(),
-    };
-    append_checked(prog, &[StmtKind::SolidRel(rel)], Vec::new())
-        .unwrap_or_else(|e| Edit::none(prog, Some(e)))
+    })).collect();
+    append_checked(prog, &stmts, Vec::new()).unwrap_or_else(|e| Edit::none(prog, Some(e)))
 }
 
 /// One constraint, written the way the registry names it.

@@ -812,7 +812,15 @@ export class Sketch {
     return core().gcs_sketch_set_prism(this.handle, i, WAYS.indexOf(way), d) !== 0;
   }
 
-  /** Bumped whenever a solid's shape changes in place (`setPrism`): what a cached mesh keys on. */
+  /** Re-turn revolution `i` where it stands through `degrees`, signed (negative clockwise about
+   *  its axis, a whole turn at 360 or past it) — the preview a revolution being sized shows
+   *  before the source says it.  False for a solid no revolution. */
+  setTurn(i: number, degrees: number): boolean {
+    return core().gcs_sketch_set_turn(this.handle, i, degrees) !== 0;
+  }
+
+  /** Bumped whenever a solid's shape changes in place (`setPrism`, `setTurn`): what a cached mesh
+   *  keys on. */
   get shapeEpoch(): number {
     return core().gcs_sketch_shape_epoch(this.handle);
   }

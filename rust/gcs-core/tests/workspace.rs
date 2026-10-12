@@ -357,6 +357,8 @@ fn a_click_on_a_solid_picks_the_face_nearest_the_eye() {
     let expected = 10.0 * toward[0] + 5.0 * toward[1];
     assert!((hit.depth - expected).abs() < 1e-9, "{} {expected}", hit.depth);
     assert!(hit.face.starts_with("top."), "{}", hit.face);
+    // and where in space it met it, for a sketch on the face to start at
+    assert!(hit.at.iter().zip([10.0, 5.0, 0.0]).all(|(a, b)| (a - b).abs() < 1e-9), "{:?}", hit.at);
     // past every object, nothing
     assert_eq!(pick_solid(sk, &proj, seen([10.0, 80.0, 0.0], az, el)), None);
     // a face of a body is named where it was made — the stock's — and the object is the body

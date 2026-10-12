@@ -32,6 +32,9 @@ mod resolve;
 mod words;
 mod apply;
 mod sets;
+mod faces;
+
+pub use faces::{FaceAxis, FacePlane};
 
 pub(crate) use words::faults as word_faults;
 use crate::lowering::Lowered;
@@ -205,6 +208,11 @@ pub struct Expansion {
     pub face_repeats: BTreeSet<String>,
     /// The points of sets measured from (#183 F2), by absolute key.
     pub inner_probes: Vec<String>,
+    /// The plane each face of a solid used as a set is drawn in, under the hidden name its
+    /// carrier reads it by (`faces`), for the elaborator to bind once memberships are in.
+    pub face_planes: Vec<FacePlane>,
+    /// The hidden axis each side used as a set is level along, for the elaborator to seed.
+    pub face_axes: Vec<FaceAxis>,
 }
 
 /// One instance, as bound: which component, under what prefix, given what.
@@ -335,6 +343,9 @@ struct Walk<'a> {
     faces: BTreeMap<String, Vec<String>>,
     face_repeats: BTreeSet<String>,
     inner_probes: Vec<String>,
+    /// See `Expansion::face_planes` and `face_axes`.
+    face_planes: Vec<FacePlane>,
+    face_axes: Vec<FaceAxis>,
 }
 
 /// Expand a program's root component into a flat list of declarations, constraints, gauges and
@@ -460,6 +471,8 @@ impl<'a> Walk<'a> {
             faces: BTreeMap::new(),
             face_repeats: BTreeSet::new(),
             inner_probes: Vec::new(),
+            face_planes: Vec::new(),
+            face_axes: Vec::new(),
         }
     }
 
@@ -483,7 +496,9 @@ impl<'a> Walk<'a> {
 
     fn finish(mut self) -> Expansion {
         self.expand_pending();
-        // a set's uses, once every set is known (§6.21); a use may hold a block over a chain
+        // a set's uses, once every set is known (§6.21) — a solid's faces among them — and a use
+        // may hold a block over a chain
+        self.face_sets();
         self.expand_sets();
         self.expand_pending();
         let (mut flat, mut aliases) = self.resolve();
@@ -517,6 +532,8 @@ impl<'a> Walk<'a> {
             probes: self.probes,
             face_repeats: self.face_repeats,
             inner_probes: self.inner_probes,
+            face_planes: self.face_planes,
+            face_axes: self.face_axes,
         }
     }
 }

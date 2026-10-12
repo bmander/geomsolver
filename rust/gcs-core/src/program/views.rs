@@ -9,7 +9,7 @@ use crate::constraints::CKind;
 use crate::model::{EntKind, EntRef, Sketch};
 
 /// Whether every one of `ps` is held.
-fn held(sk: &Sketch, ps: &[u32]) -> bool {
+pub(super) fn held(sk: &Sketch, ps: &[u32]) -> bool {
     ps.iter().all(|&q| sk.params[q as usize].fixed)
 }
 
