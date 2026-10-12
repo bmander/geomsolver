@@ -1,6 +1,14 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.74 — October 2026**
+**Specification, Draft 0.75 — October 2026**
+
+**[0.75] A component may instantiate itself.** A call back into a component still being
+expanded is a recursion, elaborated as any instance is (§8), each level named under the one that
+made it (`d.s.s.m`); a `when` over the numbers it is given ends it (§12.9). Only what nothing
+ends is refused, **E003**: a call given the numbers its own expansion was given, directly or
+through other components, every choice of which comes out the same again, and one nesting past
+the implementation's depth. A subdivision is written as itself — Penrose's tiling by Robinson
+triangles is two components each calling the other.
 
 **[0.74] A point said on another plane is drawn there.** `gear.M coincident q`, said of a point
 its declaration draws in a plane, draws it in `q` too, as `point in p, q` draws it — the statement
@@ -2083,7 +2091,20 @@ An implementation MUST refuse `port` with a message naming these forms. Aliasing
 t := Tooth(root, tip, slot: tau/N)
 ```
 
-Instantiation elaborates the named component's body into the current scope with formals bound per §4.1. Instance elaboration is recursive; cyclic instantiation is an error (**E003**).
+Instantiation elaborates the named component's body into the current scope with formals bound per §4.1. Instance elaboration is recursive. **[0.75]** A component may instantiate itself, directly or through other components: the call is elaborated as any other, under the instance's own name, so each level is named under the one that made it (`d.s.m`, `d.s.s.m`), and a `when` over the numbers the call gives ends it (§12.9). Elaboration is a function of those numbers, so a call given **the numbers its own expansion was given** — every formal of a number type bound to the same value, or none at all — makes every choice the same again and never ends: **E003**, at the call that closes the cycle. So is one nesting deeper than the implementation elaborates (bounded, since a document is untrusted input); *before [0.75] every such call was E003.*
+
+```solvent
+component Half(a: point, b: point, len: Length, n: Int) {
+  m := point
+  a horizontal m
+  a distance(len / 2) m
+  when n > 1 {
+    s := Half(a, m, len: len / 2, n: n - 1)   // d.s, d.s.s, … and no deeper than n
+  }
+}
+```
+
+*Non-normative:* recursion is for what is *defined* by itself — a subdivision, a fractal, a tree. A run of alike copies is a `repeat`, and stays shallow however long it is; a recursion nests a level per call.
 
 ### 8.1 Groups of arguments
 
@@ -2589,6 +2610,8 @@ when design.tip_relief > 0mm {
 pinion_relief := ReliefCut(pinion.body, …, reference.tooth_relief.body, …)   // in a `when` too
 ```
 
+**[0.75]** A `when` is what ends a recursion (§8): its condition reads the numbers the call gave, and a level where it does not hold makes no further call.
+
 *Non-normative:* a switch used to be written as a `repeat` over a computed 0 or 1 — `repeat min(ceil(relief / 1mm), 1) { … }` — which depended on the unit it divided by, said nothing of its intent, and named what it made as a copy (`tooth_relief[0]`).
 
 ---
@@ -2833,7 +2856,7 @@ The numerical method is unspecified. Whatever the method, a conforming solver:
 |---|---|
 | E001 | redeclaration within a body |
 | E002 | a block's index or edge binder over a name already in scope |
-| E003 | cyclic component instantiation: a component reached again while it is being expanded |
+| E003 | a component instantiation nothing ends: reached again while it is being expanded, given the numbers it was given there, or nested past the implementation's depth (§8) **[0.75]** |
 | E004 | a positional argument that binds a value parameter, or that follows a labelled one (§4.1) **[0.17]** |
 | E010 | withdrawn: an undecorated `tangent` between circles reads its branch off the seed (§9.5) |
 | E011 | closed path winding contradicts declared orientation |
