@@ -3,8 +3,8 @@
 //! meridian where `std.Rounded` or `std.Chamfered` meets that bound — the grown cone's generator
 //! and its rounded apex are steps of the meridian like any other — so its exact solid is built.
 //! Each is held to the closed form (Pappus over the corner worked out by hand) to 1e-9, and to the
-//! region read point by point beside its boundary.  A flat beside a sphere is not lowered: the
-//! sum of distances bows off the straight flat there, so it is read point by point.
+//! region read point by point beside its boundary.  A flat beside a sphere bows off the straight
+//! flat, the sum of distances a parabola's arc there, and is lowered so (#196).
 use gcs_core::program::Elaborated;
 use gcs_core::solid::MaterialField;
 use gcs_core::solve::{solve, SolveOpts};
@@ -224,17 +224,40 @@ fn a_flat_where_a_grown_cone_meets_a_plane() {
     lowered(&e, "glass", want, 8.0, [-0.5, 10.5]);
 }
 
-/// Beside the sphere the sum of distances bows off the straight flat (#208), so a chamfer there
-/// is not lowered: the region is read point by point, still chamfered.
+/// Beside the sphere the sum of distances bows off the straight flat (#208), and that is what is
+/// lowered (#196, [0.73]): a parabola about the sphere's centre, its focus — on it `ρ (1 − sin(30° −
+/// ψ)) = 9.5`, `ψ` from the axis, since `cos 30° · d_tip + (9 − ρ) = 0.5` with the tip `1 / cos 30°`
+/// out at the apex — between where it reaches the tip (ρ 8.5) and the sphere (ρ 9).  The volume is
+/// the walk with the chord in its place (Pappus), less the chord's flux, plus the parabola's.
 #[test]
-fn a_flat_beside_a_sphere_is_read_point_by_point() {
+fn a_flat_beside_a_sphere_is_a_parabola_turned() {
     let e = solved(&format!("{FRAME}bead := {{ p | p inside tip; p outside std.top; p inside big; \
                              p inside std.Chamfered(tip, big, la: 0.5mm, lb: 0.5mm) }}\n\
                              b := solid(bead)\n"));
-    let i = ent(&e, "b").i();
-    let why = gcs_core::solid::region::meridian(&e.sketch, i).unwrap_err();
-    assert!(why.contains("bows off the straight flat"), "{why}");
-    assert!(gcs_core::solid::region::in_general(&e.sketch, i));
+    let (_, co, _) = sc();
+    let k = 1.0 / co;
+    // the parabola's radius from the apex, and its derivative, at `ψ`
+    let rho = |psi: f64| 9.5 / (1.0 - (PI / 6.0 - psi).sin());
+    let drho = |psi: f64| -9.5 * (PI / 6.0 - psi).cos() / (1.0 - (PI / 6.0 - psi).sin()).powi(2);
+    let at = |psi: f64| [rho(psi) * psi.sin(), rho(psi) * psi.cos()];
+    let psi_of = |rho: f64| PI / 6.0 - (1.0 - 9.5 / rho).asin();
+    let (pa, pb) = (psi_of(8.5), psi_of(9.0));
+    let (a, b) = (at(pa), at(pb));
+    // ∫ r²/2 dz along the parabola from `a` to `b`: eight-point Gauss–Legendre over 16 stretches
+    let flux: f64 = (0..16).map(|j| gcs_core::integral::GAUSS8.iter().map(|&(x, w)| {
+        let psi = pa + (pb - pa) * (j as f64 + 0.5 + 0.5 * x) / 16.0;
+        let dz = drho(psi) * psi.cos() - rho(psi) * psi.sin();
+        w * at(psi)[0].powi(2) / 2.0 * dz * (pb - pa) / 32.0
+    }).sum::<f64>()).sum();
+    let chord = (b[1] - a[1]) / 6.0 * (a[0] * a[0] + a[0] * b[0] + b[0] * b[0]);
+    let walk = pappus([0.0, 0.0], &[
+        Go::To([k, 0.0]),
+        Go::To(a),
+        Go::To(b),
+        Go::Arc { c: [0.0, 0.0], turn: turn([0.0, 0.0], b, [0.0, 9.0]) },
+        Go::To([0.0, 0.0]),
+    ]);
+    lowered(&e, "b", walk + 2.0 * PI * (flux - chord), 9.5, [-0.5, 9.5]);
 }
 
 /// `rounds/blank.sv`: the shell between the pitch cone grown by 1.5 and shrunk by 2, outside the

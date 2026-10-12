@@ -162,7 +162,7 @@ body := solid(profile,about: ax)
 #[test]
 fn declarative_bevel_blank_reads_without_gear_names_or_coordinate_adapters() {
     let e = read(include_str!("../../../examples/spiral_bevel/blank/member.sv"));
-    let blank = field(&e,"body");
+    let blank = field(&e,"member.material");
     assert!(blank.support_bounds().unwrap().is_some());
     let rm = 50.;
     for radius in [0.8*rm,rm,1.2*rm] {

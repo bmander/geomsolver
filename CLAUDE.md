@@ -309,9 +309,16 @@ radius for a round's centres) is built in the meridian by X1's construction (`br
 moved from `tests/fillet_meridian.rs`) — a round at any corner of lines and arcs, an offset
 cone's generator and rounded apex included (#207) — and held to the region read point by point
 beside each face (`region::agrees`; a disagreement is read by the field); refused (and read by the
-field) at a charted corner (none a meridian folds) or a flat beside an arc (the sum of distances
-bows there, #208). `tests/rounds.rs` is the gate (X2's closed forms in the slow tier),
-`tests/offset_corners.rs` (Pappus, `rounds/blank.sv`) the offset cone's.
+field) at a charted corner (none a meridian folds) or a flat between two arcs. **A chamfer's flat
+is its sum of distances** (#196, #208, [0.73]): between a line and an arc it bows, the conic `|q −
+c| = α + β d_L` (`corners::sum`), a **`Seg::Conic`** — the rational quadratic Bézier over its ends
+and where their tangents meet — carried by every meridian reader: planar Booleans (`meets_steps`'
+roots, `contains` in closed form), the field's `Edge::Conic` (`Wall::conic`: pieces'
+control-triangle discs, split while wide), `Meridian::Conic`, and the recipe's rational B-spline
+(`region_profile`, read back by `meridian_region`). `std.Chamfered` is multiplied through by its
+legs, so a leg of nothing cuts nothing (a bound weighing every measurement by nothing holds
+everywhere, else E040, `measured_term`). `tests/rounds.rs` is the gate (X2's closed forms in the
+slow tier), `tests/offset_corners.rs` (Pappus, `rounds/blank.sv`) the offset cone's.
 **Rounds built exactly: the lowering table** (#194, #183 L7, `solid::lowering`): a region over a
 body's faces is recognised by its terms' shapes (`recognised`: two or three `FaceSide`s alike, an
 `Angle` gate per pair at a half turn, the common-part-against-meeting sum (the meeting cut or not
@@ -629,8 +636,8 @@ evaluate it. Union first; `cut` and `bound` commute; a swept solid may only be `
 each member's blank is a region (`blank/member.sv`, `MemberBlank`: the pitch cone, a `std.Cone`
 about the member's axis, its half left unseeded so it settles from the pose, grown by the addendum (`std.Offset`) and its outside by the back depth (`outside(d)`),
 `std.Sphere`s through the face span, sized by the solved layout — a region term reads an unknown,
-`model::TermNumber`; `EndChamfer` puts its corners on the tip set, seeded off the cone line's mean
-point); `pair.sv` draws the same
+`model::TermNumber`; the end relief two `std.Chamfered` bounds in the same region, lowered as
+conics); `pair.sv` draws the same
 limits as revolved sections for the checks' walls (`blank/limits.sv`), `tests/region_blank.rs` the
 gate between them; each crown section bounds its tip land (`distance(>= 0.01 * design.module) tip`)
 so a collapsed tip is no root. Modules `design.sv`, `views.sv`, `pitch/`, `blank/`, `crown/`,
@@ -710,7 +717,7 @@ construction needs `admission::Admission` (only `admit_body` makes one). Contrac
 `tests/native_surfaces/gear_cells.rs` holds the recorded tooth-space volumes;
 `tests/generating_harness.rs` (ignored) locates refusals by stage.
 The pair carries **backlash** (`crown/section.sv`, `side: left`), **tip relief** (`crown/relief.sv`,
-`relieved`) and **end relief** (`blank/ends.sv`, `ends_relieved`); `fixtures::gear::design` pins
+`relieved`) and **end relief** (`blank/member.sv`'s `std.Chamfered`); `fixtures::gear::design` pins
 all to zero, `fixtures::gear::fabricated` sets them. Files:
 `build/exports/hypoid-{pinion,gear}.{step,stl}`; `gcs-cli/tests/pair_check.rs` (ignored) checks
 the pair from the STLs.
@@ -823,7 +830,8 @@ patterned. `brep::export::{exact,step,stl}` is shared by `solventc` and `app/exp
 (`gcs_solid_exact`), so native and wasm files are byte-identical: the core's trigonometry, `exp`,
 `ln`, `pow`, `hypot` are its own (`fmath`, `x.dsin()` via `Det`; no platform libm). With OCCT and
 `--verify-step full` the CLI reads our STEP back (`cad::read_back`). A face met twice is told apart
-by `cutter::OCCURRENCE`; a trace ends off a sheet's patch (`Surface::off_patch`); interpolations
+by `cutter::OCCURRENCE`; a trace ends off a sheet's patch (`Surface::off_patch`, a revolution's or
+an extrusion's of a curve too); a revolution about the axis is kept by `pattern`'s turns; interpolations
 past `nurbs::BANDED` points solve banded; a gross sheet falls back to chord length.
 **Rung 3 (the app reads the exact solid):** a static solid's `EvaluatedSolid` is the B-rep's
 (`solid::Exact`, `Sketch::exact_solid`, cached against `solid::reads`; `from_brep`), built about its

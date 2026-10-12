@@ -1,6 +1,15 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.72 — October 2026**
+**Specification, Draft 0.73 — October 2026**
+
+**[0.73] A chamfer's flat is its sum of distances.** `std.Chamfered(a, b, la, lb)` is the points
+whose distances from `a`'s and `b`'s surfaces, each over the other's leg, sum to one or more, and
+nothing else: where both surfaces are flat in section that is the straight flat, and where one is
+curved it bows with it — between a cone and a sphere about one axis a parabola's arc turned, never
+the straight line between the legs' ends (§6.9). Its bound is written multiplied through by both
+legs, so a leg of nothing cuts nothing; a bound on measurements weighing every measurement by
+nothing holds everywhere or is **E040** (§6.21). The hypoid's end relief is two such bounds in each
+member's blank, and `EndChamfer` is retired.
 
 **[0.72] A block made or not by a condition.** `when COND { … }` makes its body once where
 `COND` holds and not at all where it does not, decided at elaboration over the numbers in scope
@@ -1253,7 +1262,11 @@ own body a round or a chamfer between two of its bounds is one more bound on its
 std.Rounded(wall, top, r: 2mm)`, `p inside std.Chamfered(wall, bottom, la: 1mm, lb: 1mm)` (`la`
 along the first, `lb` along the second). Where the two are bounds the region states, at its
 level and about its axis, the round or the flat is built exactly in the region's revolution (a
-torus, a cone); elsewhere it is read point by point. *Non-normative:* both readings are one
+torus; a cone between two straight sections, and **[0.73]** between a straight section and a
+circle, a sphere's, the conic the sum of distances makes there, turned); elsewhere — a flat between
+two circles — it is read point by point. **[0.73]** A chamfer's flat is what its sum of distances
+bounds and nothing else: it bows with a curved surface, and no construction substitutes the
+straight line between its legs' ends. *Non-normative:* both readings are one
 meaning: a round lowered into the revolution is the region the point-by-point reading reads. So
 is a round over a body's faces an implementation recognises by its set and builds exactly (a
 prism, a ring, a ball's corner), held to that reading.
@@ -1984,7 +1997,9 @@ plane, a face or its surface (above), or a set (below). It makes the set a regio
 point (§6.9), and is read only where a region solid's point is: `inside` keeps it, `outside` turns
 it round, and a body of such bounds only is all of them under `inside`. A product of
 measurements, a measurement read through a function or a power, a statement reading two points,
-and one reading none of a region solid's are **E040**.
+and one reading none of a region solid's are **E040**. **[0.73]** A bound whose measurements are
+all weighed nothing (`0 * distance(p, a) >= 0`) bounds nothing where it holds and is **E040** where
+it holds nowhere.
 
 **The distance from a set** **[0.69]**. A measurement may name a set, `distance(p, crease)`: the
 distance from `p` to the set's nearest point. The set is given a point of its own, which its body

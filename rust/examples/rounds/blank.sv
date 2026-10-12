@@ -9,8 +9,8 @@
 // in that meridian (lowered): `solventc --step` writes two tori between the cones and spheres.
 //
 // Edit the addendum, the radii or the cone's half angle and apply (⌘↵). Swap a round for
-// `std.Chamfered(tip, heel, la: 1mm, lb: 1mm)` and the flat beside the sphere is read point by
-// point instead: there the sum of distances bows off the straight flat.
+// `std.Chamfered(tip, heel, la: 1mm, lb: 1mm)` and the flat beside the sphere bows with it, the
+// sum of distances a parabola's arc in the meridian, built exactly too.
 unit mm
 use std
 
