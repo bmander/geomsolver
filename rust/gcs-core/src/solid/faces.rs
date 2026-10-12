@@ -278,6 +278,10 @@ impl BodyFaces {
         Some((self.back(f.o), f.z, r / self.mm, f.x))
     }
 
+    /// Edge `e`'s parameters, first to last: a circle's angles from the direction `circle` gives,
+    /// turning about its normal.
+    pub fn span(&self, e: u32) -> [f64; 2] { self.loc.b.edges[e as usize].t }
+
     /// Whether edge `e` is closed: one vertex at both ends.
     pub fn closed(&self, e: u32) -> bool {
         let v = self.loc.b.edges[e as usize].v;
@@ -303,10 +307,17 @@ impl BodyFaces {
     /// Where a run of edges `es` (between `faces`) ends: each other face at each of its ends, and
     /// which side of that face's surface the run runs on — `1` where it runs within it (its
     /// material side, `side <= 0`), `-1` outside — so the run is where `σ·side <= 0` for all.
+    /// A face going on from one of `faces` tangent at the end (a seam, no corner: an obround's
+    /// half circle after its flat side) ends nothing: the round goes on round it, along the edge
+    /// that face meets the other in.
     pub fn end_sides(&self, es: &[u32], faces: &[usize]) -> Vec<(usize, f64)> {
         let mut sides = Vec::new();
         for (v, d, vid) in self.run_ends(es) {
             for c in self.faces_at(vid, faces) {
+                let n = self.normal(c, v);
+                if faces.iter().any(|&f| dot(self.normal(f, v), n) >= 1.0 - 1e-9) {
+                    continue;
+                }
                 let step = 1e-6 * (1.0 + norm(v));
                 let s = self.side(c, add(v, scale(d, step)));
                 sides.push((c, if s <= 0.0 { 1.0 } else { -1.0 }));

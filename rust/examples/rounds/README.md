@@ -26,7 +26,8 @@ table recognises (#194, `solid::lowering`), recognised from what its body says a
 word's name, it is also built exactly and held to that reading: a run along a straight edge
 between planes is a prism whose face is a cylinder (cut off by the faces its edge ends on, square
 or at a slant), a run round a circle where a plane meets a
-cylinder is a ring whose face is a torus, a corner where three square faces meet is the ball's
+cylinder is a ring whose face is a torus (a stretch of one where the circle goes on tangent into a
+flat side), a corner where three square faces meet is the ball's
 patch, a flat is a plane. Those bodies show as exact solids and export by `solventc --step` and
 `--stl`; a region no entry builds is meshed by the page in the background, and its export is
 refused, naming why.
@@ -39,6 +40,8 @@ Read them in this order:
 | `pocket.sv` | **A concave round fills.** A pocket rounded inside (`round(r: 1.5mm) dish.pocket`): the floor's edges are filled, and where three meet at a corner the fill is a ball's. Built exactly. |
 | `boss.sv` | **A round on a curved edge.** A boss filleted where it stands on a plate (`pad.boss round(r: 3mm) pad.plate`): a ring, with no special case for the circle. Built exactly, a torus's face. |
 | `by_hand.sv` | **Your own round.** The round written out in the file: a set `Rolled(a, b, r)` and a word `A rolled(r) B` that makes it a solid and cuts it, in about twenty lines. The same set as the library's, so the same entry builds it. |
+| `pad.sv` | **Rounds that add and rounds that take away.** A cast mounting pad: a boss's root filled, two of the plate's near edges rounded, a bore drilled through after. Concave or convex is read off the geometry. Built exactly: 26549.817 mm³. |
+| `slot.sv` | **Rounds along tangent chains.** An obround boss's foot filled and a pocket's rim rounded off, each along flat sides and round the half circles or corners they go on into. Where two faces meet tangent there is no corner, so nothing ends a round there. Built exactly: runs and stretches of rings, glued where they meet. |
 | `disc.sv` | **A round in a region's own body, built exactly.** A disc defined as a set, its top rim rounded and its bottom rim chamfered by `std.Rounded` and `std.Chamfered`. Lowered into the meridian, so `solventc --step` writes a torus and a cone (1196.946 mm³, the closed form's). |
 | `regions.sv` | **Regions in general position.** An ellipsoid by its foci, Steinmetz's bicylinder, and a Voronoi cell of a ball, each read point by point. |
 

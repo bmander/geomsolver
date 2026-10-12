@@ -242,6 +242,45 @@ fn a_round_no_entry_builds_is_refused_by_name() {
     assert!(field.side([20.0, 0.2, 0.2]) > 0.0 && field.side([20.0, 6.0, 6.0]) < 0.0);
 }
 
+/// A round section's area beside a square corner, `(1 − π/4)r²`, and how far its centroid stands
+/// off each face, `r(10 − 3π)/(12 − 3π)`.
+fn spandrel(r: f64) -> (f64, f64) {
+    ((1.0 - PI / 4.0) * r * r, r * (10.0 - 3.0 * PI) / (12.0 - 3.0 * PI))
+}
+
+/// `slot.sv`: rounds along chains of edges meeting tangent. Where a flat side goes on into a half
+/// circle there is no corner, so nothing ends either round there: the boss's foot is filled along
+/// its two flat sides (prisms) and round its two ends (stretches of rings, a half turn each), each
+/// glued to the next at the section they share; the pocket's rim likewise, four quarter turns.
+/// Pappus for the rings: the section's area along its centroid's circle, `R + z̄` from the axis.
+#[test]
+fn a_slots_rounds_go_on_round_its_tangent_ends() {
+    let e = solved(include_str!("../../examples/rounds/slot.sv"));
+    assert_eq!(lowered(&e).0, 12);
+    let b = exported(&e, "part");
+    let ((foot, fz), (rim, rz)) = (spandrel(2.0), spandrel(1.0));
+    let boss = (18.0 * 12.0 + PI * 36.0) * 8.0;
+    let pocket = (20.0 * 16.0 - 4.0 * (16.0 - 4.0 * PI)) * 6.0;
+    let want = 80.0 * 50.0 * 10.0 + boss - pocket + foot * (2.0 * 18.0 + 2.0 * PI * (6.0 + fz))
+        - rim * (2.0 * 12.0 + 2.0 * 8.0 + 2.0 * PI * (4.0 + rz));
+    close(props::volume(&b), want);
+    assert_eq!(kinds(&b).get("torus"), Some(&6));
+}
+
+/// `pad.sv`: the boss's root a ring, two of the plate's near edges each a run cut off flush at the
+/// plate's sides, and the bore drilled through after — the rounds read the faces the body has
+/// before it.
+#[test]
+fn the_pads_rounds_are_built_exactly() {
+    let e = solved(include_str!("../../examples/rounds/pad.sv"));
+    let b = exported(&e, "pad");
+    let ((root, rz), (edge, _)) = (spandrel(3.0), spandrel(2.0));
+    let want = 60.0 * 40.0 * 10.0 + PI * 64.0 * 20.0 - PI * 16.0 * 30.0 + root * 2.0 * PI * (8.0 + rz)
+        - 2.0 * 40.0 * edge;
+    close(props::volume(&b), want);
+    assert_eq!(kinds(&b), [("cylinder", 4), ("plane", 7), ("torus", 1)].into());
+}
+
 /// **No term left unread**: the hand-written round with one side moved off its face
 /// (`p inside(1mm) a`) is no set of the table's — every term must be one an entry reads — so it is
 /// not built, and its export says no entry builds it.

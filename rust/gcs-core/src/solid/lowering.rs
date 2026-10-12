@@ -10,17 +10,21 @@
 //! region's own field before anything reads it (`gate`). A region no entry recognises stays the
 //! field's, its exact export refused by name.
 //!
-//! The entries so far, over plane faces meeting in straight edges, each run cut off by the plane
-//! faces its edge ends on — a run-out where one stands at a slant: the run is where its nearest
-//! point of the faces' meeting is on the edge (the slab square to it over its stretch) and on the
-//! side the edge runs on of each face at its ends, so its prism is kept within each slanted face
-//! reaching into it, and one leaning away leaves the slab's square end:
+//! The entries so far, over plane faces meeting in straight edges, and a plane meeting a cylinder
+//! or cone about one axis in a circle. A run is where its nearest point of the faces' meeting is
+//! on the edge (the slab square to it over its stretch, a sector of a ring's) and on the side the
+//! edge runs on of each face at its ends: a straight run's prism is kept within each plane face
+//! standing at a slant there and reaching into it (a run-out), one leaning away leaving the slab's
+//! square end. A face going on tangent from one of the run's is no end (a seam), so a round along
+//! an obround's flat side stops at the section the ring round its half circle starts from, and the
+//! two are glued there; a ring's stretch is turned through its circle's angle.
 //!
 //! | the region's body | built as |
 //! |---|---|
 //! | `Run` / `Fill`: within (outside) two faces, beyond reach of the ball rolled along their edge | a prism of the corner less the ball's arc (a cylinder face) |
 //! | `Flat` / `FlatFill`: within (outside) two faces, short of the flat through the legs | a prism of the triangle (a plane face) |
 //! | `Corner` / `CornerFill`: within (outside) three faces square to one another, beyond reach of the ball touching all three | the corner's cell less the ball (a sphere's patch), and each edge's run beyond it |
+//! | `Run` / `Fill` / `Flat` round a circle (or a stretch of one between seams) where a plane meets a coaxial cylinder or cone | the section turned about the axis through the circle's angle (a torus face) |
 //! | any of them where the faces meet nowhere, or an edge turns the other way | nothing |
 //!
 //! A region is its **pieces** (`Piece`: a run along an edge, a ball's cell at a corner), and the
@@ -88,15 +92,28 @@ pub struct Corner {
     pub toward: [V; 3],
 }
 
-/// A section turned once about an axis (model units): a run round a whole circle where a plane
-/// meets a cylinder or a cone about it — the section in the meridian through `section.origin`,
-/// square to `section.along` (its `length` nothing), turned about the line through `axis_origin`
-/// along the unit `axis`.
+/// A section turned about an axis (model units): a run round a circle, or a stretch of one, where
+/// a plane meets a cylinder or a cone about it — the section in the meridian through
+/// `section.origin`, square to `section.along` (its `length` nothing), turned `angle` (radians, a
+/// whole turn for a whole circle) about the line through `axis_origin` along the unit `axis`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Ring {
     pub section: Run,
     pub axis_origin: V,
     pub axis: V,
+    pub angle: f64,
+}
+
+impl Ring {
+    /// Where its section stands at the end of its turn, and the way the turn runs on there.
+    fn end(&self) -> (V, V) {
+        let r = sub(self.section.origin, self.axis_origin);
+        let foot = add(self.axis_origin, scale(self.axis, dot(r, self.axis)));
+        let radial = sub(self.section.origin, foot);
+        let (s, c) = self.angle.dsin_cos();
+        let turned = add(scale(radial, c), scale(cross(self.axis, radial), s));
+        (add(foot, turned), normalised(cross(self.axis, turned)).unwrap_or(self.section.along))
+    }
 }
 
 /// A piece of what a region is built as; a region is the union of its pieces, and one of none
@@ -386,18 +403,23 @@ fn run(body: &super::faces::BodyFaces, fa: usize, fb: usize, within: bool, secti
     if body.convex(edge) != Some(within) {
         return Ok(None);
     }
-    // round a whole circle where a plane meets a cylinder or a cone about its axis: the section in
-    // one meridian, turned once
+    // round a circle where a plane meets a cylinder or a cone about its axis: the section in the
+    // meridian through its start, turned through the circle's angle — a whole turn, or a stretch
+    // ending where a face goes on from one of these tangent (an obround's flat side), whose own
+    // run goes on from the same section
     if let Some((centre, axis, radius, x)) = body.circle(edge) {
-        if !body.closed(edge) {
-            return unbuilt("a run along a stretch of a circle");
-        }
         if !(body.coaxial(fa, centre, axis) && body.coaxial(fb, centre, axis)) {
             return unbuilt("a circle between faces not turned about one axis");
         }
-        let p0 = add(centre, scale(x, radius));
-        let section = cut(p0, cross(axis, x), 0.0, [body.normal(fa, p0), body.normal(fb, p0)], within, section)?;
-        return Ok(Some(Piece::Ring(Ring { section, axis_origin: centre, axis })));
+        let [t0, t1] = if body.closed(edge) { [0.0, std::f64::consts::TAU] } else { body.span(edge) };
+        if !body.closed(edge) && !body.end_sides(&[edge], &[fa, fb]).is_empty() {
+            return unbuilt("a stretch of a circle cut off by a face at its end");
+        }
+        let (s, c) = t0.dsin_cos();
+        let radial = add(scale(x, c), scale(cross(axis, x), s));
+        let p0 = add(centre, scale(radial, radius));
+        let section = cut(p0, cross(axis, radial), 0.0, [body.normal(fa, p0), body.normal(fb, p0)], within, section)?;
+        return Ok(Some(Piece::Ring(Ring { section, axis_origin: centre, axis, angle: t1 - t0 })));
     }
     let (Some((na, _)), Some((nb, _))) = (body.plane(fa), body.plane(fb)) else {
         return unbuilt("an edge beside a curved face");
@@ -509,7 +531,8 @@ pub fn assemble<'a>(pieces: impl IntoIterator<Item = &'a Piece>) -> Assembly {
     for p in pieces {
         match p {
             Piece::Run(r) if !out.runs.iter().any(|(q, _)| same_run(q, r)) => out.runs.push((r.clone(), [0.0, r.length])),
-            Piece::Ring(g) if !out.rings.iter().any(|h| same_run(&h.section, &g.section)) => out.rings.push(g.clone()),
+            Piece::Ring(g) if !out.rings.iter().any(|h| same_run(&h.section, &g.section)
+                && (h.angle - g.angle).abs() <= 1e-12) => out.rings.push(g.clone()),
             Piece::Corner(c) if !out.corners.iter().any(|d| near(c.vertex, d.vertex) && near(c.centre, d.centre)) => {
                 out.corners.push(c.clone())
             }
@@ -537,6 +560,18 @@ pub fn assemble<'a>(pieces: impl IntoIterator<Item = &'a Piece>) -> Assembly {
             out.joins.push([i, n + k]);
         }
     }
+    // a run and a stretch of a ring going on from one another (a round along an obround's flat
+    // side, then round its half circle): one section, where the ring's turn starts or ends
+    for (i, (r, span)) in out.runs.iter().enumerate() {
+        let ends = [add(r.origin, scale(r.along, span[0])), add(r.origin, scale(r.along, span[1]))];
+        for (k, g) in out.rings.iter().enumerate().filter(|(_, g)| g.angle < std::f64::consts::TAU - 1e-12) {
+            let (end, way) = g.end();
+            let meets = |p: V, d: V| ends.iter().any(|&q| near(p, q)) && norm(cross(d, r.along)) <= 1e-9;
+            if meets(g.section.origin, g.section.along) || meets(end, way) {
+                out.joins.push([i, out.runs.len() + k]);
+            }
+        }
+    }
     out
 }
 
@@ -558,7 +593,7 @@ impl Assembly {
             pieces.push(object([
                 ("kind", "revolve".into()), ("profile", profile(&g.section).to_json(by)?),
                 ("origin", vector(scale(g.axis_origin, by))), ("axis", vector(g.axis)),
-                ("angle", std::f64::consts::TAU.into()),
+                ("angle", g.angle.into()),
             ]));
         }
         let corners = self.corners.iter().map(|c| object([

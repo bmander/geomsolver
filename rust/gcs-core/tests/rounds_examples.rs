@@ -52,6 +52,25 @@ fn the_bosss_root_is_filleted() {
           &[[30.0, -2.5, 30.5], [30.0, -10.0, 29.0], [5.0, -5.0, 5.0]]);
 }
 
+/// `slot.sv`: the boss's foot (in front of the plate, y < 0) filled along a flat side, round a half
+/// circle, and across the seam between them, where the flat side goes on tangent into the half
+/// circle and nothing ends either round; the pocket's rim taken away, its void kept.
+#[test]
+fn the_slots_rounds_go_on_across_its_seams() {
+    holds(include_str!("../../examples/rounds/slot.sv"), "part",
+          &[[20.0, -0.3, 18.5], [29.5, -0.3, 18.5], [35.5, -0.3, 25.0], [40.0, 5.0, 10.0]],
+          &[[36.5, -0.3, 25.0], [58.0, 3.0, 25.0], [58.0, 0.1, 16.9], [67.6, 0.1, 31.6]]);
+}
+
+/// `pad.sv`: the boss's root filled, two of the plate's near edges rounded and the other two
+/// sharp, the bore through it all.
+#[test]
+fn the_pad_is_filled_rounded_and_bored() {
+    holds(include_str!("../../examples/rounds/pad.sv"), "pad",
+          &[[8.3, -0.3, 0.0], [0.0, -10.0, 6.0], [-29.0, 1.0, 0.0], [0.0, 0.2, -19.8]],
+          &[[10.5, -0.3, 0.0], [-29.8, 0.2, 0.0], [29.8, 0.2, 0.0], [0.0, 5.0, 0.0], [0.0, -10.0, 2.0]]);
+}
+
 /// `by_hand.sv`: the one edge the word written in the file names rounded, its neighbours sharp.
 #[test]
 fn the_round_written_by_hand_rounds_one_edge() {

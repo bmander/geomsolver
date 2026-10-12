@@ -260,7 +260,8 @@ component Hex(c: point, ref: line, af: Length, phase: Angle) {
 // What a ball of radius `r` rolled along the convex edge of faces `a` and `b` cannot reach: the
 // points within both faces' sides that no such ball within both covers; only where the point's
 // nearest point of the faces' meeting is on the edge (so surfaces meeting where the body has no
-// edge make nothing); cut off by the faces the edge ends on.
+// edge make nothing); cut off by the faces the edge ends on at a corner (one going on from `a` or
+// `b` tangent ends nothing: the round goes on round it, the next run starting where this stops).
 component Run(a: face, b: face, r: Length) := { p |
   p inside a
   p inside b
