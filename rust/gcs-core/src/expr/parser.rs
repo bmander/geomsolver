@@ -224,22 +224,18 @@ fn tokenize(text: &str, units: Units) -> Result<Vec<(Tok, usize)>, String> {
                 }
             }
             '^' => Tok::Pow,
-            '<' | '>' => {
+            // a comparison; a lone `=` or `!` is nothing the language writes
+            '<' | '>' | '=' | '!' if matches!(c, '<' | '>') || chars.get(i) == Some(&'=') => {
                 let eq = chars.get(i) == Some(&'=');
-                if eq {
-                    i += 1;
-                }
+                i += eq as usize;
                 Tok::Cmp(match (c, eq) {
                     ('<', false) => Cmp::Lt,
                     ('<', true) => Cmp::Le,
                     ('>', false) => Cmp::Gt,
-                    _ => Cmp::Ge,
+                    ('>', true) => Cmp::Ge,
+                    ('=', _) => Cmp::Eq,
+                    _ => Cmp::Ne,
                 })
-            }
-            // `==` and `!=`; a lone `=` or `!` is nothing the language writes
-            '=' | '!' if chars.get(i) == Some(&'=') => {
-                i += 1;
-                Tok::Cmp(if c == '=' { Cmp::Eq } else { Cmp::Ne })
             }
             '(' => Tok::LParen,
             ')' => Tok::RParen,
@@ -320,7 +316,11 @@ impl Parser {
 
     fn negation(&mut self) -> Result<Cond, String> {
         self.enter()?;
-        let r = if self.word("not") { Cond::Not(Box::new(self.negation()?)) } else { self.comparison()? };
+        let r = if self.word("not") {
+            Cond::Not(Box::new(self.negation()?))
+        } else {
+            self.comparison()?
+        };
         self.leave();
         Ok(r)
     }
@@ -338,9 +338,12 @@ impl Parser {
         let reached = self.pos;
         self.pos = start + 1;
         self.depth = depth;
-        let inner = self.cond().and_then(|c| match self.next() {
-            Tok::RParen => Ok(c),
-            _ => Err(format!("expected `)` at {}", self.toks[self.pos.saturating_sub(1)].1 + 1)),
+        let inner = self.cond().and_then(|c| {
+            if *self.peek() != Tok::RParen {
+                return Err(format!("expected `)` at {}", self.here()));
+            }
+            self.next();
+            Ok(c)
         });
         match inner {
             Ok(c) => Ok(c),
@@ -508,32 +511,31 @@ pub fn parse(text: &str) -> Result<Parsed, String> {
 }
 
 pub fn parse_in(text: &str, units: Units) -> Result<Parsed, String> {
+    whole(text, units, Parser::expr).map(|body| Parsed { body })
+}
+
+/// The whole of a text read by one rule of the grammar, nothing left over.
+fn whole<T>(
+    text: &str,
+    units: Units,
+    rule: fn(&mut Parser) -> Result<T, String>,
+) -> Result<T, String> {
     if text.len() > MAX_TEXT {
         return Err(format!("expression longer than {MAX_TEXT} characters"));
     }
-    let toks = tokenize(text, units)?;
-    let mut p = Parser { toks, pos: 0, depth: 0 };
-    let body = p.expr()?;
+    let mut p = Parser { toks: tokenize(text, units)?, pos: 0, depth: 0 };
+    let body = rule(&mut p)?;
     if *p.peek() != Tok::End {
         return Err(format!("unexpected `{}` at {}", tok_text(p.peek()), p.here()));
     }
-    Ok(Parsed { body })
+    Ok(body)
 }
 
 /// Parse a condition (#210): comparisons of numbers joined by `and`, `or` and `not`, in the
 /// document's units.  A number alone is no condition: `when n { … }` is refused, since what a
 /// number's truth would be is a convention the language does not keep.
 pub fn parse_condition_in(text: &str, units: Units) -> Result<Cond, String> {
-    if text.len() > MAX_TEXT {
-        return Err(format!("condition longer than {MAX_TEXT} characters"));
-    }
-    let toks = tokenize(text, units)?;
-    let mut p = Parser { toks, pos: 0, depth: 0 };
-    let body = p.cond()?;
-    if *p.peek() != Tok::End {
-        return Err(format!("unexpected `{}` at {}", tok_text(p.peek()), p.here()));
-    }
-    Ok(body)
+    whole(text, units, Parser::cond)
 }
 
 fn tok_text(t: &Tok) -> String {

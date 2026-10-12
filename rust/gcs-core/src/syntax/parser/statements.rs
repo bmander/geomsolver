@@ -1019,13 +1019,12 @@ impl<'a> P<'a> {
         let lo = self.prev_hi();
         // `repeat e in rack.profile` — the block runs over a chain's edges; a ring is counted,
         // since its turn is a fraction of a whole one
-        if kind == BlockKind::Ring && over_chain(&self.t, self.i) {
-            self.fail("a `ring` is counted and turned about a centre: `ring N about C { … }`");
-            self.skip_block();
-            return None;
-        }
-        if kind == BlockKind::When && over_chain(&self.t, self.i) {
-            self.fail(WHEN);
+        if matches!(kind, BlockKind::Ring | BlockKind::When) && over_chain(&self.t, self.i) {
+            self.fail(if kind == BlockKind::Ring {
+                "a `ring` is counted and turned about a centre: `ring N about C { … }`"
+            } else {
+                WHEN
+            });
             self.skip_block();
             return None;
         }

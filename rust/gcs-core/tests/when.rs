@@ -26,7 +26,7 @@ fn point(e: &Elaborated, name: &str) -> Option<usize> {
 }
 
 /// A drawing with one point made where the relief is more than nothing and another where it is
-/// not, each read by a relation outside its block.
+/// not.
 fn switched(relief: &str) -> String {
     format!(
         "unit mm\nuse std\nrelief := {relief}\nin std.front {{\n\
@@ -70,7 +70,8 @@ fn a_when_is_made_once_or_not_at_all() {
 /// its own name, and a component's block makes `t.tip` — no copy index anywhere.
 #[test]
 fn the_names_inside_a_when_are_the_enclosing_scopes() {
-    let src = format!("{}in std.front {{\nb := point hint((0, 12))\nq distance(5mm) b\n}}\n", switched("1mm"));
+    let outside = "in std.front {\nb := point hint((0, 12))\nq distance(5mm) b\n}\n";
+    let src = format!("{}{outside}", switched("1mm"));
     let (e, d) = read(&src);
     assert!(d.is_empty(), "{d:?}");
     let mut sk = e.sketch;
@@ -86,14 +87,13 @@ fn the_names_inside_a_when_are_the_enclosing_scopes() {
         in std.front {\n\
           a := point\n\
           fix((0, 0)) a\n\
+          b := point hint((0, 9))\n\
           t := Tab(a, d: 4mm)\n\
           u := Tab(a, d: 0mm)\n\
-        }\n\
-        t.tip distance(3mm) a\n";
+          t.tip distance(3mm) b\n\
+        }\n";
     let (e, d) = read(doc);
-    // `t.tip` is held 4mm and 3mm from `a` at once: the drawing says so, which is no concern of
-    // the block's — what matters is that the name resolved
-    assert!(d.iter().all(|m| !m.starts_with("E1") && !m.starts_with("syntax")), "{d:?}");
+    assert!(d.is_empty(), "{d:?}");
     let tip = e.map.ent_named("t.tip").expect("the block in `t` makes `t.tip`");
     assert_eq!(e.map.name_of(tip).map(String::as_str), Some("t.tip"));
     assert!(e.map.ent_named("u.tip").is_none(), "`u`'s depth is zero, so it has no tip");
@@ -187,8 +187,8 @@ fn a_when_has_no_index_and_no_next_copy() {
 }
 
 /// **The comparisons** (`expr`): six, between numbers of one dimension — two operands, as under
-/// `+`, so a length is compared with `0mm` and not with `0` — joined by `and`, `or` and `not`, `or` loosest; a parenthesis may hold
-/// a number or a condition.  Exact, no tolerance.
+/// `+`, so a length is compared with `0mm` and not with `0` — joined by `and`, `or` and `not`,
+/// `or` loosest; a parenthesis may hold a number or a condition.  Exact, no tolerance.
 #[test]
 fn conditions_compare_numbers_of_one_dimension() {
     let mm = Units::with_length("mm").unwrap();
@@ -227,7 +227,8 @@ fn conditions_compare_numbers_of_one_dimension() {
     let err = decide("a < 1deg").unwrap_err();
     assert_eq!(err.fault, Fault::Dimension, "{err:?}");
     assert!(err.message.contains("Length cannot be compared with Angle"), "{err:?}");
-    assert_eq!(decide("a > 0").map_err(|e| e.fault), Err(Fault::Dimension), "a bare 0 is no length");
+    let bare = decide("a > 0").map_err(|e| e.fault);
+    assert_eq!(bare, Err(Fault::Dimension), "a bare 0 is no length");
     for bad in ["a", "a < b < 3mm", "a = b", "a < b and", "(a < b", "a ! b"] {
         assert!(expr::parse_condition_in(bad, mm).is_err(), "{bad} is no condition");
     }

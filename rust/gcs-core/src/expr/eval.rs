@@ -112,9 +112,10 @@ pub fn eval(ast: &Ast, env: &BTreeMap<String, Aff>) -> Result<Aff, ExprError> {
 
 /// Whether a condition holds (#210), its names worked out from `env`.  Each comparison is
 /// between two plain numbers of one dimension, as `+` is between two operands (`Dim::agree`):
-/// `d > 0mm`, never `d > 0` — and every comparison is worked out, `and` and `or` included, so a mistake on the side a
-/// short circuit would skip is still said.  A name `env` has no number for is refused here;
-/// the caller, which knows an unknown of the drawing from a name nothing declares, asks first.
+/// `d > 0mm`, never `d > 0`.  Every comparison is worked out, under `and` and `or` too, so a
+/// mistake on the side a short circuit would skip is still said.  A name `env` has no number
+/// for is refused here; the caller, which knows an unknown of the drawing from a name nothing
+/// declares, asks first.
 pub fn decide(c: &Cond, env: &BTreeMap<String, Aff>) -> Result<bool, ExprError> {
     Ok(match c {
         Cond::Cmp(op, a, b) => {

@@ -52,16 +52,22 @@ pub(super) fn condition(
     scope: &Scope,
     units: Units,
 ) -> Result<bool, (Code, String)> {
-    let c = expr::parse_condition_in(text, units).map_err(|e| (Code::E103, format!("`{text}`: {e}")))?;
+    let said = |code, e: String| (code, format!("`{text}`: {e}"));
+    let c = expr::parse_condition_in(text, units).map_err(|e| said(Code::E103, e))?;
     for name in c.deps() {
         match env.get(&name).map(|a| a.free.as_deref()) {
             None => {
-                let why = out_of_reach(&name, env, scope)
-                    .unwrap_or_else(|| format!("`{name}` is not a number here — nothing in scope gives it one"));
+                let why = out_of_reach(&name, env, scope).unwrap_or_else(|| {
+                    format!("`{name}` is not a number here — nothing in scope gives it one")
+                });
                 return Err((Code::E101, why));
             }
             Some(Some(u)) => {
-                let what = if u == name { format!("`{name}` is") } else { format!("`{name}` reads `{u}`,") };
+                let what = if u == name {
+                    format!("`{name}` is")
+                } else {
+                    format!("`{name}` reads `{u}`,")
+                };
                 return Err((Code::E040, format!(
                     "{what} an unknown of the drawing, and a `when` is decided before the solve: \
                      compare numbers the document states"
@@ -71,11 +77,8 @@ pub(super) fn condition(
         }
     }
     expr::decide(&c, env).map_err(|e| {
-        let code = match e.fault {
-            expr::Fault::Measure => Code::E107,
-            _ => Code::E103,
-        };
-        (code, format!("`{text}`: {}", e.message))
+        let code = if e.fault == expr::Fault::Measure { Code::E107 } else { Code::E103 };
+        said(code, e.message)
     })
 }
 
