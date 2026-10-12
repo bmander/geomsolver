@@ -775,9 +775,13 @@ point in space is E060, a face over one E080. In the workspace such points are d
 eye's picture plane; depth stays the constraints'.
 
 - **`p coincident P` is `in P` said as a relation**: the point is drawn in `P`, and relations over
-  it read as `P`'s. `l coincident P` puts both ends in. The first plane wins; a second is a row in
-  space. A point whose seed has a `z`, that a `fix` holds whole, or that is claimed on the plane,
-  stays in space.
+  it read as `P`'s. `l coincident P` puts both ends in. A point its declaration draws in another
+  plane is drawn in `P` too, as `in Q, P` would draw it: the way to put a point another component
+  declares into a plane only this one knows (`gear.M coincident q`). Said plane first, `q
+  coincident gear.M` puts the plane through the point by a row. A point in space put on a second
+  plane by a statement is held there by a row, and `project` reads each point in its own plane.
+  A point whose seed has a `z`, that a `fix` holds whole, or that is claimed on the plane, stays
+  in space.
 - **A point may be drawn in two planes**: `O := point in P, G` lies on their common line, and each
   plane's geometry reads it as its own (`arc(center: O)` drawn in `G` is `G`'s). It is what two
   views tied by `project` say, said once. The same plane twice is E040, parallel planes E061.

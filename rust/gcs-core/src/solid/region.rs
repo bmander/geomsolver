@@ -281,24 +281,21 @@ fn fold(sk: &Sketch, solid: usize) -> Result<Meridian, Refusal> {
         let Some(l) = l else { continue };
         let tag = k as u32 + 1;
         let (a, b) = (l.a as u32 + 1, l.b as u32 + 1);
-        // exact only where it builds what the set says: a flat only between straight steps (beside
-        // an arc the sum of distances bows off the straight flat)
+        // exact only where it builds what the set says: a flat only where its sum of distances is
+        // a line or a conic (`corners::sum`: not between two arcs, a Cartesian oval)
         let curved = |x: &crate::brep::planar::Step| matches!(x.seg, Seg::Arc { .. });
-        let beside_arc = || region.loops.iter().any(|lp| (0..lp.len()).any(|i| {
+        let between_arcs = || region.loops.iter().any(|lp| (0..lp.len()).any(|i| {
             let (st, nx) = (&lp[i], &lp[(i + 1) % lp.len()]);
             let named = (st.tag == a && nx.tag == b) || (st.tag == b && nx.tag == a);
-            named && (curved(st) || curved(nx))
+            named && curved(st) && curved(nx)
         }));
-        if matches!(l.kind, Lower::Flat { .. }) && beside_arc() {
-            return Err(format!("`{}`: a flat beside a curved face is read point by point: the sum \
-                                of distances bows off the straight flat there", s.name).into());
+        if matches!(l.kind, Lower::Flat { .. }) && between_arcs() {
+            return Err(format!("`{}`: a flat between two curved faces is read point by point: its \
+                                sum of distances is no line or conic there", s.name).into());
         }
         region = match l.kind {
             Lower::Round { r } => crate::brep::corners::round(&region, &[a], &[b], r, tag),
-            Lower::Flat { la, lb } => {
-                use crate::brep::corners::Leg;
-                crate::brep::corners::chamfer(&region, &[a], &[b], [Leg::FromOther(la), Leg::FromOther(lb)], tag)
-            }
+            Lower::Flat { la, lb } => crate::brep::corners::summed(&region, &[a], &[b], [la, lb], tag),
         }.map_err(|e| format!("`{}`: {e}", s.name))?;
     }
     if region.loops.is_empty() || region.area().abs() <= tol * tol {
@@ -356,8 +353,9 @@ fn agrees(sk: &Sketch, solid: usize, region: &Region, half_plane: &crate::plane:
 }
 
 /// The meridian's loops as the faceted kernel turns them: polygons in the half-plane (`u` along
-/// the seam, `v` along the axis), each arc chorded as a face's arcs are (`tessellate_arc`), every
-/// side named by the term it came from — the loop enclosing most first, the holes after.
+/// the seam, `v` along the axis), each arc chorded as a face's arcs are (`tessellate_arc`), a conic
+/// as an arc of its length and turn would be, every side named by the term it came from — the loop
+/// enclosing most first, the holes after.
 pub(super) fn face_polys(m: &Meridian, unit: f64) -> Vec<super::profile::FacePoly> {
     let basis = crate::plane::Basis { u: m.seam, v: m.axis, o: m.origin };
     m.region.outer_first().into_iter().map(|l| {
@@ -369,6 +367,19 @@ pub(super) fn face_polys(m: &Meridian, unit: f64) -> Vec<super::profile::FacePol
                 Seg::Line { a, .. } => {
                     pts.push((a[0], a[1]));
                     of.push((k, false));
+                }
+                Seg::Conic { .. } => {
+                    // chorded as an arc of its length through the turn between its ends would be
+                    let (t0, t1) = (step.seg.tangent(0.0), step.seg.tangent(1.0));
+                    let turn = (t0[0] * t1[1] - t0[1] * t1[0]).datan2(t0[0] * t1[0] + t0[1] * t1[1]).abs()
+                        .max(1e-9);
+                    let r = step.seg.length() / turn;
+                    let n = super::profile::tessellate_arc((0.0, 0.0), r, 0.0, turn, unit).len() - 1;
+                    for j in 0..n {
+                        let p = step.seg.point(j as f64 / n as f64);
+                        pts.push((p[0], p[1]));
+                        of.push((k, true));
+                    }
                 }
                 Seg::Arc { c, r, a0, sweep } => {
                     let ring = super::profile::tessellate_arc((c[0], c[1]), r, a0, sweep, unit);

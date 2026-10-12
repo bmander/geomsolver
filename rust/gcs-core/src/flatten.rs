@@ -499,6 +499,17 @@ impl<'a> Walk<'a> {
         }
     }
 
+    /// The standard datums' component and the scope its statements are walked in, where the
+    /// document has them (`use std`).
+    fn datums(&self) -> Option<(&'a Component, Scope)> {
+        if !self.standard_datums {
+            return None;
+        }
+        let k = self.prog.modules.iter().position(|m| m.name == "std");
+        let scope = Scope { prefixes: vec!["std.".into()], module: k, ..Scope::default() };
+        Some((self.prog.component_in(k, "StandardDatums")?, scope))
+    }
+
     fn finish(mut self) -> Expansion {
         self.expand_pending();
         // a set's uses, once every set is known (§6.21) — a solid's faces among them — and a use
@@ -508,15 +519,12 @@ impl<'a> Walk<'a> {
         self.expand_pending();
         let (mut flat, mut aliases) = self.resolve();
         let lowered = self.to_judge(&aliases);
-        if self.standard_datums {
+        if let Some((comp, scope)) = self.datums() {
             // A document that says `use std` has the standard datums, as a CAD part has its
             // origin planes, whether or not anything refers to them yet: the workspace offers
             // them as places to draw.  They are ordinary library statements with their own spans.
             // They follow the document's own, so its points keep the indices they would have
             // without them; resolution is by name, so nothing reads them the worse for it.
-            let k = self.prog.modules.iter().position(|m| m.name == "std");
-            let comp = self.prog.component_in(k, "StandardDatums").unwrap();
-            let scope = Scope { prefixes: vec!["std.".into()], module: k, ..Scope::default() };
             let mut vals = self.module_params(comp.module.unwrap());
             self.body(&comp.body, &scope, &mut vals, &[], 1);
             self.expand_pending();

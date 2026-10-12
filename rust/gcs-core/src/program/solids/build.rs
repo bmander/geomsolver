@@ -90,7 +90,7 @@ pub(super) fn build_solid(
                 return None;
             };
             let mut terms = probes.terms.remove(&p.i()).unwrap_or_default();
-            if let Err(m) = super::super::relations::fill_sets(sk, &mut terms, probes, 0) {
+            if let Err(m) = super::super::relations::fill_sets(sk, &mut terms, probes, p.i(), 0) {
                 say(Code::E040, st.span, m);
                 return None;
             }

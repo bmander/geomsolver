@@ -18,7 +18,7 @@ spiral_angle := 25deg
 // flank clearance with the other flanks touching, a quarter of it off each crown flank
 // (crown/section.sv). The tip relief: the tips' flank edges chamfered this far down the tooth
 // (crown/relief.sv). The end relief: the tips' toe and heel edges chamfered this far each way
-// (blank/ends.sv).
+// (blank/member.sv).
 backlash := 0.05mm
 tip_relief := 0.2mm
 end_relief := 0.2mm

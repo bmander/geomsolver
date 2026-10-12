@@ -94,15 +94,15 @@ fn a_plane_dropped_on_nothing_is_free_and_set_off_the_one_being_drawn_on() {
 #[test]
 fn a_plane_through_a_point_and_square_to_a_ray() {
     let (text, e) = drop(EntKind::Plane, &["c"], Some("std.top"));
-    assert!(text.contains("c coincident v0\n"), "{text}");
+    assert!(text.contains("v0 coincident c\n"), "{text}");
     assert!(on_plane(&e, "v0", point(&e, "c")));
     // square to an axis, said outright
     let (text, e) = drop(EntKind::Plane, &["s", "t"], None);
-    assert!(text.contains("s coincident v0\nt perpendicular v0\n"), "{text}");
+    assert!(text.contains("v0 coincident s\nt perpendicular v0\n"), "{text}");
     assert!(on_plane(&e, "v0", point(&e, "s")) && along(plane(&e, "v0").0, [0.0, 1.0, 0.0]));
     // square to a drawn line, by standing square to both the plane's own axes
     let (text, e) = drop(EntKind::Plane, &["s", "ab"], None);
-    assert!(text.contains("s coincident v0\nab perpendicular v0.u\nab perpendicular v0.v\n"), "{text}");
+    assert!(text.contains("v0 coincident s\nab perpendicular v0.u\nab perpendicular v0.v\n"), "{text}");
     assert!(on_plane(&e, "v0", point(&e, "s")) && along(plane(&e, "v0").0, [1.0, 0.0, 0.0]));
 }
 
@@ -113,7 +113,7 @@ fn a_plane_holds_two_rays_or_three_points() {
     assert!(along(plane(&e, "v0").0, [0.0, 0.0, 1.0]));
     assert!(on_plane(&e, "v0", point(&e, "b")));
     let (text, e) = drop(EntKind::Plane, &["a", "b", "s"], None);
-    assert!(text.contains("a coincident v0\nb coincident v0\ns coincident v0\n"), "{text}");
+    assert!(text.contains("v0 coincident a\nv0 coincident b\nv0 coincident s\n"), "{text}");
     for p in ["a", "b", "s"] {
         assert!(on_plane(&e, "v0", point(&e, p)), "{p}");
     }

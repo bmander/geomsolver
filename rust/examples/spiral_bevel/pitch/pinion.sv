@@ -23,29 +23,27 @@ component PinionCone(p: plane, q: plane, gear: group, foot: line, design: group,
   r := design.cone_distance
   d := design.offset
   // A and V lie on the line where P and Q meet, so each is drawn in both. M is the gear's, drawn
-  // in P and G, and its image in Q is `mean`.
+  // in P and G; it is on that line too, so it is said on Q, which draws it there as well.
   A := point hint((-0.75 * d, 1.25 * d)) in p, q
   V := point hint((-0.75 * d, 1.25 * d)) in p, q
   in p {
     hinge := line(gear.M, A)
   }
+  gear.M coincident q
   V coincident hinge
   V coincident foot
   // The offset's hand: the pinion's apex on P's v side of the gear's generator.
   A distance(>= 0, along: v) p
   in q {
-    mean := point hint((-r, 0))
     tip := point hint(x: d - r * design.gear_teeth / design.crown_teeth,
                       y: -r * design.pinion_teeth / design.crown_teeth)
     virtual_tip := point hint(at: tip)
-    pitch_line := line(A, mean)
+    pitch_line := line(A, gear.M)
     ax := line(A, tip)
-    virtual_line := line(V, mean)
+    virtual_line := line(V, gear.M)
     virtual_axis := line(V, virtual_tip)
-    pitch_radius := circle(center: mean) hint(r: r * design.pinion_teeth / design.crown_teeth)
+    pitch_radius := circle(center: gear.M) hint(r: r * design.pinion_teeth / design.crown_teeth)
   }
-  mean coincident p
-  gear.M project mean
   ax equal pitch_line
   virtual_axis equal virtual_line
   ax tangent(side: right) pitch_radius

@@ -77,6 +77,17 @@ point's name (`SourceMap::twin_of`, read by `name_of`/`writable_name`; never fil
 `--where` lists the point once), and a sheet's view selects a point with its twins
 (`drawing/render.rs`). JSON `"twins"`, `graft`,
 `lift` (prints `in P, G`, never a twin) and `edit::remove` (keeps the other planes) carry it.
+**Said as a relation** (0.74, #211, #145 F11): `gear.M coincident q`, point first, of a point
+its own `in` or an `in` block draws in a plane, is the same twin. `Walk::drawn_incidences`, at the
+head of `resolve` so the memberships read first know it, makes the statement the twin's
+declaration (`Walk::twin`, shared with `twins_of`), std's datums read from `StandardDatums`
+(`Walk::datums`). The row stays for `q coincident gear.M` (the plane through the point: what
+`edit::add_datum` writes, the plane perhaps lying on the point's own, where a twin is E061), a
+point only its instance's `in` puts in a view (in space to its component: `crown/tooth.sv`'s `lp
+coincident p`), a claim, a derivative, a set's application, a ring's statement, the point's own
+plane and a line's minted end (`l.p1`); a point in space is `planes::incidences`'. `project`
+never reads a twin (`relations::constrain`): it relates two planes, each operand in its own, so
+`m coincident P; O project m` still elaborates. The hypoid's pinion reads `gear.M` in Q so.
 `tests/two_planes.rs` is the gate.
 
 **Nothing is imported bare unless the `use` names it (Solvent §14.4, [0.30], [0.48], #94):** a
@@ -309,20 +320,43 @@ radius for a round's centres) is built in the meridian by X1's construction (`br
 moved from `tests/fillet_meridian.rs`) — a round at any corner of lines and arcs, an offset
 cone's generator and rounded apex included (#207) — and held to the region read point by point
 beside each face (`region::agrees`; a disagreement is read by the field); refused (and read by the
-field) at a charted corner (none a meridian folds) or a flat beside an arc (the sum of distances
-bows there, #208). `tests/rounds.rs` is the gate (X2's closed forms in the slow tier),
-`tests/offset_corners.rs` (Pappus, `rounds/blank.sv`) the offset cone's.
+field) at a charted corner (none a meridian folds) or a flat between two arcs. **A chamfer's flat
+is its sum of distances** (#196, #208, [0.73]): between a line and an arc it bows, the conic `|q −
+c| = α + β d_L` (`corners::sum`), a **`Seg::Conic`** — the rational quadratic Bézier over its ends
+and where their tangents meet — carried by every meridian reader: planar Booleans (`meets_steps`'
+roots, `contains` in closed form), the field's `Edge::Conic` (`Wall::conic`: pieces'
+control-triangle discs, split while wide), `Meridian::Conic`, and the recipe's rational B-spline
+(`region_profile`, read back by `meridian_region`). `std.Chamfered` is multiplied through by its
+legs, so a leg of nothing cuts nothing (a bound weighing every measurement by nothing holds
+everywhere, else E040, `measured_term`). `tests/rounds.rs` is the gate (X2's closed forms in the
+slow tier), `tests/offset_corners.rs` (Pappus, `rounds/blank.sv`) the offset cone's.
 **Rounds built exactly: the lowering table** (#194, #183 L7, `solid::lowering`): a region over a
 body's faces is recognised by its terms' shapes (`recognised`: two or three `FaceSide`s alike, an
 `Angle` gate per pair at a half turn, the common-part-against-meeting sum (the meeting cut or not
 where its edge ends, `meeting_of`: std's is, #195), an `Ends` per pair, and
 one bound saying the section — a ball's `centres` set or a flat's sum), **never by a word's name**
 (`by_hand.sv`'s own `Rolled` is built by the same entry), read off the stratum (`faces::cached`,
-`BodyFaces::plane`/`segment`/`circle`/`coaxial`/`normal`) into **pieces**: `Run` (the section along a
-straight edge between planes, its ends cut off square — else refused, `unbuilt`), `Ring` (a whole
-circle where a plane meets a coaxial cylinder or cone: the section in one meridian turned once),
+`BodyFaces::plane`/`cylinder`/`segment`/`circle`/`coaxial`/`normal`) into **pieces**, one per edge
+where a face reference names a face in pieces (`run`: every edge between the two groups, each kept
+within the whole run's ends, as the field reads them): `Run` (the section along a straight edge
+between planes, or a plane and a cylinder about a line along it — the section's `Trace`s a line and
+a circle, the ball where their offsets meet — carried on past each end until the plane faces it
+ends on cut it off (#195's meaning: a square one is the prism's end, one at a slant a half-space it
+is kept within, `Run::within`, the recipe's `"within"` as a point and a normal; a run-out); a face
+along the edge or a curved end refused, `unbuilt`), `Ring` (a circle where a
+plane meets a coaxial cylinder or cone: the section in the meridian at its start turned through its
+angle, `Ring::angle`; a sphere centred on the axis is a circle in the meridian (`Trace::Circle`,
+`knob.sv`'s neck); a stretch only where its ends are seams or planes through the axis at its
+ends' meridians), a run and a stretch going on from one
+another **glued** at their shared section (a face going on tangent across a seam is no end,
+`BodyFaces::continues`, the field's and the lowering's one rule),
 `Corner` (three square planes: the cell less the ball, `brep::fillet::corner`, plus each edge's
-run); no pieces where the faces never meet or an edge turns the other way. **The gate**: the
+run), `Rolled` (along an edge no line or coaxial circle carries — a tee's crotch, a bore's rim, a
+run-out across a slope: the ball rolled along the whole run, `brep::fillet::roll`, its canal
+fitted, carried past an end and cut off by the plane there; the recipe's `"rolled"` rolled against
+the body's stratum, rebuilt from the `"stratum"` terms `cad.rs` writes beside it, the gate's
+against `BodyFaces::brep` brought back by `BodyFaces::back`); no pieces where the faces never meet
+or an edge turns the other way. **The gate**: the
 pieces' B-rep held to the region's own field (`agreement`, by area; empty only where the field
 reads empty) before anything reads them. Memoised against the region's own terms (`document::reads_own`)
 and the stratum's `Arc` (`Sketch::lowering_cache`; a key over `solid::reads` walks every round of
@@ -336,9 +370,14 @@ this needs (ported from #79–#110): edges along a face cut where they cross its
 (`query::crossings_in`), touches read to second order (`ssi::touch_near`/`touch`,
 `trace_beside`/`unseen_beside`), equal crossing cylinders' ellipses split where they cross
 (`boolean::crossings_among`), `query::line_cylinder`, `Surface::offset`, a fitted edge read at its
-own `tol`. Open: slanted or curved ends, stretches of circles, corners not square, curved
-sections (arcs: #83), traced canals (`brep::fillet::roll`, #85), run-outs (#110), the OCCT oracle.
-`tests/round_lowering.rs` is the gate (every volume the closed form's to 1e-9).
+own `tol`. `cad::shifted` (the app's exact solid, built about its own origin) moves a lowered
+node's pieces, corners and balls with the rest (`shifted_node`). Open: curved ends at a corner (a
+run-out onto a curved face, #110), corners not square, runs between two curved faces, a run
+mitred against a ring's stretch on one cylinder (the union of coincident cylinder faces: a groove
+rounded at its ends), a flat along a traced edge, a rolled round beside other pieces in one
+region, the OCCT oracle. `tests/round_lowering.rs` is the gate (every volume the closed form's to
+1e-9, a rolled one #85's quadrature's to 1e-6: `slot.sv`, `pad.sv`, `rail.sv`, `knob.sv`,
+`tee.sv`, `bore.sv`, `runout.sv`).
 **Distance from a set, offsets (§6.21, 0.64, #145 F4):** `p distance(d, side: outside|inside) S`
 (`distance` is a set use, `may_use`), `p inside(d) S` / `p outside(d) S` and `std.Offset(S, d)` are
 one bound on the signed distance from `S`'s surface (`Reach`: cmp toward the outside, whether
@@ -492,7 +531,7 @@ The parser refuses `as`, a trailing joint and `when e in X`; the measured-bound 
 statement an opener word starts. `commit_seeds` writes into a root `when`'s body. The hypoid's
 tip relief is one (`layout.sv`, `members.sv`). `tests/when.rs` is the gate.
 
-**A component may instantiate itself** (§8, 0.73): a call back into one still being expanded
+**A component may instantiate itself** (§8, 0.75): a call back into one still being expanded
 is walked like any other (`Walk::instantiating` keeps each with the numbers it was given), each
 level an instance under the last (`d.s.s.m`), ended by a `when` over its numbers. E003 at the
 call that closes the cycle is only what never ends: the same numbers again (`sub_vals` equal, so
@@ -639,8 +678,8 @@ evaluate it. Union first; `cut` and `bound` commute; a swept solid may only be `
 each member's blank is a region (`blank/member.sv`, `MemberBlank`: the pitch cone, a `std.Cone`
 about the member's axis, its half left unseeded so it settles from the pose, grown by the addendum (`std.Offset`) and its outside by the back depth (`outside(d)`),
 `std.Sphere`s through the face span, sized by the solved layout — a region term reads an unknown,
-`model::TermNumber`; `EndChamfer` puts its corners on the tip set, seeded off the cone line's mean
-point); `pair.sv` draws the same
+`model::TermNumber`; the end relief two `std.Chamfered` bounds in the same region, lowered as
+conics); `pair.sv` draws the same
 limits as revolved sections for the checks' walls (`blank/limits.sv`), `tests/region_blank.rs` the
 gate between them; each crown section bounds its tip land (`distance(>= 0.01 * design.module) tip`)
 so a collapsed tip is no root. Modules `design.sv`, `views.sv`, `pitch/`, `blank/`, `crown/`,
@@ -720,7 +759,7 @@ construction needs `admission::Admission` (only `admit_body` makes one). Contrac
 `tests/native_surfaces/gear_cells.rs` holds the recorded tooth-space volumes;
 `tests/generating_harness.rs` (ignored) locates refusals by stage.
 The pair carries **backlash** (`crown/section.sv`, `side: left`), **tip relief** (`crown/relief.sv`,
-`relieved`) and **end relief** (`blank/ends.sv`, `ends_relieved`); `fixtures::gear::design` pins
+`relieved`) and **end relief** (`blank/member.sv`'s `std.Chamfered`); `fixtures::gear::design` pins
 all to zero, `fixtures::gear::fabricated` sets them. Files:
 `build/exports/hypoid-{pinion,gear}.{step,stl}`; `gcs-cli/tests/pair_check.rs` (ignored) checks
 the pair from the STLs.
@@ -833,7 +872,8 @@ patterned. `brep::export::{exact,step,stl}` is shared by `solventc` and `app/exp
 (`gcs_solid_exact`), so native and wasm files are byte-identical: the core's trigonometry, `exp`,
 `ln`, `pow`, `hypot` are its own (`fmath`, `x.dsin()` via `Det`; no platform libm). With OCCT and
 `--verify-step full` the CLI reads our STEP back (`cad::read_back`). A face met twice is told apart
-by `cutter::OCCURRENCE`; a trace ends off a sheet's patch (`Surface::off_patch`); interpolations
+by `cutter::OCCURRENCE`; a trace ends off a sheet's patch (`Surface::off_patch`, a revolution's or
+an extrusion's of a curve too); a revolution about the axis is kept by `pattern`'s turns; interpolations
 past `nurbs::BANDED` points solve banded; a gross sheet falls back to chord length.
 **Rung 3 (the app reads the exact solid):** a static solid's `EvaluatedSolid` is the B-rep's
 (`solid::Exact`, `Sketch::exact_solid`, cached against `solid::reads`; `from_brep`), built about its

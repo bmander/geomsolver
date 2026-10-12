@@ -88,6 +88,19 @@ pub fn brent(f: &impl Fn(f64) -> f64,lo: f64,hi: f64,xtol: f64,steps: usize,stop
     (fx,x)
 }
 
+/// The real roots of `a t² + b t + c`, ascending, without cancellation (the larger root by the
+/// quadratic formula, the smaller by Vieta's product); a linear one where `a` is nothing against
+/// `b` and `c` (a parabola's along its axis), none where it is all nothing.
+pub fn quadratic(a: f64,b: f64,c: f64) -> Vec<f64> {
+    if a.abs() <= 1e-14*(b.abs()+c.abs()) { return if b == 0. { Vec::new() } else { vec![-c/b] } }
+    let disc = b*b-4.*a*c;
+    if disc < 0. { return Vec::new() }
+    let k = -0.5*(b+disc.sqrt().copysign(b));
+    if k == 0. { return vec![0.] }
+    let (x,y) = (k/a,c/k);
+    if x <= y { vec![x,y] } else { vec![y,x] }
+}
+
 /// Bisect the bracket `[lo, hi]` while `wide` says it is: `keep` is asked of each middle, and
 /// `true` moves `lo` there, `false` moves `hi`. The bracket as it ends. `mid` is the caller's,
 /// so a bracket of points is halved where the caller halves it.

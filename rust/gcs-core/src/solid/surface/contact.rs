@@ -23,6 +23,8 @@ impl RevolvedSurface {
                 start:pose.point(start),delta:pose.vector(delta)},
             Meridian::Round {center,a,b,sweep} => Meridian::Round {
                 center:pose.point(center),a:pose.vector(a),b:pose.vector(b),sweep},
+            Meridian::Conic {a,m,b,w} => Meridian::Conic {
+                a:pose.point(a),m:pose.point(m),b:pose.point(b),w},
         };
         Self {meridian,origin:pose.point(self.origin),axis:pose.vector(self.axis),..self.clone()}
     }
