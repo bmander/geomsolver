@@ -394,6 +394,12 @@ impl Meter {
         let mut cuts = Vec::new();
         let mut statics = Vec::new();
         let blank = match &sk.solids[body].def {
+            // a body with no swept cut is its own blank, read as the field reads it: its readers
+            // of faces after the rest (the stratum), its unions folded in pairs
+            SolidDef::Body {stock,on,through,bound} if !cad::contains_sweep(sk,body) => {
+                statics.extend(std::iter::once(stock).chain(on).chain(bound).chain(through));
+                SpatialField::read(sk,body,tol)?
+            }
             SolidDef::Body {stock,on,through,bound} => {
                 let mut field = read(*stock)?;
                 statics.push(*stock);

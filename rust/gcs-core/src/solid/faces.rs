@@ -242,6 +242,54 @@ impl BodyFaces {
         }).collect()
     }
 
+    /// Face `fi`'s plane, where it lies in one: its unit normal away from the material and its
+    /// frame's origin (model units).
+    pub fn plane(&self, fi: usize) -> Option<(V, V)> {
+        let f = &self.loc.b.faces[fi];
+        let crate::brep::geom::Surface::Plane(frame) = &f.surface else { return None };
+        Some((if f.reversed { scale(frame.z, -1.0) } else { frame.z }, self.back(frame.o)))
+    }
+
+    /// Edge `e`'s ends, first to last, where it is a straight line (model units).
+    pub fn segment(&self, e: u32) -> Option<[V; 2]> {
+        let edge = &self.loc.b.edges[e as usize];
+        let EdgeCurve::Curve(crate::brep::geom::Curve::Line { .. }) = &edge.curve else { return None };
+        Some(edge.v.map(|v| self.back(self.loc.b.vertices[v as usize].p)))
+    }
+
+    /// Edge `e`'s circle, where it is one (a whole turn or a stretch): its centre, unit normal and
+    /// radius, and the unit direction from its centre its parameter starts at (model units).
+    pub fn circle(&self, e: u32) -> Option<(V, V, f64, V)> {
+        let edge = &self.loc.b.edges[e as usize];
+        let EdgeCurve::Curve(crate::brep::geom::Curve::Circle(f, r)) = &edge.curve else { return None };
+        Some((self.back(f.o), f.z, r / self.mm, f.x))
+    }
+
+    /// Whether edge `e` is closed: one vertex at both ends.
+    pub fn closed(&self, e: u32) -> bool {
+        let v = self.loc.b.edges[e as usize].v;
+        v[0] == v[1]
+    }
+
+    /// Face `fi`'s unit normal at `p` (on it), away from the material.
+    pub fn normal(&self, fi: usize, p: V) -> V {
+        let n = self.outward(fi, self.q(p));
+        scale(n, 1.0 / norm(n))
+    }
+
+    /// Whether face `fi`'s surface is turned about the line through `o` along the unit `d` with a
+    /// straight meridian: a plane square to it, a cylinder or a cone about it (model units).
+    pub fn coaxial(&self, fi: usize, o: V, d: V) -> bool {
+        use crate::brep::geom::Surface;
+        let along = |z: V| norm(crate::space::cross(z, d)) <= 1e-9;
+        let on = |p: V| norm(crate::space::cross(sub(self.back(p), o), d)) <= 1e-9 * (1.0 + norm(o));
+        match &self.loc.b.faces[fi].surface {
+            Surface::Plane(f) => along(f.z),
+            Surface::Cylinder(f, _) | Surface::Cone(f, _, _) => along(f.z) && on(f.o),
+            _ => false,
+        }
+    }
+
     /// The faces at vertex `v` other than `not`.
     pub fn faces_at(&self, v: u32, not: &[usize]) -> Vec<usize> {
         (0..self.edges.len()).filter(|fi| {

@@ -4,11 +4,11 @@
 // `rust/lib/std.sv`, over faces read as sets (`block.near` is the points of that face), the
 // distance from a set, a bound on a sum of measurements, where an edge ends, and repetition over a
 // solid's faces. What each word makes is a region the field reads point by point, cut from the
-// block.
+// block — and, being sets the lowering table recognises, each is built exactly too (a prism whose
+// face is a cylinder, or a plane), so the block exports by `solventc --step`.
 //
 // The block is drawn on the front plane and stands 12 deep behind it: its near face is the one
-// you see square on. Orbit (right-drag) to see both rims. Edit `r` or `d` and apply (⌘↵); the
-// surfaces refine in the background. Write `round(r: r) block` instead to round every edge, its
+// you see square on. Orbit (right-drag) to see both rims. Edit `r` or `d` and apply (⌘↵). Write `round(r: r) block` instead to round every edge, its
 // corners where three runs meet spherical, and `chamfer(d: d) block` to cut every edge flat.
 unit mm
 use std (round, chamfer)

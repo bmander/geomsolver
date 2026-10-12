@@ -219,7 +219,8 @@ designs, both members) are the gates.
 `SpatialField` leaf (each term its surface's exact signed distance, the largest; a box's enclosure
 the centre's value within its half-diagonal), its support the box of the planes every term lies
 within (`polytope_box`, refused unbounded). Evaluated as sweeps are (`sweeps_among`: the field's
-surface); no exact construction yet (`cad.rs` says so). `tests/region_general.rs` is the gate.
+surface) unless the lowering table builds it (below); else no exact construction (`cad.rs` says so,
+naming the region). `tests/region_general.rs` is the gate.
 **A bound on measurements** (#183 F3): `distance(p, f1) + distance(p, f2) <= 10mm` in a set's
 body is `StmtKind::Measured`, **parsed once** (#190, `parser/measured.rs`, where a statement calls
 a measurement and compares outside every bracket, `compared_ahead`): each side a
@@ -304,6 +305,32 @@ term whose sets are two of the region's own bounds (same measure, at its level, 
 radius for a round's centres) is built in the meridian by X1's construction (`brep::corners`,
 moved from `tests/fillet_meridian.rs`), refused (and read by the field) at a charted corner or a
 flat between curved steps. `tests/rounds.rs` is the gate (X2's closed forms in the slow tier).
+**Rounds built exactly: the lowering table** (#194, #183 L7, `solid::lowering`): a region over a
+body's faces is recognised by its terms' shapes (`recognised`: two or three `FaceSide`s alike, an
+`Angle` gate per pair at a half turn, the common-part-against-meeting sum, an `Ends` per pair, and
+one bound saying the section — a ball's `centres` set or a flat's sum), **never by a word's name**
+(`by_hand.sv`'s own `Rolled` is built by the same entry), read off the stratum (`faces::cached`,
+`BodyFaces::plane`/`segment`/`circle`/`coaxial`/`normal`) into **pieces**: `Run` (the section along a
+straight edge between planes, its ends cut off square — else refused, `unbuilt`), `Ring` (a whole
+circle where a plane meets a coaxial cylinder or cone: the section in one meridian turned once),
+`Corner` (three square planes: the cell less the ball, `brep::fillet::corner`, plus each edge's
+run); `Lowered::Empty` where the faces never meet or an edge turns the other way. **The gate**: the
+pieces' B-rep held to the region's own field (`agreement`, by area; empty only where the field
+reads empty) before anything reads them. Memoised against the region's own terms and the
+stratum's `Arc` (`Sketch::lowering_cache`; a key over `solid::reads` walks every round of the
+body). `cad.rs` builds a body's lowered regions in one set as one recipe node, `"lowered"`
+(`assemble`: each distinct piece once, a run cut short at a corner's section and **glued** there,
+`boolean::glued`; the rest unioned — two runs crossing are a mitre), the first region standing for
+the rest; a region lowered to nothing is no operand; a body's face readers go in `"on_late"` /
+`"cut_late"`, applied after `bound` (the stratum's order, as the field and the native host apply
+them). `sweeps_among` sends a lowered region to the exact path. Kernel rules the stack found and
+this needs (ported from #79–#110): edges along a face cut where they cross its edges
+(`query::crossings_in`), touches read to second order (`ssi::touch_near`/`touch`,
+`trace_beside`/`unseen_beside`), equal crossing cylinders' ellipses split where they cross
+(`boolean::crossings_among`), `query::line_cylinder`, `Surface::offset`, a fitted edge read at its
+own `tol`. Open: slanted or curved ends, stretches of circles, corners not square, curved
+sections (arcs: #83), traced canals (`brep::fillet::roll`, #85), run-outs (#110), the OCCT oracle.
+`tests/round_lowering.rs` is the gate (every volume the closed form's to 1e-9).
 **Distance from a set, offsets (§6.21, 0.64, #145 F4):** `p distance(d, side: outside|inside) S`
 (`distance` is a set use, `may_use`), `p inside(d) S` / `p outside(d) S` and `std.Offset(S, d)` are
 one bound on the signed distance from `S`'s surface (`Reach`: cmp toward the outside, whether

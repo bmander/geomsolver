@@ -36,6 +36,7 @@ pub use field_mesh::{FieldMesher, FieldMeshing, FieldProgress, FieldSurface, Exa
 pub use field_mesh::{first_pass as field_first_pass, creases as field_creases};
 pub mod cad;
 pub mod region;
+pub mod lowering;
 pub mod faces;
 pub mod conditions;
 pub mod carrier;
@@ -436,11 +437,13 @@ pub(crate) fn has_sweep(sk: &Sketch, si: usize) -> bool {
     validate_at(sk, si, REPORT_UNIT).map(|ops| sweeps_among(sk, &ops)).unwrap_or(false)
 }
 
-/// Whether a continuous motion sweep, or a region read in general position (`region::in_general`),
-/// is among `operands` (`validate_at`'s): their boundary is the field's.  The one test, asked by
-/// `has_sweep` and by an evaluation that has validated the operands already at its own unit.
+/// Whether a continuous motion sweep, or a region read in general position (`region::in_general`)
+/// that no entry of the lowering table builds (`lowering::lowered`), is among `operands`
+/// (`validate_at`'s): their boundary is the field's.  The one test, asked by `has_sweep` and by an
+/// evaluation that has validated the operands already at its own unit.
 fn sweeps_among(sk: &Sketch, operands: &std::collections::BTreeSet<usize>) -> bool {
-    operands.iter().any(|&i| matches!(sk.solids[i].def, SolidDef::Swept { .. }) || region::in_general(sk, i))
+    operands.iter().any(|&i| matches!(sk.solids[i].def, SolidDef::Swept { .. })
+        || !matches!(lowering::lowered(sk, i), Some(Ok(_))) && region::in_general(sk, i))
 }
 
 fn validate_at(sk: &Sketch, si: usize, unit: f64) -> Result<std::collections::BTreeSet<usize>, String> {

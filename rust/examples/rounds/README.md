@@ -21,20 +21,27 @@ What the words are built from:
 
 A solid made from a set is a **region**. Where every term is about one axis it is a meridian
 turned once, and a round or chamfer between two of its own bounds is built exactly in that
-meridian. Otherwise the field reads it point by point, and the page meshes its surface in the
-background.
+meridian. Otherwise the field reads it point by point — and where the set is one the lowering
+table recognises (#194, `solid::lowering`), recognised from what its body says and never from the
+word's name, it is also built exactly and held to that reading: a run along a straight edge
+between planes is a prism whose face is a cylinder, a run round a circle where a plane meets a
+cylinder is a ring whose face is a torus, a corner where three square faces meet is the ball's
+patch, a flat is a plane. Those bodies show as exact solids and export by `solventc --step` and
+`--stl`; a region no entry builds is meshed by the page in the background, and its export is
+refused, naming why.
 
 Read them in this order:
 
 | File | What it shows |
 |---|---|
-| `block.sv` | **The two words.** A block whose near rim is rounded (`block.near round(r: 2mm) block`) and whose far rim is chamfered (`block.far chamfer(d: 1mm) block`). Each run is cut off by the faces it ends on, and the runs mitre at the corners. |
-| `pocket.sv` | **A concave round fills.** A pocket rounded inside (`round(r: 1.5mm) dish.pocket`): the floor's edges are filled, and where three meet at a corner the fill is a ball's. |
-| `boss.sv` | **A round on a curved edge.** A boss filleted where it stands on a plate (`pad.boss round(r: 3mm) pad.plate`): a ring, with no special case for the circle. |
-| `by_hand.sv` | **Your own round.** The round written out in the file: a set `Rolled(a, b, r)` and a word `A rolled(r) B` that makes it a solid and cuts it, in about twenty lines. |
+| `block.sv` | **The two words.** A block whose near rim is rounded (`block.near round(r: 2mm) block`) and whose far rim is chamfered (`block.far chamfer(d: 1mm) block`). Each run is cut off by the faces it ends on, and the runs mitre at the corners. Built exactly: 11350.525 mm³. |
+| `pocket.sv` | **A concave round fills.** A pocket rounded inside (`round(r: 1.5mm) dish.pocket`): the floor's edges are filled, and where three meet at a corner the fill is a ball's. Built exactly. |
+| `boss.sv` | **A round on a curved edge.** A boss filleted where it stands on a plate (`pad.boss round(r: 3mm) pad.plate`): a ring, with no special case for the circle. Built exactly, a torus's face. |
+| `by_hand.sv` | **Your own round.** The round written out in the file: a set `Rolled(a, b, r)` and a word `A rolled(r) B` that makes it a solid and cuts it, in about twenty lines. The same set as the library's, so the same entry builds it. |
 | `disc.sv` | **A round in a region's own body, built exactly.** A disc defined as a set, its top rim rounded and its bottom rim chamfered by `std.Rounded` and `std.Chamfered`. Lowered into the meridian, so `solventc --step` writes a torus and a cone (1196.946 mm³, the closed form's). |
 | `regions.sv` | **Regions in general position.** An ellipsoid by its foci, Steinmetz's bicylinder, and a Voronoi cell of a ball, each read point by point. |
 
 `rust/gcs-core/tests/rounds_examples.rs` holds each file to what its comments say, the suggested
-edits included. `tests/rounds.rs` holds the words to closed forms: Steiner's formula for a block
+edits included. `tests/round_lowering.rs` holds the exact constructions to closed forms to 1e-9,
+and to their fields. `tests/rounds.rs` holds the words to closed forms: Steiner's formula for a block
 rounded all over, the mitre, Pappus for the boss's ring, the volume three flats take at a corner.

@@ -72,16 +72,62 @@ pub fn node_named(n: &Json,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64
         }
         "body" => {
             // the stock, plus everything on it, minus everything that cuts it, within everything
-            // that bounds it — in that order, as the native host combines them
+            // that bounds it — in that order, as the native host combines them; then what reads
+            // the faces that makes (a round's fills, then its cuts: the stratum, #183 F6)
             let mut solid = source("stock")?.clone();
-            for (key,op) in [("on",Op::Union),("cut",Op::Cut),("bound",Op::Common)] {
-                for x in field(n,key)?.arr() {
+            for (key,op) in [("on",Op::Union),("cut",Op::Cut),("bound",Op::Common),("on_late",Op::Union),("cut_late",Op::Cut)] {
+                let Some(list) = n.get(key) else {
+                    if key.ends_with("_late") { continue }
+                    return Err(format!("recipe: no `{key}`"));
+                };
+                for x in list.arr() {
                     let operand = built.get(&x.as_i64()).ok_or(format!("recipe: an operand not built before its body"))?;
                     let name = built_names.get(&x.as_i64()).cloned().unwrap_or_default();
                     solid = combined(&solid,operand,op,floor).map_err(|e| format!("{key} `{name}`: {e}"))?;
                 }
             }
             Ok(solid)
+        }
+        "lowered" => {
+            // a region set's pieces (`solid::lowering`, #194): each run a prism or a revolution,
+            // each corner the ball's patch built where it stands; those joined (a run ending in the section a
+            // corner's cell begins in, meeting nowhere else) glued there, never intersected; the
+            // chains unioned
+            let mut pieces = field(n,"pieces")?.arr().iter().map(|piece| node_named(piece,built,built_names,floor))
+                .collect::<Result<Vec<_>,_>>()?;
+            for c in field(n,"corners")?.arr() {
+                let (vertex,centre,radius) = (vec3(field(c,"vertex")?),vec3(field(c,"centre")?),field(c,"radius")?.as_f64());
+                let toward: Vec<V> = field(c,"toward")?.arr().iter().map(vec3).collect();
+                let toward: [V;3] = toward.try_into().map_err(|_| "recipe: a corner stands between three faces")?;
+                let tol = (1e-9*(1.+radius)).max(floor);
+                pieces.push(super::fillet::corner(vertex,centre,radius,toward,tol).map_err(|e| format!("a corner: {e}"))?);
+            }
+            let joins: Vec<[usize;2]> = field(n,"joins")?.arr().iter()
+                .map(|j| { let j = j.arr(); [j[0].as_i64() as usize,j[1].as_i64() as usize] }).collect();
+            if joins.iter().flatten().any(|&k| k >= pieces.len()) { return Err("recipe: a join names no piece".into()) }
+            // each chain walked from its first piece, breadth first, at the tolerance of its pieces
+            let mut next: Vec<Vec<usize>> = vec![Vec::new();pieces.len()];
+            for &[i,j] in &joins { next[i].push(j); next[j].push(i); }
+            let tol = (1e-9*pieces.iter().map(Brep::size).fold(1.,f64::max)).max(floor);
+            let mut solid: Option<Brep> = None;
+            let mut done = vec![false;pieces.len()];
+            for first in 0..pieces.len() {
+                if done[first] { continue }
+                done[first] = true;
+                let mut chain = pieces[first].clone();
+                let mut queue = std::collections::VecDeque::from([first]);
+                while let Some(i) = queue.pop_front() {
+                    for &k in &next[i] {
+                        if done[k] { continue }
+                        done[k] = true;
+                        chain = super::boolean::glued(&chain,&pieces[k],8.*tol)
+                            .ok_or("two pieces joined at a section share no face there")?;
+                        queue.push_back(k);
+                    }
+                }
+                solid = Some(match solid { None => chain,Some(s) => combined(&s,&chain,Op::Union,floor)? });
+            }
+            solid.ok_or_else(|| "recipe: a lowered region of no pieces".to_string())
         }
         k => Err(format!("recipe: a node of kind `{k}`")),
     }
