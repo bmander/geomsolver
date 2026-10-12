@@ -224,8 +224,22 @@ by `relations::measured_term` into `RegionShape::Measured` (Σ cᵢ·distance fr
 axis or plane; `linear`: affine only, one probe) on the probe, else E040; read by the field
 (`region::measured`, divided by Σ|cᵢ|), never the meridian.
 **Faces as sets** (#183 F1, F9): in a set's body a solid and the fields past it are a face
-reference (`relations::face_ref` → `model::FaceRef { solid, path, surface }`: `pad.plate.near`,
-`pad.boss` every face `boss` gave `pad`, `block`, a last `.surface` its whole surface).
+reference (`model::FaceRef { solid, path, surface }`: `pad.plate.near`, `pad.boss` every face
+`boss` gave `pad`, `block`, `.surface` its whole surface).
+**Face references as resolved operands** (#188, [0.70]): a face's name is a
+`solid::faces::FacePath` (route through the operands, `document::operand_primitives`, the walk
+`exact::build` names faces by, placed copies included — `Exact::named` keeps each face's two
+halves — then the face's own name); `FacePath::matches` (segments from the first, never a
+suffix) is the one rule, read by `BodyFaces::faces` and the flattener's `face_links`, and
+`face_paths` enumerates the same walk with `SolidE::caps`, the one cap table. The members
+`ends`, `surface`, `body` are `syntax::Member`, written as `Seg::Member` by the flattener only
+past a set or a solid where no declared name swallows the field (`rewrite`'s `fix` over
+`Known::solids`; `sets::measured_sets` for `S.ends`; in a measurement's text the segment
+`Member::key`, `#surface`); the elaborator never matches the word. `Resolver::operand` resolves
+an operand once into `resolve::Operand` (`Ent`, `Face`, `Ends`, `Body`; `entity` for the
+entity-only readers, `operand_named` for text), so `follow` never meets a solid's fields, and
+`relations::shape` (`Shape::Face`/`Ends`/`PlaneSide`/`Other`) is the one classifier `constrain`
+and the claims about solids ask. `tests/face_names.rs` is the gate.
 **One meaning, two representations** ([0.68]): a face path is the face, bounded by its edges,
 and `.surface` the surface it lies on, whoever reads it. A region's point reads either here,
 off the solid after the solve; a drawn point or plane reads `.surface` as #162 F5's carrier rows
@@ -259,8 +273,8 @@ nearest point when off `E`, and where `E`'s run ends), the same points with a ne
 ends nowhere. `edge` and `seam` are element keywords: a set may not be called so.
 **Rounds and chamfers are words of `std.sv`** (#183 steps 4–7). `repeat a in X` over a solid (a
 face path) runs over its faces (F4): set aside, and where the faces are not given the elaborator
-names them once the solids are built (`solid::faces::face_paths`, structural: a primitive's own,
-a body's every primitive's `{prim}.{face}`) and elaborates again (`program::Again::Faces`,
+names them once the solids are built (`solid::faces::face_paths`, structural: each primitive's
+own faces under its route, `FacePath`) and elaborates again (`program::Again::Faces`,
 `flatten::expand_faces`, `Walk::face_links`); `if f in X and f != g` keeps a copy (F8,
 `syntax::When`). A relation word's body may hold blocks, instances, sets and body statements (F5,
 `parser/definitions.rs`); `A.body` in a body statement is the solid a face path is of. **The

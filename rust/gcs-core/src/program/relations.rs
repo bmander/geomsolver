@@ -1,6 +1,6 @@
 //! Resolve constraint arguments and apply gauges.
 
-use super::resolve::{follow, Resolver};
+use super::resolve::{follow, Operand, Resolver};
 use super::{Code, Diag, SourceMap};
 use crate::constraints::{Arg as CArg, CKind, Constraint, SpecKind};
 use crate::ir::{PathStep, Relation, ResolvedRelation, Statement as Stmt};
@@ -163,9 +163,16 @@ pub(super) fn constrain(
     probes: &mut Probes,
     diags: &mut Vec<Diag>,
 ) -> Option<u32> {
+    // what the relation is, by what its operands resolve to (`shape`)
+    let shape = r.form.written().map_or(Shape::Other, |w| shape(sk, res, w));
     // **a region's point against a face** (#183 F1), or where an edge ends (F7): a term of the
     // region, read off the body
-    if let Some(made) = face_relation(sk, res, r, probes).or_else(|| ends_relation(sk, res, r, probes)) {
+    let term = match (&shape, r.form.written()) {
+        (Shape::Face { point, face }, Some(w)) => Some(face_term(sk, res, w, *point, face, probes)),
+        (Shape::Ends { point, edge }, Some(w)) => Some(ends_term(w, *point, *edge, probes)),
+        _ => None,
+    };
+    if let Some(made) = term {
         match made {
             Ok((probe, t)) => probes.terms.get_mut(&probe).expect("a probe's terms").push(t),
             Err(message) => {
@@ -176,7 +183,8 @@ pub(super) fn constrain(
     }
     // **a point inside or outside a plane is a bound** (§9.6): the point's ordinate along the
     // plane's normal from its origin, at most or at least zero
-    if let Some(lowered) = r.form.written().and_then(|w| side_of_plane(sk, res, r, w)) {
+    if let (Shape::PlaneSide, Some(w)) = (&shape, r.form.written()) {
+        let lowered = side_of_plane(r, w);
         return constrain(sk, res, &lowered, st, doc, map, duals, gauges, probes, diags);
     }
     // **a word that relates two solids is a claim, judged and never solved** (§9.8).  Picked up
@@ -196,7 +204,7 @@ pub(super) fn constrain(
     // the defined word it was written with, its operands the entities they name (§9.9)
     // — but for a set (§6.21), which is no entity and is named as written
     let word = r.word.as_ref().and_then(|w| {
-        let ops = w.ops.iter().map(|o| res.lookup(o).and_then(|e| follow(sk, e, &o.path).ok()));
+        let ops = w.ops.iter().map(|o| res.entity(sk, o));
         Some(crate::constraints::WordUse {
             word: w.word.clone(),
             ops: ops.collect::<Option<Vec<EntRef>>>()?,
@@ -248,7 +256,7 @@ pub(super) fn constrain(
     // a set's body row stated as its derivative at a tangency's point (§6.21)
     // — what moves its point, or the kind a line was expected in place of
     let along = r.along.as_ref().map(|a| {
-        let ent = |x: &Ref| res.lookup(x).and_then(|e| follow(sk, e, &x.path).ok());
+        let ent = |x: &Ref| res.entity(sk, x);
         let toward = match &a.toward {
             crate::syntax::AlongBy::Line(l) => ent(l).map(|l| match l.kind {
                 EntKind::Line => Ok(Toward::Line(l.i())),
@@ -270,7 +278,7 @@ pub(super) fn constrain(
         super::reading::Reader::Drawn
     };
     let r = match r
-        .resolve(&|r| res.lookup(r).and_then(|e| follow(sk, e, &r.path).ok()).map(|e| e.kind))
+        .resolve(&|r| res.entity(sk, r).map(|e| e.kind))
     {
         Ok(r) => r,
         Err((span, message)) => {
@@ -317,7 +325,7 @@ pub(super) fn constrain(
         // along: u) P`), which `ordinate_operands` reads as that plane's origin below
         let kind = match (ckind.word_slot(), i, a) {
             (Some(_), 1, Arg::Ref(r))
-                if res.lookup(r).and_then(|e| follow(sk, e, &r.path).ok())
+                if res.entity(sk, r)
                     .is_some_and(|e| e.kind == EntKind::Plane) => &SpecKind::Plane,
             _ => kind,
         };
@@ -693,20 +701,43 @@ fn region_term(sk: &Sketch, c: &Constraint, probe: usize, grow: Option<crate::mo
     Ok(RegionTerm { shape, cmp: b.cmp, lo, hi: b.hi, grow, name })
 }
 
-/// `p inside P` / `p outside P` between a point and a plane, as what it says (§9.6): the point's
-/// ordinate along `P`'s normal from `P.origin`, at most zero (behind the normal) or at least
-/// zero.  `None` for any other word or operands — `inside` between solids is a claim.
-fn side_of_plane(
-    sk: &Sketch,
-    res: &Resolver,
-    r: &Relation,
-    w: &crate::syntax::Written,
-) -> Option<Relation> {
-    use crate::syntax::{Arg as A, Name, OpArg, RelationForm, Written};
-    let cmp = crate::constraints::plane_side_word(&w.word.text)?;
-    if !point_and_plane(sk, res, w) {
-        return None;
+/// **What a written relation is, by what its operands resolve to** (#188): the one reading
+/// `constrain` and the claims about solids ask, so neither detects the shapes again.
+pub(in crate::program) enum Shape {
+    /// A point against a solid's faces (#183 F1): `p inside F`, `p outside(d) F`, `p distance(…)
+    /// F`, `p coincident F.surface`.
+    Face { point: EntRef, face: crate::model::FaceRef },
+    /// A point `inside` (or `outside`) where the edge a set is ends (#183 F7): `p inside S.ends`.
+    Ends { point: EntRef, edge: EntRef },
+    /// A point `inside` or `outside` a plane (§9.6): a bound.
+    PlaneSide,
+    Other,
+}
+
+/// What `w` is (`Shape`): a point first, then a solid's faces, where an edge ends or a plane.
+pub(in crate::program) fn shape(sk: &Sketch, res: &Resolver, w: &crate::syntax::Written) -> Shape {
+    let [p, f] = w.ops.as_slice() else { return Shape::Other };
+    let Some(point) = res.entity(sk, p).filter(|e| e.kind == EntKind::Point) else {
+        return Shape::Other;
+    };
+    let Ok(of) = res.operand(sk, f) else { return Shape::Other };
+    let side = crate::constraints::plane_side_word(&w.word.text).is_some();
+    match of {
+        Operand::Ends(edge) if side => Shape::Ends { point, edge },
+        Operand::Ent(e) if side && e.kind == EntKind::Plane => Shape::PlaneSide,
+        _ if matches!(w.word.text.as_str(), "inside" | "outside" | "distance" | "coincident") => {
+            of.faces().map_or(Shape::Other, |face| Shape::Face { point, face })
+        }
+        _ => Shape::Other,
     }
+}
+
+/// `p inside P` / `p outside P` between a point and a plane (`Shape::PlaneSide`), as what it says
+/// (§9.6): the point's ordinate along `P`'s normal from `P.origin`, at most zero (behind the
+/// normal) or at least zero.
+fn side_of_plane(r: &Relation, w: &crate::syntax::Written) -> Relation {
+    use crate::syntax::{Arg as A, Name, OpArg, RelationForm, Written};
+    let cmp = crate::constraints::plane_side_word(&w.word.text).expect("inside or outside");
     let at = w.word.span;
     let name = |t: &str| Name { text: t.to_string(), span: at };
     // grown by a distance (§6.21, F4): `inside(d)` at most `d` before it, `outside(d)` at most
@@ -722,19 +753,7 @@ fn side_of_plane(
         OpArg::Named(name("along"), A::Word("n".to_string())),
     ];
     let written = Written { word: name("distance"), args, ..w.clone() };
-    Some(Relation { form: RelationForm::Written(written), ..r.clone() })
-}
-
-/// Whether a written relation's operands are a point and a plane, in that order: what makes
-/// `inside` a side of a plane (§9.6) rather than a claim about solids (§9.8).
-pub(in crate::program) fn point_and_plane(
-    sk: &Sketch,
-    res: &Resolver,
-    w: &crate::syntax::Written,
-) -> bool {
-    let kind = |o: &Ref| res.lookup(o).and_then(|e| follow(sk, e, &o.path).ok()).map(|e| e.kind);
-    matches!(w.ops.as_slice(), [p, plane]
-        if kind(p) == Some(EntKind::Point) && kind(plane) == Some(EntKind::Plane))
+    Relation { form: RelationForm::Written(written), ..r.clone() }
 }
 
 /// The bound a relation's number is, where it is one (§9.6), and where it is written, checked: a
@@ -1140,7 +1159,7 @@ fn apply_gauge(
                 bad(Code::E103, st.span, "`fix` names what it holds".to_string());
                 return;
             };
-            let Some(e) = res.lookup(rf).and_then(|e| follow(sk, e, &rf.path).ok()) else {
+            let Some(e) = res.entity(sk, rf) else {
                 bad(Code::E101, rf.span, format!("no such entity: `{}`", rf.root.text));
                 return;
             };
@@ -1217,7 +1236,7 @@ fn apply_gauge(
             }
             let mut pts = [0usize; 3];
             for (i, rf) in refs.iter().enumerate() {
-                match res.lookup(rf).and_then(|e| follow(sk, e, &rf.path).ok()) {
+                match res.entity(sk, rf) {
                     Some(e) if e.kind == EntKind::Point => pts[i] = e.i(),
                     _ => {
                         bad(Code::E101, rf.span, format!("no such point: `{}`", rf.root.text));
@@ -1470,12 +1489,8 @@ pub(super) fn measured_term(
     let k = rhs.1 - lhs.1;
     use crate::model::Target;
     let target = |name: &str| -> Option<Target> {
-        let segs: Vec<&str> = name.split('.').collect();
-        let (e, path) = res.dotted(&segs)?;
-        if e.kind == EntKind::Solid {
-            return Some(Target::Face(face_ref(e, &path)));
-        }
-        follow(sk, e, &path).ok().map(Target::Ent)
+        let of = res.operand_named(sk, name).ok()?;
+        of.faces().map(Target::Face).or_else(|| of.ent().map(Target::Ent))
     };
     let probe_at = |t: &Option<Target>| match t {
         Some(Target::Ent(e)) if e.kind == EntKind::Point && probes.terms.contains_key(&e.i()) => Some(e.i()),
@@ -1559,44 +1574,21 @@ pub(super) fn measured_term(
     probes.terms.get_mut(&p).expect("a probe's terms").push(term);
 }
 
-/// A face reference from a solid and the fields written past it (#183 F1): `pad.plate.near` is
-/// solid `pad`, path `plate.near`; a last `surface` reads the face's whole surface.
-pub(super) fn face_ref(solid: EntRef, path: &[crate::syntax::Seg]) -> crate::model::FaceRef {
-    let mut fields: Vec<String> = path.iter().filter_map(|s| match s {
-        crate::syntax::Seg::Field(n) => Some(n.text.clone()),
-        _ => None,
-    }).collect();
-    let surface = fields.last().is_some_and(|f| f == "surface");
-    if surface {
-        fields.pop();
-    }
-    crate::model::FaceRef { solid: solid.i() as u32, path: fields.join("."), surface }
-}
-
-/// `p inside F`, `p outside(d) F`, `p distance(<= d) F`, `p coincident F.surface` …, `p` a region
-/// solid's point and `F` a face path of a solid (#183 F1): the term it is, or why not; `None`
-/// where the relation is not between those.
-fn face_relation(sk: &Sketch, res: &Resolver, r: &Relation, probes: &Probes)
-    -> Option<Result<(usize, crate::model::RegionTerm), String>> {
+/// `p inside F`, `p outside(d) F`, `p distance(<= d) F`, `p coincident F.surface` … (`Shape::Face`):
+/// the term of the region solid whose point `p` is, or why not.
+fn face_term(sk: &Sketch, res: &Resolver, w: &crate::syntax::Written, point: EntRef,
+             face: &crate::model::FaceRef, probes: &Probes)
+    -> Result<(usize, crate::model::RegionTerm), String> {
     use crate::model::{RegionShape, RegionTerm, Target, TermNumber};
     use crate::syntax::{Cmp, OpArg};
-    let w = r.form.written()?;
-    let [p, f] = w.ops.as_slice() else { return None };
-    if !matches!(w.word.text.as_str(), "inside" | "outside" | "distance" | "coincident") {
-        return None;
-    }
-    let point = res.lookup(p).and_then(|e| follow(sk, e, &p.path).ok())
-        .filter(|e| e.kind == EntKind::Point)?;
-    let solid = res.lookup(f).filter(|e| e.kind == EntKind::Solid)?;
     if !probes.terms.contains_key(&point.i()) {
-        return Some(Err(format!(
+        return Err(format!(
             "`{}` is a drawn point: a point is read against a face where a set is applied to a \
              region solid's point (`solid(S)`)",
-            p.root.text
-        )));
+            w.ops[0].root.text
+        ));
     }
     let probe = point.i();
-    let face = face_ref(solid, &f.path);
     let word = w.word.text.as_str();
     let number = |text: &str, span: Span| -> Result<TermNumber, String> {
         let arg = Arg::Dim { text: text.to_string(), span };
@@ -1651,31 +1643,29 @@ fn face_relation(sk: &Sketch, res: &Resolver, r: &Relation, probes: &Probes)
                               `distance` from a face, not `{word}`")),
         }
     })();
-    Some(made.map(|t| (probe, t)))
+    made.map(|t| (probe, t))
 }
 
-/// `p inside S.ends` (#183 F7), `S` a set measured from at its own point (`flatten::sets`): `p`
-/// on the side the edge `S` is runs on of each face it ends on.  `None` for any other relation.
-fn ends_relation(sk: &Sketch, res: &Resolver, r: &Relation, probes: &Probes)
-    -> Option<Result<(usize, crate::model::RegionTerm), String>> {
+/// `p inside S.ends` (#183 F7, `Shape::Ends`), `S` a set measured from at its own point
+/// (`flatten::sets`): `p` on the side the edge `S` is runs on of each face it ends on.
+fn ends_term(w: &crate::syntax::Written, point: EntRef, edge: EntRef, probes: &Probes)
+    -> Result<(usize, crate::model::RegionTerm), String> {
     use crate::model::{RegionShape, RegionTerm, Target, TermNumber};
-    let w = r.form.written()?;
-    let [p, e] = w.ops.as_slice() else { return None };
-    if !e.ends_in("ends") {
-        return None;
+    if !probes.terms.contains_key(&point.i()) || !probes.terms.contains_key(&edge.i()) {
+        return Err(format!(
+            "`{}` is a drawn point: where an edge ends is read of a region solid's point, where a \
+             set is applied to one (`solid(S)`)",
+            w.ops[0].root.text
+        ));
     }
-    let edge = res.lookup(e).filter(|x| x.kind == EntKind::Point && probes.terms.contains_key(&x.i()))?;
-    let point = res.lookup(p).and_then(|x| follow(sk, x, &p.path).ok())
-        .filter(|x| x.kind == EntKind::Point && probes.terms.contains_key(&x.i()))?;
-    let cmp = crate::constraints::plane_side_word(&w.word.text)?;
+    let cmp = crate::constraints::plane_side_word(&w.word.text).expect("inside or outside");
     if cmp != crate::syntax::Cmp::Le {
-        return Some(Err("past where an edge ends is no region: say `inside S.ends`".to_string()));
+        return Err("past where an edge ends is no region: say `inside S.ends`".to_string());
     }
     let shape = RegionShape::Ends {
         edge: Box::new(Target::Set { probe: edge.i() as u32, terms: Vec::new() }),
     };
-    let t = RegionTerm::new(shape, cmp, TermNumber::stated(0.0));
-    Some(Ok((point.i(), t)))
+    Ok((point.i(), RegionTerm::new(shape, cmp, TermNumber::stated(0.0))))
 }
 
 /// The terms of the sets a region's terms measure from (#183 F2, F7), from the points their

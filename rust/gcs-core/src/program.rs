@@ -198,7 +198,7 @@ pub fn elaborate(p: &Program) -> Elaborated {
 /// none, or solids a block runs over the faces of, named.
 enum Again {
     Refused(BTreeSet<String>),
-    Faces(BTreeMap<String, Vec<String>>),
+    Faces(BTreeMap<String, Vec<crate::solid::faces::FacePath>>),
 }
 
 /// The points whose seeds break a bound, carried across (`solve::cross_bounds`): each by the key
@@ -227,7 +227,7 @@ fn elaborate_in(
     p: &Program,
     refused: &BTreeSet<String>,
     crossed: &BTreeMap<String, Vec<f64>>,
-    faces: &BTreeMap<String, Vec<String>>,
+    faces: &BTreeMap<String, Vec<crate::solid::faces::FacePath>>,
 ) -> Result<Elaborated, Again> {
     let mut diags: Vec<Diag> = Vec::new();
     let mut map = SourceMap::default();
@@ -618,7 +618,7 @@ fn elaborate_in(
     // (Motions were built with the primitives: solids retain their indices.)
     solids(&mut sk, &mut res, &mut map, &body, &skip, &mut probes, &mut diags);
     // the faces of the solids a block runs over, named for the next pass (#183 F4)
-    let unnamed: BTreeMap<String, Vec<String>> = expansion.face_repeats.iter()
+    let unnamed: BTreeMap<String, Vec<crate::solid::faces::FacePath>> = expansion.face_repeats.iter()
         .filter(|abs| !faces.contains_key(*abs))
         .filter_map(|abs| res.of.get(abs).filter(|e| e.kind == EntKind::Solid && e.i() < sk.solids.len())
             .map(|e| (abs.clone(), crate::solid::faces::face_paths(&sk, e.i()))))
