@@ -554,11 +554,14 @@ impl Surface {
     }
     /// How far `p` stands from a patch's own points — a sheet's or a loft's, its foot held to its
     /// domain: past the domain's edge its signed distance, read along the normal at the edge, runs on
-    /// along the tangent extension, and this does not. `None` for a surface with no domain's edge.
+    /// along the tangent extension, and this does not. So for a revolution or an extrusion of a
+    /// spline, past its curve's ends (#196: the end relief's band, a conic turned). `None` for a
+    /// surface with no domain's edge.
     pub fn off_patch(&self,p: V) -> Option<f64> {
         match self {
             Surface::BSpline(_,n) => { let uv = net_inverse(n,p); Some(crate::space::distance(p,n.point(uv[0],uv[1]))) }
             Surface::Blend(_,b) => Some(crate::space::distance(p,b.d1(b.inverse(p)).0)),
+            Surface::Revolution(..) | Surface::Extrusion(..) => Some(crate::space::distance(p,self.point(self.inverse(p)))),
             _ => None,
         }
     }

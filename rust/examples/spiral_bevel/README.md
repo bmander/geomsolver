@@ -14,7 +14,7 @@ gear apex O at its origin, and three views folded square to it about lines throu
 an angle of its own — G, the gear's axial view, along O → M; Q, the pinion's, along M → its apex A;
 and N, the normal section, along the trace normal C → M. A point on a fold is drawn in both views
 it lies in (`O := point in p, g`), so G's triangle is over O and M themselves; a point another
-module declares is drawn again in the later view and tied by `project`.
+module declares is said on the later view (`gear.M coincident q`), which draws it there too.
 
 | Step | Module | Constructs |
 |---|---|---|
@@ -22,8 +22,7 @@ module declares is drawn again in the later view and tied by `project`.
 | 2 | `pitch/gear.sv` | the gear's pitch cone: the right triangle O–M–F in G |
 | 2 | `pitch/trace.sv` | the tooth trace about the cutter centre C, and the normal module |
 | 2 | `pitch/pinion.sv` | the pinion's cone, solved against the gear's by the shafts and equal normal pitch |
-| 3 | `blank/member.sv`, `blank/sphere.sv` | a member's blank, one region: within its pitch cone grown by the addendum (`std.Offset`) and its heel sphere, outside its toe sphere and its pitch cone shrunk by the back depth (`back`), sized by the solved layout; its faces `tip`, `heel`, `toe` and `back` |
-| 3 | `blank/ends.sv` | the end relief: the tip's toe and heel corners chamfered, each corner put on the tip as a set |
+| 3 | `blank/member.sv`, `blank/sphere.sv` | a member's blank, one region: within its pitch cone grown by the addendum (`std.Offset`) and its heel sphere, outside its toe sphere and its pitch cone shrunk by the back depth (`back`), sized by the solved layout; the end relief its tip's toe and heel corners chamfered in the same region (`std.Chamfered`); its faces `tip`, `heel`, `toe` and `back` |
 | 4 | `crown/thickness.sv` | the crown tooth's pitch points, a quarter pitch either side of M |
 | 4 | `crown/section.sv`, `crown/rounding.sv` | the rack section: straight flanks, base, tip and tip roundings |
 | 4 | `crown/tooth.sv` | the pinion's generator: the section in N, revolved about the cutter's axis |

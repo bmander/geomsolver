@@ -24,6 +24,7 @@ mod rounds;
 mod face_names;
 mod rounds_examples;
 mod offsets;
+mod offset_corners;
 mod evaluated_solid;
 mod renderer;
 
@@ -193,3 +194,4 @@ mod minimize;
 mod catenary;
 mod extremal;
 mod slide;
+mod when;

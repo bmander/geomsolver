@@ -216,3 +216,25 @@ fn a_through_cut_crosses_its_stock_whichever_way_the_stocks_circle_starts() {
     assert!((volume-200.*std::f64::consts::PI).abs() < 1e-9*volume,"{volume}");
     assert_eq!(shells,1);
 }
+
+/// The configured hypoid pinion, its end relief lowered into its blank's meridian as two conics
+/// turned (#196, `Surface::Revolution` of a rational quadratic B-spline): its sector is split by
+/// the sides and turned into every copy — a traced edge of the band ends where it leaves the
+/// band's patch (`Surface::off_patch`), and the band is kept by the turns about the axis, not
+/// taken for a side (`brep::pattern`).
+#[test]
+fn the_relieved_pinion_is_built_by_sectors() {
+    let e = fixtures::gear::read_as_configured();
+    let body = fixtures::solid(&e,"pair.pinion.body");
+    let lines = std::sync::Mutex::new(Vec::new());
+    let say = Say {stage:&|l: &str| lines.lock().unwrap().push(l.to_string()),mark:&|_| {}};
+    let exact = export::exact(&e.sketch,body,None,None,&say).unwrap();
+    let said = lines.lock().unwrap().join("\n");
+    assert!(said.contains("turned the sector into 24 copies"),"{said}");
+    // each sector: the blank's pieces, the space's five faces and the relief's five, named by
+    // the cutter faces that made them (#212)
+    assert_eq!(exact.solid.faces.len(),243,"{said}");
+    assert_eq!(exact.solid.faces.iter().filter(|f| f.surface.kind() == "revolution").count(),24*2,
+        "the two conic bands, a piece in each sector");
+    exact.solid.check(1e-6).unwrap();
+}

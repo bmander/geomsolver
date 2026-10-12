@@ -10,6 +10,8 @@ use crate::space::{dot,length};
 enum Section {
     Line {start:[f64;2],delta:[f64;2],length:f64},
     Circle {center:[f64;2],a:[f64;2],b:[f64;2],radius:f64,sweep:f64,orientation:f64},
+    /// A conic's arc in (radius, height), read by its nearest point (`Seg::nearest`).
+    Conic {seg:crate::brep::planar::Seg},
 }
 
 /// A support-surface projection and an actual point on the finite source patch.
@@ -52,6 +54,7 @@ impl RevolvedSurface {
         let candidates = match self.meridian {
             Meridian::Line {start,delta} => vec![sub(start,self.origin),delta],
             Meridian::Round {center,a,b,..} => vec![sub(center,self.origin),a,b],
+            Meridian::Conic {a,m,b,..} => vec![sub(a,self.origin),sub(m,self.origin),sub(b,self.origin)],
         };
         let radial = candidates.iter().map(|&p| perp(p))
             .find(|&p| length(p) > 1e-12*candidates.iter().map(|&p| length(p)).fold(0.,f64::max))
@@ -90,6 +93,14 @@ impl RevolvedSurface {
                     return Err("a boundary meridian must stay on one side of its axis".into());
                 }
                 Section::Circle {center,a,b,radius,sweep,orientation:-det.signum()}
+            }
+            Meridian::Conic {a,m,b,w} => {
+                let at = |p: V| coords(sub(p,self.origin));
+                let (a,m,b) = (at(a),at(m),at(b));
+                if a[0].min(m[0]).min(b[0]) < -1e-12*a[0].abs().max(b[0].abs()) {
+                    return Err("a boundary meridian must stay on one side of its axis".into());
+                }
+                Section::Conic {seg:crate::brep::planar::Seg::Conic {a,m,b,w}}
             }
         };
         Ok(SurfaceProjector {source:self.clone(),radial,section})
@@ -130,6 +141,15 @@ impl SurfaceProjector {
                 let angle = (q[0]*b[0]+q[1]*b[1]).datan2(q[0]*a[0]+q[1]*a[1]);
                 (phase(angle,sweep)/sweep,orientation*(d-radius),
                     [orientation*q[0]/d,orientation*q[1]/d])
+            }
+            // the left of travel, as a line's: the offset from the nearest point along its normal
+            Section::Conic {seg} => {
+                let u = seg.nearest([r,z]);
+                let (c,t) = (seg.point(u),seg.tangent(u));
+                let l = t[0].dhypot(t[1]);
+                if l == 0. { return Err(Error::Degenerate); }
+                let n = [-t[1]/l,t[0]/l];
+                (u,(r-c[0])*n[0]+(z-c[1])*n[1],n)
             }
         };
         // At an axis point a nonzero radial normal has no unique world direction.

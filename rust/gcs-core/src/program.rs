@@ -468,6 +468,7 @@ fn elaborate_in(
     let mut probes = relations::Probes {
         terms: expansion.probes.iter().filter_map(|key| res.of.get(key)).map(|p| (p.i(), Vec::new()))
             .collect(),
+        idle: BTreeMap::new(),
     };
     // memberships, once every kind is built and before anything reads one: `point a in top`
     // names a plane built after the point, and `project` infers its planes from these — and then

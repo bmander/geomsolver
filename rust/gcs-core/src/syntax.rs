@@ -735,13 +735,16 @@ pub struct GroupDecl {
 }
 
 /// Repetition.  Three constructs and three meanings (spec §12): an open array, a closed one, and
-/// a ring — a closed one whose copies are one another's turns (issue #96).
+/// a ring — a closed one whose copies are one another's turns (issue #96).  And a fourth, which
+/// repeats nothing: `when COND { … }`, the body made once or not at all (§12.5, #210).
 #[derive(Clone, Debug)]
 pub struct Block {
     pub kind: BlockKind,
-    /// How many, as an expression over the enclosing parameters.  Empty where the block runs
-    /// over a named chain's edges (`over`), whose count is the chain's own.
+    /// How many, as an expression over the enclosing parameters; a `when`'s condition.  Empty
+    /// where the block runs over a named chain's edges (`over`), whose count is the chain's own.
     pub count: String,
+    /// Where `count` is written, for what is said about it.
+    pub head: Span,
     /// `repeat e in rack.profile { … }` — one copy per edge of a named chain, in traversal order,
     /// with `e` naming that copy's edge (§6.6, §12).
     pub over: Option<EdgesOf>,
@@ -841,6 +844,10 @@ pub enum BlockKind {
     /// N copies that close and are one another's turns about a centre (§12.3): solved over the
     /// first, the representative, the others worked out from it (`model::Turn`).
     Ring,
+    /// No copies: the body made once where its condition holds and not at all where it does not
+    /// (#210), decided at flattening over the numbers in scope.  No index and no prefix, so what
+    /// it declares is named as if written beside it.
+    When,
 }
 
 impl BlockKind {
@@ -849,7 +856,7 @@ impl BlockKind {
     /// sibling reference asks it, so the joint's statements and its welds cannot disagree on
     /// which pairs exist.
     pub fn wraps(self) -> bool {
-        self != BlockKind::Repeat
+        matches!(self, BlockKind::Cycle | BlockKind::Ring)
     }
 }
 

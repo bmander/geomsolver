@@ -695,3 +695,51 @@ holds.
 4. **Nothing was refused.** Every example's statements are answered by the definition as it
    stands, and no round needed a special case: curved faces, a traced saddle, chains and run-outs
    are all the same two words.
+
+## The hypoid's end relief, lowered (#196, 2026-10-12)
+
+**Decided: a chamfer's flat is its sum of distances** (spec 0.72). On the hypoid's sphere the sum
+bows 7.4e-5 mm off the straight chamfer `EndChamfer` drew. That bow is the meaning, and the
+lowering builds it exactly. Keeping the straight line instead would have needed a meaning the set
+language cannot say.
+
+- **Between a line and a circle** the sum `d_L / l_C + d_C / l_L = 1` is `|q − c| = α + β d_L(q)`:
+  - a conic with its focus at the circle's centre and eccentricity `l_L / l_C`;
+  - a parabola for equal legs.
+- **The planar kernel carries it as a step of its own:** `Seg::Conic`, the rational quadratic
+  Bézier over its ends and the point where their tangents meet, its middle weight read off its
+  shoulder.
+- **`corners::sum` builds it**, through the same ends `flat` finds with both legs measured from the
+  other face. Between two lines it is the segment; between two circles (a Cartesian oval) it is
+  refused, and the field reads it.
+- **Every meridian reader takes it:**
+  - the Booleans: roots of its implicit form, and ray crossings in closed form;
+  - the field: `Edge::Conic`, whose interval wall splits the arc into pieces held by discs about
+    their control triangles;
+  - the revolved surfaces (`Meridian::Conic`);
+  - the recipe, as a rational quadratic B-spline that the kernel revolves.
+- **`std.Chamfered` is multiplied through by its legs** (`la·d_a + lb·d_b ≥ la·lb`), so a relief of
+  nothing cuts nothing. The design's `ends_relieved` switch is gone.
+- **The hypoid:**
+  - `blank/member.sv` states the end relief in each member's region;
+  - `blank/ends.sv` (`EndChamfer`, `EndCut`) is deleted.
+
+### Held to
+
+| case | against | result |
+|---|---|---|
+| the member preview's conics | the sum of distances on them | 1.5e-13 mm |
+| their ends | the straight chamfer's legs, from the other face | 1e-9 |
+| the exact solid's volume | the meridian turned (Green's theorem) | 1e-9 |
+| the lowered field | the region read point by point, about each flat | every point's side |
+| the configured pair's flats | their sums and legs | 1.8e-13 mm |
+| the bow | the straight chamfer | 7.4e-5 mm at most; the volume differs by 4.7e-5 of the chamfers' |
+| the configured pair's exports (`solventc --step --stl`, this kernel) | main's, with `EndChamfer` | the same 147 and 291 faces; blanks 1.4e-4 and 4.8e-4 mm³ apart; field agreement, 0 disagree |
+| main's STLs and the new ones | the new model's exact faces (`--measure`) | every exact face within 10 µm (worst 5.57 / 5.70 µm pinion, 5.90 / 5.84 µm gear) |
+
+Two kernel rules the export needed:
+- **A traced edge ends where it leaves a revolution's patch:** `Surface::off_patch` now reads a
+  revolution or an extrusion of a curve too. Past the band's lower circle, the sector side's trace
+  had run on along the band's extension and been read as on the face.
+- **A revolution about the axis is kept by the pattern's turns:** `brep::pattern`'s `Kept`. The
+  band's two pieces had been taken for the sector's sides.

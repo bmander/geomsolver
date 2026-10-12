@@ -1,6 +1,31 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.71 — October 2026**
+**Specification, Draft 0.74 — October 2026**
+
+**[0.74] A point said on another plane is drawn there.** `gear.M coincident q`, said of a point
+its declaration draws in a plane, draws it in `q` too, as `point in p, q` draws it — the statement
+that puts a point another component declares into a plane only this one knows. 0.54 to 0.73 held
+it on `q` by a row, so a layout drew it in `q` again and tied the two by `project`, which still
+reads each operand in its own plane. Said the other way round, `q coincident gear.M` puts the
+plane through the point, the row it was (§6.7, §6.21).
+
+**[0.73] A chamfer's flat is its sum of distances.** `std.Chamfered(a, b, la, lb)` is the points
+whose distances from `a`'s and `b`'s surfaces, each over the other's leg, sum to one or more, and
+nothing else: where both surfaces are flat in section that is the straight flat, and where one is
+curved it bows with it — between a cone and a sphere about one axis a parabola's arc turned, never
+the straight line between the legs' ends (§6.9). Its bound is written multiplied through by both
+legs, so a leg of nothing cuts nothing; a bound on measurements weighing every measurement by
+nothing holds everywhere or is **E040** (§6.21). The hypoid's end relief is two such bounds in each
+member's blank, and `EndChamfer` is retired.
+
+**[0.72] A block made or not by a condition.** `when COND { … }` makes its body once where
+`COND` holds and not at all where it does not, decided at elaboration over the numbers in scope
+(§12.9). It repeats nothing, so it has no index and no copy: what it declares is named as if
+written beside it (`p_in`, `t.tip`). A condition compares numbers of one dimension — `<`, `<=`,
+`>`, `>=`, `==`, `!=` — joined by `and`, `or` and `not` (§3.3); two dimensions are **E103**, and
+a condition reading an unknown of the drawing is **E040**, since the block is made before there
+is a solve. A switch is no longer a `repeat` over a computed 0 or 1: the hypoid's tip relief is
+made `when design.tip_relief > 0mm`, `pinion_relief` no longer `pinion_relief[0]`.
 
 **[0.71] A set formal, and a side is a bound.** A component takes a set as a `set` formal
 (`component Rounded(a: set, b: set, r: Length)`), filled by a named set or a set family's
@@ -511,7 +536,7 @@ MUST, MUST NOT, SHOULD, SHOULD NOT, and MAY are used as in RFC 2119. Text marked
 ## 2. Lexical structure
 
 - **Identifiers:** `[A-Za-z_][A-Za-z0-9_]*`. Component names are conventionally capitalized; this is not enforced.
-- **Keywords:** `component`, `param`, `point`, `circle`, `line`, `frame`, `path`, `repeat`, `cycle`, `ring`, `about`, `as`, `next`, `prev`, `hint`, `at`, `fix`, `ccw`, `cw`, `rev`, `true`, `false`, **[0.2]** `curve`, `over`, `spline` (and `ellipse`, until **[0.15]** made the ellipse a library component — `Ellipse` in `std`, a computed point on a datum traced as a curve, whose contacts are the curve's; an implementation keeps the word only to refuse it). **[0.7]** `unit`, `class` and `style` in, `construction` out; every constraint is a prefix or an infix operator (§9.2), so `coincident`, `equal`, `tangent`, `curvature`, `symmetry` and `distance` are the words a statement is written with — it is a class now, and the base sheet is what draws it dashed (§13.2). **[0.4]** In a chain (§6.6) the word `close` is meaningful *contextually*; it is not reserved, and an entity may bear it as a name. **[0.19]** It is read the same way after `->` inside a `face`'s brackets (§6.8), which is the other place the language draws a loop. **[0.8]** `to` is retired: the plain corner is the `->` marker, and threading is stated at the joint rather than inferred from the operands. **[0.5]** A coordinate seed is written `hint at` (§6.4). **[0.7]** Every seed is written in one `hint(…)` clause (§4.3, §6.4); `hint at REF` kept its own form inside a trace block (§6.5.1) until **[0.14]**, when a place became the `at:` and `bearing:` keys of the same clause — `hint(at: REF, bearing: β)` — so `at` after `hint` is refused, and `bearing` is a key and no keyword. **[0.10]** `plane`, `in`, `project` and `fold` in (§6.7); `from` is contextual there as it is in a trace family. **[0.42]** `axis` in; `frame`, `fold`, and `from`, `offset` and `through` as a plane's labels, out — a plane's brackets take `u:` and `v:` and nothing else. **[0.13]** `port` is retired (§7); an implementation keeps the word only to refuse it. **[0.18]** `face` and `solid` are element keywords (§6.8, §6.9) and `view` and `section` open a statement (§6.11); `cut` is the body rule's own word and `on` gains a reading over two solids (§9.2), so both join the operator words a name may not be. **[0.32]** `union` is the body rule's too, and joins them; `on` loses its reading over two solids. **[0.42]** `on` is no constraint word: `coincident` says incidence (§9.2). **[0.20]** `view` and `section` leave model source for the drawing (§6.11). The eight labels a solid's brackets take — `from`, `to`, `depth`, `through`, `along`, `about`, `sweep`, `sense` — are **contextual**: they are read as labels inside the brackets that take them and are reserved nowhere, so a `param` or a point may still bear any of them as a name (`face := -(fw + D / 2)` is idiomatic). A declaration's *name*, however, may not be an element keyword, and three shipped examples renamed a line that had been called `face`.
+- **Keywords:** `component`, `param`, `point`, `circle`, `line`, `frame`, `path`, `repeat`, `cycle`, `ring`, **[0.72]** `when`, `about`, `as`, `next`, `prev`, `hint`, `at`, `fix`, `ccw`, `cw`, `rev`, `true`, `false`, **[0.2]** `curve`, `over`, `spline` (and `ellipse`, until **[0.15]** made the ellipse a library component — `Ellipse` in `std`, a computed point on a datum traced as a curve, whose contacts are the curve's; an implementation keeps the word only to refuse it). **[0.7]** `unit`, `class` and `style` in, `construction` out; every constraint is a prefix or an infix operator (§9.2), so `coincident`, `equal`, `tangent`, `curvature`, `symmetry` and `distance` are the words a statement is written with — it is a class now, and the base sheet is what draws it dashed (§13.2). **[0.4]** In a chain (§6.6) the word `close` is meaningful *contextually*; it is not reserved, and an entity may bear it as a name. **[0.19]** It is read the same way after `->` inside a `face`'s brackets (§6.8), which is the other place the language draws a loop. **[0.8]** `to` is retired: the plain corner is the `->` marker, and threading is stated at the joint rather than inferred from the operands. **[0.5]** A coordinate seed is written `hint at` (§6.4). **[0.7]** Every seed is written in one `hint(…)` clause (§4.3, §6.4); `hint at REF` kept its own form inside a trace block (§6.5.1) until **[0.14]**, when a place became the `at:` and `bearing:` keys of the same clause — `hint(at: REF, bearing: β)` — so `at` after `hint` is refused, and `bearing` is a key and no keyword. **[0.10]** `plane`, `in`, `project` and `fold` in (§6.7); `from` is contextual there as it is in a trace family. **[0.42]** `axis` in; `frame`, `fold`, and `from`, `offset` and `through` as a plane's labels, out — a plane's brackets take `u:` and `v:` and nothing else. **[0.13]** `port` is retired (§7); an implementation keeps the word only to refuse it. **[0.18]** `face` and `solid` are element keywords (§6.8, §6.9) and `view` and `section` open a statement (§6.11); `cut` is the body rule's own word and `on` gains a reading over two solids (§9.2), so both join the operator words a name may not be. **[0.32]** `union` is the body rule's too, and joins them; `on` loses its reading over two solids. **[0.42]** `on` is no constraint word: `coincident` says incidence (§9.2). **[0.20]** `view` and `section` leave model source for the drawing (§6.11). The eight labels a solid's brackets take — `from`, `to`, `depth`, `through`, `along`, `about`, `sweep`, `sense` — are **contextual**: they are read as labels inside the brackets that take them and are reserved nowhere, so a `param` or a point may still bear any of them as a name (`face := -(fw + D / 2)` is idiomatic). A declaration's *name*, however, may not be an element keyword, and three shipped examples renamed a line that had been called `face`.
 - **Literals:** decimal numbers with optional unit suffix (`10`, `2.5mm`, `30deg`). The constant `tau` (= 2π) and `pi` are predefined.
 - **Comments:** `//` to end of line; `/* ... */` nesting not required.
 - **Operators and punctuation:** `== + - * / ( ) { } [ ] , : . := -> ~ @`
@@ -596,6 +621,7 @@ Implementations **MUST** check dimensions in expressions and constraints, and MU
 
 - `*` and `/` **derive**: the exponents add and subtract.
 - `+` and `-` **demand agreement**, and so do `min`, `max`, `hypot` and `atan2`'s two arguments.
+- **[0.72]** So do a comparison's two sides — `<`, `<=`, `>`, `>=`, `==`, `!=` — which make no number but a condition, read only by `when` (§12.9): `relief > 0mm`, never `relief > 0`.
 - `^` takes a plain number, and a **dimensioned base takes a whole power**: `x ^ 2.5` where `x` is a length is not a dimension anybody meant, and `sqrt` is how a half is written.
 - The dimension an expression comes to is checked against the **slot** it is written in.
 
@@ -994,8 +1020,15 @@ round), said of a point standing in space, **draws the point in `P`**: it is `p 
 said as a relation, and the two are one statement with the same rows — the point has `P`'s two
 coordinates, and every relation over it reads as one of `P`'s points' (`p distance(25) a`, with
 `a` drawn in `P`, is `P`'s own distance). `l coincident P` draws each end of `l` not yet in `P`
-there. A point is drawn in the first plane a statement puts it on; put on a second, it is held
-there by a row in space, as a point of one view put on another plane is. A point whose own
+there. A point standing in space is drawn in the first plane a statement puts it on; put on a
+second, it is held there by a row in space. **[0.74]** A point its declaration draws in a plane —
+its own `in`, or an `in` block around it — said on another, `p coincident P`, is **drawn there
+too**, as `in P, G` draws it (below): `gear.M coincident q` draws the point another component
+declares in a plane only this one knows, and what is drawn in `q` reads it there. The other way
+round, `P coincident p` passes `P` through it (below), a row, so a plane may be put through a
+point of a plane it lies on. A point only its instance's `in` puts in a view stands in space to
+the component declaring it, which says where it stands whatever view the instance is put in, so
+what the component says of it keeps the rule for a point in space. A point whose own
 statements say it stands in space stays there and the plane holds it by a row: one seeded with a
 height (`hint(z: …)`), one whose three numbers a `fix` holds, the point a tangency differentiates
 at (§6.21), a `ring`'s (§12.4), and any under a `claim`. Which representation stands is the
@@ -1005,7 +1038,14 @@ elaborator's; what the drawing means is the statement's either way.
 in `G`, so on the line where they meet: one freedom along it where both planes stand. Each
 plane's geometry reads `O` as its own point — `arc(center: O)` drawn in `G` is centred there,
 `line(O, T)` in `G` ends there, `O distance(5) q` with `q` in `G` is `G`'s distance — so what a
-descriptive layout draws twice and ties by `project` is one point. A plane named twice is
+descriptive layout draws twice and ties by `project` is one point. **[0.74]** `O coincident G`,
+said of `O` drawn in `P`, is the same statement: `O` drawn in `P` and `G` (above), however many
+components apart the two are written. Said of a plane `O` is already drawn in, it asks nothing
+(**E061**, as before); under a `claim`, in a `ring` (§12.4) and from a set's body (§6.21) it holds
+`O` there by a row, as before. `project` relates two planes by definition, so it reads each
+operand in its own plane, never by its twin: `m coincident P` and `O project m`, the layout that
+drew `m` again, say what they said. *Non-normative:* an end a line mints and does not name
+(`l.p1`) is still held on a second plane by a row. A plane named twice is
 **E040**; two planes that are parallel meet on no line, **E061**. Only a point is drawn in
 several planes (a line is, when its ends are; **E040** otherwise). Where a plane is itself built
 along a line `O` is on — an end of it, or stated on it — the plane already holds `O`, and the
@@ -1243,7 +1283,11 @@ own body a round or a chamfer between two of its bounds is one more bound on its
 std.Rounded(wall, top, r: 2mm)`, `p inside std.Chamfered(wall, bottom, la: 1mm, lb: 1mm)` (`la`
 along the first, `lb` along the second). Where the two are bounds the region states, at its
 level and about its axis, the round or the flat is built exactly in the region's revolution (a
-torus, a cone); elsewhere it is read point by point. *Non-normative:* both readings are one
+torus; a cone between two straight sections, and **[0.73]** between a straight section and a
+circle, a sphere's, the conic the sum of distances makes there, turned); elsewhere — a flat between
+two circles — it is read point by point. **[0.73]** A chamfer's flat is what its sum of distances
+bounds and nothing else: it bows with a curved surface, and no construction substitutes the
+straight line between its legs' ends. *Non-normative:* both readings are one
 meaning: a round lowered into the revolution is the region the point-by-point reading reads. So
 is a round over a body's faces an implementation recognises by its set and builds exactly (a
 prism, a ring, a ball's corner), held to that reading.
@@ -1827,7 +1871,10 @@ said where it is used, by two words:
   described as written.
 - `q coincident S` (either way round) states the body with `q` for the bound point, expanded
   where the statement stands as a component's body is (§14.1). What the body declares privately
-  — the cone's generator — is made once for each use. `q` MUST be a point (**E040**).
+  — the cone's generator — is made once for each use. `q` MUST be a point (**E040**). A plane is
+  the set its `in` is membership of (§6.7): `q coincident P` draws `q` in `P`, and **[0.74]**
+  where `q`'s declaration draws it in another plane it draws `q` in `P` as well, a twin rather
+  than a row holding it there (§6.7 says where a row stays, `P coincident q` among them).
 - `l tangent S` (either way round), `l` a line: a **contact** point standing in space, on `l`,
   is minted for the use and the body is stated at it; and each relation of the body is stated a
   second time as its **derivative** there **[0.51]** — the relation's rate as the contact moves
@@ -1974,7 +2021,9 @@ plane, a face or its surface (above), or a set (below). It makes the set a regio
 point (§6.9), and is read only where a region solid's point is: `inside` keeps it, `outside` turns
 it round, and a body of such bounds only is all of them under `inside`. A product of
 measurements, a measurement read through a function or a power, a statement reading two points,
-and one reading none of a region solid's are **E040**.
+and one reading none of a region solid's are **E040**. **[0.73]** A bound whose measurements are
+all weighed nothing (`0 * distance(p, a) >= 0`) bounds nothing where it holds and is **E040** where
+it holds nowhere.
 
 **The distance from a set** **[0.69]**. A measurement may name a set, `distance(p, crease)`: the
 distance from `p` to the set's nearest point. The set is given a point of its own, which its body
@@ -2124,7 +2173,7 @@ What goes in the parentheses is a short list:
 
 | word | fixity | operands → constraint |
 |---|---|---|
-| `coincident` | infix | **[0.42]** (point, point); (point, line \| circle \| arc \| spline \| curve) — incidence, where 0.41 and before wrote `on`; **[0.24]** (point, plane), (line, plane) in space — **[0.54]** of a point standing in space, its membership of the plane, as `in` (§6.7); **[0.49]** (point, set), the set's body at the point (§6.21); **[0.42]** (point, axis), (axis, plane); **[0.43]** (axis, axis), one line either way round; **[0.44]** (line, axis), both ends on it; **[0.38]** (point, the envelope of a prism's side), from any view (§6.15.2). Read either way round: `P coincident p` is `p coincident P`. **[0.32]** Not (solid, solid): the body rule's union is `union` (§6.9) |
+| `coincident` | infix | **[0.42]** (point, point); (point, line \| circle \| arc \| spline \| curve) — incidence, where 0.41 and before wrote `on`; **[0.24]** (point, plane), (line, plane) in space — **[0.54]** of a point standing in space, its membership of the plane, as `in` (§6.7); **[0.74]** of a point its declaration draws in another plane, `p coincident P` draws it in `P` too and `P coincident p` passes `P` through it (§6.7); **[0.49]** (point, set), the set's body at the point (§6.21); **[0.42]** (point, axis), (axis, plane); **[0.43]** (axis, axis), one line either way round; **[0.44]** (line, axis), both ends on it; **[0.38]** (point, the envelope of a prism's side), from any view (§6.15.2). Read either way round: `P coincident p` is `p coincident P`, but for **[0.74]**'s point drawn in another plane. **[0.32]** Not (solid, solid): the body rule's union is `union` (§6.9) |
 | `cut` | infix | **[0.18]** (solid, solid) — the body rule's other half (§6.9), and no constraint at all |
 | `distance` | infix | (p, p); **[0.46]** +`along:` an ordinate — an axis or a line, or the view's `x`/`y` for the run and the rise (`right`/`left`/`up`/`down` with the sign said); (p, line); (line, line); (circle, circle); (p, plane) with `along: u`/`v` for signed ordinates from the plane's origin, or **[0.24]** `along: n` for the signed distance along the plane's normal, in space; **[0.42]** (plane, plane), the second's origin along the first's normal (§6.10) |
 | `distance` | prefix | on a line: the distance between its own ends |
@@ -2438,7 +2487,7 @@ Hints on entities inside a `ring` seed the fundamental-domain representative (§
 
 ## 12. Repetition
 
-Three constructs, three meanings. All take a compile-time `Int` count and an optional index binder.
+Three constructs, three meanings. All take a compile-time `Int` count and an optional index binder. **[0.72]** A fourth block repeats nothing: `when` makes its body once or not at all (§12.9).
 
 ### 12.1 `repeat` — open array
 
@@ -2518,6 +2567,29 @@ cycle e in CHAIN as i { ... }
 One copy per link of a named chain (§6.6), in traversal order, with `e` a reference to that copy's edge — a constraint operand, a field (`e.p1`), an argument — and `as i` optional as before. The count is the chain's, so the chain MAY be declared later in the body (P2) or reached through an instance or a group. The copies are §12.1's (or §12.2's, with `next`/`prev`) in every other respect, and §12.7 holds. `cycle` over an open chain, and iteration over what is not a named chain or a solid, are errors at the reference (**E103**); a body declaration named as the edge is **E001**.
 
 **Over a solid's faces** **[0.69]**: `repeat a in X { … }`, `X` a solid or a face path (§6.9), makes one copy per face `X` names, `a` the face (a face path itself, §6.21): a prism's `near`, `far` and a side per edge of its section, a revolution's wall per edge and, where the turn is partial, `start` and `end`, a body's every operand's faces under the operand's name (`pad.plate.near`). The faces are read off what the solid is made of, so one a Boolean ate is listed still and names nothing (§6.21); they are known once the solids are built, so the block is expanded then. A condition keeps some copies: `repeat b in B if b != a { … }`, `repeat c in A if c in B and c != a { … }` — `f in X`, the face is one `X` names, and `f != g`, it is not that face — each joined by `and`.
+
+### 12.9 `when` — a block made or not by a condition **[0.72]**
+
+```
+when COND { ... }
+```
+
+The body is made **once** where `COND` holds and **not at all** where it does not. The condition is decided at elaboration, over the numbers in scope where the block stands — the document's values and inputs with a value, a module's numbers by their paths, a component's formals bound by its call, an enclosing block's index — so it is a choice of what the program *is*, never of where the solve goes. It stands where `repeat` does: at the top level of a document, in a component body, and inside another block.
+
+`COND` is comparisons of two numbers, `<`, `<=`, `>`, `>=`, `==` and `!=`, joined by `and`, `or` and `not` (`or` binds loosest, then `and`, then `not`); a parenthesis holds a number or a condition. A number alone is no condition, and a comparison is no number. Each comparison is between two numbers of one dimension, as `+` is (§3.3): `relief > 0mm`, not `relief > 0`; two dimensions are **E103**. The comparison is exact, with no tolerance, so `<` and `==` are never both true. Every comparison is worked out, so a mistake on a side `and` or `or` could skip is still said.
+
+**A `when` repeats nothing, so it has no index and no copy.** What its body declares is named as if written beside the block — `p_in`, and in a component `t.tip` — never with a copy's index, and is reached from outside by that name; where the condition does not hold, nothing of the body is made, and a name only it declares is undefined (**E101**). The numbers a body defines are its own. A statement inside it is one statement as any is (§12.7), reached once or not at all, so a solve writes its seeds back as at the top level (§4.3). An index binder (`as i`) and a body ending mid-joint (§6.6), which threads onto a next copy there is none of, are syntax errors.
+
+A condition that reads a name nothing in scope gives a number is **E101**; one that reads an unknown of the drawing — an input with no value, a formal no call binds, a value over either — is **E040**: the block is made before there is a solve to give it a number. A measurement of the solved drawing is **E107** (§6.14).
+
+```
+when design.tip_relief > 0mm {
+  tooth_relief := crown.relief.ToothRelief(tooth, reach.cap, design, …) in n.view
+}
+pinion_relief := ReliefCut(pinion.body, …, reference.tooth_relief.body, …)   // in a `when` too
+```
+
+*Non-normative:* a switch used to be written as a `repeat` over a computed 0 or 1 — `repeat min(ceil(relief / 1mm), 1) { … }` — which depended on the unit it divided by, said nothing of its intent, and named what it made as a copy (`tooth_relief[0]`).
 
 ---
 
@@ -2622,7 +2694,7 @@ Elaboration lowers a program to the **kernel form** consumed by solvers. The pip
 
 ### 14.1 Phases
 
-1. **Instance expansion.** Recursively inline component bodies for the root's instance tree, freshening names by instance path. `repeat`/`cycle` unroll. `ring` either unrolls to `cycle` + symmetry constraints (§12.3) or lowers to quotient form (§12.4); the two MUST be solution-equivalent.
+1. **Instance expansion.** Recursively inline component bodies for the root's instance tree, freshening names by instance path. `repeat`/`cycle` unroll; **[0.72]** a `when` is decided and its body inlined once or dropped. `ring` either unrolls to `cycle` + symmetry constraints (§12.3) or lowers to quotient form (§12.4); the two MUST be solution-equivalent.
 2. **Alias resolution.** Union-find over all names, merging classes for: entity-typed arguments and constructor entity-arguments. Each class gets one representative entity. Type mismatch within a class is an error (**E040**).
 3. **Definitional substitution.** Definitional equalities (constructor value-arguments, and values and inputs with a value — `NAME := EXPR`, `param NAME := EXPR`, §6.3) are substituted, METAFONT-style: they are not residuals and consume no solver iterations. A cyclic definitional dependency is an error (**E041**).
 4. **Constraint collection.** Predicate statements, `==` equations, derived path incidences (§10.4), symmetry constraints, and gauges are collected into the constraint store.
@@ -3104,7 +3176,13 @@ hint           = "hint" ref hint_clause ;                  (* §11; unimplemente
 
 block          = ( "repeat" | "cycle" ) ( expr | IDENT "in" ref [ condition ] ) [ "as" IDENT ]
                  "{" { statement } "}"                (* IDENT "in" ref: §12.8 [0.27] *)
-               | "ring"   expr "about" ref [ "as" IDENT ] "{" { statement } "}" ;
+               | "ring"   expr "about" ref [ "as" IDENT ] "{" { statement } "}"
+               | "when"   truth "{" { statement } "}" ;    (* §12.9 [0.72] *)
+
+truth          = truth "or" conj | conj ;                 (* [0.72] *)
+conj           = conj "and" negation | negation ;
+negation       = "not" negation | expr cmpop expr | "(" truth ")" ;
+cmpop          = "<" | "<=" | ">" | ">=" | "==" | "!=" ;
 
 condition      = "if" IDENT ( "in" | "!=" ) ref { "and" IDENT ( "in" | "!=" ) ref } ;
                  (* which faces' copies are kept, §12.8 [0.69] *)

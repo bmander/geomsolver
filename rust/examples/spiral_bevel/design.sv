@@ -21,12 +21,11 @@ hypoid_design := {
   // how far each member rolls, clear of its blank at both limits, and the space cutter reaches
   pinion_roll: 35deg, gear_roll: 45deg,
   space_reach: 1.1 * mean_cone_distance + configuration.mean_module,
-  // the allowances; the reliefs each with a switch, 1 where it is not zero
+  // the allowances; the tip relief made `when` it is more than zero, the end relief a chamfer
+  // of no leg where it is zero
   backlash: configuration.backlash,
   tip_relief: configuration.tip_relief, relief_angle: 30deg,
-  relieved: min(ceil(configuration.tip_relief / 1mm), 1),
-  end_relief: configuration.end_relief,
-  ends_relieved: min(ceil(configuration.end_relief / 1mm), 1)}
+  end_relief: configuration.end_relief}
 
 preview {
   unit mm

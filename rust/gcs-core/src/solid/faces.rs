@@ -132,10 +132,17 @@ impl BodyFaces {
         (0..self.paths.len()).filter(|&i| self.paths[i].matches(&f.path)).collect()
     }
 
-    fn q(&self, p: V) -> V { scale(sub(p, self.origin), self.mm) }
+    /// A point of the model's space in the boundary's (millimetres, about its origin).
+    pub fn q(&self, p: V) -> V { scale(sub(p, self.origin), self.mm) }
 
     /// A point of the boundary's space back in the model's.
-    fn back(&self, q: V) -> V { add(scale(q, 1.0 / self.mm), self.origin) }
+    pub fn back(&self, q: V) -> V { add(scale(q, 1.0 / self.mm), self.origin) }
+
+    /// Edge `e`'s middle, by its parameter (model units).
+    pub fn middle(&self, e: u32) -> V {
+        let edge = &self.loc.b.edges[e as usize];
+        self.back(edge.point(0.5 * (edge.t[0] + edge.t[1]), &self.loc.b.vertices))
+    }
 
     /// Face `fi`'s outward unit normal at `q` (millimetres), pointing away from the material.
     fn outward(&self, fi: usize, q: V) -> V {
@@ -188,7 +195,7 @@ impl BodyFaces {
     }
 
     /// The faces edge `e` bounds.
-    fn faces_of(&self, e: u32) -> &[usize] { &self.bounding[e as usize] }
+    pub fn faces_of(&self, e: u32) -> &[usize] { &self.bounding[e as usize] }
 
     /// Whether edge `e` is convex: a point beside its middle within the first face's side and
     /// outside the second's is outside the material where the material is both sides' common
@@ -288,6 +295,19 @@ impl BodyFaces {
         Some((if f.reversed { scale(frame.z, -1.0) } else { frame.z }, self.back(frame.o)))
     }
 
+    /// Face `fi`'s cylinder, where it lies on one: a point of its axis, the axis's unit direction
+    /// and its radius (model units).
+    pub fn cylinder(&self, fi: usize) -> Option<(V, V, f64)> {
+        let crate::brep::geom::Surface::Cylinder(f, r) = &self.loc.b.faces[fi].surface else { return None };
+        Some((self.back(f.o), f.z, r / self.mm))
+    }
+
+    /// Face `fi`'s sphere, where it lies on one: its centre and radius (model units).
+    pub fn sphere(&self, fi: usize) -> Option<(V, f64)> {
+        let crate::brep::geom::Surface::Sphere(f, r) = &self.loc.b.faces[fi].surface else { return None };
+        Some((self.back(f.o), r / self.mm))
+    }
+
     /// Edge `e`'s ends, first to last, where it is a straight line (model units).
     pub fn segment(&self, e: u32) -> Option<[V; 2]> {
         let edge = &self.loc.b.edges[e as usize];
@@ -303,6 +323,10 @@ impl BodyFaces {
         Some((self.back(f.o), f.z, r / self.mm, f.x))
     }
 
+    /// Edge `e`'s parameters, first to last: a circle's angles from the direction `circle` gives,
+    /// turning about its normal.
+    pub fn span(&self, e: u32) -> [f64; 2] { self.loc.b.edges[e as usize].t }
+
     /// Whether edge `e` is closed: one vertex at both ends.
     pub fn closed(&self, e: u32) -> bool {
         let v = self.loc.b.edges[e as usize].v;
@@ -312,8 +336,8 @@ impl BodyFaces {
     /// Face `fi`'s unit normal at `p` (on it), away from the material.
     pub fn normal(&self, fi: usize, p: V) -> V { self.side_grad(fi, p).1 }
 
-    /// Whether face `fi`'s surface is turned about the line through `o` along the unit `d` with a
-    /// straight meridian: a plane square to it, a cylinder or a cone about it (model units).
+    /// Whether face `fi`'s surface is turned about the line through `o` along the unit `d`: a plane
+    /// square to it, a cylinder or a cone about it, a sphere centred on it (model units).
     pub fn coaxial(&self, fi: usize, o: V, d: V) -> bool {
         use crate::brep::geom::Surface;
         let along = |z: V| norm(crate::space::cross(z, d)) <= 1e-9;
@@ -321,6 +345,7 @@ impl BodyFaces {
         match &self.loc.b.faces[fi].surface {
             Surface::Plane(f) => along(f.z),
             Surface::Cylinder(f, _) | Surface::Cone(f, _, _) => along(f.z) && on(f.o),
+            Surface::Sphere(f, _) => on(f.o),
             _ => false,
         }
     }
@@ -328,6 +353,9 @@ impl BodyFaces {
     /// Where a run of edges `es` (between `faces`) ends: each other face at each of its ends, and
     /// which side of that face's surface the run runs on — `1` where it runs within it (its
     /// material side, `side <= 0`), `-1` outside — so the run is where `σ·side <= 0` for all.
+    /// A face going on from one of `faces` tangent at the end (a seam, no corner: an obround's
+    /// half circle after its flat side) ends nothing: the round goes on round it, along the edge
+    /// that face meets the other in.
     pub fn end_sides(&self, es: &[u32], faces: &[usize]) -> Vec<(usize, f64)> {
         let mut sides = Vec::new();
         for (v, d, vid) in self.run_ends(es) {

@@ -87,7 +87,13 @@ impl Profile {
                         if let Some([a0,a1]) = span { o.set("angles",Json::Arr(vec![a0.into(),a1.into()])); }
                         o
                     }
-                    ProfileEdge::Spline(_) => return Err("profile: a spline is not written as a recipe here".into()),
+                    ProfileEdge::Spline(ref b) => {
+                        let mut o = object([("kind","bspline".into()),("degree",b.degree.into()),
+                            ("knots",Json::Arr(b.knots.iter().map(|&k| k.into()).collect())),
+                            ("poles",Json::Arr(b.poles.iter().map(|&p| v(p,scale)).collect()))]);
+                        if let Some(w) = &b.weights { o.set("weights",Json::Arr(w.iter().map(|&x| x.into()).collect())); }
+                        o
+                    }
                 };
                 let name = self.name(l,k);
                 if !name.is_empty() { j.set("name",name.into()); }
