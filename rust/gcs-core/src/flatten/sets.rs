@@ -284,12 +284,7 @@ impl<'a> Walk<'a> {
         alias: &BTreeMap<String, String>,
     ) -> Option<Vec<(Stmt, Vec<PathStep>, Scope)>> {
         let set_of = |me: &Self, name: &str| -> Option<(String, Vec<String>)> {
-            let segs: Vec<&str> = name.split('.').collect();
-            let r = Ref {
-                root: Name::new(segs[0]),
-                path: segs[1..].iter().map(|f| crate::syntax::Seg::Field(Name::new(*f))).collect(),
-                span: st.span,
-            };
+            let r = Ref::dotted(name, st.span);
             let (abs, rest) = lookup_raw(&r, sc, &me.names, alias, me.units)?;
             me.sets.contains_key(&abs).then_some((abs, rest))
         };
@@ -318,8 +313,7 @@ impl<'a> Walk<'a> {
             StmtKind::Relation(r) => {
                 let w = r.form.written()?;
                 let [_, s] = w.ops.as_slice() else { return None };
-                let ends = s.path.last().is_some_and(|f| matches!(f, crate::syntax::Seg::Field(n) if n.text == "ends"));
-                if !ends || crate::constraints::plane_side_word(&w.word.text).is_none() {
+                if !s.ends_in("ends") || crate::constraints::plane_side_word(&w.word.text).is_none() {
                     return None;
                 }
                 let mut set = s.clone();
@@ -349,15 +343,10 @@ impl<'a> Walk<'a> {
             point.seed = vec![0.7548776662, 0.5698402910, 0.4301597090];
             point.seed_text = vec![None; 3];
             out.push((Stmt { kind: StmtKind::Decl(point), ..st.clone() }, path.to_vec(), sc.clone()));
-            let segs: Vec<&str> = name.split('.').collect();
             let set = match surfaces.get(name) {
                 // a set's surface, made beside it, by its absolute name
                 Some(abs) => Ref { root: Name { text: abs.clone(), span: at }, path: Vec::new(), span: at },
-                None => Ref {
-                    root: Name { text: segs[0].to_string(), span: at },
-                    path: segs[1..].iter().map(|f| crate::syntax::Seg::Field(Name::new(*f))).collect(),
-                    span: at,
-                },
+                None => Ref::dotted(name, at),
             };
             let on = crate::syntax::Written {
                 word: Name { text: "coincident".to_string(), span: at },
@@ -971,15 +960,18 @@ fn region_body(
         let uses: Vec<usize> = (0..body.len()).filter(|&i| written_of(&body[i]).is_some_and(may_use)).collect();
         let others = body.iter().filter(|st| matches!(st.kind, StmtKind::Relation(_) | StmtKind::Measured(_))).count();
         if let ([i], 1) = (uses.as_slice(), others) {
-            if let StmtKind::Relation(r) = &mut body[*i].kind {
-                if let Some(w) = r.form.written_mut() {
-                    if let Some(turned) = match w.word.text.as_str() { "inside" => Some("outside"), "outside" => Some("inside"), _ => None } {
-                        if w.args.is_empty() {
-                            w.word.text = turned.to_string();
-                            return Ok(());
-                        }
-                    }
-                }
+            let w = match &mut body[*i].kind {
+                StmtKind::Relation(r) => r.form.written_mut().filter(|w| w.args.is_empty()),
+                _ => None,
+            };
+            let turned = w.as_ref().and_then(|w| match w.word.text.as_str() {
+                "inside" => Some("outside"),
+                "outside" => Some("inside"),
+                _ => None,
+            });
+            if let (Some(w), Some(turned)) = (w, turned) {
+                w.word.text = turned.to_string();
+                return Ok(());
             }
         }
     }

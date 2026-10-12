@@ -1769,6 +1769,19 @@ impl Ref {
     pub fn field(name: impl Into<String>, f: &str) -> Ref {
         Ref { root: Name::new(name), path: vec![Seg::Field(Name::new(f))], span: Span::default() }
     }
+
+    /// A dotted name (`pad.plate.near`) as a reference, each part at `span`.
+    pub fn dotted(text: &str, span: Span) -> Ref {
+        let mut parts = text.split('.');
+        let root = Name { text: parts.next().unwrap_or_default().to_string(), span };
+        let path = parts.map(|f| Seg::Field(Name { text: f.to_string(), span })).collect();
+        Ref { root, path, span }
+    }
+
+    /// Whether the reference ends in the member `word` (`S.ends`).
+    pub fn ends_in(&self, word: &str) -> bool {
+        matches!(self.path.last(), Some(Seg::Field(n)) if n.text == word)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]

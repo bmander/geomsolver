@@ -150,15 +150,6 @@ pub(super) struct Probes {
     pub inner: BTreeSet<usize>,
 }
 
-impl std::ops::Deref for Probes {
-    type Target = BTreeMap<usize, Vec<crate::model::RegionTerm>>;
-    fn deref(&self) -> &Self::Target { &self.terms }
-}
-
-impl std::ops::DerefMut for Probes {
-    fn deref_mut(&mut self) -> &mut Self::Target { &mut self.terms }
-}
-
 #[allow(clippy::too_many_arguments)]
 pub(super) fn constrain(
     sk: &mut Sketch,
@@ -176,7 +167,7 @@ pub(super) fn constrain(
     // region, read off the body
     if let Some(made) = face_relation(sk, res, r, probes).or_else(|| ends_relation(sk, res, r, probes)) {
         match made {
-            Ok((probe, t)) => probes.get_mut(&probe).expect("a probe's terms").push(t),
+            Ok((probe, t)) => probes.terms.get_mut(&probe).expect("a probe's terms").push(t),
             Err(message) => {
                 diags.push(Diag { code: Code::E040, span: st.span, stmt: Some(st.id), message })
             }
@@ -601,7 +592,7 @@ pub(super) fn constrain(
     // a bound a set put on a region solid's probe is a term of the solid, never a row (§6.21)
     if let Some(probe) = probe_of(sk, &c, probes) {
         match region_term(sk, &c, probe, grow, probes.inner.contains(&probe)) {
-            Ok(t) => probes.get_mut(&probe).expect("a probe's terms").push(t),
+            Ok(t) => probes.terms.get_mut(&probe).expect("a probe's terms").push(t),
             Err(message) => {
                 diags.push(Diag { code: Code::E040, span: st.span, stmt: Some(st.id), message })
             }
@@ -620,14 +611,14 @@ pub(super) fn constrain(
 
 /// The region solid's probe a constraint reads, where it reads one: an operand, or a line's end.
 fn probe_of(sk: &Sketch, c: &Constraint, probes: &Probes) -> Option<usize> {
-    if probes.is_empty() {
+    if probes.terms.is_empty() {
         return None;
     }
     c.entities().into_iter().flat_map(|e| match e.kind {
         EntKind::Point => vec![e.i()],
         _ => crate::model::edge_ends(sk, e)
             .map_or(Vec::new(), |(a, b)| vec![a as usize, b as usize]),
-    }).find(|p| probes.contains_key(p))
+    }).find(|p| probes.terms.contains_key(p))
 }
 
 /// What a bound on a region solid's probe bounds (§6.21), read off the constraint's **kind** and
@@ -1487,35 +1478,32 @@ pub(super) fn measured_term(
         follow(sk, e, &path).ok().map(Target::Ent)
     };
     let probe_at = |t: &Option<Target>| match t {
-        Some(Target::Ent(e)) if e.kind == EntKind::Point && probes.contains_key(&e.i()) => Some(e.i()),
+        Some(Target::Ent(e)) if e.kind == EntKind::Point && probes.terms.contains_key(&e.i()) => Some(e.i()),
         _ => None,
     };
     // the material's angle where two faces meet, at the point of their edge nearest the region's
     // point (#183 F9): a bound of its own
     if let [((expr::Measure::Angle, args), c)] = terms.as_slice() {
-        let [a, b, at] = args.as_slice() else {
-            return refuse("a region's angle is between two faces, read `at:` its point: \
-                           `angle(a, b, at: p)`".to_string());
-        };
         let face = |n: &str| match target(n) {
             Some(Target::Face(f)) if !f.surface => Some(f),
             _ => None,
         };
-        let (Some(fa), Some(fb), Some(p)) = (face(a), face(b), probe_at(&target(at))) else {
+        let read = match args.as_slice() {
+            [a, b, at] => face(a).zip(face(b)).zip(probe_at(&target(at))),
+            _ => None,
+        };
+        let Some(((fa, fb), p)) = read else {
             return refuse("a region's angle is between two faces, read `at:` its point: \
                            `angle(a, b, at: p)`".to_string());
         };
         let cmp = if *c > 0.0 { m.cmp } else { m.cmp.turned().expect("one-sided") };
         let lo = expr::to_arg_units(SpecKind::Angle, k / c);
-        let term = crate::model::RegionTerm {
-            shape: crate::model::RegionShape::Angle { a: fa, b: fb },
+        let term = crate::model::RegionTerm::new(
+            crate::model::RegionShape::Angle { a: fa, b: fb },
             cmp,
-            lo: crate::model::TermNumber::stated(lo),
-            hi: None,
-            grow: None,
-            name: String::new(),
-        };
-        probes.get_mut(&p).expect("a probe's terms").push(term);
+            crate::model::TermNumber::stated(lo),
+        );
+        probes.terms.get_mut(&p).expect("a probe's terms").push(term);
         return;
     }
     let mut probe = None;
@@ -1567,15 +1555,8 @@ pub(super) fn measured_term(
         return refuse("a bound on measurements measures its point".to_string());
     };
     let shape = crate::model::RegionShape::Measured { of };
-    let term = crate::model::RegionTerm {
-        shape,
-        cmp: m.cmp,
-        lo: crate::model::TermNumber::stated(k),
-        hi: None,
-        grow: None,
-        name: String::new(),
-    };
-    probes.get_mut(&p).expect("a probe's terms").push(term);
+    let term = crate::model::RegionTerm::new(shape, m.cmp, crate::model::TermNumber::stated(k));
+    probes.terms.get_mut(&p).expect("a probe's terms").push(term);
 }
 
 /// A face reference from a solid and the fields written past it (#183 F1): `pad.plate.near` is
@@ -1607,7 +1588,7 @@ fn face_relation(sk: &Sketch, res: &Resolver, r: &Relation, probes: &Probes)
     let point = res.lookup(p).and_then(|e| follow(sk, e, &p.path).ok())
         .filter(|e| e.kind == EntKind::Point)?;
     let solid = res.lookup(f).filter(|e| e.kind == EntKind::Solid)?;
-    if !probes.contains_key(&point.i()) {
+    if !probes.terms.contains_key(&point.i()) {
         return Some(Err(format!(
             "`{}` is a drawn point: a point is read against a face where a set is applied to a \
              region solid's point (`solid(S)`)",
@@ -1627,11 +1608,8 @@ fn face_relation(sk: &Sketch, res: &Resolver, r: &Relation, probes: &Probes)
         OpArg::Dim(t, sp) => Some((t.clone(), *sp)),
         _ => None,
     });
-    let bound = w.args.iter().find_map(|a| match a {
-        OpArg::Bound { cmp, hi, .. } => Some((*cmp, hi.clone())),
-        _ => None,
-    });
-    let term = |shape, cmp, lo, hi| RegionTerm { shape, cmp, lo, hi, grow: None, name: String::new() };
+    let bound = w.bound();
+    let term = |shape, cmp, lo, hi| RegionTerm { hi, ..RegionTerm::new(shape, cmp, lo) };
     let made = (|| -> Result<RegionTerm, String> {
         match word {
             "inside" | "outside" => {
@@ -1642,10 +1620,10 @@ fn face_relation(sk: &Sketch, res: &Resolver, r: &Relation, probes: &Probes)
                     Some((t, sp)) => number(t, *sp)?,
                     None => TermNumber::stated(0.0),
                 };
-                let (cmp, lo) = if word == "inside" {
-                    (Cmp::Le, d)
-                } else {
-                    (Cmp::Ge, TermNumber { c: -d.c, free: d.free.map(|(n, m)| (n, -m)) })
+                let cmp = crate::constraints::plane_side_word(word).expect("inside or outside");
+                let lo = match cmp {
+                    Cmp::Le => d,
+                    _ => TermNumber { c: -d.c, free: d.free.map(|(n, m)| (n, -m)) },
                 };
                 Ok(term(RegionShape::FaceSide { face: face.clone() }, cmp, lo, None))
             }
@@ -1654,8 +1632,8 @@ fn face_relation(sk: &Sketch, res: &Resolver, r: &Relation, probes: &Probes)
                 let lo = number(t, *sp)?;
                 let of = vec![(Target::Face(face.clone()), 1.0)];
                 Ok(match &bound {
-                    Some((Cmp::In, Some(hi))) => {
-                        let hi = number(&hi.0, hi.1)?;
+                    Some((Cmp::In, Some((hi, sp)))) => {
+                        let hi = number(hi, *sp)?;
                         term(RegionShape::Measured { of }, Cmp::In, lo, Some(hi.c))
                     }
                     Some((cmp, _)) => term(RegionShape::Measured { of }, *cmp, lo, None),
@@ -1683,13 +1661,12 @@ fn ends_relation(sk: &Sketch, res: &Resolver, r: &Relation, probes: &Probes)
     use crate::model::{RegionShape, RegionTerm, Target, TermNumber};
     let w = r.form.written()?;
     let [p, e] = w.ops.as_slice() else { return None };
-    let ends = matches!(e.path.as_slice(), [crate::syntax::Seg::Field(n)] if n.text == "ends");
-    if !ends {
+    if !e.ends_in("ends") {
         return None;
     }
-    let edge = res.lookup(e).filter(|x| x.kind == EntKind::Point && probes.contains_key(&x.i()))?;
+    let edge = res.lookup(e).filter(|x| x.kind == EntKind::Point && probes.terms.contains_key(&x.i()))?;
     let point = res.lookup(p).and_then(|x| follow(sk, x, &p.path).ok())
-        .filter(|x| x.kind == EntKind::Point && probes.contains_key(&x.i()))?;
+        .filter(|x| x.kind == EntKind::Point && probes.terms.contains_key(&x.i()))?;
     let cmp = crate::constraints::plane_side_word(&w.word.text)?;
     if cmp != crate::syntax::Cmp::Le {
         return Some(Err("past where an edge ends is no region: say `inside S.ends`".to_string()));
@@ -1697,7 +1674,7 @@ fn ends_relation(sk: &Sketch, res: &Resolver, r: &Relation, probes: &Probes)
     let shape = RegionShape::Ends {
         edge: Box::new(Target::Set { probe: edge.i() as u32, terms: Vec::new() }),
     };
-    let t = RegionTerm { shape, cmp, lo: TermNumber::stated(0.0), hi: None, grow: None, name: String::new() };
+    let t = RegionTerm::new(shape, cmp, TermNumber::stated(0.0));
     Some(Ok((point.i(), t)))
 }
 
@@ -1712,7 +1689,7 @@ pub(super) fn fill_sets(sk: &mut Sketch, terms: &mut [crate::model::RegionTerm],
     }
     let fill = |t: &mut Target, sk: &mut Sketch| -> Result<(), String> {
         if let Target::Set { probe, terms } = t {
-            let mut inner = probes.get(&(*probe as usize)).cloned().unwrap_or_default();
+            let mut inner = probes.terms.get(&(*probe as usize)).cloned().unwrap_or_default();
             if inner.is_empty() {
                 return Err("a set measured from states nothing of its point".to_string());
             }

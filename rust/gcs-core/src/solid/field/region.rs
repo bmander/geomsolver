@@ -5,15 +5,13 @@
 //! by its half-diagonal: conservative, never sampled.  The measured terms that read a body's faces
 //! (`solid::measured`) are leaves of the same kind.
 use super::{Error, I, V};
+use crate::fmath::Det;
+use crate::space::{cross, dot, norm, sub};
 use crate::syntax::Cmp;
 use std::f64::consts::FRAC_PI_2;
 use std::sync::Arc;
 
 type P3 = [f64; 3];
-
-fn sub(a: P3, b: P3) -> P3 { [a[0] - b[0], a[1] - b[1], a[2] - b[2]] }
-fn dot(a: P3, b: P3) -> f64 { a[0] * b[0] + a[1] * b[1] + a[2] * b[2] }
-fn norm(a: P3) -> f64 { dot(a, a).sqrt() }
 
 /// What a term measures at a point: one-Lipschitz, or a cone's angle from its axis (read through
 /// the cone's signed distance once its half is known).
@@ -29,6 +27,23 @@ pub enum Measure {
     Ordinate { o: P3, n: P3 },
     /// Anything else that is one-Lipschitz and signed: negative within (`Cmp::Le` 0 holds there).
     Signed(Signed),
+}
+
+impl Measure {
+    /// The distance from the point, the line or the plane measured from (`NaN` for a cone or a
+    /// signed measure, which measure no distance).
+    pub fn distance(&self, p: P3) -> f64 {
+        match self {
+            Measure::Point(c) => norm(sub(p, *c)),
+            Measure::Line { a, d } => {
+                let q = sub(p, *a);
+                let along = dot(q, *d);
+                (dot(q, q) - along * along).max(0.0).sqrt()
+            }
+            Measure::Ordinate { o, n } => dot(sub(p, *o), *n).abs(),
+            Measure::Cone { .. } | Measure::Signed(_) => f64::NAN,
+        }
+    }
 }
 
 /// A one-Lipschitz signed measure read by a closure (`solid::measured`).
@@ -55,12 +70,7 @@ impl Term {
     /// more (outside a ball, a cylinder, a cone; past a plane along its normal).
     pub fn from_surface(&self, p: P3, v: f64) -> f64 {
         match &self.measure {
-            Measure::Point(c) => norm(sub(p, *c)) - v,
-            Measure::Line { a, d } => {
-                let q = sub(p, *a);
-                let along = dot(q, *d);
-                (dot(q, q) - along * along).max(0.0).sqrt() - v
-            }
+            Measure::Point(_) | Measure::Line { .. } => self.measure.distance(p) - v,
             Measure::Cone { a, d } => {
                 // the cone's signed distance: the generator nearest, or the apex past a quarter
                 let q = sub(p, *a);
@@ -68,8 +78,8 @@ impl Term {
                 if rho == 0.0 {
                     return 0.0;
                 }
-                let phi = (dot(q, *d) / rho).clamp(-1.0, 1.0).acos();
-                rho * (phi - v).clamp(-FRAC_PI_2, FRAC_PI_2).sin()
+                let phi = (dot(q, *d) / rho).clamp(-1.0, 1.0).dacos();
+                rho * (phi - v).clamp(-FRAC_PI_2, FRAC_PI_2).dsin()
             }
             Measure::Ordinate { o, n } => dot(sub(p, *o), *n) - v,
             Measure::Signed(f) => (f.0)(p) - v,
@@ -133,8 +143,8 @@ impl RegionField {
     /// The field over a box: its value at the centre within the half-diagonal (one-Lipschitz),
     /// widened by a rounding allowance.
     pub fn bounds(&self, p: V) -> Result<I, Error> {
-        let c = [p[0].mid(), p[1].mid(), p[2].mid()];
-        let half = p.iter().map(|x| { let [a, b] = x.bounds(); 0.5 * (b - a) }).map(|h| h * h).sum::<f64>().sqrt();
+        let (c, diagonal) = crate::space::box_centre_diagonal(&p);
+        let half = 0.5 * diagonal;
         let v = self.value(c);
         let slack = 1e-12 * self.size;
         I::new(v - half - slack, v + half + slack)
@@ -152,7 +162,6 @@ pub fn polytope_box(planes: &[(P3, f64)]) -> Option<[[f64; 2]; 3]> {
     }
     let mut lo = [f64::INFINITY; 3];
     let mut hi = [f64::NEG_INFINITY; 3];
-    let cross = |a: P3, b: P3| [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
     for i in 0..k {
         for j in i + 1..k {
             for m in j + 1..k {

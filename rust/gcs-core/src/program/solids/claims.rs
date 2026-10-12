@@ -55,8 +55,7 @@ fn solid_claim(
     }
     // and a point against a solid's face is a region's term (#183 F1, `constrain`)
     let kind = |o: &crate::syntax::Ref| res.lookup(o).map(|e| e.kind);
-    let ends = |o: &crate::syntax::Ref| matches!(o.path.as_slice(), [crate::syntax::Seg::Field(n)] if n.text == "ends");
-    if w.word.text == "inside" && w.ops.len() == 2 && ends(&w.ops[1]) {
+    if w.word.text == "inside" && w.ops.len() == 2 && w.ops[1].ends_in("ends") {
         return;
     }
     if matches!(w.word.text.as_str(), "inside" | "outside")

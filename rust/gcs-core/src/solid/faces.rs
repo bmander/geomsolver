@@ -11,6 +11,7 @@ use crate::brep::geom::V;
 use crate::brep::query::{Located, Place};
 use crate::brep::topo::EdgeCurve;
 use crate::model::{FaceRef, RegionShape, RegionTerm, Sketch, SolidDef, Target};
+use crate::fmath::Det;
 use crate::space::{add, distance, dot, norm, scale, sub};
 use std::collections::BTreeSet;
 use std::f64::consts::PI;
@@ -26,6 +27,10 @@ pub struct BodyFaces {
     /// Each edge's material angle at its middle, where it bounds two faces: under a half turn
     /// where the material is the faces' sides' common part (convex).
     convex: Vec<Option<bool>>,
+    /// Each face's edges, once each.
+    edges: Vec<Vec<u32>>,
+    /// The faces each edge bounds.
+    bounding: Vec<Vec<usize>>,
 }
 
 /// The region solids whose terms read the faces of `body`.
@@ -72,7 +77,17 @@ impl BodyFaces {
         let tol = 1e-9 * ex.brep.size().max(1.0);
         let (mm, origin) = (ex.mm, ex.origin);
         let loc = Located::owned(ex.brep, tol);
-        let mut faces = BodyFaces { loc, mm, origin, name, convex: Vec::new() };
+        let edges: Vec<Vec<u32>> = loc.b.faces.iter().map(|f| {
+            let set: BTreeSet<u32> = f.loops.iter().flatten().map(|c| c.edge).collect();
+            set.into_iter().collect()
+        }).collect();
+        let mut bounding = vec![Vec::new(); loc.b.edges.len()];
+        for (fi, es) in edges.iter().enumerate() {
+            for &e in es {
+                bounding[e as usize].push(fi);
+            }
+        }
+        let mut faces = BodyFaces { loc, mm, origin, name, convex: Vec::new(), edges, bounding };
         faces.convex = (0..faces.loc.b.edges.len()).map(|e| faces.edge_convex(e as u32)).collect();
         Ok(faces)
     }
@@ -99,9 +114,6 @@ impl BodyFaces {
     /// A point of the boundary's space back in the model's.
     fn back(&self, q: V) -> V { add(scale(q, 1.0 / self.mm), self.origin) }
 
-    /// Each face's name, in order.
-    pub fn names(&self) -> Vec<String> { self.loc.b.faces.iter().map(|f| f.name.clone()).collect() }
-
     /// Face `fi`'s outward unit normal at `q` (millimetres), pointing away from the material.
     fn outward(&self, fi: usize, q: V) -> V {
         let f = &self.loc.b.faces[fi];
@@ -126,15 +138,14 @@ impl BodyFaces {
         if self.loc.face_place(fi, foot) != Place::Out {
             return distance(q, foot) / self.mm;
         }
-        let edges: BTreeSet<u32> = f.loops.iter().flatten().map(|c| c.edge).collect();
-        edges.into_iter().map(|e| self.loc.nearest(e, q).1).fold(f64::INFINITY, f64::min) / self.mm
+        self.edges[fi].iter().map(|&e| self.loc.nearest(e, q).1).fold(f64::INFINITY, f64::min)
+            / self.mm
     }
 
     /// The edges two groups of faces share: where a face of `a` meets a face of `b`.
     pub fn edges_between(&self, a: &[usize], b: &[usize]) -> Vec<u32> {
         let of = |fs: &[usize]| -> BTreeSet<u32> {
-            fs.iter().flat_map(|&fi| self.loc.b.faces[fi].loops.iter().flatten().map(|c| c.edge))
-                .collect()
+            fs.iter().flat_map(|&fi| self.edges[fi].iter().copied()).collect()
         };
         let (ea, eb) = (of(a), of(b));
         ea.intersection(&eb).copied()
@@ -154,17 +165,13 @@ impl BodyFaces {
     }
 
     /// The faces edge `e` bounds.
-    fn faces_of(&self, e: u32) -> Vec<usize> {
-        self.loc.b.faces.iter().enumerate()
-            .filter(|(_, f)| f.loops.iter().flatten().any(|c| c.edge == e))
-            .map(|(i, _)| i).collect()
-    }
+    fn faces_of(&self, e: u32) -> &[usize] { &self.bounding[e as usize] }
 
     /// Whether edge `e` is convex: a point beside its middle within the first face's side and
     /// outside the second's is outside the material where the material is both sides' common
     /// part.  `None` for a seam or an edge two faces meeting tangent bound.
     fn edge_convex(&self, e: u32) -> Option<bool> {
-        let [fa, fb] = self.faces_of(e)[..] else { return None };
+        let [fa, fb] = *self.faces_of(e) else { return None };
         let edge = &self.loc.b.edges[e as usize];
         let x = edge.point(0.5 * (edge.t[0] + edge.t[1]), &self.loc.b.vertices);
         let (na, nb) = (self.outward(fa, x), self.outward(fb, x));
@@ -189,72 +196,11 @@ impl BodyFaces {
     pub fn angle(&self, es: &[u32], p: V) -> Option<f64> {
         let (e, x, _) = self.nearest_edge(es, p)?;
         let convex = self.convex[e as usize]?;
-        let [fa, fb] = self.faces_of(e)[..] else { return None };
-        let turn = dot(self.outward(fa, x), self.outward(fb, x)).clamp(-1.0, 1.0).acos();
+        let [fa, fb] = *self.faces_of(e) else { return None };
+        let turn = dot(self.outward(fa, x), self.outward(fb, x)).clamp(-1.0, 1.0).dacos();
         Some(if convex { PI - turn } else { PI + turn })
     }
-}
 
-/// What a region term of a body's faces reads: the faces each reference names, resolved once.
-pub struct Reading {
-    pub body: std::sync::Arc<BodyFaces>,
-    pub faces: Vec<usize>,
-}
-
-/// The faces `f` names, read off its solid (refused where it names none).
-pub fn reading(sk: &Sketch, f: &FaceRef, read: &mut Vec<(u32, std::sync::Arc<BodyFaces>)>)
-    -> Result<Reading, String> {
-    let body = match read.iter().find(|(s, _)| *s == f.solid) {
-        Some((_, b)) => b.clone(),
-        None => {
-            let b = cached(sk, f.solid as usize)?;
-            read.push((f.solid, b.clone()));
-            b
-        }
-    };
-    // a face a boolean ate, or none of that name, is no point: what reads it holds nowhere
-    let faces = body.faces(f);
-    Ok(Reading { body, faces })
-}
-
-impl Reading {
-    /// The signed distance from the surface of the face whose patch is nearest `p`.
-    pub fn side(&self, p: V) -> f64 {
-        let near = self.faces.iter().copied()
-            .min_by(|&a, &b| self.body.patch_distance(a, p).total_cmp(&self.body.patch_distance(b, p)));
-        near.map_or(f64::INFINITY, |fi| self.body.side(fi, p))
-    }
-    /// The distance from the faces' patches, or (`surface`) their surfaces.
-    pub fn distance(&self, p: V, surface: bool) -> f64 {
-        self.faces.iter().map(|&fi| {
-            if surface { self.body.side(fi, p).abs() } else { self.body.patch_distance(fi, p) }
-        }).fold(f64::INFINITY, f64::min)
-    }
-}
-
-/// Whether a term's shape is one of a face's (`Target::Face` inside a sum included).
-pub fn reads_faces(shape: &RegionShape) -> bool {
-    match shape {
-        RegionShape::FaceSide { .. } | RegionShape::Angle { .. } | RegionShape::Ends { .. } => true,
-        RegionShape::Measured { of } => of.iter().any(|(t, _)| !matches!(t, Target::Ent(_))),
-        _ => false,
-    }
-}
-
-impl Reading {
-    /// Where the faces are one plane: its outward normal `n` and `d`, the side `n · x - d`
-    /// (model units).
-    pub fn half_space(&self) -> Option<(V, f64)> {
-        let [fi] = self.faces[..] else { return None };
-        let f = &self.body.loc.b.faces[fi];
-        let crate::brep::geom::Surface::Plane(frame) = &f.surface else { return None };
-        let sign = if f.reversed { -1.0 } else { 1.0 };
-        let n = scale(frame.z, sign);
-        Some((n, dot(n, self.body.back(frame.o))))
-    }
-}
-
-impl BodyFaces {
     /// Face `fi`'s side and its gradient at `p` (model units; the gradient a unit vector).
     pub fn side_grad(&self, fi: usize, p: V) -> (f64, V) {
         let f = &self.loc.b.faces[fi];
@@ -266,8 +212,8 @@ impl BodyFaces {
     /// The vertices three groups of faces share: where a face of each meets.
     pub fn vertices_among(&self, groups: &[&[usize]]) -> Vec<V> {
         let of = |fs: &[usize]| -> BTreeSet<u32> {
-            fs.iter().flat_map(|&fi| self.loc.b.faces[fi].loops.iter().flatten())
-                .flat_map(|c| self.loc.b.edges[c.edge as usize].v).collect()
+            fs.iter().flat_map(|&fi| self.edges[fi].iter())
+                .flat_map(|&e| self.loc.b.edges[e as usize].v).collect()
         };
         let mut common = of(groups[0]);
         for g in &groups[1..] {
@@ -305,18 +251,77 @@ impl BodyFaces {
 
     /// The faces at vertex `v` other than `not`.
     pub fn faces_at(&self, v: u32, not: &[usize]) -> Vec<usize> {
-        self.loc.b.faces.iter().enumerate().filter(|(fi, f)| {
-            !not.contains(fi) && f.loops.iter().flatten().any(|c| self.loc.b.edges[c.edge as usize].v.contains(&v))
-        }).map(|(i, _)| i).collect()
+        (0..self.edges.len()).filter(|fi| {
+            !not.contains(fi) && self.edges[*fi].iter().any(|&e| self.loc.b.edges[e as usize].v.contains(&v))
+        }).collect()
     }
 }
 
+/// The bodies a reading has read, each once.
+pub type Read = Vec<(u32, std::sync::Arc<BodyFaces>)>;
+
+/// What a region term of a body's faces reads: the faces each reference names, resolved once.
+pub struct Reading {
+    pub body: std::sync::Arc<BodyFaces>,
+    pub faces: Vec<usize>,
+}
+
+/// The faces `f` names, read off its solid (refused where it names none).
+pub fn reading(sk: &Sketch, f: &FaceRef, read: &mut Read)
+    -> Result<Reading, String> {
+    let body = match read.iter().find(|(s, _)| *s == f.solid) {
+        Some((_, b)) => b.clone(),
+        None => {
+            let b = cached(sk, f.solid as usize)?;
+            read.push((f.solid, b.clone()));
+            b
+        }
+    };
+    // a face a boolean ate, or none of that name, is no point: what reads it holds nowhere
+    let faces = body.faces(f);
+    Ok(Reading { body, faces })
+}
+
 impl Reading {
+    /// The signed distance from the surface of the face whose patch is nearest `p`.
+    pub fn side(&self, p: V) -> f64 {
+        self.nearest(p).map_or(f64::INFINITY, |fi| self.body.side(fi, p))
+    }
+    /// The face whose patch is nearest `p`.
+    fn nearest(&self, p: V) -> Option<usize> {
+        self.faces.iter().map(|&fi| (self.body.patch_distance(fi, p), fi))
+            .min_by(|a, b| a.0.total_cmp(&b.0)).map(|(_, fi)| fi)
+    }
+    /// The distance from the faces' patches, or (`surface`) their surfaces.
+    pub fn distance(&self, p: V, surface: bool) -> f64 {
+        self.faces.iter().map(|&fi| {
+            if surface { self.body.side(fi, p).abs() } else { self.body.patch_distance(fi, p) }
+        }).fold(f64::INFINITY, f64::min)
+    }
+
+    /// Where the faces are one plane: its outward normal `n` and `d`, the side `n · x - d`
+    /// (model units).
+    pub fn half_space(&self) -> Option<(V, f64)> {
+        let [fi] = self.faces[..] else { return None };
+        let f = &self.body.loc.b.faces[fi];
+        let crate::brep::geom::Surface::Plane(frame) = &f.surface else { return None };
+        let sign = if f.reversed { -1.0 } else { 1.0 };
+        let n = scale(frame.z, sign);
+        Some((n, dot(n, self.body.back(frame.o))))
+    }
+
     /// The side of the face whose patch is nearest `p`, and its gradient.
     pub fn side_grad(&self, p: V) -> (f64, V) {
-        let near = self.faces.iter().copied()
-            .min_by(|&a, &b| self.body.patch_distance(a, p).total_cmp(&self.body.patch_distance(b, p)));
-        near.map_or((f64::INFINITY, [0.0, 0.0, 1.0]), |fi| self.body.side_grad(fi, p))
+        self.nearest(p).map_or((f64::INFINITY, [0.0, 0.0, 1.0]), |fi| self.body.side_grad(fi, p))
+    }
+}
+
+/// Whether a term's shape is one of a face's (`Target::Face` inside a sum included).
+pub fn reads_faces(shape: &RegionShape) -> bool {
+    match shape {
+        RegionShape::FaceSide { .. } | RegionShape::Angle { .. } | RegionShape::Ends { .. } => true,
+        RegionShape::Measured { of } => of.iter().any(|(t, _)| !matches!(t, Target::Ent(_))),
+        _ => false,
     }
 }
 
@@ -383,9 +388,10 @@ pub fn face_paths(sk: &Sketch, i: usize) -> Vec<String> {
     }
 }
 
-/// `BodyFaces::read`, remembered against what it reads (`Sketch::faces_cache`).
+/// `BodyFaces::read`, remembered against what it reads (`Sketch::faces_cache`): the stratum, so
+/// a round's own numbers do not build its body again.
 pub fn cached(sk: &Sketch, body: usize) -> Result<std::sync::Arc<BodyFaces>, String> {
-    let key = super::reads(sk, body, 0.0);
+    let key = super::document::reads_except(sk, body, 0.0, &readers_of(sk, body));
     if let Some((old, b)) = sk.faces_cache.borrow().get(&body) {
         if *old == key {
             return b.clone();

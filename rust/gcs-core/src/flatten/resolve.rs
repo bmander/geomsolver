@@ -684,12 +684,7 @@ impl<'a> Walk<'a> {
             }
         });
         let links = all.iter().filter(|f| keeps(f)).map(|f| {
-            let segs: Vec<&str> = f.split('.').collect();
-            let r = Ref {
-                root: Name { text: segs[0].to_string(), span: over.chain.span },
-                path: segs[1..].iter().map(|s| Seg::Field(Name { text: s.to_string(), span: over.chain.span })).collect(),
-                span: over.chain.span,
-            };
+            let r = Ref::dotted(f, over.chain.span);
             // an absolute name, read from the document's root
             (r, Scope { prefixes: vec![String::new()], access: sc.access.clone(), ..Scope::default() })
         }).collect();

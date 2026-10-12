@@ -9,7 +9,7 @@
 //!   conditions linearised where the last step stood (each step a small quadratic program,
 //!   solved exactly by its active set): a local nearest point, from the point measured.
 use super::faces::{BodyFaces, Reading};
-use crate::model::{RegionShape, RegionTerm, Sketch, Target, TermNumber};
+use crate::model::{RegionShape, RegionTerm, Sketch, Target};
 use crate::space::{add, dot, norm, scale, sub};
 use crate::syntax::Cmp;
 use std::sync::Arc;
@@ -20,7 +20,7 @@ type Fv = Arc<dyn Fn(V) -> (f64, V) + Send + Sync>;
 
 /// One condition on the set's point: `f ≤ 0`, or `f = 0`.
 #[derive(Clone)]
-struct Cond {
+pub struct Cond {
     f: Fv,
     eq: bool,
 }
@@ -35,17 +35,10 @@ pub enum SetDistance {
     /// One face's patch.
     Patch(Arc<Reading>),
     /// Anything else, as conditions.
-    Conditions(Vec<CondPub>),
+    Conditions(Vec<Cond>),
 }
 
-/// A condition, as the field holds it.
-#[derive(Clone)]
-pub struct CondPub(Cond);
-
-/// The bodies already read, each once.
-pub type Read = Vec<(u32, Arc<BodyFaces>)>;
-
-fn number(n: &TermNumber, sk: &Sketch) -> Result<f64, String> { n.value(sk) }
+pub use super::faces::Read;
 
 /// The face a term reads, as a patch (`Some(false)`) or a surface (`Some(true)`) held to
 /// nothing further: `q coincident F` / `q coincident F.surface`.
@@ -87,7 +80,7 @@ impl SetDistance {
         }
         let mut conds = Vec::new();
         for t in terms {
-            conds.extend(conditions(sk, t, read)?.into_iter().map(CondPub));
+            conds.extend(conditions(sk, t, read)?);
         }
         Ok(SetDistance::Conditions(conds))
     }
@@ -113,8 +106,8 @@ impl SetDistance {
 
 /// A term of a set measured from, as conditions on its point.
 fn conditions(sk: &Sketch, t: &RegionTerm, read: &mut Read) -> Result<Vec<Cond>, String> {
-    let lo = number(&t.lo, sk)?;
-    let grow = t.grow.as_ref().map_or(Ok(0.0), |g| number(g, sk))?;
+    let lo = t.lo.value(sk)?;
+    let grow = t.grow.as_ref().map_or(Ok(0.0), |g| g.value(sk))?;
     let hi = t.hi.unwrap_or(lo);
     // a measure `m` held by the term: `m ≤ lo`, `m ≥ lo`, `lo ≤ m ≤ hi` (`m = lo` where they meet)
     let held = |m: Fv| -> Vec<Cond> {
@@ -168,24 +161,10 @@ fn conditions(sk: &Sketch, t: &RegionTerm, read: &mut Read) -> Result<Vec<Cond>,
         // a ball's, a cylinder's, a cone's or a half-space's: its measure's signed distance
         // from the surface its number makes, by differences
         shape => {
-            use crate::solid::field::region::{Measure, Term};
-            let point = |i: u32| sk.world_point(i as usize);
-            let line = |l: u32| {
-                let l = &sk.lines[l as usize];
-                let (a, b) = (point(l.p1), point(l.p2));
-                (a, crate::space::normalised(sub(b, a)).unwrap_or([0.0, 0.0, 1.0]))
-            };
-            let measure = match *shape {
-                RegionShape::Ball { center } => Measure::Point(point(center)),
-                RegionShape::Cylinder { line: l } => { let (a, d) = line(l); Measure::Line { a, d } }
-                RegionShape::Cone { axis } => { let (a, d) = line(axis); Measure::Cone { a, d } }
-                RegionShape::Plane { plane, from, sign } => Measure::Ordinate {
-                    o: point(from),
-                    n: scale(sk.basis(plane as usize).normal(), sign),
-                },
-                _ => return Err("a set measured from is on faces, within their sides or at \
-                                 distances from their surfaces, from points or from its own \
-                                 bounds".to_string()),
+            use crate::solid::field::region::Term;
+            let Some(measure) = super::region::measure_of(sk, shape)? else {
+                return Err("a set measured from is on faces, within their sides or at distances \
+                            from their surfaces, from points or from its own bounds".to_string());
             };
             let term = Arc::new(Term { measure, cmp: t.cmp, lo, hi: t.hi, grow });
             let numeric = |f: Arc<dyn Fn(V) -> f64 + Send + Sync>| -> Fv {
@@ -213,15 +192,17 @@ fn conditions(sk: &Sketch, t: &RegionTerm, read: &mut Read) -> Result<Vec<Cond>,
 
 /// The point satisfying every condition nearest `p`: from `p`, each step the nearest point of the
 /// conditions linearised where the last one stood.
-fn nearest(cs: &[CondPub], p: V) -> Option<V> {
+fn nearest(cs: &[Cond], p: V) -> Option<V> {
     let tol = 1e-12 * (1.0 + norm(p));
     let mut x = p;
+    let mut rows: Vec<(V, f64, bool)> = Vec::with_capacity(cs.len());
     for _ in 0..80 {
-        let rows: Vec<(V, f64, bool)> = cs.iter().map(|CondPub(c)| {
+        rows.clear();
+        rows.extend(cs.iter().map(|c| {
             let (v, g) = (c.f)(x);
             // a · y ≤ b, the condition linearised at x
             (g, dot(g, x) - v, c.eq)
-        }).collect();
+        }));
         let y = project(p, &rows, tol)?;
         let step = norm(sub(y, x));
         x = y;
@@ -230,7 +211,7 @@ fn nearest(cs: &[CondPub], p: V) -> Option<V> {
         }
     }
     // only a point that keeps every condition
-    let off = cs.iter().map(|CondPub(c)| {
+    let off = cs.iter().map(|c| {
         let v = (c.f)(x).0;
         if c.eq { v.abs() } else { v.max(0.0) }
     }).fold(0.0, f64::max);
@@ -345,7 +326,9 @@ pub struct Rest {
 impl Rest {
     /// The rest of meeting `m` past edge `e`, where `e`'s terms are on the patches of the faces
     /// `m`'s are on the surfaces of; `None` otherwise.
-    pub fn of(sk: &Sketch, e: &[RegionTerm], m: &[RegionTerm], read: &mut Read) -> Option<Rest> {
+    /// `edge` and `meeting` are the two sets' distances, read already.
+    pub fn of(sk: &Sketch, e: &[RegionTerm], m: &[RegionTerm], edge: &SetDistance,
+              meeting: &SetDistance) -> Option<Rest> {
         let faces = |ts: &[RegionTerm], surface: bool| -> Option<Vec<crate::model::FaceRef>> {
             ts.iter().map(|t| on_face(t, sk).filter(|(_, s)| *s == surface).map(|(f, _)| {
                 crate::model::FaceRef { surface: false, ..f }
@@ -355,8 +338,7 @@ impl Rest {
         if fe.len() < 2 || fe.len() != fm.len() || !fe.iter().all(|f| fm.contains(f)) {
             return None;
         }
-        let edge = SetDistance::of(sk, e, read).ok()?;
-        let meeting = SetDistance::of(sk, m, read).ok()?;
+        let (edge, meeting) = (edge.clone(), meeting.clone());
         let ends = match &edge {
             SetDistance::Edges { body, edges, .. } => body.run_ends(edges).into_iter().map(|(v, _, _)| v).collect(),
             _ => Vec::new(),

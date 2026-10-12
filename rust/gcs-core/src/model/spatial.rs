@@ -414,6 +414,11 @@ impl FaceRef {
 }
 
 impl RegionTerm {
+    /// The one-sided bound `cmp` on `shape` at `lo`, of no set and no offset.
+    pub fn new(shape: RegionShape, cmp: crate::syntax::Cmp, lo: TermNumber) -> RegionTerm {
+        RegionTerm { shape, cmp, lo, hi: None, grow: None, name: String::new() }
+    }
+
     /// The same term over the entities `map` renumbers them to, or `None` where one went.
     pub fn remapped(&self, map: &dyn Fn(EntRef) -> Option<EntRef>) -> Option<RegionTerm> {
         Some(RegionTerm { shape: self.shape.remapped(map)?, ..self.clone() })

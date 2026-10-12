@@ -60,6 +60,7 @@ pub use field::{Millimetres,MillimetreEvaluator};
 pub use field::{OperandId,Query,Reading,Source,Want,Resolution,crease};
 pub use field::{MaterialProbe,ProbeState};
 pub use field::{BoundaryOptions,BoundaryError,BoundaryStage,FieldBoundary,BoundaryCell,BoundaryPoint,BoundaryCrossing};
+pub(crate) use field::RegionField;
 pub use field::BoundaryComponent;
 mod raycast;
 mod section;

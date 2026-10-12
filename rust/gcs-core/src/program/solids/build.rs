@@ -89,7 +89,7 @@ pub(super) fn build_solid(
                 say(Code::E080, st.span, m.into());
                 return None;
             };
-            let mut terms = probes.remove(&p.i()).unwrap_or_default();
+            let mut terms = probes.terms.remove(&p.i()).unwrap_or_default();
             if let Err(m) = super::super::relations::fill_sets(sk, &mut terms, probes, 0) {
                 say(Code::E040, st.span, m);
                 return None;

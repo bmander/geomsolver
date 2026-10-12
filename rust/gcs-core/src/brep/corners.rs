@@ -10,7 +10,8 @@
 //! What a round or a chamfer *is* is said in `rust/lib/std.sv`; this builds exactly what such a
 //! set says at a meridian's corner, which `solid::region` checks before it calls it.
 use super::planar::{Region, Seg, Step};
-use std::f64::consts::{PI, TAU};
+use crate::fmath::Det;
+use std::f64::consts::TAU;
 
 type P = [f64; 2];
 
@@ -19,7 +20,7 @@ fn add(a: P, b: P) -> P { [a[0] + b[0], a[1] + b[1]] }
 fn scale(a: P, k: f64) -> P { [a[0] * k, a[1] * k] }
 fn dot(a: P, b: P) -> f64 { a[0] * b[0] + a[1] * b[1] }
 fn cross(a: P, b: P) -> f64 { a[0] * b[1] - a[1] * b[0] }
-fn norm(a: P) -> f64 { a[0].hypot(a[1]) }
+fn norm(a: P) -> f64 { a[0].dhypot(a[1]) }
 fn dist(a: P, b: P) -> f64 { norm(sub(a, b)) }
 fn unit(a: P) -> P { scale(a, 1.0 / norm(a)) }
 fn left(a: P) -> P { [-a[1], a[0]] }
@@ -99,35 +100,6 @@ impl Carrier {
     }
 }
 
-/// Where along a step a point of its carrier is (its fraction; an arc's measured the way it runs,
-/// a point just before its start read as before it, as `planar` reads one).
-pub fn param(s: &Seg, x: P) -> f64 {
-    match *s {
-        Seg::Line { a, b } => {
-            let d = sub(b, a);
-            dot(sub(x, a), d) / dot(d, d)
-        }
-        Seg::Arc { c, a0, sweep, .. } => {
-            let phi = (x[1] - c[1]).atan2(x[0] - c[0]);
-            let mut delta = ((phi - a0) * sweep.signum()).rem_euclid(TAU);
-            if delta > PI + sweep.abs() / 2.0 {
-                delta -= TAU;
-            }
-            delta / sweep.abs()
-        }
-    }
-}
-
-/// The stretch of a step from `t0` to `t1`.
-pub fn part(s: &Seg, t0: f64, t1: f64) -> Seg {
-    match *s {
-        Seg::Line { .. } => Seg::Line { a: s.point(t0), b: s.point(t1) },
-        Seg::Arc { c, r, a0, sweep } => {
-            Seg::Arc { c, r, a0: a0 + sweep * t0, sweep: sweep * (t1 - t0) }
-        }
-    }
-}
-
 /// How a chamfer's leg is measured (#183 X0, finding 7).
 #[derive(Clone, Copy, Debug)]
 pub enum Leg {
@@ -151,13 +123,13 @@ pub fn ball(s: &Seg, n: &Seg, side: f64, r: f64) -> Result<Cut, String> {
     let centre = cs.meet(cn).into_iter().min_by(|a, b| dist(*a, x).total_cmp(&dist(*b, x)))
         .ok_or("the faces' offsets do not meet")?;
     let (fs, fn_) = (Carrier::of(s).foot(centre), Carrier::of(n).foot(centre));
-    let a0 = (fs[1] - centre[1]).atan2(fs[0] - centre[0]);
-    let a1 = (fn_[1] - centre[1]).atan2(fn_[0] - centre[0]);
+    let a0 = (fs[1] - centre[1]).datan2(fs[0] - centre[0]);
+    let a1 = (fn_[1] - centre[1]).datan2(fn_[0] - centre[0]);
     let mut sweep = (a1 - a0).rem_euclid(TAU);
     if side < 0.0 {
         sweep -= TAU;
     }
-    Ok((param(s, fs), param(n, fn_), Seg::Arc { c: centre, r, a0, sweep }))
+    Ok((s.param(fs), n.param(fn_), Seg::Arc { c: centre, r, a0, sweep }))
 }
 
 /// The flat across the corner where `s` arrives and `n` leaves, its leg on `s` measured by
@@ -173,7 +145,7 @@ pub fn flat(s: &Seg, n: &Seg, side: f64, legs: [Leg; 2]) -> Result<Cut, String> 
             Leg::FromOther(d) => Carrier::of(other).offset(t_other, x, side * d)
                 .ok_or("a face too curved for the leg")?,
         };
-        Carrier::of(on).meet(crossing).into_iter().map(|p| param(on, p))
+        Carrier::of(on).meet(crossing).into_iter().map(|p| on.param(p))
             .filter(|&t| if before { t < 1.0 } else { t > 0.0 })
             .min_by(|a, b| {
                 let off = |t: f64| if before { 1.0 - t } else { t };
@@ -225,7 +197,7 @@ pub fn corners(region: &Region, a: &[u32], b: &[u32], tag: u32,
             if t0 >= t1 {
                 return Err(format!("the cuts at both ends of face {} meet within it", l[i].tag));
             }
-            walk.push(Step { seg: part(&l[i].seg, t0, t1), ..l[i] });
+            walk.push(Step { seg: l[i].seg.part(t0, t1), ..l[i] });
             if let Some(seg) = after[i] {
                 walk.push(Step { seg, chart: None, tag });
             }

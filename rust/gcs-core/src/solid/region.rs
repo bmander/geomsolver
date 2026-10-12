@@ -43,6 +43,27 @@ impl Meridian {
 /// where they leave no material, or where they leave material without end.  Remembered against
 /// what it reads (`Sketch::meridian_cache`).
 pub fn meridian(sk: &Sketch, solid: usize) -> Result<Rc<Meridian>, String> {
+    folded(sk, solid).map_err(|r| r.why)
+}
+
+/// Why a meridian refused: its words, and whether no reading in general position answers either
+/// — a region with no material or none bounded, which is the same region however it is read.
+#[derive(Clone, Debug)]
+pub struct Refusal {
+    why: String,
+    outright: bool,
+}
+
+impl From<String> for Refusal {
+    fn from(why: String) -> Refusal { Refusal { why, outright: false } }
+}
+
+impl From<&str> for Refusal {
+    fn from(why: &str) -> Refusal { why.to_string().into() }
+}
+
+/// `meridian`, with its refusal said whole.
+fn folded(sk: &Sketch, solid: usize) -> Result<Rc<Meridian>, Refusal> {
     let key = super::reads(sk, solid, 0.0);
     if let Some((old, m)) = sk.meridian_cache.borrow().get(&solid) {
         if *old == key {
@@ -54,20 +75,20 @@ pub fn meridian(sk: &Sketch, solid: usize) -> Result<Rc<Meridian>, String> {
     m
 }
 
-fn fold(sk: &Sketch, solid: usize) -> Result<Meridian, String> {
+fn fold(sk: &Sketch, solid: usize) -> Result<Meridian, Refusal> {
     let s = sk.solids.get(solid).ok_or("no such solid")?;
     let SolidDef::Region { terms, .. } = &s.def else {
-        return Err(format!("`{}` is not a region", s.name));
+        return Err(format!("`{}` is not a region", s.name).into());
     };
     if terms.is_empty() {
-        return Err(format!("`{}` bounds nothing: a solid is a region", s.name));
+        return Err(format!("`{}` bounds nothing: a solid is a region", s.name).into());
     }
     // a round or a chamfer in the region's own body is built in the meridian where it is one of
     // two of the region's bounds (`lowering`, #183): any other term read point by point is none
     let lowered: Vec<Option<Lowering>> = terms.iter().map(|t| lowering(sk, terms, t)).collect();
     if terms.iter().zip(&lowered).any(|(t, l)| point_by_point(&t.shape) && l.is_none()) {
         return Err(format!("`{}` bounds a sum of measurements or reads faces, which no meridian \
-                            folds", s.name));
+                            folds", s.name).into());
     }
     let point = |i: u32| sk.world_point(i as usize);
     let line = |l: u32| {
@@ -222,7 +243,7 @@ fn fold(sk: &Sketch, solid: usize) -> Result<Meridian, String> {
             RegionShape::Plane { plane, from, sign } => {
                 let n = sk.basis(plane as usize).normal();
                 if norm(cross(n, axis)) > 1e-9 {
-                    return Err(format!("{}'s plane is not square to the region's axis", what(t)));
+                    return Err(format!("{}'s plane is not square to the region's axis", what(t)).into());
                 }
                 // the ordinate, `sign · n · (x - from)`, along the axis
                 let k = sign * dot(n, axis).signum();
@@ -267,7 +288,7 @@ fn fold(sk: &Sketch, solid: usize) -> Result<Meridian, String> {
                 if named && (st.chart.is_some() || nx.chart.is_some()
                     || (matches!(l.kind, Lower::Flat { .. }) && (curved(st) || curved(nx)))) {
                     return Err(format!("`{}`: a round or a flat at a curved or offset corner is read \
-                                        point by point", s.name));
+                                        point by point", s.name).into());
                 }
             }
         }
@@ -280,13 +301,15 @@ fn fold(sk: &Sketch, solid: usize) -> Result<Meridian, String> {
         }.map_err(|e| format!("`{}`: {e}", s.name))?;
     }
     if region.loops.is_empty() || region.area().abs() <= tol * tol {
-        return Err(format!("`{}` leaves no material: its bounds have no point in common", s.name));
+        let why = format!("`{}` leaves no material: its bounds have no point in common", s.name);
+        return Err(Refusal { why, outright: true });
     }
     let touches = region.loops.iter().flatten().any(|step| {
         [step.start(), step.end()].iter().any(|p| p[0] >= reach - tol || p[1].abs() >= reach - tol)
     });
     if touches {
-        return Err(format!("`{}` has no end: bound it all round (a ball, two planes, …)", s.name));
+        let why = format!("`{}` has no end: bound it all round (a ball, two planes, …)", s.name);
+        return Err(Refusal { why, outright: true });
     }
     // the half-plane's direction: square to the axis, toward the world axis least along it
     let seam = scale(across(axis).1, -1.0);
@@ -326,8 +349,6 @@ pub(super) fn face_polys(m: &Meridian, unit: f64) -> Vec<super::profile::FacePol
     }).collect()
 }
 
-/// Why a meridian refused that no reading in general position answers either: a region with no
-/// material or none bounded (`fold`'s own words), which is the same region however it is read.
 /// **A lowering entry** (#183 step 7): a term a region's body states that the meridian builds
 /// exactly — `std.Rounded(a, b, r)`, within reach of a ball of `r` lying `r` within both of two of
 /// the region's own bounds, and `std.Chamfered(a, b, la, lb)`, short of the flat between their
@@ -411,8 +432,6 @@ fn point_by_point(shape: &RegionShape) -> bool {
         | RegionShape::Angle { .. } | RegionShape::Ends { .. })
 }
 
-fn refused_outright(why: &str) -> bool { why.contains("leaves no material") || why.contains("has no end") }
-
 /// Region solid `solid` read point by point (`solid::field::RegionField`): its terms in general
 /// position, each the exact signed distance from its surface.  Its support is the box of the
 /// planes every term lies within — a ball's six, a cylinder's four about its line, a cone's four
@@ -424,48 +443,63 @@ pub fn general(sk: &Sketch, solid: usize) -> Result<crate::solid::field::RegionF
         return Err(format!("`{}` is not a region", s.name));
     };
     let point = |i: u32| sk.world_point(i as usize);
-    let line = |l: u32| {
-        let l = &sk.lines[l as usize];
-        (point(l.p1), point(l.p2))
-    };
     use crate::solid::field::region::Signed;
     let mut out = Vec::new();
     let mut planes: Vec<(V, f64)> = Vec::new();
     // the bodies whose faces it reads, each read once
     let mut read = Vec::new();
     let mut reads_faces = false;
-    // two directions square to `d`
-    let square = |d: V| {
-        let (_, e1) = across(d);
-        let e2 = cross(d, e1);
-        (e1, e2)
+    let named = |m: String| format!("{}: {m}", s.name);
+    // the six planes of the cube about `c` reaching `r`
+    let cube = |planes: &mut Vec<(V, f64)>, c: V, r: f64| {
+        for k in 0..3 {
+            let mut n = [0.0; 3];
+            n[k] = 1.0;
+            planes.push((n, c[k] + r));
+            n[k] = -1.0;
+            planes.push((n, -c[k] + r));
+        }
+    };
+    // the half-spaces where the ordinate `n · x - d` holds to `t`'s number
+    let slab = |planes: &mut Vec<(V, f64)>, t: &RegionTerm, n: V, d: f64, lo: f64| match t.cmp {
+        Cmp::Le => planes.push((n, d + lo)),
+        Cmp::Ge => planes.push((scale(n, -1.0), -(d + lo))),
+        Cmp::In => {
+            planes.push((n, d + t.hi.unwrap_or(lo)));
+            planes.push((scale(n, -1.0), -(d + lo)));
+        }
+    };
+    // a gate, or a term read by a closure: negative where it holds
+    let signed = |f: std::sync::Arc<dyn Fn(V) -> f64 + Send + Sync>| {
+        Term { measure: Measure::Signed(Signed(f)), cmp: Cmp::Le, lo: 0.0, hi: None, grow: 0.0 }
     };
     for t in terms {
-        let lo = t.lo.value(sk).map_err(|m| format!("{}: {m}", s.name))?;
-        let grow = t.grow.as_ref().map_or(Ok(0.0), |g| g.value(sk)).map_err(|m| format!("{}: {m}", s.name))?;
+        let lo = t.lo.value(sk).map_err(named)?;
+        let grow = t.grow.as_ref().map_or(Ok(0.0), |g| g.value(sk)).map_err(named)?;
         let reach = t.hi.unwrap_or(lo).max(lo);
         let within = t.cmp != Cmp::Ge;
         reads_faces |= super::faces::reads_faces(&t.shape);
         let measure = match t.shape {
             RegionShape::Measured { ref of } => {
-                if t.cmp != Cmp::In && never(sk, of, t.cmp, &mut read) {
+                // each set measured from, read once
+                let sets: Vec<Option<Result<super::conditions::SetDistance, String>>> = of.iter()
+                    .map(|(t, _)| match t {
+                        crate::model::Target::Set { terms, .. } => {
+                            Some(super::conditions::SetDistance::of(sk, terms, &mut read))
+                        }
+                        _ => None,
+                    }).collect();
+                if t.cmp != Cmp::In && never(of, &sets, t.cmp) {
                     return Ok(crate::solid::field::RegionField::empty());
                 }
-                let m = measured(sk, of, &mut read)?;
+                let m = measured(sk, of, &sets, &mut read)?;
                 // a sum of distances, each from a point, with no number below nothing, is within
                 // the ball about each point whose distance alone reaches the bound
                 if t.cmp == Cmp::Le && of.iter().all(|&(_, c)| c > 0.0) {
                     for (e, c) in of {
                         let crate::model::Target::Ent(e) = e else { continue };
                         if e.kind == crate::model::EntKind::Point {
-                            let (o, r) = (point(e.i() as u32), (lo + grow) / c);
-                            for k in 0..3 {
-                                let mut n = [0.0; 3];
-                                n[k] = 1.0;
-                                planes.push((n, o[k] + r));
-                                n[k] = -1.0;
-                                planes.push((n, -o[k] + r));
-                            }
+                            cube(&mut planes, point(e.i() as u32), (lo + grow) / c);
                         }
                     }
                 }
@@ -474,24 +508,16 @@ pub fn general(sk: &Sketch, solid: usize) -> Result<crate::solid::field::RegionF
                 continue;
             }
             RegionShape::FaceSide { ref face } => {
-                let r = super::faces::reading(sk, face, &mut read).map_err(|m| format!("{}: {m}", s.name))?;
-                if let Some(plane) = r.half_space() {
-                    let (n, d) = plane;
-                    match t.cmp {
-                        Cmp::Le => planes.push((n, d + lo + grow)),
-                        Cmp::Ge => planes.push((scale(n, -1.0), -(d + lo + grow))),
-                        Cmp::In => {
-                            planes.push((n, d + t.hi.unwrap_or(lo)));
-                            planes.push((scale(n, -1.0), -(d + lo)));
-                        }
-                    }
+                let r = super::faces::reading(sk, face, &mut read).map_err(named)?;
+                if let Some((n, d)) = r.half_space() {
+                    slab(&mut planes, t, n, d, if t.cmp == Cmp::In { lo } else { lo + grow });
                 }
                 reads_faces = true;
                 Measure::Signed(Signed(std::sync::Arc::new(move |p| r.side(p))))
             }
             RegionShape::Angle { ref a, ref b } => {
-                let (ra, rb) = (super::faces::reading(sk, a, &mut read), super::faces::reading(sk, b, &mut read));
-                let (ra, rb) = (ra.map_err(|m| format!("{}: {m}", s.name))?, rb.map_err(|m| format!("{}: {m}", s.name))?);
+                let ra = super::faces::reading(sk, a, &mut read).map_err(named)?;
+                let rb = super::faces::reading(sk, b, &mut read).map_err(named)?;
                 let edges = ra.body.edges_between(&ra.faces, &rb.faces);
                 let body = ra.body.clone();
                 let (cmp, lo, hi) = (t.cmp, lo, t.hi.unwrap_or(lo));
@@ -511,75 +537,45 @@ pub fn general(sk: &Sketch, solid: usize) -> Result<crate::solid::field::RegionF
                     });
                     if holds { -GATE } else { GATE }
                 };
-                out.push(Term { measure: Measure::Signed(Signed(std::sync::Arc::new(gate))), cmp: Cmp::Le,
-                                lo: 0.0, hi: None, grow: 0.0 });
+                out.push(signed(std::sync::Arc::new(gate)));
                 continue;
             }
             RegionShape::Ends { ref edge } => {
                 let crate::model::Target::Set { terms: inner, .. } = edge.as_ref() else {
                     return Err(format!("{}: where an edge ends is read of a set", s.name));
                 };
-                let set = super::conditions::SetDistance::of(sk, inner, &mut read)
-                    .map_err(|m| format!("{}: {m}", s.name))?;
-                let within = super::conditions::ends(&set).map_err(|m| format!("{}: {m}", s.name))?;
+                let set = super::conditions::SetDistance::of(sk, inner, &mut read).map_err(named)?;
+                let within = super::conditions::ends(&set).map_err(named)?;
                 reads_faces = true;
                 // a run that ends nowhere is cut off by nothing
                 let f = move |p: V| { let v = within(p); if v == f64::NEG_INFINITY { -GATE } else { v } };
-                out.push(Term { measure: Measure::Signed(Signed(std::sync::Arc::new(f))), cmp: Cmp::Le,
-                                lo: 0.0, hi: None, grow: 0.0 });
+                out.push(signed(std::sync::Arc::new(f)));
                 continue;
             }
-            RegionShape::Ball { center } => {
-                let c = point(center);
-                if within {
-                    for k in 0..3 {
-                        let mut n = [0.0; 3];
-                        n[k] = 1.0;
-                        planes.push((n, c[k] + reach));
-                        n[k] = -1.0;
-                        planes.push((n, -c[k] + reach));
+            ref shape => {
+                let m = measure_of(sk, shape)?.ok_or("a region bounds distances, angles and planes")?;
+                match m {
+                    Measure::Point(c) if within => cube(&mut planes, c, reach),
+                    Measure::Line { a, d } if within => {
+                        let (e1, e2) = across(d);
+                        for e in [e1, e2, scale(e1, -1.0), scale(e2, -1.0)] {
+                            planes.push((e, dot(e, a) + reach));
+                        }
                     }
-                }
-                Measure::Point(c)
-            }
-            RegionShape::Cylinder { line: l } => {
-                let (a, b) = line(l);
-                let d = normalised(sub(b, a)).ok_or("a cylinder about no line")?;
-                if within {
-                    let (e1, e2) = square(d);
-                    for e in [e1, e2, scale(e1, -1.0), scale(e2, -1.0)] {
-                        planes.push((e, dot(e, a) + reach));
+                    Measure::Cone { a, d } if within && reach + 1e-12 < FRAC_PI_2 && grow <= 0.0 => {
+                        // within the four planes through the apex leaning `reach` off the axis
+                        let (e1, e2) = across(d);
+                        let tan = reach.dtan();
+                        for e in [e1, e2, scale(e1, -1.0), scale(e2, -1.0)] {
+                            let n = sub(e, scale(d, tan));
+                            planes.push((n, dot(n, a)));
+                        }
                     }
+                    // the ordinate `n · (x - o)` against its number
+                    Measure::Ordinate { o, n } => slab(&mut planes, t, n, dot(n, o), lo),
+                    _ => {}
                 }
-                Measure::Line { a, d }
-            }
-            RegionShape::Cone { axis: l } => {
-                let (a, b) = line(l);
-                let d = normalised(sub(b, a)).ok_or("a cone about no line")?;
-                if within && reach + 1e-12 < FRAC_PI_2 && grow <= 0.0 {
-                    // within the four planes through the apex leaning `reach` off the axis
-                    let (e1, e2) = square(d);
-                    let tan = reach.tan();
-                    for e in [e1, e2, scale(e1, -1.0), scale(e2, -1.0)] {
-                        let n = sub(e, scale(d, tan));
-                        planes.push((n, dot(n, a)));
-                    }
-                }
-                Measure::Cone { a, d }
-            }
-            RegionShape::Plane { plane, from, sign } => {
-                let n = scale(sk.basis(plane as usize).normal(), sign);
-                let o = point(from);
-                // the ordinate `n · (x - o)` against its number
-                match t.cmp {
-                    Cmp::Le => planes.push((n, lo + dot(n, o))),
-                    Cmp::Ge => planes.push((scale(n, -1.0), -(lo + dot(n, o)))),
-                    Cmp::In => {
-                        planes.push((n, t.hi.unwrap_or(lo) + dot(n, o)));
-                        planes.push((scale(n, -1.0), -(lo + dot(n, o))));
-                    }
-                }
-                Measure::Ordinate { o, n }
+                m
             }
         };
         out.push(Term { measure, cmp: t.cmp, lo, hi: t.hi, grow });
@@ -596,11 +592,35 @@ pub fn general(sk: &Sketch, solid: usize) -> Result<crate::solid::field::RegionF
     Ok(crate::solid::field::RegionField::new(out, support))
 }
 
+/// What a ball, a cylinder, a cone or a half-space measures (`None` for any other shape): the
+/// distance from its centre or its line, the angle off its axis, the ordinate along its normal.
+pub(super) fn measure_of(sk: &Sketch, shape: &RegionShape)
+    -> Result<Option<crate::solid::field::region::Measure>, String> {
+    use crate::solid::field::region::Measure;
+    let point = |i: u32| sk.world_point(i as usize);
+    let line = |l: u32, what: &str| -> Result<(V, V), String> {
+        let l = &sk.lines[l as usize];
+        let (a, b) = (point(l.p1), point(l.p2));
+        Ok((a, normalised(sub(b, a)).ok_or(format!("a {what} about no line"))?))
+    };
+    Ok(Some(match *shape {
+        RegionShape::Ball { center } => Measure::Point(point(center)),
+        RegionShape::Cylinder { line: l } => { let (a, d) = line(l, "cylinder")?; Measure::Line { a, d } }
+        RegionShape::Cone { axis } => { let (a, d) = line(axis, "cone")?; Measure::Cone { a, d } }
+        RegionShape::Plane { plane, from, sign } => Measure::Ordinate {
+            o: point(from),
+            n: scale(sk.basis(plane as usize).normal(), sign),
+        },
+        _ => return Ok(None),
+    }))
+}
+
 /// A sum of measurements of a point (`RegionShape::Measured`), divided through by the sum of its
 /// numbers' sizes so it is one-Lipschitz as every term of the field is: each the distance from a
 /// point, a line produced or an axis, or a plane.
 fn measured(sk: &Sketch, of: &[(crate::model::Target, f64)],
-            read: &mut Vec<(u32, std::sync::Arc<super::faces::BodyFaces>)>)
+            sets: &[Option<Result<super::conditions::SetDistance, String>>],
+            read: &mut super::faces::Read)
     -> Result<crate::solid::field::region::Measure, String> {
     use crate::model::{EntKind, Target};
     use crate::solid::field::region::{Measure, Signed};
@@ -612,11 +632,12 @@ fn measured(sk: &Sketch, of: &[(crate::model::Target, f64)],
     let mut reads: Vec<(Dist, f64)> = Vec::new();
     // a set compared with one it lies in: the larger read past the smaller (`conditions::Rest`)
     let mut rest: Vec<Option<std::sync::Arc<super::conditions::Rest>>> = vec![None; of.len()];
-    for (ti, ci) in of {
+    for (i, (ti, ci)) in of.iter().enumerate() {
         for (j, (tj, cj)) in of.iter().enumerate() {
             let (Target::Set { terms: e, .. }, Target::Set { terms: m, .. }) = (ti, tj) else { continue };
+            let (Some(Ok(edge)), Some(Ok(meeting))) = (&sets[i], &sets[j]) else { continue };
             if *ci > 0.0 && (ci + cj).abs() <= 1e-12 * ci.abs() && rest[j].is_none() {
-                rest[j] = super::conditions::Rest::of(sk, e, m, read).map(std::sync::Arc::new);
+                rest[j] = super::conditions::Rest::of(sk, e, m, edge, meeting).map(std::sync::Arc::new);
             }
         }
     }
@@ -642,29 +663,20 @@ fn measured(sk: &Sketch, of: &[(crate::model::Target, f64)],
                         Measure::Line { a: read(x.a), d }
                     }
                     EntKind::Plane => {
-                        let o = sk.planes[e.i()].o.map(|p| sk.params[p as usize].value);
-                        Measure::Ordinate { o, n: sk.basis(e.i()).normal() }
+                        let b = sk.basis(e.i());
+                        Measure::Ordinate { o: b.o, n: b.normal() }
                     }
                     _ => return Err(format!("a distance from {} is not measured yet", e.kind.a())),
                 };
-                Box::new(move |p| match &m {
-                    Measure::Point(c) => norm(sub(p, *c)),
-                    Measure::Line { a, d } => {
-                        let q = sub(p, *a);
-                        let along = dot(q, *d);
-                        (dot(q, q) - along * along).max(0.0).sqrt()
-                    }
-                    Measure::Ordinate { o, n } => dot(sub(p, *o), *n).abs(),
-                    _ => f64::NAN,
-                })
+                Box::new(move |p| m.distance(p))
             }
             Target::Face(f) => {
                 let r = super::faces::reading(sk, f, read)?;
                 let surface = f.surface;
                 Box::new(move |p| r.distance(p, surface))
             }
-            Target::Set { terms, .. } => {
-                let set = super::conditions::SetDistance::of(sk, terms, read)?;
+            Target::Set { .. } => {
+                let set = sets[k].clone().expect("a set's distance, read")?;
                 Box::new(move |p| set.distance(p))
             }
         };
@@ -679,40 +691,57 @@ fn measured(sk: &Sketch, of: &[(crate::model::Target, f64)],
 
 /// Whether a sum of measurements can hold nowhere: it bounds from above a distance from a set
 /// that is empty (faces that do not meet), with nothing to take it back.
-fn never(sk: &Sketch, of: &[(crate::model::Target, f64)], cmp: Cmp,
-         read: &mut Vec<(u32, std::sync::Arc<super::faces::BodyFaces>)>) -> bool {
+fn never(of: &[(crate::model::Target, f64)],
+         sets: &[Option<Result<super::conditions::SetDistance, String>>], cmp: Cmp) -> bool {
     use super::conditions::SetDistance;
-    let empty = |t: &crate::model::Target, read: &mut Vec<_>| match t {
-        crate::model::Target::Set { terms, .. } => match SetDistance::of(sk, terms, read) {
-            Ok(SetDistance::Edges { edges, .. }) => edges.is_empty(),
-            Ok(SetDistance::Points(ps)) => ps.is_empty(),
-            Ok(SetDistance::Patch(r)) => r.faces.is_empty(),
-            _ => false,
-        },
+    let empty = |s: &Option<Result<SetDistance, String>>| match s {
+        Some(Ok(SetDistance::Edges { edges, .. })) => edges.is_empty(),
+        Some(Ok(SetDistance::Points(ps))) => ps.is_empty(),
+        Some(Ok(SetDistance::Patch(r))) => r.faces.is_empty(),
         _ => false,
     };
     let up = |c: f64| if cmp == Cmp::Ge { -c } else { c };
-    of.iter().any(|(t, c)| up(*c) > 0.0 && empty(t, read))
+    of.iter().zip(sets).any(|((_, c), s)| up(*c) > 0.0 && empty(s))
 }
 
 /// What a gate's term reads where it holds and where it fails: far past any distance, so the
 /// field reads it only by its sign.
 const GATE: f64 = 1e30;
 
-/// Whether region solid `solid` is read in general position: its meridian refused for a reason
-/// a reading point by point answers (its terms share no axis), and that reading made.
+/// Region solid `solid` read in general position, where its meridian refused for a reason a
+/// reading point by point answers (its terms share no axis): that reading, or why it is none.
+/// `None` where the meridian reads it or refuses it outright.  Remembered against what it reads
+/// (`Sketch::general_cache`).
+pub(crate) fn in_general_position(sk: &Sketch, solid: usize)
+    -> Option<Result<crate::solid::field::RegionField, String>> {
+    if !matches!(sk.solids.get(solid).map(|s| &s.def), Some(SolidDef::Region { .. })) {
+        return None;
+    }
+    let key = super::reads(sk, solid, 0.0);
+    if let Some((old, g)) = sk.general_cache.borrow().get(&solid) {
+        if *old == key {
+            return g.clone();
+        }
+    }
+    let g = match folded(sk, solid) {
+        Ok(_) => None,
+        Err(r) if r.outright => None,
+        Err(_) => Some(general(sk, solid)),
+    };
+    sk.general_cache.borrow_mut().insert(solid, (key, g.clone()));
+    g
+}
+
+/// Whether region solid `solid` is read in general position, and that reading made.
 pub fn in_general(sk: &Sketch, solid: usize) -> bool {
-    matches!(sk.solids.get(solid).map(|s| &s.def), Some(SolidDef::Region { .. }))
-        && meridian(sk, solid).is_err_and(|why| !refused_outright(&why))
-        && general(sk, solid).is_ok()
+    in_general_position(sk, solid).is_some_and(|g| g.is_ok())
 }
 
 /// A region solid's reading as `validate` asks it: its meridian, or else its reading in general
 /// position, or the meridian's refusal.
 pub fn readable(sk: &Sketch, solid: usize) -> Result<(), String> {
-    match meridian(sk, solid) {
-        Ok(_) => Ok(()),
-        Err(why) if refused_outright(&why) => Err(why),
-        Err(_) => general(sk, solid).map(|_| ()),
+    match in_general_position(sk, solid) {
+        Some(g) => g.map(|_| ()),
+        None => meridian(sk, solid).map(|_| ()),
     }
 }

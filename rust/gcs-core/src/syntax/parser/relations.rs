@@ -171,18 +171,10 @@ impl<'a> P<'a> {
                     out.push(OpArg::Named(name, v));
                 }
                 _ if takes_entity => out.push(OpArg::Ent(self.refr()?)),
-                // a bound, `>= d` or `<= d` (§9.6): closed, since a solution may stand on its
-                // edge, so `>` and `<` alone are refused
-                (Some(Tok::P(c @ ('>' | '<'))), next) => {
+                // a bound, `>= d` or `<= d` (§9.6)
+                (Some(Tok::P('>' | '<')), _) => {
                     let at = self.here();
-                    if next != Some(Tok::P('=')) {
-                        self.fail(&format!(
-                            "a bound is closed, `{c}=`: a solution may stand on its edge"
-                        ));
-                        return None;
-                    }
-                    self.i += 2;
-                    let cmp = if c == '>' { Cmp::Ge } else { Cmp::Le };
+                    let cmp = self.closed_cmp()?;
                     let span = Span::new(at.lo as usize, self.prev_hi());
                     out.push(OpArg::Bound { cmp, span, hi: None, grow: None });
                     let (text, span) = self.raw_number()?;
@@ -219,6 +211,18 @@ impl<'a> P<'a> {
             self.i = end;
         }
         Some(out)
+    }
+
+    /// `<=` or `>=` here, read past: a bound is closed, since a solution may stand on its edge, so
+    /// `<` and `>` alone are refused.
+    pub(super) fn closed_cmp(&mut self) -> Option<Cmp> {
+        let Some(Tok::P(c @ ('<' | '>'))) = self.peek().cloned() else { return None };
+        if self.t.get(self.i + 1).map(|(t, _)| t) != Some(&Tok::P('=')) {
+            self.fail(&format!("a bound is closed, `{c}=`: a solution may stand on its edge"));
+            return None;
+        }
+        self.i += 2;
+        Some(if c == '<' { Cmp::Le } else { Cmp::Ge })
     }
 
     /// The number an operator states, as written, up to the `,` or `)` that ends it.
