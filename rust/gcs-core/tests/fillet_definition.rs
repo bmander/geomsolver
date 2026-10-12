@@ -646,16 +646,15 @@ impl Round {
         const K: u32 = 32;
         let side = self.r;
         let n = |k: usize| ((hi[k] - lo[k]) / side).ceil() as usize;
-        let mut total = 0.0;
-        for i in 0..n(0) {
-            for j in 0..n(1) {
-                for k in 0..n(2) {
-                    let at = add(lo, scale([i as f64, j as f64, k as f64], side));
-                    total += self.cell(at, side, side / K as f64);
-                }
-            }
-        }
-        total
+        let [nx, ny, nz] = [n(0), n(1), n(2)];
+        // the cells side by side, summed in order: the same total as one walk over them
+        gcs_core::par::indices(nx * ny * nz, |c| {
+            let (i, j, k) = (c / (ny * nz), c / nz % ny, c % nz);
+            let at = add(lo, scale([i as f64, j as f64, k as f64], side));
+            self.cell(at, side, side / K as f64)
+        })
+        .into_iter()
+        .fold(0.0, |total, v| total + v)
     }
 
     fn cell(&self, lo: V, side: f64, least: f64) -> f64 {
