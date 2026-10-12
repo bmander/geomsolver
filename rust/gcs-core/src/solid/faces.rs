@@ -242,6 +242,14 @@ impl BodyFaces {
         }).collect()
     }
 
+    /// Whether face `c` carries one of `faces` on across a seam at `v` (model units): their
+    /// outward normals there one, so they meet tangent and the edge between them is none.
+    pub fn continues(&self, c: usize, faces: &[usize], v: V) -> bool {
+        let q = self.q(v);
+        let n = self.outward(c, q);
+        faces.iter().any(|&f| norm(sub(self.outward(f, q), n)) < 1e-6)
+    }
+
     /// The faces at vertex `v` other than `not`.
     pub fn faces_at(&self, v: u32, not: &[usize]) -> Vec<usize> {
         (0..self.edges.len()).filter(|fi| {

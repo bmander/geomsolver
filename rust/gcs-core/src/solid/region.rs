@@ -637,7 +637,8 @@ fn measured(sk: &Sketch, of: &[(crate::model::Target, f64)],
             let (Target::Set { terms: e, .. }, Target::Set { terms: m, .. }) = (ti, tj) else { continue };
             let (Some(Ok(edge)), Some(Ok(meeting))) = (&sets[i], &sets[j]) else { continue };
             if *ci > 0.0 && (ci + cj).abs() <= 1e-12 * ci.abs() && rest[j].is_none() {
-                rest[j] = super::conditions::Rest::of(sk, e, m, edge, meeting).map(std::sync::Arc::new);
+                rest[j] = super::conditions::Rest::of(sk, e, m, edge, meeting, read)
+                    .map(std::sync::Arc::new);
             }
         }
     }

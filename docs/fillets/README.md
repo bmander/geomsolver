@@ -617,3 +617,70 @@ are listed below.
    point exactly level with a meridian's vertex, between the arc's computed end ordinate and the
    line's start a unit in the last place apart, is counted across twice. The tests keep their
    grids off vertices; the rule itself is untouched.
+
+## The stack's examples in Solvent (#195, 2026-10-12)
+
+Seven of the stack's examples, from X0's paper programs, are now Solvent in
+[`rust/examples/rounds/`](../../rust/examples/rounds/): `pad.sv`, `knob.sv`, `rail.sv`, `tee.sv`,
+`bore.sv`, `slot.sv` and `runout.sv`. Each elaborates, solves and is read by the field. The gates
+are in `rust/gcs-core/tests/rounds_examples.rs`: points where the comments say, by default, and
+each round's volume in the slow tier. A volume is the field's reading of the example less its
+reading with the rounds left out, within a box about the round.
+
+### Held to
+
+| example | round | against | result |
+|---|---|---|---|
+| pad | the boss's root (concave ring) | the stack's `root_ring` (Pappus) | +3.8e-4 |
+| pad | each side edge (convex, ending flush) | `(1 − π/4) r² L` | −4.4e-5, +4.6e-6 |
+| knob | the rod's root (plane–cylinder) | `root_ring` | +7.8e-4 |
+| knob | the neck (cylinder–sphere) | X1's section, turned exactly | −8.9e-4 |
+| rail | both sides (circle–line section, ending flush) | the section in closed form, times the length | +1.0e-4 |
+| tee | the crotch (a traced saddle) | #85's quadrature | +2.0e-4 |
+| bore | the rim (a convex saddle a cut made) | #85's quadrature | −6.9e-5 |
+| slot | the boss's foot (a concave tangent chain) | runs and one ring | +2.5e-4 |
+| slot | the pocket's rim (a convex tangent chain) | runs and one ring | −9.8e-4 |
+| runout | the lug's root, cut off at a slant by the near face | #85's quadrature, cut by the face | +8.2e-6 |
+| runout | the same, the boss moved onto the face | #85's quadrature, halved | +2.4e-4 |
+| runout | the vent's rim, cut off where the hole breaks out | #85's quadrature, cut by the face | +2.4e-4 |
+| runout | the same, the hole moved in | #85's quadrature | −2.0e-4 |
+
+The bar is 2e-3. #85's quadrature (`fillet_definition.rs::rolled_within`) now takes a half-space: a
+section's reach along each direction is cut where the face crosses it, exactly. Nothing here is
+lowered yet, so the 1e-9 gates wait on the lowering entries (#194).
+
+### Findings
+
+1. **A tangent seam was read as a face the run ends on.** `crease.ends` took every other face at
+   each end of a run, so a run reaching a seam was cut off by the next face's surface. On the
+   slot, the boss's foot came out 11.5% short and the pocket's rim 40% short, a gap at every seam.
+   - A seam is no edge (X0's vocabulary), so the run beyond it is the next run's.
+   - **Fixed in the evaluator:** a face that carries one of the run's faces on across a seam (their
+     outward normals one at the end) is not a face the run ends on (`BodyFaces::continues`).
+   - Each run then ends at its seam by its reach alone, as X2's finding 6 says.
+2. **A convex run ending on a face at a slant stopped short of it.** The reach ended a run square
+   to its edge, and `crease.ends` then cut it by the face. Where the face cuts the edge at a slant,
+   the square end falls inside the material on one side. On the vent's rim this left a sliver: 3.2e-3
+   of the round's volume, past the bar.
+   - X2's finding 5 had the body clip a convex removal, so the two readings agreed. That holds only
+     where the face cuts the edge square, as in X2's halves.
+   - X3 decided the convention: a run is cut off by the face it ends on. **Now said in `std.sv`:**
+     the meeting the reach compares with is cut where the edge ends,
+     `meeting := { q | q coincident a.surface; q coincident b.surface; q inside crease.ends }`.
+     Short of the ends, the meeting near the edge is the edge itself, so the run carries on past
+     each end until the face cuts it off.
+   - **Read by the field** as one more general feature: a set measured from may say where an edge
+     ends. Its `Ends` term is one condition per face (`σ·side ≤ 0`), and the rest of a meeting
+     keeps an end of the edge only where the meeting carries on past it within the cut.
+   - Mitres are unchanged. At a corner where both edges are rounded, the part a run gains past its
+     square end is within the other run's (the sliver is nearer the other face), so the union is
+     the same. Every gate in `rounds.rs` holds, the slow tier included.
+   - The concave run-out was already within the bar (X3's −1.9e-4). Carried past, it is now 8e-6.
+3. **`round(r) X` over many faces is slow.** The word's corner loop runs over every ordered triple
+   of `X`'s faces and makes two solids for each. The slot's pocket has nine faces (four walls, four
+   corners and a floor), so `round(r: 1mm) part.pocket` takes 25 s to elaborate and 104 s to read.
+   The example does not suggest it. A follow-up should run the loop over unordered triples, or over
+   triples that share a vertex.
+4. **Nothing was refused.** Every example's statements are answered by the definition as it
+   stands, and no round needed a special case: curved faces, a traced saddle, chains and run-outs
+   are all the same two words.

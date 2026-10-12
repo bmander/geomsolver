@@ -1149,6 +1149,9 @@ pad.boss round(r: 3mm) pad.plate     // where the boss stands on the plate
   the boss gave), `pad.plate.near`, read from the solid through its operands' names, never by
   suffix. Faces that do not meet make nothing; a face a Boolean ate names nothing.
 - Each acts on the body after its other terms: a round reads the faces the cuts and unions left.
+- Where two faces meet tangent there is no edge: a chain of tangent edges (an obround's foot, a
+  rounded pocket's rim) is rounded as one run. A run that ends on a face it does not round is
+  carried on past its edge's end and cut off by that face, however the face stands.
 
 They are written in Solvent (`rust/lib/std.sv`), from region bodies you can write yourself
 (`rust/examples/rounds/by_hand.sv` rounds one edge in about twenty lines):
@@ -1161,7 +1164,8 @@ They are written in Solvent (`rust/lib/std.sv`), from region bodies you can writ
 | `distance(p, f1) + distance(p, f2) <= 10mm` | a bound on measurements (an ellipsoid by its foci) |
 | `crease := { q \| q coincident a; q coincident b }` | the edge where faces `a` and `b` meet |
 | `angle(a, b, at: p) <= 180deg` | at a convex edge (the material's angle there) |
-| `p inside crease.ends` | stopped by the faces the edge ends on |
+| `p inside crease.ends` | stopped by the faces the edge ends on (none at a tangent seam) |
+| `meeting := { q \| q coincident a.surface; q coincident b.surface; q inside crease.ends }` | where the surfaces meet, short of where the edge ends |
 | `repeat a in A { repeat b in B if b != a { … } }` | a copy per pair of faces |
 | `taken := solid(run)`, `taken cut A.body` | a solid of a set, cut from the body `A`'s faces are of |
 
