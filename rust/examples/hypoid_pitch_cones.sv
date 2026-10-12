@@ -18,8 +18,8 @@
 // meeting; edit `module`, the tooth counts `Ng` and `Np`, or the gear's 60° pitch angle, and
 // the pinion's cone and its plane follow.  The same hypoid can be built without naming the cones —
 // each axial plane standing on its pitch generator, square to P by construction — which is the
-// spelling in the primer's §2.12 and `gcs-core/tests/fixtures/hypoid_pitch_cones.sv`; the tests
-// solve both and find the same pair to 2e-11.
+// spelling in `gcs-core/tests/fixtures/hypoid_pitch_cones.sv`; the tests solve both and find the
+// same pair to 2e-11.
 
 unit mm
 use std (skew)
