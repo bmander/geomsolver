@@ -28,6 +28,7 @@ impl Edge {
             Self::Line {a,b,..} => [a,b],
             Self::Arc {sweep,ends,..} if sweep.abs() < TAU => ends,
             Self::Arc {..} => [self.at(0.),self.at(1.)],
+            Self::Conic {a,b,..} => [a,b],
         }
     }
     fn reversed(mut self) -> Self {
@@ -36,6 +37,7 @@ impl Edge {
             Self::Arc {start,sweep,ends,..} => {
                 *start += *sweep; *sweep = -*sweep; ends.swap(0,1);
             }
+            Self::Conic {a,b,..} => std::mem::swap(a,b),
         }
         self
     }
@@ -46,6 +48,7 @@ impl Edge {
                 let (s,c) = (start+t*sweep).dsin_cos();
                 [-s*sweep.signum(),c*sweep.signum()]
             }
+            Self::Conic {..} => self.conic().tangent(t),
         }
     }
     fn area_twice(&self) -> f64 {
@@ -53,6 +56,14 @@ impl Edge {
             Self::Line {a,b,..} => cross(a,b),
             Self::Arc {center,radius,sweep,..} =>
                 cross(center,delta(self.at(1.),self.at(0.)))+radius*radius*sweep,
+            // ∫ x dy − y dx by Gauss–Legendre over eight stretches: a sign for the winding
+            Self::Conic {..} => {
+                let g = [0.5-0.5/3f64.sqrt(),0.5+0.5/3f64.sqrt()];
+                (0..8).map(|k| g.iter().map(|x| {
+                    let t = (k as f64+x)/8.;
+                    cross(self.at(t),self.tangent(t))
+                }).sum::<f64>()/16.).sum()
+            }
         }
     }
     // The farthest boundary point from planar zero; material lies within the
@@ -61,6 +72,8 @@ impl Edge {
         match *self {
             Self::Line {a,b,..} => a[0].dhypot(a[1]).max(b[0].dhypot(b[1])),
             Self::Arc {center,radius,..} => center[0].dhypot(center[1])+radius,
+            // within its control triangle
+            Self::Conic {a,m,b,..} => a[0].dhypot(a[1]).max(m[0].dhypot(m[1])).max(b[0].dhypot(b[1])),
         }
     }
 }
@@ -121,6 +134,13 @@ fn turning(edges: &[Edge]) -> Result<(f64,bool),String> {
             if sweep*direction <= 0. { convex = false; }
             turning += sweep*direction;
         }
+        // a conic's arc turns between its end tangents, within a half turn; the convex
+        // construction has no field of its side, so the loop is read by its boundary distance
+        if let Edge::Conic {..} = *e {
+            convex = false;
+            let (a,b) = (e.tangent(0.),e.tangent(1.));
+            turning += (direction*cross(a,b)).datan2(a[0]*b[0]+a[1]*b[1]);
+        }
         let a = e.tangent(1.); let b = edges[(i+1)%edges.len()].tangent(0.);
         let turn = (direction*cross(a,b)).datan2(a[0]*b[0]+a[1]*b[1]);
         // Tangent junctions inherit the solved source's floating-point residual.
@@ -164,6 +184,7 @@ fn convex(edges: &[Edge],direction: f64) -> Result<PlanarField,String> {
                     disk.union(outside).map_err(failure)?
                 }
             }
+            Edge::Conic {..} => unreachable!("a loop with a conic is read by its boundary distance"),
         };
         constraints.push(field);
     }
@@ -197,6 +218,8 @@ enum Wall {
     Segment {a:[I;2],direction:[I;2],length:I},
     Round {center:[I;2],radius:I,ends:[[I;2];2],from:[I;2],to:[I;2],reflex:bool},
     Circle {center:[I;2],radius:I},
+    /// A conic's arc, enclosed by its pieces' control triangles (`Wall::conic`).
+    Conic {seg:crate::brep::planar::Seg,a:P,m:P,b:P,w:f64},
 }
 
 fn nonnegative(x: I) -> I { I::new(x.bounds()[0].max(0.),x.bounds()[1].max(0.)).unwrap() }
@@ -230,7 +253,46 @@ impl Wall {
                 Self::Round {center,radius,ends:[on_circle(from)?,on_circle(to)?],from,to,
                     reflex:sweep.abs() > PI}
             }
+            Edge::Conic {a,m,b,w} => Self::Conic {seg:edge.conic(),a,m,b,w},
         }))
+    }
+
+    /// A conic's arc's distance over a box `[lo, hi]`: above by the farthest corner from the
+    /// nearest of its points sampled (each on the arc, read in floating point), below by the
+    /// nearest of its pieces' discs about their control triangles — the arc lies within each
+    /// piece's triangle (positive weights) — split in halves while a piece is wider than an
+    /// eighth of the box and nearer than the bound above.
+    fn conic(seg: &crate::brep::planar::Seg,a: P,m: P,b: P,w: f64,lo: P,hi: P) -> Result<I,Error> {
+        let far = |q: P| ((q[0]-lo[0]).abs().max((q[0]-hi[0]).abs())).dhypot((q[1]-lo[1]).abs().max((q[1]-hi[1]).abs()));
+        let near = |q: P| (lo[0]-q[0]).max(q[0]-hi[0]).max(0.).dhypot((lo[1]-q[1]).max(q[1]-hi[1]).max(0.));
+        let scale = a[0].abs().max(a[1].abs()).max(b[0].abs()).max(b[1].abs()).max(m[0].abs()).max(m[1].abs());
+        let slack = 64.*f64::EPSILON*(1.+scale);
+        let mut upper = (0..=8).map(|k| far(seg.point(k as f64/8.))).fold(f64::INFINITY,f64::min);
+        let size = (hi[0]-lo[0]).dhypot(hi[1]-lo[1]);
+        let mut lower = f64::INFINITY;
+        // pieces as homogeneous nets: (x w, y w, w)
+        let mut stack = vec![([a[0],a[1],1.],[w*m[0],w*m[1],w],[b[0],b[1],1.],0usize)];
+        while let Some((h0,h1,h2,depth)) = stack.pop() {
+            let at = |h: [f64;3]| [h[0]/h[2],h[1]/h[2]];
+            let (p0,p1,p2) = (at(h0),at(h1),at(h2));
+            let centre = [(p0[0]+p1[0]+p2[0])/3.,(p0[1]+p1[1]+p2[1])/3.];
+            let radius = distance(centre,p0).max(distance(centre,p1)).max(distance(centre,p2))+slack;
+            let gap = near(centre)-radius;
+            if gap >= upper || gap >= lower { continue }
+            upper = upper.min(far(p0)).min(far(p2));
+            if radius > size/8. && depth < 40 {
+                // de Casteljau at a half in homogeneous coordinates
+                let mid = |x: [f64;3],y: [f64;3]| -> [f64;3] { std::array::from_fn(|i| 0.5*(x[i]+y[i])) };
+                let (l,r) = (mid(h0,h1),mid(h1,h2));
+                let c = mid(l,r);
+                stack.push((h0,l,c,depth+1));
+                stack.push((c,r,h2,depth+1));
+            } else {
+                lower = lower.min(gap.max(0.));
+            }
+        }
+        let lower = if lower.is_finite() { lower } else { upper };
+        I::new((lower-slack).max(0.).min(upper),upper+slack)
     }
 
     fn distance(&self,p: [I;2]) -> Result<I,Error> {
@@ -259,6 +321,10 @@ impl Wall {
                 let hi = corners.bounds()[1];
                 I::new(ring.bounds()[0].min(hi),hi)
             }
+            Self::Conic {seg,a,m,b,w} => {
+                let (x,y) = (p[0].bounds(),p[1].bounds());
+                Self::conic(seg,*a,*m,*b,*w,[x[0],y[0]],[x[1],y[1]])
+            }
         }
     }
 }
@@ -280,6 +346,8 @@ impl Boxes {
             let (lo,hi) = match *e {
                 Edge::Line {a,b,..} => ([a[0].min(b[0]),a[1].min(b[1])],[a[0].max(b[0]),a[1].max(b[1])]),
                 Edge::Arc {center,radius,..} => ([center[0]-radius,center[1]-radius],[center[0]+radius,center[1]+radius]),
+                Edge::Conic {a,m,b,..} => ([a[0].min(m[0]).min(b[0]),a[1].min(m[1]).min(b[1])],
+                    [a[0].max(m[0]).max(b[0]),a[1].max(m[1]).max(b[1])]),
             };
             crate::bvh::Bounds {lo:[lo[0]-grow,lo[1]-grow],hi:[hi[0]+grow,hi[1]+grow]}
         }))))
@@ -349,6 +417,12 @@ impl Profile {
                     let r = distance(m,center).max(f64::MIN_POSITIVE);
                     [m[0]+(center[0]-m[0])/r*eps,m[1]+(center[1]-m[1])/r*eps]
                 }
+                // as a line's: the left of travel
+                Edge::Conic {..} => {
+                    let d = e.tangent(0.5);
+                    let l = (d[0]*d[0]+d[1]*d[1]).sqrt().max(f64::MIN_POSITIVE);
+                    [m[0]-d[1]/l*eps,m[1]+d[0]/l*eps]
+                }
             };
             profile.value(probe) < 0.
         }).collect();
@@ -379,6 +453,15 @@ impl Profile {
             Edge::Arc {center,radius,..} => {
                 let ring = distance(p,center)-radius;
                 if material { ring } else { -ring }
+            }
+            // the conic's implicit form, a length to first order, turned positive on the left of
+            // travel at its middle
+            Edge::Conic {..} => {
+                let seg = self.edges[j].conic();
+                let (m,d) = (seg.point(0.5),seg.tangent(0.5));
+                let k = 1e-6*(1.+self.reach)/(d[0]*d[0]+d[1]*d[1]).sqrt().max(f64::MIN_POSITIVE);
+                let left = seg.implicit([m[0]-k*d[1],m[1]+k*d[0]]).signum()*seg.implicit(p);
+                if material { -left } else { left }
             }
         }
     }

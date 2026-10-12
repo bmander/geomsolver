@@ -20,16 +20,39 @@ fn cross(a: P,b: P) -> f64 { a[0]*b[1]-a[1]*b[0] }
 fn norm(a: P) -> f64 { a[0].dhypot(a[1]) }
 fn dist(a: P,b: P) -> f64 { norm(sub(a,b)) }
 
-/// A step of a loop: a line from `a` to `b`, or the arc about `c` of radius `r` from angle `a0`
-/// through the signed `sweep`.
+/// A step of a loop: a line from `a` to `b`, the arc about `c` of radius `r` from angle `a0`
+/// through the signed `sweep`, or a conic's arc from `a` to `b`: the rational quadratic Bézier
+/// over `a`, `m`, `b`, the middle weighed `w` and the ends one (a parabola where `w` is one, an
+/// ellipse's arc below, a hyperbola's above) — what a chamfer's flat is between a line and a
+/// circle (`corners::sum`).
 #[derive(Clone,Copy,Debug,PartialEq)]
-pub enum Seg { Line { a: P,b: P },Arc { c: P,r: f64,a0: f64,sweep: f64 } }
+pub enum Seg { Line { a: P,b: P },Arc { c: P,r: f64,a0: f64,sweep: f64 },Conic { a: P,m: P,b: P,w: f64 } }
+
+/// A conic arc's three Bernstein weights at `t`, weighed (their sum the denominator).
+fn conic_basis(w: f64,t: f64) -> [f64;3] { let s = 1.-t; [s*s,2.*w*t*s,t*t] }
+
+/// A point's barycentric coordinates in the triangle `a`, `m`, `b`, and their gradients: affine in
+/// the point, so a conic's implicit form over them is quadratic along any line.
+fn barycentric(a: P,m: P,b: P,p: P) -> ([f64;3],[P;3]) {
+    let det = cross(sub(m,a),sub(b,a));
+    let grad = |u: P,v: P| [(u[1]-v[1])/det,(v[0]-u[0])/det];
+    let (ga,gm,gb) = (grad(m,b),grad(b,a),grad(a,m));
+    let at = |g: P,o: P| dot(g,sub(p,o));
+    ([at(ga,m),at(gm,b),at(gb,a)],[ga,gm,gb])
+}
 
 impl Seg {
     pub fn point(&self,t: f64) -> P {
         match *self {
             Seg::Line {a,b} => [a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t],
             Seg::Arc {c,r,a0,sweep} => { let w = a0+sweep*t; [c[0]+r*w.dcos(),c[1]+r*w.dsin()] }
+            Seg::Conic {a,m,b,w} => {
+                // its ends exactly, as written: a vertex two steps share stays one point
+                if t == 0. { return a } else if t == 1. { return b }
+                let k = conic_basis(w,t);
+                let d = k[0]+k[1]+k[2];
+                std::array::from_fn(|i| (k[0]*a[i]+k[1]*m[i]+k[2]*b[i])/d)
+            }
         }
     }
     pub fn start(&self) -> P { self.point(0.) }
@@ -39,22 +62,62 @@ impl Seg {
         match *self {
             Seg::Line {a,b} => sub(b,a),
             Seg::Arc {r,a0,sweep,..} => { let w = a0+sweep*t; [-r*sweep*w.dsin(),r*sweep*w.dcos()] }
+            Seg::Conic {a,m,b,w} => {
+                // (N′D − ND′)/D², N = Σ kᵢ pᵢ and D = Σ kᵢ
+                let k = conic_basis(w,t);
+                let dk = [-2.*(1.-t),2.*w*(1.-2.*t),2.*t];
+                let (d,dd) = (k[0]+k[1]+k[2],dk[0]+dk[1]+dk[2]);
+                std::array::from_fn(|i| {
+                    let n = k[0]*a[i]+k[1]*m[i]+k[2]*b[i];
+                    let dn = dk[0]*a[i]+dk[1]*m[i]+dk[2]*b[i];
+                    (dn*d-n*dd)/(d*d)
+                })
+            }
         }
     }
-    pub fn length(&self) -> f64 { match *self { Seg::Line {a,b} => dist(a,b),Seg::Arc {r,sweep,..} => r*sweep.abs() } }
+    pub fn length(&self) -> f64 {
+        match *self {
+            Seg::Line {a,b} => dist(a,b),
+            Seg::Arc {r,sweep,..} => r*sweep.abs(),
+            // Gauss–Legendre of five points over sixteen stretches
+            Seg::Conic {..} => {
+                const X: [f64;5] = [-0.906179845938664,-0.538469310105683,0.,0.538469310105683,0.906179845938664];
+                const W: [f64;5] = [0.236926885056189,0.478628670499366,0.568888888888889,0.478628670499366,0.236926885056189];
+                (0..16).map(|k| (0..5).map(|i| W[i]*norm(self.tangent((k as f64+0.5+0.5*X[i])/16.))).sum::<f64>()/32.).sum()
+            }
+        }
+    }
     pub fn reversed(&self) -> Seg {
-        match *self { Seg::Line {a,b} => Seg::Line {a:b,b:a},Seg::Arc {c,r,a0,sweep} => Seg::Arc {c,r,a0:a0+sweep,sweep:-sweep} }
+        match *self {
+            Seg::Line {a,b} => Seg::Line {a:b,b:a},
+            Seg::Arc {c,r,a0,sweep} => Seg::Arc {c,r,a0:a0+sweep,sweep:-sweep},
+            Seg::Conic {a,m,b,w} => Seg::Conic {a:b,m,b:a,w},
+        }
     }
     /// The stretch from `t0` to `t1`.
-    pub(crate) fn part(&self,t0: f64,t1: f64) -> Seg {
+    pub fn part(&self,t0: f64,t1: f64) -> Seg {
         match *self {
             Seg::Line {..} => Seg::Line {a:self.point(t0),b:self.point(t1)},
             Seg::Arc {c,r,a0,sweep} => Seg::Arc {c,r,a0:a0+sweep*t0,sweep:sweep*(t1-t0)},
+            Seg::Conic {a,m,b,w} => {
+                // the blossom of the homogeneous net at (t0, t0), (t0, t1), (t1, t1), back in
+                // standard form (its ends weighed one, the middle the geometric mean's share)
+                let h = [[a[0],a[1],1.],[w*m[0],w*m[1],w],[b[0],b[1],1.]];
+                let blossom = |u: f64,v: f64| -> [f64;3] {
+                    let k = [(1.-u)*(1.-v),(1.-u)*v+u*(1.-v),u*v];
+                    std::array::from_fn(|i| k[0]*h[0][i]+k[1]*h[1][i]+k[2]*h[2][i])
+                };
+                let (p0,p1,p2) = (blossom(t0,t0),blossom(t0,t1),blossom(t1,t1));
+                let at = |q: [f64;3]| [q[0]/q[2],q[1]/q[2]];
+                let a = if t0 == 0. { a } else if t0 == 1. { b } else { at(p0) };
+                let b2 = if t1 == 1. { b } else if t1 == 0. { a } else { at(p2) };
+                Seg::Conic {a,m:at(p1),b:b2,w:p1[2]/(p0[2]*p2[2]).sqrt()}
+            }
         }
     }
     /// Where along the step a point of its line or circle is (its fraction; past the ends outside
     /// `[0, 1]`, an arc's measured on the side its sweep runs).
-    pub(crate) fn param(&self,p: P) -> f64 {
+    pub fn param(&self,p: P) -> f64 {
         match *self {
             Seg::Line {a,b} => { let d = sub(b,a); dot(sub(p,a),d)/dot(d,d) }
             Seg::Arc {c,a0,sweep,..} => {
@@ -65,21 +128,47 @@ impl Seg {
                 if delta > PI+sweep.abs()/2. { delta -= TAU; }
                 delta/sweep.abs()
             }
+            Seg::Conic {a,m,b,..} => {
+                // (1 − t)² : 2wt(1 − t) : t² are the point's barycentric coordinates in the
+                // control triangle, so `t / (1 − t)` is the root of their ends' ratio, turned
+                // negative off the arc (the middle's coordinate below nothing)
+                let ([l0,l1,l2],_) = barycentric(a,m,b,p);
+                let (s0,s2) = (l0.abs().sqrt(),l2.abs().sqrt());
+                if l1 >= 0. { s2/(s0+s2).max(1e-300) } else { let k = s2/s0.max(1e-300); -k/(1.-k) }
+            }
         }
     }
     /// The nearest distance from `p` to the step.
     fn distance(&self,p: P) -> f64 {
-        let t = self.param(p).clamp(0.,1.);
+        let t = match self { Seg::Conic {..} => self.nearest(p),_ => self.param(p).clamp(0.,1.) };
         dist(self.point(t),p).min(dist(self.start(),p)).min(dist(self.end(),p))
+    }
+    /// The fraction of the step's nearest point to `p`: of 64 samples the nearest, refined by
+    /// Newton on the squared distance within its neighbours.
+    pub(crate) fn nearest(&self,p: P) -> f64 {
+        const N: usize = 64;
+        let d2 = |t: f64| { let q = sub(self.point(t),p); dot(q,q) };
+        let k = (0..=N).min_by(|&i,&j| d2(i as f64/N as f64).total_cmp(&d2(j as f64/N as f64))).unwrap();
+        let (lo,hi) = ((k.max(1)-1) as f64/N as f64,(k+1).min(N) as f64/N as f64);
+        let (_,t) = crate::roots::brent(&d2,lo,hi,1e-15,200,|_,_| false);
+        t
     }
 }
 
 impl Seg {
     /// A signed measure of how far `p` is off the step's line or circle (zero on it).
-    fn implicit(&self,p: P) -> f64 {
+    pub(crate) fn implicit(&self,p: P) -> f64 {
         match *self {
             Seg::Line {a,b} => { let d = sub(b,a); cross(d,sub(p,a))/norm(d).max(1e-300) }
             Seg::Arc {c,r,..} => dist(p,c)-r,
+            // `λ₁² − 4w²λ₀λ₂` over its gradient's length: zero on the conic, a length off it to
+            // first order, positive on the side away from the middle control point
+            Seg::Conic {a,m,b,w} => {
+                let ([l0,l1,l2],[g0,g1,g2]) = barycentric(a,m,b,p);
+                let f = l1*l1-4.*w*w*l0*l2;
+                let g: P = std::array::from_fn(|i| 2.*l1*g1[i]-4.*w*w*(l2*g0[i]+l0*g2[i]));
+                -f/norm(g).max(1e-300)
+            }
         }
     }
 }
@@ -161,7 +250,8 @@ impl Step {
 /// they share. Plain steps meet in closed form; a charted one by roots of the other's implicit
 /// along it (and of its implicit along the other).
 fn meets_steps(s: &Step,q: &Step,tol: f64) -> (Vec<f64>,Vec<f64>) {
-    if s.chart.is_none() && q.chart.is_none() { return meets(&s.seg,&q.seg,tol) }
+    let conic = |x: &Step| matches!(x.seg,Seg::Conic {..});
+    if s.chart.is_none() && q.chart.is_none() && !conic(s) && !conic(q) { return meets(&s.seg,&q.seg,tol) }
     let (mut on_s,mut on_q) = (Vec::new(),Vec::new());
     let within = |t: f64,st: &Step| { let l = st.length().max(1e-300); t > -tol/l && t < 1.+tol/l };
     let keep = |p: P,on_s: &mut Vec<f64>,on_q: &mut Vec<f64>| {
@@ -240,6 +330,7 @@ fn meets(s: &Seg,q: &Seg,tol: f64) -> (Vec<f64>,Vec<f64>) {
                 if h <= tol { vec![m] } else { vec![[m[0]-h*e[1],m[1]+h*e[0]],[m[0]+h*e[1],m[1]-h*e[0]]] }
             }
         }
+        (Seg::Conic {..},_) | (_,Seg::Conic {..}) => unreachable!("a conic meets by `meets_steps`' roots"),
     };
     for p in points { keep(p,&mut on_s,&mut on_q); }
     (on_s,on_q)
@@ -330,6 +421,29 @@ impl Region {
                         }).count()
                     }
                 }
+                // along the ray the barycentric coordinates are affine, so the implicit form is a
+                // quadratic in the distance along it
+                Seg::Conic {a,m,b,w} => {
+                    let ([l0,l1,l2],[g0,g1,g2]) = barycentric(a,m,b,p);
+                    let (d0,d1,d2) = (dot(g0,d),dot(g1,d),dot(g2,d));
+                    let ww = 4.*w*w;
+                    let qa = d1*d1-ww*d0*d2;
+                    let qb = 2.*l1*d1-ww*(l0*d2+l2*d0);
+                    let qc = l1*l1-ww*l0*l2;
+                    let roots: Vec<f64> = if qa.abs() <= 1e-14*(qb.abs()+qc.abs()) {
+                        if qb == 0. { vec![] } else { vec![-qc/qb] }
+                    } else {
+                        let disc = qb*qb-4.*qa*qc;
+                        if disc < 0. { vec![] } else {
+                            let k = -0.5*(qb+disc.sqrt().copysign(qb));
+                            if k == 0. { vec![0.] } else { vec![k/qa,qc/k] }
+                        }
+                    };
+                    roots.into_iter().filter(|&along| along > 0. && {
+                        let t = s.param([p[0]+d[0]*along,p[1]+d[1]*along]);
+                        (0. ..1.).contains(&t)
+                    }).count()
+                }
             };
         }
         crossings % 2 == 1
@@ -363,7 +477,8 @@ impl Region {
 fn polygon(l: &[Step]) -> Vec<P> {
     l.iter().flat_map(|s| {
         let n = match (s.chart,s.seg) { (Some(_),_) => 32,(None,Seg::Line {..}) => 1,
-            (None,Seg::Arc {sweep,..}) => ((sweep.abs()/(TAU/64.)).ceil() as usize).max(2) };
+            (None,Seg::Arc {sweep,..}) => ((sweep.abs()/(TAU/64.)).ceil() as usize).max(2),
+            (None,Seg::Conic {..}) => 32 };
         (0..n).map(move |k| s.point(k as f64/n as f64))
     }).collect()
 }

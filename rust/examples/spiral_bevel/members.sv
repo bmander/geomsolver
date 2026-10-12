@@ -3,7 +3,6 @@
 use std
 use design
 use layout
-use blank.ends
 
 // A member: its blank less `tool` swept under its generating roll and indexed at every tooth.
 component GeneratedMember(design: group, tool: solid, teeth: Int, roll_limit: Angle) {
@@ -41,12 +40,6 @@ component HypoidPair(p: plane, design: group) {
       reference.tooth_relief[0].body, teeth: design.pinion_teeth, roll_limit: design.pinion_roll)
     gear_relief := ReliefCut(gear.body, reference.gear_design,
       reference.space_relief[0].body, teeth: design.gear_teeth, roll_limit: design.gear_roll)
-  }
-  repeat design.ends_relieved {
-    pinion_ends := blank.ends.EndCut(pinion.body, reference.pinion_blank.toe_end[0].ring,
-      reference.pinion_blank.heel_end[0].ring)
-    gear_ends := blank.ends.EndCut(gear.body, reference.gear_blank.toe_end[0].ring,
-      reference.gear_blank.heel_end[0].ring)
   }
 }
 

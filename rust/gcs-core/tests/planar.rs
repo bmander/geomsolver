@@ -41,6 +41,7 @@ fn discs_and_squares_cut_exactly() {
         match s.seg {
             Seg::Arc {c,r,..} => { close(c[0].hypot(c[1]),0.,1e-15); close(r,1.,1e-15); }
             Seg::Line {a,b} => { close(a[0],0.,1e-15); close(b[0],0.,1e-15); }
+            Seg::Conic {..} => unreachable!("lines and arcs make no conic"),
         }
     }
     // two unit discs a unit apart: the lens is 2π/3 − √3/2, its arcs' ends where the circles cross
@@ -103,4 +104,79 @@ fn a_ring_bounded_by_an_offset_ring_sections_exactly() {
     let radial = [p[0]-3.,p[1],0.];
     let l = radial[0].hypot(radial[1]);
     close(n[0],radial[0]/l,1e-12); close(n[1],radial[1]/l,1e-12);
+}
+
+/// A conic's arc (#196): the rational quadratic Bézier over its ends and where their tangents meet.
+/// The parabola `y = x²` from `(1, 1)` to `(−1, 1)` (its tangents meet at `(0, −1)`, the middle
+/// weighed one) and the quarter of the unit circle (weighed `cos 45°`): every point on its curve,
+/// a point's parameter read back, a stretch of it the same curve, its length the closed form's.
+#[test]
+fn a_conics_arc_is_exact() {
+    let parabola = Seg::Conic {a:[1.,1.],m:[0.,-1.],b:[-1.,1.],w:1.};
+    let quarter = Seg::Conic {a:[1.,0.],m:[1.,1.],b:[0.,1.],w:0.5f64.sqrt()};
+    for k in 0..=50 {
+        let t = k as f64/50.;
+        let (p,q) = (parabola.point(t),quarter.point(t));
+        close(p[1],p[0]*p[0],1e-15);
+        close(q[0].hypot(q[1]),1.,1e-15);
+        close(parabola.param(p),t,1e-12);
+        close(quarter.param(q),t,1e-12);
+    }
+    // a stretch: the same curve between the same points, and the curve reversed
+    let piece = parabola.part(0.2,0.7);
+    for k in 0..=10 {
+        let p = piece.point(k as f64/10.);
+        close(p[1],p[0]*p[0],1e-14);
+    }
+    for (x,y) in [(piece.start(),parabola.point(0.2)),(piece.end(),parabola.point(0.7))] {
+        close(x[0],y[0],1e-14); close(x[1],y[1],1e-14);
+    }
+    assert_eq!(parabola.reversed().point(0.),[-1.,1.]);
+    close(parabola.length(),5f64.sqrt()+2f64.asinh()/2.,1e-12);
+    close(quarter.length(),PI/2.,1e-12);
+    // the cap above the parabola: the conic and the chord back
+    let cap = Region::plain(vec![vec![parabola.reversed(),Seg::Line {a:[1.,1.],b:[-1.,1.]}]]);
+    for i in 0..40 { for j in 0..40 {
+        let p = [-1.2+2.4*(i as f64+0.31)/40.,-0.2+1.4*(j as f64+0.17)/40.];
+        assert_eq!(cap.contains(p),p[1] > p[0]*p[0] && p[1] < 1.,"{p:?}");
+    } }
+    // a Boolean across it: the cap's right half, its area the polygon's of the conic's chords
+    let half = boolean(&cap,&rect(0.,-1.,2.,2.),Op::Common,1e-9).unwrap();
+    close(half.area(),2./3.,1e-3);
+    assert!(half.loops.iter().flatten().any(|s| matches!(s.seg,Seg::Conic {..})));
+}
+
+/// `corners::sum`, `std.Chamfered`'s flat: between two lines the chamfer from the other face;
+/// between a line and a circle the conic its sum of distances bounds, through the same ends.
+#[test]
+fn a_chamfers_sum_of_distances_is_a_line_or_a_conic() {
+    use gcs_core::brep::corners::{chamfer,summed,Leg};
+    let square = rect(0.,0.,4.,4.);
+    let flat = chamfer(&Region::new(square.loops.iter().map(|l| l.iter().enumerate()
+        .map(|(k,s)| gcs_core::brep::planar::Step {tag:k as u32+1,..*s}).collect()).collect()),&[2],&[3],
+        [Leg::FromOther(1.),Leg::FromOther(0.5)],9).unwrap();
+    let tagged = Region::new(square.loops.iter().map(|l| l.iter().enumerate()
+        .map(|(k,s)| gcs_core::brep::planar::Step {tag:k as u32+1,..*s}).collect()).collect());
+    let summed_square = summed(&tagged,&[2],&[3],[1.,0.5],9).unwrap();
+    let cut = |r: &Region| r.loops.iter().flatten().find(|s| s.tag == 9).unwrap().seg;
+    assert_eq!(cut(&flat),cut(&summed_square));
+    // a disc's quarter: the right side a line, the rim the circle of radius 4 about the origin
+    let sector = Region::new(vec![vec![
+        gcs_core::brep::planar::Step {seg:Seg::Line {a:[0.,0.],b:[4.,0.]},chart:None,tag:1},
+        gcs_core::brep::planar::Step {seg:Seg::Arc {c:[0.,0.],r:4.,a0:0.,sweep:PI/2.},chart:None,tag:2},
+        gcs_core::brep::planar::Step {seg:Seg::Line {a:[0.,4.],b:[0.,0.]},chart:None,tag:3},
+    ]]);
+    let (la,lb) = (0.5,0.8);
+    let relieved = summed(&sector,&[1],&[2],[la,lb],9).unwrap();
+    let conic = cut(&relieved);
+    assert!(matches!(conic,Seg::Conic {..}));
+    for k in 0..=40 {
+        let q = conic.point(k as f64/40.);
+        // from the line (y = 0) and from the circle, each into the material, over the other's leg
+        close(q[1]/lb+(4.-q[0].hypot(q[1]))/la,1.,1e-12);
+    }
+    // its ends: on the line `la` inside the circle, on the circle `lb` above the line
+    let ends = [conic.start(),conic.end()];
+    assert!(ends.iter().any(|p| p[1].abs() < 1e-12 && (p[0]-(4.-la)).abs() < 1e-12));
+    assert!(ends.iter().any(|p| (p[0].hypot(p[1])-4.).abs() < 1e-12 && (p[1]-lb).abs() < 1e-12));
 }

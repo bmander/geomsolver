@@ -25,11 +25,11 @@ component HypoidLayout(p: plane, design: group, normal_module: Length) {
   pinion := pitch.pinion.PinionCone(p, q.view, gear, trace.foot, design)
   q := views.FoldedView(p, pinion.hinge)
 
-  // The blanks, drawn in the axial views; the gear's cones on the generator across its axis.
-  gear_blank := blank.member.MemberBlank(gear.pitch_line, gear.opposite, gear.ax, g.view,
-    design, normal_module: normal_module)
-  pinion_blank := blank.member.MemberBlank(pinion.pitch_line, pinion.pitch_line, pinion.ax,
-    q.view, design, normal_module: normal_module)
+  // The blanks, their face spans drawn in the axial views.
+  gear_blank := blank.member.MemberBlank(gear.pitch_line, gear.ax, g.view, design,
+    normal_module: normal_module)
+  pinion_blank := blank.member.MemberBlank(pinion.pitch_line, pinion.ax, q.view, design,
+    normal_module: normal_module)
 
   // The crown, in the normal section.
   thickness := crown.thickness.CrownThickness(p, gear.generator, trace.normal, design)

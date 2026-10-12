@@ -145,6 +145,9 @@ fn say_once(diags: &mut Vec<Diag>, span: Span, stmt: StmtId, message: String) {
 #[derive(Default)]
 pub(super) struct Probes {
     pub terms: BTreeMap<usize, Vec<crate::model::RegionTerm>>,
+    /// Per probe, the sets a bound of it measured from with nothing (a chamfer of no leg): read by
+    /// no term, so held when its solid is built, as `fill_sets` holds a set it reads.
+    pub idle: BTreeMap<usize, Vec<usize>>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1556,10 +1559,25 @@ pub(super) fn measured_term(
             None => of.push((to, c)),
         }
     }
-    of.retain(|&(_, c)| c != 0.0);
-    let Some(p) = probe.filter(|_| !of.is_empty()) else {
+    let Some(p) = probe else {
         return refuse("a bound on measurements measures its point".to_string());
     };
+    for (t, _) in of.iter().filter(|(_, c)| *c == 0.0) {
+        if let Target::Set { probe: q, .. } = t {
+            probes.idle.entry(p).or_default().push(*q as usize);
+        }
+    }
+    of.retain(|&(_, c)| c != 0.0);
+    // every measurement weighed nothing (a chamfer of no leg): `0 cmp k` holds everywhere, so it
+    // bounds nothing, or nowhere
+    if of.is_empty() {
+        use crate::syntax::Cmp;
+        let holds = match m.cmp { Cmp::Ge => 0.0 >= k, Cmp::Le => 0.0 <= k, Cmp::In => false };
+        if !holds {
+            refuse("a bound on measurements weighed nothing that holds nowhere".to_string());
+        }
+        return;
+    }
     let shape = crate::model::RegionShape::Measured { of };
     let term = crate::model::RegionTerm::new(shape, m.cmp, crate::model::TermNumber::stated(k));
     probes.terms.get_mut(&p).expect("a probe's terms").push(term);
@@ -1659,11 +1677,11 @@ fn ends_term(w: &crate::syntax::Written, point: EntRef, edge: EntRef, probes: &P
     Ok((point.i(), RegionTerm::new(shape, cmp, TermNumber::stated(0.0))))
 }
 
-/// The terms of the sets a region's terms measure from (#183 F2, F7), from the points their
-/// bodies were applied to, those points held (they stand for no place); `Err` for a set measured
-/// in terms of itself.
+/// The terms of the sets a region's terms (those stated of `probe`) measure from (#183 F2, F7),
+/// from the points their bodies were applied to, those points held (they stand for no place);
+/// `Err` for a set measured in terms of itself.
 pub(super) fn fill_sets(sk: &mut Sketch, terms: &mut [crate::model::RegionTerm], probes: &Probes,
-                        depth: usize) -> Result<(), String> {
+                        probe: usize, depth: usize) -> Result<(), String> {
     use crate::model::{RegionShape, Target};
     if depth > 16 {
         return Err("a set measured from is measured in terms of itself".to_string());
@@ -1674,7 +1692,7 @@ pub(super) fn fill_sets(sk: &mut Sketch, terms: &mut [crate::model::RegionTerm],
             if inner.is_empty() {
                 return Err("a set measured from states nothing of its point".to_string());
             }
-            fill_sets(sk, &mut inner, probes, depth + 1)?;
+            fill_sets(sk, &mut inner, probes, *probe as usize, depth + 1)?;
             for q in sk.own_params(EntRef::point(*probe as usize)) {
                 sk.params[q as usize].fixed = true;
             }
@@ -1682,6 +1700,16 @@ pub(super) fn fill_sets(sk: &mut Sketch, terms: &mut [crate::model::RegionTerm],
         }
         Ok(())
     };
+    // a set no term reads still has its point held (`Probes::idle`)
+    if let Some(idle) = probes.idle.get(&probe) {
+        for &q in idle {
+            let mut inner = probes.terms.get(&q).cloned().unwrap_or_default();
+            fill_sets(sk, &mut inner, probes, q, depth + 1)?;
+            for x in sk.own_params(EntRef::point(q)) {
+                sk.params[x as usize].fixed = true;
+            }
+        }
+    }
     for t in terms.iter_mut() {
         match &mut t.shape {
             RegionShape::Measured { of } => {

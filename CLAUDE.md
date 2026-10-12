@@ -307,7 +307,14 @@ and `region_term` reads every probe by one rule. **Lowering** (step 7, `solid::r
 term whose sets are two of the region's own bounds (same measure, at its level, moved in by the
 radius for a round's centres) is built in the meridian by X1's construction (`brep::corners`,
 moved from `tests/fillet_meridian.rs`), refused (and read by the field) at a charted corner or a
-flat between curved steps. `tests/rounds.rs` is the gate (X2's closed forms in the slow tier).
+flat between two arcs. **A chamfer's flat is its sum of distances** (#196, [0.72]): between a line
+and an arc it bows, the conic `|q − c| = α + β d_L` (`corners::sum`), a **`Seg::Conic`** — the
+rational quadratic Bézier over its ends and where their tangents meet — carried by every meridian
+reader: planar Booleans (`meets_steps`' roots, `contains` in closed form), the field's
+`Edge::Conic` (`Wall::conic`: pieces' control-triangle discs, split while wide), `Meridian::Conic`,
+and the recipe's rational B-spline (`region_profile`, read back by `meridian_region`). `std.Chamfered`
+is multiplied through by its legs, so a leg of nothing cuts nothing (a bound weighing every
+measurement by nothing holds everywhere, else E040, `measured_term`). `tests/rounds.rs` is the gate (X2's closed forms in the slow tier).
 **Rounds built exactly: the lowering table** (#194, #183 L7, `solid::lowering`): a region over a
 body's faces is recognised by its terms' shapes (`recognised`: two or three `FaceSide`s alike, an
 `Angle` gate per pair at a half turn, the common-part-against-meeting sum (the meeting cut or not
@@ -614,8 +621,8 @@ evaluate it. Union first; `cut` and `bound` commute; a swept solid may only be `
 each member's blank is a region (`blank/member.sv`, `MemberBlank`: the pitch cone, a `std.Cone`
 about the member's axis, its half left unseeded so it settles from the pose, grown by the addendum (`std.Offset`) and its outside by the back depth (`outside(d)`),
 `std.Sphere`s through the face span, sized by the solved layout — a region term reads an unknown,
-`model::TermNumber`; `EndChamfer` puts its corners on the tip set, seeded off the cone line's mean
-point); `pair.sv` draws the same
+`model::TermNumber`; the end relief two `std.Chamfered` bounds in the same region, lowered as
+conics); `pair.sv` draws the same
 limits as revolved sections for the checks' walls (`blank/limits.sv`), `tests/region_blank.rs` the
 gate between them; each crown section bounds its tip land (`distance(>= 0.01 * design.module) tip`)
 so a collapsed tip is no root. Modules `design.sv`, `views.sv`, `pitch/`, `blank/`, `crown/`,
@@ -695,7 +702,7 @@ construction needs `admission::Admission` (only `admit_body` makes one). Contrac
 `tests/native_surfaces/gear_cells.rs` holds the recorded tooth-space volumes;
 `tests/generating_harness.rs` (ignored) locates refusals by stage.
 The pair carries **backlash** (`crown/section.sv`, `side: left`), **tip relief** (`crown/relief.sv`,
-`relieved`) and **end relief** (`blank/ends.sv`, `ends_relieved`); `fixtures::gear::design` pins
+`relieved`) and **end relief** (`blank/member.sv`'s `std.Chamfered`); `fixtures::gear::design` pins
 all to zero, `fixtures::gear::fabricated` sets them. Files:
 `build/exports/hypoid-{pinion,gear}.{step,stl}`; `gcs-cli/tests/pair_check.rs` (ignored) checks
 the pair from the STLs.

@@ -17,7 +17,7 @@ use gcs_core::brep::corners::{chamfer, round, Carrier, Leg};
 use gcs_core::brep::planar::{boolean, Op, Region, Seg, Step};
 use gcs_core::model::{RegionShape, SolidDef};
 use gcs_core::program::Elaborated;
-use gcs_core::space::{cross as cross3, dot as dot3, norm as norm3, sub as sub3};
+use gcs_core::space::norm as norm3;
 use gcs_core::syntax::Cmp;
 use std::f64::consts::{PI, TAU};
 
@@ -50,6 +50,16 @@ fn flux(s: &Seg) -> f64 {
                     + r * r * r * (sn - sn.powi(3) / 3.0)) / 2.0
             };
             prim(a0 + sweep) - prim(a0)
+        }
+        // a rational quadratic: Gauss–Legendre of five points over 64 stretches, to roundoff
+        Seg::Conic { .. } => {
+            let (x, wt) = ([-0.906179845938664, -0.538469310105683, 0.0, 0.538469310105683, 0.906179845938664],
+                [0.236926885056189, 0.478628670499366, 0.568888888888889, 0.478628670499366, 0.236926885056189]);
+            (0..64).map(|k| (0..5).map(|i| {
+                let t = (k as f64 + 0.5 + 0.5 * x[i]) / 64.0;
+                let (p, d) = (s.point(t), s.tangent(t));
+                wt[i] * p[0] * p[0] / 2.0 * d[1]
+            }).sum::<f64>() / 128.0).sum()
         }
     }
 }
@@ -278,193 +288,172 @@ fn the_crown_tip_rounding_is_the_balls() {
     assert!(worst < 1e-9, "the prototype's rounds leave the drawn ones by {worst:e}");
 }
 
-/// #145's end relief (`blank/member.sv`'s preview, `blank/ends.sv`'s `EndChamfer`): the blank's
-/// meridian, folded by the core from its region's terms, chamfered at the tip's toe and heel
-/// corners by the prototype, against the drawn chamfers' ends and the volume the body rule builds
-/// (the region less the two drawn rings, by the kernel).  `EndChamfer` measures each leg from the
-/// other face: its end on the tip `size` inside the sphere, its end on the sphere `size` below the
-/// tip cone.  Measured from the edge instead, both legs move by `1 / sin` of the corner's angle.
-#[test]
-fn the_end_relief_is_a_chamfer_from_the_other_face() {
-    let e = fixtures::gear::read(include_str!("../../examples/spiral_bevel/blank/member.sv"),
-        &fixtures::gear::project());
-    let sk = &e.sketch;
+/// `blank/member.sv`'s preview with an end relief of `relief` mm, and its region solid's meridian.
+fn member(relief: f64) -> (Elaborated, usize) {
+    let text = include_str!("../../examples/spiral_bevel/blank/member.sv");
+    assert!(text.contains("end_relief: 0.2mm"));
+    let text = text.replace("end_relief: 0.2mm", &format!("end_relief: {relief}mm"));
+    let e = fixtures::gear::read(&text, &fixtures::gear::project());
     let solid = entity(&e, "member.material");
-    let m = gcs_core::solid::region::meridian(sk, solid).unwrap();
-    // every term is named for the region (`m.names`), not for the set it came from, so a face is
-    // told by its shape and side: the tip the cone it is inside, the heel the ball it is inside,
-    // the toe the ball it is outside
-    let SolidDef::Region { terms, .. } = &sk.solids[solid].def else { panic!("a region") };
-    let tag = |ball: bool, cmp: Cmp| terms.iter().position(|t| {
-        matches!(t.shape, RegionShape::Ball { .. }) == ball && t.cmp == cmp
-            && matches!(t.shape, RegionShape::Ball { .. } | RegionShape::Cone { .. })
-    }).unwrap() as u32 + 1;
-    let (tip, toe, heel) = (tag(false, Cmp::Le), tag(true, Cmp::Ge), tag(true, Cmp::Le));
-    let to_meridian = |p: [f64; 3]| {
-        let d = sub3(p, m.origin);
-        [norm3(cross3(d, m.axis)), dot3(d, m.axis)]
-    };
-    let size = 0.2;
-    let legs = [Leg::FromOther(size); 2];
-    let ends = |legs: [Leg; 2]| {
-        let toe_end = chamfer(&m.region, &[tip], &[toe], legs, 100).unwrap();
-        chamfer(&toe_end, &[tip], &[heel], legs, 101).unwrap()
-    };
-    let relieved = ends(legs);
-    // the chamfers' ends, the drawn ones'
-    let copied = |end: &str, part: &str| e.map.names.values().flatten()
-        .find(|n| n.starts_with("member.") && n.ends_with(&format!("{end}_end.{part}")))
-        .unwrap_or_else(|| panic!("no `{part}` of the {end} end")).clone();
-    let mut worst: f64 = 0.0;
-    for (end, t) in [("toe", 100), ("heel", 101)] {
-        let flat = relieved.loops.iter().flatten().find(|s| s.tag == t).unwrap().seg;
-        for part in ["along_tip", "down_end"] {
-            let drawn = to_meridian(sk.world_point(entity(&e, &copied(end, part))));
-            worst = worst.max(dist(flat.start(), drawn).min(dist(flat.end(), drawn)));
-        }
-    }
-    assert!(worst < 1e-9, "the prototype's chamfers leave the drawn ones by {worst:e}");
-    // the volumes: the sharp meridian turned against the region's exact solid, and the chamfered
-    // one against the body the rings are cut from
-    let volume = |name: &str| {
-        let x = sk.exact_solid(entity(&e, name)).unwrap_or_else(|why| panic!("{name}: {why}"));
-        gcs_core::brep::props::volume(&x.brep)
-    };
-    close(turned(&m.region), volume("member.material"), "the sharp blank");
-    let body = volume("body");
-    close(turned(&relieved), body, "the relieved blank");
-    // legs measured from the edge instead
-    let by_edge = ends([Leg::FromEdge(size); 2]);
-    let (taken, short) = (turned(&m.region) - body, turned(&by_edge) - turned(&relieved));
-    let (of_chamfers, of_blank) = (short / taken, short / body);
-    eprintln!("end relief: the chamfers take {taken:.6} mm³; legs from the edge take {short:.3e} \
-               mm³ less ({of_chamfers:.3e} of the chamfers', {of_blank:.3e} of the blank)");
-    assert!(short > 0.0 && short / taken < 1e-2, "{short} of {taken}");
+    (e, solid)
 }
 
-/// X3 of #183: the end relief as a chamfer said in Solvent's own terms, the points of the blank
-/// nearer the tip and the sphere than `size` in all (`distance(p, tip) + distance(p, toe) <
-/// size`).  Its edge passes through the drawn chamfer's two ends (legs from the other face, X1's
-/// finding 3), and between them bows off the straight chamfer by the sphere's curvature: by how
-/// much, against the chamfer's own material.
-#[test]
-fn the_end_relief_as_a_sum_of_distances_bows_on_the_sphere() {
-    let e = fixtures::gear::read(include_str!("../../examples/spiral_bevel/blank/member.sv"),
-        &fixtures::gear::project());
-    let sk = &e.sketch;
-    let solid = entity(&e, "member.material");
-    let m = gcs_core::solid::region::meridian(sk, solid).unwrap();
-    let SolidDef::Region { terms, .. } = &sk.solids[solid].def else { panic!("a region") };
+/// The tags of a blank's tip, toe and heel in its meridian: every term is named for the region
+/// (`m.names`), not for the set it came from, so a face is told by its shape and side — the tip
+/// the cone it is inside, the heel the ball it is inside, the toe the ball it is outside.
+fn tip_toe_heel(e: &Elaborated, solid: usize) -> [u32; 3] {
+    let SolidDef::Region { terms, .. } = &e.sketch.solids[solid].def else { panic!("a region") };
     let tag = |ball: bool, cmp: Cmp| terms.iter().position(|t| {
         matches!(t.shape, RegionShape::Ball { .. }) == ball && t.cmp == cmp
             && matches!(t.shape, RegionShape::Ball { .. } | RegionShape::Cone { .. })
     }).unwrap() as u32 + 1;
-    let (tip, toe, heel) = (tag(false, Cmp::Le), tag(true, Cmp::Ge), tag(true, Cmp::Le));
+    [tag(false, Cmp::Le), tag(true, Cmp::Ge), tag(true, Cmp::Le)]
+}
+
+/// #145's end relief, `std.Chamfered` in the blank's own region (`blank/member.sv`), **lowered**
+/// (#196): the meridian's toe and heel corners where the tip cone meets each sphere are cut by a
+/// conic's arc whose ends are the prototype's chamfer's, each leg measured from the other face —
+/// on the tip `size` inside the sphere, on the sphere `size` below the tip cone — and the exact
+/// solid turns it to the meridian's volume.  Between its ends it bows off the straight chamfer
+/// (`EndChamfer`'s, retired) by the sphere's curvature, a little of the chamfer's material.
+#[test]
+fn the_end_relief_is_lowered_from_the_other_face() {
     let size = 0.2;
-    let step = |t: u32| m.region.loops.iter().flatten().find(|s| s.tag == t).unwrap().seg;
+    let (sharp, s0) = member(0.0);
+    let m0 = gcs_core::solid::region::meridian(&sharp.sketch, s0).unwrap();
+    let (e, solid) = member(size);
+    let sk = &e.sketch;
+    assert!(!gcs_core::solid::region::in_general(sk, solid));
+    let m = gcs_core::solid::region::meridian(sk, solid).unwrap();
+    let [tip, toe, heel] = tip_toe_heel(&sharp, s0);
+    let legs = [Leg::FromOther(size); 2];
+    let straight = chamfer(&chamfer(&m0.region, &[tip], &[toe], legs, 100).unwrap(), &[tip], &[heel], legs, 101).unwrap();
+    let conics: Vec<Seg> = m.region.loops.iter().flatten().map(|s| s.seg)
+        .filter(|s| matches!(s, Seg::Conic { .. })).collect();
+    assert_eq!(conics.len(), 2, "a flat at each end");
+    let mut worst: f64 = 0.0;
+    for t in [100, 101] {
+        let flat = straight.loops.iter().flatten().find(|s| s.tag == t).unwrap().seg;
+        let near = conics.iter().map(|c| dist(c.start(), flat.start()).min(dist(c.end(), flat.start()))
+            + dist(c.start(), flat.end()).min(dist(c.end(), flat.end()))).fold(f64::INFINITY, f64::min);
+        worst = worst.max(near);
+    }
+    assert!(worst < 1e-9, "the flats' ends leave the legs' by {worst:e}");
+    let x = sk.exact_solid(solid).unwrap();
+    close(gcs_core::brep::props::volume(&x.brep) / x.mm.powi(3), turned(&m.region), "the relieved blank");
+    // the bow, against the material the chamfers take
+    let (taken, bow) = (turned(&m0.region) - turned(&straight), turned(&straight) - turned(&m.region));
+    eprintln!("end relief: the straight chamfers take {taken:.6} mm³; the bowed flats {bow:+.3e} mm³ \
+               more ({:+.2e} of it)", bow / taken);
+    assert!(taken > 0.0 && bow != 0.0 && bow.abs() < 2e-3 * taken, "{bow} of {taken}");
+}
+
+/// The conic the lowering builds is the set's own edge: on it the sum of the distances from the
+/// tip cone and the sphere, each over the other's leg, is one (to roundoff) — and between its ends
+/// it stands off its chord by the bow X3 measured, 7e-5 mm of a 0.2 mm leg.
+#[test]
+fn the_end_reliefs_conic_is_its_sum_of_distances() {
+    let size = 0.2;
+    let (sharp, s0) = member(0.0);
+    let m0 = gcs_core::solid::region::meridian(&sharp.sketch, s0).unwrap();
+    let (e, solid) = member(size);
+    let m = gcs_core::solid::region::meridian(&e.sketch, solid).unwrap();
+    let [tip, toe, heel] = tip_toe_heel(&sharp, s0);
+    let step = |t: u32| m0.region.loops.iter().flatten().find(|s| s.tag == t).unwrap().seg;
     let Seg::Line { a: ta, b: tb } = step(tip) else { panic!("the tip is a line") };
     // signed distances, positive in the material (on a step's left)
     let to_tip = |q: P| cross(sub(tb, ta), sub(q, ta)) / dist(ta, tb);
-    let mut worst_end: f64 = 0.0;
-    for (end, t) in [(toe, 100), (heel, 101)] {
+    let (mut worst, mut widest): (f64, f64) = (0.0, 0.0);
+    for end in [toe, heel] {
         let Seg::Arc { c, r, sweep, .. } = step(end) else { panic!("an end is an arc") };
         let to_sphere = |q: P| sweep.signum() * (r - dist(q, c));
-        let one = chamfer(&m.region, &[tip], &[end], [Leg::FromOther(size); 2], t).unwrap();
-        let taken = turned(&m.region) - turned(&one);
-        let flat = one.loops.iter().flatten().find(|s| s.tag == t).unwrap().seg;
-        let (a, b) = (flat.start(), flat.end());
-        // the corner: where the tip meets the sphere, beyond the chord
-        let off = |q: &P| to_sphere(*q).abs();
-        let corner = [ta, tb].into_iter().min_by(|p, q| off(p).total_cmp(&off(q))).unwrap();
-        let mut n = unit(left(sub(b, a)));
-        if dot(n, sub(corner, a)) < 0.0 {
-            n = scale(n, -1.0);
+        // the conic at this end: the one whose ends lie on this sphere and the tip
+        let conic = m.region.loops.iter().flatten().map(|s| s.seg)
+            .find(|s| matches!(s, Seg::Conic { .. }) && [s.start(), s.end()].iter().any(|&p| to_sphere(p).abs() < 1e-9))
+            .unwrap();
+        let (a, b) = (conic.start(), conic.end());
+        let chord = |q: P| cross(sub(b, a), sub(q, a)) / dist(a, b);
+        for k in 0..=200 {
+            let q = conic.point(k as f64 / 200.0);
+            worst = worst.max((to_tip(q) / size + to_sphere(q) / size - 1.0).abs());
+            widest = widest.max(chord(q).abs());
         }
-        // where the sum reaches `size` along the chord's normal, toward the corner
-        let edge_at = |u: f64| {
-            let q0 = add(a, scale(sub(b, a), u));
-            let f = |s: f64| { let q = add(q0, scale(n, s)); to_tip(q) + to_sphere(q) - size };
-            let (mut lo, mut hi) = (-size / 2.0, size / 2.0);
-            for _ in 0..100 {
-                let mid = 0.5 * (lo + hi);
-                if (f(mid) > 0.0) == (f(lo) > 0.0) { lo = mid } else { hi = mid }
-            }
-            (q0, 0.5 * (lo + hi))
-        };
-        worst_end = worst_end.max(edge_at(0.0).1.abs()).max(edge_at(1.0).1.abs());
-        // the material between the chord and the sum's edge, turned: a midpoint sum
-        let k = 2000;
-        let (mut bow, mut widest): (f64, f64) = (0.0, 0.0);
-        for i in 0..k {
-            let (q0, s) = edge_at((i as f64 + 0.5) / k as f64);
-            widest = widest.max(s.abs());
-            bow += 2.0 * PI * s * (q0[0] + 0.5 * s * n[0]) * dist(a, b) / k as f64;
-        }
-        eprintln!("end relief ({}): the chamfer takes {taken:.6} mm³; the sum's edge stands off \
-                   its chord {widest:.2e} mm at most, {:+.2e} of the chamfer's material",
-            if end == toe { "toe" } else { "heel" }, -bow / taken);
-        assert!(widest > 0.0 && widest < 1e-3 * size && bow.abs() < 1e-3 * taken);
     }
-    assert!(worst_end < 1e-12, "the sum's edge leaves the legs' ends by {worst_end:e}");
+    eprintln!("end relief: the conic's sum within {worst:.1e}; it bows {widest:.2e} mm off its chord");
+    assert!(worst < 1e-10, "the conic leaves its sum by {worst:e}");
+    assert!(widest > 1e-5 && widest < 1e-3 * size, "{widest}");
 }
 
-/// **The hypoid's end relief stated in its blank's own region** (#183 step 6): `std.Chamfered` at
-/// the tip's toe and heel corners, each leg 0.2 from the other face, is today's `EndChamfer` body —
-/// the blank less the two drawn rings — wherever a point is farther from either boundary than the
-/// sum of distances bows off the straight chamfer on the sphere (7e-5 mm, X3).  Read by the field:
-/// a chamfer on an offset cone is not lowered.
+/// The lowering builds what the set says: about each flat, the field of the relieved blank's
+/// meridian and the region read point by point agree wherever a point is not on the boundary.  A
+/// relief of nothing weighs both distances by nothing: the bound holds everywhere and the region is
+/// its four bounds.
 #[test]
-fn the_end_relief_stated_in_the_region_is_end_chamfers() {
-    let text = include_str!("../../examples/spiral_bevel/blank/member.sv");
-    let close = text.rfind('}').unwrap();
-    let stated = "  toe_side := { q | q outside member.toe }\n\
-                  relieved := { p | p inside member.tip; p inside member.heel; p outside member.toe\n\
-                    p outside(8mm) member.pitch\n\
-                    p inside std.Chamfered(member.tip, toe_side, la: 0.2mm, lb: 0.2mm)\n\
-                    p inside std.Chamfered(member.tip, member.heel, la: 0.2mm, lb: 0.2mm) }\n\
-                  stated := solid(relieved)\n";
-    let text = format!("{}{stated}{}", &text[..close], &text[close..]);
-    let e = fixtures::gear::read(&text, &fixtures::gear::project());
+fn the_end_relief_lowered_is_the_region_read_point_by_point() {
+    let (e, solid) = member(0.2);
     let sk = &e.sketch;
-    let m = gcs_core::solid::region::meridian(sk, entity(&e, "member.material")).unwrap();
-    let ours = gcs_core::solid::MaterialField::read(sk, entity(&e, "stated"), 1e-10).unwrap();
-    let theirs = gcs_core::solid::MaterialField::read(sk, entity(&e, "body"), 1e-10).unwrap();
-    // the tip's corners with the spheres, in the meridian, and points about each
-    let SolidDef::Region { terms, .. } = &sk.solids[entity(&e, "member.material")].def else { panic!() };
-    let tip = terms.iter().position(|t| matches!(t.shape, RegionShape::Cone { .. }) && t.cmp == Cmp::Le)
-        .unwrap() as u32 + 1;
-    let corners: Vec<P> = m.region.loops.iter().flat_map(|l| {
-        (0..l.len()).filter(move |&i| (l[i].tag == tip) != (l[(i + 1) % l.len()].tag == tip))
-            .map(move |i| l[i].end())
-    }).collect();
-    assert_eq!(corners.len(), 2, "the tip meets each sphere once");
-    let lift = |q: P| -> [f64; 3] {
-        std::array::from_fn(|k| m.origin[k] + q[0] * m.seam[k] + q[1] * m.axis[k])
-    };
-    let (mut checked, mut seen_cut) = (0, 0);
-    for c in corners {
-        for i in 0..=40 {
-            for j in 0..=40 {
-                // off the corner's own ordinate: a ray level with a vertex is the parity rule's
-                // edge (its arc's end and its line's start a unit in the last place apart)
-                let q = [c[0] + (i as f64 - 20.0) * 0.02 + 1.37e-3, c[1] + (j as f64 - 20.0) * 0.02 + 2.91e-3];
+    let m = gcs_core::solid::region::meridian(sk, solid).unwrap();
+    let lowered = gcs_core::solid::MaterialField::read(sk, solid, 1e-10).unwrap();
+    let general = gcs_core::solid::region::general(sk, solid).unwrap();
+    let lift = |q: P| -> [f64; 3] { std::array::from_fn(|k| m.origin[k] + q[0] * m.seam[k] + q[1] * m.axis[k]) };
+    let mut checked = 0;
+    for st in m.region.loops.iter().flatten().filter(|s| matches!(s.seg, Seg::Conic { .. })) {
+        let c = st.seg.point(0.5);
+        for i in 0..=30 {
+            for j in 0..=30 {
+                // off the vertices' own ordinates (the parity rule's edge, finding 9)
+                let q = [c[0] + (i as f64 - 15.0) * 0.01 + 1.37e-4, c[1] + (j as f64 - 15.0) * 0.01 + 2.91e-4];
                 let p = lift(q);
-                let (a, b) = (ours.side(p), theirs.side(p));
-                if a.abs() < 2e-4 || b.abs() < 2e-4 {
-                    continue;
-                }
-                assert_eq!(a < 0.0, b < 0.0, "at {q:?} (corner {c:?}): {a} against {b}");
-                checked += 1;
-                // inside the sharp blank and cut by the relief
-                if b > 0.0 && m.region.contains(q) {
-                    seen_cut += 1;
+                let g = general.value(p);
+                if g.abs() > 1e-9 {
+                    assert_eq!(lowered.side(p) < 0.0, g < 0.0, "at {q:?}: {} against {g}", lowered.side(p));
+                    checked += 1;
                 }
             }
         }
     }
-    assert!(checked > 2000 && seen_cut > 10, "{checked} points, {seen_cut} in the reliefs");
+    assert!(checked > 1800, "{checked}");
+    // and the lowered field is the distance from the meridian's boundary, the conic's included:
+    // each step's nearest point by its own closed form, a conic's by a dense walk refined
+    let nearest = |q: P| m.region.loops.iter().flatten().map(|st| match st.seg {
+        Seg::Line { a, b } => {
+            let d = sub(b, a);
+            let t = (dot(sub(q, a), d) / dot(d, d)).clamp(0.0, 1.0);
+            dist(q, add(a, scale(d, t)))
+        }
+        Seg::Arc { c, r, a0, sweep } => {
+            let phi = (q[1] - c[1]).atan2(q[0] - c[0]);
+            let along = ((phi - a0) * sweep.signum()).rem_euclid(TAU);
+            if along <= sweep.abs() { (dist(q, c) - r).abs() } else { dist(q, st.seg.start()).min(dist(q, st.seg.end())) }
+        }
+        Seg::Conic { .. } => {
+            let d = |t: f64| dist(q, st.seg.point(t));
+            let k = (0..=4000).min_by(|&i, &j| d(i as f64 / 4000.0).total_cmp(&d(j as f64 / 4000.0))).unwrap();
+            let (mut lo, mut hi) = ((k.max(1) - 1) as f64 / 4000.0, (k + 1).min(4000) as f64 / 4000.0);
+            for _ in 0..200 {
+                let (x, y) = (lo + (hi - lo) / 3.0, hi - (hi - lo) / 3.0);
+                if d(x) < d(y) { hi = y } else { lo = x }
+            }
+            d(0.5 * (lo + hi))
+        }
+    }).fold(f64::INFINITY, f64::min);
+    let mut worst: f64 = 0.0;
+    for st in m.region.loops.iter().flatten().filter(|s| matches!(s.seg, Seg::Conic { .. })) {
+        let c = st.seg.point(0.5);
+        for i in 0..=10 {
+            for j in 0..=10 {
+                let q = [c[0] + (i as f64 - 5.0) * 0.03 + 1.37e-4, c[1] + (j as f64 - 5.0) * 0.03 + 2.91e-4];
+                worst = worst.max((lowered.side(lift(q)).abs() - nearest(q)).abs());
+            }
+        }
+    }
+    assert!(worst < 1e-9, "the lowered field leaves the boundary's distance by {worst:e}");
+    let (sharp, s0) = member(0.0);
+    let SolidDef::Region { terms, .. } = &sharp.sketch.solids[s0].def else { panic!("a region") };
+    assert_eq!(terms.len(), 4);
+    let m0 = gcs_core::solid::region::meridian(&sharp.sketch, s0).unwrap();
+    assert!(m0.region.loops.iter().flatten().all(|s| !matches!(s.seg, Seg::Conic { .. })));
 }
-
 
 /// **The crown's tip rounding by the word** (#183 step 6): the section drawn sharp from the same
 /// carriers, swept a little either side of its view, its tip's two edges rounded by `round` — the
@@ -507,3 +496,4 @@ fn the_crown_tip_rounding_is_the_words() {
         assert!(off(-r / 20.0) < 0.0 && off(r / 20.0) > 0.0, "{name}");
     }
 }
+

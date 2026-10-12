@@ -12,11 +12,13 @@ fn distance(a: P,b: P) -> f64 { (a[0]-b[0]).dhypot(a[1]-b[1]) }
 /// One analytic profile edge in planar coordinates: a revolved meridian's
 /// (radius, height), or a prism section's plane view coordinates. An arc's
 /// `ends` are the exact source vertices, `ends[0]` at `start`; a full circle
-/// has `sweep` of one turn and no seam.
+/// has `sweep` of one turn and no seam. A conic's arc is the rational quadratic
+/// Bézier over `a`, `m`, `b`, its middle weighed `w` (`brep::planar::Seg::Conic`).
 #[derive(Clone,Debug)]
 pub(crate) enum Edge {
     Line {a:P,b:P,axis:bool},
     Arc {center:P,radius:f64,start:f64,sweep:f64,ends:[P;2]},
+    Conic {a:P,m:P,b:P,w:f64},
 }
 
 impl Edge {
@@ -27,10 +29,21 @@ impl Edge {
                 let (s,c) = (start+t*sweep).dsin_cos();
                 [center[0]+radius*c,center[1]+radius*s]
             }
+            Self::Conic {..} => self.conic().point(t),
         }
     }
 
+    /// A conic's arc as the planar kernel's step, which evaluates it.
+    pub(crate) fn conic(&self) -> crate::brep::planar::Seg {
+        let Self::Conic {a,m,b,w} = *self else { unreachable!("a conic's step of a conic") };
+        crate::brep::planar::Seg::Conic {a,m,b,w}
+    }
+
     fn radial_bounds(&self) -> [f64;2] {
+        // a conic's arc lies within its control triangle
+        if let Self::Conic {a,m,b,..} = *self {
+            return [a[0].min(m[0]).min(b[0]),a[0].max(m[0]).max(b[0])];
+        }
         let mut lo = self.at(0.)[0].min(self.at(1.)[0]);
         let mut hi = self.at(0.)[0].max(self.at(1.)[0]);
         if let Self::Arc {center,radius,start,sweep,..} = *self {
@@ -51,6 +64,7 @@ impl Edge {
                 center[0] = -center[0]; *start = PI-*start; *sweep = -*sweep;
                 for end in ends { end[0] = -end[0]; }
             }
+            Self::Conic {a,m,b,..} => { a[0] = -a[0]; m[0] = -m[0]; b[0] = -b[0]; }
         }
     }
 
@@ -73,6 +87,10 @@ impl Edge {
                 if ((angle-start)*sweep.signum()).rem_euclid(TAU) <= sweep.abs() {
                     (q[0].dhypot(q[1])-radius).abs()
                 } else { distance(p,self.at(0.)).min(distance(p,self.at(1.))) }
+            }
+            Self::Conic {..} => {
+                let seg = self.conic();
+                distance(p,seg.point(seg.nearest(p))).min(distance(p,self.at(0.))).min(distance(p,self.at(1.)))
             }
         }
     }
@@ -110,6 +128,41 @@ impl Edge {
                     let x = center[0]+radius*(1.-y*y).max(0.).sqrt()
                         * ((a[0]+a[1])/2.).dcos().signum();
                     p[0] < x
+                }).count()
+            }
+            Self::Conic {a,m,b,w} => {
+                // split where the height turns (the numerator of y′, a quadratic in t), each
+                // stretch crossed at most once, its ends' heights as a line's are read (its
+                // vertices exactly as written)
+                let (y0,y1,y2) = (a[1],m[1],b[1]);
+                // y′'s numerator N′D − ND′ is 2(w(y1 − y0)(1 − t)² + (y2 − y0)t(1 − t) +
+                // w(y2 − y1)t²), its cubic terms cancelled: in powers of t, twice these
+                let c0 = 2.*w*(y1-y0);
+                let c1 = 2.*(y2-y0)-4.*w*(y1-y0);
+                let c2 = 2.*w*(y2-y1)-2.*(y2-y0)+2.*w*(y1-y0);
+                let mut cuts = vec![0.];
+                let mut roots = Vec::new();
+                if c2.abs() > 1e-300 {
+                    let disc = c1*c1-4.*c2*c0;
+                    if disc >= 0. {
+                        let k = -0.5*(c1+disc.sqrt().copysign(c1));
+                        roots.push(k/c2);
+                        if k != 0. { roots.push(c0/k); }
+                    }
+                } else if c1 != 0. { roots.push(-c0/c1); }
+                roots.sort_by(f64::total_cmp);
+                cuts.extend(roots.into_iter().filter(|&t| t > 0. && t < 1.));
+                cuts.push(1.);
+                let seg = self.conic();
+                cuts.windows(2).filter(|t| {
+                    let (ya,yb) = (seg.point(t[0])[1],seg.point(t[1])[1]);
+                    if (ya > p[1]) == (yb > p[1]) { return false; }
+                    let (mut lo,mut hi) = (t[0],t[1]);
+                    for _ in 0..80 {
+                        let mid = 0.5*(lo+hi);
+                        if (seg.point(mid)[1] > p[1]) == (ya > p[1]) { lo = mid } else { hi = mid }
+                    }
+                    p[0] < seg.point(0.5*(lo+hi))[0]
                 }).count()
             }
         }
@@ -188,6 +241,8 @@ impl RevolvedRegion {
                     Edge::Arc {center:coords(sub(center,origin)),radius:a[0].dhypot(a[1]),
                         start:a[1].datan2(a[0]),sweep:sweep*(a[0]*b[1]-a[1]*b[0]).signum(),ends}
                 }
+                Meridian::Conic {a,m,b,w} => Edge::Conic {a:coords(sub(a,origin)),
+                    m:coords(sub(m,origin)),b:coords(sub(b,origin)),w},
             })
         }).collect::<Result<Vec<_>,String>>()).collect::<Result<Vec<_>,_>>()?;
         let bounds = loops.iter().flatten().map(Edge::radial_bounds)
@@ -216,6 +271,7 @@ impl RevolvedRegion {
         let loops = m.region.outer_first().into_iter().map(|l| l.iter().map(|step| match step.seg {
             Seg::Line {a,b} => Edge::Line {a,b,axis:a[0].abs() <= axis_tolerance && b[0].abs() <= axis_tolerance},
             Seg::Arc {c,r,a0,sweep} => Edge::Arc {center:c,radius:r,start:a0,sweep,ends:[step.start(),step.end()]},
+            Seg::Conic {a,m,b,w} => Edge::Conic {a,m,b,w},
         }).collect()).collect();
         Self {origin:m.origin,axis:m.axis,loops,axis_tolerance}
     }

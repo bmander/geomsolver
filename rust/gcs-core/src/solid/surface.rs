@@ -23,6 +23,8 @@ type V = [f64;3];
 enum Meridian {
     Line { start: V, delta: V },
     Round { center: V, a: V, b: V, sweep: f64 },
+    /// A conic's arc: the rational quadratic Bézier over `a`, `m`, `b`, the middle weighed `w`.
+    Conic { a: V, m: V, b: V, w: f64 },
 }
 
 impl Meridian {
@@ -91,6 +93,28 @@ impl RevolvedSurface {
                     derivative[i] = a.neg().mul(s)?.add(b.mul(c)?)?.mul(sweep)?;
                     if second_order {
                         second[i] = a.mul(c)?.add(b.mul(s)?)?.neg().mul(sweep.square()?)?;
+                    }
+                }
+            }
+            Meridian::Conic {a,m,b,w} => {
+                // the quotient rule over N = Σ kᵢ pᵢ and D = Σ kᵢ, the Bernstein weights' own
+                // enclosures: C = N/D, C′ = (N′ − C D′)/D, C″ = (N″ − 2C′D′ − C D″)/D
+                let one = I::point(1.)?;
+                let (s,w) = (one.sub(u)?,I::point(*w)?);
+                let k = [s.square()?,I::point(2.)?.mul(w)?.mul(u)?.mul(s)?,u.square()?];
+                let dk = [I::point(-2.)?.mul(s)?,I::point(2.)?.mul(w)?.mul(one.sub(I::point(2.)?.mul(u)?)?)?,
+                    I::point(2.)?.mul(u)?];
+                let ddk = [I::point(2.)?,I::point(-4.*w.bounds()[0])?,I::point(2.)?]; // w is a point
+                let sum = |x: [I;3]| -> Result<I,Error> { x[0].add(x[1])?.add(x[2]) };
+                let (d,dd,ddd) = (sum(k)?,sum(dk)?,sum(ddk)?);
+                for i in 0..3 {
+                    let p = [I::point(a[i])?,I::point(m[i])?,I::point(b[i])?];
+                    let dot = |x: [I;3]| -> Result<I,Error> { x[0].mul(p[0])?.add(x[1].mul(p[1])?)?.add(x[2].mul(p[2])?) };
+                    position[i] = dot(k)?.div(d)?;
+                    derivative[i] = dot(dk)?.sub(position[i].mul(dd)?)?.div(d)?;
+                    if second_order {
+                        second[i] = dot(ddk)?.sub(I::point(2.)?.mul(derivative[i])?.mul(dd)?)?
+                            .sub(position[i].mul(ddd)?)?.div(d)?;
                     }
                 }
             }
@@ -185,6 +209,7 @@ impl RevolvedSurface {
                 // a round edge runs counter-clockwise from its start
                 Seg::Arc {c,r,a0,sweep} => Meridian::round(at(c),m.seam,m.axis,r,
                     if sweep < 0. { a0+sweep } else { a0 },sweep.abs()),
+                Seg::Conic {a,m: c,b,w} => Meridian::Conic {a: at(a),m: at(c),b: at(b),w},
             };
             let name = format!("{solid}.{}",m.name(step.tag));
             Some(Self {name,meridian,origin: m.origin,axis: m.axis,sweep: std::f64::consts::TAU,
@@ -209,6 +234,14 @@ impl RevolvedSurface {
                 let (s,c) = (u*sweep).dsin_cos();
                 (add(*center,add(scale(*a,c),scale(*b,s))),
                     scale(add(scale(*a,-s),scale(*b,c)),*sweep))
+            }
+            Meridian::Conic { a,m,b,w } => {
+                let k = [(1.-u)*(1.-u),2.*w*u*(1.-u),u*u];
+                let dk = [-2.*(1.-u),2.*w*(1.-2.*u),2.*u];
+                let (d,dd) = (k[0]+k[1]+k[2],dk[0]+dk[1]+dk[2]);
+                let n: V = std::array::from_fn(|i| k[0]*a[i]+k[1]*m[i]+k[2]*b[i]);
+                let dn: V = std::array::from_fn(|i| dk[0]*a[i]+dk[1]*m[i]+dk[2]*b[i]);
+                (scale(n,1./d),std::array::from_fn(|i| (dn[i]*d-n[i]*dd)/(d*d)))
             }
         };
         // Rodrigues' rotation of the two vectors about the unit axis, and the
