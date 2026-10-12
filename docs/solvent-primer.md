@@ -1072,6 +1072,9 @@ several up to the `}`. It adds nothing to the drawing; what it means is said whe
   `P` without saying it.
 - A family of sets is a component whose body is one: `component Ball(center: point, r: Length)
   := { p | p distance(r) center }`; an instance is the set, its formals read by its name.
+- A component takes a set as a **`set` formal** (`component On(p: point, s: set)`): a named set
+  or a family's instance, by position like an entity. A `group` formal refuses a named set, and a
+  `set` formal a group, at the argument; a family's instance is both, so it may fill either.
 - A culprit reads as the statement (`l tangent shaft`), never as the body's rows.
 - **A set whose body is a circle's is the circle**: `k := { p | p coincident std.front; p
   distance(25mm) o }`, `o` drawn in `std.front`, is drawn, dragged, dimensioned `R25` and swept
@@ -1086,11 +1089,15 @@ several up to the `}`. It adds nothing to the drawing; what it means is said whe
   / at least: `q inside std.Sphere(c, r: 5)`, `q inside std.Cylinder(l, r: 2)`, `q inside
   std.Cone(l, half: 30deg)` (in space only), the disc `{ p | p coincident P; p distance(5) o }`.
   Regions meet by conjunction, and `outside` gives a difference: `{ p | p inside heel; p outside
-  toe }`. Refused: `outside` a conjunction or an interval, a set of several numbers, a line inside
-  a set, a tangency to a region. A point in a region is a bound on it, so a choice of root.
+  toe }`. A side is a bound too, so `outside` a set of one side turns it round: outside `{ q | q
+  inside(1mm) S }` is beyond 1mm outside `S`. Refused: `outside` a conjunction or an interval, a
+  set of several numbers, a line inside a set, a tangency to a region. A point in a region is a
+  bound on it, so a choice of root.
 - **Distance from a set, offsets** (0.64): `p distance(4mm, side: outside) k` puts `p` 4mm off
   the surface of `k` (`side:` is required); `tip := std.Offset(pitch, d: 2mm)` is the set 2mm
   outside, `p inside(2mm) pitch` within it, `p outside(4mm) pitch` within the outside grown by 4mm.
+  `S.surface` is `S` with each bound an equality: of `{ q | q inside(2mm) pitch }`, the offset
+  surface.
   A sphere's or cylinder's offset moves its number; in `solid(R)` a cone's is exact (apex rounded
   where it grows); a drawn point gets a foot on the set, found by the solve. Not: a bound on a
   drawn point's distance from a cone, a region, a circle, `inside(d)` a conjunction.

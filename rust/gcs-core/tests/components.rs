@@ -250,3 +250,41 @@ cycle 4 as i { s := Spoke(o, i * 90deg) }
     assert_eq!(said.len(), 1, "one line, one mistake: {d:?}");
     assert!(said[0].contains("`phase`"), "{d:?}");
 }
+
+/// **A set is no group, and a group no set** (#191): a `group` formal reads members a named set
+/// does not have, and a `set` formal applies what it is given as a set — so each refuses the
+/// other at the call, not as a missing member far from it.  An instance of a set family is both:
+/// a set, and an instance carrying its numbers (`spatial_lang`'s `s.r`).
+#[test]
+fn a_set_and_a_group_fill_only_their_own_formals() {
+    let base = "unit mm\nuse std\n\
+        component Reads(p: point, dims: group) {\n  p distance(dims.r) dims.at\n}\n\
+        component On(p: point, s: set) {\n  p coincident s\n}\n\
+        c := point hint((0, 0, 0))\nfix((0, 0, 0)) c\n\
+        p := point hint((3, 4, 1))\n\
+        ball := { q | q distance(5) c }\n\
+        sphere := std.Sphere(c, r: 5)\n\
+        dims := {r: 5mm, at: c}\n";
+    crate::common::refused(&format!("{base}Reads(p, ball)\n"), "E103", "wants a group", "ball");
+    crate::common::refused(&format!("{base}On(p, dims)\n"), "E103", "wants a set", "dims");
+    crate::common::refused(&format!("{base}On(p, 5mm)\n"), "E103", "wants a set", "5mm");
+    // a set's surface is no set a formal takes yet (§4.1)
+    crate::common::refused(&format!("{base}On(p, ball.surface)\n"), "E103", "wants a set",
+                           "ball.surface");
+    crate::common::refused(&format!("{base}On(p)\n"), "E103", "missing set argument `s`", "On(p)");
+    // each takes its own — the set named, or a family's instance — and an instance of a family
+    // a group as well
+    for call in ["Reads(p, dims)", "On(p, ball)", "On(p, sphere)"] {
+        let src = format!("{base}{call}\n");
+        let (prog, errs, linked) = gcs_core::library::parse_linked(&src);
+        assert!(errs.is_empty() && linked.is_empty(), "{errs:?} {linked:?}");
+        let e = gcs_core::program::elaborate(&prog);
+        assert!(e.ok(), "{call}: {:?}", e.errors().map(|d| d.message.clone()).collect::<Vec<_>>());
+        let p = crate::common::ent(&e, "p").i();
+        let mut sk = e.sketch;
+        assert!(gcs_core::solve::solve(&mut sk, gcs_core::solve::SolveOpts::default()).success);
+        let at = sk.world_point(p);
+        let r = (at[0] * at[0] + at[1] * at[1] + at[2] * at[2]).sqrt();
+        assert!((r - 5.0).abs() < 1e-9, "{call}: {r}");
+    }
+}

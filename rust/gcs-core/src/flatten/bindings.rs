@@ -160,7 +160,9 @@ impl<'a> Walk<'a> {
                      position, in order, and everything past the first label carries one too \
                      (§4.1)"
                 )
-            } else if let Some(f) = formal.filter(|f| !matches!(f.ty, Ty::Ent(_) | Ty::Group)) {
+            } else if let Some(f) =
+                formal.filter(|f| !matches!(f.ty, Ty::Ent(_) | Ty::Group | Ty::Set))
+            {
                 format!(
                     "`{0}` is a number, and a number is given by label: write `{0}: …` (§4.1)",
                     f.name.text
@@ -212,11 +214,13 @@ impl<'a> Walk<'a> {
                 (_, InstVal::Group(_)) => self.err(Code::E103, a.span, format!(
                     "a group is written in braces only where it is defined: `{n} := {{…}}`, \
                      then `{n}: {n}`", n = f.name.text)),
-                (Ty::Group, InstVal::Ref(r)) => {
+                // a group and a set are bound alike, an alias carrying the actual's numbers
+                // (`s.r` of a sphere); which the formal wants is checked once names are known
+                (ty @ (Ty::Group | Ty::Set), InstVal::Ref(r)) => {
                     let actual = written(r);
                     let key = formal_name(&prefix, &inst.name.text, &f.name.text);
                     self.aliases.push((key.clone(), r.clone(), scope.clone()));
-                    self.group_bindings.push((key, a.span));
+                    self.group_bindings.push((key, a.span, *ty));
                     let start = format!("{actual}.");
                     for (name, value) in vals {
                         if let Some(member) = name.strip_prefix(&start) {
@@ -224,7 +228,7 @@ impl<'a> Walk<'a> {
                         }
                     }
                 }
-                (Ty::Group | Ty::Ent(_), InstVal::Hint(..)) => self.err(Code::E103, a.span,
+                (Ty::Group | Ty::Set | Ty::Ent(_), InstVal::Hint(..)) => self.err(Code::E103, a.span,
                     format!("`{}` is not a number, so there is nothing to seed", f.name.text)),
                 // `beta: hint(15deg)` — the formal stays unbound, an unknown of the drawing like
                 // any unbound numeric formal (below), and its solve begins at the number
@@ -242,6 +246,8 @@ impl<'a> Walk<'a> {
                 }
                 (Ty::Group, InstVal::Expr(t)) => self.err(Code::E103, a.span,
                     format!("`{}` wants a group or layout instance, not `{t}`", f.name.text)),
+                (Ty::Set, InstVal::Expr(t)) => self.err(Code::E103, a.span,
+                    format!("`{}` wants a set, not `{t}`", f.name.text)),
                 (Ty::Ent(_), InstVal::Ref(r)) => {
                     // recorded unresolved; the resolve pass turns it into an absolute name in the
                     // *caller's* scope, which is what makes it an alias rather than a copy
@@ -294,9 +300,10 @@ impl<'a> Walk<'a> {
         // — and inside a traced component the name is no column of the curve, which is how a nested
         // instance's unbound formal is reported rather than captured by an outer one's.
         for f in &comp.formals {
-            if f.ty == Ty::Group && !inst.args.iter().enumerate().any(|(i, a)|
+            if matches!(f.ty, Ty::Group | Ty::Set) && !inst.args.iter().enumerate().any(|(i, a)|
                 a.label.as_ref().map_or_else(|| comp.formals.get(i).is_some_and(|p| p.name.text == f.name.text), |l| l.text == f.name.text)) {
-                self.err(Code::E103, inst.span, format!("missing group argument `{}`", f.name.text));
+                let what = if f.ty == Ty::Set { "set" } else { "group" };
+                self.err(Code::E103, inst.span, format!("missing {what} argument `{}`", f.name.text));
             }
             // a side left unbound is not an unknown of the drawing: the *statement* it reaches
             // says nothing about which side, which is the magnitude form and a solution set of

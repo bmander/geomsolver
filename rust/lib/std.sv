@@ -149,7 +149,7 @@ component Sphere(center: point, r: Length) := { p | p distance(r) center }
 // sphere.
 //
 //   std.CircleOnSphere(k, ball, std.side)
-component CircleOnSphere(k: circle, s: group, view: plane) {
+component CircleOnSphere(k: circle, s: set, view: plane) {
   private q := point hint(at: k, bearing: 0deg) in view
   q coincident k
   k.center horizontal q
@@ -191,14 +191,14 @@ component Cone(about: line, half: Angle) := { p |
 //
 //   tip := std.Offset(pitch, d: 2mm)
 //   region := { p | p inside tip; p outside(4mm) pitch }
-component Offset(S: group, d: Length) := { p | p distance(d, side: outside) S }
+component Offset(S: set, d: Length) := { p | p distance(d, side: outside) S }
 
 // Two cones `k1` and `k2` touching at `m` with one tangent plane there, `m` on each beside it
 // (`m coincident k1`): every direction along one cone at `m` is along the other (`k1
 // tangent(at: m) k2`, §6.21).  Two equations.  What a hypoid's pitch cones do at the mean point.
 //
 //   std.TangentCones(gc, pc, M)
-component TangentCones(k1: group, k2: group, m: point) {
+component TangentCones(k1: set, k2: set, m: point) {
   k1 tangent(at: m) k2
 }
 
@@ -411,7 +411,7 @@ chamfer(d) X := X chamfer(d: d) X
 //   disc := { p | p inside wall; p inside top; p inside bottom; p inside std.Rounded(wall, top, r: 2mm) }
 
 // Within reach of a ball of radius `r` lying within both `a` and `b`.
-component Rounded(a: group, b: group, r: Length) := { p |
+component Rounded(a: set, b: set, r: Length) := { p |
   centres := { c | c distance(>= r, side: inside) a; c distance(>= r, side: inside) b }
   distance(p, centres) <= r
 }
@@ -419,7 +419,7 @@ component Rounded(a: group, b: group, r: Length) := { p |
 // Short of the flat through each set's point `la` (on `a`) and `lb` (on `b`) from the other's
 // surface: for a point within both, its distance from each surface is its distance from what is
 // outside that set.
-component Chamfered(a: group, b: group, la: Length, lb: Length) := { p |
+component Chamfered(a: set, b: set, la: Length, lb: Length) := { p |
   out_a := { q | q outside a }
   out_b := { q | q outside b }
   distance(p, out_a) / lb + distance(p, out_b) / la >= 1

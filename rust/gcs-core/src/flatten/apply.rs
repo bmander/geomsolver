@@ -108,6 +108,7 @@ impl<'a> Walk<'a> {
         scope.anonymous = true;
         scope.cyc = None;
         scope.pass = Pass::Itself;
+        scope.held = u.scope.held;
         scope.ring = u.scope.ring.clone();
         for c in u.scope.in_class.0.iter().chain(&u.rel.class.0) {
             if !scope.in_class.has(c) {
@@ -195,6 +196,13 @@ impl<'a> Walk<'a> {
                 continue;
             }
             let StmtKind::Relation(r) = &mut st.kind else { continue };
+            // a set measured from states its point's equalities as bounds at their numbers, but
+            // for a use of another set, whose own body is held when it is applied (#192)
+            if sc.held {
+                if let Some(w) = r.form.written_mut().filter(|w| !super::sets::may_use(w)) {
+                    w.held();
+                }
+            }
             sc.written.get_or_insert(st.id);
             st.id = u.st.id;
             st.span = u.st.span;
