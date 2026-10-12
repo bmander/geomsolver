@@ -1235,12 +1235,7 @@ fn plane_datum(sk: &Sketch, sel: &Selection, current: &crate::plane::Basis, name
     use crate::space::{across, add, scale, sub};
     let Selection { points, rays, planes } = sel;
     let off = |b: &Basis| Basis { o: add(b.o, scale(b.normal(), set_off(sk))), ..*b };
-    // the points the plane passes through come first, as they are selected: the plane through
-    // each, which a point drawn in a plane may be dropped on (`v0 coincident a`, a row), where
-    // `a coincident v0` would draw the point in it too (§6.7)
-    let through_it: Vec<Said> =
-        points.iter().map(|(p, _)| said(name, "coincident", p.clone())).collect();
-    let (frame, mut said): (Basis, Vec<Said>) = match (points.len(), rays.len(), planes.len()) {
+    let (frame, mut rest): (Basis, Vec<Said>) = match (points.len(), rays.len(), planes.len()) {
         (0, 0, 0) => (off(current), Vec::new()),
         (1, 0, 0) => (Basis { o: points[0].1, ..*current }, Vec::new()),
         (3, 0, 0) => {
@@ -1286,8 +1281,12 @@ fn plane_datum(sk: &Sketch, sel: &Selection, current: &crate::plane::Basis, name
                          points, a point and a line or axis, two lines or axes, or a plane"
             .into()),
     };
-    let mut all = through_it;
-    all.append(&mut said);
+    // the points the plane passes through come first, as they are selected: the plane through
+    // each, a row, so it may lie on a point's own plane — `a coincident v0` would draw the point
+    // in it too (§6.7)
+    let mut all: Vec<Said> =
+        points.iter().map(|(p, _)| said(name, "coincident", p.clone())).collect();
+    all.append(&mut rest);
     let seed = |d: [f64; 3]| vec![syntax::Kid::Hint(syntax::KidSeed { v: seed_round(d), axis: true,
         ..Default::default() })];
     let decl = gesture_decl(EntKind::Plane, name, vec![seed(frame.u), seed(frame.v), Vec::new()],

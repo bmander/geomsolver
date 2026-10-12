@@ -781,18 +781,21 @@ fn a_lifted_program_keeps_its_planes_over_lines() {
     let mut sk = e.sketch.clone();
     assert!(solve(&mut sk, SolveOpts::default()).success);
     let (text, again) = relift(&sk);
-    let count = |s: &Sketch, k: CKind| s.user_constraints().iter().filter(|c| c.kind == k).count();
+    // the axes along lines are intrinsic, the rows a twin replaces stated
+    let all = |s: &Sketch, k: CKind| s.constraints.iter().filter(|c| c.kind == k).count();
+    let stated = |s: &Sketch, k: CKind| s.user_constraints().iter().filter(|c| c.kind == k).count();
     let mut back = again.sketch.clone();
-    assert_eq!(back.constraints.iter().filter(|c| c.kind == CKind::Parallel3).count(),
-               sk.constraints.iter().filter(|c| c.kind == CKind::Parallel3).count(), "{text}");
-    assert_eq!(count(&back, CKind::ProjectSolved), count(&sk, CKind::ProjectSolved), "{text}");
-    assert_eq!(count(&back, CKind::PointOnPlane), 0, "{text}");
+    assert_eq!(all(&back, CKind::Parallel3), all(&sk, CKind::Parallel3), "{text}");
+    assert_eq!(stated(&back, CKind::ProjectSolved), stated(&sk, CKind::ProjectSolved), "{text}");
+    assert_eq!(stated(&back, CKind::PointOnPlane), 0, "{text}");
     let twins: usize = back.twins.values().map(Vec::len).sum();
-    assert_eq!(twins, count(&sk, CKind::PointOnPlane), "{text}");
+    assert_eq!(twins, stated(&sk, CKind::PointOnPlane), "{text}");
     assert!(solve(&mut back, SolveOpts::default()).success);
-    let mut drawn = back.clone();
-    drawn.points.truncate(sk.points.len());
-    same_points(&sk, &drawn);
+    // every point the drawing had stands where it stood; the twins come after them
+    for i in 0..sk.points.len() {
+        let (x, y) = (sk.world_point(i), back.world_point(i));
+        assert!(norm(sub(x, y)) < 1e-7, "p{i}: {x:?} against {y:?}");
+    }
     let d = diagnose(&mut back, DiagnoseOptions::default());
     assert_eq!(d.dof, 0, "{}", gcs_core::diagnose::summary(&d));
 }

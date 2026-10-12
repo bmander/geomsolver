@@ -203,32 +203,29 @@ fn deleting_a_plane_keeps_the_others() {
 }
 
 /// **A point drawn in one plane, said on another, is drawn in that one too** (§6.7, #211):
-/// `O coincident G` of a point drawn in the top is `O := point in std.top, G` said as a relation —
-/// drawn in `G` by a twin, read there by what is drawn there, and no row of its own.
+/// `O coincident G` of a point drawn in the top is `O := point in std.top, G` said as a
+/// relation — drawn in `G` by a twin, read there by what is drawn there, and no row of its own.
 #[test]
 fn a_point_said_on_another_plane_is_drawn_there() {
     let drawn = "in G {\n  b := point hint((10, -8))\n  t := point hint((10, 8))\n  \
                  k := arc(center: O, start: b, end: t)\n  q := point hint((30, 5))\n}\n\
                  O distance(25) q\n";
-    let written = solved(&format!("{FOLDED}O := point hint((10, 0)) in std.top, G\n{drawn}"));
-    {
-        let said = "O coincident G";
-        let mut e = solved(&format!("{FOLDED}O := point hint((10, 0)) in std.top\n{said}\n{drawn}"));
-        assert_eq!(kinds(&e), vec![CKind::Distance], "{said}");
-        let (o, g) = (ent(&e, "O").i(), ent(&e, "G").i());
-        assert_eq!(e.sketch.twins.get(&o).map(Vec::len), Some(1), "{said}");
-        let centre = e.sketch.arcs[0].center as usize;
-        assert_eq!(e.sketch.plane_of(centre), Some(g));
-        let (a, b) = (e.sketch.world_point(centre), e.sketch.world_point(o));
-        assert!(a.iter().zip(&b).all(|(x, y)| (x - y).abs() < 1e-9), "{a:?} {b:?}");
-        assert!(b[1].abs() < 1e-9 && b[2].abs() < 1e-9, "on the x axis: {b:?}");
-        // the drawing `in std.top, G` writes, unknown for unknown and row for row
-        let mut w = written.sketch.clone();
-        let (d, dw) = (diagnose(&mut e.sketch, DiagnoseOptions::default()),
-                       diagnose(&mut w, DiagnoseOptions::default()));
-        assert_eq!((d.dof, d.n_params, d.n_equations), (dw.dof, dw.n_params, dw.n_equations));
-        assert!(d.implied.is_empty() && d.over.is_empty(), "{said}");
-    }
+    let mut written = solved(&format!("{FOLDED}O := point hint((10, 0)) in std.top, G\n{drawn}"));
+    let mut e = solved(&format!("{FOLDED}O := point hint((10, 0)) in std.top\nO coincident G\n\
+                                 {drawn}"));
+    assert_eq!(kinds(&e), vec![CKind::Distance]);
+    let (o, g) = (ent(&e, "O").i(), ent(&e, "G").i());
+    assert_eq!(e.sketch.twins.get(&o).map(Vec::len), Some(1));
+    let centre = e.sketch.arcs[0].center as usize;
+    assert_eq!(e.sketch.plane_of(centre), Some(g));
+    let (a, b) = (e.sketch.world_point(centre), e.sketch.world_point(o));
+    assert!(a.iter().zip(&b).all(|(x, y)| (x - y).abs() < 1e-9), "{a:?} {b:?}");
+    assert!(b[1].abs() < 1e-9 && b[2].abs() < 1e-9, "on the x axis: {b:?}");
+    // the drawing `in std.top, G` writes, unknown for unknown and row for row
+    let d = diagnose(&mut e.sketch, DiagnoseOptions::default());
+    let dw = diagnose(&mut written.sketch, DiagnoseOptions::default());
+    assert_eq!((d.dof, d.n_params, d.n_equations), (dw.dof, dw.n_params, dw.n_equations));
+    assert!(d.implied.is_empty() && d.over.is_empty());
 }
 
 /// The point another component declares, said on a plane only the second component knows: the
