@@ -287,6 +287,20 @@ impl<'a> Walk<'a> {
                     self.instantiating.pop();
                 }
                 StmtKind::Block(b) => {
+                    // made once in this scope, or not at all (#210): no copy, no prefix, so what
+                    // it declares is named as if written beside it, and the numbers it defines
+                    // are its own
+                    if b.kind == BlockKind::When {
+                        match super::values::condition(&b.count, vals, scope, self.units) {
+                            Ok(true) => {
+                                let mut sub = vals.clone();
+                                self.body(&b.body, scope, &mut sub, path, depth + 1);
+                            }
+                            Ok(false) => {}
+                            Err((code, message)) => self.once(code, b.head, message),
+                        }
+                        continue;
+                    }
                     if b.over.is_some() {
                         // how many is the chain's, and the chain may be a name no walk has
                         // reached yet (a forward reference, or one inside an instance written

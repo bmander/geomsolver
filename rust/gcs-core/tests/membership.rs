@@ -81,7 +81,7 @@ fn a_line_on_a_plane_is_drawn_in_it() {
 
 /// The first plane a statement puts a point standing in space on is the one it is drawn in;
 /// another is a row in space.  A point a declaration draws in a view is drawn in the other plane
-/// too (§6.7 [0.72], `tests/two_planes.rs`): a twin, and no row.
+/// too (§6.7 [0.74], `tests/two_planes.rs`): a twin, and no row.
 #[test]
 fn the_first_plane_draws_and_another_is_a_row() {
     let e = read(&format!("{SIDE}p := point\np coincident side\np coincident std.top\n"));

@@ -190,6 +190,13 @@ pub fn meridian_region(recipe: &Json,seam: V) -> Result<Result<(Profile,V,V),Str
         }
         Ok(found)
     };
+    // a conic's arc: a rational quadratic Bézier, its ends weighed alike
+    let conic = |b: &super::nurbs::BSpline| -> Option<([V;3],f64)> {
+        if b.degree != 2 || b.poles.len() != 3 || b.knots.len() != 6 { return None }
+        let w = b.weights.as_deref().unwrap_or(&[1.;3]);
+        if (w[0]-w[2]).abs() > 1e-12*w[0] { return None }
+        Some(([b.poles[0],b.poles[1],b.poles[2]],w[1]/w[0]))
+    };
     let mut line = None;
     for n in nodes {
         if field(n,"kind")?.as_str() == "revolve" && ball(n)?.is_none() { line = Some((vec3(field(n,"origin")?),unit(vec3(field(n,"axis")?)))); break }
@@ -223,7 +230,8 @@ pub fn meridian_region(recipe: &Json,seam: V) -> Result<Result<(Profile,V,V),Str
                                 let [a0,a1] = span.unwrap_or([0.,std::f64::consts::TAU]);
                                 (0..=16).map(|k| arc_at(&frame,r,a0+(a1-a0)*k as f64/16.)).collect()
                             }
-                            ProfileEdge::Spline(_) => return Ok(Err(format!("`{name}`'s profile has a spline"))),
+                            ProfileEdge::Spline(ref b) if conic(b).is_some() => b.poles.clone(),
+                        ProfileEdge::Spline(_) => return Ok(Err(format!("`{name}`'s profile has a spline"))),
                         };
                         for p in pts {
                             let d = sub(p,origin);
@@ -246,7 +254,10 @@ pub fn meridian_region(recipe: &Json,seam: V) -> Result<Result<(Profile,V,V),Str
                             let sense = (x[0]*y[1]-x[1]*y[0]).signum();
                             Seg::Arc {c,r,a0:(p0[1]-c[1]).datan2(p0[0]-c[0]),sweep:sense*(w1-w0)}
                         }
-                        ProfileEdge::Spline(_) => unreachable!("refused above"),
+                        ProfileEdge::Spline(ref b) => {
+                            let ([a,m,c],w) = conic(b).expect("refused above");
+                            Seg::Conic {a:q(a),m:q(m),b:q(c),w}
+                        }
                     }).collect()).collect())
                 }
             }
@@ -291,6 +302,10 @@ pub(crate) fn region_profile(
         Seg::Line {a,b} => ProfileEdge::Line {a:at(a),b:at(b)},
         Seg::Arc {c,r,a0,sweep} => ProfileEdge::Arc {frame:Frame::new(at(c),normal,seam),r,
             span:Some(if sweep > 0. { [a0,a0+sweep] } else { [a0+sweep,a0] })},
+        // a conic's arc is the rational quadratic B-spline over the same three points, exactly
+        Seg::Conic {a,m,b,w} => ProfileEdge::Spline(std::sync::Arc::new(super::nurbs::BSpline {degree:2,
+            knots:vec![0.,0.,0.,1.,1.,1.],poles:vec![at(a),at(m),at(b)],
+            weights:(w != 1.).then(|| vec![1.,w,1.])})),
     }).collect()).collect();
     Profile {origin,normal,loops,names}
 }

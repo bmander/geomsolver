@@ -25,7 +25,7 @@ component ConeSpan(generator: line, ax: line) {
 
 // The meridian stands `offset` off `generator` along each rib, turned `lean` from the direction
 // toward the axis: 0deg for the root and the back, 180deg for the tip. Its ends `p` and `q` are
-// public, a meridian the end relief can read (blank/ends.sv's preview).
+// public.
 component ConeBoundary(generator: line, ax: line, offset: Length, lean: Angle) {
   private span := ConeSpan(generator, ax)
   // Seeds, rough: a step along each rib turned `lean`, as the meridian stands, and the feet of

@@ -773,7 +773,7 @@ fn a_lifted_program_keeps_its_rays() {
 
 /// The hypoid's planes over its generators lift as planes over the lines, not as stated axes
 /// beside them, and read back solve to the same points.  A point of one view put on another
-/// plane by a row lifts as `p coincident P`, which draws it there too (§6.7 [0.72]): a twin, its
+/// plane by a row lifts as `p coincident P`, which draws it there too (§6.7 [0.74]): a twin, its
 /// image in `P`, beside every point the drawing had.
 #[test]
 fn a_lifted_program_keeps_its_planes_over_lines() {
