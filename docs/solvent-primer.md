@@ -887,6 +887,11 @@ unbound as an unknown (`r: hint(10mm)`; the solve writes it back):
 - `gc := std.Cone(gax, half: 60deg)`: apex at the line's start, opening toward its end; a point on
   it lies on that nappe (either generator within the axis's own view, the seed picking).
 - `std.TangentCones(gc, pc, M)` is `gc tangent(at: M) pc`.
+- `inner := std.ConeThrough(ax, q, lean: 20deg)`: the cone about `ax` through `q`, its radius
+  growing `tan(lean)` along `ax` (negative narrows it); its inside is always nearer `ax`. Its apex
+  is the instance's (`inner.apex`), made once: a family's body makes once whatever reads nothing
+  of its point.
+- `top := std.Level(o, ax, d: 2mm)`: the plane `d` along `ax` from `o`; inside is behind it.
 
 `p coincident ball` puts a point on any of them and `l tangent shaft` makes a line touch one.
 `sphere_cone_cylinder.sv` shows one of each; 2.14 lays out pitch cones.
@@ -901,7 +906,18 @@ region is a bound, so a choice of root.
 **Offsets.** `p distance(4mm, side: outside) k` puts `p` 4mm off `k`'s surface (`side:` required);
 `p inside(2mm) pitch` is within 2mm outside it; `tip := std.Offset(pitch, d: 2mm)` is the set 2mm
 out. `S.surface` is `S` with each bound made an equality: of `{ q | q inside(2mm) pitch }`, the
-offset surface. A drawn point measured from a set gets a foot on it, found by the solve.
+offset surface. A drawn point measured from a set gets a foot on it, found by the solve. A
+distance from `{ q | q outside S }` is from `S`'s surface, sides turned: so `std.Rounded(beyond,
+tip, r: 0.3mm)` rounds the corner where a region is outside `inner` (`beyond := { q | q outside
+inner }`).
+
+**A crown tooth as a region**, and its land: two `ConeThrough` flanks, two `Level`s, the tip's
+corners rounded — `tooth := { p | p outside inner; p inside outer; p inside back; p outside tip;
+p inside std.Rounded(beyond, above, r: …); p inside std.Rounded(outer, above, r: …) }` — is a
+revolution, and `solid(tooth)` swept under a generating motion cuts a member exactly. A region
+has no tip line for `distance(>= d) tip`: draw the land's ends on the tip, the flanks through
+them, and bound the land between them (`eb distance(>= 0.01mm, along: left) ea`), which picks the
+root as the drawn section's bound did.
 
 ### 1.14 Faces and solids
 

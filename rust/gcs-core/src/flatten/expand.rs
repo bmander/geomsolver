@@ -277,13 +277,21 @@ impl<'a> Walk<'a> {
                     }
                     let mut instance_path = path.to_vec();
                     instance_path.push(PathStep::Instance(st.id));
-                    // an instance of a family of sets is the set, its formals bound (§6.21)
+                    // an instance of a family of sets is the set, its formals bound (§6.21) —
+                    // and what its body makes without reading its point is the instance's,
+                    // made once here (F3)
+                    let mut own = Vec::new();
                     if let Some(lit) = &comp.set {
                         let name = sc.prefix().trim_end_matches('.').to_string();
-                        self.set_made(name, lit, &sc, depth + 1, Made { st, path, outer: scope });
+                        let (made, lit) = super::sets::instance_part(lit);
+                        own = made;
+                        self.set_made(name, &lit, &sc, depth + 1, Made { st, path, outer: scope });
                     }
                     self.instantiating.push(comp);
                     self.body(&comp.body, &sc, &mut sub_vals, &instance_path, depth + 1);
+                    if !own.is_empty() {
+                        self.body(&own, &sc, &mut sub_vals, &instance_path, depth + 1);
+                    }
                     self.instantiating.pop();
                 }
                 StmtKind::Block(b) => {

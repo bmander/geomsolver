@@ -184,6 +184,38 @@ component Cone(about: line, half: Angle) := { p |
   about angle(half) g
 }
 
+// A cone about the line `about` through the point `q`, its radius growing `tan(lean)` per unit
+// along `about` (a negative lean narrows it): `std.Cone`'s about the line `.spine`, from the apex
+// on `about` where the generator through `q` meets it, toward where the cone opens — along
+// `about` for a positive lean, against it for a negative one — so its inside is always the side
+// nearer `about`.  The apex and the spine read nothing of the set's point, so they are the
+// instance's (`.apex`, `.spine`), made once and placed by `q` (§6.21); a point on it, a line
+// touching it, `inside`, `outside` and an offset read as a cone's.  `lean` is not 0: that is a
+// cylinder (`std.Cylinder`).  A gear cutter's flanks: the cones through the pitch points leaning
+// by the pressure angle.
+//
+//   inner := std.ConeThrough(cut_ax, lp, lean: 20deg)
+//   p outside inner
+component ConeThrough(about: line, q: point, lean: Angle) := { p |
+  apex := point hint(at: about.p1)
+  private ahead := point hint(at: about.p2)
+  apex coincident about
+  ahead coincident about
+  apex distance(lean / abs(lean), along: about) ahead
+  construction spine := line(apex, ahead)
+  private construction through := line(apex, q)
+  spine angle(abs(lean)) through
+  private construction g := line(apex, p)
+  spine angle(abs(lean)) g
+}
+
+// The plane square to the line `along` at the ordinate `d` along it from `o`: the points `d` from
+// `o` along `along` (§6.21), a set and nothing drawn.  Its inside is behind it, the side `along`
+// points away from (`p inside top` is at most `d`).
+//
+//   top := std.Level(c, cut_ax, 2mm)
+component Level(o: point, along: line, d: Length) := { p | o distance(d, along: along) p }
+
 // The set `S` offset by `d`: the points `d` outside its surface (§6.21) — a sphere's, a
 // cylinder's or a cone's grown by `d` — a set and nothing drawn.  `p inside std.Offset(S, d)` is
 // `p inside(d) S`, within `S` grown by `d`; a point on it is `p coincident tip`, its foot on `S`

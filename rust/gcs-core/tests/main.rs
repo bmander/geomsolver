@@ -146,6 +146,7 @@ mod space;
 mod spatial;
 mod spatial_lang;
 mod spatial_surfaces;
+mod crown_regions;
 mod admission;
 mod contact_trace;
 mod export_contracts;

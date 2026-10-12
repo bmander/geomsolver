@@ -174,11 +174,18 @@ impl RevolvedSurface {
     /// A region solid's faces (§6.21): each step of its meridian turned once about its axis,
     /// named by the term it came from — but a line on the axis, which turns to no face.
     pub(crate) fn of_meridian(m: &super::region::Meridian,solid: &str) -> Vec<Self> {
+        Self::meridian_loops(m,solid).into_iter().flatten().flatten().collect()
+    }
+
+    /// `of_meridian` loop by loop, in the meridian's order, a line on the axis `None`: the
+    /// profile a region tool's sweep is read over, as a revolution's faces' loops are.
+    pub(crate) fn meridian_loops(m: &super::region::Meridian,solid: &str)
+        -> Vec<Vec<Option<Self>>> {
         use crate::brep::planar::Seg;
         let basis = Basis { u: m.seam,v: m.axis,o: m.origin };
         let at = |q: [f64;2]| basis.lift(q[0],q[1]);
         let on_axis = |q: [f64;2]| q[0].abs() <= crate::solid::cad::AXIS_TOLERANCE;
-        m.region.loops.iter().flatten().filter_map(|step| {
+        m.region.loops.iter().map(|lp| lp.iter().map(|step| {
             let meridian = match step.seg {
                 Seg::Line {a,b} if on_axis(a) && on_axis(b) => return None,
                 Seg::Line {a,b} => Meridian::Line {start: at(a),delta: sub(at(b),at(a))},
@@ -189,7 +196,7 @@ impl RevolvedSurface {
             let name = format!("{solid}.{}",m.name(step.tag));
             Some(Self {name,meridian,origin: m.origin,axis: m.axis,sweep: std::f64::consts::TAU,
                 v_domain: [0.,1.]})
-        }).collect()
+        }).collect()).collect()
     }
 
     /// Original source parameters: an angular span restricts v without renumbering it.
