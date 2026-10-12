@@ -136,6 +136,11 @@ struct Scope {
     /// the application stamps the use's own over it (`apply`): what a set used there is applied
     /// under (`begin_nth`), so two uses in one body stand apart by what the source wrote.
     written: Option<crate::syntax::StmtId>,
+    /// Under a set measured from (#183 F2): the point its body is applied to is a probe whose
+    /// conditions are terms, so each equality a relation states is held as a bound at its number
+    /// (`Written::held`, `apply`) — the one rule a region's term is read by (#192).  Carried into
+    /// every use applied under it.
+    held: bool,
 }
 
 impl Scope {
@@ -206,8 +211,6 @@ pub struct Expansion {
     /// The solids a block runs over the faces of, whose faces were not given (#183 F4): the
     /// elaborator names them once it has built the solids, and expands again.
     pub face_repeats: BTreeSet<String>,
-    /// The points of sets measured from (#183 F2), by absolute key.
-    pub inner_probes: Vec<String>,
     /// The plane each face of a solid used as a set is drawn in, under the hidden name its
     /// carrier reads it by (`faces`), for the elaborator to bind once memberships are in.
     pub face_planes: Vec<FacePlane>,
@@ -292,7 +295,9 @@ struct Walk<'a> {
     /// The document says `use std`, so it has the standard datums (`StandardDatums`).
     standard_datums: bool,
     group_names: BTreeSet<String>,
-    group_bindings: Vec<(String, Span)>,
+    /// A group or set formal's alias key, where it was given, and which of the two it wants:
+    /// checked against what the alias reaches once every name is known (`resolve`).
+    group_bindings: Vec<(String, Span, crate::syntax::Ty)>,
     group_fields: Vec<(String, Span)>,
     /// The dotted names a dimension's text reads that nothing numeric in scope answers to, with
     /// where each was written and the scope to resolve it in: judged once every name is known
@@ -342,7 +347,6 @@ struct Walk<'a> {
     /// (#183 F4) — see `Expansion::face_repeats`.
     faces: BTreeMap<String, Vec<crate::solid::faces::FacePath>>,
     face_repeats: BTreeSet<String>,
-    inner_probes: Vec<String>,
     /// See `Expansion::face_planes` and `face_axes`.
     face_planes: Vec<FacePlane>,
     face_axes: Vec<FaceAxis>,
@@ -401,7 +405,7 @@ pub fn expand_component(prog: &Program, comp: &Component, units: Units) -> Expan
     let mut vals: BTreeMap<String, Aff> = BTreeMap::new();
     for f in &comp.formals {
         match f.ty {
-            Ty::Ent(_) | Ty::Group => {
+            Ty::Ent(_) | Ty::Group | Ty::Set => {
                 w.names.insert(f.name.text.clone());
             }
             // a variable of the curve: a free value named after itself, which the ordinary
@@ -470,7 +474,6 @@ impl<'a> Walk<'a> {
             probes: Vec::new(),
             faces: BTreeMap::new(),
             face_repeats: BTreeSet::new(),
-            inner_probes: Vec::new(),
             face_planes: Vec::new(),
             face_axes: Vec::new(),
         }
@@ -531,7 +534,6 @@ impl<'a> Walk<'a> {
             twins: self.twins,
             probes: self.probes,
             face_repeats: self.face_repeats,
-            inner_probes: self.inner_probes,
             face_planes: self.face_planes,
             face_axes: self.face_axes,
         }

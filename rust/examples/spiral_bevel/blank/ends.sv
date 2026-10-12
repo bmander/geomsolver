@@ -15,7 +15,7 @@ use blank.sphere
 // the tip are put on it where the axial view cuts it, on the cone line's side: seeded off the
 // cone line's mean point away from the axis, each meets a circle about the apex whose other
 // crossing is across the apex.
-component EndChamfer(apex: point, rim: point, rim_in: point, cone_line: line, tip: group,
+component EndChamfer(apex: point, rim: point, rim_in: point, cone_line: line, tip: set,
                      ax: line, size: Length) {
   private to_rim := line(apex, rim)
   private to_rim_in := line(apex, rim_in)

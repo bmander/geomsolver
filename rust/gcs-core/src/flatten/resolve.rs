@@ -848,9 +848,16 @@ impl<'a> Walk<'a> {
                 self.err(Code::E103, span, format!("group member `{key}` names no value or geometry"));
             }
         }
-        for (key, span) in self.group_bindings.clone() {
-            // a set fills a group formal too (#183: a region's bounding sets, `std.Rounded`)
-            if !alias.get(&key).is_some_and(|target| self.group_names.contains(target) || self.sets.contains_key(target)) {
+        // a group formal takes a group or an instance, a set formal a set — a named one or a set
+        // family's instance, which is both (`s.r` of a sphere) — so a set handed where members
+        // are read is said at the call, not as a missing member far from it (#191)
+        for (key, span, ty) in self.group_bindings.clone() {
+            let target = alias.get(&key);
+            if ty == crate::syntax::Ty::Set {
+                if !target.is_some_and(|t| self.sets.contains_key(t)) {
+                    self.err(Code::E103, span, format!("`{key}` wants a set"));
+                }
+            } else if !target.is_some_and(|t| self.group_names.contains(t)) {
                 self.err(Code::E103, span, format!("`{key}` wants a group or layout instance"));
             }
         }
@@ -1064,7 +1071,7 @@ impl<'a> Walk<'a> {
             .into_iter()
             .find(|i| {
                 self.prog.components[i.comp].formals.iter()
-                    .any(|f| f.name.text == swept && !matches!(f.ty, Ty::Ent(_) | Ty::Group))
+                    .any(|f| f.name.text == swept && !matches!(f.ty, Ty::Ent(_) | Ty::Group | Ty::Set))
             })
             .map(|i| crate::syntax::CurveOf {
                 instance: i.prefix.clone(),

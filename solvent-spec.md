@@ -1,6 +1,15 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.70 — October 2026**
+**Specification, Draft 0.71 — October 2026**
+
+**[0.71] A set formal, and a side is a bound.** A component takes a set as a `set` formal
+(`component Rounded(a: set, b: set, r: Length)`), filled by a named set or a set family's
+instance; a `group` formal no longer takes a named set, nor a `set` formal a group, each **E103**
+at the argument (§4.1, §6.21). `std.Rounded`, `std.Chamfered`, `std.Offset`, `std.TangentCones`
+and `std.CircleOnSphere` declare theirs so. A side of a set is a bound on the signed distance
+from its surface, so the outside of a set of one side is that side turned round — outside `{ q |
+q inside(1mm) S }` is beyond `S` grown by 1mm — and a set's surface is its bounds made
+equalities, a grown side's the offset surface (§6.21).
 
 **[0.70] A face path is read from its solid, and a member is no name.** A face path names a face
 by the route through its solid's operands, segment by segment from the first: `pad.plate.near`
@@ -666,12 +675,12 @@ component Name(p1: Type1, p2: Type2, ...) {
 
 ### 4.1 Parameters
 
-Parameters are passed by name or position at instantiation. A parameter of entity type (`Point`, `Circle`, `Line`, `Plane`, **[0.42]** `Axis`) is **bound by aliasing** (P1): the formal name and the actual argument denote the same entity. A parameter of value type (`Int`, `Scalar`, `Length`, `Angle`, **[0.17]** `Side`) is a compile-time or definitional value; it contributes no unknowns. A `group` formal bundles values and geometry references (§8.1). A `Side` is one of the words `left` and `right` (§9.2) and is not a number: it may be passed on to another instance and written in a selector, and nothing else.
+Parameters are passed by name or position at instantiation. A parameter of entity type (`Point`, `Circle`, `Line`, `Plane`, **[0.42]** `Axis`) is **bound by aliasing** (P1): the formal name and the actual argument denote the same entity. A parameter of value type (`Int`, `Scalar`, `Length`, `Angle`, **[0.17]** `Side`) is a compile-time or definitional value; it contributes no unknowns. A `group` formal bundles values and geometry references (§8.1). **[0.71]** A `set` formal takes a set (§6.21): a named one (`S := { p | … }`) or an instance of a set family (`std.Sphere(c, r: 5mm)`), which is the set — written by name, since an argument is a reference, not a call; a set's surface (`S.surface`) is not one yet. It is given by position, as an entity is, and used in the body by its name wherever a set may stand (`p coincident s`, `p inside s`, `distance(p, s)`). A named set given to a `group` formal and a group given to a `set` formal are each **E103** at the argument; a family's instance is both a set and an instance, so it fills either. A `Side` is one of the words `left` and `right` (§9.2) and is not a number: it may be passed on to another instance and written in a selector, and nothing else.
 
 **[0.17] Which way is a word, not a sign.** A distance measured **from a line** — a point to a line, a line to a line — is a **magnitude**: its solution set is *both* sides, and which one a solver finds is the seed's business (P3), as it is in every other sketcher. A negative one is an error (**E040**) wherever the number comes from, including a component's argument, since the kernel cannot tell one side from the other and the minus therefore said nothing a drawing could show. A statement that must pin a side writes the word — `p distance(12, side: left) ax`, left being of the line's own `p1 → p2` — and so does a tangency (`side: left | right`, which was `side: -1`). Where a sign is *arithmetic* rather than a convention — the run and the rise, signed from the first point to the second, and the directed angle of §9.4 — it stays a sign, because a component computes it from coordinates it is given; each gains the word that says the same thing in the open (`along: right | left | up | down`, `sense: cw | ccw`), and a document SHOULD prefer it. A component takes a side as a value of the type **`Side`** (`s: Side`, `side: s`), which is a word and not a number: encoded as ±1 it would put the unreadable idiom back one level down, inside every helper.
 
-**Labels are mandatory for numbers and sides.** A positional argument MUST bind an entity
-or group formal and MUST precede every labelled argument; either violation is **E004**.
+**Labels are mandatory for numbers and sides.** A positional argument MUST bind an entity,
+group or set formal and MUST precede every labelled argument; either violation is **E004**.
 An argument MUST NOT be supplied twice. For example, `Frame(layout, dims: vtwin_dims)` passes
 a layout positionally and a dimension group by label, while `Cylinder(axes, fw: 12mm,
 dims: vtwin_dims)` labels the numeric face-wall thickness.
@@ -1873,8 +1882,8 @@ its placement and classes the statement's; a dimension the body states is drawn 
 body's is, and its derivative draws nothing. A set named anywhere else a reference stands —
 `radius(5) ball`, a face's loop — is **E040**; `coincident` between two sets is **E040**, with
 parentheses **E040**; a set whose body uses itself, however indirectly, is
-**E003**. A set may be handed to a component as a `group` formal, as an instance is, and used
-there by the formal's name (`std.CircleOnSphere(k, ball, view)`).
+**E003**. A set is handed to a component as a `set` formal **[0.71]** (§4.1) and used there by
+the formal's name (`std.CircleOnSphere(k, ball, view)`); a `group` formal refuses a named set.
 
 **Set algebra** **[0.54]**. A body's statements all hold of its point, so **intersection is
 conjunction**: `on_both := { p | p coincident ball; p coincident shaft }` is the points on both, and
@@ -1890,7 +1899,10 @@ written. So `q inside std.Sphere(c, r: 5)` is within 5 of `c`, `q inside std.Cyl
 within 2 of the line, `q inside std.Cone(l, half: 30deg)` within 30° of its axis seen from its apex
 (in space, on either side of the axis in a view too **[0.65]**), and `q inside { p | p
 coincident P; p distance(5) o }` the disc. A region's own bound is kept by `inside` and turned
-round by `outside`. A region is met by conjunction too, so `blank := { p | p inside tip; p inside
+round by `outside`. **[0.71]** A side is a bound — on the signed distance from a set's surface,
+at most 0 for `inside`, at most `d` for `inside(d)` (§6.21 below) — so `outside` a set whose one
+statement is a side of another turns that side round: outside `{ q | q outside toe }` is inside
+`toe`, outside `{ q | q inside(1mm) S }` is beyond 1mm outside `S`. A region is met by conjunction too, so `blank := { p | p inside tip; p inside
 heel; p outside toe }` is the three at once, and **`outside` says a difference** for regions: inside
 `heel` and outside `toe`. Refused (**E040**): `outside` a set stating no one number — a conjunction,
 whose outside is a union, a choice of root — or an interval (`in:`); `inside` or `outside` a set
@@ -1968,7 +1980,10 @@ is stated of, and is read as what that body says: points on two faces (`crease :
 coincident a; q coincident b }`) are the edges they share, on three the corners, on one its
 face; and any conjunction of a face's side, a distance from a face's surface, a surface, a
 distance from a point and the set's own bounds is read for its nearest point, exactly. `S.surface`
-of a region of one bound is its surface. A body stating anything else, or a set measured in terms
+of a region of one bound is its surface: **[0.71]** each bound made the equality at its number, a
+side's the surface it is a side of and a grown side's the offset surface (`{ q | q inside(1mm) S
+}.surface` is 1mm outside `S`); an interval's two surfaces are no one surface. The set's own
+equalities are conditions on its point as its bounds are, each held at its number. A body stating anything else, or a set measured in terms
 of itself, is **E040**. `distance(p, E) <= distance(p, M)`, with `E` on faces whose surfaces `M`
 is on, is the points nearer the edge than wherever else the surfaces meet: by the edge, and not
 past where it ends.
@@ -2946,6 +2961,7 @@ formals        = formal { "," formal } ;
 formal         = IDENT ":" type ;
 type           = "Int" | "Scalar" | "Length" | "Angle" | "Side"      (* §4.1 [0.17] *)
                | "group"                                             (* §8.1 [0.35] *)
+               | "set"                                               (* §4.1, §6.21 [0.71] *)
                | ekw | "curve" ;  (* an entity, in either case: `f: plane`, `p: Point`; `Frame`
                                      was folded into `Plane` in 0.15 *)
 

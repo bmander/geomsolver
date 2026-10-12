@@ -145,9 +145,6 @@ fn say_once(diags: &mut Vec<Diag>, span: Span, stmt: StmtId, message: String) {
 #[derive(Default)]
 pub(super) struct Probes {
     pub terms: BTreeMap<usize, Vec<crate::model::RegionTerm>>,
-    /// The points of sets measured from (#183 F2), whose equalities are terms too: a set's
-    /// surface, a curve where two meet.
-    pub inner: BTreeSet<usize>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -599,7 +596,7 @@ pub(super) fn constrain(
     };
     // a bound a set put on a region solid's probe is a term of the solid, never a row (§6.21)
     if let Some(probe) = probe_of(sk, &c, probes) {
-        match region_term(sk, &c, probe, grow, probes.inner.contains(&probe)) {
+        match region_term(sk, &c, probe, grow) {
             Ok(t) => probes.terms.get_mut(&probe).expect("a probe's terms").push(t),
             Err(message) => {
                 diags.push(Diag { code: Code::E040, span: st.span, stmt: Some(st.id), message })
@@ -632,17 +629,13 @@ fn probe_of(sk: &Sketch, c: &Constraint, probes: &Probes) -> Option<usize> {
 /// What a bound on a region solid's probe bounds (§6.21), read off the constraint's **kind** and
 /// never the set it came from: a distance from a point is a ball, from a line a cylinder, the
 /// angle from a line seen from its start a cone, an ordinate along a plane's normal a half-space.
-fn region_term(sk: &Sketch, c: &Constraint, probe: usize, grow: Option<crate::model::TermNumber>,
-               inner: bool)
+fn region_term(sk: &Sketch, c: &Constraint, probe: usize, grow: Option<crate::model::TermNumber>)
     -> Result<crate::model::RegionTerm, String> {
     use crate::model::{RegionShape, RegionTerm};
     let kind = crate::syntax::snake(c.kind.name());
-    // a set measured from may hold its point to a number, a surface (#183 F2)
-    let equal = c.kind.dimension_slot().filter(|_| inner && c.bound.is_none()).and_then(|at| {
-        let v = term_number(&c.args[at], sk, c.kind.dimension_kind())?;
-        Some(crate::constraints::Bound { cmp: crate::syntax::Cmp::In, hi: Some(v.c) })
-    });
-    let Some(b) = c.bound.or(equal) else {
+    // a set measured from holds its point's equalities as bounds too, `in: (d, d)`: the
+    // flattener says so (#192), so one rule reads every probe
+    let Some(b) = c.bound else {
         return Err(format!(
             "a region solid's set states `{kind}`, which bounds nothing: its body bounds numbers"
         ));
@@ -721,7 +714,8 @@ pub(in crate::program) fn shape(sk: &Sketch, res: &Resolver, w: &crate::syntax::
         return Shape::Other;
     };
     let Ok(of) = res.operand(sk, f) else { return Shape::Other };
-    let side = crate::constraints::plane_side_word(&w.word.text).is_some();
+    // a side as written or as a set's body carries it (`Written::side`, #192)
+    let side = w.side().is_some();
     match of {
         Operand::Ends(edge) if side => Shape::Ends { point, edge },
         Operand::Ent(e) if side && e.kind == EntKind::Plane => Shape::PlaneSide,
@@ -737,16 +731,12 @@ pub(in crate::program) fn shape(sk: &Sketch, res: &Resolver, w: &crate::syntax::
 /// normal) or at least zero.
 fn side_of_plane(r: &Relation, w: &crate::syntax::Written) -> Relation {
     use crate::syntax::{Arg as A, Name, OpArg, RelationForm, Written};
-    let cmp = crate::constraints::plane_side_word(&w.word.text).expect("inside or outside");
+    // as written or as a set's body carries it (`Written::side`, #192); grown by a distance
+    // (§6.21, F4): `inside(d)` at most `d` before it, `outside(d)` at most `d` behind it
+    let (cmp, level) = w.side().expect("a side");
     let at = w.word.span;
     let name = |t: &str| Name { text: t.to_string(), span: at };
-    // grown by a distance (§6.21, F4): `inside(d)` at most `d` before it, `outside(d)` at most
-    // `d` behind it
-    let level = match w.args.as_slice() {
-        [OpArg::Dim(d, _)] if cmp == crate::syntax::Cmp::Le => d.clone(),
-        [OpArg::Dim(d, _)] => format!("-({d})"),
-        _ => "0".to_string(),
-    };
+    let level = level.map_or_else(|| "0".to_string(), |(d, _)| d);
     let args = vec![
         OpArg::Bound { cmp, span: at, hi: None, grow: None },
         OpArg::Dim(level, at),
@@ -1590,6 +1580,8 @@ fn face_term(sk: &Sketch, res: &Resolver, w: &crate::syntax::Written, point: Ent
     }
     let probe = point.i();
     let word = w.word.text.as_str();
+    // a side as written or as a set's body carries it (`Written::side`, #192)
+    let side = w.side();
     let number = |text: &str, span: Span| -> Result<TermNumber, String> {
         let arg = Arg::Dim { text: text.to_string(), span };
         to_arg(sk, res, SpecKind::Length, &arg).ok().as_ref()
@@ -1603,22 +1595,18 @@ fn face_term(sk: &Sketch, res: &Resolver, w: &crate::syntax::Written, point: Ent
     let bound = w.bound();
     let term = |shape, cmp, lo, hi| RegionTerm { hi, ..RegionTerm::new(shape, cmp, lo) };
     let made = (|| -> Result<RegionTerm, String> {
-        match word {
-            "inside" | "outside" => {
-                if face.surface {
-                    return Err(format!("`{word}` reads a face's side: name the face, not its surface"));
-                }
-                let d = match &dim {
-                    Some((t, sp)) => number(t, *sp)?,
-                    None => TermNumber::stated(0.0),
-                };
-                let cmp = crate::constraints::plane_side_word(word).expect("inside or outside");
-                let lo = match cmp {
-                    Cmp::Le => d,
-                    _ => TermNumber { c: -d.c, free: d.free.map(|(n, m)| (n, -m)) },
-                };
-                Ok(term(RegionShape::FaceSide { face: face.clone() }, cmp, lo, None))
+        // the signed distance from the face's surface toward its outside, bounded at its level
+        if let Some((cmp, level)) = &side {
+            if face.surface {
+                return Err("a side is read off a face: name the face, not its surface".to_string());
             }
+            let lo = match level {
+                Some((t, sp)) => number(t, *sp)?,
+                None => TermNumber::stated(0.0),
+            };
+            return Ok(term(RegionShape::FaceSide { face: face.clone() }, *cmp, lo, None));
+        }
+        match word {
             "distance" => {
                 let Some((t, sp)) = &dim else { return Err("a distance states a number".to_string()) };
                 let lo = number(t, *sp)?;
@@ -1658,7 +1646,9 @@ fn ends_term(w: &crate::syntax::Written, point: EntRef, edge: EntRef, probes: &P
             w.ops[0].root.text
         ));
     }
-    let cmp = crate::constraints::plane_side_word(&w.word.text).expect("inside or outside");
+    let Some((cmp, None)) = w.side() else {
+        return Err("where an edge ends is a side of it: `inside S.ends`".to_string());
+    };
     if cmp != crate::syntax::Cmp::Le {
         return Err("past where an edge ends is no region: say `inside S.ends`".to_string());
     }
