@@ -1106,7 +1106,10 @@ tin := solid(can)
 Where every bound shares one axis (balls centred on it, cylinders and cones about it, planes square
 to it) and closes the material, the solid is a revolution of its meridian, built exactly. Where they
 share none it is read point by point: it shows and meshes like any solid, but an exact export
-(`--step`) refuses it. Its numbers may be the drawing's: leave a radius unbound and put a point on
+(`--step`) refuses it — unless it is one the lowering table builds: the rounds and chamfers of
+`std` along straight edges between planes, round circles where a plane meets a cylinder or a
+cone, and at corners of three square faces are built exactly (recognised by what their sets say,
+so a round written by hand is built too). Its numbers may be the drawing's: leave a radius unbound and put a point on
 the set (`heel := std.Sphere(apex, r: hint(50mm))`, `span.heel coincident heel`), and the solid
 reads the solved radius — how the hypoid's blank is sized (`spiral_bevel/blank/member.sv`).
 

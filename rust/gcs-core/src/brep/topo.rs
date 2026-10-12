@@ -105,6 +105,14 @@ pub struct Coedge { pub edge: u32,pub reversed: bool,pub pcurve: Pcurve }
 #[derive(Clone,Debug)]
 pub struct Face { pub surface: Surface,pub reversed: bool,pub loops: Vec<Vec<Coedge>>,pub name: String }
 
+impl Face {
+    /// The edges this face uses twice, once each side: its seams, which bound nothing.
+    pub fn seams(&self) -> std::collections::BTreeSet<u32> {
+        let mut seen = std::collections::BTreeSet::new();
+        self.loops.iter().flatten().filter(|c| !seen.insert(c.edge)).map(|c| c.edge).collect()
+    }
+}
+
 /// A solid's boundary: one or more closed shells, its faces in any order.
 #[derive(Clone,Debug,Default)]
 pub struct Brep { pub vertices: Vec<Vertex>,pub edges: Vec<Edge>,pub faces: Vec<Face> }

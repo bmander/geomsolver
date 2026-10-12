@@ -171,6 +171,9 @@ fn surfaces_meet_in_curves_on_both() {
         (Surface::Torus(f([0.,0.,0.],z,x),3.,1.),Surface::Torus(f([0.,0.,1.],z,x),3.5,1.),2),
         (Surface::Sphere(f([0.,0.,0.],z,x),2.),Surface::Sphere(f([1.,1.,1.],z,x),2.5),1),
         (Surface::Cylinder(f([0.,0.,0.],z,x),2.),Surface::Cylinder(f([1.,1.,5.],z,y),1.5),2),
+        // one radius, axes crossing (square and slanted, the second's origin off the crossing)
+        (Surface::Cylinder(f([0.,0.,0.],z,x),2.),Surface::Cylinder(f([3.,0.,1.],x,y),2.),2),
+        (Surface::Cylinder(f([1.,2.,0.],z,x),2.),Surface::Cylinder(f([1.,2.,1.],tilted,y),2.),2),
     ];
     for (a,b,n) in cases {
         let Ssi::Curves(cs) = intersect(&a,&b,1e-9) else { panic!("{a:?} {b:?}") };
@@ -183,7 +186,8 @@ fn surfaces_meet_in_curves_on_both() {
             }
         }
     }
-    // perpendicular cylinders have no closed form
+    // perpendicular cylinders of two radii, or of one with axes passing apart, have no closed form
+    assert_eq!(intersect(&Surface::Cylinder(f([0.,0.,0.],z,x),2.),&Surface::Cylinder(f([0.,0.5,0.],x,y),2.),1e-9),Ssi::Traced);
     assert_eq!(intersect(&Surface::Cylinder(f([0.,0.,0.],z,x),2.),&Surface::Cylinder(f([0.,0.,0.],x,y),1.),1e-9),Ssi::Traced);
     // the same surface, written from another frame
     assert_eq!(intersect(&Surface::Cylinder(f([0.,0.,0.],z,x),2.),&Surface::Cylinder(f([0.,0.,7.],scale3(z,-1.),y),2.),1e-9),Ssi::Same);
@@ -313,6 +317,94 @@ fn traced_intersections_cross_bores_and_a_pierced_ball() {
     assert!((volume(&pierced)-want).abs() <= 1e-7*want,"{} against {want}",volume(&pierced));
 }
 
+
+/// Two rods of one radius whose axes cross meet in two ellipses, in closed form: in common they are
+/// the bicylinder, `16r³ / (3 sin θ)` for axes at θ, and a block's corner cut by both is the
+/// corner less their two volumes plus that common part.
+#[test]
+fn rods_of_one_radius_crossing_meet_in_ellipses() {
+    use gcs_core::brep::boolean::{boolean,Op};
+    let r = 1.5;
+    let upright = rod([0.;3],r,[-4.,4.]);
+    for th in [PI/2.,PI/3.,1.1] {
+        let d = [th.sin(),0.,th.cos()];
+        let slanted = prism(&Profile {names:vec![],origin:[0.;3],normal:d,
+            loops:vec![vec![arc([0.;3],r,d,[0.,1.,0.],None)]]},-9.,9.).unwrap();
+        let both = boolean(&upright,&slanted,Op::Common,1e-9).unwrap_or_else(|e| panic!("{th}: {e}"));
+        both.check(1e-8).unwrap();
+        close(volume(&both),16.*r*r*r/(3.*th.sin()));
+    }
+    // the two rods a square corner's fillet runs round, their axes a radius in from both faces,
+    // crossing there: united, they are their sum less the whole bicylinder
+    let along_x = prism(&Profile {names:vec![],origin:[0.;3],normal:[1.,0.,0.],
+        loops:vec![vec![arc([0.,r,-r],r,[1.,0.,0.],[0.,1.,0.],None)]]},-1.,6.).unwrap();
+    let along_y = prism(&Profile {names:vec![],origin:[0.;3],normal:[0.,1.,0.],
+        loops:vec![vec![arc([r,0.,-r],r,[0.,1.,0.],[1.,0.,0.],None)]]},-1.,6.).unwrap();
+    let u = boolean(&along_x,&along_y,Op::Union,1e-9).unwrap();
+    u.check(1e-8).unwrap();
+    close(volume(&u),2.*PI*r*r*7.-16.*r*r*r/3.);
+}
+
+/// A line meets a cylinder in closed form: a chord's two roots, one touch where it is tangent (the
+/// two roots standing off by no more than the tolerance — sampled, that double root lands the
+/// square root of the tolerance away), the surface itself along the axis.
+#[test]
+fn a_line_meets_a_cylinder_in_closed_form() {
+    use gcs_core::brep::geom::{Curve,Surface};
+    use gcs_core::brep::query::{curve_surface,Meets};
+    let cyl = Surface::Cylinder(Frame::new([1.,2.,0.],[0.,0.,1.],[1.,0.,0.]),1.5);
+    let slant = scale3([1.,0.,0.3],1./1.09f64.sqrt());
+    // tangent: through the foot (1, 3.5, 2) square to the radius there, slanted along the axis
+    let touch = Curve::Line {p:[1.,3.5,2.],d:slant};
+    let Meets::At(roots) = curve_surface(&touch,[-4.,4.],&cyl,1e-9) else { panic!("along") };
+    assert_eq!(roots.len(),1,"{roots:?}");
+    assert!(roots[0].0.abs() <= 1e-15 && roots[0].1,"{roots:?}");
+    // a chord at 0.9 from the axis: ±1.2 across it
+    let chord = Curve::Line {p:[1.,2.9,2.],d:slant};
+    let Meets::At(roots) = curve_surface(&chord,[-9.,9.],&cyl,1e-9) else { panic!("along") };
+    let want = 1.2*1.09f64.sqrt();
+    assert_eq!(roots.len(),2);
+    assert!((roots[0].0+want).abs() <= 1e-12 && (roots[1].0-want).abs() <= 1e-12,"{roots:?}");
+    // clipped to the stretch asked, missing, and lying along the surface
+    let Meets::At(roots) = curve_surface(&chord,[0.,9.],&cyl,1e-9) else { panic!("along") };
+    assert_eq!(roots.len(),1);
+    assert!(matches!(curve_surface(&Curve::Line {p:[1.,3.6,0.],d:slant},[-9.,9.],&cyl,1e-9),Meets::At(r) if r.is_empty()));
+    assert!(matches!(curve_surface(&Curve::Line {p:[2.5,2.,0.],d:[0.,0.,1.]},[-9.,9.],&cyl,1e-9),Meets::Along));
+}
+
+#[test]
+fn a_trace_leaving_a_sheet_ends_where_its_edge_crosses() {
+    use gcs_core::brep::geom::{Curve,Surface};
+    // a curved sheet over [0, 10] × [0, 10], cut by the plane x = 4: the meeting runs from the sheet's
+    // edge at v = 0 to its edge at v = 1, each crossing a seed; traced from one, it ends at both
+    let f = |u: f64,v: f64| [10.*u,10.*v,(2.*u).sin()+v*v];
+    let (net,_) = gcs_core::brep::nurbs::fit_net(&f,3,3,16,16,1e-10).unwrap();
+    let sheet = Surface::BSpline(Frame::new([0.;3],[0.,0.,1.],[1.,0.,0.]),std::sync::Arc::new(net.clone()));
+    let plane = Surface::Plane(Frame::about([4.,0.,0.],[1.,0.,0.]));
+    let tol = 1e-9;
+    let ends = [net.point(0.4,0.),net.point(0.4,1.)];
+    for seeds in [vec![ends[0]],vec![ends[0],ends[1]],vec![ends[1],f(0.4,0.5)]] {
+        let curves = gcs_core::brep::ssi::trace(&plane,&sheet,&seeds,[-1.;3],[11.;3],tol).unwrap();
+        assert_eq!(curves.len(),1);
+        let c = &curves[0];
+        let span = match c { Curve::BSpline(b) => b.domain(),Curve::Traced(t) => [0.,(t.pts.len()-1) as f64],_ => panic!("{}",c.kind()) };
+        let (a,z) = (c.point(span[0]),c.point(span[1]));
+        // its ends the crossings, either way round: a seed exactly, else where the last step,
+        // halved, still lands on the sheet (within the march's slack)
+        let at = |p: V,q: V| (0..3).map(|k| (p[k]-q[k]).abs()).fold(0.,f64::max);
+        let (a,z) = if at(a,ends[0]) <= at(z,ends[0]) { (a,z) } else { (z,a) };
+        for (p,q) in [(a,ends[0]),(z,ends[1])] {
+            let bar = if seeds.contains(&q) { tol } else { 16.*tol };
+            assert!(at(p,q) <= bar,"{seeds:?}: end {p:?} off {q:?} by {:e}",at(p,q));
+        }
+        // and on both surfaces all the way, its ends too (a fit through points crowded at an end
+        // hooks off between them)
+        for k in 0..=1000 {
+            let p = c.point(span[0]+(span[1]-span[0])*k as f64/1000.);
+            assert!(plane.implicit(p).abs() <= 16.*tol && sheet.implicit(p).abs() <= 16.*tol,"{seeds:?}: {k}: {p:?}");
+        }
+    }
+}
 
 /// The volume a mesh encloses: the signed tetrahedra from the origin to each triangle.
 fn mesh_volume(m: &gcs_core::brep::mesh::Mesh) -> f64 {
@@ -858,15 +950,23 @@ fn one_closed_intersection_found_does_not_hide_another() {
 }
 
 #[test]
-fn a_ball_touching_a_torus_is_refused_not_missed() {
-    // resting on the top of the tube: the two meet in one point, where no curve can be traced
+fn a_ball_resting_on_a_torus_touches_it_alone_and_one_sunk_in_is_not_missed() {
+    // resting on the top of the tube the two touch at one point, read to second order wherever
+    // the ball's seam runs: the meeting there is that point alone, and the ring is unchanged
     use gcs_core::brep::boolean::{boolean,Op};
     let ring = torus(3.,1.);
     let at = 3./2f64.sqrt();
     for (seam,axis,normal) in [("about y",[0.,1.,0.],XY),("about z",[0.,0.,1.],XZ)] {
         let ball = ball_about([at,at,1.2],0.2,axis,normal);
-        let out = boolean(&ring,&ball,Op::Cut,1e-9);
-        assert!(out.as_ref().is_err_and(|e| e.contains("touch")),"{seam}: {:?}",out.map(|b| volume(&b)));
+        let out = boolean(&ring,&ball,Op::Cut,1e-9).unwrap_or_else(|e| panic!("{seam}: {e}"));
+        out.check(1e-8).unwrap();
+        close(volume(&out),volume(&ring));
+        // sunk a thousandth in, they cross in a small circle — no touch, though nearly one: traced,
+        // never read as a point alone, the ring less a lens no larger than the ball's cap that deep
+        let sunk = ball_about([at,at,1.199],0.2,axis,normal);
+        let out = boolean(&ring,&sunk,Op::Cut,1e-9).unwrap_or_else(|e| panic!("{seam}: {e}"));
+        let (lens,cap) = (volume(&ring)-volume(&out),PI*1e-6*(3.*0.2-1e-3)/3.);
+        assert!(lens > 0.1*cap && lens < cap,"{seam}: {lens} against a cap of {cap}");
     }
 }
 
@@ -1065,4 +1165,244 @@ fn a_face_thinner_than_its_chords_sag_still_meshes() {
     b.check(1e-9).unwrap();
     let m = gcs_core::brep::mesh::mesh(&b,0.5,0.8).unwrap();
     assert!(m.tris.len() > 4);
+}
+
+#[test]
+fn curves_cross_in_closed_form() {
+    use gcs_core::brep::geom::Curve;
+    use gcs_core::brep::query::curve_curve;
+    let near = |got: Vec<(f64,V)>,want: &[(f64,V)]| {
+        assert_eq!(got.len(),want.len(),"{got:?} against {want:?}");
+        for ((t,p),(u,q)) in got.iter().zip(want) {
+            assert!((t-u).abs() < 1e-12 && (0..3).all(|k| (p[k]-q[k]).abs() < 1e-12),"{got:?} against {want:?}");
+        }
+    };
+    let x = Curve::Line {p:[0.,0.,0.],d:[1.,0.,0.]};
+    near(curve_curve(&x,[0.,10.],&Curve::Line {p:[5.,-5.,0.],d:[0.,1.,0.]},[0.,10.],1e-9).unwrap(),&[(5.,[5.,0.,0.])]);
+    // skew, and crossing beyond the other's stretch
+    near(curve_curve(&x,[0.,10.],&Curve::Line {p:[5.,-5.,1.],d:[0.,1.,0.]},[0.,10.],1e-9).unwrap(),&[]);
+    near(curve_curve(&x,[0.,10.],&Curve::Line {p:[5.,1.,0.],d:[0.,1.,0.]},[0.,10.],1e-9).unwrap(),&[]);
+    let circle = Curve::Circle(Frame::new([0.;3],XY,[1.,0.,0.]),2.);
+    // a line through the circle's plane, and one in it
+    near(curve_curve(&Curve::Line {p:[2.,0.,-5.],d:XY},[0.,10.],&circle,[0.,TAU],1e-9).unwrap(),&[(5.,[2.,0.,0.])]);
+    let s3 = 3f64.sqrt();
+    near(curve_curve(&Curve::Line {p:[-5.,1.,0.],d:[1.,0.,0.]},[0.,10.],&circle,[0.,TAU],1e-9).unwrap(),
+        &[(5.-s3,[-s3,1.,0.]),(5.+s3,[s3,1.,0.])]);
+    // two circles in one plane, and in planes square to one another; a half circle has one of two
+    let beside = Curve::Circle(Frame::new([2.,0.,0.],XY,[1.,0.,0.]),2.);
+    let got = curve_curve(&circle,[0.,TAU],&beside,[0.,TAU],1e-9).unwrap();
+    let mut pts: Vec<V> = got.iter().map(|g| g.1).collect();
+    pts.sort_by(|a,b| a[1].total_cmp(&b[1]));
+    assert!((pts[0][0]-1.).abs() < 1e-12 && (pts[0][1]+s3).abs() < 1e-12 && (pts[1][1]-s3).abs() < 1e-12,"{got:?}");
+    let upright = Curve::Circle(Frame::new([0.;3],[1.,0.,0.],[0.,1.,0.]),2.);
+    assert_eq!(curve_curve(&circle,[0.,TAU],&upright,[0.,TAU],1e-9).unwrap().len(),2);
+    near(curve_curve(&circle,[0.,PI],&upright,[0.,TAU],1e-9).unwrap(),&[(PI/2.,[0.,2.,0.])]);
+    // a tangency is one touch, where it is: not two crossings the square root of a rounding apart
+    // either side of it (a fillet's ball touching the circle it rolls on)
+    near(curve_curve(&circle,[0.,TAU],&Curve::Circle(Frame::new([3.,0.,0.],XY,[1.,0.,0.]),1.),[0.,TAU],1e-9).unwrap(),
+        &[(0.,[2.,0.,0.])]);
+    let r = 6.0f64;
+    let tilt = Curve::Circle(Frame::new([0.;3],XY,[1.,0.,0.]),r);
+    let touching = Curve::Circle(Frame::new([r+2.,1e-12,0.],XY,[1.,0.,0.]),2.);
+    let got = curve_curve(&tilt,[-1.,1.],&touching,[0.,TAU],1e-9).unwrap();
+    assert!(got.len() == 1 && (got[0].1[0]-r).abs() < 1e-9 && got[0].1[1].abs() < 1e-9,"{got:?}");
+    // no closed form for any other curve
+    assert!(curve_curve(&Curve::Ellipse(Frame::new([0.;3],XY,[1.,0.,0.]),2.,1.),[0.,TAU],&x,[0.,10.],1e-9).is_none());
+}
+
+#[test]
+fn a_point_on_a_seam_is_in_its_face() {
+    use gcs_core::brep::query::{Located,Place};
+    let b = rod([0.;3],2.,[0.,4.]);
+    let located = Located::new(&b,1e-9);
+    let wall = b.faces.iter().position(|f| f.surface.kind() == "cylinder").unwrap();
+    // the seam runs up the wall at its first parameter, here +x: no boundary of the face
+    assert_eq!(located.face_place(wall,[2.,0.,2.]),Place::In);
+    assert_eq!(located.face_place(wall,[0.,2.,2.]),Place::In);
+    assert_eq!(located.face_place(wall,[2.,0.,4.]),Place::On);
+}
+
+/// A fillet's section in the meridian of the line along z: the corner at radius 8, the ball of
+/// radius 3 touching the plane `z = 0` and the cylinder of radius 8.
+fn wedge_section(origin: V) -> Profile {
+    let at = |p: V| [p[0]+origin[0],p[1]+origin[1],p[2]+origin[2]];
+    let (e,tp,tw,c) = (at([8.,0.,0.]),at([11.,0.,0.]),at([8.,0.,3.]),at([11.,0.,3.]));
+    // seen from +y an angle turns x toward −z: the plane's touch at π/2, the wall's at π
+    Profile {names:vec![],origin:e,normal:XZ,loops:vec![vec![line(e,tp),arc(c,3.,XZ,[1.,0.,0.],Some([PI/2.,PI])),line(tw,e)]]}
+}
+
+#[test]
+fn a_section_with_cusps_meshes_at_every_bar() {
+    // a line meeting an arc tangent to it is a cusp, where a thin face's boundary runs past the
+    // corners of the triangle the mesh starts in
+    let b = prism(&wedge_section([0.;3]),0.,40.).unwrap();
+    b.check(1e-9).unwrap();
+    close(volume(&b),(1.-PI/4.)*9.*40.);
+    for k in 0..12 {
+        let bar = 1e-1/2f64.powi(k);
+        gcs_core::brep::mesh::mesh(&b,bar,TAU/64.).unwrap_or_else(|e| panic!("at bar {bar}: {e}"));
+    }
+}
+
+#[test]
+fn a_ring_on_a_coincident_wall_joins_it() {
+    use gcs_core::brep::boolean::Op;
+    use gcs_core::brep::recipe::combined;
+    // a rod standing on a block, and the ring a ball rolled round its foot fills: one side of the
+    // ring lies on the rod's wall and is seamed elsewhere, its contact circle crossing the rod's seam
+    let ring = revolve(&wedge_section([0.;3]),[0.;3],XY,TAU).unwrap();
+    ring.check(1e-9).unwrap();
+    let foot = combined(&block([-30.,-30.,-10.],[30.,30.,0.]),&rod([0.;3],8.,[0.,20.]),Op::Union,0.).unwrap();
+    let whole = combined(&foot,&ring,Op::Union,0.).unwrap();
+    let moment = 9.*(8.+1.5)-PI*9./4.*(8.+3.-4.*3./(3.*PI));
+    close(volume(&ring),TAU*moment);
+    close(volume(&whole),36000.+PI*64.*20.+TAU*moment);
+}
+
+#[test]
+fn a_surface_offset_moves_its_signed_distance_by_the_offset() {
+    use gcs_core::brep::geom::Surface;
+    let f = Frame::new([1.,-2.,0.5],[0.3,0.4,1.],[1.,0.,0.]);
+    let surfaces = [Surface::Plane(f),Surface::Cylinder(f,4.),Surface::Cone(f,3.,0.4),Surface::Sphere(f,5.),
+        Surface::Torus(f,6.,2.)];
+    let points = [[0.,0.,0.],[3.,1.,-2.],[-4.,6.,3.],[7.,-1.,4.]];
+    for s in &surfaces {
+        for d in [-1.5,0.25,2.] {
+            let o = s.offset(d).unwrap_or_else(|| panic!("a {} offset by {d}",s.kind()));
+            for p in points { close(o.implicit(p),s.implicit(p)-d); }
+        }
+    }
+    // past its axis or its centre a surface offset inward is no surface
+    assert!(Surface::Cylinder(f,4.).offset(-4.).is_none());
+    assert!(Surface::Torus(f,6.,2.).offset(-3.).is_none());
+}
+
+/// The main pipe of a tee, radius 10 along x with its seam along +z, and its branch, radius 6
+/// along z; and the upper loop where they meet.
+fn tee_loop() -> (gcs_core::brep::geom::Surface,gcs_core::brep::geom::Curve) {
+    use gcs_core::brep::geom::Surface;
+    use gcs_core::brep::ssi::trace;
+    let main = Surface::Cylinder(Frame::new([0.;3],[1.,0.,0.],[0.,0.,1.]),10.);
+    let stem = Surface::Cylinder(Frame::new([0.;3],[0.,0.,1.],[1.,0.,0.]),6.);
+    let seed = [0.,6.,8.];
+    let mut loops = trace(&main,&stem,&[seed],[-20.;3],[20.;3],1e-9).unwrap();
+    loops.sort_by(|a,b| a.point(a.inverse(seed)).iter().zip(seed).map(|(x,y)| (x-y).abs()).sum::<f64>()
+        .total_cmp(&b.point(b.inverse(seed)).iter().zip(seed).map(|(x,y)| (x-y).abs()).sum::<f64>()));
+    (main,loops.swap_remove(0))
+}
+
+#[test]
+fn a_traced_edge_lying_in_a_cylinder_crosses_its_seam() {
+    use gcs_core::brep::geom::Curve;
+    use gcs_core::brep::query::crossings_in;
+    let (main,crotch) = tee_loop();
+    let period = crotch.period().expect("a closed loop");
+    // the main pipe's seam, where the loop crosses it at x = ±6
+    let seam = Curve::Line {p:[0.,0.,10.],d:[1.,0.,0.]};
+    let mut found = crossings_in(&main,&crotch,[0.,period],&seam,[-30.,30.],1e-9).expect("a line carries its crossings");
+    found.sort_by(|a,b| a.1[0].total_cmp(&b.1[0]));
+    assert_eq!(found.len(),2,"{found:?}");
+    for ((_,q),x) in found.iter().zip([-6.,6.]) {
+        for (k,want) in [x,0.,10.].into_iter().enumerate() { assert!((q[k]-want).abs() <= 1e-7,"{q:?}"); }
+    }
+    // and read from the line's side, the same two
+    assert_eq!(crossings_in(&main,&seam,[-30.,30.],&crotch,[0.,period],1e-9).unwrap().len(),2);
+}
+
+/// A rolled fillet's canal touches each operand along a whole contact edge: the union traces the
+/// canal against the pipes away from that contact, where their gradients are parallel, and reads
+/// the pair as meeting only there.
+#[test]
+fn a_canal_touching_its_operands_along_an_edge_is_unioned_with_them() {
+    use gcs_core::brep::boolean::{boolean,Op};
+    let main = prism(&Profile {names:vec![],origin:[0.;3],normal:[1.,0.,0.],
+        loops:vec![vec![arc([0.,0.,0.],10.,[1.,0.,0.],[0.,0.,1.],None)]]},-30.,30.).unwrap();
+    let tee = boolean(&main,&rod([0.,0.,0.],6.,[0.,25.]),Op::Union,1e-9).unwrap();
+    let rolled = gcs_core::brep::fillet::roll(&tee,[6.,0.,10.],2.,1e-9).unwrap();
+    assert!(rolled.concave);
+    rolled.piece.check(1e-6).unwrap();
+    let whole = boolean(&tee,&rolled.piece,Op::Union,1e-9).unwrap();
+    whole.check(1e-6).unwrap();
+    let (got,want) = (volume(&whole),volume(&tee)+volume(&rolled.piece));
+    assert!((got-want).abs() <= 1e-9*want,"{got} against {want}");
+    // the pipes' faces it rounds are kept, cut back to the contacts: nothing is left of the edge
+    assert!(whole.faces.len() > tee.faces.len());
+}
+
+/// Two solids ending in one face, material either side of it, are joined there: the face goes,
+/// its edges are shared by the faces beside them, nothing is intersected.
+#[test]
+fn solids_sharing_a_face_are_glued_along_it() {
+    use gcs_core::brep::boolean::glued;
+    let square = vec![poly(&[[1.,0.,0.],[2.,0.,0.],[2.,0.,1.],[1.,0.,1.]])];
+    let p = Profile {names:vec![],origin:[0.;3],normal:XZ,loops:square};
+    // a quarter turn about z, from the square on into +y, and a prism behind it into −y
+    let turned = revolve(&p,[0.;3],[0.,0.,1.],PI/2.).unwrap();
+    let straight = prism(&p,-3.,0.).unwrap();
+    for (a,b) in [(&turned,&straight),(&straight,&turned)] {
+        let g = glued(a,b,1e-9).expect("they share the square");
+        g.check(1e-9).unwrap();
+        close(volume(&g),3.+PI*(4.-1.)/4.);
+        assert_eq!(g.faces.len(),a.faces.len()+b.faces.len()-2);
+    }
+    // two solids that only touch share no face
+    assert!(glued(&straight,&block([5.,5.,5.],[6.,6.,6.]),1e-9).is_none());
+}
+
+/// Where two faces touch at a point of both their boundaries and their meeting runs into neither
+/// beyond it, they meet there alone: a quarter torus whose start touches a block's side at its
+/// inner equator (the plane there crosses the torus in two branches, off both faces) is their
+/// union, as it was before the second-order reading refused it as nearly touching.
+#[test]
+fn a_quarter_torus_touching_a_block_at_a_corner_meets_it_there_alone() {
+    use gcs_core::brep::boolean::{boolean,Op};
+    // the torus about z, its tube of radius 1 about the circle of radius 3, from the x axis on
+    // into +y; the block below y = 0 with its side x = 2 at the inner equator
+    let tube = vec![vec![arc([3.,0.,0.],1.,XZ,[1.,0.,0.],None)]];
+    let quarter = revolve(&Profile {names:vec![],origin:[0.;3],normal:XZ,loops:tube},[0.;3],[0.,0.,1.],PI/2.).unwrap();
+    let b = boolean(&block([-1.,-3.,-1.],[2.,0.,1.]),&quarter,Op::Union,1e-9).unwrap();
+    b.check(1e-8).unwrap();
+    close(volume(&b),18.+1.5*PI*PI);
+    // the block run on past y = 0: the torus cuts into it through that point, along a branch into
+    // both faces, which no trace follows through the touch: refused, never read as none
+    let crossed = boolean(&block([-1.,-3.,-1.],[2.,1.,1.]),&quarter,Op::Union,1e-9);
+    assert!(crossed.as_ref().is_err_and(|e| e.contains("nearly touching")),"{:?}",crossed.map(|b| volume(&b)));
+}
+
+/// A corner where a fillet rounds all three edges: the cell between the vertex and the ball's
+/// centre less the ball — `r³ − πr³/6` on a square corner; on a slanted one, the cell fanned into
+/// tetrahedra from the centre, less the ball within it (its solid angle times `r³/3`).
+#[test]
+fn a_spherical_corner_is_its_cell_less_the_ball() {
+    use gcs_core::brep::fillet::corner;
+    use gcs_core::space::{add,cross,dot,norm,scale,sub};
+    let unit = |a: V| scale(a,1./norm(a));
+    let r = 1.5;
+    let square = corner([0.;3],[r;3],r,[[1.,0.,0.],[0.,1.,0.],[0.,0.,1.]],1e-9).unwrap();
+    square.check(1e-9).unwrap();
+    assert_eq!(square.faces.len(),7);
+    close(volume(&square),r*r*r-PI*r*r*r/6.);
+    // a slanted corner: the ball's centre a radius from each face
+    let m = [[1.,0.,0.],unit([0.4,1.,0.]),unit([0.2,-0.3,1.])];
+    let p: V = [2.,-1.,0.5];
+    let rows = m.map(|mi| (mi,dot(mi,p)+r));
+    // Cramer's rule for (c · m_i) = (p · m_i) + r
+    let det = |a: V,b: V,c: V| dot(a,cross(b,c));
+    let d = det(rows[0].0,rows[1].0,rows[2].0);
+    let (mx,my,mz) = ([m[0][0],m[1][0],m[2][0]],[m[0][1],m[1][1],m[2][1]],[m[0][2],m[1][2],m[2][2]]);
+    let b = [rows[0].1,rows[1].1,rows[2].1];
+    let c = [det(b,my,mz)/d,det(mx,b,mz)/d,det(mx,my,b)/d];
+    let slanted = corner(p,c,r,m,1e-9).unwrap();
+    slanted.check(1e-9).unwrap();
+    let along = sub(c,p);
+    let edge = |i: usize,j: usize| { let e = unit(cross(m[i],m[j])); if dot(e,along) < 0. { scale(e,-1.) } else { e } };
+    let foot = |i: usize,j: usize| { let e = edge(i,j); add(p,scale(e,dot(along,e))) };
+    let touch = |i: usize| sub(c,scale(m[i],r));
+    let tet = |a: V,b: V,q: V| det(sub(a,c),sub(b,c),sub(q,c)).abs()/6.;
+    let mut cell = 0.;
+    for (i,j,k) in [(0,1,2),(1,2,0),(2,0,1)] {
+        cell += tet(p,foot(i,j),touch(i))+tet(p,touch(i),foot(i,k));
+    }
+    let omega = 2.*(det(m[0],m[1],m[2]).abs()/(1.+dot(m[0],m[1])+dot(m[1],m[2])+dot(m[2],m[0]))).atan();
+    close(volume(&slanted),cell-omega*r*r*r/3.);
 }

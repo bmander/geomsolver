@@ -8,9 +8,9 @@
 //!   nearest point satisfying every condition, found by sequential projection onto the
 //!   conditions linearised where the last step stood (each step a small quadratic program,
 //!   solved exactly by its active set): a local nearest point, from the point measured.
-use super::faces::{BodyFaces, Reading};
+use super::faces::{along_run, BodyFaces, Reading};
 use crate::model::{RegionShape, RegionTerm, Sketch, Target};
-use crate::space::{add, dot, norm, scale, sub};
+use crate::space::{dot, norm, scale, sub};
 use crate::syntax::Cmp;
 use std::sync::Arc;
 
@@ -108,10 +108,6 @@ impl SetDistance {
 fn shift(m: Fv, k: f64, sign: f64) -> Fv {
     Arc::new(move |x| { let (v, g) = m(x); (sign * (v - k), scale(g, sign)) })
 }
-
-/// A point just along a run from its end `v`, `d` the way it runs from there (`by` −1: just past
-/// the end).
-fn along_run(v: V, d: V, by: f64) -> V { add(v, scale(d, by * 1e-6 * (1.0 + norm(v)))) }
 
 /// A term of a set measured from, as conditions on its point.
 fn conditions(sk: &Sketch, t: &RegionTerm, read: &mut Read) -> Result<Vec<Cond>, String> {
@@ -416,15 +412,5 @@ fn end_sides(set: &SetDistance) -> Result<(Arc<BodyFaces>, Vec<(usize, f64)>), S
     let SetDistance::Edges { body, edges, faces } = set else {
         return Err("where a set ends is read of an edge: a set on two faces".to_string());
     };
-    let mut sides: Vec<(usize, f64)> = Vec::new();
-    for (v, d, vid) in body.run_ends(edges) {
-        // a face carrying one of the run's on across a seam is no face the run ends on: a seam is
-        // no edge, and the run beyond it is the next one's
-        let on = along_run(v, d, 1.0);
-        for c in body.faces_at(vid, faces).into_iter().filter(|&c| !body.continues(c, faces, v)) {
-            let s = body.side(c, on);
-            sides.push((c, if s <= 0.0 { 1.0 } else { -1.0 }));
-        }
-    }
-    Ok((body.clone(), sides))
+    Ok((body.clone(), body.end_sides(edges, faces)))
 }

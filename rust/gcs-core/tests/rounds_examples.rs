@@ -328,3 +328,33 @@ fn the_runouts_are_the_stacks() {
     agrees("the vent's rim, whole", taken(&whole, "vent", vent.0, vent.1, 1.0 / 64.0),
            sloped(4.0, [90.0, -12.0], [35.0, 0.25], 1.0, RIM, None));
 }
+
+/// Solid `name` of `src` built exactly (#194's lowering table), or why not.
+fn exact(src: &str, name: &str) -> Result<f64, String> {
+    use gcs_core::brep::{export, props, sweep::Say};
+    let e = solved(src);
+    let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
+    export::exact(&e.sketch, ent(&e, name).i(), None, None, &say)
+        .map(|x| props::volume(&x.solid)).map_err(|r| r.message)
+}
+
+/// `pad.sv` is built exactly: its root a ring and its sides prisms, each a piece of #194's table,
+/// the body's volume the closed form's to 1e-9.
+#[test]
+fn the_pad_is_built_exactly() {
+    let want = 60.0 * 40.0 * 10.0 + PI * 64.0 * 20.0 - PI * 16.0 * 30.0 + root_ring(8.0, 3.0)
+        - 2.0 * square_run(2.0) * 40.0;
+    let got = exact(PAD, "pad").unwrap();
+    assert!((got - want).abs() <= 1e-9 * want, "{got} against {want}");
+}
+
+/// The rest are rounds no entry builds yet (curved faces, a traced saddle, a tangent chain, a
+/// slanted run-out): each refused by name, never approximated, and read by the field.
+#[test]
+fn the_rest_are_refused_exactly_by_name() {
+    for (src, name) in [(KNOB, "knob"), (RAIL, "rail"), (TEE, "tee"), (BORE, "pipe"),
+                        (SLOT, "part"), (RUNOUT, "lug"), (RUNOUT, "vent")] {
+        let why = exact(src, name).expect_err(name);
+        assert!(why.contains("no exact construction is made of it yet"), "{name}: {why}");
+    }
+}

@@ -646,8 +646,15 @@ reading with the rounds left out, within a box about the round.
 | runout | the same, the hole moved in | #85's quadrature | −2.0e-4 |
 
 The bar is 2e-3. #85's quadrature (`fillet_definition.rs::rolled_within`) now takes a half-space: a
-section's reach along each direction is cut where the face crosses it, exactly. Nothing here is
-lowered yet, so the 1e-9 gates wait on the lowering entries (#194).
+section's reach along each direction is cut where the face crosses it, exactly.
+
+**Built exactly** (#194's lowering table, merged after): `pad.sv` is. Its root is a ring and its
+sides are prisms, and the body's volume is the closed form's to 1.6e-14 (gated at 1e-9). The other
+six are refused by name, each with the table's reason: a circle between faces not turned about one
+axis (the knob), a round over several faces at once (the rail), an edge beside a curved face (the
+tee, the bore, the vent), an edge cut off at a slant or by a curved face (the slot) and faces
+meeting in several edges (the lug). They stay the field's, as `the_rest_are_refused_exactly_by_name`
+holds.
 
 ### Findings
 
@@ -676,6 +683,10 @@ lowered yet, so the 1e-9 gates wait on the lowering entries (#194).
      square end is within the other run's (the sliver is nearer the other face), so the union is
      the same. Every gate in `rounds.rs` holds, the slow tier included.
    - The concave run-out was already within the bar (X3's −1.9e-4). Carried past, it is now 8e-6.
+   - #194's recogniser read the meeting as surfaces only, so with the cut it recognised no round
+     (8 of `round_lowering.rs`'s 10 gates failed on the merge). It now takes the meeting cut where
+     its edge ends (`lowering::meeting_of`). For the table's entries, whose ends are cut off
+     square, the two sets are the same points, and `gate` holds the build to the field anyway.
 3. **`round(r) X` over many faces is slow.** The word's corner loop runs over every ordered triple
    of `X`'s faces and makes two solids for each. The slot's pocket has nine faces (four walls, four
    corners and a floor), so `round(r: 1mm) part.pocket` takes 25 s to elaborate and 104 s to read.

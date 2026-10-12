@@ -19,6 +19,10 @@ use std::f64::consts::PI;
 /// Two faces' outward normals nearer than this at a point meet tangent there: no edge.
 const TANGENT: f64 = 1e-6;
 
+/// A point just along a run from its end `v`, `d` the way it runs from there (`by` −1: just past
+/// the end).
+pub(crate) fn along_run(v: V, d: V, by: f64) -> V { add(v, scale(d, by * 1e-6 * (1.0 + norm(v)))) }
+
 /// A body's exact boundary, located, in millimetres (`mm` of them a model unit).
 #[derive(Debug)]
 pub struct BodyFaces {
@@ -46,6 +50,19 @@ pub fn readers_of(sk: &Sketch, body: usize) -> BTreeSet<usize> {
         SolidDef::Region { terms, .. } => terms.iter().any(reads),
         _ => false,
     }).collect()
+}
+
+/// **The stratum's order** (#183 F6): body `body`'s fills `on` and cuts `cut` as
+/// `[on, cut, on_late, cut_late]`, the late ones those reading its faces (`readers_of`), which act
+/// on the body the rest make, after them, fills then cuts — the order the field, the recipe and the
+/// native host apply them in.
+pub fn stratum(sk: &Sketch, body: usize, on: impl IntoIterator<Item = u32>, cut: impl IntoIterator<Item = u32>)
+    -> [Vec<u32>; 4] {
+    let readers = readers_of(sk, body);
+    let late = |o: &u32| readers.contains(&(*o as usize));
+    let (on_late, on): (Vec<u32>, Vec<u32>) = on.into_iter().partition(late);
+    let (cut_late, cut): (Vec<u32>, Vec<u32>) = cut.into_iter().partition(late);
+    [on, cut, on_late, cut_late]
 }
 
 /// The drawing with `readers` taken out of every body's terms: the stratum they read.
@@ -223,10 +240,10 @@ impl BodyFaces {
     pub fn run_ends(&self, es: &[u32]) -> Vec<(V, V, u32)> {
         let mut count: std::collections::BTreeMap<u32, Vec<(u32, usize)>> = Default::default();
         for &e in es {
-            let edge = &self.loc.b.edges[e as usize];
-            if edge.v[0] == edge.v[1] {
+            if self.closed(e) {
                 continue;
             }
+            let edge = &self.loc.b.edges[e as usize];
             for (k, v) in edge.v.iter().enumerate() {
                 count.entry(*v).or_default().push((e, k));
             }
@@ -251,6 +268,68 @@ impl BodyFaces {
         let q = self.q(v);
         let n = self.outward(c, q);
         faces.iter().any(|&f| norm(sub(self.outward(f, q), n)) < TANGENT)
+    }
+
+    /// Face `fi`'s plane, where it lies in one: its unit normal away from the material and its
+    /// frame's origin (model units).
+    pub fn plane(&self, fi: usize) -> Option<(V, V)> {
+        let f = &self.loc.b.faces[fi];
+        let crate::brep::geom::Surface::Plane(frame) = &f.surface else { return None };
+        Some((if f.reversed { scale(frame.z, -1.0) } else { frame.z }, self.back(frame.o)))
+    }
+
+    /// Edge `e`'s ends, first to last, where it is a straight line (model units).
+    pub fn segment(&self, e: u32) -> Option<[V; 2]> {
+        let edge = &self.loc.b.edges[e as usize];
+        let EdgeCurve::Curve(crate::brep::geom::Curve::Line { .. }) = &edge.curve else { return None };
+        Some(edge.v.map(|v| self.back(self.loc.b.vertices[v as usize].p)))
+    }
+
+    /// Edge `e`'s circle, where it is one (a whole turn or a stretch): its centre, unit normal and
+    /// radius, and the unit direction from its centre its parameter starts at (model units).
+    pub fn circle(&self, e: u32) -> Option<(V, V, f64, V)> {
+        let edge = &self.loc.b.edges[e as usize];
+        let EdgeCurve::Curve(crate::brep::geom::Curve::Circle(f, r)) = &edge.curve else { return None };
+        Some((self.back(f.o), f.z, r / self.mm, f.x))
+    }
+
+    /// Whether edge `e` is closed: one vertex at both ends.
+    pub fn closed(&self, e: u32) -> bool {
+        let v = self.loc.b.edges[e as usize].v;
+        v[0] == v[1]
+    }
+
+    /// Face `fi`'s unit normal at `p` (on it), away from the material.
+    pub fn normal(&self, fi: usize, p: V) -> V { self.side_grad(fi, p).1 }
+
+    /// Whether face `fi`'s surface is turned about the line through `o` along the unit `d` with a
+    /// straight meridian: a plane square to it, a cylinder or a cone about it (model units).
+    pub fn coaxial(&self, fi: usize, o: V, d: V) -> bool {
+        use crate::brep::geom::Surface;
+        let along = |z: V| norm(crate::space::cross(z, d)) <= 1e-9;
+        let on = |p: V| norm(crate::space::cross(sub(self.back(p), o), d)) <= 1e-9 * (1.0 + norm(o));
+        match &self.loc.b.faces[fi].surface {
+            Surface::Plane(f) => along(f.z),
+            Surface::Cylinder(f, _) | Surface::Cone(f, _, _) => along(f.z) && on(f.o),
+            _ => false,
+        }
+    }
+
+    /// Where a run of edges `es` (between `faces`) ends: each other face at each of its ends, and
+    /// which side of that face's surface the run runs on — `1` where it runs within it (its
+    /// material side, `side <= 0`), `-1` outside — so the run is where `σ·side <= 0` for all.
+    pub fn end_sides(&self, es: &[u32], faces: &[usize]) -> Vec<(usize, f64)> {
+        let mut sides = Vec::new();
+        for (v, d, vid) in self.run_ends(es) {
+            // a face carrying one of the run's on across a seam is no face the run ends on: a seam
+            // is no edge, and the run beyond it is the next one's
+            let on = along_run(v, d, 1.0);
+            for c in self.faces_at(vid, faces).into_iter().filter(|&c| !self.continues(c, faces, v)) {
+                let s = self.side(c, on);
+                sides.push((c, if s <= 0.0 { 1.0 } else { -1.0 }));
+            }
+        }
+        sides
     }
 
     /// The faces at vertex `v` other than `not`.
@@ -310,11 +389,7 @@ impl Reading {
     /// (model units).
     pub fn half_space(&self) -> Option<(V, f64)> {
         let [fi] = self.faces[..] else { return None };
-        let f = &self.body.loc.b.faces[fi];
-        let crate::brep::geom::Surface::Plane(frame) = &f.surface else { return None };
-        let sign = if f.reversed { -1.0 } else { 1.0 };
-        let n = scale(frame.z, sign);
-        Some((n, dot(n, self.body.back(frame.o))))
+        self.body.plane(fi).map(|(n, o)| (n, dot(n, o)))
     }
 
     /// The side of the face whose patch is nearest `p`, and its gradient.

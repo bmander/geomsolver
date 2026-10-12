@@ -280,8 +280,10 @@ impl Session {
             let make = || -> Result<c_int,String> {
                 let id = if field(node,"kind").as_str() == "body" {
                     let mut id = shapes[&field(node,"stock").as_i64()];
-                    for operation in ["on","cut","bound"] {
-                        for operand in field(node,operation).arr() {
+                    // then what reads the faces the rest make, fills then cuts (the stratum)
+                    for (key,operation) in [("on","on"),("cut","cut"),("bound","bound"),("on_late","on"),("cut_late","cut")] {
+                        let Some(operands) = node.get(key) else { continue };
+                        for operand in operands.arr() {
                             id = self.boolean(id,shapes[&operand.as_i64()],operation)?;
                         }
                     }

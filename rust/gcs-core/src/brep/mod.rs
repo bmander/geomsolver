@@ -20,3 +20,4 @@ pub mod corners;
 pub mod section;
 pub mod sweep;
 pub mod export;
+pub mod fillet;
