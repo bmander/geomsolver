@@ -10,7 +10,7 @@ fn export_cad_flank_references() {
     let mut records = vec![];
     for member in 0..2 {
         let tip: Vec<V> = [0.,1.].iter().map(|&u| {
-            let p = pair.local_frame(member).point(pair.limits[member][0].at(u,0.).unwrap().position);
+            let p = pair.local_frame(member).point(pair.wall(member,"tip").at(u,0.).unwrap().position);
             [p[0].hypot(p[1]),0.,p[2]]
         }).collect();
         for side in 0..2 {
@@ -41,8 +41,7 @@ fn export_cad_fillet_references() {
             let flank = pair.patch(member,side,name);
             let patch = pair.patch(member,side,&format!("{name}_round"));
             let join = pair.seam(&flank,false).endpoint_parameters()[1];
-            let index = pair.model.map.ent_named(&patch.name).unwrap().i();
-            let edge = pair.model.sketch.surfaces[index].edge;
+            let edge = pair.edge_of(&patch);
             assert_eq!(edge.kind,gcs_core::model::EntKind::Arc);
             let (start,end) = pair.model.sketch.arc_angles(edge.i());
             let sweep = end-start;
@@ -110,10 +109,8 @@ fn export_tooth_space_sections_for_cad_backend() {
             levels.push(format!("{{\"subdivisions\":{n},\"sides\":{sides:?}}}"));
         }
         let blank: Vec<Vec<V>> = [0.9*pair.rm,1.1*pair.rm].iter().map(|&rho|
-            [2,0].iter().map(|&boundary| {
-                let hits = pair.limits[member][boundary].line_on_sphere([0.;3],rho,0.).unwrap();
-                assert_eq!(hits.len(),1);
-                let p = pair.local_frame(member).point(hits[0].position);
+            ["back","tip"].iter().map(|&boundary| {
+                let p = pair.local_frame(member).point(pair.cone_on_sphere(member,boundary,rho));
                 [p[0].hypot(p[1]),0.,p[2]]
             }).collect()).collect();
         members.push(format!("{{\"member\":{member},\"teeth\":{},\"blank_meridian\":{blank:?},\"levels\":[{}]}}",
@@ -135,14 +132,12 @@ fn export_cad_boundary_supports() {
             let p = pair.local_frame(member).point(p);
             [p[0].hypot(p[1]),0.,p[2]]
         };
-        let cones: Vec<Vec<V>> = pair.limits[member].iter().map(|s|
+        let cones: Vec<Vec<V>> = ["tip","back"].map(|w| pair.wall(member,w)).iter().map(|s|
             [0.,1.].iter().map(|&u| local(s.at(u,0.).unwrap().position)).collect()).collect();
-        let blank: Vec<Vec<V>> = radii.iter().map(|&rho| [2,0].iter().map(|&boundary| {
-            let hits = pair.limits[member][boundary].line_on_sphere([0.;3],rho,0.).unwrap();
-            assert_eq!(hits.len(),1);
-            local(hits[0].position)
+        let blank: Vec<Vec<V>> = radii.iter().map(|&rho| ["back","tip"].iter().map(|&boundary| {
+            local(pair.cone_on_sphere(member,boundary,rho))
         }).collect()).collect();
-        members.push(format!("{{\"member\":{member},\"teeth\":{},\"cones_tip_root_back\":{cones:?},\"blank_meridian\":{blank:?}}}",pair.teeth[member]));
+        members.push(format!("{{\"member\":{member},\"teeth\":{},\"cones_tip_back\":{cones:?},\"blank_meridian\":{blank:?}}}",pair.teeth[member]));
     }
     std::fs::write(path,format!("{{\"module_mm\":{},\"sphere_radii_mm\":{radii:?},\"members\":[{}],\"scope\":\"Exact binary64 nominal support coefficients extracted from the solved source; source-solve error is separate\"}}\n",pair.module,members.join(","))).unwrap();
 }

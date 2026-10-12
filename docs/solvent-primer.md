@@ -1318,8 +1318,9 @@ extruded, and `p coincident flank` from any view is one equation. Draw the prism
 and name the edge in it.
 
 **Spatial geometry read after the solve** adds no unknown and has no 2D glyph; each certifies only
-local evaluations ([analytic face boundaries](analytic-face-boundaries.md);
-`spiral_bevel/verification.sv` uses them throughout):
+local evaluations ([analytic face boundaries](analytic-face-boundaries.md); the spiral bevel's
+checks make the same objects of their parts, from the faces its built members leave —
+`faces::face_source`, #212):
 
 - `surface(crown, edge: rack.outer[, from: 180deg, to: 360deg])` — the surface one profile edge
   of an unmodified revolution sweeps, `u` along the edge, `v` round; read the domain, never assume

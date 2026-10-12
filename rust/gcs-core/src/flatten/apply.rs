@@ -156,6 +156,11 @@ impl<'a> Walk<'a> {
     ) {
         // the statement every relation made reads as: the use's own, or — a use inside another's
         // expansion — the outermost one, stamped over this when that one's application ends
+        // the sets its relations come through (#212): those the use was made through, where an
+        // outer application made it, then this use's own
+        let own = worded.sets.iter().map(|(_, n)| n.clone());
+        let through: Vec<String> =
+            u.rel.word.as_ref().map_or(Vec::new(), |w| w.through.clone()).into_iter().chain(own).collect();
         let worded = u.rel.word.clone().unwrap_or(worded);
         let ops: Vec<Ref> = worded.ops.iter().enumerate().map(|(i, r)| {
             self.bind_to_use(&app, &format!("#word.{i}"), r.clone(), u);
@@ -208,7 +213,10 @@ impl<'a> Walk<'a> {
             st.span = u.st.span;
             st.chained = u.st.chained;
             *p = u.path.to_vec();
-            r.word = Some(stamp.clone());
+            // the sets it came through: the use's, then those an inner use stamped (#212)
+            let inner = r.word.take().map_or(Vec::new(), |w| w.through);
+            let through = through.iter().cloned().chain(inner).collect();
+            r.word = Some(Worded { through, ..stamp.clone() });
             // in space, a set's body (§6.21), which no later stamp undoes
             r.space |= set;
             r.claim |= u.rel.claim;

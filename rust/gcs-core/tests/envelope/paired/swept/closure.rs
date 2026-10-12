@@ -22,7 +22,7 @@ impl GearSpace {
         // inactive opposite wall is not part of this tooth-space boundary.
         let delta = -TAU/pair.teeth[0].hypot(pair.teeth[1]);
         let mut sk = pair.model.sketch.clone();
-        let id = pair.model.map.ent_named("pair.generation.crown_roll").unwrap().i();
+        let id = pair.model.map.ent_named(&format!("{REF}.generation.crown_roll")).unwrap().i();
         let gcs_core::model::MotionDef::Rotation {axis,ratio,phase,..} = &mut sk.motions[id].def else { panic!() };
         *ratio = 0.; *phase = delta;
         let axis = &sk.lines[*axis as usize];
@@ -56,9 +56,7 @@ fn neighbor_closed_gear_space_matches_selected_boundary_and_interior() {
         let edge = if side == 0 { "inner" } else { "outer" };
         let flank = pair.patch(1,side,edge);
         let round = pair.patch(1,side,&format!("{edge}_round"));
-        let surface_id = pair.model.map.ent_named(&flank.name).unwrap().i();
-        let crown = pair.model.sketch.surfaces[surface_id].solid as usize;
-        let region = RevolvedRegion::read(&pair.model.sketch,crown,pair.module*1e-10).unwrap();
+        let region = RevolvedRegion::read(&pair.model.sketch,pair.crown_of(&flank),pair.module*1e-10).unwrap();
         for fraction in [0.9,1.,1.1] {
             let rho = fraction*pair.rm;
             let tip = pair.tip(1,&flank,rho,pair.analytic(1,&flank,0.5,rho).parameters);

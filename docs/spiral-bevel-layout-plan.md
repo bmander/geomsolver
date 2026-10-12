@@ -15,8 +15,8 @@ arithmetic. Three principles govern it:
 
 **Status.** Done: the example is this layout (`rust/examples/spiral_bevel/`, whose README walks
 the files), a true hypoid with its shafts stated ([the true hypoid](#the-true-hypoid)), and all
-six language changes it asked for exist. Open: step 6's per-side checks module (`checks/`); the
-analytic faces are still written out one by one in `verification.sv`.
+six language changes it asked for exist. Open: step 6's per-side checks module (`checks/`). The
+analytic faces are no longer written out (#212): the checks read them off the members as built.
 
 ## Where the example stood
 
@@ -97,8 +97,9 @@ folded by a stated angle through M; the layout does not need it.)
    `members.sv` holds `GeneratedMember` and `HypoidPair`.
 6. **Checks** (`checks/`, open). Claims readable in the model: the shaft angle, the offset,
    and the pinion's spiral angle, each measured and reported. The analytic faces, written per
-   member side (language change 3); today they are `verification.sv`'s `ReferenceFaces`, one
-   declaration per seam, corner and edge, read through `pair.sv`.
+   member side (language change 3); `verification.sv`'s `ReferenceFaces` declared them one by one
+   until #212, which reads them off each member as built, its faces named by the crown faces
+   that made them.
 7. **Manufacture** — machine settings — stays out of scope.
 
 ## Files
@@ -113,8 +114,8 @@ spiral_bevel/          (the app key; the file pane lists the steps)
   pitch/trace.sv       ToothTrace: C, the trace circle, its heading and normal at M
   pitch/pinion.sv      PinionCone: A, V, the pinion's axis solved against the gear's
   blank/sphere.sv      FaceSpan and SphericalBoundary: the toe and heel
-  blank/cone.sv        ConeSpan and ConeBoundary: the tip, root and back cones
-  blank/member.sv      MemberLimits and MemberBlank
+  blank/member.sv      MemberBlank: the blank as one region, its faces tip, heel, toe and back
+  blank/ends.sv        EndChamfer and EndCut: the end relief
   crown/thickness.sv   CrownThickness: the quarter-pitch points, inner and outer trace circles
   crown/rounding.sv    TipRounding: base, tip and roundings every crown section shares
   crown/section.sv     RackSection: flanks, pitch points and tip in N
@@ -129,8 +130,7 @@ spiral_bevel/          (the app key; the file pane lists the steps)
   layout.sv            HypoidLayout(front, design): steps 2–5
   members.sv           GeneratedMember and HypoidPair
   gears.sv             the entry point: pair: HypoidPair(…)
-  verification.sv      ReferenceFaces: the analytic faces (the plan's checks/faces.sv)
-  pair.sv              the checks' entry point: the layout and its faces
+  pair.sv              the layout alone, for the layout's checks
 ```
 
 ## Migration and verification
@@ -329,7 +329,7 @@ Ordered by what they unlock. All six are done; the table gives the spelling that
 |---|---|---|---|---|
 | 1 | spatial constraints, solved attitudes | done | `fold: beta`, `fold: along l`, `through: M`, `attitude: free`, `offset: free`; relations across views read in space; `sphere`, `cone`, `cylinder`; `against` with solved views | primer 1.13, 2.11–2.13; [spatial-constraints-plan.md](spatial-constraints-plan.md) |
 | 2 | a fold through a solved point | done, as planned | `plane q(…, from: P, fold: ε, through: M)` | primer 1.13 |
-| 3 | iterating over a chain's edges | done | `repeat e in CHAIN [as i] { … }`, and `cycle e in CHAIN` for a closed one | primer 1.7; `verification.sv` |
+| 3 | iterating over a chain's edges | done | `repeat e in CHAIN [as i] { … }`, and `cycle e in CHAIN` for a closed one | primer 1.7; `tests/chain_edges.rs` |
 | 4 | an arc-length dimension | done, as planned | `length(L) a` | primer 1.5, 2.14; `belt_wrap.sv` |
 | 5 | measurements after the solve | done for motions only | `length(l)`, `radius(c)`, `distance(a, b)`, `angle(l1, l2)` in `ratio:`, `phase:`, `advance:` | primer 1.6, 1.14; `lantern_generation.sv` |
 | 6 | angle equality as a word | done, spelled differently | `l1 angle(l3, l4) l2` | primer 1.5, 2.15; `reflection.sv` |
@@ -353,9 +353,9 @@ Ordered by what they unlock. All six are done; the table gives the spelling that
    `through:` a point, the mate's gap is a row of the solve.
 3. **Iterating over a chain's edges**: `repeat e in rack.profile { surface s(crown, edge: e) … }`.
    Collapses most of `checks/faces.sv`. *Done*, as `repeat e in CHAIN [as i] { … }` with `cycle
-   e in CHAIN` beside it (`next` is the following edge's copy). Today's `verification.sv` already
-   uses it: each rack section's surfaces, envelopes and material regions are one block per
-   section, so the per-edge declarations (and their names) changed there before the file split.
+   e in CHAIN` beside it (`next` is the following edge's copy). `verification.sv` used it (each
+   rack section's surfaces, envelopes and material regions one block per section) until #212
+   retired it.
 4. **An arc-length dimension**: `length(pi * m / 2) arc`, the circular pitch along the pitch
    circle, replacing the quarter-pitch angle and `crown_teeth`. *Done:* `length(L) a` on an
    arc, its radius times its counter-clockwise sweep (primer 1.5, `belt_wrap.sv`).
@@ -381,7 +381,7 @@ Ordered by what they unlock. All six are done; the table gives the spelling that
 3. The rewrite, steps 1–4 of the migration, reproducing the old pair. *Done.*
 4. The true 90° hypoid (migration step 5). *Done.*
 5. Changes 3–6 as the rewrite shows where they pay. *All four exist*; the layout uses 3
-   (`verification.sv`), 4 (`crown/thickness.sv`) and 5 (`generation.sv`).
+   (`verification.sv`, since retired), 4 (`crown/thickness.sv`) and 5 (`generation.sv`).
 
 ## Decisions
 

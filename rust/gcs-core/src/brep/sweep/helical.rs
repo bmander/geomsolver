@@ -9,7 +9,7 @@ use crate::fmath::Det;
 use super::sheet::{Fitted,SweptCut,settle};
 use super::Say;
 use crate::solid::constant_twist::Characteristic;
-use crate::solid::contact_trace::{Grid,Inside,Sheet,Withheld};
+use crate::solid::contact_trace::{Grid,Inside,Sheet,UNNAMED,Withheld};
 use crate::solid::export::{AtStage,ExportRefusal,Stage,Tolerance};
 use crate::space::distance;
 
@@ -76,7 +76,7 @@ pub fn helical_sheet(cut: &SweptCut,found: &Characteristic,heights: Option<[f64;
         let poses = |times: &[f64]| times.iter().map(|&t| family.pose_at(t)).collect::<Result<Vec<_>,_>>();
         let (columns,column_mids) = (poses(&grid.columns)?,poses(&grid.column_mids)?);
         let (nr,nc) = (grid.rows.len(),grid.columns.len());
-        let mut sheet = Sheet {points:Vec::with_capacity(nr*nc),normals:Vec::with_capacity(nr*nc),times:Vec::with_capacity(nr*nc),
+        let mut sheet = Sheet {bands:vec![(0,UNNAMED)],points:Vec::with_capacity(nr*nc),normals:Vec::with_capacity(nr*nc),times:Vec::with_capacity(nr*nc),
             rows:nr,columns:nc,withheld:Vec::new(),withheld_normals:Vec::new(),sites:Vec::new()};
         for row in &rows { for (pose,&t) in columns.iter().zip(&grid.columns) {
             let (p,n) = carried(*row,pose);
@@ -106,5 +106,5 @@ pub fn helical_sheet(cut: &SweptCut,found: &Characteristic,heights: Option<[f64;
     (say.stage)(&format!("`{name}`: sheet {}x{}, its edges clear of the blank",sheet.rows,sheet.columns));
     (say.mark)(Stage::Sheet);
     let sides = |grid: &Grid| lay(grid,Withheld::Sides);
-    settle(name,scale,sheet,&grid,&sides,inside,near,tolerance,"rows along the characteristic",say)?
+    settle(name,scale,sheet,&grid,&sides,inside,near,tolerance,"rows along the characteristic",say)?.map(|(fitted,_)| fitted)
 }

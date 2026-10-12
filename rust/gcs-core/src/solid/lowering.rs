@@ -807,7 +807,7 @@ fn gate(sk: &Sketch, solid: usize, pieces: &[Piece], body: &super::faces::BodyFa
     // (`build` rolls a run alone: none stands beside other pieces)
     let (b, mm) = match pieces {
         [Piece::Rolled(k)] => {
-            let (stratum, mm) = body.brep();
+            let (stratum, mm, _) = body.brep();
             let tol = 1e-9 * stratum.size().max(1.0);
             (crate::brep::fillet::roll(stratum, body.q(k.at), k.r * mm, tol)?.piece, Some(mm))
         }

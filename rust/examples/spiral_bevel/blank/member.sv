@@ -5,7 +5,8 @@
 // relief chamfers the tip's toe and heel corners `end_relief` each way, each leg measured from
 // the other face (`std.Chamfered`): on the sphere the flat bows with it, a parabola's arc turned
 // about the axis, built exactly; a relief of nothing cuts nothing.
-// The checks draw the same limits as revolved sections (blank/limits.sv), for their named walls.
+// Each set the region's body uses names the blank's face it bounds: a member built from the
+// blank has faces `material.tip`, `.heel`, `.toe` and `.back`, which the checks read.
 use std
 use blank.sphere
 
@@ -22,11 +23,11 @@ component MemberBlank(generator: line, ax: line, view: plane, design: group,
   pitch := std.Cone(ax)
   generator.p2 coincident pitch
   tip := std.Offset(pitch, d: design.addendum * normal_module)
+  back := { q | q outside(design.back * normal_module) pitch }
   // the toe's side of the blank, a bound of its own for the toe's chamfer
   beyond_toe := { q | q outside toe }
   relief := design.end_relief
-  region := { p | p inside tip; p inside heel; p outside toe
-                  p outside(design.back * normal_module) pitch
+  region := { p | p inside tip; p inside heel; p outside toe; p inside back
                   p inside std.Chamfered(tip, beyond_toe, la: relief, lb: relief)
                   p inside std.Chamfered(tip, heel, la: relief, lb: relief) }
   material := solid(region)

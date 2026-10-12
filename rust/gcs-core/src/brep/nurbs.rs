@@ -520,6 +520,18 @@ pub enum Parametrization { Even,ChordLength,Centripetal }
 /// by `kind` along each column (or row) and averaged over them, so every row is interpolated at
 /// one set of parameters; the rows interpolated along `v`, then their poles along `u`.
 pub fn interpolate_net(points: &[V],rows: usize,columns: usize,kind: Parametrization) -> Option<Net> {
+    let (tu,tv) = net_parameters(points,rows,columns,kind)?;
+    let at = |i: usize,j: usize| points[i*columns+j];
+    let rows_fit: Vec<BSpline> = (0..rows).map(|i| interpolate(&(0..columns).map(|j| at(i,j)).collect::<Vec<_>>(),&tv,3)).collect::<Option<_>>()?;
+    let nv = rows_fit[0].poles.len();
+    let cols_fit: Vec<BSpline> = (0..nv).map(|j| interpolate(&rows_fit.iter().map(|r| r.poles[j]).collect::<Vec<_>>(),&tu,3)).collect::<Option<_>>()?;
+    let poles: Vec<Vec<V>> = (0..cols_fit[0].poles.len()).map(|i| cols_fit.iter().map(|c| c.poles[i]).collect()).collect();
+    Some(Net {du:cols_fit[0].degree,dv:rows_fit[0].degree,uknots:cols_fit[0].knots.clone(),vknots:rows_fit[0].knots.clone(),poles,weights:None})
+}
+
+/// The parameters `interpolate_net` interpolates a grid at: each row's `u` and each column's `v`,
+/// so a row of the grid is the net's iso-curve at its `u` (#212).
+pub fn net_parameters(points: &[V],rows: usize,columns: usize,kind: Parametrization) -> Option<(Vec<f64>,Vec<f64>)> {
     if rows < 2 || columns < 2 || points.len() != rows*columns { return None }
     let at = |i: usize,j: usize| points[i*columns+j];
     let spread = |n: usize,lines: usize,gap: &dyn Fn(usize,usize) -> f64| -> Option<Vec<f64>> {
@@ -540,9 +552,5 @@ pub fn interpolate_net(points: &[V],rows: usize,columns: usize,kind: Parametriza
     };
     let tu = spread(rows,columns,&|j,i| crate::space::distance(at(i-1,j),at(i,j)))?;
     let tv = spread(columns,rows,&|i,j| crate::space::distance(at(i,j-1),at(i,j)))?;
-    let rows_fit: Vec<BSpline> = (0..rows).map(|i| interpolate(&(0..columns).map(|j| at(i,j)).collect::<Vec<_>>(),&tv,3)).collect::<Option<_>>()?;
-    let nv = rows_fit[0].poles.len();
-    let cols_fit: Vec<BSpline> = (0..nv).map(|j| interpolate(&rows_fit.iter().map(|r| r.poles[j]).collect::<Vec<_>>(),&tu,3)).collect::<Option<_>>()?;
-    let poles: Vec<Vec<V>> = (0..cols_fit[0].poles.len()).map(|i| cols_fit.iter().map(|c| c.poles[i]).collect()).collect();
-    Some(Net {du:cols_fit[0].degree,dv:rows_fit[0].degree,uknots:cols_fit[0].knots.clone(),vknots:rows_fit[0].knots.clone(),poles,weights:None})
+    Some((tu,tv))
 }

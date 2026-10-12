@@ -172,7 +172,7 @@ fn surface_supported_boundaries_check_incidence_without_asserting_a_disk_interio
     let e = solved(&format!("{}\nother_bottom := edge(low_cut,from: bl,to: br,along: ax)\n\
         loop_only := face(bottom_edge,other_bottom,on: lower.wall)\n",source()));
     let face = face(&e,"loop_only");
-    let support = gcs_core::solid::RevolvedSurface::named(&e.sketch,face.support().i()).unwrap();
+    let support = gcs_core::solid::RevolvedSurface::named(&e.sketch,face.support().unwrap().i()).unwrap();
     for fraction in [0.,0.25,0.5,0.75,1.] {
         let a = face.sample_boundary(0,fraction,100).unwrap();
         let b = face.sample_boundary(1,1.-fraction,100).unwrap();

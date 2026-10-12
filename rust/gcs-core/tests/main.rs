@@ -14,6 +14,7 @@ mod round_lowering;
 mod bounds;
 mod set_regions;
 mod region_blank;
+mod swept_faces;
 mod fillet_meridian;
 mod fillet_definition;
 mod region_solids;

@@ -54,6 +54,16 @@ enum Source {
     Surface {projector:SurfaceProjector,domain:[[f64;2];2]},
 }
 
+/// What a face made of its parts lies on (#212): a generating face, or an analytic surface.
+#[derive(Clone,Debug)]
+pub enum Support { Envelope(crate::patch::TrimmedPatch),Surface(RevolvedSurface) }
+
+/// One use of an edge in a face made of its parts: the edge and its identity (a caller's
+/// numbering, shared by the faces it bounds), which way the loop walks it, and where its seam's
+/// chart is the other face's of a junction, this face's `u` there.
+#[derive(Clone,Debug)]
+pub struct Use { pub edge: SpatialEdge,pub id: usize,pub direction: Direction,pub endpoint_u: Option<f64> }
+
 /// One boundary point, retaining the shared edge position and the support chart.
 /// `incidence_error` is the distance to the support evaluated in that chart.
 #[derive(Clone,Copy,Debug)]
@@ -72,7 +82,7 @@ pub struct BoundaryPoint {
 #[derive(Clone,Debug)]
 pub struct SpatialFaceBoundary {
     pub name: String,
-    support: EntRef,
+    support: Option<EntRef>,
     source: Source,
     uses: Vec<EdgeUse>,
     edges: Vec<SpatialEdge>,
@@ -110,7 +120,31 @@ impl SpatialFaceBoundary {
                 Some(crate::seam::junction(sk,[seam.first,seam.second])?[1])
             } else { None });
         }
-        let result = Self {name:face.name.clone(),support,source,uses,edges,endpoint_u,tolerance};
+        Self::checked(Self {name:face.name.clone(),support:Some(support),source,uses,edges,endpoint_u,tolerance})
+    }
+
+    /// A face on `support` bounded by `uses`, made of its parts (#212): the loop closes on the
+    /// edges' own corner identities, in order, and every use's ends are checked on the support.
+    pub fn new(name: String,support: Support,uses: Vec<Use>,tolerance: EdgeTolerance) -> Result<Self,String> {
+        if uses.len() < 2 { return Err("a spatial face needs a closed loop of at least two edges".into()); }
+        let ends: Vec<[usize;2]> = uses.iter().map(|u| {
+            let v = u.edge.vertices();
+            if u.direction == Direction::Forward { v } else { [v[1],v[0]] }
+        }).collect();
+        if (0..ends.len()).any(|i| ends[i][1] != ends[(i+1)%ends.len()][0]) {
+            return Err("spatial face edges must form one ordered closed loop of shared vertex identities".into());
+        }
+        let source = match support {
+            Support::Surface(surface) => Source::Surface {projector:surface.projector()?,domain:surface.domain()},
+            Support::Envelope(patch) => Source::Envelope(patch.envelope_patch()?.clone()),
+        };
+        let edge_uses = uses.iter().map(|u| EdgeUse {edge:u.id,direction:u.direction}).collect();
+        let endpoint_u = uses.iter().map(|u| u.endpoint_u).collect();
+        let edges = uses.into_iter().map(|u| u.edge).collect();
+        Self::checked(Self {name,support:None,source,uses:edge_uses,edges,endpoint_u,tolerance})
+    }
+
+    fn checked(result: Self) -> Result<Self,String> {
         for edge in 0..result.uses.len() {
             for fraction in [0.,1.] {
                 result.sample_boundary(edge,fraction,1)
@@ -120,7 +154,8 @@ impl SpatialFaceBoundary {
         Ok(result)
     }
 
-    pub fn support(&self) -> EntRef { self.support }
+    /// The declared support, for a face read off a declaration.
+    pub fn support(&self) -> Option<EntRef> { self.support }
     pub fn edge_uses(&self) -> &[EdgeUse] { &self.uses }
 
     /// `edge` is an index in the ordered loop; fraction follows the directed use.

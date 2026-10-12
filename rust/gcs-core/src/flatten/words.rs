@@ -304,6 +304,7 @@ impl<'a> Walk<'a> {
             ops: used.ops.clone(),
             args: crate::syntax::written_parts(&used.args).0.join(", "),
             sets: Vec::new(),
+            through: Vec::new(),
             span: at,
         };
         self.applying_words.push((k, outer));

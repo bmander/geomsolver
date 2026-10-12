@@ -50,7 +50,8 @@ An independent measure of an exported file's accuracy, before anything else chan
 
 - sample points on each STEP face (OCCT surface evaluation) and each STL triangle;
 - measure each point's distance to the **exact** generated surface by two routes: the analytic
-  envelope evaluators `verification.sv` declares (`GeneratedEnvelope`, seams, patches), and the
+  envelope evaluators a member's faces read back to (`faces::face_source`: `GeneratedEnvelope`,
+  seams, patches made of their parts), and the
   material field's exact reading (`MaterialField::reading`, exact below its cap), which should
   agree;
 - report per face: max, 99th percentile and mean deviation, and where the worst lies.
