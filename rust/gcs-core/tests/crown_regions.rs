@@ -307,3 +307,138 @@ fn a_crown_tooth_region_cuts_a_region_blank_exactly() {
     let (ok, line) = accuracy::within(&meter, &samples, &measurements, 0.01, 1.0);
     assert!(ok, "{line}");
 }
+
+// -- what the hypoid's crown as regions needed (#214) --------------------------------------------
+
+/// The radius of `cone_through(20deg)`'s cone at height `z`: `20 + tan(20°)(z − 10)`.
+fn radius_at(z: f64) -> f64 { 20.0 + 20f64.to_radians().tan() * (z - 10.0) }
+
+/// **A side's surface is a set a drawn point is put on** (#214): `m coincident side.surface`, the
+/// side `{ x | x outside(0.5mm) k }` of a cone through `q`, puts `m` on the cone moved half a
+/// millimetre into it along its normal — the radius at its height less `0.5 / cos(lean)` — as a
+/// topping's kink is put on a crown's flank as grown; and a set formal's `.surface` is the same.
+#[test]
+fn a_point_is_put_on_a_sides_surface() {
+    let e = solved(&format!("{AXIS}k := std.ConeThrough(ax, q, lean: 20deg)\n\
+        side := {{ x | x outside(0.5mm) k }}\n\
+        in std.front {{\n  m := point hint((15, -2))\n}}\nm coincident side.surface\n\
+        ax.p1 distance(-2mm, along: ax) m\n\
+        component On(f: set, at: point) {{\n  n := point hint((15, 0, -4))\n  n coincident f.surface\n  \
+        fix(y == 0) n\n  at distance(-4mm, along: ax) n\n}}\non := On(side, ax.p1)\n"));
+    let want = |z: f64| radius_at(z) - 0.5 / 20f64.to_radians().cos();
+    let m = at(&e, "m");
+    assert!((m[0] - want(-2.0)).abs() < 1e-9 && (m[2] + 2.0).abs() < 1e-9, "{m:?} against {}", want(-2.0));
+    let n = at(&e, "on.n");
+    assert!((n[0] - want(-4.0)).abs() < 1e-9, "{n:?} against {}", want(-4.0));
+}
+
+/// **A distance that comes to nothing** (#214): a set `std.Offset(S, d: 0mm)` is `S` — a point put
+/// on it is on `S` (`coincident`, where a drawn point's distance would have nowhere to put its
+/// foot), and a region within it is the region within `S`, as an allowance of none is; a zero
+/// written as the distance is still refused, naming `coincident`.
+#[test]
+fn an_offset_of_nothing_is_the_set() {
+    let src = format!("{AXIS}k := std.ConeThrough(ax, q, lean: 20deg)\nnone := std.Offset(k, d: 0mm)\n\
+        in std.front {{\n  m := point hint((18, 4))\n}}\nm coincident none\nax.p1 distance(4mm, along: ax) m\n\
+        lid := std.Level(ax.p1, ax, d: 6mm)\nfloor := {{ x | x outside std.Level(ax.p1, ax, d: -6mm) }}\n\
+        grown := {{ p | p inside none; p inside lid; p inside floor }}\n\
+        plain := {{ p | p inside k; p inside lid; p inside floor }}\n\
+        a := solid(grown)\nb := solid(plain)\n");
+    let e = solved(&src);
+    let m = at(&e, "m");
+    assert!((m[0] - radius_at(4.0)).abs() < 1e-9, "{m:?} against {}", radius_at(4.0));
+    let volume = |name: &str| {
+        let ex = e.sketch.exact_solid(ent(&e, name).i()).unwrap();
+        props::volume(&ex.brep) / ex.mm.powi(3)
+    };
+    assert!((volume("a") - volume("b")).abs() <= 1e-12 * volume("b"), "{} against {}", volume("a"), volume("b"));
+    let written = format!("{AXIS}k := std.ConeThrough(ax, q, lean: 20deg)\n\
+        in std.front {{\n  m := point hint((18, 4))\n}}\nm distance(0mm, side: outside) k\n");
+    let (p, _, _) = gcs_core::library::parse_linked(&written);
+    let refused = gcs_core::program::elaborate(&p);
+    assert!(refused.diags.iter().any(|d| d.message.contains("coincident")), "{:?}", refused.diags);
+}
+
+/// **A round's radius may read an unknown of the drawing** (#214), as the hypoid's reads the normal
+/// module the trace constructs: the tooth rounded by `0.3 * m`, `m` an unknown a drawn length
+/// holds at 1, is the tooth rounded by 0.3 to the closed form; and grown across its flanks by
+/// `0.05 * m` it is the tooth grown by 0.05mm, the growth added to the round's centres as a number
+/// (where a text over the unknown would read it as a plain number and refuse to add it).
+#[test]
+fn a_rounds_radius_reads_an_unknown() {
+    let unknown = "param m: Length hint(2mm)\nin std.front {\n  u0 := point\n  u1 := point\n  \
+        fix((40, 0)) u0\n  fix((41, 0)) u1\n}\nu0 distance(m) u1\n";
+    let rounded = ROUNDED.replace("r: 0.3mm", "r: 0.3 * m");
+    let e = solved(&format!("unit mm\nuse std\n{unknown}{TOOTH}{rounded}"));
+    let ex = e.sketch.exact_solid(ent(&e, "tool").i()).unwrap();
+    let t = 20f64.to_radians().tan();
+    let trapezoid = 32.0 * PI * (PI / 2.0 * 2.75 + t * (1.5f64.powi(2) - 1.25f64.powi(2)));
+    let want = trapezoid - round_takes(false, 0.3) - round_takes(true, 0.3);
+    let volume = props::volume(&ex.brep) / ex.mm.powi(3);
+    assert!((volume - want).abs() <= 1e-9 * want, "{volume} against {want}");
+    let grown = |g: &str| {
+        let tooth = format!("beyond_g := {{ x | x outside({g}) inner }}\nouter_g := std.Offset(outer, d: {g})\n\
+            tooth := {{ p | p inside beyond_g; p inside outer_g; p inside back; p outside point_\n\
+            p inside std.Rounded(beyond_g, above, r: 0.3 * m)\n\
+            p inside std.Rounded(outer_g, above, r: 0.3 * m) }}\nconstruction tool := solid(tooth)\n");
+        let e = solved(&format!("unit mm\nuse std\n{unknown}{TOOTH}{tooth}"));
+        let ex = e.sketch.exact_solid(ent(&e, "tool").i()).unwrap();
+        props::volume(&ex.brep) / ex.mm.powi(3)
+    };
+    let (by_unknown, by_number) = (grown("0.05 * m"), grown("0.05mm"));
+    assert!(by_unknown > volume + 0.1, "the grown tooth {by_unknown} is the tooth's {volume} and more");
+    assert!((by_unknown - by_number).abs() <= 1e-12 * by_number, "{by_unknown} against {by_number}");
+}
+
+/// **A seed's step from a point is taken in space** (#214): a point in space seeded up a line
+/// square to the plane its `at:` point is drawn in starts that far off the plane — read in the
+/// plane, the step would go nowhere and the cutter's axis would start with no length.
+#[test]
+fn a_seeds_step_is_taken_in_space() {
+    let e = read("unit mm\nuse std\nin std.top {\n  c := point\n  fix((3, 4)) c\n}\n\
+        in std.front {\n  up := line\n  fix((0, 0)) up.p1\n  fix((0, 10)) up.p2\n}\n\
+        p := point hint(at: c, along: up, by: 0.5)\n");
+    let p = at(&e, "p");
+    assert!((p[0] - 3.0).abs() < 1e-12 && (p[1] - 4.0).abs() < 1e-12 && (p[2] - 5.0).abs() < 1e-12, "{p:?}");
+}
+
+/// **A cone through a point is held at any size** (#214): its apex by the angle between its line
+/// and the generator through the point, its spine to the point's foot, nothing a fixed length.  At
+/// a thousand times `cone_through`'s size and a lean of 7.5 degrees — the apex 7.6 radii up the
+/// axis — every start jittered off the solution by up to a hundredth of the drawing settles back on
+/// the closed form, solved as an editor solves it.
+#[test]
+fn a_cone_through_is_held_at_any_size() {
+    let big = "unit mm\nuse std\nin std.front {\n  ax := line\n  fix((0, 0)) ax.p1\n  fix((0, 1000)) ax.p2\n  \
+        q := point\n  fix((20000, 10000)) q\n}\nk := std.ConeThrough(ax, q, lean: -7.5deg)\n";
+    let e = solved(big);
+    let want = 10000.0 + 20000.0 / 7.5f64.to_radians().tan();
+    assert!((at(&e, "k.apex")[2] - want).abs() < 1e-9 * want, "{:?} against {want}", at(&e, "k.apex"));
+    for seed in 0..16 {
+        let mut sk = crate::common::jittered(&e.sketch, 0.01, seed);
+        let r = solve(&mut sk, SolveOpts::default());
+        let apex = sk.world_point(ent(&e, "k.apex").i());
+        assert!(r.success && (apex[2] - want).abs() < 1e-9 * want, "seed {seed}: {r:?}, apex {apex:?}");
+    }
+}
+
+/// **A surface run the other way** (`RevolvedSurface::reversed`, #214): each face of the tooth's
+/// meridian, reversed, is where it was at `1 − u`, with its `u` derivative turned.
+#[test]
+fn a_reversed_surface_is_the_surface_run_the_other_way() {
+    use gcs_core::solid::RevolvedSurface;
+    let e = solved(&format!("unit mm\nuse std\n{TOOTH}{ROUNDED}"));
+    let m = gcs_core::solid::region::meridian(&e.sketch, ent(&e, "tool").i()).unwrap();
+    let faces: Vec<RevolvedSurface> = RevolvedSurface::meridian_loops(&m, "tool").into_iter().flatten().flatten().collect();
+    assert_eq!(faces.len(), 6);
+    for f in &faces {
+        let r = f.reversed();
+        for u in [0.0, 0.3, 0.7, 1.0] { for v in [0.0, 0.4] {
+            let (a, b) = (f.at(u, v).unwrap(), r.at(1.0 - u, v).unwrap());
+            for k in 0..3 {
+                assert!((a.position[k] - b.position[k]).abs() < 1e-12, "{}: {u} {v}", f.name);
+                assert!((a.du[k] + b.du[k]).abs() < 1e-9, "{}: {u} {v}", f.name);
+            }
+        }}
+    }
+}
