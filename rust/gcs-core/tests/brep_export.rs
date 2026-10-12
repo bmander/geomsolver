@@ -1,4 +1,4 @@
-//! A solid's exact export by this kernel (`brep::export`, phase 5 of docs/rust-kernel-plan.md), the
+//! A solid's exact export by this kernel (`brep::export`), the
 //! functions `solventc` and the browser's worker both call: a body whose swept cut is placed once is
 //! no sector, and is built whole — the blank split by the placed sheet, its cells judged by the
 //! material field — then written, parsed back, meshed and held to the field.

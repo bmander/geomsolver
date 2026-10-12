@@ -6,8 +6,7 @@ blanks, the generating crown and the motions that roll it through each blank. Ev
 follows from lines, circles, angles, incidence and projection; no constraint, and no `param`
 that feeds one, computes a point with `sin` and `cos`. Each step is a module whose
 `preview { … }` draws that step alone when it is opened in the app, and whose header comment
-says what it constructs. The plan is
-[docs/spiral-bevel-layout-plan.md](../../../docs/spiral-bevel-layout-plan.md).
+says what it constructs.
 
 The layout is drawn in two views through M (`views.sv`): the pitch plane P, `std.top`, with the
 gear apex O at its origin, and N, the normal section, folded square to it about the trace normal
@@ -80,10 +79,9 @@ A member with swept cuts is built only inside the generating-sweep class
 (`docs/generating-sweeps.md`): admission asks each swept cut its rows and refuses with the row
 and a witness, and nothing is written unless the shell checks pass and the mesh agrees with the
 material field. Each member has two sweeps, its crown's and its tip relief's. The exports take
-about 14 and 19 seconds (pinion, gear) on 12 cores (docs/native-speed-plan.md); measuring a file
+about 14 and 19 seconds (pinion, gear) on 12 cores; measuring a file
 takes longer than making it (`--measure-samples` sets how finely). `--stl-backend mesh` meshes a
-member from its material field instead; progress is reported on stderr. As configured
-(docs/native-hypoid-plan.md, phases 5 and 6):
+member from its material field instead; progress is reported on stderr. As configured:
 
 | | STEP | STL | worst exact face, STEP / STL |
 |---|---|---|---|
@@ -104,5 +102,4 @@ build/solventc rust/examples/spiral_bevel/gears.sv --no-diagnose \
 ```
 
 This is a common-crown construction with a stated backlash and tip and end relief, not a
-production acceptance result; [the roadmap](../../../docs/spiral-bevel-roadmap.md) holds the
-generating-system evidence and the outstanding engagement checks.
+production acceptance result: engagement across a tooth period is not checked.

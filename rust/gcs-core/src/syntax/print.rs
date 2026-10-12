@@ -825,7 +825,7 @@ pub fn operator_text(kind: CKind, args: &[Option<Arg>]) -> String {
     out
 }
 
-/// **An ordinate and its zero, as a document writes them** (`docs/ordinate-plan.md`): the
+/// **An ordinate and its zero, as a document writes them** (Solvent [0.46]): the
 /// direction in the word that named it or as the reference it is, a plane's own word against the
 /// plane its first point is the origin of (`q distance(d, along: u) P`), and a level in its
 /// own word (`a level(up) b`) — the standard library's `a horizontal b` is a word a file must

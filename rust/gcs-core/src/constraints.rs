@@ -86,7 +86,7 @@ pub enum CKind {
     PointOnSpline,
     SplineTangentLine,
     SplineCurvature,
-    /// **An ordinate** (`docs/ordinate-plan.md`): how far `q` stands from `p` along a directed
+    /// **An ordinate** (Solvent [0.46]): how far `q` stands from `p` along a directed
     /// line, `(q − p)·t̂ − d`.  One statement whatever the direction is — a view's own axis (the
     /// run and the rise), a drawn line, an axis in space, a plane's normal — and which kernel reads
     /// it is the operands' business, held in its `form` slot (`OrdinateForm`), which the core
@@ -130,7 +130,7 @@ pub enum CKind {
     /// `X − (o + p.x·û + p.y·v̂) = 0` over the plane's axes and origin.  Three rows over the
     /// hidden point's three Params, so net nothing.  Intrinsic, minted by `Sketch::lift_point`.
     Lift,
-    /// **Relations in space** (`docs/spatial-constraints-plan.md`): statements between points
+    /// **Relations in space**: statements between points
     /// and lines drawn in *different* views, read over the hidden points the views lift them to
     /// (`model::LiftE`).  Their slots name the drawn entities, as every relation's do;
     /// `Sketch::add` mints the lifts they read, so no caller mints one by hand, and a point on
@@ -326,7 +326,7 @@ pub const ALL_KINDS: [CKind; 66] = [
     CKind::CurveTouchesLine,
 ];
 
-/// **The words a direction may be written as** (`docs/ordinate-plan.md`): `along:` an ordinate
+/// **The words a direction may be written as** (Solvent [0.46]): `along:` an ordinate
 /// is measured on, and what `level` keeps level.  A direction is otherwise a reference — an axis
 /// or a drawn line — and these name the ones a drawing has without naming them: the axes of the
 /// view both points are drawn in (`x`, `y`, and with the sign said, `right`, `left`, `up`,
@@ -2383,7 +2383,7 @@ impl Constraint {
         Ok(Constraint::new(kind, args))
     }
 
-    /// An ordinate (`docs/ordinate-plan.md`): how far `q` stands from `p` along `t` — an axis,
+    /// An ordinate (Solvent [0.46]): how far `q` stands from `p` along `t` — an axis,
     /// a line, or a plane standing for its normal.  Its form is read when it is added.
     pub fn ordinate(p: EntRef, q: EntRef, t: EntRef, d: f64) -> Constraint {
         Constraint::new(CKind::Ordinate, vec![Arg::Ent(p), Arg::Ent(q), Arg::Ent(t), Arg::Num(d)])

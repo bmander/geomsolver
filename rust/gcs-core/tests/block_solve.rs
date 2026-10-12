@@ -135,8 +135,8 @@ p0 distance(10) p1
     s
 }
 
-/// **A solve that stops on its iteration limit is finished where it stopped**
-/// (docs/iteration-limit-rescue-plan.md).  A chain of twelve triangles seeded far off, given eight
+/// **A solve that stops on its iteration limit is finished where it stopped**.
+/// A chain of twelve triangles seeded far off, given eight
 /// DogLeg iterations where it needs ten: the eighth leaves it under the interactive acceptance
 /// and short of the solution — a success on status 4, which is all a solve did before the rescue
 /// (`BlockMode::Off`).  By default that stop is not settled, and the block pass *from the stop*

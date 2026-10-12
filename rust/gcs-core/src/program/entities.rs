@@ -571,7 +571,7 @@ fn build_plane(
     Some(e)
 }
 
-/// **Points in space** (`docs/planes-plan.md`): every point no `in` reached — no membership once
+/// **Points in space** (#81): every point no `in` reached — no membership once
 /// every membership is in — stands in space, and is given its third coordinate here, at its
 /// `hint(z: …)` or at 0.  A `z` seed on a point drawn in a plane is refused: there it has two
 /// coordinates, its plane's.

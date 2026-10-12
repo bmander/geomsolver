@@ -371,7 +371,7 @@ export class Curve extends Styled {
 }
 
 /** A plane: two axes and a place it stands, its basis read off the axes — `u` along the first,
- *  `v` what is left of the second, the viewer along `u × v` (`docs/planes-plan.md`).  Points
+ *  `v` what is left of the second, the viewer along `u × v` (#81).  Points
  *  drawn *in* it (`Point.plane`) have its two coordinates, which is what a `project` between two
  *  of them relates.  Its one point is its origin, drawn in it and held at `(0, 0)`. */
 export class Plane extends Styled {

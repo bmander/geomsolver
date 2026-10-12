@@ -1,4 +1,4 @@
-// The hypoid layout, steps 2 to 5 (docs/spiral-bevel-layout-plan.md): the pitch cones and the
+// The hypoid layout, steps 2 to 5: the pitch cones and the
 // tooth trace through the mean point M, the members' blanks, the crown tooth and its mate in the
 // normal section, and the generating motions.
 use std

@@ -268,8 +268,7 @@ impl Session {
             if full { ", and read back by the kernel as the solid" } else { "" },wrote,clock.elapsed()))
     }
     /// A stored shape as the core's own B-rep reads it (`backend/dump.cpp`, `gcs_core::brep::json`):
-    /// phase 1 of docs/rust-kernel-plan.md, OCCT's finished shape handed over for our writer and
-    /// mesher.
+    /// OCCT's finished shape handed over for our writer and mesher.
     pub(crate) fn brep_json(&self,shape: c_int) -> Result<String,String> {
         let text = unsafe { solvent_cad_brep_json(self.0,shape) };
         if text.is_null() { return Err(unsafe { CStr::from_ptr(solvent_cad_error(self.0)) }.to_string_lossy().into_owned()) }
