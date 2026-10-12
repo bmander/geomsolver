@@ -261,8 +261,8 @@ in std.front {{
 }}
 ");
     for body in ["e := Edge(u, next.u)", "e := Edge(prev.u, u)", "t := Twice(u, next.u)"] {
-        let (e, sk) = solved(&doc(body));
-        assert_eq!(diagnose(&mut sk.clone(), DiagnoseOptions::default()).dof, 0, "{body}");
+        let (e, mut sk) = solved(&doc(body));
+        assert_eq!(diagnose(&mut sk, DiagnoseOptions::default()).dof, 0, "{body}");
         let (a, b) = (xy(&sk, ent(&e, "u[0]")), xy(&sk, ent(&e, "u[1]")));
         let th = 72f64.to_radians();
         assert!((a.0 - 50.0).abs() < 1e-6 && (b.0 - 50.0 * th.cos()).abs() < 1e-6, "{body}: {a:?} {b:?}");

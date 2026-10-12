@@ -389,7 +389,7 @@ pub(super) fn written(r: &Ref) -> String {
     out
 }
 
-/// A reference a statement makes, as `rewrite` resolved it: as written, where, and what it
+/// A reference a statement or a call's argument makes, resolved: as written, where, and what it
 /// came to (the absolute name and the fields after it, joined).  What a `ring` is judged by.
 pub(super) struct Seen {
     written: String,
@@ -919,7 +919,7 @@ impl<'a> Walk<'a> {
         }
         // each ring's centre, resolved where the block stands — outside every copy — and the
         // block, by the prefix its copies' names start with
-        let mut about: BTreeMap<String, (String, Span)> = BTreeMap::new();
+        let mut about: BTreeMap<String, String> = BTreeMap::new();
         for (prefix, r, sc, n, span) in std::mem::take(&mut self.rings) {
             let Some((abs, rest)) = lookup(&r, &sc, &self.names, &alias, self.units) else {
                 let (code, why) = missing_ref(&r, &sc, &self.names, &alias, self.units);
@@ -929,7 +929,7 @@ impl<'a> Walk<'a> {
             let mut resolved = r.clone();
             resolved.root = Name { text: abs, span: r.root.span };
             resolved.path = rest.into_iter().map(|f| Seg::Field(Name::new(f))).collect();
-            about.insert(prefix.clone(), (written(&resolved), span));
+            about.insert(prefix.clone(), written(&resolved));
             self.ring_infos.push(RingInfo { prefix, about: resolved, n: n as u32, span });
         }
         // what a ring's representative reads, judged once every declaration is resolved (E021),
@@ -1044,12 +1044,12 @@ impl<'a> Walk<'a> {
     /// reference, and seeds and planes were set aside.
     fn judge_rings(
         &mut self,
-        about: &BTreeMap<String, (String, Span)>,
+        about: &BTreeMap<String, String>,
         judged: Vec<(String, Vec<Seen>)>,
         centres: &BTreeMap<String, Option<String>>,
     ) {
         for (prefix, seen) in judged {
-            let Some((centre, _)) = about.get(&prefix) else { continue };
+            let Some(centre) = about.get(&prefix) else { continue };
             for s in seen {
                 if s.abs.starts_with(&prefix) {
                     // a copy reached by index reads the same copy from every turn
