@@ -234,3 +234,41 @@ ring 3 about hub {
     );
     refused(&src, "E023", "turned copy of a curve", "probe coincident t[1].r.e");
 }
+
+const SUN: &str = "
+use std (horizontal)
+in std.front {
+  o := point hint((0, 0))
+  fix((0, 0)) o
+  q := point hint((100, 0))
+  ref := line(o, q)
+  horizontal ref
+  o distance(100) q
+  sun := std.Polygon(o, ref, n: 10, r: 100, phase: 0deg)
+  z := point hint(at: sun.v[3])
+}
+";
+
+/// **A seed reading a turned copy reads it where the turn puts it** (#225): each copy's own seed
+/// says what its representative's does, so it is turned over the representative's as each seed
+/// is settled — and a seed read later in statement order, here `z`'s, starts at `sun.v[3]`'s
+/// turned place, not at `sun.v[0]`'s.
+#[test]
+fn a_seed_reads_a_turned_copy_where_the_turn_puts_it() {
+    let e = read(SUN);
+    let sk = &e.sketch;
+    let turned = |k: usize| {
+        let t = std::f64::consts::TAU * k as f64 / 10.0;
+        (100.0 * t.cos(), 100.0 * t.sin())
+    };
+    let near = |p: (f64, f64), q: (f64, f64)| (p.0 - q.0).hypot(p.1 - q.1) < 1e-9;
+    for k in 0..10 {
+        let v = xy(sk, ent(&e, &format!("sun.v[{k}]")));
+        assert!(near(v, turned(k)), "sun.v[{k}] seeded at {v:?}, its turn at {:?}", turned(k));
+    }
+    let z = xy(sk, ent(&e, "z"));
+    assert!(near(z, turned(3)), "z seeded at {z:?}, sun.v[3]'s turn at {:?}", turned(3));
+    // and the solve leaves it there: `z` is free
+    let (e, sk) = solved(SUN);
+    assert!(near(xy(&sk, ent(&e, "z")), turned(3)));
+}
