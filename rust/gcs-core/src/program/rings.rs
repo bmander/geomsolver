@@ -37,8 +37,7 @@ pub(super) fn rings(
     diags: &mut Vec<Diag>,
 ) {
     for ring in rings {
-        let Some(about) = res.lookup(&ring.about)
-            .and_then(|e| super::resolve::follow(sk, e, &ring.about.path).ok())
+        let Some(about) = res.entity(sk, &ring.about)
         else {
             continue;
         };

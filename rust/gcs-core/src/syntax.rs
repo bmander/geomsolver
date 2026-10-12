@@ -1875,9 +1875,12 @@ impl Ref {
         Ref { root, path, span }
     }
 
-    /// Whether the reference ends in the member `word` (`S.ends`).
-    pub fn ends_in(&self, word: &str) -> bool {
-        matches!(self.path.last(), Some(Seg::Field(n)) if n.text == word)
+    /// The member the reference ends in, where the flattener read one (`S.ends`, #188).
+    pub fn member(&self) -> Option<Member> {
+        match self.path.last() {
+            Some(Seg::Member(m)) => Some(*m),
+            _ => None,
+        }
     }
 }
 
@@ -1888,6 +1891,46 @@ pub enum Seg {
     /// index is an expression over the counts and binders in scope, and those are not known until
     /// the block is expanded; `flatten` works it out there.  Spec §12.5.
     Index(String),
+    /// A member no declaration makes, as the flattener read it (#188): never written by the
+    /// parser, which reads every field as a `Field`.
+    Member(Member),
+}
+
+/// **A member every set or solid has and no declaration makes** (Solvent §6.21, #188): where the
+/// edge a set is ends (`S.ends`), the whole surface a face or a set lies on (`F.surface`), the
+/// solid a face path is of (`A.body`).  Written as a last field, and read so by the flattener
+/// only where the name before it is a set or a solid and the field is no name declared there —
+/// a member the document declares under one of these words is read as itself — so that nothing
+/// downstream matches the word: it matches this.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Member {
+    Ends,
+    Surface,
+    Body,
+}
+
+impl Member {
+    /// The word it is written as.
+    pub fn word(self) -> &'static str {
+        match self {
+            Member::Ends => "ends",
+            Member::Surface => "surface",
+            Member::Body => "body",
+        }
+    }
+
+    /// The member a last field is, where it is one (`surface`); whether it is read so is the
+    /// flattener's, by what the name before it is.
+    pub fn of(word: &str) -> Option<Member> {
+        [Member::Ends, Member::Surface, Member::Body].into_iter().find(|m| m.word() == word)
+    }
+
+    /// Its spelling once resolved, where only text carries a name (a measurement's argument,
+    /// `pad.plate.near.#surface`): a segment the source cannot write.
+    pub fn key(self) -> String { format!("#{}", self.word()) }
+
+    /// The member a resolved name's segment is (`#surface`).
+    pub fn of_key(seg: &str) -> Option<Member> { seg.strip_prefix('#').and_then(Member::of) }
 }
 
 /// `branch(KEY, ±1)` — a recorded root choice under a key `decompose::branch_key_points` could

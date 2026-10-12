@@ -340,7 +340,15 @@ pub(super) fn resolve_at(sk: &Sketch, si: usize, unit: f64, origin: [f64; 3]) ->
 
 /// The named route from a body to each primitive, relative to the requested solid.
 pub(crate) fn operand_paths(sk: &Sketch, si: usize) -> BTreeMap<String, String> {
-    let mut done: BTreeMap<u32,BTreeMap<String,String>> = BTreeMap::new();
+    operand_primitives(sk, si).into_iter().map(|(k, (route, _))| (k, route)).collect()
+}
+
+/// Each primitive a solid is made of, keyed as its faces are named while the exact boundary is
+/// built (`solid::exact`: the primitive's own name, a placed copy's under the placement): its
+/// route from the solid (`plate`, `turned.boss`, empty for the solid itself) and its index.
+/// The one walk a face's name is read by (#188).
+pub(crate) fn operand_primitives(sk: &Sketch, si: usize) -> BTreeMap<String, (String, u32)> {
+    let mut done: BTreeMap<u32, BTreeMap<String, (String, u32)>> = BTreeMap::new();
     let mut pending = vec![(si as u32,false)];
     let mut seen = std::collections::BTreeSet::new();
     while let Some((i,ready)) = pending.pop() {
@@ -356,8 +364,8 @@ pub(crate) fn operand_paths(sk: &Sketch, si: usize) -> BTreeMap<String, String> 
         match &s.def {
             SolidDef::Placed {source,..} => {
                 if let Some(source) = done.get(source) {
-                    for path in source.values() {
-                        paths.insert(placed_name(&s.name,path),path.clone());
+                    for (path, prim) in source.values() {
+                        paths.insert(placed_name(&s.name,path),(path.clone(),*prim));
                     }
                 }
             }
@@ -366,17 +374,17 @@ pub(crate) fn operand_paths(sk: &Sketch, si: usize) -> BTreeMap<String, String> 
                     let Some(operand) = sk.solids.get(o as usize) else { continue };
                     let name = operand.name.rsplit('.').next().unwrap_or(&operand.name);
                     if let Some(source) = done.get(&o) {
-                        for (primitive,path) in source {
+                        for (primitive,(path,prim)) in source {
                             // a swept solid's own sweep, split off as its stock, is the solid
                             // itself and adds no step to the route
                             let route = if operand.name == s.name { path.clone() }
                                 else { placed_name(name,path) };
-                            paths.insert(primitive.clone(),route);
+                            paths.insert(primitive.clone(),(route,*prim));
                         }
                     }
                 }
             }
-            _ => { paths.insert(s.name.clone(),String::new()); }
+            _ => { paths.insert(s.name.clone(),(String::new(),i)); }
         }
         done.insert(i,paths);
     }

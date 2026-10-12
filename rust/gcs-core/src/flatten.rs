@@ -345,7 +345,7 @@ struct Walk<'a> {
     probes: Vec<String>,
     /// Each solid's faces, by the path they are named by from it, where the elaborator has said
     /// (#183 F4) — see `Expansion::face_repeats`.
-    faces: BTreeMap<String, Vec<String>>,
+    faces: BTreeMap<String, Vec<crate::solid::faces::FacePath>>,
     face_repeats: BTreeSet<String>,
     /// See `Expansion::face_planes` and `face_axes`.
     face_planes: Vec<FacePlane>,
@@ -369,7 +369,7 @@ pub fn expand_faces(
     prog: &Program,
     units: Units,
     unlowered: &BTreeSet<String>,
-    faces: &BTreeMap<String, Vec<String>>,
+    faces: &BTreeMap<String, Vec<crate::solid::faces::FacePath>>,
 ) -> Expansion {
     let mut w = Walk::new(prog, units, None);
     w.unlowered = unlowered;

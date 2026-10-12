@@ -1,7 +1,7 @@
 //! Resolve names and child paths, including forward references.
 
-use crate::model::{EntKind, EntRef, Field, Sketch};
-use crate::syntax::{Ref, Seg, Span};
+use crate::model::{EntKind, EntRef, FaceRef, Field, Sketch};
+use crate::syntax::{Member, Ref, Seg, Span};
 use std::collections::BTreeMap;
 
 /// Preallocated entity names and declared child slots for forward references.
@@ -24,9 +24,67 @@ pub(super) struct Resolver {
     pub(super) origins: BTreeMap<String, usize>,
 }
 
+/// **What an operand names, resolved once** (#188): an entity, its fields followed; the faces of
+/// a solid a path past it names (`pad.plate.near`, `F.surface`); where the edge a set is ends
+/// (`S.ends`, the set's own point, `flatten::sets::measured_sets`); or the solid a face path is
+/// of (`A.body`).  Every reader of an operand asks this, so none meets a solid with fields or
+/// matches a member's word.
+#[derive(Clone, Debug, PartialEq)]
+pub(super) enum Operand {
+    Ent(EntRef),
+    Face(FaceRef),
+    Ends(EntRef),
+    Body(EntRef),
+}
+
+impl Operand {
+    /// The entity it is, where it is one.
+    pub(super) fn ent(&self) -> Option<EntRef> {
+        match self {
+            Operand::Ent(e) => Some(*e),
+            _ => None,
+        }
+    }
+
+    /// The faces it names: a face path's, or a solid's every face where it is named bare.
+    pub(super) fn faces(&self) -> Option<FaceRef> {
+        match self {
+            Operand::Face(f) => Some(f.clone()),
+            Operand::Ent(e) if e.kind == EntKind::Solid => {
+                Some(FaceRef { solid: e.i() as u32, path: Vec::new(), surface: false })
+            }
+            _ => None,
+        }
+    }
+}
+
 impl Resolver {
     pub(super) fn lookup(&self, r: &Ref) -> Option<EntRef> {
         self.of.get(&r.root.text).copied()
+    }
+
+    /// What `r` names (`Operand`), or why nothing.
+    pub(super) fn operand(&self, sk: &Sketch, r: &Ref) -> Result<Operand, String> {
+        let e = self.lookup(r).ok_or_else(|| format!("no such entity: `{}`", r.root.text))?;
+        operand_at(sk, e, &r.path)
+    }
+
+    /// The entity `r` names, its fields followed — `None` for anything else.
+    pub(super) fn entity(&self, sk: &Sketch, r: &Ref) -> Option<EntRef> {
+        self.operand(sk, r).ok()?.ent()
+    }
+
+    /// What a resolved name in text names (a measurement's argument, `flatten`'s
+    /// `rescope_measures`): its fields, and a member spelled by its key (`Member::key`).
+    pub(super) fn operand_named(&self, sk: &Sketch, name: &str) -> Result<Operand, String> {
+        let segs: Vec<&str> = name.split('.').collect();
+        let (e, mut path) = self.dotted(&segs).ok_or_else(|| format!("no such entity: `{name}`"))?;
+        if let Some(Seg::Field(f)) = path.last() {
+            if let Some(m) = Member::of_key(&f.text) {
+                *path.last_mut().expect("a last segment") = Seg::Member(m);
+            }
+        }
+        operand_at(sk, e, &path)
     }
 
     /// An absolute dotted name as the flattener wrote it (`t1.pin`, `pair.gen_g.p2`): an entity's
@@ -113,6 +171,32 @@ pub(super) fn follow_building(
     Err(format!("`{}` names its parts in a circle", r.root.text))
 }
 
+/// What entity `e` and the path past it name (`Resolver::operand`).
+fn operand_at(sk: &Sketch, e: EntRef, path: &[Seg]) -> Result<Operand, String> {
+    let (fields, member) = match path.split_last() {
+        Some((Seg::Member(m), rest)) => (rest, Some(*m)),
+        _ => (path, None),
+    };
+    match (e.kind, member) {
+        (EntKind::Solid, Some(Member::Body)) => Ok(Operand::Body(e)),
+        (EntKind::Solid, Some(Member::Surface)) => Ok(Operand::Face(face_ref(e, fields, true))),
+        (EntKind::Solid, None) if !fields.is_empty() => Ok(Operand::Face(face_ref(e, fields, false))),
+        (EntKind::Point, Some(Member::Ends)) if fields.is_empty() => Ok(Operand::Ends(e)),
+        (kind, Some(m)) => Err(format!("{} has no `{}`", kind.a(), m.word())),
+        _ => follow(sk, e, path).map(Operand::Ent),
+    }
+}
+
+/// A face reference from a solid and the fields written past it (#183 F1): `pad.plate.near` is
+/// solid `pad`, path `plate.near`; `surface` its surfaces (the member, read past it).
+fn face_ref(solid: EntRef, fields: &[Seg], surface: bool) -> FaceRef {
+    let path = fields.iter().filter_map(|s| match s {
+        Seg::Field(n) => Some(n.text.clone()),
+        _ => None,
+    }).collect();
+    FaceRef { solid: solid.i() as u32, path, surface }
+}
+
 /// Follow a reference's field path to the sub-entity it names — `root.center` is the circle's
 /// centre point, and `a0.start` an arc's.
 ///
@@ -120,19 +204,12 @@ pub(super) fn follow_building(
 /// statement that names one is `fix`, which reads the path itself.
 pub(super) fn follow(sk: &Sketch, mut e: EntRef, path: &[Seg]) -> Result<EntRef, String> {
     for seg in path {
-        // an entity not built yet has no parts to read (a solid's, named by a face path, #183)
-        if e.i() >= sk.count(e.kind) {
-            return Err(format!("{} has no parts yet", e.kind.a()));
-        }
-        let Seg::Field(f) = seg else {
-            return Err("an index names a copy, not a part".to_string());
+        let f = match seg {
+            Seg::Field(f) => f,
+            Seg::Index(_) => return Err("an index names a copy, not a part".to_string()),
+            Seg::Member(m) => return Err(format!("{} has no `{}`", e.kind.a(), m.word())),
         };
         let fields = e.kind.fields();
-        // a kind built after what is reading it (a solid, a face) has no parts to follow yet
-        if e.i() >= sk.count(e.kind) {
-            return Err(format!("{} is not built yet", e.kind.a()));
-        }
-        let kids = sk.children(e);
         let mut at = 0usize;
         let mut found = None;
         for (name, kind) in fields {
@@ -140,7 +217,11 @@ pub(super) fn follow(sk: &Sketch, mut e: EntRef, path: &[Seg]) -> Result<EntRef,
                 Field::Scalar => {}
                 Field::Child => {
                     if *name == f.text {
-                        found = kids.get(at).copied();
+                        // a kind built after what is reading it (a face) has no parts yet
+                        if e.i() >= sk.count(e.kind) {
+                            return Err(format!("{} is not built yet", e.kind.a()));
+                        }
+                        found = sk.children(e).get(at).copied();
                     }
                     at += 1;
                 }

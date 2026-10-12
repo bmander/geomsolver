@@ -25,7 +25,7 @@ use crate::program::public_path;
 use super::apply::{local, Application, Pass, Use};
 use crate::lowering::{self, Lowered, Radius, Shape};
 use crate::constraints::Fixity::{Infix, Prefix};
-use crate::syntax::{Along, AlongBy, Chained, DeclName, Relation, RelationForm, SetLit, Worded};
+use crate::syntax::{Along, AlongBy, Chained, DeclName, Member, Relation, RelationForm, SetLit, Worded};
 
 /// Where a set stands: its literal, the scope its body reads names in (an instance's, with its
 /// formals bound, for a family's), and how deep the walk was there.  A use's expansion stands
@@ -320,7 +320,8 @@ impl<'a> Walk<'a> {
                     for (_, args) in parsed.body.measures() {
                         for a in args {
                             let Some((abs, rest)) = set_of(self, &a) else { continue };
-                            let surface = rest.len() == 1 && rest[0] == "surface";
+                            let surface = matches!(rest.as_slice(), [m]
+                                if Member::of(m) == Some(Member::Surface));
                             if (rest.is_empty() || surface) && !sets.contains(&a) {
                                 if surface {
                                     surfaces.insert(a.clone(), self.surface_of(&abs));
@@ -334,7 +335,14 @@ impl<'a> Walk<'a> {
             StmtKind::Relation(r) => {
                 let w = r.form.written()?;
                 let [_, s] = w.ops.as_slice() else { return None };
-                if !s.ends_in("ends") || w.side().is_none() {
+                // `S.ends`: the member, where `S` is a set and declares no `ends` (below)
+                let ends = matches!(s.path.last(), Some(Seg::Field(f))
+                    if Member::of(&f.text) == Some(Member::Ends));
+                if !ends || w.side().is_none() {
+                    return None;
+                }
+                // a name declared as written is itself, whatever it is called
+                if lookup_raw(s, sc, &self.names, alias, self.units).is_some_and(|(_, r)| r.is_empty()) {
                     return None;
                 }
                 let mut set = s.clone();
@@ -397,7 +405,10 @@ impl<'a> Walk<'a> {
             StmtKind::Relation(r) => {
                 if let Some(w) = r.form.written_mut() {
                     let local = named.values().next().expect("one set").clone();
-                    w.ops[1] = Ref::field(local, "ends");
+                    // the member, read here once: the elaborator matches it, not the word (#188)
+                    let at = w.ops[1].span;
+                    let path = vec![Seg::Member(Member::Ends)];
+                    w.ops[1] = Ref { root: Name { text: local, span: at }, path, span: at };
                 }
             }
             _ => {}

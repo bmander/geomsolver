@@ -19,6 +19,7 @@ mod region_solids;
 mod region_general;
 mod region_faces;
 mod rounds;
+mod face_names;
 mod rounds_examples;
 mod offsets;
 mod evaluated_solid;

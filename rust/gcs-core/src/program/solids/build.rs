@@ -145,7 +145,7 @@ pub(super) fn build_solid(
                 say(Code::E080, st.span, "`along:` requires one start face and an optional end face".into());
                 return None;
             }
-            let Some(g) = res.lookup(guide).and_then(|e| super::super::resolve::follow(sk, e, &guide.path).ok()) else {
+            let Some(g) = res.entity(sk, guide) else {
                 say(Code::E101, guide.span, "no such guide geometry".into());
                 return None;
             };
@@ -204,8 +204,7 @@ pub(super) fn build_solid(
         }
         crate::syntax::Sweep::Revolve { axis, sweep, sense } => {
             let Some(face) = one_face(&ops, st, &mut say) else { return None };
-            let found = res.lookup(axis)
-                .and_then(|e| super::super::resolve::follow(sk, e, &axis.path).ok());
+            let found = res.entity(sk, axis);
             let Some(ax) = found else {
                 say(Code::E101, axis.span, format!("no such entity: `{}`", axis.root.text));
                 return None;

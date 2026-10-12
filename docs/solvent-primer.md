@@ -1531,8 +1531,10 @@ pad.boss round(r: 3mm) pad.plate     // where the boss stands on the plate
   rounded edges meet, the corner is the ball's. `round(r: …) X` is every edge among `X`'s faces.
 - `A chamfer(d: …) B` cuts each such edge flat, `d` along each face; `chamfer(d: …) X` likewise.
 - `A` and `B` are face paths: `block` (every face), `block.near` (one), `pad.boss` (every face
-  the boss gave the pad), `pad.plate.near`. Faces that do not meet make nothing, so
-  `block.near round(r: 2mm) block` is the near rim alone, its runs mitred at the corners.
+  the boss gave the pad), `pad.plate.near`. A path is read from its solid, step by step through
+  the operands' names (a placed copy's faces under the placement's: `pad.moved.near`), never by
+  a suffix. Faces that do not meet make nothing, so `block.near round(r: 2mm) block` is the
+  near rim alone, its runs mitred at the corners.
 - Each word acts on the body the faces are of, after its other terms: a round reads the faces as
   the cuts and unions left them, never its own (the *stratum*).
 
@@ -1556,7 +1558,8 @@ from, all in a region's body (`solid(S)`):
 | `taken := solid(run)` and `taken cut A.body` in a word's body | a solid made of a set, cut from the body `A`'s faces are of |
 
 A face path means the face, bounded by its edges, wherever it is read; `.surface` is the surface
-it lies on. Rounds read faces off the solid after the solve, so any face works, curved or cut by a
+it lies on. `.ends`, `.surface` and `.body` are members only past a set or a solid, and only
+where you declared nothing by that name: an instance's own `ends` or `body` is itself. Rounds read faces off the solid after the solve, so any face works, curved or cut by a
 Boolean; a face a Boolean ate names nothing, and what reads it holds nowhere. (Sketching on a face
 reads `.surface` as rows of the solve: 1.14, *Sketching on a face*.)
 
