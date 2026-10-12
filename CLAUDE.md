@@ -279,8 +279,11 @@ F.surface`, a distance from a point) is the nearest point by sequential projecti
 conditions linearised (each step a ≤3-active QP, exact). `d(p, E) <= d(p, M)` with `E` on the
 patches of the faces `M` is on the surfaces of is read as `d(p, E) − d(p, rest)` (`Rest`: `M`'s
 nearest point when off `E`, and where `E`'s run ends), the same points with a negative inside.
-`ends` is `max σ·side` over the faces at each end of the run (σ the side it runs on); a closed run
-ends nowhere. `edge` and `seam` are element keywords: a set may not be called so.
+`ends` is `max σ·side` over the faces at each end of the run (σ the side it runs on), a face
+carrying one of the run's on across a tangent seam none (`BodyFaces::continues`); a closed run
+ends nowhere. In a set measured from, `q inside S.ends` is one condition per such face, and `Rest`
+keeps an end of `E` only where `M` carries on past it within them: std's `meeting` is cut so, and
+a run is carried past its edge's end and cut off by the face it ends on (#195). `edge` and `seam` are element keywords: a set may not be called so.
 **Rounds and chamfers are words of `std.sv`** (#183 steps 4–7). `repeat a in X` over a solid (a
 face path) runs over its faces (F4): set aside, and where the faces are not given the elaborator
 names them once the solids are built (`solid::faces::face_paths`, structural: each primitive's
@@ -307,7 +310,8 @@ moved from `tests/fillet_meridian.rs`), refused (and read by the field) at a cha
 flat between curved steps. `tests/rounds.rs` is the gate (X2's closed forms in the slow tier).
 **Rounds built exactly: the lowering table** (#194, #183 L7, `solid::lowering`): a region over a
 body's faces is recognised by its terms' shapes (`recognised`: two or three `FaceSide`s alike, an
-`Angle` gate per pair at a half turn, the common-part-against-meeting sum, an `Ends` per pair, and
+`Angle` gate per pair at a half turn, the common-part-against-meeting sum (the meeting cut or not
+where its edge ends, `meeting_of`: std's is, #195), an `Ends` per pair, and
 one bound saying the section — a ball's `centres` set or a flat's sum), **never by a word's name**
 (`by_hand.sv`'s own `Rolled` is built by the same entry), read off the stratum (`faces::cached`,
 `BodyFaces::plane`/`segment`/`circle`/`coaxial`/`normal`) into **pieces**: `Run` (the section along a

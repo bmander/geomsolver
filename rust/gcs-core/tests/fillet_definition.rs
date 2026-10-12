@@ -718,7 +718,7 @@ fn mitred(perimeter: f64, cots: f64, r: f64) -> f64 {
 
 /// The stack's ring a ball of radius `r` fills where a cylinder of radius `big` stands on a
 /// plane (Pappus).
-fn root_ring(big: f64, r: f64) -> f64 {
+pub(crate) fn root_ring(big: f64, r: f64) -> f64 {
     let moment = r * r * (big + r / 2.0) - PI * r * r / 4.0 * (big + r - 4.0 * r / (3.0 * PI));
     2.0 * PI * moment
 }
@@ -746,6 +746,15 @@ fn ray_cylinder(o: V, w: V, at: V, axis: usize, radius: f64) -> f64 {
 /// quadrature over its sections square to the spine, swept with the spine's curvature.
 fn rolled(c: &dyn Fn(f64) -> V, toward: [&dyn Fn(V) -> V; 2], hit: [&dyn Fn(V, V) -> f64; 2],
           r: f64) -> f64 {
+    rolled_within(c, toward, hit, r, None)
+}
+
+/// `rolled`, kept within the half-space `n · x ≤ k` (`within`): the material a run carried on
+/// past its edge's end leaves, cut off by the face it ends on (#110).  Each section's reach along
+/// a direction is cut where the plane crosses it, exactly, so only the quadrature's own error is
+/// left; the sections stand at the middles of their steps, never on a plane a section lies in.
+fn rolled_within(c: &dyn Fn(f64) -> V, toward: [&dyn Fn(V) -> V; 2],
+                 hit: [&dyn Fn(V, V) -> f64; 2], r: f64, within: Option<(V, f64)>) -> f64 {
     let (n_phi, n_psi) = (720, 96);
     let gauss: Vec<(f64, f64)> = (0..n_psi).map(|i| {
         let mut x = (PI * (i as f64 + 0.75) / (n_psi as f64 + 0.5)).cos();
@@ -769,7 +778,7 @@ fn rolled(c: &dyn Fn(f64) -> V, toward: [&dyn Fn(V) -> V; 2], hit: [&dyn Fn(V, V
     let h = 1e-4;
     let mut total = 0.0;
     for k in 0..n_phi {
-        let phi = 2.0 * PI * k as f64 / n_phi as f64;
+        let phi = 2.0 * PI * (k as f64 + 0.5) / n_phi as f64;
         let p = c(phi);
         let (pa, pb) = (c(phi - h), c(phi + h));
         let d1 = scale(sub(pb, pa), 1.0 / (2.0 * h));
@@ -795,10 +804,25 @@ fn rolled(c: &dyn Fn(f64) -> V, toward: [&dyn Fn(V) -> V; 2], hit: [&dyn Fn(V, V
             for &(x, w) in &gauss {
                 let psi = a + 0.5 * (b - a) * (x + 1.0);
                 let d = dir(psi);
-                let reach = hit[0](p, d).min(hit[1](p, d));
+                let (mut lo, mut hi) = (r, hit[0](p, d).min(hit[1](p, d)));
+                if let Some((n, k)) = within {
+                    let (along, room) = (dot(n, d), k - dot(n, p));
+                    if along.abs() < 1e-15 {
+                        if room < 0.0 {
+                            continue;
+                        }
+                    } else if along > 0.0 {
+                        hi = hi.min(room / along);
+                    } else {
+                        lo = lo.max(room / along);
+                    }
+                    if hi <= lo {
+                        continue;
+                    }
+                }
                 let q = dot(d, kn);
-                let dv = (reach * reach - r * r) / 2.0 - q * (reach.powi(3) - r.powi(3)) / 3.0;
-                area += w * 0.5 * (b - a) * dv;
+                let swept = |rho: f64| rho * rho / 2.0 - q * rho.powi(3) / 3.0;
+                area += w * 0.5 * (b - a) * (swept(hi) - swept(lo));
             }
         }
         total += area * speed * 2.0 * PI / n_phi as f64;
@@ -808,7 +832,7 @@ fn rolled(c: &dyn Fn(f64) -> V, toward: [&dyn Fn(V) -> V; 2], hit: [&dyn Fn(V, V
 
 /// The stack's tee crotch: the main pipe of radius `big` about x, a branch of radius `small`
 /// about z standing on it, the ball of radius `r` rolled round where they meet.
-fn tee_crotch(big: f64, small: f64, r: f64) -> f64 {
+pub(crate) fn tee_crotch(big: f64, small: f64, r: f64) -> f64 {
     let (rb, rs) = (big + r, small + r);
     rolled(
         &|phi: f64| {
@@ -824,7 +848,7 @@ fn tee_crotch(big: f64, small: f64, r: f64) -> f64 {
 
 /// The stack's bore rim: a bore of radius `small` about z drilled into a solid pipe of radius
 /// `big` about x, its rim rolled off.
-fn bore_rim(big: f64, small: f64, r: f64) -> f64 {
+pub(crate) fn bore_rim(big: f64, small: f64, r: f64) -> f64 {
     rolled(
         &|phi: f64| {
             let (s, co) = phi.sin_cos();
@@ -840,22 +864,37 @@ fn bore_rim(big: f64, small: f64, r: f64) -> f64 {
 
 /// The stack's root of a boss of radius `big` about `(cx, cy)` standing through the plane
 /// `z = h0 − s x`, the whole way round.
-fn sloped_root(big: f64, [cx, cy]: [f64; 2], [h0, s]: [f64; 2], r: f64) -> f64 {
+pub(crate) fn sloped_root(big: f64, at: [f64; 2], slope: [f64; 2], r: f64) -> f64 {
+    sloped(big, at, slope, r, ROOT, None)
+}
+
+/// Which round `sloped` rolls: a boss's root, the ball outside the material (concave), or a
+/// hole's rim, the ball within it (convex).
+pub(crate) const ROOT: f64 = 1.0;
+pub(crate) const RIM: f64 = -1.0;
+
+/// The round where a cylinder of radius `radius` about `(cx, cy)`, square to `z`, meets the
+/// plane `z = h0 − s x`, the material below it — a boss's root (`ROOT`) or a hole's rim (`RIM`)
+/// — kept within `n · x ≤ k`: carried on past the face it ends on and cut off there
+/// (`x0/runout.sv`'s boss and vent).
+pub(crate) fn sloped(radius: f64, [cx, cy]: [f64; 2], [h0, s]: [f64; 2], r: f64, side: f64,
+                     within: Option<(V, f64)>) -> f64 {
     let n = unit([s, 0.0, 1.0]);
-    let lift = r / n[2];
-    rolled(
+    let lift = side * r / n[2];
+    rolled_within(
         &|phi: f64| {
             let (sn, co) = phi.sin_cos();
-            let x = cx + (big + r) * co;
-            [x, cy + (big + r) * sn, h0 - s * x + lift]
+            let x = cx + (radius + r) * co;
+            [x, cy + (radius + r) * sn, h0 - s * x + lift]
         },
-        [&|_: V| scale(n, -1.0), &|p: V| unit([cx - p[0], cy - p[1], 0.0])],
+        [&|_: V| scale(n, -side), &|p: V| unit([cx - p[0], cy - p[1], 0.0])],
         [&|o: V, w: V| {
             let d = dot(w, n);
-            if d < 0.0 { -(dot(o, n) - h0 * n[2]) / d } else { f64::INFINITY }
+            if side * d < 0.0 { -(dot(o, n) - h0 * n[2]) / d } else { f64::INFINITY }
         },
-            &|o, w| ray_cylinder(o, w, [cx, cy, 0.0], 2, big)],
+            &|o, w| ray_cylinder(o, w, [cx, cy, 0.0], 2, radius)],
         r,
+        within,
     )
 }
 

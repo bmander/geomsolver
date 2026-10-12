@@ -7,9 +7,9 @@
 //   - at least `r` from `centres`, the set of places the ball's centre may stand (within both
 //     faces' sides and at least `r` from each face's surface);
 //   - nearer the edge (`crease`, the points on both faces) than wherever else the two surfaces
-//     meet (`meeting`), so only the corner by the edge is taken;
-//   - and within where the edge ends (`crease.ends`), so the run is cut off by the faces it ends
-//     on.
+//     meet short of where the edge ends (`meeting`), so only the corner by the edge is taken;
+//   - and within where the edge ends (`crease.ends`), so the run is carried on past each end and
+//     cut off by the faces it ends on.
 // `A rolled(r) B` is a word that makes solids: for each face `a` of A and `b` of B it makes that
 // set a solid and cuts it from the body the faces are of.
 //
@@ -27,7 +27,7 @@ component Rolled(a: face, b: face, r: Length) := { p |
   angle(a, b, at: p) <= 180deg
   centres := { c | c inside a; c distance(>= r) a.surface; c inside b; c distance(>= r) b.surface }
   crease := { q | q coincident a; q coincident b }
-  meeting := { q | q coincident a.surface; q coincident b.surface }
+  meeting := { q | q coincident a.surface; q coincident b.surface; q inside crease.ends }
   distance(p, centres) >= r
   distance(p, crease) <= distance(p, meeting)
   p inside crease.ends

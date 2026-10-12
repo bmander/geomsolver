@@ -194,6 +194,24 @@ fn on_all<'a>(sk: &Sketch, terms: &'a [RegionTerm]) -> Option<Vec<&'a FaceRef>> 
     }).collect()
 }
 
+/// The faces a meeting is on the surfaces of (`{ q | q coincident a.surface; q coincident
+/// b.surface }`), cut or not where their edge ends (`q inside crease.ends`, std's: a run carried
+/// on past its end and cut off there, the same points as one ending square where a face cuts it
+/// square — and `gate` holds the build to the field where one does not).
+fn meeting_of<'a>(sk: &Sketch, terms: &'a [RegionTerm]) -> Option<Vec<&'a FaceRef>> {
+    terms.iter().filter_map(|t| match &t.shape {
+        RegionShape::Ends { edge } => match edge.as_ref() {
+            Target::Set { terms: inner, .. } if on_all(sk, inner).is_some_and(|f| f.len() == 2)
+                && t.cmp == Cmp::Le && plain(sk, t) == Some(0.0) => None,
+            _ => Some(None),
+        },
+        _ => Some(match one_face(sk, t)? {
+            (f, Cmp::Le, d) if d == 0.0 => Some(f),
+            _ => None,
+        }),
+    }).collect()
+}
+
 /// The face a term bounds the side of at nothing, and which way: `p inside f` or `p outside f`.
 fn side_of<'a>(sk: &Sketch, t: &'a RegionTerm) -> Option<(&'a FaceRef, Cmp)> {
     let RegionShape::FaceSide { face } = &t.shape else { return None };
@@ -240,7 +258,7 @@ fn recognised<'a>(sk: &Sketch, terms: &'a [RegionTerm]) -> Option<(Faces<'a>, Se
                 [(Target::Set { terms: x, .. }, cx), (Target::Set { terms: y, .. }, cy)] => {
                     let (common, meeting) = if *cx > 0.0 { (x, y) } else { (y, x) };
                     if (cx + cy).abs() > 1e-12 * cx.abs() || t.cmp != Cmp::Le || plain(sk, t)? != 0.0
-                        || !faces.all(&on_all(sk, common)?, false) || !faces.all(&on_all(sk, meeting)?, true) {
+                        || !faces.all(&on_all(sk, common)?, false) || !faces.all(&meeting_of(sk, meeting)?, true) {
                         return None;
                     }
                     slab += 1;

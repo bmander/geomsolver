@@ -154,6 +154,21 @@ fn a_frustum_root_and_rim_are_tori() {
     close(turned(&other), turned(&rim), "the rounds the other way about");
 }
 
+/// The stack's closed form of #83's knob's neck: a rod of radius `rod` about the axis entering a
+/// ball of radius `big` about `s`, filled to `r`.  Its section is the corner, its foot on the rod,
+/// the arc of the ball rolled, its foot on the ball and the ball's arc back, turned.
+pub(crate) fn knob_neck(s: P, big: f64, rod: f64, r: f64) -> f64 {
+    let corner = [rod, s[1] - (big * big - rod * rod).sqrt()];
+    let centre = [rod + r, s[1] - ((big + r).powi(2) - (rod + r).powi(2)).sqrt()];
+    let (on_rod, on_ball) = ([rod, centre[1]], add(s, scale(unit(sub(centre, s)), big)));
+    let at = |c: P, p: P| (p[1] - c[1]).atan2(p[0] - c[0]);
+    let arc = |c: P, r: f64, from: P, to: P| {
+        Seg::Arc { c, r, a0: at(c, from), sweep: at(c, to) - at(c, from) }
+    };
+    2.0 * PI * (flux(&Seg::Line { a: corner, b: on_rod })
+        + flux(&arc(centre, r, on_rod, on_ball)) + flux(&arc(s, big, on_ball, corner))).abs()
+}
+
 /// #83's knob (`x0/knob.sv`): a rod standing on a disc and entering a ball, its root filled to 2
 /// (plane against cylinder) and its neck to 1.5 (cylinder against sphere, a section with a curved
 /// side).
@@ -170,17 +185,8 @@ fn a_knobs_root_and_neck_turn_their_sections() {
     let knob = union(&union(&disc, &shaft), &ball);
     let root = round(&knob, &faces(11, 4), &faces(1, 4), 2.0, 100).unwrap();
     let neck = round(&root, &faces(11, 4), &[21, 22], r, 101).unwrap();
-    // the stack's closed forms: the neck's section is the corner, its foot on the rod, the arc of
-    // the ball rolled, its foot on the ball and the ball's arc back
     let corner = [rod, s[1] - (big * big - rod * rod).sqrt()];
-    let centre = [rod + r, s[1] - ((big + r).powi(2) - (rod + r).powi(2)).sqrt()];
-    let (on_rod, on_ball) = ([rod, centre[1]], add(s, scale(unit(sub(centre, s)), big)));
-    let at = |c: P, p: P| (p[1] - c[1]).atan2(p[0] - c[0]);
-    let arc = |c: P, r: f64, from: P, to: P| {
-        Seg::Arc { c, r, a0: at(c, from), sweep: at(c, to) - at(c, from) }
-    };
-    let neck_v = 2.0 * PI * (flux(&Seg::Line { a: corner, b: on_rod })
-        + flux(&arc(centre, r, on_rod, on_ball)) + flux(&arc(s, big, on_ball, corner))).abs();
+    let neck_v = knob_neck(s, big, rod, r);
     let root_v = root_ring(rod, 2.0);
     close(turned(&root) - turned(&knob), root_v, "the root");
     close(turned(&neck) - turned(&root), neck_v, "the neck");

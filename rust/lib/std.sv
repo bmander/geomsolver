@@ -259,15 +259,16 @@ component Hex(c: point, ref: line, af: Length, phase: Angle) {
 
 // What a ball of radius `r` rolled along the convex edge of faces `a` and `b` cannot reach: the
 // points within both faces' sides that no such ball within both covers; only where the point's
-// nearest point of the faces' meeting is on the edge (so surfaces meeting where the body has no
-// edge make nothing); cut off by the faces the edge ends on.
+// nearest point of the faces' meeting, short of where the edge ends, is on the edge (so surfaces
+// meeting where the body has no edge make nothing); so carried on past each end of the edge and
+// cut off there by the faces it ends on, however they stand.
 component Run(a: face, b: face, r: Length) := { p |
   p inside a
   p inside b
   angle(a, b, at: p) <= 180deg
   centres := { c | c inside a; c distance(>= r) a.surface; c inside b; c distance(>= r) b.surface }
   crease := { q | q coincident a; q coincident b }
-  meeting := { q | q coincident a.surface; q coincident b.surface }
+  meeting := { q | q coincident a.surface; q coincident b.surface; q inside crease.ends }
   distance(p, centres) >= r
   distance(p, crease) <= distance(p, meeting)
   p inside crease.ends
@@ -281,7 +282,7 @@ component Fill(a: face, b: face, r: Length) := { p |
   angle(a, b, at: p) >= 180deg
   centres := { c | c outside a; c distance(>= r) a.surface; c outside b; c distance(>= r) b.surface }
   crease := { q | q coincident a; q coincident b }
-  meeting := { q | q coincident a.surface; q coincident b.surface }
+  meeting := { q | q coincident a.surface; q coincident b.surface; q inside crease.ends }
   distance(p, centres) >= r
   distance(p, crease) <= distance(p, meeting)
   p inside crease.ends
@@ -341,7 +342,7 @@ component Flat(a: face, b: face, la: Length, lb: Length) := { p |
   angle(a, b, at: p) <= 180deg
   distance(p, a.surface) / lb + distance(p, b.surface) / la <= 1
   crease := { q | q coincident a; q coincident b }
-  meeting := { q | q coincident a.surface; q coincident b.surface }
+  meeting := { q | q coincident a.surface; q coincident b.surface; q inside crease.ends }
   distance(p, crease) <= distance(p, meeting)
   p inside crease.ends
 }
@@ -353,7 +354,7 @@ component FlatFill(a: face, b: face, la: Length, lb: Length) := { p |
   angle(a, b, at: p) >= 180deg
   distance(p, a.surface) / lb + distance(p, b.surface) / la <= 1
   crease := { q | q coincident a; q coincident b }
-  meeting := { q | q coincident a.surface; q coincident b.surface }
+  meeting := { q | q coincident a.surface; q coincident b.surface; q inside crease.ends }
   distance(p, crease) <= distance(p, meeting)
   p inside crease.ends
 }

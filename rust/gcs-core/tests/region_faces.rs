@@ -165,6 +165,25 @@ fn the_reach_of_an_edge_and_where_it_ends_are_one_slab() {
 }
 
 
+/// The faces' meeting cut where their edge ends (`q inside crease.ends`, #195): short of the
+/// edge's ends the meeting is the edge itself, so every point's nearest point of it is on the
+/// edge and the reach is the whole ball — a run carried on past its edge's end, for the faces it
+/// ends on to cut off.
+#[test]
+fn a_meeting_cut_where_its_edge_ends_is_the_edge() {
+    let e = solved(&format!("{BLOCK}{EDGE}short := {{ q | q coincident block.near.surface; \
+                             q coincident block.south.surface; q inside crease.ends }}\n\
+                             c := point hint((20, 6, 0))\nball := std.Sphere(c, r: 30)\n\
+                             reach := {{ p | p inside ball; \
+                             distance(p, crease) <= distance(p, short) }}\n\
+                             sr := solid(reach)\n"));
+    let field = MaterialField::read(&e.sketch, ent(&e, "sr").i(), 1e-10).unwrap();
+    assert!(field.side([45.0, 6.0, 0.0]) < 0.0 && field.side([-5.0, 6.0, 0.0]) < 0.0);
+    let want = 4.0 / 3.0 * PI * 30f64.powi(3);
+    let got = field_volume(&field, [-10.0, -24.0, -30.0], [50.0, 36.0, 30.0], 30.0 / 128.0);
+    assert!((got - want).abs() < 2e-3 * want, "{got} against {want}");
+}
+
 /// What a ball rolled along a convex edge cannot reach, written over F1–F3, F7 and F9 (#183 X3's
 /// `Run`), on one edge of the block: `r²(1 − π/4)` along its 40.
 const RUN: &str = "component Run(a: face, b: face, r: Length) := { p |\n\

@@ -8,7 +8,7 @@
 //!   nearest point satisfying every condition, found by sequential projection onto the
 //!   conditions linearised where the last step stood (each step a small quadratic program,
 //!   solved exactly by its active set): a local nearest point, from the point measured.
-use super::faces::{BodyFaces, Reading};
+use super::faces::{along_run, BodyFaces, Reading};
 use crate::model::{RegionShape, RegionTerm, Sketch, Target};
 use crate::space::{dot, norm, scale, sub};
 use crate::syntax::Cmp;
@@ -104,6 +104,11 @@ impl SetDistance {
     }
 }
 
+/// `sign · (m − k)`, and its gradient.
+fn shift(m: Fv, k: f64, sign: f64) -> Fv {
+    Arc::new(move |x| { let (v, g) = m(x); (sign * (v - k), scale(g, sign)) })
+}
+
 /// A term of a set measured from, as conditions on its point.
 fn conditions(sk: &Sketch, t: &RegionTerm, read: &mut Read) -> Result<Vec<Cond>, String> {
     let lo = t.lo.value(sk)?;
@@ -111,9 +116,6 @@ fn conditions(sk: &Sketch, t: &RegionTerm, read: &mut Read) -> Result<Vec<Cond>,
     let hi = t.hi.unwrap_or(lo);
     // a measure `m` held by the term: `m ≤ lo`, `m ≥ lo`, `lo ≤ m ≤ hi` (`m = lo` where they meet)
     let held = |m: Fv| -> Vec<Cond> {
-        let shift = |m: Fv, k: f64, sign: f64| -> Fv {
-            Arc::new(move |x| { let (v, g) = m(x); (sign * (v - k), scale(g, sign)) })
-        };
         match t.cmp {
             Cmp::Le => vec![Cond { f: shift(m, lo + grow, 1.0), eq: false }],
             Cmp::Ge => vec![Cond { f: shift(m, lo + grow, -1.0), eq: false }],
@@ -157,6 +159,17 @@ fn conditions(sk: &Sketch, t: &RegionTerm, read: &mut Read) -> Result<Vec<Cond>,
                     .to_string()),
             };
             Ok(held(m))
+        }
+        // within the faces a run of edges ends on, as it runs: `σ·side ≤ 0` for each
+        RegionShape::Ends { edge } => {
+            let Target::Set { terms: inner, .. } = edge.as_ref() else {
+                return Err("where an edge ends is read of a set".to_string());
+            };
+            let (body, sides) = end_sides(&SetDistance::of(sk, inner, read)?)?;
+            Ok(sides.into_iter().map(|(c, sign)| {
+                let body = body.clone();
+                Cond { f: shift(Arc::new(move |x| body.side_grad(c, x)), 0.0, sign), eq: false }
+            }).collect())
         }
         // a ball's, a cylinder's, a cone's or a half-space's: its measure's signed distance
         // from the surface its number makes, by differences
@@ -325,7 +338,9 @@ fn solve(g: &[[f64; 3]; 3], r: &[f64; 3], k: usize) -> Option<[f64; 3]> {
 /// holds, and no field reads a region from that.  The same set is where `distance(p, E)` is at
 /// most the distance from the rest of `M`, its points off `E` (closed): where `E` ends, and `M`'s
 /// nearest point when that is off `E`.  So a sum `c·distance(p, E) − c·distance(p, M)` is read as
-/// `c·distance(p, E) − c·distance(p, rest)`, negative inside: the same points.
+/// `c·distance(p, E) − c·distance(p, rest)`, negative inside: the same points.  `M` may be cut
+/// where an edge ends (`q inside E.ends`): its nearest point is then the nearest within the cut,
+/// and an end of `E` is the rest's only where `M` carries on past it within the cut.
 pub struct Rest {
     pub meeting: SetDistance,
     pub edge: SetDistance,
@@ -334,22 +349,36 @@ pub struct Rest {
 
 impl Rest {
     /// The rest of meeting `m` past edge `e`, where `e`'s terms are on the patches of the faces
-    /// `m`'s are on the surfaces of; `None` otherwise.
+    /// `m`'s are on the surfaces of (and `m`'s others say where an edge ends); `None` otherwise.
     /// `edge` and `meeting` are the two sets' distances, read already.
     pub fn of(sk: &Sketch, e: &[RegionTerm], m: &[RegionTerm], edge: &SetDistance,
-              meeting: &SetDistance) -> Option<Rest> {
-        let faces = |ts: &[RegionTerm], surface: bool| -> Option<Vec<crate::model::FaceRef>> {
-            ts.iter().map(|t| on_face(t, sk).filter(|(_, s)| *s == surface).map(|(f, _)| {
-                crate::model::FaceRef { surface: false, ..f }
-            })).collect()
-        };
-        let (fe, fm) = (faces(e, false)?, faces(m, true)?);
+              meeting: &SetDistance, read: &mut Read) -> Option<Rest> {
+        let patch = |f: crate::model::FaceRef| crate::model::FaceRef { surface: false, ..f };
+        let fe = e.iter().map(|t| on_face(t, sk).filter(|(_, s)| !s).map(|(f, _)| patch(f)))
+            .collect::<Option<Vec<_>>>()?;
+        // `m` on surfaces, and cut only where an edge ends: a cut each run lies within by how its
+        // sides are chosen (`end_sides`), so `E` stays within `M`
+        let (mut fm, mut within) = (Vec::new(), Vec::new());
+        for t in m {
+            match on_face(t, sk) {
+                Some((f, true)) => fm.push(patch(f)),
+                None if matches!(t.shape, RegionShape::Ends { .. }) => {
+                    within.extend(conditions(sk, t, read).ok()?)
+                }
+                _ => return None,
+            }
+        }
         if fe.len() < 2 || fe.len() != fm.len() || !fe.iter().all(|f| fm.contains(f)) {
             return None;
         }
         let (edge, meeting) = (edge.clone(), meeting.clone());
         let ends = match &edge {
-            SetDistance::Edges { body, edges, .. } => body.run_ends(edges).into_iter().map(|(v, _, _)| v).collect(),
+            SetDistance::Edges { body, edges, .. } => {
+                body.run_ends(edges).into_iter().filter(|(v, d, _)| {
+                    // where the meeting carries on past the end within the cut
+                    within.iter().all(|c| (c.f)(along_run(*v, *d, -1.0)).0 <= 0.0)
+                }).map(|(v, _, _)| v).collect()
+            }
             _ => Vec::new(),
         };
         Some(Rest { meeting, edge, ends })
@@ -372,10 +401,16 @@ impl Rest {
 /// each other face at that end, and which side of it the edge runs on (`-1` its material
 /// side): the region within all of them, `max σ·side`.  A closed run ends nowhere.
 pub fn ends(set: &SetDistance) -> Result<impl Fn(V) -> f64 + Send + Sync, String> {
+    let (body, sides) = end_sides(set)?;
+    Ok(move |p: V| {
+        sides.iter().map(|&(c, sign)| sign * body.side(c, p)).fold(f64::NEG_INFINITY, f64::max)
+    })
+}
+
+/// The faces a run of edges ends on, each with the side the run is on (`-1` its material side).
+fn end_sides(set: &SetDistance) -> Result<(Arc<BodyFaces>, Vec<(usize, f64)>), String> {
     let SetDistance::Edges { body, edges, faces } = set else {
         return Err("where a set ends is read of an edge: a set on two faces".to_string());
     };
-    let sides = body.end_sides(edges, faces);
-    let body = body.clone();
-    Ok(move |p: V| sides.iter().map(|&(c, sign)| sign * body.side(c, p)).fold(f64::NEG_INFINITY, f64::max))
+    Ok((body.clone(), body.end_sides(edges, faces)))
 }
