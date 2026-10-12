@@ -280,8 +280,11 @@ impl Reading {
     pub fn side(&self, p: V) -> f64 {
         self.nearest(p).map_or(f64::INFINITY, |fi| self.body.side(fi, p))
     }
-    /// The face whose patch is nearest `p`.
+    /// The face whose patch is nearest `p` (one face is, measuring nothing).
     fn nearest(&self, p: V) -> Option<usize> {
+        if let [fi] = self.faces[..] {
+            return Some(fi);
+        }
         self.faces.iter().map(|&fi| (self.body.patch_distance(fi, p), fi))
             .min_by(|a, b| a.0.total_cmp(&b.0)).map(|(_, fi)| fi)
     }

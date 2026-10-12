@@ -55,16 +55,15 @@ pub fn field_volume(field: &MaterialField, lo: [f64; 3], hi: [f64; 3], h: f64) -
     let side = (0..3).map(|k| hi[k] - lo[k]).fold(0.0f64, f64::max);
     let n = |k: usize| ((hi[k] - lo[k]) / side * 4.0).ceil() as usize;
     let step = side / 4.0;
-    let mut total = 0.0;
-    for i in 0..n(0) {
-        for j in 0..n(1) {
-            for k in 0..n(2) {
-                let q = [lo[0] + i as f64 * step, lo[1] + j as f64 * step, lo[2] + k as f64 * step];
-                total += cell(field, q, step, h);
-            }
-        }
-    }
-    total
+    let [nx, ny, nz] = [n(0), n(1), n(2)];
+    // the cells side by side, summed in order: the same total as one walk over them
+    gcs_core::par::indices(nx * ny * nz, |c| {
+        let (i, j, k) = (c / (ny * nz), c / nz % ny, c % nz);
+        let q = [lo[0] + i as f64 * step, lo[1] + j as f64 * step, lo[2] + k as f64 * step];
+        cell(field, q, step, h)
+    })
+    .into_iter()
+    .fold(0.0, |total, v| total + v)
 }
 
 /// Steinmetz's bicylinder: two cylinders of radius 2 crossing square, bounded by the two together

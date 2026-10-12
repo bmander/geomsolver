@@ -228,9 +228,6 @@ fn project(p: V, rows: &[(V, f64, bool)], tol: f64) -> Option<V> {
     let mut best: Option<(f64, V)> = None;
     let mut fallback: Option<(f64, V)> = None;
     let mut choose = |active: &[usize]| {
-        if active.len() > 3 {
-            return;
-        }
         let Some((y, lambda)) = onto(p, rows, active) else { return };
         let keeps = rows.iter().all(|(a, b, eq)| {
             let v = dot(*a, y) - b;
@@ -246,27 +243,39 @@ fn project(p: V, rows: &[(V, f64, bool)], tol: f64) -> Option<V> {
             *slot = Some((d, y));
         }
     };
-    // every subset of the inequalities, beside every equality
+    if eqs.len() > 3 {
+        return None;
+    }
+    // every subset of the inequalities, beside every equality (at most three rows in all, held on
+    // the stack: this runs thousands of times a field query)
     let n = ineqs.len();
+    let mut active = [0usize; 3];
+    active[..eqs.len()].copy_from_slice(&eqs);
     for mask in 0u32..(1 << n.min(10)) {
         if (mask.count_ones() as usize) + eqs.len() > 3 {
             continue;
         }
-        let mut active = eqs.clone();
-        active.extend((0..n).filter(|k| mask >> k & 1 == 1).map(|k| ineqs[k]));
-        choose(&active);
+        let mut k = eqs.len();
+        for (bit, &i) in ineqs.iter().enumerate().take(10) {
+            if mask >> bit & 1 == 1 {
+                active[k] = i;
+                k += 1;
+            }
+        }
+        choose(&active[..k]);
     }
     best.or(fallback).map(|(_, y)| y)
 }
 
-/// `p` projected onto the rows `active` held as equalities: the point and its multipliers.
-fn onto(p: V, rows: &[(V, f64, bool)], active: &[usize]) -> Option<(V, Vec<f64>)> {
+/// `p` projected onto the rows `active` (at most three) held as equalities: the point and its
+/// multipliers.
+fn onto(p: V, rows: &[(V, f64, bool)], active: &[usize]) -> Option<(V, [f64; 3])> {
     let k = active.len();
     if k == 0 {
-        return Some((p, Vec::new()));
+        return Some((p, [0.0; 3]));
     }
-    let a: Vec<V> = active.iter().map(|&i| rows[i].0).collect();
-    let r: Vec<f64> = active.iter().map(|&i| dot(rows[i].0, p) - rows[i].1).collect();
+    let a: [V; 3] = std::array::from_fn(|i| if i < k { rows[active[i]].0 } else { [0.0; 3] });
+    let r: [f64; 3] = std::array::from_fn(|i| if i < k { dot(rows[active[i]].0, p) - rows[active[i]].1 } else { 0.0 });
     // the Gram matrix G λ = r
     let mut g = [[0.0; 3]; 3];
     for i in 0..k {
@@ -283,7 +292,7 @@ fn onto(p: V, rows: &[(V, f64, bool)], active: &[usize]) -> Option<(V, Vec<f64>)
 }
 
 /// A small symmetric system by elimination with partial pivoting; `None` where singular.
-fn solve(g: &[[f64; 3]; 3], r: &[f64], k: usize) -> Option<Vec<f64>> {
+fn solve(g: &[[f64; 3]; 3], r: &[f64; 3], k: usize) -> Option<[f64; 3]> {
     let mut m = [[0.0; 4]; 3];
     let size = (0..k).map(|i| g[i][i].abs()).fold(0.0, f64::max).max(1e-300);
     for i in 0..k {
@@ -307,7 +316,7 @@ fn solve(g: &[[f64; 3]; 3], r: &[f64], k: usize) -> Option<Vec<f64>> {
             }
         }
     }
-    Some((0..k).map(|i| m[i][3] / m[i][i]).collect())
+    Some(std::array::from_fn(|i| if i < k { m[i][3] / m[i][i] } else { 0.0 }))
 }
 
 /// **The rest of a meeting** (#183 F2): `distance(p, E) <= distance(p, M)`, `E` the points on

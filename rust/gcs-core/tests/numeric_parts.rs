@@ -26,36 +26,37 @@ fn said(d: &Diagnosis) -> String {
     )
 }
 
-/// Every library case of at most `limit` free parameters whose two readings differ, said.
-fn disagreements(limit: usize) -> Vec<String> {
-    let mut differ = Vec::new();
-    for (_, key, _) in examples::CASES {
-        let Some(mut sk) = examples::case(key) else { continue };
+/// Every library case of free parameters within `free` whose two readings differ, said.  The
+/// cases are read side by side (`par`), answered in the library's order.
+fn disagreements(free: std::ops::RangeInclusive<usize>) -> Vec<String> {
+    gcs_core::par::map(&examples::CASES, |(_, key, _)| {
+        let mut sk = examples::case(key)?;
         solve(&mut sk, SolveOpts::default());
-        if gcs_core::system::System::new(&sk).n_free > limit {
-            continue;
+        if !free.contains(&gcs_core::system::System::new(&sk).n_free) {
+            return None;
         }
         let (whole, parts) = both(&mut sk);
-        if whole.numeric_rank.is_some() && said(&whole) != said(&parts) {
-            differ.push(format!("{key}:\n  whole {}\n  parts {}", said(&whole), said(&parts)));
-        }
-    }
-    differ
+        (whole.numeric_rank.is_some() && said(&whole) != said(&parts))
+            .then(|| format!("{key}:\n  whole {}\n  parts {}", said(&whole), said(&parts)))
+    })
+    .into_iter()
+    .flatten()
+    .collect()
 }
 
 /// Below the dense limit, where the whole SVD runs anyway: the parts read every case alike.
 #[test]
 fn the_parts_read_the_library_as_the_whole_does() {
-    let differ = disagreements(NUMERIC_MAX);
+    let differ = disagreements(0..=NUMERIC_MAX);
     assert!(differ.is_empty(), "{}", differ.join("\n"));
 }
 
 /// Past it — the V-twin, the engine, the long truss — forcing the whole SVD to compare against
-/// takes minutes, which the slow tier affords.
+/// takes minutes, which the slow tier affords (the cases below it are the test above's).
 #[test]
 #[cfg_attr(not(feature = "slow"), ignore = "slow tier, minutes: the whole SVD of every large case")]
 fn the_parts_read_the_large_cases_as_the_whole_does() {
-    let differ = disagreements(usize::MAX);
+    let differ = disagreements(NUMERIC_MAX + 1..=usize::MAX);
     assert!(differ.is_empty(), "{}", differ.join("\n"));
 }
 
