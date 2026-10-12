@@ -44,6 +44,9 @@ pub fn recipe(sk: &Sketch,root: usize) -> Result<Json,String> {
 pub struct SweptCut {
     pub swept: usize,
     pub pose: crate::envelope::Motion,
+    /// What the faces this cut leaves are named under (`brep::recipe::NAMED`): the cut operand's
+    /// own name, the outermost placement's, as `solid::exact` keys a placed copy (#212).
+    pub key: String,
 }
 
 /// A recipe with every cut that is a continuous sweep, or a placed copy of one,
@@ -82,12 +85,12 @@ pub(crate) fn swept_cut(sk: &Sketch,i: usize) -> Result<Option<SweptCut>,String>
             if contains_sweep(sk,*source as usize) {
                 return Err(format!("`{}`: nested continuous sweeps are not yet supported",solid.name));
             }
-            Ok(Some(SweptCut {swept:i,pose:crate::envelope::Motion::identity()}))
+            Ok(Some(SweptCut {swept:i,pose:crate::envelope::Motion::identity(),key:solid.name.clone()}))
         }
         SolidDef::Placed {source,motion,at} => match swept_cut(sk,*source as usize)? {
             Some(inner) => {
                 let outer = crate::motion::Family::read(sk,*motion as usize)?.at(at.value)?;
-                Ok(Some(SweptCut {swept:inner.swept,pose:inner.pose.then(outer)}))
+                Ok(Some(SweptCut {swept:inner.swept,pose:inner.pose.then(outer),key:solid.name.clone()}))
             }
             None => Ok(None),
         },

@@ -42,16 +42,6 @@ impl Design {
     }
     /// The pair (`gears.sv`), its modules beside it, the configuration replaced.
     fn read(&self) -> Elaborated { fixtures::gear::read_file("gears.sv",&self.configuration) }
-    /// The checks' document (`pair.sv`): the layout with each member's limits drawn as revolved
-    /// sections (`blank/limits.sv`), which the members' region blank stands for.
-    fn read_checks(&self) -> Elaborated { fixtures::gear::read_file("pair.sv",&self.configuration) }
-    /// Every recorded quantity of the pair `e` at scale `probe`: the layout's, and the limits'
-    /// from the checks.
-    fn read_all(&self,e: &Elaborated,probe: f64) -> Reading {
-        let mut reading = read_pair(e,probe);
-        reading.values.extend(read_limits(&self.read_checks()).values);
-        reading
-    }
 }
 
 /// The recorded designs (`fixtures::gear::designs`): the configured hypoid, the bevel pair, the
@@ -89,28 +79,6 @@ fn motion(e: &Elaborated,name: &str) -> usize {
         .unwrap_or_else(|| panic!("no motion `{name}`"))
 }
 
-/// The blank limits, read off the checks' document (`Design::read_checks`), where they are drawn:
-/// each cone's quadrilateral and each sphere's poles, in space.
-fn read_limits(e: &Elaborated) -> Reading {
-    let mut out = Reading { values: Vec::new() };
-    let point = |name: &str| e.sketch.world_point(index(e,name));
-    for member in ["gear","pinion"] {
-        for cone in &LIMITS[..3] {
-            for c in ["a","b","p","q"] {
-                let p = point(&format!("{member}_limits.{cone}.{c}"));
-                out.point(&format!("{member} {cone} cone {c}"),p);
-            }
-        }
-        for sphere in &LIMITS[3..] {
-            for c in ["top","bottom"] {
-                let p = point(&format!("{member}_limits.{sphere}.{c}"));
-                out.point(&format!("{member} {sphere} {c}"),p);
-            }
-        }
-    }
-    out
-}
-
 /// What the plan's gate compares, read off one elaborated pair: numbers with a name.
 struct Reading { values: Vec<(String,f64)> }
 
@@ -127,9 +95,6 @@ const CORNERS: [&str;8] = ["bi","bo","ij","oj","it","ot","ci","co"];
 /// The sections: the crown tooth's and its mate's two.
 const SECTIONS: [(&str,&str);3] = [("tooth","tooth.rack"),("mate outer","mate.outer"),
     ("mate inner","mate.inner")];
-
-/// Each member's blank limits: the tip, root and back cones, the toe and heel spheres.
-const LIMITS: [&str;5] = ["tip","root","back","toe","heel"];
 
 /// The motions, under `generation`.
 const MOTIONS: [&str;8] = ["crown_roll","pinion_roll","gear_roll","pinion_generation",
@@ -237,7 +202,7 @@ fn the_layout_reproduces_the_pairs_named_quantities() {
         // the motions carry points at the pair's own scale, the recorded R
         let scale = rows[0].1[k];
         assert_eq!(rows[0].0,"R");
-        let reading = design.read_all(&e,scale);
+        let reading = read_pair(&e,scale);
         assert_eq!(reading.values.len(),rows.len());
         for (name,v) in &reading.values {
             let values = recorded.get(name.as_str())
@@ -263,20 +228,20 @@ fn the_layout_reproduces_the_pairs_named_quantities() {
 }
 
 /// The static solids: the crowns and the gear's space cutter by the names the layout gives them
-/// under `REF`, and every blank limit's carrier by the checks' (`Design::read_checks`).
-const SOLIDS: [&str;14] = ["tooth.crown","mate.outer_crown","mate.inner_crown","gear_space.body",
-    "gear_limits.tip.carrier","gear_limits.root.carrier","gear_limits.back.carrier",
-    "gear_limits.toe.carrier","gear_limits.heel.carrier","pinion_limits.tip.carrier",
-    "pinion_limits.root.carrier","pinion_limits.back.carrier","pinion_limits.toe.carrier",
-    "pinion_limits.heel.carrier"];
+/// under `REF`.
+const SOLIDS: [&str;4] = ["tooth.crown","mate.outer_crown","mate.inner_crown","gear_space.body"];
 
-/// One of `SOLIDS` as a field, from the pair `e` or the checks `checks`.
-fn static_field(e: &Elaborated,checks: &Elaborated,name: &str,r: f64) -> MaterialField {
-    let (doc,full) = if name.contains("_limits.") { (checks,name.to_string()) }
-        else { (e,format!("{REF}.{name}")) };
-    MaterialField::read(&doc.sketch,fixtures::solid(doc,&full),1e-10*r)
+/// One of `SOLIDS` as a field.
+fn static_field(e: &Elaborated,name: &str,r: f64) -> MaterialField {
+    MaterialField::read(&e.sketch,fixtures::solid(e,&format!("{REF}.{name}")),1e-10*r)
         .unwrap_or_else(|err| panic!("{name}: {err}"))
 }
+
+/// Each member's blank's limits as the pair drew them when its material was recorded: the heel
+/// sphere's and the tip cone's carriers the blank lies within, the toe sphere's and the back
+/// cone's the blank lies outside — the recorded rows (`{member}_limits.{limit}.carrier`) the
+/// region blank (blank/member.sv) is held to, by the body rule over them.
+const LIMITS: [(&str,f64);4] = [("heel",1.),("tip",1.),("toe",-1.),("back",-1.)];
 
 /// A grid of `n` points a side over the box `lo`..`hi`.
 fn grid(lo: V,hi: V,n: usize) -> Vec<V> {
@@ -316,14 +281,34 @@ fn the_layout_makes_the_pairs_material() {
         let points = material_points(r);
         let values = |name: &str| &recorded[&(design.label.clone(),name.to_string())];
         // Every static solid, its value over the whole of both members and over the teeth.
-        let checks = design.read_checks();
         for name in SOLIDS {
-            let (field,want) = (static_field(&e,&checks,name,r),values(name));
+            let (field,want) = (static_field(&e,name,r),values(name));
             assert_eq!(want.len(),points.len());
             let worst = points.iter().zip(want).map(|(&p,w)| (field.side(p)-w).abs())
                 .fold(0.,f64::max);
             println!("{:10} {name:32} {:9.2e}",design.label,worst/r);
             assert!(worst <= 1e-9*r,"{}: {name}: the field is {worst} off the pair's",design.label);
+        }
+        // Each member's blank, a region: its material the recorded limits' by the body rule, at
+        // every point they decide (the carriers' fields one-Lipschitz, not distances, so held by
+        // sign alone, and only where every limit is clear of its surface).
+        for member in ["gear","pinion"] {
+            let field = MaterialField::read(&e.sketch,fixtures::solid(&e,&format!("{REF}.{member}_blank.material")),1e-10*r)
+                .unwrap_or_else(|err| panic!("{}: {member}'s blank: {err}",design.label));
+            let limits: Vec<(&Vec<f64>,f64)> = LIMITS.iter().map(|(limit,sense)|
+                (values(&format!("{member}_limits.{limit}.carrier")),*sense)).collect();
+            let (mut decided,mut inside) = (0,0);
+            for (k,&p) in points.iter().enumerate() {
+                if limits.iter().any(|(v,_)| v[k].abs() < 1e-6*r) { continue }
+                let held = limits.iter().all(|(v,sense)| v[k]*sense < 0.);
+                let side = field.side(p);
+                if side.abs() < 1e-6*r { continue }
+                assert_eq!(side < 0.,held,"{}: {member}'s blank at {p:?}: {side} where the limits say {held}",design.label);
+                decided += 1;
+                inside += usize::from(held);
+            }
+            println!("{:10} {member} blank {decided} points decided, {inside} inside",design.label);
+            assert!(decided > points.len()/2 && inside > 0,"{}: {member}'s blank: {decided} decided, {inside} inside",design.label);
         }
         // The members, each blank less its swept cuts, read by branch and bound (`side` is a
         // sign, whose magnitude is wherever the search stopped). A reading is exact to its
@@ -358,7 +343,8 @@ fn the_layout_makes_the_pairs_material() {
 /// --ignored --nocapture` prints each named design's quantities as a column and its material as
 /// rows, in the fixtures' own format, to be pasted over the old. Only a design off the bevel pair
 /// is recorded from the layout; the bevel pair's and the sizes' columns are the old pair's and
-/// stay as they are.
+/// stay as they are. The blank's limits' carrier rows (`LIMITS`) are not printed: the limits are
+/// drawn no more, and a re-record keeps those rows.
 #[test]
 #[ignore = "a tool: SOLVENT_RECORD names the designs to re-record"]
 fn record() {
@@ -367,7 +353,7 @@ fn record() {
     for (k,design) in designs().into_iter().enumerate() {
         if !wanted.split(',').any(|w| w == design.label) { continue; }
         let e = design.read();
-        let reading = design.read_all(&e,rows[0].1[k]);
+        let reading = read_pair(&e,rows[0].1[k]);
         println!("column\t{}",design.label);
         for (name,_) in &rows {
             let v = reading.values.iter().find(|(n,_)| n == name).map_or(f64::NAN,|(_,v)| *v);
@@ -380,9 +366,8 @@ fn record() {
             MaterialField::read(&e.sketch,fixtures::solid(&e,name),1e-10*r).unwrap();
         let row = |name: &str,values: Vec<f64>| println!("material\t{}\t{name}\t{}",design.label,
             values.iter().map(|v| format!("{v:.12e}")).collect::<Vec<_>>().join("\t"));
-        let checks = design.read_checks();
         for name in SOLIDS {
-            let field = static_field(&e,&checks,name,r);
+            let field = static_field(&e,name,r);
             row(name,points.iter().map(|&p| field.side(p)).collect());
         }
         for member in ["pair.pinion.body","pair.gear.body"] {

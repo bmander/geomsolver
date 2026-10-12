@@ -506,6 +506,29 @@ t0 := Rung(l0, r0, len: 50)
   declared `private`. `construction` marks purpose, independently: shown in the editor, hidden on
   sheets unless styled. A private entity may still be passed explicitly to another component.
 
+- **A component may call itself**, directly or through others, when a `when` over the numbers it
+  is given ends it (1.7): each level is an instance named under the last (`d.s.s.m`). A call given
+  the numbers its own expansion was given never ends and is **E003**, as is nesting past 32 levels
+  (`when` and blocks count). Recursion is for what is defined by itself — a subdivision; a run of
+  alike copies is a `repeat`.
+
+```
+component Acute(a: point, b: point, c: point, l: Length, n: Int) {   // Penrose's half rhombs
+  when n == 0 {
+    line(a, b)
+    line(a, c)
+  }
+  when n > 0 {
+    phi := (1 + sqrt(5)) / 2
+    p := point hint(at: a, toward: b, by: 1 / phi)
+    a distance(l / phi) p
+    c distance(l / phi) p
+    x := Acute(c, p, b, l: l / phi, n: n - 1)
+    y := Obtuse(p, c, a, s: l / phi, n: n - 1)                     // which calls Acute again
+  }
+}
+```
+
 A reusable pattern hiding its layout (`use hardware` provides this; see `solid_flange.sv`):
 
 ```solvent
@@ -1311,8 +1334,9 @@ extruded, and `p coincident flank` from any view is one equation. Draw the prism
 and name the edge in it.
 
 **Spatial geometry read after the solve** adds no unknown and has no 2D glyph; each certifies only
-local evaluations ([analytic face boundaries](analytic-face-boundaries.md);
-`spiral_bevel/verification.sv` uses them throughout):
+local evaluations ([analytic face boundaries](analytic-face-boundaries.md); the spiral bevel's
+checks make the same objects of their parts, from the faces its built members leave —
+`faces::face_source`, #212):
 
 - `surface(crown, edge: rack.outer[, from: 180deg, to: 360deg])` — the surface one profile edge
   of an unmodified revolution sweeps, `u` along the edge, `v` round; read the domain, never assume

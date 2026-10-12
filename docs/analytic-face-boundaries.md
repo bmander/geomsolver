@@ -12,10 +12,13 @@ envelope or material patch that contains those edges. The ordered loop determine
 the directed uses. Here the working face traverses `join` in reverse and the transition
 traverses it forward; both keep the same edge and corner identities.
 
-The spiral-bevel source packages this pattern as `ToothSide` (`verification.sv`), which
-also declares the seams, corners and edges, called once for each of its four tooth sides.
-It declares eight supported faces. The rim's toe and heel
-contours now read those face boundaries, including their correct support parameters,
+The spiral bevel's checks (`gcs-core/tests/envelope/paired.rs`) make this pattern of its parts
+(#212): each member is built at one tooth space, its faces named by the crown faces that made them
+(`BodyFaces`), and each of its four tooth sides' working and transition faces, with their seams,
+corners and edges, is made where the built member says those faces meet, of the analytic envelopes
+the faces' names say (`faces::face_source`; `SpatialFaceBoundary::new` and its peers) — eight
+supported faces, as the declarations (`verification.sv`, retired) once wrote them out. The rim's
+toe and heel contours read those face boundaries, including their correct support parameters,
 rather than addressing edge names separately.
 
 ## Declaration and ownership contracts

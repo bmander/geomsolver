@@ -21,8 +21,8 @@ fn functional_profile_with_side(pair: &Pair,rack: &str,active: Option<ProfileSid
     -> (PlanarField,[f64;3],[f64;3],String) {
     let active = active.map(|side| match side { ProfileSide::Inner => "inner", ProfileSide::Outer => "outer" });
     let sk = &pair.model.sketch;
-    let axis_name = if rack == "pinion" { "pair.tooth.ax" } else { "pair.mate.ax" };
-    let axis = &sk.lines[pair.model.map.ent_named(axis_name).unwrap().i()];
+    let axis_name = format!("{REF}.{}.ax",if rack == "pinion" { "tooth" } else { "mate" });
+    let axis = &sk.lines[pair.model.map.ent_named(&axis_name).unwrap().i()];
     let origin = sk.world_point(axis.p1 as usize);
     let end = sk.world_point(axis.p2 as usize);
     let axis: [f64;3] = std::array::from_fn(|k| end[k]-origin[k]);
@@ -38,7 +38,7 @@ fn functional_profile_with_side(pair: &Pair,rack: &str,active: Option<ProfileSid
     let mut planes = vec![];
     let mut fields = vec![];
     let ends = |name: &str| {
-        let line = &sk.lines[pair.model.map.ent_named(&format!("pair.{}.{name}",Pair::section(rack))).unwrap().i()];
+        let line = &sk.lines[pair.model.map.ent_named(&format!("{REF}.{}.{name}",Pair::section(rack))).unwrap().i()];
         (coordinate(line.p1),coordinate(line.p2))
     };
     // Which way the profile is walked in (radius,height): the tooth's counterclockwise, and its
@@ -57,7 +57,7 @@ fn functional_profile_with_side(pair: &Pair,rack: &str,active: Option<ProfileSid
     let mut corners = vec![];
     for name in ["outer_round","inner_round"] {
         if active.is_some_and(|side| !name.starts_with(side)) { continue; }
-        let arc = &sk.arcs[pair.model.map.ent_named(&format!("pair.{}.{name}",Pair::section(rack))).unwrap().i()];
+        let arc = &sk.arcs[pair.model.map.ent_named(&format!("{REF}.{}.{name}",Pair::section(rack))).unwrap().i()];
         let center = coordinate(arc.center);
         let radius = sk.params[arc.radius as usize].value;
         let [a,b] = [arc.start,arc.end].map(|id| {
@@ -100,7 +100,7 @@ fn explicit_functional_generator_matches_source_material_at_sampled_points() {
     let pair = Pair::read([24,48],2.);
     let mut count = 0;
     for rack in ["pinion","gear_outer","gear_inner"] {
-        let crown = pair.model.map.ent_named(&format!("pair.{}",Pair::crown(rack))).unwrap();
+        let crown = pair.model.map.ent_named(&format!("{REF}.{}",Pair::crown(rack))).unwrap();
         let source = RevolvedRegion::read(&pair.model.sketch,crown.i(),pair.module*1e-10).unwrap();
         let (profile,origin,axis,_) = functional_profile(&pair,rack);
         let field = RevolvedField::new(profile,origin,axis).unwrap();
@@ -150,9 +150,7 @@ fn sweep_probe(pair: &Pair,member: usize) -> String {
         let name = if member == side { "outer" } else { "inner" };
         let flank = pair.patch(member,side,name);
         let round = pair.patch(member,side,&format!("{name}_round"));
-        let surface_id = pair.model.map.ent_named(&flank.name).unwrap().i();
-        let crown = pair.model.sketch.surfaces[surface_id].solid as usize;
-        let region = RevolvedRegion::read(&pair.model.sketch,crown,pair.module*1e-10).unwrap();
+        let region = RevolvedRegion::read(&pair.model.sketch,pair.crown_of(&flank),pair.module*1e-10).unwrap();
         for fraction in [0.9,1.,1.1] {
             let rho = fraction*pair.rm;
             let tip = pair.tip(member,&flank,rho,pair.analytic(member,&flank,0.5,rho).parameters);
@@ -221,9 +219,7 @@ fn indexed_full_crown_union_exposes_neighboring_gear_overcut() {
             let tip = pair.tip(member,&flank,pair.rm,pair.analytic(member,&flank,0.5,pair.rm).parameters);
             let join = pair.seam(&flank,false).endpoint_parameters()[0];
             let contact = pair.analytic(member,&flank,(tip.parameters[0]+join)/2.,pair.rm);
-            let surface_id = pair.model.map.ent_named(&flank.name).unwrap().i();
-            let crown = pair.model.sketch.surfaces[surface_id].solid as usize;
-            let region = RevolvedRegion::read(&pair.model.sketch,crown,pair.module*1e-10).unwrap();
+            let region = RevolvedRegion::read(&pair.model.sketch,pair.crown_of(&flank),pair.module*1e-10).unwrap();
             let displacement = pair.module*0.005;
             let plus = std::array::from_fn(|k| contact.contact.position[k]+displacement*contact.contact.normal[k]);
             let sign = region.classify(family.at(contact.parameters[2]).unwrap().inverse().point(frame.point(plus)),0.)
@@ -275,5 +271,5 @@ fn functional_motion_definition(pair: &Pair,member: usize) -> String {
         format!("{{\"origin\":{origin:?},\"axis\":{axis:?},\"ratio\":{ratio},\"phase\":{phase}}}")
     };
     format!("{{\"source\":{},\"observer\":{}}}",
-        rotation("pair.generation.crown_roll"),rotation(&format!("pair.generation.{member_name}_roll")))
+        rotation(&format!("{REF}.generation.crown_roll")),rotation(&format!("{REF}.generation.{member_name}_roll")))
 }

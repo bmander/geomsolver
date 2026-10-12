@@ -15,7 +15,7 @@ fn spherical(rho: f64, theta: f64, phi: f64) -> V {
 impl Pair {
     pub(super) fn tip(&self, member: usize, surface: &RevolvedSurface, rho: f64,
         seed: [f64;3]) -> envelope::Intersection {
-        let seam = &self.boundary_seams[&format!("{}.tip_edge",self.label(surface))];
+        let seam = &self.boundary_seams[&format!("{}.tip_edge",surface.name)];
         let mut result = seam.intersect(
             |c| {
                 let p = c.position;
@@ -47,7 +47,7 @@ impl Pair {
             // End-face contours now read finite source edges. Sampling is uniform
             // in the declared axial coordinate, with exact shared endpoint reuse.
             let sample = |surface: &RevolvedSurface,fraction| {
-                let label = self.label(surface);
+                let label = surface.name.as_str();
                 let (base,role) = label.strip_suffix("_round")
                     .map_or((label,"working"),|base| (base,"transition"));
                 let face = &self.faces[&format!("{base}.{role}")];
@@ -148,7 +148,7 @@ impl Pair {
     fn rim(&self, member: usize, n: usize) -> Rim {
         let mut points = vec![];
         let mut width = 0;
-        let end_distance = self.ends.each_ref().map(|s| {
+        let end_distance = ["toe","heel"].map(|w| self.wall(member,w)).map(|s| {
             let p = s.at(0.5,0.).unwrap().position;
             p[0].hypot(p[1]).hypot(p[2])
         });
@@ -157,9 +157,7 @@ impl Pair {
             let end = if i == 0 { Some("toe") } else if i == n { Some("heel") } else { None };
             let section = self.rim_section_with_end(member,rho,n,end);
             width = section.len();
-            let back_section = self.limits[member][2].line_on_sphere([0.;3],rho,0.).unwrap();
-            assert_eq!(back_section.len(),1,"the declared back cone must have one section");
-            let back = polar(self.local_frame(member).point(back_section[0].position));
+            let back = polar(self.local_frame(member).point(self.cone_on_sphere(member,"back",rho)));
             let rear: Vec<V> = section.iter().map(|&p| {
                 assert!(back > 0. && back < polar(p));
                 spherical(rho,back,azimuth(p))

@@ -212,6 +212,12 @@ impl<'a> Walk<'a> {
                 }
                 StmtKind::Param(_) | StmtKind::Group(_) => {} // worked out above, before the walk
                 StmtKind::Instance(inst) => {
+                    // a body of nothing but calls emits no statement, so the statements' cap
+                    // never stops a recursion branching at every level: the instances have one
+                    if self.instances.len() >= MAX_FLAT {
+                        self.once(Code::E103, st.span, format!("more than {MAX_FLAT} instances once expanded"));
+                        return;
+                    }
                     let Some((comp, mut sub_vals, sides, key)) =
                         self.bind_instance(inst, scope, vals, true)
                     else {
@@ -260,19 +266,37 @@ impl<'a> Walk<'a> {
                         written: None,
                         held: false,
                     };
-                    // a component reached again while it is still being expanded is a cycle:
-                    // said once, at the call that closes it, and not walked
-                    if let Some(at) = self.instantiating.iter().position(|c| std::ptr::eq(*c, comp)) {
+                    // a component reached again while it is still being expanded recurses
+                    // (§8), ended by a `when` over its numbers: given the numbers it was given
+                    // there, every choice comes out the same and nothing ends it, so that, and
+                    // nesting past the cap, is E003, said once at the call closing the cycle
+                    let same = self.instantiating.iter()
+                        .rposition(|(c, given)| std::ptr::eq(*c, comp) && *given == sub_vals);
+                    let deep = depth + 1 >= MAX_DEPTH
+                        && self.instantiating.iter().any(|(c, _)| std::ptr::eq(*c, comp));
+                    if same.is_some() || deep {
                         let name = |c: &Component| c.name.as_ref().map_or(String::new(), |n| n.text.clone());
-                        let through: Vec<String> =
-                            self.instantiating[at + 1..].iter().map(|c| format!("`{}`", name(c))).collect();
-                        let message = match through.is_empty() {
-                            true => format!("`{}` instantiates itself", name(comp)),
-                            false => format!("`{}` instantiates itself through {}", name(comp), through.join(", ")),
+                        let message = match same {
+                            None => format!("`{}` instantiates itself more than {MAX_DEPTH} deep: \
+                                             its `when` does not end it soon enough", name(comp)),
+                            Some(k) => {
+                                let mut through: Vec<String> = Vec::new();
+                                for (c, _) in &self.instantiating[k + 1..] {
+                                    let n = format!("`{}`", name(c));
+                                    if !std::ptr::eq(*c, comp) && !through.contains(&n) {
+                                        through.push(n);
+                                    }
+                                }
+                                let through = match through.is_empty() {
+                                    true => String::new(),
+                                    false => format!(" through {}", through.join(", ")),
+                                };
+                                format!("`{}` instantiates itself{through} with the numbers it was \
+                                         given, so nothing ends it: a `when` over a number each \
+                                         call changes does", name(comp))
+                            }
                         };
-                        if !self.diagnostics.iter().any(|d| d.code == Code::E003 && d.span == st.span) {
-                            self.err(Code::E003, st.span, message);
-                        }
+                        self.once(Code::E003, st.span, message);
                         continue;
                     }
                     let mut instance_path = path.to_vec();
@@ -290,7 +314,7 @@ impl<'a> Walk<'a> {
                         }
                         None => Vec::new(),
                     };
-                    self.instantiating.push(comp);
+                    self.instantiating.push((comp, sub_vals.clone()));
                     self.body(&comp.body, &sc, &mut sub_vals, &instance_path, depth + 1);
                     if !own.is_empty() {
                         self.body(&own, &sc, &mut sub_vals, &instance_path, depth + 1);

@@ -1,8 +1,8 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.75 — October 2026**
+**Specification, Draft 0.76 — October 2026**
 
-**[0.75] A family's own geometry, and the crown's sets.** What a set family's body makes and
+**[0.76] A family's own geometry, and the crown's sets.** What a set family's body makes and
 states without reading its point — through what it declares — is the instance's, made once where
 the instance is rather than at each use (§6.21): `std.ConeThrough(about, q, lean)`, the cone about
 a line through a point, its radius growing `tan(lean)` along the line, owns its apex so. A
@@ -12,6 +12,14 @@ of a set as it is written (§6.21). `std.Level(o, along, d)` is the plane `d` al
 point, its inside behind it. A region's tip land is said on the land's two ends — where its
 flanks meet its tip, the flanks drawn through them — by a bound between them, which chooses the
 root as a drawn section's land does (§9.6).
+
+**[0.75] A component may instantiate itself.** A call back into a component still being
+expanded is a recursion, elaborated as any instance is (§8), each level named under the one that
+made it (`d.s.s.m`); a `when` over the numbers it is given ends it (§12.9). Only what nothing
+ends is refused, **E003**: a call given the numbers its own expansion was given, directly or
+through other components, every choice of which comes out the same again, and one nesting past
+the implementation's depth. A subdivision is written as itself — Penrose's tiling by Robinson
+triangles is two components each calling the other.
 
 **[0.74] A point said on another plane is drawn there.** `gear.M coincident q`, said of a point
 its declaration draws in a plane, draws it in `q` too, as `point in p, q` draws it — the statement
@@ -1886,7 +1894,7 @@ said where it is used, by two words:
   the set its `in` is membership of (§6.7): `q coincident P` draws `q` in `P`, and **[0.74]**
   where `q`'s declaration draws it in another plane it draws `q` in `P` as well, a twin rather
   than a row holding it there (§6.7 says where a row stays, `P coincident q` among them).
-  **[0.75]** In a family, what the body declares and states that reads nothing of its point —
+  **[0.76]** In a family, what the body declares and states that reads nothing of its point —
   directly, or through a declaration that does — is the instance's, made once where the instance
   is and read by its name (`k.apex`): `std.ConeThrough`'s apex, placed by the point it is given,
   is one point however many points are put on the cone.
@@ -1990,7 +1998,7 @@ and a cone's is exact (§6.9); a **drawn point** has a **foot**, a point on `S` 
 to the sphere about `p` through it, stated as two sets' tangency is. The foot is seeded on the far
 side of the surface from `p`, so the two start apart the way they end; it stands where `S` is
 smooth (a cone's apex is not). Refused (**E040**): no `side:`; a distance of zero (`coincident`);
-a region, which has no surface — but **[0.75]** a region that is one side of another set, `{ q |
+a region, which has no surface — but **[0.76]** a region that is one side of another set, `{ q |
 q outside S }` or `{ q | q inside S }`, whose surface is `S`'s, measured from with the sides turned
 round where it is the outside (so `std.Rounded(beyond, tip, r)` rounds where a region is outside a
 set); a set saying more than one thing of its point (a circle in a plane); an interval; `inside(d)` or `outside(d)` a conjunction; a bound on a drawn point's
@@ -2100,7 +2108,20 @@ An implementation MUST refuse `port` with a message naming these forms. Aliasing
 t := Tooth(root, tip, slot: tau/N)
 ```
 
-Instantiation elaborates the named component's body into the current scope with formals bound per §4.1. Instance elaboration is recursive; cyclic instantiation is an error (**E003**).
+Instantiation elaborates the named component's body into the current scope with formals bound per §4.1. Instance elaboration is recursive. **[0.75]** A component may instantiate itself, directly or through other components: the call is elaborated as any other, under the instance's own name, so each level is named under the one that made it (`d.s.m`, `d.s.s.m`), and a `when` over the numbers the call gives ends it (§12.9). Elaboration is a function of those numbers, so a call given **the numbers its own expansion was given** — every formal of a number type bound to the same value, or none at all — makes every choice the same again and never ends: **E003**, at the call that closes the cycle. So is one nesting deeper than the implementation elaborates (bounded, since a document is untrusted input); *before [0.75] every such call was E003.*
+
+```solvent
+component Half(a: point, b: point, len: Length, n: Int) {
+  m := point
+  a horizontal m
+  a distance(len / 2) m
+  when n > 1 {
+    s := Half(a, m, len: len / 2, n: n - 1)   // d.s, d.s.s, … and no deeper than n
+  }
+}
+```
+
+*Non-normative:* recursion is for what is *defined* by itself — a subdivision, a fractal, a tree. A run of alike copies is a `repeat`, and stays shallow however long it is; a recursion nests a level per call.
 
 ### 8.1 Groups of arguments
 
@@ -2310,7 +2331,7 @@ p outside P                       // in front of it
 - **Closed:** `>=`, `<=` and `in:` include their edge, where a solution may stand. `>` and `<` are refused.
 - **Its number:** zero may be written, unlike an ordinate's equality, which zero makes a `level` (§9.2). A bound may not be a `claim` (**E040**): a bound chooses which solution is meant, and a claim asks about the one there is. It may read an unknown only where a row of the drawing reads it too (**[0.64]**, a cone's half its side is chosen against), read as it stands: on the seeds its seed, on the solution its solution; one nothing else reads is **E040**, since a bound adds no freedom.
 - **Meaning:** outside a set body, a bound **chooses the root**. It adds no row and no freedom, and is drawn as no callout. It does the work a seed did when the seed only picked a side, so it is read on the seeds first: a point whose seed breaks a bound is carried across its edge, to the mirror of its reading, as if it had been seeded there, and everything seeded from it or placed through it follows. The solver then checks it on the solution. Where it still does not hold, the solver looks for the root where it does, from the seeds and from the solution, and fails the solve where none is found (`a bound does not hold`). The diagnosis tells which bounds are violated, and which hold with the solution on their edge (*active*).
-- **A region's land** **[0.75]**. A region draws no tip line for `distance(>= d) tip` to stand on: its rounds and faces are worked out, not solved. A tooth whose flanks are drawn through the ends of its tip — a face mill's blade, given by its point width — says its land on those ends, `eb distance(>= d, along: left) ea` in the tooth's section: on the seeds and on the solution it is the same root choice as the drawn section's, so a start on the root where the flanks cross above the tip (the tooth an edge, its tip no face) is carried to the tooth with its land.
+- **A region's land** **[0.76]**. A region draws no tip line for `distance(>= d) tip` to stand on: its rounds and faces are worked out, not solved. A tooth whose flanks are drawn through the ends of its tip — a face mill's blade, given by its point width — says its land on those ends, `eb distance(>= d, along: left) ea` in the tooth's section: on the seeds and on the solution it is the same root choice as the drawn section's, so a start on the root where the flanks cross above the tip (the tooth an edge, its tip no face) is carried to the tooth with its land.
 - **Inside a set body** a bound makes the set a region, and `inside`/`outside` put a point in one (§6.21) **[0.61]**. `solid(R)` is a region's solid (§6.9) **[0.62]**. `inside(d)` and `outside(d)` grow a side by `d` (§6.21) **[0.64]**.
 - `inside` between two solids remains the claim of §9.8; which one a statement is follows from its operands.
 
@@ -2607,6 +2628,8 @@ when design.tip_relief > 0mm {
 pinion_relief := ReliefCut(pinion.body, …, reference.tooth_relief.body, …)   // in a `when` too
 ```
 
+**[0.75]** A `when` is what ends a recursion (§8): its condition reads the numbers the call gave, and a level where it does not hold makes no further call.
+
 *Non-normative:* a switch used to be written as a `repeat` over a computed 0 or 1 — `repeat min(ceil(relief / 1mm), 1) { … }` — which depended on the unit it divided by, said nothing of its intent, and named what it made as a copy (`tooth_relief[0]`).
 
 ---
@@ -2851,7 +2874,7 @@ The numerical method is unspecified. Whatever the method, a conforming solver:
 |---|---|
 | E001 | redeclaration within a body |
 | E002 | a block's index or edge binder over a name already in scope |
-| E003 | cyclic component instantiation: a component reached again while it is being expanded |
+| E003 | a component instantiation nothing ends: reached again while it is being expanded, given the numbers it was given there, or nested past the implementation's depth (§8) **[0.75]** |
 | E004 | a positional argument that binds a value parameter, or that follows a labelled one (§4.1) **[0.17]** |
 | E010 | withdrawn: an undecorated `tangent` between circles reads its branch off the seed (§9.5) |
 | E011 | closed path winding contradicts declared orientation |

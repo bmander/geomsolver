@@ -24,9 +24,7 @@ fn declarative_pair_agrees_with_independent_member_material() {
                 let tip = pair.tip(member,&flank,pair.rm,pair.analytic(member,&flank,0.5,pair.rm).parameters);
                 let join = pair.seam(&flank,false).endpoint_parameters()[0];
                 let c = pair.analytic(member,&flank,(tip.parameters[0]+join)/2.,pair.rm);
-                let s = pair.model.map.ent_named(&flank.name).unwrap().i();
-                let region = RevolvedRegion::read(&pair.model.sketch,
-                    pair.model.sketch.surfaces[s].solid as usize,module*1e-10).unwrap();
+                let region = RevolvedRegion::read(&pair.model.sketch,pair.crown_of(&flank),module*1e-10).unwrap();
                 let displacement = module*0.005;
                 let plus = std::array::from_fn(|k| c.contact.position[k]+displacement*c.contact.normal[k]);
                 let sign = region.classify(pair.motion_families[member].at(c.parameters[2]).unwrap()

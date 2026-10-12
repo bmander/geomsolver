@@ -84,6 +84,56 @@ pub struct Station<'a> {
     pub window: [f64;2],
     /// Called from several threads at once: a station's columns are traced side by side.
     pub sample: Box<dyn Fn(f64) -> Result<Sample,TraceError>+Send+Sync+'a>,
+    /// Where along the walk each of the cutter's faces starts (ascending, within one period), and
+    /// the face (a host's tag): which face made a contact at a walk length (#212). Empty where
+    /// the host does not say, and the sheet is then one face.
+    pub starts: Vec<(f64,u32)>,
+}
+
+impl Station<'_> {
+    /// `crossings` strictly inside `lo..hi` of unfolded walk length.
+    pub fn crossings_within(&self,curve: &[Point],[lo,hi]: [f64;2]) -> Vec<(f64,u32,u32)> {
+        self.crossings(curve).into_iter().filter(|c| c.0 > lo && c.0 < hi).collect()
+    }
+
+    /// Where a traced curve passes from one of the cutter's faces to another (`starts`), in order:
+    /// at what unfolded walk length, from which face to which. A crossing is counted at the step
+    /// it is reached by, so one a curve's point stands on is counted once.
+    pub fn crossings(&self,curve: &[Point]) -> Vec<(f64,u32,u32)> {
+        let (starts,period) = (&self.starts,self.length);
+        if starts.is_empty() || !(period > 0.) { return Vec::new() }
+        let mut out = Vec::new();
+        for w in curve.windows(2) {
+            let (a,b) = (w[0],w[1]);
+            if a.s == b.s { continue }
+            let forward = b.s > a.s;
+            let mut found: Vec<(f64,usize)> = Vec::new();
+            for (k,&(start,_)) in starts.iter().enumerate() {
+                let mut m = ((a.s.min(b.s)-start)/period).floor()-1.;
+                loop {
+                    let p = start+m*period;
+                    if p > a.s.max(b.s) { break }
+                    let within = if forward { p > a.s && p <= b.s } else { p >= b.s && p < a.s };
+                    if within { found.push((p,k)); }
+                    m += 1.;
+                }
+            }
+            found.sort_by(|x,y| ((x.0-a.s).abs()).total_cmp(&(y.0-a.s).abs()));
+            for (p,k) in found {
+                let before = starts[(k+starts.len()-1)%starts.len()].1;
+                let (from,to) = if forward { (before,starts[k].1) } else { (starts[k].1,before) };
+                out.push((a.tau+(p-a.s)/(b.s-a.s)*(b.tau-a.tau),from,to));
+            }
+        }
+        out
+    }
+
+    /// The face at walk length `s`, where the station says.
+    fn face_at(&self,s: f64) -> Option<u32> {
+        let r = s.rem_euclid(self.length);
+        let k = self.starts.partition_point(|&(start,_)| start <= r);
+        self.starts.get(if k == 0 { self.starts.len().checked_sub(1)? } else { k-1 }).map(|&(_,f)| f)
+    }
 }
 
 /// How a host makes the station at an angle: called from several threads at once.
@@ -108,10 +158,18 @@ pub struct Band { pub stations: [f64;2],pub radius: f64,pub limit: f64 }
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum Rows { Walk,Length }
 
+/// A sheet band's face where the stations do not say (#212).
+pub const UNNAMED: u32 = u32::MAX;
+
 /// A candidate sheet: contact positions on a row-major grid with the outward
 /// normal of the cutter at each contact, in native millimetres.
 #[derive(Debug)]
 pub struct Sheet {
+    /// Where each of the cutter's faces begins down the rows, and the face (`Station::starts`'
+    /// tag, `UNNAMED` where the stations say none): the first row of each band of rows one face
+    /// made, the first at row 0, a band's last row the next one's first — every column crossing
+    /// from one face to the next at that row (#212).
+    pub bands: Vec<(usize,u32)>,
     pub points: Vec<V>,
     pub normals: Vec<V>,
     /// Each point's contact time.
@@ -555,7 +613,7 @@ impl Tracer<'_> {
         let stations = stations.into_iter().zip(traces).map(Arc::new).collect();
         Ok(Columns {tracer:self,station_at,margin,angles:(0..columns).map(|c| angle_of(c as f64)).collect(),
             column_mids:(0..columns-1).map(|c| angle_of(c as f64+0.5)).collect(),stations,beside,taus,columns_data,first_row,last,middles,
-            span:[lo_tau,hi_tau]})
+            span:[lo_tau,hi_tau],reached:first.iter().map(Option::is_some).collect()})
     }
 }
 
@@ -575,6 +633,8 @@ pub struct Columns<'t,'s> {
     last: usize,
     middles: Vec<f64>,
     span: [f64;2],
+    /// Which columns have a contact in the blank.
+    reached: Vec<bool>,
 }
 
 impl<'t,'s> Columns<'t,'s> {
@@ -593,16 +653,90 @@ impl<'t,'s> Columns<'t,'s> {
                 ((0..rows).map(|r| r as f64/(rows-1) as f64).collect(),(0..rows-1).map(|r| (r as f64+0.5)/(rows-1) as f64).collect())
             }
         };
+        // by walk length, each of the cutter's faces its own band of rows, where every column
+        // crosses the same faces in the same order (#212)
+        let anchors = (placement == Rows::Walk).then(|| self.anchors()).flatten();
+        let (row_coordinates,row_mids) = match &anchors {
+            Some(a) => a.rows(lo_tau,hi_tau,row_coordinates.len()),
+            None => (row_coordinates,row_mids),
+        };
         let grid = Grid {rows:row_coordinates,row_mids,columns:self.angles.clone(),column_mids:self.column_mids.clone()};
         let mut nodes = BTreeMap::new();
-        if placement == Rows::Walk {
+        if placement == Rows::Walk && anchors.is_none() {
             for (c,column) in self.columns_data.iter().enumerate() {
                 for (tau,f) in taus.iter().zip(column) { nodes.insert((grid.columns[c].to_bits(),tau.to_bits()),*f); }
             }
         }
         let traced = self.stations.iter().enumerate().map(|(c,entry)| (grid.columns[c].to_bits(),Some(entry.clone()))).collect();
         Ok(Layout {tracer,station_at:self.station_at,placement,margin:self.margin,span:[lo_tau,hi_tau],
-            beside:self.beside.clone(),stations:Mutex::new(traced),nodes:Mutex::new(nodes),grid})
+            beside:self.beside.clone(),stations:Mutex::new(traced),nodes:Mutex::new(nodes),grid,anchors,warps:Default::default()})
+    }
+
+    /// Where every column of the first grid reaching the blank crosses from one of the cutter's
+    /// faces to the next inside the rows' span, if each crosses the same faces in the same order:
+    /// each crossing's mean unfolded walk length, and the faces between them. None where the
+    /// stations name no faces, or those columns disagree.
+    fn anchors(&self) -> Option<Anchors> {
+        // only the columns reaching the blank leave faces of the cut: one carrying the sheet's
+        // edge out may cross the cutter's faces otherwise (a face run out to nothing), and keeps
+        // its rows at the walk's own lengths (`Anchors::walk`)
+        let crossings: Vec<Vec<(f64,u32,u32)>> = self.stations.iter().zip(&self.reached).filter(|(_,r)| **r)
+            .map(|(entry,_)| entry.0.crossings_within(&entry.1.curve,self.span)).collect();
+        let first = crossings.first()?;
+        let faces: Vec<u32> = match first.first() {
+            Some(c) => std::iter::once(c.1).chain(first.iter().map(|c| c.2)).collect(),
+            // one face over the whole span: the one the middle of the first reaching column was made by
+            None => {
+                let [lo,hi] = self.span;
+                let (station,traced) = &*self.stations[self.reached.iter().position(|r| *r)?];
+                let mid = traced.curve.iter().min_by(|a,b| (a.tau-(lo+hi)/2.).abs().total_cmp(&(b.tau-(lo+hi)/2.).abs()))?;
+                vec![station.face_at(mid.s)?]
+            }
+        };
+        let anchors = Anchors {at:Vec::new(),faces};
+        if !crossings.iter().all(|c| anchors.crosses(c)) { return None }
+        let at: Vec<f64> = (0..first.len()).map(|k| crossings.iter().map(|c| c[k].0).sum::<f64>()/crossings.len() as f64).collect();
+        if at.windows(2).any(|w| !(w[1] > w[0])) { return None }
+        Some(Anchors {at,..anchors})
+    }
+}
+
+/// Where the cutter's faces meet down a sheet's rows (#212): each crossing's row coordinate (the
+/// first grid's columns' mean unfolded walk length there), and the faces in order, one more than
+/// the crossings.
+#[derive(Clone,Debug)]
+struct Anchors { at: Vec<f64>,faces: Vec<u32> }
+
+impl Anchors {
+    /// Whether `crossings` pass between the faces in order, as the anchors' do.
+    fn crosses(&self,crossings: &[(f64,u32,u32)]) -> bool {
+        crossings.iter().map(|c| [c.1,c.2]).eq(self.faces.windows(2).map(|w| [w[0],w[1]]))
+    }
+
+    /// Rows over `lo..hi`, about as many as `count`, with a row at every crossing and the rows of
+    /// each face's band even between its two (at least two intervals a band), and their middles.
+    fn rows(&self,lo: f64,hi: f64,count: usize) -> (Vec<f64>,Vec<f64>) {
+        let spacing = (hi-lo)/(count.max(2)-1) as f64;
+        let ends: Vec<f64> = std::iter::once(lo).chain(self.at.iter().copied()).chain(std::iter::once(hi)).collect();
+        let mut rows = vec![lo];
+        for w in ends.windows(2) {
+            let n = ((w[1]-w[0])/spacing).round().max(2.) as usize;
+            for i in 1..n { rows.push(w[0]+(w[1]-w[0])*i as f64/n as f64); }
+            rows.push(w[1]);
+        }
+        let mids = rows.windows(2).map(|w| 0.5*(w[0]+w[1])).collect();
+        (rows,mids)
+    }
+
+    /// The unfolded walk length of row coordinate `x` on a station crossing at `crossed` (where
+    /// its curve crosses as the anchors do; else the coordinate itself): linear within each band
+    /// between the band's crossings, the span's ends fixed.
+    fn walk(&self,lo: f64,hi: f64,crossed: &[f64],x: f64) -> f64 {
+        if crossed.len() != self.at.len() { return x }
+        let k = self.at.partition_point(|&a| a < x);
+        let (x0,x1) = (if k == 0 { lo } else { self.at[k-1] },if k == self.at.len() { hi } else { self.at[k] });
+        let (t0,t1) = (if k == 0 { lo } else { crossed[k-1] },if k == crossed.len() { hi } else { crossed[k] });
+        if x1 > x0 { t0+(x-x0)*(t1-t0)/(x1-x0) } else { t0 }
     }
 }
 
@@ -700,6 +834,11 @@ pub struct Layout<'t,'s> {
     nodes: Mutex<BTreeMap<(u64,u64),Found>>,
     /// The first grid.
     pub grid: Grid,
+    /// Where the cutter's faces meet down the rows, where every column says alike (#212): a row
+    /// coordinate is then each station's own walk length, warped band by band.
+    anchors: Option<Anchors>,
+    /// Each station's crossings, by angle (`Anchors::walk`), empty where they are not the anchors'.
+    warps: Mutex<BTreeMap<u64,Vec<f64>>>,
 }
 
 impl<'s> Layout<'_,'s> {
@@ -724,7 +863,19 @@ impl<'s> Layout<'_,'s> {
         if !missing.is_empty() {
             let (station,traced) = entry;
             let found = match self.placement {
-                Rows::Walk => self.tracer.along(station,&traced.curve,&missing)?,
+                Rows::Walk => match &self.anchors {
+                    Some(a) => {
+                        let known = self.warps.lock().unwrap_or_else(|e| e.into_inner()).get(&key).cloned();
+                        let crossed = known.unwrap_or_else(|| {
+                            let c = station.crossings_within(&traced.curve,self.span);
+                            let crossed: Vec<f64> = if a.crosses(&c) { c.iter().map(|c| c.0).collect() } else { Vec::new() };
+                            self.warps.lock().unwrap_or_else(|e| e.into_inner()).entry(key).or_insert(crossed).clone()
+                        });
+                        let taus: Vec<f64> = missing.iter().map(|&x| a.walk(self.span[0],self.span[1],&crossed,x)).collect();
+                        self.tracer.along(station,&traced.curve,&taus)?
+                    }
+                    None => self.tracer.along(station,&traced.curve,&missing)?,
+                },
                 Rows::Length => self.tracer.at_lengths(station,&traced.curve,self.span[0],self.span[1],&missing)?,
             };
             let mut nodes = self.nodes.lock().unwrap_or_else(|e| e.into_inner());
@@ -732,6 +883,17 @@ impl<'s> Layout<'_,'s> {
         }
         let nodes = self.nodes.lock().unwrap_or_else(|e| e.into_inner());
         Ok(coordinates.iter().map(|x| nodes[&(key,x.to_bits())]).collect())
+    }
+
+    /// The bands of `grid`'s rows each of the cutter's faces made (`Sheet::bands`): a band from each
+    /// crossing's row, which a refined grid keeps; one unnamed band where there are no anchors.
+    fn bands(&self,grid: &Grid) -> Vec<(usize,u32)> {
+        let Some(a) = &self.anchors else { return vec![(0,UNNAMED)] };
+        let rows: Option<Vec<usize>> = a.at.iter().map(|x| grid.rows.iter().position(|r| r == x)).collect();
+        match rows {
+            Some(rows) => std::iter::once(0).chain(rows).zip(a.faces.iter().copied()).collect(),
+            None => vec![(0,UNNAMED)],
+        }
     }
 
     /// The sheet on `grid` (the first grid, or one refined from it), withholding the contacts
@@ -757,7 +919,7 @@ impl<'s> Layout<'_,'s> {
                 "the sheet's station at {:.4} degrees could not be traced over its rows",angle.to_degrees())))?;
             data.push(self.at(angle,&entry,&grid.rows)?);
         }
-        let mut sheet = Sheet {points:Vec::new(),normals:Vec::new(),times:Vec::new(),rows,columns,
+        let mut sheet = Sheet {bands:self.bands(grid),points:Vec::new(),normals:Vec::new(),times:Vec::new(),rows,columns,
             withheld:Vec::new(),withheld_normals:Vec::new(),sites:Vec::new()};
         let mut hold = |f: Found,site: [usize;2]| {
             sheet.withheld.push(f.position); sheet.withheld_normals.push(f.normal); sheet.sites.push(site);

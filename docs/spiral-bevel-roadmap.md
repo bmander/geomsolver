@@ -84,9 +84,10 @@ and bounded by the neighboring crown (`neighbor bound body`, the body rule's int
 spec 0.22). The finite radial closure lies beyond the reachable blank under every
 apex-centered generating rotation. No private member access rule or gear-specific compiler
 operation is added. The analytic faces the generating-system checks read (surfaces,
-envelopes, regions, seams, vertices, edges, faces) live in `verification.sv`, instantiated
-by `pair.sv` and not by `gears.sv`; the layout holds only the blank boundaries, crown sections
-and motions the members are generated from.
+envelopes, regions, seams, vertices, edges, faces) are made of their parts from the members as
+built (#212): a member's faces are named by the crown faces that made them, and each name is read
+back to its analytic envelope (`faces::face_source`); the layout holds only the blank, the crown
+sections and the motions the members are generated from (`pair.sv` is the layout alone).
 `configuration.sv` states the shafts (`shaft_angle`, and `offset`, their common perpendicular);
 a nonzero offset solves the pinion's pitch cone against the gear's (`pitch/pinion.sv`, [the
 true hypoid](spiral-bevel-layout-plan.md#the-true-hypoid)), its cones and its own toe/heel

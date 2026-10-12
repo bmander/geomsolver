@@ -26,7 +26,7 @@ fn station(angle: f64) -> Station<'static> {
         let phi = s/0.5;
         let normal: V = std::array::from_fn(|k| phi.cos()*side[k]+if k == 2 { phi.sin() } else { 0. });
         Ok(Sample {position:std::array::from_fn(|k| centre[k]+0.5*normal[k]),normal})
-    })}
+    }),starts:Vec::new()}
 }
 
 #[test]

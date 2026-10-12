@@ -231,7 +231,9 @@ fn the_relieved_pinion_is_built_by_sectors() {
     let exact = export::exact(&e.sketch,body,None,None,&say).unwrap();
     let said = lines.lock().unwrap().join("\n");
     assert!(said.contains("turned the sector into 24 copies"),"{said}");
-    assert_eq!(exact.solid.faces.len(),147,"{said}");
+    // each sector: the blank's pieces, the space's five faces and the relief's five, named by
+    // the cutter faces that made them (#212)
+    assert_eq!(exact.solid.faces.len(),243,"{said}");
     assert_eq!(exact.solid.faces.iter().filter(|f| f.surface.kind() == "revolution").count(),24*2,
         "the two conic bands, a piece in each sector");
     exact.solid.check(1e-6).unwrap();

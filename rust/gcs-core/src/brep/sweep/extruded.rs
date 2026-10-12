@@ -18,7 +18,7 @@ use crate::brep::geom::{Curve,Frame};
 use crate::brep::nurbs::Net;
 use crate::generate::{self,Generated,Tool};
 use crate::motion::PlanarStep;
-use crate::solid::contact_trace::{Inside,Sheet};
+use crate::solid::contact_trace::{Inside,Sheet,UNNAMED};
 use crate::solid::export::{AtStage,ExportRefusal,Stage,Tolerance};
 use std::f64::consts::{PI,TAU};
 
@@ -335,7 +335,7 @@ fn build(cut: &SweptCut,walks: &[Vec<Seg>],convex: &[Vec<bool>],extent: [f64;2],
             rows.push((s.b,normal(s.b.dc,forward)));
         }
     }
-    let mut sheet = Sheet {points:Vec::new(),normals:Vec::new(),times:Vec::new(),rows:rows.len(),columns:STATIONS,withheld:Vec::new(),
+    let mut sheet = Sheet {bands:vec![(0,UNNAMED)],points:Vec::new(),normals:Vec::new(),times:Vec::new(),rows:rows.len(),columns:STATIONS,withheld:Vec::new(),
         withheld_normals:Vec::new(),sites:Vec::new()};
     for (node,n) in &rows {
         for &h in &stations {
@@ -354,5 +354,5 @@ fn build(cut: &SweptCut,walks: &[Vec<Seg>],convex: &[Vec<bool>],extent: [f64;2],
     (say.stage)(&format!("`{name}`: the sheet extruded from the envelope's curve over {:.2} mm of the prism ({:?})",extent[1]-extent[0],
         started.elapsed()));
     (say.mark)(Stage::Withheld);
-    Ok(Fitted {face,sheet,error})
+    Ok(Fitted::whole(face,sheet,error))
 }

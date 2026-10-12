@@ -335,7 +335,7 @@ pub fn supply_exact_where(sk: &Sketch,wanted: &dyn Fn(usize) -> bool) {
         // admitted as a display is, which is looked at and not made
         let admitted = cad::swept_operands(sk,job.solid).is_empty().then(|| admission::admit_body(sk,job.solid,&DISPLAY_ADMISSION).ok()).flatten();
         let Ok(built) = exact(sk,job.solid,admitted.as_ref(),None,&say) else { continue };
-        sk.supply_exact_solid(job.solid,crate::solid::Exact {brep:built.solid,mm,origin:[0.;3],leading:Default::default(),named:Vec::new()});
+        sk.supply_exact_solid(job.solid,crate::solid::exact::named(built.solid,mm,[0.;3],Default::default()));
     }
 }
 

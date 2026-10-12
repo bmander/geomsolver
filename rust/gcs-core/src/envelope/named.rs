@@ -22,12 +22,18 @@ impl GeneratedEnvelope {
     }
     pub fn named(sk: &Sketch, index: usize) -> Result<Self,String> {
         let e = sk.envelopes.get(index).ok_or("no such envelope")?;
-        if !e.roll.iter().all(|v| v.is_finite()) || e.roll[0] >= e.roll[1] {
+        Self::new(e.name.clone(),RevolvedSurface::named(sk,e.surface as usize)?,
+            Family::read(sk,e.motion as usize)?,e.roll)
+    }
+
+    /// The envelope of `surface` under `motion` over the roll `roll` (radians), made of its parts
+    /// rather than read off a declaration (#212): a body's cut face as the cutter's face that made
+    /// it generates it.
+    pub fn new(name: String, surface: RevolvedSurface, motion: Family, roll: [f64;2]) -> Result<Self,String> {
+        if !roll.iter().all(|v| v.is_finite()) || roll[0] >= roll[1] {
             return Err("an envelope needs finite increasing roll bounds".into());
         }
-        Ok(Self {name:e.name.clone(),roll:e.roll,
-            surface:RevolvedSurface::named(sk,e.surface as usize)?,
-            motion:Family::read(sk,e.motion as usize)?})
+        Ok(Self {name,roll,surface,motion})
     }
 
     /// Evaluate the defining equation and moving contact data at a trial [u,v,roll].

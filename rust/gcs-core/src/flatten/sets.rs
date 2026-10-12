@@ -513,6 +513,7 @@ impl<'a> Walk<'a> {
             ops: vec![other],
             args: String::new(),
             sets: vec![(k, self.set_written(&w.ops[k]))],
+            through: Vec::new(),
             span: at,
         };
         self.apply(&u, app, lit.body, &BTreeMap::new(), &walks, worded, depth);
@@ -571,6 +572,7 @@ impl<'a> Walk<'a> {
             ops: Vec::new(),
             args: format!("at: {}", written(&point)),
             sets: found.iter().map(|(k, _)| (*k, self.set_written(&w.ops[*k]))).collect(),
+            through: Vec::new(),
             span: at,
         };
         let u = Use { st, rel, path, scope: sc, at };
@@ -633,6 +635,7 @@ impl<'a> Walk<'a> {
             ops: vec![plane.clone()],
             args: format!("at: {}", written(&point)),
             sets: vec![(k, set)],
+            through: Vec::new(),
             span: at,
         };
         let u = Use { st, rel, path, scope: sc, at };
@@ -808,6 +811,7 @@ impl<'a> Walk<'a> {
             ops: vec![point.clone()],
             args,
             sets: vec![(k, set.clone())],
+            through: Vec::new(),
             span: at,
         };
         let u = Use { st, rel, path, scope: sc, at };
