@@ -1410,11 +1410,13 @@ fn written_number(a: &CArg, sk: &Sketch) -> Option<f64> {
 }
 
 /// A dimension's text worked out over no scope, in the document's units: a number, or affine in
-/// the one unknown it reads.  `None` for a number with no text, or a text that is neither.
+/// the one unknown it reads.  `None` for a number with no text, or a text that is neither.  A
+/// declared unknown is what its declaration says (`param m: Length`), so `0.05 * m + 0.3mm` adds
+/// two lengths.
 fn written_aff(a: &CArg, sk: &Sketch) -> Option<expr::Aff> {
     let CArg::Expr(e) = a else { return None };
     let parsed = expr::parse_in(&e.text, sk.units).ok()?;
-    expr::eval(&parsed.body, &Default::default()).ok()
+    expr::eval(&parsed.body, &expr::declared_env(sk)).ok()
 }
 
 /// A sum of measurements and a number: `Σ cᵢ mᵢ + c`, each `mᵢ` a measurement as written, and

@@ -792,7 +792,16 @@ impl<'a> Walk<'a> {
         }
         // the distance, read where the use is — a length, which a bare number is taken as where
         // one is wanted (§3.3) — and signed toward the outside
-        let d = match value_aff(&text, &sc.vals, self.units) {
+        // the text may be one the use's scope wrote over an unknown of the drawing (`(0.3 * m +
+        // 0.05mm)`), read here in the set's scope, which binds none: the unknown is what its
+        // declaration says, as it was where the text was written
+        let mut env = sc.vals.clone();
+        for (name, u) in &self.unknowns {
+            if !env.contains_key(name) {
+                env.insert(name.clone(), Aff { free: Some(name.clone()), m: 1.0, c: 0.0, dim: u.dim });
+            }
+        }
+        let d = match value_aff(&text, &env, self.units) {
             Ok(d) if d.dim.fits(crate::units::Dim::LENGTH) => d.as_dim(crate::units::Dim::LENGTH),
             Ok(_) => {
                 let m = format!("`{text}` is a distance from `{set}`, a length");
@@ -802,8 +811,9 @@ impl<'a> Walk<'a> {
         };
         // a distance a number comes to nothing (`std.Offset(S, d: 0mm)`, an allowance of none):
         // a bound on it is the set's own side, and a point at it is on the set, as `coincident`
-        // says; a zero written so is said so
-        let written = w.args.iter().any(|a| matches!(a, OpArg::Dim(t, _) if expr::literal(t).is_some()));
+        // says; a zero written so, not by a set's application, is said so
+        let literal = |t: &str| expr::literal(t).is_some() || expr::notation(t);
+        let written = !rel.space && w.args.iter().any(|a| matches!(a, OpArg::Dim(t, _) if literal(t)));
         if d.number() == Some(0.0) && word == "distance" && cmp.is_none() {
             if surface.is_none() && !written {
                 let mut on = w.clone();

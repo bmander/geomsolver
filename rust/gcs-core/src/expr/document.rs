@@ -106,6 +106,15 @@ struct Node {
     parsed: Result<Parsed, String>,
 }
 
+/// The document's declared unknowns, each a free name of the dimension it was declared: what a
+/// text over one is worked out in, wherever it is read.
+pub(crate) fn declared_env(sk: &Sketch) -> BTreeMap<String, Aff> {
+    sk.declared
+        .iter()
+        .map(|(name, d)| (name.clone(), Aff { free: Some(name.clone()), m: 1.0, c: 0.0, dim: d.dim }))
+        .collect()
+}
+
 /// Evaluate every expression in the document, in document order.  A name an expression reads
 /// is an **unknown** (a free variable): nothing in an expression defines a name (the source
 /// defines numbers, and writes them in before a text reaches here), so what a name is worth is
@@ -137,6 +146,9 @@ pub fn evaluate(sk: &mut Sketch) -> Vec<ExprItem> {
     // what states no row last, so a bound reads an unknown the rows have bound this time round
     let (rows, rest): (Vec<usize>, Vec<usize>) =
         (0..nodes.len()).partition(|&k| sk.constraints[nodes[k].ci].states_rows());
+    // an unknown the source declared is read as what it was declared (`param m: Length`), as the
+    // flattener read it where it wrote the text: `(-1 * m + 0.2mm)` adds two lengths
+    let declared = declared_env(sk);
     let mut items: Vec<Option<ExprItem>> = (0..nodes.len()).map(|_| None).collect();
     for k in rows.into_iter().chain(rest) {
         let nd = &nodes[k];
@@ -152,7 +164,7 @@ pub fn evaluate(sk: &mut Sketch) -> Vec<ExprItem> {
                     // work it out, check what it came to against its slot, write it: three
                     // steps that fail the same way, so they are one chain and one error arm
                     None => match (|| -> Result<(f64, Aff), ExprError> {
-                        let a = eval(&p.body, &BTreeMap::new())?;
+                        let a = eval(&p.body, &declared)?;
                         check_dim(sk, nd, &a, &mut free_dim)?;
                         Ok((write_value(sk, nd, &a, &mut bound)?, a))
                     })() {
@@ -202,7 +214,12 @@ fn check_dim(
     let Some(name) = a.free.clone() else {
         return a.dim.require(want, attr).map_err(ExprError::dimension);
     };
-    let d = want.div(a.dim);
+    // a declared unknown is read as declared, so the dimension it would have to be is what the
+    // slot wants over what the text came to, times what it is
+    let d = match sk.declared.get(&name) {
+        Some(decl) => want.div(a.dim).mul(decl.dim),
+        None => want.div(a.dim),
+    };
     if d != Dim::SCALAR && d != Dim::LENGTH && d != Dim::ANGLE {
         return Err(ExprError::dimension(format!(
             "`{name}` would have to be {} here, which is not a length, an angle or a plain number",

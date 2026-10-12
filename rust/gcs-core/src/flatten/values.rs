@@ -217,10 +217,14 @@ fn of_vals(vals: &BTreeMap<String, Aff>, units: Units) -> impl Fn(&str) -> Optio
             return Some(format!("({})", a.dim.number_text(v, units)));
         }
         let n = a.free.as_ref()?;
+        // the constant is of the whole's dimension, so it says so as a number does above, or
+        // `(-0.25 * m + 0)` adds a plain number to a length once `m: Length` is written in
         Some(if a.m == 1.0 && a.c == 0.0 {
             n.clone()
+        } else if a.c == 0.0 {
+            format!("({} * {n})", crate::syntax::num(a.m))
         } else {
-            format!("({} * {n} + {})", crate::syntax::num(a.m), crate::syntax::num(a.c))
+            format!("({} * {n} + {})", crate::syntax::num(a.m), a.dim.number_text(a.c, units))
         })
     }
 }

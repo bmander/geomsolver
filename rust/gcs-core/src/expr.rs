@@ -5,6 +5,7 @@ mod eval;
 mod parser;
 
 pub use document::{evaluate, has_expr, set_dimension, sync_free, ExprError, ExprItem, Fault};
+pub(crate) use document::declared_env;
 pub use eval::{decide, eval, eval_measured, to_arg_units, to_user_units, Aff, Measurer};
 pub use parser::{literal, names_unit, notation, parse, parse_condition_in, parse_in};
 
