@@ -103,6 +103,12 @@ export class Box3D {
    *  refused preview (a body with a swept operand, never previewed) leaves the target standing
    *  and the tools as ghosts, which say as much. */
   private preview: { key: string | null; shown: boolean } = { key: null, shown: false };
+  /** What the scene reaches, measured whenever it is rebuilt: the camera's depth range is fitted
+   *  to it (`aim`), since a depth buffer's few bits are spread over that range and nothing else. */
+  private readonly reach = new THREE.Sphere();
+  /** The drawing buffer's size, as last set.  Setting a canvas's size — even to the size it has —
+   *  throws its buffer away, which done every frame is a flicker, so it is set only on a change. */
+  private size = { w: 0, h: 0, dpr: 0 };
 
   constructor(readonly canvas: HTMLCanvasElement | null) {
     this.scene.background = new THREE.Color(INK.bg);
@@ -149,12 +155,18 @@ export class Box3D {
     }
     const c = v.showSolid ? v.combining : null;
     const key = c && `${c.word} ${c.target.index} ${c.tools.map((t) => t.index).join(' ')}`;
-    if (key !== this.preview.key) this.buildPreview(v, c, key);
+    const previewed = key !== this.preview.key;
+    if (previewed) this.buildPreview(v, c, key);
+    if (datums || objects || previewed) this.measure();
     this.aim(v);
     this.chrome(v, c);
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    if (gl.getPixelRatio() !== dpr) gl.setPixelRatio(dpr);
-    gl.setSize(v.width, v.height, false);
+    const size = this.size;
+    if (size.w !== v.width || size.h !== v.height || size.dpr !== dpr) {
+      this.size = { w: v.width, h: v.height, dpr };
+      gl.setPixelRatio(dpr);
+      gl.setSize(v.width, v.height, false);
+    }
     gl.render(this.scene, this.camera);
   }
 
@@ -168,6 +180,7 @@ export class Box3D {
   clear(): void {
     this.dispose();
     this.built = null;
+    this.reach.makeEmpty();
     this.renderer?.clear();
   }
 
@@ -204,8 +217,16 @@ export class Box3D {
     c.right = halfW;
     c.top = halfH;
     c.bottom = -halfH;
-    c.near = -1e5;
-    c.far = 1e5;
+    // **the depth range is the scene's and no wider**: a depth buffer resolves its range into a
+    // fixed number of steps, and spread over ±1e5 a step was a hundredth of a unit — coarse
+    // enough that a solid's faces and the creases on them took turns in front as the eye moved.
+    // The camera stands a unit out along `eye` (the pan is square to it), so a point p is
+    // `1 − p·eye` in front of it
+    const r = this.reach;
+    const mid = r.isEmpty() ? 0 : 1 - r.center.dot(eye);
+    const half = r.isEmpty() ? 1 : Math.max(r.radius, 1e-6) * 1.05;
+    c.near = mid - half;
+    c.far = mid + half;
     c.up.copy(up);
     c.position.copy(eye);
     c.lookAt(0, 0, 0);
@@ -375,6 +396,15 @@ export class Box3D {
     return line;
   }
 
+  /** What the scene reaches: every group's box, as a sphere, so that no turn of the eye can
+   *  carry any of it past the depth range `aim` fits to it. */
+  private measure(): void {
+    const box = new THREE.Box3();
+    for (const g of [this.datums, this.objects, this.previewed]) box.expandByObject(g);
+    if (box.isEmpty()) this.reach.makeEmpty();
+    else box.getBoundingSphere(this.reach);
+  }
+
   /** Free every buffer and material the last scene made. */
   private dispose(): void {
     this.frames.length = 0;
@@ -416,6 +446,11 @@ function faceMesh(m: Mesh, f: Face): THREE.Mesh {
     metalness: 0.1,
     roughness: 0.65,
     flatShading: !f.smooth,
+    // a face stands a step behind the creases drawn on its edges and a pane lying on it, so the
+    // line and the wash are drawn over it rather than each pixel deciding afresh every frame
+    polygonOffset: true,
+    polygonOffsetFactor: 1,
+    polygonOffsetUnits: 1,
   }));
   face.name = f.path;
   face.userData.face = f.path;
