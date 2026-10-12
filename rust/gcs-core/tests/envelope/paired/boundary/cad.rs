@@ -41,10 +41,7 @@ fn export_cad_fillet_references() {
             let flank = pair.patch(member,side,name);
             let patch = pair.patch(member,side,&format!("{name}_round"));
             let join = pair.seam(&flank,false).endpoint_parameters()[1];
-            let edge = pair.edge_of(&patch);
-            assert_eq!(edge.kind,gcs_core::model::EntKind::Arc);
-            let (start,end) = pair.model.sketch.arc_angles(edge.i());
-            let sweep = end-start;
+            let sweep = pair.round_sweep(&patch);
             let omega = I::point(sweep).unwrap();
             let [p,d,dd] = patch.generating_profile_jet_bounds(I::ZERO).unwrap();
             // Recover interval enclosures of the private snapshot coefficients:

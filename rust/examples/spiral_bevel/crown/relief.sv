@@ -31,7 +31,7 @@ use generation
 component Topping(flank: set, ax: line, n: plane, near: point, height: Length, lean: Angle,
                   design: group) {
   // Seed: along the axis from the pitch point by the kink's height, `ax` the cutter's radius long.
-  kink := point hint(at: near, along: ax, by: -height / design.cutter_radius) in n
+  kink := point hint(at: near, along: ax, by: height / design.cutter_radius) in n
   kink coincident flank.surface
   ax.p1 distance(height, along: ax) kink
   cone := std.ConeThrough(ax, kink, lean: lean)

@@ -89,7 +89,10 @@ fn source_contact_curves_reproduce_independent_crown_characteristics() {
                     let world = pair.local_frame(member).inverse().point(local);
                     let mut distance = f64::INFINITY;
                     let mut temporal_match = false;
-                    for i in 0..sweep.patches().len() {
+                    // each of the sweep's faces at the point of its edge `u` names, read either
+                    // way the edge runs: a region cutter's meridian may step it against the walk
+                    // the checks read its faces in (`cutter_faces`)
+                    for (i,u) in (0..sweep.patches().len()).flat_map(|i| [(i,u),(i,1.-u)]) {
                         match sweep.patches()[i].revolved().unwrap().contacts(u,sweep.motion().at(roll).unwrap(),module*1e-10) {
                             Ok(roots) => for root in roots {
                                 let p = root.contact.position;

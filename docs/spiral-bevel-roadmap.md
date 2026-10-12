@@ -78,16 +78,16 @@ remains ahead, so this is not yet public gear solid export.
 `HypoidPair` (`members.sv`), over the step-by-step layout `HypoidLayout` (`layout.sv`; the
 steps are listed in the example's README). `GeneratedMember` subtracts a continuous cutter
 sweep at each tooth index; its tooth count and module come from the design group. The gear
-cutter is `ComplementarySpace` (`crown/space.sv`), drawn in the normal view about the mate's
-axis. Each active rounded flank is closed with ordinary lines, revolved,
-and bounded by the neighboring crown (`neighbor bound body`, the body rule's intersection,
-spec 0.22). The finite radial closure lies beyond the reachable blank under every
-apex-centered generating rotation. No private member access rule or gear-specific compiler
+cutter is `Space` (`crown/mate.sv`), regions about the cutter's axis on the flank cones the crown
+tooth stands on (#214): its outer mate beyond the tooth's outer cone, closed by a cylinder about
+the axis (`crown/reach.sv`), bounded by its inner mate, within the inner cone and turned one crown
+pitch (`neighbor bound body`, the body rule's intersection, spec 0.22). The finite radial closure
+lies beyond the reachable blank under every apex-centered generating rotation. No private member access rule or gear-specific compiler
 operation is added. The analytic faces the generating-system checks read (surfaces,
 envelopes, regions, seams, vertices, edges, faces) are made of their parts from the members as
 built (#212): a member's faces are named by the crown faces that made them, and each name is read
 back to its analytic envelope (`faces::face_source`); the layout holds only the blank, the crown
-sections and the motions the members are generated from (`pair.sv` is the layout alone).
+regions and the motions the members are generated from (`pair.sv` is the layout alone).
 `configuration.sv` states the shafts (`shaft_angle`, and `offset`, their common perpendicular);
 a nonzero offset solves the pinion's pitch cone against the gear's (`pitch/pinion.sv`, [the
 true hypoid](spiral-bevel-layout-plan.md#the-true-hypoid)), its cones and its own toe/heel

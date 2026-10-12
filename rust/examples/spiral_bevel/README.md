@@ -12,9 +12,12 @@ says what it constructs. The plan is
 The layout is drawn in four views through M (`views.sv`): the pitch plane P, `std.top`, with the
 gear apex O at its origin, and three views folded square to it about lines through M, so none needs
 an angle of its own — G, the gear's axial view, along O → M; Q, the pinion's, along M → its apex A;
-and N, the normal section, along the trace normal C → M. A point on a fold is drawn in both views
-it lies in (`O := point in p, g`), so G's triangle is over O and M themselves; a point another
-module declares is said on the later view (`gear.M coincident q`), which draws it there too.
+and N, the normal section, along the trace normal C → M, where the tip relief's kinks are drawn. A
+point on a fold is drawn in both views it lies in (`O := point in p, g`), so G's triangle is over O
+and M themselves; a point another module declares is said on the later view (`gear.M coincident
+q`), which draws it there too. The crown draws nothing in a view: its tooth and the gear's space
+cutter are regions about the cutter's axis (§6.21), sets of the flank cones and the levels along
+it, each region's meridian turned once into its solid.
 
 | Step | Module | Constructs |
 |---|---|---|
@@ -24,11 +27,11 @@ module declares is said on the later view (`gear.M coincident q`), which draws i
 | 2 | `pitch/pinion.sv` | the pinion's cone, solved against the gear's by the shafts and equal normal pitch |
 | 3 | `blank/member.sv`, `blank/sphere.sv` | a member's blank, one region: within its pitch cone grown by the addendum (`std.Offset`) and its heel sphere, outside its toe sphere and its pitch cone shrunk by the back depth (`back`), sized by the solved layout; the end relief its tip's toe and heel corners chamfered in the same region (`std.Chamfered`); its faces `tip`, `heel`, `toe` and `back` |
 | 4 | `crown/thickness.sv` | the crown tooth's pitch points, a quarter pitch either side of M |
-| 4 | `crown/section.sv`, `crown/rounding.sv` | the rack section: straight flanks, base, tip and tip roundings |
-| 4 | `crown/tooth.sv` | the pinion's generator: the section in N, revolved about the cutter's axis |
-| 4 | `crown/mate.sv`, `crown/mate_section.sv` | the gear's generator: the tooth's mate on its own flank lines |
-| 4 | `crown/reach.sv`, `crown/space.sv` | the gear's space cutter, closed clear of the blank |
-| 4 | `crown/relief.sv` | the tip relief: a semi-topping cut beside each crown |
+| 4 | `crown/cutter.sv` | the face mill: its axis through C, the two flank cones through the pitch points, and the levels the crowns' tips and bases stand at |
+| 4 | `crown/tooth.sv` | the pinion's generator: the crown tooth, a region between the flank cones and two levels, its tip's edges rounded (`std.Rounded`), each flank grown a quarter of the backlash |
+| 4 | `crown/mate.sv` | the gear's generator, its space cutter: the tooth's mate as regions on the same cones, the outer one closed at the reach, the inner turned one crown pitch round |
+| 4 | `crown/reach.sv` | how far the space cutter reaches: a cylinder about the cutter's axis, clear of the blank |
+| 4 | `crown/relief.sv` | the tip relief: a topping beside each crown, the crown's own region over cones through kinks on its flanks |
 | 5 | `generation.sv` | the rolls, the generating motions and the indexing |
 | — | `layout.sv` | `HypoidLayout`: steps 2–5 in the four views |
 | — | `members.sv` | `HypoidPair`: each blank less its crown's sweep at every tooth, and its reliefs |
