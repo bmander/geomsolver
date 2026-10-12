@@ -723,6 +723,11 @@ language cannot say.
 - **The hypoid:**
   - `blank/member.sv` states the end relief in each member's region;
   - `blank/ends.sv` (`EndChamfer`, `EndCut`) is deleted.
+- **The crown's tip rounding stays `TipRounding`** (`crown/rounding.sv`). It is retired with
+  `RackSection`, `MateSection` and `crown/space.sv` when #214 writes the crown as regions about
+  the cutter's axis, its tip edges `std.Rounded` in the region's body. `round` on today's drawn
+  crown would need a cutter that reads a body's lowered rings, and `space.sv` would have to stop
+  closing its flanks on the drawn arcs. #214 replaces both.
 
 ### Held to
 
