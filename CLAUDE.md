@@ -306,8 +306,12 @@ equality its body states is a bound at its number, `in: (d, d)` (`Written::held`
 and `region_term` reads every probe by one rule. **Lowering** (step 7, `solid::region::lowering`): a `Rounded`/`Chamfered`
 term whose sets are two of the region's own bounds (same measure, at its level, moved in by the
 radius for a round's centres) is built in the meridian by X1's construction (`brep::corners`,
-moved from `tests/fillet_meridian.rs`), refused (and read by the field) at a charted corner or a
-flat between curved steps. `tests/rounds.rs` is the gate (X2's closed forms in the slow tier).
+moved from `tests/fillet_meridian.rs`) — a round at any corner of lines and arcs, an offset
+cone's generator and rounded apex included (#207) — and held to the region read point by point
+beside each face (`region::agrees`; a disagreement is read by the field); refused (and read by the
+field) at a charted corner (none a meridian folds) or a flat beside an arc (the sum of distances
+bows there, #208). `tests/rounds.rs` is the gate (X2's closed forms in the slow tier),
+`tests/offset_corners.rs` (Pappus, `rounds/blank.sv`) the offset cone's.
 **Rounds built exactly: the lowering table** (#194, #183 L7, `solid::lowering`): a region over a
 body's faces is recognised by its terms' shapes (`recognised`: two or three `FaceSide`s alike, an
 `Angle` gate per pair at a half turn, the common-part-against-meeting sum (the meeting cut or not
