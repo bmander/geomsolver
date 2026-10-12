@@ -79,10 +79,8 @@ impl Run {
         self.strokes.iter().flat_map(|(s, _)| match *s {
             Stroke::Line { from, to } => vec![from, to],
             Stroke::Arc { centre, radius, x, angles: [a0, a1] } => {
-                let at = |a: f64, k: f64| {
-                    let (s, c) = a.dsin_cos();
-                    add(centre, scale(add(scale(x, c), scale(cross(self.along, x), s)), k))
-                };
+                let frame = crate::brep::geom::Frame::new(centre, self.along, x);
+                let at = |a: f64, k: f64| { let (s, c) = a.dsin_cos(); frame.at([k * c, k * s, 0.0]) };
                 let apex = radius / (0.5 * (a1 - a0)).dcos().max(1e-3);
                 vec![at(a0, radius), at(a1, radius), at(0.5 * (a0 + a1), apex)]
             }
@@ -117,12 +115,8 @@ pub struct Ring {
 impl Ring {
     /// Where its section stands at the end of its turn, and the way the turn runs on there.
     fn end(&self) -> (V, V) {
-        let r = sub(self.section.origin, self.axis_origin);
-        let foot = add(self.axis_origin, scale(self.axis, dot(r, self.axis)));
-        let radial = sub(self.section.origin, foot);
-        let (s, c) = self.angle.dsin_cos();
-        let turned = add(scale(radial, c), scale(cross(self.axis, radial), s));
-        (add(foot, turned), normalised(cross(self.axis, turned)).unwrap_or(self.section.along))
+        let turn = crate::brep::geom::Rigid::turn(self.axis_origin, self.axis, self.angle);
+        (turn.point(self.section.origin), turn.vector(self.section.along))
     }
 }
 
@@ -355,17 +349,19 @@ fn build(body: &super::faces::BodyFaces, f: &Faces, section: Section) -> Result<
     // is sunk along); one a boolean ate, or none of that name, holds nowhere
     let mut groups = Vec::new();
     for r in &f.faces {
-        match body.faces(r) {
-            fs if fs.is_empty() => return Ok(Vec::new()),
-            fs => groups.push(fs),
+        let fs = body.faces(r);
+        if fs.is_empty() {
+            return Ok(Vec::new());
         }
+        groups.push(fs);
     }
     let mut pieces = Vec::new();
     for &[i, j] in f.pairs() {
-        match run(body, &groups[i], &groups[j], f.within, section)? {
-            ps if ps.is_empty() => return Ok(Vec::new()),
-            ps => pieces.extend(ps),
+        let ps = run(body, &groups[i], &groups[j], f.within, section)?;
+        if ps.is_empty() {
+            return Ok(Vec::new());
         }
+        pieces.extend(ps);
     }
     let (Section::Round(r), 3) = (section, groups.len()) else { return Ok(pieces) };
     let one = |g: &Vec<usize>| match g[..] { [fi] => Some(fi), _ => None };
@@ -394,10 +390,7 @@ fn build(body: &super::faces::BodyFaces, f: &Faces, section: Section) -> Result<
     let mut bounds = Vec::new();
     for &[i, j] in f.pairs() {
         let es = body.edges_between(&[ids[i]], &[ids[j]]);
-        for (c, sign) in body.end_sides(&es, &[ids[i], ids[j]]) {
-            let (n, o) = body.plane(c).ok_or("an edge ending on a curved face")?;
-            bounds.push((scale(n, sign), sign * dot(n, o)));
-        }
+        bounds.extend(halves(body, &body.end_sides(&es, &[ids[i], ids[j]]))?);
     }
     let size = runs.iter().map(|r| r.length).fold(r, f64::max);
     // (a run cut off at a slant by an end is within that end already)
@@ -456,12 +449,10 @@ fn piece(body: &super::faces::BodyFaces, edge: u32, fa: usize, fb: usize, within
     // in the meridian through its start, turned through the circle's angle — a whole turn, or a
     // stretch ending where a face goes on from one of these tangent (an obround's flat side), whose
     // own run goes on from the same section
+    // (`run` rolls a circle whose faces are not all about its axis)
     if let Some((centre, axis, radius, x)) = body.circle(edge) {
-        if !(body.coaxial(fa, centre, axis) && body.coaxial(fb, centre, axis)) {
-            return unbuilt("a circle between faces not turned about one axis");
-        }
         let [t0, t1] = if body.closed(edge) { [0.0, std::f64::consts::TAU] } else { body.span(edge) };
-        let radial_at = |t: f64| { let (s, c) = t.dsin_cos(); add(scale(x, c), scale(cross(axis, x), s)) };
+        let radial_at = |t: f64| crate::brep::geom::Rigid::turn([0.0; 3], axis, t).vector(x);
         // a stretch ends at seams, or at a plane through the axis standing where its turn starts
         // or stops (a groove's rim at the plate's top): that end's own meridian, the sector's
         let middle = add(centre, scale(radial_at(0.5 * (t0 + t1)), radius));
@@ -506,17 +497,21 @@ fn piece(body: &super::faces::BodyFaces, edge: u32, fa: usize, fb: usize, within
     }
     // cut off at each end by every face there, on the side the edge runs on: one square to it is
     // the slab of the edge's own stretch, one at a slant a half-space besides (a run-out)
-    let mut halves = Vec::new();
-    for &(c, sign) in ends {
-        let Some((n, o)) = body.plane(c) else { return unbuilt("an edge cut off by a curved face") };
-        halves.push((scale(n, sign), sign * dot(n, o)));
-    }
     let mut run = cut(p0, along, length, traces, within, section)?;
     // only those reaching into the prism: a square end, or one leaning away, leaves it to the slab
     let hull = run.hull();
-    run.within = halves.into_iter()
+    run.within = halves(body, ends)?.into_iter()
         .filter(|&(n, d)| hull.iter().any(|&p| dot(n, p) > d + 1e-9 * (1.0 + length))).collect();
     Ok(Some(Piece::Run(run)))
+}
+
+/// The half-spaces `n·x <= d` a run is kept within at its `ends` (`end_sides`' faces and the sides
+/// it runs on), each a plane face's; a curved one is refused.
+fn halves(body: &super::faces::BodyFaces, ends: &[(usize, f64)]) -> Result<Vec<(V, f64)>, String> {
+    ends.iter().map(|&(c, sign)| match body.plane(c) {
+        Some((n, o)) => Ok((scale(n, sign), sign * dot(n, o))),
+        None => unbuilt("an edge cut off by a curved face"),
+    }).collect()
 }
 
 /// A face as a section square to the edge sees it at the edge's point: a line, its unit normal
@@ -596,7 +591,7 @@ fn cut(p0: V, along: V, length: f64, traces: [Trace; 2], within: bool, section: 
                  (arc(o, r, ta, tb, along), "round"),
                  (traces[1].stroke(tb, p0, along), "b")]
         }
-        Section::Flat { .. } if matches!(traces, [Trace::Circle { .. }, _] | [_, Trace::Circle { .. }]) => {
+        Section::Flat { .. } if traces.iter().any(|t| matches!(t, Trace::Circle { .. })) => {
             return unbuilt("a flat beside a curved face");
         }
         Section::Flat { la, lb } => {
@@ -719,7 +714,7 @@ impl Assembly {
         use super::cad::vector;
         let mut pieces = self.runs.iter().map(|(r, [from, to])| {
             let within = r.within.iter()
-                .map(|&(n, d)| object([("normal", vector(n)), ("offset", (d * by).into())])).collect();
+                .map(|&(n, d)| object([("at", vector(scale(n, d * by))), ("normal", vector(n))])).collect();
             Ok(object([
                 ("kind", "prism".into()), ("profile", profile(r).to_json(by)?),
                 ("from", (from * by).into()), ("to", (to * by).into()), ("within", Json::Arr(within)),
@@ -763,25 +758,27 @@ fn gate(sk: &Sketch, solid: usize, pieces: &[Piece], body: &super::faces::BodyFa
     let field = super::MaterialField::read(sk, solid, super::cad::AXIS_TOLERANCE)?;
     // the pieces' boundary in model units: a rolled one rolled against the stratum (millimetres,
     // about its origin) and brought back
-    let (b, rolled) = match pieces {
+    let (b, mm) = match pieces {
         [Piece::Rolled(k)] => {
             let (stratum, mm) = body.brep();
             let tol = 1e-9 * stratum.size().max(1.0);
-            (crate::brep::fillet::roll(stratum, body.q(k.at), k.r * mm, tol)?.piece, true)
+            (crate::brep::fillet::roll(stratum, body.q(k.at), k.r * mm, tol)?.piece, Some(mm))
         }
         _ if pieces.iter().any(|p| matches!(p, Piece::Rolled(_))) => {
             return unbuilt("a rolled round beside other pieces");
         }
-        _ => (assemble(pieces).brep(1.0)?, false),
+        _ => (assemble(pieces).brep(1.0)?, None),
     };
-    let mut m = crate::brep::mesh::mesh(&b, 1e-5 * b.size().max(f64::MIN_POSITIVE), crate::brep::export::ANGULAR)?;
-    if rolled {
+    // probed `offset` either side of it, so meshed no finer than a twentieth of that
+    let size = b.size().max(f64::MIN_POSITIVE);
+    let offset = 2e-3 * size;
+    let mut m = crate::brep::mesh::mesh(&b, offset / 20.0, crate::brep::export::ANGULAR)?;
+    if mm.is_some() {
         for p in &mut m.pts {
             *p = body.back(*p);
         }
     }
-    let size = b.size().max(f64::MIN_POSITIVE) / if rolled { body.brep().1 } else { 1.0 };
-    let offset = 2e-3 * size;
+    let offset = offset / mm.unwrap_or(1.0);
     let options = super::agreement::Options {
         offset, confirm: offset / 4.0, value_tolerance: offset / 5.0, triangles: 400,
         ..Default::default()

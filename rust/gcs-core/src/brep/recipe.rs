@@ -78,10 +78,11 @@ pub fn node_named(n: &Json,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64
             // chains unioned
             let mut pieces = field(n,"pieces")?.arr().iter().map(|piece| {
                 let mut b = node_named(piece,built,built_names,floor)?;
-                // a run cut off at a slant where its edge ends (a run-out): kept within each face
+                // a run cut off at a slant where its edge ends (a run-out): kept behind each face's
+                // plane (through `at`, its `normal` away from the run)
                 for h in piece.get("within").map_or(&[][..],|w| w.arr()) {
-                    let half = half_space(vec3(field(h,"normal")?),field(h,"offset")?.as_f64(),b.bounds())?;
-                    b = combined(&b,&half,Op::Common,floor).map_err(|e| format!("a run cut off at its end: {e}"))?;
+                    let keep = vec3(field(h,"normal")?).map(|x| -x);
+                    b = kept(&b,vec3(field(h,"at")?),keep,floor).map_err(|e| format!("a run cut off at its end: {e}"))?;
                 }
                 Ok::<_,String>(b)
             }).collect::<Result<Vec<_>,_>>()?;
@@ -152,19 +153,22 @@ fn body(n: &Json,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64,String>,f
     Ok(solid)
 }
 
-/// The half-space `n·x <= d` (`n` a unit normal) where it meets the box `around`: a block standing
-/// on the plane, reaching past the box on every other side.
-fn half_space(n: V,d: f64,(lo,hi): super::geom::Box3) -> Result<Brep,String> {
-    use crate::space::{add,dot,norm,scale,sub};
+/// `piece` kept on the side `keep` (a unit normal) of the plane through `o`: in common with a block
+/// standing on the plane under the piece's middle, reaching past the piece on every other side.
+pub fn kept(piece: &Brep,o: V,keep: V,floor: f64) -> Result<Brep,String> {
+    use crate::space::{add,distance,dot,scale,sub};
     use super::build::ProfileEdge;
-    if !lo[0].is_finite() { return Err("a half-space about nothing".into()) }
-    let centre = scale(add(lo,hi),0.5);
-    let reach = norm(sub(hi,lo))+(dot(n,centre)-d).abs()+1.;
-    let f = super::geom::Frame::about(sub(centre,scale(n,dot(n,centre)-d)),n);
-    let corner = |u: f64,v: f64| f.at([u*reach,v*reach,0.]);
-    let ring = [corner(-1.,-1.),corner(1.,-1.),corner(1.,1.),corner(-1.,1.)];
-    let edges = (0..4).map(|k| ProfileEdge::Line {a:ring[k],b:ring[(k+1)%4]}).collect();
-    prism(&Profile {origin:f.o,normal:n,loops:vec![edges],names:Vec::new()},-reach,0.)
+    let (lo,hi) = piece.bounds();
+    if !lo[0].is_finite() { return Err("a piece of nothing cut off at a plane".into()) }
+    let middle = scale(add(lo,hi),0.5);
+    let foot = sub(middle,scale(keep,dot(sub(middle,o),keep)));
+    let size = 2.*piece.size()+distance(middle,foot);
+    let f = super::geom::Frame::about(foot,keep);
+    let at = |x: f64,y: f64| f.at([x,y,0.]);
+    let corners = [at(-size,-size),at(size,-size),at(size,size),at(-size,size)];
+    let edges = (0..4).map(|k| ProfileEdge::Line {a:corners[k],b:corners[(k+1)%4]}).collect();
+    let block = prism(&Profile {origin:foot,normal:keep,loops:vec![edges],names:Vec::new()},0.,size)?;
+    combined(piece,&block,Op::Common,floor)
 }
 
 /// The recipe's root, built.

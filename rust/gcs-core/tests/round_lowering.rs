@@ -13,6 +13,7 @@ use gcs_core::solve::{solve, SolveOpts};
 use std::f64::consts::PI;
 
 use crate::common::{ent, read};
+use crate::fillet_meridian::root_ring;
 
 fn solved(src: &str) -> Elaborated {
     let mut e = read(src);
@@ -203,11 +204,23 @@ fn a_run_cut_off_at_a_slant_by_the_face_it_ends_on() {
     let e = solved(&format!("{src}block.near round(r: 2mm) block.south\n"));
     assert_eq!(lowered(&e), (1, 1));
     let b = exported(&e, "block");
-    let r = 2.0;
-    let area = (1.0 - PI / 4.0) * r * r;
-    let zbar = r * (10.0 - 3.0 * PI) / (12.0 - 3.0 * PI);
-    close(props::volume(&b), 40.0 * 24.0 * 12.0 - area * 40.0 + 10.0 / 24.0 * zbar * area);
+    let (area, zbar) = spandrel(2.0);
+    let want = 40.0 * 24.0 * 12.0 - area * 40.0 + 10.0 / 24.0 * zbar * area;
+    close(props::volume(&b), want);
     assert_eq!(kinds(&b), [("cylinder", 1), ("plane", 7)].into());
+    // the app builds a solid about its own origin (`cad::shifted`): the plane the run is kept
+    // behind moves with the rest (a cut's volume cannot tell, its prism past the face cutting air)
+    let recipe = gcs_core::solid::cad::recipe(&e.sketch, ent(&e, "block").i()).unwrap();
+    let by = [5.0, 7.0, 11.0];
+    let planes = |r: &gcs_core::json::Json| -> Vec<[f64; 3]> {
+        r.get("nodes").unwrap().arr().iter().filter_map(|n| n.get("pieces")).flat_map(|p| p.arr().iter())
+            .filter_map(|p| p.get("within")).flat_map(|w| w.arr().iter())
+            .map(|h| { let a = h.get("at").unwrap().arr(); [a[0].as_f64(), a[1].as_f64(), a[2].as_f64()] })
+            .collect()
+    };
+    let (before, after) = (planes(&recipe), planes(&gcs_core::solid::cad::shifted(&recipe, by)));
+    assert_eq!(before.len(), 1);
+    assert!(before.iter().zip(&after).all(|(p, q)| (0..3).all(|k| (p[k] - by[k] - q[k]).abs() < 1e-12)));
 }
 
 /// The leaning block's whole near rim: each of the four runs cut off at a slant where it meets the
@@ -222,7 +235,7 @@ fn a_leaning_rim_runs_out_at_every_corner() {
     let (r, rim) = (2.0, 40.0 + 26.0 + 30.0 + 24.0);
     let whole = (40.0 + 30.0) / 2.0 * 24.0 * 12.0;
     let v = props::volume(&b);
-    assert!(v < whole && v > whole - (1.0 - PI / 4.0) * r * r * rim, "{v}");
+    assert!(v < whole && v > whole - spandrel(r).0 * rim, "{v}");
     assert_eq!(kinds(&b), [("cylinder", 4), ("plane", 6)].into());
 }
 
@@ -243,7 +256,8 @@ fn a_round_no_entry_builds_is_refused_by_name() {
 }
 
 /// A round section's area beside a square corner, `(1 − π/4)r²`, and how far its centroid stands
-/// off each face, `r(10 − 3π)/(12 − 3π)`.
+/// off each face, `r(10 − 3π)/(12 − 3π)`. (Turned about an axis `R` from the corner, Pappus:
+/// `fillet_meridian::root_ring`.)
 fn spandrel(r: f64) -> (f64, f64) {
     ((1.0 - PI / 4.0) * r * r, r * (10.0 - 3.0 * PI) / (12.0 - 3.0 * PI))
 }
@@ -258,11 +272,11 @@ fn a_slots_rounds_go_on_round_its_tangent_ends() {
     let e = solved(include_str!("../../examples/rounds/slot.sv"));
     assert_eq!(lowered(&e).0, 12);
     let b = exported(&e, "part");
-    let ((foot, fz), (rim, rz)) = (spandrel(2.0), spandrel(1.0));
+    let (foot, rim) = (spandrel(2.0).0, spandrel(1.0).0);
     let boss = (18.0 * 12.0 + PI * 36.0) * 8.0;
     let pocket = (20.0 * 16.0 - 4.0 * (16.0 - 4.0 * PI)) * 6.0;
-    let want = 80.0 * 50.0 * 10.0 + boss - pocket + foot * (2.0 * 18.0 + 2.0 * PI * (6.0 + fz))
-        - rim * (2.0 * 12.0 + 2.0 * 8.0 + 2.0 * PI * (4.0 + rz));
+    let want = 80.0 * 50.0 * 10.0 + boss - pocket + foot * 2.0 * 18.0 + root_ring(6.0, 2.0)
+        - rim * (2.0 * 12.0 + 2.0 * 8.0) - root_ring(4.0, 1.0);
     close(props::volume(&b), want);
     assert_eq!(kinds(&b).get("torus"), Some(&6));
 }
@@ -274,9 +288,8 @@ fn a_slots_rounds_go_on_round_its_tangent_ends() {
 fn the_pads_rounds_are_built_exactly() {
     let e = solved(include_str!("../../examples/rounds/pad.sv"));
     let b = exported(&e, "pad");
-    let ((root, rz), (edge, _)) = (spandrel(3.0), spandrel(2.0));
-    let want = 60.0 * 40.0 * 10.0 + PI * 64.0 * 20.0 - PI * 16.0 * 30.0 + root * 2.0 * PI * (8.0 + rz)
-        - 2.0 * 40.0 * edge;
+    let want = 60.0 * 40.0 * 10.0 + PI * 64.0 * 20.0 - PI * 16.0 * 30.0 + root_ring(8.0, 3.0)
+        - 2.0 * 40.0 * spandrel(2.0).0;
     close(props::volume(&b), want);
     assert_eq!(kinds(&b), [("cylinder", 4), ("plane", 7), ("torus", 1)].into());
     // the app's exact solid, built about the pad's own origin (its first corner, off the world's):
@@ -328,57 +341,24 @@ fn a_rings_stretch_ends_on_a_plane_through_its_axis() {
         .replace("round(r: r) rail.plate\n", "round(r: r) rail.plate.near\n");
     let e = solved(&src);
     let b = exported(&e, "rail");
-    let (area, z) = spandrel(2.0);
-    close(props::volume(&b), 60.0 * 10.0 * 40.0 - PI * 36.0 / 2.0 * 40.0 - PI * (6.0 + z) * area);
+    close(props::volume(&b), 60.0 * 10.0 * 40.0 - PI * 36.0 / 2.0 * 40.0 - root_ring(6.0, 2.0) / 2.0);
     assert_eq!(kinds(&b).get("torus"), Some(&1));
-}
-
-/// What a step of a meridian `(ρ, z)` contributes to the volume it bounds turned once about
-/// `ρ = 0`, over `2π` (Green's theorem: `∫ ρ²/2 dz`, exact for a line and for an arc about `c` of
-/// radius `r` from the angle `a0` through `sweep`).
-fn flux_line(p: [f64; 2], q: [f64; 2]) -> f64 {
-    (q[1] - p[1]) / 2.0 * (p[0] * p[0] + p[0] * q[0] + q[0] * q[0]) / 3.0
-}
-
-fn flux_arc(c: [f64; 2], r: f64, from: [f64; 2], to: [f64; 2]) -> f64 {
-    let at = |p: [f64; 2]| (p[1] - c[1]).atan2(p[0] - c[0]);
-    let prim = |phi: f64| {
-        let (sn, cs) = phi.sin_cos();
-        (c[0] * c[0] * r * sn + c[0] * r * r * (phi + sn * cs) + r * r * r * (sn - sn.powi(3) / 3.0)) / 2.0
-    };
-    prim(at(to)) - prim(at(from))
 }
 
 /// `knob.sv` (#83's knob): the rod's root a ring between a plane and a cylinder, its neck one
 /// between a cylinder and a sphere — in the meridian the sphere is a circle, the neck's section
-/// the rod's line, the rolled ball's arc and the ball's own arc. The closed forms are
-/// `fillet_meridian.rs`'s: the disc, the rod to the ball, the ball less the cap the rod holds, the
-/// root's spandrel and the neck's section, turned.
+/// the rod's line, the rolled ball's arc and the ball's own arc (`fillet_meridian::knob_closed_form`).
 #[test]
 fn a_knobs_neck_turns_a_section_with_a_curved_side() {
     let e = solved(include_str!("../../examples/rounds/knob.sv"));
     let b = exported(&e, "knob");
-    let (s, big, rod, r): ([f64; 2], f64, f64, f64) = ([0.0, 44.0], 8.0, 4.0, 1.5);
-    let corner = [rod, s[1] - (big * big - rod * rod).sqrt()];
-    let centre = [rod + r, s[1] - ((big + r).powi(2) - (rod + r).powi(2)).sqrt()];
-    let away = [centre[0] - s[0], centre[1] - s[1]];
-    let n = away[0].hypot(away[1]);
-    let (on_rod, on_ball) = ([rod, centre[1]], [s[0] + big * away[0] / n, s[1] + big * away[1] / n]);
-    let neck = 2.0 * PI * (flux_line(corner, on_rod) + flux_arc(centre, r, on_rod, on_ball)
-        + flux_arc(s, big, on_ball, corner)).abs();
-    let (area, z) = spandrel(2.0);
-    let root = 2.0 * PI * (rod + z) * area;
-    let h = corner[1] - (s[1] - big);
-    let cap = PI * h * h * (3.0 * big - h) / 3.0;
-    let want = PI * 30.0 * 30.0 * 8.0 + PI * rod * rod * (corner[1] - 8.0) + 4.0 / 3.0 * PI * big.powi(3)
-        - cap + root + neck;
-    close(props::volume(&b), want);
+    close(props::volume(&b), crate::fillet_meridian::knob_closed_form().2);
     assert_eq!(kinds(&b).get("torus"), Some(&2));
 }
 
 /// Of a cylinder of radius `small` standing on the axis of one of radius `big` (square to it), the
 /// volume inside the bigger: `∫ 2·√(small² − y²)·√(big² − y²) dy`, with `y = small·sin θ` a smooth
-/// periodic integrand, which Gauss–Legendre takes to roundoff.
+/// periodic integrand, which the midpoint rule over its period takes to roundoff.
 fn inside_crossing(big: f64, small: f64) -> f64 {
     let n = 64;
     let mut total = 0.0;

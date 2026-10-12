@@ -181,10 +181,8 @@ fn recipe_with(sk: &Sketch,root: usize,static_only: bool) -> Result<StaticRecipe
                 let ([on,cut,on_late,cut_late],swept) = bodies.remove(&i).expect("a body's sets, read on its first visit");
                 // (each sweep listed once, on the emitting visit)
                 sweeps.extend(swept);
-                let mut node = object([
-                    ("kind","body".into()),("stock",(*stock).into()),
-                    ("on",ids(&on)),("cut",ids(&cut)),("bound",ids(bound)),
-                ]);
+                let mut node = body_terms(*stock,&on,&cut,bound);
+                node.set("kind","body".into());
                 if !on_late.is_empty() || !cut_late.is_empty() {
                     node.set("on_late",ids(&on_late));
                     node.set("cut_late",ids(&cut_late));
@@ -204,13 +202,12 @@ fn recipe_with(sk: &Sketch,root: usize,static_only: bool) -> Result<StaticRecipe
                 // a ball rolled along a traced run is rolled against the body as its terms but the
                 // late ones make it, all built before this (they come first in its dependencies)
                 if !assembly.rolled.is_empty() {
-                    let late = |b: &([Vec<u32>;4],Vec<SweptCut>)| b.0[2].contains(&(i as u32)) || b.0[3].contains(&(i as u32));
+                    let late = |b: &&([Vec<u32>;4],Vec<SweptCut>)| b.0[2..].iter().any(|s| s.contains(&(i as u32)));
                     let Some((&b,(sets,_))) = bodies.iter().find(|(_,b)| late(b)) else {
                         return Err(format!("`{}`: a rolled round is built against the body it rounds",sk.solid_name(i)));
                     };
                     let SolidDef::Body {stock,bound,..} = &sk.solids[b].def else { unreachable!("a body's sets") };
-                    node.set("stratum",object([("stock",(*stock).into()),("on",ids(&sets[0])),("cut",ids(&sets[1])),
-                        ("bound",ids(bound))]));
+                    node.set("stratum",body_terms(*stock,&sets[0],&sets[1],bound));
                 }
                 node
             }
@@ -278,6 +275,12 @@ fn recipe_with(sk: &Sketch,root: usize,static_only: bool) -> Result<StaticRecipe
         ("root",root.into()),("nodes",Json::Arr(nodes))]),sweeps})
 }
 
+/// A body's terms but the late ones — its stock, what is on it, what cuts it, what bounds it — as
+/// the recipe's `body` reads them: the body node's, and the stratum a rolled round is rolled against.
+fn body_terms(stock: u32,on: &[u32],cut: &[u32],bound: &[u32]) -> Json {
+    object([("stock",stock.into()),("on",ids(on)),("cut",ids(cut)),("bound",ids(bound))])
+}
+
 /// A recipe written about another origin: every point it carries less `by` (millimetres) — a
 /// profile's edges' ends, centres and poles, a guide's start and centre, a placement's translation
 /// (`t + R by − by`) — and every direction as it was. A point that only places a plane or a line (a
@@ -294,7 +297,8 @@ pub fn shifted(recipe: &Json,by: [f64;3]) -> Json {
 }
 
 /// One node of a recipe written about another origin (`shifted`), with the nodes it holds: a
-/// lowered region's pieces, its corners' points and where its balls are rolled from.
+/// lowered region's pieces, its corners' points, where its balls are rolled from and the planes a
+/// run is kept behind.
 fn shifted_node(n: &Json,by: [f64;3]) -> Json {
     let triple = |j: &Json| -> Option<[f64;3]> { match j { Json::Arr(a) if a.len() == 3 => Some(std::array::from_fn(|k| a[k].as_f64())),_ => None } };
     let point = |j: &Json| match triple(j) { Some(p) => vector(std::array::from_fn(|k| p[k]-by[k])),None => j.clone() };
@@ -342,7 +346,7 @@ fn shifted_node(n: &Json,by: [f64;3]) -> Json {
         let pieces = Json::Arr(pieces.iter().map(|p| shifted_node(p,by)).collect());
         n.set("pieces",pieces);
     }
-    for (key,at) in [("corners",&["vertex","centre"][..]),("rolled",&["at"][..])] {
+    for (key,at) in [("corners",&["vertex","centre"][..]),("rolled",&["at"][..]),("within",&["at"][..])] {
         if let Some(Json::Arr(list)) = n.get(key) {
             let list = Json::Arr(list.iter().map(|c| points(c,at)).collect());
             n.set(key,list);

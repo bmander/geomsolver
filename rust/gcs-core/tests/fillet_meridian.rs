@@ -94,7 +94,7 @@ fn union(a: &Region, b: &Region) -> Region { boolean(a, b, Op::Union, 1e-9).unwr
 
 /// The stack's `root_ring`: the ring a ball of radius `r` fills where a cylinder of radius `big`
 /// stands on a plane — the square at the corner less the quarter disc, turned (Pappus).
-fn root_ring(big: f64, r: f64) -> f64 {
+pub(crate) fn root_ring(big: f64, r: f64) -> f64 {
     let moment = r * r * (big + r / 2.0) - PI * r * r / 4.0 * (big + r - 4.0 * r / (3.0 * PI));
     2.0 * PI * moment
 }
@@ -170,8 +170,18 @@ fn a_knobs_root_and_neck_turn_their_sections() {
     let knob = union(&union(&disc, &shaft), &ball);
     let root = round(&knob, &faces(11, 4), &faces(1, 4), 2.0, 100).unwrap();
     let neck = round(&root, &faces(11, 4), &[21, 22], r, 101).unwrap();
-    // the stack's closed forms: the neck's section is the corner, its foot on the rod, the arc of
-    // the ball rolled, its foot on the ball and the ball's arc back
+    let (root_v, neck_v, want) = knob_closed_form();
+    close(turned(&root) - turned(&knob), root_v, "the root");
+    close(turned(&neck) - turned(&root), neck_v, "the neck");
+    close(turned(&neck), want, "the knob");
+}
+
+/// #83's knob's closed forms (`x0/knob.sv`, `rounds/knob.sv`): its root's ring, its neck's, and the
+/// knob rounded. The neck's section is the corner, its foot on the rod, the arc of the ball rolled,
+/// its foot on the ball and the ball's arc back; the knob the disc, the rod up to the ball, the ball
+/// less the cap the rod holds, and the two rings.
+pub(crate) fn knob_closed_form() -> (f64, f64, f64) {
+    let (s, big, rod, r): (P, f64, f64, f64) = ([0.0, 44.0], 8.0, 4.0, 1.5);
     let corner = [rod, s[1] - (big * big - rod * rod).sqrt()];
     let centre = [rod + r, s[1] - ((big + r).powi(2) - (rod + r).powi(2)).sqrt()];
     let (on_rod, on_ball) = ([rod, centre[1]], add(s, scale(unit(sub(centre, s)), big)));
@@ -182,12 +192,10 @@ fn a_knobs_root_and_neck_turn_their_sections() {
     let neck_v = 2.0 * PI * (flux(&Seg::Line { a: corner, b: on_rod })
         + flux(&arc(centre, r, on_rod, on_ball)) + flux(&arc(s, big, on_ball, corner))).abs();
     let root_v = root_ring(rod, 2.0);
-    close(turned(&root) - turned(&knob), root_v, "the root");
-    close(turned(&neck) - turned(&root), neck_v, "the neck");
     let cap = { let h = corner[1] - (s[1] - big); PI * h * h * (3.0 * big - h) / 3.0 };
     let want = PI * 30.0 * 30.0 * 8.0 + PI * rod * rod * (corner[1] - 8.0)
         + 4.0 / 3.0 * PI * big.powi(3) - cap + root_v + neck_v;
-    close(turned(&neck), want, "the knob");
+    (root_v, neck_v, want)
 }
 
 /// A chamfer of the frustum's rim is a cone band: the triangle it takes, turned (Pappus).  Both

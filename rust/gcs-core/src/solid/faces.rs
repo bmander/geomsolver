@@ -339,8 +339,10 @@ impl BodyFaces {
         let mut sides = Vec::new();
         for (v, d, vid) in self.run_ends(es) {
             for c in self.faces_at(vid, faces) {
-                let n = self.normal(c, v);
-                if faces.iter().any(|&f| dot(self.normal(f, v), n) >= 1.0 - 1e-9) {
+                // a seam: where `c` meets one of `faces` at the end, the two meet tangent
+                let seam = self.edges_between(&[c], faces).into_iter()
+                    .any(|e| self.loc.b.edges[e as usize].v.contains(&vid) && self.convex(e).is_none());
+                if seam {
                     continue;
                 }
                 let step = 1e-6 * (1.0 + norm(v));
