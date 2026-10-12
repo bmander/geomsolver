@@ -2,7 +2,7 @@
 
 #[allow(unused_imports)]
 use crate::fmath::Det;
-use super::{Ast, ExprError, Measure, Op, CONSTANTS};
+use super::{Ast, Cond, ExprError, Measure, Op, CONSTANTS};
 use crate::constraints::SpecKind;
 use crate::units::Dim;
 use std::collections::BTreeMap;
@@ -108,6 +108,46 @@ fn not_affine(name: &str) -> String {
 /// A measurement is refused here: nothing has been solved for it to read (`measure_refusal`).
 pub fn eval(ast: &Ast, env: &BTreeMap<String, Aff>) -> Result<Aff, ExprError> {
     ev(ast, env, None)
+}
+
+/// Whether a condition holds (#210), its names worked out from `env`.  Each comparison is
+/// between two plain numbers of one dimension, as `+` is between two operands (`Dim::agree`):
+/// `d > 0mm`, never `d > 0`.  Every comparison is worked out, under `and` and `or` too, so a
+/// mistake on the side a short circuit would skip is still said.  A name `env` has no number
+/// for is refused here; the caller, which knows an unknown of the drawing from a name nothing
+/// declares, asks first.
+pub fn decide(c: &Cond, env: &BTreeMap<String, Aff>) -> Result<bool, ExprError> {
+    Ok(match c {
+        Cond::Cmp(op, a, b) => {
+            let (x, y) = (ev(a, env, None)?, ev(b, env, None)?);
+            x.dim.agree(y.dim).ok_or_else(|| {
+                ExprError::dimension(format!(
+                    "{} cannot be compared with {}: `{}` needs one dimension, not two",
+                    x.dim.name(),
+                    y.dim.name(),
+                    op.text()
+                ))
+            })?;
+            let number = |v: &Aff| match v.number() {
+                Some(n) if n.is_finite() => Ok(n),
+                Some(n) => Err(ExprError::from(format!("a side of `{}` comes to {n}", op.text()))),
+                None => Err(ExprError::from(format!(
+                    "`{}` is not a number here",
+                    v.free.as_deref().unwrap_or("")
+                ))),
+            };
+            op.holds(number(&x)?, number(&y)?)
+        }
+        Cond::And(a, b) => {
+            let (p, q) = (decide(a, env)?, decide(b, env)?);
+            p && q
+        }
+        Cond::Or(a, b) => {
+            let (p, q) = (decide(a, env)?, decide(b, env)?);
+            p || q
+        }
+        Cond::Not(a) => !decide(a, env)?,
+    })
 }
 
 /// What reads a measurement: its kind and the names it is over, to what it comes to.

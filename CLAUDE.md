@@ -306,15 +306,19 @@ equality its body states is a bound at its number, `in: (d, d)` (`Written::held`
 and `region_term` reads every probe by one rule. **Lowering** (step 7, `solid::region::lowering`): a `Rounded`/`Chamfered`
 term whose sets are two of the region's own bounds (same measure, at its level, moved in by the
 radius for a round's centres) is built in the meridian by X1's construction (`brep::corners`,
-moved from `tests/fillet_meridian.rs`), refused (and read by the field) at a charted corner or a
-flat between two arcs. **A chamfer's flat is its sum of distances** (#196, [0.72]): between a line
-and an arc it bows, the conic `|q − c| = α + β d_L` (`corners::sum`), a **`Seg::Conic`** — the
-rational quadratic Bézier over its ends and where their tangents meet — carried by every meridian
-reader: planar Booleans (`meets_steps`' roots, `contains` in closed form), the field's
-`Edge::Conic` (`Wall::conic`: pieces' control-triangle discs, split while wide), `Meridian::Conic`,
-and the recipe's rational B-spline (`region_profile`, read back by `meridian_region`). `std.Chamfered`
-is multiplied through by its legs, so a leg of nothing cuts nothing (a bound weighing every
-measurement by nothing holds everywhere, else E040, `measured_term`). `tests/rounds.rs` is the gate (X2's closed forms in the slow tier).
+moved from `tests/fillet_meridian.rs`) — a round at any corner of lines and arcs, an offset
+cone's generator and rounded apex included (#207) — and held to the region read point by point
+beside each face (`region::agrees`; a disagreement is read by the field); refused (and read by the
+field) at a charted corner (none a meridian folds) or a flat between two arcs. **A chamfer's flat
+is its sum of distances** (#196, #208, [0.73]): between a line and an arc it bows, the conic `|q −
+c| = α + β d_L` (`corners::sum`), a **`Seg::Conic`** — the rational quadratic Bézier over its ends
+and where their tangents meet — carried by every meridian reader: planar Booleans (`meets_steps`'
+roots, `contains` in closed form), the field's `Edge::Conic` (`Wall::conic`: pieces'
+control-triangle discs, split while wide), `Meridian::Conic`, and the recipe's rational B-spline
+(`region_profile`, read back by `meridian_region`). `std.Chamfered` is multiplied through by its
+legs, so a leg of nothing cuts nothing (a bound weighing every measurement by nothing holds
+everywhere, else E040, `measured_term`). `tests/rounds.rs` is the gate (X2's closed forms in the
+slow tier), `tests/offset_corners.rs` (Pappus, `rounds/blank.sv`) the offset cone's.
 **Rounds built exactly: the lowering table** (#194, #183 L7, `solid::lowering`): a region over a
 body's faces is recognised by its terms' shapes (`recognised`: two or three `FaceSide`s alike, an
 `Angle` gate per pair at a half turn, the common-part-against-meeting sum (the meeting cut or not
@@ -483,6 +487,17 @@ by index (`judge_rings`, curves through their instances' arguments), E022 a ring
 what a ring cannot turn (`rings.rs`). The ring's own turn is gauged outside (`hub horizontal
 tip[0]`). `std.Polygon`, `gear.sv`, `gear_trace.sv`, `ngon.sv` and the Wankel rotor are rings;
 `tests/ring.rs` and `tests/turns.rs` are the gates.
+
+**`when COND { … }`, a block made or not (§12.9, 0.72, #210):** `BlockKind::When`, the condition
+in `Block::count` (`head` its span). The flattener decides it over the scope's `vals`
+(`flatten::values::condition`: E101 a name nothing gives a number, E040 one that is or reads an
+unknown, E103 two dimensions, E107 a measurement) and walks the body once in the enclosing scope
+with its own copy of `vals` — no `PathStep`, no prefix, so names are the scope's (`q`, `t.tip`).
+`expr::Cond` (`Cmp` `<`…`!=`, `and`/`or`/`not`) is made only by `expr::parse_condition_in` and
+read by `expr::decide`; no `Ast` holds one, and its sides agree as `+`'s (`> 0mm`, never `> 0`).
+The parser refuses `as`, a trailing joint and `when e in X`; the measured-bound sniff skips a
+statement an opener word starts. `commit_seeds` writes into a root `when`'s body. The hypoid's
+tip relief is one (`layout.sv`, `members.sv`). `tests/when.rs` is the gate.
 
 **Axes** (`docs/planes-plan.md`, #81): `t := axis hint(dir: (x, y, z))` is a directed line in space,
 `AxisE { d, a, placed }`: a unit direction (`axis_unit`, intrinsic, held like `quat_unit` when `fix`

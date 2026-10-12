@@ -1,8 +1,8 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.72 — October 2026**
+**Specification, Draft 0.73 — October 2026**
 
-**[0.72] A chamfer's flat is its sum of distances.** `std.Chamfered(a, b, la, lb)` is the points
+**[0.73] A chamfer's flat is its sum of distances.** `std.Chamfered(a, b, la, lb)` is the points
 whose distances from `a`'s and `b`'s surfaces, each over the other's leg, sum to one or more, and
 nothing else: where both surfaces are flat in section that is the straight flat, and where one is
 curved it bows with it — between a cone and a sphere about one axis a parabola's arc turned, never
@@ -10,6 +10,15 @@ the straight line between the legs' ends (§6.9). Its bound is written multiplie
 legs, so a leg of nothing cuts nothing; a bound on measurements weighing every measurement by
 nothing holds everywhere or is **E040** (§6.21). The hypoid's end relief is two such bounds in each
 member's blank, and `EndChamfer` is retired.
+
+**[0.72] A block made or not by a condition.** `when COND { … }` makes its body once where
+`COND` holds and not at all where it does not, decided at elaboration over the numbers in scope
+(§12.9). It repeats nothing, so it has no index and no copy: what it declares is named as if
+written beside it (`p_in`, `t.tip`). A condition compares numbers of one dimension — `<`, `<=`,
+`>`, `>=`, `==`, `!=` — joined by `and`, `or` and `not` (§3.3); two dimensions are **E103**, and
+a condition reading an unknown of the drawing is **E040**, since the block is made before there
+is a solve. A switch is no longer a `repeat` over a computed 0 or 1: the hypoid's tip relief is
+made `when design.tip_relief > 0mm`, `pinion_relief` no longer `pinion_relief[0]`.
 
 **[0.71] A set formal, and a side is a bound.** A component takes a set as a `set` formal
 (`component Rounded(a: set, b: set, r: Length)`), filled by a named set or a set family's
@@ -520,7 +529,7 @@ MUST, MUST NOT, SHOULD, SHOULD NOT, and MAY are used as in RFC 2119. Text marked
 ## 2. Lexical structure
 
 - **Identifiers:** `[A-Za-z_][A-Za-z0-9_]*`. Component names are conventionally capitalized; this is not enforced.
-- **Keywords:** `component`, `param`, `point`, `circle`, `line`, `frame`, `path`, `repeat`, `cycle`, `ring`, `about`, `as`, `next`, `prev`, `hint`, `at`, `fix`, `ccw`, `cw`, `rev`, `true`, `false`, **[0.2]** `curve`, `over`, `spline` (and `ellipse`, until **[0.15]** made the ellipse a library component — `Ellipse` in `std`, a computed point on a datum traced as a curve, whose contacts are the curve's; an implementation keeps the word only to refuse it). **[0.7]** `unit`, `class` and `style` in, `construction` out; every constraint is a prefix or an infix operator (§9.2), so `coincident`, `equal`, `tangent`, `curvature`, `symmetry` and `distance` are the words a statement is written with — it is a class now, and the base sheet is what draws it dashed (§13.2). **[0.4]** In a chain (§6.6) the word `close` is meaningful *contextually*; it is not reserved, and an entity may bear it as a name. **[0.19]** It is read the same way after `->` inside a `face`'s brackets (§6.8), which is the other place the language draws a loop. **[0.8]** `to` is retired: the plain corner is the `->` marker, and threading is stated at the joint rather than inferred from the operands. **[0.5]** A coordinate seed is written `hint at` (§6.4). **[0.7]** Every seed is written in one `hint(…)` clause (§4.3, §6.4); `hint at REF` kept its own form inside a trace block (§6.5.1) until **[0.14]**, when a place became the `at:` and `bearing:` keys of the same clause — `hint(at: REF, bearing: β)` — so `at` after `hint` is refused, and `bearing` is a key and no keyword. **[0.10]** `plane`, `in`, `project` and `fold` in (§6.7); `from` is contextual there as it is in a trace family. **[0.42]** `axis` in; `frame`, `fold`, and `from`, `offset` and `through` as a plane's labels, out — a plane's brackets take `u:` and `v:` and nothing else. **[0.13]** `port` is retired (§7); an implementation keeps the word only to refuse it. **[0.18]** `face` and `solid` are element keywords (§6.8, §6.9) and `view` and `section` open a statement (§6.11); `cut` is the body rule's own word and `on` gains a reading over two solids (§9.2), so both join the operator words a name may not be. **[0.32]** `union` is the body rule's too, and joins them; `on` loses its reading over two solids. **[0.42]** `on` is no constraint word: `coincident` says incidence (§9.2). **[0.20]** `view` and `section` leave model source for the drawing (§6.11). The eight labels a solid's brackets take — `from`, `to`, `depth`, `through`, `along`, `about`, `sweep`, `sense` — are **contextual**: they are read as labels inside the brackets that take them and are reserved nowhere, so a `param` or a point may still bear any of them as a name (`face := -(fw + D / 2)` is idiomatic). A declaration's *name*, however, may not be an element keyword, and three shipped examples renamed a line that had been called `face`.
+- **Keywords:** `component`, `param`, `point`, `circle`, `line`, `frame`, `path`, `repeat`, `cycle`, `ring`, **[0.72]** `when`, `about`, `as`, `next`, `prev`, `hint`, `at`, `fix`, `ccw`, `cw`, `rev`, `true`, `false`, **[0.2]** `curve`, `over`, `spline` (and `ellipse`, until **[0.15]** made the ellipse a library component — `Ellipse` in `std`, a computed point on a datum traced as a curve, whose contacts are the curve's; an implementation keeps the word only to refuse it). **[0.7]** `unit`, `class` and `style` in, `construction` out; every constraint is a prefix or an infix operator (§9.2), so `coincident`, `equal`, `tangent`, `curvature`, `symmetry` and `distance` are the words a statement is written with — it is a class now, and the base sheet is what draws it dashed (§13.2). **[0.4]** In a chain (§6.6) the word `close` is meaningful *contextually*; it is not reserved, and an entity may bear it as a name. **[0.19]** It is read the same way after `->` inside a `face`'s brackets (§6.8), which is the other place the language draws a loop. **[0.8]** `to` is retired: the plain corner is the `->` marker, and threading is stated at the joint rather than inferred from the operands. **[0.5]** A coordinate seed is written `hint at` (§6.4). **[0.7]** Every seed is written in one `hint(…)` clause (§4.3, §6.4); `hint at REF` kept its own form inside a trace block (§6.5.1) until **[0.14]**, when a place became the `at:` and `bearing:` keys of the same clause — `hint(at: REF, bearing: β)` — so `at` after `hint` is refused, and `bearing` is a key and no keyword. **[0.10]** `plane`, `in`, `project` and `fold` in (§6.7); `from` is contextual there as it is in a trace family. **[0.42]** `axis` in; `frame`, `fold`, and `from`, `offset` and `through` as a plane's labels, out — a plane's brackets take `u:` and `v:` and nothing else. **[0.13]** `port` is retired (§7); an implementation keeps the word only to refuse it. **[0.18]** `face` and `solid` are element keywords (§6.8, §6.9) and `view` and `section` open a statement (§6.11); `cut` is the body rule's own word and `on` gains a reading over two solids (§9.2), so both join the operator words a name may not be. **[0.32]** `union` is the body rule's too, and joins them; `on` loses its reading over two solids. **[0.42]** `on` is no constraint word: `coincident` says incidence (§9.2). **[0.20]** `view` and `section` leave model source for the drawing (§6.11). The eight labels a solid's brackets take — `from`, `to`, `depth`, `through`, `along`, `about`, `sweep`, `sense` — are **contextual**: they are read as labels inside the brackets that take them and are reserved nowhere, so a `param` or a point may still bear any of them as a name (`face := -(fw + D / 2)` is idiomatic). A declaration's *name*, however, may not be an element keyword, and three shipped examples renamed a line that had been called `face`.
 - **Literals:** decimal numbers with optional unit suffix (`10`, `2.5mm`, `30deg`). The constant `tau` (= 2π) and `pi` are predefined.
 - **Comments:** `//` to end of line; `/* ... */` nesting not required.
 - **Operators and punctuation:** `== + - * / ( ) { } [ ] , : . := -> ~ @`
@@ -605,6 +614,7 @@ Implementations **MUST** check dimensions in expressions and constraints, and MU
 
 - `*` and `/` **derive**: the exponents add and subtract.
 - `+` and `-` **demand agreement**, and so do `min`, `max`, `hypot` and `atan2`'s two arguments.
+- **[0.72]** So do a comparison's two sides — `<`, `<=`, `>`, `>=`, `==`, `!=` — which make no number but a condition, read only by `when` (§12.9): `relief > 0mm`, never `relief > 0`.
 - `^` takes a plain number, and a **dimensioned base takes a whole power**: `x ^ 2.5` where `x` is a length is not a dimension anybody meant, and `sqrt` is how a half is written.
 - The dimension an expression comes to is checked against the **slot** it is written in.
 
@@ -1252,9 +1262,9 @@ own body a round or a chamfer between two of its bounds is one more bound on its
 std.Rounded(wall, top, r: 2mm)`, `p inside std.Chamfered(wall, bottom, la: 1mm, lb: 1mm)` (`la`
 along the first, `lb` along the second). Where the two are bounds the region states, at its
 level and about its axis, the round or the flat is built exactly in the region's revolution (a
-torus; a cone between two straight sections, and **[0.72]** between a straight section and a
+torus; a cone between two straight sections, and **[0.73]** between a straight section and a
 circle, a sphere's, the conic the sum of distances makes there, turned); elsewhere — a flat between
-two circles — it is read point by point. **[0.72]** A chamfer's flat is what its sum of distances
+two circles — it is read point by point. **[0.73]** A chamfer's flat is what its sum of distances
 bounds and nothing else: it bows with a curved surface, and no construction substitutes the
 straight line between its legs' ends. *Non-normative:* both readings are one
 meaning: a round lowered into the revolution is the region the point-by-point reading reads. So
@@ -1987,7 +1997,7 @@ plane, a face or its surface (above), or a set (below). It makes the set a regio
 point (§6.9), and is read only where a region solid's point is: `inside` keeps it, `outside` turns
 it round, and a body of such bounds only is all of them under `inside`. A product of
 measurements, a measurement read through a function or a power, a statement reading two points,
-and one reading none of a region solid's are **E040**. **[0.72]** A bound whose measurements are
+and one reading none of a region solid's are **E040**. **[0.73]** A bound whose measurements are
 all weighed nothing (`0 * distance(p, a) >= 0`) bounds nothing where it holds and is **E040** where
 it holds nowhere.
 
@@ -2453,7 +2463,7 @@ Hints on entities inside a `ring` seed the fundamental-domain representative (§
 
 ## 12. Repetition
 
-Three constructs, three meanings. All take a compile-time `Int` count and an optional index binder.
+Three constructs, three meanings. All take a compile-time `Int` count and an optional index binder. **[0.72]** A fourth block repeats nothing: `when` makes its body once or not at all (§12.9).
 
 ### 12.1 `repeat` — open array
 
@@ -2533,6 +2543,29 @@ cycle e in CHAIN as i { ... }
 One copy per link of a named chain (§6.6), in traversal order, with `e` a reference to that copy's edge — a constraint operand, a field (`e.p1`), an argument — and `as i` optional as before. The count is the chain's, so the chain MAY be declared later in the body (P2) or reached through an instance or a group. The copies are §12.1's (or §12.2's, with `next`/`prev`) in every other respect, and §12.7 holds. `cycle` over an open chain, and iteration over what is not a named chain or a solid, are errors at the reference (**E103**); a body declaration named as the edge is **E001**.
 
 **Over a solid's faces** **[0.69]**: `repeat a in X { … }`, `X` a solid or a face path (§6.9), makes one copy per face `X` names, `a` the face (a face path itself, §6.21): a prism's `near`, `far` and a side per edge of its section, a revolution's wall per edge and, where the turn is partial, `start` and `end`, a body's every operand's faces under the operand's name (`pad.plate.near`). The faces are read off what the solid is made of, so one a Boolean ate is listed still and names nothing (§6.21); they are known once the solids are built, so the block is expanded then. A condition keeps some copies: `repeat b in B if b != a { … }`, `repeat c in A if c in B and c != a { … }` — `f in X`, the face is one `X` names, and `f != g`, it is not that face — each joined by `and`.
+
+### 12.9 `when` — a block made or not by a condition **[0.72]**
+
+```
+when COND { ... }
+```
+
+The body is made **once** where `COND` holds and **not at all** where it does not. The condition is decided at elaboration, over the numbers in scope where the block stands — the document's values and inputs with a value, a module's numbers by their paths, a component's formals bound by its call, an enclosing block's index — so it is a choice of what the program *is*, never of where the solve goes. It stands where `repeat` does: at the top level of a document, in a component body, and inside another block.
+
+`COND` is comparisons of two numbers, `<`, `<=`, `>`, `>=`, `==` and `!=`, joined by `and`, `or` and `not` (`or` binds loosest, then `and`, then `not`); a parenthesis holds a number or a condition. A number alone is no condition, and a comparison is no number. Each comparison is between two numbers of one dimension, as `+` is (§3.3): `relief > 0mm`, not `relief > 0`; two dimensions are **E103**. The comparison is exact, with no tolerance, so `<` and `==` are never both true. Every comparison is worked out, so a mistake on a side `and` or `or` could skip is still said.
+
+**A `when` repeats nothing, so it has no index and no copy.** What its body declares is named as if written beside the block — `p_in`, and in a component `t.tip` — never with a copy's index, and is reached from outside by that name; where the condition does not hold, nothing of the body is made, and a name only it declares is undefined (**E101**). The numbers a body defines are its own. A statement inside it is one statement as any is (§12.7), reached once or not at all, so a solve writes its seeds back as at the top level (§4.3). An index binder (`as i`) and a body ending mid-joint (§6.6), which threads onto a next copy there is none of, are syntax errors.
+
+A condition that reads a name nothing in scope gives a number is **E101**; one that reads an unknown of the drawing — an input with no value, a formal no call binds, a value over either — is **E040**: the block is made before there is a solve to give it a number. A measurement of the solved drawing is **E107** (§6.14).
+
+```
+when design.tip_relief > 0mm {
+  tooth_relief := crown.relief.ToothRelief(tooth, reach.cap, design, …) in n.view
+}
+pinion_relief := ReliefCut(pinion.body, …, reference.tooth_relief.body, …)   // in a `when` too
+```
+
+*Non-normative:* a switch used to be written as a `repeat` over a computed 0 or 1 — `repeat min(ceil(relief / 1mm), 1) { … }` — which depended on the unit it divided by, said nothing of its intent, and named what it made as a copy (`tooth_relief[0]`).
 
 ---
 
@@ -2637,7 +2670,7 @@ Elaboration lowers a program to the **kernel form** consumed by solvers. The pip
 
 ### 14.1 Phases
 
-1. **Instance expansion.** Recursively inline component bodies for the root's instance tree, freshening names by instance path. `repeat`/`cycle` unroll. `ring` either unrolls to `cycle` + symmetry constraints (§12.3) or lowers to quotient form (§12.4); the two MUST be solution-equivalent.
+1. **Instance expansion.** Recursively inline component bodies for the root's instance tree, freshening names by instance path. `repeat`/`cycle` unroll; **[0.72]** a `when` is decided and its body inlined once or dropped. `ring` either unrolls to `cycle` + symmetry constraints (§12.3) or lowers to quotient form (§12.4); the two MUST be solution-equivalent.
 2. **Alias resolution.** Union-find over all names, merging classes for: entity-typed arguments and constructor entity-arguments. Each class gets one representative entity. Type mismatch within a class is an error (**E040**).
 3. **Definitional substitution.** Definitional equalities (constructor value-arguments, and values and inputs with a value — `NAME := EXPR`, `param NAME := EXPR`, §6.3) are substituted, METAFONT-style: they are not residuals and consume no solver iterations. A cyclic definitional dependency is an error (**E041**).
 4. **Constraint collection.** Predicate statements, `==` equations, derived path incidences (§10.4), symmetry constraints, and gauges are collected into the constraint store.
@@ -3119,7 +3152,13 @@ hint           = "hint" ref hint_clause ;                  (* §11; unimplemente
 
 block          = ( "repeat" | "cycle" ) ( expr | IDENT "in" ref [ condition ] ) [ "as" IDENT ]
                  "{" { statement } "}"                (* IDENT "in" ref: §12.8 [0.27] *)
-               | "ring"   expr "about" ref [ "as" IDENT ] "{" { statement } "}" ;
+               | "ring"   expr "about" ref [ "as" IDENT ] "{" { statement } "}"
+               | "when"   truth "{" { statement } "}" ;    (* §12.9 [0.72] *)
+
+truth          = truth "or" conj | conj ;                 (* [0.72] *)
+conj           = conj "and" negation | negation ;
+negation       = "not" negation | expr cmpop expr | "(" truth ")" ;
+cmpop          = "<" | "<=" | ">" | ">=" | "==" | "!=" ;
 
 condition      = "if" IDENT ( "in" | "!=" ) ref { "and" IDENT ( "in" | "!=" ) ref } ;
                  (* which faces' copies are kept, §12.8 [0.69] *)
