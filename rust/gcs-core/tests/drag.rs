@@ -3,6 +3,7 @@
 use gcs_core::constraints::{CKind, Constraint};
 use gcs_core::decompose::{PlanDrag, PlanSolver};
 use gcs_core::examples;
+use gcs_core::fmath;
 use gcs_core::io;
 use gcs_core::model::{EntRef, Sketch};
 use gcs_core::newton::Method;
@@ -12,8 +13,10 @@ use gcs_core::system::System;
 fn circle_path(cx: f64, cy: f64, r: f64, n: usize) -> Vec<(f64, f64)> {
     (0..=n)
         .map(|i| {
+            // the core's own trigonometry, not the platform's: a path is the same bits on every
+            // target, so a hash of the frames along it is too
             let t = 2.0 * std::f64::consts::PI * i as f64 / n as f64;
-            (cx + r * t.cos(), cy + r * t.sin())
+            (cx + r * fmath::cos(t), cy + r * fmath::sin(t))
         })
         .collect()
 }
@@ -490,8 +493,9 @@ fn guards_are_renumbered_into_the_part_or_dropped() {
 /// the one-shot solve's rescue of a pose that stopped on its limit never reaches them.  Every
 /// frame of a `Drag` (the pull and polish alone) on three figures — a rectangle with fillets, a
 /// floating truss and the traced gear — is hashed, pose, status and success together, against
-/// the hash recorded before the rescue existed — re-recorded once since, when the core's
-/// trigonometry became its own (`fmath`, the same bits native and in wasm).
+/// the hash recorded before the rescue existed — re-recorded since when the core's trigonometry
+/// became its own (`fmath`, the same bits native and in wasm), and when the path walked became
+/// `fmath`'s too (`circle_path`: the platform's `sin`/`cos` made the hash glibc's or macOS's).
 #[test]
 fn pull_polish_frames_are_the_bits_they_were() {
     // FNV-1a over 64-bit words
@@ -524,7 +528,7 @@ fn pull_polish_frames_are_the_bits_they_were() {
     }
     println!("pull/polish hash {h:#018x}");
     // gear_trace's teeth are a ring since #96: one tooth's unknowns, the rest its turns
-    assert_eq!(h, 0x1965803c3a84a662);
+    assert_eq!(h, 0x60732b9479880916);
 }
 
 /// Where the eye at bearing `az` and elevation `el` sees a place in space, and the way it looks.
