@@ -10,9 +10,8 @@ use gcs_core::solve::{solve, SolveOpts};
 use std::f64::consts::PI;
 
 use crate::common::{ent, read};
-use crate::fillet_definition::{
-    bore_rim, root_ring, sloped_rim_within, sloped_root_within, tee_crotch,
-};
+use crate::fillet_definition::{bore_rim, root_ring, sloped, sloped_root, tee_crotch, RIM, ROOT};
+use crate::fillet_meridian::knob_neck;
 use crate::region_general::field_volume;
 
 fn solved(src: &str) -> Elaborated {
@@ -124,23 +123,31 @@ fn a_sketch_on_a_rounded_face_leaves_the_round() {
 
 // -- the fillet stack's examples (#195) ----------------------------------------------------------
 
+const PAD: &str = include_str!("../../examples/rounds/pad.sv");
+const KNOB: &str = include_str!("../../examples/rounds/knob.sv");
+const RAIL: &str = include_str!("../../examples/rounds/rail.sv");
+const TEE: &str = include_str!("../../examples/rounds/tee.sv");
+const BORE: &str = include_str!("../../examples/rounds/bore.sv");
+const SLOT: &str = include_str!("../../examples/rounds/slot.sv");
+const RUNOUT: &str = include_str!("../../examples/rounds/runout.sv");
+
 /// The field's bar: a round's volume read off the field within this of the closed form's.
 const BAR: f64 = 2e-3;
 
-/// `src` with its rounds left out: every statement saying `round(`.
-fn unrounded(src: &str) -> String {
-    src.lines().filter(|l| l.trim_start().starts_with("//") || !l.contains(" round("))
-        .map(|l| format!("{l}\n")).collect()
+/// `src` solved with its rounds left out (every line saying ` round(`), and as it stands.
+fn rounding(src: &str) -> [Elaborated; 2] {
+    let unrounded: String = src.lines().filter(|l| !l.contains(" round("))
+        .map(|l| format!("{l}\n")).collect();
+    [solved(&unrounded), solved(src)]
 }
 
-/// The volume solid `name` of `src` loses to its rounds within the box `lo`–`hi` (negative where
-/// they add), each read by the field down to cells of `h`.
-fn taken(src: &str, name: &str, lo: [f64; 3], hi: [f64; 3], h: f64) -> f64 {
-    let volume = |src: &str| {
-        let e = solved(src);
-        field_volume(&MaterialField::read(&e.sketch, ent(&e, name).i(), 1e-10).unwrap(), lo, hi, h)
-    };
-    volume(&unrounded(src)) - volume(src)
+/// The volume solid `name` loses to its rounds within the box `lo`–`hi` (negative where they
+/// add), each reading by the field down to cells of `h`.
+fn taken(both: &[Elaborated; 2], name: &str, lo: [f64; 3], hi: [f64; 3], h: f64) -> f64 {
+    let [before, after] = both.each_ref().map(|e| {
+        field_volume(&MaterialField::read(&e.sketch, ent(e, name).i(), 1e-10).unwrap(), lo, hi, h)
+    });
+    before - after
 }
 
 fn agrees(what: &str, got: f64, want: f64) {
@@ -155,13 +162,12 @@ fn square_run(r: f64) -> f64 { (1.0 - PI / 4.0) * r * r }
 /// a straight run cut off flush by the faces it ends on); the bore cut after, by neither.
 #[test]
 fn the_pad_is_filled_at_its_root_and_rounded_at_its_sides() {
-    holds(include_str!("../../examples/rounds/pad.sv"), "pad",
+    holds(PAD, "pad",
           &[[9.0, -0.5, 0.0], [0.0, 5.0, 10.0], [0.0, 0.2, 19.8]],
           &[[-29.8, 0.2, 0.0], [29.8, 0.2, 0.0], [-29.8, 0.2, 19.8], [10.5, -2.5, 0.0],
             [0.0, -5.0, 0.0], [0.0, 5.0, 0.0]]);
     // the suggested edit: the top edge too, mitred into the side's at the corner
-    let top = include_str!("../../examples/rounds/pad.sv").to_string()
-        + "pad.plate.near round(r: edge_radius) pad.plate.cd\n";
+    let top = format!("{PAD}pad.plate.near round(r: edge_radius) pad.plate.cd\n");
     holds(&top, "pad", &[[0.0, 5.0, 10.0], [-29.0, 1.5, 19.0]],
           &[[0.0, 0.2, 19.8], [-29.8, 0.2, 19.8]]);
 }
@@ -169,36 +175,14 @@ fn the_pad_is_filled_at_its_root_and_rounded_at_its_sides() {
 #[test]
 #[cfg_attr(not(feature = "slow"), ignore = "slow tier: the pad's three rounds, by the field")]
 fn the_pads_rounds_are_the_stacks() {
-    let src = include_str!("../../examples/rounds/pad.sv");
-    let root = -taken(src, "pad", [-12.0, -4.0, -12.0], [12.0, 1.0, 12.0], 3.0 / 32.0);
+    let pad = rounding(PAD);
+    let root = -taken(&pad, "pad", [-12.0, -4.0, -12.0], [12.0, 1.0, 12.0], 3.0 / 32.0);
     agrees("the pad's root", root, root_ring(8.0, 3.0));
     for (side, x) in [("left", -31.0), ("right", 27.0)] {
         agrees(&format!("the pad's {side} edge"),
-               taken(src, "pad", [x, -1.0, -21.0], [x + 4.0, 3.0, 21.0], 1.0 / 32.0),
+               taken(&pad, "pad", [x, -1.0, -21.0], [x + 4.0, 3.0, 21.0], 1.0 / 32.0),
                square_run(2.0) * 40.0);
     }
-}
-
-/// Turned: the volume a section's boundary sweeps about the z axis, `|∮ π x² dz|`, along lines
-/// `[a, b]` and arcs `(centre, radius, from, to)` the short way round, each exactly.
-fn turned(lines: &[[[f64; 2]; 2]], arcs: &[([f64; 2], f64, [f64; 2], [f64; 2])]) -> f64 {
-    let mut v = 0.0;
-    for [a, b] in lines {
-        v += PI * (b[1] - a[1]) * (a[0] * a[0] + a[0] * b[0] + b[0] * b[0]) / 3.0;
-    }
-    for &(c, r, from, to) in arcs {
-        let at = |p: [f64; 2]| (p[1] - c[1]).atan2(p[0] - c[0]);
-        let (t0, mut t1) = (at(from), at(to));
-        while t1 - t0 > PI { t1 -= 2.0 * PI; }
-        while t0 - t1 > PI { t1 += 2.0 * PI; }
-        // ∫ π (cx + r cos t)² r cos t dt
-        let f = |t: f64| {
-            let (s, cs) = t.sin_cos();
-            r * (c[0] * c[0] * s + c[0] * r * (t + s * cs) + r * r * (s - s * s * s / 3.0))
-        };
-        v += PI * (f(t1) - f(t0));
-    }
-    v.abs()
 }
 
 /// `knob.sv`: the rod's root on the disc (plane against cylinder, Pappus's ring) and its neck where
@@ -206,13 +190,12 @@ fn turned(lines: &[[[f64; 2]; 2]], arcs: &[([f64; 2], f64, [f64; 2], [f64; 2])])
 /// the sphere, turned).
 #[test]
 fn the_knobs_root_and_neck_are_filled() {
-    holds(include_str!("../../examples/rounds/knob.sv"), "knob",
+    holds(KNOB, "knob",
           &[[4.2, 0.0, 8.2], [0.0, 4.1, 36.95], [0.0, 0.0, 20.0], [0.0, 20.0, 4.0],
             [29.9, 0.0, 7.9]],
           &[[0.0, 5.0, 9.5], [4.4, 0.0, 36.6]]);
     // the suggested edit: the disc's own rims, convex, cut
-    let rims = include_str!("../../examples/rounds/knob.sv").to_string()
-        + "round(r: 1mm) knob.disc\n";
+    let rims = format!("{KNOB}round(r: 1mm) knob.disc\n");
     holds(&rims, "knob", &[[4.2, 0.0, 8.2], [0.0, 25.0, 4.0]],
           &[[29.9, 0.0, 7.9], [0.0, 29.9, 0.1]]);
 }
@@ -220,30 +203,21 @@ fn the_knobs_root_and_neck_are_filled() {
 #[test]
 #[cfg_attr(not(feature = "slow"), ignore = "slow tier: the knob's two rounds, by the field")]
 fn the_knobs_rounds_are_the_stacks() {
-    let src = include_str!("../../examples/rounds/knob.sv");
-    agrees("the knob's root", -taken(src, "knob", [-9.0, -9.0, 7.0], [9.0, 9.0, 15.0], 2.0 / 32.0),
-           root_ring(4.0, 2.0));
-    let (s, big, rod, r): ([f64; 2], f64, f64, f64) = ([0.0, 44.0], 8.0, 4.0, 1.5);
-    let corner = [rod, s[1] - (big * big - rod * rod).sqrt()];
-    let centre = [rod + r, s[1] - ((big + r).powi(2) - (rod + r).powi(2)).sqrt()];
-    let on_rod = [rod, centre[1]];
-    let k = big / ((centre[0] - s[0]).hypot(centre[1] - s[1]));
-    let on_ball = [s[0] + k * (centre[0] - s[0]), s[1] + k * (centre[1] - s[1])];
-    let neck = turned(&[[corner, on_rod]],
-                      &[(centre, r, on_rod, on_ball), (s, big, on_ball, corner)]);
-    let got = -taken(src, "knob", [-7.0, -7.0, 34.0], [7.0, 7.0, 39.0], r / 32.0);
-    agrees("the knob's neck", got, neck);
+    let knob = rounding(KNOB);
+    let root = -taken(&knob, "knob", [-9.0, -9.0, 7.0], [9.0, 9.0, 15.0], 2.0 / 32.0);
+    agrees("the knob's root", root, root_ring(4.0, 2.0));
+    let neck = -taken(&knob, "knob", [-7.0, -7.0, 34.0], [7.0, 7.0, 39.0], 1.5 / 32.0);
+    agrees("the knob's neck", neck, knob_neck([0.0, 44.0], 8.0, 4.0, 1.5));
 }
 
 /// `rail.sv`: both sides of the rod filled, each run's section the corner between the rod's
 /// circle and the plate's top a ball of radius `r` cannot reach, the plate's whole length.
 #[test]
 fn the_rails_sides_are_filled() {
-    let src = include_str!("../../examples/rounds/rail.sv");
-    holds(src, "rail", &[[23.9, -20.0, 10.2], [36.1, -0.1, 10.2], [30.0, -20.0, 15.0]],
+    holds(RAIL, "rail", &[[23.9, -20.0, 10.2], [36.1, -0.1, 10.2], [30.0, -20.0, 15.0]],
           &[[23.0, -20.0, 10.2], [22.0, -20.0, 10.5], [23.9, 0.1, 10.2], [23.9, -40.1, 10.2]]);
     // the suggested edit: the plate's top alone, the same two runs
-    let top = src.replace("rail.rod round(r: r) rail.plate", "rail.rod round(r: r) rail.plate.cd");
+    let top = RAIL.replace("rail.rod round(r: r) rail.plate", "rail.rod round(r: r) rail.plate.cd");
     holds(&top, "rail", &[[23.9, -20.0, 10.2], [36.1, -0.1, 10.2]], &[[23.0, -20.0, 10.2]]);
 }
 
@@ -256,8 +230,7 @@ fn the_rails_runs_are_the_stacks() {
     let theta = (r / (big + r)).asin();
     let section = ((big + r).powi(2) - r * r).sqrt() * r / 2.0 - big * big * theta / 2.0
         - r * r * (PI / 2.0 - theta) / 2.0;
-    let got = -taken(include_str!("../../examples/rounds/rail.sv"), "rail",
-                     [20.0, -41.0, 9.0], [40.0, 1.0, 15.0], r / 32.0);
+    let got = -taken(&rounding(RAIL), "rail", [20.0, -41.0, 9.0], [40.0, 1.0, 15.0], r / 32.0);
     agrees("the rail's runs", got, 2.0 * 40.0 * section);
 }
 
@@ -265,7 +238,7 @@ fn the_rails_runs_are_the_stacks() {
 /// the main pipe's axis.
 #[test]
 fn the_tees_crotch_is_filled() {
-    holds(include_str!("../../examples/rounds/tee.sv"), "tee",
+    holds(TEE, "tee",
           &[[6.1, 0.0, 10.1], [0.0, 6.1, 8.1], [0.0, 0.0, 20.0]],
           &[[7.0, 0.0, 11.0], [0.0, 7.0, 9.0], [0.0, 6.1, -8.1], [6.5, 0.0, -10.1]]);
 }
@@ -273,27 +246,24 @@ fn the_tees_crotch_is_filled() {
 #[test]
 #[cfg_attr(not(feature = "slow"), ignore = "slow tier: the tee's crotch, by the field")]
 fn the_tees_crotch_is_the_stacks() {
-    let got = -taken(include_str!("../../examples/rounds/tee.sv"), "tee",
-                     [-10.0, -10.0, 4.0], [10.0, 10.0, 14.0], 2.0 / 64.0);
+    let got = -taken(&rounding(TEE), "tee", [-10.0, -10.0, 4.0], [10.0, 10.0, 14.0], 2.0 / 64.0);
     agrees("the tee's crotch", got, tee_crotch(10.0, 6.0, 2.0));
 }
 
 /// `bore.sv`: the bore's rim rounded off where it meets the pipe's wall, its floor sharp.
 #[test]
 fn the_bores_rim_is_rounded() {
-    let src = include_str!("../../examples/rounds/bore.sv");
-    holds(src, "pipe", &[[6.6, 0.0, 7.0], [0.0, 6.5, 5.0], [5.8, 0.0, -0.2]],
+    holds(BORE, "pipe", &[[6.6, 0.0, 7.0], [0.0, 6.5, 5.0], [5.8, 0.0, -0.2]],
           &[[6.1, 0.0, 9.9], [0.0, 6.1, 7.9], [5.8, 0.0, 0.2]]);
     // the suggested edit: the floor's edge too, concave, filled
-    let floor = src.to_string() + "round(r: 1mm) pipe.bore\n";
+    let floor = format!("{BORE}round(r: 1mm) pipe.bore\n");
     holds(&floor, "pipe", &[[5.8, 0.0, 0.2]], &[[6.1, 0.0, 9.9], [5.0, 0.0, 0.5]]);
 }
 
 #[test]
 #[cfg_attr(not(feature = "slow"), ignore = "slow tier: the bore's rim, by the field")]
 fn the_bores_rim_is_the_stacks() {
-    let got = taken(include_str!("../../examples/rounds/bore.sv"), "pipe",
-                    [-10.0, -10.0, 4.0], [10.0, 10.0, 14.0], 1.0 / 32.0);
+    let got = taken(&rounding(BORE), "pipe", [-10.0, -10.0, 4.0], [10.0, 10.0, 14.0], 1.0 / 32.0);
     agrees("the bore's rim", got, bore_rim(10.0, 6.0, 1.0));
 }
 
@@ -301,13 +271,12 @@ fn the_bores_rim_is_the_stacks() {
 /// seams, the pocket's rim cut along its sides and round its corners, the pocket's floor sharp.
 #[test]
 fn the_slots_chains_run_through_their_seams() {
-    let src = include_str!("../../examples/rounds/slot.sv");
     // at the seams and round the ends, 0.3 from the plate's face and the boss's wall
     let seam = |deg: f64| {
         let t = deg.to_radians();
         [29.0 + 6.3 * t.cos(), -0.3, 25.0 + 6.3 * t.sin()]
     };
-    holds(src, "part",
+    holds(SLOT, "part",
           &[[20.0, -0.3, 18.7], [28.9, -0.3, 18.7], seam(-89.0), seam(-80.0), seam(0.0),
             seam(85.0)],
           &[[20.0, -1.5, 17.5], [47.9, 0.1, 25.0], [58.0, 0.1, 16.9], [66.9, 0.1, 31.9],
@@ -317,12 +286,12 @@ fn the_slots_chains_run_through_their_seams() {
 #[test]
 #[cfg_attr(not(feature = "slow"), ignore = "slow tier: the slot's two chains, by the field")]
 fn the_slots_chains_are_the_stacks() {
-    let src = include_str!("../../examples/rounds/slot.sv");
+    let slot = rounding(SLOT);
     // the foot: two straight sides 18 long and the two half rings, one ring in all
-    let foot = -taken(src, "part", [2.0, -2.5, 14.0], [38.0, 0.5, 36.0], 2.0 / 32.0);
+    let foot = -taken(&slot, "part", [2.0, -2.5, 14.0], [38.0, 0.5, 36.0], 2.0 / 32.0);
     agrees("the boss's foot", foot, square_run(2.0) * 36.0 + root_ring(6.0, 2.0));
     // the rim: four sides, 12 and 8 long, and four quarter rings about the pocket's corners
-    let rim = taken(src, "part", [46.0, -0.5, 15.0], [70.0, 2.0, 35.0], 1.0 / 32.0);
+    let rim = taken(&slot, "part", [46.0, -0.5, 15.0], [70.0, 2.0, 35.0], 1.0 / 32.0);
     agrees("the pocket's rim", rim, square_run(1.0) * 40.0 + root_ring(4.0, 1.0));
 }
 
@@ -330,10 +299,10 @@ fn the_slots_chains_are_the_stacks() {
 /// out, the boss's own overhang sharp; the vent's rim rounded and cut off by the end face.
 #[test]
 fn the_runouts_end_on_the_faces_they_run_onto() {
-    holds(include_str!("../../examples/rounds/runout.sv"), "lug",
+    holds(RUNOUT, "lug",
           &[[26.2, -3.0, 13.6], [20.0, -9.2, 15.2], [25.4, -0.1, 13.75], [26.1, -1.0, 13.6]],
           &[[26.1, 0.5, 13.6], [25.4, 0.1, 13.75], [27.0, -3.0, 14.5]]);
-    holds(include_str!("../../examples/rounds/runout.sv"), "vent",
+    holds(RUNOUT, "vent",
           &[[93.5, -12.0, 11.0], [99.5, -17.5, 8.0]],
           &[[93.9, -12.0, 11.4], [98.0, -16.1, 10.4], [99.9, -15.54, 9.34]]);
 }
@@ -341,22 +310,21 @@ fn the_runouts_end_on_the_faces_they_run_onto() {
 #[test]
 #[cfg_attr(not(feature = "slow"), ignore = "slow tier: four run-outs, by the field")]
 fn the_runouts_are_the_stacks() {
-    let src = include_str!("../../examples/rounds/runout.sv");
     let lug = ([10.0, -14.0, 8.0], [30.0, 3.0, 22.0]);
     let vent = ([84.0, -18.0, 7.0], [102.0, -6.0, 15.0]);
+    let runout = rounding(RUNOUT);
     // the root run past the near face (`y = 0`) and cut off there, at a slant
-    agrees("the lug's root", -taken(src, "lug", lug.0, lug.1, 2.0 / 32.0),
-           sloped_root_within(6.0, [20.0, -3.0], [20.0, 0.25], 2.0, Some(([0.0, 1.0, 0.0], 0.0))));
+    agrees("the lug's root", -taken(&runout, "lug", lug.0, lug.1, 2.0 / 32.0),
+           sloped(6.0, [20.0, -3.0], [20.0, 0.25], 2.0, ROOT, Some(([0.0, 1.0, 0.0], 0.0))));
     // the rim run past the end face (`x = 100`) and cut off there
-    agrees("the vent's rim", taken(src, "vent", vent.0, vent.1, 1.0 / 64.0),
-           sloped_rim_within(4.0, [98.0, -12.0], [35.0, 0.25], 1.0,
-                             Some(([1.0, 0.0, 0.0], 100.0))));
+    agrees("the vent's rim", taken(&runout, "vent", vent.0, vent.1, 1.0 / 64.0),
+           sloped(4.0, [98.0, -12.0], [35.0, 0.25], 1.0, RIM, Some(([1.0, 0.0, 0.0], 100.0))));
     // the suggested edits: the boss on the near face, its root cut in half; the hole in from the
     // end, its rim the whole way round
-    let halved = src.replace("fix((20, -3)) bc", "fix((20, 0)) bc");
+    let halved = rounding(&RUNOUT.replace("fix((20, -3)) bc", "fix((20, 0)) bc"));
     agrees("the lug's root, halved", -taken(&halved, "lug", lug.0, lug.1, 2.0 / 32.0),
-           sloped_root_within(6.0, [20.0, 0.0], [20.0, 0.25], 2.0, None) / 2.0);
-    let whole = src.replace("fix((98, -12)) hc", "fix((90, -12)) hc");
+           sloped_root(6.0, [20.0, 0.0], [20.0, 0.25], 2.0) / 2.0);
+    let whole = rounding(&RUNOUT.replace("fix((98, -12)) hc", "fix((90, -12)) hc"));
     agrees("the vent's rim, whole", taken(&whole, "vent", vent.0, vent.1, 1.0 / 64.0),
-           sloped_rim_within(4.0, [90.0, -12.0], [35.0, 0.25], 1.0, None));
+           sloped(4.0, [90.0, -12.0], [35.0, 0.25], 1.0, RIM, None));
 }

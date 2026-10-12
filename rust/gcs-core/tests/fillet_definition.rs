@@ -865,51 +865,34 @@ pub(crate) fn bore_rim(big: f64, small: f64, r: f64) -> f64 {
 /// The stack's root of a boss of radius `big` about `(cx, cy)` standing through the plane
 /// `z = h0 − s x`, the whole way round.
 pub(crate) fn sloped_root(big: f64, at: [f64; 2], slope: [f64; 2], r: f64) -> f64 {
-    sloped_root_within(big, at, slope, r, None)
+    sloped(big, at, slope, r, ROOT, None)
 }
 
-/// `sloped_root` kept within `n · x ≤ k`: the root carried on past the face it ends on and cut
-/// off there (`x0/runout.sv`'s boss).
-pub(crate) fn sloped_root_within(big: f64, [cx, cy]: [f64; 2], [h0, s]: [f64; 2], r: f64,
-                                 within: Option<(V, f64)>) -> f64 {
+/// Which round `sloped` rolls: a boss's root, the ball outside the material (concave), or a
+/// hole's rim, the ball within it (convex).
+pub(crate) const ROOT: f64 = 1.0;
+pub(crate) const RIM: f64 = -1.0;
+
+/// The round where a cylinder of radius `radius` about `(cx, cy)`, square to `z`, meets the
+/// plane `z = h0 − s x`, the material below it — a boss's root (`ROOT`) or a hole's rim (`RIM`)
+/// — kept within `n · x ≤ k`: carried on past the face it ends on and cut off there
+/// (`x0/runout.sv`'s boss and vent).
+pub(crate) fn sloped(radius: f64, [cx, cy]: [f64; 2], [h0, s]: [f64; 2], r: f64, side: f64,
+                     within: Option<(V, f64)>) -> f64 {
     let n = unit([s, 0.0, 1.0]);
-    let lift = r / n[2];
+    let lift = side * r / n[2];
     rolled_within(
         &|phi: f64| {
             let (sn, co) = phi.sin_cos();
-            let x = cx + (big + r) * co;
-            [x, cy + (big + r) * sn, h0 - s * x + lift]
+            let x = cx + (radius + r) * co;
+            [x, cy + (radius + r) * sn, h0 - s * x + lift]
         },
-        [&|_: V| scale(n, -1.0), &|p: V| unit([cx - p[0], cy - p[1], 0.0])],
+        [&|_: V| scale(n, -side), &|p: V| unit([cx - p[0], cy - p[1], 0.0])],
         [&|o: V, w: V| {
             let d = dot(w, n);
-            if d < 0.0 { -(dot(o, n) - h0 * n[2]) / d } else { f64::INFINITY }
+            if side * d < 0.0 { -(dot(o, n) - h0 * n[2]) / d } else { f64::INFINITY }
         },
-            &|o, w| ray_cylinder(o, w, [cx, cy, 0.0], 2, big)],
-        r,
-        within,
-    )
-}
-
-/// The rim of a hole of radius `small` about `(cx, cy)` drilled down through the plane
-/// `z = h0 − s x`, the material below it, rolled off — convex, the ball within the material —
-/// kept within `n · x ≤ k` (`x0/runout.sv`'s vent, which breaks out of its wedge's end).
-pub(crate) fn sloped_rim_within(small: f64, [cx, cy]: [f64; 2], [h0, s]: [f64; 2], r: f64,
-                                within: Option<(V, f64)>) -> f64 {
-    let n = unit([s, 0.0, 1.0]);
-    let lift = r / n[2];
-    rolled_within(
-        &|phi: f64| {
-            let (sn, co) = phi.sin_cos();
-            let x = cx + (small + r) * co;
-            [x, cy + (small + r) * sn, h0 - s * x - lift]
-        },
-        [&|_: V| n, &|p: V| unit([cx - p[0], cy - p[1], 0.0])],
-        [&|o: V, w: V| {
-            let d = dot(w, n);
-            if d > 0.0 { -(dot(o, n) - h0 * n[2]) / d } else { f64::INFINITY }
-        },
-            &|o, w| ray_cylinder(o, w, [cx, cy, 0.0], 2, small)],
+            &|o, w| ray_cylinder(o, w, [cx, cy, 0.0], 2, radius)],
         r,
         within,
     )

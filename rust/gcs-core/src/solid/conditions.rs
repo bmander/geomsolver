@@ -104,6 +104,15 @@ impl SetDistance {
     }
 }
 
+/// `sign · (m − k)`, and its gradient.
+fn shift(m: Fv, k: f64, sign: f64) -> Fv {
+    Arc::new(move |x| { let (v, g) = m(x); (sign * (v - k), scale(g, sign)) })
+}
+
+/// A point just along a run from its end `v`, `d` the way it runs from there (`by` −1: just past
+/// the end).
+fn along_run(v: V, d: V, by: f64) -> V { add(v, scale(d, by * 1e-6 * (1.0 + norm(v)))) }
+
 /// A term of a set measured from, as conditions on its point.
 fn conditions(sk: &Sketch, t: &RegionTerm, read: &mut Read) -> Result<Vec<Cond>, String> {
     let lo = t.lo.value(sk)?;
@@ -111,9 +120,6 @@ fn conditions(sk: &Sketch, t: &RegionTerm, read: &mut Read) -> Result<Vec<Cond>,
     let hi = t.hi.unwrap_or(lo);
     // a measure `m` held by the term: `m ≤ lo`, `m ≥ lo`, `lo ≤ m ≤ hi` (`m = lo` where they meet)
     let held = |m: Fv| -> Vec<Cond> {
-        let shift = |m: Fv, k: f64, sign: f64| -> Fv {
-            Arc::new(move |x| { let (v, g) = m(x); (sign * (v - k), scale(g, sign)) })
-        };
         match t.cmp {
             Cmp::Le => vec![Cond { f: shift(m, lo + grow, 1.0), eq: false }],
             Cmp::Ge => vec![Cond { f: shift(m, lo + grow, -1.0), eq: false }],
@@ -166,11 +172,7 @@ fn conditions(sk: &Sketch, t: &RegionTerm, read: &mut Read) -> Result<Vec<Cond>,
             let (body, sides) = end_sides(&SetDistance::of(sk, inner, read)?)?;
             Ok(sides.into_iter().map(|(c, sign)| {
                 let body = body.clone();
-                let f: Fv = Arc::new(move |x| {
-                    let (s, g) = body.side_grad(c, x);
-                    (sign * s, scale(g, sign))
-                });
-                Cond { f, eq: false }
+                Cond { f: shift(Arc::new(move |x| body.side_grad(c, x)), 0.0, sign), eq: false }
             }).collect())
         }
         // a ball's, a cylinder's, a cone's or a half-space's: its measure's signed distance
@@ -355,31 +357,30 @@ impl Rest {
     /// `edge` and `meeting` are the two sets' distances, read already.
     pub fn of(sk: &Sketch, e: &[RegionTerm], m: &[RegionTerm], edge: &SetDistance,
               meeting: &SetDistance, read: &mut Read) -> Option<Rest> {
-        let faces = |ts: &[&RegionTerm], surface: bool| -> Option<Vec<crate::model::FaceRef>> {
-            ts.iter().map(|t| on_face(t, sk).filter(|(_, s)| *s == surface).map(|(f, _)| {
-                crate::model::FaceRef { surface: false, ..f }
-            })).collect()
-        };
-        let (on, cut): (Vec<&RegionTerm>, Vec<&RegionTerm>) =
-            m.iter().partition(|t| on_face(t, sk).is_some());
-        if !cut.iter().all(|t| matches!(t.shape, RegionShape::Ends { .. })) {
-            return None;
+        let patch = |f: crate::model::FaceRef| crate::model::FaceRef { surface: false, ..f };
+        let fe = e.iter().map(|t| on_face(t, sk).filter(|(_, s)| !s).map(|(f, _)| patch(f)))
+            .collect::<Option<Vec<_>>>()?;
+        // `m` on surfaces, and cut only where an edge ends: a cut each run lies within by how its
+        // sides are chosen (`end_sides`), so `E` stays within `M`
+        let (mut fm, mut within) = (Vec::new(), Vec::new());
+        for t in m {
+            match on_face(t, sk) {
+                Some((f, true)) => fm.push(patch(f)),
+                None if matches!(t.shape, RegionShape::Ends { .. }) => {
+                    within.extend(conditions(sk, t, read).ok()?)
+                }
+                _ => return None,
+            }
         }
-        let (fe, fm) = (faces(&e.iter().collect::<Vec<_>>(), false)?, faces(&on, true)?);
         if fe.len() < 2 || fe.len() != fm.len() || !fe.iter().all(|f| fm.contains(f)) {
             return None;
-        }
-        let mut within = Vec::new();
-        for t in cut {
-            within.extend(conditions(sk, t, read).ok()?);
         }
         let (edge, meeting) = (edge.clone(), meeting.clone());
         let ends = match &edge {
             SetDistance::Edges { body, edges, .. } => {
                 body.run_ends(edges).into_iter().filter(|(v, d, _)| {
                     // where the meeting carries on past the end within the cut
-                    let past = sub(*v, scale(*d, 1e-6 * (1.0 + norm(*v))));
-                    within.iter().all(|c| (c.f)(past).0 <= 0.0)
+                    within.iter().all(|c| (c.f)(along_run(*v, *d, -1.0)).0 <= 0.0)
                 }).map(|(v, _, _)| v).collect()
             }
             _ => Vec::new(),
@@ -419,9 +420,9 @@ fn end_sides(set: &SetDistance) -> Result<(Arc<BodyFaces>, Vec<(usize, f64)>), S
     for (v, d, vid) in body.run_ends(edges) {
         // a face carrying one of the run's on across a seam is no face the run ends on: a seam is
         // no edge, and the run beyond it is the next one's
+        let on = along_run(v, d, 1.0);
         for c in body.faces_at(vid, faces).into_iter().filter(|&c| !body.continues(c, faces, v)) {
-            let step = 1e-6 * (1.0 + norm(v));
-            let s = body.side(c, add(v, scale(d, step)));
+            let s = body.side(c, on);
             sides.push((c, if s <= 0.0 { 1.0 } else { -1.0 }));
         }
     }

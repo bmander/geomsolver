@@ -16,6 +16,9 @@ use crate::space::{add, distance, dot, norm, scale, sub};
 use std::collections::BTreeSet;
 use std::f64::consts::PI;
 
+/// Two faces' outward normals nearer than this at a point meet tangent there: no edge.
+const TANGENT: f64 = 1e-6;
+
 /// A body's exact boundary, located, in millimetres (`mm` of them a model unit).
 #[derive(Debug)]
 pub struct BodyFaces {
@@ -169,7 +172,7 @@ impl BodyFaces {
         let x = edge.point(0.5 * (edge.t[0] + edge.t[1]), &self.loc.b.vertices);
         let (na, nb) = (self.outward(fa, x), self.outward(fb, x));
         let across = norm(sub(nb, na));
-        if across < 1e-6 {
+        if across < TANGENT {
             return None;
         }
         let step = 1e-5 * self.loc.b.size().max(1.0);
@@ -247,7 +250,7 @@ impl BodyFaces {
     pub fn continues(&self, c: usize, faces: &[usize], v: V) -> bool {
         let q = self.q(v);
         let n = self.outward(c, q);
-        faces.iter().any(|&f| norm(sub(self.outward(f, q), n)) < 1e-6)
+        faces.iter().any(|&f| norm(sub(self.outward(f, q), n)) < TANGENT)
     }
 
     /// The faces at vertex `v` other than `not`.
