@@ -60,17 +60,16 @@ fn sphere_centres(recipe: &Json,frame: Frame,size: f64) -> Vec<V> {
 
 /// A solid's diagonal (mm).
 
-/// A sheet's faces under the key of the cut that places it (`cad::SweptCut::key`), each still
-/// named by the cutter's face that made it (#212): `indexed` and `flank`, as `solid::exact` names a
-/// placed copy's.
-fn keyed(faces: &Brep,key: &str) -> Brep {
-    let mut out = faces.clone();
-    for f in &mut out.faces { f.name = format!("{key}{}{}",crate::brep::recipe::NAMED,f.name); }
-    out
-}
-
 /// A placement's rigid motion in millimetres.
 pub(super) fn placed(pose: Motion,scale: f64) -> Rigid { Rigid::from_rows(&cad::placement_matrix(pose,scale)) }
+
+/// A placed sheet's faces under the key of the cut that places it (`cad::SweptCut::key`), each
+/// still named by the cutter's face that made it (#212): `indexed` and `flank`, as `solid::exact`
+/// names a placed copy's.
+fn keyed(mut sheet: Brep,key: &str) -> Brep {
+    for f in &mut sheet.faces { f.name = crate::brep::recipe::name_under(key,&f.name); }
+    sheet
+}
 
 /// The blank of `recipe` as its meridian region turned once from the half-plane along `seam`, or
 /// by its Booleans turned about the axis till its seams lie there.
@@ -169,8 +168,8 @@ pub fn premises(sk: &Sketch,body: usize,recipe: &StaticRecipe,blank: &Brep,field
     sheets: &[Fitted],say: &Say) -> Result<Premises,String> {
     let started = crate::clock::Instant::now();
     let scale_mm = field.scale();
-    let poses: Vec<Vec<Motion>> = distinct.iter().map(|&s| recipe.sweeps.iter().filter(|c| c.swept == s).map(|c| c.pose).collect()).collect();
-    let keys: Vec<Vec<&str>> = distinct.iter().map(|&s| recipe.sweeps.iter().filter(|c| c.swept == s).map(|c| c.key.as_str()).collect()).collect();
+    let sweeps: Vec<Vec<_>> = distinct.iter().map(|&s| recipe.sweeps.iter().filter(|c| c.swept == s).collect()).collect();
+    let poses: Vec<Vec<Motion>> = sweeps.iter().map(|c| c.iter().map(|c| c.pose).collect()).collect();
     let (lo,hi) = blank.bounds();
     let bounds = [lo,hi];
     let size = distance(lo,hi);
@@ -211,7 +210,7 @@ pub fn premises(sk: &Sketch,body: usize,recipe: &StaticRecipe,blank: &Brep,field
         };
         let index = (n-first) % n;
         let j = indexing.indices[k].iter().position(|&i| i == index).ok_or("no placement in the sector")?;
-        tools.push(keyed(&sheets[k].faces,keys[k][j]).moved(&placed(poses[k][j],scale_mm)));
+        tools.push(keyed(sheets[k].faces.moved(&placed(poses[k][j],scale_mm)),&sweeps[k][j].key));
     }
     // the side, built and read back against the gaps and the material field
     let (s,w) = sector::section_span(frame,chosen.slices,bounds,&inside)?;
@@ -292,7 +291,7 @@ pub fn whole(sk: &Sketch,body: usize,recipe: &StaticRecipe,blank: &Brep,distinct
     let mut tools = Vec::new();
     for (k,&s) in distinct.iter().enumerate() {
         for cut in recipe.sweeps.iter().filter(|c| c.swept == s) {
-            let tool = keyed(&sheets[k].faces,&cut.key).moved(&placed(cut.pose,scale_mm));
+            let tool = keyed(sheets[k].faces.moved(&placed(cut.pose,scale_mm)),&cut.key);
             let (a,b) = tool.bounds();
             if (0..3).all(|i| a[i] <= hi[i] && b[i] >= lo[i]) { tools.push(tool); }
         }

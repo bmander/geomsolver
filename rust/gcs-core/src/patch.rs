@@ -13,7 +13,7 @@ enum Source {
 /// Material tests do not establish source incidence. Keep this internal so every
 /// retained-point API must check its surface/envelope before applying the trims.
 #[derive(Clone,Debug,Default)]
-pub(crate) struct MaterialTrims {
+struct MaterialTrims {
     inside: Vec<RevolvedRegion>,
     outside: Vec<RevolvedRegion>,
 }
@@ -113,11 +113,6 @@ impl TrimmedPatch {
     /// the body's own material.
     pub fn of_envelope(name: String,source: GeneratedEnvelope,inside: Vec<RevolvedRegion>,outside: Vec<RevolvedRegion>) -> Self {
         Self {name,source:Source::Envelope(EnvelopePatch {source,trims:MaterialTrims {inside,outside}})}
-    }
-
-    /// The envelope this patch trims, where it is one.
-    pub fn envelope(&self) -> Option<&GeneratedEnvelope> {
-        match &self.source { Source::Envelope(e) => Some(&e.source),Source::Surface {..} => None }
     }
 
     pub(crate) fn envelope_patch(&self) -> Result<&EnvelopePatch,String> {

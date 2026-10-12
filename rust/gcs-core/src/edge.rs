@@ -77,26 +77,37 @@ pub struct SpatialEdge {
 
 use crate::space::{dot,sub as delta,length};
 
+/// An edge's tolerances, finite and nonnegative, its solves' positive, the junction's normal
+/// tolerance below one.
+fn checked(t: EdgeTolerance) -> Result<(),String> {
+    for v in [t.junction.position,t.junction.normal,t.junction.axis,
+        t.point.normal_velocity,t.point.incidence,t.point.trim] {
+        check_tolerance(v).map_err(|_| "an edge needs finite nonnegative tolerances")?;
+    }
+    if t.junction.normal >= 1. || t.point.normal_velocity == 0. || t.point.incidence == 0. {
+        return Err("an edge needs positive solve tolerances and junction normal tolerance below one".into());
+    }
+    Ok(())
+}
+
+/// The slicing line's unit direction.
+fn along(d: [f64;3]) -> Result<[f64;3],String> {
+    let n = length(d);
+    if !n.is_finite() || n == 0. { return Err("an edge needs a finite nondegenerate along line".into()); }
+    Ok(d.map(|x| x/n))
+}
+
 impl SpatialEdge {
     /// Endpoint witnesses use each vertex's canonical chart. They are rechecked
     /// against the current sketch and converted by declared face identity.
     pub fn named(sk: &Sketch,index: usize,parameters: [[f64;3];2],t: EdgeTolerance)
         -> Result<Self,String> {
-        for v in [t.junction.position,t.junction.normal,t.junction.axis,
-            t.point.normal_velocity,t.point.incidence,t.point.trim] {
-            check_tolerance(v).map_err(|_| "an edge needs finite nonnegative tolerances")?;
-        }
-        if t.junction.normal >= 1. || t.point.normal_velocity == 0. || t.point.incidence == 0. {
-            return Err("an edge needs positive solve tolerances and junction normal tolerance below one".into());
-        }
+        checked(t)?;
         let e = sk.edges.get(index).ok_or("no such edge")?;
         validate(sk,e)?;
         let axis = &sk.lines[e.along as usize];
         for p in [axis.p1,axis.p2] { sk.points.get(p as usize).ok_or("no such edge axis point")?; }
-        let d = delta(sk.world_point(axis.p2 as usize),sk.world_point(axis.p1 as usize));
-        let n = length(d);
-        if !n.is_finite() || n == 0. { return Err("an edge needs a finite nondegenerate along line".into()); }
-        let direction = d.map(|x| x/n);
+        let direction = along(delta(sk.world_point(axis.p2 as usize),sk.world_point(axis.p1 as usize)))?;
         let source = match crate::seam::kind(sk,e.seam as usize)? {
             crate::seam::SeamKind::Boundary =>
                 Source::Boundary(BoundarySeam::named(sk,e.seam as usize,t.junction.axis)?),
@@ -109,34 +120,20 @@ impl SpatialEdge {
         let read = |i: usize| -> Result<EdgePoint,String> {
             let (parameters,position) = vertex::on_seam(sk,vertices[i],e.seam as usize,
                 parameters[i],t.junction,t.point)?;
-            let c = source.evaluate(parameters,t.point).map_err(|e| format!("invalid edge endpoint: {e:?}"))?;
-            if length(delta(c.position,position)) > t.junction.position {
-                return Err("the edge and its named vertex disagree in position".into());
-            }
             Ok(EdgePoint {parameters,position})
         };
-        let endpoints = [read(0)?,read(1)?];
-        let span = dot(delta(endpoints[1].position,endpoints[0].position),direction);
-        if !span.is_finite() || span.abs()/2. <= t.point.incidence {
-            return Err("edge endpoints need distinct positions along the slicing line".into());
-        }
-        Ok(Self {name:e.name.clone(),vertices,endpoints,source,direction,span,tolerance:t})
+        Self::new(e.name.clone(),source,vertices,[read(0)?,read(1)?],direction,t)
     }
 
     /// A stretch of `source` between two corners, made of its parts (#212): `vertices` the
     /// corners' identities (a caller's numbering), `endpoints` each corner in the seam's own chart
     /// (a junction's second face's `u` already put in where the corner is read on that face), and
-    /// the slicing line's `direction`. Each endpoint is checked on the seam, as `named` does.
+    /// the slicing line's `direction`. Each endpoint is checked on the seam (`named` reads them so).
     pub fn new(name: String,source: Source,vertices: [usize;2],endpoints: [EdgePoint;2],direction: [f64;3],
         t: EdgeTolerance) -> Result<Self,String> {
-        for v in [t.junction.position,t.junction.normal,t.junction.axis,
-            t.point.normal_velocity,t.point.incidence,t.point.trim] {
-            check_tolerance(v).map_err(|_| "an edge needs finite nonnegative tolerances")?;
-        }
+        checked(t)?;
         if vertices[0] == vertices[1] { return Err("an edge needs two distinct named vertices".into()); }
-        let n = length(direction);
-        if !n.is_finite() || n == 0. { return Err("an edge needs a finite nondegenerate along line".into()); }
-        let direction = direction.map(|x| x/n);
+        let direction = along(direction)?;
         for p in &endpoints {
             let c = source.evaluate(p.parameters,t.point).map_err(|e| format!("invalid edge endpoint: {e:?}"))?;
             if length(delta(c.position,p.position)) > t.junction.position {

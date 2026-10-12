@@ -194,21 +194,6 @@ impl RevolvedSurface {
         Ok(Self {v_domain:span.map(|a| a/sweep),..self.clone()})
     }
 
-    /// The same surface carried by a rigid motion (#212): a placed copy of a revolution's face.
-    pub fn moved(&self,m: crate::envelope::Motion,name: String) -> Self {
-        let meridian = match &self.meridian {
-            Meridian::Line {start,delta} => Meridian::Line {start:m.point(*start),delta:m.vector(*delta)},
-            Meridian::Round {center,a,b,sweep} => Meridian::Round {center:m.point(*center),a:m.vector(*a),b:m.vector(*b),sweep:*sweep},
-        };
-        Self {name,meridian,origin:m.point(self.origin),axis:m.vector(self.axis),sweep:self.sweep,v_domain:self.v_domain}
-    }
-
-    /// The line it is revolved about: a point of it and its unit direction.
-    pub fn axis(&self) -> ([f64;3],[f64;3]) {
-        let n = self.axis[0].dhypot(self.axis[1]).dhypot(self.axis[2]);
-        (self.origin,self.axis.map(|x| x/n))
-    }
-
     /// Original source parameters: an angular span restricts v without renumbering it.
     pub fn domain(&self) -> [[f64;2];2] { [[0.,1.],self.v_domain] }
 

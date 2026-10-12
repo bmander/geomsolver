@@ -15,7 +15,7 @@ fn spherical(rho: f64, theta: f64, phi: f64) -> V {
 impl Pair {
     pub(super) fn tip(&self, member: usize, surface: &RevolvedSurface, rho: f64,
         seed: [f64;3]) -> envelope::Intersection {
-        let seam = &self.boundary_seams[&format!("{}.tip_edge",self.label(surface))];
+        let seam = &self.boundary_seams[&format!("{}.tip_edge",surface.name)];
         let mut result = seam.intersect(
             |c| {
                 let p = c.position;
@@ -47,7 +47,7 @@ impl Pair {
             // End-face contours now read finite source edges. Sampling is uniform
             // in the declared axial coordinate, with exact shared endpoint reuse.
             let sample = |surface: &RevolvedSurface,fraction| {
-                let label = self.label(surface);
+                let label = surface.name.as_str();
                 let (base,role) = label.strip_suffix("_round")
                     .map_or((label,"working"),|base| (base,"transition"));
                 let face = &self.faces[&format!("{base}.{role}")];

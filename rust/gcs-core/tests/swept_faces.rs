@@ -9,7 +9,8 @@
 use gcs_core::envelope::{GeneratedEnvelope,IntersectionOptions};
 use gcs_core::program::Elaborated;
 use gcs_core::solid::faces::{face_paths,face_source,BodyFaces,FaceSource};
-use gcs_core::space::{cross,dot,norm,scale,sub};
+use gcs_core::roots;
+use gcs_core::space::{across,distance,dot,sub};
 
 type V = [f64;3];
 
@@ -45,31 +46,37 @@ fn inside(faces: &BodyFaces,fi: usize) -> (V,V) {
     (p,faces.normal(fi,p))
 }
 
-/// How far `p` is from the envelope along the normal `n` there: the envelope's point on the line
-/// through `p` along `n`, sought from the nearest of its contacts over a grid of its source.
-fn off_envelope(envelope: &GeneratedEnvelope,p: V,n: V) -> f64 {
+/// An envelope's contacts over a grid of its source (13 × 97 points, each roll where the normal
+/// velocity changes sign over 64 steps): each one's parameters and place, where a search for
+/// the envelope's point near a place starts.
+fn contacts(envelope: &GeneratedEnvelope) -> Vec<([f64;3],V)> {
     let [u,v,roll] = envelope.domain();
-    let mut best: Option<([f64;3],f64)> = None;
+    let ts: Vec<f64> = (0..=64).map(|k| roll[0]+(roll[1]-roll[0])*k as f64/64.).collect();
+    let mut out = Vec::new();
     for i in 0..=12 { for j in 0..=96 {
         let (a,b) = (u[0]+(u[1]-u[0])*i as f64/12.,v[0]+(v[1]-v[0])*j as f64/96.);
         let nv = |t: f64| envelope.evaluate([a,b,t]).map_or(f64::NAN,|c| c.normal_velocity);
-        let ts: Vec<f64> = (0..=64).map(|k| roll[0]+(roll[1]-roll[0])*k as f64/64.).collect();
-        for w in ts.windows(2) {
-            let (mut lo,mut hi) = (w[0],w[1]);
-            if !(nv(lo)*nv(hi) <= 0.) { continue }
-            for _ in 0..40 { let m = 0.5*(lo+hi); if nv(lo)*nv(m) <= 0. { hi = m } else { lo = m } }
-            let Ok(c) = envelope.evaluate([a,b,lo]) else { continue };
-            let d = norm(sub(c.position,p));
-            if best.is_none_or(|(_,e)| d < e) { best = Some(([a,b,lo],d)); }
+        let at: Vec<f64> = ts.iter().map(|&t| nv(t)).collect();
+        for k in 0..64 {
+            if !(at[k]*at[k+1] <= 0.) { continue }
+            let (lo,_) = roots::bisect(ts[k],ts[k+1],|a,b| 0.5*(a+b),|a,b| b-a > (ts[1]-ts[0])*1e-12,
+                |m| at[k]*nv(m) > 0.);
+            if let Ok(c) = envelope.evaluate([a,b,lo]) { out.push(([a,b,lo],c.position)); }
         }
     } }
-    let Some((seed,coarse)) = best else { return f64::INFINITY };
-    let e1 = { let a = if n[0].abs() < 0.9 { [1.,0.,0.] } else { [0.,1.,0.] }; let c = cross(n,a); scale(c,1./norm(c)) };
-    let e2 = cross(n,e1);
+    out
+}
+
+/// How far `p` is from the envelope along the normal `n` there: the envelope's point on the line
+/// through `p` along `n`, sought from the nearest of its `contacts`.
+fn off_envelope(envelope: &GeneratedEnvelope,contacts: &[([f64;3],V)],p: V,n: V) -> f64 {
+    let Some(&(seed,q)) = contacts.iter().min_by(|a,b| distance(a.1,p).total_cmp(&distance(b.1,p))) else { return f64::INFINITY };
+    let (e1,e2) = across(n);
+    let [u,v,roll] = envelope.domain();
     match envelope.intersect(|_,c| { let d = sub(c.position,p); [dot(d,e1),dot(d,e2)] },seed,IntersectionOptions {
         bounds:[u,v,roll],parameter_scale:[1.;3],residual_tolerance:[1e-9,1e-9,1e-9],max_iterations:100}) {
-        Ok(found) => norm(sub(found.contact.position,p)),
-        Err(_) => coarse,
+        Ok(found) => distance(found.contact.position,p),
+        Err(_) => distance(q,p),
     }
 }
 
@@ -90,9 +97,12 @@ fn a_swept_bodys_faces_lie_on_what_their_names_say() {
         }
         let sources: Vec<(String,FaceSource)> = faces.paths().iter().map(|p| (p.text(),face_source(sk,body,p)
             .unwrap_or_else(|why| panic!("{member}: `{}`: {why}",p.text())))).collect();
-        let envelopes: Vec<(String,GeneratedEnvelope)> = sources.iter().filter_map(|(name,s)| match s {
-            FaceSource::Swept {surface,motion,roll,..} =>
-                Some((name.clone(),GeneratedEnvelope::new(name.clone(),surface.clone(),motion.clone(),*roll).unwrap())),
+        let envelopes: Vec<(String,GeneratedEnvelope,Vec<([f64;3],V)>)> = sources.iter().filter_map(|(name,s)| match s {
+            FaceSource::Swept {surface,motion,roll,..} => {
+                let envelope = GeneratedEnvelope::new(name.clone(),surface.clone(),motion.clone(),*roll).unwrap();
+                let contacts = contacts(&envelope);
+                Some((name.clone(),envelope,contacts))
+            }
             FaceSource::Revolved {..} => None,
         }).collect();
         assert_eq!(envelopes.len(),5,"{member}: {named:?}");
@@ -109,8 +119,8 @@ fn a_swept_bodys_faces_lie_on_what_their_names_say() {
                 FaceSource::Swept {pose,..} => {
                     assert!(pose.point([1.,2.,3.]).iter().zip([1.,2.,3.]).all(|(a,b)| (a-b).abs() < 1e-12),
                         "{member}: the first tooth space is cut where its sweep is");
-                    for (other,envelope) in &envelopes {
-                        let d = off_envelope(envelope,p,n);
+                    for (other,envelope,contacts) in &envelopes {
+                        let d = off_envelope(envelope,contacts,p,n);
                         println!("{member}: `{name}` is {d:.2e} mm off `{other}`'s envelope");
                         if other == name { assert!(d < 0.03,"{member}: `{name}` is {d} mm off its envelope"); }
                         else { assert!(d > 0.1,"{member}: `{name}` lies on `{other}`'s envelope ({d} mm)"); }

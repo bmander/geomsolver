@@ -71,20 +71,18 @@ impl Closed {
 
     /// The blank's volume: about the axis, between the end spheres, between the cones — at a
     /// distance `rho` from the apex the polar angles `half + asin(back / rho)` to `half + asin(tip /
-    /// rho)` — integrated in `rho` by Gauss–Legendre over many panels.
+    /// rho)` — integrated in `rho` by Gauss–Legendre over many panels (`integral::GAUSS8`).
     fn volume(&self) -> f64 {
-        let (nodes, weights) = ([-0.906179845938664, -0.538469310105683, 0.0, 0.538469310105683, 0.906179845938664],
-            [0.236926885056189, 0.478628670499366, 0.568888888888889, 0.478628670499366, 0.236926885056189]);
         let f = |rho: f64| {
             let (a, b) = (self.half + (self.back / rho).asin(), self.half + (self.tip / rho).asin());
             rho * rho * (a.cos() - b.cos())
         };
-        let panels = 400;
+        let panels = 200;
         let h = (self.heel - self.toe) / panels as f64;
         let mut sum = 0.0;
         for k in 0..panels {
             let mid = self.toe + h * (k as f64 + 0.5);
-            for (x, w) in nodes.iter().zip(weights) {
+            for (x, w) in gcs_core::integral::GAUSS8 {
                 sum += w * f(mid + 0.5 * h * x) * 0.5 * h;
             }
         }

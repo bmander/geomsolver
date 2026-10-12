@@ -20,6 +20,9 @@ pub const NAMED: char = '\u{1}';
 /// The key of a face's solid and its own name, as a recipe's build names it (`NAMED`): the whole
 /// name and nothing where it was not built so.
 pub fn named_parts(name: &str) -> (&str,&str) { name.split_once(NAMED).unwrap_or((name,"")) }
+
+/// A face's name under its solid's key (`NAMED`), the inverse of `named_parts`.
+pub fn name_under(key: &str,face: &str) -> String { format!("{key}{NAMED}{face}") }
 fn field<'a>(j: &'a Json,k: &str) -> Result<&'a Json,String> { j.get(k).ok_or(format!("recipe: no `{k}`")) }
 
 /// One step of the body rule: `solid` combined with `operand` by `op`, to a tolerance of the two's
@@ -143,33 +146,58 @@ pub fn node_named(n: &Json,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64
 }
 
 /// The recipe's root, built, each face named by its node (`NAMED`): a primitive's by the node's
-/// name, a placement's copies by the placement's (and the primitive's own last word where the
-/// placed source is a body), as `solid::exact` names them.
+/// name, a placement's copies by the placement and the route to the primitive in its source —
+/// the walk `solid::document::operand_primitives` makes over the solids, made over the nodes, so
+/// the names are `solid::exact`'s.
 pub fn build(recipe: &Json) -> Result<Brep,String> {
     let mut built = BTreeMap::new();
+    // each node's primitives, keyed as its faces are named, and their routes from it
+    let mut routes: BTreeMap<i64,(String,BTreeMap<String,String>)> = BTreeMap::new();
     for n in field(recipe,"nodes")?.arr() {
         let name = n.get("name").map_or("",|j| j.as_str());
         let mut b = node(n,&built).map_err(|e| format!("`{name}`: {e}"))?;
+        let mut own = BTreeMap::new();
         match field(n,"kind")?.as_str() {
-            "body" | "lowered" => {}
-            "placed" => for f in &mut b.faces {
-                let (of,face) = named_parts(&f.name);
-                let source = recipe_name(recipe,field(n,"source")?.as_i64());
-                let key = if source.as_deref() == Some(of) { name.to_string() }
-                    else { format!("{name}.{}",of.rsplit('.').next().unwrap_or(of)) };
-                f.name = format!("{key}{NAMED}{face}");
+            "lowered" => {}
+            "body" => for key in ["stock","on","cut","bound","on_late","cut_late"] {
+                let ids = match n.get(key) { Some(Json::Arr(l)) => l.iter().map(Json::as_i64).collect(),
+                    Some(x) => vec![x.as_i64()], None => vec![] };
+                for id in ids {
+                    let Some((operand,paths)) = routes.get(&id) else { continue };
+                    let short = operand.rsplit('.').next().unwrap_or(operand);
+                    for (primitive,path) in paths {
+                        // a swept solid's own sweep, split off as its stock, adds no step
+                        let route = if operand == name { path.clone() } else { placed_name(short,path) };
+                        own.entry(primitive.clone()).or_insert(route);
+                    }
+                }
             },
-            _ => for f in &mut b.faces { f.name = format!("{name}{NAMED}{}",f.name); },
+            "placed" => {
+                let source = routes.get(&field(n,"source")?.as_i64()).map(|(_,p)| p);
+                for f in &mut b.faces {
+                    let (of,face) = named_parts(&f.name);
+                    let path = source.and_then(|p| p.get(of)).map_or(of,String::as_str);
+                    f.name = name_under(&placed_name(name,path),face);
+                }
+                for path in source.into_iter().flat_map(|p| p.values()) {
+                    own.insert(placed_name(name,path),path.clone());
+                }
+            }
+            _ => {
+                for f in &mut b.faces { f.name = name_under(name,&f.name); }
+                own.insert(name.to_string(),String::new());
+            }
         }
-        built.insert(field(n,"id")?.as_i64(),b);
+        let id = field(n,"id")?.as_i64();
+        routes.insert(id,(name.to_string(),own));
+        built.insert(id,b);
     }
     built.remove(&field(recipe,"root")?.as_i64()).ok_or("recipe: no root".into())
 }
 
-/// The name of the recipe's node `id`.
-fn recipe_name(recipe: &Json,id: i64) -> Option<String> {
-    recipe.get("nodes")?.arr().iter().find(|n| n.get("id").is_some_and(|i| i.as_i64() == id))
-        .and_then(|n| n.get("name")).map(|j| j.as_str().to_string())
+/// A route one step further on (`solid::document::placed_name`).
+fn placed_name(name: &str,path: &str) -> String {
+    if path.is_empty() { name.to_string() } else { format!("{name}.{path}") }
 }
 
 /// A recipe whose every operand is a whole revolution about one line, or a ball centred on it,
@@ -244,7 +272,7 @@ pub fn meridian_region(recipe: &Json,seam: V) -> Result<Result<(Profile,V,V),Str
                     let profile = Profile::from_json(field(n,"profile")?)?;
                     let arc = (0..profile.loops.len()).flat_map(|l| (0..profile.loops[l].len()).map(move |k| (l,k)))
                         .find(|&(l,k)| matches!(profile.loops[l][k],ProfileEdge::Arc {..})).map_or(String::new(),|(l,k)| profile.name(l,k));
-                    names.push(format!("{name}{NAMED}{arc}"));
+                    names.push(name_under(name,&arc));
                     let tag = names.len() as u32;
                     Region::half_disc(z,r).tagged(&|_,_| tag)
                 } else {
@@ -275,7 +303,7 @@ pub fn meridian_region(recipe: &Json,seam: V) -> Result<Result<(Profile,V,V),Str
                     let q = |p: V| { let d = sub(p,origin); [dot(d,side),dot(d,axis)] };
                     let first = names.len() as u32+1;
                     for (l,edges) in profile.loops.iter().enumerate() {
-                        for k in 0..edges.len() { names.push(format!("{name}{NAMED}{}",profile.name(l,k))); }
+                        for k in 0..edges.len() { names.push(name_under(name,&profile.name(l,k))); }
                     }
                     let mut tag = first;
                     Region::new(profile.loops.iter().map(|l| l.iter().map(|e| match *e {

@@ -38,7 +38,12 @@ enum Node { Leaf(usize),Body { stock: i64,ops: Vec<(Op,i64)> } }
 pub struct Sectioned { pub origin: V,pub axis: V,leaves: Vec<Leaf>,nodes: Vec<(i64,Node)>,root: i64,tol: f64 }
 
 /// The tag a revolution's meridian step bounds: its revolution, loop and place.
-fn tag(leaf: usize,l: usize,k: usize) -> u32 { ((leaf as u32+1) << 16) | ((l as u32) << 10) | k as u32 }
+fn tag(leaf: usize,l: usize,k: usize) -> u32 { ((leaf as u32+1) << 16) | edge_tag(l,k) }
+
+/// `tag`'s inverse: the revolution (`None` for no leaf's), loop and place.
+fn untag(tag: u32) -> (Option<usize>,usize,usize) {
+    ((((tag >> 16) & 0x3ff) as usize).checked_sub(1),((tag >> 10) & 0x3f) as usize,(tag & 0x3ff) as usize)
+}
 
 impl Sectioned {
     /// The recipe read, or `Ok(Err)` naming why it is not of this kind.
@@ -158,8 +163,8 @@ impl Sectioned {
     /// The face a section step's tag bounds (`tag`, its meeting bits aside): the recipe node of its
     /// revolution, by name, and its profile edge's name — empty where the profile names none.
     pub fn face_of(&self,tag: u32) -> Option<(String,String)> {
-        let leaf = self.leaves.get((((tag >> 16) & 0x3ff) as usize).checked_sub(1)?)?;
-        let (l,k) = (((tag >> 10) & 0x3f) as usize,(tag & 0x3ff) as usize);
+        let (leaf,l,k) = untag(tag);
+        let leaf = self.leaves.get(leaf?)?;
         Some((leaf.name.clone(),leaf.edges.get(l).and_then(|e| e.get(k)).cloned().unwrap_or_default()))
     }
 

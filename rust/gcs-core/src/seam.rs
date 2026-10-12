@@ -104,12 +104,19 @@ pub struct EnvelopeSeam {
     tolerance: SeamTolerance,
 }
 
-impl EnvelopeSeam {
-    pub fn named(sk: &Sketch,index: usize,tolerance: SeamTolerance) -> Result<Self,String> {
-        if [tolerance.position,tolerance.normal,tolerance.axis].iter()
-            .any(|x| !x.is_finite() || *x < 0.) || tolerance.normal >= 1. {
+impl SeamTolerance {
+    /// Finite and nonnegative, the normal's below one.
+    fn checked(&self) -> Result<(),String> {
+        if [self.position,self.normal,self.axis].iter().any(|x| !x.is_finite() || *x < 0.) || self.normal >= 1. {
             return Err("a seam needs finite nonnegative tolerances and normal tolerance below one".into());
         }
+        Ok(())
+    }
+}
+
+impl EnvelopeSeam {
+    pub fn named(sk: &Sketch,index: usize,tolerance: SeamTolerance) -> Result<Self,String> {
+        tolerance.checked()?;
         let seam = sk.seams.get(index).ok_or("no such seam")?;
         let faces = [seam.first,seam.second];
         let ends = junction(sk,faces)?;
@@ -121,10 +128,7 @@ impl EnvelopeSeam {
     /// each face's source edge's `u` at the vertex the two share, which the caller knows from the
     /// cutter's profile — checked coincident and tangent there, never found by proximity.
     pub fn new(name: String,faces: [&crate::patch::TrimmedPatch;2],ends: [f64;2],tolerance: SeamTolerance) -> Result<Self,String> {
-        if [tolerance.position,tolerance.normal,tolerance.axis].iter()
-            .any(|x| !x.is_finite() || *x < 0.) || tolerance.normal >= 1. {
-            return Err("a seam needs finite nonnegative tolerances and normal tolerance below one".into());
-        }
+        tolerance.checked()?;
         let [a,b] = faces.map(|f| f.envelope_patch().cloned());
         Self::between(name,[a?,b?],ends,tolerance)
     }

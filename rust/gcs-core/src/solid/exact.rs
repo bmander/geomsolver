@@ -5,10 +5,8 @@
 //! a face keeps the name of the operand face it is a piece of.
 use super::*;
 use crate::brep::topo::Brep;
+use crate::brep::recipe::{name_under, named_parts};
 use std::collections::BTreeSet;
-
-/// Between a face's solid and its own name while the recipe is built (`brep::recipe::NAMED`).
-const SEP: char = crate::brep::recipe::NAMED;
 
 /// A static solid's exact B-rep, in millimetres (`mm` of them a model unit, `cad::millimetres`)
 /// about `origin` (model units, the point the facet term is evaluated about too), each face named
@@ -49,13 +47,13 @@ pub(crate) fn build(sk: &Sketch, si: usize) -> Result<Exact, String> {
             SolidDef::Placed { source, .. } => {
                 let paths = operand_paths(sk, *source as usize);
                 for f in &mut b.faces {
-                    let (of, face) = f.name.split_once(SEP).unwrap_or((f.name.as_str(), ""));
+                    let (of, face) = named_parts(&f.name);
                     let path = paths.get(of).map(String::as_str).unwrap_or(of);
                     let placed = super::document::placed_name(&sol.name, path);
                     if leading.contains(&format!("{of}.{face}")) {
                         leading.insert(format!("{placed}.{face}"));
                     }
-                    f.name = format!("{placed}{SEP}{face}");
+                    f.name = name_under(&placed, face);
                 }
             }
             // a body's faces are its operands', named as they were
@@ -67,7 +65,7 @@ pub(crate) fn build(sk: &Sketch, si: usize) -> Result<Exact, String> {
                     if caps.contains(&f.name.as_str()) {
                         leading.insert(format!("{}.{}", sol.name, f.name));
                     }
-                    f.name = format!("{}{SEP}{}", sol.name, f.name);
+                    f.name = name_under(&sol.name, &f.name);
                 }
             }
         }
@@ -77,12 +75,12 @@ pub(crate) fn build(sk: &Sketch, si: usize) -> Result<Exact, String> {
     Ok(named(brep, mm, origin, leading))
 }
 
-/// A B-rep whose faces a build named in two halves (`SEP`: a recipe's, a swept body's), as an
+/// A B-rep whose faces a build named in two halves (`brep::recipe::NAMED`: a recipe's, a swept body's), as an
 /// `Exact`: each face's halves in `named`, and its name the two joined by a dot.
 pub(crate) fn named(mut brep: Brep, mm: f64, origin: [f64; 3], leading: BTreeSet<String>) -> Exact {
     let mut named = Vec::with_capacity(brep.faces.len());
     for f in &mut brep.faces {
-        let (of, face) = f.name.split_once(SEP).unwrap_or((f.name.as_str(), ""));
+        let (of, face) = named_parts(&f.name);
         named.push((of.to_string(), face.to_string()));
         f.name = if face.is_empty() { of.to_string() } else { format!("{of}.{face}") };
     }

@@ -358,8 +358,8 @@ pub fn swept_sheet(cut: &SweptCut,inside: Inside,near: &(dyn Fn(V) -> f64+Sync),
             Ok((mut fitted,kind)) => {
                 // each band named by the cutter's face that made it, by its path in the cutter
                 let face_name = |tag: u32| -> String {
-                    let Some((key,face)) = (tag != crate::solid::contact_trace::UNNAMED).then(|| cutter.face_of(tag)).flatten()
-                        else { return String::new() };
+                    // (`UNNAMED` carries the fan's bit, so names nothing)
+                    let Some((key,face)) = cutter.face_of(tag) else { return String::new() };
                     crate::solid::faces::FacePath::new(cut.routes.get(&key).map_or("",String::as_str),&face).text()
                 };
                 fitted.faces = fitted.named(kind,&face_name).at(Stage::Fit)?;

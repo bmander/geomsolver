@@ -91,6 +91,11 @@ pub struct Station<'a> {
 }
 
 impl Station<'_> {
+    /// `crossings` strictly inside `lo..hi` of unfolded walk length.
+    pub fn crossings_within(&self,curve: &[Point],[lo,hi]: [f64;2]) -> Vec<(f64,u32,u32)> {
+        self.crossings(curve).into_iter().filter(|c| c.0 > lo && c.0 < hi).collect()
+    }
+
     /// Where a traced curve passes from one of the cutter's faces to another (`starts`), in order:
     /// at what unfolded walk length, from which face to which. A crossing is counted at the step
     /// it is reached by, so one a curve's point stands on is counted once.
@@ -672,41 +677,42 @@ impl<'t,'s> Columns<'t,'s> {
     /// each crossing's mean unfolded walk length, and the faces between them. None where the
     /// stations name no faces, or those columns disagree.
     fn anchors(&self) -> Option<Anchors> {
-        let [lo,hi] = self.span;
-        let crossings: Vec<Vec<(f64,u32,u32)>> = self.stations.iter().map(|entry| {
-            let (station,traced) = &**entry;
-            station.crossings(&traced.curve).into_iter().filter(|c| c.0 > lo && c.0 < hi).collect()
-        }).collect();
-        let first = crossings.iter().zip(&self.reached).find(|(_,r)| **r)?.0;
-        let order: Vec<(u32,u32)> = first.iter().map(|c| (c.1,c.2)).collect();
         // only the columns reaching the blank leave faces of the cut: one carrying the sheet's
         // edge out may cross the cutter's faces otherwise (a face run out to nothing), and keeps
         // its rows at the walk's own lengths (`Anchors::walk`)
-        let crossings: Vec<Vec<(f64,u32,u32)>> = crossings.into_iter().zip(&self.reached).filter(|(_,r)| **r).map(|(c,_)| c).collect();
-        if crossings.iter().any(|c| c.iter().map(|c| (c.1,c.2)).ne(order.iter().copied())) { return None }
-        if order.windows(2).any(|w| w[0].1 != w[1].0) { return None }
-        let at: Vec<f64> = (0..order.len()).map(|k| crossings.iter().map(|c| c[k].0).sum::<f64>()/crossings.len() as f64).collect();
-        if at.windows(2).any(|w| !(w[1] > w[0])) { return None }
-        let faces = match order.first() {
-            Some(&(face,_)) => std::iter::once(face).chain(order.iter().map(|o| o.1)).collect(),
+        let crossings: Vec<Vec<(f64,u32,u32)>> = self.stations.iter().zip(&self.reached).filter(|(_,r)| **r)
+            .map(|(entry,_)| entry.0.crossings_within(&entry.1.curve,self.span)).collect();
+        let first = crossings.first()?;
+        let faces: Vec<u32> = match first.first() {
+            Some(c) => std::iter::once(c.1).chain(first.iter().map(|c| c.2)).collect(),
             // one face over the whole span: the one the middle of the first reaching column was made by
             None => {
+                let [lo,hi] = self.span;
                 let (station,traced) = &*self.stations[self.reached.iter().position(|r| *r)?];
                 let mid = traced.curve.iter().min_by(|a,b| (a.tau-(lo+hi)/2.).abs().total_cmp(&(b.tau-(lo+hi)/2.).abs()))?;
                 vec![station.face_at(mid.s)?]
             }
         };
-        Some(Anchors {at,order,faces})
+        let anchors = Anchors {at:Vec::new(),faces};
+        if !crossings.iter().all(|c| anchors.crosses(c)) { return None }
+        let at: Vec<f64> = (0..first.len()).map(|k| crossings.iter().map(|c| c[k].0).sum::<f64>()/crossings.len() as f64).collect();
+        if at.windows(2).any(|w| !(w[1] > w[0])) { return None }
+        Some(Anchors {at,..anchors})
     }
 }
 
 /// Where the cutter's faces meet down a sheet's rows (#212): each crossing's row coordinate (the
-/// first grid's columns' mean unfolded walk length there), which faces each passes between, and
-/// the faces in order, one more than the crossings.
+/// first grid's columns' mean unfolded walk length there), and the faces in order, one more than
+/// the crossings.
 #[derive(Clone,Debug)]
-struct Anchors { at: Vec<f64>,order: Vec<(u32,u32)>,faces: Vec<u32> }
+struct Anchors { at: Vec<f64>,faces: Vec<u32> }
 
 impl Anchors {
+    /// Whether `crossings` pass between the faces in order, as the anchors' do.
+    fn crosses(&self,crossings: &[(f64,u32,u32)]) -> bool {
+        crossings.iter().map(|c| [c.1,c.2]).eq(self.faces.windows(2).map(|w| [w[0],w[1]]))
+    }
+
     /// Rows over `lo..hi`, about as many as `count`, with a row at every crossing and the rows of
     /// each face's band even between its two (at least two intervals a band), and their middles.
     fn rows(&self,lo: f64,hi: f64,count: usize) -> (Vec<f64>,Vec<f64>) {
@@ -859,11 +865,12 @@ impl<'s> Layout<'_,'s> {
             let found = match self.placement {
                 Rows::Walk => match &self.anchors {
                     Some(a) => {
-                        let crossed = self.warps.lock().unwrap_or_else(|e| e.into_inner()).entry(key).or_insert_with(|| {
-                            let c: Vec<(f64,u32,u32)> = station.crossings(&traced.curve).into_iter()
-                                .filter(|c| c.0 > self.span[0] && c.0 < self.span[1]).collect();
-                            if c.iter().map(|c| (c.1,c.2)).eq(a.order.iter().copied()) { c.iter().map(|c| c.0).collect() } else { Vec::new() }
-                        }).clone();
+                        let known = self.warps.lock().unwrap_or_else(|e| e.into_inner()).get(&key).cloned();
+                        let crossed = known.unwrap_or_else(|| {
+                            let c = station.crossings_within(&traced.curve,self.span);
+                            let crossed: Vec<f64> = if a.crosses(&c) { c.iter().map(|c| c.0).collect() } else { Vec::new() };
+                            self.warps.lock().unwrap_or_else(|e| e.into_inner()).entry(key).or_insert(crossed).clone()
+                        });
                         let taus: Vec<f64> = missing.iter().map(|&x| a.walk(self.span[0],self.span[1],&crossed,x)).collect();
                         self.tracer.along(station,&traced.curve,&taus)?
                     }

@@ -2,7 +2,7 @@
 //! each face the space leaves held to the analytic envelope its name says (#212) — the crown face
 //! that made it, under its member's generating roll — with independent contact and indexing checks.
 use super::*;
-use gcs_core::{diagnose,modules,program,solid::RevolvedSurface,solve};
+use gcs_core::{diagnose,modules,program,solid::RevolvedSurface,solve,space};
 use std::f64::consts::{FRAC_PI_2,PI,TAU};
 
 mod boundary;
@@ -92,27 +92,34 @@ struct Built { paths: Vec<gcs_core::solid::faces::FacePath>,meets: std::collecti
 const BUILT_MODULE: f64 = 2.;
 
 impl Built {
+    /// Member `member`'s faces, both members built once per tooth counts, whichever test asks
+    /// first (the others wait for it).
     fn read(member: &str,teeth: [u32;2]) -> Built {
-        static BUILT: std::sync::Mutex<Vec<((String,[u32;2]),Built)>> = std::sync::Mutex::new(Vec::new());
-        let key = (member.to_string(),teeth);
-        if let Some((_,b)) = BUILT.lock().unwrap().iter().find(|(k,_)| *k == key) { return b.clone() }
-        let model = read_model_with(include_str!("../../../examples/spiral_bevel/gears.sv"),teeth,BUILT_MODULE,true);
+        use std::{collections::BTreeMap,sync::{Arc,Mutex,OnceLock}};
+        static BUILT: Mutex<BTreeMap<[u32;2],Arc<OnceLock<[Built;2]>>>> = Mutex::new(BTreeMap::new());
+        let cell = BUILT.lock().unwrap().entry(teeth).or_default().clone();
+        let both = cell.get_or_init(|| {
+            let model = read_model_with(include_str!("../../../examples/spiral_bevel/gears.sv"),teeth,BUILT_MODULE,true);
+            ["pinion","gear"].map(|member| Built::of(&model,member,teeth))
+        });
+        both[usize::from(member == "gear")].clone()
+    }
+
+    fn of(model: &program::Elaborated,member: &str,teeth: [u32;2]) -> Built {
         let body = model.map.ent_named(&format!("pair.{member}.body")).unwrap().i();
         let faces = gcs_core::solid::faces::BodyFaces::read(&model.sketch,body)
             .unwrap_or_else(|why| panic!("teeth {teeth:?}: {why}"));
         let n = faces.paths().len();
         let meets = (0..n).flat_map(|a| (a+1..n).map(move |b| (a,b))).filter(|&(a,b)| !faces.edges_between(&[a],&[b]).is_empty()).collect();
         let corners = (0..faces.brep().0.vertices.len() as u32).map(|v| faces.faces_at(v,&[])).collect();
-        let built = Built {paths:faces.paths().to_vec(),meets,corners};
-        BUILT.lock().unwrap().push((key,built.clone()));
-        built
+        Built {paths:faces.paths().to_vec(),meets,corners}
     }
 }
 
 /// What a face of a built member is to the checks: a face its cut left, by what they call its
 /// cutter face, or one of its blank's, by its term.
 #[derive(Clone,Debug,PartialEq)]
-enum Role { Cut(String),Wall(String) }
+enum Role { Cut(String,usize),Wall(String) }
 
 impl Pair {
     // Only explicit CAD export entry points consume these overrides; ordinary
@@ -178,7 +185,7 @@ impl Pair {
                         // outer and inner mates' (the space cutter's own crown and its neighbour)
                         let rack = if m == 0 { "pinion" } else if path.face.starts_with("outer_crown.") { "gear_outer" } else { "gear_inner" };
                         let face = path.face.rsplit('.').next().unwrap();
-                        Role::Cut(format!("faces.{rack}_{face}@{solid}"))
+                        Role::Cut(format!("faces.{rack}_{face}"),solid)
                     }
                 });
             }
@@ -192,7 +199,7 @@ impl Pair {
             let meets = |a: &[usize],b: &[usize]| a.iter().any(|&x| b.iter().any(|&y| built.meets.contains(&(x.min(y),x.max(y)))));
             let tips = fi_of(&Role::Wall("tip".into()));
             let cut: Vec<(usize,String,usize)> = roles.iter().enumerate().filter_map(|(i,r)| match r {
-                Role::Cut(l) => { let (label,solid) = l.split_once('@').unwrap(); Some((i,label.to_string(),solid.parse().unwrap())) }
+                Role::Cut(label,solid) => Some((i,label.clone(),*solid)),
                 _ => None,
             }).collect();
             let surface_of = |solid: usize,name: &str,label: &str| -> (RevolvedSurface,gcs_core::model::EntRef) {
@@ -216,6 +223,7 @@ impl Pair {
                     [(a,0),(b,1)].into_iter().find_map(|(x,i)| if x == p { Some((e,i,0)) } else if x == q { Some((e,i,1)) } else { None })
                 }).collect()
             };
+            let blank = gcs_core::solid::RevolvedRegion::read(sk,blanks[m],module*1e-10).unwrap();
             let mut corner_ids: BTreeMap<String,usize> = BTreeMap::new();
             let mut root_face = None;
             for (side,flank_name) in (if m == 0 { ["outer","inner"] } else { ["inner","outer"] }).into_iter().enumerate() {
@@ -244,8 +252,7 @@ impl Pair {
                 assert_eq!(root_face,Some(bottom[0]),"{member}: the space has one bottom");
                 for (l,s,e) in [(&label,&flank,flank_edge),(&round_label,&round,round_edge),(&root_label,&root,root_edge)] {
                     let env = envelope::GeneratedEnvelope::new(format!("{l}_envelope"),s.clone(),motion_families[m].clone(),[-roll,roll]).unwrap();
-                    let region = gcs_core::solid::RevolvedRegion::read(sk,blanks[m],module*1e-10).unwrap();
-                    regions.insert(l.clone(),gcs_core::patch::TrimmedPatch::of_envelope(format!("{l}_region"),env.clone(),vec![region],vec![]));
+                    regions.insert(l.clone(),gcs_core::patch::TrimmedPatch::of_envelope(format!("{l}_region"),env.clone(),vec![blank.clone()],vec![]));
                     envelopes.insert(l.clone(),env);
                     surfaces.insert(l.clone(),(s.clone(),solid,e));
                 }
@@ -420,7 +427,6 @@ impl Pair {
 
     /// What the checks call a cutter face, `faces.pinion_outer`, which is its surface's name — a
     /// flank's the prefix of the seams, corners, edges and faces its side has.
-    fn label<'a>(&self,surface: &'a RevolvedSurface) -> &'a str { &surface.name }
 
     fn body(&self, member: usize, t: f64) -> Motion {
         let d = self.delta[member];
@@ -434,7 +440,7 @@ impl Pair {
     }
 
     fn seam(&self,flank: &RevolvedSurface,root: bool) -> &gcs_core::seam::EnvelopeSeam {
-        &self.seams[&format!("{}.{}join",self.label(flank),if root { "root_" } else { "" })]
+        &self.seams[&format!("{}.{}join",flank.name,if root { "root_" } else { "" })]
     }
 
     fn seam_at(&self,member: usize,seam: &gcs_core::seam::EnvelopeSeam,rho: f64)
@@ -528,7 +534,7 @@ fn finite_edges_follow_independent_characteristics_and_declared_axial_slices() {
                     let flank = pair.patch(member,side,name);
                     let round = pair.patch(member,side,&format!("{name}_round"));
                     for role in ["tip","join","root","toe","heel","round_toe","round_heel"] {
-                        let edge = &pair.edges[&format!("{}.{role}_span",pair.label(&flank))];
+                        let edge = &pair.edges[&format!("{}.{role}_span",flank.name)];
                         let source = if role == "root" || role.starts_with("round_") { &round } else { &flank };
                         let [a,b] = edge.endpoints().map(|p| frame.point(p.position));
                         for fraction in [0.,0.25,0.5,0.75,1.] {
@@ -592,12 +598,12 @@ fn declared_boundary_seams_match_independent_spheres_and_tip_cones_across_sizes_
                         near(tip.contact.position,expected.contact.position,module*1e-7);
                         if fraction == 1. { continue; }
                         let end = if fraction < 1. { "toe" } else { "heel" };
-                        let corner = pair.corners[&format!("{}.tip_{end}",pair.label(&flank))];
+                        let corner = pair.corners[&format!("{}.tip_{end}",flank.name)];
                         near(corner.parameters,expected.parameters,1e-8);
                         near(pair.local_frame(member).point(corner.position),expected.contact.position,module*1e-7);
                         for source in [&flank,&round] {
                             let role = if source.name == flank.name { "" } else { "round_" };
-                            let seam = &pair.boundary_seams[&format!("{}.{role}{end}_edge",pair.label(&flank))];
+                            let seam = &pair.boundary_seams[&format!("{}.{role}{end}_edge",flank.name)];
                             for s in [0.2,0.5,0.8] {
                                 let u = if source.name == flank.name {
                                     join+s*(expected.parameters[0]-join)
@@ -656,7 +662,7 @@ fn declared_seams_agree_with_independent_characteristics_across_ratios_and_sizes
                             if fraction != 1. {
                                 let end = if fraction < 1. { "toe" } else { "heel" };
                                 let role = if root { "root" } else { "join" };
-                                let corner = pair.corners[&format!("{}.{role}_{end}",pair.label(&flank))];
+                                let corner = pair.corners[&format!("{}.{role}_{end}",flank.name)];
                                 near(corner.parameters,expected.parameters,1e-8);
                                 near(pair.local_frame(member).point(corner.position),expected.contact.position,module*1e-7);
                             }
@@ -783,28 +789,28 @@ fn the_gears_inner_mate_is_its_space_cutters_neighbour_one_tooth_over() {
     let unplaced = pair.patch(1,1,"outer");
     let frame = pair.local_frame(1);
     let pitch = TAU/pair.teeth[1];
+    let [_,v,roll] = placed.domain();
+    // turned a tooth one way or the other about the gear's axis (local z): the first point says
+    // which, and every other is held to it
+    let mut senses = vec![-1.,1.];
     for u in [0.2,0.5,0.8] {
         for rho in [0.95*pair.rm,1.05*pair.rm] {
             let c = pair.analytic(1,&unplaced,u,rho);
-            // turned a tooth either way about the gear's axis (local z), one of them on the placed
-            let d = [-1.,1.].map(|sense| {
+            let off = |sense: f64| {
                 let q = frame.inverse().point(rotate(2,sense*pitch,0.).point(c.contact.position));
-                let n = frame.inverse().vector(rotate(2,sense*pitch,0.).vector(c.contact.normal));
-                let a = if n[0].abs() < 0.9 { [1.,0.,0.] } else { [0.,1.,0.] };
-                let e1 = { let x = [n[1]*a[2]-n[2]*a[1],n[2]*a[0]-n[0]*a[2],n[0]*a[1]-n[1]*a[0]];
-                    let l = x.iter().map(|v| v*v).sum::<f64>().sqrt(); x.map(|v| v/l) };
-                let e2 = [n[1]*e1[2]-n[2]*e1[1],n[2]*e1[0]-n[0]*e1[2],n[0]*e1[1]-n[1]*e1[0]];
-                let [_,v,roll] = placed.domain();
+                let (e1,e2) = space::across(frame.inverse().vector(rotate(2,sense*pitch,0.).vector(c.contact.normal)));
                 (0..=72).flat_map(|i| (0..=24).map(move |j| (i,j))).find_map(|(i,j)| {
                     let seed = [u,v[0]+(v[1]-v[0])*i as f64/72.,roll[0]+(roll[1]-roll[0])*j as f64/24.];
-                    placed.intersect(|_,c| { let x: [f64;3] = std::array::from_fn(|k| c.position[k]-q[k]);
-                        [(0..3).map(|k| x[k]*e1[k]).sum(),(0..3).map(|k| x[k]*e2[k]).sum()] },seed,IntersectionOptions {
-                        bounds:[[u,u],v,roll],parameter_scale:[1.;3],residual_tolerance:[1e-10,1e-11,1e-10],max_iterations:50}).ok()
-                        .map(|found| (0..3).map(|k| (found.contact.position[k]-q[k]).powi(2)).sum::<f64>().sqrt())
-                        .filter(|&d| d < 1e-7)
+                    placed.intersect(|_,c| { let x = space::sub(c.position,q); [space::dot(x,e1),space::dot(x,e2)] },seed,
+                        IntersectionOptions {bounds:[[u,u],v,roll],parameter_scale:[1.;3],residual_tolerance:[1e-10,1e-11,1e-10],
+                        max_iterations:50}).ok()
+                        .map(|found| space::distance(found.contact.position,q)).filter(|&d| d < 1e-7)
                 }).unwrap_or(f64::INFINITY)
-            });
-            assert!(d[0].min(d[1]) < 1e-7,"u {u}, rho {rho}: {d:?} off the placed neighbour");
+            };
+            let d: Vec<(f64,f64)> = senses.iter().map(|&s| (s,off(s))).collect();
+            let best = d.iter().copied().min_by(|a,b| a.1.total_cmp(&b.1)).unwrap();
+            assert!(best.1 < 1e-7,"u {u}, rho {rho}: {d:?} off the placed neighbour");
+            senses = vec![best.0];
         }
     }
 }

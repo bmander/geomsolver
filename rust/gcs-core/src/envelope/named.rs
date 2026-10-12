@@ -36,9 +36,6 @@ impl GeneratedEnvelope {
         Ok(Self {name,roll,surface,motion})
     }
 
-    /// The surface the motion carries.
-    pub fn surface(&self) -> &RevolvedSurface { &self.surface }
-
     /// Evaluate the defining equation and moving contact data at a trial [u,v,roll].
     /// The first two parameters traverse the source patch; roll is radians. A nonzero
     /// normal_velocity is a point off the envelope, not a valid generated surface point.
