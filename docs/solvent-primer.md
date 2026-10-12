@@ -132,6 +132,7 @@ cycle N [as i] { ... }                  N copies that close; `next`, `prev` in s
 ring N about C { ... }                  N copies, each the first turned about C
 repeat e in CHAIN [as i] { ... }        a copy per link of a named chain (`cycle e in` closes)
 repeat a in SOLID [if ...] { ... }      a copy per face of a solid                   (1.14)
+when COND { ... }                       made once where COND holds, else not at all  (1.7)
 LHS <= RHS | LHS >= RHS                 in a set's body: a bound on measurements     (1.14)
 NAME := INSTANCE.POINT over FORMAL in (A, B)   a curve                               (1.10)
 NAME := Component(ARGS).POINT over FORMAL in (A, B)
@@ -381,6 +382,28 @@ close, with `next` and `prev` in scope. `as i` binds the index; copies are reach
 a `cycle` wraps, closing the loop with no `close`; a `repeat` leaves its last joint unstated, so
 `repeat N { line -> angle(a) }` is an open polyline. `cycle 4 { (s := line) -> perpendicular equal
 }` is a square but for size and pose (2.7).
+
+**A block made or not.** `when COND { … }` makes its body once where the condition holds and not
+at all where it does not, decided over the numbers in scope before the solve: comparisons (`<`,
+`<=`, `>`, `>=`, `==`, `!=`) of two numbers of one dimension — `relief > 0mm`, never `relief > 0`
+(E103) — joined by `and`, `or` and `not`. There is no copy: what the body declares keeps its own
+name (`q`, `t.tip`, never `q[0]`), and is undefined where the block is not made. Refused: an
+unknown of the drawing in the condition (E040), an index, a trailing joint.
+
+```
+unit mm
+use std
+
+relief := 0.2mm
+
+in std.front {
+  a := point
+  when relief > 0mm {
+    q := point hint((8, 3))
+    a distance(10mm) q
+  }
+}
+```
 
 **A ring is a cycle whose copies are turns.** `ring N about C { … }` makes N copies, each the first
 (the *representative*) turned `k · 360°/N` about `C`: a point (counter-clockwise in its view, the
@@ -1152,6 +1175,9 @@ pad.boss round(r: 3mm) pad.plate     // where the boss stands on the plate
   the boss gave), `pad.plate.near`, read from the solid through its operands' names, never by
   suffix. Faces that do not meet make nothing; a face a Boolean ate names nothing.
 - Each acts on the body after its other terms: a round reads the faces the cuts and unions left.
+- Where two faces meet tangent there is no edge: a chain of tangent edges (an obround's foot, a
+  rounded pocket's rim) is rounded as one run. A run that ends on a face it does not round is
+  carried on past its edge's end and cut off by that face, however the face stands.
 
 They are written in Solvent (`rust/lib/std.sv`), from region bodies you can write yourself
 (`rust/examples/rounds/by_hand.sv` rounds one edge in about twenty lines):
@@ -1164,7 +1190,8 @@ They are written in Solvent (`rust/lib/std.sv`), from region bodies you can writ
 | `distance(p, f1) + distance(p, f2) <= 10mm` | a bound on measurements (an ellipsoid by its foci) |
 | `crease := { q \| q coincident a; q coincident b }` | the edge where faces `a` and `b` meet |
 | `angle(a, b, at: p) <= 180deg` | at a convex edge (the material's angle there) |
-| `p inside crease.ends` | stopped by the faces the edge ends on |
+| `p inside crease.ends` | stopped by the faces the edge ends on (none at a tangent seam) |
+| `meeting := { q \| q coincident a.surface; q coincident b.surface; q inside crease.ends }` | where the surfaces meet, short of where the edge ends |
 | `repeat a in A { repeat b in B if b != a { … } }` | a copy per pair of faces |
 | `taken := solid(run)`, `taken cut A.body` | a solid of a set, cut from the body `A`'s faces are of |
 

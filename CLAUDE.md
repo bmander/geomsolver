@@ -279,8 +279,11 @@ F.surface`, a distance from a point) is the nearest point by sequential projecti
 conditions linearised (each step a ≤3-active QP, exact). `d(p, E) <= d(p, M)` with `E` on the
 patches of the faces `M` is on the surfaces of is read as `d(p, E) − d(p, rest)` (`Rest`: `M`'s
 nearest point when off `E`, and where `E`'s run ends), the same points with a negative inside.
-`ends` is `max σ·side` over the faces at each end of the run (σ the side it runs on); a closed run
-ends nowhere. `edge` and `seam` are element keywords: a set may not be called so.
+`ends` is `max σ·side` over the faces at each end of the run (σ the side it runs on), a face
+carrying one of the run's on across a tangent seam none (`BodyFaces::continues`); a closed run
+ends nowhere. In a set measured from, `q inside S.ends` is one condition per such face, and `Rest`
+keeps an end of `E` only where `M` carries on past it within them: std's `meeting` is cut so, and
+a run is carried past its edge's end and cut off by the face it ends on (#195). `edge` and `seam` are element keywords: a set may not be called so.
 **Rounds and chamfers are words of `std.sv`** (#183 steps 4–7). `repeat a in X` over a solid (a
 face path) runs over its faces (F4): set aside, and where the faces are not given the elaborator
 names them once the solids are built (`solid::faces::face_paths`, structural: each primitive's
@@ -303,27 +306,32 @@ equality its body states is a bound at its number, `in: (d, d)` (`Written::held`
 and `region_term` reads every probe by one rule. **Lowering** (step 7, `solid::region::lowering`): a `Rounded`/`Chamfered`
 term whose sets are two of the region's own bounds (same measure, at its level, moved in by the
 radius for a round's centres) is built in the meridian by X1's construction (`brep::corners`,
-moved from `tests/fillet_meridian.rs`), refused (and read by the field) at a charted corner or a
-flat between curved steps. `tests/rounds.rs` is the gate (X2's closed forms in the slow tier).
+moved from `tests/fillet_meridian.rs`) — a round at any corner of lines and arcs, an offset
+cone's generator and rounded apex included (#207) — and held to the region read point by point
+beside each face (`region::agrees`; a disagreement is read by the field); refused (and read by the
+field) at a charted corner (none a meridian folds) or a flat beside an arc (the sum of distances
+bows there, #208). `tests/rounds.rs` is the gate (X2's closed forms in the slow tier),
+`tests/offset_corners.rs` (Pappus, `rounds/blank.sv`) the offset cone's.
 **Rounds built exactly: the lowering table** (#194, #183 L7, `solid::lowering`): a region over a
 body's faces is recognised by its terms' shapes (`recognised`: two or three `FaceSide`s alike, an
-`Angle` gate per pair at a half turn, the common-part-against-meeting sum, an `Ends` per pair, and
+`Angle` gate per pair at a half turn, the common-part-against-meeting sum (the meeting cut or not
+where its edge ends, `meeting_of`: std's is, #195), an `Ends` per pair, and
 one bound saying the section — a ball's `centres` set or a flat's sum), **never by a word's name**
 (`by_hand.sv`'s own `Rolled` is built by the same entry), read off the stratum (`faces::cached`,
 `BodyFaces::plane`/`cylinder`/`segment`/`circle`/`coaxial`/`normal`) into **pieces**, one per edge
 where a face reference names a face in pieces (`run`: every edge between the two groups, each kept
 within the whole run's ends, as the field reads them): `Run` (the section along a straight edge
 between planes, or a plane and a cylinder about a line along it — the section's `Trace`s a line and
-a circle, the ball where their offsets meet — cut off by the plane faces its ends stand on: a square one is its
-slab's end, one at a slant reaching into the prism a half-space it is kept within, `Run::within`,
-the recipe's `"within"` (a run-out); a curved end refused, `unbuilt`), `Ring` (a circle where a
+a circle, the ball where their offsets meet — carried on past each end until the plane faces it
+ends on cut it off (#195's meaning: a square one is the prism's end, one at a slant a half-space it
+is kept within, `Run::within`, the recipe's `"within"` as a point and a normal; a run-out); a face
+along the edge or a curved end refused, `unbuilt`), `Ring` (a circle where a
 plane meets a coaxial cylinder or cone: the section in the meridian at its start turned through its
 angle, `Ring::angle`; a sphere centred on the axis is a circle in the meridian (`Trace::Circle`,
 `knob.sv`'s neck); a stretch only where its ends are seams or planes through the axis at its
 ends' meridians), a run and a stretch going on from one
-another **glued** at their shared section. A face going on tangent from one of a run's faces at its
-end is no end (`BodyFaces::end_sides`, the field's and the lowering's one rule: a seam, the round
-goes on round it; else the obround's flat side cut its half circle's round short),
+another **glued** at their shared section (a face going on tangent across a seam is no end,
+`BodyFaces::continues`, the field's and the lowering's one rule),
 `Corner` (three square planes: the cell less the ball, `brep::fillet::corner`, plus each edge's
 run), `Rolled` (along an edge no line or coaxial circle carries — a tee's crotch, a bore's rim, a
 run-out across a slope: the ball rolled along the whole run, `brep::fillet::roll`, its canal
@@ -493,6 +501,17 @@ by index (`judge_rings`, curves through their instances' arguments), E022 a ring
 what a ring cannot turn (`rings.rs`). The ring's own turn is gauged outside (`hub horizontal
 tip[0]`). `std.Polygon`, `gear.sv`, `gear_trace.sv`, `ngon.sv` and the Wankel rotor are rings;
 `tests/ring.rs` and `tests/turns.rs` are the gates.
+
+**`when COND { … }`, a block made or not (§12.9, 0.72, #210):** `BlockKind::When`, the condition
+in `Block::count` (`head` its span). The flattener decides it over the scope's `vals`
+(`flatten::values::condition`: E101 a name nothing gives a number, E040 one that is or reads an
+unknown, E103 two dimensions, E107 a measurement) and walks the body once in the enclosing scope
+with its own copy of `vals` — no `PathStep`, no prefix, so names are the scope's (`q`, `t.tip`).
+`expr::Cond` (`Cmp` `<`…`!=`, `and`/`or`/`not`) is made only by `expr::parse_condition_in` and
+read by `expr::decide`; no `Ast` holds one, and its sides agree as `+`'s (`> 0mm`, never `> 0`).
+The parser refuses `as`, a trailing joint and `when e in X`; the measured-bound sniff skips a
+statement an opener word starts. `commit_seeds` writes into a root `when`'s body. The hypoid's
+tip relief is one (`layout.sv`, `members.sv`). `tests/when.rs` is the gate.
 
 **Axes** (`docs/planes-plan.md`, #81): `t := axis hint(dir: (x, y, z))` is a directed line in space,
 `AxisE { d, a, placed }`: a unit direction (`axis_unit`, intrinsic, held like `quat_unit` when `fix`

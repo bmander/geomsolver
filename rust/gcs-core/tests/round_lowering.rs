@@ -13,7 +13,7 @@ use gcs_core::solve::{solve, SolveOpts};
 use std::f64::consts::PI;
 
 use crate::common::{ent, read};
-use crate::fillet_meridian::root_ring;
+use crate::fillet_definition::root_ring;
 
 fn solved(src: &str) -> Elaborated {
     let mut e = read(src);
@@ -192,24 +192,26 @@ fn a_bosss_root_is_a_ring_exactly() {
 }
 
 /// **A run-out** (#110): a run cut off by a face its edge ends on at a slant. The block's east side
-/// leans in (its top 10 short of its foot) and its west side leans out (10 past), and only its
-/// near face's south edge is rounded. At the east end the face reaches into the run's prism and
-/// cuts it off: the length kept at height `z` above the edge is `40 − (10/24)·z`, so the run takes
-/// its section's area along 40 less `(10/24)·z̄` of it, `z̄ = r(10 − 3π)/(12 − 3π)` its centroid's
-/// height. At the west end the face leans away, and the run stops square at the edge's end, as
-/// the slab its nearest point of the meeting must be on says.
+/// leans in (its top 10 short of its foot) and its west side leans out (5 past), and only its near
+/// face's south edge is rounded. The run is carried on past each end of its edge and cut off there
+/// by the face it ends on, however it stands (#195). At the east end the face reaches into the
+/// run's prism: the length kept at height `z` above the edge is short of 40 by `(10/24)·z`. At the
+/// west end it leans away, and the run carries on past the edge's end, `(5/24)·z` at height `z`.
+/// So the run takes its section's area along 40, less `(10/24 − 5/24)·z̄` of it, `z̄ = r(10 −
+/// 3π)/(12 − 3π)` its centroid's height.
 #[test]
 fn a_run_cut_off_at_a_slant_by_the_face_it_ends_on() {
-    let src = BLOCK.replace("fix((40, 24)) b2", "fix((30, 24)) b2").replace("fix((0, 24)) b3", "fix((-10, 24)) b3");
+    let src = BLOCK.replace("fix((40, 24)) b2", "fix((30, 24)) b2").replace("fix((0, 24)) b3", "fix((-5, 24)) b3");
     let e = solved(&format!("{src}block.near round(r: 2mm) block.south\n"));
     assert_eq!(lowered(&e), (1, 1));
     let b = exported(&e, "block");
     let (area, zbar) = spandrel(2.0);
-    let want = 40.0 * 24.0 * 12.0 - area * 40.0 + 10.0 / 24.0 * zbar * area;
+    let want = (40.0 + 35.0) / 2.0 * 24.0 * 12.0 - area * 40.0 + (10.0 - 5.0) / 24.0 * zbar * area;
     close(props::volume(&b), want);
-    assert_eq!(kinds(&b), [("cylinder", 1), ("plane", 7)].into());
-    // the app builds a solid about its own origin (`cad::shifted`): the plane the run is kept
-    // behind moves with the rest (a cut's volume cannot tell, its prism past the face cutting air)
+    // running out flush into the west face, it leaves no sliver of the near face there
+    assert_eq!(kinds(&b), [("cylinder", 1), ("plane", 6)].into());
+    // the app builds a solid about its own origin (`cad::shifted`): the planes the run is kept
+    // behind move with the rest (a cut's volume cannot tell, its prism past a face cutting air)
     let recipe = gcs_core::solid::cad::recipe(&e.sketch, ent(&e, "block").i()).unwrap();
     let by = [5.0, 7.0, 11.0];
     let planes = |r: &gcs_core::json::Json| -> Vec<[f64; 3]> {
@@ -219,7 +221,7 @@ fn a_run_cut_off_at_a_slant_by_the_face_it_ends_on() {
             .collect()
     };
     let (before, after) = (planes(&recipe), planes(&gcs_core::solid::cad::shifted(&recipe, by)));
-    assert_eq!(before.len(), 1);
+    assert_eq!(before.len(), 2);
     assert!(before.iter().zip(&after).all(|(p, q)| (0..3).all(|k| (p[k] - by[k] - q[k]).abs() < 1e-12)));
 }
 
@@ -257,7 +259,7 @@ fn a_round_no_entry_builds_is_refused_by_name() {
 
 /// A round section's area beside a square corner, `(1 − π/4)r²`, and how far its centroid stands
 /// off each face, `r(10 − 3π)/(12 − 3π)`. (Turned about an axis `R` from the corner, Pappus:
-/// `fillet_meridian::root_ring`.)
+/// `fillet_definition::root_ring`.)
 fn spandrel(r: f64) -> (f64, f64) {
     ((1.0 - PI / 4.0) * r * r, r * (10.0 - 3.0 * PI) / (12.0 - 3.0 * PI))
 }
@@ -347,12 +349,12 @@ fn a_rings_stretch_ends_on_a_plane_through_its_axis() {
 
 /// `knob.sv` (#83's knob): the rod's root a ring between a plane and a cylinder, its neck one
 /// between a cylinder and a sphere — in the meridian the sphere is a circle, the neck's section
-/// the rod's line, the rolled ball's arc and the ball's own arc (`fillet_meridian::knob_closed_form`).
+/// the rod's line, the rolled ball's arc and the ball's own arc (`fillet_meridian::knob_rounded`).
 #[test]
 fn a_knobs_neck_turns_a_section_with_a_curved_side() {
     let e = solved(include_str!("../../examples/rounds/knob.sv"));
     let b = exported(&e, "knob");
-    close(props::volume(&b), crate::fillet_meridian::knob_closed_form().2);
+    close(props::volume(&b), crate::fillet_meridian::knob_rounded([0.0, 44.0], 8.0, 4.0, 1.5));
     assert_eq!(kinds(&b).get("torus"), Some(&2));
 }
 
@@ -402,25 +404,45 @@ fn a_bores_rim_on_a_pipe_is_rolled_away() {
     near_quadrature(props::volume(&b), want);
 }
 
+/// Of a disc of radius `r`, the segment beyond a chord `d` from its centre: its area, and how far
+/// its centroid stands from the centre.
+fn segment(r: f64, d: f64) -> (f64, f64) {
+    let half = (d / r).acos();
+    let area = r * r * half - d * (r * r - d * d).sqrt();
+    (area, 2.0 * (r * r - d * d).powf(1.5) / (3.0 * area))
+}
+
 /// `runout.sv` (#110's run-outs): a boss's root against a sloped top, ending obliquely at the
 /// wedge's near face, and a hole's rim on another's slope, breaking out of its low end — each a
-/// ball rolled along a traced run, carried on past each end and cut off by the face there, held
-/// to the field (its run stops square to its edge where that is within the face: the same). With
-/// the boss centred on the near face the face cuts the root square, and it is half of a whole
-/// boss's root on the slope (#85's quadrature).
+/// ball rolled along a traced run, carried on past each end and cut off by the face there (#195).
+/// Each is held to #85's quadrature cut off by the same plane (`fillet_definition::sloped`):
+///
+/// - the lug: the wedge, plus the boss above the slope (all of it, less the part of its disc short
+///   of the near face under the slope, at its centroid's height 15), plus the root;
+/// - the vent: the block less the hole's disc short of the low end, under the slope (at its
+///   centroid's height), less the rim.
+///
+/// With the boss centred on the near face, the face cuts the root square: half a whole boss's root.
 #[test]
 fn rounds_that_run_out_onto_a_face_are_rolled_and_cut_off() {
+    use crate::fillet_definition::{sloped, sloped_root, RIM, ROOT};
     let src = include_str!("../../examples/rounds/runout.sv");
     let e = solved(src);
     assert_eq!(lowered(&e).0, 2);
-    let (lug, vent) = (exported(&e, "lug"), exported(&e, "vent"));
-    assert!(props::volume(&lug) > 40.0 * 15.0 * 24.0 && props::volume(&vent) < 40.0 * 15.0 * 24.0);
+    let wedge = 40.0 * 15.0 * 24.0;
+    let (seg, _) = segment(6.0, 3.0);
+    let lug = wedge + PI * 36.0 * 30.0 - 15.0 * (PI * 36.0 - seg)
+        + sloped(6.0, [20.0, -3.0], [20.0, 0.25], 2.0, ROOT, Some(([0.0, 1.0, 0.0], 0.0)));
+    near_quadrature(props::volume(&exported(&e, "lug")), lug);
+    let (seg, off) = segment(4.0, 2.0);
+    let short = PI * 16.0 - seg;
+    let x = (98.0 * PI * 16.0 - (98.0 + off) * seg) / short;
+    let vent = wedge - (35.0 - 0.25 * x) * short
+        - sloped(4.0, [98.0, -12.0], [35.0, 0.25], 1.0, RIM, Some(([1.0, 0.0, 0.0], 100.0)));
+    near_quadrature(props::volume(&exported(&e, "vent")), vent);
     let centred = solved(&src.replace("fix((20, -3)) bc", "fix((20, 0)) bc"));
     let b = exported(&centred, "lug");
-    // the wedge, the boss less its half within the wedge (under the slope, at its centroid's
-    // height 15), and half the root
-    let want = 40.0 * 15.0 * 24.0 + PI * 36.0 * 30.0 - 15.0 * PI * 18.0
-        + crate::fillet_definition::sloped_root(6.0, [20.0, 0.0], [20.0, 0.25], 2.0) / 2.0;
+    let want = wedge + PI * 36.0 * 30.0 - 15.0 * PI * 18.0 + sloped_root(6.0, [20.0, 0.0], [20.0, 0.25], 2.0) / 2.0;
     near_quadrature(props::volume(&b), want);
 }
 

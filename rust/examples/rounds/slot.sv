@@ -1,17 +1,16 @@
-// A plate with an obround boss standing on it and a pocket with rounded corners cut into it,
-// each rounded along a chain of edges that meet tangent: the boss's foot along its flat sides and
-// round its half-circle ends, the pocket's rim along its walls and round its corners. A chain is
-// not a statement of its own. Where two faces meet tangent there is no corner, so nothing ends a
-// round there: the run along a flat side and the ring round the half circle beside it each stop at
-// the section they share. Built exactly: each run a prism whose face is a cylinder, each stretch
-// of a ring a torus's.
+// A plate with an obround boss standing on it and a pocket with rounded corners cut into it, each
+// rounded where it meets the plate: rounds carried along chains of tangent edges. The boss's foot
+// runs along its two sides and round its half-circle ends; the pocket's rim along its four sides
+// and round its four corners. A chain is not a statement of its own: where two faces meet tangent
+// there is no edge, so a run reaching such a seam ends there, and the next run carries on from it
+// with no step between them.
 //
-// Edit `r_foot`, `r_rim` or the obround's length and apply (⌘↵).
+// The foot is concave, so its round fills; the rim is convex, so its round cuts. Only where the
+// pocket's walls meet the plate's near face is rounded: the pocket's floor meets only the pocket's
+// own walls, and stays sharp. Orbit (right-drag) to see both chains. Edit a radius and apply
+// (⌘↵); the surfaces refine in the background.
 unit mm
 use std (round)
-
-r_foot := 2mm   // the boss's foot, filled
-r_rim := 1mm    // the pocket's rim, taken away
 
 in std.front {
   // the plate, 80 × 50
@@ -26,7 +25,7 @@ in std.front {
   (ab := line(p0, p1)) -> (bc := line(p1, p2)) -> (cd := line(p2, p3)) -> (da := line(p3, p0)) -> close
   top := face(ab, bc, cd, da)
 
-  // the boss: an obround 12 wide, its ends half circles about centres 18 apart
+  // the boss: an obround 30 long and 12 wide, its ends half circles about centres 18 apart
   o0 := point
   o1 := point
   fix((11, 25)) o0
@@ -39,8 +38,8 @@ in std.front {
   fix((29, 19)) s1
   fix((29, 31)) s2
   fix((11, 31)) s3
-  (near_side := line(s0, s1)) -> (east := arc(center: o1, start: s1, end: s2) hint(r: 6)) ->
-    (far_side := line(s2, s3)) -> (west := arc(center: o0, start: s3, end: s0) hint(r: 6)) -> close
+  (near_side := line(s0, s1)) -> (east := arc(center: o1) hint(r: 6)) -> (far_side := line(s2, s3)) ->
+    (west := arc(center: o0) hint(r: 6)) -> close
   outline := face(near_side, east, far_side, west)
 
   // the pocket: 20 × 16, its corners rounded to 4 in the sketch
@@ -68,10 +67,10 @@ in std.front {
   fix((52, 33)) q5
   fix((48, 29)) q6
   fix((48, 21)) q7
-  (bottom := line(q0, q1)) -> (corner1 := arc(center: k1, start: q1, end: q2) hint(r: 4)) ->
-    (right := line(q2, q3)) -> (corner2 := arc(center: k2, start: q3, end: q4) hint(r: 4)) ->
-    (upper := line(q4, q5)) -> (corner3 := arc(center: k3, start: q5, end: q6) hint(r: 4)) ->
-    (left := line(q6, q7)) -> (corner0 := arc(center: k0, start: q7, end: q0) hint(r: 4)) -> close
+  (bottom := line(q0, q1)) -> (corner1 := arc(center: k1) hint(r: 4)) -> (right := line(q2, q3)) ->
+    (corner2 := arc(center: k2) hint(r: 4)) -> (upper := line(q4, q5)) ->
+    (corner3 := arc(center: k3) hint(r: 4)) -> (left := line(q6, q7)) ->
+    (corner0 := arc(center: k0) hint(r: 4)) -> close
   mouth := face(bottom, corner1, right, corner2, upper, corner3, left, corner0)
 }
 plate := solid(top, depth: 10mm)
@@ -81,8 +80,7 @@ part := solid(plate)
 boss union part
 pocket cut part
 
-// The boss's foot: concave, so filled, along four edges.
-part.boss round(r: r_foot) part.plate
-// The pocket's rim: convex, so taken away, along eight. Only where the pocket's walls meet the
-// plate's near face: its floor's edges are the pocket's against the pocket's, and stay sharp.
-part.plate round(r: r_rim) part.pocket
+// the boss's foot: one chain of four edges, filled
+part.boss round(r: 2mm) part.plate
+// the pocket's rim: one chain of eight edges, cut
+part.plate round(r: 1mm) part.pocket

@@ -73,9 +73,14 @@ impl Run {
         self.strokes.iter().find_map(|(s, _)| match *s { Stroke::Arc { centre, .. } => Some(centre), _ => None })
     }
 
-    /// Points at both ends of the prism whose hull holds it: each line's ends, and each arc's
-    /// with the point its tangents there meet (an arc lies within those three).
+    /// Points at both ends of the prism whose hull holds it (`section_hull`, at either end).
     fn hull(&self) -> Vec<V> {
+        self.section_hull().into_iter().flat_map(|p| [p, add(p, scale(self.along, self.length))]).collect()
+    }
+
+    /// Points of the section's plane whose hull holds the section: each line's ends, and each
+    /// arc's with the point its tangents there meet (an arc lies within those three).
+    fn section_hull(&self) -> Vec<V> {
         self.strokes.iter().flat_map(|(s, _)| match *s {
             Stroke::Line { from, to } => vec![from, to],
             Stroke::Arc { centre, radius, x, angles: [a0, a1] } => {
@@ -84,7 +89,20 @@ impl Run {
                 let apex = radius / (0.5 * (a1 - a0)).dcos().max(1e-3);
                 vec![at(a0, radius), at(a1, radius), at(0.5 * (a0 + a1), apex)]
             }
-        }).flat_map(|p| [p, add(p, scale(self.along, self.length))]).collect()
+        }).collect()
+    }
+
+    /// The same run over its edge's stretch `[from, to]` (`0` its origin): its section carried
+    /// `from` along it.
+    fn over(mut self, from: f64, to: f64) -> Run {
+        let by = scale(self.along, from);
+        for (s, _) in &mut self.strokes {
+            match s {
+                Stroke::Line { from, to } => (*from, *to) = (add(*from, by), add(*to, by)),
+                Stroke::Arc { centre, .. } => *centre = add(*centre, by),
+            }
+        }
+        Run { origin: add(self.origin, by), length: to - from, ..self }
     }
 }
 
@@ -241,6 +259,24 @@ fn on_all<'a>(sk: &Sketch, terms: &'a [RegionTerm]) -> Option<Vec<&'a FaceRef>> 
     }).collect()
 }
 
+/// The faces a meeting is on the surfaces of (`{ q | q coincident a.surface; q coincident
+/// b.surface }`), cut or not where their edge ends (`q inside crease.ends`, std's: a run carried
+/// on past its end and cut off there, the same points as one ending square where a face cuts it
+/// square — and `gate` holds the build to the field where one does not).
+fn meeting_of<'a>(sk: &Sketch, terms: &'a [RegionTerm]) -> Option<Vec<&'a FaceRef>> {
+    terms.iter().filter_map(|t| match &t.shape {
+        RegionShape::Ends { edge } => match edge.as_ref() {
+            Target::Set { terms: inner, .. } if on_all(sk, inner).is_some_and(|f| f.len() == 2)
+                && t.cmp == Cmp::Le && plain(sk, t) == Some(0.0) => None,
+            _ => Some(None),
+        },
+        _ => Some(match one_face(sk, t)? {
+            (f, Cmp::Le, d) if d == 0.0 => Some(f),
+            _ => None,
+        }),
+    }).collect()
+}
+
 /// The face a term bounds the side of at nothing, and which way: `p inside f` or `p outside f`.
 fn side_of<'a>(sk: &Sketch, t: &'a RegionTerm) -> Option<(&'a FaceRef, Cmp)> {
     let RegionShape::FaceSide { face } = &t.shape else { return None };
@@ -287,7 +323,7 @@ fn recognised<'a>(sk: &Sketch, terms: &'a [RegionTerm]) -> Option<(Faces<'a>, Se
                 [(Target::Set { terms: x, .. }, cx), (Target::Set { terms: y, .. }, cy)] => {
                     let (common, meeting) = if *cx > 0.0 { (x, y) } else { (y, x) };
                     if (cx + cy).abs() > 1e-12 * cx.abs() || t.cmp != Cmp::Le || plain(sk, t)? != 0.0
-                        || !faces.all(&on_all(sk, common)?, false) || !faces.all(&on_all(sk, meeting)?, true) {
+                        || !faces.all(&on_all(sk, common)?, false) || !faces.all(&meeting_of(sk, meeting)?, true) {
                         return None;
                     }
                     slab += 1;
@@ -495,12 +531,26 @@ fn piece(body: &super::faces::BodyFaces, edge: u32, fa: usize, fb: usize, within
     if body.run_ends(&[edge]).len() != 2 {
         return unbuilt("an edge with no two ends");
     }
-    // cut off at each end by every face there, on the side the edge runs on: one square to it is
-    // the slab of the edge's own stretch, one at a slant a half-space besides (a run-out)
-    let mut run = cut(p0, along, length, traces, within, section)?;
-    // only those reaching into the prism: a square end, or one leaning away, leaves it to the slab
+    // carried on past each end until every face there, on the side the edge runs on, cuts it
+    // off, however it stands (a run-out): a face square to the edge where the edge ends, one at a
+    // slant as far past as the section reaches, kept within its half-space
+    let halves = halves(body, ends)?;
+    let run = cut(p0, along, length, traces, within, section)?;
+    let (mut from, mut to) = (0.0_f64, length);
+    for &(n, d) in &halves {
+        let slope = dot(n, along);
+        if slope.abs() < 1e-6 {
+            return unbuilt("a run carried on along the face it ends on");
+        }
+        for q in run.section_hull() {
+            let s = (d - dot(n, q)) / slope;
+            if slope > 0.0 { to = to.max(s) } else { from = from.min(s) }
+        }
+    }
+    let mut run = run.over(from, to);
+    // only those reaching into the prism: a square end is the prism's own
     let hull = run.hull();
-    run.within = halves(body, ends)?.into_iter()
+    run.within = halves.into_iter()
         .filter(|&(n, d)| hull.iter().any(|&p| dot(n, p) > d + 1e-9 * (1.0 + length))).collect();
     Ok(Some(Piece::Run(run)))
 }

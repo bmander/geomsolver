@@ -1,19 +1,22 @@
-// Rounds that run out onto a face. A boss standing through a wedge's sloped top, 3 in from its
-// near face so a third of it overhangs: its root, against the slope only, is a stretch of an
-// ellipse ending obliquely at the near face. And a hole through another wedge's slope, breaking
-// out of its low end: its rim, a stretch of an ellipse ending at that end. Where an edge ends, the
-// face beyond cuts the round off, however it stands; nothing says so. Each is a ball rolled along
-// a traced run, carried on past each end and cut off by the face there. Built exactly.
+// Rounds that run out onto a face. Two wedges, each 40 long and 24 deep, their tops sloping from
+// 20 high down to 10:
+// - `lug`: a boss standing up through the first wedge's slope, its centre 3 in from the near
+//   face, so a fifth of it overhangs. Its root on the slope is filled: an arc of an ellipse
+//   ending where the near face cuts it, at a slant.
+// - `vent`: a hole drilled down through the second wedge, 2 short of its low end, so it breaks out
+//   of the end face. Its rim on the slope is rounded off, and ends where the end face cuts it.
 //
-// Edit the radii, or move the boss, and apply (⌘↵).
+// Where a run ends on a face that is not rounded, the run carries on past its edge's end and that
+// face cuts it off, however the face stands; nothing in the statements says so. Only the slope is
+// named, so where the boss passes the near face, and where the hole passes the end face, the edges
+// stay sharp. Orbit (right-drag) to see the run-outs. Move the boss onto the near face (fix `bc`
+// at (20, 0)) and the face cuts its root in half; move the hole in (fix `hc` at (90, -12)) and its
+// rim runs all the way round.
 unit mm
 use std (round)
 
-root_r := 2mm   // the boss's root against the slope, filled
-rim_r := 1mm    // the hole's rim on the slope, taken away
-
 in std.front {
-  // a wedge 40 long and 24 deep, its top sloping from 20 high to 10
+  // the first wedge, its top sloping from 20 high to 10
   w0 := point
   w1 := point
   w2 := point
@@ -38,13 +41,13 @@ in std.front {
   other_f := face(vb, ve, vt, vw)
 }
 in std.top {
-  // a boss of radius 6 standing 3 in from the near face
+  // the boss, 6 in radius, its centre 3 in from the first wedge's near face
   bc := point
   fix((20, -3)) bc
   boss_k := circle(center: bc) hint(r: 6)
   radius(6mm) boss_k
 
-  // a hole of radius 4 through the second wedge, 2 past its low end
+  // the hole, 4 in radius, its centre 2 short of the second wedge's low end
   hc := point
   fix((98, -12)) hc
   hole_k := circle(center: hc) hint(r: 4)
@@ -54,11 +57,12 @@ wedge := solid(side_f, from: 0mm, to: 24mm)
 boss := solid(face(boss_k), from: 0mm, to: 30mm)
 lug := solid(wedge)
 boss union lug
-// Only against the slope: where the boss passes the wedge's near face it stays sharp.
-lug.boss round(r: root_r) lug.wedge.wt
+// the root, against the slope alone
+lug.boss round(r: 2mm) lug.wedge.wt
 
 block := solid(other_f, from: 0mm, to: 24mm)
 hole := solid(face(hole_k), from: -1mm, to: 30mm)
 vent := solid(block)
 hole cut vent
-vent.block.vt round(r: rim_r) vent.hole
+// the rim, on the slope alone
+vent.block.vt round(r: 1mm) vent.hole

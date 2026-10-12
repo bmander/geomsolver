@@ -29,8 +29,8 @@ between planes, or between a plane and a cylinder along it, is a prism whose fac
 plane, a cylinder, a cone or a sphere meet about one axis is a ring whose face is a torus (a
 stretch of one where the circle goes on tangent into a flat side), a corner where three square
 faces meet is the ball's patch, a flat is a plane, and a round along any other edge is the ball
-rolled along it, traced, its canal fitted. Those bodies show as exact solids and export by `solventc --step` and
-`--stl`; a region no entry builds is meshed by the page in the background, and its export is
+rolled along it, traced, its canal fitted. Those bodies show as exact solids and export by
+`solventc --step` and `--stl`; a region no entry builds is meshed by the page in the background, and its export is
 refused, naming why.
 
 Read them in this order:
@@ -41,17 +41,27 @@ Read them in this order:
 | `pocket.sv` | **A concave round fills.** A pocket rounded inside (`round(r: 1.5mm) dish.pocket`): the floor's edges are filled, and where three meet at a corner the fill is a ball's. Built exactly. |
 | `boss.sv` | **A round on a curved edge.** A boss filleted where it stands on a plate (`pad.boss round(r: 3mm) pad.plate`): a ring, with no special case for the circle. Built exactly, a torus's face. |
 | `by_hand.sv` | **Your own round.** The round written out in the file: a set `Rolled(a, b, r)` and a word `A rolled(r) B` that makes it a solid and cuts it, in about twenty lines. The same set as the library's, so the same entry builds it. |
-| `pad.sv` | **Rounds that add and rounds that take away.** A cast mounting pad: a boss's root filled, two of the plate's near edges rounded, a bore drilled through after. Concave or convex is read off the geometry. Built exactly: 26549.817 mm³. |
-| `slot.sv` | **Rounds along tangent chains.** An obround boss's foot filled and a pocket's rim rounded off, each along flat sides and round the half circles or corners they go on into. Where two faces meet tangent there is no corner, so nothing ends a round there. Built exactly: runs and stretches of rings, glued where they meet. |
-| `rail.sv` | **A round beside a cylinder, over a face in pieces.** A rod half sunk along a plate, filled on both sides where it stands. The rod splits the plate's top in two, so the round is a run along each line where a piece meets the rod; in a section the rod is a circle the ball rolls against. Built exactly: 26306.866 mm³. |
-| `knob.sv` | **A section with a curved side.** A knob turned about one axis: a rod on a disc, a ball on the rod. The rod's root is filled against the disc and its neck against the ball; in a section through the axis the sphere is a circle, so the neck's section is a line and two arcs. Built exactly: two rings whose faces are tori, 26224.398 mm³. |
-| `tee.sv` | **A round no line or circle carries.** A pipe tee, its crotch filled where the branch meets the main pipe on a saddle. The ball is rolled along that loop, traced, its arc swept into a canal fitted as a B-spline surface. Built exactly: its volume #85's quadrature's to 1e-11. |
-| `bore.sv` | **A rolled round taken away.** A bore drilled into a solid pipe's wall, its rim rounded off: convex, along a saddle, rolled against the pipe as the cut leaves it. |
-| `runout.sv` | **Rounds that run out onto a face.** A boss's root against a sloped top, ending obliquely at the near face, and a hole's rim breaking out of a wedge's low end: each rolled on past where its edge ends and cut off by the face there. |
 | `disc.sv` | **A round in a region's own body, built exactly.** A disc defined as a set, its top rim rounded and its bottom rim chamfered by `std.Rounded` and `std.Chamfered`. Lowered into the meridian, so `solventc --step` writes a torus and a cone (1196.946 mm³, the closed form's). |
+| `blank.sv` | **Rounds on an offset cone.** A gear blank's face as a set: the pitch cone grown by the addendum (`std.Offset`) and shrunk by the dedendum, between a toe sphere and a heel sphere, the tip's rims rounded by `std.Rounded`. The grown cone is still a line of the meridian, so the rounds are built exactly there: `solventc --step` writes two tori (1353.180 mm³, the closed form's). A chamfer beside a sphere is read point by point instead: there the sum of distances bows off the straight flat. |
 | `regions.sv` | **Regions in general position.** An ellipsoid by its foci, Steinmetz's bicylinder, and a Voronoi cell of a ball, each read point by point. |
 
+The fillet stack's examples (#195), each the stack's program written with the words:
+
+| File | What it shows |
+|---|---|
+| `pad.sv` | **A cast mounting pad.** A boss's root filled, two of the plate's edges rounded off and cut flush by the faces they end on, and a bore drilled through after, which neither round reaches. Built exactly: 26549.817 mm³. |
+| `knob.sv` | **Curved faces.** A turned knob whose rod is filled where it stands on a disc (a cylinder against a plane) and where it enters a ball (a cylinder against a sphere): one word for both. Built exactly: two tori, the neck's section a line and two arcs in the meridian (26224.398 mm³). |
+| `rail.sv` | **A curved side, ending flush.** A rod half sunk along a plate, filled on both sides by one statement, each run ending where the rod and the plate end together. The rod splits the plate's top in two; in a section the rod is a circle the ball rolls against. Built exactly: 26306.866 mm³. |
+| `tee.sv` | **A traced crotch.** A pipe tee whose crotch is filled round the saddle where the cylinders meet, a curve nothing in the drawing carries. Built exactly: the ball rolled along the saddle, traced, its canal fitted (#85's quadrature's volume to 1e-11). |
+| `bore.sv` | **A rim a cut made.** A solid pipe drilled square into its wall, the bore's rim rounded off, said of the one body that is drilled. Built exactly: rolled against the pipe as the cut leaves it. |
+| `slot.sv` | **Tangent chains.** An obround boss's foot and a rounded pocket's rim: where two faces meet tangent there is no edge, so the runs carry on round the ends with no step. Built exactly: runs and stretches of rings, glued at the sections they share. |
+| `runout.sv` | **Runs that end on a face.** A boss's root on a slope cut off at a slant by the face it runs onto, and a hole's rim cut off where the hole breaks out of a wedge's end: carried on past the edge's end, and cut off by that face however it stands. Built exactly: each ball rolled on past its edge's end and cut off at the face's plane. |
+
 `rust/gcs-core/tests/rounds_examples.rs` holds each file to what its comments say, the suggested
-edits included. `tests/round_lowering.rs` holds the exact constructions to closed forms to 1e-9,
-and to their fields. `tests/rounds.rs` holds the words to closed forms: Steiner's formula for a block
-rounded all over, the mitre, Pappus for the boss's ring, the volume three flats take at a corner.
+edits included, and the stack's examples to the stack's closed forms and #85's quadrature, each
+round's volume read off the field within 2e-3 (the slow tier). `tests/round_lowering.rs` holds the
+exact constructions to closed forms to 1e-9 (a rolled one to #85's quadrature, 1e-6), and to their
+fields. `tests/rounds.rs` holds the words
+to closed forms: Steiner's formula for a block rounded all over, the mitre, Pappus for the boss's
+ring, the volume three flats take at a corner. `tests/offset_corners.rs` holds the rounds and flats
+on an offset cone's corners, `blank.sv` among them, to Pappus over the corners worked out by hand.

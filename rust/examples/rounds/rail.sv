@@ -1,15 +1,17 @@
-// A rod half sunk along a plate, both sides of it filled where it stands on the plate's top, each
-// running out flush into the plate's ends. The rod splits the plate's top in two, so `rail.plate`'s
-// top is two faces, each meeting the rod along a line: a round over a face in pieces is a run along
-// each edge it meets the other in. In a section square to the rod the plate's top is a line and
-// the rod a circle, and the ball rolls between them. Built exactly: a prism along each side whose
-// face is a cylinder.
+// A rail: a rod half sunk along the top of a plate, filled into the plate on both sides. The rod
+// meets the plate's top along two lines, and one statement rounds both: each a run the plate's
+// whole length, ending flush where the rod and the plate end together, cut off by the end faces.
+// The rod's wall is curved, so each run's section is the corner between a circle and a line that
+// a ball of radius `r` cannot reach.
 //
-// Edit `r` or the rod's radius and apply (⌘↵).
+// The section is drawn on the front plane and stands 40 deep in front of it. Orbit (right-drag)
+// to see the runs end flush. Edit `r` and apply (⌘↵), or name the rod and the plate's top alone
+// (`rail.rod round(r: r) rail.plate.cd`): the same two runs, since the rod meets no other face of
+// the plate's.
 unit mm
 use std (round)
 
-r := 2mm   // the fill's radius
+r := 2mm   // the fillets' radius
 
 in std.front {
   a := point
@@ -31,5 +33,5 @@ rod := solid(face(k), from: 0mm, to: 40mm)
 rail := solid(plate)
 rod union rail
 
-// Both sides at once: the rod meets the plate's top along two lines.
+// both sides at once: every edge where a face the rod gave the rail meets one the plate gave it
 rail.rod round(r: r) rail.plate

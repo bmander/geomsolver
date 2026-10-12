@@ -1,15 +1,14 @@
-// A knob turned about one axis: a disc, a rod standing on it, a ball on the rod. The rod's root is
-// filled where it stands on the disc (a plane against a cylinder) and its neck where it enters the
-// ball (a cylinder against a sphere). In a section through the axis the sphere is a circle, so the
-// neck's section has a curved side: the rod's line, the rolled ball's arc and the ball's own arc.
-// Built exactly: each round a ring whose face is a torus.
+// A knob turned about one line: a disc, a rod standing on it, and a ball on the rod's end, each a
+// section turned about the spindle and joined into one body. Two rounds fill the rod's two roots:
+// where it stands on the disc (a cylinder meeting a plane) and where it enters the ball (a
+// cylinder meeting a sphere). The second is the same word as the first; that the faces are curved
+// is read off the geometry, as whether the edge is concave is.
 //
-// Edit the radii and apply (⌘↵).
+// The sections are drawn on the front plane, the spindle up its middle. Orbit (right-drag) to see
+// the knob. Edit a radius and apply (⌘↵). Write `round(r: 1mm) knob.disc` to round the disc's own
+// outer rims too, convex, so cut.
 unit mm
 use std (round)
-
-root_r := 2mm     // the rod's root on the disc
-neck_r := 1.5mm   // the rod's neck into the ball
 
 in std.front {
   a0 := point
@@ -42,7 +41,7 @@ in std.front {
   (rbot := line(q0, q1)) -> (rwall := line(q1, q2)) -> (rtop := line(q2, q3)) ->
     (raxis := line(q3, q0)) -> close
 
-  // the ball: 8 in radius, centred 44 up
+  // the ball: 8 in radius about a point 44 up the spindle, half a disc turned
   c0 := point
   s0 := point
   s1 := point
@@ -59,5 +58,5 @@ knob := solid(disc)
 rod union knob
 ball union knob
 
-knob.rod round(r: root_r) knob.disc
-knob.rod round(r: neck_r) knob.ball
+knob.rod round(r: 2mm) knob.disc     // the root: a ring on the disc
+knob.rod round(r: 1.5mm) knob.ball   // the neck: a ring where the rod enters the ball

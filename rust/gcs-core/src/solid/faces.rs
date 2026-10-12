@@ -16,6 +16,13 @@ use crate::space::{add, distance, dot, norm, scale, sub};
 use std::collections::BTreeSet;
 use std::f64::consts::PI;
 
+/// Two faces' outward normals nearer than this at a point meet tangent there: no edge.
+const TANGENT: f64 = 1e-6;
+
+/// A point just along a run from its end `v`, `d` the way it runs from there (`by` −1: just past
+/// the end).
+pub(crate) fn along_run(v: V, d: V, by: f64) -> V { add(v, scale(d, by * 1e-6 * (1.0 + norm(v)))) }
+
 /// A body's exact boundary, located, in millimetres (`mm` of them a model unit).
 #[derive(Debug)]
 pub struct BodyFaces {
@@ -193,7 +200,7 @@ impl BodyFaces {
         let x = edge.point(0.5 * (edge.t[0] + edge.t[1]), &self.loc.b.vertices);
         let (na, nb) = (self.outward(fa, x), self.outward(fb, x));
         let across = norm(sub(nb, na));
-        if across < 1e-6 {
+        if across < TANGENT {
             return None;
         }
         let step = 1e-5 * self.loc.b.size().max(1.0);
@@ -264,6 +271,14 @@ impl BodyFaces {
             let d = crate::space::normalised(d)?;
             Some((self.back(self.loc.b.vertices[v as usize].p), d, v))
         }).collect()
+    }
+
+    /// Whether face `c` carries one of `faces` on across a seam at `v` (model units): their
+    /// outward normals there one, so they meet tangent and the edge between them is none.
+    pub fn continues(&self, c: usize, faces: &[usize], v: V) -> bool {
+        let q = self.q(v);
+        let n = self.outward(c, q);
+        faces.iter().any(|&f| norm(sub(self.outward(f, q), n)) < TANGENT)
     }
 
     /// Face `fi`'s plane, where it lies in one: its unit normal away from the material and its
@@ -338,15 +353,11 @@ impl BodyFaces {
     pub fn end_sides(&self, es: &[u32], faces: &[usize]) -> Vec<(usize, f64)> {
         let mut sides = Vec::new();
         for (v, d, vid) in self.run_ends(es) {
-            for c in self.faces_at(vid, faces) {
-                // a seam: where `c` meets one of `faces` at the end, the two meet tangent
-                let seam = self.edges_between(&[c], faces).into_iter()
-                    .any(|e| self.loc.b.edges[e as usize].v.contains(&vid) && self.convex(e).is_none());
-                if seam {
-                    continue;
-                }
-                let step = 1e-6 * (1.0 + norm(v));
-                let s = self.side(c, add(v, scale(d, step)));
+            // a face carrying one of the run's on across a seam is no face the run ends on: a seam
+            // is no edge, and the run beyond it is the next one's
+            let on = along_run(v, d, 1.0);
+            for c in self.faces_at(vid, faces).into_iter().filter(|&c| !self.continues(c, faces, v)) {
+                let s = self.side(c, on);
                 sides.push((c, if s <= 0.0 { 1.0 } else { -1.0 }));
             }
         }

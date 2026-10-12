@@ -273,24 +273,25 @@ fn fold(sk: &Sketch, solid: usize) -> Result<Meridian, Refusal> {
             }
         };
     }
-    // each round and chamfer, at every corner of its two bounds (`brep::corners`, X1)
+    // each round and chamfer, at every corner of its two bounds (`brep::corners`, X1): a round
+    // wherever the two bounds' carriers are lines or circles — an offset cone's generator and its
+    // rounded apex included (`narrow`) — and checked against the region read point by point once
+    // built (`agrees`)
     for (k, l) in lowered.iter().enumerate() {
         let Some(l) = l else { continue };
         let tag = k as u32 + 1;
         let (a, b) = (l.a as u32 + 1, l.b as u32 + 1);
-        // exact only where it builds what the set says: no corner of a charted step (an offset
-        // cone), and a flat only between straight steps
-        for lp in &region.loops {
-            for i in 0..lp.len() {
-                let (st, nx) = (&lp[i], &lp[(i + 1) % lp.len()]);
-                let named = (st.tag == a && nx.tag == b) || (st.tag == b && nx.tag == a);
-                let curved = |x: &crate::brep::planar::Step| matches!(x.seg, Seg::Arc { .. });
-                if named && (st.chart.is_some() || nx.chart.is_some()
-                    || (matches!(l.kind, Lower::Flat { .. }) && (curved(st) || curved(nx)))) {
-                    return Err(format!("`{}`: a round or a flat at a curved or offset corner is read \
-                                        point by point", s.name).into());
-                }
-            }
+        // exact only where it builds what the set says: a flat only between straight steps (beside
+        // an arc the sum of distances bows off the straight flat)
+        let curved = |x: &crate::brep::planar::Step| matches!(x.seg, Seg::Arc { .. });
+        let beside_arc = || region.loops.iter().any(|lp| (0..lp.len()).any(|i| {
+            let (st, nx) = (&lp[i], &lp[(i + 1) % lp.len()]);
+            let named = (st.tag == a && nx.tag == b) || (st.tag == b && nx.tag == a);
+            named && (curved(st) || curved(nx))
+        }));
+        if matches!(l.kind, Lower::Flat { .. }) && beside_arc() {
+            return Err(format!("`{}`: a flat beside a curved face is read point by point: the sum \
+                                of distances bows off the straight flat there", s.name).into());
         }
         region = match l.kind {
             Lower::Round { r } => crate::brep::corners::round(&region, &[a], &[b], r, tag),
@@ -313,8 +314,45 @@ fn fold(sk: &Sketch, solid: usize) -> Result<Meridian, Refusal> {
     }
     // the half-plane's direction: square to the axis, toward the world axis least along it
     let seam = scale(across(axis).1, -1.0);
+    // a round's or a chamfer's own scale: how far off the boundary the gate reads
+    let least = lowered.iter().flatten().map(|l| match l.kind {
+        Lower::Round { r } => r,
+        Lower::Flat { la, lb } => la.min(lb),
+    }).fold(f64::INFINITY, f64::min);
+    if least.is_finite() {
+        let basis = crate::plane::Basis { u: seam, v: axis, o: origin };
+        agrees(sk, solid, &region, &basis, (1e-3 * least).max(100.0 * tol))
+            .map_err(|e| format!("`{}`: {e}", s.name))?;
+    }
     let names = terms.iter().map(|t| t.name.clone()).collect();
     Ok(Meridian { origin, axis, seam, region, names })
+}
+
+/// **The gate** (#207): a meridian with a round or a chamfer built in it stands only where the
+/// region read point by point (`general`) agrees with it, as the lowering table's pieces are held
+/// (`lowering::gate`) — `by` inside each of its faces material, `by` outside none, read at each
+/// face's quarter points (no further off than a hundredth of the face's length; the axis is no
+/// face).  Lowering is a representation, never a meaning: where they disagree the region is read
+/// point by point.
+fn agrees(sk: &Sketch, solid: usize, region: &Region, half_plane: &crate::plane::Basis, by: f64)
+    -> Result<(), String> {
+    let field = general(sk, solid)?;
+    let lift = |q: [f64; 2]| half_plane.lift(q[0], q[1]);
+    for step in region.loops.iter().flatten().filter(|s| s.tag != 0) {
+        let off = by.min(1e-2 * step.length());
+        for t in [0.25, 0.5, 0.75] {
+            let (p, n) = (step.point(t), step.own_normal(t));
+            let [inside, outside] = [-off, off].map(|o| lift([p[0] + o * n[0], p[1] + o * n[1]]));
+            let (vi, vo) = (field.value(inside), field.value(outside));
+            if !(vi < 0.0 && vo > 0.0) {
+                let x = lift(p);
+                return Err(format!("its rounds and chamfers built in the meridian disagree with \
+                                    the region read point by point beside [{:.6}, {:.6}, {:.6}] \
+                                    ({vi:e} within, {vo:e} without)", x[0], x[1], x[2]));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// The meridian's loops as the faceted kernel turns them: polygons in the half-plane (`u` along
@@ -637,7 +675,8 @@ fn measured(sk: &Sketch, of: &[(crate::model::Target, f64)],
             let (Target::Set { terms: e, .. }, Target::Set { terms: m, .. }) = (ti, tj) else { continue };
             let (Some(Ok(edge)), Some(Ok(meeting))) = (&sets[i], &sets[j]) else { continue };
             if *ci > 0.0 && (ci + cj).abs() <= 1e-12 * ci.abs() && rest[j].is_none() {
-                rest[j] = super::conditions::Rest::of(sk, e, m, edge, meeting).map(std::sync::Arc::new);
+                rest[j] = super::conditions::Rest::of(sk, e, m, edge, meeting, read)
+                    .map(std::sync::Arc::new);
             }
         }
     }

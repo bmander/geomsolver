@@ -1,44 +1,43 @@
-// A cast mounting pad: a boss standing on a plate, its root filled, two of the plate's near edges
-// rounded off, and a bore drilled down through the boss and the plate after. Which rounds add
-// material and which take it away is read off the geometry — the root is concave, the edges
-// convex — so nothing says `union` or `cut`. The rounds read the faces the body has before the
-// bore, which cuts through them after. Built exactly: a ring whose face is a torus at the root, a
-// prism whose face is a cylinder along each edge, each running out flush into the plate's sides.
+// A cast mounting pad: a boss standing on a plate, its root filled, two of the plate's edges
+// rounded off, and a bore drilled down through the boss. Three statements say the rounds, and none
+// says which way: the boss's root is concave, so its round fills; the plate's edges are convex, so
+// theirs cut. The bore is cut after, and its wall is no face either round names, so neither round
+// reaches it.
 //
-// Edit the radii and apply (⌘↵).
+// The plate is drawn about the front plane's origin, its near face (the one the boss stands on)
+// the one you see square on; `da` and `bc` are its left and right sides, `ab` and `cd` its bottom
+// and top. Each side's round runs the plate's whole height and is cut off flush by the bottom and
+// top faces it ends on. Edit a radius and apply (⌘↵), or round the top edge too:
+// `pad.plate.near round(r: edge_radius) pad.plate.cd`, mitred where it meets the side's.
 unit mm
 use std (round)
 
-root_r := 3mm   // the boss's root, filled
-edge_r := 2mm   // the plate's two near edges, taken away
+width := 60mm
+depth := 40mm
+thickness := 10mm
+boss_radius := 8mm
+boss_height := 20mm
+bore_radius := 4mm
+root_radius := 3mm   // the boss's root, filled
+edge_radius := 2mm   // the plate's two side edges, cut
 
+outline := std.CenteredRectangle(std.origin, w: width, h: depth) in std.front
 in std.front {
-  t0 := point
-  t1 := point
-  t2 := point
-  t3 := point
-  fix((-30, -20)) t0
-  fix((30, -20)) t1
-  fix((30, 20)) t2
-  fix((-30, 20)) t3
-  (ab := line(t0, t1)) -> (bc := line(t1, t2)) -> (cd := line(t2, t3)) -> (da := line(t3, t0)) -> close
-  outline := face(ab, bc, cd, da)
-  c := point
-  fix((0, 0)) c
-  rim := circle(center: c) hint(r: 8)
-  radius(8mm) rim
-  hole := circle(center: c) hint(r: 4)
-  radius(4mm) hole
+  rim := circle(center: std.origin) hint(r: 8)
+  radius(boss_radius) rim
+  hole := circle(center: std.origin) hint(r: 4)
+  radius(bore_radius) hole
 }
-plate := solid(outline, depth: 10mm)
-boss := solid(face(rim), from: 0mm, to: 20mm)
-bore := solid(face(hole), from: -10mm, to: 20mm)
+
+plate := solid(outline.loop, depth: thickness)
+boss := solid(face(rim), from: 0mm, to: boss_height)
+bore := solid(face(hole), from: -thickness, to: boss_height)
 pad := solid(plate)
 boss union pad
 bore cut pad
 
-// The boss's root: every edge where a face the boss gave the pad meets one the plate gave it.
-pad.boss round(r: root_r) pad.plate
-// Two of the plate's near edges, each running out flush into the plate's sides.
-pad.plate.near round(r: edge_r) pad.plate.da
-pad.plate.near round(r: edge_r) pad.plate.bc
+// every edge where a face the boss gave the pad meets one the plate gave it: the root's circle
+pad.boss round(r: root_radius) pad.plate
+// the near face's edge along each side
+pad.plate.near round(r: edge_radius) pad.plate.da
+pad.plate.near round(r: edge_radius) pad.plate.bc

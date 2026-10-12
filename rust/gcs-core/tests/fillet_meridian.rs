@@ -94,7 +94,7 @@ fn union(a: &Region, b: &Region) -> Region { boolean(a, b, Op::Union, 1e-9).unwr
 
 /// The stack's `root_ring`: the ring a ball of radius `r` fills where a cylinder of radius `big`
 /// stands on a plane — the square at the corner less the quarter disc, turned (Pappus).
-pub(crate) fn root_ring(big: f64, r: f64) -> f64 {
+fn root_ring(big: f64, r: f64) -> f64 {
     let moment = r * r * (big + r / 2.0) - PI * r * r / 4.0 * (big + r - 4.0 * r / (3.0 * PI));
     2.0 * PI * moment
 }
@@ -154,6 +154,21 @@ fn a_frustum_root_and_rim_are_tori() {
     close(turned(&other), turned(&rim), "the rounds the other way about");
 }
 
+/// The stack's closed form of #83's knob's neck: a rod of radius `rod` about the axis entering a
+/// ball of radius `big` about `s`, filled to `r`.  Its section is the corner, its foot on the rod,
+/// the arc of the ball rolled, its foot on the ball and the ball's arc back, turned.
+pub(crate) fn knob_neck(s: P, big: f64, rod: f64, r: f64) -> f64 {
+    let corner = [rod, s[1] - (big * big - rod * rod).sqrt()];
+    let centre = [rod + r, s[1] - ((big + r).powi(2) - (rod + r).powi(2)).sqrt()];
+    let (on_rod, on_ball) = ([rod, centre[1]], add(s, scale(unit(sub(centre, s)), big)));
+    let at = |c: P, p: P| (p[1] - c[1]).atan2(p[0] - c[0]);
+    let arc = |c: P, r: f64, from: P, to: P| {
+        Seg::Arc { c, r, a0: at(c, from), sweep: at(c, to) - at(c, from) }
+    };
+    2.0 * PI * (flux(&Seg::Line { a: corner, b: on_rod })
+        + flux(&arc(centre, r, on_rod, on_ball)) + flux(&arc(s, big, on_ball, corner))).abs()
+}
+
 /// #83's knob (`x0/knob.sv`): a rod standing on a disc and entering a ball, its root filled to 2
 /// (plane against cylinder) and its neck to 1.5 (cylinder against sphere, a section with a curved
 /// side).
@@ -170,32 +185,18 @@ fn a_knobs_root_and_neck_turn_their_sections() {
     let knob = union(&union(&disc, &shaft), &ball);
     let root = round(&knob, &faces(11, 4), &faces(1, 4), 2.0, 100).unwrap();
     let neck = round(&root, &faces(11, 4), &[21, 22], r, 101).unwrap();
-    let (root_v, neck_v, want) = knob_closed_form();
-    close(turned(&root) - turned(&knob), root_v, "the root");
-    close(turned(&neck) - turned(&root), neck_v, "the neck");
-    close(turned(&neck), want, "the knob");
+    close(turned(&root) - turned(&knob), root_ring(rod, 2.0), "the root");
+    close(turned(&neck) - turned(&root), knob_neck(s, big, rod, r), "the neck");
+    close(turned(&neck), knob_rounded(s, big, rod, r), "the knob");
 }
 
-/// #83's knob's closed forms (`x0/knob.sv`, `rounds/knob.sv`): its root's ring, its neck's, and the
-/// knob rounded. The neck's section is the corner, its foot on the rod, the arc of the ball rolled,
-/// its foot on the ball and the ball's arc back; the knob the disc, the rod up to the ball, the ball
-/// less the cap the rod holds, and the two rings.
-pub(crate) fn knob_closed_form() -> (f64, f64, f64) {
-    let (s, big, rod, r): (P, f64, f64, f64) = ([0.0, 44.0], 8.0, 4.0, 1.5);
-    let corner = [rod, s[1] - (big * big - rod * rod).sqrt()];
-    let centre = [rod + r, s[1] - ((big + r).powi(2) - (rod + r).powi(2)).sqrt()];
-    let (on_rod, on_ball) = ([rod, centre[1]], add(s, scale(unit(sub(centre, s)), big)));
-    let at = |c: P, p: P| (p[1] - c[1]).atan2(p[0] - c[0]);
-    let arc = |c: P, r: f64, from: P, to: P| {
-        Seg::Arc { c, r, a0: at(c, from), sweep: at(c, to) - at(c, from) }
-    };
-    let neck_v = 2.0 * PI * (flux(&Seg::Line { a: corner, b: on_rod })
-        + flux(&arc(centre, r, on_rod, on_ball)) + flux(&arc(s, big, on_ball, corner))).abs();
-    let root_v = root_ring(rod, 2.0);
-    let cap = { let h = corner[1] - (s[1] - big); PI * h * h * (3.0 * big - h) / 3.0 };
-    let want = PI * 30.0 * 30.0 * 8.0 + PI * rod * rod * (corner[1] - 8.0)
-        + 4.0 / 3.0 * PI * big.powi(3) - cap + root_v + neck_v;
-    (root_v, neck_v, want)
+/// #83's knob rounded, whole (`x0/knob.sv`, `rounds/knob.sv`): the disc (30 by 8), the rod up to
+/// the ball, the ball less the cap the rod holds, its root's ring (2) and its neck's (`knob_neck`).
+pub(crate) fn knob_rounded(s: P, big: f64, rod: f64, r: f64) -> f64 {
+    let corner = s[1] - (big * big - rod * rod).sqrt();
+    let cap = { let h = corner - (s[1] - big); PI * h * h * (3.0 * big - h) / 3.0 };
+    PI * 30.0 * 30.0 * 8.0 + PI * rod * rod * (corner - 8.0) + 4.0 / 3.0 * PI * big.powi(3) - cap
+        + root_ring(rod, 2.0) + knob_neck(s, big, rod, r)
 }
 
 /// A chamfer of the frustum's rim is a cone band: the triangle it takes, turned (Pappus).  Both
@@ -414,7 +415,7 @@ fn the_end_relief_as_a_sum_of_distances_bows_on_the_sphere() {
 /// the tip's toe and heel corners, each leg 0.2 from the other face, is today's `EndChamfer` body —
 /// the blank less the two drawn rings — wherever a point is farther from either boundary than the
 /// sum of distances bows off the straight chamfer on the sphere (7e-5 mm, X3).  Read by the field:
-/// a chamfer on an offset cone is not lowered.
+/// a chamfer beside a sphere is not lowered (the sum bows there, #208).
 #[test]
 fn the_end_relief_stated_in_the_region_is_end_chamfers() {
     let text = include_str!("../../examples/spiral_bevel/blank/member.sv");
