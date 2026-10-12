@@ -270,6 +270,12 @@ impl BodyFaces {
         Some((self.back(f.o), f.z, r / self.mm))
     }
 
+    /// Face `fi`'s sphere, where it lies on one: its centre and radius (model units).
+    pub fn sphere(&self, fi: usize) -> Option<(V, f64)> {
+        let crate::brep::geom::Surface::Sphere(f, r) = &self.loc.b.faces[fi].surface else { return None };
+        Some((self.back(f.o), r / self.mm))
+    }
+
     /// Edge `e`'s ends, first to last, where it is a straight line (model units).
     pub fn segment(&self, e: u32) -> Option<[V; 2]> {
         let edge = &self.loc.b.edges[e as usize];
@@ -298,8 +304,8 @@ impl BodyFaces {
     /// Face `fi`'s unit normal at `p` (on it), away from the material.
     pub fn normal(&self, fi: usize, p: V) -> V { self.side_grad(fi, p).1 }
 
-    /// Whether face `fi`'s surface is turned about the line through `o` along the unit `d` with a
-    /// straight meridian: a plane square to it, a cylinder or a cone about it (model units).
+    /// Whether face `fi`'s surface is turned about the line through `o` along the unit `d`: a plane
+    /// square to it, a cylinder or a cone about it, a sphere centred on it (model units).
     pub fn coaxial(&self, fi: usize, o: V, d: V) -> bool {
         use crate::brep::geom::Surface;
         let along = |z: V| norm(crate::space::cross(z, d)) <= 1e-9;
@@ -307,6 +313,7 @@ impl BodyFaces {
         match &self.loc.b.faces[fi].surface {
             Surface::Plane(f) => along(f.z),
             Surface::Cylinder(f, _) | Surface::Cone(f, _, _) => along(f.z) && on(f.o),
+            Surface::Sphere(f, _) => on(f.o),
             _ => false,
         }
     }

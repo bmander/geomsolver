@@ -178,13 +178,13 @@ fn the_wankel_rotor_and_housing_export_and_measure_within_their_tolerance() {
 /// The rounds series (`rounds/`, #194): each round and chamfer the lowering table builds is written
 /// by the Rust kernel as STEP and STL within 10 µm and measured so against its exact faces —
 /// `boss.sv`'s ring, `pocket.sv`'s filled corners, the block's mitred rims, the round written by
-/// hand, `slot.sv`'s rounds round tangent chains, `pad.sv`'s and `rail.sv`'s beside its rod.
+/// hand, `slot.sv`'s rounds round tangent chains, `pad.sv`'s, `rail.sv`'s beside its rod and `knob.sv`'s rings.
 #[test]
 #[cfg_attr(not(feature = "slow"), ignore = "slow tier, about ten seconds: the rounds exported and measured")]
 fn the_rounds_export_and_measure_within_their_tolerance() {
     let dir = std::env::temp_dir().join(format!("solventc-rounds-{}",std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
-    for name in ["block","by_hand","pocket","boss","slot","pad","rail"] {
+    for name in ["block","by_hand","pocket","boss","slot","pad","rail","knob"] {
         let source = doc(&format!("rounds/{name}.sv"));
         let (stl,step) = (dir.join(format!("{name}.stl")),dir.join(format!("{name}.step")));
         let (stl,step) = (stl.to_str().unwrap(),step.to_str().unwrap());

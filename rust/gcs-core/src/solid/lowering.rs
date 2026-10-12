@@ -11,22 +11,22 @@
 //! field's, its exact export refused by name.
 //!
 //! The entries so far, over plane faces meeting in straight edges (or a plane and a cylinder about
-//! a line along the edge: in the section a line and a circle), and a plane meeting a cylinder or
-//! cone about one axis in a circle; a face named in pieces (a plate's top a rod splits) is a piece
-//! per edge. A run is where its nearest point of the faces' meeting is
-//! on the edge (the slab square to it over its stretch, a sector of a ring's) and on the side the
-//! edge runs on of each face at its ends: a straight run's prism is kept within each plane face
-//! standing at a slant there and reaching into it (a run-out), one leaning away leaving the slab's
-//! square end. A face going on tangent from one of the run's is no end (a seam), so a round along
-//! an obround's flat side stops at the section the ring round its half circle starts from, and the
-//! two are glued there; a ring's stretch is turned through its circle's angle.
+//! a line along the edge: in the section a line and a circle), and planes, cylinders, cones and
+//! spheres about one axis meeting in a circle; a face named in pieces (a plate's top a rod splits)
+//! is a piece per edge. A run is where its nearest point of the faces' meeting is on the edge (the
+//! slab square to it over its stretch, a sector of a ring's) and on the side the edge runs on of
+//! each face at its ends: a straight run's prism is kept within each plane face standing at a slant
+//! there and reaching into it (a run-out), one leaning away leaving the slab's square end. A face
+//! going on tangent from one of the run's is no end (a seam), so a round along an obround's flat
+//! side stops at the section the ring round its half circle starts from, and the two are glued
+//! there; a ring's stretch is turned through its circle's angle.
 //!
 //! | the region's body | built as |
 //! |---|---|
 //! | `Run` / `Fill`: within (outside) two faces, beyond reach of the ball rolled along their edge | a prism of the corner less the ball's arc (a cylinder face); beside a cylinder, its arc a side of the section |
 //! | `Flat` / `FlatFill`: within (outside) two faces, short of the flat through the legs | a prism of the triangle (a plane face) |
 //! | `Corner` / `CornerFill`: within (outside) three faces square to one another, beyond reach of the ball touching all three | the corner's cell less the ball (a sphere's patch), and each edge's run beyond it |
-//! | `Run` / `Fill` / `Flat` round a circle (or a stretch of one between seams) where a plane meets a coaxial cylinder or cone | the section turned about the axis through the circle's angle (a torus face) |
+//! | `Run` / `Fill` / `Flat` round a circle (or a stretch of one between seams) where a plane, a cylinder, a cone or a sphere meet about one axis | the section turned about the axis through the circle's angle (a torus face); in the meridian a sphere is a circle |
 //! | any of them where the faces meet nowhere, or an edge turns the other way | nothing |
 //!
 //! A region is its **pieces** (`Piece`: a run along an edge, a ball's cell at a corner), and the
@@ -429,10 +429,10 @@ fn piece(body: &super::faces::BodyFaces, edge: u32, fa: usize, fb: usize, within
     if body.convex(edge) != Some(within) {
         return Ok(None);
     }
-    // round a circle where a plane meets a cylinder or a cone about its axis: the section in the
-    // meridian through its start, turned through the circle's angle — a whole turn, or a stretch
-    // ending where a face goes on from one of these tangent (an obround's flat side), whose own
-    // run goes on from the same section
+    // round a circle where a plane, a cylinder, a cone or a sphere meet about one axis: the section
+    // in the meridian through its start, turned through the circle's angle — a whole turn, or a
+    // stretch ending where a face goes on from one of these tangent (an obround's flat side), whose
+    // own run goes on from the same section
     if let Some((centre, axis, radius, x)) = body.circle(edge) {
         if !(body.coaxial(fa, centre, axis) && body.coaxial(fb, centre, axis)) {
             return unbuilt("a circle between faces not turned about one axis");
@@ -452,8 +452,13 @@ fn piece(body: &super::faces::BodyFaces, edge: u32, fa: usize, fb: usize, within
         }
         let radial = radial_at(t0);
         let p0 = add(centre, scale(radial, radius));
-        let traces = [Trace::Line(body.normal(fa, p0)), Trace::Line(body.normal(fb, p0))];
-        let section = cut(p0, cross(axis, radial), 0.0, traces, within, section)?;
+        // in the meridian a plane, a cylinder and a cone are lines, a sphere a circle about its
+        // centre (on the axis, so in every meridian)
+        let trace = |fi: usize| match body.sphere(fi) {
+            Some((centre, radius)) => Trace::Circle { centre, radius, normal: body.normal(fi, p0) },
+            None => Trace::Line(body.normal(fi, p0)),
+        };
+        let section = cut(p0, cross(axis, radial), 0.0, [trace(fa), trace(fb)], within, section)?;
         return Ok(Some(Piece::Ring(Ring { section, axis_origin: centre, axis, angle: t1 - t0 })));
     }
     let Some([p0, p1]) = body.segment(edge) else { return unbuilt("a curved edge") };

@@ -53,7 +53,7 @@ const projects: Example[] = [{
   label: 'Rounds and chamfers · written in Solvent', key: 'rounds',
   description: 'A block with one rim rounded and the other chamfered, a pocket rounded inside, a '
     + 'boss filleted where it stands, a mounting pad, rounds along an obround\'s tangent chains, '
-    + 'a rod filled where it lies along a plate, '
+    + 'a rod filled where it lies along a plate, a turned knob, '
     + 'and a disc whose round and chamfer are built exactly. None '
     + 'is a kernel feature: `round` and `chamfer` are words of the standard library over faces '
     + 'read as sets, and by_hand.sv writes its own round in twenty lines. regions.sv shows solids '

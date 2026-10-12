@@ -71,6 +71,15 @@ fn the_rods_sides_are_filled() {
           &[[38.5, -20.0, 10.5], [21.5, -20.0, 10.5], [30.0, -20.0, 16.5]]);
 }
 
+/// `knob.sv`: turned about the z axis — the rod's root filled on the disc, its neck filled where
+/// it enters the ball, the rolled balls' own places beside each still empty.
+#[test]
+fn the_knobs_root_and_neck_are_filled() {
+    holds(include_str!("../../examples/rounds/knob.sv"), "knob",
+          &[[4.2, 0.0, 8.2], [4.1, 0.0, 37.0], [0.0, 0.0, 20.0], [20.0, 0.0, 4.0], [0.0, 0.0, 51.0]],
+          &[[5.5, 0.0, 9.5], [4.6, 0.0, 36.6], [10.0, 0.0, 20.0]]);
+}
+
 /// `pad.sv`: the boss's root filled, two of the plate's near edges rounded and the other two
 /// sharp, the bore through it all.
 #[test]

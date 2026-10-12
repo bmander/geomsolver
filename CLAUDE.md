@@ -318,7 +318,8 @@ a circle, the ball where their offsets meet — cut off by the plane faces its e
 slab's end, one at a slant reaching into the prism a half-space it is kept within, `Run::within`,
 the recipe's `"within"` (a run-out); a curved end refused, `unbuilt`), `Ring` (a circle where a
 plane meets a coaxial cylinder or cone: the section in the meridian at its start turned through its
-angle, `Ring::angle`, a stretch only where its ends are seams or planes through the axis at its
+angle, `Ring::angle`; a sphere centred on the axis is a circle in the meridian (`Trace::Circle`,
+`knob.sv`'s neck); a stretch only where its ends are seams or planes through the axis at its
 ends' meridians), a run and a stretch going on from one
 another **glued** at their shared section. A face going on tangent from one of a run's faces at its
 end is no end (`BodyFaces::end_sides`, the field's and the lowering's one rule: a seam, the round
@@ -342,7 +343,7 @@ own `tol`. Open: curved ends at a corner (a run-out onto a curved face, #110), c
 runs between two curved faces, a run mitred against a ring's stretch on one cylinder (the union
 of coincident cylinder faces: a groove rounded at its ends), curved sections (arcs: #83), traced canals
 (`brep::fillet::roll`, #85), the OCCT oracle.
-`tests/round_lowering.rs` is the gate (every volume the closed form's to 1e-9; `slot.sv`, `pad.sv`, `rail.sv`).
+`tests/round_lowering.rs` is the gate (every volume the closed form's to 1e-9; `slot.sv`, `pad.sv`, `rail.sv`, `knob.sv`).
 **Distance from a set, offsets (§6.21, 0.64, #145 F4):** `p distance(d, side: outside|inside) S`
 (`distance` is a set use, `may_use`), `p inside(d) S` / `p outside(d) S` and `std.Offset(S, d)` are
 one bound on the signed distance from `S`'s surface (`Reach`: cmp toward the outside, whether

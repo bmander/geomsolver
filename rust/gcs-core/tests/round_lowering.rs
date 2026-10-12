@@ -329,6 +329,49 @@ fn a_rings_stretch_ends_on_a_plane_through_its_axis() {
     assert_eq!(kinds(&b).get("torus"), Some(&1));
 }
 
+/// What a step of a meridian `(ρ, z)` contributes to the volume it bounds turned once about
+/// `ρ = 0`, over `2π` (Green's theorem: `∫ ρ²/2 dz`, exact for a line and for an arc about `c` of
+/// radius `r` from the angle `a0` through `sweep`).
+fn flux_line(p: [f64; 2], q: [f64; 2]) -> f64 {
+    (q[1] - p[1]) / 2.0 * (p[0] * p[0] + p[0] * q[0] + q[0] * q[0]) / 3.0
+}
+
+fn flux_arc(c: [f64; 2], r: f64, from: [f64; 2], to: [f64; 2]) -> f64 {
+    let at = |p: [f64; 2]| (p[1] - c[1]).atan2(p[0] - c[0]);
+    let prim = |phi: f64| {
+        let (sn, cs) = phi.sin_cos();
+        (c[0] * c[0] * r * sn + c[0] * r * r * (phi + sn * cs) + r * r * r * (sn - sn.powi(3) / 3.0)) / 2.0
+    };
+    prim(at(to)) - prim(at(from))
+}
+
+/// `knob.sv` (#83's knob): the rod's root a ring between a plane and a cylinder, its neck one
+/// between a cylinder and a sphere — in the meridian the sphere is a circle, the neck's section
+/// the rod's line, the rolled ball's arc and the ball's own arc. The closed forms are
+/// `fillet_meridian.rs`'s: the disc, the rod to the ball, the ball less the cap the rod holds, the
+/// root's spandrel and the neck's section, turned.
+#[test]
+fn a_knobs_neck_turns_a_section_with_a_curved_side() {
+    let e = solved(include_str!("../../examples/rounds/knob.sv"));
+    let b = exported(&e, "knob");
+    let (s, big, rod, r): ([f64; 2], f64, f64, f64) = ([0.0, 44.0], 8.0, 4.0, 1.5);
+    let corner = [rod, s[1] - (big * big - rod * rod).sqrt()];
+    let centre = [rod + r, s[1] - ((big + r).powi(2) - (rod + r).powi(2)).sqrt()];
+    let away = [centre[0] - s[0], centre[1] - s[1]];
+    let n = away[0].hypot(away[1]);
+    let (on_rod, on_ball) = ([rod, centre[1]], [s[0] + big * away[0] / n, s[1] + big * away[1] / n]);
+    let neck = 2.0 * PI * (flux_line(corner, on_rod) + flux_arc(centre, r, on_rod, on_ball)
+        + flux_arc(s, big, on_ball, corner)).abs();
+    let (area, z) = spandrel(2.0);
+    let root = 2.0 * PI * (rod + z) * area;
+    let h = corner[1] - (s[1] - big);
+    let cap = PI * h * h * (3.0 * big - h) / 3.0;
+    let want = PI * 30.0 * 30.0 * 8.0 + PI * rod * rod * (corner[1] - 8.0) + 4.0 / 3.0 * PI * big.powi(3)
+        - cap + root + neck;
+    close(props::volume(&b), want);
+    assert_eq!(kinds(&b).get("torus"), Some(&2));
+}
+
 /// **No term left unread**: the hand-written round with one side moved off its face
 /// (`p inside(1mm) a`) is no set of the table's — every term must be one an entry reads — so it is
 /// not built, and its export says no entry builds it.
