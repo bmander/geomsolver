@@ -13,6 +13,7 @@ use gcs_core::solve::{solve, SolveOpts};
 use std::f64::consts::PI;
 
 use crate::common::{ent, read};
+use crate::fillet_definition::{beside_cylinder, root_ring, square_run};
 
 fn solved(src: &str) -> Elaborated {
     let mut e = read(src);
@@ -190,20 +191,248 @@ fn a_bosss_root_is_a_ring_exactly() {
     assert_eq!(kinds(&b), [("cylinder", 1), ("plane", 7), ("torus", 1)].into());
 }
 
-/// **What no entry builds stays the field's**: a block whose east side leans, its near rim
-/// rounded — the run along the south edge is cut off at a slant where it meets the east face,
-/// which no entry builds yet. The export is refused, naming why, and the field still reads it.
+/// **A run-out** (#110): a run cut off by a face its edge ends on at a slant. The block's east side
+/// leans in (its top 10 short of its foot) and its west side leans out (5 past), and only its near
+/// face's south edge is rounded. The run is carried on past each end of its edge and cut off there
+/// by the face it ends on, however it stands (#195). At the east end the face reaches into the
+/// run's prism: the length kept at height `z` above the edge is short of 40 by `(10/24)·z`. At the
+/// west end it leans away, and the run carries on past the edge's end, `(5/24)·z` at height `z`.
+/// So the run takes its section's area along 40, less `(10/24 − 5/24)·z̄` of it, `z̄ = r(10 −
+/// 3π)/(12 − 3π)` its centroid's height.
+#[test]
+fn a_run_cut_off_at_a_slant_by_the_face_it_ends_on() {
+    let src = BLOCK.replace("fix((40, 24)) b2", "fix((30, 24)) b2").replace("fix((0, 24)) b3", "fix((-5, 24)) b3");
+    let e = solved(&format!("{src}block.near round(r: 2mm) block.south\n"));
+    assert_eq!(lowered(&e), (1, 1));
+    let b = exported(&e, "block");
+    let (area, zbar) = spandrel(2.0);
+    let want = (40.0 + 35.0) / 2.0 * 24.0 * 12.0 - area * 40.0 + (10.0 - 5.0) / 24.0 * zbar * area;
+    close(props::volume(&b), want);
+    // running out flush into the west face, it leaves no sliver of the near face there
+    assert_eq!(kinds(&b), [("cylinder", 1), ("plane", 6)].into());
+    // the app builds a solid about its own origin (`cad::shifted`): the planes the run is kept
+    // behind move with the rest (a cut's volume cannot tell, its prism past a face cutting air)
+    let recipe = gcs_core::solid::cad::recipe(&e.sketch, ent(&e, "block").i()).unwrap();
+    let by = [5.0, 7.0, 11.0];
+    let planes = |r: &gcs_core::json::Json| -> Vec<[f64; 3]> {
+        r.get("nodes").unwrap().arr().iter().filter_map(|n| n.get("pieces")).flat_map(|p| p.arr().iter())
+            .filter_map(|p| p.get("within")).flat_map(|w| w.arr().iter())
+            .map(|h| { let a = h.get("at").unwrap().arr(); [a[0].as_f64(), a[1].as_f64(), a[2].as_f64()] })
+            .collect()
+    };
+    let (before, after) = (planes(&recipe), planes(&gcs_core::solid::cad::shifted(&recipe, by)));
+    assert_eq!(before.len(), 2);
+    assert!(before.iter().zip(&after).all(|(p, q)| (0..3).all(|k| (p[k] - by[k] - q[k]).abs() < 1e-12)));
+}
+
+/// The leaning block's whole near rim: each of the four runs cut off at a slant where it meets the
+/// next side, and the runs unioned at the corners (mitres). Held to the field by the gate; its
+/// volume between the block's and the block's less every run's whole prism.
+#[test]
+fn a_leaning_rim_runs_out_at_every_corner() {
+    let src = BLOCK.replace("fix((40, 24)) b2", "fix((30, 24)) b2");
+    let e = solved(&format!("{src}block.near round(r: 2mm) block\n"));
+    assert_eq!(lowered(&e), (4, 6));
+    let b = exported(&e, "block");
+    let (r, rim) = (2.0, 40.0 + 26.0 + 30.0 + 24.0);
+    let whole = (40.0 + 30.0) / 2.0 * 24.0 * 12.0;
+    let v = props::volume(&b);
+    assert!(v < whole && v > whole - square_run(r) * rim, "{v}");
+    assert_eq!(kinds(&b), [("cylinder", 4), ("plane", 6)].into());
+}
+
+/// **What no entry builds stays the field's**: the leaning block rounded all over — at the corners
+/// of its leaning side three faces meet not square to one another, which no entry builds yet. The
+/// export is refused, naming why, and the field still reads it.
 #[test]
 fn a_round_no_entry_builds_is_refused_by_name() {
     let src = BLOCK.replace("fix((40, 24)) b2", "fix((30, 24)) b2");
-    let e = solved(&format!("{src}block.near round(r: 2mm) block\n"));
+    let e = solved(&format!("{src}round(r: 2mm) block\n"));
     let body = ent(&e, "block").i();
     let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
     let refusal = export::exact(&e.sketch, body, None, None, &say).err().expect("refused");
-    assert!(format!("{refusal:?}").contains("an edge cut off at a slant or by a curved face: no exact construction \
-        is made of it yet"), "{refusal:?}");
+    assert!(format!("{refusal:?}").contains("a corner whose faces are not square to one another: no exact \
+        construction is made of it yet"), "{refusal:?}");
     let field = MaterialField::read(&e.sketch, body, 1e-10).unwrap();
     assert!(field.side([20.0, 0.2, 0.2]) > 0.0 && field.side([20.0, 6.0, 6.0]) < 0.0);
+}
+
+/// A round section's area beside a square corner (`square_run`), and how far its centroid stands
+/// off each face, `r(10 − 3π)/(12 − 3π)`. (Turned about an axis `R` from the corner, Pappus:
+/// `fillet_definition::root_ring`.)
+fn spandrel(r: f64) -> (f64, f64) {
+    (square_run(r), r * (10.0 - 3.0 * PI) / (12.0 - 3.0 * PI))
+}
+
+/// `slot.sv`: rounds along chains of edges meeting tangent. Where a flat side goes on into a half
+/// circle there is no corner, so nothing ends either round there: the boss's foot is filled along
+/// its two flat sides (prisms) and round its two ends (stretches of rings, a half turn each), each
+/// glued to the next at the section they share; the pocket's rim likewise, four quarter turns.
+/// Pappus for the rings: the section's area along its centroid's circle, `R + z̄` from the axis.
+#[test]
+fn a_slots_rounds_go_on_round_its_tangent_ends() {
+    let e = solved(include_str!("../../examples/rounds/slot.sv"));
+    assert_eq!(lowered(&e).0, 12);
+    let b = exported(&e, "part");
+    let (foot, rim) = (square_run(2.0), square_run(1.0));
+    let boss = (18.0 * 12.0 + PI * 36.0) * 8.0;
+    let pocket = (20.0 * 16.0 - 4.0 * (16.0 - 4.0 * PI)) * 6.0;
+    let want = 80.0 * 50.0 * 10.0 + boss - pocket + foot * 2.0 * 18.0 + root_ring(6.0, 2.0)
+        - rim * (2.0 * 12.0 + 2.0 * 8.0) - root_ring(4.0, 1.0);
+    close(props::volume(&b), want);
+    assert_eq!(kinds(&b).get("torus"), Some(&6));
+}
+
+/// `pad.sv`: the boss's root a ring, two of the plate's near edges each a run cut off flush at the
+/// plate's sides, and the bore drilled through after — the rounds read the faces the body has
+/// before it.
+#[test]
+fn the_pads_rounds_are_built_exactly() {
+    let e = solved(include_str!("../../examples/rounds/pad.sv"));
+    // the app's exact solid, built about the pad's own origin (its first corner, off the world's):
+    // the pieces move with the rest (`solventc`'s export of it is the slow tier's)
+    let x = e.sketch.exact_solid(ent(&e, "pad").i()).unwrap();
+    let want = 60.0 * 40.0 * 10.0 + PI * 64.0 * 20.0 - PI * 16.0 * 30.0 + root_ring(8.0, 3.0)
+        - 2.0 * 40.0 * square_run(2.0);
+    close(props::volume(&x.brep) / x.mm.powi(3), want);
+    assert_eq!(kinds(&x.brep), [("cylinder", 4), ("plane", 7), ("torus", 1)].into());
+}
+
+/// `rail.sv`: the rod splits the plate's top in two, so the round is over a face in pieces — a run
+/// along each line where a piece meets the rod. In the section the rod is a circle: a prism of the
+/// line, the ball's arc and the rod's arc, running out flush at the plate's ends.
+#[test]
+fn a_rods_sides_are_filled_where_it_splits_the_plates_top() {
+    let e = solved(include_str!("../../examples/rounds/rail.sv"));
+    let b = exported(&e, "rail");
+    close(props::volume(&b), 60.0 * 10.0 * 40.0 + PI * 36.0 / 2.0 * 40.0 + 2.0 * 40.0 * beside_cylinder(6.0, 2.0));
+    assert_eq!(kinds(&b).get("cylinder"), Some(&3));
+}
+
+/// The same rod cut as a groove, its rims along the plate's top rounded: convex, so the same word
+/// takes them away — the ball within the plate and outside the groove, its section the fill's
+/// mirror. (Rounding its rims at the plate's ends too mitres a run against a ring's stretch on one
+/// cylinder, which this kernel's union does not yet resolve.)
+#[test]
+fn a_grooves_rims_are_rounded_away() {
+    let src = include_str!("../../examples/rounds/rail.sv").replace("rod union rail", "rod cut rail")
+        .replace("round(r: r) rail.plate\n", "round(r: r) rail.plate.cd\n");
+    assert!(src.contains("rail.plate.cd"));
+    let e = solved(&src);
+    let b = exported(&e, "rail");
+    close(props::volume(&b), 60.0 * 10.0 * 40.0 - PI * 36.0 / 2.0 * 40.0 - 2.0 * 40.0 * beside_cylinder(6.0, 2.0));
+}
+
+/// The groove's rim at the plate's near face: a half circle, its round a stretch of a ring ending
+/// at the plate's top — a plane through the groove's axis, standing where the turn stops, so the
+/// sector already ends there. In its meridian the corner is square: the spandrel, turned a half
+/// turn about the axis at `R + z̄` (Pappus).
+#[test]
+fn a_rings_stretch_ends_on_a_plane_through_its_axis() {
+    let src = include_str!("../../examples/rounds/rail.sv").replace("rod union rail", "rod cut rail")
+        .replace("round(r: r) rail.plate\n", "round(r: r) rail.plate.near\n");
+    let e = solved(&src);
+    let b = exported(&e, "rail");
+    close(props::volume(&b), 60.0 * 10.0 * 40.0 - PI * 36.0 / 2.0 * 40.0 - root_ring(6.0, 2.0) / 2.0);
+    assert_eq!(kinds(&b).get("torus"), Some(&1));
+}
+
+/// `knob.sv` (#83's knob): the rod's root a ring between a plane and a cylinder, its neck one
+/// between a cylinder and a sphere — in the meridian the sphere is a circle, the neck's section
+/// the rod's line, the rolled ball's arc and the ball's own arc (`fillet_meridian::knob_rounded`).
+#[test]
+fn a_knobs_neck_turns_a_section_with_a_curved_side() {
+    let e = solved(include_str!("../../examples/rounds/knob.sv"));
+    let b = exported(&e, "knob");
+    close(props::volume(&b), crate::fillet_meridian::knob_rounded([0.0, 44.0], 8.0, 4.0, 1.5));
+    assert_eq!(kinds(&b).get("torus"), Some(&2));
+}
+
+/// Of a cylinder of radius `small` standing on the axis of one of radius `big` (square to it), the
+/// volume inside the bigger: `∫ 2·√(small² − y²)·√(big² − y²) dy`, with `y = small·sin θ` a smooth
+/// periodic integrand, which the midpoint rule over its period takes to roundoff.
+fn inside_crossing(big: f64, small: f64) -> f64 {
+    let n = 64;
+    let mut total = 0.0;
+    for k in 0..n {
+        // the midpoint rule over a whole period of a smooth periodic integrand is spectral
+        let t = -PI / 2.0 + PI * (k as f64 + 0.5) / n as f64;
+        let (sn, cs) = t.sin_cos();
+        total += 2.0 * small * small * cs * cs * (big * big - small * small * sn * sn).sqrt();
+    }
+    total * PI / n as f64
+}
+
+/// The volume is held to the rolled pieces' closed form — #85's quadrature
+/// (`fillet_definition::rolled`) — to 1e-6, as #194 asks of a rolled piece.
+fn near_quadrature(got: f64, want: f64) {
+    assert!((got - want).abs() <= 1e-6 * want, "{got} against {want}");
+}
+
+/// `tee.sv` (#85's tee): a branch pipe standing square on a main pipe, the crotch filled. No line
+/// or circle carries where they meet: the ball rolls along a traced loop (`brep::fillet::roll`),
+/// against the body as its other terms make it, its canal fitted.
+#[test]
+fn a_tees_crotch_is_rolled() {
+    let e = solved(include_str!("../../examples/rounds/tee.sv"));
+    assert_eq!(lowered(&e).0, 1);
+    let b = exported(&e, "tee");
+    let want = PI * 100.0 * 60.0 + PI * 36.0 * 25.0 - inside_crossing(10.0, 6.0)
+        + crate::fillet_definition::tee_crotch(10.0, 6.0, 2.0);
+    near_quadrature(props::volume(&b), want);
+}
+
+/// `bore.sv` (#85's bore): a bore drilled square into a solid pipe's wall, its rim rounded away —
+/// convex, along a saddle, rolled against the pipe as the cut leaves it (the stratum).
+#[test]
+fn a_bores_rim_on_a_pipe_is_rolled_away() {
+    let e = solved(include_str!("../../examples/rounds/bore.sv"));
+    assert_eq!(lowered(&e).0, 1);
+    let b = exported(&e, "pipe");
+    let want = PI * 100.0 * 60.0 - inside_crossing(10.0, 6.0) - crate::fillet_definition::bore_rim(10.0, 6.0, 1.0);
+    near_quadrature(props::volume(&b), want);
+}
+
+/// Of a disc of radius `r`, the segment beyond a chord `d` from its centre: its area, and how far
+/// its centroid stands from the centre.
+fn segment(r: f64, d: f64) -> (f64, f64) {
+    let half = (d / r).acos();
+    let area = r * r * half - d * (r * r - d * d).sqrt();
+    (area, 2.0 * (r * r - d * d).powf(1.5) / (3.0 * area))
+}
+
+/// `runout.sv` (#110's run-outs): a boss's root against a sloped top, ending obliquely at the
+/// wedge's near face, and a hole's rim on another's slope, breaking out of its low end — each a
+/// ball rolled along a traced run, carried on past each end and cut off by the face there (#195).
+/// Each is held to #85's quadrature cut off by the same plane (`fillet_definition::sloped`):
+///
+/// - the lug: the wedge, plus the boss above the slope (all of it, less the part of its disc short
+///   of the near face under the slope, at its centroid's height 15), plus the root;
+/// - the vent: the block less the hole's disc short of the low end, under the slope (at its
+///   centroid's height), less the rim.
+///
+/// With the boss centred on the near face, the face cuts the root square: half a whole boss's root.
+#[test]
+fn rounds_that_run_out_onto_a_face_are_rolled_and_cut_off() {
+    use crate::fillet_definition::{sloped, sloped_root, RIM, ROOT};
+    let src = include_str!("../../examples/rounds/runout.sv");
+    let e = solved(src);
+    assert_eq!(lowered(&e).0, 2);
+    let wedge = 40.0 * 15.0 * 24.0;
+    let (seg, _) = segment(6.0, 3.0);
+    let lug = wedge + PI * 36.0 * 30.0 - 15.0 * (PI * 36.0 - seg)
+        + sloped(6.0, [20.0, -3.0], [20.0, 0.25], 2.0, ROOT, Some(([0.0, 1.0, 0.0], 0.0)));
+    near_quadrature(props::volume(&exported(&e, "lug")), lug);
+    let (seg, off) = segment(4.0, 2.0);
+    let short = PI * 16.0 - seg;
+    let x = (98.0 * PI * 16.0 - (98.0 + off) * seg) / short;
+    let vent = wedge - (35.0 - 0.25 * x) * short
+        - sloped(4.0, [98.0, -12.0], [35.0, 0.25], 1.0, RIM, Some(([1.0, 0.0, 0.0], 100.0)));
+    near_quadrature(props::volume(&exported(&e, "vent")), vent);
+    let centred = solved(&src.replace("fix((20, -3)) bc", "fix((20, 0)) bc"));
+    let b = exported(&centred, "lug");
+    let want = wedge + PI * 36.0 * 30.0 - 15.0 * PI * 18.0 + sloped_root(6.0, [20.0, 0.0], [20.0, 0.25], 2.0) / 2.0;
+    near_quadrature(props::volume(&b), want);
 }
 
 /// **No term left unread**: the hand-written round with one side moved off its face

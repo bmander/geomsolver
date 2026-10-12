@@ -70,36 +70,39 @@ pub fn node_named(n: &Json,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64
             let pad = diagonal.sqrt()*4e-5;
             prism(&profile,from-pad,to+pad)
         }
-        "body" => {
-            // the stock, plus everything on it, minus everything that cuts it, within everything
-            // that bounds it — in that order, as the native host combines them; then what reads
-            // the faces that makes (a round's fills, then its cuts: the stratum, #183 F6)
-            let mut solid = source("stock")?.clone();
-            for (key,op,written) in [("on",Op::Union,true),("cut",Op::Cut,true),("bound",Op::Common,true),
-                ("on_late",Op::Union,false),("cut_late",Op::Cut,false)] {
-                // the late sets only where a body has readers of its faces
-                let list = match n.get(key) { Some(l) => l.arr(),None if !written => continue,None => field(n,key)?.arr() };
-                for x in list {
-                    let operand = built.get(&x.as_i64()).ok_or(format!("recipe: an operand not built before its body"))?;
-                    let name = built_names.get(&x.as_i64()).cloned().unwrap_or_default();
-                    solid = combined(&solid,operand,op,floor).map_err(|e| format!("{key} `{name}`: {e}"))?;
-                }
-            }
-            Ok(solid)
-        }
+        "body" => body(n,built,built_names,floor),
         "lowered" => {
             // a region set's pieces (`solid::lowering`, #194): each run a prism or a revolution,
             // each corner the ball's patch built where it stands; those joined (a run ending in the section a
             // corner's cell begins in, meeting nowhere else) glued there, never intersected; the
             // chains unioned
-            let mut pieces = field(n,"pieces")?.arr().iter().map(|piece| node_named(piece,built,built_names,floor))
-                .collect::<Result<Vec<_>,_>>()?;
+            let mut pieces = field(n,"pieces")?.arr().iter().map(|piece| {
+                let mut b = node_named(piece,built,built_names,floor)?;
+                // a run cut off at a slant where its edge ends (a run-out): kept behind each face's
+                // plane (through `at`, its `normal` away from the run)
+                for h in piece.get("within").map_or(&[][..],|w| w.arr()) {
+                    let keep = vec3(field(h,"normal")?).map(|x| -x);
+                    b = kept(&b,vec3(field(h,"at")?),keep,floor).map_err(|e| format!("a run cut off at its end: {e}"))?;
+                }
+                Ok::<_,String>(b)
+            }).collect::<Result<Vec<_>,_>>()?;
             for c in field(n,"corners")?.arr() {
                 let (vertex,centre,radius) = (vec3(field(c,"vertex")?),vec3(field(c,"centre")?),field(c,"radius")?.as_f64());
                 let toward: Vec<V> = field(c,"toward")?.arr().iter().map(vec3).collect();
                 let toward: [V;3] = toward.try_into().map_err(|_| "recipe: a corner stands between three faces")?;
                 let tol = (1e-9*(1.+radius)).max(floor);
                 pieces.push(super::fillet::corner(vertex,centre,radius,toward,tol).map_err(|e| format!("a corner: {e}"))?);
+            }
+            // a ball rolled along a traced run (#194): against the body the region rounds as its terms
+            // but the late ones make it (the stratum), each piece the material it adds or takes
+            let rolled = n.get("rolled").map_or(&[][..],|r| r.arr());
+            if !rolled.is_empty() {
+                let stratum = body(field(n,"stratum")?,built,built_names,floor)?;
+                let tol = (1e-9*stratum.size()).max(floor);
+                for k in rolled {
+                    let (at,r) = (vec3(field(k,"at")?),field(k,"radius")?.as_f64());
+                    pieces.push(super::fillet::roll(&stratum,at,r,tol).map_err(|e| format!("a rolled round: {e}"))?.piece);
+                }
             }
             let joins: Vec<[usize;2]> = field(n,"joins")?.arr().iter()
                 .map(|j| { let j = j.arr(); [j[0].as_i64() as usize,j[1].as_i64() as usize] }).collect();
@@ -130,6 +133,42 @@ pub fn node_named(n: &Json,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64
         }
         k => Err(format!("recipe: a node of kind `{k}`")),
     }
+}
+
+/// A body: the stock, plus everything on it, minus everything that cuts it, within everything that
+/// bounds it — in that order, as the native host combines them; then what reads the faces that
+/// makes (a round's fills, then its cuts: the stratum, #183 F6), where `n` lists them.
+fn body(n: &Json,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64,String>,floor: f64) -> Result<Brep,String> {
+    let mut solid = built.get(&field(n,"stock")?.as_i64()).ok_or("recipe: `stock` not built before its user")?.clone();
+    for (key,op,written) in [("on",Op::Union,true),("cut",Op::Cut,true),("bound",Op::Common,true),
+        ("on_late",Op::Union,false),("cut_late",Op::Cut,false)] {
+        // the late sets only where a body has readers of its faces
+        let list = match n.get(key) { Some(l) => l.arr(),None if !written => continue,None => field(n,key)?.arr() };
+        for x in list {
+            let operand = built.get(&x.as_i64()).ok_or(format!("recipe: an operand not built before its body"))?;
+            let name = built_names.get(&x.as_i64()).cloned().unwrap_or_default();
+            solid = combined(&solid,operand,op,floor).map_err(|e| format!("{key} `{name}`: {e}"))?;
+        }
+    }
+    Ok(solid)
+}
+
+/// `piece` kept on the side `keep` (a unit normal) of the plane through `o`: in common with a block
+/// standing on the plane under the piece's middle, reaching past the piece on every other side.
+pub fn kept(piece: &Brep,o: V,keep: V,floor: f64) -> Result<Brep,String> {
+    use crate::space::{add,distance,dot,scale,sub};
+    use super::build::ProfileEdge;
+    let (lo,hi) = piece.bounds();
+    if !lo[0].is_finite() { return Err("a piece of nothing cut off at a plane".into()) }
+    let middle = scale(add(lo,hi),0.5);
+    let foot = sub(middle,scale(keep,dot(sub(middle,o),keep)));
+    let size = 2.*distance(lo,hi)+distance(middle,foot);
+    let f = super::geom::Frame::about(foot,keep);
+    let at = |x: f64,y: f64| f.at([x,y,0.]);
+    let corners = [at(-size,-size),at(size,-size),at(size,size),at(-size,size)];
+    let edges = (0..4).map(|k| ProfileEdge::Line {a:corners[k],b:corners[(k+1)%4]}).collect();
+    let block = prism(&Profile {origin:foot,normal:keep,loops:vec![edges],names:Vec::new()},0.,size)?;
+    combined(piece,&block,Op::Common,floor)
 }
 
 /// The recipe's root, built.

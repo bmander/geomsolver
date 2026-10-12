@@ -21,6 +21,8 @@ use gcs_core::space::norm as norm3;
 use gcs_core::syntax::Cmp;
 use std::f64::consts::{PI, TAU};
 
+use crate::fillet_definition::root_ring;
+
 type P = [f64; 2];
 
 fn sub(a: P, b: P) -> P { [a[0] - b[0], a[1] - b[1]] }
@@ -97,13 +99,6 @@ fn frustum() -> Region {
 fn faces(tag: u32, n: u32) -> Vec<u32> { (tag..tag + n).collect() }
 
 fn union(a: &Region, b: &Region) -> Region { boolean(a, b, Op::Union, 1e-9).unwrap() }
-
-/// The stack's `root_ring`: the ring a ball of radius `r` fills where a cylinder of radius `big`
-/// stands on a plane — the square at the corner less the quarter disc, turned (Pappus).
-fn root_ring(big: f64, r: f64) -> f64 {
-    let moment = r * r * (big + r / 2.0) - PI * r * r / 4.0 * (big + r - 4.0 * r / (3.0 * PI));
-    2.0 * PI * moment
-}
 
 /// The stack's `turned_wedge`: the volume the ball of radius `r` in the meridian corner at `corner`
 /// between unit directions `d` leaves turned, by its section in closed form.
@@ -191,15 +186,18 @@ fn a_knobs_root_and_neck_turn_their_sections() {
     let knob = union(&union(&disc, &shaft), &ball);
     let root = round(&knob, &faces(11, 4), &faces(1, 4), 2.0, 100).unwrap();
     let neck = round(&root, &faces(11, 4), &[21, 22], r, 101).unwrap();
-    let corner = [rod, s[1] - (big * big - rod * rod).sqrt()];
-    let neck_v = knob_neck(s, big, rod, r);
-    let root_v = root_ring(rod, 2.0);
-    close(turned(&root) - turned(&knob), root_v, "the root");
-    close(turned(&neck) - turned(&root), neck_v, "the neck");
-    let cap = { let h = corner[1] - (s[1] - big); PI * h * h * (3.0 * big - h) / 3.0 };
-    let want = PI * 30.0 * 30.0 * 8.0 + PI * rod * rod * (corner[1] - 8.0)
-        + 4.0 / 3.0 * PI * big.powi(3) - cap + root_v + neck_v;
-    close(turned(&neck), want, "the knob");
+    close(turned(&root) - turned(&knob), root_ring(rod, 2.0), "the root");
+    close(turned(&neck) - turned(&root), knob_neck(s, big, rod, r), "the neck");
+    close(turned(&neck), knob_rounded(s, big, rod, r), "the knob");
+}
+
+/// #83's knob rounded, whole (`x0/knob.sv`, `rounds/knob.sv`): the disc (30 by 8), the rod up to
+/// the ball, the ball less the cap the rod holds, its root's ring (2) and its neck's (`knob_neck`).
+pub(crate) fn knob_rounded(s: P, big: f64, rod: f64, r: f64) -> f64 {
+    let corner = s[1] - (big * big - rod * rod).sqrt();
+    let cap = { let h = corner - (s[1] - big); PI * h * h * (3.0 * big - h) / 3.0 };
+    PI * 30.0 * 30.0 * 8.0 + PI * rod * rod * (corner - 8.0) + 4.0 / 3.0 * PI * big.powi(3) - cap
+        + root_ring(rod, 2.0) + knob_neck(s, big, rod, r)
 }
 
 /// A chamfer of the frustum's rim is a cone band: the triangle it takes, turned (Pappus).  Both

@@ -325,11 +325,27 @@ body's faces is recognised by its terms' shapes (`recognised`: two or three `Fac
 where its edge ends, `meeting_of`: std's is, #195), an `Ends` per pair, and
 one bound saying the section — a ball's `centres` set or a flat's sum), **never by a word's name**
 (`by_hand.sv`'s own `Rolled` is built by the same entry), read off the stratum (`faces::cached`,
-`BodyFaces::plane`/`segment`/`circle`/`coaxial`/`normal`) into **pieces**: `Run` (the section along a
-straight edge between planes, its ends cut off square — else refused, `unbuilt`), `Ring` (a whole
-circle where a plane meets a coaxial cylinder or cone: the section in one meridian turned once),
+`BodyFaces::plane`/`cylinder`/`segment`/`circle`/`coaxial`/`normal`) into **pieces**, one per edge
+where a face reference names a face in pieces (`run`: every edge between the two groups, each kept
+within the whole run's ends, as the field reads them): `Run` (the section along a straight edge
+between planes, or a plane and a cylinder about a line along it — the section's `Trace`s a line and
+a circle, the ball where their offsets meet — carried on past each end until the plane faces it
+ends on cut it off (#195's meaning: a square one is the prism's end, one at a slant a half-space it
+is kept within, `Run::within`, the recipe's `"within"` as a point and a normal; a run-out); a face
+along the edge or a curved end refused, `unbuilt`), `Ring` (a circle where a
+plane meets a coaxial cylinder or cone: the section in the meridian at its start turned through its
+angle, `Ring::angle`; a sphere centred on the axis is a circle in the meridian (`Trace::Circle`,
+`knob.sv`'s neck); a stretch only where its ends are seams or planes through the axis at its
+ends' meridians), a run and a stretch going on from one
+another **glued** at their shared section (a face going on tangent across a seam is no end,
+`BodyFaces::continues`, the field's and the lowering's one rule),
 `Corner` (three square planes: the cell less the ball, `brep::fillet::corner`, plus each edge's
-run); no pieces where the faces never meet or an edge turns the other way. **The gate**: the
+run), `Rolled` (along an edge no line or coaxial circle carries — a tee's crotch, a bore's rim, a
+run-out across a slope: the ball rolled along the whole run, `brep::fillet::roll`, its canal
+fitted, carried past an end and cut off by the plane there; the recipe's `"rolled"` rolled against
+the body's stratum, rebuilt from the `"stratum"` terms `cad.rs` writes beside it, the gate's
+against `BodyFaces::brep` brought back by `BodyFaces::back`); no pieces where the faces never meet
+or an edge turns the other way. **The gate**: the
 pieces' B-rep held to the region's own field (`agreement`, by area; empty only where the field
 reads empty) before anything reads them. Memoised against the region's own terms (`document::reads_own`)
 and the stratum's `Arc` (`Sketch::lowering_cache`; a key over `solid::reads` walks every round of
@@ -343,9 +359,14 @@ this needs (ported from #79–#110): edges along a face cut where they cross its
 (`query::crossings_in`), touches read to second order (`ssi::touch_near`/`touch`,
 `trace_beside`/`unseen_beside`), equal crossing cylinders' ellipses split where they cross
 (`boolean::crossings_among`), `query::line_cylinder`, `Surface::offset`, a fitted edge read at its
-own `tol`. Open: slanted or curved ends, stretches of circles, corners not square, curved
-sections (arcs: #83), traced canals (`brep::fillet::roll`, #85), run-outs (#110), the OCCT oracle.
-`tests/round_lowering.rs` is the gate (every volume the closed form's to 1e-9).
+own `tol`. `cad::shifted` (the app's exact solid, built about its own origin) moves a lowered
+node's pieces, corners and balls with the rest (`shifted_node`). Open: curved ends at a corner (a
+run-out onto a curved face, #110), corners not square, runs between two curved faces, a run
+mitred against a ring's stretch on one cylinder (the union of coincident cylinder faces: a groove
+rounded at its ends), a flat along a traced edge, a rolled round beside other pieces in one
+region, the OCCT oracle. `tests/round_lowering.rs` is the gate (every volume the closed form's to
+1e-9, a rolled one #85's quadrature's to 1e-6: `slot.sv`, `pad.sv`, `rail.sv`, `knob.sv`,
+`tee.sv`, `bore.sv`, `runout.sv`).
 **Distance from a set, offsets (§6.21, 0.64, #145 F4):** `p distance(d, side: outside|inside) S`
 (`distance` is a set use, `may_use`), `p inside(d) S` / `p outside(d) S` and `std.Offset(S, d)` are
 one bound on the signed distance from `S`'s surface (`Reach`: cmp toward the outside, whether

@@ -57,8 +57,8 @@ const projects: Example[] = [{
     + 'read as sets, and by_hand.sv writes its own round in twenty lines. regions.sv shows solids '
     + 'that are sets read point by point. Then the fillet stack\'s parts: a cast pad, a turned '
     + 'knob, a rail, a pipe tee\'s crotch, a drilled pipe\'s rim, tangent chains round a slot and '
-    + 'a pocket, and rounds that run out onto a face. The README says what each shows; the '
-    + 'surfaces refine in the background as you watch.',
+    + 'a pocket, and rounds that run out onto a face, all built exactly too. The README says '
+    + 'what each shows; the surfaces refine in the background as you watch.',
   target: { kind: 'directory', path: 'rounds', entry: 'block.sv' },
 }, {
   label: 'Sundials · hour lines from the sun', key: 'sundial',

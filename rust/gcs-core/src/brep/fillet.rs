@@ -479,20 +479,13 @@ fn build_open(b: &Brep,chain: &[usize],net: &Net,surfaces: &[Surface;2],meeting:
     Ok(out)
 }
 
-/// A run's piece cut off at each plane its ends are cut off by, kept on the run's side: a block
-/// standing on the plane, as large as the piece, in common with it.
+/// A run's piece cut off at each plane its ends are cut off by, kept on the run's side
+/// (`recipe::kept`).
 fn trimmed(mut piece: Brep,trims: &[Trim]) -> Result<Brep,String> {
     let tol = 1e-9*piece.size();
     for (i,t) in trims.iter().enumerate() {
         if trims[..i].iter().any(|u| u.beside(t,tol)) { continue }
-        let (lo,hi) = piece.bounds();
-        let size = 2.*piece.size()+distance(scale(add(lo,hi),0.5),t.o);
-        let f = Frame::about(t.o,t.keep);
-        let at = |x: f64,y: f64| f.at([x,y,0.]);
-        let corners = [at(-size,-size),at(size,-size),at(size,size),at(-size,size)];
-        let edges = (0..4).map(|k| super::build::ProfileEdge::Line {a:corners[k],b:corners[(k+1)%4]}).collect();
-        let block = super::build::prism(&super::build::Profile {origin:t.o,normal:t.keep,loops:vec![edges],names:vec![]},0.,size)?;
-        piece = super::recipe::combined(&piece,&block,super::boolean::Op::Common,0.)
+        piece = super::recipe::kept(&piece,t.o,t.keep,0.)
             .map_err(|m| format!("a fillet's run cannot be cut off where it ends: {m}"))?;
     }
     Ok(piece)
