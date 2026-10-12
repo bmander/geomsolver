@@ -239,7 +239,7 @@ other (`tests/region_faces.rs::a_sketch_on_a_face_leaves_a_regions_reading_of_it
 `relations::face_relation` makes `p inside/outside[(d)] F` a `RegionShape::FaceSide` (signed
 distance from the surface, positive away from the material), `p distance(… d) F` and `p coincident
 F` a `Measured` over `Target::Face`; `distance(p, F)` in a sum the same; `angle(a, b, at: p)` (the
-one labelled measurement, `expr` `Tok::Colon`) a `RegionShape::Angle`, the material's angle at
+one labelled measurement, `syntax::Measurement::at`) a `RegionShape::Angle`, the material's angle at
 the nearest point of the edges `a` and `b` share, read as a **gate** (`region::GATE`: ±1e30 by
 whether it holds; convexity per edge at its middle by `solid_place`). Claims skip a point against a
 solid. Read by `solid::faces::BodyFaces` off `brep::recipe::build(cad::recipe(…))` (millimetres,
