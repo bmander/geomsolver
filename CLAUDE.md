@@ -70,7 +70,7 @@ relations, ties each (`planes::tie_twins`, E040 a plane twice; `planes::parallel
 `views::place`): `Sketch::tie_twin`'s two intrinsic rows, the twin on the point's plane and
 `Project`, then `Sketch::hold_twins`' point on the twin's plane — left out where a line the plane is
 built along (`axes_along`'s `Parallel3`) ends at the point or has it stated on it, a dependency the
-structural count cannot see (#88). The gear's folds are square so. A point is read where its reader
+structural count cannot see (#88). The crown's normal section N is square so. A point is read where its reader
 is drawn: `planes::memberships` puts a twin in a drawn element's slot (`Sketch::twin_in`,
 `replace_point`), `reading::read_twins` in a relation's before `in_space`. A twin goes by its
 point's name (`SourceMap::twin_of`, read by `name_of`/`writable_name`; never filed in `names`, so
@@ -87,7 +87,7 @@ point only its instance's `in` puts in a view (in space to its component: `crown
 coincident p`), a claim, a derivative, a set's application, a ring's statement, the point's own
 plane and a line's minted end (`l.p1`); a point in space is `planes::incidences`'. `project`
 never reads a twin (`relations::constrain`): it relates two planes, each operand in its own, so
-`m coincident P; O project m` still elaborates. The hypoid's pinion reads `gear.M` in Q so.
+`m coincident P; O project m` still elaborates.
 `tests/two_planes.rs` is the gate.
 
 **Nothing is imported bare unless the `use` names it (Solvent §14.4, [0.30], [0.48], #94):** a
@@ -723,7 +723,11 @@ parts where the built member says the faces meet; the gear's inner mate is read 
 over (its space cutter's `neighbor` is the inner crown a crown pitch round).
 `configuration.sv` states `shaft_angle`, `offset` (E = 0 is bevel); the pinion's cone solves
 against the gear's (`pitch/pinion.sv`); members roll at `N_c / N` off the gear's triangle, not
-`1 / sin`. `tests/hypoid_layout.rs` is the gate. The mesh export refuses a sheet a placement
+`1 / sin`. **No axial views** (#215): the gear's triangle O–M–F and the pinion's two axes stand
+in space square to P on their generators (`O level(p.v) foot`; the axes square to `square`, the
+level line square to the hinge), each side a bound (`foot inside p`, `tip outside p`), and a
+blank's face span is on its generator (`FaceSpan`, ordinates along it); only P and N are drawn in.
+`tests/hypoid_layout.rs` is the gate. The mesh export refuses a sheet a placement
 carries inside the blank; CLI test readers zero the offset.
 **Continuous motion solids:** `removal := solid(tool, under: generating, from: -30deg, to: 30deg)`
 is the union over the whole interval, not posed meshes; `at:` and intervals exclusive.

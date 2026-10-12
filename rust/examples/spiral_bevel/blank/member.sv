@@ -11,10 +11,9 @@ use std
 use blank.sphere
 
 // The blank of a member: `generator` runs from the apex to the mean point; `ax` is the member's
-// axis from its apex, and `view` its axial view.
-component MemberBlank(generator: line, ax: line, view: plane, design: group,
-                      normal_module: Length) {
-  span := blank.sphere.FaceSpan(generator, width: design.face_width) in view
+// axis from its apex.
+component MemberBlank(generator: line, ax: line, design: group, normal_module: Length) {
+  span := blank.sphere.FaceSpan(generator, width: design.face_width)
   toe := std.Sphere(generator.p1, r: hint(design.cone_distance))
   heel := std.Sphere(generator.p1, r: hint(design.cone_distance))
   span.toe coincident toe
@@ -47,5 +46,5 @@ preview {
     to_foot perpendicular ax
     generator angle(30deg) ax
   }
-  member := MemberBlank(generator, ax, std.front, proportions, normal_module: 2mm)
+  member := MemberBlank(generator, ax, proportions, normal_module: 2mm)
 }

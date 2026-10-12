@@ -9,20 +9,19 @@ that feeds one, computes a point with `sin` and `cos`. Each step is a module who
 says what it constructs. The plan is
 [docs/spiral-bevel-layout-plan.md](../../../docs/spiral-bevel-layout-plan.md).
 
-The layout is drawn in four views through M (`views.sv`): the pitch plane P, `std.top`, with the
-gear apex O at its origin, and three views folded square to it about lines through M, so none needs
-an angle of its own — G, the gear's axial view, along O → M; Q, the pinion's, along M → its apex A;
-and N, the normal section, along the trace normal C → M. A point on a fold is drawn in both views
-it lies in (`O := point in p, g`), so G's triangle is over O and M themselves; a point another
-module declares is said on the later view (`gear.M coincident q`), which draws it there too.
+The layout is drawn in two views through M (`views.sv`): the pitch plane P, `std.top`, with the
+gear apex O at its origin, and N, the normal section, folded square to it about the trace normal
+C → M, so it needs no angle of its own. The rest stands in space: each member's axis square to P
+on its pitch generator (the gear's triangle O–M–F, the pinion's axis through its apex A), and each
+blank a region about its axis, its face span on the generator.
 
 | Step | Module | Constructs |
 |---|---|---|
 | 1 | `configuration.sv`, `design.sv` | the stated pair: teeth, module, shafts, shift, spiral, allowances; the proportions |
-| 2 | `pitch/gear.sv` | the gear's pitch cone: the right triangle O–M–F in G |
+| 2 | `pitch/gear.sv` | the gear's pitch cone: the right triangle O–M–F, standing square to P on O → M |
 | 2 | `pitch/trace.sv` | the tooth trace about the cutter centre C, and the normal module |
 | 2 | `pitch/pinion.sv` | the pinion's cone, solved against the gear's by the shafts and equal normal pitch |
-| 3 | `blank/member.sv`, `blank/sphere.sv` | a member's blank, one region: within its pitch cone grown by the addendum (`std.Offset`) and its heel sphere, outside its toe sphere and its pitch cone shrunk by the back depth (`back`), sized by the solved layout; the end relief its tip's toe and heel corners chamfered in the same region (`std.Chamfered`); its faces `tip`, `heel`, `toe` and `back` |
+| 3 | `blank/member.sv`, `blank/sphere.sv` | the face span on the pitch generator; a member's blank, one region: within its pitch cone grown by the addendum (`std.Offset`) and its heel sphere, outside its toe sphere and its pitch cone shrunk by the back depth (`back`), sized by the solved layout; the end relief its tip's toe and heel corners chamfered in the same region (`std.Chamfered`); its faces `tip`, `heel`, `toe` and `back` |
 | 4 | `crown/thickness.sv` | the crown tooth's pitch points, a quarter pitch either side of M |
 | 4 | `crown/section.sv`, `crown/rounding.sv` | the rack section: straight flanks, base, tip and tip roundings |
 | 4 | `crown/tooth.sv` | the pinion's generator: the section in N, revolved about the cutter's axis |
@@ -30,7 +29,7 @@ module declares is said on the later view (`gear.M coincident q`), which draws i
 | 4 | `crown/reach.sv`, `crown/space.sv` | the gear's space cutter, closed clear of the blank |
 | 4 | `crown/relief.sv` | the tip relief: a semi-topping cut beside each crown |
 | 5 | `generation.sv` | the rolls, the generating motions and the indexing |
-| — | `layout.sv` | `HypoidLayout`: steps 2–5 in the four views |
+| — | `layout.sv` | `HypoidLayout`: steps 2–5 |
 | — | `members.sv` | `HypoidPair`: each blank less its crown's sweep at every tooth, and its reliefs |
 
 The normal module is stated nowhere: `ToothTrace` leaves it unbound and constructs it, and every

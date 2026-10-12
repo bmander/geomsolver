@@ -1,66 +1,66 @@
 // Step 2, the pinion's pitch cone, solved against the gear's. The shafts are stated, the
 // shaft angle and the offset apart, and the cone touches P along its generator through M: its
 // apex A lies in P, turned from O about M by the offset angle the solve answers, and its axis
-// is drawn in Q, the view square to P along M -> A.
+// stands square to P on the hinge M -> A.
 //
 // The equal normal pitch sizes it, with no cosine written. V, where MA crosses the square from
 // O to the trace's heading, falls with O on one point of the heading, so R cos(spiral) is
 // |MV| cos(spiral + offset angle). A virtual axis leaves V at the bevel pinion's pitch angle,
-// the angle at M in the gear's triangle, and the pinion's pitch radius is one circle about M
-// that both axes touch. With no offset, A and V are O and the two axes one.
+// the angle at M in the gear's triangle, and the pinion's pitch radius is one distance from M
+// that both axes keep. With no offset, A and V are O and the two axes one.
 use std (skew)
 use design
-use views
 use pitch.gear
 use pitch.trace
 
 // `gear` is the GearCone, `foot` the trace's square from O to its heading. A caller leaves
-// `pinion_angle` unbound: the two triangles below construct it.
-component PinionCone(p: plane, q: plane, gear: group, foot: line, design: group,
-                     pinion_angle: Angle) {
-  // Seeds only, rough: A and V the offset aside of O and back from it, and in Q the bevel
-  // pinion's cone.
+// `pinion_angle` and `pitch_radius` unbound: the triangles below construct them.
+component PinionCone(p: plane, gear: group, foot: line, design: group, pinion_angle: Angle,
+                     pitch_radius: Length) {
+  // Seeds only, rough: A and V the offset aside of O and back from it, the tips where the
+  // bevel pinion's cone puts its axis, above P.
   r := design.cone_distance
   d := design.offset
-  // A and V lie on the line where P and Q meet, so each is drawn in both. M is the gear's, drawn
-  // in P and G; it is on that line too, so it is said on Q, which draws it there as well.
-  A := point hint((-0.75 * d, 1.25 * d)) in p, q
-  V := point hint((-0.75 * d, 1.25 * d)) in p, q
+  c := design.gear_teeth / design.crown_teeth
+  s := design.pinion_teeth / design.crown_teeth
   in p {
+    A := point hint((-0.75 * d, 1.25 * d))
+    V := point hint((-0.75 * d, 1.25 * d))
     hinge := line(gear.M, A)
   }
-  gear.M coincident q
   V coincident hinge
   V coincident foot
   // The offset's hand: the pinion's apex on P's v side of the gear's generator.
   A distance(>= 0, along: v) p
-  in q {
-    tip := point hint(x: d - r * design.gear_teeth / design.crown_teeth,
-                      y: -r * design.pinion_teeth / design.crown_teeth)
-    virtual_tip := point hint(at: tip)
-    pitch_line := line(A, gear.M)
-    ax := line(A, tip)
-    virtual_line := line(V, gear.M)
-    virtual_axis := line(V, virtual_tip)
-    pitch_radius := circle(center: gear.M) hint(r: r * design.pinion_teeth / design.crown_teeth)
-  }
+  tip := point hint((-0.75 * d + (r + 0.75 * d) * c, 1.25 * d * (1 - c), r * s))
+  virtual_tip := point hint(at: tip)
+  pitch_line := line(A, gear.M)
+  ax := line(A, tip)
+  virtual_line := line(V, gear.M)
+  virtual_axis := line(V, virtual_tip)
+  // Both axes stand square to P on the hinge, above it: square to the level line square to it.
+  square := axis hint(dir: (0, 1, 0))
+  square perpendicular hinge
+  square perpendicular gear.crown_axis
+  ax perpendicular square
+  virtual_axis perpendicular square
+  tip outside p
+  virtual_tip outside p
   ax equal pitch_line
   virtual_axis equal virtual_line
-  ax tangent(side: right) pitch_radius
-  virtual_axis tangent(side: right) pitch_radius
+  gear.M distance(pitch_radius) ax
+  gear.M distance(pitch_radius) virtual_axis
   // The shafts.
   gear.ax skew(theta: design.shaft, e: design.offset) ax
   // The bevel pinion's pitch angle, generator to axis: the angle at M in the gear's triangle
   // is the angle at V.
-  gear.to_apex angle(pinion_angle, sense: cw) gear.to_foot
+  gear.to_apex angle(pinion_angle) gear.to_foot
   virtual_line angle(pinion_angle) virtual_axis
 }
 
 preview {
   unit mm
-  gear := pitch.gear.GearCone(std.top, g.view, design.hypoid_design)
-  g := views.FoldedView(std.top, gear.generator)
+  gear := pitch.gear.GearCone(std.top, design.hypoid_design)
   trace := pitch.trace.ToothTrace(std.top, gear.generator, design.hypoid_design)
-  pinion := PinionCone(std.top, q.view, gear, trace.foot, design.hypoid_design)
-  q := views.FoldedView(std.top, pinion.hinge)
+  pinion := PinionCone(std.top, gear, trace.foot, design.hypoid_design)
 }

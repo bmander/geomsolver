@@ -17,6 +17,9 @@ arithmetic. Three principles govern it:
 the files), a true hypoid with its shafts stated ([the true hypoid](#the-true-hypoid)), and all
 six language changes it asked for exist. Open: step 6's per-side checks module (`checks/`). The
 analytic faces are no longer written out (#212): the checks read them off the members as built.
+The axial views G and Q are gone (#215): the gear's triangle and the pinion's axes stand in space
+square to P on their generators, and the blanks are regions with their face spans on the
+generators, so only P and N are drawn in; the views below are the plan as it was laid out.
 
 ## Where the example stood
 

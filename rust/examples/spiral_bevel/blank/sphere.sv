@@ -1,34 +1,17 @@
 // Step 3, a member's ends: the face width centred on the mean point along the pitch generator
-// (`FaceSpan`, which the blank's end spheres pass through, blank/member.sv), and an end sphere
-// drawn about the apex through one of its ends as a revolved section (`SphericalBoundary`). A
-// sphere's meridian runs pole to pole through the rim, its poles
-// square to the generator, so it turns about its diameter clear of the cones.
+// (`FaceSpan`), which the blank's end spheres pass through (blank/member.sv).
 use std
 
-// The face width along `generator` (apex -> mean point), centred on the mean point.
+// The face width along `generator` (apex -> mean point), centred on the mean point: the toe
+// toward the apex, the heel away from it, each on the generator, wherever it is drawn.
 component FaceSpan(generator: line, width: Length) {
   // Seeds only, rough: a tenth of the generator either side of the mean point.
   toe := point hint(at: generator.p2, toward: generator.p1, by: 0.1)
   heel := point hint(at: generator.p2, toward: generator.p1, by: -0.1)
-  span := line(toe, heel)
-  generator.p2 midpoint span
-  distance(width) span
-  generator angle(0deg) span
-}
-
-// The sphere about `apex` through `rim`, a point of `generator` (apex -> mean point).
-component SphericalBoundary(apex: point, generator: line, rim: point) {
-  // Seeds: the rim turned a quarter either way about the apex.
-  private bottom := point hint(at: apex, toward: rim, turn: -90deg)
-  private top := point hint(at: apex, toward: rim, turn: 90deg)
-  private meridian := arc(center: apex, start: bottom, end: top)
-  private diameter := line(top, bottom)
-  apex coincident diameter
-  generator angle(90deg, sense: cw) diameter
-  rim coincident meridian
-  private profile := face(meridian, diameter)
-  private construction carrier := solid(profile, about: diameter)
-  wall := surface(carrier, meridian)
+  toe coincident generator
+  heel coincident generator
+  toe distance(width / 2, along: generator) generator.p2
+  generator.p2 distance(width / 2, along: generator) heel
 }
 
 preview {
@@ -37,8 +20,6 @@ preview {
     mean := point
     fix((50, 0)) mean
     generator := line(std.origin, mean)
-    span := FaceSpan(generator, width: 10mm)
-    toe := SphericalBoundary(std.origin, generator, span.toe)
-    heel := SphericalBoundary(std.origin, generator, span.heel)
   }
+  span := FaceSpan(generator, width: 10mm)
 }

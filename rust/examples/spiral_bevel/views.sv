@@ -1,9 +1,6 @@
-// The views the layout is drawn in. The pitch plane P is `std.top`, the gear apex O at its origin,
-// so the front plane is the view along P's v; every other view stands square to P on a line
-// through the mean point M, so it needs no angle of its own:
-//   G, the gear's axial view:    along O -> M, the gear apex to M  (pitch/gear.sv)
-//   Q, the pinion's axial view:  along M -> A, the pinion apex     (pitch/pinion.sv)
-//   N, the normal section:       along C -> M, the trace normal    (crown/)
+// The view the crown is drawn in. The pitch plane P is `std.top`, the gear apex O at its origin;
+// N, the normal section, stands square to P on the trace normal C -> M through the mean point M,
+// so it needs no angle of its own (crown/). The pitch cones and the blanks stand in space.
 use std
 
 // A view standing square to `parent` on `hinge`, a line drawn in it: its u is the hinge, so it

@@ -5,7 +5,6 @@
 // C.
 use std
 use design
-use views
 use pitch.gear
 use pitch.trace
 
@@ -42,8 +41,7 @@ component CrownThickness(p: plane, generator: line, normal: line, design: group)
 
 preview {
   unit mm
-  gear := pitch.gear.GearCone(std.top, g.view, design.hypoid_design)
-  g := views.FoldedView(std.top, gear.generator)
+  gear := pitch.gear.GearCone(std.top, design.hypoid_design)
   trace := pitch.trace.ToothTrace(std.top, gear.generator, design.hypoid_design)
   thickness := CrownThickness(std.top, gear.generator, trace.normal, design.hypoid_design)
 }
