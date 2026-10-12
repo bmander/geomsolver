@@ -20,6 +20,8 @@ pub type Box3 = (V,V);
 /// The box holding nothing, which anything widens.
 pub const EMPTY: Box3 = ([f64::INFINITY;3],[f64::NEG_INFINITY;3]);
 /// `b` widened to hold `p`.
+/// `t` moved by whole periods into `[lo, lo + period)`.
+pub fn around(t: f64,lo: f64,period: f64) -> f64 { lo+(t-lo).rem_euclid(period) }
 pub fn include(b: &mut Box3,p: V) { for k in 0..3 { b.0[k] = b.0[k].min(p[k]); b.1[k] = b.1[k].max(p[k]); } }
 /// `b` widened to hold `other` (unchanged by `EMPTY`).
 pub fn widen(b: &mut Box3,other: Box3) { for k in 0..3 { b.0[k] = b.0[k].min(other.0[k]); b.1[k] = b.1[k].max(other.1[k]); } }
@@ -596,6 +598,21 @@ impl Surface {
             Surface::Torus(_,big,_) => [u,wrap(z.datan2(rho-big))],
             Surface::Extrusion(..) | Surface::Revolution(..) | Surface::Blend(..) | Surface::BSpline(..) => unreachable!(),
         }
+    }
+    /// The surface standing `d` off this one along its own normal (`S_u × S_v`), where its signed
+    /// distance (`implicit`) is `d`: in closed form for the analytic kinds — a plane moved, a radius
+    /// grown or shrunk — and `None` for the swept and fitted kinds, or an offset through an axis.
+    pub fn offset(&self,d: f64) -> Option<Surface> {
+        let positive = |r: f64| (r > 0.).then_some(r);
+        Some(match *self {
+            Surface::Plane(f) => Surface::Plane(Frame {o:add(f.o,scale(f.z,d)),..f}),
+            Surface::Cylinder(f,r) => Surface::Cylinder(f,positive(r+d)?),
+            // implicit (ρ − r) cos α − z sin α = d is the cone of radius r + d / cos α at `o`
+            Surface::Cone(f,r,a) => Surface::Cone(f,positive(r+d/a.dcos())?,a),
+            Surface::Sphere(f,r) => Surface::Sphere(f,positive(r+d)?),
+            Surface::Torus(f,big,r) => Surface::Torus(f,big,positive(r+d)?),
+            Surface::Extrusion(..) | Surface::Revolution(..) | Surface::Blend(..) | Surface::BSpline(..) => return None,
+        })
     }
     /// A signed distance whose zero set is the surface (for a cone, the one sheet `ρ ≥ 0` its
     /// parameters reach), positive on the side its normal points to: exact for the plane,
