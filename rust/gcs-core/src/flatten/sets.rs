@@ -726,10 +726,12 @@ impl<'a> Walk<'a> {
         // q outside S }` the sides turned round, from `{ q | q inside S }` as they are
         if let Some((other, outside)) = self.side_of_set(abs, alias) {
             let mut turned = lowered.clone();
-            for a in turned.args.iter_mut().filter(|_| outside) {
-                if let OpArg::Named(n, crate::syntax::Arg::Word(x)) = a {
-                    if n.text == "side" {
-                        *x = if x == "outside" { "inside".into() } else { "outside".into() };
+            if outside {
+                for a in turned.args.iter_mut() {
+                    if let OpArg::Named(n, crate::syntax::Arg::Word(x)) = a {
+                        if n.text == "side" {
+                            *x = if x == "outside" { "inside".into() } else { "outside".into() };
+                        }
                     }
                 }
             }
@@ -1044,35 +1046,25 @@ pub(super) fn instance_part(lit: &SetLit) -> (Vec<Stmt>, SetLit) {
             _ => None,
         }
     }
+    let judged: Vec<_> = lit.body.iter().map(reads).collect();
+    // the names that read the point, grown until no statement adds one
     let mut reading: BTreeSet<&str> = BTreeSet::from([lit.bound.text.as_str()]);
     let mut set = vec![false; lit.body.len()];
-    loop {
-        let mut grew = false;
-        for (k, st) in lit.body.iter().enumerate() {
-            if set[k] {
-                continue;
-            }
-            let judged = reads(st);
-            let point = judged.as_ref()
-                .is_none_or(|(names, _)| names.iter().any(|n| reading.contains(n)));
-            if point {
-                let defines = judged.and_then(|(_, d)| d);
+    let mut grew = true;
+    while grew {
+        grew = false;
+        for (k, j) in judged.iter().enumerate() {
+            let on_point = |(ns, _): &(Vec<&str>, _)| ns.iter().any(|n| reading.contains(n));
+            if !set[k] && j.as_ref().is_none_or(on_point) {
                 set[k] = true;
                 grew = true;
-                reading.extend(defines);
+                reading.extend(j.as_ref().and_then(|(_, d)| *d));
             }
         }
-        if !grew {
-            break;
-        }
     }
-    let mut own = Vec::new();
-    let mut rest = lit.clone();
-    rest.body.clear();
-    for (st, is_set) in lit.body.iter().zip(set) {
-        if is_set { rest.body.push(st.clone()) } else { own.push(st.clone()) }
-    }
-    (own, rest)
+    let (body, own): (Vec<_>, Vec<_>) = lit.body.iter().cloned().zip(set).partition(|(_, s)| *s);
+    let stmts = |v: Vec<(Stmt, bool)>| v.into_iter().map(|(st, _)| st).collect();
+    (stmts(own), SetLit { bound: lit.bound.clone(), body: stmts(body), span: lit.span })
 }
 
 /// A statement's written relation, where it is one.

@@ -332,12 +332,12 @@ impl RegionShape {
     /// axis's direction — `None` for another shape, or a line of no length.
     pub fn normal(&self, sk: &Sketch) -> Option<[f64; 3]> {
         let RegionShape::Plane { along, .. } = *self else { return None };
-        let point = |i: u32| sk.world_point(i as usize);
         match along.kind {
             EntKind::Plane => Some(sk.basis(along.i()).normal()),
             EntKind::Line => {
                 let l = sk.lines.get(along.i())?;
-                crate::space::normalised(crate::space::sub(point(l.p2), point(l.p1)))
+                let (a, b) = (sk.world_point(l.p1 as usize), sk.world_point(l.p2 as usize));
+                crate::space::normalised(crate::space::sub(b, a))
             }
             EntKind::Axis => {
                 let d = sk.axes.get(along.i())?.d.map(|q| sk.params[q as usize].value);

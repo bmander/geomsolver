@@ -205,14 +205,10 @@ impl SweepContacts {
                 SolidDef::Region {..} => {
                     let m = super::region::meridian(sk,id)?;
                     for lp in RevolvedSurface::meridian_loops(&m,&sk.solids[id].name) {
-                        let mut order = Vec::with_capacity(lp.len());
-                        for surface in lp {
-                            order.push(surface.map(|s| {
-                                patches.push(ToolSurface::Revolved(s.placed(pose)));
-                                patches.len()-1
-                            }));
-                        }
-                        loops.push(order);
+                        loops.push(lp.into_iter().map(|s| s.map(|s| {
+                            patches.push(ToolSurface::Revolved(s.placed(pose)));
+                            patches.len()-1
+                        })).collect());
                     }
                 }
                 // a prism's sides, one an edge of its profile; its caps, square to the extrusion,

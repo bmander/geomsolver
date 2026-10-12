@@ -77,9 +77,9 @@ fn a_cone_through_a_point_is_its_closed_form() {
 #[test]
 fn a_cone_throughs_apex_is_made_once() {
     let b = "b := point hint((5, 30, 10))\nfix(x == 5) b\nfix(y == 30) b\nb coincident k\n";
-    let (one, two) = (read(&cone_through("20deg", "")), read(&cone_through("20deg", b)));
-    assert_eq!(two.sketch.params.len() - one.sketch.params.len(), 3);
+    let one = read(&cone_through("20deg", ""));
     let e = solved(&cone_through("20deg", b));
+    assert_eq!(e.sketch.params.len() - one.sketch.params.len(), 3);
     let (r, z) = (5f64.hypot(30.0), at(&e, "b")[2]);
     assert!((z - (10.0 + (r - 20.0) / 20f64.to_radians().tan())).abs() < 1e-9, "{z}");
     assert!(off_line(at(&e, "k.apex"), [0.0; 3], [0.0, 0.0, 1.0]) < 1e-12);
@@ -294,12 +294,12 @@ fn a_crown_tooth_region_cuts_a_region_blank_exactly() {
     let said = lines.lock().unwrap().join("\n");
     assert!(said.contains("5 profile faces"), "{said}");
     assert!(said.contains(", 0 disagree"), "{said}");
-    let removed = props::volume(&exact.solid);
+    let left = props::volume(&exact.solid);
     let blank = {
         let ex = e.sketch.exact_solid(ent(&e, "blank").i()).unwrap();
         props::volume(&ex.brep) / ex.mm.powi(3)
     };
-    assert!(removed < blank - 1.0, "{removed} of {blank}: the tooth space is cut");
+    assert!(left < blank - 1.0, "{left} of {blank}: the tooth space is cut");
     let meter = Meter::read(&e.sketch, body, Options::in_units(1.0)).unwrap();
     let (vertices, triangles) = gcs_core::solid::agreement::stl_triangles(&stl, 1.0).unwrap();
     let samples = accuracy::mesh_samples(&vertices, &triangles, 4000);

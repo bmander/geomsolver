@@ -213,7 +213,7 @@ component ConeThrough(about: line, q: point, lean: Angle) := { p |
 // `o` along `along` (§6.21), a set and nothing drawn.  Its inside is behind it, the side `along`
 // points away from (`p inside top` is at most `d`).
 //
-//   top := std.Level(c, cut_ax, 2mm)
+//   top := std.Level(c, cut_ax, d: 2mm)
 component Level(o: point, along: line, d: Length) := { p | o distance(d, along: along) p }
 
 // The set `S` offset by `d`: the points `d` outside its surface (§6.21) — a sphere's, a
