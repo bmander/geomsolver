@@ -51,8 +51,16 @@ fn a_component_recurses_until_its_when_ends_it() {
 /// rhomb (legs `l`, apex 36°) cuts into an acute and an obtuse one, an obtuse (legs `s`, apex
 /// 108°) into two obtuse and an acute.  A leaf draws its two legs, apex first.
 fn penrose(depth: usize) -> String {
+    penrose_from(depth, "repeat 10 as k {\n\
+                 v := point\n\
+                 fix((l * cos(36deg * k), l * sin(36deg * k))) v\n\
+               }", "v")
+}
+
+/// The same tiling, its ten outer points stated by `sun` and called `v[…]` by the rest.
+fn penrose_from(depth: usize, sun: &str, v: &str) -> String {
     format!(
-        "use std\n\
+        "use std (horizontal)\n\
          param depth := {depth}\n\
          param l := 100\n\
          component Acute(a: point, b: point, c: point, l: Length, n: Int) {{\n\
@@ -90,17 +98,14 @@ fn penrose(depth: usize) -> String {
          in std.front {{\n\
            o := point hint((0, 0))\n\
            fix((0, 0)) o\n\
-           repeat 10 as k {{\n\
-             v := point\n\
-             fix((l * cos(36deg * k), l * sin(36deg * k))) v\n\
-           }}\n\
+           {sun}\n\
            repeat 5 as k {{\n\
-             t := Acute(o, v[2 * k + 1], v[2 * k], l: l, n: depth)\n\
+             t := Acute(o, {v}[2 * k + 1], {v}[2 * k], l: l, n: depth)\n\
            }}\n\
            repeat 4 as k {{\n\
-             m := Acute(o, v[2 * k + 1], v[2 * k + 2], l: l, n: depth)\n\
+             m := Acute(o, {v}[2 * k + 1], {v}[2 * k + 2], l: l, n: depth)\n\
            }}\n\
-           last := Acute(o, v[9], v[0], l: l, n: depth)\n\
+           last := Acute(o, {v}[9], {v}[0], l: l, n: depth)\n\
          }}\n"
     )
 }
@@ -145,16 +150,36 @@ fn subdivided(depth: usize) -> Vec<(bool, P, P, P)> {
 /// branch each point is seeded on included, which a count of lengths alone would not see.
 #[test]
 fn mutually_recursive_components_subdivide_a_penrose_sun() {
-    let depth = 3;
-    let e = read(&penrose(depth));
+    tiles(&penrose(3), 3, 0);
+}
+
+/// **The same with the sun a `ring`** (#225): `std.Polygon`'s ten corners, nine of them turned
+/// copies of the first, each subdivided triangle seeding its points from them — so each seed must
+/// read a copy where its turn puts it, or the deepest levels start on the wrong branch.
+#[test]
+fn a_penrose_sun_drawn_as_a_ring_subdivides_alike() {
+    let sun = "q := point hint((l, 0))\n\
+               ref := line(o, q)\n\
+               horizontal ref\n\
+               o distance(l) q\n\
+               sun := std.Polygon(o, ref, n: 10, r: l, phase: 0deg)";
+    // `ref` and the polygon's ten sides
+    tiles(&penrose_from(3, sun, "sun.v"), 3, 11);
+}
+
+/// Every leaf the solve places is a triangle of `subdivided(depth)`, and every one is drawn;
+/// `sun` lines are drawn before the leaves.
+fn tiles(src: &str, depth: usize, sun: usize) {
+    let e = read(src);
     let mut sk = e.sketch;
     let r = solve(&mut sk, SolveOpts::default());
     assert!(r.success, "{r:?}");
     let want = subdivided(depth);
     assert_eq!(want.len(), 130, "10 → 20 → 50 → 130 half rhombs");
-    // each leaf drew its two legs, apex first, one after the other
-    assert_eq!(sk.lines.len(), 2 * want.len());
-    let drawn: Vec<(P, P, P)> = sk.lines.chunks(2)
+    // each leaf drew its two legs, apex first, one after the other, past the sun's
+    assert_eq!(sk.lines.len(), sun + 2 * want.len());
+    let legs = &sk.lines[sun..];
+    let drawn: Vec<(P, P, P)> = legs.chunks(2)
         .map(|legs| {
             assert_eq!(legs[0].p1, legs[1].p1, "a leaf's legs share its apex");
             let xy = |i: u32| sk.point_xy(i as usize);

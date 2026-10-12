@@ -780,6 +780,51 @@ fn seed_eval(
     }
 }
 
+/// Where a seed is written: a parameter a `fix` holds or a bound carried across is left where it
+/// stands, and a ring's turned copy (§12.3) is its representative's place turned, never its own
+/// seed — so each write turns the copies over what it moved at once, and a seed read later in
+/// statement order reads a copy where the solve will put it (#225).
+struct Seeds<'h> {
+    held: &'h std::collections::BTreeSet<u32>,
+    derived: Vec<crate::model::Derivation>,
+    /// The derivations over each base parameter, by index into `derived`.
+    over: BTreeMap<u32, Vec<usize>>,
+    is_derived: Vec<bool>,
+}
+
+impl<'h> Seeds<'h> {
+    fn new(sk: &Sketch, held: &'h std::collections::BTreeSet<u32>) -> Self {
+        let derived = sk.derived();
+        let mut over: BTreeMap<u32, Vec<usize>> = BTreeMap::new();
+        for (i, d) in derived.iter().enumerate() {
+            for &(b, _) in &d.terms {
+                over.entry(b).or_default().push(i);
+            }
+        }
+        Seeds { held, derived, over, is_derived: sk.derived_mask() }
+    }
+
+    fn write(&self, sk: &mut Sketch, p: u32, v: f64) {
+        if self.is_derived.get(p as usize).copied().unwrap_or(false) {
+            return;
+        }
+        let q = &mut sk.params[p as usize];
+        if q.fixed || self.held.contains(&p) {
+            return;
+        }
+        q.value = v;
+        for &i in self.over.get(&p).into_iter().flatten() {
+            // the sum `Derivation::value` takes, over the parameters as they stand
+            let d = &self.derived[i];
+            let mut sum = 0.0;
+            for &(b, w) in &d.terms {
+                sum += w * sk.params[b as usize].value;
+            }
+            sk.params[d.param as usize].value = sum;
+        }
+    }
+}
+
 /// Seeds that read geometry, worked out in statement order — never over a number a `fix` holds,
 /// which was applied first.
 /// `held`: the parameters left where they stand — a point a bound carried across (§9.6), whose
@@ -791,12 +836,8 @@ pub(super) fn settle_deferred(
     held: &std::collections::BTreeSet<u32>,
     diags: &mut Vec<Diag>,
 ) {
-    let write = |sk: &mut Sketch, p: u32, v: f64| {
-        let q = &mut sk.params[p as usize];
-        if !q.fixed && !held.contains(&p) {
-            q.value = v;
-        }
-    };
+    let seeds = Seeds::new(sk, held);
+    let write = |sk: &mut Sketch, p: u32, v: f64| seeds.write(sk, p, v);
     for d in deferred {
         let (span, stmt, result) = match d {
             Deferred::Text { param, text, names, span, stmt } => {
@@ -823,10 +864,8 @@ pub(super) fn settle_deferred(
                 let ((cx, cy), (sx, sy)) =
                     (sk.point_xy(a.center as usize), sk.point_xy(a.start as usize));
                 let r = (sx - cx).dhypot(sy - cy);
-                let rp = a.radius as usize;
-                if !sk.params[rp].fixed {
-                    sk.params[rp].value = if r.abs() > 1e-9 { r } else { UNSEEDED_RADIUS };
-                }
+                let rp = a.radius;
+                write(sk, rp, if r.abs() > 1e-9 { r } else { UNSEEDED_RADIUS });
                 continue;
             }
         };
