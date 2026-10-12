@@ -162,7 +162,7 @@ pub fn kept(piece: &Brep,o: V,keep: V,floor: f64) -> Result<Brep,String> {
     if !lo[0].is_finite() { return Err("a piece of nothing cut off at a plane".into()) }
     let middle = scale(add(lo,hi),0.5);
     let foot = sub(middle,scale(keep,dot(sub(middle,o),keep)));
-    let size = 2.*piece.size()+distance(middle,foot);
+    let size = 2.*distance(lo,hi)+distance(middle,foot);
     let f = super::geom::Frame::about(foot,keep);
     let at = |x: f64,y: f64| f.at([x,y,0.]);
     let corners = [at(-size,-size),at(size,-size),at(size,size),at(-size,size)];

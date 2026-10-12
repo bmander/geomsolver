@@ -193,10 +193,9 @@ fn the_rounds_export_and_measure_within_their_tolerance() {
         let (stl,step) = (dir.join(format!("{name}.stl")),dir.join(format!("{name}.step")));
         let (stl,step) = (stl.to_str().unwrap(),step.to_str().unwrap());
         let which: Vec<&str> = solid.iter().flat_map(|s| ["--solid",*s]).collect();
-        let solventc = |args: &[&str]| run(&[&[source.as_str()],args,&["--tolerance","0.01mm","--no-diagnose"],&which].concat());
-        let result = solventc(&["--stl",stl,"--step",step]);
-        assert_eq!(result.status.code(),Some(0),"{name}: {}",String::from_utf8_lossy(&result.stderr));
-        let measured = solventc(&["--measure",stl]);
+        // one run writes both and measures what it wrote
+        let measured = run(&[&[source.as_str(),"--stl",stl,"--step",step,"--measure",stl,"--tolerance","0.01mm","--no-diagnose"],
+            &which[..]].concat());
         let stdout = String::from_utf8_lossy(&measured.stdout);
         assert_eq!(measured.status.code(),Some(0),"{name}: {stdout}{}",String::from_utf8_lossy(&measured.stderr));
         assert!(stdout.contains("tolerance 10.000 µm: every exact face within it"),"{name}: {stdout}");

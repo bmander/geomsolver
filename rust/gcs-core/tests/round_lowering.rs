@@ -13,7 +13,7 @@ use gcs_core::solve::{solve, SolveOpts};
 use std::f64::consts::PI;
 
 use crate::common::{ent, read};
-use crate::fillet_definition::root_ring;
+use crate::fillet_definition::{beside_cylinder, root_ring, square_run};
 
 fn solved(src: &str) -> Elaborated {
     let mut e = read(src);
@@ -237,7 +237,7 @@ fn a_leaning_rim_runs_out_at_every_corner() {
     let (r, rim) = (2.0, 40.0 + 26.0 + 30.0 + 24.0);
     let whole = (40.0 + 30.0) / 2.0 * 24.0 * 12.0;
     let v = props::volume(&b);
-    assert!(v < whole && v > whole - spandrel(r).0 * rim, "{v}");
+    assert!(v < whole && v > whole - square_run(r) * rim, "{v}");
     assert_eq!(kinds(&b), [("cylinder", 4), ("plane", 6)].into());
 }
 
@@ -257,11 +257,11 @@ fn a_round_no_entry_builds_is_refused_by_name() {
     assert!(field.side([20.0, 0.2, 0.2]) > 0.0 && field.side([20.0, 6.0, 6.0]) < 0.0);
 }
 
-/// A round section's area beside a square corner, `(1 − π/4)r²`, and how far its centroid stands
+/// A round section's area beside a square corner (`square_run`), and how far its centroid stands
 /// off each face, `r(10 − 3π)/(12 − 3π)`. (Turned about an axis `R` from the corner, Pappus:
 /// `fillet_definition::root_ring`.)
 fn spandrel(r: f64) -> (f64, f64) {
-    ((1.0 - PI / 4.0) * r * r, r * (10.0 - 3.0 * PI) / (12.0 - 3.0 * PI))
+    (square_run(r), r * (10.0 - 3.0 * PI) / (12.0 - 3.0 * PI))
 }
 
 /// `slot.sv`: rounds along chains of edges meeting tangent. Where a flat side goes on into a half
@@ -274,7 +274,7 @@ fn a_slots_rounds_go_on_round_its_tangent_ends() {
     let e = solved(include_str!("../../examples/rounds/slot.sv"));
     assert_eq!(lowered(&e).0, 12);
     let b = exported(&e, "part");
-    let (foot, rim) = (spandrel(2.0).0, spandrel(1.0).0);
+    let (foot, rim) = (square_run(2.0), square_run(1.0));
     let boss = (18.0 * 12.0 + PI * 36.0) * 8.0;
     let pocket = (20.0 * 16.0 - 4.0 * (16.0 - 4.0 * PI)) * 6.0;
     let want = 80.0 * 50.0 * 10.0 + boss - pocket + foot * 2.0 * 18.0 + root_ring(6.0, 2.0)
@@ -289,23 +289,13 @@ fn a_slots_rounds_go_on_round_its_tangent_ends() {
 #[test]
 fn the_pads_rounds_are_built_exactly() {
     let e = solved(include_str!("../../examples/rounds/pad.sv"));
-    let b = exported(&e, "pad");
-    let want = 60.0 * 40.0 * 10.0 + PI * 64.0 * 20.0 - PI * 16.0 * 30.0 + root_ring(8.0, 3.0)
-        - 2.0 * 40.0 * spandrel(2.0).0;
-    close(props::volume(&b), want);
-    assert_eq!(kinds(&b), [("cylinder", 4), ("plane", 7), ("torus", 1)].into());
     // the app's exact solid, built about the pad's own origin (its first corner, off the world's):
-    // the pieces move with the rest
+    // the pieces move with the rest (`solventc`'s export of it is the slow tier's)
     let x = e.sketch.exact_solid(ent(&e, "pad").i()).unwrap();
+    let want = 60.0 * 40.0 * 10.0 + PI * 64.0 * 20.0 - PI * 16.0 * 30.0 + root_ring(8.0, 3.0)
+        - 2.0 * 40.0 * square_run(2.0);
     close(props::volume(&x.brep) / x.mm.powi(3), want);
-}
-
-/// The section beside a cylinder of radius `big` whose axis lies in a plane, where the ball of
-/// radius `r` touches both: the triangle of the axis, the plane's touch and the ball's centre, less
-/// the ball's sector and the cylinder's.
-fn beside_cylinder(big: f64, r: f64) -> f64 {
-    let a = ((big + r) * (big + r) - r * r).sqrt();
-    a * r / 2.0 - r * r * (r / (big + r)).acos() / 2.0 - big * big * r.atan2(a) / 2.0
+    assert_eq!(kinds(&x.brep), [("cylinder", 4), ("plane", 7), ("torus", 1)].into());
 }
 
 /// `rail.sv`: the rod splits the plate's top in two, so the round is over a face in pieces — a run
@@ -376,7 +366,6 @@ fn inside_crossing(big: f64, small: f64) -> f64 {
 /// The volume is held to the rolled pieces' closed form — #85's quadrature
 /// (`fillet_definition::rolled`) — to 1e-6, as #194 asks of a rolled piece.
 fn near_quadrature(got: f64, want: f64) {
-    eprintln!("against the quadrature: {got:.9} for {want:.9}, {:+.2e}", (got - want) / want);
     assert!((got - want).abs() <= 1e-6 * want, "{got} against {want}");
 }
 

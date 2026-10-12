@@ -365,7 +365,7 @@ impl BodyFaces {
     }
 
     /// The faces at vertex `v` other than `not`.
-    pub fn faces_at(&self, v: u32, not: &[usize]) -> Vec<usize> {
+    fn faces_at(&self, v: u32, not: &[usize]) -> Vec<usize> {
         (0..self.edges.len()).filter(|fi| {
             !not.contains(fi) && self.edges[*fi].iter().any(|&e| self.loc.b.edges[e as usize].v.contains(&v))
         }).collect()

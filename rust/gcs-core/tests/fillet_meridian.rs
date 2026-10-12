@@ -21,6 +21,8 @@ use gcs_core::space::{cross as cross3, dot as dot3, norm as norm3, sub as sub3};
 use gcs_core::syntax::Cmp;
 use std::f64::consts::{PI, TAU};
 
+use crate::fillet_definition::root_ring;
+
 type P = [f64; 2];
 
 fn sub(a: P, b: P) -> P { [a[0] - b[0], a[1] - b[1]] }
@@ -91,13 +93,6 @@ fn frustum() -> Region {
 fn faces(tag: u32, n: u32) -> Vec<u32> { (tag..tag + n).collect() }
 
 fn union(a: &Region, b: &Region) -> Region { boolean(a, b, Op::Union, 1e-9).unwrap() }
-
-/// The stack's `root_ring`: the ring a ball of radius `r` fills where a cylinder of radius `big`
-/// stands on a plane — the square at the corner less the quarter disc, turned (Pappus).
-fn root_ring(big: f64, r: f64) -> f64 {
-    let moment = r * r * (big + r / 2.0) - PI * r * r / 4.0 * (big + r - 4.0 * r / (3.0 * PI));
-    2.0 * PI * moment
-}
 
 /// The stack's `turned_wedge`: the volume the ball of radius `r` in the meridian corner at `corner`
 /// between unit directions `d` leaves turned, by its section in closed form.

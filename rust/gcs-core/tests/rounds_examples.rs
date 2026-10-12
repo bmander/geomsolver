@@ -7,10 +7,11 @@
 use gcs_core::program::Elaborated;
 use gcs_core::solid::MaterialField;
 use gcs_core::solve::{solve, SolveOpts};
-use std::f64::consts::PI;
 
 use crate::common::{ent, read};
-use crate::fillet_definition::{bore_rim, root_ring, sloped, sloped_root, tee_crotch, RIM, ROOT};
+use crate::fillet_definition::{
+    beside_cylinder, bore_rim, root_ring, sloped, sloped_root, square_run, tee_crotch, RIM, ROOT,
+};
 use crate::fillet_meridian::knob_neck;
 use crate::region_general::field_volume;
 
@@ -155,8 +156,6 @@ fn agrees(what: &str, got: f64, want: f64) {
     assert!((got - want).abs() <= BAR * want.abs(), "{what}: {got} against {want}");
 }
 
-/// A straight run's section: the corner a ball of radius `r` leaves between two faces square.
-fn square_run(r: f64) -> f64 { (1.0 - PI / 4.0) * r * r }
 
 /// `pad.sv`: the boss's root (concave, Pappus's ring) and the plate's two side edges (convex, each
 /// a straight run cut off flush by the faces it ends on); the bore cut after, by neither.
@@ -225,13 +224,8 @@ fn the_rails_sides_are_filled() {
 #[cfg_attr(not(feature = "slow"), ignore = "slow tier: the rail's two runs, by the field")]
 fn the_rails_runs_are_the_stacks() {
     let (big, r): (f64, f64) = (6.0, 2.0);
-    // the ball touches the plate `r` up and the rod `big + r` from its axis: the section is the
-    // triangle of its centre, its foot and the axis, less the rod's sector and the ball's
-    let theta = (r / (big + r)).asin();
-    let section = ((big + r).powi(2) - r * r).sqrt() * r / 2.0 - big * big * theta / 2.0
-        - r * r * (PI / 2.0 - theta) / 2.0;
     let got = -taken(&rounding(RAIL), "rail", [20.0, -41.0, 9.0], [40.0, 1.0, 15.0], r / 32.0);
-    agrees("the rail's runs", got, 2.0 * 40.0 * section);
+    agrees("the rail's runs", got, 2.0 * 40.0 * beside_cylinder(big, r));
 }
 
 /// `tee.sv`: the crotch filled round the saddle, nothing where the cylinders' surfaces meet below

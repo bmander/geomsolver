@@ -202,8 +202,8 @@ fn recipe_with(sk: &Sketch,root: usize,static_only: bool) -> Result<StaticRecipe
                 // a ball rolled along a traced run is rolled against the body as its terms but the
                 // late ones make it, all built before this (they come first in its dependencies)
                 if !assembly.rolled.is_empty() {
-                    let late = |b: &&([Vec<u32>;4],Vec<SweptCut>)| b.0[2..].iter().any(|s| s.contains(&(i as u32)));
-                    let Some((&b,(sets,_))) = bodies.iter().find(|(_,b)| late(b)) else {
+                    let late = |sets: &[Vec<u32>;4]| sets[2..].iter().any(|s| s.contains(&(i as u32)));
+                    let Some((&b,(sets,_))) = bodies.iter().find(|(_,(sets,_))| late(sets)) else {
                         return Err(format!("`{}`: a rolled round is built against the body it rounds",sk.solid_name(i)));
                     };
                     let SolidDef::Body {stock,bound,..} = &sk.solids[b].def else { unreachable!("a body's sets") };
