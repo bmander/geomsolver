@@ -275,30 +275,23 @@ fn fold(sk: &Sketch, solid: usize) -> Result<Meridian, Refusal> {
     }
     // each round and chamfer, at every corner of its two bounds (`brep::corners`, X1): a round
     // wherever the two bounds' carriers are lines or circles — an offset cone's generator and its
-    // rounded apex included, each the offset's own step (`narrow`) — and checked against the
-    // region read point by point once built (`agrees`)
+    // rounded apex included (`narrow`) — and checked against the region read point by point once
+    // built (`agrees`)
     for (k, l) in lowered.iter().enumerate() {
         let Some(l) = l else { continue };
         let tag = k as u32 + 1;
         let (a, b) = (l.a as u32 + 1, l.b as u32 + 1);
         // exact only where it builds what the set says: a flat only between straight steps (beside
-        // an arc the sum of distances bows off the straight flat), and no corner of a charted step
-        // (none a meridian folds: charts are a section's, `brep::section`)
-        for lp in &region.loops {
-            for i in 0..lp.len() {
-                let (st, nx) = (&lp[i], &lp[(i + 1) % lp.len()]);
-                let named = (st.tag == a && nx.tag == b) || (st.tag == b && nx.tag == a);
-                let curved = |x: &crate::brep::planar::Step| matches!(x.seg, Seg::Arc { .. });
-                if named && (st.chart.is_some() || nx.chart.is_some()) {
-                    return Err(format!("`{}`: a round or a flat at a charted corner is read point \
-                                        by point", s.name).into());
-                }
-                if named && matches!(l.kind, Lower::Flat { .. }) && (curved(st) || curved(nx)) {
-                    return Err(format!("`{}`: a flat beside a curved face is read point by point: \
-                                        the sum of distances bows off the straight flat there",
-                                       s.name).into());
-                }
-            }
+        // an arc the sum of distances bows off the straight flat)
+        let curved = |x: &crate::brep::planar::Step| matches!(x.seg, Seg::Arc { .. });
+        let beside_arc = || region.loops.iter().any(|lp| (0..lp.len()).any(|i| {
+            let (st, nx) = (&lp[i], &lp[(i + 1) % lp.len()]);
+            let named = (st.tag == a && nx.tag == b) || (st.tag == b && nx.tag == a);
+            named && (curved(st) || curved(nx))
+        }));
+        if matches!(l.kind, Lower::Flat { .. }) && beside_arc() {
+            return Err(format!("`{}`: a flat beside a curved face is read point by point: the sum \
+                                of distances bows off the straight flat there", s.name).into());
         }
         region = match l.kind {
             Lower::Round { r } => crate::brep::corners::round(&region, &[a], &[b], r, tag),
@@ -327,7 +320,8 @@ fn fold(sk: &Sketch, solid: usize) -> Result<Meridian, Refusal> {
         Lower::Flat { la, lb } => la.min(lb),
     }).fold(f64::INFINITY, f64::min);
     if least.is_finite() {
-        agrees(sk, solid, &region, [origin, axis, seam], (1e-3 * least).max(100.0 * tol))
+        let basis = crate::plane::Basis { u: seam, v: axis, o: origin };
+        agrees(sk, solid, &region, &basis, (1e-3 * least).max(100.0 * tol))
             .map_err(|e| format!("`{}`: {e}", s.name))?;
     }
     let names = terms.iter().map(|t| t.name.clone()).collect();
@@ -340,12 +334,10 @@ fn fold(sk: &Sketch, solid: usize) -> Result<Meridian, Refusal> {
 /// face's quarter points (no further off than a hundredth of the face's length; the axis is no
 /// face).  Lowering is a representation, never a meaning: where they disagree the region is read
 /// point by point.
-fn agrees(sk: &Sketch, solid: usize, region: &Region, [origin, axis, seam]: [V; 3], by: f64)
+fn agrees(sk: &Sketch, solid: usize, region: &Region, half_plane: &crate::plane::Basis, by: f64)
     -> Result<(), String> {
     let field = general(sk, solid)?;
-    let lift = |q: [f64; 2]| -> V {
-        std::array::from_fn(|k| origin[k] + q[0] * seam[k] + q[1] * axis[k])
-    };
+    let lift = |q: [f64; 2]| half_plane.lift(q[0], q[1]);
     for step in region.loops.iter().flatten().filter(|s| s.tag != 0) {
         let off = by.min(1e-2 * step.length());
         for t in [0.25, 0.5, 0.75] {

@@ -67,14 +67,10 @@ fn pappus(start: [f64; 2], walk: &[Go]) -> f64 {
     2.0 * PI * sum
 }
 
-/// The angle from `c` to `p`.
-fn bearing(c: [f64; 2], p: [f64; 2]) -> f64 {
-    (p[1] - c[1]).atan2(p[0] - c[0])
-}
-
 /// The turn about `c` from `p` to `q`, less than a half turn either way.
 fn turn(c: [f64; 2], p: [f64; 2], q: [f64; 2]) -> f64 {
-    (bearing(c, q) - bearing(c, p) + PI).rem_euclid(2.0 * PI) - PI
+    let bearing = |x: [f64; 2]| (x[1] - c[1]).atan2(x[0] - c[0]);
+    (bearing(q) - bearing(p) + PI).rem_euclid(2.0 * PI) - PI
 }
 
 /// Solid `name` lowered into its meridian, its exact volume `want` to 1e-9, and its field the
@@ -129,7 +125,7 @@ fn a_round_where_a_grown_cone_meets_a_plane() {
     let want = pappus([0.0, 0.0], &[
         Go::To([g / co, 0.0]),
         Go::To(on_cone),
-        Go::Arc { c: centre, turn: bearing(centre, on_lid) - bearing(centre, on_cone) },
+        Go::Arc { c: centre, turn: turn(centre, on_cone, on_lid) },
         Go::To([0.0, 10.0]),
         Go::To([0.0, 0.0]),
     ]);
@@ -153,8 +149,8 @@ fn a_round_where_a_grown_cone_meets_a_sphere() {
     let want = pappus([0.0, 0.0], &[
         Go::To([g / co, 0.0]),
         Go::To(on_cone),
-        Go::Arc { c: centre, turn: bearing(centre, on_ball) - bearing(centre, on_cone) },
-        Go::Arc { c: [0.0, 0.0], turn: PI / 2.0 - bearing([0.0, 0.0], on_ball) },
+        Go::Arc { c: centre, turn: turn(centre, on_cone, on_ball) },
+        Go::Arc { c: [0.0, 0.0], turn: turn([0.0, 0.0], on_ball, [0.0, big]) },
         Go::To([0.0, 0.0]),
     ]);
     lowered(&e, "b", want, 9.0, [-0.5, 9.5]);
@@ -177,7 +173,7 @@ fn a_round_where_a_shrunk_cone_meets_a_cylinder() {
     let want = pappus([0.0, 0.0], &[
         Go::To([wall, 0.0]),
         Go::To(on_wall),
-        Go::Arc { c: centre, turn: bearing(centre, on_cone) - bearing(centre, on_wall) },
+        Go::Arc { c: centre, turn: turn(centre, on_wall, on_cone) },
         Go::To([0.0, 2.0]),
         Go::To([0.0, 0.0]),
     ]);
@@ -199,8 +195,8 @@ fn a_round_where_a_grown_cones_apex_meets_a_plane() {
     let leaves = [g * co, -g * s];
     let want = pappus([0.0, low], &[
         Go::To(on_floor),
-        Go::Arc { c: centre, turn: bearing(centre, on_apex) - bearing(centre, on_floor) },
-        Go::Arc { c: [0.0, 0.0], turn: bearing([0.0, 0.0], leaves) - bearing([0.0, 0.0], on_apex) },
+        Go::Arc { c: centre, turn: turn(centre, on_floor, on_apex) },
+        Go::Arc { c: [0.0, 0.0], turn: turn([0.0, 0.0], on_apex, leaves) },
         Go::To([10.0 * ta + g / co, 10.0]),
         Go::To([0.0, 10.0]),
         Go::To([0.0, low]),
