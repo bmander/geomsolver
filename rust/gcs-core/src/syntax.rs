@@ -176,17 +176,22 @@ pub enum Ty {
     Side,
     /// A named bundle of values and geometry aliases, or a component's layout instance.
     Group,
+    /// A set (§6.21): one named (`S := { p | … }`), an instance of a set family (`std.Cone(…)`)
+    /// or one written in place.  Not a group: a group formal refuses a set and this a group, so a
+    /// set handed where members are read is said at the call (#191).
+    Set,
     Ent(EntKind),
 }
 
 /// The words the types other than an entity kind are written as — one table, read both ways.
-const TYPE_WORDS: [(&str, Ty); 6] = [
+const TYPE_WORDS: [(&str, Ty); 7] = [
     ("Int", Ty::Int),
     ("Scalar", Ty::Scalar),
     ("Length", Ty::Length),
     ("Angle", Ty::Angle),
     ("Side", Ty::Side),
     ("group", Ty::Group),
+    ("set", Ty::Set),
 ];
 
 impl Ty {
@@ -222,7 +227,9 @@ impl Ty {
         match self {
             Ty::Length => crate::units::Dim::LENGTH,
             Ty::Angle => crate::units::Dim::ANGLE,
-            Ty::Int | Ty::Scalar | Ty::Side | Ty::Group | Ty::Ent(_) => crate::units::Dim::SCALAR,
+            Ty::Int | Ty::Scalar | Ty::Side | Ty::Group | Ty::Set | Ty::Ent(_) => {
+                crate::units::Dim::SCALAR
+            }
         }
     }
 
@@ -1546,6 +1553,96 @@ impl Written {
         })
     }
 
+    /// **A side, said as a bound** (§9.6, §6.21; #192), in place: `p inside X` is `p
+    /// coincident(<=) X` and `p outside X` `p coincident(>=) X`; `p inside(d) X` is `p
+    /// distance(<= d, side: outside) X` and `p outside(d) X` `p distance(<= d, side: inside) X`.
+    /// The one form a set's body carries its sides in, so a side turned round is its bound's
+    /// `Cmp::turned` and its surface the bound taken off, as every other bound's.  Any other
+    /// relation is left as it stands.
+    pub fn lower_side(&mut self) {
+        let Some(cmp) = crate::constraints::plane_side_word(&self.word.text) else { return };
+        if self.ops.len() != 2 {
+            return;
+        }
+        let at = self.word.span;
+        let bound = |cmp| OpArg::Bound { cmp, span: at, hi: None, grow: None };
+        match self.args.as_slice() {
+            [] => {
+                self.word.text = "coincident".to_string();
+                self.args = vec![bound(cmp)];
+            }
+            [OpArg::Dim(..)] => {
+                let side = if cmp == Cmp::Le { "outside" } else { "inside" };
+                self.word.text = "distance".to_string();
+                self.args.insert(0, bound(Cmp::Le));
+                let key = Name { text: "side".to_string(), span: at };
+                self.args.push(OpArg::Named(key, Arg::Word(side.to_string())));
+            }
+            _ => {}
+        }
+    }
+
+    /// Which side of its second operand's surface it puts its point on (§9.6, §6.21), read in
+    /// `lower_side`'s one form: the bound on the signed distance from the surface toward its
+    /// outside, and that distance where one is written (`-(d)` for `side: inside`).  `None` for a
+    /// relation stating no side, an equality (`distance(d, side: outside)`) or an interval.
+    pub fn side(&self) -> Option<(Cmp, Option<(String, Span)>)> {
+        let mut w = self.clone();
+        w.lower_side();
+        let (cmp, None) = w.bound()? else { return None };
+        if w.ops.len() != 2 {
+            return None;
+        }
+        let dim = w.args.iter().find_map(|a| match a {
+            OpArg::Dim(t, s) => Some((t.clone(), *s)),
+            _ => None,
+        });
+        match (w.word.text.as_str(), dim) {
+            ("coincident", None) => Some((cmp, None)),
+            ("distance", Some((t, s))) => match w.sel("side").as_deref() {
+                Some("outside") => Some((cmp, Some((t, s)))),
+                Some("inside") => Some((cmp.turned()?, Some((format!("-({t})"), s)))),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    /// Its bound turned round (§9.6): the other side of the same number — `None` for an
+    /// interval, either side of which is no one bound, or a relation stating none.
+    pub fn turn_bound(&mut self) -> Option<()> {
+        self.args.iter_mut().find_map(|a| match a {
+            OpArg::Bound { cmp, .. } => Some(cmp),
+            _ => None,
+        }).and_then(|cmp| {
+            *cmp = cmp.turned()?;
+            Some(())
+        })
+    }
+
+    /// Its one-sided bound made the equality at its number — a ball's sphere, a side's surface —
+    /// returning which way the bound ran; `None` where it states none, or an interval.
+    pub fn equality(&mut self) -> Option<Cmp> {
+        let k = self.args.iter().position(|a| matches!(a, OpArg::Bound { hi: None, .. }))?;
+        let OpArg::Bound { cmp, .. } = self.args.remove(k) else { unreachable!("a bound") };
+        Some(cmp)
+    }
+
+    /// Its equality held as a bound at its number, `in: (d, d)` (§9.6) — what a set measured
+    /// from states of its point, a term and never a row (#192).  `None` where it states a
+    /// bound already, or no number.
+    pub fn held(&mut self) -> Option<()> {
+        if self.bound().is_some() {
+            return None;
+        }
+        let (k, text, span) = self.args.iter().enumerate().find_map(|(k, a)| match a {
+            OpArg::Dim(t, s) => Some((k, t.clone(), *s)),
+            _ => None,
+        })?;
+        self.args.insert(k, OpArg::Bound { cmp: Cmp::In, span, hi: Some((text, span)), grow: None });
+        Some(())
+    }
+
     /// Whether it states a bound (§9.6): its number is one, or it is `inside` / `outside` a
     /// plane, lowered to one later — either way no row, and no derivative.
     pub fn states_bound(&self) -> bool {
@@ -1927,9 +2024,12 @@ impl Ref {
         Ref { root, path, span }
     }
 
-    /// Whether the reference ends in the member `word` (`S.ends`).
-    pub fn ends_in(&self, word: &str) -> bool {
-        matches!(self.path.last(), Some(Seg::Field(n)) if n.text == word)
+    /// The member the reference ends in, where the flattener read one (`S.ends`, #188).
+    pub fn member(&self) -> Option<Member> {
+        match self.path.last() {
+            Some(Seg::Member(m)) => Some(*m),
+            _ => None,
+        }
     }
 }
 
@@ -1940,6 +2040,46 @@ pub enum Seg {
     /// index is an expression over the counts and binders in scope, and those are not known until
     /// the block is expanded; `flatten` works it out there.  Spec §12.5.
     Index(String),
+    /// A member no declaration makes, as the flattener read it (#188): never written by the
+    /// parser, which reads every field as a `Field`.
+    Member(Member),
+}
+
+/// **A member every set or solid has and no declaration makes** (Solvent §6.21, #188): where the
+/// edge a set is ends (`S.ends`), the whole surface a face or a set lies on (`F.surface`), the
+/// solid a face path is of (`A.body`).  Written as a last field, and read so by the flattener
+/// only where the name before it is a set or a solid and the field is no name declared there —
+/// a member the document declares under one of these words is read as itself — so that nothing
+/// downstream matches the word: it matches this.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Member {
+    Ends,
+    Surface,
+    Body,
+}
+
+impl Member {
+    /// The word it is written as.
+    pub fn word(self) -> &'static str {
+        match self {
+            Member::Ends => "ends",
+            Member::Surface => "surface",
+            Member::Body => "body",
+        }
+    }
+
+    /// The member a last field is, where it is one (`surface`); whether it is read so is the
+    /// flattener's, by what the name before it is.
+    pub fn of(word: &str) -> Option<Member> {
+        [Member::Ends, Member::Surface, Member::Body].into_iter().find(|m| m.word() == word)
+    }
+
+    /// Its spelling once resolved, where only text carries a name (a measurement's argument,
+    /// `pad.plate.near.#surface`): a segment the source cannot write.
+    pub fn key(self) -> String { format!("#{}", self.word()) }
+
+    /// The member a resolved name's segment is (`#surface`).
+    pub fn of_key(seg: &str) -> Option<Member> { seg.strip_prefix('#').and_then(Member::of) }
 }
 
 /// `branch(KEY, ±1)` — a recorded root choice under a key `decompose::branch_key_points` could

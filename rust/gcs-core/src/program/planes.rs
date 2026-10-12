@@ -159,9 +159,8 @@ pub(super) fn incidences(
     deferred: &[super::Deferred],
     rings: &[crate::flatten::RingInfo],
 ) -> BTreeSet<usize> {
-    use super::resolve::follow;
     let ent = |r: &crate::syntax::Ref, sk: &Sketch| {
-        res.lookup(r).and_then(|e| follow(sk, e, &r.path).ok())
+        res.entity(sk, r)
     };
     let mut kept: BTreeSet<usize> = deferred.iter().filter_map(|d| match d {
         super::Deferred::Height { point, .. } => Some(*point),

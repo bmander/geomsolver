@@ -166,11 +166,16 @@ set named as an entity (E040 in `rewrite`), `coincident` between two sets, paren
 non-point `coincident`, a non-line or claimed `tangent`.  `tests/sets.rs` is the gate.
 **Regions (§6.21, §9.6, 0.61, #145 F1):** a set whose body bounds a number is a region
 (`flatten::sets::region`, over `Written::states_bound`). `q inside S` / `q outside S` are set
-uses (`may_use`): `expand_use` rewrites the body in place before the walk (`region_body`, its
-side from `plane_side_word`) — its one number (a relation with an `OpArg::Dim`) gains
-`OpArg::Bound` `Le`/`Ge`, a region's own is kept or turned round, a body of only uses (a
-conjunction) is applied as written by `inside` and refused by `outside` (a union), as are an
-interval `outside`, several numbers and none (E040). A tangency to a region is E040, once, in
+uses (`may_use`): `expand_use` rewrites the body in place before the walk (`region_body`) — its
+one number (a relation with an `OpArg::Dim`) gains `OpArg::Bound` `Le`/`Ge`, a region's own is
+kept or turned round (`Written::turn_bound`), a body of only uses (a conjunction) is applied as
+written by `inside` and refused by `outside` (a union) but for one side of another set, turned
+round, as are an interval `outside`, several numbers and none (E040). **A side is a bound**
+(#192): `Written::lower_side` says `p inside X` as `p coincident(<=) X`, `p outside X` as `(>=)`,
+`p inside(d) X` as `p distance(<= d, side: outside) X` and `outside(d)` as `side: inside`; every
+set's body is held so (`sets::lowered`, at `Site::new`) and each use read so, and the
+elaborator's readers (`relations::shape`, `side_of_plane`, `face_term`, `ends_term`) take either spelling
+through `Written::side` (the bound on the signed distance from the surface, and its level). A tangency to a region is E040, once, in
 `expand_set_uses`; the derivative pass drops whatever `states_bound`. `boundable` adds `PointLine3` (a cylinder in space) and `Angle3` (a cone), the latter
 read straight off its cosine (`Constraint::reading`); an angle in a view is refused (signed: a
 half-plane), but a set's body never reads one (below). `Constraint::reading_range` (`magnitude()` without a `side:`, or `Angle3`'s half
@@ -228,8 +233,22 @@ by `relations::measured_term` into `RegionShape::Measured` (Σ cᵢ·distance fr
 axis or plane; `linear`: affine only, one probe) on the probe, else E040; read by the field
 (`region::measured`, divided by Σ|cᵢ|), never the meridian.
 **Faces as sets** (#183 F1, F9): in a set's body a solid and the fields past it are a face
-reference (`relations::face_ref` → `model::FaceRef { solid, path, surface }`: `pad.plate.near`,
-`pad.boss` every face `boss` gave `pad`, `block`, a last `.surface` its whole surface).
+reference (`model::FaceRef { solid, path, surface }`: `pad.plate.near`, `pad.boss` every face
+`boss` gave `pad`, `block`, `.surface` its whole surface).
+**Face references as resolved operands** (#188, [0.70]): a face's name is a
+`solid::faces::FacePath` (route through the operands, `document::operand_primitives`, the walk
+`exact::build` names faces by, placed copies included — `Exact::named` keeps each face's two
+halves — then the face's own name); `FacePath::matches` (segments from the first, never a
+suffix) is the one rule, read by `BodyFaces::faces` and the flattener's `face_links`, and
+`face_paths` enumerates the same walk with `SolidE::caps`, the one cap table. The members
+`ends`, `surface`, `body` are `syntax::Member`, written as `Seg::Member` by the flattener only
+past a set or a solid where no declared name swallows the field (`rewrite`'s `fix` over
+`Known::solids`; `sets::measured_sets` for `S.ends`; in a measurement's text the segment
+`Member::key`, `#surface`); the elaborator never matches the word. `Resolver::operand` resolves
+an operand once into `resolve::Operand` (`Ent`, `Face`, `Ends`, `Body`; `entity` for the
+entity-only readers, `operand_named` for text), so `follow` never meets a solid's fields, and
+`relations::shape` (`Shape::Face`/`Ends`/`PlaneSide`/`Other`) is the one classifier `constrain`
+and the claims about solids ask. `tests/face_names.rs` is the gate.
 **One meaning, two representations** ([0.68]): a face path is the face, bounded by its edges,
 and `.surface` the surface it lies on, whoever reads it. A region's point reads either here,
 off the solid after the solve; a drawn point or plane reads `.surface` as #162 F5's carrier rows
@@ -263,8 +282,8 @@ nearest point when off `E`, and where `E`'s run ends), the same points with a ne
 ends nowhere. `edge` and `seam` are element keywords: a set may not be called so.
 **Rounds and chamfers are words of `std.sv`** (#183 steps 4–7). `repeat a in X` over a solid (a
 face path) runs over its faces (F4): set aside, and where the faces are not given the elaborator
-names them once the solids are built (`solid::faces::face_paths`, structural: a primitive's own,
-a body's every primitive's `{prim}.{face}`) and elaborates again (`program::Again::Faces`,
+names them once the solids are built (`solid::faces::face_paths`, structural: each primitive's
+own faces under its route, `FacePath`) and elaborates again (`program::Again::Faces`,
 `flatten::expand_faces`, `Walk::face_links`); `if f in X and f != g` keeps a copy (F8,
 `syntax::When`). A relation word's body may hold blocks, instances, sets and body statements (F5,
 `parser/definitions.rs`); `A.body` in a body statement is the solid a face path is of. **The
@@ -275,10 +294,12 @@ origin; cached in `Sketch::faces_cache`); one naming nothing holds nowhere, and 
 `RegionField::empty`, no term of a body. `std.sv`: `Run`, `Fill`, `Corner`, `CornerFill`, `Flat`,
 `FlatFill` (sets over faces) and the words `A round(r: …) B`, `round(r: …) X`, `A chamfer(d: …) B`,
 `chamfer(d: …) X`; in a region's body `std.Rounded(a, b, r)` and `std.Chamfered(a, b, la, lb)`
-over two of its own sets (a set fills a `group` formal; `p inside S(…)` may be written in place).
-A set's `S.surface` is the set with its bound made an equality (`sets::surface_of`); a distance
-from a one-bound region's surface reads it (`sets::one_bound`); an inner point's equalities are
-terms (`Probes::inner`). **Lowering** (step 7, `solid::region::lowering`): a `Rounded`/`Chamfered`
+over two of its own sets (`set` formals, #191; `p inside S(…)` may be written in place).
+A set's `S.surface` is the set with each bound made an equality (`Written::equality`,
+`sets::surface_of`; a grown side's is the offset surface); a distance from a one-bound region's
+surface reads it (`sets::one_bound`); a set measured from is applied under `Scope::held`, so each
+equality its body states is a bound at its number, `in: (d, d)` (`Written::held`, in `apply`),
+and `region_term` reads every probe by one rule. **Lowering** (step 7, `solid::region::lowering`): a `Rounded`/`Chamfered`
 term whose sets are two of the region's own bounds (same measure, at its level, moved in by the
 radius for a round's centres) is built in the meridian by X1's construction (`brep::corners`,
 moved from `tests/fillet_meridian.rs`), refused (and read by the field) at a charted corner or a
@@ -286,8 +307,8 @@ flat between curved steps. `tests/rounds.rs` is the gate (X2's closed forms in t
 **Distance from a set, offsets (§6.21, 0.64, #145 F4):** `p distance(d, side: outside|inside) S`
 (`distance` is a set use, `may_use`), `p inside(d) S` / `p outside(d) S` and `std.Offset(S, d)` are
 one bound on the signed distance from `S`'s surface (`Reach`: cmp toward the outside, whether
-the offset grows it, `reach_of`/`grown_side`; only a `distance` with `side: outside|inside` is a
-set use, `sets::reaches`), applied by `sets::expand_reach` in three representations: a body whose
+the offset grows it, `reach_of` over `Written::lower_side`'s form; only a `distance` with `side:
+outside|inside` is a set use, `sets::reaches`), applied by `sets::expand_reach` in three representations: a body whose
 one relation is a `distance` gets its number moved (`(r) + #grow`, the grow settled in the use's
 scope and given to the application, `Application::give`); otherwise, at a region solid's probe
 (`Walk::probes` through the alias table), the bound carries it (`OpArg::Bound::grow`, `Written::grow`,
@@ -300,8 +321,8 @@ the body walked `Itself` then along
 `Chart(0)`/`Chart(1)` (keys `{prefix}t{k}.`), with `p distance(#reach) foot` (its derivative is the
 sphere about `p`'s), `p outside S` (the side) and `foot inside S` (so the seed crossing puts the
 foot across the surface from `p`) appended to the body under synthetic ids (`FOOT_STATEMENTS`
-down, so `Scope::written` keeps their uses apart). `region_body` counts no grown side of another
-set among a body's numbers (a distance from one is `std.Offset`'s). `tests/offsets.rs` is the gate.
+down, so `Scope::written` keeps their uses apart). `region_body` counts no bounded side of
+another set among a body's numbers (a distance from one is `std.Offset`'s). `tests/offsets.rs` is the gate.
 **`P tangent(at: m) S`, a plane tangent to a set (#145, #148, 0.56):** `sets::expand_touch`
 applies the body at `m` and walks it `Pass::Made` then `Pass::Along` toward `P.u` and `P.v`
 (`model::Toward::Axis`: the axis's `d` columns fed where a line's ends go, `dual_kernel`
@@ -445,7 +466,10 @@ Definitions and built-ins stay callable. A component scope holds only its formal
 declarations; repetitions share it. `dims := {width: 20mm, origin: o}` bundles values and
 geometry aliases; `dims: group` is a required formal. Groups nest, by name or in place
 (`{bar: {at: o}}`, `InstVal::Group`, flattened to dotted members by `members_of`, each nested
-group registered so `Bar(design.bar)` binds); an instance may pass as a layout group. **An
+group registered so `Bar(design.bar)` binds); an instance may pass as a layout group. A **`set`
+formal** (`Ty::Set`, #191) takes a set — named, or a family's instance, which is both a set and an
+instance — and a `group` formal no named set; each refusal is E103 at the argument
+(`Walk::group_bindings`, checked in `resolve` against `sets` / `group_names`). **An
 instance's numbers are read by its name**: `Walk::instance_numbers` puts every numeric formal
 of every instance a body writes into its `vals` as `inst.formal` (the number bound, else the
 unknown `bind` names), before the statements, so `p distance(ball.r) ball.center` reads it and a
@@ -1315,7 +1339,7 @@ Conventions:
   `make test` cannot.
 - A **bound** (Solvent §9.6, 0.60, #109) *chooses the root*: `distance(>= d)`, `distance(<= d)`,
   `distance(in: (a, b))` and `p inside P` / `p outside P` (point, plane: the ordinate along `n`
-  from `P.origin`, `<=`/`>=` 0, lowered by `relations::side_of_plane`; `plane_side_word`).
+  from `P.origin`, `<=`/`>=` 0, lowered by `relations::side_of_plane`; `Written::side`).
   Parsed as `OpArg::Bound { cmp: syntax::Cmp, hi }` before the number's `OpArg::Dim`, which every
   number reader keeps reading; `RelationForm::bound`, `ResolvedRelation::bound`, the canonical
   form's `bound`; checked by `relations::bound_of` (`CKind::boundable`: ordinate, distances; not a

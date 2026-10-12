@@ -238,7 +238,7 @@ impl<'a> Walk<'a> {
                         prefixes: vec![key],
                         closed: true,
                         forbidden,
-                        groups: comp.formals.iter().filter(|f| f.ty == Ty::Group).map(|f| f.name.text.clone()).collect(),
+                        groups: comp.formals.iter().filter(|f| matches!(f.ty, Ty::Group | Ty::Set)).map(|f| f.name.text.clone()).collect(),
                         cyc: None,
                         // a ring's copy reaches into the instances written in it
                         ring: scope.ring.clone(),
@@ -258,6 +258,7 @@ impl<'a> Walk<'a> {
                         module: comp.module,
                         pass: Pass::Itself,
                         written: None,
+                        held: false,
                     };
                     // a component reached again while it is still being expanded is a cycle:
                     // said once, at the call that closes it, and not walked
@@ -649,6 +650,7 @@ impl<'a> Walk<'a> {
                 module: scope.module,
                 pass: scope.pass.clone(),
                 written: None,
+                held: scope.held,
             };
             let mut p2 = path.to_vec();
             p2.push(PathStep::Copy { block: st.id, index: k as u32 });

@@ -511,7 +511,7 @@ impl<'a> P<'a> {
     fn number_type(&mut self) -> Option<Ty> {
         let at = self.here();
         let ty = self.formal_type()?;
-        if matches!(ty, Ty::Side | Ty::Group | Ty::Ent(_)) {
+        if matches!(ty, Ty::Side | Ty::Group | Ty::Set | Ty::Ent(_)) {
             self.errs.push(SynErr {
                 span: at,
                 message: "a `param` is a number: `Length`, `Angle`, `Scalar` or `Int`".into(),

@@ -161,6 +161,10 @@ pub(super) fn write_ref(out: &mut String, r: &Ref) {
                 out.push_str(&f.text);
             }
             Seg::Index(t) => out.push_str(&format!("[{t}]")),
+            Seg::Member(m) => {
+                out.push('.');
+                out.push_str(m.word());
+            }
         }
     }
 }

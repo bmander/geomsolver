@@ -22,6 +22,10 @@ pub struct Exact {
     /// The faces whose facets lead, as the facet term's do — a prism's caps and a sweep's — so an
     /// edge between two faces, named by the face that leads, is named as it was.
     pub leading: BTreeSet<String>,
+    /// Each face's name in its two halves, beside `brep.faces`: the primitive it is a piece of,
+    /// keyed as `document::operand_primitives` keys it, and the face's own name in it (#188);
+    /// empty for a swept solid supplied whole.
+    pub named: Vec<(String, String)>,
 }
 
 /// Solid `si`'s exact B-rep, or why this kernel does not build it (no length unit, a sweep, a
@@ -58,11 +62,8 @@ pub(crate) fn build(sk: &Sketch, si: usize) -> Result<Exact, String> {
             // a body's faces are its operands', named as they were
             SolidDef::Body { .. } => {}
             _ => {
-                let caps: &[&str] = match sol.def {
-                    SolidDef::Prism { .. } | SolidDef::Through { .. } => &["near", "far"],
-                    SolidDef::Loft { .. } => &["start", "end"],
-                    _ => &[],
-                };
+                // a turn's ends do not lead
+                let caps = if matches!(sol.def, SolidDef::Revolve { .. }) { &[][..] } else { sol.caps() };
                 for f in &mut b.faces {
                     if caps.contains(&f.name.as_str()) {
                         leading.insert(format!("{}.{}", sol.name, f.name));
@@ -74,12 +75,11 @@ pub(crate) fn build(sk: &Sketch, si: usize) -> Result<Exact, String> {
         built.insert(id, b);
     }
     let mut brep = built.remove(&field(&recipe, "root")?.as_i64()).ok_or("recipe: no root")?;
+    let mut named = Vec::with_capacity(brep.faces.len());
     for f in &mut brep.faces {
-        f.name = match f.name.split_once(SEP) {
-            Some((of, "")) => of.to_string(),
-            Some((of, face)) => format!("{of}.{face}"),
-            None => std::mem::take(&mut f.name),
-        };
+        let (of, face) = f.name.split_once(SEP).unwrap_or((f.name.as_str(), ""));
+        named.push((of.to_string(), face.to_string()));
+        f.name = if face.is_empty() { of.to_string() } else { format!("{of}.{face}") };
     }
-    Ok(Exact { brep, mm, origin, leading })
+    Ok(Exact { brep, mm, origin, leading, named })
 }

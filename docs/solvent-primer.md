@@ -1072,6 +1072,9 @@ several up to the `}`. It adds nothing to the drawing; what it means is said whe
   `P` without saying it.
 - A family of sets is a component whose body is one: `component Ball(center: point, r: Length)
   := { p | p distance(r) center }`; an instance is the set, its formals read by its name.
+- A component takes a set as a **`set` formal** (`component On(p: point, s: set)`): a named set
+  or a family's instance, by position like an entity. A `group` formal refuses a named set, and a
+  `set` formal a group, at the argument; a family's instance is both, so it may fill either.
 - A culprit reads as the statement (`l tangent shaft`), never as the body's rows.
 - **A set whose body is a circle's is the circle**: `k := { p | p coincident std.front; p
   distance(25mm) o }`, `o` drawn in `std.front`, is drawn, dragged, dimensioned `R25` and swept
@@ -1086,11 +1089,15 @@ several up to the `}`. It adds nothing to the drawing; what it means is said whe
   / at least: `q inside std.Sphere(c, r: 5)`, `q inside std.Cylinder(l, r: 2)`, `q inside
   std.Cone(l, half: 30deg)` (in space only), the disc `{ p | p coincident P; p distance(5) o }`.
   Regions meet by conjunction, and `outside` gives a difference: `{ p | p inside heel; p outside
-  toe }`. Refused: `outside` a conjunction or an interval, a set of several numbers, a line inside
-  a set, a tangency to a region. A point in a region is a bound on it, so a choice of root.
+  toe }`. A side is a bound too, so `outside` a set of one side turns it round: outside `{ q | q
+  inside(1mm) S }` is beyond 1mm outside `S`. Refused: `outside` a conjunction or an interval, a
+  set of several numbers, a line inside a set, a tangency to a region. A point in a region is a
+  bound on it, so a choice of root.
 - **Distance from a set, offsets** (0.64): `p distance(4mm, side: outside) k` puts `p` 4mm off
   the surface of `k` (`side:` is required); `tip := std.Offset(pitch, d: 2mm)` is the set 2mm
   outside, `p inside(2mm) pitch` within it, `p outside(4mm) pitch` within the outside grown by 4mm.
+  `S.surface` is `S` with each bound an equality: of `{ q | q inside(2mm) pitch }`, the offset
+  surface.
   A sphere's or cylinder's offset moves its number; in `solid(R)` a cone's is exact (apex rounded
   where it grows); a drawn point gets a foot on the set, found by the solve. Not: a bound on a
   drawn point's distance from a cone, a region, a circle, `inside(d)` a conjunction.
@@ -1524,8 +1531,10 @@ pad.boss round(r: 3mm) pad.plate     // where the boss stands on the plate
   rounded edges meet, the corner is the ball's. `round(r: …) X` is every edge among `X`'s faces.
 - `A chamfer(d: …) B` cuts each such edge flat, `d` along each face; `chamfer(d: …) X` likewise.
 - `A` and `B` are face paths: `block` (every face), `block.near` (one), `pad.boss` (every face
-  the boss gave the pad), `pad.plate.near`. Faces that do not meet make nothing, so
-  `block.near round(r: 2mm) block` is the near rim alone, its runs mitred at the corners.
+  the boss gave the pad), `pad.plate.near`. A path is read from its solid, step by step through
+  the operands' names (a placed copy's faces under the placement's: `pad.moved.near`), never by
+  a suffix. Faces that do not meet make nothing, so `block.near round(r: 2mm) block` is the
+  near rim alone, its runs mitred at the corners.
 - Each word acts on the body the faces are of, after its other terms: a round reads the faces as
   the cuts and unions left them, never its own (the *stratum*).
 
@@ -1549,7 +1558,8 @@ from, all in a region's body (`solid(S)`):
 | `taken := solid(run)` and `taken cut A.body` in a word's body | a solid made of a set, cut from the body `A`'s faces are of |
 
 A face path means the face, bounded by its edges, wherever it is read; `.surface` is the surface
-it lies on. Rounds read faces off the solid after the solve, so any face works, curved or cut by a
+it lies on. `.ends`, `.surface` and `.body` are members only past a set or a solid, and only
+where you declared nothing by that name: an instance's own `ends` or `body` is itself. Rounds read faces off the solid after the solve, so any face works, curved or cut by a
 Boolean; a face a Boolean ate names nothing, and what reads it holds nowhere. (Sketching on a face
 reads `.surface` as rows of the solve: 1.14, *Sketching on a face*.)
 

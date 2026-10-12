@@ -247,3 +247,56 @@ fn what_a_distance_from_a_set_refuses() {
                   b := solid(bad)\n";
     refused(&format!("{FRAME}{region}"), "E040", "is a region", "bad");
 }
+
+/// **A side turned round** (#192): a side of another set is a bound on the signed distance from
+/// its surface, so the outside of a set of one side is that side turned round — outside `S`
+/// grown by 1 is beyond 1 outside `S`, and outside `S`'s outside grown by 1 is deeper than 1
+/// inside it — and a bounded distance from a set reads alike.
+#[test]
+fn the_outside_of_a_grown_set_is_its_side_turned_round() {
+    let e = solved(&format!("{FRAME}big := std.Sphere(c, r: 2)\nhuge := std.Sphere(c, r: 5)\n\
+                             fat := {{ q | q inside(1) big }}\n\
+                             thin := {{ q | q outside(1) big }}\n\
+                             near := {{ q | q distance(<= 1, side: outside) big }}\n\
+                             peel := {{ p | p inside huge; p outside fat }}\n\
+                             core := {{ p | p inside huge; p outside thin }}\n\
+                             rind := {{ p | p inside huge; p outside near }}\n\
+                             a := solid(peel)\nb := solid(core)\nd := solid(rind)\n"));
+    let shell = 4.0 / 3.0 * PI * (125.0 - 27.0);
+    holds(&e, "a", shell, &[[3.1, 0.0, 0.0]], &[[2.9, 0.0, 0.0]]);
+    holds(&e, "b", 4.0 / 3.0 * PI, &[[0.9, 0.0, 0.0]], &[[1.1, 0.0, 0.0]]);
+    holds(&e, "d", shell, &[[3.1, 0.0, 0.0]], &[[2.9, 0.0, 0.0]]);
+}
+
+/// The outside of an interval is either side of it, and of a conjunction any one failing: a
+/// union each, which no bound says — refused at the use, a grown interval's as a plain one's.
+#[test]
+fn the_outside_of_an_interval_is_refused() {
+    for (set, why) in [
+        ("band := { q | q distance(in: (1, 2)) c }", "either side of it"),
+        ("band := { q | q inside(1) tube; q inside lid }", "several things hold"),
+    ] {
+        refused(&format!("{FRAME}{set}\nbad := {{ p | p inside tube; p outside band }}\n\
+                          b := solid(bad)\n"),
+                "E040", why, "bad");
+    }
+}
+
+/// **A grown set's surface** (#192): the side's bound made the equality, the surface the offset
+/// stands at — so within ½ of the surface of a ball of 2 grown by 1 is within ½ of the sphere
+/// of 3, as a measurement from a set reads it (#183 F2).
+#[test]
+fn a_grown_sets_surface_is_the_offset_surface() {
+    let e = solved(&format!("{FRAME}big := std.Sphere(c, r: 2)\nthree := std.Sphere(c, r: 3)\n\
+                             fat := {{ q | q inside(1) big }}\n\
+                             skin := {{ p | distance(p, fat.surface) <= 0.5mm }}\n\
+                             same := {{ p | distance(p, three.surface) <= 0.5mm }}\n\
+                             grown := solid(skin)\nplain := solid(same)\n"));
+    for name in ["grown", "plain"] {
+        let field = MaterialField::read(&e.sketch, ent(&e, name).i(), 1e-10).unwrap();
+        for (x, inside) in [(2.4, false), (2.6, true), (3.4, true), (3.6, false)] {
+            let p = [0.0, x * 0.6, x * 0.8];
+            assert_eq!(field.side(p) < 0.0, inside, "{name} at {x}: {}", field.side(p));
+        }
+    }
+}
