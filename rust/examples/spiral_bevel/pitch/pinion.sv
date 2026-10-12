@@ -1,7 +1,7 @@
 // Step 2, the pinion's pitch cone, solved against the gear's. The shafts are stated, the
 // shaft angle and the offset apart, and the cone touches P along its generator through M: its
 // apex A lies in P, turned from O about M by the offset angle the solve answers, and its axis
-// stands square to P on the hinge M -> A.
+// stands square to P on its generator A -> M.
 //
 // The equal normal pitch sizes it, with no cosine written. V, where MA crosses the square from
 // O to the trace's heading, falls with O on one point of the heading, so R cos(spiral) is
@@ -26,21 +26,20 @@ component PinionCone(p: plane, gear: group, foot: line, design: group, pinion_an
   in p {
     A := point hint((-0.75 * d, 1.25 * d))
     V := point hint((-0.75 * d, 1.25 * d))
-    hinge := line(gear.M, A)
+    pitch_line := line(A, gear.M)
   }
-  V coincident hinge
+  V coincident pitch_line
   V coincident foot
   // The offset's hand: the pinion's apex on P's v side of the gear's generator.
   A distance(>= 0, along: v) p
   tip := point hint((-0.75 * d + (r + 0.75 * d) * c, 1.25 * d * (1 - c), r * s))
   virtual_tip := point hint(at: tip)
-  pitch_line := line(A, gear.M)
   ax := line(A, tip)
   virtual_line := line(V, gear.M)
   virtual_axis := line(V, virtual_tip)
-  // Both axes stand square to P on the hinge, above it: square to the level line square to it.
+  // Both axes stand square to P on the generator, above it: square to the level line square to it.
   square := axis hint(dir: (0, 1, 0))
-  square perpendicular hinge
+  square perpendicular pitch_line
   square perpendicular gear.crown_axis
   ax perpendicular square
   virtual_axis perpendicular square

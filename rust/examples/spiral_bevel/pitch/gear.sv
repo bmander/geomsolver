@@ -18,7 +18,6 @@ component GearCone(p: plane, design: group) {
   // The triangle, in space on the generator, square to P: F below it.
   foot := point hint((r / 4, 0, -r / 2))
   top := point hint((0, 0, r))
-  pitch_line := line(O, M)
   to_apex := line(M, O)
   to_foot := line(M, foot)
   ax := line(O, foot)
@@ -33,7 +32,7 @@ component GearCone(p: plane, design: group) {
   O level(p.u) top
   O level(p.v) top
   top outside p
-  crown_axis equal pitch_line
+  crown_axis equal generator
 }
 
 preview {

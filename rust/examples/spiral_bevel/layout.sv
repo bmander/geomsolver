@@ -24,7 +24,7 @@ component HypoidLayout(p: plane, design: group, normal_module: Length) {
   pinion := pitch.pinion.PinionCone(p, gear, trace.foot, design)
 
   // The blanks, regions about the members' axes.
-  gear_blank := blank.member.MemberBlank(gear.pitch_line, gear.ax, design,
+  gear_blank := blank.member.MemberBlank(gear.generator, gear.ax, design,
     normal_module: normal_module)
   pinion_blank := blank.member.MemberBlank(pinion.pitch_line, pinion.ax, design,
     normal_module: normal_module)

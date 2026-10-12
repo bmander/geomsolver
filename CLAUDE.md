@@ -724,8 +724,8 @@ over (its space cutter's `neighbor` is the inner crown a crown pitch round).
 `configuration.sv` states `shaft_angle`, `offset` (E = 0 is bevel); the pinion's cone solves
 against the gear's (`pitch/pinion.sv`); members roll at `N_c / N` off the gear's triangle, not
 `1 / sin`. **No axial views** (#215): the gear's triangle O–M–F and the pinion's two axes stand
-in space square to P on their generators (`O level(p.v) foot`; the axes square to `square`, the
-level line square to the hinge), each side a bound (`foot inside p`, `tip outside p`), and a
+in space square to P on their generators (`O level(p.v) foot`; the pinion's axes square to `square`,
+level and square to their generator), each side a bound (`foot inside p`, `tip outside p`), and a
 blank's face span is on its generator (`FaceSpan`, ordinates along it); only P and N are drawn in.
 `tests/hypoid_layout.rs` is the gate. The mesh export refuses a sheet a placement
 carries inside the blank; CLI test readers zero the offset.
