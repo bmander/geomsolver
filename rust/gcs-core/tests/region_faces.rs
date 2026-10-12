@@ -237,3 +237,24 @@ fn a_word_makes_a_relief() {
     let want = 40.0;
     assert!((before - after - want).abs() < 2e-3 * want, "{} against {want}", before - after);
 }
+
+/// **One meaning, two representations**: a face path names the face, `.surface` the surface it
+/// lies on, whoever reads it.  A sketch on the block's near face (a plane on its surface, read by
+/// the solve as rows) leaves a region's reading of the same face (the patch, read off the solid)
+/// as it was: the pillow round the near face is no thicker past the face's edge for it.
+#[test]
+fn a_sketch_on_a_face_leaves_a_regions_reading_of_it() {
+    let region = "c := point hint((20, 0, 12))\nfix((20, 0, 12)) c\nball := std.Sphere(c, r: 30)\n\
+                  pillow := { p | p inside ball; p distance(<= 1mm) block.near }\n\
+                  s := solid(pillow)\n";
+    let sketch = "v1 := plane\nv1.origin coincident block.near.surface\n\
+                  v1 tangent(at: v1.origin) block.near.surface\n";
+    // past the near face's edge (x = 40) and in front of its plane (y = 0): within 1 of the
+    // plane, but more than 1 from the face
+    let (past, over) = ([45.0, -0.5, 12.0], [20.0, -0.5, 12.0]);
+    for extra in ["", sketch] {
+        let e = solved(&format!("{BLOCK}{region}{extra}"));
+        let field = MaterialField::read(&e.sketch, ent(&e, "s").i(), 1e-10).unwrap();
+        assert!(field.side(past) > 0.0 && field.side(over) < 0.0, "{extra:?}");
+    }
+}

@@ -1343,12 +1343,13 @@ fn axis_datum(sk: &Sketch, sel: &Selection, current: &crate::plane::Basis, name:
 }
 
 /// **Sketch on a face** (#162 F5): a plane lying on the face `face` of object `solid` (the path
-/// the face is named by, `b0.near`), its origin on the face and the plane touching it there —
+/// the face is named by, `b0.near`), its origin on the surface the face lies on and the plane
+/// touching it there —
 ///
 /// ```text
 /// v1 := plane(u: hint(dir: …), v: hint(dir: …)) hint(origin: …)
-/// v1.origin coincident b0.near
-/// v1 tangent(at: v1.origin) b0.near
+/// v1.origin coincident b0.near.surface
+/// v1 tangent(at: v1.origin) b0.near.surface
 /// ```
 ///
 /// — so it follows the face wherever the solid's extents and profile take it, and keeps the
@@ -1388,10 +1389,12 @@ fn on_face_edit(
     let point = format!("{name}.origin");
     let touch = syntax::OpArg::Named(syntax::Name::new("at"),
                                      syntax::Arg::Ref(syntax::Ref::new(point.clone())));
+    // what is drawn on a face is drawn on the surface it lies on (§6.9 [0.68])
+    let surface = format!("{face}.surface");
     let stmts = [
         StmtKind::Decl(decl),
-        written(said(point, "coincident", face)),
-        written(Said { args: vec![touch], ..said(name.clone(), "tangent", face) }),
+        written(said(point, "coincident", &surface)),
+        written(Said { args: vec![touch], ..said(name.clone(), "tangent", &surface) }),
     ];
     append_checked(&e.program, &stmts, vec![name])
 }

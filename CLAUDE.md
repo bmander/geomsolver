@@ -226,9 +226,12 @@ axis or plane; `linear`: affine only, one probe) on the probe, else E040; read b
 **Faces as sets** (#183 F1, F9): in a set's body a solid and the fields past it are a face
 reference (`relations::face_ref` → `model::FaceRef { solid, path, surface }`: `pad.plate.near`,
 `pad.boss` every face `boss` gave `pad`, `block`, a last `.surface` its whole surface).
-Beside #162 F5's carrier (below): a set use the walk has already written (`m coincident b0.near`,
-a drawn point or a plane) is the face's carrier, made by `Walk::face_sets` before the uses are
-expanded; a face path in a set's body, walked after, is read here, its patch.
+**One meaning, two representations** ([0.68]): a face path is the face, bounded by its edges,
+and `.surface` the surface it lies on, whoever reads it. A region's point reads either here,
+off the solid after the solve; a drawn point or plane reads `.surface` as #162 F5's carrier rows
+(below), made under a hidden key only its statement is pointed at, so neither ever captures the
+other (`tests/region_faces.rs::a_sketch_on_a_face_leaves_a_regions_reading_of_it`,
+`tests/rounds_examples.rs::a_sketch_on_a_rounded_face_leaves_the_round`).
 `relations::face_relation` makes `p inside/outside[(d)] F` a `RegionShape::FaceSide` (signed
 distance from the surface, positive away from the material), `p distance(… d) F` and `p coincident
 F` a `Measured` over `Target::Face`; `distance(p, F)` in a sum the same; `angle(a, b, at: p)` (the
@@ -1685,16 +1688,19 @@ Conventions:
   shared `face_groups`; `core/mesh.ts::preview`).  `box3d` draws it in the target's place, the
   tools as ghosts in their word's ink (`SketchView.combining` is the key).  `tests/booleans.rs`
   is the gate.
-- **A face of a solid is a set** (#162 F5, [0.66]): `b0.near`, `b0.far`, a straight side `b0.ab`
-  and `body.b0.near` name the face's carrier, made by the flattener from the solid's own text
-  before the uses are expanded (`flatten/faces.rs`, `Walk::face_sets`; a face written in place
-  too): a cap `{ p | p distance(D, along: n) f0#plane }` (`coincident` at 0), a side `{ p | p
+- **A face of a solid is a set** (#162 F5, [0.66], [0.68]): `b0.near`, `b0.far`, a straight side
+  `b0.ab` and `body.b0.near` name the face, and `.surface` its carrier — the one a drawn point or
+  plane reads, made by the flattener from the solid's own text before the uses are expanded
+  (`flatten/faces.rs`, `Walk::face_sets`; a face written in place too) under the hidden key
+  `{face}#surface`, the asking operand rewritten to it (`surface_of`); a bare face from a drawn
+  use is E040 naming `.surface` (a region's point reads it, #183 above): a cap `{ p | p
+  distance(D, along: n) f0#plane }` (`coincident` at 0), a side `{ p | p
   level(M) e.p1 }` over a hidden axis `M` square to the edge, parallel to the plane.  `f0#plane`
   is a name the source cannot write, bound by the elaborator to the plane the face's edges are
   drawn in before the constraints (`planes::face_planes`, `Expansion::face_planes`, which seeds
   `M` too).  Refused at the use (E040): a curved side, a `through:` solid's caps, a non-prism.
-  **Sketching on a face** is `v1.origin coincident b0.near` + `v1 tangent(at: v1.origin)
-  b0.near` (`at:` takes a path), written by `edit::sketch_on_face` seeded on the numeric twin
+  **Sketching on a face** is `v1.origin coincident b0.near.surface` + `v1 tangent(at:
+  v1.origin) b0.near.surface` (`at:` takes a path), written by `edit::sketch_on_face` seeded on the numeric twin
   `solid::carrier` where the eye's ray met it (`SolidHit::at`); `edit::face_plane` finds a plane
   already lying there, which the app chooses instead (a double-click on a face, or Solids ▸
   Sketch on face, `k`).  A plane dropped from a plane states `P distance(d) v` and is sized as an

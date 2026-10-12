@@ -1,6 +1,18 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.67 — October 2026**
+**Specification, Draft 0.68 — October 2026**
+
+**[0.68] A face is the face, and `.surface` the surface it lies on.** A face path (`b0.near`,
+`body.b0.near`, `pad.boss`) means the face as the solid has it, bounded by its edges, wherever it
+is read; `b0.near.surface` is the whole surface it lies on. What is drawn on a face is drawn on
+its surface: sketching on a face is `v1.origin coincident b0.near.surface` and `v1 tangent(at:
+v1.origin) b0.near.surface`, and a point or a plane the drawing draws on the face itself is
+**E040**, pointing at `.surface`. A region's point reads either (§6.21): `p inside b0.near`,
+`distance(p, b0.near)` from the face, `distance(p, b0.near.surface)` from its surface. One
+meaning, two representations: the solve reads a prism's flat face's surface as rows over the
+drawing's unknowns, and a region reads any face off the solid as it stands, after the solve —
+so a sketch on a face and a round of it read the same face. This replaces 0.66, where the bare
+path was the surface.
 
 **[0.67] A face turns about an axis too.** `about:` takes an `axis` lying in the face's own plane
 (`solid(f, about: std.z)` on `std.front`) as well as a line drawn there: a plane's own axes lie
@@ -535,7 +547,7 @@ Compound entities expose sub-entities by field access. Sub-entities are ordinary
 | `Solid` | `.start`, `.end` | a partial revolution's two caps **[0.18]** |
 | `Solid` | `.volume`, `.area`, `.bounds.x0`… | what a report measures off it (§16.3) **[0.18]** |
 
-**[0.18] A solid's derived names are *paths*, and a path is not a sub-entity.** A face of a solid carries no coordinates, joins no alias class and is no operand of a relation over entities — but **[0.66]** a prism's face path names a **set**, the surface it lies on (§6.21): a cap the profile's plane at its extent, a straight side the plane through its edge along the profile's normal, so `p coincident b0.near` and `v1 tangent(at: v1.origin) b0.near` read it as any set; a curved side, a `through:` solid's caps and a revolution's or a loft's faces are not sets yet (**E040**). Otherwise the path is what a report writes a number under (`block.side_l.area`) and what a derived picture labels a stroke with. A guided loft/sweep has `.start` and `.end` caps and walls named by the start section’s source edges, including hole boundaries. Through a body the operand keeps its own name, so a face of `block` inside `body` is `body.block.near` — a path never renames, which is the naming problem every history-based kernel has and this one does not, because a boolean cannot renumber a name. The *sub-entities* a solid does have are the ones its declaration is written over: the face it is swept from, a revolution's axis line (or axis), and the solids of its term. Those are ordinary entities, and deleting one takes the solid with it.
+**[0.18] A solid's derived names are *paths*, and a path is not a sub-entity.** A face of a solid carries no coordinates, joins no alias class and is no operand of a relation over entities — but **[0.66]** a face path names a **set**: **[0.68]** the face as the solid has it, bounded by its edges, and `.surface` the surface it lies on (§6.21). A prism's flat face's surface is one the solve reads — a cap the profile's plane at its extent, a straight side the plane through its edge along the profile's normal — so `p coincident b0.near.surface` and `v1 tangent(at: v1.origin) b0.near.surface` read it as any set; a point or a plane drawn on the bounded face itself, a curved side's surface, a `through:` solid's caps and a revolution's or a loft's faces are not sets the solve reads yet (**E040**). A region's point reads any face, bounded or by its surface, off the solid after the solve. Otherwise the path is what a report writes a number under (`block.side_l.area`) and what a derived picture labels a stroke with. A guided loft/sweep has `.start` and `.end` caps and walls named by the start section’s source edges, including hole boundaries. Through a body the operand keeps its own name, so a face of `block` inside `body` is `body.block.near` — a path never renames, which is the naming problem every history-based kernel has and this one does not, because a boolean cannot renumber a name. The *sub-entities* a solid does have are the ones its declaration is written over: the face it is swept from, a revolution's axis line (or axis), and the solids of its term. Those are ordinary entities, and deleting one takes the solid with it.
 
 **[0.42] A plane is two axes and a place.** `P := plane(u: r1, v: r2)` aliases two axes (or
 drawn lines, each read as the axis from its `p1` toward its `p2`) and owns three numbers of its

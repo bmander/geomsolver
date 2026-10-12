@@ -101,3 +101,14 @@ fn the_suggested_edits_do_what_they_say() {
     let e = holds(&disc, "disc", &[[0.4, 0.0, 2.0]], &[[10.6, 0.0, 3.9]]);
     assert!(gcs_core::solid::region::in_general(&e.sketch, ent(&e, "disc").i()));
 }
+
+/// A sketch on the block's far face (a plane on the surface it lies on) leaves its rounds and
+/// chamfers as they were: the face is one thing to both.
+#[test]
+fn a_sketch_on_a_rounded_face_leaves_the_round() {
+    let src = format!("{}v1 := plane\nv1.origin coincident block.far.surface\n\
+                       v1 tangent(at: v1.origin) block.far.surface\n",
+                      include_str!("../../examples/rounds/block.sv"));
+    holds(&src, "block", &[[20.0, 6.0, 6.0], [20.0, 11.0, 2.0]],
+          &[[20.0, 0.2, 0.2], [20.0, 11.8, 0.2]]);
+}

@@ -1,8 +1,15 @@
-//! **A face of a solid is a set** (§6.9, §6.21, #162 F5): `b0.near`, `b0.far`, a side `b0.ab`,
-//! and through a body `body.b0.near`, each the surface the face lies on — its *carrier*, the
-//! face carried past its edges.  Used where any set is: `m coincident b0.near` puts a point on
-//! it, and `v1 tangent(at: v1.origin) b0.near` is a plane lying on it, which is sketching on a
-//! face.
+//! **A face of a solid is a set** (§6.9, §6.21, #162 F5, [0.68]): `b0.near`, `b0.far`, a side
+//! `b0.ab`, and through a body `body.b0.near`, each the face, and `.surface` the surface it lies
+//! on — its *carrier*, the face carried past its edges.  What is drawn on a face is drawn on its
+//! surface: `m coincident b0.near.surface` puts a point on it, and `v1 tangent(at: v1.origin)
+//! b0.near.surface` is a plane lying on it, which is sketching on a face.
+//!
+//! **One meaning, two representations**: this is the surface as the solve reads it, rows over the
+//! drawing's unknowns, for a point or a plane the drawing draws.  A region's point reads the same
+//! face off the solid as the solid stands (`solid::faces`, #183) — the face bounded by its edges,
+//! or with `.surface` the whole surface — after the solve.  So the set is made here under a name
+//! the source cannot write (`b0.near#surface`), and only the statement that asked for it is
+//! pointed at it: a region's body naming the same face never meets it.
 //!
 //! The set is made here, from the solid's own text, before the uses are expanded, so every use
 //! is an ordinary one.  Its body is written over what the solid is written over, so it follows
@@ -82,14 +89,15 @@ impl Walk<'_> {
             return;
         }
         let alias = self.alias_table();
-        let mut wanted: Vec<(Span, String, Vec<String>)> = Vec::new();
-        for (st, _, sc) in &self.out {
+        // each operand naming a solid's face: where it stands, the solid, and the path past it
+        let mut wanted: Vec<(usize, usize, Span, String, Vec<String>)> = Vec::new();
+        for (i, (st, _, sc)) in self.out.iter().enumerate() {
             let StmtKind::Relation(r) = &st.kind else { continue };
             let Some(w) = r.form.written().filter(|w| sets::may_use(w)) else { continue };
-            for op in &w.ops {
+            for (k, op) in w.ops.iter().enumerate() {
                 if let Some((abs, rest)) = lookup_raw(op, sc, &self.names, &alias, self.units) {
                     if !rest.is_empty() && !self.sets.contains_key(&abs) {
-                        wanted.push((op.span, abs, rest));
+                        wanted.push((i, k, op.span, abs, rest));
                     }
                 }
             }
@@ -98,24 +106,47 @@ impl Walk<'_> {
             return;
         }
         let table = self.table(&alias);
-        for (span, abs, rest) in wanted {
+        for (i, k, span, abs, rest) in wanted {
             if !table.solids.contains_key(&abs) && !table.operands.contains_key(&abs) {
                 continue; // not a solid: whatever it is, it is someone else's to read
             }
-            // the set is named by the whole path, which then resolves to it as any set's name
-            let key = format!("{abs}.{}", rest.join("."));
-            if self.sets.contains_key(&key) {
+            // a face is the face; what is drawn on it here is drawn on the surface it lies on
+            let face = rest.split_last().filter(|(l, f)| l.as_str() == "surface" && !f.is_empty())
+                .map(|(_, f)| f);
+            let Some(face) = face else {
+                let said = format!("{}.{}", public_path(&abs), rest.join("."));
+                let m = if rest == ["surface"] {
+                    let s = public_path(&abs);
+                    format!("`{said}` is every face of `{s}`: a point or a plane is drawn on one \
+                             face's surface, `{s}.near.surface`")
+                } else {
+                    format!("`{said}` is the face, bounded by its edges; a point or a plane is \
+                             drawn on the surface it lies on, `{said}.surface`")
+                };
+                self.once(Code::E040, span, m);
+                self.refused.push(span);
                 continue;
-            }
-            match self.carrier(&table, &alias, &abs, &rest, span) {
-                Ok(site) => {
-                    self.names.insert(key.clone());
-                    self.sets.insert(key, site);
+            };
+            // under a name the source cannot write, so only this statement reads the set: a
+            // region's reading of the same face is the face's own (`solid::faces`)
+            let key = format!("{abs}.{}#surface", face.join("."));
+            if !self.sets.contains_key(&key) {
+                match self.carrier(&table, &alias, &abs, face, span) {
+                    Ok(site) => {
+                        self.names.insert(key.clone());
+                        self.sets.insert(key, site);
+                    }
+                    // and a statement over it says nothing more: it was said at the operand
+                    Err(m) => {
+                        self.once(Code::E040, span, m);
+                        self.refused.push(span);
+                        continue;
+                    }
                 }
-                // and a statement over it says nothing more: it was said at the operand
-                Err(m) => {
-                    self.once(Code::E040, span, m);
-                    self.refused.push(span);
+            }
+            if let StmtKind::Relation(r) = &mut self.out[i].0.kind {
+                if let Some(op) = r.form.written_mut().and_then(|w| w.ops.get_mut(k)) {
+                    surface_of(op);
                 }
             }
         }
@@ -325,6 +356,21 @@ fn suffixed(r: &Ref, tail: &str, at: Span) -> Ref {
     }
     r.span = at;
     r
+}
+
+/// `F.surface` as the hidden name its carrier is made under: `b0.near.surface` is
+/// `b0.near#surface`.
+fn surface_of(r: &mut Ref) {
+    if matches!(r.path.last(), Some(Seg::Field(f)) if f.text == "surface") {
+        r.path.pop();
+    }
+    match r.path.iter_mut().rev().find_map(|s| match s {
+        Seg::Field(f) => Some(f),
+        Seg::Index(_) => None,
+    }) {
+        Some(f) => f.text.push_str("#surface"),
+        None => r.root.text.push_str("#surface"),
+    }
 }
 
 /// `r.field`: an edge's `p1`.

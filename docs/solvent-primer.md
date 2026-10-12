@@ -1359,22 +1359,27 @@ before `body := solid(stock)` gives the same number: both sides of the body rule
 
 #### Sketching on a face
 
-A face of a solid names a **set**: the surface it lies on, carried past its edges. For a prism
-these are:
+A face of a solid names a **set**: the face itself, bounded by its edges. Its **`.surface`** is
+the surface it lies on, carried past its edges. For a prism the faces are:
 
 - `b0.near` and `b0.far`, the caps at its higher and lower extent;
 - `b0.ab`, the side swept from the straight edge `ab`;
 - `body.b0.near` for the same cap reached through a body.
 
-A point is put on one as on any set, and a plane lies on one by touching it at its own origin.
-That is what sketching on a face says:
+What is drawn on a face is drawn on its surface. A point is put on one as on any set, and a plane
+lies on one by touching it at its own origin. That is what sketching on a face says:
 
 ```
 b0 := solid(f0, depth: 20)
 v1 := plane(u: hint(dir: (1, 0, 0)), v: hint(dir: (0, 0, 1))) hint(origin: (10, 20, 10))
-v1.origin coincident b0.far
-v1 tangent(at: v1.origin) b0.far
+v1.origin coincident b0.far.surface
+v1 tangent(at: v1.origin) b0.far.surface
 ```
+
+A point or a plane drawn on the bare face (`b0.far`) is refused, pointing at `.surface`: the
+bounded face is read by a region's point instead, which is how rounds and chamfers name faces
+(`p inside b0.far`, `distance(p, b0.far)`; `rust/examples/rounds/`). The face is one thing to
+both: a sketch on `b0.far` and a round of it read the same face.
 
 Draw on `v1` (`in v1 { … }`) and extrude again.
 
@@ -1389,6 +1394,7 @@ on the face, it chooses that one instead (a cap on the profile is the profile's 
 
 Refused, at the face's name (**E040**):
 
+- the bare face, which is bounded by its edges: write `.surface`;
 - a curved side, over an arc or a circle;
 - a `through:` solid's caps, whose extent is known only after the solve;
 - an edge with no name to call its side by;

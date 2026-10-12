@@ -2600,7 +2600,8 @@ test('a sketch on a face is written by name through the edit API, and a plane al
   const e = d.sketchOnFace(b0.index, 'b0.far', [20, 4, 10]);
   assert.equal(e.refused, null);
   assert.deepEqual(e.names, ['v0']);
-  assert.ok(e.text.endsWith('v0.origin coincident b0.far\nv0 tangent(at: v0.origin) b0.far\n'),
+  assert.ok(e.text.endsWith('v0.origin coincident b0.far.surface\n'
+                            + 'v0 tangent(at: v0.origin) b0.far.surface\n'),
             e.text);
   const on = Document.read(e.text);
   assert.ok(on.ok, JSON.stringify(on.diagnostics));

@@ -159,7 +159,8 @@ fn sketching_on_a_cap_writes_a_plane_touching_it_where_it_was_clicked() {
     let (text, e) = on_face("b0.far", Some([10.0, 23.0, 12.0]));
     assert!(text.contains("v0 := plane(u: hint(dir: (1, 0, 0)), v: hint(dir: (0, 0, 1))) \
                            hint(origin: (10, 20, 12))\n"), "{text}");
-    assert!(text.ends_with("v0.origin coincident b0.far\nv0 tangent(at: v0.origin) b0.far\n"), "{text}");
+    assert!(text.ends_with("v0.origin coincident b0.far.surface\n\
+                            v0 tangent(at: v0.origin) b0.far.surface\n"), "{text}");
     let (n, o) = plane(&e, "v0");
     assert!(along(n, [0.0, 1.0, 0.0]) && (o[1] - 20.0).abs() < 1e-9, "{n:?} {o:?}");
     let b0 = e.map.ent_named("b0").unwrap().i();

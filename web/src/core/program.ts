@@ -380,7 +380,8 @@ export class Document {
 
   /** **Sketch on a face**: a plane lying on face `face` (its path, `b0.near`) of object `solid`
    *  (its index), its origin where the eye's ray met it (`at`, in space) or the face's middle,
-   *  touching the face there — so it follows the solid.  `names[0]` is the plane. */
+   *  touching the surface the face lies on there (`b0.near.surface`) — so it follows the solid.
+   *  `names[0]` is the plane. */
   sketchOnFace(solid: number, face: string, at?: [number, number, number], name?: string): Edit {
     return edit(withJson({ face, at, name },
       (p, n) => core().gcs_elab_sketch_on_face(this.h, this.sketch.handle, solid, p, n)));
