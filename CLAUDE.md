@@ -815,7 +815,8 @@ patterned. `brep::export::{exact,step,stl}` is shared by `solventc` and `app/exp
 (`gcs_solid_exact`), so native and wasm files are byte-identical: the core's trigonometry, `exp`,
 `ln`, `pow`, `hypot` are its own (`fmath`, `x.dsin()` via `Det`; no platform libm). With OCCT and
 `--verify-step full` the CLI reads our STEP back (`cad::read_back`). A face met twice is told apart
-by `cutter::OCCURRENCE`; a trace ends off a sheet's patch (`Surface::off_patch`); interpolations
+by `cutter::OCCURRENCE`; a trace ends off a sheet's patch (`Surface::off_patch`, a revolution's or
+an extrusion's of a curve too); a revolution about the axis is kept by `pattern`'s turns; interpolations
 past `nurbs::BANDED` points solve banded; a gross sheet falls back to chord length.
 **Rung 3 (the app reads the exact solid):** a static solid's `EvaluatedSolid` is the B-rep's
 (`solid::Exact`, `Sketch::exact_solid`, cached against `solid::reads`; `from_brep`), built about its

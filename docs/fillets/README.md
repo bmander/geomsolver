@@ -734,3 +734,12 @@ language cannot say.
 | the lowered field | the region read point by point, about each flat | every point's side |
 | the configured pair's flats | their sums and legs | 1.8e-13 mm |
 | the bow | the straight chamfer | 7.4e-5 mm at most; the volume differs by 4.7e-5 of the chamfers' |
+| the configured pair's exports (`solventc --step --stl`, this kernel) | main's, with `EndChamfer` | the same 147 and 291 faces; blanks 1.4e-4 and 4.8e-4 mm³ apart; field agreement, 0 disagree |
+| main's STLs and the new ones | the new model's exact faces (`--measure`) | every exact face within 10 µm (worst 5.57 / 5.70 µm pinion, 5.90 / 5.84 µm gear) |
+
+Two kernel rules the export needed:
+- **A traced edge ends where it leaves a revolution's patch:** `Surface::off_patch` now reads a
+  revolution or an extrusion of a curve too. Past the band's lower circle, the sector side's trace
+  had run on along the band's extension and been read as on the face.
+- **A revolution about the axis is kept by the pattern's turns:** `brep::pattern`'s `Kept`. The
+  band's two pieces had been taken for the sector's sides.
