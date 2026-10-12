@@ -494,13 +494,7 @@ fn validate_at(sk: &Sketch, si: usize, unit: f64) -> Result<std::collections::BT
         };
         let polys = face_polys(sk, face as usize, unit).map_err(|m| fail(&m))?;
         let poly = &polys[0];
-        let reserved: &[&str] = match &s.def {
-            SolidDef::Prism { .. } | SolidDef::Through { .. } => &["near", "far"],
-            SolidDef::Revolve { sweep, .. } if sweep.value < std::f64::consts::TAU - 1e-9 => {
-                &["start", "end"]
-            }
-            _ => &[],
-        };
+        let reserved = s.caps();
         if let Some(name) = polys.iter().flat_map(|p| &p.names).find(|n| reserved.contains(&n.as_str())) {
             return Err(fail(&format!(
                 "edge `{name}` collides with a sweep cap; rename the source edge"

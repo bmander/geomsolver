@@ -3,7 +3,7 @@
 //! it was written.  The curve's definition, pegs and free length are the sketch's
 //! (`Sketch::settle_variational`), worked out once every row is stated.
 
-use super::resolve::{follow, Resolver};
+use super::resolve::Resolver;
 use super::{Code, Diag, Made, SourceMap};
 use crate::constraints::{Arg, CKind, Constraint};
 use crate::ir::Statement;
@@ -19,7 +19,7 @@ pub(super) fn state(
     diags: &mut Vec<Diag>,
 ) {
     let err = |code: Code, span, message: String| Diag { code, span, stmt: Some(st.id), message };
-    let Some(e) = res.lookup(&m.curve).and_then(|e| follow(sk, e, &m.curve.path).ok()) else {
+    let Some(e) = res.entity(sk, &m.curve) else {
         diags.push(err(Code::E101, m.curve.span, format!("`{}` names nothing", m.curve.root.text)));
         return;
     };

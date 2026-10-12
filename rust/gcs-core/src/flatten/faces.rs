@@ -32,7 +32,7 @@ use super::apply::local;
 use crate::model::EntKind;
 use crate::program::public_path;
 use crate::constraints::Fixity::Infix;
-use crate::syntax::{Arg, Chained, DeclName, OpArg, Relation, SetLit, Sweep};
+use crate::syntax::{Arg, Chained, DeclName, Member, OpArg, Relation, SetLit, Sweep};
 
 /// The plane a face of a solid is drawn in, by the hidden name its carriers read it under — see
 /// `Expansion::face_planes`.
@@ -111,11 +111,13 @@ impl Walk<'_> {
                 continue; // not a solid: whatever it is, it is someone else's to read
             }
             // a face is the face; what is drawn on it here is drawn on the surface it lies on
-            let face = rest.split_last().filter(|(l, f)| l.as_str() == "surface" && !f.is_empty())
+            // the member read past a solid, as `resolve` reads it (#188)
+            let surface = |l: &String| Member::of(l) == Some(Member::Surface);
+            let face = rest.split_last().filter(|(l, f)| surface(l) && !f.is_empty())
                 .map(|(_, f)| f);
             let Some(face) = face else {
                 let said = format!("{}.{}", public_path(&abs), rest.join("."));
-                let m = if rest == ["surface"] {
+                let m = if rest.len() == 1 && surface(&rest[0]) {
                     let s = public_path(&abs);
                     format!("`{said}` is every face of `{s}`: a point or a plane is drawn on one \
                              face's surface, `{s}.near.surface`")
@@ -129,7 +131,7 @@ impl Walk<'_> {
             };
             // under a name the source cannot write, so only this statement reads the set: a
             // region's reading of the same face is the face's own (`solid::faces`)
-            let key = format!("{abs}.{}#surface", face.join("."));
+            let key = format!("{abs}.{}{}", face.join("."), Member::Surface.key());
             if !self.sets.contains_key(&key) {
                 match self.carrier(&table, &alias, &abs, face, span) {
                     Ok(site) => {
@@ -349,7 +351,7 @@ fn suffixed(r: &Ref, tail: &str, at: Span) -> Ref {
     let mut r = r.clone();
     match r.path.iter_mut().rev().find_map(|s| match s {
         Seg::Field(f) => Some(f),
-        Seg::Index(_) => None,
+        Seg::Index(_) | Seg::Member(_) => None,
     }) {
         Some(f) => f.text.push_str(tail),
         None => r.root.text.push_str(tail),
@@ -361,15 +363,16 @@ fn suffixed(r: &Ref, tail: &str, at: Span) -> Ref {
 /// `F.surface` as the hidden name its carrier is made under: `b0.near.surface` is
 /// `b0.near#surface`.
 fn surface_of(r: &mut Ref) {
-    if matches!(r.path.last(), Some(Seg::Field(f)) if f.text == "surface") {
+    if matches!(r.path.last(), Some(Seg::Field(f)) if Member::of(&f.text) == Some(Member::Surface)) {
         r.path.pop();
     }
+    let key = Member::Surface.key();
     match r.path.iter_mut().rev().find_map(|s| match s {
         Seg::Field(f) => Some(f),
-        Seg::Index(_) => None,
+        Seg::Index(_) | Seg::Member(_) => None,
     }) {
-        Some(f) => f.text.push_str("#surface"),
-        None => r.root.text.push_str("#surface"),
+        Some(f) => f.text.push_str(&key),
+        None => r.root.text.push_str(&key),
     }
 }
 

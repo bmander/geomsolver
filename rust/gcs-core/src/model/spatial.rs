@@ -380,11 +380,12 @@ impl RegionShape {
 /// solid `pad`'s faces that its operand `plate` gave it as its near cap; `pad.boss` every face
 /// `boss` gave it; `block` every face of `block`.  Read off the solid's exact boundary, as the
 /// faces stand in it (a boolean never renames).  `surface` reads the face's whole surface
-/// (`F.surface`), not its patch.
+/// (`F.surface`), not its patch.  `path` is the segments written past the solid, matched
+/// against each face's `solid::faces::FacePath` (#188).
 #[derive(Clone, Debug, PartialEq)]
 pub struct FaceRef {
     pub solid: u32,
-    pub path: String,
+    pub path: Vec<String>,
     pub surface: bool,
 }
 
@@ -630,6 +631,19 @@ impl SolidE {
                 v.extend(bound.iter().copied());
                 v
             }
+        }
+    }
+
+    /// The faces a sweep makes besides its section's sides, by their own names (#188, the one
+    /// table): a prism's caps, a loft's ends and a partial turn's.
+    pub fn caps(&self) -> &'static [&'static str] {
+        match &self.def {
+            SolidDef::Prism { .. } | SolidDef::Through { .. } => &["near", "far"],
+            SolidDef::Loft { .. } => &["start", "end"],
+            SolidDef::Revolve { sweep, .. } if sweep.value.abs() < std::f64::consts::TAU - 1e-9 => {
+                &["start", "end"]
+            }
+            _ => &[],
         }
     }
 

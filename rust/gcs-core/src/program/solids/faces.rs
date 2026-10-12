@@ -24,8 +24,7 @@ pub(super) fn validate_chain(
 ) -> bool {
     let mut previous = None;
     for r in &c.links {
-        let e = res.lookup(r).filter(|e| e.i() < sk.count(e.kind))
-            .and_then(|e| super::super::resolve::follow(sk, e, &r.path).ok());
+        let e = res.entity(sk, r).filter(|e| e.i() < sk.count(e.kind));
         let pair = e.filter(|e| matches!(e.kind, EntKind::Line | EntKind::Arc))
             .and_then(|e| crate::model::edge_ends(sk, e));
         let Some((start, end)) = pair else {
@@ -131,7 +130,7 @@ fn build_loop(
     let mut items: Vec<Item> = Vec::with_capacity(refs.len());
     let mut trimmed: BTreeSet<u32> = BTreeSet::new();
     let entity = |sk: &Sketch, r: &crate::syntax::Ref| {
-        res.lookup(r).and_then(|e| super::super::resolve::follow(sk, e, &r.path).ok())
+        res.entity(sk, r)
             .ok_or_else(|| (r.span, format!("no such entity: `{}`", r.root.text)))
     };
     for &(r, trim) in &refs {

@@ -49,17 +49,9 @@ fn solid_claim(
     let Some(word) = crate::constraints::solid_word(&w.word.text) else {
         return;
     };
-    // a point inside a plane is a bound, not a claim about solids (§9.6, `constrain`)
-    if crate::program::relations::point_and_plane(sk, res, w) {
-        return;
-    }
-    // and a point against a solid's face is a region's term (#183 F1, `constrain`)
-    let kind = |o: &crate::syntax::Ref| res.lookup(o).map(|e| e.kind);
-    if w.word.text == "inside" && w.ops.len() == 2 && w.ops[1].ends_in("ends") {
-        return;
-    }
-    if matches!(w.word.text.as_str(), "inside" | "outside")
-        && matches!(w.ops.as_slice(), [p, f] if kind(p) == Some(EntKind::Point) && kind(f) == Some(EntKind::Solid)) {
+    // a point inside a plane is a bound, and a point against a solid's faces or where an edge
+    // ends a region's term, not a claim about solids (§9.6, #183, `constrain`'s one reading)
+    if !matches!(crate::program::relations::shape(sk, res, w), crate::program::relations::Shape::Other) {
         return;
     }
     let mut say = |code: Code, span: Span, m: String| {

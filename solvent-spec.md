@@ -1,6 +1,15 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.69 — October 2026**
+**Specification, Draft 0.70 — October 2026**
+
+**[0.70] A face path is read from its solid, and a member is no name.** A face path names a face
+by the route through its solid's operands, segment by segment from the first: `pad.plate.near`
+is the near cap `plate` gave `pad`, whatever `plate`'s own absolute name, and a placed copy's
+faces stand under the placement's name (`pad.moved.near`); a path never names a face by a suffix
+of it (`pad.near` is a cap of `pad`'s own sweep, not every operand's) (§6.21). The members
+`S.ends`, `F.surface` and `A.body` are read so only past a set or a solid, and only where the
+document declares nothing under that name: an instance's member called `ends`, `surface` or
+`body` is itself (§5).
 
 **[0.69] Rounds and chamfers are said in the language.** A region's body may read a solid's faces
 (`p inside pad.plate.near`, `distance(p, block.near) <= 1mm`), bound a sum of measurements
@@ -1923,6 +1932,24 @@ faces are read off the solid as it stands once the drawing is solved, so a face 
 read so, curved or not. `inside` or `outside` a face's surface (the side is the face's) is
 **E040**, and so is a face read of a point the drawing draws: what is drawn on a face is drawn on
 its surface (§6.9 [0.68]).
+
+**How a face path names faces** **[0.70]**. Each face of a solid is named by the route through
+the solid's operands to the primitive it is a piece of — an operand's own name at each step, a
+placed copy (§6.9) by the placement's name, a swept solid's own sweep by no step — then the
+face's own name in that primitive (a cap, `near`; a side, its edge's name). A path written past
+the solid names every face whose name it begins: `pad` every face, `pad.plate` every face `plate`
+gave it, `pad.plate.near` one. It is read from the solid, so an operand an instance made is
+reached from the instance's solid by its route (`part.pad.plate.near`), and never by a suffix:
+`pad.near` names a cap of `pad`'s own sweep and nothing of its operands'. `repeat a in X` (§12.8)
+runs over the same names.
+
+**Members** **[0.70]**. `S.ends` (where the edge a set is ends, below), `F.surface` (a face's or a
+set's whole surface) and `A.body` (the solid a face path is of, §9.9) are no names: each is read
+as the member only past a set or a solid, and only where the document declares no name so —
+`h.ends`, where the instance `h` declares a set `ends`, is that set, and `cyl.body`, where `cyl`
+declares a solid `body`, is that solid. Past a solid the member is read at the end of a path:
+an operand called `surface` is reached through its faces (`pad.surface.near`), and `pad.surface`
+is every face's surface.
 
 **A bound on measurements** **[0.69]**. A set's body may state `LHS <= RHS` or `LHS >= RHS` (closed,
 as every bound, §9.6: `<`, `>` alone are **E040**), each side a sum of numbers and measurements,

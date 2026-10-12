@@ -2,6 +2,7 @@
 
 use super::*;
 use crate::model::EntKind;
+use crate::syntax::Member;
 
 /// The geometry a kept seed text reads, renamed to the absolute names the sheet resolves — the
 /// same `lookup` every reference goes through, so a formal reads as the actual it aliases and a
@@ -44,12 +45,14 @@ fn rescope_seeds(
 /// into the text: a formal reads as its actual and a name inside a block copy as that copy's
 /// (`side.#282.0.small`, which the expression lexer reads as one name for this reason).
 #[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)]
 fn rescope_measures(
     text: &mut String,
     span: Span,
     sc: &Scope,
     names_seen: &BTreeSet<String>,
     alias: &BTreeMap<String, String>,
+    solids: &BTreeSet<String>,
     units: Units,
     bad: &mut Vec<(Code, Span, String)>,
 ) {
@@ -62,8 +65,15 @@ fn rescope_measures(
             }
             let segs: Vec<&str> = a.split('.').collect();
             match resolve_dotted(&segs, span, sc, names_seen, alias, units) {
-                Ok(full) => {
-                    to.insert(a, full);
+                Ok((abs, mut rest)) => {
+                    // a face's surface, read here: spelled by a segment the source cannot write,
+                    // so the elaborator reads the member and not the word (#188)
+                    if solids.contains(&abs)
+                        && rest.last().is_some_and(|f| Member::of(f) == Some(Member::Surface))
+                    {
+                        *rest.last_mut().expect("a last field") = Member::Surface.key();
+                    }
+                    to.insert(a, std::iter::once(abs).chain(rest).collect::<Vec<_>>().join("."));
                 }
                 Err((code, why)) => bad.push((code, span, why)),
             }
@@ -97,7 +107,8 @@ fn rescope_text(
         }
         let scalar = segs.pop().unwrap_or_default();
         match resolve_dotted(&segs, span, sc, names_seen, alias, units) {
-            Ok(full) => {
+            Ok((abs, rest)) => {
+                let full = std::iter::once(abs).chain(rest).collect::<Vec<_>>().join(".");
                 names.insert(dep.clone(), format!("{full}.{scalar}"));
             }
             Err((code, why)) => bad.push((code, span, why)),
@@ -106,8 +117,8 @@ fn rescope_text(
 }
 
 /// A dotted name an expression reads (`gen_g`, `k.center`), resolved as the reference it spells
-/// by the same `lookup` every reference goes through: the absolute name of what it denotes, or
-/// the words for why nothing is.
+/// by the same `lookup` every reference goes through: the absolute name of what it denotes and
+/// the fields past it, or the words for why nothing is.
 fn resolve_dotted(
     segs: &[&str],
     span: Span,
@@ -115,16 +126,13 @@ fn resolve_dotted(
     names_seen: &BTreeSet<String>,
     alias: &BTreeMap<String, String>,
     units: Units,
-) -> Result<String, (Code, String)> {
+) -> Result<(String, Vec<String>), (Code, String)> {
     let r = Ref {
         root: Name { text: segs[0].to_string(), span },
         path: segs[1..].iter().map(|f| Seg::Field(Name::new(*f))).collect(),
         span,
     };
-    match lookup(&r, sc, names_seen, alias, units) {
-        Some((abs, rest)) => Ok(std::iter::once(abs).chain(rest).collect::<Vec<_>>().join(".")),
-        None => Err(missing_ref(&r, sc, names_seen, alias, units)),
-    }
+    lookup(&r, sc, names_seen, alias, units).ok_or_else(|| missing_ref(&r, sc, names_seen, alias, units))
 }
 
 /// The absolute name `name` has inside copy `k` of whichever block declares it, under
@@ -244,11 +252,13 @@ pub(super) fn lookup_raw(
             let scope = Scope { prefixes: vec![format!("{prefix}.")], ..sc.clone() };
             copy_of("", leaf, k, &scope, names)?
         };
+        // a member is no name (#188): the caller keeps it
         let rest: Vec<String> = r.path[at + 1..]
             .iter()
-            .map(|s| match s {
-                Seg::Field(f) => f.text.clone(),
-                Seg::Index(t) => t.clone(),
+            .filter_map(|s| match s {
+                Seg::Field(f) => Some(f.text.clone()),
+                Seg::Index(t) => Some(t.clone()),
+                Seg::Member(_) => None,
             })
             .collect();
         // greedy under the copy, as below: `cyl[0].small` is the entity `…cyl.small` and no
@@ -270,6 +280,7 @@ pub(super) fn lookup_raw(
         match s {
             Seg::Field(f) => segs.push(f.text.clone()),
             Seg::Index(t) => segs.push(t.clone()),
+            Seg::Member(_) => {}
         }
     }
     // `next` and `prev` name the sibling copy, so the rest of the path is read in *its* scope
@@ -369,6 +380,10 @@ pub(super) fn written(r: &Ref) -> String {
                 out.push_str(&f.text);
             }
             Seg::Index(t) => out.push_str(&format!("[{t}]")),
+            Seg::Member(m) => {
+                out.push('.');
+                out.push_str(m.word());
+            }
         }
     }
     out
@@ -383,13 +398,15 @@ pub(super) struct Seen {
 }
 
 /// What a reference may resolve to once the walk is done: every name declared, every alias
-/// resolved, the sets (no entity of the drawing), the operands an application found naming
+/// resolved, the sets (no entity of the drawing), the solids, the operands an application found naming
 /// nothing (said once already), and the units numbers are read in.
 #[derive(Clone, Copy)]
 struct Known<'k> {
     names: &'k BTreeSet<String>,
     alias: &'k BTreeMap<String, String>,
     sets: &'k BTreeSet<String>,
+    /// Every solid declared, by absolute name: what a member `surface` or `body` is read past.
+    solids: &'k BTreeSet<String>,
     failed: &'k BTreeSet<String>,
     units: Units,
 }
@@ -401,9 +418,20 @@ fn rewrite(
     bad: &mut Vec<(Code, Span, String)>,
     seen: &std::cell::RefCell<Vec<Seen>>,
 ) {
-    let Known { names, alias, sets, failed, units } = known;
+    let Known { names, alias, sets, solids, failed, units } = known;
     // only a ring's representative is judged by what it reads (E021)
     let judged = sc.ring.as_ref().is_some_and(|r| !r.turned);
+    // a member read already (a set's `ends`, `sets::measured_sets`) is kept; `surface` and
+    // `body` past a solid are read here, where no name declared under it is written so (#188)
+    let member = |r: &Ref, abs: &str, rest: &mut Vec<String>| -> Option<Seg> {
+        let read = r.member().or_else(|| {
+            let m = rest.last().and_then(|f| Member::of(f))
+                .filter(|m| *m != Member::Ends && solids.contains(abs))?;
+            rest.pop();
+            Some(m)
+        });
+        read.map(Seg::Member)
+    };
     let fix = |r: &mut Ref, bad: &mut Vec<(Code, Span, String)>| match lookup(r, sc, names, alias, units)
     {
         // a set is no entity: what it means is said where it is used (§6.21)
@@ -417,10 +445,11 @@ fn rewrite(
                 written(r)
             ),
         )),
-        Some((abs, rest)) => {
+        Some((abs, mut rest)) => {
             let was = judged.then(|| written(r));
+            let member = member(r, &abs, &mut rest);
             r.root = Name { text: abs, span: r.root.span };
-            r.path = rest.into_iter().map(|f| Seg::Field(Name::new(f))).collect();
+            r.path = rest.into_iter().map(|f| Seg::Field(Name::new(f))).chain(member).collect();
             if let Some(was) = was {
                 seen.borrow_mut().push(Seen { written: was, span: r.span, abs: written(r) });
             }
@@ -494,7 +523,7 @@ fn rewrite(
                 // the scope it was written in; the sheet reads it by absolute name
                 for a in motion.args_mut() {
                     if let crate::syntax::Arg::Dim { text, span } = a {
-                        rescope_measures(text, *span, sc, names, alias, units, bad);
+                        rescope_measures(text, *span, sc, names, alias, solids, units, bad);
                     }
                 }
             }
@@ -514,8 +543,8 @@ fn rewrite(
         StmtKind::Minimize(m) => fix(&mut m.curve, bad),
         // a bound on measurements names what it measures, as a motion's numbers do (#183 F3)
         StmtKind::Measured(m) => {
-            rescope_measures(&mut m.lhs, m.lhs_span, sc, names, alias, units, bad);
-            rescope_measures(&mut m.rhs, m.rhs_span, sc, names, alias, units, bad);
+            rescope_measures(&mut m.lhs, m.lhs_span, sc, names, alias, solids, units, bad);
+            rescope_measures(&mut m.rhs, m.rhs_span, sc, names, alias, solids, units, bad);
         }
         // `bore cut body` names two solids, and inside a component both wear the prefix
         StmtKind::SolidRel(r) => {
@@ -656,14 +685,12 @@ impl<'a> Walk<'a> {
         let StmtKind::Block(b) = &p.st.kind else { return None };
         let over = b.over.as_ref()?;
         let sc = self.pending_scope(p);
+        // the faces a path names, by the rule a region's reading of them is (`FacePath::matches`)
         let faces_of = |r: &Ref| -> Option<Vec<String>> {
             let (abs, rest) = lookup(r, &sc, &self.names, alias, self.units)?;
             let all = self.faces.get(&abs)?;
-            let rest = rest.join(".");
-            Some(all.iter().filter(|f| {
-                rest.is_empty() || **f == rest || f.starts_with(&format!("{rest}."))
-                    || f.ends_with(&format!(".{rest}")) || f.contains(&format!(".{rest}."))
-            }).map(|f| format!("{abs}.{f}")).collect())
+            Some(all.iter().filter(|f| f.matches(&rest)).map(|f| format!("{abs}.{}", f.text()))
+                .collect())
         };
         let all = faces_of(&over.chain)?;
         // what a name in a condition stands for: the face itself, or as its reference resolves
@@ -895,6 +922,10 @@ impl<'a> Walk<'a> {
         // a set drawn as an element is named as the element (#105)
         let sets: BTreeSet<String> =
             self.sets.keys().filter(|k| !self.lowered.contains_key(*k)).cloned().collect();
+        let solids: BTreeSet<String> = out.iter().filter_map(|(st, ..)| match &st.kind {
+            StmtKind::Decl(d) if d.kind == EntKind::Solid => Some(d.name.key().text.clone()),
+            _ => None,
+        }).collect();
         let mut flat = Vec::with_capacity(out.len());
         for (mut st, path, sc) in out {
             // a refused relation is not emitted; a declaration is (a plane whose fold misspells
@@ -906,7 +937,7 @@ impl<'a> Walk<'a> {
             }
             let mut bad: Vec<(Code, Span, String)> = Vec::new();
             let seen = std::cell::RefCell::new(Vec::new());
-            let known = Known { names: &self.names, alias: &alias, sets: &sets, failed: &failed, units: self.units };
+            let known = Known { names: &self.names, alias: &alias, sets: &sets, solids: &solids, failed: &failed, units: self.units };
             rewrite(&mut st.kind, &sc, known, &mut bad, &seen);
             if let StmtKind::Decl(d) = &st.kind {
                 // a centre the circle names, or `None` for one it mints (`c.center`)

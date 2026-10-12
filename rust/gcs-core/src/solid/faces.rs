@@ -16,14 +16,15 @@ use crate::space::{add, distance, dot, norm, scale, sub};
 use std::collections::BTreeSet;
 use std::f64::consts::PI;
 
-/// A body's exact boundary, located, in millimetres (`mm` of them a model unit), its name.
+/// A body's exact boundary, located, in millimetres (`mm` of them a model unit).
 #[derive(Debug)]
 pub struct BodyFaces {
     loc: Located<'static>,
     mm: f64,
     /// Where the boundary is built about (model units): a point of space is `(p − origin)·mm`.
     origin: V,
-    name: String,
+    /// Each face's name as the body names it, beside `loc.b.faces`.
+    paths: Vec<FacePath>,
     /// Each edge's material angle at its middle, where it bounds two faces: under a half turn
     /// where the material is the faces' sides' common part (convex).
     convex: Vec<Option<bool>>,
@@ -74,6 +75,10 @@ impl BodyFaces {
         };
         // each face named by its document path (`pocket.near`), as `solid::exact` names them
         let ex = super::exact::build(from, body).map_err(|e| format!("`{name}`'s faces: {e}"))?;
+        let routes = super::document::operand_paths(from, body);
+        let paths = ex.named.iter().map(|(of, face)| {
+            FacePath::new(routes.get(of).map_or(of.as_str(), String::as_str), face)
+        }).collect();
         let tol = 1e-9 * ex.brep.size().max(1.0);
         let (mm, origin) = (ex.mm, ex.origin);
         let loc = Located::owned(ex.brep, tol);
@@ -87,26 +92,14 @@ impl BodyFaces {
                 bounding[e as usize].push(fi);
             }
         }
-        let mut faces = BodyFaces { loc, mm, origin, name, convex: Vec::new(), edges, bounding };
+        let mut faces = BodyFaces { loc, mm, origin, paths, convex: Vec::new(), edges, bounding };
         faces.convex = (0..faces.loc.b.edges.len()).map(|e| faces.edge_convex(e as u32)).collect();
         Ok(faces)
     }
 
-    /// The faces a reference names: every face where its path is empty, else those its operand
-    /// path reaches (`plate.near`, `boss`) or the solid's own (`near`).
+    /// The faces a reference names, by its path (`FacePath::matches`).
     pub fn faces(&self, f: &FaceRef) -> Vec<usize> {
-        let path = f.path.as_str();
-        let own = format!("{}.{path}", self.name);
-        self.loc.b.faces.iter().enumerate().filter(|(_, face)| {
-            let n = face.name.as_str();
-            path.is_empty()
-                || n == path
-                || n == own
-                || n.starts_with(&format!("{path}."))
-                || n.starts_with(&format!("{own}."))
-                // an operand an instance made, named by its absolute path (`pad.plate.near`)
-                || (path.contains('.') && n.ends_with(&format!(".{path}")))
-        }).map(|(i, _)| i).collect()
+        (0..self.paths.len()).filter(|&i| self.paths[i].matches(&f.path)).collect()
     }
 
     fn q(&self, p: V) -> V { scale(sub(p, self.origin), self.mm) }
@@ -325,67 +318,64 @@ pub fn reads_faces(shape: &RegionShape) -> bool {
     }
 }
 
-/// **The faces of a solid by the paths they are named by from it** (#183 F4): a primitive's own
-/// (`near`, `far`, one per edge of its section; `start` and `end` of a partial turn), a body's
-/// every primitive's under that primitive's name (`plate.near`), as its boundary names them
-/// (`solid::exact`) — read off the definitions, so a face a boolean ate is still listed, and
-/// reads as nothing.
-pub fn face_paths(sk: &Sketch, i: usize) -> Vec<String> {
-    fn own(sk: &Sketch, i: usize) -> Vec<String> {
-        let names = |face: u32| -> Vec<String> {
-            sk.faces.get(face as usize).map_or(Vec::new(), |f| {
-                f.boundaries().flat_map(|(_, n)| n.iter().cloned()).collect()
-            })
-        };
-        let mut out = match &sk.solids[i].def {
-            SolidDef::Prism { face, .. } | SolidDef::Through { face, .. } => {
-                let mut v = names(*face);
-                v.extend(["near".to_string(), "far".to_string()]);
-                v
-            }
-            SolidDef::Revolve { face, sweep, .. } => {
-                let mut v = names(*face);
-                if sweep.value.abs() < 2.0 * PI - 1e-9 {
-                    v.extend(["start".to_string(), "end".to_string()]);
-                }
-                v
-            }
-            SolidDef::Loft { face, .. } => {
-                let mut v = names(*face);
-                v.extend(["start".to_string(), "end".to_string()]);
-                v
-            }
-            _ => Vec::new(),
-        };
-        out.dedup();
-        out
+/// **A face's name, as a body names it** (#188): the route through the body's operands to the
+/// primitive the face is a piece of (`plate`, a placed copy's `turned`, none for the body's own
+/// sweep, `document::operand_primitives`) and the face's own name in that primitive (`near`, an
+/// edge's `ab`).  Produced by the one walk the exact boundary's faces are named by, and matched
+/// by the one rule, `matches`.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct FacePath {
+    pub route: Vec<String>,
+    pub face: String,
+}
+
+impl FacePath {
+    /// The face `face` of the primitive at `route` (dotted, empty for the solid itself).
+    pub fn new(route: &str, face: &str) -> FacePath {
+        let route = route.split('.').filter(|s| !s.is_empty()).map(str::to_string).collect();
+        FacePath { route, face: face.to_string() }
     }
-    fn primitives(sk: &Sketch, i: usize, depth: usize, out: &mut Vec<usize>) {
-        if depth > 64 {
-            return;
-        }
-        match &sk.solids[i].def {
-            SolidDef::Body { .. } => {
-                for o in sk.solids[i].operands() {
-                    primitives(sk, o as usize, depth + 1, out);
-                }
-            }
-            _ if !out.contains(&i) => out.push(i),
-            _ => {}
-        }
+
+    /// Its segments: the route's, then the face's own name.
+    pub fn segments(&self) -> impl Iterator<Item = &str> {
+        self.route.iter().map(String::as_str).chain(self.face.split('.').filter(|s| !s.is_empty()))
     }
-    match &sk.solids.get(i).map(|s| &s.def) {
-        Some(SolidDef::Body { .. }) => {
-            let mut prims = Vec::new();
-            primitives(sk, i, 0, &mut prims);
-            prims.into_iter().flat_map(|p| {
-                let name = sk.solids[p].name.clone();
-                own(sk, p).into_iter().map(move |f| format!("{name}.{f}"))
-            }).collect()
-        }
-        Some(_) => own(sk, i),
-        None => Vec::new(),
+
+    /// Whether a path written past the solid names this face: its segments, from the first, are
+    /// this face's — `plate` every face `plate` gave the body, `plate.near` its near cap, the
+    /// empty path every face.  Never by a suffix: `near` alone is the body's own sweep's cap,
+    /// and an instance's operand is reached from the instance's solid by its route
+    /// (`pad.plate.near` is `pad`'s `plate.near`, whatever `plate`'s absolute name).
+    pub fn matches<S: AsRef<str>>(&self, path: &[S]) -> bool {
+        let mine: Vec<&str> = self.segments().collect();
+        path.len() <= mine.len() && path.iter().zip(&mine).all(|(a, b)| a.as_ref() == *b)
     }
+
+    /// As written in a path (`plate.near`).
+    pub fn text(&self) -> String { self.segments().collect::<Vec<_>>().join(".") }
+}
+
+/// **The faces of a solid by the paths they are named by from it** (#183 F4): each primitive's
+/// own (the edges of its section, then `SolidE::caps`) under its route
+/// (`document::operand_primitives`, the walk `solid::exact` names faces by, placed copies
+/// included) — read off the definitions, so a face a boolean ate is still listed, and reads as
+/// nothing.
+pub fn face_paths(sk: &Sketch, i: usize) -> Vec<FacePath> {
+    let own = |p: usize| -> Vec<String> {
+        let s = &sk.solids[p];
+        let mut v: Vec<String> = s.face().and_then(|f| sk.faces.get(f as usize)).map_or(Vec::new(), |f| {
+            f.boundaries().flat_map(|(_, n)| n.iter().cloned()).collect()
+        });
+        v.extend(s.caps().iter().map(|c| c.to_string()));
+        v.dedup();
+        v
+    };
+    if i >= sk.solids.len() {
+        return Vec::new();
+    }
+    super::document::operand_primitives(sk, i).into_values().flat_map(|(route, p)| {
+        own(p as usize).into_iter().map(move |f| FacePath::new(&route, &f))
+    }).collect()
 }
 
 /// `BodyFaces::read`, remembered against what it reads (`Sketch::faces_cache`): the stratum, so
