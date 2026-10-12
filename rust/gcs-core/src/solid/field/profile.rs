@@ -56,14 +56,11 @@ impl Edge {
             Self::Line {a,b,..} => cross(a,b),
             Self::Arc {center,radius,sweep,..} =>
                 cross(center,delta(self.at(1.),self.at(0.)))+radius*radius*sweep,
-            // ∫ x dy − y dx by Gauss–Legendre over eight stretches: a sign for the winding
-            Self::Conic {..} => {
-                let g = [0.5-0.5/3f64.sqrt(),0.5+0.5/3f64.sqrt()];
-                (0..8).map(|k| g.iter().map(|x| {
-                    let t = (k as f64+x)/8.;
-                    cross(self.at(t),self.tangent(t))
-                }).sum::<f64>()/16.).sum()
-            }
+            // ∫ x dy − y dx by Gauss–Legendre: a sign for the winding
+            Self::Conic {..} => crate::integral::GAUSS8.iter().map(|&(x,w)| {
+                let t = 0.5+0.5*x;
+                w*cross(self.at(t),self.tangent(t))
+            }).sum::<f64>()/2.,
         }
     }
     // The farthest boundary point from planar zero; material lies within the
@@ -219,7 +216,7 @@ enum Wall {
     Round {center:[I;2],radius:I,ends:[[I;2];2],from:[I;2],to:[I;2],reflex:bool},
     Circle {center:[I;2],radius:I},
     /// A conic's arc, enclosed by its pieces' control triangles (`Wall::conic`).
-    Conic {seg:crate::brep::planar::Seg,a:P,m:P,b:P,w:f64},
+    Conic(crate::brep::planar::Seg),
 }
 
 fn nonnegative(x: I) -> I { I::new(x.bounds()[0].max(0.),x.bounds()[1].max(0.)).unwrap() }
@@ -253,7 +250,7 @@ impl Wall {
                 Self::Round {center,radius,ends:[on_circle(from)?,on_circle(to)?],from,to,
                     reflex:sweep.abs() > PI}
             }
-            Edge::Conic {a,m,b,w} => Self::Conic {seg:edge.conic(),a,m,b,w},
+            Edge::Conic {..} => Self::Conic(edge.conic()),
         }))
     }
 
@@ -262,7 +259,8 @@ impl Wall {
     /// nearest of its pieces' discs about their control triangles — the arc lies within each
     /// piece's triangle (positive weights) — split in halves while a piece is wider than an
     /// eighth of the box and nearer than the bound above.
-    fn conic(seg: &crate::brep::planar::Seg,a: P,m: P,b: P,w: f64,lo: P,hi: P) -> Result<I,Error> {
+    fn conic(seg: &crate::brep::planar::Seg,lo: P,hi: P) -> Result<I,Error> {
+        let crate::brep::planar::Seg::Conic {a,m,b,w} = *seg else { unreachable!("a conic's wall") };
         let far = |q: P| ((q[0]-lo[0]).abs().max((q[0]-hi[0]).abs())).dhypot((q[1]-lo[1]).abs().max((q[1]-hi[1]).abs()));
         let near = |q: P| (lo[0]-q[0]).max(q[0]-hi[0]).max(0.).dhypot((lo[1]-q[1]).max(q[1]-hi[1]).max(0.));
         let scale = a[0].abs().max(a[1].abs()).max(b[0].abs()).max(b[1].abs()).max(m[0].abs()).max(m[1].abs());
@@ -321,9 +319,9 @@ impl Wall {
                 let hi = corners.bounds()[1];
                 I::new(ring.bounds()[0].min(hi),hi)
             }
-            Self::Conic {seg,a,m,b,w} => {
+            Self::Conic(seg) => {
                 let (x,y) = (p[0].bounds(),p[1].bounds());
-                Self::conic(seg,*a,*m,*b,*w,[x[0],y[0]],[x[1],y[1]])
+                Self::conic(seg,[x[0],y[0]],[x[1],y[1]])
             }
         }
     }

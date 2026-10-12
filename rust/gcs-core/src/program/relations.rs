@@ -1686,29 +1686,27 @@ pub(super) fn fill_sets(sk: &mut Sketch, terms: &mut [crate::model::RegionTerm],
     if depth > 16 {
         return Err("a set measured from is measured in terms of itself".to_string());
     }
+    // a set's point held and its own terms filled, in turn
+    let held = |q: usize, sk: &mut Sketch| -> Result<Vec<crate::model::RegionTerm>, String> {
+        let mut inner = probes.terms.get(&q).cloned().unwrap_or_default();
+        fill_sets(sk, &mut inner, probes, q, depth + 1)?;
+        for x in sk.own_params(EntRef::point(q)) {
+            sk.params[x as usize].fixed = true;
+        }
+        Ok(inner)
+    };
     let fill = |t: &mut Target, sk: &mut Sketch| -> Result<(), String> {
         if let Target::Set { probe, terms } = t {
-            let mut inner = probes.terms.get(&(*probe as usize)).cloned().unwrap_or_default();
-            if inner.is_empty() {
+            if probes.terms.get(&(*probe as usize)).is_none_or(|t| t.is_empty()) {
                 return Err("a set measured from states nothing of its point".to_string());
             }
-            fill_sets(sk, &mut inner, probes, *probe as usize, depth + 1)?;
-            for q in sk.own_params(EntRef::point(*probe as usize)) {
-                sk.params[q as usize].fixed = true;
-            }
-            *terms = inner;
+            *terms = held(*probe as usize, sk)?;
         }
         Ok(())
     };
     // a set no term reads still has its point held (`Probes::idle`)
-    if let Some(idle) = probes.idle.get(&probe) {
-        for &q in idle {
-            let mut inner = probes.terms.get(&q).cloned().unwrap_or_default();
-            fill_sets(sk, &mut inner, probes, q, depth + 1)?;
-            for x in sk.own_params(EntRef::point(q)) {
-                sk.params[x as usize].fixed = true;
-            }
-        }
+    for &q in probes.idle.get(&probe).into_iter().flatten() {
+        held(q, sk)?;
     }
     for t in terms.iter_mut() {
         match &mut t.shape {

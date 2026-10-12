@@ -151,21 +151,15 @@ fn a_conics_arc_is_exact() {
 #[test]
 fn a_chamfers_sum_of_distances_is_a_line_or_a_conic() {
     use gcs_core::brep::corners::{chamfer,summed,Leg};
-    let square = rect(0.,0.,4.,4.);
-    let flat = chamfer(&Region::new(square.loops.iter().map(|l| l.iter().enumerate()
-        .map(|(k,s)| gcs_core::brep::planar::Step {tag:k as u32+1,..*s}).collect()).collect()),&[2],&[3],
-        [Leg::FromOther(1.),Leg::FromOther(0.5)],9).unwrap();
-    let tagged = Region::new(square.loops.iter().map(|l| l.iter().enumerate()
-        .map(|(k,s)| gcs_core::brep::planar::Step {tag:k as u32+1,..*s}).collect()).collect());
-    let summed_square = summed(&tagged,&[2],&[3],[1.,0.5],9).unwrap();
+    // each step tagged by its place, from 1
+    let tagged = |r: Region| r.tagged(&|_,k| k as u32+1);
+    let square = tagged(rect(0.,0.,4.,4.));
+    let flat = chamfer(&square,&[2],&[3],[Leg::FromOther(1.),Leg::FromOther(0.5)],9).unwrap();
     let cut = |r: &Region| r.loops.iter().flatten().find(|s| s.tag == 9).unwrap().seg;
-    assert_eq!(cut(&flat),cut(&summed_square));
+    assert_eq!(cut(&flat),cut(&summed(&square,&[2],&[3],[1.,0.5],9).unwrap()));
     // a disc's quarter: the right side a line, the rim the circle of radius 4 about the origin
-    let sector = Region::new(vec![vec![
-        gcs_core::brep::planar::Step {seg:Seg::Line {a:[0.,0.],b:[4.,0.]},chart:None,tag:1},
-        gcs_core::brep::planar::Step {seg:Seg::Arc {c:[0.,0.],r:4.,a0:0.,sweep:PI/2.},chart:None,tag:2},
-        gcs_core::brep::planar::Step {seg:Seg::Line {a:[0.,4.],b:[0.,0.]},chart:None,tag:3},
-    ]]);
+    let sector = tagged(Region::plain(vec![vec![Seg::Line {a:[0.,0.],b:[4.,0.]},
+        Seg::Arc {c:[0.,0.],r:4.,a0:0.,sweep:PI/2.},Seg::Line {a:[0.,4.],b:[0.,0.]}]]));
     let (la,lb) = (0.5,0.8);
     let relieved = summed(&sector,&[1],&[2],[la,lb],9).unwrap();
     let conic = cut(&relieved);

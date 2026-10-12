@@ -28,8 +28,17 @@ fn dist(a: P,b: P) -> f64 { norm(sub(a,b)) }
 #[derive(Clone,Copy,Debug,PartialEq)]
 pub enum Seg { Line { a: P,b: P },Arc { c: P,r: f64,a0: f64,sweep: f64 },Conic { a: P,m: P,b: P,w: f64 } }
 
-/// A conic arc's three Bernstein weights at `t`, weighed (their sum the denominator).
-fn conic_basis(w: f64,t: f64) -> [f64;3] { let s = 1.-t; [s*s,2.*w*t*s,t*t] }
+/// A rational quadratic Bézier over `p` (its middle weighed `w`, its ends one) at `t`: the point
+/// and its derivative, by the quotient rule over `N = Σ kᵢ pᵢ` and `D = Σ kᵢ` — a conic's arc in
+/// the plane (`Seg::Conic`) or turned into space (`solid::surface`'s meridian).
+pub(crate) fn conic_at<const N: usize>(p: [[f64;N];3],w: f64,t: f64) -> ([f64;N],[f64;N]) {
+    let s = 1.-t;
+    let (k,dk) = ([s*s,2.*w*t*s,t*t],[-2.*s,2.*w*(1.-2.*t),2.*t]);
+    let (d,dd) = (k[0]+k[1]+k[2],dk[0]+dk[1]+dk[2]);
+    let n: [f64;N] = std::array::from_fn(|i| k[0]*p[0][i]+k[1]*p[1][i]+k[2]*p[2][i]);
+    let dn: [f64;N] = std::array::from_fn(|i| dk[0]*p[0][i]+dk[1]*p[1][i]+dk[2]*p[2][i]);
+    (n.map(|x| x/d),std::array::from_fn(|i| (dn[i]*d-n[i]*dd)/(d*d)))
+}
 
 /// A point's barycentric coordinates in the triangle `a`, `m`, `b`, and their gradients: affine in
 /// the point, so a conic's implicit form over them is quadratic along any line.
@@ -46,13 +55,9 @@ impl Seg {
         match *self {
             Seg::Line {a,b} => [a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t],
             Seg::Arc {c,r,a0,sweep} => { let w = a0+sweep*t; [c[0]+r*w.dcos(),c[1]+r*w.dsin()] }
-            Seg::Conic {a,m,b,w} => {
-                // its ends exactly, as written: a vertex two steps share stays one point
-                if t == 0. { return a } else if t == 1. { return b }
-                let k = conic_basis(w,t);
-                let d = k[0]+k[1]+k[2];
-                std::array::from_fn(|i| (k[0]*a[i]+k[1]*m[i]+k[2]*b[i])/d)
-            }
+            // its ends exactly as written (the basis is 1, 0, 0 there): a vertex two steps share
+            // stays one point
+            Seg::Conic {a,m,b,w} => conic_at([a,m,b],w,t).0,
         }
     }
     pub fn start(&self) -> P { self.point(0.) }
@@ -62,29 +67,16 @@ impl Seg {
         match *self {
             Seg::Line {a,b} => sub(b,a),
             Seg::Arc {r,a0,sweep,..} => { let w = a0+sweep*t; [-r*sweep*w.dsin(),r*sweep*w.dcos()] }
-            Seg::Conic {a,m,b,w} => {
-                // (N′D − ND′)/D², N = Σ kᵢ pᵢ and D = Σ kᵢ
-                let k = conic_basis(w,t);
-                let dk = [-2.*(1.-t),2.*w*(1.-2.*t),2.*t];
-                let (d,dd) = (k[0]+k[1]+k[2],dk[0]+dk[1]+dk[2]);
-                std::array::from_fn(|i| {
-                    let n = k[0]*a[i]+k[1]*m[i]+k[2]*b[i];
-                    let dn = dk[0]*a[i]+dk[1]*m[i]+dk[2]*b[i];
-                    (dn*d-n*dd)/(d*d)
-                })
-            }
+            Seg::Conic {a,m,b,w} => conic_at([a,m,b],w,t).1,
         }
     }
     pub fn length(&self) -> f64 {
         match *self {
             Seg::Line {a,b} => dist(a,b),
             Seg::Arc {r,sweep,..} => r*sweep.abs(),
-            // Gauss–Legendre of five points over sixteen stretches
-            Seg::Conic {..} => {
-                const X: [f64;5] = [-0.906179845938664,-0.538469310105683,0.,0.538469310105683,0.906179845938664];
-                const W: [f64;5] = [0.236926885056189,0.478628670499366,0.568888888888889,0.478628670499366,0.236926885056189];
-                (0..16).map(|k| (0..5).map(|i| W[i]*norm(self.tangent((k as f64+0.5+0.5*X[i])/16.))).sum::<f64>()/32.).sum()
-            }
+            // eight-point Gauss–Legendre over sixteen stretches
+            Seg::Conic {..} => (0..16).map(|k| crate::integral::GAUSS8.iter()
+                .map(|&(x,w)| w*norm(self.tangent((k as f64+0.5+0.5*x)/16.))).sum::<f64>()/32.).sum(),
         }
     }
     pub fn reversed(&self) -> Seg {
@@ -144,7 +136,7 @@ impl Seg {
         dist(self.point(t),p).min(dist(self.start(),p)).min(dist(self.end(),p))
     }
     /// The fraction of the step's nearest point to `p`: of 64 samples the nearest, refined by
-    /// Newton on the squared distance within its neighbours.
+    /// Brent's minimisation of the squared distance between its neighbours.
     pub(crate) fn nearest(&self,p: P) -> f64 {
         const N: usize = 64;
         let d2 = |t: f64| { let q = sub(self.point(t),p); dot(q,q) };
@@ -427,18 +419,8 @@ impl Region {
                     let ([l0,l1,l2],[g0,g1,g2]) = barycentric(a,m,b,p);
                     let (d0,d1,d2) = (dot(g0,d),dot(g1,d),dot(g2,d));
                     let ww = 4.*w*w;
-                    let qa = d1*d1-ww*d0*d2;
-                    let qb = 2.*l1*d1-ww*(l0*d2+l2*d0);
-                    let qc = l1*l1-ww*l0*l2;
-                    let roots: Vec<f64> = if qa.abs() <= 1e-14*(qb.abs()+qc.abs()) {
-                        if qb == 0. { vec![] } else { vec![-qc/qb] }
-                    } else {
-                        let disc = qb*qb-4.*qa*qc;
-                        if disc < 0. { vec![] } else {
-                            let k = -0.5*(qb+disc.sqrt().copysign(qb));
-                            if k == 0. { vec![0.] } else { vec![k/qa,qc/k] }
-                        }
-                    };
+                    let roots = crate::roots::quadratic(d1*d1-ww*d0*d2,2.*l1*d1-ww*(l0*d2+l2*d0),
+                        l1*l1-ww*l0*l2);
                     roots.into_iter().filter(|&along| along > 0. && {
                         let t = s.param([p[0]+d[0]*along,p[1]+d[1]*along]);
                         (0. ..1.).contains(&t)

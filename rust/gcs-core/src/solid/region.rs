@@ -352,8 +352,6 @@ fn agrees(sk: &Sketch, solid: usize, region: &Region, half_plane: &crate::plane:
     Ok(())
 }
 
-fn cross2(a: [f64; 2], b: [f64; 2]) -> f64 { a[0] * b[1] - a[1] * b[0] }
-
 /// The meridian's loops as the faceted kernel turns them: polygons in the half-plane (`u` along
 /// the seam, `v` along the axis), each arc chorded as a face's arcs are (`tessellate_arc`), a conic
 /// as an arc of its length and turn would be, every side named by the term it came from — the loop
@@ -373,7 +371,8 @@ pub(super) fn face_polys(m: &Meridian, unit: f64) -> Vec<super::profile::FacePol
                 Seg::Conic { .. } => {
                     // chorded as an arc of its length through the turn between its ends would be
                     let (t0, t1) = (step.seg.tangent(0.0), step.seg.tangent(1.0));
-                    let turn = cross2(t0, t1).datan2(t0[0] * t1[0] + t0[1] * t1[1]).abs().max(1e-9);
+                    let turn = (t0[0] * t1[1] - t0[1] * t1[0]).datan2(t0[0] * t1[0] + t0[1] * t1[1]).abs()
+                        .max(1e-9);
                     let r = step.seg.length() / turn;
                     let n = super::profile::tessellate_arc((0.0, 0.0), r, 0.0, turn, unit).len() - 1;
                     for j in 0..n {

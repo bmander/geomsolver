@@ -193,7 +193,7 @@ pub fn meridian_region(recipe: &Json,seam: V) -> Result<Result<(Profile,V,V),Str
     // a conic's arc: a rational quadratic Bézier, its ends weighed alike
     let conic = |b: &super::nurbs::BSpline| -> Option<([V;3],f64)> {
         if b.degree != 2 || b.poles.len() != 3 || b.knots.len() != 6 { return None }
-        let w = b.weights.clone().unwrap_or(vec![1.;3]);
+        let w = b.weights.as_deref().unwrap_or(&[1.;3]);
         if (w[0]-w[2]).abs() > 1e-12*w[0] { return None }
         Some(([b.poles[0],b.poles[1],b.poles[2]],w[1]/w[0]))
     };

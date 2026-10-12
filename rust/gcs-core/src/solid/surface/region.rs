@@ -131,38 +131,26 @@ impl Edge {
                 }).count()
             }
             Self::Conic {a,m,b,w} => {
-                // split where the height turns (the numerator of y′, a quadratic in t), each
-                // stretch crossed at most once, its ends' heights as a line's are read (its
+                // in powers of t, `w(y1 − y0)(1 − t)² + (y2 − y0)t(1 − t) + w(y2 − y1)t²` is half
+                // the numerator of y′ (its cubic terms cancel) and `(y0 − h)(1 − t)² +
+                // 2w(y1 − h)t(1 − t) + (y2 − h)t²` that of y − h: split where the height turns,
+                // each stretch crossed at most once, its ends' heights read as a line's are (its
                 // vertices exactly as written)
-                let (y0,y1,y2) = (a[1],m[1],b[1]);
-                // y′'s numerator N′D − ND′ is 2(w(y1 − y0)(1 − t)² + (y2 − y0)t(1 − t) +
-                // w(y2 − y1)t²), its cubic terms cancelled: in powers of t, twice these
-                let c0 = 2.*w*(y1-y0);
-                let c1 = 2.*(y2-y0)-4.*w*(y1-y0);
-                let c2 = 2.*w*(y2-y1)-2.*(y2-y0)+2.*w*(y1-y0);
+                let powers = |e0: f64,e1: f64,e2: f64| (e0,e1-2.*e0,e0-e1+e2);
+                let (c0,c1,c2) = powers(w*(m[1]-a[1]),b[1]-a[1],w*(b[1]-m[1]));
                 let mut cuts = vec![0.];
-                let mut roots = Vec::new();
-                if c2.abs() > 1e-300 {
-                    let disc = c1*c1-4.*c2*c0;
-                    if disc >= 0. {
-                        let k = -0.5*(c1+disc.sqrt().copysign(c1));
-                        roots.push(k/c2);
-                        if k != 0. { roots.push(c0/k); }
-                    }
-                } else if c1 != 0. { roots.push(-c0/c1); }
-                roots.sort_by(f64::total_cmp);
-                cuts.extend(roots.into_iter().filter(|&t| t > 0. && t < 1.));
+                cuts.extend(crate::roots::quadratic(c2,c1,c0).into_iter().filter(|&t| t > 0. && t < 1.));
                 cuts.push(1.);
+                let (h0,h1,h2) = powers(a[1]-p[1],2.*w*(m[1]-p[1]),b[1]-p[1]);
                 let seg = self.conic();
                 cuts.windows(2).filter(|t| {
-                    let (ya,yb) = (seg.point(t[0])[1],seg.point(t[1])[1]);
-                    if (ya > p[1]) == (yb > p[1]) { return false; }
-                    let (mut lo,mut hi) = (t[0],t[1]);
-                    for _ in 0..80 {
-                        let mid = 0.5*(lo+hi);
-                        if (seg.point(mid)[1] > p[1]) == (ya > p[1]) { lo = mid } else { hi = mid }
-                    }
-                    p[0] < seg.point(0.5*(lo+hi))[0]
+                    if (seg.point(t[0])[1] > p[1]) == (seg.point(t[1])[1] > p[1]) { return false; }
+                    // where the stretch meets the ray's height: the root within it (to roundoff)
+                    let off = |x: f64| (x.clamp(t[0],t[1])-x).abs();
+                    let at = crate::roots::quadratic(h2,h1,h0).into_iter()
+                        .min_by(|x,y| off(*x).total_cmp(&off(*y)))
+                        .map_or(0.5*(t[0]+t[1]),|x| x.clamp(t[0],t[1]));
+                    p[0] < seg.point(at)[0]
                 }).count()
             }
         }

@@ -51,16 +51,12 @@ fn flux(s: &Seg) -> f64 {
             };
             prim(a0 + sweep) - prim(a0)
         }
-        // a rational quadratic: Gauss–Legendre of five points over 64 stretches, to roundoff
-        Seg::Conic { .. } => {
-            let (x, wt) = ([-0.906179845938664, -0.538469310105683, 0.0, 0.538469310105683, 0.906179845938664],
-                [0.236926885056189, 0.478628670499366, 0.568888888888889, 0.478628670499366, 0.236926885056189]);
-            (0..64).map(|k| (0..5).map(|i| {
-                let t = (k as f64 + 0.5 + 0.5 * x[i]) / 64.0;
-                let (p, d) = (s.point(t), s.tangent(t));
-                wt[i] * p[0] * p[0] / 2.0 * d[1]
-            }).sum::<f64>() / 128.0).sum()
-        }
+        // a rational quadratic: eight-point Gauss–Legendre over 16 stretches, to roundoff
+        Seg::Conic { .. } => (0..16).map(|k| gcs_core::integral::GAUSS8.iter().map(|&(x, w)| {
+            let t = (k as f64 + 0.5 + 0.5 * x) / 16.0;
+            let (p, d) = (s.point(t), s.tangent(t));
+            w * p[0] * p[0] / 2.0 * d[1]
+        }).sum::<f64>() / 32.0).sum(),
     }
 }
 

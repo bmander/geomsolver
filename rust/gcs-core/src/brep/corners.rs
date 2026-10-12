@@ -161,7 +161,7 @@ pub fn flat(s: &Seg, n: &Seg, side: f64, legs: [Leg; 2]) -> Result<Cut, String> 
     Ok((t_s, t_n, Seg::Line { a: s.point(t_s), b: n.point(t_n) }))
 }
 
-/// The curve `std.Chamfered` (and `std.Flat`) bounds at the corner where `s` arrives and `n`
+/// The curve `std.Chamfered` bounds at the corner where `s` arrives and `n`
 /// leaves: the points whose distances from the two carriers, each toward side `side`, make
 /// `d_s / legs[1] + d_n / legs[0]` one — through the ends `flat` finds with both legs measured from
 /// the other face.  Between lines the segment; between a line and a circle about `c` the conic
@@ -191,7 +191,7 @@ pub fn sum(s: &Seg, n: &Seg, side: f64, legs: [f64; 2]) -> Result<Cut, String> {
     let k = side * sweep.signum();
     let (alpha, beta) = (r - k * l_line, k * l_line / l_circle);
     let f = |q: P| dist(q, c) - alpha - beta * (dot(nl, q) - h);
-    let grad = |q: P| sub(scale(unit(sub(q, c)), 1.0), scale(nl, beta));
+    let grad = |q: P| sub(unit(sub(q, c)), scale(nl, beta));
     // the tangents at the ends, and where they meet
     let (g0, g2) = (grad(p0), grad(p2));
     let (d0, d2) = (left(g0), left(g2));
@@ -201,18 +201,13 @@ pub fn sum(s: &Seg, n: &Seg, side: f64, legs: [f64; 2]) -> Result<Cut, String> {
     }
     let m = add(p0, scale(d0, cross(sub(p2, p0), d2) / den));
     // the shoulder: where the conic crosses from the chord's middle toward `m`, a quadratic
+    // (nearly linear for a parabola, along its axis)
     let mid = scale(add(p0, p2), 0.5);
     let v = sub(m, mid);
     let (e, rhs0, rhs1) = (sub(mid, c), alpha + beta * (dot(nl, mid) - h), beta * dot(nl, v));
-    let qa = dot(v, v) - rhs1 * rhs1;
-    let (qb, qc) = (2.0 * (dot(e, v) - rhs0 * rhs1), dot(e, e) - rhs0 * rhs0);
-    let disc = qb * qb - 4.0 * qa * qc;
-    if disc < 0.0 {
-        return Err("the flat's conic misses its own middle".into());
-    }
-    // the roots without cancellation: a parabola's quadratic is nearly linear along its axis
-    let k = -0.5 * (qb + disc.sqrt().copysign(qb));
-    let shoulder = [k / qa, qc / k].into_iter()
+    let roots = crate::roots::quadratic(dot(v, v) - rhs1 * rhs1, 2.0 * (dot(e, v) - rhs0 * rhs1),
+        dot(e, e) - rhs0 * rhs0);
+    let shoulder = roots.into_iter()
         .filter(|&u| u > 0.0 && u < 1.0 && rhs0 + u * rhs1 >= 0.0)
         .min_by(|a, b| f(add(mid, scale(v, *a))).abs().total_cmp(&f(add(mid, scale(v, *b))).abs()))
         .ok_or("the flat's conic leaves its control triangle")?;

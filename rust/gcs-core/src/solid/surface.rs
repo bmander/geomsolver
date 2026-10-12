@@ -235,14 +235,7 @@ impl RevolvedSurface {
                 (add(*center,add(scale(*a,c),scale(*b,s))),
                     scale(add(scale(*a,-s),scale(*b,c)),*sweep))
             }
-            Meridian::Conic { a,m,b,w } => {
-                let k = [(1.-u)*(1.-u),2.*w*u*(1.-u),u*u];
-                let dk = [-2.*(1.-u),2.*w*(1.-2.*u),2.*u];
-                let (d,dd) = (k[0]+k[1]+k[2],dk[0]+dk[1]+dk[2]);
-                let n: V = std::array::from_fn(|i| k[0]*a[i]+k[1]*m[i]+k[2]*b[i]);
-                let dn: V = std::array::from_fn(|i| dk[0]*a[i]+dk[1]*m[i]+dk[2]*b[i]);
-                (scale(n,1./d),std::array::from_fn(|i| (dn[i]*d-n[i]*dd)/(d*d)))
-            }
+            Meridian::Conic { a,m,b,w } => crate::brep::planar::conic_at([*a,*m,*b],*w,u),
         };
         // Rodrigues' rotation of the two vectors about the unit axis, and the
         // angular velocity's cross product: what a pose would compute through

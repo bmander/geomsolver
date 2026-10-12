@@ -24,10 +24,11 @@ component MemberBlank(generator: line, ax: line, view: plane, design: group,
   tip := std.Offset(pitch, d: design.addendum * normal_module)
   // the toe's side of the blank, a bound of its own for the toe's chamfer
   beyond_toe := { q | q outside toe }
+  relief := design.end_relief
   region := { p | p inside tip; p inside heel; p outside toe
                   p outside(design.back * normal_module) pitch
-                  p inside std.Chamfered(tip, beyond_toe, la: design.end_relief, lb: design.end_relief)
-                  p inside std.Chamfered(tip, heel, la: design.end_relief, lb: design.end_relief) }
+                  p inside std.Chamfered(tip, beyond_toe, la: relief, lb: relief)
+                  p inside std.Chamfered(tip, heel, la: relief, lb: relief) }
   material := solid(region)
 }
 

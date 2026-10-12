@@ -236,18 +236,18 @@ fn a_flat_beside_a_sphere_is_a_parabola_turned() {
                              b := solid(bead)\n"));
     let (_, co, _) = sc();
     let k = 1.0 / co;
-    let at = |psi: f64| { let rho = 9.5 / (1.0 - (PI / 6.0 - psi).sin()); [rho * psi.sin(), rho * psi.cos()] };
+    // the parabola's radius from the apex, and its derivative, at `ψ`
+    let rho = |psi: f64| 9.5 / (1.0 - (PI / 6.0 - psi).sin());
+    let drho = |psi: f64| -9.5 * (PI / 6.0 - psi).cos() / (1.0 - (PI / 6.0 - psi).sin()).powi(2);
+    let at = |psi: f64| [rho(psi) * psi.sin(), rho(psi) * psi.cos()];
     let psi_of = |rho: f64| PI / 6.0 - (1.0 - 9.5 / rho).asin();
     let (pa, pb) = (psi_of(8.5), psi_of(9.0));
     let (a, b) = (at(pa), at(pb));
-    // ∫ r²/2 dz along the parabola from `a` to `b`, Gauss–Legendre of five points over 64 stretches
-    let (x, w) = ([-0.906179845938664, -0.538469310105683, 0.0, 0.538469310105683, 0.906179845938664],
-        [0.236926885056189, 0.478628670499366, 0.568888888888889, 0.478628670499366, 0.236926885056189]);
-    let h = 1e-6;
-    let flux: f64 = (0..64).map(|j| (0..5).map(|i| {
-        let psi = pa + (pb - pa) * (j as f64 + 0.5 + 0.5 * x[i]) / 64.0;
-        let (q, dz) = (at(psi), (at(psi + h)[1] - at(psi - h)[1]) / (2.0 * h));
-        w[i] * q[0] * q[0] / 2.0 * dz * (pb - pa) / 128.0
+    // ∫ r²/2 dz along the parabola from `a` to `b`: eight-point Gauss–Legendre over 16 stretches
+    let flux: f64 = (0..16).map(|j| gcs_core::integral::GAUSS8.iter().map(|&(x, w)| {
+        let psi = pa + (pb - pa) * (j as f64 + 0.5 + 0.5 * x) / 16.0;
+        let dz = drho(psi) * psi.cos() - rho(psi) * psi.sin();
+        w * at(psi)[0].powi(2) / 2.0 * dz * (pb - pa) / 32.0
     }).sum::<f64>()).sum();
     let chord = (b[1] - a[1]) / 6.0 * (a[0] * a[0] + a[0] * b[0] + b[0] * b[0]);
     let walk = pappus([0.0, 0.0], &[
