@@ -194,3 +194,4 @@ mod catenary;
 mod extremal;
 mod slide;
 mod when;
+mod recursion;

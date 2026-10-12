@@ -212,6 +212,12 @@ impl<'a> Walk<'a> {
                 }
                 StmtKind::Param(_) | StmtKind::Group(_) => {} // worked out above, before the walk
                 StmtKind::Instance(inst) => {
+                    // a body of nothing but calls emits no statement, so the statements' cap
+                    // never stops a recursion branching at every level: the instances have one
+                    if self.instances.len() >= MAX_FLAT {
+                        self.once(Code::E103, st.span, format!("more than {MAX_FLAT} instances once expanded"));
+                        return;
+                    }
                     let Some((comp, mut sub_vals, sides, key)) =
                         self.bind_instance(inst, scope, vals, true)
                     else {
@@ -260,20 +266,40 @@ impl<'a> Walk<'a> {
                         written: None,
                         held: false,
                     };
-                    // a component reached again while it is still being expanded is a cycle:
-                    // said once, at the call that closes it, and not walked
-                    if let Some(at) = self.instantiating.iter().position(|c| std::ptr::eq(*c, comp)) {
+                    // a component reached again while it is still being expanded recurses
+                    // (§8): walked like any other call, since a `when` decided over its numbers
+                    // ends it — unless it is given the numbers it was given there, when every
+                    // choice comes out the same and nothing ever ends it, or it nests past the
+                    // cap; either is said once, at the call that closes the cycle, and not walked
+                    let again = self.instantiating.iter().position(|(c, _)| std::ptr::eq(*c, comp));
+                    if let Some(first) = again {
                         let name = |c: &Component| c.name.as_ref().map_or(String::new(), |n| n.text.clone());
-                        let through: Vec<String> =
-                            self.instantiating[at + 1..].iter().map(|c| format!("`{}`", name(c))).collect();
-                        let message = match through.is_empty() {
-                            true => format!("`{}` instantiates itself", name(comp)),
-                            false => format!("`{}` instantiates itself through {}", name(comp), through.join(", ")),
-                        };
-                        if !self.diagnostics.iter().any(|d| d.code == Code::E003 && d.span == st.span) {
-                            self.err(Code::E003, st.span, message);
+                        let same = self.instantiating[first..].iter()
+                            .rposition(|(c, given)| std::ptr::eq(*c, comp) && *given == sub_vals)
+                            .map(|k| first + k);
+                        let endless = depth + 1 >= MAX_DEPTH;
+                        if same.is_some() || endless {
+                            let at = same.unwrap_or(first);
+                            let through: Vec<String> = self.instantiating[at + 1..].iter()
+                                .filter(|(c, _)| !std::ptr::eq(*c, comp))
+                                .map(|(c, _)| format!("`{}`", name(c)))
+                                .collect();
+                            let how = match through.is_empty() {
+                                true => format!("`{}` instantiates itself", name(comp)),
+                                false => format!("`{}` instantiates itself through {}", name(comp), through.join(", ")),
+                            };
+                            let message = match same.is_some() {
+                                true => format!("{how} with the numbers it was given, so nothing \
+                                                 ends it: a `when` over a number each call \
+                                                 changes does"),
+                                false => format!("{how} more than {MAX_DEPTH} deep: its `when` \
+                                                  does not end it soon enough"),
+                            };
+                            if !self.diagnostics.iter().any(|d| d.code == Code::E003 && d.span == st.span) {
+                                self.err(Code::E003, st.span, message);
+                            }
+                            continue;
                         }
-                        continue;
                     }
                     let mut instance_path = path.to_vec();
                     instance_path.push(PathStep::Instance(st.id));
@@ -282,7 +308,7 @@ impl<'a> Walk<'a> {
                         let name = sc.prefix().trim_end_matches('.').to_string();
                         self.set_made(name, lit, &sc, depth + 1, Made { st, path, outer: scope });
                     }
-                    self.instantiating.push(comp);
+                    self.instantiating.push((comp, sub_vals.clone()));
                     self.body(&comp.body, &sc, &mut sub_vals, &instance_path, depth + 1);
                     self.instantiating.pop();
                 }

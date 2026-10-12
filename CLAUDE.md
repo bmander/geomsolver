@@ -492,6 +492,16 @@ The parser refuses `as`, a trailing joint and `when e in X`; the measured-bound 
 statement an opener word starts. `commit_seeds` writes into a root `when`'s body. The hypoid's
 tip relief is one (`layout.sv`, `members.sv`). `tests/when.rs` is the gate.
 
+**A component may instantiate itself** (§8, 0.73): a call back into one still being expanded
+is walked like any other (`Walk::instantiating` keeps each with the numbers it was given), each
+level an instance under the last (`d.s.s.m`), ended by a `when` over its numbers. E003 at the
+call that closes the cycle is only what never ends: the same numbers again (`sub_vals` equal, so
+every `when` comes out alike), or nesting past `MAX_DEPTH`; one branching at every level
+meets the instances' cap (`MAX_FLAT`, E103), since a body of calls emits no statement.
+`tests/recursion.rs` is the gate
+(Penrose's P3 by Robinson triangles, two components each calling the other, held to the
+subdivision worked out directly).
+
 **Axes** (`docs/planes-plan.md`, #81): `t := axis hint(dir: (x, y, z))` is a directed line in space,
 `AxisE { d, a, placed }`: a unit direction (`axis_unit`, intrinsic, held like `quat_unit` when `fix`
 holds all three) and the point nearest the origin, fixed — no freedom — until a relation reads it

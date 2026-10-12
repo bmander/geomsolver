@@ -314,9 +314,11 @@ struct Walk<'a> {
     /// Where a statement read a name nothing declares (E101): the statement is not emitted, so
     /// the name never reaches the expression graph to become an unknown of its own making.
     refused: Vec<Span>,
-    /// The components being expanded, outermost first: a call to one already here is a
-    /// component instantiating itself (E003), refused rather than walked until the depth cap.
-    instantiating: Vec<&'a Component>,
+    /// The components being expanded, outermost first, each with the numbers it was given: a
+    /// call to one already here is a component instantiating itself, walked like any other call
+    /// (a `when` ends it, §12.9) unless it is given the numbers it was given there, which make
+    /// the same choices again and so never end (E003).
+    instantiating: Vec<(&'a Component, BTreeMap<String, Aff>)>,
     /// The rings expanded, waiting for their centres to be resolved with everything else: the
     /// copies' prefix, the centre as written and the scope it was written in, the count, the
     /// block.
