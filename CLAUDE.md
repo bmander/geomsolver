@@ -77,6 +77,18 @@ point's name (`SourceMap::twin_of`, read by `name_of`/`writable_name`; never fil
 `--where` lists the point once), and a sheet's view selects a point with its twins
 (`drawing/render.rs`). JSON `"twins"`, `graft`,
 `lift` (prints `in P, G`, never a twin) and `edit::remove` (keeps the other planes) carry it.
+**Said as a relation** (0.72, #211, #145 F11): `gear.M coincident q`, of a point a declaration
+draws in a plane (its own `in` or an `in` block; one only its instance's `in` puts in a view
+stands in space to its component, so keeps the row: `crown/tooth.sv`'s `lp coincident p`), is the
+same twin — `Walk::drawn_incidences` (at the head of `resolve`, so the memberships read first know
+it) makes the statement the twin's declaration, keyed past the point's `in`, in place of the
+row — the point said first: `q coincident gear.M` puts the plane through it, a row (what
+`edit::add_datum` writes, the dropped plane perhaps lying on the point's own); a claim, a
+derivative, a set's application, a ring's statement and the point's own plane keep the row (a
+point in space is `planes::incidences`'; a line's minted end `l.p1` is not resolved here and
+keeps it too); std's datums, walked after `resolve`, are read from `StandardDatums`. `project` never reads a twin (`relations::constrain`): it relates
+two planes, each operand in its own, so `m coincident P; O project m` still elaborates. The
+hypoid's pinion reads `gear.M` in Q so, with no `mean` and no `project`.
 `tests/two_planes.rs` is the gate.
 
 **Nothing is imported bare unless the `use` names it (Solvent §14.4, [0.30], [0.48], #94):** a

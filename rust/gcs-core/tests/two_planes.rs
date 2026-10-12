@@ -201,3 +201,122 @@ fn deleting_a_plane_keeps_the_others() {
     let line = out.text.lines().find(|l| l.starts_with("O :=")).unwrap_or_default().to_string();
     assert_eq!(line, "O := point hint((10, 0)) in std.top", "{}", out.text);
 }
+
+/// **A point drawn in one plane, said on another, is drawn in that one too** (§6.7, #211):
+/// `O coincident G` of a point drawn in the top is `O := point in std.top, G` said as a relation —
+/// drawn in `G` by a twin, read there by what is drawn there, and no row of its own.
+#[test]
+fn a_point_said_on_another_plane_is_drawn_there() {
+    let drawn = "in G {\n  b := point hint((10, -8))\n  t := point hint((10, 8))\n  \
+                 k := arc(center: O, start: b, end: t)\n  q := point hint((30, 5))\n}\n\
+                 O distance(25) q\n";
+    let written = solved(&format!("{FOLDED}O := point hint((10, 0)) in std.top, G\n{drawn}"));
+    {
+        let said = "O coincident G";
+        let mut e = solved(&format!("{FOLDED}O := point hint((10, 0)) in std.top\n{said}\n{drawn}"));
+        assert_eq!(kinds(&e), vec![CKind::Distance], "{said}");
+        let (o, g) = (ent(&e, "O").i(), ent(&e, "G").i());
+        assert_eq!(e.sketch.twins.get(&o).map(Vec::len), Some(1), "{said}");
+        let centre = e.sketch.arcs[0].center as usize;
+        assert_eq!(e.sketch.plane_of(centre), Some(g));
+        let (a, b) = (e.sketch.world_point(centre), e.sketch.world_point(o));
+        assert!(a.iter().zip(&b).all(|(x, y)| (x - y).abs() < 1e-9), "{a:?} {b:?}");
+        assert!(b[1].abs() < 1e-9 && b[2].abs() < 1e-9, "on the x axis: {b:?}");
+        // the drawing `in std.top, G` writes, unknown for unknown and row for row
+        let mut w = written.sketch.clone();
+        let (d, dw) = (diagnose(&mut e.sketch, DiagnoseOptions::default()),
+                       diagnose(&mut w, DiagnoseOptions::default()));
+        assert_eq!((d.dof, d.n_params, d.n_equations), (dw.dof, dw.n_params, dw.n_equations));
+        assert!(d.implied.is_empty() && d.over.is_empty(), "{said}");
+    }
+}
+
+/// The point another component declares, said on a plane only the second component knows: the
+/// pinion's `gear.M coincident q` (`spiral_bevel/pitch/pinion.sv`), where the gear's component
+/// draws `M` in its own planes and cannot name `q`.
+#[test]
+fn a_point_another_component_draws_is_drawn_in_this_ones_plane() {
+    let src = format!(
+        "{FOLDED}component Gear(p: plane) {{\n  M := point hint((20, 0)) in p\n}}\n\
+         component Pinion(q: plane, gear: group) {{\n  gear.M coincident q\n  in q {{\n    \
+         t := point hint((20, 8))\n    l := line(gear.M, t)\n  }}\n}}\n\
+         gear := Gear(std.top)\npinion := Pinion(G, gear)\nfix(x == 20) gear.M\n\
+         pinion.l perpendicular std.x\n"
+    );
+    let mut e = solved(&src);
+    assert!(!kinds(&e).iter().any(|k| format!("{k:?}").contains("Plane")), "{:?}", kinds(&e));
+    let (m, g) = (ent(&e, "gear.M").i(), ent(&e, "G").i());
+    let end = e.sketch.lines[ent(&e, "pinion.l").i()].p1 as usize;
+    assert_eq!(e.sketch.plane_of(end), Some(g), "the line in G reads M's twin there");
+    assert_eq!(e.map.name_of(gcs_core::model::EntRef::point(end)).map(String::as_str),
+               Some("gear.M"));
+    let (a, b) = (e.sketch.world_point(end), e.sketch.world_point(m));
+    assert!(a.iter().zip(&b).all(|(x, y)| (x - y).abs() < 1e-9), "{a:?} {b:?}");
+    let d = diagnose(&mut e.sketch, DiagnoseOptions::default());
+    assert_eq!(d.dof, 1, "t along the line l stands on: {:?}", d.warnings);
+}
+
+/// A claim is judged, so it draws nothing; the plane said first is put through the point, a row
+/// (a plane dropped through a point may lie on the point's own); a point standing in space is
+/// drawn in the plane, its one plane (§6.7 [0.54]).
+#[test]
+fn a_claim_or_a_point_in_space_is_no_twin() {
+    let e = read(&format!("{FOLDED}O := point hint((10, 0)) in std.top\nG coincident O\n"));
+    assert!(e.sketch.twins.is_empty());
+    assert_eq!(kinds(&e), vec![CKind::PointOnPlane]);
+    let e = read(&format!("{FOLDED}O := point hint((10, 0)) in std.top\n\
+                           V := plane(u: hint(dir: (1, 0, 0)), v: hint(dir: (0, 1, 0))) \
+                           hint(origin: (10, 0, 0))\nV coincident O\n"));
+    assert!(e.ok(), "a plane through the point, lying on its own: {:?}", e.diags);
+    let e = read(&format!("{FOLDED}O := point hint((10, 0)) in std.top\nfix((10, 0)) O\n\
+                           claim O coincident G\n"));
+    assert!(e.sketch.twins.is_empty());
+    assert!(e.sketch.constraints.iter().any(|c| c.claim));
+    let e = read(&format!("{FOLDED}O := point\nO coincident G\n"));
+    assert!(e.sketch.twins.is_empty());
+    assert_eq!(e.sketch.plane_of(ent(&e, "O").i()), Some(ent(&e, "G").i()));
+}
+
+/// Deleting the plane takes the statement that drew the point there, and leaves it in its own.
+#[test]
+fn deleting_the_plane_a_point_was_said_on_takes_the_statement() {
+    let e = read(&format!("{FOLDED}O := point hint((10, 0)) in std.top\nO coincident G\n"));
+    let g = ent(&e, "G");
+    let out = edit::remove(&e, &e.program, &e.sketch, &[g], &[]);
+    assert!(!out.text.contains("coincident"), "{}", out.text);
+    assert!(out.text.contains("O := point hint((10, 0)) in std.top\n"), "{}", out.text);
+}
+
+/// A projection relates two planes by definition, so it reads each operand in its own: the
+/// layout idiom that drew a point again and tied it by `project` still says the same, the twin
+/// standing beside the drawn image (§6.7).
+#[test]
+fn a_projection_reads_each_point_in_its_own_plane() {
+    let src = format!(
+        "{FOLDED}O := point hint((10, 0)) in std.top\nfix((10, 0)) O\n\
+         m := point hint((10, 0)) in G\nm coincident std.top\nO project m\n"
+    );
+    let mut e = solved(&src);
+    assert!(kinds(&e).contains(&CKind::Project), "{:?}", kinds(&e));
+    let (o, m) = (ent(&e, "O").i(), ent(&e, "m").i());
+    assert_eq!(e.sketch.twins.get(&m).map(Vec::len), Some(1));
+    let (a, b) = (e.sketch.world_point(o), e.sketch.world_point(m));
+    assert!(a.iter().zip(&b).all(|(x, y)| (x - y).abs() < 1e-9), "{a:?} {b:?}");
+    let d = diagnose(&mut e.sketch, DiagnoseOptions::default());
+    assert_eq!(d.dof, 0, "{:?}", d.warnings);
+}
+
+/// A point its instance's `in` puts in a view stands in space to the component declaring it, so
+/// what the component says of it reads as a point in space's: put on a plane, it is held there by
+/// a row, whatever view the instance is put in (the crown tooth's pitch points, `crown/tooth.sv`).
+#[test]
+fn a_point_its_instance_puts_in_a_view_keeps_the_row() {
+    let src = format!(
+        "{FOLDED}component Foot(p: plane) {{\n  f := point hint((10, 0))\n  f coincident p\n}}\n\
+         foot := Foot(std.top) in G\n"
+    );
+    let e = read(&src);
+    assert!(e.sketch.twins.is_empty());
+    assert_eq!(e.sketch.plane_of(ent(&e, "foot.f").i()), Some(ent(&e, "G").i()));
+    assert_eq!(kinds(&e), vec![CKind::PointOnPlane]);
+}

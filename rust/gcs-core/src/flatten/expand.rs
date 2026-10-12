@@ -722,6 +722,104 @@ impl Walk<'_> {
             twin
         }).collect()
     }
+
+    /// **A point drawn in a plane said to be on another is drawn in that one too** (§6.7,
+    /// §6.21, #211): `gear.M coincident q`, where `gear.M` is drawn in `p` and `q` is a plane,
+    /// is `gear.M` drawn in `q` by a twin, as `in p, q` would draw it — the statement made the
+    /// twin's declaration in place of a row, so what is drawn in `q` reads the point there.  It
+    /// is said here, once every declaration is walked, because the memberships the elaborator
+    /// reads first must know the twin; a point that is drawn in no plane yet is left to
+    /// `planes::incidences`, which draws it in the plane, and one already drawn in it to its row.
+    /// The point is said first: `q coincident gear.M` puts the plane through the point, a row (a
+    /// plane dropped through a point, `edit::add_datum`, may lie on its plane).  A claim, a
+    /// derivative, a set's application and a ring's statement say a row as written.
+    pub(super) fn drawn_incidences(&mut self, alias: &BTreeMap<String, String>) {
+        if self.sym.is_some() {
+            return; // a traced body is solved for its point, never drawn
+        }
+        let units = self.units;
+        // every declaration walked, by its absolute name, and the standard datums, walked after
+        // the document's own (`finish`) but planes and a point it may name like any other
+        let mut decls: Vec<(String, &Decl, Scope)> = self.out.iter().filter_map(|(st, _, sc)| match &st.kind {
+            StmtKind::Decl(d) => Some((d.name.key().text.clone(), d, sc.clone())),
+            _ => None,
+        }).collect();
+        if self.standard_datums {
+            let k = self.prog.modules.iter().position(|m| m.name == "std");
+            let scope = Scope { prefixes: vec!["std.".into()], module: k, ..Scope::default() };
+            if let Some(comp) = self.prog.component_in(k, "StandardDatums") {
+                decls.extend(comp.body.iter().filter_map(|st| match &st.kind {
+                    StmtKind::Decl(d) => {
+                        Some((format!("std.{}", d.name.key().text), d, scope.clone()))
+                    }
+                    _ => None,
+                }));
+            }
+        }
+        let planes: BTreeSet<String> = decls.iter()
+            .filter(|(_, d, _)| d.kind == crate::model::EntKind::Plane)
+            .map(|(key, ..)| key.clone())
+            .collect();
+        let at = |r: &Ref, sc: &Scope, names: &BTreeSet<String>| {
+            super::resolve::lookup(r, sc, names, alias, units)
+                .and_then(|(abs, rest)| rest.is_empty().then_some(abs))
+        };
+        // each point its declaration draws in a plane, with every plane it is drawn in, first first
+        let mut drawn: BTreeMap<String, Vec<String>> = BTreeMap::new();
+        for (key, d, sc) in &decls {
+            // a point its instance's `in` puts in a view stands in space to the component that
+            // declares it, which says where it stands whatever view its instance is put in: its
+            // statements read as a point in space's (`planes::incidences`)
+            if d.kind != crate::model::EntKind::Point
+                || d.membership.source() == crate::syntax::Source::Instance
+            {
+                continue;
+            }
+            let Some(first) = d.membership.plane() else { continue };
+            let Some(first) = at(first, sc, &self.names) else { continue };
+            let also = d.membership.also().iter().map(|r| at(r, sc, &self.names));
+            drawn.insert(key.clone(), std::iter::once(Some(first)).chain(also).flatten().collect());
+        }
+        drop(decls);
+        for i in 0..self.out.len() {
+            let (st, _, sc) = &self.out[i];
+            let StmtKind::Relation(r) = &st.kind else { continue };
+            if r.claim || r.along.is_some() || r.space || sc.ring.is_some() {
+                continue;
+            }
+            let Some(w) = r.form.written() else { continue };
+            if w.word.text != "coincident" || w.ops.len() != 2 || !w.args.is_empty() {
+                continue;
+            }
+            // the point first: `P coincident p` puts the plane through the point, by a row
+            let [Some(point), Some(plane)] =
+                [at(&w.ops[0], sc, &self.names), at(&w.ops[1], sc, &self.names)]
+            else {
+                continue;
+            };
+            if !drawn.contains_key(&point) || !planes.contains(&plane) {
+                continue;
+            }
+            let (rp, rq) = (&w.ops[0], &w.ops[1]);
+            let images = drawn.get_mut(&point).expect("drawn");
+            if images.contains(&plane) {
+                continue;
+            }
+            let mut k = images.len();
+            while self.names.contains(&format!("{point}@{k}")) {
+                k += 1;
+            }
+            let key = format!("{point}@{k}");
+            images.push(plane);
+            let span = Span::new(rp.span.lo as usize, rp.span.lo as usize);
+            let name = crate::syntax::DeclName::Key(Name { text: key.clone(), span });
+            let mut twin = Decl::point(name, [0.0; 2], Some(crate::syntax::AtRef::at(rp.clone())));
+            twin.membership = crate::syntax::Membership::written_at(rq.clone(), span);
+            self.names.insert(key.clone());
+            self.twins.push((point, key));
+            self.out[i].0.kind = StmtKind::Decl(twin);
+        }
+    }
 }
 
 impl Walk<'_> {

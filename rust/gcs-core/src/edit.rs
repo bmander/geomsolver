@@ -1144,7 +1144,7 @@ impl Selection {
     }
 }
 
-/// A relation a datum is dropped with: `p coincident v0`, `v0 distance(20) v1`.
+/// A relation a datum is dropped with: `v0 coincident p`, `v0 distance(20) v1`.
 struct Said {
     a: String,
     word: &'static str,
@@ -1172,7 +1172,7 @@ fn said(a: impl Into<String>, word: &'static str, b: impl Into<String>) -> Said 
 /// | a point, a plane  | —                                    | its normal through the point     |
 /// | two planes        | —                                    | where they meet                  |
 ///
-/// A ray is a drawn line or an axis.  Every relation is an ordinary statement (`p coincident v0`,
+/// A ray is a drawn line or an axis.  Every relation is an ordinary statement (`v0 coincident p`,
 /// `t perpendicular v0`), its kind the elaborator's to read off the operands, so the datum is
 /// constrained further like anything else; the seeds are read off the drawing `sk`, so the first
 /// solve starts at the answer meant.  `current` is the plane being drawn on (`None` the page).
@@ -1222,7 +1222,7 @@ fn set_off(sk: &Sketch) -> f64 {
     round_sig(crate::overview::axis_reach(sk) / 5.0, 1)
 }
 
-/// `p coincident x`, for each of the points.
+/// `p coincident x`, for each of the points: an axis through each.
 fn through(points: &[(String, [f64; 3])], x: &str) -> Vec<Said> {
     points.iter().map(|(p, _)| said(p.clone(), "coincident", x)).collect()
 }
@@ -1235,6 +1235,11 @@ fn plane_datum(sk: &Sketch, sel: &Selection, current: &crate::plane::Basis, name
     use crate::space::{across, add, scale, sub};
     let Selection { points, rays, planes } = sel;
     let off = |b: &Basis| Basis { o: add(b.o, scale(b.normal(), set_off(sk))), ..*b };
+    // the points the plane passes through come first, as they are selected: the plane through
+    // each, which a point drawn in a plane may be dropped on (`v0 coincident a`, a row), where
+    // `a coincident v0` would draw the point in it too (§6.7)
+    let through_it: Vec<Said> =
+        points.iter().map(|(p, _)| said(name, "coincident", p.clone())).collect();
     let (frame, mut said): (Basis, Vec<Said>) = match (points.len(), rays.len(), planes.len()) {
         (0, 0, 0) => (off(current), Vec::new()),
         (1, 0, 0) => (Basis { o: points[0].1, ..*current }, Vec::new()),
@@ -1281,8 +1286,7 @@ fn plane_datum(sk: &Sketch, sel: &Selection, current: &crate::plane::Basis, name
                          points, a point and a line or axis, two lines or axes, or a plane"
             .into()),
     };
-    // the points the plane passes through come first, as they are selected
-    let mut all = through(points, name);
+    let mut all = through_it;
     all.append(&mut said);
     let seed = |d: [f64; 3]| vec![syntax::Kid::Hint(syntax::KidSeed { v: seed_round(d), axis: true,
         ..Default::default() })];

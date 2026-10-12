@@ -79,8 +79,9 @@ fn a_line_on_a_plane_is_drawn_in_it() {
     assert!(kinds(&e).is_empty());
 }
 
-/// The first plane a point is put on is the one it is drawn in; another is a row in space, and
-/// a point already drawn in a view is put on another plane in space.
+/// The first plane a statement puts a point standing in space on is the one it is drawn in;
+/// another is a row in space.  A point a declaration draws in a view is drawn in the other plane
+/// too (§6.7 [0.72], `tests/two_planes.rs`): a twin, and no row.
 #[test]
 fn the_first_plane_draws_and_another_is_a_row() {
     let e = read(&format!("{SIDE}p := point\np coincident side\np coincident std.top\n"));
@@ -90,7 +91,8 @@ fn the_first_plane_draws_and_another_is_a_row() {
     assert!(off_side(&sk, &e, "p") < 1e-9);
     assert!(sk.world_point(ent(&e, "p").i())[2].abs() < 1e-9);
     let e = read(&format!("{SIDE}b := point hint((5, 5)) in std.front\nb coincident side\n"));
-    assert_eq!(kinds(&e), vec![CKind::PointOnPlane]);
+    assert!(kinds(&e).is_empty());
+    assert_eq!(e.sketch.twins.get(&ent(&e, "b").i()).map(Vec::len), Some(1));
 }
 
 /// A point its declaration or statements put in space stays there, and the plane holds it by a

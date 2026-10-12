@@ -1,6 +1,13 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.71 — October 2026**
+**Specification, Draft 0.72 — October 2026**
+
+**[0.72] A point said on another plane is drawn there.** `gear.M coincident q`, said of a point
+its declaration draws in a plane, draws it in `q` too, as `point in p, q` draws it — the statement
+that puts a point another component declares into a plane only this one knows. 0.54 to 0.71 held
+it on `q` by a row, so a layout drew it in `q` again and tied the two by `project`, which still
+reads each operand in its own plane. Said the other way round, `q coincident gear.M` puts the
+plane through the point, the row it was (§6.7, §6.21).
 
 **[0.71] A set formal, and a side is a bound.** A component takes a set as a `set` formal
 (`component Rounded(a: set, b: set, r: Length)`), filled by a named set or a set family's
@@ -994,8 +1001,16 @@ round), said of a point standing in space, **draws the point in `P`**: it is `p 
 said as a relation, and the two are one statement with the same rows — the point has `P`'s two
 coordinates, and every relation over it reads as one of `P`'s points' (`p distance(25) a`, with
 `a` drawn in `P`, is `P`'s own distance). `l coincident P` draws each end of `l` not yet in `P`
-there. A point is drawn in the first plane a statement puts it on; put on a second, it is held
-there by a row in space, as a point of one view put on another plane is. A point whose own
+there. A point standing in space is drawn in the first plane a statement puts it on; put on a
+second, it is held there by a row in space. **[0.72]** A point its declaration draws in a plane —
+its own `in`, or an `in` block around it — said on another, `p coincident P`, is **drawn there
+too**, as `in P, G` draws it (below): `gear.M coincident q` draws the point another component
+declares in a plane only this one knows, and what is drawn in `q` reads it there. The other way
+round, `P coincident p` passes `P` through it (below): a row, so a plane may be put through a point
+of a plane it lies on. A point only its instance's `in`
+puts in a view stands in space to the component declaring it, which says where it stands
+whatever view the instance is put in, so what the component says of it keeps the rule for a
+point in space: put on a plane, it is held there by a row. A point whose own
 statements say it stands in space stays there and the plane holds it by a row: one seeded with a
 height (`hint(z: …)`), one whose three numbers a `fix` holds, the point a tangency differentiates
 at (§6.21), a `ring`'s (§12.4), and any under a `claim`. Which representation stands is the
@@ -1005,7 +1020,15 @@ elaborator's; what the drawing means is the statement's either way.
 in `G`, so on the line where they meet: one freedom along it where both planes stand. Each
 plane's geometry reads `O` as its own point — `arc(center: O)` drawn in `G` is centred there,
 `line(O, T)` in `G` ends there, `O distance(5) q` with `q` in `G` is `G`'s distance — so what a
-descriptive layout draws twice and ties by `project` is one point. A plane named twice is
+descriptive layout draws twice and ties by `project` is one point. **[0.72]** `O coincident G`,
+said of `O` drawn in `P`, is the same statement: `O` drawn in `P` and `G` (above), however many
+components apart the two are written; `G coincident O` is `G` through `O`, a row. Said of a plane
+`O` is already drawn in, it asks nothing,
+**E061** as before; under a `claim`, in a `ring` (§12.4) and from a set's body (§6.21) it holds
+`O` there by a row, as before. `project` relates two planes by definition, so it reads each
+operand in its own plane, never by its twin: `m coincident P` and `O project m`, the layout that
+drew `m` again, say what they said. *Non-normative:* an end a line mints and does not name
+(`l.p1`) is still held on a second plane by a row. A plane named twice is
 **E040**; two planes that are parallel meet on no line, **E061**. Only a point is drawn in
 several planes (a line is, when its ends are; **E040** otherwise). Where a plane is itself built
 along a line `O` is on — an end of it, or stated on it — the plane already holds `O`, and the
@@ -1827,7 +1850,10 @@ said where it is used, by two words:
   described as written.
 - `q coincident S` (either way round) states the body with `q` for the bound point, expanded
   where the statement stands as a component's body is (§14.1). What the body declares privately
-  — the cone's generator — is made once for each use. `q` MUST be a point (**E040**).
+  — the cone's generator — is made once for each use. `q` MUST be a point (**E040**). A plane is
+  the set its `in` is membership of (§6.7): `q coincident P` draws `q` in `P`, and **[0.72]**
+  where `q`'s declaration draws it in another plane it draws `q` in `P` as well, a twin rather
+  than a row holding it there (§6.7 says where a row stays, `P coincident q` among them).
 - `l tangent S` (either way round), `l` a line: a **contact** point standing in space, on `l`,
   is minted for the use and the body is stated at it; and each relation of the body is stated a
   second time as its **derivative** there **[0.51]** — the relation's rate as the contact moves
@@ -2124,7 +2150,7 @@ What goes in the parentheses is a short list:
 
 | word | fixity | operands → constraint |
 |---|---|---|
-| `coincident` | infix | **[0.42]** (point, point); (point, line \| circle \| arc \| spline \| curve) — incidence, where 0.41 and before wrote `on`; **[0.24]** (point, plane), (line, plane) in space — **[0.54]** of a point standing in space, its membership of the plane, as `in` (§6.7); **[0.49]** (point, set), the set's body at the point (§6.21); **[0.42]** (point, axis), (axis, plane); **[0.43]** (axis, axis), one line either way round; **[0.44]** (line, axis), both ends on it; **[0.38]** (point, the envelope of a prism's side), from any view (§6.15.2). Read either way round: `P coincident p` is `p coincident P`. **[0.32]** Not (solid, solid): the body rule's union is `union` (§6.9) |
+| `coincident` | infix | **[0.42]** (point, point); (point, line \| circle \| arc \| spline \| curve) — incidence, where 0.41 and before wrote `on`; **[0.24]** (point, plane), (line, plane) in space — **[0.54]** of a point standing in space, its membership of the plane, as `in` (§6.7); **[0.72]** of a point its declaration draws in another plane, `p coincident P` draws it in `P` too and `P coincident p` passes `P` through it (§6.7); **[0.49]** (point, set), the set's body at the point (§6.21); **[0.42]** (point, axis), (axis, plane); **[0.43]** (axis, axis), one line either way round; **[0.44]** (line, axis), both ends on it; **[0.38]** (point, the envelope of a prism's side), from any view (§6.15.2). Read either way round: `P coincident p` is `p coincident P`. **[0.32]** Not (solid, solid): the body rule's union is `union` (§6.9) |
 | `cut` | infix | **[0.18]** (solid, solid) — the body rule's other half (§6.9), and no constraint at all |
 | `distance` | infix | (p, p); **[0.46]** +`along:` an ordinate — an axis or a line, or the view's `x`/`y` for the run and the rise (`right`/`left`/`up`/`down` with the sign said); (p, line); (line, line); (circle, circle); (p, plane) with `along: u`/`v` for signed ordinates from the plane's origin, or **[0.24]** `along: n` for the signed distance along the plane's normal, in space; **[0.42]** (plane, plane), the second's origin along the first's normal (§6.10) |
 | `distance` | prefix | on a line: the distance between its own ends |
