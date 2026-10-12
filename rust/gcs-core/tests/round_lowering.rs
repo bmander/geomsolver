@@ -281,6 +281,54 @@ fn the_pads_rounds_are_built_exactly() {
     assert_eq!(kinds(&b), [("cylinder", 4), ("plane", 7), ("torus", 1)].into());
 }
 
+/// The section beside a cylinder of radius `big` whose axis lies in a plane, where the ball of
+/// radius `r` touches both: the triangle of the axis, the plane's touch and the ball's centre, less
+/// the ball's sector and the cylinder's.
+fn beside_cylinder(big: f64, r: f64) -> f64 {
+    let a = ((big + r) * (big + r) - r * r).sqrt();
+    a * r / 2.0 - r * r * (r / (big + r)).acos() / 2.0 - big * big * r.atan2(a) / 2.0
+}
+
+/// `rail.sv`: the rod splits the plate's top in two, so the round is over a face in pieces — a run
+/// along each line where a piece meets the rod. In the section the rod is a circle: a prism of the
+/// line, the ball's arc and the rod's arc, running out flush at the plate's ends.
+#[test]
+fn a_rods_sides_are_filled_where_it_splits_the_plates_top() {
+    let e = solved(include_str!("../../examples/rounds/rail.sv"));
+    let b = exported(&e, "rail");
+    close(props::volume(&b), 60.0 * 10.0 * 40.0 + PI * 36.0 / 2.0 * 40.0 + 2.0 * 40.0 * beside_cylinder(6.0, 2.0));
+    assert_eq!(kinds(&b).get("cylinder"), Some(&3));
+}
+
+/// The same rod cut as a groove, its rims along the plate's top rounded: convex, so the same word
+/// takes them away — the ball within the plate and outside the groove, its section the fill's
+/// mirror. (Rounding its rims at the plate's ends too mitres a run against a ring's stretch on one
+/// cylinder, which this kernel's union does not yet resolve.)
+#[test]
+fn a_grooves_rims_are_rounded_away() {
+    let src = include_str!("../../examples/rounds/rail.sv").replace("rod union rail", "rod cut rail")
+        .replace("round(r: r) rail.plate\n", "round(r: r) rail.plate.cd\n");
+    assert!(src.contains("rail.plate.cd"));
+    let e = solved(&src);
+    let b = exported(&e, "rail");
+    close(props::volume(&b), 60.0 * 10.0 * 40.0 - PI * 36.0 / 2.0 * 40.0 - 2.0 * 40.0 * beside_cylinder(6.0, 2.0));
+}
+
+/// The groove's rim at the plate's near face: a half circle, its round a stretch of a ring ending
+/// at the plate's top — a plane through the groove's axis, standing where the turn stops, so the
+/// sector already ends there. In its meridian the corner is square: the spandrel, turned a half
+/// turn about the axis at `R + z̄` (Pappus).
+#[test]
+fn a_rings_stretch_ends_on_a_plane_through_its_axis() {
+    let src = include_str!("../../examples/rounds/rail.sv").replace("rod union rail", "rod cut rail")
+        .replace("round(r: r) rail.plate\n", "round(r: r) rail.plate.near\n");
+    let e = solved(&src);
+    let b = exported(&e, "rail");
+    let (area, z) = spandrel(2.0);
+    close(props::volume(&b), 60.0 * 10.0 * 40.0 - PI * 36.0 / 2.0 * 40.0 - PI * (6.0 + z) * area);
+    assert_eq!(kinds(&b).get("torus"), Some(&1));
+}
+
 /// **No term left unread**: the hand-written round with one side moved off its face
 /// (`p inside(1mm) a`) is no set of the table's — every term must be one an entry reads — so it is
 /// not built, and its export says no entry builds it.

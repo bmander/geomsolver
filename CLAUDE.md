@@ -310,12 +310,16 @@ body's faces is recognised by its terms' shapes (`recognised`: two or three `Fac
 `Angle` gate per pair at a half turn, the common-part-against-meeting sum, an `Ends` per pair, and
 one bound saying the section — a ball's `centres` set or a flat's sum), **never by a word's name**
 (`by_hand.sv`'s own `Rolled` is built by the same entry), read off the stratum (`faces::cached`,
-`BodyFaces::plane`/`segment`/`circle`/`coaxial`/`normal`) into **pieces**: `Run` (the section along a
-straight edge between planes, cut off by the plane faces its ends stand on: a square one is its
+`BodyFaces::plane`/`cylinder`/`segment`/`circle`/`coaxial`/`normal`) into **pieces**, one per edge
+where a face reference names a face in pieces (`run`: every edge between the two groups, each kept
+within the whole run's ends, as the field reads them): `Run` (the section along a straight edge
+between planes, or a plane and a cylinder about a line along it — the section's `Trace`s a line and
+a circle, the ball where their offsets meet — cut off by the plane faces its ends stand on: a square one is its
 slab's end, one at a slant reaching into the prism a half-space it is kept within, `Run::within`,
 the recipe's `"within"` (a run-out); a curved end refused, `unbuilt`), `Ring` (a circle where a
 plane meets a coaxial cylinder or cone: the section in the meridian at its start turned through its
-angle, `Ring::angle`, a stretch only where its ends are seams), a run and a stretch going on from one
+angle, `Ring::angle`, a stretch only where its ends are seams or planes through the axis at its
+ends' meridians), a run and a stretch going on from one
 another **glued** at their shared section. A face going on tangent from one of a run's faces at its
 end is no end (`BodyFaces::end_sides`, the field's and the lowering's one rule: a seam, the round
 goes on round it; else the obround's flat side cut its half circle's round short),
@@ -335,9 +339,10 @@ this needs (ported from #79–#110): edges along a face cut where they cross its
 `trace_beside`/`unseen_beside`), equal crossing cylinders' ellipses split where they cross
 (`boolean::crossings_among`), `query::line_cylinder`, `Surface::offset`, a fitted edge read at its
 own `tol`. Open: curved ends at a corner (a run-out onto a curved face, #110), corners not square,
-runs beside a curved face (`rail`), a face split in pieces (`a round over several faces at once`), curved sections (arcs: #83), traced canals
+runs between two curved faces, a run mitred against a ring's stretch on one cylinder (the union
+of coincident cylinder faces: a groove rounded at its ends), curved sections (arcs: #83), traced canals
 (`brep::fillet::roll`, #85), the OCCT oracle.
-`tests/round_lowering.rs` is the gate (every volume the closed form's to 1e-9; `slot.sv`, `pad.sv`).
+`tests/round_lowering.rs` is the gate (every volume the closed form's to 1e-9; `slot.sv`, `pad.sv`, `rail.sv`).
 **Distance from a set, offsets (§6.21, 0.64, #145 F4):** `p distance(d, side: outside|inside) S`
 (`distance` is a set use, `may_use`), `p inside(d) S` / `p outside(d) S` and `std.Offset(S, d)` are
 one bound on the signed distance from `S`'s surface (`Reach`: cmp toward the outside, whether

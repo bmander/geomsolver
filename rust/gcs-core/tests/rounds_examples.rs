@@ -62,6 +62,15 @@ fn the_slots_rounds_go_on_across_its_seams() {
           &[[36.5, -0.3, 25.0], [58.0, 3.0, 25.0], [58.0, 0.1, 16.9], [67.6, 0.1, 31.6]]);
 }
 
+/// `rail.sv`: the rod (in front of the plane, y < 0, along it) filled beside both its sides where
+/// it stands on the plate, the ball's own place beyond still empty.
+#[test]
+fn the_rods_sides_are_filled() {
+    holds(include_str!("../../examples/rounds/rail.sv"), "rail",
+          &[[36.2, -20.0, 10.2], [23.8, -20.0, 10.2], [30.0, -20.0, 15.0], [10.0, -20.0, 5.0]],
+          &[[38.5, -20.0, 10.5], [21.5, -20.0, 10.5], [30.0, -20.0, 16.5]]);
+}
+
 /// `pad.sv`: the boss's root filled, two of the plate's near edges rounded and the other two
 /// sharp, the bore through it all.
 #[test]

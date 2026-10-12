@@ -171,7 +171,7 @@ impl BodyFaces {
     }
 
     /// The faces edge `e` bounds.
-    fn faces_of(&self, e: u32) -> &[usize] { &self.bounding[e as usize] }
+    pub fn faces_of(&self, e: u32) -> &[usize] { &self.bounding[e as usize] }
 
     /// Whether edge `e` is convex: a point beside its middle within the first face's side and
     /// outside the second's is outside the material where the material is both sides' common
@@ -261,6 +261,13 @@ impl BodyFaces {
         let f = &self.loc.b.faces[fi];
         let crate::brep::geom::Surface::Plane(frame) = &f.surface else { return None };
         Some((if f.reversed { scale(frame.z, -1.0) } else { frame.z }, self.back(frame.o)))
+    }
+
+    /// Face `fi`'s cylinder, where it lies on one: a point of its axis, the axis's unit direction
+    /// and its radius (model units).
+    pub fn cylinder(&self, fi: usize) -> Option<(V, V, f64)> {
+        let crate::brep::geom::Surface::Cylinder(f, r) = &self.loc.b.faces[fi].surface else { return None };
+        Some((self.back(f.o), f.z, r / self.mm))
     }
 
     /// Edge `e`'s ends, first to last, where it is a straight line (model units).
