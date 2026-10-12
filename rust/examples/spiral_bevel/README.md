@@ -14,7 +14,7 @@ gear apex O at its origin, and three views folded square to it about lines throu
 an angle of its own — G, the gear's axial view, along O → M; Q, the pinion's, along M → its apex A;
 and N, the normal section, along the trace normal C → M. A point on a fold is drawn in both views
 it lies in (`O := point in p, g`), so G's triangle is over O and M themselves; a point another
-module declares is drawn again in the later view and tied by `project`.
+module declares is said on the later view (`gear.M coincident q`), which draws it there too.
 
 | Step | Module | Constructs |
 |---|---|---|

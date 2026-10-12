@@ -397,8 +397,11 @@ pub(super) fn constrain(
             return None;
         }
     }
-    // a point drawn in several planes is read in the one its reader is drawn in (§6.7)
-    super::reading::read_twins(sk, &mut args);
+    // a point drawn in several planes is read in the one its reader is drawn in (§6.7) — but a
+    // projection relates two planes by definition, each operand read in its own
+    if ckind != CKind::Project {
+        super::reading::read_twins(sk, &mut args);
+    }
     let (ckind, spec, mut args, left_out) = match super::reading::in_space(sk, ckind, &args, reader) {
         Ok(None) => (ckind, spec, args, left_out),
         Ok(Some((k, a, l))) => (k, k.spec(), a, l),

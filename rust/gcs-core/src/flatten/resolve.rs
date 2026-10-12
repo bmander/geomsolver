@@ -826,6 +826,7 @@ impl<'a> Walk<'a> {
         for (_, _, sc) in &mut self.out { sc.access = access.clone(); }
         for (_, _, sc) in &mut self.aliases { sc.access = access.clone(); }
         let alias = self.alias_table();
+        self.drawn_incidences(&alias);
         // an operand a use wrote that names nothing is said there, once, and not again at every
         // place in the body that reads it (#103)
         let mut failed: BTreeSet<String> = BTreeSet::new();
