@@ -450,10 +450,13 @@ component Rounded(a: set, b: set, r: Length) := { p |
 }
 
 // Short of the flat through each set's point `la` (on `a`) and `lb` (on `b`) from the other's
-// surface: for a point within both, its distance from each surface is its distance from what is
-// outside that set.
+// surface: the points whose distances from the two surfaces, each over the other's leg, sum to
+// one or more — for a point within both, its distance from each surface is its distance from
+// what is outside that set.  Between planes the flat, about an axis a cone; where a surface is
+// curved in section it bows with it (on a sphere beside a cone, a parabola's arc turned).
+// Multiplied through by both legs, so a leg of nothing cuts nothing.
 component Chamfered(a: set, b: set, la: Length, lb: Length) := { p |
   out_a := { q | q outside a }
   out_b := { q | q outside b }
-  distance(p, out_a) / lb + distance(p, out_b) / la >= 1
+  la * distance(p, out_a) + lb * distance(p, out_b) >= la * lb
 }

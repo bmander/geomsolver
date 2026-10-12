@@ -74,8 +74,9 @@ impl Kept {
         let f = s.frame();
         if !cross(f.z,a).iter().all(|c| c.abs() <= 1e-12) { return Kept::No }
         match s {
+            // a revolution of a curve about the axis too (#196: the end relief's conic turned)
             Surface::Cylinder(..) | Surface::Cone(..) | Surface::Sphere(..) | Surface::Torus(..)
-                if norm(cross(sub(f.o,o),a)) <= tol => Kept::Revolved,
+                | Surface::Revolution(..) if norm(cross(sub(f.o,o),a)) <= tol => Kept::Revolved,
             Surface::Plane(f) => { let l = f.local(o); Kept::Flat {foot:[l[0],l[1]],sense:crate::space::dot(f.z,a).signum()} }
             _ => Kept::No,
         }

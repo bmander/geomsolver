@@ -723,6 +723,18 @@ pub(crate) fn root_ring(big: f64, r: f64) -> f64 {
     2.0 * PI * moment
 }
 
+/// A round section's area beside a square corner, `(1 − π/4)r²`: a straight run's section, the
+/// one `root_ring` turns.
+pub(crate) fn square_run(r: f64) -> f64 { (1.0 - PI / 4.0) * r * r }
+
+/// The section beside a cylinder of radius `big` whose axis lies in a plane, where the ball of
+/// radius `r` touches both: the triangle of the axis, the plane's touch and the ball's centre, less
+/// the ball's sector and the cylinder's.
+pub(crate) fn beside_cylinder(big: f64, r: f64) -> f64 {
+    let a = ((big + r) * (big + r) - r * r).sqrt();
+    a * r / 2.0 - r * r * (r / (big + r)).acos() / 2.0 - big * big * r.atan2(a) / 2.0
+}
+
 /// The least positive root of `a t² + b t + c` (infinite where there is none).
 fn first_root(a: f64, b: f64, c: f64) -> f64 {
     let disc = b * b - 4.0 * a * c;

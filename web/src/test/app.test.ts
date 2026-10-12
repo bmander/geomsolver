@@ -1845,7 +1845,7 @@ test('a datum dropped on a selection is constrained to it, and a selection no ru
   // three points: a plane through them
   view.selected = [ent('a'), ent('b'), ent('c')];
   assert.ok(view.addDatum('plane'));
-  assert.ok(view.source.includes('a coincident v0\nb coincident v0\nc coincident v0'), view.source);
+  assert.ok(view.source.includes('v0 coincident a\nv0 coincident b\nv0 coincident c'), view.source);
   // two points: an axis through both
   view.selected = [ent('a'), ent('c')];
   assert.ok(view.addDatum('axis'));
@@ -1857,7 +1857,7 @@ test('a datum dropped on a selection is constrained to it, and a selection no ru
   // a point and an axis: a plane through the point, square to the axis
   view.selected = [ent('b'), ent('x1')];
   assert.ok(view.addDatum('plane'));
-  assert.ok(view.source.includes('b coincident v1\nx1 perpendicular v1'), view.source);
+  assert.ok(view.source.includes('v1 coincident b\nx1 perpendicular v1'), view.source);
   assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
   // a circle places nothing: refused, the text untouched
   const said: string[] = [];

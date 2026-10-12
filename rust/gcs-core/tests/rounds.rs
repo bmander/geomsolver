@@ -8,6 +8,7 @@ use gcs_core::solve::{solve, SolveOpts};
 use std::f64::consts::PI;
 
 use crate::common::{ent, read};
+use crate::fillet_definition::root_ring;
 use crate::region_general::field_volume;
 
 fn solved(src: &str) -> Elaborated {
@@ -107,13 +108,6 @@ fn a_pocket_rounded_inside_is_filled() {
         + 4.0 * (pr * pr * pr - PI * pr * pr * pr / 6.0);
     let got = -part_change("round(r: 1.5mm) dish.pocket", "dish", [14.0, -1.0, 9.0], [46.0, 7.0, 31.0], pr / 16.0);
     assert!((got - want).abs() < 2e-3 * want, "{got} against {want}");
-}
-
-/// The stack's ring a ball of radius `r` fills where a cylinder of radius `big` stands on a plane
-/// (Pappus).
-fn root_ring(big: f64, r: f64) -> f64 {
-    let moment = r * r * (big + r / 2.0) - PI * r * r / 4.0 * (big + r - 4.0 * r / (3.0 * PI));
-    2.0 * PI * moment
 }
 
 /// A boss's root, where its wall meets the plate: a concave circle, filled by a torus's ring.

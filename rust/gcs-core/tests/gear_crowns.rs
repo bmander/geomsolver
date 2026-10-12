@@ -12,7 +12,7 @@
 //! each generated flank is a quarter of it inside its conjugate one. Tip relief is a second cut
 //! beside each crown (`crown/relief.sv`) whose chamfer leaves the crown's flank at a kink, so the
 //! two cuts together are the crown turned there. End relief chamfers the blank itself, the tip
-//! cone's corner with each end sphere (`blank/ends.sv`).
+//! cone's corner with each end sphere, in the blank's own region (`blank/member.sv`).
 use gcs_core::solid::MaterialField;
 
 /// The pinion's crown tooth and the gear's space cutter at a design, in their generating pose.
@@ -206,66 +206,50 @@ fn a_tip_relief_of_zero_cuts_nothing() {
     assert_eq!(relief_solids(&with),3+4+2+24+48);
 }
 
-/// End relief, proved on the blanks (`blank/ends.sv`, as configured): at each member's toe and heel
-/// the corner where the tip cone meets the sphere is chamfered the end relief each way, the
-/// chamfer's end on the tip cone that much farther along the cone distance toward the tooth and its
-/// end on the sphere that much down from the tip cone; and the ring each end cuts takes from the
-/// blank the corner beyond the chamfer and nothing else. In the member's axial plane about the
-/// corner, a point of the blank is in the ring exactly when it is on the corner's side of the
-/// chamfer.
+/// End relief, proved on the blanks (`blank/member.sv`, as configured): at each member's toe and
+/// heel the corner where the tip cone meets the sphere is chamfered in the blank's region
+/// (`std.Chamfered`), lowered into its meridian as a conic's arc: on it the distances from the tip
+/// cone and from the sphere, each over the end relief, sum to one; its end on the tip cone is the
+/// end relief inside the sphere and its end on the sphere the end relief below the tip cone.
 #[test]
 fn the_end_relief_chamfers_each_tip_corner() {
+    use gcs_core::brep::planar::Seg;
+    use gcs_core::model::{RegionShape,SolidDef};
+    use gcs_core::syntax::Cmp;
     let e = fixtures::gear::read_as_configured();
     let sk = &e.sketch;
-    let entity = |name: &str| e.map.ent_named(name).unwrap_or_else(|| panic!("no `{name}`")).i();
-    // An end's entities are one copy of the limits' `repeat`, named under the copy's key.
-    let copied = |limits: &str,end: &str,part: &str| e.map.names.values().flatten()
-        .find(|n| n.starts_with(limits) && n.ends_with(&format!(".{end}_end.{part}")))
-        .unwrap_or_else(|| panic!("no `{part}` of the {end} end of `{limits}`")).clone();
-    let world = |name: &str| sk.world_point(entity(name));
-    let field = |name: &str| MaterialField::read(sk,entity(name),1e-10).unwrap();
-    let value = |f: &MaterialField,p: [f64;3]| f.reading(p).value;
-    let sub = |a: [f64;3],b: [f64;3]| -> [f64;3] { std::array::from_fn(|k| a[k]-b[k]) };
-    let dist = |a: [f64;3],b: [f64;3]| { let d = sub(a,b); (d[0]*d[0]+d[1]*d[1]+d[2]*d[2]).sqrt() };
     let size = 0.2;
-    let (mut worst,mut kept,mut cut): (f64,usize,usize) = (0.,0,0);
+    let mut worst: f64 = 0.;
     for member in ["pinion","gear"] {
-        let limits = format!("pair.reference.{member}_blank");
-        let apex = sk.world_point(sk.lines[entity(&format!("pair.reference.{member}.pitch_line"))].p1 as usize);
-        // the blank before its ends are relieved: its region (within the tip cone and the heel
-        // sphere, outside the toe sphere and the back cone)
-        let region = field(&format!("{limits}.material"));
-        let blank = |p| value(&region,p);
-        // the generator the ends are drawn on in the member's axial view (the gear's across its
-        // axis)
-        let drawn = if member == "gear" { "gear.opposite" } else { "pinion.pitch_line" };
-        let cone_line = &sk.lines[entity(&format!("pair.reference.{drawn}"))];
-        let along_cone = sub(sk.world_point(cone_line.p2 as usize),sk.world_point(cone_line.p1 as usize));
-        for (end,inward) in [("toe",1.),("heel",-1.)] {
-            let at = |point: &str| world(&copied(&limits,end,point));
-            let (corner,along,down) = (at("corner"),at("along_tip"),at("down_end"));
-            // the tip cone's meridian through the corner, parallel to the pitch generator: the
-            // chamfer's end on the tip on it, both on the blank's surface
-            let off_tip = |p: [f64;3]| crate::common::off_line(p,corner,along_cone);
-            let radius = dist(world(&format!("{limits}.span.{end}")),apex);
-            for p in [corner,down] { worst = worst.max((dist(p,apex)-radius).abs()); }
-            for p in [corner,along] { worst = worst.max(blank(p).abs()); }
-            worst = worst.max(off_tip(along));
-            worst = worst.max((inward*(dist(along,apex)-radius)-size).abs());
-            worst = worst.max((off_tip(down)-size).abs());
-            let ring = field(&copied(&limits,end,"ring"));
-            let (a,d) = (sub(along,corner),sub(down,corner));
-            for i in -15..=25 { for j in -15..=25 {
-                let (s,t) = (i as f64/10.+0.013,j as f64/10.+0.007);
-                let p: [f64;3] = std::array::from_fn(|k| corner[k]+s*a[k]+t*d[k]);
-                if blank(p) > -1e-6 || (s+t-1.).abs() < 1e-3 { continue; }
-                let (inside,beyond) = (value(&ring,p) < 0.,s+t < 1.);
-                assert_eq!(inside,beyond,"{member} {end} at ({s}, {t}): in the ring {inside}, beyond the chamfer {beyond}");
-                if inside { cut += 1; } else { kept += 1; }
-            }}
+        let solid = fixtures::solid(&e,&format!("pair.reference.{member}_blank.material"));
+        assert!(!gcs_core::solid::region::in_general(sk,solid),"{member}'s blank is lowered");
+        let m = gcs_core::solid::region::meridian(sk,solid).unwrap();
+        let SolidDef::Region {terms,..} = &sk.solids[solid].def else { panic!("a region") };
+        let tag = |ball: bool,cmp: Cmp| terms.iter().position(|t| t.cmp == cmp
+            && if ball { matches!(t.shape,RegionShape::Ball {..}) } else { matches!(t.shape,RegionShape::Cone {..}) })
+            .unwrap() as u32+1;
+        let step = |t: u32| m.region.loops.iter().flatten().find(|s| s.tag == t).unwrap().seg;
+        let Seg::Line {a: ta,b: tb} = step(tag(false,Cmp::Le)) else { panic!("the tip is a line") };
+        let len = ((tb[0]-ta[0]).powi(2)+(tb[1]-ta[1]).powi(2)).sqrt();
+        let to_tip = |q: [f64;2]| ((tb[0]-ta[0])*(q[1]-ta[1])-(tb[1]-ta[1])*(q[0]-ta[0]))/len;
+        let conics: Vec<Seg> = m.region.loops.iter().flatten().map(|s| s.seg)
+            .filter(|s| matches!(s,Seg::Conic {..})).collect();
+        assert_eq!(conics.len(),2,"{member}: a flat at each end");
+        for end in [tag(true,Cmp::Ge),tag(true,Cmp::Le)] {
+            let Seg::Arc {c,r,sweep,..} = step(end) else { panic!("an end is an arc") };
+            let to_sphere = |q: [f64;2]| sweep.signum()*(r-((q[0]-c[0]).powi(2)+(q[1]-c[1]).powi(2)).sqrt());
+            let conic = conics.iter().find(|s| [s.start(),s.end()].iter().any(|&p| to_sphere(p).abs() < 1e-9))
+                .unwrap_or_else(|| panic!("{member}: no flat on the sphere {end}"));
+            for k in 0..=100 {
+                let q = conic.point(k as f64/100.);
+                worst = worst.max((to_tip(q)/size+to_sphere(q)/size-1.).abs());
+            }
+            for p in [conic.start(),conic.end()] {
+                let (t,s) = (to_tip(p),to_sphere(p));
+                worst = worst.max(if t.abs() < s.abs() { t.abs()+(s-size).abs() } else { s.abs()+(t-size).abs() });
+            }
         }
     }
-    eprintln!("end relief: chamfers within {worst:.3e} mm; {cut} blank points cut by the rings, {kept} kept");
+    eprintln!("end relief: the flats within {worst:.3e} mm of their sums and legs");
     assert!(worst < 1e-9,"the end relief leaves its stated chamfer by {worst}");
-    assert!(cut > 20 && kept > 500);
 }

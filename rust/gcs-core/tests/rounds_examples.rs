@@ -7,10 +7,11 @@
 use gcs_core::program::Elaborated;
 use gcs_core::solid::MaterialField;
 use gcs_core::solve::{solve, SolveOpts};
-use std::f64::consts::PI;
 
 use crate::common::{ent, read};
-use crate::fillet_definition::{bore_rim, root_ring, sloped, sloped_root, tee_crotch, RIM, ROOT};
+use crate::fillet_definition::{
+    beside_cylinder, bore_rim, root_ring, sloped, sloped_root, square_run, tee_crotch, RIM, ROOT,
+};
 use crate::fillet_meridian::knob_neck;
 use crate::region_general::field_volume;
 
@@ -155,8 +156,6 @@ fn agrees(what: &str, got: f64, want: f64) {
     assert!((got - want).abs() <= BAR * want.abs(), "{what}: {got} against {want}");
 }
 
-/// A straight run's section: the corner a ball of radius `r` leaves between two faces square.
-fn square_run(r: f64) -> f64 { (1.0 - PI / 4.0) * r * r }
 
 /// `pad.sv`: the boss's root (concave, Pappus's ring) and the plate's two side edges (convex, each
 /// a straight run cut off flush by the faces it ends on); the bore cut after, by neither.
@@ -225,13 +224,8 @@ fn the_rails_sides_are_filled() {
 #[cfg_attr(not(feature = "slow"), ignore = "slow tier: the rail's two runs, by the field")]
 fn the_rails_runs_are_the_stacks() {
     let (big, r): (f64, f64) = (6.0, 2.0);
-    // the ball touches the plate `r` up and the rod `big + r` from its axis: the section is the
-    // triangle of its centre, its foot and the axis, less the rod's sector and the ball's
-    let theta = (r / (big + r)).asin();
-    let section = ((big + r).powi(2) - r * r).sqrt() * r / 2.0 - big * big * theta / 2.0
-        - r * r * (PI / 2.0 - theta) / 2.0;
     let got = -taken(&rounding(RAIL), "rail", [20.0, -41.0, 9.0], [40.0, 1.0, 15.0], r / 32.0);
-    agrees("the rail's runs", got, 2.0 * 40.0 * section);
+    agrees("the rail's runs", got, 2.0 * 40.0 * beside_cylinder(big, r));
 }
 
 /// `tee.sv`: the crotch filled round the saddle, nothing where the cylinders' surfaces meet below
@@ -327,34 +321,4 @@ fn the_runouts_are_the_stacks() {
     let whole = rounding(&RUNOUT.replace("fix((98, -12)) hc", "fix((90, -12)) hc"));
     agrees("the vent's rim, whole", taken(&whole, "vent", vent.0, vent.1, 1.0 / 64.0),
            sloped(4.0, [90.0, -12.0], [35.0, 0.25], 1.0, RIM, None));
-}
-
-/// Solid `name` of `src` built exactly (#194's lowering table), or why not.
-fn exact(src: &str, name: &str) -> Result<f64, String> {
-    use gcs_core::brep::{export, props, sweep::Say};
-    let e = solved(src);
-    let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
-    export::exact(&e.sketch, ent(&e, name).i(), None, None, &say)
-        .map(|x| props::volume(&x.solid)).map_err(|r| r.message)
-}
-
-/// `pad.sv` is built exactly: its root a ring and its sides prisms, each a piece of #194's table,
-/// the body's volume the closed form's to 1e-9.
-#[test]
-fn the_pad_is_built_exactly() {
-    let want = 60.0 * 40.0 * 10.0 + PI * 64.0 * 20.0 - PI * 16.0 * 30.0 + root_ring(8.0, 3.0)
-        - 2.0 * square_run(2.0) * 40.0;
-    let got = exact(PAD, "pad").unwrap();
-    assert!((got - want).abs() <= 1e-9 * want, "{got} against {want}");
-}
-
-/// The rest are rounds no entry builds yet (curved faces, a traced saddle, a tangent chain, a
-/// slanted run-out): each refused by name, never approximated, and read by the field.
-#[test]
-fn the_rest_are_refused_exactly_by_name() {
-    for (src, name) in [(KNOB, "knob"), (RAIL, "rail"), (TEE, "tee"), (BORE, "pipe"),
-                        (SLOT, "part"), (RUNOUT, "lug"), (RUNOUT, "vent")] {
-        let why = exact(src, name).expect_err(name);
-        assert!(why.contains("no exact construction is made of it yet"), "{name}: {why}");
-    }
 }

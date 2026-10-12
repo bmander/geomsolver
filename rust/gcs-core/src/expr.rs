@@ -5,8 +5,8 @@ mod eval;
 mod parser;
 
 pub use document::{evaluate, has_expr, set_dimension, sync_free, ExprError, ExprItem, Fault};
-pub use eval::{eval, eval_measured, to_arg_units, to_user_units, Aff, Measurer};
-pub use parser::{literal, names_unit, notation, parse, parse_in};
+pub use eval::{decide, eval, eval_measured, to_arg_units, to_user_units, Aff, Measurer};
+pub use parser::{literal, names_unit, notation, parse, parse_condition_in, parse_in};
 
 use crate::units::Dim;
 use std::collections::BTreeSet;
@@ -175,6 +175,78 @@ pub enum Op {
     Mul,
     Div,
     Pow,
+}
+
+/// How two numbers of one dimension compare (#210): `<`, `<=`, `>`, `>=`, `==`, `!=`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Cmp {
+    Lt,
+    Le,
+    Gt,
+    Ge,
+    Eq,
+    Ne,
+}
+
+impl Cmp {
+    /// The comparison as written.
+    pub fn text(self) -> &'static str {
+        match self {
+            Cmp::Lt => "<",
+            Cmp::Le => "<=",
+            Cmp::Gt => ">",
+            Cmp::Ge => ">=",
+            Cmp::Eq => "==",
+            Cmp::Ne => "!=",
+        }
+    }
+
+    /// Whether `a` stands so to `b`: exactly, as the numbers are — no tolerance, so `<` and
+    /// `==` are never both true.
+    pub fn holds(self, a: f64, b: f64) -> bool {
+        match self {
+            Cmp::Lt => a < b,
+            Cmp::Le => a <= b,
+            Cmp::Gt => a > b,
+            Cmp::Ge => a >= b,
+            Cmp::Eq => a == b,
+            Cmp::Ne => a != b,
+        }
+    }
+}
+
+/// **A condition** (#210): comparisons of numbers joined by `and`, `or` and `not` — what `when
+/// COND { … }` decides a block by.  Not an `Ast`: a truth is no number, so no arithmetic can read
+/// one and no number slot can hold one; only `parse_condition_in` makes one.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Cond {
+    Cmp(Cmp, Ast, Ast),
+    And(Box<Cond>, Box<Cond>),
+    Or(Box<Cond>, Box<Cond>),
+    Not(Box<Cond>),
+}
+
+impl Cond {
+    /// Every name the condition reads, once each, in name order.
+    pub fn deps(&self) -> BTreeSet<String> {
+        let mut out = BTreeSet::new();
+        self.collect_deps(&mut out);
+        out
+    }
+
+    fn collect_deps(&self, out: &mut BTreeSet<String>) {
+        match self {
+            Cond::Cmp(_, a, b) => {
+                a.collect_deps(out);
+                b.collect_deps(out);
+            }
+            Cond::And(a, b) | Cond::Or(a, b) => {
+                a.collect_deps(out);
+                b.collect_deps(out);
+            }
+            Cond::Not(a) => a.collect_deps(out),
+        }
+    }
 }
 
 /// A parsed expression.

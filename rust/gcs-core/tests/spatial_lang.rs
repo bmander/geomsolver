@@ -475,7 +475,6 @@ fn each_word_across_planes_is_the_relation_in_space() {
         ("a symmetry(lb) la.p1", CKind::Symmetric3),
         ("a coincident cb", CKind::PointOnCircle3),
         // a plane is a place in space whatever plane the point is drawn in
-        ("a coincident std.side", CKind::PointOnPlane),
         ("s coincident std.side", CKind::PointOnPlane),
         ("la coincident std.side", CKind::LineOnPlane),
         // an axis and a plane
@@ -493,6 +492,10 @@ fn each_word_across_planes_is_the_relation_in_space() {
     ] {
         assert_eq!(settles(stmt), kind, "{stmt}");
     }
+    // a point drawn in one plane said on another is drawn there too, a twin and no row (§6.7)
+    let e = read(&format!("{TWO_VIEWS}a coincident std.side\n"));
+    assert!(e.sketch.user_constraints().is_empty());
+    assert_eq!(e.sketch.twins.get(&ent(&e, "a").i()).map(Vec::len), Some(1));
     // an ordinate is one kind in or out of a plane: a coordinate in its own plane, how far along
     // the axis in another, along the normal in space
     use OrdinateForm as F;
@@ -769,20 +772,30 @@ fn a_lifted_program_keeps_its_rays() {
 }
 
 /// The hypoid's planes over its generators lift as planes over the lines, not as stated axes
-/// beside them, and read back solve to the same points.
+/// beside them, and read back solve to the same points.  A point of one view put on another
+/// plane by a row lifts as `p coincident P`, which draws it there too (§6.7 [0.74]): a twin, its
+/// image in `P`, beside every point the drawing had.
 #[test]
 fn a_lifted_program_keeps_its_planes_over_lines() {
     let e = read(HYPOID);
     let mut sk = e.sketch.clone();
     assert!(solve(&mut sk, SolveOpts::default()).success);
     let (text, again) = relift(&sk);
-    let count = |s: &Sketch, k: CKind| s.constraints.iter().filter(|c| c.kind == k).count();
+    // the axes along lines are intrinsic, the rows a twin replaces stated
+    let all = |s: &Sketch, k: CKind| s.constraints.iter().filter(|c| c.kind == k).count();
+    let stated = |s: &Sketch, k: CKind| s.user_constraints().iter().filter(|c| c.kind == k).count();
     let mut back = again.sketch.clone();
-    for k in [CKind::Parallel3, CKind::PointOnPlane, CKind::ProjectSolved] {
-        assert_eq!(count(&back, k), count(&sk, k), "{k:?}\n{text}");
-    }
+    assert_eq!(all(&back, CKind::Parallel3), all(&sk, CKind::Parallel3), "{text}");
+    assert_eq!(stated(&back, CKind::ProjectSolved), stated(&sk, CKind::ProjectSolved), "{text}");
+    assert_eq!(stated(&back, CKind::PointOnPlane), 0, "{text}");
+    let twins: usize = back.twins.values().map(Vec::len).sum();
+    assert_eq!(twins, stated(&sk, CKind::PointOnPlane), "{text}");
     assert!(solve(&mut back, SolveOpts::default()).success);
-    same_points(&sk, &back);
+    // every point the drawing had stands where it stood; the twins come after them
+    for i in 0..sk.points.len() {
+        let (x, y) = (sk.world_point(i), back.world_point(i));
+        assert!(norm(sub(x, y)) < 1e-7, "p{i}: {x:?} against {y:?}");
+    }
     let d = diagnose(&mut back, DiagnoseOptions::default());
     assert_eq!(d.dof, 0, "{}", gcs_core::diagnose::summary(&d));
 }

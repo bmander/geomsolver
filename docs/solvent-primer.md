@@ -132,6 +132,7 @@ cycle N [as i] { ... }                  N copies that close; `next`, `prev` in s
 ring N about C { ... }                  N copies, each the first turned about C
 repeat e in CHAIN [as i] { ... }        a copy per link of a named chain (`cycle e in` closes)
 repeat a in SOLID [if ...] { ... }      a copy per face of a solid                   (1.14)
+when COND { ... }                       made once where COND holds, else not at all  (1.7)
 LHS <= RHS | LHS >= RHS                 in a set's body: a bound on measurements     (1.14)
 NAME := INSTANCE.POINT over FORMAL in (A, B)   a curve                               (1.10)
 NAME := Component(ARGS).POINT over FORMAL in (A, B)
@@ -381,6 +382,28 @@ close, with `next` and `prev` in scope. `as i` binds the index; copies are reach
 a `cycle` wraps, closing the loop with no `close`; a `repeat` leaves its last joint unstated, so
 `repeat N { line -> angle(a) }` is an open polyline. `cycle 4 { (s := line) -> perpendicular equal
 }` is a square but for size and pose (2.7).
+
+**A block made or not.** `when COND { … }` makes its body once where the condition holds and not
+at all where it does not, decided over the numbers in scope before the solve: comparisons (`<`,
+`<=`, `>`, `>=`, `==`, `!=`) of two numbers of one dimension — `relief > 0mm`, never `relief > 0`
+(E103) — joined by `and`, `or` and `not`. There is no copy: what the body declares keeps its own
+name (`q`, `t.tip`, never `q[0]`), and is undefined where the block is not made. Refused: an
+unknown of the drawing in the condition (E040), an index, a trailing joint.
+
+```
+unit mm
+use std
+
+relief := 0.2mm
+
+in std.front {
+  a := point
+  when relief > 0mm {
+    q := point hint((8, 3))
+    a distance(10mm) q
+  }
+}
+```
 
 **A ring is a cycle whose copies are turns.** `ring N about C { … }` makes N copies, each the first
 (the *representative*) turned `k · 360°/N` about `C`: a point (counter-clockwise in its view, the
@@ -729,9 +752,13 @@ point in space is E060, a face over one E080. In the workspace such points are d
 eye's picture plane; depth stays the constraints'.
 
 - **`p coincident P` is `in P` said as a relation**: the point is drawn in `P`, and relations over
-  it read as `P`'s. `l coincident P` puts both ends in. The first plane wins; a second is a row in
-  space. A point whose seed has a `z`, that a `fix` holds whole, or that is claimed on the plane,
-  stays in space.
+  it read as `P`'s. `l coincident P` puts both ends in. A point its declaration draws in another
+  plane is drawn in `P` too, as `in Q, P` would draw it: the way to put a point another component
+  declares into a plane only this one knows (`gear.M coincident q`). Said plane first, `q
+  coincident gear.M` puts the plane through the point by a row. A point in space put on a second
+  plane by a statement is held there by a row, and `project` reads each point in its own plane.
+  A point whose seed has a `z`, that a `fix` holds whole, or that is claimed on the plane, stays
+  in space.
 - **A point may be drawn in two planes**: `O := point in P, G` lies on their common line, and each
   plane's geometry reads it as its own (`arc(center: O)` drawn in `G` is `G`'s). It is what two
   views tied by `project` say, said once. The same plane twice is E040, parallel planes E061.
