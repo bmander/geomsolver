@@ -6,7 +6,6 @@
 // crown pitch round, four quarter pitches of the mean pitch circle.
 use std
 use design
-use views
 use pitch.gear
 use pitch.trace
 use pitch.pinion
@@ -29,11 +28,9 @@ component Generation(gear: group, pinion: group, thickness: group) {
 
 preview {
   unit mm
-  gear := pitch.gear.GearCone(std.top, g.view, design.hypoid_design)
-  g := views.FoldedView(std.top, gear.generator)
+  gear := pitch.gear.GearCone(std.top, design.hypoid_design)
   trace := pitch.trace.ToothTrace(std.top, gear.generator, design.hypoid_design)
-  pinion := pitch.pinion.PinionCone(std.top, q.view, gear, trace.foot, design.hypoid_design)
-  q := views.FoldedView(std.top, pinion.hinge)
+  pinion := pitch.pinion.PinionCone(std.top, gear, trace.foot, design.hypoid_design)
   thickness := crown.thickness.CrownThickness(std.top, gear.generator, trace.normal,
     design.hypoid_design)
   in std.front {

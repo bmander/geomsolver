@@ -41,8 +41,7 @@ component ComplementarySpace(ax: line, outside: group, inside: group, indexing: 
 
 preview {
   unit mm
-  gear := pitch.gear.GearCone(std.top, g.view, design.hypoid_design)
-  g := views.FoldedView(std.top, gear.generator)
+  gear := pitch.gear.GearCone(std.top, design.hypoid_design)
   trace := pitch.trace.ToothTrace(std.top, gear.generator, design.hypoid_design)
   thickness := crown.thickness.CrownThickness(std.top, gear.generator, trace.normal,
     design.hypoid_design)

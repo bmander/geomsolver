@@ -41,7 +41,9 @@ impl Closed {
     fn read(e: &Elaborated, m: &str) -> Closed {
         let (apex, foot) = line(e, &format!("pair.{m}.ax"));
         let axis = unit(sub(foot, apex));
-        let (from, mean) = line(e, &format!("pair.{m}.pitch_line"));
+        // the line the blank is built on, apex to mean point
+        let generator = if m == "gear" { "generator" } else { "pitch_line" };
+        let (from, mean) = line(e, &format!("pair.{m}.{generator}"));
         assert!(norm(sub(from, apex)) < 1e-9 * norm(sub(mean, apex)), "{m}: its pitch line runs from its apex");
         let to_mean = sub(mean, apex);
         let half = norm(cross(to_mean, axis)).atan2(dot(to_mean, axis));
