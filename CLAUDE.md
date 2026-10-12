@@ -221,10 +221,14 @@ the centre's value within its half-diagonal), its support the box of the planes 
 within (`polytope_box`, refused unbounded). Evaluated as sweeps are (`sweeps_among`: the field's
 surface); no exact construction yet (`cad.rs` says so). `tests/region_general.rs` is the gate.
 **A bound on measurements** (#183 F3): `distance(p, f1) + distance(p, f2) <= 10mm` in a set's
-body is `StmtKind::Measured` (sides kept as text; parsed where a statement opens on a measurement
-and compares outside every bracket, `compared_ahead`; numbers written in by the walk, names by
-`rescope_measures`; the expr lexer reads `s#probe` as one name). A region (`sets::region`); `inside`
-keeps it, `outside` turns it, and a body of bounds only is all of them under `inside`. Elaborated
+body is `StmtKind::Measured`, **parsed once** (#190, `parser/measured.rs`, where a statement calls
+a measurement and compares outside every bracket, `compared_ahead`): each side a
+`syntax::Measuring` tree whose `Measurement`s name what they measure by `Ref`s (`at:` a labelled
+one), resolved by `rewrite` as every operand is and rewritten structurally by `measured_sets`;
+whatever measures nothing is one `Number` text the walk writes the scope's numbers into, read by
+`expr` (whose lexer reads no hidden key mid-name: `s#probe` is no name a source writes). A
+region (`sets::region`); `inside` keeps it, `outside` turns it, and a body of bounds only is all
+of them under `inside`. Elaborated
 by `relations::measured_term` into `RegionShape::Measured` (Σ cᵢ·distance from a point, line,
 axis or plane; `linear`: affine only, one probe) on the probe, else E040; read by the field
 (`region::measured`, divided by Σ|cᵢ|), never the meridian.
@@ -254,7 +258,7 @@ other (`tests/region_faces.rs::a_sketch_on_a_face_leaves_a_regions_reading_of_it
 `relations::face_relation` makes `p inside/outside[(d)] F` a `RegionShape::FaceSide` (signed
 distance from the surface, positive away from the material), `p distance(… d) F` and `p coincident
 F` a `Measured` over `Target::Face`; `distance(p, F)` in a sum the same; `angle(a, b, at: p)` (the
-one labelled measurement, `expr` `Tok::Colon`) a `RegionShape::Angle`, the material's angle at
+one labelled measurement, `syntax::Measurement::at`) a `RegionShape::Angle`, the material's angle at
 the nearest point of the edges `a` and `b` share, read as a **gate** (`region::GATE`: ±1e30 by
 whether it holds; convexity per edge at its middle by `solid_place`). Claims skip a point against a
 solid. Read by `solid::faces::BodyFaces` off `brep::recipe::build(cad::recipe(…))` (millimetres,

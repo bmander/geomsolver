@@ -200,7 +200,7 @@ fn write_stmt(out: &mut String, k: &StmtKind) {
             out.push_str(" }");
         }
         StmtKind::Measured(m) => {
-            out.push_str(&format!("{} {} {}", m.lhs, m.cmp.text(), m.rhs));
+            out.push_str(&format!("{} {} {}", m.lhs.text(), m.cmp.text(), m.rhs.text()));
         }
         StmtKind::Minimize(m) => {
             write_ref(out, &m.curve);

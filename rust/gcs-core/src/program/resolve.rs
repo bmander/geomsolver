@@ -74,19 +74,6 @@ impl Resolver {
         self.operand(sk, r).ok()?.ent()
     }
 
-    /// What a resolved name in text names (a measurement's argument, `flatten`'s
-    /// `rescope_measures`): its fields, and a member spelled by its key (`Member::key`).
-    pub(super) fn operand_named(&self, sk: &Sketch, name: &str) -> Result<Operand, String> {
-        let segs: Vec<&str> = name.split('.').collect();
-        let (e, mut path) = self.dotted(&segs).ok_or_else(|| format!("no such entity: `{name}`"))?;
-        if let Some(Seg::Field(f)) = path.last() {
-            if let Some(m) = Member::of_key(&f.text) {
-                *path.last_mut().expect("a last segment") = Seg::Member(m);
-            }
-        }
-        operand_at(sk, e, &path)
-    }
-
     /// An absolute dotted name as the flattener wrote it (`t1.pin`, `pair.gen_g.p2`): an entity's
     /// absolute name is dotted itself, so the entity is the longest head that names one, and the
     /// rest is fields into it for `follow`.

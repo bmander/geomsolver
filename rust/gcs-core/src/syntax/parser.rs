@@ -3,6 +3,7 @@
 mod chains;
 mod declarations;
 mod definitions;
+mod measured;
 mod minimize;
 mod relations;
 mod statements;

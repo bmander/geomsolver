@@ -53,6 +53,11 @@ fn stamp_plane(stmts: &mut [Stmt], plane: &Ref, errs: &mut Vec<SynErr>) {
 
 impl<'a> P<'a> {
     fn stmt(&mut self, next_id: &mut u32) -> Option<StmtKind> {
+        // `distance(p, f1) + distance(p, f2) <= 10mm`, `2 * distance(p, a) >= …` — a bound on
+        // measurements (#183 F3), told from a relation by a comparison outside every bracket
+        if self.compared_ahead() && self.measures_ahead() {
+            return self.measured().map(StmtKind::Measured);
+        }
         let Some(Tok::Ident(w)) = self.peek().cloned() else {
             self.fail("a statement starts with a word");
             return None;
@@ -185,11 +190,6 @@ impl<'a> P<'a> {
                 r.claim = true;
                 Some(StmtKind::Relation(r))
             }
-            // `distance(p, f1) + distance(p, f2) <= 10mm` — a bound on measurements (#183 F3),
-            // told from a relation by a comparison outside every bracket
-            m if crate::expr::MEASURES.iter().any(|f| f.0 == m) && self.compared_ahead() => {
-                self.measured().map(StmtKind::Measured)
-            }
             // `view(cyl.body) in views.right` — a picture asked of a solid (§6.11).  The
             // brackets are what it is a picture of, `in` is the trailer it already is
             "view" | "section" | "dimensions" => {
@@ -252,9 +252,18 @@ impl<'a> P<'a> {
         matches!(self.t.get(self.level_end(true)), Some((Tok::P('<' | '>'), _)))
     }
 
+    /// Whether a measurement is called before the comparison (`distance(`, `angle(`).
+    fn measures_ahead(&self) -> bool {
+        let end = self.level_end(true);
+        (self.i..end).any(|j| {
+            matches!(&self.t[j].0, Tok::Ident(w) if crate::expr::MEASURES.iter().any(|m| m.0 == w))
+                && matches!(self.t.get(j + 1), Some((Tok::P('('), _)))
+        })
+    }
+
     /// Where the expression from here ends outside every bracket: at a closing bracket, the line's
     /// end, or (`at_cmp`) a `<` or `>`.
-    fn level_end(&self, at_cmp: bool) -> usize {
+    pub(super) fn level_end(&self, at_cmp: bool) -> usize {
         let mut depth = 0i32;
         for (j, (t, _)) in self.t.iter().enumerate().skip(self.i) {
             match t {
@@ -267,30 +276,6 @@ impl<'a> P<'a> {
             }
         }
         self.t.len()
-    }
-
-    /// `LHS <= RHS` or `LHS >= RHS`, each side an expression kept as text.
-    fn measured(&mut self) -> Option<crate::syntax::Measured> {
-        let lo = self.here().lo as usize;
-        let side = |p: &mut Self, stop_at_cmp: bool| -> Option<(String, Span)> {
-            let from = p.here().lo as usize;
-            p.i = p.level_end(stop_at_cmp);
-            let text = p.text_from(from).trim().to_string();
-            if text.is_empty() {
-                p.fail("expected an expression");
-                return None;
-            }
-            Some((text, Span::new(from, p.prev_hi())))
-        };
-        let (lhs, lhs_span) = side(self, true)?;
-        if !matches!(self.peek(), Some(Tok::P('<' | '>'))) {
-            self.fail("a bound on measurements compares two sides, `<=` or `>=`");
-            return None;
-        }
-        let cmp = self.closed_cmp()?;
-        let (rhs, rhs_span) = side(self, false)?;
-        self.end_of_stmt();
-        Some(crate::syntax::Measured { lhs, lhs_span, cmp, rhs, rhs_span, span: Span::new(lo, self.prev_hi()) })
     }
 
     /// `view(cyl.body) in views.right` — a picture asked of a solid (§6.11).  The brackets are

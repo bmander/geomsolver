@@ -372,11 +372,12 @@ impl<'a> Walk<'a> {
                     }
                 }
                 // a bound on measurements: the scope's numbers written in, what it measures
-                // resolved with the references (`rescope_measures`) (#183 F3)
+                // resolved with the references (`rewrite`) (#183 F3, #190)
                 StmtKind::Measured(m) => {
                     let mut m2 = m.clone();
-                    m2.lhs = super::values::substitute(&m.lhs, vals, self.units);
-                    m2.rhs = super::values::substitute(&m.rhs, vals, self.units);
+                    for text in m2.lhs.numbers_mut().into_iter().chain(m2.rhs.numbers_mut()) {
+                        *text = super::values::substitute(text, vals, self.units);
+                    }
                     self.emit(StmtKind::Measured(m2), st, scope, path);
                 }
                 // a claim over an interval: its numbers and its relations' worked out as above

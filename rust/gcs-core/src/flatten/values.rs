@@ -286,14 +286,7 @@ pub(super) fn map_measured(text: &str, of: impl Fn(&str) -> Option<String>) -> S
                 let args: Vec<String> = inner
                     .split(',')
                     .map(|a| a.trim())
-                    .map(|a| match a.split_once(':') {
-                        // a labelled argument, `at: p` (#183 F9)
-                        Some((label, name)) => {
-                            let name = name.trim();
-                            format!("{}: {}", label.trim(), of(name).unwrap_or_else(|| name.to_string()))
-                        }
-                        None => of(a).unwrap_or_else(|| a.to_string()),
-                    })
+                    .map(|a| of(a).unwrap_or_else(|| a.to_string()))
                     .collect();
                 out.push('(');
                 out.push_str(&args.join(", "));

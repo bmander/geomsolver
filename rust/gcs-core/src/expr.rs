@@ -108,10 +108,7 @@ impl Measure {
 
     /// `length(gen_g)`, as the call is written.
     pub fn text(self, args: &[String]) -> String {
-        match args {
-            [a, b, at] if self == Measure::Angle => format!("angle({a}, {b}, at: {at})"),
-            _ => format!("{}({})", self.name(), args.join(", ")),
-        }
+        format!("{}({})", self.name(), args.join(", "))
     }
 }
 
