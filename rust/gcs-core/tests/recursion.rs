@@ -5,17 +5,8 @@
 //! the numbers its own expansion was given (every choice comes out the same again), or one
 //! nesting past the flattener's cap.
 
-use crate::common::{parse, refused};
-use gcs_core::program::{elaborate, Elaborated};
+use crate::common::{read, refused};
 use gcs_core::solve::{solve, SolveOpts};
-
-fn read(src: &str) -> (Elaborated, Vec<String>) {
-    let (prog, errs) = parse(src);
-    let e = elaborate(&prog);
-    let mut all: Vec<String> = errs.iter().map(|x| format!("syntax: {}", x.message)).collect();
-    all.extend(e.diags.iter().map(|d| format!("{}: {}", d.code.as_str(), d.message)));
-    (e, all)
-}
 
 /// A segment halved `depth` times toward its start, one level per instance.
 fn halving(depth: usize) -> String {
@@ -43,8 +34,7 @@ fn halving(depth: usize) -> String {
 /// runs out: three levels make `d.m`, `d.s.m`, `d.s.s.m` and no fourth.
 #[test]
 fn a_component_recurses_until_its_when_ends_it() {
-    let (e, d) = read(&halving(3));
-    assert!(d.is_empty(), "{d:?}");
+    let e = read(&halving(3));
     for name in ["d.m", "d.s.m", "d.s.s.m"] {
         assert!(e.map.ent_named(name).is_some(), "`{name}` is made");
     }
@@ -156,8 +146,7 @@ fn subdivided(depth: usize) -> Vec<(bool, P, P, P)> {
 #[test]
 fn mutually_recursive_components_subdivide_a_penrose_sun() {
     let depth = 3;
-    let (e, d) = read(&penrose(depth));
-    assert!(d.is_empty(), "{d:?}");
+    let e = read(&penrose(depth));
     let mut sk = e.sketch;
     let r = solve(&mut sk, SolveOpts::default());
     assert!(r.success, "{r:?}");
@@ -204,9 +193,13 @@ fn a_recursion_nothing_ends_is_refused() {
     refused("use std\ncomponent G(a: point) {\n  m := point\n  g := G(m)\n}\n\
              in std.front {\n  o := point\n  x := G(o)\n}\n",
             "E003", "`G` instantiates itself with the numbers it was given", "g := G(m)");
+    // two components each calling the other, said once and not as `A`, `A`, `A`, … through it
+    refused("use std\ncomponent A(p: point, n: Int) {\n  when n > 0 {\n    b := B(p, n: n + 1)\n  }\n}\n\
+             component B(p: point, n: Int) {\n  a := A(p, n: n)\n}\n\
+             in std.front {\n  o := point\n  x := A(o, n: 1)\n}\n",
+            "E003", "`B` instantiates itself more than 32 deep: its", "b := B(p, n: n + 1)");
     // and a count that runs out is no refusal at all
-    let (_, d) = read(&doc("F(m, n: n - 1)"));
-    assert!(d.is_empty(), "{d:?}");
+    read(&doc("F(m, n: n - 1)"));
 }
 
 /// **A recursion branching at every level is stopped by its count of instances**: a body of

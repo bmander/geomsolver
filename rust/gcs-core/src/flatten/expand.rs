@@ -267,39 +267,37 @@ impl<'a> Walk<'a> {
                         held: false,
                     };
                     // a component reached again while it is still being expanded recurses
-                    // (§8): walked like any other call, since a `when` decided over its numbers
-                    // ends it — unless it is given the numbers it was given there, when every
-                    // choice comes out the same and nothing ever ends it, or it nests past the
-                    // cap; either is said once, at the call that closes the cycle, and not walked
-                    let again = self.instantiating.iter().position(|(c, _)| std::ptr::eq(*c, comp));
-                    if let Some(first) = again {
+                    // (§8), ended by a `when` over its numbers: given the numbers it was given
+                    // there, every choice comes out the same and nothing ends it, so that, and
+                    // nesting past the cap, is E003, said once at the call closing the cycle
+                    let same = self.instantiating.iter()
+                        .rposition(|(c, given)| std::ptr::eq(*c, comp) && *given == sub_vals);
+                    let deep = depth + 1 >= MAX_DEPTH
+                        && self.instantiating.iter().any(|(c, _)| std::ptr::eq(*c, comp));
+                    if same.is_some() || deep {
                         let name = |c: &Component| c.name.as_ref().map_or(String::new(), |n| n.text.clone());
-                        let same = self.instantiating[first..].iter()
-                            .rposition(|(c, given)| std::ptr::eq(*c, comp) && *given == sub_vals)
-                            .map(|k| first + k);
-                        let endless = depth + 1 >= MAX_DEPTH;
-                        if same.is_some() || endless {
-                            let at = same.unwrap_or(first);
-                            let through: Vec<String> = self.instantiating[at + 1..].iter()
-                                .filter(|(c, _)| !std::ptr::eq(*c, comp))
-                                .map(|(c, _)| format!("`{}`", name(c)))
-                                .collect();
-                            let how = match through.is_empty() {
-                                true => format!("`{}` instantiates itself", name(comp)),
-                                false => format!("`{}` instantiates itself through {}", name(comp), through.join(", ")),
-                            };
-                            let message = match same.is_some() {
-                                true => format!("{how} with the numbers it was given, so nothing \
-                                                 ends it: a `when` over a number each call \
-                                                 changes does"),
-                                false => format!("{how} more than {MAX_DEPTH} deep: its `when` \
-                                                  does not end it soon enough"),
-                            };
-                            if !self.diagnostics.iter().any(|d| d.code == Code::E003 && d.span == st.span) {
-                                self.err(Code::E003, st.span, message);
+                        let message = match same {
+                            None => format!("`{}` instantiates itself more than {MAX_DEPTH} deep: \
+                                             its `when` does not end it soon enough", name(comp)),
+                            Some(k) => {
+                                let mut through: Vec<String> = Vec::new();
+                                for (c, _) in &self.instantiating[k + 1..] {
+                                    let n = format!("`{}`", name(c));
+                                    if !std::ptr::eq(*c, comp) && !through.contains(&n) {
+                                        through.push(n);
+                                    }
+                                }
+                                let through = match through.is_empty() {
+                                    true => String::new(),
+                                    false => format!(" through {}", through.join(", ")),
+                                };
+                                format!("`{}` instantiates itself{through} with the numbers it was \
+                                         given, so nothing ends it: a `when` over a number each \
+                                         call changes does", name(comp))
                             }
-                            continue;
-                        }
+                        };
+                        self.once(Code::E003, st.span, message);
+                        continue;
                     }
                     let mut instance_path = path.to_vec();
                     instance_path.push(PathStep::Instance(st.id));
