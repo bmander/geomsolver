@@ -80,8 +80,8 @@ const projects: Example[] = [{
   description: 'A hypoid pair laid out through its mean point: square shafts 20 mm apart, the pinion\'s '
     + 'view solved, and the two pitch cones named and stated to touch at M (DOF 0). Orbit '
     + '(right-drag) to see them kiss on the pitch plane; set `E` to 0mm for a straight bevel, or '
-    + 'edit the tooth counts. The primer\'s §2.12 builds the same pair without naming the cones, each '
-    + 'axial view folded along its pitch generator.',
+    + 'edit the tooth counts. The test fixture of the same name builds the pair without naming the '
+    + 'cones, each axial view standing on its pitch generator.',
   target: { kind: 'file', path: 'hypoid_pitch_cones.sv' },
 }, {
   label: 'Sphere, cone and cylinder · spatial relations', key: 'sphere_cone_cylinder',
