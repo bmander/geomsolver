@@ -56,7 +56,7 @@ import {
   about, alternatives, doOpen, flipBranch, insertPlane, leaveExample, openCase, openExample, options,
   report, reportSolve, showDiagnosis,
 } from './dialogs.js';
-import { editValue, onDimension, onExtent } from './dimbox.js';
+import { editValue, onDimension, onExtent, onRound } from './dimbox.js';
 import { bindProgramPanel, openDrawing, refreshProgram, resetProgramFiles, saveProjectFile,
   showStatementFor, toggleProgramPanel } from './program.js';
 import { closePanel, openPanel, refresh, refreshPanel, refreshStatus } from './lists.js';
@@ -95,11 +95,15 @@ const ELEMENT_TOOLS = [
  * revolve, then the Boolean operations — the body to change, then the bodies to change it with. */
 const BOOLEAN = 'click the body to change, then each body to change it with; click the first '
   + 'again, or Enter, to write it.  ';
+const EDGES = 'click its edges — a chain of them, open or closed — or a face for every edge of '
+  + 'it; type the size and Enter to write it.  A concave edge is filled, a convex one cut.  ';
 const SOLID_TOOLS = [
   ['Extrude', 'extrude', 'u'], ['Revolve', 'revolve', 'q'],
   ['Union', 'union', 'm', `Join bodies: ${BOOLEAN}`],
   ['Cut', 'cut', 'z', `Cut a body with others: ${BOOLEAN}`],
   ['Intersect', 'bound', 'y', `Keep what bodies share (bound): ${BOOLEAN}`],
+  ['Fillet', 'fillet', '⇧f', `Round edges of a solid (std's \`round\`): ${EDGES}`],
+  ['Chamfer', 'chamfer', '⇧c', `Cut edges of a solid flat (std's \`chamfer\`): ${EDGES}`],
 ] as [string, Tool, string, string?][];
 const TOOLS = [...ELEMENT_TOOLS, ...SOLID_TOOLS];
 const toolButton = ([label, tool, key, what]: [string, Tool, string, string?]): ToolbarButton => ({
@@ -515,7 +519,8 @@ window.addEventListener('keydown', (e) => {
   // would insert the character, and would find a stray letter in it
   const action = ACTION_KEYS.get(e.shiftKey ? `⇧${k}` : k);
   if (action) { e.preventDefault(); action(); return; }
-  if (!e.shiftKey && TOOL_KEYS[k]) view.setTool(TOOL_KEYS[k]);
+  const tool = TOOL_KEYS[e.shiftKey ? `⇧${k}` : k];
+  if (tool) view.setTool(tool);
 });
 
 /* -- boot ------------------------------------------------------------------------- */
@@ -558,6 +563,7 @@ planeSelect.addEventListener('change', () => {
 });
 view.onDimension = onDimension;
 view.onExtent = onExtent;
+view.onRound = onRound;
 view.onChanged = () => { refresh(); refreshProgram(); refreshPlanes(); };
 view.onPicked = refreshPanel;
 // the source changed without the drawing's structure doing so — a drag wrote its seeds back, or a

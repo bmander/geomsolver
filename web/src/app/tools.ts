@@ -3,7 +3,7 @@
  * the fit tool makes nothing until it finishes and takes its own there. */
 import * as C from '../core/constraints.js';
 import { Line, Point, distanceBetween, onRadius } from '../core/model.js';
-import { combines } from './view.js';
+import { combines, roundsEdges } from './view.js';
 import type { Place, SketchView, Tool } from './view.js';
 
 export function setTool(v: SketchView, tool: Tool): void {
@@ -13,6 +13,7 @@ export function setTool(v: SketchView, tool: Tool): void {
   v.hoverRegion = null;
   v.pendingRevolve = null;
   v.highlight = [];
+  v.endRound();                              // what an edge tool picked goes with it
   v.endExtent();                             // an extrusion being sized is done with the tool
   v.canvas.classList.toggle('select', tool === 'select');
   v.canvas.style.cursor = '';                // drop any hover affordance
@@ -33,6 +34,7 @@ export function finishCurve(v: SketchView): void {
   if (v.tool === 'spline') finishSpline(v);
   else if (v.tool === 'splinefit') finishSplineFit(v);
   else if (combines(v.tool)) v.finishCombine();
+  else if (roundsEdges(v.tool)) v.finishRound();
 }
 
 /** Every point minted since there were `n0` is drawn in the current plane.  Called at the two
@@ -124,6 +126,13 @@ export function cancelTool(v: SketchView): void {
     v.draw();
     return;
   }
+  // what an edge tool picked: let go, the tool still down
+  if (v.rounding) {
+    v.endRound();
+    v.tellRound();
+    v.draw();
+    return;
+  }
   // an extrusion being sized: done sizing, the tool still down for the next
   if (v.liveExtent) {
     v.endExtent();
@@ -191,6 +200,11 @@ export function toolClick(v: SketchView, sp: [number, number],
   // a Boolean picks bodies where the eye sees them, on no plane
   if (combines(v.tool)) {
     v.combineAt(sp[0], sp[1]);
+    return;
+  }
+  // and an edge tool its edges and faces
+  if (roundsEdges(v.tool)) {
+    v.roundAt(sp[0], sp[1]);
     return;
   }
   // a standard plane chosen before the document had it is brought in by the first press: the

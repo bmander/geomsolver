@@ -113,6 +113,8 @@ pub struct EvaluatedSolid {
     edges: OnceCell<Vec<Edge>>,
     mesh: OnceCell<mesh::Mesh>,
     ray_indices: OnceCell<Vec<RayIndex>>,
+    /// Where its faces meet, read off its mesh (`mesh::face_edges`).
+    face_edges: OnceCell<Vec<mesh::FaceEdge>>,
 }
 
 impl EvaluatedSolid {
@@ -217,6 +219,7 @@ impl EvaluatedSolid {
             edges: OnceCell::new(),
             mesh: OnceCell::new(),
             ray_indices: OnceCell::new(),
+            face_edges: OnceCell::new(),
         })
     }
     /// A swept solid's boundary is its material field's surface, whatever approximation is asked
@@ -328,6 +331,7 @@ impl EvaluatedSolid {
             edges: OnceCell::new(),
             mesh: OnceCell::new(),
             ray_indices: OnceCell::new(),
+            face_edges: OnceCell::new(),
         })
     }
     /// A swept solid from its field's surface (`field_mesh.rs`): the mesh stands in as one
@@ -387,6 +391,7 @@ impl EvaluatedSolid {
             edges: OnceCell::new(),
             mesh: OnceCell::new(),
             ray_indices: OnceCell::new(),
+            face_edges: OnceCell::new(),
         })
     }
     /// A swept solid from its exact B-rep's mesh, built elsewhere and supplied
@@ -462,6 +467,7 @@ impl EvaluatedSolid {
             edges: OnceCell::new(),
             mesh: OnceCell::new(),
             ray_indices: OnceCell::new(),
+            face_edges: OnceCell::new(),
         })
     }
     /// A preview of a surface still being refined, which may be open.
@@ -612,6 +618,11 @@ impl EvaluatedSolid {
             Surface::Brep { .. } => mesh::grouped_welded(self.boundary().to_vec()),
             Surface::Csg => mesh::grouped(self.boundary()),
         })
+    }
+    /// Where two of its faces meet, by their paths, read off its mesh once (`mesh::face_edges`):
+    /// what a round or a chamfer is written along.  In the solid's own coordinates.
+    pub fn face_edges(&self) -> &[mesh::FaceEdge] {
+        self.face_edges.get_or_init(|| mesh::face_edges(self.mesh()))
     }
     pub fn world_boundary(&self) -> Vec<Piece> {
         translate_pieces(self.boundary(), self.origin.0)

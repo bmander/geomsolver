@@ -110,6 +110,7 @@ export interface Abi {
                           x: number, y: number): number;
   gcs_elab_sketch_on_face(h: number, s: number, solid: number, p: number, n: number): number;
   gcs_elab_face_plane_json(h: number, s: number, solid: number, p: number, n: number): number;
+  gcs_elab_add_rounds(h: number, s: number, solid: number, p: number, n: number): number;
   gcs_elab_region_json(h: number, s: number, plane: number, x: number, y: number,
                        unit: number): number;
   gcs_elab_remove(h: number, sk: number, p: number, n: number): number;
@@ -246,6 +247,9 @@ export interface Abi {
   gcs_workspace_panes_at(h: number, az: number, el: number, x: number, y: number,
                          out: number, cap: number): number;
   gcs_workspace_pick_solid_json(h: number, az: number, el: number, x: number, y: number): number;
+  gcs_workspace_pick_edge_json(h: number, az: number, el: number, x: number, y: number,
+                               tol: number): number;
+  gcs_workspace_solid_edges_json(h: number, solid: number): number;
   gcs_workspace_nearest_point(h: number, az: number, el: number, x: number, y: number,
                               outDist: number): number;
   gcs_workspace_overlapping_json(h: number, unit: number, az: number, el: number,

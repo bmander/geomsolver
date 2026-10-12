@@ -583,3 +583,85 @@ pub fn grouped_welded(welded: Vec<Piece>) -> Mesh {
     }
     mesh
 }
+
+/// Where two faces of an object meet, as its mesh says: the two faces' paths (in order) and the
+/// triangle sides they share, each `[a, b]` — the edge a round or a chamfer is written along.
+/// The faces name the edge, so two stretches between the same pair (a rod sunk along a plate
+/// meets its top on both sides) are one, as `A round(r) B` reads them.
+#[derive(Clone, Debug, PartialEq)]
+pub struct FaceEdge {
+    pub faces: (String, String),
+    pub segs: Vec<[[f64; 3]; 2]>,
+}
+
+/// How far two faces must turn from one another across their meeting for it to be an edge: a
+/// face going on tangent into the next (an obround's side into its end) is no edge, as the
+/// language reads it, and a mesh's facets across such a seam differ by no more than its sag lets
+/// them.
+pub const EDGE_TURN: f64 = 0.17;
+
+/// The edges of a grouped mesh: every pair of faces sharing triangle sides, where the facets
+/// across them turn by more than `EDGE_TURN`, in the order of the faces' paths.  Corners are
+/// matched to the weld's own tolerance, so the sides two faces' triangles share are found
+/// whichever of them the boundary cut first.
+pub fn face_edges(m: &Mesh) -> Vec<FaceEdge> {
+    let n = m.positions.len() / 9;
+    if n == 0 {
+        return Vec::new();
+    }
+    let (mut lo, mut hi) = ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]);
+    for (i, &x) in m.positions.iter().enumerate() {
+        lo[i % 3] = lo[i % 3].min(x);
+        hi[i % 3] = hi[i % 3].max(x);
+    }
+    let scale = (0..3).fold(1.0f64, |s, i| s.max(hi[i] - lo[i]));
+    let g = scale * WELD;
+    let key = |p: [f64; 3]| p.map(|x| (x / g).round() as i64);
+    let corner = |t: usize, k: usize| -> [f64; 3] {
+        std::array::from_fn(|c| m.positions[9 * t + 3 * k + c])
+    };
+    // every triangle side, by its two corners in order: the faces whose triangles have it, each
+    // with its triangle's own normal
+    let mut sides: BTreeMap<([i64; 3], [i64; 3]), Vec<(usize, [f64; 3], [[f64; 3]; 2])>> =
+        BTreeMap::new();
+    for (gi, group) in m.groups.iter().enumerate() {
+        for t in group.start..group.start + group.count {
+            let [a, b, c] = [0, 1, 2].map(|k| corner(t, k));
+            let (ab, ac) = (crate::space::sub(b, a), crate::space::sub(c, a));
+            let normal = plane::unit(plane::cross(ab, ac));
+            let Some(normal) = normal else { continue };
+            for (u, v) in [(a, b), (b, c), (c, a)] {
+                let (ku, kv) = (key(u), key(v));
+                if ku == kv {
+                    continue;
+                }
+                let k = if ku < kv { (ku, kv) } else { (kv, ku) };
+                sides.entry(k).or_default().push((gi, normal, [u, v]));
+            }
+        }
+    }
+    let mut by: BTreeMap<(usize, usize), (Vec<[[f64; 3]; 2]>, f64)> = BTreeMap::new();
+    for found in sides.values() {
+        for (i, &(ga, na, seg)) in found.iter().enumerate() {
+            for &(gb, nb, _) in &found[i + 1..] {
+                if ga == gb {
+                    continue;
+                }
+                let turn = plane::dot(na, nb).clamp(-1.0, 1.0).acos();
+                let e = by.entry((ga.min(gb), ga.max(gb))).or_insert_with(|| (Vec::new(), 0.0));
+                e.0.push(seg);
+                e.1 = e.1.max(turn);
+            }
+        }
+    }
+    let mut out: Vec<FaceEdge> = by.into_iter()
+        .filter(|(_, (_, turn))| *turn > EDGE_TURN)
+        .map(|((a, b), (segs, _))| {
+            let (pa, pb) = (&m.groups[a].path, &m.groups[b].path);
+            let faces = if pa <= pb { (pa.clone(), pb.clone()) } else { (pb.clone(), pa.clone()) };
+            FaceEdge { faces, segs }
+        })
+        .collect();
+    out.sort_by(|x, y| x.faces.cmp(&y.faces));
+    out
+}
