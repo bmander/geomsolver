@@ -279,6 +279,10 @@ fn the_pads_rounds_are_built_exactly() {
         - 2.0 * 40.0 * edge;
     close(props::volume(&b), want);
     assert_eq!(kinds(&b), [("cylinder", 4), ("plane", 7), ("torus", 1)].into());
+    // the app's exact solid, built about the pad's own origin (its first corner, off the world's):
+    // the pieces move with the rest
+    let x = e.sketch.exact_solid(ent(&e, "pad").i()).unwrap();
+    close(props::volume(&x.brep) / x.mm.powi(3), want);
 }
 
 /// The section beside a cylinder of radius `big` whose axis lies in a plane, where the ball of

@@ -273,6 +273,16 @@ fn recipe_with(sk: &Sketch,root: usize,static_only: bool) -> Result<StaticRecipe
 /// own size. A kernel building a solid far from the world's origin builds it about its own instead,
 /// where a double still carries the solid's sizes (a part at 1e9 mm is good to 1e-7 mm there).
 pub fn shifted(recipe: &Json,by: [f64;3]) -> Json {
+    let mut out = recipe.clone();
+    if let Some(Json::Arr(nodes)) = recipe.get("nodes") {
+        out.set("nodes",Json::Arr(nodes.iter().map(|n| shifted_node(n,by)).collect()));
+    }
+    out
+}
+
+/// One node of a recipe written about another origin (`shifted`), with the nodes it holds: a
+/// lowered region's pieces, its corners' points and where its balls are rolled from.
+fn shifted_node(n: &Json,by: [f64;3]) -> Json {
     let triple = |j: &Json| -> Option<[f64;3]> { match j { Json::Arr(a) if a.len() == 3 => Some(std::array::from_fn(|k| a[k].as_f64())),_ => None } };
     let point = |j: &Json| match triple(j) { Some(p) => vector(std::array::from_fn(|k| p[k]-by[k])),None => j.clone() };
     let points = |j: &Json,keys: &[&str]| {
@@ -303,26 +313,29 @@ pub fn shifted(recipe: &Json,by: [f64;3]) -> Json {
         }
         p
     };
-    let mut out = recipe.clone();
-    if let Some(Json::Arr(nodes)) = recipe.get("nodes") {
-        let nodes = nodes.iter().map(|n| {
-            let mut n = n.clone();
-            nearest(&mut n,"origin","axis",false);
-            for k in ["profile","end"] { if let Some(p) = n.get(k).filter(|p| matches!(p,Json::Obj(_))).map(&profile) { n.set(k,p); } }
-            if let Some(g) = n.get("guide").map(|g| points(g,&["start","center"])) { n.set("guide",g); }
-            if let Some(Json::Arr(m)) = n.get("matrix") {
-                let m: Vec<f64> = m.iter().map(Json::as_f64).collect();
-                if m.len() == 12 {
-                    let mut moved = m.clone();
-                    for r in 0..3 { moved[4*r+3] = m[4*r+3]+(0..3).map(|c| m[4*r+c]*by[c]).sum::<f64>()-by[r]; }
-                    n.set("matrix",Json::Arr(moved.into_iter().map(Json::from).collect()));
-                }
-            }
-            n
-        }).collect();
-        out.set("nodes",Json::Arr(nodes));
+    let mut n = n.clone();
+    nearest(&mut n,"origin","axis",false);
+    for k in ["profile","end"] { if let Some(p) = n.get(k).filter(|p| matches!(p,Json::Obj(_))).map(&profile) { n.set(k,p); } }
+    if let Some(g) = n.get("guide").map(|g| points(g,&["start","center"])) { n.set("guide",g); }
+    if let Some(Json::Arr(m)) = n.get("matrix") {
+        let m: Vec<f64> = m.iter().map(Json::as_f64).collect();
+        if m.len() == 12 {
+            let mut moved = m.clone();
+            for r in 0..3 { moved[4*r+3] = m[4*r+3]+(0..3).map(|c| m[4*r+c]*by[c]).sum::<f64>()-by[r]; }
+            n.set("matrix",Json::Arr(moved.into_iter().map(Json::from).collect()));
+        }
     }
-    out
+    if let Some(Json::Arr(pieces)) = n.get("pieces") {
+        let pieces = Json::Arr(pieces.iter().map(|p| shifted_node(p,by)).collect());
+        n.set("pieces",pieces);
+    }
+    for (key,at) in [("corners",&["vertex","centre"][..]),("rolled",&["at"][..])] {
+        if let Some(Json::Arr(list)) = n.get(key) {
+            let list = Json::Arr(list.iter().map(|c| points(c,at)).collect());
+            n.set(key,list);
+        }
+    }
+    n
 }
 
 /// How near its curve a fitted stretch must pass (millimetres).
