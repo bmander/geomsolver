@@ -290,30 +290,25 @@ impl<'a> Walk<'a> {
         sc: &Scope,
         alias: &BTreeMap<String, String>,
     ) -> Option<Vec<(Stmt, Vec<PathStep>, Scope)>> {
-        let set_of = |me: &Self, name: &str| -> Option<(String, Vec<String>)> {
-            let r = Ref::dotted(name, st.span);
-            let (abs, rest) = lookup_raw(&r, sc, &me.names, alias, me.units)?;
+        let set_of = |me: &Self, r: &Ref| -> Option<(String, Vec<String>)> {
+            let (abs, rest) = lookup_raw(r, sc, &me.names, alias, me.units)?;
             me.sets.contains_key(&abs).then_some((abs, rest))
         };
-        // the sets the statement reads: a measurement's argument (a set, or a set's surface,
-        // `S.surface`), or the operand `S.ends`
-        let mut sets: Vec<String> = Vec::new();
+        // the sets the statement reads, by the reference as written: a measurement's argument
+        // (a set, or a set's surface, `S.surface`), or the operand `S.ends`
+        let mut sets: Vec<(String, Ref)> = Vec::new();
         let mut surfaces: BTreeMap<String, String> = BTreeMap::new();
         match &st.kind {
             StmtKind::Measured(m) => {
-                for text in [&m.lhs, &m.rhs] {
-                    let Ok(parsed) = crate::expr::parse_in(text, self.units) else { continue };
-                    for (_, args) in parsed.body.measures() {
-                        for a in args {
-                            let Some((abs, rest)) = set_of(self, &a) else { continue };
-                            let surface = rest.len() == 1 && rest[0] == "surface";
-                            if (rest.is_empty() || surface) && !sets.contains(&a) {
-                                if surface {
-                                    surfaces.insert(a.clone(), self.surface_of(&abs));
-                                }
-                                sets.push(a);
-                            }
+                for r in m.lhs.measures().into_iter().chain(m.rhs.measures()).flat_map(|x| x.refs()) {
+                    let Some((abs, rest)) = set_of(self, r) else { continue };
+                    let text = crate::syntax::ref_text(r);
+                    let surface = rest.len() == 1 && rest[0] == "surface";
+                    if (rest.is_empty() || surface) && !sets.iter().any(|(t, _)| *t == text) {
+                        if surface {
+                            surfaces.insert(text.clone(), self.surface_of(&abs));
                         }
+                        sets.push((text, r.clone()));
                     }
                 }
             }
@@ -325,9 +320,8 @@ impl<'a> Walk<'a> {
                 }
                 let mut set = s.clone();
                 set.path.pop();
-                let text = crate::syntax::ref_text(&set);
-                set_of(self, &text).filter(|(_, rest)| rest.is_empty())?;
-                sets.push(text);
+                set_of(self, &set).filter(|(_, rest)| rest.is_empty())?;
+                sets.push((crate::syntax::ref_text(&set), set));
             }
             _ => return None,
         }
@@ -339,7 +333,7 @@ impl<'a> Walk<'a> {
         // the statement as written, which an application's stamp does not hide: two statements
         // of one body stamped alike stay apart
         let id = sc.written.unwrap_or(st.id).0;
-        for (k, name) in sets.iter().enumerate() {
+        for (k, (name, written)) in sets.iter().enumerate() {
             let local = format!("#{id}.m{k}");
             let key = format!("{}{local}", sc.prefix());
             self.names.insert(key.clone());
@@ -353,7 +347,10 @@ impl<'a> Walk<'a> {
             let set = match surfaces.get(name) {
                 // a set's surface, made beside it, by its absolute name
                 Some(abs) => Ref { root: Name { text: abs.clone(), span: at }, path: Vec::new(), span: at },
-                None => Ref::dotted(name, at),
+                None => {
+                    let root = Name { span: at, ..written.root.clone() };
+                    Ref { root, path: written.path.clone(), span: at }
+                }
             };
             let on = crate::syntax::Written {
                 word: Name { text: "coincident".to_string(), span: at },
@@ -375,9 +372,14 @@ impl<'a> Walk<'a> {
         }
         let mut st = st.clone();
         match &mut st.kind {
+            // each measurement naming a set names its point instead, in the reference's place
             StmtKind::Measured(m) => {
-                for text in [&mut m.lhs, &mut m.rhs] {
-                    *text = super::values::map_measured(text, |w| named.get(w).cloned());
+                for x in m.lhs.measures_mut().into_iter().chain(m.rhs.measures_mut()) {
+                    for r in x.refs_mut() {
+                        if let Some(local) = named.get(&crate::syntax::ref_text(r)) {
+                            *r = Ref { span: r.span, ..Ref::new(local) };
+                        }
+                    }
                 }
             }
             StmtKind::Relation(r) => {

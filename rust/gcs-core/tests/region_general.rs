@@ -204,3 +204,86 @@ fn a_bound_on_measurements_is_refused_off_a_region_and_off_a_sum() {
                            "distance(c, f1) <= 10mm");
 }
 
+
+/// **A bound on measurements is parsed once** (#190): each side a tree whose measurements name
+/// what they measure by reference — a labelled one (`at:`) included — and whatever measures
+/// nothing one number's text, however much arithmetic or how many calls it is.
+#[test]
+fn a_bound_on_measurements_is_parsed_into_references() {
+    use gcs_core::expr::{Measure, Op};
+    use gcs_core::syntax::{Measuring, StmtKind};
+    let src = "2 * distance(p, f.a) + angle(b.east, b.south, at: p) / 2 <= max(8mm, 10mm) - 3 1/2\n\
+               -distance(p, q) >= (1mm + 2mm) ** 2\n";
+    let (prog, errs) = gcs_core::syntax::parse(src);
+    assert!(errs.is_empty(), "{errs:?}");
+    let bounds: Vec<_> = prog.stmts().filter_map(|st| match &st.kind {
+        StmtKind::Measured(m) => Some(m),
+        _ => None,
+    }).collect();
+    let [one, two] = bounds.as_slice() else { panic!("two bounds: {bounds:?}") };
+    let Measuring::Bin(Op::Add, a, b) = &one.lhs else { panic!("{:?}", one.lhs) };
+    let Measuring::Bin(Op::Mul, k, d) = &**a else { panic!("{a:?}") };
+    assert!(matches!(&**k, Measuring::Number { text, .. } if text == "2"));
+    let Measuring::Measure(d) = &**d else { panic!("{d:?}") };
+    assert_eq!(d.measure, Measure::Distance);
+    assert_eq!((d.args.len(), d.text()), (2, "distance(p, f.a)".to_string()));
+    let Measuring::Bin(Op::Div, x, _) = &**b else { panic!("{b:?}") };
+    let Measuring::Measure(x) = &**x else { panic!("{x:?}") };
+    assert_eq!(x.measure, Measure::Angle);
+    assert_eq!(x.args.len(), 2);
+    assert_eq!(x.at.as_ref().map(|r| r.root.text.as_str()), Some("p"));
+    assert_eq!(x.text(), "angle(b.east, b.south, at: p)");
+    // a call over numbers, a mixed fraction: one number, as written
+    assert!(matches!(&one.rhs, Measuring::Number { text, .. } if text == "max(8mm, 10mm) - 3 1/2"));
+    assert!(matches!(&two.lhs, Measuring::Neg(_)));
+    assert!(matches!(&two.rhs, Measuring::Number { text, .. } if text == "(1mm + 2mm) ** 2"));
+    // and printed back as it reads
+    assert_eq!(one.lhs.text(), "2 * distance(p, f.a) + angle(b.east, b.south, at: p) / 2");
+    assert_eq!(two.lhs.text(), "-distance(p, q)");
+}
+
+/// A measurement takes names, the one label `at:` on an angle, and nothing else.
+#[test]
+fn a_measurement_takes_names_and_one_label() {
+    for (src, needle) in [
+        ("distance(p, at: q) <= 1\n", "takes no `at:`"),
+        ("angle(a, b, from: p) <= 1\n", "takes no `from:`"),
+        ("distance(p, 2) <= 1\n", "its arguments are names"),
+        ("distance(p, q, r) <= 1\n", "takes 2 argument(s)"),
+        ("distance(p) <= 1\n", "takes 2 argument(s)"),
+    ] {
+        let (_, errs) = gcs_core::syntax::parse(src);
+        assert!(errs.iter().any(|e| e.message.contains(needle)), "{src}: {errs:?}");
+    }
+}
+
+/// The ellipsoid again, its sides written with a call and parentheses: the same region.
+#[test]
+fn a_bound_reads_its_numbers_through_calls() {
+    let e = solved(&format!("{AXES}f1 := point hint((3, 0, 0))\nfix((3, 0, 0)) f1\n\
+                             f2 := point hint((-3, 0, 0))\nfix((-3, 0, 0)) f2\n\
+                             half := 5mm\n\
+                             egg := {{ p | (distance(p, f1) + distance(p, f2)) / 2 <= \
+                             max(half, 4mm) }}\n\
+                             s := solid(egg)\n"));
+    let field = MaterialField::read(&e.sketch, ent(&e, "s").i(), 1e-10).unwrap();
+    for (p, inside) in [([4.9, 0.0, 0.0], true), ([5.1, 0.0, 0.0], false), ([0.0, 3.9, 0.0], true),
+                        ([0.0, 0.0, 4.1], false)] {
+        assert_eq!(field.side(p) < 0.0, inside, "{p:?}");
+    }
+}
+
+/// **A hidden key is no name a source may write** (#190): the region's point is `s#probe` to the
+/// flattener, which a measurement reaches by reference, and neither a measurement's argument nor
+/// a number may spell it.
+#[test]
+fn a_hidden_key_is_not_writable_in_a_bound() {
+    let head = format!("{AXES}f1 := point hint((3, 0, 0))\nfix((3, 0, 0)) f1\n\
+                        egg := {{ p | distance(p, f1) <= 10mm }}\ns := solid(egg)\n");
+    let (_, errs, _) = gcs_core::library::parse_linked(&format!(
+        "{head}near := {{ q | distance(q, s#probe) <= 1mm }}\n"));
+    assert!(!errs.is_empty(), "a measurement's argument spelled a hidden key");
+    crate::common::refused(&format!("{head}near := {{ q | distance(q, f1) <= s#probe.x }}\n\
+                                     t := solid(near)\n"),
+                           "E040", "unexpected `#probe.x`", "t := solid(near)");
+}

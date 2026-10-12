@@ -216,10 +216,14 @@ the centre's value within its half-diagonal), its support the box of the planes 
 within (`polytope_box`, refused unbounded). Evaluated as sweeps are (`sweeps_among`: the field's
 surface); no exact construction yet (`cad.rs` says so). `tests/region_general.rs` is the gate.
 **A bound on measurements** (#183 F3): `distance(p, f1) + distance(p, f2) <= 10mm` in a set's
-body is `StmtKind::Measured` (sides kept as text; parsed where a statement opens on a measurement
-and compares outside every bracket, `compared_ahead`; numbers written in by the walk, names by
-`rescope_measures`; the expr lexer reads `s#probe` as one name). A region (`sets::region`); `inside`
-keeps it, `outside` turns it, and a body of bounds only is all of them under `inside`. Elaborated
+body is `StmtKind::Measured`, **parsed once** (#190, `parser/measured.rs`, where a statement calls
+a measurement and compares outside every bracket, `compared_ahead`): each side a
+`syntax::Measuring` tree whose `Measurement`s name what they measure by `Ref`s (`at:` a labelled
+one), resolved by `rewrite` as every operand is and rewritten structurally by `measured_sets`;
+whatever measures nothing is one `Number` text the walk writes the scope's numbers into, read by
+`expr` (whose lexer reads no hidden key mid-name: `s#probe` is no name a source writes). A
+region (`sets::region`); `inside` keeps it, `outside` turns it, and a body of bounds only is all
+of them under `inside`. Elaborated
 by `relations::measured_term` into `RegionShape::Measured` (Σ cᵢ·distance from a point, line,
 axis or plane; `linear`: affine only, one probe) on the probe, else E040; read by the field
 (`region::measured`, divided by Σ|cᵢ|), never the meridian.

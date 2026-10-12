@@ -12,7 +12,6 @@ enum Tok {
     LParen,
     RParen,
     Comma,
-    Colon,
     End,
 }
 
@@ -181,17 +180,6 @@ fn tokenize(text: &str, units: Units) -> Result<Vec<(Tok, usize)>, String> {
             while i < chars.len() && (chars[i].is_ascii_alphanumeric() || chars[i] == '_') {
                 i += 1;
             }
-            // and a hidden point's key after its owner's name (`blank#probe`, a region solid's
-            // point, which a bound on measurements reads, #183 F3)
-            while chars.get(i) == Some(&'#')
-                && chars.get(i + 1).is_some_and(|d| d.is_ascii_alphanumeric() || *d == '_')
-            {
-                key = true;
-                i += 1;
-                while i < chars.len() && (chars[i].is_ascii_alphanumeric() || chars[i] == '_') {
-                    i += 1;
-                }
-            }
             // A dot *between* identifier characters is part of the name: `c.center.x` is one
             // coordinate a curve is written over, not a name and a decimal point.  Only there —
             // `a.5` and a trailing `a.` are left alone, so `.5` is still the number it always was
@@ -217,14 +205,6 @@ fn tokenize(text: &str, units: Units) -> Result<Vec<(Tok, usize)>, String> {
                 while i < chars.len() && (chars[i].is_ascii_alphanumeric() || chars[i] == '_') {
                     i += 1;
                 }
-                // a hidden point's key within a path too (`#3.0.blank#probe`)
-                while copy(i) {
-                    key = true;
-                    i += 1;
-                    while i < chars.len() && (chars[i].is_ascii_alphanumeric() || chars[i] == '_') {
-                        i += 1;
-                    }
-                }
             }
             out.push((Tok::Ident(chars[start..i].iter().collect()), at));
             continue;
@@ -244,7 +224,6 @@ fn tokenize(text: &str, units: Units) -> Result<Vec<(Tok, usize)>, String> {
             '(' => Tok::LParen,
             ')' => Tok::RParen,
             ',' => Tok::Comma,
-            ':' => Tok::Colon,
             _ => return Err(format!("unexpected `{c}` at {}", at + 1)),
         };
         out.push((t, at));
@@ -363,16 +342,6 @@ impl Parser {
                     let mut args = Vec::new();
                     loop {
                         match self.next() {
-                            // the point an angle between faces is read nearest (#183 F9), the one
-                            // label a measurement takes: `angle(a, b, at: p)`
-                            Tok::Ident(l) if l == "at" && *self.peek() == Tok::Colon
-                                && m == super::Measure::Angle && args.len() == 2 => {
-                                self.next();
-                                match self.next() {
-                                    Tok::Ident(a) => args.push(a),
-                                    _ => return Err(format!("`{name}` is read `at:` a point")),
-                                }
-                            }
                             Tok::Ident(a) if args.len() < n => args.push(a),
                             Tok::Ident(_) => return Err(format!("`{name}` takes {n} argument(s)")),
                             _ => return Err(format!("`{name}` measures geometry: its arguments are names")),
@@ -383,7 +352,7 @@ impl Parser {
                             _ => return Err(format!("expected `,` or `)` at {}", self.here())),
                         }
                     }
-                    if args.len() != n && !(m == super::Measure::Angle && args.len() == 3) {
+                    if args.len() != n {
                         return Err(format!("`{name}` takes {n} argument(s)"));
                     }
                     return Ok(Ast::Measure(m, args));
@@ -459,7 +428,6 @@ fn tok_text(t: &Tok) -> String {
         Tok::LParen => "(".to_string(),
         Tok::RParen => ")".to_string(),
         Tok::Comma => ",".to_string(),
-        Tok::Colon => ":".to_string(),
         Tok::End => "end".to_string(),
     }
 }

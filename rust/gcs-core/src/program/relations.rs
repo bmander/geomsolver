@@ -1396,45 +1396,45 @@ fn written_aff(a: &CArg, sk: &Sketch) -> Option<expr::Aff> {
     expr::eval(&parsed.body, &Default::default()).ok()
 }
 
-/// A sum of measurements and a number: `Σ cᵢ mᵢ + c`, each `mᵢ` a measurement as written (its
-/// kind and the names it reads).
-type Linear = (Vec<((expr::Measure, Vec<String>), f64)>, f64);
+/// A sum of measurements and a number: `Σ cᵢ mᵢ + c`, each `mᵢ` a measurement as written.
+type Linear<'m> = (Vec<(&'m crate::syntax::Measurement, f64)>, f64);
 
-/// What an expression of measurements comes to as a sum of them times numbers (#183 F3), or why
-/// it is not one: a product or a quotient of two measurements, or one read through a function.
-fn linear(ast: &expr::Ast) -> Result<Linear, String> {
-    use expr::{Ast, Op};
-    if ast.measures().is_empty() {
-        let v = expr::eval(ast, &Default::default())
-            .map_err(|e| e.message)?
-            .number()
-            .ok_or("a bound on measurements reads numbers stated, and no unknown")?;
-        return Ok((Vec::new(), v));
-    }
-    let scaled = |(terms, c): Linear, k: f64| -> Linear {
+/// What a side of a bound on measurements comes to as a sum of them times numbers (#183 F3), or
+/// why it is not one: a product or a quotient of two measurements, or one read through a function.
+fn linear<'m>(m: &'m crate::syntax::Measuring, units: crate::units::Units) -> Result<Linear<'m>, String> {
+    use crate::syntax::Measuring;
+    use expr::Op;
+    let scaled = |(terms, c): Linear<'m>, k: f64| -> Linear<'m> {
         (terms.into_iter().map(|(m, x)| (m, x * k)).collect(), c * k)
     };
-    let number = |a: &Ast| -> Option<f64> {
-        a.measures().is_empty().then(|| linear(a).ok().map(|(_, c)| c)).flatten()
+    let number = |a: &'m Measuring| -> Option<f64> {
+        a.measures().is_empty().then(|| linear(a, units).ok().map(|(_, c)| c)).flatten()
     };
-    Ok(match ast {
-        Ast::Measure(m, args) => (vec![((*m, args.clone()), 1.0)], 0.0),
-        Ast::Neg(a) => scaled(linear(a)?, -1.0),
-        Ast::Bin(op @ (Op::Add | Op::Sub), a, b) => {
-            let (mut terms, c) = linear(a)?;
+    Ok(match m {
+        Measuring::Number { text, .. } => {
+            let v = expr::eval(&expr::parse_in(text, units)?.body, &Default::default())
+                .map_err(|e| e.message)?
+                .number()
+                .ok_or("a bound on measurements reads numbers stated, and no unknown")?;
+            (Vec::new(), v)
+        }
+        Measuring::Measure(x) => (vec![(x, 1.0)], 0.0),
+        Measuring::Neg(a) => scaled(linear(a, units)?, -1.0),
+        Measuring::Bin(op @ (Op::Add | Op::Sub), a, b) => {
+            let (mut terms, c) = linear(a, units)?;
             let k = if *op == Op::Add { 1.0 } else { -1.0 };
-            let (more, d) = scaled(linear(b)?, k);
+            let (more, d) = scaled(linear(b, units)?, k);
             terms.extend(more);
             (terms, c + d)
         }
-        Ast::Bin(Op::Mul, a, b) => match (number(a), number(b)) {
-            (Some(k), _) => scaled(linear(b)?, k),
-            (_, Some(k)) => scaled(linear(a)?, k),
+        Measuring::Bin(Op::Mul, a, b) => match (number(a), number(b)) {
+            (Some(k), _) => scaled(linear(b, units)?, k),
+            (_, Some(k)) => scaled(linear(a, units)?, k),
             _ => return Err("a bound on measurements is a sum of them, each times a number: \
                              two measured are not multiplied".to_string()),
         },
-        Ast::Bin(Op::Div, a, b) => match number(b) {
-            Some(k) if k != 0.0 => scaled(linear(a)?, 1.0 / k),
+        Measuring::Bin(Op::Div, a, b) => match number(b) {
+            Some(k) if k != 0.0 => scaled(linear(a, units)?, 1.0 / k),
             _ => return Err("a bound on measurements is a sum of them, each times a number: \
                              a measurement divides nothing".to_string()),
         },
@@ -1445,7 +1445,8 @@ fn linear(ast: &expr::Ast) -> Result<Linear, String> {
 
 /// `distance(p, f1) + distance(p, f2) <= 10mm` (#183 F3): a term of the region solid whose probe
 /// it measures — each measurement a distance between the probe and what else it names, the
-/// bound on their sum — or refused (E040): read only of a region solid's point.
+/// bound on their sum — or refused (E040): read only of a region solid's point.  What each
+/// measurement names is a reference the flattener has made absolute (#190).
 pub(super) fn measured_term(
     sk: &Sketch,
     res: &Resolver,
@@ -1457,10 +1458,7 @@ pub(super) fn measured_term(
     let mut refuse = |message: String| {
         diags.push(Diag { code: Code::E040, span: st.span, stmt: Some(st.id), message })
     };
-    let side = |text: &str| -> Result<Linear, String> {
-        linear(&expr::parse_in(text, sk.units)?.body)
-    };
-    let (lhs, rhs) = match (side(&m.lhs), side(&m.rhs)) {
+    let (lhs, rhs) = match (linear(&m.lhs, sk.units), linear(&m.rhs, sk.units)) {
         (Ok(l), Ok(r)) => (l, r),
         (Err(e), _) | (_, Err(e)) => return refuse(e),
     };
@@ -1469,13 +1467,12 @@ pub(super) fn measured_term(
     terms.extend(rhs.0.into_iter().map(|(m, c)| (m, -c)));
     let k = rhs.1 - lhs.1;
     use crate::model::Target;
-    let target = |name: &str| -> Option<Target> {
-        let segs: Vec<&str> = name.split('.').collect();
-        let (e, path) = res.dotted(&segs)?;
+    let target = |r: &Ref| -> Option<Target> {
+        let e = res.lookup(r)?;
         if e.kind == EntKind::Solid {
-            return Some(Target::Face(face_ref(e, &path)));
+            return Some(Target::Face(face_ref(e, &r.path)));
         }
-        follow(sk, e, &path).ok().map(Target::Ent)
+        follow(sk, e, &r.path).ok().map(Target::Ent)
     };
     let probe_at = |t: &Option<Target>| match t {
         Some(Target::Ent(e)) if e.kind == EntKind::Point && probes.terms.contains_key(&e.i()) => Some(e.i()),
@@ -1483,45 +1480,47 @@ pub(super) fn measured_term(
     };
     // the material's angle where two faces meet, at the point of their edge nearest the region's
     // point (#183 F9): a bound of its own
-    if let [((expr::Measure::Angle, args), c)] = terms.as_slice() {
-        let face = |n: &str| match target(n) {
-            Some(Target::Face(f)) if !f.surface => Some(f),
-            _ => None,
-        };
-        let read = match args.as_slice() {
-            [a, b, at] => face(a).zip(face(b)).zip(probe_at(&target(at))),
-            _ => None,
-        };
-        let Some(((fa, fb), p)) = read else {
-            return refuse("a region's angle is between two faces, read `at:` its point: \
-                           `angle(a, b, at: p)`".to_string());
-        };
-        let cmp = if *c > 0.0 { m.cmp } else { m.cmp.turned().expect("one-sided") };
-        let lo = expr::to_arg_units(SpecKind::Angle, k / c);
-        let term = crate::model::RegionTerm::new(
-            crate::model::RegionShape::Angle { a: fa, b: fb },
-            cmp,
-            crate::model::TermNumber::stated(lo),
-        );
-        probes.terms.get_mut(&p).expect("a probe's terms").push(term);
-        return;
+    if let [(x, c)] = terms.as_slice() {
+        if x.measure == expr::Measure::Angle {
+            let face = |r: &Ref| match target(r) {
+                Some(Target::Face(f)) if !f.surface => Some(f),
+                _ => None,
+            };
+            let read = match (x.args.as_slice(), &x.at) {
+                ([a, b], Some(at)) => face(a).zip(face(b)).zip(probe_at(&target(at))),
+                _ => None,
+            };
+            let Some(((fa, fb), p)) = read else {
+                return refuse("a region's angle is between two faces, read `at:` its point: \
+                               `angle(a, b, at: p)`".to_string());
+            };
+            let cmp = if *c > 0.0 { m.cmp } else { m.cmp.turned().expect("one-sided") };
+            let lo = expr::to_arg_units(SpecKind::Angle, k / c);
+            let term = crate::model::RegionTerm::new(
+                crate::model::RegionShape::Angle { a: fa, b: fb },
+                cmp,
+                crate::model::TermNumber::stated(lo),
+            );
+            probes.terms.get_mut(&p).expect("a probe's terms").push(term);
+            return;
+        }
     }
     let mut probe = None;
     let mut of: Vec<(Target, f64)> = Vec::new();
-    for ((measure, args), c) in terms {
-        if measure != expr::Measure::Distance {
+    for (x, c) in terms {
+        if x.measure != expr::Measure::Distance || x.at.is_some() {
             return refuse(format!(
                 "a region's bound measures distances from its point; `{}` is not read yet",
-                measure.name()
+                x.text()
             ));
         }
-        let ends: Vec<Option<Target>> = args.iter().map(|a| target(a)).collect();
+        let ends: Vec<Option<Target>> = x.args.iter().map(target).collect();
         // the point the set is about is the first operand where both are such points
         let Some(at) = (0..ends.len()).find(|&k| probe_at(&ends[k]).is_some()) else {
             return refuse(format!(
                 "`{}` measures nothing of a region solid's point: a bound on measurements is read \
                  where a set is applied to one (`solid(S)`)",
-                measure.text(&args)
+                x.text()
             ));
         };
         let p = probe_at(&ends[at]).expect("found");
@@ -1530,7 +1529,8 @@ pub(super) fn measured_term(
         }
         probe = Some(p);
         let Some(mut to) = ends[1 - at].clone() else {
-            return refuse(format!("`{}` names nothing to measure from", args[1 - at]));
+            return refuse(format!("`{}` names nothing to measure from",
+                                  crate::syntax::ref_text(&x.args[1 - at])));
         };
         // a set measured from has a point of its own, whose bounds it is (#183 F2)
         if let Some(q) = probe_at(&ends[1 - at]) {
