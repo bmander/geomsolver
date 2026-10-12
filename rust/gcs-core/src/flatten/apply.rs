@@ -194,6 +194,10 @@ impl<'a> Walk<'a> {
         for (i, (st, p, sc)) in self.out.iter_mut().enumerate().skip(from) {
             // an energy the word states is the use's statement, as its relations are (#121)
             if let StmtKind::Minimize(_) | StmtKind::Measured(_) = &st.kind {
+                // the sets it came through, as a relation's (#212): the use's, then an inner's
+                if let StmtKind::Measured(m) = &mut st.kind {
+                    m.through = through.iter().cloned().chain(std::mem::take(&mut m.through)).collect();
+                }
                 sc.written.get_or_insert(st.id);
                 st.id = u.st.id;
                 st.span = u.st.span;

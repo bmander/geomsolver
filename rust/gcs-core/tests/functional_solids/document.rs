@@ -99,7 +99,7 @@ body := solid(face(outer,holes: inner),about: ax)
 
 #[test]
 fn rounded_crown_source_matches_independent_analytic_material_queries() {
-    let e = read(include_str!("../../../examples/spiral_bevel/crown/section.sv"));
+    let e = read(include_str!("../fixtures/crown_section.sv"));
     let crown = e.map.ent_named("crown").unwrap().i();
     let source = RevolvedRegion::read(&e.sketch,crown,1e-10).unwrap();
     let field = field(&e,"crown");
@@ -221,7 +221,7 @@ body := solid(profile,about: ax)
 
 #[test]
 fn profile_connectivity_uses_shared_source_vertices_at_rounded_junctions() {
-    let mut e = read(include_str!("../../../examples/spiral_bevel/crown/section.sv"));
+    let mut e = read(include_str!("../fixtures/crown_section.sv"));
     let crown = e.map.ent_named("crown").unwrap().i();
     // A tiny radius residual must not change the topology of shared endpoints.
     // The analytic field still uses the current radius, not a snapped curve.

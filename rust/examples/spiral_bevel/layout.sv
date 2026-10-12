@@ -1,6 +1,6 @@
 // The hypoid layout, steps 2 to 5 (docs/spiral-bevel-layout-plan.md): the pitch cones and the
 // tooth trace through the mean point M, the members' blanks in their axial views, the crown
-// tooth and its mate in the normal section, and the generating motions.
+// tooth and its mate as regions about the cutter's axis, and the generating motions.
 use std
 use design
 use views
@@ -9,10 +9,10 @@ use pitch.trace
 use pitch.pinion
 use blank.member
 use crown.thickness
+use crown.cutter
 use crown.tooth
 use crown.mate
 use crown.reach
-use crown.space
 use crown.relief
 use generation
 
@@ -31,22 +31,26 @@ component HypoidLayout(p: plane, design: group, normal_module: Length) {
   pinion_blank := blank.member.MemberBlank(pinion.pitch_line, pinion.ax, q.view, design,
     normal_module: normal_module)
 
-  // The crown, in the normal section.
+  // The crown, about the cutter's axis: the pinion's generator, the crown tooth, and the gear's,
+  // its space cutter, on the flank cones they share.
   thickness := crown.thickness.CrownThickness(p, gear.generator, trace.normal, design)
-  n := views.FoldedView(p, trace.normal)
-  tooth := crown.tooth.CrownTooth(p, trace.normal, thickness.inner_pitch,
-    thickness.outer_pitch, design, normal_module: normal_module) in n.view
-  mate := crown.mate.CrownMate(tooth, design, normal_module: normal_module) in n.view
-  reach := crown.reach.CutterReach(p, n.view, gear.O, trace.normal, mate.ax,
-    reach: design.space_reach)
+  cutter := crown.cutter.Cutter(gear.crown_axis, trace.normal, thickness.inner_pitch,
+    thickness.outer_pitch, design, normal_module: normal_module)
+  tooth := crown.tooth.Tooth(cutter.inner_flank, cutter.outer_flank, cutter.tooth_base,
+    cutter.tooth_tip, grow: design.backlash / 4, r: design.rounding * normal_module)
+  reach := crown.reach.CutterReach(p, gear.O, trace.normal, cutter.ax, reach: design.space_reach)
   generation := generation.Generation(gear, pinion, thickness)
-  construction gear_space := crown.space.ComplementarySpace(mate.ax, mate.outer, mate.inner,
-    generation.crown_neighbor, reach.cap) in n.view
+  construction gear_space := crown.mate.Space(cutter.outer_flank, cutter.inner_flank,
+    cutter.mate_tip, cutter.mate_base, reach.cap, generation.crown_neighbor,
+    grow: design.backlash / 4, r: design.rounding * normal_module)
   when design.tip_relief > 0mm {
-    construction tooth_relief := crown.relief.ToothRelief(tooth, reach.cap, design,
-      normal_module: normal_module) in n.view
-    construction space_relief := crown.relief.SpaceRelief(mate.ax, mate.outer, mate.inner,
-      generation.crown_neighbor, reach.cap, design, normal_module: normal_module) in n.view
+    // the toppings' kinks, in the normal section N along the trace normal C -> M
+    n := views.FoldedView(p, trace.normal)
+    construction tooth_relief := crown.relief.ToothRelief(cutter, tooth, n.view,
+      thickness.inner_pitch, thickness.outer_pitch, design, normal_module: normal_module)
+    construction space_relief := crown.relief.SpaceRelief(cutter, gear_space, reach.cap,
+      generation.crown_neighbor, n.view, thickness.inner_pitch, thickness.outer_pitch, design,
+      normal_module: normal_module)
   }
 
   // What each member is cut from and how its cutter moves.

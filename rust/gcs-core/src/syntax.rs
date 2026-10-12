@@ -414,6 +414,10 @@ pub struct Measured {
     pub cmp: Cmp,
     pub rhs: Measuring,
     pub span: Span,
+    /// The sets it was applied through, outermost first (#212, #214): `Worded::through` for a
+    /// bound on measurements, so the faces a region's term makes are named by the set its body
+    /// used (`inner_round` for `p inside inner_round`).  Empty as written.
+    pub through: Vec<String>,
 }
 
 /// One side of a bound on measurements, as written: arithmetic over measurements and numbers.

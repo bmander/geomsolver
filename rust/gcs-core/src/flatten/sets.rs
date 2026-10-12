@@ -174,22 +174,28 @@ impl<'a> Walk<'a> {
     /// operands name, by absolute name — `None` for a statement naming none.  Only `coincident`
     /// and `tangent` between two operands may use one.
     fn set_use<'s>(
-        &self,
+        &mut self,
         st: &'s Stmt,
         sc: &Scope,
         alias: &BTreeMap<String, String>,
     ) -> Option<(&'s Relation, Vec<(usize, String)>)> {
         let StmtKind::Relation(rel) = &st.kind else { return None };
         let w = rel.form.written().filter(|w| may_use(w))?;
-        let found: Vec<(usize, String)> = w
-            .ops
-            .iter()
-            .enumerate()
-            .filter_map(|(i, r)| match lookup_raw(r, sc, &self.names, alias, self.units) {
-                Some((abs, rest)) if rest.is_empty() && self.sets.contains_key(&abs) => Some((i, abs)),
-                _ => None,
-            })
-            .collect();
+        let mut found: Vec<(usize, String)> = Vec::new();
+        for (i, r) in w.ops.iter().enumerate() {
+            match lookup_raw(r, sc, &self.names, alias, self.units) {
+                Some((abs, rest)) if rest.is_empty() && self.sets.contains_key(&abs) => found.push((i, abs)),
+                // a set's surface (`S.surface`): the set with each bound an equality, a set of its
+                // own (#214: a point on a side grown, where a topping leaves a crown's flank)
+                Some((abs, rest)) if self.sets.contains_key(&abs)
+                    && matches!(rest.as_slice(), [m] if Member::of(m) == Some(Member::Surface)) =>
+                {
+                    let surface = self.surface_of(&abs);
+                    found.push((i, surface));
+                }
+                _ => {}
+            }
+        }
         // a set drawn as an element is one, and a point is put on it as on any (#105) — but for
         // a derivative, which reads the body's rows
         let element = matches!(found.as_slice(),
@@ -794,7 +800,18 @@ impl<'a> Walk<'a> {
             }
             Err(e) => return self.once(Code::E103, at, format!("`{text}`: {e}")),
         };
-        if d.number() == Some(0.0) && word == "distance" {
+        // a distance a number comes to nothing (`std.Offset(S, d: 0mm)`, an allowance of none):
+        // a bound on it is the set's own side, and a point at it is on the set, as `coincident`
+        // says; a zero written so is said so
+        let written = w.args.iter().any(|a| matches!(a, OpArg::Dim(t, _) if expr::literal(t).is_some()));
+        if d.number() == Some(0.0) && word == "distance" && cmp.is_none() {
+            if surface.is_none() && !written {
+                let mut on = w.clone();
+                on.word.text = "coincident".to_string();
+                on.args.clear();
+                let rel = Relation { form: RelationForm::Written(on), ..rel.clone() };
+                return self.expand_use(st, &rel, path, sc, k, abs);
+            }
             let m = format!("a point at no distance from `{set}` is on it: `coincident`");
             return self.once(Code::E040, at, m);
         }
@@ -823,16 +840,35 @@ impl<'a> Walk<'a> {
                 return self.once(Code::E040, at, m);
             }
             let n = measured.args.iter().position(is_dim).expect("a number");
+            let mut grow = offset;
             if distance {
                 let OpArg::Dim(t, _) = &mut measured.args[n] else { unreachable!("a number") };
-                *t = format!("({t}) + #grow");
+                // the number moved, worked out where the set states it: added as numbers, an
+                // unknown either reads keeps its dimension, which a text written over it would
+                // lose (a free name in a text is a plain number until its slot says otherwise)
+                let moved = value_aff(t, &closure.vals, self.units).ok()
+                    .filter(|a| a.dim.fits(crate::units::Dim::LENGTH))
+                    .and_then(|a| {
+                        let free = match (&a.free, &grow.free) {
+                            (Some(x), Some(y)) if x != y => return None,
+                            (x, y) => x.clone().or_else(|| y.clone()),
+                        };
+                        Some(Aff { free, m: a.m + grow.m, c: a.c + grow.c, dim: crate::units::Dim::LENGTH })
+                    });
+                match moved {
+                    Some(sum) => {
+                        *t = "#grow".to_string();
+                        grow = sum;
+                    }
+                    None => *t = format!("({t}) + #grow"),
+                }
             }
             if let Some(cmp) = cmp {
                 let carried = (!distance).then(|| ("#grow".to_string(), at));
                 measured.args.insert(n, OpArg::Bound { cmp, span: at, hi: None, grow: carried });
             }
             let mut app = self.begin(&u, &closure).of_set();
-            app.give("#grow", offset);
+            app.give("#grow", grow);
             self.bind_to_use(&app, &bound, point, &u);
             let walks = vec![self.inherited_twin(&app, &u).into()];
             return self.apply(&u, app, lit.body, &BTreeMap::new(), &walks, worded, depth);

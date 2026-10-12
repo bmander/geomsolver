@@ -1,34 +1,40 @@
-// Step 4, the gear's generator: the crown tooth's mate, two sections on the tooth's own flank
-// lines (crown/mate_section.sv), one tooth's width outward and one inward along the pitch line,
-// each with its own tip and roundings, revolved about the cutter's axis turned tip down. The
-// shift is stated once, on the tooth, so the two crowns are complementary by construction.
-use std (turned)
+// Step 4, the gear's generator: the crown tooth's mate, tip down, as the gear's space cutter —
+// the stretch between two neighbouring mate teeth, each a region about the cutter's axis on the
+// flank cones the tooth stands on (crown/cutter.sv), so the two crowns are complementary by
+// construction. The outer mate lies beyond the tooth's outer cone, closed at the reach's cap
+// (crown/reach.sv); the inner within its inner cone, out to the axis, and turned one crown pitch
+// round. Each grows across its cone a quarter of the backlash, as the tooth does (crown/tooth.sv).
+use std
 use design
 use views
 use pitch.gear
 use pitch.trace
 use crown.thickness
-use crown.tooth
-use crown.mate_section
+use crown.cutter
+use crown.reach
+use generation
+use pitch.pinion
 
-// The mate of `tooth`, a CrownTooth.
-component CrownMate(tooth: group, design: group, normal_module: Length) {
-  // Seeds: the tooth's pitch points reflected through each other, and its axis turned.
-  outer_far := point hint(at: tooth.rack.pitch.p2, toward: tooth.rack.pitch.p1, by: -1)
-  inner_far := point hint(at: tooth.rack.pitch.p1, toward: tooth.rack.pitch.p2, by: -1)
-  bottom := point hint(at: tooth.ax.p1, toward: tooth.ax.p2, by: -1)
-  construction outer_span := line(tooth.rack.pitch.p1, outer_far)
-  construction inner_span := line(inner_far, tooth.rack.pitch.p2)
-  tooth.rack.pitch.p2 midpoint outer_span
-  tooth.rack.pitch.p1 midpoint inner_span
-  outer := crown.mate_section.MateSection(tooth.rack.pitch.p2, outer_far, tooth.rack.outer,
-    tooth.rack.inner, design, normal_module: normal_module)
-  inner := crown.mate_section.MateSection(inner_far, tooth.rack.pitch.p1, tooth.rack.outer,
-    tooth.rack.inner, design, normal_module: normal_module)
-  ax := line(tooth.ax.p1, bottom)
-  ax turned(theta: 180deg) tooth.ax
-  construction outer_crown := solid(outer.profile, about: ax)
-  construction inner_crown := solid(inner.profile, about: ax)
+// A crown space, tip down: beyond the flank cone `a` and within the cap `cap`, within the flank
+// cone `b` turned by `index` — each cone grown by `grow` — above the level `lo` and below `hi`,
+// the edges of its tips at `lo` rounded by `r`. Each set it is within names the face it bounds:
+// `inner`, `outer`, `tip`, `base`, `cap` and the rounds `inner_round` and `outer_round`; the outer
+// mate is `outer_crown`, the inner `inner_crown`, turned `neighbor`.
+component Space(a: set, b: set, lo: set, hi: set, cap: set, index: motion, grow: Length,
+                r: Length) {
+  inner := { q | q outside(grow) a }
+  outer := std.Offset(b, d: grow)
+  tip := { q | q outside lo }
+  base := { q | q inside hi }
+  inner_round := std.Rounded(inner, tip, r: r)
+  outer_round := std.Rounded(outer, tip, r: r)
+  near := { p | p inside inner; p inside cap; p inside tip; p inside base; p inside inner_round }
+  far := { p | p inside outer; p inside tip; p inside base; p inside outer_round }
+  private construction outer_crown := solid(near)
+  private construction inner_crown := solid(far)
+  private construction neighbor := solid(inner_crown, under: index, at: 0deg)
+  body := solid(outer_crown)
+  neighbor bound body
 }
 
 preview {
@@ -36,11 +42,16 @@ preview {
   gear := pitch.gear.GearCone(std.top, g.view, design.hypoid_design)
   g := views.FoldedView(std.top, gear.generator)
   trace := pitch.trace.ToothTrace(std.top, gear.generator, design.hypoid_design)
+  pinion := pitch.pinion.PinionCone(std.top, q.view, gear, trace.foot, design.hypoid_design)
+  q := views.FoldedView(std.top, pinion.hinge)
   thickness := crown.thickness.CrownThickness(std.top, gear.generator, trace.normal,
     design.hypoid_design)
-  n := views.FoldedView(std.top, trace.normal)
-  tooth := crown.tooth.CrownTooth(std.top, trace.normal, thickness.inner_pitch,
-    thickness.outer_pitch, design.hypoid_design, normal_module: trace.normal_module) in n.view
-  mate := CrownMate(tooth, design.hypoid_design,
-    normal_module: trace.normal_module) in n.view
+  cutter := crown.cutter.Cutter(gear.crown_axis, trace.normal, thickness.inner_pitch,
+    thickness.outer_pitch, design.hypoid_design, normal_module: trace.normal_module)
+  reach := crown.reach.CutterReach(std.top, gear.O, trace.normal, cutter.ax,
+    reach: design.hypoid_design.space_reach)
+  generation := generation.Generation(gear, pinion, thickness)
+  gear_space := Space(cutter.outer_flank, cutter.inner_flank, cutter.mate_tip, cutter.mate_base,
+    reach.cap, generation.crown_neighbor, grow: design.hypoid_design.backlash / 4,
+    r: design.hypoid_design.rounding * trace.normal_module)
 }

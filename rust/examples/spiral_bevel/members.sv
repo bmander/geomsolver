@@ -37,9 +37,11 @@ component HypoidPair(p: plane, design: group) {
     teeth: design.gear_teeth, roll_limit: design.gear_roll)
   when design.tip_relief > 0mm {
     pinion_relief := ReliefCut(pinion.body, reference.pinion_design,
-      reference.tooth_relief.body, teeth: design.pinion_teeth, roll_limit: design.pinion_roll)
+      reference.tooth_relief.relief.crown, teeth: design.pinion_teeth,
+      roll_limit: design.pinion_roll)
     gear_relief := ReliefCut(gear.body, reference.gear_design,
-      reference.space_relief.body, teeth: design.gear_teeth, roll_limit: design.gear_roll)
+      reference.space_relief.relief.body, teeth: design.gear_teeth,
+      roll_limit: design.gear_roll)
   }
 }
 

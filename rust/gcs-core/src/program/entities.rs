@@ -854,6 +854,35 @@ fn place_of(
     // a point in space: the place is read in the plane it is drawn in and lifted from there,
     // or, where it stands in space itself, read where it stands
     let e = place(sk, res, &a.what)?;
+    // a step from a point, with no turn, is the same step in space wherever its point is drawn:
+    // read there, so a step along a line square to that plane goes somewhere (#214: up a
+    // cutter's axis from a point of the pitch plane)
+    let plain = a.turn.is_none() && a.bearing.is_none() && a.x.is_none() && a.y.is_none();
+    if e.kind == EntKind::Point && plain && (a.toward.is_some() || a.along.is_some()) {
+        let ends = match (&a.toward, &a.along) {
+            (Some(t), _) => {
+                let b = place(sk, res, t)?;
+                if b.kind != EntKind::Point {
+                    return Err(format!("a step is taken toward a point, not {}", b.kind.a()));
+                }
+                (e.i(), b.i())
+            }
+            (None, Some(l)) => {
+                let l = place(sk, res, l)?;
+                if l.kind != EntKind::Line {
+                    return Err(format!("a step is taken along a line, not {}", l.kind.a()));
+                }
+                (sk.lines[l.i()].p1 as usize, sk.lines[l.i()].p2 as usize)
+            }
+            (None, None) => unreachable!("a step"),
+        };
+        let f = match &a.by {
+            Some((text, _)) => seed_eval(sk, res, text, names).map_err(|m| format!("`{text}`: {m}"))?,
+            None => 1.0,
+        };
+        let (at, from, to) = (sk.world_point(e.i()), sk.world_point(ends.0), sk.world_point(ends.1));
+        return Ok((0..3).map(|k| at[k] + f * (to[k] - from[k])).collect());
+    }
     let home = match e.kind {
         EntKind::Plane => Some(e.i()),
         EntKind::Circle => sk.plane_of(sk.circles[e.i()].center as usize),
