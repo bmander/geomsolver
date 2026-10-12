@@ -540,7 +540,8 @@ built, its relations, holds, claims and branches are not (`program.rs`'s `statin
 circle's or arc's numbers are then **derived** (`Sketch::derived`, linear in the
 representative's and the centre's params), owning no column — `System::col_of` is `-2 - k` for
 one, its Jacobian folded into its bases by weights (`ent_w`, 1 elsewhere so every other bit
-stands), its value settled in `apply_z`/`full_x` and at `expr::sync_free`; a turned arc's
+stands), its value settled in `apply_z`/`full_x`, at `expr::sync_free` and as each seed is written
+(`settle_deferred`'s `Seeds`, so a seed reads a copy turned, #225); a turned arc's
 intrinsic rows are not compiled; a turned curve evaluates as its representative, turned
 (`curve_turn`). Readers outside `System` are told: `cgraph` leaves rows on copies to the
 numeric residual, `decompose` writes none, the diagnosis reads a copy as free as its bases,

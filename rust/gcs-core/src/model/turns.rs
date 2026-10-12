@@ -37,8 +37,8 @@ pub struct Derivation {
 }
 
 impl Derivation {
-    /// Its value over a parameter vector — the one sum `System` and `settle_turns` both take, so
-    /// the two agree to the bit.
+    /// Its value over a parameter vector — the one sum `System` and `settle_derivation` both take,
+    /// so the two agree to the bit.
     pub fn value(&self, x: &[f64]) -> f64 {
         let mut v = 0.0;
         for &(b, w) in &self.terms {
@@ -159,14 +159,19 @@ impl Sketch {
         if self.turns.is_empty() {
             return;
         }
-        // a base is never derived, so each value is read off the parameters as they stand
         for d in self.derived() {
-            let mut v = 0.0;
-            for &(b, w) in &d.terms {
-                v += w * self.params[b as usize].value;
-            }
-            self.params[d.param as usize].value = v;
+            self.settle_derivation(&d);
         }
+    }
+
+    /// Write one derived parameter's value from its bases: a base is never derived, so it is read
+    /// off the parameters as they stand, by the sum `Derivation::value` takes.
+    pub fn settle_derivation(&mut self, d: &Derivation) {
+        let mut v = 0.0;
+        for &(b, w) in &d.terms {
+            v += w * self.params[b as usize].value;
+        }
+        self.params[d.param as usize].value = v;
     }
 
     /// The turn of a turned curve's view, about its centre's place in that view: worked out once
