@@ -122,6 +122,7 @@ impl<'a> Walk<'a> {
     pub(super) fn bind_to_use(&mut self, app: &Application, name: &str, r: Ref, u: &Use) {
         let key = format!("{}{name}", app.prefix);
         self.use_aliases.insert(key.clone());
+        self.arguments.insert(key.clone());
         self.aliases.push((key, r, u.scope.clone()));
     }
 

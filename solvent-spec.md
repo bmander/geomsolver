@@ -2576,7 +2576,7 @@ An entity declared **outside** a ring and referenced **inside** it MUST be invar
 - a `Circle` whose `.center` is (an alias of) the axis point: invariant;
 - any value-typed entity (`Scalar`, `Length`, `Angle` used as magnitude): invariant;
 - **[0.47]** a plane a ring-local point is drawn `in` (a place, not a position), and anything a seed's place reads (a seed is no constraint, §11): not judged;
-- everything else: **not** established — error **E021** ("entity referenced in ring is not C_N-invariant"). **[0.47]** So is a copy of the ring's own reached by index from inside it (`tip[2]`): it reads the same copy from every turn; a neighbour is `next.tip` or `prev.tip`. A curve written in place inside a ring is judged by the entities its instance is given.
+- everything else: **not** established — error **E021** ("entity referenced in ring is not C_N-invariant"). **[0.47]** So is a copy of the ring's own reached by index from inside it (`tip[2]`): it reads the same copy from every turn; a neighbour is `next.tip` or `prev.tip`. An instance inside a ring — drawn, or written in place for a curve — and a relation word or set applied there are judged by what the call wrote: `Edge(u, next.u)` reads a neighbour exactly as `line(u, next.u)` does, and `Edge(u, u[2])` is refused at the argument, not inside the component.
 
 *Non-normative:* E021 is one of the language's best diagnostics; it converts "the solver produced something weird and asymmetric" into a precise compile-time message.
 

@@ -408,7 +408,15 @@ struct Known<'k> {
     /// Every solid declared, by absolute name: what a member `surface` or `body` is read past.
     solids: &'k BTreeSet<String>,
     failed: &'k BTreeSet<String>,
+    /// The names bound to what a call or a use wrote (`Walk::arguments`).
+    arguments: &'k BTreeSet<String>,
     units: Units,
+}
+
+/// Whether `r` reads a name bound to what a call or a use wrote — a formal, a bound variable —
+/// which a ring's representative judges there, as written (#226).
+fn through_argument(r: &Ref, sc: &Scope, arguments: &BTreeSet<String>) -> bool {
+    sc.prefixes.iter().any(|p| arguments.contains(&format!("{p}{}", r.root.text)))
 }
 
 fn rewrite(
@@ -418,7 +426,7 @@ fn rewrite(
     bad: &mut Vec<(Code, Span, String)>,
     seen: &std::cell::RefCell<Vec<Seen>>,
 ) {
-    let Known { names, alias, sets, solids, failed, units } = known;
+    let Known { names, alias, sets, solids, failed, arguments, units } = known;
     // only a ring's representative is judged by what it reads (E021)
     let judged = sc.ring.as_ref().is_some_and(|r| !r.turned);
     // a member read already (a set's `ends`, `sets::measured_sets`) is kept; `surface` and
@@ -446,7 +454,8 @@ fn rewrite(
             ),
         )),
         Some((abs, mut rest)) => {
-            let was = judged.then(|| written(r));
+            // a formal reads what its call was given, judged at the argument as written
+            let was = (judged && !through_argument(r, sc, arguments)).then(|| written(r));
             let member = member(r, &abs, &mut rest);
             r.root = Name { text: abs, span: r.root.span };
             r.path = rest.into_iter().map(|f| Seg::Field(Name::new(f))).chain(member).collect();
@@ -946,7 +955,7 @@ impl<'a> Walk<'a> {
             }
             let mut bad: Vec<(Code, Span, String)> = Vec::new();
             let seen = std::cell::RefCell::new(Vec::new());
-            let known = Known { names: &self.names, alias: &alias, sets: &sets, solids: &solids, failed: &failed, units: self.units };
+            let known = Known { names: &self.names, alias: &alias, sets: &sets, solids: &solids, failed: &failed, arguments: &self.arguments, units: self.units };
             rewrite(&mut st.kind, &sc, known, &mut bad, &seen);
             if let StmtKind::Decl(d) = &st.kind {
                 // a centre the circle names, or `None` for one it mints (`c.center`)
@@ -1012,16 +1021,18 @@ impl<'a> Walk<'a> {
                 Err(d) => self.diagnostic(d),
             }
         }
-        // a curve written in place reads its entities through its instance's arguments, which no
-        // statement of the ring states: judged as the representative's references are
-        for info in self.instances.iter().filter(|i| !i.drawn) {
-            let Some((prefix, (_, span))) = about.iter().find(|(p, _)| info.prefix.starts_with(&format!("{p}0."))) else {
+        // an instance's entity argument and a use's operand, as written where the call stands:
+        // the body reading it reads the name it is bound to, and is not judged again (#226)
+        for (key, r, sc) in &self.aliases {
+            let Some(ring) = sc.ring.as_ref().filter(|r| !r.turned) else { continue };
+            if !self.arguments.contains(key) || through_argument(r, sc, &self.arguments) {
                 continue;
-            };
-            let seen = info.ents.iter().filter_map(|(formal, actual)| {
-                actual.as_ref().map(|a| Seen { written: formal.clone(), span: *span, abs: a.clone() })
-            }).collect();
-            judged.push((prefix.clone(), seen));
+            }
+            if let Some((abs, rest)) = lookup(r, sc, &self.names, &alias, self.units) {
+                let abs = std::iter::once(abs).chain(rest).collect::<Vec<_>>().join(".");
+                let seen = Seen { written: written(r), span: r.span, abs };
+                judged.push((ring.prefix.clone(), vec![seen]));
+            }
         }
         self.judge_rings(&about, judged, &centres);
         (flat, alias)

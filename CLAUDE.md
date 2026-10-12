@@ -546,7 +546,9 @@ intrinsic rows are not compiled; a turned curve evaluates as its representative,
 numeric residual, `decompose` writes none, the diagnosis reads a copy as free as its bases,
 `Part`/`graft`/JSON (`"turns"`)/`topology_key` carry turns. E015 the index read in the body
 (parser finds the reads, `Block::index_reads`), E021 a reference the turn would move or a copy
-by index (`judge_rings`, curves through their instances' arguments), E022 a ring in a ring, E023
+by index (`judge_rings`; an instance's entity argument or a use's operand is judged at the call as
+written, `next.u` a turn, and a body reading the formal is not judged again: `Walk::arguments`,
+#226), E022 a ring in a ring, E023
 what a ring cannot turn (`rings.rs`). The ring's own turn is gauged outside (`hub horizontal
 tip[0]`). `std.Polygon`, `gear.sv`, `gear_trace.sv`, `ngon.sv` and the Wankel rotor are rings;
 `tests/ring.rs` and `tests/turns.rs` are the gates.

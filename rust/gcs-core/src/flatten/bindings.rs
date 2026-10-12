@@ -251,11 +251,9 @@ impl<'a> Walk<'a> {
                 (Ty::Ent(_), InstVal::Ref(r)) => {
                     // recorded unresolved; the resolve pass turns it into an absolute name in the
                     // *caller's* scope, which is what makes it an alias rather than a copy
-                    self.aliases.push((
-                        formal_name(&prefix, &inst.name.text, &f.name.text),
-                        r.clone(),
-                        scope.clone(),
-                    ));
+                    let key = formal_name(&prefix, &inst.name.text, &f.name.text);
+                    self.arguments.insert(key.clone());
+                    self.aliases.push((key, r.clone(), scope.clone()));
                 }
                 (Ty::Ent(_), InstVal::Expr(t)) => self.err(
                     Code::E103,
