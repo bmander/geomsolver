@@ -132,6 +132,7 @@ cycle N [as i] { ... }                  N copies that close; `next`, `prev` in s
 ring N about C { ... }                  N copies, each the first turned about C
 repeat e in CHAIN [as i] { ... }        a copy per link of a named chain (`cycle e in` closes)
 repeat a in SOLID [if ...] { ... }      a copy per face of a solid                   (1.14)
+when COND { ... }                       made once where COND holds, else not at all  (1.7)
 LHS <= RHS | LHS >= RHS                 in a set's body: a bound on measurements     (1.14)
 NAME := INSTANCE.POINT over FORMAL in (A, B)   a curve                               (1.10)
 NAME := Component(ARGS).POINT over FORMAL in (A, B)
@@ -381,6 +382,28 @@ close, with `next` and `prev` in scope. `as i` binds the index; copies are reach
 a `cycle` wraps, closing the loop with no `close`; a `repeat` leaves its last joint unstated, so
 `repeat N { line -> angle(a) }` is an open polyline. `cycle 4 { (s := line) -> perpendicular equal
 }` is a square but for size and pose (2.7).
+
+**A block made or not.** `when COND { … }` makes its body once where the condition holds and not
+at all where it does not, decided over the numbers in scope before the solve: comparisons (`<`,
+`<=`, `>`, `>=`, `==`, `!=`) of two numbers of one dimension — `relief > 0mm`, never `relief > 0`
+(E103) — joined by `and`, `or` and `not`. There is no copy: what the body declares keeps its own
+name (`q`, `t.tip`, never `q[0]`), and is undefined where the block is not made. Refused: an
+unknown of the drawing in the condition (E040), an index, a trailing joint.
+
+```
+unit mm
+use std
+
+relief := 0.2mm
+
+in std.front {
+  a := point
+  when relief > 0mm {
+    q := point hint((8, 3))
+    a distance(10mm) q
+  }
+}
+```
 
 **A ring is a cycle whose copies are turns.** `ring N about C { … }` makes N copies, each the first
 (the *representative*) turned `k · 360°/N` about `C`: a point (counter-clockwise in its view, the
