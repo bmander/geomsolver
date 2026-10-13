@@ -94,7 +94,7 @@ set named as an entity (E040 in `rewrite`), `coincident` between two sets, paren
 non-point `coincident`, a non-line or claimed `tangent`.  `tests/sets.rs` is the gate.
 
 **Regions (§6.21, §9.6, 0.61, #145 F1):** a set whose body bounds a number is a region
-(`flatten::sets::region`, over `Written::states_bound`). `q inside S` / `q outside S` are set
+(`sets::BodyShape::region`, over `Written::states_bound`). `q inside S` / `q outside S` are set
 uses (`may_use`): `expand_use` rewrites the body in place before the walk (`region_body`) — its
 one number (a relation with an `OpArg::Dim`) gains `OpArg::Bound` `Le`/`Ge`, a region's own is
 kept or turned round (`Written::turn_bound`), a body of only uses (a conjunction) is applied as
@@ -174,7 +174,7 @@ a measurement and compares outside every bracket, `compared_ahead`): each side a
 one), resolved by `rewrite` as every operand is and rewritten structurally by `measured_sets`;
 whatever measures nothing is one `Number` text the walk writes the scope's numbers into, read by
 `expr` (whose lexer reads no hidden key mid-name: `s#probe` is no name a source writes). A
-region (`sets::region`); `inside` keeps it, `outside` turns it, and a body of bounds only is all
+region (`BodyShape`); `inside` keeps it, `outside` turns it, and a body of bounds only is all
 of them under `inside`. Elaborated
 by `regions::measured_term` into `RegionShape::Measured` (Σ cᵢ·distance from a point, line,
 axis or plane; `linear`: affine only, one probe) on the probe, else E040; read by the field
