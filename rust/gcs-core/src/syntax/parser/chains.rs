@@ -7,7 +7,8 @@ use crate::style::Classes;
 use crate::syntax::lexer::Tok;
 use crate::syntax::names::refs_eq;
 use crate::syntax::words::{
-    joint_word, link_word, named_link_at, opens_link, past_args, prefix_word, word_at, OPENERS,
+    joint_word, link_word, named_link_at, opens_link, past_args, past_bracket, prefix_word, word_at,
+    Brackets, OPENERS,
 };
 use crate::syntax::{
     build_rank, ref_text, under_root, Arg, Chained, Decl, DeclName, Fall, Kid, Name, OpArg,
@@ -179,24 +180,8 @@ impl<'a> P<'a> {
         loop {
             match self.t.get(j).map(|(t, _)| t) {
                 Some(Tok::P('.')) => j += 2,
-                Some(Tok::P('[')) => {
-                    let mut d = 0i32;
-                    loop {
-                        match self.t.get(j).map(|(t, _)| t) {
-                            Some(Tok::P('[')) => d += 1,
-                            Some(Tok::P(']')) => {
-                                d -= 1;
-                                if d == 0 {
-                                    j += 1;
-                                    break;
-                                }
-                            }
-                            Some(Tok::Nl) | None => return Some(j),
-                            _ => {}
-                        }
-                        j += 1;
-                    }
-                }
+                // an index unclosed on its line ends the reference there
+                Some(Tok::P('[')) => j = past_bracket(&self.t, j, Brackets::Square),
                 _ => return Some(j),
             }
         }

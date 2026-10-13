@@ -4,7 +4,7 @@ use super::P;
 use crate::model::EntKind;
 use crate::style::Classes;
 use crate::syntax::lexer::Tok;
-use crate::syntax::words::{over_chain, set_at, BLOCKS, ENERGY_WORDS};
+use crate::syntax::words::{self, over_chain, set_at, Brackets, BLOCKS, ENERGY_WORDS};
 use crate::syntax::{
     Arg, Block, BlockKind, BodyWord, Branch, Chained, ClaimOver, Component, CurveSpec, CurveTarget,
     Decl, DeclName, EdgesOf, DerivedDecl, Formal, InBlock, InstArg, InstVal, Instance, Membership,
@@ -282,18 +282,8 @@ impl<'a> P<'a> {
     /// Where the expression from here ends outside every bracket: at a closing bracket, the line's
     /// end, or (`at_cmp`) a `<` or `>`.
     pub(super) fn level_end(&self, at_cmp: bool) -> usize {
-        let mut depth = 0i32;
-        for (j, (t, _)) in self.t.iter().enumerate().skip(self.i) {
-            match t {
-                Tok::P('(') | Tok::P('[') | Tok::P('{') => depth += 1,
-                Tok::P(')') | Tok::P(']') | Tok::P('}') if depth == 0 => return j,
-                Tok::P(')') | Tok::P(']') | Tok::P('}') => depth -= 1,
-                Tok::P('<') | Tok::P('>') if depth == 0 && at_cmp => return j,
-                Tok::Nl => return j,
-                _ => {}
-            }
-        }
-        self.t.len()
+        let cmp = |t: &Tok| at_cmp && matches!(t, Tok::P('<' | '>'));
+        words::level_end(&self.t, self.i, self.t.len(), Brackets::All, cmp)
     }
 
     /// `view(cyl.body) in views.right` — a picture asked of a solid (§6.11).  The brackets are
@@ -1310,18 +1300,9 @@ impl<'a> P<'a> {
             self.i = checkpoint;
             self.errs.truncate(errors);
             let from = self.here().lo as usize;
-            let mut depth = 0i32;
-            while !self.done() {
-                match self.peek() {
-                    Some(Tok::P('(')) | Some(Tok::P('[')) => depth += 1,
-                    Some(Tok::P(')')) | Some(Tok::P(']')) if depth == 0 => break,
-                    Some(Tok::P(')')) | Some(Tok::P(']')) => depth -= 1,
-                    Some(Tok::P(',')) | Some(Tok::P('}')) if depth == 0 => break,
-                    Some(Tok::Nl) => break,
-                    _ => {}
-                }
-                self.i += 1;
-            }
+            let stop = |t: &Tok| matches!(t, Tok::P(',' | '}'));
+            let end = words::level_end(&self.t, self.i, self.t.len(), Brackets::Expr, stop);
+            self.i = end.max(self.i);
             InstVal::Expr(self.text_from(from).trim().to_string())
         };
         Some(InstArg { label, value, span: Span::new(lo, self.prev_hi()) })
