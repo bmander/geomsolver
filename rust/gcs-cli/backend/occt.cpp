@@ -580,9 +580,6 @@ int solvent_cad_revolve(Cad* cad,int face,const double* origin,const double* axi
 int solvent_cad_boolean(Cad* cad,int a,int b,int operation_kind) noexcept {
     SOLVENT_PROBE("solvent_cad_boolean");
     return guarded(cad,[&] {
-        // `SOLVENT_OCCT_FUZZY=VALUE` (mm): another fuzzy tolerance, for an oracle asking OCCT's
-        // Boolean at its own precision
-        const double fuzzy = std::getenv("SOLVENT_OCCT_FUZZY") ? std::atof(std::getenv("SOLVENT_OCCT_FUZZY")) : 1e-5;
         TopTools_ListOfShape objects,tools;
         objects.Append(cad->at(a)); tools.Append(cad->at(b));
         // `SOLVENT_DUMP_BOOLEAN=PREFIX`: each Boolean's operands written as BRep files, for a harness.
@@ -596,7 +593,7 @@ int solvent_cad_boolean(Cad* cad,int a,int b,int operation_kind) noexcept {
         if (operation_kind == 1) {
             BRepAlgoAPI_Cut operation;
             operation.SetArguments(objects); operation.SetTools(tools);
-            operation.SetFuzzyValue(fuzzy); operation.SetRunParallel(parallel_booleans()); operation.SetUseOBB(true);
+            operation.SetFuzzyValue(1e-5); operation.SetRunParallel(parallel_booleans()); operation.SetUseOBB(true);
             operation.Build();
             probe::boolean("body cut",operation);
             if (!operation.IsDone()) throw std::runtime_error("Boolean cut failed");
@@ -604,7 +601,7 @@ int solvent_cad_boolean(Cad* cad,int a,int b,int operation_kind) noexcept {
         } else if (operation_kind == 2) {
             BRepAlgoAPI_Common operation;
             operation.SetArguments(objects); operation.SetTools(tools);
-            operation.SetFuzzyValue(fuzzy); operation.SetRunParallel(parallel_booleans()); operation.SetUseOBB(true);
+            operation.SetFuzzyValue(1e-5); operation.SetRunParallel(parallel_booleans()); operation.SetUseOBB(true);
             operation.Build();
             probe::boolean("body bound",operation);
             if (!operation.IsDone()) throw std::runtime_error("Boolean intersection failed");
@@ -612,7 +609,7 @@ int solvent_cad_boolean(Cad* cad,int a,int b,int operation_kind) noexcept {
         } else {
             BRepAlgoAPI_Fuse operation;
             operation.SetArguments(objects); operation.SetTools(tools);
-            operation.SetFuzzyValue(fuzzy); operation.SetRunParallel(parallel_booleans()); operation.SetUseOBB(true);
+            operation.SetFuzzyValue(1e-5); operation.SetRunParallel(parallel_booleans()); operation.SetUseOBB(true);
             operation.Build();
             probe::boolean("body on",operation);
             if (!operation.IsDone()) throw std::runtime_error("Boolean union failed");
