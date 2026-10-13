@@ -209,6 +209,17 @@ impl EntKind {
         }
     }
 
+    /// What the source calls one of this kind's ends, by `ends()`'s index — `p1`, `start` — the
+    /// field's own name, so an `at:` word and a dotted boundary are spelled alike.  `None` for
+    /// an index that is no end of the kind.
+    pub fn end_name(self, slot: usize) -> Option<&'static str> {
+        let (en, ex) = self.ends()?;
+        if slot != en && slot != ex {
+            return None;
+        }
+        self.fields().iter().filter(|(_, f)| *f != Field::Scalar).nth(slot).map(|(n, _)| *n)
+    }
+
     /// The names a curve written over an entity of this kind reads its coordinates by, in
     /// **`Sketch::entity_params` order** — `c.center.x`, `c.center.y`, `c.r` for a circle.
     ///

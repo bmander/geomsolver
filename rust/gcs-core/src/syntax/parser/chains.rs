@@ -1,7 +1,7 @@
 //! Chain parsing, boundary threading, and relation desugaring.
 
 use super::P;
-use crate::constraints::{is_operator, Fixity};
+use crate::constraints::{is_operator, tangent_at, Fixity, Touch};
 use crate::model::{EntKind, Field};
 use crate::style::Classes;
 use crate::syntax::lexer::Tok;
@@ -995,8 +995,8 @@ impl<'a> P<'a> {
         }
     }
 
-    /// Lower a joint word for the operand kinds. Tangency depends on both kinds;
-    /// threaded joints also validate that their boundaries can meet.
+    /// Lower a joint word for the operand kinds.  A threaded `tangent` is the regular form the
+    /// core's table gives for the shared point (`constraints::tangent_at`), never chosen here.
     fn joint_relation(
         &mut self,
         word: &str,
@@ -1006,7 +1006,6 @@ impl<'a> P<'a> {
         right: (&Ref, Option<EntKind>),
         threaded: bool,
     ) -> Option<Relation> {
-        use EntKind::{Arc, Line};
         let (lref, lk) = left;
         let (rref, rk) = right;
         // A joint is the infix operator its word already is, written between two links instead
@@ -1041,58 +1040,47 @@ impl<'a> P<'a> {
         if !threaded {
             return written(word, vec![lref.clone(), rref.clone()], extra.to_vec());
         }
-        match (lk, rk) {
-            // the joint knows the shared point, so tangency is stated *at* it — the regular
-            // form, with `at:` read off the direction of travel
-            (Some(Line), Some(Arc)) if word == "tangent" => {
-                written("tangent", vec![rref.clone(), lref.clone()], end("start"))
+        if word == "tangent" {
+            // the joint knows the shared point — one link's exit, the next one's entry — so the
+            // tangency is stated *at* it, in the regular form the core's one table says
+            // (`constraints::tangent_at`).  A side that only names an element is a kind not
+            // known yet: the declared side names the point, and elaboration refuses a name of a
+            // kind the form does not take
+            let touch = |k: Option<EntKind>, exit: bool| Touch {
+                kind: k,
+                end: k.and_then(|k| k.ends()).map(|(en, ex)| if exit { ex } else { en }),
+            };
+            let ended = |k: Option<EntKind>| k.filter(|k| k.ends().is_some());
+            match tangent_at(touch(lk, true), touch(rk, false)) {
+                Some(t) => {
+                    let (x, y) = if t.swap { (rref, lref) } else { (lref, rref) };
+                    let args = match t.at {
+                        Some(w) => end(w),
+                        None => extra.to_vec(),
+                    };
+                    return written(t.word, vec![x.clone(), y.clone()], args);
+                }
+                // two arcs meeting at a corner already touch there, so `TangentCircleCircle`
+                // would be a row that is zero at every solution — a *tangency between names* is
+                // a real statement, but at a shared corner there is nothing left for it to say
+                None => {
+                    // a side with no ends threads nothing, which `thread` has said already
+                    let (Some(a), Some(b)) = (ended(lk), ended(rk)) else {
+                        return written(word, vec![lref.clone(), rref.clone()], extra.to_vec());
+                    };
+                    self.errs.push(SynErr {
+                        span: at,
+                        message: format!(
+                            "`tangent` does not join {} to {} at a corner: they already meet \
+                             there, and there is no regular form left to state",
+                            a.a(),
+                            b.a()
+                        ),
+                    });
+                    return None;
+                }
             }
-            (Some(Arc), Some(Line)) if word == "tangent" => {
-                written("tangent", vec![lref.clone(), rref.clone()], end("end"))
-            }
-            // a corner between a fresh element and one declared elsewhere: the declared side
-            // says which of its ends was threaded, and elaboration settles the pair once the
-            // name's kind is known — the `at:` selector is what keeps the statement the regular
-            // form there too, never the bare pair over a coincidence
-            (Some(Arc), None) if word == "tangent" => {
-                written("tangent", vec![lref.clone(), rref.clone()], end("end"))
-            }
-            (None, Some(Arc)) if word == "tangent" => {
-                written("tangent", vec![rref.clone(), lref.clone()], end("start"))
-            }
-            (Some(Line), None) if word == "tangent" => {
-                written("tangent", vec![lref.clone(), rref.clone()], end("p2"))
-            }
-            // the named side can only sensibly be an arc here (a line meeting a line tangent is
-            // collinear, and needs both declared to say so); `at: end` is the arc's exit, and a
-            // name of any other kind is refused where its kind becomes known
-            (None, Some(Line)) if word == "tangent" => {
-                written("tangent", vec![lref.clone(), rref.clone()], end("end"))
-            }
-            // two straight runs meeting tangent share a point and a direction: collinear
-            (Some(Line), Some(Line)) if word == "tangent" => {
-                written("parallel", vec![lref.clone(), rref.clone()], extra.to_vec())
-            }
-            // two arcs meeting at a corner already touch there, so `TangentCircleCircle` would
-            // be a row that is zero at every solution — a *tangency between names* is a real
-            // statement, but at a shared corner there is nothing left for it to say
-            (Some(a), Some(b))
-                if word == "tangent"
-                    && matches!(a, Arc | EntKind::Circle)
-                    && matches!(b, Arc | EntKind::Circle) =>
-            {
-                self.errs.push(SynErr {
-                    span: at,
-                    message: format!(
-                        "`tangent` does not join {} to {} at a corner: they already meet \
-                         there, and there is no regular form left to state",
-                        a.a(),
-                        b.a()
-                    ),
-                });
-                None
-            }
-            _ => written(word, vec![lref.clone(), rref.clone()], extra.to_vec()),
         }
+        written(word, vec![lref.clone(), rref.clone()], extra.to_vec())
     }
 }

@@ -633,6 +633,96 @@ pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option
     })
 }
 
+/// One side of a tangency at a point the drawing already holds (#5): what it is — `None` for a
+/// name whose kind elaboration has yet to say — and which of its ends the point is, as
+/// `EntKind::ends` indexes them; `None` where the point lies on it but is none of its ends.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Touch {
+    pub kind: Option<EntKind>,
+    pub end: Option<usize>,
+}
+
+/// A tangency stated at its contact: `word` between the two sides — in the order they were
+/// asked, or `swap`ped — with `at:` naming an end **of the operand written first**.  The two
+/// At-forms name the contact from opposite sides (`arc tangent line at: end` the arc's end,
+/// `line tangent circle at: p2` the line's), and that rule is what lets one entry say both.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TangentAt {
+    pub word: &'static str,
+    pub swap: bool,
+    pub at: Option<&'static str>,
+}
+
+impl TangentAt {
+    /// The constraint it settles to between sides of kinds `a` and `b`, by `infix_op` over the
+    /// operands as written — so the entry says a word and a selector, never a second name.
+    pub fn kind(self, a: EntKind, b: EntKind) -> Option<CKind> {
+        let (x, y) = if self.swap { (b, a) } else { (a, b) };
+        let at = self.at;
+        infix_op(self.word, x, y, &|k| if k == "at" { at.map(str::to_string) } else { None })
+    }
+}
+
+/// **Which regular tangency two things touching at a held point mean** (#5).  A tangency whose
+/// contact the drawing already holds must be stated *at* that point, or it is a double root —
+/// rank-deficient at every solution — and this is the one table saying how.  A chain knows the
+/// contact by threading (one link's exit, the next one's entry; `syntax`'s `joint_relation`)
+/// and the app by which end it finds already there (`commands.ts::cTangent`, through the
+/// registry's `tangentAt`), so it takes both sides and either may name the point.
+///
+/// An arc's own end is read first (`TangentArcLine`), then a line's (`TangentLineCircleAt`,
+/// against a circle or an arc's rim); two lines meeting tangent are collinear (`parallel`).
+/// Two round things already touch where they meet, so there is no regular form left: `None`,
+/// as for every pair it does not name — the caller says why in its own terms.
+pub fn tangent_at(a: Touch, b: Touch) -> Option<TangentAt> {
+    use EntKind::{Arc, Circle, Line};
+    /// How a side can name the contact by its own end: matched over every kind, so a kind
+    /// given ends (`EntKind::ends`) stops the build here as well and is given its form.
+    enum End {
+        Line(&'static str),
+        Arc(&'static str),
+    }
+    fn by_end(t: Touch) -> Option<End> {
+        let k = t.kind?;
+        let w = k.end_name(t.end?)?;
+        Some(match k {
+            EntKind::Line => End::Line(w),
+            EntKind::Arc => End::Arc(w),
+            EntKind::Point
+            | EntKind::Circle
+            | EntKind::Axis
+            | EntKind::Spline
+            | EntKind::Plane
+            | EntKind::Curve
+            | EntKind::Face
+            | EntKind::Solid
+            | EntKind::Surface
+            | EntKind::Motion
+            | EntKind::Envelope
+            | EntKind::Patch
+            | EntKind::Seam
+            | EntKind::Vertex
+            | EntKind::Edge => return None,
+        })
+    }
+    // a line's other side, or a side whose kind is not known yet (elaboration refuses it then)
+    let straight = |t: Touch| matches!(t.kind, None | Some(Line));
+    // what a line's end can be tangent against: a rim, or a side not known yet
+    let round = |t: Touch| matches!(t.kind, None | Some(Circle | Arc));
+    let at = |swap, w| Some(TangentAt { word: "tangent", swap, at: Some(w) });
+    match (by_end(a), by_end(b)) {
+        // two straight runs meeting tangent share a point and a direction: collinear
+        (Some(_), _) | (_, Some(_)) if a.kind == Some(Line) && b.kind == Some(Line) => {
+            Some(TangentAt { word: "parallel", swap: false, at: None })
+        }
+        (Some(End::Arc(w)), _) if straight(b) => at(false, w),
+        (_, Some(End::Arc(w))) if straight(a) => at(true, w),
+        (Some(End::Line(w)), _) if round(b) => at(false, w),
+        (_, Some(End::Line(w))) if round(a) => at(true, w),
+        _ => None,
+    }
+}
+
 /// **Whether the language itself has a word of this fixity** (§9.9): what a relation word may
 /// not be defined as.  Read off the tables that settle a statement — `infix_op` and `prefix_op`
 /// over every pair of kinds, the gauges, the calls and the words about solids — so a word the

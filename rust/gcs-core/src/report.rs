@@ -10,14 +10,14 @@
 use crate::fmath::Det;
 use crate::callout::{self, Callout, Seg};
 use crate::cgraph::{ConstraintGraph, El, ElKind};
-use crate::constraints::{Arg, CKind, Constraint, ALL_KINDS};
+use crate::constraints::{tangent_at, Arg, CKind, Constraint, Touch, ALL_KINDS};
 use crate::decompose::{Plan, PlanResult};
 use crate::diagnose::{summary as diag_summary, Diagnosis};
 use crate::homotopy::Alternative;
 use crate::io::describe;
 use crate::json::{object, Json};
 use crate::kernels::KERNELS;
-use crate::model::{EntRef, Sketch};
+use crate::model::{EntKind, EntRef, Sketch};
 use crate::solve::SolveResult;
 use crate::witness::WitnessReport;
 
@@ -835,9 +835,44 @@ pub fn registry_json() -> Json {
             ])
         })
         .collect();
+    // which regular tangency two things touching at a held point mean (#5): every entry of
+    // `constraints::tangent_at` between kinds, each side's end by its word (`null` its rim), so
+    // a front end that finds a contact asks the core's table instead of keeping a copy of it
+    let mut forms = Vec::new();
+    let sides = |k: EntKind| {
+        let mut ends = vec![None];
+        if let Some((en, ex)) = k.ends() {
+            ends.extend([Some(en), Some(ex)]);
+        }
+        ends.into_iter().map(move |end| Touch { kind: Some(k), end })
+    };
+    for a in EntKind::ALL.iter().flat_map(|&k| sides(k)) {
+        for b in EntKind::ALL.iter().flat_map(|&k| sides(k)) {
+            if a.end.is_none() && b.end.is_none() {
+                continue;
+            }
+            let (Some(ka), Some(kb)) = (a.kind, b.kind) else { continue };
+            let Some(t) = tangent_at(a, b) else { continue };
+            let Some(kind) = t.kind(ka, kb) else { continue };
+            let end = |k: EntKind, e: Option<usize>| match e.and_then(|e| k.end_name(e)) {
+                Some(w) => Json::Str(w.to_string()),
+                None => Json::Null,
+            };
+            forms.push(object([
+                ("a", ka.as_str().into()),
+                ("aEnd", end(ka, a.end)),
+                ("b", kb.as_str().into()),
+                ("bEnd", end(kb, b.end)),
+                ("type", kind.name().into()),
+                ("swap", t.swap.into()),
+                ("at", t.at.map(|w| Json::Str(w.to_string())).unwrap_or(Json::Null)),
+            ]));
+        }
+    }
     object([
         ("types", Json::Arr(types)),
         ("kernels", Json::Arr(kernels)),
+        ("tangentAt", Json::Arr(forms)),
         // what a front end needs to know about the curves without knowing the degree: how many
         // control points make one, so its tool and its messages cannot drift from `spline_with`
         ("curve", object([

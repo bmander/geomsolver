@@ -58,9 +58,24 @@ export interface CurveInfo {
   minCtrl: number;
 }
 
+/** One entry of the core's tangency table (`constraints::tangent_at`, #5): two kinds touching
+ *  at a point the drawing already holds — each side's end by its word, `null` where the point
+ *  is on it but none of its ends — and the regular constraint that says so, its operands
+ *  `swap`ped or not, `at` naming an end of the one written first. */
+interface TangentAtEntry {
+  a: string;
+  aEnd: string | null;
+  b: string;
+  bEnd: string | null;
+  type: string;
+  swap: boolean;
+  at: string | null;
+}
+
 interface Registry {
   types: TypeEntry[];
   kernels: KernelEntry[];
+  tangentAt: TangentAtEntry[];
   curve: CurveInfo;
 }
 
@@ -473,6 +488,20 @@ export function type(name: string): ConstraintCtor {
 export function build(name: string, args: unknown[]): Constraint {
   const Cls = type(name) as unknown as new (...a: unknown[]) => Constraint;
   return new Cls(...args);
+}
+
+/** A tangency between `a` and `b` stated *at* the point they already share — `aEnd`/`bEnd` the
+ *  end of each that point is, `null` where it is on its rim — or `null` where there is no
+ *  regular form.  The form is the core's table, asked rather than kept here: unstated at its
+ *  contact, a held point on the rim plus the bare tangency is a double root. */
+export function tangentAt(
+  a: Primitive, aEnd: string | null, b: Primitive, bEnd: string | null,
+): Constraint | null {
+  const e = REGISTRY().tangentAt.find((t) =>
+    t.a === a.kind && t.aEnd === aEnd && t.b === b.kind && t.bEnd === bEnd);
+  if (!e) return null;
+  const [x, y] = e.swap ? [b, a] : [a, b];
+  return build(e.type, e.at === null ? [x, y] : [x, y, e.at]);
 }
 
 /** DragTarget's mutable target — the one write the hot path performs. */

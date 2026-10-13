@@ -1065,15 +1065,26 @@ fn a_corner_onto_existing_geometry() {
         .expect("the at-form");
     assert!(format!("{:?}", c.args).contains("p2"), "tangent at the line's exit: {:?}", c.args);
 
-    // and out of the arc the other way: the arc exits at its end, so the tangency is stated there
+    // and out of the arc the other way: the declared line names where they meet, its entry,
+    // so the tangency is stated at that end of it — whatever the name turns out to be
     let e = read(&format!("{base}k -> tangent (t := line(k.end, p3))\n"));
     let c = e
         .sketch
         .user_constraints()
         .into_iter()
-        .find(|c| c.kind == CKind::TangentArcLine)
+        .find(|c| c.kind == CKind::TangentLineCircleAt)
         .expect("the at-form");
-    assert!(format!("{:?}", c.args).contains("end"), "tangent at the arc's exit: {:?}", c.args);
+    assert!(format!("{:?}", c.args).contains("p1"), "tangent at the line's entry: {:?}", c.args);
+    assert_eq!(c.contact_point(&e.sketch), Some(e.sketch.arcs[0].end as usize));
+
+    // the same corner onto a circle, which has no end to name: the line's end is the contact
+    let e = read(&format!(
+        "{PTS}q := circle(center: c) hint(r: 10)\nq -> tangent (t := line(p1, p3))\n"
+    ));
+    assert!(
+        e.sketch.user_constraints().iter().any(|c| c.kind == CKind::TangentLineCircleAt),
+        "a line leaving a circle tangent is stated at the line's end"
+    );
 
     // a corner whose declared side does not say where they meet has nothing to thread
     refuses(
@@ -1496,3 +1507,111 @@ in std.front {
 p := point hint((40, 40))
 }
 ";
+
+/// **One table says which regular tangency a contact means** (#5): `constraints::tangent_at`,
+/// asked by the chain's joints and — through the registry's `tangentAt` — by the app's Tangent
+/// button.  An arc's own end is read first, then a line's (against a circle or an arc's rim, so
+/// a line end held on an arc's rim is no double root either); two lines are collinear; two
+/// round things have no form left.  The `at:` word always names an end of the operand written
+/// first, and every entry settles, through `infix_op`, to the kind whose words take it.
+#[test]
+fn one_table_names_the_regular_tangency() {
+    use gcs_core::constraints::{tangent_at, TangentAt, Touch};
+    use gcs_core::model::EntKind::{self, Arc, Circle, Line, Spline};
+    let side = |k: EntKind, end: Option<&str>| Touch {
+        kind: Some(k),
+        end: end.map(|w| {
+            let (en, ex) = k.ends().unwrap();
+            [en, ex].into_iter().find(|&e| k.end_name(e) == Some(w)).unwrap()
+        }),
+    };
+    let form = |a: Touch, b: Touch| {
+        tangent_at(a, b).map(|t| (t.kind(a.kind.unwrap(), b.kind.unwrap()).unwrap(), t.swap, t.at))
+    };
+    // a line into an arc's start: the arc's end names it, the arc written first
+    assert_eq!(
+        form(side(Line, Some("p2")), side(Arc, Some("start"))),
+        Some((CKind::TangentArcLine, true, Some("start")))
+    );
+    assert_eq!(
+        form(side(Arc, Some("end")), side(Line, Some("p1"))),
+        Some((CKind::TangentArcLine, false, Some("end")))
+    );
+    // a line's end on a rim: the line's end names it
+    for round in [Circle, Arc] {
+        assert_eq!(
+            form(side(Line, Some("p1")), side(round, None)),
+            Some((CKind::TangentLineCircleAt, false, Some("p1")))
+        );
+        assert_eq!(
+            form(side(round, None), side(Line, Some("p2"))),
+            Some((CKind::TangentLineCircleAt, true, Some("p2")))
+        );
+    }
+    assert_eq!(
+        tangent_at(side(Line, Some("p2")), side(Line, Some("p1"))),
+        Some(TangentAt { word: "parallel", swap: false, at: None })
+    );
+    // no regular form: two round things, a rim against a rim, a spline (its contact owns a
+    // parameter, a form of its own)
+    assert_eq!(tangent_at(side(Arc, Some("end")), side(Arc, Some("start"))), None);
+    assert_eq!(tangent_at(side(Arc, Some("end")), side(Circle, None)), None);
+    assert_eq!(tangent_at(side(Line, None), side(Circle, None)), None);
+    assert_eq!(tangent_at(side(Line, Some("p1")), side(Spline, None)), None);
+    // a side not known yet takes the form its declared neighbour names
+    let unknown = Touch { kind: None, end: None };
+    assert_eq!(
+        tangent_at(side(Arc, Some("end")), unknown),
+        Some(TangentAt { word: "tangent", swap: false, at: Some("end") })
+    );
+    assert_eq!(
+        tangent_at(unknown, side(Line, Some("p1"))),
+        Some(TangentAt { word: "tangent", swap: true, at: Some("p1") })
+    );
+
+    // and the registry publishes exactly these entries, by word, for a front end to ask
+    let reg = gcs_core::report::registry_json();
+    let entries = reg.get("tangentAt").expect("published").arr();
+    let find = |a: &str, ae: Option<&str>, b: &str, be: Option<&str>| {
+        let word = |j: Option<&gcs_core::json::Json>| match j {
+            Some(gcs_core::json::Json::Str(s)) => Some(s.clone()),
+            _ => None,
+        };
+        entries
+            .iter()
+            .find(|t| {
+                word(t.get("a")).as_deref() == Some(a)
+                    && word(t.get("aEnd")).as_deref() == ae
+                    && word(t.get("b")).as_deref() == Some(b)
+                    && word(t.get("bEnd")).as_deref() == be
+            })
+            .map(|t| (word(t.get("type")).unwrap(), word(t.get("at"))))
+    };
+    assert_eq!(
+        find("arc", Some("start"), "line", Some("p1")),
+        Some(("TangentArcLine".to_string(), Some("start".to_string())))
+    );
+    assert_eq!(
+        find("line", Some("p2"), "circle", None),
+        Some(("TangentLineCircleAt".to_string(), Some("p2".to_string())))
+    );
+    assert_eq!(
+        find("arc", None, "line", Some("p1")),
+        Some(("TangentLineCircleAt".to_string(), Some("p1".to_string())))
+    );
+    assert_eq!(find("arc", Some("end"), "arc", Some("start")), None);
+    // every entry's selector is one its kind's `at` slot takes
+    for t in entries {
+        let kind = CKind::from_name(&word_of(t.get("type"))).unwrap();
+        if let Some(gcs_core::json::Json::Str(w)) = t.get("at") {
+            let slot = kind.spec().iter().position(|(n, _)| *n == "at").unwrap();
+            assert!(kind.words(slot).unwrap().contains(&w.as_str()), "{kind:?} at: {w}");
+        }
+    }
+    fn word_of(j: Option<&gcs_core::json::Json>) -> String {
+        match j {
+            Some(gcs_core::json::Json::Str(s)) => s.clone(),
+            _ => String::new(),
+        }
+    }
+}
