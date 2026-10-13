@@ -30,7 +30,7 @@ fn defines(p: &Program, k: usize, name: &str) -> Option<bool> {
         return Some(true);
     }
     let other = p.component_in(Some(k), name).is_some()
-        || p.interfaces.iter().any(|f| f.module == Some(k) && f.name.text == name)
+        || p.interface_in(Some(k), name).is_some()
         || p.modules[k].root.body.iter().any(|st| match &st.kind {
             StmtKind::Param(d) => d.name.text == name,
             StmtKind::Group(g) => g.name.text == name,

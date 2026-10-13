@@ -702,19 +702,20 @@ of 0°/180° is E040 by value (`program/relations.rs`). `tests/axis.rs` is the g
 
 **Interfaces (§8.1, 0.84):** `interface Gear { O: point, M: point, pitch: Length }` at a file's
 top level (`syntax::Interface`, `Program::interfaces`, `parser/statements.rs::interface`; linked
-from modules as words are, `resolve_interface` as `resolve_component`). A formal typed by one
-(`gear: Gear`) is `Ty::Group` with `Formal::interface` set, so every group path reads it.
-`flatten/interfaces.rs` resolves it into a `Shape` (`Walk::formal_shape`) and holds it in three
-places: `bind` (`interface_numbers`: each number of its member's dimension, only the declared ones
-copied into the body's `vals`; `handed_on`: an actual read through the caller's own interface
-must have been promised the members, `lacks`), `resolve` (`conform`: geometry, sets and groups
-present, public, of their sort; an entity's kind left to `relations::member_kinds` via
-`Expansion::kinds`), and the body (`Scope::interfaces`; `lookup`/`missing_ref`, `settle_text`
-and `out_of_reach` refuse a member the interface does not declare, E101, the relation not
-stated). A call refused (E103) puts its instance in `Walk::nonconforming`: its relations are not
-stated and its declarations' faults not said again. Text faults are `interfaces::check`
-(E071/E001/E101/E003). `hypoid.sv`'s `Gear`, `Trace`, `BlankDesign`; `tests/interfaces.rs` is
-the gate.
+from modules as words are; `resolve_interface` shares `resolve_component`'s `resolve_named`). A
+formal typed by one (`gear: Gear`) is `Ty::Group` with `Formal::interface` set.
+`flatten/interfaces.rs` resolves every interface once per walk (`shapes`, a cycle read as an
+untyped group) and `bind` makes the formal **a group of its own** (`Walk::typed`: its key in
+`names`/`group_names`/`typed`, each declared entity, set or group member an alias of the
+argument's, a nested interface a group again; the numbers by `interface_numbers`, each of its
+dimension), the whole argument kept under `{key}#given` for `conform` (from `resolve`: members
+present, sets and groups of their sort; an entity's kind by `relations::kinds` via
+`Expansion::kinds`, as a `path` formal's). So an undeclared member is no name: `lookup` refuses a
+field left past a typed group (`Scope::typed`, given with `access`), `missing_ref` names the
+interface, and nothing handed on carries more. A member missing at the call is `failed`, its
+reads silenced (`read_through`); a relation reading one is not stated. Text faults are
+`interfaces::check` (E071/E001/E101/E003). `hypoid.sv`'s `Gear`, `Trace`, `BlankDesign`;
+`tests/interfaces.rs` is the gate.
 
 **Closed components:** model dependencies enter through arguments, standard datums included.
 Definitions and built-ins stay callable. A component scope holds only its formals and

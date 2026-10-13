@@ -244,7 +244,7 @@ fn parse_at(src: &str, base: usize, first_id: u32, limits: ParseLimits) -> (Prog
                 Some(f) => interfaces.push(f),
                 None => {
                     st.i = at;
-                    st.skip_braced();
+                    st.skip_block();
                     st.resync();
                 }
             }

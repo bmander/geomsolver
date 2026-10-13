@@ -614,10 +614,10 @@ component Bar(layout: Layout) {
 A formal typed by one (`layout: Layout`) is a group formal the call must give **every member, of
 its type** — a number of the member's dimension, an entity of its kind, a set, a group of the
 nested shape — or **E103** at the argument; whatever else the group or instance carries is
-allowed, and nothing says it is a `Layout` but having the members. The body reads through it
-**only what the interface declares**: `layout.width` is **E101** where it is read, as is handing
-it on (`Pin(layout.width)`), or handing `layout` to a formal typed by an interface asking for
-more than `Layout` declares. Handed to a plain `group` formal it is any group. A module exports
+allowed, and nothing says it is a `Layout` but having the members. The formal is a group of its
+own **holding only what the interface declares**: `layout.width` is **E101** where it is read, as
+is handing it on (`Pin(layout.width)`), and `layout` handed on whole holds no more, whatever the
+formal it is handed to. A module exports
 its interfaces as it does its components (`spiral.Gear`, `use spiral (Gear)`). The spiral bevel's
 steps read one another so (`gear: Gear, trace: Trace` in `spiral_bevel/hypoid.sv`).
 

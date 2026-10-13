@@ -27,20 +27,18 @@ struct Def {
 }
 
 /// Why a name a text reads is out of this component's reach — a document name it must be
-/// handed as an argument, or a group member the argument does not have — or `None`.  Asked of a
-/// dimension's text (`settle_text`) and of a pin to a name (`t == s`) alike.
-fn out_of_reach(name: &str, vals: &BTreeMap<String, Aff>, scope: &Scope) -> Option<String> {
+/// handed as an argument (E103), or a group member the argument does not have, or its
+/// interface does not declare (E101) — or `None`.  Asked of a dimension's text (`settle_text`)
+/// and of a pin to a name (`t == s`) alike.
+fn out_of_reach(name: &str, vals: &BTreeMap<String, Aff>, scope: &Scope) -> Option<(Code, String)> {
     if vals.contains_key(name) {
         return None;
     }
     if scope.forbidden.contains(name) {
-        return Some(format!("`{name}` is outside this component; pass it as an argument"));
-    }
-    if let Some((shape, member)) = super::interfaces::undeclared_name(name, scope) {
-        return Some(super::resolve::undeclared_text(name, &shape, &member));
+        return Some((Code::E103, format!("`{name}` is outside this component; pass it as an argument")));
     }
     if name.split_once('.').is_some_and(|(head, _)| scope.groups.contains(head)) {
-        return Some(format!("no numeric member `{name}` in the group argument"));
+        return Some((Code::E101, format!("no numeric member `{name}` in the group argument")));
     }
     None
 }
@@ -60,7 +58,7 @@ pub(super) fn condition(
     for name in c.deps() {
         match env.get(&name).map(|a| a.free.as_deref()) {
             None => {
-                let why = out_of_reach(&name, env, scope).unwrap_or_else(|| {
+                let why = out_of_reach(&name, env, scope).map(|(_, why)| why).unwrap_or_else(|| {
                     format!("`{name}` is not a number here — nothing in scope gives it one")
                 });
                 return Err((Code::E101, why));
@@ -447,15 +445,8 @@ impl<'a> Walk<'a> {
     ) -> Result<String, (Code, String)> {
         let reads: BTreeSet<String> =
             expr::parse_in(text, self.units).map(|p| p.body.deps()).unwrap_or_default();
-        // a number an interface does not declare is no name in the body it types (§8.1 [0.84])
-        if let Some(e) = reads.iter().find_map(|name| {
-            let (shape, member) = super::interfaces::undeclared_name(name, scope)?;
-            Some(super::resolve::undeclared_text(name, &shape, &member))
-        }) {
-            return Err((Code::E101, e));
-        }
         if let Some(e) = reads.iter().find_map(|name| out_of_reach(name, vals, scope)) {
-            return Err((Code::E103, e));
+            return Err(e);
         }
         if let Some(name) = reads.iter().find(|n| self.undeclared(n, vals, scope)) {
             return Err((Code::E101, undefined(name)));
@@ -498,9 +489,13 @@ impl<'a> Walk<'a> {
         vals: &BTreeMap<String, Aff>,
         scope: &Scope,
     ) {
-        self.note_dim_reads(text, span, vals, scope);
+        // what it reads is judged once names are known only where the text settles: one it
+        // cannot is said here, once
         match self.settle_text(text, vals, scope) {
-            Ok(t) => *text = t,
+            Ok(t) => {
+                self.note_dim_reads(text, span, vals, scope);
+                *text = t;
+            }
             Err((code, e)) => {
                 if code == Code::E101 {
                     self.refused.push(span);
@@ -519,10 +514,7 @@ impl<'a> Walk<'a> {
         }
         let Ok(p) = expr::parse_in(text, self.units) else { return };
         for name in p.body.deps() {
-            // one an interface does not declare is said where the text is settled
-            if name.contains('.') && !vals.contains_key(&name)
-                && super::interfaces::undeclared_name(&name, scope).is_none()
-            {
+            if name.contains('.') && !vals.contains_key(&name) {
                 self.dim_reads.push((name, span, scope.clone()));
             }
         }

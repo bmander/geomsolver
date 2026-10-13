@@ -140,7 +140,7 @@ in std.front {{
     // the instance has `hidden`, but the interface does not say so
     said(&doc("gear.hidden distance(5mm) C"), Code::E101, &["`gear.hidden`", "`Cone` does not declare"]);
     // nor may a number be read past what it declares, nor a member handed on
-    said(&doc("gear.O distance(gear.pitch) C"), Code::E101, &["`gear.pitch`", "`Cone` does not declare"]);
+    said(&doc("gear.O distance(gear.pitch) C"), Code::E101, &["no numeric member `gear.pitch`"]);
     let handed = format!("component Pin(p: point) {{ }}\n{}", doc("Pin(gear.hidden)"));
     said(&handed, Code::E101, &["`gear.hidden`"]);
     // a field of a declared member is the member's own
@@ -173,7 +173,7 @@ in std.front {{
     // a group given where an interface asks for a nested one, and the body reading past it
     let past = doc("{length: 12mm, width: 3mm}").replace("d.at distance(d.size.length) tip",
         "d.at distance(d.size.width) tip");
-    said(&past, Code::E101, &["`d.size.width`", "`Size` does not declare"]);
+    said(&past, Code::E101, &["no numeric member `d.size.width`"]);
 }
 
 #[test]
@@ -188,12 +188,15 @@ in std.front {{
 }}
 ");
     assert!(build(&doc("module: Length")).ok());
-    // the instance has `hidden`, but `Cone` does not promise it
-    said(&doc("hidden: point"), Code::E103, &["`gear` is a `Cone`", "declares no `hidden`"]);
-    said(&doc("module: Angle"), Code::E103, &["declares `module` a number (Length)", "Angle"]);
-    // an untyped group formal reads what it is given, as any group formal does
-    let open = doc("module: Length").replace("component Inner(g: Pitched)", "component Inner(g: group)");
-    assert!(build(&open).ok());
+    // the instance has `hidden`, but `Cone` does not promise it: `gear` holds no such member
+    said(&doc("hidden: point"), Code::E103, &["`gear` has no `hidden`", "`Pitched` asks for"]);
+    said(&doc("module: Angle"), Code::E103, &["`g.module` is Angle"]);
+    // nor does it hand an untyped group formal more than it holds
+    let open = doc("module: Length").replace("component Inner(g: Pitched) { }",
+        "component Inner(g: group) { q := point\nq coincident g.O }");
+    assert!(build(&open).ok(), "{:?}", build(&open).diags);
+    let past = open.replace("q coincident g.O", "q coincident g.hidden");
+    assert!(!build(&past).ok());
 }
 
 #[test]
@@ -231,7 +234,7 @@ in std.front {
   Use(s)
 }
 ";
-    said(src, Code::E103, &["`s.b` is private"]);
+    said(src, Code::E101, &["`s.b` names private member"]);
 }
 
 #[test]

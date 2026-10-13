@@ -219,28 +219,21 @@ impl<'a> Walk<'a> {
                 (ty @ (Ty::Group | Ty::Set), InstVal::Ref(r)) => {
                     let actual = written(r);
                     let key = formal_name(&prefix, &inst.name.text, &f.name.text);
-                    self.aliases.push((key.clone(), r.clone(), scope.clone()));
-                    self.group_bindings.push((key.clone(), a.span, *ty));
-                    // typed by an interface (§8.1 [0.84]): the numbers it declares, each of its
-                    // dimension, and no others; the rest of it once every name is known
+                    // typed by an interface (§8.1 [0.84]): a group of its own holding what the
+                    // interface declares, the whole argument under a key no source writes, for
+                    // what it asks of it to be judged once every name is known
                     if let Some(shape) = self.formal_shape(comp, f) {
-                        // what the caller's own interface promised first: past it, the rest
-                        // is not said again
-                        let promised = self.handed_on(&shape, r, scope, a.span);
-                        let numbers = self.interface_numbers(&shape, &actual, &f.name.text, vals,
-                                                             &mut sub, a.span, promised, 0);
-                        if !(promised && numbers) {
-                            self.nonconforming.insert(format!("{prefix}{}.", inst.name.text));
-                        }
-                        self.interface_bindings.push((key, a.span, shape, actual));
+                        let given = format!("{key}#given");
+                        self.aliases.push((given.clone(), r.clone(), scope.clone()));
+                        self.group_bindings.push((given.clone(), a.span, *ty));
+                        self.typed(&shape, &key, r, scope);
+                        self.interface_numbers(&shape, &actual, &f.name.text, vals, &mut sub, a.span);
+                        self.interface_bindings.push((given, a.span, shape, actual));
                         continue;
                     }
-                    let start = format!("{actual}.");
-                    for (name, value) in vals {
-                        if let Some(member) = name.strip_prefix(&start) {
-                            sub.insert(format!("{}.{member}", f.name.text), value.clone());
-                        }
-                    }
+                    self.aliases.push((key.clone(), r.clone(), scope.clone()));
+                    self.group_bindings.push((key, a.span, *ty));
+                    super::copy_members(vals, &actual, &f.name.text, &mut sub);
                 }
                 (Ty::Group | Ty::Set | Ty::Ent(_) | Ty::Path, InstVal::Hint(..)) => self.err(Code::E103, a.span,
                     format!("`{}` is not a number, so there is nothing to seed", f.name.text)),

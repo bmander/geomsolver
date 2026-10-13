@@ -8,14 +8,13 @@ each member written as a formal is, `name: type`, separated by commas or line br
 number type, an entity kind, `path`, `set`, `group` or another interface. A formal typed by one
 (`gear: Gear`) is a `group` formal (§8.1) the call must give every member to, each of its type —
 a number of the member's dimension, an entity of its kind, a set, a group of the nested
-interface's shape — whatever else the group or instance given carries; a member missing, private
-or of another type is **E103** at the argument. The body reads through the formal only what the
-interface declares: a member it does not is **E101** where it is read, as is handing it on. So
-what a component relies on its argument for is written where the component is, not found by
-reading its body. Structural, as everything in the language is: an instance or a group is a
-`Gear` by having the members, never by saying so. A formal typed by an interface handed on to
-another is held to its own interface's members (a body passes on only what it was promised); to
-an untyped `group` formal it is read as any group is. A module exports its interfaces as it
+interface's shape — whatever else the group or instance given carries; a member missing or of
+another type is **E103** at the argument, one private to the instance given **E101**. The formal
+is a group of its own holding only what the interface declares: a member it does not is no name
+in the body, **E101** where it is read, as is handing it on, and the formal handed on whole holds
+no more, to a typed formal or a plain `group` one. So what a component relies on its argument for
+is written where the component is, not found by reading its body. Structural, as everything in
+the language is: an instance or a group is a `Gear` by having the members, never by saying so. A module exports its interfaces as it
 does its components (`spiral.Gear`, or `use spiral (Gear)`). An interface defined twice in a
 file, or over a component of the file, is **E071**; a member twice **E001**; a `Side` member
 **E103** (a group holds no side); a type naming no interface **E101**; one holding itself
@@ -2292,19 +2291,18 @@ members are separated by commas or line breaks, and each type is one a formal ma
 interface is a `group` formal in every respect but two. **The call gives every member, each of
 its type**: a number of the member's dimension (a bare number fits, as in any slot, §3.3), an
 entity of its kind (`path`: any of a path's kinds), a set, a group or an instance — of the nested
-interface's shape where one is named; a member missing, private to the instance given, or of
-another type is **E103** at the argument, and the instance is then not stated, so the fault is
-said once. Whatever else the actual carries is allowed. **The body reads only what the interface
-declares**: `layout.size.width` above is **E101** where it is written, a reference, a number in a
-dimension or an argument handed on alike; a declared member's own fields (`layout.ax.p2`) are its
-own. The checks are structural: an instance conforms by having the members, and nothing says
-which interfaces it is one of.
+interface's shape where one is named; a member missing or of another type is **E103** at the
+argument, one private to the instance given **E101** there, and the body's reads of a member
+missing are not said again. Whatever else the actual carries is allowed. **The formal is a group
+of its own, holding only what the interface declares**: `layout.size.width` above is **E101**
+where it is written, a reference, a number in a dimension or an argument handed on alike; a
+declared member's own fields (`layout.ax.p2`) are its own. The checks are structural: an instance
+conforms by having the members, and nothing says which interfaces it is one of.
 
-A formal typed by an interface, or a member of one typed by another, handed to a formal typed
-by a third is held to what its own interface declares, each member of the third declared there of
-the same type: a body may pass on only what it was promised, so the interface is all a reader of
-the component need know of what it needs. Handed to an untyped `group` formal it is any group,
-read as that body reads it. An interface names no solve boundary and makes nothing.
+Handed on whole, the formal is that group and no more: to a formal typed by another interface it
+has only the members its own declares, and to an untyped `group` formal the same — a body may pass
+on only what it was promised, so the interface is all a reader of the component need know of what
+it needs. An interface names no solve boundary and makes nothing.
 
 A module exports its interfaces as it does its components: read by the module's full path
 (`spiral.Gear`) or imported bare (`use spiral (Gear)`, §14.4). Two interfaces of one name in one
@@ -3056,7 +3054,7 @@ The numerical method is unspecified. Whatever the method, a conforming solver:
 | E084 | a section whose cutting plane is not parallel to the view it is drawn in (§6.11) **[0.18]** |
 | E101 | a name nothing in scope declares, or a member a scope cannot reach (§3.3, §5, §13.3) **[0.41]**; **[0.84]** a member an interface does not declare, read through a formal it types, and a type naming no interface (§8.1) |
 | E102 | **[0.48]** a relation word nothing defines where it is written (§9.9), naming the import that would where a module defines it |
-| E103 | a shape or a number the model cannot build: more children than the kind has slots (§6.1), an input whose value is not its type (§6.3), a seed reading a scalar that is not there (§6.4), a curve the model cannot trace (§6.5), an extent of the wrong dimension (§6.9), iteration over what is not a named chain (§12.8), **[0.84]** a group or an instance given where an interface asks for a member it lacks, holds privately or holds of another type, and an interface's `Side` member (§8.1) |
+| E103 | a shape or a number the model cannot build: more children than the kind has slots (§6.1), an input whose value is not its type (§6.3), a seed reading a scalar that is not there (§6.4), a curve the model cannot trace (§6.5), an extent of the wrong dimension (§6.9), iteration over what is not a named chain (§12.8), **[0.84]** a group or an instance given where an interface asks for a member it lacks or holds of another type, and an interface's `Side` member (§8.1) |
 | E105 | a `fix` of a number the entity does not have (§13) **[0.34]** |
 | E107 | a measurement of the solved drawing where a number is needed before the solve (§6.14) **[0.27]** |
 

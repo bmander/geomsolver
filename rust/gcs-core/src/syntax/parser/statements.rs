@@ -79,7 +79,7 @@ impl<'a> P<'a> {
             }
             "interface" => {
                 self.fail("an `interface` stands at the top of a file, not inside a body");
-                self.skip_braced();
+                self.skip_block();
                 None
             }
             "preview" => {
@@ -521,21 +521,23 @@ impl<'a> P<'a> {
     /// A formal's type, or the interface it names (§8.1 [0.84]): a type word, else a name —
     /// dotted for a module's, `spiral.Gear` — which makes it a `group` formal typed by that
     /// interface.  Whether the name is one is the flattener's to say, once modules are linked.
-    pub(super) fn formal_or_interface(&mut self) -> Option<(Ty, Option<Name>)> {
-        let lo = self.here().lo as usize;
+    fn formal_or_interface(&mut self) -> Option<(Ty, Option<Name>)> {
         let word = self.word_at(self.i).map(str::to_string);
         if word.as_deref().is_some_and(|w| Ty::parse(w).is_some() || w.eq_ignore_ascii_case("frame")) {
             return self.formal_type().map(|ty| (ty, None));
         }
-        let mut text = self.ident()?.text;
-        while self.peek() == Some(&Tok::P('.'))
-            && matches!(self.t.get(self.i + 1).map(|(t, _)| t), Some(Tok::Ident(_)))
-        {
-            self.i += 1;
-            text.push('.');
-            text.push_str(&self.ident()?.text);
+        Some((Ty::Group, Some(self.component_name()?)))
+    }
+
+    /// `name: type` — a component's formal, or an interface's member, written alike.
+    fn formal(&mut self) -> Option<Formal> {
+        let name = self.ident()?;
+        if !self.want_p(':') {
+            return None;
         }
-        Some((Ty::Group, Some(Name { text, span: Span::new(lo, self.prev_hi()) })))
+        let (ty, interface) = self.formal_or_interface()?;
+        let span = Span::new(name.span.lo as usize, self.prev_hi());
+        Some(Formal { name, ty, span, interface })
     }
 
     /// `interface Gear { O: point, M: point, ax: line }` — a group's shape, named (§8.1 [0.84]):
@@ -560,13 +562,7 @@ impl<'a> P<'a> {
             if self.eat_p('}') {
                 break;
             }
-            let fname = self.ident()?;
-            if !self.want_p(':') {
-                return None;
-            }
-            let (ty, interface) = self.formal_or_interface()?;
-            let span = Span::new(fname.span.lo as usize, self.prev_hi());
-            members.push(Formal { name: fname, ty, span, interface });
+            members.push(self.formal()?);
             if !self.eat_p(',') && !matches!(self.peek(), Some(Tok::Nl) | Some(Tok::P('}'))) {
                 self.fail("expected `,`, a line break or `}` after an interface's member");
                 return None;
@@ -574,25 +570,6 @@ impl<'a> P<'a> {
         }
         self.end_of_stmt();
         Some(super::super::Interface { name, members, span: Span::new(lo, self.prev_hi()), module: None })
-    }
-
-    /// Past a top-level statement written as `word … { … }` that failed to parse, its braces
-    /// matched, so a member list is not read as statements.
-    pub(super) fn skip_braced(&mut self) {
-        let mut depth = 0usize;
-        while let Some(t) = self.peek().cloned() {
-            // no brace opened by the end of the line: the line was all of it
-            if depth == 0 && t == Tok::Nl {
-                break;
-            }
-            self.i += 1;
-            match t {
-                Tok::P('{') => depth += 1,
-                Tok::P('}') if depth <= 1 => break,
-                Tok::P('}') => depth -= 1,
-                _ => {}
-            }
-        }
     }
 
     /// An input's type: a formal's, and a number — `Length`, `Angle`, `Scalar` or `Int`.
@@ -942,13 +919,7 @@ impl<'a> P<'a> {
         let mut formals = Vec::new();
         if self.eat_p('(') {
             while !self.eat_p(')') {
-                let fname = self.ident()?;
-                if !self.want_p(':') {
-                    return None;
-                }
-                let (ty, interface) = self.formal_or_interface()?;
-                let span = Span::new(fname.span.lo as usize, self.prev_hi());
-                formals.push(Formal { name: fname, ty, span, interface });
+                formals.push(self.formal()?);
                 if !self.eat_p(',') && self.peek() != Some(&Tok::P(')')) {
                     self.fail("expected `,` or `)`");
                     return None;
@@ -1211,7 +1182,7 @@ impl<'a> P<'a> {
 
     /// Step over a refused block: the rest of its header line and, where one opens there, the
     /// balanced braces after it — however many lines they span.
-    fn skip_block(&mut self) {
+    pub(super) fn skip_block(&mut self) {
         let mut depth = 0i32;
         while !self.done() {
             match self.peek() {
