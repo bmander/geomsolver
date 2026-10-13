@@ -216,6 +216,7 @@ fn parse_at(src: &str, base: usize, first_id: u32, limits: ParseLimits) -> (Prog
     let mut comps: Vec<Component> = Vec::new();
     let mut uses: Vec<Use> = Vec::new();
     let mut words: Vec<crate::syntax::WordDef> = Vec::new();
+    let mut interfaces: Vec<crate::syntax::Interface> = Vec::new();
     let mut next_id = first_id;
     while !st.done() {
         st.skip_ends();
@@ -229,6 +230,23 @@ fn parse_at(src: &str, base: usize, first_id: u32, limits: ParseLimits) -> (Prog
             match st.component(&mut next_id) {
                 Some(c) => comps.push(c),
                 None => st.resync(),
+            }
+            continue;
+        }
+        // `interface Gear { … }` — a group's shape, named (§8.1 [0.84]), at the top as a
+        // component is
+        if st.peek_word("interface") {
+            if !st.take_statement(st.here()) {
+                break;
+            }
+            let at = st.i;
+            match st.interface() {
+                Some(f) => interfaces.push(f),
+                None => {
+                    st.i = at;
+                    st.skip_braced();
+                    st.resync();
+                }
             }
             continue;
         }
@@ -299,6 +317,7 @@ fn parse_at(src: &str, base: usize, first_id: u32, limits: ParseLimits) -> (Prog
     p.in_blocks = std::mem::take(&mut st.in_blocks);
     p.uses = uses;
     p.words = words;
+    p.interfaces = interfaces;
     // A file's root is its top-level statements, even when empty. A component definition is
     // reusable source, not an implicit instance with missing arguments when opened on its own.
     p.components = comps;

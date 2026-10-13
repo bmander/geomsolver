@@ -96,6 +96,10 @@ pub struct Program {
     /// the document's own, then each module's once `modules::link` has run, each saying which
     /// file it was written in.
     pub words: Vec<WordDef>,
+    /// The interfaces defined at the top of a file (`interface Gear { … }`, §8.1 [0.84]): the
+    /// document's own, then each module's once `modules::link` has run, each saying which file
+    /// it was written in.
+    pub interfaces: Vec<super::Interface>,
     /// The modules linked in, in the order they were resolved.  Each one's text is kept, so a
     /// re-parse of the document (`retext`) can link again without asking the host.
     pub modules: Vec<Module>,
@@ -141,6 +145,7 @@ impl Program {
             preview: None,
             uses: Vec::new(),
             words: Vec::new(),
+            interfaces: Vec::new(),
             modules: Vec::new(),
             next_stmt: 0,
         }
@@ -318,6 +323,46 @@ impl Program {
             }
         }
         Err(format!("no component named `{name}`"))
+    }
+
+    /// **The interface a type names, from where it is written** (§8.1 [0.84]): resolved as a
+    /// component's name is — one its own file defines, one a `use` imports bare, or a module's by
+    /// its full path (`spiral.Gear`).  The index into `interfaces`, or why there is none.
+    pub fn resolve_interface(&self, name: &str, from: Option<usize>) -> Result<usize, String> {
+        let find = |module: Option<usize>, base: &str| {
+            self.interfaces.iter().position(|i| i.module == module && i.name.text == base)
+        };
+        let uses = self.uses_of(from);
+        if let Some((path, base)) = name.rsplit_once('.') {
+            if !uses.contains(&path) {
+                return Err(format!("no module `{path}` is used here: write `use {path}`"));
+            }
+            let m = self.module_named(path);
+            return find(m, base).ok_or_else(|| format!("`{path}` defines no interface `{base}`"));
+        }
+        if let Some(i) = find(from, name) {
+            return Ok(i);
+        }
+        if let Some(i) = self.imported(name, from).and_then(|m| find(Some(m), name)) {
+            return Ok(i);
+        }
+        for path in uses {
+            let m = self.module_named(path);
+            if m.is_some() && find(m, name).is_some() {
+                return Err(format!("no interface named `{name}` here: `{path}` defines one, \
+                                    written `{path}.{name}`, or imported `use {path} ({name})`"));
+            }
+        }
+        Err(format!("`{name}` is not a type, nor an interface defined here"))
+    }
+
+    /// An interface's identity across the whole program, as a component's (`component_id`).
+    pub fn interface_id(&self, i: usize) -> String {
+        let f = &self.interfaces[i];
+        match f.module.and_then(|k| self.modules.get(k)) {
+            Some(m) => format!("{}.{}", m.name, f.name.text),
+            None => f.name.text.clone(),
+        }
     }
 
     /// A component's identity across the whole program: its module's path in front of its name

@@ -36,6 +36,9 @@ fn out_of_reach(name: &str, vals: &BTreeMap<String, Aff>, scope: &Scope) -> Opti
     if scope.forbidden.contains(name) {
         return Some(format!("`{name}` is outside this component; pass it as an argument"));
     }
+    if let Some((shape, member)) = super::interfaces::undeclared_name(name, scope) {
+        return Some(super::resolve::undeclared_text(name, &shape, &member));
+    }
     if name.split_once('.').is_some_and(|(head, _)| scope.groups.contains(head)) {
         return Some(format!("no numeric member `{name}` in the group argument"));
     }
@@ -444,6 +447,13 @@ impl<'a> Walk<'a> {
     ) -> Result<String, (Code, String)> {
         let reads: BTreeSet<String> =
             expr::parse_in(text, self.units).map(|p| p.body.deps()).unwrap_or_default();
+        // a number an interface does not declare is no name in the body it types (§8.1 [0.84])
+        if let Some(e) = reads.iter().find_map(|name| {
+            let (shape, member) = super::interfaces::undeclared_name(name, scope)?;
+            Some(super::resolve::undeclared_text(name, &shape, &member))
+        }) {
+            return Err((Code::E101, e));
+        }
         if let Some(e) = reads.iter().find_map(|name| out_of_reach(name, vals, scope)) {
             return Err((Code::E103, e));
         }
@@ -509,7 +519,10 @@ impl<'a> Walk<'a> {
         }
         let Ok(p) = expr::parse_in(text, self.units) else { return };
         for name in p.body.deps() {
-            if name.contains('.') && !vals.contains_key(&name) {
+            // one an interface does not declare is said where the text is settled
+            if name.contains('.') && !vals.contains_key(&name)
+                && super::interfaces::undeclared_name(&name, scope).is_none()
+            {
                 self.dim_reads.push((name, span, scope.clone()));
             }
         }

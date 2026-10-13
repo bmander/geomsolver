@@ -698,6 +698,31 @@ pub(super) fn paths(map: &SourceMap, given: &[(String, Span, String)], diags: &m
     }
 }
 
+/// **An interface's entity member is of the kind it declares** (§8.1 [0.84]): `generator:
+/// line` given a point is refused at the argument, once the elaborator knows what the name is,
+/// as a `path` formal is.
+pub(super) fn member_kinds(map: &SourceMap, given: &[crate::flatten::MemberKind], diags: &mut Vec<Diag>) {
+    use EntKind::{Arc, Circle, Curve, Line, Spline};
+    for m in given {
+        let Some(e) = map.ent_named(&m.target) else { continue };
+        let (fits, want) = match m.ty {
+            crate::syntax::Ty::Ent(k) => (e.kind == k, k.a()),
+            _ => (matches!(e.kind, Line | Arc | Circle | Spline | Curve), "a path".to_string()),
+        };
+        if !fits {
+            diags.push(Diag {
+                code: Code::E103,
+                span: m.span,
+                stmt: None,
+                message: format!(
+                    "`{}` is {}, where `{}` asks for {want}",
+                    m.member, e.kind.a(), m.interface
+                ),
+            });
+        }
+    }
+}
+
 /// **A tangent at a point reads the place of the contact holding the point** (#251): `g
 /// tangent(at: m) l` over a spline or a curve says which way the line runs where `m` is on `g`,
 /// and that is a contact's to say. One with none is refused, naming the statement it wants.

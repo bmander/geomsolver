@@ -8,8 +8,8 @@ use crate::syntax::{Program, StmtKind};
 use crate::syntax::Span;
 use std::collections::{BTreeMap, BTreeSet};
 
-/// The names a file defines at its top level — its components, relation words, values, groups,
-/// instances and declarations — which an import may not shadow.
+/// The names a file defines at its top level — its components, relation words, interfaces,
+/// values, groups, instances and declarations — which an import may not shadow.
 fn own_names(p: &Program, file: Option<usize>) -> BTreeSet<&str> {
     let root = match file {
         None => &p.root().body,
@@ -17,18 +17,20 @@ fn own_names(p: &Program, file: Option<usize>) -> BTreeSet<&str> {
     };
     let components = p.components.iter().filter(|c| c.module == file).filter_map(|c| c.name.as_ref());
     let words = p.words.iter().filter(|d| d.module == file).map(|d| &d.word);
+    let interfaces = p.interfaces.iter().filter(|f| f.module == file).map(|f| &f.name);
     let stmts = root.iter().filter_map(|st| st.kind.bound_name());
-    components.chain(words).chain(stmts).map(|n| n.text.as_str()).collect()
+    components.chain(words).chain(interfaces).chain(stmts).map(|n| n.text.as_str()).collect()
 }
 
 /// What module `k` defines as `name` for a file to import: `Some(true)` a relation word,
-/// `Some(false)` a component or a top-level value or group (a module's own drawing is not
+/// `Some(false)` a component, an interface or a top-level value or group (a module's own drawing is not
 /// exported, §14.4), `None` nothing.
 fn defines(p: &Program, k: usize, name: &str) -> Option<bool> {
     if p.words.iter().any(|d| d.module == Some(k) && d.word.text == name) {
         return Some(true);
     }
     let other = p.component_in(Some(k), name).is_some()
+        || p.interfaces.iter().any(|f| f.module == Some(k) && f.name.text == name)
         || p.modules[k].root.body.iter().any(|st| match &st.kind {
             StmtKind::Param(d) => d.name.text == name,
             StmtKind::Group(g) => g.name.text == name,

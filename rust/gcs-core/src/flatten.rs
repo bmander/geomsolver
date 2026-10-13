@@ -33,10 +33,12 @@ mod words;
 mod apply;
 mod sets;
 mod faces;
+mod interfaces;
 
 pub use faces::{FaceAxis, FacePlane};
 
 pub(crate) use words::faults as word_faults;
+pub(crate) use interfaces::check as interface_faults;
 use crate::lowering::Lowered;
 
 pub(crate) use values::{substitute_with, value_aff, value_read};
@@ -141,6 +143,9 @@ struct Scope {
     /// (`Written::held`, `apply`) — the one rule a region's term is read by (#192).  Carried into
     /// every use applied under it.
     held: bool,
+    /// The formals of the component the statement stands in that an interface types (§8.1
+    /// [0.84]), each to its shape: what a reference read through one may name (`undeclared`).
+    interfaces: BTreeMap<String, std::rc::Rc<interfaces::Shape>>,
 }
 
 impl Scope {
@@ -220,6 +225,21 @@ pub struct Expansion {
     /// argument is written and the formal's name — for the elaborator to judge once it knows
     /// what each name is (E103).
     pub paths: Vec<(String, Span, String)>,
+    /// Every member an interface asks to be an entity of a kind (§8.1 [0.84]), as given: for the
+    /// elaborator to judge once it knows what each name is (E103), as it judges `paths`.
+    pub kinds: Vec<MemberKind>,
+}
+
+/// An interface's entity member as a call gave it: the absolute name of what it is, where the
+/// argument is written, the kind (or `path`) asked for, the member as the call reaches it
+/// (`gear_cone.generator`) and the interface asking.
+#[derive(Clone, Debug)]
+pub struct MemberKind {
+    pub target: String,
+    pub span: Span,
+    pub ty: crate::syntax::Ty,
+    pub member: String,
+    pub interface: String,
 }
 
 /// One instance, as bound: which component, under what prefix, given what.
@@ -307,6 +327,15 @@ struct Walk<'a> {
     path_bindings: Vec<(String, Span, String)>,
     /// Those resolved.
     paths: Vec<(String, Span, String)>,
+    /// A formal an interface types: its alias key, where it was given, the shape, and the
+    /// argument as written — checked against what the alias reaches (`resolve`, `conform`).
+    interface_bindings: Vec<(String, Span, std::rc::Rc<interfaces::Shape>, String)>,
+    /// What those asked to be an entity of a kind, for `Expansion::kinds`.
+    kinds: Vec<MemberKind>,
+    /// The prefixes of the instances whose call an interface refused (`bind`, `conform`): their
+    /// relations are not stated, and what their declarations read is not said again, so the call
+    /// is the one place the fault is said.
+    nonconforming: BTreeSet<String>,
     group_fields: Vec<(String, Span)>,
     /// The dotted names a dimension's text reads that nothing numeric in scope answers to, with
     /// where each was written and the scope to resolve it in: judged once every name is known
@@ -471,6 +500,9 @@ impl<'a> Walk<'a> {
             group_bindings: Vec::new(),
             path_bindings: Vec::new(),
             paths: Vec::new(),
+            interface_bindings: Vec::new(),
+            kinds: Vec::new(),
+            nonconforming: BTreeSet::new(),
             group_fields: Vec::new(),
             dim_reads: Vec::new(),
             pending: Vec::new(),
@@ -563,6 +595,7 @@ impl<'a> Walk<'a> {
             face_planes: self.face_planes,
             face_axes: self.face_axes,
             paths: self.paths,
+            kinds: self.kinds,
         }
     }
 }

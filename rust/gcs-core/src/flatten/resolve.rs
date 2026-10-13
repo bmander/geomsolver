@@ -345,6 +345,10 @@ fn private_member(r: &Ref, sc: &Scope, target: &str, alias: &BTreeMap<String, St
 pub(super) fn lookup(r: &Ref, sc: &Scope, names: &BTreeSet<String>, alias: &BTreeMap<String, String>, units: Units)
     -> Option<(String, Vec<String>)>
 {
+    // a member an interface does not declare is no name in the body it types (§8.1 [0.84])
+    if super::interfaces::undeclared(r, sc).is_some() {
+        return None;
+    }
     let found = lookup_raw(r, sc, names, alias, units)?;
     private_member(r, sc, &found.0, alias).is_none().then_some(found)
 }
@@ -352,6 +356,9 @@ pub(super) fn lookup(r: &Ref, sc: &Scope, names: &BTreeSet<String>, alias: &BTre
 fn missing_ref(r: &Ref, sc: &Scope, names: &BTreeSet<String>, alias: &BTreeMap<String, String>, units: Units)
     -> (Code, String)
 {
+    if let Some((shape, member)) = super::interfaces::undeclared(r, sc) {
+        return (Code::E101, undeclared_text(&written(r), &shape, &member));
+    }
     if let Some((target, _)) = lookup_raw(r, sc, names, alias, units) {
         if let Some(member) = private_member(r, sc, &target, alias) {
             return (Code::E101, format!("`{}` names private member `{member}`", written(r)));
@@ -366,6 +373,13 @@ fn missing_ref(r: &Ref, sc: &Scope, names: &BTreeSet<String>, alias: &BTreeMap<S
         ));
     }
     (Code::E101, format!("no such entity: `{}`", written(r)))
+}
+
+/// What is said of a read through an interface-typed formal of a member the interface does not
+/// declare — one wording, for a reference and a text alike.
+pub(super) fn undeclared_text(read: &str, shape: &str, member: &str) -> String {
+    format!("`{read}` reads `{member}`, which `{shape}` does not declare: add it to the \
+             interface, or pass it on its own")
 }
 
 /// A reference spelled back the way the source wrote it, for a message about it.
@@ -414,6 +428,9 @@ struct Known<'k> {
     /// The names bound to what a call or a use wrote (`Walk::arguments`).
     arguments: &'k BTreeSet<String>,
     units: Units,
+    /// Set where a reference reads a member its interface does not declare (§8.1 [0.84]): the
+    /// relation is said there and not stated.
+    undeclared: &'k std::cell::Cell<bool>,
 }
 
 /// Whether `r` reads a name bound to what a call or a use wrote — a formal, a bound variable —
@@ -429,7 +446,7 @@ fn rewrite(
     bad: &mut Vec<(Code, Span, String)>,
     seen: &std::cell::RefCell<Vec<Seen>>,
 ) {
-    let Known { names, alias, sets, solids, failed, arguments, units } = known;
+    let Known { names, alias, sets, solids, failed, arguments, units, undeclared } = known;
     // only a ring's representative is judged by what it reads (E021)
     let judged = sc.ring.as_ref().is_some_and(|r| !r.turned);
     // a member read already (a set's `ends`, `sets::measured_sets`) is kept; `surface` and
@@ -470,6 +487,9 @@ fn rewrite(
         // read through an operand already said to name nothing
         None if sc.prefixes.iter().any(|p| failed.contains(&format!("{p}{}", r.root.text))) => {}
         None => {
+            if super::interfaces::undeclared(r, sc).is_some() {
+                undeclared.set(true);
+            }
             let (code, why) = missing_ref(r, sc, names, alias, units);
             bad.push((code, r.span, why))
         }
@@ -853,7 +873,9 @@ impl<'a> Walk<'a> {
         for (key, r, sc) in self.aliases.clone() {
             match lookup_raw(&r, &sc, &self.names, &alias, self.units) {
                 Some((target, _)) => {
-                    if let Some(member) = private_member(&r, &sc, &target, &alias) {
+                    if let Some((shape, member)) = super::interfaces::undeclared(&r, &sc) {
+                        self.once(Code::E101, r.span, undeclared_text(&written(&r), &shape, &member));
+                    } else if let Some(member) = private_member(&r, &sc, &target, &alias) {
                         self.err(Code::E101, r.span, format!("`{}` names private member `{member}`", written(&r)));
                     }
                 }
@@ -881,6 +903,17 @@ impl<'a> Walk<'a> {
                 }
             } else if !target.is_some_and(|t| self.group_names.contains(t)) {
                 self.err(Code::E103, span, format!("`{key}` wants a group or layout instance"));
+            }
+        }
+        // what each interface asks of the group or instance its formal was given (§8.1 [0.84]),
+        // where it is one: whatever it is not was said just above
+        for (key, span, shape, actual) in std::mem::take(&mut self.interface_bindings) {
+            let Some(target) = alias.get(&key).filter(|t| self.group_names.contains(*t)) else {
+                continue;
+            };
+            if !self.conform(&shape, &target.clone(), &actual, &alias, span, 0) {
+                let at = key.rsplit_once('.').map_or(String::new(), |(inst, _)| format!("{inst}."));
+                self.nonconforming.insert(at);
             }
         }
         // what each path formal was given, for the elaborator to judge by its kind (#251)
@@ -970,10 +1003,20 @@ impl<'a> Walk<'a> {
             {
                 continue;
             }
+            // an instance whose call its interface refused: said at the call, and only there
+            let refused_call = sc.prefixes.iter()
+                .any(|p| self.nonconforming.iter().any(|n| p.starts_with(n.as_str())));
+            if refused_call && !matches!(st.kind, StmtKind::Decl(_)) {
+                continue;
+            }
             let mut bad: Vec<(Code, Span, String)> = Vec::new();
             let seen = std::cell::RefCell::new(Vec::new());
-            let known = Known { names: &self.names, alias: &alias, sets: &sets, solids: &solids, failed: &failed, arguments: &self.arguments, units: self.units };
+            let undeclared = std::cell::Cell::new(false);
+            let known = Known { names: &self.names, alias: &alias, sets: &sets, solids: &solids, failed: &failed, arguments: &self.arguments, units: self.units, undeclared: &undeclared };
             rewrite(&mut st.kind, &sc, known, &mut bad, &seen);
+            if refused_call {
+                bad.clear();
+            }
             if let StmtKind::Decl(d) = &st.kind {
                 // a centre the circle names, or `None` for one it mints (`c.center`)
                 if d.kind == EntKind::Circle {
@@ -1013,6 +1056,9 @@ impl<'a> Walk<'a> {
             let clean = bad.is_empty();
             for (code, span, msg) in bad {
                 self.err(code, span, msg);
+            }
+            if undeclared.get() && !matches!(st.kind, StmtKind::Decl(_)) {
+                continue;
             }
             // a curve of a drawn instance's point: the point's name is absolute now, and the
             // instance it belongs to is the innermost one whose component has the formal

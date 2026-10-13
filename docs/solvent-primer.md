@@ -506,7 +506,8 @@ t0 := Rung(l0, r0, len: 50)
 ```
 
 - **Formals** are an entity kind (`point`, `line`, `circle`, `arc`, `plane`, …), a number type
-  (`Length`, `Angle`, `Int`, `Scalar`, `Side`), a `group` or a `set` (1.13), or a `path`: a line,
+  (`Length`, `Angle`, `Int`, `Scalar`, `Side`), a `group` or an interface (below), a `set`
+  (1.13), or a `path`: a line,
   an arc, a circle, a spline or a curve, whose words are settled by what the call gives it
   (`m coincident g`, `g tangent(at: m) l`); given anything else, E103 at the argument.
 - **Passing an entity is aliasing**: formal and actual are one entity, so a boundary costs nothing.
@@ -593,6 +594,32 @@ Numeric members keep their units; geometry members alias and add no solver state
 be passed as a group, exposing its geometry but not its local values. A group formal must be
 supplied, and a missing member is an error. A traced component (1.10) needs fixed scalar or entity
 formals, so pass members individually there.
+
+**Interfaces** name a group's shape. Written at the top of a file, as a component is, each
+member as a formal is, separated by commas or line breaks; a member may be typed by another
+interface:
+
+```solvent
+interface Size { length: Length }
+interface Layout {
+  origin: point
+  size: Size
+}
+component Bar(layout: Layout) {
+  tip := point hint((layout.origin.x + layout.size.length, layout.origin.y))
+  layout.origin distance(layout.size.length) tip
+}
+```
+
+A formal typed by one (`layout: Layout`) is a group formal the call must give **every member, of
+its type** — a number of the member's dimension, an entity of its kind, a set, a group of the
+nested shape — or **E103** at the argument; whatever else the group or instance carries is
+allowed, and nothing says it is a `Layout` but having the members. The body reads through it
+**only what the interface declares**: `layout.width` is **E101** where it is read, as is handing
+it on (`Pin(layout.width)`), or handing `layout` to a formal typed by an interface asking for
+more than `Layout` declares. Handed to a plain `group` formal it is any group. A module exports
+its interfaces as it does its components (`spiral.Gear`, `use spiral (Gear)`). The spiral bevel's
+steps read one another so (`gear: Gear, trace: Trace` in `spiral_bevel/hypoid.sv`).
 
 **Derive, don't restate**: keep a few design inputs and derive the rest, so changing one carries
 its dependents (the V-twin derives its cylinder, pockets and grooves from bore, throw and wall).

@@ -268,6 +268,8 @@ fn elaborate_in(
     defined_twice(p, &mut diags);
     // -- and every relation word and import, as written (§9.9, §14.4)
     words::check(p, &mut diags);
+    // -- and every interface and the types naming one (§8.1 [0.84])
+    crate::flatten::interface_faults(p, &mut diags);
 
     // -- phase 1: names, in one pre-pass.  Indices come from declaration order within a kind,
     // which is `primitives()` order, which is the order phase 2 builds in.
@@ -577,6 +579,7 @@ fn elaborate_in(
     // what each `path` formal was given runs along something, and each tangent at a point reads
     // a contact's place there (#251)
     relations::paths(&map, &expansion.paths, &mut diags);
+    relations::member_kinds(&map, &expansion.kinds, &mut diags);
     relations::tangents_at(&sk, &map, &mut diags);
 
     // each point drawn in further planes tied to its twins, once the holds say which planes are
