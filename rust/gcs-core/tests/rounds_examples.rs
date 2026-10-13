@@ -80,15 +80,19 @@ fn the_disc_is_finished_exactly() {
     assert!(e.sketch.exact_solid(disc).is_ok(), "lowered into the meridian");
 }
 
-/// `regions.sv`: the egg by its foci, the bicylinder and the Voronoi cell, each read point by point.
+/// `regions.sv`: the egg by its foci, the bicylinder and the Voronoi cell, with material where its
+/// comments say: the egg and the cell folded into a meridian about the line through their points,
+/// the bicylinder in general position and built as the common of its two cylinders (#238).
 #[test]
 fn the_regions_are_read_point_by_point() {
     let src = include_str!("../../examples/rounds/regions.sv");
     let e = holds(src, "egg", &[[4.9, 0.0, 0.0], [0.0, 3.9, 0.0]], &[[5.1, 0.0, 0.0], [0.0, 0.0, 4.1]]);
     holds(src, "bicylinder", &[[20.0, 2.9, 0.0], [21.5, 0.0, 1.5]], &[[20.0, 2.0, 2.5], [20.0, 3.1, 0.0]]);
     holds(src, "cell", &[[39.0, 0.5, 0.5], [36.0, 0.0, 0.0]], &[[41.0, 0.5, 0.5], [34.0, 0.0, 0.0]]);
-    for name in ["egg", "bicylinder", "cell"] {
-        assert!(gcs_core::solid::region::in_general(&e.sketch, ent(&e, name).i()), "{name}");
+    for (name, general) in [("egg", false), ("bicylinder", true), ("cell", false)] {
+        let s = ent(&e, name).i();
+        assert_eq!(gcs_core::solid::region::in_general(&e.sketch, s), general, "{name}");
+        assert!(e.sketch.exact_solid(s).is_ok(), "{name}");
     }
 }
 
