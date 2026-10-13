@@ -1239,7 +1239,7 @@ pub fn corner_points(vertex: V,centre: V,r: f64,toward: [V;3]) -> ([V;3],[V;3]) 
 /// The directions of a corner's three edges from `vertex` toward the feet of `centre` on them —
 /// each square to two faces' `toward`, in the order (0, 1), (1, 2), (2, 0) — the normals of its
 /// sections through the centre.
-pub fn corner_sections(vertex: V,centre: V,toward: [V;3]) -> [V;3] {
+fn corner_sections(vertex: V,centre: V,toward: [V;3]) -> [V;3] {
     let along = sub(centre,vertex);
     [(0,1),(1,2),(2,0)].map(|(i,j)| { let e = unit(cross(toward[i],toward[j])); if dot(e,along) < 0. { scale(e,-1.) } else { e } })
 }

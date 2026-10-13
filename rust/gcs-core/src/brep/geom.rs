@@ -22,9 +22,9 @@ pub fn tolerance_over(size: f64,floor: f64) -> f64 { tolerance(size).max(floor) 
 pub type Box3 = (V,V);
 /// The box holding nothing, which anything widens.
 pub const EMPTY: Box3 = ([f64::INFINITY;3],[f64::NEG_INFINITY;3]);
-/// `b` widened to hold `p`.
 /// `t` moved by whole periods into `[lo, lo + period)`.
 pub fn around(t: f64,lo: f64,period: f64) -> f64 { lo+(t-lo).rem_euclid(period) }
+/// `b` widened to hold `p`.
 pub fn include(b: &mut Box3,p: V) { for k in 0..3 { b.0[k] = b.0[k].min(p[k]); b.1[k] = b.1[k].max(p[k]); } }
 /// `b` widened to hold `other` (unchanged by `EMPTY`).
 pub fn widen(b: &mut Box3,other: Box3) { for k in 0..3 { b.0[k] = b.0[k].min(other.0[k]); b.1[k] = b.1[k].max(other.1[k]); } }
@@ -171,6 +171,8 @@ pub enum Surface {
 pub enum Carry { Line { delta: V },Arc { center: V,axis: V,angle: f64 },Screw { center: V,axis: V,angle: f64,advance: f64 } }
 
 impl Carry {
+    /// `p` turned by `angle` about the unit `axis` through the origin, by Rodrigues' formula: the
+    /// same turn as `Rigid::turn`'s matrix, but not its bits, so the two stay apart.
     fn turn(axis: V,angle: f64,p: V) -> V {
         let (s,c) = angle.dsin_cos();
         add(add(scale(p,c),scale(cross(axis,p),s)),scale(axis,dot(axis,p)*(1.-c)))

@@ -81,8 +81,8 @@ impl Profile {
         Ok(Profile {origin:vec3(field(j,"origin")?),normal:unit(vec3(field(j,"normal")?)),loops,names})
     }
 
-    /// As a recipe writes it (`from_json`'s inverse), its lengths times `scale`: lines and arcs,
-    /// each named where it is; a spline is not written here (a meridian has none).
+    /// As a recipe writes it (`from_json`'s inverse), its lengths times `scale`: lines, arcs and
+    /// B-splines (their weights where rational), each named where it is. It never fails.
     pub fn to_json(&self,scale: f64) -> Result<Json,String> {
         use crate::json::object;
         let v = |p: V,s: f64| Json::Arr(p.iter().map(|&x| Json::from(x*s)).collect());

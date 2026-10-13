@@ -443,7 +443,7 @@ pub fn ball_of(n: &Json,tol: f64) -> Result<Option<(V,f64)>,String> {
 
 /// `meridian`'s region: a profile in the half-plane of its line towards `seam` (its outer loop
 /// first), with the line's point and direction.
-pub fn meridian_region(recipe: &Json,seam: V) -> Result<Result<(Profile,V,V),String>,String> {
+fn meridian_region(recipe: &Json,seam: V) -> Result<Result<(Profile,V,V),String>,String> {
     use crate::space::{add,cross,dot,norm,scale,sub};
     use super::build::ProfileEdge;
     use super::geom::Frame;
