@@ -1,4 +1,5 @@
-//! Resolve constraint arguments and apply gauges.
+//! Settle relations into constraints and resolve their arguments.  Gauges are applied in
+//! `gauges`, and region terms built in `regions`.
 
 use super::resolve::{follow, Operand, Resolver};
 use super::gauges::{apply_gauge, fix_spelling, Gauges};
