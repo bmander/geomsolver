@@ -602,7 +602,8 @@ static Handle(Geom_Surface) basis(const TopoDS_Face& face,TopLoc_Location& there
     while (auto trimmed = Handle(Geom_RectangularTrimmedSurface)::DownCast(surface)) surface = trimmed->BasisSurface();
     return surface;
 }
-static Handle(Geom_Surface) basis(const TopoDS_Face& face) { TopLoc_Location there; return basis(face,there); }
+// (named apart from the two-argument form: inside `extern "C"` GCC overloads nothing, static or not)
+static Handle(Geom_Surface) basis_of(const TopoDS_Face& face) { TopLoc_Location there; return basis(face,there); }
 
 static bool about(const TopoDS_Face& face,const gp_Ax1& axis) {
     TopLoc_Location there;
@@ -671,7 +672,7 @@ static TopoDS_Shape turned_copy(const TopoDS_Shape& source,const gp_Ax1& axis,do
     for (; from.More() && to.More(); from.Next(),to.Next()) {
         const TopoDS_Face original = TopoDS::Face(from.Current());
         if (!about(original,axis)) continue;
-        const Handle(Geom_Surface) surface = basis(original);
+        const Handle(Geom_Surface) surface = basis_of(original);
         // which way the parameter runs about the axis: the turn is a shift of u by +angle or -angle
         double u0,u1,v0,v1;
         BRepTools::UVBounds(original,u0,u1,v0,v1);
@@ -691,7 +692,7 @@ static TopoDS_Shape turned_copy(const TopoDS_Shape& source,const gp_Ax1& axis,do
 // as the blank's own face did. (Closed on the junction between two copies instead, the ring's
 // parameters would span more than a period, which the mesher does not read.)
 static std::vector<TopoDS_Face> into_one_period(const TopoDS_Face& face,const gp_Ax1& axis,double reach) {
-    const Handle(Geom_Surface) surface = basis(face);
+    const Handle(Geom_Surface) surface = basis_of(face);
     const double period = 2*M_PI,slack = 1e-9;
     double u0,u1,v0,v1;
     BRepTools::UVBounds(face,u0,u1,v0,v1);
@@ -834,7 +835,7 @@ int solvent_cad_pattern(Cad* cad,int solid,const double* origin,const double* ax
             for (TopExp_Explorer it(base,TopAbs_FACE); it.More(); it.Next()) {
                 const TopoDS_Face face = TopoDS::Face(it.Current());
                 if (!about(face,line)) continue;
-                const Handle(Geom_Surface) surface = basis(face);
+                const Handle(Geom_Surface) surface = basis_of(face);
                 GeomAPI_ProjectPointOnSurf foot(middle,surface);
                 if (!foot.NbPoints()) throw std::runtime_error("the sector's middle has no foot on a face of revolution");
                 double uc,vc,u0,u1,v0,v1;

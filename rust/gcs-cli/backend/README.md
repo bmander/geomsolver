@@ -17,6 +17,8 @@ build/solventc rust/examples/spiral_bevel/blank/member.sv --solid body --step bl
 
 For another installation prefix, set `OCCT_ROOT` to the directory containing
 `include/opencascade/` and `lib/`. Cargo also accepts `-p gcs-cli --features occt`.
+OCCT 7.8 or later is the reference; a distribution's 7.6 (`apt install libocct-*-dev`) builds too,
+its STEP and STL libraries linked by their older names and a STEP text written through a file.
 The bridge currently builds on Unix native hosts. The default Cargo build, the core,
 and WebAssembly have no OCCT dependency. A CLI built without the feature explains
 how to enable it when asked for STEP.

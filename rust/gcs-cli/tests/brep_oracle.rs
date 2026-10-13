@@ -54,6 +54,8 @@ fn every_node_the_kernel_builds_is_occts() {
                 let theirs = match session.construct(&sub) {
                     Ok(t) => Some(t),
                     Err(err) if err.contains("along-guide lofts") => { eprintln!("{label}: {v:.9} mm³ (OCCT builds no lofts)"); None }
+                    // nor a lowered round (`tests/fillet_oracle.rs` holds those to OCCT's fillet)
+                    Err(err) if err.contains("lowered round") => { eprintln!("{label}: {v:.9} mm³ (OCCT builds no lowered rounds)"); None }
                     Err(err) => panic!("{label}: OCCT: {err}"),
                 };
                 if let Some(theirs) = theirs {

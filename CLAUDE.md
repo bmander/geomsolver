@@ -428,7 +428,12 @@ node's pieces, corners and balls with the rest (`shifted_node`). Open (#218): a 
 run ending on a curved face, a corner beside a curved end, corners where curved faces meet, a run
 mitred against a ring's stretch on one cylinder (the union of coincident cylinder faces: a groove
 rounded at its ends), a flat along a traced edge, a rolled round beside other pieces in one
-region, the OCCT oracle. `tests/round_lowering.rs` is the gate (every volume the closed form's to
+region. **The oracle** (#218's 8): `gcs-cli tests/fillet_oracle.rs` (OCCT) builds each rounds
+example's body less its lowered regions, rounds the same edges by OCCT's own fillet or chamfer
+(`solvent_cad_round`, `Session::round`; each edge the one through a point the pieces give) and
+holds ours to it (volume 1e-9 where both are analytic, 2e-5 where either fits a B-spline; face
+kinds, OCCT's B-spline standing for an analytic face of ours); where OCCT's fillet fails (`rail`)
+or makes no valid solid (`post`) it is counted. `tests/round_lowering.rs` is the gate (every volume the closed form's to
 1e-9, a rolled one #85's quadrature's to 1e-6: `slot.sv`, `pad.sv`, `rail.sv`, `knob.sv`,
 `tee.sv`, `bore.sv`, `runout.sv`, `twin.sv`, `post.sv`).
 **Distance from a set, offsets (§6.21, 0.64, #145 F4):** `p distance(d, side: outside|inside) S`

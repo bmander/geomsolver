@@ -38,6 +38,7 @@ extern "C" {
         trust: f64,output: *mut f64) -> c_int;
     fn solvent_cad_read_step(cad: *mut c_void,path: *const c_char) -> c_int;
     fn solvent_cad_face_kind(cad: *mut c_void,face: c_int) -> c_int;
+    fn solvent_cad_round(cad: *mut c_void,id: c_int,count: c_int,points: *const f64,sizes: *const f64,chamfer: c_int) -> c_int;
     fn solvent_cad_surface_grid(cad: *mut c_void,face: c_int,nu: c_int,nv: c_int,output: *mut f64) -> c_int;
 }
 
@@ -172,6 +173,15 @@ impl Session {
         self.result(unsafe { solvent_cad_solid_contains(self.0,solid,points.as_ptr().cast(),
             points.len() as c_int,tolerance,states.as_mut_ptr()) })?;
         Ok(states)
+    }
+    /// `solid`'s edges through the points of `edges` rounded by OCCT's own fillet, each by the
+    /// radius beside its point, or chamfered (`chamfer`) by a distance along both faces: the
+    /// oracle of the rounds `gcs_core::solid::lowering` builds (`tests/fillet_oracle.rs`).
+    #[allow(dead_code)]
+    pub(crate) fn round(&self,solid: c_int,edges: &[([f64;3],f64)],chamfer: bool) -> Result<c_int,String> {
+        let points: Vec<f64> = edges.iter().flat_map(|e| e.0).collect();
+        let sizes: Vec<f64> = edges.iter().map(|e| e.1).collect();
+        self.result(unsafe { solvent_cad_round(self.0,solid,edges.len() as c_int,points.as_ptr(),sizes.as_ptr(),chamfer as c_int) })
     }
     pub(crate) fn volume(&self,solid: c_int) -> Result<f64,String> {
         let mut v = [0.];
