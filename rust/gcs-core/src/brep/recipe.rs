@@ -29,8 +29,14 @@ fn field<'a>(j: &'a Json,k: &str) -> Result<&'a Json,String> { j.get(k).ok_or(fo
 /// size (never under `floor`, mm), and checked.
 pub fn combined(solid: &Brep,operand: &Brep,op: Op,floor: f64) -> Result<Brep,String> {
     let tol = (1e-9*solid.size().max(operand.size())).max(floor);
-    let out = boolean(solid,operand,op,tol)?;
-    out.check(10.*tol)?;
+    let mut out = boolean(solid,operand,op,tol)?;
+    // material touching itself along a line (two rounds of separate statements meeting where the
+    // body they each read leaves them so, #218): each such edge held twice, a solid's boundary
+    // pinched there
+    if let Err(e) = out.check(10.*tol) {
+        if !e.starts_with(super::topo::NOT_MANIFOLD) || !matches!(out.unpinched(),Ok(n) if n > 0) { return Err(e) }
+        out.check(10.*tol)?;
+    }
     Ok(out)
 }
 

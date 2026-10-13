@@ -239,17 +239,21 @@ impl BodyFaces {
         if f.reversed { (-s, scale(g, -1.0)) } else { (s, g) }
     }
 
-    /// The vertices three groups of faces share: where a face of each meets.
-    pub fn vertices_among(&self, groups: &[&[usize]]) -> Vec<V> {
-        let of = |fs: &[usize]| -> BTreeSet<u32> {
-            fs.iter().flat_map(|&fi| self.edges[fi].iter())
-                .flat_map(|&e| self.loc.b.edges[e as usize].v).collect()
+    /// The vertices three groups of faces share: where a face of each meets, with the faces of
+    /// each group standing there (model units).
+    pub fn vertices_among(&self, groups: &[&[usize]]) -> Vec<(V, Vec<Vec<usize>>)> {
+        let at = |fi: usize| -> BTreeSet<u32> {
+            self.edges[fi].iter().flat_map(|&e| self.loc.b.edges[e as usize].v).collect()
         };
+        let of = |fs: &[usize]| -> BTreeSet<u32> { fs.iter().flat_map(|&fi| at(fi)).collect() };
         let mut common = of(groups[0]);
         for g in &groups[1..] {
             common = common.intersection(&of(g)).copied().collect();
         }
-        common.into_iter().map(|v| self.back(self.loc.b.vertices[v as usize].p)).collect()
+        common.into_iter().map(|v| {
+            let faces = groups.iter().map(|g| g.iter().copied().filter(|&fi| at(fi).contains(&v)).collect()).collect();
+            (self.back(self.loc.b.vertices[v as usize].p), faces)
+        }).collect()
     }
 
     /// Where a run of edges ends: each vertex only one of `es` reaches (model units), with the

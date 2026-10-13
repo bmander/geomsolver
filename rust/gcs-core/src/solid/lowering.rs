@@ -488,24 +488,29 @@ fn build(body: &super::faces::BodyFaces, f: &Faces, section: Section) -> Result<
         pieces.extend(ps);
     }
     let (Section::Round(r), 3) = (section, groups.len()) else { return Ok(pieces) };
-    let one = |g: &Vec<usize>| match g[..] { [fi] => Some(fi), _ => None };
-    let Some(ids) = groups.iter().map(one).collect::<Option<Vec<usize>>>() else {
-        return unbuilt("a corner of a face in pieces");
-    };
-    // three faces: the ball touching all three, at each vertex they share (three planes meet at
-    // one; a D's flat, its round and a cap at both ends of the flat's edge)
-    let vertices = body.vertices_among(&[&[ids[0]], &[ids[1]], &[ids[2]]]);
-    if vertices.is_empty() {
+    // three faces: the ball touching all three, at each vertex a face of each shares (three planes
+    // meet at one; a D's flat, its round and a cap at both ends of the flat's edge), each of them
+    // the face of its reference standing there — one piece of a face split in pieces (a plate's
+    // side a post stands across)
+    let refs: Vec<&[usize]> = groups.iter().map(Vec::as_slice).collect();
+    let mut corners = Vec::new();
+    for (vertex, at) in body.vertices_among(&refs) {
+        let one = |g: &Vec<usize>| match g[..] { [fi] => Some(fi), _ => None };
+        let Some(ids) = at.iter().map(one).collect::<Option<Vec<usize>>>() else {
+            return unbuilt("a corner where two pieces of one face meet");
+        };
+        let (corner, toward) = corner_at(body, &ids, vertex, f.within, r)?;
+        corners.push((corner, toward, ids));
+    }
+    if corners.is_empty() {
         return Ok(Vec::new());
     }
-    let corners = vertices.iter().map(|&vertex| corner_at(body, &ids, vertex, f.within, r))
-        .collect::<Result<Vec<_>, _>>()?;
     // three planes: every run within each edge's ends, so the region is their union and nothing
     // cuts them
     let planar = |c: &Corner| c.faces.iter().all(|s| matches!(s, Surf::Plane { .. }));
-    if let [(corner, toward)] = &corners[..] {
+    if let [(corner, toward, ids)] = &corners[..] {
         if !planar(corner) {
-            pieces.extend(corners.into_iter().map(|(c, _)| Piece::Corner(c)));
+            pieces.extend(corners.into_iter().map(|(c, ..)| Piece::Corner(c)));
             return Ok(pieces);
         }
         let mut bounds = Vec::new();
@@ -525,7 +530,7 @@ fn build(body: &super::faces::BodyFaces, f: &Faces, section: Section) -> Result<
             return unbuilt("a ball larger than the edges it rounds");
         }
     }
-    pieces.extend(corners.into_iter().map(|(c, _)| Piece::Corner(c)));
+    pieces.extend(corners.into_iter().map(|(c, ..)| Piece::Corner(c)));
     Ok(pieces)
 }
 

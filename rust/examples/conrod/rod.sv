@@ -121,8 +121,9 @@ round(r: re) rod.shank
 
 // Two sets of edges are left sharp: each round reads the rod as its other terms leave it, never
 // another round, so where rounds of separate statements meet they cannot blend. Add either and
-// the field reads the rod as written, but the exact build refuses it, naming where the material
-// the rounds leave touches itself along a line (#218):
+// the field and the exact build read the rod as written, but the material the rounds leave
+// touches itself along a line, which no manifold file describes: the export is refused, naming
+// where (#218):
 //   rod.shank.near round(r: re) rod.big_end   (and `far`, and `small_end`: the shank's faces into
 //                                              the eyes, meeting the flanges' runs and the 6 mm
 //                                              fills at one vertex)

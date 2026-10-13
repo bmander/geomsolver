@@ -74,7 +74,7 @@ impl SetDistance {
                 },
                 _ => {
                     let groups: Vec<&[usize]> = readings.iter().map(|r| r.faces.as_slice()).collect();
-                    SetDistance::Points(body.vertices_among(&groups))
+                    SetDistance::Points(body.vertices_among(&groups).into_iter().map(|(v, _)| v).collect())
                 }
             });
         }

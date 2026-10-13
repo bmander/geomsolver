@@ -739,3 +739,64 @@ fn a_set_with_a_term_no_entry_reads_is_not_lowered() {
     let refusal = export::exact(&e.sketch, ent(&e, "block").i(), None, None, &say).err().expect("refused");
     assert!(format!("{refusal:?}").contains("no entry of the lowering table builds"), "{refusal:?}");
 }
+
+/// Solid `name`'s exact B-rep as the drawing reads it (`Sketch::exact_solid`), held to its own
+/// field: every probe `offset` inside its boundary material by the field, every one `offset`
+/// outside not (`agreement`, by area); and its volume (model units).
+fn agrees_with_field(e: &Elaborated, name: &str, offset: f64) -> f64 {
+    let body = ent(e, name).i();
+    let exact = e.sketch.exact_solid(body).unwrap_or_else(|why| panic!("{name}: {why}"));
+    let b = &exact.brep;
+    let offset = offset * exact.mm;
+    let m = gcs_core::brep::mesh::mesh(b, offset / 20.0, gcs_core::brep::export::ANGULAR).unwrap();
+    let pts: Vec<[f64; 3]> = m.pts.iter().map(|&q| std::array::from_fn(|k| q[k] / exact.mm + exact.origin[k])).collect();
+    let field = MaterialField::read(&e.sketch, body, 1e-10).unwrap();
+    let offset = offset / exact.mm;
+    let options = gcs_core::solid::agreement::Options {
+        offset, confirm: offset / 4.0, value_tolerance: offset / 5.0, triangles: 2000, ..Default::default()
+    };
+    let report = gcs_core::solid::agreement::of_triangles_parallel(&pts, &m.tris, &field, 1, &options).unwrap();
+    assert!(report.agrees(), "{name}: {} of {} probes disagree: {:?}", report.disagreements.len(), report.probes,
+        report.disagreements);
+    props::volume(b) / exact.mm.powi(3)
+}
+
+/// The export's refusal of solid `name`, as text.
+fn refused(e: &Elaborated, name: &str) -> String {
+    let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
+    format!("{:?}", export::exact(&e.sketch, ent(e, name).i(), None, None, &say).err().expect("refused"))
+}
+
+/// **A corner of a face in pieces** (#218's 4): `post.sv`'s stand rounded all over. The post
+/// splits the plate's front side in two, so a corner where the plate's top, its front and an end
+/// meet takes the piece of the front standing at that vertex. Where the plate's convex top edge
+/// runs into the post's concave root, the rounds — each read off the stand before the others —
+/// leave material touching itself along a line (#218, from #197): built as a boundary holding
+/// that line twice, agreeing with the field, and refused by the export, which no manifold file
+/// describes.
+#[test]
+fn a_corner_of_a_face_in_pieces_is_rounded() {
+    let src = include_str!("../../examples/rounds/post.sv")
+        .replace("stand.plate.near round(r: r) stand.plate.ab", "round(r: 1mm) stand");
+    let e = solved(&src);
+    lowered(&e);
+    assert!(agrees_with_field(&e, "stand", 0.01) > 0.0);
+    let why = refused(&e, "stand");
+    assert!(why.contains("touches itself along a line") && why.contains("no manifold file describes it"), "{why}");
+}
+
+/// **A vertex where convex and concave rounds meet** (#218): `twin.sv`'s bar rounded all over.
+/// Where the seam between the rods (concave, filled) meets a cap whose rims are convex (taken),
+/// each round is read off the bar before the others, so the seam's fill and the rims' cuts leave
+/// material touching itself along a short line at each end of the seam: built, the line held
+/// twice, agreeing with the field, and refused by the export, which no manifold file describes.
+#[test]
+fn rounds_meeting_at_a_vertex_of_both_kinds_touch_along_a_line() {
+    let src = include_str!("../../examples/rounds/twin.sv")
+        .replace("bar.right.small round(r: r) bar.left.big", "round(r: 1mm) bar");
+    let e = solved(&src);
+    lowered(&e);
+    assert!(agrees_with_field(&e, "bar", 0.01) > 0.0);
+    let why = refused(&e, "bar");
+    assert!(why.contains("touches itself along a line") && why.contains("no manifold file describes it"), "{why}");
+}
