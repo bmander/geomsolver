@@ -314,7 +314,9 @@ fn arrange<'a>(a: &'a Brep,b: &'a Brep,tol: f64) -> Result<Arranged<'a>,String> 
                                 // on the boundary of every face that edge bounds: a meeting of the
                                 // face beside it may end there (two fillets' faces and the face both
                                 // roll on, touching one another at one point)
-                                for &h in &bounded[other][g as usize] { on_face[other][h].push(v); }
+                                for &h in &bounded[other][g as usize] {
+                                    if !on_face[other][h].contains(&v) { on_face[other][h].push(v); }
+                                }
                             }
                         }
                     }

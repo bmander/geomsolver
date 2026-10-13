@@ -144,7 +144,9 @@ fn cross2(a: Meridian,b: Meridian,tol: f64) -> Option<Vec<[f64;2]>> {
                 let h = (r*r-a*a).max(0.).sqrt();
                 let u = [(k[0]-c[0])/d,(k[1]-c[1])/d];
                 let m = [c[0]+a*u[0],c[1]+a*u[1]];
-                if h <= tol { vec![m] } else { vec![[m[0]-h*u[1],m[1]+h*u[0]],[m[0]+h*u[1],m[1]-h*u[0]]] }
+                // touching: by the gap, not the half chord (its square root)
+                let touch = h <= tol || (r+s-d).abs() <= tol || (d-(r-s).abs()).abs() <= tol;
+                if touch { vec![m] } else { vec![[m[0]-h*u[1],m[1]+h*u[0]],[m[0]+h*u[1],m[1]-h*u[0]]] }
             }
         }
     };
@@ -241,7 +243,8 @@ pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi {
             let dist = dot(pl.z,sub(c.o,pl.o));
             if dist.abs() > r+tol { return Ssi::Curves(vec![]) }
             let rho = (r*r-dist*dist).max(0.).sqrt();
-            if rho <= tol { return Ssi::Curves(vec![]) }
+            // touching at a point, by the gap (the circle's radius is its square root)
+            if rho <= tol || (r-dist.abs()).abs() <= tol { return Ssi::Curves(vec![]) }
             Ssi::Curves(vec![Curve::Circle(Frame::new(sub(c.o,scale(pl.z,dist)),pl.z,pl.x),rho)])
         }
         (Surface::Plane(_),Surface::Extrusion(..)) | (Surface::Extrusion(..),Surface::Plane(_))

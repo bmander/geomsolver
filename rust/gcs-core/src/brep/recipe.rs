@@ -100,30 +100,17 @@ pub fn node_named(n: &Json,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64
                 // one carried on into a curved face it ends on (#218): kept within or outside the
                 // cylinder or the ball its surface bounds
                 for k in piece.get("kept").map_or(&[][..],|w| w.arr()) {
-                    let (o,radius) = (vec3(field(k,"origin")?),field(k,"radius")?.as_f64());
                     let inside = matches!(field(k,"inside")?,Json::Bool(true));
-                    b = kept_by_solid(&b,o,k.get("axis").map(vec3),radius,inside,floor)
-                        .map_err(|e| format!("a run cut off at a curved end: {e}"))?;
+                    b = kept_by_solid(&b,&surface_of(k)?,inside,floor).map_err(|e| format!("a run cut off at a curved end: {e}"))?;
                 }
                 Ok::<_,String>(b)
             }).collect::<Result<Vec<_>,_>>()?;
             for c in field(n,"corners")?.arr() {
                 let (vertex,centre,radius) = (vec3(field(c,"vertex")?),vec3(field(c,"centre")?),field(c,"radius")?.as_f64());
-                let toward: Vec<V> = field(c,"toward")?.arr().iter().map(vec3).collect();
-                let toward: [V;3] = toward.try_into().map_err(|_| "recipe: a corner stands between three faces")?;
-                let tol = (1e-9*(1.+radius)).max(floor);
-                // where a face is curved (#218), the cell over the faces' surfaces
-                let cell = match c.get("faces") {
-                    Some(faces) => {
-                        let surfaces = faces.arr().iter().map(crate::solid::lowering::CornerFace::surface_of_json)
-                            .collect::<Result<Vec<_>,_>>()?;
-                        let [a,b,s] = &surfaces[..] else { return Err("recipe: a corner stands between three faces".into()) };
-                        let tol = (1e-9*(1.+radius+crate::space::norm(vertex))).max(floor);
-                        super::fillet::corner_among(vertex,centre,radius,[a,b,s],tol)
-                    }
-                    None => super::fillet::corner(vertex,centre,radius,toward,tol),
-                };
-                pieces.push(cell.map_err(|e| format!("a corner: {e}"))?);
+                let surfaces = field(c,"faces")?.arr().iter().map(surface_of).collect::<Result<Vec<_>,_>>()?;
+                let [a,b,s] = &surfaces[..] else { return Err("recipe: a corner stands between three faces".into()) };
+                let tol = (1e-9*(1.+radius+crate::space::norm(vertex))).max(floor);
+                pieces.push(super::fillet::corner_among(vertex,centre,radius,[a,b,s],tol).map_err(|e| format!("a corner: {e}"))?);
             }
             // a ball rolled along a traced run (#194): against the body the region rounds as its terms
             // but the late ones make it (the stratum), each piece the material it adds or takes
@@ -203,34 +190,46 @@ pub fn kept(piece: &Brep,o: V,keep: V,floor: f64) -> Result<Brep,String> {
     combined(piece,&block,Op::Common,floor)
 }
 
-/// `piece` kept within (`inside`) or outside the solid a cylinder of `radius` about the line
-/// through `o` along the unit `axis`, or a ball about `o` (`axis` none), bounds: in common with it,
-/// or less it, the cylinder long enough to reach past the piece either way.
-pub fn kept_by_solid(piece: &Brep,o: V,axis: Option<V>,radius: f64,inside: bool,floor: f64) -> Result<Brep,String> {
+/// A lowered piece's end face or a corner's face, as `solid::lowering` writes it (millimetres): a
+/// plane through `origin` square to `normal`, a cylinder of `radius` about the line through `origin`
+/// along `axis`, or a sphere of `radius` about `origin`.
+fn surface_of(j: &Json) -> Result<super::geom::Surface,String> {
+    use super::geom::{Frame,Surface};
+    let radius = || field(j,"radius").map(Json::as_f64);
+    Ok(match field(j,"kind")?.as_str() {
+        "plane" => Surface::Plane(Frame::about(vec3(field(j,"origin")?),vec3(field(j,"normal")?))),
+        "cylinder" => Surface::Cylinder(Frame::about(vec3(field(j,"origin")?),vec3(field(j,"axis")?)),radius()?),
+        "sphere" => Surface::Sphere(Frame::about(vec3(field(j,"origin")?),[0.,0.,1.]),radius()?),
+        k => return Err(format!("recipe: a face on a surface of kind `{k}`")),
+    })
+}
+
+/// `piece` kept within (`inside`) or outside the solid a cylinder or a sphere bounds: in common with
+/// it, or less it, the cylinder long enough to reach past the piece either way.
+pub fn kept_by_solid(piece: &Brep,surface: &super::geom::Surface,inside: bool,floor: f64) -> Result<Brep,String> {
     use crate::space::{add,distance,dot,scale,sub};
     use super::build::ProfileEdge;
-    use super::geom::Frame;
+    use super::geom::{Frame,Surface};
     let (lo,hi) = piece.bounds();
     if !lo[0].is_finite() { return Err("a piece of nothing cut off at a curved face".into()) }
     let middle = scale(add(lo,hi),0.5);
-    let solid = match axis {
-        Some(d) => {
+    let solid = match *surface {
+        Surface::Cylinder(f,radius) => {
             // the circle in the plane square to the axis through the piece's middle's foot
-            let foot = add(o,scale(d,dot(sub(middle,o),d)));
+            let foot = add(f.o,scale(f.z,dot(sub(middle,f.o),f.z)));
             let reach = distance(lo,hi)+radius;
-            let frame = Frame::about(foot,d);
-            let circle = ProfileEdge::Arc {frame,r:radius,span:None};
-            prism(&Profile {origin:foot,normal:d,loops:vec![vec![circle]],names:Vec::new()},-reach,reach)?
+            let circle = ProfileEdge::Arc {frame:Frame::about(foot,f.z),r:radius,span:None};
+            prism(&Profile {origin:foot,normal:f.z,loops:vec![vec![circle]],names:Vec::new()},-reach,reach)?
         }
-        None => {
+        Surface::Sphere(f,radius) => {
             // a half disc turned once about a line through the centre
-            let frame = Frame::about(o,[0.,0.,1.]);
-            let (top,bottom) = (frame.at([0.,radius,0.]),frame.at([0.,-radius,0.]));
-            let arc = ProfileEdge::Arc {frame:Frame::new(o,frame.z,frame.y),r:radius,span:Some([0.,std::f64::consts::PI])};
+            let (top,bottom) = (f.at([0.,radius,0.]),f.at([0.,-radius,0.]));
+            let arc = ProfileEdge::Arc {frame:Frame::new(f.o,f.z,f.y),r:radius,span:Some([0.,std::f64::consts::PI])};
             let shut = ProfileEdge::Line {a:bottom,b:top};
-            let half = Profile {origin:o,normal:frame.z,loops:vec![vec![arc,shut]],names:Vec::new()};
-            super::build::revolve(&half,o,frame.y,std::f64::consts::TAU)?
+            let half = Profile {origin:f.o,normal:f.z,loops:vec![vec![arc,shut]],names:Vec::new()};
+            super::build::revolve(&half,f.o,f.y,std::f64::consts::TAU)?
         }
+        _ => return Err(format!("a piece kept within a {}",surface.kind())),
     };
     combined(piece,&solid,if inside { Op::Common } else { Op::Cut },floor)
 }

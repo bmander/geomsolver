@@ -20,6 +20,7 @@ use gcs_core::brep::{export,geom::Rigid,props::volume,sweep::Say};
 use gcs_core::json::Json;
 use gcs_core::model::{RegionShape,SolidDef};
 use gcs_core::solid::lowering::{self,Piece,Run,Stroke};
+use gcs_core::space::{add,distance as dist,norm,scale};
 use std::collections::BTreeSet;
 
 /// How near OCCT's volume ours must be where both build every face analytically.
@@ -68,9 +69,6 @@ fn edge_of(p: &Piece) -> Option<(V,f64,bool)> {
     }
 }
 
-fn add(a: V,b: V) -> V { [a[0]+b[0],a[1]+b[1],a[2]+b[2]] }
-fn scale(a: V,k: f64) -> V { a.map(|x| x*k) }
-fn dist(a: V,b: V) -> f64 { (0..3).map(|k| (a[k]-b[k]).powi(2)).sum::<f64>().sqrt() }
 
 /// The body's recipe less its lowered regions: what the rounds read.
 fn stratum(recipe: &Json) -> Json {
@@ -104,9 +102,8 @@ fn apart(session: &native::Session,ours: &gcs_core::brep::topo::Brep,theirs: std
     use gcs_core::brep::query::{Located,Place};
     let (lo,hi) = ours.bounds();
     let located = Located::owned(ours.clone(),1e-9*ours.size());
-    let mut k = 0x9e3779b97f4a7c15u64;
-    let mut next = || { k ^= k << 13; k ^= k >> 7; k ^= k << 17; (k >> 11) as f64/(1u64 << 53) as f64 };
-    let points: Vec<V> = (0..20000).map(|_| std::array::from_fn(|j| lo[j]+(hi[j]-lo[j])*next())).collect();
+    let mut rng = gcs_core::rng::Rng::new(218);
+    let points: Vec<V> = (0..20000).map(|_| std::array::from_fn(|j| rng.uniform(lo[j],hi[j]))).collect();
     let states = session.solid_contains(theirs,&points,1e-9).unwrap();
     let apart: Vec<(&V,&str)> = points.iter().zip(&states).filter_map(|(p,s)| match located.solid_place(*p) {
         Place::In if *s == 0 => Some((p,"ours")),Place::Out if *s == 1 => Some((p,"OCCT's")),_ => None,
@@ -144,7 +141,7 @@ fn every_rounds_example_is_occts_fillet() {
             let Some(Ok(pieces)) = lowering::lowered(sk,i) else { continue };
             for (at,size,chamfer) in pieces.iter().filter_map(edge_of) {
                 let list = if chamfer { &mut flats } else { &mut rounds };
-                if !list.iter().any(|(p,_)| dist(*p,at) <= 1e-9*(1.+dist(at,[0.;3]))) { list.push((at,size)); }
+                if !list.iter().any(|(p,_)| dist(*p,at) <= 1e-9*(1.+norm(at))) { list.push((at,size)); }
             }
         }
         // theirs: OCCT's body less the rounds, rounded by OCCT

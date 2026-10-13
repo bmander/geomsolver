@@ -620,36 +620,32 @@ int solvent_cad_round(Cad* cad,int id,int count,const double* points,const doubl
         const TopoDS_Shape shape = cad->at(id);
         TopTools_IndexedMapOfShape edges;
         TopExp::MapShapes(shape,TopAbs_EDGE,edges);
-        BRepFilletAPI_MakeFillet fillet(shape);
-        BRepFilletAPI_MakeChamfer flat(shape);
-        for (int k = 0; k < count; ++k) {
-            const gp_Pnt p(points[3*k],points[3*k+1],points[3*k+2]);
+        // each edge's box, so a point is measured against the edges near it alone
+        std::vector<Bnd_Box> boxes(static_cast<size_t>(edges.Extent()));
+        for (int i = 1; i <= edges.Extent(); ++i) BRepBndLib::Add(edges(i),boxes[static_cast<size_t>(i-1)]);
+        const auto edge_at = [&](const gp_Pnt& p) {
+            const double reach = 1e-6*(1.+p.XYZ().Modulus());
             const TopoDS_Vertex at = BRepBuilderAPI_MakeVertex(p);
             int best = 0;
             double nearest = std::numeric_limits<double>::infinity();
             for (int i = 1; i <= edges.Extent(); ++i) {
                 const TopoDS_Edge& edge = TopoDS::Edge(edges(i));
-                if (BRep_Tool::Degenerated(edge)) continue;
+                if (BRep_Tool::Degenerated(edge) || boxes[static_cast<size_t>(i-1)].IsOut(p)) continue;
                 BRepExtrema_DistShapeShape distance(at,edge);
                 if (distance.IsDone() && distance.Value() < nearest) { nearest = distance.Value(); best = i; }
             }
-            if (best == 0 || nearest > 1e-6*(1.+p.XYZ().Modulus()))
+            if (best == 0 || nearest > reach)
                 throw std::runtime_error("no edge passes through (" + std::to_string(p.X()) + ", " + std::to_string(p.Y())
-                    + ", " + std::to_string(p.Z()) + "): the nearest is " + std::to_string(nearest) + " from it");
-            if (chamfer) flat.Add(sizes[k],TopoDS::Edge(edges(best)));
-            else fillet.Add(sizes[k],TopoDS::Edge(edges(best)));
-        }
-        TopoDS_Shape result;
-        if (chamfer) {
-            flat.Build();
-            if (!flat.IsDone()) throw std::runtime_error("chamfer failed");
-            result = flat.Shape();
-        } else {
-            fillet.Build();
-            if (!fillet.IsDone()) throw std::runtime_error("fillet failed");
-            result = fillet.Shape();
-        }
-        return cad->put(result);
+                    + ", " + std::to_string(p.Z()) + ")");
+            return TopoDS::Edge(edges(best));
+        };
+        const auto rounded = [&](auto&& maker) {
+            for (int k = 0; k < count; ++k) maker.Add(sizes[k],edge_at(gp_Pnt(points[3*k],points[3*k+1],points[3*k+2])));
+            maker.Build();
+            if (!maker.IsDone()) throw std::runtime_error(chamfer ? "chamfer failed" : "fillet failed");
+            return maker.Shape();
+        };
+        return cad->put(chamfer ? rounded(BRepFilletAPI_MakeChamfer(shape)) : rounded(BRepFilletAPI_MakeFillet(shape)));
     });
 }
 int solvent_cad_transform(Cad* cad,int source,const double* matrix) noexcept {

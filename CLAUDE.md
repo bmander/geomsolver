@@ -387,31 +387,34 @@ where a face reference names a face in pieces (`run`: every edge between the two
 within the whole run's ends, as the field reads them): `Run` (the section along a straight edge
 between planes, or a plane and a cylinder, or two cylinders, about lines along it — the section's
 `Trace`s lines and circles, the ball where their offsets meet (`twin.sv`), a chamfer's flat beside
-a circle the conic its sum of distances makes (`bowed`, `Stroke::Conic`, a rational quadratic
-profile edge: an extrusion face; turned in a ring, a revolution's; between two circles a
-Cartesian oval, refused) — carried on past each end until the plane faces it
+a circle the conic its sum of distances makes (the section read as a meridian's corner,
+`Corner2`, its round and its flat by `brep::corners::ball`/`sum`, the meridian's own rule;
+`Stroke::Conic`, a rational quadratic profile edge: an extrusion face; turned in a ring, a
+revolution's; between two circles a Cartesian oval, refused) — carried on past each end until the plane faces it
 ends on cut it off (#195's meaning: a square one is the prism's end, one at a slant a half-space it
 is kept within, `Run::within`, the recipe's `"within"` as a point and a normal; a run-out); a
 cylinder or a sphere it ends on carried into until every line of its section's hull has crossed
-it, and kept within or outside that solid (#218, `Run::kept`, `Kept`, the recipe's `"kept"` built
-by `recipe::kept_by_solid`: `post.sv`, a D's flat, a quarter ball); a face along the edge or
+it, and kept within or outside that solid (#218, `Run::kept`, `Kept` over a `Surf`, the recipe's
+`"kept"` read by `recipe::surface_of` and built by `recipe::kept_by_solid`; one `ends_at` sorts a
+piece's ends: `post.sv`, a D's flat, a quarter ball); a face along the edge or
 another curved end refused, `unbuilt`), `Ring` (a circle where a
 plane meets a coaxial cylinder or cone: the section in the meridian at its start turned through its
 angle, `Ring::angle`; a sphere centred on the axis is a circle in the meridian (`Trace::Circle`,
 `knob.sv`'s neck); a stretch ends at seams, at planes through the axis at its ends' meridians,
-or at a plane not through it — carried on round until its whole section has crossed it, and kept
-within it, #218: a D's rim at its flat — or at a cylinder or a sphere it runs into, carried a
+or at a plane not through it — carried on round until its whole section has crossed it (each
+point's first crossing a sinusoid's root, `first_over`), and kept within it, #218: a D's rim at
+its flat — or at a cylinder or a sphere it runs into, carried a
 quarter of the way through what its section's points spend in that solid and kept on its side,
 `Kept`: the twin bar's rim), a run and a stretch going on from one
 another **glued** at their shared section (a face going on tangent across a seam is no end,
 `BodyFaces::continues`, the field's and the lowering's one rule),
-`Corner` (three planes at any convex or concave corner, #218: the ball `r` from each by a 3×3
-solve, the vertex within its normal cone; the cell less the ball, `brep::fillet::corner`, plus
-each edge's run, cut short at its section even where it ran out past a slanted end; where a face
-is a cylinder or a sphere, `curved_corner` at each vertex the three share: the ball by Newton's
-steps on the signed distances, its cell `fillet::corner_among` over the surfaces (`Corner::faces`,
-the recipe's corner `"faces"`), a ring's stretch turned only to the corner's meridian and glued
-there: `dshaft.sv`), `Rolled` (along an edge no line or coaxial circle carries — a tee's crotch, a bore's rim, a
+`Corner` (`corner_at` each vertex three faces share, planes or a cylinder or a sphere among
+them, #218: the ball `r` from each surface, a 3×3 solve on the tangent planes then Newton's steps
+on the signed distances, `roots::newton_onto` — none for planes; the vertex within its normal
+cone; the cell less the ball, `fillet::corner_among` over the faces' surfaces, `Corner::faces`,
+the recipe's corner `"faces"`, `fillet::corner` its three-plane case; plus each edge's run or
+ring stretch, cut short at its section even where it ran out past a slanted end, a ring's
+stretch turned only to the corner's meridian, glued there: `dshaft.sv`), `Rolled` (along an edge no line or coaxial circle carries — a tee's crotch, a bore's rim, a
 run-out across a slope: the ball rolled along the whole run, `brep::fillet::roll`, its canal
 fitted, carried past an end and cut off by the plane there; the recipe's `"rolled"` rolled against
 the body's stratum, rebuilt from the `"stratum"` terms `cad.rs` writes beside it, the gate's
