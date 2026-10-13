@@ -174,9 +174,11 @@ pub struct Sketch {
             crate::solid::region::Refusal>)>,
     >,
     /// Each region solid's reading in general position (`solid::region::in_general_position`),
-    /// against `solid::reads`: validation, the sweep test and the field each ask it.
+    /// against its own terms and the strata it reads: validation, the sweep test and the field
+    /// each ask it.
     pub(crate) general_cache: std::cell::RefCell<
-        BTreeMap<usize, (Vec<f64>, Option<Result<crate::solid::RegionField, String>>)>,
+        BTreeMap<usize, (Vec<f64>, Vec<std::sync::Arc<crate::solid::faces::BodyFaces>>,
+            Option<Result<crate::solid::RegionField, String>>)>,
     >,
     /// Each region solid's lowering (`solid::lowering::lowered`, #194), against its own terms and
     /// the stratum it reads: the recipe and the exact boundary each ask it, and its gate reads the

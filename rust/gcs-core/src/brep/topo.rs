@@ -113,6 +113,10 @@ impl Face {
     }
 }
 
+/// How `Brep::check` opens a refusal of an edge not used once each way: the boundary is no
+/// manifold there (two pieces touching along it, or a face kept twice).
+pub const NOT_MANIFOLD: &str = "not a manifold: ";
+
 /// A solid's boundary: one or more closed shells, its faces in any order.
 #[derive(Clone,Debug,Default)]
 pub struct Brep { pub vertices: Vec<Vertex>,pub edges: Vec<Edge>,pub faces: Vec<Face> }
@@ -241,8 +245,9 @@ impl Brep {
             match e.curve {
                 EdgeCurve::Degenerate => if u.0+u.1 != 1 { return Err(format!("degenerate edge {i} used {} times",u.0+u.1)) },
                 EdgeCurve::Curve(_) => if *u != (1,1) {
-                    return Err(format!("edge {i} ({}) used {} times along and {} against",
-                        if let EdgeCurve::Curve(c) = &e.curve { c.kind() } else { "" },u.0,u.1))
+                    return Err(format!("{NOT_MANIFOLD}edge {i} ({}) near {:?} used {} times along and {} against",
+                        if let EdgeCurve::Curve(c) = &e.curve { c.kind() } else { "" },
+                        e.point(0.5*(e.t[0]+e.t[1]),&self.vertices).map(|x| (x*1e4).round()/1e4),u.0,u.1))
                 }
             }
         }

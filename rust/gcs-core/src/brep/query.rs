@@ -125,7 +125,8 @@ pub fn crossings_in(surface: &Surface,a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2
             let slack = tol/carrier.speed().max(1e-300);
             (t >= span[0]-slack && t <= span[1]+slack && distance(carrier.point(t),q) <= 8.*tol).then_some(t)
         };
-        Some(roots.into_iter().filter_map(|(t,_)| { let q = other.point(t); on(q).map(|_| (t,q)) }).collect())
+        let found: Vec<(f64,V)> = roots.into_iter().filter_map(|(t,_)| { let q = other.point(t); on(q).map(|_| (t,q)) }).collect();
+        Some(tangential(carrier,other,over,found,tol))
     };
     let carries = |c: &Curve| matches!(c,Curve::Line {..} | Curve::Circle(..) | Curve::Ellipse(..));
     match (a,b) {
@@ -141,6 +142,36 @@ pub fn crossings_in(surface: &Surface,a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2
         }
         _ => None,
     }
+}
+
+/// **A crossing where `other` arrives tangent to `carrier` is one crossing**: there `other` stays
+/// within the tolerance of the carrier over a stretch the square root of the tolerance times its
+/// curvature long, and its roots on the carrier's plane are several points of that one stretch (a
+/// fillet's trace on a wall arriving where the fillet lies tangent to a face the wall meets). Roots
+/// joined by a stretch of `other` that never leaves the carrier are one, taken at `other`'s end
+/// where one of them is there (the vertex that end already is), else nearest the carrier.
+fn tangential(carrier: &Curve,other: &Curve,over: [f64;2],mut found: Vec<(f64,V)>,tol: f64) -> Vec<(f64,V)> {
+    if found.len() < 2 { return found }
+    found.sort_by(|x,y| x.0.total_cmp(&y.0));
+    let off = |q: V| distance(carrier.point(carrier.inverse(q)),q);
+    let slack = tol/other.speed().max(1e-300);
+    let at_end = |t: f64| (t-over[0]).abs() <= slack || (t-over[1]).abs() <= slack;
+    let mut out: Vec<(f64,V)> = Vec::new();
+    let mut cluster = vec![found[0]];
+    let flush = |cluster: &mut Vec<(f64,V)>,out: &mut Vec<(f64,V)>| {
+        let pick = cluster.iter().copied().find(|&(t,_)| at_end(t))
+            .unwrap_or_else(|| cluster.iter().copied().min_by(|x,y| off(x.1).total_cmp(&off(y.1))).unwrap());
+        out.push(pick);
+        cluster.clear();
+    };
+    for &(t,q) in &found[1..] {
+        let last = cluster.last().unwrap().0;
+        let hugging = (1..8).all(|j| off(other.point(last+(t-last)*j as f64/8.)) <= 8.*tol);
+        if !hugging { flush(&mut cluster,&mut out); }
+        cluster.push((t,q));
+    }
+    flush(&mut cluster,&mut out);
+    out
 }
 
 /// Where `curve` over `[t0, t1]` meets `surface`, to `tol`: every sign change of the surface's

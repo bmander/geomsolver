@@ -880,8 +880,21 @@ impl Walk<'_> {
         let [Kid::Ref(set)] = d.children.first().map(Vec::as_slice).unwrap_or(&[]) else {
             return None;
         };
-        let alias = self.alias_table();
-        let found = super::resolve::lookup_raw(set, sc, &self.names, &alias, self.units);
+        // a plain name declared in scope, as a family's instance is (`taken := solid(run)`), is
+        // read off the names without the alias table, which a region asked for per solid would
+        // build afresh each time (`lookup_raw`'s order: each prefix, then the bare name)
+        let plain = set.path.is_empty() && !matches!(set.root.text.as_str(), "next" | "prev");
+        let candidates = sc.prefixes.iter().map(|p| format!("{p}{}", set.root.text))
+            .chain((!sc.closed).then(|| set.root.text.clone()));
+        let first = candidates.filter(|_| plain)
+            .find(|abs| self.names.contains(abs) || self.aliases.iter().any(|(k, _, _)| k == abs));
+        let found = match first {
+            Some(abs) if self.names.contains(&abs) => Some((abs, Vec::new())),
+            _ => {
+                let alias = self.alias_table();
+                super::resolve::lookup_raw(set, sc, &self.names, &alias, self.units)
+            }
+        };
         let Some((abs, rest)) = found else { return None };
         if !rest.is_empty() || !self.sets.contains_key(&abs) {
             return None;

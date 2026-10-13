@@ -146,12 +146,24 @@ pub fn node_named(n: &Json,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64
                         queue.push_back(k);
                     }
                 }
-                solid = Some(match solid { None => chain,Some(s) => combined(&s,&chain,Op::Union,floor)? });
+                solid = Some(match solid { None => chain,Some(s) => beside(&s,&chain,floor)? });
             }
             solid.ok_or_else(|| "recipe: a lowered region of no pieces".to_string())
         }
         k => Err(format!("recipe: a node of kind `{k}`")),
     }
+}
+
+/// Two chains of a lowered region unioned, or — where they only touch, along a line their ends
+/// share (a rim's run and a ring's stretch each side of a reflex corner, kept off one another by
+/// the walls they end on) — side by side as two shells: their union is no manifold there, but
+/// nothing of either lies in the other, so a body taking each takes both.
+fn beside(a: &Brep,b: &Brep,floor: f64) -> Result<Brep,String> {
+    let union = match combined(a,b,Op::Union,floor) { Ok(u) => return Ok(u),Err(e) => e };
+    let size = a.size().max(b.size());
+    let apart = combined(a,b,Op::Common,floor)
+        .is_ok_and(|c| c.faces.is_empty() || super::props::volume(&c).abs() <= 1e-9*size.dpowi(3));
+    if apart { Ok(a.joined(b)) } else { Err(union) }
 }
 
 /// A body: the stock, plus everything on it, minus everything that cuts it, within everything that
@@ -166,7 +178,17 @@ fn body(n: &Json,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64,String>,f
         for x in list {
             let operand = built.get(&x.as_i64()).ok_or(format!("recipe: an operand not built before its body"))?;
             let name = built_names.get(&x.as_i64()).cloned().unwrap_or_default();
-            solid = combined(&solid,operand,op,floor).map_err(|e| format!("{key} `{name}`: {e}"))?;
+            solid = combined(&solid,operand,op,floor).map_err(|e| {
+                // **what the stratum leaves**: each round or chamfer is read off the body as the
+                // terms before them leave it, never off another, so two of separate statements
+                // meeting at a vertex (a fill and a run of other radii) or across a corner a fill
+                // rounds (a rim's run and a ring's stretch) leave material touching itself along a
+                // line, which no manifold boundary holds (#197, #218)
+                if !written && e.starts_with(super::topo::NOT_MANIFOLD) {
+                    format!("{key}: rounds or chamfers of separate statements meet where the body they each read leaves \
+                        them touching along a line, not built yet (#218): {e}")
+                } else { format!("{key} `{name}`: {e}") }
+            })?;
         }
     }
     Ok(solid)

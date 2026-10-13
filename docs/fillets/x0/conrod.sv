@@ -2,7 +2,7 @@
 // shank, the shank filled into both eyes, a pocket each side of the web rounded inside, the
 // bores chamfered, and every other edge rounded. Draft from the parting plane is left out (#66).
 // Does not parse yet: rounds and chamfers on solids, face groups, distances from faces and solids
-// in a region's body.
+// in a region's body. As it parses now, and built exactly: rust/examples/conrod/rod.sv (#197).
 //
 // `engine/conrod.sv` draws the same rod in its plane of swing, where the shank-to-eye fillets are
 // 42 statement lines of 2D geometry: four arcs, their centres, rays, contact points and seeds, each
