@@ -858,30 +858,12 @@ fn place_of(
     // read there, so a step along a line square to that plane goes somewhere (#214: up a
     // cutter's axis from a point of the pitch plane)
     let plain = a.turn.is_none() && a.bearing.is_none() && a.x.is_none() && a.y.is_none();
-    if e.kind == EntKind::Point && plain && (a.toward.is_some() || a.along.is_some()) {
-        let ends = match (&a.toward, &a.along) {
-            (Some(t), _) => {
-                let b = place(sk, res, t)?;
-                if b.kind != EntKind::Point {
-                    return Err(format!("a step is taken toward a point, not {}", b.kind.a()));
-                }
-                (e.i(), b.i())
-            }
-            (None, Some(l)) => {
-                let l = place(sk, res, l)?;
-                if l.kind != EntKind::Line {
-                    return Err(format!("a step is taken along a line, not {}", l.kind.a()));
-                }
-                (sk.lines[l.i()].p1 as usize, sk.lines[l.i()].p2 as usize)
-            }
-            (None, None) => unreachable!("a step"),
-        };
-        let f = match &a.by {
-            Some((text, _)) => seed_eval(sk, res, text, names).map_err(|m| format!("`{text}`: {m}"))?,
-            None => 1.0,
-        };
-        let (at, from, to) = (sk.world_point(e.i()), sk.world_point(ends.0), sk.world_point(ends.1));
-        return Ok((0..3).map(|k| at[k] + f * (to[k] - from[k])).collect());
+    if e.kind == EntKind::Point && plain {
+        if let Some((from, to)) = step_ends(sk, res, e, a)? {
+            let f = step_by(sk, res, &a.by, 1.0, names)?;
+            let (at, from, to) = (sk.world_point(e.i()), sk.world_point(from), sk.world_point(to));
+            return Ok((0..3).map(|k| at[k] + f * (to[k] - from[k])).collect());
+        }
     }
     let home = match e.kind {
         EntKind::Plane => Some(e.i()),
@@ -891,45 +873,18 @@ fn place_of(
     if home.is_some() || e.kind != EntKind::Point {
         return place_in(sk, res, home, a, names).map(|q| sk.world_in(home, q).to_vec());
     }
-    if a.turn.is_some() || a.bearing.is_some() || a.x.is_some() || a.y.is_some() {
+    if !plain {
         return Err("a turn or a bearing is taken in a plane, and this place stands in space"
             .to_string());
     }
-    let at = sk.world_point(e.i());
-    let Some(t) = &a.toward else {
-        if a.along.is_some() {
-            return Err("a step along a line is taken in a plane; step `toward:` a point".into());
-        }
-        return Ok(at.to_vec());
-    };
-    let b = place(sk, res, t)?;
-    if b.kind != EntKind::Point {
-        return Err(format!("a step is taken toward a point, not {}", b.kind.a()));
-    }
-    let f = match &a.by {
-        Some((text, _)) => seed_eval(sk, res, text, names).map_err(|m| format!("`{text}`: {m}"))?,
-        None => 1.0,
-    };
-    let to = sk.world_point(b.i());
-    Ok((0..3).map(|k| at[k] + f * (to[k] - at[k])).collect())
+    Ok(sk.world_point(e.i()).to_vec())
 }
 
-/// `place_of` read in `view`'s coordinates.
-fn place_in(
-    sk: &Sketch,
-    res: &Resolver,
-    view: Option<usize>,
-    a: &AtRef,
-    names: &[(String, String)],
-) -> Result<(f64, f64), String> {
-    let e = place(sk, res, &a.what)?;
-    // a place's number: what the text comes to, or what an unwritten key means
-    let number = |t: &Option<(String, Span)>, unsaid: f64| match t {
-        Some((text, _)) => seed_eval(sk, res, text, names).map_err(|m| format!("`{text}`: {m}")),
-        None => Ok(unsaid),
-    };
-    // the step a place takes: toward a point, or a line's run
-    let step = match (&a.toward, &a.along) {
+/// The two points a place's step runs between: from `e` toward a point (`toward:`), or a line's
+/// run (`along:`); `None` where it takes no step.
+fn step_ends(sk: &Sketch, res: &Resolver, e: EntRef, a: &AtRef)
+    -> Result<Option<(usize, usize)>, String> {
+    Ok(match (&a.toward, &a.along) {
         (Some(t), _) => {
             let b = place(sk, res, t)?;
             if b.kind != EntKind::Point {
@@ -945,7 +900,30 @@ fn place_in(
             Some((sk.lines[l.i()].p1 as usize, sk.lines[l.i()].p2 as usize))
         }
         (None, None) => None,
-    };
+    })
+}
+
+/// A place's number: what the text comes to, or what an unwritten key means.
+fn step_by(sk: &Sketch, res: &Resolver, t: &Option<(String, Span)>, unsaid: f64,
+           names: &[(String, String)]) -> Result<f64, String> {
+    match t {
+        Some((text, _)) => seed_eval(sk, res, text, names).map_err(|m| format!("`{text}`: {m}")),
+        None => Ok(unsaid),
+    }
+}
+
+/// `place_of` read in `view`'s coordinates.
+fn place_in(
+    sk: &Sketch,
+    res: &Resolver,
+    view: Option<usize>,
+    a: &AtRef,
+    names: &[(String, String)],
+) -> Result<(f64, f64), String> {
+    let e = place(sk, res, &a.what)?;
+    let number = |t: &Option<(String, Span)>, unsaid: f64| step_by(sk, res, t, unsaid, names);
+    // the step a place takes: toward a point, or a line's run
+    let step = step_ends(sk, res, e, a)?;
     // a place in a plane's own coordinates, read in space and seen where the point is
     if a.x.is_some() || a.y.is_some() {
         if e.kind != EntKind::Plane {

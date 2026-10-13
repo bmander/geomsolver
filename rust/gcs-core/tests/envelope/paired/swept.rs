@@ -123,8 +123,8 @@ fn whole_mate(pair: &Pair,rack: &str) -> (PlanarField,[f64;3],[f64;3],String) {
     let tooth = Pieces::read(pair,"pinion");
     let sk = &pair.model.sketch;
     let point = |name: &str| sk.world_point(pair.model.map.ent_named(&format!("{REF}.{name}")).unwrap().i());
+    let unit = side.axis.map(|v| v/side.axis[0].hypot(side.axis[1]).hypot(side.axis[2]));
     let radius = |p: [f64;3]| {
-        let unit = side.axis.map(|v| v/side.axis[0].hypot(side.axis[1]).hypot(side.axis[2]));
         let q: [f64;3] = std::array::from_fn(|k| p[k]-side.origin[k]);
         let z = (0..3).map(|k| q[k]*unit[k]).sum::<f64>();
         (0..3).map(|k| (q[k]-z*unit[k]).powi(2)).sum::<f64>().sqrt()
@@ -133,8 +133,7 @@ fn whole_mate(pair: &Pair,rack: &str) -> (PlanarField,[f64;3],[f64;3],String) {
     // the outer mate's other flank is the tooth's inner one moved out by two pitch gaps; the
     // inner mate's, its outer one moved in
     let (from,shift) = if rack == "gear_outer" { ("inner",2.*(ro-ri)) } else { ("outer",2.*(ri-ro)) };
-    let (_,through,_) = tooth.planes.iter().find(|p| p.0 == from).unwrap().clone();
-    let (_,_,tooth_normal) = tooth.planes.iter().find(|p| p.0 == from).unwrap().clone();
+    let (_,through,tooth_normal) = tooth.planes.iter().find(|p| p.0 == from).unwrap().clone();
     let through = [through[0]+shift,through[1]];
     // outward from the mate: away from its own flank, which the tooth's opposite normal faces
     let normal = tooth_normal.map(|x| -x);

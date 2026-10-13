@@ -156,8 +156,8 @@ fn cutter_faces(model: &program::Elaborated,solid: usize) -> Vec<Option<CutterFa
         .then(Motion::rotation(axis,angle,0.).unwrap()).then(Motion::translation(m.origin,[0.;3]).unwrap());
     walk.into_iter().map(|(seg,surface)| {
         let surface = surface?;
-        let start = basis.lift(if area < 0. { seg.end() } else { seg.start() }[0],
-            if area < 0. { seg.end() } else { seg.start() }[1]);
+        let first = if area < 0. { seg.end() } else { seg.start() };
+        let start = basis.lift(first[0],first[1]);
         let ends = [0.,1.].map(|u| space::distance(surface.at(u,0.).unwrap().position,start));
         let surface = if ends[0] <= ends[1] { surface } else { surface.reversed() };
         let sweep = match seg { Seg::Arc {sweep,..} => Some(sweep.abs()),_ => None };
@@ -248,8 +248,10 @@ impl Pair {
                 _ => None,
             }).collect();
             // each cutter's faces, its region's meridian's steps in their walk (`cutter_faces`)
+            let cutters: std::collections::BTreeMap<usize,Vec<Option<CutterFace>>> = cut.iter()
+                .map(|&(_,_,solid)| (solid,cutter_faces(&model,solid))).collect();
             let surface_of = |solid: usize,name: &str,label: &str| -> (RevolvedSurface,usize,Option<f64>) {
-                let faces = cutter_faces(&model,solid);
+                let faces = &cutters[&solid];
                 let k = faces.iter().position(|f| f.as_ref().is_some_and(|(n,..)| n == name))
                     .unwrap_or_else(|| panic!("`{}` has no `{name}`",sk.solids[solid].name));
                 let (_,s,sweep) = faces[k].as_ref().unwrap();
@@ -258,12 +260,12 @@ impl Pair {
                 (s,k,*sweep)
             };
             let profile_name = |solid: usize,k: usize| -> String {
-                cutter_faces(&model,solid)[k].as_ref().map(|f| f.0.clone()).unwrap_or_default()
+                cutters[&solid][k].as_ref().map(|f| f.0.clone()).unwrap_or_default()
             };
             let neighbours = |solid: usize,k: usize| -> Vec<(usize,usize,usize)> {
                 // the faces either side of step `k` in the meridian, each with which end of
                 // step `k` and which of its own (its `u`, 0 or 1) is the corner they share
-                let faces = cutter_faces(&model,solid);
+                let faces = &cutters[&solid];
                 let ends = |f: &RevolvedSurface| [0.,1.].map(|u| f.at(u,0.).unwrap().position);
                 let this = ends(&faces[k].as_ref().unwrap().1);
                 let n = faces.len();

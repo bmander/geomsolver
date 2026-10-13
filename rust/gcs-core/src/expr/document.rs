@@ -1,9 +1,10 @@
 //! Evaluate the document's expressions and maintain the free variables they read.
 
-use super::{eval, literal, parse_in, to_arg_units, to_user_units, Aff, Expr, Free, Parsed};
+use super::{eval, literal, parse_in, to_arg_units, to_user_units, Aff, Ast, Expr, Free, Parsed};
 use crate::constraints::{Arg, Constraint, SpecKind};
-use crate::model::Sketch;
+use crate::model::{Declared, Sketch};
 use crate::units::Dim;
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 
 /// Why an expression could not be used — sorted by what it means for the document, since the
@@ -106,13 +107,30 @@ struct Node {
     parsed: Result<Parsed, String>,
 }
 
-/// The document's declared unknowns, each a free name of the dimension it was declared: what a
-/// text over one is worked out in, wherever it is read.
-pub(crate) fn declared_env(sk: &Sketch) -> BTreeMap<String, Aff> {
-    sk.declared
-        .iter()
-        .map(|(name, d)| (name.clone(), Aff { free: Some(name.clone()), m: 1.0, c: 0.0, dim: d.dim }))
-        .collect()
+/// `env` with each declared unknown `ast` reads and `env` does not bind a free name of the
+/// dimension it was declared: how a text written over one (`(-1 * m + 0.2mm)`, `of_vals`) is read
+/// wherever it is read, the flattener's scopes and the sketch's alike.  `env` itself where the
+/// text reads none.
+pub(crate) fn with_declared<'e>(
+    ast: &Ast,
+    env: &'e BTreeMap<String, Aff>,
+    declared: &BTreeMap<String, Declared>,
+) -> Cow<'e, BTreeMap<String, Aff>> {
+    let mut read = ast.deps().into_iter()
+        .filter_map(|name| Some((declared.get(&name)?.dim, name)))
+        .filter(|(_, name)| !env.contains_key(name))
+        .peekable();
+    if read.peek().is_none() {
+        return Cow::Borrowed(env);
+    }
+    let mut env = env.clone();
+    env.extend(read.map(|(dim, name)| (name.clone(), Aff::free(name, dim))));
+    Cow::Owned(env)
+}
+
+/// A text worked out over no scope but the drawing's declared unknowns (`with_declared`).
+pub(crate) fn eval_declared(ast: &Ast, declared: &BTreeMap<String, Declared>) -> Result<Aff, ExprError> {
+    eval(ast, &with_declared(ast, &BTreeMap::new(), declared))
 }
 
 /// Evaluate every expression in the document, in document order.  A name an expression reads
@@ -146,9 +164,6 @@ pub fn evaluate(sk: &mut Sketch) -> Vec<ExprItem> {
     // what states no row last, so a bound reads an unknown the rows have bound this time round
     let (rows, rest): (Vec<usize>, Vec<usize>) =
         (0..nodes.len()).partition(|&k| sk.constraints[nodes[k].ci].states_rows());
-    // an unknown the source declared is read as what it was declared (`param m: Length`), as the
-    // flattener read it where it wrote the text: `(-1 * m + 0.2mm)` adds two lengths
-    let declared = declared_env(sk);
     let mut items: Vec<Option<ExprItem>> = (0..nodes.len()).map(|_| None).collect();
     for k in rows.into_iter().chain(rest) {
         let nd = &nodes[k];
@@ -164,7 +179,8 @@ pub fn evaluate(sk: &mut Sketch) -> Vec<ExprItem> {
                     // work it out, check what it came to against its slot, write it: three
                     // steps that fail the same way, so they are one chain and one error arm
                     None => match (|| -> Result<(f64, Aff), ExprError> {
-                        let a = eval(&p.body, &declared)?;
+                        // an unknown the source declared is what it was declared
+                        let a = eval_declared(&p.body, &sk.declared)?;
                         check_dim(sk, nd, &a, &mut free_dim)?;
                         Ok((write_value(sk, nd, &a, &mut bound)?, a))
                     })() {

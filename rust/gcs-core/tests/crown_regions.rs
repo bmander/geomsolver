@@ -368,14 +368,19 @@ fn an_offset_of_nothing_is_the_set() {
 fn a_rounds_radius_reads_an_unknown() {
     let unknown = "param m: Length hint(2mm)\nin std.front {\n  u0 := point\n  u1 := point\n  \
         fix((40, 0)) u0\n  fix((41, 0)) u1\n}\nu0 distance(m) u1\n";
-    let rounded = ROUNDED.replace("r: 0.3mm", "r: 0.3 * m");
-    let e = solved(&format!("unit mm\nuse std\n{unknown}{TOOTH}{rounded}"));
-    let ex = e.sketch.exact_solid(ent(&e, "tool").i()).unwrap();
     let t = 20f64.to_radians().tan();
     let trapezoid = 32.0 * PI * (PI / 2.0 * 2.75 + t * (1.5f64.powi(2) - 1.25f64.powi(2)));
     let want = trapezoid - round_takes(false, 0.3) - round_takes(true, 0.3);
-    let volume = props::volume(&ex.brep) / ex.mm.powi(3);
-    assert!((volume - want).abs() <= 1e-9 * want, "{volume} against {want}");
+    // a multiple of it, and one with a length beside it (the measured bound the round's centres
+    // are read through reads the unknown as declared)
+    let mut volume = 0.0;
+    for r in ["0.3 * m", "0.25 * m + 0.05mm"] {
+        let rounded = ROUNDED.replace("r: 0.3mm", &format!("r: {r}"));
+        let e = solved(&format!("unit mm\nuse std\n{unknown}{TOOTH}{rounded}"));
+        let ex = e.sketch.exact_solid(ent(&e, "tool").i()).unwrap();
+        volume = props::volume(&ex.brep) / ex.mm.powi(3);
+        assert!((volume - want).abs() <= 1e-9 * want, "{r}: {volume} against {want}");
+    }
     let grown = |g: &str| {
         let tooth = format!("beyond_g := {{ x | x outside({g}) inner }}\nouter_g := std.Offset(outer, d: {g})\n\
             tooth := {{ p | p inside beyond_g; p inside outer_g; p inside back; p outside point_\n\

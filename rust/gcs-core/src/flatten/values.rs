@@ -5,7 +5,7 @@ use super::*;
 /// The drawing's unknown a declared number stands for when nothing binds it — a formal no call
 /// binds, or an input with no value (`param beta: Angle`) — under its declared dimension.
 pub(super) fn free(name: String, ty: Ty) -> Aff {
-    Aff { free: Some(name), m: 1.0, c: 0.0, dim: ty.dim() }
+    Aff::free(name, ty.dim())
 }
 
 /// A number worked out for a name declared `ty` — a formal, a typed `param` — taken to be what
@@ -114,11 +114,24 @@ pub(crate) fn value_aff(
     env: &BTreeMap<String, Aff>,
     units: Units,
 ) -> Result<Aff, String> {
+    value_read(text, env, &BTreeMap::new(), units)
+}
+
+/// `value_aff`, where the text may be one a scope wrote over an unknown of the drawing (`(0.3 * m
+/// + 0.05mm)`, `of_vals`) and is read in a scope that binds none: each unknown it reads is what
+/// its declaration says, as it was where the text was written (`expr::with_declared`).
+pub(crate) fn value_read(
+    text: &str,
+    env: &BTreeMap<String, Aff>,
+    unknowns: &BTreeMap<String, crate::model::Declared>,
+    units: Units,
+) -> Result<Aff, String> {
     let t = text.trim();
     if t.is_empty() {
         return Err("nothing to work out".to_string());
     }
     let p = expr::parse_in(t, units)?;
+    let env = &*expr::with_declared(&p.body, env, unknowns);
     let a = expr::eval(&p.body, env)?;
     match (a.number(), &a.free) {
         (Some(v), _) if !v.is_finite() => Err(format!("comes to {v}")),

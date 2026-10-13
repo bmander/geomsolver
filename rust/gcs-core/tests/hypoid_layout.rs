@@ -93,21 +93,17 @@ impl Reading {
 /// its faces meet, named by side, with the faces: the crown tooth's six and the gear's space
 /// cutter's, its outer mate's inner flank (closed at the reach's cap) and its inner mate's outer
 /// flank (closed at the axis), unturned.  The recorded pair's sections drew both mates whole; the
-/// space cutter has the flank of each that cuts.
-const CORNERS: [(&str,&str,&[(&str,&str,&str)]);3] = [
+/// space cutter has the flank of each that cuts.  Then its tip roundings, by the corner its
+/// centre is recorded as.
+type Corners = [(&'static str,&'static str,&'static str)];
+const CROWNS: [(&str,&str,&Corners,&[(&str,&str)]);3] = [
     ("tooth","tooth.crown",&[("bi","inner","base"),("bo","outer","base"),("ij","inner","inner_round"),
-        ("oj","outer","outer_round"),("it","inner_round","tip"),("ot","outer_round","tip")]),
+        ("oj","outer","outer_round"),("it","inner_round","tip"),("ot","outer_round","tip")],
+        &[("ci","inner_round"),("co","outer_round")]),
     ("mate outer","gear_space.outer_crown",&[("bi","inner","base"),("ij","inner","inner_round"),
-        ("it","inner_round","tip")]),
+        ("it","inner_round","tip")],&[("ci","inner_round")]),
     ("mate inner","gear_space.inner_crown",&[("bo","outer","base"),("oj","outer","outer_round"),
-        ("ot","outer_round","tip")]),
-];
-
-/// Each region's tip roundings, by the corner its centre is recorded as.
-const ROUNDS: [(&str,&str,&[(&str,&str)]);3] = [
-    ("tooth","tooth.crown",&[("ci","inner_round"),("co","outer_round")]),
-    ("mate outer","gear_space.outer_crown",&[("ci","inner_round")]),
-    ("mate inner","gear_space.inner_crown",&[("co","outer_round")]),
+        ("ot","outer_round","tip")],&[("co","outer_round")]),
 ];
 
 /// A region solid's meridian, its steps in space: each step's ends, its circle's centre and
@@ -201,8 +197,8 @@ fn read_pair(e: &Elaborated,probe: f64) -> Reading {
     };
     // a pose a meridian cannot be read at reads nowhere, every corner of it apart from the pair
     let nowhere = [f64::NAN;3];
-    for ((label,solid,corners),(_,_,rounds)) in CORNERS.iter().zip(&ROUNDS) {
-        let steps = Steps::read(e,solid);
+    let read: Vec<Option<Steps>> = CROWNS.iter().map(|(_,solid,_,_)| Steps::read(e,solid)).collect();
+    for ((label,_,corners,rounds),steps) in CROWNS.iter().zip(&read) {
         for (k,a,b) in corners.iter() {
             corner(&mut out,format!("{label}.{k}"),steps.as_ref().map_or(nowhere,|s| s.corner(a,b)));
         }
@@ -211,7 +207,7 @@ fn read_pair(e: &Elaborated,probe: f64) -> Reading {
         }
         out.push(&format!("{label} rounding"),steps.as_ref().map_or(f64::NAN,|s| s.round(rounds[0].1).1));
     }
-    let (outer,inner) = (Steps::read(e,"gear_space.outer_crown"),Steps::read(e,"gear_space.inner_crown"));
+    let [_,outer,inner] = &read[..] else { unreachable!("three crowns") };
     for (end,face) in [("base_end","base"),("tip_end","tip")] {
         corner(&mut out,format!("space outer {end}"),outer.as_ref().map_or(nowhere,|s| s.corner(face,"cap")));
         corner(&mut out,format!("space inner {end}"),inner.as_ref().map_or(nowhere,|s| s.on_axis(face,(u0,up))));

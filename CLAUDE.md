@@ -2115,7 +2115,7 @@ Conventions:
   **unknown**: `flatten::values::params` puts `free(name, ty)` in `vals` (as `bind` does for an
   unbound formal) and records a `model::Declared` (dimension, seed) in `Expansion::unknowns` →
   `Sketch::declared`, which `expr::evaluate` reads (the seed, skipping `settle`; the declared
-  dimension: a text is worked out over `expr::declared_env`, as the flattener read it, so
+  dimension: a text is worked out over `expr::with_declared`, here and in the flattener's `value_read`, so
   `values::of_vals`'s `(-1 * m + 0.2mm)` — the constant in the whole's unit — reads alike
   everywhere; `check_dim`).  An unbound
   `param` states its type (`Length`/`Angle`/`Scalar`), takes the one keyless `hint(E)`; a seed on

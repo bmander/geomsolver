@@ -214,8 +214,7 @@ pub(super) fn constrain(
     });
     // a region's term is named by the set the region's body used, where it used one (#212):
     // `tip` for `p inside tip` in `region`'s body, else the region's own name
-    let term_name = r.word.as_ref().and_then(|w| w.through.get(1).or(w.through.first()))
-        .cloned().unwrap_or_default();
+    let term_name = r.word.as_ref().map_or_else(String::new, |w| term_name(&w.through));
     // a set's points are points: `coincident` puts one on it, `inside` and `outside` one in it
     // or out of it, and nothing else (§6.21) — said at the use, where the statement was written
     let used = r.word.as_ref().filter(|w| !w.sets.is_empty()).map(|w| w.span);
@@ -936,7 +935,7 @@ fn level_spelling(w: Option<&crate::syntax::Written>, word: &str) -> String {
 /// expression that comes to it.
 fn written_zero(text: &str, units: crate::units::Units) -> bool {
     let text = text.trim();
-    (expr::literal(text).is_some() || expr::notation(text))
+    expr::is_literal(text)
         && expr::parse_in(text, units).ok()
             .and_then(|p| expr::eval(&p.body, &Default::default()).ok())
             .and_then(|a| a.number())
@@ -1373,6 +1372,22 @@ impl Relation {
     }
 }
 
+/// The name of a region's term (#212): the set the region's body used, where it used one (`tip`
+/// for `p inside tip` in `region`'s body), else the region's own — the second of the sets an
+/// application went through, else the first.
+fn term_name(through: &[String]) -> String {
+    through.get(1).or(through.first()).cloned().unwrap_or_default()
+}
+
+/// A region term's number affine in an unknown, in the kernels' units (an angle in radians);
+/// stated where it reads none, or reads it times nothing.
+fn term_of(a: expr::Aff, kind: SpecKind) -> crate::model::TermNumber {
+    crate::model::TermNumber {
+        c: expr::to_arg_units(kind, a.c),
+        free: a.free.filter(|_| a.m != 0.0).map(|name| (name, expr::to_arg_units(kind, a.m))),
+    }
+}
+
 /// A region term's number (§6.21): a literal or a text reading no unknown as it stands, else one
 /// affine in an unknown of the drawing, read once it is solved (`TermNumber::value`).  `None` for
 /// a text that is neither.
@@ -1384,13 +1399,7 @@ fn term_number(a: &CArg, sk: &Sketch, kind: SpecKind) -> Option<crate::model::Te
         _ => return None,
     };
     let read = written_aff(a, sk)?;
-    Some(match read.free {
-        None => TermNumber::stated(e.value),
-        Some(name) => TermNumber {
-            c: expr::to_arg_units(kind, read.c),
-            free: Some((name, expr::to_arg_units(kind, read.m))),
-        },
-    })
+    Some(if read.free.is_none() { TermNumber::stated(e.value) } else { term_of(read, kind) })
 }
 
 /// A number as the kernels read it (an angle in radians) where it is one before `expr::evaluate`:
@@ -1416,7 +1425,7 @@ fn written_number(a: &CArg, sk: &Sketch) -> Option<f64> {
 fn written_aff(a: &CArg, sk: &Sketch) -> Option<expr::Aff> {
     let CArg::Expr(e) = a else { return None };
     let parsed = expr::parse_in(&e.text, sk.units).ok()?;
-    expr::eval(&parsed.body, &expr::declared_env(sk)).ok()
+    expr::eval_declared(&parsed.body, &sk.declared).ok()
 }
 
 /// A sum of measurements and a number: `Σ cᵢ mᵢ + c`, each `mᵢ` a measurement as written, and
@@ -1425,50 +1434,54 @@ type Linear<'m> = (Vec<(&'m crate::syntax::Measurement, f64)>, expr::Aff);
 
 /// What a side of a bound on measurements comes to as a sum of them times numbers (#183 F3), or
 /// why it is not one: a product or a quotient of two measurements, or one read through a function.
-fn linear<'m>(m: &'m crate::syntax::Measuring, units: crate::units::Units) -> Result<Linear<'m>, String> {
+fn linear<'m>(m: &'m crate::syntax::Measuring, sk: &Sketch) -> Result<Linear<'m>, String> {
     use crate::syntax::Measuring;
     use expr::{Aff, Op};
     let scaled = |(terms, c): Linear<'m>, k: f64| -> Linear<'m> {
-        (terms.into_iter().map(|(m, x)| (m, x * k)).collect(), Aff { m: c.m * k, c: c.c * k, ..c })
+        (terms.into_iter().map(|(m, x)| (m, x * k)).collect(), c.times(k))
     };
     // a measurement's coefficient is a plain number: an unknown times a measurement is no bound
     // on measurements a region can read
     let number = |a: &'m Measuring| -> Option<f64> {
-        a.measures().is_empty().then(|| linear(a, units).ok().and_then(|(_, c)| c.number())).flatten()
+        a.measures().is_empty().then(|| linear(a, sk).ok().and_then(|(_, c)| c.number())).flatten()
     };
     Ok(match m {
+        // a declared unknown is what it was declared, as in every other number (`with_declared`)
         Measuring::Number { text, .. } => {
-            let v = expr::eval(&expr::parse_in(text, units)?.body, &Default::default())
+            let v = expr::eval_declared(&expr::parse_in(text, sk.units)?.body, &sk.declared)
                 .map_err(|e| e.message)?;
             (Vec::new(), v)
         }
         Measuring::Measure(x) => (vec![(x, 1.0)], Aff::num(0.0)),
-        Measuring::Neg(a) => scaled(linear(a, units)?, -1.0),
+        Measuring::Neg(a) => scaled(linear(a, sk)?, -1.0),
         Measuring::Bin(op @ (Op::Add | Op::Sub), a, b) => {
-            let (mut terms, c) = linear(a, units)?;
+            let (mut terms, c) = linear(a, sk)?;
             let k = if *op == Op::Add { 1.0 } else { -1.0 };
-            let (more, d) = scaled(linear(b, units)?, k);
-            terms.extend(more);
-            let free = match (&c.free, &d.free) {
-                (Some(x), Some(y)) if x != y => return Err(format!(
-                    "a bound on measurements reads one unknown, and `{x}` and `{y}` are two")),
-                (x, y) => x.clone().or_else(|| y.clone()),
-            };
-            (terms, Aff { free, m: c.m + d.m, c: c.c + d.c, dim: c.dim })
+            let (more, d) = linear(b, sk)?;
+            terms.extend(more.into_iter().map(|(m, x)| (m, x * k)));
+            (terms, one_unknown(&c, &d, k)?)
         }
         Measuring::Bin(Op::Mul, a, b) => match (number(a), number(b)) {
-            (Some(k), _) => scaled(linear(b, units)?, k),
-            (_, Some(k)) => scaled(linear(a, units)?, k),
+            (Some(k), _) => scaled(linear(b, sk)?, k),
+            (_, Some(k)) => scaled(linear(a, sk)?, k),
             _ => return Err("a bound on measurements is a sum of them, each times a number: \
                              two measured are not multiplied".to_string()),
         },
         Measuring::Bin(Op::Div, a, b) => match number(b) {
-            Some(k) if k != 0.0 => scaled(linear(a, units)?, 1.0 / k),
+            Some(k) if k != 0.0 => scaled(linear(a, sk)?, 1.0 / k),
             _ => return Err("a bound on measurements is a sum of them, each times a number: \
                              a measurement divides nothing".to_string()),
         },
         _ => return Err("a bound on measurements is a sum of them, each times a number: none is \
                          read through a function or a power".to_string()),
+    })
+}
+
+/// `a + k·b` of a bound on measurements' numbers, which read one unknown between them.
+fn one_unknown(a: &expr::Aff, b: &expr::Aff, k: f64) -> Result<expr::Aff, String> {
+    a.plus(b, k).map_err(|_| {
+        let (x, y) = (a.free.clone().unwrap_or_default(), b.free.clone().unwrap_or_default());
+        format!("a bound on measurements reads one unknown, and `{x}` and `{y}` are two")
     })
 }
 
@@ -1487,7 +1500,7 @@ pub(super) fn measured_term(
     let mut refuse = |message: String| {
         diags.push(Diag { code: Code::E040, span: st.span, stmt: Some(st.id), message })
     };
-    let (lhs, rhs) = match (linear(&m.lhs, sk.units), linear(&m.rhs, sk.units)) {
+    let (lhs, rhs) = match (linear(&m.lhs, sk), linear(&m.rhs, sk)) {
         (Ok(l), Ok(r)) => (l, r),
         (Err(e), _) | (_, Err(e)) => return refuse(e),
     };
@@ -1495,14 +1508,11 @@ pub(super) fn measured_term(
     let mut terms = lhs.0;
     terms.extend(rhs.0.into_iter().map(|(m, c)| (m, -c)));
     // the number the sum is bounded by, stated or affine in the one unknown either side reads
-    let free = match (&lhs.1.free, &rhs.1.free) {
-        (Some(x), Some(y)) if x != y => {
-            return refuse(format!("a bound on measurements reads one unknown, and `{x}` and `{y}` are two"))
-        }
-        (x, y) => x.clone().or_else(|| y.clone()),
+    let bound = match one_unknown(&rhs.1, &lhs.1, -1.0) {
+        Ok(n) => n,
+        Err(e) => return refuse(e),
     };
-    let (k, km) = (rhs.1.c - lhs.1.c, rhs.1.m - lhs.1.m);
-    let free = free.filter(|_| km != 0.0);
+    let (k, free) = (bound.c, bound.free.as_ref().filter(|_| bound.m != 0.0));
     use crate::model::Target;
     let target = |r: &Ref| -> Option<Target> {
         let of = res.operand(sk, r).ok()?;
@@ -1611,12 +1621,8 @@ pub(super) fn measured_term(
         return;
     }
     let shape = crate::model::RegionShape::Measured { of };
-    let number = crate::model::TermNumber {
-        c: expr::to_arg_units(SpecKind::Length, k),
-        free: free.map(|name| (name, expr::to_arg_units(SpecKind::Length, km))),
-    };
-    // named by the set the region's body used, as a relation's term is (#212)
-    let name = m.through.get(1).or(m.through.first()).cloned().unwrap_or_default();
+    let number = term_of(bound, SpecKind::Length);
+    let name = term_name(&m.through);
     let term = crate::model::RegionTerm { name, ..crate::model::RegionTerm::new(shape, m.cmp, number) };
     probes.terms.get_mut(&p).expect("a probe's terms").push(term);
 }

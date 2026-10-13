@@ -60,7 +60,7 @@ impl Edit {
 /// Whether a seed is a number a solve may write over: a literal, or one in notation (`3 1/8`,
 /// `30deg`) — not an expression, which is the author's arithmetic.
 fn writable_seed(text: &str) -> bool {
-    crate::expr::literal(text).is_some() || crate::expr::notation(text)
+    crate::expr::is_literal(text)
 }
 
 /// A solved seed as it is written back: in degrees where an angle's text named its unit.

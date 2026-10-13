@@ -36,6 +36,11 @@ pub(super) struct Site {
     depth: usize,
 }
 
+/// Whether what a path reads past a set is its surface (`S.surface`).
+fn names_surface(rest: &[String]) -> bool {
+    matches!(rest, [m] if Member::of(m) == Some(Member::Surface))
+}
+
 impl Site {
     /// A set made other than by a statement the walk met: a face of a solid (`faces`).
     pub(super) fn new(lit: SetLit, scope: Scope, depth: usize) -> Site {
@@ -183,17 +188,15 @@ impl<'a> Walk<'a> {
         let w = rel.form.written().filter(|w| may_use(w))?;
         let mut found: Vec<(usize, String)> = Vec::new();
         for (i, r) in w.ops.iter().enumerate() {
-            match lookup_raw(r, sc, &self.names, alias, self.units) {
-                Some((abs, rest)) if rest.is_empty() && self.sets.contains_key(&abs) => found.push((i, abs)),
+            let Some((abs, rest)) = lookup_raw(r, sc, &self.names, alias, self.units)
+                .filter(|(abs, _)| self.sets.contains_key(abs)) else { continue };
+            if rest.is_empty() {
+                found.push((i, abs));
+            } else if names_surface(&rest) {
                 // a set's surface (`S.surface`): the set with each bound an equality, a set of its
                 // own (#214: a point on a side grown, where a topping leaves a crown's flank)
-                Some((abs, rest)) if self.sets.contains_key(&abs)
-                    && matches!(rest.as_slice(), [m] if Member::of(m) == Some(Member::Surface)) =>
-                {
-                    let surface = self.surface_of(&abs);
-                    found.push((i, surface));
-                }
-                _ => {}
+                let surface = self.surface_of(&abs);
+                found.push((i, surface));
             }
         }
         // a set drawn as an element is one, and a point is put on it as on any (#105) — but for
@@ -323,8 +326,7 @@ impl<'a> Walk<'a> {
                 for r in m.lhs.measures().into_iter().chain(m.rhs.measures()).flat_map(|x| x.refs()) {
                     let Some((abs, rest)) = set_of(self, r) else { continue };
                     let text = crate::syntax::ref_text(r);
-                    let surface = matches!(rest.as_slice(), [m]
-                        if Member::of(m) == Some(Member::Surface));
+                    let surface = names_surface(&rest);
                     if (rest.is_empty() || surface) && !sets.iter().any(|(t, _)| *t == text) {
                         if surface {
                             surfaces.insert(text.clone(), self.surface_of(&abs));
@@ -791,17 +793,9 @@ impl<'a> Walk<'a> {
             return self.once(Code::E040, at, m);
         }
         // the distance, read where the use is — a length, which a bare number is taken as where
-        // one is wanted (§3.3) — and signed toward the outside
-        // the text may be one the use's scope wrote over an unknown of the drawing (`(0.3 * m +
-        // 0.05mm)`), read here in the set's scope, which binds none: the unknown is what its
-        // declaration says, as it was where the text was written
-        let mut env = sc.vals.clone();
-        for (name, u) in &self.unknowns {
-            if !env.contains_key(name) {
-                env.insert(name.clone(), Aff { free: Some(name.clone()), m: 1.0, c: 0.0, dim: u.dim });
-            }
-        }
-        let d = match value_aff(&text, &env, self.units) {
+        // one is wanted (§3.3) — and signed toward the outside; a text the use's scope wrote over
+        // an unknown reads it as declared
+        let d = match value_read(&text, &sc.vals, &self.unknowns, self.units) {
             Ok(d) if d.dim.fits(crate::units::Dim::LENGTH) => d.as_dim(crate::units::Dim::LENGTH),
             Ok(_) => {
                 let m = format!("`{text}` is a distance from `{set}`, a length");
@@ -812,8 +806,7 @@ impl<'a> Walk<'a> {
         // a distance a number comes to nothing (`std.Offset(S, d: 0mm)`, an allowance of none):
         // a bound on it is the set's own side, and a point at it is on the set, as `coincident`
         // says; a zero written so, not by a set's application, is said so
-        let literal = |t: &str| expr::literal(t).is_some() || expr::notation(t);
-        let written = !rel.space && w.args.iter().any(|a| matches!(a, OpArg::Dim(t, _) if literal(t)));
+        let written = !rel.space && w.args.iter().any(|a| matches!(a, OpArg::Dim(t, _) if expr::is_literal(t)));
         if d.number() == Some(0.0) && word == "distance" && cmp.is_none() {
             if surface.is_none() && !written {
                 let mut on = w.clone();
@@ -825,7 +818,7 @@ impl<'a> Walk<'a> {
             let m = format!("a point at no distance from `{set}` is on it: `coincident`");
             return self.once(Code::E040, at, m);
         }
-        let offset = if grows { d.clone() } else { Aff { m: -d.m, c: -d.c, ..d.clone() } };
+        let offset = if grows { d.clone() } else { d.times(-1.0) };
         let site = &self.sets[abs];
         let (mut lit, depth, closure) = (lit.clone(), site.depth, site.scope.clone());
         let StmtKind::Relation(r) = &mut lit.body[i].kind else { unreachable!("a relation") };
@@ -858,13 +851,8 @@ impl<'a> Walk<'a> {
                 // lose (a free name in a text is a plain number until its slot says otherwise)
                 let moved = value_aff(t, &closure.vals, self.units).ok()
                     .filter(|a| a.dim.fits(crate::units::Dim::LENGTH))
-                    .and_then(|a| {
-                        let free = match (&a.free, &grow.free) {
-                            (Some(x), Some(y)) if x != y => return None,
-                            (x, y) => x.clone().or_else(|| y.clone()),
-                        };
-                        Some(Aff { free, m: a.m + grow.m, c: a.c + grow.c, dim: crate::units::Dim::LENGTH })
-                    });
+                    .and_then(|a| a.plus(&grow, 1.0).ok())
+                    .map(|sum| sum.as_dim(crate::units::Dim::LENGTH));
                 match moved {
                     Some(sum) => {
                         *t = "#grow".to_string();
