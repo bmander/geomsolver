@@ -71,14 +71,18 @@ pub(super) fn append(prog: &Program, kind: StmtKind, names: Vec<String>) -> Edit
 
 /// The text with statements appended, one splice, and where in it they went.
 fn appended(prog: &Program, stmts: &[StmtKind]) -> Result<(String, Span), String> {
-    let (at, lead) = append_at(prog);
-    let mut with = lead;
+    let (text, landed) = splice_landing(prog.text(), vec![appending(prog, stmts)?]);
+    Ok((text, landed[0].ok_or("the end of the document is no place in it")?))
+}
+
+/// The splice appending statements, a line each, where `append_at` says.
+pub(super) fn appending(prog: &Program, stmts: &[StmtKind]) -> Result<Splice, String> {
+    let (at, mut with) = append_at(prog);
     for (i, k) in stmts.iter().enumerate() {
         if i > 0 { with.push('\n'); }
         syntax::write_stmt_to(&mut with, k).map_err(|e| e.to_string())?;
     }
-    let span = Span::new(at.lo as usize, at.lo as usize + with.len());
-    Ok((splice(prog.text(), vec![Splice { at, with }]), span))
+    Ok(Splice { at, with })
 }
 
 /// `use NAME`, so the document reaches a module it did not — the workspace adds `use std` when

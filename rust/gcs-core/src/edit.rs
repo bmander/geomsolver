@@ -105,18 +105,44 @@ struct Splice {
     with: String,
 }
 
+impl Splice {
+    /// `with` written at `at`, said as a replacement of the whole of `outer`, which holds it — so
+    /// where it lands (`splice_landing`) is where `outer` stands in the new text.
+    fn within(text: &str, outer: Span, at: Span, with: &str) -> Splice {
+        let (lo, hi) = (outer.lo as usize, outer.hi as usize);
+        let (a, b) = (at.lo as usize, at.hi as usize);
+        Splice { at: outer, with: format!("{}{with}{}", &text[lo..a], &text[b..hi]) }
+    }
+}
+
 /// Apply a set of replacements, back to front so earlier spans stay valid.
-fn splice(text: &str, mut edits: Vec<Splice>) -> String {
-    edits.sort_by_key(|e| std::cmp::Reverse(e.at.lo));
+fn splice(text: &str, edits: Vec<Splice>) -> String {
+    splice_landing(text, edits).0
+}
+
+/// `splice`, and where each replacement landed in the new text, in the order `edits` gave them:
+/// its text's span there, or `None` where its span named no place in `text`.  Two at one place
+/// stand in the new text the other way round from the order given.
+fn splice_landing(text: &str, edits: Vec<Splice>) -> (String, Vec<Option<Span>>) {
+    let mut order: Vec<usize> = (0..edits.len()).collect();
+    order.sort_by_key(|&k| std::cmp::Reverse(edits[k].at.lo));
     let mut out = text.to_string();
-    for e in edits {
+    let mut landed: Vec<Option<Span>> = vec![None; edits.len()];
+    for k in order {
+        let e = &edits[k];
         let (lo, hi) = (e.at.lo as usize, e.at.hi as usize);
         if lo > hi || hi > out.len() || !out.is_char_boundary(lo) || !out.is_char_boundary(hi) {
             continue; // a span that does not name a place in this text edits nothing
         }
         out.replace_range(lo..hi, &e.with);
+        // every replacement made so far stands at or past this one's end: moved by what it grew
+        let by = e.with.len() as i64 - (hi - lo) as i64;
+        for l in landed.iter_mut().flatten() {
+            *l = Span::new((l.lo as i64 + by) as usize, (l.hi as i64 + by) as usize);
+        }
+        landed[k] = Some(Span::new(lo, lo + e.with.len()));
     }
-    out
+    (out, landed)
 }
 
 /// Whether a statement is one of the root component's own.

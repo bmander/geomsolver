@@ -274,12 +274,12 @@ fn resweep(
     let mut d2 = d.clone();
     d2.sweep = Some(with(d.sweep.as_ref().expect("a swept solid"))?);
     let args = syntax::decl_args(&d2);
-    // the statement in the new text: where it was, longer or shorter by what the list became
     let stmt = prog.stmt(site.stmt).map(|s| s.span).ok_or("no statement makes that solid")?;
-    let grown = args.len() as i64 - (d.list_span.hi as i64 - d.list_span.lo as i64);
-    let ours = Span::new(stmt.lo as usize, (stmt.hi as i64 + grown) as usize);
-    let text = splice(prog.text(), vec![Splice { at: d.list_span, with: args }]);
-    checked(prog, text, ours, Vec::new())
+    // the statement rewritten, so that where it lands is the text this edit wrote
+    let edit = Splice::within(prog.text(), stmt, d.list_span, &args);
+    let (text, landed) = splice_landing(prog.text(), vec![edit]);
+    checked(prog, text, landed[0].ok_or("that solid's statement is no place in the source")?,
+        Vec::new())
 }
 
 /// `what union body`, `what cut body`, `what common body` — the body rule, a statement for each
@@ -405,12 +405,27 @@ fn rounds_edit(
             picked.push((f, written(f)?));
         }
     }
-    let said = |a: &str, b: &str| format!("{a} {}({}: {size}) {b}", word.as_str(), word.key());
-    let mut stmts: Vec<String> = Vec::new();
+    let said = |ops: &[&str]| StmtKind::Relation(syntax::Relation::of(
+        syntax::RelationForm::Written(syntax::Written {
+            word: syntax::Name::new(word.as_str()),
+            fixity: if ops.len() == 1 {
+                crate::constraints::Fixity::Prefix
+            } else {
+                crate::constraints::Fixity::Infix
+            },
+            ops: ops.iter().map(|o| syntax::Ref::new(o.to_string())).collect(),
+            args: vec![syntax::OpArg::Named(
+                syntax::Name::new(word.key()),
+                syntax::Arg::Dim { text: size.to_string(), span: Span::default() },
+            )],
+            span: Span::default(),
+        }),
+    ));
+    let mut stmts: Vec<StmtKind> = Vec::new();
     if all.iter().all(|(f, w)| w.is_none() || picked.iter().any(|(p, _)| p == f)) {
-        stmts.push(format!("{}({}: {size}) {body}", word.as_str(), word.key()));
+        stmts.push(said(&[&body]));
     } else {
-        stmts.extend(picked.iter().map(|(_, w)| said(w, &body)));
+        stmts.extend(picked.iter().map(|(_, w)| said(&[w, &body])));
         let mut seen: Vec<(&str, &str)> = Vec::new();
         for (a, b) in edges {
             let (wa, wb) = (written(a)?, written(b)?);
@@ -422,25 +437,17 @@ fn rounds_edit(
             let covered = picked.iter().any(|(p, _)| *p == pair.0 || *p == pair.1);
             if !covered && !seen.contains(&pair) {
                 seen.push(pair);
-                stmts.push(said(&wa, &wb));
+                stmts.push(said(&[&wa, &wb]));
             }
         }
     }
-    let (at, lead) = append_at(prog);
-    let appended = Splice { at, with: format!("{lead}{}", stmts.join("\n")) };
     // what the word's own body refuses is said at the `use` that brought the library in: the
-    // statements and the `use` are both what this edit wrote, each where it lands once the other
-    // is in
-    let (import, mut used) = imports(prog, word.as_str());
-    let grown = import.as_ref().map_or(0, |i| i.with.len());
-    let shift = |lo: u32, by: usize, past: u32| lo as usize + if past <= lo { by } else { 0 };
-    let lo = shift(at.lo, grown, import.as_ref().map_or(u32::MAX, |i| i.at.lo));
-    let mut regions = vec![Span::new(lo, lo + appended.with.len())];
-    if let Some(u) = used.as_mut() {
-        let lo = shift(u.lo, appended.with.len(), at.lo + 1);
-        regions.push(Span::new(lo, lo + (u.hi - u.lo) as usize + grown));
-    }
-    let text = splice(prog.text(), [Some(appended), import].into_iter().flatten().collect());
+    // statements and a `use` the document wrote are both what this edit wrote, where they landed
+    let (import, written_use) = imports(prog, word.as_str());
+    let (text, landed) = splice_landing(prog.text(), vec![appending(prog, &stmts)?, import]);
+    let regions: Vec<Span> = landed.into_iter().take(if written_use { 2 } else { 1 })
+        .map(|l| l.ok_or("the edit is no place in the source"))
+        .collect::<Result<_, _>>()?;
     checked_in(prog, text, &regions, Vec::new())
 }
 
@@ -454,22 +461,24 @@ pub fn round_size(sk: &Sketch, solid: usize) -> Option<f64> {
     least.is_finite().then(|| round_sig(least / 10.0, 1))
 }
 
-/// The splice that has the document's `use std` name `word` bare (§14.4) — its list grown, one
-/// written (`use std` becomes `use std (round)`), or a line of its own where `add_use` would put
-/// one; `None` where it already does — and the span of the `use std` the document writes.
-fn imports(prog: &Program, word: &str) -> (Option<Splice>, Option<Span>) {
+/// The splice that has the document's `use std` name `word` bare (§14.4) — the whole `use std`
+/// the document writes, its list grown, one written (`use std` becomes `use std (round)`) or as
+/// it stands where it already does; else a line of its own where `add_use` would put one — and
+/// whether the document wrote that `use`.
+fn imports(prog: &Program, word: &str) -> (Splice, bool) {
     let text = prog.text();
     let Some(u) = prog.uses.iter().find(|u| u.name == "std" && (u.span.hi as usize) <= text.len())
     else {
-        return (Some(use_line(prog, &format!("use std ({word})"))), None);
+        return (use_line(prog, &format!("use std ({word})")), false);
     };
-    if u.names.iter().any(|n| n.text == word) {
-        return (None, Some(u.span));
-    }
     let (lo, hi) = (u.span.lo as usize, u.span.hi as usize);
-    let (at, with) = match u.names.last() {
-        Some(n) => (n.span.hi as usize, format!(", {word}")),
-        None => (lo + text[lo..hi].trim_end().len(), format!(" ({word})")),
+    let (at, with) = if u.names.iter().any(|n| n.text == word) {
+        (hi, String::new())
+    } else {
+        match u.names.last() {
+            Some(n) => (n.span.hi as usize, format!(", {word}")),
+            None => (lo + text[lo..hi].trim_end().len(), format!(" ({word})")),
+        }
     };
-    (Some(Splice { at: Span::new(at, at), with }), Some(u.span))
+    (Splice::within(text, u.span, Span::new(at, at), &with), true)
 }
