@@ -12,12 +12,95 @@ mod native;
 mod progress;
 use gcs_core::brep::{geom::Surface,props::volume,recipe};
 use gcs_core::json::{object,Json};
+use gcs_core::space::{cross,norm,sub as minus3};
 use std::collections::BTreeMap;
 
-/// How far OCCT's volume of a Boolean may stand off ours where it approximates an ill-conditioned
-/// meeting, and how little ours may move with its tolerance there.
-const OCCT_APPROXIMATE: f64 = 1e-5;
+/// An edge tolerance OCCT's result declares past its operands' (1e-7 mm): it approximated a meeting
+/// it could not resolve to them. And how little ours may move with its tolerance there.
+const DECLARED: f64 = 1e-6;
 const CONVERGED: f64 = 1e-9;
+
+/// A whole revolution's volume by Pappus, where its profile is one loop of lines and arcs in a
+/// plane through its axis: `2π ∬ s dA`, `s` the distance from the axis, by Green's theorem `∮ s²/2
+/// dt` (`t` along the axis), each line's and arc's integral by Gauss–Legendre (a polynomial along a
+/// line, a trigonometric one along an arc: exact to rounding at this order).
+fn pappus(n: &Json) -> Option<f64> {
+    type V = [f64;3];
+    let v = |j: &Json| -> V { std::array::from_fn(|i| j.arr()[i].as_f64()) };
+    let dot = |a: V,b: V| a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
+    let (lin,add) = (|a: V,k: f64| a.map(|x| x*k),|a: V,b: V| -> V { std::array::from_fn(|i| a[i]+b[i]) });
+    if n.get("kind")?.as_str() != "revolve" || (n.get("angle")?.as_f64().abs()-2.*std::f64::consts::PI).abs() > 1e-12 { return None }
+    let loops = n.get("profile")?.get("loops")?.arr();
+    if loops.len() != 1 { return None }
+    let (o,a) = (v(n.get("origin")?),v(n.get("axis")?));
+    let a = lin(a,1./dot(a,a).sqrt());
+    // each piece as a point and its derivative over [0, 1], in the loop's order
+    let mut pieces: Vec<Box<dyn Fn(f64) -> (V,V)>> = Vec::new();
+    let mut last: Option<V> = None;
+    let entries = loops[0].arr();
+    for (k,e) in entries.iter().enumerate() {
+        match e.get("kind")?.as_str() {
+            "line" => {
+                let (p,q) = (v(e.get("start")?),v(e.get("end")?));
+                let d = add(q,lin(p,-1.));
+                pieces.push(Box::new(move |u| (add(p,lin(d,u)),d)));
+                last = Some(q);
+            }
+            "circle" => {
+                let (c,nn,x,r) = (v(e.get("center")?),v(e.get("normal")?),v(e.get("x_dir")?),e.get("radius")?.as_f64());
+                let y = [nn[1]*x[2]-nn[2]*x[1],nn[2]*x[0]-nn[0]*x[2],nn[0]*x[1]-nn[1]*x[0]];
+                let span = e.get("angles")?.arr();
+                let (a0,a1) = (span[0].as_f64(),span[1].as_f64());
+                let at = move |th: f64| add(c,add(lin(x,r*th.cos()),lin(y,r*th.sin())));
+                // walked from the end that meets its neighbour
+                let next = entries.get(k+1).or(entries.first()).and_then(|f| f.get("start")).map(&v);
+                let from_a0 = match (last,next) {
+                    (Some(p),_) => { let d = |q: V| dot(add(q,lin(p,-1.)),add(q,lin(p,-1.))); d(at(a0)) <= d(at(a1)) }
+                    (None,Some(q)) => { let d = |p: V| dot(add(q,lin(p,-1.)),add(q,lin(p,-1.))); d(at(a1)) <= d(at(a0)) }
+                    _ => true,
+                };
+                let (s0,s1) = if from_a0 { (a0,a1) } else { (a1,a0) };
+                pieces.push(Box::new(move |u| {
+                    let th = s0+(s1-s0)*u;
+                    (at(th),lin(add(lin(x,-r*th.sin()),lin(y,r*th.cos())),s1-s0))
+                }));
+                last = Some(at(s1));
+            }
+            _ => return None,
+        }
+    }
+    // the side the profile stands on, across the axis in its plane
+    let across = |p: V| { let d = add(p,lin(o,-1.)); add(d,lin(a,-dot(d,a))) };
+    let side = pieces.iter().map(|f| across(f(0.5).0)).max_by(|p,q| dot(*p,*p).total_cmp(&dot(*q,*q)))?;
+    let e = lin(side,1./dot(side,side).sqrt());
+    let (x,w) = gauss(64);
+    let mut moment = 0.;
+    for f in &pieces {
+        for (xi,wi) in x.iter().zip(&w) {
+            let (p,dp) = f(0.5*(xi+1.));
+            let s = dot(add(p,lin(o,-1.)),e);
+            moment += 0.5*wi*(-0.5*s*s*dot(dp,a));
+        }
+    }
+    Some(2.*std::f64::consts::PI*moment.abs())
+}
+
+/// Gauss–Legendre's nodes and weights on (−1, 1).
+fn gauss(n: usize) -> (Vec<f64>,Vec<f64>) {
+    (0..n).map(|i| {
+        let mut x = (std::f64::consts::PI*(i as f64+0.75)/(n as f64+0.5)).cos();
+        let mut dp = 0.;
+        for _ in 0..100 {
+            let (mut p0,mut p1) = (1.,x);
+            for k in 2..=n { let p2 = ((2*k-1) as f64*x*p1-(k-1) as f64*p0)/k as f64; p0 = p1; p1 = p2; }
+            dp = n as f64*(x*p1-p0)/(x*x-1.);
+            let dx = p1/dp;
+            x -= dx;
+            if dx.abs() < 1e-16 { break }
+        }
+        (x,2./((1.-x*x)*dp*dp))
+    }).unzip()
+}
 
 /// A body node's volume built operand by operand by the Boolean at a tolerance `k` of its size: its
 /// stock, plus what is `on` it, less what `cut`s it, within what `bound`s it (none late).
@@ -100,14 +183,29 @@ fn every_node_the_kernel_builds_is_occts() {
                 let bar = if through_splines { 1e-3 } else if swept(&b) { 1e-5 } else { 1e-7 };
                 if rel >= bar {
                     // a Boolean whose meeting OCCT approximates where it is ill-conditioned (two
-                    // surfaces touching at a point, a traced meeting through it): OCCT's volume is
-                    // good to its own tolerance there, so ours is held to itself — rebuilt with a
-                    // tolerance ten times looser and ten times tighter, it moves by less than
-                    // `CONVERGED` — and to OCCT within `OCCT_APPROXIMATE`
-                    let held = n.get("kind").unwrap().as_str() == "body" && rel < OCCT_APPROXIMATE
+                    // surfaces touching at a point, a traced meeting through it) and says so: its edges'
+                    // tolerance grown far past its operands'. Its boundary is then only within that
+                    // tolerance of the true one, so its volume within it times the boundary's area;
+                    // and ours is held to itself, rebuilt at tolerances ten times either way, within
+                    // `CONVERGED`
+                    let [_,edge_tol,_] = session.tolerances(theirs).unwrap();
+                    let area = gcs_core::brep::mesh::mesh(&b,1e-3*b.size(),0.2).map(|m| m.tris.iter().map(|t| {
+                        let [p,q,r] = t.map(|i| m.pts[i as usize]);
+                        0.5*norm(cross(minus3(q,p),minus3(r,p)))
+                    }).sum::<f64>()).unwrap_or(f64::INFINITY);
+                    // a whole revolution of lines and arcs: its volume is Pappus's, which decides
+                    if let Some(closed) = pappus(n) {
+                        let off = ((v-closed)/closed).abs();
+                        if off >= CONVERGED { failures.push(format!("{label}: volume {v} against Pappus's {closed} ({off:.1e})")); continue }
+                        eprintln!("{label}: OCCT {rel:.1e} off; ours Pappus's {closed:.9} mm³ within {off:.1e}");
+                    } else {
+                    let held = n.get("kind").unwrap().as_str() == "body" && edge_tol > DECLARED
+                        && (v-w).abs() <= edge_tol*area
                         && [1e-8,1e-10].iter().all(|&k| rebuilt(n,&ours,k).is_ok_and(|u| ((u-v)/v).abs() < CONVERGED));
                     if !held { failures.push(format!("{label}: volume {v} against OCCT's {w}")); continue }
-                    eprintln!("{label}: ours converged within {CONVERGED:e} at tolerances ten times either way; OCCT's {rel:.1e} off");
+                    eprintln!("{label}: OCCT declares its edges good to {edge_tol:.1e} mm (its bound on the volume {:.1e} mm³, off by \
+                        {:.1e}); ours converged within {CONVERGED:e} at tolerances ten times either way",edge_tol*area,(v-w).abs());
+                    }
                 }
                 // faces by the kind of their surface (OCCT's `GeomAbs_SurfaceType` order): OCCT may split
                 // a plane along a line where another face only touches it, which this kernel does not
@@ -120,7 +218,26 @@ fn every_node_the_kernel_builds_is_occts() {
                 if our_kinds != their_kinds {
                     let extra_planes = their_kinds.iter().filter(|&&k| k != 0).eq(our_kinds.iter().filter(|&&k| k != 0))
                         && their_kinds.iter().filter(|&&k| k == 0).count() > our_kinds.iter().filter(|&&k| k == 0).count();
+                    // or OCCT builds a general surface (a B-spline, a surface of revolution) for an
+                    // analytic one of ours, one for one, lying on our surfaces within the face
+                    // tolerance OCCT declares (the drill's wheel's nose, a torus OCCT does not read as one)
+                    let minus = |a: &[i32],b: &[i32]| { let mut rest = b.to_vec(); a.iter().filter(|k| {
+                        match rest.iter().position(|j| j == *k) { Some(i) => { rest.remove(i); false } None => true }
+                    }).copied().collect::<Vec<i32>>() };
+                    let (extra,missing) = (minus(&their_kinds,&our_kinds),minus(&our_kinds,&their_kinds));
+                    let general = |k: &i32| *k == 6 || *k == 7;
+                    let stood_in = !extra.is_empty() && extra.len() == missing.len() && extra.iter().all(general)
+                        && !missing.iter().any(general) && {
+                        let face_tol = session.tolerances(theirs).unwrap()[0].max(1e-9);
+                        let off = session.faces(theirs).unwrap().into_iter().filter(|&g| general(&session.face_kind(g).unwrap()))
+                            .flat_map(|g| session.surface_grid(g,9,9).unwrap())
+                            .map(|(p,_)| b.faces.iter().map(|f| norm(minus3(f.surface.point(f.surface.inverse(p)),p))).fold(f64::INFINITY,f64::min))
+                            .fold(0.,f64::max);
+                        eprintln!("  (OCCT builds {extra:?} for our {missing:?}, on our surfaces within {off:.1e} mm, its faces' tolerance {face_tol:.1e})");
+                        off <= face_tol
+                    };
                     if extra_planes { eprintln!("  (OCCT splits a plane along a line it only touches: {their_kinds:?} against our {our_kinds:?})"); }
+                    else if stood_in {}
                     else { failures.push(format!("{label}: faces by kind {our_kinds:?} against OCCT's {their_kinds:?}")); continue }
                 }
                 }

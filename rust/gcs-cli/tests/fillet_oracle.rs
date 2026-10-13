@@ -226,6 +226,21 @@ fn flats_by_occt(session: &native::Session,body: &Json,ours: &gcs_core::brep::to
     Ok((points.len(),worst))
 }
 
+/// How far each face OCCT builds of a kind this kernel's body has none of (a B-spline it fits, a
+/// general surface of revolution) stands off the surfaces of ours: the greatest distance of a grid
+/// of its support's points from the nearest of our faces' surfaces.
+fn stand_in(session: &native::Session,theirs: std::os::raw::c_int,ours: &gcs_core::brep::topo::Brep,kind: &str) -> f64 {
+    let mut worst: f64 = 0.;
+    for f in session.faces(theirs).unwrap() {
+        if occt_kind(session.face_kind(f).unwrap()) != kind { continue }
+        for (p,_) in session.surface_grid(f,9,9).unwrap() {
+            let near = ours.faces.iter().map(|g| dist(g.surface.point(g.surface.inverse(p)),p)).fold(f64::INFINITY,f64::min);
+            worst = worst.max(near);
+        }
+    }
+    worst
+}
+
 /// OCCT's `GeomAbs_SurfaceType` as this kernel names its surfaces.
 fn occt_kind(k: i32) -> &'static str {
     ["plane","cylinder","cone","sphere","torus","bezier","bspline","revolution","extrusion","offset","other"]
@@ -387,9 +402,16 @@ fn every_rounds_example_is_occts_fillet() {
             failures.push(format!("{file} `{name}`: volume {ours} against OCCT's {w} ({rel:.1e}); {} of 20000 points apart, as {:?}",
                 apart.len(),&apart[..apart.len().min(4)]));
         }
-        // every kind of ours OCCT's, and OCCT's the same but for a B-spline it fits where this kernel
-        // builds a face exactly (a round between two cylinders, the knob's neck)
-        let alike = our_kinds.is_subset(&their_kinds) && their_kinds.iter().all(|k| *k == "bspline" || our_kinds.contains(k));
+        // the same kinds of face, but where OCCT fits a B-spline to a face this kernel builds
+        // exactly (a round between two cylinders, the knob's neck): there every OCCT B-spline lies on
+        // a surface of ours, within the face tolerance OCCT declares for its own result
+        let stood_in = their_kinds.contains("bspline") && !our_kinds.contains("bspline");
+        let alike = our_kinds == their_kinds.iter().copied().filter(|k| !stood_in || *k != "bspline").collect::<BTreeSet<_>>();
+        if let (Some(id),true) = (solid,stood_in && alike) {
+            let ([face_tol,_,_],off) = (session.tolerances(id).unwrap(),stand_in(&session,id,&exact.solid,"bspline"));
+            eprintln!("{file} `{name}`: OCCT's B-splines lie on our surfaces within {off:.1e} mm (its faces' tolerance {face_tol:.1e})");
+            if off > face_tol.max(1e-9) { failures.push(format!("{file} `{name}`: OCCT's B-splines stand {off:e} off our surfaces")); }
+        }
         if !alike { failures.push(format!("{file} `{name}`: faces {our_kinds:?} against OCCT's {their_kinds:?}")); }
     }
     eprintln!("{} compared",examples.len());
