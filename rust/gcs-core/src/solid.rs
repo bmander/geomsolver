@@ -440,16 +440,14 @@ pub(crate) fn has_sweep(sk: &Sketch, si: usize) -> bool {
     validate_at(sk, si, REPORT_UNIT).map(|ops| sweeps_among(sk, &ops)).unwrap_or(false)
 }
 
-/// Whether a continuous motion sweep no ball's tube builds (`canal::is_canal`), or a region read in
-/// general position (`region::in_general`)
-/// that neither an entry of the lowering table (`lowering::lowered`) nor the common of its terms
-/// (`bounded::built`) builds, is among `operands`
-/// (`validate_at`'s): their boundary is the field's.  The one test, asked by `has_sweep` and by an
-/// evaluation that has validated the operands already at its own unit.
+/// Whether a continuous motion sweep no ball's tube builds (`canal::is_canal`), or a region no
+/// exact construction builds (`region::Route::field_only`), is among `operands` (`validate_at`'s):
+/// their boundary is the field's.  The one test, asked by `has_sweep` and by an evaluation that
+/// has validated the operands already at its own unit.
 fn sweeps_among(sk: &Sketch, operands: &std::collections::BTreeSet<usize>) -> bool {
     operands.iter().any(|&i| matches!(sk.solids[i].def, SolidDef::Swept { .. }) && !canal::is_canal(sk, i)
-        || region::in_general(sk, i) && !matches!(lowering::lowered(sk, i), Some(Ok(_)))
-            && !matches!(bounded::built(sk, i), Some(Ok(_))))
+        || matches!(sk.solids[i].def, SolidDef::Region { .. })
+            && region::route(sk, i).is_ok_and(|r| r.field_only()))
 }
 
 fn validate_at(sk: &Sketch, si: usize, unit: f64) -> Result<std::collections::BTreeSet<usize>, String> {

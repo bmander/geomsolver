@@ -550,7 +550,9 @@ fn build(
     }
     // a region: its meridian's loops turned once about its axis, the holes taken out
     if let SolidDef::Region { .. } = sol.def {
-        let Ok(m) = super::region::meridian(sk, si as usize) else { return Term::Empty };
+        let Ok(super::region::Form::Meridian(m)) = super::region::form(sk, si as usize) else {
+            return Term::Empty;
+        };
         let mut term = Term::Empty;
         let (axis, full) = (((0.0, 0.0), (0.0, 1.0)), std::f64::consts::TAU);
         for (i, p) in super::region::face_polys(&m, unit).into_iter().map(local).enumerate() {

@@ -1321,8 +1321,7 @@ fn beside_edges(body: &super::faces::BodyFaces, f: &Faces, section: Section) -> 
 fn gate(sk: &Sketch, solid: usize, pieces: &[Piece], body: &super::faces::BodyFaces, beside: impl FnOnce() -> Vec<V>)
     -> Result<(), String> {
     if pieces.is_empty() {
-        let empty = super::region::in_general_position(sk, solid)
-            .is_some_and(|g| g.is_ok_and(|f| f.is_empty()));
+        let empty = matches!(super::region::form(sk, solid), Ok(super::region::Form::General(f)) if f.is_empty());
         return if empty { Ok(()) } else {
             Err("the field reads material where the faces it reads say there is none".to_string())
         };
