@@ -226,20 +226,23 @@ component ConeThrough(about: line, q: point, lean: Angle) := { p |
   spine angle(abs(lean)) g
 }
 
-// The plane square to the line `along` at the ordinate `d` along it from `o`: the points `d` from
-// `o` along `along` (§6.21), a set and nothing drawn.  Its inside is behind it, the side `along`
-// points away from (`p inside top` is at most `d`).
+// The half-space behind the plane square to the line `along` at the ordinate `d` along it from
+// `o`: its surface is the points `d` from `o` along `along` (§6.21), a set and nothing drawn.  Its
+// inside is behind that plane, the side `along` points away from (`p inside top` is at most `d`
+// along); its points are not level with `o`, which `o level(along) p` says.  Through 0.84 it was
+// `std.Level` (#270).
 //
-//   top := std.Level(c, cut_ax, d: 2mm)
-component Level(o: point, along: line, d: Length) := { p | o distance(d, along: along) p }
+//   top := std.HalfSpace(c, cut_ax, d: 2mm)
+component HalfSpace(o: point, along: line, d: Length) := { p | o distance(d, along: along) p }
 
-// The set `S` offset by `d`: the points `d` outside its surface (§6.21) — a sphere's, a
-// cylinder's or a cone's grown by `d` — a set and nothing drawn.  `p inside std.Offset(S, d)` is
-// `p inside(d) S`, within `S` grown by `d`; a point on it is `p coincident tip`, its foot on `S`
-// found by the solve.  A cone's offset is a cone, its apex rounded by a ball where it grows.
+// The set `S` offset by `d`: the points `d` outside its surface (§6.21) — a sphere's, a cylinder's
+// or a cone's grown by `d` — a set and nothing drawn.  `p inside std.Offset(S, d)` is `p
+// distance(<= d, side: outside) S`, within `S` grown by `d`; a point on it is `p coincident tip`,
+// its foot on `S` found by the solve.  A cone's offset is a cone, its apex rounded by a ball where
+// it grows.
 //
 //   tip := std.Offset(pitch, d: 2mm)
-//   region := { p | p inside tip; p outside(4mm) pitch }
+//   region := { p | p inside tip; p distance(<= 4mm, side: inside) pitch }
 component Offset(S: set, d: Length) := { p | p distance(d, side: outside) S }
 
 // Two cones `k1` and `k2` touching at `m` with one tangent plane there, `m` on each beside it

@@ -114,9 +114,13 @@ examples…**).
 - [Solvent drawings](docs/solvent-drawing.md): `.svd` sheets, views and dimensions.
 - [Usage](docs/usage.md): `solventc`, solid export (STL/STEP), the TypeScript binding and
   hosting the web app.
-- [Implementation status](docs/implementation-status.md): architecture, module map, benchmarks.
-- [`solvent-spec.md`](solvent-spec.md) (normative language spec) and
-  [`gcs-solver-program.md`](gcs-solver-program.md) (the staged build program).
+- [Architecture](docs/contract/architecture.md) and the rest of the
+  [contributor contract](CLAUDE.md): the rules each subsystem is held to, one file per area.
+- [Implementation status](docs/implementation-status.md): how the build program's stages were
+  met, with benchmarks.
+- [`solvent-spec.md`](solvent-spec.md) (normative language spec, with its
+  [changelog](docs/solvent-changelog.md)) and [`gcs-solver-program.md`](gcs-solver-program.md)
+  (the staged build program).
 - [Bibliography](docs/bibliography.md): the methods the core implements.
 
 ## License

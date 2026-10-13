@@ -1021,6 +1021,26 @@ test('undo is the source, so it comes back word for word', () => {
   assert.equal(view.sketch.points.length, 2 + 5);
 });
 
+test('Delete takes everything a band selected, and leaves the datums std made', () => {
+  const view = docView(ANNOTATED);
+  const said: string[] = [];
+  view.onStatus = (m) => said.push(m);
+  // a band over the whole base, which also catches the standard datums' points at the origin
+  drag(view, view.w2s(-30, 30), view.w2s(130, -30));
+  assert.ok(view.selected.length > 3, `the band caught ${view.selected.length}`);
+  const fromStd = view.selected.filter((p) => view.doc.nameOf(p)?.startsWith('std.')).length;
+  assert.ok(fromStd > 0, 'and some of them are std\'s');
+  const n = view.selected.length - fromStd;
+  view.deleteSelected();
+  assert.ok(!view.source.includes('a := point'), view.source);
+  assert.ok(!view.source.includes('b := point'), view.source);
+  assert.ok(!view.source.includes('ab := line'), view.source);
+  assert.ok(view.source.includes('// a base, and this comment must survive every gesture'));
+  assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
+  assert.equal(said.at(-1), `deleted ${n} entities; ${fromStd} made by a component stay`);
+  assert.deepEqual(view.selected, [], 'what stayed is not left selected');
+});
+
 test('a gesture beside a component leaves the component written', () => {
   const view = docView(examples.source('gear'));
   assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics.slice(0, 3)));
@@ -2230,7 +2250,7 @@ test('a Boolean tool takes the body to change, then its tools, and writes them a
   assert.equal(view.tool, 'select');
 });
 
-test('a Boolean starts from the bodies selected, and Enter writes it; Intersect is `bound`', () => {
+test('a Boolean starts from the bodies selected, and Enter writes it; Intersect is `common`', () => {
   const view = combining();
   view.pickSolid(view.solidAt(...seenAt(view, [10, 0, 10]))!);
   view.pickSolid(view.solidAt(...seenAt(view, [30, 0, 20]))!, true);
@@ -2241,11 +2261,11 @@ test('a Boolean starts from the bodies selected, and Enter writes it; Intersect 
   assert.ok(view.source.endsWith('peg union block\nside union block\n'), view.source);
   assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
   view.undo();
-  view.setTool('bound');
+  view.setTool('common');
   clickSeen(view, [10, 0, 10]);
   clickSeen(view, [30, 0, 20]);
   view.finishCurve();
-  assert.ok(view.source.endsWith('peg bound block\n'), view.source);
+  assert.ok(view.source.endsWith('peg common block\n'), view.source);
   assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
 });
 

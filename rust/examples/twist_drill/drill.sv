@@ -86,7 +86,7 @@ repeat configuration.point {
     reach: configuration.fluted_length + configuration.diameter)
   repeat configuration.flutes as i {
     construction flank_at := solid(flank.body, under: index, at: lip_at_corner + i * 360deg / configuration.flutes)
-    flank_at bound fluted
+    flank_at common fluted
   }
 }
 

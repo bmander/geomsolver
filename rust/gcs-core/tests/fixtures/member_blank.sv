@@ -1,15 +1,15 @@
 // A member's blank, as the spiral bevel's step 3 drew it when the pair was modules (it is now
 // `spiral_bevel/hypoid.sv`'s `Blank`), kept for the tests that read a blank on its own
-// (functional_solids/document.rs, fillet_meridian.rs). A member's blank: the points within its tip cone and its heel sphere and outside its
-// toe sphere and its back cone, one region and its solid (§6.21). The cones are the pitch cone
-// offset by the addendum and by the back depth (`std.Offset`, `outside(d)`); the spheres are
-// about its apex through the face span's ends (`FaceSpan`, the face width on the pitch generator
-// centred on the mean point). Their sizes are the layout's, solved. The end relief chamfers the
-// tip's toe and heel corners `end_relief` each way, each leg measured from the other face
-// (`std.Chamfered`): on the sphere the flat bows with it, a parabola's arc turned about the axis,
-// built exactly; a relief of nothing cuts nothing.
-// Each set the region's body uses names the blank's face it bounds: a member built from the
-// blank has faces `material.tip`, `.heel`, `.toe` and `.back`, which the checks read.
+// (functional_solids/document.rs, fillet_meridian.rs). A member's blank: the points within its tip
+// cone and its heel sphere and outside its toe sphere and its back cone, one region and its solid
+// (§6.21). The cones are the pitch cone offset by the addendum and by the back depth (`std.Offset`,
+// `distance(<= d, side: inside)`); the spheres are about its apex through the face span's ends
+// (`FaceSpan`, the face width on the pitch generator centred on the mean point). Their sizes are
+// the layout's, solved. The end relief chamfers the tip's toe and heel corners `end_relief` each
+// way, each leg measured from the other face (`std.Chamfered`): on the sphere the flat bows with
+// it, a parabola's arc turned about the axis, built exactly; a relief of nothing cuts nothing. Each
+// set the region's body uses names the blank's face it bounds: a member built from the blank has
+// faces `material.tip`, `.heel`, `.toe` and `.back`, which the checks read.
 use std
 
 // The face width along `generator` (apex -> mean point), centred on the mean point: the toe
@@ -36,7 +36,7 @@ component MemberBlank(generator: line, ax: line, design: group, normal_module: L
   pitch := std.Cone(ax)
   generator.p2 coincident pitch
   tip := std.Offset(pitch, d: design.addendum * normal_module)
-  back := { q | q outside(design.back * normal_module) pitch }
+  back := { q | q distance(<= design.back * normal_module, side: inside) pitch }
   // the toe's side of the blank, a bound of its own for the toe's chamfer
   beyond_toe := { q | q outside toe }
   relief := design.end_relief

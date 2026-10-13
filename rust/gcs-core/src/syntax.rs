@@ -355,7 +355,7 @@ pub enum StmtKind {
     Block(Block),
     /// Parse a style block, retaining property spans for diagnostics.
     Style(StyleRule),
-    /// A body operation (§6.9): `cut` subtracts, `union` unites, `bound` intersects.
+    /// A body operation (§6.9): `cut` subtracts, `union` unites, `common` intersects.
     /// Relations are folded into the stock body after declarations are built.
     SolidRel(SolidRel),
     /// `claim over crank.theta in (0deg, 360deg) { … }` — the claims in the body, judged as the
@@ -644,27 +644,27 @@ pub enum BodyWord {
     /// `bore cut cyl` — the body rule's subtraction (§6.9). Relations are folded into
     /// the stock body after declarations are built.
     Cut,
-    /// `tip bound cyl` — the body rule's intersection: the body keeps what lies within
-    /// every solid that bounds it.
-    Bound,
+    /// `tip common cyl` — the body rule's intersection: the body keeps what it has in common
+    /// with every solid stated so.  Through 0.84 the word was `bound` (#270).
+    Common,
 }
 
 impl BodyWord {
     /// The word as written, or `None` for one that is not a body word.
     pub fn parse(w: &str) -> Option<BodyWord> {
-        [BodyWord::Union, BodyWord::Cut, BodyWord::Bound].into_iter().find(|b| b.as_str() == w)
+        [BodyWord::Union, BodyWord::Cut, BodyWord::Common].into_iter().find(|b| b.as_str() == w)
     }
 
     pub fn as_str(self) -> &'static str {
         match self {
             BodyWord::Union => "union",
             BodyWord::Cut => "cut",
-            BodyWord::Bound => "bound",
+            BodyWord::Common => "common",
         }
     }
 }
 
-/// A body operation (§6.9): `cut` subtracts, `union` unites, `bound` intersects.
+/// A body operation (§6.9): `cut` subtracts, `union` unites, `common` intersects.
 /// Relations are folded into the stock body after declarations are built.
 #[derive(Clone, Debug)]
 pub struct SolidRel {
@@ -1338,7 +1338,7 @@ pub enum Sweep {
     /// `sense: cw` the other way round.
     Revolve { axis: Ref, sweep: Option<Arg>, sense: Sense },
     /// `body := solid(block)` — a stock, or a term: what it is made of is in the list, and the
-    /// `union`/`cut`/`bound` statements say the rest.
+    /// `union`/`cut`/`common` statements say the rest.
     Body,
     /// `blank := solid(R)`, R a set — the points inside it (§6.21): written as a `Body` over the
     /// set, and made this by the flattener, which applies the set to the hidden `probe` point
@@ -1565,11 +1565,11 @@ pub enum OpArg {
     Vector { key: Option<Name>, parts: Vec<Arg>, span: Span },
     /// the number, as written — `80`, `x = 7`, `h = w / 2`, `1' 3"`
     Dim(String, Span),
-    /// The number beside it is a **bound** (§9.6): `distance(>= 5)`, `distance(<= d)`, or the
-    /// low end of `distance(in: (a, b))`, whose high end is `hi`.  `span` is the `>=` or `in:`
-    /// written.  Outside a set body a bound is a branch choice: no row, checked on the solution.
-    /// `grow` is an offset no source writes: a set's use (`p inside(d) S`, §6.21) puts it on a
-    /// cone's number, so the bound is on the distance from its surface (`model::RegionTerm`).
+    /// The number beside it is a **bound** (§9.6): `distance(>= 5)`, `distance(<= d)`, or the low
+    /// end of `distance(in: (a, b))`, whose high end is `hi`.  `span` is the `>=` or `in:` written.
+    /// Outside a set body a bound is a branch choice: no row, checked on the solution.  `grow` is
+    /// an offset no source writes: a set's use (`p distance(<= d, side: outside) S`, §6.21) puts it
+    /// on a cone's number, so the bound is on the distance from its surface (`model::RegionTerm`).
     Bound { cmp: Cmp, span: Span, hi: Option<(String, Span)>, grow: Option<(String, Span)> },
 }
 
@@ -1641,32 +1641,17 @@ impl Written {
     }
 
     /// **A side, said as a bound** (§9.6, §6.21; #192), in place: `p inside X` is `p
-    /// coincident(<=) X` and `p outside X` `p coincident(>=) X`; `p inside(d) X` is `p
-    /// distance(<= d, side: outside) X` and `p outside(d) X` `p distance(<= d, side: inside) X`.
-    /// The one form a set's body carries its sides in, so a side turned round is its bound's
-    /// `Cmp::turned` and its surface the bound taken off, as every other bound's.  Any other
-    /// relation is left as it stands.
+    /// coincident(<=) X` and `p outside X` `p coincident(>=) X` — beside `p distance(<= d, side:
+    /// outside) X`, a side grown, the one form a set's body carries its sides in (`inside(d)` is
+    /// retired, #266), so a side turned round is its bound's `Cmp::turned` and its surface the
+    /// bound taken off, as every other bound's.  Any other relation is left as it stands.
     pub fn lower_side(&mut self) {
         let Some(cmp) = crate::constraints::plane_side_word(&self.word.text) else { return };
-        if self.ops.len() != 2 {
+        if self.ops.len() != 2 || !self.args.is_empty() {
             return;
         }
-        let at = self.word.span;
-        let bound = |cmp| OpArg::Bound { cmp, span: at, hi: None, grow: None };
-        match self.args.as_slice() {
-            [] => {
-                self.word.text = "coincident".to_string();
-                self.args = vec![bound(cmp)];
-            }
-            [OpArg::Dim(..)] => {
-                let side = if cmp == Cmp::Le { "outside" } else { "inside" };
-                self.word.text = "distance".to_string();
-                self.args.insert(0, bound(Cmp::Le));
-                let key = Name { text: "side".to_string(), span: at };
-                self.args.push(OpArg::Named(key, Arg::Word(side.to_string())));
-            }
-            _ => {}
-        }
+        self.word.text = "coincident".to_string();
+        self.args = vec![OpArg::Bound { cmp, span: self.word.span, hi: None, grow: None }];
     }
 
     /// Which side of its second operand's surface it puts its point on (§9.6, §6.21), read in

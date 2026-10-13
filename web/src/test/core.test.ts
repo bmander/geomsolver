@@ -1999,17 +1999,17 @@ test('a Boolean is previewed by the core before it is written, and written as on
   const at = (name: string) => d.solids().find((s) => s.name === name)!.index;
   const [plate, boss] = [at('plate'), at('boss')];
   // the box of a preview along x and z, the front's own axes
-  const span = (word: 'union' | 'cut' | 'bound', tools: number[]) => {
+  const span = (word: 'union' | 'cut' | 'common', tools: number[]) => {
     const p = preview(d.sketch, plate, word, tools).positions;
     const xs = p.filter((_, i) => i % 3 === 0);
     const zs = p.filter((_, i) => i % 3 === 2);
     return [Math.min(...xs), Math.max(...xs), Math.min(...zs), Math.max(...zs)].map(
       (v) => Math.round(v * 1e6) / 1e6);
   };
-  assert.deepEqual(span('bound', [boss]), [35, 45, 15, 25], 'what the two share');
+  assert.deepEqual(span('common', [boss]), [35, 45, 15, 25], 'what the two share');
   assert.deepEqual(span('cut', [boss]), [0, 60, 0, 40]);
   const before = d.solids().length;
-  assert.throws(() => preview(d.sketch, plate, 'cut', [plate]), /cut itself/);
+  assert.throws(() => preview(d.sketch, plate, 'cut', [plate]), /`plate cut plate` joins a solid to itself/);
   assert.equal(d.solids().length, before, 'a preview writes nothing');
   const both = d.addBodyWord('union', ['boss', 'pin'], 'plate');
   assert.equal(both.refused, null);

@@ -109,14 +109,14 @@ component HypoidPair(P: plane, across: axis, up: axis, pinion_teeth: Int, gear_t
       lean: inner_lean)
     pinion_outer := Topping(tooth.outer, mill.ax, N, mill.to_outer, height: -depth,
       lean: outer_lean)
-    pinion_top := std.Level(trace.C, mill.ax, d: -addendum / 2)
+    pinion_top := std.HalfSpace(trace.C, mill.ax, d: -addendum / 2)
     construction pinion_topping := Tooth(pinion_inner.cone, pinion_outer.cone, mill.tooth_base,
       pinion_top, grow: 0mm, r: rounding)
     gear_outer := Topping(gear_space.inner, mill.ax, N, mill.to_outer, height: depth,
       lean: outer_lean)
     gear_inner := Topping(gear_space.outer, mill.ax, N, mill.to_inner, height: depth,
       lean: inner_lean)
-    gear_top := std.Level(trace.C, mill.ax, d: addendum / 2)
+    gear_top := std.HalfSpace(trace.C, mill.ax, d: addendum / 2)
     construction gear_topping := Space(gear_outer.cone, gear_inner.cone, gear_top,
       mill.mate_base, mill.reach, crown_neighbor, grow: 0mm, r: rounding)
     pinion_relief := Generated(pinion.body, pinion_topping.crown, pinion_generation,
@@ -233,7 +233,7 @@ component Blank(rim: line, ax: line, design: BlankDesign) {
   pitch := std.Cone(ax)
   rim.p2 coincident pitch
   tip := std.Offset(pitch, d: design.addendum)
-  back := { q | q outside(design.back) pitch }
+  back := { q | q distance(<= design.back, side: inside) pitch }
   beyond_toe := { q | q outside toe }
   region := { p | p inside tip; p inside heel; p outside toe; p inside back
                   p inside std.Chamfered(tip, beyond_toe, la: design.relief, lb: design.relief)
@@ -269,10 +269,10 @@ component FaceMill(P: plane, gear: Gear, trace: Trace, R: Length, mean_module: L
   trace.C distance(0.8 * R, along: gear.crown_ax) ax.p2
   inner_flank := std.ConeThrough(ax, inner_pitch, lean: pressure + pressure_shift)
   outer_flank := std.ConeThrough(ax, outer_pitch, lean: pressure_shift - pressure)
-  tooth_tip := std.Level(trace.C, ax, d: dedendum)
-  tooth_base := std.Level(trace.C, ax, d: -base)
-  mate_tip := std.Level(trace.C, ax, d: -dedendum)
-  mate_base := std.Level(trace.C, ax, d: base)
+  tooth_tip := std.HalfSpace(trace.C, ax, d: dedendum)
+  tooth_base := std.HalfSpace(trace.C, ax, d: -base)
+  mate_tip := std.HalfSpace(trace.C, ax, d: -dedendum)
+  mate_base := std.HalfSpace(trace.C, ax, d: base)
   cap := point in P
   to_cap := line(trace.C, gear.O)
   cap coincident to_cap
@@ -286,7 +286,7 @@ component FaceMill(P: plane, gear: Gear, trace: Trace, R: Length, mean_module: L
 // is the offset of the envelope), above the level `lo` and below `hi`, its tip's edges rounded by
 // `r`; and its solid, `crown`. Each set names the face it bounds.
 component Tooth(a: set, b: set, lo: set, hi: set, grow: Length, r: Length) {
-  inner := { q | q outside(grow) a }
+  inner := { q | q distance(<= grow, side: inside) a }
   outer := std.Offset(b, d: grow)
   base := { q | q outside lo }
   tip := { q | q inside hi }
@@ -301,7 +301,7 @@ component Tooth(a: set, b: set, lo: set, hi: set, grow: Length, r: Length) {
 // `step`, each cone grown by `grow`, above `lo` and below `hi`, its tips' edges rounded. The
 // outer mate is `outer_crown`, the inner `inner_crown`, turned `neighbor`.
 component Space(a: set, b: set, lo: set, hi: set, cap: set, step: motion, grow: Length, r: Length) {
-  inner := { q | q outside(grow) a }
+  inner := { q | q distance(<= grow, side: inside) a }
   outer := std.Offset(b, d: grow)
   tip := { q | q outside lo }
   base := { q | q inside hi }
@@ -313,7 +313,7 @@ component Space(a: set, b: set, lo: set, hi: set, cap: set, step: motion, grow: 
   private construction inner_crown := solid(far)
   private construction neighbor := solid(inner_crown, under: step, at: 0deg)
   body := solid(outer_crown)
-  neighbor bound body
+  neighbor common body
 }
 
 // -- generation --------------------------------------------------------------------------------

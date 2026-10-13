@@ -272,7 +272,7 @@ pub enum Term {
     Prim(usize),
     Union(Box<Term>, Box<Term>),
     Diff(Box<Term>, Box<Term>),
-    /// What two operands share: the `bound` side of the body rule (§6.9).
+    /// What two operands share: the `common` side of the body rule (§6.9).
     Inter(Box<Term>, Box<Term>),
     /// A term nothing could be built for — a face that would not close, a degenerate sweep.
     /// Classifies as empty, so an output is missing rather than wrong.

@@ -250,7 +250,7 @@ fn read(sk: &Sketch,solid: usize,axis_tolerance: f64) -> Result<Snapshot,String>
                         Ok(parts.pop())
                     };
                     if let Some(cut) = union(&through)? { body = body.combine(cut,BodyWord::Cut).map_err(error)?; }
-                    for &i in bound { body = body.combine(get(i),BodyWord::Bound).map_err(error)?; }
+                    for &i in bound { body = body.combine(get(i),BodyWord::Common).map_err(error)?; }
                     // the stratum's readers as the cuts are, one union each, so a body rounded all
                     // over stands no deeper than its terms' logarithm
                     if let Some(fill) = union(&on_late)? { body = body.combine(fill,BodyWord::Union).map_err(error)?; }

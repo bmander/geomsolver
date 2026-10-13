@@ -289,9 +289,9 @@ pub enum SolidDef {
     /// own direction) unless `sense: cw`.  Read through `Sketch::revolve_axis`.
     Revolve { face: u32, axis: EntRef, sweep: Extent, sense: Sense },
     /// **The body rule, and the whole of it**: its stock, plus everything in `union` with it,
-    /// minus everything that `cut`s it, within everything that `bound`s it.  All three are sets, so
-    /// the statements that fill them may be written anywhere in any order (P2) — which is what
-    /// a feature tree, folding a *sequence*, is not.  Difference and intersection commute, so
+    /// minus everything that `cut`s it, within everything it is in `common` with.  All three are
+    /// sets, so the statements that fill them may be written anywhere in any order (P2) — which is
+    /// what a feature tree, folding a *sequence*, is not.  Difference and intersection commute, so
     /// the last two need no order between them; union comes first.  A design needing the
     /// other order names the intermediate, and then there are two solids because there are
     /// two things.
@@ -303,14 +303,14 @@ pub enum SolidDef {
 }
 
 impl SolidDef {
-    /// The set of a body's that `word` fills — `union`'s, `cut`'s or `bound`'s — or `None` for a
+    /// The set of a body's that `word` fills — `union`'s, `cut`'s or `common`'s — or `None` for a
     /// solid that is not a body.
     pub fn body_set(&mut self, word: crate::syntax::BodyWord) -> Option<&mut Vec<u32>> {
         use crate::syntax::BodyWord;
         match (self, word) {
             (SolidDef::Body { on, .. }, BodyWord::Union) => Some(on),
             (SolidDef::Body { through, .. }, BodyWord::Cut) => Some(through),
-            (SolidDef::Body { bound, .. }, BodyWord::Bound) => Some(bound),
+            (SolidDef::Body { bound, .. }, BodyWord::Common) => Some(bound),
             _ => None,
         }
     }
@@ -335,8 +335,8 @@ pub enum RegionShape {
     /// from what it names (`Target`).
     Measured { of: Vec<(Target, f64)> },
     /// The signed distance from a face's surface (#183 F1), positive on the side away from the
-    /// body's material: `p inside F` at most nothing, `p outside F` at least, `p inside(d) F` at
-    /// most `d`.
+    /// body's material: `p inside F` at most nothing, `p outside F` at least, `p distance(<= d,
+    /// side: outside) F` at most `d`.
     FaceSide { face: FaceRef },
     /// The material's angle at the edge where faces `a` and `b` meet, at the point of it nearest
     /// the probe (#183 F9), in radians: under a half turn where the edge is convex.
@@ -757,7 +757,7 @@ impl Sketch {
         -> Result<(), String> {
         let name = |sk: &Sketch, i: usize| sk.solids[i].name.clone();
         if tool == body {
-            return Err(format!("`{}` is {} itself", name(self, body), word.as_str()));
+            return Err(format!("`{0} {1} {0}` joins a solid to itself", name(self, body), word.as_str()));
         }
         self.as_body(body);
         self.solids[body].def.body_set(word).expect("a body").push(tool as u32);

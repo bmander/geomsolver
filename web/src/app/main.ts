@@ -101,7 +101,7 @@ const SOLID_TOOLS = [
   ['Extrude', 'extrude', 'u'], ['Revolve', 'revolve', 'q'],
   ['Union', 'union', 'm', `Join bodies: ${BOOLEAN}`],
   ['Cut', 'cut', 'z', `Cut a body with others: ${BOOLEAN}`],
-  ['Intersect', 'bound', 'y', `Keep what bodies share (bound): ${BOOLEAN}`],
+  ['Intersect', 'common', 'y', `Keep what bodies share (common): ${BOOLEAN}`],
   ['Fillet', 'fillet', '⇧f', `Round edges of a solid (std's \`round\`): ${EDGES}`],
   ['Chamfer', 'chamfer', '⇧c', `Cut edges of a solid flat (std's \`chamfer\`): ${EDGES}`],
 ] as [string, Tool, string, string?][];
@@ -150,7 +150,7 @@ const VIEW_BUTTONS: ToolbarButton[] = [
       view.setOrbitMode(!view.orbitMode);
       toast(view.orbitMode ? 'orbit: drag to turn the view' : 'orbit off');
     } },
-  { label: 'Delete', onClick: () => view.deleteSelected(),
+  { label: 'Delete', onClick: () => deleteSelection(),
     title: 'Delete what is selected (Delete)' },
 ];
 const [orbitButton] = VIEW_BUTTONS.map((b) => addButton(
@@ -469,6 +469,20 @@ aboutBadge.addEventListener('click', () => void about());
 
 /* -- keyboard ------------------------------------------------------------------- */
 
+/** What the Delete key and the workspace's Delete button both do: take away whatever is selected
+ *  — the constraint with the focus, else the drawing's selection, the solids or the picture.  One
+ *  function, so a phone's button and a keyboard's key cannot come to delete different things. */
+function deleteSelection(): void {
+  if (currentConstraint) {
+    const c = currentConstraint;
+    focusConstraint(null);
+    view.removeConstraint(c);
+    toast(`removed ${c.typeName}`);
+  } else {
+    view.deleteSelected();
+  }
+}
+
 const TOOL_KEYS: Record<string, Tool> =
   Object.fromEntries(TOOLS.map(([, tool, key]) => [key, tool]));
 /** Every accelerator in the app, read off the buttons and menu items themselves so there is
@@ -504,14 +518,7 @@ window.addEventListener('keydown', (e) => {
   if (k === 'enter') { e.preventDefault(); view.finishCurve(); return; }
   if (k === 'delete' || k === 'backspace') {
     e.preventDefault();
-    if (currentConstraint) {
-      const c = currentConstraint;
-      focusConstraint(null);
-      view.removeConstraint(c);
-      toast(`removed ${c.typeName}`);
-    } else {
-      view.deleteSelected();
-    }
+    deleteSelection();
     return;
   }
   // shift is part of the token, so ⇧L is Perpendicular and never the Line tool.  The key is
@@ -581,7 +588,12 @@ view.afterEdit();
 view.fit();
 window.addEventListener('popstate', () => {
   const url = new URL(location.href);
-  void openExample(url.searchParams.get('example') ?? 'rect_fillets', 'none',
-    url.searchParams.get('file') ?? undefined);
+  const example = url.searchParams.get('example');
+  if (example) void openExample(example, 'none', url.searchParams.get('file') ?? undefined);
+  else view.newDocument();
 });
-await openExample(initialExample, 'replace', new URL(location.href).searchParams.get('file') ?? undefined);
+// the bare address is a blank sheet: `newDocument` leaves the example, which puts the modal away
+if (initialExample) {
+  await openExample(initialExample, 'replace', new URL(location.href).searchParams.get('file') ?? undefined);
+}
+else view.newDocument();

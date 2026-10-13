@@ -40,6 +40,14 @@ const projects: Example[] = [{
     + 'pinion\'s), so edit either radius and the cut is re-timed and refines as you watch.',
   target: { kind: 'file', path: 'lantern_generation.sv' },
 }, {
+  label: 'Penrose tiling · components calling each other', key: 'penrose',
+  description: 'Penrose\'s P3 by Robinson triangles: an acute half rhomb cuts into an acute and an '
+    + 'obtuse one, an obtuse into two obtuse and an acute, each a golden ratio smaller, and two '
+    + 'components each call the other until a `when` over the count ends them. A sun of ten '
+    + 'triangles three levels down is 130 half rhombs, every point placed by distances alone. '
+    + 'Edit `depth` or `l`.',
+  target: { kind: 'file', path: 'penrose.sv' },
+}, {
   label: 'Generation by motion · nine examples', key: 'generation',
   description: 'Curves and solids nobody draws: what a tool leaves behind as it moves, or the path a '
     + 'mechanism traces, each a curve the solve can constrain. A Jansen leg whose toe rod solves to '

@@ -130,6 +130,17 @@ impl<'a> P<'a> {
         if crate::syntax::words::named_link_at(&self.t, self.i) || !self.eat_p('(') {
             return Some(Vec::new());
         }
+        // a side takes nothing in its parentheses: one grown by a distance is that distance from
+        // the surface (§6.21, #266), and the set grown is `std.Offset`
+        if fixity == Fixity::Infix {
+            if let Some(cmp) = crate::constraints::plane_side_word(word) {
+                let side = if cmp == Cmp::Le { "outside" } else { "inside" };
+                self.fail(&format!("`{word}` takes nothing in its parentheses: a point at most \
+                    `d` on `S`'s {side} is `p distance(<= d, side: {side}) S`, and `S` grown by \
+                    `d` is the set `std.Offset(S, d: d)`"));
+                return None;
+            }
+        }
         // a defined word's parameters, by label, each kept as written (§9.9) — a word the
         // language has in the other fixity included, as the expansion reads it
         if !builtin_word(word, fixity) {

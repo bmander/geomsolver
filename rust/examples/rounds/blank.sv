@@ -27,7 +27,7 @@ toe_side := { q | q distance(>= 12mm) apex }
 
 face := { p |
   p inside tip
-  p outside(2mm) pitch
+  p distance(<= 2mm, side: inside) pitch
   p inside heel
   p inside toe_side
   p inside std.Rounded(tip, heel, r: 0.8mm)

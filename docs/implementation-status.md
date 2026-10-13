@@ -1,5 +1,11 @@
 # Implementation status
 
+*This page records how Stages 0–5 of the build program were met, with the measurements taken as
+each landed. It is not kept current with everything since (solids, spatial geometry, the B-rep
+kernel, the 3D workspace): for today's architecture read
+[contract/architecture.md](contract/architecture.md), and for each subsystem's rules the files
+[CLAUDE.md](../CLAUDE.md) lists.*
+
 Stages 0–5 of [`gcs-solver-program.md`](../gcs-solver-program.md): a residual-formulation solver,
 structural diagnosis (matching / Dulmage–Mendelsohn / pebble game / minimal conflict sets),
 Fudos–Hoffmann-style decomposition into cached solve plans, the witness configuration method
@@ -14,7 +20,7 @@ The solver exists **once**:
 | **core** | [`rust/gcs-core/`](../rust/gcs-core/) | the whole engine — model, kernels, solvers, linear algebra, diagnosis, decomposition, witness analysis, homotopy, document I/O.  No dependencies. |
 | **ABI** | [`rust/gcs-ffi/`](../rust/gcs-ffi/) | one flat C ABI, built twice: a native `cdylib` and a self-contained `wasm32-unknown-unknown` module |
 | **TypeScript** | [`web/src/core/`](../web/src/core/) | a thin binding over WebAssembly — proxies over handles, buffers for hot-path numbers, JSON for ragged results |
-| **app** | [`web/src/app/`](../web/src/app/) | an HTML5-canvas sketcher, the only front end |
+| **app** | [`web/src/app/`](../web/src/app/) | a 3D-workspace sketcher (sketches on planes, solids drawn by three.js), the only front end |
 
 The language has **modules** (`use engine.parts`, spec §14.4): `modules.rs` links a module's
 components and params into a program, the CLI resolves a name against the files beside the
@@ -45,16 +51,16 @@ implementation, and it is a dev-dependency so nothing it brings links into the c
   witness's dimension jitter.  Identity is an integer everywhere (a Param is its index, an entity
   is `(kind, index)`, a constraint is a monotonic id), which is what lets the bindings intern
   proxies and keep `is` / `===` meaning what they always did.
-* `expr.rs` — **dimension expressions**: a `Length`/`Angle` argument may be text — `w = 80`
-  names its value, `h = w / 2` and `sin(h * 10)` read names — parsed by a small recursive-descent
-  parser (`+ - * / ^`, parentheses, `pi`, the usual functions; trigonometry in degrees, like
-  every angle a person reads here).  The names make a graph over the document's dimensions and
-  `evaluate` is a topological (Kahn) walk of it, earliest in the document first among the ready
-  ones: every value is written into its argument (radians for an angle) and the report lists
-  each expression with its name, what it reads, and its error — defined twice, not defined, on a
-  cycle, not a number.  One that cannot be computed keeps its last number, so the solver always
-  has a constant; the report says what is wrong.  Documents save `{"expr", "value"}`; the
-  callout shows `h=40` or `=0.342`, the constraint list `h = w / 2 = 40`.
+* `expr.rs` — **dimension expressions**: a `Length`/`Angle` argument may be text — `w / 2`,
+  `sin(h * 10)` — parsed by a small recursive-descent parser (`+ - * / ^`, parentheses, `pi`,
+  `tau`, the usual functions; trigonometry in degrees, like every angle a person reads here),
+  every number carrying a checked dimension (`units.rs`).  An expression defines no name: the
+  Solvent source names a number (`w := 80`) and writes it in, and a name a text still reads is a
+  free variable, an unknown of the sketch.  `evaluate` works the expressions out in document
+  order, writing every value into its argument (radians for an angle) and reporting each
+  expression with what it reads and its error.  One that cannot be computed keeps its last
+  number, so the solver always has a constant; the report says what is wrong.  Documents save
+  `{"expr", "value"}`, and a callout draws the expression as written.
 * `kernels.rs` — one **vectorized residual/Jacobian kernel per constraint type**, evaluated for a
   whole block of same-typed constraints per call.  Registration order **is** the kernel id.
   Squared distances, no sqrt; a determinant for parallel; a wrapped atan2 gap for the directed
@@ -149,7 +155,7 @@ solve(sk);                     // p -> (1, 0), q -> (11, 0): least change
   perpendiculars, since the fourth follows and would over-constrain it) / **C**ircle /
   **A**rc (centre, start, end) / **3**-point arc (two ends, then a point the arc passes
   through — `Sketch.arcThrough`, which builds the circumcircle and picks the sweep
-  containing that point), wheel zoom, right-drag pan; Escape steps back one stage at a
+  containing that point), wheel zoom, right-drag orbit, middle-drag pan; Escape steps back one stage at a
   time — stop a DOF animation, drop the points a tool has collected, leave the tool;
 * **File ▸ Trace image…** puts a picture behind the drawing, handled like anything else on
   the canvas and under no tool of its own: click its frame to select it, drag it to move it,
@@ -158,8 +164,8 @@ solve(sk);                     // p -> (1, 0), q -> (11, 0): least change
   frame answers a press until it is selected, so the drawing is made straight through it.
   It is view state and not document state — not saved, not exported, not solved, not undone;
 * every dimension's number is editable as text (double-click its callout or its row): a
-  number, or an expression — `w = 80` names it, `h = w / 2` uses it — evaluated by the core
-  in dependency order; a row whose expression cannot be computed is marked `ƒ` with why, and
+  number, or an expression over the document's named numbers — `w / 2` — evaluated by the
+  core; a row whose expression cannot be computed is marked `ƒ` with why, and
   Solution ▸ Diagnose lists every expression in evaluation order;
 * a measurement readout in the canvas's lower right whenever exactly two entities are
   selected: their distance from `distanceBetween` in the model (so the readout and any
@@ -197,7 +203,8 @@ solve(sk);                     // p -> (1, 0), q -> (11, 0): least change
   resizes together (a relation, not a dimension); the
   Diagnose report (structural + witness), DOF animation, branch flipping and homotopy
   enumeration of alternative roots;
-* JSON save/load, undo, and the case library from `examples.ts`.
+* the Solvent source as the document (JSON is an export), undo, and the example library
+  (`example-catalog.ts`, **File ▸ Open examples…**).
 
 Measured in the browser (median ms) — `npm run bench`, whose native half
 (`cargo run --release -p gcs-core --bin bench`) measures the same things on the same code:

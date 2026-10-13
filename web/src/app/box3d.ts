@@ -40,7 +40,7 @@ const INK = {
   /** A Boolean's tools, ghosted in the colour of what they do to the body (#162 F4). */
   union: 0x2ca02c,
   cut: 0xd62728,
-  bound: 0x1f77b4,
+  common: 0x1f77b4,
 };
 
 /** How much of a Boolean's tool shows through as a ghost. */

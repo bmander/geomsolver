@@ -36,14 +36,16 @@ export const pdiags = document.getElementById('pdiags') as HTMLElement;
 export const componentEl = document.getElementById('component') as HTMLElement;
 export const footerEl = document.querySelector('footer') as HTMLElement;
 
-// the loading modal stays up through the first example's opening (`openExample`), which puts it away
+// the loading modal stays up until the first document is open — an example's opening
+// (`openExample`) or the blank sheet's — which puts it away
 await initCore();
 
-/** Example routes open an authored drawing after the shell is wired. The model editor
- *  starts empty; opening an example never loads its assembly as the active document. */
+/** Example routes open an authored drawing after the shell is wired; the bare address opens a
+ *  blank sheet, and stays the bare address.  The model editor starts empty; opening an example
+ *  never loads its assembly as the active document. */
 const url = new URL(location.href);
-export const initialExample = url.searchParams.get('example')
-  ?? /\/example\/([^/]+)\/?$/.exec(url.pathname)?.[1] ?? 'rect_fillets';
+export const initialExample: string | null = url.searchParams.get('example')
+  ?? /\/example\/([^/]+)\/?$/.exec(url.pathname)?.[1] ?? null;
 export const view = new SketchView(canvas, Document.read(''), boxCanvas);
 export let currentConstraint: Constraint | null = null;
 

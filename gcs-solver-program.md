@@ -1,6 +1,10 @@
 # Building a Geometric Constraint Solver: A Staged Program
 ## Python front-end, C core — from Newton's method to the research frontier
 
+*Written when the solver was planned as a Python front end over a C core. It was built instead as
+one Rust core, compiled natively and to WebAssembly; the stages are as planned. What was built
+and measured is [docs/implementation-status.md](docs/implementation-status.md).*
+
 The strategy mirrors how the field itself evolved: start with the pure-numerical approach that SolveSpace and PlaneGCS use (which gets you a *working* sketcher fast), then layer on the graph-theoretic machinery (diagnosis, decomposition, witness analysis) that separates D-Cubed DCM from everything in open source. Each stage produces a usable solver; each subsequent stage is the answer to a concrete failure you'll have personally experienced in the previous one. That failure-driven ordering matters — you'll understand *why* decomposition exists after you've watched DogLeg grind on a 400-entity sketch, in a way you can't from reading Owen's paper cold.
 
 A note on "C extension": the architecture below is binding-agnostic. Straight CPython C API is maximal control and maximal boilerplate; **Cython** is the pragmatic middle for this project (you can move code across the Python/C boundary incrementally, which fits the staged plan perfectly); **pybind11** if you'd rather the core be C++ (which gives you Eigen, a real asset here). Given the routelab pattern, everything here also ports 1:1 to Rust/PyO3 with nalgebra — the stages don't change, only the FFI. I'd honestly suggest deciding at Stage 1, not now.

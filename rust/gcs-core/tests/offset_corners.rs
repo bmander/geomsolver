@@ -1,10 +1,10 @@
 //! **Rounds and chamfers at an offset cone's corner** (#207, #145): a region about one axis whose
-//! bound is a cone grown or shrunk (`std.Offset`, `outside(d)`) is still lowered into its
-//! meridian where `std.Rounded` or `std.Chamfered` meets that bound — the grown cone's generator
-//! and its rounded apex are steps of the meridian like any other — so its exact solid is built.
-//! Each is held to the closed form (Pappus over the corner worked out by hand) to 1e-9, and to the
-//! region read point by point beside its boundary.  A flat beside a sphere bows off the straight
-//! flat, the sum of distances a parabola's arc there, and is lowered so (#196).
+//! bound is a cone grown or shrunk (`std.Offset`, `distance(<= d, side: inside)`) is still lowered
+//! into its meridian where `std.Rounded` or `std.Chamfered` meets that bound — the grown cone's
+//! generator and its rounded apex are steps of the meridian like any other — so its exact solid is
+//! built.  Each is held to the closed form (Pappus over the corner worked out by hand) to 1e-9, and
+//! to the region read point by point beside its boundary.  A flat beside a sphere bows off the
+//! straight flat, the sum of distances a parabola's arc there, and is lowered so (#196).
 use gcs_core::program::Elaborated;
 use gcs_core::solid::MaterialField;
 use gcs_core::solve::{solve, SolveOpts};
@@ -156,11 +156,11 @@ fn a_round_where_a_grown_cone_meets_a_sphere() {
     lowered(&e, "b", want, 9.0, [-0.5, 9.5]);
 }
 
-/// The cone shrunk by 1 (`outside(1mm)`, its apex 2 further up) leaves the cylinder's material
+/// The cone shrunk by 1 (at most 1mm inside, its apex 2 further up) leaves the cylinder's material
 /// below it: where it meets the cylinder's wall, a convex corner, rounded by a ball of 0.5.
 #[test]
 fn a_round_where_a_shrunk_cone_meets_a_cylinder() {
-    let e = solved(&format!("{FRAME}cleared := {{ q | q outside(1mm) funnel }}\n\
+    let e = solved(&format!("{FRAME}cleared := {{ q | q distance(<= 1mm, side: inside) funnel }}\n\
                              plug := {{ p | p inside tube; p outside std.top; p inside lid; \
                              p inside cleared; p inside std.Rounded(cleared, tube, r: 0.5mm) }}\n\
                              s := solid(plug)\n"));

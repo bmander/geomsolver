@@ -27,12 +27,12 @@ component Tooth(a: group, b: group, lo: group, hi: group, grow: Length, r: Lengt
   fb round(r) hi
 }
 
-// As `crown/tooth.sv` would call it, after #145's F3 (`std.ConeThrough`, `std.Level`):
+// As `crown/tooth.sv` would call it, after #145's F3 (`std.ConeThrough`, `std.HalfSpace`):
 //
 //   inner := std.ConeThrough(cut_ax, ahead.end, lean: pressure + shift)
 //   outer := std.ConeThrough(cut_ax, behind.end, lean: shift - pressure)
-//   tooth_tip := std.Level(C, cut_ax, dedendum * mn)
-//   tooth_base := std.Level(C, cut_ax, -base * mn)
+//   tooth_tip := std.HalfSpace(C, cut_ax, dedendum * mn)
+//   tooth_base := std.HalfSpace(C, cut_ax, -base * mn)
 //   tooth := solid(Tooth(inner, outer, tooth_base, tooth_tip, grow: backlash / 4,
 //                        r: rounding * mn))
 //

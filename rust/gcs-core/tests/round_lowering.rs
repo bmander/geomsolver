@@ -833,12 +833,13 @@ fn rounds_that_run_out_onto_a_face_are_rolled_and_cut_off() {
     near_quadrature(props::volume(&b), want);
 }
 
-/// **No term left unread**: the hand-written round with one side moved off its face
-/// (`p inside(1mm) a`) is no set of the table's — every term must be one an entry reads — so it is
-/// not built, and its export says no entry builds it.
+/// **No term left unread**: the hand-written round with one side moved off its face (`p
+/// distance(<= 1mm, side: outside) a`) is no set of the table's — every term must be one an entry
+/// reads — so it is not built, and its export says no entry builds it.
 #[test]
 fn a_set_with_a_term_no_entry_reads_is_not_lowered() {
-    let src = include_str!("../../examples/rounds/by_hand.sv").replacen("  p inside a\n", "  p inside(1mm) a\n", 1);
+    let src = include_str!("../../examples/rounds/by_hand.sv")
+        .replacen("  p inside a\n", "  p distance(<= 1mm, side: outside) a\n", 1);
     assert_ne!(src, include_str!("../../examples/rounds/by_hand.sv"));
     let e = solved(&src);
     assert_eq!(lowered(&e), (0, 0));
@@ -1038,7 +1039,7 @@ fn a_rolled_run_is_cut_off_by_both_its_ends_faces() {
 #[test]
 fn a_rolled_run_onto_a_curved_face_is_cut_off_by_its_solid() {
     let drum = "in std.top {\n  dc := point\n  fix((40, -12)) dc\n  drum_k := circle(center: dc) hint(r: 60)\n  radius(60mm) drum_k\n}\n\
-        drum := solid(face(drum_k), from: -1mm, to: 40mm)\ndrum bound vent\n";
+        drum := solid(face(drum_k), from: -1mm, to: 40mm)\ndrum common vent\n";
     let e = solved(&vent(98.0, -12.0, drum));
     assert_eq!(lowered(&e).0, 1);
     let b = exported(&e, "vent");
