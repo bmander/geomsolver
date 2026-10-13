@@ -287,11 +287,11 @@ fn meets(s: &Seg,q: &Seg,tol: f64) -> (Vec<f64>,Vec<f64>) {
     for p in [s.start(),s.end()] { if q.distance(p) <= tol { keep(p,&mut on_s,&mut on_q); } }
     for p in [q.start(),q.end()] { if s.distance(p) <= tol { keep(p,&mut on_s,&mut on_q); } }
     let carrier = |s: &Seg| match *s {
-        Seg::Line {a,b} => Carrier::Line {p: a,d: sub(b,a)},
+        Seg::Line {a,b} => Carrier::Line {p: a,d: plane2::unit(sub(b,a))},
         Seg::Arc {c,r,..} => Carrier::Circle {c,r},
         Seg::Conic {..} => unreachable!("a conic meets by `meets_steps`' roots"),
     };
-    let points = plane2::meet(carrier(s),carrier(q),Touch::Chord(tol)).unwrap_or_default();
+    let points = plane2::meet(carrier(s),carrier(q),Touch::Gap(tol)).unwrap_or_default();
     for p in points { keep(p,&mut on_s,&mut on_q); }
     (on_s,on_q)
 }

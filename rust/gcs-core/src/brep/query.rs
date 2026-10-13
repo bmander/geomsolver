@@ -45,7 +45,7 @@ pub fn curve_curve(a: &Curve,ta: [f64;2],b: &Curve,tb: [f64;2],tol: f64) -> Opti
         }
         if dot(sub(p,o),z).abs() > tol { return Vec::new(); }
         let foot = add(p,scale(d,dot(sub(o,p),d)));
-        match chord(distance(foot,o),r,Touch::Sagitta(tol)) {
+        match chord(distance(foot,o),r,Touch::Gap(tol)) {
             Chord::Miss => Vec::new(),
             Chord::Touch => vec![foot],
             Chord::Cross(half) => vec![add(foot,scale(d,-half)),add(foot,scale(d,half))],
@@ -235,7 +235,7 @@ fn line_cylinder(p: V,d: V,[t0,t1]: [f64;2],c: &super::geom::Frame,r: f64,tol: f
         return if (norm(w)-r).abs() <= tol { Meets::Along } else { Meets::At(Vec::new()) }
     }
     let foot = -dot(w,e)/ee;
-    let roots = match chord(norm(add(w,scale(e,foot))),r,Touch::Sagitta(tol)) {
+    let roots = match chord(norm(add(w,scale(e,foot))),r,Touch::Gap(tol)) {
         Chord::Miss => Vec::new(),
         Chord::Touch => vec![(foot,true)],
         Chord::Cross(half) => { let half = half/ee.sqrt(); vec![(foot-half,false),(foot+half,false)] }
