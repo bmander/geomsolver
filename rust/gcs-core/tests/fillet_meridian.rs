@@ -282,12 +282,13 @@ fn the_crown_tip_rounding_is_the_balls() {
     assert!(worst < 1e-9, "the prototype's rounds leave the drawn ones by {worst:e}");
 }
 
-/// `blank/member.sv`'s preview with an end relief of `relief` mm, and its region solid's meridian.
+/// `fixtures/member_blank.sv`'s preview (the spiral bevel's blank as its own step drew it) with an
+/// end relief of `relief` mm, and its region solid's meridian.
 fn member(relief: f64) -> (Elaborated, usize) {
-    let text = include_str!("../../examples/spiral_bevel/blank/member.sv");
+    let text = include_str!("fixtures/member_blank.sv");
     assert!(text.contains("end_relief: 0.2mm"));
     let text = text.replace("end_relief: 0.2mm", &format!("end_relief: {relief}mm"));
-    let e = fixtures::gear::read(&text, &fixtures::gear::project());
+    let e = fixtures::gear::read(&text);
     let solid = entity(&e, "member.material");
     (e, solid)
 }
@@ -304,7 +305,7 @@ fn tip_toe_heel(e: &Elaborated, solid: usize) -> [u32; 3] {
     [tag(false, Cmp::Le), tag(true, Cmp::Ge), tag(true, Cmp::Le)]
 }
 
-/// #145's end relief, `std.Chamfered` in the blank's own region (`blank/member.sv`), **lowered**
+/// #145's end relief, `std.Chamfered` in the blank's own region (`fixtures/member_blank.sv`), **lowered**
 /// (#196): the meridian's toe and heel corners where the tip cone meets each sphere are cut by a
 /// conic's arc whose ends are the prototype's chamfer's, each leg measured from the other face —
 /// on the tip `size` inside the sphere, on the sphere `size` below the tip cone — and the exact

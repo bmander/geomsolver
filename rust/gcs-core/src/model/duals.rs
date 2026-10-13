@@ -160,28 +160,50 @@ impl Sketch {
     /// of chart, made once: a document carries it (`set_chart`).
     pub fn choose_charts(&mut self) {
         for d in 0..self.duals.len() {
-            let Toward::Chart { axis: None, .. } = self.duals[d].toward else { continue };
-            let Some(x) = self.lifted_cols(self.duals[d].point) else { continue };
-            let mut score = [0.0f64; 3];
-            for c in self.constraints.iter().filter(|c| c.along == Some(d)) {
-                let cols = c.row_params(self);
-                let v: Vec<f64> = cols.iter().map(|&p| self.params[p as usize].value).collect();
-                let (_, jac) = crate::kernels::eval_one(c.kernel_id(), &v, &c.row_consts(self));
-                for row in jac.chunks(cols.len().max(1)) {
-                    let g: [f64; 3] = std::array::from_fn(|a| {
-                        cols.iter().zip(row).filter(|(p, _)| **p == x[a]).map(|(_, g)| g).sum()
-                    });
-                    let n = crate::space::norm(g);
-                    if n > 0.0 {
-                        for a in 0..3 {
-                            score[a] += (g[a] / n).abs();
-                        }
+            if let Toward::Chart { axis: None, .. } = self.duals[d].toward {
+                if let Some(c) = self.chart_here(d) {
+                    self.set_chart(d, c);
+                }
+            }
+        }
+    }
+
+    /// Each chart whose gauge differs from what `choose_charts` would give it where its point
+    /// stands now, with that gauge (#217): a chart chosen where an unseeded point started —
+    /// about the origin, its sets' geometry turned from where the solve puts it — can be square
+    /// to the tangent plane the solve ends at, a direction no tangent there takes.
+    pub fn charts_moved(&self) -> Vec<(usize, u8)> {
+        (0..self.duals.len())
+            .filter_map(|d| {
+                let Toward::Chart { axis, .. } = self.duals[d].toward else { return None };
+                let c = self.chart_here(d)?;
+                (axis != Some(c)).then_some((d, c))
+            })
+            .collect()
+    }
+
+    /// The world axis chart `d`'s sets' normal runs most along where its point stands now.
+    fn chart_here(&self, d: usize) -> Option<u8> {
+        let x = self.lifted_cols(self.duals[d].point)?;
+        let mut score = [0.0f64; 3];
+        for c in self.constraints.iter().filter(|c| c.along == Some(d)) {
+            let cols = c.row_params(self);
+            let v: Vec<f64> = cols.iter().map(|&p| self.params[p as usize].value).collect();
+            let (_, jac) = crate::kernels::eval_one(c.kernel_id(), &v, &c.row_consts(self));
+            for row in jac.chunks(cols.len().max(1)) {
+                let g: [f64; 3] = std::array::from_fn(|a| {
+                    cols.iter().zip(row).filter(|(p, _)| **p == x[a]).map(|(_, g)| g).sum()
+                });
+                let n = crate::space::norm(g);
+                if n > 0.0 {
+                    for a in 0..3 {
+                        score[a] += (g[a] / n).abs();
                     }
                 }
             }
-            let c = (0..3).fold(0, |best, a| if score[a] > score[best] { a } else { best });
-            self.set_chart(d, c as u8);
         }
+        let c = (0..3).fold(0, |best, a| if score[a] > score[best] { a } else { best });
+        Some(c as u8)
     }
 
     /// The private geometry's own rows among `rows` (constraint indices), each stated again as its

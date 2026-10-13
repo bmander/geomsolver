@@ -413,8 +413,11 @@ fn every_dimension_can_be_written_free() {
         let Some(free) = k.free_kernel() else { continue };
         let (stated, free) = (kernels::kernel(k.kernel()), kernels::kernel(free));
         assert_eq!(free.n_par, stated.n_par + 1, "{k:?}");
-        // the affine map, m and c
-        assert_eq!(free.n_const, 2, "{k:?}");
+        // the affine map, m and c — and a skew distance's pin beside them, as its stated kernel
+        // carries it beside its number (#217)
+        let pin = usize::from(k == gcs_core::constraints::CKind::LineLine3);
+        assert_eq!(free.n_const, 2 + pin, "{k:?}");
+        assert_eq!(stated.n_const, 1 + pin, "{k:?}");
         assert_eq!(free.n_res, stated.n_res, "{k:?}");
         assert_eq!(free.degree, stated.degree, "{k:?}");
     }

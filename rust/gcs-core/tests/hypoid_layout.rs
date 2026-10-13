@@ -1,5 +1,5 @@
-//! The spiral-bevel pair laid out step by step (`spiral_bevel/layout.sv`: the pitch cones, the
-//! trace and the crown built from lines, circles and folds), held to the pair as it was computed
+//! The spiral-bevel pair laid out step by step (`spiral_bevel/hypoid.sv`: the pitch cones, the
+//! trace and the crown built from lines, circles and regions), held to the pair as it was computed
 //! with trigonometry before the layout replaced it: every named quantity the layout plan lists
 //! (docs/spiral-bevel-layout-plan.md), at the configured hypoid, the bevel pair, the six-millimetre
 //! hypoid and the nine sizes and ratios the paired-envelope checks read, and the material both
@@ -31,50 +31,43 @@ fn slant(a: V,b: V) -> f64 { angle(a,b).min(180.-angle(a,b)) }
 /// The distance of `p` from the line through `o` along `d`.
 fn off_line(p: V,o: V,d: V) -> f64 { norm(cross(sub(p,o),unit(d))) }
 
-/// A design: the configuration module's text.
-struct Design { label: String, configuration: String }
+/// A design: the pair's document at it.
+struct Design { label: String, text: String }
 
 impl Design {
     /// A design of its own (`fixtures::gear::configuration`).
     fn at(label: String,teeth: [u32;2],module: f64,offset: f64,shift: f64,spiral: f64) -> Self {
-        let configuration = fixtures::gear::configuration(teeth,module,offset,shift,spiral);
-        Design { label, configuration }
+        Design { label, text: fixtures::gear::at(teeth,module,offset,shift,spiral) }
     }
-    /// The pair (`gears.sv`), its modules beside it, the configuration replaced.
-    fn read(&self) -> Elaborated { fixtures::gear::read_file("gears.sv",&self.configuration) }
+    /// The pair (`hypoid.sv`) at this design, solved.
+    fn read(&self) -> Elaborated { fixtures::gear::read(&self.text) }
 }
 
 /// The recorded designs (`fixtures::gear::designs`): the configured hypoid, the bevel pair, the
 /// six-millimetre hypoid and the nine sizes and ratios of `tests/envelope/paired.rs`.
 fn designs() -> Vec<Design> {
-    fixtures::gear::designs().into_iter().map(|(label,configuration)| Design { label,configuration })
-        .collect()
+    fixtures::gear::designs().into_iter().map(|(label,text)| Design { label,text }).collect()
 }
-
-/// The pair names its layout under this; the members stand beside it.
-const REF: &str = "pair.reference";
 
 fn index(e: &Elaborated,name: &str) -> usize {
     e.map.ent_named(name).unwrap_or_else(|| panic!("no `{name}`")).i()
 }
 /// A line's ends in space.
 fn line(e: &Elaborated,name: &str) -> (V,V) {
-    let l = &e.sketch.lines[index(e,&format!("{REF}.{name}"))];
+    let l = &e.sketch.lines[index(e,name)];
     (e.sketch.world_point(l.p1 as usize),e.sketch.world_point(l.p2 as usize))
 }
 /// A point in space, or a line's end where the end is another's point by alias.
 fn point(e: &Elaborated,name: &str) -> V {
-    let full = format!("{REF}.{name}");
-    if e.map.ent_named(&full).is_none() {
+    if e.map.ent_named(name).is_none() {
         if let Some((l,end)) = name.rsplit_once('.').filter(|(_,end)| ["p1","p2"].contains(end)) {
             let (a,b) = line(e,l);
             return if end == "p1" { a } else { b };
         }
     }
-    e.sketch.world_point(index(e,&full))
+    e.sketch.world_point(index(e,name))
 }
 fn motion(e: &Elaborated,name: &str) -> usize {
-    let name = format!("{REF}.generation.{name}");
     e.sketch.motions.iter().position(|m| m.name == name)
         .unwrap_or_else(|| panic!("no motion `{name}`"))
 }
@@ -114,7 +107,7 @@ impl Steps {
     /// `None` where the pose leaves no meridian to read (a rough start's stop, its terms apart).
     fn read(e: &Elaborated,name: &str) -> Option<Steps> {
         use gcs_core::brep::planar::Seg;
-        let m = gcs_core::solid::region::meridian(&e.sketch,index(e,&format!("{REF}.{name}"))).ok()?;
+        let m = gcs_core::solid::region::meridian(&e.sketch,index(e,name)).ok()?;
         let basis = gcs_core::plane::Basis { u: m.seam,v: m.axis,o: m.origin };
         let at = |q: [f64;2]| basis.lift(q[0],q[1]);
         let steps = m.region.loops.iter().flatten().map(|s| {
@@ -152,12 +145,12 @@ const MOTIONS: [&str;8] = ["crown_roll","pinion_roll","gear_roll","pinion_genera
 
 /// Every quantity of one pair; `probe` sizes the points the motions are asked to carry.
 fn read_pair(e: &Elaborated,probe: f64) -> Reading {
-    let o = point(e,"gear.O");
-    let (g0,g1) = line(e,"gear.ax");
-    let (c0,c1) = line(e,"gear.crown_axis");
-    let a = point(e,"pinion.A");
-    let (p0,p1) = line(e,"pinion.ax");
-    let m = point(e,"gear.M");
+    let o = point(e,"O");
+    let (g0,g1) = line(e,"gear_ax");
+    let (c0,c1) = line(e,"crown_ax");
+    let a = point(e,"A");
+    let (p0,p1) = line(e,"pinion_ax");
+    let m = point(e,"M");
     let r = dist(m,o);
     let mut out = Reading { values: Vec::new() };
     out.push("R",r);
@@ -177,7 +170,7 @@ fn read_pair(e: &Elaborated,probe: f64) -> Reading {
     let skew = unit(cross(sub(g1,g0),sub(p1,p0)));
     out.push("offset",dot(sub(p0,g0),skew).abs());
     // The cutter: its centre and axis, and the trace through M about it.
-    let (u0,u1) = line(e,"cutter.ax");
+    let (u0,u1) = line(e,"cut_ax");
     out.point("C",u0);
     out.point("cutter axis",unit(sub(u1,u0)));
     let heading = unit(cross([0.,0.,1.],sub(m,u0)));
@@ -186,8 +179,8 @@ fn read_pair(e: &Elaborated,probe: f64) -> Reading {
     // Sections, about the cutter's axis: distance from it, and height.
     let up = unit(sub(u1,u0));
     let meridian = |p: V| (off_line(p,u0,up),dot(sub(p,u0),up));
-    let lp = point(e,"thickness.inner_pitch");
-    let rp = point(e,"thickness.outer_pitch");
+    let lp = point(e,"inner_pitch");
+    let rp = point(e,"outer_pitch");
     out.push("section width",dist(lp,rp));
     out.push("section radius",(meridian(lp).0+meridian(rp).0)/2.);
     let corner = |out: &mut Reading,name: String,p: V| {
@@ -281,19 +274,19 @@ fn the_layout_reproduces_the_pairs_named_quantities() {
 }
 
 /// The static solids: the crown tooth and the gear's space cutter by the names the layout gives
-/// them under `REF`.
+/// them.
 const SOLIDS: [&str;2] = ["tooth.crown","gear_space.body"];
 
 /// One of `SOLIDS` as a field.
 fn static_field(e: &Elaborated,name: &str,r: f64) -> MaterialField {
-    MaterialField::read(&e.sketch,fixtures::solid(e,&format!("{REF}.{name}")),1e-10*r)
+    MaterialField::read(&e.sketch,fixtures::solid(e,name),1e-10*r)
         .unwrap_or_else(|err| panic!("{name}: {err}"))
 }
 
 /// Each member's blank's limits as the pair drew them when its material was recorded: the heel
 /// sphere's and the tip cone's carriers the blank lies within, the toe sphere's and the back
 /// cone's the blank lies outside — the recorded rows (`{member}_limits.{limit}.carrier`) the
-/// region blank (blank/member.sv) is held to, by the body rule over them.
+/// region blank (`hypoid.sv`'s `Blank`) is held to, by the body rule over them.
 const LIMITS: [(&str,f64);4] = [("heel",1.),("tip",1.),("toe",-1.),("back",-1.)];
 
 /// A grid of `n` points a side over the box `lo`..`hi`.
@@ -346,7 +339,7 @@ fn the_layout_makes_the_pairs_material() {
         // every point they decide (the carriers' fields one-Lipschitz, not distances, so held by
         // sign alone, and only where every limit is clear of its surface).
         for member in ["gear","pinion"] {
-            let field = MaterialField::read(&e.sketch,fixtures::solid(&e,&format!("{REF}.{member}_blank.material")),1e-10*r)
+            let field = MaterialField::read(&e.sketch,fixtures::solid(&e,&format!("{member}_blank.material")),1e-10*r)
                 .unwrap_or_else(|err| panic!("{}: {member}'s blank: {err}",design.label));
             let limits: Vec<(&Vec<f64>,f64)> = LIMITS.iter().map(|(limit,sense)|
                 (values(&format!("{member}_limits.{limit}.carrier")),*sense)).collect();
@@ -370,7 +363,7 @@ fn the_layout_makes_the_pairs_material() {
         // regions since #214: the same surfaces, read through their meridians, so a reading off
         // the boundary may stop elsewhere within its accuracy than the drawn sections' did; the
         // band within a hundredth of the cone distance of the surface is reported.
-        for member in ["pair.pinion.body","pair.gear.body"] {
+        for member in ["pinion.body","gear.body"] {
             let (field,want) = (read(member),values(member));
             let (mut inside,mut near,mut far) = (0,0_f64,0_f64);
             for (&p,&a) in points.iter().zip(want) {
@@ -422,7 +415,7 @@ fn record() {
             let field = static_field(&e,name,r);
             row(name,points.iter().map(|&p| field.side(p)).collect());
         }
-        for member in ["pair.pinion.body","pair.gear.body"] {
+        for member in ["pinion.body","gear.body"] {
             let field = read(member);
             row(member,points.iter().map(|&p| field.reading(p).value).collect());
         }
@@ -435,7 +428,7 @@ fn record() {
 /// pitch radius the equal normal pitch's, and each member rolling on the common crown at the
 /// crown's tooth count over its own, N_c / N = (2R / m) / N. The pinion's pitch angle is solved,
 /// so its cone's own ratio, one over the sine of it, is not that ratio: the layout measures the
-/// pinion's roll off the gear's triangle (`generation.sv`), whose hypotenuse is R and whose
+/// pinion's roll off the gear's triangle (`hypoid.sv`'s step 5), whose hypotenuse is R and whose
 /// short leg is N_p m / 2, and this holds it to the tooth counts.
 #[test]
 fn the_true_hypoid_is_square_offset_on_one_pitch_plane_and_rolls_at_the_tooth_ratio() {
@@ -448,10 +441,10 @@ fn the_true_hypoid_is_square_offset_on_one_pitch_plane_and_rolls_at_the_tooth_ra
         let e = design.read();
         let label = &design.label;
         let [np,ng] = teeth.map(f64::from);
-        let (o,m,a) = (point(&e,"gear.O"),point(&e,"gear.M"),point(&e,"pinion.A"));
-        let (g0,g1) = line(&e,"gear.ax");
-        let (p0,p1) = line(&e,"pinion.ax");
-        let (c0,c1) = line(&e,"gear.crown_axis");
+        let (o,m,a) = (point(&e,"O"),point(&e,"M"),point(&e,"A"));
+        let (g0,g1) = line(&e,"gear_ax");
+        let (p0,p1) = line(&e,"pinion_ax");
+        let (c0,c1) = line(&e,"crown_ax");
         let (g,p,n) = (unit(sub(g1,g0)),unit(sub(p1,p0)),unit(sub(c1,c0)));
         let r = dist(m,o);
         let ct = (np*np+ng*ng).sqrt();
@@ -477,7 +470,7 @@ fn the_true_hypoid_is_square_offset_on_one_pitch_plane_and_rolls_at_the_tooth_ra
         }
         // the equal normal pitch: each member's pitch radius at M times the cosine of its spiral
         // is its teeth times half the normal module
-        let c = point(&e,"cutter.ax.p1");
+        let c = point(&e,"cut_ax.p1");
         let heading = unit(cross(n,sub(m,c)));
         let normal_module = module*spiral.to_radians().cos();
         for (what,axis,axis_point,apex,teeth) in [("gear",g,g0,o,ng),("pinion",p,p0,a,np)] {
@@ -522,103 +515,95 @@ fn off_recorded(reading: &Reading,rows: &[(String,Vec<f64>)],k: usize) -> (f64,S
 }
 
 impl Design {
-    /// The pair elaborated and not solved: where its seeds put it.
-    fn unsolved(&self) -> Elaborated { fixtures::gear::unsolved(&self.configuration) }
-    /// `sk`, this design's pair, started from the seeds the same layout computes at `f` times its
-    /// size (`scaled`): right in shape and wrong in size.
+    /// The pair elaborated and not solved: where its words put it, no point seeded.
+    fn unsolved(&self) -> Elaborated { fixtures::gear::unsolved(&self.text) }
+    /// `sk`, this design's pair, started from the same layout solved at `f` times its size
+    /// (`scaled`): right in shape and wrong in size, which is what a seed a person writes by eye
+    /// is.
     fn reseed(&self,sk: &mut gcs_core::model::Sketch,f: f64) {
-        let seeds = fixtures::gear::unsolved(&scaled(&self.configuration,f));
-        assert_eq!(sk.params.len(),seeds.sketch.params.len());
-        for (p,q) in sk.params.iter_mut().zip(&seeds.sketch.params) {
+        let rough = fixtures::gear::read(&scaled(&self.text,f));
+        assert_eq!(sk.params.len(),rough.sketch.params.len());
+        for (p,q) in sk.params.iter_mut().zip(&rough.sketch.params) {
             if !p.fixed { p.value = q.value; }
         }
     }
 }
 
-/// A configuration with its lengths — the mean module and the offset — scaled by `f`.
-fn scaled(text: &str,f: f64) -> String {
-    text.lines().map(|l| {
-        let t = l.trim_start();
-        match ["mean_module","offset"].iter().find(|p| t.starts_with(**p)
-            && t[p.len()..].trim_start().starts_with(":=")) {
-            Some(_) => {
-                let eq = l.find(":=").unwrap();
-                let v: f64 = l[eq+2..].trim().trim_end_matches("mm").trim().parse().unwrap();
-                format!("{}:= {}mm\n",&l[..eq],v*f)
-            }
-            None => format!("{l}\n"),
-        }
-    }).collect()
+/// The input `name` of the pair's text, in its document's unit.
+fn input(text: &str,name: &str) -> f64 {
+    let line = text.lines().find_map(|l| l.strip_prefix(&format!("param {name} := ")))
+        .unwrap_or_else(|| panic!("no input `{name}`"));
+    line.trim().trim_end_matches("mm").parse().unwrap()
 }
 
-/// **A bound says which root** (§9.6, #109): the gear's axis below the pitch plane and the
-/// pinion's offset hand were said by the side their seeds stood on, and are now stated (`foot
-/// inside p`, `A distance(>= 0, along: v) p`).  Every design, seeded on the wrong side of both,
-/// lands on the recorded pair.  (The reach's cap beyond C was a third, until the cap became a
-/// cylinder about the cutter's axis through the point past the apex, which has one root, #214.)
+/// The pair with its lengths — the mean module and the offset — scaled by `f`.
+fn scaled(text: &str,f: f64) -> String {
+    let params = ["mean_module","offset"].map(|p| (p,input(text,p)*f));
+    fixtures::gear::configure(text,&params)
+}
+
+/// `sk` with point `name` carried across the pitch plane's u axis (in P) or through P (in space):
+/// its last coordinate turned, and its lift's with it.
+fn crossed(e: &mut Elaborated,name: &str) {
+    let p = index(e,name);
+    let sk = &mut e.sketch;
+    let own = sk.point_all_params(p);
+    let last = *own.last().unwrap() as usize;
+    sk.params[last].value = -sk.params[last].value;
+    if let Some(k) = sk.lift_of(p) {
+        let w = sk.world_point(p);
+        for (i,v) in sk.lifts[k].x.into_iter().zip(w) {
+            sk.params[i as usize].value = v;
+        }
+    }
+}
+
+/// **Words say which root** (§9.6, #109, #217): the gear's axis below the pitch plane and the
+/// pinion's offset hand (`foot inside std.top`, `A distance(>= 0, along: v) std.top`) were once said
+/// by the side their seeds stood on.  Every design solved, then its gear axis's foot carried
+/// above P and its pinion's apex to the offset's other hand — the start a seed on the wrong side
+/// of both made — and solved again, lands on the recorded pair.
 #[test]
-fn seeds_on_the_wrong_side_land_on_the_recorded_pair() {
+fn a_start_on_the_wrong_side_lands_on_the_recorded_pair() {
     let (_,rows) = recorded();
-    let flips = [
-        ("foot := point hint((r / 4, 0, -r / 2))","foot := point hint((r / 4, 0, r / 2))"),
-        ("A := point hint((-0.75 * d, 1.25 * d))","A := point hint((-0.75 * d, -1.25 * d))"),
-    ];
     for (k,design) in designs().into_iter().enumerate() {
-        let mut flipped = 0;
-        let e = fixtures::read_beside(&fixtures::gear::source(),&fixtures::gear::project(),
-            &mut |name,text| {
-                if name == "configuration" { return design.configuration.clone() }
-                let mut text = text;
-                for (from,to) in flips {
-                    if text.contains(from) {
-                        text = text.replace(from,to);
-                        flipped += 1;
-                    }
-                }
-                text
-            });
-        assert_eq!(flipped,flips.len(),"{}: every seed found",design.label);
+        let mut e = design.read();
+        crossed(&mut e,"foot");
+        crossed(&mut e,"A");
+        let res = gcs_core::solve::solve(&mut e.sketch,fixtures::accurate());
+        assert!(res.success,"{}: {res:?}",design.label);
         let (d,at) = off_recorded(&read_pair(&e,rows[0].1[k]),&rows,k);
+        println!("{:12} from the wrong side: {} {d:.1e} off at {at}",design.label,res.method);
         assert!(d <= 1e-9,"{}: {d:e} off the recorded pair at {at}",design.label);
     }
 }
 
-/// **The layout solves from rough seeds in block-triangular order** (docs/block-triangular-solve-
-/// plan.md, phase 2).  Every design's equations, started from the seeds the same layout computes
-/// at two fifths and at two and a half times its size (the mean module and the offset scaled):
-/// right in shape and wrong in size, which is what a seed a person writes by eye is.  Solved
-/// block by block, each block from what the blocks before it made, and polished whole, it lands
-/// on the recorded pair to the 1e-9 the named-quantities gate asks.  `Rescue` — the default — is
-/// the pass after a failed DogLeg; `First` the pass before it: both are held to the recorded
-/// numbers, and a whole-system DogLeg that settles comes out of `Rescue` the same solve.
-///
-/// Solved as one system (DogLeg, then LM), the layout missed the recorded pair from every one of
-/// these starts while each crown section was a drawn chain of six edges, whose rough seeds could
-/// fold it onto another root.  Since the crown is regions about the cutter's axis (#214) nothing
-/// of it is drawn but the cutter's axis and the flank cones' apexes, and the whole-system solve
-/// lands on the recorded pair from every start two and a half times the size and from the 32x32
-/// pairs' at two fifths; from the other nine at two fifths the LM after it stops in another basin
-/// and only the block pass gets there — the same at every module, the flank cones' apexes held by
-/// angles from the cutter's axis, whatever the size.  No mate's tip collapses in the block pass
-/// any more (#215 allowed the 32- and 28-tooth crowns' to until this step): there is no section
-/// to collapse.  The configured hypoid's block path is still allowed to miss from one of its two
-/// starts (its narrow tips once stopped a block a few 1e-9 short); both missing fails.
+/// **The layout solves from its words alone** (#217): nothing seeds a point, so every design's
+/// equations start where the elaborator puts unseeded geometry, about the origin at the size of a
+/// unit, and a document solve gets to the recorded pair by the block-triangular order
+/// (docs/block-triangular-solve-plan.md) — each block from what the blocks before it made, its
+/// root searched for where it comes to none or to one a bound it decides refuses (`Search`), and
+/// polished whole — to the 1e-9 the named-quantities gate asks, `Rescue` (the default: the pass
+/// after a failed whole-system DogLeg) and `First` (the pass before it) alike.  And from rough
+/// starts, the same layout solved at two fifths and at two and a half times its size: right in
+/// shape and wrong in size, where a whole-system DogLeg that settles comes out of `Rescue` the
+/// same solve.  The whole-system solve alone (`Off`, DogLeg then LM) is reported, not held: from
+/// the words alone it reaches the pair from no design.
 #[test]
-fn the_layout_solves_from_rough_seeds_in_block_order() {
+fn the_layout_solves_from_its_words_alone_in_block_order() {
     use gcs_core::solve::{self,BlockMode,SolveOpts};
     let (_,rows) = recorded();
     let opts = |blocks| SolveOpts {blocks,..fixtures::accurate()};
-    // starts from which the whole-system solve does not reach the recorded pair
-    let mut whole_missed = 0;
-    let mut configured_missed = std::collections::BTreeSet::new();
+    let mut whole_reached = 0;
     for (k,design) in designs().into_iter().enumerate() {
         let r = rows[0].1[k];
         let mut e = design.unsolved();
         let start = e.sketch.clone();
-        for f in [0.4,2.5] {
+        for f in [None,Some(0.4),Some(2.5)] {
             let mut rough = start.clone();
-            design.reseed(&mut rough,f);
-            let mut line = format!("{:12} seeds x{f:3}",design.label);
+            if let Some(f) = f { design.reseed(&mut rough,f); }
+            let from = f.map_or("its words".to_string(),|f| format!("x{f}"));
+            let mut line = format!("{:12} from {from:10}",design.label);
             let mut whole = None;
             for mode in [BlockMode::Off,BlockMode::Rescue,BlockMode::First] {
                 e.sketch = rough.clone();
@@ -627,85 +612,62 @@ fn the_layout_solves_from_rough_seeds_in_block_order() {
                 line += &format!(" | {mode:?}: {} by {} ({:.1e})",if res.success { "solved" }
                     else { "FAILED" },res.method,res.max_residual);
                 if let Some((d,at)) = &off { line += &format!(", {d:.1e} off at {at}"); }
-                let label = format!("{} seeds x{f}, {mode:?}",design.label);
+                let label = format!("{} from {from}, {mode:?}",design.label);
                 let bits = crate::common::bits(&e.sketch);
                 match (mode,&whole) {
                     (BlockMode::Off,_) => {
-                        if !off.as_ref().is_some_and(|(d,_)| *d <= 1e-9) { whole_missed += 1; }
+                        if off.as_ref().is_some_and(|(d,_)| *d <= 1e-9) { whole_reached += 1; }
                         whole = Some((res.settled() && res.method == "dogleg",bits));
                     }
                     // a whole-system DogLeg that settles here comes out of `Rescue` the same solve
-                    (BlockMode::Rescue,Some((true,x))) => assert!(&bits == x,"{label}"),
-                    _ => {
-                        let solved = res.success && res.method == "blocks";
-                        match off.filter(|_| solved) {
-                            Some((d,_)) if d <= 1e-9 => {}
-                            // the configured hypoid's one start the block path is not held to
-                            // (see above): noted, and counted
-                            _ if design.label == "configured" => {
-                                println!("{label}: missed");
-                                configured_missed.insert(format!("{f}"));
-                            }
-                            None => panic!("{label}: {res:?}"),
-                            Some((d,at)) => panic!("{label}: {d:e} off the recorded pair at {at}"),
-                        }
-                    }
+                    (BlockMode::Rescue,Some((true,x))) => assert!(&bits == x,"{label} {line}"),
+                    _ => match off {
+                        Some((d,_)) if d <= 1e-9 => {}
+                        None => panic!("{label}: {res:?}"),
+                        Some((d,at)) => panic!("{label}: {d:e} off the recorded pair at {at}"),
+                    },
                 }
             }
             println!("{line}");
         }
     }
-    assert!(whole_missed == 9,"the whole-system solve missed from {whole_missed} rough starts of 24");
-    assert!(configured_missed.len() <= 1,"the block path missed the configured hypoid from both starts");
+    println!("the whole-system solve reached the recorded pair from {whole_reached} starts of 36");
 }
 
-/// Every module of the example opens: its `preview` solved as solventc solves it (the default
-/// options, an interactive acceptance of 1e-6) and **converged**, not merely under that
-/// acceptance.  Rough seeds make the difference: a whole-system DogLeg that runs out of
-/// iterations at a residual of 1e-7 is a success by the interactive measure, and until such a
-/// stop was rescued (docs/iteration-limit-rescue-plan.md) the preview drew a pose that is not the
-/// solution — which is what the crown previews did with tip seeds narrower than the tip (their
-/// tips all but vanished).
+/// The pair opens: `hypoid.sv` solved as solventc solves it (the default options, an interactive
+/// acceptance of 1e-6) **converges**, not merely under that acceptance — a whole-system DogLeg that
+/// runs out of iterations at a residual of 1e-7 is a success by the interactive measure, and the
+/// app would draw a pose that is not the solution.
 #[test]
-fn every_modules_preview_converges_as_solventc_solves_it() {
+fn the_pair_converges_as_solventc_solves_it() {
     use gcs_core::solve::{self,SolveOpts};
-    let project = fixtures::gear::project();
-    let mut files = Vec::new();
-    for dir in ["",  "pitch", "blank", "crown"] {
-        for entry in std::fs::read_dir(project.join(dir)).unwrap() {
-            let path = entry.unwrap().path();
-            // the configuration is numbers for design.sv to read, with no unit of its own
-            if path.extension().is_some_and(|e| e == "sv")
-                && !path.ends_with("configuration.sv") { files.push(path); }
-        }
-    }
-    files.sort();
-    assert!(files.len() >= 16,"{files:?}");
-    for path in files {
-        let text = std::fs::read_to_string(&path).unwrap();
-        let mut e = fixtures::unsolved(&text,&mut fixtures::beside(&project,&mut |_,text| text));
-        let res = solve::solve(&mut e.sketch,SolveOpts::default());
-        let name = path.strip_prefix(&project).unwrap().display();
-        println!("{name:24} {} by {} ({:.1e})",res.success,res.method,res.max_residual);
-        assert!(res.success && res.max_residual <= 1e-10,"{name}: {res:?}");
-    }
+    let mut e = fixtures::gear::unsolved(&fixtures::gear::source());
+    let res = solve::solve(&mut e.sketch,SolveOpts::default());
+    println!("hypoid.sv {} by {} ({:.1e})",res.success,res.method,res.max_residual);
+    assert!(res.success && res.max_residual <= 1e-10,"{res:?}");
 }
 
-/// The block path decides nothing by the order its work happens to be done in: the same rough
-/// start solved twice by it comes out the same to the bit.
+/// The block path decides nothing by the order its work happens to be done in, nor by a draw:
+/// the same start — the words alone, and a rough one — solved twice by it comes out the same to
+/// the bit, its root search and all.
 #[test]
-fn a_rough_start_solves_to_the_same_bits_twice() {
+fn a_start_solves_to_the_same_bits_twice() {
     use gcs_core::solve::{self,BlockMode,SolveOpts};
     let designs = designs();
-    let design = &designs[5];
-    let mut e = design.unsolved();
-    design.reseed(&mut e.sketch,2.5);
-    let (mut a,mut b) = (e.sketch.clone(),e.sketch.clone());
-    let first = SolveOpts {blocks:BlockMode::First,..fixtures::accurate()};
-    let (ra,rb) = (solve::solve(&mut a,first),solve::solve(&mut b,first));
-    assert!(ra.success && ra.method == "blocks","{ra:?}");
-    assert_eq!((ra.nfev,ra.njev,ra.iterations),(rb.nfev,rb.njev,rb.iterations));
-    assert_eq!(crate::common::bits(&a),crate::common::bits(&b));
+    for design in [&designs[0],&designs[5]] {
+        for rough in [false,true] {
+            let mut e = design.unsolved();
+            if rough { design.reseed(&mut e.sketch,2.5); }
+            let (mut a,mut b) = (e.sketch.clone(),e.sketch.clone());
+            for blocks in [BlockMode::First,BlockMode::Rescue] {
+                let opts = SolveOpts {blocks,..fixtures::accurate()};
+                let (ra,rb) = (solve::solve(&mut a,opts),solve::solve(&mut b,opts));
+                assert!(ra.success,"{}: {ra:?}",design.label);
+                assert_eq!((ra.nfev,ra.njev,ra.iterations),(rb.nfev,rb.njev,rb.iterations));
+                assert_eq!(crate::common::bits(&a),crate::common::bits(&b));
+            }
+        }
+    }
 }
 
 /// The design labelled `label`, by its index among `designs()` and solved as solventc solves it:
@@ -746,22 +708,22 @@ fn first_start(scenario: &str, jitters: &[f64], mut attempt: impl FnMut(f64,u32)
 }
 
 /// **A solve that stops on its iteration limit is rescued.** A design solved as solventc solves
-/// it and then jittered by a few thousandths of its extent is back under the interactive
-/// acceptance within the DogLeg's hundred iterations and not at its solution: without the block
-/// rescue (`BlockMode::Off`) the solve succeeds on status 4, short of the recorded pair.  By
-/// default such a stop is not *settled* and the rescue runs: what it returns has settled, or is
-/// the stop bit for bit, unless a bound then breaks (status 5) — at every stop met.  And from
-/// some, the block pass settles it.  Which root it settles on is the layout's; the rough starts'
-/// gates hold that.  The 24x48 pair at module 25.4, where the rescue was first measured: since
-/// the crown is regions (#214) the bevel at module 2 converges inside the limit from these
-/// jitters, its drawn sections' stops (run toward another root, or a collapsed tip) gone.
+/// it and then jittered by a fifth of its extent is back under the interactive acceptance within
+/// the DogLeg's hundred iterations and not at its solution: without the block rescue
+/// (`BlockMode::Off`) the solve succeeds on status 4, short of the recorded pair.  By default such
+/// a stop is not *settled* and the rescue runs: what it returns has settled, or is the stop bit for
+/// bit, unless a bound then breaks (status 5) — at every stop met.  And from some, the block pass
+/// settles it.  Which root it settles on is the layout's; the rough starts' gates hold that.  The
+/// bevel pair: since the heading's square from O is said as parallel to MC (#217) the configured
+/// hypoid converges inside the limit from every jitter of a fifth tried, and so does every design
+/// at a few hundredths.
 #[test]
 fn a_stop_on_the_iteration_limit_is_rescued() {
     use gcs_core::solve::{self,BlockMode,SolveOpts};
     let (_,rows) = recorded();
     let (k,mut e) = solved_design("bevel");
     let reference = e.sketch.clone();
-    first_start("a limit stop the block pass settles",&[0.01,0.02,0.05],|jitter,seed| {
+    first_start("a limit stop the block pass settles",&[0.2],|jitter,seed| {
         let start = crate::common::jittered(&reference,jitter,seed);
         e.sketch = start.clone();
         let off = SolveOpts {blocks:BlockMode::Off,..SolveOpts::default()};
@@ -781,7 +743,7 @@ fn a_stop_on_the_iteration_limit_is_rescued() {
     });
 }
 
-/// A tool, not a check: which path each design's solve takes from the layout's own seeds — the
+/// A tool, not a check: which path each design's solve takes from the layout's own words — the
 /// whole-system DogLeg (`dogleg`), the block rescue (`blocks`) or the LM retry (`lm`) — under
 /// each `BlockMode`, how far from the recorded pair it lands, and how long it takes.
 #[test]
@@ -836,4 +798,5 @@ fn design_sweep() {
     }}}}}
     println!("{bad} of {n} designs");
 }
+
 
