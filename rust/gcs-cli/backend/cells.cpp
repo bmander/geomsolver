@@ -845,6 +845,57 @@ int solvent_cad_pattern(Cad* cad,int solid,const double* origin,const double* ax
                 if (m != 0) reseat(face,surface,-m*2*M_PI);
             }
         }
+        // Every face of revolution on one surface for each surface it lies on: a split or a copy
+        // gives a piece its own copy of its surface, and an older OCCT's unification merges no faces
+        // on two surfaces however alike (a ring's wall cut between neighbours' cuts stays in two)
+        std::vector<Handle(Geom_Surface)> canon;
+        // and, but for a ring's pieces (kept in one period by `into_one_period`), in the period from
+        // the sector's middle round: the middle is in the sector's own cut, so no piece of a wall
+        // between two cuts stands across that turn, and its halves from two copies meet on
+        // parameters that continue one another, where they would otherwise meet a period apart
+        // between the last copy and the first
+        // (each surface's canonical one and the turn of u onto it, and each canonical surface's
+        // parameter at the sector's middle, found once: copies share their surfaces)
+        std::map<const Geom_Surface*,std::pair<Handle(Geom_Surface),double>> seated;
+        std::map<const Geom_Surface*,double> centre;
+        const auto one_surface = [&](const TopoDS_Face& face,bool ring_piece) {
+            if (!about(face,line)) return;
+            const Handle(Geom_Surface) own = basis_of(face);
+            double u0,u1,v0,v1;
+            BRepTools::UVBounds(face,u0,u1,v0,v1);
+            auto it = seated.find(own.get());
+            if (it == seated.end()) {
+                std::pair<Handle(Geom_Surface),double> to {own,0.};
+                const gp_Pnt p = own->Value(u0,v0),q = own->Value(u0,v1);
+                const double near = 1e-9*(1.+p.Distance(gp_Pnt(0,0,0)));
+                for (const auto& s: canon) {
+                    if (s->DynamicType() != own->DynamicType()) continue;
+                    GeomAPI_ProjectPointOnSurf foot(p,s);
+                    if (!foot.NbPoints() || foot.LowerDistance() > near) continue;
+                    double a,b;
+                    foot.LowerDistanceParameters(a,b);
+                    // the same parameters but for a turn: u shifted, v alike
+                    if (std::abs(b-v0) > 1e-9 || s->Value(a,v1).Distance(q) > near) continue;
+                    to = {s,a-u0-2*M_PI*std::round((a-u0)/(2*M_PI))};
+                    break;
+                }
+                if (to.first == own) canon.push_back(own);
+                it = seated.emplace(own.get(),to).first;
+            }
+            const Handle(Geom_Surface) on = it->second.first;
+            double shift = it->second.second;
+            if (!ring_piece) {
+                auto c = centre.find(on.get());
+                if (c == centre.end()) {
+                    GeomAPI_ProjectPointOnSurf foot(middle,on);
+                    double uc = std::nan(""),vc;
+                    if (foot.NbPoints()) foot.LowerDistanceParameters(uc,vc);
+                    c = centre.emplace(on.get(),uc).first;
+                }
+                if (!std::isnan(c->second)) shift -= 2*M_PI*std::floor(((u0+u1)/2+shift-c->second)/(2*M_PI));
+            }
+            if (shift != 0 || on != own) reseat(face,on,shift);
+        };
         BRepBuilderAPI_Sewing sewing(fuzzy);
         for (int k=0;k<=count;++k) {
             const TopoDS_Shape copy = k == 0 ? base : turned_copy(base,line,angles[k-1]);
@@ -854,8 +905,8 @@ int solvent_cad_pattern(Cad* cad,int solid,const double* origin,const double* ax
             for (int i=0;i<own.Extent();++i) {
                 if (side[i] >= 0) continue;
                 const TopoDS_Face face = TopoDS::Face(own(i+1));
-                if (ring[i]) for (const auto& part: into_one_period(face,line,reach)) sewing.Add(part);
-                else sewing.Add(face);
+                if (ring[i]) for (const auto& part: into_one_period(face,line,reach)) { one_surface(part,true); sewing.Add(part); }
+                else { one_surface(face,false); sewing.Add(face); }
             }
         }
         lap("turned and gathered the copies' faces");

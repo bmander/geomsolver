@@ -45,14 +45,14 @@ fn frame(sample: &[f64;15]) {
 
 const BOX: &str = "unit mm
 use std
-profile := std.CenteredRectangle(std.origin,w: 2mm,h: 2mm)
+profile := std.CenteredRectangle(std.origin,w: 2mm,h: 2mm) in std.front
 stock := solid(face(profile.loop),depth: 2mm)
 body := solid(stock)
 ";
 
 #[test]
 fn a_blind_hole_has_a_concave_floor_edge() {
-    let e = fixtures::read_beside(&format!("{BOX}c := circle(center: std.origin)\nradius(0.5mm) c\n\
+    let e = fixtures::read_beside(&format!("{BOX}in std.front {{\nc := circle(center: std.origin)\nradius(0.5mm) c\n}}\n\
         drill := solid(face(c),from: -1mm,to: 3mm)\ndrill cut body\n"),Path::new("."),&mut |_,text| text);
     let cad = native::Session::new().unwrap();
     let solid = cad.construct(&cad::recipe(&e.sketch,e.map.ent_named("body").unwrap().i()).unwrap()).unwrap();
@@ -204,11 +204,11 @@ fn native_cutter_edges_agree_with_the_independent_source_material() {
 /// rays along its faces' inward normals, inside and clear of the 0.2 µm the classifier needs.
 #[test]
 fn a_sliver_is_sampled_between_its_faces() {
-    let mut text = String::from("unit mm\n");
+    let mut text = String::from("unit mm\nuse std\nin std.front {\n");
     for (name,x,y) in [("a",0.,0.),("b",20.,10.),("c",40.,0.),("d",40.,0.004),("e",20.,10.004),("f",0.,0.004)] {
         text += &format!("{name} := point\nfix(({x}, {y})) {name}\n");
     }
-    text += "sliver := solid(face(a, b, c, d, e, f, -> close), depth: 10mm)\n";
+    text += "}\nsliver := solid(face(a, b, c, d, e, f, -> close), depth: 10mm)\n";
     let e = fixtures::read_beside(&text,Path::new("."),&mut |_,text| text);
     let cad = native::Session::new().unwrap();
     let solid = cad.construct(&cad::recipe(&e.sketch,e.map.ent_named("sliver").unwrap().i()).unwrap()).unwrap();

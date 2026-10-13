@@ -166,8 +166,9 @@ pub fn flat(s: &Seg, n: &Seg, side: f64, legs: [Leg; 2]) -> Result<Cut, String> 
 /// `d_s / legs[1] + d_n / legs[0]` one — through the ends `flat` finds with both legs measured from
 /// the other face.  Between lines the segment; between a line and a circle about `c` the conic
 /// `|q − c| = α + β d_L(q)` (`d_L` affine), focus `c`, eccentricity the legs' ratio, as the
-/// rational quadratic Bézier over its ends and where their tangents meet.  Between circles it is a
-/// Cartesian oval, refused.
+/// rational quadratic Bézier over its ends and where their tangents meet.  Between circles with
+/// equal legs a conic too, the centres its foci (`between_circles`); with unequal ones a Cartesian
+/// oval, refused.
 pub fn sum(s: &Seg, n: &Seg, side: f64, legs: [f64; 2]) -> Result<Cut, String> {
     let (t_s, t_n, chord) = flat(s, n, side, [Leg::FromOther(legs[0]), Leg::FromOther(legs[1])])?;
     let (p0, p2) = (s.point(t_s), n.point(t_n));
@@ -181,7 +182,10 @@ pub fn sum(s: &Seg, n: &Seg, side: f64, legs: [f64; 2]) -> Result<Cut, String> {
         (Seg::Arc { c, r, sweep, .. }, Seg::Line { a, b }) => {
             ((*a, *b), (*c, *r, *sweep), legs[1], legs[0])
         }
-        _ => return Err("a flat between two curved faces is no line or conic".into()),
+        (Seg::Arc { c: cs, r: rs, sweep: ws, .. }, Seg::Arc { c: cn, r: rn, sweep: wn, .. }) => {
+            return between_circles(t_s, t_n, p0, p2, [(*cs, *rs, *ws, legs[1]), (*cn, *rn, *wn, legs[0])], side);
+        }
+        _ => return Err("a flat between a conic and a face takes no cut".into()),
     };
     let nl = scale(left(unit(sub(line.1, line.0))), side);
     let h = dot(nl, line.0);
@@ -213,6 +217,40 @@ pub fn sum(s: &Seg, n: &Seg, side: f64, legs: [f64; 2]) -> Result<Cut, String> {
         .ok_or("the flat's conic leaves its control triangle")?;
     let w = shoulder / (1.0 - shoulder);
     Ok((t_s, t_n, Seg::Conic { a: p0, m, b: p2, w }))
+}
+
+/// `sum` between two circles, each `(centre, radius, sweep, leg)` with the leg its distance is
+/// divided by: `Σ kᵢ (rᵢ − |q − cᵢ|) / legᵢ = 1`, `kᵢ` which way each distance runs toward `side`.
+/// Where the two are divided alike (equal legs) it is a conic with the centres its foci — an
+/// ellipse where the distances add, a hyperbola's branch where they differ — the rational quadratic
+/// Bézier over its ends, where their tangents meet, its middle weighed by the point it passes
+/// between the chord's middle and there. Else it is a Cartesian oval, a quartic of genus one, which
+/// no rational curve parametrises: refused.
+fn between_circles(t_s: f64, t_n: f64, p0: P, p2: P, circles: [(P, f64, f64, f64); 2], side: f64) -> Result<Cut, String> {
+    let weigh = |&(_, _, sweep, leg): &(P, f64, f64, f64)| -side * sweep.signum() / leg;
+    let (a, b) = (weigh(&circles[0]), weigh(&circles[1]));
+    if (a.abs() - b.abs()).abs() > 1e-12 * a.abs().max(b.abs()) {
+        return Err("a flat between two curved faces with unequal legs is a Cartesian oval, which no rational curve \
+            holds".into());
+    }
+    let f = |q: P| circles.iter().map(|&(c, r, sweep, leg)| side * sweep.signum() * (r - dist(q, c)) / leg).sum::<f64>() - 1.0;
+    let grad = |q: P| add(scale(unit(sub(q, circles[0].0)), a), scale(unit(sub(q, circles[1].0)), b));
+    let (d0, d2) = (left(grad(p0)), left(grad(p2)));
+    let den = cross(d0, d2);
+    if den.abs() <= 1e-12 * norm(d0) * norm(d2) {
+        return Err("the flat's tangents at its ends do not meet".into());
+    }
+    let m = add(p0, scale(d0, cross(sub(p2, p0), d2) / den));
+    // the shoulder: where the conic crosses the line from the chord's middle toward `m`
+    let mid = scale(add(p0, p2), 0.5);
+    let v = sub(m, mid);
+    let along = |u: f64| f(add(mid, scale(v, u)));
+    let (f0, f1) = (along(0.0), along(1.0));
+    if !(f0 * f1 < 0.0) {
+        return Err("the flat's conic leaves its control triangle".into());
+    }
+    let u = crate::roots::bracketed_root(|u| Some(along(u)), 0.0, f0, 1.0, f1, 1e-15);
+    Ok((t_s, t_n, Seg::Conic { a: p0, m, b: p2, w: u / (1.0 - u) }))
 }
 
 /// `region` with every corner where a step of `a` meets a step of `b` (either way round) cut by

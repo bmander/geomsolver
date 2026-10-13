@@ -11,27 +11,32 @@
 //! field's, its exact export refused by name.
 //!
 //! The entries so far, over plane faces meeting in straight edges (or a plane and a cylinder, or
-//! two cylinders, about lines along the edge: in the section lines and circles), planes meeting at
-//! any corner, and planes, cylinders, cones and spheres about one axis meeting in a circle; a face
-//! named in pieces (a plate's top a rod splits) is a piece per edge. A run is where its nearest point of the faces' meeting is on the edge (the
-//! slab square to it over its stretch, a sector of a ring's) and on the side the edge runs on of
-//! each face at its ends: a straight run's prism is kept within each plane face standing at a slant
-//! there and reaching into it (a run-out), one leaning away leaving the slab's square end; one ending
-//! on a cylinder or a sphere is carried on into it and kept on its side of that solid (`Kept`). A face
-//! going on tangent from one of the run's is no end (a seam), so a round along an obround's flat
-//! side stops at the section the ring round its half circle starts from, and the two are glued
-//! there; a ring's stretch is turned through its circle's angle, and on round past an end on a
-//! plane not through its axis until its section has crossed it, kept within it (or into a
-//! cylinder or a ball it ends on, kept on its side of that solid).
+//! two cylinders, about lines along the edge: in the section lines and circles), corners of any
+//! three faces among planes, cylinders, cones and spheres (a face in pieces taking the piece at
+//! each vertex), and planes, cylinders, cones, spheres and tori about one axis meeting in a circle;
+//! a face named in pieces (a plate's top a rod splits) is a piece per edge. A run is where its
+//! nearest point of the faces' meeting is on the edge (the slab square to it over its stretch, a
+//! sector of a ring's) and on the side the edge runs on of each face at its ends: a straight run's
+//! prism is kept within each plane face standing at a slant there and reaching into it (a run-out),
+//! one leaning away leaving the slab's square end; one ending on a cylinder, a cone or a sphere is
+//! carried on into it and kept on its side of that solid (`Kept`). A face going on tangent from
+//! one of the run's is no end (a seam), so a round along an obround's flat side stops at the
+//! section the ring round its half circle starts from, and the two are glued there; a ring's
+//! stretch is turned through its circle's angle, and on round past an end on a plane not through
+//! its axis until its section has crossed it, kept within it (or into a cylinder or a ball it ends
+//! on, kept on its side of that solid). Along an edge no line or coaxial circle carries, a round's
+//! ball is rolled and a chamfer's flat cut (`brep::fillet`), each run of such edges one piece, cut
+//! off by every face at its ends (a plane's half-space, a curved face's solid) or, where a corner
+//! stands there, cut short at the corner's section and glued to its cell.
 //!
 //! | the region's body | built as |
 //! |---|---|
 //! | `Run` / `Fill`: within (outside) two faces, beyond reach of the ball rolled along their edge | a prism of the corner less the ball's arc (a cylinder face); beside a cylinder, its arc a side of the section; between two, the ball where the two circles grown by its radius meet |
-//! | `Flat` / `FlatFill`: within (outside) two faces, short of the flat through the legs | a prism of the triangle (a plane face); beside a cylinder (or a sphere, in a meridian) the flat is a conic's arc, the sum of a distance from a line and one from a circle (`Corner2`, by `brep::corners`' rule: an extrusion, or a revolution, face) |
-//! | `Corner` / `CornerFill`: within (outside) three planes meeting at a corner, beyond reach of the ball touching all three | the corner's cell — the trihedron cut by the sections through the ball's centre square to its edges — less the ball (a sphere's patch), and each edge's run beyond it |
-//! | the same where a face is a cylinder or a sphere (a D's flat, round and cap) | the ball where Newton's steps put it, `r` from each surface; its cell over the three surfaces (`brep::fillet::corner_among`), and each edge's run or ring stretch cut short at its section there |
-//! | `Run` / `Fill` / `Flat` round a circle (or a stretch of one between seams) where a plane, a cylinder, a cone or a sphere meet about one axis | the section turned about the axis through the circle's angle (a torus face); in the meridian a sphere is a circle |
-//! | `Run` / `Fill` along an edge no line or coaxial circle carries (two pipes' saddle, a plane across a cylinder) | the ball rolled along the run, traced, against the stratum (`brep::fillet::roll`): its canal fitted, carried past each end and cut off by the plane there |
+//! | `Flat` / `FlatFill`: within (outside) two faces, short of the flat through the legs | a prism of the triangle (a plane face); beside a cylinder (or a sphere, in a meridian) the flat is a conic's arc, the sum of a distance from a line and one from a circle (`Corner2`, by `brep::corners`' rule: an extrusion, or a revolution, face); between two circles with equal legs an ellipse or a hyperbola's arc, their centres its foci (with unequal ones a Cartesian oval, which no rational curve holds: refused) |
+//! | `Corner` / `CornerFill`: within (outside) three faces meeting at a corner, beyond reach of the ball touching all three | the ball where Newton's steps put it, `r` from each surface; the corner's cell — the trihedron cut by the planes of the ball's arc between each two faces (its sections) — less the ball (a sphere's patch), over the three surfaces, their meetings in closed form or traced about the corner (`brep::fillet::corner_among`); and each edge's run, ring stretch or rolled run cut short at its section there and glued to it |
+//! | `Run` / `Fill` / `Flat` round a circle (or a stretch of one between seams) where a plane, a cylinder, a cone, a sphere or a torus meet about one axis | the section turned about the axis through the circle's angle (a torus face); in the meridian a sphere is a circle, a torus its tube's |
+//! | `Run` / `Fill` along an edge no line or coaxial circle carries (two pipes' saddle, a plane across a cylinder, a cone's generator) | the ball rolled along the run, traced, against the stratum (`brep::fillet::roll`): its canal fitted, carried past each end and cut off by the faces there |
+//! | `Flat` / `FlatFill` along such an edge | the flat sectioned square to the faces' meeting between its legs and fitted (`brep::fillet::flat_along`), its strips and ends as a rolled round's |
 //! | any of them where the faces meet nowhere, or an edge turns the other way | nothing |
 //!
 //! A region is its **pieces** (`Piece`: a run along an edge, a ball's cell at a corner), and the
@@ -99,6 +104,35 @@ impl Surf {
             Some(Surf::Cone { origin, axis, radius, half })
         } else {
             body.sphere(fi).map(|(centre, radius)| Surf::Sphere { centre, radius })
+        }
+    }
+
+    /// A point within the solid a cylinder, a sphere or a cone bounds (its axis's point where the
+    /// cone is wider than nothing); a plane's origin.
+    fn within(&self) -> V {
+        match *self {
+            Surf::Plane { origin, .. } | Surf::Cylinder { origin, .. } => origin,
+            Surf::Sphere { centre, .. } => centre,
+            Surf::Cone { origin, axis, radius, half } => {
+                let slope = half.dtan();
+                if radius > 0.0 || slope.abs() < 1e-12 { origin }
+                else { add(origin, scale(axis, (1.0 - radius) / slope)) }
+            }
+        }
+    }
+
+    /// The gradient of `side` at `x` (a unit vector but at a cone's axis).
+    fn gradient(&self, x: V) -> V {
+        match *self {
+            Surf::Plane { normal, .. } => normal,
+            Surf::Sphere { centre, .. } => normalised(sub(x, centre)).unwrap_or([0.0; 3]),
+            _ => {
+                let (origin, axis, _, half) = self.axial().expect("a cylinder or a cone");
+                let w = sub(x, origin);
+                let radial = normalised(sub(w, scale(axis, dot(w, axis)))).unwrap_or([0.0; 3]);
+                let (sn, cs) = half.dsin_cos();
+                sub(scale(radial, cs), scale(axis, sn))
+            }
         }
     }
 
@@ -271,7 +305,17 @@ pub enum Piece {
 pub struct Rolled {
     pub at: V,
     pub r: f64,
+    /// A chamfer's flat cut along the run instead (#218's 6): its legs, on the face `on` stands
+    /// beside and on the other, each from the other face's surface (`brep::fillet::flat_along`).
+    pub flat: Option<([f64; 2], V)>,
+    /// Where its run ends (an open one's two vertices).
+    pub ends: Vec<V>,
+    /// The sections of the corners standing at its ends, each a point of it, the normal toward the
+    /// run, and how far the corner's cell reaches from it: what lies on the corner's side within
+    /// that reach is cut from the piece, the cell taking it (#218's 7).
+    pub cuts: Vec<(V, V, f64)>,
 }
+
 
 /// The faces a region rounds or cuts at, and whether it lies within all of them (a convex edge's
 /// material) or outside all of them (a concave edge's void).
@@ -339,7 +383,7 @@ pub fn lowered(sk: &Sketch, solid: usize) -> Option<Result<Rc<Vec<Piece>>, Strin
         }
     }
     let l = build(&body, &faces, section).and_then(|pieces| {
-        gate(sk, solid, &pieces, &body)?;
+        gate(sk, solid, &pieces, &body, || beside_edges(&body, &faces, section))?;
         Ok(Rc::new(pieces))
     });
     sk.lowering_cache.borrow_mut().insert(solid, (key, body, l.clone()));
@@ -513,24 +557,29 @@ fn build(body: &super::faces::BodyFaces, f: &Faces, section: Section) -> Result<
         pieces.extend(ps);
     }
     let (Section::Round(r), 3) = (section, groups.len()) else { return Ok(pieces) };
-    let one = |g: &Vec<usize>| match g[..] { [fi] => Some(fi), _ => None };
-    let Some(ids) = groups.iter().map(one).collect::<Option<Vec<usize>>>() else {
-        return unbuilt("a corner of a face in pieces");
-    };
-    // three faces: the ball touching all three, at each vertex they share (three planes meet at
-    // one; a D's flat, its round and a cap at both ends of the flat's edge)
-    let vertices = body.vertices_among(&[&[ids[0]], &[ids[1]], &[ids[2]]]);
-    if vertices.is_empty() {
+    // three faces: the ball touching all three, at each vertex a face of each shares (three planes
+    // meet at one; a D's flat, its round and a cap at both ends of the flat's edge), each of them
+    // the face of its reference standing there — one piece of a face split in pieces (a plate's
+    // side a post stands across)
+    let refs: Vec<&[usize]> = groups.iter().map(Vec::as_slice).collect();
+    let mut corners = Vec::new();
+    for (vertex, at) in body.vertices_among(&refs) {
+        let one = |g: &Vec<usize>| match g[..] { [fi] => Some(fi), _ => None };
+        let Some(ids) = at.iter().map(one).collect::<Option<Vec<usize>>>() else {
+            return unbuilt("a corner where two pieces of one face meet");
+        };
+        let (corner, toward) = corner_at(body, &ids, vertex, f.within, r)?;
+        corners.push((corner, toward, ids));
+    }
+    if corners.is_empty() {
         return Ok(Vec::new());
     }
-    let corners = vertices.iter().map(|&vertex| corner_at(body, &ids, vertex, f.within, r))
-        .collect::<Result<Vec<_>, _>>()?;
     // three planes: every run within each edge's ends, so the region is their union and nothing
     // cuts them
     let planar = |c: &Corner| c.faces.iter().all(|s| matches!(s, Surf::Plane { .. }));
-    if let [(corner, toward)] = &corners[..] {
+    if let [(corner, toward, ids)] = &corners[..] {
         if !planar(corner) {
-            pieces.extend(corners.into_iter().map(|(c, _)| Piece::Corner(c)));
+            pieces.extend(corners.into_iter().map(|(c, ..)| Piece::Corner(c)));
             return Ok(pieces);
         }
         let mut bounds = Vec::new();
@@ -550,7 +599,7 @@ fn build(body: &super::faces::BodyFaces, f: &Faces, section: Section) -> Result<
             return unbuilt("a ball larger than the edges it rounds");
         }
     }
-    pieces.extend(corners.into_iter().map(|(c, _)| Piece::Corner(c)));
+    pieces.extend(corners.into_iter().map(|(c, ..)| Piece::Corner(c)));
     Ok(pieces)
 }
 
@@ -596,13 +645,37 @@ fn run(body: &super::faces::BodyFaces, ga: &[usize], gb: &[usize], within: bool,
     let edges = body.edges_between(ga, gb);
     // an edge no line or circle about the faces' common axis carries: the ball rolled along the
     // whole run of them, traced
-    let carried = |e: u32| body.segment(e).is_some() || body.circle(e).is_some_and(|(centre, axis, ..)| {
-        body.faces_of(e).iter().all(|&f| body.coaxial(f, centre, axis))
-    });
-    if let Some(&e) = edges.iter().find(|&&e| !carried(e)) {
-        let Section::Round(r) = section else { return unbuilt("a flat along a traced edge") };
-        return Ok(if body.convex(e) == Some(within) { vec![Piece::Rolled(Rolled { at: body.middle(e), r })] }
-            else { Vec::new() });
+    // (a straight edge carried only between planes and cylinders along it: a cone's generator is
+    // rolled along, its section square to it no circle)
+    let carried = |e: u32| match body.segment(e) {
+        Some([p0, p1]) => {
+            let d = normalised(sub(p1, p0)).unwrap_or([0.0; 3]);
+            body.faces_of(e).iter().all(|&f| body.plane(f).is_some()
+                || body.cylinder(f).is_some_and(|(_, axis, _)| norm(cross(axis, d)) <= 1e-9))
+        }
+        None => body.circle(e).is_some_and(|(centre, axis, ..)| {
+            body.faces_of(e).iter().all(|&f| body.coaxial(f, centre, axis))
+        }),
+    };
+    if edges.iter().any(|&e| !carried(e)) {
+        // a piece for each run of them (two generators of a half cone: two runs): a ball rolled
+        // along it, or a flat cut along it — its legs told apart by a point beside face `a`'s
+        return body.runs(&edges).into_iter().filter(|run| body.convex(run[0]) == Some(within)).map(|run| {
+            let e = run[0];
+            let at = body.middle(e);
+            let ends: Vec<V> = body.run_ends(&run).into_iter().map(|(v, ..)| v).collect();
+            Ok(Piece::Rolled(match section {
+                Section::Round(r) => Rolled { at, r, flat: None, ends, cuts: Vec::new() },
+                Section::Flat { la, lb } => {
+                    let &[f0, f1] = body.faces_of(e) else { return unbuilt("an edge not between two faces") };
+                    let (fa, fb) = if ga.contains(&f0) { (f0, f1) } else { (f1, f0) };
+                    let na = body.normal(fa, at);
+                    let t = toward(body.normal(fb, at), within);
+                    let w = normalised(sub(t, scale(na, dot(t, na)))).ok_or("faces meeting tangent")?;
+                    Rolled { at, r: 0.0, flat: Some(([la, lb], add(at, scale(w, 0.5 * la)))), ends, cuts: Vec::new() }
+                }
+            }))
+        }).collect();
     }
     let all: Vec<usize> = ga.iter().chain(gb).copied().collect();
     let ends = body.end_sides(&edges, &all);
@@ -643,10 +716,16 @@ fn piece(body: &super::faces::BodyFaces, edge: u32, fa: usize, fb: usize, within
             && (dot(n, centre) - d).abs() <= 1e-9 * (1.0 + norm(centre))
             && dot(n, body.middle(edge)) < d;
         // in the meridian a plane, a cylinder and a cone are lines, a sphere a circle about its
-        // centre (on the axis, so in every meridian)
-        let trace = |fi: usize, p: V| match body.sphere(fi) {
-            Some((centre, radius)) => Trace::Circle { centre, radius, normal: body.normal(fi, p) },
-            None => Trace::Line(body.normal(fi, p)),
+        // centre (on the axis, so in every meridian), a torus its tube's circle about where the
+        // tube's centre crosses the meridian
+        let trace = |fi: usize, p: V| match (body.sphere(fi), body.torus(fi)) {
+            (Some((centre, radius)), _) => Trace::Circle { centre, radius, normal: body.normal(fi, p) },
+            (_, Some((o, d, big, tube))) => {
+                let w = sub(p, o);
+                let radial = normalised(sub(w, scale(d, dot(w, d)))).unwrap_or(x);
+                Trace::Circle { centre: add(o, scale(radial, big)), radius: tube, normal: body.normal(fi, p) }
+            }
+            _ => Trace::Line(body.normal(fi, p)),
         };
         let section_at = |t: f64| {
             let p = add(centre, scale(radial_at(t), radius));
@@ -785,18 +864,14 @@ fn piece(body: &super::faces::BodyFaces, edge: u32, fa: usize, fb: usize, within
 }
 
 /// The faces of a run's `ends` (`end_sides`' faces and the sides it runs on) standing at `p`, one
-/// end of an edge of it: each plane's half-space `n·x <= d` it is kept within, and each cylinder or
-/// ball it is kept within (where that side holds its axis, its centre) or outside of.
+/// end of an edge of it: each plane's half-space `n·x <= d` it is kept within, and each cylinder,
+/// cone or ball it is kept within (where that side holds its axis, its centre) or outside of.
 fn ends_at(body: &super::faces::BodyFaces, ends: &[(usize, f64)], p: V) -> Result<(Vec<(V, f64)>, Vec<Kept>), String> {
     let (mut planes, mut bent) = (Vec::new(), Vec::new());
     for &(c, sign) in ends.iter().filter(|&&(c, _)| body.side(c, p).abs() <= 1e-7 * (1.0 + norm(p))) {
         match Surf::of(body, c) {
             Some(Surf::Plane { origin, normal }) => planes.push((scale(normal, sign), sign * dot(normal, origin))),
-            Some(face) => {
-                let (Surf::Cylinder { origin: on, .. } | Surf::Cone { origin: on, .. } | Surf::Sphere { centre: on, .. }
-                    | Surf::Plane { origin: on, .. }) = face;
-                bent.push(Kept { face, inside: sign * body.side(c, on) < 0.0 });
-            }
+            Some(face) => bent.push(Kept { face, inside: sign * body.side(c, face.within()) < 0.0 }),
             None => return unbuilt("an edge cut off by a face neither a plane, a cylinder, a cone nor a sphere"),
         }
     }
@@ -924,8 +999,9 @@ impl Corner2 {
     /// on `a` and `b` and the stroke between them.
     fn flat(&self, [la, lb]: [f64; 2]) -> Result<(V, V, Stroke), String> {
         use crate::brep::planar::Seg;
+        // (a Cartesian oval is no construction left to make: no rational curve holds it)
         let (ta, tb, cut) = crate::brep::corners::sum(&self.steps[0], &self.steps[1], self.side, [la, lb])
-            .or_else(|e| unbuilt(&e))?;
+            .map_err(|e| if e.contains("no rational curve") { e } else { unbuilt::<()>(&e).unwrap_err() })?;
         let (qa, qb) = (self.lift(self.steps[0].point(ta)), self.lift(self.steps[1].point(tb)));
         Ok((qa, qb, match cut {
             Seg::Conic { m, w, .. } => Stroke::Conic { a: qa, m: self.lift(m), b: qb, w },
@@ -1005,7 +1081,7 @@ fn profile(r: &Run) -> Result<crate::brep::build::Profile, String> {
 
 /// Pieces as one construction: each distinct piece once, each run with the stretch of its edge it
 /// is built over (cut short at the section of a corner standing at either end), and which run is
-/// joined to which corner there (runs counted first, then rings, then corners).
+/// joined to which corner there (runs counted first, then rings, then corners, then rolled runs).
 #[derive(Clone, Debug, Default)]
 pub struct Assembly {
     pub runs: Vec<Run>,
@@ -1022,7 +1098,7 @@ pub fn assemble<'a>(pieces: impl IntoIterator<Item = &'a Piece>) -> Assembly {
         Piece::Run(r) => norm(r.origin) + r.span[0].abs().max(r.span[1].abs()),
         Piece::Ring(g) => norm(g.section.origin) + norm(g.axis_origin),
         Piece::Corner(c) => norm(c.vertex) + c.r,
-        Piece::Rolled(k) => norm(k.at) + k.r,
+        Piece::Rolled(k) => norm(k.at) + k.r + k.flat.map_or(0.0, |([la, lb], _)| la.max(lb)),
     }).fold(1.0, f64::max);
     let near = |p: V, q: V| distance(p, q) <= 1e-9 * size;
     let same_stroke = |a: &Stroke, b: &Stroke| match (a, b) {
@@ -1050,7 +1126,8 @@ pub fn assemble<'a>(pieces: impl IntoIterator<Item = &'a Piece>) -> Assembly {
             Piece::Corner(c) if !out.corners.iter().any(|d| near(c.vertex, d.vertex) && near(c.centre, d.centre)) => {
                 out.corners.push(c.clone())
             }
-            Piece::Rolled(k) if !out.rolled.iter().any(|j| near(j.at, k.at) && (j.r - k.r).abs() <= 1e-9 * size) => {
+            Piece::Rolled(k) if !out.rolled.iter().any(|j| near(j.at, k.at) && (j.r - k.r).abs() <= 1e-9 * size
+                && j.flat.is_some() == k.flat.is_some()) => {
                 out.rolled.push(k.clone());
             }
             _ => {}
@@ -1106,6 +1183,12 @@ pub fn assemble<'a>(pieces: impl IntoIterator<Item = &'a Piece>) -> Assembly {
                 continue;
             }
             let (at, cut) = (angle_of(c.vertex), angle_of(c.centre));
+            // a corner at one end of this stretch (or within what it was carried on past it), not
+            // one standing on another stretch of the same circle
+            let at = if at > std::f64::consts::TAU - 1e-9 { at - std::f64::consts::TAU } else { at };
+            if at > g.angle + 1e-9 {
+                continue;
+            }
             if at <= 0.5 * g.angle {
                 // at its start: turned on to the corner's section
                 let turn = crate::brep::geom::Rigid::turn(g.axis_origin, g.axis, cut);
@@ -1116,6 +1199,26 @@ pub fn assemble<'a>(pieces: impl IntoIterator<Item = &'a Piece>) -> Assembly {
             }
             g.section.release(c.vertex, size);
             out.joins.push([n + i, n + rings + k]);
+        }
+    }
+    // a rolled run at an end of which a corner stands is cut at that corner's section: the plane of
+    // the corner's ball's arc between the two faces the run lies between (through its centre and
+    // where it touches each), its cell taking what lies between there and the vertex, and glued
+    // to it there (rolled pieces counted after the corners)
+    let (pieces_before, corners) = (out.runs.len() + out.rings.len(), out.corners.len());
+    for (i, k) in out.rolled.iter_mut().enumerate() {
+        for (j, c) in out.corners.iter().enumerate() {
+            if !k.ends.iter().any(|&v| near(v, c.vertex)) {
+                continue;
+            }
+            let on: Vec<&Surf> = c.faces.iter().filter(|f| f.side(k.at).abs() <= 1e-7 * size).collect();
+            let &[fa, fb] = &on[..] else { continue };
+            let touch = |f: &Surf| { let mut q = c.centre; for _ in 0..8 { q = sub(q, scale(f.gradient(q), f.side(q))); } q };
+            let Some(n) = normalised(cross(sub(touch(fa), c.centre), sub(touch(fb), c.centre))) else { continue };
+            let away = if dot(n, sub(c.vertex, c.centre)) > 0.0 { scale(n, -1.0) } else { n };
+            // (only near the corner: a run round a hole comes back past the section's plane)
+            k.cuts.push((c.centre, away, distance(c.vertex, c.centre) + 2.0 * c.r));
+            out.joins.push([pieces_before + corners + i, pieces_before + j]);
         }
     }
     // a run and a stretch of a ring going on from one another (a round along an obround's flat
@@ -1165,8 +1268,18 @@ impl Assembly {
             ("radius", (c.r * by).into()), ("faces", Json::Arr(c.faces.iter().map(|f| f.json(by)).collect())),
         ])).collect();
         let joins = self.joins.iter().map(|j| Json::Arr(j.iter().map(|&k| k.into()).collect())).collect();
-        let rolled = self.rolled.iter()
-            .map(|k| object([("at", vector(scale(k.at, by))), ("radius", (k.r * by).into())])).collect();
+        let rolled = self.rolled.iter().map(|k| {
+            let mut o = object([("at", vector(scale(k.at, by))), ("radius", (k.r * by).into())]);
+            if let Some(([la, lb], on)) = k.flat {
+                o.set("legs", Json::Arr(vec![(la * by).into(), (lb * by).into()]));
+                o.set("on", vector(scale(on, by)));
+            }
+            if !k.cuts.is_empty() {
+                o.set("cuts", Json::Arr(k.cuts.iter().map(|&(at, n, reach)| object([("at", vector(scale(at, by))),
+                    ("normal", vector(n)), ("reach", (reach * by).into())])).collect()));
+            }
+            o
+        }).collect();
         Ok(object([("kind", "lowered".into()), ("pieces", Json::Arr(pieces)), ("corners", Json::Arr(corners)),
             ("joins", Json::Arr(joins)), ("rolled", Json::Arr(rolled))]))
     }
@@ -1177,10 +1290,37 @@ impl Assembly {
     }
 }
 
+/// Points just inside the corner along each edge the region rounds or cuts (a quarter, a half and
+/// three quarters along it), a tenth of the section's size in along the bisector of its two faces:
+/// where the field reads the region there, the pieces must hold it (`gate`).
+fn beside_edges(body: &super::faces::BodyFaces, f: &Faces, section: Section) -> Vec<V> {
+    let size = match section { Section::Round(r) => r, Section::Flat { la, lb } => la.min(lb) };
+    let groups: Vec<Vec<usize>> = f.faces.iter().map(|r| body.faces(r)).collect();
+    let mut out = Vec::new();
+    for &[i, j] in f.pairs() {
+        for e in body.edges_between(&groups[i], &groups[j]) {
+            let &[fa, fb] = body.faces_of(e) else { continue };
+            if body.convex(e) != Some(f.within) {
+                continue;
+            }
+            for s in [0.25, 0.5, 0.75] {
+                let p = body.along(e, s);
+                let Some(w) = normalised(add(toward(body.normal(fa, p), f.within), toward(body.normal(fb, p), f.within))) else {
+                    continue;
+                };
+                out.push(add(p, scale(w, 0.1 * size)));
+            }
+        }
+    }
+    out
+}
+
 /// **The gate**: a lowering stands only where the region's own field agrees with it — every probe
 /// a little inside the built boundary material by the field, every one a little outside not
-/// (`agreement`, sampled by area); one holding nowhere, only where the field reads it empty too.
-fn gate(sk: &Sketch, solid: usize, pieces: &[Piece], body: &super::faces::BodyFaces) -> Result<(), String> {
+/// (`agreement`, sampled by area), and what the field reads `beside` each edge held; one holding
+/// nowhere, only where the field reads it empty too.
+fn gate(sk: &Sketch, solid: usize, pieces: &[Piece], body: &super::faces::BodyFaces, beside: impl FnOnce() -> Vec<V>)
+    -> Result<(), String> {
     if pieces.is_empty() {
         let empty = super::region::in_general_position(sk, solid)
             .is_some_and(|g| g.is_ok_and(|f| f.is_empty()));
@@ -1191,14 +1331,16 @@ fn gate(sk: &Sketch, solid: usize, pieces: &[Piece], body: &super::faces::BodyFa
     let field = super::MaterialField::read(sk, solid, super::cad::AXIS_TOLERANCE)?;
     // the pieces' boundary in model units: a rolled one rolled against the stratum (millimetres,
     // about its origin) and brought back
-    // (`build` rolls a run alone: none stands beside other pieces)
-    let (b, mm) = match pieces {
-        [Piece::Rolled(k)] => {
-            let (stratum, mm, _) = body.brep();
-            let tol = 1e-9 * stratum.size().max(1.0);
-            (crate::brep::fillet::roll(stratum, body.q(k.at), k.r * mm, tol)?.piece, Some(mm))
-        }
-        _ => (assemble(pieces).brep(1.0)?, None),
+    let rolled: Vec<&Rolled> = pieces.iter().filter_map(|p| match p { Piece::Rolled(k) => Some(k), _ => None }).collect();
+    let (b, mm) = if rolled.is_empty() { (assemble(pieces).brep(1.0)?, None) } else {
+        // in the stratum's own frame (millimetres about its origin), as the recipe builds it: the
+        // lowered node, rolled against the stratum standing in its built set
+        let (stratum, mm, origin) = body.brep();
+        let mut node = super::cad::shifted_node(&assemble(pieces).node(mm)?, scale(origin, mm));
+        node.set("stratum", object([("kind", "body".into()), ("stock", 0.into()), ("on", Json::Arr(vec![])),
+            ("cut", Json::Arr(vec![])), ("bound", Json::Arr(vec![]))]));
+        let built = std::collections::BTreeMap::from([(0, stratum.clone())]);
+        (crate::brep::recipe::node_named(&node, &built, &Default::default(), 0.0)?, Some(mm))
     };
     // probed `offset` either side of it, so meshed no finer than a twentieth of that
     let size = b.size().max(f64::MIN_POSITIVE);
@@ -1214,6 +1356,18 @@ fn gate(sk: &Sketch, solid: usize, pieces: &[Piece], body: &super::faces::BodyFa
         offset, confirm: offset / 4.0, value_tolerance: offset / 5.0, triangles: 400,
         ..Default::default()
     };
+    // and no piece left out: what the field reads of the region just inside each edge, the pieces
+    // hold (a probe of the boundary built sees nothing of a piece never built)
+    let located = crate::brep::query::Located::new(&b, 1e-9 * size);
+    for p in beside() {
+        if field.side(p) < -1e-6 * (1.0 + norm(p)) {
+            let q = if mm.is_some() { body.q(p) } else { p };
+            if located.solid_place(q) == crate::brep::query::Place::Out {
+                return Err(format!("its exact construction leaves out what the field reads beside its edge at [{:.6}, {:.6}, {:.6}]",
+                    p[0], p[1], p[2]));
+            }
+        }
+    }
     let report = super::agreement::of_triangles_parallel(&m.pts, &m.tris, &field, 1, &options)?;
     match report.disagreements.first() {
         None => Ok(()),

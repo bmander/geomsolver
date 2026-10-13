@@ -437,12 +437,19 @@ the recipe's corner `"faces"`, `fillet::corner` its three-plane case; plus each 
 ring stretch, cut short at its section even where it ran out past a slanted end, a ring's
 stretch turned only to the corner's meridian, glued there: `dshaft.sv`), `Rolled` (along an edge no line or coaxial circle carries — a tee's crotch, a bore's rim, a
 run-out across a slope: the ball rolled along the whole run, `brep::fillet::roll`, its canal
-fitted, carried past an end and cut off by the plane there; the recipe's `"rolled"` rolled against
+fitted, carried past an end and cut off there (`fillet::end_at`'s `Cut`s: the plane, a curved
+end's solid, or — where a face goes on tangent across a seam into another piece's — the section
+that piece ends at, refused where the ball crosses the seam elsewhere, `seam_aligned`:
+`bullnose.sv`); one per run of the region (`BodyFaces::runs`), winding round both faces or not,
+cut short at a corner's section (the plane of the ball's arc) and glued there (`frustum.sv`); a
+flat the same with a line for the arc, `fillet::flat_along` (`crotch.sv`); the recipe's
+`"rolled"` rolled against
 the body's stratum, rebuilt from the `"stratum"` terms `cad.rs` writes beside it, the gate's
 against `BodyFaces::brep` brought back by `BodyFaces::back`); no pieces where the faces never meet
 or an edge turns the other way. **The gate**: the
 pieces' B-rep held to the region's own field (`agreement`, by area; empty only where the field
-reads empty) before anything reads them. Memoised against the region's own terms (`document::reads_own`)
+reads empty), and holding what the field reads just inside each edge (`beside_edges`: a probe of
+the boundary built sees nothing of a piece never built), before anything reads them. Memoised against the region's own terms (`document::reads_own`)
 and the stratum's `Arc` (`Sketch::lowering_cache`; a key over `solid::reads` walks every round of
 the body), asked once a recipe. `cad.rs` builds a body's lowered regions in one set as one recipe node, `"lowered"`
 (`assemble`: each distinct piece once, a run cut short at a corner's section and **glued** there,
@@ -457,19 +464,22 @@ this needs (ported from #79–#110): edges along a face cut where they cross its
 own `tol`; a plane or a cylinder touching a cylinder along a line is one line, judged by the gap
 (the half chord is its square root, #218), and a vertex an edge lying in a face makes on that
 face's edge is on every face that edge bounds (a meeting of the face beside it may end there). `cad::shifted` (the app's exact solid, built about its own origin) moves a lowered
-node's pieces, corners and balls with the rest (`shifted_node`). Open (#218): a rolled run ending on a
-curved face, a vertex where convex and concave rounds meet (the twin bar rounded all over), corners of a face in pieces or of two curved faces, a run
-mitred against a ring's stretch on one cylinder (a groove rounded at its ends: refused where the
-two rounds' meeting ends at a point all three surfaces touch, which the trace does not follow,
-#58), a flat along a traced edge, a rolled round beside other pieces in one
-region. **The oracle** (#218's 8): `gcs-cli tests/fillet_oracle.rs` (OCCT) builds each rounds
-example's body less its lowered regions, rounds the same edges by OCCT's own fillet or chamfer
-(`solvent_cad_round`, `Session::round`; each edge the one through a point the pieces give) and
-holds ours to it (volume 1e-9 where both are analytic, 2e-5 where either fits a B-spline; face
-kinds, OCCT's B-spline standing for an analytic face of ours); where OCCT's fillet fails (`rail`)
-or makes no valid solid (`post`) it is counted. `tests/round_lowering.rs` is the gate (every volume the closed form's to
+node's pieces, corners and balls with the rest (`shifted_node`). Refused by the kernel, by name
+(#218): a meeting that branches where two surfaces touch (`roll`), a fitted canal met tangent by
+a cylinder (`runout.sv`'s lug rounded all over: ill-conditioned), and rounds of separate
+statements touching along a line (no manifold file describes it). **The oracle** (#218's 8): `gcs-cli tests/fillet_oracle.rs` (OCCT) builds each rounds
+example's body less its lowered regions, rounds the same edges by OCCT (`How`: its fillet or
+chamfer, `solvent_cad_round`, `Session::round`, each edge the one through a point the pieces give;
+a convex body rounded all over by its offsets, `solvent_cad_opened`; a chamfer beside a curved face,
+where OCCT's chamfer is ruled between legs along the faces, by a loft through `std.Flat`'s sections
+in closed form, `solvent_cad_loft`) and holds ours to it (volume 1e-9 where both are analytic, 2e-5
+where either fits a B-spline; face kinds alike, OCCT's B-spline standing only for an analytic face
+of ours it fits). OCCT's fillet and offsets misread an edge along or ending on a periodic surface's
+seam (`rail`, `post`, `frustum`): asked of the same solid with its seams turned (`seams_turned`).
+`tests/round_lowering.rs` is the gate (every volume the closed form's to
 1e-9, a rolled one #85's quadrature's to 1e-6: `slot.sv`, `pad.sv`, `rail.sv`, `knob.sv`,
-`tee.sv`, `bore.sv`, `runout.sv`, `twin.sv`, `post.sv`, `dshaft.sv`).
+`tee.sv`, `bore.sv`, `runout.sv`, `twin.sv`, `post.sv`, `dshaft.sv`, `groove.sv`, `bores.sv`,
+`frustum.sv`, `crotch.sv`, `bullnose.sv`).
 **The closing case** (#197, `rust/examples/conrod/`): a forged rod, every round and chamfer a
 statement over the faces its solids gave it, built exactly (pockets drawn as prisms, so their walls
 are planes and cylinders). What the stratum leaves is a finding, not a bug: rounds of separate
@@ -1008,7 +1018,12 @@ extreme angle). Never a sample grid: extremes between samples were missed.
 **This kernel is every export's default** (phase 5): OCCT answers only `--kernel occt` /
 `--stl-backend occt` / `SOLVENT_KERNEL=occt` (the oracle; refused in a build without OCCT), its
 STEP checked by `step_check` against `Solid::of`. `gcs-cli tests/brep_oracle.rs` builds every
-corpus recipe node both ways; `tests/brep_census.rs` holds a census and `brep_body_debug`;
+corpus recipe node both ways (where OCCT is off the bar a closed form or OCCT's own declaration
+decides: a whole revolution of lines and arcs is held to Pappus, `pappus`; a Boolean whose edges
+OCCT declares far coarser than its operands' — two tori touching in the hypoid's tooth space — to
+that tolerance times its area, ours rebuilt at tolerances ten times either way within 1e-9,
+`rebuilt`; a general surface OCCT builds for an analytic one of ours must lie on ours within its
+declared face tolerance); `tests/brep_census.rs` holds a census and `brep_body_debug`;
 `SOLVENT_BREP_DEBUG` narrates, `SOLVENT_BREP_TIME` times slow Boolean steps. OCCT's volume of a
 STEP it reads (~1e-5) is no gate on our accuracy. Rung 1 is done: every corpus solid with a recipe
 agrees with OCCT (volume 1e-9, faces by kind) but for named refusals of self-touching designs

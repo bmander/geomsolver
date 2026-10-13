@@ -360,10 +360,19 @@ pub fn verify(text: &str,solid: &Solid) -> Result<Verified,String> {
     let mut uses: BTreeMap<u32,u32> = BTreeMap::new();
     let mut vertices: BTreeSet<u32> = Default::default();
     let mut splines = 0;
+    // the seam edges a whole torus's face leaves unwritten: a face on a toroidal surface bounded by
+    // vertex loops alone is the whole closed surface (OCCT 7.6's writer writes a whole torus so),
+    // its two seams, used by it alone, implied
+    let mut implied = 0;
     for (k,(&f,expected)) in faces.iter().zip(&solid.faces).enumerate() {
         let what = format!("face {k} (#{f})");
         let (_,face) = of(Some(f),&["ADVANCED_FACE"],&what)?;
-        for bound in face.get(1).and_then(Value::list).ok_or_else(|| format!("{what}: no bounds"))? {
+        let bounds = face.get(1).and_then(Value::list).ok_or_else(|| format!("{what}: no bounds"))?;
+        let only_vertices = !bounds.is_empty() && bounds.iter().all(|b| of(b.reference(),&["FACE_BOUND","FACE_OUTER_BOUND"],&what)
+            .ok().and_then(|(_,b)| of(b.get(1).and_then(Value::reference),&["EDGE_LOOP","VERTEX_LOOP"],&what).ok())
+            .is_some_and(|(kind,_)| kind == "VERTEX_LOOP"));
+        if only_vertices && expected.kind == TORUS { implied += 2; }
+        for bound in bounds {
             let (_,bound) = of(bound.reference(),&["FACE_BOUND","FACE_OUTER_BOUND"],&what)?;
             bound.get(2).and_then(Value::logical).ok_or_else(|| format!("{what}: a bound without an orientation"))?;
             // a loop of edges, or the one vertex a pole leaves (the writer writes no degenerate edge)
@@ -396,7 +405,7 @@ pub fn verify(text: &str,solid: &Solid) -> Result<Verified,String> {
         if surface_matches(&get,surface,expected).map_err(|e| format!("{what}: {e}"))? { splines += 1; }
     }
     if let Some((e,n)) = uses.iter().find(|(_,&n)| n != 2) { return Err(format!("the edge #{e} is used {n} times by the shell's faces, not twice")) }
-    if uses.len() != solid.edges || count("EDGE_CURVE") != uses.len() {
+    if uses.len()+implied != solid.edges || count("EDGE_CURVE") != uses.len() {
         return Err(format!("the file's faces use {} of its {} edges, the solid has {}",uses.len(),count("EDGE_CURVE"),solid.edges));
     }
     if vertices.len() != solid.vertices || count("VERTEX_POINT") != vertices.len() {

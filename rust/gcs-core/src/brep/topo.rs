@@ -254,6 +254,93 @@ impl Brep {
         Ok(())
     }
 
+    /// The boundary of a solid touching itself along lines, each held as two edges on one curve:
+    /// where an edge is used twice each way (two pieces of material meeting along it and nowhere
+    /// else near), its four faces sorted round it, each paired with its neighbour across the
+    /// material between them — one along, one against — and the second pair given an edge of its
+    /// own. Its ends are then pinches (`pinches`). How many edges it split, or `Err` where four
+    /// uses pair no way a solid can (faces meeting tangent there, or material on both sides of one).
+    pub fn unpinched(&mut self) -> Result<usize,String> {
+        let mut uses: Vec<Vec<(usize,usize,usize)>> = vec![Vec::new();self.edges.len()];
+        for (fi,f) in self.faces.iter().enumerate() {
+            for (li,l) in f.loops.iter().enumerate() {
+                for (ci,c) in l.iter().enumerate() { uses[c.edge as usize].push((fi,li,ci)); }
+            }
+        }
+        let mut split = 0;
+        for e in 0..self.edges.len() {
+            if uses[e].len() != 4 { continue }
+            let EdgeCurve::Curve(curve) = &self.edges[e].curve else { continue };
+            let along = uses[e].iter().filter(|&&(f,l,c)| !self.faces[f].loops[l][c].reversed).count();
+            if along != 2 { continue }
+            let t = 0.5*(self.edges[e].t[0]+self.edges[e].t[1]);
+            let d = curve.tangent(t);
+            let Some(d) = crate::space::normalised(d) else { return Err(format!("edge {e} has no direction")) };
+            let (a,b) = crate::space::across(d);
+            // each use's face: the way into it from the edge (left of the use, its material normal
+            // up) as an angle about the edge, and whether its material lies on from there
+            let mut round: Vec<(f64,bool,usize)> = Vec::new();
+            for (k,&(f,l,c)) in uses[e].iter().enumerate() {
+                let face = &self.faces[f];
+                let co = &face.loops[l][c];
+                let uv = co.pcurve.at(t,&self.edges[e],&face.surface,&self.vertices);
+                let Some(n) = face.surface.normal(uv) else { return Err(format!("edge {e}: a face with no normal")) };
+                let n = if face.reversed { crate::space::scale(n,-1.) } else { n };
+                let way = if co.reversed { crate::space::scale(d,-1.) } else { d };
+                let into = crate::space::cross(n,way);
+                let angle = dot(into,b).atan2(dot(into,a));
+                // turning on about `d` from `into`, the material (against `n`) lies ahead or behind
+                let on = dot(crate::space::scale(n,-1.),crate::space::cross(d,into)) > 0.;
+                round.push((angle,on,k));
+            }
+            round.sort_by(|x,y| x.0.total_cmp(&y.0));
+            let gap = (0..4).map(|i| { let g = round[(i+1)%4].0-round[i].0; if i == 3 { g+std::f64::consts::TAU } else { g } })
+                .fold(f64::INFINITY,f64::min);
+            if gap < 1e-6 { return Err(format!("edge {e}: faces meeting tangent along it, used twice each way")) }
+            // the material wedges: from a face whose material lies on to the next, which must have
+            // it behind
+            let start = (0..4).find(|&i| round[i].1).ok_or(format!("edge {e}: no material beside it"))?;
+            let pairs = [[round[start].2,round[(start+1)%4].2],[round[(start+2)%4].2,round[(start+3)%4].2]];
+            let alternate = (0..4).all(|i| round[(start+i)%4].1 == (i % 2 == 0));
+            let opposed = pairs.iter().all(|&[x,y]| {
+                let r = |k: usize| { let (f,l,c) = uses[e][k]; self.faces[f].loops[l][c].reversed };
+                r(x) != r(y)
+            });
+            if !alternate || !opposed { return Err(format!("edge {e}: four uses that pair no way a solid can")) }
+            let twin = self.edges[e].clone();
+            self.edges.push(twin);
+            let new = (self.edges.len()-1) as u32;
+            for k in pairs[1] { let (f,l,c) = uses[e][k]; self.faces[f].loops[l][c].edge = new; }
+            split += 1;
+        }
+        Ok(split)
+    }
+
+    /// Where the solid touches itself along a line (`unpinched`): two edges between the same
+    /// vertices along one curve, within `tol` at their middles; each line's ends.
+    pub fn self_touching(&self,tol: f64) -> Vec<[V;2]> {
+        // the edges between each pair of vertices, then each against the ones after it there
+        let mut between: std::collections::BTreeMap<[u32;2],Vec<usize>> = Default::default();
+        for (i,e) in self.edges.iter().enumerate() {
+            if !matches!(e.curve,EdgeCurve::Curve(_)) { continue }
+            between.entry([e.v[0].min(e.v[1]),e.v[0].max(e.v[1])]).or_default().push(i);
+        }
+        let mid = |e: &Edge| e.point(0.5*(e.t[0]+e.t[1]),&self.vertices);
+        let mut out = Vec::new();
+        for (_,list) in between {
+            if list.len() < 2 { continue }
+            let mids: Vec<V> = list.iter().map(|&i| mid(&self.edges[i])).collect();
+            for (j,&i) in list.iter().enumerate() {
+                let a = &self.edges[i];
+                let twin = (j+1..list.len()).any(|k| distance(mids[j],mids[k]) <= tol.max(a.tol).max(self.edges[list[k]].tol));
+                if twin { out.push((i,a.v.map(|v| self.vertices[v as usize].p))); }
+            }
+        }
+        // in the edges' order, as found before
+        out.sort_by_key(|&(i,_)| i);
+        out.into_iter().map(|(_,p)| p).collect()
+    }
+
     /// Where the solid pinches: vertices whose faces fall into more than one fan — joined round
     /// the vertex only through the edges that end there — so the solid touches itself at a point
     /// (a bore whose end is tangent to another's wall). A valid boundary, but not a manifold one.

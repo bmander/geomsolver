@@ -12,7 +12,98 @@ mod native;
 mod progress;
 use gcs_core::brep::{geom::Surface,props::volume,recipe};
 use gcs_core::json::{object,Json};
+use gcs_core::space::{cross,norm,sub as minus3};
 use std::collections::BTreeMap;
+
+/// An edge tolerance OCCT's result declares past its operands' (1e-7 mm): it approximated a meeting
+/// it could not resolve to them. And how little ours may move with its tolerance there.
+const DECLARED: f64 = 1e-6;
+const CONVERGED: f64 = 1e-9;
+
+/// A whole revolution's volume by Pappus, where its profile is one loop of lines and arcs in a
+/// plane through its axis: `2π ∬ s dA`, `s` the distance from the axis, by Green's theorem `∮ s²/2
+/// dt` (`t` along the axis), each line's and arc's integral by Gauss–Legendre (a polynomial along a
+/// line, a trigonometric one along an arc).
+fn pappus(n: &Json) -> Option<f64> {
+    use gcs_core::space::{add,dot,normalised,scale};
+    type V = [f64;3];
+    let v = |j: &Json| -> V { std::array::from_fn(|i| j.arr()[i].as_f64()) };
+    if n.get("kind")?.as_str() != "revolve" || (n.get("angle")?.as_f64().abs()-2.*std::f64::consts::PI).abs() > 1e-12 { return None }
+    let loops = n.get("profile")?.get("loops")?.arr();
+    if loops.len() != 1 { return None }
+    let (o,a) = (v(n.get("origin")?),normalised(v(n.get("axis")?))?);
+    // each piece as a point and its derivative over [0, 1], in the loop's order
+    let mut pieces: Vec<Box<dyn Fn(f64) -> (V,V)>> = Vec::new();
+    let mut last: Option<V> = None;
+    let entries = loops[0].arr();
+    for (k,e) in entries.iter().enumerate() {
+        match e.get("kind")?.as_str() {
+            "line" => {
+                let (p,q) = (v(e.get("start")?),v(e.get("end")?));
+                let d = minus3(q,p);
+                pieces.push(Box::new(move |u| (add(p,scale(d,u)),d)));
+                last = Some(q);
+            }
+            "circle" => {
+                let (c,nn,x,r) = (v(e.get("center")?),v(e.get("normal")?),v(e.get("x_dir")?),e.get("radius")?.as_f64());
+                let y = cross(nn,x);
+                let span = e.get("angles")?.arr();
+                let (a0,a1) = (span[0].as_f64(),span[1].as_f64());
+                let at = move |th: f64| add(c,add(scale(x,r*th.cos()),scale(y,r*th.sin())));
+                // walked from the end that meets its neighbour
+                let next = entries.get(k+1).or(entries.first()).and_then(|f| f.get("start")).map(&v);
+                let far = |p: V,q: V| { let d = minus3(q,p); dot(d,d) };
+                let from_a0 = match (last,next) {
+                    (Some(p),_) => far(at(a0),p) <= far(at(a1),p),
+                    (None,Some(q)) => far(at(a1),q) <= far(at(a0),q),
+                    _ => true,
+                };
+                let (s0,s1) = if from_a0 { (a0,a1) } else { (a1,a0) };
+                pieces.push(Box::new(move |u| {
+                    let th = s0+(s1-s0)*u;
+                    (at(th),scale(add(scale(x,-r*th.sin()),scale(y,r*th.cos())),s1-s0))
+                }));
+                last = Some(at(s1));
+            }
+            _ => return None,
+        }
+    }
+    // the side the profile stands on, across the axis in its plane
+    let across = |p: V| { let d = minus3(p,o); minus3(d,scale(a,dot(d,a))) };
+    let side = pieces.iter().map(|f| across(f(0.5).0)).max_by(|p,q| dot(*p,*p).total_cmp(&dot(*q,*q)))?;
+    let e = normalised(side)?;
+    // each piece by Gauss–Legendre's eight points on each of eight panels: a polynomial along a
+    // line, a trigonometric one along an arc, exact to rounding at this order
+    let panels = 8;
+    let mut moment = 0.;
+    for f in &pieces {
+        for j in 0..panels {
+            for &(xi,wi) in &gcs_core::integral::GAUSS8 {
+                let (p,dp) = f((j as f64+0.5*(xi+1.))/panels as f64);
+                let s = dot(minus3(p,o),e);
+                moment += 0.5*wi/panels as f64*(-0.5*s*s*dot(dp,a));
+            }
+        }
+    }
+    Some(2.*std::f64::consts::PI*moment.abs())
+}
+
+/// A body node's volume built operand by operand by the Boolean at a tolerance `k` of its size: its
+/// stock, plus what is `on` it, less what `cut`s it, within what `bound`s it (none late).
+fn rebuilt(n: &Json,ours: &BTreeMap<i64,gcs_core::brep::topo::Brep>,k: f64) -> Result<f64,String> {
+    use gcs_core::brep::boolean::{boolean,Op};
+    let ids = |key: &str| n.get(key).map(|l| l.arr().iter().map(|x| x.as_i64()).collect::<Vec<_>>()).unwrap_or_default();
+    if !ids("on_late").is_empty() || !ids("cut_late").is_empty() { return Err("late operands".into()) }
+    let of = |i: i64| ours.get(&i).ok_or_else(|| format!("no operand {i}"));
+    let mut b = of(n.get("stock").ok_or("no stock")?.as_i64())?.clone();
+    for (key,op) in [("on",Op::Union),("cut",Op::Cut),("bound",Op::Common)] {
+        for i in ids(key) {
+            let other = of(i)?;
+            b = boolean(&b,other,op,k*b.size().max(other.size()))?;
+        }
+    }
+    Ok(volume(&b))
+}
 
 #[test]
 fn every_node_the_kernel_builds_is_occts() {
@@ -78,7 +169,32 @@ fn every_node_the_kernel_builds_is_occts() {
                 // 1e-9 and OCCT is 4e-8 off; fitted within 1e-4 mm, OCCT is 2e-6 off (`tests/brep.rs`
                 // and `brep_census.rs` hold this kernel to the closed forms)
                 let bar = if through_splines { 1e-3 } else if swept(&b) { 1e-5 } else { 1e-7 };
-                if rel >= bar { failures.push(format!("{label}: volume {v} against OCCT's {w}")); continue }
+                if rel >= bar {
+                    // a Boolean whose meeting OCCT approximates where it is ill-conditioned (two
+                    // surfaces touching at a point, a traced meeting through it) and says so: its edges'
+                    // tolerance grown far past its operands'. Its boundary is then only within that
+                    // tolerance of the true one, so its volume within it times the boundary's area;
+                    // and ours is held to itself, rebuilt at tolerances ten times either way, within
+                    // `CONVERGED`
+                    // a whole revolution of lines and arcs: its volume is Pappus's, which decides
+                    if let Some(closed) = pappus(n) {
+                        let off = ((v-closed)/closed).abs();
+                        if off >= CONVERGED { failures.push(format!("{label}: volume {v} against Pappus's {closed} ({off:.1e})")); continue }
+                        eprintln!("{label}: OCCT {rel:.1e} off; ours Pappus's {closed:.9} mm³ within {off:.1e}");
+                    } else {
+                    let [_,edge_tol,_] = session.tolerances(theirs).unwrap();
+                    let area = gcs_core::brep::mesh::mesh(&b,1e-3*b.size(),0.2).map(|m| m.tris.iter().map(|t| {
+                        let [p,q,r] = t.map(|i| m.pts[i as usize]);
+                        0.5*norm(cross(minus3(q,p),minus3(r,p)))
+                    }).sum::<f64>()).unwrap_or(f64::INFINITY);
+                    let held = n.get("kind").unwrap().as_str() == "body" && edge_tol > DECLARED
+                        && (v-w).abs() <= edge_tol*area
+                        && [1e-8,1e-10].iter().all(|&k| rebuilt(n,&ours,k).is_ok_and(|u| ((u-v)/v).abs() < CONVERGED));
+                    if !held { failures.push(format!("{label}: volume {v} against OCCT's {w}")); continue }
+                    eprintln!("{label}: OCCT declares its edges good to {edge_tol:.1e} mm (its bound on the volume {:.1e} mm³, off by \
+                        {:.1e}); ours converged within {CONVERGED:e} at tolerances ten times either way",edge_tol*area,(v-w).abs());
+                    }
+                }
                 // faces by the kind of their surface (OCCT's `GeomAbs_SurfaceType` order): OCCT may split
                 // a plane along a line where another face only touches it, which this kernel does not
                 let kinds = |ks: &mut Vec<i32>| { ks.sort(); ks.clone() };
@@ -90,8 +206,26 @@ fn every_node_the_kernel_builds_is_occts() {
                 if our_kinds != their_kinds {
                     let extra_planes = their_kinds.iter().filter(|&&k| k != 0).eq(our_kinds.iter().filter(|&&k| k != 0))
                         && their_kinds.iter().filter(|&&k| k == 0).count() > our_kinds.iter().filter(|&&k| k == 0).count();
+                    // or OCCT builds a general surface (a B-spline, a surface of revolution) for an
+                    // analytic one of ours, one for one, lying on our surfaces within the face
+                    // tolerance OCCT declares (the drill's wheel's nose, a torus OCCT does not read as one)
+                    let minus = |a: &[i32],b: &[i32]| { let mut rest = b.to_vec(); a.iter().filter(|k| {
+                        match rest.iter().position(|j| j == *k) { Some(i) => { rest.remove(i); false } None => true }
+                    }).copied().collect::<Vec<i32>>() };
+                    let (extra,missing) = (minus(&their_kinds,&our_kinds),minus(&our_kinds,&their_kinds));
+                    let general = |k: &i32| *k == 6 || *k == 7;
+                    let stood_in = !extra.is_empty() && extra.len() == missing.len() && extra.iter().all(general)
+                        && !missing.iter().any(general) && {
+                        let face_tol = session.tolerances(theirs).unwrap()[0].max(1e-9);
+                        let off = session.off_surfaces(theirs,&b,&|k| general(&k)).unwrap();
+                        eprintln!("  (OCCT builds {extra:?} for our {missing:?}, on our surfaces within {off:.1e} mm, its faces' tolerance {face_tol:.1e})");
+                        off <= face_tol
+                    };
                     if extra_planes { eprintln!("  (OCCT splits a plane along a line it only touches: {their_kinds:?} against our {our_kinds:?})"); }
-                    else { failures.push(format!("{label}: faces by kind {our_kinds:?} against OCCT's {their_kinds:?}")); continue }
+                    if !extra_planes && !stood_in {
+                        failures.push(format!("{label}: faces by kind {our_kinds:?} against OCCT's {their_kinds:?}"));
+                        continue
+                    }
                 }
                 }
                 let whole = n.get("kind").unwrap().as_str() == "body" || id == root_id;

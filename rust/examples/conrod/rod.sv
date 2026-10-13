@@ -127,7 +127,8 @@ rod.shank.far round(r: re) rod.small_end
 //
 // The pockets' rims are left sharp too: each round reads the rod as its other terms leave it,
 // never another round, so where rounds of separate statements meet they cannot blend. Add them
-// and the field reads the rod as written, but the exact build refuses it, naming where the
-// material the rounds leave touches itself along a line (#218):
+// and the field and the exact build read the rod as written, but the material the rounds leave
+// touches itself along a line, which no manifold file describes: the export is refused, naming
+// where (#218):
 //   rod.front_pocket round(r: re) rod.shank   (and `back_pocket`: the pockets' rims, whose runs
 //                                              cut down past the corners' fills on both sides)

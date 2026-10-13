@@ -754,6 +754,18 @@ fn ray_cylinder(o: V, w: V, at: V, axis: usize, radius: f64) -> f64 {
     first_root(a, b, o[i] * o[i] + o[j] * o[j] - radius * radius)
 }
 
+/// Where a ray from `o` along `w` first meets the cone `ρ = r0 − slope·z` about `z` (its nappe
+/// with `ρ ≥ 0`).
+fn ray_cone(o: V, w: V, r0: f64, slope: f64) -> f64 {
+    let k = r0 - slope * o[2];
+    let a = w[0] * w[0] + w[1] * w[1] - slope * slope * w[2] * w[2];
+    let b = 2.0 * (o[0] * w[0] + o[1] * w[1]) + 2.0 * slope * w[2] * k;
+    let c = o[0] * o[0] + o[1] * o[1] - k * k;
+    let disc = (b * b - 4.0 * a * c).max(0.0).sqrt();
+    [(-b - disc) / (2.0 * a), (-b + disc) / (2.0 * a)].into_iter()
+        .filter(|&t| t > 0.0 && k - slope * w[2] * t >= 0.0).fold(f64::INFINITY, f64::min)
+}
+
 /// The stack's `rolled` (#85): a ball of radius `r` rolled round a closed spine `c(φ)`, by
 /// quadrature over its sections square to the spine, swept with the spine's curvature.
 fn rolled(c: &dyn Fn(f64) -> V, toward: [&dyn Fn(V) -> V; 2], hit: [&dyn Fn(V, V) -> f64; 2],
@@ -767,30 +779,21 @@ fn rolled(c: &dyn Fn(f64) -> V, toward: [&dyn Fn(V) -> V; 2], hit: [&dyn Fn(V, V
 /// left; the sections stand at the middles of their steps, never on a plane a section lies in.
 fn rolled_within(c: &dyn Fn(f64) -> V, toward: [&dyn Fn(V) -> V; 2],
                  hit: [&dyn Fn(V, V) -> f64; 2], r: f64, within: Option<(V, f64)>) -> f64 {
+    rolled_over(c, [0.0, 2.0 * PI], toward, hit, r, within.as_slice(), &[])
+}
+
+/// `rolled_within` along the stretch `span` of an open spine `c(φ)`, kept within every half-space
+/// `n · x ≤ k` of `within` and every upright cylinder (about `(x, y)`, of a radius) of `drums`: a
+/// run carried on past both its ends and cut off by the faces there.
+pub(crate) fn rolled_over(c: &dyn Fn(f64) -> V, span: [f64; 2], toward: [&dyn Fn(V) -> V; 2],
+                 hit: [&dyn Fn(V, V) -> f64; 2], r: f64, within: &[(V, f64)], drums: &[([f64; 2], f64)]) -> f64 {
     let (n_phi, n_psi) = (720, 96);
-    let gauss: Vec<(f64, f64)> = (0..n_psi).map(|i| {
-        let mut x = (PI * (i as f64 + 0.75) / (n_psi as f64 + 0.5)).cos();
-        let mut dp = 0.0;
-        for _ in 0..100 {
-            let (mut p0, mut p1) = (1.0, x);
-            for k in 2..=n_psi {
-                let p2 = ((2 * k - 1) as f64 * x * p1 - (k - 1) as f64 * p0) / k as f64;
-                p0 = p1;
-                p1 = p2;
-            }
-            dp = n_psi as f64 * (x * p1 - p0) / (x * x - 1.0);
-            let dx = p1 / dp;
-            x -= dx;
-            if dx.abs() < 1e-16 {
-                break;
-            }
-        }
-        (x, 2.0 / ((1.0 - x * x) * dp * dp))
-    }).collect();
+    let gauss = gauss_legendre(n_psi);
     let h = 1e-4;
     let mut total = 0.0;
+    let step = (span[1] - span[0]) / n_phi as f64;
     for k in 0..n_phi {
-        let phi = 2.0 * PI * (k as f64 + 0.5) / n_phi as f64;
+        let phi = span[0] + step * (k as f64 + 0.5);
         let p = c(phi);
         let (pa, pb) = (c(phi - h), c(phi + h));
         let d1 = scale(sub(pb, pa), 1.0 / (2.0 * h));
@@ -817,27 +820,38 @@ fn rolled_within(c: &dyn Fn(f64) -> V, toward: [&dyn Fn(V) -> V; 2],
                 let psi = a + 0.5 * (b - a) * (x + 1.0);
                 let d = dir(psi);
                 let (mut lo, mut hi) = (r, hit[0](p, d).min(hit[1](p, d)));
-                if let Some((n, k)) = within {
+                for &(n, k) in within {
                     let (along, room) = (dot(n, d), k - dot(n, p));
                     if along.abs() < 1e-15 {
                         if room < 0.0 {
-                            continue;
+                            hi = lo;
                         }
                     } else if along > 0.0 {
                         hi = hi.min(room / along);
                     } else {
                         lo = lo.max(room / along);
                     }
-                    if hi <= lo {
+                }
+                for &([cx, cy], radius) in drums {
+                    let (ox, oy) = (p[0] - cx, p[1] - cy);
+                    let (a, b, c) = (d[0] * d[0] + d[1] * d[1], 2.0 * (ox * d[0] + oy * d[1]), ox * ox + oy * oy - radius * radius);
+                    let disc = b * b - 4.0 * a * c;
+                    if a < 1e-300 || disc < 0.0 {
+                        if c > 0.0 { hi = lo; }
                         continue;
                     }
+                    lo = lo.max((-b - disc.sqrt()) / (2.0 * a));
+                    hi = hi.min((-b + disc.sqrt()) / (2.0 * a));
+                }
+                if hi <= lo {
+                    continue;
                 }
                 let q = dot(d, kn);
                 let swept = |rho: f64| rho * rho / 2.0 - q * rho.powi(3) / 3.0;
                 area += w * 0.5 * (b - a) * (swept(hi) - swept(lo));
             }
         }
-        total += area * speed * 2.0 * PI / n_phi as f64;
+        total += area * speed * step;
     }
     total
 }
@@ -889,16 +903,24 @@ pub(crate) const RIM: f64 = -1.0;
 /// plane `z = h0 − s x`, the material below it — a boss's root (`ROOT`) or a hole's rim (`RIM`)
 /// — kept within `n · x ≤ k`: carried on past the face it ends on and cut off there
 /// (`x0/runout.sv`'s boss and vent).
-pub(crate) fn sloped(radius: f64, [cx, cy]: [f64; 2], [h0, s]: [f64; 2], r: f64, side: f64,
+pub(crate) fn sloped(radius: f64, at: [f64; 2], slope: [f64; 2], r: f64, side: f64,
                      within: Option<(V, f64)>) -> f64 {
+    sloped_clipped(radius, at, slope, r, side, within.as_slice(), &[])
+}
+
+/// `sloped` kept within every half-space of `within` and every upright cylinder of `drums`: a run
+/// that ends at a corner of two faces, or runs out onto a curved face (#218's 7).
+pub(crate) fn sloped_clipped(radius: f64, [cx, cy]: [f64; 2], [h0, s]: [f64; 2], r: f64, side: f64,
+                     within: &[(V, f64)], drums: &[([f64; 2], f64)]) -> f64 {
     let n = unit([s, 0.0, 1.0]);
     let lift = side * r / n[2];
-    rolled_within(
+    rolled_over(
         &|phi: f64| {
             let (sn, co) = phi.sin_cos();
             let x = cx + (radius + r) * co;
             [x, cy + (radius + r) * sn, h0 - s * x + lift]
         },
+        [0.0, 2.0 * PI],
         [&|_: V| scale(n, -side), &|p: V| unit([cx - p[0], cy - p[1], 0.0])],
         [&|o: V, w: V| {
             let d = dot(w, n);
@@ -907,6 +929,262 @@ pub(crate) fn sloped(radius: f64, [cx, cy]: [f64; 2], [h0, s]: [f64; 2], r: f64,
             &|o, w| ray_cylinder(o, w, [cx, cy, 0.0], 2, radius)],
         r,
         within,
+        drums,
+    )
+}
+
+/// The round along a frustum's generator where the plane `y = 0` through its axis (z) cuts it, the
+/// material `y > 0` within the frustum: radius `r0 − slope · z`, the run cut off by the planes `z =
+/// z0` and `z = z1` it ends at, the ball rolled with its centre `r` off the plane and on the cone
+/// grown in by `r` (a hyperbola), carried on past both.
+pub(crate) fn frustum_generator(r0: f64, slope: f64, [z0, z1]: [f64; 2], r: f64) -> f64 {
+    let (cs, sn) = (1.0 / (1.0 + slope * slope).sqrt(), slope / (1.0 + slope * slope).sqrt());
+    let reach = 3.0 * r;
+    rolled_over(
+        &|z: f64| {
+            let rho = r0 - slope * z - r / cs;
+            [(rho * rho - r * r).sqrt(), r, z]
+        },
+        [z0 - reach, z1 + reach],
+        [&|_: V| [0.0, -1.0, 0.0], &|p: V| {
+            let rho = p[0].hypot(p[1]);
+            [cs * p[0] / rho, cs * p[1] / rho, sn]
+        }],
+        [&|o: V, w: V| if w[1] < 0.0 { -o[1] / w[1] } else { f64::INFINITY },
+            &|o, w| ray_cone(o, w, r0, slope)],
+        r,
+        &[([0.0, 0.0, -1.0], -z0), ([0.0, 0.0, 1.0], z1)],
+        &[],
+    )
+}
+
+/// A chamfer's flat cut along a closed edge `c(φ)` (`φ` over a whole turn) where two faces meet:
+/// the region within both — `d[k]`, each face's signed distance, positive toward the region, with
+/// its gradient — short of the flat `d₀ / legs[1] + d₁ / legs[0] ≤ 1`, by quadrature over its
+/// sections square to the edge (#218's 6). Each section is bounded by face 0 from the edge to its
+/// leg (`d₁ = legs[0]`), the flat, and face 1 back from its leg (`d₀ = legs[1]`), each point pulled
+/// onto its curve and the section's plane by Newton's steps; its area, swept with the edge's
+/// curvature, `∬ (1 − κ x) dA`, is `∮ (x − κ x² / 2) dy` by Green's theorem (`x` along the
+/// principal normal), each curve by Gauss–Legendre.
+pub(crate) fn flat_along(c: &dyn Fn(f64) -> V, d: [&dyn Fn(V) -> f64; 2], grad: [&dyn Fn(V) -> V; 2], legs: [f64; 2])
+    -> f64 {
+    flat_within(c, d, grad, legs, &[])
+}
+
+/// `flat_along` kept within every half-space `n · x ≤ k` of `within`: a run carried on past the
+/// faces it ends on and cut off there. A section a plane cuts is read as a polygon of its three
+/// curves, densely, clipped by the half-spaces, `∮ (x − κ x² / 2) dy` exact along each side.
+pub(crate) fn flat_within(c: &dyn Fn(f64) -> V, d: [&dyn Fn(V) -> f64; 2], grad: [&dyn Fn(V) -> V; 2], legs: [f64; 2],
+    within: &[(V, f64)]) -> f64 {
+    let (n_phi, n_t) = (720, 48);
+    let gauss = gauss_legendre(n_t);
+    // `x` solving `rows · x = rhs` (three rows)
+    let solve = |m: [V; 3], rhs: V| -> V { solve3(m, rhs).expect("a section's planes meet in a point") };
+    // the point near `q` where `f` (with its gradient `g`) is nothing, on the plane through `e`
+    // square to `t`, and on the plane through `at` square to `along`
+    let pull = |mut q: V, f: &dyn Fn(V) -> f64, g: &dyn Fn(V) -> V, e: V, t: V, at: V, along: V| -> V {
+        for _ in 0..60 {
+            let r = [f(q), dot(sub(q, e), t), dot(sub(q, at), along)];
+            let step = solve([g(q), t, along], r);
+            q = sub(q, step);
+            if norm(step) < 1e-15 * (1.0 + norm(q)) { break; }
+        }
+        q
+    };
+    let flat = |q: V| d[0](q) / legs[1] + d[1](q) / legs[0] - 1.0;
+    let flat_grad = |q: V| add(scale(grad[0](q), 1.0 / legs[1]), scale(grad[1](q), 1.0 / legs[0]));
+    let h = 1e-4;
+    let mut total = 0.0;
+    for k in 0..n_phi {
+        let phi = 2.0 * PI * (k as f64 + 0.5) / n_phi as f64;
+        let e = c(phi);
+        let (pa, pb) = (c(phi - h), c(phi + h));
+        let d1 = scale(sub(pb, pa), 1.0 / (2.0 * h));
+        let d2 = scale(sub(add(pb, pa), scale(e, 2.0)), 1.0 / (h * h));
+        let speed = norm(d1);
+        let t = scale(d1, 1.0 / speed);
+        let kn = scale(sub(d2, scale(t, dot(d2, t))), 1.0 / (speed * speed));
+        let nrm = if norm(kn) > 1e-12 { unit(kn) } else { unit(cross(t, if t[0].abs() < 0.9 { [1.0, 0.0, 0.0] } else { [0.0, 1.0, 0.0] })) };
+        let bin = cross(t, nrm);
+        // each leg: on face `k`, `legs[k]` from the other
+        let leg = |k: usize| -> V {
+            let (fk, fo) = (d[k], d[1 - k]);
+            let g = grad[1 - k](e);
+            let n = unit(grad[k](e));
+            let w = unit(sub(g, scale(n, dot(g, n))));
+            let mut q = add(e, scale(w, legs[k]));
+            for _ in 0..60 {
+                let r = [fk(q), fo(q) - legs[k], dot(sub(q, e), t)];
+                let step = solve([grad[k](q), grad[1 - k](q), t], r);
+                q = sub(q, step);
+                if norm(step) < 1e-15 * (1.0 + norm(q)) { break; }
+            }
+            q
+        };
+        let (l0, l1) = (leg(0), leg(1));
+        // `∮ P dy` along the curve from `a` to `b` where `f` is nothing
+        let along = |a: V, b: V, f: &dyn Fn(V) -> f64, g: &dyn Fn(V) -> V| -> f64 {
+            let chord = unit(sub(b, a));
+            let at = |s: f64| pull(add(a, scale(sub(b, a), s)), f, g, e, t, add(a, scale(sub(b, a), s)), chord);
+            let p = |q: V| { let x = dot(sub(q, e), nrm); x - dot(kn, sub(q, e)) * x / 2.0 };
+            gauss.iter().map(|&(x, w)| {
+                let s = 0.5 * (x + 1.0);
+                let dy = (dot(at(s + 1e-6), bin) - dot(at(s - 1e-6), bin)) / 2e-6;
+                0.5 * w * p(at(s)) * dy
+            }).sum()
+        };
+        // the section's outline, densely, where a plane may cut it
+        let outline = || -> Vec<V> {
+            let n = 2000;
+            let mut pts = Vec::new();
+            for (a, b, f, g) in [(e, l0, d[0], grad[0]), (l0, l1, &flat as &dyn Fn(V) -> f64, &flat_grad as &dyn Fn(V) -> V),
+                (l1, e, d[1], grad[1])] {
+                let chord = unit(sub(b, a));
+                for j in 0..n {
+                    let at = add(a, scale(sub(b, a), j as f64 / n as f64));
+                    pts.push(if j == 0 { a } else { pull(at, f, g, e, t, at, chord) });
+                }
+            }
+            pts
+        };
+        let section = if within.is_empty() {
+            along(e, l0, d[0], grad[0]) + along(l0, l1, &flat, &flat_grad) + along(l1, e, d[1], grad[1])
+        } else {
+            let mut poly = outline();
+            if poly.iter().all(|&q| within.iter().all(|&(n, k)| dot(n, q) <= k)) {
+                along(e, l0, d[0], grad[0]) + along(l0, l1, &flat, &flat_grad) + along(l1, e, d[1], grad[1])
+            } else {
+                for &(n, k) in within {
+                    let mut kept = Vec::new();
+                    for i in 0..poly.len() {
+                        let (a, b) = (poly[i], poly[(i + 1) % poly.len()]);
+                        let (fa, fb) = (dot(n, a) - k, dot(n, b) - k);
+                        if fa <= 0.0 { kept.push(a); }
+                        if (fa < 0.0) != (fb < 0.0) && fa != fb { kept.push(add(a, scale(sub(b, a), fa / (fa - fb)))); }
+                    }
+                    poly = kept;
+                }
+                // `∮ P dy` along each side, `P` quadratic along it: Simpson's rule, exact
+                let p = |q: V| { let x = dot(sub(q, e), nrm); x - dot(kn, sub(q, e)) * x / 2.0 };
+                (0..poly.len()).map(|i| {
+                    let (a, b) = (poly[i], poly[(i + 1) % poly.len()]);
+                    let dy = dot(sub(b, a), bin);
+                    dy * (p(a) + 4.0 * p(scale(add(a, b), 0.5)) + p(b)) / 6.0
+                }).sum()
+            }
+        };
+        total += section.abs() * speed * 2.0 * PI / n_phi as f64;
+    }
+    total
+}
+
+/// A bore of radius `small` about the upright line through `(dx, 0)` drilled down a cone about z
+/// (radius `r0 − slope·z`), its axis inside the bore, the rim where they meet rounded by a ball of
+/// radius `r` within the material — the loop winding round both (#218's 7).
+pub(crate) fn cone_bore_rim(r0: f64, slope: f64, small: f64, dx: f64, r: f64) -> f64 {
+    let (cs, sn) = (1.0 / (1.0 + slope * slope).sqrt(), slope / (1.0 + slope * slope).sqrt());
+    rolled(
+        &|phi: f64| {
+            let (s, co) = phi.sin_cos();
+            let (x, y) = (dx + (small + r) * co, (small + r) * s);
+            [x, y, (r0 - r / cs - x.hypot(y)) / slope]
+        },
+        [&|p: V| unit([dx - p[0], -p[1], 0.0]), &|p: V| {
+            let rho = p[0].hypot(p[1]);
+            [cs * p[0] / rho, cs * p[1] / rho, sn]
+        }],
+        [&|o, w| ray_cylinder(o, w, [dx, 0.0, 0.0], 2, small),
+            &|o, w| ray_cone(o, w, r0, slope)],
+        r,
+    )
+}
+
+/// A boss of radius `big` about `z` standing on a top that runs from a flat land (`z = nose`, `y ≤
+/// 0`) on smoothly into a bullnose (the cylinder of radius `nose` about `x`, `y ≥ 0`), its root
+/// filled by a ball of radius `r` rolled the whole way round across the seam where they meet.
+pub(crate) fn bullnose_root(big: f64, nose: f64, r: f64) -> f64 {
+    let (rs, rn) = (big + r, nose + r);
+    rolled(
+        &|phi: f64| {
+            let (s, co) = phi.sin_cos();
+            let y = rs * s;
+            [rs * co, y, if y <= 0.0 { rn } else { (rn * rn - y * y).sqrt() }]
+        },
+        [&|p: V| if p[1] <= 0.0 { [0.0, 0.0, -1.0] } else { unit([0.0, -p[1], -p[2]]) },
+            &|p: V| unit([-p[0], -p[1], 0.0])],
+        [&|o: V, w: V| {
+            // the land where it is crossed at `y ≤ 0`, the bullnose where at `y ≥ 0`
+            let land = if w[2] < 0.0 { (nose - o[2]) / w[2] } else { f64::INFINITY };
+            let land = if land.is_finite() && o[1] + land * w[1] <= 0.0 { land } else { f64::INFINITY };
+            let round = ray_cylinder(o, w, [0.0; 3], 0, nose);
+            let round = if round.is_finite() && o[1] + round * w[1] >= 0.0 { round } else { f64::INFINITY };
+            land.min(round)
+        },
+            &|o, w| ray_cylinder(o, w, [0.0; 3], 2, big)],
+        r,
+    )
+}
+
+/// A cylinder of radius `radius` about `(cx, cy)`, square to `z`, through the plane `z = h0 − s x`
+/// (the material below it), the flat of legs `leg` where they meet — a boss's root (`ROOT`, outside
+/// the cylinder) or a hole's rim (`RIM`, within the material, outside the hole) — kept within
+/// `n · x ≤ k`: `sloped`'s chamfered.
+pub(crate) fn sloped_flat(radius: f64, [cx, cy]: [f64; 2], [h0, s]: [f64; 2], leg: f64, side: f64,
+                          within: &[(V, f64)]) -> f64 {
+    let n = unit([s, 0.0, 1.0]);
+    let rho = |p: V| (p[0] - cx).hypot(p[1] - cy);
+    flat_within(
+        &|phi: f64| { let (sn, co) = phi.sin_cos(); let x = cx + radius * co; [x, cy + radius * sn, h0 - s * x] },
+        // the plane's distance, positive above it for a root (outside the material), below for a rim
+        [&|p: V| side * (dot(p, n) - h0 * n[2]), &|p: V| rho(p) - radius],
+        [&|_: V| scale(n, side), &|p: V| scale([p[0] - cx, p[1] - cy, 0.0], 1.0 / rho(p))],
+        [leg, leg],
+        within,
+    )
+}
+
+/// Gauss–Legendre's nodes and weights on (−1, 1).
+fn gauss_legendre(n: usize) -> Vec<(f64, f64)> {
+    (0..n).map(|i| {
+        let mut x = (PI * (i as f64 + 0.75) / (n as f64 + 0.5)).cos();
+        let mut dp = 0.0;
+        for _ in 0..100 {
+            let (mut p0, mut p1) = (1.0, x);
+            for k in 2..=n {
+                let p2 = ((2 * k - 1) as f64 * x * p1 - (k - 1) as f64 * p0) / k as f64;
+                p0 = p1;
+                p1 = p2;
+            }
+            dp = n as f64 * (x * p1 - p0) / (x * x - 1.0);
+            let dx = p1 / dp;
+            x -= dx;
+            if dx.abs() < 1e-16 { break; }
+        }
+        (x, 2.0 / ((1.0 - x * x) * dp * dp))
+    }).collect()
+}
+
+/// The stack's tee crotch chamfered: the main pipe of radius `big` about x, a branch of radius
+/// `small` about z standing on it, the flat of legs `leg` where they meet (outside both).
+pub(crate) fn tee_flat(big: f64, small: f64, leg: f64) -> f64 {
+    let rho = |p: V, i: usize, j: usize| p[i].hypot(p[j]);
+    flat_along(
+        &|phi: f64| { let (s, co) = phi.sin_cos(); [small * co, small * s, (big * big - small * small * s * s).sqrt()] },
+        [&|p: V| rho(p, 1, 2) - big, &|p: V| rho(p, 0, 1) - small],
+        [&|p: V| scale([0.0, p[1], p[2]], 1.0 / rho(p, 1, 2)), &|p: V| scale([p[0], p[1], 0.0], 1.0 / rho(p, 0, 1))],
+        [leg, leg],
+    )
+}
+
+/// The stack's bore rim chamfered: a bore of radius `small` about z drilled into a solid pipe of
+/// radius `big` about x, the flat of legs `leg` along its rim (within the pipe, outside the bore).
+pub(crate) fn bore_flat(big: f64, small: f64, leg: f64) -> f64 {
+    let rho = |p: V, i: usize, j: usize| p[i].hypot(p[j]);
+    flat_along(
+        &|phi: f64| { let (s, co) = phi.sin_cos(); [small * co, small * s, (big * big - small * small * s * s).sqrt()] },
+        [&|p: V| big - rho(p, 1, 2), &|p: V| rho(p, 0, 1) - small],
+        [&|p: V| scale([0.0, p[1], p[2]], -1.0 / rho(p, 1, 2)), &|p: V| scale([p[0], p[1], 0.0], 1.0 / rho(p, 0, 1))],
+        [leg, leg],
     )
 }
 

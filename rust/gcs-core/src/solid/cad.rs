@@ -317,7 +317,7 @@ pub fn shifted(recipe: &Json,by: [f64;3]) -> Json {
 /// One node of a recipe written about another origin (`shifted`), with the nodes it holds: a
 /// lowered region's pieces, its corners' points, where its balls are rolled from and the planes a
 /// run is kept behind.
-fn shifted_node(n: &Json,by: [f64;3]) -> Json {
+pub(crate) fn shifted_node(n: &Json,by: [f64;3]) -> Json {
     let triple = |j: &Json| -> Option<[f64;3]> { match j { Json::Arr(a) if a.len() == 3 => Some(std::array::from_fn(|k| a[k].as_f64())),_ => None } };
     let point = |j: &Json| match triple(j) { Some(p) => vector(std::array::from_fn(|k| p[k]-by[k])),None => j.clone() };
     let points = |j: &Json,keys: &[&str]| {
@@ -366,14 +366,19 @@ fn shifted_node(n: &Json,by: [f64;3]) -> Json {
         let pieces = Json::Arr(pieces.iter().map(|p| shifted_node(p,by)).collect());
         n.set("pieces",pieces);
     }
-    for (key,at) in [("corners",&["vertex","centre"][..]),("rolled",&["at"][..]),("within",&["at"][..]),("kept",&["origin"][..])] {
+    for (key,at) in [("corners",&["vertex","centre"][..]),("rolled",&["at","on"][..]),("within",&["at"][..]),("kept",&["origin"][..])] {
         if let Some(Json::Arr(list)) = n.get(key) {
             let list = Json::Arr(list.iter().map(|c| {
                 let mut c = points(c,at);
-                // a corner's faces stand where its points do
+                // a corner's faces stand where its points do, and so do the sections a rolled
+                // piece is cut at
                 if key == "corners" {
                     let faces = Json::Arr(c.get("faces").map_or(&[][..],|f| f.arr()).iter().map(|f| points(f,&["origin"])).collect());
                     c.set("faces",faces);
+                }
+                if let Some(Json::Arr(cuts)) = c.get("cuts").filter(|_| key == "rolled") {
+                    let cuts = Json::Arr(cuts.iter().map(|f| points(f,&["at"])).collect());
+                    c.set("cuts",cuts);
                 }
                 c
             }).collect());

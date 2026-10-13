@@ -459,16 +459,63 @@ pub(crate) fn trace_beside(a: &Surface,b: &Surface,seeds: &[V],beside: &dyn Fn(V
     // the curves traced so far, as traced (exact: each point a projection onto both surfaces), so a
     // seed on one is known by its distance to the curve and not to a polyline's chords
     let mut traced_so_far: Vec<Curve> = Vec::new();
-    for &p0 in &projected {
-        if traced_so_far.iter().any(|c| crate::space::distance(c.point(c.inverse(p0)),p0) <= 8.*tol) { continue }
-        let Some(_) = tangent(p0) else { if beside(p0) { continue } return Err(shallow(p0)) };
+    // **a meeting through a point where the two touch** (#218's 1, #58): two rounds tangent to
+    // one face meet in a curve that ends where both touch it — a point where the two surfaces
+    // touch and their meeting has two branches crossing (`touch`). A march arriving there ends
+    // there; a seed standing there is traced from once the rest are, along each half of each
+    // branch no curve has arrived along
+    // (found walking over either: a fitted sheet's foot is read numerically, an analytic one's not)
+    let touch_at = |q: V| -> Option<Touch> {
+        let at = touch_near(a,b,q,tol).or_else(|| touch_near(b,a,q,tol))?;
+        let t = touch(a,b,at)?;
+        (distance(at,q) <= 2.*t.radius.max(h0)).then_some(t)
+    };
+    let mut touches: Vec<Touch> = Vec::new();
+    // the seeds, then each touch's half-branches: a start, and the sense its march leaves in (none:
+    // both ways from a seed)
+    let mut starts: Vec<(V,Option<V>)> = projected.iter().map(|&p| (p,None)).collect();
+    let mut k = 0;
+    loop {
+        // every seed traced: each touch's half-branches no curve arrived along, once
+        if k == projected.len() { queue_branches(&mut starts,&touches,&traced_so_far,tol) }
+        let Some(&(p0,leaving)) = starts.get(k) else { break };
+        k += 1;
+        if leaving.is_none() && traced_so_far.iter().any(|c| crate::space::distance(c.point(c.inverse(p0)),p0) <= 8.*tol) { continue }
+        if leaving.is_none() && tangent(p0).is_none() {
+            if beside(p0) { continue }
+            match touch_at(p0) {
+                // where the two touch at that point alone (their meeting there no curve, `touch`'s
+                // `Q` definite): nothing to trace from it
+                Some(t) if t.branches.is_empty() => continue,
+                Some(t) => {
+                    if !touches.iter().any(|u| distance(u.at,t.at) <= 8.*tol) { touches.push(t); }
+                    continue
+                }
+                None => return Err(shallow(p0)),
+            }
+        }
         let mut halves: Vec<Vec<V>> = Vec::new();
         let mut closed = false;
         for sense in [1.,-1.] {
+            // from a touch, one way only: out along its half-branch
+            if leaving.is_some() && sense < 0. { halves.push(vec![p0]); continue }
             let mut pts = vec![p0];
             let mut p = p0;
-            let mut t = scale(tangent(p0).unwrap(),sense);
+            let mut t = match leaving { Some(d) => d,None => scale(tangent(p0).unwrap(),sense) };
             let mut h = h0;
+            // a march from a touch steps out along its branch before it reads the meeting's tangent
+            if leaving.is_some() {
+                let mut r = h0;
+                let first = loop {
+                    let q = probe.project(add(p0,scale(t,r)));
+                    if tangent(q).is_some() || r > 64.*h0 { break q }
+                    r *= 2.;
+                };
+                let Some(tq) = tangent(first) else { return Err(shallow(first)) };
+                pts.push(first);
+                p = first;
+                t = if dot(tq,t) < 0. { scale(tq,-1.) } else { tq };
+            }
             for _ in 0..100_000 {
                 let q = probe.project(add(p,scale(t,h)));
                 // a projection that does not reach both surfaces: a step too long (shortened), or past a
@@ -511,7 +558,13 @@ pub(crate) fn trace_beside(a: &Surface,b: &Surface,seeds: &[V],beside: &dyn Fn(V
                 let Some(tq) = tangent(q) else {
                     // into a known meeting: what runs on from there is known, or off the faces
                     if beside(q) { pts.push(q); break }
-                    return Err(shallow(q))
+                    // into a point where the two touch, along one of its branches: ending there
+                    let Some(touched) = touch_at(q).filter(|t| !t.branches.is_empty()) else { return Err(shallow(q)) };
+                    if !touched.branches.iter().any(|&d| dot(d,t) > 0.9) { return Err(shallow(q)) }
+                    while pts.len() > 1 && distance(*pts.last().unwrap(),touched.at) < 0.25*h0 { pts.pop(); }
+                    pts.push(touched.at);
+                    if !touches.iter().any(|u| distance(u.at,touched.at) <= 8.*tol) { touches.push(touched); }
+                    break
                 };
                 let tq = if dot(tq,t) < 0. { scale(tq,-1.) } else { tq };
                 if dot(tq,t) < 0.996 && h > h0*1e-4 { h /= 2.; continue }
@@ -541,10 +594,11 @@ pub(crate) fn trace_beside(a: &Surface,b: &Surface,seeds: &[V],beside: &dyn Fn(V
             back.extend(halves.pop().unwrap());
             back
         };
-        if pts.len() < 2 { continue }
-        if std::env::var_os("SOLVENT_BREP_DEBUG").is_some() { eprintln!("brep:   a curve of {} points, closed {closed}, from {:?} to {:?}",pts.len(),pts[0],pts[pts.len()-1]); }
-        let traced = Traced {a:a.clone(),b:b.clone(),pts,closed};
-        traced_so_far.push(Curve::Traced(std::sync::Arc::new(traced)));
+        if pts.len() >= 2 {
+            if std::env::var_os("SOLVENT_BREP_DEBUG").is_some() { eprintln!("brep:   a curve of {} points, closed {closed}, from {:?} to {:?}",pts.len(),pts[0],pts[pts.len()-1]); }
+            let traced = Traced {a:a.clone(),b:b.clone(),pts,closed};
+            traced_so_far.push(Curve::Traced(std::sync::Arc::new(traced)));
+        }
     }
     // each fitted through the seeds on it, exactly: they are where the faces' boundaries cross, the
     // vertices its edges will end at (a fit within `tol` of the traced points may pass farther from
@@ -567,6 +621,22 @@ pub(crate) fn trace_beside(a: &Surface,b: &Surface,seeds: &[V],beside: &dyn Fn(V
         curves.push(fitted(t,tol/4.,&through).unwrap_or(c));
     }
     Ok(curves)
+}
+
+/// Once every seed is traced: from each touch where two surfaces' meeting has branches crossing,
+/// each half-branch no traced curve arrives along, queued as a start leaving that way.
+fn queue_branches(starts: &mut Vec<(V,Option<V>)>,touches: &[Touch],traced: &[Curve],tol: f64) {
+    for t in touches {
+        for &d in &t.branches {
+            // a curve arrives along it where a point of the curve stands out that way from the touch
+            let probe = add(t.at,scale(d,t.radius.max(64.*tol)));
+            let arrived = traced.iter().any(|c| {
+                let q = c.point(c.inverse(probe));
+                distance(q,t.at) <= 2.*t.radius.max(64.*tol)+8.*tol && dot(sub(q,t.at),d) > 0.7*distance(q,t.at)
+            });
+            if !arrived { starts.push((t.at,Some(d))); }
+        }
+    }
 }
 
 /// Whether the search for unseen meetings (`unseen`) can answer for a surface, as either side:

@@ -138,6 +138,12 @@ impl BodyFaces {
     /// A point of the boundary's space back in the model's.
     pub fn back(&self, q: V) -> V { add(scale(q, 1.0 / self.mm), self.origin) }
 
+    /// Edge `e`'s point a fraction `s` along its parameter (model units).
+    pub fn along(&self, e: u32, s: f64) -> V {
+        let edge = &self.loc.b.edges[e as usize];
+        self.back(edge.point(edge.t[0] + s * (edge.t[1] - edge.t[0]), &self.loc.b.vertices))
+    }
+
     /// Edge `e`'s middle, by its parameter (model units).
     pub fn middle(&self, e: u32) -> V {
         let edge = &self.loc.b.edges[e as usize];
@@ -239,17 +245,37 @@ impl BodyFaces {
         if f.reversed { (-s, scale(g, -1.0)) } else { (s, g) }
     }
 
-    /// The vertices three groups of faces share: where a face of each meets.
-    pub fn vertices_among(&self, groups: &[&[usize]]) -> Vec<V> {
-        let of = |fs: &[usize]| -> BTreeSet<u32> {
-            fs.iter().flat_map(|&fi| self.edges[fi].iter())
-                .flat_map(|&e| self.loc.b.edges[e as usize].v).collect()
+    /// The vertices three groups of faces share: where a face of each meets, with the faces of
+    /// each group standing there (model units).
+    pub fn vertices_among(&self, groups: &[&[usize]]) -> Vec<(V, Vec<Vec<usize>>)> {
+        let at = |fi: usize| -> BTreeSet<u32> {
+            self.edges[fi].iter().flat_map(|&e| self.loc.b.edges[e as usize].v).collect()
         };
+        let of = |fs: &[usize]| -> BTreeSet<u32> { fs.iter().flat_map(|&fi| at(fi)).collect() };
         let mut common = of(groups[0]);
         for g in &groups[1..] {
             common = common.intersection(&of(g)).copied().collect();
         }
-        common.into_iter().map(|v| self.back(self.loc.b.vertices[v as usize].p)).collect()
+        common.into_iter().map(|v| {
+            let faces = groups.iter().map(|g| g.iter().copied().filter(|&fi| at(fi).contains(&v)).collect()).collect();
+            (self.back(self.loc.b.vertices[v as usize].p), faces)
+        }).collect()
+    }
+
+    /// Edges `es` in runs: each run the edges joined end to end through the vertices they share.
+    pub fn runs(&self, es: &[u32]) -> Vec<Vec<u32>> {
+        let mut out: Vec<Vec<u32>> = Vec::new();
+        for &e in es {
+            let ends = self.loc.b.edges[e as usize].v;
+            let touching: Vec<usize> = (0..out.len()).filter(|&k| out[k].iter()
+                .any(|&f| self.loc.b.edges[f as usize].v.iter().any(|v| ends.contains(v)))).collect();
+            let mut run = vec![e];
+            for &k in touching.iter().rev() {
+                run.extend(out.remove(k));
+            }
+            out.push(run);
+        }
+        out
     }
 
     /// Where a run of edges ends: each vertex only one of `es` reaches (model units), with the
@@ -316,6 +342,13 @@ impl BodyFaces {
         Some((self.back(f.o), r / self.mm))
     }
 
+    /// Face `fi`'s torus, where it lies on one: a point of its axis, the axis's unit direction, the
+    /// radius of the circle its tube's centre runs round and the tube's (model units).
+    pub fn torus(&self, fi: usize) -> Option<(V, V, f64, f64)> {
+        let crate::brep::geom::Surface::Torus(f, big, r) = &self.loc.b.faces[fi].surface else { return None };
+        Some((self.back(f.o), f.z, big / self.mm, r / self.mm))
+    }
+
     /// Edge `e`'s ends, first to last, where it is a straight line (model units).
     pub fn segment(&self, e: u32) -> Option<[V; 2]> {
         let edge = &self.loc.b.edges[e as usize];
@@ -345,14 +378,14 @@ impl BodyFaces {
     pub fn normal(&self, fi: usize, p: V) -> V { self.side_grad(fi, p).1 }
 
     /// Whether face `fi`'s surface is turned about the line through `o` along the unit `d`: a plane
-    /// square to it, a cylinder or a cone about it, a sphere centred on it (model units).
+    /// square to it, a cylinder, a cone or a torus about it, a sphere centred on it (model units).
     pub fn coaxial(&self, fi: usize, o: V, d: V) -> bool {
         use crate::brep::geom::Surface;
         let along = |z: V| norm(crate::space::cross(z, d)) <= 1e-9;
         let on = |p: V| norm(crate::space::cross(sub(self.back(p), o), d)) <= 1e-9 * (1.0 + norm(o));
         match &self.loc.b.faces[fi].surface {
             Surface::Plane(f) => along(f.z),
-            Surface::Cylinder(f, _) | Surface::Cone(f, _, _) => along(f.z) && on(f.o),
+            Surface::Cylinder(f, _) | Surface::Cone(f, _, _) | Surface::Torus(f, _, _) => along(f.z) && on(f.o),
             Surface::Sphere(f, _) => on(f.o),
             _ => false,
         }

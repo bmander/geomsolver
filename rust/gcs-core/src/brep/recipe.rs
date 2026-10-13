@@ -29,8 +29,14 @@ fn field<'a>(j: &'a Json,k: &str) -> Result<&'a Json,String> { j.get(k).ok_or(fo
 /// size (never under `floor`, mm), and checked.
 pub fn combined(solid: &Brep,operand: &Brep,op: Op,floor: f64) -> Result<Brep,String> {
     let tol = (1e-9*solid.size().max(operand.size())).max(floor);
-    let out = boolean(solid,operand,op,tol)?;
-    out.check(10.*tol)?;
+    let mut out = boolean(solid,operand,op,tol)?;
+    // material touching itself along a line (two rounds of separate statements meeting where the
+    // body they each read leaves them so, #218): each such edge held twice, a solid's boundary
+    // pinched there
+    if let Err(e) = out.check(10.*tol) {
+        if !e.starts_with(super::topo::NOT_MANIFOLD) || !matches!(out.unpinched(),Ok(n) if n > 0) { return Err(e) }
+        out.check(10.*tol)?;
+    }
     Ok(out)
 }
 
@@ -134,12 +140,28 @@ pub fn node_named(n: &Json,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64
             // a ball rolled along a traced run (#194): against the body the region rounds as its terms
             // but the late ones make it (the stratum), each piece the material it adds or takes
             let rolled = n.get("rolled").map_or(&[][..],|r| r.arr());
+            let first_rolled = pieces.len();
             if !rolled.is_empty() {
                 let stratum = body(field(n,"stratum")?,built,built_names,floor)?;
                 let tol = (1e-9*stratum.size()).max(floor);
                 for k in rolled {
                     let (at,r) = (vec3(field(k,"at")?),field(k,"radius")?.as_f64());
-                    pieces.push(super::fillet::roll(&stratum,at,r,tol).map_err(|e| format!("a rolled round: {e}"))?.piece);
+                    // a chamfer's flat cut along the run instead (#218's 6)
+                    let mut piece = match k.get("legs") {
+                        Some(legs) => {
+                            let legs = legs.arr();
+                            let ([la,lb],on) = ([legs[0].as_f64(),legs[1].as_f64()],vec3(field(k,"on")?));
+                            super::fillet::flat_along(&stratum,at,[la,lb],Some(on),tol).map_err(|e| format!("a flat along a run: {e}"))?
+                        }
+                        None => super::fillet::roll(&stratum,at,r,tol).map_err(|e| format!("a rolled round: {e}"))?.piece,
+                    };
+                    // cut at the section of each corner standing at an end of its run, which takes the
+                    // rest (#218's 7)
+                    for c in k.get("cuts").map_or(&[][..],|c| c.arr()) {
+                        piece = cut_before(&piece,vec3(field(c,"at")?),vec3(field(c,"normal")?),field(c,"reach")?.as_f64(),floor)
+                            .map_err(|e| format!("a rolled round cut at a corner: {e}"))?;
+                    }
+                    pieces.push(piece);
                 }
             }
             let joins: Vec<[usize;2]> = field(n,"joins")?.arr().iter()
@@ -155,16 +177,24 @@ pub fn node_named(n: &Json,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64
                 if done[first] { continue }
                 done[first] = true;
                 let mut chain = pieces[first].clone();
+                let mut rolled = false;
                 let mut queue = std::collections::VecDeque::from([first]);
                 while let Some(i) = queue.pop_front() {
                     for &k in &next[i] {
                         if done[k] { continue }
                         done[k] = true;
-                        chain = super::boolean::glued(&chain,&pieces[k],8.*tol)
+                        // a rolled piece's cap is cut from its fitted canal: its edges are the cell's
+                        // to within the canal's fit (`fillet::roll`'s bar, a ten-millionth of the
+                        // boundary), and the shared edges are measured once the chain is whole
+                        let rolled_join = [i,k].iter().any(|&p| p >= first_rolled);
+                        let bar = if rolled_join { (2e-7*chain.size().max(pieces[k].size())).max(8.*tol) } else { 8.*tol };
+                        chain = super::boolean::glued(&chain,&pieces[k],bar)
                             .ok_or("two pieces joined at a section share no face there")?;
+                        rolled |= rolled_join;
                         queue.push_back(k);
                     }
                 }
+                if rolled { super::json::measure(&mut chain); }
                 solid = Some(match solid { None => chain,Some(s) => beside(&s,&chain,floor)? });
             }
             solid.ok_or_else(|| "recipe: a lowered region of no pieces".to_string())
@@ -231,9 +261,24 @@ pub fn kept(piece: &Brep,o: V,keep: V,floor: f64) -> Result<Brep,String> {
     combined(piece,&block,Op::Common,floor)
 }
 
+/// `piece` less what lies behind the plane through `o` (against `keep`, a unit normal) within
+/// `reach` of `o`: a block standing on the plane, `reach` deep and as wide either way — a rolled
+/// run cut short at the section of the corner at its end, the cell taking what lies between there
+/// and the vertex, and nothing of the run elsewhere (a rim round a hole comes back past the plane).
+pub fn cut_before(piece: &Brep,o: V,keep: V,reach: f64,floor: f64) -> Result<Brep,String> {
+    use super::build::ProfileEdge;
+    let f = super::geom::Frame::about(o,keep);
+    let at = |x: f64,y: f64| f.at([x,y,0.]);
+    let corners = [at(-reach,-reach),at(reach,-reach),at(reach,reach),at(-reach,reach)];
+    let edges = (0..4).map(|k| ProfileEdge::Line {a:corners[k],b:corners[(k+1)%4]}).collect();
+    let block = prism(&Profile {origin:o,normal:keep,loops:vec![edges],names:Vec::new()},-reach,0.)?;
+    combined(piece,&block,Op::Cut,floor)
+}
+
 /// A lowered piece's end face or a corner's face, as `solid::lowering` writes it (millimetres): a
 /// plane through `origin` square to `normal`, a cylinder of `radius` about the line through `origin`
-/// along `axis`, or a sphere of `radius` about `origin`.
+/// along `axis`, a sphere of `radius` about `origin`, or a cone about the line through `origin`
+/// along `axis` of `radius` there, its `half` angle (radians).
 fn surface_of(j: &Json) -> Result<super::geom::Surface,String> {
     use super::geom::{Frame,Surface};
     let radius = || field(j,"radius").map(Json::as_f64);
@@ -264,18 +309,6 @@ pub fn kept_by_solid(piece: &Brep,surface: &super::geom::Surface,inside: bool,fl
             let circle = ProfileEdge::Arc {frame:Frame::about(foot,f.z),r:radius,span:None};
             prism(&Profile {origin:foot,normal:f.z,loops:vec![vec![circle]],names:Vec::new()},-reach,reach)?
         }
-        Surface::Cone(f,radius,half) => {
-            // a frustum about the axis, lofted between its circles either side of the middle's foot
-            let h = dot(sub(middle,f.o),f.z);
-            let reach = distance(lo,hi)+radius;
-            let at = |k: f64| -> Result<Profile,String> {
-                let (o,r) = (add(f.o,scale(f.z,h+k)),radius+(h+k)*half.dtan());
-                if !(r > 0.) { return Err("a piece kept by a cone reaching past its apex".into()) }
-                Ok(Profile {origin:o,normal:f.z,loops:vec![vec![ProfileEdge::Arc {frame:Frame::about(o,f.z),r,span:None}]],
-                    names:Vec::new()})
-            };
-            loft(&at(-reach)?,Some(&at(reach)?),&Guide::Line {delta:scale(f.z,2.*reach)})?
-        }
         Surface::Sphere(f,radius) => {
             // a half disc turned once about a line through the centre
             let (top,bottom) = (f.at([0.,radius,0.]),f.at([0.,-radius,0.]));
@@ -283,6 +316,27 @@ pub fn kept_by_solid(piece: &Brep,surface: &super::geom::Surface,inside: bool,fl
             let shut = ProfileEdge::Line {a:bottom,b:top};
             let half = Profile {origin:f.o,normal:f.z,loops:vec![vec![arc,shut]],names:Vec::new()};
             super::build::revolve(&half,f.o,f.y,std::f64::consts::TAU)?
+        }
+        Surface::Cone(f,radius,half) => {
+            // a frustum of the cone's solid over the heights along its axis the piece reaches, and
+            // as far again either way, short of the apex: its section in a meridian turned once
+            let slope = half.dtan();
+            let corners = [lo,hi].into_iter().flat_map(|a| [lo,hi].into_iter().flat_map(move |b| [lo,hi].into_iter()
+                .map(move |c| [a[0],b[1],c[2]])));
+            let heights: Vec<f64> = corners.map(|p| dot(sub(p,f.o),f.z)).collect();
+            let (h0,h1) = heights.iter().fold((f64::INFINITY,f64::NEG_INFINITY),|(a,b),&h| (a.min(h),b.max(h)));
+            let span = h1-h0;
+            let (mut from,mut to) = (h0-span,h1+span);
+            let apex = if slope.abs() > 1e-12 { -radius/slope } else { f64::NAN };
+            if slope > 1e-12 { from = from.max(apex+1e-6*span.max(1.)) }
+            if slope < -1e-12 { to = to.min(apex-1e-6*span.max(1.)) }
+            if !(to > from) { return Err("a piece kept within a cone it does not reach".into()) }
+            let at = |rho: f64,h: f64| add(f.o,add(scale(f.x,rho),scale(f.z,h)));
+            let (r0,r1) = (radius+slope*from,radius+slope*to);
+            let pts = [at(0.,from),at(r0,from),at(r1,to),at(0.,to)];
+            let edges = (0..4).map(|k| ProfileEdge::Line {a:pts[k],b:pts[(k+1)%4]}).collect();
+            let section = Profile {origin:f.o,normal:f.y,loops:vec![edges],names:Vec::new()};
+            super::build::revolve(&section,f.o,f.z,std::f64::consts::TAU)?
         }
         _ => return Err(format!("a piece kept within a {}",surface.kind())),
     };

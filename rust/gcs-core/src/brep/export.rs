@@ -54,6 +54,11 @@ pub fn exact(sk: &Sketch,body: usize,admitted: Option<&admission::Admission>,tol
     let solid = super::recipe::build(&recipe.recipe).at(Stage::Blank)?;
     let tol = 1e-9*solid.size().max(1.);
     solid.check(10.*tol).map_err(|e| ExportRefusal::at(Stage::Blank,format!("the built boundary is invalid: {e}")))?;
+    if let Some([a,b]) = solid.self_touching(tol).first() {
+        return Err(ExportRefusal::at(Stage::Blank,format!("the solid touches itself along a line from [{:.4}, {:.4}, {:.4}] to \
+            [{:.4}, {:.4}, {:.4}] mm (two of its pieces meet there and nowhere else near, as rounds of separate statements leave \
+            them where each reads the body before the other): no manifold file describes it",a[0],a[1],a[2],b[0],b[1],b[2])))
+    }
     if let Some(p) = solid.pinches().first() {
         return Err(ExportRefusal::at(Stage::Blank,format!("the solid pinches to a point at [{:.4}, {:.4}, {:.4}] mm (two of its \
             walls touch there without an edge between them): no manifold file describes it",p[0],p[1],p[2])))

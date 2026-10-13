@@ -9,6 +9,12 @@
 #include <BRepExtrema_DistShapeShape.hxx>
 #include <BRepFilletAPI_MakeChamfer.hxx>
 #include <BRepFilletAPI_MakeFillet.hxx>
+#include <BRepOffsetAPI_MakeOffsetShape.hxx>
+#include <TColgp_HArray1OfPnt.hxx>
+#include <GeomAPI_Interpolate.hxx>
+#include <BRepOffsetAPI_ThruSections.hxx>
+#include <ShapeFix_Solid.hxx>
+#include <BRepBuilderAPI_MakeSolid.hxx>
 #include <BRepBndLib.hxx>
 #include <BRepBuilderAPI_MakeEdge.hxx>
 #include <BRepBuilderAPI_MakeFace.hxx>
@@ -81,6 +87,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <stdexcept>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -648,6 +655,62 @@ int solvent_cad_round(Cad* cad,int id,int count,const double* points,const doubl
         return cad->put(chamfer ? rounded(BRepFilletAPI_MakeChamfer(shape)) : rounded(BRepFilletAPI_MakeFillet(shape)));
     });
 }
+// The test-only oracle of a convex body rounded all over (#218): the body shrunk by `r`, then grown
+// by it with its edges and corners joined round (`GeomAbs_Arc`): every edge a pipe of the ball,
+// every corner a patch of it.
+int solvent_cad_opened(Cad* cad,int id,double r) noexcept {
+    SOLVENT_PROBE("solvent_cad_opened");
+    return guarded(cad,[&] {
+        const auto offset = [&](const TopoDS_Shape& shape,double by,GeomAbs_JoinType join) {
+            BRepOffsetAPI_MakeOffsetShape maker;
+            maker.PerformByJoin(shape,by,1e-7,BRepOffset_Skin,Standard_False,Standard_False,join);
+            if (!maker.IsDone()) throw std::runtime_error("offset failed");
+            return maker.Shape();
+        };
+        const TopoDS_Shape shrunk = offset(cad->at(id),-r,GeomAbs_Intersection);
+        const TopoDS_Shape grown = offset(shrunk,r,GeomAbs_Arc);
+        // the offset's skin, one closed shell: the solid it bounds
+        TopTools_IndexedMapOfShape solids,shells;
+        TopExp::MapShapes(grown,TopAbs_SOLID,solids);
+        if (solids.Extent() == 1) return cad->put(solids(1));
+        TopExp::MapShapes(grown,TopAbs_SHELL,shells);
+        if (shells.Extent() != 1) throw std::runtime_error("offset made " + std::to_string(shells.Extent()) + " shells");
+        BRepBuilderAPI_MakeSolid made(TopoDS::Shell(shells(1)));
+        if (!made.IsDone()) throw std::runtime_error("offset's shell bounds no solid");
+        ShapeFix_Solid fix;
+        fix.Init(made.Solid());
+        fix.Perform();
+        return cad->put(fix.Solid());
+    });
+}
+// The test-only oracle of a surface OCCT has no feature for (#218): a solid lofted through
+// `sections` closed wires, each of `segments` curves interpolated through `count` points apiece
+// (xyz, each curve's last point the next one's first, the last curve's the first's).
+int solvent_cad_loft(Cad* cad,int sections,int segments,int count,const double* points) noexcept {
+    SOLVENT_PROBE("solvent_cad_loft");
+    return guarded(cad,[&] {
+        if (sections < 2 || segments < 1 || count < 2) throw std::runtime_error("a loft needs two sections of curves");
+        BRepOffsetAPI_ThruSections loft(Standard_True,Standard_False,1e-9);
+        loft.CheckCompatibility(Standard_False);
+        for (int s = 0; s < sections; ++s) {
+            BRepBuilderAPI_MakeWire wire;
+            for (int g = 0; g < segments; ++g) {
+                Handle(TColgp_HArray1OfPnt) poles = new TColgp_HArray1OfPnt(1,count);
+                const double* at = points+3*count*(s*segments+g);
+                for (int k = 0; k < count; ++k) poles->SetValue(k+1,gp_Pnt(at[3*k],at[3*k+1],at[3*k+2]));
+                GeomAPI_Interpolate fit(poles,Standard_False,1e-12);
+                fit.Perform();
+                if (!fit.IsDone()) throw std::runtime_error("a loft's curve does not interpolate");
+                wire.Add(BRepBuilderAPI_MakeEdge(fit.Curve()).Edge());
+            }
+            if (!wire.IsDone()) throw std::runtime_error("a loft's section is no wire");
+            loft.AddWire(wire.Wire());
+        }
+        loft.Build();
+        if (!loft.IsDone()) throw std::runtime_error("loft failed");
+        return cad->put(loft.Shape());
+    });
+}
 int solvent_cad_transform(Cad* cad,int source,const double* matrix) noexcept {
     SOLVENT_PROBE("solvent_cad_transform");
     return guarded(cad,[&] {
@@ -799,6 +862,10 @@ int solvent_cad_step(Cad* cad,int id,const char* path,int full,int unchecked) no
             if (debug) fprintf(stderr,"step: %s %.2f s\n",step,std::chrono::duration<double>(now-clock).count());
             clock = now;
         };
+        // OCCT's STEP writer shares static state (its protocol and step types) between writers:
+        // two written at once in one process fail, so one at a time
+        static std::mutex writing;
+        const std::lock_guard<std::mutex> one(writing);
         STEPControl_Writer writer;
         if (writer.Transfer(shape,STEPControl_AsIs) != IFSelect_RetDone) throw std::runtime_error("STEP write failed");
         lap("transferred");
