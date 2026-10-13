@@ -561,16 +561,51 @@ pub struct ExtrudeHandle {
 /// down the normal.
 const EDGE_ON_NORMAL: f64 = 0.05;
 
-/// Prism `solid` as the eye sees it: its face's middle, one unit of its face's normal (seeing is
-/// linear, so a point `t` along it is seen at `base + t·step`), and its extents — `None` for a
-/// solid that is not a prism.
-fn seen_prism(sk: &Sketch, proj: &Projection, solid: usize)
-    -> Option<((f64, f64), (f64, f64), f64, f64)> {
+/// A straight sizing handle as the eye sees it — an extrusion's or an offset plane's arrow: where
+/// it starts and one unit along the normal it runs on (seeing is linear, so a point `t` along it
+/// is seen at `base + t·step`).
+#[derive(Clone, Copy, Debug)]
+struct SeenLinear {
+    base: (f64, f64),
+    step: (f64, f64),
+}
+
+impl SeenLinear {
+    /// The line through `at` along `dir`, in space, as the eye sees it.
+    fn of(proj: &Projection, at: [f64; 3], dir: [f64; 3]) -> SeenLinear {
+        SeenLinear { base: proj.seen(at), step: proj.seen(dir) }
+    }
+
+    /// Whether it can be dragged along: not where the eye looks down it, an arrow there being a
+    /// dot.
+    fn readable(&self) -> bool {
+        self.step.0.dhypot(self.step.1) >= EDGE_ON_NORMAL
+    }
+
+    /// The point `t` along it, seen — the tip of an arrow `t` long — or `None` where the eye
+    /// looks down it.
+    fn tip(&self, t: f64) -> Option<(f64, f64)> {
+        let (b, d) = (self.base, self.step);
+        self.readable().then(|| (b.0 + t * d.0, b.1 + t * d.1))
+    }
+
+    /// How far along it the eye's ray through `at` passes nearest: `t`, or `None` where the eye
+    /// looks down it — what dragging its arrow's tip to `at` sizes it to.
+    fn along(&self, at: (f64, f64)) -> Option<f64> {
+        let (b, d) = (self.base, self.step);
+        let along = (at.0 - b.0) * d.0 + (at.1 - b.1) * d.1;
+        self.readable().then(|| along / (d.0 * d.0 + d.1 * d.1))
+    }
+}
+
+/// Prism `solid`'s arrow as the eye sees it, from its face's middle along its face's normal, and
+/// its extents — `None` for a solid that is not a prism.
+fn seen_prism(sk: &Sketch, proj: &Projection, solid: usize) -> Option<(SeenLinear, f64, f64)> {
     let crate::model::SolidDef::Prism { face, from, to, .. } = &sk.solids.get(solid)?.def else {
         return None;
     };
     let (poly, middle) = face_middle(sk, *face)?;
-    Some((proj.seen(middle), proj.seen(poly.basis.normal()), from.value, to.value))
+    Some((SeenLinear::of(proj, middle, poly.basis.normal()), from.value, to.value))
 }
 
 /// Face `face`'s outline and its area's middle in space — where a sizing handle starts, read
@@ -583,35 +618,22 @@ fn face_middle(sk: &Sketch, face: u32) -> Option<(crate::solid::FacePoly, [f64; 
     Some((poly, middle))
 }
 
-fn readable(step: (f64, f64)) -> bool {
-    step.0.dhypot(step.1) >= EDGE_ON_NORMAL
-}
-
 /// The arrow prism `solid` is sized by, seen: `None` for a solid that is not a prism.
 pub fn extrude_handle(sk: &Sketch, proj: &Projection, solid: usize) -> Option<ExtrudeHandle> {
-    let (base, step, from, to) = seen_prism(sk, proj, solid)?;
+    let (arrow, from, to) = seen_prism(sk, proj, solid)?;
     let far = if to.abs() >= from.abs() { to } else { from };
-    let tip = readable(step).then(|| (base.0 + far * step.0, base.1 + far * step.1));
     let (way, thick) = match crate::model::Way::of(from, to) {
         Some((way, d)) => (Some(way), d),
         None => (None, to - from),
     };
-    Some(ExtrudeHandle { base, tip, way, thick })
+    Some(ExtrudeHandle { base: arrow.base, tip: arrow.tip(far), way, thick })
 }
 
 /// How far along prism `solid`'s normal the point under `at` is, as the eye sees it: the signed
 /// distance from its face of the point on the normal through the face's middle that the eye's
 /// ray through `at` passes nearest — what dragging the arrow's tip to `at` sizes it to.
 pub fn extent_at(sk: &Sketch, proj: &Projection, solid: usize, at: (f64, f64)) -> Option<f64> {
-    let (b, d, ..) = seen_prism(sk, proj, solid)?;
-    along_seen(b, d, at)
-}
-
-/// How far along the seen line `base + t·step` the eye's ray through `at` passes nearest: `t`, or
-/// `None` where the eye looks down the line.
-fn along_seen(base: (f64, f64), step: (f64, f64), at: (f64, f64)) -> Option<f64> {
-    let along = (at.0 - base.0) * step.0 + (at.1 - base.1) * step.1;
-    readable(step).then(|| along / (step.0 * step.0 + step.1 * step.1))
+    seen_prism(sk, proj, solid)?.0.along(at)
 }
 
 /// The arrow an offset plane is sized by (#162 F5), seen: from the plane it is set off to that
@@ -624,27 +646,25 @@ pub struct OffsetHandle {
     pub distance: f64,
 }
 
-/// `P distance(d) Q`, the constraint `id`, as the eye sees its arrow: `P`'s origin, one unit of
+/// `P distance(d) Q`, the constraint `id`, as the eye sees its arrow, from `P`'s origin along
 /// `P`'s normal, and `d` — `None` for any other constraint.
-fn seen_offset(sk: &Sketch, proj: &Projection, id: u32) -> Option<((f64, f64), (f64, f64), f64)> {
+fn seen_offset(sk: &Sketch, proj: &Projection, id: u32) -> Option<(SeenLinear, f64)> {
     let c = sk.constraint(id).filter(|c| c.kind == crate::constraints::CKind::PlaneDistance)?;
     let p = c.entities().first()?.i();
     let b = sk.basis(p);
-    Some((proj.seen(b.o), proj.seen(b.normal()), c.args.get(2)?.value(sk)))
+    Some((SeenLinear::of(proj, b.o, b.normal()), c.args.get(2)?.value(sk)))
 }
 
 /// The arrow the plane distance `id` is sized by, seen: `None` for any other constraint.
 pub fn offset_handle(sk: &Sketch, proj: &Projection, id: u32) -> Option<OffsetHandle> {
-    let (base, step, distance) = seen_offset(sk, proj, id)?;
-    let tip = readable(step).then(|| (base.0 + distance * step.0, base.1 + distance * step.1));
-    Some(OffsetHandle { base, tip, distance })
+    let (arrow, distance) = seen_offset(sk, proj, id)?;
+    Some(OffsetHandle { base: arrow.base, tip: arrow.tip(distance), distance })
 }
 
 /// What dragging the plane distance `id`'s arrow to `at` sizes it to: `extent_at` for a plane set
 /// off another.
 pub fn offset_at(sk: &Sketch, proj: &Projection, id: u32, at: (f64, f64)) -> Option<f64> {
-    let (base, step, _) = seen_offset(sk, proj, id)?;
-    along_seen(base, step, at)
+    seen_offset(sk, proj, id)?.0.along(at)
 }
 
 /// The handle a revolution is sized by (#162 F3), seen: the middle of its profile, the arc that
