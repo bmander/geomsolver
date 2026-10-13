@@ -384,9 +384,8 @@ impl BodyFaces {
         let on = |p: V| norm(crate::space::cross(sub(self.back(p), o), d)) <= 1e-9 * (1.0 + norm(o));
         match &self.loc.b.faces[fi].surface {
             Surface::Plane(f) => along(f.z),
-            Surface::Cylinder(f, _) | Surface::Cone(f, _, _) => along(f.z) && on(f.o),
+            Surface::Cylinder(f, _) | Surface::Cone(f, _, _) | Surface::Torus(f, _, _) => along(f.z) && on(f.o),
             Surface::Sphere(f, _) => on(f.o),
-            Surface::Torus(f, _, _) => along(f.z) && on(f.o),
             _ => false,
         }
     }

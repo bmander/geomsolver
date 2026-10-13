@@ -53,7 +53,6 @@
 #include <Bnd_Box.hxx>
 #include <GProp_GProps.hxx>
 #include <ShapeUpgrade_UnifySameDomain.hxx>
-#include <Geom_CylindricalSurface.hxx>
 #include <TopExp.hxx>
 #include <TopExp_Explorer.hxx>
 #include <TopTools_IndexedMapOfShape.hxx>
@@ -855,39 +854,47 @@ int solvent_cad_pattern(Cad* cad,int solid,const double* origin,const double* ax
         // between two cuts stands across that turn, and its halves from two copies meet on
         // parameters that continue one another, where they would otherwise meet a period apart
         // between the last copy and the first
+        // (each surface's canonical one and the turn of u onto it, and each canonical surface's
+        // parameter at the sector's middle, found once: copies share their surfaces)
+        std::map<const Geom_Surface*,std::pair<Handle(Geom_Surface),double>> seated;
+        std::map<const Geom_Surface*,double> centre;
         const auto one_surface = [&](const TopoDS_Face& face,bool ring_piece) {
             if (!about(face,line)) return;
-            Handle(Geom_Surface) on = basis_of(face);
+            const Handle(Geom_Surface) own = basis_of(face);
             double u0,u1,v0,v1;
             BRepTools::UVBounds(face,u0,u1,v0,v1);
-            double shift = 0;
-            const gp_Pnt p = on->Value(u0,v0),q = on->Value(u0,v1);
-            const double near = 1e-9*(1.+p.Distance(gp_Pnt(0,0,0)));
-            bool found = false;
-            for (const auto& s: canon) {
-                if (s == on) { found = true; break; }
-                if (s->DynamicType() != on->DynamicType()) continue;
-                GeomAPI_ProjectPointOnSurf foot(p,s);
-                if (!foot.NbPoints() || foot.LowerDistance() > near) continue;
-                double a,b;
-                foot.LowerDistanceParameters(a,b);
-                // the same parameters but for a turn: u shifted, v alike
-                if (std::abs(b-v0) > 1e-9 || s->Value(a,v1).Distance(q) > near) continue;
-                shift = a-u0-2*M_PI*std::round((a-u0)/(2*M_PI));
-                on = s;
-                found = true;
-                break;
-            }
-            if (!found) canon.push_back(on);
-            if (!ring_piece) {
-                GeomAPI_ProjectPointOnSurf foot(middle,on);
-                if (foot.NbPoints()) {
-                    double uc,vc;
-                    foot.LowerDistanceParameters(uc,vc);
-                    shift -= 2*M_PI*std::floor(((u0+u1)/2+shift-uc)/(2*M_PI));
+            auto it = seated.find(own.get());
+            if (it == seated.end()) {
+                std::pair<Handle(Geom_Surface),double> to {own,0.};
+                const gp_Pnt p = own->Value(u0,v0),q = own->Value(u0,v1);
+                const double near = 1e-9*(1.+p.Distance(gp_Pnt(0,0,0)));
+                for (const auto& s: canon) {
+                    if (s->DynamicType() != own->DynamicType()) continue;
+                    GeomAPI_ProjectPointOnSurf foot(p,s);
+                    if (!foot.NbPoints() || foot.LowerDistance() > near) continue;
+                    double a,b;
+                    foot.LowerDistanceParameters(a,b);
+                    // the same parameters but for a turn: u shifted, v alike
+                    if (std::abs(b-v0) > 1e-9 || s->Value(a,v1).Distance(q) > near) continue;
+                    to = {s,a-u0-2*M_PI*std::round((a-u0)/(2*M_PI))};
+                    break;
                 }
+                if (to.first == own) canon.push_back(own);
+                it = seated.emplace(own.get(),to).first;
             }
-            if (shift != 0 || on != basis_of(face)) reseat(face,on,shift);
+            const Handle(Geom_Surface) on = it->second.first;
+            double shift = it->second.second;
+            if (!ring_piece) {
+                auto c = centre.find(on.get());
+                if (c == centre.end()) {
+                    GeomAPI_ProjectPointOnSurf foot(middle,on);
+                    double uc = std::nan(""),vc;
+                    if (foot.NbPoints()) foot.LowerDistanceParameters(uc,vc);
+                    c = centre.emplace(on.get(),uc).first;
+                }
+                if (!std::isnan(c->second)) shift -= 2*M_PI*std::floor(((u0+u1)/2+shift-c->second)/(2*M_PI));
+            }
+            if (shift != 0 || on != own) reseat(face,on,shift);
         };
         BRepBuilderAPI_Sewing sewing(fuzzy);
         for (int k=0;k<=count;++k) {

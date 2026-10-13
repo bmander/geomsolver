@@ -23,17 +23,15 @@ const CONVERGED: f64 = 1e-9;
 /// A whole revolution's volume by Pappus, where its profile is one loop of lines and arcs in a
 /// plane through its axis: `2π ∬ s dA`, `s` the distance from the axis, by Green's theorem `∮ s²/2
 /// dt` (`t` along the axis), each line's and arc's integral by Gauss–Legendre (a polynomial along a
-/// line, a trigonometric one along an arc: exact to rounding at this order).
+/// line, a trigonometric one along an arc).
 fn pappus(n: &Json) -> Option<f64> {
+    use gcs_core::space::{add,dot,normalised,scale};
     type V = [f64;3];
     let v = |j: &Json| -> V { std::array::from_fn(|i| j.arr()[i].as_f64()) };
-    let dot = |a: V,b: V| a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
-    let (lin,add) = (|a: V,k: f64| a.map(|x| x*k),|a: V,b: V| -> V { std::array::from_fn(|i| a[i]+b[i]) });
     if n.get("kind")?.as_str() != "revolve" || (n.get("angle")?.as_f64().abs()-2.*std::f64::consts::PI).abs() > 1e-12 { return None }
     let loops = n.get("profile")?.get("loops")?.arr();
     if loops.len() != 1 { return None }
-    let (o,a) = (v(n.get("origin")?),v(n.get("axis")?));
-    let a = lin(a,1./dot(a,a).sqrt());
+    let (o,a) = (v(n.get("origin")?),normalised(v(n.get("axis")?))?);
     // each piece as a point and its derivative over [0, 1], in the loop's order
     let mut pieces: Vec<Box<dyn Fn(f64) -> (V,V)>> = Vec::new();
     let mut last: Option<V> = None;
@@ -42,27 +40,28 @@ fn pappus(n: &Json) -> Option<f64> {
         match e.get("kind")?.as_str() {
             "line" => {
                 let (p,q) = (v(e.get("start")?),v(e.get("end")?));
-                let d = add(q,lin(p,-1.));
-                pieces.push(Box::new(move |u| (add(p,lin(d,u)),d)));
+                let d = minus3(q,p);
+                pieces.push(Box::new(move |u| (add(p,scale(d,u)),d)));
                 last = Some(q);
             }
             "circle" => {
                 let (c,nn,x,r) = (v(e.get("center")?),v(e.get("normal")?),v(e.get("x_dir")?),e.get("radius")?.as_f64());
-                let y = [nn[1]*x[2]-nn[2]*x[1],nn[2]*x[0]-nn[0]*x[2],nn[0]*x[1]-nn[1]*x[0]];
+                let y = cross(nn,x);
                 let span = e.get("angles")?.arr();
                 let (a0,a1) = (span[0].as_f64(),span[1].as_f64());
-                let at = move |th: f64| add(c,add(lin(x,r*th.cos()),lin(y,r*th.sin())));
+                let at = move |th: f64| add(c,add(scale(x,r*th.cos()),scale(y,r*th.sin())));
                 // walked from the end that meets its neighbour
                 let next = entries.get(k+1).or(entries.first()).and_then(|f| f.get("start")).map(&v);
+                let far = |p: V,q: V| { let d = minus3(q,p); dot(d,d) };
                 let from_a0 = match (last,next) {
-                    (Some(p),_) => { let d = |q: V| dot(add(q,lin(p,-1.)),add(q,lin(p,-1.))); d(at(a0)) <= d(at(a1)) }
-                    (None,Some(q)) => { let d = |p: V| dot(add(q,lin(p,-1.)),add(q,lin(p,-1.))); d(at(a1)) <= d(at(a0)) }
+                    (Some(p),_) => far(at(a0),p) <= far(at(a1),p),
+                    (None,Some(q)) => far(at(a1),q) <= far(at(a0),q),
                     _ => true,
                 };
                 let (s0,s1) = if from_a0 { (a0,a1) } else { (a1,a0) };
                 pieces.push(Box::new(move |u| {
                     let th = s0+(s1-s0)*u;
-                    (at(th),lin(add(lin(x,-r*th.sin()),lin(y,r*th.cos())),s1-s0))
+                    (at(th),scale(add(scale(x,-r*th.sin()),scale(y,r*th.cos())),s1-s0))
                 }));
                 last = Some(at(s1));
             }
@@ -70,36 +69,23 @@ fn pappus(n: &Json) -> Option<f64> {
         }
     }
     // the side the profile stands on, across the axis in its plane
-    let across = |p: V| { let d = add(p,lin(o,-1.)); add(d,lin(a,-dot(d,a))) };
+    let across = |p: V| { let d = minus3(p,o); minus3(d,scale(a,dot(d,a))) };
     let side = pieces.iter().map(|f| across(f(0.5).0)).max_by(|p,q| dot(*p,*p).total_cmp(&dot(*q,*q)))?;
-    let e = lin(side,1./dot(side,side).sqrt());
-    let (x,w) = gauss(64);
+    let e = normalised(side)?;
+    // each piece by Gauss–Legendre's eight points on each of eight panels: a polynomial along a
+    // line, a trigonometric one along an arc, exact to rounding at this order
+    let panels = 8;
     let mut moment = 0.;
     for f in &pieces {
-        for (xi,wi) in x.iter().zip(&w) {
-            let (p,dp) = f(0.5*(xi+1.));
-            let s = dot(add(p,lin(o,-1.)),e);
-            moment += 0.5*wi*(-0.5*s*s*dot(dp,a));
+        for j in 0..panels {
+            for &(xi,wi) in &gcs_core::integral::GAUSS8 {
+                let (p,dp) = f((j as f64+0.5*(xi+1.))/panels as f64);
+                let s = dot(minus3(p,o),e);
+                moment += 0.5*wi/panels as f64*(-0.5*s*s*dot(dp,a));
+            }
         }
     }
     Some(2.*std::f64::consts::PI*moment.abs())
-}
-
-/// Gauss–Legendre's nodes and weights on (−1, 1).
-fn gauss(n: usize) -> (Vec<f64>,Vec<f64>) {
-    (0..n).map(|i| {
-        let mut x = (std::f64::consts::PI*(i as f64+0.75)/(n as f64+0.5)).cos();
-        let mut dp = 0.;
-        for _ in 0..100 {
-            let (mut p0,mut p1) = (1.,x);
-            for k in 2..=n { let p2 = ((2*k-1) as f64*x*p1-(k-1) as f64*p0)/k as f64; p0 = p1; p1 = p2; }
-            dp = n as f64*(x*p1-p0)/(x*x-1.);
-            let dx = p1/dp;
-            x -= dx;
-            if dx.abs() < 1e-16 { break }
-        }
-        (x,2./((1.-x*x)*dp*dp))
-    }).unzip()
 }
 
 /// A body node's volume built operand by operand by the Boolean at a tolerance `k` of its size: its
@@ -188,17 +174,17 @@ fn every_node_the_kernel_builds_is_occts() {
                     // tolerance of the true one, so its volume within it times the boundary's area;
                     // and ours is held to itself, rebuilt at tolerances ten times either way, within
                     // `CONVERGED`
-                    let [_,edge_tol,_] = session.tolerances(theirs).unwrap();
-                    let area = gcs_core::brep::mesh::mesh(&b,1e-3*b.size(),0.2).map(|m| m.tris.iter().map(|t| {
-                        let [p,q,r] = t.map(|i| m.pts[i as usize]);
-                        0.5*norm(cross(minus3(q,p),minus3(r,p)))
-                    }).sum::<f64>()).unwrap_or(f64::INFINITY);
                     // a whole revolution of lines and arcs: its volume is Pappus's, which decides
                     if let Some(closed) = pappus(n) {
                         let off = ((v-closed)/closed).abs();
                         if off >= CONVERGED { failures.push(format!("{label}: volume {v} against Pappus's {closed} ({off:.1e})")); continue }
                         eprintln!("{label}: OCCT {rel:.1e} off; ours Pappus's {closed:.9} mm³ within {off:.1e}");
                     } else {
+                    let [_,edge_tol,_] = session.tolerances(theirs).unwrap();
+                    let area = gcs_core::brep::mesh::mesh(&b,1e-3*b.size(),0.2).map(|m| m.tris.iter().map(|t| {
+                        let [p,q,r] = t.map(|i| m.pts[i as usize]);
+                        0.5*norm(cross(minus3(q,p),minus3(r,p)))
+                    }).sum::<f64>()).unwrap_or(f64::INFINITY);
                     let held = n.get("kind").unwrap().as_str() == "body" && edge_tol > DECLARED
                         && (v-w).abs() <= edge_tol*area
                         && [1e-8,1e-10].iter().all(|&k| rebuilt(n,&ours,k).is_ok_and(|u| ((u-v)/v).abs() < CONVERGED));
@@ -229,16 +215,15 @@ fn every_node_the_kernel_builds_is_occts() {
                     let stood_in = !extra.is_empty() && extra.len() == missing.len() && extra.iter().all(general)
                         && !missing.iter().any(general) && {
                         let face_tol = session.tolerances(theirs).unwrap()[0].max(1e-9);
-                        let off = session.faces(theirs).unwrap().into_iter().filter(|&g| general(&session.face_kind(g).unwrap()))
-                            .flat_map(|g| session.surface_grid(g,9,9).unwrap())
-                            .map(|(p,_)| b.faces.iter().map(|f| norm(minus3(f.surface.point(f.surface.inverse(p)),p))).fold(f64::INFINITY,f64::min))
-                            .fold(0.,f64::max);
+                        let off = session.off_surfaces(theirs,&b,&|k| general(&k)).unwrap();
                         eprintln!("  (OCCT builds {extra:?} for our {missing:?}, on our surfaces within {off:.1e} mm, its faces' tolerance {face_tol:.1e})");
                         off <= face_tol
                     };
                     if extra_planes { eprintln!("  (OCCT splits a plane along a line it only touches: {their_kinds:?} against our {our_kinds:?})"); }
-                    else if stood_in {}
-                    else { failures.push(format!("{label}: faces by kind {our_kinds:?} against OCCT's {their_kinds:?}")); continue }
+                    if !extra_planes && !stood_in {
+                        failures.push(format!("{label}: faces by kind {our_kinds:?} against OCCT's {their_kinds:?}"));
+                        continue
+                    }
                 }
                 }
                 let whole = n.get("kind").unwrap().as_str() == "body" || id == root_id;

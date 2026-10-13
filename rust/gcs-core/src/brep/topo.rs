@@ -276,8 +276,7 @@ impl Brep {
             let t = 0.5*(self.edges[e].t[0]+self.edges[e].t[1]);
             let d = curve.tangent(t);
             let Some(d) = crate::space::normalised(d) else { return Err(format!("edge {e} has no direction")) };
-            let a = crate::space::normalised(crate::space::cross(d,if d[0].abs() < 0.9 { [1.,0.,0.] } else { [0.,1.,0.] })).unwrap();
-            let b = crate::space::cross(d,a);
+            let (a,b) = crate::space::across(d);
             // each use's face: the way into it from the edge (left of the use, its material normal
             // up) as an angle about the edge, and whether its material lies on from there
             let mut round: Vec<(f64,bool,usize)> = Vec::new();
@@ -320,15 +319,26 @@ impl Brep {
     /// Where the solid touches itself along a line (`unpinched`): two edges between the same
     /// vertices along one curve, within `tol` at their middles; each line's ends.
     pub fn self_touching(&self,tol: f64) -> Vec<[V;2]> {
-        let mut out = Vec::new();
-        for (i,a) in self.edges.iter().enumerate() {
-            let EdgeCurve::Curve(_) = a.curve else { continue };
-            let mid = |e: &Edge| e.point(0.5*(e.t[0]+e.t[1]),&self.vertices);
-            let twin = self.edges[i+1..].iter().any(|b| matches!(b.curve,EdgeCurve::Curve(_))
-                && (b.v == a.v || b.v == [a.v[1],a.v[0]]) && distance(mid(a),mid(b)) <= tol.max(a.tol).max(b.tol));
-            if twin { out.push(a.v.map(|v| self.vertices[v as usize].p)); }
+        // the edges between each pair of vertices, then each against the ones after it there
+        let mut between: std::collections::BTreeMap<[u32;2],Vec<usize>> = Default::default();
+        for (i,e) in self.edges.iter().enumerate() {
+            if !matches!(e.curve,EdgeCurve::Curve(_)) { continue }
+            between.entry([e.v[0].min(e.v[1]),e.v[0].max(e.v[1])]).or_default().push(i);
         }
-        out
+        let mid = |e: &Edge| e.point(0.5*(e.t[0]+e.t[1]),&self.vertices);
+        let mut out = Vec::new();
+        for (_,list) in between {
+            if list.len() < 2 { continue }
+            let mids: Vec<V> = list.iter().map(|&i| mid(&self.edges[i])).collect();
+            for (j,&i) in list.iter().enumerate() {
+                let a = &self.edges[i];
+                let twin = (j+1..list.len()).any(|k| distance(mids[j],mids[k]) <= tol.max(a.tol).max(self.edges[list[k]].tol));
+                if twin { out.push((i,a.v.map(|v| self.vertices[v as usize].p))); }
+            }
+        }
+        // in the edges' order, as found before
+        out.sort_by_key(|&(i,_)| i);
+        out.into_iter().map(|(_,p)| p).collect()
     }
 
     /// Where the solid pinches: vertices whose faces fall into more than one fan — joined round

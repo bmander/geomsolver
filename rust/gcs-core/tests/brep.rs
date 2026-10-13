@@ -1377,7 +1377,7 @@ fn a_quarter_torus_touching_a_block_at_a_corner_meets_it_there_alone() {
         let turn = ((1./rho).min(1.).asin()-(2./rho).min(1.).acos()).max(0.);
         turn*rho*2.*(1.-(rho-3.)*(rho-3.)).max(0.).sqrt()*2.*(hi-lo)*u
     };
-    let shared = (1..n).map(|k| if k%2 == 1 { 4. } else { 2. }*g(k as f64/n as f64)).sum::<f64>()/(3.*n as f64)+g(1.)/(3.*n as f64);
+    let shared = simpson(0.,1.,n,g);
     assert!((volume(&crossed)-(24.+1.5*PI*PI-shared)).abs() <= 1e-9*24.,"{} against {}",volume(&crossed),24.+1.5*PI*PI-shared);
 }
 

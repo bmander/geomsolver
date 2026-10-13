@@ -25,7 +25,7 @@ use gcs_core::brep::{export,geom::Rigid,props::volume,sweep::Say};
 use gcs_core::json::Json;
 use gcs_core::model::{RegionShape,SolidDef};
 use gcs_core::solid::lowering::{self,Piece,Run,Stroke};
-use gcs_core::space::{add,cross,distance as dist,dot,norm,scale,sub};
+use gcs_core::space::{add,distance as dist,norm,scale};
 use std::collections::BTreeSet;
 
 /// How near OCCT's volume ours must be where both build every face analytically.
@@ -43,12 +43,10 @@ fn source(file: &str) -> String {
     std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}",path.display()))
 }
 
-/// What a lowered piece says of the edge it rounds or chamfers: a point on the edge, the size
-/// (a round's radius, a chamfer's leg) and whether it is a chamfer. A corner's cell says nothing
-/// its three edges do not.
-fn edge_of(p: &Piece) -> Option<(V,f64,bool)> { edge_and_kind(p).map(|(at,size,chamfer,_)| (at,size,chamfer)) }
 
-/// `edge_of`, and whether a chamfer's flat stands beside a curved face (#218's 5, 6): there
+/// What a lowered piece says of the edge it rounds or chamfers: a point on the edge, the size
+/// (a round's radius, a chamfer's leg), whether it is a chamfer, and whether a chamfer's flat
+/// stands beside a curved face (#218's 5, 6): there
 /// `std.Flat`'s flat is where the two faces' distances, each over the other's leg, sum to one —
 /// its legs measured from the other face's surface — and OCCT's chamfer is ruled between legs
 /// measured along the faces from the edge: two definitions, which only between planes agree.
@@ -102,28 +100,19 @@ fn stratum(recipe: &Json) -> Json {
     out
 }
 
-/// `v` turned through `angle` about the unit `k` (Rodrigues).
-fn turned(v: V,k: V,angle: f64) -> V {
-    let (sn,cs) = angle.sin_cos();
-    add(add(scale(v,cs),scale(cross(k,v),sn)),scale(k,dot(k,v)*(1.-cs)))
-}
-
 fn vector_of(j: &Json) -> V { std::array::from_fn(|i| j.arr()[i].as_f64()) }
 fn json_of(v: V) -> Json { Json::Arr(v.iter().map(|&x| Json::Num(x)).collect()) }
 
-/// A profile's every point and direction turned through `angle` about the line through `o` along
-/// the unit `k`, by what its keys say they are.
-fn profile_turned(j: &mut Json,o: V,k: V,angle: f64) {
+/// A profile's every point and direction turned by `turn`, by what its keys say they are.
+fn profile_turned(j: &mut Json,turn: &Rigid) {
     match j {
-        Json::Arr(list) => for x in list { profile_turned(x,o,k,angle) },
+        Json::Arr(list) => for x in list { profile_turned(x,turn) },
         Json::Obj(pairs) => for (key,x) in pairs.iter_mut() {
             match key.as_str() {
-                "start" | "end" | "center" | "origin" => *x = json_of(add(o,turned(sub(vector_of(x),o),k,angle))),
-                "normal" | "x_dir" => *x = json_of(turned(vector_of(x),k,angle)),
-                "poles" => for p in match x { Json::Arr(l) => l,_ => unreachable!() } {
-                    *p = json_of(add(o,turned(sub(vector_of(p),o),k,angle)));
-                },
-                _ => profile_turned(x,o,k,angle),
+                "start" | "end" | "center" | "origin" => *x = json_of(turn.point(vector_of(x))),
+                "normal" | "x_dir" => *x = json_of(turn.vector(vector_of(x))),
+                "poles" => for p in match x { Json::Arr(l) => l,_ => unreachable!() } { *p = json_of(turn.point(vector_of(p))) },
+                _ => profile_turned(x,turn),
             }
         },
         _ => {}
@@ -137,7 +126,7 @@ fn circles_turned(j: &mut Json,angle: f64) {
         Json::Obj(_) => {
             if j.get("kind").is_some_and(|k| *k == Json::Str("circle".into())) && j.get("angles").is_none() {
                 let (n,x) = (vector_of(j.get("normal").unwrap()),vector_of(j.get("x_dir").unwrap()));
-                j.set("x_dir",json_of(turned(x,scale(n,1./norm(n)),angle)));
+                j.set("x_dir",json_of(Rigid::turn([0.;3],n,angle).vector(x)));
             }
             if let Json::Obj(pairs) = j { for (_,x) in pairs.iter_mut() { circles_turned(x,angle) } }
         }
@@ -158,9 +147,9 @@ fn seams_turned(recipe: &Json) -> Json {
         let whole = n.get("kind").is_some_and(|k| *k == Json::Str("revolve".into()))
             && (n.get("angle").unwrap().as_f64().abs() - 2.*std::f64::consts::PI).abs() < 1e-9;
         if whole {
-            let (o,k) = (vector_of(n.get("origin").unwrap()),vector_of(n.get("axis").unwrap()));
+            let turn = Rigid::turn(vector_of(n.get("origin").unwrap()),vector_of(n.get("axis").unwrap()),1.);
             let mut profile = n.get("profile").unwrap().clone();
-            profile_turned(&mut profile,o,scale(k,1./norm(k)),1.);
+            profile_turned(&mut profile,&turn);
             n.set("profile",profile);
         }
         if let Some(mut profile) = n.get("profile").cloned() {
@@ -226,42 +215,29 @@ fn flats_by_occt(session: &native::Session,body: &Json,ours: &gcs_core::brep::to
     Ok((points.len(),worst))
 }
 
-/// How far each face OCCT builds of a kind this kernel's body has none of (a B-spline it fits, a
-/// general surface of revolution) stands off the surfaces of ours: the greatest distance of a grid
-/// of its support's points from the nearest of our faces' surfaces.
-fn stand_in(session: &native::Session,theirs: std::os::raw::c_int,ours: &gcs_core::brep::topo::Brep,kind: &str) -> f64 {
-    let mut worst: f64 = 0.;
-    for f in session.faces(theirs).unwrap() {
-        if occt_kind(session.face_kind(f).unwrap()) != kind { continue }
-        for (p,_) in session.surface_grid(f,9,9).unwrap() {
-            let near = ours.faces.iter().map(|g| dist(g.surface.point(g.surface.inverse(p)),p)).fold(f64::INFINITY,f64::min);
-            worst = worst.max(near);
-        }
-    }
-    worst
-}
-
 /// OCCT's `GeomAbs_SurfaceType` as this kernel names its surfaces.
 fn occt_kind(k: i32) -> &'static str {
     ["plane","cylinder","cone","sphere","torus","bezier","bspline","revolution","extrusion","offset","other"]
         .get(k as usize).copied().unwrap_or("other")
 }
 
-/// Where two solids disagree, sampled at `count` points over ours's box: the points inside one
+/// How many points `apart` samples.
+const APART: usize = 20_000;
+
+/// Where two solids disagree, sampled at `APART` points over ours's box: the points inside one
 /// and outside the other, and whose.
-fn apart(session: &native::Session,ours: &gcs_core::brep::topo::Brep,theirs: std::os::raw::c_int,count: usize)
+fn apart(session: &native::Session,ours: &gcs_core::brep::topo::Brep,theirs: std::os::raw::c_int)
     -> Vec<(V,&'static str)> {
     use gcs_core::brep::query::{Located,Place};
     let (lo,hi) = ours.bounds();
     let located = Located::owned(ours.clone(),1e-9*ours.size());
     let mut rng = gcs_core::rng::Rng::new(218);
-    let points: Vec<V> = (0..count).map(|_| std::array::from_fn(|j| rng.uniform(lo[j],hi[j]))).collect();
+    let points: Vec<V> = (0..APART).map(|_| std::array::from_fn(|j| rng.uniform(lo[j],hi[j]))).collect();
     let states = session.solid_contains(theirs,&points,1e-9).unwrap();
     points.iter().zip(&states).filter_map(|(p,s)| match located.solid_place(*p) {
         Place::In if *s == 0 => Some((*p,"ours")),Place::Out if *s == 1 => Some((*p,"OCCT's")),_ => None,
     }).collect()
 }
-
 
 /// How OCCT builds what an example rounds.
 #[derive(Clone,Copy)]
@@ -347,9 +323,9 @@ fn every_rounds_example_is_occts_fillet() {
             .any(|t| matches!(&t.shape,RegionShape::FaceSide {face} if face.solid as usize == body)));
         for i in (0..sk.solids.len()).filter(|&i| over(i)) {
             let Some(Ok(pieces)) = lowering::lowered(sk,i) else { continue };
-            beside_curved |= pieces.iter().filter_map(edge_and_kind).any(|(_,_,_,curved)| curved);
             traced_flats.extend(pieces.iter().filter_map(|p| match p { Piece::Rolled(k) => k.flat.map(|(legs,on)| (k.at,legs,on)),_ => None }));
-            for (at,size,chamfer) in pieces.iter().filter_map(edge_of) {
+            for (at,size,chamfer,curved) in pieces.iter().filter_map(edge_and_kind) {
+                beside_curved |= curved;
                 let list = if chamfer { &mut flats } else { &mut rounds };
                 if !list.iter().any(|(p,_)| dist(*p,at) <= 1e-9*(1.+norm(at))) { list.push((at,size)); }
             }
@@ -398,8 +374,8 @@ fn every_rounds_example_is_occts_fillet() {
             {their_kinds:?}",rounds.len(),flats.len());
         let fitted = our_kinds.contains("bspline") || their_kinds.contains("bspline");
         if rel > if fitted { APPROXIMATE } else { EXACT } {
-            let apart = solid.map(|id| apart(&session,&exact.solid,id,20_000)).unwrap_or_default();
-            failures.push(format!("{file} `{name}`: volume {ours} against OCCT's {w} ({rel:.1e}); {} of 20000 points apart, as {:?}",
+            let apart = solid.map(|id| apart(&session,&exact.solid,id)).unwrap_or_default();
+            failures.push(format!("{file} `{name}`: volume {ours} against OCCT's {w} ({rel:.1e}); {} of {APART} points apart, as {:?}",
                 apart.len(),&apart[..apart.len().min(4)]));
         }
         // the same kinds of face, but where OCCT fits a B-spline to a face this kernel builds
@@ -408,7 +384,7 @@ fn every_rounds_example_is_occts_fillet() {
         let stood_in = their_kinds.contains("bspline") && !our_kinds.contains("bspline");
         let alike = our_kinds == their_kinds.iter().copied().filter(|k| !stood_in || *k != "bspline").collect::<BTreeSet<_>>();
         if let (Some(id),true) = (solid,stood_in && alike) {
-            let ([face_tol,_,_],off) = (session.tolerances(id).unwrap(),stand_in(&session,id,&exact.solid,"bspline"));
+            let ([face_tol,_,_],off) = (session.tolerances(id).unwrap(),session.off_surfaces(id,&exact.solid,&|k| occt_kind(k) == "bspline").unwrap());
             eprintln!("{file} `{name}`: OCCT's B-splines lie on our surfaces within {off:.1e} mm (its faces' tolerance {face_tol:.1e})");
             if off > face_tol.max(1e-9) { failures.push(format!("{file} `{name}`: OCCT's B-splines stand {off:e} off our surfaces")); }
         }

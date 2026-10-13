@@ -386,7 +386,7 @@ pub fn lowered(sk: &Sketch, solid: usize) -> Option<Result<Rc<Vec<Piece>>, Strin
         }
     }
     let l = build(&body, &faces, section).and_then(|pieces| {
-        gate(sk, solid, &pieces, &body, &beside_edges(&body, &faces, section))?;
+        gate(sk, solid, &pieces, &body, || beside_edges(&body, &faces, section))?;
         Ok(Rc::new(pieces))
     });
     sk.lowering_cache.borrow_mut().insert(solid, (key, body, l.clone()));
@@ -1293,9 +1293,6 @@ impl Assembly {
     }
 }
 
-/// **The gate**: a lowering stands only where the region's own field agrees with it — every probe
-/// a little inside the built boundary material by the field, every one a little outside not
-/// (`agreement`, sampled by area); one holding nowhere, only where the field reads it empty too.
 /// Points just inside the corner along each edge the region rounds or cuts (a quarter, a half and
 /// three quarters along it), a tenth of the section's size in along the bisector of its two faces:
 /// where the field reads the region there, the pieces must hold it (`gate`).
@@ -1321,7 +1318,12 @@ fn beside_edges(body: &super::faces::BodyFaces, f: &Faces, section: Section) -> 
     out
 }
 
-fn gate(sk: &Sketch, solid: usize, pieces: &[Piece], body: &super::faces::BodyFaces, beside: &[V]) -> Result<(), String> {
+/// **The gate**: a lowering stands only where the region's own field agrees with it — every probe
+/// a little inside the built boundary material by the field, every one a little outside not
+/// (`agreement`, sampled by area), and what the field reads `beside` each edge held; one holding
+/// nowhere, only where the field reads it empty too.
+fn gate(sk: &Sketch, solid: usize, pieces: &[Piece], body: &super::faces::BodyFaces, beside: impl FnOnce() -> Vec<V>)
+    -> Result<(), String> {
     if pieces.is_empty() {
         let empty = super::region::in_general_position(sk, solid)
             .is_some_and(|g| g.is_ok_and(|f| f.is_empty()));
@@ -1337,8 +1339,7 @@ fn gate(sk: &Sketch, solid: usize, pieces: &[Piece], body: &super::faces::BodyFa
         // in the stratum's own frame (millimetres about its origin), as the recipe builds it: the
         // lowered node, rolled against the stratum standing in its built set
         let (stratum, mm, origin) = body.brep();
-        let node = super::cad::shifted_node(&assemble(pieces).node(mm)?, scale(origin, mm));
-        let mut node = node;
+        let mut node = super::cad::shifted_node(&assemble(pieces).node(mm)?, scale(origin, mm));
         node.set("stratum", object([("kind", "body".into()), ("stock", 0.into()), ("on", Json::Arr(vec![])),
             ("cut", Json::Arr(vec![])), ("bound", Json::Arr(vec![]))]));
         let built = std::collections::BTreeMap::from([(0, stratum.clone())]);
@@ -1361,7 +1362,7 @@ fn gate(sk: &Sketch, solid: usize, pieces: &[Piece], body: &super::faces::BodyFa
     // and no piece left out: what the field reads of the region just inside each edge, the pieces
     // hold (a probe of the boundary built sees nothing of a piece never built)
     let located = crate::brep::query::Located::new(&b, 1e-9 * size);
-    for &p in beside {
+    for p in beside() {
         if field.side(p) < -1e-6 * (1.0 + norm(p)) {
             let q = if mm.is_some() { body.q(p) } else { p };
             if located.solid_place(q) == crate::brep::query::Place::Out {

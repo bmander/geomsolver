@@ -997,7 +997,7 @@ fn chamfers_that_run_out_onto_a_face_are_cut_off() {
 /// `runout.sv`'s vent with only its hole and its rim, the hole at `(hx, hy)`, and `more` after.
 fn vent(hx: f64, hy: f64, more: &str) -> String {
     let src = include_str!("../../examples/rounds/runout.sv");
-    let lug = src.index_of("wedge := solid(side_f");
+    let lug = src.find("wedge := solid(side_f").expect("the wedge");
     let mut out = src[..lug].replace("fix((98, -12)) hc", &format!("fix(({hx}, {hy})) hc"));
     out.push_str("block := solid(other_f, from: 0mm, to: 24mm)\nhole := solid(face(hole_k), from: -1mm, to: 30mm)\n\
         vent := solid(block)\nhole cut vent\n");
@@ -1006,14 +1006,6 @@ fn vent(hx: f64, hy: f64, more: &str) -> String {
     out
 }
 
-trait IndexOf { fn index_of(&self, what: &str) -> usize; }
-impl IndexOf for str { fn index_of(&self, what: &str) -> usize { self.find(what).expect(what) } }
-
-/// `∫ f` over `[a, b]` by Simpson's rule over `n` (even) steps.
-fn simpson_n(f: &dyn Fn(f64) -> f64, a: f64, b: f64, n: usize) -> f64 {
-    let h = (b - a) / n as f64;
-    (0..=n).map(|k| f(a + h * k as f64) * if k == 0 || k == n { 1.0 } else if k % 2 == 1 { 4.0 } else { 2.0 }).sum::<f64>() * h / 3.0
-}
 
 /// **A rolled run cut off by a face its other end stands on** (#218's 7): the vent's hole moved so
 /// its circle passes through the block's corner where its end (x = 100) and its side (y = −24)
@@ -1053,14 +1045,14 @@ fn a_rolled_run_onto_a_curved_face_is_cut_off_by_its_solid() {
     // the wedge's top `z = 35 − x/4` over the block within the drum
     let reach = |y: f64| 40.0 + (3600.0 - (y + 12.0) * (y + 12.0)).sqrt();
     let under = |x0: f64, x1: f64| 35.0 * (x1 - x0) - (x1 * x1 - x0 * x0) / 8.0;
-    let block = simpson_n(&|y| under(60.0, reach(y).min(100.0)), -24.0, 0.0, 200_000);
+    let block = crate::brep::simpson(-24.0, 0.0, 200_000, |y| under(60.0, reach(y).min(100.0)));
     // the hole within the drum: across its disc, `y = −12 + 4 sin θ`
-    let hole = simpson_n(&|t: f64| {
+    let hole = crate::brep::simpson(-PI / 2.0, PI / 2.0, 200_000, |t: f64| {
         let (sn, cs) = t.sin_cos();
         let y = -12.0 + 4.0 * sn;
         let half = 4.0 * cs;
         under(98.0 - half, (98.0 + half).min(reach(y))) * 4.0 * cs
-    }, -PI / 2.0, PI / 2.0, 200_000);
+    });
     let rim = crate::fillet_definition::sloped_clipped(4.0, [98.0, -12.0], [35.0, 0.25], 1.0, crate::fillet_definition::RIM,
         &[], &[([40.0, -12.0], 60.0)]);
     near_quadrature(props::volume(&b), block - hole - rim);
@@ -1096,22 +1088,22 @@ fn half_frustum_opened(big: f64, small: f64, h: f64, r: f64) -> f64 {
     let a = big - r * k;
     let rad = |z: f64| a - slope * z;
     let (z0, z1) = (r, h - r);
-    let seg = |q: f64| q * q * (r / q).acos() - r * (q * q - r * r).sqrt();
+    let seg = |q: f64| segment(q, r).0;
     let arc = |z: f64| rad(z) * (PI - 2.0 * (r / rad(z)).asin());
     let chord = |z: f64| 2.0 * (rad(z) * rad(z) - r * r).sqrt();
     let n = 20_000;
-    let v = simpson_n(&|z| seg(rad(z)), z0, z1, n);
-    let s = seg(rad(z0)) + seg(rad(z1)) + simpson_n(&chord, z0, z1, n) + k * simpson_n(&arc, z0, z1, n);
+    let v = crate::brep::simpson(z0, z1, n, |z| seg(rad(z)));
+    let s = seg(rad(z0)) + seg(rad(z1)) + crate::brep::simpson(z0, z1, n, chord) + k * crate::brep::simpson(z0, z1, n, arc);
     // the cone's mean curvature `1 / (2 k ρ)` over its strip; the caps' rims, the cut's lines across
     // the caps (square) and its hyperbolas along the cone
-    let m = simpson_n(&|z| arc(z) / (2.0 * rad(z)), z0, z1, n)
+    let m = crate::brep::simpson(z0, z1, n, |z| arc(z) / (2.0 * rad(z)))
         + (slope / k).acos() / 2.0 * arc(z1) + (-slope / k).acos() / 2.0 * arc(z0)
         + PI / 4.0 * (chord(z0) + chord(z1))
-        + simpson_n(&|z| {
+        + crate::brep::simpson(z0, z1, n, |z| {
             let q = rad(z);
             let dx = -slope * q / (q * q - r * r).sqrt();
             (-(r / q) / k).acos() * (1.0 + dx * dx).sqrt()
-        }, z0, z1, n);
+        });
     v + s * r + m * r * r + 4.0 * PI / 3.0 * r.powi(3)
 }
 
@@ -1151,10 +1143,10 @@ fn a_rim_winding_round_both_faces_is_rolled() {
     let b = exported(&e, "part");
     let frustum = PI * 16.0 * (100.0 + 20.0 + 4.0) / 3.0;
     // the bore's share between ρ = 2 and 4, `ρ = 4 − 2s²` for the root at 4
-    let shared = simpson_n(&|s: f64| {
+    let shared = crate::brep::simpson(0.0, 1.0, 20_000, |s: f64| {
         let rho = 4.0 - 2.0 * s * s;
         2.0 * ((rho * rho - 8.0) / (2.0 * rho)).clamp(-1.0, 1.0).acos() * 2.0 * (10.0 - rho) * rho * 4.0 * s
-    }, 0.0, 1.0, 20_000);
+    });
     let bore = 64.0 * PI + shared;
     let want = frustum - bore - crate::fillet_definition::cone_bore_rim(10.0, 0.5, 3.0, 1.0, 0.5);
     near_quadrature(props::volume(&b), want);

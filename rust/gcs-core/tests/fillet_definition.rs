@@ -754,6 +754,18 @@ fn ray_cylinder(o: V, w: V, at: V, axis: usize, radius: f64) -> f64 {
     first_root(a, b, o[i] * o[i] + o[j] * o[j] - radius * radius)
 }
 
+/// Where a ray from `o` along `w` first meets the cone `ρ = r0 − slope·z` about `z` (its nappe
+/// with `ρ ≥ 0`).
+fn ray_cone(o: V, w: V, r0: f64, slope: f64) -> f64 {
+    let k = r0 - slope * o[2];
+    let a = w[0] * w[0] + w[1] * w[1] - slope * slope * w[2] * w[2];
+    let b = 2.0 * (o[0] * w[0] + o[1] * w[1]) + 2.0 * slope * w[2] * k;
+    let c = o[0] * o[0] + o[1] * o[1] - k * k;
+    let disc = (b * b - 4.0 * a * c).max(0.0).sqrt();
+    [(-b - disc) / (2.0 * a), (-b + disc) / (2.0 * a)].into_iter()
+        .filter(|&t| t > 0.0 && k - slope * w[2] * t >= 0.0).fold(f64::INFINITY, f64::min)
+}
+
 /// The stack's `rolled` (#85): a ball of radius `r` rolled round a closed spine `c(φ)`, by
 /// quadrature over its sections square to the spine, swept with the spine's curvature.
 fn rolled(c: &dyn Fn(f64) -> V, toward: [&dyn Fn(V) -> V; 2], hit: [&dyn Fn(V, V) -> f64; 2],
@@ -776,25 +788,7 @@ fn rolled_within(c: &dyn Fn(f64) -> V, toward: [&dyn Fn(V) -> V; 2],
 pub(crate) fn rolled_over(c: &dyn Fn(f64) -> V, span: [f64; 2], toward: [&dyn Fn(V) -> V; 2],
                  hit: [&dyn Fn(V, V) -> f64; 2], r: f64, within: &[(V, f64)], drums: &[([f64; 2], f64)]) -> f64 {
     let (n_phi, n_psi) = (720, 96);
-    let gauss: Vec<(f64, f64)> = (0..n_psi).map(|i| {
-        let mut x = (PI * (i as f64 + 0.75) / (n_psi as f64 + 0.5)).cos();
-        let mut dp = 0.0;
-        for _ in 0..100 {
-            let (mut p0, mut p1) = (1.0, x);
-            for k in 2..=n_psi {
-                let p2 = ((2 * k - 1) as f64 * x * p1 - (k - 1) as f64 * p0) / k as f64;
-                p0 = p1;
-                p1 = p2;
-            }
-            dp = n_psi as f64 * (x * p1 - p0) / (x * x - 1.0);
-            let dx = p1 / dp;
-            x -= dx;
-            if dx.abs() < 1e-16 {
-                break;
-            }
-        }
-        (x, 2.0 / ((1.0 - x * x) * dp * dp))
-    }).collect();
+    let gauss = gauss_legendre(n_psi);
     let h = 1e-4;
     let mut total = 0.0;
     let step = (span[1] - span[0]) / n_phi as f64;
@@ -957,15 +951,7 @@ pub(crate) fn frustum_generator(r0: f64, slope: f64, [z0, z1]: [f64; 2], r: f64)
             [cs * p[0] / rho, cs * p[1] / rho, sn]
         }],
         [&|o: V, w: V| if w[1] < 0.0 { -o[1] / w[1] } else { f64::INFINITY },
-            &|o: V, w: V| {
-                let k = r0 - slope * o[2];
-                let a = w[0] * w[0] + w[1] * w[1] - slope * slope * w[2] * w[2];
-                let b = 2.0 * (o[0] * w[0] + o[1] * w[1]) + 2.0 * slope * w[2] * k;
-                let c = o[0] * o[0] + o[1] * o[1] - k * k;
-                let disc = (b * b - 4.0 * a * c).max(0.0).sqrt();
-                [(-b - disc) / (2.0 * a), (-b + disc) / (2.0 * a)].into_iter()
-                    .filter(|&t| t > 0.0 && k - slope * w[2] * t >= 0.0).fold(f64::INFINITY, f64::min)
-            }],
+            &|o, w| ray_cone(o, w, r0, slope)],
         r,
         &[([0.0, 0.0, -1.0], -z0), ([0.0, 0.0, 1.0], z1)],
         &[],
@@ -993,11 +979,7 @@ pub(crate) fn flat_within(c: &dyn Fn(f64) -> V, d: [&dyn Fn(V) -> f64; 2], grad:
     let (n_phi, n_t) = (720, 48);
     let gauss = gauss_legendre(n_t);
     // `x` solving `rows · x = rhs` (three rows)
-    let solve = |m: [V; 3], rhs: V| -> V {
-        let det = dot(m[0], cross(m[1], m[2]));
-        let col = |k: usize| { let mut a = m; for i in 0..3 { a[i][k] = rhs[i]; } dot(a[0], cross(a[1], a[2])) };
-        [col(0) / det, col(1) / det, col(2) / det]
-    };
+    let solve = |m: [V; 3], rhs: V| -> V { solve3(m, rhs).expect("a section's planes meet in a point") };
     // the point near `q` where `f` (with its gradient `g`) is nothing, on the plane through `e`
     // square to `t`, and on the plane through `at` square to `along`
     let pull = |mut q: V, f: &dyn Fn(V) -> f64, g: &dyn Fn(V) -> V, e: V, t: V, at: V, along: V| -> V {
@@ -1112,15 +1094,7 @@ pub(crate) fn cone_bore_rim(r0: f64, slope: f64, small: f64, dx: f64, r: f64) ->
             [cs * p[0] / rho, cs * p[1] / rho, sn]
         }],
         [&|o, w| ray_cylinder(o, w, [dx, 0.0, 0.0], 2, small),
-            &|o: V, w: V| {
-                let k = r0 - slope * o[2];
-                let a = w[0] * w[0] + w[1] * w[1] - slope * slope * w[2] * w[2];
-                let b = 2.0 * (o[0] * w[0] + o[1] * w[1]) + 2.0 * slope * w[2] * k;
-                let c = o[0] * o[0] + o[1] * o[1] - k * k;
-                let disc = (b * b - 4.0 * a * c).max(0.0).sqrt();
-                [(-b - disc) / (2.0 * a), (-b + disc) / (2.0 * a)].into_iter()
-                    .filter(|&t| t > 0.0 && k - slope * w[2] * t >= 0.0).fold(f64::INFINITY, f64::min)
-            }],
+            &|o, w| ray_cone(o, w, r0, slope)],
         r,
     )
 }

@@ -202,6 +202,24 @@ impl Session {
         let points: Vec<f64> = sections.iter().flatten().flatten().flatten().copied().collect();
         self.result(unsafe { solvent_cad_loft(self.0,sections.len() as c_int,segments as c_int,count as c_int,points.as_ptr()) })
     }
+    /// How far the faces of `solid` whose surface kind `general` names (a B-spline OCCT fits, a
+    /// general surface of revolution) stand off the surfaces of `ours`: the greatest distance of a
+    /// 9 × 9 grid of each one's support from the nearest of `ours`'s faces' surfaces — the oracles'
+    /// test of a surface OCCT builds in place of an analytic one (`tests/*_oracle.rs`).
+    #[allow(dead_code)]
+    pub(crate) fn off_surfaces(&self,solid: c_int,ours: &gcs_core::brep::topo::Brep,general: &dyn Fn(c_int) -> bool)
+        -> Result<f64,String> {
+        let mut worst: f64 = 0.;
+        for f in self.faces(solid)? {
+            if !general(self.face_kind(f)?) { continue }
+            for (p,_) in self.surface_grid(f,9,9)? {
+                let near = ours.faces.iter().map(|g| gcs_core::space::distance(g.surface.point(g.surface.inverse(p)),p))
+                    .fold(f64::INFINITY,f64::min);
+                worst = worst.max(near);
+            }
+        }
+        Ok(worst)
+    }
     pub(crate) fn volume(&self,solid: c_int) -> Result<f64,String> {
         let mut v = [0.];
         self.result(unsafe { solvent_cad_volume(self.0,solid,v.as_mut_ptr()) })?;

@@ -158,6 +158,7 @@ pub fn node_named(n: &Json,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64
                 if done[first] { continue }
                 done[first] = true;
                 let mut chain = pieces[first].clone();
+                let mut rolled = false;
                 let mut queue = std::collections::VecDeque::from([first]);
                 while let Some(i) = queue.pop_front() {
                     for &k in &next[i] {
@@ -165,15 +166,16 @@ pub fn node_named(n: &Json,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64
                         done[k] = true;
                         // a rolled piece's cap is cut from its fitted canal: its edges are the cell's
                         // to within the canal's fit (`fillet::roll`'s bar, a ten-millionth of the
-                        // boundary), and the shared edges are measured after
+                        // boundary), and the shared edges are measured once the chain is whole
                         let rolled_join = [i,k].iter().any(|&p| p >= first_rolled);
                         let bar = if rolled_join { (2e-7*chain.size().max(pieces[k].size())).max(8.*tol) } else { 8.*tol };
                         chain = super::boolean::glued(&chain,&pieces[k],bar)
                             .ok_or("two pieces joined at a section share no face there")?;
-                        if rolled_join { super::json::measure(&mut chain); }
+                        rolled |= rolled_join;
                         queue.push_back(k);
                     }
                 }
+                if rolled { super::json::measure(&mut chain); }
                 solid = Some(match solid { None => chain,Some(s) => beside(&s,&chain,floor)? });
             }
             solid.ok_or_else(|| "recipe: a lowered region of no pieces".to_string())

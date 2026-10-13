@@ -50,8 +50,7 @@ fn slerp(a: V,b: V,v: f64) -> V {
 /// The run of `b`'s edges nearest `at` between two faces, as a ball rolled along it or a flat cut
 /// along it reads it: the faces either side (each with every face on its surface the same way
 /// out), the run's edges (closing on itself, or ending at the two vertices `stops`), the uses of
-/// every edge, the faces' outward normals at the edge's middle `p` and the directions into each
-/// from there, whether the edge is concave, and the way each surface is offset toward the region
+/// every edge, the edge's middle `p` and the directions into each face from there, whether the edge is concave, and the way each surface is offset toward the region
 /// (`sides`).
 struct Meeting<'b> {
     uses: Vec<Vec<(usize,usize,usize)>>,
@@ -60,7 +59,6 @@ struct Meeting<'b> {
     chain: Vec<usize>,
     stops: Vec<u32>,
     p: V,
-    normals: [V;2],
     into: [V;2],
     theta: f64,
     concave: bool,
@@ -150,15 +148,29 @@ fn meeting<'b>(b: &'b Brep,at: V,tol: f64) -> Result<Meeting<'b>,String> {
     let side = |f: &Face| { let out = if f.reversed { -1. } else { 1. }; if concave { out } else { -out } };
     let sides = [side(face_a),side(face_b)];
     let surfaces = [face_a.surface.clone(),face_b.surface.clone()];
-    Ok(Meeting {uses,faces:[face_a,face_b],sides_faces,chain,stops,p,normals:[na,nb],into:[da,db],theta,concave,
+    Ok(Meeting {uses,faces:[face_a,face_b],sides_faces,chain,stops,p,into:[da,db],theta,concave,
         sides,surfaces,names:names()})
+}
+
+/// A curve read along `span` from `t0` as a smooth guide: a cubic through 257 of its points by
+/// chord length. A trace's own parameter turns at every point it was marched through, which no
+/// smooth fit follows; projected back point by point, the guide is exact and smooth between its
+/// ends.
+fn smooth_guide(c: &Curve,t0: f64,span: f64) -> Option<BSpline> {
+    let n = 256;
+    let pts: Vec<V> = (0..=n).map(|k| c.point(t0+span*k as f64/n as f64)).collect();
+    let mut ts = vec![0.];
+    for w in pts.windows(2) { let last = *ts.last().unwrap(); ts.push(last+distance(w[0],w[1])); }
+    let total = *ts.last().unwrap();
+    let ts: Vec<f64> = ts.into_iter().map(|t| t/total).collect();
+    super::nurbs::interpolate(&pts,&ts,3)
 }
 
 /// The ball of radius `r` rolled along the edge of `b` nearest `at`, the faces either side of it
 /// meeting on a closed loop; `tol` the boundary's tolerance, and the bar the canal and the spine
 /// are fitted within. `Err` says why it cannot be rolled exactly.
 pub fn roll(b: &Brep,at: V,r: f64,tol: f64) -> Result<Rolled,String> {
-    let Meeting {uses,faces:[face_a,face_b],sides_faces,chain,stops,p,normals:[_,_],into:[da,db],theta,concave,sides,surfaces,
+    let Meeting {uses,faces:[face_a,face_b],sides_faces,chain,stops,p,into:[da,db],theta,concave,sides,surfaces,
         names,..} = meeting(b,at,tol)?;
     let names = || names.clone();
     let [Some(oa),Some(ob)] = [0,1].map(|k| surfaces[k].offset(sides[k]*r)) else {
@@ -208,14 +220,14 @@ pub fn roll(b: &Brep,at: V,r: f64,tol: f64) -> Result<Rolled,String> {
     let loop_pts: Vec<V> = chain.iter().flat_map(|&e| { let ed = &b.edges[e];
         (0..16).map(move |k| ed.point(ed.t[0]+(ed.t[1]-ed.t[0])*k as f64/16.,&b.vertices)) }).collect();
     let strips = [0,1].map(|k| reframed(&surfaces[k],&loop_pts));
+    // whether a closed loop winds round a strip (a branch pipe's crotch round the branch; round
+    // both where a bore down a cone's tip holds its axis): the second is split where it is
+    // seamed, below
+    let winding = [0,1].map(|k| ends.is_empty() && winds(&strips[k],&loop_pts));
     let (t0,span) = if ends.is_empty() {
         let Some(period) = spine.period() else {
             return Err(format!("the ball between {} rolls off the end of their meeting",names()));
         };
-        // whether the loop winds round a strip (a branch pipe's crotch round the branch; round
-        // both where a bore down a cone's tip holds its axis): the second is split where it is
-        // seamed, below
-        let winding = [0,1].map(|k| winds(&strips[k],&loop_pts));
         // the canal starts where its contact with a winding strip crosses the strip's iso line
         // through a vertex of the loop, so the strip's seam runs between vertices both already have
         let mut t0 = spine.inverse(seed);
@@ -271,15 +283,7 @@ pub fn roll(b: &Brep,at: V,r: f64,tol: f64) -> Result<Rolled,String> {
     // the spine read along a smooth guide: a trace's own parameter turns at every point it was
     // marched through, which no smooth fit follows; a cubic through its points, by chord length,
     // projected back onto both offsets point by point, is exact and smooth between its ends
-    let guide = {
-        let n = 256;
-        let pts: Vec<V> = (0..=n).map(|k| spine.point(t0+span*k as f64/n as f64)).collect();
-        let mut ts = vec![0.];
-        for w in pts.windows(2) { let last = *ts.last().unwrap(); ts.push(last+distance(w[0],w[1])); }
-        let total = *ts.last().unwrap();
-        let ts: Vec<f64> = ts.into_iter().map(|t| t/total).collect();
-        super::nurbs::interpolate(&pts,&ts,3).ok_or("the spine could not be read smoothly")?
-    };
+    let guide = smooth_guide(&spine,t0,span).ok_or("the spine could not be read smoothly")?;
     // the ball's centre at `u` and the directions to its contacts, each projected once however
     // many points of the canal's arc there are read (the fit asks each `u` for its whole row)
     let frames = std::cell::RefCell::new(std::collections::BTreeMap::<u64,(V,[V;2])>::new());
@@ -350,7 +354,7 @@ pub fn roll(b: &Brep,at: V,r: f64,tol: f64) -> Result<Rolled,String> {
     let reversed = [face_a.reversed,face_b.reversed];
     // a loop winding round both strips: the second's contact split where it crosses that strip's
     // iso line through the loop's first vertex (the first's starts there already)
-    let split = if ends.is_empty() && [0,1].iter().all(|&k| winds(&strips[k],&loop_pts)) {
+    let split = if winding[0] && winding[1] {
         let s = &strips[1];
         let vertex = b.vertices[b.edges[chain[0]].v[0] as usize].p;
         let contact = |u: f64| canal(u,1.);
@@ -449,9 +453,9 @@ pub fn flat_along(b: &Brep,at: V,legs: [f64;2],on_a: Option<V>,tol: f64) -> Resu
         let (trim,faces) = end_at(b,&uses,&sides_faces,&chain,v,m,tol,&names,&section)?;
         ends.push(Stop {trim,t:edge.inverse(q),faces});
     }
+    let winding = [0,1].map(|k| ends.is_empty() && winds(&strips[k],&loop_pts));
     let (t0,span) = if ends.is_empty() {
         let Some(period) = edge.period() else { return Err(format!("the meeting of {names} does not close")) };
-        let winding = [0,1].map(|k| winds(&strips[k],&loop_pts));
         // the flat starts where its leg on a winding strip crosses the strip's iso line through a
         // vertex of the loop, so the strip's seam runs between vertices both already have
         let mut t0 = edge.inverse(seed);
@@ -500,15 +504,7 @@ pub fn flat_along(b: &Brep,at: V,legs: [f64;2],on_a: Option<V>,tol: f64) -> Resu
         (lo,hi-lo)
     };
     // the meeting read along a smooth guide, as `roll` reads its spine
-    let guide = {
-        let n = 256;
-        let pts: Vec<V> = (0..=n).map(|k| edge.point(t0+span*k as f64/n as f64)).collect();
-        let mut ts = vec![0.];
-        for w in pts.windows(2) { let last = *ts.last().unwrap(); ts.push(last+distance(w[0],w[1])); }
-        let total = *ts.last().unwrap();
-        let ts: Vec<f64> = ts.into_iter().map(|t| t/total).collect();
-        super::nurbs::interpolate(&pts,&ts,3).ok_or("the meeting could not be read smoothly")?
-    };
+    let guide = smooth_guide(&edge,t0,span).ok_or("the meeting could not be read smoothly")?;
     let frames = std::cell::RefCell::new(std::collections::BTreeMap::<u64,(V,V,[V;2])>::new());
     let frame_at = |u: f64| -> (V,V,[V;2]) {
         let u = u.clamp(0.,1.);
@@ -553,7 +549,7 @@ pub fn flat_along(b: &Brep,at: V,legs: [f64;2],on_a: Option<V>,tol: f64) -> Resu
     let reversed = [face_a.reversed,face_b.reversed];
     if ends.is_empty() {
         // winding round both strips: the second's leg split where it is seamed, as `roll`'s contact
-        let split = if [0,1].iter().all(|&k| winds(&strips[k],&loop_pts)) {
+        let split = if winding[0] && winding[1] {
             let s = &strips[1];
             let vertex = b.vertices[b.edges[chain[0]].v[0] as usize].p;
             Some(crossing(&|u| s.inverse(flat(u,1.))[0],s.inverse(vertex)[0],s.periods()[0].unwrap_or(TAU),0.,1.)
