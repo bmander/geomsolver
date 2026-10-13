@@ -165,7 +165,11 @@ impl<'a> P<'a> {
                     // word of the table is a word, unless it opens a path — and no selector word
                     // is a path, so a path is a reference whatever its key (`at: v1.origin`)
                     let along = name.text == "along" && self.reference_ahead();
-                    let v = if self.path_ahead() || along {
+                    // and `tangent(at: m)` names a point, unless it names an end of the line or
+                    // the arc (`at: p1`, `at: start`): the tangent at a point already on (#251)
+                    let point = word == "tangent" && name.text == "at" && matches!(self.peek(),
+                        Some(Tok::Ident(w)) if !["start", "end", "p1", "p2"].contains(&w.as_str()));
+                    let v = if self.path_ahead() || along || point {
                         Arg::Ref(self.refr()?)
                     } else {
                         self.sel_value()?

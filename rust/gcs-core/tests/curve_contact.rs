@@ -226,3 +226,73 @@ fn the_contacts_are_operators() {
     assert!(said.iter().any(|s| s == "inv tangent l"), "{said:?}");
     assert!(said.iter().any(|s| s == "inv curvature osc"), "{said:?}");
 }
+
+/// The point `m` held on the involute at roll `t`, written as `contact`, and a line from it ten
+/// long whose direction `tangency` states: the involute's tangent at a point it already holds.
+fn at_point(curve: &str, contact: &str, tangency: &str) -> String {
+    format!(
+        "{curve}in std.front {{\nm := point hint((26, 7))\nq := point hint((32, 13))\n\
+         l := line(m, q)\n{contact}\n{tangency}\nm distance(10) q\n}}\n"
+    )
+}
+
+/// What the diagnosis says of a drawing solved: its freedom, and how many of its equations
+/// say nothing the others do not — by the numeric rank, which sees what the matching does not.
+fn rank_of(e: &mut Elaborated) -> (i64, usize) {
+    let r = solve(&mut e.sketch, SolveOpts::default());
+    assert!(r.success, "{}", r.message);
+    let opts = gcs_core::diagnose::DiagnoseOptions::default();
+    let d = gcs_core::diagnose::diagnose(&mut e.sketch, opts);
+    (d.dof, d.n_equations - d.numeric_rank.unwrap())
+}
+
+/// **The tangent at a point already on a curve is one row** (#251): `inv tangent(at: m) l` reads
+/// the place of the contact holding `m` on the involute, so the line runs along the string at
+/// that roll — `(cos u, sin u)` — and the drawing is fully determined, every equation of it
+/// independent. The tangency pinned at the same roll beside the contact restates the point.
+#[test]
+fn a_tangent_at_a_point_of_a_curve_is_regular_where_the_pinned_pair_is_not() {
+    for (curve, tol) in [(INVOLUTE, 1e-5), (UNWIND, 1e-3)] {
+        let src = at_point(curve, "m coincident(t == 45) inv", "inv tangent(at: m) l");
+        let mut e = build(&src);
+        assert_eq!(rank_of(&mut e), (0, 0));
+        fd_jacobian(&e.sketch, tol);
+        let at = |n: &str| e.sketch.point_xy(e.map.ent_named(n).unwrap().i());
+        let (m, q) = (at("m"), at("q"));
+        let c = involute_at(0.0, 0.0, 20.0, 45.0);
+        assert!((m.0 - c.0).abs() < 1e-9 && (m.1 - c.1).abs() < 1e-9, "{m:?} against {c:?}");
+        let (tx, ty) = (45f64.to_radians().cos(), 45f64.to_radians().sin());
+        let (dx, dy) = (q.0 - m.0, q.1 - m.1);
+        assert!((dx * ty - dy * tx).abs() < 1e-9 * dx.hypot(dy), "({dx}, {dy}) along the string");
+        // one unknown: the contact's place, which the tangent reads
+        let owned: Vec<u32> = e.sketch.constraints.iter().flat_map(|c| c.aux_params()).collect();
+        assert_eq!(owned.len(), 2);
+        assert_eq!(owned[0], owned[1], "the tangent's place is the contact's");
+
+        let pinned = at_point(curve, "m coincident(t == 45) inv", "inv tangent(t == 45) l");
+        let mut e = build(&pinned);
+        assert_eq!(rank_of(&mut e), (0, 1), "the pinned pair restates the point");
+    }
+}
+
+/// The contact need not hold its place pinned, nor be stated first: a free one placed by a
+/// distance from the base centre solves to the involute's own tangent there.
+#[test]
+fn a_tangent_at_a_point_shares_a_free_contacts_place_stated_after_it() {
+    let contact = "m coincident inv hint(t: 40)\no distance(28) m";
+    let src = at_point(INVOLUTE, "inv tangent(at: m) l", contact);
+    let mut e = build(&src);
+    assert_eq!(rank_of(&mut e), (0, 0));
+    fd_jacobian(&e.sketch, 1e-5);
+    let owned: Vec<u32> = e.sketch.constraints.iter().flat_map(|c| c.aux_params()).collect();
+    assert_eq!(owned.len(), 2);
+    assert_eq!(owned[0], owned[1]);
+    let u = e.sketch.params[owned[0] as usize].value;
+    // |C(u)| = Rb·√(1 + φ²): 28 from the centre is φ = √(28² − 20²) / 20
+    let phi = (28f64.powi(2) - 400.0).sqrt() / 20.0;
+    assert!((u.to_radians() - phi).abs() < 1e-9, "roll {u} against {}", phi.to_degrees());
+    let at = |n: &str| e.sketch.point_xy(e.map.ent_named(n).unwrap().i());
+    let (m, q) = (at("m"), at("q"));
+    let (dx, dy) = (q.0 - m.0, q.1 - m.1);
+    assert!((dx * phi.sin() - dy * phi.cos()).abs() < 1e-9 * dx.hypot(dy));
+}

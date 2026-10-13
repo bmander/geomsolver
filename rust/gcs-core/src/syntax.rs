@@ -183,11 +183,16 @@ pub enum Ty {
     /// or one written in place.  Not a group: a group formal refuses a set and this a group, so a
     /// set handed where members are read is said at the call (#191).
     Set,
+    /// **Any path** (#251): a line, an arc, a circle, a spline or a curve — what a point runs
+    /// along and a tangent is taken at. An entity formal whose words are settled by the kind of
+    /// the actual, as every entity formal's are; refused at the call when the actual runs along
+    /// nothing (E103, `program::paths`).
+    Path,
     Ent(EntKind),
 }
 
 /// The words the types other than an entity kind are written as — one table, read both ways.
-const TYPE_WORDS: [(&str, Ty); 7] = [
+const TYPE_WORDS: [(&str, Ty); 8] = [
     ("Int", Ty::Int),
     ("Scalar", Ty::Scalar),
     ("Length", Ty::Length),
@@ -195,6 +200,7 @@ const TYPE_WORDS: [(&str, Ty); 7] = [
     ("Side", Ty::Side),
     ("group", Ty::Group),
     ("set", Ty::Set),
+    ("path", Ty::Path),
 ];
 
 impl Ty {
@@ -230,7 +236,7 @@ impl Ty {
         match self {
             Ty::Length => crate::units::Dim::LENGTH,
             Ty::Angle => crate::units::Dim::ANGLE,
-            Ty::Int | Ty::Scalar | Ty::Side | Ty::Group | Ty::Set | Ty::Ent(_) => {
+            Ty::Int | Ty::Scalar | Ty::Side | Ty::Group | Ty::Set | Ty::Ent(_) | Ty::Path => {
                 crate::units::Dim::SCALAR
             }
         }
