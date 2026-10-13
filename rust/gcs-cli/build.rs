@@ -38,7 +38,7 @@ fn main() {
         .any(|dir| ["so","dylib","a"].iter().any(|ext| root.join(dir).join(format!("lib{name}.{ext}")).exists()));
     let exchange: &[&str] = if has("TKDESTEP") || !has("TKSTEP") { &["TKDESTEP","TKDESTL"] }
         else { &["TKSTEP","TKSTEPAttr","TKSTEPBase","TKSTEP209","TKSTL"] };
-    for library in exchange.iter().chain(&["TKFillet","TKMesh","TKShHealing","TKXSBase","TKBO","TKBool","TKPrim",
+    for library in exchange.iter().chain(&["TKFillet","TKOffset","TKMesh","TKShHealing","TKXSBase","TKBO","TKBool","TKPrim",
         "TKTopAlgo","TKGeomAlgo","TKBRep","TKGeomBase","TKG3d","TKG2d","TKMath","TKernel"]) {
         println!("cargo:rustc-link-lib=dylib={library}");
     }

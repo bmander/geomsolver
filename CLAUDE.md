@@ -447,15 +447,15 @@ node's pieces, corners and balls with the rest (`shifted_node`). Refused by the 
 (#218): a meeting that branches where two surfaces touch (`roll`), a fitted canal met tangent by
 a cylinder (`runout.sv`'s lug rounded all over: ill-conditioned), and rounds of separate
 statements touching along a line (no manifold file describes it). **The oracle** (#218's 8): `gcs-cli tests/fillet_oracle.rs` (OCCT) builds each rounds
-example's body less its lowered regions, rounds the same edges by OCCT's own fillet or chamfer
-(`solvent_cad_round`, `Session::round`; each edge the one through a point the pieces give) and
-holds ours to it (volume 1e-9 where both are analytic, 2e-5 where either fits a B-spline; face
-kinds, OCCT's B-spline standing for an analytic face of ours). OCCT's fillet fails on an edge
-along or ending on a periodic surface's seam (`rail`, `post`, `frustum`): asked again of the same
-solid with its seams turned (`seams_turned`). Where OCCT means otherwise it is held to what it can
-say: a corner of three rounds beside a rolled one OCCT fills by its own surface, so the two may
-differ only near such corners (ours Steiner's to 1e-9, `half_frustum_opened`), and a chamfer
-beside a curved face, ruled in OCCT, is read off ours by OCCT's distances (`flats_by_occt`). `tests/round_lowering.rs` is the gate (every volume the closed form's to
+example's body less its lowered regions, rounds the same edges by OCCT (`How`: its fillet or
+chamfer, `solvent_cad_round`, `Session::round`, each edge the one through a point the pieces give;
+a convex body rounded all over by its offsets, `solvent_cad_opened`; a chamfer beside a curved face,
+where OCCT's chamfer is ruled between legs along the faces, by a loft through `std.Flat`'s sections
+in closed form, `solvent_cad_loft`) and holds ours to it (volume 1e-9 where both are analytic, 2e-5
+where either fits a B-spline; face kinds alike, OCCT's B-spline standing only for an analytic face
+of ours it fits). OCCT's fillet and offsets misread an edge along or ending on a periodic surface's
+seam (`rail`, `post`, `frustum`): asked of the same solid with its seams turned (`seams_turned`).
+`tests/round_lowering.rs` is the gate (every volume the closed form's to
 1e-9, a rolled one #85's quadrature's to 1e-6: `slot.sv`, `pad.sv`, `rail.sv`, `knob.sv`,
 `tee.sv`, `bore.sv`, `runout.sv`, `twin.sv`, `post.sv`, `dshaft.sv`, `groove.sv`, `bores.sv`,
 `frustum.sv`, `crotch.sv`, `bullnose.sv`).
@@ -948,7 +948,9 @@ extreme angle). Never a sample grid: extremes between samples were missed.
 **This kernel is every export's default** (phase 5): OCCT answers only `--kernel occt` /
 `--stl-backend occt` / `SOLVENT_KERNEL=occt` (the oracle; refused in a build without OCCT), its
 STEP checked by `step_check` against `Solid::of`. `gcs-cli tests/brep_oracle.rs` builds every
-corpus recipe node both ways; `tests/brep_census.rs` holds a census and `brep_body_debug`;
+corpus recipe node both ways (a Boolean OCCT meets off our bar where its meeting is ill-conditioned
+— two tori touching in the hypoid's tooth space — is held to OCCT within 1e-5 and to itself
+rebuilt at tolerances ten times either way, within 1e-9: `rebuilt`); `tests/brep_census.rs` holds a census and `brep_body_debug`;
 `SOLVENT_BREP_DEBUG` narrates, `SOLVENT_BREP_TIME` times slow Boolean steps. OCCT's volume of a
 STEP it reads (~1e-5) is no gate on our accuracy. Rung 1 is done: every corpus solid with a recipe
 agrees with OCCT (volume 1e-9, faces by kind) but for named refusals of self-touching designs

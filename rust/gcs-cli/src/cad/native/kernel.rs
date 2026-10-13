@@ -39,6 +39,8 @@ extern "C" {
     fn solvent_cad_read_step(cad: *mut c_void,path: *const c_char) -> c_int;
     fn solvent_cad_face_kind(cad: *mut c_void,face: c_int) -> c_int;
     fn solvent_cad_round(cad: *mut c_void,id: c_int,count: c_int,points: *const f64,sizes: *const f64,chamfer: c_int) -> c_int;
+    fn solvent_cad_opened(cad: *mut c_void,id: c_int,r: f64) -> c_int;
+    fn solvent_cad_loft(cad: *mut c_void,sections: c_int,segments: c_int,count: c_int,points: *const f64) -> c_int;
     fn solvent_cad_surface_grid(cad: *mut c_void,face: c_int,nu: c_int,nv: c_int,output: *mut f64) -> c_int;
 }
 
@@ -182,6 +184,23 @@ impl Session {
         let points: Vec<f64> = edges.iter().flat_map(|e| e.0).collect();
         let sizes: Vec<f64> = edges.iter().map(|e| e.1).collect();
         self.result(unsafe { solvent_cad_round(self.0,solid,edges.len() as c_int,points.as_ptr(),sizes.as_ptr(),chamfer as c_int) })
+    }
+    /// A convex solid rounded all over by OCCT's offsets: shrunk by `r`, then grown by it with round
+    /// joins (`tests/fillet_oracle.rs`).
+    #[allow(dead_code)]
+    pub(crate) fn opened(&self,solid: c_int,r: f64) -> Result<c_int,String> {
+        self.result(unsafe { solvent_cad_opened(self.0,solid,r) })
+    }
+    /// A solid lofted through closed sections, each `[segment][point]`, every segment interpolated
+    /// through its points (`tests/fillet_oracle.rs`).
+    #[allow(dead_code)]
+    pub(crate) fn loft(&self,sections: &[Vec<Vec<[f64;3]>>]) -> Result<c_int,String> {
+        let (segments,count) = (sections[0].len(),sections[0][0].len());
+        if sections.iter().any(|s| s.len() != segments || s.iter().any(|g| g.len() != count)) {
+            return Err("a loft's sections differ in shape".into());
+        }
+        let points: Vec<f64> = sections.iter().flatten().flatten().flatten().copied().collect();
+        self.result(unsafe { solvent_cad_loft(self.0,sections.len() as c_int,segments as c_int,count as c_int,points.as_ptr()) })
     }
     pub(crate) fn volume(&self,solid: c_int) -> Result<f64,String> {
         let mut v = [0.];
