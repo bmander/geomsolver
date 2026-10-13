@@ -180,10 +180,6 @@ pub fn kernel(id: K) -> &'static Kernel {
     &KERNELS[id as usize]
 }
 
-pub fn kernel_by_id(id: usize) -> &'static Kernel {
-    &KERNELS[id]
-}
-
 /// The kernel for one curve definition: `point_on_curve` at that definition's widths.
 ///
 /// Not in `KERNELS` because there is no fixed number of them — a document defines as many curve
