@@ -9,7 +9,8 @@
 //! the lowering's pieces (a point on each edge and its size), so OCCT is told nothing a person
 //! would not: which edges, how big. Where OCCT's fillet fails, or makes no valid solid (this
 //! kernel's own export of each is held by `tests/cli.rs` and `round_lowering.rs`), that is said
-//! and counted, never passed over silently.
+//! and counted, never passed over silently; so is a chamfer beside a curved face, where OCCT's
+//! chamfer and `std.Flat` are two definitions (`round_lowering.rs` holds ours to quadratures).
 #[path="../src/cad/native.rs"]
 #[allow(dead_code)]
 mod native;
@@ -41,7 +42,14 @@ fn source(file: &str) -> String {
 /// What a lowered piece says of the edge it rounds or chamfers: a point on the edge, the size
 /// (a round's radius, a chamfer's leg) and whether it is a chamfer. A corner's cell says nothing
 /// its three edges do not.
-fn edge_of(p: &Piece) -> Option<(V,f64,bool)> {
+fn edge_of(p: &Piece) -> Option<(V,f64,bool)> { edge_and_kind(p).map(|(at,size,chamfer,_)| (at,size,chamfer)) }
+
+/// `edge_of`, and whether a chamfer's flat stands beside a curved face (#218's 5, 6): there
+/// `std.Flat`'s flat is where the two faces' distances, each over the other's leg, sum to one —
+/// its legs measured from the other face's surface — and OCCT's chamfer is ruled between legs
+/// measured along the faces from the edge: two definitions, which only between planes agree.
+fn edge_and_kind(p: &Piece) -> Option<(V,f64,bool,bool)> {
+    let curved = |r: &Run| r.strokes.iter().any(|(s,_)| !matches!(s,Stroke::Line {..}));
     // a section's size: its ball's arc, or the leg from the edge along its first face
     let size = |r: &Run| -> (f64,bool) {
         match r.strokes.iter().find_map(|(s,n)| match s { Stroke::Arc {radius,..} if *n == "round" => Some(*radius),_ => None }) {
@@ -57,14 +65,14 @@ fn edge_of(p: &Piece) -> Option<(V,f64,bool)> {
         Piece::Run(r) => {
             let (s,chamfer) = size(r);
             // a little way along the edge from its first end
-            Some((add(r.origin,scale(r.along,0.5*s)),s,chamfer))
+            Some((add(r.origin,scale(r.along,0.5*s)),s,chamfer,chamfer && curved(r)))
         }
         Piece::Ring(g) => {
             let (s,chamfer) = size(&g.section);
             // half way round its turn
-            Some((Rigid::turn(g.axis_origin,g.axis,0.5*g.angle).point(g.section.origin),s,chamfer))
+            Some((Rigid::turn(g.axis_origin,g.axis,0.5*g.angle).point(g.section.origin),s,chamfer,chamfer && curved(&g.section)))
         }
-        Piece::Rolled(k) => Some(match k.flat { None => (k.at,k.r,false),Some(([la,_],_)) => (k.at,la,true) }),
+        Piece::Rolled(k) => Some(match k.flat { None => (k.at,k.r,false,false),Some(([la,_],_)) => (k.at,la,true,true) }),
         Piece::Corner(_) => None,
     }
 }
@@ -116,8 +124,8 @@ fn every_rounds_example_is_occts_fillet() {
     let session = native::Session::new().unwrap();
     let examples = [("block","block"),("by_hand","block"),("pocket","dish"),("boss","pad"),("slot","part"),("pad","pad"),
         ("rail","rail"),("knob","knob"),("tee","tee"),("bore","pipe"),("runout","lug"),("runout","vent"),("twin","bar"),
-        ("post","stand"),("dshaft","shaft")];
-    let (mut failures,mut refused) = (Vec::new(),0);
+        ("post","stand"),("dshaft","shaft"),("groove","part"),("bores","slab"),("frustum","half"),("crotch","tee")];
+    let (mut failures,mut refused,mut unlike) = (Vec::new(),0,0);
     for (file,name) in examples {
         let (prog,errs,linked) = gcs_core::library::parse_linked(&source(file));
         assert!(errs.is_empty() && linked.is_empty(),"{file}: {errs:?} {linked:?}");
@@ -134,15 +142,23 @@ fn every_rounds_example_is_occts_fillet() {
         // the edges its regions round, each once
         let mut rounds: Vec<(V,f64)> = Vec::new();
         let mut flats: Vec<(V,f64)> = Vec::new();
+        let mut beside_curved = false;
         // (of the regions over this body's faces)
         let over = |i: usize| matches!(&sk.solids[i].def,SolidDef::Region {terms,..} if terms.iter()
             .any(|t| matches!(&t.shape,RegionShape::FaceSide {face} if face.solid as usize == body)));
         for i in (0..sk.solids.len()).filter(|&i| over(i)) {
             let Some(Ok(pieces)) = lowering::lowered(sk,i) else { continue };
+            beside_curved |= pieces.iter().filter_map(edge_and_kind).any(|(_,_,_,curved)| curved);
             for (at,size,chamfer) in pieces.iter().filter_map(edge_of) {
                 let list = if chamfer { &mut flats } else { &mut rounds };
                 if !list.iter().any(|(p,_)| dist(*p,at) <= 1e-9*(1.+norm(at))) { list.push((at,size)); }
             }
+        }
+        if beside_curved {
+            eprintln!("{file} `{name}`: a flat beside a curved face is std's sum of distances, OCCT's chamfer ruled between \
+                legs along the faces: not compared");
+            unlike += 1;
+            continue;
         }
         // theirs: OCCT's body less the rounds, rounded by OCCT
         let recipe = gcs_core::solid::cad::recipe(sk,body).unwrap();
@@ -172,6 +188,6 @@ fn every_rounds_example_is_occts_fillet() {
             && our_kinds.iter().all(|k| their_kinds.contains(k) || their_kinds.contains("bspline"));
         if !alike { failures.push(format!("{file} `{name}`: faces {our_kinds:?} against OCCT's {their_kinds:?}")); }
     }
-    eprintln!("{} compared, {refused} OCCT does not round",examples.len()-refused);
+    eprintln!("{} compared, {refused} OCCT does not round, {unlike} chamfered beside a curved face",examples.len()-refused-unlike);
     assert!(failures.is_empty(),"{} disagreements:\n{}",failures.len(),failures.join("\n"));
 }

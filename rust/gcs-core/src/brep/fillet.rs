@@ -120,7 +120,10 @@ fn meeting<'b>(b: &'b Brep,at: V,tol: f64) -> Result<Meeting<'b>,String> {
     for &e in &chain { for v in b.edges[e].v { *degree.entry(v).or_default() += 1; } }
     let stops: Vec<u32> = degree.iter().filter(|(_,&d)| d % 2 != 0).map(|(&v,_)| v).collect();
     if !(stops.is_empty() || stops.len() == 2 && degree.values().all(|&d| d <= 2)) {
-        return Err(format!("the meeting of {} branches: a fillet along it is rung 3",names()));
+        // (a meeting branches only where the two surfaces touch: there they are tangent, and no
+        // ball touches both through it, of any size)
+        return Err(format!("the meeting of {} branches where the two touch: no ball rolls through a point where they \
+            are tangent",names()));
     }
     // the faces' outward normals and the directions into each from the edge, at its middle
     let e = &b.edges[nearest];
@@ -199,11 +202,10 @@ pub fn roll(b: &Brep,at: V,r: f64,tol: f64) -> Result<Rolled,String> {
         let Some(period) = spine.period() else {
             return Err(format!("the ball between {} rolls off the end of their meeting",names()));
         };
-        // whether the loop winds round a strip (a branch pipe's crotch round the branch)
+        // whether the loop winds round a strip (a branch pipe's crotch round the branch; round
+        // both where a bore down a cone's tip holds its axis): the second is split where it is
+        // seamed, below
         let winding = [0,1].map(|k| winds(&strips[k],&loop_pts));
-        if winding[0] && winding[1] {
-            return Err(format!("the fillet of {} winds round both faces: not built yet",names()));
-        }
         // the canal starts where its contact with a winding strip crosses the strip's iso line
         // through a vertex of the loop, so the strip's seam runs between vertices both already have
         let mut t0 = spine.inverse(seed);
@@ -336,7 +338,18 @@ pub fn roll(b: &Brep,at: V,r: f64,tol: f64) -> Result<Rolled,String> {
     // end, `crease.ends`, wherever along the run it stands)
     let trims: Vec<Trim> = ends.iter().map(|e| e.trim.clone()).collect();
     let reversed = [face_a.reversed,face_b.reversed];
-    let piece = if ends.is_empty() { build(b,&chain,&net,&strips,reversed,concave,tol,net_err)? } else {
+    // a loop winding round both strips: the second's contact split where it crosses that strip's
+    // iso line through the loop's first vertex (the first's starts there already)
+    let split = if ends.is_empty() && [0,1].iter().all(|&k| winds(&strips[k],&loop_pts)) {
+        let s = &strips[1];
+        let vertex = b.vertices[b.edges[chain[0]].v[0] as usize].p;
+        let contact = |u: f64| canal(u,1.);
+        Some(crossing(&|u| s.inverse(contact(u))[0],s.inverse(vertex)[0],s.periods()[0].unwrap_or(TAU),0.,1.)
+            .ok_or_else(|| format!("the fillet of {}: its second contact never crosses its strip's seam",names()))?)
+            // (none where it crosses there at the canal's start already)
+            .filter(|&u| u > 1e-9 && u < 1.-1e-9)
+    } else { None };
+    let piece = if ends.is_empty() { build(b,&chain,&net,&strips,reversed,concave,tol,net_err,split)? } else {
         let meeting = super::geom::Traced {a:surfaces[0].clone(),b:surfaces[1].clone(),pts:Vec::new(),closed:false};
         // the section's plane at `u`: through the ball's centre, square to the spine (the plane of
         // its arc), its normal along `u`; where the faces meet in it, across the ball from its centre
@@ -423,9 +436,6 @@ pub fn flat_along(b: &Brep,at: V,legs: [f64;2],on_a: Option<V>,tol: f64) -> Resu
     let (t0,span) = if ends.is_empty() {
         let Some(period) = edge.period() else { return Err(format!("the meeting of {names} does not close")) };
         let winding = [0,1].map(|k| winds(&strips[k],&loop_pts));
-        if winding[0] && winding[1] {
-            return Err(format!("the flat of {names} winds round both faces: not built yet"));
-        }
         // the flat starts where its leg on a winding strip crosses the strip's iso line through a
         // vertex of the loop, so the strip's seam runs between vertices both already have
         let mut t0 = edge.inverse(seed);
@@ -525,7 +535,17 @@ pub fn flat_along(b: &Brep,at: V,legs: [f64;2],on_a: Option<V>,tol: f64) -> Resu
     if net_err > bar { return Err(format!("the flat between {names} misses its fit by {net_err:e}")); }
     let middle = frame_at(0.5).0;
     let reversed = [face_a.reversed,face_b.reversed];
-    if ends.is_empty() { return build_with(b,&chain,&net,&strips,reversed,concave,tol,net_err,Some(middle)) }
+    if ends.is_empty() {
+        // winding round both strips: the second's leg split where it is seamed, as `roll`'s contact
+        let split = if [0,1].iter().all(|&k| winds(&strips[k],&loop_pts)) {
+            let s = &strips[1];
+            let vertex = b.vertices[b.edges[chain[0]].v[0] as usize].p;
+            Some(crossing(&|u| s.inverse(flat(u,1.))[0],s.inverse(vertex)[0],s.periods()[0].unwrap_or(TAU),0.,1.)
+                .ok_or_else(|| format!("the flat of {names}: its second leg never crosses its strip's seam"))?)
+                .filter(|&u| u > 1e-9 && u < 1.-1e-9)
+        } else { None };
+        return build_with(b,&chain,&net,&strips,reversed,concave,tol,net_err,Some(middle),split)
+    }
     let trims: Vec<Trim> = ends.iter().map(|e| e.trim.clone()).collect();
     let section = |u: f64| { let (e,t,_) = frame_at(u); (e,t) };
     let corner = |u: f64| frame_at(u).0;
@@ -766,14 +786,19 @@ fn copy_run(b: &Brep,chain: &[usize],out: &mut Brep) -> (std::collections::BTree
 /// behind the middle of its arc), or a flat, its piece looking away from `edge`, the point of the
 /// faces' meeting in its middle section.
 fn surface_face(out: &mut Brep,net: &Net,contact: [u32;2],ends: [u32;2],edge: Option<V>) {
+    let [[u0,u1],_] = net.domain();
+    surface_face_of(out,net,[&[(contact[0],[u0,u1])],&[(contact[1],[u0,u1])]],ends,edge)
+}
+
+/// `surface_face` with each contact in pieces, each an edge over a stretch of `u`, in order.
+fn surface_face_of(out: &mut Brep,net: &Net,contact: [&[(u32,[f64;2])];2],ends: [u32;2],edge: Option<V>) {
     let [[u0,u1],[v0,v1]] = net.domain();
     let line = |a: Uv,z: Uv| Pcurve::Line {a,b:z};
-    let canal_loop = vec![
-        Coedge {edge:contact[0],reversed:false,pcurve:line([u0,v0],[u1,v0])},
-        Coedge {edge:ends[1],reversed:false,pcurve:line([u1,v0],[u1,v1])},
-        Coedge {edge:contact[1],reversed:true,pcurve:line([u0,v1],[u1,v1])},
-        Coedge {edge:ends[0],reversed:true,pcurve:line([u0,v0],[u0,v1])},
-    ];
+    let mut canal_loop: Vec<Coedge> = contact[0].iter()
+        .map(|&(e,[a,z])| Coedge {edge:e,reversed:false,pcurve:line([a,v0],[z,v0])}).collect();
+    canal_loop.push(Coedge {edge:ends[1],reversed:false,pcurve:line([u1,v0],[u1,v1])});
+    canal_loop.extend(contact[1].iter().rev().map(|&(e,[a,z])| Coedge {edge:e,reversed:true,pcurve:line([a,v1],[z,v1])}));
+    canal_loop.push(Coedge {edge:ends[0],reversed:true,pcurve:line([u0,v0],[u0,v1])});
     let surface = Surface::BSpline(Frame::new([0.;3],[0.,0.,1.],[1.,0.,0.]),Arc::new(net.clone()));
     let (m,su,sv) = surface.d1([0.5*(u0+u1),0.5*(v0+v1)]);
     // the ball's centre a radius behind the middle of the arc; a flat's edge behind it
@@ -795,28 +820,42 @@ fn face_out(out: &mut Brep,s: Surface,outward: V,es: &[usize],name: &str) -> Res
 
 /// The piece: the canal face over `net` (seamed along its first column), and on each surface the
 /// strip between the loop `chain` (edges of `b`) and the canal's contact with it.
-fn build(b: &Brep,chain: &[usize],net: &Net,surfaces: &[Surface;2],face_reversed: [bool;2],concave: bool,tol: f64,fit: f64)
-    -> Result<Brep,String> { build_with(b,chain,net,surfaces,face_reversed,concave,tol,fit,None) }
+fn build(b: &Brep,chain: &[usize],net: &Net,surfaces: &[Surface;2],face_reversed: [bool;2],concave: bool,tol: f64,fit: f64,
+    split: Option<f64>) -> Result<Brep,String> { build_with(b,chain,net,surfaces,face_reversed,concave,tol,fit,None,split) }
 
-/// `build` over a fitted face `surface_face` orients by `edge`.
+/// `build` over a fitted face `surface_face` orients by `edge`, the contact on the second face
+/// split at `split` (its `u`) where a strip winding round its surface too has its seam (#218's 7:
+/// the loop winding round both).
 #[allow(clippy::too_many_arguments)]
 fn build_with(b: &Brep,chain: &[usize],net: &Net,surfaces: &[Surface;2],face_reversed: [bool;2],concave: bool,tol: f64,fit: f64,
-    edge: Option<V>) -> Result<Brep,String> {
+    edge: Option<V>,split: Option<f64>) -> Result<Brep,String> {
     let [[u0,u1],[v0,v1]] = net.domain();
     let mut out = Brep::default();
     let last_v = net.poles[0].len()-1;
     let (va,vb) = (out.vertex(net.point(u0,v0)),out.vertex(net.point(u0,v1)));
-    // the contacts, each one closed edge, and the canal's seam between them
-    let contact = [out.edge(EdgeCurve::Curve(column(net,0)),[u0,u1],[va,va]),out.edge(EdgeCurve::Curve(column(net,last_v)),[u0,u1],[vb,vb])];
+    // the contacts, each one closed edge (the second in two where it is split), and the canal's
+    // seam between them
+    let first = out.edge(EdgeCurve::Curve(column(net,0)),[u0,u1],[va,va]);
+    let second: Vec<(u32,[f64;2])> = match split {
+        None => vec![(out.edge(EdgeCurve::Curve(column(net,last_v)),[u0,u1],[vb,vb]),[u0,u1])],
+        Some(us) => {
+            let vs = out.vertex(net.point(us,v1));
+            vec![(out.edge(EdgeCurve::Curve(column(net,last_v)),[u0,us],[vb,vs]),[u0,us]),
+                (out.edge(EdgeCurve::Curve(column(net,last_v)),[us,u1],[vs,vb]),[us,u1])]
+        }
+    };
+    let contact: [Vec<u32>;2] = [vec![first],second.iter().map(|&(e,_)| e).collect()];
     let seam = out.edge(EdgeCurve::Curve(row(net,0)),[v0,v1],[va,vb]);
-    surface_face(&mut out,net,contact,[seam,seam],edge);
+    surface_face_of(&mut out,net,[&[(first,[u0,u1])],&second],[seam,seam],edge);
     let (_,edge_of) = copy_run(b,chain,&mut out);
     for k in 0..2 {
         let name = ["a","b"][k];
         // the strip's surface: the face's own, its material away from the piece at a concave edge
         let reversed = face_reversed[k] != concave;
         let s = &surfaces[k];
-        let mut loops = vec![closed_loop(&out,&[contact[k] as usize],s)?,closed_loop(&out,&edge_of,s)?];
+        // (a split contact walked from where it is split, where its seam reaches it)
+        let walk: Vec<usize> = contact[k].iter().rev().map(|&e| e as usize).collect();
+        let mut loops = vec![closed_loop(&out,&walk,s)?,closed_loop(&out,&edge_of,s)?];
         let periods = s.periods();
         let winds = |l: &Loop| periods[0].is_some_and(|p| (l.turn[0]/p).round().abs() >= 1.);
         let face_loops = if loops.iter().all(|l| !winds(l)) {
@@ -840,7 +879,7 @@ fn build_with(b: &Brep,chain: &[usize],net: &Net,surfaces: &[Surface;2],face_rev
     super::json::measure(&mut out);
     // a contact is the canal's iso line, off its face's surface by the fit at most — which a
     // measure at the net's own nodes (where the fit is exact) does not see
-    for c in contact { let e = &mut out.edges[c as usize]; e.tol = e.tol.max(fit); }
+    for c in contact.iter().flatten() { let e = &mut out.edges[*c as usize]; e.tol = e.tol.max(fit); }
     out.check(10.*tol.max(fit))?;
     Ok(out)
 }

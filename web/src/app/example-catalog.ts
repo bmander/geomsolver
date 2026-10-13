@@ -58,8 +58,9 @@ const projects: Example[] = [{
     + 'that are sets read point by point. Then the fillet stack\'s parts: a cast pad, a turned '
     + 'knob, a rail, a pipe tee\'s crotch, a drilled pipe\'s rim, tangent chains round a slot and '
     + 'a pocket, rounds that run out onto a face or into a post, the seams of two rods made one, '
-    + 'and a D-shaped shaft rounded all over, all built exactly too. The README says '
-    + 'what each shows; the surfaces refine in the background as you watch.',
+    + 'a D-shaped shaft rounded all over, a groove rounded all round, a slab drilled twice and '
+    + 'half a frustum rounded all over, and a tee\'s crotch chamfered, all built exactly too. '
+    + 'The README says what each shows; the surfaces refine in the background as you watch.',
   target: { kind: 'directory', path: 'rounds', entry: 'block.sv' },
 }, {
   label: 'Connecting rod, forged · rounded in Solvent', key: 'conrod',

@@ -688,8 +688,8 @@ fn simpson(f: &dyn Fn(f64) -> f64, a: f64, b: f64, tol: f64) -> f64 {
     step(f, a, b, fa, fm, fb, (b - a) / 6.0 * (fa + 4.0 * fm + fb), tol, 48)
 }
 
-/// **A run mitred against a ring's stretch on one cylinder** (#218's 1): the groove's rims rounded
-/// all round — along the plate's top (two runs) and at its ends (two half rings). At each corner a
+/// **A run mitred against a ring's stretch on one cylinder** (#218's 1): `groove.sv`, the groove's
+/// rims rounded all round — along the plate's top (two runs) and at its ends (two half rings). At each corner a
 /// run and a stretch meet, each with a face on the groove's cylinder; their union shares those
 /// faces on the one cylinder, and the two rounds meet in a curve ending where both touch the
 /// groove — a point where the run's cylinder and the ring's torus touch, their meeting two branches
@@ -704,10 +704,9 @@ fn simpson(f: &dyn Fn(f64) -> f64, a: f64, b: f64, tol: f64) -> f64 {
 /// dρ`, by quadrature (`ρ = 6 + (√60 − 6) u²` for the root at 6).
 #[test]
 fn a_grooves_rims_rounded_all_round_mitre_on_the_groove() {
-    let src = include_str!("../../examples/rounds/rail.sv").replace("rod union rail", "rod cut rail");
-    let e = solved(&src);
+    let e = solved(include_str!("../../examples/rounds/groove.sv"));
     assert_eq!(lowered(&e).0, 3);
-    let b = exported(&e, "rail");
+    let b = exported(&e, "part");
     let (top, alpha) = (60f64.sqrt(), 2f64.atan2(60f64.sqrt()));
     let shared = |u: f64| {
         let rho = 6.0 + (top - 6.0) * u * u;
@@ -719,7 +718,7 @@ fn a_grooves_rims_rounded_all_round_mitre_on_the_groove() {
     let want = 60.0 * 10.0 * 40.0 - PI * 36.0 / 2.0 * 40.0 - 2.0 * 40.0 * beside_cylinder(6.0, 2.0)
         - root_ring(6.0, 2.0) + 4.0 * corner;
     close(props::volume(&b), want);
-    agrees_with_field(&e, "rail", 0.01);
+    agrees_with_field(&e, "part", 0.01);
 }
 
 /// The groove's rim at the plate's near face: a half circle, its round a stretch of a ring ending
@@ -909,17 +908,8 @@ fn rounds_meeting_at_a_vertex_of_both_kinds_touch_along_a_line() {
     assert!(why.contains("touches itself along a line") && why.contains("no manifold file describes it"), "{why}");
 }
 
-/// Two overlapping bores through a round slab 40 across and 10 deep.
-const BORES: &str = "unit mm\nuse std (round)\nin std.front {\n\
-    o := point\nfix((5, 0)) o\nrim := circle(center: o) hint(r: 20)\nradius(20mm) rim\n\
-    c1 := point\nc2 := point\nfix((0, 0)) c1\nfix((14, 0)) c2\n\
-    big := circle(center: c1) hint(r: 10)\nsmall := circle(center: c2) hint(r: 8)\n\
-    radius(10mm) big\nradius(8mm) small\n}\n\
-    block := solid(face(rim), from: 0mm, to: 10mm)\n\
-    left := solid(face(big), from: 0mm, to: 10mm)\nright := solid(face(small), from: 0mm, to: 10mm)\n\
-    left cut block\nright cut block\n";
-
-/// **A corner where two curved faces meet** (#218's 4): the two bores' slab rounded all over.
+/// **A corner where two curved faces meet** (#218's 4): `bores.sv`, a slab drilled twice, the
+/// bores overlapping, rounded all over.
 /// Where the cusp between the bores reaches a face of the block, three convex edges meet — the
 /// cusp (a line between two cylinders) and each bore's rim (a circle where a plane meets a
 /// cylinder) — and the ball touching the face and both walls rounds the corner: its cell over a
@@ -928,26 +918,22 @@ const BORES: &str = "unit mm\nuse std (round)\nin std.front {\n\
 /// standing on another stretch of the same circle). Built, exported, and held to the field.
 #[test]
 fn a_corner_where_two_bores_meet_a_face_is_rounded() {
-    let e = solved(&format!("{BORES}round(r: 1mm) block\n"));
+    let e = solved(include_str!("../../examples/rounds/bores.sv"));
     lowered(&e);
-    let b = exported(&e, "block");
+    let b = exported(&e, "slab");
     let k = kinds(&b);
     assert!(k.get("sphere").is_some_and(|&n| n >= 4) && k.contains_key("torus"), "{k:?}");
-    agrees_with_field(&e, "block", 0.01);
+    agrees_with_field(&e, "slab", 0.01);
 }
 
 
-/// A frustum (radius 10 at z = 0 to 6 at z = 12, about z), its half y < 0 cut away.
-const HALF_FRUSTUM: &str = "unit mm\nuse std (round)\nin std.front {\n\
-    a := point\nb := point\nc := point\nd := point\n\
-    fix((0, 0)) a\nfix((10, 0)) b\nfix((6, 12)) c\nfix((0, 12)) d\n\
-    (ab := line(a, b)) -> (bc := line(b, c)) -> (cd := line(c, d)) -> (da := line(d, a)) -> close\n}\n\
-    in std.top {\n  e := point\n  f := point\n  g := point\n  h := point\n\
-    fix((-20, -20)) e\nfix((20, -20)) f\nfix((20, 0)) g\nfix((-20, 0)) h\n\
-    (ef := line(e, f)) -> (fg := line(f, g)) -> (gh := line(g, h)) -> (he := line(h, e)) -> close\n}\n\
-    cone := solid(face(ab, bc, cd, da), about: std.z)\n\
-    cutter := solid(face(ef, fg, gh, he), from: -1mm, to: 13mm)\n\
-    half := solid(cone)\ncutter cut half\n";
+/// `frustum.sv`: a frustum (radius 10 at z = 0 to 6 at z = 12, about z), its half y < 0 cut away,
+/// with `more` in place of its rounds.
+fn half_frustum(more: &str) -> String {
+    let src = include_str!("../../examples/rounds/frustum.sv");
+    assert!(src.contains("round(r: r) half\n"));
+    src.replace("round(r: r) half\n", more)
+}
 
 /// **A straight edge beside a curved face no line carries** (#218's 5): the half frustum's two
 /// generators, where the cut through its axis meets the cone. In a section square to the edge
@@ -957,15 +943,15 @@ const HALF_FRUSTUM: &str = "unit mm\nuse std (round)\nin std.front {\n\
 /// (`fillet_definition::frustum_generator`) to 1e-6.
 #[test]
 fn a_frustums_generators_are_rolled() {
-    let e = solved(&format!("{HALF_FRUSTUM}half.cutter round(r: 1mm) half.cone.bc\n"));
+    let e = solved(&half_frustum("half.cutter round(r: 1mm) half.cone.bc\n"));
     assert_eq!(lowered(&e).0, 1);
     let b = exported(&e, "half");
     let want = 392.0 * PI - 2.0 * crate::fillet_definition::frustum_generator(10.0, 1.0 / 3.0, [0.0, 12.0], 1.0);
     near_quadrature(props::volume(&b), want);
 }
 
-/// **A flat along a traced edge** (#218's 6): `tee.sv`'s crotch and `bore.sv`'s rim chamfered
-/// instead of rounded. No line or circle carries either edge: the flat — where the two walls'
+/// **A flat along a traced edge** (#218's 6): `crotch.sv`, a tee's crotch, and `bore.sv`'s rim
+/// chamfered instead of rounded. No line or circle carries either edge: the flat — where the two walls'
 /// distances, each over the other's leg, sum to one — is sectioned square to the edge between its
 /// two legs (each wall met with the other grown by the leg) and fitted, its strips on the walls
 /// built as a rolled round's are (`brep::fillet::flat_along`). Each held to a quadrature over its
@@ -973,7 +959,7 @@ fn a_frustums_generators_are_rolled() {
 #[test]
 fn chamfers_along_traced_edges_are_flats_fitted() {
     let ex = |s: &str| s.replace("use std (round)", "use std (chamfer)").replace("round(r: r)", "chamfer(d: 1mm)");
-    let e = solved(&ex(include_str!("../../examples/rounds/tee.sv")));
+    let e = solved(include_str!("../../examples/rounds/crotch.sv"));
     assert_eq!(lowered(&e).0, 1);
     let want = PI * 100.0 * 60.0 + PI * 36.0 * 25.0 - inside_crossing(10.0, 6.0)
         + crate::fillet_definition::tee_flat(10.0, 6.0, 1.0);
@@ -1080,7 +1066,8 @@ fn a_rolled_run_onto_a_curved_face_is_cut_off_by_its_solid() {
     near_quadrature(props::volume(&b), block - hole - rim);
 }
 
-/// **A rolled round beside other pieces** (#218's 7): the half frustum rounded all over. Its two
+/// **A rolled round beside other pieces** (#218's 7): `frustum.sv`, the half frustum rounded all
+/// over. Its two
 /// generators are rolled, its rims rings, its cut's edges runs, and where three meet a corner's
 /// cell — over a plane, a cone and a plane, its meetings traced where no closed form holds them
 /// (`fillet::corner_among`), each section the plane of the ball's arc between two faces (through
@@ -1090,7 +1077,7 @@ fn a_rolled_run_onto_a_curved_face_is_cut_off_by_its_solid() {
 /// and held to the field.
 #[test]
 fn rolled_runs_are_glued_to_the_corners_at_their_ends() {
-    let e = solved(&format!("{HALF_FRUSTUM}round(r: 1mm) half\n"));
+    let e = solved(include_str!("../../examples/rounds/frustum.sv"));
     lowered(&e);
     let b = exported(&e, "half");
     assert!(kinds(&b).get("sphere").is_some_and(|&n| n >= 4), "{:?}", kinds(&b));
@@ -1108,4 +1095,41 @@ fn a_rolled_rim_is_cut_only_near_its_corners() {
     lowered(&e);
     exported(&e, "vent");
     agrees_with_field(&e, "vent", 0.01);
+}
+
+/// **A rolled round winding round both faces** (#218's 7): a frustum (radius 10 at its foot to 2
+/// at its top, 16 high) bored down its tip by a bore of 3 whose axis stands 1 off the cone's, so
+/// the cone's axis is inside the bore and the rim where they meet winds round both. Each strip is
+/// seamed along its surface's iso line through a vertex of the rim, the second's contact split
+/// where it crosses its own (or none, where by the part's symmetry it crosses it where the canal
+/// starts: the bore turned about the cone's axis is the same part, split). The frustum less the bore — at each distance `ρ` from the cone's axis the bore
+/// holds `2 acos((ρ² − 8)/2ρ)` of the turn, the whole of it within 2, under the cone `z = 2(10 −
+/// ρ)` or the top — less the rim, #85's quadrature (`cone_bore_rim`), to 1e-6.
+#[test]
+fn a_rim_winding_round_both_faces_is_rolled() {
+    let src = "unit mm\nuse std (round)\nin std.front {\n\
+        a := point\nb := point\nc := point\nd := point\n\
+        fix((0, 0)) a\nfix((10, 0)) b\nfix((2, 16)) c\nfix((0, 16)) d\n\
+        (ab := line(a, b)) -> (bc := line(b, c)) -> (cd := line(c, d)) -> (da := line(d, a)) -> close\n}\n\
+        in std.top {\n  o := point\n  fix((1, 0)) o\n  k := circle(center: o) hint(r: 3)\n  radius(3mm) k\n}\n\
+        cone := solid(face(ab, bc, cd, da), about: std.z)\n\
+        bore := solid(face(k), from: -1mm, to: 20mm)\n\
+        part := solid(cone)\nbore cut part\npart.cone.bc round(r: 0.5mm) part.bore\n";
+    let e = solved(src);
+    assert_eq!(lowered(&e).0, 1);
+    let b = exported(&e, "part");
+    let frustum = PI * 16.0 * (100.0 + 20.0 + 4.0) / 3.0;
+    // the bore's share between ρ = 2 and 4, `ρ = 4 − 2s²` for the root at 4
+    let shared = simpson_n(&|s: f64| {
+        let rho = 4.0 - 2.0 * s * s;
+        2.0 * ((rho * rho - 8.0) / (2.0 * rho)).clamp(-1.0, 1.0).acos() * 2.0 * (10.0 - rho) * rho * 4.0 * s
+    }, 0.0, 1.0, 20_000);
+    let bore = 64.0 * PI + shared;
+    let want = frustum - bore - crate::fillet_definition::cone_bore_rim(10.0, 0.5, 3.0, 1.0, 0.5);
+    near_quadrature(props::volume(&b), want);
+    agrees_with_field(&e, "part", 0.01);
+    // the bore turned about the cone's axis: the same part, but the rim's vertices (where each
+    // face's own seam meets it) no longer on its plane of symmetry, so the second contact is split
+    let e = solved(&src.replace("fix((1, 0)) o", "fix((0.6, 0.8)) o"));
+    near_quadrature(props::volume(&exported(&e, "part")), want);
 }

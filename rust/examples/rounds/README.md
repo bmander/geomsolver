@@ -32,9 +32,10 @@ word's name, it is also built exactly and held to that reading: a run along a st
 between planes, or between a plane and a cylinder along it, is a prism whose face is a cylinder
 (cut off by the faces its edge ends on, square or at a slant), a run round a circle where a
 plane, a cylinder, a cone or a sphere meet about one axis is a ring whose face is a torus (a
-stretch of one where the circle goes on tangent into a flat side), a corner where three square
-faces meet is the ball's patch, a flat is a plane, and a round along any other edge is the ball
-rolled along it, traced, its canal fitted. Those bodies show as exact solids and export by
+stretch of one where the circle goes on tangent into a flat side), a corner where three faces
+meet is the ball's patch, a flat is a plane (or a conic's prism or turn beside a curved face), a
+round along any other edge is the ball rolled along it, traced, its canal fitted, and a flat along
+one the sum of distances sectioned and fitted the same way. Those bodies show as exact solids and export by
 `solventc --step` and `--stl`; a region no entry builds is meshed by the page in the background, and its export is
 refused, naming why.
 
@@ -64,6 +65,10 @@ The fillet stack's examples (#195), each the stack's program written with the wo
 | `post.sv` | **A run that ends on a curved face.** A plate's top edge rounded up to a post standing at that edge: each run ends on the post's wall, so it is carried on into the post and cut off by its cylinder, kept outside it. Built exactly (the closed form's volume to 1e-9). |
 | `dshaft.sv` | **Corners with a curved face.** A D-shaped shaft rounded all over: the flat's edges run into the round and are cut off by it, the rims are stretches of rings cut off by the flat, and where the flat, the round and a cap meet the ball touching all three rounds the corner, its cell with a patch of the round among its faces. Built exactly (Steiner's formula over the shrunk D, to 1e-9). |
 | `twin.sv` | **Between two curved faces.** Two rods side by side, overlapping, made one: their walls meet in two straight seams, and in a section both are circles. Built exactly: the ball stands where the two circles grown by its radius meet, each seam's fill a prism of three arcs (the closed form's volume to 1e-9). Chamfered instead, the flat's sum of distances from the two walls is one from the rods' axes: an ellipse with the axes its foci, a prism over a rational quadratic (the closed form's volume to 1e-9). A flat of unequal legs there is a Cartesian oval, which no rational curve holds: refused by name. |
+| `groove.sv` | **A run mitred against a ring on one cylinder.** A rod's groove along a plate, its rims rounded all round: at each corner a run along the top meets a ring's stretch round the groove's end, each with a face on the groove, and their rounds meet in a curve ending where both touch it — a point where the two surfaces touch and their meeting is two branches crossing, traced up to it. Built exactly (a quadrature in the distance from the groove's axis, to 1e-9). |
+| `bores.sv` | **Corners where a face meets two curved walls.** A slab drilled twice, the bores overlapping, rounded all over: where a cusp between the bores reaches a face, the ball touching the face and both walls rounds the corner, its cell over a plane and two cylinders. Built exactly, and OCCT's fillet agrees (`fillet_oracle`). |
+| `frustum.sv` | **Rolled runs beside corners.** Half a frustum rounded all over: its generators are straight, but a section square to one cuts the cone in no circle, so the ball is rolled along it; each rolled run is cut short at the section of the corner at its end (the plane of the ball's arc) and glued to that corner's cell. Built exactly; the generators alone are #85's quadrature over an open spine (1e-6). |
+| `crotch.sv` | **A flat along a traced edge.** A tee's crotch chamfered: the flat — where the walls' distances, each over the other's leg, sum to one — sectioned square to the saddle between its legs and fitted, as a rolled round's canal is. Built exactly (a quadrature over sections square to the saddle, to 1e-6). OCCT's chamfer is ruled between legs measured along the faces, a different flat, so the oracle does not compare it. |
 
 `rust/gcs-core/tests/rounds_examples.rs` holds each file to what its comments say, the suggested
 edits included, and the stack's examples to the stack's closed forms and #85's quadrature, each

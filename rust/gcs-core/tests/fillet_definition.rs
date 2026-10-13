@@ -1096,6 +1096,35 @@ pub(crate) fn flat_within(c: &dyn Fn(f64) -> V, d: [&dyn Fn(V) -> f64; 2], grad:
     total
 }
 
+/// A bore of radius `small` about the upright line through `(dx, 0)` drilled down a cone about z
+/// (radius `r0 − slope·z`), its axis inside the bore, the rim where they meet rounded by a ball of
+/// radius `r` within the material — the loop winding round both (#218's 7).
+pub(crate) fn cone_bore_rim(r0: f64, slope: f64, small: f64, dx: f64, r: f64) -> f64 {
+    let (cs, sn) = (1.0 / (1.0 + slope * slope).sqrt(), slope / (1.0 + slope * slope).sqrt());
+    rolled(
+        &|phi: f64| {
+            let (s, co) = phi.sin_cos();
+            let (x, y) = (dx + (small + r) * co, (small + r) * s);
+            [x, y, (r0 - r / cs - x.hypot(y)) / slope]
+        },
+        [&|p: V| unit([dx - p[0], -p[1], 0.0]), &|p: V| {
+            let rho = p[0].hypot(p[1]);
+            [cs * p[0] / rho, cs * p[1] / rho, sn]
+        }],
+        [&|o, w| ray_cylinder(o, w, [dx, 0.0, 0.0], 2, small),
+            &|o: V, w: V| {
+                let k = r0 - slope * o[2];
+                let a = w[0] * w[0] + w[1] * w[1] - slope * slope * w[2] * w[2];
+                let b = 2.0 * (o[0] * w[0] + o[1] * w[1]) + 2.0 * slope * w[2] * k;
+                let c = o[0] * o[0] + o[1] * o[1] - k * k;
+                let disc = (b * b - 4.0 * a * c).max(0.0).sqrt();
+                [(-b - disc) / (2.0 * a), (-b + disc) / (2.0 * a)].into_iter()
+                    .filter(|&t| t > 0.0 && k - slope * w[2] * t >= 0.0).fold(f64::INFINITY, f64::min)
+            }],
+        r,
+    )
+}
+
 /// A cylinder of radius `radius` about `(cx, cy)`, square to `z`, through the plane `z = h0 − s x`
 /// (the material below it), the flat of legs `leg` where they meet — a boss's root (`ROOT`, outside
 /// the cylinder) or a hole's rim (`RIM`, within the material, outside the hole) — kept within

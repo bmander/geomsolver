@@ -11,27 +11,32 @@
 //! field's, its exact export refused by name.
 //!
 //! The entries so far, over plane faces meeting in straight edges (or a plane and a cylinder, or
-//! two cylinders, about lines along the edge: in the section lines and circles), planes meeting at
-//! any corner, and planes, cylinders, cones and spheres about one axis meeting in a circle; a face
-//! named in pieces (a plate's top a rod splits) is a piece per edge. A run is where its nearest point of the faces' meeting is on the edge (the
-//! slab square to it over its stretch, a sector of a ring's) and on the side the edge runs on of
-//! each face at its ends: a straight run's prism is kept within each plane face standing at a slant
-//! there and reaching into it (a run-out), one leaning away leaving the slab's square end; one ending
-//! on a cylinder or a sphere is carried on into it and kept on its side of that solid (`Kept`). A face
-//! going on tangent from one of the run's is no end (a seam), so a round along an obround's flat
-//! side stops at the section the ring round its half circle starts from, and the two are glued
-//! there; a ring's stretch is turned through its circle's angle, and on round past an end on a
-//! plane not through its axis until its section has crossed it, kept within it (or into a
-//! cylinder or a ball it ends on, kept on its side of that solid).
+//! two cylinders, about lines along the edge: in the section lines and circles), corners of any
+//! three faces among planes, cylinders, cones and spheres (a face in pieces taking the piece at
+//! each vertex), and planes, cylinders, cones, spheres and tori about one axis meeting in a circle;
+//! a face named in pieces (a plate's top a rod splits) is a piece per edge. A run is where its
+//! nearest point of the faces' meeting is on the edge (the slab square to it over its stretch, a
+//! sector of a ring's) and on the side the edge runs on of each face at its ends: a straight run's
+//! prism is kept within each plane face standing at a slant there and reaching into it (a run-out),
+//! one leaning away leaving the slab's square end; one ending on a cylinder, a cone or a sphere is
+//! carried on into it and kept on its side of that solid (`Kept`). A face going on tangent from
+//! one of the run's is no end (a seam), so a round along an obround's flat side stops at the
+//! section the ring round its half circle starts from, and the two are glued there; a ring's
+//! stretch is turned through its circle's angle, and on round past an end on a plane not through
+//! its axis until its section has crossed it, kept within it (or into a cylinder or a ball it ends
+//! on, kept on its side of that solid). Along an edge no line or coaxial circle carries, a round's
+//! ball is rolled and a chamfer's flat cut (`brep::fillet`), each run of such edges one piece, cut
+//! off by every face at its ends (a plane's half-space, a curved face's solid) or, where a corner
+//! stands there, cut short at the corner's section and glued to its cell.
 //!
 //! | the region's body | built as |
 //! |---|---|
 //! | `Run` / `Fill`: within (outside) two faces, beyond reach of the ball rolled along their edge | a prism of the corner less the ball's arc (a cylinder face); beside a cylinder, its arc a side of the section; between two, the ball where the two circles grown by its radius meet |
-//! | `Flat` / `FlatFill`: within (outside) two faces, short of the flat through the legs | a prism of the triangle (a plane face); beside a cylinder (or a sphere, in a meridian) the flat is a conic's arc, the sum of a distance from a line and one from a circle (`Corner2`, by `brep::corners`' rule: an extrusion, or a revolution, face) |
-//! | `Corner` / `CornerFill`: within (outside) three planes meeting at a corner, beyond reach of the ball touching all three | the corner's cell — the trihedron cut by the sections through the ball's centre square to its edges — less the ball (a sphere's patch), and each edge's run beyond it |
-//! | the same where a face is a cylinder or a sphere (a D's flat, round and cap) | the ball where Newton's steps put it, `r` from each surface; its cell over the three surfaces (`brep::fillet::corner_among`), and each edge's run or ring stretch cut short at its section there |
-//! | `Run` / `Fill` / `Flat` round a circle (or a stretch of one between seams) where a plane, a cylinder, a cone or a sphere meet about one axis | the section turned about the axis through the circle's angle (a torus face); in the meridian a sphere is a circle |
-//! | `Run` / `Fill` along an edge no line or coaxial circle carries (two pipes' saddle, a plane across a cylinder) | the ball rolled along the run, traced, against the stratum (`brep::fillet::roll`): its canal fitted, carried past each end and cut off by the plane there |
+//! | `Flat` / `FlatFill`: within (outside) two faces, short of the flat through the legs | a prism of the triangle (a plane face); beside a cylinder (or a sphere, in a meridian) the flat is a conic's arc, the sum of a distance from a line and one from a circle (`Corner2`, by `brep::corners`' rule: an extrusion, or a revolution, face); between two circles with equal legs an ellipse or a hyperbola's arc, their centres its foci (with unequal ones a Cartesian oval, which no rational curve holds: refused) |
+//! | `Corner` / `CornerFill`: within (outside) three faces meeting at a corner, beyond reach of the ball touching all three | the ball where Newton's steps put it, `r` from each surface; the corner's cell — the trihedron cut by the planes of the ball's arc between each two faces (its sections) — less the ball (a sphere's patch), over the three surfaces, their meetings in closed form or traced about the corner (`brep::fillet::corner_among`); and each edge's run, ring stretch or rolled run cut short at its section there and glued to it |
+//! | `Run` / `Fill` / `Flat` round a circle (or a stretch of one between seams) where a plane, a cylinder, a cone, a sphere or a torus meet about one axis | the section turned about the axis through the circle's angle (a torus face); in the meridian a sphere is a circle, a torus its tube's |
+//! | `Run` / `Fill` along an edge no line or coaxial circle carries (two pipes' saddle, a plane across a cylinder, a cone's generator) | the ball rolled along the run, traced, against the stratum (`brep::fillet::roll`): its canal fitted, carried past each end and cut off by the faces there |
+//! | `Flat` / `FlatFill` along such an edge | the flat sectioned square to the faces' meeting between its legs and fitted (`brep::fillet::flat_along`), its strips and ends as a rolled round's |
 //! | any of them where the faces meet nowhere, or an edge turns the other way | nothing |
 //!
 //! A region is its **pieces** (`Piece`: a run along an edge, a ball's cell at a corner), and the
