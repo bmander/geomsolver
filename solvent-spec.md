@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.88 — October 2026**
+**Specification, Draft 0.89 — October 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -622,7 +622,12 @@ held where its held axes are not, are **E067**.
 
 Every plane has three members. `P.u` and `P.v` are its axes, axes through its origin. `P.origin`
 is a point drawn in `P` and held at its `(0, 0)`, which a component may be handed and a relation
-may place. An axis square to `P` is `t perpendicular P`; there is no `P.n`.
+may place. An axis square to `P` is `t perpendicular P`. **[0.89]** A fourth, `P.normal`, is the
+axis along `u × v` through its origin: square to both axes, on the side `u × v` is, standing where
+the plane stands, and read wherever an axis is (`l parallel P.normal`, `plane(u: P.normal, …)`,
+`hint(dir: P.normal)`). It is the plane's, never a freedom of its own, and is not declared: a
+reference names it, so a declaration before `P`'s cannot (**E040**). In a seed `P.n` reads the
+same direction.
 
 **A point drawn in a plane has the plane's own two coordinates.** The point `(a, b)` drawn in `P`
 stands at `o_P + a·û_P + b·v̂_P` in space, its *lift*, which is what a relation in space reads

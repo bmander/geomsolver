@@ -3,7 +3,7 @@
 #[allow(unused_imports)]
 use crate::fmath::Det;
 use super::curves::build_curve;
-use super::resolve::{follow, follow_building, Resolver};
+use super::resolve::{follow, follow_building, Resolver, NORMAL};
 use super::{Code, Diag};
 use crate::ir::{Decl, Kid, Statement as Stmt};
 use crate::model::{EntKind, EntRef, Field, Sketch};
@@ -580,6 +580,12 @@ fn build_plane(
     for (key, ax) in minted {
         anon.push((format!("{}.{key}", d.name.key().text), EntRef::new(EntKind::Axis, ax)));
     }
+    // its normal, where the document reads it: minted here, so a declaration after it may name
+    // it, and recorded with the statement as a minted axis is
+    if res.normals.contains(&d.name.key().text) {
+        let n = sk.plane_normal(pi, &format!("{show}.{NORMAL}"));
+        anon.push((format!("{}.{NORMAL}", d.name.key().text), EntRef::new(EntKind::Axis, n)));
+    }
     let e = EntRef::plane(pi);
     set_class(sk, e, d.class.clone());
     Some(e)
@@ -697,7 +703,9 @@ pub(super) fn axes_along(sk: &mut Sketch, deferred: &[Deferred]) {
             continue;
         };
         let rows: Vec<u32> = sk.constraints.iter()
-            .filter(|c| c.intrinsic && c.kind == CKind::PlaneAxis && c.args[0].ent() == EntRef::plane(p))
+            // its normal's stays: it stands through the origin wherever that is
+            .filter(|c| c.intrinsic && c.kind == CKind::PlaneAxis && c.args[0].ent() == EntRef::plane(p)
+                && [u, v].contains(&c.args[1].ent().i()))
             .map(|c| c.id)
             .collect();
         for id in rows {
@@ -934,8 +942,8 @@ fn place_of(
 }
 
 /// Which way `hint(dir: …)` points, in space and of unit length: an axis's own seed, a line's
-/// from its `p1` to its `p2` where each end stands, a plane's normal (`P.n`) — turned `turn:`
-/// about a second of these, counter-clockwise looking down it (Rodrigues).
+/// from its `p1` to its `p2` where each end stands, a plane's normal (`P.normal`, or `P.n`) —
+/// turned `turn:` about a second of these, counter-clockwise looking down it (Rodrigues).
 fn direction_of(
     sk: &Sketch,
     res: &Resolver,
@@ -944,8 +952,9 @@ fn direction_of(
 ) -> Result<[f64; 3], String> {
     use crate::space::{add, cross, dot, norm, scale};
     let read = |r: &crate::syntax::Ref| -> Result<[f64; 3], String> {
-        // a plane stands for its normal by the word `n`, as an ordinate reads one
-        let normal = matches!(r.path.last(), Some(Seg::Field(f)) if f.text == "n");
+        // a plane stands for its normal by the word `n`, as an ordinate reads one, or by its
+        // member `normal` — read off its axes either way, as they are seeded now
+        let normal = matches!(r.path.last(), Some(Seg::Field(f)) if f.text == "n" || f.text == NORMAL);
         let e = if normal {
             let root = *res.of.get(&r.root.text)
                 .ok_or_else(|| format!("no such entity: `{}`", r.root.text))?;
@@ -962,7 +971,7 @@ fn direction_of(
             }
             k => {
                 return Err(format!(
-                    "a direction is an axis's, a line's or a plane's normal (`P.n`), not {}'s",
+                    "a direction is an axis's, a line's or a plane's normal (`P.normal`), not {}'s",
                     k.a()
                 ));
             }
@@ -1129,7 +1138,7 @@ pub(super) fn crosses_views(sk: &Sketch, res: &Resolver, deferred: &[Deferred]) 
 /// Whether a direction read off `r` reads through what the document places: an axis or a
 /// plane not held, or a line with an end drawn in such a plane.
 fn reads_unplaced(sk: &Sketch, res: &Resolver, r: &crate::syntax::Ref) -> bool {
-    let normal = matches!(r.path.last(), Some(Seg::Field(f)) if f.text == "n");
+    let normal = matches!(r.path.last(), Some(Seg::Field(f)) if f.text == "n" || f.text == NORMAL);
     let e = match normal {
         true => res.of.get(&r.root.text).and_then(|&e| follow(sk, e, &r.path[..r.path.len() - 1]).ok()),
         false => place(sk, res, r).ok(),

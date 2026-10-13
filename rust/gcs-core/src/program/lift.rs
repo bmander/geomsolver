@@ -10,8 +10,8 @@ use crate::syntax::{
 use crate::{curve, decompose, expr};
 use std::collections::{BTreeMap, BTreeSet};
 
-/// What a lifted program calls an entity: its own name, except a plane's origin, which is the
-/// plane's — `v0.origin` — since the plane mints it.
+/// What a lifted program calls an entity: its own name, except a plane's origin and its normal,
+/// which are the plane's — `v0.origin`, `v0.normal` — since the plane mints them.
 fn name(sk: &Sketch, e: EntRef) -> String {
     if e.kind == EntKind::Point {
         if let Some(i) = sk.plane_of_origin(e.i()) {
@@ -20,6 +20,12 @@ fn name(sk: &Sketch, e: EntRef) -> String {
         // a twin is its point, drawn in a further plane: written by the point's name (§6.7)
         if let Some(p) = twin_of(sk, e.i()) {
             return crate::syntax::entity_name(EntRef::point(p));
+        }
+    }
+    // a plane's normal is the plane's, minted where it is read: `v0.normal`
+    if e.kind == EntKind::Axis {
+        if let Some(i) = sk.normal_of(e.i()) {
+            return format!("{}.{}", crate::syntax::entity_name(EntRef::plane(i)), super::NORMAL);
         }
     }
     crate::syntax::entity_name(e)
@@ -69,6 +75,8 @@ pub fn to_program(sk: &Sketch) -> Program {
     for e in sk.primitives() {
         match e.kind {
             EntKind::Plane => continue,
+            // and a normal by a statement reading it, never declared
+            EntKind::Axis if sk.normal_of(e.i()).is_some() => continue,
             // a twin is said by its point's `in` (§6.7)
             EntKind::Point if twin_of(sk, e.i()).is_some() => continue,
             EntKind::Point => match sk.plane_of_origin(e.i()) {

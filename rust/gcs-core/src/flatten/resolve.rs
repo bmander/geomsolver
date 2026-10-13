@@ -2,6 +2,7 @@
 
 use super::*;
 use crate::model::EntKind;
+use crate::program::NORMAL;
 use crate::syntax::Member;
 
 /// The geometry a kept seed text reads, renamed to the absolute names the sheet resolves — the
@@ -427,6 +428,8 @@ struct Known<'k> {
     /// Set where a reference names nothing that was said elsewhere, or reads past what an
     /// interface declares: the relation is not stated, so it is not said again.
     unresolved: &'k std::cell::Cell<bool>,
+    /// What each reference reading a member `normal` reads it of — see `Expansion::normals`.
+    normals: &'k std::cell::RefCell<BTreeSet<String>>,
 }
 
 /// Whether `r` reads a name bound to what a call or a use wrote — a formal, a bound variable —
@@ -455,7 +458,7 @@ fn rewrite(
     bad: &mut Vec<(Code, Span, String)>,
     seen: &std::cell::RefCell<Vec<Seen>>,
 ) {
-    let Known { names, alias, sets, solids, failed, arguments, units, unresolved } = known;
+    let Known { names, alias, sets, solids, failed, arguments, units, unresolved, normals } = known;
     // only a ring's representative is judged by what it reads (E021)
     let judged = sc.ring.as_ref().is_some_and(|r| !r.turned);
     // a member read already (a set's `ends`, `sets::measured_sets`) is kept; `surface` and
@@ -483,6 +486,11 @@ fn rewrite(
             ),
         )),
         Some((abs, mut rest)) => {
+            // a plane's normal is minted only where it is read (`Sketch::plane_normal`)
+            if let Some((_, of)) = rest.split_last().filter(|(f, _)| *f == NORMAL) {
+                normals.borrow_mut().insert(std::iter::once(&abs).chain(of).cloned()
+                    .collect::<Vec<_>>().join("."));
+            }
             // a formal reads what its call was given, judged at the argument as written
             let was = (judged && !through_argument(r, sc, arguments)).then(|| written(r));
             let member = member(r, &abs, &mut rest);
@@ -1025,6 +1033,7 @@ impl<'a> Walk<'a> {
             _ => None,
         }).collect();
         let mut flat = Vec::with_capacity(out.len());
+        let normals = std::cell::RefCell::new(std::mem::take(&mut self.normals));
         for (mut st, path, sc) in out {
             // a refused relation is not emitted; a declaration is (a plane whose fold misspells
             // a name), so the error is the one said and not every reference to it after
@@ -1036,7 +1045,7 @@ impl<'a> Walk<'a> {
             let mut bad: Vec<(Code, Span, String)> = Vec::new();
             let seen = std::cell::RefCell::new(Vec::new());
             let unresolved = std::cell::Cell::new(false);
-            let known = Known { names: &self.names, alias: &alias, sets: &sets, solids: &solids, failed: &failed, arguments: &self.arguments, units: self.units, unresolved: &unresolved };
+            let known = Known { names: &self.names, alias: &alias, sets: &sets, solids: &solids, failed: &failed, arguments: &self.arguments, units: self.units, unresolved: &unresolved, normals: &normals };
             rewrite(&mut st.kind, &sc, known, &mut bad, &seen);
             if let StmtKind::Decl(d) = &st.kind {
                 // a centre the circle names, or `None` for one it mints (`c.center`)
@@ -1125,6 +1134,7 @@ impl<'a> Walk<'a> {
                 judged.push((ring.prefix.clone(), vec![seen]));
             }
         }
+        self.normals = normals.into_inner();
         self.judge_rings(&about, judged, &centres);
         (flat, alias)
     }

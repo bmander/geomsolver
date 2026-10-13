@@ -311,7 +311,8 @@ impl Sketch {
     fn push_plane(&mut self, u: usize, v: usize, op: [u32; 3], origin: usize) -> usize {
         let pi = self.planes.len();
         self.points[origin].plane = Some(pi as u32);
-        self.planes.push(PlaneE { u: u as u32, v: v as u32, o: op, origin: origin as u32, class: Classes::default() });
+        self.planes.push(PlaneE { u: u as u32, v: v as u32, o: op, origin: origin as u32, normal: None,
+                                 class: Classes::default() });
         let o = op.map(|q| self.params[q as usize].value);
         for ax in [u, v] {
             // an axis this plane is the first to place starts through where the plane does
@@ -324,6 +325,69 @@ impl Sketch {
             self.add_quiet(c);
         }
         pi
+    }
+
+    /// **Plane `pi`'s normal, `P.normal`**: an axis along `u × v` through its origin, minted the
+    /// first time it is asked for, under `name`.  Held so by three intrinsic rows — square to
+    /// each axis (`Perpendicular3`) and through the origin (`PlaneAxis`) — which leave it its
+    /// sense, so it is seeded along `u × v` (`seed_normals`) and a solve, which moves it
+    /// continuously, keeps it there.  Three unknowns and three rows for its direction, the unit
+    /// row among them, and its place's two against `PlaneAxis`'s two: no freedom of its own.
+    pub fn plane_normal(&mut self, pi: usize, name: &str) -> usize {
+        if let Some(n) = self.planes[pi].normal {
+            return n as usize;
+        }
+        let n = self.axis(self.basis(pi).normal(), name);
+        self.stand_normal(pi, n);
+        n
+    }
+
+    /// Axis `n` made plane `pi`'s normal: its rows, and it seeded so (`plane_normal`).  What a
+    /// document reader calls with an axis already made.
+    pub fn stand_normal(&mut self, pi: usize, n: usize) {
+        use crate::constraints::{Arg, CKind};
+        self.planes[pi].normal = Some(n as u32);
+        let (u, v) = (self.planes[pi].u as usize, self.planes[pi].v as usize);
+        let axis = EntRef::new(EntKind::Axis, n);
+        for side in [u, v] {
+            let mut c = Constraint::two_line(CKind::Perpendicular3, axis, EntRef::new(EntKind::Axis, side));
+            c.intrinsic = true;
+            self.add_quiet(c);
+        }
+        let mut c = Constraint::new(CKind::PlaneAxis, vec![Arg::Ent(EntRef::plane(pi)), Arg::Ent(axis)]);
+        c.intrinsic = true;
+        self.add_quiet(c);
+        self.seed_normal(pi);
+    }
+
+    /// Every plane's normal turned along `u × v` as its axes now stand, and stood through where
+    /// it stands — after anything that moves a plane's seed, since the normal's rows hold it
+    /// square to the axes either way round.
+    pub fn seed_normals(&mut self) {
+        for pi in 0..self.planes.len() {
+            self.seed_normal(pi);
+        }
+    }
+
+    fn seed_normal(&mut self, pi: usize) {
+        let Some(n) = self.planes[pi].normal.map(|n| n as usize) else { return };
+        let b = self.basis(pi);
+        for (k, x) in b.normal().into_iter().enumerate() {
+            let q = self.axes[n].d[k] as usize;
+            if !self.params[q].fixed {
+                self.params[q].value = x;
+            }
+        }
+        // a place a `fix` holds stays where it is held
+        let held = self.axes[n].placed && self.axes[n].a.iter().any(|&q| self.params[q as usize].fixed);
+        if !held {
+            self.stand_axis_through(n, b.o);
+        }
+    }
+
+    /// The plane axis `r` is the normal of, where it is one.
+    pub fn normal_of(&self, r: usize) -> Option<usize> {
+        self.planes.iter().position(|p| p.normal == Some(r as u32))
     }
 
     /// Stand axis `r`'s line through `x`, its direction kept: its place is the foot of the

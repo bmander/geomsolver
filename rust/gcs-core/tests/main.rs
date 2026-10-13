@@ -121,6 +121,7 @@ mod pick;
 mod plane_lang;
 mod points_in_space;
 mod plane;
+mod plane_normal;
 mod program;
 mod refine;
 mod crease;

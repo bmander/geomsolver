@@ -327,7 +327,7 @@ pub fn pick(sk: &Sketch, proj: &Projection, at: (f64, f64), tol: f64, unit: f64)
 fn nearest_axis(sk: &Sketch, proj: &Projection, at: (f64, f64), tol: f64) -> Option<EntRef> {
     let reach = super::axis_reach(sk);
     let mut best: Option<(f64, usize)> = None;
-    for i in 0..sk.axes.len() {
+    for i in (0..sk.axes.len()).filter(|&i| sk.normal_of(i).is_none()) {
         let Some((tail, tip, _)) = super::axis_segment(sk, i, reach) else { continue };
         let (a, b) = (proj.seen(tail), proj.seen(tip));
         if (b.0 - a.0).dhypot(b.1 - a.1) < 2.0 * tol {

@@ -334,9 +334,12 @@ impl Sketch {
     /// A curve is written *over* the other kinds and so is built and grafted last, which is why
     /// `primitives()` stops short of it — but a consumer that means "draw the drawing" wants
     /// both, and this is where that is said.  Written once because it was already being patched
-    /// up locally by everything that needed it.
+    /// up locally by everything that needed it.  A plane's normal (`plane_normal`) is not in it:
+    /// a name the document reads, with nothing of its own to show.
     pub fn drawn(&self) -> Vec<EntRef> {
         let mut v = self.primitives();
+        let normals: Vec<u32> = self.planes.iter().filter_map(|p| p.normal).collect();
+        v.retain(|e| e.kind != EntKind::Axis || !normals.contains(&(e.i() as u32)));
         v.extend((0..self.curves.len()).map(|i| EntRef::new(EntKind::Curve, i)));
         v
     }

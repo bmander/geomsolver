@@ -79,6 +79,7 @@ use entities::{build, crosses_views, settle_deferred, Deferred};
 pub(crate) use lift::{holds, lift_decl, lift_gauge, lift_relation, point_len};
 use planes::memberships;
 pub(crate) use planes::{drawn_plane, plane_of_entity, plane_of_entity_by};
+pub(crate) use resolve::NORMAL;
 use relations::{constrain, repeated, Gauges};
 use resolve::Resolver;
 use solids::{solid_claims, solids};
@@ -279,7 +280,7 @@ fn elaborate_in(
     // seeds and dimensions as they are built
     sk.declared = std::mem::take(&mut expansion.unknowns);
     diags.extend(expansion.diagnostics.iter().cloned());
-    let mut res = Resolver::default();
+    let mut res = Resolver { normals: expansion.normals.clone(), ..Resolver::default() };
     let mut count: BTreeMap<EntKind, u32> = BTreeMap::new();
     // a redeclaration is skipped rather than merged, and *which* statement was skipped is
     // remembered here: inferring it later from the name would find the one that won
@@ -524,6 +525,8 @@ fn elaborate_in(
     views::stand_axes(&mut sk);
     entities::drawn_in_planes(&sk, &map, &mut diags);
     entities::axes_along(&mut sk, &deferred);
+    // each normal read turned along its plane as the holds and the lines have stood it
+    sk.seed_normals();
     // a ring's copies, turns of its representative: after the holds, which a copy may not have
     rings::rings(&mut sk, &res, &map, &expansion.rings, &mut diags);
 
@@ -621,6 +624,7 @@ fn elaborate_in(
 
     // a ring's copies where their representatives' seeds put them, whatever a seed said of a copy
     sk.settle_turns();
+    sk.seed_normals();
 
     // -- phase 3b: faces, then solids (§6.8, §6.9).  **After every other kind and after the
     // constraints**, because a face is written over edges the drawing already has and a solid

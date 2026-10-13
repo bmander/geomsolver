@@ -871,12 +871,14 @@ line, not an `axis` (a revolution's takes either, 1.14).
 **A plane is two axes through its origin**: `P := plane(u: r, v: s)`. Right is `u`, out of the
 plane `u × v`, up out × u, so `v` need not be square to `u`: it picks the plane and which side is
 up. `P.origin` (drawn in `P`, held at `(0, 0)`) lies on both axes, so where the axes stand the plane
-stands; two held axes that do not meet are E067. A plane over a line stands on it, and over two
+stands; `P.normal` is the axis along `u × v` through `P.origin`, read wherever an axis is (`l
+parallel P.normal`, `plane(u: P.normal, v: P.u)`) and adding no freedom — declare `P` before
+anything naming it; two held axes that do not meet are E067. A plane over a line stands on it, and over two
 lines sharing an end, at that end. **A slot left out mints a free axis**: `P := plane` is seven
 freedoms, `plane(u: std.x)` mints only `P.v`. A minted axis starts as the front's unless seeded,
 `plane(v: hint(dir: (0, -1, 0)))` — seed one a relation will turn far. A seed may read the
 direction off geometry: an axis (`hint(dir: up)`), a line from its `p1` to its `p2` in space
-(`hint(dir: g)`), a plane's normal (`hint(dir: P.n)`), turned about another (`hint(dir: up, turn:
+(`hint(dir: g)`), a plane's normal (`hint(dir: P.normal)`, or `P.n`), turned about another (`hint(dir: up, turn:
 -90deg, about: g)`), so a word standing a plane square to a line it is handed seeds it from that
 line: `plane(u: hint(dir: up, turn: -90deg, about: g), v: hint(dir: up))`. A frame of two square axes:
 
@@ -922,7 +924,8 @@ n coincident b.origin                // DOF 0
 ```
 
 Stacked parts are drawn so; there is no mate word. Two planes lying on one another are warned
-(W113). `solventc --where P` lists `P.x`, `P.y`, `P.z` (where it stands) and `P.u`, `P.v`, `P.n`.
+(W113). `solventc --where P` lists `P.x`, `P.y`, `P.z` (where it stands) and `P.u`, `P.v`, `P.n`
+(and `P.normal`, where the document reads it).
 
 **A plane is also a view.** A point drawn `in P` has `P`'s own coordinates, so a dimension within
 `P` is measured from `P.origin` along `P.u` and `P.v`. `a project b` says two points drawn in two

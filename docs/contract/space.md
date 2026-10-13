@@ -18,7 +18,7 @@ rows over three unknowns would be a dependency the structural count cannot see, 
 writes both rows (`r parallel l`, `p coincident r`).
 A **plane** is `P := plane(u: r1, v: r2)` (`PlaneE { u, v, o, origin }`): right u, out u × v, up
 out × u; it owns `o` (three unknowns); members `P.u`, `P.v`, `P.origin` (a point drawn in P held at
-(0, 0)). **Its axes pass through its origin** (0.43, #84): `push_plane` mints two intrinsic
+(0, 0)), and `P.normal` (below). **Its axes pass through its origin** (0.43, #84): `push_plane` mints two intrinsic
 `PlaneAxis` rows (`point_on_axis` over `o`), placing both axes, standing one it is first to place
 through `o`. A slot left out mints a free axis (`P.u`/`P.v`, `build_plane`): `p := plane` is 7
 DOF. `views::origins_on_axes` (right after the `fix` pass) holds `o` where two wholly held axes
@@ -55,6 +55,22 @@ implicit frame; `instance := Part(f) in view` supplies membership. Aliases keep 
 components.dims.vtwin_dims)` (`vtwin/components/cylinder.sv`'s preview). Retired: the
 datum rotor, `toward:`, `from:`, `fold:`, `offset:`, `through:`, `attitude: free`, quaternions,
 hinges, `against`, the role rule, page placement, `std.ThreeViews`.
+
+**A plane's normal, `P.normal`** (0.89): an axis along `u × v` through the origin, no field of
+the declaration (`fields()` and the JSON keys stay three) but `PlaneE::normal`, minted only where
+a reference reads it — the flattener records each (`Expansion::normals`, in `rewrite`'s `fix`)
+and `build_plane` mints it with the plane (`Sketch::plane_normal`, bound as `P.normal`), so a later
+declaration may name it and an earlier one is E040 (`follow_building`). Its rows are intrinsic:
+`Perpendicular3` to each axis and `PlaneAxis` through `o` — three rows over its direction with the
+unit row, two over its place, no freedom; `axes_along` keeps its `PlaneAxis` where it swaps the
+plane's for a `Coincident3`. The rows leave its sense, so `Sketch::seed_normals` turns it along
+`u × v` after `axes_along`, in `views::place` (which reads it off the axes, never solves it:
+placed with them, its rows not taken) and after `settle_turns`; the solve keeps the sense by
+continuity. `follow` resolves it; `hint(dir: P.normal)` reads the basis as `P.n` does. **Drawn
+nowhere**: `Sketch::drawn` leaves it out (so the workspace's scene, picks and boxes) and
+`nearest_axis` skips it. JSON writes a plane's `"normal"` (an axis index) only where one was read,
+and the reader and `graft` give it its rows again (`stand_normal`); `lift` names it `vK.normal`
+and declares no axis. `tests/plane_normal.rs` is the gate.
 
 **A point drawn in two planes** (0.58, #145): `O := point in P, G` (`Membership::also`). The
 flattener declares a hidden **twin** per further plane beside it (`Walk::twins_of`, key `O@1`,
