@@ -450,8 +450,12 @@ statements touching along a line (no manifold file describes it). **The oracle**
 example's body less its lowered regions, rounds the same edges by OCCT's own fillet or chamfer
 (`solvent_cad_round`, `Session::round`; each edge the one through a point the pieces give) and
 holds ours to it (volume 1e-9 where both are analytic, 2e-5 where either fits a B-spline; face
-kinds, OCCT's B-spline standing for an analytic face of ours); where OCCT's fillet fails (`rail`)
-or makes no valid solid (`post`) it is counted. `tests/round_lowering.rs` is the gate (every volume the closed form's to
+kinds, OCCT's B-spline standing for an analytic face of ours). OCCT's fillet fails on an edge
+along or ending on a periodic surface's seam (`rail`, `post`, `frustum`): asked again of the same
+solid with its seams turned (`seams_turned`). Where OCCT means otherwise it is held to what it can
+say: a corner of three rounds beside a rolled one OCCT fills by its own surface, so the two may
+differ only near such corners (ours Steiner's to 1e-9, `half_frustum_opened`), and a chamfer
+beside a curved face, ruled in OCCT, is read off ours by OCCT's distances (`flats_by_occt`). `tests/round_lowering.rs` is the gate (every volume the closed form's to
 1e-9, a rolled one #85's quadrature's to 1e-6: `slot.sv`, `pad.sv`, `rail.sv`, `knob.sv`,
 `tee.sv`, `bore.sv`, `runout.sv`, `twin.sv`, `post.sv`, `dshaft.sv`, `groove.sv`, `bores.sv`,
 `frustum.sv`, `crotch.sv`, `bullnose.sv`).

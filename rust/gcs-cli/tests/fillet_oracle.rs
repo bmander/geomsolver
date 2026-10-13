@@ -7,10 +7,14 @@
 //! kinds of surface their faces lie on — OCCT approximating by a B-spline some analytic face this
 //! kernel builds exactly (a round between two cylinders, the knob's neck). The edges are read off
 //! the lowering's pieces (a point on each edge and its size), so OCCT is told nothing a person
-//! would not: which edges, how big. Where OCCT's fillet fails, or makes no valid solid (this
-//! kernel's own export of each is held by `tests/cli.rs` and `round_lowering.rs`), that is said
-//! and counted, never passed over silently; so is a chamfer beside a curved face, where OCCT's
-//! chamfer and `std.Flat` are two definitions (`round_lowering.rs` holds ours to quadratures).
+//! would not: which edges, how big. Where OCCT's fillet fails on an edge along or ending on a
+//! periodic surface's seam, it is asked again of the same solid with its seams turned
+//! (`seams_turned`). Two places where OCCT means something else are said, and held to what OCCT
+//! can say of them: a corner of three rounds where one is rolled, which OCCT fills by a surface of
+//! its own (ours is the ball's, Steiner's to 1e-9: the two may differ only near such corners, and
+//! the rolled runs alone agree in volume), and a chamfer beside a curved face, where OCCT's is
+//! ruled between legs along the faces and `std.Flat`'s is where the faces' distances, each over
+//! the other's leg, sum to one — read off ours by OCCT's own distances (`flats_by_occt`).
 #[path="../src/cad/native.rs"]
 #[allow(dead_code)]
 mod native;
@@ -21,7 +25,7 @@ use gcs_core::brep::{export,geom::Rigid,props::volume,sweep::Say};
 use gcs_core::json::Json;
 use gcs_core::model::{RegionShape,SolidDef};
 use gcs_core::solid::lowering::{self,Piece,Run,Stroke};
-use gcs_core::space::{add,distance as dist,norm,scale};
+use gcs_core::space::{add,cross,distance as dist,dot,norm,scale,sub};
 use std::collections::BTreeSet;
 
 /// How near OCCT's volume ours must be where both build every face analytically.
@@ -98,36 +102,173 @@ fn stratum(recipe: &Json) -> Json {
     out
 }
 
+/// `v` turned through `angle` about the unit `k` (Rodrigues).
+fn turned(v: V,k: V,angle: f64) -> V {
+    let (sn,cs) = angle.sin_cos();
+    add(add(scale(v,cs),scale(cross(k,v),sn)),scale(k,dot(k,v)*(1.-cs)))
+}
+
+fn vector_of(j: &Json) -> V { std::array::from_fn(|i| j.arr()[i].as_f64()) }
+fn json_of(v: V) -> Json { Json::Arr(v.iter().map(|&x| Json::Num(x)).collect()) }
+
+/// A profile's every point and direction turned through `angle` about the line through `o` along
+/// the unit `k`, by what its keys say they are.
+fn profile_turned(j: &mut Json,o: V,k: V,angle: f64) {
+    match j {
+        Json::Arr(list) => for x in list { profile_turned(x,o,k,angle) },
+        Json::Obj(pairs) => for (key,x) in pairs.iter_mut() {
+            match key.as_str() {
+                "start" | "end" | "center" | "origin" => *x = json_of(add(o,turned(sub(vector_of(x),o),k,angle))),
+                "normal" | "x_dir" => *x = json_of(turned(vector_of(x),k,angle)),
+                "poles" => for p in match x { Json::Arr(l) => l,_ => unreachable!() } {
+                    *p = json_of(add(o,turned(sub(vector_of(p),o),k,angle)));
+                },
+                _ => profile_turned(x,o,k,angle),
+            }
+        },
+        _ => {}
+    }
+}
+
+/// A whole circle's start turned round it, `angle` about its normal.
+fn circles_turned(j: &mut Json,angle: f64) {
+    match j {
+        Json::Arr(list) => for x in list { circles_turned(x,angle) },
+        Json::Obj(_) => {
+            if j.get("kind").is_some_and(|k| *k == Json::Str("circle".into())) && j.get("angles").is_none() {
+                let (n,x) = (vector_of(j.get("normal").unwrap()),vector_of(j.get("x_dir").unwrap()));
+                j.set("x_dir",json_of(turned(x,scale(n,1./norm(n)),angle)));
+            }
+            if let Json::Obj(pairs) = j { for (_,x) in pairs.iter_mut() { circles_turned(x,angle) } }
+        }
+        _ => {}
+    }
+}
+
+/// The same solid with every seam turned off where it was: each whole circle's start a radian
+/// round it, each whole revolution's profile a radian round its axis. OCCT's fillet fails, or
+/// makes a face it cannot orient, where an edge it rounds ends on a seam or lies along it (a
+/// rod's seam where a plate's top meets it, a frustum's along the plane that halves it), and the
+/// mirror image of that edge, off the seam, it rounds: the oracle asks it again of the same solid
+/// described from another start.
+fn seams_turned(recipe: &Json) -> Json {
+    let mut out = recipe.clone();
+    let Some(Json::Arr(nodes)) = out.get("nodes").cloned() else { return out };
+    let nodes = nodes.into_iter().map(|mut n| {
+        let whole = n.get("kind").is_some_and(|k| *k == Json::Str("revolve".into()))
+            && (n.get("angle").unwrap().as_f64().abs() - 2.*std::f64::consts::PI).abs() < 1e-9;
+        if whole {
+            let (o,k) = (vector_of(n.get("origin").unwrap()),vector_of(n.get("axis").unwrap()));
+            let mut profile = n.get("profile").unwrap().clone();
+            profile_turned(&mut profile,o,scale(k,1./norm(k)),1.);
+            n.set("profile",profile);
+        }
+        if let Some(mut profile) = n.get("profile").cloned() {
+            circles_turned(&mut profile,1.);
+            n.set("profile",profile);
+        }
+        n
+    }).collect();
+    out.set("nodes",Json::Arr(nodes));
+    out
+}
+
+/// How near one the faces' distances, each over the other's leg, must sum on our flat: its fit's.
+const FLAT_FIT: f64 = 1e-6;
+
+/// Our flats along traced edges held to their meaning by OCCT's geometry: of each point of a
+/// fitted face of ours (a grid of its parameters, off the fit's nodes), the distance from each of the two faces of OCCT's own
+/// body (`body`, the stratum) that meet at the flat's edge, the second the one the first leg is
+/// on. The number of points read, and the worst `|d_a / l_b + d_b / l_a − 1|`.
+fn flats_by_occt(session: &native::Session,body: &Json,ours: &gcs_core::brep::topo::Brep,flats: &[(V,[f64;2],V)])
+    -> Result<(usize,f64),String> {
+    let theirs = session.construct(body)?;
+    let faces = session.faces(theirs)?;
+    let distance = |face: std::os::raw::c_int,points: &[V]| -> Result<Vec<f64>,String> {
+        Ok(session.surface_feet_near(face,points,&vec![[f64::NAN;2];points.len()],0.)?.into_iter()
+            .map(|f| f.map_or(f64::INFINITY,|(_,d)| d)).collect())
+    };
+    // the fitted faces of ours, read on a grid of their parameters off every node of the fit
+    let mut points: Vec<V> = Vec::new();
+    for face in &ours.faces {
+        let gcs_core::brep::geom::Surface::BSpline(_,net) = &face.surface else { continue };
+        let [[u0,u1],[v0,v1]] = net.domain();
+        let n = 64;
+        for i in 0..n {
+            for j in 0..n {
+                let at = |k: usize,[a,b]: [f64;2]| a+(b-a)*(k as f64+0.371)/n as f64;
+                points.push(face.surface.point([at(i,[u0,u1]),at(j,[v0,v1])]));
+            }
+        }
+    }
+    if points.is_empty() { return Err("no fitted face of ours to hold to OCCT".into()) }
+    let mut worst: f64 = 0.;
+    for &(at,[la,lb],on) in flats {
+        // the two faces meeting at the edge, the first the one `on` stands beside
+        let mut meeting = Vec::new();
+        for &f in &faces {
+            if distance(f,&[at])?[0] <= 1e-6*(1.+norm(at)) { meeting.push((distance(f,&[on])?[0],f)); }
+        }
+        meeting.sort_by(|a,b| a.0.total_cmp(&b.0));
+        let [(_,a),(_,b)] = meeting[..] else { return Err(format!("{} of OCCT's faces meet at {at:?}",meeting.len())) };
+        let (da,db) = (distance(a,&points)?,distance(b,&points)?);
+        // (of the points of this flat: those within its legs of both faces)
+        let within: Vec<(f64,f64)> = da.iter().zip(&db).map(|(x,y)| (*x,*y))
+            .filter(|(x,y)| *x <= lb*(1.+1e-6) && *y <= la*(1.+1e-6)).collect();
+        // (and of those, enough off its legs to read the fit between them)
+        let inner = within.iter().filter(|(x,y)| x/lb > 0.01 && y/la > 0.01).count();
+        if inner < 100 { return Err(format!("only {inner} points of our flat stand between its legs")) }
+        for (x,y) in within {
+            worst = worst.max((x/lb+y/la-1.).abs());
+        }
+    }
+    if worst > FLAT_FIT { return Err(format!("OCCT's distances of our flat sum to one only within {worst:e}")) }
+    Ok((points.len(),worst))
+}
+
 /// OCCT's `GeomAbs_SurfaceType` as this kernel names its surfaces.
 fn occt_kind(k: i32) -> &'static str {
     ["plane","cylinder","cone","sphere","torus","bezier","bspline","revolution","extrusion","offset","other"]
         .get(k as usize).copied().unwrap_or("other")
 }
 
-/// Where two solids disagree, sampled over ours's box: how many of the points read inside one and
-/// outside the other, and the first few.
-fn apart(session: &native::Session,ours: &gcs_core::brep::topo::Brep,theirs: std::os::raw::c_int) -> String {
+/// Where two solids disagree, sampled at `count` points over ours's box: the points inside one
+/// and outside the other, and whose.
+fn apart(session: &native::Session,ours: &gcs_core::brep::topo::Brep,theirs: std::os::raw::c_int,count: usize)
+    -> Vec<(V,&'static str)> {
     use gcs_core::brep::query::{Located,Place};
     let (lo,hi) = ours.bounds();
     let located = Located::owned(ours.clone(),1e-9*ours.size());
     let mut rng = gcs_core::rng::Rng::new(218);
-    let points: Vec<V> = (0..20000).map(|_| std::array::from_fn(|j| rng.uniform(lo[j],hi[j]))).collect();
+    let points: Vec<V> = (0..count).map(|_| std::array::from_fn(|j| rng.uniform(lo[j],hi[j]))).collect();
     let states = session.solid_contains(theirs,&points,1e-9).unwrap();
-    let apart: Vec<(&V,&str)> = points.iter().zip(&states).filter_map(|(p,s)| match located.solid_place(*p) {
-        Place::In if *s == 0 => Some((p,"ours")),Place::Out if *s == 1 => Some((p,"OCCT's")),_ => None,
-    }).collect();
-    format!("; {} of {} points apart, as {:?}",apart.len(),points.len(),&apart[..apart.len().min(4)])
+    points.iter().zip(&states).filter_map(|(p,s)| match located.solid_place(*p) {
+        Place::In if *s == 0 => Some((*p,"ours")),Place::Out if *s == 1 => Some((*p,"OCCT's")),_ => None,
+    }).collect()
 }
+
+/// How many sampled points stand within the solids' disagreement apart from `corners` (balls
+/// about each, `REACH` times its radius).
+const REACH: f64 = 3.;
 
 #[test]
 fn every_rounds_example_is_occts_fillet() {
     let session = native::Session::new().unwrap();
-    let examples = [("block","block"),("by_hand","block"),("pocket","dish"),("boss","pad"),("slot","part"),("pad","pad"),
-        ("rail","rail"),("knob","knob"),("tee","tee"),("bore","pipe"),("runout","lug"),("runout","vent"),("twin","bar"),
-        ("post","stand"),("dshaft","shaft"),("groove","part"),("bores","slab"),("frustum","half"),("crotch","tee"),("bullnose","part")];
-    let (mut failures,mut refused,mut unlike) = (Vec::new(),0,0);
-    for (file,name) in examples {
-        let (prog,errs,linked) = gcs_core::library::parse_linked(&source(file));
+    // (each with an edit of its source, where it is asked of part of what the example rounds)
+    let generators = Some(("round(r: r) half\n","half.cutter round(r: r) half.cone.bc\n"));
+    let examples = [("block","block",None),("by_hand","block",None),("pocket","dish",None),("boss","pad",None),
+        ("slot","part",None),("pad","pad",None),("rail","rail",None),("knob","knob",None),("tee","tee",None),
+        ("bore","pipe",None),("runout","lug",None),("runout","vent",None),("twin","bar",None),("post","stand",None),
+        ("dshaft","shaft",None),("groove","part",None),("bores","slab",None),("frustum","half",None),
+        ("frustum","half",generators),("crotch","tee",None),("bullnose","part",None)];
+    let (mut failures,mut refused,mut unlike,mut blended) = (Vec::new(),0,0,0);
+    for (file,name,edit) in examples {
+        let text = match edit {
+            None => source(file),
+            Some((from,to)) => { let s = source(file); assert!(s.contains(from),"{file}: {from}"); s.replace(from,to) }
+        };
+        let file = if edit.is_some() { format!("{file} (in part)") } else { file.to_string() };
+        let (prog,errs,linked) = gcs_core::library::parse_linked(&text);
         assert!(errs.is_empty() && linked.is_empty(),"{file}: {errs:?} {linked:?}");
         let mut e = gcs_core::program::elaborate(&prog);
         assert!(e.ok(),"{file}: does not elaborate");
@@ -143,34 +284,61 @@ fn every_rounds_example_is_occts_fillet() {
         let mut rounds: Vec<(V,f64)> = Vec::new();
         let mut flats: Vec<(V,f64)> = Vec::new();
         let mut beside_curved = false;
+        // the flats rolled along a traced edge: (a point of the edge, the legs, a point beside the
+        // face the first leg is on)
+        let mut traced_flats: Vec<(V,[f64;2],V)> = Vec::new();
+        // the corners of three rounds where one of them is rolled: OCCT fills such a corner by a
+        // surface of its own, not the ball that touches all three faces
+        let mut fitted_corners: Vec<(V,f64)> = Vec::new();
         // (of the regions over this body's faces)
         let over = |i: usize| matches!(&sk.solids[i].def,SolidDef::Region {terms,..} if terms.iter()
             .any(|t| matches!(&t.shape,RegionShape::FaceSide {face} if face.solid as usize == body)));
         for i in (0..sk.solids.len()).filter(|&i| over(i)) {
             let Some(Ok(pieces)) = lowering::lowered(sk,i) else { continue };
             beside_curved |= pieces.iter().filter_map(edge_and_kind).any(|(_,_,_,curved)| curved);
+            traced_flats.extend(pieces.iter().filter_map(|p| match p { Piece::Rolled(k) => k.flat.map(|(legs,on)| (k.at,legs,on)),_ => None }));
+            if pieces.iter().any(|p| matches!(p,Piece::Rolled(_))) {
+                for p in pieces.iter() {
+                    let Piece::Corner(c) = p else { continue };
+                    if !fitted_corners.iter().any(|(v,_)| dist(*v,c.vertex) <= 1e-9*(1.+norm(*v))) {
+                        fitted_corners.push((c.vertex,c.r));
+                    }
+                }
+            }
             for (at,size,chamfer) in pieces.iter().filter_map(edge_of) {
                 let list = if chamfer { &mut flats } else { &mut rounds };
                 if !list.iter().any(|(p,_)| dist(*p,at) <= 1e-9*(1.+norm(at))) { list.push((at,size)); }
             }
         }
+        let recipe = gcs_core::solid::cad::recipe(sk,body).unwrap();
         if beside_curved {
-            eprintln!("{file} `{name}`: a flat beside a curved face is std's sum of distances, OCCT's chamfer ruled between \
-                legs along the faces: not compared");
+            // std's flat is where the faces' distances, each over the other's leg, sum to one; OCCT's
+            // chamfer is ruled between legs measured along the faces, another surface (between two
+            // cylinders 1.9e-4 of the tee's volume away). So OCCT is asked what it can say of ours:
+            // each point of our flat, its distance from each of the two faces of OCCT's own body
+            match flats_by_occt(&session,&stratum(&recipe),&exact.solid,&traced_flats) {
+                Ok((points,worst)) => eprintln!("{file} `{name}`: a flat beside a curved face, std's sum of distances: \
+                    OCCT's distances of {points} points of ours sum to one within {worst:.1e}"),
+                Err(why) => failures.push(format!("{file} `{name}`: {why}")),
+            }
             unlike += 1;
             continue;
         }
         // theirs: OCCT's body less the rounds, rounded by OCCT
-        let recipe = gcs_core::solid::cad::recipe(sk,body).unwrap();
-        let theirs = session.construct(&stratum(&recipe)).and_then(|mut id| {
+        let round = |recipe: &Json| session.construct(recipe).and_then(|mut id| {
             if !rounds.is_empty() { id = session.round(id,&rounds,false)?; }
             if !flats.is_empty() { id = session.round(id,&flats,true)?; }
             session.validate(id).map_err(|e| format!("its fillet is no valid solid: {e}"))?;
             Ok(id)
         });
+        let theirs = round(&stratum(&recipe)).or_else(|first| {
+            let turned = round(&seams_turned(&stratum(&recipe)));
+            if turned.is_ok() { eprintln!("{file} `{name}`: OCCT rounds it with its seams turned ({first})"); }
+            turned
+        });
         let theirs = match theirs {
             Ok(id) => id,
-            Err(err) => { eprintln!("{file} `{name}`: OCCT does not round it: {err}"); refused += 1; continue }
+            Err(err) => { failures.push(format!("{file} `{name}`: OCCT does not round it: {err}")); refused += 1; continue }
         };
         let w = session.volume(theirs).unwrap();
         let their_kinds: BTreeSet<&str> = session.faces(theirs).unwrap().into_iter()
@@ -180,14 +348,26 @@ fn every_rounds_example_is_occts_fillet() {
             {their_kinds:?}",rounds.len(),flats.len());
         let fitted = our_kinds.contains("bspline") || their_kinds.contains("bspline");
         if rel > if fitted { APPROXIMATE } else { EXACT } {
-            failures.push(format!("{file} `{name}`: volume {ours} against OCCT's {w} ({rel:.1e}){}",
-                apart(&session,&exact.solid,theirs)));
+            let points = apart(&session,&exact.solid,theirs,if fitted_corners.is_empty() { 20_000 } else { 400_000 });
+            let elsewhere: Vec<&(V,&str)> = points.iter()
+                .filter(|(p,_)| !fitted_corners.iter().any(|(v,r)| dist(*p,*v) <= REACH*r)).collect();
+            if !fitted_corners.is_empty() && elsewhere.is_empty() {
+                // ours is the ball's, Steiner's to 1e-9 (`round_lowering.rs`): what is left is OCCT's own corner
+                eprintln!("{file} `{name}`: apart only within {REACH} radii of its {} corners beside a rolled round \
+                    ({} of 400000 points), where OCCT fills each by its own surface",fitted_corners.len(),points.len());
+                blended += 1;
+            } else {
+                failures.push(format!("{file} `{name}`: volume {ours} against OCCT's {w} ({rel:.1e}); {} points apart{}, as {:?}",
+                    points.len(),if fitted_corners.is_empty() { String::new() } else { format!(", {} away from its corners",elsewhere.len()) },
+                    &elsewhere[..elsewhere.len().min(4)]));
+            }
         }
         // every kind of OCCT's ours, and every one of ours OCCT's or a B-spline OCCT fits in its place
         let alike = their_kinds.iter().all(|k| *k == "bspline" || our_kinds.contains(k))
             && our_kinds.iter().all(|k| their_kinds.contains(k) || their_kinds.contains("bspline"));
         if !alike { failures.push(format!("{file} `{name}`: faces {our_kinds:?} against OCCT's {their_kinds:?}")); }
     }
-    eprintln!("{} compared, {refused} OCCT does not round, {unlike} chamfered beside a curved face",examples.len()-refused-unlike);
+    eprintln!("{} compared ({blended} apart only at corners OCCT fills by its own surface), {refused} OCCT does not round, \
+        {unlike} chamfered beside a curved face, held to OCCT's distances",examples.len()-refused-unlike);
     assert!(failures.is_empty(),"{} disagreements:\n{}",failures.len(),failures.join("\n"));
 }

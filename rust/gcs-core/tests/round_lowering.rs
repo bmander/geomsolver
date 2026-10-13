@@ -1074,14 +1074,45 @@ fn a_rolled_run_onto_a_curved_face_is_cut_off_by_its_solid() {
 /// its centre and where it touches both: square to the edge only where the centre runs along it,
 /// not along a cone's generator). Each rolled run is cut short at the section of the corner at its
 /// end, near that corner only, and glued to the cell there to the canal's fit. Built, exported,
-/// and held to the field.
+/// held to Steiner's formula to 1e-9 (`half_frustum_opened`) and to the field.
 #[test]
 fn rolled_runs_are_glued_to_the_corners_at_their_ends() {
     let e = solved(include_str!("../../examples/rounds/frustum.sv"));
     lowered(&e);
     let b = exported(&e, "half");
     assert!(kinds(&b).get("sphere").is_some_and(|&n| n >= 4), "{:?}", kinds(&b));
+    close(props::volume(&b), half_frustum_opened(10.0, 6.0, 12.0, 1.0));
     agrees_with_field(&e, "half", 0.01);
+}
+
+/// A frustum (radius `big` at its foot to `small` at its top, `h` high) halved through its axis,
+/// rounded all over by `r`: convex, so rounded all over it is the body shrunk by `r` and grown by
+/// the ball (Steiner's formula over the shrunk body: `V + S r + M r² + 4π r³ / 3`, `M` the integral
+/// of mean curvature over the faces and of half the turn across each edge). The shrunk body is a
+/// cone cut by `r ≤ z ≤ h − r` and `y ≥ r`; each integral along its height by Simpson's rule.
+fn half_frustum_opened(big: f64, small: f64, h: f64, r: f64) -> f64 {
+    let slope = (big - small) / h;
+    let k = (1.0 + slope * slope).sqrt();
+    let a = big - r * k;
+    let rad = |z: f64| a - slope * z;
+    let (z0, z1) = (r, h - r);
+    let seg = |q: f64| q * q * (r / q).acos() - r * (q * q - r * r).sqrt();
+    let arc = |z: f64| rad(z) * (PI - 2.0 * (r / rad(z)).asin());
+    let chord = |z: f64| 2.0 * (rad(z) * rad(z) - r * r).sqrt();
+    let n = 20_000;
+    let v = simpson_n(&|z| seg(rad(z)), z0, z1, n);
+    let s = seg(rad(z0)) + seg(rad(z1)) + simpson_n(&chord, z0, z1, n) + k * simpson_n(&arc, z0, z1, n);
+    // the cone's mean curvature `1 / (2 k ρ)` over its strip; the caps' rims, the cut's lines across
+    // the caps (square) and its hyperbolas along the cone
+    let m = simpson_n(&|z| arc(z) / (2.0 * rad(z)), z0, z1, n)
+        + (slope / k).acos() / 2.0 * arc(z1) + (-slope / k).acos() / 2.0 * arc(z0)
+        + PI / 4.0 * (chord(z0) + chord(z1))
+        + simpson_n(&|z| {
+            let q = rad(z);
+            let dx = -slope * q / (q * q - r * r).sqrt();
+            (-(r / q) / k).acos() * (1.0 + dx * dx).sqrt()
+        }, z0, z1, n);
+    v + s * r + m * r * r + 4.0 * PI / 3.0 * r.powi(3)
 }
 
 /// The same where a rolled rim comes back past a corner's section: `runout.sv`'s vent rounded all
