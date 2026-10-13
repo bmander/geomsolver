@@ -101,8 +101,10 @@ export function removeConstraint(v: SketchView, c: Constraint): void {
  *  said about text instead.  A rebuild would have been simpler and would have flattened the
  *  document to a list of points on the first deletion; this leaves everything else written.
  *
- *  Refused when what is selected came out of a component: there is no one statement to delete, and
- *  taking the component out is a far larger edit than the gesture asked for. */
+ *  Everything selected goes **except** what came out of a component: there is no one statement to
+ *  delete for that, and taking the component out is a far larger edit than the gesture asked for.
+ *  So a band swept over the drawing that also caught the standard datums deletes the drawing, and
+ *  says what it left; it is refused only when that is all there was. */
 export function deleteSelected(v: SketchView): void {
   // the traced picture, when that is what is selected — which is the only time it can be, the
   // two selections being exclusive.  It is not in the document, so this is not an `apply`:
@@ -120,8 +122,13 @@ export function deleteSelected(v: SketchView): void {
     return;
   }
   if (!v.selected.length) return;
-  const n = v.selected.length;
-  if (v.apply(v.doc.remove(v.selected), `deleted ${n} entities`)) v.onSelect();
+  const e = v.doc.remove(v.selected);
+  const n = v.selected.length - e.kept;
+  const left = e.kept ? `; ${e.kept} made by a component stay` : '';
+  if (!v.apply(e, `deleted ${n} entit${n === 1 ? 'y' : 'ies'}${left}`)) return;
+  // what stayed was never what the gesture was for, so it does not stay selected either
+  v.selected = [];
+  v.onSelect();
 }
 
 /** Flip reference/normal on the selected lines, circles and arcs. */

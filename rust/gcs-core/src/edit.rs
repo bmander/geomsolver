@@ -39,6 +39,9 @@ pub struct Edit {
     pub names: Vec<String>,
     /// Why, when an edit could not be made.
     pub refused: Option<String>,
+    /// What a removal was asked to take and left standing: entities a component made, which have
+    /// no statement of their own to delete.
+    pub kept: usize,
 }
 
 impl Edit {
@@ -48,12 +51,13 @@ impl Edit {
             kind: Kind::None,
             names: Vec::new(),
             refused: why,
+            kept: 0,
         }
     }
 
     /// The source with `edits` applied, an edit of the class `kind`.
     fn spliced(prog: &Program, edits: Vec<Splice>, kind: Kind) -> Edit {
-        Edit { text: splice(prog.text(), edits), kind, names: Vec::new(), refused: None }
+        Edit { text: splice(prog.text(), edits), kind, names: Vec::new(), refused: None, kept: 0 }
     }
 }
 
@@ -553,7 +557,7 @@ fn next_name(taken: &mut std::collections::BTreeSet<String>, kind: EntKind) -> S
 /// Append one statement, whatever it is.
 fn append(prog: &Program, kind: StmtKind, names: Vec<String>) -> Edit {
     match appended(prog, &[kind]) {
-        Ok((text, _)) => Edit { text, kind: Kind::Structural, names, refused: None },
+        Ok((text, _)) => Edit { text, kind: Kind::Structural, names, refused: None, kept: 0 },
         Err(e) => Edit::none(prog, Some(e)),
     }
 }
@@ -583,6 +587,7 @@ pub fn add_use(prog: &Program, name: &str) -> Edit {
         kind: Kind::Structural,
         names: Vec::new(),
         refused: None,
+        kept: 0,
     }
 }
 
@@ -679,6 +684,7 @@ pub fn add_rectangle(prog: &Program, w: f64, h: f64, plane: Option<&str>) -> Edi
         kind: Kind::Structural,
         names: vec![name],
         refused: None,
+        kept: 0,
     }
 }
 
@@ -836,7 +842,7 @@ fn checked_in(prog: &Program, text: String, regions: &[Span], names: Vec<String>
     let refused = e.errors().find(|d| in_ours(d)).map(|d| d.message.clone());
     match refused {
         Some(why) => Err(why),
-        None => Ok(Edit { text, kind: Kind::Structural, names, refused: None }),
+        None => Ok(Edit { text, kind: Kind::Structural, names, refused: None, kept: 0 }),
     }
 }
 
@@ -1663,9 +1669,11 @@ pub fn add_relation(prog: &Program, r: syntax::Relation) -> Edit {
 /// is the same rule `io::without` follows on a sketch, said about text instead: a constraint
 /// comes along exactly when all its entities did.
 ///
-/// Refused when what is being removed was made inside a component or a block.  There is no one
+/// What was made inside a component or a block **stays**, and the rest goes: there is no one
 /// statement to delete there — the statement makes N of them — and quietly deleting the whole
-/// component would be a much larger edit than the gesture asked for.
+/// component would be a much larger edit than the gesture asked for.  So a selection swept over
+/// a drawing that also caught `std`'s datums deletes the drawing; the edit counts what it left
+/// (`Edit::kept`), and is refused, saying why, only when that is everything it was given.
 ///
 /// The **sketch is passed**, as `reconcile` and `commit_seeds` take theirs and for the same
 /// reason: a front end moves the sketch out of the elaboration into a handle of its own
@@ -1682,17 +1690,13 @@ pub fn remove(
     let mut doomed: std::collections::BTreeSet<crate::syntax::StmtId> =
         std::collections::BTreeSet::new();
     let mut names: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    let mut left = 0;
     for r in ents {
         let Some(site) = e.map.of_entity.get(r) else { continue };
+        // a component's, which stays: the rest of what was asked for still goes
         if !site.path.0.is_empty() || !in_root(prog, site.stmt) {
-            return Edit::none(
-                prog,
-                Some(
-                    "that comes from a component, so deleting it would edit the component and \
-                     everything else drawn from it"
-                        .into(),
-                ),
-            );
+            left += 1;
+            continue;
         }
         doomed.insert(site.stmt);
         if let Some(d) = decl_of(prog, site) {
@@ -1746,7 +1750,12 @@ pub fn remove(
         }
     }
     if doomed.is_empty() {
-        return Edit::none(prog, None);
+        let why = (left > 0).then(|| {
+            "that comes from a component, so deleting it would edit the component and everything \
+             else drawn from it"
+                .to_string()
+        });
+        return Edit::none(prog, why);
     }
     // a membership names a plane without depending on it: a point whose plane goes stays,
     // and only its `in …` clause comes out — with the space that set it off
@@ -1830,7 +1839,7 @@ pub fn remove(
             return refuse();
         }
     }
-    Edit { text, kind: Kind::Structural, names: Vec::new(), refused: None }
+    Edit { text, kind: Kind::Structural, names: Vec::new(), refused: None, kept: left }
 }
 
 /// The names a statement refers to, of those given.
@@ -2639,7 +2648,7 @@ pub fn reconcile(e: &mut Elaborated, sk: &Sketch) -> Edit {
     if seeds.kind != Kind::None {
         e.retext(&text);
     }
-    Edit { text, kind: Kind::Structural, names, refused: None }
+    Edit { text, kind: Kind::Structural, names, refused: None, kept: 0 }
 }
 
 /// A lifted declaration refers to its children by their *positional* names (`P3`, `C0`); the

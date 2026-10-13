@@ -4170,6 +4170,7 @@ fn out_edit(e: gcs_core::edit::Edit) -> *mut u8 {
         ),
         ("names", Json::Arr(e.names.into_iter().map(Json::Str).collect())),
         ("refused", e.refused.map(Json::Str).unwrap_or(Json::Null)),
+        ("kept", Json::Num(e.kept as f64)),
     ]))
 }
 

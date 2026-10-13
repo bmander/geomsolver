@@ -251,7 +251,7 @@ fn deleting_a_point_takes_what_named_it() {
     assert_eq!(back.sketch.lines.len(), 1);
 }
 
-/// Deleting something a component made is refused, and says why: the statement makes N of them,
+/// Deleting only what a component made is refused, and says why: the statement makes N of them,
 /// and taking the component out is a far larger edit than the gesture asked for.
 #[test]
 fn deleting_what_a_component_made_is_refused() {
@@ -273,6 +273,48 @@ fix((0, 0)) q.a
     assert_eq!(d.kind, Kind::None);
     assert!(d.refused.is_some_and(|r| r.contains("component")), "it says why");
     assert_eq!(d.text, src, "and changes nothing");
+}
+
+/// What a component made **stays** and the rest of what was asked for goes: a band swept over a
+/// drawing also catches `std`'s datums, and refusing the whole deletion over them deleted
+/// nothing.  The edit counts what it left, so the front end can say so.
+#[test]
+fn deleting_beside_what_a_component_made_takes_the_rest() {
+    let src = "\
+use std
+component Pair() {
+  a := point
+  b := point hint((10, 0))
+}
+in std.front {
+q := Pair()
+fix((0, 0)) q.a
+p := point hint((30, 5))
+r := point hint((40, 5))
+pr := line(p, r)
+}
+";
+    let prog = prog_of(src);
+    let e = elaborate(&prog);
+    assert!(e.ok(), "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
+    let named = |n: &str| e.map.ent_named(n).unwrap_or_else(|| panic!("no {n}"));
+    let asked = [named("q.a"), named("std.origin"), named("p"), named("q.b")];
+    let d = edit::remove(&e, &prog, &e.sketch, &asked, &[]);
+    assert_eq!(d.kind, Kind::Structural, "{:?}", d.refused);
+    assert_eq!(d.refused, None);
+    assert_eq!(d.kept, 3, "the pair's two points and the origin stay");
+    assert!(!d.text.contains("p := point"), "{}", d.text);
+    assert!(!d.text.contains("pr := line"), "and the line that named it: {}", d.text);
+    assert!(d.text.contains("r := point hint((40, 5))"), "{}", d.text);
+    assert!(d.text.contains("q := Pair()\nfix((0, 0)) q.a\n"), "the component is untouched");
+    let back = elaborate(&prog_of(&d.text));
+    assert!(back.ok(), "{:?}", back.errors().map(|x| &x.message).collect::<Vec<_>>());
+
+    // and only the component's: nothing would go, so it is refused, and says why
+    let d = edit::remove(&e, &prog, &e.sketch, &[named("q.a"), named("std.origin")], &[]);
+    assert_eq!(d.kind, Kind::None);
+    assert!(d.refused.is_some_and(|r| r.contains("component")), "it says why");
+    assert_eq!(d.text, src);
 }
 
 /// Editing a number splices the number.  A plain one is `Numeric` — the topology cannot have
