@@ -47,17 +47,9 @@ fn a_component_recurses_until_its_when_ends_it() {
     }
 }
 
-/// Penrose's P3 by Robinson triangles, two components each calling the other: an acute half
-/// rhomb (legs `l`, apex 36°) cuts into an acute and an obtuse one, an obtuse (legs `s`, apex
-/// 108°) into two obtuse and an acute.  A leaf draws its two legs, apex first.
-fn penrose(depth: usize) -> String {
-    penrose_from(depth, "repeat 10 as k {\n\
-                 v := point\n\
-                 fix((l * cos(36deg * k), l * sin(36deg * k))) v\n\
-               }", "v")
-}
-
-/// The same tiling, its ten outer points stated by `sun` and called `v[…]` by the rest.
+/// Penrose's P3 by Robinson triangles, two components each calling the other
+/// (`examples/penrose.sv`, the app's example), its ten outer points stated by `sun` and called
+/// `v[…]` by the rest.
 fn penrose_from(depth: usize, sun: &str, v: &str) -> String {
     format!(
         "use std (horizontal)\n\
@@ -150,7 +142,7 @@ fn subdivided(depth: usize) -> Vec<(bool, P, P, P)> {
 /// branch each point is seeded on included, which a count of lengths alone would not see.
 #[test]
 fn mutually_recursive_components_subdivide_a_penrose_sun() {
-    tiles(&penrose(3), 3, 0);
+    tiles(include_str!("../../examples/penrose.sv"), 3, 0);
 }
 
 /// **The same with the sun a `ring`** (#225): `std.Polygon`'s ten corners, nine of them turned
