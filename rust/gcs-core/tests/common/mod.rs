@@ -174,8 +174,8 @@ pub fn corpus() -> Vec<Doc> {
             _ => println!("skip {name}: does not elaborate"),
         }
     }
-    for (label, configuration) in fixtures::gear::designs() {
-        let sketch = fixtures::gear::unsolved(&configuration).sketch;
+    for (label, text) in fixtures::gear::designs() {
+        let sketch = fixtures::gear::unsolved(&text).sketch;
         docs.push(Doc { name: format!("spiral_bevel@{label}"), sketch });
     }
     docs

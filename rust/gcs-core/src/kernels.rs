@@ -2215,36 +2215,52 @@ fn skew_gap(v: &[f64], j: &mut [f64]) -> f64 {
     s
 }
 
-/// Columns of `line_line3`: (A, B, C, D) — two lines' hidden endpoints — K = (d), the stated
-/// distance already turned to the side the seed was on.  `s − d`: a length, degree 1.
+/// Columns of `line_line3`: (A, B, C, D) — two lines' hidden endpoints — K = (d, pinned): the
+/// common perpendicular's length, a magnitude, `|s| − d` (#217), both sides of the first line
+/// roots and a bound or the seed choosing; or, `pinned` 1, `s − d` with `d` turned to the side
+/// a `sign:` names.  A length, degree 1.
 fn line_line3_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
     let mut g = [0.0; 12];
     for i in 0..n {
-        r[i] = skew_gap(&v[12 * i..], &mut g) - k[i];
+        let s = skew_gap(&v[12 * i..], &mut g);
+        r[i] = if k[2 * i + 1] != 0.0 { s } else { s.abs() } - k[2 * i];
     }
 }
 
-fn line_line3_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
+fn line_line3_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
     for i in 0..n {
         let o = 12 * i;
-        skew_gap(&v[o..], &mut j[o..o + 12]);
+        let s = skew_gap(&v[o..], &mut j[o..o + 12]);
+        if k[2 * i + 1] == 0.0 && s < 0.0 {
+            for x in &mut j[o..o + 12] {
+                *x = -*x;
+            }
+        }
     }
 }
 
-/// (A, B, C, D, a), K = (m, c): `s − (m·a + c)`, the sign folded into m and c.
+/// (A, B, C, D, a), K = (m, c, pinned): `|s| − (m·a + c)`, or where pinned `s − (m·a + c)`, the
+/// sign folded into m and c.
 fn line_line3_free_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
     let mut g = [0.0; 12];
     for i in 0..n {
         let o = 13 * i;
-        r[i] = skew_gap(&v[o..], &mut g) - free_dim(v, k, i, o + 12).0;
+        let s = skew_gap(&v[o..], &mut g);
+        let (m, c, pinned) = (k[3 * i], k[3 * i + 1], k[3 * i + 2]);
+        r[i] = if pinned != 0.0 { s } else { s.abs() } - (m * v[o + 12] + c);
     }
 }
 
 fn line_line3_free_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
     for i in 0..n {
         let o = 13 * i;
-        skew_gap(&v[o..], &mut j[o..o + 12]);
-        j[o + 12] = -k[2 * i];
+        let s = skew_gap(&v[o..], &mut j[o..o + 12]);
+        if k[3 * i + 2] == 0.0 && s < 0.0 {
+            for x in &mut j[o..o + 12] {
+                *x = -*x;
+            }
+        }
+        j[o + 12] = -k[3 * i];
     }
 }
 
@@ -3247,12 +3263,18 @@ fn skew_gap_of<T: Num>(v: &[T]) -> T {
     vdot(m, vsub(c, a)) / vlen(m, MIN_LINE_LEN * MIN_LINE_LEN)
 }
 
+/// The gap a skew distance compares: signed where `pinned`, its magnitude where not.
+fn skew_reading<T: Num>(v: &[T], pinned: f64) -> T {
+    let s = skew_gap_of(v);
+    if pinned == 0.0 && s.val() < 0.0 { T::cst(0.0) - s } else { s }
+}
+
 fn line_line3_rows<T: Num>(v: &[T], k: &[f64]) -> [T; 1] {
-    [skew_gap_of(v) - T::cst(k[0])]
+    [skew_reading(v, k[1]) - T::cst(k[0])]
 }
 
 fn line_line3_free_rows<T: Num>(v: &[T], k: &[f64]) -> [T; 1] {
-    [skew_gap_of(v) - free_num(v[12], k)]
+    [skew_reading(v, k[2]) - free_num(v[12], k)]
 }
 
 /// The two lines' directions, (B − A, D − C).
@@ -3518,8 +3540,8 @@ pub static KERNELS: [Kernel; N_KERNELS] = [
     Kernel { name: "distance3_free", n_res: 1, n_par: 7, degree: 2, n_const: 2, res: distance3_free_res, jac: distance3_free_jac, const_jac: None },
     Kernel { name: "point_line3", n_res: 1, n_par: 9, degree: 1, n_const: 1, res: point_line3_res, jac: point_line3_jac, const_jac: None },
     Kernel { name: "point_line3_free", n_res: 1, n_par: 10, degree: 1, n_const: 2, res: point_line3_free_res, jac: point_line3_free_jac, const_jac: None },
-    Kernel { name: "line_line3", n_res: 1, n_par: 12, degree: 1, n_const: 1, res: line_line3_res, jac: line_line3_jac, const_jac: None },
-    Kernel { name: "line_line3_free", n_res: 1, n_par: 13, degree: 1, n_const: 2, res: line_line3_free_res, jac: line_line3_free_jac, const_jac: None },
+    Kernel { name: "line_line3", n_res: 1, n_par: 12, degree: 1, n_const: 2, res: line_line3_res, jac: line_line3_jac, const_jac: None },
+    Kernel { name: "line_line3_free", n_res: 1, n_par: 13, degree: 1, n_const: 3, res: line_line3_free_res, jac: line_line3_free_jac, const_jac: None },
     Kernel { name: "angle3", n_res: 1, n_par: 12, degree: 0, n_const: 1, res: angle3_res, jac: angle3_jac, const_jac: None },
     Kernel { name: "angle3_free", n_res: 1, n_par: 13, degree: 0, n_const: 2, res: angle3_free_res, jac: angle3_free_jac, const_jac: None },
     Kernel { name: "perpendicular3", n_res: 1, n_par: 12, degree: 0, n_const: 0, res: perpendicular3_res, jac: perpendicular3_jac, const_jac: None },

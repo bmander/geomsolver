@@ -1,154 +1,136 @@
-//! The spiral-bevel project (`rust/examples/spiral_bevel`) at a design: the module rewrites
-//! every gear suite reads it through, and the readers.
-use gcs_core::program;
+//! The spiral-bevel pair (`rust/examples/spiral_bevel/hypoid.sv`, one file) at a design: the
+//! rewrites every gear suite reads it through, and the readers. A design is the document's own
+//! inputs given numbers (`param pinion_teeth := 24`, …), each rewritten where the parser says
+//! its value stands (`configure`); nothing else of the text is touched but the member's tooth
+//! count for a one-space build (`one_space`) and a published blank (`publish_blank`).
+use gcs_core::{program,syntax};
 use std::path::PathBuf;
 
 /// The project's directory.
 pub fn project() -> PathBuf { PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../examples/spiral_bevel") }
 
-/// The pair's entry document, `gears.sv`.
-pub fn source() -> String { std::fs::read_to_string(project().join("gears.sv")).unwrap() }
+/// The pair's document, `hypoid.sv`.
+pub fn source() -> String { std::fs::read_to_string(project().join("hypoid.sv")).unwrap() }
 
-/// One of the project's documents (`gears.sv`, `pair.sv`) read with its modules beside it, the
-/// configuration module replaced by `configuration`.
-pub fn read_file(file: &str,configuration: &str) -> program::Elaborated {
-    let text = std::fs::read_to_string(project().join(file)).unwrap();
-    crate::read_beside(&text,&project(),&mut |name,text|
-        if name == "configuration" { configuration.to_string() } else { text })
+/// The inputs `configure` reads in millimetres, and those it reads as plain counts; every other
+/// is in degrees.
+const LENGTHS: [&str;5] = ["mean_module","offset","backlash","tip_relief","end_relief"];
+const COUNTS: [&str;2] = ["pinion_teeth","gear_teeth"];
+
+/// `text` with each named input (`param NAME := …` at the top level) given a number: lengths in
+/// millimetres, counts as they are, every other in degrees. Asserts each is an input.
+pub fn configure(text: &str,params: &[(&str,f64)]) -> String {
+    let (prog,_) = syntax::parse(text);
+    let mut values: Vec<(syntax::Span,String)> = params.iter().map(|&(name,v)| {
+        let span = prog.root().body.iter().find_map(|st| match &st.kind {
+            syntax::StmtKind::Param(p) if p.input.is_some() && p.bound() && p.name.text == name => Some(p.span),
+            _ => None,
+        }).unwrap_or_else(|| panic!("the pair has no input `{name}`"));
+        let unit = if LENGTHS.contains(&name) { "mm" } else if COUNTS.contains(&name) { "" } else { "deg" };
+        (span,format!("{v}{unit}"))
+    }).collect();
+    values.sort_by_key(|(at,_)| std::cmp::Reverse(at.lo));
+    let mut out = text.to_string();
+    for (at,v) in values {
+        out.replace_range(at.lo as usize..at.hi as usize,&v);
+    }
+    out
 }
 
-/// One of the project's modules (a dotted name in a subdirectory), or the library's.
-pub fn module(name: &str) -> Option<String> { crate::module(&project(),name) }
-
-/// A `configuration` module of its own: the tooth counts, the mean module and the offset between
-/// the shafts in millimetres, the pressure shift and the crown's spiral in degrees, the shafts
-/// square, with no backlash, no tip relief and no end relief.
-pub fn configuration(teeth: [u32;2],mean_module: f64,offset: f64,shift: f64,spiral: f64) -> String {
-    format!("pinion_teeth := {}\ngear_teeth := {}\nmean_module := {mean_module}mm\n\
-        shaft_angle := 90deg\noffset := {offset}mm\npressure_shift := {shift}deg\n\
-        spiral_angle := {spiral}deg\nbacklash := 0mm\ntip_relief := 0mm\n\
-        end_relief := 0mm\n",teeth[0],teeth[1])
+/// A design's inputs: the tooth counts, the mean module and the offset between the shafts in
+/// millimetres, the pressure shift and the crown's spiral in degrees, the shafts square, with no
+/// backlash, no tip relief and no end relief.
+pub fn configuration(teeth: [u32;2],mean_module: f64,offset: f64,shift: f64,spiral: f64) -> Vec<(&'static str,f64)> {
+    vec![("pinion_teeth",teeth[0].into()),("gear_teeth",teeth[1].into()),("mean_module",mean_module),
+        ("shaft_angle",90.),("offset",offset),("pressure_shift",shift),("spiral_angle",spiral),
+        ("backlash",0.),("tip_relief",0.),("end_relief",0.)]
 }
 
-/// The parameters `configure` reads in millimetres; every other is in degrees.
-const LENGTHS: [&str;4] = ["offset","backlash","tip_relief","end_relief"];
-
-/// The `configuration` module with each named parameter set to a number: the offset, the
-/// backlash and the tip and end reliefs in millimetres, every other in degrees. Its line is
-/// dropped wherever it stands and the value written at the end. Every other module unchanged.
-pub fn configure(name: &str,text: String,params: &[(&str,f64)]) -> String {
-    if name != "configuration" { return text; }
-    // `offset` must not take an `offset_…`: a name ends at a space or its `:=`.
-    let names = |l: &str| params.iter().any(|(p,_)| l.trim_start().strip_prefix(p)
-        .is_some_and(|rest| rest.starts_with([' ',':'])));
-    let unit = |p: &str| if LENGTHS.contains(&p) { "mm" } else { "deg" };
-    text.lines().filter(|l| !names(l)).map(|l| format!("{l}\n")).collect::<String>()
-        + &params.iter().map(|(p,v)| format!("{p} := {v}{}\n",unit(p))).collect::<String>()
+/// The pair at a design of its own (`configuration`).
+pub fn at(teeth: [u32;2],mean_module: f64,offset: f64,shift: f64,spiral: f64) -> String {
+    configure(&source(),&configuration(teeth,mean_module,offset,shift,spiral))
 }
 
-/// The gear design: the offset between the shafts in millimetres, the pressure shift and the
-/// crown's spiral angle in degrees; with no backlash and no tip or end relief, the conjugate pair
-/// every number the suites recorded was taken of (`fabricated` adds them).
-pub fn design(name: &str,text: String,offset: f64,shift: f64,spiral: f64) -> String {
-    fabricated(name,text,[offset,shift,spiral],0.,0.,0.)
+/// `text` at the gear design: the offset between the shafts in millimetres, the pressure shift and
+/// the crown's spiral angle in degrees; with no backlash and no tip or end relief, the conjugate
+/// pair every number the suites recorded was taken of (`fabricated` adds them).
+pub fn design(text: &str,offset: f64,shift: f64,spiral: f64) -> String {
+    fabricated(text,[offset,shift,spiral],0.,0.,0.)
 }
 
 /// `design` with the fabrication allowances: the normal backlash, the tip relief and the end
 /// relief in millimetres.
-pub fn fabricated(name: &str,text: String,design: [f64;3],backlash: f64,tip_relief: f64,end_relief: f64) -> String {
-    configure(name,text,&[("offset",design[0]),("pressure_shift",design[1]),("spiral_angle",design[2]),
+pub fn fabricated(text: &str,design: [f64;3],backlash: f64,tip_relief: f64,end_relief: f64) -> String {
+    configure(text,&[("offset",design[0]),("pressure_shift",design[1]),("spiral_angle",design[2]),
         ("backlash",backlash),("tip_relief",tip_relief),("end_relief",end_relief)])
 }
 
 /// The bevel pair: every recorded number in the suites was taken with the pinion axis through
 /// the common apex and the bevel pair's pressure angles and spiral, whatever is configured.
-pub fn bevel(name: &str,text: String) -> String { design(name,text,0.,0.,35.) }
+pub fn bevel(text: &str) -> String { design(text,0.,0.,35.) }
 
 /// A small hypoid: 5.7 mm between the shafts, the axis offset of the turned layout's six-degree
 /// hypoid it replaced (5.705 mm), with the bevel pair's pressure angles and spiral.
-pub fn hypoid6(name: &str,text: String) -> String { design(name,text,5.7,0.,35.) }
+pub fn hypoid6(text: &str) -> String { design(text,5.7,0.,35.) }
 
-/// The `members` module with a single tooth space per member, as a one-space export has.
+/// The pair with a single tooth space per member, as a one-space export has: `Generated`'s
+/// indexing at its first tooth alone.
 pub fn one_space(text: &str) -> String {
-    assert!(text.contains("repeat teeth as i {"),"the member indexes its cut by `repeat teeth as i`");
-    text.replace("repeat teeth as i {","repeat 1 as i {")
+    assert!(text.contains("repeat n as i {"),"a cut is indexed at every tooth by `repeat n as i`");
+    text.replace("repeat n as i {","repeat 1 as i {")
 }
 
-/// The `members` module with each member also publishing its blank (`blank`: a body over the
-/// blank's region, `design.blank`) and `extra` after it, past the member's generated `cut`.
+/// The pair with each member also publishing its blank (`blank`: a body over the blank's region)
+/// and `extra` after it, past the member's generated `cut`.
 pub fn publish_blank(text: &str,extra: &str) -> String {
-    let cut = "  body := solid(design.blank)\n  cut := Generated(";
+    let cut = "  body := solid(blank)\n  cut := Generated(";
     let at = text.find(cut).expect("the member's body is its blank, less its generated cut")+cut.len();
     let end = at+text[at..].find('\n').unwrap()+1;
-    format!("{}  construction blank := solid(design.blank)\n{extra}{}",&text[..end],&text[end..])
+    format!("{}  construction blank := solid(blank)\n{extra}{}",&text[..end],&text[end..])
 }
 
-/// The `design` module with each member's roll limit in degrees (`pinion_roll`, `gear_roll`).
-pub fn roll(name: &str,text: String,member: &str,degrees: f64) -> String {
-    if name != "design" { return text; }
-    let key = format!("{member}_roll: ");
-    let at = text.find(&key).unwrap_or_else(|| panic!("the design states no `{key}`"))+key.len();
-    let end = at+text[at..].find([',',')']).unwrap();
-    format!("{}{degrees}deg{}",&text[..at],&text[end..])
+/// `text` with a member's roll limit in degrees (`pinion`, `gear`).
+pub fn roll(text: &str,member: &str,degrees: f64) -> String {
+    configure(text,&[(&format!("{member}_roll_limit"),degrees)])
 }
 
-/// Copy the project's sources into `dir`, subdirectories and all, its configuration at a design
-/// (`design`: the offset in millimetres, the shift and the spiral in degrees; no fabrication
-/// allowances).
-pub fn copy_design(dir: &std::path::Path,offset: f64,shift: f64,spiral: f64) {
-    fn walk(from: &std::path::Path,to: &std::path::Path) {
-        std::fs::create_dir_all(to).unwrap();
-        for entry in std::fs::read_dir(from).unwrap() {
-            let path = entry.unwrap().path();
-            let target = to.join(path.file_name().unwrap());
-            if path.is_dir() { walk(&path,&target); }
-            else if path.extension().map_or(false,|e| e == "sv") { std::fs::copy(&path,&target).unwrap(); }
-        }
-    }
-    walk(&project(),dir);
-    let path = dir.join("configuration.sv");
-    let text = std::fs::read_to_string(&path).unwrap();
-    std::fs::write(&path,design("configuration",text,offset,shift,spiral)).unwrap();
+/// Write the pair into `dir` as `hypoid.sv` at a design (`design`: the offset in millimetres, the
+/// shift and the spiral in degrees; no fabrication allowances), and say where.
+pub fn copy_design(dir: &std::path::Path,offset: f64,shift: f64,spiral: f64) -> PathBuf {
+    std::fs::create_dir_all(dir).unwrap();
+    let path = dir.join("hypoid.sv");
+    std::fs::write(&path,design(&source(),offset,shift,spiral)).unwrap();
+    path
 }
 
-/// The pair as configured, each module rewritten.
-pub fn read_configured_with(rewrite: &mut dyn FnMut(&str,String) -> String) -> program::Elaborated {
-    crate::read_beside(&source(),&project(),rewrite)
+/// `text`, the pair at some design, elaborated and solved accurately.
+pub fn read(text: &str) -> program::Elaborated {
+    crate::elaborate(text,&mut |name| gcs_core::library::resolve(name))
+}
+
+/// `text` elaborated and not solved: where its words and the elaborator put it.
+pub fn unsolved(text: &str) -> program::Elaborated {
+    crate::unsolved(text,&mut |name| gcs_core::library::resolve(name))
 }
 
 /// The pair as configured, offset and fabrication allowances and all.
-pub fn read_as_configured() -> program::Elaborated { read_configured_with(&mut |_,text| text) }
-
-/// `source` with its modules read beside `base` as the bevel pair, then rewritten.
-pub fn read_with(source: &str,base: &std::path::Path,rewrite: &mut dyn FnMut(&str,String) -> String) -> program::Elaborated {
-    crate::read_beside(source,base,&mut |name,text| rewrite(name,bevel(name,text)))
-}
-
-/// `source` with its modules read beside `base` as the bevel pair.
-pub fn read(source: &str,base: &std::path::Path) -> program::Elaborated { read_with(source,base,&mut |_,text| text) }
+pub fn read_as_configured() -> program::Elaborated { read(&source()) }
 
 /// The twelve designs the layout regression records (`tests/hypoid_layout.rs`), each a label and
-/// its `configuration` module: the configured hypoid (with no fabrication allowances, as it was
+/// the document at it: the configured hypoid (with no fabrication allowances, as it was
 /// recorded), the bevel pair, the six-millimetre hypoid, and the bevel pair at three tooth pairs
 /// and three modules — the sizes and ratios the paired-envelope checks read.
 pub fn designs() -> Vec<(String,String)> {
-    let text = std::fs::read_to_string(project().join("configuration.sv")).unwrap();
+    let text = source();
     let mut all = vec![
-        ("configured".to_string(),design("configuration",text.clone(),25.,12.5,25.)),
-        ("bevel".to_string(),bevel("configuration",text.clone())),
-        ("hypoid6".to_string(),hypoid6("configuration",text)),
+        ("configured".to_string(),design(&text,25.,12.5,25.)),
+        ("bevel".to_string(),bevel(&text)),
+        ("hypoid6".to_string(),hypoid6(&text)),
     ];
     for teeth in [[24,48],[32,32],[28,49]] {
         for module in [0.2,2.,25.4] {
-            all.push((format!("{}x{} m{module}",teeth[0],teeth[1]),configuration(teeth,module,0.,0.,35.)));
+            all.push((format!("{}x{} m{module}",teeth[0],teeth[1]),configure(&text,&configuration(teeth,module,0.,0.,35.))));
         }
     }
     all
-}
-
-/// The pair (`gears.sv`) at a `configuration` module, elaborated and not solved: where its seeds
-/// put it.
-pub fn unsolved(configuration: &str) -> program::Elaborated {
-    crate::unsolved(&source(),&mut crate::beside(&project(),
-        &mut |name,text| if name == "configuration" { configuration.to_string() } else { text }))
 }

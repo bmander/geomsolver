@@ -1,4 +1,6 @@
-// Step 3, a member's blank: the points within its tip cone and its heel sphere and outside its
+// A member's blank, as the spiral bevel's step 3 drew it when the pair was modules (it is now
+// `spiral_bevel/hypoid.sv`'s `Blank`), kept for the tests that read a blank on its own
+// (functional_solids/document.rs, fillet_meridian.rs). A member's blank: the points within its tip cone and its heel sphere and outside its
 // toe sphere and its back cone, one region and its solid (§6.21). The cones are the pitch cone
 // offset by the addendum and by the back depth (`std.Offset`, `outside(d)`); the spheres are
 // about its apex through the face span's ends (`FaceSpan`, the face width on the pitch generator

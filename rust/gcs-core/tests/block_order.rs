@@ -111,23 +111,26 @@ fn the_over_and_under_determined_parts_stand_apart() {
 /// The configured hypoid's layout as recorded, with no backlash or tip relief; the relief's own
 /// geometry is `the_tip_relief_orders_whole`'s.  Since the crown is regions about the cutter's axis
 /// (#214) it draws no section: what was 204 rows in 64 blocks, 13 deep (three crown sections of
-/// sixteen), is the cutter's axis and its flank cones' apexes and feet.
+/// sixteen), is the cutter's axis and its flank cones' apexes and feet.  In one file (#217), 87
+/// rows in 34 blocks: the crown's axis held, the cutter's parallel to it, the normal module read
+/// off O with no point of its own, the blank's spheres sized from M with no rim points.
 #[test]
-fn the_hypoid_layout_is_41_blocks_9_deep() {
-    let e = fixtures::gear::read_configured_with(&mut |name, text| fixtures::gear::design(name, text, 25., 12.5, 25.));
+fn the_hypoid_layout_is_34_blocks_9_deep() {
+    let e = fixtures::gear::read(&fixtures::gear::design(&fixtures::gear::source(), 25., 12.5, 25.));
     let mut sys = System::new(&e.sketch);
     let order = sys.block_order();
-    assert_eq!((sys.hard_rows().len(), sys.n_free), (105, 105));
+    assert_eq!((sys.hard_rows().len(), sys.n_free), (87, 87));
     assert!(order.over_rows.is_empty() && order.under_cols.is_empty());
-    assert_eq!(order.blocks.len(), 41);
+    assert_eq!(order.blocks.len(), 34);
     assert_eq!(order.depth(), 9);
     let mut sizes = std::collections::BTreeMap::new();
     for b in &order.blocks {
         assert_eq!(b.rows.len(), b.cols.len());
         *sizes.entry(b.rows.len()).or_insert(0) += 1;
     }
-    // a plane's origin where its two axes meet is a block of three
-    let want = [(1, 15), (2, 9), (3, 15), (7, 1), (20, 1)];
+    // a plane's origin where its two axes meet is a block of three; the gear's triangle is the
+    // block of seven, the pinion's cone against it the block of twenty
+    let want = [(1, 14), (2, 8), (3, 10), (7, 1), (20, 1)];
     assert_eq!(sizes.into_iter().collect::<Vec<_>>(), want);
     // every block reads only the blocks before it: a column a block's rows touch that is not its
     // own is an earlier block's

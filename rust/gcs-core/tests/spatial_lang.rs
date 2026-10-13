@@ -320,10 +320,12 @@ fn the_solved_axis_is_written_back_to_its_seed() {
     read(&ed.text);
 }
 
-/// A skew distance read from a document that left its side out has the side inferred from the
-/// geometry, as a `null` there always did — not defaulted to one the drawing may not stand on.
+/// A skew distance is a magnitude (#217): nothing reads a side off the geometry, so a document
+/// that leaves it out, or writes 0, states the length alone and both sides of the first line are
+/// roots — the drawing stays on the side it stands on, and a bound would choose — while a side
+/// written ±1 is a pin, kept through a round trip.
 #[test]
-fn a_skew_side_left_out_of_a_document_is_read_off_the_geometry() {
+fn a_skew_distance_is_a_magnitude_unless_its_side_is_pinned() {
     let mut sides = Vec::new();
     // the pinion's axis drawn on one side of the gear's, and on the other
     let below = AXES.replace("hint((0, 10)), hint((60, 12))", "hint((0, -10)), hint((60, -12))");
@@ -332,17 +334,24 @@ fn a_skew_side_left_out_of_a_document_is_read_off_the_geometry() {
         let mut sk = e.sketch.clone();
         let ls = [ent(&e, "gax"), ent(&e, "pax")];
         let c = Constraint::in_space(&sk, CKind::LineLine3, &ls, Some(5.0)).unwrap();
-        let side = c.args[3].clone();
+        assert_eq!(c.args[3].num(), 0.0, "no side read off the geometry");
         sk.add(c);
         let text = io::dumps(&sk, None);
-        let written = format!("5.0,{}]}}", if side.num() < 0.0 { "-1" } else { "1" });
-        assert!(text.contains(&written), "{text}");
-        let back = io::loads(&text.replace(&written, "5.0]}")).expect("loads");
-        let c = back.constraints.iter().find(|c| c.kind == CKind::LineLine3).unwrap();
-        assert_eq!(c.args[3].num(), side.num(), "the side as the geometry has it");
-        sides.push(side.num());
+        assert!(text.contains("5.0,0]}"), "{text}");
+        for (written, pinned) in [("5.0]}", 0.0), ("5.0,-1]}", -1.0), ("5.0,1]}", 1.0)] {
+            let back = io::loads(&text.replace("5.0,0]}", written)).expect("loads");
+            let c = back.constraints.iter().find(|c| c.kind == CKind::LineLine3).unwrap();
+            assert_eq!(c.args[3].num(), pinned, "{written}");
+        }
+        // solved as a magnitude, each stays on the side it was drawn on
+        assert!(solve(&mut sk, SolveOpts::default()).success);
+        let ((a, b), (c, d)) = (ends(&sk, ls[0]), ends(&sk, ls[1]));
+        let m = cross(sub(b, a), sub(d, c));
+        let s = dot(m, sub(c, a)) / norm(m);
+        assert!((s.abs() - 5.0).abs() < 1e-9, "{s}");
+        sides.push(s.signum());
     }
-    // the two stand on opposite sides, so one of them is the side a default would miss
+    // the two stand on opposite sides: a side read off nothing but the seed
     assert_eq!(sides[0], -sides[1]);
 }
 

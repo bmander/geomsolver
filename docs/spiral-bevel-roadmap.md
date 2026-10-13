@@ -19,8 +19,8 @@ not displace frontend/backend integration.
 The integration path is:
 
 1. Use an ordinary, editable Solvent project for the configured generating geometry.
-   `rust/examples/spiral_bevel/pair.sv` imports `design.sv` (over `configuration.sv`) and
-   instantiates `HypoidLayout`; the export adapter no longer rewrites the component's source text.
+   `rust/examples/spiral_bevel/hypoid.sv` is the whole pair in one file (#217), its design the
+   `param` inputs at its head; the export adapter rewrites no component's source text.
    Each new workflow saves its actual linked sources under `solvent/` and checks them with
    the normal `solventc` executable.
 2. Express the blank, generating removal and tooth indexing with general solid operations
@@ -74,22 +74,22 @@ Boundary export still refuses these graphs explicitly; native sweep-boundary con
 remains ahead, so this is not yet public gear solid export.
 
 
-`rust/examples/spiral_bevel/gears.sv` now instantiates both complete material bodies through
-`HypoidPair` (`members.sv`), over the step-by-step layout `HypoidLayout` (`layout.sv`; the
-steps are listed in the example's README). `GeneratedMember` subtracts a continuous cutter
-sweep at each tooth index; its tooth count and module come from the design group. The gear
-cutter is `Space` (`crown/mate.sv`), regions about the cutter's axis on the flank cones the crown
+`rust/examples/spiral_bevel/hypoid.sv` (one file since #217, its words choosing every root with no
+point seeded) makes both complete material bodies, `pinion.body` and `gear.body`, over its
+step-by-step layout (the steps are listed in the example's README). `Member` subtracts a
+continuous cutter sweep at each tooth index (`Generated`). The gear
+cutter is `Space`, regions about the cutter's axis on the flank cones the crown
 tooth stands on (#214): its outer mate beyond the tooth's outer cone, closed by a cylinder about
-the axis (`crown/reach.sv`), bounded by its inner mate, within the inner cone and turned one crown
+the axis (`reach`), bounded by its inner mate, within the inner cone and turned one crown
 pitch (`neighbor bound body`, the body rule's intersection, spec 0.22). The finite radial closure
 lies beyond the reachable blank under every apex-centered generating rotation. No private member access rule or gear-specific compiler
 operation is added. The analytic faces the generating-system checks read (surfaces,
 envelopes, regions, seams, vertices, edges, faces) are made of their parts from the members as
 built (#212): a member's faces are named by the crown faces that made them, and each name is read
 back to its analytic envelope (`faces::face_source`); the layout holds only the blank, the crown
-regions and the motions the members are generated from (`pair.sv` is the layout alone).
-`configuration.sv` states the shafts (`shaft_angle`, and `offset`, their common perpendicular);
-a nonzero offset solves the pinion's pitch cone against the gear's (`pitch/pinion.sv`, [the
+regions and the motions the members are generated from.
+Its inputs state the shafts (`shaft_angle`, and `offset`, their common perpendicular);
+a nonzero offset solves the pinion's pitch cone against the gear's ([the
 true hypoid](spiral-bevel-layout-plan.md#the-true-hypoid)), its cones and its own toe/heel
 spheres stand about its own apex in its axial view, and its generating roll becomes a screw
 about the crown. Nothing in the sweep or arrangement changes. The mesh export checks every

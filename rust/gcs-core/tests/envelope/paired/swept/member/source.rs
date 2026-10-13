@@ -5,12 +5,12 @@ use super::*;
 fn declarative_pair_agrees_with_independent_member_material() {
     for (teeth,module) in [([24,48],2.),([28,49],1.5)] {
         let pair = Pair::read(teeth,module);
-        let e = read_model(include_str!("../../../../../../examples/spiral_bevel/gears.sv"),teeth,module);
+        let e = read_model(teeth,module);
         let options = Options {value_tolerance:module*1e-4,max_evaluations:100000};
         let band = I::new(-module*1e-5,module*1e-5).unwrap();
         for member in 0..2 {
             let name = ["pinion","gear"][member];
-            let id = e.map.ent_named(&format!("pair.{name}.body")).unwrap().i();
+            let id = e.map.ent_named(&format!("{name}.body")).unwrap().i();
             let field = MaterialField::read(&e.sketch,id,module*1e-10)
                 .unwrap_or_else(|error| panic!("{teeth:?} {name}: {error}"));
             let mut source = field.evaluator(100000);
@@ -63,11 +63,11 @@ fn source_contact_curves_reproduce_independent_crown_characteristics() {
     use gcs_core::solid::SweepContacts;
     let teeth = [24,48]; let module = 2.;
     let pair = Pair::read(teeth,module);
-    let e = read_model(include_str!("../../../../../../examples/spiral_bevel/gears.sv"),teeth,module);
+    let e = read_model(teeth,module);
     let mut checked = 0;
     for member in 0..2 {
         let name = ["pinion","gear"][member];
-        let id = e.map.ent_named(&format!("pair.{name}.cut.removal")).unwrap().i();
+        let id = e.map.ent_named(&format!("{name}.cut.removal")).unwrap().i();
         let sweep = SweepContacts::read(&e.sketch,id,module*1e-10).unwrap();
         assert_eq!(sweep.patches().len(),[6,9][member]);
         for side in 0..2 {

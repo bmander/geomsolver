@@ -11,11 +11,11 @@ const parts = ['cylinder', 'plate', 'piston', 'disc', 'flywheel', 'throttle'];
 const projects: Example[] = [{
   label: 'Hypoid gear pair · swept solids', key: 'spiral_bevel',
   description: 'A 24-tooth pinion and a 48-tooth gear on square shafts 25 mm apart, laid out step '
-    + 'by step from their pitch cones through the mean point (layout.sv). Each is its blank less '
-    + 'a generating crown rolled through it at every tooth. Edit the tooth counts, module, the '
-    + 'offset between the shafts or the spiral angle in configuration.sv; the solids refine in '
-    + 'the background as you watch.',
-  target: { kind: 'directory', path: 'spiral_bevel', entry: 'gears.sv' },
+    + 'by step from their pitch cones through the mean point, in one file (hypoid.sv) whose words '
+    + 'choose every root, with no point seeded. Each is its blank less a generating crown rolled '
+    + 'through it at every tooth. Edit the tooth counts, module, the offset between the shafts or '
+    + 'the spiral angle at its head; the solids refine in the background as you watch.',
+  target: { kind: 'directory', path: 'spiral_bevel', entry: 'hypoid.sv' },
 }, {
   label: 'Twist drill · flutes ground under a screw', key: 'twist_drill',
   description: 'A 10 mm two-flute drill: each flute is what a grinding wheel carried along a screw '

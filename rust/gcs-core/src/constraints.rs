@@ -1146,8 +1146,9 @@ impl CKind {
             CKind::Coincident3 => &[("p", S::Point), ("q", S::Point)],
             CKind::Distance3 => &[("p", S::Point), ("q", S::Point), ("d", S::Length)],
             CKind::PointLine3 => &[("p", S::Point), ("line", S::Line), ("d", S::Length)],
-            // which side of the first line the second passes: ±1, read off the seed and never
-            // written, as a tangency's side is when nobody names one
+            // which side of the first line the second passes: ±1 pins it, 0 — what nothing that
+            // writes one says — leaves the distance a magnitude, its side the roots' to choose
+            // by a bound, or the seed (#217)
             CKind::LineLine3 => {
                 &[("l1", S::Line), ("l2", S::Line), ("d", S::Length), ("sign", S::Int)]
             }
@@ -1343,7 +1344,7 @@ impl CKind {
             (CKind::TangentArcLine, 2) => Arg::Str("start".to_string()),
             (CKind::TangentLineCircleAt, 2) => Arg::Str("p1".to_string()),
             (CKind::TangentLineCircle, 2) => Arg::Str("left".to_string()),
-            (CKind::LineLine3, 3) => Arg::Int(1),
+            (CKind::LineLine3, 3) => Arg::Int(0),
             _ => match self.spec()[i].1 {
                 SpecKind::Int => Arg::Int(0),
                 SpecKind::Bool => Arg::Bool(false),
@@ -2737,10 +2738,11 @@ impl Constraint {
             // side, and turning (m, c) with it keeps the twin's kernel sign-blind; and a word
             // that says which way — `side:`, `along:`, `sense:` — turns them as it turns a
             // stated number below, or `side: right` over a free `k` meant the left
-            let s = match self.kind {
-                CKind::LineLine3 => self.skew_sign(),
-                _ => self.side().unwrap_or(1.0),
-            };
+            if self.kind == CKind::LineLine3 {
+                let s = self.skew_sign();
+                return vec![s * f.m, s * f.c, self.skew_pinned()];
+            }
+            let s = self.side().unwrap_or(1.0);
             return vec![s * f.m, s * f.c];
         }
         if let Some((sp, t)) = self.spline_contact(sk) {
@@ -2858,13 +2860,18 @@ impl Constraint {
             }
             CKind::Distance3 | CKind::PointLine3 => vec![self.args[2].num()],
             // the magnitude turned to the side the lines stood on when it was stated
-            CKind::LineLine3 => vec![self.skew_sign() * self.args[2].num()],
+            CKind::LineLine3 => vec![self.skew_sign() * self.args[2].num(), self.skew_pinned()],
             CKind::Angle3 => vec![self.args[2].num()],
             // two directions across a line as its hidden points stand now — the first line of a
             // parallel, the line a point is on — refreshed with every `refresh_consts`, so they
             // follow the line between solves
+            // — across the second where it is held and the first is not: the rows vanish where
+            // the cross product runs along the frame's line, which a held direction it is square
+            // to never does, while a line turned far from where it was seeded can (#217)
             CKind::Parallel3 => {
-                let (e1, e2) = across(self.axis_dir(sk, 0));
+                let across_held = self.direction_held(sk, 1) && !self.direction_held(sk, 0);
+                let at = if across_held { 1 } else { 0 };
+                let (e1, e2) = across(self.axis_dir(sk, at));
                 [e1, e2].concat()
             }
             CKind::PointOnLine3 | CKind::PointOnAxis | CKind::LineOnAxis | CKind::PlaneAxis => {
@@ -3341,6 +3348,28 @@ impl Constraint {
     }
 
     /// Operand `i`'s direction as it stands now, as a direction relation reads it.
+    /// Whether operand `i`'s direction is held: an axis's outright, a line's by its ends, each
+    /// held where it is drawn, in a plane held where it stands.
+    fn direction_held(&self, sk: &Sketch, i: usize) -> bool {
+        let held = |ps: &[u32]| ps.iter().all(|&p| sk.params[p as usize].fixed);
+        let axis = |a: usize| held(&sk.axes[a].d);
+        let e = self.args[i].ent();
+        match e.kind {
+            EntKind::Axis => axis(e.i()),
+            EntKind::Line => {
+                let l = &sk.lines[e.i()];
+                [l.p1, l.p2].iter().all(|&p| {
+                    held(&sk.point_all_params(p as usize))
+                        && sk.plane_of(p as usize).is_none_or(|v| {
+                            let pl = &sk.planes[v];
+                            held(&pl.o) && axis(pl.u as usize) && axis(pl.v as usize)
+                        })
+                })
+            }
+            _ => false,
+        }
+    }
+
     fn axis_dir(&self, sk: &Sketch, i: usize) -> [f64; 3] {
         let e = self.args[i].ent();
         if e.kind == EntKind::Axis {
@@ -3384,7 +3413,17 @@ impl Constraint {
         }
     }
 
-    /// The side a skew distance was stated on, as the sign its kernel's gap carries there: the
+    /// Whether a skew distance's side is pinned, its `sign` slot ±1, as 1 or 0: unpinned, the
+    /// distance is a magnitude (#217).
+    fn skew_pinned(&self) -> f64 {
+        let i = self.kind.spec().iter().position(|(n, _)| *n == "sign");
+        match i.map(|i| &self.args[i]) {
+            Some(Arg::Int(s)) if *s != 0 => 1.0,
+            _ => 0.0,
+        }
+    }
+
+    /// The side a skew distance is pinned to, as the sign its kernel's gap carries there: the
     /// kind's `sign` slot.
     fn skew_sign(&self) -> f64 {
         let i = self.kind.spec().iter().position(|(n, _)| *n == "sign");
@@ -3787,8 +3826,10 @@ pub fn infer_value(sk: &Sketch, kind: CKind, args: &[Arg], i: usize) -> Option<A
         return Some(Arg::Int(ordinate_form(sk, p.i(), q.i(), t, word) as i64));
     }
     match (kind, i) {
+        // no side read off the seed: the distance is a magnitude (#217); two parallel lines,
+        // which have no common perpendicular, are refused by `validate`
         (CKind::LineLine3, 3) => {
-            skew_seed(sk, args[0].ent(), args[1].ent()).map(|s| Arg::Int(s as i64))
+            skew_seed(sk, args[0].ent(), args[1].ent()).map(|_| Arg::Int(0))
         }
         _ => None,
     }
