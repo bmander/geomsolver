@@ -700,6 +700,23 @@ axis is handed to the line kernels as the segment
 `(0, d)` from `Sketch::origin_param`, a fixed 0 (`Constraint::axis_columns`). An unsigned angle
 of 0°/180° is E040 by value (`program/relations.rs`). `tests/axis.rs` is the gate.
 
+**Interfaces (§8.1, 0.84):** `interface Gear { O: point, M: point, pitch: Length }` at a file's
+top level (`syntax::Interface`, `Program::interfaces`, `parser/statements.rs::interface`; linked
+from modules as words are; `resolve_interface` shares `resolve_component`'s `resolve_named`). A
+formal typed by one (`gear: Gear`) is `Ty::Group` with `Formal::interface` set.
+`flatten/interfaces.rs` resolves every interface once per walk (`shapes`, a cycle read as an
+untyped group) and `bind` makes the formal **a group of its own** (`Walk::typed`: its key in
+`names`/`group_names`/`typed`, each declared entity, set or group member an alias of the
+argument's, a nested interface a group again; the numbers by `interface_numbers`, each of its
+dimension), the whole argument kept under `{key}#given` for `conform` (from `resolve`: members
+present, sets and groups of their sort; an entity's kind by `relations::kinds` via
+`Expansion::kinds`, as a `path` formal's). So an undeclared member is no name: `lookup` refuses a
+field left past a typed group (`Scope::typed`, given with `access`), `missing_ref` names the
+interface, and nothing handed on carries more. A member missing at the call is `failed`, its
+reads silenced (`read_through`); a relation reading one is not stated. Text faults are
+`interfaces::check` (E071/E001/E101/E003). `hypoid.sv`'s `Gear`, `Trace`, `BlankDesign`;
+`tests/interfaces.rs` is the gate.
+
 **Closed components:** model dependencies enter through arguments, standard datums included.
 Definitions and built-ins stay callable. A component scope holds only its formals and
 declarations; repetitions share it. `dims := {width: 20mm, origin: o}` bundles values and

@@ -1,6 +1,24 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.83 — October 2026**
+**Specification, Draft 0.84 — October 2026**
+
+**[0.84] A group's shape may be named.** `interface Gear { O: point, M: point, generator: line,
+pitch: Length }`, written at the top of a file as a component is, names what a group must hold:
+each member written as a formal is, `name: type`, separated by commas or line breaks, its type a
+number type, an entity kind, `path`, `set`, `group` or another interface. A formal typed by one
+(`gear: Gear`) is a `group` formal (§8.1) the call must give every member to, each of its type —
+a number of the member's dimension, an entity of its kind, a set, a group of the nested
+interface's shape — whatever else the group or instance given carries; a member missing or of
+another type is **E103** at the argument, one private to the instance given **E101**. The formal
+is a group of its own holding only what the interface declares: a member it does not is no name
+in the body, **E101** where it is read, as is handing it on, and the formal handed on whole holds
+no more, to a typed formal or a plain `group` one. So what a component relies on its argument for
+is written where the component is, not found by reading its body. Structural, as everything in
+the language is: an instance or a group is a `Gear` by having the members, never by saying so. A module exports its interfaces as it
+does its components (`spiral.Gear`, or `use spiral (Gear)`). An interface defined twice in a
+file, or over a component of the file, is **E071**; a member twice **E001**; a `Side` member
+**E103** (a group holds no side); a type naming no interface **E101**; one holding itself
+through its members **E003**. The spiral bevel's steps take `gear: Gear` and `trace: Trace`.
 
 **[0.83] A relation word's parameter may be an entity.** A parameter read where an entity
 stands in the word's body — an operand, an entity in a relation's parentheses, a declaration's
@@ -795,7 +813,7 @@ component Name(p1: Type1, p2: Type2, ...) {
 
 ### 4.1 Parameters
 
-Parameters are passed by name or position at instantiation. A parameter of entity type (`Point`, `Circle`, `Line`, `Plane`, **[0.42]** `Axis`) is **bound by aliasing** (P1): the formal name and the actual argument denote the same entity. A parameter of value type (`Int`, `Scalar`, `Length`, `Angle`, **[0.17]** `Side`) is a compile-time or definitional value; it contributes no unknowns. A `group` formal bundles values and geometry references (§8.1). **[0.79]** A `path` formal takes a line, an arc, a circle, a spline or a curve, bound by aliasing as an entity is; the words its body writes of it are settled by the kind of the actual, and an actual that runs along nothing is **E103** at the argument. **[0.71]** A `set` formal takes a set (§6.21): a named one (`S := { p | … }`) or an instance of a set family (`std.Sphere(c, r: 5mm)`), which is the set — written by name, since an argument is a reference, not a call; a set's surface (`S.surface`) is not one yet. It is given by position, as an entity is, and used in the body by its name wherever a set may stand (`p coincident s`, `p inside s`, `distance(p, s)`). A named set given to a `group` formal and a group given to a `set` formal are each **E103** at the argument; a family's instance is both a set and an instance, so it fills either. A `Side` is one of the words `left` and `right` (§9.2) and is not a number: it may be passed on to another instance and written in a selector, and nothing else.
+Parameters are passed by name or position at instantiation. A parameter of entity type (`Point`, `Circle`, `Line`, `Plane`, **[0.42]** `Axis`) is **bound by aliasing** (P1): the formal name and the actual argument denote the same entity. A parameter of value type (`Int`, `Scalar`, `Length`, `Angle`, **[0.17]** `Side`) is a compile-time or definitional value; it contributes no unknowns. A `group` formal bundles values and geometry references (§8.1); **[0.84]** one typed by an interface (`gear: Gear`) names the members its argument must have and its body may read (§8.1). **[0.79]** A `path` formal takes a line, an arc, a circle, a spline or a curve, bound by aliasing as an entity is; the words its body writes of it are settled by the kind of the actual, and an actual that runs along nothing is **E103** at the argument. **[0.71]** A `set` formal takes a set (§6.21): a named one (`S := { p | … }`) or an instance of a set family (`std.Sphere(c, r: 5mm)`), which is the set — written by name, since an argument is a reference, not a call; a set's surface (`S.surface`) is not one yet. It is given by position, as an entity is, and used in the body by its name wherever a set may stand (`p coincident s`, `p inside s`, `distance(p, s)`). A named set given to a `group` formal and a group given to a `set` formal are each **E103** at the argument; a family's instance is both a set and an instance, so it fills either. A `Side` is one of the words `left` and `right` (§9.2) and is not a number: it may be passed on to another instance and written in a selector, and nothing else.
 
 **[0.17] Which way is a word, not a sign.** A distance measured **from a line** — a point to a line, a line to a line — is a **magnitude**: its solution set is *both* sides, and which one a solver finds is the seed's business (P3), as it is in every other sketcher. A negative one is an error (**E040**) wherever the number comes from, including a component's argument, since the kernel cannot tell one side from the other and the minus therefore said nothing a drawing could show. A statement that must pin a side writes the word — `p distance(12, side: left) ax`, left being of the line's own `p1 → p2` — and so does a tangency (`side: left | right`, which was `side: -1`). Where a sign is *arithmetic* rather than a convention — the run and the rise, signed from the first point to the second, and the directed angle of §9.4 — it stays a sign, because a component computes it from coordinates it is given; each gains the word that says the same thing in the open (`along: right | left | up | down`, `sense: cw | ccw`), and a document SHOULD prefer it. A component takes a side as a value of the type **`Side`** (`s: Side`, `side: s`), which is a word and not a number: encoded as ±1 it would put the unreadable idiom back one level down, inside every helper.
 
@@ -2251,8 +2269,47 @@ exposes its geometry by the same dotted paths available at the assembly site: `l
 `layout.bank[0].pivot`. Parameters inside the layout instance are local; use an explicit group
 for numeric values. Groups may be passed positionally before labels or by label. A component
 may forward a group or select a nested group for another call. A missing member is an error,
-not an implicit solver unknown. The component's uses determine the member types required;
-there is no nominal record type or new solve boundary.
+not an implicit solver unknown. An untyped `group` formal's member types are what the
+component's uses determine; there is no nominal record type or new solve boundary.
+
+**[0.84] Interfaces.** A group's shape may be named, and a formal typed by the name:
+
+```solvent
+interface Size { length: Length }
+interface Layout { origin: point, ax: line, size: Size }
+
+component Bar(layout: Layout) {
+  tip := point hint(at: layout.ax.p2)
+  tip coincident layout.ax
+  layout.origin distance(layout.size.length) tip
+}
+```
+
+`interface NAME { member: type, … }` stands at the top of a file, as a component does; its
+members are separated by commas or line breaks, and each type is one a formal may have but
+`Side` (a group holds no side), or another interface, which nests. A formal typed by an
+interface is a `group` formal in every respect but two. **The call gives every member, each of
+its type**: a number of the member's dimension (a bare number fits, as in any slot, §3.3), an
+entity of its kind (`path`: any of a path's kinds), a set, a group or an instance — of the nested
+interface's shape where one is named; a member missing or of another type is **E103** at the
+argument, one private to the instance given **E101** there, and the body's reads of a member
+missing are not said again. Whatever else the actual carries is allowed. **The formal is a group
+of its own, holding only what the interface declares**: `layout.size.width` above is **E101**
+where it is written, a reference, a number in a dimension or an argument handed on alike; a
+declared member's own fields (`layout.ax.p2`) are its own. The checks are structural: an instance
+conforms by having the members, and nothing says which interfaces it is one of.
+
+Handed on whole, the formal is that group and no more: to a formal typed by another interface it
+has only the members its own declares, and to an untyped `group` formal the same — a body may pass
+on only what it was promised, so the interface is all a reader of the component need know of what
+it needs. An interface names no solve boundary and makes nothing.
+
+A module exports its interfaces as it does its components: read by the module's full path
+(`spiral.Gear`) or imported bare (`use spiral (Gear)`, §14.4). Two interfaces of one name in one
+file, or an interface named as a component of its file, are **E071**; a member declared twice is
+**E001**; a type that names no interface where it is written is **E101**; an interface holding
+itself through its members, which no group could be, is **E003**. A name that is one of the
+language's own types (`Length`, `point`, `group`) is no interface's.
 
 Curves compiled over a component still require fixed scalar or entity formals. A group has no
 fixed coordinate layout, so its needed members must be passed individually to a traced component.
@@ -2965,7 +3022,7 @@ The numerical method is unspecified. Whatever the method, a conforming solver:
 |---|---|
 | E001 | redeclaration within a body |
 | E002 | a block's index or edge binder over a name already in scope |
-| E003 | a component instantiation nothing ends: reached again while it is being expanded, given the numbers it was given there, or nested past the implementation's depth (§8) **[0.75]** |
+| E003 | a component instantiation nothing ends: reached again while it is being expanded, given the numbers it was given there, or nested past the implementation's depth (§8) **[0.75]**; an interface holding itself through its members (§8.1) **[0.84]** |
 | E004 | a positional argument that binds a value parameter, or that follows a labelled one (§4.1) **[0.17]** |
 | E010 | withdrawn: an undecorated `tangent` between circles reads its branch off the seed (§9.5) |
 | E011 | closed path winding contradicts declared orientation |
@@ -2990,14 +3047,14 @@ The numerical method is unspecified. Whatever the method, a conforming solver:
 | E066 | withdrawn **[0.42]**: was `against` between planes that turn apart **[0.23; narrowed 0.26]** |
 | E067 | a plane that cannot stand on its held axes: two wholly held axes that do not meet or run alike, or a plane held where its held axes are not — a plane's axes pass through its origin (§6.7) **[0.43]** |
 | E070 | a `use` nothing resolves (§14.4) **[0.12]** |
-| E071 | a component or a relation word defined twice in one file (§14.4, §9.9) **[0.12]** **[0.30]**; **[0.48]** a relation word defined over a word of the language's own, and an import of a name twice, from two modules, over the file's own definition, or over a built-in word (§14.4) |
+| E071 | a component or a relation word defined twice in one file (§14.4, §9.9) **[0.12]** **[0.30]**; **[0.48]** a relation word defined over a word of the language's own, and an import of a name twice, from two modules, over the file's own definition, or over a built-in word (§14.4); **[0.84]** an interface defined twice in one file, or over a component of the file (§8.1) |
 | E080 | a face or a solid the model cannot build (§6.8, §6.9) **[0.18]**: a loop that does not close, an edge that is not a line, an arc, a circle or a point, a circle standing *in* a loop rather than being one, **[0.19]** an edge that meets neither neighbour and so is walked two ways, a straight loop with fewer than three corners, edges in two planes, a swept solid written over anything but one face, a body made of what is not a solid, a prism swept nowhere, a feature written into a solid that is a face swept rather than a body; **[0.42]** a face over a point standing in space, and a prism's side generating in a plane the solve places (§6.15.2) |
 | E081 | invalid revolution axis or guided sweep path (§6.9) **[0.18]** |
 | E082 | a face of a body that the body no longer has (§6.9) **[0.18]** |
 | E084 | a section whose cutting plane is not parallel to the view it is drawn in (§6.11) **[0.18]** |
-| E101 | a name nothing in scope declares, or a member a scope cannot reach (§3.3, §5, §13.3) **[0.41]** |
+| E101 | a name nothing in scope declares, or a member a scope cannot reach (§3.3, §5, §13.3) **[0.41]**; **[0.84]** a member an interface does not declare, read through a formal it types, and a type naming no interface (§8.1) |
 | E102 | **[0.48]** a relation word nothing defines where it is written (§9.9), naming the import that would where a module defines it |
-| E103 | a shape or a number the model cannot build: more children than the kind has slots (§6.1), an input whose value is not its type (§6.3), a seed reading a scalar that is not there (§6.4), a curve the model cannot trace (§6.5), an extent of the wrong dimension (§6.9), iteration over what is not a named chain (§12.8) |
+| E103 | a shape or a number the model cannot build: more children than the kind has slots (§6.1), an input whose value is not its type (§6.3), a seed reading a scalar that is not there (§6.4), a curve the model cannot trace (§6.5), an extent of the wrong dimension (§6.9), iteration over what is not a named chain (§12.8), **[0.84]** a group or an instance given where an interface asks for a member it lacks or holds of another type, and an interface's `Side` member (§8.1) |
 | E105 | a `fix` of a number the entity does not have (§13) **[0.34]** |
 | E107 | a measurement of the solved drawing where a number is needed before the solve (§6.14) **[0.27]** |
 
@@ -3153,7 +3210,9 @@ Square system, full rank at the hinted seed; one Newton basin per §12.4, lifted
 ## 19. Grammar (EBNF)
 
 ```ebnf
-program        = { use_decl | component | word_def | preview | statement } ;
+program        = { use_decl | component | interface | word_def | preview | statement } ;
+interface      = "interface" IDENT "{" [ formal { ( "," | NEWLINE ) formal } ] "}" ;
+                                                                    (* §8.1 [0.84] *)
 preview        = "preview" "{" { statement } "}" ;                  (* at most one, §14.4 *)
 use_decl       = "use" IDENT { "." IDENT }
                  [ "(" IDENT { "," IDENT } ")" ] ;          (* a module, and names read bare, §14.4 *)
@@ -3168,8 +3227,9 @@ formal         = IDENT ":" type ;
 type           = "Int" | "Scalar" | "Length" | "Angle" | "Side"      (* §4.1 [0.17] *)
                | "group"                                             (* §8.1 [0.35] *)
                | "set"                                               (* §4.1, §6.21 [0.71] *)
-               | ekw | "curve" ;  (* an entity, in either case: `f: plane`, `p: Point`; `Frame`
+               | ekw | "curve"    (* an entity, in either case: `f: plane`, `p: Point`; `Frame`
                                      was folded into `Plane` in 0.15 *)
+               | IDENT { "." IDENT } ;  (* an interface, a group of its shape: §8.1 [0.84] *)
 
 statement      = definition | input | relation | gauge | branch | block | in_block
                | unit_decl | body_rel | claim_over | energy | measured | hint | path_decl | frag ;

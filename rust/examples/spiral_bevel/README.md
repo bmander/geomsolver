@@ -24,6 +24,12 @@ cutter are regions about the cutter's axis (§6.21), sets of the flank cones and
 it, each region's meridian turned once into its solid. The tip relief's kinks are drawn in N, the
 normal section, square to P on the trace normal C → M.
 
+The steps read one another through interfaces (§8.1): `Gear` is what the trace, the pinion's cone
+and the face mill read of the gear's cone (O, M, its generator and axis, the triangle's legs, the
+crown's axis), `Trace` what the pinion's cone and the mill read of the trace (C, the normal, the
+line to the heading), and `BlankDesign` the four numbers a blank is cut to. Each step is handed
+the instance and may read nothing else of it.
+
 | Step | In `hypoid.sv` | Constructs |
 |---|---|---|
 | 1 | the `param`s; `HypoidPair`'s proportions | the stated pair: teeth, module, shafts, shift, spiral, allowances, roll limits; the cone distance R and the depths in normal modules |

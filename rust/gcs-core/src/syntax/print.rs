@@ -44,6 +44,9 @@ pub fn render_flat(p: &mut Program) -> Result<&str, PrintError> {
     if p.words.iter().any(|d| d.module.is_none()) {
         return Err(PrintError { construct: "relation word definitions" });
     }
+    if p.interfaces.iter().any(|f| f.module.is_none()) {
+        return Err(PrintError { construct: "interface definitions" });
+    }
     for c in p.components.iter().filter(|c| own(c)) {
         for st in &c.body {
             printable(&st.kind)?;
