@@ -217,7 +217,7 @@ impl<'a> Walk<'a> {
                 // a group and a set are bound alike, an alias carrying the actual's numbers
                 // (`s.r` of a sphere); which the formal wants is checked once names are known
                 (ty @ (Ty::Group | Ty::Set), InstVal::Ref(r)) => {
-                    let actual = written(r);
+                    let actual = ref_text(r);
                     let key = formal_name(&prefix, &inst.name.text, &f.name.text);
                     // typed by an interface (§8.1 [0.84]): a group of its own holding what the
                     // interface declares, the whole argument under a key no source writes, for
@@ -297,7 +297,7 @@ impl<'a> Walk<'a> {
                     self.bind_value(&mut sub, f, *ty, t, vals, scope, &inst.name.text, a.span)
                 }
                 (ty, InstVal::Ref(r)) => {
-                    let t = written(r);
+                    let t = ref_text(r);
                     self.bind_value(&mut sub, f, *ty, &t, vals, scope, &inst.name.text, a.span)
                 }
             }
@@ -429,7 +429,7 @@ impl<'a> Walk<'a> {
                 let Some(f) = f.filter(|f| f.ty.number()) else { continue };
                 let text = match &a.value {
                     InstVal::Expr(t) => t.clone(),
-                    InstVal::Ref(r) => written(r),
+                    InstVal::Ref(r) => ref_text(r),
                     InstVal::Hint(..) | InstVal::Group(_) => continue,
                 };
                 if let Some(v) = value_aff(&text, vals, self.units)

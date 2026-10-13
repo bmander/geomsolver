@@ -544,7 +544,7 @@ impl<'a> Walk<'a> {
     ) {
         let Some(w) = rel.form.written() else { return };
         let at = w.word.span;
-        let names: Vec<String> = found.iter().map(|(k, _)| written(&w.ops[*k])).collect();
+        let names: Vec<String> = found.iter().map(|(k, _)| ref_text(&w.ops[*k])).collect();
         let point = at_point(w);
         let spell = |m: &str| format!("`{} tangent(at: {m}) {}`", names[0], names[1]);
         let Some(point) = point else {
@@ -552,7 +552,7 @@ impl<'a> Walk<'a> {
             self.once(Code::E040, at, m);
             return;
         };
-        let spelled = spell(&written(&point));
+        let spelled = spell(&ref_text(&point));
         if rel.claim {
             let m = format!("a tangency between two sets is stated, not claimed: {spelled}");
             self.once(Code::E040, at, m);
@@ -580,7 +580,7 @@ impl<'a> Walk<'a> {
         let worded = Worded {
             word: w.word.text.clone(),
             ops: Vec::new(),
-            args: format!("at: {}", written(&point)),
+            args: format!("at: {}", ref_text(&point)),
             sets: found.iter().map(|(k, _)| (*k, self.set_written(&w.ops[*k]))).collect(),
             through: Vec::new(),
             span: at,
@@ -626,7 +626,7 @@ impl<'a> Walk<'a> {
         };
         if rel.claim || rel.along.is_some() || sc.twin().is_some() {
             let m = format!("a plane's tangency to a set is stated, and never inside a set's \
-                             body: {}", spell(&written(&point)));
+                             body: {}", spell(&ref_text(&point)));
             self.once(Code::E040, at, m);
             return;
         }
@@ -634,7 +634,7 @@ impl<'a> Walk<'a> {
             let m = format!(
                 "{} reads the set's body at the point, where `{set}`'s makes `{what}` of its \
                  own, which only the point on it would place",
-                spell(&written(&point))
+                spell(&ref_text(&point))
             );
             self.once(Code::E040, at, m);
             return;
@@ -643,7 +643,7 @@ impl<'a> Walk<'a> {
         let worded = Worded {
             word: w.word.text.clone(),
             ops: vec![plane.clone()],
-            args: format!("at: {}", written(&point)),
+            args: format!("at: {}", ref_text(&point)),
             sets: vec![(k, set)],
             through: Vec::new(),
             span: at,
@@ -923,7 +923,7 @@ impl<'a> Walk<'a> {
     fn set_written(&self, r: &Ref) -> String {
         match self.prog.span_text(r.span).filter(|_| r.root.text.starts_with('#')) {
             Some(text) => text.split_whitespace().collect::<Vec<_>>().join(" "),
-            None => written(r),
+            None => ref_text(r),
         }
     }
 

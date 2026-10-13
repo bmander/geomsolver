@@ -253,9 +253,9 @@ impl Walk<'_> {
                 let face_abs = lookup_raw(r, sc, &self.names, alias, self.units)
                     .filter(|(_, rest)| rest.is_empty())
                     .map(|(a, _)| a)
-                    .ok_or_else(|| format!("`{said}`: `{}` names no face", written(r)))?;
+                    .ok_or_else(|| format!("`{said}`: `{}` names no face", ref_text(r)))?;
                 let Some((items, face_sc)) = t.faces.get(&face_abs) else {
-                    return Err(format!("`{said}`: `{}` is not a face", written(r)));
+                    return Err(format!("`{said}`: `{}` is not a face", ref_text(r)));
                 };
                 (face_abs, items.clone(), face_sc.clone(), suffixed(r, keys::PLANE, at))
             }
@@ -301,7 +301,7 @@ impl Walk<'_> {
                                     and is not yet a set: sketch on a cap"));
             }
             edge => {
-                let leaf = |r: &Ref| written(r).rsplit('.').next() == Some(edge);
+                let leaf = |r: &Ref| ref_text(r).rsplit('.').next() == Some(edge);
                 let Some(e) = items.iter().find(|r| leaf(r)) else {
                     return Err(format!("`{said}` names no face: `{}` has `near`, `far` and a side \
                                         for each edge it names", public_path(&solid)));

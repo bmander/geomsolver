@@ -178,7 +178,7 @@ impl<'a> Walk<'a> {
                             {
                                 c.of = Some(crate::syntax::CurveOf {
                                     instance: key,
-                                    point: written(point),
+                                    point: ref_text(point),
                                 });
                             }
                         }

@@ -41,7 +41,7 @@ pub(super) fn rings(
         else {
             continue;
         };
-        let centre = public_path(&crate::flatten::written_name(&ring.about));
+        let centre = public_path(&crate::syntax::ref_text(&ring.about));
         // the view a turn about a point is in; `None` for one about an axis, in space
         let view = match about.kind {
             EntKind::Point if sk.points[about.i()].z.is_some() => {

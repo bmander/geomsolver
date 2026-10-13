@@ -361,11 +361,11 @@ fn missing_ref(r: &Ref, sc: &Scope, names: &BTreeSet<String>, alias: &BTreeMap<S
         if let (Some(shape), Some(member)) = (sc.typed.get(&target), rest.first()) {
             return (Code::E101, format!(
                 "`{}` reads `{member}`, which `{shape}` does not declare: add it to the \
-                 interface, or pass it on its own", written(r)
+                 interface, or pass it on its own", ref_text(r)
             ));
         }
         if let Some(member) = private_member(r, sc, &target, alias) {
-            return (Code::E101, format!("`{}` names private member `{member}`", written(r)));
+            return (Code::E101, format!("`{}` names private member `{member}`", ref_text(r)));
         }
     }
     // `next` and `prev` name a sibling copy, which only a `cycle` has (§12.1)
@@ -376,31 +376,7 @@ fn missing_ref(r: &Ref, sc: &Scope, names: &BTreeSet<String>, alias: &BTreeMap<S
             if word == "next" { "next" } else { "previous" }
         ));
     }
-    (Code::E101, format!("no such entity: `{}`", written(r)))
-}
-
-/// A reference spelled back the way the source wrote it, for a message about it.
-fn written_ref(r: &Ref) -> String {
-    written(r)
-}
-
-/// A reference spelled back the way the source wrote it, for a message about it.
-pub(super) fn written(r: &Ref) -> String {
-    let mut out = r.root.text.clone();
-    for seg in &r.path {
-        match seg {
-            Seg::Field(f) => {
-                out.push('.');
-                out.push_str(&f.text);
-            }
-            Seg::Index(t) => out.push_str(&format!("[{t}]")),
-            Seg::Member(m) => {
-                out.push('.');
-                out.push_str(m.word());
-            }
-        }
-    }
-    out
+    (Code::E101, format!("no such entity: `{}`", ref_text(r)))
 }
 
 /// A reference a statement or a call's argument makes, resolved: as written, where, and what it
@@ -482,7 +458,7 @@ fn rewrite(
                 "`{}` is a set, the points its body holds: a point is put on it by `coincident` \
                  or `inside` and `outside` it, at a distance from its surface by `distance(d, \
                  side: outside)` or `side: inside`, and a line touches it by `tangent`",
-                written(r)
+                ref_text(r)
             ),
         )),
         Some((abs, mut rest)) => {
@@ -492,12 +468,12 @@ fn rewrite(
                     .collect::<Vec<_>>().join("."));
             }
             // a formal reads what its call was given, judged at the argument as written
-            let was = (judged && !through_argument(r, sc, arguments)).then(|| written(r));
+            let was = (judged && !through_argument(r, sc, arguments)).then(|| ref_text(r));
             let member = member(r, &abs, &mut rest);
             r.root = Name { text: abs, span: r.root.span };
             r.path = rest.into_iter().map(|f| Seg::Field(Name::new(f))).chain(member).collect();
             if let Some(was) = was {
-                seen.borrow_mut().push(Seen { written: was, span: r.span, abs: written(r) });
+                seen.borrow_mut().push(Seen { written: was, span: r.span, abs: ref_text(r) });
             }
         }
         // named as written, so an index that picked no copy says which one it was
@@ -826,7 +802,7 @@ impl<'a> Walk<'a> {
                     format!(
                         "`{}` is not a named chain: `{} {} in …` runs over the edges of a \
                          chain written `name := line -> …`",
-                        written(r),
+                        ref_text(r),
                         if b.kind.wraps() { "cycle" } else { "repeat" },
                         over.var.text
                     ),
@@ -862,7 +838,7 @@ impl<'a> Walk<'a> {
                 format!(
                     "`{}` is an open chain, and a `cycle` closes — its last edge's `next` would \
                      be its first; write `repeat {} in …`",
-                    written(&over.chain),
+                    ref_text(&over.chain),
                     over.var.text
                 ),
             );
@@ -905,7 +881,7 @@ impl<'a> Walk<'a> {
             match self.found(raw) {
                 Some((target, _)) => {
                     if let Some(member) = private_member(&r, &sc, &target, &alias) {
-                        self.once(Code::E101, r.span, format!("`{}` names private member `{member}`", written(&r)));
+                        self.once(Code::E101, r.span, format!("`{}` names private member `{member}`", ref_text(&r)));
                     }
                 }
                 // a member an interface asks for that its call did not give: said at the call
@@ -1017,7 +993,7 @@ impl<'a> Walk<'a> {
             let mut resolved = r.clone();
             resolved.root = Name { text: abs, span: r.root.span };
             resolved.path = rest.into_iter().map(|f| Seg::Field(Name::new(f))).collect();
-            about.insert(prefix.clone(), written(&resolved));
+            about.insert(prefix.clone(), ref_text(&resolved));
             self.ring_infos.push(RingInfo { prefix, about: resolved, n: n as u32, span });
         }
         // what a ring's representative reads, judged once every declaration is resolved (E021),
@@ -1051,7 +1027,7 @@ impl<'a> Walk<'a> {
                 // a centre the circle names, or `None` for one it mints (`c.center`)
                 if d.kind == EntKind::Circle {
                     let named = match d.children.first().and_then(|g| g.first()) {
-                        Some(Kid::Ref(r)) => Some(written(r)),
+                        Some(Kid::Ref(r)) => Some(ref_text(r)),
                         _ => None,
                     };
                     centres.insert(d.name.key().text.clone(), named);
@@ -1096,7 +1072,7 @@ impl<'a> Walk<'a> {
             // instance it belongs to is the innermost one whose component has the formal
             if let StmtKind::Decl(Decl { curve: Some(c), .. }) = &mut st.kind {
                 if let (CurveTarget::Drawn(r), true) = (&c.target, clean) {
-                    let abs = written_ref(r);
+                    let abs = ref_text(r);
                     match self.owner_of(&abs, &c.swept.text) {
                         Some(of) => c.of = Some(of),
                         None => self.err(
@@ -1130,7 +1106,7 @@ impl<'a> Walk<'a> {
             }
             if let Some((abs, rest)) = lookup(r, sc, &self.names, &alias, self.units) {
                 let abs = std::iter::once(abs).chain(rest).collect::<Vec<_>>().join(".");
-                let seen = Seen { written: written(r), span: r.span, abs };
+                let seen = Seen { written: ref_text(r), span: r.span, abs };
                 judged.push((ring.prefix.clone(), vec![seen]));
             }
         }

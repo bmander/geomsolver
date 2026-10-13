@@ -643,7 +643,7 @@ impl<'a> Walk<'a> {
                     let text = match &field.value {
                         crate::syntax::InstVal::Ref(r) => {
                             references.push((name.clone(), r.clone()));
-                            written(r)
+                            ref_text(r)
                         }
                         crate::syntax::InstVal::Expr(t) => t.clone(),
                         crate::syntax::InstVal::Hint(..) => {
