@@ -322,6 +322,30 @@ pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option
     })
 }
 
+/// **What `word` means between two things selected** — of kinds `a` and `b`, in no order: a
+/// selection has none, so `infix_op` over them as given, else turned round (no word relates a
+/// pair both ways to two different kinds).  What a constraint button reading the selection
+/// states; `None` where the word relates them neither way.
+pub fn word_between(word: &str, a: EntKind, b: EntKind) -> Option<CKind> {
+    let plain = |_: &str| None;
+    infix_op(word, a, b, &plain).or_else(|| infix_op(word, b, a, &plain))
+}
+
+/// How near parallel two lines may look and still be dimensioned by the gap between them: the
+/// sine of the angle between them.  A solved `parallel` sits within a residual scaled to the
+/// sketch's extent, which on a short line is a few ten-thousandths of a radian; anything looser
+/// is a corner.
+pub const DIMENSION_PARALLEL_SIN: f64 = 1e-3;
+
+/// What a number put on two lines measures: the gap between them (`ParallelDistance`) where the
+/// sketch makes them parallel, else the angle at their corner (`Angle`) — read off the angle the
+/// constraint would be given (`model::angle_between`).
+pub fn dimension_between_lines(sk: &Sketch, a: EntRef, b: EntRef) -> CKind {
+    use crate::fmath::Det;
+    let angle = crate::model::angle_between(sk, a, b);
+    if angle.dsin().abs() <= DIMENSION_PARALLEL_SIN { CKind::ParallelDistance } else { CKind::Angle }
+}
+
 /// One side of a tangency at a point the drawing already holds (#5): what it is — `None` for a
 /// name whose kind elaboration has yet to say — and which of its ends the point is, as
 /// `EntKind::ends` indexes them; `None` where the point lies on it but is none of its ends.

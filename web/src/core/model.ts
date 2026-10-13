@@ -876,6 +876,13 @@ export function angleBetween(a: Line, b: Line): number {
   return core().gcs_angle_between(a.sketch.handle, a.index, b.index);
 }
 
+/** What a number put on two lines measures, as the core reads it (`dimension_between_lines`):
+ *  the gap between them where the sketch makes them parallel, else the angle at their corner. */
+export function dimensionBetweenLines(a: Line, b: Line): 'gap' | 'angle' {
+  return core().gcs_dimension_between_lines(a.sketch.handle, a.index, b.index) === 0
+    ? 'gap' : 'angle';
+}
+
 /** The point at distance `r` from (cx, cy) towards (tx, ty).  The centre-start-end arc
  *  construction: the third click gives a direction, and the radius comes from the second.
  *  Null when the target is the centre, which names no direction. */

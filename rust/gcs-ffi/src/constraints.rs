@@ -348,3 +348,30 @@ pub unsafe extern "C" fn gcs_describe(h: *mut Sketch, id: i32) -> *mut u8 {
         out_str(s.constraint(id as u32).map(io::describe).unwrap_or_default())
     })
 }
+
+/* -- what a button means by its word ---------------------------------------- */
+
+/// The constraint type the word `ptr`/`len` (`coincident`, `parallel`, …) means between two
+/// things selected, of kind ids `a` and `b` in no order (`constraints::word_between`): its name,
+/// or the empty string where the word relates them neither way.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_word_between(ptr: *const u8, len: usize, a: i32, b: i32) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || {
+        let (a, b) = (ent(a, 0).kind, ent(b, 0).kind);
+        let kind = gcs_core::constraints::word_between(as_str(ptr, len), a, b);
+        out_str(kind.map_or("", |k| k.name()).to_string())
+    })
+}
+
+/// What a number put on lines `a` and `b` measures (`constraints::dimension_between_lines`): 0
+/// the gap between them, parallel as the sketch makes them, 1 the angle at their corner.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_dimension_between_lines(h: *mut Sketch, a: i32, b: i32) -> i32 {
+    guard(-1, move || {
+        let (a, b) = (EntRef::line(a as usize), EntRef::line(b as usize));
+        match gcs_core::constraints::dimension_between_lines(sk(h), a, b) {
+            gcs_core::constraints::CKind::ParallelDistance => 0,
+            _ => 1,
+        }
+    })
+}

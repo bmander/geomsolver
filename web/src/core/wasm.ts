@@ -19,6 +19,7 @@ export interface Abi {
   gcs_last_error(): number;
 
   gcs_registry_json(): number;
+  gcs_word_between(ptr: number, len: number, a: number, b: number): number;
   gcs_version(): number;
   gcs_kernel_count(): number;
 
@@ -172,6 +173,7 @@ export interface Abi {
   gcs_distance_between(h: number, ka: number, ia: number, kb: number, ib: number): number;
   gcs_signed_point_to_line(h: number, x: number, y: number, line: number): number;
   gcs_angle_between(h: number, a: number, b: number): number;
+  gcs_dimension_between_lines(h: number, a: number, b: number): number;
   gcs_on_radius(cx: number, cy: number, tx: number, ty: number, r: number,
                 out: number): number;
   gcs_arc_angles(h: number, idx: number, out: number): void;

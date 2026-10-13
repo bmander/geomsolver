@@ -10,11 +10,9 @@ import * as C from '../core/constraints.js';
 import { Constraint } from '../core/constraints.js';
 import * as examples from '../core/examples.js';
 import * as io from '../core/io.js';
-import { Axis, Plane, Point, Sketch } from '../core/model.js';
+import { Axis, Line, Plane, Point, Sketch, dimensionBetweenLines } from '../core/model.js';
 import { Document, fromSketch } from '../core/program.js';
-import {
-  INCIDENCE, PARALLEL, PERPENDICULAR, firstFit, sortSelection, stated,
-} from '../app/relate.js';
+import { meant, sortSelection, stated } from '../app/relate.js';
 import type { Diagnosis } from '../core/diagnose.js';
 import { callouts, pairOf } from '../core/callout.js';
 import type { PairDimension } from '../core/callout.js';
@@ -2006,25 +2004,61 @@ test('the constraint bar relates points, lines, axes and planes by what is selec
                        + 'fix(dir == (0, 0, 1), origin == (5, 5, 0)) t\n'
                        + 'w := plane(u: std.x, v: std.y) hint(origin: (0, 0, 10))\n');
   const ent = (n: string) => view.doc.entity(n)!;
-  const meant = (names: readonly string[], ...sel: string[]): string | undefined =>
-    firstFit(names, sortSelection(sel.map(ent)))?.name;
-  assert.equal(meant(INCIDENCE, 'c', 'w'), 'PointOnPlane');
-  assert.equal(meant(INCIDENCE, 'w', 'ab'), 'LineOnPlane');
-  assert.equal(meant(INCIDENCE, 't', 'w'), 'AxisOnPlane');
-  assert.equal(meant(INCIDENCE, 'c', 't'), 'PointOnAxis');
-  assert.equal(meant(INCIDENCE, 't', 'std.z'), 'AxisCoincident');
-  assert.equal(meant(INCIDENCE, 'a', 'c'), 'Coincident', 'two points meet, as on a page');
-  assert.equal(meant(PARALLEL, 'ab', 't'), 'Parallel3');
-  assert.equal(meant(PARALLEL, 't', 'w'), 'AxisParallelPlane');
-  assert.equal(meant(PARALLEL, 'w', 'std.top'), 'PlaneParallel');
-  assert.equal(meant(PERPENDICULAR, 't', 'w'), 'AxisPerpendicularPlane');
-  assert.equal(meant(PERPENDICULAR, 't', 'std.x'), 'Perpendicular3');
-  assert.equal(meant(PARALLEL, 'c', 'w'), undefined, 'a point is parallel to nothing');
+  const said = (word: string, ...sel: string[]): string | undefined =>
+    meant(word, sortSelection(sel.map(ent)))?.name;
+  assert.equal(said('coincident', 'c', 'w'), 'PointOnPlane');
+  assert.equal(said('coincident', 'w', 'c'), 'PointOnPlane', 'whichever is picked first');
+  assert.equal(said('coincident', 'w', 'ab'), 'LineOnPlane');
+  assert.equal(said('coincident', 't', 'w'), 'AxisOnPlane');
+  assert.equal(said('coincident', 'c', 't'), 'PointOnAxis');
+  assert.equal(said('coincident', 't', 'ab'), 'LineOnAxis');
+  assert.equal(said('coincident', 't', 'std.z'), 'AxisCoincident');
+  assert.equal(said('coincident', 'a', 'c'), 'Coincident', 'two points meet, as on a page');
+  assert.equal(said('parallel', 'ab', 't'), 'Parallel3');
+  assert.equal(said('parallel', 't', 'w'), 'AxisParallelPlane');
+  assert.equal(said('parallel', 'w', 'std.top'), 'PlaneParallel');
+  assert.equal(said('perpendicular', 't', 'w'), 'AxisPerpendicularPlane');
+  assert.equal(said('perpendicular', 't', 'std.x'), 'Perpendicular3');
+  assert.equal(said('parallel', 'c', 'w'), undefined, 'a point is parallel to nothing');
+  assert.equal(said('coincident', 'a', 'b', 'c'), undefined, 'a pair, not three');
   // stated, a ray slot takes the line before the axis; written back, each is its word
-  const [c] = stated(firstFit(PARALLEL, sortSelection([ent('t'), ent('ab')]))!,
+  const [c] = stated(meant('parallel', sortSelection([ent('t'), ent('ab')]))!,
                      sortSelection([ent('t'), ent('ab')]));
   view.addConstraints(c);
   assert.ok(view.source.includes('ab parallel t'), view.source);
+});
+
+test('on a page the bar states the 2D kinds, and a number on two lines is a gap or an angle', () => {
+  const view = docView(`use std
+in std.front {
+a := point hint((0, 0))
+b := point hint((40, 0))
+c := point hint((0, 10))
+d := point hint((40, 10))
+e := point hint((0, 30))
+m := point hint((20, 5))
+ab := line(a, b)
+cd := line(c, d)
+ae := line(a, e)
+k := circle(center: m) hint(r: 5)
+q := arc(center: m) hint(r: 8)
+}
+`);
+  const ent = (n: string) => view.doc.entity(n)!;
+  const said = (word: string, ...sel: string[]): string | undefined =>
+    meant(word, sortSelection(sel.map(ent)))?.name;
+  assert.equal(said('parallel', 'ab', 'cd'), 'Parallel', 'two lines on a page, not in space');
+  assert.equal(said('perpendicular', 'ab', 'ae'), 'Perpendicular');
+  assert.equal(said('coincident', 'ab', 'm'), 'PointOnLine');
+  assert.equal(said('coincident', 'm', 'k'), 'PointOnCircle');
+  assert.equal(said('coincident', 'q', 'e'), 'PointOnCircle', 'an arc is a circle here');
+  assert.equal(said('coincident', 'ab', 'cd'), undefined, 'two lines do not meet as one');
+  assert.equal(said('midpoint', 'ab', 'm'), 'Midpoint');
+  assert.equal(said('midpoint', 'm', 'e'), undefined);
+  assert.equal(said('parallel', 'k', 'q'), undefined);
+  const line = (n: string) => ent(n) as Line;
+  assert.equal(dimensionBetweenLines(line('ab'), line('cd')), 'gap');
+  assert.equal(dimensionBetweenLines(line('ab'), line('ae')), 'angle');
 });
 
 test('an axis is picked with the select tool where the box draws it, and Delete takes it out', () => {
