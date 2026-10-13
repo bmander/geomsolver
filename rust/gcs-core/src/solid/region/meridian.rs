@@ -63,11 +63,13 @@ pub(super) fn fold(sk: &Sketch, solid: usize) -> Result<Meridian, Refusal> {
         return Err(format!("`{}` bounds nothing: a solid is a region", s.name).into());
     }
     // a round or a chamfer in the region's own body is built in the meridian where it is one of
-    // two of the region's bounds (`lowering`, #183): any other term read point by point is none
-    let lowered: Vec<Option<Lowering>> = terms.iter().map(|t| lowering(sk, terms, t)).collect();
+    // two of the region's bounds (`meridian_corner`, #183): any other term read point by point is
+    // none
+    let corners: Vec<Option<MeridianCorner>> =
+        terms.iter().map(|t| meridian_corner(sk, terms, t)).collect();
     // and a sum of distances from points, a conic about the line through them (#238)
     let conics: Vec<Option<Vec<(V, f64)>>> = terms.iter().map(|t| foci(sk, t)).collect();
-    if terms.iter().zip(&lowered).zip(&conics)
+    if terms.iter().zip(&corners).zip(&conics)
         .any(|((t, l), c)| point_by_point(&t.shape) && l.is_none() && c.is_none()) {
         return Err(format!("`{}` bounds a sum of measurements or reads faces, which no meridian \
                             folds", s.name).into());
@@ -91,7 +93,7 @@ pub(super) fn fold(sk: &Sketch, solid: usize) -> Result<Meridian, Refusal> {
     let reach = f.reach;
     let mut region = rect(0.0, reach, -reach, reach);
     for (k, ((t, &lo), &g)) in terms.iter().zip(&lows).zip(&grows).enumerate() {
-        if lowered[k].is_some() {
+        if corners[k].is_some() {
             continue;
         }
         let tag = k as u32 + 1;
@@ -108,7 +110,7 @@ pub(super) fn fold(sk: &Sketch, solid: usize) -> Result<Meridian, Refusal> {
             }
         };
     }
-    let region = rounded(region, &lowered, &s.name)?;
+    let region = rounded(region, &corners, &s.name)?;
     if region.loops.is_empty() || region.area().abs() <= tol * tol {
         let why = format!("`{}` leaves no material: its bounds have no point in common", s.name);
         return Err(Refusal { why, outright: true });
@@ -123,7 +125,7 @@ pub(super) fn fold(sk: &Sketch, solid: usize) -> Result<Meridian, Refusal> {
     // the half-plane's direction: square to the axis, toward the world axis least along it
     let seam = scale(across(axis).1, -1.0);
     // a round's or a chamfer's own scale: how far off the boundary the gate reads
-    let least = lowered.iter().flatten().map(|l| match l.kind {
+    let least = corners.iter().flatten().map(|l| match l.kind {
         Section::Round(r) => r,
         Section::Flat { la, lb } => la.min(lb),
     }).fold(f64::INFINITY, f64::min);
@@ -378,12 +380,13 @@ impl Fold<'_> {
     }
 }
 
-/// Each round and chamfer (`lowered`, by its term) built into `region` at every corner of its two
+/// Each round and chamfer (`corners`, by its term) built into `region` at every corner of its two
 /// bounds (`brep::corners`, X1): a round wherever the two bounds' carriers are lines or circles —
 /// an offset cone's generator and its rounded apex included (`Fold::narrow`) — and checked
 /// against the region read point by point once built (`agrees`); `solid` names the region.
-fn rounded(mut region: Region, lowered: &[Option<Lowering>], solid: &str) -> Result<Region, Refusal> {
-    for (k, l) in lowered.iter().enumerate() {
+fn rounded(mut region: Region, corners: &[Option<MeridianCorner>], solid: &str)
+    -> Result<Region, Refusal> {
+    for (k, l) in corners.iter().enumerate() {
         let Some(l) = l else { continue };
         let tag = k as u32 + 1;
         let (a, b) = (l.a as u32 + 1, l.b as u32 + 1);
@@ -481,20 +484,20 @@ pub(crate) fn face_polys(m: &Meridian, unit: f64) -> Vec<crate::solid::profile::
     }).collect()
 }
 
-/// **A lowering entry** (#183 step 7): a term a region's body states that the meridian builds
-/// exactly — `std.Rounded(a, b, r)`, within reach of a ball of `r` lying `r` within both of two of
-/// the region's own bounds, and `std.Chamfered(a, b, la, lb)`, short of the flat between their
-/// surfaces — at the bounds `a` and `b` (their indices among the terms).
-struct Lowering {
+/// **A corner built in the meridian** (#183 step 7): a term a region's body states that the
+/// meridian builds exactly — `std.Rounded(a, b, r)`, within reach of a ball of `r` lying `r` within
+/// both of two of the region's own bounds, and `std.Chamfered(a, b, la, lb)`, short of the flat
+/// between their surfaces — at the bounds `a` and `b` (their indices among the terms).
+struct MeridianCorner {
     a: usize,
     b: usize,
     kind: Section,
 }
 
-/// The lowering a term is, where it is one: its sets each the region's own bound (a shape it
-/// states, at its level — moved in by the ball's radius for a round's centres), never what the
-/// set is for.
-fn lowering(sk: &Sketch, terms: &[RegionTerm], t: &RegionTerm) -> Option<Lowering> {
+/// The corner a term builds in the meridian, where it is one: its sets each the region's own
+/// bound (a shape it states, at its level — moved in by the ball's radius for a round's centres),
+/// never what the set is for.
+fn meridian_corner(sk: &Sketch, terms: &[RegionTerm], t: &RegionTerm) -> Option<MeridianCorner> {
     use crate::model::Target;
     let RegionShape::Measured { of } = &t.shape else { return None };
     let lo = t.lo.read(sk)?;
@@ -529,7 +532,7 @@ fn lowering(sk: &Sketch, terms: &[RegionTerm], t: &RegionTerm) -> Option<Lowerin
             let side = |u: &RegionTerm, k: usize| u.cmp == terms[k].cmp;
             (ka != kb && side(&inner[0], ka) && side(&inner[1], kb) && r > 0.0
                 && (ga - r).abs() <= tol(r) && (gb - r).abs() <= tol(r))
-                .then_some(Lowering { a: ka, b: kb, kind: Section::Round(r) })
+                .then_some(MeridianCorner { a: ka, b: kb, kind: Section::Round(r) })
         }
         // at least one from the flat between two surfaces: a chamfer
         ([(Target::Set { terms: sa, .. }, ca), (Target::Set { terms: sb, .. }, cb)], Cmp::Ge)
@@ -545,7 +548,7 @@ fn lowering(sk: &Sketch, terms: &[RegionTerm], t: &RegionTerm) -> Option<Lowerin
             };
             (ka != kb && across(&sa[0], ka) && across(&sb[0], kb)
                 && ga.abs() <= tol(lo) && gb.abs() <= tol(lo))
-                .then_some(Lowering { a: ka, b: kb, kind: Section::Flat { la: lo / cb, lb: lo / ca } })
+                .then_some(MeridianCorner { a: ka, b: kb, kind: Section::Flat { la: lo / cb, lb: lo / ca } })
         }
         _ => None,
     }

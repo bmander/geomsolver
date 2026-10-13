@@ -24,7 +24,7 @@ A set's `S.surface` is the set with each bound made an equality (`Written::equal
 `sets::surface_of`; a grown side's is the offset surface); a distance from a one-bound region's
 surface reads it (`sets::one_bound`); a set measured from is applied under `Scope::held`, so each
 equality its body states is a bound at its number, `in: (d, d)` (`Written::held`, in `apply`),
-and `region_term` reads every probe by one rule. **Lowering** (step 7, `solid::region::lowering`): a `Rounded`/`Chamfered`
+and `region_term` reads every probe by one rule. **Lowering** (step 7, `solid::region::meridian_corner`): a `Rounded`/`Chamfered`
 term whose sets are two of the region's own bounds (same measure, at its level, moved in by the
 radius for a round's centres) is built in the meridian by X1's construction (`brep::corners`,
 moved from `tests/fillet_meridian.rs`) — a round at any corner of lines and arcs, an offset
