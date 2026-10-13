@@ -234,10 +234,15 @@ fn recipe_with(sk: &Sketch,root: usize,static_only: bool) -> Result<StaticRecipe
                     ("angle",std::f64::consts::TAU.into()),
                 ])
             }
-            SolidDef::Prism {face,from,to} => object([
-                ("kind","prism".into()),("profile",profile(sk,*face as usize,scale)?),
-                ("from",(from.value*scale).into()),("to",(to.value*scale).into()),
-            ]),
+            SolidDef::Prism {face,from,to,draft} => {
+                let mut node = object([
+                    ("kind","prism".into()),("profile",profile(sk,*face as usize,scale)?),
+                    ("from",(from.value*scale).into()),("to",(to.value*scale).into()),
+                ]);
+                // its sides tapered from the profile's plane (#245), an angle in radians
+                if let Some(d) = draft { node.set("draft",d.value.into()); }
+                node
+            }
             SolidDef::Through {face,..} => object([
                 ("kind","through".into()),("profile",profile(sk,*face as usize,scale)?),
                 ("sources",ids(&dependencies)),

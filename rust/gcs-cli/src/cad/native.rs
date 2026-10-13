@@ -118,6 +118,10 @@ impl Session {
             return Err("native CAD export does not build a lowered round or chamfer; the core's kernel builds them \
                 (`--kernel rust`), and `tests/fillet_oracle.rs` holds them to OCCT's own fillet".into());
         }
+        if node.get("draft").is_some() {
+            return Err("native CAD export does not build a drafted prism; the core's kernel builds it \
+                (`--kernel rust`)".into());
+        }
         let profile = field(node,"profile");
         let n = v(profile,"normal");
         let (start,end) = match kind {

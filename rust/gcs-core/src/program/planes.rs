@@ -209,7 +209,7 @@ pub(super) fn incidences(
         let on_curve = match kind {
             CKind::PointOnPlane | CKind::LineOnPlane if w.args.is_empty() => false,
             CKind::PointOnSpline | CKind::PointOnCurve | CKind::SplineTangentLine
-            | CKind::CurveTangentLine => true,
+            | CKind::CurveTangentLine | CKind::SplineTangentAt | CKind::CurveTangentAt => true,
             _ => continue,
         };
         // the operand drawn in a plane (the plane itself, a spline, a curve) and the point or

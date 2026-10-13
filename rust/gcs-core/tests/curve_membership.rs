@@ -103,36 +103,34 @@ fn a_point_in_space_on_a_traced_curve_is_drawn_in_its_plane() {
 /// so the tangency is the plane's own.  `OnSpline`'s station (`docs/lofts/l0/stations`) is this.
 #[test]
 fn a_line_in_space_tangent_to_a_spline_is_drawn_in_its_plane() {
-    let e = read(&format!(
-        "{}m := point\nm coincident(t == 0.5) g\nq := point\ntl := line(m, q)\n\
-         g tangent(t == 0.5) tl\nm distance(10mm) q\n",
-        guide("std.top")
-    ));
-    let plane = plane_of(&e, "k0");
-    for p in ["m", "q"] {
-        assert_eq!(plane_of(&e, p), plane, "{p}");
+    // pinned at the contact's place, and at the point the contact holds (#251)
+    for tangent in ["g tangent(t == 0.5) tl", "g tangent(at: m) tl"] {
+        let e = read(&format!(
+            "{}m := point\nm coincident(t == 0.5) g\nq := point\ntl := line(m, q)\n\
+             {tangent}\nm distance(10mm) q\n",
+            guide("std.top")
+        ));
+        let plane = plane_of(&e, "k0");
+        for p in ["m", "q"] {
+            assert_eq!(plane_of(&e, p), plane, "{tangent}: {p}");
+        }
+        let sk = solved(&e);
+        let (m, q) = (sk.world_point(ent(&e, "m").i()), sk.world_point(ent(&e, "q").i()));
+        assert!(near(m, [12.5, 22.5, 0.0]), "{tangent}: {m:?}");
+        assert!(q[2].abs() < 1e-9, "{tangent}");
+        assert!(norm(cross(sub(q, m), [0.6, 0.4, 0.0])) < 1e-7, "{tangent}: {q:?}");
     }
-    let sk = solved(&e);
-    let (m, q) = (sk.world_point(ent(&e, "m").i()), sk.world_point(ent(&e, "q").i()));
-    assert!(near(m, [12.5, 22.5, 0.0]), "{m:?}");
-    assert!(q[2].abs() < 1e-9);
-    assert!(norm(cross(sub(q, m), [0.6, 0.4, 0.0])) < 1e-7, "{q:?}");
-    // a line with both ends in space
-    let e = read(&format!(
-        "{}l := line(hint((5mm, 5mm)), hint((30mm, 25mm)))\ng tangent l\n", guide("std.top")
-    ));
-    for p in ["l.p1", "l.p2"] {
-        assert_eq!(plane_of(&e, p), plane, "{p}");
+    let plane = plane_of(&read(&guide("std.top")), "k0");
+    // a line with both ends in space, either way round (#251 reads `l tangent g` as `g tangent l`)
+    for said in ["g tangent l", "l tangent g"] {
+        let e = read(&format!(
+            "{}l := line(hint((5mm, 5mm)), hint((30mm, 25mm)))\n{said}\n", guide("std.top")
+        ));
+        for p in ["l.p1", "l.p2"] {
+            assert_eq!(plane_of(&e, p), plane, "{said}: {p}");
+        }
+        assert!(!kinds(&e).iter().any(|k| k.spatial()), "{said}: {:?}", kinds(&e));
     }
-    assert!(!kinds(&e).iter().any(|k| k.spatial()), "{:?}", kinds(&e));
-    // a word the operands do not take draws nothing: `l tangent g` is refused as written, and
-    // `l` stands where it stood
-    let src = format!("{}l := line(hint((5mm, 5mm)), hint((30mm, 25mm)))\nl tangent g\n",
-        guide("std.top"));
-    refused(&src, "E040", "does not relate a line to a spline", "tangent");
-    let (prog, _, _) = gcs_core::library::parse_linked(&src);
-    let e = gcs_core::program::elaborate(&prog);
-    assert_eq!(plane_of(&e, "l.p1"), None);
 }
 
 /// A point a statement keeps in space is on no curve drawn in a plane: there is no contact in

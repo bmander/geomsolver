@@ -78,11 +78,13 @@ pub struct Run {
 
 /// A face's surface as a corner's cell or a piece's end reads it (model units): a plane through
 /// `origin`, its `normal` away from the material; a cylinder of `radius` about the line through
-/// `origin` along the unit `axis`; or a sphere.
+/// `origin` along the unit `axis`; a cone about it, `radius` at `origin` and growing along `axis`
+/// by the tangent of `half` (a drafted eye's side, #245); or a sphere.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Surf {
     Plane { origin: V, normal: V },
     Cylinder { origin: V, axis: V, radius: f64 },
+    Cone { origin: V, axis: V, radius: f64, half: f64 },
     Sphere { centre: V, radius: f64 },
 }
 
@@ -93,37 +95,57 @@ impl Surf {
             Some(Surf::Plane { origin, normal })
         } else if let Some((origin, axis, radius)) = body.cylinder(fi) {
             Some(Surf::Cylinder { origin, axis, radius })
+        } else if let Some((origin, axis, radius, half)) = body.cone(fi) {
+            Some(Surf::Cone { origin, axis, radius, half })
         } else {
             body.sphere(fi).map(|(centre, radius)| Surf::Sphere { centre, radius })
         }
     }
 
-    /// From `x` to the surface along its normal: positive on the side the plane's normal points
-    /// to, or outside the cylinder or the ball.
-    fn side(&self, x: V) -> f64 {
+    /// A cylinder or a cone about its axis: a point of the axis, its unit direction, the radius
+    /// there and the half-angle (a cylinder's nothing, whose tangent and cosine change no bit).
+    fn axial(&self) -> Option<(V, V, f64, f64)> {
         match *self {
-            Surf::Plane { origin, normal } => dot(normal, sub(x, origin)),
-            Surf::Cylinder { origin, axis, radius } => {
-                let w = sub(x, origin);
-                norm(sub(w, scale(axis, dot(w, axis)))) - radius
-            }
-            Surf::Sphere { centre, radius } => distance(x, centre) - radius,
+            Surf::Cylinder { origin, axis, radius } => Some((origin, axis, radius, 0.0)),
+            Surf::Cone { origin, axis, radius, half } => Some((origin, axis, radius, half)),
+            Surf::Plane { .. } | Surf::Sphere { .. } => None,
         }
     }
 
-    /// Where the line `q + s·along` crosses a cylinder or a sphere: its two crossings in order, if
-    /// it does (a plane is no solid a line goes into and out of).
-    fn crossings(&self, q: V, along: V) -> Option<[f64; 2]> {
-        let (w, a, radius) = match *self {
-            Surf::Plane { .. } => return None,
-            Surf::Cylinder { origin, axis, radius } => {
-                let flat = |v: V| sub(v, scale(axis, dot(v, axis)));
-                (flat(sub(q, origin)), flat(along), radius)
+    /// From `x` to the surface along its normal: positive on the side the plane's normal points
+    /// to, or outside the cylinder, the cone or the ball.
+    fn side(&self, x: V) -> f64 {
+        match *self {
+            Surf::Plane { origin, normal } => dot(normal, sub(x, origin)),
+            Surf::Sphere { centre, radius } => distance(x, centre) - radius,
+            _ => {
+                let (origin, axis, radius, half) = self.axial().expect("a cylinder or a cone");
+                let w = sub(x, origin);
+                let h = dot(w, axis);
+                (norm(sub(w, scale(axis, h))) - radius - h * half.dtan()) * half.dcos()
             }
-            Surf::Sphere { centre, radius } => (sub(q, centre), along, radius),
+        }
+    }
+
+    /// Where the line `q + s·along` crosses a cylinder, a cone or a sphere: its two crossings in
+    /// order, if it does (a plane is no solid a line goes into and out of; a cone's on its own
+    /// nappe, short of its apex).
+    fn crossings(&self, q: V, along: V) -> Option<[f64; 2]> {
+        // |w⊥ + s a⊥|² = (r + t (h + s a·axis))², the right side's root positive: a sphere's with
+        // nothing taken off and no taper
+        let (w, a, radius, t, k) = match *self {
+            Surf::Plane { .. } => return None,
+            Surf::Sphere { centre, radius } => (sub(q, centre), along, radius, 0.0, 0.0),
+            _ => {
+                let (origin, axis, radius, half) = self.axial().expect("a cylinder or a cone");
+                let flat = |v: V| sub(v, scale(axis, dot(v, axis)));
+                let (w, t) = (sub(q, origin), half.dtan());
+                (flat(w), flat(along), radius + t * dot(w, axis), t, dot(along, axis))
+            }
         };
-        match crate::roots::quadratic(dot(a, a), 2.0 * dot(w, a), dot(w, w) - radius * radius)[..] {
-            [s0, s1] => Some([s0.min(s1), s0.max(s1)]),
+        match crate::roots::quadratic(dot(a, a) - t * t * k * k, 2.0 * (dot(w, a) - t * radius * k),
+            dot(w, w) - radius * radius)[..] {
+            [s0, s1] if [s0, s1].iter().all(|&s| radius + t * k * s > 0.0) => Some([s0.min(s1), s0.max(s1)]),
             _ => None,
         }
     }
@@ -136,6 +158,9 @@ impl Surf {
                 ("origin", vector(scale(origin, by))), ("normal", vector(normal))]),
             Surf::Cylinder { origin, axis, radius } => object([("kind", "cylinder".into()),
                 ("origin", vector(scale(origin, by))), ("axis", vector(axis)), ("radius", (radius * by).into())]),
+            Surf::Cone { origin, axis, radius, half } => object([("kind", "cone".into()),
+                ("origin", vector(scale(origin, by))), ("axis", vector(axis)), ("radius", (radius * by).into()),
+                ("half", half.into())]),
             Surf::Sphere { centre, radius } => object([("kind", "sphere".into()),
                 ("origin", vector(scale(centre, by))), ("radius", (radius * by).into())]),
         }
@@ -540,7 +565,7 @@ fn build(body: &super::faces::BodyFaces, f: &Faces, section: Section) -> Result<
 fn corner_at(body: &super::faces::BodyFaces, ids: &[usize], vertex: V, within: bool, r: f64)
     -> Result<(Corner, [V; 3]), String> {
     let faces: Vec<Surf> = ids.iter().map(|&fi| Surf::of(body, fi)
-        .ok_or_else(|| "a corner where a face neither a plane, a cylinder nor a sphere meets two others".to_string()))
+        .ok_or_else(|| "a corner where a face neither a plane, a cylinder, a cone nor a sphere meets two others".to_string()))
         .collect::<Result<_, _>>().or_else(|e| unbuilt(&e))?;
     let faces = [faces[0], faces[1], faces[2]];
     let tangents: [V; 3] = std::array::from_fn(|i| toward(body.normal(ids[i], vertex), within));
@@ -768,10 +793,11 @@ fn ends_at(body: &super::faces::BodyFaces, ends: &[(usize, f64)], p: V) -> Resul
         match Surf::of(body, c) {
             Some(Surf::Plane { origin, normal }) => planes.push((scale(normal, sign), sign * dot(normal, origin))),
             Some(face) => {
-                let (Surf::Cylinder { origin: on, .. } | Surf::Sphere { centre: on, .. } | Surf::Plane { origin: on, .. }) = face;
+                let (Surf::Cylinder { origin: on, .. } | Surf::Cone { origin: on, .. } | Surf::Sphere { centre: on, .. }
+                    | Surf::Plane { origin: on, .. }) = face;
                 bent.push(Kept { face, inside: sign * body.side(c, on) < 0.0 });
             }
-            None => return unbuilt("an edge cut off by a face neither a plane, a cylinder nor a sphere"),
+            None => return unbuilt("an edge cut off by a face neither a plane, a cylinder, a cone nor a sphere"),
         }
     }
     Ok((planes, bent))

@@ -23,16 +23,25 @@ pub(crate) struct SweepParts {
     pub(crate) along: Option<Ref>,
     pub(crate) sweep: Option<Arg>,
     pub(crate) sense: Option<Sense>,
+    pub(crate) draft: Option<Arg>,
 }
 
 /// The labels a solid's brackets may carry beside the face or the operands.
 fn sweep_label(l: &str) -> bool {
-    matches!(l, "from" | "to" | "depth" | "about" | "sweep" | "sense" | "through" | "along" | "under" | "at")
+    matches!(l, "from" | "to" | "depth" | "about" | "sweep" | "sense" | "through" | "along" | "under" | "at"
+        | "draft")
 }
 
 /// What the sweep arguments a bracket list carried come to.  A solid is a prism, a revolution,
 /// or a body over other solids — and a mixture is none of the three.
 pub(crate) fn sweep_of(p: SweepParts) -> Result<Sweep, String> {
+    // **draft** (#245) tapers a prism's sides from the plane its face is drawn in, the parting
+    // plane: nothing else is swept along a normal
+    if p.draft.is_some() && (p.under.is_some() || p.at.is_some() || p.along.is_some()
+        || p.through.is_some() || p.about.is_some() || p.depth.is_none() && p.from.is_none() && p.to.is_none()) {
+        return Err("`draft:` tapers a prism's sides from its face's plane: say `from:`/`to:` or \
+                    `depth:`, and nothing else".into());
+    }
     if p.under.is_some() || p.at.is_some() {
         if p.depth.is_some() || p.about.is_some() || p.through.is_some()
             || p.along.is_some() || p.sweep.is_some() || p.sense.is_some() {
@@ -76,8 +85,8 @@ pub(crate) fn sweep_of(p: SweepParts) -> Result<Sweep, String> {
                     .into());
             }
             match (from, to, depth) {
-                (Some(from), Some(to), None) => Ok(Sweep::Prism { from, to }),
-                (None, None, Some(depth)) => Ok(Sweep::Depth { depth }),
+                (Some(from), Some(to), None) => Ok(Sweep::Prism { from, to, draft: p.draft }),
+                (None, None, Some(depth)) => Ok(Sweep::Depth { depth, draft: p.draft }),
                 (Some(_), None, None) | (None, Some(_), None) => {
                     Err("a prism runs `from:` one ordinate `to:` another, or `depth:` behind the \
                          face"
@@ -714,6 +723,7 @@ impl<'a> P<'a> {
                     "from" => &mut parts.from,
                     "to" => &mut parts.to,
                     "depth" => &mut parts.depth,
+                    "draft" => &mut parts.draft,
                     _ => &mut parts.sweep,
                 };
                 if slot.is_some() {

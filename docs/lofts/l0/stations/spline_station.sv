@@ -1,6 +1,7 @@
 // L0 (#243): `OnSpline`'s station on a cubic Bézier guide at s = ½: the midpoint (12.5, 22.5),
-// the plane square to the tangent (60, 40). One dependency (README, finding 5): the tangency
-// pinned at `s` restates the point already on the curve.
+// the plane square to the tangent (60, 40). DOF 0 (README, finding 5, #251): the tangent at `m`
+// reads the place of the contact holding `m` on the curve, where `g tangent(t == s) tl` restated
+// the point and left one dependency.
 unit mm
 use std
 use lofts

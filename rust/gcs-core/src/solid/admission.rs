@@ -348,6 +348,8 @@ fn tool(sk: &Sketch,id: usize) -> Result<(),String> {
             if !through.is_empty() { return Err(format!("`{}` cuts solids; only intersections are in the class",solid.name)); }
             std::iter::once(stock).chain(bound).try_for_each(|&o| tool(sk,o as usize))
         }
+        SolidDef::Prism {draft:Some(_),..} => Err(format!("`{}` is a drafted prism: its sides lean, and \
+            a tool's are extrusions",solid.name)),
         // a prism's sides are extrusions of lines and arcs, its contact set fixed by the motion
         SolidDef::Prism {..} => Ok(()),
         SolidDef::Loft {..} => Err(format!("`{}` is a loft, not a revolution",solid.name)),

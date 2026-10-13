@@ -463,6 +463,25 @@ plain declared name without building the alias table, and
 `region::in_general_position`/`folded` key a face-reading region on `reads_own` and the strata
 (`faces::cached`'s `Arc`s), never `reads` (which walks the body's every other round).
 `tests/conrod.rs` is the gate.
+**Draft (§6.9, 0.80, #245):** `solid(f, from:, to:, draft: θ)` (or `depth:`) is
+`SolidDef::Prism::draft` (radians; `None` undrafted): the section at ordinate `h` is `f` moved `|h|
+tan θ` into its material from its own plane, the parting plane (an outer loop in, a hole out). Every
+evaluator reads it: the facets (`primitive::prism`'s `taper`, `offset` by mitres, a side breaking at
+the plane; `drafted_away` refuses a side taken to nothing, at validation), the field
+(`ExtrudedField::drafted`: the side's value plus `|w| tan`, times the cosine — exact only where
+`PlanarField::draftable`: convex loops of lines and whole circles, else refused) and the exact
+kernel (the recipe's prism `"draft"`; `brep::build::drafted`: `offset` the profile — a line moved
+square, a circle's radius, corners where lines cross or where sides go on tangent, an arc at an
+angle refused — and `ruled` lofts each side of the plane, `boolean::glued` there; OCCT refuses it).
+Faces keep the prism's names, a side crossing the plane two pieces of one name; a round over such a
+face takes the pieces as one (`round(r) X` never rounds their crease), and the field's set distances
+read a face in pieces on several surfaces meeting convex surface by surface
+(`Reading::convex_pieces`, `conditions`: within, and at least `d` off where also within), else a
+projection flips between pieces at the crease. The lowering table's run ends on a cone
+(`Surf::Cone`, the recipe's `"kept"` cone a lofted frustum, `kept_by_solid`). A canal across the
+parting plane (two pieces each side, `brep::fillet::roll`) is refused, naming the turn (rung 3).
+Refused besides: a drafted side as a set or a carrier, an extruded surface or a tool. `rod.sv` is
+drafted 3°; `tests/draft.rs` is the gate.
 **Distance from a set, offsets (§6.21, 0.64, #145 F4):** `p distance(d, side: outside|inside) S`
 (`distance` is a set use, `may_use`), `p inside(d) S` / `p outside(d) S` and `std.Offset(S, d)` are
 one bound on the signed distance from `S`'s surface (`Reach`: cmp toward the outside, whether
@@ -500,8 +519,9 @@ then states nothing, `drawn` in `program.rs`), the rows `in P` makes. Kept in sp
 a point with a `Deferred::Height` seed, held by a `fix`, a dual's point (`along.point`), a
 ring's, or claimed. **A point on a curve drawn in a plane is in it** (#249): `m coincident g` (pins
 allowed), `g` a spline or a traced curve (`planes::drawn_plane`, not an extrusion) drawn in `P`, draws a
-point in space in `P`, and `g tangent l` a line's free ends — read off the kind `relations::settle`
-gives, so a word the operands do not take draws nothing; the statement stays the 2D contact. A
+point in space in `P`, and `g tangent l` (either way round, `at:` too, #251) a line's free ends —
+read off the kind `relations::settle` gives, so a word the operands do not take draws nothing; the
+statement stays the 2D contact. A
 kept point is E062 naming what keeps it (`kept`'s cause), its statement returned apart from the
 lowered ones and skipped; a circle or an arc keeps `PointOnCircle3`. `tests/curve_membership.rs`. **A set whose body is a circle's is the circle**, the one entry so far of
 **`lowering.rs`**, the table of what a set may be drawn as (#140): `lowering::shape` reads `{ p
@@ -1479,6 +1499,20 @@ Conventions:
   guard is inside `witness::screen`: at a solution, a tangency present, removals capped at what
   the matching cannot account for, at most `SCREEN_MAX`.  A double root's singular value is as
   small as a real freedom's, so a candidate is recognised only by trying it.
+  **The tangent at a point of any path** (#251): `g tangent(at: m) l`, the parser reading `at:`
+  as a point unless it is `start`/`end`/`p1`/`p2` — of a spline `SplineTangentAt` (the
+  `spline_tangent_at` kernel, `spline_tangent_line`'s direction row alone), of a curve
+  `CurveTangentAt` (`FamilyKernel::TangentAt`), of a circle or arc `TangentCircleAt` (the
+  `tangent_arc_line` kernel over `[at, centre, line]`), of a line `parallel`. The spline's and
+  curve's own `t` is **the contact's**: `Sketch::add` hands it the place of the contact holding
+  `m` on `g` (`Constraint::tangent_at`/`holds_on`, `Sketch::holding`), whichever comes first
+  (`share_place` re-points an earlier tangent), whatever it arrived carrying, so a graft, JSON and
+  a lifted program (which never writes its `t`) share it again; `remove` keeps a place free while
+  any constraint owns it. None holding it is E040 (`relations::tangents_at`). A line and a spline
+  or curve touch whichever is written first (`settle` puts the curve first). A **`path`** formal
+  (`Ty::Path`) is an entity formal judged by kind at elaboration: what the call gave it must be a
+  line, arc, circle, spline or curve (`Expansion::paths`, `relations::paths`, E103 at the
+  argument). `tests/tangent_at.rs` and `tests/curve_contact.rs` are the gates.
 - `Horizontal`/`Vertical` level a line; a `Level` along a view's own axis levels a *pair of
   points* with the same line kernels, and `cgraph` gives it a `virtual_line` in the ground
   x-axis's direction class, so a levelled pair decomposes rather than falling to the residue.
@@ -1645,7 +1679,7 @@ Conventions:
   place a slot is spelled, read by both printers, as `hint_of` is for the clause around it.
   **The shape is the library's**: every user-facing kind has one or two entity slots, always first
   in spec order, with `Symmetric` the single three-slot exception.  Several kinds share a word —
-  **`coincident` is fifteen kinds, `distance` nine, `tangent` six** (twins in space included; a set's uses besides) — and `horizontal`/`vertical` are
+  **`coincident` is fifteen kinds, `distance` nine, `tangent` nine** (twins in space included; a set's uses besides) — and `horizontal`/`vertical` are
   two each with the *fixity* doing the work.
   **What a word means is the kinds of its operands, and a name does not carry its kind until
   elaboration** — so the parser resolves *nothing*: it produces a `syntax::Written` and

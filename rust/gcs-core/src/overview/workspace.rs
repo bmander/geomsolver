@@ -524,7 +524,7 @@ const EDGE_ON_NORMAL: f64 = 0.05;
 /// solid that is not a prism.
 fn seen_prism(sk: &Sketch, proj: &Projection, solid: usize)
     -> Option<((f64, f64), (f64, f64), f64, f64)> {
-    let crate::model::SolidDef::Prism { face, from, to } = &sk.solids.get(solid)?.def else {
+    let crate::model::SolidDef::Prism { face, from, to, .. } = &sk.solids.get(solid)?.def else {
         return None;
     };
     let (poly, middle) = face_middle(sk, *face)?;

@@ -60,18 +60,66 @@ fn ears(pts: &[(f64, f64)]) -> Vec<[usize; 3]> {
     out
 }
 
-/// A face swept along its plane's normal, from `lo` to `hi` — a prism (§6.9).
-pub fn prism(poly: &FacePoly, lo: f64, hi: f64, of: &str) -> Option<Prim> {
+/// A loop (counter-clockwise) moved `d` into what it bounds, each straight step along its own
+/// normal and each corner where its two neighbours' moved lines meet — a drafted prism's section
+/// (#245), a tessellated arc's facets the facets of the arc moved.  Unmoved where `d` is 0.
+pub(super) fn offset(pts: &[(f64, f64)], d: f64) -> Vec<(f64, f64)> {
+    let n = pts.len();
+    if d == 0.0 || n < 3 {
+        return pts.to_vec();
+    }
+    // each step's unit normal into the loop: left of a counter-clockwise walk
+    let normal = |i: usize| {
+        let (a, b) = (pts[i], pts[(i + 1) % n]);
+        let l = (b.0 - a.0).dhypot(b.1 - a.1);
+        if l > 0.0 { (-(b.1 - a.1) / l, (b.0 - a.0) / l) } else { (0.0, 0.0) }
+    };
+    (0..n).map(|i| {
+        let (m0, m1) = (normal((i + n - 1) % n), normal(i));
+        let w = 1.0 + m0.0 * m1.0 + m0.1 * m1.1;
+        // the corner's mitre, where both moved lines pass; a step turned straight back has none
+        let k = if w > 1e-12 { d / w } else { d / 2.0 };
+        (pts[i].0 + k * (m0.0 + m1.0), pts[i].1 + k * (m0.1 + m1.1))
+    }).collect()
+}
+
+/// The taper of a face's loop `k` under a draft of tangent `taper`: the outer loop (0) shrinks,
+/// a hole grows — its prism, cut away, by as much again.
+pub(super) fn loop_taper(k: usize, taper: f64) -> f64 { if k == 0 { taper } else { -taper } }
+
+/// Where a draft of `taper` (its tangent; positive shrinks) as far as ordinate `reach` either way
+/// takes a step of the loop to nothing or turns it round: the step's index, `None` where every one
+/// survives. A step's length is affine in the move, so the farthest section says it.
+pub(super) fn drafted_away(pts: &[(f64, f64)], reach: f64, taper: f64) -> Option<usize> {
+    let n = pts.len();
+    let q = offset(pts, reach * taper);
+    (0..n).find(|&i| {
+        let j = (i + 1) % n;
+        let (a, b) = ((pts[j].0 - pts[i].0, pts[j].1 - pts[i].1), (q[j].0 - q[i].0, q[j].1 - q[i].1));
+        a.0 * b.0 + a.1 * b.1 <= 0.0
+    })
+}
+
+/// A face swept along its plane's normal, from `lo` to `hi` — a prism (§6.9).  With a `taper`
+/// (a draft's tangent, #245) the section at ordinate `h` is the loop moved `|h| taper` into what
+/// it bounds, so the sides lean from the face's own plane; a side crossing that plane breaks
+/// there, its two pieces one face.
+pub fn prism(poly: &FacePoly, lo: f64, hi: f64, taper: f64, of: &str) -> Option<Prim> {
     let (lo, hi) = if lo <= hi { (lo, hi) } else { (hi, lo) };
     if hi - lo <= 0.0 {
         return None;
     }
     let n = poly.pts.len();
     let nrm = poly.basis.normal();
-    let at = |i: usize, k: f64| {
-        let p = poly.lift(i);
+    let levels: Vec<f64> = if taper != 0.0 && lo < 0.0 && hi > 0.0 { vec![lo, 0.0, hi] } else { vec![lo, hi] };
+    let sections: Vec<Vec<(f64, f64)>> = levels.iter().map(|h| offset(&poly.pts, h.abs() * taper)).collect();
+    let at = |s: usize, i: usize| {
+        let (a, b) = sections[s][i];
+        let p = poly.basis.lift(a, b);
+        let k = levels[s];
         [p[0] + k * nrm[0], p[1] + k * nrm[1], p[2] + k * nrm[2]]
     };
+    let top = levels.len() - 1;
     // face 0 is `far` (at lo), face 1 is `near` (at hi), then one per drawn edge
     let mut faces = vec!["far".to_string(), "near".to_string()];
     faces.extend(poly.names.iter().cloned());
@@ -84,24 +132,26 @@ pub fn prism(poly: &FacePoly, lo: f64, hi: f64, of: &str) -> Option<Prim> {
         // a surface that is inside out — which is exactly what a cap contributing nothing at
         // the origin will hide from every test that does not stand the solid away from it.
         facets.push(Facet {
-            pts: vec![at(t[0], hi), at(t[1], hi), at(t[2], hi)],
+            pts: vec![at(top, t[0]), at(top, t[1]), at(top, t[2])],
             n: nrm,
             face: 1,
             smooth: false,
         });
         facets.push(Facet {
-            pts: vec![at(t[2], lo), at(t[1], lo), at(t[0], lo)],
+            pts: vec![at(0, t[2]), at(0, t[1]), at(0, t[0])],
             n: plane::scaled(nrm, -1.0),
             face: 0,
             smooth: false,
         });
     }
-    for i in 0..n {
-        let j = (i + 1) % n;
-        let (edge, smooth) = poly.of[i];
-        let quad = vec![at(i, lo), at(j, lo), at(j, hi), at(i, hi)];
-        let Some(nn) = facet_normal(&quad) else { continue };
-        facets.push(Facet { pts: quad, n: nn, face: 2 + edge, smooth });
+    for s in 0..top {
+        for i in 0..n {
+            let j = (i + 1) % n;
+            let (edge, smooth) = poly.of[i];
+            let quad = vec![at(s, i), at(s, j), at(s + 1, j), at(s + 1, i)];
+            let Some(nn) = facet_normal(&quad) else { continue };
+            facets.push(Facet { pts: quad, n: nn, face: 2 + edge, smooth });
+        }
     }
     Some(finish(facets, faces, of))
 }
