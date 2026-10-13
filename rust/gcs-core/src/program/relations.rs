@@ -123,7 +123,7 @@ pub(crate) fn settle(
 /// An E040 said once at its span, however many of a use's rows find it.
 fn say_once(diags: &mut Vec<Diag>, span: Span, stmt: StmtId, message: String) {
     if !diags.iter().any(|d| d.span == span && d.message == message) {
-        diags.push(Diag { code: Code::E040, span, stmt: Some(stmt), message });
+        diags.push(Diag::within(Code::E040, span, stmt, message));
     }
 }
 
@@ -153,7 +153,7 @@ pub(super) fn constrain(
         match made {
             Ok((probe, t)) => probes.terms.get_mut(&probe).expect("a probe's terms").push(t),
             Err(message) => {
-                diags.push(Diag { code: Code::E040, span: st.span, stmt: Some(st.id), message })
+                diags.push(Diag::on(Code::E040, st, message))
             }
         }
         return None;
@@ -171,7 +171,7 @@ pub(super) fn constrain(
         if w.word.text == "outside" {
             let m = "`outside` says which side of a plane a point is on: `p outside P`";
             let message = m.to_string();
-            diags.push(Diag { code: Code::E040, span: st.span, stmt: Some(st.id), message });
+            diags.push(Diag::on(Code::E040, st, message));
             return None;
         }
         if crate::constraints::solid_word(&w.word.text).is_some() {
@@ -262,7 +262,7 @@ pub(super) fn constrain(
     {
         Ok(r) => r,
         Err((span, message)) => {
-            diags.push(Diag { code: Code::E040, span, stmt: Some(st.id), message });
+            diags.push(Diag::within(Code::E040, span, st.id, message));
             return None;
         }
     };
@@ -272,16 +272,15 @@ pub(super) fn constrain(
     // unclaimable kind is, so it is checked first.
     if ckind.gauge() {
         if r.claim {
-            diags.push(Diag {
-                code: Code::E040,
-                span: st.span,
-                stmt: Some(st.id),
-                message: format!(
+            diags.push(Diag::on(
+                Code::E040,
+                st,
+                format!(
                     "`{}` is judged by nothing a claim can weigh: it holds a number or picks a \
                      root, and adds no row for the diagnosis to rank",
                     crate::syntax::snake(ckind.name())
                 ),
-            });
+            ));
             return None;
         }
         apply_gauge(sk, res, &r, st, gauges, diags);
@@ -317,15 +316,15 @@ pub(super) fn constrain(
                     // the empty word is the slot's own default and says nothing — a selector
                     // nobody wrote (issue #48, item 4), which the printers leave out again
                     if !w.is_empty() && !words.contains(&w.as_str()) {
-                        diags.push(Diag {
-                            code: Code::E040,
-                            span: where_(a),
-                            stmt: Some(st.id),
-                            message: format!(
+                        diags.push(Diag::within(
+                            Code::E040,
+                            where_(a),
+                            st.id,
+                            format!(
                                 "`{name}` is {}, not `{w}`",
                                 crate::syntax::one_of(words)
                             ),
-                        });
+                        ));
                         return None;
                     }
                 }
@@ -347,7 +346,7 @@ pub(super) fn constrain(
                 };
                 let message =
                     format!("`at` is {ends}a point on what is touched, and `{what}` names nothing");
-                diags.push(Diag { code: Code::E040, span: where_(a), stmt: Some(st.id), message });
+                diags.push(Diag::within(Code::E040, where_(a), st.id, message));
                 return None;
             }
             // a direction that names nothing is a word misspelt, more likely than an entity
@@ -357,16 +356,16 @@ pub(super) fn constrain(
                     other => crate::syntax::sel_text(other),
                 };
                 let message = no_direction(&what);
-                diags.push(Diag { code: Code::E040, span: where_(a), stmt: Some(st.id), message });
+                diags.push(Diag::within(Code::E040, where_(a), st.id, message));
                 return None;
             }
             Err((code, msg)) => {
-                diags.push(Diag {
+                diags.push(Diag::within(
                     code,
-                    span: where_(a),
-                    stmt: Some(st.id),
-                    message: format!("{}: {msg}", name),
-                });
+                    where_(a),
+                    st.id,
+                    format!("{}: {msg}", name),
+                ));
                 return None;
             }
         }
@@ -392,7 +391,7 @@ pub(super) fn constrain(
         if let Err((span, message)) =
             ordinate_operands(sk, res, &r, st, doc, &mut args, &mut left_out)
         {
-            diags.push(Diag { code: Code::E040, span, stmt: Some(st.id), message });
+            diags.push(Diag::within(Code::E040, span, st.id, message));
             return None;
         }
     }
@@ -406,12 +405,12 @@ pub(super) fn constrain(
         Ok(Some((k, a, l))) => (k, k.spec(), a, l),
         Err((selector, message)) => {
             let key = ["side", "sense"].into_iter().find_map(|k| r.written.and_then(|w| w.key_span(k)));
-            diags.push(Diag {
-                code: if selector { Code::E040 } else { Code::E062 },
-                span: if selector { key.unwrap_or(st.span) } else { st.span },
-                stmt: Some(st.id),
+            diags.push(Diag::within(
+                if selector { Code::E040 } else { Code::E062 },
+                if selector { key.unwrap_or(st.span) } else { st.span },
+                st.id,
                 message,
-            });
+            ));
             return None;
         }
     };
@@ -447,20 +446,20 @@ pub(super) fn constrain(
                     ),
                     None => String::new(),
                 };
-                diags.push(Diag {
-                    code: Code::E040,
-                    span: r
+                diags.push(Diag::within(
+                    Code::E040,
+                    r
                         .args
                         .get(i)
                         .and_then(|a| a.as_ref())
                         .and_then(arg_span)
                         .unwrap_or(st.span),
-                    stmt: Some(st.id),
-                    message: format!(
+                    st.id,
+                    format!(
                         "{} is a magnitude and cannot be negative{fix}",
                         crate::model::article(&crate::syntax::snake(ckind.name()))
                     ),
-                });
+                ));
                 return None;
             }
         }
@@ -478,15 +477,15 @@ pub(super) fn constrain(
                 a => Some(a.num().dcos()),
             };
             if cos.is_some_and(|c| c.abs() > 1.0 - 1e-12) {
-                diags.push(Diag {
-                    code: Code::E040,
-                    span: r.args.get(i).and_then(|a| a.as_ref()).and_then(arg_span).unwrap_or(st.span),
-                    stmt: Some(st.id),
-                    message: "an angle in space of 0 or 180 degrees says the two are parallel, and \
-                              is read by a cosine that does not move there: write `parallel`, \
-                              and the seed says which way"
+                diags.push(Diag::within(
+                    Code::E040,
+                    r.args.get(i).and_then(|a| a.as_ref()).and_then(arg_span).unwrap_or(st.span),
+                    st.id,
+                    "an angle in space of 0 or 180 degrees says the two are parallel, and \
+                     is read by a cosine that does not move there: write `parallel`, \
+                     and the seed says which way"
                         .to_string(),
-                });
+                ));
                 return None;
             }
         }
@@ -498,30 +497,28 @@ pub(super) fn constrain(
     if ckind == CKind::AnnularDistance {
         let centre = |e: EntRef| sk.children(e).first().copied();
         if centre(args[0].ent()) != centre(args[1].ent()) {
-            diags.push(Diag {
-                code: Code::E040,
-                span: st.span,
-                stmt: Some(st.id),
-                message: "`distance` between two circles is the radial gap between concentric \
-                          ones, and these are centred on different points — dimension the \
-                          centres, or make the circles concentric"
+            diags.push(Diag::on(
+                Code::E040,
+                st,
+                "`distance` between two circles is the radial gap between concentric \
+                 ones, and these are centred on different points — dimension the \
+                 centres, or make the circles concentric"
                     .to_string(),
-            });
+            ));
             return None;
         }
     }
     // a claim is judged, never solved for, so it may own no unknown — `CKind::claimable` is the
     // rule, shared with the document readers; elaboration's job is only to give it a span
     if r.claim && !ckind.claimable() {
-        diags.push(Diag {
-            code: Code::E040,
-            span: st.span,
-            stmt: Some(st.id),
-            message: format!(
+        diags.push(Diag::on(
+            Code::E040,
+            st,
+            format!(
                 "`{}` carries an unknown of its own, and a claim may add none",
                 crate::syntax::snake(ckind.name())
             ),
-        });
+        ));
         return None;
     }
     // the inferred slots the source left out — read off the geometry, the one place that rule
@@ -529,18 +526,18 @@ pub(super) fn constrain(
     // the model refuses once they are in, in its own words, given this statement's span
     let name = |e: EntRef| map.name_of(e).cloned().unwrap_or_else(|| io::entity_name(e));
     if let Err(message) = crate::constraints::on_the_arc(ckind, &args, &name) {
-        diags.push(Diag { code: Code::E040, span: st.span, stmt: Some(st.id), message });
+        diags.push(Diag::on(Code::E040, st, message));
         return None;
     }
     if let Err(message) = io::seed_omitted_named(sk, ckind, &mut args, |i| left_out[i], &name) {
-        diags.push(Diag { code: Code::E061, span: st.span, stmt: Some(st.id), message });
+        diags.push(Diag::on(Code::E061, st, message));
         return None;
     }
     let bound = match bound_of(sk, res, &r, ckind) {
         Ok(b) => b,
         Err((span, message)) => {
             let span = span.unwrap_or(st.span);
-            diags.push(Diag { code: Code::E040, span, stmt: Some(st.id), message });
+            diags.push(Diag::within(Code::E040, span, st.id, message));
             return None;
         }
     };
@@ -551,7 +548,7 @@ pub(super) fn constrain(
         if b.hi.is_some_and(|hi| hi < c.args[i].num()) {
             let message = "an interval runs from its low end to its high end".to_string();
             let span = at.unwrap_or(st.span);
-            diags.push(Diag { code: Code::E040, span, stmt: Some(st.id), message });
+            diags.push(Diag::within(Code::E040, span, st.id, message));
             return None;
         }
     }
@@ -595,9 +592,7 @@ pub(super) fn constrain(
                 Some(g) => Some(g),
                 None => {
                     let message = "an offset is stated or reads one unknown of the drawing";
-                    diags.push(Diag {
-                        code: Code::E040, span: st.span, stmt: Some(st.id), message: message.into()
-                    });
+                    diags.push(Diag::on(Code::E040, st, message.into()));
                     return None;
                 }
             }
@@ -608,7 +603,7 @@ pub(super) fn constrain(
         match region_term(sk, &c, probe, grow, term_name) {
             Ok(t) => probes.terms.get_mut(&probe).expect("a probe's terms").push(t),
             Err(message) => {
-                diags.push(Diag { code: Code::E040, span: st.span, stmt: Some(st.id), message })
+                diags.push(Diag::on(Code::E040, st, message))
             }
         }
         return None;
@@ -617,7 +612,7 @@ pub(super) fn constrain(
         let message = "an offset of a cone is a region solid's: a point is put at a distance from \
                        one by its foot on it"
             .to_string();
-        diags.push(Diag { code: Code::E040, span: st.span, stmt: Some(st.id), message });
+        diags.push(Diag::on(Code::E040, st, message));
         return None;
     }
     Some(sk.add_quiet(c))
@@ -647,7 +642,7 @@ pub(super) fn kinds(map: &SourceMap, given: &[crate::flatten::KindAsked], diags:
             }
             (Some(i), _) => format!("`{}` is {}, where `{i}` asks for a path", k.what, e.kind.a()),
         };
-        diags.push(Diag { code: Code::E103, span: k.span, stmt: None, message });
+        diags.push(Diag::new(Code::E103, k.span, None, message));
     }
 }
 
@@ -664,17 +659,17 @@ pub(super) fn tangents_at(sk: &Sketch, map: &SourceMap, diags: &mut Vec<Diag>) {
             map.name_of(e).map_or_else(|| e.kind.a(), written)
         };
         let (m, g) = (name(EntRef::point(at)), name(on));
-        diags.push(Diag {
-            code: Code::E040,
-            span: site.span,
-            stmt: Some(site.stmt),
-            message: format!(
+        diags.push(Diag::within(
+            Code::E040,
+            site.span,
+            site.stmt,
+            format!(
                 "the tangent at {m} is taken where a contact holds {m} on {g}, and none does: \
                  state `{} coincident {}`",
                 m.trim_matches('`'),
                 g.trim_matches('`')
             ),
-        });
+        ));
     }
 }
 

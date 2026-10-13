@@ -231,7 +231,7 @@ pub(super) fn measured_term(
     diags: &mut Vec<Diag>,
 ) {
     let mut refuse = |message: String| {
-        diags.push(Diag { code: Code::E040, span: st.span, stmt: Some(st.id), message })
+        diags.push(Diag::on(Code::E040, st, message))
     };
     let (lhs, rhs) = match (linear(&m.lhs, sk), linear(&m.rhs, sk)) {
         (Ok(l), Ok(r)) => (l, r),

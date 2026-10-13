@@ -691,7 +691,7 @@ pub(super) fn build_curve(
         }
         Ok(None) => None,
         Err((code, span, message)) => {
-            diags.push(Diag { code, span, stmt: Some(st.id), message });
+            diags.push(Diag::within(code, span, st.id, message));
             None
         }
     }

@@ -37,26 +37,26 @@ pub fn solid_diagnostics(sk: &crate::model::Sketch, map: &SourceMap) -> Vec<Diag
         .filter_map(|(i, _)| {
             let message = crate::solid::validate(sk, i).err()?;
             let site = map.site_of(crate::model::EntRef::solid(i));
-            Some(Diag { code: Code::E080, span: site.map(|s| s.span).unwrap_or_default(),
-                stmt: site.map(|s| s.stmt), message })
+            Some(Diag::new(Code::E080, site.map(|s| s.span).unwrap_or_default(),
+                site.map(|s| s.stmt), message))
         }).collect();
-    diags.extend(crate::solid::bearing_errors(sk).into_iter().map(|(b, message)| Diag {
-        code: Code::E082, span: b.span, stmt: Some(crate::syntax::StmtId(b.stmt)), message,
-    }));
+    diags.extend(crate::solid::bearing_errors(sk).into_iter().map(|(b, message)| Diag::within(
+        Code::E082, b.span, crate::syntax::StmtId(b.stmt), message,
+    )));
     // a prism's side is read in the drawing, where its envelope stands for it (`extruded_envelopes`)
     let prism = |i: usize| matches!(sk.solids[sk.surfaces[i].solid as usize].def, crate::model::SolidDef::Prism { .. });
     for i in (0..sk.surfaces.len()).filter(|&i| !prism(i)) {
         if let Err(message) = crate::solid::RevolvedSurface::named(sk,i) {
             let site = map.site_of(crate::model::EntRef::new(crate::model::EntKind::Surface,i));
-            diags.push(Diag {code:Code::E080,span:site.map(|s| s.span).unwrap_or_default(),
-                stmt:site.map(|s| s.stmt),message});
+            diags.push(Diag::new(Code::E080,site.map(|s| s.span).unwrap_or_default(),
+                site.map(|s| s.stmt),message));
         }
     }
     for i in 0..sk.motions.len() {
         if let Err(message) = crate::motion::evaluate(sk,i,0.) {
             let site = map.site_of(crate::model::EntRef::new(crate::model::EntKind::Motion,i));
-            diags.push(Diag {code:Code::E080,span:site.map(|s| s.span).unwrap_or_default(),
-                stmt:site.map(|s| s.stmt),message});
+            diags.push(Diag::new(Code::E080,site.map(|s| s.span).unwrap_or_default(),
+                site.map(|s| s.stmt),message));
         }
     }
     diags.extend(views::degenerate(sk, map));
@@ -64,8 +64,8 @@ pub fn solid_diagnostics(sk: &crate::model::Sketch, map: &SourceMap) -> Vec<Diag
     for i in 0..sk.envelopes.len() {
         if let Err(message) = crate::envelope::GeneratedEnvelope::named(sk,i) {
             let site = map.site_of(crate::model::EntRef::new(crate::model::EntKind::Envelope,i));
-            diags.push(Diag {code:Code::E080,span:site.map(|s| s.span).unwrap_or_default(),
-                stmt:site.map(|s| s.stmt),message});
+            diags.push(Diag::new(Code::E080,site.map(|s| s.span).unwrap_or_default(),
+                site.map(|s| s.stmt),message));
         }
     }
     diags
@@ -93,17 +93,17 @@ use std::collections::{BTreeMap, BTreeSet};
 fn shadowing(p: &Program, diags: &mut Vec<Diag>) {
     fn say(name: &Name, what: &str, stmt: Option<StmtId>, diags: &mut Vec<Diag>) {
         let Some(kind) = expr::builtin(&name.text) else { return };
-        diags.push(Diag {
-            code: Code::W112,
-            span: name.span,
+        diags.push(Diag::new(
+            Code::W112,
+            name.span,
             stmt,
-            message: format!(
+            format!(
                 "`{}` is {kind}, and {what} of that name does not shadow it — an expression \
                  reads the built-in wherever a number is worked out (§3.3), so this name is \
                  read two ways.  Rename it.",
                 name.text
             ),
-        });
+        ));
     }
     fn body(stmts: &[Stmt], diags: &mut Vec<Diag>) {
         for st in stmts {
@@ -162,7 +162,7 @@ fn defined_twice(p: &Program, diags: &mut Vec<Diag>) {
 pub(crate) fn defined_again(p: &Program, n: &crate::syntax::Name, was: Span) -> Diag {
     let line = p.line_col(was.lo as usize).0;
     let message = format!("`{}` is defined twice; the first is at line {line}", n.text);
-    Diag { code: Code::E071, span: n.span, stmt: None, message }
+    Diag::new(Code::E071, n.span, None, message)
 }
 
 pub fn elaborate(p: &Program) -> Elaborated {
@@ -248,21 +248,21 @@ fn elaborate_in(
     for st in &p.root().body {
         let crate::syntax::StmtKind::Unit(n) = &st.kind else { continue };
         if said {
-            diags.push(Diag {
-                code: Code::E040,
-                span: n.span,
-                stmt: Some(st.id),
-                message: "the document's unit is already stated above — one document, one \
-                          unit"
+            diags.push(Diag::within(
+                Code::E040,
+                n.span,
+                st.id,
+                "the document's unit is already stated above — one document, one \
+                 unit"
                     .to_string(),
-            });
+            ));
             continue;
         }
         said = true;
         match crate::units::Units::with_length(&n.text) {
             Ok(u) => sk.units = u,
             Err(message) => {
-                diags.push(Diag { code: Code::E040, span: n.span, stmt: Some(st.id), message })
+                diags.push(Diag::within(Code::E040, n.span, st.id, message))
             }
         }
     }
@@ -302,14 +302,14 @@ fn elaborate_in(
         // the document's.  Silence there is exactly what §13.1 forbids, so it is a diagnostic.
         if let StmtKind::Unit(n) = &st.kind {
             if !p.root().body.iter().any(|r| r.id == st.id) {
-                diags.push(Diag {
-                    code: Code::E040,
-                    span: n.span,
-                    stmt: Some(st.id),
-                    message: "a document's unit is stated once, at the top — not inside a \
-                              component or a block"
+                diags.push(Diag::within(
+                    Code::E040,
+                    n.span,
+                    st.id,
+                    "a document's unit is stated once, at the top — not inside a \
+                     component or a block"
                         .to_string(),
-                });
+                ));
             }
         }
         if let StmtKind::Style(r) = &st.kind {
@@ -335,15 +335,15 @@ fn elaborate_in(
                 || crate::syntax::decl_head(kind, name),
                 |n| n.text.clone(),
             );
-            diags.push(Diag {
-                code: Code::E001,
-                span: name.span(),
-                stmt: Some(st.id),
-                message: format!(
+            diags.push(Diag::within(
+                Code::E001,
+                name.span(),
+                st.id,
+                format!(
                     "`{who}` is declared twice; the first is at line {}",
                     p.line_col(was.lo as usize).0
                 ),
-            });
+            ));
             skip.insert(st.id);
             continue; // the second, so every later reference still resolves to the first
         }
@@ -679,7 +679,7 @@ fn elaborate_in(
                 expr::Fault::Measure => (Code::E107, ""),
                 expr::Fault::Place => (Code::E040, ""),
             };
-            diags.push(Diag { code, span, stmt, message: format!("`{}`: {err}{tail}", item.text) });
+            diags.push(Diag::new(code, span, stmt, format!("`{}`: {err}{tail}", item.text)));
         }
     }
 
@@ -689,15 +689,15 @@ fn elaborate_in(
     for (i, cv) in sk.curves.iter().enumerate() {
         for n in cv.unknowns.iter().filter(|n| !sk.free_vars.contains_key(*n)) {
             let site = map.site_of(EntRef::new(EntKind::Curve, i));
-            diags.push(Diag {
-                code: Code::E103,
-                span: site.map(|s| s.span).unwrap_or_default(),
-                stmt: site.map(|s| s.stmt),
-                message: format!(
+            diags.push(Diag::new(
+                Code::E103,
+                site.map(|s| s.span).unwrap_or_default(),
+                site.map(|s| s.stmt),
+                format!(
                     "`{n}` is left unknown, and nothing on the sheet reads it: give the \
                      instance a number for it, or state what it is"
                 ),
-            });
+            ));
         }
     }
 

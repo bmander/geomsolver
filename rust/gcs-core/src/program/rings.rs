@@ -18,7 +18,7 @@ use std::collections::BTreeSet;
 
 fn refuse(diags: &mut Vec<Diag>, span: crate::syntax::Span, message: String) {
     if !diags.iter().any(|d| d.code == Code::E023 && d.span == span) {
-        diags.push(Diag { code: Code::E023, span, stmt: None, message });
+        diags.push(Diag::new(Code::E023, span, None, message));
     }
 }
 

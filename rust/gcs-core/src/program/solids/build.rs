@@ -15,23 +15,23 @@ pub(super) fn build_solid(
     for k in kids {
         let e = match k {
             Kid::Ref(r) if !r.path.is_empty() && res.chains.contains_key(&r.root.text) => {
-                diags.push(Diag {
-                    code: Code::E080, span: r.span, stmt: Some(st.id),
-                    message: format!("`{}` names a chain, not a member of that chain; \
+                diags.push(Diag::within(
+                    Code::E080, r.span, st.id,
+                    format!("`{}` names a chain, not a member of that chain; \
                         its named links belong to the enclosing component", r.root.text),
-                });
+                ));
                 return None;
             }
             Kid::Face { decl: face, span } => {
                 EntRef::face(build_face(sk, res, face, &d.name.key().text, st.id, *span, diags)?)
             }
             Kid::Ref(r) if res.chains.get(&r.root.text).is_some_and(|c| !c.closed) => {
-                diags.push(Diag {
-                    code: Code::E080, span: r.span, stmt: Some(st.id),
-                    message: format!("`{}` is an open chain: a sweep needs a closed loop; \
+                diags.push(Diag::within(
+                    Code::E080, r.span, st.id,
+                    format!("`{}` is an open chain: a sweep needs a closed loop; \
                         finish the chain with `-> close` or write `face({}, -> close)`",
                         r.root.text, r.root.text),
-                });
+                ));
                 return None;
             }
             Kid::Ref(r) => match res.lookup(r).ok_or_else(||
@@ -39,34 +39,33 @@ pub(super) fn build_solid(
                 .and_then(|e| super::super::resolve::follow_building(sk,res,e,r)) {
                 Ok(e) => e,
                 Err(message) => {
-                    diags.push(Diag {
-                        code: Code::E101,
-                        span: r.span,
-                        stmt: Some(st.id),
+                    diags.push(Diag::within(
+                        Code::E101,
+                        r.span,
+                        st.id,
                         message,
-                    });
+                    ));
                     return None;
                 }
             },
             Kid::Hint(_) | Kid::Trim { .. } => {
-                diags.push(Diag {
-                    code: Code::E080,
-                    span: st.span,
-                    stmt: Some(st.id),
-                    message: "a solid is made of a face or of other solids".into(),
-                });
+                diags.push(Diag::on(
+                    Code::E080,
+                    st,
+                    "a solid is made of a face or of other solids".into(),
+                ));
                 return None;
             }
         };
         if e.kind == EntKind::Face && sk.faces.get(e.i()).is_none_or(|f| f.plane().is_err()) {
-            diags.push(Diag {code:Code::E080,span:st.span,stmt:Some(st.id),
-                message:"a sweep needs a built planar profile; a spatial face cannot be swept".into()});
+            diags.push(Diag::on(Code::E080,st,
+                "a sweep needs a built planar profile; a spatial face cannot be swept".into()));
             return None;
         }
         ops.push(e);
     }
     let mut say = |code: Code, span: Span, m: String| {
-        diags.push(Diag { code, span, stmt: Some(st.id), message: m });
+        diags.push(Diag::within(code, span, st.id, m));
     };
     let sweep = d.sweep.as_ref().unwrap_or(&crate::syntax::Sweep::Body);
     // every number a solid carries is settled here and is never an unknown (`Extent`)

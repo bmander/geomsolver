@@ -80,7 +80,7 @@ pub(super) fn apply_gauge(
         })
         .collect();
     let mut bad = |code: Code, span: Span, message: String| {
-        diags.push(Diag { code, span, stmt: Some(st.id), message })
+        diags.push(Diag::within(code, span, st.id, message))
     };
     match r.kind {
         CKind::Fix => {
@@ -256,7 +256,7 @@ impl Gauges {
                 "{fields} of `{of}` {are} held at two values: a number is held once, and another \
                  `fix` holding it says otherwise"
             );
-            diags.push(Diag { code: Code::E031, span, stmt: Some(id), message });
+            diags.push(Diag::within(Code::E031, span, id, message));
         }
     }
 
@@ -274,7 +274,7 @@ impl Gauges {
                     "{what} is oriented both ways: one statement chooses one root, and another \
                      the other"
                 );
-                diags.push(Diag { code: Code::E031, span, stmt: Some(id), message });
+                diags.push(Diag::within(Code::E031, span, id, message));
             }
         }
     }

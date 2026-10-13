@@ -56,12 +56,12 @@ pub(crate) fn degenerate(sk: &Sketch, map: &SourceMap) -> Vec<Diag> {
         };
         if let Some(message) = message {
             let site = map.site_of_constraint(c.id);
-            out.push(Diag {
-                code: Code::E065,
-                span: site.map(|s| s.span).unwrap_or_default(),
-                stmt: site.map(|s| s.stmt),
+            out.push(Diag::new(
+                Code::E065,
+                site.map(|s| s.span).unwrap_or_default(),
+                site.map(|s| s.stmt),
                 message,
-            });
+            ));
         }
     }
     out
@@ -88,8 +88,8 @@ pub(crate) fn origins_on_axes(sk: &mut Sketch, map: &SourceMap) -> Vec<Diag> {
         let [(hu, au, du), (hv, av, dv)] = lines;
         let mut refuse = |message: String| {
             let site = map.site_of(EntRef::plane(p));
-            out.push(Diag { code: Code::E067, span: site.map(|s| s.span).unwrap_or_default(),
-                            stmt: site.map(|s| s.stmt), message });
+            out.push(Diag::new(Code::E067, site.map(|s| s.span).unwrap_or_default(),
+                            site.map(|s| s.stmt), message));
         };
         let name = sk.plane_name(p);
         if held(sk, &o) {
@@ -184,18 +184,18 @@ pub(crate) fn coplanar(sk: &Sketch, map: &SourceMap) -> Vec<Diag> {
             continue;
         }
         let Some(site) = map.site_of(EntRef::plane(j)) else { continue };
-        out.push(Diag {
-            code: Code::W113,
-            span: site.span,
-            stmt: Some(site.stmt),
-            message: format!(
+        out.push(Diag::within(
+            Code::W113,
+            site.span,
+            site.stmt,
+            format!(
                 "`{}` lies on `{}`, and a relation reads points drawn in each: one plane in \
                  space, so the relation is read in space where one plane would read it on the \
                  plane",
                 sk.plane_name(j),
                 sk.plane_name(i)
             ),
-        });
+        ));
     }
     out
 }
