@@ -573,8 +573,10 @@ impl<'a> Walk<'a> {
                 return;
             }
         }
-        // one derivative per direction, which both sets' rows share
-        let keys = [0u8, 1].map(|k| format!("{}#{}.t{k}.", sc.prefix(), st.id.0));
+        // one derivative per direction, which both sets' rows share — under the statement as
+        // written, so two tangencies of one body take directions apart
+        let id = sc.written.unwrap_or(st.id).0;
+        let keys = [0u8, 1].map(|k| format!("{}#{id}.t{k}.", sc.prefix()));
         let worded = Worded {
             word: w.word.text.clone(),
             ops: Vec::new(),
@@ -652,7 +654,9 @@ impl<'a> Walk<'a> {
         let app = self.begin(&u, &closure).of_set();
         let bound = lit.bound.text.clone();
         self.bind_to_use(&app, &bound, point.clone(), &u);
-        // the plane's own two directions, each a derivative of its own
+        // the plane's own two directions, each a derivative of its own, under the statement as
+        // written
+        let id = sc.written.unwrap_or(st.id).0;
         let mut walks = vec![Pass::Made];
         for (n, axis) in ["u", "v"].into_iter().enumerate() {
             let mut r = plane.clone();
@@ -662,7 +666,7 @@ impl<'a> Walk<'a> {
             walks.push(Pass::Along(Along {
                 point: local(&bound, at),
                 toward: AlongBy::Line(local(&name, at)),
-                key: format!("{}#{}.a{n}.", sc.prefix(), st.id.0),
+                key: format!("{}#{id}.a{n}.", sc.prefix()),
                 made: None,
             }));
         }
