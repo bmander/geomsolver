@@ -97,8 +97,7 @@ pub fn add_datum(
     current: Option<&str>,
     name: Option<&str>,
 ) -> Edit {
-    datum_edit(e, sk, kind, from, current, name)
-        .unwrap_or_else(|why| Edit::none(&e.program, Some(why)))
+    Edit::refused_or(&e.program, datum_edit(e, sk, kind, from, current, name))
 }
 
 fn datum_edit(
@@ -279,8 +278,7 @@ pub fn sketch_on_face(
     at: Option<[f64; 3]>,
     name: Option<&str>,
 ) -> Edit {
-    on_face_edit(e, sk, solid, face, at, name)
-        .unwrap_or_else(|why| Edit::none(&e.program, Some(why)))
+    Edit::refused_or(&e.program, on_face_edit(e, sk, solid, face, at, name))
 }
 
 fn on_face_edit(

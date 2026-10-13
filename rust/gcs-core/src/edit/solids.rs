@@ -13,7 +13,7 @@ pub fn add_face(
     holes: &[Vec<String>],
     name: Option<&str>,
 ) -> Edit {
-    face_edit(prog, edges, holes, name).unwrap_or_else(|e| Edit::none(prog, Some(e)))
+    Edit::refused_or(prog, face_edit(prog, edges, holes, name))
 }
 
 fn face_edit(
@@ -74,7 +74,7 @@ pub struct SolidSweep {
 /// A solid swept from `face`: `b0 := solid(f0, depth: 20)`.  A mixture of sweeps is refused in
 /// the parser's own words (`sweep_of`), and a sweep the elaborator refuses (E080, E081) in its.
 pub fn add_solid(prog: &Program, face: &str, how: &SolidSweep, name: Option<&str>) -> Edit {
-    solid_edit(prog, face, how, name).unwrap_or_else(|e| Edit::none(prog, Some(e)))
+    Edit::refused_or(prog, solid_edit(prog, face, how, name))
 }
 
 fn solid_edit(prog: &Program, face: &str, how: &SolidSweep, name: Option<&str>) -> Result<Edit, String> {
@@ -150,7 +150,7 @@ pub fn extrude(
     with: Option<(syntax::BodyWord, &str)>,
     through: bool,
 ) -> Edit {
-    extrude_edit(prog, sk, outer, holes, with, through).unwrap_or_else(|why| Edit::none(prog, Some(why)))
+    Edit::refused_or(prog, extrude_edit(prog, sk, outer, holes, with, through))
 }
 
 fn extrude_edit(
@@ -182,7 +182,7 @@ pub fn revolve(
     with: Option<(syntax::BodyWord, &str)>,
 ) -> Edit {
     let how = SolidSweep { about: Some(about.to_string()), ..Default::default() };
-    region_solid(prog, outer, holes, &how, with).unwrap_or_else(|why| Edit::none(prog, Some(why)))
+    Edit::refused_or(prog, region_solid(prog, outer, holes, &how, with))
 }
 
 /// A region's face, the solid swept from it `how`, and the body rule `with` says, in one splice.
@@ -214,7 +214,7 @@ fn region_solid(
 /// same face, its bracket list replaced and nothing else in the file touched.  The solid's own
 /// statement, at the root: one a component or a block made is no statement to rewrite.
 pub fn set_sweep(e: &Elaborated, prog: &Program, solid: usize, how: &SolidSweep) -> Edit {
-    sweep_edit(e, prog, solid, how).unwrap_or_else(|why| Edit::none(prog, Some(why)))
+    Edit::refused_or(prog, sweep_edit(e, prog, solid, how))
 }
 
 fn sweep_edit(e: &Elaborated, prog: &Program, solid: usize, how: &SolidSweep) -> Result<Edit, String> {
@@ -231,7 +231,7 @@ fn sweep_edit(e: &Elaborated, prog: &Program, solid: usize, how: &SolidSweep) ->
 /// `model::turn_of` — `-90` is `sweep: 90, sense: cw`, a whole turn or more no `sweep:` at all;
 /// an expression is written whole, the way the solid already turns.
 pub fn set_turn(e: &Elaborated, prog: &Program, solid: usize, angle: &str) -> Edit {
-    turn_edit(e, prog, solid, angle).unwrap_or_else(|why| Edit::none(prog, Some(why)))
+    Edit::refused_or(prog, turn_edit(e, prog, solid, angle))
 }
 
 fn turn_edit(e: &Elaborated, prog: &Program, solid: usize, angle: &str) -> Result<Edit, String> {
@@ -294,7 +294,7 @@ pub fn add_body_word(prog: &Program, word: syntax::BodyWord, what: &[&str], body
         body: syntax::Ref::new(body.to_string()),
         span: Span::default(),
     })).collect();
-    append_checked(prog, &stmts, Vec::new()).unwrap_or_else(|e| Edit::none(prog, Some(e)))
+    Edit::refused_or(prog, append_checked(prog, &stmts, Vec::new()))
 }
 
 /// The library's two words a gesture writes along a solid's edges (`std.sv`): `round`, rounded
@@ -356,8 +356,7 @@ pub fn add_rounds(
     edges: &[(String, String)],
     size: &str,
 ) -> Edit {
-    rounds_edit(prog, sk, solid, word, faces, edges, size)
-        .unwrap_or_else(|why| Edit::none(prog, Some(why)))
+    Edit::refused_or(prog, rounds_edit(prog, sk, solid, word, faces, edges, size))
 }
 
 fn rounds_edit(

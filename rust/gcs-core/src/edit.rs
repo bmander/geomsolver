@@ -75,6 +75,12 @@ impl Edit {
         }
     }
 
+    /// What a gesture's edit came to: the edit, or the document untouched with why it was
+    /// refused.  The one shape of every public gesture over a `Result`-returning body.
+    fn refused_or(prog: &Program, r: Result<Edit, String>) -> Edit {
+        r.unwrap_or_else(|why| Edit::none(prog, Some(why)))
+    }
+
     /// The source with `edits` applied, an edit of the class `kind`.
     fn spliced(prog: &Program, edits: Vec<Splice>, kind: Kind) -> Edit {
         Edit { text: splice(prog.text(), edits), kind, names: Vec::new(), refused: None, kept: 0 }

@@ -2,7 +2,6 @@
 
 use super::*;
 
-/// `pN := point hint((…, …))`
 /// The rectangle the Rect tool draws: a **reusable component**, defined once per document, and
 /// one instance per gesture.  The definition is the chain a person would write — four lines
 /// welded corner to corner at right angles, the first two carrying the width and the height —
@@ -67,6 +66,7 @@ pub fn add_rectangle(prog: &Program, w: f64, h: f64, plane: Option<&str>) -> Edi
     }
 }
 
+/// `pN := point hint((…, …))`
 pub fn add_point(prog: &Program, x: f64, y: f64) -> Edit {
     let name = mint(prog, EntKind::Point);
     let d = Decl::point(syntax::DeclName::Written(syntax::Name::new(name.clone())), [x, y], None);
@@ -86,9 +86,8 @@ pub fn add_entity(prog: &Program, kind: EntKind, args: &[String], seed: &[f64]) 
 /// edit is refused in those words.  The language's own form — a gesture drops one by
 /// `add_datum` instead, constrained to what is selected.
 pub fn add_plane(prog: &Program, args: &[String], name: Option<&str>) -> Edit {
-    entity_decl(prog, EntKind::Plane, args, &[], name)
-        .and_then(|(d, name)| append_checked(prog, &[StmtKind::Decl(d)], vec![name]))
-        .unwrap_or_else(|e| Edit::none(prog, Some(e)))
+    Edit::refused_or(prog, entity_decl(prog, EntKind::Plane, args, &[], name)
+        .and_then(|(d, name)| append_checked(prog, &[StmtKind::Decl(d)], vec![name])))
 }
 
 fn add_entity_with(
