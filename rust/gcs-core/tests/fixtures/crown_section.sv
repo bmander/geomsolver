@@ -1,7 +1,7 @@
 // The spiral bevel's crown tooth section as it was drawn before the crown became a region about
 // the cutter's axis (#214): a six-edge chain revolved about a line, its tip's corners rounded by
 // tangent arcs (`TipRounding`). Kept as a drawn revolution the envelope, field and fillet checks
-// read; the example's crown is `spiral_bevel/crown/tooth.sv`.
+// read; the example's crown is `spiral_bevel/hypoid.sv`'s `Tooth`.
 //
 // Straight flanks at the pressure angle split by the shift, a base and a tip at their depths,
 // and the tip roundings; revolved about the cutter's axis the flanks are cones and the roundings

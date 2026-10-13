@@ -12,6 +12,7 @@
 mod common;
 mod round_lowering;
 mod bounds;
+mod words_alone;
 mod set_regions;
 mod region_blank;
 mod swept_faces;

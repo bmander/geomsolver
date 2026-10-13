@@ -83,8 +83,8 @@ head of `resolve` so the memberships read first know it, makes the statement the
 declaration (`Walk::twin`, shared with `twins_of`), std's datums read from `StandardDatums`
 (`Walk::datums`). The row stays for `q coincident gear.M` (the plane through the point: what
 `edit::add_datum` writes, the plane perhaps lying on the point's own, where a twin is E061), a
-point only its instance's `in` puts in a view (in space to its component: `crown/tooth.sv`'s `lp
-coincident p`), a claim, a derivative, a set's application, a ring's statement, the point's own
+point only its instance's `in` puts in a view (in space to its component:
+`two_planes.rs::a_point_its_instance_puts_in_a_view_keeps_the_row`), a claim, a derivative, a set's application, a ring's statement, the point's own
 plane and a line's minted end (`l.p1`); a point in space is `planes::incidences`'. `project`
 never reads a twin (`relations::constrain`): it relates two planes, each operand in its own, so
 `m coincident P; O project m` still elaborates.
@@ -149,9 +149,9 @@ tip, r)` lowers. A region tool's faces are its meridian's steps (`RevolvedSurfac
 `SweepContacts::read`'s `Region` arm); the cutter reads its `revolve` recipe as any. A region's tip
 land is a bound between its land's ends drawn on the tip, the flanks through them.
 `tests/crown_regions.rs` is the gate (a crown tooth region cutting a region blank within 10 µm).
-**The hypoid's crown is regions** (#214, 0.77): `crown/cutter.sv`'s `Cutter` (the axis up the
-crown's from C, the flank cones through the pitch points, the four levels), `crown/tooth.sv`'s
-`Tooth` and `crown/mate.sv`'s `Space` (beyond one cone grown, within the other, between two levels,
+**The hypoid's crown is regions** (#214, 0.77): `hypoid.sv`'s cutter (the axis up through C
+parallel to the crown's, the flank cones through the pitch points, the four levels), its
+`Tooth` and its `Space` (beyond one cone grown, within the other, between two levels,
 rounded by `std.Rounded`; the space's outer mate to the reach's cylinder, its inner one turned a
 crown pitch), the relief's toppings the same over cones through kinks on the grown flanks
 (`kink coincident tooth.inner.surface`). What it needed: `S.surface` as any set use's operand
@@ -463,7 +463,7 @@ plain declared name without building the alias table, and
 `region::in_general_position`/`folded` key a face-reading region on `reads_own` and the strata
 (`faces::cached`'s `Arc`s), never `reads` (which walks the body's every other round).
 `tests/conrod.rs` is the gate.
-**Draft (§6.9, 0.78, #245):** `solid(f, from:, to:, draft: θ)` (or `depth:`) is
+**Draft (§6.9, 0.79, #245):** `solid(f, from:, to:, draft: θ)` (or `depth:`) is
 `SolidDef::Prism::draft` (radians; `None` undrafted): the section at ordinate `h` is `f` moved `|h|
 tan θ` into its material from its own plane, the parting plane (an outer loop in, a hole out). Every
 evaluator reads it: the facets (`primitive::prism`'s `taper`, `offset` by mitres, a side breaking at
@@ -636,7 +636,7 @@ with its own copy of `vals` — no `PathStep`, no prefix, so names are the scope
 read by `expr::decide`; no `Ast` holds one, and its sides agree as `+`'s (`> 0mm`, never `> 0`).
 The parser refuses `as`, a trailing joint and `when e in X`; the measured-bound sniff skips a
 statement an opener word starts. `commit_seeds` writes into a root `when`'s body. The hypoid's
-tip relief is one (`layout.sv`, `members.sv`). `tests/when.rs` is the gate.
+tip relief is one (`hypoid.sv`). `tests/when.rs` is the gate.
 
 **A component may instantiate itself** (§8, 0.75): a call back into one still being expanded
 is walked like any other (`Walk::instantiating` keeps each with the numbers it was given), each
@@ -781,31 +781,34 @@ sectors, others `Node::Profile` (ray-parity sign only when the box clears every 
 stock, plus `union`, minus what `cut`s it, within what `bound`s it. `SolidDef::Body` carries
 `bound`; `Term::Inter`; facets, fields and the CAD recipe (`"bound"`, `BRepAlgoAPI_Common`) all
 evaluate it. Union first; `cut` and `bound` commute; a swept solid may only be `cut`. `bound` and
-`union` (0.32) are body words, not names; `coincident` between two solids is refused. Spiral bevel:
-each member's blank is a region (`blank/member.sv`, `MemberBlank`: the pitch cone, a `std.Cone`
-about the member's axis, its half left unseeded so it settles from the pose, grown by the addendum (`std.Offset`) and its outside by the back depth (`outside(d)`),
-`std.Sphere`s through the face span, sized by the solved layout — a region term reads an unknown,
-`model::TermNumber`; the end relief two `std.Chamfered` bounds in the same region, lowered as
-conics); its faces are `tip`, `heel`, `toe`, `back` (the sets its body uses), and
-`tests/region_blank.rs` holds the region to their closed forms read off the layout's points (faces,
-volume, material); each crown section bounds its tip land (`distance(>= 0.01 * design.module) tip`)
-so a collapsed tip is no root. Modules `design.sv`, `views.sv`, `pitch/`, `blank/`, `crown/`,
-`generation.sv`, `layout.sv` (`HypoidLayout`), `members.sv` (`HypoidPair`) (README walks them).
-`gears.sv` is the pair; `pair.sv` the layout alone. `tests/envelope/paired.rs` reads the members
-built at one tooth space each (`gears.sv`, `fixtures::gear::one_space`; their topology read at 2 mm
-by tooth counts, the design being proportional to its module) and holds each face to the analytic
-envelope its name says (`face_source`), its seams, corners, edges and face loops made of their
-parts where the built member says the faces meet; the gear's inner mate is read unplaced, one tooth
-over (its space cutter's `neighbor` is the inner crown a crown pitch round).
-`configuration.sv` states `shaft_angle`, `offset` (E = 0 is bevel); the pinion's cone solves
-against the gear's (`pitch/pinion.sv`); members roll at `N_c / N` off the gear's triangle, not
-`1 / sin`. **No axial views** (#215): the gear's triangle O–M–F and the pinion's two axes stand
-in space square to P on their generators (`O level(p.v) foot`; the pinion's axes square to `square`,
-level and square to their generator), each side a bound (`foot inside p`, `tip outside p`), and a
-blank's face span is on its generator (`FaceSpan`, ordinates along it); only P is drawn in, and N
-for the tip relief's kinks (the crown is regions, #214).
-`tests/hypoid_layout.rs` is the gate. The mesh export refuses a sheet a placement
-carries inside the blank; CLI test readers zero the offset.
+`union` (0.32) are body words, not names; `coincident` between two solids is refused. Spiral bevel
+(**one file, `spiral_bevel/hypoid.sv`**, #217: under 200 statement lines, no `project`, no
+`hint` — every root chosen by a word, the layout solved from them alone; README walks it): each
+member's blank is a region (`Blank`: the pitch cone, a `std.Cone` about the member's axis, its
+half left unknown so it settles from the pose, grown by the addendum (`std.Offset`) and its
+outside by the back depth (`outside(d)`), `std.Sphere`s about the apex the half face width either
+side of M (`rim.p2 distance(w / 2, side: outside) toe`), sized by the solved layout — a region term
+reads an unknown, `model::TermNumber`; the end relief two `std.Chamfered` bounds in the same
+region, lowered as conics); its faces are `tip`, `heel`, `toe`, `back` (the sets its body uses),
+and `tests/region_blank.rs` holds the region to their closed forms read off the layout's points
+(faces, volume, material). The depths are values of the unknown normal module (`dedendum := 1.25 *
+mn`); the normal module is O's distance from the trace normal over R / m. `tests/envelope/paired.rs`
+reads the members built at one tooth space each (`fixtures::gear::one_space`; their topology read
+at 2 mm by tooth counts, the design being proportional to its module) and holds each face to the
+analytic envelope its name says (`face_source`), its seams, corners, edges and face loops made of
+their parts where the built member says the faces meet; the gear's inner mate is read unplaced, one
+tooth over (its space cutter's `neighbor` is the inner crown a crown pitch round). Its inputs are
+`param`s at its head (`shaft_angle`, `offset`, E = 0 is bevel; `fixtures::gear::configure` sets
+them where the parser says their values stand); the pinion's cone solves against the gear's;
+members roll at `N_c / N` off the gear's triangle, not `1 / sin`. **No axial views** (#215): the
+gear's triangle O–M–F and the pinion's two axes stand in space square to P on their generators
+(`O level(std.y) foot`; the pinion's axes square to `square`, each running from its apex to the
+foot of M on it, `M level(pinion_ax) pinion_foot`), each side a bound (`foot inside std.top`,
+`pinion_foot outside std.top`), the offset's hand and the apex behind M bounds too; only P is drawn
+in, and N for the tip relief's kinks (beyond C as their pitch points: `distance(>= 0mm, along:
+to_inner)`). `tests/hypoid_layout.rs` is the gate (the recorded pair to 1e-9 from the words alone,
+from rough starts and from the wrong side of every bound). The mesh export refuses a sheet a
+placement carries inside the blank; CLI test readers zero the offset.
 **Continuous motion solids:** `removal := solid(tool, under: generating, from: -30deg, to: 30deg)`
 is the union over the whole interval, not posed meshes; `at:` and intervals exclusive.
 `MaterialField::read` promotes static DAGs when a sweep appears; nested sweeps refused; caches
@@ -833,7 +836,7 @@ point query is `MaterialField::query(p, &mut Query)` (`Want::Sign | Reading`, `S
 Cached(Resolution) | Warm {hints,local}`; shorthands `side`, `reading`); `SweptField::query` takes
 box, floor table, cache, search, in order. Readings are branch and bound; crossings by safeguarded
 Newton, memoised. A `construction` solid is never an object. App example `spiral_bevel`
-(`gears.sv`). `solventc --stl-backend refine` skips admission, gated by field agreement
+(`hypoid.sv`). `solventc --stl-backend refine` skips admission, gated by field agreement
 (`SOLVENT_FEATURES=field`).
 **Meshing speed (2026-09-25):** sweeps read from adaptive distance fields (`solid/field/adf.rs`,
 `SweptField::cached`, `Source::Cached`): an octree per sweep and `Resolution`, exact corners,
@@ -875,11 +878,10 @@ construction needs `admission::Admission` (only `admit_body` makes one). Contrac
 `fixtures::gear::bevel` / `hypoid6` (`rust/fixtures`, dev-only);
 `tests/native_surfaces/gear_cells.rs` holds the recorded tooth-space volumes;
 `tests/generating_harness.rs` (ignored) locates refusals by stage.
-The pair carries **backlash** (`crown/tooth.sv`, `crown/mate.sv`: each flank cone grown a
-quarter of it), **tip relief** (`layout.sv`'s `Topping`s and the crown's regions over their
-cones, cut by `members.sv`'s `Generated`, under `when`) and **end relief** (`blank/member.sv`'s
-`std.Chamfered`); `fixtures::gear::design` pins all to zero, `fixtures::gear::fabricated` sets
-them. Files:
+The pair carries **backlash** (`Tooth`, `Space`: each flank cone grown a quarter of it), **tip
+relief** (`Topping`s and the crown's regions over their cones, cut by `Generated`, under `when`)
+and **end relief** (`Blank`'s `std.Chamfered`); `fixtures::gear::design` pins all to zero,
+`fixtures::gear::fabricated` sets them. Files:
 `build/exports/hypoid-{pinion,gear}.{step,stl}`; `gcs-cli/tests/pair_check.rs` (ignored) checks
 the pair from the STLs.
 **Screws, the constant-twist class (#64):** a sweep under `motion(about:, advance:)` is admitted by
@@ -2232,7 +2234,7 @@ Conventions:
   *free twin* kernel (one more column, (m, c) as constants) in `CKind::free_kernel`, exhaustive;
   `every_dimension_can_be_written_free` checks it.  `params_on` appends the free column (always
   last), `consts_on` returns `[m, c]` turned by `side:`, `along:` or `sense:` (a skew distance's by
-  its seed's side), `kernel_id` picks the twin.  A fresh one seeds from the stated number, else by
+  its pinned `sign`, with the pin beside them), `kernel_id` picks the twin.  A fresh one seeds from the stated number, else by
   Newton on its row (`expr::settle`).  A free dimension is `unsupported` in `cgraph`, never jittered
   by the witness, part of `topology_key`, and joins `io::Part`'s walk.  `expr::sync_free` updates
   the numbers shown from every seam writing parameters directly — `Sketch::set_x`,
@@ -2434,6 +2436,35 @@ Conventions:
   failed DogLeg, before LM, only with `retry` and ≥2 blocks, kept only if it solves; `First` is
   for measurement only (it changes bits and roots). `BLOCK_XTOL` 1e-15, accepted at
   `acceptance_tol`. The spiral bevel relies on it (`hypoid_layout.rs` holds rough starts).
+- **Words choose roots; the block pass searches for them** (#217, F8): a block is accepted when
+  its rows meet `acceptance_tol` **and every bound it decides holds** (`solve::Search`: a bound
+  whose columns are all solved so far, some the block's own); where not, it is started again —
+  each broken bound's point carried across it (`across`) and the block mirrored across the plane
+  that point crossed (an offset's other hand), from its solution and its start, then `RESTARTS`
+  starts with its points scattered about what the blocks before it placed, at their size, and its
+  axes turned (a fixed `rng::Rng` stream per start) — each a DogLeg, else followed along the
+  Newton homotopy `r(z) = (1 − t) r(start)` (`follow_block`, `HOMOTOPY_STEPS`); a drawing stating
+  no bound has no root to search for. Constants read off the pose (`CKind::reads_pose`) are
+  refreshed before each block (`refresh_consts`) and put back for the polish. A
+  steered solve whose crossings leave a bound broken runs the pass from its start (not under
+  `BlockMode::Off`). **A drawing is judged at its own size**: a failed document solve ending more
+  than `RESIZE` times the extent it was compiled at is compiled there and solved again from its
+  start (`System::resized`), so an unseeded start about the origin at unit size reaches a drawing
+  hundreds of millimetres across. **Constants are read again where a solve ends**
+  (`solve_unsteered`, `REFRAMES`): a row in space taken across a line (`parallel`, a point on a
+  line, a plane over a line's hidden axis) is measured along directions across the line as
+  compiled, and a line turned square to them leaves a root of the frame and none of the drawing's;
+  so a succeeding document solve with such a row refreshes and, where its rows no longer hold,
+  solves on.
+  **A chart is gauged where a failed solve ends** (`System::recharted`, `Sketch::charts_moved`):
+  one chosen where an unseeded point started can lie in the tangent plane the solve ends at;
+  changed, the system is compiled again and solved on, kept only where it succeeds. An angle's
+  bound is held to the relative tolerance itself, not the length one read as radians
+  (`bound_reading`): an offset's side about a far apex is a turn of 1e-4.
+  `Parallel3` frames across its second operand where that is held and the first not. **A skew
+  distance is a magnitude** (`|s| − d`, `line_line3`, consts `[d, pinned]`): its `sign` slot is no
+  longer read off the seed (0, inferred), so both sides are roots and a bound chooses; ±1 pins.
+  `tests/words_alone.rs` is the gate (each change's small case), the hypoid its large one.
 - **Settled** ([docs/iteration-limit-rescue-plan.md](docs/iteration-limit-rescue-plan.md)):
   `SolveResult::settled` is `success && status != 4`; a DogLeg accepted on its iteration limit
   can be 1e-3 of the extent off. With `retry` and `Rescue`, `System::block_rescue` tries the block

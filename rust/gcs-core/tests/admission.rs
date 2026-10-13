@@ -159,10 +159,9 @@ fn member(member: &str,offset: f64,shift: f64,spiral: f64) -> Result<admission::
 /// relief in millimetres. A tip-relieved member has two sweeps, its crown's and its relief's; the
 /// end relief is two more static cuts of its blank.
 fn fabricated(member: &str,design: [f64;3],backlash: f64,relief: f64,ends: f64) -> Result<admission::Admission,Error> {
-    let e = fixtures::gear::read_configured_with(&mut |name,text|
-        fixtures::gear::fabricated(name,text,design,backlash,relief,ends));
+    let e = fixtures::gear::read(&fixtures::gear::fabricated(&fixtures::gear::source(),design,backlash,relief,ends));
     let started = std::time::Instant::now();
-    let body = fixtures::solid(&e,&format!("pair.{member}.body"));
+    let body = fixtures::solid(&e,&format!("{member}.body"));
     let result = admission::admit_body(&e.sketch,body,&Options::default());
     eprintln!("{member} at {design:?}, backlash {backlash}, relief {relief}, ends {ends}: {:?}",started.elapsed());
     result
@@ -248,7 +247,7 @@ fn the_configured_hypoid_gear_is_admitted() {
 fn a_hypoid_pinion_with_undercut_is_refused() {
     let r = refused(pinion(30.,0.,35.));
     assert!(matches!(r.condition,Condition::Single | Condition::Fold | Condition::Crossing),"{r}");
-    assert_eq!(r.sweep,"pair.pinion.cut.removal");
+    assert_eq!(r.sweep,"pinion.cut.removal");
 }
 
 /// At 20 mm of offset with a symmetric rack no tool point touches the blank twice; the flank's

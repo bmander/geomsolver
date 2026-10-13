@@ -20,27 +20,20 @@ fn read(offset: f64,shift: Option<f64>) -> program::Elaborated {
     let spiral = std::env::var("SOLVENT_CLASS_SPIRAL").ok().map(|v| v.parse::<f64>().unwrap());
     let design: Vec<(&str,f64)> = [("offset",Some(offset)),("pressure_shift",shift),("spiral_angle",spiral)]
         .into_iter().filter_map(|(p,v)| v.map(|v| (p,v))).collect();
-    fixtures::gear::read_configured_with(&mut |name,text| match name {
-        "configuration" => fixtures::gear::configure(name,text,&design),
-        // `SOLVENT_CLASS_ONE`: the members with a single tooth space, as a one-space export has.
-        "members" if std::env::var("SOLVENT_CLASS_ONE").is_ok() => fixtures::gear::publish_blank(&fixtures::gear::one_space(&text),""),
-        "members" => fixtures::gear::publish_blank(&text,""),
-        "design" => {
-            // `SOLVENT_CLASS_ROLL` (degrees) widens the pinion's roll: the negative
-            // control, a tool left in the blank and revisiting it.
-            let text = match std::env::var("SOLVENT_CLASS_ROLL") {
-                Ok(roll) => fixtures::gear::roll(name,text,"pinion",roll.parse().unwrap()),
-                Err(_) => text,
-            };
-            // `SOLVENT_CLASS_TIP` scales the crown tooth's tip round (0.3 normal modules).
-            match std::env::var("SOLVENT_CLASS_TIP") {
-                Ok(k) => { assert!(text.contains("rounding: 0.3,"));
-                    text.replace("rounding: 0.3,",&format!("rounding: {k},")) }
-                Err(_) => text,
-            }
-        },
-        _ => text,
-    })
+    let mut text = fixtures::gear::configure(&fixtures::gear::source(),&design);
+    // `SOLVENT_CLASS_ROLL` (degrees) widens the pinion's roll: the negative control, a tool left
+    // in the blank and revisiting it.
+    if let Ok(roll) = std::env::var("SOLVENT_CLASS_ROLL") {
+        text = fixtures::gear::roll(&text,"pinion",roll.parse().unwrap());
+    }
+    // `SOLVENT_CLASS_TIP` scales the crown tooth's tip round (0.3 normal modules).
+    if let Ok(k) = std::env::var("SOLVENT_CLASS_TIP") {
+        assert!(text.contains("rounding := 0.3\n"));
+        text = text.replace("rounding := 0.3\n",&format!("rounding := {k}\n"));
+    }
+    // `SOLVENT_CLASS_ONE`: the members with a single tooth space, as a one-space export has.
+    if std::env::var("SOLVENT_CLASS_ONE").is_ok() { text = fixtures::gear::one_space(&text); }
+    fixtures::gear::read(&fixtures::gear::publish_blank(&text,""))
 }
 
 /// One in-blank contact of the fine pass.
@@ -76,8 +69,8 @@ fn roots(c: &SweepContacts,patch: usize,u: f64,v: f64) -> Result<Vec<TimedContac
 }
 
 fn measure(e: &program::Elaborated,member: &str) -> Report {
-    let removal = e.map.ent_named(&format!("pair.{member}.cut.removal")).unwrap().i();
-    let blank_id = e.map.ent_named(&format!("pair.{member}.blank")).unwrap().i();
+    let removal = e.map.ent_named(&format!("{member}.cut.removal")).unwrap().i();
+    let blank_id = e.map.ent_named(&format!("{member}.blank")).unwrap().i();
     let c = SweepContacts::read(&e.sketch,removal,1e-10).unwrap();
     let blank = SpatialField::read(&e.sketch,blank_id,1e-10).unwrap();
     let inside = |p: V| blank.value(p) < -1e-6;
@@ -256,7 +249,7 @@ fn where_the_pair_stands_against_the_generating_class() {
 }
 
 /// The field agreement of an STL already written: `SOLVENT_AGREE_STL=<path>` of
-/// `pair.<SOLVENT_AGREE_MEMBER>.body` (pinion by default) at the configured design,
+/// `<SOLVENT_AGREE_MEMBER>.body` (pinion by default) at the configured design,
 /// or with `SOLVENT_CLASS_OFFSETS` etc. as above, and `SOLVENT_AGREE_TRIANGLES`.
 #[test]
 #[ignore]
@@ -267,7 +260,7 @@ fn an_exported_member_agrees_with_its_field() {
     let offset: Option<f64> = std::env::var("SOLVENT_CLASS_OFFSETS").ok().map(|v| v.parse().unwrap());
     let shift: Option<f64> = std::env::var("SOLVENT_CLASS_SHIFTS").ok().map(|v| v.parse().unwrap());
     let e = match offset { Some(o) => read(o,shift), None => fixtures::gear::read_as_configured() };
-    let body = e.map.ent_named(&format!("pair.{member}.body")).unwrap().i();
+    let body = e.map.ent_named(&format!("{member}.body")).unwrap().i();
     let scale = e.sketch.units.length.unwrap().1;
     let (vertices,triangles) = agreement::stl_triangles(&std::fs::read(&path).unwrap(),scale).unwrap();
     let mut material = MaterialField::read(&e.sketch,body,1e-10).unwrap().evaluator(4096);
@@ -283,7 +276,7 @@ fn an_exported_member_agrees_with_its_field() {
 }
 
 /// The material field's sign along a line: `SOLVENT_LINE=x,y,z,dx,dy,dz` (a point and a
-/// direction), ±1 mm in 10 µm steps, for `pair.<SOLVENT_AGREE_MEMBER>.body` at the configured
+/// direction), ±1 mm in 10 µm steps, for `<SOLVENT_AGREE_MEMBER>.body` at the configured
 /// design. Shows where material begins and ends across a failing probe.
 #[test]
 #[ignore]
@@ -292,7 +285,7 @@ fn the_material_along_a_line() {
     let v: Vec<f64> = std::env::var("SOLVENT_LINE").expect("SOLVENT_LINE").split(',').map(|s| s.trim().parse().unwrap()).collect();
     let member = std::env::var("SOLVENT_AGREE_MEMBER").unwrap_or("gear".into());
     let e = fixtures::gear::read_as_configured();
-    let body = e.map.ent_named(&format!("pair.{member}.body")).unwrap().i();
+    let body = e.map.ent_named(&format!("{member}.body")).unwrap().i();
     let mut material = MaterialField::read(&e.sketch,body,1e-10).unwrap().evaluator(4096);
     let n = (v[3]*v[3]+v[4]*v[4]+v[5]*v[5]).sqrt();
     let mut last = 'x';
@@ -337,7 +330,7 @@ fn side_query_cost() {
     let offset: f64 = std::env::var("SOLVENT_CLASS_OFFSETS").map_or(0.,|v| v.parse().unwrap());
     let shift: Option<f64> = std::env::var("SOLVENT_CLASS_SHIFTS").ok().map(|v| v.parse().unwrap());
     let e = read(offset,shift);
-    let body = e.map.ent_named(&format!("pair.{member}.body")).unwrap().i();
+    let body = e.map.ent_named(&format!("{member}.body")).unwrap().i();
     let scale = e.sketch.units.length.unwrap().1;
     let (vertices,triangles) = agreement::stl_triangles(&std::fs::read(&path).unwrap(),scale).unwrap();
     let field = MaterialField::read(&e.sketch,body,1e-10).unwrap();

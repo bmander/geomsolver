@@ -50,8 +50,6 @@ fn report(label: &str, e: &gcs_core::program::Elaborated) {
 #[test]
 #[ignore = "a tool: cargo test --manifest-path rust/Cargo.toml -p gcs-core --test core block_structure -- --ignored --nocapture"]
 fn the_hypoid_layouts_block_structure() {
-    report("gears.sv, configured", &fixtures::gear::read_as_configured());
-    let pair = std::fs::read_to_string(fixtures::gear::project().join("pair.sv")).unwrap();
-    report("pair.sv, configured", &fixtures::read_beside(&pair, &fixtures::gear::project(), &mut |_, t| t));
-    report("gears.sv, bevel", &fixtures::gear::read_configured_with(&mut |n, t| fixtures::gear::bevel(n, t)));
+    report("hypoid.sv, configured", &fixtures::gear::read_as_configured());
+    report("hypoid.sv, bevel", &fixtures::gear::read(&fixtures::gear::bevel(&fixtures::gear::source())));
 }

@@ -423,7 +423,7 @@ fn the_exported_pair_meshes_with_its_backlash() {
         (e.sketch.world_point(l.p1 as usize),e.sketch.world_point(l.p2 as usize))
     };
     for (member,c,a) in [("pinion",cp,ap),("gear",cg,ag)] {
-        let (o,t) = line(&format!("pair.reference.{member}.ax"));
+        let (o,t) = line(&format!("{member}_ax"));
         let m = unit(sub(t,o));
         println!("{member}'s axis {:.2e}° off the model's, its centroid {:.2e} mm off it",
             dot(a,m).abs().min(1.).acos().to_degrees(),norm(cross(sub(c,o),m)));
@@ -446,7 +446,7 @@ fn the_exported_pair_meshes_with_its_backlash() {
     eprintln!("flanks: {} and {} triangles, {blank} others",sides[0].len(),sides[1].len());
     let names = ["facing the pinion's turn","facing against it"];
     let [plus,minus] = sides.map(Bvh::new);
-    let (apex,mean) = line("pair.reference.pinion.pitch_line");
+    let (apex,mean) = line("pitch_line");
     let mut pair = Pair { pinion:[plus,minus], whole:Bvh::new(pinion), gear:Bvh::new(gear), cp, ap, cg, ag, apex, sense:1. };
     eprintln!("bounding volumes built ({:.1} s)",started.elapsed().as_secs_f64());
 

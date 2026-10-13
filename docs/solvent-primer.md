@@ -761,6 +761,16 @@ from it following; off the solution the solve looks for a root where it holds, e
 bound does not hold`. The diagnosis lists violated and *active* bounds. Not on a `claim`, and not
 the only reader of an unknown. Inside a set's body a bound makes a region (1.13).
 
+**Words, not seeds.** A bound chooses the root of each block of the solve's block-triangular order
+it decides, so a drawing whose bounds, senses and signed ordinates say every root needs no seed at
+all: the solve constructs it a block at a time, searching a block's roots for the one its bounds
+allow. Say a side with a bound wherever a seed would have picked it — which side of a plane
+(`foot inside std.top`), which hand (`A distance(>= 0, along: v) std.top`), which way along a line
+(`A distance(>= 0, along: generator) M`) — and draw a line whose direction matters so that it runs
+by construction (to the foot of a point on it, `M level(ax) foot`), not by a bound on its end,
+which the solve cannot carry across by moving one point. A skew distance between two lines is a
+magnitude, its side such a choice. `spiral_bevel/hypoid.sv` seeds nothing.
+
 ### 1.12 Space, axes and planes
 
 **Standard datums.** `use std` gives the axes `std.x` (right), `std.y` (away from the front's
@@ -970,7 +980,7 @@ revolution, and `solid(tooth)` swept under a generating motion cuts a member exa
 has no tip line for `distance(>= d) tip`: draw the land's ends on the tip, the flanks through
 them, and bound the land between them (`eb distance(>= 0.01mm, along: left) ea`), which picks the
 root as the drawn section's bound did. Where the flanks go through points the drawing already
-places (the hypoid's pitch points, `spiral_bevel/crown/`), the land has no root to choose and
+places (the hypoid's pitch points, `spiral_bevel/hypoid.sv`), the land has no root to choose and
 needs no bound; a round's radius may read an unknown of the drawing (`r: 0.3 * mn`).
 
 ### 1.14 Faces and solids
@@ -1185,9 +1195,10 @@ share none it is read point by point: it shows and meshes like any solid, but an
 (`--step`) refuses it — unless it is one the lowering table builds: the rounds and chamfers of
 `std` along straight edges between planes, round circles where a plane meets a cylinder or a
 cone, and at corners of three square faces are built exactly (recognised by what their sets say,
-so a round written by hand is built too). Its numbers may be the drawing's: leave a radius unbound and put a point on
-the set (`heel := std.Sphere(apex, r: hint(50mm))`, `span.heel coincident heel`), and the solid
-reads the solved radius — how the hypoid's blank is sized (`spiral_bevel/blank/member.sv`).
+so a round written by hand is built too). Its numbers may be the drawing's: leave a radius unbound and say where
+the set's surface is (`heel := std.Sphere(apex)`, `M distance(w / 2, side: inside) heel`), and the
+solid reads the solved radius — how the hypoid's blank is sized (`spiral_bevel/hypoid.sv`'s
+`Blank`).
 
 #### Sketching on a face
 

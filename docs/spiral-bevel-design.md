@@ -190,14 +190,14 @@ tests cover a band of ±0.15 mean module, not a complete root-to-tip tooth.
 
 ## Declarative root construction
 
-`rust/examples/spiral_bevel/crown/cutter.sv` defines the cutter about its axis: the two flank
+`rust/examples/spiral_bevel/hypoid.sv`'s step 4 defines the cutter about its axis: the two flank
 cones through the pitch points (`std.ConeThrough`, leaning by the pressure angle) and four levels
 along the axis, the tooth's and the mate's tips and bases at their depths. `crown/tooth.sv`'s
 `Tooth` is a region of them (§6.21): beyond one cone and within the other, each grown by a
 quarter of the backlash, between two levels, its tip edges rounded by `std.Rounded`; its meridian
 turned once is the reference solid, and `crown.svd` draws its preview. Nothing of it is drawn
-in a view, so no section can fold onto another root; in the layout (`crown/thickness.sv`) the
-pitch points follow from the tooth traces.
+in a view, so no section can fold onto another root; in the layout the pitch points follow from
+the tooth traces.
 
 The envelope tests read the actual solved `outer`, `outer_round` and `tip` patches through
 `RevolvedSurface`. They verify the conical and toroidal equations and their derivatives,

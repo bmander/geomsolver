@@ -10,7 +10,7 @@ mod member;
 #[derive(Clone,Copy)]
 enum ProfileSide { Inner, Outer }
 
-/// A crown's meridian about the cutter's axis (`cutter.ax`, up from C) in (radius, height), as
+/// A crown's meridian about the cutter's axis (`cut_ax`, up from C) in (radius, height), as
 /// pieces of a functional profile: a half-plane per line (through a point, its normal outward) and
 /// a rounded corner per minor arc (its centre and radius and the two radii to its ends,
 /// counterclockwise), each by its face's name.  A step on the axis bounds nothing a revolution
@@ -22,7 +22,7 @@ impl Pieces {
     fn read(pair: &Pair,rack: &str) -> Self {
         use gcs_core::brep::planar::Seg;
         let sk = &pair.model.sketch;
-        let ax = &sk.lines[pair.model.map.ent_named(&format!("{REF}.cutter.ax")).unwrap().i()];
+        let ax = &sk.lines[pair.model.map.ent_named("cut_ax").unwrap().i()];
         let origin = sk.world_point(ax.p1 as usize);
         let end = sk.world_point(ax.p2 as usize);
         let axis: [f64;3] = std::array::from_fn(|k| end[k]-origin[k]);
@@ -34,7 +34,7 @@ impl Pieces {
             let r: [f64;3] = std::array::from_fn(|k| q[k]-z*unit[k]);
             [r[0].hypot(r[1]).hypot(r[2]),z]
         };
-        let crown = pair.model.map.ent_named(&format!("{REF}.{}",Pair::crown(rack))).unwrap().i();
+        let crown = pair.model.map.ent_named(Pair::crown(rack)).unwrap().i();
         let m = gcs_core::solid::region::meridian(sk,crown).unwrap();
         let basis = gcs_core::plane::Basis {u: m.seam,v: m.axis,o: m.origin};
         let at = |q: [f64;2]| coordinate(basis.lift(q[0],q[1]));
@@ -122,14 +122,14 @@ fn whole_mate(pair: &Pair,rack: &str) -> (PlanarField,[f64;3],[f64;3],String) {
     let side = Pieces::read(pair,rack).only(|name| name != "cap");
     let tooth = Pieces::read(pair,"pinion");
     let sk = &pair.model.sketch;
-    let point = |name: &str| sk.world_point(pair.model.map.ent_named(&format!("{REF}.{name}")).unwrap().i());
+    let point = |name: &str| sk.world_point(pair.model.map.ent_named(name).unwrap().i());
     let unit = side.axis.map(|v| v/side.axis[0].hypot(side.axis[1]).hypot(side.axis[2]));
     let radius = |p: [f64;3]| {
         let q: [f64;3] = std::array::from_fn(|k| p[k]-side.origin[k]);
         let z = (0..3).map(|k| q[k]*unit[k]).sum::<f64>();
         (0..3).map(|k| (q[k]-z*unit[k]).powi(2)).sum::<f64>().sqrt()
     };
-    let (ri,ro) = (radius(point("thickness.inner_pitch")),radius(point("thickness.outer_pitch")));
+    let (ri,ro) = (radius(point("inner_pitch")),radius(point("outer_pitch")));
     // the outer mate's other flank is the tooth's inner one moved out by two pitch gaps; the
     // inner mate's, its outer one moved in
     let (from,shift) = if rack == "gear_outer" { ("inner",2.*(ro-ri)) } else { ("outer",2.*(ri-ro)) };
@@ -174,7 +174,7 @@ fn explicit_functional_generator_matches_source_material_at_sampled_points() {
     let pair = Pair::read([24,48],2.);
     let mut count = 0;
     for rack in ["pinion","gear_outer","gear_inner"] {
-        let crown = pair.model.map.ent_named(&format!("{REF}.{}",Pair::crown(rack))).unwrap();
+        let crown = pair.model.map.ent_named(Pair::crown(rack)).unwrap();
         let source = RevolvedRegion::read(&pair.model.sketch,crown.i(),pair.module*1e-10).unwrap();
         let (profile,origin,axis,_) = functional_profile(&pair,rack);
         let field = RevolvedField::new(profile,origin,axis).unwrap();
@@ -345,5 +345,5 @@ fn functional_motion_definition(pair: &Pair,member: usize) -> String {
         format!("{{\"origin\":{origin:?},\"axis\":{axis:?},\"ratio\":{ratio},\"phase\":{phase}}}")
     };
     format!("{{\"source\":{},\"observer\":{}}}",
-        rotation(&format!("{REF}.generation.crown_roll")),rotation(&format!("{REF}.generation.{member_name}_roll")))
+        rotation("crown_roll"),rotation(&format!("{member_name}_roll")))
 }

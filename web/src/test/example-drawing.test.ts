@@ -44,15 +44,14 @@ test('menu examples open files or directories with one V-twin choice', async (t)
   }
   const gears = await remote.drawing('spiral_bevel');
   assert.equal(gears.directory, 'spiral_bevel');
-  for (const name of ['configuration', 'design', 'layout', 'members', 'generation', 'views',
-    'pitch/gear', 'blank/member', 'crown/cutter', 'crown/tooth', 'crown/mate', 'crown/reach']) {
-    assert.ok(gears.files[`spiral_bevel/${name}.sv`], name);
-  }
+  assert.equal(gears.source, 'spiral_bevel/hypoid.sv');
+  for (const name of ['hypoid.sv', 'crown.svd']) assert.ok(gears.files[`spiral_bevel/${name}`], name);
+  assert.deepEqual(Object.keys(gears.files).filter((f) => f.endsWith('.sv')), ['spiral_bevel/hypoid.sv']);
   // the text beside the sources is part of the project, shown and never elaborated
   assert.match(gears.files['spiral_bevel/README.md'], /^# /);
   const readme = await remote.drawing('spiral_bevel', 'spiral_bevel/README.md');
   assert.equal(readme.source, 'spiral_bevel/README.md');
-  assert.equal(readme.entry, 'spiral_bevel/gears.sv');
+  assert.equal(readme.entry, 'spiral_bevel/hypoid.sv');
   const vtwin = await remote.drawing('vtwin');
   assert.equal(vtwin.directory, 'vtwin');
   assert.ok(vtwin.files['vtwin/components/frame.sv']);
