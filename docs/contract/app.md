@@ -28,6 +28,13 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   placement — belongs in `graft`, or the three will disagree.  JSON is now the *export* format,
   derived rather than canonical; `io::dumps` is still what the Rust tests and the benchmarks
   compare against.
+- **Delete takes everything selected** that has a statement of its own (`edit::remove`): what a
+  component or a block made stays, counted in `Edit::kept`, and the rest goes — so a band swept
+  over the drawing that also caught `std`'s datums deletes the drawing, and the status line says
+  what stayed.  Refused, saying why, only when nothing would go.  The key and the workspace's
+  Delete button are one function (`main.ts`'s `deleteSelection`): the focused constraint, else the
+  drawing's selection, the solids or the picture.  Gate:
+  `deleting_beside_what_a_component_made_takes_the_rest`, and the app test beside it.
 
 - **A gesture writes a solid** (#162 F0): `edit::add_face`, `add_solid` (`SolidSweep`, extents
   as text into `Arg::Dim`, mixtures refused by the parser's own `sweep_of`) and `add_body_word`

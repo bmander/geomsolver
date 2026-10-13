@@ -93,6 +93,9 @@ export interface Edit {
   names: string[];
   /** Set when the core declined, and says why.  `text` is then unchanged. */
   refused: string | null;
+  /** What a removal was asked to take and left standing — what a component made, which has no
+   *  statement of its own to delete. */
+  kept: number;
 }
 
 /** What `gcs_elab_report` hands back.  The offsets in it are the core's **bytes**; `Document.adopt`

@@ -150,7 +150,7 @@ const VIEW_BUTTONS: ToolbarButton[] = [
       view.setOrbitMode(!view.orbitMode);
       toast(view.orbitMode ? 'orbit: drag to turn the view' : 'orbit off');
     } },
-  { label: 'Delete', onClick: () => view.deleteSelected(),
+  { label: 'Delete', onClick: () => deleteSelection(),
     title: 'Delete what is selected (Delete)' },
 ];
 const [orbitButton] = VIEW_BUTTONS.map((b) => addButton(
@@ -469,6 +469,20 @@ aboutBadge.addEventListener('click', () => void about());
 
 /* -- keyboard ------------------------------------------------------------------- */
 
+/** What the Delete key and the workspace's Delete button both do: take away whatever is selected
+ *  — the constraint with the focus, else the drawing's selection, the solids or the picture.  One
+ *  function, so a phone's button and a keyboard's key cannot come to delete different things. */
+function deleteSelection(): void {
+  if (currentConstraint) {
+    const c = currentConstraint;
+    focusConstraint(null);
+    view.removeConstraint(c);
+    toast(`removed ${c.typeName}`);
+  } else {
+    view.deleteSelected();
+  }
+}
+
 const TOOL_KEYS: Record<string, Tool> =
   Object.fromEntries(TOOLS.map(([, tool, key]) => [key, tool]));
 /** Every accelerator in the app, read off the buttons and menu items themselves so there is
@@ -504,14 +518,7 @@ window.addEventListener('keydown', (e) => {
   if (k === 'enter') { e.preventDefault(); view.finishCurve(); return; }
   if (k === 'delete' || k === 'backspace') {
     e.preventDefault();
-    if (currentConstraint) {
-      const c = currentConstraint;
-      focusConstraint(null);
-      view.removeConstraint(c);
-      toast(`removed ${c.typeName}`);
-    } else {
-      view.deleteSelected();
-    }
+    deleteSelection();
     return;
   }
   // shift is part of the token, so ⇧L is Perpendicular and never the Line tool.  The key is
