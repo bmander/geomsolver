@@ -87,8 +87,8 @@ fn a_drafted_block_is_its_closed_form() {
     // and the facet term, its sides planes, holds the same points on the same sides
     let field = MaterialField::read(&e.sketch, ent(&e, "blk").i(), 1e-10).unwrap();
     let facets = gcs_core::solid::resolve(&e.sketch, ent(&e, "blk").i(), gcs_core::solid::REPORT_UNIT);
-    for (y, dz) in [(-3.0, 0.05), (-3.0, -0.05), (4.0, 0.02), (4.0, -0.02), (0.0, -0.1), (0.0, 0.1)] {
-        let z = (-y as f64).abs() * t + dz;
+    for (y, dz) in [(-3.0f64, 0.05), (-3.0, -0.05), (4.0, 0.02), (4.0, -0.02), (0.0, -0.1), (0.0, 0.1)] {
+        let z = y.abs() * t + dz;
         let want = -dz * 3f64.to_radians().cos();
         let got = field.side([10.0, y, z]);
         assert!((got - want).abs() <= 1e-9, "at y {y}, z {z}: {got} against {want}");
@@ -123,8 +123,8 @@ fn a_drafted_prisms_faces_keep_their_names() {
 #[test]
 fn a_drafted_disc_is_two_frustums_and_its_bore_widens() {
     let t = 5f64.to_radians().tan();
-    let frustum = |r0: f64, h: f64| { let r1 = r0 - h * t; PI * h * (r0 * r0 + r0 * r1 + r1 * r1) / 3.0 };
-    let bored = |r0: f64, h: f64| { let r1 = r0 + h * t; PI * h * (r0 * r0 + r0 * r1 + r1 * r1) / 3.0 };
+    // a frustum `h` high from radius `r0`, its radius growing `taper` a unit along
+    let cone = |r0: f64, h: f64, taper: f64| { let r1 = r0 + h * taper; PI * h * (r0 * r0 + r0 * r1 + r1 * r1) / 3.0 };
     let disc = |holes: &str| format!("unit mm
 use std
 in std.front {{
@@ -139,7 +139,7 @@ in std.front {{
 disc := solid(f, from: -4, to: 3, draft: 5deg)
 ");
     let e = solved(&disc(""));
-    let want = frustum(20.0, 4.0) + frustum(20.0, 3.0);
+    let want = cone(20.0, 4.0, -t) + cone(20.0, 3.0, -t);
     close("the disc, exactly", props::volume(&exact(&e, "disc").unwrap()), want, 1e-9);
     // the app reads the exact solid, and the facet term's polygons lie within the report's
     // sagitta of the cones
@@ -149,7 +149,7 @@ disc := solid(f, from: -4, to: 3, draft: 5deg)
     let r = 20.0 - 2.0 * t;
     assert!(facets.inside([r - 0.01, 2.0, 0.0]) && !facets.inside([r + 0.01, 2.0, 0.0]));
     let e = solved(&disc(", holes: bore"));
-    let want = want - bored(6.0, 4.0) - bored(6.0, 3.0);
+    let want = want - cone(6.0, 4.0, t) - cone(6.0, 3.0, t);
     close("the bored disc, exactly", props::volume(&exact(&e, "disc").unwrap()), want, 1e-9);
     // the field: at y = 2 (ordinate −2) the bore's wall stands at 6 + 2 tan 5° and the rim's at
     // 20 − 2 tan 5°, each read as its cone's distance
@@ -171,8 +171,7 @@ disc := solid(f, from: -4, to: 3, draft: 5deg)
 /// plane meet along a curve) and a side of a drafted prism sketched on.
 #[test]
 fn what_a_draft_cannot_say_is_refused() {
-    let (p, errs) = crate::common::parse(&block("about: ab, draft: 3deg", ""));
-    let _ = p;
+    let (_, errs) = crate::common::parse(&block("about: ab, draft: 3deg", ""));
     assert!(errs.iter().any(|e| e.message.contains("`draft:` tapers a prism's sides")), "{errs:?}");
     let (p, errs) = crate::common::parse(&block("from: 0, to: 5, draft: 90deg", ""));
     assert!(errs.is_empty(), "{errs:?}");

@@ -510,14 +510,12 @@ fn build(
         let pad = diagonal * EPS * 4.0;
         Some((lo - pad, hi + pad))
     } else { None };
+    let taper = match &sol.def { SolidDef::Prism { draft: Some(d), .. } => d.value.dtan(), _ => 0.0 };
     let mut term = Term::Empty;
     for (i, p) in polys.into_iter().map(local).enumerate() {
         let built = match &sol.def {
             // a draft shrinks the outer loop and grows each hole: their prisms are subtracted
-            SolidDef::Prism { from, to, draft, .. } => {
-                let taper = draft.as_ref().map_or(0.0, |d| d.value.dtan());
-                prism(&p, from.value, to.value, if i == 0 { taper } else { -taper }, &name)
-            }
+            SolidDef::Prism { from, to, .. } => prism(&p, from.value, to.value, primitive::loop_taper(i, taper), &name),
             SolidDef::Through { .. } => {
                 let (lo, hi) = through_extent.expect("through extent was resolved before sweeping");
                 prism(&p, lo, hi, 0.0, &name)

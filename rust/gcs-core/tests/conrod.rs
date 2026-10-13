@@ -112,7 +112,7 @@ fn the_bores_chamfers_and_the_eyes_rims_are_pappus() {
         // edges along the cap toward the axis and down the cone, outward as it nears y = 0
         let corner = [r - half_width * draft.tan(), half_width];
         let (e1, e2) = ([-1.0, 0.0], [draft.sin(), -draft.cos()]);
-        let theta = (e1[0] * e2[0] + e1[1] * e2[1]).acos();
+        let theta = PI / 2.0 + draft;
         let b = { let s = [e1[0] + e2[0], e1[1] + e2[1]]; let l = s[0].hypot(s[1]); [s[0] / l, s[1] / l] };
         let at = |d: [f64; 2], k: f64| [corner[0] + k * d[0], corner[1] + k * d[1]];
         let tangent = re / (theta / 2.0).tan();

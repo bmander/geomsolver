@@ -167,8 +167,8 @@ pub fn roll(b: &Brep,at: V,r: f64,tol: f64) -> Result<Rolled,String> {
             // the two faces' own other pieces: a drafted side crossing its parting plane (#245),
             // where the run turns and the canal each side would meet the other's in a mitre
             if faces.iter().all(|&g| [&face_a.name,&face_b.name].contains(&&b.faces[g].name)) {
-                return Err(format!("the fillet of {} turns where each face's pieces meet (a drafted side's \
-                    parting plane): two canals meeting in a mitre are rung 3",names()));
+                return Err(format!("the fillet of {} turns where each face's pieces meet (as a drafted \
+                    side's do at its parting plane): two canals meeting in a mitre are rung 3",names()));
             }
             return Err(format!("the fillet of {} ends where `{}` and `{}` meet: a fillet ending at a corner is rung 3",
                 names(),b.faces[first].name,b.faces[f].name));

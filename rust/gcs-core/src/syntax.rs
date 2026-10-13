@@ -1333,6 +1333,22 @@ impl Sweep {
         }
     }
 
+    /// A prism's draft (#245), where one is written.
+    pub fn draft(&self) -> Option<&Arg> {
+        match self {
+            Sweep::Prism { draft, .. } | Sweep::Depth { draft, .. } => draft.as_ref(),
+            _ => None,
+        }
+    }
+
+    /// A prism's draft slot, `None` for a sweep that takes none.
+    pub fn draft_mut(&mut self) -> Option<&mut Option<Arg>> {
+        match self {
+            Sweep::Prism { draft, .. } | Sweep::Depth { draft, .. } => Some(draft),
+            _ => None,
+        }
+    }
+
     /// The revolution axis or through-extent target, for walks that rewrite references.
     pub fn reference_mut(&mut self) -> Option<&mut Ref> {
         match self {

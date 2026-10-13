@@ -452,23 +452,23 @@ impl Reading {
     /// meet otherwise.
     pub fn convex_pieces(&self) -> Option<Vec<usize>> {
         let b = &self.body.loc.b;
-        let same = |x: usize, y: usize| {
-            let (fx, fy) = (&b.faces[x], &b.faces[y]);
-            let tol = 1e-9 * (1.0 + norm(fx.surface.frame().o) + norm(fy.surface.frame().o));
-            fx.reversed == fy.reversed && crate::brep::ssi::same(&fx.surface, &fy.surface, tol)
-        };
+        // each face's surface, by the first face on it
         let mut pieces: Vec<usize> = Vec::new();
-        for &fi in &self.faces {
-            if !pieces.iter().any(|&q| same(q, fi)) {
-                pieces.push(fi);
-            }
-        }
+        let group: Vec<usize> = self.faces.iter().map(|&fi| {
+            let (f, tol) = (&b.faces[fi], self.body.loc.tol);
+            pieces.iter().position(|&q| b.faces[q].reversed == f.reversed
+                && crate::brep::ssi::same(&b.faces[q].surface, &f.surface, tol))
+                .unwrap_or_else(|| { pieces.push(fi); pieces.len() - 1 })
+        }).collect();
         if pieces.len() < 2 {
             return None;
         }
-        for &fa in &self.faces {
-            for &fb in self.faces.iter().filter(|&&fb| fb > fa && !same(fa, fb)) {
-                if self.body.edges_between(&[fa], &[fb]).into_iter().any(|e| self.body.convex(e) != Some(true)) {
+        // every edge between two of the faces on different surfaces, convex
+        let group_of = |fi: usize| self.faces.iter().position(|&g| g == fi).map(|k| group[k]);
+        for (k, &fi) in self.faces.iter().enumerate() {
+            for &e in &self.body.edges[fi] {
+                let across = self.body.faces_of(e).iter().filter_map(|&o| group_of(o)).any(|g| g != group[k]);
+                if across && self.body.convex(e) != Some(true) {
                     return None;
                 }
             }

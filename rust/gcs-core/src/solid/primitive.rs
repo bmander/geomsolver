@@ -83,17 +83,20 @@ pub(super) fn offset(pts: &[(f64, f64)], d: f64) -> Vec<(f64, f64)> {
     }).collect()
 }
 
-/// Where a draft of `taper` (its tangent; positive shrinks) over `lo..hi` takes a step of the
-/// loop to nothing or turns it round: the step's index, `None` where every one survives.
-pub(super) fn drafted_away(pts: &[(f64, f64)], lo: f64, hi: f64, taper: f64) -> Option<usize> {
+/// The taper of a face's loop `k` under a draft of tangent `taper`: the outer loop (0) shrinks,
+/// a hole grows — its prism, cut away, by as much again.
+pub(super) fn loop_taper(k: usize, taper: f64) -> f64 { if k == 0 { taper } else { -taper } }
+
+/// Where a draft of `taper` (its tangent; positive shrinks) as far as ordinate `reach` either way
+/// takes a step of the loop to nothing or turns it round: the step's index, `None` where every one
+/// survives. A step's length is affine in the move, so the farthest section says it.
+pub(super) fn drafted_away(pts: &[(f64, f64)], reach: f64, taper: f64) -> Option<usize> {
     let n = pts.len();
-    [lo, hi].into_iter().find_map(|h| {
-        let q = offset(pts, h.abs() * taper);
-        (0..n).find(|&i| {
-            let j = (i + 1) % n;
-            let (a, b) = ((pts[j].0 - pts[i].0, pts[j].1 - pts[i].1), (q[j].0 - q[i].0, q[j].1 - q[i].1));
-            a.0 * b.0 + a.1 * b.1 <= 0.0
-        })
+    let q = offset(pts, reach * taper);
+    (0..n).find(|&i| {
+        let j = (i + 1) % n;
+        let (a, b) = ((pts[j].0 - pts[i].0, pts[j].1 - pts[i].1), (q[j].0 - q[i].0, q[j].1 - q[i].1));
+        a.0 * b.0 + a.1 * b.1 <= 0.0
     })
 }
 

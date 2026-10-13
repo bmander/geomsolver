@@ -220,7 +220,7 @@ enum Wall {
 }
 
 fn nonnegative(x: I) -> I { I::new(x.bounds()[0].max(0.),x.bounds()[1].max(0.)).unwrap() }
-fn magnitude(x: I) -> I {
+pub(super) fn magnitude(x: I) -> I {
     let [lo,hi] = x.bounds();
     if lo >= 0. { x } else if hi <= 0. { x.neg() } else { I::new(0.,(-lo).max(hi)).unwrap() }
 }

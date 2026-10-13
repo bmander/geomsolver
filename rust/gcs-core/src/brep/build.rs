@@ -11,7 +11,6 @@ use crate::json::Json;
 use crate::space::{add,cross,distance,dot,norm,scale,sub};
 
 const TAU: f64 = std::f64::consts::TAU;
-const PI: f64 = std::f64::consts::PI;
 
 fn unit(a: V) -> V { scale(a,1./norm(a)) }
 fn vec3(j: &Json) -> V { let a = j.arr(); [a[0].as_f64(),a[1].as_f64(),a[2].as_f64()] }
@@ -103,6 +102,19 @@ impl Profile {
             loops.push(Json::Arr(out));
         }
         Ok(object([("origin",v(self.origin,scale)),("normal",v(self.normal,1.)),("loops",Json::Arr(loops))]))
+    }
+
+    /// The profile moved by `m`.
+    fn moved(&self,m: &Rigid) -> Profile {
+        let loops = self.loops.iter().map(|l| l.iter().map(|e| match e {
+            ProfileEdge::Line {a,b} => ProfileEdge::Line {a:m.point(*a),b:m.point(*b)},
+            ProfileEdge::Arc {frame,r,span} => ProfileEdge::Arc {frame:frame.moved(m),r:*r,span:*span},
+            ProfileEdge::Spline(b) => match Curve::BSpline(b.clone()).moved(m) {
+                Curve::BSpline(b) => ProfileEdge::Spline(b),
+                _ => unreachable!("a spline moved is a spline"),
+            },
+        }).collect()).collect();
+        Profile {origin:m.point(self.origin),normal:m.vector(self.normal),loops,names:self.names.clone()}
     }
 
     /// A length the profile's tolerances are taken against.
@@ -255,20 +267,22 @@ pub fn drafted(p: &Profile,from: f64,to: f64,draft: f64) -> Result<Brep,String> 
     if !(h1 > h0) { return Err("a prism of no depth".into()) }
     let n = unit(p.normal);
     let taper = draft.dtan();
-    let section = |h: f64| -> Result<Profile,String> {
+    let section = |h: f64| -> Result<(f64,Profile),String> {
         let q = offset(p,h.abs()*taper)?;
-        Ok(q.moved(&Rigid {r:Rigid::identity().r,t:scale(n,h)}))
+        Ok((h,q.moved(&Rigid {r:Rigid::identity().r,t:scale(n,h)})))
     };
-    let piece = |a: f64,b: f64| -> Result<Brep,String> {
-        let mut s = ruled(&section(a)?,&section(b)?,Carry::Line {delta:scale(n,b-a)})?;
+    let piece = |(a,start): &(f64,Profile),(b,end): &(f64,Profile)| -> Result<Brep,String> {
+        let mut s = ruled(start,end,Carry::Line {delta:scale(n,b-a)})?;
         let k = s.faces.len();
-        s.faces[k-2].name = if a == h0 { "far".into() } else { PARTING.into() };
-        s.faces[k-1].name = if b == h1 { "near".into() } else { PARTING.into() };
+        s.faces[k-2].name = if *a == h0 { "far".into() } else { PARTING.into() };
+        s.faces[k-1].name = if *b == h1 { "near".into() } else { PARTING.into() };
         Ok(s)
     };
-    if !(h0 < 0. && h1 > 0.) { return piece(h0,h1) }
+    let (lo,hi) = (section(h0)?,section(h1)?);
+    if !(h0 < 0. && h1 > 0.) { return piece(&lo,&hi) }
     let tol = 1e-9*(p.size()+h1-h0);
-    let b = super::boolean::glued(&piece(h0,0.)?,&piece(0.,h1)?,tol)
+    let parting = section(0.)?;
+    let b = super::boolean::glued(&piece(&lo,&parting)?,&piece(&parting,&hi)?,tol)
         .ok_or("a drafted prism's halves do not meet at its parting plane")?;
     if b.faces.iter().any(|f| f.name == PARTING) { return Err("a drafted prism's halves meet across more than its parting plane".into()) }
     Ok(b)
@@ -330,7 +344,7 @@ fn offset(p: &Profile,d: f64) -> Result<Profile,String> {
                     let span = match span {
                         None => None,
                         Some([a0,a1]) => {
-                            let angle = |q: V,near: f64| { let l = f.local(q); near+(l[1].datan2(l[0])-near+PI).rem_euclid(TAU)-PI };
+                            let angle = |q: V,near: f64| super::geom::around(Curve::Circle(f,r2).inverse(q),near-0.5*TAU,TAU);
                             let (q0,q1) = if s.forward() { (start,end) } else { (end,start) };
                             let (b0,b1) = (angle(q0,a0),angle(q1,a1));
                             if !(b1 > b0) { return Err(gone()) }
@@ -344,18 +358,6 @@ fn offset(p: &Profile,d: f64) -> Result<Profile,String> {
         }
     }
     Ok(out)
-}
-
-impl Profile {
-    /// The profile moved by `m`.
-    fn moved(&self,m: &Rigid) -> Profile {
-        let loops = self.loops.iter().map(|l| l.iter().map(|e| match e {
-            ProfileEdge::Line {a,b} => ProfileEdge::Line {a:m.point(*a),b:m.point(*b)},
-            ProfileEdge::Arc {frame,r,span} => ProfileEdge::Arc {frame:frame.moved(m),r:*r,span:*span},
-            ProfileEdge::Spline(b) => ProfileEdge::Spline(Arc::new(BSpline {poles:b.poles.iter().map(|&q| m.point(q)).collect(),..(**b).clone()})),
-        }).collect()).collect();
-        Profile {origin:m.point(self.origin),normal:m.vector(self.normal),loops,names:self.names.clone()}
-    }
 }
 
 /// What a profile step sweeps as it turns about the axis.

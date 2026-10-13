@@ -296,6 +296,10 @@ impl Walk<'_> {
                     vec![relation("distance", vec![p, plane], vec![OpArg::Dim(d, at), along], at)]
                 }
             }
+            _ if drafted => {
+                return Err(format!("`{said}` is a drafted side, which leans off the face's plane, \
+                                    and is not yet a set: sketch on a cap"));
+            }
             edge => {
                 let leaf = |r: &Ref| written(r).rsplit('.').next() == Some(edge);
                 let Some(e) = items.iter().find(|r| leaf(r)) else {
@@ -305,10 +309,6 @@ impl Walk<'_> {
                 let e_abs = lookup_raw(e, &face_sc, &self.names, alias, self.units)
                     .filter(|(_, r)| r.is_empty())
                     .map(|(a, _)| a);
-                if drafted {
-                    return Err(format!("`{said}` is a drafted side, which leans off the face's \
-                                        plane, and is not yet a set: sketch on a cap"));
-                }
                 if !e_abs.as_ref().is_some_and(|a| t.lines.contains(a)) {
                     return Err(format!("`{said}` is a curved side, and a curved face is not yet a \
                                         set: sketch on a flat one"));

@@ -332,7 +332,7 @@ impl ExtrudedField {
     /// depth `w` is where the profile's field is at most `-|w| tan angle`. Exactly the draft where
     /// the profile's field moves its sides so (`PlanarField::draftable`, its caller's to ask).
     pub fn drafted(mut self,angle: f64) -> Self {
-        if angle != 0. { self.draft = [angle.dtan(),angle.dcos()]; }
+        self.draft = [angle.dtan(),angle.dcos()];
         self
     }
 
@@ -400,9 +400,7 @@ impl ExtrudedField {
         let mut side = self.profile.bounds([c[0],c[1]])?;
         let [t,cos] = self.draft;
         if t != 0. {
-            let [a,b] = c[2].bounds();
-            let depth = if a >= 0. { c[2] } else if b <= 0. { c[2].neg() } else { I::new(0.,(-a).max(b))? };
-            side = side.add(depth.mul(I::point(t)?)?)?.mul(I::point(cos)?)?;
+            side = side.add(profile::magnitude(c[2]).mul(I::point(t)?)?)?.mul(I::point(cos)?)?;
         }
         Ok(max(side,slab))
     }

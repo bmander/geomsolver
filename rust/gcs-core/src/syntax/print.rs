@@ -346,7 +346,7 @@ fn dim(a: &Arg) -> String {
 
 /// Sweep arguments are document expressions, preserved through canonical printing.
 fn sweep_parts(s: &Sweep) -> Vec<String> {
-    match s {
+    let mut parts = match s {
         Sweep::Swept {motion,from,to} => {
             let mut text = String::from("under: ");
             write_ref(&mut text,motion);
@@ -369,10 +369,8 @@ fn sweep_parts(s: &Sweep) -> Vec<String> {
             write_ref(&mut text, body);
             vec![text]
         },
-        Sweep::Prism { from, to, draft } => [format!("from: {}", dim(from)), format!("to: {}", dim(to))]
-            .into_iter().chain(draft.iter().map(|d| format!("draft: {}", dim(d)))).collect(),
-        Sweep::Depth { depth, draft } => std::iter::once(format!("depth: {}", dim(depth)))
-            .chain(draft.iter().map(|d| format!("draft: {}", dim(d)))).collect(),
+        Sweep::Prism { from, to, .. } => vec![format!("from: {}", dim(from)), format!("to: {}", dim(to))],
+        Sweep::Depth { depth, .. } => vec![format!("depth: {}", dim(depth))],
         Sweep::Revolve { axis, sweep, sense } => {
             let mut about = String::from("about: ");
             write_ref(&mut about, axis);
@@ -385,7 +383,9 @@ fn sweep_parts(s: &Sweep) -> Vec<String> {
             }
             parts
         }
-    }
+    };
+    parts.extend(s.draft().map(|d| format!("draft: {}", dim(d))));
+    parts
 }
 
 /// One property of a style, as a `style` block writes it.

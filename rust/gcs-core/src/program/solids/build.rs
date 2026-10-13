@@ -82,14 +82,15 @@ pub(super) fn build_solid(
             Ok(Extent { text: text.trim().to_string(), value: v.c })
         };
     // a prism's draft (#245): an angle, leaning its sides less than square to the face
-    let draft = |a: &Option<crate::syntax::Arg>| -> Result<Option<Extent>, (Code, String)> {
-        let Some(a) = a else { return Ok(None) };
-        let e = ext(a, "draft", crate::units::Dim::ANGLE).map_err(|m| (Code::E103, m))?;
-        if e.value.abs() >= 90.0 {
-            return Err((Code::E080, format!("a draft of `{}` leans a side flat: a draft is less \
-                                              than a right angle", e.text)));
+    let draft = match sweep.draft().map(|a| ext(a, "draft", crate::units::Dim::ANGLE)) {
+        None => None,
+        Some(Err(m)) => { say(Code::E103, st.span, m); return None; }
+        Some(Ok(e)) if e.value.abs() >= 90.0 => {
+            say(Code::E080, st.span, format!("a draft of `{}` leans a side flat: a draft is less \
+                                              than a right angle", e.text));
+            return None;
         }
-        Ok((e.value != 0.0).then(|| Extent { text: e.text, value: e.value.to_radians() }))
+        Some(Ok(e)) => (e.value != 0.0).then(|| Extent { text: e.text, value: e.value.to_radians() }),
     };
     let def = match sweep {
         // a region: the bounds its set put on the probe, gathered as they were stated (§6.21)
@@ -177,12 +178,8 @@ pub(super) fn build_solid(
             }
             SolidDef::Through { face, body: target.idx }
         }
-        crate::syntax::Sweep::Depth { depth, draft: written } => {
+        crate::syntax::Sweep::Depth { depth, .. } => {
             let face = one_face(&ops, st, &mut say)?;
-            let draft = match draft(written) {
-                Ok(d) => d,
-                Err((code, m)) => { say(code, st.span, m); return None; }
-            };
             let d = match ext(depth, "depth", crate::units::Dim::LENGTH) {
                 Ok(d) => d,
                 Err(m) => { say(Code::E103, st.span, m); return None; }
@@ -199,12 +196,8 @@ pub(super) fn build_solid(
                 draft,
             }
         }
-        crate::syntax::Sweep::Prism { from, to, draft: written } => {
+        crate::syntax::Sweep::Prism { from, to, .. } => {
             let Some(face) = one_face(&ops, st, &mut say) else { return None };
-            let draft = match draft(written) {
-                Ok(d) => d,
-                Err((code, m)) => { say(code, st.span, m); return None; }
-            };
             let (a, b) = match (
                 ext(from, "from", crate::units::Dim::LENGTH),
                 ext(to, "to", crate::units::Dim::LENGTH),

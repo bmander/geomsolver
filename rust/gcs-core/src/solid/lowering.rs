@@ -102,21 +102,28 @@ impl Surf {
         }
     }
 
+    /// A cylinder or a cone about its axis: a point of the axis, its unit direction, the radius
+    /// there and the half-angle (a cylinder's nothing, whose tangent and cosine change no bit).
+    fn axial(&self) -> Option<(V, V, f64, f64)> {
+        match *self {
+            Surf::Cylinder { origin, axis, radius } => Some((origin, axis, radius, 0.0)),
+            Surf::Cone { origin, axis, radius, half } => Some((origin, axis, radius, half)),
+            Surf::Plane { .. } | Surf::Sphere { .. } => None,
+        }
+    }
+
     /// From `x` to the surface along its normal: positive on the side the plane's normal points
     /// to, or outside the cylinder, the cone or the ball.
     fn side(&self, x: V) -> f64 {
         match *self {
             Surf::Plane { origin, normal } => dot(normal, sub(x, origin)),
-            Surf::Cylinder { origin, axis, radius } => {
-                let w = sub(x, origin);
-                norm(sub(w, scale(axis, dot(w, axis)))) - radius
-            }
-            Surf::Cone { origin, axis, radius, half } => {
+            Surf::Sphere { centre, radius } => distance(x, centre) - radius,
+            _ => {
+                let (origin, axis, radius, half) = self.axial().expect("a cylinder or a cone");
                 let w = sub(x, origin);
                 let h = dot(w, axis);
                 (norm(sub(w, scale(axis, h))) - radius - h * half.dtan()) * half.dcos()
             }
-            Surf::Sphere { centre, radius } => distance(x, centre) - radius,
         }
     }
 
@@ -124,29 +131,21 @@ impl Surf {
     /// order, if it does (a plane is no solid a line goes into and out of; a cone's on its own
     /// nappe, short of its apex).
     fn crossings(&self, q: V, along: V) -> Option<[f64; 2]> {
-        if let Surf::Cone { origin, axis, radius, half } = *self {
-            // |w⊥ + s a⊥|² = (radius + t (h + s a·axis))², where the right side's root is positive
-            let (w, t) = (sub(q, origin), half.dtan());
-            let flat = |v: V| sub(v, scale(axis, dot(v, axis)));
-            let (fw, fa, h, k) = (flat(w), flat(along), dot(w, axis), dot(along, axis));
-            let rho = radius + t * h;
-            let roots = crate::roots::quadratic(dot(fa, fa) - t * t * k * k, 2.0 * (dot(fw, fa) - t * rho * k),
-                dot(fw, fw) - rho * rho);
-            return match roots[..] {
-                [s0, s1] if [s0, s1].iter().all(|&s| rho + t * k * s > 0.0) => Some([s0.min(s1), s0.max(s1)]),
-                _ => None,
-            };
-        }
-        let (w, a, radius) = match *self {
-            Surf::Plane { .. } | Surf::Cone { .. } => return None,
-            Surf::Cylinder { origin, axis, radius } => {
+        // |w⊥ + s a⊥|² = (r + t (h + s a·axis))², the right side's root positive: a sphere's with
+        // nothing taken off and no taper
+        let (w, a, radius, t, k) = match *self {
+            Surf::Plane { .. } => return None,
+            Surf::Sphere { centre, radius } => (sub(q, centre), along, radius, 0.0, 0.0),
+            _ => {
+                let (origin, axis, radius, half) = self.axial().expect("a cylinder or a cone");
                 let flat = |v: V| sub(v, scale(axis, dot(v, axis)));
-                (flat(sub(q, origin)), flat(along), radius)
+                let (w, t) = (sub(q, origin), half.dtan());
+                (flat(w), flat(along), radius + t * dot(w, axis), t, dot(along, axis))
             }
-            Surf::Sphere { centre, radius } => (sub(q, centre), along, radius),
         };
-        match crate::roots::quadratic(dot(a, a), 2.0 * dot(w, a), dot(w, w) - radius * radius)[..] {
-            [s0, s1] => Some([s0.min(s1), s0.max(s1)]),
+        match crate::roots::quadratic(dot(a, a) - t * t * k * k, 2.0 * (dot(w, a) - t * radius * k),
+            dot(w, w) - radius * radius)[..] {
+            [s0, s1] if [s0, s1].iter().all(|&s| radius + t * k * s > 0.0) => Some([s0.min(s1), s0.max(s1)]),
             _ => None,
         }
     }
