@@ -686,7 +686,7 @@ impl<'a> Walk<'a> {
         let site = self.sets.get(abs)?;
         let [st] = site.lit.body.as_slice() else { return None };
         let w = written_of(st)?;
-        if !may_use(w) || w.args.iter().any(|a| matches!(a, crate::syntax::OpArg::Dim(..))) {
+        if !may_use(w) || w.dim().is_some() {
             return None;
         }
         let (cmp, _) = w.bound()?;
@@ -743,13 +743,7 @@ impl<'a> Walk<'a> {
         if let Some((other, outside)) = self.side_of_set(abs, alias) {
             let mut turned = lowered.clone();
             if outside {
-                for a in turned.args.iter_mut() {
-                    if let OpArg::Named(n, crate::syntax::Arg::Word(x)) = a {
-                        if n.text == "side" {
-                            *x = if x == "outside" { "inside".into() } else { "outside".into() };
-                        }
-                    }
-                }
+                turned.turn_side();
             }
             let rel = Relation { form: RelationForm::Written(turned), ..rel.clone() };
             return self.expand_reach(st, &rel, path, sc, k, &other, alias);
@@ -783,7 +777,6 @@ impl<'a> Walk<'a> {
         let lit = surface.as_ref().unwrap_or(lit);
         let cmp = if flipped { cmp.and_then(|c| c.turned()) } else { cmp };
         // the one relation of its point, holding the number its surface is at
-        let is_dim = |a: &OpArg| matches!(a, OpArg::Dim(..));
         let relations: Vec<usize> = (0..lit.body.len())
             .filter(|&i| matches!(lit.body[i].kind, StmtKind::Relation(_)))
             .collect();
@@ -793,7 +786,7 @@ impl<'a> Walk<'a> {
                 relations.len());
             return self.once(Code::E040, at, m);
         };
-        if !written_of(&lit.body[i]).is_some_and(|w| w.args.iter().any(is_dim)) {
+        if !written_of(&lit.body[i]).is_some_and(|w| w.dim().is_some()) {
             let m = format!("`{set}` holds no number its surface is at, to measure from");
             return self.once(Code::E040, at, m);
         }
@@ -847,7 +840,7 @@ impl<'a> Walk<'a> {
                 let m = format!("a region solid's point is bounded: `inside({text}) {set}`");
                 return self.once(Code::E040, at, m);
             }
-            let n = measured.args.iter().position(is_dim).expect("a number");
+            let n = measured.dim_index().expect("a number");
             let mut grow = offset;
             if distance {
                 let OpArg::Dim(t, _) = &mut measured.args[n] else { unreachable!("a number") };
@@ -1131,8 +1124,7 @@ fn region_body(
     at: Span,
     name: &str,
 ) -> Result<(), String> {
-    use crate::syntax::{Cmp, OpArg};
-    let is_dim = |a: &OpArg| matches!(a, OpArg::Dim(..));
+    use crate::syntax::Cmp;
     // a side of another set, grown or not (a bounded distance from it), is a use of it, not a
     // number of this one's; a distance from one is (`std.Offset`'s body)
     let side_of = |w: &crate::syntax::Written| reaches(w) && w.bound().is_some();
@@ -1140,7 +1132,7 @@ fn region_body(
     let measured = |st: &Stmt| matches!(st.kind, StmtKind::Measured(_));
     let dims: Vec<usize> = (0..body.len())
         .filter(|&i| measured(&body[i])
-            || written_of(&body[i]).is_some_and(|w| w.args.iter().any(is_dim) && !side_of(w)))
+            || written_of(&body[i]).is_some_and(|w| w.dim().is_some() && !side_of(w)))
         .collect();
     let either = || format!(
         "outside `{name}`'s interval is either side of it: a choice of root, not a region \
@@ -1190,8 +1182,8 @@ fn region_body(
     };
     let w = r.form.written_mut().expect("a dimension is written");
     if w.bound().is_none() {
-        let k = w.args.iter().position(is_dim).expect("a dimension's number");
-        w.args.insert(k, OpArg::Bound { cmp: side, span: at, hi: None, grow: None });
+        let k = w.dim_index().expect("a dimension's number");
+        w.args.insert(k, crate::syntax::OpArg::Bound { cmp: side, span: at, hi: None, grow: None });
         return Ok(());
     }
     // a region already: `inside` keeps its bound, `outside` turns it round
@@ -1212,8 +1204,7 @@ fn one_bound(lit: &SetLit) -> Option<(SetLit, bool)> {
     let StmtKind::Relation(r) = &mut bare.body[i].kind else { return None };
     let w = r.form.written_mut()?;
     let cmp = w.equality()?;
-    w.args.iter().any(|a| matches!(a, crate::syntax::OpArg::Dim(..)))
-        .then_some((bare, cmp == crate::syntax::Cmp::Ge))
+    w.dim().is_some().then_some((bare, cmp == crate::syntax::Cmp::Ge))
 }
 
 /// The statement ids a distance's foot gives what it adds to the set's body (`expand_reach`), so
