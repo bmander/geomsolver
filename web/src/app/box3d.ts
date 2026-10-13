@@ -192,7 +192,15 @@ export class Box3D {
     if (this.renderer) return this.renderer;
     if (!this.canvas) return null;   // no box on this page: a test's view, which draws nothing
     try {
-      this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: true });
+      // **the faster GPU where there are two**: Chrome 155 on an Intel UHD 630 (a 2018 MacBook
+      // Pro, ANGLE over Metal) puts stale frames on screen, so a solid jumps between the poses of
+      // past frames as the eye pans or turns; on the same machine's AMD it does not.  A browser
+      // with one GPU ignores the preference
+      this.renderer = new THREE.WebGLRenderer({
+        canvas: this.canvas,
+        antialias: true,
+        powerPreference: 'high-performance',
+      });
       return this.renderer;
     } catch {
       // no WebGL: the box simply does not draw, and the status line has already said what the
