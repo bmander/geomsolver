@@ -22,7 +22,7 @@ import {
 import { checkSketch } from '../core/fdcheck.js';
 import { enumerateStep } from '../core/homotopy.js';
 import { Axis, Plane, Point, Sketch, Spline } from '../core/model.js';
-import { mesh, objects, preview, stl, glb } from '../core/mesh.js';
+import { mesh, objects, preview, stl, glb, unbuilt } from '../core/mesh.js';
 import { FieldMesher, deferFields, fieldJobs, supplyField, unpaired } from '../core/field.js';
 import { overview } from '../core/overview.js';
 import { Document, fromSketch, highlight } from '../core/program.js';
@@ -1325,7 +1325,7 @@ test('a solid crosses the ABI as a mesh a viewer can use', () => {
   }
 });
 
-test('a solid that does not evaluate is refused with the core\'s reason, its neighbours meshed', () => {
+test('a solid that does not evaluate is refused with the core\'s reason, its neighbours meshed, and listed as not drawn', () => {
   // the triangle turned about `std.x`, which crosses it: the box once threw on the null face
   // table on every paint, and the page stopped drawing
   const src = [
@@ -1339,6 +1339,9 @@ test('a solid that does not evaluate is refused with the core\'s reason, its nei
   const at = (name: string) => objects(doc.sketch).find((o) => o.name === name)!.index;
   assert.ok(mesh(doc.sketch, at('b0'), 0).positions.length > 0);
   assert.throws(() => mesh(doc.sketch, at('b1'), 0), /`b1`: the revolution axis crosses the profile/);
+  // and the page is told which object is not drawn, and why
+  assert.deepEqual(unbuilt(doc.sketch),
+    [{ solid: at('b1'), name: 'b1', reason: '`b1`: the revolution axis crosses the profile' }]);
 });
 
 test('a named component chain reaches the browser as the same swept mesh', () => {

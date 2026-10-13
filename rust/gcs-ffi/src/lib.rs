@@ -2256,6 +2256,27 @@ pub unsafe extern "C" fn gcs_solid_objects_json(h: *mut Sketch) -> *mut u8 {
     })
 }
 
+/// **The objects that are not drawn, and why** (`overview::unbuilt`):
+/// `[{ "solid", "name", "reason" }]`, the reason the core's own sentence.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_solid_unbuilt_json(h: *mut Sketch) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || {
+        let s = sk(h);
+        out_json(Json::Arr(
+            gcs_core::overview::unbuilt(s)
+                .into_iter()
+                .map(|(i, why)| {
+                    Json::Obj(vec![
+                        ("solid".into(), Json::Int(i as i64)),
+                        ("name".into(), Json::Str(s.solid_name(i))),
+                        ("reason".into(), Json::Str(why)),
+                    ])
+                })
+                .collect(),
+        ))
+    })
+}
+
 /// **How finely a mesh of this solid should be cut**: `MESH_SAGITTA` of its own diagonal, as a
 /// `unit`.  A viewer that wants its own faceting passes its own; one that has no opinion passes
 /// this, and gets a mesh matched to the object rather than to a report's four digits.

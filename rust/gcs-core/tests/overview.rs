@@ -477,3 +477,40 @@ bore cut body
         .collect();
     assert!(!solid_pts.is_empty(), "and edges over them");
 }
+
+/// An object that does not evaluate is not drawn, and the box says why in the core's words
+/// rather than leaving it out silently: a triangle turned about `std.x`, which crosses it, beside
+/// a partial revolve of the same triangle about its own side, which is drawn.  A feature is not
+/// an object, so one that does not evaluate is reported through the object made of it.
+#[test]
+fn an_object_that_does_not_evaluate_is_reported_with_its_reason() {
+    let src = "\
+use std
+in std.front {
+  a := point hint((-0.4, 0))
+  b := point hint((0.28, -0.4))
+  c := point hint((0.28, 0.38))
+  ab := line(a, b)
+  bc := line(b, c)
+  ca := line(c, a)
+}
+f0 := face(ab, bc, ca)
+b0 := solid(f0, about: bc, sweep: 271)
+f1 := face(ab, bc, ca)
+b1 := solid(f1, about: std.x)
+";
+    let (prog, errs, _) = gcs_core::library::parse_linked(src);
+    assert!(errs.is_empty(), "{errs:?}");
+    let e = gcs_core::program::elaborate(&prog);
+    assert!(e.ok(), "{:?}", e.errors().map(|d| d.message.clone()).collect::<Vec<_>>());
+    let named = |n: &str| e.map.ent_named(n).unwrap().i();
+    assert_eq!(gcs_core::overview::unbuilt(&e.sketch),
+        vec![(named("b1"), "`b1`: the revolution axis crosses the profile".to_string())]);
+    // made into a body, the bad revolve is a feature, and the body is what is not drawn
+    let (prog, _, _) = gcs_core::library::parse_linked(&format!("{src}body := solid(b0)\nb1 union body\n"));
+    let e = gcs_core::program::elaborate(&prog);
+    assert!(e.ok(), "{:?}", e.errors().map(|d| d.message.clone()).collect::<Vec<_>>());
+    let gone = gcs_core::overview::unbuilt(&e.sketch);
+    assert_eq!(gone.iter().map(|g| g.0).collect::<Vec<_>>(), vec![e.map.ent_named("body").unwrap().i()]);
+    assert!(gone[0].1.contains("revolution axis crosses the profile"), "{gone:?}");
+}

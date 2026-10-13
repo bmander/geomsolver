@@ -76,6 +76,14 @@ export function objects(sk: Sketch): { name: string; index: number }[] {
   return takeJson<{ name: string; index: number }[]>(core().gcs_solid_objects_json(sk.handle));
 }
 
+/** The objects that are not drawn, and why: each one that does not evaluate, with the core's
+ *  reason (`` `b1`: the revolution axis crosses the profile ``).  A swept object still being
+ *  meshed in a worker is not one. */
+export function unbuilt(sk: Sketch): { solid: number; name: string; reason: string }[] {
+  return takeJson<{ solid: number; name: string; reason: string }[]>(
+    core().gcs_solid_unbuilt_json(sk.handle));
+}
+
 /** **The objects as a binary glTF.**  Every face of every object is a named node, so a viewer's
  *  outliner is the document's own tree of names; positions are in metres where the document names
  *  a unit, as the glTF spec requires.

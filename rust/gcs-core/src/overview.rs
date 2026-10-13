@@ -699,6 +699,21 @@ pub fn objects(sk: &Sketch) -> Vec<usize> {
         .collect()
 }
 
+/// **The objects that are not drawn, and why**: each object (`objects`) that does not evaluate
+/// at the box's approximation (`ApproximationPolicy::Mesh`, the one it is meshed at), with the
+/// reason the evaluation gives — `` `b1`: the revolution axis crosses the profile ``.  A swept
+/// object whose surface a host is still meshing (`FieldMeshing::Deferred`, none supplied yet) is
+/// not one: it is on its way, and the host says so.  Evaluations are the sketch's cached ones,
+/// so asking after the box has drawn costs nothing more.
+pub fn unbuilt(sk: &Sketch) -> Vec<(usize, String)> {
+    let meshing = |i: usize| sk.is_swept(i) && sk.supplied_field(i).is_none()
+        && sk.field_meshing.get() == crate::solid::FieldMeshing::Deferred;
+    objects(sk).into_iter().filter(|&i| !meshing(i))
+        .filter_map(|i| sk.evaluated_solid(i, crate::solid::ApproximationPolicy::Mesh).err()
+            .map(|why| (i, why)))
+        .collect()
+}
+
 /// **The surfaces of a solid, as this eye sees them.**
 ///
 /// Two culls and then an ordering, and the first cull is the one that matters.  A closed solid
