@@ -53,8 +53,8 @@ import type { ExportJob, ExportReply } from './export-worker.js';
 import { drawingActive, exportDrawingSvg } from './drawing.js';
 import { CONSTRAINT_BUTTONS } from './commands.js';
 import {
-  about, alternatives, doOpen, flipBranch, insertPlane, leaveExample, openCase, openExample, options,
-  report, reportSolve, showDiagnosis,
+  about, alternatives, doOpen, flipBranch, insertComponent, insertPlane, leaveExample, openCase,
+  openExample, options, report, reportSolve, showDiagnosis,
 } from './dialogs.js';
 import { editValue, onDimension, onExtent, onRound } from './dimbox.js';
 import { bindProgramPanel, openDrawing, refreshProgram, resetProgramFiles, saveProjectFile,
@@ -114,6 +114,10 @@ const toolButton = ([label, tool, key, what]: [string, Tool, string, string?]): 
 const TOOL_BUTTONS: ToolbarButton[] = [
   { label: 'Construction', key: 'g', onClick: () => view.toggleConstructionSelected(),
     title: 'Draw the selected lines/circles/arcs dashed as reference geometry (they still constrain)' },
+  { label: 'Component', key: '⇧g', onClick: () => view.makeComponent(),
+    title: 'Package the selection as a component of the document, drawn again as one instance of '
+         + 'it: what it reads from the rest of the drawing becomes the component’s arguments '
+         + '(Insert ▸ Component… names it)' },
   { label: 'Plane', key: 'n', onClick: () => view.addDatum('plane'),
     title: 'A plane, constrained to the selection: through a point · three points · a point, '
          + 'square to a line or axis · holding two lines or axes · parallel to a plane · '
@@ -437,6 +441,8 @@ const MENUS: [string, (MenuItem | null)[]][] = [
   ['Insert', [
     { label: 'Plane…', onClick: () => void insertPlane(),
       title: 'A named plane, constrained to the selection as the Plane button does' },
+    { label: 'Component…', onClick: () => void insertComponent(),
+      title: 'The selection as a named component, as the Component button makes one' },
   ]],
   ['Solution', [
     { label: 'Solve', onClick: () => { view.solveNow(); reportSolve(); } },

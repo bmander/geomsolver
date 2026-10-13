@@ -1,6 +1,7 @@
 /* Editing the document: adding and removing constraints, and what the selection can be told to
- * do — delete, mark as reference geometry, copy, cut, paste, fix.  Each is one thing the user did, so
- * each is one undo entry, one solve and one diagnosis, and each says what came of it. */
+ * do — delete, package as a component, mark as reference geometry, copy, cut, paste, fix.  Each
+ * is one thing the user did, so each is one undo entry, one solve and one diagnosis, and each
+ * says what came of it. */
 import * as io from '../core/io.js';
 import * as dim from '../core/callout.js';
 import { Constraint, sameConstraint } from '../core/constraints.js';
@@ -129,6 +130,28 @@ export function deleteSelected(v: SketchView): void {
   // what stayed was never what the gesture was for, so it does not stay selected either
   v.selected = [];
   v.onSelect();
+}
+
+/** Package the selection as a component of the document (`edit::make_component`): what made
+ *  it moves into a `component` definition, one instance of it stands where it was, and the
+ *  drawing is the same drawing.  `name` is the component's, else the core mints one.  What a
+ *  module made (std's datums, which a band over the origin catches) stays, and is said.
+ *
+ *  The selection follows what was packaged: it is named through the instance now (`a` is
+ *  `part0.a`), so it is carried across by those names rather than the ones it had. */
+export function makeComponent(v: SketchView, name?: string): boolean {
+  if (!v.selected.length) {
+    v.onStatus('select what the component is to be made of');
+    return false;
+  }
+  const held = v.selected.map((p) => v.doc.nameOf(p)).filter((n): n is string => !!n);
+  const e = v.doc.makeComponent(v.selected, [], name);
+  const [comp, inst] = e.names;
+  const left = e.kept ? `; ${e.kept} made by a module stay${e.kept === 1 ? 's' : ''}` : '';
+  if (!v.apply(e, `made component ${comp}, drawn as ${inst}${left}`)) return false;
+  v.selected = held.flatMap((n) => v.doc.entity(`${inst}.${n}`) ?? []);
+  v.onSelect();
+  return true;
 }
 
 /** Flip reference/normal on the selected lines, circles and arcs. */

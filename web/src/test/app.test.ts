@@ -1041,6 +1041,61 @@ test('Delete takes everything a band selected, and leaves the datums std made', 
   assert.deepEqual(view.selected, [], 'what stayed is not left selected');
 });
 
+test('Component packages what a band selected, and the selection follows it in', () => {
+  const view = docView(ANNOTATED);
+  const said: string[] = [];
+  view.onStatus = (m) => said.push(m);
+  drag(view, view.w2s(-30, 30), view.w2s(130, -30));
+  const fromStd = view.selected.filter((p) => view.doc.nameOf(p)?.startsWith('std.')).length;
+  const ours = view.selected.length - fromStd;
+  assert.ok(fromStd > 0 && ours >= 3, `the band caught ${ours} and ${fromStd} of std's`);
+  assert.ok(view.makeComponent());
+  assert.ok(view.source.includes('component Part(front: plane) {\n  in front {\n    a := point\n'),
+            view.source);
+  assert.ok(view.source.includes('    ab := line(a, b)      // the base\n    horizontal ab\n'),
+            'the line and the relations on it went in, comment and all');
+  assert.ok(view.source.includes('\npart0 := Part(std.front)\n'), view.source);
+  assert.ok(view.source.startsWith('// a base, and this comment must survive every gesture\n'));
+  assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
+  assert.equal(said.at(-1),
+               `made component Part, drawn as part0; ${fromStd} made by a module stay`);
+  // what was selected is still selected, under the names the instance gives it
+  const names = view.selected.map((p) => view.doc.nameOf(p)).sort();
+  assert.equal(names.length, ours);
+  assert.ok(names.every((n) => n?.startsWith('part0.')), names.join(' '));
+  view.undo();
+  assert.equal(view.source, ANNOTATED, 'one undo step, word for word');
+});
+
+test('a point packaged into a component keeps where it was dragged through the next edit', () => {
+  const view = docView(ANNOTATED.replace('horizontal ab\n', ''));
+  view.autoSolve = true;
+  drag(view, view.w2s(-30, 30), view.w2s(130, -30));
+  assert.ok(view.makeComponent());
+  view.selected = [];
+  const [sx, sy] = view.w2s(...(view.doc.entity('part0.b') as Point).xy);
+  drag(view, [sx, sy], [sx + 20, sy - 40]);
+  const moved = (view.doc.entity('part0.b') as Point).xy;
+  assert.ok(Math.hypot(moved[0] - 100, moved[1]) > 1, `the drag moved it: ${moved}`);
+  assert.ok(!view.source.includes('hint((100, 0))'),
+            `and wrote it into the definition:\n${view.source}`);
+  view.addDatum('axis');                // a structural edit: the document is read again
+  const after = (view.doc.entity('part0.b') as Point).xy;
+  assert.ok(Math.hypot(after[0] - moved[0], after[1] - moved[1]) < 1e-6, `${after} vs ${moved}`);
+});
+
+test('Component is refused, saying why, with nothing of the document selected', () => {
+  const view = docView(ANNOTATED);
+  const said: string[] = [];
+  view.onStatus = (m) => said.push(m);
+  assert.ok(!view.makeComponent());
+  assert.equal(said.at(-1), 'select what the component is to be made of');
+  view.selected = [view.doc.entity('std.origin') as Point];
+  assert.ok(!view.makeComponent());
+  assert.match(said.at(-1) ?? '', /no statement here to package/);
+  assert.equal(view.source, ANNOTATED);
+});
+
 test('a gesture beside a component leaves the component written', () => {
   const view = docView(examples.source('gear'));
   assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics.slice(0, 3)));

@@ -470,6 +470,22 @@ export class Document {
     );
   }
 
+  /** Package the selection as a component of the document, drawn again by one instance of it:
+   *  the statements that make it move into `component NAME(…) { … }`, what they read from
+   *  outside handed in as formals, and what stays outside names them through the instance.
+   *  `name` is the component's, else a fresh `Part`; the edit's `names` are the component and
+   *  then the instance. */
+  makeComponent(entities: Iterable<{ ref: readonly [string, number] }> = [],
+                constraints: Iterable<Constraint> = [], name?: string): Edit {
+    const ents = [...entities].map((e) => e.ref);
+    const cons = [...constraints].map((c) => c.id);
+    return edit(
+      withJson({ entities: ents, constraints: cons, name: name ?? '' }, (p, n) =>
+        core().gcs_elab_make_component(this.h, this.sketch.handle, p, n),
+      ),
+    );
+  }
+
   /** Rewrite a dimension's number, as written — an expression stays an expression. */
   setDimension(id: number, attr: string, text: string): Edit {
     return edit(

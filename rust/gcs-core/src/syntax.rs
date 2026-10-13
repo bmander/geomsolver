@@ -12,7 +12,7 @@ mod words;
 
 pub use highlight::{highlight, Tint};
 pub(crate) use highlight::with_comments;
-pub use names::{camel, entity_name, hidden, kind_initial, num, one_of, snake};
+pub use names::{camel, entity_name, hidden, kind_initial, name_uses, num, one_of, snake, NameUse};
 pub use parser::{parse, parse_from, parse_legacy, parse_with_limits, ParseLimits};
 pub(crate) use parser::{reference_at, sweep_of, SweepParts};
 pub use print::{bounded, operator_text, render_flat, write_stmt_to, PrintError};

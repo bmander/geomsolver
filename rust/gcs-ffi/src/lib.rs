@@ -4594,6 +4594,31 @@ pub unsafe extern "C" fn gcs_elab_add_relation(
     })
 }
 
+/// A selection as an edit is handed it: `{"entities": [["point", 3], ...], "constraints": [id,
+/// ...]}`, each entity by kind and index.
+fn selection_of(v: &Json) -> (Vec<EntRef>, Vec<u32>) {
+    let ents: Vec<EntRef> = v
+        .get("entities")
+        .map(|a| {
+            a.arr()
+                .iter()
+                .filter_map(|r| {
+                    let p = r.arr();
+                    (p.len() == 2)
+                        .then(|| EntKind::parse(p[0].as_str()))
+                        .flatten()
+                        .map(|k| EntRef::new(k, p[1].as_i64() as usize))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let cons: Vec<u32> = v
+        .get("constraints")
+        .map(|a| a.arr().iter().map(|x| x.as_i64() as u32).collect())
+        .unwrap_or_default();
+    (ents, cons)
+}
+
 /// `{"entities": [["point", 3], ...], "constraints": [id, ...]}`
 #[no_mangle]
 pub unsafe extern "C" fn gcs_elab_remove(
@@ -4603,29 +4628,30 @@ pub unsafe extern "C" fn gcs_elab_remove(
     len: usize,
 ) -> *mut u8 {
     guard(std::ptr::null_mut(), move || {
-        let v = as_json(ptr, len);
-        let ents: Vec<EntRef> = v
-            .get("entities")
-            .map(|a| {
-                a.arr()
-                    .iter()
-                    .filter_map(|r| {
-                        let p = r.arr();
-                        (p.len() == 2)
-                            .then(|| EntKind::parse(p[0].as_str()))
-                            .flatten()
-                            .map(|k| EntRef::new(k, p[1].as_i64() as usize))
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-        let cons: Vec<u32> = v
-            .get("constraints")
-            .map(|a| a.arr().iter().map(|x| x.as_i64() as u32).collect())
-            .unwrap_or_default();
+        let (ents, cons) = selection_of(&as_json(ptr, len));
         // the live sketch, not the elaboration's: the binding took that one out into `s`
         let e = &*h;
         out_edit(gcs_core::edit::remove(e, &e.program, sk(s), &ents, &cons))
+    })
+}
+
+/// `{"entities": […], "constraints": […], "name": "Bracket"}` — the selection packaged as a
+/// component (`edit::make_component`), `name` optional; the edit's `names` are the component
+/// and its instance.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_elab_make_component(
+    h: *mut Elaborated,
+    s: *mut Sketch,
+    ptr: *const u8,
+    len: usize,
+) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || {
+        let v = as_json(ptr, len);
+        let (ents, cons) = selection_of(&v);
+        let name = v.get("name").map(|n| n.as_str().to_string()).filter(|n| !n.is_empty());
+        let e = &*h;
+        let name = name.as_deref();
+        out_edit(gcs_core::edit::make_component(e, &e.program, sk(s), &ents, &cons, name))
     })
 }
 

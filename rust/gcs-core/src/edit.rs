@@ -19,6 +19,9 @@ use crate::model::{EntKind, EntRef, Sketch};
 use crate::program::{Elaborated, Made, Site};
 use crate::syntax::{self, num, Decl, Program, Span, Stmt, StmtKind};
 
+mod component;
+pub use component::make_component;
+
 /// What an edit did to the document, and what it costs to take up.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
@@ -143,11 +146,25 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
     }
     let mut root = Vec::new();
     written(&prog.root().body, &mut root);
-    for st in root {
+    // and a component of the document's own that is drawn once: one instance path reaches each
+    // of its statements, so the pose there is that instance's and its text the one spelling of
+    // it — what Make component leaves behind.  Only a seed the definition already writes is
+    // spliced; a clause it left out is not written into it (`missing` below), so a `Rectangle`
+    // the Rect tool defined stays the bare chain it is
+    let mut inner = Vec::new();
+    for c in prog.components.iter().filter(|c| c.module.is_none() && !std::ptr::eq(*c, prog.root()))
+    {
+        written(&c.body, &mut inner);
+    }
+    let walk = root.into_iter().map(|st| (st, false)).chain(inner.into_iter().map(|st| (st, true)));
+    for (st, nested) in walk {
         let StmtKind::Decl(d) = &st.kind else { continue };
         // `hint(at: t)` names a *place*, and has no coordinates to write.  Faces and
         // solids also own no seeds: their children are boundaries and operands, not points.
         if d.seed_at.is_some() || d.kind.spatial() {
+            continue;
+        }
+        if nested && !one_path(e, st.id) {
             continue;
         }
         // a declaration that could not be built made nothing, and has no pose to record
@@ -277,6 +294,11 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
             edits.extend(mine);
             continue;
         }
+        // inside a definition, only what it already wrote
+        if nested {
+            edits.extend(mine);
+            continue;
+        }
         // Something the source never wrote has moved — an omitted radius, an endpoint of a bare
         // `l := line`.  There is nowhere to splice, so what the source left out is written: the
         // argument list, the `hint(…)` clause, or both.
@@ -401,6 +423,21 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
         return Edit::none(prog, None);
     }
     Edit::spliced(prog, edits, Kind::Numeric)
+}
+
+/// Whether a statement is reached by exactly one instance path — the third clause of the
+/// writeback rule, asked of a statement in a component's body: everything it made was made under
+/// one path, and no block's copy is on it (a block's copies are one statement however many).
+fn one_path(e: &Elaborated, id: syntax::StmtId) -> bool {
+    let mut paths =
+        e.map.ents_made_by(id).filter_map(|r| e.map.of_entity.get(&r)).map(|s| &s.path.0);
+    match paths.next() {
+        Some(first) => {
+            !first.iter().any(|p| matches!(p, crate::ir::PathStep::Copy { .. }))
+                && paths.all(|p| p == first)
+        }
+        None => false,
+    }
 }
 
 /// A `hint(…)` clause of the numbers given, each by its field's name: a seed written as an

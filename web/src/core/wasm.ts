@@ -114,6 +114,7 @@ export interface Abi {
   gcs_elab_region_json(h: number, s: number, plane: number, x: number, y: number,
                        unit: number): number;
   gcs_elab_remove(h: number, sk: number, p: number, n: number): number;
+  gcs_elab_make_component(h: number, sk: number, p: number, n: number): number;
   gcs_elab_set_dimension(h: number, cid: number, ap: number, an: number,
                          tp: number, tn: number): number;
   gcs_sketch_counts(h: number, out: number): void;

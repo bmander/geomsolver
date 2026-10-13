@@ -14,7 +14,12 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   lexical rule: *a seed is writable iff it is inside a `hint(…)` clause, is a literal and not an
   expression, and is reached by exactly one instance path.*  `Decl::hint_span` carries where the
   clause *is* or — empty — where it *would go*; `commit_seeds` splices each seed in place when
-  all have spans, else writes the whole clause there; a decl seeded by *place* is skipped.
+  all have spans, else writes the whole clause there; a decl seeded by *place* is skipped.  A
+  statement in one of the document's own components is written back when everything it made
+  shares **one instance path** with no block copy on it (`edit::one_path`), and only by splicing
+  a seed the definition already writes — no clause is written into a definition, so the Rect
+  tool's bare `Rectangle` stays bare; drawn twice, it is two poses of one statement and left
+  alone.
   `reconcile` and `retext` **apply themselves to the `Elaborated` and do not rebuild the
   drawing** (that would invalidate a half-finished tool's proxies).  `retext` re-parses (same
   ids); `adopt` extends the map onto new statements.  `reconcile` reads only the *append* (past
@@ -35,6 +40,23 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   Delete button are one function (`main.ts`'s `deleteSelection`): the focused constraint, else the
   drawing's selection, the solids or the picture.  Gate:
   `deleting_beside_what_a_component_made_takes_the_rest`, and the app test beside it.
+- **Make component** (`edit::make_component`; FFI `gcs_elab_make_component`,
+  `Document.makeComponent`; the Component button `⇧G`, and Insert ▸ Component… to name it) is
+  the selection's statements moved, **as written**, into `component Part(…) { … }` and one
+  `part0 := Part(…)` standing where the first was — a splice, comments kept, held to the
+  elaborator (an error the document did not have refuses it in its words).  What moves is the
+  root statement each selected thing came from (an instance or a block whole, by its path's
+  first step), then every relation — and every anonymous declaration, the `line(o, q)` one is
+  written over — whose root names all moved (`remove`'s rule).  A line moves whole or not at
+  all (a chain, a `;`); an `in P { … }` block's run is an `in` block inside the definition, and
+  the block goes when nothing in it stays.  **What the moved text reads from outside is a formal
+  of the name it had**, so the text reads unchanged: a declaration by its kind, an instance or
+  group as `group`, a value by label typed by its dimension (`Length`, `Angle`, else `Scalar`);
+  a module's datum has no bare name, so `std.front` is handed in as `front` and rewritten.
+  **What stays outside names what moved through the instance** (`part0.a`), found by
+  `syntax::name_uses`, the lexer's own reading of a text's names.  What a module made stays,
+  counted in `Edit::kept`; `names` are the component and the instance, and the app carries the
+  selection across by them.  `tests/make_component.rs` and `app.test.ts` are the gates.
 
 - **A gesture writes a solid** (#162 F0): `edit::add_face`, `add_solid` (`SolidSweep`, extents
   as text into `Arg::Dim`, mixtures refused by the parser's own `sweep_of`) and `add_body_word`

@@ -149,6 +149,19 @@ export async function insertPlane(): Promise<void> {
   view.addDatum('plane', name.trim() || undefined);
 }
 
+/** Ask what the component is called, then package the selection as the Component button does.
+ *  Whether the name will do is the core's to say: a taken one is refused in its words. */
+export async function insertComponent(): Promise<void> {
+  if (!view.selected.length) { toast('select what the component is to be made of'); return; }
+  let name = '';
+  const ok = await askFields('Make component', (body) => {
+    addText(body, 'name', name, (s) => { name = s; },
+            'What the definition is called — blank to have one minted (Part, Part2, …)');
+  });
+  if (!ok) return;
+  view.makeComponent(name.trim() || undefined);
+}
+
 /* -- Stage 5: root selection ---------------------------------------------------- */
 
 /** A selected tangency row toggles its inside/outside flag; a selected point flips the

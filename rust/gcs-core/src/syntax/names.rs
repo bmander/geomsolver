@@ -176,3 +176,56 @@ pub(crate) fn ref_text(r: &Ref) -> String {
     write_ref(&mut s, r);
     s
 }
+
+/// **A name a text reads**, as the lexer sees it: `std.front` is one use of two parts, each with
+/// where it stands.  What `name_uses` hands back.
+#[derive(Clone, Debug, PartialEq)]
+pub struct NameUse {
+    /// The dotted parts as written, `std` then `front`, each at its span.
+    pub parts: Vec<(String, Span)>,
+    /// Whether a `(` follows: a call, `std.Polygon(…)`, which names no entity.
+    pub called: bool,
+}
+
+/// Every name a text reads, in order: an identifier and the fields dotted after it.  Not a field
+/// (one after a `.`), a label (one before a `:`), the name a `:=` defines, nor a unit (one
+/// standing against the number before it).  Lexical, so it asks nothing of what the names
+/// are: a keyword or a relation word comes back too, and a caller matching against names it
+/// knows is what makes the answer mean anything.  Spans are offsets into `text`.  What
+/// `edit::make_component` reads both the statements it moves and the ones it leaves with.
+pub fn name_uses(text: &str) -> Vec<NameUse> {
+    use super::lexer::{lex, Tok};
+    let toks = lex(text).0.toks;
+    let ident = |k: usize| match toks.get(k) {
+        // a shorthand is read as its word (`@` is `coincident`), and is no name either way
+        Some((Tok::Ident(s), at)) if at.len() as usize == s.len() => Some((s.clone(), *at)),
+        _ => None,
+    };
+    let mut out = Vec::new();
+    let mut k = 0;
+    while k < toks.len() {
+        let Some(first) = ident(k) else {
+            k += 1;
+            continue;
+        };
+        let field = k > 0 && toks[k - 1].0 == Tok::P('.');
+        let unit = k > 0 && matches!(toks[k - 1], (Tok::Num(_), at) if at.hi == first.1.lo);
+        let mut parts = vec![first];
+        k += 1;
+        while toks.get(k).is_some_and(|t| t.0 == Tok::P('.')) {
+            match ident(k + 1) {
+                Some(part) => {
+                    parts.push(part);
+                    k += 2;
+                }
+                None => break,
+            }
+        }
+        let next = toks.get(k).map(|t| &t.0);
+        if field || unit || matches!(next, Some(Tok::P(':')) | Some(Tok::Define)) {
+            continue;
+        }
+        out.push(NameUse { parts, called: next == Some(&Tok::P('(')) });
+    }
+    out
+}

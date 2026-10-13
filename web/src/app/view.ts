@@ -1899,6 +1899,7 @@ export class SketchView {
   addConstraints(...cs: Constraint[]): void { edit.addConstraints(this, ...cs); }
   removeConstraint(c: Constraint): void { edit.removeConstraint(this, c); }
   deleteSelected(): void { edit.deleteSelected(this); }
+  makeComponent(name?: string): boolean { return edit.makeComponent(this, name); }
   toggleConstructionSelected(): void { edit.toggleConstructionSelected(this); }
   toggleFixSelected(): void { edit.toggleFixSelected(this); }
   copySelected(): number { return edit.copySelected(this); }
