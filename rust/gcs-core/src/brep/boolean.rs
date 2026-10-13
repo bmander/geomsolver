@@ -342,38 +342,8 @@ fn arrange<'a>(a: &'a Brep,b: &'a Brep,tol: f64) -> Result<Arranged<'a>,String> 
             }
         }
     }
-    // **a root found where an edge meets a surface flatly is known only as the stretch of the edge
-    // within the tolerance of it**: a crossing of the same edge found exactly inside that stretch (a
-    // fillet's contact, where its canal lies tangent to the face the edge lies in) is that root, and
-    // the vertex the root minted is no vertex at all
-    let rooted: std::collections::BTreeSet<(usize,u32)> = loose.iter().map(|l| (l.edge,l.vertex)).collect();
-    let mut gone = std::collections::BTreeSet::new();
-    for l in &loose {
-        if cuts[l.edge].len() < 2 { continue }
-        let e = &solids[l.side].edges[l.index];
-        let EdgeCurve::Curve(c) = &e.curve else { continue };
-        let s = &solids[1-l.side].faces[l.face].surface;
-        let near = |t: f64| s.implicit(c.point(t)).abs() <= 16.*tol.max(e.tol);
-        // out from the root each way, doubling, as far as the edge stays that near
-        let reach = |dir: f64| {
-            let (mut d,mut last) = (1e-12*(e.t[1]-e.t[0]).abs().max(1e-300),l.t);
-            loop {
-                let t = (l.t+dir*d).clamp(e.t[0],e.t[1]);
-                if !near(t) { return last }
-                last = t;
-                if t == e.t[0] || t == e.t[1] { return last }
-                d *= 2.;
-            }
-        };
-        let (lo,hi) = (reach(-1.),reach(1.));
-        let exact = cuts[l.edge].iter().filter(|&&(t,w)| w != l.vertex && !rooted.contains(&(l.edge,w)) && t >= lo && t <= hi)
-            .min_by(|x,y| (x.0-l.t).abs().total_cmp(&(y.0-l.t).abs())).map(|x| x.1);
-        let Some(w) = exact else { continue };
-        if debug { eprintln!("brep: a root at {:?} met flatly is the crossing at {:?}",pool.pts[l.vertex as usize],pool.pts[w as usize]); }
-        cuts[l.edge].retain(|&(_,u)| u != l.vertex);
-        for u in on_face[1-l.side][l.face].iter_mut() { if *u == l.vertex { *u = w } }
-        gone.insert(l.vertex);
-    }
+    // a root met flatly that is a crossing found besides is that crossing (`flat_roots`)
+    let gone = flat_roots(solids,&loose,&mut cuts,&mut on_face,&pool,tol,debug);
     let t1 = clock.elapsed().as_secs_f64();
     // 2. every pair of faces: their surfaces' curves, kept where they lie in both faces
     let mut ssi_edges: Vec<(usize,usize,usize)> = Vec::new(); // (edge, face of A, face of B)
@@ -583,66 +553,13 @@ fn arrange<'a>(a: &'a Brep,b: &'a Brep,tol: f64) -> Result<Arranged<'a>,String> 
     // meetings among them: two edges running along one another (a shared circle, each solid
     // seamed at its own angle; a meeting traced along an edge already there) then share their
     // vertices, and step 4 takes them for one. Each edge boxed by its curve's enclosure, on every core.
-    let inside = crate::par::indices(edges.len(),|we| -> Vec<(f64,u32)> {
-        let e = &edges[we];
-        let EdgeCurve::Curve(c) = &e.curve else { return Vec::new() };
-        let (lo,hi) = c.bounds(e.t);
-        (0..pool.pts.len() as u32).filter_map(|v| {
-            if v == e.v[0] || v == e.v[1] || gone.contains(&v) || cuts[we].iter().any(|&(_,w)| w == v) { return None }
-            let p = pool.pts[v as usize];
-            if (0..3).any(|k| p[k] < lo[k]-pad || p[k] > hi[k]+pad) { return None }
-            let mut t = c.inverse(p);
-            if let Some(period) = c.period() { t = around(t,e.t[0],period); }
-            // a vertex at the edge's end in all but the pool's labelling is its end
-            let near = |q: V| distance(q,p) <= 8.*tol;
-            (t > e.t[0] && t < e.t[1] && near(c.point(t)) && !near(c.point(e.t[0])) && !near(c.point(e.t[1]))).then_some((t,v))
-        }).collect()
-    });
+    let inside = vertices_inside(&edges,&cuts,&pool,&gone,pad,tol);
     for (we,found) in inside.into_iter().enumerate() { cuts[we].extend(found); }
     let t2 = clock.elapsed().as_secs_f64();
     // 3. every original edge split where it was cut: its pieces, in order along it
-    let mut pieces_of: Vec<Vec<(u32,[f64;2])>> = Vec::new();
-    let mut out: Vec<WEdge> = Vec::new();
-    for (i,e) in edges.iter().enumerate() {
-        let mut cs: Vec<(f64,u32)> = cuts[i].iter().copied()
-            .filter(|&(t,v)| v != e.v[0] && v != e.v[1] && t > e.t[0] && t < e.t[1]).collect();
-        cs.sort_by(|x,y| x.0.total_cmp(&y.0));
-        cs.dedup_by(|x,y| x.1 == y.1);
-        let mut run = vec![(e.t[0],e.v[0])];
-        run.extend(cs);
-        run.push((e.t[1],e.v[1]));
-        let mut ps = Vec::new();
-        for w in run.windows(2) {
-            if w[0].1 == w[1].1 && w.len() == 2 && run.len() > 2 { continue }
-            out.push(WEdge {curve:e.curve.clone(),t:[w[0].0,w[1].0],v:[w[0].1,w[1].1]});
-            ps.push(((out.len()-1) as u32,[w[0].0,w[1].0]));
-        }
-        pieces_of.push(ps);
-    }
+    let (pieces_of,out) = split_edges(&edges,&cuts);
     // 4. pieces that are one edge merged: the same ends and the same curve between
-    let mut rep: Vec<(u32,bool)> = (0..out.len() as u32).map(|i| (i,false)).collect();
-    let mut by_ends: BTreeMap<(u32,u32),Vec<u32>> = BTreeMap::new();
-    for (i,e) in out.iter().enumerate() { by_ends.entry((e.v[0].min(e.v[1]),e.v[0].max(e.v[1]))).or_default().push(i as u32); }
-    for group in by_ends.values() {
-        for (k,&i) in group.iter().enumerate() {
-            let ei = &out[i as usize];
-            let mid = ei.point((ei.t[0]+ei.t[1])/2.,&pool);
-            for &j in &group[..k] {
-                if rep[j as usize].0 != j { continue }
-                let ej = &out[j as usize];
-                let (EdgeCurve::Curve(ci),EdgeCurve::Curve(cj)) = (&ei.curve,&ej.curve) else { continue };
-                let mut t = cj.inverse(mid);
-                if let Some(period) = cj.period() { t = around(t,ej.t[0],period); }
-                if t < ej.t[0]-1e-9 || t > ej.t[1]+1e-9 || distance(cj.point(t),mid) > 8.*tol { continue }
-                // the same way round: the same first vertex, or (closed) the same tangent
-                let along = if ei.v[0] != ei.v[1] { ei.v[0] == ej.v[0] } else {
-                    crate::space::dot(ci.tangent((ei.t[0]+ei.t[1])/2.),cj.tangent(t)) > 0.
-                };
-                rep[i as usize] = (j,!along);
-                break
-            }
-        }
-    }
+    let rep = merged(&out,&pool,tol);
     // 5. each face split by what lies on it, traced in its parameters
     let mut pieces: Vec<(usize,usize,Vec<Vec<Half>>)> = Vec::new();
     for s in 0..2 {
@@ -735,6 +652,118 @@ fn arrange<'a>(a: &'a Brep,b: &'a Brep,tol: f64) -> Result<Arranged<'a>,String> 
             the rest {:.2} s",t2-t1,clock.elapsed().as_secs_f64()-t2);
     }
     Ok(Arranged {solids,located,pool,out,pieces})
+}
+
+/// **A root found where an edge meets a surface flatly is known only as the stretch of the edge
+/// within the tolerance of it**: a crossing of the same edge found exactly inside that stretch (a
+/// fillet's contact, where its canal lies tangent to the face the edge lies in) is that root, and
+/// the vertex the root minted is no vertex at all. Returns those vertices: each such root's
+/// crossing takes its place in `cuts` and `on_face`.
+fn flat_roots(solids: [&Brep;2],loose: &[Loose],cuts: &mut [Vec<(f64,u32)>],on_face: &mut [Vec<Vec<u32>>;2],pool: &Pool,
+    tol: f64,debug: bool) -> std::collections::BTreeSet<u32> {
+    let rooted: std::collections::BTreeSet<(usize,u32)> = loose.iter().map(|l| (l.edge,l.vertex)).collect();
+    let mut gone = std::collections::BTreeSet::new();
+    for l in loose {
+        if cuts[l.edge].len() < 2 { continue }
+        let e = &solids[l.side].edges[l.index];
+        let EdgeCurve::Curve(c) = &e.curve else { continue };
+        let s = &solids[1-l.side].faces[l.face].surface;
+        let near = |t: f64| s.implicit(c.point(t)).abs() <= 16.*tol.max(e.tol);
+        // out from the root each way, doubling, as far as the edge stays that near
+        let reach = |dir: f64| {
+            let (mut d,mut last) = (1e-12*(e.t[1]-e.t[0]).abs().max(1e-300),l.t);
+            loop {
+                let t = (l.t+dir*d).clamp(e.t[0],e.t[1]);
+                if !near(t) { return last }
+                last = t;
+                if t == e.t[0] || t == e.t[1] { return last }
+                d *= 2.;
+            }
+        };
+        let (lo,hi) = (reach(-1.),reach(1.));
+        let exact = cuts[l.edge].iter().filter(|&&(t,w)| w != l.vertex && !rooted.contains(&(l.edge,w)) && t >= lo && t <= hi)
+            .min_by(|x,y| (x.0-l.t).abs().total_cmp(&(y.0-l.t).abs())).map(|x| x.1);
+        let Some(w) = exact else { continue };
+        if debug { eprintln!("brep: a root at {:?} met flatly is the crossing at {:?}",pool.pts[l.vertex as usize],pool.pts[w as usize]); }
+        cuts[l.edge].retain(|&(_,u)| u != l.vertex);
+        for u in on_face[1-l.side][l.face].iter_mut() { if *u == l.vertex { *u = w } }
+        gone.insert(l.vertex);
+    }
+    gone
+}
+
+/// Step 2b's vertices: for each working edge, the pooled vertices (none of `gone`) lying inside
+/// it, off its ends, and where along it; each edge boxed by its curve's enclosure, on every core.
+fn vertices_inside(edges: &[WEdge],cuts: &[Vec<(f64,u32)>],pool: &Pool,gone: &std::collections::BTreeSet<u32>,
+    pad: f64,tol: f64) -> Vec<Vec<(f64,u32)>> {
+    crate::par::indices(edges.len(),|we| -> Vec<(f64,u32)> {
+        let e = &edges[we];
+        let EdgeCurve::Curve(c) = &e.curve else { return Vec::new() };
+        let (lo,hi) = c.bounds(e.t);
+        (0..pool.pts.len() as u32).filter_map(|v| {
+            if v == e.v[0] || v == e.v[1] || gone.contains(&v) || cuts[we].iter().any(|&(_,w)| w == v) { return None }
+            let p = pool.pts[v as usize];
+            if (0..3).any(|k| p[k] < lo[k]-pad || p[k] > hi[k]+pad) { return None }
+            let mut t = c.inverse(p);
+            if let Some(period) = c.period() { t = around(t,e.t[0],period); }
+            // a vertex at the edge's end in all but the pool's labelling is its end
+            let near = |q: V| distance(q,p) <= 8.*tol;
+            (t > e.t[0] && t < e.t[1] && near(c.point(t)) && !near(c.point(e.t[0])) && !near(c.point(e.t[1]))).then_some((t,v))
+        }).collect()
+    })
+}
+
+/// Step 3: every working edge split where `cuts` cut it, as pieces in order along it (indices
+/// into the edges returned, and each piece's parameters).
+fn split_edges(edges: &[WEdge],cuts: &[Vec<(f64,u32)>]) -> (Vec<Vec<(u32,[f64;2])>>,Vec<WEdge>) {
+    let mut pieces_of: Vec<Vec<(u32,[f64;2])>> = Vec::new();
+    let mut out: Vec<WEdge> = Vec::new();
+    for (i,e) in edges.iter().enumerate() {
+        let mut cs: Vec<(f64,u32)> = cuts[i].iter().copied()
+            .filter(|&(t,v)| v != e.v[0] && v != e.v[1] && t > e.t[0] && t < e.t[1]).collect();
+        cs.sort_by(|x,y| x.0.total_cmp(&y.0));
+        cs.dedup_by(|x,y| x.1 == y.1);
+        let mut run = vec![(e.t[0],e.v[0])];
+        run.extend(cs);
+        run.push((e.t[1],e.v[1]));
+        let mut ps = Vec::new();
+        for w in run.windows(2) {
+            if w[0].1 == w[1].1 && w.len() == 2 && run.len() > 2 { continue }
+            out.push(WEdge {curve:e.curve.clone(),t:[w[0].0,w[1].0],v:[w[0].1,w[1].1]});
+            ps.push(((out.len()-1) as u32,[w[0].0,w[1].0]));
+        }
+        pieces_of.push(ps);
+    }
+    (pieces_of,out)
+}
+
+/// Step 4: each piece's representative among `out` (the first piece with the same ends and the
+/// same curve between), and whether it runs the other way round.
+fn merged(out: &[WEdge],pool: &Pool,tol: f64) -> Vec<(u32,bool)> {
+    let mut rep: Vec<(u32,bool)> = (0..out.len() as u32).map(|i| (i,false)).collect();
+    let mut by_ends: BTreeMap<(u32,u32),Vec<u32>> = BTreeMap::new();
+    for (i,e) in out.iter().enumerate() { by_ends.entry((e.v[0].min(e.v[1]),e.v[0].max(e.v[1]))).or_default().push(i as u32); }
+    for group in by_ends.values() {
+        for (k,&i) in group.iter().enumerate() {
+            let ei = &out[i as usize];
+            let mid = ei.point((ei.t[0]+ei.t[1])/2.,&pool);
+            for &j in &group[..k] {
+                if rep[j as usize].0 != j { continue }
+                let ej = &out[j as usize];
+                let (EdgeCurve::Curve(ci),EdgeCurve::Curve(cj)) = (&ei.curve,&ej.curve) else { continue };
+                let mut t = cj.inverse(mid);
+                if let Some(period) = cj.period() { t = around(t,ej.t[0],period); }
+                if t < ej.t[0]-1e-9 || t > ej.t[1]+1e-9 || distance(cj.point(t),mid) > 8.*tol { continue }
+                // the same way round: the same first vertex, or (closed) the same tangent
+                let along = if ei.v[0] != ei.v[1] { ei.v[0] == ej.v[0] } else {
+                    crate::space::dot(ci.tangent((ei.t[0]+ei.t[1])/2.),cj.tangent(t)) > 0.
+                };
+                rep[i as usize] = (j,!along);
+                break
+            }
+        }
+    }
+    rep
 }
 
 /// Where the closed curves two surfaces meet in (`curves`, in closed form) cross one another,
