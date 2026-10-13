@@ -25,8 +25,16 @@ pub(crate) fn degenerate(sk: &Sketch, map: &SourceMap) -> Vec<Diag> {
             CKind::ProjectSolved => {
                 let (a, b) = (c.args[2].ent().i(), c.args[3].ent().i());
                 let (na, nb) = (sk.basis(a).normal(), sk.basis(b).normal());
-                (crate::space::norm(crate::space::cross(na, nb)) <= crate::plane::PARALLEL_TOL)
-                    .then(|| format!(
+                let parallel =
+                    crate::space::norm(crate::space::cross(na, nb)) <= crate::plane::PARALLEL_TOL;
+                // a point drawn in two planes the solve turned parallel: said where the point is
+                // declared, as it is of two planes placed parallel before the solve (§6.7)
+                let (p, t) = (c.args[0].ent().i(), c.args[1].ent().i());
+                if parallel && c.intrinsic && sk.twins.get(&p).is_some_and(|ts| ts.contains(&t)) {
+                    out.extend(super::planes::twin_parallel(sk, map, p, a, b));
+                    continue;
+                }
+                parallel.then(|| format!(
                         "`{}` and `{}` came out parallel, so no fold line relates them and the \
                          projection says nothing",
                         sk.plane_name(a), sk.plane_name(b)
@@ -216,14 +224,20 @@ fn points(sk: &Sketch, e: EntRef, out: &mut Vec<usize>, depth: u32) {
 /// or a plane is placed once the statements taken determine it.  The drawing in a plane never
 /// places it: its seeds are what is to be read through it.  Nothing else moves; the hidden
 /// points are put back where their points now stand.  What nothing places keeps its seed.
-pub(crate) fn place(sk: &mut Sketch) {
+///
+/// Which planes stand turned as the statements say, and not merely as they were seeded: each
+/// plane both of whose axes are held or placed here.
+pub(crate) fn place(sk: &mut Sketch) -> Vec<bool> {
     use std::collections::BTreeSet;
     align(sk);
     let mut axis_placed: Vec<bool> =
         (0..sk.axes.len()).map(|r| held(sk, &sk.axes[r].d)).collect();
     let mut plane_placed: Vec<bool> = (0..sk.planes.len()).map(|p| sk.plane_fixed(p)).collect();
+    let turned = |sk: &Sketch, axis_placed: &[bool]| -> Vec<bool> {
+        sk.planes.iter().map(|pl| axis_placed[pl.u as usize] && axis_placed[pl.v as usize]).collect()
+    };
     if axis_placed.iter().all(|&b| b) && plane_placed.iter().all(|&b| b) {
-        return;
+        return turned(sk, &axis_placed);
     }
     // what each statement reads: its axes and planes, a plane's origin standing for its plane,
     // the planes the other points it reads are drawn in (a held point waits for none), and every
@@ -381,6 +395,7 @@ pub(crate) fn place(sk: &mut Sketch) {
         }
     }
     relift(sk);
+    turned(sk, &axis_placed)
 }
 
 /// Every axis a plane holds along a drawn line (`program::entities::axes_along`) turned to the

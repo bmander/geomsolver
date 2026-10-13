@@ -147,6 +147,8 @@ fn every_node_the_kernel_builds_is_occts() {
                     Err(err) if err.contains("along-guide lofts") => { eprintln!("{label}: {v:.9} mm³ (OCCT builds no lofts)"); None }
                     // nor a lowered round (`tests/fillet_oracle.rs` holds those to OCCT's fillet)
                     Err(err) if err.contains("lowered round") => { eprintln!("{label}: {v:.9} mm³ (OCCT builds no lowered rounds)"); None }
+                    // nor a ball's tube (`tests/canal.rs` holds those to Pappus)
+                    Err(err) if err.contains("ball's tube") => { eprintln!("{label}: {v:.9} mm³ (OCCT builds no balls' tubes)"); None }
                     Err(err) => panic!("{label}: OCCT: {err}"),
                 };
                 if let Some(theirs) = theirs {

@@ -41,7 +41,7 @@ fn rate(kid: usize, path: &[Jet], k: &[f64], e: f64) -> Vec<f64> {
 fn spline_contact(name: &str, rng: &mut Rng) -> Option<(usize, Vec<f64>)> {
     let t = match name {
         "point_on_spline" => 2,
-        "spline_tangent_line" | "spline_curvature" => 0,
+        "spline_tangent_line" | "spline_tangent_at" | "spline_curvature" => 0,
         _ => return None,
     };
     let mut k = vec![0.0];

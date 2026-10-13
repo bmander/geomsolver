@@ -550,6 +550,15 @@ impl<'a> Walk<'a> {
                     ks.v[i] = v;
                 }
             }
+            // how far a direction read off geometry is turned: a number over the parameters in
+            // scope, read by the build as a place's `turn:` is
+            if let Some((b, _)) = ks.dir.as_mut().and_then(|d| d.turn.as_mut()) {
+                *b = if self.sym.is_some() {
+                    self.subst_sym(b, vals, scope)
+                } else {
+                    substitute(b, vals, self.units)
+                };
+            }
         }
         for (b, _) in d.seed_at.iter_mut().flat_map(|a| a.texts_mut()) {
             // a place's numbers are texts over the parameters in scope, read later — by the

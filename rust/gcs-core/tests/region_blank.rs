@@ -1,6 +1,6 @@
 //! **The hypoid's blank, as a region, held to its own faces** (#145 F2/F3, #212).  Each member
 //! is cut from `solid(R)`, `R` its blank's region — within the tip cone and the heel sphere,
-//! outside the toe sphere and the back cone, sized by the solved layout (`blank/member.sv`).  The
+//! outside the toe sphere and the back cone, sized by the solved layout (`hypoid.sv`'s `Blank`).  The
 //! region's faces are named by the sets its body uses (`tip`, `heel`, `toe`, `back`), and each is
 //! held here to its closed form, read off the layout's own points and nothing the region makes:
 //! the spheres about the member's apex through its face span's ends, and the cones the pitch cone
@@ -39,16 +39,26 @@ struct Closed { apex: V, axis: V, half: f64, toe: f64, heel: f64, tip: f64, back
 
 impl Closed {
     fn read(e: &Elaborated, m: &str) -> Closed {
-        let (apex, foot) = line(e, &format!("pair.{m}.ax"));
+        let (apex, foot) = line(e, &format!("{m}_ax"));
         let axis = unit(sub(foot, apex));
         // the line the blank is built on, apex to mean point
         let generator = if m == "gear" { "generator" } else { "pitch_line" };
-        let (from, mean) = line(e, &format!("pair.{m}.{generator}"));
+        let (from, mean) = line(e, generator);
         assert!(norm(sub(from, apex)) < 1e-9 * norm(sub(mean, apex)), "{m}: its pitch line runs from its apex");
         let to_mean = sub(mean, apex);
         let half = norm(cross(to_mean, axis)).atan2(dot(to_mean, axis));
-        let radius = |end: &str| norm(sub(point(e, &format!("pair.{m}_blank.span.{end}")), apex));
-        let nm = e.sketch.params[e.sketch.free_vars["pair.normal_module"] as usize].value;
+        let unknown = |name: &str| e.sketch.params[e.sketch.free_vars[name] as usize].value;
+        // the spheres' radii: the face span's ends, half the face width either side of the mean
+        // point along the generator
+        let width = 0.2 * norm(sub(point(e, "M"), point(e, "O")));
+        let to_mean = norm(sub(mean, apex));
+        let radius = |end: &str| {
+            let r = unknown(&format!("{m}_blank.{end}.r"));
+            let want = to_mean + if end == "toe" { -width / 2.0 } else { width / 2.0 };
+            assert!((r - want).abs() < 1e-9 * to_mean, "{m}'s {end} sphere: {r} against {want}");
+            r
+        };
+        let nm = unknown("mn");
         Closed { apex, axis, half, toe: radius("toe"), heel: radius("heel"), tip: nm, back: -4.0 * nm }
     }
 
@@ -94,11 +104,11 @@ impl Closed {
 
 #[test]
 fn the_blank_is_held_to_its_own_faces() {
-    for (label, configuration) in fixtures::gear::designs() {
-        let e = fixtures::gear::read_file("pair.sv", &configuration);
+    for (label, text) in fixtures::gear::designs() {
+        let e = fixtures::gear::read(&text);
         for m in ["gear", "pinion"] {
             let closed = Closed::read(&e, m);
-            let region = named(&e, &format!("pair.{m}_blank.material"));
+            let region = named(&e, &format!("{m}_blank.material"));
             let x = e.sketch.exact_solid(region).unwrap_or_else(|why| panic!("{label} {m}: {why}"));
             // its faces, each on its closed form
             let mut faces: Vec<&str> = x.named.iter().map(|(_, f)| f.as_str()).collect();

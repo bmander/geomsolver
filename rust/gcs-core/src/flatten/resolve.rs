@@ -31,6 +31,9 @@ fn rescope_seeds(
                     rescope_text(t, ks.spans[i], sc, names_seen, alias, units, &mut names, bad);
                 }
             }
+            if let Some((t, span)) = ks.dir.as_ref().and_then(|d| d.turn.as_ref()) {
+                rescope_text(t, *span, sc, names_seen, alias, units, &mut names, bad);
+            }
         }
     }
     // a place's numbers are texts over the same names — `atan2(k2.center.y - k1.center.y, …)`
@@ -547,6 +550,14 @@ fn rewrite(
                     fix(r, bad);
                 }
             }
+            // a direction a plane's axis is seeded along, read off geometry like a place
+            for kid in d.children.iter_mut().flatten() {
+                if let crate::syntax::Kid::Hint(crate::syntax::KidSeed { dir: Some(dir), .. }) = kid {
+                    for r in dir.refs_mut() {
+                        fix(r, bad);
+                    }
+                }
+            }
         }
         // an energy names the curve it is over (#121)
         StmtKind::Minimize(m) => fix(&mut m.curve, bad),
@@ -872,6 +883,12 @@ impl<'a> Walk<'a> {
                 self.err(Code::E103, span, format!("`{key}` wants a group or layout instance"));
             }
         }
+        // what each path formal was given, for the elaborator to judge by its kind (#251)
+        for (key, span, formal) in std::mem::take(&mut self.path_bindings) {
+            if let Some(target) = alias.get(&key) {
+                self.paths.push((target.clone(), span, formal));
+            }
+        }
         // what each instance was given, now that the aliases its arguments made are absolute
         for info in self.instances.iter_mut() {
             for (formal, actual) in info.ents.iter_mut() {
@@ -974,6 +991,11 @@ impl<'a> Walk<'a> {
                 if let StmtKind::Decl(d) = &st.kind {
                     if let Some(at) = &d.seed_at {
                         free.extend(std::iter::once(at.what.span).chain(at.toward.iter().chain(&at.along).map(|r| r.span)));
+                    }
+                    for kid in d.children.iter().flatten() {
+                        if let Kid::Hint(crate::syntax::KidSeed { dir: Some(dir), .. }) = kid {
+                            free.extend(dir.refs().map(|r| r.span));
+                        }
                     }
                     free.extend(d.membership.plane().map(|r| r.span));
                 }
@@ -1084,7 +1106,7 @@ impl<'a> Walk<'a> {
             .into_iter()
             .find(|i| {
                 self.prog.components[i.comp].formals.iter()
-                    .any(|f| f.name.text == swept && !matches!(f.ty, Ty::Ent(_) | Ty::Group | Ty::Set))
+                    .any(|f| f.name.text == swept && !matches!(f.ty, Ty::Ent(_) | Ty::Path | Ty::Group | Ty::Set))
             })
             .map(|i| crate::syntax::CurveOf {
                 instance: i.prefix.clone(),

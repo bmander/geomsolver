@@ -305,7 +305,7 @@ fn a_projection_reads_each_point_in_its_own_plane() {
 
 /// A point its instance's `in` puts in a view stands in space to the component declaring it, so
 /// what the component says of it reads as a point in space's: put on a plane, it is held there by
-/// a row, whatever view the instance is put in (the crown tooth's pitch points, `crown/tooth.sv`).
+/// a row, whatever view the instance is put in (the crown tooth's pitch points, as they were).
 #[test]
 fn a_point_its_instance_puts_in_a_view_keeps_the_row() {
     let src = format!(
@@ -316,4 +316,31 @@ fn a_point_its_instance_puts_in_a_view_keeps_the_row() {
     assert!(e.sketch.twins.is_empty());
     assert_eq!(e.sketch.plane_of(ent(&e, "foot.f").i()), Some(ent(&e, "G").i()));
     assert_eq!(kinds(&e), vec![CKind::PointOnPlane]);
+}
+
+/// A plane the solve turns — `n.v` along a line to a point in space, which nothing places before
+/// the solve — so its seed, the front's attitude, says nothing about where it stands.
+fn turned(axis: &str) -> String {
+    format!("unit mm\nuse std\nq := point hint(x: 0, y: 5, z: 1)\nq coincident std.{axis}\n\
+             std.origin distance(5mm) q\nn := plane\nn.origin coincident std.origin\n\
+             n.u parallel std.x\nn.v parallel (l := line(std.origin, q))\n\
+             O := point hint((5, 0)) in n, std.front\nstd.origin distance(5mm, along: std.x) O\n")
+}
+
+/// **E061 waits for a plane the solve places** (#252): a point drawn in the front and in a plane
+/// seeded as the front is judged where that plane comes to stand, not where it started.  Turned
+/// up to the top, the two meet on the x axis and the point is there; turned onto the front, they
+/// are parallel, said at the point once the solve has left them so.
+#[test]
+fn a_twin_across_a_plane_the_solve_places_is_judged_where_it_stands() {
+    let e = solved(&turned("y"));
+    let o = e.sketch.world_point(ent(&e, "O").i());
+    assert!((o[0] - 5.0).abs() < 1e-9 && o[1].abs() < 1e-9 && o[2].abs() < 1e-9, "{o:?}");
+    let src = turned("z");
+    let mut e = read(&src);
+    solve(&mut e.sketch, SolveOpts::default());
+    let d = gcs_core::program::solid_diagnostics(&e.sketch, &e.map);
+    let d = d.iter().find(|d| d.code.as_str() == "E061" && d.message.contains("parallel"))
+        .unwrap_or_else(|| panic!("{d:?}"));
+    assert_eq!(d.span.slice(&src), "O := point hint((5, 0)) in n, std.front");
 }

@@ -584,6 +584,16 @@ fn end_at(b: &Brep,uses: &[Vec<(usize,usize,usize)>],sides_faces: &[Vec<usize>;2
     let e = &b.edges[*chain.iter().find(|&&e| b.edges[e].v.contains(&v)).unwrap()];
     let EdgeCurve::Curve(c) = &e.curve else { return Err(format!("{} meet at a point",names())) };
     let leaving = if e.v[0] == v { unit(c.tangent(e.t[0])) } else { scale(unit(c.tangent(e.t[1])),-1.) };
+    // the two faces' own other pieces alone, meeting the run at an angle: a drafted side crossing
+    // its parting plane (#245), where the run turns and the canal each side would meet the other's
+    // in a mitre
+    let smooth = |g: usize| { let n = unit(b.faces[g].surface.gradient(p)); (0..2).any(|k| 1.-dot(m[k],n).abs() <= 1e-9) };
+    let side_named = |g: usize| sides_faces.iter().flatten().any(|&s| b.faces[s].name == b.faces[g].name);
+    let turning: Vec<usize> = faces.iter().copied().filter(|&g| !smooth(g)).collect();
+    if !turning.is_empty() && turning.iter().all(|&g| side_named(g)) {
+        return Err(format!("the fillet of {} turns where each face's pieces meet (as a drafted side's do at its parting \
+            plane): two canals meeting in a mitre are rung 3",names()));
+    }
     // each surface the faces there lie on, once: a plane, or a curved face's solid
     let mut cuts: Vec<Cut> = Vec::new();
     for &f in &faces {

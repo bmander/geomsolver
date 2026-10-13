@@ -183,11 +183,16 @@ pub enum Ty {
     /// or one written in place.  Not a group: a group formal refuses a set and this a group, so a
     /// set handed where members are read is said at the call (#191).
     Set,
+    /// **Any path** (#251): a line, an arc, a circle, a spline or a curve — what a point runs
+    /// along and a tangent is taken at. An entity formal whose words are settled by the kind of
+    /// the actual, as every entity formal's are; refused at the call when the actual runs along
+    /// nothing (E103, `program::paths`).
+    Path,
     Ent(EntKind),
 }
 
 /// The words the types other than an entity kind are written as — one table, read both ways.
-const TYPE_WORDS: [(&str, Ty); 7] = [
+const TYPE_WORDS: [(&str, Ty); 8] = [
     ("Int", Ty::Int),
     ("Scalar", Ty::Scalar),
     ("Length", Ty::Length),
@@ -195,6 +200,7 @@ const TYPE_WORDS: [(&str, Ty); 7] = [
     ("Side", Ty::Side),
     ("group", Ty::Group),
     ("set", Ty::Set),
+    ("path", Ty::Path),
 ];
 
 impl Ty {
@@ -230,7 +236,7 @@ impl Ty {
         match self {
             Ty::Length => crate::units::Dim::LENGTH,
             Ty::Angle => crate::units::Dim::ANGLE,
-            Ty::Int | Ty::Scalar | Ty::Side | Ty::Group | Ty::Set | Ty::Ent(_) => {
+            Ty::Int | Ty::Scalar | Ty::Side | Ty::Group | Ty::Set | Ty::Ent(_) | Ty::Path => {
                 crate::units::Dim::SCALAR
             }
         }
@@ -1295,12 +1301,13 @@ pub enum Sweep {
     Placed { motion: Ref, at: Arg },
     /// The continuous union of a solid under a finite motion interval.
     Swept { motion: Ref, from: Arg, to: Arg },
-    /// `from: a, to: b` — signed ordinates along the plane's normal.
-    Prism { from: Arg, to: Arg },
+    /// `from: a, to: b` — signed ordinates along the plane's normal; `draft: θ` tapers the sides
+    /// from the face's own plane, the parting plane (#245).
+    Prism { from: Arg, to: Arg, draft: Option<Arg> },
     /// One section repeated, or two sections interpolated, along a directed guide.
     Along { guide: Ref },
     /// A positive magnitude, kept until elaboration can validate its evaluated expression.
-    Depth { depth: Arg },
+    Depth { depth: Arg, draft: Option<Arg> },
     /// Span the target's stock and additions along the section normal.
     Through { body: Ref },
     /// `about: ax` — a full turn about a line in the face's own plane, or `sweep:` of one,
@@ -1323,12 +1330,28 @@ impl Sweep {
         match self {
             Sweep::Placed { at, .. } => vec![at],
             Sweep::Swept { from, to, .. } => vec![from,to],
-            Sweep::Prism { from, to } => vec![from, to],
-            Sweep::Depth { depth } => vec![depth],
+            Sweep::Prism { from, to, draft } => [from, to].into_iter().chain(draft).collect(),
+            Sweep::Depth { depth, draft } => std::iter::once(depth).chain(draft).collect(),
             Sweep::Revolve { sweep, .. } => sweep.iter_mut().collect(),
             Sweep::Body | Sweep::Through { .. } | Sweep::Along { .. } | Sweep::Region { .. } => {
                 Vec::new()
             }
+        }
+    }
+
+    /// A prism's draft (#245), where one is written.
+    pub fn draft(&self) -> Option<&Arg> {
+        match self {
+            Sweep::Prism { draft, .. } | Sweep::Depth { draft, .. } => draft.as_ref(),
+            _ => None,
+        }
+    }
+
+    /// A prism's draft slot, `None` for a sweep that takes none.
+    pub fn draft_mut(&mut self) -> Option<&mut Option<Arg>> {
+        match self {
+            Sweep::Prism { draft, .. } | Sweep::Depth { draft, .. } => Some(draft),
+            _ => None,
         }
     }
 
@@ -1423,6 +1446,30 @@ pub struct KidSeed {
     pub span: Span,
     /// The slot is an axis's (a plane's `u:` and `v:`), so the seed is its direction, `dir:`.
     pub axis: bool,
+    /// `hint(dir: up)`: the direction given as geometry, in place of the three numbers.
+    pub dir: Option<DirRef>,
+}
+
+/// `hint(dir: g)`, `hint(dir: up, turn: -90deg, about: g)` — a direction given as geometry: an
+/// axis's own, a line's from its `p1` to its `p2`, a plane's normal (`P.n`), read in space where
+/// each stands, and turned `turn:` (counter-clockwise looking down it) about a second one.  The
+/// place seed (`AtRef`) for directions (§6.4): it reads seeds, never solved values, and a solve
+/// writes nothing back over it.
+#[derive(Clone, Debug)]
+pub struct DirRef {
+    pub what: Ref,
+    pub about: Option<Ref>,
+    pub turn: Option<(String, Span)>,
+}
+
+impl DirRef {
+    pub fn refs(&self) -> impl Iterator<Item = &Ref> {
+        std::iter::once(&self.what).chain(self.about.iter())
+    }
+
+    pub fn refs_mut(&mut self) -> impl Iterator<Item = &mut Ref> {
+        std::iter::once(&mut self.what).chain(self.about.iter_mut())
+    }
 }
 
 /// `hint(at: c, bearing: u + phase)` — a place given as geometry: at a point, or at the edge

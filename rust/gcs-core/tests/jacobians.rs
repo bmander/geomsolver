@@ -217,6 +217,17 @@ fn all_constraints(seed: u32) -> Sketch {
         Constraint::point_on_spline(&sk, qe, spwe),
         Constraint::spline_tangent_line(&sk, spwe, le2),
         Constraint::spline_curvature(&sk, spwe, ce2),
+        // the tangent at a point a contact holds on the curve (#251): its place the contact's
+        Constraint::new(
+            CKind::SplineTangentAt,
+            vec![e(spe), e(le2), e(pe), Arg::Seed { value: 0.5, pinned: false }],
+        ),
+        Constraint::new(
+            CKind::SplineTangentAt,
+            vec![e(spwe), e(le1), e(qe), Arg::Seed { value: 0.5, pinned: false }],
+        ),
+        Constraint::new(CKind::TangentCircleAt, vec![e(ae), e(le1), e(pe)]),
+        Constraint::new(CKind::TangentCircleAt, vec![e(ce1), e(le2), e(qe)]),
         // a projection between two held planes, and the lift over a free plane and a held one
         Constraint::project(&sk, EntRef::point(dp), pe).expect("two images on two planes that fold"),
         Constraint::new(CKind::Lift, vec![e(EntRef::point(lc)), e(pce)]),
@@ -413,8 +424,11 @@ fn every_dimension_can_be_written_free() {
         let Some(free) = k.free_kernel() else { continue };
         let (stated, free) = (kernels::kernel(k.kernel()), kernels::kernel(free));
         assert_eq!(free.n_par, stated.n_par + 1, "{k:?}");
-        // the affine map, m and c
-        assert_eq!(free.n_const, 2, "{k:?}");
+        // the affine map, m and c — and a skew distance's pin beside them, as its stated kernel
+        // carries it beside its number (#217)
+        let pin = usize::from(k == gcs_core::constraints::CKind::LineLine3);
+        assert_eq!(free.n_const, 2 + pin, "{k:?}");
+        assert_eq!(stated.n_const, 1 + pin, "{k:?}");
         assert_eq!(free.n_res, stated.n_res, "{k:?}");
         assert_eq!(free.degree, stated.degree, "{k:?}");
     }

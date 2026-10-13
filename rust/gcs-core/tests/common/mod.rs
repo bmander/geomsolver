@@ -108,6 +108,24 @@ pub fn ent(e: &Elaborated, n: &str) -> EntRef {
     e.map.ent_named(n).unwrap_or_else(|| panic!("no `{n}`"))
 }
 
+/// The kinds of the constraints the document states, in order.
+pub fn kinds(e: &Elaborated) -> Vec<gcs_core::constraints::CKind> {
+    e.sketch.user_constraints().iter().map(|c| c.kind).collect()
+}
+
+/// The plane the point the document calls `n` is drawn in.
+pub fn plane_of(e: &Elaborated, n: &str) -> Option<usize> {
+    e.sketch.plane_of(ent(e, n).i())
+}
+
+/// The elaborated drawing solved, or the test fails saying why.
+pub fn solved(e: &Elaborated) -> Sketch {
+    let mut sk = e.sketch.clone();
+    let r = gcs_core::solve::solve(&mut sk, SolveOpts::default());
+    assert!(r.success, "{}", r.message);
+    sk
+}
+
 /// A line's two ends where they stand in space.
 pub fn ends(sk: &Sketch, l: EntRef) -> ([f64; 3], [f64; 3]) {
     let l = &sk.lines[l.i()];
@@ -174,8 +192,8 @@ pub fn corpus() -> Vec<Doc> {
             _ => println!("skip {name}: does not elaborate"),
         }
     }
-    for (label, configuration) in fixtures::gear::designs() {
-        let sketch = fixtures::gear::unsolved(&configuration).sketch;
+    for (label, text) in fixtures::gear::designs() {
+        let sketch = fixtures::gear::unsolved(&text).sketch;
         docs.push(Doc { name: format!("spiral_bevel@{label}"), sketch });
     }
     docs

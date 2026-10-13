@@ -113,7 +113,7 @@ impl<'a> Walk<'a> {
             ents: comp
                 .formals
                 .iter()
-                .filter(|f| matches!(f.ty, Ty::Ent(_)))
+                .filter(|f| matches!(f.ty, Ty::Ent(_) | Ty::Path))
                 .map(|f| (f.name.text.clone(), None))
                 .collect(),
             values: sub_vals.clone(),
@@ -161,7 +161,7 @@ impl<'a> Walk<'a> {
                      (§4.1)"
                 )
             } else if let Some(f) =
-                formal.filter(|f| !matches!(f.ty, Ty::Ent(_) | Ty::Group | Ty::Set))
+                formal.filter(|f| !matches!(f.ty, Ty::Ent(_) | Ty::Path | Ty::Group | Ty::Set))
             {
                 format!(
                     "`{0}` is a number, and a number is given by label: write `{0}: …` (§4.1)",
@@ -228,7 +228,7 @@ impl<'a> Walk<'a> {
                         }
                     }
                 }
-                (Ty::Group | Ty::Set | Ty::Ent(_), InstVal::Hint(..)) => self.err(Code::E103, a.span,
+                (Ty::Group | Ty::Set | Ty::Ent(_) | Ty::Path, InstVal::Hint(..)) => self.err(Code::E103, a.span,
                     format!("`{}` is not a number, so there is nothing to seed", f.name.text)),
                 // `beta: hint(15deg)` — the formal stays unbound, an unknown of the drawing like
                 // any unbound numeric formal (below), and its solve begins at the number
@@ -248,14 +248,18 @@ impl<'a> Walk<'a> {
                     format!("`{}` wants a group or layout instance, not `{t}`", f.name.text)),
                 (Ty::Set, InstVal::Expr(t)) => self.err(Code::E103, a.span,
                     format!("`{}` wants a set, not `{t}`", f.name.text)),
-                (Ty::Ent(_), InstVal::Ref(r)) => {
+                (Ty::Ent(_) | Ty::Path, InstVal::Ref(r)) => {
                     // recorded unresolved; the resolve pass turns it into an absolute name in the
                     // *caller's* scope, which is what makes it an alias rather than a copy
                     let key = formal_name(&prefix, &inst.name.text, &f.name.text);
+                    // and what a path is given is judged once its kind is known (#251)
+                    if f.ty == Ty::Path {
+                        self.path_bindings.push((key.clone(), a.span, f.name.text.clone()));
+                    }
                     self.arguments.insert(key.clone());
                     self.aliases.push((key, r.clone(), scope.clone()));
                 }
-                (Ty::Ent(_), InstVal::Expr(t)) => self.err(
+                (Ty::Ent(_) | Ty::Path, InstVal::Expr(t)) => self.err(
                     Code::E103,
                     a.span,
                     format!("`{}` wants an entity, and `{t}` is a number", f.name.text),

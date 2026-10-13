@@ -1,7 +1,10 @@
 //! Bodies with continuous swept cuts, built by the same native construction solventc uses.
 use std::{ffi::c_int,path::Path};
 
-use fixtures::gear::read;
+/// A document whose modules are read beside `base`, solved accurately.
+fn read(source: &str,base: &Path) -> gcs_core::program::Elaborated {
+    fixtures::read_beside(source,base,&mut |_,text| text)
+}
 #[path="../src/cad/native.rs"]
 #[allow(dead_code)]
 mod native;

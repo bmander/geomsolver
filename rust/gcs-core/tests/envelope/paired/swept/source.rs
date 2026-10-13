@@ -6,7 +6,7 @@ fn declarative_gear_space_matches_active_flanks_within_reachable_blank() {
     let pair = Pair::read([24,48],2.);
     let e = &pair.model;
     let source = SpatialField::read(&e.sketch,
-        e.map.ent_named(&format!("{REF}.gear_space.body")).unwrap().i(),pair.module*1e-10).unwrap();
+        e.map.ent_named("gear_space.body").unwrap().i(),pair.module*1e-10).unwrap();
     let reference = closure::GearSpace::read(&pair).field;
     let mut counts = [0;2];
     // All generating and indexing motions fix the apex. This ball covers every

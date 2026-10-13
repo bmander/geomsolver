@@ -1,4 +1,4 @@
-//! The generating-system checks: the pair's members built at one tooth space each (`gears.sv`),
+//! The generating-system checks: the pair's members built at one tooth space each (`hypoid.sv`),
 //! each face the space leaves held to the analytic envelope its name says (#212) — the crown face
 //! that made it, under its member's generating roll — with independent contact and indexing checks.
 use super::*;
@@ -12,11 +12,8 @@ mod faces;
 mod caps;
 mod swept;
 
-/// The layout's names in the pair: `HypoidPair` keeps it under its private `reference`.
-const REF: &str = "pair.reference";
-
 /// The checks' roll: the envelopes are verified over ±35 degrees; each member's removal sweep
-/// (members.sv) rolls at least that far.
+/// (`Generated`) rolls at least that far.
 const ROLL_SPAN: f64 = 35.;
 
 struct Pair {
@@ -45,18 +42,17 @@ struct Pair {
     surfaces: std::collections::BTreeMap<String,(RevolvedSurface,usize,Option<f64>)>,
 }
 
-fn read_model(src: &str,teeth: [u32;2],module: f64) -> program::Elaborated { read_model_with(src,teeth,module,false) }
+/// The pair (`hypoid.sv`) at `teeth` and `module`, solved: the bevel pair, since the reference
+/// checks assume the common apex.
+fn read_model(teeth: [u32;2],module: f64) -> program::Elaborated { read_model_with(teeth,module,false) }
 
 /// `read_model`, each member cut at its first tooth space only where `one_space` says: the faces
 /// a space leaves, every space's alike.
-fn read_model_with(src: &str,teeth: [u32;2],module: f64,one_space: bool) -> program::Elaborated {
+fn read_model_with(teeth: [u32;2],module: f64,one_space: bool) -> program::Elaborated {
+    let src = fixtures::gear::at(teeth,module,0.,0.,35.);
+    let src = if one_space { fixtures::gear::one_space(&src) } else { src };
     let (mut p,errors) = crate::common::parse(&src);
-    let link = modules::link(&mut p,&mut |name| match name {
-        // The reference checks assume the common apex, so the offset is zero here.
-        "configuration" => Some(fixtures::gear::configuration(teeth,module,0.,0.,35.)),
-        "members" if one_space => fixtures::gear::module(name).map(|text| fixtures::gear::one_space(&text)),
-        _ => fixtures::gear::module(name),
-    });
+    let link = modules::link(&mut p,&mut |name| gcs_core::library::resolve(name));
     assert!(errors.is_empty() && link.is_empty(),"{errors:?} {link:?}");
     let mut model = program::elaborate(&p);
     assert!(model.ok(),"{:?}",model.diags);
@@ -80,7 +76,7 @@ fn read_model_with(src: &str,teeth: [u32;2],module: f64,one_space: bool) -> prog
 
 /// What the checks read off a member as built (`BodyFaces`): each face's name, which faces meet
 /// along an edge, and which meet at each vertex. The design is proportional to its module
-/// (design.sv: every depth in modules, every length in the cone distance; no offset or allowance
+/// (`hypoid.sv`: every depth in modules, every length in the cone distance; no offset or allowance
 /// here), so a member's faces and how they meet are the same at every module for its tooth
 /// counts: they are read off the member built at `BUILT_MODULE`, where this kernel fits the cut's
 /// sheet (its rows are spaced in millimetres, and a tenth of that tooth is a few rows deep), and
@@ -99,14 +95,14 @@ impl Built {
         static BUILT: Mutex<BTreeMap<[u32;2],Arc<OnceLock<[Built;2]>>>> = Mutex::new(BTreeMap::new());
         let cell = BUILT.lock().unwrap().entry(teeth).or_default().clone();
         let both = cell.get_or_init(|| {
-            let model = read_model_with(include_str!("../../../examples/spiral_bevel/gears.sv"),teeth,BUILT_MODULE,true);
+            let model = read_model_with(teeth,BUILT_MODULE,true);
             ["pinion","gear"].map(|member| Built::of(&model,member,teeth))
         });
         both[usize::from(member == "gear")].clone()
     }
 
     fn of(model: &program::Elaborated,member: &str,teeth: [u32;2]) -> Built {
-        let body = model.map.ent_named(&format!("pair.{member}.body")).unwrap().i();
+        let body = model.map.ent_named(&format!("{member}.body")).unwrap().i();
         let faces = gcs_core::solid::faces::BodyFaces::read(&model.sketch,body)
             .unwrap_or_else(|why| panic!("teeth {teeth:?}: {why}"));
         let n = faces.paths().len();
@@ -126,7 +122,7 @@ enum Role { Cut(String,usize),Wall(String) }
 type CutterFace = (String,RevolvedSurface,Option<f64>);
 
 /// A region cutter's faces (`RevolvedSurface::meridian_loops`; a step on the axis `None`), walked
-/// counterclockwise in (radius, height) about the cutter's axis (`cutter.ax`, up from C) — the
+/// counterclockwise in (radius, height) about the cutter's axis (`cut_ax`, up from C) — the
 /// crown tooth's base, outer flank, round, tip, round and inner flank; its mate's base, inner
 /// flank, round, tip and so on — each face's `u` along the walk, as the drawn sections' were; and
 /// turned about the axis so each chart starts where the section stood in the normal view, on the
@@ -134,9 +130,9 @@ type CutterFace = (String,RevolvedSurface,Option<f64>);
 fn cutter_faces(model: &program::Elaborated,solid: usize) -> Vec<Option<CutterFace>> {
     use gcs_core::brep::planar::Seg;
     let sk = &model.sketch;
-    let ax = &sk.lines[model.map.ent_named(&format!("{REF}.cutter.ax")).unwrap().i()];
+    let ax = &sk.lines[model.map.ent_named("cut_ax").unwrap().i()];
     let up = space::sub(sk.world_point(ax.p2 as usize),sk.world_point(ax.p1 as usize));
-    let mean = sk.world_point(model.map.ent_named(&format!("{REF}.gear.M")).unwrap().i());
+    let mean = sk.world_point(model.map.ent_named("M").unwrap().i());
     let m = gcs_core::solid::region::meridian(sk,solid).unwrap();
     let surfaces = RevolvedSurface::meridian_loops(&m,&sk.solids[solid].name);
     let ([steps],[faces]) = (m.region.loops.as_slice(),surfaces.as_slice()) else { panic!("a cutter is one loop") };
@@ -180,7 +176,7 @@ impl Pair {
         Self::read(teeth,module)
     }
 
-    /// The pair at `teeth` and `module`, each member built at one tooth space (`gears.sv`), and
+    /// The pair at `teeth` and `module`, each member built at one tooth space (`hypoid.sv`), and
     /// what the checks read off it: each face the space leaves (`BodyFaces`), held to the analytic
     /// surface its name says (`face_source`) — every seam, corner, edge and face boundary between
     /// them made of those analytic parts, never of the kernel's fit of the faces.
@@ -191,8 +187,7 @@ impl Pair {
         use gcs_core::edge::{EdgePoint,EdgeTolerance,SpatialEdge};
         use gcs_core::spatial_face::{SpatialFaceBoundary,Support,Use};
         use std::collections::BTreeMap;
-        let src = include_str!("../../../examples/spiral_bevel/gears.sv");
-        let model = read_model_with(src,teeth,module,true);
+        let model = read_model_with(teeth,module,true);
         let sk = &model.sketch;
         let teeth_f = teeth.map(|n| n as f64);
         let delta = [teeth_f[0].atan2(teeth_f[1]),teeth_f[1].atan2(teeth_f[0])];
@@ -200,7 +195,7 @@ impl Pair {
         let theta = (35f64-90.).to_radians();
         let offset = [rm-0.8*rm*theta.cos(),-0.8*rm*theta.sin(),0.];
         let motion_families = ["pinion_generation","gear_generation"].map(|name|
-            gcs_core::motion::Family::read(sk,model.map.ent_named(&format!("{REF}.generation.{name}")).unwrap().i()).unwrap());
+            gcs_core::motion::Family::read(sk,model.map.ent_named(name).unwrap().i()).unwrap());
         let tolerance = SeamTolerance {position:module*1e-8,normal:1e-8,axis:module*1e-10};
         let edge_tolerance = EdgeTolerance {junction:tolerance,point:gcs_core::seam::BoundarySeamTolerance {
             normal_velocity:module*1e-10,incidence:module*1e-10,trim:module*1e-8}};
@@ -211,7 +206,7 @@ impl Pair {
         let (mut seams,mut boundary_seams,mut surface_seams) = (BTreeMap::new(),BTreeMap::new(),BTreeMap::new());
         let (mut corners,mut edges,mut faces) = (BTreeMap::new(),BTreeMap::new(),BTreeMap::new());
         for (m,member) in ["pinion","gear"].into_iter().enumerate() {
-            let body = model.map.ent_named(&format!("pair.{member}.body")).unwrap().i();
+            let body = model.map.ent_named(&format!("{member}.body")).unwrap().i();
             let built = Built::read(member,teeth);
             // each built face's role: a cut face by what the checks call its cutter face, a blank
             // face by its term
@@ -353,7 +348,7 @@ impl Pair {
                     }
                 }
                 // its edges, between those corners along the seams, sliced along the member's axis
-                let axis = &sk.lines[model.map.ent_named(&format!("{REF}.{member}.ax")).unwrap().i()];
+                let axis = &sk.lines[model.map.ent_named(&format!("{member}_ax")).unwrap().i()];
                 let along: [f64;3] = { let (a,b) = (sk.world_point(axis.p1 as usize),sk.world_point(axis.p2 as usize)); std::array::from_fn(|k| b[k]-a[k]) };
                 let point = |name: &str,u: Option<f64>| {
                     let c = corners[&format!("{label}.{name}")];
@@ -822,8 +817,8 @@ fn both_members_have_tangent_generated_root_transitions_on_both_sides() {
     }
 }
 
-/// The gear's inner mate is its space cutter's neighbour (crown/mate.sv): the inner crown turned
-/// a crown pitch about the crown's axis, which the generating roll turns about too, so the
+/// The gear's inner mate is its space cutter's neighbour (`hypoid.sv`'s `Space`): the inner crown
+/// turned a crown pitch about the crown's axis, which the generating roll turns about too, so the
 /// neighbour's face generates the inner mate's envelope turned a gear tooth about the gear's
 /// axis — the face the indexed member's previous space leaves, which the checks read. Held here
 /// at points of the unplaced envelope: each, turned a tooth, lies on the placed one, the face the
@@ -833,7 +828,7 @@ fn the_gears_inner_mate_is_its_space_cutters_neighbour_one_tooth_over() {
     use gcs_core::solid::faces::{face_source,FacePath,FaceSource};
     let pair = Pair::read([24,48],2.);
     let sk = &pair.model.sketch;
-    let body = pair.model.map.ent_named("pair.gear.body").unwrap().i();
+    let body = pair.model.map.ent_named("gear.body").unwrap().i();
     let FaceSource::Swept {surface,motion,within,..} = face_source(sk,body,&FacePath::new("indexed","neighbor.outer")).unwrap()
         else { panic!("the neighbour's flank is a cut face") };
     assert!(within.point([1.,2.,3.]).iter().zip([1.,2.,3.]).any(|(a,b)| (a-b).abs() > 1e-3),"the neighbour is turned");

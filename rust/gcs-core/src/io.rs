@@ -1201,8 +1201,8 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
                     _ => unreachable!(),
                 }}
             }
-            crate::model::SolidDef::Prism { face: f, from, to } => {
-                crate::model::SolidDef::Prism { face: face(*f), from: from.clone(), to: to.clone() }
+            crate::model::SolidDef::Prism { face: f, from, to, draft } => {
+                crate::model::SolidDef::Prism { face: face(*f), from: from.clone(), to: to.clone(), draft: draft.clone() }
             }
             crate::model::SolidDef::Through { face: f, body } => {
                 crate::model::SolidDef::Through { face: face(*f), body: sol(body) }

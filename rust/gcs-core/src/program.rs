@@ -78,7 +78,7 @@ pub(crate) use entities::child_names;
 use entities::{build, crosses_views, settle_deferred, Deferred};
 pub(crate) use lift::{holds, lift_decl, lift_gauge, lift_relation, point_len};
 use planes::memberships;
-pub(crate) use planes::{plane_of_entity, plane_of_entity_by};
+pub(crate) use planes::{drawn_plane, plane_of_entity, plane_of_entity_by};
 use relations::{constrain, repeated, Gauges};
 use resolve::Resolver;
 use solids::{solid_claims, solids};
@@ -475,8 +475,11 @@ fn elaborate_in(
     // every point no `in` reached stands in space (`places`), and a plane written over a drawn
     // line has its hidden axis held along it
     memberships(&mut sk, &res, &map, &body, &skip, &mut diags);
-    // and `q coincident P` of a point in space is its membership of `P`, said another way
-    let drawn = planes::incidences(&mut sk, &res, &mut map, &stating, &deferred, &expansion.rings);
+    // and `q coincident P` of a point in space is its membership of `P`, said another way — as
+    // is a point on a curve drawn in `P`, where one kept in space is refused (`kept_off`)
+    let (drawn, kept_off) = planes::incidences(
+        &mut sk, &res, &mut map, &stating, &deferred, &expansion.rings, &mut diags,
+    );
     // and a set drawn as an element is one only where what it reads says so (`lowering`)
     let ent = |r: &crate::syntax::Ref| {
         res.lookup(r).and_then(|e| resolve::follow(&sk, e, &r.path).ok())
@@ -557,7 +560,7 @@ fn elaborate_in(
             continue;
         }
         let StmtKind::Relation(r) = &st.kind else { continue };
-        if relations::is_fix(r) || drawn.contains(&i) {
+        if relations::is_fix(r) || drawn.contains(&i) || kept_off.contains(&i) {
             continue;
         }
         let (d, g) = (&mut duals, &mut gauges);
@@ -570,6 +573,11 @@ fn elaborate_in(
             repeated(&mut sk, id, st, &mut arrays);
         }
     }
+
+    // what each `path` formal was given runs along something, and each tangent at a point reads
+    // a contact's place there (#251)
+    relations::paths(&map, &expansion.paths, &mut diags);
+    relations::tangents_at(&sk, &map, &mut diags);
 
     // each point drawn in further planes tied to its twins, once the holds say which planes are
     // fixed and the relations what else holds it on each (§6.7)
@@ -586,9 +594,7 @@ fn elaborate_in(
     // Only then — a document whose places are all in their own planes settles once.
     // A plane placed over seeds read through another plane is read through in turn, so the two
     // alternate until the seeds stand still — a few rounds, one per plane a chain of them crosses.
-    views::place(&mut sk);
-    // a point drawn in planes that never meet is on none of them at once (§6.7)
-    planes::parallel_twins(&sk, &map, &mut diags);
+    let mut placed = views::place(&mut sk);
     if crosses_views(&sk, &res, &deferred) {
         for _ in 0..4 {
             let before: Vec<f64> = sk.params.iter().map(|p| p.value).collect();
@@ -599,13 +605,17 @@ fn elaborate_in(
             diags.splice(settled, again);
             settled = found;
             // and the planes placed again over the points the seeds moved
-            views::place(&mut sk);
+            placed = views::place(&mut sk);
             let moved = sk.params.iter().zip(&before).any(|(p, &b)| (p.value - b).abs() > 1e-12 * (1.0 + b.abs()));
             if !moved {
                 break;
             }
         }
     }
+
+    // a point drawn in planes that never meet is on none of them at once (§6.7): judged of the
+    // planes placed, and of the rest where the solve leaves them (`views::degenerate`)
+    planes::parallel_twins(&sk, &map, &placed, &mut diags);
 
     // a ring's copies where their representatives' seeds put them, whatever a seed said of a copy
     sk.settle_turns();

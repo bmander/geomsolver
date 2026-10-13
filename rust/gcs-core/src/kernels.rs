@@ -121,9 +121,11 @@ pub enum K {
     DragSeen,
     // a line lying on an axis
     LineOnAxis,
+    // a line along a spline's tangent where a contact already holds a point on it (#251)
+    SplineTangentAt,
 }
 
-pub const N_KERNELS: usize = 84;
+pub const N_KERNELS: usize = 85;
 
 #[derive(Clone, Copy)]
 pub struct Kernel {
@@ -399,6 +401,19 @@ pub fn curve_tangent_kernel(n_theta: usize, n_const: usize, body: u8) -> Kernel 
         _ => ("curve_tangent_line", curve_tangent_res::<FORMULA>, curve_tangent_jac::<FORMULA>),
     };
     Kernel { name, n_res: 2, n_par: 1 + n_theta + 4, n_const, degree: 1, res, jac, const_jac: None }
+}
+
+/// The tangent at a point already on a curve written in the language (#251): `(u, θ…, ax, ay,
+/// bx, by)`, `curve_tangent_kernel`'s second row alone — its `u` the place of the contact holding
+/// the point, so one row, as `spline_tangent_at` is a spline's.
+pub fn curve_tangent_at_kernel(n_theta: usize, n_const: usize, body: u8) -> Kernel {
+    let (name, res, jac): (&'static str, KernelFn, KernelFn) = match body {
+        TRACE => ("trace_tangent_at", curve_tangent_at_res::<TRACE>, curve_tangent_at_jac::<TRACE>),
+        ENVELOPE => ("envelope_tangent_at", curve_tangent_at_res::<ENVELOPE>, curve_tangent_at_jac::<ENVELOPE>),
+        EXTREMAL => ("extremal_tangent_at", curve_tangent_at_res::<EXTREMAL>, curve_tangent_at_jac::<EXTREMAL>),
+        _ => ("curve_tangent_at", curve_tangent_at_res::<FORMULA>, curve_tangent_at_jac::<FORMULA>),
+    };
+    Kernel { name, n_res: 1, n_par: 1 + n_theta + 4, n_const, degree: 1, res, jac, const_jac: None }
 }
 
 /// A kernel's residual or Jacobian, as the table holds it.
@@ -1392,6 +1407,47 @@ fn spline_tangent_line_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
     }
 }
 
+/// **The tangent at a point already on the curve** (#251): `spline_tangent_line`'s second row
+/// alone, `cross(C'(t), b − a) / |b − a|`, over the same columns.  Its `t` is the place of the
+/// contact holding the point on the spline (`Sketch::add` shares it), so where that contact
+/// already says the curve passes, this says only which way the line runs: one row, regular
+/// wherever `C' ≠ 0`.  The two-row tangency there is a double root — the contact on the line
+/// restates the point — and rank-deficient at every solution.
+fn spline_tangent_at_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    for i in 0..n {
+        let o = N_PAR_SPLINE_LINE * i;
+        let l = o + 1 + 2 * SPAN_N;
+        let f = span_frame(&v[o..], 0, 1, span_knots(k, i));
+        let (dx, dy) = (v[l + 2] - v[l], v[l + 3] - v[l + 1]);
+        r[i] = (f.d1.0 * dy - f.d1.1 * dx) / line_len(dx, dy);
+    }
+}
+
+fn spline_tangent_at_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    let mut dc = [0.0f64; N_PAR_SPLINE_LINE];
+    let mut dl = [0.0f64; N_PAR_SPLINE_LINE];
+    for i in 0..n {
+        let o = N_PAR_SPLINE_LINE * i;
+        let l = o + 1 + 2 * SPAN_N;
+        let ll = l - o;
+        let jo = N_PAR_SPLINE_LINE * i;
+        let f = span_frame(&v[o..], 0, 1, span_knots(k, i));
+        let (tx, ty) = f.d1;
+        let (dx, dy) = (v[l + 2] - v[l], v[l + 3] - v[l + 1]);
+        let len = line_len(dx, dy);
+        dl.fill(0.0);
+        dl[ll..ll + 4].copy_from_slice(&[-dx / len, -dy / len, dx / len, dy / len]);
+        dc.fill(0.0);
+        dc[0] = f.d2.0 * dy - f.d2.1 * dx;
+        for a in 0..SPAN_N {
+            dc[1 + 2 * a] = f.d[a] * dy;
+            dc[2 + 2 * a] = -f.d[a] * dx;
+        }
+        dc[ll..ll + 4].copy_from_slice(&[ty, -tx, -ty, tx]);
+        ratio_jac(&dc, &dl, len, tx * dy - ty * dx, &mut j[jo..jo + N_PAR_SPLINE_LINE]);
+    }
+}
+
 /// Columns of `spline_curvature`: (t, c0x, c0y ... c3x, c3y, cx, cy, r).
 pub const N_PAR_SPLINE_CURVE: usize = 1 + 2 * SPAN_N + 3;
 
@@ -1823,6 +1879,50 @@ fn curve_tangent_jac<const BODY: u8>(n: usize, v: &[f64], k: &[f64], j: &mut [f6
     }
 }
 
+/// `cross(C', b − a) / |b − a|`: the direction row of `curve_tangent_res`, alone.
+fn curve_tangent_at_res<const BODY: u8>(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
+    let (n_par, n_const) = curve_widths(n, v, k);
+    if n_par < 5 || n_const < 2 {
+        return;
+    }
+    let n_theta = n_par - 5;
+    for i in 0..n {
+        let (o, ko) = (n_par * i, n_const * i);
+        let c = curve_value::<BODY>(&k[ko..ko + n_const], v[o], &v[o + 1..o + 1 + n_theta], 1);
+        let l = o + 1 + n_theta;
+        let (dx, dy) = (v[l + 2] - v[l], v[l + 3] - v[l + 1]);
+        r[i] = (c[1][0] * dy - c[1][1] * dx) / line_len(dx, dy);
+    }
+}
+
+fn curve_tangent_at_jac<const BODY: u8>(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
+    const W: usize = crate::tape::MAX_VARS + 4;
+    let (n_par, n_const) = curve_widths(n, v, k);
+    if n_par < 5 || n_const < 2 || n_par > W {
+        return;
+    }
+    let n_theta = n_par - 5;
+    let (mut dc, mut dl) = ([0.0f64; W], [0.0f64; W]);
+    for i in 0..n {
+        let (o, ko) = (n_par * i, n_const * i);
+        let f = curve_frame::<BODY>(&k[ko..ko + n_const], v[o], &v[o + 1..o + 1 + n_theta], 2);
+        let l = o + 1 + n_theta;
+        let ll = l - o;
+        let jo = n_par * i;
+        let (dx, dy) = (v[l + 2] - v[l], v[l + 3] - v[l + 1]);
+        let (tx, ty) = (f.c[1][0], f.c[1][1]);
+        let len = line_len(dx, dy);
+        dl[..n_par].fill(0.0);
+        dl[ll..ll + 4].copy_from_slice(&[-dx / len, -dy / len, dx / len, dy / len]);
+        dc[..n_par].fill(0.0);
+        for c in 0..1 + n_theta {
+            dc[c] = f.g[1][0][c] * dy - f.g[1][1][c] * dx;
+        }
+        dc[ll..ll + 4].copy_from_slice(&[ty, -tx, -ty, tx]);
+        ratio_jac(&dc[..n_par], &dl[..n_par], len, tx * dy - ty * dx, &mut j[jo..jo + n_par]);
+    }
+}
+
 /* -- a circle osculating a curve: (u, θ…, cx, cy, r) ------------------------------------- */
 
 /// Rows: the spline curvature's — the centre is the centre of curvature, and the radius is the
@@ -2215,37 +2315,54 @@ fn skew_gap(v: &[f64], j: &mut [f64]) -> f64 {
     s
 }
 
-/// Columns of `line_line3`: (A, B, C, D) — two lines' hidden endpoints — K = (d), the stated
-/// distance already turned to the side the seed was on.  `s − d`: a length, degree 1.
+/// Columns of `line_line3`: (A, B, C, D) — two lines' hidden endpoints — K = (d, pinned): the
+/// common perpendicular's length, a magnitude, `|s| − d` (#217), both sides of the first line
+/// roots and a bound or the seed choosing; or, `pinned` 1, `s − d` with `d` turned to the side
+/// a `sign:` names.  A length, degree 1.
 fn line_line3_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
     let mut g = [0.0; 12];
     for i in 0..n {
-        r[i] = skew_gap(&v[12 * i..], &mut g) - k[i];
+        r[i] = skew_read(&v[12 * i..], &mut g, k[2 * i + 1]) - k[2 * i];
     }
 }
 
-fn line_line3_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
+fn line_line3_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
     for i in 0..n {
         let o = 12 * i;
-        skew_gap(&v[o..], &mut j[o..o + 12]);
+        skew_read(&v[o..], &mut j[o..o + 12], k[2 * i + 1]);
     }
 }
 
-/// (A, B, C, D, a), K = (m, c): `s − (m·a + c)`, the sign folded into m and c.
+/// (A, B, C, D, a), K = (m, c, pinned): `|s| − (m·a + c)`, or where pinned `s − (m·a + c)`, the
+/// sign folded into m and c.
 fn line_line3_free_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
     let mut g = [0.0; 12];
     for i in 0..n {
         let o = 13 * i;
-        r[i] = skew_gap(&v[o..], &mut g) - free_dim(v, k, i, o + 12).0;
+        let (m, c, pinned) = (k[3 * i], k[3 * i + 1], k[3 * i + 2]);
+        r[i] = skew_read(&v[o..], &mut g, pinned) - (m * v[o + 12] + c);
     }
 }
 
 fn line_line3_free_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
     for i in 0..n {
         let o = 13 * i;
-        skew_gap(&v[o..], &mut j[o..o + 12]);
-        j[o + 12] = -k[2 * i];
+        skew_read(&v[o..], &mut j[o..o + 12], k[3 * i + 2]);
+        j[o + 12] = -k[3 * i];
     }
+}
+
+/// The skew gap as a skew distance reads it, its gradient in `g`: signed where its side is
+/// `pinned` (non-zero), else its magnitude (#217) — `skew_reading`'s rule, over `f64`.
+fn skew_read(v: &[f64], g: &mut [f64], pinned: f64) -> f64 {
+    let s = skew_gap(v, g);
+    if pinned != 0.0 || s >= 0.0 {
+        return s;
+    }
+    for x in &mut g[..12] {
+        *x = -*x;
+    }
+    -s
 }
 
 /// The cosine of the angle between two lines' directions in space, `â·b̂` with a = B − A and
@@ -3247,12 +3364,18 @@ fn skew_gap_of<T: Num>(v: &[T]) -> T {
     vdot(m, vsub(c, a)) / vlen(m, MIN_LINE_LEN * MIN_LINE_LEN)
 }
 
+/// The gap a skew distance compares: signed where `pinned`, its magnitude where not.
+fn skew_reading<T: Num>(v: &[T], pinned: f64) -> T {
+    let s = skew_gap_of(v);
+    if pinned == 0.0 && s.val() < 0.0 { T::cst(0.0) - s } else { s }
+}
+
 fn line_line3_rows<T: Num>(v: &[T], k: &[f64]) -> [T; 1] {
-    [skew_gap_of(v) - T::cst(k[0])]
+    [skew_reading(v, k[1]) - T::cst(k[0])]
 }
 
 fn line_line3_free_rows<T: Num>(v: &[T], k: &[f64]) -> [T; 1] {
-    [skew_gap_of(v) - free_num(v[12], k)]
+    [skew_reading(v, k[2]) - free_num(v[12], k)]
 }
 
 /// The two lines' directions, (B − A, D − C).
@@ -3518,8 +3641,8 @@ pub static KERNELS: [Kernel; N_KERNELS] = [
     Kernel { name: "distance3_free", n_res: 1, n_par: 7, degree: 2, n_const: 2, res: distance3_free_res, jac: distance3_free_jac, const_jac: None },
     Kernel { name: "point_line3", n_res: 1, n_par: 9, degree: 1, n_const: 1, res: point_line3_res, jac: point_line3_jac, const_jac: None },
     Kernel { name: "point_line3_free", n_res: 1, n_par: 10, degree: 1, n_const: 2, res: point_line3_free_res, jac: point_line3_free_jac, const_jac: None },
-    Kernel { name: "line_line3", n_res: 1, n_par: 12, degree: 1, n_const: 1, res: line_line3_res, jac: line_line3_jac, const_jac: None },
-    Kernel { name: "line_line3_free", n_res: 1, n_par: 13, degree: 1, n_const: 2, res: line_line3_free_res, jac: line_line3_free_jac, const_jac: None },
+    Kernel { name: "line_line3", n_res: 1, n_par: 12, degree: 1, n_const: 2, res: line_line3_res, jac: line_line3_jac, const_jac: None },
+    Kernel { name: "line_line3_free", n_res: 1, n_par: 13, degree: 1, n_const: 3, res: line_line3_free_res, jac: line_line3_free_jac, const_jac: None },
     Kernel { name: "angle3", n_res: 1, n_par: 12, degree: 0, n_const: 1, res: angle3_res, jac: angle3_jac, const_jac: None },
     Kernel { name: "angle3_free", n_res: 1, n_par: 13, degree: 0, n_const: 2, res: angle3_free_res, jac: angle3_free_jac, const_jac: None },
     Kernel { name: "perpendicular3", n_res: 1, n_par: 12, degree: 0, n_const: 0, res: perpendicular3_res, jac: perpendicular3_jac, const_jac: None },
@@ -3557,6 +3680,7 @@ pub static KERNELS: [Kernel; N_KERNELS] = [
     Kernel { name: "plane_parallel", n_res: 2, n_par: 12, degree: 0, n_const: 6, res: plane_parallel_res, jac: plane_parallel_jac, const_jac: None },
     Kernel { name: "drag_seen", n_res: 2, n_par: 3, degree: 1, n_const: 9, res: drag_seen_res, jac: drag_seen_jac, const_jac: None },
     Kernel { name: "line_on_axis", n_res: 4, n_par: 12, degree: 1, n_const: 6, res: line_on_axis_res, jac: line_on_axis_jac, const_jac: None },
+    Kernel { name: "spline_tangent_at", n_res: 1, n_par: N_PAR_SPLINE_LINE, degree: 1, n_const: SPAN_C, res: spline_tangent_at_res, jac: spline_tangent_at_jac, const_jac: None },
 ];
 
 /// One row of a kernel: residual and Jacobian for a single constraint's local values.  The

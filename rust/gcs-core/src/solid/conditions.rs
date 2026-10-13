@@ -40,6 +40,25 @@ pub enum SetDistance {
 
 pub use super::faces::Read;
 
+/// The face `f` names, as its patch (`F`, not `F.surface`).
+fn patch(f: &crate::model::FaceRef) -> crate::model::FaceRef {
+    crate::model::FaceRef { surface: false, ..f.clone() }
+}
+
+/// The side of the faces `r` reads, and its gradient: one for each surface where they lie on
+/// several meeting convex and `split` is asked (`Reading::convex_pieces`), else the side of the
+/// face whose patch is nearest.
+fn sides(r: Reading, split: bool) -> Vec<Fv> {
+    let r = Arc::new(r);
+    match split.then(|| r.convex_pieces()).flatten() {
+        Some(pieces) => pieces.into_iter().map(|fi| {
+            let body = r.body.clone();
+            Arc::new(move |x| body.side_grad(fi, x)) as Fv
+        }).collect(),
+        None => vec![Arc::new(move |x| r.side_grad(x))],
+    }
+}
+
 /// The face a term reads, as a patch (`Some(false)`) or a surface (`Some(true)`) held to
 /// nothing further: `q coincident F` / `q coincident F.surface`.
 fn on_face(t: &RegionTerm, sk: &Sketch) -> Option<(crate::model::FaceRef, bool)> {
@@ -78,9 +97,15 @@ impl SetDistance {
                 }
             });
         }
+        // the faces the set's point is within: a distance off one of those in pieces is read
+        // piece by piece (`Reading::convex_pieces`)
+        let within: Vec<crate::model::FaceRef> = terms.iter().filter_map(|t| match &t.shape {
+            RegionShape::FaceSide { face } if t.cmp == Cmp::Le => Some(patch(face)),
+            _ => None,
+        }).collect();
         let mut conds = Vec::new();
         for t in terms {
-            conds.extend(conditions(sk, t, read)?);
+            conds.extend(conditions(sk, t, read, &within)?);
         }
         Ok(SetDistance::Conditions(conds))
     }
@@ -109,8 +134,10 @@ fn shift(m: Fv, k: f64, sign: f64) -> Fv {
     Arc::new(move |x| { let (v, g) = m(x); (sign * (v - k), scale(g, sign)) })
 }
 
-/// A term of a set measured from, as conditions on its point.
-fn conditions(sk: &Sketch, t: &RegionTerm, read: &mut Read) -> Result<Vec<Cond>, String> {
+/// A term of a set measured from, as conditions on its point, `within` the faces the set says
+/// its point is within.
+fn conditions(sk: &Sketch, t: &RegionTerm, read: &mut Read, within: &[crate::model::FaceRef])
+    -> Result<Vec<Cond>, String> {
     let lo = t.lo.value(sk)?;
     let grow = t.grow.as_ref().map_or(Ok(0.0), |g| g.value(sk))?;
     let hi = t.hi.unwrap_or(lo);
@@ -125,9 +152,10 @@ fn conditions(sk: &Sketch, t: &RegionTerm, read: &mut Read) -> Result<Vec<Cond>,
         }
     };
     match &t.shape {
+        // within faces on several surfaces meeting convex: within each surface's side
         RegionShape::FaceSide { face } => {
-            let r = Arc::new(super::faces::reading(sk, face, read)?);
-            Ok(held(Arc::new(move |x| r.side_grad(x))))
+            let r = super::faces::reading(sk, face, read)?;
+            Ok(sides(r, t.cmp == Cmp::Le).into_iter().flat_map(held).collect())
         }
         RegionShape::Measured { of } => {
             let [(target, c)] = of.as_slice() else {
@@ -136,15 +164,19 @@ fn conditions(sk: &Sketch, t: &RegionTerm, read: &mut Read) -> Result<Vec<Cond>,
             let c = *c;
             let m: Fv = match target {
                 Target::Face(f) if f.surface => {
-                    let r = Arc::new(super::faces::reading(sk, f, read)?);
+                    let r = super::faces::reading(sk, f, read)?;
                     // on the surface: its side is nothing, a smooth condition
                     if t.cmp == Cmp::Le && lo == 0.0 && grow == 0.0 {
+                        let r = Arc::new(r);
                         return Ok(vec![Cond { f: Arc::new(move |x| r.side_grad(x)), eq: true }]);
                     }
-                    Arc::new(move |x| {
-                        let (s, g) = r.side_grad(x);
+                    // at least a distance off faces on several surfaces meeting convex, within them:
+                    // off each (outside them, another piece's surface runs on past the crease)
+                    let split = t.cmp == Cmp::Ge && within.contains(&patch(f));
+                    return Ok(sides(r, split).into_iter().flat_map(|side| held(Arc::new(move |x| {
+                        let (s, g) = side(x);
                         (c * s.abs(), scale(g, c * s.signum()))
-                    })
+                    }))).collect());
                 }
                 Target::Ent(e) if e.kind == crate::model::EntKind::Point => {
                     let o = sk.world_point(e.i());
@@ -353,17 +385,16 @@ impl Rest {
     /// `edge` and `meeting` are the two sets' distances, read already.
     pub fn of(sk: &Sketch, e: &[RegionTerm], m: &[RegionTerm], edge: &SetDistance,
               meeting: &SetDistance, read: &mut Read) -> Option<Rest> {
-        let patch = |f: crate::model::FaceRef| crate::model::FaceRef { surface: false, ..f };
-        let fe = e.iter().map(|t| on_face(t, sk).filter(|(_, s)| !s).map(|(f, _)| patch(f)))
+        let fe = e.iter().map(|t| on_face(t, sk).filter(|(_, s)| !s).map(|(f, _)| patch(&f)))
             .collect::<Option<Vec<_>>>()?;
         // `m` on surfaces, and cut only where an edge ends: a cut each run lies within by how its
         // sides are chosen (`end_sides`), so `E` stays within `M`
         let (mut fm, mut within) = (Vec::new(), Vec::new());
         for t in m {
             match on_face(t, sk) {
-                Some((f, true)) => fm.push(patch(f)),
+                Some((f, true)) => fm.push(patch(&f)),
                 None if matches!(t.shape, RegionShape::Ends { .. }) => {
-                    within.extend(conditions(sk, t, read).ok()?)
+                    within.extend(conditions(sk, t, read, &[]).ok()?)
                 }
                 _ => return None,
             }

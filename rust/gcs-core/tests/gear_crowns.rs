@@ -2,25 +2,24 @@
 //! crown tooth and the gear's space cutter meet flank on flank, so at any roll no point is kept
 //! by both members and none is cut by both.  A pressure shift gives the crown tooth unequal
 //! flanks, and its mate must carry them on the opposite sides; the layout makes both crowns
-//! regions on the same two flank cones (`crown/cutter.sv`), so it does by construction.  A mate
+//! regions on the same two flank cones (`hypoid.sv`'s step 4), so it does by construction.  A mate
 //! whose flanks stood at the tooth's own angles instead — its section shared with the tooth's, as
 //! an earlier model had it — crossed the mating flanks at the pitch line, 20 degrees apart, and
 //! the configured hypoid interfered by 19 mm³ over the whole face width.
 //!
-//! Backlash grows each crown across the shared flank cones by a quarter of it (`crown/tooth.sv`):
+//! Backlash grows each crown across the shared flank cones by a quarter of it (`Tooth`, `Space`):
 //! the crowns overlap by half the backlash across each shared cone, so each generated flank is a
 //! quarter of it inside its conjugate one. Tip relief is a second cut beside each crown, its
-//! topping (`layout.sv`), which leaves the crown's flank at a kink, so the two cuts together are
+//! topping (`Topping`), which leaves the crown's flank at a kink, so the two cuts together are
 //! the crown turned there. End relief chamfers the blank itself, the tip cone's corner with
-//! each end sphere, in the blank's own region (`blank/member.sv`).
+//! each end sphere, in the blank's own region (`Blank`).
 use gcs_core::solid::MaterialField;
 
 /// The pinion's crown tooth and the gear's space cutter at a design, in their generating pose.
-fn crowns(shift: f64,rewrite: &dyn Fn(&str,String) -> String) -> (MaterialField,MaterialField) {
-    let e = fixtures::gear::read_configured_with(&mut |name,text|
-        rewrite(name,fixtures::gear::design(name,text,25.,shift,25.)));
+fn crowns(shift: f64,rewrite: &dyn Fn(String) -> String) -> (MaterialField,MaterialField) {
+    let e = fixtures::gear::read(&rewrite(fixtures::gear::design(&fixtures::gear::source(),25.,shift,25.)));
     let read = |name: &str| MaterialField::read(&e.sketch,fixtures::solid(&e,name),1e-10).unwrap();
-    (read("pair.reference.tooth.crown"),read("pair.reference.gear_space.body"))
+    (read("tooth.crown"),read("gear_space.body"))
 }
 
 /// Points of a box about the mean point, in the flank band clear of both crowns' tips and
@@ -43,21 +42,20 @@ fn disagreements(tooth: &MaterialField,space: &MaterialField) -> (usize,usize,us
 #[test]
 fn the_generating_crowns_mate_flank_on_flank_with_a_pressure_shift() {
     for shift in [0.,10.] {
-        let (tooth,space) = crowns(shift,&|_,text| text);
+        let (tooth,space) = crowns(shift,&|text| text);
         let (inside,overlap,gap) = disagreements(&tooth,&space);
         assert!(inside > 500,"shift {shift}: the box misses the crown tooth ({inside} points in it)");
         assert_eq!((overlap,gap),(0,0),"shift {shift}: {inside} points in the tooth");
     }
     // The control: each mate flank turned twice the shift off the tooth's flank cone, the mate's
     // flanks at the tooth's own pressure angles.
-    let shared = |name: &str,text: String| if name == "layout" {
-        let space = "  construction gear_space := crown.mate.Space(cutter.outer_flank, cutter.inner_flank,\n";
+    let shared = |text: String| {
+        let space = "construction gear_space := Space(outer_flank, inner_flank,";
         assert!(text.contains(space));
-        text.replace(space,"  shared_outer := std.ConeThrough(cutter.ax, thickness.outer_pitch,\n    \
-            lean: -design.pressure - design.shift)\n  \
-            shared_inner := std.ConeThrough(cutter.ax, thickness.inner_pitch,\n    \
-            lean: design.pressure - design.shift)\n  \
-            construction gear_space := crown.mate.Space(shared_outer, shared_inner,\n") } else { text };
+        text.replace(space,"shared_outer := std.ConeThrough(cut_ax, outer_pitch, \
+            lean: -pressure - pressure_shift)\n\
+            shared_inner := std.ConeThrough(cut_ax, inner_pitch, lean: pressure - pressure_shift)\n\
+            construction gear_space := Space(shared_outer, shared_inner,") };
     let (tooth,space) = crowns(10.,&shared);
     let (_,overlap,gap) = disagreements(&tooth,&space);
     assert!(overlap > 100 && gap > 100,"the shared section went unnoticed: {overlap} overlapping, {gap} missed");
@@ -66,10 +64,9 @@ fn the_generating_crowns_mate_flank_on_flank_with_a_pressure_shift() {
 /// The crown tooth and the space cutter at the configured hypoid with `backlash` millimetres of
 /// normal backlash and no tip relief.
 fn crowns_with_backlash(backlash: f64) -> (MaterialField,MaterialField) {
-    let e = fixtures::gear::read_configured_with(&mut |name,text|
-        fixtures::gear::fabricated(name,text,[25.,12.5,25.],backlash,0.,0.));
+    let e = fixtures::gear::read(&fixtures::gear::fabricated(&fixtures::gear::source(),[25.,12.5,25.],backlash,0.,0.));
     let read = |name: &str| MaterialField::read(&e.sketch,fixtures::solid(&e,name),1e-10).unwrap();
-    (read("pair.reference.tooth.crown"),read("pair.reference.gear_space.body"))
+    (read("tooth.crown"),read("gear_space.body"))
 }
 
 /// Backlash, proved on the cutters: every point of a conjugate flank (the crowns without backlash)
@@ -125,7 +122,7 @@ fn backlash_stands_each_cutter_a_quarter_of_it_off_the_shared_flanks() {
     assert!(overlap > 0 && gap == 0);
 }
 
-/// Tip relief, proved on the cutters (`pair.sv`, the layout at the configured design): the
+/// Tip relief, proved on the cutters (the pair at the configured design): the
 /// crown with its relief is the crown's meridian turned at a kink by the relief angle. Along each
 /// topping's generator below its kink the relief bounds (reads zero) and the crown lies behind it
 /// by sin(relief angle) per millimetre; along the flank's above the kink the crown bounds and the
@@ -135,12 +132,9 @@ fn backlash_stands_each_cutter_a_quarter_of_it_off_the_shared_flanks() {
 /// of the space cutter against its own relief side, before the neighbour's indexing.
 #[test]
 fn the_tip_relief_turns_each_crown_flank_at_its_kink() {
-    let project = fixtures::gear::project();
-    let source = std::fs::read_to_string(project.join("pair.sv")).unwrap();
-    let e = fixtures::read_beside(&source,&project,&mut |_,text| text);
+    let e = fixtures::gear::read_as_configured();
     let sk = &e.sketch;
-    let entity = |name: &str| { let name = format!("pair.{name}");
-        e.map.ent_named(&name).unwrap_or_else(|| panic!("no `{name}`")).i() };
+    let entity = |name: &str| e.map.ent_named(name).unwrap_or_else(|| panic!("no `{name}`")).i();
     let field = |name: &str| MaterialField::read(sk,entity(name),1e-10).unwrap();
     let (turn,tip_relief,addendum) = (30f64.to_radians(),0.2,1.);
     let world = |name: &str| sk.world_point(entity(name));
@@ -148,18 +142,18 @@ fn the_tip_relief_turns_each_crown_flank_at_its_kink() {
         let n = (d[0]*d[0]+d[1]*d[1]+d[2]*d[2]).sqrt(); d.map(|x| x/n) };
     let dot = |a: [f64;3],b: [f64;3]| (0..3).map(|k| a[k]*b[k]).sum::<f64>();
     let at = |p: [f64;3],u: [f64;3],t: f64| -> [f64;3] { std::array::from_fn(|k| p[k]+t*u[k]) };
-    let normal_module = sk.params[sk.free_vars["pair.normal_module"] as usize].value;
+    let normal_module = sk.params[sk.free_vars["mn"] as usize].value;
     // the cutter's axis, up from C
-    let ax = &sk.lines[entity("cutter.ax")];
+    let ax = &sk.lines[entity("cut_ax")];
     let (c,up_axis) = (sk.world_point(ax.p1 as usize),unit(sk.world_point(ax.p1 as usize),sk.world_point(ax.p2 as usize)));
     let mut worst: f64 = 0.;
     // each side: the crown, its relief, the topping, the flank cone it leaves and its pitch point,
     // and which way along the cutter's axis the crown's base lies
     for (crown,relief,topping,flank,pitch,base) in [
-        ("tooth.crown","pinion_topping.crown","pinion_outer","cutter.outer_flank","thickness.outer_pitch",-1.),
-        ("tooth.crown","pinion_topping.crown","pinion_inner","cutter.inner_flank","thickness.inner_pitch",-1.),
-        ("gear_space.outer_crown","gear_topping.outer_crown","gear_outer","cutter.outer_flank","thickness.outer_pitch",1.),
-        ("gear_space.inner_crown","gear_topping.inner_crown","gear_inner","cutter.inner_flank","thickness.inner_pitch",1.),
+        ("tooth.crown","pinion_topping.crown","pinion_outer","outer_flank","outer_pitch",-1.),
+        ("tooth.crown","pinion_topping.crown","pinion_inner","inner_flank","inner_pitch",-1.),
+        ("gear_space.outer_crown","gear_topping.outer_crown","gear_outer","outer_flank","outer_pitch",1.),
+        ("gear_space.inner_crown","gear_topping.inner_crown","gear_inner","inner_flank","inner_pitch",1.),
     ] {
         let (crown,relief) = (field(crown),field(relief));
         let value = |f: &MaterialField,p: [f64;3]| f.reading(p).value;
@@ -197,7 +191,7 @@ fn the_tip_relief_turns_each_crown_flank_at_its_kink() {
 fn a_tip_relief_of_zero_cuts_nothing() {
     let relief_solids = |e: &gcs_core::program::Elaborated| e.sketch.solids.iter()
         .filter(|s| s.name.contains("relief") || s.name.contains("topping")).count();
-    let without = fixtures::gear::read_configured_with(&mut |name,text| fixtures::gear::fabricated(name,text,[25.,12.5,25.],0.05,0.,0.));
+    let without = fixtures::gear::read(&fixtures::gear::fabricated(&fixtures::gear::source(),[25.,12.5,25.],0.05,0.,0.));
     assert_eq!(relief_solids(&without),0);
     // As configured: the two relief tools (the pinion's topping, one region solid; the gear's
     // space, two and its neighbour and their body), a sweep of each, and a placement at every
@@ -206,7 +200,7 @@ fn a_tip_relief_of_zero_cuts_nothing() {
     assert_eq!(relief_solids(&with),1+4+2+24+48);
 }
 
-/// End relief, proved on the blanks (`blank/member.sv`, as configured): at each member's toe and
+/// End relief, proved on the blanks (`Blank`, as configured): at each member's toe and
 /// heel the corner where the tip cone meets the sphere is chamfered in the blank's region
 /// (`std.Chamfered`), lowered into its meridian as a conic's arc: on it the distances from the tip
 /// cone and from the sphere, each over the end relief, sum to one; its end on the tip cone is the
@@ -221,7 +215,7 @@ fn the_end_relief_chamfers_each_tip_corner() {
     let size = 0.2;
     let mut worst: f64 = 0.;
     for member in ["pinion","gear"] {
-        let solid = fixtures::solid(&e,&format!("pair.reference.{member}_blank.material"));
+        let solid = fixtures::solid(&e,&format!("{member}_blank.material"));
         assert!(!gcs_core::solid::region::in_general(sk,solid),"{member}'s blank is lowered");
         let m = gcs_core::solid::region::meridian(sk,solid).unwrap();
         let SolidDef::Region {terms,..} = &sk.solids[solid].def else { panic!("a region") };
@@ -257,13 +251,13 @@ fn the_end_relief_chamfers_each_tip_corner() {
 /// Each member of the pair built by this kernel (`export::exact`) from the crowns at `rewrite`'s
 /// design, at the export tolerance `tolerance` where one is given: its volume, its blank's and
 /// its face count.
-fn built(rewrite: &dyn Fn(&str,String) -> String,tolerance: Option<f64>) -> [(f64,f64,usize);2] {
+fn built(rewrite: &dyn Fn(String) -> String,tolerance: Option<f64>) -> [(f64,f64,usize);2] {
     use gcs_core::brep::{export,props,sweep::Say};
     let say = Say {stage:&|_: &str| {},mark:&|_| {}};
-    let e = fixtures::gear::read_configured_with(&mut |name,text| rewrite(name,text));
+    let e = fixtures::gear::read(&rewrite(fixtures::gear::source()));
     ["pinion","gear"].map(|member| {
-        let body = fixtures::solid(&e,&format!("pair.{member}.body"));
-        let blank = e.sketch.exact_solid(fixtures::solid(&e,&format!("pair.reference.{member}_blank.material"))).unwrap();
+        let body = fixtures::solid(&e,&format!("{member}.body"));
+        let blank = e.sketch.exact_solid(fixtures::solid(&e,&format!("{member}_blank.material"))).unwrap();
         let tolerance = tolerance.map(|t| gcs_core::solid::export::Tolerance::new(t).unwrap());
         let exact = export::exact(&e.sketch,body,None,tolerance,&say)
             .unwrap_or_else(|r| panic!("{member}: refused at {:?}: {}",r.stage,r.message));
@@ -278,8 +272,7 @@ fn built(rewrite: &dyn Fn(&str,String) -> String,tolerance: Option<f64>) -> [(f6
 /// took 120.675849 and 117.134204 mm³ by this kernel, which the regions take to 1e-7.
 #[test]
 fn the_regions_cut_the_recorded_tooth_spaces() {
-    let spaces = built(&|name,text| { let text = fixtures::gear::bevel(name,text);
-        if name == "members" { fixtures::gear::one_space(&text) } else { text } },None);
+    let spaces = built(&|text| fixtures::gear::one_space(&fixtures::gear::bevel(&text)),None);
     for ((member,(volume,blank,_)),(recorded,drawn)) in ["pinion","gear"].iter().zip(spaces)
         .zip([(120.708817,120.675849),(117.137321,117.134204)]) {
         let space = blank-volume;
@@ -297,7 +290,7 @@ fn the_regions_cut_the_recorded_tooth_spaces() {
 #[test]
 #[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 40 s: both members built whole as fabricated")]
 fn the_fabricated_pair_is_the_drawn_sections_export() {
-    let members = built(&|_,text| text,Some(0.01));
+    let members = built(&|text| text,Some(0.01));
     for ((member,(volume,_,faces)),(recorded,recorded_faces)) in ["pinion","gear"].iter().zip(members)
         .zip([(14643.571918,243),(22261.893669,291)]) {
         eprintln!("{member}: {volume:.6} mm³ in {faces} faces, the drawn sections' {recorded} in {recorded_faces}");

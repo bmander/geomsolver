@@ -225,6 +225,9 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
             }
             let seed = match slot_kid(j) {
                 Some(syntax::Kid::Ref(_) | syntax::Kid::Face { .. } | syntax::Kid::Trim { .. }) => continue,
+                // a direction read off geometry is a seed given as geometry, as a place is: a
+                // solve writes nothing back over it
+                Some(syntax::Kid::Hint(s)) if s.dir.is_some() => continue,
                 Some(syntax::Kid::Hint(s)) => Some(s),
                 None => None,
             };
@@ -327,6 +330,7 @@ pub fn commit_seeds(e: &Elaborated, sk: &Sketch, prog: &Program) -> Edit {
                 // a child a `fix` holds is placed there, and its slot is left empty
                 None if seeded(*k).iter().all(|&p| held(p)) => None,
                 Some(syntax::Kid::Ref(r)) => Some(syntax::Kid::Ref(r.clone())),
+                Some(syntax::Kid::Hint(s)) if s.dir.is_some() => Some(syntax::Kid::Hint(s.clone())),
                 _ => {
                     let mut v = [0.0; 3];
                     for (x, p) in v.iter_mut().zip(seeded(*k)) {
@@ -1051,7 +1055,12 @@ pub fn set_sweep(e: &Elaborated, prog: &Program, solid: usize, how: &SolidSweep)
 }
 
 fn sweep_edit(e: &Elaborated, prog: &Program, solid: usize, how: &SolidSweep) -> Result<Edit, String> {
-    resweep(e, prog, solid, |_| how.sweep())
+    // a draft written on the solid stays: the gesture sizes the extrusion, never its taper
+    resweep(e, prog, solid, |was| {
+        let mut s = how.sweep()?;
+        if let Some(slot) = s.draft_mut() { *slot = was.draft().cloned(); }
+        Ok(s)
+    })
 }
 
 /// Rewrite how far revolution `solid` turns, about what it turns about: `angle` the text written,

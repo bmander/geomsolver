@@ -134,11 +134,7 @@ pub fn render(doc: &Document, models: &BTreeMap<String, Model<'_>>, sheet: Optio
             let plane = sketch_plane(&v.direction, alias, models, v.span)?;
             if let Some(p) = plane {
                 let sk = model.sketch;
-                let of = |e: EntRef| match e.kind {
-                    EntKind::Curve => sk.curve_view(e.i()),
-                    _ => crate::program::plane_of_entity(sk, e),
-                };
-                selected.retain(|&e| of(e) == Some(p));
+                selected.retain(|&e| crate::program::drawn_plane(sk, e) == Some(p));
             }
         }
         if selected.is_empty() { return Err(error(v.span, format!("no geometry named `{}`", v.target))) }

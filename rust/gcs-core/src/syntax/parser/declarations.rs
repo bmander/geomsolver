@@ -6,7 +6,7 @@ use crate::style::{Classes, Style};
 use crate::syntax::lexer::Tok;
 use crate::syntax::words::trails_decl;
 use crate::syntax::{
-    decl_head, Arg, AtRef, Decl, DeclName, Kid, KidSeed, Membership, Name, Ref, Sense, Span, StmtKind, StyleRule, Sweep,
+    decl_head, Arg, AtRef, Decl, DeclName, DirRef, Kid, KidSeed, Membership, Name, Ref, Sense, Span, StmtKind, StyleRule, Sweep,
     Weight,
 };
 
@@ -23,16 +23,25 @@ pub(crate) struct SweepParts {
     pub(crate) along: Option<Ref>,
     pub(crate) sweep: Option<Arg>,
     pub(crate) sense: Option<Sense>,
+    pub(crate) draft: Option<Arg>,
 }
 
 /// The labels a solid's brackets may carry beside the face or the operands.
 fn sweep_label(l: &str) -> bool {
-    matches!(l, "from" | "to" | "depth" | "about" | "sweep" | "sense" | "through" | "along" | "under" | "at")
+    matches!(l, "from" | "to" | "depth" | "about" | "sweep" | "sense" | "through" | "along" | "under" | "at"
+        | "draft")
 }
 
 /// What the sweep arguments a bracket list carried come to.  A solid is a prism, a revolution,
 /// or a body over other solids — and a mixture is none of the three.
 pub(crate) fn sweep_of(p: SweepParts) -> Result<Sweep, String> {
+    // **draft** (#245) tapers a prism's sides from the plane its face is drawn in, the parting
+    // plane: nothing else is swept along a normal
+    if p.draft.is_some() && (p.under.is_some() || p.at.is_some() || p.along.is_some()
+        || p.through.is_some() || p.about.is_some() || p.depth.is_none() && p.from.is_none() && p.to.is_none()) {
+        return Err("`draft:` tapers a prism's sides from its face's plane: say `from:`/`to:` or \
+                    `depth:`, and nothing else".into());
+    }
     if p.under.is_some() || p.at.is_some() {
         if p.depth.is_some() || p.about.is_some() || p.through.is_some()
             || p.along.is_some() || p.sweep.is_some() || p.sense.is_some() {
@@ -76,8 +85,8 @@ pub(crate) fn sweep_of(p: SweepParts) -> Result<Sweep, String> {
                     .into());
             }
             match (from, to, depth) {
-                (Some(from), Some(to), None) => Ok(Sweep::Prism { from, to }),
-                (None, None, Some(depth)) => Ok(Sweep::Depth { depth }),
+                (Some(from), Some(to), None) => Ok(Sweep::Prism { from, to, draft: p.draft }),
+                (None, None, Some(depth)) => Ok(Sweep::Depth { depth, draft: p.draft }),
                 (Some(_), None, None) | (None, Some(_), None) => {
                     Err("a prism runs `from:` one ordinate `to:` another, or `depth:` behind the \
                          face"
@@ -430,7 +439,16 @@ impl<'a> P<'a> {
                         let slot = match h.key.as_str() {
                             "at" => &mut at,
                             "toward" => &mut toward,
-                            _ => &mut along,
+                            "along" => &mut along,
+                            _ => {
+                                let m = format!(
+                                    "`{}:` reads a direction off geometry, which seeds a plane's \
+                                     axis: `plane(v: hint(dir: up))`; `{}` seeds its scalars",
+                                    h.key, kind.as_str()
+                                );
+                                self.fail_at(h.at, &m);
+                                continue;
+                            }
                         };
                         if slot.is_some() {
                             self.fail_at(h.at, &format!("`{}:` is written twice", h.key));
@@ -714,6 +732,7 @@ impl<'a> P<'a> {
                     "from" => &mut parts.from,
                     "to" => &mut parts.to,
                     "depth" => &mut parts.depth,
+                    "draft" => &mut parts.draft,
                     _ => &mut parts.sweep,
                 };
                 if slot.is_some() {
@@ -834,7 +853,30 @@ impl<'a> P<'a> {
     /// `hint(dir: (1, 0, 0))`.
     fn kid_seed(&mut self, lo: usize, axis: bool) -> Option<KidSeed> {
         let mut k = KidSeed { axis, ..KidSeed::default() };
+        // a direction given as geometry: what it reads, what it turns about, and by how much
+        let (mut what, mut about, mut turn) = (None, None, None);
+        let mut numbers: Option<Span> = None;
         for h in self.hint_body("(0, 0)")? {
+            if axis {
+                let slot = match h.key.as_str() {
+                    "dir" if h.place.is_some() => Some(&mut what),
+                    "about" => Some(&mut about),
+                    "turn" => {
+                        if turn.replace((h.text, h.span)).is_some() {
+                            self.fail_at(h.at, "`turn:` is written twice");
+                        }
+                        continue;
+                    }
+                    _ => None,
+                };
+                if let Some(slot) = slot {
+                    if slot.replace(h.place.expect("a direction's keys are references")).is_some() {
+                        self.fail_at(h.at, &format!("`{}:` is written twice", h.key));
+                    }
+                    continue;
+                }
+            }
+            numbers.get_or_insert(h.at);
             let i = match (axis, h.key.as_str()) {
                 (false, "x") | (true, "dir.x") => 0,
                 (false, "y") | (true, "dir.y") => 1,
@@ -856,6 +898,28 @@ impl<'a> P<'a> {
             k.spans[i] = h.span;
         }
         k.span = Span::new(lo, self.prev_hi());
+        match what {
+            Some(what) => {
+                if let Some(at) = numbers {
+                    self.fail_at(at, "`dir:` names the direction; a clause with it carries no \
+                                      number but how far it is turned, `turn:`");
+                    return None;
+                }
+                if about.is_some() != turn.is_some() {
+                    let sp = about.as_ref().map(|r| r.span).or(turn.as_ref().map(|t| t.1));
+                    self.fail_at(sp.unwrap_or(k.span), "a direction is turned `turn:` an angle \
+                                                       `about:` a line or an axis: both or neither");
+                    return None;
+                }
+                k.dir = Some(DirRef { what, about, turn });
+            }
+            None if about.is_some() || turn.is_some() => {
+                self.fail_at(k.span, "`turn:` and `about:` turn a direction read off geometry, \
+                                      `hint(dir: up, turn: 90deg, about: g)`");
+                return None;
+            }
+            None => {}
+        }
         Some(k)
     }
 

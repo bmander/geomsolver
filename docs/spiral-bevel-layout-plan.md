@@ -19,7 +19,10 @@ six language changes it asked for exist. Open: step 6's per-side checks module (
 analytic faces are no longer written out (#212): the checks read them off the members as built.
 The axial views G and Q are gone (#215): the gear's triangle and the pinion's axes stand in space
 square to P on their generators, and the blanks are regions with their face spans on the
-generators, so only P and N are drawn in; the views below are the plan as it was laid out.
+generators, so only P and N are drawn in; the views below are the plan as it was laid out. The
+modules and their previews are gone too (#217): the pair is one file, `hypoid.sv`, its steps in
+order, every root chosen by a word and no point seeded; the module structure below is the plan
+as it was laid out.
 
 ## Where the example stood
 

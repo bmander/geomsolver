@@ -1,0 +1,43 @@
+// L0 (#243): the library words that cannot be written yet, apart from `lofts.sv` so that what
+// they need (README, findings 5 and 8) does not stop the programs that do not use them.
+use std
+use lofts
+
+// The one word the three above stand in for: the plane square to any path `g` — a line, an arc, a
+// spline, a traced curve, an envelope, or a named chain of them run link by link — where its
+// parameter is `s`, its `v` along `up`. It asks two things of the language (README, findings 2
+// and 5): `coincident(t == s)` on every kind of path (#248, and #249 for `m` in space), and the
+// tangent at a point of every kind — `path` and `g tangent(at: m) tl` are #251's, and this word
+// elaborates over a line, an arc and a spline once `m` is drawn in the guide's view
+// (`tests/tangent_at.rs`).
+component On(g: path, up: axis, s: Scalar) {
+  m := point
+  m coincident(t == s) g
+  q := point
+  tl := line(m, q)
+  g tangent(at: m) tl
+  // drawn a length, or `q` slides along it (finding 13: a direction has no word without one)
+  distance(10mm) tl
+  n := plane
+  n.origin coincident m
+  tl perpendicular n.u
+  n.u perpendicular up
+  n.v parallel up
+}
+
+// Today's `solid(a, b, along: g)` as a word (L3): the section at `s` is `a`'s walk with every
+// corner mixed with the corner of `b` written in its place, each read in its own plane's
+// coordinates and drawn in the station's. Not writable yet (README, finding 8): it repeats over a
+// face's walk, zips two walks, reads a corner's coordinates as a number outside a trace body, and
+// would have to make an arc where the walk has an arc.
+component Ruled(a: face, b: face, g: line, up: axis, s: Scalar) {
+  st := lofts.OnLine(g, up: up, s: s)
+  cycle (ea, eb) in (a, b) {
+    in st.n {
+      q := point
+      q coords(du: (1 - s) * ea.p1.x + s * eb.p1.x, dv: (1 - s) * ea.p1.y + s * eb.p1.y) st.n
+      e := line(q, next.q)
+    }
+  }
+  f := face(e)
+}

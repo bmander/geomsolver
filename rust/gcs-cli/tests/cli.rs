@@ -30,7 +30,12 @@ fn a_continuous_boundary_exports_through_the_field_mesh() {
     let dir = std::env::temp_dir().join(format!("solventc-sweep-mesh-{}",std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let output = dir.join("swept.stl");
-    let result = run(&[&doc("solid_generating_sweep.sv"),"--stl",output.to_str().unwrap(),
+    // the ball slid along the spindle, not turned about it: a turned ball is its tube, built
+    // exactly (#238, `solid::canal`), and a slid one is still the field's
+    let source = dir.join("slid.sv");
+    std::fs::write(&source,include_str!("../../examples/solid_generating_sweep.sv")
+        .replace("generating := motion(about: spindle)","generating := motion(along: spindle, advance: 6mm)")).unwrap();
+    let result = run(&[source.to_str().unwrap(),"--stl",output.to_str().unwrap(),
         "--solid","removal.body","--stl-backend","mesh","--no-diagnose"]);
     assert_eq!(result.status.code(),Some(0),"{}",String::from_utf8_lossy(&result.stderr));
     let bytes = std::fs::read(&output).unwrap();
@@ -46,11 +51,11 @@ fn a_sweep_outside_the_generating_class_is_refused_with_its_row() {
     let dir = std::env::temp_dir().join(format!("solventc-class-refusal-{}",std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
-    fixtures::gear::copy_design(&dir,30.,0.,35.);
+    let document = fixtures::gear::copy_design(&dir,30.,0.,35.);
     let output = dir.join("pinion.stl");
     std::fs::write(&output,"old STL").unwrap();
-    let result = run(&[dir.join("gears.sv").to_str().unwrap(),"--stl",output.to_str().unwrap(),
-        "--solid","pair.pinion.body","--no-diagnose"]);
+    let result = run(&[document.to_str().unwrap(),"--stl",output.to_str().unwrap(),
+        "--solid","pinion.body","--no-diagnose"]);
     let stderr = String::from_utf8_lossy(&result.stderr);
     assert_eq!(result.status.code(),Some(1),"{stderr}");
     assert!(stderr.contains("outside the generating-sweep class (E2"),"{stderr}");
@@ -232,8 +237,8 @@ fn fabricated(member: &str) {
     std::fs::create_dir_all(&dir).unwrap();
     let (stl,step) = (dir.join(format!("{member}.stl")),dir.join(format!("{member}.step")));
     let (stl,step) = (stl.to_str().unwrap(),step.to_str().unwrap());
-    let body = format!("pair.{member}.body");
-    let result = run(&[&doc("spiral_bevel/gears.sv"),"--solid",&body,"--stl",stl,"--step",step,"--tolerance","0.01mm",
+    let body = format!("{member}.body");
+    let result = run(&[&doc("spiral_bevel/hypoid.sv"),"--solid",&body,"--stl",stl,"--step",step,"--tolerance","0.01mm",
         "--verify-step","full","--no-diagnose"]);
     let stderr = String::from_utf8_lossy(&result.stderr);
     assert_eq!(result.status.code(),Some(0),"{stderr}");
@@ -241,7 +246,7 @@ fn fabricated(member: &str) {
     assert!(stderr.contains("probed 0.0200 mm off each side") && stderr.contains("0 disagree"),"{stderr}");
     gcs_core::mesh::stl_shells(&std::fs::read(stl).unwrap()).unwrap();
     for file in [step,stl] {
-        let measured = run(&[&doc("spiral_bevel/gears.sv"),"--solid",&body,"--measure",file,"--tolerance","0.01mm","--no-diagnose"]);
+        let measured = run(&[&doc("spiral_bevel/hypoid.sv"),"--solid",&body,"--measure",file,"--tolerance","0.01mm","--no-diagnose"]);
         let stdout = String::from_utf8_lossy(&measured.stdout);
         assert_eq!(measured.status.code(),Some(0),"{stdout}{}",String::from_utf8_lossy(&measured.stderr));
         assert!(stdout.contains("tolerance 10.000 µm: every exact face within it"),"{stdout}");

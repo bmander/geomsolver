@@ -94,7 +94,10 @@ fn fold(sk: &Sketch, solid: usize) -> Result<Meridian, Refusal> {
     // a round or a chamfer in the region's own body is built in the meridian where it is one of
     // two of the region's bounds (`lowering`, #183): any other term read point by point is none
     let lowered: Vec<Option<Lowering>> = terms.iter().map(|t| lowering(sk, terms, t)).collect();
-    if terms.iter().zip(&lowered).any(|(t, l)| point_by_point(&t.shape) && l.is_none()) {
+    // and a sum of distances from points, a conic about the line through them (#238)
+    let conics: Vec<Option<Vec<(V, f64)>>> = terms.iter().map(|t| foci(sk, t)).collect();
+    if terms.iter().zip(&lowered).zip(&conics)
+        .any(|((t, l), c)| point_by_point(&t.shape) && l.is_none() && c.is_none()) {
         return Err(format!("`{}` bounds a sum of measurements or reads faces, which no meridian \
                             folds", s.name).into());
     }
@@ -104,7 +107,8 @@ fn fold(sk: &Sketch, solid: usize) -> Result<Meridian, Refusal> {
         (point(l.p1), point(l.p2))
     };
     // the axis: a cone's or a cylinder's line, else a plane's normal through a ball's centre or the
-    // plane's point, else the line through two balls' centres, else the z through one
+    // plane's point, else the line through two balls' centres or measured points, else the z
+    // through one
     let ball = |t: &RegionTerm| match t.shape {
         RegionShape::Ball { center } => Some(point(center)),
         _ => None,
@@ -123,7 +127,8 @@ fn fold(sk: &Sketch, solid: usize) -> Result<Meridian, Refusal> {
         }
         _ => None,
     });
-    let centres: Vec<V> = terms.iter().filter_map(ball).collect();
+    let centres: Vec<V> = terms.iter().filter_map(ball)
+        .chain(conics.iter().flatten().flatten().map(|&(p, _)| p)).collect();
     let through = || {
         let c0 = *centres.first()?;
         let other = centres.iter().find_map(|&c| normalised(sub(c, c0)));
@@ -134,6 +139,7 @@ fn fold(sk: &Sketch, solid: usize) -> Result<Meridian, Refusal> {
     // plane's origin
     let stands = |t: &RegionTerm| match t.shape {
         RegionShape::Ball { center } => vec![point(center)],
+        RegionShape::Measured { .. } => foci(sk, t).into_iter().flatten().map(|(p, _)| p).collect(),
         RegionShape::Cylinder { line: l } | RegionShape::Cone { axis: l } => {
             let (a, b) = line(l);
             vec![a, b]
@@ -205,6 +211,55 @@ fn fold(sk: &Sketch, solid: usize) -> Result<Meridian, Refusal> {
         };
         Region::plain(vec![steps])
     };
+    // a sum of distances from points on the axis (`foci`): `Σ cᵢ dᵢ ≤ v`, in the half-plane
+    let measured_within = |t: &RegionTerm, v: f64, g: f64| -> Result<Region, String> {
+        if g != 0.0 {
+            return Err(format!("{} is a sum of measurements grown, which no meridian folds", what(t)));
+        }
+        let all = || rect(0.0, reach, -reach, reach);
+        let none = || Region { loops: Vec::new() };
+        let less = |r: Region| boolean(&all(), &r, Op::Cut, tol);
+        let ps = foci(sk, t).expect("a sum the meridian reads");
+        Ok(match ps.as_slice() {
+            // `c d ≤ v`: within a ball, or (`c` below nothing) outside one
+            &[(p, c)] => {
+                let r = v / c;
+                match (c > 0.0, r > 0.0) {
+                    (true, true) => Region::half_disc(z(p), r),
+                    (true, false) => none(),
+                    (false, true) => less(Region::half_disc(z(p), r))?,
+                    (false, false) => all(),
+                }
+            }
+            // `c (d₁ + d₂) ≤ v`: within an ellipsoid, or outside one
+            &[(p, c), (q, d)] if c * d > 0.0 => {
+                let two_a = v / c;
+                let e = if two_a > 0.0 { half_ellipse(z(p), z(q), two_a, tol) } else { none() };
+                if c > 0.0 { e } else if two_a > 0.0 { less(e)? } else { all() }
+            }
+            // `c (d₁ − d₂) ≤ v`, `c` above nothing once the two are named the other way round:
+            // the side of the plane midway between them nearer the first, or a hyperboloid's lobe
+            // about it, or all but the lobe about the second
+            &[(p, c), (q, _)] => {
+                let ((p, q), k) = if c > 0.0 { ((p, q), v / c) } else { ((q, p), -v / c) };
+                let (zp, zq) = (z(p), z(q));
+                let span = (zq - zp).abs();
+                if k >= span - tol {
+                    all()
+                } else if k <= -span + tol {
+                    none()
+                } else if k.abs() <= tol {
+                    let mid = (zp + zq) / 2.0;
+                    if zp < zq { rect(0.0, reach, -reach, mid) } else { rect(0.0, reach, mid, reach) }
+                } else if k < 0.0 {
+                    lobe(zp, zq, -k, reach)
+                } else {
+                    less(lobe(zq, zp, k, reach))?
+                }
+            }
+            _ => unreachable!("`foci` reads one point or two"),
+        })
+    };
     // the points a term reads at most `v` at, or with an offset `g`, no more than `g` outside
     // the surface where it reads `v` — in the half-plane
     let within = |t: &RegionTerm, v: f64, g: f64| -> Result<Region, String> {
@@ -212,8 +267,13 @@ fn fold(sk: &Sketch, solid: usize) -> Result<Meridian, Refusal> {
         if !plane && stands(t).into_iter().any(|p| off(p) > tol) {
             return Err(match t.shape {
                 RegionShape::Ball { .. } => format!("{}'s centre is off the region's axis", what(t)),
+                RegionShape::Measured { .. } => format!("{} measures from a point off the region's axis",
+                    what(t)),
                 _ => format!("{} is about a line other than the region's axis", what(t)),
             });
+        }
+        if let RegionShape::Measured { .. } = t.shape {
+            return measured_within(t, v, g);
         }
         // a measure from a point or a line is never less than nothing (a distance's offset is its
         // number moved before it gets here: only a cone's is `g`, `region_term`)
@@ -325,6 +385,8 @@ fn fold(sk: &Sketch, solid: usize) -> Result<Meridian, Refusal> {
         Lower::Round { r } => r,
         Lower::Flat { la, lb } => la.min(lb),
     }).fold(f64::INFINITY, f64::min);
+    // a sum of distances folded is held so too, a thousandth of the region's size off (#238)
+    let least = if conics.iter().any(Option::is_some) { least.min(size) } else { least };
     if least.is_finite() {
         let basis = crate::plane::Basis { u: seam, v: axis, o: origin };
         agrees(sk, solid, &region, &basis, (1e-3 * least).max(100.0 * tol))
@@ -482,6 +544,70 @@ fn lowering(sk: &Sketch, terms: &[RegionTerm], t: &RegionTerm) -> Option<Lowerin
         }
         _ => None,
     }
+}
+
+/// A sum of measurements the meridian folds (#238): the distance from one point, or the sum or the
+/// difference of the distances from two alike in weight — each point given as it stands, with its
+/// number.  About the line through the points such a bound is a ball, an ellipsoid's or a
+/// hyperboloid's lobe turned, or the plane square to the line midway between them: a circle, a
+/// conic or a line in the meridian.  `None` for any other sum.
+fn foci(sk: &Sketch, t: &RegionTerm) -> Option<Vec<(V, f64)>> {
+    use crate::model::{EntKind, Target};
+    let RegionShape::Measured { of } = &t.shape else { return None };
+    let points = of.iter().map(|(target, c)| match target {
+        Target::Ent(e) if e.kind == EntKind::Point && *c != 0.0 && c.is_finite() => {
+            Some((sk.world_point(e.i()), *c))
+        }
+        _ => None,
+    }).collect::<Option<Vec<_>>>()?;
+    match points.as_slice() {
+        [_] => Some(points),
+        [(_, a), (_, b)] if (a.abs() - b.abs()).abs() <= 1e-12 * a.abs() => Some(points),
+        _ => None,
+    }
+}
+
+/// The half of an ellipse of revolution in the meridian: its foci on the axis at `z1` and `z2`, the
+/// sum of the distances from them `two_a` — two quarter ellipses (`Seg::Conic`, a quarter's middle
+/// weighed `cos 45°`) and the axis between their ends.  Nothing where it is no wider than its foci.
+fn half_ellipse(z1: f64, z2: f64, two_a: f64, tol: f64) -> Region {
+    let (a, f) = (two_a / 2.0, (z2 - z1).abs() / 2.0);
+    if a - f <= tol {
+        return Region { loops: Vec::new() };
+    }
+    let (zc, b, w) = ((z1 + z2) / 2.0, ((a - f) * (a + f)).sqrt(), std::f64::consts::FRAC_1_SQRT_2);
+    Region::plain(vec![vec![
+        Seg::Conic { a: [0.0, zc - a], m: [b, zc - a], b: [b, zc], w },
+        Seg::Conic { a: [b, zc], m: [b, zc + a], b: [0.0, zc + a], w },
+        Seg::Line { a: [0.0, zc + a], b: [0.0, zc - a] },
+    ]])
+}
+
+/// The lobe of a hyperboloid of two sheets in the meridian about the focus at `near`: the points
+/// whose distance from it falls `k` short of that from the focus at `far` (`0 < k < |far − near|`),
+/// out past `reach` from the axis and along it — the branch `z = zc ± a cosh u`, `r = b sinh u` in
+/// conic arcs of at most a unit of `u` each (an arc's middle weighed `cosh` of half its span), and
+/// the line across its far end and the axis back.
+fn lobe(near: f64, far: f64, k: f64, reach: f64) -> Region {
+    let (a, f) = (k / 2.0, (far - near).abs() / 2.0);
+    let (zc, b, s) = ((near + far) / 2.0, ((f - a) * (f + a)).sqrt(), (near - far).signum());
+    let (sinh, cosh) = (|u: f64| (u.dexp() - (-u).dexp()) / 2.0, |u: f64| (u.dexp() + (-u).dexp()) / 2.0);
+    // out until it stands past the box either way
+    let wide = 2.0 * reach / b;
+    let long = ((2.0 * reach + zc.abs()) / a).max(1.0);
+    let span = (wide + (wide * wide + 1.0).sqrt()).dln().min((long + (long * long - 1.0).sqrt()).dln());
+    let n = span.ceil().max(1.0) as usize;
+    let at = |u: f64| [b * sinh(u), zc + s * a * cosh(u)];
+    let mut steps: Vec<Seg> = (0..n).map(|i| {
+        let (u0, u1) = (span * i as f64 / n as f64, span * (i + 1) as f64 / n as f64);
+        let (um, h) = ((u0 + u1) / 2.0, (u1 - u0) / 2.0);
+        let m = [b * sinh(um) / cosh(h), zc + s * a * cosh(um) / cosh(h)];
+        Seg::Conic { a: at(u0), m, b: at(u1), w: cosh(h) }
+    }).collect();
+    let end = at(span);
+    steps.push(Seg::Line { a: end, b: [0.0, end[1]] });
+    steps.push(Seg::Line { a: [0.0, end[1]], b: at(0.0) });
+    Region::plain(vec![steps])
 }
 
 /// Whether a term is read only point by point: a sum of measurements, or a face's (#183).
