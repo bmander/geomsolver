@@ -105,15 +105,23 @@ export function bindEvents(v: SketchView): void {
       insertControl(v, hit, ...v.s2wIn(v.viewOf(hit.ctrl[0]), ...sp));
       return;
     }
-    // on a solid's face, the face drawn on (#162 F5): the plane lying there chosen, or written
-    const face = hit ? null : v.solidAt(...sp);
+    // on a solid's face, the face drawn on (#162 F5): the plane lying there chosen, or written —
+    // a pane's frame lies beneath a solid, as a press finds it
+    const frame = hit instanceof Plane ? hit : null;
+    const face = hit && !frame ? null : v.solidAt(...sp);
     if (face) {
       v.sketchOnFace(face);
       return;
     }
+    // on a pane's frame, which picks its plane, that plane chosen as a press inside it would be
+    const named = frame ? v.doc.nameOf(frame) : null;
+    if (named && v.planeChoices().includes(named)) {
+      v.choosePlane(named, false);
+      return;
+    }
     // and on a pane, with nothing drawn under the pointer, it is that plane chosen: the next thing
     // is drawn there.  The eye stays where it is — the pane was double-clicked where it was seen
-    const pane = hit ? null : v.paneAt(...sp);
+    const pane = hit && !frame ? null : v.paneAt(...sp);
     if (pane) v.choosePlane(pane, false);
   });
   cv.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -367,6 +375,14 @@ export function onPointerDown(v: SketchView, e: PointerEvent): void {
     // clears the selection, because an empty box selects nothing.
     if (!e.shiftKey) v.selected = [];
     v.gesture = bandGesture(v, sp);
+  } else if (ent instanceof Plane && !canMove(v, ent)) {
+    // a plane held where it stands is picked by a click on its pane's frame — which runs just
+    // outside what is drawn on it, so a press there that moves is the band it would have been
+    // on bare canvas, taking what it touches in place of the plane
+    const base = e.shiftKey ? v.selected : [];
+    v.selected = !e.shiftKey ? [ent]
+      : v.selected.includes(ent) ? v.selected.filter((p) => p !== ent) : [...v.selected, ent];
+    v.gesture = bandGesture(v, sp, base);
   } else if (e.shiftKey) {
     // assigned, never grown in place: the setter is where the other selections are let go
     v.selected = v.selected.includes(ent)
@@ -389,6 +405,18 @@ export function onPointerDown(v: SketchView, e: PointerEvent): void {
       // on the sketch's own plan, compiled once per topology: the drag starts at once
       const drag = new PlanDrag(v.sketch, ent, ...v.s2wIn(view, ...sp), null, 0.05, v.plan());
       v.gesture = pointGesture(v, drag, (at) => v.s2wIn(view, ...at));
+    // a plane is dragged by its pane as a point in space is, where the eye sees it: the core
+    // takes hold of its origin and moves where the plane stands, carrying it without turning it.
+    // The pane is grabbed where it was pressed, so it follows the pointer from there
+    } else if (ent instanceof Plane && canMove(v, ent)) {
+      v.pushUndo();
+      const [px, py] = v.eye(...sp);
+      const [ox, oy] = v.eye(...v.seen(ent.origin));
+      const drag = new PlanDrag(v.sketch, ent.origin, ox, oy, null, 0.05, v.plan(), v.orbit);
+      v.gesture = pointGesture(v, drag, (at) => {
+        const [x, y] = v.eye(...at);
+        return [x + ox - px, y + oy - py];
+      });
     } else if (isResizable(v, ent) && readable(v, v.viewOf(ent.center))) {
       v.pushUndo();
       v.gesture = radiusGesture(v, new RadiusDrag(v.sketch, ent, Math.abs(scalarOf(ent).value)),
@@ -555,8 +583,9 @@ export function calloutGesture(v: SketchView, c: Constraint, from: [number, numb
   };
 }
 
-export function bandGesture(v: SketchView, from: [number, number]): Gesture {
-  const base = [...v.selected];
+export function bandGesture(v: SketchView, from: [number, number],
+                            base: Primitive[] = v.selected): Gesture {
+  base = [...base];
   let to = from;                     // the gesture owns both corners, so paint reads no globals
   return {
     move: (sp) => {
@@ -593,10 +622,12 @@ export function boxContents(v: SketchView, from: [number, number], to: [number, 
 /** What is under the pointer, in the order a press offers itself to things.
  *
  *  The order is the whole content of this function and it is stated **once**: a corner handle,
- *  then a dimension callout, then the geometry, then the traced picture, then nothing.  Handles
- *  and callouts are painted over everything and so outrank it; the **drawing outranks the
- *  picture**, so a line lying across a photograph is what a click on that line picks, and the
- *  picture answers only where the geometry did not.
+ *  then a dimension callout, then the geometry, then an object's face, then the traced picture,
+ *  then a pane's frame, then nothing.  Handles and callouts are painted over everything and so
+ *  outrank it; the **drawing outranks the picture**, so a line lying across a photograph is what a
+ *  click on that line picks, and the picture answers only where the geometry did not.  A pane's
+ *  frame runs just outside what is drawn on its plane, so it answers only where nothing else
+ *  does.
  *
  *  Both readers — the press and the cursor it promises — ask this rather than each walking the
  *  list, because two copies of the order are two orders the moment one of them is edited, and
@@ -615,11 +646,14 @@ function whatIsAt(v: SketchView, sp: [number, number], solids = true): Target {
   const callout = v.pickCallout(sp[0], sp[1]);
   if (callout) return { kind: 'callout', callout };
   const ent = v.pick(sp[0], sp[1]);
-  if (ent) return { kind: 'entity', ent };
-  // beneath the drawing: an object's face, where the eye sees it
-  const pick = solids ? v.solidAt(sp[0], sp[1]) : null;
+  if (ent && !(ent instanceof Plane)) return { kind: 'entity', ent };
+  // beneath the drawing: an object's face, where the eye sees it — asked for a cursor too where
+  // a pane's frame would otherwise promise one
+  const pick = solids || ent ? v.solidAt(sp[0], sp[1]) : null;
   if (pick) return { kind: 'solid', pick };
   if (bodyAt(v, sp)) return { kind: 'image' };
+  // and beneath everything, a pane's frame: a plane
+  if (ent) return { kind: 'entity', ent };
   return { kind: 'none' };
 }
 
@@ -677,7 +711,8 @@ export function hover(v: SketchView, sp: [number, number]): void {
   v.canvas.style.cursor =
       at.kind === 'handle' ? (at.corner % 2 ? 'nesw-resize' : 'nwse-resize')
     : at.kind === 'callout' || at.kind === 'image' ? 'move'
-    : at.kind === 'entity' && at.ent instanceof Point && canMove(v, at.ent) ? 'grab'
+    : at.kind === 'entity' && (at.ent instanceof Point || at.ent instanceof Plane)
+      && canMove(v, at.ent) ? 'grab'
     : at.kind === 'entity' && isResizable(v, at.ent) ? 'ew-resize'
     : '';
 }

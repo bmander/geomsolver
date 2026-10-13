@@ -1195,6 +1195,7 @@ impl CKind {
                 ("weight", S::Float),
                 ("az", S::Float),
                 ("el", S::Float),
+                ("depth", S::Float),
             ],
             CKind::Horizontal | CKind::Vertical => &[("line", S::Line)],
             // how far `q` stands from `p` along `t`, signed from `p` to `q`, so the pair is not
@@ -2510,10 +2511,13 @@ impl Constraint {
 
     /// The soft target of a drag of a point in space, seen by the eye at bearing `az` and
     /// elevation `el` at (`tx`, `ty`) on its picture plane.
-    pub fn drag_seen(p: EntRef, tx: f64, ty: f64, weight: f64, az: f64, el: f64) -> Constraint {
+    /// `depth` is how far along the eye's line of sight (`right × up`) the point is held, weakly.
+    pub fn drag_seen(p: EntRef, tx: f64, ty: f64, weight: f64, (az, el): (f64, f64), depth: f64)
+        -> Constraint {
         let mut c = Constraint::new(
             CKind::DragSeen,
-            vec![Arg::Ent(p), Arg::Num(tx), Arg::Num(ty), Arg::Num(weight), Arg::Num(az), Arg::Num(el)],
+            vec![Arg::Ent(p), Arg::Num(tx), Arg::Num(ty), Arg::Num(weight), Arg::Num(az),
+                 Arg::Num(el), Arg::Num(depth)],
         );
         c.soft = true;
         c
@@ -3081,7 +3085,9 @@ impl Constraint {
             }
             CKind::DragSeen => {
                 let (right, up) = crate::overview::eye(self.args[4].num(), self.args[5].num());
-                [&[self.args[1].num(), self.args[2].num(), self.args[3].num()][..], &right, &up]
+                let out = crate::space::cross(right, up);
+                [&[self.args[1].num(), self.args[2].num(), self.args[3].num()][..], &right, &up,
+                 &out, &[self.args[6].num()]]
                     .concat()
             }
             // the number is a magnitude and the word is its sign: `side: right` is the same
@@ -3374,10 +3380,17 @@ impl Constraint {
                 [pt(0), ln(1)].concat()
             }
             CKind::DragTarget => pt(0),
-            // a point in space: its own three numbers, which are where it stands
+            // a point in space: its own three numbers, which are where it stands — or a plane's
+            // origin, held at its (0, 0), so where the plane stands is the plane's own three
             CKind::DragSeen => {
-                let p = &sk.points[e(0).i()];
-                vec![p.x, p.y, p.z.expect("a point seen in space has its own z")]
+                let i = e(0).i();
+                match (sk.points[i].z, sk.plane_of_origin(i)) {
+                    (None, Some(pl)) => sk.planes[pl].o.to_vec(),
+                    _ => {
+                        let p = &sk.points[i];
+                        vec![p.x, p.y, p.z.expect("a point seen in space has its own z")]
+                    }
+                }
             }
             CKind::Horizontal | CKind::Vertical => ln(0),
             CKind::Parallel

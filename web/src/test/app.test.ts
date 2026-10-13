@@ -23,6 +23,7 @@ import { solve } from '../core/system.js';
 import { DimAlt, SketchView } from '../app/view.js';
 import type { SolidPick } from '../app/view.js';
 import { pickEdgeSeen, roundSize, solidEdges } from '../core/workspace.js';
+import { overview3 } from '../core/overview.js';
 import type { SolidEdge } from '../core/workspace.js';
 import { contains, corners, toImage, toWorld } from '../app/underlay.js';
 import type { Bitmap } from '../app/underlay.js';
@@ -266,7 +267,8 @@ test('a tap reaches as far as a fingertip covers, and a cursor only its own tole
   const near = sy - 16;                       // past a cursor's 8 px, inside a finger's 22
   cv.fire('pointerdown', pointer(sx, near, { pointerType: 'mouse' }));
   cv.fire('pointerup', pointer(sx, near, { pointerType: 'mouse' }));
-  assert.deepEqual(view.selected, [], 'a click that far off picks nothing');
+  // (the front's pane runs round the drawing just there: a click on its frame is the plane's)
+  assert.ok(!view.selected.includes(apex), 'a click that far off does not pick the point');
   cv.fire('pointerdown', finger(sx, near, 1));
   cv.fire('pointerup', finger(sx, near, 1));
   assert.deepEqual(view.selected, [apex], 'a tap there lands on the point');
@@ -1932,6 +1934,52 @@ test('an axis is picked with the select tool where the box draws it, and Delete 
   assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
 });
 
+
+test('a plane is picked by its pane\'s frame and dragged where the eye sees it, carried and not '
+     + 'turned', () => {
+  const view = docView(DATUMS);
+  view.choosePlane('std.front');
+  view.selected = [];
+  assert.ok(view.addDatum('plane'));
+  view.selected = [];
+  view.orbit = { az: 0.6, el: 0.5 };
+  const plane = (): Plane => view.doc.entity('v0') as Plane;
+  const pane = overview3(view.sketch, 0, 'datums')
+    .find((i) => i.part === 'face' && i.kind === 'plane' && i.index === plane().index)!;
+  const on = seenAt(view, pane.pts[2]);
+  // a press inside the pane does not pick its plane: only the frame does
+  const off = [0, 1, 2].map((k) => (4 * pane.pts[0][k] + pane.pts[1][k] + pane.pts[2][k]) / 6);
+  const inside = seenAt(view, off as [number, number, number]);
+  drag(view, inside, inside);
+  assert.ok(!view.selected.includes(plane()), 'the inside of a pane picked its plane');
+  // a press on its frame picks it; a drag carries it where the eye sees the pointer
+  drag(view, on, on);
+  assert.deepEqual(view.selected, [plane()]);
+  const before = view.source;
+  const { u, v, o } = plane().frame3;
+  const from = view.seen(plane().origin);
+  drag(view, on, [on[0] + 40, on[1] + 25]);
+  assert.equal(PlanDrag.live, 0);
+  assert.notEqual(view.source, before, 'the drag is written back as the plane\'s seeds');
+  const now = plane().frame3;
+  const to = view.seen(plane().origin);
+  assert.ok(Math.hypot(to[0] - from[0] - 40, to[1] - from[1] - 25) < 1e-6, `seen at ${to}`);
+  const { az, el } = view.orbit;
+  const toward = [Math.cos(az) * Math.cos(el), Math.sin(az) * Math.cos(el), Math.sin(el)];
+  const depth = toward.reduce((d, t, k) => d + t * (now.o[k] - o[k]), 0);
+  assert.ok(Math.abs(depth) < 1e-6, `moved ${depth} along the line of sight`);
+  for (const [a, b] of [[u, now.u], [v, now.v]]) {
+    assert.ok(a.every((x, k) => Math.abs(x - b[k]) < 1e-9), `turned: ${a} to ${b}`);
+  }
+  assert.deepEqual(view.selected, [plane()], 'still selected, by name');
+  // a double-click on its frame chooses it to draw on
+  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  view.choosePlane('std.front', false);
+  const pane2 = overview3(view.sketch, 0, 'datums')
+    .find((i) => i.part === 'face' && i.kind === 'plane' && i.index === plane().index)!;
+  cv.fire('dblclick', pointer(...seenAt(view, pane2.pts[2])));
+  assert.equal(view.plane, plane());
+});
 
 /* -- extrude (#162 F2) ------------------------------------------------------------------- */
 

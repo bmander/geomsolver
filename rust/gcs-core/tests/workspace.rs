@@ -418,3 +418,52 @@ fn the_scene_comes_in_a_datum_layer_and_an_object_layer() {
     let creases = |s: &[gcs_core::overview::Item3]| s.iter().filter(|it| part(it) == "Solid").count();
     assert_eq!(creases(&objects), creases(&all));
 }
+
+/// A plane is picked by its pane's frame, where the box draws it — beneath the drawing and the
+/// axes, and not inside the pane, where a press lands on what is drawn there or starts a band.
+/// A place is one pane, its first plane's, and one seen edge on is not picked.
+#[test]
+fn a_plane_is_picked_by_its_panes_frame() {
+    let e = build(AXES);
+    let sk = &e.sketch;
+    let named = |n: &str| Some(e.map.ent_named(n).unwrap());
+    let (az, el) = (-FRAC_PI_2, 0.0);
+    let proj = Projection::new(sk, az, el);
+    // the front's pane, from the front: its frame's corners, and the middle of each side
+    let front = proj.views.place(Some(plane(&e, "std.front")));
+    assert_eq!(front, proj.views.place(Some(plane(&e, "std.up"))), "one place");
+    let frame: Vec<(f64, f64)> = gcs_core::overview::scene3d(sk, 0.0)
+        .iter()
+        .find(|i| i.of == named("std.front") && matches!(i.what, gcs_core::overview::Part::Face))
+        .expect("the front's pane")
+        .pts
+        .iter()
+        .map(|&x| seen(x, az, el))
+        .collect();
+    let span = |k: fn(&(f64, f64)) -> f64| {
+        let (lo, hi) = (f64::INFINITY, f64::NEG_INFINITY);
+        frame.iter().map(k).fold((lo, hi), |m, v| (m.0.min(v), m.1.max(v)))
+    };
+    let ((x0, x1), (y0, y1)) = (span(|p| p.0), span(|p| p.1));
+    let mid = ((x0 + x1) / 2.0, (y0 + y1) / 2.0);
+    for at in [(mid.0, y1), (x1, mid.1), (mid.0, y1 + 0.3), (x0 - 0.3, mid.1 + 7.0)] {
+        assert_eq!(pick(sk, &proj, at, 0.5, 0.01), named("std.front"), "{at:?} on {frame:?}");
+    }
+    // inside the pane, off everything drawn: nothing — and well off the frame, nothing
+    assert_eq!(pick(sk, &proj, (mid.0, mid.1 + 7.0), 0.5, 0.01), None);
+    assert_eq!(pick(sk, &proj, (x1 + 5.0, mid.1), 0.5, 0.01), None);
+    // the side and the top are seen edge on from the front: their frames are lines, not picked
+    // even where the line falls; std.x, drawn along the top's, outranks it
+    let picked = pick(sk, &proj, (x0 + 1.0, 0.0), 0.5, 0.01);
+    assert!(picked != named("std.top") && picked != named("std.side"), "{picked:?}");
+    // from three quarters, the top's pane is a pane, picked by its frame
+    let (az, el) = (0.6, 0.5);
+    let proj = Projection::new(sk, az, el);
+    let top = gcs_core::overview::scene3d(sk, 0.0)
+        .into_iter()
+        .find(|i| i.of == named("std.top") && matches!(i.what, gcs_core::overview::Part::Face))
+        .expect("the top's pane");
+    // the far corner, off every axis
+    let on = seen(top.pts[2], az, el);
+    assert_eq!(pick(sk, &proj, on, 0.5, 0.01), named("std.top"));
+}
