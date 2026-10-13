@@ -101,6 +101,11 @@ pub fn unwrap(mut uv: Uv,near: Uv,periods: [Option<f64>;2]) -> Uv {
 #[derive(Clone,Debug)]
 pub struct Coedge { pub edge: u32,pub reversed: bool,pub pcurve: Pcurve }
 
+/// A loop's uses walked the other way round: in reverse order, each against its edge.
+pub fn reverse_loop(l: Vec<Coedge>) -> Vec<Coedge> {
+    l.into_iter().rev().map(|c| Coedge {reversed:!c.reversed,..c}).collect()
+}
+
 /// A face: a surface, which side is material, and its loops (the first outer).
 #[derive(Clone,Debug)]
 pub struct Face { pub surface: Surface,pub reversed: bool,pub loops: Vec<Vec<Coedge>>,pub name: String }
@@ -381,5 +386,32 @@ impl Brep {
         }
         let n = pts.len();
         (0..n).map(|i| { let (a,b) = (pts[i],pts[(i+1)%n]); a[0]*b[1]-a[1]*b[0] }).sum::<f64>()/2.
+    }
+
+    /// Each edge's tolerance: the largest gap between its curve and each use's pcurve image
+    /// (sampled along it, its knots and ends included), and between its curve's ends and its
+    /// vertices.
+    pub fn measure_tolerances(&mut self) {
+        let mut gaps = vec![0_f64;self.edges.len()];
+        for f in &self.faces {
+            for c in f.loops.iter().flatten() {
+                let e = &self.edges[c.edge as usize];
+                let gap = &mut gaps[c.edge as usize];
+                let mut ts: Vec<f64> = (0..=32).map(|k| e.t[0]+(e.t[1]-e.t[0])*k as f64/32.).collect();
+                if let EdgeCurve::Curve(curve) = &e.curve { ts.extend(curve.breaks(e.t)); }
+                if let Pcurve::Curve(pc) = &c.pcurve { ts.extend(pc.breaks(e.t)); }
+                for t in ts {
+                    let d = distance(f.surface.point(c.pcurve.at(t,e,&f.surface,&self.vertices)),e.point(t,&self.vertices));
+                    *gap = gap.max(d);
+                }
+            }
+        }
+        for (e,gap) in self.edges.iter_mut().zip(gaps) {
+            let ends = match &e.curve {
+                EdgeCurve::Curve(c) => (0..2).map(|k| distance(c.point(e.t[k]),self.vertices[e.v[k] as usize].p)).fold(0.,f64::max),
+                EdgeCurve::Degenerate => 0.,
+            };
+            e.tol = gap.max(ends);
+        }
     }
 }

@@ -275,7 +275,7 @@ pub fn construct(recipe: &StaticRecipe,distinct: &[usize],premises: Premises,say
     (say.mark)(crate::solid::export::Stage::Classify);
     let [kept] = &kept[..] else { return Err(format!("{} cells of the sector are material: this kernel does not unite them",kept.len())) };
     let mut piece = cells.swap_remove(kept.index);
-    crate::brep::json::measure(&mut piece);
+    piece.measure_tolerances();
     Ok(Sector {piece,origin:frame.origin,axis:frame.axis,count:n,pitch})
 }
 
@@ -328,6 +328,6 @@ pub fn whole(sk: &Sketch,body: usize,recipe: &StaticRecipe,blank: &Brep,distinct
     (say.mark)(crate::solid::export::Stage::Classify);
     let [kept] = &kept[..] else { return Err(format!("{} cells of the body are material: this kernel does not unite them",kept.len())) };
     let mut solid = cells.swap_remove(kept.index);
-    crate::brep::json::measure(&mut solid);
+    solid.measure_tolerances();
     Ok(solid)
 }

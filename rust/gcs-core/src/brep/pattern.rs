@@ -330,7 +330,7 @@ pub fn pattern(sector: &Brep,o: V,axis: V,count: usize,tol: f64) -> Result<Built
     for (i,v) in out.vertices.iter().enumerate() { if used[i] { renum[i] = kept.len() as u32; kept.push(v.clone()); } }
     out.vertices = kept;
     for e in &mut out.edges { e.v = e.v.map(|v| renum[v as usize]); }
-    super::json::measure(&mut out);
+    out.measure_tolerances();
     Ok(Built {solid:out,sides,step,matched,sector:sector.clone(),o,a,count,partner,edge_partner})
 }
 

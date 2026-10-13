@@ -8,7 +8,7 @@ use crate::fmath::Det;
 use super::geom::{around,Uv,V};
 use super::query::{crossings_in,face_box,curve_surface_within,Located,Meets,Place};
 use super::ssi::{intersect,Ssi};
-use super::topo::{unwrap,Brep,Coedge,EdgeCurve,Face,Pcurve};
+use super::topo::{reverse_loop,unwrap,Brep,Coedge,EdgeCurve,Face,Pcurve};
 use crate::space::{distance,norm};
 use std::collections::BTreeMap;
 
@@ -227,20 +227,26 @@ pub fn boolean(a: &Brep,b: &Brep,op: Op,tol: f64) -> Result<Brep,String> {
         } };
         if !keep { continue }
         let flip = op == Op::Cut && s == 1;
-        let loops: Vec<Vec<Coedge>> = piece.iter().map(|cycle| {
-            let mut l: Vec<Coedge> = cycle.iter().map(|h| Coedge {edge:h.edge,reversed:!h.along,pcurve:h.pcurve.clone()}).collect();
-            if flip { l = l.into_iter().rev().map(|c| Coedge {reversed:!c.reversed,..c}).collect(); }
-            l
-        }).collect();
-        kept.push(Face {surface:f.surface.clone(),reversed:f.reversed != flip,loops,name:f.name.clone()});
+        kept.push(piece_face(f,&piece,flip));
     }
     Ok(assemble(&out,&pool,kept))
+}
+
+/// A piece of face `f` as a face of its own: its cycles as loops, each turned the other way round
+/// with the face's sense where `flip` (a piece of the solid a cut takes away).
+fn piece_face(f: &Face,piece: &[Vec<Half>],flip: bool) -> Face {
+    let loops: Vec<Vec<Coedge>> = piece.iter().map(|cycle| {
+        let mut l: Vec<Coedge> = cycle.iter().map(|h| Coedge {edge:h.edge,reversed:!h.along,pcurve:h.pcurve.clone()}).collect();
+        if flip { l = reverse_loop(l); }
+        l
+    }).collect();
+    Face {surface:f.surface.clone(),reversed:f.reversed != flip,loops,name:f.name.clone()}
 }
 
 /// The faces of `a` and `b` split where the other crosses them (`Arranged`).
 fn arrange<'a>(a: &'a Brep,b: &'a Brep,tol: f64) -> Result<Arranged<'a>,String> {
     // `SOLVENT_BREP_DEBUG` narrates every pair of faces: the curves, the spans kept and dropped
-    let debug = std::env::var_os("SOLVENT_BREP_DEBUG").is_some();
+    let debug = super::debug();
     let solids = [a,b];
     let located = [Located::new(a,tol),Located::new(b,tol)];
     let mut pool = Pool::new(tol);
@@ -287,9 +293,10 @@ fn arrange<'a>(a: &'a Brep,b: &'a Brep,tol: f64) -> Result<Arranged<'a>,String> 
                 if !overlap(&ebox,&boxes[other][fi],pad+sag) { continue }
                 let started = crate::clock::Instant::now();
                 // an edge measured off its surfaces by more than the tolerance (a fitted contact's
-                // `tol`, `json::measure`) is read at its own: it lies in a face it is that near
+                // `tol`, `Brep::measure_tolerances`) is read at its own: it lies in a face it is
+                // that near
                 let meets = curve_surface_within(&c,e.t,&f.surface,tol.max(e.tol),boxes[other][fi],pad);
-                if started.elapsed().as_secs_f64() > 0.1 && std::env::var_os("SOLVENT_BREP_TIME").is_some() {
+                if started.elapsed().as_secs_f64() > 0.1 && super::timing() {
                     eprintln!("time: edge {i} of {} ({}, {:.3} long) against face {fi} ({}, feature {:.3e}): {:.2} s",["A","B"][s],c.kind(),
                         c.speed()*(e.t[1]-e.t[0]),f.surface.kind(),f.surface.feature(),started.elapsed().as_secs_f64());
                 }
@@ -483,7 +490,7 @@ fn arrange<'a>(a: &'a Brep,b: &'a Brep,tol: f64) -> Result<Arranged<'a>,String> 
                     }
                     let took = started.elapsed().as_secs_f64();
                     t_trace += took;
-                    if took > 0.2 && std::env::var_os("SOLVENT_BREP_TIME").is_some() {
+                    if took > 0.2 && super::timing() {
                         eprintln!("time: A{fa} {} × B{fb} {}: traced {} curves from {} seeds in {took:.2} s",sa.kind(),sb.kind(),traced.len(),seeds.len());
                     }
                     if debug { for c in &traced {
@@ -712,7 +719,7 @@ fn arrange<'a>(a: &'a Brep,b: &'a Brep,tol: f64) -> Result<Arranged<'a>,String> 
                     }
                 } }
             }
-            if std::env::var_os("SOLVENT_BREP_DEBUG").is_some() && s == 1 {
+            if super::debug() && s == 1 {
                 // the cut network on this face: each vertex's count of cut edges (an odd one is an open end)
                 let mut degree: BTreeMap<u32,usize> = BTreeMap::new();
                 let cut: Vec<u32> = ssi_edges.iter().filter(|e| e.2 == fi).flat_map(|&(e,_,_)| pieces_of[e].iter().map(|&(p,_)| rep[p as usize].0)).collect();
@@ -723,7 +730,7 @@ fn arrange<'a>(a: &'a Brep,b: &'a Brep,tol: f64) -> Result<Arranged<'a>,String> 
             for piece in pieces_of_face(f,&halves,&out,&pool)? { pieces.push((s,fi,piece)); }
         }
     }
-    if std::env::var_os("SOLVENT_BREP_TIME").is_some() {
+    if super::timing() {
         eprintln!("time: arrange: edges against faces {t1:.2} s; face pairs {:.2} s (grid seeds {t_grid:.2}, traces {t_trace:.2}); \
             the rest {:.2} s",t2-t1,clock.elapsed().as_secs_f64()-t2);
     }
@@ -831,7 +838,7 @@ fn pieces_of_face(f: &Face,halves: &[Half],out: &[WEdge],pool: &Pool) -> Result<
         loop {
             if seen[h] {
                 if h == start { break }
-                if std::env::var_os("SOLVENT_BREP_DEBUG").is_some() {
+                if super::debug() {
                     for (k,x) in halves.iter().enumerate() {
                         let e = &out[x.edge as usize];
                         eprintln!("pieces: half {k} edge {} ({}, vertices {:?} at {:?}) along {} nodes {:?} from {:?} to {:?} leave {:.4} back {:.4}{}",
@@ -961,7 +968,7 @@ pub fn split(solid: &Brep,sheets: &Brep,tol: f64) -> Result<Vec<Brep>,String> {
             }
         }
         if area < 0. {
-            for l in &mut f.loops { *l = l.iter().rev().map(|c| Coedge {reversed:!c.reversed,..c.clone()}).collect(); }
+            for l in &mut f.loops { *l = reverse_loop(std::mem::take(l)); }
         }
     }
     let sheets = &sheets;
@@ -970,13 +977,7 @@ pub fn split(solid: &Brep,sheets: &Brep,tol: f64) -> Result<Vec<Brep>,String> {
     let arranged = clock.elapsed().as_secs_f64();
     let face_of = |i: usize,flip: bool| -> Face {
         let (s,fi,piece) = &pieces[i];
-        let f = &solids[*s].faces[*fi];
-        let loops: Vec<Vec<Coedge>> = piece.iter().map(|cycle| {
-            let mut l: Vec<Coedge> = cycle.iter().map(|h| Coedge {edge:h.edge,reversed:!h.along,pcurve:h.pcurve.clone()}).collect();
-            if flip { l = l.into_iter().rev().map(|c| Coedge {reversed:!c.reversed,..c}).collect(); }
-            l
-        }).collect();
-        Face {surface:f.surface.clone(),reversed:f.reversed != flip,loops,name:f.name.clone()}
+        piece_face(&solids[*s].faces[*fi],piece,flip)
     };
     // the pieces kept: all the solid's, and the sheets' inside it
     let mut kept: Vec<usize> = Vec::new();
@@ -986,7 +987,7 @@ pub fn split(solid: &Brep,sheets: &Brep,tol: f64) -> Result<Vec<Brep>,String> {
         let f = &solids[1].faces[*fi];
         let candidates = inside(piece,f,&out,&pool)?;
         let place = candidates.iter().map(|&uv| located[0].solid_place(f.surface.point(uv))).find(|&p| p != Place::On).unwrap_or(Place::On);
-        if std::env::var_os("SOLVENT_BREP_DEBUG").is_some() {
+        if super::debug() {
             let all: Vec<Place> = candidates.iter().map(|&uv| located[0].solid_place(f.surface.point(uv))).collect();
             eprintln!("split: a piece of the sheet's {}: {place:?} at {:?} ({} loops); at its {} inner points {} in, {} out, {} on",f.surface.kind(),
                 f.surface.point(candidates[0]),piece.len(),all.len(),all.iter().filter(|&&p| p == Place::In).count(),
@@ -994,7 +995,7 @@ pub fn split(solid: &Brep,sheets: &Brep,tol: f64) -> Result<Vec<Brep>,String> {
         }
         if place == Place::In { kept.push(i); }
     }
-    if std::env::var_os("SOLVENT_BREP_TIME").is_some() {
+    if super::timing() {
         eprintln!("time: split: arranged {arranged:.2} s, the sheet's pieces placed {:.2} s",clock.elapsed().as_secs_f64()-arranged);
     }
     // a side of a piece: 2i as it is, 2i + 1 turned round; the cells are classes of sides
@@ -1002,7 +1003,7 @@ pub fn split(solid: &Brep,sheets: &Brep,tol: f64) -> Result<Vec<Brep>,String> {
     fn root(p: &mut [usize],mut x: usize) -> usize { while p[x] != x { p[x] = p[p[x]]; x = p[x]; } x }
     let mut at_edge: BTreeMap<u32,Vec<(usize,usize)>> = BTreeMap::new();
     for &i in &kept { for (k,h) in pieces[i].2.iter().flatten().enumerate() { at_edge.entry(h.edge).or_default().push((i,k)); } }
-    if std::env::var_os("SOLVENT_BREP_DEBUG").is_some() {
+    if super::debug() {
         for (&e,uses) in &at_edge { if uses.len() == 1 {
             let (i,_) = uses[0];
             eprintln!("split: edge {e} meets only a piece of a {} (solid {}), at {:?}",solids[pieces[i].0].faces[pieces[i].1].surface.kind(),pieces[i].0,
@@ -1041,7 +1042,7 @@ pub fn split(solid: &Brep,sheets: &Brep,tol: f64) -> Result<Vec<Brep>,String> {
             let rj = crate::space::cross(t,dj);
             let side_i = 2*i+usize::from(crate::space::dot(n,r) > 0.);
             let side_j = 2*j+usize::from(crate::space::dot(nj,rj) < 0.);
-            if std::env::var_os("SOLVENT_BREP_DEBUG").is_some() && pieces[i].0 == 0 && pieces[j].0 == 0 && (side_i%2) != (side_j%2) {
+            if super::debug() && pieces[i].0 == 0 && pieces[j].0 == 0 && (side_i%2) != (side_j%2) {
                 eprintln!("split: at edge {e} ({} uses, at {m:?}) a {} piece's {} meets a {} piece's {}",around.len(),
                     solids[0].faces[pieces[i].1].surface.kind(),["inside","outside"][side_i%2],solids[0].faces[pieces[j].1].surface.kind(),["inside","outside"][side_j%2]);
             }
@@ -1057,7 +1058,7 @@ pub fn split(solid: &Brep,sheets: &Brep,tol: f64) -> Result<Vec<Brep>,String> {
         let r = root(&mut parent,side);
         if !outside.contains(&r) { classes.entry(r).or_default().push(side); }
     } }
-    if std::env::var_os("SOLVENT_BREP_DEBUG").is_some() {
+    if super::debug() {
         let mut all: BTreeMap<usize,(usize,usize,bool)> = BTreeMap::new();
         for &i in &kept { for side in [2*i,2*i+1] {
             let r = root(&mut parent,side);

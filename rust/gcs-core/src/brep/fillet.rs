@@ -8,11 +8,11 @@
 //! Boolean, which follows the canal's tangent contact with each face along the edge it lies in.
 #[allow(unused_imports)]
 use crate::fmath::Det;
-use super::geom::{around,Curve,Frame,Surface,Uv,V};
+use super::geom::{around,tolerance,Curve,Frame,Surface,Uv,V};
 use super::nurbs::{fit_curve,fit_net,BSpline,Net};
 use super::query::Located;
-use super::topo::{unwrap,Brep,Coedge,EdgeCurve,Face,Pcurve};
-use crate::space::{add,cross,distance,dot,norm,scale,sub};
+use super::topo::{reverse_loop,unwrap,Brep,Coedge,EdgeCurve,Face,Pcurve};
+use crate::space::{add,cross,distance,dot,norm,scale,sub,unit};
 use std::sync::Arc;
 
 const TAU: f64 = std::f64::consts::TAU;
@@ -37,7 +37,6 @@ pub struct Rolled {
     pub trims: Vec<Trim>,
 }
 
-fn unit(a: V) -> V { scale(a,1./norm(a)) }
 
 /// Along the arc of the unit sphere from `a` to `b` (the short way), a fraction `v`.
 fn slerp(a: V,b: V,v: f64) -> V {
@@ -784,7 +783,7 @@ fn build_open(b: &Brep,chain: &[usize],net: &Net,surfaces: &[Surface;2],meeting:
         out.faces.push(Face {surface:surfaces[k].clone(),reversed,loops:vec![turned(l.coedges,(l.area > 0.) == reversed)],
             name:["a","b"][k].into()});
     }
-    super::json::measure(&mut out);
+    out.measure_tolerances();
     for c in contact { let e = &mut out.edges[c]; e.tol = e.tol.max(fit); }
     out.check(10.*tol.max(worst))?;
     Ok(out)
@@ -793,7 +792,7 @@ fn build_open(b: &Brep,chain: &[usize],net: &Net,surfaces: &[Surface;2],meeting:
 /// A run's piece cut off by what each end is cut off by, kept on the run's side: a plane's
 /// half-space (`recipe::kept`), a curved face's solid (`recipe::kept_by_solid`).
 fn trimmed(mut piece: Brep,trims: &[Trim]) -> Result<Brep,String> {
-    let tol = 1e-9*piece.size();
+    let tol = tolerance(piece.size());
     let mut done: Vec<&Cut> = Vec::new();
     for cut in trims.iter().flat_map(|t| &t.cuts) {
         if done.iter().any(|c| c.same(cut,tol)) { continue }
@@ -916,7 +915,7 @@ fn build_with(b: &Brep,chain: &[usize],net: &Net,surfaces: &[Surface;2],face_rev
                 let outer = i == 0;
                 let ccw = l.area > 0.;
                 let want = outer != reversed;
-                if ccw == want { l.coedges } else { reverse(l.coedges) }
+                if ccw == want { l.coedges } else { reverse_loop(l.coedges) }
             }).collect()
         } else if loops.iter().all(winds) {
             // both round the surface's period: one loop through a seam along the surface's iso
@@ -927,7 +926,7 @@ fn build_with(b: &Brep,chain: &[usize],net: &Net,surfaces: &[Surface;2],face_rev
         };
         out.faces.push(Face {surface:s.clone(),reversed,loops:face_loops,name:name.into()});
     }
-    super::json::measure(&mut out);
+    out.measure_tolerances();
     // a contact is the canal's iso line, off its face's surface by the fit at most — which a
     // measure at the net's own nodes (where the fit is exact) does not see
     for c in contact.iter().flatten() { let e = &mut out.edges[*c as usize]; e.tol = e.tol.max(fit); }
@@ -985,14 +984,9 @@ fn closed_loop(b: &Brep,es: &[usize],s: &Surface) -> Result<Loop,String> {
     Ok(Loop {coedges,turn,area})
 }
 
-/// A loop's uses walked the other way round.
-fn reverse(l: Vec<Coedge>) -> Vec<Coedge> {
-    l.into_iter().rev().map(|c| Coedge {reversed:!c.reversed,..c}).collect()
-}
-
 /// A face's loop the right way round for its side: counter-clockwise in its parameters as built,
 /// reversed for a reversed face.
-fn turned(l: Vec<Coedge>,reversed: bool) -> Vec<Coedge> { if reversed { reverse(l) } else { l } }
+fn turned(l: Vec<Coedge>,reversed: bool) -> Vec<Coedge> { if reversed { reverse_loop(l) } else { l } }
 
 /// Two loops each once round a surface's period — the contact first, the original edges second,
 /// each starting at a vertex on one iso line of the surface (constant first parameter) — joined
@@ -1015,7 +1009,7 @@ fn seamed(out: &mut Brep,loops: Vec<Loop>,s: &Surface,reversed: bool) -> Result<
     let seam = out.edge(EdgeCurve::Curve(curve),t,[v_low,v_high]);
     // the contact runs the other way round to the loop, from the far end of the seam
     let w = (edges.turn[0]/period).round();
-    let contact = if (contact.turn[0]/period).round() == w { reverse(contact.coedges) } else { contact.coedges };
+    let contact = if (contact.turn[0]/period).round() == w { reverse_loop(contact.coedges) } else { contact.coedges };
     let shift = |c: Coedge,du: f64| match c.pcurve {
         Pcurve::Inverse {a,b} => Coedge {pcurve:Pcurve::Inverse {a:[a[0]+du,a[1]],b:[b[0]+du,b[1]]},..c},
         _ => c,
@@ -1036,7 +1030,7 @@ fn seamed(out: &mut Brep,loops: Vec<Loop>,s: &Surface,reversed: bool) -> Result<
     l.push(Coedge {edge:seam,reversed:true,pcurve:Pcurve::Line {a:[low[0],low[1]],b:[low[0],high[1]]}});
     // counter-clockwise for the face's side: the loop runs `w` turns at `low`, back at `high`
     let ccw = w*(high[1]-low[1]) > 0.;
-    Ok(if ccw == !reversed { l } else { reverse(l) })
+    Ok(if ccw == !reversed { l } else { reverse_loop(l) })
 }
 
 /// The iso line of `s` at first parameter `u` from `p` to `q` (both on it): a generator of a
@@ -1230,7 +1224,7 @@ pub fn corner_among(vertex: V,centre: V,r: f64,faces: [&Surface;3],tol: f64) -> 
     let middle = unit(scale(add(add(toward[0],toward[1]),toward[2]),-1.));
     let sphere = Surface::Sphere(Frame::new(centre,Frame::about(centre,middle).x,scale(middle,-1.)),r);
     face_out(&mut out,sphere,scale(middle,-1.),&arcs,"round")?;
-    super::json::measure(&mut out);
+    out.measure_tolerances();
     out.check(10.*tol)?;
     Ok(out)
 }

@@ -7,9 +7,7 @@
 #[allow(unused_imports)]
 use crate::fmath::Det;
 use super::geom::{Curve,Frame,Surface,V};
-use crate::space::{add,cross,distance,dot,norm,scale,sub};
-
-fn unit(a: V) -> V { scale(a,1./norm(a)) }
+use crate::space::{add,cross,distance,dot,norm,scale,sub,unit};
 
 /// What two surfaces share.
 #[derive(Clone,Debug,PartialEq)]
@@ -530,7 +528,7 @@ pub(crate) fn trace_beside(a: &Surface,b: &Surface,seeds: &[V],beside: &dyn Fn(V
                 if !lands(q) {
                     // a step too long for the projection to land: shorter, as a turn too sharp is
                     if h > h0*1e-4 { h /= 2.; continue }
-                    if std::env::var_os("SOLVENT_BREP_DEBUG").is_some() {
+                    if super::debug() {
                         eprintln!("brep:   a step left the surfaces after {} points: {:.1e} and {:.1e} off, h {h:.1e}",pts.len(),a.implicit(q),b.implicit(q));
                     }
                     // **a trace leaving a patch ends on its edge**: a march standing on an edge
@@ -595,7 +593,7 @@ pub(crate) fn trace_beside(a: &Surface,b: &Surface,seeds: &[V],beside: &dyn Fn(V
             back
         };
         if pts.len() >= 2 {
-            if std::env::var_os("SOLVENT_BREP_DEBUG").is_some() { eprintln!("brep:   a curve of {} points, closed {closed}, from {:?} to {:?}",pts.len(),pts[0],pts[pts.len()-1]); }
+            if super::debug() { eprintln!("brep:   a curve of {} points, closed {closed}, from {:?} to {:?}",pts.len(),pts[0],pts[pts.len()-1]); }
             let traced = Traced {a:a.clone(),b:b.clone(),pts,closed};
             traced_so_far.push(Curve::Traced(std::sync::Arc::new(traced)));
         }
@@ -784,7 +782,7 @@ pub(crate) fn unseen_beside(a: &Surface,domain: [[f64;2];2],b: &Surface,known: &
         if mu*hu >= mv*hv { cells.push([[mid[0],u1],[v0,v1]]); cells.push([[u0,mid[0]],[v0,v1]]); }
         else { cells.push([[u0,u1],[mid[1],v1]]); cells.push([[u0,u1],[v0,mid[1]]]); }
     }
-    if std::env::var_os("SOLVENT_BREP_DEBUG").is_some() {
+    if super::debug() {
         eprintln!("brep:   a {} over {domain:?} is clear of a {} but for {} known curve(s), in {asked} cells (leaf {leaf:.1e})",
             a.kind(),b.kind(),known.len());
     }
@@ -847,7 +845,7 @@ fn fitted(t: &super::geom::Traced,tol: f64,through: &[(f64,V)]) -> Option<Curve>
     // a traced point where one stands near the middle, else the middle itself: a traced point
     // beside an end (a vertex the fit passes through, between two traced points) would crowd it
     let middle = |a: f64,b: f64| { let m = ((a+b)/2.).floor(); if b-a >= 2. && (m-a).min(b-m) >= (b-a)/4. { m } else { (a+b)/2. } };
-    let debug = std::env::var_os("SOLVENT_BREP_DEBUG").is_some();
+    let debug = super::debug();
     for round in 0..24 {
         let pts: Vec<V> = at.iter().map(|&x| point(x)).collect();
         let mut s = vec![0.];

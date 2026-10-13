@@ -4,12 +4,11 @@
 use crate::fmath::Det;
 use super::boolean::{boolean,Op};
 use super::build::{drafted,loft,prism,revolve,Guide,Profile};
-use super::geom::{widen,Rigid,V,EMPTY};
+use super::geom::{tolerance,tolerance_over,widen,Rigid,V,EMPTY};
 use super::topo::Brep;
 use crate::json::Json;
+use super::vec3;
 use std::collections::BTreeMap;
-
-fn vec3(j: &Json) -> V { let a = j.arr(); [a[0].as_f64(),a[1].as_f64(),a[2].as_f64()] }
 
 /// Between a face's solid and its own name while a recipe is built (`build`, `meridian`,
 /// `solid::exact`): the solid half keyed as `document::operand_primitives` keys it, the face half
@@ -23,12 +22,14 @@ pub fn named_parts(name: &str) -> (&str,&str) { name.split_once(NAMED).unwrap_or
 
 /// A face's name under its solid's key (`NAMED`), the inverse of `named_parts`.
 pub fn name_under(key: &str,face: &str) -> String { format!("{key}{NAMED}{face}") }
-fn field<'a>(j: &'a Json,k: &str) -> Result<&'a Json,String> { j.get(k).ok_or(format!("recipe: no `{k}`")) }
+
+/// A recipe's field `k`, or an error naming it.
+pub(super) fn field<'a>(j: &'a Json,k: &str) -> Result<&'a Json,String> { super::field(j,k,"recipe") }
 
 /// One step of the body rule: `solid` combined with `operand` by `op`, to a tolerance of the two's
 /// size (never under `floor`, mm), and checked.
 pub fn combined(solid: &Brep,operand: &Brep,op: Op,floor: f64) -> Result<Brep,String> {
-    let tol = (1e-9*solid.size().max(operand.size())).max(floor);
+    let tol = tolerance_over(solid.size().max(operand.size()),floor);
     let mut out = boolean(solid,operand,op,tol)?;
     // material touching itself along a line (two rounds of separate statements meeting where the
     // body they each read leaves them so, #218): each such edge held twice, a solid's boundary
@@ -134,7 +135,7 @@ pub fn node_named(n: &Json,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64
                 let (vertex,centre,radius) = (vec3(field(c,"vertex")?),vec3(field(c,"centre")?),field(c,"radius")?.as_f64());
                 let surfaces = field(c,"faces")?.arr().iter().map(surface_of).collect::<Result<Vec<_>,_>>()?;
                 let [a,b,s] = &surfaces[..] else { return Err("recipe: a corner stands between three faces".into()) };
-                let tol = (1e-9*(1.+radius+crate::space::norm(vertex))).max(floor);
+                let tol = tolerance_over(1.+radius+crate::space::norm(vertex),floor);
                 pieces.push(super::fillet::corner_among(vertex,centre,radius,[a,b,s],tol).map_err(|e| format!("a corner: {e}"))?);
             }
             // a ball rolled along a traced run (#194): against the body the region rounds as its terms
@@ -143,7 +144,7 @@ pub fn node_named(n: &Json,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64
             let first_rolled = pieces.len();
             if !rolled.is_empty() {
                 let stratum = body(field(n,"stratum")?,built,built_names,floor)?;
-                let tol = (1e-9*stratum.size()).max(floor);
+                let tol = tolerance_over(stratum.size(),floor);
                 for k in rolled {
                     let (at,r) = (vec3(field(k,"at")?),field(k,"radius")?.as_f64());
                     // a chamfer's flat cut along the run instead (#218's 6)
@@ -170,7 +171,7 @@ pub fn node_named(n: &Json,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64
             // each chain walked from its first piece, breadth first, at the tolerance of its pieces
             let mut next: Vec<Vec<usize>> = vec![Vec::new();pieces.len()];
             for &[i,j] in &joins { next[i].push(j); next[j].push(i); }
-            let tol = (1e-9*pieces.iter().map(Brep::size).fold(1.,f64::max)).max(floor);
+            let tol = tolerance_over(pieces.iter().map(Brep::size).fold(1.,f64::max),floor);
             let mut solid: Option<Brep> = None;
             let mut done = vec![false;pieces.len()];
             for first in 0..pieces.len() {
@@ -194,7 +195,7 @@ pub fn node_named(n: &Json,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64
                         queue.push_back(k);
                     }
                 }
-                if rolled { super::json::measure(&mut chain); }
+                if rolled { chain.measure_tolerances(); }
                 solid = Some(match solid { None => chain,Some(s) => beside(&s,&chain,floor)? });
             }
             solid.ok_or_else(|| "recipe: a lowered region of no pieces".to_string())
@@ -453,7 +454,7 @@ pub fn meridian_region(recipe: &Json,seam: V) -> Result<Result<(Profile,V,V),Str
     for n in nodes.iter().filter(|n| n.get("kind").is_some_and(|k| k.as_str() == "revolve")) {
         size = size.max(norm(vec3(field(n,"origin")?))+norm(vec3(field(n,"axis")?)));
     }
-    let tol = 1e-9*size;
+    let tol = tolerance(size);
     let ball = |n: &Json| ball_of(n,tol);
     // a conic's arc: a rational quadratic Bézier, its ends weighed alike
     let conic = |b: &super::nurbs::BSpline| -> Option<([V;3],f64)> {

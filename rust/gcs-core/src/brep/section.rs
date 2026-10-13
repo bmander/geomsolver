@@ -9,15 +9,13 @@
 #[allow(unused_imports)]
 use crate::fmath::Det;
 use super::build::{Profile,ProfileEdge};
-use super::geom::{Rigid,V};
+use super::geom::{tolerance,Rigid,V};
 use super::planar::{boolean,Chart,Op,Region,Seg,Step};
+use super::recipe::field;
+use super::vec3;
 use crate::json::Json;
-use crate::space::{add,cross,dot,norm,scale,sub};
+use crate::space::{add,cross,dot,norm,scale,sub,unit};
 use std::collections::BTreeMap;
-
-fn vec3(j: &Json) -> V { let a = j.arr(); [a[0].as_f64(),a[1].as_f64(),a[2].as_f64()] }
-fn field<'a>(j: &'a Json,k: &str) -> Result<&'a Json,String> { j.get(k).ok_or(format!("recipe: no `{k}`")) }
-fn unit(a: V) -> V { scale(a,1./norm(a)) }
 
 /// One revolution: a point of its line and its direction (`±` the section's), and its meridian
 /// region in its own `(r, z)` (radius about its line, distance along it from that point), each
@@ -53,7 +51,7 @@ impl Sectioned {
         for n in nodes.iter().filter(|n| n.get("kind").is_some_and(|k| k.as_str() == "revolve")) {
             size = size.max(norm(vec3(field(n,"origin")?))+norm(vec3(field(n,"axis")?)));
         }
-        let tol = 1e-9*size;
+        let tol = tolerance(size);
         // each node's leaf (a revolution, as placed so far)
         // each revolution's line as placed, and the line and profile it was drawn with
         let mut placed: BTreeMap<i64,usize> = BTreeMap::new();

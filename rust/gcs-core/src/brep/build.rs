@@ -4,16 +4,14 @@
 //! (`solid::cad::recipe`).
 #[allow(unused_imports)]
 use crate::fmath::Det;
-use super::geom::{BSpline,Blend,Carry,Curve,Frame,Rigid,Surface,Uv,V};
+use super::geom::{tolerance,BSpline,Blend,Carry,Curve,Frame,Rigid,Surface,Uv,V};
 use std::sync::Arc;
-use super::topo::{Brep,Coedge,EdgeCurve,Face,Pcurve};
+use super::topo::{reverse_loop,Brep,Coedge,EdgeCurve,Face,Pcurve};
+use super::vec3;
 use crate::json::Json;
-use crate::space::{add,cross,distance,dot,norm,scale,sub};
+use crate::space::{add,cross,distance,dot,norm,scale,sub,unit};
 
 const TAU: f64 = std::f64::consts::TAU;
-
-fn unit(a: V) -> V { scale(a,1./norm(a)) }
-fn vec3(j: &Json) -> V { let a = j.arr(); [a[0].as_f64(),a[1].as_f64(),a[2].as_f64()] }
 
 /// One edge of a profile: a line, an arc (a whole circle where `span` is none) turning
 /// counter-clockwise about its frame's `z`, which is the profile's normal, or a B-spline whose
@@ -47,7 +45,7 @@ impl Profile {
     pub fn name(&self,l: usize,k: usize) -> String { self.names.get(l).and_then(|n| n.get(k)).cloned().unwrap_or_default() }
     /// From a recipe's `profile` (millimetres).
     pub fn from_json(j: &Json) -> Result<Profile,String> {
-        let field = |j: &Json,k: &str| j.get(k).cloned().ok_or(format!("profile: no `{k}`"));
+        fn field<'a>(j: &'a Json,k: &str) -> Result<&'a Json,String> { super::field(j,k,"profile") }
         let mut loops = Vec::new();
         let mut names = Vec::new();
         for l in field(j,"loops")?.arr() {
@@ -55,9 +53,9 @@ impl Profile {
             names.push(l.arr().iter().map(|e| e.get("name").map_or(String::new(),|n| n.as_str().to_string())).collect());
             for e in l.arr() {
                 edges.push(match field(e,"kind")?.as_str() {
-                    "line" => ProfileEdge::Line {a:vec3(&field(e,"start")?),b:vec3(&field(e,"end")?)},
+                    "line" => ProfileEdge::Line {a:vec3(field(e,"start")?),b:vec3(field(e,"end")?)},
                     "circle" => {
-                        let frame = Frame::new(vec3(&field(e,"center")?),vec3(&field(e,"normal")?),vec3(&field(e,"x_dir")?));
+                        let frame = Frame::new(vec3(field(e,"center")?),vec3(field(e,"normal")?),vec3(field(e,"x_dir")?));
                         let span = e.get("angles").map(|a| {
                             let (a0,a1) = (a.arr()[0].as_f64(),a.arr()[1].as_f64());
                             let sweep = (a1-a0).rem_euclid(TAU);
@@ -80,7 +78,7 @@ impl Profile {
             }
             loops.push(edges);
         }
-        Ok(Profile {origin:vec3(&field(j,"origin")?),normal:unit(vec3(&field(j,"normal")?)),loops,names})
+        Ok(Profile {origin:vec3(field(j,"origin")?),normal:unit(vec3(field(j,"normal")?)),loops,names})
     }
 
     /// As a recipe writes it (`from_json`'s inverse), its lengths times `scale`: lines and arcs,
@@ -149,7 +147,7 @@ impl Seg {
 /// Each loop of a profile as a closed walk, the outer one counter-clockwise in `(x, y)` and the
 /// holes clockwise, where `coords` reads a point's coordinates in the plane.
 pub fn walks(p: &Profile,coords: &dyn Fn(V) -> [f64;2]) -> Result<Vec<Vec<Seg>>,String> {
-    let tol = 1e-9*p.size();
+    let tol = tolerance(p.size());
     let mut out = Vec::new();
     for (li,l) in p.loops.iter().enumerate() {
         let segs: Vec<Seg> = l.iter().enumerate().map(|(source,e)| match *e {
@@ -280,7 +278,7 @@ pub fn drafted(p: &Profile,from: f64,to: f64,draft: f64) -> Result<Brep,String> 
     };
     let (lo,hi) = (section(h0)?,section(h1)?);
     if !(h0 < 0. && h1 > 0.) { return piece(&lo,&hi) }
-    let tol = 1e-9*(p.size()+h1-h0);
+    let tol = tolerance(p.size()+h1-h0);
     let parting = section(0.)?;
     let b = super::boolean::glued(&piece(&lo,&parting)?,&piece(&parting,&hi)?,tol)
         .ok_or("a drafted prism's halves do not meet at its parting plane")?;
@@ -299,7 +297,7 @@ fn offset(p: &Profile,d: f64) -> Result<Profile,String> {
     let n = unit(p.normal);
     let frame = Frame::about(p.origin,n);
     let walks = walks(p,&|q| { let l = frame.local(q); [l[0],l[1]] })?;
-    let tol = 1e-9*p.size();
+    let tol = tolerance(p.size());
     let mut out = p.clone();
     for (li,walk) in walks.iter().enumerate() {
         let m = walk.len();
@@ -371,7 +369,7 @@ pub fn revolve(p: &Profile,origin: V,axis: V,angle: f64) -> Result<Brep,String> 
     let theta = angle.abs().min(TAU);
     if !(theta > 0.) { return Err("a revolution through no angle".into()) }
     let full = theta >= TAU-1e-12;
-    let tol = 1e-9*p.size();
+    let tol = tolerance(p.size());
     let normal = unit(p.normal);
     if dot(normal,z).abs() > 1e-9 || dot(sub(origin,p.origin),normal).abs() > tol {
         return Err("a revolution's axis must lie in its profile's plane".into())
@@ -514,7 +512,7 @@ pub fn revolve(p: &Profile,origin: V,axis: V,angle: f64) -> Result<Brep,String> 
                 l.push(rim(k,vs,true,&mut b));
             }
             let ccw = b.loop_area(&Face {surface:surface.clone(),reversed,loops:vec![],name:String::new()},&l) > 0.;
-            if ccw == reversed { l = l.into_iter().rev().map(|c| Coedge {reversed:!c.reversed,..c}).collect(); }
+            if ccw == reversed { l = reverse_loop(l); }
             b.faces.push(Face {surface,reversed,loops:vec![l],name:p.name(li,s.source)});
         }
         if !full {
@@ -650,7 +648,7 @@ fn ruled(start: &Profile,end: &Profile,carry: Carry) -> Result<Brep,String> {
         Carry::Arc {center,axis,angle} => (Rigid::turn(center,axis,-angle),None),
         Carry::Screw {center,axis,angle,advance} => (screw(center,axis,-angle,-advance),None),
     };
-    let tol = 1e-9*(start.size()+end.size()+norm(sub(end.origin,start.origin)));
+    let tol = tolerance(start.size()+end.size()+norm(sub(end.origin,start.origin)));
     let frame = Frame::about(start.origin,n);
     let starts = walks(start,&|q| { let l = frame.local(q); [l[0],l[1]] })?;
     let ends = walks(end,&|q| { let l = frame.local(back.point(q)); [l[0],l[1]] })?;
@@ -741,7 +739,7 @@ fn ruled(start: &Profile,end: &Profile,carry: Carry) -> Result<Brep,String> {
             };
             let face = Face {surface,reversed,loops:vec![],name:start.name(li,a.source)};
             let ccw = b.loop_area(&face,&l) > 0.;
-            if ccw == reversed { l = l.into_iter().rev().map(|c| Coedge {reversed:!c.reversed,..c}).collect(); }
+            if ccw == reversed { l = reverse_loop(l); }
             b.faces.push(Face {loops:vec![l],..face});
         }
         start_loops.push((0..m).map(|k| use_of(se[k],&sw[k],true,on_plane())).collect::<Vec<_>>());
@@ -761,7 +759,7 @@ fn ruled(start: &Profile,end: &Profile,carry: Carry) -> Result<Brep,String> {
         let loops = loops.into_iter().enumerate().map(|(li,l)| {
             let ccw = b.loop_area(&face,&l) > 0.;
             // the outer loop turns with the face's sense, its holes against it
-            if (li == 0) != (ccw != reversed) { l.into_iter().rev().map(|c| Coedge {reversed:!c.reversed,..c}).collect() } else { l }
+            if (li == 0) != (ccw != reversed) { reverse_loop(l) } else { l }
         }).collect();
         Face {loops,..face}
     };

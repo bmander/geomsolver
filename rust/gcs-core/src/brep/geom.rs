@@ -3,7 +3,7 @@
 //! OCCT (and STEP) parameterise it, so a face written out is the face read in.
 #[allow(unused_imports)]
 use crate::fmath::Det;
-use crate::space::{add,cross,dot,norm,scale,sub};
+use crate::space::{add,cross,dot,norm,scale,sub,unit};
 use std::sync::Arc;
 pub use super::nurbs::BSpline;
 
@@ -13,7 +13,10 @@ pub type Uv = [f64;2];
 const TAU: f64 = std::f64::consts::TAU;
 const PI: f64 = std::f64::consts::PI;
 
-fn unit(a: V) -> V { scale(a,1./norm(a)) }
+/// The working tolerance of a construction `size` across (mm): a part in 10⁹ of it.
+pub fn tolerance(size: f64) -> f64 { 1e-9*size }
+/// `tolerance(size)`, never under `floor` (mm).
+pub fn tolerance_over(size: f64,floor: f64) -> f64 { tolerance(size).max(floor) }
 
 /// An axis-aligned box: its least and its greatest corner.
 pub type Box3 = (V,V);
