@@ -22,7 +22,7 @@ impl GearSpace {
         // inactive opposite wall is not part of this tooth-space boundary.
         let delta = -TAU/pair.teeth[0].hypot(pair.teeth[1]);
         let mut sk = pair.model.sketch.clone();
-        let id = pair.model.map.ent_named(&format!("{REF}.generation.crown_roll")).unwrap().i();
+        let id = pair.model.map.ent_named("crown_roll").unwrap().i();
         let gcs_core::model::MotionDef::Rotation {axis,ratio,phase,..} = &mut sk.motions[id].def else { panic!() };
         *ratio = 0.; *phase = delta;
         let axis = &sk.lines[*axis as usize];

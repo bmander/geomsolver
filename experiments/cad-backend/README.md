@@ -7,9 +7,10 @@ a general F-rep mesher first. No runtime dependency or language construct change
 
 ## Solvent integration in progress
 
-The editable generating model is `rust/examples/spiral_bevel/pair.sv`; tooth counts and
-mean module live in its imported `configuration.sv`. It uses ordinary components and
-module parameters. The CAD adapter now instantiates that project without replacing text
+The editable generating model was `rust/examples/spiral_bevel/pair.sv`, its tooth counts
+and mean module in its imported `configuration.sv` (since #217 the pair is one file,
+`hypoid.sv`, its tooth counts and mean module the inputs at its head). It used ordinary
+components and module parameters. The CAD adapter now instantiates that project without replacing text
 inside the reference component. New `build_pair.py` runs save the actual linked project
 under `OUTPUT/solvent/`, record its hashes, and check it with the normal `solventc` CLI.
 Open `OUTPUT/solvent/pair.sv` to inspect the configured source behind an export.

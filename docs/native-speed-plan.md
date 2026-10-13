@@ -1,7 +1,7 @@
 # The native export, a hundred times faster: plan
 
-The native export of the configured hypoid pair (`solventc rust/examples/spiral_bevel/gears.sv
---solid pair.{pinion,gear}.body --tolerance --step … --stl …`) takes 613 s for the gear and about
+The native export of the configured hypoid pair (`solventc rust/examples/spiral_bevel/hypoid.sv
+--solid {pinion,gear}.body --tolerance --step … --stl …`; `gears.sv` and `pair.` before #217) takes 613 s for the gear and about
 330–480 s for the pinion. The field meshing went from 430 s to 4.5 s by exploiting the gear's
 symmetry and by never doing the same work twice; this plan does the same for the native export.
 **Goal: 100× on both members (the gear to about 6 s), with the files as good as they are now** —
@@ -62,8 +62,8 @@ has not used it.
 
 Each export run alone or two side by side on the 12-core machine (`uptime` noted in each log;
 12–17 while the pairs ran), `make solventc OCCT=1`,
-`SOLVENT_STAGE_TRACE=… /usr/bin/time -l build/solventc rust/examples/spiral_bevel/gears.sv --solid
-pair.MEMBER.body [--tolerance] --step … --stl … --no-diagnose`. A stage's time is the difference of
+`SOLVENT_STAGE_TRACE=… /usr/bin/time -l build/solventc rust/examples/spiral_bevel/hypoid.sv --solid
+MEMBER.body [--tolerance] --step … --stl … --no-diagnose`. A stage's time is the difference of
 the trace's marks; "before" is the elaboration, the solve and the admission (the wall clock less the
 trace's last mark). Instructions retired are the steady figure: wall clock moves with the machine's
 load, and the tolerance rows were run twice (the first pair beside a compile read 532 s and 828 s).

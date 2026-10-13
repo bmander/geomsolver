@@ -281,8 +281,9 @@ fn two_skew_lines_meet_their_closed_form() {
     let (e1, e2) = (EntRef::line(l1), EntRef::line(l2));
     sk.add(Constraint::distance(EntRef::point(c), EntRef::point(d), 10.0));
     let dist = relation(&sk, CKind::LineLine3, &[e1, e2], Some(e));
-    let sign = match dist.args[3] { Arg::Int(s) => s as f64, _ => unreachable!() };
-    assert_eq!(sign, 1.0, "the side the seed stands on");
+    // a magnitude (#217): no side is read off the seed, and the solve keeps the one it stands on
+    assert!(matches!(dist.args[3], Arg::Int(0)), "{:?}", dist.args[3]);
+    let sign = 1.0;
     sk.add(dist);
     sk.add(relation(&sk, CKind::Angle3, &[e1, e2], Some(theta)));
     assert_eq!(ledger(&mut sk).dof, 0);

@@ -305,7 +305,7 @@ fn a_projection_reads_each_point_in_its_own_plane() {
 
 /// A point its instance's `in` puts in a view stands in space to the component declaring it, so
 /// what the component says of it reads as a point in space's: put on a plane, it is held there by
-/// a row, whatever view the instance is put in (the crown tooth's pitch points, `crown/tooth.sv`).
+/// a row, whatever view the instance is put in (the crown tooth's pitch points, as they were).
 #[test]
 fn a_point_its_instance_puts_in_a_view_keeps_the_row() {
     let src = format!(
