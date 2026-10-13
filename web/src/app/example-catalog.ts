@@ -62,6 +62,15 @@ const projects: Example[] = [{
     + 'what each shows; the surfaces refine in the background as you watch.',
   target: { kind: 'directory', path: 'rounds', entry: 'block.sv' },
 }, {
+  label: 'Connecting rod, forged · rounded in Solvent', key: 'conrod',
+  description: 'Two eyes joined by a tapering I-section shank: the shank filled into both eyes, a '
+    + 'pocket each side of the web rounded inside, the bores chamfered and the outside\'s edges '
+    + 'rounded, each one statement of the standard library\'s `round` and `chamfer` over the faces '
+    + 'the rod\'s solids gave it, the sketch only the sharp outline. Built exactly. The comments '
+    + 'say which edges are left sharp, and why: rounds of separate statements meeting where each '
+    + 'reads the rod before the other. Edit any number and apply; rod.svd is the drawing.',
+  target: { kind: 'directory', path: 'conrod', entry: 'rod.sv' },
+}, {
   label: 'Sundials · hour lines from the sun', key: 'sundial',
   description: 'A horizontal dial and a polar one, their hour lines found rather than tabled: the '
     + 'equinox sun is a ring of 24 hourly places about the style (sun.sv), and each hour line is '

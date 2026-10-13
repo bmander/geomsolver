@@ -64,7 +64,15 @@ impl From<&str> for Refusal {
 
 /// `meridian`, with its refusal said whole.
 fn folded(sk: &Sketch, solid: usize) -> Result<Rc<Meridian>, Refusal> {
-    let key = super::reads(sk, solid, 0.0);
+    // a region reading a body's faces is refused by its own terms, whatever the body: its key
+    // need not walk the body, and through it every other round of it (#197)
+    let faces = matches!(&sk.solids.get(solid).map(|s| &s.def), Some(SolidDef::Region { terms, .. })
+        if terms.iter().any(|t| super::faces::reads_faces(&t.shape)));
+    let key = if faces {
+        super::document::reads_own(sk, solid, 0.0)
+    } else {
+        super::reads(sk, solid, 0.0)
+    };
     if let Some((old, m)) = sk.meridian_cache.borrow().get(&solid) {
         if *old == key {
             return m.clone();
@@ -761,15 +769,26 @@ const GATE: f64 = 1e30;
 /// Region solid `solid` read in general position, where its meridian refused for a reason a
 /// reading point by point answers (its terms share no axis): that reading, or why it is none.
 /// `None` where the meridian reads it or refuses it outright.  Remembered against what it reads
-/// (`Sketch::general_cache`).
+/// (`Sketch::general_cache`): its own terms and the strata of the bodies whose faces it reads
+/// (`faces::cached`'s), as `lowering::lowered` keys its own — a key over the bodies' every term
+/// walks each other round of them, for each (#197).
 pub(crate) fn in_general_position(sk: &Sketch, solid: usize)
     -> Option<Result<crate::solid::field::RegionField, String>> {
-    if !matches!(sk.solids.get(solid).map(|s| &s.def), Some(SolidDef::Region { .. })) {
+    let Some(SolidDef::Region { terms, .. }) = sk.solids.get(solid).map(|s| &s.def) else {
         return None;
-    }
-    let key = super::reads(sk, solid, 0.0);
-    if let Some((old, g)) = sk.general_cache.borrow().get(&solid) {
-        if *old == key {
+    };
+    let mut bodies: Vec<usize> = terms.iter().flat_map(|t| t.shape.entities())
+        .filter(|e| e.kind == crate::model::EntKind::Solid).map(|e| e.i()).collect();
+    bodies.sort_unstable();
+    bodies.dedup();
+    let strata = bodies.iter().map(|&b| super::faces::cached(sk, b)).collect::<Result<Vec<_>, _>>();
+    let (key, strata) = match strata {
+        Ok(strata) => (super::document::reads_own(sk, solid, 0.0), strata),
+        Err(_) => (super::reads(sk, solid, 0.0), Vec::new()),
+    };
+    if let Some((old, read, g)) = sk.general_cache.borrow().get(&solid) {
+        if *old == key && read.len() == strata.len()
+            && read.iter().zip(&strata).all(|(a, b)| std::sync::Arc::ptr_eq(a, b)) {
             return g.clone();
         }
     }
@@ -778,7 +797,7 @@ pub(crate) fn in_general_position(sk: &Sketch, solid: usize)
         Err(r) if r.outright => None,
         Err(_) => Some(general(sk, solid)),
     };
-    sk.general_cache.borrow_mut().insert(solid, (key, g.clone()));
+    sk.general_cache.borrow_mut().insert(solid, (key, strata, g.clone()));
     g
 }
 

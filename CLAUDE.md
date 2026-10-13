@@ -449,6 +449,20 @@ kinds, OCCT's B-spline standing for an analytic face of ours); where OCCT's fill
 or makes no valid solid (`post`) it is counted. `tests/round_lowering.rs` is the gate (every volume the closed form's to
 1e-9, a rolled one #85's quadrature's to 1e-6: `slot.sv`, `pad.sv`, `rail.sv`, `knob.sv`,
 `tee.sv`, `bore.sv`, `runout.sv`, `twin.sv`, `post.sv`, `dshaft.sv`).
+**The closing case** (#197, `rust/examples/conrod/`): a forged rod, every round and chamfer a
+statement over the faces its solids gave it, built exactly (pockets drawn as prisms, so their walls
+are planes and cylinders). What the stratum leaves is a finding, not a bug: rounds of separate
+statements each read the body before the other, so a pocket's rim beside its corners' fills, or a
+shank face's fill where a flange's run and a side's fill meet, leave material touching along a
+line — the field reads it, the late Boolean's `Brep::check` (`topo::NOT_MANIFOLD`) refuses it and
+`recipe::body` names it. Kernel rules it found: a traced meeting arriving tangent to a line or
+conic crosses it once (`query::tangential`), and a lowered region's chains touching only along a
+line stand side by side as two shells (`recipe::beside`, where their union fails and their common
+is empty). Elaboration of many face-reading regions is linear: `flatten::Walk::region_of` reads a
+plain declared name without building the alias table, and
+`region::in_general_position`/`folded` key a face-reading region on `reads_own` and the strata
+(`faces::cached`'s `Arc`s), never `reads` (which walks the body's every other round).
+`tests/conrod.rs` is the gate.
 **Distance from a set, offsets (§6.21, 0.64, #145 F4):** `p distance(d, side: outside|inside) S`
 (`distance` is a set use, `may_use`), `p inside(d) S` / `p outside(d) S` and `std.Offset(S, d)` are
 one bound on the signed distance from `S`'s surface (`Reach`: cmp toward the outside, whether

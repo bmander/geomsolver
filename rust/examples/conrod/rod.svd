@@ -1,0 +1,16 @@
+// The rod on one sheet: in its plane of swing, from the side, a section across the shank halfway
+// along, where the I is (rod.sv), and an isometric.
+model m from "rod.sv"
+
+sheet rod {
+  size (420mm, 297mm)
+  label "CONNECTING ROD, FORGED  140 mm centres, rounded and chamfered in Solvent" at (14mm, 16mm)
+  view swing(m.rod) from front at (100mm, 205mm) scale 1
+  view side(m.rod) from right at (190mm, 205mm) scale 1
+  section across(m.rod) from top cut m.across at (330mm, 235mm) scale 1.6
+  view pictorial(m.rod) from isometric at (320mm, 130mm) scale 0.6
+  dimensions in swing
+  dimensions in side
+  label "Section across the shank, halfway: the I" at (290mm, 268mm)
+  style .hidden { display: none }
+}
