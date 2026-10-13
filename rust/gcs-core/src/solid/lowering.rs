@@ -21,7 +21,8 @@
 //! going on tangent from one of the run's is no end (a seam), so a round along an obround's flat
 //! side stops at the section the ring round its half circle starts from, and the two are glued
 //! there; a ring's stretch is turned through its circle's angle, and on round past an end on a
-//! plane not through its axis until its section has crossed it, kept within it.
+//! plane not through its axis until its section has crossed it, kept within it (or into a
+//! cylinder or a ball it ends on, kept on its side of that solid).
 //!
 //! | the region's body | built as |
 //! |---|---|
@@ -667,9 +668,6 @@ fn piece(body: &super::faces::BodyFaces, edge: u32, fa: usize, fb: usize, within
         let meridian = |&(n, d): &(V, f64)| dot(n, axis).abs() <= 1e-9
             && (dot(n, centre) - d).abs() <= 1e-9 * (1.0 + norm(centre))
             && dot(n, body.middle(edge)) < d;
-        if !closed && !own_bent([p0, p1]).is_empty() {
-            return unbuilt("a stretch of a circle cut off by a curved face at its end");
-        }
         // in the meridian a plane, a cylinder and a cone are lines, a sphere a circle about its
         // centre (on the axis, so in every meridian)
         let trace = |fi: usize, p: V| match body.sphere(fi) {
@@ -684,11 +682,13 @@ fn piece(body: &super::faces::BodyFaces, edge: u32, fa: usize, fb: usize, within
         // carried on round past it until the whole section has crossed that plane, and kept within
         // it (#218's 2) — the section's hull turned, each point's first crossing (`n·x` along a
         // turn is a sinusoid, so once over the plane it stays over for less than a whole turn)
-        let (mut from, mut to, mut halves) = (t0, t1, Vec::new());
+        let (mut from, mut to, mut halves, mut kepts) = (t0, t1, Vec::new(), Vec::new());
         if !closed {
             for (k, p, t) in [(0, p0, t0), (1, p1, t1)] {
                 let at: Vec<(V, f64)> = own([p, p]).into_iter().filter(|h| !meridian(h)).collect();
-                if at.is_empty() {
+                let bent: Vec<Kept> = own_bent([p, p]).into_iter().map(|(c, sign)| kept_by(body, c, sign))
+                    .collect::<Result<_, _>>()?;
+                if at.is_empty() && bent.is_empty() {
                     continue;
                 }
                 let way = if k == 0 { -1.0 } else { 1.0 };
@@ -711,8 +711,39 @@ fn piece(body: &super::faces::BodyFaces, edge: u32, fa: usize, fb: usize, within
                         reach = reach.max(phi);
                     }
                 }
+                // a curved one (a cylinder or a ball it runs into): each point's turn into the side
+                // it leaves and back out of it (a point turning round a circle may come back out of
+                // a solid it went into); carried on a quarter of the way into what every point
+                // spends there (the other end may run into the same solid from its other side)
+                for kept in &bent {
+                    let away = |x: V| {
+                        let w = sub(x, kept.origin);
+                        let w = match kept.axis { Some(d) => sub(w, scale(d, dot(w, d))), None => w };
+                        if kept.inside { norm(w) - kept.radius } else { kept.radius - norm(w) }
+                    };
+                    let (mut entry, mut exit) = (0.0_f64, std::f64::consts::TAU);
+                    for &q in &hull {
+                        let over = |phi: f64| away(crate::brep::geom::Rigid::turn(centre, axis, way * phi).point(q));
+                        let steps = 720;
+                        let step = std::f64::consts::TAU / steps as f64;
+                        let root = |a: f64, b: f64| crate::roots::bracketed_root(|x| Some(over(x)), a, over(a), b, over(b), 1e-15);
+                        let Some(j) = (0..=steps).find(|&j| over(j as f64 * step) > 0.0) else {
+                            return unbuilt("a stretch of a circle its curved end does not cut off");
+                        };
+                        let first = if j == 0 { 0.0 } else { root((j - 1) as f64 * step, j as f64 * step) };
+                        let back = (j..steps).find(|&i| over((i + 1) as f64 * step) <= 0.0)
+                            .map_or(std::f64::consts::TAU, |i| root(i as f64 * step, (i + 1) as f64 * step));
+                        entry = entry.max(first);
+                        exit = exit.min(back);
+                    }
+                    if !(entry < exit) {
+                        return unbuilt("a stretch of a circle its curved end does not cut off");
+                    }
+                    reach = reach.max(entry + 0.25 * (exit - entry));
+                }
                 if k == 0 { from -= reach } else { to += reach }
                 halves.extend(at);
+                kepts.extend(bent);
             }
             if to - from >= std::f64::consts::TAU {
                 return unbuilt("a stretch of a circle carried on round its whole turn");
@@ -720,6 +751,7 @@ fn piece(body: &super::faces::BodyFaces, edge: u32, fa: usize, fb: usize, within
         }
         let mut section = section_at(from)?;
         section.within = halves;
+        section.kept = kepts;
         return Ok(Some(Piece::Ring(Ring { section, axis_origin: centre, axis, angle: to - from })));
     }
     let Some([p0, p1]) = body.segment(edge) else { return unbuilt("a curved edge") };
@@ -1014,6 +1046,20 @@ fn bowed(p0: V, along: V, traces: [Trace; 2], [ua, ub]: [V; 2], [la, lb]: [f64; 
     Ok((qa, qb, Stroke::Conic { a: qa, m, b: qb, w: u / (1.0 - u) }))
 }
 
+/// The curved faces a piece is kept on its side of, as a recipe reads them (millimetres, `by` of
+/// them a model unit).
+fn kept_json(kept: &[Kept], by: f64) -> Json {
+    use super::cad::vector;
+    Json::Arr(kept.iter().map(|k| {
+        let mut o = object([("origin", vector(scale(k.origin, by))), ("radius", (k.radius * by).into()),
+            ("inside", k.inside.into())]);
+        if let Some(d) = k.axis {
+            o.set("axis", vector(d));
+        }
+        o
+    }).collect())
+}
+
 /// A run's section moved by `m` (a turn about a ring's axis): its strokes, its origin and way; the
 /// faces it is kept within stand where they stood.
 fn turned(r: &Run, m: &crate::brep::geom::Rigid) -> Run {
@@ -1160,6 +1206,7 @@ pub fn assemble<'a>(pieces: impl IntoIterator<Item = &'a Piece>) -> Assembly {
                 g.angle = cut;
             }
             g.section.within.retain(|&(m, d)| (dot(m, c.vertex) - d).abs() > 1e-9 * size);
+            g.section.kept.retain(|k| !k.through(c.vertex, size));
             out.joins.push([n + i, n + rings + k]);
         }
     }
@@ -1188,18 +1235,11 @@ impl Assembly {
             let [from, to] = r.span;
             let within = r.within.iter()
                 .map(|&(n, d)| object([("at", vector(scale(n, d * by))), ("normal", vector(n))])).collect();
-            let kept = r.kept.iter().map(|k| {
-                let mut o = object([("origin", vector(scale(k.origin, by))), ("radius", (k.radius * by).into()),
-                    ("inside", k.inside.into())]);
-                if let Some(d) = k.axis {
-                    o.set("axis", vector(d));
-                }
-                o
-            }).collect();
+            let kept = kept_json(&r.kept, by);
             Ok(object([
                 ("kind", "prism".into()), ("profile", profile(r)?.to_json(by)?),
                 ("from", (from * by).into()), ("to", (to * by).into()), ("within", Json::Arr(within)),
-                ("kept", Json::Arr(kept)),
+                ("kept", kept),
             ]))
         }).collect::<Result<Vec<_>, String>>()?;
         for g in &self.rings {
@@ -1208,7 +1248,7 @@ impl Assembly {
             pieces.push(object([
                 ("kind", "revolve".into()), ("profile", profile(&g.section)?.to_json(by)?),
                 ("origin", vector(scale(g.axis_origin, by))), ("axis", vector(g.axis)),
-                ("angle", g.angle.into()), ("within", Json::Arr(within)),
+                ("angle", g.angle.into()), ("within", Json::Arr(within)), ("kept", kept_json(&g.section.kept, by)),
             ]));
         }
         let corners = self.corners.iter().map(|c| {

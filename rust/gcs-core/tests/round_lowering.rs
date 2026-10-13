@@ -471,6 +471,27 @@ fn a_d_shaft_rounded_all_over_is_steiners_exactly() {
     close(props::volume(&b), want);
 }
 
+/// **A ring's stretch cut off by a curved face** (#218's 2): the twin bar's big rod's rim at one
+/// end rounded — round the rod from one cusp to the other, ending on the small rod's wall at both.
+/// Carried on round into the small rod and kept outside it: a point of the section `ρ = 10 − u` from
+/// the big rod's axis is kept over the turn outside the small rod's disc, all but `2 acos((ρ² + 14²
+/// − 8²)/(28ρ))` of it.
+#[test]
+fn a_rings_stretch_cut_off_by_a_cylinder_at_its_ends() {
+    let src = include_str!("../../examples/rounds/twin.sv")
+        .replace("bar.right.small round(r: r) bar.left.big", "bar.left.near round(r: 1mm) bar.left.big");
+    let e = solved(&src);
+    assert_eq!(lowered(&e).0, 1);
+    let b = exported(&e, "bar");
+    let (r, big, small, d): (f64, f64, f64, f64) = (1.0, 10.0, 8.0, 14.0);
+    let ring = simpson(|t: f64| {
+        let rho = big - r * (1.0 - t.cos());
+        let inside = ((rho * rho + d * d - small * small) / (2.0 * rho * d)).acos();
+        (r - r * t.sin()) * rho * (2.0 * PI - 2.0 * inside) * r * t.sin()
+    }, 0.0, PI / 2.0, 4000);
+    close(props::volume(&b), (PI * (big * big + small * small) - lens(big, small, d)) * 40.0 - ring);
+}
+
 /// And within a ball: a quarter of a ball of 10 (its half disc turned a quarter turn), the edge
 /// where its two flats meet rounded. The edge runs through the centre from pole to pole, ending on
 /// the sphere at both: the run carried on out of the ball and kept within it. At `(a, b)` from the

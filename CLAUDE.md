@@ -400,7 +400,9 @@ plane meets a coaxial cylinder or cone: the section in the meridian at its start
 angle, `Ring::angle`; a sphere centred on the axis is a circle in the meridian (`Trace::Circle`,
 `knob.sv`'s neck); a stretch ends at seams, at planes through the axis at its ends' meridians,
 or at a plane not through it — carried on round until its whole section has crossed it, and kept
-within it, #218: a D's rim at its flat), a run and a stretch going on from one
+within it, #218: a D's rim at its flat — or at a cylinder or a sphere it runs into, carried a
+quarter of the way through what its section's points spend in that solid and kept on its side,
+`Kept`: the twin bar's rim), a run and a stretch going on from one
 another **glued** at their shared section (a face going on tangent across a seam is no end,
 `BodyFaces::continues`, the field's and the lowering's one rule),
 `Corner` (three planes at any convex or concave corner, #218: the ball `r` from each by a 3×3
@@ -431,8 +433,8 @@ this needs (ported from #79–#110): edges along a face cut where they cross its
 own `tol`; a plane or a cylinder touching a cylinder along a line is one line, judged by the gap
 (the half chord is its square root, #218), and a vertex an edge lying in a face makes on that
 face's edge is on every face that edge bounds (a meeting of the face beside it may end there). `cad::shifted` (the app's exact solid, built about its own origin) moves a lowered
-node's pieces, corners and balls with the rest (`shifted_node`). Open (#218): a ring's stretch or a rolled
-run ending on a curved face, corners of a face in pieces or of two curved faces, a run
+node's pieces, corners and balls with the rest (`shifted_node`). Open (#218): a rolled run ending on a
+curved face, a vertex where convex and concave rounds meet (the twin bar rounded all over), corners of a face in pieces or of two curved faces, a run
 mitred against a ring's stretch on one cylinder (a groove rounded at its ends: refused where the
 two rounds' meeting ends at a point all three surfaces touch, which the trace does not follow,
 #58), a flat along a traced edge, a rolled round beside other pieces in one
