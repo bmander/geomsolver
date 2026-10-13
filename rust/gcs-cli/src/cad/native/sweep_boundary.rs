@@ -117,11 +117,9 @@ pub(crate) fn judge(volumes: &[f64],sampled: Vec<Vec<([f64;3],f64)>>,field: &Mil
 /// A sheet grid fitted as a native face and judged: the face, the grid, and its withheld error.
 pub(crate) type Fitted = (c_int,Sheet,f64);
 
-/// How many times a sheet's grid is refined toward its tolerance, and the most nodes it may
-/// have each way (the kernel interpolates at most 512): past either it is refused.
-const MOST_REFINEMENTS: usize = 4;
-const MOST_ROWS: usize = 480;
-const MOST_COLUMNS: usize = 400;
+// How many times a sheet's grid is refined toward its tolerance, and the most nodes it may
+// have each way: the core's bars (`brep::sweep::sheet`).
+use gcs_core::brep::sweep::sheet::{MOST_COLUMNS,MOST_REFINEMENTS,MOST_ROWS};
 
 /// The candidate sheet grid of one swept solid whose contacts enter the blank
 /// `inside` describes, widened until its boundary lies outside: the core traces
