@@ -948,9 +948,12 @@ extreme angle). Never a sample grid: extremes between samples were missed.
 **This kernel is every export's default** (phase 5): OCCT answers only `--kernel occt` /
 `--stl-backend occt` / `SOLVENT_KERNEL=occt` (the oracle; refused in a build without OCCT), its
 STEP checked by `step_check` against `Solid::of`. `gcs-cli tests/brep_oracle.rs` builds every
-corpus recipe node both ways (a Boolean OCCT meets off our bar where its meeting is ill-conditioned
-— two tori touching in the hypoid's tooth space — is held to OCCT within 1e-5 and to itself
-rebuilt at tolerances ten times either way, within 1e-9: `rebuilt`); `tests/brep_census.rs` holds a census and `brep_body_debug`;
+corpus recipe node both ways (where OCCT is off the bar a closed form or OCCT's own declaration
+decides: a whole revolution of lines and arcs is held to Pappus, `pappus`; a Boolean whose edges
+OCCT declares far coarser than its operands' — two tori touching in the hypoid's tooth space — to
+that tolerance times its area, ours rebuilt at tolerances ten times either way within 1e-9,
+`rebuilt`; a general surface OCCT builds for an analytic one of ours must lie on ours within its
+declared face tolerance); `tests/brep_census.rs` holds a census and `brep_body_debug`;
 `SOLVENT_BREP_DEBUG` narrates, `SOLVENT_BREP_TIME` times slow Boolean steps. OCCT's volume of a
 STEP it reads (~1e-5) is no gate on our accuracy. Rung 1 is done: every corpus solid with a recipe
 agrees with OCCT (volume 1e-9, faces by kind) but for named refusals of self-touching designs
