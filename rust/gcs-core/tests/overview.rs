@@ -2,7 +2,7 @@
 //! and the object reconstructed from the views that see it.
 use gcs_core::constraints::Constraint;
 use gcs_core::model::{EntRef, Sketch};
-use gcs_core::overview::{corners, drawable, scene, Part};
+use gcs_core::overview::{corners, drawable, scene, scene3d, Part};
 use gcs_core::plane::Basis;
 use std::f64::consts::FRAC_PI_2;
 
@@ -222,8 +222,9 @@ fn the_bracket_folds_up() {
     assert!(near(rise, 15f64.hypot(10.0)), "the incline's true length: {rise}");
     let s = scene(&sk, 0.5, 0.6, 0.3);
     assert!(s.items.iter().any(|i| i.what == Part::Solid), "the object is drawn");
-    // the four standard planes and the auxiliary view's
-    assert!(s.items.iter().filter(|i| i.what == Part::Face).count() == 5, "five panes");
+    // the standard planes and the auxiliary view's: `std.up` stands where `std.front` does, and
+    // a place is one pane
+    assert!(s.items.iter().filter(|i| i.what == Part::Face).count() == 4, "four panes");
     assert!(s.bounds.2 > s.bounds.0 && s.bounds.3 > s.bounds.1);
 }
 
@@ -377,6 +378,45 @@ fn nearly_parallel_views_place_nothing() {
 
 /// **The box shows the objects, not the features they are made of.**
 ///
+/// **One pane for a place.**  `std.up` is `std.front` turned a quarter: with nothing drawn the
+/// two panes were one square, and a line drawn on the front grew the front's away from it,
+/// leaving `std.up`'s behind as a second frame round the same plane.  The box draws the place's
+/// first plane, its pane reaching over everything drawn on any plane standing there.
+#[test]
+fn planes_in_one_place_are_one_pane() {
+    let src = "\
+unit mm
+use std
+p := point hint((40, 30)) in std.front
+q := point hint((90, 70)) in std.front
+l := line(p, q)
+fix((40, 30)) p
+fix((90, 70)) q
+r := point hint((10, 20)) in std.up
+fix((10, 20)) r
+";
+    let (prog, errs, _) = gcs_core::library::parse_linked(src);
+    assert!(errs.is_empty(), "{errs:?}");
+    let mut e = gcs_core::program::elaborate(&prog);
+    assert!(e.ok(), "{:?}", e.errors().map(|d| d.message.clone()).collect::<Vec<_>>());
+    assert!(gcs_core::solve::solve(&mut e.sketch, Default::default()).success);
+    let sk = &e.sketch;
+    let plane = |n: &str| e.map.ent_named(n).unwrap();
+    let items = scene3d(sk, 0.0);
+    let faces: Vec<_> = items.iter().filter(|i| i.what == Part::Face).collect();
+    // front, top and side: std.up has no pane of its own, nor axes
+    assert_eq!(faces.len(), 3, "a pane per place");
+    let up = Some(plane("std.up"));
+    assert!(!items.iter().any(|i| i.of == up && matches!(i.what, Part::Face | Part::Axis)));
+    // the front's pane reaches over the line, and over what stands on std.up too: x and z in
+    // space are the front's own u and v, and std.up's (10, 20) is z 10 and x -20
+    let front = faces.iter().find(|i| i.of == Some(plane("std.front"))).expect("the front pane");
+    assert!(front.pts.iter().all(|p| p[1].abs() < 1e-9), "on the front plane");
+    let (x0, x1) = front.pts.iter().fold((f64::MAX, f64::MIN), |(l, h), p| (l.min(p[0]), h.max(p[0])));
+    let (z0, z1) = front.pts.iter().fold((f64::MAX, f64::MIN), |(l, h), p| (l.min(p[2]), h.max(p[2])));
+    assert!(x0 < -20.0 && x1 > 90.0 && z0 <= 0.0 && z1 > 70.0, "{x0} {x1} {z0} {z1}");
+}
+
 /// A part is written as a stock, the holes cut out of it, and the body that is the term over
 /// them — four names for one thing and three voids.  Drawn whole, each void was an object in its
 /// own right, hidden-line tested against *itself*, so a bore floated in front of the face it is

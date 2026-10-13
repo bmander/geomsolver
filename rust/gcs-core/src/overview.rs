@@ -328,11 +328,13 @@ pub fn scene3d_of(sk: &Sketch, unit: f64, layer: Layer) -> Vec<Item3> {
     let mut items: Vec<Item3> = Vec::new();
     let (datums, objects_too) = (layer != Layer::Objects, layer != Layer::Datums);
     let views = views(sk);
+    let places = places(sk);
     let least = sk.extent() * LEAST_SIDE;
-    for i in (0..sk.planes.len()).filter(|_| datums) {
+    // one pane for each place, its first plane's
+    for i in (0..sk.planes.len()).filter(|&i| datums && places[i] == i) {
         let of = Some(EntRef::plane(i));
         let basis = sk.basis(i);
-        let rect = pane(sk, i, &views, least);
+        let rect = pane(sk, i, &views, &places, least);
         items.push(Item3 { of, in_plane: of, what: Part::Face, pts: face(&basis, rect) });
         for arm in axes(&basis, rect) {
             items.push(Item3 { of, in_plane: of, what: Part::Axis, pts: arm.to_vec() });
@@ -418,12 +420,13 @@ pub fn scene_with(sk: &Sketch, unit: f64, az: f64, el: f64, shaded: bool) -> Sce
     let views = views(sk);
     let least = sk.extent() * LEAST_SIDE;
 
-    // the panes of the box, under everything — **one per plane, drawn in or not** — each with
+    // the panes of the box, under everything — **one per place, drawn in or not** — each with
     // its own axes at its origin
-    for i in 0..sk.planes.len() {
+    let places = places(sk);
+    for i in (0..sk.planes.len()).filter(|&i| places[i] == i) {
         let of = Some(EntRef::plane(i));
         let basis = sk.basis(i);
-        let rect = pane(sk, i, &views, least);
+        let rect = pane(sk, i, &views, &places, least);
         items.push(Item {
             of,
             in_plane: of,
@@ -603,19 +606,39 @@ fn finish(items: Vec<Item>) -> Scene {
     Scene { items, bounds }
 }
 
+/// **Each plane's place**: the first plane standing on the same plane in space
+/// (`Basis::coplanar`, `workspace::Views`' rule and tolerance, the page left out — it has no
+/// pane).  `std.up` is `std.front` turned a quarter, so its place is the front's.
+fn places(sk: &Sketch) -> Vec<usize> {
+    let bases: Vec<_> = (0..sk.planes.len()).map(|i| sk.basis(i)).collect();
+    let tol = 1e-9 * sk.extent();
+    (0..bases.len())
+        .map(|k| (0..k).find(|&j| bases[j].coplanar(&bases[k], tol)).unwrap_or(k))
+        .collect()
+}
+
 /// The rectangle a view is drawn on, in its own view coordinates: the box of everything standing
-/// on that plane *and its origin* — where its axes cross, so a pane never cuts them off — grown
-/// a little, and never thinner than `least` (`LEAST_SIDE` of the sketch's extent) either way,
-/// which is what a view with nothing in it, or only its origin, or only points along one line,
-/// gets.
+/// in its **place** — on it, or on any plane in the same place in space — *and the origins
+/// there* — where axes cross, so a pane never cuts them off — grown a little, and never thinner
+/// than `least` (`LEAST_SIDE` of the sketch's extent) either way, which is what a view with
+/// nothing in it, or only its origin, or only points along one line, gets.
 ///
 /// One rule for the face and its axes both, so the two cannot come to disagree about how far a
-/// view reaches.
-fn pane(sk: &Sketch, plane: usize, views: &[Option<usize>], least: f64) -> Box2 {
+/// view reaches; and one pane for a place, so drawing on `std.front` does not leave `std.up`'s
+/// behind as a second frame round the same plane (the box draws the place's first plane only).
+fn pane(sk: &Sketch, plane: usize, views: &[Option<usize>], places: &[usize], least: f64) -> Box2 {
+    let basis = sk.basis(plane);
     let mut b = (0.0f64, 0.0f64, 0.0f64, 0.0f64);
+    for j in (0..places.len()).filter(|&j| j != plane && places[j] == places[plane]) {
+        grow(&mut b, basis.view_coords(sk.basis(j).o));
+    }
     for (i, v) in views.iter().enumerate() {
-        if *v == Some(plane) {
-            grow(&mut b, sk.point_xy(i));
+        match *v {
+            Some(j) if j == plane => grow(&mut b, sk.point_xy(i)),
+            Some(j) if places[j] == places[plane] => {
+                grow(&mut b, basis.view_coords(sk.world_point(i)))
+            }
+            _ => {}
         }
     }
     let widen = |lo: f64, hi: f64| {

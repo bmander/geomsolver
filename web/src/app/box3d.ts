@@ -21,7 +21,7 @@ import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js
 import { mesh, objects, preview } from '../core/mesh.js';
 import type { Face, Mesh } from '../core/mesh.js';
 import { overview3 } from '../core/overview.js';
-import { solidEdges } from '../core/workspace.js';
+import { placeOf, solidEdges } from '../core/workspace.js';
 import type { SolidEdge } from '../core/workspace.js';
 import type { Item3 } from '../core/overview.js';
 import { COL, chromeOf, inkOf } from './paint.js';
@@ -368,11 +368,16 @@ export class Box3D {
     for (const { it, line } of this.frames) {
       (line.material as THREE.LineBasicMaterial).color.set(ink(it, INK.drawn));
     }
+    // a pane is a place's (`std.up` has none of its own: it stands where `std.front` does), so
+    // the one that bolds is the place of the plane being drawn on
+    const ws = v.workspace();
+    const here = v.plane ? placeOf(ws, v.plane.index) : null;
     for (const { it, line } of this.panes) {
       const m = line.material;
       m.color.set(ink(it, INK.pane));
       // the plane being drawn on: its frame bolds, so where the next thing goes is in sight
-      const current = v.planeOf(it) === v.plane;
+      const pl = v.planeOf(it);
+      const current = here !== null && pl !== null && placeOf(ws, pl.index) === here;
       m.opacity = current ? 0.8 : 0.35;
       m.linewidth = current ? FRAME_PX.current : FRAME_PX.plain;
       m.resolution.set(v.width, v.height);

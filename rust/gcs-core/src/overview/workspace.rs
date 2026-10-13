@@ -339,6 +339,7 @@ const EDGE_ON: f64 = 1e6;
 /// same rule the box draws it by, and its whole face answers, not only its frame.
 pub fn panes_at(sk: &Sketch, proj: &Projection, at: (f64, f64)) -> Vec<usize> {
     let views = super::views(sk);
+    let places = super::places(sk);
     let least = sk.extent() * super::LEAST_SIDE;
     let toward = proj.toward();
     let mut hits: Vec<(f64, usize)> = Vec::new();
@@ -352,7 +353,7 @@ pub fn panes_at(sk: &Sketch, proj: &Projection, at: (f64, f64)) -> Vec<usize> {
         // where the eye's ray through `at` meets the plane, in its own coordinates
         let (x, y) = (at.0 - m[2], at.1 - m[5]);
         let (px, py) = ((m[4] * x - m[1] * y) / det, (-m[3] * x + m[0] * y) / det);
-        let (x0, y0, x1, y1) = super::pane(sk, i, &views, least);
+        let (x0, y0, x1, y1) = super::pane(sk, i, &views, &places, least);
         if px < x0 || px > x1 || py < y0 || py > y1 {
             continue;
         }

@@ -177,6 +177,10 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   per-kind polyline walk `svg::entity` and the workspace share, refined to `curve::flatness`.
   **Every plane is a pane**, drawn in or not; `overview::pane` is the *one* rule for its reach
   (geometry and origin, grown a little, never thinner than `LEAST_SIDE`), so face and axes agree.
+  **A place is one pane** (`overview::places`, `Basis::coplanar`): planes standing on one plane
+  in space (`std.up` on `std.front`) are drawn as the first one's pane, reaching over what is
+  drawn on any of them, so drawing on the front leaves no second frame behind
+  (`planes_in_one_place_are_one_pane`); the pane that bolds is the current plane's place.
   **The box shows the objects, not the features they are made of** — a solid is the object exactly
   when nothing else is made of it (`overview::objects`).  `box3d.ts` draws what `scene3d` says
   stands in space — panes, axes, the object's creases (a `smooth` seam dropped: shading draws the
