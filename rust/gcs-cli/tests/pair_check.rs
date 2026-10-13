@@ -357,14 +357,10 @@ impl Pair {
         let gaps = each(&poses,|&(s,phi)| self.gap(s,phi,extra));
         gaps.chunks(2).map(|g| [g[0],g[1]]).collect()
     }
-    /// The pinion's triangles on `side` within `film` of the gear at some pose of the pitch.
-    fn pattern(&self,side: usize,extra: f64,film: f64) -> Vec<u32> {
+    /// The pinion's triangles on `side` within `film` of the gear at each pose of the pitch.
+    fn pattern(&self,side: usize,extra: f64,film: f64) -> Vec<Vec<u32>> {
         let poses: Vec<f64> = (0..=STEPS).map(|k| (k as f64*GEAR_PITCH/STEPS as f64).to_radians()).collect();
-        let mut all: Vec<u32> = each(&poses,|&phi| search(&self.pinion[side],&self.gear,&self.pose(phi,extra),Some(film)).3)
-            .into_iter().flatten().collect();
-        all.sort();
-        all.dedup();
-        all
+        each(&poses,|&phi| search(&self.pinion[side],&self.gear,&self.pose(phi,extra),Some(film)).3)
     }
 }
 
@@ -425,7 +421,7 @@ fn the_exported_pair_meshes_with_its_backlash() {
 #[ignore = "a tool: export both Formate members (examples/spiral_bevel/README.md, The Formate pair), \
     then cargo test --manifest-path rust/Cargo.toml -p gcs-cli --test pair_check formate -- --ignored --nocapture"]
 fn the_exported_formate_pair_is_conjugate() {
-    meshes("formate",fixtures::gear::formate_as_configured(),true);
+    meshes("formate",fixtures::gear::read(&fixtures::gear::formate_source()),true);
 }
 
 /// The pair exported as `{stem}-pinion.stl` and `{stem}-gear.stl`, its model `e`, checked; a
@@ -539,8 +535,12 @@ fn meshes(stem: &str,e: gcs_core::program::Elaborated,conjugate: bool) {
         let backlash = BACKLASH/2.*(1.+(open.lever/closing.lever).abs());
         println!("  normal backlash (the other flanks' least clearance with these touching): {:.4} mm, by the levers \
             {backlash:.4} mm; the touching flanks {:.4} mm apart at their nearest",open.d,touch.d);
-        let pattern = pair.pattern(side,turn,FILM);
-        let tris: Vec<Tri> = pattern.iter().map(|&i| pair.pinion[side].tris[i as usize]).collect();
+        let flank = &pair.pinion[side].tris;
+        let by_pose = pair.pattern(side,turn,FILM);
+        let mut pattern: Vec<u32> = by_pose.iter().flatten().copied().collect();
+        pattern.sort();
+        pattern.dedup();
+        let tris: Vec<Tri> = pattern.iter().map(|&i| flank[i as usize]).collect();
         let cone = |p: V| norm(sub(p,apex));
         let centre = |t: &Tri| scale(add(add(t[0],t[1]),t[2]),1./3.);
         let along = |t: &Tri| cone(centre(t));
@@ -560,14 +560,12 @@ fn meshes(stem: &str,e: gcs_core::program::Elaborated,conjugate: bool) {
         assert!(touching < SAG,"the flanks {} part by {touching} mm over the pitch",names[side]);
         // And at one pose they touch along a line: the triangles within the film reach across the
         // face, toe to heel, through the mean section — the pose whose film reaches furthest.
-        let flank = &pair.pinion[side].tris;
         let (f0,f1) = span(flank,&along);
-        let lines = each(&poses,|&phi| {
-            let near: Vec<Tri> = search(&pair.pinion[side],&pair.gear,&pair.pose(phi,turn),Some(FILM)).3.iter()
-                .map(|&i| flank[i as usize]).collect();
+        let lines: Vec<_> = by_pose.iter().zip(&poses).map(|(near,&phi)| {
+            let near: Vec<Tri> = near.iter().map(|&i| flank[i as usize]).collect();
             let (l0,l1) = span(&near,&along);
             (l1-l0,l0,l1,near.iter().map(|t| area(*t)).sum::<f64>(),phi)
-        });
+        }).collect();
         let &(reach,l0,l1,film,phi) = lines.iter().max_by(|a,b| a.0.total_cmp(&b.0)).unwrap();
         println!("  line contact: at gear {:.2}° the film reaches {l0:.2} to {l1:.2} mm from the apex ({:.0}% of the \
             flank's {f0:.2} to {f1:.2}), {film:.2} mm²",phi.to_degrees(),100.*reach/(f1-f0));
