@@ -790,7 +790,7 @@ fn build_open(b: &Brep,chain: &[usize],net: &Net,surfaces: &[Surface;2],meeting:
 }
 
 /// A run's piece cut off by what each end is cut off by, kept on the run's side: a plane's
-/// half-space (`recipe::kept`), a curved face's solid (`recipe::kept_by_solid`).
+/// half-space (`build::kept`), a curved face's solid (`build::kept_by_solid`).
 fn trimmed(mut piece: Brep,trims: &[Trim]) -> Result<Brep,String> {
     let tol = tolerance(piece.size());
     let mut done: Vec<&Cut> = Vec::new();
@@ -798,9 +798,9 @@ fn trimmed(mut piece: Brep,trims: &[Trim]) -> Result<Brep,String> {
         if done.iter().any(|c| c.same(cut,tol)) { continue }
         done.push(cut);
         piece = match cut {
-            Cut::Plane {o,keep} => super::recipe::kept(&piece,*o,*keep,0.),
-            Cut::Solid {surface,inside} => super::recipe::kept_by_solid(&piece,surface,*inside,0.),
-            Cut::Section {o,keep,reach} => super::recipe::cut_before(&piece,*o,*keep,*reach,0.),
+            Cut::Plane {o,keep} => super::build::kept(&piece,*o,*keep,0.),
+            Cut::Solid {surface,inside} => super::build::kept_by_solid(&piece,surface,*inside,0.),
+            Cut::Section {o,keep,reach} => super::build::cut_before(&piece,*o,*keep,*reach,0.),
         }.map_err(|m| format!("a fillet's run cannot be cut off where it ends: {m}"))?;
     }
     Ok(piece)

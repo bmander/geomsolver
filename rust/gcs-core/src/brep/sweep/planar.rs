@@ -59,7 +59,7 @@ pub fn cut(sk: &Sketch,body: usize,recipe: &StaticRecipe,prepared: &Prepared,tol
         (say.mark)(Stage::Reach);
         for c in recipe.sweeps.iter().filter(|c| c.swept == swept) {
             let placed = prism.moved(&super::sector::placed(c.pose,scale));
-            solid = crate::brep::recipe::combined(&solid,&placed,Op::Common,0.)
+            solid = crate::brep::boolean::combined(&solid,&placed,Op::Common,0.)
                 .map_err(|e| ExportRefusal::at(Stage::Split,format!("`{}`: kept within `{}`'s envelope: {e}",sk.solids[body].name,sk.solids[swept].name)))?;
         }
     }

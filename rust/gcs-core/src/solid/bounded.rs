@@ -6,13 +6,13 @@
 //! material: Steinmetz's bicylinder, two cylinders crossing.  The recipe's `region` node; held to
 //! the region read point by point before it stands (`gate`), as the lowering table's pieces are.
 //! Any other term (a sum of measurements, a face's, an offset) leaves the region the field's.
-use crate::brep::build::{Profile, ProfileEdge};
+use crate::brep::build::{ball_section, disc, square, Profile, ProfileEdge};
 use crate::brep::geom::Frame;
 use crate::json::{object, Json};
 use crate::model::{RegionShape, Sketch, SolidDef};
 use crate::space::{add, dot, norm, scale, sub};
 use crate::syntax::Cmp;
-use std::f64::consts::{FRAC_PI_2, PI, TAU};
+use std::f64::consts::{FRAC_PI_2, TAU};
 use std::rc::Rc;
 
 #[allow(unused_imports)]
@@ -57,22 +57,20 @@ impl Bounded {
         let v = |p: V| Json::Arr(p.iter().map(|&x| Json::from(x * scale_by)).collect());
         let dir = |p: V| Json::Arr(p.iter().map(|&x| Json::from(x)).collect());
         let pieces = self.pieces.iter().map(|piece| {
-            let profile = |origin: V, normal: V, edges: Vec<ProfileEdge>| {
-                let names = vec![vec![piece.name.clone(); edges.len()]];
-                Profile { origin, normal, loops: vec![edges], names }.to_json(scale_by)
+            // each edge named by the term's set
+            let profile = |p: Profile| {
+                let names = vec![vec![piece.name.clone(); p.loops[0].len()]];
+                Profile { names, ..p }.to_json(scale_by)
             };
             let mut node = match piece.shape {
                 Shape::Ball { c, r } => {
                     // a half disc turned once about a line through the centre
                     let f = Frame::about(c, [0.0, 0.0, 1.0]);
-                    let arc = ProfileEdge::Arc { frame: Frame::new(c, f.z, f.y), r, span: Some([0.0, PI]) };
-                    let shut = ProfileEdge::Line { a: f.at([0.0, -r, 0.0]), b: f.at([0.0, r, 0.0]) };
-                    object([("kind", "revolve".into()), ("profile", profile(c, f.z, vec![arc, shut])?),
+                    object([("kind", "revolve".into()), ("profile", profile(ball_section(&f, r))?),
                         ("origin", v(c)), ("axis", dir(f.y)), ("angle", TAU.into())])
                 }
                 Shape::Cylinder { a, d, r, reach } => {
-                    let circle = ProfileEdge::Arc { frame: Frame::about(a, d), r, span: None };
-                    object([("kind", "prism".into()), ("profile", profile(a, d, vec![circle])?),
+                    object([("kind", "prism".into()), ("profile", profile(disc(a, d, r))?),
                         ("from", (-reach * scale_by).into()), ("to", (reach * scale_by).into())])
                 }
                 Shape::Cone { a, d, half, reach } => {
@@ -82,18 +80,14 @@ impl Bounded {
                     let rim = add(tip, scale(f.x, reach * half.dtan()));
                     let edges = vec![ProfileEdge::Line { a, b: rim }, ProfileEdge::Line { a: rim, b: tip },
                                      ProfileEdge::Line { a: tip, b: a }];
-                    object([("kind", "revolve".into()), ("profile", profile(a, f.y, edges)?),
+                    let section = Profile { origin: a, normal: f.y, loops: vec![edges], names: Vec::new() };
+                    object([("kind", "revolve".into()), ("profile", profile(section)?),
                         ("origin", v(a)), ("axis", dir(d)), ("angle", TAU.into())])
                 }
                 Shape::Half { o, n, reach } => {
                     // a square on the plane, swept away from `n` into the half-space
                     let keep = scale(n, -1.0);
-                    let f = Frame::about(o, keep);
-                    let at = |x: f64, y: f64| f.at([x, y, 0.0]);
-                    let corners = [at(-reach, -reach), at(reach, -reach), at(reach, reach), at(-reach, reach)];
-                    let edges = (0..4).map(|k| ProfileEdge::Line { a: corners[k], b: corners[(k + 1) % 4] })
-                        .collect();
-                    object([("kind", "prism".into()), ("profile", profile(o, keep, edges)?),
+                    object([("kind", "prism".into()), ("profile", profile(square(o, keep, reach))?),
                         ("from", 0.0.into()), ("to", (reach * scale_by).into())])
                 }
             };
