@@ -18,13 +18,35 @@ pub use path::{face_paths, face_source, FacePath, FaceSource};
 
 /// The region solids whose terms read the faces of `body`.
 pub fn readers_of(sk: &Sketch, body: usize) -> BTreeSet<usize> {
-    let reads = |t: &RegionTerm| t.shape.entities().iter().any(|e| {
-        e.kind == crate::model::EntKind::Solid && e.i() == body
-    });
     (0..sk.solids.len()).filter(|&i| match &sk.solids[i].def {
-        SolidDef::Region { terms, .. } => terms.iter().any(reads),
+        SolidDef::Region { terms, .. } => terms.iter().any(|t| reads_body(&t.shape, body)),
         _ => false,
     }).collect()
+}
+
+/// Whether a term's shape reads the faces of `body`: `body` among the solids of
+/// `RegionShape::entities`, sought without gathering them, and no further than the first.  A
+/// drawing rounded all over asks it of every region for every `cached` key, so the gathering was
+/// most of the asking.
+fn reads_body(shape: &RegionShape, body: usize) -> bool {
+    let solid = |e: &crate::model::EntRef| e.kind == crate::model::EntKind::Solid && e.i() == body;
+    match shape {
+        RegionShape::Ball { .. } | RegionShape::Cylinder { .. } | RegionShape::Cone { .. } => false,
+        RegionShape::Plane { along, .. } => solid(along),
+        RegionShape::Measured { of } => of.iter().any(|(t, _)| target_reads_body(t, body)),
+        RegionShape::FaceSide { face } => face.solid as usize == body,
+        RegionShape::Angle { a, b } => a.solid as usize == body || b.solid as usize == body,
+        RegionShape::Ends { edge } => target_reads_body(edge, body),
+    }
+}
+
+/// `reads_body` of what a measurement measures (`Target::entities`' solids).
+fn target_reads_body(t: &Target, body: usize) -> bool {
+    match t {
+        Target::Ent(e) => e.kind == crate::model::EntKind::Solid && e.i() == body,
+        Target::Face(face) => face.solid as usize == body,
+        Target::Set { terms, .. } => terms.iter().any(|t| reads_body(&t.shape, body)),
+    }
 }
 
 /// **The stratum's order** (#183 F6): body `body`'s fills `on` and cuts `cut` as
