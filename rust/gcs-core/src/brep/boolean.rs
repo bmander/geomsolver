@@ -1,4 +1,4 @@
-//! Booleans of two solids: every edge of each split where it
+//! Booleans of two solids (docs/rust-kernel-plan.md, rung 1): every edge of each split where it
 //! crosses the other's faces, every pair of faces intersected and the curves kept where they lie in
 //! both, every face split by what now lies on it — traced in its own parameters, the material on
 //! the left — each piece placed against the other solid, and the pieces the operation keeps

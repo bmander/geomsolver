@@ -1,4 +1,4 @@
-//! A point no `in` reaches stands in space (#81): three coordinates, its
+//! A point no `in` reaches stands in space (`docs/planes-plan.md`, #81): three coordinates, its
 //! seed and its gauge, through JSON; what it may not make (a curve, a face); and planes stacked
 //! by a distance, placed by an axis through both origins.
 use gcs_core::diagnose::{diagnose, DiagnoseOptions};

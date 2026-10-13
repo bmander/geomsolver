@@ -38,9 +38,9 @@ impl Body {
     }
 }
 
-/// Which kernel builds a solid for STEP and STL: the core's own (`gcs_core::brep`), unless OCCT
-/// is asked for by name (`--kernel occt`, `--stl-backend occt`, `SOLVENT_KERNEL=occt`),
-/// which a build with the `occt` feature keeps as the oracle.
+/// Which kernel builds a solid for STEP and STL: the core's own (`gcs_core::brep`, phase 5 of
+/// docs/rust-kernel-plan.md), unless OCCT is asked for by name (`--kernel occt`, `--stl-backend
+/// occt`, `SOLVENT_KERNEL=occt`), which a build with the `occt` feature keeps as the oracle.
 static RUST_KERNEL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// Whether OCCT was asked for by name (`--kernel occt`, `--stl-backend occt`): a build without it
@@ -180,7 +180,7 @@ pub fn export(sk: &Sketch,body: &Body,step: Option<&str>,stl: Option<&str>,toler
         progress::start();
         let recipe = body.recipe.as_ref().map_err(Clone::clone).at(Stage::Blank)?;
         let session = native::Session::new().at(Stage::Blank)?;
-        // `SOLVENT_WRITER=rust`: the solid the kernel built
+        // `SOLVENT_WRITER=rust` (phases 1 and 2 of docs/rust-kernel-plan.md): the solid the kernel built
         // read into the core's own B-rep and its STEP and STL written from that, by our writer and
         // mesher; built as one sector, the sector read and turned into the whole by the core
         // (`brep::pattern`), the kernel's union never made

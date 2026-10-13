@@ -808,7 +808,7 @@ fn bound_of(
     Ok(Some((crate::constraints::Bound { cmp, hi }, at)))
 }
 
-/// **An ordinate's operands, read** (Solvent [0.46]): a plane's own direction is
+/// **An ordinate's operands, read** (`docs/ordinate-plan.md`): a plane's own direction is
 /// measured from its origin, so `q distance(d, along: u) P` is the ordinate from `P.origin` to
 /// `q` along `P.u` (`P`'s normal for `n`) and the arguments are rewritten so; a direction written
 /// as a reference is an axis or a line, never a plane; a word of the table that is also the name

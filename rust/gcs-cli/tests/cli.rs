@@ -80,7 +80,7 @@ fn a_refined_mesh_the_field_refuses_leaves_the_old_output() {
     std::fs::remove_dir_all(dir).unwrap();
 }
 
-/// The swept torus held to 0.1 µm: the first sheet
+/// The swept torus held to 0.1 µm (docs/native-hypoid-plan.md): the first sheet
 /// (24x24, 0.11 µm from its withheld contacts at best against a 0.05 µm bar) misses, is refined
 /// where it misses and fitted again until it holds, and the meter reads both files within the
 /// tolerance.
@@ -244,14 +244,14 @@ fn fabricated(member: &str) {
 
 /// The configured hypoid gear exports natively, STEP and STL, through the swept construction
 /// and its field-agreement gate, held to 10 µm. It was refused at the fit until the sheet's rows
-/// stopped before a margin column's leap into a far corner's fan.
+/// stopped before a margin column's leap into a far corner's fan (docs/native-hypoid-plan.md).
 #[cfg(feature="occt")]
 #[test]
 #[cfg_attr(not(feature = "slow"), ignore = "slow tier, about six minutes: the configured gear exported at 10 µm and measured")]
 fn the_configured_gear_exports_natively() { fabricated("gear"); }
 
 /// The configured hypoid pinion at 10 µm: its fillets were 11.6 and 16.9 µm off at the gross bars
-/// and are refined into the tolerance.
+/// (docs/native-hypoid-plan.md) and are refined into the tolerance.
 #[cfg(feature="occt")]
 #[test]
 #[cfg_attr(not(feature = "slow"), ignore = "slow tier, about five minutes: the configured pinion exported at 10 µm and measured")]

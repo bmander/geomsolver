@@ -309,7 +309,7 @@ pub const STD_POINTS: usize = 5;
 
 /// A 2D document drawn in the front plane: `use std`, and every statement but a `unit`, a `use`,
 /// a `style` and a component's definition inside one `in std.front { … }` — what a document
-/// written before points stood in space says now (#81).  One that already says
+/// written before points stood in space says now (`docs/planes-plan.md`).  One that already says
 /// `use std` is taken as written.
 pub fn front(src: &str) -> String {
     let says_std = |l: &str| l.trim() == "use std" || l.trim().starts_with("use std (");
@@ -353,7 +353,7 @@ pub fn front(src: &str) -> String {
 
 /// A hand-built sketch drawn in one view: a held front plane, made here, with every point the
 /// sketch has so far put in it — what a run, a rise or a level between two of them reads its
-/// axes off (Solvent [0.46]).  A 2D sketch with no plane has no axes to name.
+/// axes off (`docs/ordinate-plan.md`).  A 2D sketch with no plane has no axes to name.
 pub struct View {
     pub plane: usize,
     pub u: EntRef,

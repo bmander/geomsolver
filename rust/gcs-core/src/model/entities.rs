@@ -65,7 +65,7 @@ pub enum EntKind {
     Vertex,
     /// A finite directed portion of a spatial seam between named corners.
     Edge,
-    /// **An axis** (#81): a directed line in space, with no start — a direction
+    /// **An axis** (`docs/planes-plan.md`): a directed line in space, with no start — a direction
     /// and a place, placed by relations like any other entity and drawn on no sheet.  Its
     /// relations (`parallel`, `perpendicular`, `angle`, `p coincident t`) are in space.
     Axis,
@@ -396,7 +396,7 @@ pub struct PointE {
     pub x: u32,
     pub y: u32,
     /// The third coordinate of a **point in space** — one a document declares outside every
-    /// `in` (#81), whose three numbers are where it stands.  `None` for a
+    /// `in` (`docs/planes-plan.md`), whose three numbers are where it stands.  `None` for a
     /// point drawn in a plane, whose two numbers are that plane's own coordinates.
     pub z: Option<u32>,
     /// The plane this point is drawn in (`a := point in top`): its `x`, `y` are that plane's
@@ -466,7 +466,7 @@ pub struct SplineE {
     pub class: Classes,
 }
 
-/// **A plane in space** (#81): its attitude is two axes' — right along `u`,
+/// **A plane in space** (`docs/planes-plan.md`): its attitude is two axes' — right along `u`,
 /// out along `u × v`, up along `out × u` — and where it stands is `o`, three Params of its own.
 /// Its origin is the member point `origin`, drawn in it and held at `(0, 0)`, so it stands at
 /// `o`.  A plane owns no intrinsic row: what it is, is read off its axes and `o` (`Sketch::basis`),

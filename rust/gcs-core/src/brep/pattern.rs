@@ -1,4 +1,4 @@
-//! An indexed solid built from one sector by identity: the
+//! An indexed solid built from one sector by identity (phase 2 of docs/rust-kernel-plan.md): the
 //! sector turned into every copy about its axis, its two sides — one face, and the same face turned
 //! a pitch on — left out, and the pieces of one surface that meet across a side made one face. A face
 //! of revolution about the axis keeps the sector's surface in every copy, its pcurves moved along `u`

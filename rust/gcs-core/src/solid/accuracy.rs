@@ -1,5 +1,5 @@
 //! How far an exported boundary lies from the exact one: each sample point's distance to a
-//! body's exact surface, read two independent ways.
+//! body's exact surface, read two independent ways (docs/native-hypoid-plan.md).
 //!
 //! **The analytic route** knows what the surface is made of. A blank face is a turned line or
 //! arc, and its distance is the exact meridian projection (`SurfaceProjector`). A generated face

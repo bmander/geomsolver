@@ -1,7 +1,7 @@
-//! Where the configured pair stands
+//! Phase 1 of docs/generating-sweeps-plan.md: where the configured pair stands
 //! against the generating-sweep class (docs/generating-sweeps.md), measured on
 //! the solved source by sampling. Nothing here constructs a boundary; these are
-//! the numbers the choice of offsets read. Sampled, never certified.
+//! the numbers the plan's decision gate reads. Sampled, never certified.
 //!
 //! `SOLVENT_CLASS_OFFSETS=0,6,15` (millimetres between the shafts) chooses the offsets,
 //! `SOLVENT_CLASS_SHIFTS=0,5` the pressure shifts (every pair is measured), and

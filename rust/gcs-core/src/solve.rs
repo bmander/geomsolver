@@ -203,7 +203,7 @@ impl SolveResult {
     /// The pose is a solve's answer: accepted, *and* stopped for a reason other than the
     /// iteration limit.  A DogLeg still descending when its budget runs out can be under
     /// `acceptance_tol` in an ill-conditioned direction and a thousandth of the extent from the
-    /// solution; it is a success, and not settled.
+    /// solution; it is a success, and not settled (docs/iteration-limit-rescue-plan.md).
     pub fn settled(&self) -> bool {
         self.success && self.status != 4
     }
@@ -489,7 +489,7 @@ impl System {
     /// bar.  A system whose seeds are good only upstream of a block can fail whole and solve in
     /// order, each block from what the blocks before it made; and a DogLeg accepted on its
     /// iteration limit, still descending in an ill-conditioned direction, can be a thousandth of
-    /// the extent from the solution.  So:
+    /// the extent from the solution (docs/iteration-limit-rescue-plan.md).  So:
     ///
     /// * **a failure** is tried from the start, kept if it succeeds;
     /// * **a stop on the limit** is tried from the stop, kept if it converges there (status 0) —

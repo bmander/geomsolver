@@ -1,5 +1,5 @@
-// A hypoid's pitch cones, laid out through the mean point M.
-// The pitch plane P is the front plane; each axial plane
+// A hypoid's pitch cones, laid out through the mean point M (docs/spiral-bevel-layout-plan.md,
+// docs/spatial-constraints-plan.md P3).  The pitch plane P is the front plane; each axial plane
 // stands square to it over its member's pitch generator, so each axis is drawn in the plane of
 // its generator and P is the tangent plane of both pitch cones along their generators: the
 // common pitch plane holds by construction and nothing states it.

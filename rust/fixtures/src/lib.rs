@@ -13,7 +13,7 @@ pub use read::{accurate,elaborate,unsolved,read,module,beside,read_beside,solid,
 
 /// A generated document's zero ordinates said as what they are: `p level(v) P`, `a horizontal b`.
 /// A generator writes each coordinate as `p distance({v}mm, along: v) P`, and a number written as
-/// zero is refused (Solvent [0.46]): the two are level, which states no number.
+/// zero is refused (`docs/ordinate-plan.md`): the two are level, which states no number.
 pub fn levelled(src: String) -> String {
     let mut out: String = src.lines().map(|l| level_line(l).unwrap_or_else(|| l.to_string()))
         .collect::<Vec<_>>().join("\n");
