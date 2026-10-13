@@ -313,7 +313,7 @@ fn pcurve(o: &mut Out,b: &Brep,fi: usize,u: &super::topo::Coedge,surface: usize,
                 distance(f.surface.point([(ua[0]+uz[0])/2.,(ua[1]+uz[1])/2.]),c.point((ta+tz)/2.))
             };
             let ts = samples(c,e.t,tol,&off);
-            if std::env::var_os("SOLVENT_BREP_DEBUG").is_some() {
+            if super::debug() {
                 eprintln!("step: a {} on a {} as {} points, ends {a:?} {z:?}, middle {:?}",c.kind(),f.surface.kind(),ts.len(),at((e.t[0]+e.t[1])/2.));
             }
             let ids: Vec<String> = ts.iter().map(|&t| format!("#{}",p2(o,at(t)))).collect();

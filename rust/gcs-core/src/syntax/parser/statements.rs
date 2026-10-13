@@ -4,7 +4,7 @@ use super::P;
 use crate::model::EntKind;
 use crate::style::Classes;
 use crate::syntax::lexer::Tok;
-use crate::syntax::words::{over_chain, BLOCKS, ENERGY_WORDS};
+use crate::syntax::words::{self, over_chain, set_at, Brackets, BLOCKS, ENERGY_WORDS};
 use crate::syntax::{
     Arg, Block, BlockKind, BodyWord, Branch, Chained, ClaimOver, Component, CurveSpec, CurveTarget,
     Decl, DeclName, EdgesOf, DerivedDecl, Formal, InBlock, InstArg, InstVal, Instance, Membership,
@@ -205,7 +205,7 @@ impl<'a> P<'a> {
             // brackets are what it is a picture of, `in` is the trailer it already is
             "view" | "section" | "dimensions" => {
                 let at = self.here().lo as usize;
-                let name = DeclName::Key(Name { text: format!("#a{at}"), span: Span::new(at, at) });
+                let name = DeclName::Key(Name { text: format!("#a{at}"), span: Span::at(at) });
                 self.derived(name)
             }
             // `bore cut cyl`, `boss union cyl` — the body rule's own words, and the one statement
@@ -258,7 +258,7 @@ impl<'a> P<'a> {
             }) && !self.defined_prefix_ahead() =>
             {
                 let lo = self.here().lo as usize;
-                let name = Name { text: format!("#i{lo}"), span: Span::new(lo, lo) };
+                let name = Name { text: format!("#i{lo}"), span: Span::at(lo) };
                 self.instance(name, lo).map(StmtKind::Instance)
             }
             _ => self.relation().map(StmtKind::Relation),
@@ -282,18 +282,8 @@ impl<'a> P<'a> {
     /// Where the expression from here ends outside every bracket: at a closing bracket, the line's
     /// end, or (`at_cmp`) a `<` or `>`.
     pub(super) fn level_end(&self, at_cmp: bool) -> usize {
-        let mut depth = 0i32;
-        for (j, (t, _)) in self.t.iter().enumerate().skip(self.i) {
-            match t {
-                Tok::P('(') | Tok::P('[') | Tok::P('{') => depth += 1,
-                Tok::P(')') | Tok::P(']') | Tok::P('}') if depth == 0 => return j,
-                Tok::P(')') | Tok::P(']') | Tok::P('}') => depth -= 1,
-                Tok::P('<') | Tok::P('>') if depth == 0 && at_cmp => return j,
-                Tok::Nl => return j,
-                _ => {}
-            }
-        }
-        self.t.len()
+        let cmp = |t: &Tok| at_cmp && matches!(t, Tok::P('<' | '>'));
+        words::level_end(&self.t, self.i, self.t.len(), Brackets::All, cmp)
     }
 
     /// `view(cyl.body) in views.right` — a picture asked of a solid (§6.11).  The brackets are
@@ -499,7 +489,7 @@ impl<'a> P<'a> {
             self.i += 1;
             self.value_after_define()?
         } else {
-            (String::new(), Span::new(self.prev_hi(), self.prev_hi()))
+            (String::new(), Span::at(self.prev_hi()))
         };
         let seed = self.hint_value()?;
         self.end_of_stmt();
@@ -815,7 +805,7 @@ impl<'a> P<'a> {
             let inst = Instance {
                 annotations: Default::default(),
                 // a key the source cannot write, as an anonymous declaration's is
-                name: Name { text: format!("#c{at}"), span: Span::new(at, at) },
+                name: Name { text: format!("#c{at}"), span: Span::at(at) },
                 component,
                 args,
                 span: Span::new(lo, self.prev_hi()),
@@ -998,7 +988,7 @@ impl<'a> P<'a> {
         let left = self.refr()?;
         let word = self.ident()?;
         let at = self.here().lo as usize;
-        let key = |prefix: &str| Name { text: format!("#{prefix}{at}"), span: Span::new(at, at) };
+        let key = |prefix: &str| Name { text: format!("#{prefix}{at}"), span: Span::at(at) };
         let (name, kind) = if self.set_ahead() {
             let name = key("s");
             let lit = self.set_lit(next_id)?;
@@ -1035,14 +1025,9 @@ impl<'a> P<'a> {
         self.set_at(self.i)
     }
 
-    /// `set_ahead` at token `i`.
+    /// `set_ahead` at token `i` (`words::set_at`, which the colouring asks too).
     fn set_at(&self, i: usize) -> bool {
-        if self.t.get(i).map(|(t, _)| t) != Some(&Tok::P('{')) {
-            return false;
-        }
-        let mut toks = self.t[i + 1..].iter().map(|(t, _)| t);
-        let mut next = || toks.find(|t| **t != Tok::Nl);
-        matches!(next(), Some(Tok::Ident(_))) && next() == Some(&Tok::P('|'))
+        set_at(&self.t, i).is_some()
     }
 
     /// `{ p | statement … }` — the bound point, then the body through the closing brace, each
@@ -1117,7 +1102,7 @@ impl<'a> P<'a> {
             return Some(Block {
                 kind,
                 count: String::new(),
-                head: Span::new(lo, lo),
+                head: Span::at(lo),
                 over: Some(EdgesOf { var, chain, when }),
                 binder,
                 body,
@@ -1315,18 +1300,9 @@ impl<'a> P<'a> {
             self.i = checkpoint;
             self.errs.truncate(errors);
             let from = self.here().lo as usize;
-            let mut depth = 0i32;
-            while !self.done() {
-                match self.peek() {
-                    Some(Tok::P('(')) | Some(Tok::P('[')) => depth += 1,
-                    Some(Tok::P(')')) | Some(Tok::P(']')) if depth == 0 => break,
-                    Some(Tok::P(')')) | Some(Tok::P(']')) => depth -= 1,
-                    Some(Tok::P(',')) | Some(Tok::P('}')) if depth == 0 => break,
-                    Some(Tok::Nl) => break,
-                    _ => {}
-                }
-                self.i += 1;
-            }
+            let stop = |t: &Tok| matches!(t, Tok::P(',' | '}'));
+            let end = words::level_end(&self.t, self.i, self.t.len(), Brackets::Expr, stop);
+            self.i = end.max(self.i);
             InstVal::Expr(self.text_from(from).trim().to_string())
         };
         Some(InstArg { label, value, span: Span::new(lo, self.prev_hi()) })

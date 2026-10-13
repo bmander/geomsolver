@@ -88,13 +88,13 @@ missing its point or line is dropped with its rows), JSON (`"duals"`, `"along": 
 it, `to_program` drops it (a flat program cannot spell it).  Every static kernel but the drags
 has a Taylor form (the spline contacts' exact to every order, `taylor::span_frame`:
 the basis about `t₀` a cubic in the jet `τ`, over `Σ wB` by the quotient rule): the spatial `*_rows` are generic over
-`kernels::Num` (`Dual<N>` for res/jac, `Jet` for the form, `kernels::num_form`), the
+`kernels::Num` (`Dual<N>` for res/jac, `Jet` for the form, `Kernel::form`, `num_kernel!`), the
 hand-written spatial kernels have generic twins held to them by `tests/taylor.rs`.  Refused: a
 set named as an entity (E040 in `rewrite`), `coincident` between two sets, parentheses, a
 non-point `coincident`, a non-line or claimed `tangent`.  `tests/sets.rs` is the gate.
 
 **Regions (§6.21, §9.6, 0.61, #145 F1):** a set whose body bounds a number is a region
-(`flatten::sets::region`, over `Written::states_bound`). `q inside S` / `q outside S` are set
+(`sets::BodyShape::region`, over `Written::states_bound`). `q inside S` / `q outside S` are set
 uses (`may_use`): `expand_use` rewrites the body in place before the walk (`region_body`) — its
 one number (a relation with an `OpArg::Dim`) gains `OpArg::Bound` `Le`/`Ge`, a region's own is
 kept or turned round (`Written::turn_bound`), a body of only uses (a conjunction) is applied as
@@ -128,9 +128,9 @@ pose's `sense:`, so a lifted program keeps the root.
 **A region is a solid (§6.9, 0.62, #145 F2/F3):** `blank := solid(R)`, R a set, is `SolidDef::Region
 { probe, terms }`. The flattener (`Walk::region_of`) rewrites `solid(R)`'s `Sweep::Body` over a set
 to `Sweep::Region { probe }`, declares the probe `{solid}#probe` (in space, held at a fixed
-irrational place; `Expansion::probes` → elaboration's `relations::Probes`) and states `probe inside
+irrational place; `Expansion::probes` → elaboration's `regions::Probes`) and states `probe inside
 R`; `constrain` takes every bound landing on a probe as a `RegionTerm` instead of a row
-(`probe_of`, `region_term`: by kind — `Distance(3)` a ball, `PointLine(Distance|3)` a cylinder,
+(`regions::probe_of`, `region_term`: by kind — `Distance(3)` a ball, `PointLine(Distance|3)` a cylinder,
 `Angle3` from a line's start a cone, an `Ordinate` along a plane's `n` a half-space; numbers by
 `term_number`: stated, or affine in one unknown read when evaluated; an angle unknown read only
 as unsigned, a cone's half, is kept within a half turn by `expr::sync_free`), and `build_solid`
@@ -151,14 +151,14 @@ designs, both members) are the gates.
 `region::readable`/`in_general`) is read point by point by `solid::field::RegionField`, a
 `SpatialField` leaf (each term its surface's exact signed distance, the largest; a box's enclosure
 the centre's value within its half-diagonal), its support the box of the planes every term lies
-within (`polytope_box`, refused unbounded). Evaluated as sweeps are (`sweeps_among`: the field's
+within (`polytope_box`, refused unbounded). Evaluated as sweeps are (`sweeps_among` over `region::route`: the field's
 surface) unless the lowering table builds it ([rounds.md](rounds.md)) or **the common of its terms** does (#238,
 `solid::bounded`: every term a ball, a cylinder, a cone narrower than square or a half-space, no
 offset — each a primitive bounded past the support, kept within in common, kept outside taken
 away; the recipe's `"region"` node, `"pieces"` each with `"keep"`; gated by agreement with the
 field, `Sketch::bounded_cache`); else no exact construction (`cad.rs` says so, naming the region).
 
-**A sum of distances the meridian folds** (#238, `region::foci`): from one point, or two alike in
+**A sum of distances the meridian folds** (#238, `region::meridian::foci`): from one point, or two alike in
 weight, on its axis (the line through them chooses it when nothing else does) — a ball, an
 ellipsoid's half ellipse (two `Seg::Conic` quarters), the plane midway, or a hyperboloid's lobe
 (`lobe`: hyperbolic conic arcs, `w = cosh`, a unit of `u` each); held to the field as rounds are
@@ -174,11 +174,11 @@ a measurement and compares outside every bracket, `compared_ahead`): each side a
 one), resolved by `rewrite` as every operand is and rewritten structurally by `measured_sets`;
 whatever measures nothing is one `Number` text the walk writes the scope's numbers into, read by
 `expr` (whose lexer reads no hidden key mid-name: `s#probe` is no name a source writes). A
-region (`sets::region`); `inside` keeps it, `outside` turns it, and a body of bounds only is all
+region (`BodyShape`); `inside` keeps it, `outside` turns it, and a body of bounds only is all
 of them under `inside`. Elaborated
-by `relations::measured_term` into `RegionShape::Measured` (Σ cᵢ·distance from a point, line,
+by `regions::measured_term` into `RegionShape::Measured` (Σ cᵢ·distance from a point, line,
 axis or plane; `linear`: affine only, one probe) on the probe, else E040; read by the field
-(`region::measured`, divided by Σ|cᵢ|), never the meridian.
+(`region::general::measured`, divided by Σ|cᵢ|), never the meridian.
 
 **Faces as sets** (#183 F1, F9): in a set's body a solid and the fields past it are a face
 reference (`model::FaceRef { solid, path, surface }`: `pad.plate.near`, `pad.boss` every face
@@ -205,7 +205,7 @@ off the solid after the solve; a drawn point or plane reads `.surface` as #162 F
 (below), made under a hidden key only its statement is pointed at, so neither ever captures the
 other (`tests/region_faces.rs::a_sketch_on_a_face_leaves_a_regions_reading_of_it`,
 `tests/rounds_examples.rs::a_sketch_on_a_rounded_face_leaves_the_round`).
-`relations::face_relation` makes `p inside/outside[(d)] F` a `RegionShape::FaceSide` (signed
+`regions::face_term` makes `p inside/outside[(d)] F` a `RegionShape::FaceSide` (signed
 distance from the surface, positive away from the material), `p distance(… d) F` and `p coincident
 F` a `Measured` over `Target::Face`; `distance(p, F)` in a sum the same; `angle(a, b, at: p)` (the
 one labelled measurement, `syntax::Measurement::at`) a `RegionShape::Angle`, the material's angle at
@@ -221,8 +221,8 @@ A region reading faces may have no support (`RegionField` with `None`): a cut ne
 or `p inside S.ends`, gets a hidden point of its own (`sets::measured_sets`: key
 `{prefix}#{stmt}.m{k}`, a probe, `inner coincident S` applied under a prefix of its own so two
 sets of one statement bind apart); the measurement then names that point, elaborated as
-`Target::Set { probe, terms }` (`relations::ends_relation`: `RegionShape::Ends`), the terms filled
-and the point held when the solid is built (`relations::fill_sets`). Read by
+`Target::Set { probe, terms }` (`regions::ends_term`: `RegionShape::Ends`), the terms filled
+and the point held when the solid is built (`regions::fill_sets`). Read by
 `solid::conditions::SetDistance`: points on two faces' patches are the boundary's shared edges, on
 three its vertices, on one its patch; any other conjunction (a face's side, `|side|` bounds, `on
 F.surface`, a distance from a point) is the nearest point by sequential projection onto the

@@ -178,7 +178,7 @@ impl<'a> Walk<'a> {
                             {
                                 c.of = Some(crate::syntax::CurveOf {
                                     instance: key,
-                                    point: written(point),
+                                    point: ref_text(point),
                                 });
                             }
                         }
@@ -649,7 +649,7 @@ impl<'a> Walk<'a> {
             self.err(Code::E103, b.span, format!("{n} copies is more than {MAX_FLAT}"));
             return;
         }
-        let block_prefix = format!("{}#{}.", scope.prefix(), st.id.0);
+        let block_prefix = keys::block(scope.prefix(), st.id.0);
         // a ring: copies the representative's turns.  One inside another is refused (E022) and
         // expanded as the cycle it is besides, so what it makes is still there to be named; and
         // its index, read anywhere in its body, varies nothing (E015)
@@ -770,7 +770,7 @@ impl Walk<'_> {
     /// name as its scope reads it.
     fn twins_of(&mut self, d: &Decl, local: &str) -> Vec<Decl> {
         let point = d.name.key().text.clone();
-        let at = Span::new(d.name.span().lo as usize, d.name.span().lo as usize);
+        let at = Span::at(d.name.span().lo as usize);
         d.membership.also().iter().enumerate().map(|(k, plane)| {
             self.twin(&point, format!("{point}@{}", k + 1), at, Ref::new(local), plane.clone())
         }).collect()
@@ -805,7 +805,7 @@ impl Walk<'_> {
         }
         let units = self.units;
         let at = |r: &Ref, sc: &Scope, names: &BTreeSet<String>| {
-            super::resolve::lookup(r, sc, names, alias, units)
+            Lookup { names, alias, units }.find(r, sc)
                 .and_then(|(abs, rest)| rest.is_empty().then_some(abs))
         };
         // every declaration walked, by its absolute name, and the standard datums, walked after
@@ -868,7 +868,7 @@ impl Walk<'_> {
                 k += 1;
             }
             images.push(plane);
-            let span = Span::new(rp.span.lo as usize, rp.span.lo as usize);
+            let span = Span::at(rp.span.lo as usize);
             let twin = self.twin(&point, format!("{point}@{k}"), span, rp, rq);
             self.out[i].0.kind = StmtKind::Decl(twin);
         }
@@ -884,7 +884,7 @@ impl Walk<'_> {
     /// `None` for any other declaration.
     fn region_of(&mut self, d: &mut Decl, local: &str, sc: &Scope)
         -> Option<(Decl, crate::syntax::Relation)> {
-        use crate::syntax::{DeclName, Sweep};
+        use crate::syntax::Sweep;
         if d.kind != crate::model::EntKind::Solid || !matches!(d.sweep, Some(Sweep::Body)) {
             return None;
         }
@@ -893,7 +893,7 @@ impl Walk<'_> {
         };
         // a plain name declared in scope, as a family's instance is (`taken := solid(run)`), is
         // read off the names without the alias table, which a region asked for per solid would
-        // build afresh each time (`lookup_raw`'s order: each prefix, then the bare name)
+        // build afresh each time (`Lookup::raw`'s order: each prefix, then the bare name)
         let plain = set.path.is_empty() && !matches!(set.root.text.as_str(), "next" | "prev");
         let candidates = sc.prefixes.iter().map(|p| format!("{p}{}", set.root.text))
             .chain((!sc.closed).then(|| set.root.text.clone()));
@@ -903,7 +903,7 @@ impl Walk<'_> {
             Some(abs) if self.names.contains(&abs) => Some((abs, Vec::new())),
             _ => {
                 let alias = self.alias_table();
-                super::resolve::lookup_raw(set, sc, &self.names, &alias, self.units)
+                self.look(&alias).raw(set, sc)
             }
         };
         let Some((abs, rest)) = found else { return None };
@@ -911,20 +911,14 @@ impl Walk<'_> {
             return None;
         }
         let set = set.clone();
-        let at = Span::new(d.name.span().lo as usize, d.name.span().lo as usize);
-        let key = format!("{}#probe", d.name.key().text);
+        let at = Span::at(d.name.span().lo as usize);
+        let key = keys::probe(&d.name.key().text);
         self.names.insert(key.clone());
         self.probes.push(key.clone());
-        let probe = format!("{local}#probe");
+        let probe = keys::probe(&local);
         d.children.clear();
         d.sweep = Some(Sweep::Region { probe: Ref::new(&probe) });
-        // held at a place no drawing chooses (irrational, off every axis and plane through the
-        // origin), so a cone's line from an apex there to it has a length; where it stands
-        // decides nothing else — its bounds are terms, never rows.  Not `scatter`'s unseeded
-        // place: an empty hint span would be written back into the solid's statement
-        let mut point = Decl::point(DeclName::Key(Name { text: key, span: at }), [0.0; 2], None);
-        point.seed = vec![0.7548776662, 0.5698402910, 0.4301597090];
-        point.seed_text = vec![None; 3];
+        let point = super::sets::probe(key, at);
         let inside = crate::syntax::Written {
             word: Name { text: "inside".to_string(), span: set.span },
             fixity: crate::constraints::Fixity::Infix,

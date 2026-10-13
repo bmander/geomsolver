@@ -42,7 +42,7 @@ fn defines(p: &Program, k: usize, name: &str) -> Option<bool> {
 pub(super) fn check(p: &Program, diags: &mut Vec<Diag>) {
     let mut said: Vec<Diag> = Vec::new();
     let mut say = |code: Code, span, message: String| {
-        said.push(Diag { code, span, stmt: None, message });
+        said.push(Diag::new(code, span, None, message));
     };
     // every definition: what is wrong with it as written, and one defined twice in one file
     let mut first: BTreeMap<(Option<usize>, &str, bool), Span> = BTreeMap::new();

@@ -11,6 +11,7 @@ use crate::fmath::Det;
 use crate::brep::build::{walks,Profile,Seg};
 use crate::brep::geom::Frame;
 use crate::brep::planar::Step;
+use crate::brep::recipe::field;
 use crate::brep::section::Sectioned;
 use crate::json::Json;
 use crate::solid::contact_trace::{Sample,TraceError,Tracer};
@@ -164,12 +165,11 @@ impl Cutter {
     }
     /// A recipe whose root is one prism, as its sections: none for any other recipe.
     fn prism(recipe: &Json) -> Result<Option<Cutter>,String> {
-        let field = |j: &Json,k: &str| j.get(k).cloned().ok_or(format!("recipe: no `{k}`"));
         let root = field(recipe,"root")?.as_i64();
         let nodes = field(recipe,"nodes")?;
         let Some(node) = nodes.arr().iter().find(|n| n.get("id").is_some_and(|i| i.as_i64() == root)) else { return Ok(None) };
         if !node.get("kind").is_some_and(|k| k.as_str() == "prism") { return Ok(None) }
-        let profile = Profile::from_json(&field(node,"profile")?)?;
+        let profile = Profile::from_json(field(node,"profile")?)?;
         let (from,to) = (field(node,"from")?.as_f64(),field(node,"to")?.as_f64());
         let axis = unit(profile.normal)?;
         let plane = Frame::about(profile.origin,axis);

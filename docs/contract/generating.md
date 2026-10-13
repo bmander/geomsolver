@@ -81,7 +81,7 @@ turn. The recipe's `"canal"` node (`centre`, `radius`, axis `origin`/`axis`, `an
 the ball's `face` naming every face; native OCCT refuses it by name); gated by agreement with the
 sweep's field (`Sketch::canal_cache`); `cad::contains_sweep`, `swept_cut` and `sweeps_among` read
 such a sweep as static material. Seams run off the path's plane (`build::SEAM`) and each half
-ball is a ball turned about an axis leaning off the path (`half_ball`, kept by `recipe::kept`): a
+ball is a ball turned about an axis leaning off the path (`half_ball`, kept by `build::kept`): a
 plane through a sphere's parameter pole is a meeting this kernel's Booleans do not split.
 `swept_groove.sv`, `swept_spring.sv`, `solid_generating_sweep.sv`; `tests/canal.rs` (Pappus, to
 1e-9) is the gate. Field-path tests sweep the ball along a line instead (`solid_sweep.rs::slid`).

@@ -76,7 +76,7 @@ came from.
   `CKind::Fix`, `Ccw`, `Cw`, read by the one relation parser and settled by the word alone
   (`constraints::gauge_op`, before the operands' kinds are asked — which numbers `fix` holds is
   the entity's, and `ccw(a, b, c)` has no operand outside its parentheses).  They are
-  **applied, not added**: `program::apply_gauge` marks the parameters fixed or records the root
+  **applied, not added**: `program::gauges::apply_gauge` marks the parameters fixed or records the root
   choice, `constrain` returns no id, and no `Constraint` is one — so they are not in `ALL_KINDS`,
   the registry never publishes them, and `CKind::gauge` is the question every table that would
   reach for a kernel asks first.  A `claim` on one is refused (E040): a gauge adds no row.
@@ -90,11 +90,11 @@ came from.
   seed's at parse.  Writers say each vector whole where all of it is given, else by member
   (`syntax::said`; `lift_gauge` writes a `Written` fix).  `o := (10mm, 20mm)` is a group of
   members `x`, `y` (`o.x`).  `ground`, `fix c.r` and a bare
-  `fix p` are gone (`relations::fix_spelling` refuses the others where written).  **A held number
+  `fix p` are gone (`gauges::fix_spelling` refuses the others where written).  **A held number
   is its own seed**: fixes are applied once points have their places (`entities::places`), before
-  `axes_along`, motions, envelopes and `settle_deferred` (`relations::is_fix`), and
+  `axes_along`, motions, envelopes and `settle_deferred` (`gauges::is_fix`), and
   `views::stand_axes` then stands each plane's free axes through its held origin, so no `hint`
-  repeats a `fix`.  Holds and root choices are gathered (`relations::Gauges`) and applied once
+  repeats a `fix`.  Holds and root choices are gathered (`gauges::Gauges`) and applied once
   all are in (`hold_all` after the fix pass, `choose_all` after phase 5's `branch`es): alike, one
   gauge; differing, E031 at each statement and nothing applied, so no order decides (#113).
   `commit_seeds` takes a held number out of a written clause (the whole clause

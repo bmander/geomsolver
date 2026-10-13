@@ -236,7 +236,7 @@ fn bind(sk: &mut Sketch, res: &mut Resolver, map: &mut SourceMap, st: &Statement
             map.record(st, Made::Ent(e));
         }
         Err(message) => {
-            diags.push(Diag { code: Code::E080, span: st.span, stmt: Some(st.id), message });
+            diags.push(Diag::on(Code::E080, st, message));
             res.of.remove(&d.name.key().text);
         }
     }

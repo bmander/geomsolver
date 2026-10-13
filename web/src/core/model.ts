@@ -722,11 +722,6 @@ export class Sketch {
     return this.constraints.filter((c) => !(c.intrinsic || c.soft));
   }
 
-  /** Everything that must be satisfied (excludes soft ones such as drag targets). */
-  hardConstraints(): Constraint[] {
-    return this.constraints.filter((c) => !c.soft);
-  }
-
   constraintById(id: number): Constraint | undefined {
     this.syncConstraints();
     return this.byId.get(id);
@@ -879,6 +874,13 @@ export function signedPointToLine(px: number, py: number, ln: Line): number {
  *  means, and what a dimension dialog offers as the current value. */
 export function angleBetween(a: Line, b: Line): number {
   return core().gcs_angle_between(a.sketch.handle, a.index, b.index);
+}
+
+/** What a number put on two lines measures, as the core reads it (`dimension_between_lines`):
+ *  the gap between them where the sketch makes them parallel, else the angle at their corner. */
+export function dimensionBetweenLines(a: Line, b: Line): 'gap' | 'angle' {
+  return core().gcs_dimension_between_lines(a.sketch.handle, a.index, b.index) === 0
+    ? 'gap' : 'angle';
 }
 
 /** The point at distance `r` from (cx, cy) towards (tx, ty).  The centre-start-end arc

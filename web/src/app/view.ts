@@ -1,8 +1,9 @@
 /* The sketch view: the object the whole front end holds, and the state every part of it reads
  * — the camera, the selection, the tool, the compiled plan and the last diagnosis.  What is
  * *done* to it lives in the modules beside this one: `paint` strokes it, `gesture` drives it
- * from the pointer, `tools` draws into it, `dimension` writes a number on it and `edit` changes
- * the document.  They take the view as their first argument, so this file stays the state and
+ * from the pointer, `tools` draws into it, `solids` makes solids and datums of it, `extent`
+ * sizes what they made, `dimension` writes a number on it and `edit` changes the document.
+ * They take the view as their first argument, so this file stays the state and
  * the seams — the history, the solve, and the two one-line questions everything else asks:
  * where a world place is on the canvas (`camera`) and what is under the cursor (the core).
  * Neither answer is worked out here: the camera is the front end's only linear algebra and the
@@ -19,13 +20,12 @@
 import { Box3D } from './box3d.js';
 import { objects } from '../core/mesh.js';
 import { FieldPreview, type Refining } from './field-preview.js';
-import * as io from '../core/io.js';
 import * as dim from '../core/callout.js';
 import { Constraint } from '../core/constraints.js';
 import { PlanResult, PlanSolver, asSolveResult } from '../core/decompose.js';
 import { Diagnosis, diagnose } from '../core/diagnose.js';
-import { Axis, Line, Param, Plane, Point, Primitive, Sketch } from '../core/model.js';
-import type { Way } from '../core/model.js';
+import * as io from '../core/io.js';
+import { Param, Plane, Point, Primitive, Sketch } from '../core/model.js';
 import { Document, Edit, fromSketch } from '../core/program.js';
 import type { BodyWord, Region } from '../core/program.js';
 import { Method, SolveResult, System } from '../core/system.js';
@@ -33,20 +33,22 @@ import type { Item } from '../core/overview.js';
 import { Motion, WitnessReport, analyze } from '../core/witness.js';
 import { Camera, ViewCam } from './camera.js';
 import * as edit from './edit.js';
+import * as extent from './extent.js';
+import type { Handle, LiveExtent } from './extent.js';
 import * as dimension from './dimension.js';
 import { abandonGesture, bindEvents } from './gesture.js';
 import type { Gesture } from './gesture.js';
 import type { DimAlt, LiveDim } from './dimension.js';
 import { paint } from './paint.js';
+import * as solids from './solids.js';
 import * as tools from './tools.js';
 import * as underlay from './underlay.js';
 import type { Bitmap, Underlay } from './underlay.js';
 import {
-  NOWHERE, PAGE, boundsSeen, calloutSeen, extentAt, extrudeHandle, lookOf, maps, nearestSeen,
-  offsetAt, offsetHandle, ofView, panesSeen, pickSeen, pickSolidSeen, placeOf, spacePoints,
-  pickEdgeSeen, roundSize, turnAt, turnHandle, workspace,
+  NOWHERE, PAGE, boundsSeen, calloutSeen, lookOf, maps, nearestSeen, ofView, panesSeen, pickSeen,
+  pickSolidSeen, placeOf, spacePoints, workspace,
 } from '../core/workspace.js';
-import type { EdgeHit, ExtrudeHandle, TurnHandle } from '../core/workspace.js';
+import type { EdgeHit } from '../core/workspace.js';
 import type { View, Workspace } from '../core/workspace.js';
 
 /** A solid picked in the workspace: which (its name, and its index in the current sketch) and the
@@ -59,24 +61,8 @@ export interface SolidPick {
   at?: [number, number, number];
 }
 
-/** A thing being sized by its arrow: an extrusion (#162 F2) — which solid, which way it runs
- *  from its face (the core's `Way`: behind it, in front of it, both ways) and how thick, in all —
- *  a revolution (F3), which solid and how far it turns, in degrees, negative clockwise about its
- *  axis — or an offset plane (F5), by the plane's name, and how far it is set off.  Open from the
- *  gesture that made it until the tool is put down or the next click; carried across an edit by
- *  name. */
-export type LiveExtent =
-  | { kind: 'extrusion'; solid: string; way: Way; d: number }
-  | { kind: 'turn'; solid: string; d: number }
-  | { kind: 'offset'; plane: string; d: number };
-
-/** A sizing handle on the eye's picture plane or on screen: where it starts, the tip a press takes
- *  hold of (none where it cannot be read) and, for a turn, the arc it runs along. */
-export interface Handle {
-  base: [number, number];
-  tip: [number, number] | null;
-  arc?: [number, number][];
-}
+/* What is being sized, and its arrow, belong to `extent`; the view holds them. */
+export type { Handle, LiveExtent } from './extent.js';
 
 /* A dimension being written belongs to `dimension`, but it is the view a caller holds, so the
  * two types are published from here as well. */
@@ -163,19 +149,6 @@ export interface Rounding {
   faces: string[];
   edges: [string, string][];
 }
-
-/** What an edge tool has picked, said: `2 edges and 1 face` (`sep` between). */
-function picked(r: Rounding, sep: string): string {
-  const count = (n: number, thing: string) => (n ? `${n} ${thing}${n === 1 ? '' : 's'}` : '');
-  return [count(r.edges.length, 'edge'), count(r.faces.length, 'face')].filter(Boolean).join(sep);
-}
-
-/** What a Boolean tool's status line asks for next, by its word: the target, then its tools. */
-const COMBINE = {
-  union: { target: 'the body to join others to', tools: 'join to it', done: 'joined' },
-  cut: { target: 'the body to cut', tools: 'cut it with', done: 'cut' },
-  common: { target: 'the body to intersect', tools: 'intersect it with', done: 'intersected' },
-} as const;
 
 /** A Boolean about to be written: the body it is written on, its word and the tools it joins. */
 export interface Combining {
@@ -326,7 +299,7 @@ export class SketchView {
    *  what it shows — the shell puts an editor there; nulls when there is none. */
   onRound: (r: Rounding | null, at: [number, number] | null, size: string) => void = () => {};
   /** Where the click that last picked for the Fillet or Chamfer tool was, on the canvas. */
-  private roundClick: [number, number] | null = null;
+  roundClick: [number, number] | null = null;
 
 
   /* -- the view's own workings.  What is not `private` here is read by the modules beside
@@ -559,6 +532,12 @@ export class SketchView {
     }
   }
 
+  /** The eye's own camera: the picture plane the core projects the workspace onto, on screen. */
+  eyeCam(): ViewCam {
+    this.cams();
+    return this.camCache!.eye;
+  }
+
   /** Whether a point stands in space, in no view: seen where it is, dragged where it is seen. */
   inSpace(p: Point): boolean {
     this.cams();
@@ -757,7 +736,7 @@ export class SketchView {
         return index === undefined ? [] : [{ ...s, index }];
       });
     }
-    if (this.liveExtent && !this.liveHandle()) this.endExtent();
+    if (this.liveExtent && !extent.liveHandle(this)) this.endExtent();
     const again = heldPlane ? this.doc.entity(heldPlane) : undefined;
     this.plane = again instanceof Plane ? again : null;
     // drawing in space is no plane to lose, and outlasts a lone plane the selection re-armed
@@ -792,7 +771,7 @@ export class SketchView {
    * survives an edit.  So a selection crosses by name, and the lookup is the source map's — the
    * front end does no indexing of its own. */
 
-  private namesOf(ps: Primitive[]): string[] {
+  namesOf(ps: Primitive[]): string[] {
     return ps.map((p) => this.doc.nameOf(p)).filter((n): n is string => !!n);
   }
 
@@ -952,7 +931,7 @@ export class SketchView {
   }
 
   /** One solve by the selected path; keeps the compiled System for the diagnosis that follows. */
-  private solveOnce(): SolveResult {
+  solveOnce(): SolveResult {
     this.releaseSystem();
     this.systemKey = this.sketch.topologyKey();
     if (this.usePlan && this.sketch.constraints.length) {
@@ -1195,7 +1174,7 @@ export class SketchView {
   setTool(tool: Tool): void {
     tools.setTool(this, tool);
     // a Boolean tool starts from the bodies already selected: the first is the target
-    this.tellCombine();
+    solids.tellCombine(this);
     // an edge tool says what it wants
     this.tellRound();
   }
@@ -1260,562 +1239,35 @@ export class SketchView {
   finishCurve(): void { tools.finishCurve(this); }
   finishSplineFit(): void { tools.finishSplineFit(this); }
 
-  /** The closed region of the drawing under a canvas point, on the plane being drawn on. */
+  /* The solid tools (`solids.ts`) and the sizing of what they make (`extent.ts`). */
+
   regionAt(sx: number, sy: number): Region | { refused: string } | null {
-    // a region is bounded on a plane, and in space there is none being drawn on
-    if (this.openSpace) return null;
-    const [x, y] = this.s2wIn(this.toolView, sx, sy);
-    return this.doc.regionAt(this.plane, x, y, this.unit);
+    return solids.regionAt(this, sx, sy);
   }
-
-  /** **Extrude** the region under a canvas point (#162 F2): the face, the solid and — with a body
-   *  selected — the body rule, written as one edit (one undo step): joined, or with `cut` cut
-   *  from it, or with `through` cut through all of it.  The new solid is selected and, unless
-   *  it goes through, opened for sizing (`liveExtent`). */
   extrudeAt(sx: number, sy: number, cut = false, through = false): void {
-    const r = this.regionHere(sx, sy, 'extrude');
-    const cutting = cut || through;
-    const body = r && this.cutting(cutting);
-    if (!r || body === false) return;
-    const e = this.doc.extrude(r.outer, r.holes,
-      body ? { word: cutting ? 'cut' : 'union', body, through } : undefined);
-    this.madeSolid(e, 'extruded', (solid) => {
-      const h = through ? null : this.extrudeHandleOf(solid);
-      return h?.way ? { kind: 'extrusion', solid, way: h.way, d: h.thick } : null;
-    });
+    solids.extrudeAt(this, sx, sy, cut, through);
   }
-
-  /** **Revolve** (#162 F3): the region under a canvas point, then the line or axis to turn it
-   *  about — the second click, or one already selected — written as one edit (one undo step):
-   *  the face, the solid a whole turn about it and, with a body selected, the body rule (joined,
-   *  or with `cut` cut from it).  The new solid is selected and opened for sizing its turn. */
-  revolveAt(sx: number, sy: number, cut = false): void {
-    const held = this.selected.length === 1 ? this.turnsAbout(this.selected[0]) : null;
-    const region = this.pendingRevolve ?? this.regionHere(sx, sy, 'revolve');
-    if (!region) return;
-    const about = this.pendingRevolve ? this.turnsAbout(this.pick(sx, sy)) : held;
-    if (!about && !this.pendingRevolve) {
-      this.pendingRevolve = region;
-      this.onStatus('now click the line or axis to turn it about — Esc to choose another region');
-      this.draw();
-      return;
-    }
-    if (!about) {
-      this.onStatus('click a line in the region\'s plane, or an axis lying in it, to turn about');
-      return;
-    }
-    const body = this.cutting(cut);
-    if (body === false) return;
-    const e = this.doc.revolve(region.outer, region.holes, about,
-      body ? { word: cut ? 'cut' : 'union', body } : undefined);
-    this.pendingRevolve = null;
-    this.highlight = [];
-    this.madeSolid(e, `revolved about ${about}`, (solid) => {
-      const h = this.turnHandleOf(solid);
-      return h ? { kind: 'turn', solid, d: h.turn } : null;
-    });
-  }
-
-  /** **Union, Cut, Intersect** (#162 F4): a click with a Boolean tool down.  The first body
-   *  clicked is the target, and each after it a tool — clicked again, let go; a click back on the
-   *  target writes the Boolean (`finishCombine`, as Enter does).  **The selection is the
-   *  gesture's state**, in the order it was clicked, so bodies selected before the tool was taken
-   *  up are where it starts, and the box previews what it would write (`combining`). */
-  combineAt(sx: number, sy: number): void {
-    const pick = this.solidAt(sx, sy);
-    const [target] = this.selectedSolids;
-    if (!pick) {
-      this.tellCombine();
-      return;
-    }
-    if (target && pick.index === target.index) {
-      this.finishCombine();
-      return;
-    }
-    this.pickSolid(pick, !!target);
-    this.tellCombine();
-    this.onSelect();
-    this.onChanged();
-    this.draw();
-  }
-
-  /** The Boolean the selection would write while a Boolean tool is down — the target, the word
-   *  and the tools — or null until there is a tool to join. */
-  get combining(): Combining | null {
-    const word = combines(this.tool);
-    const [target, ...tools] = this.selectedSolids;
-    return word && target && tools.length ? { target, word, tools } : null;
-  }
-
-  /** Write the Boolean: `tool word target` for every tool, one splice and one undo step, the
-   *  target left selected for the next.  Refused, in the core's words, where the language would
-   *  refuse it — a body made of itself (E041). */
-  finishCombine(): void {
-    const c = this.combining;
-    if (!c) {
-      this.tellCombine();
-      return;
-    }
-    const tools = c.tools.map((t) => t.name);
-    const e = this.doc.addBodyWord(c.word, tools, c.target.name);
-    if (!this.apply(e, `${c.target.name}: ${COMBINE[c.word].done} by ${tools.join(', ')}`)) return;
-    // the tools are the target's now, and no objects of their own: only the target stays picked
-    this.pickSolidNamed(c.target.name);
-    this.onSelect();
-    this.onChanged();
-    this.draw();
-  }
-
-  /** Say what a Boolean tool wants next. */
-  private tellCombine(): void {
-    const word = combines(this.tool);
-    if (!word) return;
-    const [target, ...tools] = this.selectedSolids;
-    this.onStatus(!target ? `click ${COMBINE[word].target}`
-      : !tools.length ? `${target.name}: now click the bodies to ${COMBINE[word].tools} — Esc to `
-                        + 'choose another'
-      : `${tools.map((t) => t.name).join(', ')} ${word} ${target.name} — click ${target.name} `
-        + 'again, or Enter, to write it');
-  }
-
-  /** **Fillet, Chamfer**: a click with an edge tool down.  An edge the eye sees under the pointer
-   *  is picked, else the face of a solid there — whole, its every edge — and a second click on
-   *  either lets it go.  A pick on another object starts over on that one: the words are written
-   *  over one body's faces.  The number is then asked beside the click (`onRound`), and Enter
-   *  writes it (`finishRound`). */
-  roundAt(sx: number, sy: number): void {
-    const edge = this.edgeAt(sx, sy);
-    const face = edge ? null : this.solidAt(sx, sy);
-    const solid = edge?.solid ?? face?.index;
-    const name = face?.name
-      ?? (edge && this.doc.solids().find((s) => s.index === edge.solid)?.name);
-    if (solid === undefined || !name || (face && !face.face)) {
-      this.onStatus(`click an edge of a solid to ${roundsEdges(this.tool)} it, or a face for every `
-                    + 'edge of it');
-      return;
-    }
-    const was = this.rounding;
-    const r: Rounding = was && was.solid === solid
-      ? { ...was } : { solid, name, faces: [], edges: [] };
-    if (edge) {
-      const [a, b] = edge.faces;
-      const has = r.edges.some(([x, y]) => x === a && y === b);
-      r.edges = has ? r.edges.filter(([x, y]) => x !== a || y !== b) : [...r.edges, [a, b]];
-    } else {
-      const f = face!.face;
-      r.faces = r.faces.includes(f) ? r.faces.filter((x) => x !== f) : [...r.faces, f];
-    }
-    this.rounding = r.faces.length || r.edges.length ? r : null;
-    this.roundClick = [sx, sy];
-    this.tellRound();
-    this.draw();
-  }
-
-  /** The edge a click would pick with an edge tool down, lit — or nothing. */
-  hoverRound(sx: number, sy: number): EdgeHit | null {
-    this.hoverEdge = roundsEdges(this.tool) ? this.edgeAt(sx, sy) : null;
-    return this.hoverEdge;
-  }
-
-  /** The edge of an object the eye sees under a canvas point, within a pick's reach. */
-  private edgeAt(sx: number, sy: number): EdgeHit | null {
-    const { az, el } = this.orbit;
-    return pickEdgeSeen(this.sketch, az, el, ...this.eye(sx, sy), this.world(this.pickPx));
-  }
-
-  /** **Write what the edge tool picked** at `size` (the radius, or the flat's leg — what was
-   *  typed, else the size it was offered at): the library's word over the faces, one splice and
-   *  one undo step, the tool left down for the next.  The core's words where it refuses, and null where it
-   *  wrote. */
-  finishRound(size?: string): string | null {
-    const word = roundsEdges(this.tool);
-    const r = this.rounding;
-    if (!word || !r) {
-      this.tellRound();
-      return null;
-    }
-    const text = (size ?? '').trim() || this.roundOffer(word, r);
-    const e = this.doc.addRounds(r.solid, word, r.faces, r.edges, text);
-    if (e.refused) {
-      this.onStatus(e.refused);
-      return e.refused;
-    }
-    this.roundSize[word] = text;
-    const done = word === 'round' ? 'rounded' : 'chamfered';
-    if (!this.apply(e, `${r.name}: ${picked(r, ' and ')} ${done} at ${text}`)) {
-      return null;
-    }
-    this.endRound();
-    this.onChanged();
-    this.draw();
-    return null;
-  }
-
-  /** Let what the edge tool picked go: its number's box closed, the tool still down. */
-  endRound(): void {
-    const had = this.rounding;
-    this.rounding = null;
-    this.hoverEdge = null;
-    this.roundClick = null;
-    if (had) this.onRound(null, null, '');
-  }
-
-  /** The size an edge tool offers on object `r`: the last one written or left, else a tenth of
-   *  the object's least extent (the core's). */
-  private roundOffer(word: EdgeWord, r: Rounding): string {
-    if (this.roundSize[word]) return this.roundSize[word];
-    const size = roundSize(this.sketch, r.solid);
-    return size === null ? '1' : io.fmt(size, 6);
-  }
-
-  /** Say what an edge tool has picked and wants next, and put its number where it is asked. */
-  tellRound(): void {
-    const word = roundsEdges(this.tool);
-    if (!word) return;
-    const r = this.rounding;
-    if (!r) {
-      this.onRound(null, null, '');
-      this.onStatus(`click edges of a solid to ${word} them — a chain of them, or a face for `
-                    + 'every edge of it');
-      return;
-    }
-    const size = word === 'round' ? 'the radius' : 'how far the flat runs along each face';
-    this.onStatus(`${r.name}: ${picked(r, ', ')} — click more, then type ${size} and Enter `
-                  + '(Esc lets them go)');
-    const at = this.roundClick;
-    this.onRound(r, at && [at[0] + 12, at[1] + 12], this.roundOffer(word, r));
-  }
-
-  /** The name of what a revolution may turn about — a line or an axis, as the source calls it —
-   *  or null for anything else. */
-  turnsAbout(e: Primitive | null | undefined): string | null {
-    return e instanceof Line || e instanceof Axis ? this.doc.nameOf(e) ?? null : null;
-  }
-
-  /** The closed region under a canvas point, or null having said why there is none to `verb`. */
-  private regionHere(sx: number, sy: number, verb: string): Region | null {
-    const r = this.regionAt(sx, sy);
-    if (r && !('refused' in r)) return r;
-    this.onStatus(r?.refused
-      ?? `there is no closed region here to ${verb}: click inside a loop of edges`);
-    return null;
-  }
-
-  /** The body a solid tool's new solid joins or cuts: the selected one (undefined for none), or
-   *  false having said that a cut wants one. */
-  private cutting(cut: boolean): string | undefined | false {
-    const body = this.selectedSolids[0]?.name;
-    if (cut && !body) {
-      this.onStatus('select the body to cut first');
-      return false;
-    }
-    return body;
-  }
-
-  /** A solid tool's edit applied (one undo step), the new solid selected and — where `live`
-   *  says how — opened for sizing. */
-  private madeSolid(e: Edit, what: string, live: (solid: string) => LiveExtent | null): void {
-    const solid = e.names[0];
-    if (!this.apply(e, `${solid}: ${what}`)) return;
-    this.endExtent();                 // the one before is done with: this one is sized now
-    this.pickSolidNamed(solid);
-    this.liveExtent = live(solid);
-    this.tellExtent();
-    this.onSelect();
-  }
-
-  /** Select a solid by the name the source gives it. */
-  private pickSolidNamed(name: string): void {
-    const index = this.solidIndex(name);
-    if (index !== undefined) this.pickSolid({ name, index, face: '' });
-  }
-
-  private solidIndex(name: string): number | undefined {
-    return this.doc.solids().find((s) => s.name === name)?.index;
-  }
-
-  private extrudeHandleOf(name: string): ExtrudeHandle | null {
-    const i = this.solidIndex(name);
-    const { az, el } = this.orbit;
-    return i === undefined ? null : extrudeHandle(this.sketch, az, el, i);
-  }
-
-  private turnHandleOf(name: string): TurnHandle | null {
-    const i = this.solidIndex(name);
-    const { az, el } = this.orbit;
-    return i === undefined ? null : turnHandle(this.sketch, az, el, i);
-  }
-
-  /** The plane distance an offset plane is set off by: `P distance(d) plane`. */
-  private offsetOf(plane: string): Constraint | undefined {
-    const p = this.doc.entity(plane);
-    if (!(p instanceof Plane)) return undefined;
-    return this.sketch.constraints.find((c) => {
-      const set = c.typeName === 'PlaneDistance' ? c.entities()[1] : undefined;
-      return set instanceof Plane && set.index === p.index;
-    });
-  }
-
-  /** The offset plane being sized, its distance and the slot its number is in — or null. */
-  private liveOffset(): { live: LiveExtent; c: Constraint; attr: string } | null {
-    const live = this.liveExtent;
-    const c = live?.kind === 'offset' ? this.offsetOf(live.plane) : undefined;
-    const attr = c?.dimensions()[0]?.[0];
-    return live && c && attr ? { live, c, attr } : null;
-  }
-
-  /** The arrow of what is being sized, on the eye's picture plane: an extrusion's, a
-   *  revolution's (with the arc it turns along) or an offset plane's.  Null when nothing is, or
-   *  it is gone. */
-  private liveHandle(): Handle | null {
-    const live = this.liveExtent;
-    switch (live?.kind) {
-      case undefined: return null;
-      case 'extrusion': return this.extrudeHandleOf(live.solid);
-      case 'turn': return this.turnHandleOf(live.solid);
-      case 'offset': {
-        const c = this.offsetOf(live.plane);
-        const { az, el } = this.orbit;
-        return c ? offsetHandle(this.sketch, az, el, c.id) : null;
-      }
-    }
-  }
-
-  /** The arrow what is being sized is dragged by, on screen: an extrusion's from its face's
-   *  middle to its far end, an offset plane's from the plane it is set off — no tip where the eye
-   *  looks down the normal — and a revolution's round the arc its profile's middle turns
-   *  through, no tip where the eye looks along that.  Null when nothing is being sized. */
-  extentArrow(): Handle | null {
-    const h = this.liveHandle();
-    if (!h) return null;
-    this.cams();
-    const eye = this.camCache!.eye;
-    return {
-      base: eye.w2s(...h.base), tip: h.tip && eye.w2s(...h.tip),
-      arc: h.arc?.map((p) => eye.w2s(...p)),
-    };
-  }
-
-  /** Size what is being sized to where the eye sees a canvas point — an extrusion along its
-   *  normal, a revolution round its turn, an offset plane along the normal it is set off by — a
-   *  preview, written when the drag lets go (`commitExtent`). */
-  sizeExtent(sx: number, sy: number, both = false): void {
-    switch (this.liveExtent?.kind) {
-      case 'extrusion': return this.sizePrism(sx, sy, both);
-      case 'turn': return this.sizeTurn(sx, sy);
-      case 'offset': return this.sizeOffset(sx, sy);
-    }
-  }
-
-  /** Write what is being sized into the source — at the drag's number, or at `text` as typed —
-   *  joining the undo step that made it.  Null when written, else why not. */
-  commitExtent(text?: string): string | null {
-    switch (this.liveExtent?.kind) {
-      case 'extrusion': return this.commitPrism(text);
-      case 'turn': return this.commitTurn(text);
-      case 'offset': return this.commitOffset(text);
-      case undefined: return 'nothing is being sized';
-    }
-  }
-
-  /** The solid being sized, of `kind`, and its index in the sketch — or null. */
-  private liveSolid(kind: 'extrusion')
-    : { live: Extract<LiveExtent, { kind: 'extrusion' }>; i: number } | null;
-  private liveSolid(kind: 'turn')
-    : { live: Extract<LiveExtent, { kind: 'turn' }>; i: number } | null;
-  private liveSolid(kind: LiveExtent['kind']): { live: LiveExtent; i: number } | null {
-    const live = this.liveExtent;
-    const i = live?.kind === kind && 'solid' in live ? this.solidIndex(live.solid) : undefined;
-    return live && i !== undefined ? { live, i } : null;
-  }
-
-  /** A sizing edit taken — the document read again, carrying what is being sized across by
-   *  name (`swap`) and the edit into the gesture's undo step — and its number `d` now, read off
-   *  what was written.  Null when taken, else why not. */
-  private resized(e: Edit, d: () => number | undefined): string | null {
-    if (e.refused) return e.refused;
-    this.takeDocument(Document.read(e.text));
-    const n = d();
-    if (this.liveExtent && n !== undefined && Number.isFinite(n)) {
-      this.liveExtent = { ...this.liveExtent, d: n };
-    }
-    this.tellExtent();
-    this.draw();
-    return null;
-  }
-
-  /** Size the extrusion to where the eye sees a canvas point along its normal: in front of its
-   *  face or behind by the side the point is on, both ways with `both` (`setPrism`). */
-  private sizePrism(sx: number, sy: number, both: boolean): void {
-    const got = this.liveSolid('extrusion');
-    if (!got) return;
-    const { live, i } = got;
-    const { az, el } = this.orbit;
-    const t = extentAt(this.sketch, az, el, i, ...this.eye(sx, sy));
-    if (!Number.isFinite(t) || Math.abs(t) < 1e-9) return;
-    // two significant figures: a drag says roughly how much, the number box says exactly
-    const r = Number(Math.abs(t).toPrecision(2));
-    const next: LiveExtent = both ? { ...live, way: 'both', d: 2 * r }
-      : { ...live, way: t > 0 ? 'front' : 'behind', d: r };
-    if (next.way === live.way && next.d === live.d) return;
-    this.liveExtent = next;
-    this.sketch.setPrism(i, next.way, next.d);
-    this.tellExtent();
-    this.draw();
-  }
-
-  /** Write the extrusion's thickness over the same face and solid, the way it runs; the core
-   *  writes the sweep. */
-  private commitPrism(text?: string): string | null {
-    const got = this.liveSolid('extrusion');
-    if (!got) return 'nothing is being extruded';
-    const thick = text ?? String(got.live.d);
-    return this.resized(this.doc.setSweep(got.i, { way: got.live.way, thick }),
-      () => Number(thick));
-  }
-
-  /** Turn the revolution being sized to where the eye sees a canvas point on its turning plane,
-   *  in whole degrees, signed: carried back past its start it turns the other way (`setTurn`). */
-  private sizeTurn(sx: number, sy: number): void {
-    const got = this.liveSolid('turn');
-    if (!got) return;
-    const { live, i } = got;
-    const { az, el } = this.orbit;
-    const t = Math.round(turnAt(this.sketch, az, el, i, ...this.eye(sx, sy), live.d));
-    if (!Number.isFinite(t) || t === 0 || t === live.d) return;
-    this.liveExtent = { ...live, d: t };
-    this.sketch.setTurn(i, t);
-    this.tellExtent();
-    this.draw();
-  }
-
-  /** Write how far the revolution turns about what it turns about — degrees as the core reads
-   *  them (a number signed, negative clockwise) — and read back the turn it now has. */
-  private commitTurn(text?: string): string | null {
-    const got = this.liveSolid('turn');
-    if (!got) return 'nothing is being revolved';
-    return this.resized(this.doc.setTurn(got.i, text ?? String(got.live.d)),
-      () => this.turnHandleOf(got.live.solid)?.turn);
-  }
-
-  /** Set the offset plane being sized off where the eye sees a canvas point along the normal it
-   *  is set off by — either side — previewed on the sketch, written when the drag lets go. */
-  private sizeOffset(sx: number, sy: number): void {
-    const o = this.liveOffset();
-    if (!o) return;
-    const { live, c, attr } = o;
-    const { az, el } = this.orbit;
-    const t = offsetAt(this.sketch, az, el, c.id, ...this.eye(sx, sy));
-    if (!Number.isFinite(t) || Math.abs(t) < 1e-9) return;
-    const d = Number(t.toPrecision(2));
-    if (d === live.d) return;
-    this.liveExtent = { ...live, d };
-    c.setDimension(attr, String(d));
-    // the plane moves by a solve; the lists and the source wait for the release
-    this.lastResult = this.solveOnce();
-    this.tellExtent();
-    this.draw();
-  }
-
-  /** Write how far the offset plane being sized is set off into its statement — at the drag's
-   *  distance, or `text` as typed.  Joins the plane's own undo step.  Null when written. */
-  private commitOffset(text?: string): string | null {
-    const o = this.liveOffset();
-    if (!o) return 'no plane is being set off';
-    const { live, c, attr } = o;
-    const d = text ?? String(live.d);
-    const e = this.doc.setDimension(c.id, attr, d);
-    if (e.refused) return e.refused;
-    let numeric = e.kind === 'numeric';
-    try {
-      if (numeric) numeric = c.setDimension(attr, d) === null;
-    } catch {
-      numeric = false;
-    }
-    if (numeric && this.doc.retext(e.text)) {
-      this.afterEdit();
-      this.onProgram();
-    } else {
-      const next = dimension.readWhole(e.text);
-      if (typeof next === 'string') return next;
-      this.takeDocument(next);
-    }
-    const n = Number(d);
-    if (this.liveExtent && Number.isFinite(n)) this.liveExtent = { ...this.liveExtent, d: n };
-    this.tellExtent();
-    this.draw();
-    return null;
-  }
-
-  /** Stop sizing the extrusion: what was last written stands. */
-  endExtent(): void {
-    if (!this.liveExtent) return;
-    this.liveExtent = null;
-    this.onExtent(null, null);
-  }
-
-  /** Tell the shell where the number of the extrusion being sized is: at the arrow's tip, or its
-   *  base where there is no tip to hold. */
-  private tellExtent(): void {
-    const live = this.liveExtent;
-    if (!live) return this.onExtent(null, null);
-    const a = this.extentArrow();
-    this.onExtent(live, a ? a.tip ?? a.base : null);
-  }
-
-  /** **Drop a datum**: a plane or an axis, written at once and constrained to what is selected
-   *  by the core's table (`edit::add_datum`): through a point, along a line, square to a plane —
-   *  or, with nothing selected, free, set off the plane being drawn on.  It is constrained further
-   *  like anything else; the new one is selected, and a plane so becomes the current one. */
+  revolveAt(sx: number, sy: number, cut = false): void { solids.revolveAt(this, sx, sy, cut); }
+  combineAt(sx: number, sy: number): void { solids.combineAt(this, sx, sy); }
+  get combining(): Combining | null { return solids.combining(this); }
+  finishCombine(): void { solids.finishCombine(this); }
+  roundAt(sx: number, sy: number): void { solids.roundAt(this, sx, sy); }
+  hoverRound(sx: number, sy: number): EdgeHit | null { return solids.hoverRound(this, sx, sy); }
+  finishRound(size?: string): string | null { return solids.finishRound(this, size); }
+  endRound(): void { solids.endRound(this); }
+  tellRound(): void { solids.tellRound(this); }
+  turnsAbout(e: Primitive | null | undefined): string | null { return solids.turnsAbout(this, e); }
   addDatum(kind: 'plane' | 'axis', name?: string): boolean {
-    // a standard plane chosen before the document had it is brought in first, as a tool's press
-    // brings it in, so the datum is set off the plane chosen
-    if (!this.ensurePlane()) return false;
-    const from = this.namesOf(this.selected);
-    if (from.length < this.selected.length) {
-      this.onStatus('something selected has no name in the source to constrain to: name it first');
-      return false;
-    }
-    const current = this.plane ? this.doc.nameOf(this.plane) : undefined;
-    const e = this.doc.addDatum(kind, from, current, name);
-    if (!this.apply(e, `${kind} ${e.names[0]}`)) return false;
-    const made = this.doc.entity(e.names[0]);
-    if (made) this.selected = [made];
-    // a plane set off another is sized at once, as an extrusion is: by its arrow or its number
-    this.endExtent();
-    const c = made instanceof Plane ? this.offsetOf(e.names[0]) : undefined;
-    if (c) {
-      const { az, el } = this.orbit;
-      const d = offsetHandle(this.sketch, az, el, c.id)?.distance ?? 0;
-      this.liveExtent = { kind: 'offset', plane: e.names[0], d };
-      this.tellExtent();
-    }
-    this.onSelect();
-    this.onChanged();
-    this.draw();
-    return true;
+    return solids.addDatum(this, kind, name);
   }
+  sketchOnFace(pick: SolidPick): boolean { return solids.sketchOnFace(this, pick); }
 
-  /** **Sketch on a face** (#162 F5): the plane already lying on it chosen, or a plane written
-   *  lying on it — its origin where the click met the face, touching the face there, so it
-   *  follows the solid — and chosen.  One edit, one undo step. */
-  sketchOnFace(pick: SolidPick): boolean {
-    if (!pick.face) {
-      this.onStatus('click a face of the solid to sketch on it');
-      return false;
-    }
-    const there = this.doc.facePlane(pick.index, pick.face);
-    if (there) {
-      this.choosePlane(there, false);
-      return true;
-    }
-    const e = this.doc.sketchOnFace(pick.index, pick.face, pick.at);
-    if (!this.apply(e, `sketching on ${pick.face}`)) return false;
-    this.choosePlane(e.names[0], false);
-    this.draw();
-    return true;
+  extentArrow(): Handle | null { return extent.extentArrow(this); }
+  sizeExtent(sx: number, sy: number, both = false): void {
+    extent.sizeExtent(this, sx, sy, both);
   }
-
+  commitExtent(text?: string): string | null { return extent.commitExtent(this, text); }
+  endExtent(): void { extent.endExtent(this); }
   /** **The planes a sketch can be drawn on**, by name, for the workspace's chooser: the three
    *  standard ones first, whether or not the document has them yet, then every other plane the
    *  document names (`std.up` is the front plane turned, so it is not offered twice). */

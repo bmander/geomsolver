@@ -300,7 +300,6 @@ pub(crate) fn settle_integrand(
     Ok(text)
 }
 
-/// `substitute`, over whatever `of` says a word stands for.
 /// Whether a seed's text reads a scalar of the geometry — `k.center.x`, `pin.y`, `base.r` — which
 /// is the one kind of name a seed may keep past the flattener (§6.4): a dotted name, since a
 /// param and a formal are bare words and an entity's scalar never is.
@@ -643,7 +642,7 @@ impl<'a> Walk<'a> {
                     let text = match &field.value {
                         crate::syntax::InstVal::Ref(r) => {
                             references.push((name.clone(), r.clone()));
-                            written(r)
+                            ref_text(r)
                         }
                         crate::syntax::InstVal::Expr(t) => t.clone(),
                         crate::syntax::InstVal::Hint(..) => {

@@ -25,15 +25,64 @@ use crate::program::public_path;
 use super::apply::{local, Application, Pass, Use};
 use crate::lowering::{self, Lowered, Radius, Shape};
 use crate::constraints::Fixity::{Infix, Prefix};
-use crate::syntax::{Along, AlongBy, Chained, DeclName, Member, Relation, RelationForm, SetLit, Worded};
+use crate::syntax::{
+    Along, AlongBy, Chained, Cmp, DeclName, Member, Relation, RelationForm, SetLit, Worded, Written,
+};
 
 /// Where a set stands: its literal, the scope its body reads names in (an instance's, with its
-/// formals bound, for a family's), and how deep the walk was there.  A use's expansion stands
-/// where the use does, at the use's path.
+/// formals bound, for a family's), how deep the walk was there, and what its body is (`shape`).
+/// A use's expansion stands where the use does, at the use's path.
+#[derive(Clone)]
 pub(super) struct Site {
     lit: SetLit,
     scope: Scope,
     depth: usize,
+    shape: BodyShape,
+}
+
+/// What a set's body is, read once where the set is made (`Site::of`): every question a use asks
+/// of the body, so none scans it again.
+#[derive(Clone, Debug, Default)]
+struct BodyShape {
+    /// A **region** (§6.21, §9.6): its body bounds a number, or says its point is inside or
+    /// outside something — so it has no surface to touch.
+    region: bool,
+    /// The statements that are relations or bounds on measurements, by index: what the body says
+    /// of its point.
+    relations: Vec<usize>,
+    /// The statements stating a number of the set's own, by index: a dimension or a bound on
+    /// measurements, but not a bounded side of another set (`region_body`).
+    numbers: Vec<usize>,
+    /// The statements using another set (`may_use`), by index.
+    uses: Vec<usize>,
+    /// What the body makes of its own, which a tangency at a point cannot place (`makes_points`).
+    makes: Option<String>,
+    /// A set of one side of another, `{ q | q outside S }` (its body one bounded use of `S`, no
+    /// number of its own): `S` as written, and whether it is the outside.
+    side_of: Option<(Ref, bool)>,
+}
+
+impl BodyShape {
+    fn of(lit: &SetLit) -> BodyShape {
+        let body = &lit.body;
+        let measured = |st: &Stmt| matches!(st.kind, StmtKind::Measured(_));
+        let indices =
+            |f: &dyn Fn(&Stmt) -> bool| (0..body.len()).filter(|&i| f(&body[i])).collect();
+        // a side of another set, grown or not (a bounded distance from it), is a use of it, not a
+        // number of this one's; a distance from one is (`std.Offset`'s body)
+        let side_of_another = |w: &Written| reaches(w) && w.bound().is_some();
+        BodyShape {
+            region: body.iter().filter_map(written_of).any(|w| w.states_bound())
+                || body.iter().any(measured),
+            relations: indices(&|st| matches!(st.kind, StmtKind::Relation(_)) || measured(st)),
+            // a bound on measurements is a number of this one's, a bound already (#183 F3)
+            numbers: indices(&|st| measured(st)
+                || written_of(st).is_some_and(|w| w.dim().is_some() && !side_of_another(w))),
+            uses: indices(&|st| written_of(st).is_some_and(may_use)),
+            makes: makes_points(lit),
+            side_of: side_of(lit),
+        }
+    }
 }
 
 /// Whether what a path reads past a set is its surface (`S.surface`).
@@ -44,7 +93,13 @@ fn names_surface(rest: &[String]) -> bool {
 impl Site {
     /// A set made other than by a statement the walk met: a face of a solid (`faces`).
     pub(super) fn new(lit: SetLit, scope: Scope, depth: usize) -> Site {
-        Site { lit: lowered(lit), scope, depth }
+        Site::of(lowered(lit), scope, depth)
+    }
+
+    /// A set whose body is already as a site holds it, its shape read.
+    fn of(lit: SetLit, scope: Scope, depth: usize) -> Site {
+        let shape = BodyShape::of(&lit);
+        Site { lit, scope, depth, shape }
     }
 }
 
@@ -67,6 +122,115 @@ pub(super) struct Made<'m> {
     pub st: &'m Stmt,
     pub path: &'m [PathStep],
     pub outer: &'m Scope,
+}
+
+/// One use of a set (§6.21), as `expand_set_uses` found it: the statement as written (`Use`), its
+/// relation, the operands naming sets — each by its place and the set by absolute name — and
+/// how every relation the use makes reads (`Relation::word`), its parentheses left to each case.
+struct SetUse<'u> {
+    u: Use<'u>,
+    w: &'u Written,
+    found: Vec<(usize, String)>,
+    worded: Worded,
+}
+
+impl SetUse<'_> {
+    /// The one set a use of one uses: its operand, and the set by absolute name.
+    fn set(&self) -> (usize, &str) {
+        let (k, abs) = &self.found[0];
+        (*k, abs)
+    }
+
+    /// Why the use, a claim or stated in a body walked for its derivative, cannot place the
+    /// point it reads its sets' bodies at — a point the solve finds, which a claim cannot add and
+    /// a derivative cannot move — each said its own way; `None` where it can.  A contact is
+    /// refused only where the use was set aside from such a body (`Relation::along`).
+    fn refuse_derivative(&self, placed: &Placed) -> Option<String> {
+        let rel = self.u.rel;
+        let derived = rel.along.is_some() || self.u.scope.twin().is_some();
+        Some(match *placed {
+            Placed::Contact { name, .. } if rel.claim => format!(
+                "a tangency to a set is stated, not claimed: the contact on it is found by the \
+                 solve (`l tangent {name}`)"
+            ),
+            Placed::Contact { word, name } if rel.along.is_some() => format!(
+                "a set's body may put its point on another set, not a line tangent to one \
+                 (`{word} {name}`)"
+            ),
+            Placed::Pair(spelled) if rel.claim => {
+                format!("a tangency between two sets is stated, not claimed: {spelled}")
+            }
+            Placed::Pair(spelled) if derived => {
+                format!("a set's body may put its point on another set, not state {spelled}")
+            }
+            Placed::Touch { spelled, .. } if rel.claim || derived => format!(
+                "a plane's tangency to a set is stated, and never inside a set's body: {spelled}"
+            ),
+            Placed::Foot(set) if rel.claim => format!(
+                "a point's distance from `{set}` is found by its foot on it, which a claim \
+                 cannot add"
+            ),
+            Placed::Foot(set) if derived => format!(
+                "a point's distance from `{set}` has a foot on it, which a derivative cannot \
+                 move"
+            ),
+            _ => return None,
+        })
+    }
+}
+
+/// The point a set's use reads the set's body at, for the refusals the uses share
+/// (`Walk::refused`): each says what the use is, as the statement spells it.
+enum Placed<'s> {
+    /// `l tangent S`'s contact: the word and the set's name.
+    Contact { word: &'s str, name: &'s str },
+    /// `S1 tangent(at: m) S2`'s point, the statement spelled.
+    Pair(&'s str),
+    /// `P tangent(at: m) S`'s point, the statement spelled, and `S` as written.
+    Touch { spelled: &'s str, set: &'s str },
+    /// `p distance(d, side: outside) S`'s foot, `S` as written.
+    Foot(&'s str),
+}
+
+impl Placed<'_> {
+    /// Why a set's body making `what` of its own, `name` as the statement names the set, cannot
+    /// be read at the point — which only the point on it would place; `None` for a contact, what
+    /// the body makes moving with it by a tangent unknown of its own (`model::Dual`).
+    fn made(&self, name: &str, what: &str) -> Option<String> {
+        Some(match *self {
+            Placed::Contact { .. } => return None,
+            Placed::Pair(spelled) => format!(
+                "{spelled} reads each set's body at the point, where `{name}`'s makes `{what}` of \
+                 its own, which only the point on it would place"
+            ),
+            Placed::Touch { spelled, set } => format!(
+                "{spelled} reads the set's body at the point, where `{set}`'s makes `{what}` of \
+                 its own, which only the point on it would place"
+            ),
+            Placed::Foot(set) => format!(
+                "a point's distance from `{set}` reads its body at the foot, where it makes \
+                 `{what}` of its own"
+            ),
+        })
+    }
+}
+
+/// A reach read off its set (`Walk::expand_reach`), for the way it is applied: the body measured
+/// from — the set's, or its one bound's surface — and the statement in it holding the number
+/// its surface is at, the bound on the signed distance toward the outside (`None` an equation),
+/// the distance as written and as read, whether the offset grows the set, the scope and depth
+/// the set stands at, how the use reads and the set as written.
+struct Reached {
+    lit: SetLit,
+    i: usize,
+    cmp: Option<Cmp>,
+    text: String,
+    d: Aff,
+    grows: bool,
+    closure: Scope,
+    depth: usize,
+    worded: Worded,
+    set: String,
 }
 
 impl<'a> Walk<'a> {
@@ -123,7 +287,7 @@ impl<'a> Walk<'a> {
         // a set written in place, or an unnamed call, is named nothing the source can say
         let name = if outer.anonymous || written.text.starts_with('#') {
             let at = written.span.lo as usize;
-            DeclName::Key(Name { text: abs.to_string(), span: Span::new(at, at) })
+            DeclName::Key(Name { text: abs.to_string(), span: Span::at(at) })
         } else {
             DeclName::Written(written.clone()).prefixed(abs.to_string(), outer.copies)
         };
@@ -137,7 +301,7 @@ impl<'a> Walk<'a> {
         self.out.push((decl, path.to_vec(), sc.clone()));
         // drawn and edited where the number is written; a call that gives none draws what it
         // comes to
-        let span = radius.at(call).unwrap_or(Span::new(st.span.lo as usize, st.span.lo as usize));
+        let span = radius.at(call).unwrap_or(Span::at(st.span.lo as usize));
         let word = radius.word.span;
         let dim = crate::syntax::OpArg::Dim(radius.text.to_string(), span);
         let stated = relation(("radius", word), Prefix, vec![local(abs, word)], vec![dim], st.span);
@@ -167,7 +331,7 @@ impl<'a> Walk<'a> {
     /// A reference read where `sc` reads it, made absolute — `None` where it names a set or
     /// nothing.
     fn absolute(&self, r: &Ref, sc: &Scope, alias: &BTreeMap<String, String>) -> Option<Ref> {
-        let (abs, rest) = lookup(r, sc, &self.names, alias, self.units)?;
+        let (abs, rest) = self.look(alias).find(r, sc)?;
         if rest.is_empty() && self.sets.contains_key(&abs) {
             return None;
         }
@@ -188,7 +352,7 @@ impl<'a> Walk<'a> {
         let w = rel.form.written().filter(|w| may_use(w))?;
         let mut found: Vec<(usize, String)> = Vec::new();
         for (i, r) in w.ops.iter().enumerate() {
-            let Some((abs, rest)) = lookup_raw(r, sc, &self.names, alias, self.units)
+            let Some((abs, rest)) = self.look(alias).raw(r, sc)
                 .filter(|(abs, _)| self.sets.contains_key(abs)) else { continue };
             if rest.is_empty() {
                 found.push((i, abs));
@@ -265,7 +429,7 @@ impl<'a> Walk<'a> {
                 }
                 // a region has no surface to touch (§6.21) — by a line, a plane or a set alike
                 let tangent = rel.form.written().filter(|w| w.word.text == "tangent");
-                let bounded = found.iter().find(|(_, abs)| region(&self.sets[abs].lit));
+                let bounded = found.iter().find(|(_, abs)| self.sets[abs].shape.region);
                 if let (Some(w), Some((_, abs))) = (tangent, bounded) {
                     let m = format!("`{}` is a region, and has no surface to touch: touch the set \
                                      it is bounded by", public_path(abs));
@@ -273,22 +437,18 @@ impl<'a> Walk<'a> {
                     continue;
                 }
                 self.held = next.len() + rest.len();
+                let su = self.set_use_of(&st, rel, &path, &sc, found);
                 // one set touched at a point: by a plane, the one thing that can be
-                let touch = !pair && rel.form.written()
-                    .is_some_and(|w| w.word.text == "tangent" && !w.args.is_empty());
-                // a distance from a set, or a side of one grown (F4)
-                let reach = rel.form.written().is_some_and(reaches);
+                let touch = !pair && su.w.word.text == "tangent" && !su.w.args.is_empty();
                 if pair {
-                    self.expand_pair(&st, rel, &path, &sc, &found);
+                    self.expand_pair(&su);
+                } else if reaches(su.w) {
+                    // a distance from a set, or a side of one grown (F4)
+                    self.expand_reach(&su, &alias);
+                } else if touch {
+                    self.expand_touch(&su);
                 } else {
-                    let (k, abs) = found.into_iter().next().unwrap();
-                    if reach {
-                        self.expand_reach(&st, rel, &path, &sc, k, &abs, &alias);
-                    } else if touch {
-                        self.expand_touch(&st, rel, &path, &sc, k, &abs);
-                    } else {
-                        self.expand_use(&st, rel, &path, &sc, k, &abs);
-                    }
+                    self.expand_use(&su);
                 }
                 next.append(&mut self.out);
                 self.held = 0;
@@ -314,7 +474,7 @@ impl<'a> Walk<'a> {
         alias: &BTreeMap<String, String>,
     ) -> Option<Vec<(Stmt, Vec<PathStep>, Scope)>> {
         let set_of = |me: &Self, r: &Ref| -> Option<(String, Vec<String>)> {
-            let (abs, rest) = lookup_raw(r, sc, &me.names, alias, me.units)?;
+            let (abs, rest) = me.look(alias).raw(r, sc)?;
             me.sets.contains_key(&abs).then_some((abs, rest))
         };
         // the sets the statement reads, by the reference as written: a measurement's argument
@@ -345,7 +505,7 @@ impl<'a> Walk<'a> {
                     return None;
                 }
                 // a name declared as written is itself, whatever it is called
-                if lookup_raw(s, sc, &self.names, alias, self.units).is_some_and(|(_, r)| r.is_empty()) {
+                if self.look(alias).raw(s, sc).is_some_and(|(_, r)| r.is_empty()) {
                     return None;
                 }
                 let mut set = s.clone();
@@ -364,14 +524,12 @@ impl<'a> Walk<'a> {
         // of one body stamped alike stay apart
         let id = sc.written.unwrap_or(st.id).0;
         for (k, (name, written)) in sets.iter().enumerate() {
-            let local = format!("#{id}.m{k}");
+            let local = keys::measured(id, k);
             let key = format!("{}{local}", sc.prefix());
             self.names.insert(key.clone());
             self.probes.push(key.clone());
             let at = st.span;
-            let mut point = Decl::point(DeclName::Key(Name { text: key, span: Span::new(at.lo as usize, at.lo as usize) }), [0.0; 2], None);
-            point.seed = vec![0.7548776662, 0.5698402910, 0.4301597090];
-            point.seed_text = vec![None; 3];
+            let point = probe(key, Span::at(at.lo as usize));
             out.push((Stmt { kind: StmtKind::Decl(point), ..st.clone() }, path.to_vec(), sc.clone()));
             let set = match surfaces.get(name) {
                 // a set's surface, made beside it, by its absolute name
@@ -393,7 +551,7 @@ impl<'a> Walk<'a> {
             // their points apart
             let mut usc = sc.clone();
             usc.held = true;
-            usc.prefixes.insert(0, format!("{}#{id}.m{k}.", sc.prefix()));
+            usc.prefixes.insert(0, keys::measured_prefix(sc.prefix(), id, k));
             if !usc.prefixes.iter().any(|p| p.is_empty()) {
                 usc.prefixes.push(String::new());
             }
@@ -432,7 +590,7 @@ impl<'a> Walk<'a> {
     /// plane, a side's surface, a grown side's the offset one — by its absolute name
     /// (`{abs}#surface`), made once.  An interval's two surfaces are no one surface: kept.
     fn surface_of(&mut self, abs: &str) -> String {
-        let key = format!("{abs}#surface");
+        let key = keys::surface(abs);
         if !self.sets.contains_key(&key) {
             let site = &self.sets[abs];
             let mut lit = site.lit.clone();
@@ -442,26 +600,58 @@ impl<'a> Walk<'a> {
                     w.equality();
                 }
             }
-            let made = Site { lit, scope: site.scope.clone(), depth: site.depth };
+            let made = Site::of(lit, site.scope.clone(), site.depth);
             self.sets.insert(key.clone(), made);
             self.names.insert(key.clone());
         }
         key
     }
 
-    /// One use of the set `abs`, operand `k` of the statement `st` (§6.21).
-    fn expand_use(
-        &mut self,
-        st: &Stmt,
-        rel: &Relation,
-        path: &[PathStep],
-        sc: &Scope,
-        k: usize,
-        abs: &str,
-    ) {
-        let Some(w) = rel.form.written() else { return };
+    /// A use as `expand_set_uses` found it (`set_use`), described as it was written: the word,
+    /// the operands that are no set, and the sets as written — its parentheses each case's own.
+    fn set_use_of<'u>(
+        &self,
+        st: &'u Stmt,
+        rel: &'u Relation,
+        path: &'u [PathStep],
+        sc: &'u Scope,
+        found: Vec<(usize, String)>,
+    ) -> SetUse<'u> {
+        let w = rel.form.written().expect("a set's use is written");
+        let worded = Worded {
+            word: w.word.text.clone(),
+            ops: (0..w.ops.len())
+                .filter(|i| found.iter().all(|(k, _)| k != i))
+                .map(|i| w.ops[i].clone())
+                .collect(),
+            args: String::new(),
+            sets: found.iter().map(|(k, _)| (*k, self.set_written(&w.ops[*k]))).collect(),
+            through: Vec::new(),
+            span: w.word.span,
+        };
+        SetUse { u: Use { st, rel, path, scope: sc, at: w.word.span }, w, found, worded }
+    }
+
+    /// Whether a use cannot place the point it reads its sets' bodies at (`placed`) — a claim,
+    /// a body walked for its derivative, or a body making geometry of its own only the point on
+    /// it would place — said, once, where the word is.
+    fn refused(&mut self, su: &SetUse, placed: Placed) -> bool {
+        let m = su.refuse_derivative(&placed).or_else(|| {
+            su.found.iter().find_map(|(k, abs)| {
+                let what = self.sets[abs].shape.makes.as_deref()?;
+                placed.made(&ref_text(&su.w.ops[*k]), what)
+            })
+        });
+        let Some(m) = m else { return false };
+        self.once(Code::E040, su.u.at, m);
+        true
+    }
+
+    /// One use of one set, `q coincident S`, `q inside S` or `l tangent S` (§6.21).
+    fn expand_use(&mut self, su: &SetUse) {
+        let (k, abs) = su.set();
+        let (w, at) = (su.w, su.u.at);
         let word = w.word.text.as_str();
-        let at = w.word.span;
         let name = public_path(abs);
         // a side, said as a bound (`Written::lower_side`): the body with its number bounded
         let mut lowered = w.clone();
@@ -477,54 +667,37 @@ impl<'a> Walk<'a> {
             }
         };
         let tangent = word == "tangent";
-        if tangent && rel.claim {
-            let m = format!("a tangency to a set is stated, not claimed: the contact on it is \
-                             found by the solve (`l tangent {name}`)");
-            self.once(Code::E040, at, m);
+        if tangent && self.refused(su, Placed::Contact { word, name: &name }) {
             return;
         }
-        if tangent && rel.along.is_some() {
-            let m = format!("a set's body may put its point on another set, not a line \
-                             tangent to one (`{word} {name}`)");
-            self.once(Code::E040, at, m);
-            return;
-        }
-        let site = &self.sets[abs];
-        let (mut lit, depth, closure) = (site.lit.clone(), site.depth, site.scope.clone());
+        let site = self.sets[abs].clone();
+        let mut body = site.lit.body;
         // **inside or outside a set** (§9.6): its body with its one number a bound
         if let Some(side) = side {
-            if let Err(m) = region_body(&mut lit.body, side, word, at, &name) {
+            if let Err(m) = region_body(&mut body, &site.shape, side, word, at, &name) {
                 self.once(Code::E040, at, m);
                 return;
             }
         }
-        let u = Use { st, rel, path, scope: sc, at };
-        let app = self.begin(&u, &closure).of_set();
+        let u = &su.u;
+        let app = self.begin(u, &site.scope).of_set();
         let other = w.ops[1 - k].clone();
-        let bound = lit.bound.text.clone();
+        let bound = site.lit.bound.text;
         // a tangency: the body at a contact on the line, then differentiated along it; else the
         // body at the point — differentiated already where the use is in a body being
         // differentiated (a tangency there was refused above)
         let walks = if tangent {
-            self.bind_to_use(&app, "#line", other.clone(), &u);
-            self.contact(&app, st, &bound, at, path);
-            let toward = AlongBy::Line(local("#line", at));
+            self.bind_to_use(&app, keys::LINE, other, u);
+            self.contact(&app, u.st, &bound, at, u.path);
+            let toward = AlongBy::Line(local(keys::LINE, at));
             let key = app.prefix().to_string();
             let made = Some(key.clone());
             vec![Pass::Itself, Pass::Along(Along { point: local(&bound, at), toward, key, made })]
         } else {
-            self.bind_to_use(&app, &bound, other.clone(), &u);
-            vec![self.inherited_twin(&app, &u).into()]
+            self.bind_to_use(&app, &bound, other, u);
+            vec![self.inherited_twin(&app, u).into()]
         };
-        let worded = Worded {
-            word: word.to_string(),
-            ops: vec![other],
-            args: String::new(),
-            sets: vec![(k, self.set_written(&w.ops[k]))],
-            through: Vec::new(),
-            span: at,
-        };
-        self.apply(&u, app, lit.body, &BTreeMap::new(), &walks, worded, depth);
+        self.apply(u, app, body, &BTreeMap::new(), &walks, su.worded.clone(), site.depth);
     }
 
     /// Two sets tangent at a point, `S1 tangent(at: m) S2` (§6.21): their tangent spaces at `m`
@@ -534,65 +707,33 @@ impl<'a> Walk<'a> {
     /// `m` on each is stated beside it (`m coincident S1`); the word walks each body only for
     /// what it makes, so a body with geometry of its own, which the incidence would place, is
     /// refused.
-    fn expand_pair(
-        &mut self,
-        st: &Stmt,
-        rel: &Relation,
-        path: &[PathStep],
-        sc: &Scope,
-        found: &[(usize, String)],
-    ) {
-        let Some(w) = rel.form.written() else { return };
-        let at = w.word.span;
-        let names: Vec<String> = found.iter().map(|(k, _)| written(&w.ops[*k])).collect();
-        let point = at_point(w);
+    fn expand_pair(&mut self, su: &SetUse) {
+        let (w, at) = (su.w, su.u.at);
+        let names: Vec<String> = su.found.iter().map(|(k, _)| ref_text(&w.ops[*k])).collect();
         let spell = |m: &str| format!("`{} tangent(at: {m}) {}`", names[0], names[1]);
-        let Some(point) = point else {
+        let Some(point) = at_point(w) else {
             let m = format!("two sets touch at a point, which the word names: {}", spell("m"));
             self.once(Code::E040, at, m);
             return;
         };
-        let spelled = spell(&written(&point));
-        if rel.claim {
-            let m = format!("a tangency between two sets is stated, not claimed: {spelled}");
-            self.once(Code::E040, at, m);
+        if self.refused(su, Placed::Pair(&spell(&ref_text(&point)))) {
             return;
         }
-        if rel.along.is_some() || sc.twin().is_some() {
-            let m = format!("a set's body may put its point on another set, not state {spelled}");
-            self.once(Code::E040, at, m);
-            return;
-        }
-        for ((_, abs), name) in found.iter().zip(&names) {
-            if let Some(what) = makes_points(&self.sets[abs].lit) {
-                let m = format!(
-                    "{spelled} reads each set's body at the point, where `{name}`'s makes \
-                     `{what}` of its own, which only the point on it would place"
-                );
-                self.once(Code::E040, at, m);
-                return;
-            }
-        }
-        // one derivative per direction, which both sets' rows share
-        let keys = [0u8, 1].map(|k| format!("{}#{}.t{k}.", sc.prefix(), st.id.0));
-        let worded = Worded {
-            word: w.word.text.clone(),
-            ops: Vec::new(),
-            args: format!("at: {}", written(&point)),
-            sets: found.iter().map(|(k, _)| (*k, self.set_written(&w.ops[*k]))).collect(),
-            through: Vec::new(),
-            span: at,
-        };
-        let u = Use { st, rel, path, scope: sc, at };
-        for (n, (_, abs)) in found.iter().enumerate() {
-            let site = &self.sets[abs];
-            let (lit, depth, closure) = (site.lit.clone(), site.depth, site.scope.clone());
-            let app = self.begin_nth(&u, &closure, n).of_set();
-            let bound = lit.bound.text.clone();
-            self.bind_to_use(&app, &bound, point.clone(), &u);
-            let along = |k: u8| charted(local(&bound, at), k, keys[k as usize].clone());
+        // one derivative per direction, which both sets' rows share — under the statement as
+        // written, so two tangencies of one body take directions apart
+        let u = &su.u;
+        let id = u.scope.written.unwrap_or(u.st.id).0;
+        let charts = [0u8, 1].map(|k| keys::chart(u.scope.prefix(), id, k));
+        let worded = Worded { args: format!("at: {}", ref_text(&point)), ..su.worded.clone() };
+        for (n, (_, abs)) in su.found.iter().enumerate() {
+            let site = self.sets[abs].clone();
+            let app = self.begin_nth(u, &site.scope, n).of_set();
+            let bound = site.lit.bound.text;
+            self.bind_to_use(&app, &bound, point.clone(), u);
+            let along = |k: u8| charted(local(&bound, at), k, charts[k as usize].clone());
             let walks = [Pass::Made, along(0), along(1)];
-            self.apply(&u, app, lit.body, &BTreeMap::new(), &walks, worded.clone(), depth);
+            let body = site.lit.body;
+            self.apply(u, app, body, &BTreeMap::new(), &walks, worded.clone(), site.depth);
         }
     }
 
@@ -603,17 +744,9 @@ impl<'a> Walk<'a> {
     /// What the body already says along the plane — a cone's along its generator, where the
     /// apex is on `P` — makes the two derivatives dependent: the system's rank finds that
     /// (`diagnose`), and nothing here knows a shape.
-    fn expand_touch(
-        &mut self,
-        st: &Stmt,
-        rel: &Relation,
-        path: &[PathStep],
-        sc: &Scope,
-        k: usize,
-        abs: &str,
-    ) {
-        let Some(w) = rel.form.written() else { return };
-        let at = w.word.span;
+    fn expand_touch(&mut self, su: &SetUse) {
+        let (k, abs) = su.set();
+        let (w, at) = (su.w, su.u.at);
         let set = self.set_written(&w.ops[k]);
         let spell = |m: &str| format!("`P tangent(at: {m}) {set}`");
         let Some(point) = at_point(w) else {
@@ -622,78 +755,48 @@ impl<'a> Walk<'a> {
             self.once(Code::E040, at, m);
             return;
         };
-        if rel.claim || rel.along.is_some() || sc.twin().is_some() {
-            let m = format!("a plane's tangency to a set is stated, and never inside a set's \
-                             body: {}", spell(&written(&point)));
-            self.once(Code::E040, at, m);
-            return;
-        }
-        if let Some(what) = makes_points(&self.sets[abs].lit) {
-            let m = format!(
-                "{} reads the set's body at the point, where `{set}`'s makes `{what}` of its \
-                 own, which only the point on it would place",
-                spell(&written(&point))
-            );
-            self.once(Code::E040, at, m);
+        if self.refused(su, Placed::Touch { spelled: &spell(&ref_text(&point)), set: &set }) {
             return;
         }
         let plane = w.ops[1 - k].clone();
-        let worded = Worded {
-            word: w.word.text.clone(),
-            ops: vec![plane.clone()],
-            args: format!("at: {}", written(&point)),
-            sets: vec![(k, set)],
-            through: Vec::new(),
-            span: at,
-        };
-        let u = Use { st, rel, path, scope: sc, at };
-        let site = &self.sets[abs];
-        let (lit, depth, closure) = (site.lit.clone(), site.depth, site.scope.clone());
-        let app = self.begin(&u, &closure).of_set();
-        let bound = lit.bound.text.clone();
-        self.bind_to_use(&app, &bound, point.clone(), &u);
-        // the plane's own two directions, each a derivative of its own
+        let worded = Worded { args: format!("at: {}", ref_text(&point)), ..su.worded.clone() };
+        let u = &su.u;
+        let site = self.sets[abs].clone();
+        let app = self.begin(u, &site.scope).of_set();
+        let bound = site.lit.bound.text;
+        self.bind_to_use(&app, &bound, point.clone(), u);
+        // the plane's own two directions, each a derivative of its own, under the statement as
+        // written
+        let id = u.scope.written.unwrap_or(u.st.id).0;
         let mut walks = vec![Pass::Made];
         for (n, axis) in ["u", "v"].into_iter().enumerate() {
             let mut r = plane.clone();
             r.path.push(Seg::Field(Name { text: axis.to_string(), span: at }));
-            let name = format!("#{axis}");
-            self.bind_to_use(&app, &name, r, &u);
+            let name = keys::plane_axis(axis);
+            self.bind_to_use(&app, &name, r, u);
             walks.push(Pass::Along(Along {
                 point: local(&bound, at),
                 toward: AlongBy::Line(local(&name, at)),
-                key: format!("{}#{}.a{n}.", sc.prefix(), st.id.0),
+                key: keys::plane_along(u.scope.prefix(), id, n),
                 made: None,
             }));
         }
-        self.apply(&u, app, lit.body, &BTreeMap::new(), &walks, worded.clone(), depth);
+        self.apply(u, app, site.lit.body, &BTreeMap::new(), &walks, worded.clone(), site.depth);
         // and the point on the plane
-        let mut on = relation(("coincident", at), Infix, vec![point, plane], Vec::new(), st.span);
+        let mut on = relation(("coincident", at), Infix, vec![point, plane], Vec::new(), u.st.span);
         on.word = Some(worded);
         let kind = StmtKind::Relation(on);
-        let made = Stmt { id: st.id, kind, span: st.span, chained: Chained::No };
-        self.out.push((made, path.to_vec(), sc.clone()));
+        let made = Stmt { id: u.st.id, kind, span: u.st.span, chained: Chained::No };
+        self.out.push((made, u.path.to_vec(), u.scope.clone()));
     }
 
-    /// The set a set is one side of, by absolute name, and whether it is the outside: `{ q | q
-    /// outside S }` (its body one bounded use of `S`, no number of its own) — `None` for any
-    /// other.
+    /// The set a set is one side of (`BodyShape::side_of`), by absolute name, and whether it is
+    /// the outside — `None` for any other.
     fn side_of_set(&self, abs: &str, alias: &BTreeMap<String, String>) -> Option<(String, bool)> {
         let site = self.sets.get(abs)?;
-        let [st] = site.lit.body.as_slice() else { return None };
-        let w = written_of(st)?;
-        if !may_use(w) || w.args.iter().any(|a| matches!(a, crate::syntax::OpArg::Dim(..))) {
-            return None;
-        }
-        let (cmp, _) = w.bound()?;
-        let bound = &site.lit.bound.text;
-        let other = match (&w.ops[0], &w.ops[1]) {
-            (q, s) | (s, q) if q.path.is_empty() && q.root.text == *bound => s,
-            _ => return None,
-        };
-        let (abs, rest) = lookup_raw(other, &site.scope, &self.names, alias, self.units)?;
-        let outside = cmp == crate::syntax::Cmp::Ge;
-        (rest.is_empty() && self.sets.contains_key(&abs)).then_some((abs, outside))
+        let (other, outside) = site.shape.side_of.as_ref()?;
+        let (abs, rest) = self.look(alias).raw(other, &site.scope)?;
+        (rest.is_empty() && self.sets.contains_key(&abs)).then_some((abs, *outside))
     }
 
     /// **A point's distance from a set, and a side of a set grown** (§6.21, F4): `p distance(d,
@@ -711,22 +814,15 @@ impl<'a> Walk<'a> {
     ///   `p` at `d` from it on the side named, and `p − foot` square to `S` there — the body
     ///   and the distance each differentiated along two directions solved for at the foot
     ///   (charts, as two sets touching are), which is `S` tangent there to the sphere about `p`.
-    #[allow(clippy::too_many_arguments)]
-    fn expand_reach(
-        &mut self,
-        st: &Stmt,
-        rel: &Relation,
-        path: &[PathStep],
-        sc: &Scope,
-        k: usize,
-        abs: &str,
-        alias: &BTreeMap<String, String>,
-    ) {
+    ///
+    /// This reads the reach off its set (`reach_across` where the set is one side of another)
+    /// and applies it by `reach_number` or `reach_foot`.
+    fn expand_reach(&mut self, su: &SetUse, alias: &BTreeMap<String, String>) {
         use crate::syntax::OpArg;
-        let Some(w) = rel.form.written() else { return };
-        let (word, at) = (w.word.text.as_str(), w.word.span);
+        let (k, abs) = su.set();
+        let (w, rel, at) = (su.w, su.u.rel, su.u.at);
+        let word = w.word.text.as_str();
         let set = self.set_written(&w.ops[k]);
-        let point = w.ops[1 - k].clone();
         // a side grown, as a set's body carries it (`Written::lower_side`): a bounded distance
         let mut lowered = w.clone();
         lowered.lower_side();
@@ -734,21 +830,8 @@ impl<'a> Walk<'a> {
             let m = format!("`{word}` grows `{set}` by one distance: `{word}(d) {set}`");
             return self.once(Code::E040, at, m);
         }
-        // a distance from one side of another set is from that set's surface (#209): from `{ q |
-        // q outside S }` the sides turned round, from `{ q | q inside S }` as they are
         if let Some((other, outside)) = self.side_of_set(abs, alias) {
-            let mut turned = lowered.clone();
-            if outside {
-                for a in turned.args.iter_mut() {
-                    if let OpArg::Named(n, crate::syntax::Arg::Word(x)) = a {
-                        if n.text == "side" {
-                            *x = if x == "outside" { "inside".into() } else { "outside".into() };
-                        }
-                    }
-                }
-            }
-            let rel = Relation { form: RelationForm::Written(turned), ..rel.clone() };
-            return self.expand_reach(st, &rel, path, sc, k, &other, alias);
+            return self.reach_across(su, lowered, other, outside, alias);
         }
         let Reach { cmp, text, grows, args } = match reach_of(&lowered, &set) {
             Ok(r) => r,
@@ -761,9 +844,9 @@ impl<'a> Walk<'a> {
         let mut grows = grows;
         let mut flipped = false;
         let mut surface: Option<SetLit> = None;
-        let lit = &self.sets[abs].lit;
-        if region(lit) {
-            match one_bound(lit) {
+        let site = &self.sets[abs];
+        if site.shape.region {
+            match one_bound(site) {
                 Some((bare, ge)) => {
                     grows ^= ge;
                     flipped = ge;
@@ -776,27 +859,24 @@ impl<'a> Walk<'a> {
                 }
             }
         }
-        let lit = surface.as_ref().unwrap_or(lit);
+        let lit = surface.as_ref().unwrap_or(&site.lit);
         let cmp = if flipped { cmp.and_then(|c| c.turned()) } else { cmp };
-        // the one relation of its point, holding the number its surface is at
-        let is_dim = |a: &OpArg| matches!(a, OpArg::Dim(..));
-        let relations: Vec<usize> = (0..lit.body.len())
-            .filter(|&i| matches!(lit.body[i].kind, StmtKind::Relation(_)))
-            .collect();
-        let [i] = relations[..] else {
+        // the one relation of its point, holding the number its surface is at (a surface's is the
+        // region's one)
+        let [i] = site.shape.relations[..] else {
             let m = format!("a distance is measured from a surface, and `{set}` says {} things of \
                              its point",
-                relations.len());
+                site.shape.relations.len());
             return self.once(Code::E040, at, m);
         };
-        if !written_of(&lit.body[i]).is_some_and(|w| w.args.iter().any(is_dim)) {
+        if !written_of(&lit.body[i]).is_some_and(|w| w.dim().is_some()) {
             let m = format!("`{set}` holds no number its surface is at, to measure from");
             return self.once(Code::E040, at, m);
         }
         // the distance, read where the use is — a length, which a bare number is taken as where
         // one is wanted (§3.3) — and signed toward the outside; a text the use's scope wrote over
         // an unknown reads it as declared
-        let d = match value_read(&text, &sc.vals, &self.unknowns, self.units) {
+        let d = match value_read(&text, &su.u.scope.vals, &self.unknowns, self.units) {
             Ok(d) if d.dim.fits(crate::units::Dim::LENGTH) => d.as_dim(crate::units::Dim::LENGTH),
             Ok(_) => {
                 let m = format!("`{text}` is a distance from `{set}`, a length");
@@ -814,126 +894,162 @@ impl<'a> Walk<'a> {
                 on.word.text = "coincident".to_string();
                 on.args.clear();
                 let rel = Relation { form: RelationForm::Written(on), ..rel.clone() };
-                return self.expand_use(st, &rel, path, sc, k, abs);
+                let on = self.set_use_of(su.u.st, &rel, su.u.path, su.u.scope, su.found.clone());
+                return self.expand_use(&on);
             }
             let m = format!("a point at no distance from `{set}` is on it: `coincident`");
             return self.once(Code::E040, at, m);
         }
-        let offset = if grows { d.clone() } else { d.times(-1.0) };
-        let site = &self.sets[abs];
-        let (mut lit, depth, closure) = (lit.clone(), site.depth, site.scope.clone());
-        let StmtKind::Relation(r) = &mut lit.body[i].kind else { unreachable!("a relation") };
-        let measured = r.form.written_mut().expect("a number is written");
-        let distance = measured.word.text == "distance";
-        let probe = lookup_raw(&point, sc, &self.names, alias, self.units)
+        let distance = written_of(&lit.body[i]).is_some_and(|m| m.word.text == "distance");
+        let probe = self.look(alias).raw(&w.ops[1 - k], su.u.scope)
             .is_some_and(|(p, rest)| rest.is_empty() && self.probes.contains(&p));
-        let worded = Worded {
-            word: word.to_string(),
-            ops: vec![point.clone()],
-            args,
-            sets: vec![(k, set.clone())],
-            through: Vec::new(),
-            span: at,
+        let reached = Reached {
+            lit: lit.clone(),
+            i,
+            cmp,
+            text,
+            d,
+            grows,
+            closure: site.scope.clone(),
+            depth: site.depth,
+            worded: Worded { args, ..su.worded.clone() },
+            set,
         };
-        let u = Use { st, rel, path, scope: sc, at };
-        let bound = lit.bound.text.clone();
         if distance || probe {
-            // the number moved, or the bound on the number offset
-            if !distance && cmp.is_none() {
-                let m = format!("a region solid's point is bounded: `inside({text}) {set}`");
-                return self.once(Code::E040, at, m);
-            }
-            let n = measured.args.iter().position(is_dim).expect("a number");
-            let mut grow = offset;
-            if distance {
-                let OpArg::Dim(t, _) = &mut measured.args[n] else { unreachable!("a number") };
-                // the number moved, worked out where the set states it: added as numbers, an
-                // unknown either reads keeps its dimension, which a text written over it would
-                // lose (a free name in a text is a plain number until its slot says otherwise)
-                let moved = value_aff(t, &closure.vals, self.units).ok()
-                    .filter(|a| a.dim.fits(crate::units::Dim::LENGTH))
-                    .and_then(|a| a.plus(&grow, 1.0).ok())
-                    .map(|sum| sum.as_dim(crate::units::Dim::LENGTH));
-                match moved {
-                    Some(sum) => {
-                        *t = "#grow".to_string();
-                        grow = sum;
-                    }
-                    None => *t = format!("({t}) + #grow"),
-                }
-            }
-            if let Some(cmp) = cmp {
-                let carried = (!distance).then(|| ("#grow".to_string(), at));
-                measured.args.insert(n, OpArg::Bound { cmp, span: at, hi: None, grow: carried });
-            }
-            let mut app = self.begin(&u, &closure).of_set();
-            app.give("#grow", grow);
-            self.bind_to_use(&app, &bound, point, &u);
-            let walks = vec![self.inherited_twin(&app, &u).into()];
-            return self.apply(&u, app, lit.body, &BTreeMap::new(), &walks, worded, depth);
-        }
-        // a foot on the set: refused where it cannot be one — a choice of root, a claim, a body
-        // walked for its derivative, or one making geometry only the point on it would place
-        let refusal = if cmp.is_some() {
-            Some(format!("a bound on a point's distance from `{set}` chooses among roots its foot \
-                          does not say: bound a region solid's point, or state the distance"))
-        } else if rel.claim {
-            Some(format!("a point's distance from `{set}` is found by its foot on it, which a \
-                          claim cannot add"))
-        } else if rel.along.is_some() || sc.twin().is_some() {
-            Some(format!("a point's distance from `{set}` has a foot on it, which a derivative \
-                          cannot move"))
+            self.reach_number(su, reached, distance)
         } else {
-            makes_points(&lit).map(|what| format!(
-                "a point's distance from `{set}` reads its body at the foot, where it makes \
-                 `{what}` of its own"
-            ))
-        };
-        if let Some(m) = refusal {
+            self.reach_foot(su, reached)
+        }
+    }
+
+    /// A distance from one side of another set, `{ q | q outside S }` or `{ q | q inside S }`
+    /// (#209): from `S`'s surface, the sides turned round from its outside and as they are from
+    /// its inside — `lowered` the use, its side said as a bound.
+    fn reach_across(
+        &mut self,
+        su: &SetUse,
+        mut lowered: Written,
+        other: String,
+        outside: bool,
+        alias: &BTreeMap<String, String>,
+    ) {
+        if outside {
+            lowered.turn_side();
+        }
+        let rel = Relation { form: RelationForm::Written(lowered), ..su.u.rel.clone() };
+        let found = vec![(su.set().0, other)];
+        let across = self.set_use_of(su.u.st, &rel, su.u.path, su.u.scope, found);
+        self.expand_reach(&across, alias)
+    }
+
+    /// A reach whose set's number is a **distance**, moved by the offset, or whose point is a
+    /// region solid's **probe**, the bound on the set's number carrying it (`OpArg::Bound::grow`).
+    fn reach_number(&mut self, su: &SetUse, reached: Reached, distance: bool) {
+        use crate::syntax::OpArg;
+        let Reached { mut lit, i, cmp, text, d, grows, closure, depth, worded, set } = reached;
+        let at = su.u.at;
+        // the number moved, or the bound on the number offset
+        if !distance && cmp.is_none() {
+            let m = format!("a region solid's point is bounded: `inside({text}) {set}`");
             return self.once(Code::E040, at, m);
         }
-        let mut app = self.begin(&u, &closure).of_set();
-        app.give("#reach", d);
-        self.bind_to_use(&app, "#p", point, &u);
-        self.bind_to_use(&app, "#set", w.ops[k].clone(), &u);
+        let StmtKind::Relation(r) = &mut lit.body[i].kind else { unreachable!("a relation") };
+        let measured = r.form.written_mut().expect("a number is written");
+        let n = measured.dim_index().expect("a number");
+        let mut grow = if grows { d } else { d.times(-1.0) };
+        if distance {
+            let OpArg::Dim(t, _) = &mut measured.args[n] else { unreachable!("a number") };
+            // the number moved, worked out where the set states it: added as numbers, an
+            // unknown either reads keeps its dimension, which a text written over it would
+            // lose (a free name in a text is a plain number until its slot says otherwise)
+            let moved = value_aff(t, &closure.vals, self.units).ok()
+                .filter(|a| a.dim.fits(crate::units::Dim::LENGTH))
+                .and_then(|a| a.plus(&grow, 1.0).ok())
+                .map(|sum| sum.as_dim(crate::units::Dim::LENGTH));
+            match moved {
+                Some(sum) => {
+                    *t = keys::GROW.to_string();
+                    grow = sum;
+                }
+                None => *t = format!("({t}) + {}", keys::GROW),
+            }
+        }
+        if let Some(cmp) = cmp {
+            let carried = (!distance).then(|| (keys::GROW.to_string(), at));
+            measured.args.insert(n, OpArg::Bound { cmp, span: at, hi: None, grow: carried });
+        }
+        let u = &su.u;
+        let mut app = self.begin(u, &closure).of_set();
+        app.give(keys::GROW, grow);
+        let bound = lit.bound.text.clone();
+        self.bind_to_use(&app, &bound, su.w.ops[1 - su.set().0].clone(), u);
+        let walks = vec![self.inherited_twin(&app, u).into()];
+        self.apply(u, app, lit.body, &BTreeMap::new(), &walks, worded, depth);
+    }
+
+    /// A reach from a drawn point: a **foot** on the set, at the body's point, the point at the
+    /// distance from it on the side named and square to the set there.
+    fn reach_foot(&mut self, su: &SetUse, reached: Reached) {
+        use crate::syntax::OpArg;
+        let Reached { mut lit, cmp, d, grows, closure, depth, worded, set, .. } = reached;
+        let (u, at) = (&su.u, su.u.at);
+        // a foot on the set: refused where it cannot be one — a choice of root, a claim, a body
+        // walked for its derivative, or one making geometry only the point on it would place
+        if cmp.is_some() {
+            let m = format!("a bound on a point's distance from `{set}` chooses among roots its \
+                             foot does not say: bound a region solid's point, or state the \
+                             distance");
+            return self.once(Code::E040, at, m);
+        }
+        if self.refused(su, Placed::Foot(&set)) {
+            return;
+        }
+        let k = su.set().0;
+        let mut app = self.begin(u, &closure).of_set();
+        app.give(keys::REACH, d);
+        self.bind_to_use(&app, keys::POINT, su.w.ops[1 - k].clone(), u);
+        self.bind_to_use(&app, keys::SET, su.w.ops[k].clone(), u);
+        let bound = lit.bound.text.clone();
         // the foot, at the body's point, where the point is to start
-        self.hidden_point(&app, st, &bound, crate::syntax::AtRef::at(local("#p", at)), at, path);
+        let seed = crate::syntax::AtRef::at(local(keys::POINT, at));
+        self.hidden_point(&app, u.st, &bound, seed, at, u.path);
         // the point at the distance from it, on the side named — and the foot, which stands on
         // the surface, seeded on its other side, so the two start apart the way they end; each
         // a statement of the body of its own, so the uses among them are applied apart
         // (`Scope::written`), stamped as the use's once walked
-        let dim = OpArg::Dim("#reach".to_string(), at);
-        let ops = vec![local("#p", at), local(&bound, at)];
+        let span = u.st.span;
+        let dim = OpArg::Dim(keys::REACH.to_string(), at);
+        let ops = vec![local(keys::POINT, at), local(&bound, at)];
         let (side, other) = if grows { ("outside", "inside") } else { ("inside", "outside") };
-        let set = local("#set", at);
+        let set = local(keys::SET, at);
         let made = [
-            relation(("distance", at), Infix, ops, vec![dim], st.span),
-            relation((side, at), Infix, vec![local("#p", at), set.clone()], Vec::new(), st.span),
-            relation((other, at), Infix, vec![local(&bound, at), set], Vec::new(), st.span),
+            relation(("distance", at), Infix, ops, vec![dim], span),
+            relation((side, at), Infix, vec![local(keys::POINT, at), set.clone()], vec![], span),
+            relation((other, at), Infix, vec![local(&bound, at), set], Vec::new(), span),
         ];
         for (n, r) in made.into_iter().enumerate() {
             let id = crate::syntax::StmtId(FOOT_STATEMENTS - n as u32);
             let kind = StmtKind::Relation(r);
-            lit.body.push(Stmt { id, kind, span: st.span, chained: Chained::No });
+            lit.body.push(Stmt { id, kind, span, chained: Chained::No });
         }
         // the body at the foot, then it and the distance along two directions there
-        let along = |k: u8| charted(local(&bound, at), k, format!("{}t{k}.", app.prefix()));
+        let along = |k: u8| charted(local(&bound, at), k, keys::foot_chart(app.prefix(), k));
         let walks = [Pass::Itself, along(0), along(1)];
-        self.apply(&u, app, lit.body, &BTreeMap::new(), &walks, worded, depth);
+        self.apply(u, app, lit.body, &BTreeMap::new(), &walks, worded, depth);
     }
 
     /// A set as the statement wrote it: its name, or — written in place — its text, on one line.
     fn set_written(&self, r: &Ref) -> String {
         match self.prog.span_text(r.span).filter(|_| r.root.text.starts_with('#')) {
             Some(text) => text.split_whitespace().collect::<Vec<_>>().join(" "),
-            None => written(r),
+            None => ref_text(r),
         }
     }
 
     /// `l tangent S`'s contact: a point standing in space, on the line, seeded at its middle —
     /// declared at the bound name under the use's prefix, so the body reads it as its point.
     fn contact(&mut self, app: &Application, st: &Stmt, bound: &str, at: Span, path: &[PathStep]) {
-        let line = local("#line", at);
+        let line = local(keys::LINE, at);
         let end = |e: &str| {
             let mut r = line.clone();
             r.path.push(Seg::Field(Name { text: e.to_string(), span: at }));
@@ -965,7 +1081,7 @@ impl<'a> Walk<'a> {
     ) {
         let abs = format!("{}{bound}", app.prefix());
         self.names.insert(abs.clone());
-        let key = Name { text: abs, span: Span::new(at.lo as usize, at.lo as usize) };
+        let key = Name { text: abs, span: Span::at(at.lo as usize) };
         let decl = Decl::point(DeclName::Key(key), [0.0; 2], Some(seed));
         let kind = StmtKind::Decl(decl);
         let made = Stmt { id: st.id, kind, span: st.span, chained: Chained::No };
@@ -1030,11 +1146,21 @@ fn reaches(w: &crate::syntax::Written) -> bool {
     w.word.text == "distance" && matches!(w.sel("side").as_deref(), Some("outside" | "inside"))
 }
 
-/// Whether a set is a **region** (§6.21, §9.6): its body bounds a number, or says its point is
-/// inside or outside something — so it has no surface to touch.
-fn region(lit: &SetLit) -> bool {
-    lit.body.iter().filter_map(written_of).any(|w| w.states_bound())
-        || lit.body.iter().any(|st| matches!(st.kind, StmtKind::Measured(_)))
+/// The set a set is one side of, as its body writes it, and whether it is the outside: `{ q | q
+/// outside S }` (its body one bounded use of `S`, no number of its own) — `None` for any other.
+fn side_of(lit: &SetLit) -> Option<(Ref, bool)> {
+    let [st] = lit.body.as_slice() else { return None };
+    let w = written_of(st)?;
+    if !may_use(w) || w.dim().is_some() {
+        return None;
+    }
+    let (cmp, _) = w.bound()?;
+    let bound = &lit.bound.text;
+    let other = match (&w.ops[0], &w.ops[1]) {
+        (q, s) | (s, q) if q.path.is_empty() && q.root.text == *bound => s,
+        _ => return None,
+    };
+    Some((other.clone(), cmp == Cmp::Ge))
 }
 
 /// **A family's body, split by its point** (§6.21, F3): what reads the bound point — through
@@ -1113,31 +1239,24 @@ fn written_of(st: &Stmt) -> Option<&crate::syntax::Written> {
 }
 
 /// A set's body as `inside` or `outside` reads it (§6.21, §9.6), rewritten in place: its **one
-/// dimension** a bound running `side` (`inside` at most its number, `outside` at least), a region's
-/// own bound kept or turned round, and every other statement as written, so a disc is its circle's
-/// plane and a bound.  A body stating no number of its own is read as written by `inside`;
-/// `outside` turns round its one side of another set (`{ q | q outside toe }`, `{ q | q distance(<=
-/// 1mm, side: outside) S }`), and of several is no complement it can say: that is a union, a choice
-/// of root.  Every side is a bound here (`lowered`), so turning one is turning its `Cmp`.  `at` is
-/// the use's word, where the bound is written.
+/// dimension** a bound running `side` (`inside` at most its number, `outside` at least), a
+/// region's own bound kept or turned round, and every other statement as written, so a disc is
+/// its circle's plane and a bound.  A body stating no number of its own is read as written by
+/// `inside`; `outside` turns round its one side of another set (`{ q | q outside toe }`, `{ q |
+/// q distance(<= 1mm, side: outside) S }`), and of several is no complement it can say: that is
+/// a union, a choice of root.  Every side is a bound here (`lowered`), so turning one is turning
+/// its `Cmp`.  `at` is the use's word, where the bound is written; `shape` is the body's, as its
+/// site read it.
 fn region_body(
     body: &mut [Stmt],
-    side: crate::syntax::Cmp,
+    shape: &BodyShape,
+    side: Cmp,
     word: &str,
     at: Span,
     name: &str,
 ) -> Result<(), String> {
-    use crate::syntax::{Cmp, OpArg};
-    let is_dim = |a: &OpArg| matches!(a, OpArg::Dim(..));
-    // a side of another set, grown or not (a bounded distance from it), is a use of it, not a
-    // number of this one's; a distance from one is (`std.Offset`'s body)
-    let side_of = |w: &crate::syntax::Written| reaches(w) && w.bound().is_some();
-    // a bound on measurements is a number of this one's, a bound already (#183 F3)
     let measured = |st: &Stmt| matches!(st.kind, StmtKind::Measured(_));
-    let dims: Vec<usize> = (0..body.len())
-        .filter(|&i| measured(&body[i])
-            || written_of(&body[i]).is_some_and(|w| w.args.iter().any(is_dim) && !side_of(w)))
-        .collect();
+    let dims = &shape.numbers;
     let either = || format!(
         "outside `{name}`'s interval is either side of it: a choice of root, not a region \
          `outside` can say"
@@ -1151,9 +1270,7 @@ fn region_body(
     // outside toe }` is inside `toe` (#183, a region's own side as `std.Chamfered` takes it),
     // outside `{ q | q distance(<= 1mm, side: outside) S }` beyond `S` grown (#192)
     if dims.is_empty() && side == Cmp::Ge {
-        let uses: Vec<usize> = (0..body.len()).filter(|&i| written_of(&body[i]).is_some_and(may_use)).collect();
-        let others = body.iter().filter(|st| matches!(st.kind, StmtKind::Relation(_) | StmtKind::Measured(_))).count();
-        if let ([i], 1) = (uses.as_slice(), others) {
+        if let ([i], 1) = (shape.uses.as_slice(), shape.relations.len()) {
             if let StmtKind::Relation(r) = &mut body[*i].kind {
                 if let Some(w) = r.form.written_mut().filter(|w| w.bound().is_some()) {
                     return w.turn_bound().ok_or_else(either);
@@ -1162,7 +1279,7 @@ fn region_body(
         }
     }
     let [i] = dims[..] else {
-        let uses = body.iter().filter_map(written_of).any(may_use);
+        let uses = !shape.uses.is_empty();
         return match (dims.len(), uses, side) {
             (0, true, Cmp::Le) => Ok(()),
             (0, true, _) => Err(format!(
@@ -1186,8 +1303,8 @@ fn region_body(
     };
     let w = r.form.written_mut().expect("a dimension is written");
     if w.bound().is_none() {
-        let k = w.args.iter().position(is_dim).expect("a dimension's number");
-        w.args.insert(k, OpArg::Bound { cmp: side, span: at, hi: None, grow: None });
+        let k = w.dim_index().expect("a dimension's number");
+        w.args.insert(k, crate::syntax::OpArg::Bound { cmp: side, span: at, hi: None, grow: None });
         return Ok(());
     }
     // a region already: `inside` keeps its bound, `outside` turns it round
@@ -1199,17 +1316,25 @@ fn region_body(
 
 /// A region of one bounded relation as its surface (#183): the body with the bound made the
 /// equality (`Written::equality`), and whether the bound ran `>=` (its outside the smaller side).
-fn one_bound(lit: &SetLit) -> Option<(SetLit, bool)> {
-    let relations: Vec<usize> = (0..lit.body.len())
-        .filter(|&i| matches!(lit.body[i].kind, StmtKind::Relation(_) | StmtKind::Measured(_)))
-        .collect();
-    let [i] = relations[..] else { return None };
-    let mut bare = lit.clone();
+fn one_bound(site: &Site) -> Option<(SetLit, bool)> {
+    let [i] = site.shape.relations[..] else { return None };
+    let mut bare = site.lit.clone();
     let StmtKind::Relation(r) = &mut bare.body[i].kind else { return None };
     let w = r.form.written_mut()?;
     let cmp = w.equality()?;
-    w.args.iter().any(|a| matches!(a, crate::syntax::OpArg::Dim(..)))
-        .then_some((bare, cmp == crate::syntax::Cmp::Ge))
+    w.dim().is_some().then_some((bare, cmp == Cmp::Ge))
+}
+
+/// **A probe** under `key`: a point standing in space, held at a place no drawing chooses
+/// (irrational, off every axis and plane through the origin), so a cone's line from an apex there
+/// to it has a length; where it stands decides nothing else — its bounds are terms, never rows.
+/// Not `scatter`'s unseeded place: an empty hint span would be written back into the statement
+/// that made it.
+pub(super) fn probe(key: String, at: Span) -> Decl {
+    let mut point = Decl::point(DeclName::Key(Name { text: key, span: at }), [0.0; 2], None);
+    point.seed = vec![0.7548776662, 0.5698402910, 0.4301597090];
+    point.seed_text = vec![None; 3];
+    point
 }
 
 /// The statement ids a distance's foot gives what it adds to the set's body (`expand_reach`), so

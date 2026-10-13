@@ -55,12 +55,12 @@ fn solid_claim(
         return;
     }
     let mut say = |code: Code, span: Span, m: String| {
-        diags.push(Diag {
+        diags.push(Diag::within(
             code,
             span,
-            stmt: Some(st.id),
-            message: m,
-        });
+            st.id,
+            m,
+        ));
     };
     // **it is a claim whether or not it says so.**  These words cannot act — there is no row for
     // them — so a document that writes one without `claim` is saying the same thing, and refusing
@@ -177,12 +177,12 @@ fn sweep_of_claim(
     diags: &mut Vec<Diag>,
 ) -> Option<crate::model::Sweep> {
     let mut say = |code: Code, span: Span, m: String| {
-        diags.push(Diag {
+        diags.push(Diag::within(
             code,
             span,
-            stmt: Some(st.id),
-            message: m,
-        });
+            st.id,
+            m,
+        ));
     };
     let name = crate::syntax::ref_text(&c.formal);
     // **a named motion's roll**: the claim read at every pose of the solids placed under it

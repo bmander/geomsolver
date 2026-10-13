@@ -198,13 +198,17 @@ fn read(sk: &Sketch,solid: usize,axis_tolerance: f64) -> Result<Snapshot,String>
             let get = |i: u32| done[&(i as usize)].clone();
             let error = |e| format!("material field: {e:?}");
             Ok(match &s.def {
-                // a region whose terms share no axis, read point by point (§6.21)
-                SolidDef::Region {..} if let Some(f) = crate::solid::region::in_general_position(sk,i) => {
-                    let f = f?;
-                    if f.is_empty() { empty.insert(i); }
-                    Snapshot::Static(f.into())
-                }
-                SolidDef::Revolve {..} | SolidDef::Region {..} =>
+                // a region whose terms share no axis, read point by point (§6.21), whatever exact
+                // construction builds it (`region::Route`); else its meridian turned
+                SolidDef::Region {..} => match crate::solid::region::form(sk,i)? {
+                    crate::solid::region::Form::General(f) => {
+                        if f.is_empty() { empty.insert(i); }
+                        Snapshot::Static(f.into())
+                    }
+                    crate::solid::region::Form::Meridian(_) =>
+                        Snapshot::Static(RevolvedRegion::read(sk,i,axis_tolerance)?.field()?.into()),
+                },
+                SolidDef::Revolve {..} =>
                     Snapshot::Static(RevolvedRegion::read(sk,i,axis_tolerance)?.field()?.into()),
                 SolidDef::Prism {face,from,to,draft} => Snapshot::Static(extruded(sk,*face as usize,
                     [from.value,to.value],draft.as_ref().map_or(0.,|d| d.value))?.into()),

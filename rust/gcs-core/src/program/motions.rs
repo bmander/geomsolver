@@ -142,7 +142,7 @@ pub(super) fn motions(sk: &mut Sketch, res: &mut Resolver, map: &mut SourceMap,
     for name in names {
         if let Err(message) = b.build(&name) {
             let st = b.decls[&name].0;
-            diags.push(Diag {code:Code::E080,span:st.span,stmt:Some(st.id),message});
+            diags.push(Diag::on(Code::E080, st, message));
             b.res.of.remove(&name);
         }
     }

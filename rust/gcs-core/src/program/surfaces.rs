@@ -62,7 +62,7 @@ pub(super) fn surfaces(sk: &mut Sketch, res: &mut Resolver, map: &mut SourceMap,
                 map.record(st,Made::Ent(e));
             }
             Err(message) => {
-                diags.push(Diag {code:Code::E080,span:st.span,stmt:Some(st.id),message});
+                diags.push(Diag::on(Code::E080, st, message));
                 res.of.remove(name);
             }
         }

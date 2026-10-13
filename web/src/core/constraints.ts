@@ -478,6 +478,14 @@ export function wordsFor(c: Constraint, slot: string): string[] {
   return (i < 0 ? null : words?.[i]) ?? [];
 }
 
+/** The constraint type a word (`coincident`, `parallel`, …) means between two things selected,
+ *  by their kind ids, in no order — the core's own reading of the word (`word_between`), or null
+ *  where it relates them neither way. */
+export function wordBetween(word: string, a: number, b: number): string | null {
+  const name = withStr(word, (p, n) => takeStr(core().gcs_word_between(p, n, a, b)));
+  return name || null;
+}
+
 /** A constraint type by name — the generic path the toolbar applier and I/O use. */
 export function type(name: string): ConstraintCtor {
   const t = initTypes()[name];

@@ -14,13 +14,13 @@
 use crate::fmath::Det;
 use super::geom::{BSpline,Curve,Frame,Surface,V};
 use super::nurbs::Net;
-use super::topo::{Brep,Coedge,EdgeCurve,Face,Pcurve};
+use super::topo::{reverse_loop,Brep,Coedge,EdgeCurve,Face,Pcurve};
+use super::vec3;
 use crate::json::Json;
-use crate::space::{cross,distance,dot};
+use crate::space::{cross,dot};
 use std::sync::Arc;
 
-fn field<'a>(j: &'a Json,k: &str) -> Result<&'a Json,String> { j.get(k).ok_or(format!("brep json: no `{k}`")) }
-fn vec3(j: &Json) -> V { let a = j.arr(); [a[0].as_f64(),a[1].as_f64(),a[2].as_f64()] }
+fn field<'a>(j: &'a Json,k: &str) -> Result<&'a Json,String> { super::field(j,k,"brep json") }
 fn reals(j: &Json) -> Vec<f64> { j.arr().iter().map(Json::as_f64).collect() }
 
 /// A placement's axes as written, and whether they are right-handed.
@@ -120,14 +120,14 @@ pub fn read(text: &str) -> Result<Brep,String> {
             let mut uses = chained(found,&b,&s);
             // a reversed face's loops run the other way round from its forward self's, as dumped
             if field(f,"reversed")?.as_bool() {
-                uses = uses.into_iter().rev().map(|c| Coedge {reversed:!c.reversed,..c}).collect();
+                uses = reverse_loop(uses);
             }
             // the outer loop first
             if field(l,"outer")?.as_bool() { loops.insert(0,uses) } else { loops.push(uses) }
         }
         b.faces.push(Face {surface:s,reversed,loops,name:String::new()});
     }
-    measure(&mut b);
+    b.measure_tolerances();
     Ok(b)
 }
 
@@ -151,30 +151,4 @@ fn chained(mut left: Vec<Coedge>,b: &Brep,s: &Surface) -> Vec<Coedge> {
         walk.push(left.remove(k));
     }
     walk
-}
-
-/// Each edge's tolerance: the largest gap between its curve and each use's pcurve image (sampled
-/// along it, its knots and ends included), and between its curve's ends and its vertices.
-pub fn measure(b: &mut Brep) {
-    let mut gaps = vec![0_f64;b.edges.len()];
-    for f in &b.faces {
-        for c in f.loops.iter().flatten() {
-            let e = &b.edges[c.edge as usize];
-            let gap = &mut gaps[c.edge as usize];
-            let mut ts: Vec<f64> = (0..=32).map(|k| e.t[0]+(e.t[1]-e.t[0])*k as f64/32.).collect();
-            if let EdgeCurve::Curve(curve) = &e.curve { ts.extend(curve.breaks(e.t)); }
-            if let Pcurve::Curve(pc) = &c.pcurve { ts.extend(pc.breaks(e.t)); }
-            for t in ts {
-                let d = distance(f.surface.point(c.pcurve.at(t,e,&f.surface,&b.vertices)),e.point(t,&b.vertices));
-                *gap = gap.max(d);
-            }
-        }
-    }
-    for (e,gap) in b.edges.iter_mut().zip(gaps) {
-        let ends = match &e.curve {
-            EdgeCurve::Curve(c) => (0..2).map(|k| distance(c.point(e.t[k]),b.vertices[e.v[k] as usize].p)).fold(0.,f64::max),
-            EdgeCurve::Degenerate => 0.,
-        };
-        e.tol = gap.max(ends);
-    }
 }

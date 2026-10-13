@@ -18,7 +18,7 @@ pub(super) fn state(
     map: &mut SourceMap,
     diags: &mut Vec<Diag>,
 ) {
-    let err = |code: Code, span, message: String| Diag { code, span, stmt: Some(st.id), message };
+    let err = |code: Code, span, message: String| Diag::within(code, span, st.id, message);
     let Some(e) = res.entity(sk, &m.curve) else {
         diags.push(err(Code::E101, m.curve.span, format!("`{}` names nothing", m.curve.root.text)));
         return;
@@ -73,12 +73,12 @@ pub(super) fn state(
 pub(super) fn settle(sk: &mut Sketch, map: &SourceMap, diags: &mut Vec<Diag>) {
     for (id, why) in sk.settle_variational() {
         let site = map.site_of_constraint(id);
-        diags.push(Diag {
-            code: Code::E040,
-            span: site.map(|s| s.span).unwrap_or_default(),
-            stmt: site.map(|s| s.stmt),
-            message: why,
-        });
+        diags.push(Diag::new(
+            Code::E040,
+            site.map(|s| s.span).unwrap_or_default(),
+            site.map(|s| s.stmt),
+            why,
+        ));
     }
     // a free curve whose length nothing holds and settles nowhere: said where its energy is
     for i in sk.seed_extremals() {
@@ -86,15 +86,15 @@ pub(super) fn settle(sk: &mut Sketch, map: &SourceMap, diags: &mut Vec<Diag>) {
         let Some(site) = map.site_of_constraint(lead) else { continue };
         let e = crate::model::EntRef::new(EntKind::Curve, i);
         let name = map.name_of(e).cloned().unwrap_or_else(|| "the curve".into());
-        diags.push(Diag {
-            code: Code::W114,
-            span: site.span,
-            stmt: Some(site.stmt),
-            message: format!(
+        diags.push(Diag::within(
+            Code::W114,
+            site.span,
+            site.stmt,
+            format!(
                 "nothing holds `{name}`'s length and no length makes its energy stationary: state its \
                  length, or something that fixes it (a point it passes, a line it touches)"
             ),
-        });
+        ));
     }
     // a free curve whose shape nothing states
     for i in 0..sk.curves.len() {
@@ -104,14 +104,14 @@ pub(super) fn settle(sk: &mut Sketch, map: &SourceMap, diags: &mut Vec<Diag>) {
         let e = crate::model::EntRef::new(EntKind::Curve, i);
         let Some(site) = map.site_of(e) else { continue };
         let name = map.name_of(e).cloned().unwrap_or_else(|| "the curve".into());
-        diags.push(Diag {
-            code: Code::E040,
-            span: site.span,
-            stmt: Some(site.stmt),
-            message: format!(
+        diags.push(Diag::within(
+            Code::E040,
+            site.span,
+            site.stmt,
+            format!(
                 "`{name}` is a free curve, and no energy states its shape: say what it is, \
                  `{name} minimizes integral(p.y over p)`"
             ),
-        });
+        ));
     }
 }

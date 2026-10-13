@@ -113,12 +113,12 @@ fn recipe_with(sk: &Sketch,root: usize,static_only: bool) -> Result<StaticRecipe
     let mut users: std::collections::BTreeMap<u32,usize> = Default::default();
     for s in &sk.solids { for o in s.operands() { *users.entry(o).or_default() += 1; } }
     let mut groups: std::collections::BTreeMap<usize,Vec<u32>> = Default::default();
-    // each region's lowering (#194), asked once a recipe
-    let lowerings = std::cell::RefCell::new(std::collections::BTreeMap::new());
-    let lowered = |o: usize| lowerings.borrow_mut().entry(o).or_insert_with(|| super::lowering::lowered(sk,o)).clone();
-    let pieces_of = |o: u32| match lowered(o as usize) { Some(Ok(p)) => p,_ => Default::default() };
+    // each region's route (`region::route`, #194), asked once a recipe; none for any other solid
+    let routes = std::cell::RefCell::new(std::collections::BTreeMap::new());
+    let route = |o: usize| routes.borrow_mut().entry(o).or_insert_with(|| super::region::route(sk,o).ok()).clone();
+    let pieces_of = |o: u32| route(o as usize).as_ref().and_then(|r| r.pieces().cloned()).unwrap_or_default();
     // a region lowered to nothing is a term of no body: a round over faces that never meet
-    let nowhere = |o: &u32| matches!(lowered(*o as usize),Some(Ok(p)) if p.is_empty());
+    let nowhere = |o: &u32| route(*o as usize).as_ref().and_then(|r| r.pieces().map(|p| p.is_empty())).unwrap_or(false);
     // each body's sets, read on its first visit and written on its second
     let mut bodies: std::collections::BTreeMap<usize,([Vec<u32>;4],Vec<SweptCut>)> = Default::default();
     while let Some((i,ready)) = pending.pop() {
@@ -196,45 +196,36 @@ fn recipe_with(sk: &Sketch,root: usize,static_only: bool) -> Result<StaticRecipe
                 }
                 node
             }
-            // a region over a body's faces that an entry of the lowering table builds (#194): its
-            // pieces, with those of the regions it stands for in its body's set
-            SolidDef::Region {..} if let Some(l) = lowered(i) => {
-                if l.map_err(|e| format!("`{}`: {e}",sk.solid_name(i)))?.is_empty() {
-                    return Err(format!("`{}` holds nowhere",sk.solid_name(i)))
+            // a region: built as its route says (`region::route`)
+            SolidDef::Region {..} => match route(i).map_or_else(|| super::region::route(sk,i),Ok)? {
+                // over a body's faces, an entry of the lowering table (#194): its pieces, with those
+                // of the regions it stands for in its body's set
+                super::region::Route::Lowered(l) => {
+                    if l.map_err(|e| format!("`{}`: {e}",sk.solid_name(i)))?.is_empty() {
+                        return Err(format!("`{}` holds nowhere",sk.solid_name(i)))
+                    }
+                    let members = groups.get(&i).cloned().unwrap_or_else(|| vec![i as u32]);
+                    let pieces: Vec<_> = members.into_iter().map(pieces_of).collect();
+                    let assembly = super::lowering::assemble(pieces.iter().flat_map(|p| p.iter()));
+                    let mut node = assembly.node(scale)?;
+                    // a ball rolled along a traced run is rolled against the body as its terms but the
+                    // late ones make it, all built before this (they come first in its dependencies)
+                    if !assembly.rolled.is_empty() {
+                        let late = |sets: &[Vec<u32>;4]| sets[2..].iter().any(|s| s.contains(&(i as u32)));
+                        let Some((&b,(sets,_))) = bodies.iter().find(|(_,(sets,_))| late(sets)) else {
+                            return Err(format!("`{}`: a rolled round is built against the body it rounds",sk.solid_name(i)));
+                        };
+                        let SolidDef::Body {stock,bound,..} = &sk.solids[b].def else { unreachable!("a body's sets") };
+                        node.set("stratum",body_terms(*stock,&sets[0],&sets[1],bound));
+                    }
+                    node
                 }
-                let members = groups.get(&i).cloned().unwrap_or_else(|| vec![i as u32]);
-                let pieces: Vec<_> = members.into_iter().map(pieces_of).collect();
-                let assembly = super::lowering::assemble(pieces.iter().flat_map(|p| p.iter()));
-                let mut node = assembly.node(scale)?;
-                // a ball rolled along a traced run is rolled against the body as its terms but the
-                // late ones make it, all built before this (they come first in its dependencies)
-                if !assembly.rolled.is_empty() {
-                    let late = |sets: &[Vec<u32>;4]| sets[2..].iter().any(|s| s.contains(&(i as u32)));
-                    let Some((&b,(sets,_))) = bodies.iter().find(|(_,(sets,_))| late(sets)) else {
-                        return Err(format!("`{}`: a rolled round is built against the body it rounds",sk.solid_name(i)));
-                    };
-                    let SolidDef::Body {stock,bound,..} = &sk.solids[b].def else { unreachable!("a body's sets") };
-                    node.set("stratum",body_terms(*stock,&sets[0],&sets[1],bound));
-                }
-                node
-            }
-            // a region: its meridian turned once about its axis (§6.21)
-            SolidDef::Region {terms,..} => {
                 // in general position: the common of its terms' primitives, where they are ones that
                 // construction makes (#238)
-                if super::region::in_general(sk,i) {
-                    let Some(b) = super::bounded::built(sk,i) else {
-                        let what = if terms.iter().any(|t| super::faces::reads_faces(&t.shape)) {
-                            "a region over a body's faces that no entry of the lowering table builds"
-                        } else {
-                            "a region in general position over a sum of measurements, an offset or a wide cone"
-                        };
-                        return Err(format!("`{}`: {what} is read by the field; no exact construction is made of it yet",
-                            sk.solid_name(i)));
-                    };
-                    b.map_err(|e| format!("`{}`: {e}",sk.solid_name(i)))?.node(scale)?
-                } else {
-                    let m = super::region::meridian(sk,i)?;
+                super::region::Route::Bounded(b) => b.map_err(|e| format!("`{}`: {e}",sk.solid_name(i)))?.node(scale)?,
+                super::region::Route::Field(why) => return Err(format!("`{}`: {why}",sk.solid_name(i))),
+                // on one axis: its meridian turned once about it (§6.21)
+                super::region::Route::Meridian(m) => {
                     let name = |t: u32| m.name(t);
                     let p = crate::brep::recipe::region_profile(&m.region,m.origin,m.seam,m.axis,&name);
                     object([
@@ -243,7 +234,7 @@ fn recipe_with(sk: &Sketch,root: usize,static_only: bool) -> Result<StaticRecipe
                         ("angle",std::f64::consts::TAU.into()),
                     ])
                 }
-            }
+            },
             SolidDef::Prism {face,from,to,draft} => {
                 let mut node = object([
                     ("kind","prism".into()),("profile",profile(sk,*face as usize,scale)?),

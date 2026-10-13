@@ -95,6 +95,31 @@ pub fn of_triangles_parallel(vertices: &[V],triangles: &[[u32;3]],field: &super:
     Ok(report)
 }
 
+/// **The gate** an exact construction of a solid stands by (the lowering table's, a region built
+/// as the common of its terms, a ball's tube): it stands only where the solid's own `field`
+/// agrees with its boundary `b` — every probe a little inside it material by the field, every one
+/// a little outside not, sampled by area — probed a five-hundredth of `b`'s size either side, so
+/// meshed no coarser than a twentieth of that.  `back`, where `b` is built in millimetres (`mm` of
+/// them a model unit), brings the mesh's points into the field's units; `what` says what
+/// disagrees, in the refusal.
+pub fn gate(field: &super::MaterialField,b: &crate::brep::topo::Brep,back: Option<(&dyn Fn(V) -> V,f64)>,
+    what: &str) -> Result<(),String> {
+    let size = b.size().max(f64::MIN_POSITIVE);
+    let mut offset = 2e-3*size;
+    let mut m = crate::brep::mesh::mesh(b,offset/20.0,crate::brep::export::ANGULAR)?;
+    if let Some((back,mm)) = back {
+        for p in &mut m.pts { *p = back(*p); }
+        offset /= mm;
+    }
+    let options = Options {offset,confirm:offset/4.0,value_tolerance:offset/5.0,triangles:400,..Default::default()};
+    let report = of_triangles_parallel(&m.pts,&m.tris,field,1,&options)?;
+    match report.disagreements.first() {
+        None => Ok(()),
+        Some(d) => Err(format!("{what} at [{:.6}, {:.6}, {:.6}] ({} of {} probes)",d.point[0],d.point[1],d.point[2],
+            report.disagreements.len(),report.probes)),
+    }
+}
+
 /// An indexed body's turn: the line it turns about (a point and a unit direction) and how many
 /// turns by a pitch make the whole, as the body's construction read it off its placements.
 #[derive(Clone,Copy,Debug)]

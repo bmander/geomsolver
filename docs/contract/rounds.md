@@ -24,12 +24,12 @@ A set's `S.surface` is the set with each bound made an equality (`Written::equal
 `sets::surface_of`; a grown side's is the offset surface); a distance from a one-bound region's
 surface reads it (`sets::one_bound`); a set measured from is applied under `Scope::held`, so each
 equality its body states is a bound at its number, `in: (d, d)` (`Written::held`, in `apply`),
-and `region_term` reads every probe by one rule. **Lowering** (step 7, `solid::region::lowering`): a `Rounded`/`Chamfered`
+and `region_term` reads every probe by one rule. **Lowering** (step 7, `solid::region::meridian::meridian_corner`): a `Rounded`/`Chamfered`
 term whose sets are two of the region's own bounds (same measure, at its level, moved in by the
 radius for a round's centres) is built in the meridian by X1's construction (`brep::corners`,
 moved from `tests/fillet_meridian.rs`) — a round at any corner of lines and arcs, an offset
 cone's generator and rounded apex included (#207) — and held to the region read point by point
-beside each face (`region::agrees`; a disagreement is read by the field); refused (and read by the
+beside each face (`region::meridian::agrees`; a disagreement is read by the field); refused (and read by the
 field) at a charted corner (none a meridian folds) or a flat between two arcs. **A chamfer's flat
 is its sum of distances** (#196, #208, [0.73]): between a line and an arc it bows, the conic `|q −
 c| = α + β d_L` (`corners::sum`), a **`Seg::Conic`** — the rational quadratic Bézier over its ends
@@ -60,7 +60,7 @@ ends on cut it off (#195's meaning: a square one is the prism's end, one at a sl
 is kept within, `Run::within`, the recipe's `"within"` as a point and a normal; a run-out); a
 cylinder or a sphere it ends on carried into until every line of its section's hull has crossed
 it, and kept within or outside that solid (#218, `Run::kept`, `Kept` over a `Surf`, the recipe's
-`"kept"` read by `recipe::surface_of` and built by `recipe::kept_by_solid`; one `ends_at` sorts a
+`"kept"` read by `recipe::surface_of` and built by `build::kept_by_solid`; one `ends_at` sorts a
 piece's ends: `post.sv`, a D's flat, a quarter ball); a face along the edge or
 another curved end refused, `unbuilt`), `Ring` (a circle where a
 plane meets a coaxial cylinder or cone: the section in the meridian at its start turned through its

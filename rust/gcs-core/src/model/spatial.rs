@@ -476,6 +476,27 @@ impl RegionTerm {
     pub fn remapped(&self, map: &dyn Fn(EntRef) -> Option<EntRef>) -> Option<RegionTerm> {
         Some(RegionTerm { shape: self.shape.remapped(map)?, ..self.clone() })
     }
+
+    /// Its low end and its offset (nothing where it has none) as the drawing stands
+    /// (`TermNumber::value`): refused where either reads an unknown nothing determines.
+    pub fn value(&self, sk: &Sketch) -> Result<(f64, f64), String> {
+        Ok((self.lo.value(sk)?, self.grow_value(sk)?))
+    }
+
+    /// `value`, `None` where nothing determines either.
+    pub fn read(&self, sk: &Sketch) -> Option<(f64, f64)> {
+        Some((self.lo.read(sk)?, self.grow_read(sk)?))
+    }
+
+    /// Its offset as the drawing stands, nothing where it has none (`TermNumber::value`).
+    pub fn grow_value(&self, sk: &Sketch) -> Result<f64, String> {
+        self.grow.as_ref().map_or(Ok(0.0), |g| g.value(sk))
+    }
+
+    /// `grow_value`, `None` where nothing determines it.
+    pub fn grow_read(&self, sk: &Sketch) -> Option<f64> {
+        self.grow.as_ref().map_or(Some(0.0), |g| g.read(sk))
+    }
 }
 
 /// One bound of a region solid: its measure, which way, and its numbers (a length or an angle in
@@ -824,27 +845,20 @@ impl Sketch {
     /// Solid `i`'s exact B-rep (`solid::Exact`), or why this kernel does not build it: built once
     /// for the geometry it reads, whatever approximation asks.
     pub fn exact_solid(&self, i: usize) -> Result<std::rc::Rc<crate::solid::Exact>, String> {
-        let key = crate::solid::reads(self, i, 0.0);
-        if let Some((old, value)) = self.exact_cache.borrow().get(&i) {
-            if *old == key { return value.clone(); }
-        }
-        let value = crate::solid::build_exact(self, i).map(std::rc::Rc::new);
-        self.exact_cache.borrow_mut().insert(i, (key, value.clone()));
-        value
+        let key = crate::solid::MemoKey::of(self, i);
+        self.exact_cache.get_or(i, key, || crate::solid::build_exact(self, i).map(std::rc::Rc::new))
     }
 
     /// Give swept solid `i` its exact B-rep, built elsewhere (`brep::export::supply_exact`) against
     /// the drawing as it stands now: its evaluation then reads the B-rep, as a static solid's does
     /// (`EvaluatedSolid::from_brep`), until the drawing changes.
     pub fn supply_exact_solid(&self, i: usize, exact: crate::solid::Exact) {
-        let key = crate::solid::reads(self, i, 0.0);
-        self.exact_cache.borrow_mut().insert(i, (key, Ok(std::rc::Rc::new(exact))));
+        self.exact_cache.put(i, crate::solid::MemoKey::of(self, i), Ok(std::rc::Rc::new(exact)));
     }
 
     /// The exact B-rep supplied for swept solid `i` against the drawing as it stands, if any.
     pub fn supplied_exact_solid(&self, i: usize) -> Option<std::rc::Rc<crate::solid::Exact>> {
-        let key = crate::solid::reads(self, i, 0.0);
-        match self.exact_cache.borrow().get(&i) { Some((old, Ok(x))) if *old == key => Some(x.clone()), _ => None }
+        self.exact_cache.get(i, &crate::solid::MemoKey::of(self, i)).and_then(Result::ok)
     }
 
     /// **What a host meshing swept solids elsewhere has to mesh** (`FieldMeshing::Deferred`): the

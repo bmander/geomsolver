@@ -18,7 +18,7 @@ use std::collections::BTreeSet;
 
 fn refuse(diags: &mut Vec<Diag>, span: crate::syntax::Span, message: String) {
     if !diags.iter().any(|d| d.code == Code::E023 && d.span == span) {
-        diags.push(Diag { code: Code::E023, span, stmt: None, message });
+        diags.push(Diag::new(Code::E023, span, None, message));
     }
 }
 
@@ -41,7 +41,7 @@ pub(super) fn rings(
         else {
             continue;
         };
-        let centre = public_path(&crate::flatten::written_name(&ring.about));
+        let centre = public_path(&crate::syntax::ref_text(&ring.about));
         // the view a turn about a point is in; `None` for one about an axis, in space
         let view = match about.kind {
             EntKind::Point if sk.points[about.i()].z.is_some() => {

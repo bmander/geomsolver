@@ -100,7 +100,7 @@ impl<'a> Walk<'a> {
     /// in one body are applied apart.
     pub(super) fn begin_nth(&mut self, u: &Use, closure: &Scope, n: usize) -> Application {
         let id = u.scope.written.unwrap_or(u.st.id);
-        let prefix = format!("{}#{}.{n}.", u.scope.prefix(), id.0);
+        let prefix = keys::application(u.scope.prefix(), id.0, n);
         let mut scope = closure.clone();
         scope.written = None;
         scope.prefixes.insert(0, prefix.clone());
@@ -131,15 +131,15 @@ impl<'a> Walk<'a> {
     /// — read again under the application's prefix.
     pub(super) fn inherited_twin(&mut self, app: &Application, u: &Use) -> Option<Along> {
         let t = u.rel.along.clone().or_else(|| u.scope.twin().cloned())?;
-        self.bind_to_use(app, "#along.p", t.point, u);
+        self.bind_to_use(app, keys::ALONG_POINT, t.point, u);
         let toward = match t.toward {
             AlongBy::Line(l) => {
-                self.bind_to_use(app, "#line", l, u);
-                AlongBy::Line(local("#line", u.at))
+                self.bind_to_use(app, keys::LINE, l, u);
+                AlongBy::Line(local(keys::LINE, u.at))
             }
             chart => chart,
         };
-        Some(Along { point: local("#along.p", u.at), toward, ..t })
+        Some(Along { point: local(keys::ALONG_POINT, u.at), toward, ..t })
     }
 
     /// The body walked once per entry of `walks` — as itself, for only what it makes, or as its derivative —
@@ -164,8 +164,8 @@ impl<'a> Walk<'a> {
             u.rel.word.as_ref().map_or(Vec::new(), |w| w.through.clone()).into_iter().chain(own).collect();
         let worded = u.rel.word.clone().unwrap_or(worded);
         let ops: Vec<Ref> = worded.ops.iter().enumerate().map(|(i, r)| {
-            self.bind_to_use(&app, &format!("#word.{i}"), r.clone(), u);
-            local(format!("#word.{i}"), r.span)
+            self.bind_to_use(&app, &keys::word_operand(i), r.clone(), u);
+            local(keys::word_operand(i), r.span)
         }).collect();
         let stamp = Worded { ops, ..worded };
         let Application { mut scope, from, set, .. } = app;
@@ -260,7 +260,7 @@ impl<'a> Walk<'a> {
 /// and editing it edits the argument, and every other at an empty place before the word — the
 /// number is drawn.
 fn dims_at(body: &mut [Stmt], dims: &BTreeMap<String, Span>, at: Span) {
-    let nowhere = Span::new(at.lo as usize, at.lo as usize);
+    let nowhere = Span::at(at.lo as usize);
     for st in body {
         let StmtKind::Relation(r) = &mut st.kind else { continue };
         let Some(w) = r.form.written_mut() else { continue };

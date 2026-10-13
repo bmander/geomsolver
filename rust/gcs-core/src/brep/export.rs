@@ -99,7 +99,7 @@ fn combine(sk: &Sketch,body: usize,part: &mut dyn FnMut(usize) -> Result<Brep,Ex
     for (operands,op,word) in [(on,Op::Union,"union"),(through,Op::Cut,"cut"),(bound,Op::Common,"common")] {
         for &o in operands {
             let operand = part(o as usize)?;
-            built = super::recipe::combined(&built,&operand,op,0.)
+            built = super::boolean::combined(&built,&operand,op,0.)
                 .map_err(|e| ExportRefusal::at(Stage::Fuse,format!("`{}`: {word} `{}`: {e}",solid.name,sk.solids[o as usize].name)))?;
         }
     }

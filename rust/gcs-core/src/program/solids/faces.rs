@@ -28,19 +28,19 @@ pub(super) fn validate_chain(
         let pair = e.filter(|e| matches!(e.kind, EntKind::Line | EntKind::Arc))
             .and_then(|e| crate::model::edge_ends(sk, e));
         let Some((start, end)) = pair else {
-            diags.push(Diag {
-                code: Code::E080, span: r.span, stmt: Some(st.id),
-                message: format!("a named chain traverses lines and arcs; `{}` is not one",
+            diags.push(Diag::within(
+                Code::E080, r.span, st.id,
+                format!("a named chain traverses lines and arcs; `{}` is not one",
                     crate::syntax::ref_text(r)),
-            });
+            ));
             return false;
         };
         if previous.is_some_and(|p| p != start) {
-            diags.push(Diag {
-                code: Code::E080, span: r.span, stmt: Some(st.id),
-                message: format!("`{}` does not share the preceding link's endpoint in chain `{}`",
+            diags.push(Diag::within(
+                Code::E080, r.span, st.id,
+                format!("`{}` does not share the preceding link's endpoint in chain `{}`",
                     crate::syntax::ref_text(r), c.name.key().text),
-            });
+            ));
             return false;
         }
         previous = Some(end);
@@ -88,7 +88,7 @@ fn build_loop(
     diags: &mut Vec<Diag>,
 ) -> Option<(crate::model::FaceLoop, Option<u32>)> {
     let mut report = |code: Code, span: Span, m: String| {
-        diags.push(Diag { code, span, stmt: Some(stmt), message: m });
+        diags.push(Diag::within(code, span, stmt, m));
     };
     // each item: a reference, or a curve with the two points its stretch runs between
     let mut refs: Vec<(&crate::syntax::Ref, Option<[&crate::syntax::Ref; 2]>)> = Vec::new();
@@ -434,7 +434,7 @@ fn hole_of_face(
     diags: &mut Vec<Diag>,
 ) -> Option<(crate::model::FaceLoop, Option<u32>)> {
     let mut refuse = |m: String| {
-        diags.push(Diag { code: Code::E080, span: r.span, stmt: Some(stmt), message: m });
+        diags.push(Diag::within(Code::E080, r.span, stmt, m));
         None
     };
     let name = crate::syntax::ref_text(r);
@@ -480,8 +480,8 @@ fn build_face_whole(
     diags: &mut Vec<Diag>,
 ) -> Option<usize> {
     if d.children.get(2).is_some_and(|g| !g.is_empty()) {
-        diags.push(Diag {code:Code::E080,span,stmt:Some(stmt),
-            message:"a spatial face is not a planar sweep profile".into()});
+        diags.push(Diag::within(Code::E080,span,stmt,
+            "a spatial face is not a planar sweep profile".into()));
         return None;
     }
     let (outer, plane) = build_loop(sk, res,
@@ -509,8 +509,8 @@ fn build_face_whole(
             _ => None,
         };
         let Some((r, kind)) = reference else {
-            diags.push(Diag { code: Code::E080, span, stmt: Some(stmt),
-                message: "a hole is a circle, a named closed loop or a face".into() });
+            diags.push(Diag::within(Code::E080, span, stmt,
+                "a hole is a circle, a named closed loop or a face".into()));
             return None;
         };
         let (mut hole, hole_plane) = match kind {
@@ -528,13 +528,13 @@ fn build_face_whole(
             };
         }
         if hole_plane != plane {
-            diags.push(Diag { code: Code::E080, span: r.span, stmt: Some(stmt),
-                message: "a face and its holes must lie in one plane".into() });
+            diags.push(Diag::within(Code::E080, r.span, stmt,
+                "a face and its holes must lie in one plane".into()));
             return None;
         }
         if let Some(name) = hole.edge_names.iter().find(|n| !used.insert((*n).clone())) {
-            diags.push(Diag { code: Code::E080, span: r.span, stmt: Some(stmt),
-                message: format!("hole boundary name `{name}` collides with another boundary; rename the source edge") });
+            diags.push(Diag::within(Code::E080, r.span, stmt,
+                format!("hole boundary name `{name}` collides with another boundary; rename the source edge")));
             return None;
         }
         holes.push(hole);

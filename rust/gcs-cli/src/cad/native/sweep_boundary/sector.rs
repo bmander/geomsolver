@@ -10,41 +10,13 @@
 use super::*;
 use gcs_core::solid::sector::{self,Boundary,Frame,Slices};
 use gcs_core::envelope::Motion;
+use gcs_core::brep::sweep::sector::{sphere_centres,COLUMNS,MARGIN,PROBES,READ_BACK};
 
 /// `SOLVENT_SECTOR=off` builds the whole body, the construction the sector is checked against.
 pub(super) fn wanted() -> bool { std::env::var("SOLVENT_SECTOR").map_or(true,|v| v != "off") }
 
-/// The side's grid across its slices, and how finely the built side is read back.
-const COLUMNS: usize = 9;
-const READ_BACK: usize = 4;
-/// The least clearance the side keeps from every cut beyond twice the sheets' fit error (mm).
-const MARGIN: f64 = 0.05;
-/// The most points of the side the material field is asked about.
-const PROBES: usize = 160;
 /// The fuzzy value the copies are identified to (mm): the split's own.
 const FUZZY: f64 = 1e-5;
-
-/// The centres of the spheres the recipe's revolutions make, where they are on the axis: the
-/// slicings a bevel gear's end spheres suggest. Millimetres.
-fn sphere_centres(recipe: &Json,frame: Frame,size: f64) -> Vec<[f64;3]> {
-    let on_axis = |p: [f64;3]| { let d = sub(p,frame.origin); norm(sub(d,scaled(frame.axis,dot(d,frame.axis)))) <= 1e-6*size };
-    let mut centres: Vec<[f64;3]> = Vec::new();
-    for node in recipe.get("nodes").map(Json::arr).unwrap_or_default() {
-        if node.get("kind").map(Json::as_str) != Some("revolve") { continue }
-        let (Some(o),Some(a)) = (node.get("origin"),node.get("axis")) else { continue };
-        let [o,a]: [[f64;3];2] = [o,a].map(|j| std::array::from_fn(|i| j.arr()[i].as_f64()));
-        // a circle about a point of the revolution's own axis turns into a sphere about it
-        let on_revolution = |p: [f64;3]| norm(cross(sub(p,o),a)) <= 1e-6*size*norm(a);
-        let Some(profile) = node.get("profile") else { continue };
-        for edges in profile.get("loops").map(Json::arr).unwrap_or_default() { for edge in edges.arr() {
-            if edge.get("kind").map(Json::as_str) != Some("circle") { continue }
-            let Some(c) = edge.get("center") else { continue };
-            let c: [f64;3] = std::array::from_fn(|i| c.arr()[i].as_f64());
-            if on_revolution(c) && on_axis(c) && !centres.iter().any(|&k| distance(k,c) <= 1e-6*size) { centres.push(c); }
-        } }
-    }
-    centres
-}
 
 /// `SOLVENT_SECTOR_DEBUG`: the faces of a solid by the kind of their support.
 pub(super) fn debug_faces(session: &Session,what: &str,solid: c_int) {

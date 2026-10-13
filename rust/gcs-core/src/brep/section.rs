@@ -8,16 +8,14 @@
 //! at every station, and read exactly: its point and its surface's outward normal in space.
 #[allow(unused_imports)]
 use crate::fmath::Det;
-use super::build::{Profile,ProfileEdge};
+use super::build::Profile;
 use super::geom::{Rigid,V};
-use super::planar::{boolean,Chart,Op,Region,Seg,Step};
+use super::planar::{boolean,Chart,Op,Region,Step};
+use super::recipe::{field,meridian_of,revolutions_tolerance,whole_turn,Unread};
+use super::vec3;
 use crate::json::Json;
-use crate::space::{add,cross,dot,norm,scale,sub};
+use crate::space::{add,cross,dot,norm,scale,sub,unit};
 use std::collections::BTreeMap;
-
-fn vec3(j: &Json) -> V { let a = j.arr(); [a[0].as_f64(),a[1].as_f64(),a[2].as_f64()] }
-fn field<'a>(j: &'a Json,k: &str) -> Result<&'a Json,String> { j.get(k).ok_or(format!("recipe: no `{k}`")) }
-fn unit(a: V) -> V { scale(a,1./norm(a)) }
 
 /// One revolution: a point of its line and its direction (`±` the section's), and its meridian
 /// region in its own `(r, z)` (radius about its line, distance along it from that point), each
@@ -49,11 +47,7 @@ impl Sectioned {
     /// The recipe read, or `Ok(Err)` naming why it is not of this kind.
     pub fn read(recipe: &Json) -> Result<Result<Sectioned,String>,String> {
         let nodes = field(recipe,"nodes")?.arr();
-        let mut size: f64 = 1.;
-        for n in nodes.iter().filter(|n| n.get("kind").is_some_and(|k| k.as_str() == "revolve")) {
-            size = size.max(norm(vec3(field(n,"origin")?))+norm(vec3(field(n,"axis")?)));
-        }
-        let tol = 1e-9*size;
+        let tol = revolutions_tolerance(nodes)?;
         // each node's leaf (a revolution, as placed so far)
         // each revolution's line as placed, and the line and profile it was drawn with
         let mut placed: BTreeMap<i64,usize> = BTreeMap::new();
@@ -63,7 +57,7 @@ impl Sectioned {
             let (id,name) = (field(n,"id")?.as_i64(),n.get("name").map_or("",|j| j.as_str()));
             match field(n,"kind")?.as_str() {
                 "revolve" => {
-                    if (field(n,"angle")?.as_f64().abs()-std::f64::consts::TAU).abs() > 1e-9 { return Ok(Err(format!("`{name}` is a partial revolution"))) }
+                    if let Err(e) = whole_turn(n,name)? { return Ok(Err(e)) }
                     let (o,a) = (vec3(field(n,"origin")?),unit(vec3(field(n,"axis")?)));
                     profiles.push((o,a,o,a,Profile::from_json(field(n,"profile")?)?,name.to_string()));
                     placed.insert(id,profiles.len()-1);
@@ -93,38 +87,16 @@ impl Sectioned {
         let mut leaves = Vec::new();
         for (o,a,so,sa,profile,name) in profiles {
             if norm(cross(a,axis)) > 1e-12 { return Ok(Err("a revolution about a line not parallel to the first's".into())) }
-            // the meridian in its own (r, z): the side of its line every point of the profile is on
-            let arc_at = |f: &super::geom::Frame,r: f64,w: f64| add(f.o,add(scale(f.x,r*w.dcos()),scale(f.y,r*w.dsin())));
-            let mut side: Option<V> = None;
-            for e in profile.loops.iter().flatten() {
-                let pts: Vec<V> = match *e {
-                    ProfileEdge::Line {a: p,b: q} => vec![p,q],
-                    ProfileEdge::Arc {frame,r,span} => { let [w0,w1] = span.unwrap_or([0.,std::f64::consts::TAU]);
-                        (0..=16).map(|k| arc_at(&frame,r,w0+(w1-w0)*k as f64/16.)).collect() }
-                    ProfileEdge::Spline(_) => return Ok(Err("a profile with a spline".into())),
-                };
-                for p in pts {
-                    let d = sub(p,so);
-                    let d = sub(d,scale(sa,dot(d,sa)));
-                    if norm(d) <= tol { continue }
-                    let d = unit(d);
-                    match side { None => side = Some(d), Some(s) => if dot(s,d) < 1.-1e-9 { return Ok(Err("a profile crossing its line".into())) } }
-                }
-            }
-            // (read where it was drawn: a placement is rigid, and moves only the line)
-            let Some(side) = side else { return Ok(Err("a profile on its line".into())) };
-            let q = |p: V| { let d = sub(p,so); [dot(d,side),dot(d,sa)] };
-            let region = Region::new(profile.loops.iter().enumerate().map(|(li,l)| l.iter().enumerate().map(|(k,e)| (k,match *e {
-                ProfileEdge::Line {a: p,b: r} => Seg::Line {a:q(p),b:q(r)},
-                ProfileEdge::Arc {frame,r,span} => {
-                    let [w0,w1] = span.unwrap_or([0.,std::f64::consts::TAU]);
-                    let c = q(frame.o);
-                    let p0 = q(arc_at(&frame,r,w0));
-                    let (x,y) = ([dot(frame.x,side),dot(frame.x,sa)],[dot(frame.y,side),dot(frame.y,sa)]);
-                    Seg::Arc {c,r,a0:(p0[1]-c[1]).datan2(p0[0]-c[0]),sweep:(x[0]*y[1]-x[1]*y[0]).signum()*(w1-w0)}
-                }
-                ProfileEdge::Spline(_) => unreachable!("refused above"),
-            })).map(|(k,seg)| Step {seg,chart:None,tag:edge_tag(li,k)}).collect()).collect());
+            // the meridian in its own (r, z), read where it was drawn: a placement is rigid, and
+            // moves only the line
+            let loops = match meridian_of(&profile,so,sa,tol,false) {
+                Ok(loops) => loops,
+                Err(Unread::Spline) => return Ok(Err("a profile with a spline".into())),
+                Err(Unread::Crosses) => return Ok(Err("a profile crossing its line".into())),
+                Err(Unread::OnLine) => return Ok(Err("a profile on its line".into())),
+            };
+            let region = Region::new(loops.into_iter().enumerate()
+                .map(|(li,l)| l.into_iter().enumerate().map(|(k,seg)| Step {seg,chart:None,tag:edge_tag(li,k)}).collect()).collect());
             leaves.push(Leaf {o,a,region,name,edges:profile.names.clone()});
         }
         Ok(Ok(Sectioned {origin,axis,leaves,nodes:out,root:field(recipe,"root")?.as_i64(),tol}))
