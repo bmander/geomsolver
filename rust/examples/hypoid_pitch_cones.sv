@@ -6,8 +6,8 @@
 // the vertical line the gear's generator lies on; the pinion's axial plane Q stands on two axes
 // the solve turns, square to each other, with its origin at M — its own turn held by drawing the
 // pinion's axis level in it.  Each pitch cone is the library's (`std.Cone`), a set about its
-// axis: M is on both (`M coincident gc`), and `std.TangentCones(gc, pc, M)` says they touch there
-// with one tangent plane.
+// axis: M is on both (`M coincident gc`), and `gc tangent(at: M) pc` says they touch there with
+// one tangent plane.
 // The gear's apex is on P, which makes P the gear cone's tangent plane at M, and so the pinion's
 // too — its apex comes out on P with nothing saying so.  Two pitch radii, the gear's pitch angle,
 // the shaft angle and the offset settle the rest: DOF 0, the pinion's pitch angle γ = 29.56° and
@@ -57,7 +57,7 @@ gc := std.Cone(gax, half: 60deg)
 pc := std.Cone(pax, half: hint(30deg))
 M coincident gc
 M coincident pc
-std.TangentCones(gc, pc, M)
+gc tangent(at: M) pc
 
 // the two pitch radii at M, and the shafts: square, and E apart
 M distance(Rg) gax

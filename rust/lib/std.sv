@@ -184,8 +184,9 @@ component Cylinder(about: line, r: Length) := { p | p distance(r) about }
 // angle between the axis and every generator: the points whose generator from the apex makes
 // that angle with the axis (§6.21) — on the nappe the axis points into — a set and nothing drawn.
 // A point on it is `p coincident k`, a line touching it `l tangent k`, two cones touching at a
-// point `TangentCones`.  The angle is the angle in space wherever the point is drawn, as every
-// set's body is read (§6.21): with the point in the axis's own view, on either generator there.
+// point with one tangent plane there `k1 tangent(at: m) k2`.  The angle is the angle in space
+// wherever the point is drawn, as every set's body is read (§6.21): with the point in the axis's
+// own view, on either generator there.
 // Leave `half` unbound (`half: hint(30deg)`) and it is an unknown of the drawing.
 //
 //   gc := std.Cone(gax, half: 60deg)
@@ -244,15 +245,6 @@ component HalfSpace(o: point, along: line, d: Length) := { p | o distance(d, alo
 //   tip := std.Offset(pitch, d: 2mm)
 //   region := { p | p inside tip; p distance(<= 4mm, side: inside) pitch }
 component Offset(S: set, d: Length) := { p | p distance(d, side: outside) S }
-
-// Two cones `k1` and `k2` touching at `m` with one tangent plane there, `m` on each beside it
-// (`m coincident k1`): every direction along one cone at `m` is along the other (`k1
-// tangent(at: m) k2`, §6.21).  Two equations.  What a hypoid's pitch cones do at the mean point.
-//
-//   std.TangentCones(gc, pc, M)
-component TangentCones(k1: set, k2: set, m: point) {
-  k1 tangent(at: m) k2
-}
 
 // An ellipse, as a curve: the point at eccentric angle `u` on the ellipse of semi-axes `a` and
 // `b` about the centre `c`, its major axis turned `turn` from the `x` of the plane `c` is drawn

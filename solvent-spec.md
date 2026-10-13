@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.86 — October 2026**
+**Specification, Draft 0.87 — October 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -1431,7 +1431,8 @@ said where it is used, by two words:
   and each body is stated as its derivative along both: two conditions for two surfaces, the
   directions' two unknowns against four rows. `m` on each is said beside it (`m coincident S1`);
   the word reads each body only at `m`, so a body that declares geometry of its own is **E040**
-  here, and the word without `at:` is **E040**.
+  here, and the word without `at:` is **E040**. **[0.87]** It is the one spelling: the library
+  names no component for it.
 - `P tangent(at: m) S` **[0.56]**, a plane and a set: `P` is **`S`'s tangent plane at `m`** —
   `m` on `P`, and the body at `m` stationary along each of `P`'s directions. `m` on `S` is said
   beside it, as for two sets. Anything but a plane before it is **E040**, as is the word without
