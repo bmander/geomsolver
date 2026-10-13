@@ -12,7 +12,7 @@ use std::f64::consts::PI;
 /// space, for checks on one tooth without the others, each rewritten by `rewrite`. The recorded
 /// volumes are the bevel pair's, so the axis offset reads as zero.
 pub(super) fn read_gears_with(rewrite: &dyn Fn(String) -> String) -> program::Elaborated {
-    let single = "  construction single := solid(blank)\n  cut.removal cut single\n";
+    let single = "  construction single := solid(published)\n  cut.removal cut single\n";
     let text = fixtures::gear::publish_blank(&fixtures::gear::bevel(&fixtures::gear::source()),single);
     fixtures::gear::read(&rewrite(text))
 }
@@ -59,7 +59,7 @@ fn sides_agree(cad: &Cad,part: c_int,blank: c_int,sheet: &native::sweep_boundary
 fn single_space(member: &str,expected: f64) {
     let e = read_gears();
     let removal = e.map.ent_named(&format!("{member}.cut.removal")).unwrap().i();
-    let blank_id = e.map.ent_named(&format!("{member}.blank")).unwrap().i();
+    let blank_id = e.map.ent_named(&format!("{member}.published")).unwrap().i();
     let single_id = e.map.ent_named(&format!("{member}.single")).unwrap().i();
     let cad = Cad::new();
     let blank = cad.0.construct(&gcs_core::solid::cad::recipe(&e.sketch,blank_id).unwrap()).unwrap();
@@ -184,7 +184,7 @@ fn a_roll_that_leaves_the_cutter_in_the_blank_is_refused() {
     // The gear's cutter still overlaps its blank at 35 degrees of roll.
     let e = read_gears_with(&|text| fixtures::gear::roll(&text,"gear",35.));
     let removal = e.map.ent_named("gear.cut.removal").unwrap().i();
-    let blank_id = e.map.ent_named("gear.blank").unwrap().i();
+    let blank_id = e.map.ent_named("gear.published").unwrap().i();
     let cad = Cad::new();
     let blank = cad.0.construct(&gcs_core::solid::cad::recipe(&e.sketch,blank_id).unwrap()).unwrap();
     let error = native::sweep_boundary::swept_sheet(&cad.0,&e.sketch,removal,blank,&Millimetres::<SpatialField>::read(&e.sketch,blank_id,1e-10).unwrap(),None).unwrap_err();

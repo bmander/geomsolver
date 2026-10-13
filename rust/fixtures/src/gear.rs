@@ -76,13 +76,13 @@ pub fn one_space(text: &str) -> String {
     text.replace("repeat n as i {","repeat 1 as i {")
 }
 
-/// The pair with each member also publishing its blank (`blank`: a body over the blank's region)
+/// The pair with each member also publishing its blank (`published`: a solid over its `blank` formal)
 /// and `extra` after it, past the member's generated `cut`.
 pub fn publish_blank(text: &str,extra: &str) -> String {
     let cut = "  body := solid(blank)\n  cut := Generated(";
     let at = text.find(cut).expect("the member's body is its blank, less its generated cut")+cut.len();
     let end = at+text[at..].find('\n').unwrap()+1;
-    format!("{}  construction blank := solid(blank)\n{extra}{}",&text[..end],&text[end..])
+    format!("{}  construction published := solid(blank)\n{extra}{}",&text[..end],&text[end..])
 }
 
 /// `text` with a member's roll limit in degrees (`pinion`, `gear`).
