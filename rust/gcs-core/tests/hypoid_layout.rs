@@ -680,7 +680,7 @@ fn every_modules_preview_converges_as_solventc_solves_it() {
         }
     }
     files.sort();
-    assert!(files.len() >= 17,"{files:?}");
+    assert!(files.len() >= 16,"{files:?}");
     for path in files {
         let text = std::fs::read_to_string(&path).unwrap();
         let mut e = fixtures::unsolved(&text,&mut fixtures::beside(&project,&mut |_,text| text));

@@ -76,7 +76,7 @@ fn roots(c: &SweepContacts,patch: usize,u: f64,v: f64) -> Result<Vec<TimedContac
 }
 
 fn measure(e: &program::Elaborated,member: &str) -> Report {
-    let removal = e.map.ent_named(&format!("pair.{member}.removal")).unwrap().i();
+    let removal = e.map.ent_named(&format!("pair.{member}.cut.removal")).unwrap().i();
     let blank_id = e.map.ent_named(&format!("pair.{member}.blank")).unwrap().i();
     let c = SweepContacts::read(&e.sketch,removal,1e-10).unwrap();
     let blank = SpatialField::read(&e.sketch,blank_id,1e-10).unwrap();

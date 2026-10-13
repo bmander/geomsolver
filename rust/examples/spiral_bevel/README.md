@@ -30,10 +30,9 @@ meridian turned once into its solid.
 | 4 | `crown/tooth.sv` | the pinion's generator: the crown tooth, a region between the flank cones and two levels, its tip's edges rounded (`std.Rounded`), each flank grown a quarter of the backlash |
 | 4 | `crown/mate.sv` | the gear's generator, its space cutter: the tooth's mate as regions on the same cones, the outer one closed at the reach, the inner turned one crown pitch round |
 | 4 | `crown/reach.sv` | how far the space cutter reaches: a cylinder about the cutter's axis, clear of the blank |
-| 4 | `crown/relief.sv` | the tip relief: a topping beside each crown, the crown's own region over cones through kinks on its flanks |
 | 5 | `generation.sv` | the rolls, the generating motions and the indexing |
-| — | `layout.sv` | `HypoidLayout`: steps 2–5 |
-| — | `members.sv` | `HypoidPair`: each blank less its crown's sweep at every tooth, and its reliefs |
+| — | `layout.sv` | `HypoidLayout`: steps 2–5, and the tip relief `when` the design has one: a `Topping` beside each crown flank (a kink on the flank, the cone through it turned by the relief angle), the crown's own `Tooth` and `Space` regions over the toppings' cones |
+| — | `members.sv` | `HypoidPair`: each blank less its crown's sweep at every tooth (`Generated`), and its topping's the same way |
 
 The normal module is stated nowhere: `ToothTrace` leaves it unbound and constructs it, and every
 depth reads it as `trace.normal_module`. As configured the pair is a hypoid 25 mm off, whose 12.5°

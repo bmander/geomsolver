@@ -2644,9 +2644,13 @@ A condition that reads a name nothing in scope gives a number is **E101**; one t
 ```
 when design.tip_relief > 0mm {
   n := views.FoldedView(p, trace.normal)
-  tooth_relief := crown.relief.ToothRelief(cutter, tooth, n.view, …)
+  pinion_inner := Topping(tooth.inner, cutter.ax, n.view, …)
+  pinion_outer := Topping(tooth.outer, cutter.ax, n.view, …)
+  pinion_top := std.Level(cutter.ax.p1, cutter.ax, d: -design.addendum * normal_module / 2)
+  pinion_topping := crown.tooth.Tooth(pinion_inner.cone, pinion_outer.cone, cutter.tooth_base,
+    pinion_top, grow: 0mm, …)
 }
-pinion_relief := ReliefCut(pinion.body, …, reference.tooth_relief.relief.crown, …)   // in a `when` too
+pinion_relief := Generated(pinion.body, …, reference.pinion_topping.crown, …)   // in a `when` too
 ```
 
 **[0.75]** A `when` is what ends a recursion (§8): its condition reads the numbers the call gave, and a level where it does not hold makes no further call.
