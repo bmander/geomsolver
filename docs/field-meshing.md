@@ -2,7 +2,7 @@
 
 Started 2026-09-23. The generating-sweep export built a sheet from traced contacts, fitted
 it as a spline, split the blank with a kernel Boolean, classified the cells and meshed the
-result. Every representation change in
+result ([robustness plan](generating-sweeps-robustness.md)). Every representation change in
 that chain has been a source of failures: branch ends, folds, crease pleats, near-tangent
 splits. The material field (`solid::MaterialField`) has been the reliable part all along; it
 is what the final gate trusts. This experiment meshes the field directly.

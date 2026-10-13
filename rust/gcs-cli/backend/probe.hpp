@@ -1,5 +1,5 @@
 #pragma once
-// Phase 0's measurement: with `SOLVENT_ABI_TRACE` naming a file, every
+// Phase 0's measurement (docs/rust-kernel-plan.md): with `SOLVENT_ABI_TRACE` naming a file, every
 // entry point's time, every Boolean's face pairs that actually intersect — their surface kinds,
 // each intersection curve's length and the least angle between the surfaces along it — and the
 // exported shape's smallest face and edge, one tab-separated line each, on one steady clock the

@@ -102,8 +102,8 @@ fn distance(a: V,b: V) -> f64 { (0..3).map(|k| (a[k]-b[k]).powi(2)).sum::<f64>()
 
 /// The configured gear's sheet failed its fit at the root fillet, in the blank, because one
 /// column in the margin leapt a turn round into a far corner's fan on its last row: the fit's
-/// chord-length parameters are averaged over the columns, so that row moved every row's.
-/// A sheet's rows stop before such a leap outside the
+/// chord-length parameters are averaged over the columns, so that row moved every row's
+/// (docs/native-hypoid-plan.md). A sheet's rows stop before such a leap outside the
 /// blank; a row holding a contact in the blank is never trimmed.
 #[test]
 fn a_sheet_keeps_its_rows_only_while_the_margin_is_one_chart() {

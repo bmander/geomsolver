@@ -1,4 +1,4 @@
-//! Planes over axes, in the language (§6.7; #81): a plane whose axis or place
+//! Planes over axes, in the language (§6.7; `docs/planes-plan.md`): a plane whose axis or place
 //! is solved for, its seeds, its refusals, and `project` between a stated and a solved plane;
 //! the words across planes and in space; the library's spheres; and the hypoid's pitch cones
 //! laid out by construction.
@@ -446,7 +446,7 @@ fn settles(stmt: &str) -> CKind {
     settles_as(stmt).0
 }
 
-/// The same, with the form an ordinate takes (Solvent [0.46]).
+/// The same, with the form an ordinate takes (`docs/ordinate-plan.md`).
 fn settles_as(stmt: &str) -> (CKind, Option<OrdinateForm>) {
     let e = read(&format!("{TWO_VIEWS}{stmt}\n"));
     let cs = e.sketch.user_constraints();

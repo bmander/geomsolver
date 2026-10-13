@@ -1,6 +1,6 @@
-// A stored shape as JSON for the core's own B-rep (`gcs_core::brep::json`): its vertices, its
-// edges on their curves with their parameter ranges and ends,
-// its faces on their surfaces with their loops of oriented edge uses, each use
+// A stored shape as JSON for the core's own B-rep (`gcs_core::brep::json`, phase 1 of
+// docs/rust-kernel-plan.md): its vertices, its edges on their curves with their parameter
+// ranges and ends, its faces on their surfaces with their loops of oriented edge uses, each use
 // carrying its curve in the face's parameters. Geometry is written as the kernel holds it — every
 // location applied, a trimmed curve or surface as its basis, a placement with its own three axes
 // (a left-handed one as it is, for the reader to turn) — and a kind the core has no counterpart for

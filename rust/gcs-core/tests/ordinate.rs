@@ -1,4 +1,4 @@
-//! **An ordinate along any direction, and `level`** (Solvent [0.46]): one statement,
+//! **An ordinate along any direction, and `level`** (`docs/ordinate-plan.md`): one statement,
 //! `(q − p)·t̂ = d`, whatever the direction is — a view's own axis, a drawn line, an axis in
 //! space, a plane's normal — and its zero, `a level(t) b`, of which `horizontal` and `vertical`
 //! between points are aliases.  Held here against closed forms: where the points stand once

@@ -1,7 +1,7 @@
 //! The elementary functions, the same bits on every target. `f64::sin` and its kin are the
 //! platform's: the system's libm natively, a port of musl's in a wasm build, and the two disagree in
 //! the last place often enough that one drawing solves to different bits in the terminal and in the
-//! browser, and an exported file differs between them (the export holds
+//! browser, and an exported file differs between them (phase 5 of docs/rust-kernel-plan.md holds
 //! the two byte-identical). These are the classic FreeBSD/musl algorithms (MIT-licensed, as this
 //! repository is) written over IEEE arithmetic alone, which every target rounds alike: argument
 //! reduction, a minimax polynomial, reconstruction. Each is within a unit or two in the last place

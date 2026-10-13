@@ -1,5 +1,5 @@
-//! The block-triangular solve measured across the corpus: a tool, not a gate.  Every example
-//! document (`rust/examples/**/*.sv`) and the twelve
+//! The block-triangular solve measured across the corpus (docs/block-triangular-solve-plan.md,
+//! phase 4): a tool, not a gate.  Every example document (`rust/examples/**/*.sv`) and the twelve
 //! spiral-bevel designs `tests/hypoid_layout.rs` records, each solved as solventc solves it
 //! (`SolveOpts::default()`, one `System` compiled per solve) with `BlockMode::Off`, `Rescue` and
 //! `First`:

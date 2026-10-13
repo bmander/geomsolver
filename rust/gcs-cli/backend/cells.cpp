@@ -300,7 +300,7 @@ int solvent_cad_split_solid_fuzzy(Cad* cad,int solid,const int* tools,int count,
 
 // Split tools split by each other (the general fuse of them, as the split would intersect them), as
 // one shape: a split by it skips the tools' intersections with each other, which are then made
-// here, beside other work. Same fuzzy value as the split.
+// here, beside other work (docs/native-speed-plan.md, phase 6). Same fuzzy value as the split.
 int solvent_cad_fused_tools(Cad* cad,const int* tools,int count) noexcept {
     SOLVENT_PROBE("solvent_cad_fused_tools");
     return guarded(cad,[&] {
@@ -768,7 +768,7 @@ static std::vector<int> sector_sides(Cad* cad,const TopTools_IndexedMapOfShape& 
 }
 
 // One solid and its copies turned by `angles` about the line (`origin`, `axis`), united: the
-// sectors of an indexed body, each meeting the next on a face both carry.
+// sectors of an indexed body, each meeting the next on a face both carry (docs/native-speed-plan.md).
 // The faces on the two sides (`sides`: every sample of the face within `fuzzy` of one of theirs) are
 // left out, and the rest of every copy sewn to `fuzzy` (mm) into one closed shell: no face is
 // intersected. The pieces of a ring are first moved into one period (`into_one_period`). The union
@@ -1238,8 +1238,8 @@ int solvent_cad_revolved(Cad* cad,int solid,const double* origin,const double* a
 // A solid of revolution made by turning a planar region (a face, or faces a Boolean of meridian
 // sections left) once about the line (`origin`, `axis`) in its plane: the region's faces merged on
 // their plane first, each turned a whole turn, and the turns united — the blank of a member whose
-// every operand is a revolution about one line, from the Boolean of their meridian sections.
-// The faces' parameters start where the region lies.
+// every operand is a revolution about one line, from the Boolean of their meridian sections
+// (docs/native-speed-plan.md). The faces' parameters start where the region lies.
 int solvent_cad_revolve_region(Cad* cad,int region,const double* origin,const double* axis) noexcept {
     SOLVENT_PROBE("solvent_cad_revolve_region");
     return guarded(cad,[&] {

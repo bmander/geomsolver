@@ -1,5 +1,5 @@
 //! Where a plane stands in space, read off its axes and its origin, and the hidden points in
-//! space a spatial relation reads (#81).
+//! space a spatial relation reads (`docs/planes-plan.md`).
 //!
 //! Nothing here is minted unless asked for: a document that relates no two planes in space has
 //! no `LiftE`, so its parameter vector, its constraints and every number a solve reads are what

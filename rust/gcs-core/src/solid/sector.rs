@@ -1,4 +1,4 @@
-//! One sector of an indexed body. A body whose swept cuts are rigid
+//! One sector of an indexed body (docs/native-speed-plan.md). A body whose swept cuts are rigid
 //! copies of one another turned about one axis, from a blank that turn leaves alike, is as many
 //! copies of one sector as there are placements — when the sector can be bounded where no cut
 //! reaches, so that nothing a cut makes is divided between two copies.

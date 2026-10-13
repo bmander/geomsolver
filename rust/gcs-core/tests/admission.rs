@@ -266,6 +266,7 @@ fn a_folding_flank_is_refused_and_balanced_pressure_angles_admit_it() {
 /// admission::the_admission_grid -- --ignored --nocapture` (each design offset/shift/spiral, the
 /// offset in millimetres, the rest in degrees, then optionally the backlash, the tip relief and the
 /// end relief in millimetres, zero when left out) prints each member's verdict and margins, one line per sweep.
+/// The tables it chose the configured design from are in docs/spiral-bevel-layout-plan.md.
 #[test]
 #[ignore = "a tool: SOLVENT_GRID names the designs to admit"]
 fn the_admission_grid() {

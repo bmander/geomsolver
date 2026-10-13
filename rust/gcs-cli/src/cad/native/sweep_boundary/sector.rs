@@ -1,4 +1,4 @@
-//! A body built as one sector, patterned. Where every swept cut is a
+//! A body built as one sector, patterned (docs/native-speed-plan.md). Where every swept cut is a
 //! turn of one placement about one axis and the blank reads alike under that turn, the body is its
 //! count of turned copies of one sector: the blank between a side through the gaps the cuts leave
 //! (`solid::sector`) and that side turned by one pitch, cut by the placements that fall in it. The

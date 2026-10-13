@@ -1,4 +1,4 @@
-//! The sector construction against the whole one, on a small indexed
+//! The sector construction (docs/native-speed-plan.md) against the whole one, on a small indexed
 //! fixture: a ring about the spindle cut by a unit sphere rolled about a parallel cradle, turned to
 //! several places — a gear's shape in miniature, its cuts leaving a gap between neighbours. Built
 //! as one sector patterned, the body is the body built whole: its volume, its faces, a closed mesh.
