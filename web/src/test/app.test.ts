@@ -28,7 +28,8 @@ import type { SolidEdge } from '../core/workspace.js';
 import { contains, corners, toImage, toWorld } from '../app/underlay.js';
 import type { Bitmap } from '../app/underlay.js';
 import { initCore } from '../core/wasm.js';
-import { fakeCanvas, pointer } from './canvas.js';
+import { canvasOf, fakeCanvas, pointer } from './canvas.js';
+import { click, clickSeen, clickWith, dblclickAt, docView, seenAt } from './views.js';
 import { paintCallouts } from '../app/paint.js';
 
 // the view schedules its repaints; nothing is being looked at, so run them inline
@@ -113,7 +114,7 @@ test('the model canvas calls out its dimensions, and off shows only the one bein
 test('a second pointer does not take over a live drag', () => {
   const sk = pinnedApex();
   const view = viewOn(sk);
-  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  const cv = canvasOf(view);
   const apex = view.sketch.points[2];
   const [sx, sy] = view.w2s(...apex.xy);
 
@@ -136,7 +137,7 @@ test('a second pointer does not take over a live drag', () => {
 test('a cancelled pointer ends the drag it owned', () => {
   const sk = pinnedApex();
   const view = viewOn(sk);
-  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  const cv = canvasOf(view);
   const [sx, sy] = view.w2s(...sk.points[2].xy);
 
   cv.fire('pointerdown', pointer(sx, sy, { pointerId: 1 }));
@@ -154,7 +155,7 @@ test('a cancelled pointer ends the drag it owned', () => {
 test('losing pointer capture ends the drag too', () => {
   const sk = pinnedApex();
   const view = viewOn(sk);
-  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  const cv = canvasOf(view);
   const [sx, sy] = view.w2s(...sk.points[2].xy);
 
   cv.fire('pointerdown', pointer(sx, sy, { pointerId: 1 }));
@@ -167,7 +168,7 @@ test('a point in space is dragged where the eye sees it', (t) => {
   const view = new SketchView(fakeCanvas(), Document.read('l := line\n'));
   t.after(() => { view.doc.dispose(); });
   view.orbit = { az: 0.6, el: 0.4 };                   // three quarters: depth is not the page's y
-  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  const cv = canvasOf(view);
   const end = view.sketch.points[1];
   assert.ok(view.inSpace(end), 'a line no `in` reaches stands in space');
   const [sx, sy] = view.seen(end);
@@ -194,7 +195,7 @@ test('two fingers pinch the workspace about their middle and carry it with them'
   const sk = pinnedApex();
   const view = viewOn(sk);
   view.setTool('point');                     // a press would add a point: a pinch must not
-  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  const cv = canvasOf(view);
   const before = view.source;
   const scale = view.cam.scale;
   const anchor = view.cam.s2w(400, 300);
@@ -225,7 +226,7 @@ test('two fingers pinch the workspace about their middle and carry it with them'
 test('a lone finger is a pointer: it drags, and a second finger settles the drag', () => {
   const sk = pinnedApex();
   const view = viewOn(sk);
-  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  const cv = canvasOf(view);
   const apex = view.sketch.points[2];
   const [sx, sy] = view.w2s(...apex.xy);
 
@@ -248,7 +249,7 @@ test('a lone finger is a pointer: it drags, and a second finger settles the drag
 test('a tap is a click', () => {
   const sk = pinnedApex();
   const view = viewOn(sk);
-  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  const cv = canvasOf(view);
   const apex = view.sketch.points[2];
   const [sx, sy] = view.w2s(...apex.xy);
   cv.fire('pointerdown', finger(sx, sy, 1));
@@ -261,7 +262,7 @@ test('a tap is a click', () => {
 test('a tap reaches as far as a fingertip covers, and a cursor only its own tolerance', () => {
   const sk = pinnedApex();
   const view = viewOn(sk);
-  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  const cv = canvasOf(view);
   const apex = view.sketch.points[2];
   const [sx, sy] = view.w2s(...apex.xy);
   const near = sy - 16;                       // past a cursor's 8 px, inside a finger's 22
@@ -278,7 +279,7 @@ test('a tap reaches as far as a fingertip covers, and a cursor only its own tole
 
 test('a trackpad pinches by ctrl and its wheel, and pans by scrolling', () => {
   const view = viewOn(pinnedApex());
-  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  const cv = canvasOf(view);
   const wheel = (init: Record<string, unknown>): void => cv.fire('wheel',
     { clientX: 400, clientY: 300, deltaX: 0, deltaY: 0, deltaMode: 0, ctrlKey: false, ...init });
   const at = (): [number, number] => view.cam.s2w(400, 300);
@@ -324,7 +325,7 @@ test('the drawing calls out every dimension it has', () => {
 test('clicking a callout picks its constraint instead of the geometry', () => {
   const sk = dimensioned();
   const view = viewOn(sk);
-  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  const cv = canvasOf(view);
   view.draw();
   const picked: Constraint[] = [];
   view.onPickConstraint = (c) => picked.push(c);
@@ -339,7 +340,7 @@ test('clicking a callout picks its constraint instead of the geometry', () => {
 test('a click that misses every callout still reaches the sketch', () => {
   const sk = dimensioned();
   const view = viewOn(sk);
-  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  const cv = canvasOf(view);
   view.draw();
   let picked = 0;
   view.onPickConstraint = () => { picked += 1; };
@@ -359,7 +360,7 @@ test("a radius's leader does not shadow the centre it comes out of", () => {
   built.add(new C.Radius(circle0, 20));
   const view = viewOn(built);
   const c = view.sketch.points[0];
-  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  const cv = canvasOf(view);
   view.draw();
   let picked = 0;
   view.onPickConstraint = () => { picked += 1; };
@@ -379,7 +380,7 @@ test("a radius's leader does not shadow the centre it comes out of", () => {
 test('double-clicking a callout opens its value', () => {
   const sk = dimensioned();
   const view = viewOn(sk);
-  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  const cv = canvasOf(view);
   view.draw();
   const edited: Constraint[] = [];
   view.onEditConstraint = (c) => edited.push(c);
@@ -409,7 +410,7 @@ function dimY(view: SketchView, sk: Sketch): number {
 test('dragging a callout moves it, and it stays moved', () => {
   const sk = dimensioned();
   const view = viewOn(sk);
-  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  const cv = canvasOf(view);
   view.draw();
   const before = dimY(view, view.sketch);
   const [ax] = view.w2s(...view.sketch.points[0].xy);
@@ -432,7 +433,7 @@ test('dragging a callout moves it, and it stays moved', () => {
 test('a callout follows the point it was grabbed at, not the pointer', () => {
   const sk = dimensioned();
   const view = viewOn(sk);
-  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  const cv = canvasOf(view);
   view.draw();
   const before = dimY(view, view.sketch);
   const [ax] = view.w2s(...view.sketch.points[0].xy);
@@ -448,7 +449,7 @@ test('a callout follows the point it was grabbed at, not the pointer', () => {
 test('a click on a callout that never moves is not an edit', () => {
   const sk = dimensioned();
   const view = viewOn(sk);
-  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  const cv = canvasOf(view);
   view.draw();
   const before = dimY(view, sk);
   const [ax] = view.w2s(...sk.points[0].xy);
@@ -463,7 +464,7 @@ test('a click on a callout that never moves is not an edit', () => {
 test('re-placing puts a dragged callout back', () => {
   const sk = dimensioned();
   const view = viewOn(sk);
-  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  const cv = canvasOf(view);
   view.draw();
   const before = dimY(view, view.sketch);
   const [ax] = view.w2s(...view.sketch.points[0].xy);
@@ -608,7 +609,7 @@ test('the clipboard outlives the sketch it came from', () => {
 
 /** Click the fit tool at each screen position, then finish. */
 function fitThrough(view: SketchView, at: [number, number][]): void {
-  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  const cv = canvasOf(view);
   view.setTool('splinefit');
   for (const [x, y] of at) {
     cv.fire('pointerdown', pointer(x, y));
@@ -659,7 +660,7 @@ test('a fit click that lands on a point holds the curve to it', () => {
 test('an abandoned fit leaves the sketch untouched', () => {
   const view = docView('use std\n');
   const before = io.dumps(view.sketch);
-  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  const cv = canvasOf(view);
   view.setTool('splinefit');
   for (const [x, y] of [[100, 100], [200, 60], [300, 160]] as [number, number][]) {
     cv.fire('pointerdown', pointer(x, y));
@@ -730,7 +731,7 @@ function pairMaker(a: Point, b: Point): (kind: PairDimension) => Constraint {
 
 test('where the number is put is which dimension it is', () => {
   const { view, sk, alt } = pairToDimension();
-  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  const cv = canvasOf(view);
   const first = alt.make('length');
   assert.ok(view.startDimension([first], true, alt));
   assert.equal(sk.userConstraints().length, 1, 'stated at once, not after a dialog');
@@ -755,7 +756,7 @@ test('where the number is put is which dimension it is', () => {
 
 test('a dimension being written is one edit, and Escape takes all of it back', () => {
   const { view, sk, alt } = pairToDimension();
-  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  const cv = canvasOf(view);
   const before = io.dumps(sk);
   const first = alt.make('length');
   view.startDimension([first], true, alt);
@@ -783,7 +784,7 @@ test('a dimension being written is one edit, and Escape takes all of it back', (
 
 test('a click plants the number, and the pointer stops carrying it', () => {
   const { view, sk, alt } = pairToDimension();
-  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  const cv = canvasOf(view);
   const c = alt.make('length');
   view.startDimension([c], true, alt);
   cv.fire('pointermove', pointer(...view.w2s(-20, 20)));
@@ -809,7 +810,7 @@ test('a click plants the number, and the pointer stops carrying it', () => {
 
 test('a pair with a length on it can still be given its run', () => {
   const { view, sk, alt } = pairToDimension();
-  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  const cv = canvasOf(view);
   const first = alt.make('length');
   view.startDimension([first], true, alt);
   cv.fire('pointermove', pointer(...view.w2s(-10, 50)));    // across the pair: its own length
@@ -851,7 +852,7 @@ test('nothing is solved or judged while a dimension is being laid down', () => {
   built.add(new C.Distance(a0, c0, 50));
   const view = new SketchView(fakeCanvas(), Document.read(fromSketch(built)));  // auto-solve on
   const [a, b, c] = view.sketch.points;
-  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  const cv = canvasOf(view);
   const said: string[] = [];
   view.onStatus = (m) => said.push(m);
   let refreshes = 0;
@@ -943,17 +944,9 @@ fix((0, 0)) a
 }
 `;
 
-function docView(text: string): SketchView {
-  const view = new SketchView(fakeCanvas(), Document.read(text));
-  view.showDimensions = true;
-  view.autoSolve = false;
-  return view;
-}
-
 test('a gesture is a source edit, and leaves everything else written', () => {
   const view = docView(ANNOTATED);
-  assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
-  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  const cv = canvasOf(view);
   view.setTool('line');
   cv.fire('pointerdown', pointer(...view.w2s(0, 60)));
   cv.fire('pointerup', pointer(...view.w2s(0, 60)));
@@ -982,7 +975,7 @@ test('a gesture is a source edit, and leaves everything else written', () => {
 
 test('a drag writes its seeds back, once, and nothing else', () => {
   const view = docView(ANNOTATED);
-  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  const cv = canvasOf(view);
   const b = view.sketch.points[1];
   const [sx, sy] = view.w2s(...b.xy);
   let wrote = 0;
@@ -1102,7 +1095,7 @@ test('a gesture beside a component leaves the component written', () => {
   const view = docView(examples.source('gear'));
   assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics.slice(0, 3)));
   const before = view.sketch.points.length;
-  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  const cv = canvasOf(view);
   view.setTool('point');
   cv.fire('pointerdown', pointer(...view.w2s(200, 0)));
   cv.fire('pointerup', pointer(...view.w2s(200, 0)));
@@ -1117,7 +1110,7 @@ test('a gesture beside a component leaves the component written', () => {
 
 test('a sketch writes the digits its zoom justifies, and no more', () => {
   const view = docView('a := point hint((0, 0))\n');
-  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  const cv = canvasOf(view);
   // a press at a canvas pixel: where it falls on the page has every digit a double holds
   const press = (sx: number, sy: number) => {
     cv.fire('pointerdown', pointer(sx, sy));
@@ -1189,16 +1182,8 @@ function pointNamed(view: SketchView, name: string): Point {
   return p;
 }
 
-/** A click with a drawing tool down. */
-function click(view: SketchView, x: number, y: number): void {
-  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
-  cv.fire('pointerdown', pointer(...view.w2s(x, y)));
-  cv.fire('pointerup', pointer(...view.w2s(x, y)));
-}
-
 test('the current plane flows into a fresh point, and a snapped point stays where it was', () => {
   const view = docView(VIEWS);
-  assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
   const front = planeNamed(view, 'front');
   view.selected = [front];
   assert.equal(view.plane, front, 'a plane selected on its own is the one being drawn in');
@@ -1224,7 +1209,6 @@ test('the current plane flows into a fresh point, and a snapped point stays wher
 test('a projection is one constraint, and the source says `project`', () => {
   const view = docView(`${VIEWS}a := point in front hint((10, 5))\n`
                        + 'b := point in top hint((10, 100))\n');
-  assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
   view.addConstraints(new C.Project(pointNamed(view, 'a'), pointNamed(view, 'b')));
   const cs = view.sketch.userConstraints();
   assert.equal(cs.length, 1);
@@ -1282,7 +1266,6 @@ test('the current plane survives an edit, goes with its deletion, and is dropped
 test('a named plane is dropped over the selection, and becomes the one drawn in', () => {
   const view = docView(`${VIEWS}in std.front {\nab := line(hint((0, 0)), hint((40, 0)))\n`
                        + 'ac := line(hint((0, 0)), hint((0, 30)))\n}\n');
-  assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
   view.selected = [view.doc.entity('ab')!, view.doc.entity('ac')!];
   assert.ok(view.addDatum('plane', 'aux'));
   assert.ok(view.source.includes('aux := plane(u: hint(dir: (1, 0, 0)), v: hint(dir: (0, 0, 1)))'),
@@ -1322,7 +1305,7 @@ function traced(text = ANNOTATED): SketchView {
 
 /** Press, move and release on the canvas, as the pointer handlers see it. */
 function drag(view: SketchView, from: [number, number], to: [number, number]): void {
-  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  const cv = canvasOf(view);
   cv.fire('pointerdown', pointer(...from));
   cv.fire('pointermove', pointer(...to));
   cv.fire('pointerup', pointer(...to));
@@ -1433,19 +1416,8 @@ da := line(d, a)
 block := solid(face(ab, bc, cd, da), depth: 5)
 `;
 
-/** The canvas point where the eye, from the view's orbit, sees a point in space. */
-function seenAt(view: SketchView, x: [number, number, number]): [number, number] {
-  const { az, el } = view.orbit;
-  const right = [-Math.sin(az), Math.cos(az), 0];
-  const up = [-Math.cos(az) * Math.sin(el), -Math.sin(az) * Math.sin(el), Math.cos(el)];
-  const dot = (a: number[]) => a[0] * x[0] + a[1] * x[1] + a[2] * x[2];
-  return [view.cam.originX + dot(right) * view.cam.scale,
-          view.cam.originY - dot(up) * view.cam.scale];
-}
-
 test('a click on a solid selects it by the face it lands on, apart from the drawing', () => {
   const view = docView(BLOCK);
-  assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
   view.orbit = { az: 0.6, el: 0.5 };
   const top = seenAt(view, [10, 5, 0]);
   drag(view, top, top);
@@ -1463,7 +1435,7 @@ test('a click on a solid selects it by the face it lands on, apart from the draw
   drag(view, top, top);
   assert.deepEqual(view.selected, []);
   assert.equal(view.selectedSolids.length, 1);
-  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  const cv = canvasOf(view);
   cv.fire('pointerdown', pointer(...top, { shiftKey: true }));
   cv.fire('pointerup', pointer(...top, { shiftKey: true }));
   assert.deepEqual(view.selectedSolids, []);
@@ -1750,7 +1722,7 @@ test('a standard plane the document does not have comes in with `use std` on the
 
 test('double-clicking a pane draws on its plane', () => {
   const view = docView('use std\nt := point in std.top hint((40, 40))\n');
-  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  const cv = canvasOf(view);
   const top = planeNamed(view, 'std.top');
   view.orbit = { az: -Math.PI / 3, el: 1.2 };       // from above, the front and side all but edge on
   const at = view.inView(top.index, () => view.w2s(30, 30))!;
@@ -1793,7 +1765,7 @@ test('a plane seen edge on takes no point: the press says why', () => {
   view.onStatus = (m) => { said = m; };
   view.setTool('point');
   const n = view.sketch.points.length;
-  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  const cv = canvasOf(view);
   cv.fire('pointerdown', pointer(400, 300));
   cv.fire('pointerup', pointer(400, 300));
   assert.equal(view.sketch.points.length, n);
@@ -1803,7 +1775,7 @@ test('a plane seen edge on takes no point: the press says why', () => {
 test('the right button turns the workspace and the middle one slides it; neither edits', () => {
   const view = docView(examples.source('rect_fillets'));
   const before = view.source;
-  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  const cv = canvasOf(view);
   const orbit = { ...view.orbit };
   cv.fire('pointerdown', pointer(400, 300, { button: 2, buttons: 2 }));
   cv.fire('pointermove', pointer(460, 280, { button: 2, buttons: 2 }));
@@ -1826,7 +1798,7 @@ test('a click picks what is seen under it, though another view lies there on the
   assert.equal(view.pick(...view.seen(f)), f);
   assert.equal(view.pick(...view.seen(s)), s);
   // and a band round one of them takes that one alone
-  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  const cv = canvasOf(view);
   const [x, y] = view.seen(s);
   cv.fire('pointerdown', pointer(x - 6, y - 6));
   cv.fire('pointermove', pointer(x + 6, y + 6));
@@ -1840,7 +1812,7 @@ test('a band takes whatever it touches, though neither end of a line is inside i
     + 'c := point hint((0, 60))\nfix((0, 60)) c\nd := point hint((100, 60))\nfix((100, 60)) d\n'
     + 'cd := line(c, d)\n}\n');
   view.orbit = { ...FRONT };
-  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  const cv = canvasOf(view);
   const [x0, y] = view.seen(pointNamed(view, 'a'));
   const [x1] = view.seen(pointNamed(view, 'b'));
   const x = (x0 + x1) / 2;
@@ -1982,7 +1954,6 @@ fix((40, 30)) c
 
 test('Plane and Axis drop a free datum with nothing selected, and select it', () => {
   const view = docView(DATUMS);
-  assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
   view.choosePlane('std.front');
   view.selected = [];
   assert.ok(view.addDatum('plane'));
@@ -2034,7 +2005,6 @@ test('the constraint bar relates points, lines, axes and planes by what is selec
   const view = docView(`${DATUMS}t := axis hint(dir: (0, 0, 1))\n`
                        + 'fix(dir == (0, 0, 1), origin == (5, 5, 0)) t\n'
                        + 'w := plane(u: std.x, v: std.y) hint(origin: (0, 0, 10))\n');
-  assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
   const ent = (n: string) => view.doc.entity(n)!;
   const meant = (names: readonly string[], ...sel: string[]): string | undefined =>
     firstFit(names, sortSelection(sel.map(ent)))?.name;
@@ -2110,7 +2080,7 @@ test('a plane is picked by its pane\'s frame and dragged where the eye sees it, 
   }
   assert.deepEqual(view.selected, [plane()], 'still selected, by name');
   // a double-click on its frame chooses it to draw on
-  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  const cv = canvasOf(view);
   view.choosePlane('std.front', false);
   const pane2 = overview3(view.sketch, 0, 'datums')
     .find((i) => i.part === 'face' && i.kind === 'plane' && i.index === plane().index)!;
@@ -2157,22 +2127,14 @@ fix((80, 10)) s
 
 function extruding(body = ''): SketchView {
   const view = docView(EXTRUDING + body);
-  assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
   view.choosePlane('std.front');
   view.setTool('extrude');
   return view;
 }
 
-/** A press and release at a place on the page, with modifiers held. */
-function clickWith(view: SketchView, x: number, y: number, mods: Record<string, boolean>): void {
-  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
-  cv.fire('pointerdown', pointer(...view.w2s(x, y), mods));
-  cv.fire('pointerup', pointer(...view.w2s(x, y), mods));
-}
-
 test('the Extrude tool washes the region under the pointer, and a click drops a solid', () => {
   const view = extruding();
-  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  const cv = canvasOf(view);
   cv.fire('pointermove', pointer(...view.w2s(85, 5)));
   const r = view.hoverRegion;
   assert.ok(r && !('refused' in r), JSON.stringify(r));
@@ -2207,7 +2169,7 @@ test('a thickness typed or dragged rewrites the solid in place, in the click\'s 
   view.orbit = { az: 0.6, el: 0.5 };
   const arrow = view.extentArrow();
   assert.ok(arrow?.tip, 'the arrow is seen from three quarters');
-  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  const cv = canvasOf(view);
   const to = seenAt(view, [85, -15, 5]);
   cv.fire('pointerdown', pointer(...arrow.tip));
   cv.fire('pointermove', pointer(...to));
@@ -2276,7 +2238,6 @@ fix((20, 10)) q1
 
 function revolving(body = ''): SketchView {
   const view = docView(REVOLVING + body);
-  assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
   view.choosePlane('std.front');
   view.setTool('revolve');
   return view;
@@ -2284,7 +2245,7 @@ function revolving(body = ''): SketchView {
 
 test('the Revolve tool takes a region, then the line to turn it about, as one undo step', () => {
   const view = revolving();
-  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  const cv = canvasOf(view);
   cv.fire('pointermove', pointer(...view.w2s(12, 4)));
   const r = view.hoverRegion;
   assert.ok(r && !('refused' in r), JSON.stringify(r));
@@ -2338,7 +2299,7 @@ test('about an axis already selected a click revolves at once, and its turn is t
   view.orbit = { az: 0.6, el: 0.5 };
   const arrow = view.extentArrow();
   assert.ok(arrow?.tip && arrow.arc && arrow.arc.length > 2, 'the handle is seen from here');
-  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
+  const cv = canvasOf(view);
   const to = seenAt(view, [-12, 0, 4]);
   cv.fire('pointerdown', pointer(...arrow.tip));
   cv.fire('pointermove', pointer(...seenAt(view, [-8.5, 8.5, 4])));
@@ -2382,16 +2343,8 @@ function combining(more = ''): SketchView {
   const view = docView(`${EXTRUDING}block := solid(face(ab, bc, cd, da), depth: 5)\n`
                        + 'peg := solid(face(hole), from: -10, to: 10)\n'
                        + `side := solid(face(pq, qr, rs, sp), depth: 5)\n${more}`);
-  assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
   view.orbit = { az: -Math.PI / 2, el: 0 };
   return view;
-}
-
-/** A click where the eye sees a place in space. */
-function clickSeen(view: SketchView, x: [number, number, number]): void {
-  const cv = view.canvas as ReturnType<typeof fakeCanvas>;
-  cv.fire('pointerdown', pointer(...seenAt(view, x)));
-  cv.fire('pointerup', pointer(...seenAt(view, x)));
 }
 
 test('a Boolean tool takes the body to change, then its tools, and writes them as one step', () => {
@@ -2564,15 +2517,9 @@ test('in orbit mode a drag turns the workspace, whatever tool is down, and draws
   assert.equal(view.sketch.points.length, points + 1, 'out of orbit mode the tool draws again');
 });
 
-/** A double-click at a canvas point. */
-function dblclickAt(view: SketchView, at: [number, number]): void {
-  (view.canvas as ReturnType<typeof fakeCanvas>).fire('dblclick', { clientX: at[0], clientY: at[1] });
-}
-
 test('double-clicking a face of a solid draws on it: a plane written lying on it, or the one '
      + 'already there', () => {
   const view = docView(BLOCK);
-  assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
   view.orbit = { az: 0.6, el: 0.5 };
   // the side over `cd`, at y = 10, faces the eye from here: a plane is written on it
   const before = view.source;
@@ -2600,7 +2547,6 @@ test('double-clicking a face of a solid draws on it: a plane written lying on it
 test('a plane set off another is sized by its arrow, written once, in the plane\'s undo step',
      () => {
   const view = docView(DATUMS);
-  assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
   view.selected = [view.doc.entity('std.top')!];
   assert.ok(view.addDatum('plane'));
   assert.ok(/v0 parallel std\.top\nstd\.top distance\([\d.]+\) v0\n/.test(view.source),

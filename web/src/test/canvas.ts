@@ -52,6 +52,11 @@ export function fakeCanvas(width = 800, height = 600): HTMLCanvasElement & FakeC
   return cv as HTMLCanvasElement & FakeCanvas;
 }
 
+/** The fake canvas a view was constructed with, typed as one: what a test fires events at. */
+export function canvasOf(view: { readonly canvas: HTMLCanvasElement }): HTMLCanvasElement & FakeCanvas {
+  return view.canvas as HTMLCanvasElement & FakeCanvas;
+}
+
 /** A pointer event's fields, with the ones the view reads defaulted. */
 export function pointer(x: number, y: number, init: Record<string, unknown> = {})
   : Record<string, unknown> {
