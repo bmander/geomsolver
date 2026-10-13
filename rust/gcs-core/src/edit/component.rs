@@ -24,7 +24,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use super::{in_root, mentions, splice, Edit, Kind, Splice};
+use super::remove::mentions;
+use super::{in_root, splice, Edit, Kind, Splice};
 use crate::ir::PathStep;
 use crate::model::{EntRef, Sketch};
 use crate::program::{Elaborated, Site};
