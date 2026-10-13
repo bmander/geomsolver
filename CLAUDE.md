@@ -222,7 +222,8 @@ kept or turned round (`Written::turn_bound`), a body of only uses (a conjunction
 written by `inside` and refused by `outside` (a union) but for one side of another set, turned
 round, as are an interval `outside`, several numbers and none (E040). **A side is a bound**
 (#192): `Written::lower_side` says `p inside X` as `p coincident(<=) X`, `p outside X` as `(>=)`,
-`p inside(d) X` as `p distance(<= d, side: outside) X` and `outside(d)` as `side: inside`; every
+beside a side grown, `p distance(<= d, side: outside|inside) X` (`inside(d)`/`outside(d)` are
+refused by the parser naming it and `std.Offset`, #266: one spelling, `op_args`); every
 set's body is held so (`sets::lowered`, at `Site::new`) and each use read so, and the
 elaborator's readers (`relations::shape`, `side_of_plane`, `face_term`, `ends_term`) take either spelling
 through `Written::side` (the bound on the signed distance from the surface, and its level). A tangency to a region is E040, once, in
@@ -515,8 +516,8 @@ parting plane (two pieces each side, `brep::fillet::roll`) is refused, naming th
 Refused besides: a drafted side as a set or a carrier, an extruded surface or a tool. `rod.sv` is
 drafted 3°; `tests/draft.rs` is the gate.
 **Distance from a set, offsets (§6.21, 0.64, #145 F4):** `p distance(d, side: outside|inside) S`
-(`distance` is a set use, `may_use`), `p inside(d) S` / `p outside(d) S` and `std.Offset(S, d)` are
-one bound on the signed distance from `S`'s surface (`Reach`: cmp toward the outside, whether
+(`distance` is a set use, `may_use`), its bound `p distance(<= d, side: outside) S` and
+`std.Offset(S, d)` (the set, where one is passed or used) are one bound on the signed distance from `S`'s surface (`Reach`: cmp toward the outside, whether
 the offset grows it, `reach_of` over `Written::lower_side`'s form; only a `distance` with `side:
 outside|inside` is a set use, `sets::reaches`), applied by `sets::expand_reach` in three representations: a body whose
 one relation is a `distance` gets its number moved (`(r) + #grow`, the grow settled in the use's
@@ -849,7 +850,7 @@ it — `GearCone`, `ToothTrace`, `PinionCone` (each cone's axis `.ax`; `fixtures
 the recorded rows under their old labels. Each
 member's blank is a region (`Blank`: the pitch cone, a `std.Cone` about the member's axis, its
 half left unknown so it settles from the pose, grown by the addendum (`std.Offset`) and its
-outside by the back depth (`outside(d)`), `std.Sphere`s about the apex the half face width either
+outside by the back depth (`distance(<= d, side: inside)`), `std.Sphere`s about the apex the half face width either
 side of M (`rim.p2 distance(w / 2, side: outside) toe`), sized by the solved layout — a region term
 reads an unknown, `model::TermNumber`; the end relief two `std.Chamfered` bounds in the same
 region, lowered as conics); its faces are `tip`, `heel`, `toe`, `back` (the sets its body uses),

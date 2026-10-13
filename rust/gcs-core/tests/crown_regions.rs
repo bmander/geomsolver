@@ -254,7 +254,8 @@ pitch := std.Cone(gear_ax, half: 45deg)
 tip := std.Offset(pitch, d: 1mm)
 toe := std.Sphere(o, r: 17mm)
 heel := std.Sphere(o, r: 23mm)
-blank_region := { p | p inside tip; p inside heel; p outside toe; p outside(3mm) pitch }
+blank_region := { p | p inside tip; p inside heel; p outside toe
+  p distance(<= 3mm, side: inside) pitch }
 blank := solid(blank_region)
 ";
 
@@ -314,13 +315,14 @@ fn a_crown_tooth_region_cuts_a_region_blank_exactly() {
 fn radius_at(z: f64) -> f64 { 20.0 + 20f64.to_radians().tan() * (z - 10.0) }
 
 /// **A side's surface is a set a drawn point is put on** (#214): `m coincident side.surface`, the
-/// side `{ x | x outside(0.5mm) k }` of a cone through `q`, puts `m` on the cone moved half a
-/// millimetre into it along its normal — the radius at its height less `0.5 / cos(lean)` — as a
-/// topping's kink is put on a crown's flank as grown; and a set formal's `.surface` is the same.
+/// side `{ x | x distance(<= 0.5mm, side: inside) k }` of a cone through `q`, puts `m` on the cone
+/// moved half a millimetre into it along its normal — the radius at its height less `0.5 /
+/// cos(lean)` — as a topping's kink is put on a crown's flank as grown; and a set formal's
+/// `.surface` is the same.
 #[test]
 fn a_point_is_put_on_a_sides_surface() {
     let e = solved(&format!("{AXIS}k := std.ConeThrough(ax, q, lean: 20deg)\n\
-        side := {{ x | x outside(0.5mm) k }}\n\
+        side := {{ x | x distance(<= 0.5mm, side: inside) k }}\n\
         in std.front {{\n  m := point hint((15, -2))\n}}\nm coincident side.surface\n\
         ax.p1 distance(-2mm, along: ax) m\n\
         component On(f: set, at: point) {{\n  n := point hint((15, 0, -4))\n  n coincident f.surface\n  \
@@ -382,7 +384,8 @@ fn a_rounds_radius_reads_an_unknown() {
         assert!((volume - want).abs() <= 1e-9 * want, "{r}: {volume} against {want}");
     }
     let grown = |g: &str| {
-        let tooth = format!("beyond_g := {{ x | x outside({g}) inner }}\nouter_g := std.Offset(outer, d: {g})\n\
+        let tooth = format!("beyond_g := {{ x | x distance(<= {g}, side: inside) inner }}\n\
+            outer_g := std.Offset(outer, d: {g})\n\
             tooth := {{ p | p inside beyond_g; p inside outer_g; p inside back; p outside point_\n\
             p inside std.Rounded(beyond_g, above, r: 0.3 * m)\n\
             p inside std.Rounded(outer_g, above, r: 0.3 * m) }}\nconstruction tool := solid(tooth)\n");

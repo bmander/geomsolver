@@ -1560,11 +1560,11 @@ pub enum OpArg {
     Vector { key: Option<Name>, parts: Vec<Arg>, span: Span },
     /// the number, as written — `80`, `x = 7`, `h = w / 2`, `1' 3"`
     Dim(String, Span),
-    /// The number beside it is a **bound** (§9.6): `distance(>= 5)`, `distance(<= d)`, or the
-    /// low end of `distance(in: (a, b))`, whose high end is `hi`.  `span` is the `>=` or `in:`
-    /// written.  Outside a set body a bound is a branch choice: no row, checked on the solution.
-    /// `grow` is an offset no source writes: a set's use (`p inside(d) S`, §6.21) puts it on a
-    /// cone's number, so the bound is on the distance from its surface (`model::RegionTerm`).
+    /// The number beside it is a **bound** (§9.6): `distance(>= 5)`, `distance(<= d)`, or the low
+    /// end of `distance(in: (a, b))`, whose high end is `hi`.  `span` is the `>=` or `in:` written.
+    /// Outside a set body a bound is a branch choice: no row, checked on the solution.  `grow` is
+    /// an offset no source writes: a set's use (`p distance(<= d, side: outside) S`, §6.21) puts it
+    /// on a cone's number, so the bound is on the distance from its surface (`model::RegionTerm`).
     Bound { cmp: Cmp, span: Span, hi: Option<(String, Span)>, grow: Option<(String, Span)> },
 }
 
@@ -1636,32 +1636,17 @@ impl Written {
     }
 
     /// **A side, said as a bound** (§9.6, §6.21; #192), in place: `p inside X` is `p
-    /// coincident(<=) X` and `p outside X` `p coincident(>=) X`; `p inside(d) X` is `p
-    /// distance(<= d, side: outside) X` and `p outside(d) X` `p distance(<= d, side: inside) X`.
-    /// The one form a set's body carries its sides in, so a side turned round is its bound's
-    /// `Cmp::turned` and its surface the bound taken off, as every other bound's.  Any other
-    /// relation is left as it stands.
+    /// coincident(<=) X` and `p outside X` `p coincident(>=) X` — beside `p distance(<= d, side:
+    /// outside) X`, a side grown, the one form a set's body carries its sides in (`inside(d)` is
+    /// retired, #266), so a side turned round is its bound's `Cmp::turned` and its surface the
+    /// bound taken off, as every other bound's.  Any other relation is left as it stands.
     pub fn lower_side(&mut self) {
         let Some(cmp) = crate::constraints::plane_side_word(&self.word.text) else { return };
-        if self.ops.len() != 2 {
+        if self.ops.len() != 2 || !self.args.is_empty() {
             return;
         }
-        let at = self.word.span;
-        let bound = |cmp| OpArg::Bound { cmp, span: at, hi: None, grow: None };
-        match self.args.as_slice() {
-            [] => {
-                self.word.text = "coincident".to_string();
-                self.args = vec![bound(cmp)];
-            }
-            [OpArg::Dim(..)] => {
-                let side = if cmp == Cmp::Le { "outside" } else { "inside" };
-                self.word.text = "distance".to_string();
-                self.args.insert(0, bound(Cmp::Le));
-                let key = Name { text: "side".to_string(), span: at };
-                self.args.push(OpArg::Named(key, Arg::Word(side.to_string())));
-            }
-            _ => {}
-        }
+        self.word.text = "coincident".to_string();
+        self.args = vec![OpArg::Bound { cmp, span: self.word.span, hi: None, grow: None }];
     }
 
     /// Which side of its second operand's surface it puts its point on (§9.6, §6.21), read in

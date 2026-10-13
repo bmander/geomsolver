@@ -323,8 +323,8 @@ pub enum RegionShape {
     /// from what it names (`Target`).
     Measured { of: Vec<(Target, f64)> },
     /// The signed distance from a face's surface (#183 F1), positive on the side away from the
-    /// body's material: `p inside F` at most nothing, `p outside F` at least, `p inside(d) F` at
-    /// most `d`.
+    /// body's material: `p inside F` at most nothing, `p outside F` at least, `p distance(<= d,
+    /// side: outside) F` at most `d`.
     FaceSide { face: FaceRef },
     /// The material's angle at the edge where faces `a` and `b` meet, at the point of it nearest
     /// the probe (#183 F9), in radians: under a half turn where the edge is convex.

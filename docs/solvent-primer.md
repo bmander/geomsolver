@@ -1023,12 +1023,14 @@ conjunction, and `outside` makes a difference: `{ p | p inside heel; p outside t
 region is a bound, so a choice of root.
 
 **Offsets.** `p distance(4mm, side: outside) k` puts `p` 4mm off `k`'s surface (`side:` required);
-`p inside(2mm) pitch` is within 2mm outside it; `tip := std.Offset(pitch, d: 2mm)` is the set 2mm
-out. `S.surface` is `S` with each bound made an equality: of `{ q | q inside(2mm) pitch }`, the
-offset surface — a set like any, so `k coincident S.surface` puts a drawn point on it. A distance
-that comes to nothing (`std.Offset(S, d: 0mm)`) is `S` itself. A drawn point measured from a set
-gets a foot on it, found by the solve. A
-distance from `{ q | q outside S }` is from `S`'s surface, sides turned: so `std.Rounded(beyond,
+a bound on it, `p distance(<= 2mm, side: outside) pitch`, is within 2mm outside it (`side: inside`,
+at most 2mm in); `tip := std.Offset(pitch, d: 2mm)` is the set 2mm out, for where a set is passed
+or used (`p inside tip`, `std.Rounded(tip, …)`). `inside`/`outside` take no number: `p inside(2mm)
+pitch` is refused, naming these two. `S.surface` is `S` with each bound made an equality: of
+`{ q | q distance(<= 2mm, side: outside) pitch }`, the offset surface — a set like any, so
+`k coincident S.surface` puts a drawn point on it. A distance that comes to nothing
+(`std.Offset(S, d: 0mm)`) is `S` itself. A drawn point measured from a set gets a foot on it, found
+by the solve. A distance from `{ q | q outside S }` is from `S`'s surface, sides turned: so `std.Rounded(beyond,
 tip, r: 0.3mm)` rounds the corner where a region is outside `inner` (`beyond := { q | q outside
 inner }`).
 
@@ -1308,7 +1310,7 @@ They are written in Solvent (`rust/lib/std.sv`), from region bodies you can writ
 
 | written | means |
 |---|---|
-| `p inside block.near`, `p outside(d) block.near` | the material's side of the face's surface (grown by `d`) |
+| `p inside block.near`, `p distance(<= d, side: outside) block.near` | the material's side of the face's surface (grown by `d`) |
 | `p distance(<= 1mm) block.near` | within 1 of the face, bounded by its edges |
 | `p distance(>= r) block.near.surface` | at least `r` from the whole surface |
 | `distance(p, f1) + distance(p, f2) <= 10mm` | a bound on measurements (an ellipsoid by its foci) |

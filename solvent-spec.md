@@ -1,6 +1,13 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.85 — October 2026**
+**Specification, Draft 0.86 — October 2026**
+
+**[0.86] One spelling for a side grown.** `p inside(d) S` and `p outside(d) S` are retired: a
+point at most `d` outside `S`'s surface is `p distance(<= d, side: outside) S`, and at most `d`
+inside it `p distance(<= d, side: inside) S` — the bound on the signed distance each always was
+(§6.21) — and the set `S` grown by `d`, where a set is passed or used, is `std.Offset(S, d: d)`.
+`inside` and `outside` take nothing in their parentheses; a number there does not parse, and an
+implementation SHOULD say the two spellings kept. Plain `inside` and `outside` stay the sides.
 
 **[0.85] The body rule's intersection is `common`, and a half-space is `std.HalfSpace`.** `tip
 common body` keeps what a body has in common with `tip` (§6.9), the word the Boolean is named by;
@@ -154,7 +161,7 @@ instance; a `group` formal no longer takes a named set, nor a `set` formal a gro
 at the argument (§4.1, §6.21). `std.Rounded`, `std.Chamfered`, `std.Offset`, `std.TangentCones`
 and `std.CircleOnSphere` declare theirs so. A side of a set is a bound on the signed distance
 from its surface, so the outside of a set of one side is that side turned round — outside `{ q |
-q inside(1mm) S }` is beyond `S` grown by 1mm — and a set's surface is its bounds made
+q distance(<= 1mm, side: outside) S }` is beyond `S` grown by 1mm — and a set's surface is its bounds made
 equalities, a grown side's the offset surface (§6.21).
 
 **[0.70] A face path is read from its solid, and a member is no name.** A face path names a face
@@ -209,7 +216,8 @@ about the member's axis, with no point held in space to make its angle unsigned.
 
 **[0.64] A point's distance from a set, and offsets.** `p distance(d, side: outside) S` is `p` the
 signed distance `d` from the surface of a set `S`, `std.Offset(S, d)` the set `d` outside it, and
-`p inside(d) S` / `p outside(d) S` that side of `S` grown by `d` (§6.21). A sphere's or a
+`p inside(d) S` / `p outside(d) S` that side of `S` grown by `d` (§6.21; **[0.86]** written
+`p distance(<= d, side: outside) S` / `side: inside`). A sphere's or a
 cylinder's offset is its number moved; a region solid's cone offset is exact, a cone with its apex
 rounded by a ball where it grows (§6.9); a drawn point stands at its foot on the set. A bound may
 read an unknown the drawing's rows read (§9.6). The hypoid's blank is its pitch cone grown by
@@ -1371,7 +1379,7 @@ anything but bounds (a disc's plane) is **E040**. A region solid is a solid like
 `common`, `union`, swept and placed. **[0.63]** A bound's number may read one unknown of the drawing
 (`std.Sphere(c, r: hint(50mm))` with `q coincident` it): the solid reads it as solved, and refuses one
 nothing determines. A cone's half is the unsigned angle its row reads, so one solved past a half
-turn is the cone it reads as. **[0.64]** A bound offset (`p inside(d) S`, §6.21) is the set's surface
+turn is the cone it reads as. **[0.64]** A bound offset (`p distance(<= d, side: outside) S`, §6.21) is the set's surface
 grown by `d`, or shrunk where `d` is taken off: a ball's or a cylinder's radius moved, a plane moved
 along its normal, and a cone's offset exactly — the cone whose surface stands `d` from it, its apex
 further back where it grows, rounded there by the ball of radius `d` about the apex (the points
@@ -2078,9 +2086,10 @@ within 2 of the line, `q inside std.Cone(l, half: 30deg)` within 30° of its axi
 (in space, on either side of the axis in a view too **[0.65]**), and `q inside { p | p
 coincident P; p distance(5) o }` the disc. A region's own bound is kept by `inside` and turned
 round by `outside`. **[0.71]** A side is a bound — on the signed distance from a set's surface,
-at most 0 for `inside`, at most `d` for `inside(d)` (§6.21 below) — so `outside` a set whose one
-statement is a side of another turns that side round: outside `{ q | q outside toe }` is inside
-`toe`, outside `{ q | q inside(1mm) S }` is beyond 1mm outside `S`. A region is met by conjunction too, so `blank := { p | p inside tip; p inside
+at most 0 for `inside`, at most `d` for `distance(<= d, side: outside)` (§6.21 below) — so
+`outside` a set whose one statement is a side of another turns that side round: outside `{ q | q
+outside toe }` is inside `toe`, outside `{ q | q distance(<= 1mm, side: outside) S }` is beyond 1mm
+outside `S`. A region is met by conjunction too, so `blank := { p | p inside tip; p inside
 heel; p outside toe }` is the three at once, and **`outside` says a difference** for regions: inside
 `heel` and outside `toe`. Refused (**E040**): `outside` a set stating no one number — a conjunction,
 whose outside is a union, a choice of root — or an interval (`in:`); `inside` or `outside` a set
@@ -2094,9 +2103,12 @@ distance** from it is the distance to the surface, positive on its outside (wher
 exceeds its number). `p distance(d, side: outside) S` is `p` at signed distance `d`, and `side:
 inside` at `-d`; `<=`, `>=` bound it (§9.6). `side:` is said: a surface has two. `std.Offset(S, d)
 := { p | p distance(d, side: outside) S }` is the set `d` outside `S`, so `p inside
-std.Offset(S, d)` is within `S` grown by `d`, written `p inside(d) S`; `p outside(d) S` is within
-the outside of `S` grown by `d`, outside `S` shrunk by it. A plane takes the same words (`p
-inside(2mm) P`, the ordinate along its normal). One meaning, said by what the body measures and
+std.Offset(S, d)` is within `S` grown by `d`, `p distance(<= d, side: outside) S`; `p distance(<=
+d, side: inside) S` is within the outside of `S` grown by `d`, outside `S` shrunk by it. A plane
+takes the same words (`p distance(<= 2mm, side: outside) P`, the ordinate along its normal).
+**[0.86]** These are the spellings: `inside` and `outside` take no number (`p inside(d) S` does not
+parse). The bound is the general form, the equality and `>=` included; `std.Offset` is the set,
+for where a set is passed or used (`p inside tip`, `std.Rounded(tip, …)`). One meaning, said by what the body measures and
 where the point is: a **distance** (a sphere, a cylinder, a level) is the measure less its number,
 so the offset moves the number, anywhere; at a region solid's point the bound carries the offset,
 and a cone's is exact (§6.9); a **drawn point** has a **foot**, a point on `S` found by the solve,
@@ -2109,7 +2121,7 @@ written so (`coincident`);
 a region, which has no surface — but **[0.76]** a region that is one side of another set, `{ q |
 q outside S }` or `{ q | q inside S }`, whose surface is `S`'s, measured from with the sides turned
 round where it is the outside (so `std.Rounded(beyond, tip, r)` rounds where a region is outside a
-set); a set saying more than one thing of its point (a circle in a plane); an interval; `inside(d)` or `outside(d)` a conjunction; a bound on a drawn point's
+set); a set saying more than one thing of its point (a circle in a plane); an interval; a bound on a drawn point's
 distance from a set with no closed form (its foot cannot say which root), a claim of one, or one
 inside a body walked for its derivative (a tangency to an offset of a cone).
 
@@ -2118,8 +2130,8 @@ inside a body walked for its derivative (a tangency to an offset of a cone).
 edges — `pad.plate.near` the face `plate` gave `pad`, `pad.boss` every face `boss` gave it, `block`
 every face of `block` — and `F.surface` the whole surface the face lies on (**[0.68]**, one
 meaning wherever it is read). `p inside F` is within the side of `F`'s surface the material is on
-and `p outside F` the other side, each grown by `d` in `inside(d)`, `outside(d)`; `p distance(d)
-F`, with `<=`, `>=` or `in:` (§9.6), is `p` at that distance from the face, and from its surface
+and `p outside F` the other side, each grown by `d` in `p distance(<= d, side: outside) F`, `side:
+inside`; `p distance(d) F`, with `<=`, `>=` or `in:` (§9.6), is `p` at that distance from the face, and from its surface
 with `F.surface`; `p coincident F` is on the face, `p coincident F.surface` on its surface. A face a
 Boolean ate names nothing: what reads it holds nowhere, and a region over it is no material. The
 faces are read off the solid as it stands once the drawing is solved, so a face of any kind is
@@ -2167,8 +2179,8 @@ coincident a; q coincident b }`) are the edges they share, on three the corners,
 face; and any conjunction of a face's side, a distance from a face's surface, a surface, a
 distance from a point and the set's own bounds is read for its nearest point, exactly. `S.surface`
 of a region of one bound is its surface: **[0.71]** each bound made the equality at its number, a
-side's the surface it is a side of and a grown side's the offset surface (`{ q | q inside(1mm) S
-}.surface` is 1mm outside `S`); an interval's two surfaces are no one surface. **[0.77]** Such a
+side's the surface it is a side of and a grown side's the offset surface (`{ q | q distance(<= 1mm,
+side: outside) S }.surface` is 1mm outside `S`); an interval's two surfaces are no one surface. **[0.77]** Such a
 surface is a set wherever one is used, so a drawn point is put on it (`k coincident S.surface`).
 The set's own
 equalities are conditions on its point as its bounds are, each held at its number. A body stating anything else, or a set measured in terms
@@ -2483,7 +2495,7 @@ p outside P                       // in front of it
 - **Its number:** zero may be written, unlike an ordinate's equality, which zero makes a `level` (§9.2). A bound may not be a `claim` (**E040**): a bound chooses which solution is meant, and a claim asks about the one there is. It may read an unknown only where a row of the drawing reads it too (**[0.64]**, a cone's half its side is chosen against), read as it stands: on the seeds its seed, on the solution its solution; one nothing else reads is **E040**, since a bound adds no freedom.
 - **Meaning:** outside a set body, a bound **chooses the root**. It adds no row and no freedom, and is drawn as no callout. It does the work a seed did when the seed only picked a side, so it is read on the seeds first: a point whose seed breaks a bound is carried across its edge, to the mirror of its reading, as if it had been seeded there, and everything seeded from it or placed through it follows. The solver then checks it on the solution. Where it still does not hold, the solver looks for the root where it does, from the seeds and from the solution, and fails the solve where none is found (`a bound does not hold`). **[0.78]** A solver that constructs the drawing a block at a time (§15) holds each block to the bounds it decides — every quantity they read is the block's or placed before it — and looks for a block's root there, so the words choose the roots of a drawing with no seed at all. The diagnosis tells which bounds are violated, and which hold with the solution on their edge (*active*).
 - **A region's land** **[0.76]**. A region draws no tip line for `distance(>= d) tip` to stand on: its rounds and faces are worked out, not solved. A tooth whose flanks are drawn through the ends of its tip — a face mill's blade, given by its point width — says its land on those ends, `eb distance(>= d, along: left) ea` in the tooth's section: on the seeds and on the solution it is the same root choice as the drawn section's, so a start on the root where the flanks cross above the tip (the tooth an edge, its tip no face) is carried to the tooth with its land.
-- **Inside a set body** a bound makes the set a region, and `inside`/`outside` put a point in one (§6.21) **[0.61]**. `solid(R)` is a region's solid (§6.9) **[0.62]**. `inside(d)` and `outside(d)` grow a side by `d` (§6.21) **[0.64]**.
+- **Inside a set body** a bound makes the set a region, and `inside`/`outside` put a point in one (§6.21) **[0.61]**. `solid(R)` is a region's solid (§6.9) **[0.62]**. `distance(<= d, side: outside|inside)` grows a side by `d` (§6.21) **[0.64]**, its one spelling **[0.86]**.
 - `inside` between two solids remains the claim of §9.8; which one a statement is follows from its operands.
 
 ### 9.7 Claims **[0.5]**

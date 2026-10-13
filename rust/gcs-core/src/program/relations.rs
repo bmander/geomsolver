@@ -816,7 +816,7 @@ fn region_term(sk: &Sketch, c: &Constraint, probe: usize, grow: Option<crate::mo
 /// **What a written relation is, by what its operands resolve to** (#188): the one reading
 /// `constrain` and the claims about solids ask, so neither detects the shapes again.
 pub(in crate::program) enum Shape {
-    /// A point against a solid's faces (#183 F1): `p inside F`, `p outside(d) F`, `p distance(…)
+    /// A point against a solid's faces (#183 F1): `p inside F`, `p outside F`, `p distance(…)
     /// F`, `p coincident F.surface`.
     Face { point: EntRef, face: crate::model::FaceRef },
     /// A point `inside` (or `outside`) where the edge a set is ends (#183 F7): `p inside S.ends`.
@@ -851,7 +851,7 @@ pub(in crate::program) fn shape(sk: &Sketch, res: &Resolver, w: &crate::syntax::
 fn side_of_plane(r: &Relation, w: &crate::syntax::Written) -> Relation {
     use crate::syntax::{Arg as A, Name, OpArg, RelationForm, Written};
     // as written or as a set's body carries it (`Written::side`, #192); grown by a distance
-    // (§6.21, F4): `inside(d)` at most `d` before it, `outside(d)` at most `d` behind it
+    // (§6.21, F4): `side: outside` at most `d` before it, `side: inside` at most `d` behind it
     let (cmp, level) = w.side().expect("a side");
     let at = w.word.span;
     let name = |t: &str| Name { text: t.to_string(), span: at };
@@ -1735,7 +1735,7 @@ pub(super) fn measured_term(
     probes.terms.get_mut(&p).expect("a probe's terms").push(term);
 }
 
-/// `p inside F`, `p outside(d) F`, `p distance(<= d) F`, `p coincident F.surface` … (`Shape::Face`):
+/// `p inside F`, `p outside F`, `p distance(<= d) F`, `p coincident F.surface` … (`Shape::Face`):
 /// the term of the region solid whose point `p` is, or why not.
 fn face_term(sk: &Sketch, res: &Resolver, w: &crate::syntax::Written, point: EntRef,
              face: &crate::model::FaceRef, probes: &Probes)

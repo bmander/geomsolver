@@ -79,18 +79,19 @@ fn a_line_parallel_to_a_held_axis_stands_along_it() {
     assert!((apex[2] + 20.0 / 20f64.to_radians().tan()).abs() < 1e-9, "{apex:?}");
 }
 
-/// A point on the surface `outside(d)` reaches into a cone (§6.21: what is not deeper than `d`
-/// inside it), the cone's axis 300 mm across the drawing and narrowing along it: the side the
-/// point's offset is read on is an angle about the cone's apex, a few 1e-4 radians — under a
-/// length's tolerance on a drawing that size read as an angle, so the offset on the cone's other
-/// side held.  Held to the solve's own tolerance, the point stands inside the cone by the grow.
+/// A point on the surface `distance(<= d, side: inside)` reaches into a cone (§6.21: what is not
+/// deeper than `d` inside it), the cone's axis 300 mm across the drawing and narrowing along it:
+/// the side the point's offset is read on is an angle about the cone's apex, a few 1e-4 radians —
+/// under a length's tolerance on a drawing that size read as an angle, so the offset on the cone's
+/// other side held.  Held to the solve's own tolerance, the point stands inside the cone by the
+/// grow.
 #[test]
 fn an_angles_bound_is_held_to_the_solves_tolerance() {
     let src = "unit mm\nuse std\n\
                C := point in std.top\nq := point in std.top\nfix((0, 0)) C\nfix((300, 0)) q\n\
                ax := line(C)\nax parallel std.z\nC distance(100, along: std.z) ax.p2\n\
                k := std.ConeThrough(ax, q, lean: -10deg)\n\
-               grown := { p | p outside(0.5mm) k }\n\
+               grown := { p | p distance(<= 0.5mm, side: inside) k }\n\
                kink := point in std.front\nkink coincident grown.surface\n\
                C distance(5mm, along: ax) kink\nC distance(>= 0mm, along: std.x) kink\n";
     let e = solved(src);
@@ -112,7 +113,7 @@ fn a_chart_is_gauged_where_the_solve_ends() {
                C := point in std.top\nq := point in std.top\nfix((0, 0)) C\nfix((50, 0)) q\n\
                ax := line(C)\nax parallel std.z\nC distance(100, along: std.z) ax.p2\n\
                k := std.ConeThrough(ax, q, lean: 20deg)\n\
-               grown := { p | p outside(0.5mm) k }\n\
+               grown := { p | p distance(<= 0.5mm, side: inside) k }\n\
                kink := point in std.front\nkink coincident grown.surface\n\
                C distance(-2mm, along: ax) kink\nC distance(>= 0mm, along: std.x) kink\n";
     let e = solved(src);

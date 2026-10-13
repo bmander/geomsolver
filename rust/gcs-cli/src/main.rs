@@ -321,7 +321,7 @@ fn check(s: &Source, opts: &Opts) -> (u8, Option<Json>) {
         if !opts.json {
             println!("{}: did not elaborate", s.name);
         }
-        return (1, opts.json.then(|| doc_json(s, None, None, &e, Json::Null)));
+        return (1, opts.json.then(|| doc_json(s, &errs, None, None, &e, Json::Null)));
     }
 
     let mut sk = e.sketch.clone();
@@ -333,7 +333,7 @@ fn check(s: &Source, opts: &Opts) -> (u8, Option<Json>) {
     let failed = invalid.iter().any(|d| d.severity() == Severity::Error);
     e.diags.extend(invalid);
     if failed {
-        return (1, opts.json.then(|| doc_json(s, Some(&r), None, &e, Json::Null)));
+        return (1, opts.json.then(|| doc_json(s, &[], Some(&r), None, &e, Json::Null)));
     }
     let d = (!opts.no_diagnose).then(|| diagnose(&mut sk, DiagnoseOptions::default()));
 
@@ -536,7 +536,7 @@ fn check(s: &Source, opts: &Opts) -> (u8, Option<Json>) {
     (
         code,
         opts.json.then(|| {
-            doc_json(s, Some(&r), d.as_ref().map(|d| (&sk, d)), &e, positions.unwrap_or(Json::Null))
+            doc_json(s, &[], Some(&r), d.as_ref().map(|d| (&sk, d)), &e, positions.unwrap_or(Json::Null))
         }),
     )
 }
@@ -687,24 +687,27 @@ fn pick_solid(sk: &gcs_core::model::Sketch, name: Option<&str>) -> Result<usize,
 /// and is `Null` for a document that never got as far as a drawing.
 fn doc_json(
     s: &Source,
+    syntax: &[gcs_core::syntax::SynErr],
     r: Option<&gcs_core::solve::SolveResult>,
     d: Option<(&Sketch, &gcs_core::diagnose::Diagnosis)>,
     e: &Elaborated,
     positions: Json,
 ) -> Json {
-    let diags: Vec<Json> = e
-        .diags
-        .iter()
-        .map(|x| {
-            let (line, col) = line_col(&s.text, x.span.lo);
-            json::object([
-                ("code", Json::Str(x.code.as_str().to_string())),
-                ("severity", Json::Str(severity(x.severity()).to_string())),
-                ("line", Json::Int(line as i64)),
-                ("column", Json::Int(col as i64)),
-                ("message", Json::Str(x.message.clone())),
-            ])
-        })
+    let said = |lo: u32, code: &str, sev: &str, message: &str| {
+        let (line, col) = line_col(&s.text, lo);
+        json::object([
+            ("code", Json::Str(code.to_string())),
+            ("severity", Json::Str(sev.to_string())),
+            ("line", Json::Int(line as i64)),
+            ("column", Json::Int(col as i64)),
+            ("message", Json::Str(message.to_string())),
+        ])
+    };
+    // a syntax error first, as the text report says it (`E001`, no `Code` of its own yet)
+    let diags: Vec<Json> = syntax.iter().map(|x| said(x.span.lo, "E001", "error", &x.message))
+        .chain(e.diags.iter().map(|x| {
+            said(x.span.lo, x.code.as_str(), severity(x.severity()), &x.message)
+        }))
         .collect();
     json::object([
         ("name", Json::Str(s.name.clone())),
