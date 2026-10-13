@@ -47,19 +47,11 @@ pub fn built(sk: &Sketch, swept: usize) -> Option<Result<Rc<Canal>, String>> {
     if !matches!(sk.solids.get(swept)?.def, SolidDef::Swept { .. }) {
         return None;
     }
-    let key = super::reads(sk, swept, 0.0);
-    if let Some((old, c)) = sk.canal_cache.borrow().get(&swept) {
-        if *old == key {
-            return c.clone();
-        }
-    }
-    let c = read(sk, swept).map(|c| {
+    sk.canal_cache.get_or(swept, super::MemoKey::of(sk, swept), || read(sk, swept).map(|c| {
         let c = c?;
         gate(sk, swept, &c)?;
         Ok(Rc::new(c))
-    });
-    sk.canal_cache.borrow_mut().insert(swept, (key, c.clone()));
-    c
+    }))
 }
 
 /// Whether sweep `i` is built as a ball's tube: not a continuous sweep the generating class or the

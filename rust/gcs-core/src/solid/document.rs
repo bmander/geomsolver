@@ -145,6 +145,73 @@ fn reads_where(sk: &Sketch, si: usize, unit: f64, skip: &dyn Fn(usize) -> bool) 
     v
 }
 
+/// **What a result built for a solid was built from** — the memo key every per-solid cache keeps
+/// (`Memo`): the numbers it reads (`reads`, or one of its narrower walks) and the strata it reads
+/// (`faces::cached`'s), each told by identity, since a stratum is the same one exactly while its
+/// own key holds.
+#[derive(Clone, Debug, Default)]
+pub struct MemoKey {
+    reads: Vec<f64>,
+    strata: Vec<std::sync::Arc<super::faces::BodyFaces>>,
+}
+
+impl PartialEq for MemoKey {
+    fn eq(&self, o: &MemoKey) -> bool {
+        self.reads == o.reads && self.strata.len() == o.strata.len()
+            && self.strata.iter().zip(&o.strata).all(|(a, b)| std::sync::Arc::ptr_eq(a, b))
+    }
+}
+
+impl MemoKey {
+    /// Everything solid `si` reads (`reads`).
+    pub fn of(sk: &Sketch, si: usize) -> MemoKey {
+        MemoKey { reads: reads(sk, si, 0.0), strata: Vec::new() }
+    }
+
+    /// What solid `si` reads of its own (`reads_own`), and the strata it reads.
+    pub fn own(sk: &Sketch, si: usize, strata: Vec<std::sync::Arc<super::faces::BodyFaces>>) -> MemoKey {
+        MemoKey { reads: reads_own(sk, si, 0.0), strata }
+    }
+
+    /// What solid `si` reads but the solids `skip` (`reads_except`).
+    pub fn except(sk: &Sketch, si: usize, skip: &std::collections::BTreeSet<usize>) -> MemoKey {
+        MemoKey { reads: reads_except(sk, si, 0.0, skip), strata: Vec::new() }
+    }
+}
+
+/// **A result per solid, remembered against what it was built from** (`MemoKey`):
+/// `curve_polyline`'s bargain, built again only where what it reads has moved.  Interior, so
+/// `&Sketch` readers share it; a cache and not state, since a miss builds what a hit remembers.
+#[derive(Clone, Debug)]
+pub struct Memo<V>(std::cell::RefCell<std::collections::BTreeMap<usize, (MemoKey, V)>>);
+
+impl<V> Default for Memo<V> {
+    fn default() -> Memo<V> { Memo(Default::default()) }
+}
+
+impl<V: Clone> Memo<V> {
+    /// What is remembered for solid `i`, where it was built against `key`.
+    pub fn get(&self, i: usize, key: &MemoKey) -> Option<V> {
+        self.0.borrow().get(&i).filter(|(old, _)| old == key).map(|(_, v)| v.clone())
+    }
+
+    /// Remember `value` for solid `i`, built against `key`.
+    pub fn put(&self, i: usize, key: MemoKey, value: V) {
+        self.0.borrow_mut().insert(i, (key, value));
+    }
+
+    /// What is remembered for solid `i` against `key`, else what `build` makes, remembered.  The
+    /// memo is not borrowed while `build` runs, so it may ask this memo of other solids.
+    pub fn get_or(&self, i: usize, key: MemoKey, build: impl FnOnce() -> V) -> V {
+        if let Some(v) = self.get(i, &key) {
+            return v;
+        }
+        let v = build();
+        self.put(i, key, v.clone());
+        v
+    }
+}
+
 fn name_read(name: &str, v: &mut Vec<f64>) {
     v.push(name.len() as f64);
     v.extend(name.bytes().map(f64::from));

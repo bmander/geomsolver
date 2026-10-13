@@ -224,7 +224,7 @@ fn recipe_with(sk: &Sketch,root: usize,static_only: bool) -> Result<StaticRecipe
                 // construction makes (#238)
                 if super::region::in_general(sk,i) {
                     let Some(b) = super::bounded::built(sk,i) else {
-                        let what = if terms.iter().any(|t| super::faces::reads_faces(&t.shape)) {
+                        let what = if super::faces::terms_read_faces(terms) {
                             "a region over a body's faces that no entry of the lowering table builds"
                         } else {
                             "a region in general position over a sum of measurements, an offset or a wide cone"

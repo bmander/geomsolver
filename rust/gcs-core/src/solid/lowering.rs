@@ -376,18 +376,11 @@ pub fn lowered(sk: &Sketch, solid: usize) -> Option<Result<Rc<Vec<Piece>>, Strin
         Ok(b) => b,
         Err(e) => return Some(Err(e)),
     };
-    let key = super::document::reads_own(sk, solid, 0.0);
-    if let Some((old, b, l)) = sk.lowering_cache.borrow().get(&solid) {
-        if *old == key && std::sync::Arc::ptr_eq(b, &body) {
-            return Some(l.clone());
-        }
-    }
-    let l = build(&body, &faces, section).and_then(|pieces| {
+    let key = super::MemoKey::own(sk, solid, vec![body.clone()]);
+    Some(sk.lowering_cache.get_or(solid, key, || build(&body, &faces, section).and_then(|pieces| {
         gate(sk, solid, &pieces, &body, || beside_edges(&body, &faces, section))?;
         Ok(Rc::new(pieces))
-    });
-    sk.lowering_cache.borrow_mut().insert(solid, (key, body, l.clone()));
-    Some(l)
+    })))
 }
 
 /// A term's number, where it states one and bounds it on one side, with no offset.

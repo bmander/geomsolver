@@ -111,21 +111,15 @@ impl Bounded {
 pub fn built(sk: &Sketch, solid: usize) -> Option<Result<Rc<Bounded>, String>> {
     let SolidDef::Region { terms, .. } = &sk.solids.get(solid)?.def else { return None };
     // a region over a body's faces is the lowering table's
-    if terms.iter().any(|t| super::faces::reads_faces(&t.shape)) {
+    if super::faces::terms_read_faces(terms) {
         return None;
     }
-    let key = super::reads(sk, solid, 0.0);
-    if let Some((old, b)) = sk.bounded_cache.borrow().get(&solid) {
-        if *old == key {
-            return b.clone();
-        }
-    }
-    let b = construction(sk, solid).map(|b| b.and_then(|b| {
-        gate(sk, solid, &b)?;
-        Ok(Rc::new(b))
-    }));
-    sk.bounded_cache.borrow_mut().insert(solid, (key, b.clone()));
-    b
+    sk.bounded_cache.get_or(solid, super::MemoKey::of(sk, solid), || {
+        construction(sk, solid).map(|b| b.and_then(|b| {
+            gate(sk, solid, &b)?;
+            Ok(Rc::new(b))
+        }))
+    })
 }
 
 /// The pieces of region solid `solid`, or `None` where it is not read in general position or a

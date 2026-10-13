@@ -53,7 +53,7 @@ use profile::loop_poly;
 pub use primitive::{prism,revolve};
 pub(crate) use primitive::area_vector;
 use primitive::{facet_normal,finish};
-pub use document::{reads,resolve};
+pub use document::{reads,resolve,Memo,MemoKey};
 mod static_boundary;
 pub use static_boundary::{static_solid,indexed,indexed_faces,primitive_triangles,StaticSolid,static_solid_at_unit};
 pub(crate) use document::{evaluation_operands,operand_paths,reaches};

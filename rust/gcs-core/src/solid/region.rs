@@ -67,20 +67,13 @@ fn folded(sk: &Sketch, solid: usize) -> Result<Rc<Meridian>, Refusal> {
     // a region reading a body's faces is refused by its own terms, whatever the body: its key
     // need not walk the body, and through it every other round of it (#197)
     let faces = matches!(&sk.solids.get(solid).map(|s| &s.def), Some(SolidDef::Region { terms, .. })
-        if terms.iter().any(|t| super::faces::reads_faces(&t.shape)));
+        if super::faces::terms_read_faces(terms));
     let key = if faces {
-        super::document::reads_own(sk, solid, 0.0)
+        super::MemoKey::own(sk, solid, Vec::new())
     } else {
-        super::reads(sk, solid, 0.0)
+        super::MemoKey::of(sk, solid)
     };
-    if let Some((old, m)) = sk.meridian_cache.borrow().get(&solid) {
-        if *old == key {
-            return m.clone();
-        }
-    }
-    let m = fold(sk, solid).map(Rc::new);
-    sk.meridian_cache.borrow_mut().insert(solid, (key, m.clone()));
-    m
+    sk.meridian_cache.get_or(solid, key, || fold(sk, solid).map(Rc::new))
 }
 
 fn fold(sk: &Sketch, solid: usize) -> Result<Meridian, Refusal> {
@@ -904,28 +897,15 @@ pub(crate) fn in_general_position(sk: &Sketch, solid: usize)
     let Some(SolidDef::Region { terms, .. }) = sk.solids.get(solid).map(|s| &s.def) else {
         return None;
     };
-    let mut bodies: Vec<usize> = terms.iter().flat_map(|t| t.shape.entities())
-        .filter(|e| e.kind == crate::model::EntKind::Solid).map(|e| e.i()).collect();
-    bodies.sort_unstable();
-    bodies.dedup();
-    let strata = bodies.iter().map(|&b| super::faces::cached(sk, b)).collect::<Result<Vec<_>, _>>();
-    let (key, strata) = match strata {
-        Ok(strata) => (super::document::reads_own(sk, solid, 0.0), strata),
-        Err(_) => (super::reads(sk, solid, 0.0), Vec::new()),
+    let key = match super::faces::strata(sk, terms) {
+        Ok(strata) => super::MemoKey::own(sk, solid, strata),
+        Err(_) => super::MemoKey::of(sk, solid),
     };
-    if let Some((old, read, g)) = sk.general_cache.borrow().get(&solid) {
-        if *old == key && read.len() == strata.len()
-            && read.iter().zip(&strata).all(|(a, b)| std::sync::Arc::ptr_eq(a, b)) {
-            return g.clone();
-        }
-    }
-    let g = match folded(sk, solid) {
+    sk.general_cache.get_or(solid, key, || match folded(sk, solid) {
         Ok(_) => None,
         Err(r) if r.outright => None,
         Err(_) => Some(general(sk, solid)),
-    };
-    sk.general_cache.borrow_mut().insert(solid, (key, strata, g.clone()));
-    g
+    })
 }
 
 /// Whether region solid `solid` is read in general position, and that reading made.

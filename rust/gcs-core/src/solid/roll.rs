@@ -38,16 +38,10 @@ pub fn interval(sk: &Sketch, swept: usize) -> Result<[f64; 2], String> {
         Roll::Stated { from, to } => return Ok([from.value, to.value]),
         Roll::Through { body } => *body as usize,
     };
-    let key = super::reads(sk, swept, 0.0);
-    if let Some((old, found)) = sk.roll_cache.borrow().get(&swept) {
-        if *old == key {
-            return found.clone();
-        }
-    }
-    let found = through(sk, *source as usize, *motion as usize, body)
-        .map_err(|m| format!("`{}` rolls through `{}`: {m}", s.name, sk.solids[body].name));
-    sk.roll_cache.borrow_mut().insert(swept, (key, found.clone()));
-    found
+    sk.roll_cache.get_or(swept, super::MemoKey::of(sk, swept), || {
+        through(sk, *source as usize, *motion as usize, body)
+            .map_err(|m| format!("`{}` rolls through `{}`: {m}", s.name, sk.solids[body].name))
+    })
 }
 
 /// The ways the march goes from 0: down, then up.

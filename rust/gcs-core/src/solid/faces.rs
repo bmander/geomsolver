@@ -519,6 +519,11 @@ pub fn reads_faces(shape: &RegionShape) -> bool {
     }
 }
 
+/// Whether any of a region's terms reads a body's faces (`reads_faces`).
+pub fn terms_read_faces(terms: &[RegionTerm]) -> bool {
+    terms.iter().any(|t| reads_faces(&t.shape))
+}
+
 /// **A face's name, as a body names it** (#188): the route through the body's operands to the
 /// primitive the face is a piece of (`plate`, a placed copy's `turned`, none for the body's own
 /// sweep, `document::operand_primitives`) and the face's own name in that primitive (`near`, an
@@ -695,13 +700,16 @@ fn face_reach(sk: &Sketch, i: usize, route: &[String]) -> Result<(usize, crate::
 /// `BodyFaces::read`, remembered against what it reads (`Sketch::faces_cache`): the stratum, so
 /// a round's own numbers do not build its body again.
 pub fn cached(sk: &Sketch, body: usize) -> Result<std::sync::Arc<BodyFaces>, String> {
-    let key = super::document::reads_except(sk, body, 0.0, &readers_of(sk, body));
-    if let Some((old, b)) = sk.faces_cache.borrow().get(&body) {
-        if *old == key {
-            return b.clone();
-        }
-    }
-    let b = BodyFaces::read(sk, body).map(std::sync::Arc::new);
-    sk.faces_cache.borrow_mut().insert(body, (key, b.clone()));
-    b
+    let key = super::MemoKey::except(sk, body, &readers_of(sk, body));
+    sk.faces_cache.get_or(body, key, || BodyFaces::read(sk, body).map(std::sync::Arc::new))
+}
+
+/// The strata of the bodies whose faces region terms `terms` read (`cached`'s, each body once, in
+/// order): what a reading of them is keyed on beside its own numbers (`MemoKey::own`).
+pub fn strata(sk: &Sketch, terms: &[RegionTerm]) -> Result<Vec<std::sync::Arc<BodyFaces>>, String> {
+    let mut bodies: Vec<usize> = terms.iter().flat_map(|t| t.shape.entities())
+        .filter(|e| e.kind == crate::model::EntKind::Solid).map(|e| e.i()).collect();
+    bodies.sort_unstable();
+    bodies.dedup();
+    bodies.iter().map(|&b| cached(sk, b)).collect()
 }
