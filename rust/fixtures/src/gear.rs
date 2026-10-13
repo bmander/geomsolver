@@ -77,9 +77,9 @@ pub fn one_space(text: &str) -> String {
 /// The `members` module with each member also publishing its blank (`blank`: a body over the
 /// blank's region, `design.blank`) and `extra` after it, past the member's generated `cut`.
 pub fn publish_blank(text: &str,extra: &str) -> String {
-    let member = "  body := solid(design.blank)\n  cut := Generated(";
-    let at = text.find(member).expect("the member's body is its blank, less its generated cut");
-    let end = at+text[at..].find(")\n").unwrap()+2;
+    let cut = "  body := solid(design.blank)\n  cut := Generated(";
+    let at = text.find(cut).expect("the member's body is its blank, less its generated cut")+cut.len();
+    let end = at+text[at..].find('\n').unwrap()+1;
     format!("{}  construction blank := solid(design.blank)\n{extra}{}",&text[..end],&text[end..])
 }
 

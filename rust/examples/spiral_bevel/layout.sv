@@ -64,27 +64,27 @@ component HypoidLayout(p: plane, design: group, normal_module: Length) {
     cutter.mate_tip, cutter.mate_base, reach.cap, generation.crown_neighbor,
     grow: design.backlash / 4, r: design.rounding * normal_module)
   when design.tip_relief > 0mm {
-    // The toppings, their kinks in the normal section N along the trace normal C -> M: the
-    // pinion's each `tip_relief` above where its flank generates the pinion's tip edge, the
-    // gear's each as far below where its flank generates the gear's, tip down; each the crown's
-    // own region over the toppings' cones, from its base to a top half an addendum short of the
-    // pitch plane, its flanks grown nothing (each kink is on its crown's flank as grown).
+    // The toppings, their kinks in the normal section N along the trace normal C -> M, each
+    // `tip_relief` short of the addendum where its flank generates its member's tip edge (the
+    // pinion's below the pitch plane, the gear's above), leaning the relief angle past its
+    // flank; each crown's own region over its toppings' cones, from its base to a top half an
+    // addendum short of the pitch plane, its flanks grown nothing (each kink is on its crown's
+    // flank as grown).
     n := views.FoldedView(p, trace.normal)
+    depth := design.addendum * normal_module - design.tip_relief
+    inner_lean := design.pressure + design.shift + design.relief_angle
+    outer_lean := design.shift - design.pressure - design.relief_angle
     pinion_inner := Topping(tooth.inner, cutter.ax, n.view, thickness.inner_pitch,
-      height: design.tip_relief - design.addendum * normal_module,
-      lean: design.pressure + design.shift + design.relief_angle, design: design)
+      height: -depth, lean: inner_lean, design: design)
     pinion_outer := Topping(tooth.outer, cutter.ax, n.view, thickness.outer_pitch,
-      height: design.tip_relief - design.addendum * normal_module,
-      lean: design.shift - design.pressure - design.relief_angle, design: design)
+      height: -depth, lean: outer_lean, design: design)
     pinion_top := std.Level(cutter.ax.p1, cutter.ax, d: -design.addendum * normal_module / 2)
     construction pinion_topping := crown.tooth.Tooth(pinion_inner.cone, pinion_outer.cone,
       cutter.tooth_base, pinion_top, grow: 0mm, r: design.rounding * normal_module)
     gear_outer := Topping(gear_space.inner, cutter.ax, n.view, thickness.outer_pitch,
-      height: design.addendum * normal_module - design.tip_relief,
-      lean: design.shift - design.pressure - design.relief_angle, design: design)
+      height: depth, lean: outer_lean, design: design)
     gear_inner := Topping(gear_space.outer, cutter.ax, n.view, thickness.inner_pitch,
-      height: design.addendum * normal_module - design.tip_relief,
-      lean: design.pressure + design.shift + design.relief_angle, design: design)
+      height: depth, lean: inner_lean, design: design)
     gear_top := std.Level(cutter.ax.p1, cutter.ax, d: design.addendum * normal_module / 2)
     construction gear_topping := crown.mate.Space(gear_outer.cone, gear_inner.cone, gear_top,
       cutter.mate_base, reach.cap, generation.crown_neighbor, grow: 0mm,

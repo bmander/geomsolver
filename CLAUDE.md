@@ -818,9 +818,10 @@ construction needs `admission::Admission` (only `admit_body` makes one). Contrac
 `tests/native_surfaces/gear_cells.rs` holds the recorded tooth-space volumes;
 `tests/generating_harness.rs` (ignored) locates refusals by stage.
 The pair carries **backlash** (`crown/tooth.sv`, `crown/mate.sv`: each flank cone grown a
-quarter of it), **tip relief** (`layout.sv`'s `Topping`s and the crown's regions over their cones, cut by
-`members.sv`'s `Generated`, under `when`) and **end relief** (`blank/member.sv`'s `std.Chamfered`); `fixtures::gear::design` pins
-all to zero, `fixtures::gear::fabricated` sets them. Files:
+quarter of it), **tip relief** (`layout.sv`'s `Topping`s and the crown's regions over their
+cones, cut by `members.sv`'s `Generated`, under `when`) and **end relief** (`blank/member.sv`'s
+`std.Chamfered`); `fixtures::gear::design` pins all to zero, `fixtures::gear::fabricated` sets
+them. Files:
 `build/exports/hypoid-{pinion,gear}.{step,stl}`; `gcs-cli/tests/pair_check.rs` (ignored) checks
 the pair from the STLs.
 **Screws, the constant-twist class (#64):** a sweep under `motion(about:, advance:)` is admitted by
