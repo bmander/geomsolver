@@ -290,16 +290,17 @@ fn fold(sk: &Sketch, solid: usize) -> Result<Meridian, Refusal> {
         let tag = k as u32 + 1;
         let (a, b) = (l.a as u32 + 1, l.b as u32 + 1);
         // exact only where it builds what the set says: a flat only where its sum of distances is
-        // a line or a conic (`corners::sum`: not between two arcs, a Cartesian oval)
+        // a line or a conic (`corners::sum`: between two arcs only with equal legs, else a
+        // Cartesian oval)
         let curved = |x: &crate::brep::planar::Step| matches!(x.seg, Seg::Arc { .. });
         let between_arcs = || region.loops.iter().any(|lp| (0..lp.len()).any(|i| {
             let (st, nx) = (&lp[i], &lp[(i + 1) % lp.len()]);
             let named = (st.tag == a && nx.tag == b) || (st.tag == b && nx.tag == a);
             named && curved(st) && curved(nx)
         }));
-        if matches!(l.kind, Lower::Flat { .. }) && between_arcs() {
-            return Err(format!("`{}`: a flat between two curved faces is read point by point: its \
-                                sum of distances is no line or conic there", s.name).into());
+        if matches!(l.kind, Lower::Flat { la, lb } if (la - lb).abs() > 1e-12 * la.max(lb)) && between_arcs() {
+            return Err(format!("`{}`: a flat between two curved faces with unequal legs is read point by \
+                                point: its sum of distances is a Cartesian oval, which no rational curve holds", s.name).into());
         }
         region = match l.kind {
             Lower::Round { r } => crate::brep::corners::round(&region, &[a], &[b], r, tag),

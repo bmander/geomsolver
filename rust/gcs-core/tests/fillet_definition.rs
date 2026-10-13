@@ -767,6 +767,13 @@ fn rolled(c: &dyn Fn(f64) -> V, toward: [&dyn Fn(V) -> V; 2], hit: [&dyn Fn(V, V
 /// left; the sections stand at the middles of their steps, never on a plane a section lies in.
 fn rolled_within(c: &dyn Fn(f64) -> V, toward: [&dyn Fn(V) -> V; 2],
                  hit: [&dyn Fn(V, V) -> f64; 2], r: f64, within: Option<(V, f64)>) -> f64 {
+    rolled_over(c, [0.0, 2.0 * PI], toward, hit, r, within.as_slice())
+}
+
+/// `rolled_within` along the stretch `span` of an open spine `c(φ)`, kept within every half-space
+/// `n · x ≤ k` of `within`: a run carried on past both its ends and cut off by the faces there.
+pub(crate) fn rolled_over(c: &dyn Fn(f64) -> V, span: [f64; 2], toward: [&dyn Fn(V) -> V; 2],
+                 hit: [&dyn Fn(V, V) -> f64; 2], r: f64, within: &[(V, f64)]) -> f64 {
     let (n_phi, n_psi) = (720, 96);
     let gauss: Vec<(f64, f64)> = (0..n_psi).map(|i| {
         let mut x = (PI * (i as f64 + 0.75) / (n_psi as f64 + 0.5)).cos();
@@ -789,8 +796,9 @@ fn rolled_within(c: &dyn Fn(f64) -> V, toward: [&dyn Fn(V) -> V; 2],
     }).collect();
     let h = 1e-4;
     let mut total = 0.0;
+    let step = (span[1] - span[0]) / n_phi as f64;
     for k in 0..n_phi {
-        let phi = 2.0 * PI * (k as f64 + 0.5) / n_phi as f64;
+        let phi = span[0] + step * (k as f64 + 0.5);
         let p = c(phi);
         let (pa, pb) = (c(phi - h), c(phi + h));
         let d1 = scale(sub(pb, pa), 1.0 / (2.0 * h));
@@ -817,27 +825,27 @@ fn rolled_within(c: &dyn Fn(f64) -> V, toward: [&dyn Fn(V) -> V; 2],
                 let psi = a + 0.5 * (b - a) * (x + 1.0);
                 let d = dir(psi);
                 let (mut lo, mut hi) = (r, hit[0](p, d).min(hit[1](p, d)));
-                if let Some((n, k)) = within {
+                for &(n, k) in within {
                     let (along, room) = (dot(n, d), k - dot(n, p));
                     if along.abs() < 1e-15 {
                         if room < 0.0 {
-                            continue;
+                            hi = lo;
                         }
                     } else if along > 0.0 {
                         hi = hi.min(room / along);
                     } else {
                         lo = lo.max(room / along);
                     }
-                    if hi <= lo {
-                        continue;
-                    }
+                }
+                if hi <= lo {
+                    continue;
                 }
                 let q = dot(d, kn);
                 let swept = |rho: f64| rho * rho / 2.0 - q * rho.powi(3) / 3.0;
                 area += w * 0.5 * (b - a) * (swept(hi) - swept(lo));
             }
         }
-        total += area * speed * 2.0 * PI / n_phi as f64;
+        total += area * speed * step;
     }
     total
 }
@@ -907,6 +915,38 @@ pub(crate) fn sloped(radius: f64, [cx, cy]: [f64; 2], [h0, s]: [f64; 2], r: f64,
             &|o, w| ray_cylinder(o, w, [cx, cy, 0.0], 2, radius)],
         r,
         within,
+    )
+}
+
+/// The round along a frustum's generator where the plane `y = 0` through its axis (z) cuts it, the
+/// material `y > 0` within the frustum: radius `r0 − slope · z`, the run cut off by the planes `z =
+/// z0` and `z = z1` it ends at, the ball rolled with its centre `r` off the plane and on the cone
+/// grown in by `r` (a hyperbola), carried on past both.
+pub(crate) fn frustum_generator(r0: f64, slope: f64, [z0, z1]: [f64; 2], r: f64) -> f64 {
+    let (cs, sn) = (1.0 / (1.0 + slope * slope).sqrt(), slope / (1.0 + slope * slope).sqrt());
+    let reach = 3.0 * r;
+    rolled_over(
+        &|z: f64| {
+            let rho = r0 - slope * z - r / cs;
+            [(rho * rho - r * r).sqrt(), r, z]
+        },
+        [z0 - reach, z1 + reach],
+        [&|_: V| [0.0, -1.0, 0.0], &|p: V| {
+            let rho = p[0].hypot(p[1]);
+            [cs * p[0] / rho, cs * p[1] / rho, sn]
+        }],
+        [&|o: V, w: V| if w[1] < 0.0 { -o[1] / w[1] } else { f64::INFINITY },
+            &|o: V, w: V| {
+                let k = r0 - slope * o[2];
+                let a = w[0] * w[0] + w[1] * w[1] - slope * slope * w[2] * w[2];
+                let b = 2.0 * (o[0] * w[0] + o[1] * w[1]) + 2.0 * slope * w[2] * k;
+                let c = o[0] * o[0] + o[1] * o[1] - k * k;
+                let disc = (b * b - 4.0 * a * c).max(0.0).sqrt();
+                [(-b - disc) / (2.0 * a), (-b + disc) / (2.0 * a)].into_iter()
+                    .filter(|&t| t > 0.0 && k - slope * w[2] * t >= 0.0).fold(f64::INFINITY, f64::min)
+            }],
+        r,
+        &[([0.0, 0.0, -1.0], -z0), ([0.0, 0.0, 1.0], z1)],
     )
 }
 

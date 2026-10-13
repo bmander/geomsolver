@@ -220,7 +220,8 @@ pub fn kept(piece: &Brep,o: V,keep: V,floor: f64) -> Result<Brep,String> {
 
 /// A lowered piece's end face or a corner's face, as `solid::lowering` writes it (millimetres): a
 /// plane through `origin` square to `normal`, a cylinder of `radius` about the line through `origin`
-/// along `axis`, or a sphere of `radius` about `origin`.
+/// along `axis`, a sphere of `radius` about `origin`, or a cone about the line through `origin`
+/// along `axis` of `radius` there, its `half` angle (radians).
 fn surface_of(j: &Json) -> Result<super::geom::Surface,String> {
     use super::geom::{Frame,Surface};
     let radius = || field(j,"radius").map(Json::as_f64);
@@ -228,12 +229,14 @@ fn surface_of(j: &Json) -> Result<super::geom::Surface,String> {
         "plane" => Surface::Plane(Frame::about(vec3(field(j,"origin")?),vec3(field(j,"normal")?))),
         "cylinder" => Surface::Cylinder(Frame::about(vec3(field(j,"origin")?),vec3(field(j,"axis")?)),radius()?),
         "sphere" => Surface::Sphere(Frame::about(vec3(field(j,"origin")?),[0.,0.,1.]),radius()?),
+        "cone" => Surface::Cone(Frame::about(vec3(field(j,"origin")?),vec3(field(j,"axis")?)),radius()?,field(j,"half")?.as_f64()),
         k => return Err(format!("recipe: a face on a surface of kind `{k}`")),
     })
 }
 
-/// `piece` kept within (`inside`) or outside the solid a cylinder or a sphere bounds: in common with
-/// it, or less it, the cylinder long enough to reach past the piece either way.
+/// `piece` kept within (`inside`) or outside the solid a cylinder, a sphere or a cone bounds: in
+/// common with it, or less it, the cylinder or the cone long enough to reach past the piece either
+/// way.
 pub fn kept_by_solid(piece: &Brep,surface: &super::geom::Surface,inside: bool,floor: f64) -> Result<Brep,String> {
     use crate::space::{add,distance,dot,scale,sub};
     use super::build::ProfileEdge;
@@ -256,6 +259,27 @@ pub fn kept_by_solid(piece: &Brep,surface: &super::geom::Surface,inside: bool,fl
             let shut = ProfileEdge::Line {a:bottom,b:top};
             let half = Profile {origin:f.o,normal:f.z,loops:vec![vec![arc,shut]],names:Vec::new()};
             super::build::revolve(&half,f.o,f.y,std::f64::consts::TAU)?
+        }
+        Surface::Cone(f,radius,half) => {
+            // a frustum of the cone's solid over the heights along its axis the piece reaches, and
+            // as far again either way, short of the apex: its section in a meridian turned once
+            let slope = half.dtan();
+            let corners = [lo,hi].into_iter().flat_map(|a| [lo,hi].into_iter().flat_map(move |b| [lo,hi].into_iter()
+                .map(move |c| [a[0],b[1],c[2]])));
+            let heights: Vec<f64> = corners.map(|p| dot(sub(p,f.o),f.z)).collect();
+            let (h0,h1) = heights.iter().fold((f64::INFINITY,f64::NEG_INFINITY),|(a,b),&h| (a.min(h),b.max(h)));
+            let span = h1-h0;
+            let (mut from,mut to) = (h0-span,h1+span);
+            let apex = if slope.abs() > 1e-12 { -radius/slope } else { f64::NAN };
+            if slope > 1e-12 { from = from.max(apex+1e-6*span.max(1.)) }
+            if slope < -1e-12 { to = to.min(apex-1e-6*span.max(1.)) }
+            if !(to > from) { return Err("a piece kept within a cone it does not reach".into()) }
+            let at = |rho: f64,h: f64| add(f.o,add(scale(f.x,rho),scale(f.z,h)));
+            let (r0,r1) = (radius+slope*from,radius+slope*to);
+            let pts = [at(0.,from),at(r0,from),at(r1,to),at(0.,to)];
+            let edges = (0..4).map(|k| ProfileEdge::Line {a:pts[k],b:pts[(k+1)%4]}).collect();
+            let section = Profile {origin:f.o,normal:f.y,loops:vec![edges],names:Vec::new()};
+            super::build::revolve(&section,f.o,f.z,std::f64::consts::TAU)?
         }
         _ => return Err(format!("a piece kept within a {}",surface.kind())),
     };

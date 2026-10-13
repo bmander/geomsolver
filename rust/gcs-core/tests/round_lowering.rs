@@ -322,19 +322,95 @@ fn a_cusp_between_two_bores_is_rounded_away() {
     close(props::volume(&b), (50.0 * 40.0 - bores - 2.0 * cusp_fill(big, small, d, r)) * 40.0);
 }
 
-/// **What no entry builds stays the field's**: the twin bar's seams chamfered. Between two circles
-/// a flat's sum of distances is a Cartesian oval, no conic, which no entry builds: the export is
-/// refused, naming why, and the field still reads it.
+/// **A flat between two curved faces** (#218's 5): the twin bar's seams chamfered. With equal legs
+/// the flat's sum of distances from the two walls is one from their axes, `|q − c₁| + |q − c₂| =
+/// 10 + 8 + 1`: an ellipse whose foci are the rods' centres (`corners::between_circles`), a prism
+/// over a rational quadratic. Each cusp's fill is bounded by the big rod's arc from the cusp to the
+/// flat's end on it, the ellipse's arc and the small rod's back to the cusp: its area by Green's
+/// theorem over the three, each in closed form.
 #[test]
-fn a_round_no_entry_builds_is_refused_by_name() {
+fn a_chamfer_between_two_rods_is_an_ellipse() {
     let src = include_str!("../../examples/rounds/twin.sv").replace("use std (round)", "use std (chamfer)")
         .replace("bar.right.small round(r: r) bar.left.big", "bar.right.small chamfer(d: 1mm) bar.left.big");
     let e = solved(&src);
+    assert_eq!(lowered(&e).0, 1);
+    let b = exported(&e, "bar");
+    let (big, small, d, leg) = (10.0_f64, 8.0_f64, 14.0_f64, 1.0_f64);
+    // where a circle about the origin of radius `ra` crosses one about (d, 0) of radius `rb`,
+    // above the axis
+    let crossing = |ra: f64, rb: f64| { let x = (ra * ra - rb * rb + d * d) / (2.0 * d); [x, (ra * ra - x * x).sqrt()] };
+    let (cusp, p0, p2) = (crossing(big, small), crossing(big, small + leg), crossing(big + leg, small));
+    // `½∮(x dz − z dx)` along an arc about (cx, 0) from angle θ₁ to θ₂, and along the ellipse
+    // `(d/2 + a cos t, b sin t)` from t₁ to t₂
+    let circle = |cx: f64, r: f64, t1: f64, t2: f64| 0.5 * r * (cx * (t2.sin() - t1.sin()) + r * (t2 - t1));
+    let a = (big + small + leg) / 2.0;
+    let bb = (a * a - d * d / 4.0).sqrt();
+    let ellipse = |t1: f64, t2: f64| 0.5 * (d / 2.0 * bb * (t2.sin() - t1.sin()) + a * bb * (t2 - t1));
+    let angle = |p: [f64; 2], cx: f64| p[1].atan2(p[0] - cx);
+    let param = |p: [f64; 2]| (p[1] / bb).atan2((p[0] - d / 2.0) / a);
+    let fill = (circle(0.0, big, angle(cusp, 0.0), angle(p0, 0.0)) + ellipse(param(p0), param(p2))
+        + circle(d, small, angle(p2, d), angle(cusp, d))).abs();
+    let section = PI * (big * big + small * small) - lens(big, small, d) + 2.0 * fill;
+    close(props::volume(&b), section * 40.0);
+}
+
+/// The same flat in a region's meridian: a lens, two balls of radius 10 about (0, 0, ±6), its rim
+/// chamfered by `std.Chamfered` with equal legs. The flat is `|q − c₁| + |q − c₂| ≤ 19`, a spheroid
+/// with the balls' centres its foci (semi-axes 9.5 and √54.25), a conic in the meridian: the lens
+/// is the spheroid out to where it meets each ball (`z₀ = 19/24`), the balls beyond.
+#[test]
+fn a_lenss_rim_chamfered_is_a_spheroid() {
+    let e = solved("unit mm\nuse std\nc1 := point hint((0, 0, -6))\nfix((0, 0, -6)) c1\n\
+        c2 := point hint((0, 0, 6))\nfix((0, 0, 6)) c2\n\
+        a := std.Sphere(c1, r: 10mm)\nb := std.Sphere(c2, r: 10mm)\n\
+        both := { p |\n  p inside a\n  p inside b\n  p inside std.Chamfered(a, b, la: 1mm, lb: 1mm)\n}\n\
+        lens := solid(both)\n");
+    let b = exported(&e, "lens");
+    let z0: f64 = 19.0 / 24.0;
+    let spheroid = 54.25 * (z0 - z0.powi(3) / (3.0 * 90.25));
+    let ball = |z: f64| 100.0 * z - (z + 6.0).powi(3) / 3.0;
+    close(props::volume(&b), 2.0 * PI * (spheroid + ball(4.0) - ball(z0)));
+}
+
+/// **A ring beside a torus** (#218's 5): a torus (tube 4 about a circle of 10) half sunk in a slab,
+/// filled where it leaves the slab's top. In each meridian the torus is its tube's circle, so each
+/// edge's fill is turned exactly — a torus face — not rolled: the section beside a cylinder lying
+/// on a plane (`beside_cylinder`), turned about the axis at the outer edge and mirrored at the inner
+/// one, their centroids `10 ± ρ̄`, so both together are the section turned at 10 twice (Pappus).
+#[test]
+fn a_torus_on_a_slab_is_filled_by_rings() {
+    let e = solved("unit mm\nuse std (round)\nin std.top {\n\
+        a := point\nb := point\nc := point\nd := point\n\
+        fix((-20, -20)) a\nfix((20, -20)) b\nfix((20, 20)) c\nfix((-20, 20)) d\n\
+        (ab := line(a, b)) -> (bc := line(b, c)) -> (cd := line(c, d)) -> (da := line(d, a)) -> close\n}\n\
+        in std.front {\n  o := point\n  fix((10, 0)) o\n  k := circle(center: o) hint(r: 4)\n  radius(4mm) k\n\
+        \x20 lo := point\n  hi := point\n  fix((0, -5)) lo\n  fix((0, 5)) hi\n  spine := line(lo, hi)\n}\n\
+        slab := solid(face(ab, bc, cd, da), from: -20mm, to: 0mm)\n\
+        tube := solid(face(k), about: spine)\n\
+        body := solid(slab)\ntube union body\nbody.tube round(r: 1mm) body.slab\n");
+    let (built, _) = lowered(&e);
+    assert!(built >= 1);
+    let b = exported(&e, "body");
+    assert!(kinds(&b).get("torus").is_some_and(|&n| n >= 3), "{:?}", kinds(&b));
+    let want = 40.0 * 40.0 * 20.0 + PI * 16.0 * 2.0 * PI * 10.0 / 2.0 + 2.0 * 2.0 * PI * 10.0 * beside_cylinder(4.0, 1.0);
+    close(props::volume(&b), want);
+}
+
+/// **What no rational curve holds stays the field's**: the twin bar's seams cut by a flat of
+/// unequal legs. Between two circles its sum of distances is then a Cartesian oval — a quartic of
+/// genus one, which no rational curve parametrises — so the export is refused, naming why, and the
+/// field still reads it.
+#[test]
+fn a_flat_no_rational_curve_holds_is_refused_by_name() {
+    let src = include_str!("../../examples/rounds/twin.sv").replace("use std (round)", "use std")
+        .replace("bar.right.small round(r: r) bar.left.big", "A bevel(la, lb) B := {\n\
+            \x20 repeat a in A {\n    repeat b in B if b != a {\n\
+            \x20     fill := std.FlatFill(a, b, la: la, lb: lb)\n      filled := solid(fill)\n      filled union A.body\n\
+            \x20   }\n  }\n}\nbar.right.small bevel(la: 1mm, lb: 2mm) bar.left.big");
+    let e = solved(&src);
     let body = ent(&e, "bar").i();
-    let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
-    let refusal = export::exact(&e.sketch, body, None, None, &say).err().expect("refused");
-    assert!(format!("{refusal:?}").contains("a flat between two curved faces is no line or conic: no exact \
-        construction is made of it yet"), "{refusal:?}");
+    let refusal = refused(&e, "bar");
+    assert!(refusal.contains("a Cartesian oval, which no rational curve holds"), "{refusal}");
     let field = MaterialField::read(&e.sketch, body, 1e-10).unwrap();
     // (the front plane's normal, toward the viewer, is −y: the bar stands at y in (−40, 0))
     assert!(field.side([0.0, -20.0, 0.0]) < 0.0 && field.side([7.0, -20.0, 20.0]) > 0.0);
@@ -860,3 +936,30 @@ fn a_corner_where_two_bores_meet_a_face_is_rounded() {
     agrees_with_field(&e, "block", 0.01);
 }
 
+
+/// A frustum (radius 10 at z = 0 to 6 at z = 12, about z), its half y < 0 cut away.
+const HALF_FRUSTUM: &str = "unit mm\nuse std (round)\nin std.front {\n\
+    a := point\nb := point\nc := point\nd := point\n\
+    fix((0, 0)) a\nfix((10, 0)) b\nfix((6, 12)) c\nfix((0, 12)) d\n\
+    (ab := line(a, b)) -> (bc := line(b, c)) -> (cd := line(c, d)) -> (da := line(d, a)) -> close\n}\n\
+    in std.top {\n  e := point\n  f := point\n  g := point\n  h := point\n\
+    fix((-20, -20)) e\nfix((20, -20)) f\nfix((20, 0)) g\nfix((-20, 0)) h\n\
+    (ef := line(e, f)) -> (fg := line(f, g)) -> (gh := line(g, h)) -> (he := line(h, e)) -> close\n}\n\
+    cone := solid(face(ab, bc, cd, da), about: std.z)\n\
+    cutter := solid(face(ef, fg, gh, he), from: -1mm, to: 13mm)\n\
+    half := solid(cone)\ncutter cut half\n";
+
+/// **A straight edge beside a curved face no line carries** (#218's 5): the half frustum's two
+/// generators, where the cut through its axis meets the cone. In a section square to the edge
+/// the cone is no circle, so the ball is rolled (`brep::fillet::roll`), its centre on the plane
+/// grown by `r` and the cone shrunk by it — a hyperbola — and carried past the frustum's top and
+/// bottom and cut off there: held to #85's quadrature over an open spine
+/// (`fillet_definition::frustum_generator`) to 1e-6.
+#[test]
+fn a_frustums_generators_are_rolled() {
+    let e = solved(&format!("{HALF_FRUSTUM}half.cutter round(r: 1mm) half.cone.bc\n"));
+    assert_eq!(lowered(&e).0, 1);
+    let b = exported(&e, "half");
+    let want = 392.0 * PI - 2.0 * crate::fillet_definition::frustum_generator(10.0, 1.0 / 3.0, [0.0, 12.0], 1.0);
+    near_quadrature(props::volume(&b), want);
+}

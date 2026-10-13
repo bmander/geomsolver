@@ -78,12 +78,14 @@ pub struct Run {
 
 /// A face's surface as a corner's cell or a piece's end reads it (model units): a plane through
 /// `origin`, its `normal` away from the material; a cylinder of `radius` about the line through
-/// `origin` along the unit `axis`; or a sphere.
+/// `origin` along the unit `axis`; a sphere; or a cone about the line through `origin` along `axis`,
+/// of `radius` at `origin` and growing at the `half` angle (radians) along `axis`.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Surf {
     Plane { origin: V, normal: V },
     Cylinder { origin: V, axis: V, radius: f64 },
     Sphere { centre: V, radius: f64 },
+    Cone { origin: V, axis: V, radius: f64, half: f64 },
 }
 
 impl Surf {
@@ -93,8 +95,24 @@ impl Surf {
             Some(Surf::Plane { origin, normal })
         } else if let Some((origin, axis, radius)) = body.cylinder(fi) {
             Some(Surf::Cylinder { origin, axis, radius })
+        } else if let Some((origin, axis, radius, half)) = body.cone(fi) {
+            Some(Surf::Cone { origin, axis, radius, half })
         } else {
             body.sphere(fi).map(|(centre, radius)| Surf::Sphere { centre, radius })
+        }
+    }
+
+    /// A point within the solid a cylinder, a sphere or a cone bounds (its axis's point where the
+    /// cone is wider than nothing); a plane's origin.
+    fn within(&self) -> V {
+        match *self {
+            Surf::Plane { origin, .. } | Surf::Cylinder { origin, .. } => origin,
+            Surf::Sphere { centre, .. } => centre,
+            Surf::Cone { origin, axis, radius, half } => {
+                let slope = half.dtan();
+                if radius > 0.0 || slope.abs() < 1e-12 { origin }
+                else { add(origin, scale(axis, (1.0 - radius) / slope)) }
+            }
         }
     }
 
@@ -108,6 +126,12 @@ impl Surf {
                 norm(sub(w, scale(axis, dot(w, axis)))) - radius
             }
             Surf::Sphere { centre, radius } => distance(x, centre) - radius,
+            Surf::Cone { origin, axis, radius, half } => {
+                let w = sub(x, origin);
+                let h = dot(w, axis);
+                let (sn, cs) = half.dsin_cos();
+                (norm(sub(w, scale(axis, h))) - radius) * cs - h * sn
+            }
         }
     }
 
@@ -121,6 +145,18 @@ impl Surf {
                 (flat(sub(q, origin)), flat(along), radius)
             }
             Surf::Sphere { centre, radius } => (sub(q, centre), along, radius),
+            // `ρ = radius + h tan(half)`, on the nappe where that is nothing or more
+            Surf::Cone { origin, axis, radius, half } => {
+                let slope = half.dtan();
+                let flat = |v: V| sub(v, scale(axis, dot(v, axis)));
+                let w = sub(q, origin);
+                let (w0, a0) = (flat(w), flat(along));
+                let (h0, h1) = (dot(w, axis), dot(along, axis));
+                let (k0, k1) = (radius + slope * h0, slope * h1);
+                let roots: Vec<f64> = crate::roots::quadratic(dot(a0, a0) - k1 * k1, 2.0 * (dot(w0, a0) - k0 * k1),
+                    dot(w0, w0) - k0 * k0).into_iter().filter(|&s| k0 + k1 * s >= 0.0).collect();
+                return match roots[..] { [s0, s1] => Some([s0.min(s1), s0.max(s1)]), _ => None };
+            }
         };
         match crate::roots::quadratic(dot(a, a), 2.0 * dot(w, a), dot(w, w) - radius * radius)[..] {
             [s0, s1] => Some([s0.min(s1), s0.max(s1)]),
@@ -138,6 +174,9 @@ impl Surf {
                 ("origin", vector(scale(origin, by))), ("axis", vector(axis)), ("radius", (radius * by).into())]),
             Surf::Sphere { centre, radius } => object([("kind", "sphere".into()),
                 ("origin", vector(scale(centre, by))), ("radius", (radius * by).into())]),
+            Surf::Cone { origin, axis, radius, half } => object([("kind", "cone".into()),
+                ("origin", vector(scale(origin, by))), ("axis", vector(axis)), ("radius", (radius * by).into()),
+                ("half", half.into())]),
         }
     }
 }
@@ -576,13 +615,25 @@ fn run(body: &super::faces::BodyFaces, ga: &[usize], gb: &[usize], within: bool,
     let edges = body.edges_between(ga, gb);
     // an edge no line or circle about the faces' common axis carries: the ball rolled along the
     // whole run of them, traced
-    let carried = |e: u32| body.segment(e).is_some() || body.circle(e).is_some_and(|(centre, axis, ..)| {
-        body.faces_of(e).iter().all(|&f| body.coaxial(f, centre, axis))
-    });
-    if let Some(&e) = edges.iter().find(|&&e| !carried(e)) {
+    // (a straight edge carried only between planes and cylinders along it: a cone's generator is
+    // rolled along, its section square to it no circle)
+    let carried = |e: u32| match body.segment(e) {
+        Some([p0, p1]) => {
+            let d = normalised(sub(p1, p0)).unwrap_or([0.0; 3]);
+            body.faces_of(e).iter().all(|&f| body.plane(f).is_some()
+                || body.cylinder(f).is_some_and(|(_, axis, _)| norm(cross(axis, d)) <= 1e-9))
+        }
+        None => body.circle(e).is_some_and(|(centre, axis, ..)| {
+            body.faces_of(e).iter().all(|&f| body.coaxial(f, centre, axis))
+        }),
+    };
+    if edges.iter().any(|&e| !carried(e)) {
         let Section::Round(r) = section else { return unbuilt("a flat along a traced edge") };
-        return Ok(if body.convex(e) == Some(within) { vec![Piece::Rolled(Rolled { at: body.middle(e), r })] }
-            else { Vec::new() });
+        // a piece for each run of them (two generators of a half cone: two runs)
+        return Ok(body.runs(&edges).into_iter().filter_map(|run| {
+            let e = run[0];
+            (body.convex(e) == Some(within)).then(|| Piece::Rolled(Rolled { at: body.middle(e), r }))
+        }).collect());
     }
     let all: Vec<usize> = ga.iter().chain(gb).copied().collect();
     let ends = body.end_sides(&edges, &all);
@@ -623,10 +674,16 @@ fn piece(body: &super::faces::BodyFaces, edge: u32, fa: usize, fb: usize, within
             && (dot(n, centre) - d).abs() <= 1e-9 * (1.0 + norm(centre))
             && dot(n, body.middle(edge)) < d;
         // in the meridian a plane, a cylinder and a cone are lines, a sphere a circle about its
-        // centre (on the axis, so in every meridian)
-        let trace = |fi: usize, p: V| match body.sphere(fi) {
-            Some((centre, radius)) => Trace::Circle { centre, radius, normal: body.normal(fi, p) },
-            None => Trace::Line(body.normal(fi, p)),
+        // centre (on the axis, so in every meridian), a torus its tube's circle about where the
+        // tube's centre crosses the meridian
+        let trace = |fi: usize, p: V| match (body.sphere(fi), body.torus(fi)) {
+            (Some((centre, radius)), _) => Trace::Circle { centre, radius, normal: body.normal(fi, p) },
+            (_, Some((o, d, big, tube))) => {
+                let w = sub(p, o);
+                let radial = normalised(sub(w, scale(d, dot(w, d)))).unwrap_or(x);
+                Trace::Circle { centre: add(o, scale(radial, big)), radius: tube, normal: body.normal(fi, p) }
+            }
+            _ => Trace::Line(body.normal(fi, p)),
         };
         let section_at = |t: f64| {
             let p = add(centre, scale(radial_at(t), radius));
@@ -765,18 +822,15 @@ fn piece(body: &super::faces::BodyFaces, edge: u32, fa: usize, fb: usize, within
 }
 
 /// The faces of a run's `ends` (`end_sides`' faces and the sides it runs on) standing at `p`, one
-/// end of an edge of it: each plane's half-space `n·x <= d` it is kept within, and each cylinder or
-/// ball it is kept within (where that side holds its axis, its centre) or outside of.
+/// end of an edge of it: each plane's half-space `n·x <= d` it is kept within, and each cylinder,
+/// cone or ball it is kept within (where that side holds its axis, its centre) or outside of.
 fn ends_at(body: &super::faces::BodyFaces, ends: &[(usize, f64)], p: V) -> Result<(Vec<(V, f64)>, Vec<Kept>), String> {
     let (mut planes, mut bent) = (Vec::new(), Vec::new());
     for &(c, sign) in ends.iter().filter(|&&(c, _)| body.side(c, p).abs() <= 1e-7 * (1.0 + norm(p))) {
         match Surf::of(body, c) {
             Some(Surf::Plane { origin, normal }) => planes.push((scale(normal, sign), sign * dot(normal, origin))),
-            Some(face) => {
-                let (Surf::Cylinder { origin: on, .. } | Surf::Sphere { centre: on, .. } | Surf::Plane { origin: on, .. }) = face;
-                bent.push(Kept { face, inside: sign * body.side(c, on) < 0.0 });
-            }
-            None => return unbuilt("an edge cut off by a face neither a plane, a cylinder nor a sphere"),
+            Some(face) => bent.push(Kept { face, inside: sign * body.side(c, face.within()) < 0.0 }),
+            None => return unbuilt("an edge cut off by a face neither a plane, a cylinder, a cone nor a sphere"),
         }
     }
     Ok((planes, bent))
@@ -903,8 +957,9 @@ impl Corner2 {
     /// on `a` and `b` and the stroke between them.
     fn flat(&self, [la, lb]: [f64; 2]) -> Result<(V, V, Stroke), String> {
         use crate::brep::planar::Seg;
+        // (a Cartesian oval is no construction left to make: no rational curve holds it)
         let (ta, tb, cut) = crate::brep::corners::sum(&self.steps[0], &self.steps[1], self.side, [la, lb])
-            .or_else(|e| unbuilt(&e))?;
+            .map_err(|e| if e.contains("no rational curve") { e } else { unbuilt::<()>(&e).unwrap_err() })?;
         let (qa, qb) = (self.lift(self.steps[0].point(ta)), self.lift(self.steps[1].point(tb)));
         Ok((qa, qb, match cut {
             Seg::Conic { m, w, .. } => Stroke::Conic { a: qa, m: self.lift(m), b: qb, w },
@@ -1176,14 +1231,23 @@ fn gate(sk: &Sketch, solid: usize, pieces: &[Piece], body: &super::faces::BodyFa
     let field = super::MaterialField::read(sk, solid, super::cad::AXIS_TOLERANCE)?;
     // the pieces' boundary in model units: a rolled one rolled against the stratum (millimetres,
     // about its origin) and brought back
-    // (`build` rolls a run alone: none stands beside other pieces)
-    let (b, mm) = match pieces {
-        [Piece::Rolled(k)] => {
-            let (stratum, mm, _) = body.brep();
-            let tol = 1e-9 * stratum.size().max(1.0);
-            (crate::brep::fillet::roll(stratum, body.q(k.at), k.r * mm, tol)?.piece, Some(mm))
+    // (rolled runs stand alone: none beside other pieces)
+    let rolled: Vec<&Rolled> = pieces.iter().filter_map(|p| match p { Piece::Rolled(k) => Some(k), _ => None }).collect();
+    let (b, mm) = if rolled.is_empty() { (assemble(pieces).brep(1.0)?, None) } else {
+        if rolled.len() < pieces.len() {
+            return Err("a rolled round beside other pieces: not built yet".to_string());
         }
-        _ => (assemble(pieces).brep(1.0)?, None),
+        let (stratum, mm, _) = body.brep();
+        let tol = 1e-9 * stratum.size().max(1.0);
+        let mut all: Option<crate::brep::topo::Brep> = None;
+        for k in rolled {
+            let piece = crate::brep::fillet::roll(stratum, body.q(k.at), k.r * mm, tol)?.piece;
+            all = Some(match all {
+                None => piece,
+                Some(b) => crate::brep::recipe::combined(&b, &piece, crate::brep::boolean::Op::Union, 0.0)?,
+            });
+        }
+        (all.expect("a rolled piece"), Some(mm))
     };
     // probed `offset` either side of it, so meshed no finer than a twentieth of that
     let size = b.size().max(f64::MIN_POSITIVE);

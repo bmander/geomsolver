@@ -256,6 +256,22 @@ impl BodyFaces {
         }).collect()
     }
 
+    /// Edges `es` in runs: each run the edges joined end to end through the vertices they share.
+    pub fn runs(&self, es: &[u32]) -> Vec<Vec<u32>> {
+        let mut out: Vec<Vec<u32>> = Vec::new();
+        for &e in es {
+            let ends = self.loc.b.edges[e as usize].v;
+            let touching: Vec<usize> = (0..out.len()).filter(|&k| out[k].iter()
+                .any(|&f| self.loc.b.edges[f as usize].v.iter().any(|v| ends.contains(v)))).collect();
+            let mut run = vec![e];
+            for &k in touching.iter().rev() {
+                run.extend(out.remove(k));
+            }
+            out.push(run);
+        }
+        out
+    }
+
     /// Where a run of edges ends: each vertex only one of `es` reaches (model units), with the
     /// unit direction the edge runs from it.  A closed run has none.
     pub fn run_ends(&self, es: &[u32]) -> Vec<(V, V, u32)> {
@@ -312,6 +328,20 @@ impl BodyFaces {
         Some((self.back(f.o), r / self.mm))
     }
 
+    /// Face `fi`'s cone, where it lies on one: a point of its axis, the axis's unit direction, its
+    /// radius there and its half angle (radians), the radius growing along the axis (model units).
+    pub fn cone(&self, fi: usize) -> Option<(V, V, f64, f64)> {
+        let crate::brep::geom::Surface::Cone(f, r, a) = &self.loc.b.faces[fi].surface else { return None };
+        Some((self.back(f.o), f.z, r / self.mm, *a))
+    }
+
+    /// Face `fi`'s torus, where it lies on one: a point of its axis, the axis's unit direction, the
+    /// radius of the circle its tube's centre runs round and the tube's (model units).
+    pub fn torus(&self, fi: usize) -> Option<(V, V, f64, f64)> {
+        let crate::brep::geom::Surface::Torus(f, big, r) = &self.loc.b.faces[fi].surface else { return None };
+        Some((self.back(f.o), f.z, big / self.mm, r / self.mm))
+    }
+
     /// Edge `e`'s ends, first to last, where it is a straight line (model units).
     pub fn segment(&self, e: u32) -> Option<[V; 2]> {
         let edge = &self.loc.b.edges[e as usize];
@@ -341,7 +371,7 @@ impl BodyFaces {
     pub fn normal(&self, fi: usize, p: V) -> V { self.side_grad(fi, p).1 }
 
     /// Whether face `fi`'s surface is turned about the line through `o` along the unit `d`: a plane
-    /// square to it, a cylinder or a cone about it, a sphere centred on it (model units).
+    /// square to it, a cylinder, a cone or a torus about it, a sphere centred on it (model units).
     pub fn coaxial(&self, fi: usize, o: V, d: V) -> bool {
         use crate::brep::geom::Surface;
         let along = |z: V| norm(crate::space::cross(z, d)) <= 1e-9;
@@ -350,6 +380,7 @@ impl BodyFaces {
             Surface::Plane(f) => along(f.z),
             Surface::Cylinder(f, _) | Surface::Cone(f, _, _) => along(f.z) && on(f.o),
             Surface::Sphere(f, _) => on(f.o),
+            Surface::Torus(f, _, _) => along(f.z) && on(f.o),
             _ => false,
         }
     }
