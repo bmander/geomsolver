@@ -112,7 +112,18 @@ pub fn node_named(n: &Json,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64
                 let toward: Vec<V> = field(c,"toward")?.arr().iter().map(vec3).collect();
                 let toward: [V;3] = toward.try_into().map_err(|_| "recipe: a corner stands between three faces")?;
                 let tol = (1e-9*(1.+radius)).max(floor);
-                pieces.push(super::fillet::corner(vertex,centre,radius,toward,tol).map_err(|e| format!("a corner: {e}"))?);
+                // where a face is curved (#218), the cell over the faces' surfaces
+                let cell = match c.get("faces") {
+                    Some(faces) => {
+                        let surfaces = faces.arr().iter().map(crate::solid::lowering::CornerFace::surface_of_json)
+                            .collect::<Result<Vec<_>,_>>()?;
+                        let [a,b,s] = &surfaces[..] else { return Err("recipe: a corner stands between three faces".into()) };
+                        let tol = (1e-9*(1.+radius+crate::space::norm(vertex))).max(floor);
+                        super::fillet::corner_among(vertex,centre,radius,[a,b,s],tol)
+                    }
+                    None => super::fillet::corner(vertex,centre,radius,toward,tol),
+                };
+                pieces.push(cell.map_err(|e| format!("a corner: {e}"))?);
             }
             // a ball rolled along a traced run (#194): against the body the region rounds as its terms
             // but the late ones make it (the stratum), each piece the material it adds or takes

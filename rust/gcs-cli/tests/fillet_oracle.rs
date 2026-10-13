@@ -119,7 +119,7 @@ fn every_rounds_example_is_occts_fillet() {
     let session = native::Session::new().unwrap();
     let examples = [("block","block"),("by_hand","block"),("pocket","dish"),("boss","pad"),("slot","part"),("pad","pad"),
         ("rail","rail"),("knob","knob"),("tee","tee"),("bore","pipe"),("runout","lug"),("runout","vent"),("twin","bar"),
-        ("post","stand")];
+        ("post","stand"),("dshaft","shaft")];
     let (mut failures,mut refused) = (Vec::new(),0);
     for (file,name) in examples {
         let (prog,errs,linked) = gcs_core::library::parse_linked(&source(file));

@@ -450,6 +450,27 @@ fn a_rings_stretch_cut_off_by_a_flat_at_its_ends() {
     close(props::volume(&b), (PI * big * big - segment) * 20.0 - ring);
 }
 
+/// **Corners where a curved face meets two planes** (#218's 4), `dshaft.sv`: the D-shaped shaft
+/// rounded all over. At each of its four corners its flat, its round and a cap meet; the ball touching all three
+/// stands where Newton's steps put it, and its cell is the cell over the three surfaces — a patch of
+/// the round among them — the flat's runs, the rims' rings and the seams' runs each cut short at
+/// its section there. The D is convex, so the body is the D shrunk by `r`, `h − 2r` deep, grown by
+/// the ball (Steiner, as for a polygon): `A h + (2A + p h) r + π r² (h + p/2) + 4πr³/3`.
+#[test]
+fn a_d_shaft_rounded_all_over_is_steiners_exactly() {
+    let e = solved(include_str!("../../examples/rounds/dshaft.sv"));
+    let b = exported(&e, "shaft");
+    let r: f64 = 2.0;
+    let (big, c) = (10.0 - r, 6.0 - r);
+    let half = (c / big).acos();
+    let area = PI * big * big - (big * big * half - c * (big * big - c * c).sqrt());
+    let perimeter = big * (2.0 * PI - 2.0 * half) + 2.0 * (big * big - c * c).sqrt();
+    let h = 20.0 - 2.0 * r;
+    let want = area * h + (2.0 * area + perimeter * h) * r + PI * r * r * (h + perimeter / 2.0)
+        + 4.0 * PI * r * r * r / 3.0;
+    close(props::volume(&b), want);
+}
+
 /// And within a ball: a quarter of a ball of 10 (its half disc turned a quarter turn), the edge
 /// where its two flats meet rounded. The edge runs through the centre from pole to pole, ending on
 /// the sphere at both: the run carried on out of the ball and kept within it. At `(a, b)` from the
