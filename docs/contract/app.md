@@ -123,7 +123,15 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   overlap but are apart in space, so nothing is picked in view coordinates.  `w2s`/`s2w` read the
   view being worked in — the painter's (`inView`), else the current plane's; a drag reads the
   dragged point's view, a callout its dimension's (`calloutView`).  A view seen edge on refuses a
-  press (`ViewCam::readable`).  **An object's face is picked where the eye's ray meets it**
+  press (`ViewCam::readable`).  **A gesture writes the digits its zoom justifies**: what a tool
+  puts down — a fresh point, a place a curve passes through, a circle's radius, a rectangle's
+  sides — and where a point or a radius is dragged are read through `place`/`placeIn`/
+  `placeLength`, onto the decade grid no coarser than the page length one pixel stands for there
+  (`ViewCam.pixel`, along the least foreshortened way; the rule is `edit::placed`, FFI
+  `gcs_placed`).  The drawing takes the rounded place, so the source still says where it is, and
+  nothing moves more than half a pixel.  What the core derives from those places (an arc's
+  circumcentre, a fitted control polygon) and what a solve settles keep their digits.  Gates:
+  `a_click_writes_the_digits_its_pixel_justifies`, and the app test beside it.  **An object's face is picked where the eye's ray meets it**
   (`workspace::pick_solid`, nearest the viewer over each object's mesh; the path is where the face
   was made, so the object index rides beside it), beneath the drawing in `whatIsAt`'s order.  A
   solid picked is a **third selection** (`SketchView.selectedSolids`, `pickSolid`), exclusive

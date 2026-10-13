@@ -1456,6 +1456,28 @@ fn round_sig(x: f64, digits: i32) -> f64 {
     (x * k).round() / k
 }
 
+/// **A place the pointer gave, to the digits the zoom justifies.**  `px` is the page length one
+/// screen pixel stands for; `x` goes to the decade grid no coarser than it — at 6 pixels a
+/// millimetre, tenths — so it moves less than half a pixel, and the seed a gesture writes has no
+/// digit the eye could not have meant.  Shortest round-trip (`syntax::num`) then prints it as
+/// that decimal: below a unit the grid is divided out rather than multiplied in, since a tenth is
+/// no exact double and `123 × 0.1` is not the double nearest 12.3.  A pixel of no size, or a
+/// place that is no number, is left as it is.
+pub fn placed(x: f64, px: f64) -> f64 {
+    if !x.is_finite() || !px.is_finite() || px <= 0.0 {
+        return x;
+    }
+    let k = px.log10().floor() as i32;
+    // `+ 0.0`: a place just left of zero rounds to a negative zero, which nobody wrote
+    if k >= 0 {
+        let q = 10f64.powi(k);
+        (x / q).round() * q + 0.0
+    } else {
+        let s = 10f64.powi(-k);
+        (x * s).round() / s + 0.0
+    }
+}
+
 /// A seed as the source should read it: a part a millionth of the whole is zero, and the rest
 /// keeps nine significant digits — a direction off the drawing is no more exact than that.
 fn seed_round(v: [f64; 3]) -> [f64; 3] {

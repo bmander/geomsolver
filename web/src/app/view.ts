@@ -524,6 +524,23 @@ export class SketchView {
     return (this.camOf(view) ?? this.viewCam()).s2w(sx, sy);
   }
 
+  /** **Where a click puts something new**, on the view being worked in: `s2w` to the digits the
+   *  zoom justifies (`io.placed`), so a seed the gesture writes says where the pointer was and
+   *  no more — `hint((12.3, 40.5))` at six pixels a unit, not seventeen digits of where a pixel
+   *  fell. */
+  place(sx: number, sy: number): [number, number] { return this.viewCam().place(sx, sy); }
+
+  /** `place`, on a view's page — how a drag reads where the pointer has carried a point. */
+  placeIn(view: View, sx: number, sy: number): [number, number] {
+    return (this.camOf(view) ?? this.viewCam()).place(sx, sy);
+  }
+
+  /** A length a gesture measured on a view's page (a radius, a side), to the digits the zoom
+   *  justifies there. */
+  placeLength(w: number, view: View = this.toolView): number {
+    return io.placed(w, (this.camOf(view) ?? this.viewCam()).pixel);
+  }
+
   /** Run `fn` in a view: every `w2s`, `s2w` and `len` inside it is that view's.  Nothing runs for
    *  a figure that stands in no one view, which has nowhere to be drawn. */
   inView<T>(view: View, fn: () => T): T | undefined {

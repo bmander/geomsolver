@@ -10,6 +10,8 @@
  * tilted plane is drawn, and a click turned back into a place on it, by 2D linear algebra alone.
  * The 3D arithmetic stays in the core, where the map came from. */
 
+import { placed } from '../core/io.js';
+
 /** A world box, as the model reports one: (xmin, ymin, xmax, ymax). */
 export type Box = readonly [number, number, number, number];
 
@@ -108,6 +110,25 @@ export class ViewCam {
     // `+ 0`: the inverse makes a negative zero where the page has a zero, and the drawing must
     // hold the number its source reads back as
     return [(m[4] * x - m[1] * y) / d + 0, (-m[3] * x + m[0] * y) / d + 0];
+  }
+
+  /** The page length one screen pixel stands for, along the way the view is least foreshortened
+   *  (the map's larger singular value) — what a place read off the canvas is good to, so the
+   *  digits a click may write (`io.placed`).  Square on, `world(1)`. */
+  get pixel(): number {
+    const m = this.m;
+    const f = m[0] * m[0] + m[1] * m[1] + m[3] * m[3] + m[4] * m[4];
+    const d = this.det;
+    const s2 = (f + Math.sqrt(Math.max(0, f * f - 4 * d * d))) / 2;
+    return s2 > 0 ? 1 / Math.sqrt(s2) : Infinity;
+  }
+
+  /** A canvas point on the view's page as a click places something there: `s2w`, to the digits
+   *  a pixel justifies. */
+  place(sx: number, sy: number): [number, number] {
+    const px = this.pixel;
+    const [x, y] = this.s2w(sx, sy);
+    return [placed(x, px), placed(y, px)];
   }
 
   /** A page *direction* on the canvas, as a unit vector: which way it points on screen, and

@@ -403,8 +403,8 @@ export function onPointerDown(v: SketchView, e: PointerEvent): void {
       v.pushUndo();
       const view = v.viewOf(ent);
       // on the sketch's own plan, compiled once per topology: the drag starts at once
-      const drag = new PlanDrag(v.sketch, ent, ...v.s2wIn(view, ...sp), null, 0.05, v.plan());
-      v.gesture = pointGesture(v, drag, (at) => v.s2wIn(view, ...at));
+      const drag = new PlanDrag(v.sketch, ent, ...v.placeIn(view, ...sp), null, 0.05, v.plan());
+      v.gesture = pointGesture(v, drag, (at) => v.placeIn(view, ...at));
     // a plane is dragged by its pane as a point in space is, where the eye sees it: the core
     // takes hold of its origin and moves where the plane stands, carrying it without turning it.
     // The pane is grabbed where it was pressed, so it follows the pointer from there
@@ -549,8 +549,10 @@ export function radiusGesture(v: SketchView, drag: RadiusDrag, view: View): Gest
     move: (sp) => {
       const [wx, wy] = v.s2wIn(view, ...sp);
       const e = drag.circle;
-      // a circle's rim follows the cursor at its distance from the centre
-      const r = Math.hypot(wx - e.center.x.value, wy - e.center.y.value);
+      // a circle's rim follows the cursor at its distance from the centre, to the digits the
+      // zoom justifies — and a rim within half a pixel of it keeps what it measured, not zero
+      const w = Math.hypot(wx - e.center.x.value, wy - e.center.y.value);
+      const r = v.placeLength(w, view) || w;
       v.lastResult = drag.move(r);
       v.onDragFrame();
     },
