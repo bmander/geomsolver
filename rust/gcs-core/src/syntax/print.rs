@@ -576,6 +576,21 @@ pub(crate) fn hint_numbers(v: &[f64]) -> String {
 
 /// Print a child slot's seed as it was written, or as the numbers it holds.
 pub(crate) fn kid_seed_text(k: &KidSeed) -> String {
+    if let Some(d) = &k.dir {
+        let named = |r: &Ref| {
+            let mut text = String::new();
+            write_ref(&mut text, r);
+            text
+        };
+        let mut parts = vec![format!("dir: {}", named(&d.what))];
+        if let Some((t, _)) = &d.turn {
+            parts.push(format!("turn: {t}"));
+        }
+        if let Some(a) = &d.about {
+            parts.push(format!("about: {}", named(a)));
+        }
+        return hint_of(&parts);
+    }
     kid_hint(k.axis, [k.text[0].as_deref(), k.text[1].as_deref(), k.text[2].as_deref()], k.v)
 }
 

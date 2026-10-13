@@ -804,9 +804,15 @@ eye's picture plane; depth stays the constraints'.
   plane by a statement is held there by a row, and `project` reads each point in its own plane.
   A point whose seed has a `z`, that a `fix` holds whole, or that is claimed on the plane, stays
   in space.
+- **A point on a curve drawn in a plane is in that plane**: `m coincident g`, `g` a spline or a
+  traced curve drawn in `P` and `m` standing in space, draws `m` in `P` as `m coincident P` would,
+  and `g tangent l` draws a line's free ends there — so a word handed `g` need not be handed its
+  plane. Neither curve has a contact in space, so a point kept there (a `z` seed, a `fix`) is
+  E062, saying what keeps it. A circle or an arc keeps its contact in space.
 - **A point may be drawn in two planes**: `O := point in P, G` lies on their common line, and each
   plane's geometry reads it as its own (`arc(center: O)` drawn in `G` is `G`'s). It is what two
-  views tied by `project` say, said once. The same plane twice is E040, parallel planes E061.
+  views tied by `project` say, said once. The same plane twice is E040, parallel planes E061 —
+  judged where the planes stand once placed, or where the solve leaves a plane only seeded.
 
 **An axis** is a directed line in space with no start: a direction, and a place once something
 reads it.
@@ -832,7 +838,11 @@ up. `P.origin` (drawn in `P`, held at `(0, 0)`) lies on both axes, so where the 
 stands; two held axes that do not meet are E067. A plane over a line stands on it, and over two
 lines sharing an end, at that end. **A slot left out mints a free axis**: `P := plane` is seven
 freedoms, `plane(u: std.x)` mints only `P.v`. A minted axis starts as the front's unless seeded,
-`plane(v: hint(dir: (0, -1, 0)))` — seed one a relation will turn far. A frame of two square axes:
+`plane(v: hint(dir: (0, -1, 0)))` — seed one a relation will turn far. A seed may read the
+direction off geometry: an axis (`hint(dir: up)`), a line from its `p1` to its `p2` in space
+(`hint(dir: g)`), a plane's normal (`hint(dir: P.n)`), turned about another (`hint(dir: up, turn:
+-90deg, about: g)`), so a word standing a plane square to a line it is handed seeds it from that
+line: `plane(u: hint(dir: up, turn: -90deg, about: g), v: hint(dir: up))`. A frame of two square axes:
 
 ```sv
 u := axis
