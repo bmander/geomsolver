@@ -8,6 +8,7 @@
 use crate::fmath::Det;
 use crate::brep::planar::{boolean, Op, Region, Seg};
 use crate::model::{RegionShape, RegionTerm, Sketch, SolidDef};
+use super::lowering::Section;
 use crate::space::{across, cross, dot, norm, normalised, scale, sub};
 use crate::syntax::Cmp;
 use std::f64::consts::{FRAC_PI_2, PI};
@@ -145,9 +146,8 @@ fn fold(sk: &Sketch, solid: usize) -> Result<Meridian, Refusal> {
     let lows = terms.iter().map(|t| t.lo.value(sk).map_err(|m| format!("{}: {m}", s.name)))
         .collect::<Result<Vec<f64>, String>>()?;
     // and each offset, a signed distance from the surface the term's number makes (F4)
-    let grows = terms.iter().map(|t| {
-        t.grow.as_ref().map_or(Ok(0.0), |g| g.value(sk).map_err(|m| format!("{}: {m}", s.name)))
-    }).collect::<Result<Vec<f64>, String>>()?;
+    let grows = terms.iter().map(|t| t.grow_value(sk).map_err(|m| format!("{}: {m}", s.name)))
+        .collect::<Result<Vec<f64>, String>>()?;
     // how far everything stands from the origin, for the tolerances and the box
     let mut size: f64 = 1.0;
     for ((t, lo), g) in terms.iter().zip(&lows).zip(&grows) {
@@ -351,13 +351,13 @@ fn fold(sk: &Sketch, solid: usize) -> Result<Meridian, Refusal> {
             let named = (st.tag == a && nx.tag == b) || (st.tag == b && nx.tag == a);
             named && curved(st) && curved(nx)
         }));
-        if matches!(l.kind, Lower::Flat { la, lb } if (la - lb).abs() > 1e-12 * la.max(lb)) && between_arcs() {
+        if matches!(l.kind, Section::Flat { la, lb } if (la - lb).abs() > 1e-12 * la.max(lb)) && between_arcs() {
             return Err(format!("`{}`: a flat between two curved faces with unequal legs is read point by \
                                 point: its sum of distances is a Cartesian oval, which no rational curve holds", s.name).into());
         }
         region = match l.kind {
-            Lower::Round { r } => crate::brep::corners::round(&region, &[a], &[b], r, tag),
-            Lower::Flat { la, lb } => crate::brep::corners::summed(&region, &[a], &[b], [la, lb], tag),
+            Section::Round(r) => crate::brep::corners::round(&region, &[a], &[b], r, tag),
+            Section::Flat { la, lb } => crate::brep::corners::summed(&region, &[a], &[b], [la, lb], tag),
         }.map_err(|e| format!("`{}`: {e}", s.name))?;
     }
     if region.loops.is_empty() || region.area().abs() <= tol * tol {
@@ -375,8 +375,8 @@ fn fold(sk: &Sketch, solid: usize) -> Result<Meridian, Refusal> {
     let seam = scale(across(axis).1, -1.0);
     // a round's or a chamfer's own scale: how far off the boundary the gate reads
     let least = lowered.iter().flatten().map(|l| match l.kind {
-        Lower::Round { r } => r,
-        Lower::Flat { la, lb } => la.min(lb),
+        Section::Round(r) => r,
+        Section::Flat { la, lb } => la.min(lb),
     }).fold(f64::INFINITY, f64::min);
     // a sum of distances folded is held so too, a thousandth of the region's size off (#238)
     let least = if conics.iter().any(Option::is_some) { least.min(size) } else { least };
@@ -469,12 +469,7 @@ pub(super) fn face_polys(m: &Meridian, unit: f64) -> Vec<super::profile::FacePol
 struct Lowering {
     a: usize,
     b: usize,
-    kind: Lower,
-}
-
-enum Lower {
-    Round { r: f64 },
-    Flat { la: f64, lb: f64 },
+    kind: Section,
 }
 
 /// The lowering a term is, where it is one: its sets each the region's own bound (a shape it
@@ -484,9 +479,7 @@ fn lowering(sk: &Sketch, terms: &[RegionTerm], t: &RegionTerm) -> Option<Lowerin
     use crate::model::Target;
     let RegionShape::Measured { of } = &t.shape else { return None };
     let lo = t.lo.read(sk)?;
-    let level = |u: &RegionTerm| -> Option<(f64, f64)> {
-        Some((u.lo.read(sk)?, u.grow.as_ref().map_or(Some(0.0), |g| g.read(sk))?))
-    };
+    let level = |u: &RegionTerm| u.read(sk);
     // the outer bound with the same measure whose surface stands `want` outward of `u`'s (a
     // slab's two sides share a measure)
     let outer = |u: &RegionTerm, want: f64| -> Option<(usize, f64)> {
@@ -517,7 +510,7 @@ fn lowering(sk: &Sketch, terms: &[RegionTerm], t: &RegionTerm) -> Option<Lowerin
             let side = |u: &RegionTerm, k: usize| u.cmp == terms[k].cmp;
             (ka != kb && side(&inner[0], ka) && side(&inner[1], kb) && r > 0.0
                 && (ga - r).abs() <= tol(r) && (gb - r).abs() <= tol(r))
-                .then_some(Lowering { a: ka, b: kb, kind: Lower::Round { r } })
+                .then_some(Lowering { a: ka, b: kb, kind: Section::Round(r) })
         }
         // at least one from the flat between two surfaces: a chamfer
         ([(Target::Set { terms: sa, .. }, ca), (Target::Set { terms: sb, .. }, cb)], Cmp::Ge)
@@ -533,7 +526,7 @@ fn lowering(sk: &Sketch, terms: &[RegionTerm], t: &RegionTerm) -> Option<Lowerin
             };
             (ka != kb && across(&sa[0], ka) && across(&sb[0], kb)
                 && ga.abs() <= tol(lo) && gb.abs() <= tol(lo))
-                .then_some(Lowering { a: ka, b: kb, kind: Lower::Flat { la: lo / cb, lb: lo / ca } })
+                .then_some(Lowering { a: ka, b: kb, kind: Section::Flat { la: lo / cb, lb: lo / ca } })
         }
         _ => None,
     }
@@ -605,8 +598,7 @@ fn lobe(near: f64, far: f64, k: f64, reach: f64) -> Region {
 
 /// Whether a term is read only point by point: a sum of measurements, or a face's (#183).
 fn point_by_point(shape: &RegionShape) -> bool {
-    matches!(shape, RegionShape::Measured { .. } | RegionShape::FaceSide { .. }
-        | RegionShape::Angle { .. } | RegionShape::Ends { .. })
+    matches!(shape, RegionShape::Measured { .. }) || super::faces::reads_faces(shape)
 }
 
 /// Region solid `solid` read point by point (`solid::field::RegionField`): its terms in general
@@ -651,8 +643,7 @@ pub fn general(sk: &Sketch, solid: usize) -> Result<crate::solid::field::RegionF
         Term { measure: Measure::Signed(Signed(f)), cmp: Cmp::Le, lo: 0.0, hi: None, grow: 0.0 }
     };
     for t in terms {
-        let lo = t.lo.value(sk).map_err(named)?;
-        let grow = t.grow.as_ref().map_or(Ok(0.0), |g| g.value(sk)).map_err(named)?;
+        let (lo, grow) = t.value(sk).map_err(named)?;
         let reach = t.hi.unwrap_or(lo).max(lo);
         let within = t.cmp != Cmp::Ge;
         reads_faces |= super::faces::reads_faces(&t.shape);

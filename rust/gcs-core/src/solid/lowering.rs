@@ -346,9 +346,10 @@ impl Faces<'_> {
     }
 }
 
-/// What the region's section is beside its edges.
+/// What the region's section is beside its edges (or, in the meridian, beside its corner:
+/// `region::lowering`).
 #[derive(Clone, Copy, Debug)]
-enum Section {
+pub(crate) enum Section {
     /// Beyond reach of a ball of this radius touching every face.
     Round(f64),
     /// Short of the flat through the point `la` along `a` and the point `lb` along `b`, each from
@@ -395,9 +396,8 @@ fn same(x: &FaceRef, y: &FaceRef, surface: bool) -> bool {
 
 /// A term bounding the distance from one face (or its surface): the face, which way, its number.
 fn one_face<'a>(sk: &Sketch, t: &'a RegionTerm) -> Option<(&'a FaceRef, Cmp, f64)> {
-    let RegionShape::Measured { of } = &t.shape else { return None };
-    let [(Target::Face(f), c)] = &of[..] else { return None };
-    (*c == 1.0).then_some((f, t.cmp, plain(sk, t)?))
+    let (f, c) = super::faces::measured_face(t)?;
+    (c == 1.0).then_some((f, t.cmp, plain(sk, t)?))
 }
 
 /// The faces a set is the points on (`{ q | q coincident a; q coincident b }`): each term a

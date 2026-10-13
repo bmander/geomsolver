@@ -78,7 +78,7 @@ fn reads_where(sk: &Sketch, si: usize, unit: f64, skip: &dyn Fn(usize) -> bool) 
                     // an unknown's as solved; one nothing determines reads as a number no other
                     // key holds, and the solid refuses it where it is evaluated
                     let lo = t.lo.read(sk).unwrap_or(UNREAD);
-                    let grow = t.grow.as_ref().map_or(Some(0.0), |g| g.read(sk));
+                    let grow = t.grow_read(sk);
                     v.extend([t.cmp as u8 as f64, lo, hi[0], hi[1], grow.unwrap_or(UNREAD)]);
                     for e in t.shape.entities() {
                         match e.kind {

@@ -476,6 +476,27 @@ impl RegionTerm {
     pub fn remapped(&self, map: &dyn Fn(EntRef) -> Option<EntRef>) -> Option<RegionTerm> {
         Some(RegionTerm { shape: self.shape.remapped(map)?, ..self.clone() })
     }
+
+    /// Its low end and its offset (nothing where it has none) as the drawing stands
+    /// (`TermNumber::value`): refused where either reads an unknown nothing determines.
+    pub fn value(&self, sk: &Sketch) -> Result<(f64, f64), String> {
+        Ok((self.lo.value(sk)?, self.grow_value(sk)?))
+    }
+
+    /// `value`, `None` where nothing determines either.
+    pub fn read(&self, sk: &Sketch) -> Option<(f64, f64)> {
+        Some((self.lo.read(sk)?, self.grow_read(sk)?))
+    }
+
+    /// Its offset as the drawing stands, nothing where it has none (`TermNumber::value`).
+    pub fn grow_value(&self, sk: &Sketch) -> Result<f64, String> {
+        self.grow.as_ref().map_or(Ok(0.0), |g| g.value(sk))
+    }
+
+    /// `grow_value`, `None` where nothing determines it.
+    pub fn grow_read(&self, sk: &Sketch) -> Option<f64> {
+        self.grow.as_ref().map_or(Some(0.0), |g| g.read(sk))
+    }
 }
 
 /// One bound of a region solid: its measure, which way, and its numbers (a length or an angle in

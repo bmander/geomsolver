@@ -519,6 +519,17 @@ pub fn reads_faces(shape: &RegionShape) -> bool {
     }
 }
 
+/// The one face a term measures from, and the weight it gives it: a sum over that face (or its
+/// surface) alone, what `q coincident F` and `q distance(d) F` make.  The one reader of that
+/// pattern; its callers ask the rest of the term themselves, and differ: the lowering table takes a
+/// weight of one and a plain number (`lowering::one_face`), a set measured from any weight above
+/// nothing at nothing (`conditions::on_face`).
+pub fn measured_face(t: &RegionTerm) -> Option<(&FaceRef, f64)> {
+    let RegionShape::Measured { of } = &t.shape else { return None };
+    let [(Target::Face(f), c)] = of.as_slice() else { return None };
+    Some((f, *c))
+}
+
 /// Whether any of a region's terms reads a body's faces (`reads_faces`).
 pub fn terms_read_faces(terms: &[RegionTerm]) -> bool {
     terms.iter().any(|t| reads_faces(&t.shape))
