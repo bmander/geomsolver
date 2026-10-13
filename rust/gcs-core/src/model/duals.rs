@@ -168,22 +168,18 @@ impl Sketch {
         }
     }
 
-    /// Every chart gauged again where its point stands now, as `choose_charts` gauges a fresh one
-    /// (#217): a chart chosen where an unseeded point started — about the origin, its sets'
-    /// geometry turned from where the solve puts it — can be square to the tangent plane the solve
-    /// ends at, a direction no tangent there takes.  Whether any chart changed.
-    pub fn rechoose_charts(&mut self) -> bool {
-        let mut changed = false;
-        for d in 0..self.duals.len() {
-            let Toward::Chart { axis, .. } = self.duals[d].toward else { continue };
-            if let Some(c) = self.chart_here(d) {
-                if axis != Some(c) {
-                    self.set_chart(d, c);
-                    changed = true;
-                }
-            }
-        }
-        changed
+    /// Each chart whose gauge differs from what `choose_charts` would give it where its point
+    /// stands now, with that gauge (#217): a chart chosen where an unseeded point started —
+    /// about the origin, its sets' geometry turned from where the solve puts it — can be square
+    /// to the tangent plane the solve ends at, a direction no tangent there takes.
+    pub fn charts_moved(&self) -> Vec<(usize, u8)> {
+        (0..self.duals.len())
+            .filter_map(|d| {
+                let Toward::Chart { axis, .. } = self.duals[d].toward else { return None };
+                let c = self.chart_here(d)?;
+                (axis != Some(c)).then_some((d, c))
+            })
+            .collect()
     }
 
     /// The world axis chart `d`'s sets' normal runs most along where its point stands now.

@@ -1021,6 +1021,24 @@ impl CKind {
         matches!(self, CKind::Fix | CKind::Ccw | CKind::Cw)
     }
 
+    /// Whether this kind's constants are read off the pose — directions across a line or a
+    /// plane's normal as they stand, a fold line (`Constraint::consts_on`) — and so go stale as
+    /// a solve turns what they were read from (`refresh_consts`, #217).
+    pub fn reads_pose(self) -> bool {
+        matches!(
+            self,
+            CKind::Project
+                | CKind::Parallel3
+                | CKind::PointOnLine3
+                | CKind::PointOnAxis
+                | CKind::LineOnAxis
+                | CKind::PlaneAxis
+                | CKind::AxisCoincident
+                | CKind::AxisPerpendicularPlane
+                | CKind::PlaneParallel
+        )
+    }
+
     pub fn from_name(s: &str) -> Option<CKind> {
         ALL_KINDS.iter().copied().find(|k| k.name() == s)
     }
@@ -1344,7 +1362,6 @@ impl CKind {
             (CKind::TangentArcLine, 2) => Arg::Str("start".to_string()),
             (CKind::TangentLineCircleAt, 2) => Arg::Str("p1".to_string()),
             (CKind::TangentLineCircle, 2) => Arg::Str("left".to_string()),
-            (CKind::LineLine3, 3) => Arg::Int(0),
             _ => match self.spec()[i].1 {
                 SpecKind::Int => Arg::Int(0),
                 SpecKind::Bool => Arg::Bool(false),
@@ -2739,8 +2756,8 @@ impl Constraint {
             // that says which way — `side:`, `along:`, `sense:` — turns them as it turns a
             // stated number below, or `side: right` over a free `k` meant the left
             if self.kind == CKind::LineLine3 {
-                let s = self.skew_sign();
-                return vec![s * f.m, s * f.c, self.skew_pinned()];
+                let (s, pinned) = self.skew_pin();
+                return vec![s * f.m, s * f.c, pinned];
             }
             let s = self.side().unwrap_or(1.0);
             return vec![s * f.m, s * f.c];
@@ -2860,7 +2877,10 @@ impl Constraint {
             }
             CKind::Distance3 | CKind::PointLine3 => vec![self.args[2].num()],
             // the magnitude turned to the side the lines stood on when it was stated
-            CKind::LineLine3 => vec![self.skew_sign() * self.args[2].num(), self.skew_pinned()],
+            CKind::LineLine3 => {
+                let (s, pinned) = self.skew_pin();
+                vec![s * self.args[2].num(), pinned]
+            }
             CKind::Angle3 => vec![self.args[2].num()],
             // two directions across a line as its hidden points stand now — the first line of a
             // parallel, the line a point is on — refreshed with every `refresh_consts`, so they
@@ -3347,29 +3367,24 @@ impl Constraint {
         self.params(sk).iter().all(|&p| sk.params[p as usize].fixed)
     }
 
-    /// Operand `i`'s direction as it stands now, as a direction relation reads it.
     /// Whether operand `i`'s direction is held: an axis's outright, a line's by its ends, each
     /// held where it is drawn, in a plane held where it stands.
     fn direction_held(&self, sk: &Sketch, i: usize) -> bool {
-        let held = |ps: &[u32]| ps.iter().all(|&p| sk.params[p as usize].fixed);
-        let axis = |a: usize| held(&sk.axes[a].d);
         let e = self.args[i].ent();
         match e.kind {
-            EntKind::Axis => axis(e.i()),
+            EntKind::Axis => sk.axes[e.i()].d.iter().all(|&p| sk.params[p as usize].fixed),
             EntKind::Line => {
                 let l = &sk.lines[e.i()];
                 [l.p1, l.p2].iter().all(|&p| {
-                    held(&sk.point_all_params(p as usize))
-                        && sk.plane_of(p as usize).is_none_or(|v| {
-                            let pl = &sk.planes[v];
-                            held(&pl.o) && axis(pl.u as usize) && axis(pl.v as usize)
-                        })
+                    sk.point_held(p as usize)
+                        && sk.plane_of(p as usize).is_none_or(|v| sk.plane_fixed(v))
                 })
             }
             _ => false,
         }
     }
 
+    /// Operand `i`'s direction as it stands now, as a direction relation reads it.
     fn axis_dir(&self, sk: &Sketch, i: usize) -> [f64; 3] {
         let e = self.args[i].ent();
         if e.kind == EntKind::Axis {
@@ -3413,23 +3428,14 @@ impl Constraint {
         }
     }
 
-    /// Whether a skew distance's side is pinned, its `sign` slot ±1, as 1 or 0: unpinned, the
-    /// distance is a magnitude (#217).
-    fn skew_pinned(&self) -> f64 {
+    /// A skew distance's `sign` slot as its kernel reads it: the sign its gap carries (1 where
+    /// unpinned), and whether it is pinned, as 1 or 0 — unpinned, a magnitude (#217).
+    fn skew_pin(&self) -> (f64, f64) {
         let i = self.kind.spec().iter().position(|(n, _)| *n == "sign");
         match i.map(|i| &self.args[i]) {
-            Some(Arg::Int(s)) if *s != 0 => 1.0,
-            _ => 0.0,
-        }
-    }
-
-    /// The side a skew distance is pinned to, as the sign its kernel's gap carries there: the
-    /// kind's `sign` slot.
-    fn skew_sign(&self) -> f64 {
-        let i = self.kind.spec().iter().position(|(n, _)| *n == "sign");
-        match i.map(|i| &self.args[i]) {
-            Some(Arg::Int(s)) if *s < 0 => -1.0,
-            _ => 1.0,
+            Some(Arg::Int(s)) if *s < 0 => (-1.0, 1.0),
+            Some(Arg::Int(s)) if *s > 0 => (1.0, 1.0),
+            _ => (1.0, 0.0),
         }
     }
 
@@ -3779,7 +3785,7 @@ pub fn validate(
                 ));
             }
             if k == CKind::LineLine3
-                && skew_seed(sk, lines[0], lines[1]).is_none()
+                && skew_parallel(sk, lines[0], lines[1])
             {
                 return Err(format!(
                     "{} and {} are parallel in space, and parallel lines have no common \
@@ -3794,27 +3800,24 @@ pub fn validate(
     }
 }
 
-/// The side two lines stand on as drawn, as the sign of their common-perpendicular gap — `None`
-/// where they are parallel and have none.  Read off the drawn pose (`Sketch::world_point`), which
-/// is where the hidden points are seeded, so it is the same reading before and after the add.
-fn skew_seed(sk: &Sketch, l1: EntRef, l2: EntRef) -> Option<f64> {
-    use crate::space::{cross, dot, norm, sub};
+/// Whether two lines stand parallel as drawn, with no common perpendicular to measure.  Read off
+/// the drawn pose (`Sketch::world_point`), which is where the hidden points are seeded, so it is
+/// the same reading before and after the add.
+fn skew_parallel(sk: &Sketch, l1: EntRef, l2: EntRef) -> bool {
+    use crate::space::{cross, norm, sub};
     let ends = |l: EntRef| {
         let l = &sk.lines[l.i()];
         (sk.world_point(l.p1 as usize), sk.world_point(l.p2 as usize))
     };
     let ((a, b), (c, d)) = (ends(l1), ends(l2));
     let (e1, e2) = (sub(b, a), sub(d, c));
-    let m = cross(e1, e2);
-    if norm(m) <= crate::plane::PARALLEL_TOL * norm(e1) * norm(e2) {
-        return None;
-    }
-    Some(if dot(m, sub(c, a)) < 0.0 { -1.0 } else { 1.0 })
+    norm(cross(e1, e2)) <= crate::plane::PARALLEL_TOL * norm(e1) * norm(e2)
 }
 
 /// A non-entity argument the core reads off the geometry, for the kinds whose omitted value is
-/// the geometry's and not a constant: a skew distance's side.  `None` for every other slot, which
-/// keeps what the caller or the defaults gave it.
+/// the geometry's and not a constant: an ordinate's form, and whether a skew distance has a
+/// side to leave unpinned.  `None` for every other slot, which keeps what the caller or the
+/// defaults gave it.
 pub fn infer_value(sk: &Sketch, kind: CKind, args: &[Arg], i: usize) -> Option<Arg> {
     if kind.form_slot() == Some(i) {
         let ent = |j: usize| match args.get(j) {
@@ -3829,7 +3832,7 @@ pub fn infer_value(sk: &Sketch, kind: CKind, args: &[Arg], i: usize) -> Option<A
         // no side read off the seed: the distance is a magnitude (#217); two parallel lines,
         // which have no common perpendicular, are refused by `validate`
         (CKind::LineLine3, 3) => {
-            skew_seed(sk, args[0].ent(), args[1].ent()).map(|_| Arg::Int(0))
+            (!skew_parallel(sk, args[0].ent(), args[1].ent())).then_some(Arg::Int(0))
         }
         _ => None,
     }

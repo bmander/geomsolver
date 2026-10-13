@@ -289,6 +289,7 @@ impl SparseConditioned {
 /// slices, the same summation order for a column a constraint names twice, and the same
 /// `row_scale` and `col_scale` — so a block solved through it is solved in the whole system's
 /// units, and a traced contact reads its constants at the address its memory is keyed by.
+#[derive(Clone)]
 pub struct Subset {
     /// (kernel block, first instance, count, first local row, first local kernel Jacobian output).
     runs: Vec<(usize, usize, usize, usize, usize)>,

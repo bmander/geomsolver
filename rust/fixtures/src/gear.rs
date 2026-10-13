@@ -12,13 +12,8 @@ pub fn project() -> PathBuf { PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..
 /// The pair's document, `hypoid.sv`.
 pub fn source() -> String { std::fs::read_to_string(project().join("hypoid.sv")).unwrap() }
 
-/// The inputs `configure` reads in millimetres, and those it reads as plain counts; every other
-/// is in degrees.
-const LENGTHS: [&str;5] = ["mean_module","offset","backlash","tip_relief","end_relief"];
-const COUNTS: [&str;2] = ["pinion_teeth","gear_teeth"];
-
-/// `text` with each named input (`param NAME := …` at the top level) given a number: lengths in
-/// millimetres, counts as they are, every other in degrees. Asserts each is an input.
+/// `text` with each named input (`param NAME := …` at the top level) given a number, in the
+/// unit its literal is written in there (`2mm`, `25deg`, a count bare). Asserts each is an input.
 pub fn configure(text: &str,params: &[(&str,f64)]) -> String {
     let (prog,_) = syntax::parse(text);
     let mut values: Vec<(syntax::Span,String)> = params.iter().map(|&(name,v)| {
@@ -26,7 +21,8 @@ pub fn configure(text: &str,params: &[(&str,f64)]) -> String {
             syntax::StmtKind::Param(p) if p.input.is_some() && p.bound() && p.name.text == name => Some(p.span),
             _ => None,
         }).unwrap_or_else(|| panic!("the pair has no input `{name}`"));
-        let unit = if LENGTHS.contains(&name) { "mm" } else if COUNTS.contains(&name) { "" } else { "deg" };
+        let written = &text[span.lo as usize..span.hi as usize];
+        let unit = written.trim_start_matches(|c: char| !c.is_ascii_alphabetic());
         (span,format!("{v}{unit}"))
     }).collect();
     values.sort_by_key(|(at,_)| std::cmp::Reverse(at.lo));

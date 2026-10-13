@@ -14,6 +14,7 @@ use crate::curve;
 use crate::linalg::Mat;
 use crate::model::{increments, orientation, EntRef, Sketch};
 use crate::newton::{self, Info, Method, TrustRegion};
+use crate::space;
 use crate::sparse::Ata;
 use crate::system::{SolveBlock, Subset, System, DENSE_MAX};
 
@@ -62,14 +63,16 @@ pub fn bound_reading(
     // held to the relative tolerance itself (#217): a cone's side read off the angle a point makes
     // with its axis, a grow of a hundredth of a millimetre on a drawing hundreds across, is a
     // turn smaller than the length tolerance read as radians
-    let tol = if c.kind.dimension_kind() == crate::constraints::SpecKind::Angle {
-        tol / sk.extent()
-    } else {
-        tol
-    };
+    let tol = if reads_angle(c) { tol / sk.extent() } else { tol };
     let edge = (m - lo).abs() <= tol || b.hi.is_some_and(|hi| (m - hi).abs() <= tol);
     let aims = b.aims(lo, m, c.reading_range());
     Some(BoundReading { holds: b.holds(lo, m, tol), edge, aims })
+}
+
+/// Whether bound `c` reads an angle: held to the solve's relative tolerance itself, not a
+/// length's over the drawing's extent read as radians (`bound_reading`, `across`).
+fn reads_angle(c: &Constraint) -> bool {
+    c.kind.dimension_kind() == crate::constraints::SpecKind::Angle
 }
 
 /// How far past its edge a bound still holds: the solve's own relative tolerance, over the
@@ -90,6 +93,12 @@ fn broken(sk: &Sketch) -> Vec<(usize, Vec<f64>)> {
     sk.constraints.iter().enumerate()
         .filter_map(|(i, c)| bound_reading(sk, c, tol).filter(|r| !r.holds).map(|r| (i, r.aims)))
         .collect()
+}
+
+/// Whether a row of the drawing has constants read off the pose (`CKind::reads_pose`): only then
+/// are they read again as a solve goes (`REFRAMES`, the block pass).
+fn reads_pose(sk: &Sketch) -> bool {
+    sk.constraints.iter().any(|c| c.kind.reads_pose() && c.states_rows())
 }
 
 /// The parameters a solve moves, the ones `across` may step: asked once a pass, since nothing
@@ -155,9 +164,7 @@ fn across(
     };
     let extent = sk.extent();
     // a length's reading to the drawing's size, an angle's to the tolerance itself
-    // (`bound_reading`)
-    let angle = c.kind.dimension_kind() == crate::constraints::SpecKind::Angle;
-    let (tol, h) = (STEER_TOL * if angle { 1.0 } else { extent }, 1e-7 * extent);
+    let (tol, h) = (STEER_TOL * if reads_angle(&c) { 1.0 } else { extent }, 1e-7 * extent);
     let mut nudged = false;
     for _ in 0..ACROSS_STEPS {
         let m = c.reading(sk)?;
@@ -369,17 +376,7 @@ impl System {
             return res;
         }
         let kept = sk.get_x();
-        let compiled = std::mem::replace(self, System::new(sk));
-        sk.set_x(start);
-        let again = self.solve_unsteered(sk, opts);
-        if again.success {
-            return again;
-        }
-        *self = compiled;
-        sk.set_x(&kept);
-        let z = self.z0(sk);
-        let _ = self.residuals(&z); // back in step with the pose kept
-        res
+        self.recompiled(sk, opts, res, |sk| { sk.set_x(start); }, |sk| { sk.set_x(&kept); })
     }
 
     /// **A chart is gauged where the solve ends** (#217): a set's derivative along a chart
@@ -388,24 +385,48 @@ impl System {
     /// (`Sketch::choose_charts`) — for an unseeded point, about the origin, its sets' geometry
     /// turned from where the solve puts it.  There `c` can lie in the tangent plane the solve ends
     /// at, a direction no tangent there takes, and the derivative's rows cannot hold.  A document
-    /// solve that fails is gauged again where it ends (`Sketch::rechoose_charts`) and, where a
+    /// solve that fails is gauged again where it ends (`Sketch::charts_moved`) and, where a
     /// chart changed, compiled again and solved on from there; kept where it succeeds, else the
     /// first stands, its charts as they were.
     fn recharted(&mut self, sk: &mut Sketch, opts: SolveOpts, res: SolveResult) -> SolveResult {
-        let before = sk.clone();
-        if !sk.rechoose_charts() {
+        let moved = sk.charts_moved();
+        if moved.is_empty() {
             return res;
         }
+        let before = sk.clone();
+        for (d, c) in moved {
+            sk.set_chart(d, c); // which tangents are free: compiled with them
+        }
+        self.recompiled(sk, opts, res, |_| {}, |sk| *sk = before)
+    }
+
+    /// A system compiled where `sk` stands, then `prepare` the sketch and solve on it: kept where
+    /// that succeeds, else the system that was is put back, `undo` puts back the sketch it stood
+    /// on, and `res` stands (`resized`, `recharted`).
+    fn recompiled(
+        &mut self,
+        sk: &mut Sketch,
+        opts: SolveOpts,
+        res: SolveResult,
+        prepare: impl FnOnce(&mut Sketch),
+        undo: impl FnOnce(&mut Sketch),
+    ) -> SolveResult {
         let compiled = std::mem::replace(self, System::new(sk));
+        prepare(sk);
         let again = self.solve_unsteered(sk, opts);
         if again.success {
             return again;
         }
         *self = compiled;
-        *sk = before;
-        let z = self.z0(sk);
-        let _ = self.residuals(&z); // back in step with the pose kept
+        undo(sk);
+        self.resync(sk);
         res
+    }
+
+    /// The system's own numbers back in step with the pose `sk` stands at.
+    fn resync(&mut self, sk: &Sketch) {
+        let z = self.z0(sk);
+        let _ = self.residuals(&z);
     }
 
     /// **A bound chooses the root** (§9.6) — the second line, the elaborator having chosen the
@@ -483,8 +504,7 @@ impl System {
                 res = again;
             } else {
                 sk.set_x(&kept);
-                let z = self.z0(sk);
-                let _ = self.residuals(&z); // back in step with the pose kept
+                self.resync(sk); // back in step with the pose kept
             }
         }
         // named where it is reported (`Diagnosis::bounds_violated`), not here
@@ -505,27 +525,20 @@ impl System {
         // a seed far from the drawing, every point unseeded, can end on such a root, which is no
         // root of the drawing's.  So a document solve that succeeds re-reads its constants there
         // (`refresh_consts`) and, where its rows no longer hold, solves on from where it stopped.
-        if opts.retry && opts.writeback {
+        if opts.retry && opts.writeback && reads_pose(sk) {
             for _ in 0..REFRAMES {
                 if !res.success {
                     break;
                 }
                 self.refresh_consts(sk);
                 let z = self.z0(sk);
-                if self.worst_hard(&z) < opts.acceptance_tol {
+                if self.max_relative_residual(&z) < opts.acceptance_tol {
                     break;
                 }
                 res = self.solve_rehomed(sk, opts);
             }
         }
         res
-    }
-
-    /// The largest hard row at `z`, over its own units: what "solved" reads.
-    fn worst_hard(&mut self, z: &[f64]) -> f64 {
-        let r = self.residuals(z);
-        let hard = r.iter().zip(&self.hard).filter(|(_, &h)| h);
-        hard.fold(0.0, |w, (v, _)| if v.is_nan() { f64::NAN } else { w.max(v.abs()) })
     }
 
     fn solve_rehomed(&mut self, sk: &mut Sketch, opts: SolveOpts) -> SolveResult {
@@ -688,39 +701,54 @@ impl System {
         let order = self.block_order();
         let (mut nfev, mut njev) = (0, 0);
         if order.blocks.len() >= 2 {
-            let mut search = Search::new(self, sk);
-            let mut solved = std::collections::BTreeSet::new();
             // a constant read off the pose — the directions across a line its rows are taken
             // along — is read where the blocks before put it, not where it was seeded: a line
             // turned far from its seed admits a root no word says (#217); the compiled ones are
             // put back for the polish, which starts on the pass's solution, so a pass not kept
             // leaves the system as it found it
-            let compiled: Vec<Vec<f64>> = self.blocks.iter().map(|b| b.consts.clone()).collect();
+            let framed = reads_pose(sk);
+            let bounded = sk.constraints.iter().any(|c| c.bound.is_some());
+            let compiled: Vec<Vec<f64>> = if framed {
+                self.blocks.iter().map(|b| b.consts.clone()).collect()
+            } else {
+                Vec::new()
+            };
+            // the scratch sketch the search reads, made the first time a block needs it
+            let mut search: Option<Search> = None;
+            let mut solved = std::collections::BTreeSet::new();
             for b in &order.blocks {
-                search.sk.set_x(&self.full_x(z));
-                self.refresh_consts(&search.sk);
+                if framed {
+                    let s = search.get_or_insert_with(|| Search::new(self, sk));
+                    s.sk.set_x(&self.full_x(z));
+                    self.refresh_consts(&s.sk);
+                }
+                let sub = self.subset(&b.instances, &b.cols);
                 let start: Vec<f64> = b.cols.iter().map(|&c| z[c]).collect();
-                let (mut ok, info) = self.solve_block(b, z, &start, opts);
+                let (mut ok, info) = self.solve_block(&sub, z, &start, opts);
                 (nfev, njev) = (nfev + info.nfev, njev + info.njev);
-                let decided = search.deciding(&b.cols, &solved);
-                if !(ok && search.holds(self, z, &decided)) {
-                    // the root the words say, or else what the block's own start came to
-                    let first: Vec<f64> = b.cols.iter().map(|&c| z[c]).collect();
-                    let mut found = false;
-                    for attempt in search.attempts(self, z, b, &start, &solved, &decided) {
-                        let (mut fine, mut info) = self.solve_block(b, z, &attempt, opts);
-                        if !fine {
-                            (fine, info) = self.follow_block(b, z, &attempt, opts);
+                // a drawing that says no bound has no root to search for: its block stands
+                if bounded {
+                    let s = search.get_or_insert_with(|| Search::new(self, sk));
+                    let decided = s.deciding(&b.cols, &solved);
+                    if !(ok && s.holds(self, z, &decided)) {
+                        // the root the words say, or else what the block's own start came to
+                        let first: Vec<f64> = b.cols.iter().map(|&c| z[c]).collect();
+                        let mut found = false;
+                        for attempt in s.attempts(self, z, b, &start, &solved, &decided) {
+                            let (mut fine, mut info) = self.solve_block(&sub, z, &attempt, opts);
+                            if !fine {
+                                (fine, info) = self.follow_block(&sub, z, &attempt, opts);
+                            }
+                            (nfev, njev) = (nfev + info.nfev, njev + info.njev);
+                            if fine && s.holds(self, z, &decided) {
+                                (ok, found) = (true, true);
+                                break;
+                            }
                         }
-                        (nfev, njev) = (nfev + info.nfev, njev + info.njev);
-                        if fine && search.holds(self, z, &decided) {
-                            (ok, found) = (true, true);
-                            break;
-                        }
-                    }
-                    if !found {
-                        for (k, &c) in b.cols.iter().enumerate() {
-                            z[c] = first[k];
+                        if !found {
+                            for (k, &c) in b.cols.iter().enumerate() {
+                                z[c] = first[k];
+                            }
                         }
                     }
                 }
@@ -742,30 +770,23 @@ impl System {
         (res, rel)
     }
 
-    /// One block minimised from `start` (its own columns), every other column held at `z`, which
-    /// it is written back into: whether its rows meet `acceptance_tol`, and the minimisation's
-    /// count.
+    /// One block (`sub`, its rows and columns) minimised from `start` (its own columns), every
+    /// other column held at `z`, which it is written back into: whether its rows meet
+    /// `acceptance_tol`, and the minimisation's count.
     fn solve_block(
         &mut self,
-        b: &SolveBlock,
+        sub: &Subset,
         z: &mut [f64],
         start: &[f64],
         opts: &SolveOpts,
     ) -> (bool, Info) {
-        let gtol = 1e-16 / self.extent.max(1.0);
-        let tol = newton::Tol { ftol: opts.tol, xtol: BLOCK_XTOL, gtol };
-        let max_nfev = if opts.max_nfev <= 0 { 4 * opts.max_iter } else { opts.max_nfev };
-        let sub = self.subset(&b.instances, &b.cols);
+        let (tol, max_nfev) = self.block_tol(opts);
         let mut zb = start.to_vec();
-        let mut t = BlockTr::new(self, sub, z);
+        let mut t = BlockTr::new(self, sub.clone(), z);
         let mut r = vec![0.0; t.m()];
         t.residuals_into(&zb, &mut r);
         let info = newton::dogleg(&mut t, &mut zb, &mut r, tol, opts.max_iter, max_nfev);
-        for (k, &c) in b.cols.iter().enumerate() {
-            z[c] = zb[k];
-        }
-        // `dogleg` keeps `r` the residuals at `zb`; NaN fails the comparison
-        (r.iter().all(|v| v.abs() < opts.acceptance_tol), info)
+        (Self::block_back(sub, z, &zb, &r, opts), info)
     }
 
     /// One block followed from `start` to a root along the Newton homotopy `r(z) = (1 − t)
@@ -774,17 +795,15 @@ impl System {
     /// leads to.  Written back into `z` as `solve_block` does.
     fn follow_block(
         &mut self,
-        b: &SolveBlock,
+        sub: &Subset,
         z: &mut [f64],
         start: &[f64],
         opts: &SolveOpts,
     ) -> (bool, Info) {
-        let gtol = 1e-16 / self.extent.max(1.0);
-        let tol = newton::Tol { ftol: opts.tol, xtol: BLOCK_XTOL, gtol };
-        let max_nfev = if opts.max_nfev <= 0 { 4 * opts.max_iter } else { opts.max_nfev };
-        let sub = self.subset(&b.instances, &b.cols);
+        let (tol, max_nfev) = self.block_tol(opts);
         let mut zb = start.to_vec();
-        let mut path = Path { inner: BlockTr::new(self, sub, z), r0: Vec::new(), left: 1.0 };
+        let inner = BlockTr::new(self, sub.clone(), z);
+        let mut path = Path { inner, r0: Vec::new(), left: 1.0 };
         let mut r = vec![0.0; path.m()];
         path.inner.residuals_into(&zb, &mut r);
         path.r0 = r.clone();
@@ -801,10 +820,23 @@ impl System {
                 break;
             }
         }
-        for (k, &c) in b.cols.iter().enumerate() {
-            z[c] = zb[k];
+        (Self::block_back(sub, z, &zb, &r, opts), total)
+    }
+
+    /// A block's minimisation's tolerances and evaluation budget.
+    fn block_tol(&self, opts: &SolveOpts) -> (newton::Tol, i32) {
+        let gtol = 1e-16 / self.extent.max(1.0);
+        let max_nfev = if opts.max_nfev <= 0 { 4 * opts.max_iter } else { opts.max_nfev };
+        (newton::Tol { ftol: opts.tol, xtol: BLOCK_XTOL, gtol }, max_nfev)
+    }
+
+    /// A block's columns `zb` written back into `z`, and whether its rows `r` (the residuals at
+    /// `zb`) meet `acceptance_tol`; NaN fails the comparison.
+    fn block_back(sub: &Subset, z: &mut [f64], zb: &[f64], r: &[f64], opts: &SolveOpts) -> bool {
+        for (&c, &v) in sub.cols.iter().zip(zb) {
+            z[c] = v;
         }
-        (r.iter().all(|v| v.abs() < opts.acceptance_tol), total)
+        r.iter().all(|v| v.abs() < opts.acceptance_tol)
     }
 
     /// One minimisation from `z`, updated in place, measured on the hard rows: the result and
@@ -1002,11 +1034,8 @@ impl Search {
 
     /// The block's columns as the scratch sketch has them.
     fn block_of(&self, sys: &System, b: &SolveBlock) -> Vec<f64> {
-        let x = self.sk.get_x();
-        b.cols.iter().map(|&c| {
-            let v = x[sys.free[c] as usize];
-            v * sys.col_scale[c]
-        }).collect()
+        let value = |c: usize| self.sk.params[sys.free[c] as usize].value * sys.col_scale[c];
+        b.cols.iter().map(|&c| value(c)).collect()
     }
 
     /// Where block `b` may start again, its own start (`start`, with `z` the block's solution)
@@ -1045,22 +1074,18 @@ impl Search {
                 self.sk.set_x(x);
                 let before: Vec<[f64; 3]> =
                     moving.iter().map(|&p| self.sk.world_point(p)).collect();
-                let free = std::mem::take(&mut self.free);
-                let moved = across(&mut self.sk, ci, aim, &free);
-                self.free = free;
-                let Some(q) = moved else { continue };
+                let Some(q) = across(&mut self.sk, ci, aim, &self.free) else { continue };
                 out.push(self.block_of(sys, b));
                 // and the block mirrored across the plane the point was carried through: the
                 // other hand of what it is, where the point alone comes back to where it was
                 let Some(k) = moving.iter().position(|&p| p == q) else { continue };
                 let (from, to) = (before[k], self.sk.world_point(q));
-                let Some(n) = crate::space::normalised(crate::space::sub(to, from)) else {
+                let Some(n) = space::normalised(space::sub(to, from)) else {
                     continue;
                 };
-                let mid = [0, 1, 2].map(|i| (from[i] + to[i]) / 2.0);
+                let mid = space::lerp(from, to, 0.5);
                 let mirror = |w: [f64; 3]| {
-                    let h = crate::space::dot(crate::space::sub(w, mid), n);
-                    [0, 1, 2].map(|i| w[i] - 2.0 * h * n[i])
+                    space::sub(w, space::scale(n, 2.0 * space::dot(space::sub(w, mid), n)))
                 };
                 self.sk.set_x(x);
                 for (&p, &w) in moving.iter().zip(&before) {
@@ -1068,9 +1093,9 @@ impl Search {
                 }
                 for d in &turning {
                     let v = d.map(|c| self.sk.params[sys.free[c] as usize].value);
-                    let h = crate::space::dot(v, n);
-                    for (i, &c) in d.iter().enumerate() {
-                        self.sk.params[sys.free[c] as usize].value = v[i] - 2.0 * h * n[i];
+                    let v = space::sub(v, space::scale(n, 2.0 * space::dot(v, n)));
+                    for (&c, x) in d.iter().zip(v) {
+                        self.sk.params[sys.free[c] as usize].value = x;
                     }
                 }
                 out.push(self.block_of(sys, b));
@@ -1086,13 +1111,9 @@ impl Search {
             .map(|&(p, _)| self.sk.world_point(p))
             .collect();
         let n = placed.len().max(1) as f64;
-        let centre = placed
-            .iter()
-            .fold([0.0; 3], |a, w| [a[0] + w[0] / n, a[1] + w[1] / n, a[2] + w[2] / n]);
-        let size = placed
-            .iter()
-            .map(|w| crate::space::norm(crate::space::sub(*w, centre)))
-            .fold(0.0, f64::max);
+        let centre = space::scale(placed.iter().fold([0.0; 3], |a, &w| space::add(a, w)), 1.0 / n);
+        let size =
+            placed.iter().map(|&w| space::norm(space::sub(w, centre))).fold(0.0, f64::max);
         let size = if size > 0.0 { size } else { sys.extent.max(1.0) };
         for k in 0..RESTARTS {
             let seed = 0x2170_0000 ^ (k as u32).wrapping_mul(2_654_435_761);
@@ -1103,9 +1124,8 @@ impl Search {
                 self.place(p, w);
             }
             for d in &turning {
-                let mut v = [0, 1, 2].map(|_| rng.uniform(-1.0, 1.0));
-                let n = crate::space::norm(v).max(1e-9);
-                v = v.map(|x| x / n);
+                let v = [0, 1, 2].map(|_| rng.uniform(-1.0, 1.0));
+                let v = space::normalised(v).unwrap_or([0.0, 0.0, 1.0]);
                 for (&c, x) in d.iter().zip(v) {
                     self.sk.params[sys.free[c] as usize].value = x;
                 }

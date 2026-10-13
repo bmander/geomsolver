@@ -2222,20 +2222,14 @@ fn skew_gap(v: &[f64], j: &mut [f64]) -> f64 {
 fn line_line3_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
     let mut g = [0.0; 12];
     for i in 0..n {
-        let s = skew_gap(&v[12 * i..], &mut g);
-        r[i] = if k[2 * i + 1] != 0.0 { s } else { s.abs() } - k[2 * i];
+        r[i] = skew_read(&v[12 * i..], &mut g, k[2 * i + 1]) - k[2 * i];
     }
 }
 
 fn line_line3_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
     for i in 0..n {
         let o = 12 * i;
-        let s = skew_gap(&v[o..], &mut j[o..o + 12]);
-        if k[2 * i + 1] == 0.0 && s < 0.0 {
-            for x in &mut j[o..o + 12] {
-                *x = -*x;
-            }
-        }
+        skew_read(&v[o..], &mut j[o..o + 12], k[2 * i + 1]);
     }
 }
 
@@ -2245,23 +2239,30 @@ fn line_line3_free_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
     let mut g = [0.0; 12];
     for i in 0..n {
         let o = 13 * i;
-        let s = skew_gap(&v[o..], &mut g);
         let (m, c, pinned) = (k[3 * i], k[3 * i + 1], k[3 * i + 2]);
-        r[i] = if pinned != 0.0 { s } else { s.abs() } - (m * v[o + 12] + c);
+        r[i] = skew_read(&v[o..], &mut g, pinned) - (m * v[o + 12] + c);
     }
 }
 
 fn line_line3_free_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
     for i in 0..n {
         let o = 13 * i;
-        let s = skew_gap(&v[o..], &mut j[o..o + 12]);
-        if k[3 * i + 2] == 0.0 && s < 0.0 {
-            for x in &mut j[o..o + 12] {
-                *x = -*x;
-            }
-        }
+        skew_read(&v[o..], &mut j[o..o + 12], k[3 * i + 2]);
         j[o + 12] = -k[3 * i];
     }
+}
+
+/// The skew gap as a skew distance reads it, its gradient in `g`: signed where its side is
+/// `pinned` (non-zero), else its magnitude (#217) — `skew_reading`'s rule, over `f64`.
+fn skew_read(v: &[f64], g: &mut [f64], pinned: f64) -> f64 {
+    let s = skew_gap(v, g);
+    if pinned != 0.0 || s >= 0.0 {
+        return s;
+    }
+    for x in &mut g[..12] {
+        *x = -*x;
+    }
+    -s
 }
 
 /// The cosine of the angle between two lines' directions in space, `â·b̂` with a = B − A and

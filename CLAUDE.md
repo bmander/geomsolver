@@ -2385,8 +2385,9 @@ Conventions:
   that point crossed (an offset's other hand), from its solution and its start, then `RESTARTS`
   starts with its points scattered about what the blocks before it placed, at their size, and its
   axes turned (a fixed `rng::Rng` stream per start) — each a DogLeg, else followed along the
-  Newton homotopy `r(z) = (1 − t) r(start)` (`follow_block`, `HOMOTOPY_STEPS`). Constants read off
-  the pose are refreshed before each block (`refresh_consts`) and put back for the polish. A
+  Newton homotopy `r(z) = (1 − t) r(start)` (`follow_block`, `HOMOTOPY_STEPS`); a drawing stating
+  no bound has no root to search for. Constants read off the pose (`CKind::reads_pose`) are
+  refreshed before each block (`refresh_consts`) and put back for the polish. A
   steered solve whose crossings leave a bound broken runs the pass from its start (not under
   `BlockMode::Off`). **A drawing is judged at its own size**: a failed document solve ending more
   than `RESIZE` times the extent it was compiled at is compiled there and solved again from its
@@ -2395,8 +2396,9 @@ Conventions:
   (`solve_unsteered`, `REFRAMES`): a row in space taken across a line (`parallel`, a point on a
   line, a plane over a line's hidden axis) is measured along directions across the line as
   compiled, and a line turned square to them leaves a root of the frame and none of the drawing's;
-  so a succeeding document solve refreshes and, where its rows no longer hold, solves on.
-  **A chart is gauged where a failed solve ends** (`System::recharted`, `Sketch::rechoose_charts`):
+  so a succeeding document solve with such a row refreshes and, where its rows no longer hold,
+  solves on.
+  **A chart is gauged where a failed solve ends** (`System::recharted`, `Sketch::charts_moved`):
   one chosen where an unseeded point started can lie in the tangent plane the solve ends at;
   changed, the system is compiled again and solved on, kept only where it succeeds. An angle's
   bound is held to the relative tolerance itself, not the length one read as radians
