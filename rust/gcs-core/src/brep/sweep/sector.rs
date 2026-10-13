@@ -23,13 +23,14 @@ use crate::space::{cross,distance,dot,norm,scale,sub};
 
 type V = [f64;3];
 
-/// The side's grid across its slices, and how finely the built side is read back.
-const COLUMNS: usize = 9;
-const READ_BACK: usize = 4;
+/// The side's grid across its slices, and how finely the built side is read back (the native
+/// host's sector too).
+pub const COLUMNS: usize = 9;
+pub const READ_BACK: usize = 4;
 /// The least clearance the side keeps from every cut beyond twice the sheets' fit error (mm).
-const MARGIN: f64 = 0.05;
+pub const MARGIN: f64 = 0.05;
 /// The most points of the side the material field is asked about.
-const PROBES: usize = 160;
+pub const PROBES: usize = 160;
 /// The tolerance the split works to (mm).
 const SPLIT_TOL: f64 = 1e-6;
 
@@ -39,13 +40,14 @@ pub struct Sector { pub piece: Brep,pub origin: V,pub axis: V,pub count: usize,p
 
 /// The centres of the spheres the recipe's revolutions make where they are on the axis: the
 /// slicings a bevel gear's end spheres suggest (mm).
-fn sphere_centres(recipe: &Json,frame: Frame,size: f64) -> Vec<V> {
+pub fn sphere_centres(recipe: &Json,frame: Frame,size: f64) -> Vec<V> {
     let on_axis = |p: V| { let d = sub(p,frame.origin); norm(sub(d,scale(frame.axis,dot(d,frame.axis)))) <= 1e-6*size };
     let mut centres: Vec<V> = Vec::new();
     for node in recipe.get("nodes").map(Json::arr).unwrap_or_default() {
         if node.get("kind").map(Json::as_str) != Some("revolve") { continue }
         let (Some(o),Some(a)) = (node.get("origin"),node.get("axis")) else { continue };
         let [o,a]: [V;2] = [o,a].map(|j| std::array::from_fn(|i| j.arr()[i].as_f64()));
+        // a circle about a point of the revolution's own axis turns into a sphere about it
         let on_revolution = |p: V| norm(cross(sub(p,o),a)) <= 1e-6*size*norm(a);
         let Some(profile) = node.get("profile") else { continue };
         for edges in profile.get("loops").map(Json::arr).unwrap_or_default() { for edge in edges.arr() {
@@ -57,8 +59,6 @@ fn sphere_centres(recipe: &Json,frame: Frame,size: f64) -> Vec<V> {
     }
     centres
 }
-
-/// A solid's diagonal (mm).
 
 /// A placement's rigid motion in millimetres.
 pub(super) fn placed(pose: Motion,scale: f64) -> Rigid { Rigid::from_rows(&cad::placement_matrix(pose,scale)) }
@@ -275,7 +275,7 @@ pub fn construct(recipe: &StaticRecipe,distinct: &[usize],premises: Premises,say
     (say.mark)(crate::solid::export::Stage::Classify);
     let [kept] = &kept[..] else { return Err(format!("{} cells of the sector are material: this kernel does not unite them",kept.len())) };
     let mut piece = cells.swap_remove(kept.index);
-    crate::brep::json::measure(&mut piece);
+    piece.measure_tolerances();
     Ok(Sector {piece,origin:frame.origin,axis:frame.axis,count:n,pitch})
 }
 
@@ -328,6 +328,6 @@ pub fn whole(sk: &Sketch,body: usize,recipe: &StaticRecipe,blank: &Brep,distinct
     (say.mark)(crate::solid::export::Stage::Classify);
     let [kept] = &kept[..] else { return Err(format!("{} cells of the body are material: this kernel does not unite them",kept.len())) };
     let mut solid = cells.swap_remove(kept.index);
-    crate::brep::json::measure(&mut solid);
+    solid.measure_tolerances();
     Ok(solid)
 }

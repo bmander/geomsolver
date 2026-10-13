@@ -62,10 +62,9 @@ fn sides(r: Reading, split: bool) -> Vec<Fv> {
 /// The face a term reads, as a patch (`Some(false)`) or a surface (`Some(true)`) held to
 /// nothing further: `q coincident F` / `q coincident F.surface`.
 fn on_face(t: &RegionTerm, sk: &Sketch) -> Option<(crate::model::FaceRef, bool)> {
-    let RegionShape::Measured { of } = &t.shape else { return None };
-    let [(Target::Face(f), c)] = of.as_slice() else { return None };
+    let (f, c) = super::faces::measured_face(t)?;
     let at = t.lo.value(sk).ok()?;
-    (*c > 0.0 && t.cmp == Cmp::Le && at == 0.0 && t.grow.is_none()).then(|| (f.clone(), f.surface))
+    (c > 0.0 && t.cmp == Cmp::Le && at == 0.0 && t.grow.is_none()).then(|| (f.clone(), f.surface))
 }
 
 impl SetDistance {
@@ -138,8 +137,7 @@ fn shift(m: Fv, k: f64, sign: f64) -> Fv {
 /// its point is within.
 fn conditions(sk: &Sketch, t: &RegionTerm, read: &mut Read, within: &[crate::model::FaceRef])
     -> Result<Vec<Cond>, String> {
-    let lo = t.lo.value(sk)?;
-    let grow = t.grow.as_ref().map_or(Ok(0.0), |g| g.value(sk))?;
+    let (lo, grow) = t.value(sk)?;
     let hi = t.hi.unwrap_or(lo);
     // a measure `m` held by the term: `m ≤ lo`, `m ≥ lo`, `lo ≤ m ≤ hi` (`m = lo` where they meet)
     let held = |m: Fv| -> Vec<Cond> {

@@ -235,6 +235,55 @@ fn a_derivative_at_a_point_drawn_in_a_view_is_read_in_space() {
     fd_jacobian(&sk, 1e-5);
 }
 
+/// Two tangencies written in one set's body are two statements there, each with its own two
+/// directions: both pairs touch, as they do written outright, though the application stamps both
+/// with the one use's statement.
+#[test]
+fn two_tangencies_in_one_body_take_directions_apart() {
+    let head = "unit mm\nuse std\nin std.front {\n  c1 := point\n  fix((0, 0)) c1\n  \
+                c2 := point\n  fix((10, 0)) c2\n  c3 := point\n  fix((0, 40)) c3\n  \
+                c4 := point\n  fix((10, 40)) c4\n  m := point hint((3, 1))\n  \
+                n := point hint((3, 41))\n  z := point hint((50, 50))\n}\n\
+                s1 := std.Sphere(c1, r: 4)\ns2 := std.Sphere(c2, r: hint(5))\n\
+                s3 := std.Sphere(c3, r: 4)\ns4 := std.Sphere(c4, r: hint(5))\n\
+                m coincident s1\nm coincident s2\nn coincident s3\nn coincident s4\n";
+    let pairs = "s1 tangent(at: m) s2\n  s3 tangent(at: n) s4\n";
+    for src in [
+        format!("{head}{pairs}"),
+        format!("{head}both := {{ q |\n  {pairs}}}\nz coincident both\n"),
+    ] {
+        let e = read(&src);
+        let sk = solved(&e);
+        for (p, at_, r) in [("m", [4.0, 0.0, 0.0], "s2.r"), ("n", [4.0, 0.0, 40.0], "s4.r")] {
+            let got = at(&sk, &e, p);
+            assert!(norm(sub(got, at_)) < 1e-9, "{p}: {got:?}\n{src}");
+            let r = sk.params[sk.free_vars[r] as usize].value;
+            assert!((r - 6.0).abs() < 1e-9, "{r}\n{src}");
+        }
+    }
+}
+
+/// And a plane tangent to two sets in one body: each tangency's directions are its own.
+#[test]
+fn two_plane_tangencies_in_one_body_take_directions_apart() {
+    let head = "unit mm\nuse std\nM := point in std.top\nfix((40, 0)) M\n\
+                C := point hint((35, 5, 18))\nb1 := std.Sphere(C, r: 20)\nM coincident b1\n\
+                N := point in std.top\nfix((-40, 0)) N\nD := point hint((-35, 5, 18))\n\
+                b2 := std.Sphere(D, r: 20)\nN coincident b2\nz := point hint((50, 50, 50))\n";
+    let pairs = "std.top tangent(at: M) b1\n  std.top tangent(at: N) b2\n";
+    for src in [
+        format!("{head}{pairs}"),
+        format!("{head}both := {{ q |\n  {pairs}}}\nz coincident both\n"),
+    ] {
+        let e = read(&src);
+        let sk = solved(&e);
+        for (p, at_) in [("C", [40.0, 0.0, 20.0]), ("D", [-40.0, 0.0, 20.0])] {
+            let got = at(&sk, &e, p);
+            assert!(norm(sub(got, at_)) < 1e-9, "{p}: {got:?}\n{src}");
+        }
+    }
+}
+
 /// Two cones tangent at a point drawn in the gear cone's own view, `G`: its body is read where
 /// the point stands in space, as across views, so the pair stands as it does with the point
 /// drawn in the front.

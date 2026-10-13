@@ -34,6 +34,7 @@ mod apply;
 mod sets;
 mod faces;
 mod interfaces;
+mod keys;
 
 pub use faces::{FaceAxis, FacePlane};
 
@@ -43,7 +44,8 @@ use crate::lowering::Lowered;
 
 pub(crate) use values::{substitute_with, value_aff, value_read};
 use values::{free, typed, value_of, substitute, reads_geometry};
-use resolve::{lookup, lookup_raw, written};
+use resolve::Lookup;
+use crate::syntax::ref_text;
 
 /// No set walked as a set for want of an element: `Walk::unlowered` where nothing was.
 static NONE: BTreeSet<String> = BTreeSet::new();
@@ -80,11 +82,6 @@ pub struct RingInfo {
     pub about: Ref,
     pub n: u32,
     pub span: Span,
-}
-
-/// A reference spelled back as one name, as the source wrote it — for a message about it.
-pub fn written_name(r: &Ref) -> String {
-    written(r)
 }
 
 /// What the names in one statement are resolved against: the prefixes it is nested in, innermost

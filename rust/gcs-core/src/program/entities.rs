@@ -65,7 +65,7 @@ fn shown(sk: &Sketch, d: &Decl) -> String {
 /// (a `length` row holds it, or the energy's stationarity in it sets it).
 fn build_free_curve(sk: &mut Sketch, res: &Resolver, d: &Decl, st: &Stmt, diags: &mut Vec<Diag>) -> Option<EntRef> {
     let err = |diags: &mut Vec<Diag>, code, span, message: String| {
-        diags.push(Diag { code, span, stmt: Some(st.id), message });
+        diags.push(Diag::within(code, span, st.id, message));
         None
     };
     let mut ends = Vec::with_capacity(2);
@@ -149,12 +149,11 @@ pub(super) fn build(
     // a seed named by a place (`hint(at: k, bearing: b)`) is a point's; every other kind has
     // a scalar of its own the clause seeds by name
     if d.seed_at.is_some() && d.kind != EntKind::Point {
-        diags.push(Diag {
-            code: Code::E103,
-            span: st.span,
-            stmt: Some(st.id),
-            message: "only a point takes a geometric seed (`hint(at: …)`)".to_string(),
-        });
+        diags.push(Diag::on(
+            Code::E103,
+            st,
+            "only a point takes a geometric seed (`hint(at: …)`)".to_string(),
+        ));
         return None;
     }
     // every child a declaration names, flattened in field order and checked to be a Point —
@@ -209,28 +208,27 @@ pub(super) fn build(
                     // a list slot has no arity, so it has no dotted path to be named by, and a
                     // point nothing can name is a point nothing can constrain or drag
                     let Some(name) = dotted.get(slot) else {
-                        diags.push(Diag {
-                            code: Code::E103,
-                            span: st.span,
-                            stmt: Some(st.id),
-                            message: format!(
+                        diags.push(Diag::on(
+                            Code::E103,
+                            st,
+                            format!(
                                 "{}'s control points have no names to be reached by, so each \
                                  one is declared",
                                 d.kind.a()
                             ),
-                        });
+                        ));
                         return None;
                     };
                     // a child is drawn where its parent is; a point in space is declared
                     if !seed.spans[2].is_empty() {
-                        diags.push(Diag {
-                            code: Code::E040,
-                            span: seed.spans[2],
-                            stmt: Some(st.id),
-                            message: "an anonymous point has no `z`: it is drawn where its parent \
-                                      is, and a point in space is declared, `p := point hint(x: …, \
-                                      y: …, z: …)`".to_string(),
-                        });
+                        diags.push(Diag::within(
+                            Code::E040,
+                            seed.spans[2],
+                            st.id,
+                            "an anonymous point has no `z`: it is drawn where its parent \
+                             is, and a point in space is declared, `p := point hint(x: …, \
+                             y: …, z: …)`".to_string(),
+                        ));
                         return None;
                     }
                     let i = sk.point(seed.v[0], seed.v[1], false, label.get(slot).unwrap_or(name));
@@ -253,38 +251,38 @@ pub(super) fn build(
             };
             slot += 1;
             let Some(e) = res.lookup(r) else {
-                diags.push(Diag {
-                    code: Code::E101,
-                    span: r.span,
-                    stmt: Some(st.id),
-                    message: format!("no such entity: `{}`", r.root.text),
-                });
+                diags.push(Diag::within(
+                    Code::E101,
+                    r.span,
+                    st.id,
+                    format!("no such entity: `{}`", r.root.text),
+                ));
                 return None;
             };
             let e = match follow_building(sk, res, e, r) {
                 Ok(e) => e,
                 Err(msg) => {
-                    diags.push(Diag {
-                        code: Code::E040,
-                        span: r.span,
-                        stmt: Some(st.id),
-                        message: msg,
-                    });
+                    diags.push(Diag::within(
+                        Code::E040,
+                        r.span,
+                        st.id,
+                        msg,
+                    ));
                     return None;
                 }
             };
             if e.kind != EntKind::Point {
-                diags.push(Diag {
-                    code: Code::E040,
-                    span: r.span,
-                    stmt: Some(st.id),
-                    message: format!(
+                diags.push(Diag::within(
+                    Code::E040,
+                    r.span,
+                    st.id,
+                    format!(
                         "`{}` is {}, and {} is built from points",
                         r.root.text,
                         e.kind.a(),
                         d.kind.a()
                     ),
-                });
+                ));
                 return None;
             }
             kids.push(e.i());
@@ -295,16 +293,15 @@ pub(super) fn build(
     let want = d.kind.children_arity();
     if let Some(n) = want {
         if kids.len() != n {
-            diags.push(Diag {
-                code: Code::E103,
-                span: st.span,
-                stmt: Some(st.id),
-                message: format!(
+            diags.push(Diag::on(
+                Code::E103,
+                st,
+                format!(
                     "{} is built from {n} point(s), and {} were given",
                     d.kind.a(),
                     written
                 ),
-            });
+            ));
             return None;
         }
     }
@@ -372,15 +369,14 @@ pub(super) fn build(
         }
         EntKind::Spline => {
             if kids.len() > io::MAX_CTRL {
-                diags.push(Diag {
-                    code: Code::E104,
-                    span: st.span,
-                    stmt: Some(st.id),
-                    message: format!(
+                diags.push(Diag::on(
+                    Code::E104,
+                    st,
+                    format!(
                         "a curve may not have more than {} control points",
                         io::MAX_CTRL
                     ),
-                });
+                ));
                 return None;
             }
             match sk.spline_weighted(&kids, d.knots.clone(), d.weights.clone()) {
@@ -394,7 +390,7 @@ pub(super) fn build(
                             curve::DEGREE
                         )
                     };
-                    diags.push(Diag { code: Code::E103, span: st.span, stmt: Some(st.id), message });
+                    diags.push(Diag::on(Code::E103, st, message));
                     return None;
                 }
             }
@@ -462,7 +458,7 @@ fn build_plane(
     deferred: &mut Vec<Deferred>,
 ) -> Option<EntRef> {
     let fail = |diags: &mut Vec<Diag>, span: Span, message: String| {
-        diags.push(Diag { code: Code::E103, span, stmt: Some(st.id), message });
+        diags.push(Diag::within(Code::E103, span, st.id, message));
     };
     let show = shown(sk, d);
     // the slots in field order: `u`, `v`, then `origin`, which is never written
@@ -532,18 +528,18 @@ fn build_plane(
             }
         };
         let Some(e) = res.lookup(r) else {
-            diags.push(Diag {
-                code: Code::E101,
-                span: r.span,
-                stmt: Some(st.id),
-                message: format!("no such entity: `{}`", r.root.text),
-            });
+            diags.push(Diag::within(
+                Code::E101,
+                r.span,
+                st.id,
+                format!("no such entity: `{}`", r.root.text),
+            ));
             return None;
         };
         let e = match follow_building(sk, res, e, r) {
             Ok(e) => e,
             Err(msg) => {
-                diags.push(Diag { code: Code::E040, span: r.span, stmt: Some(st.id), message: msg });
+                diags.push(Diag::within(Code::E040, r.span, st.id, msg));
                 return None;
             }
         };
@@ -600,13 +596,13 @@ pub(super) fn places(sk: &mut Sketch, deferred: &[Deferred], diags: &mut Vec<Dia
     for d in deferred {
         let &Deferred::Height { point, z, span, stmt, .. } = d else { continue };
         if sk.plane_of(point).is_some() {
-            diags.push(Diag {
-                code: Code::E040,
+            diags.push(Diag::within(
+                Code::E040,
                 span,
-                stmt: Some(stmt),
-                message: "a point drawn in a plane has that plane's two coordinates, and no `z`"
+                stmt,
+                "a point drawn in a plane has that plane's two coordinates, and no `z`"
                     .to_string(),
-            });
+            ));
         } else {
             height.insert(point, z);
         }
@@ -630,11 +626,11 @@ pub(super) fn drawn_in_planes(sk: &Sketch, map: &super::SourceMap, diags: &mut V
         let Some(&p) = sk.children(e).iter().find(|k| sk.plane_of(k.i()).is_none()) else { continue };
         let Some(site) = map.site_of(e) else { continue };
         let who = |r: EntRef| map.name_of(r).cloned().unwrap_or_else(|| io::entity_name(r));
-        diags.push(Diag {
-            code: Code::E060,
-            span: site.span,
-            stmt: Some(site.stmt),
-            message: format!(
+        diags.push(Diag::within(
+            Code::E060,
+            site.span,
+            site.stmt,
+            format!(
                 "{} is drawn in a plane, and `{}` stands in space: draw it `in` one",
                 match e.kind {
                     EntKind::Arc => "an arc",
@@ -644,7 +640,7 @@ pub(super) fn drawn_in_planes(sk: &Sketch, map: &super::SourceMap, diags: &mut V
                 },
                 who(p)
             ),
-        });
+        ));
     }
 }
 
@@ -892,7 +888,7 @@ pub(super) fn settle_deferred(
             }
         };
         if let Err(message) = result {
-            diags.push(Diag { code: Code::E103, span, stmt: Some(stmt), message });
+            diags.push(Diag::within(Code::E103, span, stmt, message));
         }
     }
 }

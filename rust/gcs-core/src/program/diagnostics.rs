@@ -163,6 +163,21 @@ pub struct Diag {
 }
 
 impl Diag {
+    /// A diagnostic at `span`, in the statement `stmt` where there is one.
+    pub fn new(code: Code, span: Span, stmt: Option<StmtId>, message: String) -> Diag {
+        Diag { code, span, stmt, message }
+    }
+
+    /// A diagnostic at `span` within the statement `stmt`.
+    pub fn within(code: Code, span: Span, stmt: StmtId, message: String) -> Diag {
+        Diag { code, span, stmt: Some(stmt), message }
+    }
+
+    /// A diagnostic on a whole statement: its span and its id.
+    pub(crate) fn on(code: Code, st: &crate::ir::Statement, message: String) -> Diag {
+        Diag { code, span: st.span, stmt: Some(st.id), message }
+    }
+
     pub fn severity(&self) -> Severity {
         self.code.severity()
     }

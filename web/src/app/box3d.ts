@@ -21,7 +21,7 @@ import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js
 import { mesh, objects, preview } from '../core/mesh.js';
 import type { Face, Mesh } from '../core/mesh.js';
 import { overview3 } from '../core/overview.js';
-import { placeOf, solidEdges } from '../core/workspace.js';
+import { eyeFrame, placeOf, solidEdges } from '../core/workspace.js';
 import type { SolidEdge } from '../core/workspace.js';
 import type { Item3 } from '../core/overview.js';
 import { COL, chromeOf, inkOf } from './paint.js';
@@ -215,10 +215,9 @@ export class Box3D {
    *  that plane to the screen.  Setting three's orthographic camera from the same two vectors and
    *  the same scale is what keeps a click landing on the thing under the cursor. */
   private aim(v: SketchView): void {
-    const { az, el } = v.orbit;
-    const ce = Math.cos(el);
-    const eye = new THREE.Vector3(Math.cos(az) * ce, Math.sin(az) * ce, Math.sin(el));
-    const up = new THREE.Vector3(-Math.cos(az) * Math.sin(el), -Math.sin(az) * Math.sin(el), ce);
+    const frame = eyeFrame(v.orbit.az, v.orbit.el);
+    const eye = new THREE.Vector3(...frame.toward);
+    const up = new THREE.Vector3(...frame.up);
     // the eye length of half the canvas, which is what `camera.ts` reads its scale as
     const [cx, cy] = v.cam.s2w(v.width / 2, v.height / 2);
     const centre = new THREE.Vector3(-cx, -cy, 0);
@@ -237,7 +236,7 @@ export class Box3D {
     c.updateProjectionMatrix();
     // the pan: the core projects about the world origin and `camera.ts` then translates, so the
     // same translation is applied here in the camera's own screen plane
-    const right = new THREE.Vector3(-Math.sin(az), Math.cos(az), 0);
+    const right = new THREE.Vector3(...frame.right);
     c.position.addScaledVector(right, -centre.x);
     c.position.addScaledVector(up, -centre.y);
     c.updateMatrixWorld();

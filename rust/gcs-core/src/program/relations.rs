@@ -1,6 +1,12 @@
-//! Resolve constraint arguments and apply gauges.
+//! Settle relations into constraints and resolve their arguments.  Gauges are applied in
+//! `gauges`, and region terms built in `regions`.
 
 use super::resolve::{follow, Operand, Resolver};
+use super::gauges::{apply_gauge, fix_spelling, Gauges};
+use super::regions::{
+    ends_term, face_term, probe_of, region_term, settled_number, term_name, term_number,
+    written_number, Probes,
+};
 use super::{Code, Diag, SourceMap};
 use crate::constraints::{Arg as CArg, CKind, Constraint, SpecKind};
 use crate::ir::{PathStep, Relation, ResolvedRelation, Statement as Stmt};
@@ -8,7 +14,7 @@ use crate::model::{EntKind, EntRef, Sketch, Toward};
 use crate::syntax::{Arg, Ref, RelationForm, Span, StmtId};
 use std::collections::{BTreeMap, BTreeSet};
 use crate::fmath::Det;
-use crate::{decompose, expr, io};
+use crate::{expr, io};
 
 /// Resolve an operator to its constraint kind and registry-ordered arguments.
 pub(crate) fn settle(
@@ -115,69 +121,11 @@ pub(crate) fn settle(
     Ok((kind, w.assemble(kind)?))
 }
 
-/// `fix` states every number it holds, pinned whole or by member (§9.2: inside the parentheses
-/// `==` pins and `:` selects): `fix((0, 0)) p`, `fix(x == 0) p`, `fix(dir == (1, 0, 0)) t`.  A
-/// bare `fix p`, a held number without its name and one written as a selector are each refused
-/// where they stand, with the spelling.
-fn fix_spelling(w: &crate::syntax::Written) -> Result<(), (Span, String)> {
-    use crate::syntax::OpArg;
-    let of = w.ops.first().map_or("p".to_string(), |r| r.root.text.clone());
-    let refused = |key: &str| format!("`fix` holds a point itself, `fix((0, 0)) {of}`, or what an \
-        entity has — `x`, `r`, `half`, `dir`, `origin`, or one component, `dir.x` — not `{key}`");
-    for a in &w.args {
-        match a {
-            OpArg::Named(key, _) => {
-                let m = format!("`fix` pins a number with `==`: `fix({} == …) {of}`", key.text);
-                return Err((key.span, m))
-            }
-            OpArg::Dim(text, span) => {
-                return Err((*span, format!("`fix` names each number it holds: \
-                    `fix(r == {text}) {of}`, and a point's place is a vector, `fix((0, 0)) {of}`")))
-            }
-            OpArg::Slot { key, .. } => {
-                if !CKind::Fix.spec()[1..].iter().any(|(n, _)| *n == key.text) {
-                    return Err((key.span, refused(&key.text)))
-                }
-            }
-            OpArg::Vector { key: Some(key), .. } => {
-                if !matches!(key.text.as_str(), "dir" | "origin") {
-                    return Err((key.span, refused(&key.text)))
-                }
-            }
-            _ => {}
-        }
-    }
-    if !w.args.iter().any(|a| matches!(a, OpArg::Slot { .. } | OpArg::Vector { .. })) {
-        return Err((w.word.span, format!("`fix` states the numbers it holds: `fix((0, 0)) {of}`")));
-    }
-    Ok(())
-}
-
-/// Whether a statement is a `fix`, which is applied before the seeds that read geometry are
-/// worked out (`program::build`), so a seed reading a held point reads where it is held.
-pub(super) fn is_fix(r: &Relation) -> bool {
-    match &r.form {
-        RelationForm::Written(w) => w.word.text == "fix",
-        RelationForm::Canonical { kind, .. } => *kind == CKind::Fix,
-    }
-}
-
 /// An E040 said once at its span, however many of a use's rows find it.
 fn say_once(diags: &mut Vec<Diag>, span: Span, stmt: StmtId, message: String) {
     if !diags.iter().any(|d| d.span == span && d.message == message) {
-        diags.push(Diag { code: Code::E040, span, stmt: Some(stmt), message });
+        diags.push(Diag::within(Code::E040, span, stmt, message));
     }
-}
-
-/// The hidden points region solids' bodies are applied to (`solid(R)`, §6.21), each with the
-/// bounds stated on it: gathered as relations are stated, taken by each solid as it is built
-/// (`SolidDef::Region`).  Never a row: a probe's bound describes material and chooses no root.
-#[derive(Default)]
-pub(super) struct Probes {
-    pub terms: BTreeMap<usize, Vec<crate::model::RegionTerm>>,
-    /// Per probe, the sets a bound of it measured from with nothing (a chamfer of no leg): read by
-    /// no term, so held when its solid is built, as `fill_sets` holds a set it reads.
-    pub idle: BTreeMap<usize, Vec<usize>>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -206,7 +154,7 @@ pub(super) fn constrain(
         match made {
             Ok((probe, t)) => probes.terms.get_mut(&probe).expect("a probe's terms").push(t),
             Err(message) => {
-                diags.push(Diag { code: Code::E040, span: st.span, stmt: Some(st.id), message })
+                diags.push(Diag::on(Code::E040, st, message))
             }
         }
         return None;
@@ -224,7 +172,7 @@ pub(super) fn constrain(
         if w.word.text == "outside" {
             let m = "`outside` says which side of a plane a point is on: `p outside P`";
             let message = m.to_string();
-            diags.push(Diag { code: Code::E040, span: st.span, stmt: Some(st.id), message });
+            diags.push(Diag::on(Code::E040, st, message));
             return None;
         }
         if crate::constraints::solid_word(&w.word.text).is_some() {
@@ -315,7 +263,7 @@ pub(super) fn constrain(
     {
         Ok(r) => r,
         Err((span, message)) => {
-            diags.push(Diag { code: Code::E040, span, stmt: Some(st.id), message });
+            diags.push(Diag::within(Code::E040, span, st.id, message));
             return None;
         }
     };
@@ -325,16 +273,15 @@ pub(super) fn constrain(
     // unclaimable kind is, so it is checked first.
     if ckind.gauge() {
         if r.claim {
-            diags.push(Diag {
-                code: Code::E040,
-                span: st.span,
-                stmt: Some(st.id),
-                message: format!(
+            diags.push(Diag::on(
+                Code::E040,
+                st,
+                format!(
                     "`{}` is judged by nothing a claim can weigh: it holds a number or picks a \
                      root, and adds no row for the diagnosis to rank",
                     crate::syntax::snake(ckind.name())
                 ),
-            });
+            ));
             return None;
         }
         apply_gauge(sk, res, &r, st, gauges, diags);
@@ -370,15 +317,15 @@ pub(super) fn constrain(
                     // the empty word is the slot's own default and says nothing — a selector
                     // nobody wrote (issue #48, item 4), which the printers leave out again
                     if !w.is_empty() && !words.contains(&w.as_str()) {
-                        diags.push(Diag {
-                            code: Code::E040,
-                            span: where_(a),
-                            stmt: Some(st.id),
-                            message: format!(
+                        diags.push(Diag::within(
+                            Code::E040,
+                            where_(a),
+                            st.id,
+                            format!(
                                 "`{name}` is {}, not `{w}`",
                                 crate::syntax::one_of(words)
                             ),
-                        });
+                        ));
                         return None;
                     }
                 }
@@ -400,7 +347,7 @@ pub(super) fn constrain(
                 };
                 let message =
                     format!("`at` is {ends}a point on what is touched, and `{what}` names nothing");
-                diags.push(Diag { code: Code::E040, span: where_(a), stmt: Some(st.id), message });
+                diags.push(Diag::within(Code::E040, where_(a), st.id, message));
                 return None;
             }
             // a direction that names nothing is a word misspelt, more likely than an entity
@@ -410,16 +357,16 @@ pub(super) fn constrain(
                     other => crate::syntax::sel_text(other),
                 };
                 let message = no_direction(&what);
-                diags.push(Diag { code: Code::E040, span: where_(a), stmt: Some(st.id), message });
+                diags.push(Diag::within(Code::E040, where_(a), st.id, message));
                 return None;
             }
             Err((code, msg)) => {
-                diags.push(Diag {
+                diags.push(Diag::within(
                     code,
-                    span: where_(a),
-                    stmt: Some(st.id),
-                    message: format!("{}: {msg}", name),
-                });
+                    where_(a),
+                    st.id,
+                    format!("{}: {msg}", name),
+                ));
                 return None;
             }
         }
@@ -445,7 +392,7 @@ pub(super) fn constrain(
         if let Err((span, message)) =
             ordinate_operands(sk, res, &r, st, doc, &mut args, &mut left_out)
         {
-            diags.push(Diag { code: Code::E040, span, stmt: Some(st.id), message });
+            diags.push(Diag::within(Code::E040, span, st.id, message));
             return None;
         }
     }
@@ -459,12 +406,12 @@ pub(super) fn constrain(
         Ok(Some((k, a, l))) => (k, k.spec(), a, l),
         Err((selector, message)) => {
             let key = ["side", "sense"].into_iter().find_map(|k| r.written.and_then(|w| w.key_span(k)));
-            diags.push(Diag {
-                code: if selector { Code::E040 } else { Code::E062 },
-                span: if selector { key.unwrap_or(st.span) } else { st.span },
-                stmt: Some(st.id),
+            diags.push(Diag::within(
+                if selector { Code::E040 } else { Code::E062 },
+                if selector { key.unwrap_or(st.span) } else { st.span },
+                st.id,
                 message,
-            });
+            ));
             return None;
         }
     };
@@ -500,20 +447,20 @@ pub(super) fn constrain(
                     ),
                     None => String::new(),
                 };
-                diags.push(Diag {
-                    code: Code::E040,
-                    span: r
+                diags.push(Diag::within(
+                    Code::E040,
+                    r
                         .args
                         .get(i)
                         .and_then(|a| a.as_ref())
                         .and_then(arg_span)
                         .unwrap_or(st.span),
-                    stmt: Some(st.id),
-                    message: format!(
+                    st.id,
+                    format!(
                         "{} is a magnitude and cannot be negative{fix}",
                         crate::model::article(&crate::syntax::snake(ckind.name()))
                     ),
-                });
+                ));
                 return None;
             }
         }
@@ -531,15 +478,15 @@ pub(super) fn constrain(
                 a => Some(a.num().dcos()),
             };
             if cos.is_some_and(|c| c.abs() > 1.0 - 1e-12) {
-                diags.push(Diag {
-                    code: Code::E040,
-                    span: r.args.get(i).and_then(|a| a.as_ref()).and_then(arg_span).unwrap_or(st.span),
-                    stmt: Some(st.id),
-                    message: "an angle in space of 0 or 180 degrees says the two are parallel, and \
-                              is read by a cosine that does not move there: write `parallel`, \
-                              and the seed says which way"
+                diags.push(Diag::within(
+                    Code::E040,
+                    r.args.get(i).and_then(|a| a.as_ref()).and_then(arg_span).unwrap_or(st.span),
+                    st.id,
+                    "an angle in space of 0 or 180 degrees says the two are parallel, and \
+                     is read by a cosine that does not move there: write `parallel`, \
+                     and the seed says which way"
                         .to_string(),
-                });
+                ));
                 return None;
             }
         }
@@ -551,30 +498,28 @@ pub(super) fn constrain(
     if ckind == CKind::AnnularDistance {
         let centre = |e: EntRef| sk.children(e).first().copied();
         if centre(args[0].ent()) != centre(args[1].ent()) {
-            diags.push(Diag {
-                code: Code::E040,
-                span: st.span,
-                stmt: Some(st.id),
-                message: "`distance` between two circles is the radial gap between concentric \
-                          ones, and these are centred on different points — dimension the \
-                          centres, or make the circles concentric"
+            diags.push(Diag::on(
+                Code::E040,
+                st,
+                "`distance` between two circles is the radial gap between concentric \
+                 ones, and these are centred on different points — dimension the \
+                 centres, or make the circles concentric"
                     .to_string(),
-            });
+            ));
             return None;
         }
     }
     // a claim is judged, never solved for, so it may own no unknown — `CKind::claimable` is the
     // rule, shared with the document readers; elaboration's job is only to give it a span
     if r.claim && !ckind.claimable() {
-        diags.push(Diag {
-            code: Code::E040,
-            span: st.span,
-            stmt: Some(st.id),
-            message: format!(
+        diags.push(Diag::on(
+            Code::E040,
+            st,
+            format!(
                 "`{}` carries an unknown of its own, and a claim may add none",
                 crate::syntax::snake(ckind.name())
             ),
-        });
+        ));
         return None;
     }
     // the inferred slots the source left out — read off the geometry, the one place that rule
@@ -582,18 +527,18 @@ pub(super) fn constrain(
     // the model refuses once they are in, in its own words, given this statement's span
     let name = |e: EntRef| map.name_of(e).cloned().unwrap_or_else(|| io::entity_name(e));
     if let Err(message) = crate::constraints::on_the_arc(ckind, &args, &name) {
-        diags.push(Diag { code: Code::E040, span: st.span, stmt: Some(st.id), message });
+        diags.push(Diag::on(Code::E040, st, message));
         return None;
     }
     if let Err(message) = io::seed_omitted_named(sk, ckind, &mut args, |i| left_out[i], &name) {
-        diags.push(Diag { code: Code::E061, span: st.span, stmt: Some(st.id), message });
+        diags.push(Diag::on(Code::E061, st, message));
         return None;
     }
     let bound = match bound_of(sk, res, &r, ckind) {
         Ok(b) => b,
         Err((span, message)) => {
             let span = span.unwrap_or(st.span);
-            diags.push(Diag { code: Code::E040, span, stmt: Some(st.id), message });
+            diags.push(Diag::within(Code::E040, span, st.id, message));
             return None;
         }
     };
@@ -604,7 +549,7 @@ pub(super) fn constrain(
         if b.hi.is_some_and(|hi| hi < c.args[i].num()) {
             let message = "an interval runs from its low end to its high end".to_string();
             let span = at.unwrap_or(st.span);
-            diags.push(Diag { code: Code::E040, span, stmt: Some(st.id), message });
+            diags.push(Diag::within(Code::E040, span, st.id, message));
             return None;
         }
     }
@@ -648,9 +593,7 @@ pub(super) fn constrain(
                 Some(g) => Some(g),
                 None => {
                     let message = "an offset is stated or reads one unknown of the drawing";
-                    diags.push(Diag {
-                        code: Code::E040, span: st.span, stmt: Some(st.id), message: message.into()
-                    });
+                    diags.push(Diag::on(Code::E040, st, message.into()));
                     return None;
                 }
             }
@@ -661,7 +604,7 @@ pub(super) fn constrain(
         match region_term(sk, &c, probe, grow, term_name) {
             Ok(t) => probes.terms.get_mut(&probe).expect("a probe's terms").push(t),
             Err(message) => {
-                diags.push(Diag { code: Code::E040, span: st.span, stmt: Some(st.id), message })
+                diags.push(Diag::on(Code::E040, st, message))
             }
         }
         return None;
@@ -670,7 +613,7 @@ pub(super) fn constrain(
         let message = "an offset of a cone is a region solid's: a point is put at a distance from \
                        one by its foot on it"
             .to_string();
-        diags.push(Diag { code: Code::E040, span: st.span, stmt: Some(st.id), message });
+        diags.push(Diag::on(Code::E040, st, message));
         return None;
     }
     Some(sk.add_quiet(c))
@@ -700,7 +643,7 @@ pub(super) fn kinds(map: &SourceMap, given: &[crate::flatten::KindAsked], diags:
             }
             (Some(i), _) => format!("`{}` is {}, where `{i}` asks for a path", k.what, e.kind.a()),
         };
-        diags.push(Diag { code: Code::E103, span: k.span, stmt: None, message });
+        diags.push(Diag::new(Code::E103, k.span, None, message));
     }
 }
 
@@ -717,100 +660,18 @@ pub(super) fn tangents_at(sk: &Sketch, map: &SourceMap, diags: &mut Vec<Diag>) {
             map.name_of(e).map_or_else(|| e.kind.a(), written)
         };
         let (m, g) = (name(EntRef::point(at)), name(on));
-        diags.push(Diag {
-            code: Code::E040,
-            span: site.span,
-            stmt: Some(site.stmt),
-            message: format!(
+        diags.push(Diag::within(
+            Code::E040,
+            site.span,
+            site.stmt,
+            format!(
                 "the tangent at {m} is taken where a contact holds {m} on {g}, and none does: \
                  state `{} coincident {}`",
                 m.trim_matches('`'),
                 g.trim_matches('`')
             ),
-        });
-    }
-}
-
-/// The region solid's probe a constraint reads, where it reads one: an operand, or a line's end.
-fn probe_of(sk: &Sketch, c: &Constraint, probes: &Probes) -> Option<usize> {
-    if probes.terms.is_empty() {
-        return None;
-    }
-    c.entities().into_iter().flat_map(|e| match e.kind {
-        EntKind::Point => vec![e.i()],
-        _ => crate::model::edge_ends(sk, e)
-            .map_or(Vec::new(), |(a, b)| vec![a as usize, b as usize]),
-    }).find(|p| probes.terms.contains_key(p))
-}
-
-/// What a bound on a region solid's probe bounds (§6.21), read off the constraint's **kind** and
-/// never the set it came from: a distance from a point is a ball, from a line a cylinder, the
-/// angle from a line seen from its start a cone, an ordinate along a plane's normal a half-space.
-fn region_term(sk: &Sketch, c: &Constraint, probe: usize, grow: Option<crate::model::TermNumber>,
-    name: String) -> Result<crate::model::RegionTerm, String> {
-    use crate::model::{RegionShape, RegionTerm};
-    let kind = crate::syntax::snake(c.kind.name());
-    // a set measured from holds its point's equalities as bounds too, `in: (d, d)`: the
-    // flattener says so (#192), so one rule reads every probe
-    let Some(b) = c.bound else {
-        return Err(format!(
-            "a region solid's set states `{kind}`, which bounds nothing: its body bounds numbers"
         ));
-    };
-    let at = c.kind.dimension_slot().expect("a bound is on a number");
-    let lo = term_number(&c.args[at], sk, c.kind.dimension_kind())
-        .ok_or("a region's number is stated or reads one unknown of the drawing")?;
-    let ent = |i: usize| c.args[i].ent();
-    let other =
-        |a: EntRef, b: EntRef| if a.i() == probe && a.kind == EntKind::Point { b } else { a };
-    let shape = match c.kind {
-        CKind::Distance | CKind::Distance3 => {
-            RegionShape::Ball { center: other(ent(0), ent(1)).i() as u32 }
-        }
-        CKind::PointLineDistance | CKind::PointLine3 => {
-            RegionShape::Cylinder { line: ent(1).i() as u32 }
-        }
-        CKind::Angle3 => {
-            let ends = |l: EntRef| [sk.lines[l.i()].p1 as usize, sk.lines[l.i()].p2 as usize];
-            let (a, g) = (ent(0), ent(1));
-            let (axis, seen) = if ends(g).contains(&probe) { (a, g) } else { (g, a) };
-            // the apex one point, though the axis drawn in a view takes its twin there (§6.7)
-            let apex = ends(seen).into_iter().find(|&p| p != probe);
-            if !apex.is_some_and(|p| sk.twinned(p, ends(axis)[0])) {
-                return Err("a cone's angle is seen from its axis's start: the line to the point \
-                            begins where the axis does"
-                    .to_string());
-            }
-            RegionShape::Cone { axis: axis.i() as u32 }
-        }
-        CKind::Ordinate => {
-            let from = ent(0);
-            let normal = matches!(&c.args[4], CArg::Str(w) if w == "n");
-            // along a plane's normal from its origin (`inside`/`outside` the plane), or along a
-            // line or an axis from any point (`std.HalfSpace`)
-            let along = match c.args[2] {
-                CArg::Ent(t) if matches!(t.kind, EntKind::Line | EntKind::Axis) => Some(t),
-                _ => sk.plane_of_origin(from.i()).filter(|_| normal).map(EntRef::plane),
-            };
-            let Some(along) = along else {
-                return Err("a region's ordinate is along a plane's normal (`inside`/`outside` \
-                            the plane), a line or an axis"
-                    .to_string());
-            };
-            RegionShape::Plane {
-                along,
-                from: from.i() as u32,
-                sign: if ent(1).i() == probe { 1.0 } else { -1.0 },
-            }
-        }
-        _ => {
-            return Err(format!("a region solid bounds distances, angles and planes, not `{kind}`"))
-        }
-    };
-    if grow.is_some() && (b.hi.is_some() || !matches!(shape, RegionShape::Cone { .. } | RegionShape::Plane { .. })) {
-        return Err("an offset is of a cone's surface or a plane's, on one side of it".to_string());
     }
-    Ok(RegionTerm { shape, cmp: b.cmp, lo, hi: b.hi, grow, name })
 }
 
 /// **What a written relation is, by what its operands resolve to** (#188): the one reading
@@ -1190,7 +1051,7 @@ pub(super) fn ent_arg(
     Ok(CArg::Ent(e))
 }
 
-fn to_arg(sk: &Sketch, res: &Resolver, kind: SpecKind, a: &Arg) -> Result<CArg, (Code, String)> {
+pub(super) fn to_arg(sk: &Sketch, res: &Resolver, kind: SpecKind, a: &Arg) -> Result<CArg, (Code, String)> {
     if let Some(v) = scalar_arg(kind, a) {
         return Ok(v);
     }
@@ -1237,229 +1098,6 @@ fn to_arg(sk: &Sketch, res: &Resolver, kind: SpecKind, a: &Arg) -> Result<CArg, 
     })
 }
 
-/// A gauge or an orientation predicate, **applied** (issue #47, item 5): written and settled as
-/// every other relation — an operator, a class, a placement — but holding parameters or
-/// recording a root choice instead of becoming a constraint the sketch holds, so `constrain`
-/// returns no id for it and the map never knows it.  The checks are the ones the two statement
-/// kinds always made, in their words.  What it holds or chooses goes into `gauges`, applied once
-/// every gauge is in (`Gauges::hold_all`, `choose_all`).
-fn apply_gauge(
-    sk: &mut Sketch,
-    res: &Resolver,
-    r: &ResolvedRelation<'_>,
-    st: &Stmt,
-    gauges: &mut Gauges,
-    diags: &mut Vec<Diag>,
-) {
-    let refs: Vec<&Ref> = r
-        .args
-        .iter()
-        .filter_map(|a| match a {
-            Some(Arg::Ref(rf)) => Some(rf),
-            _ => None,
-        })
-        .collect();
-    let mut bad = |code: Code, span: Span, message: String| {
-        diags.push(Diag { code, span, stmt: Some(st.id), message })
-    };
-    match r.kind {
-        CKind::Fix => {
-            let Some(rf) = refs.first().copied() else {
-                bad(Code::E103, st.span, "`fix` names what it holds".to_string());
-                return;
-            };
-            let Some(e) = res.entity(sk, rf) else {
-                bad(Code::E101, rf.span, format!("no such entity: `{}`", rf.root.text));
-                return;
-            };
-            // a plane holds where it stands; an axis its direction and its origin
-            let members = e.kind.members();
-            let spec = r.kind.spec();
-            let own = sk.own_params(e);
-            let owned = &members[..own.len().min(members.len())];
-            let kind = e.kind.as_str();
-            let article = if kind.starts_with(['a', 'e', 'i', 'o', 'u']) { "an" } else { "a" };
-            // a vector held whole is as long as the vector it holds: a point in a plane is two
-            // numbers and one in space three, so `(0, 0)` cannot leave a height free unsaid
-            for a in r.written.map_or(&[][..], |w| &w.args[..]) {
-                let crate::syntax::OpArg::Vector { key, parts, span } = a else { continue };
-                let k = key.as_ref().map_or("", |k| k.text.as_str());
-                let Some(&(_, first)) = e.kind.vectors().iter().find(|(v, _)| *v == k) else {
-                    let m = match k {
-                        _ if owned.is_empty() => format!("{article} {kind} has no number of its \
-                                                          own to fix"),
-                        "" => format!("{article} {kind} is no vector: it has {}", said(e.kind, owned)),
-                        _ => format!("{article} {kind} has {}, not `{k}`", said(e.kind, owned)),
-                    };
-                    bad(Code::E105, *span, m);
-                    return;
-                };
-                let n = owned.len().saturating_sub(first).min(3);
-                if parts.len() != n {
-                    let m = match (k, n) {
-                        ("", 2) => "a point in a plane has two coordinates: `(x, y)`".to_string(),
-                        ("", _) => "a point in space has three coordinates: `(x, y, z)`".to_string(),
-                        _ => format!("`{k}` has three components: `{k} == (x, y, z)`"),
-                    };
-                    bad(Code::E105, *span, m);
-                    return;
-                }
-            }
-            for (i, a) in r.args.iter().enumerate().skip(1) {
-                let Some(a) = a else { continue };
-                let field = spec[i].0;
-                let Some(at) = owned.iter().position(|&n| n == field) else {
-                    bad(
-                        Code::E105,
-                        st.span,
-                        if owned.is_empty() {
-                            format!("{article} {kind} has no number of its own to fix")
-                        } else {
-                            format!("{article} {kind} has {}, not `{field}`", said(e.kind, owned))
-                        },
-                    );
-                    continue;
-                };
-                // a `fix` holds a number, and an unknown is not one
-                if let Arg::Tie { span, .. } = a {
-                    let m = format!("`fix` holds a number, and `{field}` is pinned to an unknown");
-                    bad(Code::E040, *span, m);
-                    continue;
-                }
-                // what the flattener settled the pin to; an expression it could not work out was
-                // reported there
-                let Arg::Seed { value, .. } = a else { continue };
-                let v = *value;
-                // where an axis is (its numbers after the direction's three), held: placed first,
-                // so no later relation reading its place frees what this holds
-                if e.kind == EntKind::Axis && at >= 3 {
-                    sk.place_axis(e.i());
-                }
-                gauges.hold(own[at], v, field, crate::syntax::ref_text(rf), st);
-            }
-        }
-        CKind::Ccw | CKind::Cw => {
-            if refs.len() != 3 {
-                bad(Code::E103, st.span, "an orientation names three points".to_string());
-                return;
-            }
-            let mut pts = [0usize; 3];
-            for (i, rf) in refs.iter().enumerate() {
-                match res.entity(sk, rf) {
-                    Some(e) if e.kind == EntKind::Point => pts[i] = e.i(),
-                    _ => {
-                        bad(Code::E101, rf.span, format!("no such point: `{}`", rf.root.text));
-                        return;
-                    }
-                }
-            }
-            // canonical, so the choice the document states and the one the plan replays are one
-            // record and not two that never meet (issue #48, item 4)
-            let (key, v) = decompose::branch_record(pts, r.kind == CKind::Ccw);
-            let names: Vec<String> = refs.iter().map(|rf| crate::syntax::ref_text(rf)).collect();
-            gauges.orient(key, v, format!("the triangle `{}`", names.join("`, `")), st);
-        }
-        _ => unreachable!("{:?} is not a gauge", r.kind),
-    }
-}
-
-/// What an entity has to hold, as the source names it: a point's coordinates (`x and y`), and
-/// for anything else its vectors whole (`dir and origin`) beside its scalars (`r`).
-fn said(kind: EntKind, owned: &[&str]) -> String {
-    let mut names: Vec<&str> = Vec::new();
-    for m in owned {
-        let head = m.split_once('.').map_or(*m, |(v, _)| v);
-        if !names.contains(&head) {
-            names.push(head);
-        }
-    }
-    if kind == EntKind::Point && names.len() == 3 {
-        return "x, y and z".to_string();
-    }
-    names.join(" and ")
-}
-
-/// Every number the `fix`es hold and every root the orientations choose, gathered before any is
-/// applied (issue #113).  A gauge adds no row, so the diagnosis never sees two of them disagree,
-/// and applied as each was read the later would silently win: an outcome hanging on the order
-/// of statements (P2).  So each is applied once all are in — those that agree as the one gauge
-/// they are (copies of a block holding a shared point alike), and those that disagree not at
-/// all, **E031** at every statement taking part.
-#[derive(Default)]
-pub(super) struct Gauges {
-    /// each held parameter: its value, then where, per statement holding it, with the field and
-    /// the entity as that statement names them
-    holds: BTreeMap<u32, Vec<(f64, Span, StmtId, &'static str, String)>>,
-    /// each canonical triangle's choices (`decompose::branch_record`), and a raw key's
-    branches: BTreeMap<String, Vec<(i32, String, Span, StmtId)>>,
-}
-
-impl Gauges {
-    fn hold(&mut self, param: u32, v: f64, field: &'static str, of: String, st: &Stmt) {
-        self.holds.entry(param).or_default().push((v, st.span, st.id, field, of));
-    }
-
-    fn orient(&mut self, key: String, v: i32, what: String, st: &Stmt) {
-        self.branches.entry(key).or_default().push((v, what, st.span, st.id));
-    }
-
-    /// A `branch(KEY, ±1)` statement: a root choice under a key no triple of points spells.
-    pub(super) fn branch(&mut self, b: &crate::syntax::Branch, st: &Stmt) {
-        self.orient(b.key.clone(), b.value, format!("the root choice `{}`", b.key), st);
-    }
-
-    /// Hold every number its holds agree on.  Values a rounding apart are one hold — two
-    /// spellings of one number (`w / 3 * 3`, `w`) — held at the least, whichever came first.
-    /// A statement holding several numbers in dispute is told once, naming each.
-    pub(super) fn hold_all(&mut self, sk: &mut Sketch, diags: &mut Vec<Diag>) {
-        let mut disputed: BTreeMap<(Span, StmtId), (Vec<&'static str>, String)> = BTreeMap::new();
-        for (param, holds) in std::mem::take(&mut self.holds) {
-            let lo = holds.iter().map(|h| h.0).fold(f64::INFINITY, f64::min);
-            let hi = holds.iter().map(|h| h.0).fold(f64::NEG_INFINITY, f64::max);
-            if hi - lo <= 1e-12 * lo.abs().max(hi.abs()).max(1.0) {
-                let p = &mut sk.params[param as usize];
-                p.value = lo;
-                p.fixed = true;
-                continue;
-            }
-            for (_, span, id, field, of) in holds {
-                let (fields, _) = disputed.entry((span, id)).or_insert_with(|| (Vec::new(), of));
-                if !fields.contains(&field) {
-                    fields.push(field);
-                }
-            }
-        }
-        for ((span, id), (fields, of)) in disputed {
-            let are = if fields.len() == 1 { "is" } else { "are" };
-            let fields = fields.iter().map(|f| format!("`{f}`")).collect::<Vec<_>>().join(" and ");
-            let message = format!(
-                "{fields} of `{of}` {are} held at two values: a number is held once, and another \
-                 `fix` holding it says otherwise"
-            );
-            diags.push(Diag { code: Code::E031, span, stmt: Some(id), message });
-        }
-    }
-
-    /// Record every root choice its statements agree on.
-    pub(super) fn choose_all(&mut self, sk: &mut Sketch, diags: &mut Vec<Diag>) {
-        for (key, choices) in std::mem::take(&mut self.branches) {
-            if choices.iter().all(|c| c.0 == choices[0].0) {
-                sk.branches.insert(key, choices[0].0);
-                continue;
-            }
-            let at: BTreeMap<(Span, StmtId), String> =
-                choices.into_iter().map(|(_, what, span, id)| ((span, id), what)).collect();
-            for ((span, id), what) in at {
-                let message = format!(
-                    "{what} is oriented both ways: one statement chooses one root, and another \
-                     the other"
-                );
-                diags.push(Diag { code: Code::E031, span, stmt: Some(id), message });
-            }
-        }
-    }
-}
-
 impl Relation {
     pub(crate) fn resolve(
         &self,
@@ -1478,398 +1116,4 @@ impl Relation {
             bound: self.form.bound(),
         })
     }
-}
-
-/// The name of a region's term (#212): the set the region's body used, where it used one (`tip`
-/// for `p inside tip` in `region`'s body), else the region's own — the second of the sets an
-/// application went through, else the first.
-fn term_name(through: &[String]) -> String {
-    through.get(1).or(through.first()).cloned().unwrap_or_default()
-}
-
-/// A region term's number affine in an unknown, in the kernels' units (an angle in radians);
-/// stated where it reads none, or reads it times nothing.
-fn term_of(a: expr::Aff, kind: SpecKind) -> crate::model::TermNumber {
-    crate::model::TermNumber {
-        c: expr::to_arg_units(kind, a.c),
-        free: a.free.filter(|_| a.m != 0.0).map(|name| (name, expr::to_arg_units(kind, a.m))),
-    }
-}
-
-/// A region term's number (§6.21): a literal or a text reading no unknown as it stands, else one
-/// affine in an unknown of the drawing, read once it is solved (`TermNumber::value`).  `None` for
-/// a text that is neither.
-fn term_number(a: &CArg, sk: &Sketch, kind: SpecKind) -> Option<crate::model::TermNumber> {
-    use crate::model::TermNumber;
-    let e = match a {
-        CArg::Num(v) => return Some(TermNumber::stated(*v)),
-        CArg::Expr(e) => e,
-        _ => return None,
-    };
-    let read = written_aff(a, sk)?;
-    Some(if read.free.is_none() { TermNumber::stated(e.value) } else { term_of(read, kind) })
-}
-
-/// A number as the kernels read it (an angle in radians) where it is one before `expr::evaluate`:
-/// a literal, or a text reading no unknown (`to_arg` values it).  `None` where it reads one.
-fn settled_number(a: &CArg, sk: &Sketch) -> Option<f64> {
-    match a {
-        CArg::Num(v) => Some(*v),
-        CArg::Expr(e) => written_number(a, sk).map(|_| e.value),
-        _ => None,
-    }
-}
-
-/// What a dimension's text comes to as written, in the document's units (degrees for an angle):
-/// `None` for a number with no text, or a text that reads an unknown.
-fn written_number(a: &CArg, sk: &Sketch) -> Option<f64> {
-    written_aff(a, sk).and_then(|a| a.number())
-}
-
-/// A dimension's text worked out over no scope, in the document's units: a number, or affine in
-/// the one unknown it reads.  `None` for a number with no text, or a text that is neither.  A
-/// declared unknown is what its declaration says (`param m: Length`), so `0.05 * m + 0.3mm` adds
-/// two lengths.
-fn written_aff(a: &CArg, sk: &Sketch) -> Option<expr::Aff> {
-    let CArg::Expr(e) = a else { return None };
-    let parsed = expr::parse_in(&e.text, sk.units).ok()?;
-    expr::eval_declared(&parsed.body, &sk.declared).ok()
-}
-
-/// A sum of measurements and a number: `Σ cᵢ mᵢ + c`, each `mᵢ` a measurement as written, and
-/// `c` stated or affine in one unknown of the drawing (a radius reading the solved module).
-type Linear<'m> = (Vec<(&'m crate::syntax::Measurement, f64)>, expr::Aff);
-
-/// What a side of a bound on measurements comes to as a sum of them times numbers (#183 F3), or
-/// why it is not one: a product or a quotient of two measurements, or one read through a function.
-fn linear<'m>(m: &'m crate::syntax::Measuring, sk: &Sketch) -> Result<Linear<'m>, String> {
-    use crate::syntax::Measuring;
-    use expr::{Aff, Op};
-    let scaled = |(terms, c): Linear<'m>, k: f64| -> Linear<'m> {
-        (terms.into_iter().map(|(m, x)| (m, x * k)).collect(), c.times(k))
-    };
-    // a measurement's coefficient is a plain number: an unknown times a measurement is no bound
-    // on measurements a region can read
-    let number = |a: &'m Measuring| -> Option<f64> {
-        a.measures().is_empty().then(|| linear(a, sk).ok().and_then(|(_, c)| c.number())).flatten()
-    };
-    Ok(match m {
-        // a declared unknown is what it was declared, as in every other number (`with_declared`)
-        Measuring::Number { text, .. } => {
-            let v = expr::eval_declared(&expr::parse_in(text, sk.units)?.body, &sk.declared)
-                .map_err(|e| e.message)?;
-            (Vec::new(), v)
-        }
-        Measuring::Measure(x) => (vec![(x, 1.0)], Aff::num(0.0)),
-        Measuring::Neg(a) => scaled(linear(a, sk)?, -1.0),
-        Measuring::Bin(op @ (Op::Add | Op::Sub), a, b) => {
-            let (mut terms, c) = linear(a, sk)?;
-            let k = if *op == Op::Add { 1.0 } else { -1.0 };
-            let (more, d) = linear(b, sk)?;
-            terms.extend(more.into_iter().map(|(m, x)| (m, x * k)));
-            (terms, one_unknown(&c, &d, k)?)
-        }
-        Measuring::Bin(Op::Mul, a, b) => match (number(a), number(b)) {
-            (Some(k), _) => scaled(linear(b, sk)?, k),
-            (_, Some(k)) => scaled(linear(a, sk)?, k),
-            _ => return Err("a bound on measurements is a sum of them, each times a number: \
-                             two measured are not multiplied".to_string()),
-        },
-        Measuring::Bin(Op::Div, a, b) => match number(b) {
-            Some(k) if k != 0.0 => scaled(linear(a, sk)?, 1.0 / k),
-            _ => return Err("a bound on measurements is a sum of them, each times a number: \
-                             a measurement divides nothing".to_string()),
-        },
-        _ => return Err("a bound on measurements is a sum of them, each times a number: none is \
-                         read through a function or a power".to_string()),
-    })
-}
-
-/// `a + k·b` of a bound on measurements' numbers, which read one unknown between them.
-fn one_unknown(a: &expr::Aff, b: &expr::Aff, k: f64) -> Result<expr::Aff, String> {
-    a.plus(b, k).map_err(|_| {
-        let (x, y) = (a.free.clone().unwrap_or_default(), b.free.clone().unwrap_or_default());
-        format!("a bound on measurements reads one unknown, and `{x}` and `{y}` are two")
-    })
-}
-
-/// `distance(p, f1) + distance(p, f2) <= 10mm` (#183 F3): a term of the region solid whose probe
-/// it measures — each measurement a distance between the probe and what else it names, the
-/// bound on their sum — or refused (E040): read only of a region solid's point.  What each
-/// measurement names is a reference the flattener has made absolute (#190).
-pub(super) fn measured_term(
-    sk: &Sketch,
-    res: &Resolver,
-    m: &crate::syntax::Measured,
-    st: &Stmt,
-    probes: &mut Probes,
-    diags: &mut Vec<Diag>,
-) {
-    let mut refuse = |message: String| {
-        diags.push(Diag { code: Code::E040, span: st.span, stmt: Some(st.id), message })
-    };
-    let (lhs, rhs) = match (linear(&m.lhs, sk), linear(&m.rhs, sk)) {
-        (Ok(l), Ok(r)) => (l, r),
-        (Err(e), _) | (_, Err(e)) => return refuse(e),
-    };
-    // `Σ cᵢ mᵢ cmp k`, every measurement on the left
-    let mut terms = lhs.0;
-    terms.extend(rhs.0.into_iter().map(|(m, c)| (m, -c)));
-    // the number the sum is bounded by, stated or affine in the one unknown either side reads
-    let bound = match one_unknown(&rhs.1, &lhs.1, -1.0) {
-        Ok(n) => n,
-        Err(e) => return refuse(e),
-    };
-    let (k, free) = (bound.c, bound.free.as_ref().filter(|_| bound.m != 0.0));
-    use crate::model::Target;
-    let target = |r: &Ref| -> Option<Target> {
-        let of = res.operand(sk, r).ok()?;
-        of.faces().map(Target::Face).or_else(|| of.ent().map(Target::Ent))
-    };
-    let probe_at = |t: &Option<Target>| match t {
-        Some(Target::Ent(e)) if e.kind == EntKind::Point && probes.terms.contains_key(&e.i()) => Some(e.i()),
-        _ => None,
-    };
-    // the material's angle where two faces meet, at the point of their edge nearest the region's
-    // point (#183 F9): a bound of its own
-    if let [(x, c)] = terms.as_slice() {
-        if x.measure == expr::Measure::Angle {
-            let face = |r: &Ref| match target(r) {
-                Some(Target::Face(f)) if !f.surface => Some(f),
-                _ => None,
-            };
-            let read = match (x.args.as_slice(), &x.at) {
-                ([a, b], Some(at)) => face(a).zip(face(b)).zip(probe_at(&target(at))),
-                _ => None,
-            };
-            let Some(((fa, fb), p)) = read else {
-                return refuse("a region's angle is between two faces, read `at:` its point: \
-                               `angle(a, b, at: p)`".to_string());
-            };
-            if free.is_some() {
-                return refuse("a region's angle is bounded by a number stated".to_string());
-            }
-            let cmp = if *c > 0.0 { m.cmp } else { m.cmp.turned().expect("one-sided") };
-            let lo = expr::to_arg_units(SpecKind::Angle, k / c);
-            let term = crate::model::RegionTerm::new(
-                crate::model::RegionShape::Angle { a: fa, b: fb },
-                cmp,
-                crate::model::TermNumber::stated(lo),
-            );
-            probes.terms.get_mut(&p).expect("a probe's terms").push(term);
-            return;
-        }
-    }
-    let mut probe = None;
-    let mut of: Vec<(Target, f64)> = Vec::new();
-    for (x, c) in terms {
-        if x.measure != expr::Measure::Distance || x.at.is_some() {
-            return refuse(format!(
-                "a region's bound measures distances from its point; `{}` is not read yet",
-                x.text()
-            ));
-        }
-        let ends: Vec<Option<Target>> = x.args.iter().map(target).collect();
-        // the point the set is about is the first operand where both are such points
-        let Some(at) = (0..ends.len()).find(|&k| probe_at(&ends[k]).is_some()) else {
-            return refuse(format!(
-                "`{}` measures nothing of a region solid's point: a bound on measurements is read \
-                 where a set is applied to one (`solid(S)`)",
-                x.text()
-            ));
-        };
-        let p = probe_at(&ends[at]).expect("found");
-        if probe.is_some_and(|q| q != p) {
-            return refuse("a bound on measurements reads one point".to_string());
-        }
-        probe = Some(p);
-        let Some(mut to) = ends[1 - at].clone() else {
-            return refuse(format!("`{}` names nothing to measure from",
-                                  crate::syntax::ref_text(&x.args[1 - at])));
-        };
-        // a set measured from has a point of its own, whose bounds it is (#183 F2)
-        if let Some(q) = probe_at(&ends[1 - at]) {
-            to = Target::Set { probe: q as u32, terms: Vec::new() };
-        }
-        if let Target::Ent(e) = &to {
-            if !matches!(e.kind, EntKind::Point | EntKind::Line | EntKind::Axis | EntKind::Plane) {
-                return refuse(format!(
-                    "a region's bound measures the distance from a point, a line, an axis, a \
-                     plane, a face or a set, not {}",
-                    e.kind.a()
-                ));
-            }
-        }
-        match of.iter_mut().find(|(e, _)| *e == to) {
-            Some((_, x)) => *x += c,
-            None => of.push((to, c)),
-        }
-    }
-    let Some(p) = probe else {
-        return refuse("a bound on measurements measures its point".to_string());
-    };
-    for (t, _) in of.iter().filter(|(_, c)| *c == 0.0) {
-        if let Target::Set { probe: q, .. } = t {
-            probes.idle.entry(p).or_default().push(*q as usize);
-        }
-    }
-    of.retain(|&(_, c)| c != 0.0);
-    // every measurement weighed nothing (a chamfer of no leg): `0 cmp k` holds everywhere, so it
-    // bounds nothing, or nowhere
-    if of.is_empty() {
-        use crate::syntax::Cmp;
-        if free.is_some() {
-            return refuse("a bound on measurements weighing nothing is bounded by a number stated"
-                .to_string());
-        }
-        let holds = match m.cmp { Cmp::Ge => 0.0 >= k, Cmp::Le => 0.0 <= k, Cmp::In => false };
-        if !holds {
-            refuse("a bound on measurements weighed nothing that holds nowhere".to_string());
-        }
-        return;
-    }
-    let shape = crate::model::RegionShape::Measured { of };
-    let number = term_of(bound, SpecKind::Length);
-    let name = term_name(&m.through);
-    let term = crate::model::RegionTerm { name, ..crate::model::RegionTerm::new(shape, m.cmp, number) };
-    probes.terms.get_mut(&p).expect("a probe's terms").push(term);
-}
-
-/// `p inside F`, `p outside F`, `p distance(<= d) F`, `p coincident F.surface` … (`Shape::Face`):
-/// the term of the region solid whose point `p` is, or why not.
-fn face_term(sk: &Sketch, res: &Resolver, w: &crate::syntax::Written, point: EntRef,
-             face: &crate::model::FaceRef, probes: &Probes)
-    -> Result<(usize, crate::model::RegionTerm), String> {
-    use crate::model::{RegionShape, RegionTerm, Target, TermNumber};
-    use crate::syntax::{Cmp, OpArg};
-    if !probes.terms.contains_key(&point.i()) {
-        return Err(format!(
-            "`{}` is a drawn point: a point is read against a face where a set is applied to a \
-             region solid's point (`solid(S)`)",
-            w.ops[0].root.text
-        ));
-    }
-    let probe = point.i();
-    let word = w.word.text.as_str();
-    // a side as written or as a set's body carries it (`Written::side`, #192)
-    let side = w.side();
-    let number = |text: &str, span: Span| -> Result<TermNumber, String> {
-        let arg = Arg::Dim { text: text.to_string(), span };
-        to_arg(sk, res, SpecKind::Length, &arg).ok().as_ref()
-            .and_then(|a| term_number(a, sk, SpecKind::Length))
-            .ok_or_else(|| format!("`{text}` is no length"))
-    };
-    let dim = w.args.iter().find_map(|a| match a {
-        OpArg::Dim(t, sp) => Some((t.clone(), *sp)),
-        _ => None,
-    });
-    let bound = w.bound();
-    let term = |shape, cmp, lo, hi| RegionTerm { hi, ..RegionTerm::new(shape, cmp, lo) };
-    let made = (|| -> Result<RegionTerm, String> {
-        // the signed distance from the face's surface toward its outside, bounded at its level
-        if let Some((cmp, level)) = &side {
-            if face.surface {
-                return Err("a side is read off a face: name the face, not its surface".to_string());
-            }
-            let lo = match level {
-                Some((t, sp)) => number(t, *sp)?,
-                None => TermNumber::stated(0.0),
-            };
-            return Ok(term(RegionShape::FaceSide { face: face.clone() }, *cmp, lo, None));
-        }
-        match word {
-            "distance" => {
-                let Some((t, sp)) = &dim else { return Err("a distance states a number".to_string()) };
-                let lo = number(t, *sp)?;
-                let of = vec![(Target::Face(face.clone()), 1.0)];
-                Ok(match &bound {
-                    Some((Cmp::In, Some((hi, sp)))) => {
-                        let hi = number(hi, *sp)?;
-                        term(RegionShape::Measured { of }, Cmp::In, lo, Some(hi.c))
-                    }
-                    Some((cmp, _)) => term(RegionShape::Measured { of }, *cmp, lo, None),
-                    None => {
-                        let at = lo.c;
-                        term(RegionShape::Measured { of }, Cmp::In, lo, Some(at))
-                    }
-                })
-            }
-            "coincident" => {
-                let of = vec![(Target::Face(face.clone()), 1.0)];
-                Ok(term(RegionShape::Measured { of }, Cmp::Le, TermNumber::stated(0.0), None))
-            }
-            _ => Err(format!("a region's point is `inside`, `outside`, `coincident` with or at a \
-                              `distance` from a face, not `{word}`")),
-        }
-    })();
-    made.map(|t| (probe, t))
-}
-
-/// `p inside S.ends` (#183 F7, `Shape::Ends`), `S` a set measured from at its own point
-/// (`flatten::sets`): `p` on the side the edge `S` is runs on of each face it ends on.
-fn ends_term(w: &crate::syntax::Written, point: EntRef, edge: EntRef, probes: &Probes)
-    -> Result<(usize, crate::model::RegionTerm), String> {
-    use crate::model::{RegionShape, RegionTerm, Target, TermNumber};
-    if !probes.terms.contains_key(&point.i()) || !probes.terms.contains_key(&edge.i()) {
-        return Err(format!(
-            "`{}` is a drawn point: where an edge ends is read of a region solid's point, where a \
-             set is applied to one (`solid(S)`)",
-            w.ops[0].root.text
-        ));
-    }
-    let Some((cmp, None)) = w.side() else {
-        return Err("where an edge ends is a side of it: `inside S.ends`".to_string());
-    };
-    if cmp != crate::syntax::Cmp::Le {
-        return Err("past where an edge ends is no region: say `inside S.ends`".to_string());
-    }
-    let shape = RegionShape::Ends {
-        edge: Box::new(Target::Set { probe: edge.i() as u32, terms: Vec::new() }),
-    };
-    Ok((point.i(), RegionTerm::new(shape, cmp, TermNumber::stated(0.0))))
-}
-
-/// The terms of the sets a region's terms (those stated of `probe`) measure from (#183 F2, F7),
-/// from the points their bodies were applied to, those points held (they stand for no place);
-/// `Err` for a set measured in terms of itself.
-pub(super) fn fill_sets(sk: &mut Sketch, terms: &mut [crate::model::RegionTerm], probes: &Probes,
-                        probe: usize, depth: usize) -> Result<(), String> {
-    use crate::model::{RegionShape, Target};
-    if depth > 16 {
-        return Err("a set measured from is measured in terms of itself".to_string());
-    }
-    // a set's point held and its own terms filled, in turn
-    let held = |q: usize, sk: &mut Sketch| -> Result<Vec<crate::model::RegionTerm>, String> {
-        let mut inner = probes.terms.get(&q).cloned().unwrap_or_default();
-        fill_sets(sk, &mut inner, probes, q, depth + 1)?;
-        for x in sk.own_params(EntRef::point(q)) {
-            sk.params[x as usize].fixed = true;
-        }
-        Ok(inner)
-    };
-    let fill = |t: &mut Target, sk: &mut Sketch| -> Result<(), String> {
-        if let Target::Set { probe, terms } = t {
-            if probes.terms.get(&(*probe as usize)).is_none_or(|t| t.is_empty()) {
-                return Err("a set measured from states nothing of its point".to_string());
-            }
-            *terms = held(*probe as usize, sk)?;
-        }
-        Ok(())
-    };
-    // a set no term reads still has its point held (`Probes::idle`)
-    for &q in probes.idle.get(&probe).into_iter().flatten() {
-        held(q, sk)?;
-    }
-    for t in terms.iter_mut() {
-        match &mut t.shape {
-            RegionShape::Measured { of } => {
-                for (target, _) in of.iter_mut() {
-                    fill(target, sk)?;
-                }
-            }
-            RegionShape::Ends { edge } => fill(edge, sk)?,
-            _ => {}
-        }
-    }
-    Ok(())
 }

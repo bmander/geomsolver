@@ -4,16 +4,14 @@
 //! (`solid::cad::recipe`).
 #[allow(unused_imports)]
 use crate::fmath::Det;
-use super::geom::{BSpline,Blend,Carry,Curve,Frame,Rigid,Surface,Uv,V};
+use super::geom::{tolerance,BSpline,Blend,Carry,Curve,Frame,Rigid,Surface,Uv,V};
 use std::sync::Arc;
-use super::topo::{Brep,Coedge,EdgeCurve,Face,Pcurve};
+use super::topo::{reverse_loop,Brep,Coedge,EdgeCurve,Face,Pcurve};
+use super::vec3;
 use crate::json::Json;
-use crate::space::{add,cross,distance,dot,norm,scale,sub};
+use crate::space::{add,cross,distance,dot,norm,scale,sub,unit};
 
 const TAU: f64 = std::f64::consts::TAU;
-
-fn unit(a: V) -> V { scale(a,1./norm(a)) }
-fn vec3(j: &Json) -> V { let a = j.arr(); [a[0].as_f64(),a[1].as_f64(),a[2].as_f64()] }
 
 /// One edge of a profile: a line, an arc (a whole circle where `span` is none) turning
 /// counter-clockwise about its frame's `z`, which is the profile's normal, or a B-spline whose
@@ -47,7 +45,7 @@ impl Profile {
     pub fn name(&self,l: usize,k: usize) -> String { self.names.get(l).and_then(|n| n.get(k)).cloned().unwrap_or_default() }
     /// From a recipe's `profile` (millimetres).
     pub fn from_json(j: &Json) -> Result<Profile,String> {
-        let field = |j: &Json,k: &str| j.get(k).cloned().ok_or(format!("profile: no `{k}`"));
+        fn field<'a>(j: &'a Json,k: &str) -> Result<&'a Json,String> { super::field(j,k,"profile") }
         let mut loops = Vec::new();
         let mut names = Vec::new();
         for l in field(j,"loops")?.arr() {
@@ -55,9 +53,9 @@ impl Profile {
             names.push(l.arr().iter().map(|e| e.get("name").map_or(String::new(),|n| n.as_str().to_string())).collect());
             for e in l.arr() {
                 edges.push(match field(e,"kind")?.as_str() {
-                    "line" => ProfileEdge::Line {a:vec3(&field(e,"start")?),b:vec3(&field(e,"end")?)},
+                    "line" => ProfileEdge::Line {a:vec3(field(e,"start")?),b:vec3(field(e,"end")?)},
                     "circle" => {
-                        let frame = Frame::new(vec3(&field(e,"center")?),vec3(&field(e,"normal")?),vec3(&field(e,"x_dir")?));
+                        let frame = Frame::new(vec3(field(e,"center")?),vec3(field(e,"normal")?),vec3(field(e,"x_dir")?));
                         let span = e.get("angles").map(|a| {
                             let (a0,a1) = (a.arr()[0].as_f64(),a.arr()[1].as_f64());
                             let sweep = (a1-a0).rem_euclid(TAU);
@@ -80,11 +78,11 @@ impl Profile {
             }
             loops.push(edges);
         }
-        Ok(Profile {origin:vec3(&field(j,"origin")?),normal:unit(vec3(&field(j,"normal")?)),loops,names})
+        Ok(Profile {origin:vec3(field(j,"origin")?),normal:unit(vec3(field(j,"normal")?)),loops,names})
     }
 
-    /// As a recipe writes it (`from_json`'s inverse), its lengths times `scale`: lines and arcs,
-    /// each named where it is; a spline is not written here (a meridian has none).
+    /// As a recipe writes it (`from_json`'s inverse), its lengths times `scale`: lines, arcs and
+    /// B-splines (their weights where rational), each named where it is. It never fails.
     pub fn to_json(&self,scale: f64) -> Result<Json,String> {
         use crate::json::object;
         let v = |p: V,s: f64| Json::Arr(p.iter().map(|&x| Json::from(x*s)).collect());
@@ -149,7 +147,7 @@ impl Seg {
 /// Each loop of a profile as a closed walk, the outer one counter-clockwise in `(x, y)` and the
 /// holes clockwise, where `coords` reads a point's coordinates in the plane.
 pub fn walks(p: &Profile,coords: &dyn Fn(V) -> [f64;2]) -> Result<Vec<Vec<Seg>>,String> {
-    let tol = 1e-9*p.size();
+    let tol = tolerance(p.size());
     let mut out = Vec::new();
     for (li,l) in p.loops.iter().enumerate() {
         let segs: Vec<Seg> = l.iter().enumerate().map(|(source,e)| match *e {
@@ -280,7 +278,7 @@ pub fn drafted(p: &Profile,from: f64,to: f64,draft: f64) -> Result<Brep,String> 
     };
     let (lo,hi) = (section(h0)?,section(h1)?);
     if !(h0 < 0. && h1 > 0.) { return piece(&lo,&hi) }
-    let tol = 1e-9*(p.size()+h1-h0);
+    let tol = tolerance(p.size()+h1-h0);
     let parting = section(0.)?;
     let b = super::boolean::glued(&piece(&lo,&parting)?,&piece(&parting,&hi)?,tol)
         .ok_or("a drafted prism's halves do not meet at its parting plane")?;
@@ -299,7 +297,7 @@ fn offset(p: &Profile,d: f64) -> Result<Profile,String> {
     let n = unit(p.normal);
     let frame = Frame::about(p.origin,n);
     let walks = walks(p,&|q| { let l = frame.local(q); [l[0],l[1]] })?;
-    let tol = 1e-9*p.size();
+    let tol = tolerance(p.size());
     let mut out = p.clone();
     for (li,walk) in walks.iter().enumerate() {
         let m = walk.len();
@@ -371,7 +369,7 @@ pub fn revolve(p: &Profile,origin: V,axis: V,angle: f64) -> Result<Brep,String> 
     let theta = angle.abs().min(TAU);
     if !(theta > 0.) { return Err("a revolution through no angle".into()) }
     let full = theta >= TAU-1e-12;
-    let tol = 1e-9*p.size();
+    let tol = tolerance(p.size());
     let normal = unit(p.normal);
     if dot(normal,z).abs() > 1e-9 || dot(sub(origin,p.origin),normal).abs() > tol {
         return Err("a revolution's axis must lie in its profile's plane".into())
@@ -514,7 +512,7 @@ pub fn revolve(p: &Profile,origin: V,axis: V,angle: f64) -> Result<Brep,String> 
                 l.push(rim(k,vs,true,&mut b));
             }
             let ccw = b.loop_area(&Face {surface:surface.clone(),reversed,loops:vec![],name:String::new()},&l) > 0.;
-            if ccw == reversed { l = l.into_iter().rev().map(|c| Coedge {reversed:!c.reversed,..c}).collect(); }
+            if ccw == reversed { l = reverse_loop(l); }
             b.faces.push(Face {surface,reversed,loops:vec![l],name:p.name(li,s.source)});
         }
         if !full {
@@ -571,7 +569,7 @@ pub fn canal(c: V,r: f64,origin: V,axis: V,angle: f64,advance: f64,name: &str) -
     let tube = if advance == 0. { revolve(&disc,origin,a,angle)? }
         else { loft(&disc,None,&Guide::Screw {center:origin,axis:a,angle,advance})? };
     let end = screw(origin,a,angle,advance);
-    let union = |s: &Brep,b: Brep| super::recipe::combined(s,&named(b),super::boolean::Op::Union,0.);
+    let union = |s: &Brep,b: Brep| super::boolean::combined(s,&named(b),super::boolean::Op::Union,0.);
     union(&union(&named(tube),half_ball(c,scale(t,-1.),w,r)?)?,half_ball(c,t,w,r)?.moved(&end))
 }
 
@@ -594,7 +592,7 @@ fn ball(c: V,w: V,r: f64) -> Result<Brep,String> {
 /// centre along the path — which lies in the path's plane, as a face of the design often does,
 /// and a plane through a pole is a meeting this kernel's Booleans do not split.
 fn half_ball(c: V,n: V,w: V,r: f64) -> Result<Brep,String> {
-    super::recipe::kept(&ball(c,w,r)?,c,n,0.)
+    kept(&ball(c,w,r)?,c,n,0.)
 }
 
 /// The screw about the line through `c` along the unit `a`: a turn by `angle` and a step of `advance`
@@ -650,7 +648,7 @@ fn ruled(start: &Profile,end: &Profile,carry: Carry) -> Result<Brep,String> {
         Carry::Arc {center,axis,angle} => (Rigid::turn(center,axis,-angle),None),
         Carry::Screw {center,axis,angle,advance} => (screw(center,axis,-angle,-advance),None),
     };
-    let tol = 1e-9*(start.size()+end.size()+norm(sub(end.origin,start.origin)));
+    let tol = tolerance(start.size()+end.size()+norm(sub(end.origin,start.origin)));
     let frame = Frame::about(start.origin,n);
     let starts = walks(start,&|q| { let l = frame.local(q); [l[0],l[1]] })?;
     let ends = walks(end,&|q| { let l = frame.local(back.point(q)); [l[0],l[1]] })?;
@@ -741,7 +739,7 @@ fn ruled(start: &Profile,end: &Profile,carry: Carry) -> Result<Brep,String> {
             };
             let face = Face {surface,reversed,loops:vec![],name:start.name(li,a.source)};
             let ccw = b.loop_area(&face,&l) > 0.;
-            if ccw == reversed { l = l.into_iter().rev().map(|c| Coedge {reversed:!c.reversed,..c}).collect(); }
+            if ccw == reversed { l = reverse_loop(l); }
             b.faces.push(Face {loops:vec![l],..face});
         }
         start_loops.push((0..m).map(|k| use_of(se[k],&sw[k],true,on_plane())).collect::<Vec<_>>());
@@ -761,7 +759,7 @@ fn ruled(start: &Profile,end: &Profile,carry: Carry) -> Result<Brep,String> {
         let loops = loops.into_iter().enumerate().map(|(li,l)| {
             let ccw = b.loop_area(&face,&l) > 0.;
             // the outer loop turns with the face's sense, its holes against it
-            if (li == 0) != (ccw != reversed) { l.into_iter().rev().map(|c| Coedge {reversed:!c.reversed,..c}).collect() } else { l }
+            if (li == 0) != (ccw != reversed) { reverse_loop(l) } else { l }
         }).collect();
         Face {loops,..face}
     };
@@ -870,4 +868,93 @@ pub fn sheet(net: crate::brep::nurbs::Net) -> Result<Brep,String> {
     ];
     b.faces.push(Face {surface:Surface::BSpline(Frame::new([0.;3],[0.,0.,1.],[1.,0.,0.]),Arc::new(net)),reversed:false,loops:vec![lp],name:String::new()});
     Ok(b)
+}
+
+/// The square on the plane through `o` square to the unit `n`, `half` from `o` along each of its
+/// frame's axes (`Frame::about`): a block's section.
+pub fn square(o: V,n: V,half: f64) -> Profile {
+    let f = Frame::about(o,n);
+    let at = |x: f64,y: f64| f.at([x,y,0.]);
+    let corners = [at(-half,-half),at(half,-half),at(half,half),at(-half,half)];
+    let edges = (0..4).map(|k| ProfileEdge::Line {a:corners[k],b:corners[(k+1)%4]}).collect();
+    Profile {origin:o,normal:n,loops:vec![edges],names:Vec::new()}
+}
+
+/// The disc of radius `r` about `o` square to `n`: a cylinder's or a frustum's section.
+pub fn disc(o: V,n: V,r: f64) -> Profile {
+    Profile {origin:o,normal:n,loops:vec![vec![ProfileEdge::Arc {frame:Frame::about(o,n),r,span:None}]],names:Vec::new()}
+}
+
+/// The half disc of the ball of radius `r` about `f.o` in `f`'s plane, on the side of `f.y` its `x`
+/// points to, shut along `f.y`: turned once about the line through `f.o` along `f.y`, the ball.
+pub fn ball_section(f: &Frame,r: f64) -> Profile {
+    let arc = ProfileEdge::Arc {frame:Frame::new(f.o,f.z,f.y),r,span:Some([0.,std::f64::consts::PI])};
+    let shut = ProfileEdge::Line {a:f.at([0.,-r,0.]),b:f.at([0.,r,0.])};
+    Profile {origin:f.o,normal:f.z,loops:vec![vec![arc,shut]],names:Vec::new()}
+}
+
+/// `piece` kept on the side `keep` (a unit normal) of the plane through `o`: in common with a block
+/// standing on the plane under the piece's middle, reaching past the piece on every other side.
+pub fn kept(piece: &Brep,o: V,keep: V,floor: f64) -> Result<Brep,String> {
+    let (lo,hi) = piece.bounds();
+    if !lo[0].is_finite() { return Err("a piece of nothing cut off at a plane".into()) }
+    let middle = scale(add(lo,hi),0.5);
+    let foot = sub(middle,scale(keep,dot(sub(middle,o),keep)));
+    let size = 2.*distance(lo,hi)+distance(middle,foot);
+    let block = prism(&square(foot,keep,size),0.,size)?;
+    super::boolean::combined(piece,&block,super::boolean::Op::Common,floor)
+}
+
+/// `piece` less what lies behind the plane through `o` (against `keep`, a unit normal) within
+/// `reach` of `o`: a block standing on the plane, `reach` deep and as wide either way — a rolled
+/// run cut short at the section of the corner at its end, the cell taking what lies between there
+/// and the vertex, and nothing of the run elsewhere (a rim round a hole comes back past the plane).
+pub fn cut_before(piece: &Brep,o: V,keep: V,reach: f64,floor: f64) -> Result<Brep,String> {
+    let block = prism(&square(o,keep,reach),-reach,0.)?;
+    super::boolean::combined(piece,&block,super::boolean::Op::Cut,floor)
+}
+
+/// `piece` kept within (`inside`) or outside the solid a cylinder, a cone or a sphere bounds: in
+/// common with it, or less it, the cylinder or the cone long enough to reach past the piece either
+/// way (a cone short of its apex).
+pub fn kept_by_solid(piece: &Brep,surface: &Surface,inside: bool,floor: f64) -> Result<Brep,String> {
+    let (lo,hi) = piece.bounds();
+    if !lo[0].is_finite() { return Err("a piece of nothing cut off at a curved face".into()) }
+    let middle = scale(add(lo,hi),0.5);
+    let solid = match *surface {
+        Surface::Cylinder(f,radius) => {
+            // the circle in the plane square to the axis through the piece's middle's foot
+            let foot = add(f.o,scale(f.z,dot(sub(middle,f.o),f.z)));
+            let reach = distance(lo,hi)+radius;
+            prism(&disc(foot,f.z,radius),-reach,reach)?
+        }
+        Surface::Sphere(f,radius) => {
+            // a half disc turned once about a line through the centre
+            revolve(&ball_section(&f,radius),f.o,f.y,TAU)?
+        }
+        Surface::Cone(f,radius,half) => {
+            // a frustum of the cone's solid over the heights along its axis the piece reaches, and
+            // as far again either way, short of the apex: its section in a meridian turned once
+            let slope = half.dtan();
+            let corners = [lo,hi].into_iter().flat_map(|a| [lo,hi].into_iter().flat_map(move |b| [lo,hi].into_iter()
+                .map(move |c| [a[0],b[1],c[2]])));
+            let heights: Vec<f64> = corners.map(|p| dot(sub(p,f.o),f.z)).collect();
+            let (h0,h1) = heights.iter().fold((f64::INFINITY,f64::NEG_INFINITY),|(a,b),&h| (a.min(h),b.max(h)));
+            let span = h1-h0;
+            let (mut from,mut to) = (h0-span,h1+span);
+            let apex = if slope.abs() > 1e-12 { -radius/slope } else { f64::NAN };
+            if slope > 1e-12 { from = from.max(apex+1e-6*span.max(1.)) }
+            if slope < -1e-12 { to = to.min(apex-1e-6*span.max(1.)) }
+            if !(to > from) { return Err("a piece kept within a cone it does not reach".into()) }
+            let at = |rho: f64,h: f64| add(f.o,add(scale(f.x,rho),scale(f.z,h)));
+            let (r0,r1) = (radius+slope*from,radius+slope*to);
+            let pts = [at(0.,from),at(r0,from),at(r1,to),at(0.,to)];
+            let edges = (0..4).map(|k| ProfileEdge::Line {a:pts[k],b:pts[(k+1)%4]}).collect();
+            let section = Profile {origin:f.o,normal:f.y,loops:vec![edges],names:Vec::new()};
+            revolve(&section,f.o,f.z,TAU)?
+        }
+        _ => return Err(format!("a piece kept within a {}",surface.kind())),
+    };
+    let op = if inside { super::boolean::Op::Common } else { super::boolean::Op::Cut };
+    super::boolean::combined(piece,&solid,op,floor)
 }

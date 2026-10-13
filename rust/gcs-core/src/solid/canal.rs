@@ -47,19 +47,11 @@ pub fn built(sk: &Sketch, swept: usize) -> Option<Result<Rc<Canal>, String>> {
     if !matches!(sk.solids.get(swept)?.def, SolidDef::Swept { .. }) {
         return None;
     }
-    let key = super::reads(sk, swept, 0.0);
-    if let Some((old, c)) = sk.canal_cache.borrow().get(&swept) {
-        if *old == key {
-            return c.clone();
-        }
-    }
-    let c = read(sk, swept).map(|c| {
+    sk.canal_cache.get_or(swept, super::MemoKey::of(sk, swept), || read(sk, swept).map(|c| {
         let c = c?;
         gate(sk, swept, &c)?;
         Ok(Rc::new(c))
-    });
-    sk.canal_cache.borrow_mut().insert(swept, (key, c.clone()));
-    c
+    }))
 }
 
 /// Whether sweep `i` is built as a ball's tube: not a continuous sweep the generating class or the
@@ -116,17 +108,6 @@ fn read(sk: &Sketch, swept: usize) -> Option<Result<Canal, String>> {
 fn gate(sk: &Sketch, swept: usize, c: &Canal) -> Result<(), String> {
     let brep = crate::brep::recipe::node(&c.node(1.0), &Default::default())?;
     let field = super::MaterialField::read(sk, swept, super::cad::AXIS_TOLERANCE)?;
-    let size = brep.size().max(f64::MIN_POSITIVE);
-    let offset = 2e-3 * size;
-    let m = crate::brep::mesh::mesh(&brep, offset / 20.0, crate::brep::export::ANGULAR)?;
-    let options = super::agreement::Options {
-        offset, confirm: offset / 4.0, value_tolerance: offset / 5.0, triangles: 400,
-        ..Default::default()
-    };
-    let report = super::agreement::of_triangles_parallel(&m.pts, &m.tris, &field, 1, &options)?;
-    match report.disagreements.first() {
-        None => Ok(()),
-        Some(d) => Err(format!("`{}`: the ball's tube disagrees with the sweep's field at [{:.6}, {:.6}, {:.6}] ({} of {} \
-            probes)", sk.solids[swept].name, d.point[0], d.point[1], d.point[2], report.disagreements.len(), report.probes)),
-    }
+    let what = format!("`{}`: the ball's tube disagrees with the sweep's field", sk.solids[swept].name);
+    super::agreement::gate(&field, &brep, None, &what)
 }

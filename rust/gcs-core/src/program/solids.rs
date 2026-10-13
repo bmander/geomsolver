@@ -22,7 +22,7 @@ pub(super) fn solids(
     map: &mut SourceMap,
     body: &[&Stmt],
     skip: &BTreeSet<StmtId>,
-    probes: &mut super::relations::Probes,
+    probes: &mut super::regions::Probes,
     diags: &mut Vec<Diag>,
 ) {
     let has = body.iter().any(|st| {
@@ -119,16 +119,16 @@ pub(super) fn solids(
             _ => continue,
         };
         let mut say = |span: Span, m: String| {
-            diags.push(Diag { code: Code::E080, span, stmt: Some(st.id), message: m });
+            diags.push(Diag::within(Code::E080, span, st.id, m));
         };
         let (Some(a), Some(b)) = (res.lookup(what), res.lookup(into)) else {
             let miss = if res.lookup(what).is_none() { what } else { into };
-            diags.push(Diag {
-                code: Code::E101,
-                span: miss.span,
-                stmt: Some(st.id),
-                message: format!("no such entity: `{}`", miss.root.text),
-            });
+            diags.push(Diag::within(
+                Code::E101,
+                miss.span,
+                st.id,
+                format!("no such entity: `{}`", miss.root.text),
+            ));
             continue;
         };
         // `A.body`: the solid a face path is of (#183 F5), `pad.boss.body` is `pad`
@@ -169,7 +169,7 @@ pub(super) fn solids(
         // so a gesture writing it is refused at the gesture (#162 F4) — and the body is left as
         // the statements before it made it
         if let Err(why) = sk.join_body(b.i(), word, a.i()) {
-            diags.push(Diag { code: Code::E041, span: at, stmt: Some(st.id), message: why });
+            diags.push(Diag::within(Code::E041, at, st.id, why));
         }
     }
     // -- the pictures the document asks for (§6.11) ---------------------------
@@ -179,7 +179,7 @@ pub(super) fn solids(
             continue;
         }
         let mut say = |code: Code, span: Span, m: String| {
-            diags.push(Diag { code, span, stmt: Some(st.id), message: m });
+            diags.push(Diag::within(code, span, st.id, m));
         };
         let find = |r: &crate::syntax::Ref, want: EntKind| match res.lookup(r) {
             Some(e) if e.kind == want => Ok(e.idx),
@@ -257,12 +257,12 @@ pub(super) fn solids(
                 })
                 .map(|st| st.span)
                 .unwrap_or_default();
-            diags.push(Diag {
-                code: Code::E041,
-                span: at,
-                stmt: None,
-                message: format!("`{name}` is made of itself"),
-            });
+            diags.push(Diag::new(
+                Code::E041,
+                at,
+                None,
+                format!("`{name}` is made of itself"),
+            ));
             // left standing but emptied, so nothing below it walks the cycle
             sk.solids[i].def =
                 SolidDef::Body { stock: i as u32, on: Vec::new(), through: Vec::new(), bound: Vec::new() };

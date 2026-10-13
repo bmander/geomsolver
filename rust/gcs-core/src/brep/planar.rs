@@ -12,13 +12,9 @@
 use crate::fmath::Det;
 use std::f64::consts::{PI,TAU};
 
-pub type P = [f64;2];
+pub use super::plane2::P;
 
-fn sub(a: P,b: P) -> P { [a[0]-b[0],a[1]-b[1]] }
-fn dot(a: P,b: P) -> f64 { a[0]*b[0]+a[1]*b[1] }
-fn cross(a: P,b: P) -> f64 { a[0]*b[1]-a[1]*b[0] }
-fn norm(a: P) -> f64 { a[0].dhypot(a[1]) }
-fn dist(a: P,b: P) -> f64 { norm(sub(a,b)) }
+use super::plane2::{self,Carrier,Touch,sub,dot,cross,norm,dist};
 
 /// A step of a loop: a line from `a` to `b`, the arc about `c` of radius `r` from angle `a0`
 /// through the signed `sweep`, or a conic's arc from `a` to `b`: the rational quadratic Bézier
@@ -290,42 +286,12 @@ fn meets(s: &Seg,q: &Seg,tol: f64) -> (Vec<f64>,Vec<f64>) {
     // a shared stretch: each one's ends that lie on the other
     for p in [s.start(),s.end()] { if q.distance(p) <= tol { keep(p,&mut on_s,&mut on_q); } }
     for p in [q.start(),q.end()] { if s.distance(p) <= tol { keep(p,&mut on_s,&mut on_q); } }
-    let points: Vec<P> = match (*s,*q) {
-        (Seg::Line {a,b},Seg::Line {a: c,b: d}) => {
-            let (u,v) = (sub(b,a),sub(d,c));
-            let den = cross(u,v);
-            if den.abs() <= 1e-14*norm(u)*norm(v) { vec![] } else {
-                let t = cross(sub(c,a),v)/den;
-                vec![[a[0]+u[0]*t,a[1]+u[1]*t]]
-            }
-        }
-        (Seg::Line {a,b},Seg::Arc {c,r,..}) | (Seg::Arc {c,r,..},Seg::Line {a,b}) => {
-            let d = sub(b,a);
-            let f = sub(a,c);
-            let (qa,qb,qc) = (dot(d,d),2.*dot(f,d),dot(f,f)-r*r);
-            let disc = qb*qb-4.*qa*qc;
-            let scale = qb*qb+4.*qa*qc.abs();
-            if disc < -1e-12*scale { vec![] }
-            else if disc <= 1e-12*scale { let t = -qb/(2.*qa); vec![[a[0]+d[0]*t,a[1]+d[1]*t]] }
-            else {
-                let w = disc.sqrt();
-                [(-qb-w)/(2.*qa),(-qb+w)/(2.*qa)].iter().map(|&t| [a[0]+d[0]*t,a[1]+d[1]*t]).collect()
-            }
-        }
-        (Seg::Arc {c: c1,r: r1,..},Seg::Arc {c: c2,r: r2,..}) => {
-            let d = dist(c1,c2);
-            if d <= tol && (r1-r2).abs() <= tol { vec![] }
-            else if d > r1+r2+tol || d < (r1-r2).abs()-tol || d == 0. { vec![] }
-            else {
-                let a = (r1*r1-r2*r2+d*d)/(2.*d);
-                let h = (r1*r1-a*a).max(0.).sqrt();
-                let e = [(c2[0]-c1[0])/d,(c2[1]-c1[1])/d];
-                let m = [c1[0]+a*e[0],c1[1]+a*e[1]];
-                if h <= tol { vec![m] } else { vec![[m[0]-h*e[1],m[1]+h*e[0]],[m[0]+h*e[1],m[1]-h*e[0]]] }
-            }
-        }
-        (Seg::Conic {..},_) | (_,Seg::Conic {..}) => unreachable!("a conic meets by `meets_steps`' roots"),
+    let carrier = |s: &Seg| match *s {
+        Seg::Line {a,b} => Carrier::Line {p: a,d: plane2::unit(sub(b,a))},
+        Seg::Arc {c,r,..} => Carrier::Circle {c,r},
+        Seg::Conic {..} => unreachable!("a conic meets by `meets_steps`' roots"),
     };
+    let points = plane2::meet(carrier(s),carrier(q),Touch::Gap(tol)).unwrap_or_default();
     for p in points { keep(p,&mut on_s,&mut on_q); }
     (on_s,on_q)
 }

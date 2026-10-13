@@ -85,32 +85,103 @@ pub(super) fn word_at(toks: &[(Tok, Span)], i: usize) -> Option<&str> {
     }
 }
 
+/// **A set literal opening at `i`** (§6.21): `{`, one name, `|`, line breaks between them read
+/// past as the lexer reads past them — the token index of the name it binds, or `None`.  The
+/// parser and the colouring both ask it.
+pub(super) fn set_at(toks: &[(Tok, Span)], i: usize) -> Option<usize> {
+    if toks.get(i).map(|(t, _)| t) != Some(&Tok::P('{')) {
+        return None;
+    }
+    let mut rest = toks.iter().enumerate().skip(i + 1).filter(|(_, (t, _))| *t != Tok::Nl);
+    let (name, _) = rest.next().filter(|(_, (t, _))| matches!(t, Tok::Ident(_)))?;
+    rest.next().is_some_and(|(_, (t, _))| *t == Tok::P('|')).then_some(name)
+}
+
+/// Which brackets a scan (`level_end`) steps over.
+#[derive(Clone, Copy)]
+pub(super) enum Brackets {
+    /// `(` and `[`: an expression's.
+    Expr,
+    /// `(` alone: a word's parentheses.
+    Round,
+    /// `[` alone: an index.
+    Square,
+    /// `(`, `[` and `{`: whatever a statement's text holds.
+    All,
+}
+
+impl Brackets {
+    fn opens(self, c: char) -> bool {
+        match self {
+            Brackets::Expr => matches!(c, '(' | '['),
+            Brackets::Round => c == '(',
+            Brackets::Square => c == '[',
+            Brackets::All => matches!(c, '(' | '[' | '{'),
+        }
+    }
+
+    fn closes(self, c: char) -> bool {
+        match self {
+            Brackets::Expr => matches!(c, ')' | ']'),
+            Brackets::Round => c == ')',
+            Brackets::Square => c == ']',
+            Brackets::All => matches!(c, ')' | ']' | '}'),
+        }
+    }
+}
+
+/// **The one bracket scanner**, for the parser's raw texts and every lookahead: from token
+/// `from`, stepping over what `brackets` opens, the index of the first token that closes the level
+/// the scan began on, that `stop` takes at that level, or that ends the line — else `end` (no
+/// further than the tokens go).  Any closing bracket closes the level: an unbalanced text is the
+/// parser's to report, and the scan only has to stop.
+pub(super) fn level_end(
+    toks: &[(Tok, Span)],
+    from: usize,
+    end: usize,
+    brackets: Brackets,
+    stop: impl Fn(&Tok) -> bool,
+) -> usize {
+    let end = end.min(toks.len());
+    let mut depth = 0i32;
+    for (j, (t, _)) in toks.iter().enumerate().take(end).skip(from) {
+        match t {
+            Tok::P(c) if brackets.opens(*c) => depth += 1,
+            Tok::P(c) if brackets.closes(*c) => {
+                if depth == 0 {
+                    return j;
+                }
+                depth -= 1;
+            }
+            Tok::Nl => return j,
+            _ if depth == 0 && stop(t) => return j,
+            _ => {}
+        }
+    }
+    end
+}
+
+/// The token index just past the bracket closing the one open at `open`, or where the line ends
+/// first (an unclosed list is a syntax error the parser proper reports; a lookahead only has to
+/// stop rather than run off the end).
+pub(super) fn past_bracket(toks: &[(Tok, Span)], open: usize, brackets: Brackets) -> usize {
+    let j = level_end(toks, open + 1, toks.len(), brackets, |_| false);
+    match toks.get(j) {
+        Some((Tok::P(c), _)) if brackets.closes(*c) => j + 1,
+        _ => j,
+    }
+}
+
 /// Skip an operator and its optional parentheses for parser and highlighter lookahead.
 /// Stop at a statement boundary if the list is unclosed; parsing reports the error.
 pub(super) fn past_args(toks: &[(Tok, Span)], i: usize) -> usize {
-    let mut j = i + 1;
+    let j = i + 1;
     // `horizontal (l := line)` — the parentheses are the named link the word stands before,
     // not the word's own arguments
     if toks.get(j).map(|(t, _)| t) != Some(&Tok::P('(')) || named_link_at(toks, j) {
         return j;
     }
-    let mut depth = 0i32;
-    loop {
-        match toks.get(j).map(|(t, _)| t) {
-            Some(Tok::P('(')) => depth += 1,
-            Some(Tok::P(')')) => {
-                depth -= 1;
-                if depth == 0 {
-                    return j + 1;
-                }
-            }
-            // an unclosed list is a syntax error the parser proper reports; this lookahead only
-            // has to stop rather than run off the end
-            Some(Tok::Nl) | None => return j,
-            _ => {}
-        }
-        j += 1;
-    }
+    past_bracket(toks, j, Brackets::Round)
 }
 
 /// **`a word(params) b :=` or `word(params) l :=` at `i`** — a relation word being defined

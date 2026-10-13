@@ -23,6 +23,9 @@ pub fn distance(a: V3,b: V3) -> f64 { norm(sub(a,b)) }
 pub fn distance_squared(a: V3,b: V3) -> f64 { let d = sub(a,b); dot(d,d) }
 /// The unit vector along `a`, or none for a zero vector.
 pub fn normalised(a: V3) -> Option<V3> { let l = norm(a); (l > 0.).then(|| a.map(|x| x/l)) }
+/// The unit vector along `a`, as `a × (1 / |a|)`: not bit-identical to `normalised`, which
+/// divides, and NaN for a zero vector (the B-rep kernel's construction arithmetic).
+pub fn unit(a: V3) -> V3 { scale(a,1./norm(a)) }
 /// Two unit vectors across a direction: perpendicular to it and to each other, with the second
 /// `â × e₁`.  The first is taken against whichever axis `a` is least along, so the cross product
 /// is never small; a direction of no length gets the x and y axes.

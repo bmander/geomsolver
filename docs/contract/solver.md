@@ -221,8 +221,8 @@ version ([0.n], see the [language changelog](../solvent-changelog.md)) says wher
   for measurement only (it changes bits and roots). `BLOCK_XTOL` 1e-15, accepted at
   `acceptance_tol`. The spiral bevel relies on it (`hypoid_layout.rs` holds rough starts).
 - **Words choose roots; the block pass searches for them** (#217, F8): a block is accepted when
-  its rows meet `acceptance_tol` **and every bound it decides holds** (`solve::Search`: a bound
-  whose columns are all solved so far, some the block's own); where not, it is started again —
+  its rows meet `acceptance_tol` **and every bound it decides holds** (`solve::blocks::Search`: a
+  bound whose columns are all solved so far, some the block's own); where not, it is started again —
   each broken bound's point carried across it (`across`) and the block mirrored across the plane
   that point crossed (an offset's other hand), from its solution and its start, then `RESTARTS`
   starts with its points scattered about what the blocks before it placed, at their size, and its

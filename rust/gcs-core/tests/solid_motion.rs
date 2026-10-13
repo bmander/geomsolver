@@ -153,3 +153,19 @@ fn solids_bind_final_motion_indices_after_dependency_ordering() {
         assert!(!solid(&e,name).contains_world(WorldPoint([2.,-1.,1.])));
     }
 }
+
+#[test]
+fn a_placement_whose_motion_refuses_keys_its_solid_alike_each_read() {
+    // a key over a number nothing reads must equal itself, or the solid is built at every ask
+    let mut e = read(&format!("{SOURCE}moved := solid(stock, under: turn, at: 90deg)\n\
+        swept := solid(stock, under: turn, from: -10deg, to: 10deg)\n"));
+    let m = e.map.ent_named("turn").unwrap().i();
+    let MotionDef::Rotation {axis,..} = &mut e.sketch.motions[m].def else { unreachable!() };
+    *axis = u32::MAX;
+    for name in ["moved","swept"] {
+        let i = e.map.ent_named(name).unwrap().i();
+        let key = gcs_core::solid::reads(&e.sketch,i,0.0);
+        assert!(key.iter().all(|x| !x.is_nan()),"{name}: {key:?}");
+        assert_eq!(key,gcs_core::solid::reads(&e.sketch,i,0.0),"{name}");
+    }
+}

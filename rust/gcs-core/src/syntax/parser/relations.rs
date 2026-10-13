@@ -102,7 +102,7 @@ impl<'a> P<'a> {
         // point, `Decl::hint_span`'s device, spliced by `reconcile` when a callout is dragged
         if place.is_none() {
             let at = self.prev_hi();
-            place_span = Span::new(at, at);
+            place_span = Span::at(at);
         }
         Some(Relation {
             place,
@@ -244,25 +244,7 @@ impl<'a> P<'a> {
 
     /// The number an operator states, as written, up to the `,` or `)` that ends it.
     fn raw_number(&mut self) -> Option<(String, Span)> {
-        let from = self.here().lo as usize;
-        let mut depth = 0i32;
-        while !self.done() {
-            match self.peek() {
-                Some(Tok::P('(')) | Some(Tok::P('[')) => depth += 1,
-                Some(Tok::P(')')) | Some(Tok::P(']')) if depth == 0 => break,
-                Some(Tok::P(')')) | Some(Tok::P(']')) => depth -= 1,
-                Some(Tok::P(',')) if depth == 0 => break,
-                Some(Tok::Nl) => break,
-                _ => {}
-            }
-            self.i += 1;
-        }
-        let text = self.text_from(from).trim().to_string();
-        if text.is_empty() {
-            self.fail("expected the number this states");
-            return None;
-        }
-        Some((text, Span::new(from, self.prev_hi())))
+        self.raw_until(|t| *t == Tok::P(','), "expected the number this states")
     }
 
     /// A pin: `t == 0.4`, one member of a vector, `dir.x == 1`, a vector the entity has,

@@ -95,7 +95,7 @@ impl Walk<'_> {
             let StmtKind::Relation(r) = &st.kind else { continue };
             let Some(w) = r.form.written().filter(|w| sets::may_use(w)) else { continue };
             for (k, op) in w.ops.iter().enumerate() {
-                if let Some((abs, rest)) = lookup_raw(op, sc, &self.names, &alias, self.units) {
+                if let Some((abs, rest)) = self.look(&alias).raw(op, sc) {
                     if !rest.is_empty() && !self.sets.contains_key(&abs) {
                         wanted.push((i, k, op.span, abs, rest));
                     }
@@ -162,7 +162,7 @@ impl Walk<'_> {
             operands: BTreeMap::new(),
         };
         let abs = |r: &Ref, sc: &Scope| {
-            lookup_raw(r, sc, &self.names, alias, self.units)
+            self.look(alias).raw(r, sc)
                 .filter(|(_, rest)| rest.is_empty())
                 .map(|(a, _)| a)
         };
@@ -250,28 +250,28 @@ impl Walk<'_> {
         // the face swept: one named, or one written in place, `solid(face(ab, bc, …), …)`
         let (face_abs, items, face_sc, plane) = match decl.children.first().map(Vec::as_slice) {
             Some([Kid::Ref(r)]) => {
-                let face_abs = lookup_raw(r, sc, &self.names, alias, self.units)
+                let face_abs = self.look(alias).raw(r, sc)
                     .filter(|(_, rest)| rest.is_empty())
                     .map(|(a, _)| a)
-                    .ok_or_else(|| format!("`{said}`: `{}` names no face", written(r)))?;
+                    .ok_or_else(|| format!("`{said}`: `{}` names no face", ref_text(r)))?;
                 let Some((items, face_sc)) = t.faces.get(&face_abs) else {
-                    return Err(format!("`{said}`: `{}` is not a face", written(r)));
+                    return Err(format!("`{said}`: `{}` is not a face", ref_text(r)));
                 };
-                (face_abs, items.clone(), face_sc.clone(), suffixed(r, "#plane", at))
+                (face_abs, items.clone(), face_sc.clone(), suffixed(r, keys::PLANE, at))
             }
             Some([Kid::Face { decl: f, .. }]) => {
                 let items = f.children.first().into_iter().flatten().filter_map(Kid::as_ref);
-                let face_abs = format!("{solid}#face");
-                let plane = local(format!("{face_abs}#plane"), at);
+                let face_abs = keys::written_face(&solid);
+                let plane = local(keys::face_plane(&face_abs), at);
                 (face_abs, items.cloned().collect(), sc.clone(), plane)
             }
             _ => return Err(format!("`{said}`: its profile is no face to draw on")),
         };
         // the plane the face is drawn in, under a name only the elaborator binds
-        let plane_key = format!("{face_abs}#plane");
+        let plane_key = keys::face_plane(&face_abs);
         if self.names.insert(plane_key.clone()) {
             let edges = items.iter().filter_map(|r| {
-                lookup_raw(r, &face_sc, &self.names, alias, self.units).map(|(a, rest)| {
+                self.look(alias).raw(r, &face_sc).map(|(a, rest)| {
                     std::iter::once(a).chain(rest).collect::<Vec<_>>().join(".")
                 })
             });
@@ -301,12 +301,12 @@ impl Walk<'_> {
                                     and is not yet a set: sketch on a cap"));
             }
             edge => {
-                let leaf = |r: &Ref| written(r).rsplit('.').next() == Some(edge);
+                let leaf = |r: &Ref| ref_text(r).rsplit('.').next() == Some(edge);
                 let Some(e) = items.iter().find(|r| leaf(r)) else {
                     return Err(format!("`{said}` names no face: `{}` has `near`, `far` and a side \
                                         for each edge it names", public_path(&solid)));
                 };
-                let e_abs = lookup_raw(e, &face_sc, &self.names, alias, self.units)
+                let e_abs = self.look(alias).raw(e, &face_sc)
                     .filter(|(_, r)| r.is_empty())
                     .map(|(a, _)| a);
                 if !e_abs.as_ref().is_some_and(|a| t.lines.contains(a)) {
@@ -314,7 +314,7 @@ impl Walk<'_> {
                                         set: sketch on a flat one"));
                 }
                 // square to the edge and along the face's plane: the side's own normal
-                let m_key = format!("{face_abs}#{edge}#m");
+                let m_key = keys::side_axis(&face_abs, edge);
                 if self.names.insert(m_key.clone()) {
                     let mut axis = Decl::point(DeclName::Key(Name { text: m_key.clone(), span: at }),
                                                [0.0; 2], None);

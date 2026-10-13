@@ -7,9 +7,8 @@
 #[allow(unused_imports)]
 use crate::fmath::Det;
 use super::geom::{Curve,Frame,Surface,V};
-use crate::space::{add,cross,distance,dot,norm,scale,sub};
-
-fn unit(a: V) -> V { scale(a,1./norm(a)) }
+use super::plane2;
+use crate::space::{add,cross,distance,dot,norm,scale,sub,unit};
 
 /// What two surfaces share.
 #[derive(Clone,Debug,PartialEq)]
@@ -105,52 +104,16 @@ fn meridian(s: &Surface,o: V,z: V,tol: f64) -> Option<Meridian> {
 /// Where two meridians cross in `ρ ≥ −tol`, as `(ρ, z)`; `None` where they coincide.
 fn cross2(a: Meridian,b: Meridian,tol: f64) -> Option<Vec<[f64;2]>> {
     use Meridian::*;
-    let line_line = |p: [f64;2],d: [f64;2],q: [f64;2],e: [f64;2]| -> Option<Vec<[f64;2]>> {
-        let det = d[0]*e[1]-d[1]*e[0];
-        let w = [q[0]-p[0],q[1]-p[1]];
-        if det.abs() <= 1e-14 {
-            // parallel: the same line, or none
-            return if (w[0]*d[1]-w[1]*d[0]).abs() <= tol { None } else { Some(vec![]) }
-        }
-        let s = (w[0]*e[1]-w[1]*e[0])/det;
-        Some(vec![[p[0]+s*d[0],p[1]+s*d[1]]])
+    let carrier = |m: Meridian| match m {
+        Level(h) => plane2::Carrier::Line {p:[0.,h],d:[1.,0.]},
+        Line {p,d} => plane2::Carrier::Line {p,d},
+        Circle {c,r} => plane2::Carrier::Circle {c,r},
+        Spline(..) => unreachable!("a spline meridian is crossed by `spline_cross`"),
     };
-    let line_circle = |p: [f64;2],d: [f64;2],c: [f64;2],r: f64| -> Vec<[f64;2]> {
-        let w = [p[0]-c[0],p[1]-c[1]];
-        let bb = w[0]*d[0]+w[1]*d[1];
-        let cc = w[0]*w[0]+w[1]*w[1]-r*r;
-        let disc = bb*bb-cc;
-        // a line within `tol` of tangent touches once
-        let foot = [p[0]-bb*d[0],p[1]-bb*d[1]];
-        let gap = ((foot[0]-c[0]).dhypot(foot[1]-c[1])-r).abs();
-        if gap <= tol { return vec![foot] }
-        if disc < 0. { return vec![] }
-        let root = disc.sqrt();
-        [-bb-root,-bb+root].iter().map(|s| [p[0]+s*d[0],p[1]+s*d[1]]).collect()
-    };
-    let pts = match (a,b) {
-        (Spline(..),_) | (_,Spline(..)) => unreachable!("a spline meridian is crossed by `spline_cross`"),
-        (Level(h),Level(k)) => return if (h-k).abs() <= tol { None } else { Some(vec![]) },
-        (Level(h),Line {p,d}) | (Line {p,d},Level(h)) => line_line([0.,h],[1.,0.],p,d)?,
-        (Level(h),Circle {c,r}) | (Circle {c,r},Level(h)) => line_circle([0.,h],[1.,0.],c,r),
-        (Line {p,d},Line {p: q,d: e}) => line_line(p,d,q,e)?,
-        (Line {p,d},Circle {c,r}) | (Circle {c,r},Line {p,d}) => line_circle(p,d,c,r),
-        (Circle {c,r},Circle {c: k,r: s}) => {
-            let d = (k[0]-c[0]).dhypot(k[1]-c[1]);
-            if d <= tol && (r-s).abs() <= tol { return None }
-            if d <= tol || d > r+s+tol || d < (r-s).abs()-tol { vec![] }
-            else {
-                let a = ((r*r-s*s+d*d)/(2.*d)).clamp(-r,r);
-                let h = (r*r-a*a).max(0.).sqrt();
-                let u = [(k[0]-c[0])/d,(k[1]-c[1])/d];
-                let m = [c[0]+a*u[0],c[1]+a*u[1]];
-                // touching: by the gap, not the half chord (its square root)
-                let touch = h <= tol || (r+s-d).abs() <= tol || (d-(r-s).abs()).abs() <= tol;
-                if touch { vec![m] } else { vec![[m[0]-h*u[1],m[1]+h*u[0]],[m[0]+h*u[1],m[1]-h*u[0]]] }
-            }
-        }
-    };
-    Some(pts.into_iter().filter(|q| q[0] >= -tol).collect())
+    // a level is the line the crossing is read along
+    let (a,b) = if matches!(b,Level(_)) && !matches!(a,Level(_)) { (b,a) } else { (a,b) };
+    let pts = plane2::meet(carrier(a),carrier(b),plane2::Touch::Gap(tol));
+    pts.map(|pts| pts.into_iter().filter(|q| q[0] >= -tol).collect())
 }
 
 /// Whether two swept curves are one curve once `seen` takes out the motion that sweeps them: the
@@ -241,10 +204,10 @@ pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi {
             let (pl,sp) = if matches!(a,Surface::Plane(_)) { (f,b.clone()) } else { (g,a.clone()) };
             let Surface::Sphere(c,r) = sp else { unreachable!() };
             let dist = dot(pl.z,sub(c.o,pl.o));
-            if dist.abs() > r+tol { return Ssi::Curves(vec![]) }
-            let rho = (r*r-dist*dist).max(0.).sqrt();
             // touching at a point, by the gap (the circle's radius is its square root)
-            if rho <= tol || (r-dist.abs()).abs() <= tol { return Ssi::Curves(vec![]) }
+            let plane2::Chord::Cross(rho) = plane2::chord(dist,r,plane2::Touch::Gap(tol)) else {
+                return Ssi::Curves(vec![])
+            };
             Ssi::Curves(vec![Curve::Circle(Frame::new(sub(c.o,scale(pl.z,dist)),pl.z,pl.x),rho)])
         }
         (Surface::Plane(_),Surface::Extrusion(..)) | (Surface::Extrusion(..),Surface::Plane(_))
@@ -267,19 +230,17 @@ pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi {
             // parallel axes: the sections' circles meet in the lines' feet
             let w = sub(g.o,f.o);
             let w = sub(w,scale(f.z,dot(w,f.z)));
-            let d = norm(w);
-            if d > r+s+tol || d < (r-s).abs()-tol || d <= tol { return Ssi::Curves(vec![]) }
+            // touching (a fillet's face on the face it rolls against): one line, judged by how far
+            // apart the surfaces stand (`Touch::Gap`)
+            let (a,h) = match plane2::circles(norm(w),r,s,plane2::Touch::Gap(tol)) {
+                plane2::Circles::Same | plane2::Circles::Miss => return Ssi::Curves(vec![]),
+                plane2::Circles::Touch(a) => (a,None),
+                plane2::Circles::Cross(a,h) => (a,Some(h)),
+            };
             let u = unit(w);
             let v = cross(f.z,u);
-            let a = ((r*r-s*s+d*d)/(2.*d)).clamp(-r,r);
-            let h = (r*r-a*a).max(0.).sqrt();
             let m = add(f.o,scale(u,a));
-            // touching (a fillet's face on the face it rolls against): one line, judged by how far
-            // apart the surfaces stand, not by the half chord, which is the square root of that
-            // and sees a gap of roundoff as two lines √(2rε) apart
-            if h <= tol || (r+s-d).abs() <= tol || (d-(r-s).abs()).abs() <= tol {
-                return Ssi::Curves(vec![Curve::Line {p:m,d:f.z}])
-            }
+            let Some(h) = h else { return Ssi::Curves(vec![Curve::Line {p:m,d:f.z}]) };
             Ssi::Curves(vec![Curve::Line {p:add(m,scale(v,h)),d:f.z},Curve::Line {p:sub(m,scale(v,h)),d:f.z}])
         }
         (Surface::Cylinder(_,r),Surface::Cylinder(_,s)) if (r-s).abs() <= tol => {
@@ -307,13 +268,15 @@ fn plane_cylinder(n: V,h: f64,c: &Frame,r: f64,tol: f64) -> Vec<Curve> {
     let cos = dot(n,c.z);
     if cos.abs() <= 1e-12 {
         let dist = h-dot(n,c.o);
-        if dist.abs() > r+tol { return vec![] }
         let foot = add(c.o,scale(n,dist));
         let w = unit(cross(c.z,n));
-        let half = (r*r-dist*dist).max(0.).sqrt();
         // (touching: by the gap, as for two cylinders)
-        if half <= tol || (r-dist.abs()).abs() <= tol { return vec![Curve::Line {p:foot,d:c.z}] }
-        return vec![Curve::Line {p:add(foot,scale(w,half)),d:c.z},Curve::Line {p:sub(foot,scale(w,half)),d:c.z}]
+        return match plane2::chord(dist,r,plane2::Touch::Gap(tol)) {
+            plane2::Chord::Miss => vec![],
+            plane2::Chord::Touch => vec![Curve::Line {p:foot,d:c.z}],
+            plane2::Chord::Cross(half) =>
+                vec![Curve::Line {p:add(foot,scale(w,half)),d:c.z},Curve::Line {p:sub(foot,scale(w,half)),d:c.z}],
+        }
     }
     let centre = add(c.o,scale(c.z,(h-dot(n,c.o))/cos));
     let minor = cross(c.z,n);
@@ -530,7 +493,7 @@ pub(crate) fn trace_beside(a: &Surface,b: &Surface,seeds: &[V],beside: &dyn Fn(V
                 if !lands(q) {
                     // a step too long for the projection to land: shorter, as a turn too sharp is
                     if h > h0*1e-4 { h /= 2.; continue }
-                    if std::env::var_os("SOLVENT_BREP_DEBUG").is_some() {
+                    if super::debug() {
                         eprintln!("brep:   a step left the surfaces after {} points: {:.1e} and {:.1e} off, h {h:.1e}",pts.len(),a.implicit(q),b.implicit(q));
                     }
                     // **a trace leaving a patch ends on its edge**: a march standing on an edge
@@ -595,7 +558,7 @@ pub(crate) fn trace_beside(a: &Surface,b: &Surface,seeds: &[V],beside: &dyn Fn(V
             back
         };
         if pts.len() >= 2 {
-            if std::env::var_os("SOLVENT_BREP_DEBUG").is_some() { eprintln!("brep:   a curve of {} points, closed {closed}, from {:?} to {:?}",pts.len(),pts[0],pts[pts.len()-1]); }
+            if super::debug() { eprintln!("brep:   a curve of {} points, closed {closed}, from {:?} to {:?}",pts.len(),pts[0],pts[pts.len()-1]); }
             let traced = Traced {a:a.clone(),b:b.clone(),pts,closed};
             traced_so_far.push(Curve::Traced(std::sync::Arc::new(traced)));
         }
@@ -784,7 +747,7 @@ pub(crate) fn unseen_beside(a: &Surface,domain: [[f64;2];2],b: &Surface,known: &
         if mu*hu >= mv*hv { cells.push([[mid[0],u1],[v0,v1]]); cells.push([[u0,mid[0]],[v0,v1]]); }
         else { cells.push([[u0,u1],[mid[1],v1]]); cells.push([[u0,u1],[v0,mid[1]]]); }
     }
-    if std::env::var_os("SOLVENT_BREP_DEBUG").is_some() {
+    if super::debug() {
         eprintln!("brep:   a {} over {domain:?} is clear of a {} but for {} known curve(s), in {asked} cells (leaf {leaf:.1e})",
             a.kind(),b.kind(),known.len());
     }
@@ -847,7 +810,7 @@ fn fitted(t: &super::geom::Traced,tol: f64,through: &[(f64,V)]) -> Option<Curve>
     // a traced point where one stands near the middle, else the middle itself: a traced point
     // beside an end (a vertex the fit passes through, between two traced points) would crowd it
     let middle = |a: f64,b: f64| { let m = ((a+b)/2.).floor(); if b-a >= 2. && (m-a).min(b-m) >= (b-a)/4. { m } else { (a+b)/2. } };
-    let debug = std::env::var_os("SOLVENT_BREP_DEBUG").is_some();
+    let debug = super::debug();
     for round in 0..24 {
         let pts: Vec<V> = at.iter().map(|&x| point(x)).collect();
         let mut s = vec![0.];

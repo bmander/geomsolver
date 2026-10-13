@@ -1247,7 +1247,7 @@ fn a_section_with_cusps_meshes_at_every_bar() {
 #[test]
 fn a_ring_on_a_coincident_wall_joins_it() {
     use gcs_core::brep::boolean::Op;
-    use gcs_core::brep::recipe::combined;
+    use gcs_core::brep::boolean::combined;
     // a rod standing on a block, and the ring a ball rolled round its foot fills: one side of the
     // ring lies on the rod's wall and is seamed elsewhere, its contact circle crossing the rod's seam
     let ring = revolve(&wedge_section([0.;3]),[0.;3],XY,TAU).unwrap();

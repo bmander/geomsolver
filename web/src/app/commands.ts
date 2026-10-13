@@ -4,11 +4,11 @@
 import * as C from '../core/constraints.js';
 import { Constraint } from '../core/constraints.js';
 import {
-  Arc, Circle, Curve, Line, Point, Spline, angleBetween, distanceBetween, signedPointToLine,
+  Arc, Circle, Curve, Line, Point, Spline, angleBetween, dimensionBetweenLines,
+  distanceBetween, signedPointToLine,
 } from '../core/model.js';
 import {
-  INCIDENCE, PARALLEL, PERPENDICULAR, firstFit, fitsSelection, only, sortSelection, stated,
-  wantedText,
+  fitsSelection, meant, only, sortSelection, stated, wantedText,
 } from './relate.js';
 import type { Sel } from './relate.js';
 import { view } from './shell.js';
@@ -55,13 +55,13 @@ export const CONSTRAINT_BUTTONS: ToolbarButton[] = [
   { label: 'Vertical', key: 'v', onClick: () => cLevel('Vertical'),
     title: 'Plumb: one or more lines, or a pair of points with no line between them' },
   { label: 'Parallel', key: 'b',
-    onClick: () => applyFirst(PARALLEL, 'two lines, or lines, axes and planes in a pair'),
+    onClick: () => applyWord('parallel', 'two lines, or lines, axes and planes in a pair'),
     title: 'Two lines · in space, a line or an axis and another, an axis and a plane, two '
          + 'planes' },
   { label: 'Perpendicular', key: '⇧l',
-    onClick: () => applyFirst(PERPENDICULAR, 'two lines, or a line or axis and an axis or plane'),
+    onClick: () => applyWord('perpendicular', 'two lines, or a line or axis and an axis or plane'),
     title: 'Two lines · in space, a line or an axis and another, an axis and a plane' },
-  { label: 'Midpoint', key: '⇧m', onClick: () => applyFirst(['Midpoint'], wantedText(C.Midpoint)) },
+  { label: 'Midpoint', key: '⇧m', onClick: () => applyWord('midpoint', wantedText(C.Midpoint)) },
   { label: 'Equal', key: 'e', onClick: () => cEqual() },
   { label: 'Tangent', key: 't', onClick: () => cTangent(),
     title: 'A line or a circle tangent to a circle/arc · a line tangent to a curve '
@@ -78,10 +78,10 @@ export const CONSTRAINT_BUTTONS: ToolbarButton[] = [
 /** The selection, sorted into the bins a constraint's slots are filled from. */
 const sel = (): Sel => sortSelection(view.selected);
 
-/** The first of several classes the selection fits, applied — one button, several meanings. */
-function applyFirst(cands: readonly string[], what: string): void {
+/** What a button's word means over the selection, applied — one button, several meanings. */
+function applyWord(word: string, what: string): void {
   const s = sel();
-  const cls = firstFit(cands, s);
+  const cls = meant(word, s);
   if (!need(!!cls, what)) return;
   view.addConstraints(...stated(cls!, s));
 }
@@ -93,7 +93,7 @@ function need(ok: boolean, what: string): boolean {
 
 /** The single incidence button: read the selection and pick the constraint that fits it. */
 function cCoincident(): void {
-  applyFirst(INCIDENCE, 'two points, a point and a line, a point and a circle/arc/curve, or a '
+  applyWord('coincident', 'two points, a point and a line, a point and a circle/arc/curve, or a '
              + 'point, line or axis and a plane or axis');
 }
 
@@ -142,13 +142,10 @@ function cDimension(): void {
   if (!pts.length && lines.length === 2) {
     const [a, b] = lines;
     if (!need(a.length() > 0 && b.length() > 0, 'lines with two distinct endpoints')) return;
-    // "Parallel" here means the sketch makes them so, not that they merely look it: a solved
-    // Parallel sits within a residual scaled to the sketch's extent, which on a short line is
-    // a few ten-thousandths of a radian.  Anything looser is a corner, and what a drawing
-    // dimensions on a corner is its angle.  The angle is the core's, so the test is on the
-    // same number the constraint would be given.
-    return Math.abs(Math.sin(angleBetween(a, b))) <= 1e-3 ? cParallelDistance(a, b)
-                                                          : cAngle(a, b);
+    // "Parallel" here means the sketch makes them so, not that they merely look it, and what a
+    // drawing dimensions on a corner is its angle: the core's to say, off the same angle the
+    // constraint would be given
+    return dimensionBetweenLines(a, b) === 'gap' ? cParallelDistance(a, b) : cAngle(a, b);
   }
   if (pts.length === 1 && lines.length === 1) return cPointLineDistance(pts[0], lines[0]);
   // a dimension *between* two circles is the ring; on any other number of them it is the

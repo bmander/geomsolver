@@ -6,6 +6,7 @@
 use super::P;
 use crate::expr::{Op, MEASURES};
 use crate::syntax::lexer::Tok;
+use crate::syntax::words::{level_end, Brackets};
 use crate::syntax::{Measured, Measurement, Measuring, Span};
 
 impl<'a> P<'a> {
@@ -121,20 +122,8 @@ impl<'a> P<'a> {
 
     /// The token closing the bracket open at `self.i`, or `end` where none does before it.
     fn m_close(&self, end: usize) -> usize {
-        let mut depth = 0i32;
-        for j in self.i..end {
-            match self.t[j].0 {
-                Tok::P('(') | Tok::P('[') => depth += 1,
-                Tok::P(')') | Tok::P(']') => {
-                    depth -= 1;
-                    if depth == 0 {
-                        return j;
-                    }
-                }
-                _ => {}
-            }
-        }
-        end
+        // the measured statement holds no line's end before `end` (`level_end`)
+        level_end(&self.t, self.i + 1, end, Brackets::Expr, |_| false)
     }
 
     fn m_atom(&mut self, end: usize) -> Option<Measuring> {

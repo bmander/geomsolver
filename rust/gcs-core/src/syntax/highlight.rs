@@ -4,7 +4,7 @@ use std::collections::BTreeSet;
 
 use super::lexer::{lex, Tok};
 use super::words::{
-    joint_word, link_word, opens_link, over_chain, past_args, trails_decl, word_at,
+    joint_word, link_word, opens_link, over_chain, past_args, set_at, trails_decl, word_at,
     word_definition_at, BLOCKS, MODIFIERS,
 };
 use super::{Span, Ty, MAX_TEXT};
@@ -253,8 +253,10 @@ fn tint_word(
 ) -> (Option<Tint>, Next) {
     let next = toks.get(i + 1).map(|(t, _)| t);
     // `{ p | p distance(r) c }` — the point a set is made of is the name it binds (§6.21), and a
-    // set may open where a statement does or where a group's list would
-    if prev == Some(&Tok::P('{')) && next == Some(&Tok::P('|')) {
+    // set may open where a statement does or where a group's list would; line breaks read past
+    // as the parser reads past them (`words::set_at`)
+    let open = toks[..i].iter().rposition(|(t, _)| *t != Tok::Nl);
+    if open.is_some_and(|j| set_at(toks, j) == Some(i)) {
         return (Some(Tint::Def), Next::Word);
     }
     match at {

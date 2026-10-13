@@ -165,47 +165,36 @@ pub struct Sketch {
     /// Each static solid's exact B-rep (`solid::Exact`), remembered against `solid::reads` alone:
     /// it does not depend on an approximation, so it is built once for a geometry and only meshed
     /// again for each one the evaluated solids above ask for.
-    pub exact_cache:
-        std::cell::RefCell<BTreeMap<usize, (Vec<f64>, Result<std::rc::Rc<crate::solid::Exact>, String>)>>,
+    pub exact_cache: crate::solid::Memo<Result<std::rc::Rc<crate::solid::Exact>, String>>,
     /// Each region solid's meridian (`solid::region::meridian`), against `solid::reads`: every
     /// evaluator, the validation and admission read it, and it is a fold of exact Booleans.
-    pub meridian_cache: std::cell::RefCell<
-        BTreeMap<usize, (Vec<f64>, Result<std::rc::Rc<crate::solid::region::Meridian>,
-            crate::solid::region::Refusal>)>,
+    pub meridian_cache: crate::solid::Memo<
+        Result<std::rc::Rc<crate::solid::region::Meridian>, crate::solid::region::Refusal>,
     >,
     /// Each region solid's reading in general position (`solid::region::in_general_position`),
     /// against its own terms and the strata it reads: validation, the sweep test and the field
     /// each ask it.
-    pub(crate) general_cache: std::cell::RefCell<
-        BTreeMap<usize, (Vec<f64>, Vec<std::sync::Arc<crate::solid::faces::BodyFaces>>,
-            Option<Result<crate::solid::RegionField, String>>)>,
-    >,
+    pub(crate) general_cache: crate::solid::Memo<Option<Result<crate::solid::RegionField, String>>>,
     /// Each region solid's lowering (`solid::lowering::lowered`, #194), against its own terms and
     /// the stratum it reads: the recipe and the exact boundary each ask it, and its gate reads the
     /// field.
-    pub(crate) lowering_cache: std::cell::RefCell<
-        BTreeMap<usize, (Vec<f64>, std::sync::Arc<crate::solid::faces::BodyFaces>,
-            Result<std::rc::Rc<Vec<crate::solid::lowering::Piece>>, String>)>,
-    >,
+    pub(crate) lowering_cache:
+        crate::solid::Memo<Result<std::rc::Rc<Vec<crate::solid::lowering::Piece>>, String>>,
     /// Each region solid in general position built as the common of its terms
     /// (`solid::bounded::built`, #238), against `solid::reads`: the sweep test, the recipe and
     /// the exact boundary each ask it, and its gate reads the field.
-    pub(crate) bounded_cache: std::cell::RefCell<
-        BTreeMap<usize, (Vec<f64>, Option<Result<std::rc::Rc<crate::solid::bounded::Bounded>, String>>)>,
-    >,
+    pub(crate) bounded_cache:
+        crate::solid::Memo<Option<Result<std::rc::Rc<crate::solid::bounded::Bounded>, String>>>,
     /// Each ball's sweep built as its tube (`solid::canal::built`, #238), against `solid::reads`:
     /// the sweep test, the recipe and the exact boundary each ask it, and its gate reads the field.
-    pub(crate) canal_cache: std::cell::RefCell<
-        BTreeMap<usize, (Vec<f64>, Option<Result<std::rc::Rc<crate::solid::canal::Canal>, String>>)>,
-    >,
+    pub(crate) canal_cache:
+        crate::solid::Memo<Option<Result<std::rc::Rc<crate::solid::canal::Canal>, String>>>,
     /// Each sweep's roll through a body (`solid::roll::interval`, #271), against `solid::reads`:
     /// admission, the field and the exact construction each ask it.
-    pub(crate) roll_cache: std::cell::RefCell<BTreeMap<usize, (Vec<f64>, Result<[f64; 2], String>)>>,
+    pub(crate) roll_cache: crate::solid::Memo<Result<[f64; 2], String>>,
     /// Each body's faces as regions read them (`solid::faces::BodyFaces`, #183), against
     /// `solid::reads`: every round over one body reads the same stratum.
-    pub faces_cache: std::cell::RefCell<
-        BTreeMap<usize, (Vec<f64>, Result<std::sync::Arc<crate::solid::faces::BodyFaces>, String>)>,
-    >,
+    pub faces_cache: crate::solid::Memo<Result<std::sync::Arc<crate::solid::faces::BodyFaces>, String>>,
     /// Swept solids' surfaces a host meshed elsewhere (`supply_field`), each against the
     /// `solid::reads` it was supplied under, so a moved drawing reads none.
     pub field_surfaces: std::cell::RefCell<BTreeMap<usize, (Vec<f64>, std::rc::Rc<crate::solid::FieldSurface>)>>,

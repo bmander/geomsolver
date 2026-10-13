@@ -54,6 +54,25 @@ export function lookOf(ws: Workspace, view: View): { az: number; el: number } | 
   return l ? { az: l[0], el: l[1] } : null;
 }
 
+/** The eye at bearing `az` and elevation `el` (radians): its picture plane's `right` and `up`,
+ *  and `toward` the viewer — the core's one basis (`workspace::eye_frame`), which a camera of the
+ *  front end's own is set from so that it sees what the picking sees. */
+export interface Eye {
+  right: [number, number, number];
+  up: [number, number, number];
+  toward: [number, number, number];
+}
+
+/** The eye at bearing `az` and elevation `el` (radians). */
+export function eyeFrame(az: number, el: number): Eye {
+  return withBuf(9, 8, (b) => {
+    core().gcs_workspace_eye(az, el, b.ptr);
+    const v = (k: number) => Array.from(b.f64.subarray(3 * k, 3 * k + 3)) as
+      [number, number, number];
+    return { right: v(0), up: v(1), toward: v(2) };
+  });
+}
+
 /** Every view's map as the eye at bearing `az` and elevation `el` (radians) sees it, the page
  *  first — asked per frame, so through a buffer and not JSON. */
 export function maps(sk: Sketch, az: number, el: number): Map[] {

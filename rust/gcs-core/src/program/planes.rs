@@ -34,7 +34,7 @@ pub(super) fn memberships(
             continue;
         }
         let mut fail = |code: Code, span: Span, message: String| {
-            diags.push(Diag { code, span, stmt: Some(st.id), message });
+            diags.push(Diag::within(code, span, st.id, message));
         };
         let plane = match res.lookup(r) {
             None => {
@@ -97,12 +97,12 @@ pub(super) fn tie_twins(sk: &mut Sketch, map: &SourceMap, diags: &mut Vec<Diag>)
                 let site = map.site_of(EntRef::point(p));
                 let who = map.name_of(EntRef::point(p)).cloned()
                     .unwrap_or_else(|| io::entity_name(EntRef::point(p)));
-                diags.push(Diag {
-                    code: Code::E040,
-                    span: site.map(|s| s.span).unwrap_or_default(),
-                    stmt: site.map(|s| s.stmt),
-                    message: format!("`{who}` is drawn in each plane it names once"),
-                });
+                diags.push(Diag::new(
+                    Code::E040,
+                    site.map(|s| s.span).unwrap_or_default(),
+                    site.map(|s| s.stmt),
+                    format!("`{who}` is drawn in each plane it names once"),
+                ));
                 continue;
             }
             planes.push(plane);
@@ -135,17 +135,17 @@ pub(super) fn twin_parallel(sk: &Sketch, map: &SourceMap, p: usize, first: usize
     }
     let site = map.site_of(EntRef::point(p));
     let name = |e: EntRef| map.name_of(e).cloned().unwrap_or_else(|| io::entity_name(e));
-    Some(Diag {
-        code: Code::E061,
-        span: site.map(|s| s.span).unwrap_or_default(),
-        stmt: site.map(|s| s.stmt),
-        message: format!(
+    Some(Diag::new(
+        Code::E061,
+        site.map(|s| s.span).unwrap_or_default(),
+        site.map(|s| s.stmt),
+        format!(
             "`{}` and `{}` are parallel, and meet on no line `{}` could be on",
             name(EntRef::plane(first)),
             name(EntRef::plane(other)),
             name(EntRef::point(p)),
         ),
-    })
+    ))
 }
 
 /// **A plane is a set, and `in` is membership of it** (§6.7, #105): `q coincident P`, said of a
@@ -194,7 +194,7 @@ pub(super) fn incidences(
         if let Some(e) = r.along.as_ref().and_then(|a| ent(&a.point, sk)) {
             kept.insert(e.i(), "a tangency's derivative moves it there");
         }
-        if super::relations::is_fix(r) {
+        if super::gauges::is_fix(r) {
             let held = r.form.written().and_then(|w| w.ops.first()).and_then(|o| ent(o, sk));
             kept.extend(held.filter(|e| e.kind == EntKind::Point)
                 .map(|e| (e.i(), "a `fix` holds it there")));
@@ -249,11 +249,10 @@ pub(super) fn incidences(
             Some((&p, why)) => {
                 let name = |e: EntRef| map.name_of(e).cloned().unwrap_or_else(|| io::entity_name(e));
                 let kind = if on.kind == EntKind::Spline { "spline" } else { "curve" };
-                diags.push(Diag {
-                    code: Code::E062,
-                    span: st.span,
-                    stmt: Some(st.id),
-                    message: format!(
+                diags.push(Diag::on(
+                    Code::E062,
+                    st,
+                    format!(
                         "`{}` stands in space ({why}), and a {} `{}` is drawn in `{}`, the \
                          plane the {kind} is drawn in: a {kind} has no contact in space",
                         name(EntRef::point(p)),
@@ -261,7 +260,7 @@ pub(super) fn incidences(
                         name(on),
                         name(EntRef::plane(plane)),
                     ),
-                });
+                ));
                 refused.insert(i);
                 continue;
             }
@@ -337,13 +336,13 @@ pub(super) fn face_planes(
             Some(p) if views.iter().all(|v| *v == Some(p)) => {
                 res.of.insert(f.key.clone(), EntRef::new(EntKind::Plane, p));
             }
-            _ => diags.push(Diag {
-                code: Code::E040,
-                span: f.span,
-                stmt: None,
-                message: format!("`{}` is drawn in no one plane, so a solid swept from it has \
+            _ => diags.push(Diag::new(
+                Code::E040,
+                f.span,
+                None,
+                format!("`{}` is drawn in no one plane, so a solid swept from it has \
                                   no faces to draw on", f.face),
-            }),
+            )),
         }
     }
     for a in axes {

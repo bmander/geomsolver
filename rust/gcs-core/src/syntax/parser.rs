@@ -11,6 +11,7 @@ mod statements;
 pub(crate) use declarations::{sweep_of, SweepParts};
 
 use super::lexer::{lex, Tok};
+use super::words::{level_end, Brackets};
 use super::names::write_ref;
 use super::{
     seed_arg, Component, InBlock, Name, OpArg, OpenJoint, Program, Ref, Seg, Span, Stmt, SynErr,
@@ -181,7 +182,7 @@ fn parse_at(src: &str, base: usize, first_id: u32, limits: ParseLimits) -> (Prog
         return (
             p,
             vec![SynErr {
-                span: Span::new(base, base),
+                span: Span::at(base),
                 message: format!("a program may not be longer than {MAX_TEXT} bytes"),
             }],
         );
@@ -376,7 +377,7 @@ impl<'a> P<'a> {
     }
 
     fn here(&self) -> Span {
-        self.t.get(self.i).map(|(_, s)| *s).unwrap_or(Span::new(self.src.len(), self.src.len()))
+        self.t.get(self.i).map(|(_, s)| *s).unwrap_or(Span::at(self.src.len()))
     }
 
     /// The source from an offset to wherever the last token ended.
@@ -513,22 +514,8 @@ impl<'a> P<'a> {
         if self.peek() != Some(&Tok::P('(')) {
             return false;
         }
-        let mut depth = 0i32;
-        for (t, _) in &self.t[self.i..] {
-            match t {
-                Tok::P('(') | Tok::P('[') => depth += 1,
-                Tok::P(')') | Tok::P(']') => {
-                    depth -= 1;
-                    if depth == 0 {
-                        return false;
-                    }
-                }
-                Tok::P(',') if depth == 1 => return true,
-                Tok::Nl => return false,
-                _ => {}
-            }
-        }
-        false
+        let j = level_end(&self.t, self.i + 1, self.t.len(), Brackets::Expr, |t| *t == Tok::P(','));
+        matches!(self.t.get(j), Some((Tok::P(','), _)))
     }
 
     /// A vector, `(a, b)` or `(a, b, c)`, each component an expression as `value_text` reads
@@ -650,26 +637,24 @@ impl<'a> P<'a> {
     /// anything else — `Rr`, `R + m`, `tau / N` — comes back as text for expansion to work out
     /// against the parameters in scope.
     fn value_text(&mut self) -> Option<(Option<f64>, String, Span)> {
+        let (text, span) = self.raw_until(|t| *t == Tok::P(','), "expected a number")?;
+        Some((text.parse::<f64>().ok().filter(|v| v.is_finite()), text, span))
+    }
+
+    /// The source from here up to what ends it outside every bracket — `stop`, a closing bracket
+    /// or the line's end (`words::level_end`) — as written, trimmed; `what` is said where nothing
+    /// is written.
+    pub(super) fn raw_until(&mut self, stop: impl Fn(&Tok) -> bool, what: &str)
+        -> Option<(String, Span)> {
         let from = self.here().lo as usize;
-        let mut depth = 0i32;
-        while !self.done() {
-            match self.peek() {
-                Some(Tok::P('(')) | Some(Tok::P('[')) => depth += 1,
-                Some(Tok::P(')')) | Some(Tok::P(']')) if depth == 0 => break,
-                Some(Tok::P(')')) | Some(Tok::P(']')) => depth -= 1,
-                Some(Tok::P(',')) if depth == 0 => break,
-                Some(Tok::Nl) => break,
-                _ => {}
-            }
-            self.i += 1;
-        }
+        // a scan begun past the tokens ends where it began
+        self.i = level_end(&self.t, self.i, self.t.len(), Brackets::Expr, stop).max(self.i);
         let text = self.text_from(from).trim().to_string();
         if text.is_empty() {
-            self.fail("expected a number");
+            self.fail(what);
             return None;
         }
-        let span = Span::new(from, self.prev_hi());
-        Some((text.parse::<f64>().ok().filter(|v| v.is_finite()), text, span))
+        Some((text, Span::new(from, self.prev_hi())))
     }
 
     fn refr(&mut self) -> Option<Ref> {
@@ -704,26 +689,12 @@ impl<'a> P<'a> {
     }
 
     fn expr_until_or(&mut self, end: char, word: Option<&str>) -> Option<(String, Span)> {
-        let from = self.here().lo as usize;
-        let mut depth = 0i32;
-        while !self.done() {
-            match self.peek() {
-                Some(Tok::P('(')) | Some(Tok::P('[')) => depth += 1,
-                Some(Tok::P(c)) if *c == end && depth == 0 => break,
-                Some(Tok::Ident(w)) if depth == 0 && word == Some(w.as_str()) => break,
-                Some(Tok::P(')')) | Some(Tok::P(']')) if depth == 0 => break,
-                Some(Tok::P(')')) | Some(Tok::P(']')) => depth -= 1,
-                Some(Tok::Nl) => break,
-                _ => {}
-            }
-            self.i += 1;
-        }
-        let text = self.text_from(from).trim().to_string();
-        if text.is_empty() {
-            self.fail("expected an expression");
-            return None;
-        }
-        Some((text, Span::new(from, self.prev_hi())))
+        let stop = |t: &Tok| match t {
+            Tok::P(c) => *c == end,
+            Tok::Ident(w) => word == Some(w.as_str()),
+            _ => false,
+        };
+        self.raw_until(stop, "expected an expression")
     }
 
     fn peek_word(&self, w: &str) -> bool {

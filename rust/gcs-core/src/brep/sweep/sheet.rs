@@ -28,10 +28,12 @@ const FIT_TURN: f64 = 20.;
 const FOLD_TURN: f64 = 90.;
 /// How near its contact a foot found by a local search must be to be taken without a global one.
 const LOCAL_TRUST: f64 = 0.005;
-/// How many times a sheet's grid is refined toward its tolerance, and the most nodes either way.
-const MOST_REFINEMENTS: usize = 4;
-const MOST_ROWS: usize = 480;
-const MOST_COLUMNS: usize = 400;
+/// How many times a sheet's grid is refined toward its tolerance, and the most nodes it may have
+/// each way (a kernel interpolates at most 512): past either it is refused. The native
+/// construction (`gcs-cli`'s `sweep_boundary`) refines its sheets by the same bars.
+pub const MOST_REFINEMENTS: usize = 4;
+pub const MOST_ROWS: usize = 480;
+pub const MOST_COLUMNS: usize = 400;
 
 /// A swept cut as its sheet is built: what the sketch says of it, read where the sketch is, so
 /// that the sheets can be built side by side.

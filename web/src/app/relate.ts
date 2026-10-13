@@ -104,21 +104,14 @@ export function stated(cls: C.ConstraintCtor, s: Sel): Constraint[] {
   });
 }
 
-/* What each button that reads the selection may mean, by class name, in the order tried: the
- * first the selection fits is the one meant, so a pair of lines on a page states the 2D kind
- * before the one in space. */
-
-/** "These touch": two points meet, a point on a line, circle, arc or curve — and in space a
- *  point, a line or an axis on a plane or an axis, an axis on an axis. */
-export const INCIDENCE = [
-  'Coincident', 'PointOnLine', 'PointOnCircle', 'PointOnSpline', 'PointOnCurve',
-  'PointOnPlane', 'LineOnPlane', 'AxisOnPlane', 'PointOnAxis', 'LineOnAxis', 'AxisCoincident',
-] as const;
-/** Two lines on a page — or in space lines, axes and planes in any pair the language relates. */
-export const PARALLEL = ['Parallel', 'Parallel3', 'AxisParallelPlane', 'PlaneParallel'] as const;
-export const PERPENDICULAR = ['Perpendicular', 'Perpendicular3', 'AxisPerpendicularPlane'] as const;
-
-/** The first of these classes the selection fits — one button, several meanings. */
-export function firstFit(names: readonly string[], s: Sel): C.ConstraintCtor | undefined {
-  return names.map((n) => C.type(n)).find((cls) => fitsSelection(cls, s));
+/** The class a constraint button's word (`coincident`, `parallel`, `perpendicular`, `midpoint`)
+ *  means over the selection: two things, related by the word as the core reads it whichever way
+ *  round they were picked (`wordBetween`) — so a pair of lines on a page states the 2D kind and
+ *  in space the kind in space — when the selection fits that class. */
+export function meant(word: string, s: Sel): C.ConstraintCtor | undefined {
+  const picked = BINS.flatMap((b): readonly Primitive[] => s[b]);
+  if (picked.length !== 2) return undefined;
+  const name = C.wordBetween(word, picked[0].kindId, picked[1].kindId);
+  const cls = name ? C.type(name) : undefined;
+  return cls && fitsSelection(cls, s) ? cls : undefined;
 }
