@@ -1335,23 +1335,9 @@ fn gate(sk: &Sketch, solid: usize, pieces: &[Piece], body: &super::faces::BodyFa
         let built = std::collections::BTreeMap::from([(0, stratum.clone())]);
         (crate::brep::recipe::node_named(&node, &built, &Default::default(), 0.0)?, Some(mm))
     };
-    // probed `offset` either side of it, so meshed no finer than a twentieth of that
-    let size = b.size().max(f64::MIN_POSITIVE);
-    let mut offset = 2e-3 * size;
-    let mut m = crate::brep::mesh::mesh(&b, offset / 20.0, crate::brep::export::ANGULAR)?;
-    if let Some(mm) = mm {
-        for p in &mut m.pts {
-            *p = body.back(*p);
-        }
-        offset /= mm;
-    }
-    let options = super::agreement::Options {
-        offset, confirm: offset / 4.0, value_tolerance: offset / 5.0, triangles: 400,
-        ..Default::default()
-    };
-    // and no piece left out: what the field reads of the region just inside each edge, the pieces
+    // no piece left out: what the field reads of the region just inside each edge, the pieces
     // hold (a probe of the boundary built sees nothing of a piece never built)
-    let located = crate::brep::query::Located::new(&b, 1e-9 * size);
+    let located = crate::brep::query::Located::new(&b, 1e-9 * b.size().max(f64::MIN_POSITIVE));
     for p in beside() {
         if field.side(p) < -1e-6 * (1.0 + norm(p)) {
             let q = if mm.is_some() { body.q(p) } else { p };
@@ -1361,10 +1347,7 @@ fn gate(sk: &Sketch, solid: usize, pieces: &[Piece], body: &super::faces::BodyFa
             }
         }
     }
-    let report = super::agreement::of_triangles_parallel(&m.pts, &m.tris, &field, 1, &options)?;
-    match report.disagreements.first() {
-        None => Ok(()),
-        Some(d) => Err(format!("its exact construction disagrees with the field at [{:.6}, {:.6}, {:.6}] ({} of {} probes)",
-            d.point[0], d.point[1], d.point[2], report.disagreements.len(), report.probes)),
-    }
+    let back = |p: V| body.back(p);
+    let back = mm.map(|mm| (&back as &dyn Fn(V) -> V, mm));
+    super::agreement::gate(&field, &b, back, "its exact construction disagrees with the field")
 }

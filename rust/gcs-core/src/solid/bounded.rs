@@ -210,17 +210,5 @@ fn construction(sk: &Sketch, solid: usize) -> Option<Result<Bounded, String>> {
 fn gate(sk: &Sketch, solid: usize, b: &Bounded) -> Result<(), String> {
     let brep = crate::brep::recipe::node(&b.node(1.0)?, &Default::default())?;
     let field = super::MaterialField::read(sk, solid, super::cad::AXIS_TOLERANCE)?;
-    let size = brep.size().max(f64::MIN_POSITIVE);
-    let offset = 2e-3 * size;
-    let m = crate::brep::mesh::mesh(&brep, offset / 20.0, crate::brep::export::ANGULAR)?;
-    let options = super::agreement::Options {
-        offset, confirm: offset / 4.0, value_tolerance: offset / 5.0, triangles: 400,
-        ..Default::default()
-    };
-    let report = super::agreement::of_triangles_parallel(&m.pts, &m.tris, &field, 1, &options)?;
-    match report.disagreements.first() {
-        None => Ok(()),
-        Some(d) => Err(format!("its exact construction disagrees with the field at [{:.6}, {:.6}, {:.6}] ({} of {} probes)",
-            d.point[0], d.point[1], d.point[2], report.disagreements.len(), report.probes)),
-    }
+    super::agreement::gate(&field, &brep, None, "its exact construction disagrees with the field")
 }
