@@ -154,7 +154,11 @@ export function askChoice(title: string, label: string,
         for (const row of rows) row.hidden = !row.textContent?.toLocaleLowerCase().includes(query);
         empty.hidden = rows.some((r) => !r.hidden);
       });
-      modalBody.append(search, empty);
+      // the bar stays put above the list as it scrolls, so the search is in reach however far down
+      const bar = document.createElement('div');
+      bar.className = 'search-bar';
+      bar.append(search);
+      modalBody.append(bar, empty);
     }
     modalBody.append(box);
     modalActions.append(button('Cancel', () => resolve(null)));

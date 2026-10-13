@@ -284,8 +284,13 @@ dialog .choices .described-choice {
 dialog .choices button[hidden] { display: none; }
 .described-choice strong { font-size: 14px; font-weight: 600; }
 .described-choice span { color: var(--muted); line-height: 1.5; }
+/* pinned to the top of the scrolling body; opaque, so the list passes under it.  A sticky box
+   stops at the body's padding edge, so it is raised by the body's 12px to cover that strip too */
+dialog .search-bar {
+  position: sticky; top: -12px; z-index: 1; background: var(--bg); padding: 10px 0;
+}
 dialog input[type=search] {
-  display: block; width: 100%; margin: 10px 0; padding: 8px 10px;
+  display: block; width: 100%; margin: 0; padding: 8px 10px;
   font: inherit; border: 1px solid var(--line); border-radius: 5px;
 }
 
