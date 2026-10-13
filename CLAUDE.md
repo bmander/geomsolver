@@ -16,7 +16,7 @@ has a top-level `.sv`. Source edits add geometry inside the preview, reusable de
 Hosts look for modules beside the model, then its ancestors, then the library.
 `web/tools/copy-examples.js` packages sources for static hosts; live files override them.
 
-**Points in space, planes from axes (0.42–0.43, #81, #84, [plan](docs/planes-plan.md)):** a point no `in`
+**Points in space, planes from axes (0.42–0.43, #81, #84):** a point no `in`
 reaches stands in space (`PointE.z`, given by `Sketch::give_place` once memberships are in; its
 own lift, no row); a 2D drawing is `use std` + `in std.front { … }`. There is no page: a point
 with neither plane nor `z` is only a 2D sketch's (JSON, hand-built tests), with no lift. An **axis**
@@ -70,7 +70,7 @@ relations, ties each (`planes::tie_twins`, E040 a plane twice; `planes::parallel
 `views::place`): `Sketch::tie_twin`'s two intrinsic rows, the twin on the point's plane and
 `Project`, then `Sketch::hold_twins`' point on the twin's plane — left out where a line the plane is
 built along (`axes_along`'s `Parallel3`) ends at the point or has it stated on it, a dependency the
-structural count cannot see (#88). The gear's folds are square so. A point is read where its reader
+structural count cannot see (#88). The crown's normal section N is square so. A point is read where its reader
 is drawn: `planes::memberships` puts a twin in a drawn element's slot (`Sketch::twin_in`,
 `replace_point`), `reading::read_twins` in a relation's before `in_space`. A twin goes by its
 point's name (`SourceMap::twin_of`, read by `name_of`/`writable_name`; never filed in `names`, so
@@ -87,7 +87,7 @@ point only its instance's `in` puts in a view (in space to its component: `crown
 coincident p`), a claim, a derivative, a set's application, a ring's statement, the point's own
 plane and a line's minted end (`l.p1`); a point in space is `planes::incidences`'. `project`
 never reads a twin (`relations::constrain`): it relates two planes, each operand in its own, so
-`m coincident P; O project m` still elaborates. The hypoid's pinion reads `gear.M` in Q so.
+`m coincident P; O project m` still elaborates.
 `tests/two_planes.rs` is the gate.
 
 **Nothing is imported bare unless the `use` names it (Solvent §14.4, [0.30], [0.48], #94):** a
@@ -555,13 +555,16 @@ built, its relations, holds, claims and branches are not (`program.rs`'s `statin
 circle's or arc's numbers are then **derived** (`Sketch::derived`, linear in the
 representative's and the centre's params), owning no column — `System::col_of` is `-2 - k` for
 one, its Jacobian folded into its bases by weights (`ent_w`, 1 elsewhere so every other bit
-stands), its value settled in `apply_z`/`full_x` and at `expr::sync_free`; a turned arc's
+stands), its value settled in `apply_z`/`full_x`, at `expr::sync_free` and as each seed is written
+(`settle_deferred`'s `Seeds`, so a seed reads a copy turned, #225); a turned arc's
 intrinsic rows are not compiled; a turned curve evaluates as its representative, turned
 (`curve_turn`). Readers outside `System` are told: `cgraph` leaves rows on copies to the
 numeric residual, `decompose` writes none, the diagnosis reads a copy as free as its bases,
 `Part`/`graft`/JSON (`"turns"`)/`topology_key` carry turns. E015 the index read in the body
 (parser finds the reads, `Block::index_reads`), E021 a reference the turn would move or a copy
-by index (`judge_rings`, curves through their instances' arguments), E022 a ring in a ring, E023
+by index (`judge_rings`; an instance's entity argument or a use's operand is judged at the call as
+written, `next.u` a turn, and a body reading the formal is not judged again: `Walk::arguments`,
+#226), E022 a ring in a ring, E023
 what a ring cannot turn (`rings.rs`). The ring's own turn is gauged outside (`hub horizontal
 tip[0]`). `std.Polygon`, `gear.sv`, `gear_trace.sv`, `ngon.sv` and the Wankel rotor are rings;
 `tests/ring.rs` and `tests/turns.rs` are the gates.
@@ -587,7 +590,7 @@ meets the instances' cap (`MAX_FLAT`, E103), since a body of calls emits no stat
 (Penrose's P3 by Robinson triangles, two components each calling the other, held to the
 subdivision worked out directly).
 
-**Axes** (`docs/planes-plan.md`, #81): `t := axis hint(dir: (x, y, z))` is a directed line in space,
+**Axes** (#81): `t := axis hint(dir: (x, y, z))` is a directed line in space,
 `AxisE { d, a, placed }`: a unit direction (`axis_unit`, intrinsic, held like `quat_unit` when `fix`
 holds all three) and the point nearest the origin, fixed — no freedom — until a relation reads it
 (`CKind::place_slots`: `PointOnAxis`, `AxisCoincident`, `PlaneAxis`), when `Sketch::place_axis`
@@ -696,8 +699,8 @@ outward-rounded arithmetic; zero-straddling division, overflow and invalid domai
 circular-crown verifier and its rational checker establish nominal differential regularity, not
 source-error transfer, injectivity or interference (`docs/interval-geometry.md`).
 
-**Geometry validation contracts:** `docs/geometry-validation.md`; the spiral-bevel
-[roadmap](docs/spiral-bevel-roadmap.md). `interval::minimum::enclose` refines with an enclosure
+**Geometry validation contracts:** `docs/geometry-validation.md`.
+`interval::minimum::enclose` refines with an enclosure
 oracle; exhausted budgets keep bounds, never guess membership. `Family::bounds` / `MotionBounds`
 enclose mathematical poses and point boxes (coefficients private), not float evaluation or
 source error; past [-8,8] angles use `Interval::sin_cos_periodic`. `solid::PlanarField` /
@@ -738,7 +741,12 @@ parts where the built member says the faces meet; the gear's inner mate is read 
 over (its space cutter's `neighbor` is the inner crown a crown pitch round).
 `configuration.sv` states `shaft_angle`, `offset` (E = 0 is bevel); the pinion's cone solves
 against the gear's (`pitch/pinion.sv`); members roll at `N_c / N` off the gear's triangle, not
-`1 / sin`. `tests/hypoid_layout.rs` is the gate. The mesh export refuses a sheet a placement
+`1 / sin`. **No axial views** (#215): the gear's triangle O–M–F and the pinion's two axes stand
+in space square to P on their generators (`O level(p.v) foot`; the pinion's axes square to `square`,
+level and square to their generator), each side a bound (`foot inside p`, `tip outside p`), and a
+blank's face span is on its generator (`FaceSpan`, ordinates along it); only P is drawn in, and N
+for the tip relief's kinks (the crown is regions, #214).
+`tests/hypoid_layout.rs` is the gate. The mesh export refuses a sheet a placement
 carries inside the blank; CLI test readers zero the offset.
 **Continuous motion solids:** `removal := solid(tool, under: generating, from: -30deg, to: 30deg)`
 is the union over the whole interval, not posed meshes; `at:` and intervals exclusive.
@@ -839,7 +847,7 @@ its prism (`brep::sweep::planar`), metered as envelope × slab (`accuracy::Plana
 MOTION` advances the placements under it (`Sweep::motion`). A profile field's walls are boxed
 (`Boxes`); `ssi` cuts an extrusion square in closed form and `boolean` gives its iso edges straight
 pcurves. `rust/examples/wankel/`, `fixtures::wankel`, `tests/{bore,planar_envelope,wankel}.rs`.
-**Export tolerance ([plan](docs/native-hypoid-plan.md)):** `solventc --tolerance [LENGTH]` (default
+**Export tolerance:** `solventc --tolerance [LENGTH]` (default
 0.01 mm; bare number in document units); `solid::export::Tolerance` states every bar once. Sheets
 pass within half of it of withheld contacts (`contact_trace::Withheld::Sides`), normals within
 `Tolerance::turn`, refined where they miss (`marked`, `Grid::refined`, ≤4 times, 480×400). Fit:
@@ -848,7 +856,7 @@ half (OCCT's deflection is no bound), float32 rounding counted with it (`mesh::s
 `brep::export::written_within`: far from the origin refused, #60); the mesh contract counts clusters
 (`TinyTriangles::clustered`); the field is probed at max(2 tol, 2 µm).
 `--measure FILE` checks an export (`solid::accuracy`) and exits 1 over tolerance.
-**One sector, sewn round ([plan](docs/native-speed-plan.md)):** a body whose swept cuts are turns
+**One sector, sewn round:** a body whose swept cuts are turns
 of one placement about one axis (`solid::sector::indexing`), from a blank alike under the turn, is
 built as one sector (`cad/native/sweep_boundary/sector.rs`): its side runs midway across the gaps
 between neighbours' contacts (`sector::Boundary`, sliced by spheres about the blank's centres or
@@ -871,7 +879,7 @@ meridian section turned once (`Session::construct_meridian`, `solvent_cad_revolv
 `SOLVENT_BLANK=booleans`); field agreement probes one sector, reading cuts not proved positive
 (`agreement::Sector`, `MaterialField::without_cuts`; `SOLVENT_AGREEMENT=whole`); STEP text is
 formatted on every core, the kernel's to the byte (`SOLVENT_STEP_TEXT_CHECK`).
-**The Rust B-rep kernel** ([plan](docs/rust-kernel-plan.md)); clean-room — OCCT is LGPL, this repo
+**The Rust B-rep kernel**; clean-room — OCCT is LGPL, this repo
 MIT: its code is never translated, only its behaviour and conventions studied. `gcs_core::brep`:
 `geom` (surfaces parameterised as OCCT/STEP do, closed-form inverses, signed distances, `Traced`
 intersections), `topo` (`Brep`: oriented uses with pcurves, degenerate poles; `check`, `pinches`),
@@ -1104,7 +1112,7 @@ rolls `dist/app/main.js` into one `dist/app/bundle.js`, what the page loads.  Th
 from a CDN) so the app opens from a file.
 
 Conventions:
-- **A name is defined one way, `NAME := VALUE`** ([plan](docs/definitions-plan.md), Solvent §5,
+- **A name is defined one way, `NAME := VALUE`** (Solvent §5,
   [0.29]).  `w := 100` is a value (`StmtKind::Param`), `c := circle(…)` a declaration, `t :=
   Tooth(…)` an instance, `dims := {…}` a group (a brace after `:=` is a list, lexed across lines),
   `profile := (ab := line(a, b)) -> line -> close` a chain whose link is named in place, `k :=
@@ -1179,7 +1187,7 @@ Conventions:
   `tests/refusals.rs` is the gate.  `along:` also takes a reference (an axis, a line): see the
   ordinate below.
 - **An ordinate is one kind along any direction, and `level` its zero**
-  ([plan](docs/ordinate-plan.md), Solvent [0.46]).  `a distance(d, along: t) b` is `CKind::Ordinate`,
+  (Solvent [0.46]).  `a distance(d, along: t) b` is `CKind::Ordinate`,
   `(q − p)·t̂ − d`, signed along `t`; `a level(t) b` is `CKind::Level`, no number, no callout (the
   direction positional, as `symmetry(l)`'s line).  Slots `(p, q, t: SpecKind::Along, [d], along:
   Str, form: Int)`: `t` an axis, a line, or a plane standing for its normal (only via the word
@@ -2340,7 +2348,7 @@ Conventions:
   in the solve path.  Every random draw comes from the seeded `rng::Rng`.
 - The trust-region loop is `newton::dogleg` over a `TrustRegion`; a new thing to minimise
   implements the trait rather than copying the loop.
-- **Block-triangular solve** ([docs/block-triangular-solve-plan.md](docs/block-triangular-solve-plan.md)):
+- **Block-triangular solve**:
   `System::block_order` (memoised per compile) is the DM-matched square part in strongly
   connected blocks (`graph::blocks`: Tarjan, lowest row first), over/under parts beside it.
   `System::subset` evaluates through the whole system's helpers, so its numbers match to the bit;
@@ -2349,7 +2357,7 @@ Conventions:
   failed DogLeg, before LM, only with `retry` and ≥2 blocks, kept only if it solves; `First` is
   for measurement only (it changes bits and roots). `BLOCK_XTOL` 1e-15, accepted at
   `acceptance_tol`. The spiral bevel relies on it (`hypoid_layout.rs` holds rough starts).
-- **Settled** ([docs/iteration-limit-rescue-plan.md](docs/iteration-limit-rescue-plan.md)):
+- **Settled**:
   `SolveResult::settled` is `success && status != 4`; a DogLeg accepted on its iteration limit
   can be 1e-3 of the extent off. With `retry` and `Rescue`, `System::block_rescue` tries the block
   pass on an unsettled DogLeg: a failure from the start, kept if it succeeds; a limit stop from

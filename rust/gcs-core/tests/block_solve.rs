@@ -135,8 +135,8 @@ p0 distance(10) p1
     s
 }
 
-/// **A solve that stops on its iteration limit is finished where it stopped**
-/// (docs/iteration-limit-rescue-plan.md).  A chain of twelve triangles seeded far off, given eight
+/// **A solve that stops on its iteration limit is finished where it stopped**.
+/// A chain of twelve triangles seeded far off, given eight
 /// DogLeg iterations where it needs ten: the eighth leaves it under the interactive acceptance
 /// and short of the solution — a success on status 4, which is all a solve did before the rescue
 /// (`BlockMode::Off`).  By default that stop is not settled, and the block pass *from the stop*
@@ -164,9 +164,8 @@ fn a_stop_on_the_iteration_limit_is_finished_where_it_stopped() {
     assert!(apart(&from_start, &full) > 0.1, "{:e}", apart(&from_start, &full));
 }
 
-/// **A stop the rescue cannot settle keeps its pose** (docs/iteration-limit-rescue-plan.md): the
-/// traced gear (`gear.sv`) seeded off by a unit and given five iterations stops its DogLeg on that
-/// limit under the interactive acceptance, a success.  At every such stop the default solve either
+/// **A stop the rescue cannot settle keeps its pose**: the traced gear (`gear.sv`) seeded off by a
+/// unit and given five iterations stops its DogLeg on that limit under the interactive acceptance, a success.  At every such stop the default solve either
 /// settles by the block pass or returns the stop; and at some the block pass under the limit
 /// settles it from neither the stop nor the start, so the default solve returns the stop exactly
 /// as a solve without the rescue does — the same bits, status, success, residual, counts and

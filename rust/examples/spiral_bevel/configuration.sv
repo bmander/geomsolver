@@ -9,7 +9,7 @@ shaft_angle := 90deg
 offset := 25mm
 // Added to the crown tooth's inner flank pressure angle and taken from its outer flank's: an
 // offset works a tooth's two sides at different effective pressure angles, and a hypoid
-// balances them rather than accept undercut on one (docs/generating-sweeps-plan.md, Phase 1).
+// balances them rather than accept undercut on one.
 pressure_shift := 12.5deg
 // The crown's spiral angle at the mean point. The pinion's adds the offset angle, which the
 // layout solves for.

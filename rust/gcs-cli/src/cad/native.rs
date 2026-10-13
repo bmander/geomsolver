@@ -155,7 +155,7 @@ impl Session {
     /// A static recipe whose every operand is a full revolution about one line (or a ball centred on
     /// it) built as its meridian region — each operand's section in one half-plane of the line, the
     /// Booleans of the recipe taken of the sections — turned once about the line, where its Booleans
-    /// in space took a Boolean of revolutions each (docs/native-speed-plan.md). None, with the reason,
+    /// in space took a Boolean of revolutions each. None, with the reason,
     /// where the recipe is not such (a prism, a placement, a partial turn, a revolution about another
     /// line, a section crossing its axis). `SOLVENT_BLANK=booleans` builds every blank by its Booleans.
     pub(crate) fn construct_meridian(&self,recipe: &Json) -> Result<Result<(c_int,Meridian),String>,String> {

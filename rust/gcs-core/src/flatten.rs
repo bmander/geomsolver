@@ -333,6 +333,10 @@ struct Walk<'a> {
     /// The names an application bound to what its use wrote (`apply::bind_to_use`): one that
     /// names nothing is said once, at the operand, and not again inside the body.
     use_aliases: BTreeSet<String>,
+    /// The names bound to what a call or a use wrote: an instance's entity formals and an
+    /// application's bound variables.  A ring's representative is judged by the argument as
+    /// written (E021), and not again where a body reads the name (#226).
+    arguments: BTreeSet<String>,
     /// Every set the walk made, by absolute name (§6.21) — see `sets::Site`.
     sets: BTreeMap<String, sets::Site>,
     /// Those drawn as elements (`lowering`), by the same name, with what each is judged by.
@@ -468,6 +472,7 @@ impl<'a> Walk<'a> {
             word_kinds: BTreeMap::new(),
             applying_words: Vec::new(),
             use_aliases: BTreeSet::new(),
+            arguments: BTreeSet::new(),
             sets: BTreeMap::new(),
             lowered: BTreeMap::new(),
             unlowered: &NONE,

@@ -1,4 +1,4 @@
-//! The configured hypoid pair checked from its fabrication files (docs/native-hypoid-plan.md):
+//! The configured hypoid pair checked from its fabrication files:
 //! the two STLs `solventc --tolerance` writes, read as triangles and nothing else.
 //!
 //! - **The shafts.** Each member's axis is the axis of its solid's inertia (a body with N-fold

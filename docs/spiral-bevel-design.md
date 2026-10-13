@@ -5,10 +5,9 @@ parameters. Solid design is separate from manufacturing: no cutter selection, to
 machine-axis access, feeds, or process allowances belong in the pair's interface.
 A generating surface is a mathematical construction; it does not prescribe a physical cutter.
 
-**Current direction:** [the subproject roadmap](spiral-bevel-roadmap.md) evaluates continuous
-generating-volume subtraction as the primary solid representation. Further manual cap/face
-assembly is paused while that route is assessed. The implementation history below remains
-evidence for analytic geometry and verification; it does not establish a finished solid.
+**Current direction:** the pair is built as a [generating sweep](generating-sweeps.md) and
+exported by the core's own B-rep kernel (`rust/examples/spiral_bevel/README.md`). The
+implementation history below remains evidence for analytic geometry and verification.
 
 ## Current implementation
 
@@ -129,8 +128,7 @@ own cone would roll at `1 / sin(gamma_p)`, which is not that ratio off the bevel
 mean_module / 2)`; `tests/hypoid_layout.rs` holds both ratios to `N_c / N` within 1e-12 at five
 designs. At E = 0 the pinion is the intersecting-axis one and every bevel number is unchanged.
 The configured pair is E = 25 mm with a 12.5° pressure shift and a 25° spiral, inside the
-generating-sweep class for both members
-([the layout plan](spiral-bevel-layout-plan.md#the-true-hypoid) records the grid).
+generating-sweep class for both members (`admission::the_admission_grid` prints the grid).
 
 ## Common-crown construction under investigation
 
@@ -190,13 +188,14 @@ tests cover a band of ±0.15 mean module, not a complete root-to-tip tooth.
 
 ## Declarative root construction
 
-`rust/examples/spiral_bevel/crown/section.sv` defines `RackSection` using ordinary lines,
-circular arcs, tangencies, flank angles and depths from its two pitch points
-(`crown/rounding.sv` states the tip roundings every crown section shares). Its construction
-points stay private. Revolving its public profile produces the reference geometry, and
-`crown.svd` draws its preview. The source solves with zero degrees of freedom after its seeds
-are disturbed. The preview places the pitch line at 0.8 of the 24:48 pair's mean cone
-distance; in the layout (`crown/thickness.sv`) the pitch points follow from the tooth traces.
+`rust/examples/spiral_bevel/crown/cutter.sv` defines the cutter about its axis: the two flank
+cones through the pitch points (`std.ConeThrough`, leaning by the pressure angle) and four levels
+along the axis, the tooth's and the mate's tips and bases at their depths. `crown/tooth.sv`'s
+`Tooth` is a region of them (§6.21): beyond one cone and within the other, each grown by a
+quarter of the backlash, between two levels, its tip edges rounded by `std.Rounded`; its meridian
+turned once is the reference solid, and `crown.svd` draws its preview. Nothing of it is drawn
+in a view, so no section can fold onto another root; in the layout (`crown/thickness.sv`) the
+pitch points follow from the tooth traces.
 
 The envelope tests read the actual solved `outer`, `outer_round` and `tip` patches through
 `RevolvedSurface`. They verify the conical and toroidal equations and their derivatives,
@@ -214,14 +213,13 @@ inserted after generating the tooth flank.
 
 The matching step distinguishes generating normals from material normals. Simply using the same
 oriented crown patch for both members establishes the velocity equation, but gives coincident
-normals, not the opposing outward normals required for contact. `crown/mate.sv` (with
-`crown/mate_section.sv`) implements the circular reference section by pairing the pinion's
-outer flank with a mate section drawn on that same flank line one tooth's width outward, and
-the pinion's inner flank with one a tooth's width inward. Each mate section has its tip
-pointing the other way along the cutter's axis, which reverses the pressure slope; it walks its
-edges the other way round, which restores the same geometric cone with opposite boundary
-orientation. The two axes share one spatial center, and the mate's flanks lie on the tooth's by
-construction, so the two sections cannot be given different pressure angles. Tests read the
+normals, not the opposing outward normals required for contact. `crown/mate.sv`'s `Space` pairs
+the pinion's outer flank with a mate region on that same flank cone one tooth's width outward,
+and the pinion's inner flank with one a tooth's width inward. Each mate has its tip pointing
+the other way along the cutter's axis, which reverses the pressure slope, and is on the other
+side of the shared cone, which restores the same geometric cone with opposite material
+orientation. Tooth and mates are regions of the one cutter's cones, so they cannot be given
+different pressure angles. Tests read the
 actual source geometry for 24:48, 32:32 and 28:49 pairs at mean modules 0.2, 2 and 25.4. At
 three face stations and three active-flank heights they verify common positions, **opposite**
 oriented normals, equal generating roll, and zero normal component of the actual shaft-relative

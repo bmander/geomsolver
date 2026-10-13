@@ -1,5 +1,5 @@
-//! A solid's exact export by this kernel, as every host makes it (phase 5 of
-//! docs/rust-kernel-plan.md): the terminal's `solventc` and the browser's worker call the same
+//! A solid's exact export by this kernel, as every host makes it:
+//! the terminal's `solventc` and the browser's worker call the same
 //! functions, so a file is one file wherever it is written. A body is built from its CAD recipe,
 //! or — with swept cuts of the generating class, admitted — as one sector patterned
 //! (`brep::sweep`); its STEP is written and parsed back against it (`step_check`); its STL is meshed

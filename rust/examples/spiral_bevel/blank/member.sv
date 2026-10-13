@@ -1,20 +1,31 @@
 // Step 3, a member's blank: the points within its tip cone and its heel sphere and outside its
 // toe sphere and its back cone, one region and its solid (§6.21). The cones are the pitch cone
 // offset by the addendum and by the back depth (`std.Offset`, `outside(d)`); the spheres are
-// about its apex through the face span's ends. Their sizes are the layout's, solved. The end
-// relief chamfers the tip's toe and heel corners `end_relief` each way, each leg measured from
-// the other face (`std.Chamfered`): on the sphere the flat bows with it, a parabola's arc turned
-// about the axis, built exactly; a relief of nothing cuts nothing.
+// about its apex through the face span's ends (`FaceSpan`, the face width on the pitch generator
+// centred on the mean point). Their sizes are the layout's, solved. The end relief chamfers the
+// tip's toe and heel corners `end_relief` each way, each leg measured from the other face
+// (`std.Chamfered`): on the sphere the flat bows with it, a parabola's arc turned about the axis,
+// built exactly; a relief of nothing cuts nothing.
 // Each set the region's body uses names the blank's face it bounds: a member built from the
 // blank has faces `material.tip`, `.heel`, `.toe` and `.back`, which the checks read.
 use std
-use blank.sphere
+
+// The face width along `generator` (apex -> mean point), centred on the mean point: the toe
+// toward the apex, the heel away from it, each on the generator, wherever it is drawn.
+component FaceSpan(generator: line, width: Length) {
+  // Seeds only, rough: a tenth of the generator either side of the mean point.
+  toe := point hint(at: generator.p2, toward: generator.p1, by: 0.1)
+  heel := point hint(at: generator.p2, toward: generator.p1, by: -0.1)
+  toe coincident generator
+  heel coincident generator
+  toe distance(width / 2, along: generator) generator.p2
+  generator.p2 distance(width / 2, along: generator) heel
+}
 
 // The blank of a member: `generator` runs from the apex to the mean point; `ax` is the member's
-// axis from its apex, and `view` its axial view.
-component MemberBlank(generator: line, ax: line, view: plane, design: group,
-                      normal_module: Length) {
-  span := blank.sphere.FaceSpan(generator, width: design.face_width) in view
+// axis from its apex.
+component MemberBlank(generator: line, ax: line, design: group, normal_module: Length) {
+  span := FaceSpan(generator, width: design.face_width)
   toe := std.Sphere(generator.p1, r: hint(design.cone_distance))
   heel := std.Sphere(generator.p1, r: hint(design.cone_distance))
   span.toe coincident toe
@@ -47,5 +58,5 @@ preview {
     to_foot perpendicular ax
     generator angle(30deg) ax
   }
-  member := MemberBlank(generator, ax, std.front, proportions, normal_module: 2mm)
+  member := MemberBlank(generator, ax, proportions, normal_module: 2mm)
 }

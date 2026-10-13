@@ -6,7 +6,6 @@
 // round. Each grows across its cone a quarter of the backlash, as the tooth does (crown/tooth.sv).
 use std
 use design
-use views
 use pitch.gear
 use pitch.trace
 use crown.thickness
@@ -39,11 +38,9 @@ component Space(a: set, b: set, lo: set, hi: set, cap: set, index: motion, grow:
 
 preview {
   unit mm
-  gear := pitch.gear.GearCone(std.top, g.view, design.hypoid_design)
-  g := views.FoldedView(std.top, gear.generator)
+  gear := pitch.gear.GearCone(std.top, design.hypoid_design)
   trace := pitch.trace.ToothTrace(std.top, gear.generator, design.hypoid_design)
-  pinion := pitch.pinion.PinionCone(std.top, q.view, gear, trace.foot, design.hypoid_design)
-  q := views.FoldedView(std.top, pinion.hinge)
+  pinion := pitch.pinion.PinionCone(std.top, gear, trace.foot, design.hypoid_design)
   thickness := crown.thickness.CrownThickness(std.top, gear.generator, trace.normal,
     design.hypoid_design)
   cutter := crown.cutter.Cutter(gear.crown_axis, trace.normal, thickness.inner_pitch,

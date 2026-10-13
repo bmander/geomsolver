@@ -228,9 +228,9 @@ fn a_point_said_on_another_plane_is_drawn_there() {
     assert!(d.implied.is_empty() && d.over.is_empty());
 }
 
-/// The point another component declares, said on a plane only the second component knows: the
-/// pinion's `gear.M coincident q` (`spiral_bevel/pitch/pinion.sv`), where the gear's component
-/// draws `M` in its own planes and cannot name `q`.
+/// The point another component declares, said on a plane only the second component knows:
+/// `gear.M coincident q`, as the hypoid's pinion said it before its axial view went (#215), where
+/// the gear's component draws `M` in its own planes and cannot name `q`.
 #[test]
 fn a_point_another_component_draws_is_drawn_in_this_ones_plane() {
     let src = format!(

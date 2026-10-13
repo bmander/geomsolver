@@ -1,6 +1,6 @@
-// The hypoid layout, steps 2 to 5 (docs/spiral-bevel-layout-plan.md): the pitch cones and the
-// tooth trace through the mean point M, the members' blanks in their axial views, the crown
-// tooth and its mate as regions about the cutter's axis, and the generating motions.
+// The hypoid layout, steps 2 to 5: the pitch cones and the tooth trace through the mean point M,
+// the members' blanks, the crown tooth and its mate as regions about the cutter's axis, and the
+// generating motions.
 use std
 use design
 use views
@@ -19,16 +19,14 @@ use generation
 // The layout on the pitch plane `p` (`std.top`). The normal module is the trace's: a caller
 // leaves `normal_module` unbound, the trace constructs it, and every depth reads it.
 component HypoidLayout(p: plane, design: group, normal_module: Length) {
-  gear := pitch.gear.GearCone(p, g.view, design)
-  g := views.FoldedView(p, gear.generator)
+  gear := pitch.gear.GearCone(p, design)
   trace := pitch.trace.ToothTrace(p, gear.generator, design, normal_module: normal_module)
-  pinion := pitch.pinion.PinionCone(p, q.view, gear, trace.foot, design)
-  q := views.FoldedView(p, pinion.hinge)
+  pinion := pitch.pinion.PinionCone(p, gear, trace.foot, design)
 
-  // The blanks, their face spans drawn in the axial views.
-  gear_blank := blank.member.MemberBlank(gear.pitch_line, gear.ax, g.view, design,
+  // The blanks, regions about the members' axes.
+  gear_blank := blank.member.MemberBlank(gear.generator, gear.ax, design,
     normal_module: normal_module)
-  pinion_blank := blank.member.MemberBlank(pinion.pitch_line, pinion.ax, q.view, design,
+  pinion_blank := blank.member.MemberBlank(pinion.pitch_line, pinion.ax, design,
     normal_module: normal_module)
 
   // The crown, about the cutter's axis: the pinion's generator, the crown tooth, and the gear's,

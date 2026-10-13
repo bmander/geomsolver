@@ -8,7 +8,6 @@
 // meet a flank; each region's meridian turned once.
 use std
 use design
-use views
 use pitch.gear
 use pitch.trace
 use crown.thickness
@@ -33,8 +32,7 @@ component Cutter(crown_axis: line, normal: line, inner: point, outer: point, des
 
 preview {
   unit mm
-  gear := pitch.gear.GearCone(std.top, g.view, design.hypoid_design)
-  g := views.FoldedView(std.top, gear.generator)
+  gear := pitch.gear.GearCone(std.top, design.hypoid_design)
   trace := pitch.trace.ToothTrace(std.top, gear.generator, design.hypoid_design)
   thickness := crown.thickness.CrownThickness(std.top, gear.generator, trace.normal,
     design.hypoid_design)

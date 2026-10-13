@@ -1,4 +1,4 @@
-//! A static solid read through this kernel's B-rep (rung 3 of docs/rust-kernel-plan.md): its CAD
+//! A static solid read through this kernel's B-rep: its CAD
 //! recipe built node by node, every face named by the path the faceted kernel gives it —
 //! `bore.wall`, a placed copy's `placed.bore.wall` — so a body's surviving faces, its provenance
 //! and its round features read the same whichever kernel evaluated it. A boolean never renames:

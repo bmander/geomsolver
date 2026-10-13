@@ -11,7 +11,7 @@ use crate::rng::Rng;
 use crate::style::Classes;
 use crate::syntax::{AtRef, Program, Span, StmtId};
 use crate::{curve, expr, io};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// Default radius for unseeded circles and degenerate arcs. Keep it nonzero so
 /// the radius gradient can move the initial geometry.
@@ -571,7 +571,7 @@ fn build_plane(
     Some(e)
 }
 
-/// **Points in space** (`docs/planes-plan.md`): every point no `in` reached — no membership once
+/// **Points in space** (#81): every point no `in` reached — no membership once
 /// every membership is in — stands in space, and is given its third coordinate here, at its
 /// `hint(z: …)` or at 0.  A `z` seed on a point drawn in a plane is refused: there it has two
 /// coordinates, its plane's.
@@ -780,6 +780,43 @@ fn seed_eval(
     }
 }
 
+/// Where a seed is written: a parameter a `fix` holds or a bound carried across is left where it
+/// stands, and a ring's turned copy (§12.3) is its representative's place turned, never its own
+/// seed — so each write turns the copies over what it moved at once, and a seed read later in
+/// statement order reads a copy where the solve will put it (#225).
+struct Seeds<'h> {
+    held: &'h BTreeSet<u32>,
+    derived: Vec<crate::model::Derivation>,
+    /// The derivations over each base parameter, by index into `derived`.
+    over: BTreeMap<u32, Vec<usize>>,
+    /// Every derived parameter: a copy's own.
+    copies: BTreeSet<u32>,
+}
+
+impl<'h> Seeds<'h> {
+    fn new(sk: &Sketch, held: &'h BTreeSet<u32>) -> Self {
+        let derived = sk.derived();
+        let mut over: BTreeMap<u32, Vec<usize>> = BTreeMap::new();
+        for (i, d) in derived.iter().enumerate() {
+            for &(b, _) in &d.terms {
+                over.entry(b).or_default().push(i);
+            }
+        }
+        let copies = derived.iter().map(|d| d.param).collect();
+        Seeds { held, derived, over, copies }
+    }
+
+    fn write(&self, sk: &mut Sketch, p: u32, v: f64) {
+        if sk.params[p as usize].fixed || self.held.contains(&p) || self.copies.contains(&p) {
+            return;
+        }
+        sk.params[p as usize].value = v;
+        for &i in self.over.get(&p).into_iter().flatten() {
+            sk.settle_derivation(&self.derived[i]);
+        }
+    }
+}
+
 /// Seeds that read geometry, worked out in statement order — never over a number a `fix` holds,
 /// which was applied first.
 /// `held`: the parameters left where they stand — a point a bound carried across (§9.6), whose
@@ -788,25 +825,20 @@ pub(super) fn settle_deferred(
     sk: &mut Sketch,
     res: &Resolver,
     deferred: &[Deferred],
-    held: &std::collections::BTreeSet<u32>,
+    held: &BTreeSet<u32>,
     diags: &mut Vec<Diag>,
 ) {
-    let write = |sk: &mut Sketch, p: u32, v: f64| {
-        let q = &mut sk.params[p as usize];
-        if !q.fixed && !held.contains(&p) {
-            q.value = v;
-        }
-    };
+    let seeds = Seeds::new(sk, held);
     for d in deferred {
         let (span, stmt, result) = match d {
             Deferred::Text { param, text, names, span, stmt } => {
-                let r = seed_eval(sk, res, text, names).map(|v| write(sk, *param, v));
+                let r = seed_eval(sk, res, text, names).map(|v| seeds.write(sk, *param, v));
                 (*span, *stmt, r.map_err(|e| format!("`{text}`: {e}")))
             }
             Deferred::At { point, at, names, span, stmt } => {
                 let r = place_of(sk, res, *point, at, names).map(|place| {
                     for (p, v) in sk.point_all_params(*point).into_iter().zip(place) {
-                        write(sk, p, v);
+                        seeds.write(sk, p, v);
                     }
                 });
                 (*span, *stmt, r)
@@ -814,7 +846,7 @@ pub(super) fn settle_deferred(
             Deferred::Height { point, text: Some(text), names, span, stmt, .. } => {
                 // refused already where the point is drawn in a plane (`places`)
                 let Some(param) = sk.points[*point].z else { continue };
-                let r = seed_eval(sk, res, text, names).map(|v| write(sk, param, v));
+                let r = seed_eval(sk, res, text, names).map(|v| seeds.write(sk, param, v));
                 (*span, *stmt, r.map_err(|e| format!("`{text}`: {e}")))
             }
             Deferred::Along { .. } | Deferred::Height { .. } => continue,
@@ -823,10 +855,7 @@ pub(super) fn settle_deferred(
                 let ((cx, cy), (sx, sy)) =
                     (sk.point_xy(a.center as usize), sk.point_xy(a.start as usize));
                 let r = (sx - cx).dhypot(sy - cy);
-                let rp = a.radius as usize;
-                if !sk.params[rp].fixed {
-                    sk.params[rp].value = if r.abs() > 1e-9 { r } else { UNSEEDED_RADIUS };
-                }
+                seeds.write(sk, a.radius, if r.abs() > 1e-9 { r } else { UNSEEDED_RADIUS });
                 continue;
             }
         };

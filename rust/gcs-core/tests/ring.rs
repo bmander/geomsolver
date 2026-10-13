@@ -205,15 +205,15 @@ fn dragging_a_copy_turns_the_representative() {
 }
 
 /// A curve written in place reads its entities through its instance's arguments: a datum line
-/// from outside the ring is read by the representative's tooth alone, and is refused as any
-/// reference is (the traced gear gives each tooth a spoke of its own instead).
+/// from outside the ring is read by the representative's tooth alone, and is refused where the
+/// tooth is given it (the traced gear gives each tooth a spoke of its own instead).
 #[test]
 fn a_curve_reading_what_the_turn_would_move_is_refused() {
     let src = gcs_core::examples::GEAR_TRACE.replace(
         "  fix((0, 0)) center\n",
         "  fix((0, 0)) center\n  far := point\n  fix((R, 0)) far\n  outside := line(center, far)\n",
     ).replace("t := Tooth(base, datum,", "t := Tooth(base, outside,");
-    refused(&src, "E021", "`datum` is outside the `ring`", "ring N about center {\n    // the first tooth's datum points along x; the others are turned with their teeth\n    private anchor := point\n    fix((R, 0)) anchor\n    private datum := line(center, anchor)\n    t := Tooth(base, outside, root, tip, a0: 0deg, half: half, u0: u0, u1: u1)\n    gap := line(t.l.lo, next.t.r.lo)\n  }");
+    refused(&src, "E021", "`outside` is outside the `ring`", "outside");
 }
 
 #[test]
@@ -233,4 +233,81 @@ ring 3 about hub {
         "    gap := line(t.l.lo, next.t.r.lo)\n  }\n  probe := point\n  probe coincident t[1].r.e\n",
     );
     refused(&src, "E023", "turned copy of a curve", "probe coincident t[1].r.e");
+}
+
+const SUN: &str = "
+use std (horizontal)
+in std.front {
+  o := point hint((0, 0))
+  fix((0, 0)) o
+  q := point hint((100, 0))
+  ref := line(o, q)
+  horizontal ref
+  o distance(100) q
+  sun := std.Polygon(o, ref, n: 10, r: 100, phase: 0deg)
+  z := point hint(at: sun.v[3])
+}
+";
+
+/// **A seed reading a turned copy reads it where the turn puts it** (#225): each copy's own seed
+/// says what its representative's does, so it is turned over the representative's as each seed
+/// is settled — and a seed read later in statement order, here `z`'s, starts at `sun.v[3]`'s
+/// turned place, not at `sun.v[0]`'s.
+#[test]
+fn a_seed_reads_a_turned_copy_where_the_turn_puts_it() {
+    let e = read(SUN);
+    let sk = &e.sketch;
+    let turned = |k: usize| {
+        let t = std::f64::consts::TAU * k as f64 / 10.0;
+        (100.0 * t.cos(), 100.0 * t.sin())
+    };
+    let near = |p: (f64, f64), q: (f64, f64)| (p.0 - q.0).hypot(p.1 - q.1) < 1e-9;
+    for k in 0..10 {
+        let v = xy(sk, ent(&e, &format!("sun.v[{k}]")));
+        assert!(near(v, turned(k)), "sun.v[{k}] seeded at {v:?}, its turn at {:?}", turned(k));
+    }
+    let z = xy(sk, ent(&e, "z"));
+    assert!(near(z, turned(3)), "z seeded at {z:?}, sun.v[3]'s turn at {:?}", turned(3));
+    // and the solve leaves it there: `z` is free
+    let (e, sk) = solved(SUN);
+    assert!(near(xy(&sk, ent(&e, "z")), turned(3)));
+}
+
+/// A neighbour passed to an instance (#226) or a word is read as the argument was written: `next.u`
+/// handed down is a turn, as written in the ring's body, through any depth of instances; a copy
+/// reached by index through an argument is refused at the argument, not inside the component.
+#[test]
+fn a_neighbour_passed_down_is_read_as_written() {
+    let doc = |body: &str| format!("
+unit mm
+use std (horizontal)
+component Edge(a: point, b: point) {{
+  line(a, b)
+}}
+component Twice(a: point, b: point) {{
+  e := Edge(a, b)
+}}
+in std.front {{
+  o := point hint((0, 0))
+  fix((0, 0)) o
+  ring 5 about o {{
+    u := point hint((50, 0))
+    o distance(50) u
+    {body}
+  }}
+  o horizontal u[0]
+}}
+");
+    for body in ["e := Edge(u, next.u)", "e := Edge(prev.u, u)", "t := Twice(u, next.u)"] {
+        let (e, mut sk) = solved(&doc(body));
+        assert_eq!(diagnose(&mut sk, DiagnoseOptions::default()).dof, 0, "{body}");
+        let (a, b) = (xy(&sk, ent(&e, "u[0]")), xy(&sk, ent(&e, "u[1]")));
+        let th = 72f64.to_radians();
+        assert!((a.0 - 50.0).abs() < 1e-6 && (b.0 - 50.0 * th.cos()).abs() < 1e-6, "{body}: {a:?} {b:?}");
+    }
+    // a word's operand is a bound variable like a formal (a pentagon's sides cannot all be level,
+    // so this one is only read)
+    read(&doc("u horizontal next.u"));
+    refused(&doc("e := Edge(u, u[2])"), "E021", "reach a neighbour", "u[2]");
+    refused(&doc("t := Twice(u, u[2])"), "E021", "reach a neighbour", "u[2]");
 }

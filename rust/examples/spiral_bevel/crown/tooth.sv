@@ -10,7 +10,6 @@
 // between each flank pair, all of it once one pair touches.
 use std
 use design
-use views
 use pitch.gear
 use pitch.trace
 use crown.thickness
@@ -34,8 +33,7 @@ component Tooth(a: set, b: set, lo: set, hi: set, grow: Length, r: Length) {
 
 preview {
   unit mm
-  gear := pitch.gear.GearCone(std.top, g.view, design.hypoid_design)
-  g := views.FoldedView(std.top, gear.generator)
+  gear := pitch.gear.GearCone(std.top, design.hypoid_design)
   trace := pitch.trace.ToothTrace(std.top, gear.generator, design.hypoid_design)
   thickness := crown.thickness.CrownThickness(std.top, gear.generator, trace.normal,
     design.hypoid_design)

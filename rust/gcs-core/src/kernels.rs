@@ -2049,7 +2049,7 @@ fn point_on_extrusion_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
 
 /* -- relations in space ------------------------------------------------------
  *
- * What a relation between two views says (`docs/spatial-constraints-plan.md`).  Every one
+ * What a relation between two views says.  Every one
  * reads the **hidden points** a view point lifts to (`model::LiftE`), three columns each, and
  * never a view's attitude — the `lift` rows are where a drawn point and its place in space are
  * tied together, so a relation here is plain vector algebra over points in space.  Those that
@@ -2745,7 +2745,7 @@ fn free_num<T: Num>(a: T, k: &[f64]) -> T {
     a * T::cst(k[0]) + T::cst(k[1])
 }
 
-/* -- planes over axes (`docs/planes-plan.md`) ------------------------------------------------
+/* -- planes over axes (#81) ------------------------------------------------
  *
  * A plane is two axes and an origin: right along the first axis's direction `du`, up along what
  * is left of the second's `dv` once its component along `du` is removed, out along their cross
@@ -2907,7 +2907,7 @@ fn project_jac(n: usize, _v: &[f64], k: &[f64], j: &mut [f64]) {
     }
 }
 
-/* -- ordinates (`docs/ordinate-plan.md`) ------------------------------------------------------
+/* -- ordinates (Solvent [0.46]) ------------------------------------------------------
  *
  * How far `q` stands from `p` along a directed line, `(q − p)·t̂ − D`: degree 1, and linear in the
  * points.  The run and the rise are its form along a view's own axes (`ordinate_u`/`_v`, above);

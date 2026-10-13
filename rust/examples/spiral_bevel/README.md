@@ -6,26 +6,24 @@ blanks, the generating crown and the motions that roll it through each blank. Ev
 follows from lines, circles, angles, incidence and projection; no constraint, and no `param`
 that feeds one, computes a point with `sin` and `cos`. Each step is a module whose
 `preview { … }` draws that step alone when it is opened in the app, and whose header comment
-says what it constructs. The plan is
-[docs/spiral-bevel-layout-plan.md](../../../docs/spiral-bevel-layout-plan.md).
+says what it constructs.
 
-The layout is drawn in four views through M (`views.sv`): the pitch plane P, `std.top`, with the
-gear apex O at its origin, and three views folded square to it about lines through M, so none needs
-an angle of its own — G, the gear's axial view, along O → M; Q, the pinion's, along M → its apex A;
-and N, the normal section, along the trace normal C → M, where the tip relief's kinks are drawn. A
-point on a fold is drawn in both views it lies in (`O := point in p, g`), so G's triangle is over O
-and M themselves; a point another module declares is said on the later view (`gear.M coincident
-q`), which draws it there too. The crown draws nothing in a view: its tooth and the gear's space
-cutter are regions about the cutter's axis (§6.21), sets of the flank cones and the levels along
-it, each region's meridian turned once into its solid.
+The layout is drawn in two views through M (`views.sv`): the pitch plane P, `std.top`, with the
+gear apex O at its origin, and N, the normal section, folded square to it about the trace normal
+C → M, so it needs no angle of its own; the tip relief's kinks are drawn there. The rest stands in
+space: each member's axis square to P on its pitch generator (the gear's triangle O–M–F, the
+pinion's axis through its apex A), and each blank a region about its axis, its face span on the
+generator. The crown draws nothing in a view: its tooth and the gear's space cutter are regions
+about the cutter's axis (§6.21), sets of the flank cones and the levels along it, each region's
+meridian turned once into its solid.
 
 | Step | Module | Constructs |
 |---|---|---|
 | 1 | `configuration.sv`, `design.sv` | the stated pair: teeth, module, shafts, shift, spiral, allowances; the proportions |
-| 2 | `pitch/gear.sv` | the gear's pitch cone: the right triangle O–M–F in G |
+| 2 | `pitch/gear.sv` | the gear's pitch cone: the right triangle O–M–F, standing square to P on O → M |
 | 2 | `pitch/trace.sv` | the tooth trace about the cutter centre C, and the normal module |
 | 2 | `pitch/pinion.sv` | the pinion's cone, solved against the gear's by the shafts and equal normal pitch |
-| 3 | `blank/member.sv`, `blank/sphere.sv` | a member's blank, one region: within its pitch cone grown by the addendum (`std.Offset`) and its heel sphere, outside its toe sphere and its pitch cone shrunk by the back depth (`back`), sized by the solved layout; the end relief its tip's toe and heel corners chamfered in the same region (`std.Chamfered`); its faces `tip`, `heel`, `toe` and `back` |
+| 3 | `blank/member.sv` | the face span on the pitch generator; a member's blank, one region: within its pitch cone grown by the addendum (`std.Offset`) and its heel sphere, outside its toe sphere and its pitch cone shrunk by the back depth (`back`), sized by the solved layout; the end relief its tip's toe and heel corners chamfered in the same region (`std.Chamfered`); its faces `tip`, `heel`, `toe` and `back` |
 | 4 | `crown/thickness.sv` | the crown tooth's pitch points, a quarter pitch either side of M |
 | 4 | `crown/cutter.sv` | the face mill: its axis through C, the two flank cones through the pitch points, and the levels the crowns' tips and bases stand at |
 | 4 | `crown/tooth.sv` | the pinion's generator: the crown tooth, a region between the flank cones and two levels, its tip's edges rounded (`std.Rounded`), each flank grown a quarter of the backlash |
@@ -33,7 +31,7 @@ it, each region's meridian turned once into its solid.
 | 4 | `crown/reach.sv` | how far the space cutter reaches: a cylinder about the cutter's axis, clear of the blank |
 | 4 | `crown/relief.sv` | the tip relief: a topping beside each crown, the crown's own region over cones through kinks on its flanks |
 | 5 | `generation.sv` | the rolls, the generating motions and the indexing |
-| — | `layout.sv` | `HypoidLayout`: steps 2–5 in the four views |
+| — | `layout.sv` | `HypoidLayout`: steps 2–5 |
 | — | `members.sv` | `HypoidPair`: each blank less its crown's sweep at every tooth, and its reliefs |
 
 The normal module is stated nowhere: `ToothTrace` leaves it unbound and constructs it, and every
@@ -84,10 +82,9 @@ A member with swept cuts is built only inside the generating-sweep class
 (`docs/generating-sweeps.md`): admission asks each swept cut its rows and refuses with the row
 and a witness, and nothing is written unless the shell checks pass and the mesh agrees with the
 material field. Each member has two sweeps, its crown's and its tip relief's. The exports take
-about 14 and 19 seconds (pinion, gear) on 12 cores (docs/native-speed-plan.md); measuring a file
+about 14 and 19 seconds (pinion, gear) on 12 cores; measuring a file
 takes longer than making it (`--measure-samples` sets how finely). `--stl-backend mesh` meshes a
-member from its material field instead; progress is reported on stderr. As configured
-(docs/native-hypoid-plan.md, phases 5 and 6):
+member from its material field instead; progress is reported on stderr. As configured:
 
 | | STEP | STL | worst exact face, STEP / STL |
 |---|---|---|---|
@@ -108,5 +105,4 @@ build/solventc rust/examples/spiral_bevel/gears.sv --no-diagnose \
 ```
 
 This is a common-crown construction with a stated backlash and tip and end relief, not a
-production acceptance result; [the roadmap](../../../docs/spiral-bevel-roadmap.md) holds the
-generating-system evidence and the outstanding engagement checks.
+production acceptance result: engagement across a tooth period is not checked.

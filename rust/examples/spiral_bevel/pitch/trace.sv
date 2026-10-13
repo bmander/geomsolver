@@ -5,7 +5,6 @@
 // the generator. A caller leaves `normal_module` unbound, and this constructs it.
 use std
 use design
-use views
 use pitch.gear
 
 component ToothTrace(p: plane, generator: line, design: group, normal_module: Length) {
@@ -36,7 +35,6 @@ component ToothTrace(p: plane, generator: line, design: group, normal_module: Le
 
 preview {
   unit mm
-  gear := pitch.gear.GearCone(std.top, g.view, design.hypoid_design)
-  g := views.FoldedView(std.top, gear.generator)
+  gear := pitch.gear.GearCone(std.top, design.hypoid_design)
   trace := ToothTrace(std.top, gear.generator, design.hypoid_design)
 }

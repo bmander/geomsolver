@@ -1,5 +1,5 @@
-//! A body with swept cuts of the generating class built by this kernel alone (phase 5 of
-//! docs/rust-kernel-plan.md): each distinct sweep's sheet traced and fitted (`sheet`), the body
+//! A body with swept cuts of the generating class built by this kernel alone:
+//! each distinct sweep's sheet traced and fitted (`sheet`), the body
 //! built as one sector split by its sides and its sheets and judged by the material field
 //! (`sector`), and that sector patterned round its axis (`brep::pattern`). What a native host did
 //! with its kernel's shapes is done here with this kernel's, so the export needs no native kernel,
