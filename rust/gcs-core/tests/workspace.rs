@@ -2,7 +2,9 @@
 //! orthographic eye, with what is under the pointer asked where the eye sees it — because views
 //! that lie on top of one another on the page are nowhere near one another in space.
 use gcs_core::model::{EntKind, EntRef, Sketch};
-use gcs_core::overview::workspace::{apply, look_at, nearest_point, overlapping, panes_at, pick, Projection};
+use gcs_core::overview::workspace::{
+    apply, look_at, nearest_point, overlapping, panes_at, pick, space_points, unseen, Projection,
+};
 use gcs_core::{callout, library, program};
 use std::f64::consts::{FRAC_PI_2, PI};
 
@@ -73,6 +75,34 @@ fn a_map_is_the_lift_seen_by_the_eye() {
         let (x, y) = gcs_core::overview::workspace::space_points(sk, az, el)[p].unwrap();
         close((x, y), seen([10.0, 4.0, 0.0], az, el));
     }
+}
+
+/// **Drawing in no plane** (the chooser's None): `unseen` stands the point where the eye saw the
+/// click, at nought deep, and the source says it as a point in space — three numbers, no `in` —
+/// which elaborates back to the same place.
+#[test]
+fn a_point_drawn_in_no_plane_stands_in_space_where_it_was_seen() {
+    for (az, el) in [(-FRAC_PI_2, 0.0), (0.3, 0.4), (-2.0, -0.7), (1.0, 1.2)] {
+        let at = unseen(az, el, (12.0, -5.0));
+        close(seen(at, az, el), (12.0, -5.0));
+        // nought deep: on the plane through the origin square to the eye's ray
+        let toward = [az.cos() * el.cos(), az.sin() * el.cos(), el.sin()];
+        assert!((0..3).map(|k| at[k] * toward[k]).sum::<f64>().abs() < 1e-12, "{at:?}");
+    }
+    let mut e = build("unit mm\nuse std\n");
+    let (az, el) = (0.3, 0.4);
+    let at = unseen(az, el, (12.0, -5.0));
+    let p = e.sketch.point3(at, false, "");
+    close(space_points(&e.sketch, az, el)[p].unwrap(), (12.0, -5.0));
+    let sk = std::mem::take(&mut e.sketch);
+    let out = gcs_core::edit::reconcile(&mut e, &sk);
+    let line = out.text.lines().find(|l| l.starts_with("p0 := ")).unwrap_or_default();
+    assert!(line.starts_with("p0 := point hint((") && !line.contains(" in "), "{}", out.text);
+    let again = build(&out.text);
+    let q = again.map.ent_named("p0").unwrap().i();
+    assert!(again.sketch.plane_of(q).is_none() && again.sketch.points[q].z.is_some());
+    let w = again.sketch.world_point(q);
+    assert!((0..3).all(|k| (w[k] - at[k]).abs() < 1e-6), "{w:?} != {at:?}");
 }
 
 /// `look_at` turns the eye square on to a plane, with the plane's `u` to the right: its map is

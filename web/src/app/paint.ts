@@ -183,8 +183,8 @@ export function paint(v: SketchView): void {
   // a plane is not stroked here: it is a pane of the workspace, drawn in space below, and the
   // plane being drawn on is named in the chooser over the viewport
   ctx.setLineDash([]);
-  // a tool's preview is where its clicks are read (`toolView`)
-  if (v.pending.length || v.pendingFit.length) v.inView(v.toolView, () => paintPreview(v));
+  // a tool's preview is where its clicks are read (`toolCam`): the eye's own, drawing in space
+  if (v.pending.length || v.pendingFit.length) v.withCam(v.toolCam(), () => paintPreview(v));
   // the region a click would extrude, washed where it is drawn
   // (the Revolve tool's, once a click chose it, while the line to turn it about is found)
   const region = sweepsRegion(v.tool) ? v.pendingRevolve ?? v.hoverRegion : null;

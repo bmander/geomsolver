@@ -1591,6 +1591,45 @@ test('the chooser offers the standard planes and the document\'s own, and turns 
   assert.equal(view.doc.nameOf(view.plane!), 'std.front', 'a name that is no plane changes nothing');
 });
 
+test('None in the chooser draws in space: what a tool mints stands in no plane, where it was seen', () => {
+  const view = docView(VIEWS);
+  view.orbit = { az: 0.3, el: 0.4 };
+  view.drawInSpace();
+  assert.equal(view.plane, null);
+  assert.equal(view.planeName, '', 'the chooser shows None');
+  assert.ok(closeTo([view.orbit.az, view.orbit.el], [0.3, 0.4]), 'there is no plane to face');
+  view.setTool('line');
+  click(view, 10, 20);
+  click(view, 40, -5);
+  const at = /\bp(\d) := point hint\(\((-?[\d.e-]+), (-?[\d.e-]+), (-?[\d.e-]+)\)\)\n/g;
+  const written = [...view.source.matchAll(at)];
+  assert.equal(written.length, 2, view.source);
+  for (const [, n] of written) {
+    const p = pointNamed(view, `p${n}`);
+    assert.equal(p.plane, null);
+    assert.ok(view.inSpace(p), `p${n} stands in space`);
+  }
+  // each where the eye saw the click
+  assert.ok(closeTo(view.seen(pointNamed(view, 'p0')), view.w2s(10, 20)));
+  assert.ok(closeTo(view.seen(pointNamed(view, 'p1')), view.w2s(40, -5)));
+  assert.ok(/:= line\(p0, p1\)/.test(view.source), view.source);
+  // a circle is drawn in a plane: in space the tool makes nothing
+  view.setTool('circle');
+  const before = view.source;
+  click(view, 0, 0);
+  assert.equal(view.source, before);
+  // an edit and an undo keep drawing in space; choosing a plane leaves it, a load lets it go
+  view.undo();
+  assert.ok(view.openSpace && view.plane === null);
+  view.choosePlane('top');
+  assert.ok(!view.openSpace);
+  assert.equal(view.plane, planeNamed(view, 'top'));
+  view.drawInSpace();
+  view.load(VIEWS);
+  assert.ok(!view.openSpace);
+  assert.equal(view.planeName, 'std.front');
+});
+
 test('a standard plane the document does not have comes in with `use std` on the first press', () => {
   const view = docView('w := 100\n');
   view.choosePlane('std.side');
