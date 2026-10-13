@@ -206,6 +206,25 @@ unsafe fn write_map<S, T>(out: *mut T, src: &[S], f: impl Fn(&S) -> T) {
     }
 }
 
+/* -- indices across the ABI ------------------------------------------------ */
+
+/// An index as a binding passes it (`i32`): what it counts to, or `None` for a negative one.  A
+/// negative index names nothing — never the first thing, which `max(0)` read it as.
+fn index(i: i32) -> Option<usize> {
+    usize::try_from(i).ok()
+}
+
+/// The solid `idx` names in `s`, or `None` with the reason in `gcs_last_error()`.  Every entry
+/// point taking a solid of a sketch reads its index here, so a negative one and one past the
+/// drawing's solids are refused alike, each by its entry point's neutral return.
+fn solid_at(s: &Sketch, idx: i32) -> Option<usize> {
+    let i = index(idx).filter(|&i| i < s.solids.len());
+    if i.is_none() {
+        set_error(format!("{idx} names no solid of this drawing (it has {})", s.solids.len()));
+    }
+    i
+}
+
 /* -- library metadata ------------------------------------------------------ */
 
 /// The constraint-type and kernel registry — everything a front end needs to be generic.
@@ -1791,7 +1810,9 @@ pub unsafe extern "C" fn gcs_solid_mesh(
     cap: i32,
 ) -> i32 {
     guard(-1, move || {
-        let solid = match sk(h).evaluated_solid(idx as usize, gcs_core::solid::ApproximationPolicy::from_unit(unit)) {
+        let s = sk(h);
+        let Some(i) = solid_at(s, idx) else { return -1 };
+        let solid = match s.evaluated_solid(i, gcs_core::solid::ApproximationPolicy::from_unit(unit)) {
             Ok(s) => s,
             Err(message) => { set_error(message); return -1; }
         };
@@ -1818,7 +1839,9 @@ pub unsafe extern "C" fn gcs_solid_normals(
     cap: i32,
 ) -> i32 {
     guard(-1, move || {
-        let solid = match sk(h).evaluated_solid(idx as usize, gcs_core::solid::ApproximationPolicy::from_unit(unit)) {
+        let s = sk(h);
+        let Some(i) = solid_at(s, idx) else { return -1 };
+        let solid = match s.evaluated_solid(i, gcs_core::solid::ApproximationPolicy::from_unit(unit)) {
             Ok(s) => s,
             Err(message) => { set_error(message); return -1; }
         };
@@ -1877,7 +1900,9 @@ pub unsafe extern "C" fn gcs_solid_supply_field(
             provisional: provisional != 0,
             exact: None,
         };
-        match sk(h).supply_field(usize::try_from(idx).unwrap_or(usize::MAX), surface) {
+        let s = sk(h);
+        let Some(i) = solid_at(s, idx) else { return -1 };
+        match s.supply_field(i, surface) {
             Ok(()) => 0,
             Err(message) => { set_error(message); -1 }
         }
@@ -1912,7 +1937,9 @@ pub unsafe extern "C" fn gcs_solid_supply_exact(
             provisional: false,
             exact: Some(gcs_core::solid::ExactFaces { of: o.to_vec(), smooth: m.iter().map(|&x| x != 0).collect(), volume }),
         };
-        match sk(h).supply_field(usize::try_from(idx).unwrap_or(usize::MAX), surface) {
+        let s = sk(h);
+        let Some(i) = solid_at(s, idx) else { return -1 };
+        match s.supply_field(i, surface) {
             Ok(()) => 0,
             Err(message) => { set_error(message); -1 }
         }
@@ -1931,7 +1958,8 @@ pub unsafe extern "C" fn gcs_exact_builder_new(h: *mut Sketch, idx: i32) -> *mut
             set_error(message);
             return std::ptr::null_mut();
         }
-        match gcs_core::brep::export::Builder::new(s, usize::try_from(idx).unwrap_or(usize::MAX)) {
+        let Some(i) = solid_at(s, idx) else { return std::ptr::null_mut() };
+        match gcs_core::brep::export::Builder::new(s, i) {
             Ok(b) => Box::into_raw(Box::new(ExactBuilder(b))),
             Err(refusal) => { set_error(format!("{} (at {})", refusal.message, refusal.stage.key())); std::ptr::null_mut() }
         }
@@ -1998,7 +2026,9 @@ pub struct Mesher {
 #[no_mangle]
 pub unsafe extern "C" fn gcs_field_mesher_new(h: *mut Sketch, idx: i32, fineness: f64) -> *mut Mesher {
     guard(std::ptr::null_mut(), move || {
-        match gcs_core::solid::FieldMesher::with_fineness(sk(h), idx as usize, fineness) {
+        let s = sk(h);
+        let Some(i) = solid_at(s, idx) else { return std::ptr::null_mut() };
+        match gcs_core::solid::FieldMesher::with_fineness(s, i, fineness) {
             Ok(mesher) => Box::into_raw(Box::new(Mesher { mesher, last: Default::default() })),
             Err(message) => { set_error(message); std::ptr::null_mut() }
         }
@@ -2117,7 +2147,9 @@ pub unsafe extern "C" fn gcs_solid_preview_json(h: *mut Sketch, ptr: *const u8, 
 #[no_mangle]
 pub unsafe extern "C" fn gcs_solid_faces_json(h: *mut Sketch, idx: i32, unit: f64) -> *mut u8 {
     guard(std::ptr::null_mut(), move || {
-        let solid = match sk(h).evaluated_solid(idx as usize, gcs_core::solid::ApproximationPolicy::from_unit(unit)) {
+        let s = sk(h);
+        let Some(i) = solid_at(s, idx) else { return std::ptr::null_mut() };
+        let solid = match s.evaluated_solid(i, gcs_core::solid::ApproximationPolicy::from_unit(unit)) {
             Ok(s) => s,
             Err(message) => { set_error(message); return std::ptr::null_mut(); }
         };
@@ -2150,8 +2182,12 @@ pub unsafe extern "C" fn gcs_solid_glb(h: *mut Sketch, idx: i32, unit: f64) -> *
         // -1 asks for **every object** — the solids nothing else is made of, which is what a
         // document's "export the solid" means when it holds an assembly
         let s = sk(h);
-        let which: Vec<usize> =
-            if idx < 0 { gcs_core::overview::objects(s) } else { vec![idx as usize] };
+        let which: Vec<usize> = if idx < 0 {
+            gcs_core::overview::objects(s)
+        } else {
+            let Some(i) = solid_at(s, idx) else { return std::ptr::null_mut() };
+            vec![i]
+        };
         if let Some((_, message)) = gcs_core::solid::bearing_errors(s).into_iter().next() {
             set_error(message);
             return std::ptr::null_mut();
@@ -2169,7 +2205,7 @@ pub unsafe extern "C" fn gcs_solid_glb(h: *mut Sketch, idx: i32, unit: f64) -> *
 pub unsafe extern "C" fn gcs_solid_stl(h: *mut Sketch, idx: i32, unit: f64) -> *mut u8 {
     guard(std::ptr::null_mut(), move || {
         let s = sk(h);
-        let i = idx.max(0) as usize;
+        let Some(i) = solid_at(s, idx) else { return std::ptr::null_mut() };
         if let Some((_, message)) = gcs_core::solid::bearing_errors(s).into_iter().next() {
             set_error(message);
             return std::ptr::null_mut();
@@ -2187,7 +2223,8 @@ pub unsafe extern "C" fn gcs_solid_stl(h: *mut Sketch, idx: i32, unit: f64) -> *
 pub unsafe extern "C" fn gcs_solid_stl_preview(h: *mut Sketch, idx: i32, unit: f64) -> *mut u8 {
     guard(std::ptr::null_mut(), move || {
         let s = sk(h);
-        match s.evaluated_solid(idx.max(0) as usize, gcs_core::solid::ApproximationPolicy::from_unit(unit)).and_then(|s| s.preview_stl()) {
+        let Some(i) = solid_at(s, idx) else { return std::ptr::null_mut() };
+        match s.evaluated_solid(i, gcs_core::solid::ApproximationPolicy::from_unit(unit)).and_then(|s| s.preview_stl()) {
             Ok(bytes) => out_bytes(bytes),
             Err(message) => { set_error(message); std::ptr::null_mut() }
         }
@@ -2204,7 +2241,7 @@ pub unsafe extern "C" fn gcs_solid_stl_preview(h: *mut Sketch, idx: i32, unit: f
 pub unsafe extern "C" fn gcs_solid_exact(h: *mut Sketch, idx: i32, kind: i32, tolerance: f64) -> *mut u8 {
     guard(std::ptr::null_mut(), move || {
         let s = sk(h);
-        let i = idx.max(0) as usize;
+        let Some(i) = solid_at(s, idx) else { return std::ptr::null_mut() };
         if let Some((_, message)) = gcs_core::solid::bearing_errors(s).into_iter().next() {
             set_error(message);
             return std::ptr::null_mut();
@@ -2229,7 +2266,9 @@ pub unsafe extern "C" fn gcs_solid_exact(h: *mut Sketch, idx: i32, kind: i32, to
 #[no_mangle]
 pub unsafe extern "C" fn gcs_solid_provisional(h: *mut Sketch, idx: i32) -> i32 {
     guard(-1, move || {
-        match sk(h).field_provisional(usize::try_from(idx).unwrap_or(usize::MAX)) {
+        let s = sk(h);
+        let Some(i) = solid_at(s, idx) else { return -1 };
+        match s.field_provisional(i) {
             Ok(p) => p as i32,
             Err(message) => { set_error(message); -1 }
         }
@@ -2261,7 +2300,10 @@ pub unsafe extern "C" fn gcs_solid_objects_json(h: *mut Sketch) -> *mut u8 {
 /// this, and gets a mesh matched to the object rather than to a report's four digits.
 #[no_mangle]
 pub unsafe extern "C" fn gcs_solid_mesh_unit(h: *mut Sketch, idx: i32) -> f64 {
-    guard(0.0, move || gcs_core::solid::mesh_unit(sk(h), idx as usize))
+    guard(0.0, move || {
+        let s = sk(h);
+        solid_at(s, idx).map_or(0.0, |i| gcs_core::solid::mesh_unit(s, i))
+    })
 }
 
 /// **The overview in space**: the glass box's panes, axes and drawn geometry as 3D polylines,
@@ -2358,7 +2400,7 @@ pub unsafe extern "C" fn gcs_workspace_pick_solid_json(h: *mut Sketch, az: f64, 
 #[no_mangle]
 pub unsafe extern "C" fn gcs_workspace_solid_edges_json(h: *mut Sketch, solid: i32) -> *mut u8 {
     guard(std::ptr::null_mut(), move || {
-        let edges = usize::try_from(solid).map_or(Vec::new(), |i| {
+        let edges = index(solid).map_or(Vec::new(), |i| {
             gcs_core::overview::workspace::solid_edges(sk(h), i)
         });
         out_json(Json::Arr(edges.into_iter().map(|e| json::object([
@@ -2375,7 +2417,7 @@ pub unsafe extern "C" fn gcs_workspace_solid_edges_json(h: *mut Sketch, solid: i
 #[no_mangle]
 pub unsafe extern "C" fn gcs_workspace_round_size(h: *mut Sketch, solid: i32) -> f64 {
     guard(f64::NAN, move || {
-        let size = usize::try_from(solid).ok().and_then(|i| gcs_core::edit::round_size(sk(h), i));
+        let size = index(solid).and_then(|i| gcs_core::edit::round_size(sk(h), i));
         size.unwrap_or(f64::NAN)
     })
 }
@@ -2414,7 +2456,7 @@ pub unsafe extern "C" fn gcs_workspace_extrude_handle_json(h: *mut Sketch, az: f
         use gcs_core::overview::workspace::{extrude_handle, Projection};
         let s = sk(h);
         let proj = Projection::new(s, az, el);
-        out_json(match extrude_handle(s, &proj, solid.max(0) as usize) {
+        out_json(match solid_at(s, solid).and_then(|i| extrude_handle(s, &proj, i)) {
             Some(k) => json::object([
                 ("base", pt(k.base)),
                 ("tip", k.tip.map_or(Json::Null, pt)),
@@ -2435,7 +2477,7 @@ pub unsafe extern "C" fn gcs_workspace_extent_at(h: *mut Sketch, az: f64, el: f6
         use gcs_core::overview::workspace::{extent_at, Projection};
         let s = sk(h);
         let proj = Projection::new(s, az, el);
-        extent_at(s, &proj, solid.max(0) as usize, (x, y)).unwrap_or(f64::NAN)
+        solid_at(s, solid).and_then(|i| extent_at(s, &proj, i, (x, y))).unwrap_or(f64::NAN)
     })
 }
 
@@ -2450,7 +2492,7 @@ pub unsafe extern "C" fn gcs_workspace_turn_handle_json(h: *mut Sketch, az: f64,
         use gcs_core::overview::workspace::{turn_handle, Projection};
         let s = sk(h);
         let proj = Projection::new(s, az, el);
-        out_json(match turn_handle(s, &proj, solid.max(0) as usize) {
+        out_json(match solid_at(s, solid).and_then(|i| turn_handle(s, &proj, i)) {
             Some(k) => json::object([
                 ("base", pt(k.base)),
                 ("arc", Json::Arr(k.arc.into_iter().map(pt).collect())),
@@ -2471,7 +2513,7 @@ pub unsafe extern "C" fn gcs_workspace_turn_at(h: *mut Sketch, az: f64, el: f64,
         use gcs_core::overview::workspace::{turn_at, Projection};
         let s = sk(h);
         let proj = Projection::new(s, az, el);
-        turn_at(s, &proj, solid.max(0) as usize, (x, y), near).unwrap_or(f64::NAN)
+        solid_at(s, solid).and_then(|i| turn_at(s, &proj, i, (x, y), near)).unwrap_or(f64::NAN)
     })
 }
 
@@ -4388,7 +4430,11 @@ pub unsafe extern "C" fn gcs_elab_set_sweep(h: *mut Elaborated, solid: i32, ptr:
             (Some(way), Some(t)) => gcs_core::edit::SolidSweep::thick(way, t.as_str()),
             _ => sweep_of(&v),
         };
-        out_edit(gcs_core::edit::set_sweep(&*h, &(*h).program, solid.max(0) as usize, &how))
+        let Some(solid) = index(solid) else {
+            set_error(format!("{solid} names no solid"));
+            return std::ptr::null_mut();
+        };
+        out_edit(gcs_core::edit::set_sweep(&*h, &(*h).program, solid, &how))
     })
 }
 
@@ -4399,7 +4445,11 @@ pub unsafe extern "C" fn gcs_elab_set_turn(h: *mut Elaborated, solid: i32, ptr: 
                                            len: usize) -> *mut u8 {
     guard(std::ptr::null_mut(), move || {
         let angle = as_str(ptr, len);
-        out_edit(gcs_core::edit::set_turn(&*h, &(*h).program, solid.max(0) as usize, angle))
+        let Some(solid) = index(solid) else {
+            set_error(format!("{solid} names no solid"));
+            return std::ptr::null_mut();
+        };
+        out_edit(gcs_core::edit::set_turn(&*h, &(*h).program, solid, angle))
     })
 }
 
@@ -4410,7 +4460,7 @@ pub unsafe extern "C" fn gcs_elab_set_turn(h: *mut Elaborated, solid: i32, ptr: 
 pub unsafe extern "C" fn gcs_sketch_set_prism(h: *mut Sketch, i: i32, way: i32, d: f64) -> i32 {
     use gcs_core::model::Way;
     let way = match way { 1 => Way::Front, 2 => Way::Both, _ => Way::Behind };
-    guard(0, move || i32::from(i >= 0 && sk(h).set_prism(i as usize, way, d)))
+    guard(0, move || i32::from(index(i).is_some_and(|i| sk(h).set_prism(i, way, d))))
 }
 
 /// Re-turn revolution `i` where it stands through `degrees`, signed (negative clockwise about its
@@ -4418,7 +4468,7 @@ pub unsafe extern "C" fn gcs_sketch_set_prism(h: *mut Sketch, i: i32, way: i32, 
 /// `Sketch::set_turn`.  1 done, 0 not a revolution.
 #[no_mangle]
 pub unsafe extern "C" fn gcs_sketch_set_turn(h: *mut Sketch, i: i32, degrees: f64) -> i32 {
-    guard(0, move || i32::from(i >= 0 && sk(h).set_turn(i as usize, degrees)))
+    guard(0, move || i32::from(index(i).is_some_and(|i| sk(h).set_turn(i, degrees))))
 }
 
 /// Bumped whenever a solid's shape changes in place (`set_prism`, `set_turn`): what a cached mesh
@@ -4460,7 +4510,7 @@ pub unsafe extern "C" fn gcs_elab_sketch_on_face(h: *mut Elaborated, s: *mut Ske
             _ => None,
         });
         let name = v.get("name").map(|x| x.as_str().to_string());
-        let Ok(solid) = usize::try_from(solid) else {
+        let Some(solid) = index(solid) else {
             set_error("no solid to sketch on");
             return std::ptr::null_mut();
         };
@@ -4475,7 +4525,7 @@ pub unsafe extern "C" fn gcs_elab_face_plane_json(h: *mut Elaborated, s: *mut Sk
                                                   ptr: *const u8, len: usize) -> *mut u8 {
     guard(std::ptr::null_mut(), move || {
         let face = std::str::from_utf8(std::slice::from_raw_parts(ptr, len)).unwrap_or_default();
-        let found = usize::try_from(solid).ok()
+        let found = index(solid)
             .and_then(|i| gcs_core::edit::face_plane(&*h, sk(s), i, face));
         out_json(found.map_or(Json::Null, Json::Str))
     })
@@ -4511,7 +4561,7 @@ pub unsafe extern "C" fn gcs_elab_add_rounds(h: *mut Elaborated, s: *mut Sketch,
             set_error(format!("`{}` is not an edge word: round or chamfer", text("word")));
             return std::ptr::null_mut();
         };
-        let Ok(solid) = usize::try_from(solid) else {
+        let Some(solid) = index(solid) else {
             set_error("no solid to round");
             return std::ptr::null_mut();
         };
@@ -4536,7 +4586,7 @@ pub unsafe extern "C" fn gcs_elab_region_json(h: *mut Elaborated, s: *mut Sketch
                                               x: f64, y: f64, unit: f64) -> *mut u8 {
     guard(std::ptr::null_mut(), move || {
         use gcs_core::overview::region;
-        let plane = usize::try_from(plane).ok();
+        let plane = index(plane);
         let names = |n: Vec<String>| Json::Arr(n.into_iter().map(Json::Str).collect());
         let refused = |why: String| json::object([("refused", Json::Str(why))]);
         out_json(match region::region_at(sk(s), plane, (x, y), unit) {
