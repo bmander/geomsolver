@@ -85,7 +85,7 @@ export async function openExample(key: string, navigation: 'push' | 'replace' | 
 
 /** The address names an example only while that example is the document: another one (File ▸
  *  New, Open, a drawing folder) takes `example` and `file` off it, in place — a step back to the
- *  bare address would open the default example — and an example still on its way is dropped. */
+ *  bare address would open a blank sheet — and an example still on its way is dropped. */
 export function leaveExample(): void {
   ++exampleRequest;
   loaded();

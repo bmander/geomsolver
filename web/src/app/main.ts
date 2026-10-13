@@ -588,7 +588,12 @@ view.afterEdit();
 view.fit();
 window.addEventListener('popstate', () => {
   const url = new URL(location.href);
-  void openExample(url.searchParams.get('example') ?? 'rect_fillets', 'none',
-    url.searchParams.get('file') ?? undefined);
+  const example = url.searchParams.get('example');
+  if (example) void openExample(example, 'none', url.searchParams.get('file') ?? undefined);
+  else view.newDocument();
 });
-await openExample(initialExample, 'replace', new URL(location.href).searchParams.get('file') ?? undefined);
+// the bare address is a blank sheet: `newDocument` leaves the example, which puts the modal away
+if (initialExample) {
+  await openExample(initialExample, 'replace', new URL(location.href).searchParams.get('file') ?? undefined);
+}
+else view.newDocument();
