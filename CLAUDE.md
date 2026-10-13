@@ -1855,6 +1855,23 @@ Conventions:
   shared `face_groups`; `core/mesh.ts::preview`).  `box3d` draws it in the target's place, the
   tools as ghosts in their word's ink (`SketchView.combining` is the key).  `tests/booleans.rs`
   is the gate.
+- **Fillet, Chamfer** (`⇧F`, `⇧C`): an edge is where two faces of an object meet, read off its
+  mesh (`mesh::face_edges`: triangle sides two faces share, matched to the weld's tolerance,
+  turning past `EDGE_TURN` — a tangent seam is no edge; two stretches between one pair are one
+  edge, as the words read them), cached on `EvaluatedSolid::face_edges`.  `workspace::pick_edge`
+  picks one where the eye sees it, never through the material (a ray at it meeting a face nearer
+  the eye); `solid_edges` gives them in space for the box to light (`box3d`'s fat lines, drawn
+  over everything).  The tool's clicks toggle edges, or a face (every edge of it), on one object
+  (`SketchView.rounding`; another object starts over), the number asked beside the last click
+  (`dimbox`'s `roundBox`, focused, the pointer-down's default prevented so it keeps the
+  keyboard); Enter writes `edit::add_rounds`: the mesh's paths mapped to the document's through
+  the operand routes (`EvaluatedSolid::face_route`, the report's too; `plate.near` on `pad` is `pad.plate.near`, checked against `face_paths`; a
+  round's own faces have no name to write), `F round(r: d) body` per face, `a round(r: d) b` per
+  edge no face covers, `round(r: d) body` for every face, `use std` made to name the word — one
+  splice, held to the elaborator over both places (the library's errors are said at the `use`).
+  Corners where three rounded edges meet are a ball's only in that last form.  The offered size
+  is the last written, else `edit::round_size`.  `tests/edit_rounds.rs` and `app.test.ts` are the
+  gates.
 - **A face of a solid is a set** (#162 F5, [0.66], [0.68]): `b0.near`, `b0.far`, a straight side
   `b0.ab` and `body.b0.near` name the face, and `.surface` its carrier — the one a drawn point or
   plane reads, made by the flattener from the solid's own text before the uses are expanded

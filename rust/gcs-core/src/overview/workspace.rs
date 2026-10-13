@@ -404,6 +404,80 @@ pub fn pick_solid(sk: &Sketch, proj: &Projection, at: (f64, f64)) -> Option<Soli
     best
 }
 
+/// Where two faces of object `solid` meet, in space (`EvaluatedSolid::face_edges`): what the
+/// round and chamfer tools pick and light.  Empty for no object, or one that does not evaluate.
+pub fn solid_edges(sk: &Sketch, solid: usize) -> Vec<crate::mesh::FaceEdge> {
+    let Ok(s) = sk.evaluated_solid(solid, crate::solid::ApproximationPolicy::Mesh) else {
+        return Vec::new();
+    };
+    let world = |p: [f64; 3]| s.to_world(crate::solid::LocalPoint(p)).0;
+    s.face_edges().iter().map(|e| crate::mesh::FaceEdge {
+        faces: e.faces.clone(),
+        segs: e.segs.iter().map(|&[a, b]| [world(a), world(b)]).collect(),
+    }).collect()
+}
+
+/// An edge of an object the eye sees under the pointer: which object, the two faces that meet
+/// there (`FaceEdge::faces`), and the place on it nearest the pointer.
+#[derive(Clone, Debug, PartialEq)]
+pub struct EdgeHit {
+    pub solid: usize,
+    pub faces: (String, String),
+    pub at: [f64; 3],
+}
+
+/// The edge of an object nearest `at` on the eye's picture plane, within `tol` there, that the
+/// eye sees — an edge behind the object's material is not picked through it.  Asked of each
+/// object's mesh, as `pick_solid` is: a place on an edge is hidden where the eye's ray through it
+/// meets a face nearer the viewer than it, by more than a thousandth of the object.
+pub fn pick_edge(sk: &Sketch, proj: &Projection, at: (f64, f64), tol: f64) -> Option<EdgeHit> {
+    let toward = proj.toward();
+    let foot = [0, 1, 2].map(|k| at.0 * proj.right[k] + at.1 * proj.up[k]);
+    let mut near: Vec<(f64, EdgeHit, f64)> = Vec::new();
+    for i in super::objects(sk) {
+        let Ok(solid) = sk.evaluated_solid(i, crate::solid::ApproximationPolicy::Mesh) else {
+            continue;
+        };
+        // culled by its box, as `pick_solid` is, grown by the reach of a pick
+        let w = solid.world_bounds();
+        if !w.grown(tol).meets(foot, toward, f64::NEG_INFINITY) {
+            continue;
+        }
+        let slack = 1e-3 * (0..3).fold(0f64, |m, k| m.max(w.hi[k] - w.lo[k]));
+        // the solid stands translated, and seeing is linear: its origin is seen once
+        let o = solid.origin().0;
+        let (ox, oy) = proj.seen(o);
+        for e in solid.face_edges() {
+            // the place on this edge nearest the pointer, as the eye sees it
+            let mut best: Option<(f64, [f64; 3])> = None;
+            for &[a, b] in &e.segs {
+                let (sa, sb) = (proj.seen(a), proj.seen(b));
+                let (sa, sb) = ((sa.0 + ox, sa.1 + oy), (sb.0 + ox, sb.1 + oy));
+                let d = (sb.0 - sa.0, sb.1 - sa.1);
+                let len2 = d.0 * d.0 + d.1 * d.1;
+                let t = if len2 > 0.0 {
+                    (((at.0 - sa.0) * d.0 + (at.1 - sa.1) * d.1) / len2).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
+                let gap = (sa.0 + t * d.0 - at.0).dhypot(sa.1 + t * d.1 - at.1);
+                if gap <= tol && best.is_none_or(|(g, _)| gap < g) {
+                    best = Some((gap, crate::space::add(crate::space::lerp(a, b, t), o)));
+                }
+            }
+            if let Some((gap, p)) = best {
+                near.push((gap, EdgeHit { solid: i, faces: e.faces.clone(), at: p }, slack));
+            }
+        }
+    }
+    near.sort_by(|a, b| a.0.total_cmp(&b.0));
+    near.into_iter().find(|(_, hit, slack)| {
+        let seen = proj.seen(hit.at);
+        let depth = dot(hit.at, toward);
+        pick_solid(sk, proj, seen).is_none_or(|nearest| nearest.depth <= depth + slack)
+    }).map(|(_, hit, _)| hit)
+}
+
 /// Where the line `o + t·d` crosses the triangle `p` (nine doubles), as `t` — either side, its
 /// edges included (Möller–Trumbore).  `None` for a miss or a line in the triangle's plane.
 fn line_meets_triangle(o: [f64; 3], d: [f64; 3], p: &[f64]) -> Option<f64> {

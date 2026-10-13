@@ -22,6 +22,8 @@ import { PlanDrag } from '../core/decompose.js';
 import { solve } from '../core/system.js';
 import { DimAlt, SketchView } from '../app/view.js';
 import type { SolidPick } from '../app/view.js';
+import { pickEdgeSeen, roundSize, solidEdges } from '../core/workspace.js';
+import type { SolidEdge } from '../core/workspace.js';
 import { contains, corners, toImage, toWorld } from '../app/underlay.js';
 import type { Bitmap } from '../app/underlay.js';
 import { initCore } from '../core/wasm.js';
@@ -2262,6 +2264,84 @@ test('a Boolean the language refuses is refused at the gesture, in its words', (
   view.finishCurve();
   assert.equal(view.source, before);
   assert.ok(said.some((m) => /made of itself/.test(m)), said.join('\n'));
+});
+
+/** Where an edge's first stretch is middled, in space. */
+function middle(e: SolidEdge): [number, number, number] {
+  const s = e.segs[0];
+  return [(s[0] + s[3]) / 2, (s[1] + s[4]) / 2, (s[2] + s[5]) / 2];
+}
+
+test('the Fillet tool picks edges a click at a time, and Enter writes them as std\'s round', () => {
+  const view = docView(BLOCK);
+  view.orbit = { az: 0.6, el: 0.5 };
+  const said: string[] = [];
+  view.onStatus = (m) => said.push(m);
+  const asked: (string | null)[] = [];
+  view.onRound = (r, _at, size) => asked.push(r ? size : null);
+  view.setTool('fillet');
+  assert.ok(said.some((m) => /click edges of a solid to round them/.test(m)), said.join('\n'));
+  const block = view.doc.solids().find((s) => s.name === 'block')!;
+  const edges = solidEdges(view.sketch, block.index);
+  const size = roundSize(view.sketch, block.index);
+  assert.equal(edges.length, 12, 'a box\'s twelve edges, each named by its two faces');
+  // the edges the eye sees: a click at the middle of one picks it
+  const { az, el } = view.orbit;
+  const seen = edges.filter((e) => {
+    const hit = pickEdgeSeen(view.sketch, az, el, ...view.eye(...seenAt(view, middle(e))),
+                             view.world(view.pickPx));
+    return hit?.faces.join() === e.faces.join();
+  });
+  assert.ok(seen.length >= 3 && seen.length < 12, `${seen.length} seen`);
+  const [e1, e2] = seen;
+  const before = view.source;
+  clickSeen(view, middle(e1));
+  clickSeen(view, middle(e2));
+  assert.deepEqual(view.rounding?.edges, [e1.faces, e2.faces]);
+  assert.equal(asked.at(-1), io.fmt(size!, 6), 'the size offered is the core\'s');
+  // a second click on an edge lets it go, and a third picks it again
+  clickSeen(view, middle(e2));
+  assert.deepEqual(view.rounding?.edges, [e1.faces]);
+  clickSeen(view, middle(e2));
+  assert.equal(view.source, before, 'nothing is written while edges are picked');
+  view.finishCurve();                       // Enter, at the size offered
+  const face = (f: string) => `block.${f.split('.')[1]}`;
+  const statement = (e: SolidEdge) =>
+    `${face(e.faces[0])} round(r: ${io.fmt(size!, 6)}) ${face(e.faces[1])}`;
+  assert.ok(view.source.includes(`\n${statement(e1)}\n${statement(e2)}\n`), view.source);
+  assert.ok(view.source.includes('use std (round)\n'), view.source);
+  assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
+  assert.equal(view.rounding, null);
+  assert.equal(asked.at(-1), null, 'the number\'s box is closed');
+  assert.equal(view.tool, 'fillet', 'the tool stays down for the next');
+  view.undo();
+  assert.equal(view.source, before, 'the round is one undo step');
+});
+
+test('the Chamfer tool takes a face for every edge of it, at the size typed; Esc lets go', () => {
+  const view = docView(BLOCK);
+  view.orbit = { az: 0.6, el: 0.5 };
+  view.setTool('chamfer');
+  const top = view.solidAt(...seenAt(view, [10, 5, 0]))!;
+  assert.ok(top.face, 'a face under the pointer');
+  clickSeen(view, [10, 5, 0]);
+  assert.deepEqual(view.rounding?.faces, [top.face]);
+  assert.deepEqual(view.rounding?.edges, []);
+  // Escape lets what was picked go, the tool still down
+  view.cancelTool();
+  assert.equal(view.rounding, null);
+  assert.equal(view.tool, 'chamfer');
+  clickSeen(view, [10, 5, 0]);
+  assert.equal(view.finishRound('1'), null);
+  const chamfered = `\nblock.${top.face.split('.')[1]} chamfer(d: 1) block\n`;
+  assert.ok(view.source.endsWith(chamfered), view.source);
+  assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
+  // a size the language refuses is refused in its words, and the picks stay
+  clickSeen(view, [10, 5, 0]);
+  const was = view.source;
+  assert.ok(view.finishRound('2deg'));
+  assert.equal(view.source, was);
+  assert.ok(view.rounding);
 });
 
 test('in orbit mode a drag turns the workspace, whatever tool is down, and draws nothing', () => {

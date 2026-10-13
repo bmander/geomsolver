@@ -16,7 +16,7 @@ import { COL } from './paint.js';
 import { insertControl } from './edit.js';
 import { cancelTool, toolClick } from './tools.js';
 import { bodyAt, grabBody, grabHandle, handleAt } from './underlay.js';
-import { sweepsRegion } from './view.js';
+import { roundsEdges, sweepsRegion } from './view.js';
 import type { SketchView, SolidPick } from './view.js';
 
 /** One pointer gesture in progress.  `move` gets canvas coordinates; `end` and `paint` are
@@ -312,6 +312,8 @@ export function onPointerDown(v: SketchView, e: PointerEvent): void {
   }
   if (v.liveExtent?.kind === 'offset') v.endExtent();
   if (v.tool !== 'select') {
+    // an edge tool's number keeps the keyboard across the clicks that pick more
+    if (roundsEdges(v.tool)) e.preventDefault();
     toolClick(v, sp, { alt: e.altKey, shift: e.shiftKey });
     return;
   }
@@ -658,6 +660,11 @@ export function hover(v: SketchView, sp: [number, number]): void {
       v.hoverRegion = grab ? null : v.regionAt(sp[0], sp[1]);
     }
     v.canvas.style.cursor = grab ? 'grab' : '';
+    return;
+  }
+  // an edge tool lights the edge a click would pick
+  if (roundsEdges(v.tool)) {
+    v.canvas.style.cursor = v.hoverRound(sp[0], sp[1]) ? 'pointer' : '';
     return;
   }
   if (v.tool !== 'select') return;

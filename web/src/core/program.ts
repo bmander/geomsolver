@@ -394,6 +394,15 @@ export class Document {
       (p, n) => core().gcs_elab_face_plane_json(this.h, this.sketch.handle, solid, p, n)));
   }
 
+  /** **Round or chamfer** edges of object `solid` (its index): whole faces (every edge of each)
+   *  and edges (the two faces meeting there), by the paths its mesh names them by, written as
+   *  the library's word over face paths at `size` (the radius, or the flat's leg, as typed). */
+  addRounds(solid: number, word: 'round' | 'chamfer', faces: string[], edges: [string, string][],
+            size: string): Edit {
+    return edit(withJson({ word, faces, edges, size },
+      (p, n) => core().gcs_elab_add_rounds(this.h, this.sketch.handle, solid, p, n)));
+  }
+
   /** **Extrude** the region a click found — its loops by name — as one splice: the face, the
    *  solid swept from it at a round default depth (or `through` the body), and with a body the
    *  body rule.  `names` is the solid, then the faces. */

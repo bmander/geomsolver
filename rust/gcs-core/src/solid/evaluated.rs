@@ -113,6 +113,8 @@ pub struct EvaluatedSolid {
     edges: OnceCell<Vec<Edge>>,
     mesh: OnceCell<mesh::Mesh>,
     ray_indices: OnceCell<Vec<RayIndex>>,
+    /// Where its faces meet, read off its mesh (`mesh::face_edges`).
+    face_edges: OnceCell<Vec<mesh::FaceEdge>>,
 }
 
 impl EvaluatedSolid {
@@ -217,6 +219,7 @@ impl EvaluatedSolid {
             edges: OnceCell::new(),
             mesh: OnceCell::new(),
             ray_indices: OnceCell::new(),
+            face_edges: OnceCell::new(),
         })
     }
     /// A swept solid's boundary is its material field's surface, whatever approximation is asked
@@ -328,6 +331,7 @@ impl EvaluatedSolid {
             edges: OnceCell::new(),
             mesh: OnceCell::new(),
             ray_indices: OnceCell::new(),
+            face_edges: OnceCell::new(),
         })
     }
     /// A swept solid from its field's surface (`field_mesh.rs`): the mesh stands in as one
@@ -387,6 +391,7 @@ impl EvaluatedSolid {
             edges: OnceCell::new(),
             mesh: OnceCell::new(),
             ray_indices: OnceCell::new(),
+            face_edges: OnceCell::new(),
         })
     }
     /// A swept solid from its exact B-rep's mesh, built elsewhere and supplied
@@ -462,6 +467,7 @@ impl EvaluatedSolid {
             edges: OnceCell::new(),
             mesh: OnceCell::new(),
             ray_indices: OnceCell::new(),
+            face_edges: OnceCell::new(),
         })
     }
     /// A preview of a surface still being refined, which may be open.
@@ -548,6 +554,17 @@ impl EvaluatedSolid {
     pub fn round_features(&self) -> &[RoundFeature] {
         &self.round
     }
+    /// A face's path from this solid, from the path its boundary names it by (the primitive's own
+    /// name first, `plate.near`): the route to that primitive, then the face — `plate.near` on a
+    /// body made of `plate`, `near` on the primitive itself.  `None` for a face no primitive's
+    /// name begins.
+    pub fn face_route(&self, path: &str) -> Option<String> {
+        let (primitive, route) = self.paths.iter()
+            .filter(|(p, _)| path.strip_prefix(p.as_str()).is_some_and(|r| r.starts_with('.')))
+            .max_by_key(|(p, _)| p.len())?;
+        let face = &path[primitive.len() + 1..];
+        Some(if route.is_empty() { face.to_string() } else { format!("{route}.{face}") })
+    }
     pub fn provenance_paths(&self) -> &BTreeMap<String, String> {
         &self.paths
     }
@@ -612,6 +629,11 @@ impl EvaluatedSolid {
             Surface::Brep { .. } => mesh::grouped_welded(self.boundary().to_vec()),
             Surface::Csg => mesh::grouped(self.boundary()),
         })
+    }
+    /// Where two of its faces meet, by their paths, read off its mesh once (`mesh::face_edges`):
+    /// what a round or a chamfer is written along.  In the solid's own coordinates.
+    pub fn face_edges(&self) -> &[mesh::FaceEdge] {
+        self.face_edges.get_or_init(|| mesh::face_edges(self.mesh()))
     }
     pub fn world_boundary(&self) -> Vec<Piece> {
         translate_pieces(self.boundary(), self.origin.0)
