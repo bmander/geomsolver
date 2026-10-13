@@ -872,6 +872,12 @@ impl<'a> Walk<'a> {
                 self.err(Code::E103, span, format!("`{key}` wants a group or layout instance"));
             }
         }
+        // what each path formal was given, for the elaborator to judge by its kind (#251)
+        for (key, span, formal) in std::mem::take(&mut self.path_bindings) {
+            if let Some(target) = alias.get(&key) {
+                self.paths.push((target.clone(), span, formal));
+            }
+        }
         // what each instance was given, now that the aliases its arguments made are absolute
         for info in self.instances.iter_mut() {
             for (formal, actual) in info.ents.iter_mut() {
@@ -1084,7 +1090,7 @@ impl<'a> Walk<'a> {
             .into_iter()
             .find(|i| {
                 self.prog.components[i.comp].formals.iter()
-                    .any(|f| f.name.text == swept && !matches!(f.ty, Ty::Ent(_) | Ty::Group | Ty::Set))
+                    .any(|f| f.name.text == swept && !matches!(f.ty, Ty::Ent(_) | Ty::Path | Ty::Group | Ty::Set))
             })
             .map(|i| crate::syntax::CurveOf {
                 instance: i.prefix.clone(),

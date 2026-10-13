@@ -57,6 +57,20 @@ pub(crate) fn settle(
             // and `t perpendicular P` and `P perpendicular t` are one statement — the operands are
             // put in the order the kind names them
             let symmetric = matches!(word, "coincident" | "parallel" | "perpendicular");
+            // **and a tangency between a line and a curve** (#251): the curve is named first
+            // (`g tangent l`, `g tangent(at: m) l`), and a line written first is put second —
+            // but for `l tangent c` of a circle, its own kind, and `arc tangent line`, at the arc's
+            // end, apart from it
+            let at_point = w.sel("at").is_some_and(|s| s.is_empty());
+            let curved = matches!(b, EntKind::Spline | EntKind::Curve);
+            let curve_last = word == "tangent"
+                && a == EntKind::Line
+                && (curved || (at_point && b != EntKind::Line));
+            if curve_last {
+                let mut swapped = w.clone();
+                swapped.ops.swap(0, 1);
+                return settle(&swapped, kind_of);
+            }
             if symmetric && crate::constraints::infix_op(word, a, b, &|n| w.sel(n)).is_none() {
                 if let Some(k) = crate::constraints::infix_op(word, b, a, &|n| w.sel(n)) {
                     let mut swapped = w.clone();
@@ -82,6 +96,13 @@ pub(crate) fn settle(
     } else {
         kind
     };
+    // the tangent at a point of a line is the line's direction (#251): `parallel`, the point
+    // saying nothing a line does not
+    if kind == CKind::Parallel && word == "tangent" {
+        let mut along = w.clone();
+        along.args.retain(|a| !matches!(a, crate::syntax::OpArg::Named(n, _) if n.text == "at"));
+        return Ok((kind, along.assemble(kind)?));
+    }
     Ok((kind, w.assemble(kind)?))
 }
 
@@ -354,6 +375,25 @@ pub(super) fn constrain(
                 }
                 args.push(v)
             }
+            // a point a tangent is at that names nothing may be an end's word misspelt (#251):
+            // `at: banana` once silently meant `end`, and is said as both it could have been
+            Err((Code::E101, _)) if *name == "at" && ckind.is_tangency() && kind.takes_ref() => {
+                let what = match a {
+                    Arg::Ref(r) => crate::syntax::ref_text(r),
+                    other => crate::syntax::sel_text(other),
+                };
+                let arc = |x: &Arg| {
+                    matches!(x, Arg::Ref(o) if res.entity(sk, o).is_some_and(|e| e.kind == EntKind::Arc))
+                };
+                let ends = match r.args.first().and_then(|a| a.as_ref()).is_some_and(arc) {
+                    true => format!("{}, or ", crate::syntax::one_of(&["start", "end"])),
+                    false => String::new(),
+                };
+                let message =
+                    format!("`at` is {ends}a point on what is touched, and `{what}` names nothing");
+                diags.push(Diag { code: Code::E040, span: where_(a), stmt: Some(st.id), message });
+                return None;
+            }
             // a direction that names nothing is a word misspelt, more likely than an entity
             Err((Code::E101, _)) if ckind.word_slot().is_some() && i == 2 => {
                 let what = match a {
@@ -621,6 +661,55 @@ pub(super) fn constrain(
         return None;
     }
     Some(sk.add_quiet(c))
+}
+
+/// **A `path` is what a point runs along** (#251): a line, an arc, a circle, a spline or a
+/// curve. A formal of the type given anything else is refused at the argument, once the
+/// elaborator knows what the name it was given is.
+pub(super) fn paths(map: &SourceMap, given: &[(String, Span, String)], diags: &mut Vec<Diag>) {
+    for (target, span, formal) in given {
+        let Some(e) = map.ent_named(target) else { continue };
+        use EntKind::{Arc, Circle, Curve, Line, Spline};
+        if !matches!(e.kind, Line | Arc | Circle | Spline | Curve) {
+            diags.push(Diag {
+                code: Code::E103,
+                span: *span,
+                stmt: None,
+                message: format!(
+                    "`{formal}` is a path — a line, an arc, a circle, a spline or a curve — \
+                     not {}",
+                    e.kind.a()
+                ),
+            });
+        }
+    }
+}
+
+/// **A tangent at a point reads the place of the contact holding the point** (#251): `g
+/// tangent(at: m) l` over a spline or a curve says which way the line runs where `m` is on `g`,
+/// and that is a contact's to say. One with none is refused, naming the statement it wants.
+pub(super) fn tangents_at(sk: &Sketch, map: &SourceMap, diags: &mut Vec<Diag>) {
+    for c in &sk.constraints {
+        let Some((t, at, on)) = c.tangent_at() else { continue };
+        let held = matches!(c.args[t], CArg::Param(p) if sk.holding(at, on) == Some(p));
+        let Some(site) = map.site_of_constraint(c.id).filter(|_| !held) else { continue };
+        let name = |e: EntRef| {
+            let written = |n: &String| format!("`{}`", super::source_map::public_path(n));
+            map.name_of(e).map_or_else(|| e.kind.a(), written)
+        };
+        let (m, g) = (name(EntRef::point(at)), name(on));
+        diags.push(Diag {
+            code: Code::E040,
+            span: site.span,
+            stmt: Some(site.stmt),
+            message: format!(
+                "the tangent at {m} is taken where a contact holds {m} on {g}, and none does: \
+                 state `{} coincident {}`",
+                m.trim_matches('`'),
+                g.trim_matches('`')
+            ),
+        });
+    }
 }
 
 /// The region solid's probe a constraint reads, where it reads one: an operand, or a line's end.

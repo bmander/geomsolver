@@ -780,7 +780,15 @@ pub fn operator_text(kind: CKind, args: &[Option<Arg>]) -> String {
         if matches!(a, Arg::Word(w) if w.is_empty()) {
             continue;
         }
-        if sk.takes_ref() {
+        // and the place of a tangent at a point is the contact's, written with the contact
+        if sk.is_param() && matches!(kind, CKind::SplineTangentAt | CKind::CurveTangentAt) {
+            continue;
+        }
+        // the point a tangent is at goes in the parentheses by its name (#251), as written:
+        // unlabelled it would read as `symmetry`'s third entity
+        if sk.takes_ref() && *name == "at" {
+            parens.push(format!("at: {}", write_arg(name, *sk, a)));
+        } else if sk.takes_ref() {
             ents.push(write_arg(name, *sk, a));
         } else if sk.is_param() {
             let (pin, hint) = slot_text(name, a);
