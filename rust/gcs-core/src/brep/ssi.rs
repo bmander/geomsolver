@@ -464,11 +464,16 @@ pub(crate) fn trace_beside(a: &Surface,b: &Surface,seeds: &[V],beside: &dyn Fn(V
     // touch and their meeting has two branches crossing (`touch`). A march arriving there ends
     // there; a seed standing there is traced from once the rest are, along each half of each
     // branch no curve has arrived along
-    let crossing_touch = |q: V| -> Option<Touch> {
-        let at = touch_near(a,b,q,tol)?;
+    // (found walking over either: a fitted sheet's foot is read numerically, an analytic one's not)
+    let touch_at = |q: V| -> Option<Touch> {
+        let at = touch_near(a,b,q,tol).or_else(|| touch_near(b,a,q,tol))?;
         let t = touch(a,b,at)?;
-        (!t.branches.is_empty() && distance(at,q) <= 2.*t.radius.max(h0)).then_some(t)
+        (distance(at,q) <= 2.*t.radius.max(h0)).then_some(t)
     };
+    let crossing_touch = |q: V| -> Option<Touch> { touch_at(q).filter(|t| !t.branches.is_empty()) };
+    // a seed where the two touch at that point alone (their meeting there no curve, `touch`'s `Q`
+    // definite): nothing to trace from it
+    let lone_touch = |q: V| -> bool { touch_at(q).is_some_and(|t| t.branches.is_empty()) };
     let mut touches: Vec<Touch> = Vec::new();
     // the seeds, then each touch's half-branches: a start, and the sense its march leaves in (none:
     // both ways from a seed)
@@ -479,7 +484,7 @@ pub(crate) fn trace_beside(a: &Surface,b: &Surface,seeds: &[V],beside: &dyn Fn(V
         k += 1;
         if leaving.is_none() && traced_so_far.iter().any(|c| crate::space::distance(c.point(c.inverse(p0)),p0) <= 8.*tol) { continue }
         if leaving.is_none() && tangent(p0).is_none() {
-            if beside(p0) { continue }
+            if beside(p0) || lone_touch(p0) { continue }
             match crossing_touch(p0) {
                 Some(t) => {
                     if !touches.iter().any(|u| distance(u.at,t.at) <= 8.*tol) { touches.push(t); }

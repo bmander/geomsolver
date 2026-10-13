@@ -121,20 +121,28 @@ pub fn node_named(n: &Json,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64
             // a ball rolled along a traced run (#194): against the body the region rounds as its terms
             // but the late ones make it (the stratum), each piece the material it adds or takes
             let rolled = n.get("rolled").map_or(&[][..],|r| r.arr());
+            let first_rolled = pieces.len();
             if !rolled.is_empty() {
                 let stratum = body(field(n,"stratum")?,built,built_names,floor)?;
                 let tol = (1e-9*stratum.size()).max(floor);
                 for k in rolled {
                     let (at,r) = (vec3(field(k,"at")?),field(k,"radius")?.as_f64());
                     // a chamfer's flat cut along the run instead (#218's 6)
-                    pieces.push(match k.get("legs") {
+                    let mut piece = match k.get("legs") {
                         Some(legs) => {
                             let legs = legs.arr();
                             let ([la,lb],on) = ([legs[0].as_f64(),legs[1].as_f64()],vec3(field(k,"on")?));
                             super::fillet::flat_along(&stratum,at,[la,lb],Some(on),tol).map_err(|e| format!("a flat along a run: {e}"))?
                         }
                         None => super::fillet::roll(&stratum,at,r,tol).map_err(|e| format!("a rolled round: {e}"))?.piece,
-                    });
+                    };
+                    // cut at the section of each corner standing at an end of its run, which takes the
+                    // rest (#218's 7)
+                    for c in k.get("cuts").map_or(&[][..],|c| c.arr()) {
+                        piece = cut_before(&piece,vec3(field(c,"at")?),vec3(field(c,"normal")?),field(c,"reach")?.as_f64(),floor)
+                            .map_err(|e| format!("a rolled round cut at a corner: {e}"))?;
+                    }
+                    pieces.push(piece);
                 }
             }
             let joins: Vec<[usize;2]> = field(n,"joins")?.arr().iter()
@@ -155,8 +163,14 @@ pub fn node_named(n: &Json,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64
                     for &k in &next[i] {
                         if done[k] { continue }
                         done[k] = true;
-                        chain = super::boolean::glued(&chain,&pieces[k],8.*tol)
+                        // a rolled piece's cap is cut from its fitted canal: its edges are the cell's
+                        // to within the canal's fit (`fillet::roll`'s bar, a ten-millionth of the
+                        // boundary), and the shared edges are measured after
+                        let rolled_join = [i,k].iter().any(|&p| p >= first_rolled);
+                        let bar = if rolled_join { (2e-7*chain.size().max(pieces[k].size())).max(8.*tol) } else { 8.*tol };
+                        chain = super::boolean::glued(&chain,&pieces[k],bar)
                             .ok_or("two pieces joined at a section share no face there")?;
+                        if rolled_join { super::json::measure(&mut chain); }
                         queue.push_back(k);
                     }
                 }
@@ -224,6 +238,20 @@ pub fn kept(piece: &Brep,o: V,keep: V,floor: f64) -> Result<Brep,String> {
     let edges = (0..4).map(|k| ProfileEdge::Line {a:corners[k],b:corners[(k+1)%4]}).collect();
     let block = prism(&Profile {origin:foot,normal:keep,loops:vec![edges],names:Vec::new()},0.,size)?;
     combined(piece,&block,Op::Common,floor)
+}
+
+/// `piece` less what lies behind the plane through `o` (against `keep`, a unit normal) within
+/// `reach` of `o`: a block standing on the plane, `reach` deep and as wide either way — a rolled
+/// run cut short at the section of the corner at its end, the cell taking what lies between there
+/// and the vertex, and nothing of the run elsewhere (a rim round a hole comes back past the plane).
+pub fn cut_before(piece: &Brep,o: V,keep: V,reach: f64,floor: f64) -> Result<Brep,String> {
+    use super::build::ProfileEdge;
+    let f = super::geom::Frame::about(o,keep);
+    let at = |x: f64,y: f64| f.at([x,y,0.]);
+    let corners = [at(-reach,-reach),at(reach,-reach),at(reach,reach),at(-reach,reach)];
+    let edges = (0..4).map(|k| ProfileEdge::Line {a:corners[k],b:corners[(k+1)%4]}).collect();
+    let block = prism(&Profile {origin:o,normal:keep,loops:vec![edges],names:Vec::new()},-reach,0.)?;
+    combined(piece,&block,Op::Cut,floor)
 }
 
 /// A lowered piece's end face or a corner's face, as `solid::lowering` writes it (millimetres): a

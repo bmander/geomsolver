@@ -135,6 +135,24 @@ impl Surf {
         }
     }
 
+    /// The gradient of `side` at `x` (a unit vector but at a cone's axis).
+    fn gradient(&self, x: V) -> V {
+        match *self {
+            Surf::Plane { normal, .. } => normal,
+            Surf::Cylinder { origin, axis, .. } => {
+                let w = sub(x, origin);
+                normalised(sub(w, scale(axis, dot(w, axis)))).unwrap_or([0.0; 3])
+            }
+            Surf::Sphere { centre, .. } => normalised(sub(x, centre)).unwrap_or([0.0; 3]),
+            Surf::Cone { origin, axis, half, .. } => {
+                let w = sub(x, origin);
+                let radial = normalised(sub(w, scale(axis, dot(w, axis)))).unwrap_or([0.0; 3]);
+                let (sn, cs) = half.dsin_cos();
+                sub(scale(radial, cs), scale(axis, sn))
+            }
+        }
+    }
+
     /// Where the line `q + s·along` crosses a cylinder or a sphere: its two crossings in order, if
     /// it does (a plane is no solid a line goes into and out of).
     fn crossings(&self, q: V, along: V) -> Option<[f64; 2]> {
@@ -288,19 +306,14 @@ pub struct Rolled {
     /// A chamfer's flat cut along the run instead (#218's 6): its legs, on the face `on` stands
     /// beside and on the other, each from the other face's surface (`brep::fillet::flat_along`).
     pub flat: Option<([f64; 2], V)>,
+    /// Where its run ends (an open one's two vertices).
+    pub ends: Vec<V>,
+    /// The sections of the corners standing at its ends, each a point of it, the normal toward the
+    /// run, and how far the corner's cell reaches from it: what lies on the corner's side within
+    /// that reach is cut from the piece, the cell taking it (#218's 7).
+    pub cuts: Vec<(V, V, f64)>,
 }
 
-impl Rolled {
-    /// Its piece, against the stratum `b` (millimetres, `mm` of them a model unit, `q` a point of
-    /// the model in its space).
-    fn build(&self, b: &crate::brep::topo::Brep, mm: f64, q: impl Fn(V) -> V, tol: f64)
-        -> Result<crate::brep::topo::Brep, String> {
-        match self.flat {
-            None => Ok(crate::brep::fillet::roll(b, q(self.at), self.r * mm, tol)?.piece),
-            Some(([la, lb], on)) => crate::brep::fillet::flat_along(b, q(self.at), [la * mm, lb * mm], Some(q(on)), tol),
-        }
-    }
-}
 
 /// The faces a region rounds or cuts at, and whether it lies within all of them (a convex edge's
 /// material) or outside all of them (a concave edge's void).
@@ -648,15 +661,16 @@ fn run(body: &super::faces::BodyFaces, ga: &[usize], gb: &[usize], within: bool,
         return body.runs(&edges).into_iter().filter(|run| body.convex(run[0]) == Some(within)).map(|run| {
             let e = run[0];
             let at = body.middle(e);
+            let ends: Vec<V> = body.run_ends(&run).into_iter().map(|(v, ..)| v).collect();
             Ok(Piece::Rolled(match section {
-                Section::Round(r) => Rolled { at, r, flat: None },
+                Section::Round(r) => Rolled { at, r, flat: None, ends, cuts: Vec::new() },
                 Section::Flat { la, lb } => {
                     let &[f0, f1] = body.faces_of(e) else { return unbuilt("an edge not between two faces") };
                     let (fa, fb) = if ga.contains(&f0) { (f0, f1) } else { (f1, f0) };
                     let na = body.normal(fa, at);
                     let t = toward(body.normal(fb, at), within);
                     let w = normalised(sub(t, scale(na, dot(t, na)))).ok_or("faces meeting tangent")?;
-                    Rolled { at, r: 0.0, flat: Some(([la, lb], add(at, scale(w, 0.5 * la)))) }
+                    Rolled { at, r: 0.0, flat: Some(([la, lb], add(at, scale(w, 0.5 * la)))), ends, cuts: Vec::new() }
                 }
             }))
         }).collect();
@@ -1065,7 +1079,7 @@ fn profile(r: &Run) -> Result<crate::brep::build::Profile, String> {
 
 /// Pieces as one construction: each distinct piece once, each run with the stretch of its edge it
 /// is built over (cut short at the section of a corner standing at either end), and which run is
-/// joined to which corner there (runs counted first, then rings, then corners).
+/// joined to which corner there (runs counted first, then rings, then corners, then rolled runs).
 #[derive(Clone, Debug, Default)]
 pub struct Assembly {
     pub runs: Vec<Run>,
@@ -1185,6 +1199,26 @@ pub fn assemble<'a>(pieces: impl IntoIterator<Item = &'a Piece>) -> Assembly {
             out.joins.push([n + i, n + rings + k]);
         }
     }
+    // a rolled run at an end of which a corner stands is cut at that corner's section: the plane of
+    // the corner's ball's arc between the two faces the run lies between (through its centre and
+    // where it touches each), its cell taking what lies between there and the vertex, and glued
+    // to it there (rolled pieces counted after the corners)
+    let (pieces_before, corners) = (out.runs.len() + out.rings.len(), out.corners.len());
+    for (i, k) in out.rolled.iter_mut().enumerate() {
+        for (j, c) in out.corners.iter().enumerate() {
+            if !k.ends.iter().any(|&v| near(v, c.vertex)) {
+                continue;
+            }
+            let on: Vec<&Surf> = c.faces.iter().filter(|f| f.side(k.at).abs() <= 1e-7 * size).collect();
+            let &[fa, fb] = &on[..] else { continue };
+            let touch = |f: &Surf| { let mut q = c.centre; for _ in 0..8 { q = sub(q, scale(f.gradient(q), f.side(q))); } q };
+            let Some(n) = normalised(cross(sub(touch(fa), c.centre), sub(touch(fb), c.centre))) else { continue };
+            let away = if dot(n, sub(c.vertex, c.centre)) > 0.0 { scale(n, -1.0) } else { n };
+            // (only near the corner: a run round a hole comes back past the section's plane)
+            k.cuts.push((c.centre, away, distance(c.vertex, c.centre) + 2.0 * c.r));
+            out.joins.push([pieces_before + corners + i, pieces_before + j]);
+        }
+    }
     // a run and a stretch of a ring going on from one another (a round along an obround's flat
     // side, then round its half circle): one section, where the ring's turn starts or ends
     for (i, r) in out.runs.iter().enumerate() {
@@ -1238,6 +1272,10 @@ impl Assembly {
                 o.set("legs", Json::Arr(vec![(la * by).into(), (lb * by).into()]));
                 o.set("on", vector(scale(on, by)));
             }
+            if !k.cuts.is_empty() {
+                o.set("cuts", Json::Arr(k.cuts.iter().map(|&(at, n, reach)| object([("at", vector(scale(at, by))),
+                    ("normal", vector(n)), ("reach", (reach * by).into())])).collect()));
+            }
             o
         }).collect();
         Ok(object([("kind", "lowered".into()), ("pieces", Json::Arr(pieces)), ("corners", Json::Arr(corners)),
@@ -1264,23 +1302,17 @@ fn gate(sk: &Sketch, solid: usize, pieces: &[Piece], body: &super::faces::BodyFa
     let field = super::MaterialField::read(sk, solid, super::cad::AXIS_TOLERANCE)?;
     // the pieces' boundary in model units: a rolled one rolled against the stratum (millimetres,
     // about its origin) and brought back
-    // (rolled runs stand alone: none beside other pieces)
     let rolled: Vec<&Rolled> = pieces.iter().filter_map(|p| match p { Piece::Rolled(k) => Some(k), _ => None }).collect();
     let (b, mm) = if rolled.is_empty() { (assemble(pieces).brep(1.0)?, None) } else {
-        if rolled.len() < pieces.len() {
-            return Err("a rolled round beside other pieces: not built yet".to_string());
-        }
-        let (stratum, mm, _) = body.brep();
-        let tol = 1e-9 * stratum.size().max(1.0);
-        let mut all: Option<crate::brep::topo::Brep> = None;
-        for k in rolled {
-            let piece = k.build(stratum, mm, |p| body.q(p), tol)?;
-            all = Some(match all {
-                None => piece,
-                Some(b) => crate::brep::recipe::combined(&b, &piece, crate::brep::boolean::Op::Union, 0.0)?,
-            });
-        }
-        (all.expect("a rolled piece"), Some(mm))
+        // in the stratum's own frame (millimetres about its origin), as the recipe builds it: the
+        // lowered node, rolled against the stratum standing in its built set
+        let (stratum, mm, origin) = body.brep();
+        let node = super::cad::shifted_node(&assemble(pieces).node(mm)?, scale(origin, mm));
+        let mut node = node;
+        node.set("stratum", object([("kind", "body".into()), ("stock", 0.into()), ("on", Json::Arr(vec![])),
+            ("cut", Json::Arr(vec![])), ("bound", Json::Arr(vec![]))]));
+        let built = std::collections::BTreeMap::from([(0, stratum.clone())]);
+        (crate::brep::recipe::node_named(&node, &built, &Default::default(), 0.0)?, Some(mm))
     };
     // probed `offset` either side of it, so meshed no finer than a twentieth of that
     let size = b.size().max(f64::MIN_POSITIVE);

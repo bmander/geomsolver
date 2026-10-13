@@ -1079,3 +1079,33 @@ fn a_rolled_run_onto_a_curved_face_is_cut_off_by_its_solid() {
         &[], &[([40.0, -12.0], 60.0)]);
     near_quadrature(props::volume(&b), block - hole - rim);
 }
+
+/// **A rolled round beside other pieces** (#218's 7): the half frustum rounded all over. Its two
+/// generators are rolled, its rims rings, its cut's edges runs, and where three meet a corner's
+/// cell — over a plane, a cone and a plane, its meetings traced where no closed form holds them
+/// (`fillet::corner_among`), each section the plane of the ball's arc between two faces (through
+/// its centre and where it touches both: square to the edge only where the centre runs along it,
+/// not along a cone's generator). Each rolled run is cut short at the section of the corner at its
+/// end, near that corner only, and glued to the cell there to the canal's fit. Built, exported,
+/// and held to the field.
+#[test]
+fn rolled_runs_are_glued_to_the_corners_at_their_ends() {
+    let e = solved(&format!("{HALF_FRUSTUM}round(r: 1mm) half\n"));
+    lowered(&e);
+    let b = exported(&e, "half");
+    assert!(kinds(&b).get("sphere").is_some_and(|&n| n >= 4), "{:?}", kinds(&b));
+    agrees_with_field(&e, "half", 0.01);
+}
+
+/// The same where a rolled rim comes back past a corner's section: `runout.sv`'s vent rounded all
+/// over, the hole's rim on the slope rolled, a corner's cell at each end where the rim reaches the
+/// block's end. The rim curves round the hole, so each corner cuts it only near itself.
+#[test]
+fn a_rolled_rim_is_cut_only_near_its_corners() {
+    let src = include_str!("../../examples/rounds/runout.sv")
+        .replace("vent.block.vt round(r: 1mm) vent.hole", "round(r: 1mm) vent");
+    let e = solved(&src);
+    lowered(&e);
+    exported(&e, "vent");
+    agrees_with_field(&e, "vent", 0.01);
+}

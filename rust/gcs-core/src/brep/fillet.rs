@@ -1032,13 +1032,15 @@ pub fn corner(vertex: V,centre: V,r: f64,toward: [V;3],tol: f64) -> Result<Brep,
 /// `vertex` cut by the three sections through the ball's centre square to its edges — less the
 /// ball, over faces lying on `faces`: planes, or surfaces a plane through the centre square to an
 /// edge cuts in a closed form (a cylinder about a line through the edge or along it: a line or a
-/// circle). The ball touches each face where the face's surface is nearest its centre; each edge
-/// is where two of the surfaces meet through the vertex, its section the plane through the centre
-/// square to it at the centre's foot on it (the section a neighbouring run or ring ends in). Faces:
+/// circle; or, where no closed form holds them, traced about the corner). The ball touches each face
+/// where the face's surface is nearest its centre; each edge is where two of the surfaces meet
+/// through the vertex, its section the plane of the ball's arc between those two (through its
+/// centre and both touches: square to the edge where the centre runs along it), at the edge's
+/// foot where it crosses it (the section a neighbouring run, ring or rolled run ends in). Faces:
 /// `a`, `b`, `c`, a stretch of each face (vertex, foot, touch, foot); `near_ab`, `near_bc`,
 /// `near_ca`, the sections (foot, touch, the ball's arc, touch), each a neighbouring piece's cap;
 /// and `round`, the ball's triangle. Every curve is the meeting `ssi::intersect` gives in closed
-/// form; one it would trace is refused.
+/// form, or `ssi::trace` near the corner.
 pub fn corner_among(vertex: V,centre: V,r: f64,faces: [&Surface;3],tol: f64) -> Result<Brep,String> {
     use super::ssi::{intersect,Ssi};
     let pairs = [(0,1),(1,2),(2,0)];
@@ -1048,18 +1050,42 @@ pub fn corner_among(vertex: V,centre: V,r: f64,faces: [&Surface;3],tol: f64) -> 
         return Err("a corner's ball touches its faces nowhere".into())
     }
     let toward: [V;3] = std::array::from_fn(|i| unit(sub(centre,touches[i])));
-    // the curve through `p` of where two surfaces meet, in closed form
+    // the curve through `p` of where two surfaces meet: in closed form, or traced about the corner
+    // (a section of a cone, two cylinders' saddle) within a box holding its cell
+    let reach = distance(vertex,centre)+2.*r;
+    let (lo,hi) = (centre.map(|x| x-reach),centre.map(|x| x+reach));
     let meeting = |a: &Surface,b: &Surface,p: V| -> Result<Curve,String> {
-        let Ssi::Curves(cs) = intersect(a,b,tol) else { return Err(format!("a corner where a {} meets a {}",a.kind(),b.kind())) };
+        let cs = match intersect(a,b,tol) {
+            Ssi::Curves(cs) => cs,
+            Ssi::Traced => super::ssi::trace(a,b,&[p],lo,hi,tol)?,
+            Ssi::Same => return Err(format!("a corner where a {} and a {} lie on one surface",a.kind(),b.kind())),
+        };
         cs.into_iter().find(|c| distance(c.point(c.inverse(p)),p) <= 1e3*tol)
             .ok_or_else(|| format!("a corner where a {} and a {} meet away from it",a.kind(),b.kind()))
     };
     let edges: Vec<Curve> = pairs.iter().map(|&(i,j)| meeting(faces[i],faces[j],vertex)).collect::<Result<_,_>>()?;
-    // the centre's foot on each edge, and the edge's way there from the vertex
-    let feet: [V;3] = std::array::from_fn(|k| edges[k].point(edges[k].inverse(centre)));
+    // each edge's section: the plane of the ball's arc between the two faces — through its centre
+    // and where it touches both (square to the edge where the ball's centre runs along it: planes,
+    // a cylinder along it, a coaxial ring; not along a cone's generator) — its normal away from
+    // the vertex, and the edge's foot where it crosses that plane
     let dirs: [V;3] = std::array::from_fn(|k| {
-        let t = unit(edges[k].tangent(edges[k].inverse(feet[k])));
-        if dot(t,sub(feet[k],vertex)) < 0. { scale(t,-1.) } else { t }
+        let (i,j) = pairs[k];
+        let n = cross(sub(touches[i],centre),sub(touches[j],centre));
+        let n = if norm(n) > 1e-12*(1.+r*r) { unit(n) } else { unit(edges[k].tangent(edges[k].inverse(centre))) };
+        if dot(n,sub(centre,vertex)) < 0. { scale(n,-1.) } else { n }
+    });
+    let feet: [V;3] = std::array::from_fn(|k| {
+        let c = &edges[k];
+        let mut t = c.inverse(centre);
+        for _ in 0..64 {
+            let (p,d) = (c.point(t),c.tangent(t));
+            let along = dot(d,dirs[k]);
+            if along.abs() < 1e-300 { break }
+            let step = dot(sub(p,centre),dirs[k])/along;
+            t -= step;
+            if step.abs() <= 1e-15*(1.+t.abs()) { break }
+        }
+        c.point(t)
     });
     let mut out = Brep::default();
     let pv = out.vertex(vertex);
