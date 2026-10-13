@@ -4,7 +4,7 @@ use super::P;
 use crate::model::EntKind;
 use crate::style::Classes;
 use crate::syntax::lexer::Tok;
-use crate::syntax::words::{over_chain, BLOCKS, ENERGY_WORDS};
+use crate::syntax::words::{over_chain, set_at, BLOCKS, ENERGY_WORDS};
 use crate::syntax::{
     Arg, Block, BlockKind, BodyWord, Branch, Chained, ClaimOver, Component, CurveSpec, CurveTarget,
     Decl, DeclName, EdgesOf, DerivedDecl, Formal, InBlock, InstArg, InstVal, Instance, Membership,
@@ -1035,14 +1035,9 @@ impl<'a> P<'a> {
         self.set_at(self.i)
     }
 
-    /// `set_ahead` at token `i`.
+    /// `set_ahead` at token `i` (`words::set_at`, which the colouring asks too).
     fn set_at(&self, i: usize) -> bool {
-        if self.t.get(i).map(|(t, _)| t) != Some(&Tok::P('{')) {
-            return false;
-        }
-        let mut toks = self.t[i + 1..].iter().map(|(t, _)| t);
-        let mut next = || toks.find(|t| **t != Tok::Nl);
-        matches!(next(), Some(Tok::Ident(_))) && next() == Some(&Tok::P('|'))
+        set_at(&self.t, i).is_some()
     }
 
     /// `{ p | statement … }` — the bound point, then the body through the closing brace, each

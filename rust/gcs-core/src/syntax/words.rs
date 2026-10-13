@@ -85,6 +85,18 @@ pub(super) fn word_at(toks: &[(Tok, Span)], i: usize) -> Option<&str> {
     }
 }
 
+/// **A set literal opening at `i`** (§6.21): `{`, one name, `|`, line breaks between them read
+/// past as the lexer reads past them — the token index of the name it binds, or `None`.  The
+/// parser and the colouring both ask it.
+pub(super) fn set_at(toks: &[(Tok, Span)], i: usize) -> Option<usize> {
+    if toks.get(i).map(|(t, _)| t) != Some(&Tok::P('{')) {
+        return None;
+    }
+    let mut rest = toks.iter().enumerate().skip(i + 1).filter(|(_, (t, _))| *t != Tok::Nl);
+    let (name, _) = rest.next().filter(|(_, (t, _))| matches!(t, Tok::Ident(_)))?;
+    rest.next().is_some_and(|(_, (t, _))| *t == Tok::P('|')).then_some(name)
+}
+
 /// Skip an operator and its optional parentheses for parser and highlighter lookahead.
 /// Stop at a statement boundary if the list is unclosed; parsing reports the error.
 pub(super) fn past_args(toks: &[(Tok, Span)], i: usize) -> usize {

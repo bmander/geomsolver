@@ -332,6 +332,17 @@ fn a_set_binds_its_point() {
     assert_eq!(tint_of(src, "q |"), Some(Tint::Def));
 }
 
+/// A set's head written over lines is the set the parser reads (it reads past the breaks), so
+/// its point is coloured as the name it binds there too.
+#[test]
+fn a_set_written_over_lines_binds_its_point() {
+    let src = "near := {\n  p |\n  p distance(20) c\n}\nfar := {\n  q\n  | q distance(9) c\n}\n";
+    assert!(gcs_core::syntax::parse(src).1.is_empty(), "the parser reads both as sets");
+    assert_eq!(tint_of(src, "p |"), Some(Tint::Def));
+    assert_eq!(tint_of(src, "q\n"), Some(Tint::Def));
+    assert_eq!(tint_of(src, "distance(20)"), Some(Tint::Relation));
+}
+
 /// The smaller words a statement is shaped by: a ring's centre, the copy after this one, a
 /// spline's weights and a curve's stretch.
 #[test]
