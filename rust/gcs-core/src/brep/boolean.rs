@@ -263,6 +263,14 @@ fn arrange<'a>(a: &'a Brep,b: &'a Brep,tol: f64) -> Result<Arranged<'a>,String> 
     let mut along_face: [Vec<Vec<usize>>;2] = [vec![Vec::new();a.faces.len()],vec![Vec::new();b.faces.len()]];
     // each root an edge meets a face at by its distance from the surface, at a vertex of its own
     let mut loose: Vec<Loose> = Vec::new();
+    // the faces each edge bounds
+    let bounded: [Vec<Vec<usize>>;2] = [a,b].map(|sol| {
+        let mut out = vec![Vec::new();sol.edges.len()];
+        for (fi,f) in sol.faces.iter().enumerate() {
+            for c in f.loops.iter().flatten() { if !out[c.edge as usize].contains(&fi) { out[c.edge as usize].push(fi); } }
+        }
+        out
+    });
     for s in 0..2 {
         let other = 1-s;
         for (i,e) in solids[s].edges.iter().enumerate() {
@@ -303,7 +311,12 @@ fn arrange<'a>(a: &'a Brep,b: &'a Brep,tol: f64) -> Result<Arranged<'a>,String> 
                                     ["A","B"][s],c.kind()); }
                                 let v = pool.at(q);
                                 cuts[we].push((t,v));
-                                on_face[other][fi].push(v);
+                                // on the boundary of every face that edge bounds: a meeting of the
+                                // face beside it may end there (two fillets' faces and the face both
+                                // roll on, touching one another at one point)
+                                for &h in &bounded[other][g as usize] {
+                                    if !on_face[other][h].contains(&v) { on_face[other][h].push(v); }
+                                }
                             }
                         }
                     }

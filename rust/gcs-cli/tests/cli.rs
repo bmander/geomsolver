@@ -180,13 +180,15 @@ fn the_wankel_rotor_and_housing_export_and_measure_within_their_tolerance() {
 /// `boss.sv`'s ring, `pocket.sv`'s filled corners, the block's mitred rims, the round written by
 /// hand, `blank.sv`'s rounds on an offset cone built in its meridian (#207), `slot.sv`'s rounds round
 /// tangent chains, `pad.sv`'s, `rail.sv`'s beside its rod, `knob.sv`'s rings and the balls rolled
-/// along traced runs of `tee.sv`, `bore.sv` and both of `runout.sv`'s solids.
+/// along traced runs of `tee.sv`, `bore.sv` and both of `runout.sv`'s solids, and `twin.sv`'s seams
+/// between two cylinders, `post.sv`'s runs cut off by a cylinder and `dshaft.sv` rounded all over,
+/// its corners each a ball's cell with a patch of a cylinder (#218).
 #[test]
 #[cfg_attr(not(feature = "slow"), ignore = "slow tier, about a minute: the rounds exported and measured")]
 fn the_rounds_export_and_measure_within_their_tolerance() {
     let dir = std::env::temp_dir().join(format!("solventc-rounds-{}",std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
-    let files = ["block","by_hand","pocket","boss","blank","slot","pad","rail","knob","tee","bore"].map(|f| (f,None));
+    let files = ["block","by_hand","pocket","boss","blank","slot","pad","rail","knob","tee","bore","twin","post","dshaft"].map(|f| (f,None));
     for (file,solid) in files.into_iter().chain([("runout",Some("lug")),("runout",Some("vent"))]) {
         let name = solid.unwrap_or(file);
         let source = doc(&format!("rounds/{file}.sv"));

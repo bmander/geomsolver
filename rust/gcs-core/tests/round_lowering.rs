@@ -241,20 +241,294 @@ fn a_leaning_rim_runs_out_at_every_corner() {
     assert_eq!(kinds(&b), [("cylinder", 4), ("plane", 6)].into());
 }
 
-/// **What no entry builds stays the field's**: the leaning block rounded all over — at the corners
-/// of its leaning side three faces meet not square to one another, which no entry builds yet. The
-/// export is refused, naming why, and the field still reads it.
+/// **Corners not square** (#218's 3): the leaning block rounded all over. Where its leaning side
+/// meets the top and the bottom, three faces meet at a slant; the ball touching all three stands
+/// `r` from each (a 3×3 solve), and its cell — the trihedron cut by the three sections through it
+/// square to the edges — less the ball is the corner's piece, each run cut short at its section
+/// there. The body is the shrunk prism grown by the ball (Steiner): `V + S r + r² Σ L(π − θ)/2 +
+/// 4πr³/3` over the prism of the trapezoid inset by `r`, `h − 2r` deep.
 #[test]
-fn a_round_no_entry_builds_is_refused_by_name() {
+fn a_leaning_block_rounded_all_over_is_steiners_exactly() {
     let src = BLOCK.replace("fix((40, 24)) b2", "fix((30, 24)) b2");
     let e = solved(&format!("{src}round(r: 2mm) block\n"));
-    let body = ent(&e, "block").i();
+    let b = exported(&e, "block");
+    let r = 2.0;
+    // the east side `24x + 10z = 960` moved in by `r` (its normal 26 long), the others square
+    let east = |z: f64| (960.0 - 26.0 * r - 10.0 * z) / 24.0;
+    let (lo, hi) = (r, 24.0 - r);
+    let (bottom, top) = (east(lo) - r, east(hi) - r);
+    let area = (bottom + top) / 2.0 * (hi - lo);
+    let slant = ((bottom - top).powi(2) + (hi - lo).powi(2)).sqrt();
+    let (perimeter, h) = (bottom + top + (hi - lo) + slant, 12.0 - 2.0 * r);
+    close(props::volume(&b), steiner(area, perimeter, h, r));
+    assert_eq!(kinds(&b), [("cylinder", 12), ("plane", 6), ("sphere", 8)].into());
+}
+
+/// Of two discs of radii `a` and `b`, centres `d` apart, the lens they share.
+fn lens(a: f64, b: f64, d: f64) -> f64 {
+    let half = |a: f64, b: f64| ((d * d + a * a - b * b) / (2.0 * d * a)).acos();
+    a * a * half(a, b) + b * b * half(b, a)
+        - 0.5 * ((-d + a + b) * (d + a - b) * (d - a + b) * (d + a + b)).sqrt()
+}
+
+/// Of two discs of radii `a` and `b`, centres `d` apart, the fill a ball of radius `r` outside
+/// both leaves at one of the cusps where their circles cross: the triangle of the three centres
+/// less each disc's sector in it, the half lens in it counted once.
+fn cusp_fill(a: f64, b: f64, d: f64, r: f64) -> f64 {
+    let (sa, sb) = (a + r, b + r);
+    let alpha = ((d * d + sa * sa - sb * sb) / (2.0 * d * sa)).acos();
+    let beta = ((d * d + sb * sb - sa * sa) / (2.0 * d * sb)).acos();
+    let gamma = PI - alpha - beta;
+    let triangle = 0.5 * d * sa * alpha.sin();
+    triangle - 0.5 * (a * a * alpha + b * b * beta + r * r * gamma) + lens(a, b, d) / 2.0
+}
+
+/// **A round between two curved faces** (#218's 5), `twin.sv`: two parallel rods overlapping,
+/// made one, the two straight seams where their walls meet filled. In the section both walls are
+/// circles, and the ball stands where the two circles grown by `r` meet: each seam's fill a prism
+/// of two arcs and the ball's.
+#[test]
+fn a_seam_between_two_rods_is_filled_exactly() {
+    let e = solved(include_str!("../../examples/rounds/twin.sv"));
+    assert_eq!(lowered(&e).0, 1);
+    let b = exported(&e, "bar");
+    let (big, small, d, r) = (10.0, 8.0, 14.0, 2.0);
+    let section = PI * (big * big + small * small) - lens(big, small, d) + 2.0 * cusp_fill(big, small, d, r);
+    close(props::volume(&b), section * 40.0);
+    // (the union leaves the caps in pieces)
+    assert_eq!(kinds(&b).keys().copied().collect::<Vec<_>>(), ["cylinder", "plane"]);
+}
+
+/// The same rods as two bores through a block, overlapping: the cusps where the bores' walls meet
+/// are convex, so the same word rounds them away — the ball within the material, outside both
+/// bores.
+#[test]
+fn a_cusp_between_two_bores_is_rounded_away() {
+    let e = solved("unit mm\nuse std (round)\nin std.front {\n\
+        a := point\nb := point\nc := point\nd := point\n\
+        fix((-20, -20)) a\nfix((30, -20)) b\nfix((30, 20)) c\nfix((-20, 20)) d\n\
+        (ab := line(a, b)) -> (bc := line(b, c)) -> (cd := line(c, d)) -> (da := line(d, a)) -> close\n\
+        c1 := point\nc2 := point\nfix((0, 0)) c1\nfix((14, 0)) c2\n\
+        big := circle(center: c1) hint(r: 10)\nsmall := circle(center: c2) hint(r: 8)\n\
+        radius(10mm) big\nradius(8mm) small\n}\n\
+        block := solid(face(ab, bc, cd, da), from: 0mm, to: 40mm)\n\
+        left := solid(face(big), from: 0mm, to: 40mm)\nright := solid(face(small), from: 0mm, to: 40mm)\n\
+        left cut block\nright cut block\nblock.right.small round(r: 2mm) block.left.big\n");
+    let b = exported(&e, "block");
+    // at each cusp the material outside both bores that the ball cannot reach: the same figure
+    // as the twin bar's fill
+    let (big, small, d, r) = (10.0, 8.0, 14.0, 2.0);
+    let bores = PI * (big * big + small * small) - lens(big, small, d);
+    close(props::volume(&b), (50.0 * 40.0 - bores - 2.0 * cusp_fill(big, small, d, r)) * 40.0);
+}
+
+/// **What no entry builds stays the field's**: the twin bar's seams chamfered. Between two circles
+/// a flat's sum of distances is a Cartesian oval, no conic, which no entry builds: the export is
+/// refused, naming why, and the field still reads it.
+#[test]
+fn a_round_no_entry_builds_is_refused_by_name() {
+    let src = include_str!("../../examples/rounds/twin.sv").replace("use std (round)", "use std (chamfer)")
+        .replace("bar.right.small round(r: r) bar.left.big", "bar.right.small chamfer(d: 1mm) bar.left.big");
+    let e = solved(&src);
+    let body = ent(&e, "bar").i();
     let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
     let refusal = export::exact(&e.sketch, body, None, None, &say).err().expect("refused");
-    assert!(format!("{refusal:?}").contains("a corner whose faces are not square to one another: no exact \
+    assert!(format!("{refusal:?}").contains("a flat between two curved faces is no line or conic: no exact \
         construction is made of it yet"), "{refusal:?}");
     let field = MaterialField::read(&e.sketch, body, 1e-10).unwrap();
-    assert!(field.side([20.0, 0.2, 0.2]) > 0.0 && field.side([20.0, 6.0, 6.0]) < 0.0);
+    // (the front plane's normal, toward the viewer, is −y: the bar stands at y in (−40, 0))
+    assert!(field.side([0.0, -20.0, 0.0]) < 0.0 && field.side([7.0, -20.0, 20.0]) > 0.0);
+}
+
+/// **A chamfer beside a curved face** (#218's 6): `rail.sv`'s fills chamfered instead. In the
+/// section the rod is a circle about `c` on the plate's top, and the flat — `d_rod + d_top = d` —
+/// is the conic `(ρ − 6) + ρ sin θ = d` about `c`, from the top `d` out along it to the rod `d` up:
+/// `ρ(θ) = (6 + d)/(1 + sin θ)` for `0 ≤ θ ≤ asin(d/6)`, its area beside the rod `∫ (ρ² − 36)/2 dθ`
+/// in closed form (`t = tan(θ/2)`, `∫ dθ/(1 + sin θ)² = −2/u + 2/u² − 4/(3u³)` with `u = 1 + t`).
+/// Built as a prism over a rational quadratic, an extrusion face.
+#[test]
+fn a_chamfer_beside_a_rod_is_a_conic_prism() {
+    let src = include_str!("../../examples/rounds/rail.sv").replace("use std (round)", "use std (round, chamfer)")
+        .replace("rail.rod round(r: r) rail.plate", "rail.rod chamfer(d: 2mm) rail.plate");
+    let e = solved(&src);
+    assert_eq!(lowered(&e).0, 1);
+    let b = exported(&e, "rail");
+    let (r, d): (f64, f64) = (6.0, 2.0);
+    let end = (d / r).asin();
+    let anti = |theta: f64| {
+        let u = 1.0 + (theta / 2.0).tan();
+        -2.0 / u + 2.0 / (u * u) - 4.0 / (3.0 * u * u * u)
+    };
+    let area = 0.5 * (r + d) * (r + d) * (anti(end) - anti(0.0)) - 0.5 * r * r * end;
+    close(props::volume(&b), 60.0 * 10.0 * 40.0 + PI * r * r / 2.0 * 40.0 + 2.0 * 40.0 * area);
+    assert_eq!(kinds(&b).get("extrusion"), Some(&2), "{:?}", kinds(&b));
+}
+
+/// Over the section a round of radius `r` takes beside a square corner, `∫ f(u, h) du`: `u` the
+/// depth in from one face, `h` the section's height there (`f` the integrand per `du`, its height
+/// in it). `u = r(1 − cos t)` makes it smooth for Simpson, to roundoff at a few thousand steps.
+fn over_round(r: f64, f: impl Fn(f64, f64) -> f64) -> f64 {
+    crate::brep::simpson(0.0, PI / 2.0, 4000, |t: f64| f(r * (1.0 - t.cos()), r - r * t.sin()) * r * t.sin())
+}
+
+/// Steiner's formula for a prism of `area`, `perimeter` and depth `h`, convex, grown by a ball of
+/// radius `r`: `A h + (2A + p h) r + π r² (h + p/2) + 4πr³/3`.
+fn steiner(area: f64, perimeter: f64, h: f64, r: f64) -> f64 {
+    area * h + (2.0 * area + perimeter * h) * r + PI * r * r * (h + perimeter / 2.0) + 4.0 * PI * r * r * r / 3.0
+}
+
+/// `dshaft.sv` with `round(r: r) shaft` in place of its round all over.
+fn dshaft(round: &str) -> Elaborated {
+    let src = include_str!("../../examples/rounds/dshaft.sv");
+    assert!(src.contains("round(r: r) shaft\n"));
+    solved(&src.replace("round(r: r) shaft\n", &format!("{round}\n")))
+}
+
+/// **A run cut off by a curved face** (#218's 2, #110), `post.sv`: the plate's top edge along its
+/// near side runs into the post standing there, whose axis the edge passes through. Each run is
+/// carried on into the post and kept outside its wall: at depth `u` in from the side, the run's
+/// section stands `30 − √(64 − u²)` long, so it takes `∫ h(u) (30 − √(64 − u²)) du` over the round's
+/// section (`h` its height at `u`; `u = r(1 − cos t)` makes it smooth for Simpson).
+#[test]
+fn a_run_cut_off_by_a_post_it_runs_into() {
+    let e = solved(include_str!("../../examples/rounds/post.sv"));
+    assert_eq!(lowered(&e).0, 1);
+    let b = exported(&e, "stand");
+    let (r, big) = (2.0, 8.0);
+    let run = over_round(r, |u, h| h * (30.0 - (big * big - u * u).sqrt()));
+    let want = 60.0 * 40.0 * 10.0 + PI * big * big * 30.0 - PI * big * big / 2.0 * 10.0 - 2.0 * run;
+    close(props::volume(&b), want);
+    // the app builds a solid about its own origin (`cad::shifted`): the post's wall the runs are
+    // cut off by moves with the rest
+    let recipe = gcs_core::solid::cad::recipe(&e.sketch, ent(&e, "stand").i()).unwrap();
+    let by = [5.0, 7.0, 11.0];
+    let walls = |r: &gcs_core::json::Json| -> Vec<[f64; 3]> {
+        r.get("nodes").unwrap().arr().iter().filter_map(|n| n.get("pieces")).flat_map(|p| p.arr().iter())
+            .filter_map(|p| p.get("kept")).flat_map(|w| w.arr().iter())
+            .map(|h| { let a = h.get("origin").unwrap().arr(); [a[0].as_f64(), a[1].as_f64(), a[2].as_f64()] })
+            .collect()
+    };
+    let (before, after) = (walls(&recipe), walls(&gcs_core::solid::cad::shifted(&recipe, by)));
+    assert_eq!(before.len(), 2);
+    assert!(before.iter().zip(&after).all(|(p, q)| (0..3).all(|k| (p[k] - by[k] - q[k]).abs() < 1e-12)));
+}
+
+/// The same within a curved face: a D-shaped shaft (a round of 10 about its axis with a flat 6
+/// from it), the flat's top edge rounded. The run ends on the round at both ends, from inside:
+/// carried on out of the shaft past its wall and kept within it. At depth `u` in from the flat its
+/// section is the chord `2√(100 − (6 − u)²)` long.
+#[test]
+fn a_run_cut_off_at_both_ends_by_the_round_it_lies_within() {
+    let e = dshaft("shaft.near round(r: r) shaft.flat");
+    assert_eq!(lowered(&e).0, 1);
+    let b = exported(&e, "shaft");
+    let (r, big, c): (f64, f64, f64) = (2.0, 10.0, 6.0);
+    let run = over_round(r, |u, h| h * 2.0 * (big * big - (c - u) * (c - u)).sqrt());
+    close(props::volume(&b), (PI * big * big - segment(big, c).0) * 20.0 - run);
+}
+
+/// **A ring's stretch cut off by a plane at its end** (#218's 2): the D-shaped shaft's top rim
+/// rounded — round its round, from one end of the flat to the other. The flat is no plane through
+/// the axis, so the stretch is carried on round past each end and kept within the flat. A point
+/// of the section `ρ = 10 − u` from the axis is kept over the turn where `ρ cos θ <= 6`, `2π −
+/// 2 acos(6/ρ)` of it: the section turned through that much at each radius.
+#[test]
+fn a_rings_stretch_cut_off_by_a_flat_at_its_ends() {
+    let e = dshaft("shaft.near round(r: r) shaft.rim");
+    assert_eq!(lowered(&e).0, 1);
+    let b = exported(&e, "shaft");
+    let (r, big, c): (f64, f64, f64) = (2.0, 10.0, 6.0);
+    let ring = over_round(r, |u, h| h * (big - u) * (2.0 * PI - 2.0 * (c / (big - u)).acos()));
+    close(props::volume(&b), (PI * big * big - segment(big, c).0) * 20.0 - ring);
+}
+
+/// **Corners where a curved face meets two planes** (#218's 4), `dshaft.sv`: the D-shaped shaft
+/// rounded all over. At each of its four corners its flat, its round and a cap meet; the ball touching all three
+/// stands where Newton's steps put it, and its cell is the cell over the three surfaces — a patch of
+/// the round among them — the flat's runs, the rims' rings and the seams' runs each cut short at
+/// its section there. The D is convex, so the body is the D shrunk by `r`, `h − 2r` deep, grown by
+/// the ball (Steiner, as for a polygon): `A h + (2A + p h) r + π r² (h + p/2) + 4πr³/3`.
+#[test]
+fn a_d_shaft_rounded_all_over_is_steiners_exactly() {
+    let e = solved(include_str!("../../examples/rounds/dshaft.sv"));
+    let b = exported(&e, "shaft");
+    let r: f64 = 2.0;
+    let (big, c) = (10.0 - r, 6.0 - r);
+    let area = PI * big * big - segment(big, c).0;
+    let perimeter = big * (2.0 * PI - 2.0 * (c / big).acos()) + 2.0 * (big * big - c * c).sqrt();
+    close(props::volume(&b), steiner(area, perimeter, 20.0 - 2.0 * r, r));
+}
+
+/// **A ring's stretch cut off by a curved face** (#218's 2): the twin bar's big rod's rim at one
+/// end rounded — round the rod from one cusp to the other, ending on the small rod's wall at both.
+/// Carried on round into the small rod and kept outside it: a point of the section `ρ = 10 − u` from
+/// the big rod's axis is kept over the turn outside the small rod's disc, all but `2 acos((ρ² + 14²
+/// − 8²)/(28ρ))` of it.
+#[test]
+fn a_rings_stretch_cut_off_by_a_cylinder_at_its_ends() {
+    let src = include_str!("../../examples/rounds/twin.sv")
+        .replace("bar.right.small round(r: r) bar.left.big", "bar.left.near round(r: 1mm) bar.left.big");
+    let e = solved(&src);
+    assert_eq!(lowered(&e).0, 1);
+    let b = exported(&e, "bar");
+    let (r, big, small, d): (f64, f64, f64, f64) = (1.0, 10.0, 8.0, 14.0);
+    let ring = over_round(r, |u, h| {
+        let rho = big - u;
+        h * rho * (2.0 * PI - 2.0 * ((rho * rho + d * d - small * small) / (2.0 * rho * d)).acos())
+    });
+    close(props::volume(&b), (PI * (big * big + small * small) - lens(big, small, d)) * 40.0 - ring);
+}
+
+/// And within a ball: a quarter of a ball of 10 (its half disc turned a quarter turn), the edge
+/// where its two flats meet rounded. The edge runs through the centre from pole to pole, ending on
+/// the sphere at both: the run carried on out of the ball and kept within it. At `(a, b)` from the
+/// edge its section is the chord `2√(100 − a² − b²)` long; over the section's height at `a` that
+/// is `[b√(A² − b²) + A² asin(b/A)]` from 0, `A² = 100 − a²`.
+#[test]
+fn a_run_cut_off_by_the_ball_it_lies_within() {
+    let e = solved("unit mm\nuse std (round)\nin std.front {\n\
+        a0 := point\na1 := point\nfix((0, -10)) a0\nfix((0, 10)) a1\nspindle := line(a0, a1)\n\
+        c0 := point\nfix((0, 0)) c0\nshell := arc(center: c0, start: a0, end: a1) hint(r: 10)\n\
+        shut := line(a1, a0)\n}\n\
+        wedge := solid(face(shell, shut), about: spindle, sweep: 90deg)\n\
+        wedge.start round(r: 2mm) wedge.end\n");
+    assert_eq!(lowered(&e).0, 1);
+    let b = exported(&e, "wedge");
+    let (r, big): (f64, f64) = (2.0, 10.0);
+    let run = over_round(r, |a, h| {
+        let aa = big * big - a * a;
+        h * (aa - h * h).sqrt() + aa * (h / aa.sqrt()).asin()
+    });
+    close(props::volume(&b), PI * big * big * big / 3.0 - run);
+    assert_eq!(kinds(&b).get("sphere"), Some(&1), "{:?}", kinds(&b));
+}
+
+/// `knob.sv` chamfered instead (#218's 6, about an axis): the root's flat between the disc's top
+/// and the rod is a cone (its triangle turned, Pappus), and the neck's between the rod and the
+/// ball the conic `(x − 4) + (|q − c| − 8) = d` of the meridian turned — in polar about the
+/// ball's centre `ρ = (12 + d)/(1 + cos φ)` out to where it meets the rod and the ball, from the
+/// ball (`ρ = 8`) or the rod (`ρ = 4 / cos φ`), whichever stands farther; turned, Pappus over
+/// `∫∫ x ρ dρ dφ`.
+#[test]
+fn a_knobs_neck_chamfered_is_a_conic_turned() {
+    let src = include_str!("../../examples/rounds/knob.sv").replace("use std (round)", "use std (chamfer)")
+        .replace("knob.rod round(r: 2mm) knob.disc", "knob.rod chamfer(d: 2mm) knob.disc")
+        .replace("knob.rod round(r: 1.5mm) knob.ball", "knob.rod chamfer(d: 1.5mm) knob.ball");
+    let e = solved(&src);
+    let b = exported(&e, "knob");
+    let (rod, big, d) = (4.0, 8.0, 1.5);
+    let unrounded = crate::fillet_meridian::knob_rounded([0.0, 44.0], big, rod, 1.5)
+        - root_ring(rod, 2.0) - crate::fillet_meridian::knob_neck([0.0, 44.0], big, rod, 1.5);
+    let root = 2.0 * PI * (rod + 2.0 / 3.0) * 2.0;
+    let hi = |phi: f64| (big + rod + d) / (1.0 + phi.cos());
+    let moment = |phi: f64, lo: f64| (hi(phi).powi(3) - lo.powi(3)) / 3.0 * phi.cos();
+    // below the ball's equator: from the conic meeting the rod, through the edge, to its meeting the
+    // ball
+    let (from, edge, to) = (-(rod / (big + d)).acos(), -(rod / big).acos(), -((rod + d) / big).acos());
+    let neck = crate::brep::simpson(from, edge, 4000, |phi| moment(phi, rod / phi.cos()))
+        + crate::brep::simpson(edge, to, 4000, |phi| moment(phi, big));
+    close(props::volume(&b), unrounded + root + 2.0 * PI * neck);
+    assert_eq!(kinds(&b).get("cone"), Some(&1), "{:?}", kinds(&b));
 }
 
 /// A round section's area beside a square corner (`square_run`), and how far its centroid stands
@@ -321,6 +595,23 @@ fn a_grooves_rims_are_rounded_away() {
     let e = solved(&src);
     let b = exported(&e, "rail");
     close(props::volume(&b), 60.0 * 10.0 * 40.0 - PI * 36.0 / 2.0 * 40.0 - 2.0 * 40.0 * beside_cylinder(6.0, 2.0));
+}
+
+/// **A run mitred against a ring's stretch on one cylinder** (#218's 1): the groove's rims rounded
+/// all round — along the plate's top (two runs) and at its ends (two half rings). At each corner a
+/// run and a stretch meet, each with a face on the groove's cylinder; their union is found (the
+/// faces they share on one cylinder, the line where a run's round touches the groove taken once)
+/// up to where the two rounds meet, which ends where both touch the groove — three surfaces
+/// tangent at one point, which this kernel's trace does not follow (#58): refused, naming that.
+#[test]
+fn a_grooves_rims_rounded_all_round_are_refused_where_three_surfaces_touch() {
+    let src = include_str!("../../examples/rounds/rail.sv").replace("rod union rail", "rod cut rail");
+    let e = solved(&src);
+    assert_eq!(lowered(&e).0, 3);
+    let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
+    let refusal = export::exact(&e.sketch, ent(&e, "rail").i(), None, None, &say).err().expect("refused");
+    assert!(format!("{refusal:?}").contains("a cylinder and a torus meet at 0.00°")
+        && format!("{refusal:?}").contains("nearly touching: their meeting is ill-conditioned there"), "{refusal:?}");
 }
 
 /// The groove's rim at the plate's near face: a half circle, its round a stretch of a ring ending

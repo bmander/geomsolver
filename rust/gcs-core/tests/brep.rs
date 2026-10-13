@@ -277,7 +277,7 @@ fn booleans_of_faces_on_one_surface() {
 
 
 /// `∫_a^b f` by Simpson's rule on `n` (even) steps.
-fn simpson(a: f64,b: f64,n: usize,f: impl Fn(f64) -> f64) -> f64 {
+pub(crate) fn simpson(a: f64,b: f64,n: usize,f: impl Fn(f64) -> f64) -> f64 {
     let h = (b-a)/n as f64;
     (0..=n).map(|i| f(a+h*i as f64)*if i == 0 || i == n { 1. } else if i%2 == 1 { 4. } else { 2. }).sum::<f64>()*h/3.
 }

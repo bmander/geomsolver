@@ -768,30 +768,73 @@ fn crossing(u: &dyn Fn(f64) -> f64,target: f64,period: f64,from: f64,span: f64) 
 
 /// **A spherical corner** (rung 3): where three planar faces meet at `vertex` and a fillet of
 /// radius `r` rounds all three of its edges, the ball touching all three faces sits at `centre`,
-/// and the corner's piece is the corner's cell less the ball — the cell the trihedron at the vertex
-/// cut by the three planes through `centre` square to its edges, its vertices the vertex, the feet
-/// of the centre on the edges, the touches and the centre. `toward[i]` is the unit direction from
-/// face `i` toward the ball (into the material at a convex corner, the void at a concave one), so
-/// `(centre − vertex) · toward[i] = r`. Faces: `a`, `b`, `c` on the three faces, `near_ab`,
-/// `near_bc`, `near_ca` the sections (each a neighbouring edge piece's cap), and `round`, the
-/// sphere's triangle.
+/// and the corner's piece is the corner's cell less the ball (`corner_among` over the three
+/// planes). `toward[i]` is the unit direction from face `i` toward the ball (into the material at a
+/// convex corner, the void at a concave one), so `(centre − vertex) · toward[i] = r`.
 pub fn corner(vertex: V,centre: V,r: f64,toward: [V;3],tol: f64) -> Result<Brep,String> {
+    let planes = toward.map(|m| Surface::Plane(Frame::about(vertex,m)));
+    corner_among(vertex,centre,r,[&planes[0],&planes[1],&planes[2]],tol)
+}
+
+/// **A ball's patch where three faces meet** (#218's 4): the corner's cell — the trihedron at
+/// `vertex` cut by the three sections through the ball's centre square to its edges — less the
+/// ball, over faces lying on `faces`: planes, or surfaces a plane through the centre square to an
+/// edge cuts in a closed form (a cylinder about a line through the edge or along it: a line or a
+/// circle). The ball touches each face where the face's surface is nearest its centre; each edge
+/// is where two of the surfaces meet through the vertex, its section the plane through the centre
+/// square to it at the centre's foot on it (the section a neighbouring run or ring ends in). Faces:
+/// `a`, `b`, `c`, a stretch of each face (vertex, foot, touch, foot); `near_ab`, `near_bc`,
+/// `near_ca`, the sections (foot, touch, the ball's arc, touch), each a neighbouring piece's cap;
+/// and `round`, the ball's triangle. Every curve is the meeting `ssi::intersect` gives in closed
+/// form; one it would trace is refused.
+pub fn corner_among(vertex: V,centre: V,r: f64,faces: [&Surface;3],tol: f64) -> Result<Brep,String> {
+    use super::ssi::{intersect,Ssi};
     let pairs = [(0,1),(1,2),(2,0)];
-    let dirs = corner_sections(vertex,centre,toward);
-    let (feet,touches) = corner_points(vertex,centre,r,toward);
+    // where the ball touches each face, and the way from it to the ball
+    let touches: [V;3] = faces.map(|s| s.point(s.inverse(centre)));
+    if touches.iter().any(|&t| (distance(t,centre)-r).abs() > 1e-6*(1.+r)) {
+        return Err("a corner's ball touches its faces nowhere".into())
+    }
+    let toward: [V;3] = std::array::from_fn(|i| unit(sub(centre,touches[i])));
+    // the curve through `p` of where two surfaces meet, in closed form
+    let meeting = |a: &Surface,b: &Surface,p: V| -> Result<Curve,String> {
+        let Ssi::Curves(cs) = intersect(a,b,tol) else { return Err(format!("a corner where a {} meets a {}",a.kind(),b.kind())) };
+        cs.into_iter().find(|c| distance(c.point(c.inverse(p)),p) <= 1e3*tol)
+            .ok_or_else(|| format!("a corner where a {} and a {} meet away from it",a.kind(),b.kind()))
+    };
+    let edges: Vec<Curve> = pairs.iter().map(|&(i,j)| meeting(faces[i],faces[j],vertex)).collect::<Result<_,_>>()?;
+    // the centre's foot on each edge, and the edge's way there from the vertex
+    let feet: [V;3] = std::array::from_fn(|k| edges[k].point(edges[k].inverse(centre)));
+    let dirs: [V;3] = std::array::from_fn(|k| {
+        let t = unit(edges[k].tangent(edges[k].inverse(feet[k])));
+        if dot(t,sub(feet[k],vertex)) < 0. { scale(t,-1.) } else { t }
+    });
     let mut out = Brep::default();
     let pv = out.vertex(vertex);
     let fv = feet.map(|p| out.vertex(p));
     let tv = touches.map(|p| out.vertex(p));
-    let line = |out: &mut Brep,a: V,z: V,va: u32,vz: u32| {
-        let l = distance(a,z);
-        out.edge(EdgeCurve::Curve(Curve::Line {p:a,d:scale(sub(z,a),1./l)}),[0.,l],[va,vz]) as usize
+    // a stretch of a curve from `a` to `z` (the short way round a closed one)
+    let stretch = |out: &mut Brep,c: &Curve,a: V,z: V,va: u32,vz: u32| -> usize {
+        let (t0,mut t1) = (c.inverse(a),c.inverse(z));
+        if let Some(period) = c.period() { t1 = t0+around(t1-t0,-0.5*period,period); }
+        if t0 <= t1 { out.edge(EdgeCurve::Curve(c.clone()),[t0,t1],[va,vz]) as usize }
+        else { out.edge(EdgeCurve::Curve(c.clone()),[t1,t0],[vz,va]) as usize }
     };
     // along each edge from the vertex to its foot; across each face from a foot to its touch
-    let runs: Vec<usize> = (0..3).map(|k| line(&mut out,vertex,feet[k],pv,fv[k])).collect();
-    // across[k] = [from foot k to face i's touch, to face j's], (i, j) = pairs[k]
-    let across: Vec<[usize;2]> = pairs.iter().enumerate().map(|(k,&(i,j))|
-        [i,j].map(|f| line(&mut out,feet[k],touches[f],fv[k],tv[f]))).collect();
+    let runs: Vec<usize> = (0..3).map(|k| stretch(&mut out,&edges[k],vertex,feet[k],pv,fv[k])).collect();
+    let sections: [Surface;3] = dirs.map(|d| Surface::Plane(Frame::about(centre,d)));
+    let mut across: Vec<[usize;2]> = Vec::new();
+    for (k,&(i,j)) in pairs.iter().enumerate() {
+        let mut both = [0;2];
+        for (m,f) in [i,j].into_iter().enumerate() {
+            let c = meeting(&sections[k],faces[f],feet[k])?;
+            if distance(c.point(c.inverse(touches[f])),touches[f]) > 1e3*tol {
+                return Err(format!("a corner's section meets its {} away from the ball's touch",faces[f].kind()))
+            }
+            both[m] = stretch(&mut out,&c,feet[k],touches[f],fv[k],tv[f]);
+        }
+        across.push(both);
+    }
     // the ball's arc in each section, from one touch to the other about the centre
     let arcs: Vec<usize> = pairs.iter().enumerate().map(|(k,&(i,j))| {
         let x = unit(sub(touches[i],centre));
@@ -801,17 +844,19 @@ pub fn corner(vertex: V,centre: V,r: f64,toward: [V;3],tol: f64) -> Result<Brep,
         let end = dot(w,frame.y).datan2(dot(w,frame.x));
         out.edge(EdgeCurve::Curve(Curve::Circle(frame,r)),[0.,end],[tv[i],tv[j]]) as usize
     }).collect();
-    // on each face: vertex, foot, touch, foot — face i lies between sections i − 1 and i (pairs
-    // (i − 1, i) and (i, i + 1)); the piece toward the ball from it
+    // on each face, the piece toward the ball from it: outward, away from the ball, where the loop
+    // starts
     for (i,name) in ["a","b","c"].into_iter().enumerate() {
         let (k0,k1) = ((i+2)%3,i);
-        let s = Surface::Plane(Frame::about(vertex,toward[i]));
-        face_out(&mut out,s,scale(toward[i],-1.),&[runs[k0],across[k0][1],across[k1][0],runs[k1]],name)?;
+        let es = [runs[k0],across[k0][1],across[k1][0],runs[k1]];
+        let at = out.vertices[out.edges[es[0]].v[0] as usize].p;
+        let g = unit(faces[i].gradient(at));
+        let away = if dot(unit(faces[i].gradient(touches[i])),toward[i]) > 0. { scale(g,-1.) } else { g };
+        face_out(&mut out,faces[i].clone(),away,&es,name)?;
     }
     // each section: foot, touch, arc, touch; the piece lies toward the vertex from it
     for k in 0..3 {
-        let s = Surface::Plane(Frame::about(centre,dirs[k]));
-        face_out(&mut out,s,dirs[k],&[across[k][0],arcs[k],across[k][1]],["near_ab","near_bc","near_ca"][k])?;
+        face_out(&mut out,sections[k].clone(),dirs[k],&[across[k][0],arcs[k],across[k][1]],["near_ab","near_bc","near_ca"][k])?;
     }
     // the ball's triangle, its frame's poles and seam turned away from it; the piece outside it
     let middle = unit(scale(add(add(toward[0],toward[1]),toward[2]),-1.));

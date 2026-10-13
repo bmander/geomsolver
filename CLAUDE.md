@@ -385,19 +385,36 @@ one bound saying the section — a ball's `centres` set or a flat's sum), **neve
 `BodyFaces::plane`/`cylinder`/`segment`/`circle`/`coaxial`/`normal`) into **pieces**, one per edge
 where a face reference names a face in pieces (`run`: every edge between the two groups, each kept
 within the whole run's ends, as the field reads them): `Run` (the section along a straight edge
-between planes, or a plane and a cylinder about a line along it — the section's `Trace`s a line and
-a circle, the ball where their offsets meet — carried on past each end until the plane faces it
+between planes, or a plane and a cylinder, or two cylinders, about lines along it — the section's
+`Trace`s lines and circles, the ball where their offsets meet (`twin.sv`), a chamfer's flat beside
+a circle the conic its sum of distances makes (the section read as a meridian's corner,
+`Corner2`, its round and its flat by `brep::corners::ball`/`sum`, the meridian's own rule;
+`Stroke::Conic`, a rational quadratic profile edge: an extrusion face; turned in a ring, a
+revolution's; between two circles a Cartesian oval, refused) — carried on past each end until the plane faces it
 ends on cut it off (#195's meaning: a square one is the prism's end, one at a slant a half-space it
-is kept within, `Run::within`, the recipe's `"within"` as a point and a normal; a run-out); a face
-along the edge or a curved end refused, `unbuilt`), `Ring` (a circle where a
+is kept within, `Run::within`, the recipe's `"within"` as a point and a normal; a run-out); a
+cylinder or a sphere it ends on carried into until every line of its section's hull has crossed
+it, and kept within or outside that solid (#218, `Run::kept`, `Kept` over a `Surf`, the recipe's
+`"kept"` read by `recipe::surface_of` and built by `recipe::kept_by_solid`; one `ends_at` sorts a
+piece's ends: `post.sv`, a D's flat, a quarter ball); a face along the edge or
+another curved end refused, `unbuilt`), `Ring` (a circle where a
 plane meets a coaxial cylinder or cone: the section in the meridian at its start turned through its
 angle, `Ring::angle`; a sphere centred on the axis is a circle in the meridian (`Trace::Circle`,
-`knob.sv`'s neck); a stretch only where its ends are seams or planes through the axis at its
-ends' meridians), a run and a stretch going on from one
+`knob.sv`'s neck); a stretch ends at seams, at planes through the axis at its ends' meridians,
+or at a plane not through it — carried on round until its whole section has crossed it (each
+point's first crossing a sinusoid's root, `first_over`), and kept within it, #218: a D's rim at
+its flat — or at a cylinder or a sphere it runs into, carried a
+quarter of the way through what its section's points spend in that solid and kept on its side,
+`Kept`: the twin bar's rim), a run and a stretch going on from one
 another **glued** at their shared section (a face going on tangent across a seam is no end,
 `BodyFaces::continues`, the field's and the lowering's one rule),
-`Corner` (three square planes: the cell less the ball, `brep::fillet::corner`, plus each edge's
-run), `Rolled` (along an edge no line or coaxial circle carries — a tee's crotch, a bore's rim, a
+`Corner` (`corner_at` each vertex three faces share, planes or a cylinder or a sphere among
+them, #218: the ball `r` from each surface, a 3×3 solve on the tangent planes then Newton's steps
+on the signed distances, `roots::newton_onto` — none for planes; the vertex within its normal
+cone; the cell less the ball, `fillet::corner_among` over the faces' surfaces, `Corner::faces`,
+the recipe's corner `"faces"`, `fillet::corner` its three-plane case; plus each edge's run or
+ring stretch, cut short at its section even where it ran out past a slanted end, a ring's
+stretch turned only to the corner's meridian, glued there: `dshaft.sv`), `Rolled` (along an edge no line or coaxial circle carries — a tee's crotch, a bore's rim, a
 run-out across a slope: the ball rolled along the whole run, `brep::fillet::roll`, its canal
 fitted, carried past an end and cut off by the plane there; the recipe's `"rolled"` rolled against
 the body's stratum, rebuilt from the `"stratum"` terms `cad.rs` writes beside it, the gate's
@@ -416,14 +433,22 @@ this needs (ported from #79–#110): edges along a face cut where they cross its
 (`query::crossings_in`), touches read to second order (`ssi::touch_near`/`touch`,
 `trace_beside`/`unseen_beside`), equal crossing cylinders' ellipses split where they cross
 (`boolean::crossings_among`), `query::line_cylinder`, `Surface::offset`, a fitted edge read at its
-own `tol`. `cad::shifted` (the app's exact solid, built about its own origin) moves a lowered
-node's pieces, corners and balls with the rest (`shifted_node`). Open: curved ends at a corner (a
-run-out onto a curved face, #110), corners not square, runs between two curved faces, a run
-mitred against a ring's stretch on one cylinder (the union of coincident cylinder faces: a groove
-rounded at its ends), a flat along a traced edge, a rolled round beside other pieces in one
-region, the OCCT oracle. `tests/round_lowering.rs` is the gate (every volume the closed form's to
+own `tol`; a plane or a cylinder touching a cylinder along a line is one line, judged by the gap
+(the half chord is its square root, #218), and a vertex an edge lying in a face makes on that
+face's edge is on every face that edge bounds (a meeting of the face beside it may end there). `cad::shifted` (the app's exact solid, built about its own origin) moves a lowered
+node's pieces, corners and balls with the rest (`shifted_node`). Open (#218): a rolled run ending on a
+curved face, a vertex where convex and concave rounds meet (the twin bar rounded all over), corners of a face in pieces or of two curved faces, a run
+mitred against a ring's stretch on one cylinder (a groove rounded at its ends: refused where the
+two rounds' meeting ends at a point all three surfaces touch, which the trace does not follow,
+#58), a flat along a traced edge, a rolled round beside other pieces in one
+region. **The oracle** (#218's 8): `gcs-cli tests/fillet_oracle.rs` (OCCT) builds each rounds
+example's body less its lowered regions, rounds the same edges by OCCT's own fillet or chamfer
+(`solvent_cad_round`, `Session::round`; each edge the one through a point the pieces give) and
+holds ours to it (volume 1e-9 where both are analytic, 2e-5 where either fits a B-spline; face
+kinds, OCCT's B-spline standing for an analytic face of ours); where OCCT's fillet fails (`rail`)
+or makes no valid solid (`post`) it is counted. `tests/round_lowering.rs` is the gate (every volume the closed form's to
 1e-9, a rolled one #85's quadrature's to 1e-6: `slot.sv`, `pad.sv`, `rail.sv`, `knob.sv`,
-`tee.sv`, `bore.sv`, `runout.sv`).
+`tee.sv`, `bore.sv`, `runout.sv`, `twin.sv`, `post.sv`, `dshaft.sv`).
 **Distance from a set, offsets (§6.21, 0.64, #145 F4):** `p distance(d, side: outside|inside) S`
 (`distance` is a set use, `may_use`), `p inside(d) S` / `p outside(d) S` and `std.Offset(S, d)` are
 one bound on the signed distance from `S`'s surface (`Reach`: cmp toward the outside, whether

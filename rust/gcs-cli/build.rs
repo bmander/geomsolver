@@ -32,8 +32,14 @@ fn main() {
     println!("cargo:rustc-link-search=native={}",out.display());
     println!("cargo:rustc-link-lib=static=solvent_occt");
     println!("cargo:rustc-link-search=native={}",root.join("lib").display());
-    for library in ["TKDESTEP","TKDESTL","TKMesh","TKShHealing","TKXSBase","TKBO","TKBool","TKPrim","TKTopAlgo",
-        "TKGeomAlgo","TKBRep","TKGeomBase","TKG3d","TKG2d","TKMath","TKernel"] {
+    // OCCT 7.8 gathered its STEP and STL readers into `TKDESTEP` and `TKDESTL`; an older one (a
+    // distribution's 7.6) still has them apart
+    let has = |name: &str| ["lib","lib64","lib/x86_64-linux-gnu","lib/aarch64-linux-gnu"].iter()
+        .any(|dir| ["so","dylib","a"].iter().any(|ext| root.join(dir).join(format!("lib{name}.{ext}")).exists()));
+    let exchange: &[&str] = if has("TKDESTEP") || !has("TKSTEP") { &["TKDESTEP","TKDESTL"] }
+        else { &["TKSTEP","TKSTEPAttr","TKSTEPBase","TKSTEP209","TKSTL"] };
+    for library in exchange.iter().chain(&["TKFillet","TKMesh","TKShHealing","TKXSBase","TKBO","TKBool","TKPrim",
+        "TKTopAlgo","TKGeomAlgo","TKBRep","TKGeomBase","TKG3d","TKG2d","TKMath","TKernel"]) {
         println!("cargo:rustc-link-lib=dylib={library}");
     }
     println!("cargo:rustc-link-lib={}",if target.contains("apple") { "c++" } else { "stdc++" });

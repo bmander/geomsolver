@@ -5,6 +5,10 @@
 #include <BRepAlgoAPI_Common.hxx>
 #include <BRepAlgoAPI_Cut.hxx>
 #include <BRepAlgoAPI_Fuse.hxx>
+#include <BRepBuilderAPI_MakeVertex.hxx>
+#include <BRepExtrema_DistShapeShape.hxx>
+#include <BRepFilletAPI_MakeChamfer.hxx>
+#include <BRepFilletAPI_MakeFillet.hxx>
 #include <BRepBndLib.hxx>
 #include <BRepBuilderAPI_MakeEdge.hxx>
 #include <BRepBuilderAPI_MakeFace.hxx>
@@ -14,6 +18,9 @@
 #include <BRepCheck_Result.hxx>
 #include <BRepCheck_ListOfStatus.hxx>
 #include <sstream>
+#include <fstream>
+#include <unistd.h>
+#include <Standard_Version.hxx>
 #include <BRepGProp.hxx>
 #include <BRepGProp_Domain.hxx>
 #include <BRepGProp_Face.hxx>
@@ -398,9 +405,24 @@ static double patterned_volume(const TopoDS_Shape& shape,const gp_Ax1& axis,int 
 // whole; `SOLVENT_STEP_TEXT_CHECK` has it write it as well and requires the same text.
 static std::string step_text(STEPControl_Writer& writer) {
     const auto serial = [&] {
+#if OCC_VERSION_HEX >= 0x070700
         std::ostringstream out;
         if (writer.WriteStream(out) != IFSelect_RetDone) throw std::runtime_error("STEP write failed");
         return std::move(out).str();
+#else
+        // (OCCT before 7.7 writes only to a file: one of its own, read back and removed)
+        char path[] = "/tmp/solvent-step-XXXXXX";
+        const int fd = mkstemp(path);
+        if (fd < 0) throw std::runtime_error("STEP write failed: no temporary file");
+        close(fd);
+        const bool written = writer.Write(path) == IFSelect_RetDone;
+        std::ifstream in(path,std::ios::binary);
+        std::ostringstream out;
+        out << in.rdbuf();
+        std::remove(path);
+        if (!written) throw std::runtime_error("STEP write failed");
+        return std::move(out).str();
+#endif
     };
     if (std::getenv("SOLVENT_STEP_SERIAL")) return serial();
     const Handle(StepData_StepModel) model = writer.Model();
@@ -587,6 +609,43 @@ int solvent_cad_boolean(Cad* cad,int a,int b,int operation_kind) noexcept {
             result = operation.Shape();
         }
         return cad->put(result);
+    });
+}
+// The test-only oracle of the rounds the core's lowering builds (#218): a solid's edges rounded
+// (`chamfer` 0, each `sizes[k]` a radius) or chamfered (1, each a distance along both faces) by
+// OCCT's own fillet, each edge the one passing through `points[k]` (to a millionth of its reach).
+int solvent_cad_round(Cad* cad,int id,int count,const double* points,const double* sizes,int chamfer) noexcept {
+    SOLVENT_PROBE("solvent_cad_round");
+    return guarded(cad,[&] {
+        const TopoDS_Shape shape = cad->at(id);
+        TopTools_IndexedMapOfShape edges;
+        TopExp::MapShapes(shape,TopAbs_EDGE,edges);
+        // each edge's box, so a point is measured against the edges near it alone
+        std::vector<Bnd_Box> boxes(static_cast<size_t>(edges.Extent()));
+        for (int i = 1; i <= edges.Extent(); ++i) BRepBndLib::Add(edges(i),boxes[static_cast<size_t>(i-1)]);
+        const auto edge_at = [&](const gp_Pnt& p) {
+            const double reach = 1e-6*(1.+p.XYZ().Modulus());
+            const TopoDS_Vertex at = BRepBuilderAPI_MakeVertex(p);
+            int best = 0;
+            double nearest = std::numeric_limits<double>::infinity();
+            for (int i = 1; i <= edges.Extent(); ++i) {
+                const TopoDS_Edge& edge = TopoDS::Edge(edges(i));
+                if (BRep_Tool::Degenerated(edge) || boxes[static_cast<size_t>(i-1)].IsOut(p)) continue;
+                BRepExtrema_DistShapeShape distance(at,edge);
+                if (distance.IsDone() && distance.Value() < nearest) { nearest = distance.Value(); best = i; }
+            }
+            if (best == 0 || nearest > reach)
+                throw std::runtime_error("no edge passes through (" + std::to_string(p.X()) + ", " + std::to_string(p.Y())
+                    + ", " + std::to_string(p.Z()) + ")");
+            return TopoDS::Edge(edges(best));
+        };
+        const auto rounded = [&](auto&& maker) {
+            for (int k = 0; k < count; ++k) maker.Add(sizes[k],edge_at(gp_Pnt(points[3*k],points[3*k+1],points[3*k+2])));
+            maker.Build();
+            if (!maker.IsDone()) throw std::runtime_error(chamfer ? "chamfer failed" : "fillet failed");
+            return maker.Shape();
+        };
+        return cad->put(chamfer ? rounded(BRepFilletAPI_MakeChamfer(shape)) : rounded(BRepFilletAPI_MakeFillet(shape)));
     });
 }
 int solvent_cad_transform(Cad* cad,int source,const double* matrix) noexcept {

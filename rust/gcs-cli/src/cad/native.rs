@@ -113,8 +113,12 @@ impl Session {
         self.result(unsafe { solvent_cad_face(self.0,ids.as_ptr(),ids.len() as c_int) })
     }
     fn primitive(&self,node: &Json,shapes: &BTreeMap<i64,c_int>) -> Result<c_int,String> {
-        let profile = field(node,"profile");
         let kind = field(node,"kind").as_str();
+        if kind == "lowered" {
+            return Err("native CAD export does not build a lowered round or chamfer; the core's kernel builds them \
+                (`--kernel rust`), and `tests/fillet_oracle.rs` holds them to OCCT's own fillet".into());
+        }
+        let profile = field(node,"profile");
         let n = v(profile,"normal");
         let (start,end) = match kind {
             "prism" => (field(node,"from").as_f64(),field(node,"to").as_f64()),
