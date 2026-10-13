@@ -547,6 +547,23 @@ fn a_grooves_rims_are_rounded_away() {
     close(props::volume(&b), 60.0 * 10.0 * 40.0 - PI * 36.0 / 2.0 * 40.0 - 2.0 * 40.0 * beside_cylinder(6.0, 2.0));
 }
 
+/// **A run mitred against a ring's stretch on one cylinder** (#218's 1): the groove's rims rounded
+/// all round — along the plate's top (two runs) and at its ends (two half rings). At each corner a
+/// run and a stretch meet, each with a face on the groove's cylinder; their union is found (the
+/// faces they share on one cylinder, the line where a run's round touches the groove taken once)
+/// up to where the two rounds meet, which ends where both touch the groove — three surfaces
+/// tangent at one point, which this kernel's trace does not follow (#58): refused, naming that.
+#[test]
+fn a_grooves_rims_rounded_all_round_are_refused_where_three_surfaces_touch() {
+    let src = include_str!("../../examples/rounds/rail.sv").replace("rod union rail", "rod cut rail");
+    let e = solved(&src);
+    assert_eq!(lowered(&e).0, 3);
+    let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
+    let refusal = export::exact(&e.sketch, ent(&e, "rail").i(), None, None, &say).err().expect("refused");
+    assert!(format!("{refusal:?}").contains("a cylinder and a torus meet at 0.00°")
+        && format!("{refusal:?}").contains("nearly touching: their meeting is ill-conditioned there"), "{refusal:?}");
+}
+
 /// The groove's rim at the plate's near face: a half circle, its round a stretch of a ring ending
 /// at the plate's top — a plane through the groove's axis, standing where the turn stops, so the
 /// sector already ends there. In its meridian the corner is square: the spandrel, turned a half

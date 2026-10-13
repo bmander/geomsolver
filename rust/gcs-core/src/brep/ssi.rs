@@ -271,7 +271,12 @@ pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi {
             let a = ((r*r-s*s+d*d)/(2.*d)).clamp(-r,r);
             let h = (r*r-a*a).max(0.).sqrt();
             let m = add(f.o,scale(u,a));
-            if h <= tol { return Ssi::Curves(vec![Curve::Line {p:m,d:f.z}]) }
+            // touching (a fillet's face on the face it rolls against): one line, judged by how far
+            // apart the surfaces stand, not by the half chord, which is the square root of that
+            // and sees a gap of roundoff as two lines √(2rε) apart
+            if h <= tol || (r+s-d).abs() <= tol || (d-(r-s).abs()).abs() <= tol {
+                return Ssi::Curves(vec![Curve::Line {p:m,d:f.z}])
+            }
             Ssi::Curves(vec![Curve::Line {p:add(m,scale(v,h)),d:f.z},Curve::Line {p:sub(m,scale(v,h)),d:f.z}])
         }
         (Surface::Cylinder(_,r),Surface::Cylinder(_,s)) if (r-s).abs() <= tol => {
@@ -303,7 +308,8 @@ fn plane_cylinder(n: V,h: f64,c: &Frame,r: f64,tol: f64) -> Vec<Curve> {
         let foot = add(c.o,scale(n,dist));
         let w = unit(cross(c.z,n));
         let half = (r*r-dist*dist).max(0.).sqrt();
-        if half <= tol { return vec![Curve::Line {p:foot,d:c.z}] }
+        // (touching: by the gap, as for two cylinders)
+        if half <= tol || (r-dist.abs()).abs() <= tol { return vec![Curve::Line {p:foot,d:c.z}] }
         return vec![Curve::Line {p:add(foot,scale(w,half)),d:c.z},Curve::Line {p:sub(foot,scale(w,half)),d:c.z}]
     }
     let centre = add(c.o,scale(c.z,(h-dot(n,c.o))/cos));

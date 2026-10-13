@@ -423,11 +423,14 @@ this needs (ported from #79–#110): edges along a face cut where they cross its
 (`query::crossings_in`), touches read to second order (`ssi::touch_near`/`touch`,
 `trace_beside`/`unseen_beside`), equal crossing cylinders' ellipses split where they cross
 (`boolean::crossings_among`), `query::line_cylinder`, `Surface::offset`, a fitted edge read at its
-own `tol`. `cad::shifted` (the app's exact solid, built about its own origin) moves a lowered
+own `tol`; a plane or a cylinder touching a cylinder along a line is one line, judged by the gap
+(the half chord is its square root, #218), and a vertex an edge lying in a face makes on that
+face's edge is on every face that edge bounds (a meeting of the face beside it may end there). `cad::shifted` (the app's exact solid, built about its own origin) moves a lowered
 node's pieces, corners and balls with the rest (`shifted_node`). Open (#218): a ring's stretch or a rolled
 run ending on a curved face, a corner beside a curved end, corners where curved faces meet, a run
-mitred against a ring's stretch on one cylinder (the union of coincident cylinder faces: a groove
-rounded at its ends), a flat along a traced edge, a rolled round beside other pieces in one
+mitred against a ring's stretch on one cylinder (a groove rounded at its ends: refused where the
+two rounds' meeting ends at a point all three surfaces touch, which the trace does not follow,
+#58), a flat along a traced edge, a rolled round beside other pieces in one
 region. **The oracle** (#218's 8): `gcs-cli tests/fillet_oracle.rs` (OCCT) builds each rounds
 example's body less its lowered regions, rounds the same edges by OCCT's own fillet or chamfer
 (`solvent_cad_round`, `Session::round`; each edge the one through a point the pieces give) and
