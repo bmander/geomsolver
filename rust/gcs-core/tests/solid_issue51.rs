@@ -97,8 +97,10 @@ fn negative_gaps_cannot_override_inside_or_disjointness() {
 
 #[test]
 fn solid_claim_arguments_are_checked_instead_of_discarded() {
+    // `inside` takes nothing in its parentheses, refused where it is read (#266)
+    let (_, errors) = crate::common::parse_legacy(&source("arguments_inside(1mm)"));
+    assert!(errors.iter().any(|e| e.message.contains("`inside` takes nothing")), "{errors:?}");
     for src in [
-        source("arguments_inside(1mm)"),
         source("arguments_clear(1mm,2mm)"),
         source("arguments_clear(1mm,2mm)").replace("clear(1mm,2mm)", "fits(1mm,2mm)"),
     ] {
