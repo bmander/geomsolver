@@ -28,8 +28,8 @@ fn read(offset: f64,shift: Option<f64>) -> program::Elaborated {
     }
     // `SOLVENT_CLASS_TIP` scales the crown tooth's tip round (0.3 normal modules).
     if let Ok(k) = std::env::var("SOLVENT_CLASS_TIP") {
-        assert!(text.contains("rounding := 0.3\n"));
-        text = text.replace("rounding := 0.3\n",&format!("rounding := {k}\n"));
+        assert!(text.contains("rounding := 0.3 * mn\n"));
+        text = text.replace("rounding := 0.3 * mn\n",&format!("rounding := {k} * mn\n"));
     }
     // `SOLVENT_CLASS_ONE`: the members with a single tooth space, as a one-space export has.
     if std::env::var("SOLVENT_CLASS_ONE").is_ok() { text = fixtures::gear::one_space(&text); }
@@ -69,8 +69,8 @@ fn roots(c: &SweepContacts,patch: usize,u: f64,v: f64) -> Result<Vec<TimedContac
 }
 
 fn measure(e: &program::Elaborated,member: &str) -> Report {
-    let removal = e.map.ent_named(&format!("{member}.cut.removal")).unwrap().i();
-    let blank_id = e.map.ent_named(&format!("{member}.blank")).unwrap().i();
+    let removal = e.map.ent_named(&format!("pair.{member}.cut.removal")).unwrap().i();
+    let blank_id = e.map.ent_named(&format!("pair.{member}.blank")).unwrap().i();
     let c = SweepContacts::read(&e.sketch,removal,1e-10).unwrap();
     let blank = SpatialField::read(&e.sketch,blank_id,1e-10).unwrap();
     let inside = |p: V| blank.value(p) < -1e-6;
@@ -260,7 +260,7 @@ fn an_exported_member_agrees_with_its_field() {
     let offset: Option<f64> = std::env::var("SOLVENT_CLASS_OFFSETS").ok().map(|v| v.parse().unwrap());
     let shift: Option<f64> = std::env::var("SOLVENT_CLASS_SHIFTS").ok().map(|v| v.parse().unwrap());
     let e = match offset { Some(o) => read(o,shift), None => fixtures::gear::read_as_configured() };
-    let body = e.map.ent_named(&format!("{member}.body")).unwrap().i();
+    let body = e.map.ent_named(&format!("pair.{member}.body")).unwrap().i();
     let scale = e.sketch.units.length.unwrap().1;
     let (vertices,triangles) = agreement::stl_triangles(&std::fs::read(&path).unwrap(),scale).unwrap();
     let mut material = MaterialField::read(&e.sketch,body,1e-10).unwrap().evaluator(4096);
@@ -285,7 +285,7 @@ fn the_material_along_a_line() {
     let v: Vec<f64> = std::env::var("SOLVENT_LINE").expect("SOLVENT_LINE").split(',').map(|s| s.trim().parse().unwrap()).collect();
     let member = std::env::var("SOLVENT_AGREE_MEMBER").unwrap_or("gear".into());
     let e = fixtures::gear::read_as_configured();
-    let body = e.map.ent_named(&format!("{member}.body")).unwrap().i();
+    let body = e.map.ent_named(&format!("pair.{member}.body")).unwrap().i();
     let mut material = MaterialField::read(&e.sketch,body,1e-10).unwrap().evaluator(4096);
     let n = (v[3]*v[3]+v[4]*v[4]+v[5]*v[5]).sqrt();
     let mut last = 'x';
@@ -330,7 +330,7 @@ fn side_query_cost() {
     let offset: f64 = std::env::var("SOLVENT_CLASS_OFFSETS").map_or(0.,|v| v.parse().unwrap());
     let shift: Option<f64> = std::env::var("SOLVENT_CLASS_SHIFTS").ok().map(|v| v.parse().unwrap());
     let e = read(offset,shift);
-    let body = e.map.ent_named(&format!("{member}.body")).unwrap().i();
+    let body = e.map.ent_named(&format!("pair.{member}.body")).unwrap().i();
     let scale = e.sketch.units.length.unwrap().1;
     let (vertices,triangles) = agreement::stl_triangles(&std::fs::read(&path).unwrap(),scale).unwrap();
     let field = MaterialField::read(&e.sketch,body,1e-10).unwrap();

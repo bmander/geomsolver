@@ -283,13 +283,13 @@ fn the_spiral_bevel_rolls_measured_off_the_pitch_geometry_are_its_trig_ratios() 
     // the bevel pair, whose rolls the layout measures off its pitch triangles (`hypoid.sv`'s
     // step 5), each written a second time with its ratio in closed form: a pitch cone's
     // distance over its pitch radius is one over the sine of its pitch angle
-    let anchor = "gear_generation := motion(crown_roll, relative_to: gear_roll)\n";
+    let anchor = "  gear_generation := motion(crown_roll, relative_to: gear_roll)\n";
     let text = fixtures::gear::bevel(&fixtures::gear::source());
     assert!(text.contains(anchor));
     let e = fixtures::gear::read(&text.replace(anchor,&format!("{anchor}\
-trig_pinion_roll := motion(about: pinion_ax, ratio: 1 / sin(atan2(24, 48)))\n\
-trig_gear_roll := motion(about: gear_ax, ratio: -1 / sin(atan2(48, 24)))\n")));
-    let find = |name: &str| e.sketch.motions.iter().position(|m| m.name == name)
+trig_pinion_roll := motion(about: pinion_cone.ax, ratio: 1 / sin(atan2(24, 48)))\n\
+trig_gear_roll := motion(about: gear_cone.ax, ratio: -1 / sin(atan2(48, 24)))\n")));
+    let find = |name: &str| e.sketch.motions.iter().position(|m| m.name == format!("pair.{name}"))
         .unwrap_or_else(|| panic!("no motion `{name}`"));
     for member in ["pinion_roll","gear_roll"] {
         let (measured,trig) = (find(member),find(&format!("trig_{member}")));

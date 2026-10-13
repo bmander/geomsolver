@@ -613,11 +613,11 @@ mm³. The chamfer bands read as exact in the STEP files and within 1.4 µm in th
 ```sh
 make solventc OCCT=1
 mkdir -p build/exports
-build/solventc rust/examples/spiral_bevel/hypoid.sv --solid pinion.body --tolerance \
+build/solventc rust/examples/spiral_bevel/hypoid.sv --solid pair.pinion.body --tolerance \
   --step build/exports/hypoid-pinion.step --stl build/exports/hypoid-pinion.stl --no-diagnose
-build/solventc rust/examples/spiral_bevel/hypoid.sv --solid gear.body --tolerance \
+build/solventc rust/examples/spiral_bevel/hypoid.sv --solid pair.gear.body --tolerance \
   --step build/exports/hypoid-gear.step --stl build/exports/hypoid-gear.stl --no-diagnose
-build/solventc rust/examples/spiral_bevel/hypoid.sv --solid pinion.body --tolerance \
+build/solventc rust/examples/spiral_bevel/hypoid.sv --solid pair.pinion.body --tolerance \
   --measure build/exports/hypoid-pinion.step --measure-samples 400000 --no-diagnose
 ```
 

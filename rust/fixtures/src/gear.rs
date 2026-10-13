@@ -85,6 +85,10 @@ pub fn publish_blank(text: &str,extra: &str) -> String {
     format!("{}  construction blank := solid(blank)\n{extra}{}",&text[..end],&text[end..])
 }
 
+/// A member's axis (`pinion`, `gear`): each is its pitch cone's, under the pair
+/// (`pair.gear_cone.ax`, `pair.pinion_cone.ax`).
+pub fn axis(member: &str) -> String { format!("pair.{member}_cone.ax") }
+
 /// `text` with a member's roll limit in degrees (`pinion`, `gear`).
 pub fn roll(text: &str,member: &str,degrees: f64) -> String {
     configure(text,&[(&format!("{member}_roll_limit"),degrees)])

@@ -763,8 +763,14 @@ stock, plus `union`, minus what `cut`s it, within what `bound`s it. `SolidDef::B
 `bound`; `Term::Inter`; facets, fields and the CAD recipe (`"bound"`, `BRepAlgoAPI_Common`) all
 evaluate it. Union first; `cut` and `bound` commute; a swept solid may only be `cut`. `bound` and
 `union` (0.32) are body words, not names; `coincident` between two solids is refused. Spiral bevel
-(**one file, `spiral_bevel/hypoid.sv`**, #217: under 200 statement lines, no `project`, no
-`hint` — every root chosen by a word, the layout solved from them alone; README walks it): each
+(**one file, `spiral_bevel/hypoid.sv`**, #217: no `project`, no `hint` — every root chosen by a
+word, the layout solved from them alone; README walks it). **The pair is one component**,
+`pair := HypoidPair(std.top, std.y, std.z, …)` over the root's `param`s (std's datums its
+arguments, its unknowns `mn`, `rp`, `pa` formals the call leaves out), its steps components below
+it — `GearCone`, `ToothTrace`, `PinionCone` (each cone's axis `.ax`; `fixtures::gear::axis`),
+`Blank`, `FaceMill` (`mill.ax`, the flank cones, levels and reach), `Tooth`, `Space`, `Member`,
+`Topping` — so every name is under `pair.` (`pair.pinion.body`, `pair.gear_cone.M`); a test reads
+the recorded rows under their old labels. Each
 member's blank is a region (`Blank`: the pitch cone, a `std.Cone` about the member's axis, its
 half left unknown so it settles from the pose, grown by the addendum (`std.Offset`) and its
 outside by the back depth (`outside(d)`), `std.Sphere`s about the apex the half face width either
@@ -783,9 +789,9 @@ tooth over (its space cutter's `neighbor` is the inner crown a crown pitch round
 them where the parser says their values stand); the pinion's cone solves against the gear's;
 members roll at `N_c / N` off the gear's triangle, not `1 / sin`. **No axial views** (#215): the
 gear's triangle O–M–F and the pinion's two axes stand in space square to P on their generators
-(`O level(std.y) foot`; the pinion's axes square to `square`, each running from its apex to the
-foot of M on it, `M level(pinion_ax) pinion_foot`), each side a bound (`foot inside std.top`,
-`pinion_foot outside std.top`), the offset's hand and the apex behind M bounds too; only P is drawn
+(`O level(across) foot`; the pinion's axes square to `square`, each running from its apex to the
+foot of M on it, `gear.M level(ax) foot`), each side a bound (`foot inside P`, `foot outside P`
+in the pinion's cone), the offset's hand and the apex behind M bounds too; only P is drawn
 in, and N for the tip relief's kinks (beyond C as their pitch points: `distance(>= 0mm, along:
 to_inner)`). `tests/hypoid_layout.rs` is the gate (the recorded pair to 1e-9 from the words alone,
 from rough starts and from the wrong side of every bound). The mesh export refuses a sheet a

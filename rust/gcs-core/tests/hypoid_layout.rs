@@ -67,8 +67,10 @@ fn point(e: &Elaborated,name: &str) -> V {
     }
     e.sketch.world_point(index(e,name))
 }
+/// A motion of the pair by its name there (`crown_roll`, …: the recorded rows' labels).
 fn motion(e: &Elaborated,name: &str) -> usize {
-    e.sketch.motions.iter().position(|m| m.name == name)
+    let path = format!("pair.{name}");
+    e.sketch.motions.iter().position(|m| m.name == path)
         .unwrap_or_else(|| panic!("no motion `{name}`"))
 }
 
@@ -90,12 +92,12 @@ impl Reading {
 /// centre is recorded as.
 type Corners = [(&'static str,&'static str,&'static str)];
 const CROWNS: [(&str,&str,&Corners,&[(&str,&str)]);3] = [
-    ("tooth","tooth.crown",&[("bi","inner","base"),("bo","outer","base"),("ij","inner","inner_round"),
+    ("tooth","pair.tooth.crown",&[("bi","inner","base"),("bo","outer","base"),("ij","inner","inner_round"),
         ("oj","outer","outer_round"),("it","inner_round","tip"),("ot","outer_round","tip")],
         &[("ci","inner_round"),("co","outer_round")]),
-    ("mate outer","gear_space.outer_crown",&[("bi","inner","base"),("ij","inner","inner_round"),
+    ("mate outer","pair.gear_space.outer_crown",&[("bi","inner","base"),("ij","inner","inner_round"),
         ("it","inner_round","tip")],&[("ci","inner_round")]),
-    ("mate inner","gear_space.inner_crown",&[("bo","outer","base"),("oj","outer","outer_round"),
+    ("mate inner","pair.gear_space.inner_crown",&[("bo","outer","base"),("oj","outer","outer_round"),
         ("ot","outer_round","tip")],&[("co","outer_round")]),
 ];
 
@@ -145,12 +147,12 @@ const MOTIONS: [&str;8] = ["crown_roll","pinion_roll","gear_roll","pinion_genera
 
 /// Every quantity of one pair; `probe` sizes the points the motions are asked to carry.
 fn read_pair(e: &Elaborated,probe: f64) -> Reading {
-    let o = point(e,"O");
-    let (g0,g1) = line(e,"gear_ax");
-    let (c0,c1) = line(e,"crown_ax");
-    let a = point(e,"A");
-    let (p0,p1) = line(e,"pinion_ax");
-    let m = point(e,"M");
+    let o = point(e,"pair.gear_cone.O");
+    let (g0,g1) = line(e,"pair.gear_cone.ax");
+    let (c0,c1) = line(e,"pair.gear_cone.crown_ax");
+    let a = point(e,"pair.pinion_cone.A");
+    let (p0,p1) = line(e,"pair.pinion_cone.ax");
+    let m = point(e,"pair.gear_cone.M");
     let r = dist(m,o);
     let mut out = Reading { values: Vec::new() };
     out.push("R",r);
@@ -170,7 +172,7 @@ fn read_pair(e: &Elaborated,probe: f64) -> Reading {
     let skew = unit(cross(sub(g1,g0),sub(p1,p0)));
     out.push("offset",dot(sub(p0,g0),skew).abs());
     // The cutter: its centre and axis, and the trace through M about it.
-    let (u0,u1) = line(e,"cut_ax");
+    let (u0,u1) = line(e,"pair.mill.ax");
     out.point("C",u0);
     out.point("cutter axis",unit(sub(u1,u0)));
     let heading = unit(cross([0.,0.,1.],sub(m,u0)));
@@ -179,8 +181,8 @@ fn read_pair(e: &Elaborated,probe: f64) -> Reading {
     // Sections, about the cutter's axis: distance from it, and height.
     let up = unit(sub(u1,u0));
     let meridian = |p: V| (off_line(p,u0,up),dot(sub(p,u0),up));
-    let lp = point(e,"inner_pitch");
-    let rp = point(e,"outer_pitch");
+    let lp = point(e,"pair.mill.inner_pitch");
+    let rp = point(e,"pair.mill.outer_pitch");
     out.push("section width",dist(lp,rp));
     out.push("section radius",(meridian(lp).0+meridian(rp).0)/2.);
     let corner = |out: &mut Reading,name: String,p: V| {
@@ -273,13 +275,13 @@ fn the_layout_reproduces_the_pairs_named_quantities() {
     assert!(failed.is_empty(),"{failed:#?}");
 }
 
-/// The static solids: the crown tooth and the gear's space cutter by the names the layout gives
-/// them.
+/// The static solids: the crown tooth and the gear's space cutter by the names the pair gives
+/// them (under `pair`), each the label its recorded rows carry.
 const SOLIDS: [&str;2] = ["tooth.crown","gear_space.body"];
 
 /// One of `SOLIDS` as a field.
 fn static_field(e: &Elaborated,name: &str,r: f64) -> MaterialField {
-    MaterialField::read(&e.sketch,fixtures::solid(e,name),1e-10*r)
+    MaterialField::read(&e.sketch,fixtures::solid(e,&format!("pair.{name}")),1e-10*r)
         .unwrap_or_else(|err| panic!("{name}: {err}"))
 }
 
@@ -321,7 +323,7 @@ fn the_layout_makes_the_pairs_material() {
         let e = design.read();
         let r = rows[0].1[k];
         let read = |name: &str| {
-            MaterialField::read(&e.sketch,fixtures::solid(&e,name),1e-10*r)
+            MaterialField::read(&e.sketch,fixtures::solid(&e,&format!("pair.{name}")),1e-10*r)
                 .unwrap_or_else(|err| panic!("{}: {name}: {err}",design.label))
         };
         let points = material_points(r);
@@ -339,7 +341,7 @@ fn the_layout_makes_the_pairs_material() {
         // every point they decide (the carriers' fields one-Lipschitz, not distances, so held by
         // sign alone, and only where every limit is clear of its surface).
         for member in ["gear","pinion"] {
-            let field = MaterialField::read(&e.sketch,fixtures::solid(&e,&format!("{member}_blank.material")),1e-10*r)
+            let field = MaterialField::read(&e.sketch,fixtures::solid(&e,&format!("pair.{member}_blank.material")),1e-10*r)
                 .unwrap_or_else(|err| panic!("{}: {member}'s blank: {err}",design.label));
             let limits: Vec<(&Vec<f64>,f64)> = LIMITS.iter().map(|(limit,sense)|
                 (values(&format!("{member}_limits.{limit}.carrier")),*sense)).collect();
@@ -408,7 +410,7 @@ fn record() {
         let r = reading.values[0].1;
         let points = material_points(r);
         let read = |name: &str|
-            MaterialField::read(&e.sketch,fixtures::solid(&e,name),1e-10*r).unwrap();
+            MaterialField::read(&e.sketch,fixtures::solid(&e,&format!("pair.{name}")),1e-10*r).unwrap();
         let row = |name: &str,values: Vec<f64>| println!("material\t{}\t{name}\t{}",design.label,
             values.iter().map(|v| format!("{v:.12e}")).collect::<Vec<_>>().join("\t"));
         for name in SOLIDS {
@@ -441,10 +443,11 @@ fn the_true_hypoid_is_square_offset_on_one_pitch_plane_and_rolls_at_the_tooth_ra
         let e = design.read();
         let label = &design.label;
         let [np,ng] = teeth.map(f64::from);
-        let (o,m,a) = (point(&e,"O"),point(&e,"M"),point(&e,"A"));
-        let (g0,g1) = line(&e,"gear_ax");
-        let (p0,p1) = line(&e,"pinion_ax");
-        let (c0,c1) = line(&e,"crown_ax");
+        let (o,m,a) = (point(&e,"pair.gear_cone.O"),point(&e,"pair.gear_cone.M"),
+            point(&e,"pair.pinion_cone.A"));
+        let (g0,g1) = line(&e,"pair.gear_cone.ax");
+        let (p0,p1) = line(&e,"pair.pinion_cone.ax");
+        let (c0,c1) = line(&e,"pair.gear_cone.crown_ax");
         let (g,p,n) = (unit(sub(g1,g0)),unit(sub(p1,p0)),unit(sub(c1,c0)));
         let r = dist(m,o);
         let ct = (np*np+ng*ng).sqrt();
@@ -470,7 +473,7 @@ fn the_true_hypoid_is_square_offset_on_one_pitch_plane_and_rolls_at_the_tooth_ra
         }
         // the equal normal pitch: each member's pitch radius at M times the cosine of its spiral
         // is its teeth times half the normal module
-        let c = point(&e,"cut_ax.p1");
+        let c = point(&e,"pair.mill.ax.p1");
         let heading = unit(cross(n,sub(m,c)));
         let normal_module = module*spiral.to_radians().cos();
         for (what,axis,axis_point,apex,teeth) in [("gear",g,g0,o,ng),("pinion",p,p0,a,np)] {
@@ -559,7 +562,7 @@ fn crossed(e: &mut Elaborated,name: &str) {
 }
 
 /// **Words say which root** (§9.6, #109, #217): the gear's axis below the pitch plane and the
-/// pinion's offset hand (`foot inside std.top`, `A distance(>= 0, along: v) std.top`) were once said
+/// pinion's offset hand (`foot inside P`, `A distance(>= 0, along: v) P`) were once said
 /// by the side their seeds stood on.  Every design solved, then its gear axis's foot carried
 /// above P and its pinion's apex to the offset's other hand — the start a seed on the wrong side
 /// of both made — and solved again, lands on the recorded pair.
@@ -568,8 +571,8 @@ fn a_start_on_the_wrong_side_lands_on_the_recorded_pair() {
     let (_,rows) = recorded();
     for (k,design) in designs().into_iter().enumerate() {
         let mut e = design.read();
-        crossed(&mut e,"foot");
-        crossed(&mut e,"A");
+        crossed(&mut e,"pair.gear_cone.foot");
+        crossed(&mut e,"pair.pinion_cone.A");
         let res = gcs_core::solve::solve(&mut e.sketch,fixtures::accurate());
         assert!(res.success,"{}: {res:?}",design.label);
         let (d,at) = off_recorded(&read_pair(&e,rows[0].1[k]),&rows,k);

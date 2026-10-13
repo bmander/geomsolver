@@ -9,7 +9,7 @@ const OFFSETS: [f64;3] = [0.,0.02,-0.02];
 
 fn pinion() -> (gcs_core::program::Elaborated,usize,Meter) {
     let e = fixtures::gear::read_as_configured();
-    let body = fixtures::solid(&e,"pinion.body");
+    let body = fixtures::solid(&e,"pair.pinion.body");
     let started = std::time::Instant::now();
     let meter = Meter::read(&e.sketch,body,Options::in_units(1.)).unwrap();
     eprintln!("meter read in {:?}: {} exact faces",started.elapsed(),meter.surfaces().len());
