@@ -151,14 +151,14 @@ designs, both members) are the gates.
 `region::readable`/`in_general`) is read point by point by `solid::field::RegionField`, a
 `SpatialField` leaf (each term its surface's exact signed distance, the largest; a box's enclosure
 the centre's value within its half-diagonal), its support the box of the planes every term lies
-within (`polytope_box`, refused unbounded). Evaluated as sweeps are (`sweeps_among`: the field's
+within (`polytope_box`, refused unbounded). Evaluated as sweeps are (`sweeps_among` over `region::route`: the field's
 surface) unless the lowering table builds it ([rounds.md](rounds.md)) or **the common of its terms** does (#238,
 `solid::bounded`: every term a ball, a cylinder, a cone narrower than square or a half-space, no
 offset — each a primitive bounded past the support, kept within in common, kept outside taken
 away; the recipe's `"region"` node, `"pieces"` each with `"keep"`; gated by agreement with the
 field, `Sketch::bounded_cache`); else no exact construction (`cad.rs` says so, naming the region).
 
-**A sum of distances the meridian folds** (#238, `region::foci`): from one point, or two alike in
+**A sum of distances the meridian folds** (#238, `region::meridian::foci`): from one point, or two alike in
 weight, on its axis (the line through them chooses it when nothing else does) — a ball, an
 ellipsoid's half ellipse (two `Seg::Conic` quarters), the plane midway, or a hyperboloid's lobe
 (`lobe`: hyperbolic conic arcs, `w = cosh`, a unit of `u` each); held to the field as rounds are
@@ -178,7 +178,7 @@ region (`BodyShape`); `inside` keeps it, `outside` turns it, and a body of bound
 of them under `inside`. Elaborated
 by `regions::measured_term` into `RegionShape::Measured` (Σ cᵢ·distance from a point, line,
 axis or plane; `linear`: affine only, one probe) on the probe, else E040; read by the field
-(`region::measured`, divided by Σ|cᵢ|), never the meridian.
+(`region::general::measured`, divided by Σ|cᵢ|), never the meridian.
 
 **Faces as sets** (#183 F1, F9): in a set's body a solid and the fields past it are a face
 reference (`model::FaceRef { solid, path, surface }`: `pad.plate.near`, `pad.boss` every face

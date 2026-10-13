@@ -24,12 +24,12 @@ A set's `S.surface` is the set with each bound made an equality (`Written::equal
 `sets::surface_of`; a grown side's is the offset surface); a distance from a one-bound region's
 surface reads it (`sets::one_bound`); a set measured from is applied under `Scope::held`, so each
 equality its body states is a bound at its number, `in: (d, d)` (`Written::held`, in `apply`),
-and `region_term` reads every probe by one rule. **Lowering** (step 7, `solid::region::meridian_corner`): a `Rounded`/`Chamfered`
+and `region_term` reads every probe by one rule. **Lowering** (step 7, `solid::region::meridian::meridian_corner`): a `Rounded`/`Chamfered`
 term whose sets are two of the region's own bounds (same measure, at its level, moved in by the
 radius for a round's centres) is built in the meridian by X1's construction (`brep::corners`,
 moved from `tests/fillet_meridian.rs`) — a round at any corner of lines and arcs, an offset
 cone's generator and rounded apex included (#207) — and held to the region read point by point
-beside each face (`region::agrees`; a disagreement is read by the field); refused (and read by the
+beside each face (`region::meridian::agrees`; a disagreement is read by the field); refused (and read by the
 field) at a charted corner (none a meridian folds) or a flat between two arcs. **A chamfer's flat
 is its sum of distances** (#196, #208, [0.73]): between a line and an arc it bows, the conic `|q −
 c| = α + β d_L` (`corners::sum`), a **`Seg::Conic`** — the rational quadratic Bézier over its ends
