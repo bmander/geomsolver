@@ -242,6 +242,29 @@ fn describe_and_write_skip_the_planes() {
     assert_eq!(io::describe(c), want, "and positionally, with the planes left out");
 }
 
+/// A plane over drawn lines holds a hidden axis for each, minted by its statement: a reconcile
+/// with nothing drawn reads none of them as new, so the text read back is the same drawing
+/// (the hypoid's normal section N, whose two axes the page appended as `x0`, `x1`).
+#[test]
+fn a_planes_hidden_axes_are_its_statements() {
+    let src = "\
+use std
+a := point in std.top hint((1, 2))
+b := point hint((1, 2, 5))
+l := line(a, hint((4, 6))) in std.top
+m := line(a, b)
+N := plane(u: l, v: m)
+";
+    let mut e = read(src);
+    let n = e.map.ent_named("N").unwrap();
+    let u = EntRef::new(EntKind::Axis, e.sketch.planes[n.i()].u as usize);
+    assert_eq!(e.map.ent_named("N.u"), Some(u), "the hidden axis is the plane's `u`");
+    let out = reconciled(&mut e);
+    assert!(!out.text.contains(":= axis"), "nothing was drawn: {}", out.text);
+    let back = read(&out.text);
+    assert_eq!(back.sketch.params.len(), e.sketch.params.len());
+}
+
 #[test]
 fn reconcile_writes_membership_a_plane_and_a_projection() {
     let mut e = read(VIEWS);

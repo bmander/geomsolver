@@ -220,6 +220,16 @@ impl Family {
         }
     }
 
+    /// The turn this motion is, where it is one rotation about one axis: a screw (`screw`), or a
+    /// rotation with no advance (`advance` nothing) — what a ball under it sweeps is the tube about
+    /// a helix or an arc of a circle (`solid::canal`, #238).
+    pub fn turning(&self) -> Option<Screw> {
+        match *self.steps.as_slice() {
+            [Step::Rotation {origin,axis,ratio,advance,..}] if ratio != 0. => Some(Screw {origin,axis:unit(axis)?,ratio,advance}),
+            _ => None,
+        }
+    }
+
     /// How this motion carries the plane through `point` with unit `normal`, when it carries it
     /// within itself: a rotation whose axis is square to the plane and does not screw along it,
     /// or a translation along it. Every other motion (a screw, a relative motion, a graph of

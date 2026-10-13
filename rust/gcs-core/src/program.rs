@@ -571,6 +571,11 @@ fn elaborate_in(
         }
     }
 
+    // what each `path` formal was given runs along something, and each tangent at a point reads
+    // a contact's place there (#251)
+    relations::paths(&map, &expansion.paths, &mut diags);
+    relations::tangents_at(&sk, &map, &mut diags);
+
     // each point drawn in further planes tied to its twins, once the holds say which planes are
     // fixed and the relations what else holds it on each (§6.7)
     planes::tie_twins(&mut sk, &map, &mut diags);

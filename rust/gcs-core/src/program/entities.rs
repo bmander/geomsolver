@@ -550,10 +550,12 @@ fn build_plane(
         axes[k] = match e.kind {
             EntKind::Axis => e.i(),
             // a drawn line is an axis from its start toward its end: a hidden one, held parallel
-            // to it once its points stand somewhere
+            // to it once its points stand somewhere — minted by this statement as a left-out
+            // slot's is, so recorded with it, or `reconcile` reads it as one a gesture drew
             EntKind::Line => {
                 let axis = sk.axis([1.0, 0.0, 0.0], &format!("{show}.{key}"));
                 deferred.push(Deferred::Along { axis, line: e.i() });
+                minted.push((key, axis));
                 axis
             }
             other => {

@@ -82,7 +82,8 @@ fn two_crossing_cylinders_are_a_bicylinder() {
     let want = 16.0 * 8.0 / 3.0;
     let got = field_volume(&field, [-2.0; 3], [2.0; 3], 2.0 / 64.0);
     assert!((got - want).abs() < 2e-3 * want, "{got} against {want}");
-    assert!(e.sketch.exact_solid(bi).is_err_and(|m| m.contains("read by the field")));
+    // and built exactly as the common of the two (#238, `tests/region_exact.rs`)
+    assert!(e.sketch.exact_solid(bi).is_ok());
 }
 
 /// A ball of radius 5 within two planes square to each other, 3 from its centre: the ball less two
@@ -150,7 +151,8 @@ fn a_region_with_no_end_is_refused() {
 }
 
 /// **A bound on measurements** (#183 F3): an ellipsoid of revolution by its foci, the points whose
-/// distances from the two sum to at most 10 — semi-axes 5 and 4 about foci 3 from its centre.
+/// distances from the two sum to at most 10 — semi-axes 5 and 4 about foci 3 from its centre.  Its
+/// foci on one line, its meridian is an ellipse (#238), and the field reads that turned.
 #[test]
 fn an_ellipsoid_by_its_foci() {
     let e = solved(&format!("{AXES}f1 := point hint((3, 0, 0))\nfix((3, 0, 0)) f1\n\
@@ -158,7 +160,7 @@ fn an_ellipsoid_by_its_foci() {
                              egg := {{ p | distance(p, f1) + distance(p, f2) <= 10mm }}\n\
                              s := solid(egg)\n"));
     let s = ent(&e, "s").i();
-    assert!(gcs_core::solid::region::in_general(&e.sketch, s));
+    assert!(!gcs_core::solid::region::in_general(&e.sketch, s));
     let field = MaterialField::read(&e.sketch, s, 1e-10).unwrap();
     for (p, inside) in [([4.9, 0.0, 0.0], true), ([5.1, 0.0, 0.0], false), ([0.0, 3.9, 0.0], true),
                         ([0.0, 0.0, 4.1], false), ([3.0, 2.0, 2.0], true), ([4.0, 2.0, 2.0], false)] {

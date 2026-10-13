@@ -114,9 +114,17 @@ impl Session {
     }
     fn primitive(&self,node: &Json,shapes: &BTreeMap<i64,c_int>) -> Result<c_int,String> {
         let kind = field(node,"kind").as_str();
+        if kind == "canal" {
+            return Err("native CAD export does not build a ball's tube (a ball swept by a turn or a screw); the core's kernel \
+                builds it (`--kernel rust`), held to the sweep's field".into());
+        }
         if kind == "lowered" {
             return Err("native CAD export does not build a lowered round or chamfer; the core's kernel builds them \
                 (`--kernel rust`), and `tests/fillet_oracle.rs` holds them to OCCT's own fillet".into());
+        }
+        if node.get("draft").is_some() {
+            return Err("native CAD export does not build a drafted prism; the core's kernel builds it \
+                (`--kernel rust`)".into());
         }
         let profile = field(node,"profile");
         let n = v(profile,"normal");
@@ -292,6 +300,16 @@ impl Session {
                         }
                     }
                     id
+                } else if field(node,"kind").as_str() == "region" {
+                    // a region in general position (`solid::bounded`, #238): the common of the
+                    // primitives it keeps within, less those it keeps outside
+                    let mut id = None;
+                    for piece in field(node,"pieces").arr() {
+                        let p = self.primitive(piece,&shapes)?;
+                        let keep = matches!(field(piece,"keep"),Json::Bool(true));
+                        id = Some(match id { None => p,Some(s) => self.boolean(s,p,if keep { "bound" } else { "cut" })? });
+                    }
+                    id.ok_or("a region of no pieces")?
                 } else if field(node,"kind").as_str() == "placed" {
                     let matrix: Vec<_> = field(node,"matrix").arr().iter().map(Json::as_f64).collect();
                     self.result(unsafe { solvent_cad_transform(self.0,

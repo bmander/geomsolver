@@ -103,7 +103,9 @@ fixtures.
    direction, its `v` along that one" would say it once; it is useful beyond lofts (any datum
    square to a line).
 
-5. **One station word over any path** (`pending.On`) needs three things:
+5. **One station word over any path** (`pending.On`) needs three things (the first and the
+   third done, #251 — `path` and `g tangent(at: m) l` over every kind, `tests/tangent_at.rs`; the
+   second is #248):
    - a `path` formal type: a line, an arc, a spline, a traced curve, an envelope, or a named chain;
    - finding 2's `t` on every kind;
    - **the tangent at a point** on every kind:
@@ -115,6 +117,12 @@ fixtures.
    - `tl tangent g` is refused where `g tangent tl` is accepted. Operand order carries meaning by
      design, but for a symmetric tangency the refusal reads as a bug.
 
+   Done in #251: `g tangent(at: m) l` reads the place of the contact holding `m` (one row), of an
+   arc or a circle it is the radius square to `l`, of a line `parallel`; a line and a spline or a
+   curve touch whichever is written first. With the dependency gone the spline station read DOF 1:
+   the tangent line's own length, `q` sliding along it, which the dependency had hidden. The words
+   now draw it 10 mm long — finding 13's paper cut again, a direction with no word of its own.
+
 6. **A chain as one path** (`pipe.sv`). The station runs over a named chain link by link (`s` from
    0 to 5), so the joints need no gluing and the wall is one face per section edge across the
    bends.
@@ -123,7 +131,7 @@ fixtures.
    - The alternative, a family per link unioned (`repeat e in route { … }`), needs kind dispatch
      (finding 8) and names a wall once per link.
 
-7. **Seeding the first station.** *Done (#252, Solvent 0.79).*
+7. **Seeding the first station.** *Done (#252, Solvent 0.81).*
    - The station plane's attitude must start near its answer: the bottle's twin rim point was judged
      against the seeded plane before the solve (E061, "`bottle.st.n` and `std.front` are parallel").
    - A literal seed in the word cannot serve every guide: seeding it for the bottle broke the

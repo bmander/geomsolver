@@ -142,7 +142,12 @@ pub const FIT: f64 = 1e-6;
 /// where it turns or linear where it runs straight (a blend carried along a line is linear in `v`).
 /// Refused where no net the fit may grow to comes within `FIT`, rather than written further off.
 pub fn blend_net(b: &super::geom::Blend) -> Result<super::nurbs::Net,String> {
-    let (dv,nv) = match b.carry { super::geom::Carry::Line {..} => (1,1),super::geom::Carry::Arc {..} => (3,4) };
+    let (dv,nv) = match b.carry {
+        super::geom::Carry::Line {..} => (1,1),
+        super::geom::Carry::Arc {..} => (3,4),
+        // a quarter of a turn a span to start with, as a helix wants
+        super::geom::Carry::Screw {angle,..} => (3,((angle.abs()/std::f64::consts::FRAC_PI_2).ceil() as usize).max(4)),
+    };
     match super::nurbs::fit_net(&|u,v| b.d1([u,v]).0,3,dv,8,nv,FIT) {
         Some((net,err)) if err <= FIT => Ok(net),
         Some((_,err)) => Err(format!("a loft face is fitted no nearer than {err:.3e} mm to its surface, past the file's {FIT:e}")),

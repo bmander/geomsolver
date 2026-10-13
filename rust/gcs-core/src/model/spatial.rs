@@ -260,7 +260,14 @@ pub enum SolidDef {
     /// A face swept along its plane's normal, between two signed coordinates along it.  `from`
     /// and `to` are ordinates and their signs are arithmetic; `depth: d` is the draughtsman's
     /// spelling of `from: -d, to: 0`, the material behind the face the view shows.
-    Prism { face: u32, from: Extent, to: Extent },
+    ///
+    /// `draft` (#245, radians) tapers its sides from the face's own plane, the parting plane: the
+    /// section at ordinate `h` is the face's offset `|h| tan draft` into its material (an outer
+    /// loop shrinks, a hole grows), so the sides lean away from the plane either side of it, as a
+    /// forging's come out of its die; a negative draft leans them the other way.  A straight side
+    /// stays a plane and a circle's a cone; the faces keep the prism's names, a side crossing the
+    /// plane in two pieces of one name.
+    Prism { face: u32, from: Extent, to: Extent, draft: Option<Extent> },
     /// Sections at the endpoints of a directed line or circular arc.
     Loft { face: u32, end: Option<u32>, guide: EntRef },
     /// A prism spanning the target's additive material, evaluated after solving.

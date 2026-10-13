@@ -1,7 +1,8 @@
 // A coil spring: a ball swept along a helix. The ball turns about the upright axis and climbs
-// `pitch` every turn, for `turns` turns; the body is everything it passes through. Change a
-// number and apply (⌘↵) to watch it refine again; ⌘B shows it in the glass box. Keep `wire_r`
-// below half the pitch, or neighbouring turns run into each other.
+// `pitch` every turn, for `turns` turns; the body is everything it passes through — the ball's
+// disc carried along the helix, with the ball at each end — built exactly. ⌘B shows it in the
+// glass box. Keep `wire_r` below half the pitch, or neighbouring turns run into each other (and
+// the spring is read by its field instead).
 unit mm
 use std (right_of)
 

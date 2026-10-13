@@ -64,8 +64,10 @@ pub fn recipe_static(sk: &Sketch,root: usize) -> Result<StaticRecipe,String> {
     recipe_with(sk,root,true)
 }
 
+/// Whether solid `i` holds a continuous sweep among its operands that only the generating class
+/// or the field builds: a ball's sweep built as its tube (`canal`, #238) is static material.
 pub(crate) fn contains_sweep(sk: &Sketch,i: usize) -> bool {
-    matches!(sk.solids[i].def,SolidDef::Swept {..})
+    matches!(sk.solids[i].def,SolidDef::Swept {..}) && !super::canal::is_canal(sk,i)
         || sk.solids[i].operands().into_iter().any(|o| contains_sweep(sk,o as usize))
 }
 
@@ -81,7 +83,7 @@ pub(crate) fn swept_operands(sk: &Sketch,i: usize) -> Vec<usize> {
 pub(crate) fn swept_cut(sk: &Sketch,i: usize) -> Result<Option<SweptCut>,String> {
     let solid = &sk.solids[i];
     match &solid.def {
-        SolidDef::Swept {source,..} => {
+        SolidDef::Swept {source,..} if !super::canal::is_canal(sk,i) => {
             if contains_sweep(sk,*source as usize) {
                 return Err(format!("`{}`: nested continuous sweeps are not yet supported",solid.name));
             }
@@ -172,6 +174,8 @@ fn recipe_with(sk: &Sketch,root: usize,static_only: bool) -> Result<StaticRecipe
         }
         let solid = &sk.solids[i];
         let mut node = match &solid.def {
+            // a ball under one turn: the tube about its centre's path (#238)
+            SolidDef::Swept {..} if let Some(c) = super::canal::built(sk,i) => c?.node(scale),
             SolidDef::Swept {..} => return Err(format!(
                 "`{}`: native CAD boundary construction for continuous motion sweeps is not yet supported",solid.name)),
             SolidDef::Placed { source, motion, at } => {
@@ -216,28 +220,39 @@ fn recipe_with(sk: &Sketch,root: usize,static_only: bool) -> Result<StaticRecipe
             }
             // a region: its meridian turned once about its axis (§6.21)
             SolidDef::Region {terms,..} => {
+                // in general position: the common of its terms' primitives, where they are ones that
+                // construction makes (#238)
                 if super::region::in_general(sk,i) {
-                    let what = if terms.iter().any(|t| super::faces::reads_faces(&t.shape)) {
-                        "a region over a body's faces that no entry of the lowering table builds"
-                    } else {
-                        "a region whose terms share no axis"
+                    let Some(b) = super::bounded::built(sk,i) else {
+                        let what = if terms.iter().any(|t| super::faces::reads_faces(&t.shape)) {
+                            "a region over a body's faces that no entry of the lowering table builds"
+                        } else {
+                            "a region in general position over a sum of measurements, an offset or a wide cone"
+                        };
+                        return Err(format!("`{}`: {what} is read by the field; no exact construction is made of it yet",
+                            sk.solid_name(i)));
                     };
-                    return Err(format!("`{}`: {what} is read by the field; no exact construction is made of it yet",
-                        sk.solid_name(i)));
+                    b.map_err(|e| format!("`{}`: {e}",sk.solid_name(i)))?.node(scale)?
+                } else {
+                    let m = super::region::meridian(sk,i)?;
+                    let name = |t: u32| m.name(t);
+                    let p = crate::brep::recipe::region_profile(&m.region,m.origin,m.seam,m.axis,&name);
+                    object([
+                        ("kind","revolve".into()),("profile",p.to_json(scale)?),
+                        ("origin",vector(m.origin.map(|v| v*scale))),("axis",vector(m.axis)),
+                        ("angle",std::f64::consts::TAU.into()),
+                    ])
                 }
-                let m = super::region::meridian(sk,i)?;
-                let name = |t: u32| m.name(t);
-                let p = crate::brep::recipe::region_profile(&m.region,m.origin,m.seam,m.axis,&name);
-                object([
-                    ("kind","revolve".into()),("profile",p.to_json(scale)?),
-                    ("origin",vector(m.origin.map(|v| v*scale))),("axis",vector(m.axis)),
-                    ("angle",std::f64::consts::TAU.into()),
-                ])
             }
-            SolidDef::Prism {face,from,to} => object([
-                ("kind","prism".into()),("profile",profile(sk,*face as usize,scale)?),
-                ("from",(from.value*scale).into()),("to",(to.value*scale).into()),
-            ]),
+            SolidDef::Prism {face,from,to,draft} => {
+                let mut node = object([
+                    ("kind","prism".into()),("profile",profile(sk,*face as usize,scale)?),
+                    ("from",(from.value*scale).into()),("to",(to.value*scale).into()),
+                ]);
+                // its sides tapered from the profile's plane (#245), an angle in radians
+                if let Some(d) = draft { node.set("draft",d.value.into()); }
+                node
+            }
             SolidDef::Through {face,..} => object([
                 ("kind","through".into()),("profile",profile(sk,*face as usize,scale)?),
                 ("sources",ids(&dependencies)),
@@ -335,6 +350,8 @@ fn shifted_node(n: &Json,by: [f64;3]) -> Json {
     };
     let mut n = n.clone();
     nearest(&mut n,"origin","axis",false);
+    // a canal's ball centre is a point
+    if let Some(c) = n.get("centre").map(&point) { n.set("centre",c); }
     for k in ["profile","end"] { if let Some(p) = n.get(k).filter(|p| matches!(p,Json::Obj(_))).map(&profile) { n.set(k,p); } }
     if let Some(g) = n.get("guide").map(|g| points(g,&["start","center"])) { n.set("guide",g); }
     if let Some(Json::Arr(m)) = n.get("matrix") {
