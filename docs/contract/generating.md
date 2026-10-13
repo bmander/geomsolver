@@ -86,7 +86,7 @@ plane through a sphere's parameter pole is a meeting this kernel's Booleans do n
 `swept_groove.sv`, `swept_spring.sv`, `solid_generating_sweep.sv`; `tests/canal.rs` (Pappus, to
 1e-9) is the gate. Field-path tests sweep the ball along a line instead (`solid_sweep.rs::slid`).
 
-**A sweep's roll through what it cuts** (#271, §6.9 [0.87]): `solid(tool, under: m, through: body)`
+**A sweep's roll through what it cuts** (#271, §6.9 [0.88]): `solid(tool, under: m, through: body)`
 is `SolidDef::Swept { roll: model::Roll::Through { body } }` (`Roll::Stated` is `from:`/`to:`),
 the roll about 0 during which the tool meets the body's material (`document::material_sources`:
 stock and additions, never cuts, so `removal` cutting `body` is no cycle; `evaluation_operands`

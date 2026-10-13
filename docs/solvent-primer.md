@@ -1004,7 +1004,8 @@ unbound as an unknown (`r: hint(10mm)`; the solve writes it back):
   (the line is `.about`, since `axis` is an element's word).
 - `gc := std.Cone(gax, half: 60deg)`: apex at the line's start, opening toward its end; a point on
   it lies on that nappe (either generator within the axis's own view, the seed picking).
-- `std.TangentCones(gc, pc, M)` is `gc tangent(at: M) pc`.
+- Two cones touching at `M` with one tangent plane there: `gc tangent(at: M) pc` (§6.21), `M`
+  on each beside it. The library has no component for it.
 - `inner := std.ConeThrough(ax, q, lean: 20deg)`: the cone about `ax` through `q`, its radius
   growing `tan(lean)` along `ax` (negative narrows it); its inside is always nearer `ax`. Its apex
   is the instance's (`inner.apex`), made once: a family's body makes once whatever reads nothing
@@ -1898,7 +1899,7 @@ gc := std.Cone(gax, half: 60deg)
 pc := std.Cone(pax, half: hint(30deg))
 M coincident gc
 M coincident pc
-std.TangentCones(gc, pc, M)
+gc tangent(at: M) pc
 
 // the two pitch radii at M, and the shafts: square, and E apart
 M distance(Rg) gax
@@ -1908,9 +1909,9 @@ gax distance(E) pax
 ```
 
 `44 params, 44 equations, structural rank 44; DOF 0`. The gear's apex on P makes P the gear cone's
-tangent plane at M, and `std.TangentCones` makes it the pinion's, so the pinion's apex lands on P
-unasked. The pinion's plane stands on two axes the solve turns, held square, with its origin at M;
-`horizontal pax` fixes its remaining turn. Γ = 60°, γ = 29.564957707°, ε = 10.722102067°.
+tangent plane at M, and `gc tangent(at: M) pc` makes it the pinion's, so the pinion's apex lands
+on P unasked. The pinion's plane stands on two axes the solve turns, held square, with its origin
+at M; `horizontal pax` fixes its remaining turn. Γ = 60°, γ = 29.564957707°, ε = 10.722102067°.
 `hypoid_pitch_cones.sv` is this document in the app; `gcs-core/tests/fixtures/hypoid_pitch_cones.sv`
 builds the same pair without naming the cones, and the tests find the two agree to 2e-11.
 
