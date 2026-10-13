@@ -378,14 +378,14 @@ fn a_set_with_geometry_of_its_own_is_tangent_to_a_line() {
 }
 
 /// Two cones tangent at a point, written as one word: their tangent planes there are one, two
-/// conditions — the hypoid's pitch cones, which `std.TangentCones` now states this way, and
-/// which `spatial_surfaces.rs` holds to the fold construction.  The chart its two directions are
+/// conditions — the hypoid's pitch cones, which the shipped example states this way and
+/// `spatial_surfaces.rs` holds to the fold construction.  The chart its two directions are
 /// gauged in rises along the pitch plane's normal, and every row's Jacobian is exact.
 #[test]
 fn two_sets_tangent_at_a_point() {
-    let src = include_str!("../../examples/hypoid_pitch_cones.sv")
-        .replace("std.TangentCones(gc, pc, M)", "gc tangent(at: M) pc");
-    let e = read(&src);
+    let src = include_str!("../../examples/hypoid_pitch_cones.sv");
+    assert!(src.contains("\ngc tangent(at: M) pc\n"), "the example states the word");
+    let e = read(src);
     assert!(described(&e).contains(&"gc tangent(at: M) pc".to_string()), "{:?}", described(&e));
     let mut sk = solved(&e);
     let d = diagnose(&mut sk, DiagnoseOptions::default());
@@ -405,6 +405,15 @@ fn two_sets_tangent_at_a_point() {
     // and a document carries it
     let back = io::from_json(&io::to_json(&sk)).expect("reads back");
     assert_eq!(io::dumps(&back, None), io::dumps(&sk, None));
+}
+
+/// `std.TangentCones` is retired (#265): its whole body was `k1 tangent(at: m) k2`, the word
+/// `two_sets_tangent_at_a_point` reads, and the library no longer has the name.
+#[test]
+fn the_retired_tangent_cones_is_no_name_of_the_library() {
+    let src = include_str!("../../examples/hypoid_pitch_cones.sv")
+        .replace("\ngc tangent(at: M) pc\n", "\nstd.TangentCones(gc, pc, M)\n");
+    refused(&src, "E103", "`std` defines no component `TangentCones`", "std.TangentCones");
 }
 
 /// A tangency's derivative rows deleted, its tangent unknowns are no freedom: each is held again.

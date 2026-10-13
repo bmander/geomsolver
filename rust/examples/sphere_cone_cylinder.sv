@@ -15,8 +15,8 @@
 //   ball.
 // - Two cones: one about a vertical axis, its half-angle stated; the other about a level axis
 //   whose apex may slide along it and whose half-angle is not stated.  A point M of the side view
-//   is on both, and `std.TangentCones(k1, k2, M)` says they touch there with one tangent plane —
-//   two equations more.  Four equations, four unknowns (M's two, the second apex, its
+//   is on both, and `k1 tangent(at: M) k2` says they touch there with one tangent plane — two
+//   equations more.  Four equations, four unknowns (M's two, the second apex, its
 //   half-angle).
 //
 // DOF 1, and it is the point on the ball.  Edit the first cone's `half` and the second cone
@@ -63,4 +63,4 @@ k2 := std.Cone(jax, half: hint(38deg))
 M := point hint((-25, 61)) in std.side
 M coincident k1
 M coincident k2
-std.TangentCones(k1, k2, M)
+k1 tangent(at: M) k2

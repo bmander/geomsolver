@@ -1,7 +1,7 @@
 //! Cones and cylinders, the library's (`std.Cone`, `std.Cylinder`): a line and a number each, sets
 //! of points (§6.21, `tests/sets.rs`), and what stands on them — a point on a cylinder its radius
 //! from the axis, one on a cone at its half-angle at the apex, a line its radius from a cylinder's
-//! axis by the common perpendicular, two cones' tangent planes made one (`std.TangentCones`) —
+//! axis by the common perpendicular, two cones' tangent planes made one (`k1 tangent(at: m) k2`) —
 //! against closed forms; the hypoid's pitch cones named and stated to
 //! touch, against the fold construction of them (`spatial_lang.rs`); and a stated plane's origin
 //! through a lifted program.
@@ -153,7 +153,7 @@ fn a_line_touching_a_cylinder_is_its_radius_from_the_axis() {
 
 /// **The named hypoid** (the plan's P4 gate): the app's `examples/hypoid_pitch_cones.sv`, its
 /// pitch cones named — the gear's axial plane stated, the pinion's solved, M on both cones and
-/// `std.TangentCones(gc, pc, M)` — against the fold construction `fixtures/hypoid_pitch_cones.sv`
+/// `gc tangent(at: M) pc` — against the fold construction `fixtures/hypoid_pitch_cones.sv`
 /// states.  The two documents put their views differently on the sheet, so they are compared by
 /// what a hypoid is: the pitch angles, the offset angle, the apexes' distances from M and from
 /// each other, all to 1e-9.
