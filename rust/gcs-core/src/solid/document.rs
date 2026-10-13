@@ -41,12 +41,12 @@ fn reads_where(sk: &Sketch, si: usize, unit: f64, skip: &dyn Fn(usize) -> bool) 
         v.push(s as f64);
         name_read(&sol.name, &mut v);
         match &sol.def {
-            SolidDef::Swept { source, motion, roll: crate::model::Roll::Stated { from, to } } => {
+            SolidDef::Swept { source, motion, roll: Roll::Stated { from, to } } => {
                 v.extend([6.,*source as f64,*motion as f64,from.value,to.value]);
                 motion_reads(sk,*motion,&mut v);
             }
             // a roll through a body reads its material, never its cuts (`material_sources`)
-            SolidDef::Swept { source, motion, roll: crate::model::Roll::Through { body } } => {
+            SolidDef::Swept { source, motion, roll: Roll::Through { body } } => {
                 v.extend([8.,*source as f64,*motion as f64,*body as f64]);
                 motion_reads(sk,*motion,&mut v);
                 match material_sources(sk, *body) {
@@ -258,7 +258,7 @@ pub(crate) fn evaluation_operands(sk: &Sketch, i: usize) -> Result<Vec<u32>, Str
     match s.def {
         SolidDef::Through { body, .. } => material_sources(sk, body),
         // a roll through a body reads its tool and the body's material (#271)
-        SolidDef::Swept { source, roll: crate::model::Roll::Through { body }, .. } => {
+        SolidDef::Swept { source, roll: Roll::Through { body }, .. } => {
             Ok(std::iter::once(source).chain(material_sources(sk, body)?).collect())
         }
         _ => Ok(s.operands()),

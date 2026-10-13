@@ -98,8 +98,7 @@ fn every_reader_reads_one_roll() {
     }
 }
 
-/// A tool that does not meet the body at 0, or one never clear of it, is refused naming why;
-/// `through:` beside a stated roll is no sweep; a body made of its own roll is E041.
+/// A tool that does not meet the body at 0, or one never clear of it, is refused naming why.
 #[test]
 fn a_roll_with_no_engagement_about_0_is_refused() {
     let e = read(&balls("(-3, 0, 0)", "under: turn, through: part"));
@@ -113,6 +112,8 @@ fn a_roll_with_no_engagement_about_0_is_refused() {
     assert!(why.contains("not clear of it within two turns"), "{why}");
 }
 
+/// `through:` beside a stated roll is no sweep, it names a solid, and a body made of the sweep
+/// that rolls through it is E041.
 #[test]
 fn through_is_a_roll_of_its_own() {
     let mixed = balls("(3, 0, 0)", "under: turn, through: part, from: 0deg, to: 10deg");
@@ -138,8 +139,8 @@ fn a_roll_through_prints_as_written() {
     let src = balls("(3, 0, 0)", "under: turn, through: part");
     let (p, errors) = syntax::parse(&src);
     assert!(errors.is_empty(), "{errors:?}");
-    let stmt = p.root().body.iter().find(|st| syntax::write_stmt_to(&mut String::new(), &st.kind).is_ok()
-        && src[st.span.lo as usize..st.span.hi as usize].starts_with("construction removal")).unwrap();
+    let stmt = p.root().body.iter()
+        .find(|st| src[st.span.lo as usize..st.span.hi as usize].starts_with("construction removal")).unwrap();
     let mut printed = String::new();
     syntax::write_stmt_to(&mut printed, &stmt.kind).unwrap();
     assert!(printed.contains("solid(tool, under: turn, through: part)"), "{printed}");
@@ -150,8 +151,8 @@ fn a_roll_through_prints_as_written() {
 
 /// **The issue's case** (#271): the spiral bevel at 10:48, the gear close to a crown gear, whose
 /// stated 45-degree roll left the space cutter in the blank (E1). Rolled through its blank, each
-/// member's cut is admitted, every roll brackets where the tool's surface, sampled as E1 samples
-/// it, first leaves the blank, and runs a small margin past it.
+/// member's roll ends where the tool's surface, sampled as E1 samples it, is clear of the blank, a
+/// small margin past where it first leaves it, and the gear is admitted.
 #[test]
 fn the_pair_at_ten_teeth_is_admitted_with_no_roll_stated() {
     let text = fixtures::gear::configure(&fixtures::gear::source(), &[("pinion_teeth", 10.)]);

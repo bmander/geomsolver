@@ -50,19 +50,27 @@ pub fn interval(sk: &Sketch, swept: usize) -> Result<[f64; 2], String> {
     found
 }
 
+/// The ways the march goes from 0: down, then up.
+const WAYS: [f64; 2] = [-1.0, 1.0];
+
+fn fault(e: crate::interval::Error) -> String { format!("{e:?}") }
+
+/// How wide an interval is, and a box's widest side.
+fn side(x: I) -> f64 { x.bounds()[1] - x.bounds()[0] }
+fn widest(b: &[I; 3]) -> f64 { b.iter().map(|&x| side(x)).fold(0.0, f64::max) }
+
 /// The roll about 0 during which `source` under `motion` meets `body`'s material.
 fn through(sk: &Sketch, source: usize, motion: usize, body: usize) -> Result<[f64; 2], String> {
     let tolerance = super::cad::AXIS_TOLERANCE;
     let tool = SpatialField::read(sk, source, tolerance)?;
-    let interval = |e: crate::interval::Error| format!("{e:?}");
-    let Some(support) = tool.support_bounds().map_err(interval)? else {
+    let Some(support) = tool.support_bounds().map_err(fault)? else {
         return Err(format!("its tool `{}` has no bounded support, so no roll is known to carry it \
                             clear", sk.solids[source].name));
     };
     let mut blank: Option<SpatialField> = None;
     for s in super::document::material_sources(sk, body as u32)? {
         let f = SpatialField::read(sk, s as usize, tolerance)?;
-        blank = Some(match blank { Some(b) => b.union(f).map_err(interval)?, None => f });
+        blank = Some(match blank { Some(b) => b.union(f).map_err(fault)?, None => f });
     }
     let blank = blank.ok_or("it has no material")?;
     let family = crate::motion::Family::read(sk, motion)?;
@@ -75,18 +83,18 @@ fn through(sk: &Sketch, source: usize, motion: usize, body: usize) -> Result<[f6
         let asks: Vec<(usize, u32)> = (0..2).filter(|&w| ends[w].is_none())
             .flat_map(|w| (k..k + ahead).map(move |j| (w, j))).collect();
         let answers = crate::par::map(&asks, |&(w, j)| {
-            let (a, b) = (f64::from(j) * STEP, f64::from(j + 1) * STEP);
-            clear(&tool, support, &blank, &family, if w == 1 { [a, b] } else { [-b, -a] })
+            let [a, b] = [j, j + 1].map(|n| WAYS[w] * f64::from(n) * STEP);
+            clear(&tool, support, &blank, &family, [a.min(b), a.max(b)])
         });
         for (&(w, j), clear) in asks.iter().zip(answers) {
             if ends[w].is_none() && clear? {
-                ends[w] = Some(if w == 1 { 1.0 } else { -1.0 } * f64::from(j) * STEP);
+                ends[w] = Some(WAYS[w] * f64::from(j) * STEP);
             }
         }
         k += ahead;
         if let Some(w) = (0..2).find(|&w| ends[w].is_none() && f64::from(k) * STEP >= REACH) {
             return Err(format!("its tool is not clear of it within two turns {} of 0",
-                               if w == 1 { "above" } else { "below" }));
+                               ["below", "above"][w]));
         }
     }
     let [Some(lo), Some(hi)] = ends else { unreachable!("each way has its end") };
@@ -104,11 +112,14 @@ fn through(sk: &Sketch, source: usize, motion: usize, body: usize) -> Result<[f6
 /// pose, or where the splitting runs out.
 pub fn clear(tool: &SpatialField, support: [I; 3], blank: &SpatialField,
              family: &crate::motion::Family, span: [f64; 2]) -> Result<bool, String> {
-    let interval = |e: crate::interval::Error| format!("{e:?}");
-    let widest = |b: &[I; 3]| (0..3).map(|k| b[k].bounds()[1] - b[k].bounds()[0]).fold(0.0, f64::max);
-    let mut boxes = vec![(support, span, 0_u32)];
+    // a span's enclosed poses and its middle pose, asked once for every box under it
+    let poses = |span: [f64; 2]| -> Result<Poses, String> {
+        let enclosed = I::new(span[0], span[1]).and_then(|s| family.bounds(s)).ok();
+        Ok(Poses { span, enclosed, middle: family.at(0.5 * (span[0] + span[1]))? })
+    };
+    let mut boxes = vec![(support, poses(span)?, 0_u32)];
     let mut asked = 0;
-    while let Some((cell, span, depth)) = boxes.pop() {
+    while let Some((cell, at, depth)) = boxes.pop() {
         asked += 1;
         if asked > BOXES {
             return Ok(false);
@@ -117,33 +128,36 @@ pub fn clear(tool: &SpatialField, support: [I; 3], blank: &SpatialField,
         if tool.bounds(cell).is_ok_and(|t| t.bounds()[0] > 0.0) {
             continue;
         }
-        let posed = I::new(span[0], span[1]).and_then(|s| family.bounds(s)).and_then(|m| m.point(cell));
-        if posed.and_then(|p| blank.bounds(p)).is_ok_and(|k| k.bounds()[0] > 0.0) {
+        let posed = at.enclosed.and_then(|m| m.point(cell).ok());
+        if posed.is_some_and(|p| blank.bounds(p).is_ok_and(|k| k.bounds()[0] > 0.0)) {
             continue;
         }
         let c = cell.map(I::mid);
-        if tool.value(c) < 0.0 && blank.value(family.at(0.5 * (span[0] + span[1]))?.point(c)) < 0.0 {
+        if tool.value(c) < 0.0 && blank.value(at.middle.point(c)) < 0.0 {
             return Ok(false);
         }
         if depth == DEPTH {
             return Ok(false);
         }
-        if posed.is_ok_and(|p| widest(&p) > 2.0 * widest(&cell)) {
-            let m = 0.5 * (span[0] + span[1]);
-            boxes.extend([(cell, [span[0], m], depth + 1), (cell, [m, span[1]], depth + 1)]);
+        if posed.is_some_and(|p| widest(&p) > 2.0 * widest(&cell)) {
+            let m = 0.5 * (at.span[0] + at.span[1]);
+            for half in [[at.span[0], m], [m, at.span[1]]] {
+                boxes.push((cell, poses(half)?, depth + 1));
+            }
             continue;
         }
-        let k = (0..3).max_by(|&i, &j| {
-            let w = |x: I| x.bounds()[1] - x.bounds()[0];
-            w(cell[i]).total_cmp(&w(cell[j]))
-        }).expect("three sides");
+        let k = (0..3).max_by(|&i, &j| side(cell[i]).total_cmp(&side(cell[j]))).expect("three sides");
         let [lo, hi] = cell[k].bounds();
         let m = cell[k].mid();
         for half in [I::new(lo, m), I::new(m, hi)] {
             let mut next = cell;
-            next[k] = half.map_err(interval)?;
-            boxes.push((next, span, depth + 1));
+            next[k] = half.map_err(fault)?;
+            boxes.push((next, at, depth + 1));
         }
     }
     Ok(true)
 }
+
+/// The poses over one span of a step: enclosed (`None` where they cannot be), and the middle one.
+#[derive(Clone, Copy)]
+struct Poses { span: [f64; 2], enclosed: Option<crate::motion::MotionBounds>, middle: crate::envelope::Motion }
