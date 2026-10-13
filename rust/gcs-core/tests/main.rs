@@ -77,6 +77,7 @@ mod edit;
 mod edit_datums;
 mod edit_rounds;
 mod edit_solids;
+mod make_component;
 mod extrude;
 mod ellipse;
 mod envelope;
