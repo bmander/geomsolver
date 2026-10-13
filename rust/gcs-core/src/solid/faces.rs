@@ -138,6 +138,12 @@ impl BodyFaces {
     /// A point of the boundary's space back in the model's.
     pub fn back(&self, q: V) -> V { add(scale(q, 1.0 / self.mm), self.origin) }
 
+    /// Edge `e`'s point a fraction `s` along its parameter (model units).
+    pub fn along(&self, e: u32, s: f64) -> V {
+        let edge = &self.loc.b.edges[e as usize];
+        self.back(edge.point(edge.t[0] + s * (edge.t[1] - edge.t[0]), &self.loc.b.vertices))
+    }
+
     /// Edge `e`'s middle, by its parameter (model units).
     pub fn middle(&self, e: u32) -> V {
         let edge = &self.loc.b.edges[e as usize];

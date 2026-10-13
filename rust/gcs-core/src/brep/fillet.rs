@@ -189,7 +189,17 @@ pub fn roll(b: &Brep,at: V,r: f64,tol: f64) -> Result<Rolled,String> {
     for &v in &stops {
         let p = b.vertices[v as usize].p;
         let m = [0,1].map(|k| scale(toward(k,p),-1.));
-        let (trim,faces) = end_at(b,&uses,&sides_faces,&chain,v,m,tol,&names())?;
+        // a tangent chain's seam: the ball over the vertex, where its contact with the side going on
+        // must stand on the seam too, or no one section joins this run to the next
+        let section = |k: usize,f: usize,leaving: V| -> Result<Cut,String> {
+            let c = onto.project(across(p,m,r));
+            let e = [toward(0,c),toward(1,c)];
+            let n = unit(cross(e[0],e[1]));
+            let keep = if dot(n,leaving) < 0. { scale(n,-1.) } else { n };
+            seam_aligned(b,&uses,&sides_faces[k],f,v,add(c,scale(e[k],r)),tol,&names())?;
+            Ok(Cut::Section {o:c,keep,reach:4.*r})
+        };
+        let (trim,faces) = end_at(b,&uses,&sides_faces,&chain,v,m,tol,&names(),&section)?;
         // the ball's centre over the vertex, `r` from each face
         let t = spine.inverse(onto.project(across(p,m,r)));
         ends.push(Stop {trim,t,faces});
@@ -430,7 +440,13 @@ pub fn flat_along(b: &Brep,at: V,legs: [f64;2],on_a: Option<V>,tol: f64) -> Resu
     for &v in &stops {
         let q = b.vertices[v as usize].p;
         let m = [0,1].map(|k| scale(unit(surfaces[k].gradient(q)),sides[k]));
-        let (trim,faces) = end_at(b,&uses,&sides_faces,&chain,v,m,tol,&names)?;
+        let section = |k: usize,f: usize,leaving: V| -> Result<Cut,String> {
+            let (e,t) = (meet.project(q),unit(cross(surfaces[0].gradient(q),surfaces[1].gradient(q))));
+            let keep = if dot(t,leaving) < 0. { scale(t,-1.) } else { t };
+            seam_aligned(b,&uses,&sides_faces[k],f,v,legs_at(e,keep)[k],tol,&names)?;
+            Ok(Cut::Section {o:e,keep,reach:4.*legs[0].max(legs[1])})
+        };
+        let (trim,faces) = end_at(b,&uses,&sides_faces,&chain,v,m,tol,&names,&section)?;
         ends.push(Stop {trim,t:edge.inverse(q),faces});
     }
     let (t0,span) = if ends.is_empty() {
@@ -556,12 +572,12 @@ pub fn flat_along(b: &Brep,at: V,legs: [f64;2],on_a: Option<V>,tol: f64) -> Resu
 
 /// Where a run of `b`'s edges `chain` between the faces `sides_faces` ends, at its vertex `v`: the
 /// other faces there, each cutting the run off (`Trim`: a plane, or a cylinder's, a cone's or a
-/// sphere's solid, kept on the side the run lies on), and none of which either face runs on into
-/// smoothly — `m[k]` the way from face `k` toward the region there — or the run is refused, naming
-/// why.
+/// sphere's solid, kept on the side the run lies on) — or, where it goes on smoothly from face `k`
+/// (`m[k]` the way from face `k` toward the region there), what `section(k, face, leaving)` cuts
+/// it at — or the run is refused, naming why.
 #[allow(clippy::too_many_arguments)]
 fn end_at(b: &Brep,uses: &[Vec<(usize,usize,usize)>],sides_faces: &[Vec<usize>;2],chain: &[usize],v: u32,m: [V;2],tol: f64,
-    names: &str) -> Result<(Trim,Vec<usize>),String> {
+    names: &str,section: &dyn Fn(usize,usize,V) -> Result<Cut,String>) -> Result<(Trim,Vec<usize>),String> {
     let names = || names.to_string();
     let p = b.vertices[v as usize].p;
     let faces: Vec<usize> = (0..b.edges.len()).filter(|&e| b.edges[e].v.contains(&v))
@@ -577,10 +593,12 @@ fn end_at(b: &Brep,uses: &[Vec<(usize,usize,usize)>],sides_faces: &[Vec<usize>;2
     for &f in &faces {
         let face = &b.faces[f];
         let n = unit(face.surface.gradient(p));
-        // not a face either side runs on into smoothly (a chain of traced and straight edges)
-        if m.iter().any(|&w| 1.-dot(w,n).abs() <= 1e-9) {
-            return Err(format!("the fillet of {} runs on smoothly into `{}`: a chain of traced and straight edges is rung 3",
-                names(),face.name));
+        // a face one side runs on into smoothly (a chain of traced and straight edges): the run
+        // ends at the section the caller makes there, the next piece taking on from it
+        if let Some(k) = (0..2).find(|&k| 1.-dot(m[k],n).abs() <= 1e-9) {
+            let cut = section(k,f,leaving)?;
+            if !cuts.iter().any(|c| c.same(&cut,tol)) { cuts.push(cut); }
+            continue;
         }
         let s = dot(leaving,n);
         if s.abs() < MIN_TURN.dsin() {
@@ -597,18 +615,43 @@ fn end_at(b: &Brep,uses: &[Vec<(usize,usize,usize)>],sides_faces: &[Vec<usize>;2
     Ok((Trim {vertex:v,o:p,cuts},faces))
 }
 
+/// Whether `contact` (where a ball or a flat meets the side `side` of a run, in the section through
+/// its vertex `v`) stands on the seam at `v` between that side and the face `going` on from it
+/// tangent: else the contact crosses the seam in another section than the edge does, and no one
+/// section joins the run to the piece going on from it (#218's 7).
+#[allow(clippy::too_many_arguments)]
+fn seam_aligned(b: &Brep,uses: &[Vec<(usize,usize,usize)>],side: &[usize],going: usize,v: u32,contact: V,tol: f64,names: &str)
+    -> Result<(),String> {
+    let seams: Vec<usize> = (0..b.edges.len()).filter(|&e| b.edges[e].v.contains(&v)
+        && uses[e].iter().any(|u| u.0 == going) && uses[e].iter().any(|u| side.contains(&u.0))).collect();
+    let off = seams.iter().filter_map(|&e| match &b.edges[e].curve {
+        EdgeCurve::Curve(c) => Some(distance(c.point(c.inverse(contact)),contact)),
+        EdgeCurve::Degenerate => None,
+    }).fold(f64::INFINITY,f64::min);
+    if off <= 1e-6*(1.+norm(contact)).max(1e3*tol) { return Ok(()) }
+    Err(format!("the fillet of {names} runs on smoothly into `{}`, but its contact crosses their seam in another section than \
+        its edge does ({off:.2e} off it there): no one section joins the run to the piece going on",b.faces[going].name))
+}
+
 /// What cuts a run off where it ends (#218's 7): a plane through `o`, the run kept on the side
 /// `keep` points to; or the solid a curved face's surface bounds (a cylinder, a cone or a sphere),
 /// the run kept within it (`inside`) or outside it.
 #[derive(Clone,Debug)]
-pub enum Cut { Plane { o: V,keep: V },Solid { surface: Surface,inside: bool } }
+pub enum Cut {
+    Plane { o: V,keep: V },
+    Solid { surface: Surface,inside: bool },
+    /// Where a face goes on tangent from one the run lies on (a tangent chain): the section of the
+    /// ball over the vertex, through `o`, the run kept on the side `keep` points to within `reach`
+    /// of it — the next piece takes on from there (#218's 7).
+    Section { o: V,keep: V,reach: f64 },
+}
 
 impl Cut {
     /// How far within the side kept `x` stands (negative beyond it): a plane's distance, a curved
     /// surface's signed distance.
     fn kept(&self,x: V) -> f64 {
         match self {
-            Cut::Plane {o,keep} => dot(sub(x,*o),*keep),
+            Cut::Plane {o,keep} | Cut::Section {o,keep,..} => dot(sub(x,*o),*keep),
             Cut::Solid {surface,inside} => if *inside { -surface.implicit(x) } else { surface.implicit(x) },
         }
     }
@@ -618,6 +661,7 @@ impl Cut {
         match (self,other) {
             (Cut::Plane {o,keep},Cut::Plane {o: p,keep: k}) => dot(*keep,*k) >= 1.-1e-9 && dot(sub(*p,*o),*keep).abs() <= tol,
             (Cut::Solid {surface,inside},Cut::Solid {surface: s,inside: i}) => inside == i && super::ssi::same(surface,s,tol),
+            (Cut::Section {o,keep,..},Cut::Section {o: p,keep: k,..}) => dot(*keep,*k) >= 1.-1e-9 && distance(*o,*p) <= tol,
             _ => false,
         }
     }
@@ -751,6 +795,7 @@ fn trimmed(mut piece: Brep,trims: &[Trim]) -> Result<Brep,String> {
         piece = match cut {
             Cut::Plane {o,keep} => super::recipe::kept(&piece,*o,*keep,0.),
             Cut::Solid {surface,inside} => super::recipe::kept_by_solid(&piece,surface,*inside,0.),
+            Cut::Section {o,keep,reach} => super::recipe::cut_before(&piece,*o,*keep,*reach,0.),
         }.map_err(|m| format!("a fillet's run cannot be cut off where it ends: {m}"))?;
     }
     Ok(piece)

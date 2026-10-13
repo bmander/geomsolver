@@ -1125,6 +1125,32 @@ pub(crate) fn cone_bore_rim(r0: f64, slope: f64, small: f64, dx: f64, r: f64) ->
     )
 }
 
+/// A boss of radius `big` about `z` standing on a top that runs from a flat land (`z = nose`, `y ≤
+/// 0`) on smoothly into a bullnose (the cylinder of radius `nose` about `x`, `y ≥ 0`), its root
+/// filled by a ball of radius `r` rolled the whole way round across the seam where they meet.
+pub(crate) fn bullnose_root(big: f64, nose: f64, r: f64) -> f64 {
+    let (rs, rn) = (big + r, nose + r);
+    rolled(
+        &|phi: f64| {
+            let (s, co) = phi.sin_cos();
+            let y = rs * s;
+            [rs * co, y, if y <= 0.0 { rn } else { (rn * rn - y * y).sqrt() }]
+        },
+        [&|p: V| if p[1] <= 0.0 { [0.0, 0.0, -1.0] } else { unit([0.0, -p[1], -p[2]]) },
+            &|p: V| unit([-p[0], -p[1], 0.0])],
+        [&|o: V, w: V| {
+            // the land where it is crossed at `y ≤ 0`, the bullnose where at `y ≥ 0`
+            let land = if w[2] < 0.0 { (nose - o[2]) / w[2] } else { f64::INFINITY };
+            let land = if land.is_finite() && o[1] + land * w[1] <= 0.0 { land } else { f64::INFINITY };
+            let round = ray_cylinder(o, w, [0.0; 3], 0, nose);
+            let round = if round.is_finite() && o[1] + round * w[1] >= 0.0 { round } else { f64::INFINITY };
+            land.min(round)
+        },
+            &|o, w| ray_cylinder(o, w, [0.0; 3], 2, big)],
+        r,
+    )
+}
+
 /// A cylinder of radius `radius` about `(cx, cy)`, square to `z`, through the plane `z = h0 − s x`
 /// (the material below it), the flat of legs `leg` where they meet — a boss's root (`ROOT`, outside
 /// the cylinder) or a hole's rim (`RIM`, within the material, outside the hole) — kept within

@@ -1133,3 +1133,36 @@ fn a_rim_winding_round_both_faces_is_rolled() {
     let e = solved(&src.replace("fix((1, 0)) o", "fix((0.6, 0.8)) o"));
     near_quadrature(props::volume(&exported(&e, "part")), want);
 }
+
+/// **A round across a tangent seam** (#218's 7, `bullnose.sv`): a plate whose top runs from a flat
+/// land on smoothly into a bullnose (a quarter round of 10), a boss of 4 standing on the seam, its
+/// root rounded: a ring's stretch on the land and a ball rolled along the bullnose, carried on past
+/// the seam and cut off at the section the stretch ends at — together the ball rolled the whole way
+/// round (`bullnose_root`, #85's quadrature, to 1e-6). Stood off the seam, the ball's contact
+/// crosses the seam in another section than the edge does, so no one section joins the run to the
+/// piece going on: refused, saying so.
+#[test]
+fn a_root_across_a_tangent_seam_is_rolled() {
+    let src = include_str!("../../examples/rounds/bullnose.sv");
+    let round = "part.boss round(r: 1mm) part.slab\n";
+    assert!(src.contains(round));
+    let e = solved(src);
+    assert_eq!(lowered(&e).0, 2);
+    let sharp = props::volume(&exported(&solved(&src.replace(round, "")), "part"));
+    near_quadrature(props::volume(&exported(&e, "part")), sharp + crate::fillet_definition::bullnose_root(4.0, 10.0, 1.0));
+    agrees_with_field(&e, "part", 0.01);
+    let why = refused(&solved(&src.replace("fix((0, 0)) q", "fix((0, -1)) q")), "part");
+    assert!(why.contains("runs on smoothly into") && why.contains("crosses their seam in another section"), "{why}");
+}
+
+/// A mixed vertex the stratum leaves to the kernel: `runout.sv`'s lug rounded all over. The boss's
+/// root, rolled along its traced run, touches the boss's own wall along a curve, and the convex
+/// rounds read after it meet that fitted canal there tangent: the export is refused naming the
+/// kernel's limit, a meeting too ill-conditioned to trace.
+#[test]
+fn a_lug_rounded_all_over_is_refused_by_the_kernel() {
+    let src = include_str!("../../examples/rounds/runout.sv")
+        .replace("lug.boss round(r: 2mm) lug.wedge.wt", "round(r: 1mm) lug");
+    let why = refused(&solved(&src), "lug");
+    assert!(why.contains("nearly touching") && why.contains("ill-conditioned"), "{why}");
+}

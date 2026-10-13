@@ -386,7 +386,7 @@ pub fn lowered(sk: &Sketch, solid: usize) -> Option<Result<Rc<Vec<Piece>>, Strin
         }
     }
     let l = build(&body, &faces, section).and_then(|pieces| {
-        gate(sk, solid, &pieces, &body)?;
+        gate(sk, solid, &pieces, &body, &beside_edges(&body, &faces, section))?;
         Ok(Rc::new(pieces))
     });
     sk.lowering_cache.borrow_mut().insert(solid, (key, body, l.clone()));
@@ -1296,7 +1296,32 @@ impl Assembly {
 /// **The gate**: a lowering stands only where the region's own field agrees with it — every probe
 /// a little inside the built boundary material by the field, every one a little outside not
 /// (`agreement`, sampled by area); one holding nowhere, only where the field reads it empty too.
-fn gate(sk: &Sketch, solid: usize, pieces: &[Piece], body: &super::faces::BodyFaces) -> Result<(), String> {
+/// Points just inside the corner along each edge the region rounds or cuts (a quarter, a half and
+/// three quarters along it), a tenth of the section's size in along the bisector of its two faces:
+/// where the field reads the region there, the pieces must hold it (`gate`).
+fn beside_edges(body: &super::faces::BodyFaces, f: &Faces, section: Section) -> Vec<V> {
+    let size = match section { Section::Round(r) => r, Section::Flat { la, lb } => la.min(lb) };
+    let groups: Vec<Vec<usize>> = f.faces.iter().map(|r| body.faces(r)).collect();
+    let mut out = Vec::new();
+    for &[i, j] in f.pairs() {
+        for e in body.edges_between(&groups[i], &groups[j]) {
+            let &[fa, fb] = body.faces_of(e) else { continue };
+            if body.convex(e) != Some(f.within) {
+                continue;
+            }
+            for s in [0.25, 0.5, 0.75] {
+                let p = body.along(e, s);
+                let Some(w) = normalised(add(toward(body.normal(fa, p), f.within), toward(body.normal(fb, p), f.within))) else {
+                    continue;
+                };
+                out.push(add(p, scale(w, 0.1 * size)));
+            }
+        }
+    }
+    out
+}
+
+fn gate(sk: &Sketch, solid: usize, pieces: &[Piece], body: &super::faces::BodyFaces, beside: &[V]) -> Result<(), String> {
     if pieces.is_empty() {
         let empty = super::region::in_general_position(sk, solid)
             .is_some_and(|g| g.is_ok_and(|f| f.is_empty()));
@@ -1333,6 +1358,18 @@ fn gate(sk: &Sketch, solid: usize, pieces: &[Piece], body: &super::faces::BodyFa
         offset, confirm: offset / 4.0, value_tolerance: offset / 5.0, triangles: 400,
         ..Default::default()
     };
+    // and no piece left out: what the field reads of the region just inside each edge, the pieces
+    // hold (a probe of the boundary built sees nothing of a piece never built)
+    let located = crate::brep::query::Located::new(&b, 1e-9 * size);
+    for &p in beside {
+        if field.side(p) < -1e-6 * (1.0 + norm(p)) {
+            let q = if mm.is_some() { body.q(p) } else { p };
+            if located.solid_place(q) == crate::brep::query::Place::Out {
+                return Err(format!("its exact construction leaves out what the field reads beside its edge at [{:.6}, {:.6}, {:.6}]",
+                    p[0], p[1], p[2]));
+            }
+        }
+    }
     let report = super::agreement::of_triangles_parallel(&m.pts, &m.tris, &field, 1, &options)?;
     match report.disagreements.first() {
         None => Ok(()),

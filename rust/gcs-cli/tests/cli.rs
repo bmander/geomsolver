@@ -184,8 +184,8 @@ fn the_wankel_rotor_and_housing_export_and_measure_within_their_tolerance() {
 /// between two cylinders, `post.sv`'s runs cut off by a cylinder and `dshaft.sv` rounded all over,
 /// its corners each a ball's cell with a patch of a cylinder (#218); `groove.sv`'s runs mitred
 /// against rings on one cylinder, `bores.sv`'s corners over a plane and two cylinders,
-/// `frustum.sv`'s rolled generators glued to its corners and `crotch.sv`'s flat along a traced
-/// saddle.
+/// `frustum.sv`'s rolled generators glued to its corners, `crotch.sv`'s flat along a traced
+/// saddle and `bullnose.sv`'s root rolled across a tangent seam onto a ring's stretch.
 #[test]
 #[cfg_attr(not(feature = "slow"), ignore = "slow tier, about a minute: the rounds exported and measured")]
 fn the_rounds_export_and_measure_within_their_tolerance() {
@@ -193,7 +193,7 @@ fn the_rounds_export_and_measure_within_their_tolerance() {
     std::fs::create_dir_all(&dir).unwrap();
     let files = ["block","by_hand","pocket","boss","blank","slot","pad","rail","knob","tee","bore","twin","post","dshaft"].map(|f| (f,None));
     let more = [("runout",Some("lug")),("runout",Some("vent")),("groove",Some("part")),("bores",Some("slab")),
-        ("frustum",Some("half")),("crotch",Some("tee"))];
+        ("frustum",Some("half")),("crotch",Some("tee")),("bullnose",Some("part"))];
     for (file,solid) in files.into_iter().chain(more) {
         let name = solid.unwrap_or(file);
         let source = doc(&format!("rounds/{file}.sv"));
