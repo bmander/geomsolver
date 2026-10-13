@@ -676,25 +676,31 @@ pub(super) fn constrain(
     Some(sk.add_quiet(c))
 }
 
-/// **A `path` is what a point runs along** (#251): a line, an arc, a circle, a spline or a
-/// curve. A formal of the type given anything else is refused at the argument, once the
-/// elaborator knows what the name it was given is.
-pub(super) fn paths(map: &SourceMap, given: &[(String, Span, String)], diags: &mut Vec<Diag>) {
-    for (target, span, formal) in given {
-        let Some(e) = map.ent_named(target) else { continue };
-        use EntKind::{Arc, Circle, Curve, Line, Spline};
-        if !matches!(e.kind, Line | Arc | Circle | Spline | Curve) {
-            diags.push(Diag {
-                code: Code::E103,
-                span: *span,
-                stmt: None,
-                message: format!(
-                    "`{formal}` is a path — a line, an arc, a circle, a spline or a curve — \
-                     not {}",
-                    e.kind.a()
-                ),
-            });
+/// **An entity given where a kind is asked for is of that kind**, refused at the argument once
+/// the elaborator knows what the name it was given is: a `path` formal's (#251), a line, an arc,
+/// a circle, a spline or a curve, what a point runs along; an interface's entity member's
+/// (§8.1 [0.84]), the kind it declares.
+pub(super) fn kinds(map: &SourceMap, given: &[crate::flatten::KindAsked], diags: &mut Vec<Diag>) {
+    for k in given {
+        let Some(e) = map.ent_named(&k.target) else { continue };
+        let fits = match k.ty {
+            crate::syntax::Ty::Ent(want) => e.kind == want,
+            _ => e.kind.runs_along(),
+        };
+        if fits {
+            continue;
         }
+        let message = match (&k.interface, k.ty) {
+            (None, _) => format!(
+                "`{}` is a path — a line, an arc, a circle, a spline or a curve — not {}",
+                k.what, e.kind.a()
+            ),
+            (Some(i), crate::syntax::Ty::Ent(want)) => {
+                format!("`{}` is {}, where `{i}` asks for {}", k.what, e.kind.a(), want.a())
+            }
+            (Some(i), _) => format!("`{}` is {}, where `{i}` asks for a path", k.what, e.kind.a()),
+        };
+        diags.push(Diag { code: Code::E103, span: k.span, stmt: None, message });
     }
 }
 

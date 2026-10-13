@@ -229,7 +229,7 @@ component ConeThrough(about: line, q: point, lean: Angle) := { p |
 // The half-space behind the plane square to the line `along` at the ordinate `d` along it from
 // `o`: its surface is the points `d` from `o` along `along` (§6.21), a set and nothing drawn.  Its
 // inside is behind that plane, the side `along` points away from (`p inside top` is at most `d`
-// along); its points are not level with `o`, which `o level(along) p` says.  Through 0.83 it was
+// along); its points are not level with `o`, which `o level(along) p` says.  Through 0.84 it was
 // `std.Level` (#270).
 //
 //   top := std.HalfSpace(c, cut_ax, d: 2mm)

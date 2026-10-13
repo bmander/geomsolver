@@ -96,6 +96,10 @@ pub struct Program {
     /// the document's own, then each module's once `modules::link` has run, each saying which
     /// file it was written in.
     pub words: Vec<WordDef>,
+    /// The interfaces defined at the top of a file (`interface Gear { … }`, §8.1 [0.84]): the
+    /// document's own, then each module's once `modules::link` has run, each saying which file
+    /// it was written in.
+    pub interfaces: Vec<super::Interface>,
     /// The modules linked in, in the order they were resolved.  Each one's text is kept, so a
     /// re-parse of the document (`retext`) can link again without asking the host.
     pub modules: Vec<Module>,
@@ -141,6 +145,7 @@ impl Program {
             preview: None,
             uses: Vec::new(),
             words: Vec::new(),
+            interfaces: Vec::new(),
             modules: Vec::new(),
             next_stmt: 0,
         }
@@ -242,6 +247,11 @@ impl Program {
             .find(|c| c.module == module && c.name.as_ref().is_some_and(|n| n.text == name))
     }
 
+    /// The interface `name` defined in `module` (`None`: the document's own).
+    pub fn interface_in(&self, module: Option<usize>, name: &str) -> Option<&super::Interface> {
+        self.interfaces.iter().find(|f| f.module == module && f.name.text == name)
+    }
+
     /// The modules a body read `from` the document (`None`) or a module may name: exactly the
     /// ones its own file `use`s (§14.4) — a module brought in by another is that one's business.
     pub fn uses_of(&self, from: Option<usize>) -> Vec<&str> {
@@ -294,13 +304,38 @@ impl Program {
                 c.module == module && c.name.as_ref().is_some_and(|n| n.text == base)
             })
         };
+        self.resolve_named(name, from, "component", find)
+            .map_err(|e| e.unwrap_or_else(|| format!("no component named `{name}`")))
+    }
+
+    /// **The interface a type names, from where it is written** (§8.1 [0.84]): resolved as a
+    /// component's name is.  The index into `interfaces`, or why there is none.
+    pub fn resolve_interface(&self, name: &str, from: Option<usize>) -> Result<usize, String> {
+        let find = |module: Option<usize>, base: &str| {
+            self.interfaces.iter().position(|i| i.module == module && i.name.text == base)
+        };
+        self.resolve_named(name, from, "interface", find).map_err(|e| {
+            e.unwrap_or_else(|| format!("`{name}` is not a type, nor an interface defined here"))
+        })
+    }
+
+    /// A name read from the file `from` (§14.4): one its own file defines, one a `use` imports
+    /// bare, or a module's by its full path.  `find` looks a bare name up in one file; an `Err`
+    /// says why where there is more to say than that nothing is so named (`None`).
+    fn resolve_named(
+        &self,
+        name: &str,
+        from: Option<usize>,
+        noun: &str,
+        find: impl Fn(Option<usize>, &str) -> Option<usize>,
+    ) -> Result<usize, Option<String>> {
         let uses = self.uses_of(from);
         if let Some((path, base)) = name.rsplit_once('.') {
             if !uses.contains(&path) {
-                return Err(format!("no module `{path}` is used here: write `use {path}`"));
+                return Err(Some(format!("no module `{path}` is used here: write `use {path}`")));
             }
             let m = self.module_named(path);
-            return find(m, base).ok_or_else(|| format!("`{path}` defines no component `{base}`"));
+            return find(m, base).ok_or_else(|| Some(format!("`{path}` defines no {noun} `{base}`")));
         }
         if let Some(i) = find(from, name) {
             return Ok(i);
@@ -313,19 +348,29 @@ impl Program {
         for path in uses {
             let m = self.module_named(path);
             if m.is_some() && find(m, name).is_some() {
-                return Err(format!("no component named `{name}` here: `{path}` defines one, \
-                                    written `{path}.{name}`, or imported `use {path} ({name})`"));
+                return Err(Some(format!("no {noun} named `{name}` here: `{path}` defines one, \
+                                         written `{path}.{name}`, or imported `use {path} ({name})`")));
             }
         }
-        Err(format!("no component named `{name}`"))
+        Err(None)
     }
 
     /// A component's identity across the whole program: its module's path in front of its name
     /// (`engine.parts.Crank`), and its bare name where the document defines it.
     pub fn component_id(&self, i: usize) -> String {
         let c = &self.components[i];
-        let name = c.name.as_ref().map_or("", |n| n.text.as_str());
-        match c.module.and_then(|k| self.modules.get(k)) {
+        self.qualified(c.module, c.name.as_ref().map_or("", |n| n.text.as_str()))
+    }
+
+    /// An interface's identity across the whole program, as a component's.
+    pub fn interface_id(&self, i: usize) -> String {
+        let f = &self.interfaces[i];
+        self.qualified(f.module, &f.name.text)
+    }
+
+    /// A name defined in `module` (`None`: the document) as the whole program reads it.
+    fn qualified(&self, module: Option<usize>, name: &str) -> String {
+        match module.and_then(|k| self.modules.get(k)) {
             Some(m) => format!("{}.{name}", m.name),
             None => name.to_string(),
         }

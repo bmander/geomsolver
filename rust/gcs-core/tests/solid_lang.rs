@@ -289,7 +289,7 @@ fn a_body_keeps_what_it_has_in_common_with_each_solid() {
         "made of itself",
     );
     refused(&format!("{RECT}s := solid(sec, depth: 3mm)\nx := solid(s)\nx common x\n"), Code::E080, "`x common x` joins a solid to itself");
-    // through 0.83 the word was `bound`, which is also what a dimension's bound is (#270): the
+    // through 0.84 the word was `bound`, which is also what a dimension's bound is (#270): the
     // old spelling is refused where it is written, naming the new
     refused(&format!("{stock}body := solid(stock)\nbore bound body\n"), Code::E100, "now `common`: write `X common B`");
 }

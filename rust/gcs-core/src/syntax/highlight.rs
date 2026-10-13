@@ -289,7 +289,7 @@ fn tint_word(
             if EntKind::parse(w).is_some() {
                 return (Some(Tint::Word), Next::Word);
             }
-            if w == "component" {
+            if w == "component" || w == "interface" {
                 return (Some(Tint::Word), Next::Def);
             }
             if w == "use" {

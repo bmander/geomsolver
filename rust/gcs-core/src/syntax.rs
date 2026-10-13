@@ -163,6 +163,27 @@ pub struct Formal {
     pub name: Name,
     pub ty: Ty,
     pub span: Span,
+    /// The interface a `group` formal (or member) is typed by, as written — `Gear`, `spiral.Gear`
+    /// — where it names one rather than the word `group` (§8.1 [0.84]).  `ty` is then `Group`,
+    /// so everything that binds or reads a group reads this one; the interface is what the call
+    /// is checked against and all the body may read through it.
+    pub interface: Option<Name>,
+}
+
+/// **A group's shape, named** (§8.1 [0.84]): `interface Gear { O: point, M: point, ax: line,
+/// pitch: Length }`, written at the top of a file as a component is.  A formal typed by it
+/// (`gear: Gear`) is a `group` formal the call must give every member to, each of its type —
+/// a group or an instance, whatever else it carries — and the body may read through it only
+/// what it declares.  Structural: nothing says it is a `Gear`, it only has to have one's members.
+#[derive(Clone, Debug)]
+pub struct Interface {
+    pub name: Name,
+    /// The members, each written as a formal is, `name: type`; a member may itself be typed by
+    /// an interface (`cone: Cone`).
+    pub members: Vec<Formal>,
+    pub span: Span,
+    /// Which of the program's `modules` it was read from; `None` for one the document wrote.
+    pub module: Option<usize>,
 }
 
 /// The spec's §3.1 value types, plus the entity kinds this model actually has.
@@ -624,7 +645,7 @@ pub enum BodyWord {
     /// the stock body after declarations are built.
     Cut,
     /// `tip common cyl` — the body rule's intersection: the body keeps what it has in common
-    /// with every solid stated so.  Through 0.83 the word was `bound` (#270).
+    /// with every solid stated so.  Through 0.84 the word was `bound` (#270).
     Common,
 }
 

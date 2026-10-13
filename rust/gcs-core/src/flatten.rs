@@ -33,10 +33,12 @@ mod words;
 mod apply;
 mod sets;
 mod faces;
+mod interfaces;
 
 pub use faces::{FaceAxis, FacePlane};
 
 pub(crate) use words::faults as word_faults;
+pub(crate) use interfaces::check as interface_faults;
 use crate::lowering::Lowered;
 
 pub(crate) use values::{substitute_with, value_aff, value_read};
@@ -141,6 +143,9 @@ struct Scope {
     /// (`Written::held`, `apply`) — the one rule a region's term is read by (#192).  Carried into
     /// every use applied under it.
     held: bool,
+    /// The groups an interface types (`Walk::typed`), by absolute key, to the interface's name:
+    /// a field read past one names nothing it declares (`lookup`).  Given with `access`.
+    typed: std::rc::Rc<BTreeMap<String, String>>,
 }
 
 impl Scope {
@@ -162,6 +167,15 @@ impl Scope {
     /// `cycle` is a repetition of statements written in the body around it.
     fn instance_prefix(&self) -> &str {
         self.prefixes.iter().map(String::as_str).find(|p| !is_copy_prefix(p)).unwrap_or("")
+    }
+}
+
+/// Every number `{from}.…` in `vals`, copied into `sub` as `{to}.…`: what a group or a set
+/// argument carries into the body it is handed to.
+fn copy_members(vals: &BTreeMap<String, Aff>, from: &str, to: &str, sub: &mut BTreeMap<String, Aff>) {
+    let start = format!("{from}.");
+    for (k, v) in vals.range(start.clone()..).take_while(|(k, _)| k.starts_with(&start)) {
+        sub.insert(format!("{to}.{}", &k[start.len()..]), v.clone());
     }
 }
 
@@ -216,10 +230,22 @@ pub struct Expansion {
     pub face_planes: Vec<FacePlane>,
     /// The hidden axis each side used as a set is level along, for the elaborator to seed.
     pub face_axes: Vec<FaceAxis>,
-    /// Every `path` formal bound (#251): the absolute name of what the call gave it, where the
-    /// argument is written and the formal's name — for the elaborator to judge once it knows
-    /// what each name is (E103).
-    pub paths: Vec<(String, Span, String)>,
+    /// Every `path` formal bound (#251) and every member an interface asks to be an entity of a
+    /// kind (§8.1 [0.84]), as given: for the elaborator to judge once it knows what each name is
+    /// (E103).
+    pub(crate) kinds: Vec<KindAsked>,
+}
+
+/// An entity a call gave where a kind (or any `path`) is asked for: the absolute name of what it
+/// is, where the argument is written, what is asked, and who asks — a `path` formal by its name
+/// (`interface` `None`), or an interface's member as the call reaches it (`gear_cone.generator`).
+#[derive(Clone, Debug)]
+pub(crate) struct KindAsked {
+    pub target: String,
+    pub span: Span,
+    pub ty: crate::syntax::Ty,
+    pub what: String,
+    pub interface: Option<String>,
 }
 
 /// One instance, as bound: which component, under what prefix, given what.
@@ -303,10 +329,19 @@ struct Walk<'a> {
     /// checked against what the alias reaches once every name is known (`resolve`).
     group_bindings: Vec<(String, Span, crate::syntax::Ty)>,
     /// A `path` formal's alias key, where it was given and the formal's name: resolved with the
-    /// rest (`resolve`) into `Expansion::paths`.
+    /// rest (`resolve`) into `Expansion::kinds`.
     path_bindings: Vec<(String, Span, String)>,
-    /// Those resolved.
-    paths: Vec<(String, Span, String)>,
+    /// Every interface of the program, resolved once (`interfaces::shapes`).
+    shapes: Vec<std::rc::Rc<interfaces::Shape>>,
+    /// The groups interfaces type (`Walk::typed`), by absolute key, to the interface's name.
+    typed: BTreeMap<String, String>,
+    /// A formal an interface types: the key of the whole argument's alias, where it was given,
+    /// the shape, and the argument as written — checked against what the alias reaches
+    /// (`resolve`, `conform`).
+    interface_bindings: Vec<(String, Span, std::rc::Rc<interfaces::Shape>, String)>,
+    /// What path formals and interfaces asked to be an entity of a kind, for `Expansion::kinds`.
+    kinds: Vec<KindAsked>,
+
     group_fields: Vec<(String, Span)>,
     /// The dotted names a dimension's text reads that nothing numeric in scope answers to, with
     /// where each was written and the scope to resolve it in: judged once every name is known
@@ -470,7 +505,10 @@ impl<'a> Walk<'a> {
             group_names: BTreeSet::new(),
             group_bindings: Vec::new(),
             path_bindings: Vec::new(),
-            paths: Vec::new(),
+            shapes: interfaces::shapes(prog),
+            typed: BTreeMap::new(),
+            interface_bindings: Vec::new(),
+            kinds: Vec::new(),
             group_fields: Vec::new(),
             dim_reads: Vec::new(),
             pending: Vec::new(),
@@ -562,7 +600,7 @@ impl<'a> Walk<'a> {
             face_repeats: self.face_repeats,
             face_planes: self.face_planes,
             face_axes: self.face_axes,
-            paths: self.paths,
+            kinds: self.kinds,
         }
     }
 }

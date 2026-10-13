@@ -152,7 +152,7 @@ owns `.apex`/`.spine` (the apex held by the angle between `about` and the genera
 `lean` or its supplement by which way it opens, and the spine from it to `q`'s foot on `about`, so
 the cone is held at any size, #214; half `abs(lean)`), one per instance, and a region reading it
 shares the `Cone` term's line.
-`std.HalfSpace(o, along, d)` (`std.Level` through 0.83, #270) is an ordinate along a line:
+`std.HalfSpace(o, along, d)` (`std.Level` through 0.84, #270) is an ordinate along a line:
 `RegionShape::Plane { along: EntRef }` takes a plane (its `n`), a line or an axis
 (`RegionShape::normal`). A reach to `{ q | q outside S }`
 measures from `S`, sides turned (`Walk::side_of_set`, in `expand_reach`), so `std.Rounded(beyond,
@@ -701,6 +701,23 @@ axis is handed to the line kernels as the segment
 `(0, d)` from `Sketch::origin_param`, a fixed 0 (`Constraint::axis_columns`). An unsigned angle
 of 0°/180° is E040 by value (`program/relations.rs`). `tests/axis.rs` is the gate.
 
+**Interfaces (§8.1, 0.84):** `interface Gear { O: point, M: point, pitch: Length }` at a file's
+top level (`syntax::Interface`, `Program::interfaces`, `parser/statements.rs::interface`; linked
+from modules as words are; `resolve_interface` shares `resolve_component`'s `resolve_named`). A
+formal typed by one (`gear: Gear`) is `Ty::Group` with `Formal::interface` set.
+`flatten/interfaces.rs` resolves every interface once per walk (`shapes`, a cycle read as an
+untyped group) and `bind` makes the formal **a group of its own** (`Walk::typed`: its key in
+`names`/`group_names`/`typed`, each declared entity, set or group member an alias of the
+argument's, a nested interface a group again; the numbers by `interface_numbers`, each of its
+dimension), the whole argument kept under `{key}#given` for `conform` (from `resolve`: members
+present, sets and groups of their sort; an entity's kind by `relations::kinds` via
+`Expansion::kinds`, as a `path` formal's). So an undeclared member is no name: `lookup` refuses a
+field left past a typed group (`Scope::typed`, given with `access`), `missing_ref` names the
+interface, and nothing handed on carries more. A member missing at the call is `failed`, its
+reads silenced (`read_through`); a relation reading one is not stated. Text faults are
+`interfaces::check` (E071/E001/E101/E003). `hypoid.sv`'s `Gear`, `Trace`, `BlankDesign`;
+`tests/interfaces.rs` is the gate.
+
 **Closed components:** model dependencies enter through arguments, standard datums included.
 Definitions and built-ins stay callable. A component scope holds only its formals and
 declarations; repetitions share it. `dims := {width: 20mm, origin: o}` bundles values and
@@ -817,7 +834,7 @@ sectors, others `Node::Profile` (ray-parity sign only when the box clears every 
 `[-d, d]`). Partial revolutions and lofts refuse.
 **The body rule's third side (0.22):** `tip common body` keeps what the body has in common with
 `tip`: a solid is its stock, plus `union`, minus what `cut`s it, within what it is in `common`
-with. The word was `bound` through 0.83 (#270: a bound is a dimension choosing a root); `X bound B`
+with. The word was `bound` through 0.84 (#270: a bound is a dimension choosing a root); `X bound B`
 is refused naming `common` (`parser/statements.rs`), and `bound` stays reserved. The Rust names
 keep the old word: `SolidDef::Body` carries `bound`; `Term::Inter`; facets, fields and the CAD
 recipe (`"bound"`, `BRepAlgoAPI_Common`) all evaluate it. Union first; `cut` and `common` commute;

@@ -346,13 +346,23 @@ pub(super) fn lookup(r: &Ref, sc: &Scope, names: &BTreeSet<String>, alias: &BTre
     -> Option<(String, Vec<String>)>
 {
     let found = lookup_raw(r, sc, names, alias, units)?;
+    // a group an interface types holds what it declares and nothing past it (§8.1 [0.84])
+    if !found.1.is_empty() && sc.typed.contains_key(&found.0) {
+        return None;
+    }
     private_member(r, sc, &found.0, alias).is_none().then_some(found)
 }
 
 fn missing_ref(r: &Ref, sc: &Scope, names: &BTreeSet<String>, alias: &BTreeMap<String, String>, units: Units)
     -> (Code, String)
 {
-    if let Some((target, _)) = lookup_raw(r, sc, names, alias, units) {
+    if let Some((target, rest)) = lookup_raw(r, sc, names, alias, units) {
+        if let (Some(shape), Some(member)) = (sc.typed.get(&target), rest.first()) {
+            return (Code::E101, format!(
+                "`{}` reads `{member}`, which `{shape}` does not declare: add it to the \
+                 interface, or pass it on its own", written(r)
+            ));
+        }
         if let Some(member) = private_member(r, sc, &target, alias) {
             return (Code::E101, format!("`{}` names private member `{member}`", written(r)));
         }
@@ -414,12 +424,28 @@ struct Known<'k> {
     /// The names bound to what a call or a use wrote (`Walk::arguments`).
     arguments: &'k BTreeSet<String>,
     units: Units,
+    /// Set where a reference names nothing that was said elsewhere, or reads past what an
+    /// interface declares: the relation is not stated, so it is not said again.
+    unresolved: &'k std::cell::Cell<bool>,
 }
 
 /// Whether `r` reads a name bound to what a call or a use wrote — a formal, a bound variable —
 /// which a ring's representative judges there, as written (#226).
 fn through_argument(r: &Ref, sc: &Scope, arguments: &BTreeSet<String>) -> bool {
     sc.prefixes.iter().any(|p| arguments.contains(&format!("{p}{}", r.root.text)))
+}
+
+/// Whether `r` reads through a name already said to name nothing (`failed`): its root, or a
+/// member past it (`d.far`, an interface's member its call did not give).
+fn read_through(r: &Ref, sc: &Scope, failed: &BTreeSet<String>) -> bool {
+    let mut name = r.root.text.clone();
+    let mut names = vec![name.clone()];
+    for seg in &r.path {
+        let Seg::Field(f) = seg else { break };
+        name = format!("{name}.{}", f.text);
+        names.push(name.clone());
+    }
+    sc.prefixes.iter().any(|p| names.iter().any(|n| failed.contains(&format!("{p}{n}"))))
 }
 
 fn rewrite(
@@ -429,7 +455,7 @@ fn rewrite(
     bad: &mut Vec<(Code, Span, String)>,
     seen: &std::cell::RefCell<Vec<Seen>>,
 ) {
-    let Known { names, alias, sets, solids, failed, arguments, units } = known;
+    let Known { names, alias, sets, solids, failed, arguments, units, unresolved } = known;
     // only a ring's representative is judged by what it reads (E021)
     let judged = sc.ring.as_ref().is_some_and(|r| !r.turned);
     // a member read already (a set's `ends`, `sets::measured_sets`) is kept; `surface` and
@@ -467,9 +493,13 @@ fn rewrite(
             }
         }
         // named as written, so an index that picked no copy says which one it was
-        // read through an operand already said to name nothing
-        None if sc.prefixes.iter().any(|p| failed.contains(&format!("{p}{}", r.root.text))) => {}
+        // read through an operand, or a member of one, already said to name nothing
+        None if read_through(r, sc, failed) => unresolved.set(true),
         None => {
+            // past what an interface declares (§8.1 [0.84]): said here, and only here
+            let past = lookup_raw(r, sc, names, alias, units)
+                .is_some_and(|(t, rest)| !rest.is_empty() && sc.typed.contains_key(&t));
+            unresolved.set(unresolved.get() || past);
             let (code, why) = missing_ref(r, sc, names, alias, units);
             bad.push((code, r.span, why))
         }
@@ -636,7 +666,7 @@ impl<'a> Walk<'a> {
     pub(super) fn alias_table(&self) -> BTreeMap<String, String> {
         let mut alias: BTreeMap<String, String> = BTreeMap::new();
         for (abs, r, sc) in &self.aliases {
-            if let Some((target, rest)) = lookup_raw(r, sc, &self.names, &alias, self.units) {
+            if let Some((target, rest)) = self.found(lookup_raw(r, sc, &self.names, &alias, self.units)) {
                 let to = std::iter::once(target).chain(rest).collect::<Vec<_>>().join(".");
                 alias.insert(abs.clone(), to);
             }
@@ -659,6 +689,12 @@ impl<'a> Walk<'a> {
             }
         }
         alias
+    }
+
+    /// What a reference was found to name, unless it is a field of a group or an instance that
+    /// nothing under it declares (`d.far` of a group with no `far`): no name at all.
+    fn found(&self, f: Option<(String, Vec<String>)>) -> Option<(String, Vec<String>)> {
+        f.filter(|(target, rest)| rest.is_empty() || !self.group_names.contains(target))
     }
 
     /// The scope a set-aside block's chain is looked up in, with the access table the resolve
@@ -843,21 +879,33 @@ impl<'a> Walk<'a> {
     /// Turn every reference into the absolute name of what it denotes.
     pub(super) fn resolve(&mut self) -> (Vec<crate::ir::Statement>, BTreeMap<String, String>) {
         let access = std::rc::Rc::new(self.private_names.clone());
-        for (_, _, sc) in &mut self.out { sc.access = access.clone(); }
-        for (_, _, sc) in &mut self.aliases { sc.access = access.clone(); }
+        let typed = std::rc::Rc::new(self.typed.clone());
+        let scopes = self.out.iter_mut().map(|(_, _, sc)| sc);
+        for sc in scopes.chain(self.aliases.iter_mut().map(|(_, _, sc)| sc)) {
+            sc.access = access.clone();
+            sc.typed = typed.clone();
+        }
         let alias = self.alias_table();
         self.drawn_incidences(&alias);
         // an operand a use wrote that names nothing is said there, once, and not again at every
         // place in the body that reads it (#103)
         let mut failed: BTreeSet<String> = BTreeSet::new();
         for (key, r, sc) in self.aliases.clone() {
-            match lookup_raw(&r, &sc, &self.names, &alias, self.units) {
+            let raw = lookup_raw(&r, &sc, &self.names, &alias, self.units);
+            // read past what an interface declares (§8.1 [0.84]), as the argument is written
+            let past = raw.as_ref().is_some_and(|(t, rest)| !rest.is_empty() && self.typed.contains_key(t));
+            match self.found(raw) {
                 Some((target, _)) => {
                     if let Some(member) = private_member(&r, &sc, &target, &alias) {
-                        self.err(Code::E101, r.span, format!("`{}` names private member `{member}`", written(&r)));
+                        self.once(Code::E101, r.span, format!("`{}` names private member `{member}`", written(&r)));
                     }
                 }
-                None if self.use_aliases.contains(&key) => {
+                // a member an interface asks for that its call did not give: said at the call
+                // (`conform`), and not again where the body reads it
+                None if key.rsplit_once('.').is_some_and(|(group, _)| self.typed.contains_key(group)) => {
+                    failed.insert(key);
+                }
+                None if past || self.use_aliases.contains(&key) => {
                     let (code, why) = missing_ref(&r, &sc, &self.names, &alias, self.units);
                     self.once(code, r.span, why);
                     failed.insert(key);
@@ -880,13 +928,28 @@ impl<'a> Walk<'a> {
                     self.err(Code::E103, span, format!("`{key}` wants a set"));
                 }
             } else if !target.is_some_and(|t| self.group_names.contains(t)) {
+                let key = key.trim_end_matches("#given");
                 self.err(Code::E103, span, format!("`{key}` wants a group or layout instance"));
             }
+        }
+        // what each interface asks of the group or instance its formal was given (§8.1 [0.84]),
+        // where it is one: whatever it is not was said just above
+        for (key, span, shape, actual) in std::mem::take(&mut self.interface_bindings) {
+            let Some(target) = alias.get(&key).filter(|t| self.group_names.contains(*t)) else {
+                continue;
+            };
+            self.conform(&shape, &target.clone(), &actual, &alias, span);
         }
         // what each path formal was given, for the elaborator to judge by its kind (#251)
         for (key, span, formal) in std::mem::take(&mut self.path_bindings) {
             if let Some(target) = alias.get(&key) {
-                self.paths.push((target.clone(), span, formal));
+                self.kinds.push(super::KindAsked {
+                    target: target.clone(),
+                    span,
+                    ty: crate::syntax::Ty::Path,
+                    what: formal,
+                    interface: None,
+                });
             }
         }
         // what each instance was given, now that the aliases its arguments made are absolute
@@ -972,7 +1035,8 @@ impl<'a> Walk<'a> {
             }
             let mut bad: Vec<(Code, Span, String)> = Vec::new();
             let seen = std::cell::RefCell::new(Vec::new());
-            let known = Known { names: &self.names, alias: &alias, sets: &sets, solids: &solids, failed: &failed, arguments: &self.arguments, units: self.units };
+            let unresolved = std::cell::Cell::new(false);
+            let known = Known { names: &self.names, alias: &alias, sets: &sets, solids: &solids, failed: &failed, arguments: &self.arguments, units: self.units, unresolved: &unresolved };
             rewrite(&mut st.kind, &sc, known, &mut bad, &seen);
             if let StmtKind::Decl(d) = &st.kind {
                 // a centre the circle names, or `None` for one it mints (`c.center`)
@@ -1013,6 +1077,11 @@ impl<'a> Walk<'a> {
             let clean = bad.is_empty();
             for (code, span, msg) in bad {
                 self.err(code, span, msg);
+            }
+            // a relation reading what was said to name nothing is not stated: stated, it would
+            // say so again
+            if unresolved.get() && !matches!(st.kind, StmtKind::Decl(_)) {
+                continue;
             }
             // a curve of a drawn instance's point: the point's name is absolute now, and the
             // instance it belongs to is the innermost one whose component has the formal

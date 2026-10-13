@@ -93,6 +93,12 @@ impl EntKind {
         article(self.as_str())
     }
 
+    /// Whether a point runs along an entity of this kind (#251): what a `path` is.
+    pub fn runs_along(self) -> bool {
+        use EntKind::{Arc, Circle, Curve, Line, Spline};
+        matches!(self, Line | Arc | Circle | Spline | Curve)
+    }
+
     pub fn as_str(self) -> &'static str {
         match self {
             EntKind::Point => "point",
