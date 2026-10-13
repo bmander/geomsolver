@@ -5,8 +5,8 @@ unit mm
 use std
 use lofts
 
-component Shrinking(g: line, up: axis, run: Length, size: Length, s: Scalar) {
-  st := lofts.OnLine(g, up: up, run: run, s: s)
+component Shrinking(g: line, up: axis, size: Length, s: Scalar) {
+  st := lofts.OnLine(g, up: up, s: s)
   sq := std.CenteredRectangle(st.n.origin, w: size * (1 - s), h: size * (1 - s)) in st.n
   f := face(sq.loop)
 }
@@ -18,4 +18,4 @@ in std.top {
   fix((0mm, 30mm)) e
   guide := line(o, e)
 }
-pyramid := Shrinking(guide, std.z, run: 30mm, size: 20mm, s: 0.5)
+pyramid := Shrinking(guide, std.z, size: 20mm, s: 0.5)

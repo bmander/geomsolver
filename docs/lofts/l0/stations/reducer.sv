@@ -16,8 +16,8 @@ component Section(c: point, size: Length, wall: Length) {
 
 // The section at station `s`: drawn in the plane square to the guide there, its size the inlet's
 // mixed with the outlet's.
-component Reducer(g: line, up: axis, run: Length, inlet: Length, outlet: Length, wall: Length, s: Scalar) {
-  st := lofts.OnLine(g, up: up, run: run, s: s)
+component Reducer(g: line, up: axis, inlet: Length, outlet: Length, wall: Length, s: Scalar) {
+  st := lofts.OnLine(g, up: up, s: s)
   sec := Section(st.n.origin, size: inlet + (outlet - inlet) * s, wall: wall) in st.n
 }
 
@@ -29,4 +29,4 @@ in std.top {
   vertical guide
   distance(length) guide
 }
-body := Reducer(guide, std.z, run: length, inlet: 24mm, outlet: 12mm, wall: 2mm, s: 0.5)
+body := Reducer(guide, std.z, inlet: 24mm, outlet: 12mm, wall: 2mm, s: 0.5)

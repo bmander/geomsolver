@@ -549,8 +549,9 @@ impl System {
             return result;
         }
         // a curve family's contact has no span to walk off, but a domain to be clamped to
-        let rehome =
-            opts.rehome && opts.writeback && !(self.spans().is_empty() && sk.curves.is_empty());
+        // and a fraction of an arc's turn, held to the arc (#248)
+        let rehome = opts.rehome && opts.writeback
+            && !(self.spans().is_empty() && sk.curves.is_empty() && !self.on_arcs());
         // A contact *seeded* off the end of its curve is brought onto it before anything is
         // solved, and left free.  The pin below is for a solve that walked off — free again, it
         // walks straight back — but a seed is only where the search begins, and one written a

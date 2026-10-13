@@ -80,15 +80,18 @@ fixtures.
      (finding 8) and any expression in `s` (`twist * (3 * s^2 - 2 * s^3)`), since `s` is a column
      the station holds fixed, not a free name of the drawing (which is affine only).
 
-2. **A point at a fraction of a line's or an arc's run.**
-   - `m coincident(t == s) g` is refused on a line and on an arc ("`coincident` has no slot `t`").
+2. **A point at a fraction of a line's or an arc's run.** *Done (#248, Solvent 0.82).*
+   - `m coincident(t == s) g` was refused on a line and on an arc ("`coincident` has no slot `t`").
      A spline's contact has `t`, and so does a curve's.
-   - Proposal: a line's and an arc's point contact take `t` too, as a fraction from `p1` to `p2`
-     and from `start` to `end` by angle. The station words then need no length or sweep passed in.
-   - The probe passes them (`run`, `sweep`).
+   - A line's and an arc's point contact now take `t` too, as a fraction from `p1` to `p2` (on past
+     either end) and from `start` to `end` by angle (held to the arc), in a view, across views and
+     in a traced body. The probe's `OnLine` and `OnArc` are the target's, and no station is handed
+     a run or a sweep (`tests/fractions.rs` holds `reducer.sv` and `elbow.sv` to their stations).
 
 3. **A point in space on a curve drawn in a plane.**
    - `m coincident(t == s) g` with `g` an arc or a spline in `std.top` and `m` in space is E062.
+     *An arc's is read in space since #248* (`PointAlongArc3`: the elbow's `OnArc` passes no
+     `view`).
      The station's point must be drawn in the guide's plane.
    - A closed component cannot name the plane its argument is drawn in, so the probe passes it
      (`view: plane`).
@@ -97,9 +100,8 @@ fixtures.
      - or give a drawn entity a member naming its plane (`g.plane`).
    - **Done for a spline and a traced curve** (#249): a point in space said on one is drawn in its
      plane (membership, §6.21's one rule), and a line said tangent to one has its free ends drawn
-     there, so the probe's `OnSpline` takes no `view:`. `OnArc` still does: an arc's point in
-     space has its contact there (`PointOnCircle3`), but its `out` line and the angle from the
-     centre are drawn in the arc's plane.
+     there, so the probe's `OnSpline` takes no `view:`. With an arc's fraction read in space
+     (#248), neither does `OnArc`: no station word is handed a plane.
 
 4. **A plane's own axes are not held square, and every station word has to say so.** The first
    drafts of `OnLine` and `OnHelix` came out DOF 1 and DOF 4 (the reducer's and the spring's
@@ -207,9 +209,9 @@ fixtures.
 ### What L0 hands on
 
 - **Before L1 (language, each its own small issue):**
-  - finding 2 (`t` on a line's and an arc's contact);
-  - finding 3 (a point in space on a planar curve);
-  - finding 4 (a std word for a square frame; done, #250);
+  - ~~finding 2 (`t` on a line's and an arc's contact)~~, done in #248;
+  - ~~finding 3 (a point in space on a planar curve)~~, done in #249 (splines, curves) and #248 (arcs);
+  - ~~finding 4 (a std word for a square frame)~~, done in #250;
   - finding 5 (`path` type, the At-form of a spline's and a curve's tangency);
   - ~~finding 7 (seed reading geometry for a plane; E061 after placement)~~, done in #252.
 

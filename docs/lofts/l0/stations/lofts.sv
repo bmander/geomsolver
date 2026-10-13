@@ -1,9 +1,9 @@
 // L0 (#243), the station probe: `../lofts.sv` in today's spelling, so each program's section can
 // be solved at one station (`s: 0.5`) before the family exists. Where it differs from the target
-// it says what today lacks: a fraction along a line or an arc (the run or the sweep passed in),
-// the plane an arc is drawn in (passed in). A spline's point is drawn in the spline's plane by
-// being on it (#249), so `OnSpline` is handed no plane; the tangent at a point of a spline is the
-// target's, `g tangent(at: m) tl` (#251).
+// it says what today lacks. A fraction along a line or an arc is the contact's own `t` (#248),
+// and a spline's point is drawn in the spline's plane by being on it (#249), so no station is
+// handed a run, a sweep or a plane; the tangent at a point of a spline is the target's,
+// `g tangent(at: m) tl` (#251).
 //
 // A loft is a face of a component as one of its numbers runs (`solid(I.f over s in (0, 1))`).
 // The words here only say where a station stands on its path. What the section is at that station
@@ -16,10 +16,9 @@ use std (on_u, square)
 // Along a straight guide every station is the first one moved, so nothing turns. The plane starts
 // as it ends, read off the guide and `up`: `v` along `up`, and `u` that turned back a quarter about
 // `g`, so its normal runs along `g` (README, finding 7).
-component OnLine(g: line, up: axis, run: Length, s: Scalar) {
+component OnLine(g: line, up: axis, s: Scalar) {
   m := point
-  m coincident g
-  g.p1 distance(run * s, along: g) m
+  m coincident(t == s) g
   n := plane(u: hint(dir: up, turn: -90deg, about: g), v: hint(dir: up))
   n.origin coincident m
   n square(up: up) g
@@ -29,13 +28,10 @@ component OnLine(g: line, up: axis, run: Length, s: Scalar) {
 // running out from the centre to the arc, its `v` along `up`, the normal of the plane the arc is
 // drawn in. Square to the arc's tangent, and turned about the axis as the arc turns: along a guide
 // in one plane this is the rotation-minimising frame.
-component OnArc(g: arc, view: plane, up: axis, sweep: Angle, s: Scalar) {
-  in view {
-    m := point
-    m coincident g
-    out := line(g.center, m)
-    (from := line(g.center, g.start)) angle(sweep * s, sense: ccw) out
-  }
+component OnArc(g: arc, up: axis, s: Scalar) {
+  m := point
+  m coincident(t == s) g
+  out := line(g.center, m)
   n := plane
   n.origin coincident m
   n.u parallel out
