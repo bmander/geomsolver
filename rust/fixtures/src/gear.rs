@@ -126,18 +126,20 @@ pub fn copy_design(dir: &std::path::Path,offset: f64,shift: f64,spiral: f64) -> 
     path
 }
 
-/// `text`, the pair at some design, elaborated and solved accurately.
-pub fn read(text: &str) -> program::Elaborated {
-    crate::elaborate(text,&mut |name| gcs_core::library::resolve(name))
-}
+/// `text`, the pair at some design, elaborated and solved accurately, its modules read beside the
+/// project (the Formate pair imports `hypoid`), then from the library.
+pub fn read(text: &str) -> program::Elaborated { crate::read_beside(text,&project(),&mut |_,t| t) }
 
 /// `text` elaborated and not solved: where its words and the elaborator put it.
-pub fn unsolved(text: &str) -> program::Elaborated {
-    crate::unsolved(text,&mut |name| gcs_core::library::resolve(name))
-}
+pub fn unsolved(text: &str) -> program::Elaborated { crate::unsolved(text,&mut crate::beside(&project(),&mut |_,t| t)) }
 
 /// The pair as configured, offset and fabrication allowances and all.
 pub fn read_as_configured() -> program::Elaborated { read(&source()) }
+
+/// The Formate pair's document, `formate.sv` (#283, step 1): the gear formed, the pinion its blank
+/// less the gear's tooth swept under the mesh. It states the same inputs as `hypoid.sv`, so
+/// `configure`, `design` and `fabricated` set them, and `read` reads it, `hypoid` beside it.
+pub fn formate_source() -> String { std::fs::read_to_string(project().join("formate.sv")).unwrap() }
 
 /// The twelve designs the layout regression records (`tests/hypoid_layout.rs`), each a label and
 /// the document at it: the configured hypoid (with no fabrication allowances, as it was
