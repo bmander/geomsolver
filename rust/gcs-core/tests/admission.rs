@@ -248,7 +248,7 @@ fn the_configured_hypoid_gear_is_admitted() {
 fn a_hypoid_pinion_with_undercut_is_refused() {
     let r = refused(pinion(30.,0.,35.));
     assert!(matches!(r.condition,Condition::Single | Condition::Fold | Condition::Crossing),"{r}");
-    assert_eq!(r.sweep,"pair.pinion.removal");
+    assert_eq!(r.sweep,"pair.pinion.cut.removal");
 }
 
 /// At 20 mm of offset with a symmetric rack no tool point touches the blank twice; the flank's

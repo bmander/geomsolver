@@ -9,9 +9,9 @@
 //!
 //! Backlash grows each crown across the shared flank cones by a quarter of it (`crown/tooth.sv`):
 //! the crowns overlap by half the backlash across each shared cone, so each generated flank is a
-//! quarter of it inside its conjugate one. Tip relief is a second cut beside each crown
-//! (`crown/relief.sv`) whose topping leaves the crown's flank at a kink, so the two cuts together
-//! are the crown turned there. End relief chamfers the blank itself, the tip cone's corner with
+//! quarter of it inside its conjugate one. Tip relief is a second cut beside each crown, its
+//! topping (`layout.sv`), which leaves the crown's flank at a kink, so the two cuts together are
+//! the crown turned there. End relief chamfers the blank itself, the tip cone's corner with
 //! each end sphere, in the blank's own region (`blank/member.sv`).
 use gcs_core::solid::MaterialField;
 
@@ -125,7 +125,7 @@ fn backlash_stands_each_cutter_a_quarter_of_it_off_the_shared_flanks() {
     assert!(overlap > 0 && gap == 0);
 }
 
-/// Tip relief, proved on the cutters (`crown/relief.sv`'s preview, at the configured design): the
+/// Tip relief, proved on the cutters (`pair.sv`, the layout at the configured design): the
 /// crown with its relief is the crown's meridian turned at a kink by the relief angle. Along each
 /// topping's generator below its kink the relief bounds (reads zero) and the crown lies behind it
 /// by sin(relief angle) per millimetre; along the flank's above the kink the crown bounds and the
@@ -136,10 +136,11 @@ fn backlash_stands_each_cutter_a_quarter_of_it_off_the_shared_flanks() {
 #[test]
 fn the_tip_relief_turns_each_crown_flank_at_its_kink() {
     let project = fixtures::gear::project();
-    let source = std::fs::read_to_string(project.join("crown/relief.sv")).unwrap();
+    let source = std::fs::read_to_string(project.join("pair.sv")).unwrap();
     let e = fixtures::read_beside(&source,&project,&mut |_,text| text);
     let sk = &e.sketch;
-    let entity = |name: &str| e.map.ent_named(name).unwrap_or_else(|| panic!("no `{name}`")).i();
+    let entity = |name: &str| { let name = format!("pair.{name}");
+        e.map.ent_named(&name).unwrap_or_else(|| panic!("no `{name}`")).i() };
     let field = |name: &str| MaterialField::read(sk,entity(name),1e-10).unwrap();
     let (turn,tip_relief,addendum) = (30f64.to_radians(),0.2,1.);
     let world = |name: &str| sk.world_point(entity(name));
@@ -147,7 +148,7 @@ fn the_tip_relief_turns_each_crown_flank_at_its_kink() {
         let n = (d[0]*d[0]+d[1]*d[1]+d[2]*d[2]).sqrt(); d.map(|x| x/n) };
     let dot = |a: [f64;3],b: [f64;3]| (0..3).map(|k| a[k]*b[k]).sum::<f64>();
     let at = |p: [f64;3],u: [f64;3],t: f64| -> [f64;3] { std::array::from_fn(|k| p[k]+t*u[k]) };
-    let normal_module = sk.params[sk.free_vars["trace.normal_module"] as usize].value;
+    let normal_module = sk.params[sk.free_vars["pair.normal_module"] as usize].value;
     // the cutter's axis, up from C
     let ax = &sk.lines[entity("cutter.ax")];
     let (c,up_axis) = (sk.world_point(ax.p1 as usize),unit(sk.world_point(ax.p1 as usize),sk.world_point(ax.p2 as usize)));
@@ -155,10 +156,10 @@ fn the_tip_relief_turns_each_crown_flank_at_its_kink() {
     // each side: the crown, its relief, the topping, the flank cone it leaves and its pitch point,
     // and which way along the cutter's axis the crown's base lies
     for (crown,relief,topping,flank,pitch,base) in [
-        ("tooth.crown","tooth_relief.relief.crown","tooth_relief.outer_topping","cutter.outer_flank","thickness.outer_pitch",-1.),
-        ("tooth.crown","tooth_relief.relief.crown","tooth_relief.inner_topping","cutter.inner_flank","thickness.inner_pitch",-1.),
-        ("gear_space.outer_crown","space_relief.relief.outer_crown","space_relief.outer_topping","cutter.outer_flank","thickness.outer_pitch",1.),
-        ("gear_space.inner_crown","space_relief.relief.inner_crown","space_relief.inner_topping","cutter.inner_flank","thickness.inner_pitch",1.),
+        ("tooth.crown","pinion_topping.crown","pinion_outer","cutter.outer_flank","thickness.outer_pitch",-1.),
+        ("tooth.crown","pinion_topping.crown","pinion_inner","cutter.inner_flank","thickness.inner_pitch",-1.),
+        ("gear_space.outer_crown","gear_topping.outer_crown","gear_outer","cutter.outer_flank","thickness.outer_pitch",1.),
+        ("gear_space.inner_crown","gear_topping.inner_crown","gear_inner","cutter.inner_flank","thickness.inner_pitch",1.),
     ] {
         let (crown,relief) = (field(crown),field(relief));
         let value = |f: &MaterialField,p: [f64;3]| f.reading(p).value;
@@ -190,11 +191,12 @@ fn the_tip_relief_turns_each_crown_flank_at_its_kink() {
     assert!(worst < 1e-9,"the relief leaves its stated chamfer by {worst}");
 }
 
-/// A tip relief of zero is no relief: the pair then has no relief cut at all, and each member is
-/// its blank less its crown's sweep alone, as before the allowance existed.
+/// A tip relief of zero is no relief: the pair then has no topping and no relief cut at all, and
+/// each member is its blank less its crown's sweep alone, as before the allowance existed.
 #[test]
 fn a_tip_relief_of_zero_cuts_nothing() {
-    let relief_solids = |e: &gcs_core::program::Elaborated| e.sketch.solids.iter().filter(|s| s.name.contains("relief")).count();
+    let relief_solids = |e: &gcs_core::program::Elaborated| e.sketch.solids.iter()
+        .filter(|s| s.name.contains("relief") || s.name.contains("topping")).count();
     let without = fixtures::gear::read_configured_with(&mut |name,text| fixtures::gear::fabricated(name,text,[25.,12.5,25.],0.05,0.,0.));
     assert_eq!(relief_solids(&without),0);
     // As configured: the two relief tools (the pinion's topping, one region solid; the gear's

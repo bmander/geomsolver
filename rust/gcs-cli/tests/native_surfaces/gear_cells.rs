@@ -14,7 +14,7 @@ use std::f64::consts::PI;
 pub(super) fn read_gears_with(base: &Path,rewrite: &mut dyn FnMut(&str,String) -> String) -> program::Elaborated {
     let source = std::fs::read_to_string(base.join("gears.sv")).unwrap();
     fixtures::gear::read_with(&source,base,&mut |name,text| {
-        let single = "  construction single := solid(design.blank)\n  removal cut single\n";
+        let single = "  construction single := solid(design.blank)\n  cut.removal cut single\n";
         let text = if name == "members" { fixtures::gear::publish_blank(&text,single) } else { text };
         rewrite(name,text)
     })
@@ -62,7 +62,7 @@ fn sides_agree(cad: &Cad,part: c_int,blank: c_int,sheet: &native::sweep_boundary
 fn single_space(member: &str,expected: f64) {
     let base = fixtures::gear::project();
     let e = read_gears(&base);
-    let removal = e.map.ent_named(&format!("pair.{member}.removal")).unwrap().i();
+    let removal = e.map.ent_named(&format!("pair.{member}.cut.removal")).unwrap().i();
     let blank_id = e.map.ent_named(&format!("pair.{member}.blank")).unwrap().i();
     let single_id = e.map.ent_named(&format!("pair.{member}.single")).unwrap().i();
     let cad = Cad::new();
@@ -189,7 +189,7 @@ fn a_roll_that_leaves_the_cutter_in_the_blank_is_refused() {
     let base = fixtures::gear::project();
     // The gear's cutter still overlaps its blank at 35 degrees of roll.
     let e = read_gears_with(&base,&mut |name,text| fixtures::gear::roll(name,text,"gear",35.));
-    let removal = e.map.ent_named("pair.gear.removal").unwrap().i();
+    let removal = e.map.ent_named("pair.gear.cut.removal").unwrap().i();
     let blank_id = e.map.ent_named("pair.gear.blank").unwrap().i();
     let cad = Cad::new();
     let blank = cad.0.construct(&gcs_core::solid::cad::recipe(&e.sketch,blank_id).unwrap()).unwrap();
@@ -204,7 +204,7 @@ fn the_static_recipe_lists_swept_cuts_with_their_poses() {
     let base = fixtures::gear::project();
     let e = read_gears(&base);
     let body = e.map.ent_named("pair.pinion.body").unwrap().i();
-    let removal = e.map.ent_named("pair.pinion.removal").unwrap().i();
+    let removal = e.map.ent_named("pair.pinion.cut.removal").unwrap().i();
     let recipe = gcs_core::solid::cad::recipe_static(&e.sketch,body).unwrap();
     assert_eq!(recipe.sweeps.len(),24);
     assert!(recipe.sweeps.iter().all(|s| s.swept == removal));

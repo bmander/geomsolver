@@ -45,8 +45,7 @@ test('menu examples open files or directories with one V-twin choice', async (t)
   const gears = await remote.drawing('spiral_bevel');
   assert.equal(gears.directory, 'spiral_bevel');
   for (const name of ['configuration', 'design', 'layout', 'members', 'generation', 'views',
-    'pitch/gear', 'blank/member', 'crown/cutter', 'crown/tooth', 'crown/mate', 'crown/reach',
-    'crown/relief']) {
+    'pitch/gear', 'blank/member', 'crown/cutter', 'crown/tooth', 'crown/mate', 'crown/reach']) {
     assert.ok(gears.files[`spiral_bevel/${name}.sv`], name);
   }
   // the text beside the sources is part of the project, shown and never elaborated
