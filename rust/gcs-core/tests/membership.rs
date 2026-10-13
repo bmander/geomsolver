@@ -9,7 +9,7 @@ use gcs_core::program::Elaborated;
 use gcs_core::solve::{solve, SolveOpts};
 use gcs_core::space::{dot, sub};
 
-use crate::common::{ent, read};
+use crate::common::{ent, kinds, plane_of, read, solved};
 
 /// A side plane standing square to the front through the origin, with a point drawn in it.
 const SIDE: &str = "\
@@ -20,21 +20,6 @@ fix(origin == (0, 0, 0)) side
 a := point hint((10, 20)) in side
 fix((10, 20)) a
 ";
-
-fn kinds(e: &Elaborated) -> Vec<CKind> {
-    e.sketch.user_constraints().iter().map(|c| c.kind).collect()
-}
-
-fn plane_of(e: &Elaborated, n: &str) -> Option<usize> {
-    e.sketch.plane_of(ent(e, n).i())
-}
-
-fn solved(e: &Elaborated) -> Sketch {
-    let mut sk = e.sketch.clone();
-    let r = solve(&mut sk, SolveOpts::default());
-    assert!(r.success, "{}", r.message);
-    sk
-}
 
 /// How far a point stands off the side plane (the world's `x = 0`).
 fn off_side(sk: &Sketch, e: &Elaborated, n: &str) -> f64 {

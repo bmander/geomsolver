@@ -3,6 +3,7 @@
 use super::resolve::Resolver;
 use super::{Code, Diag, SourceMap};
 use crate::ir::{Operation as StmtKind, Statement as Stmt};
+use crate::constraints::CKind;
 use crate::model::{EntKind, EntRef, Sketch};
 use crate::syntax::{Span, StmtId};
 use crate::io;
@@ -146,7 +147,7 @@ pub(super) fn parallel_twins(sk: &Sketch, map: &SourceMap, diags: &mut Vec<Diag>
 /// coincident P` draws each end not yet in `P` there.  Read once every membership is in, in
 /// statement order, so the first plane a point is put on is the one it is drawn in and any
 /// other stays a row in space.  The index of each statement read so (into `stating`), which
-/// then states nothing.
+/// then states nothing, and of each refused here.
 ///
 /// A point stays in space, its statement a row, where its own declaration or a statement says
 /// it stands there: its seed has a height (`hint(z: …)`), a `fix` holds its three numbers, a
@@ -155,8 +156,8 @@ pub(super) fn parallel_twins(sk: &Sketch, map: &SourceMap, diags: &mut Vec<Diag>
 /// **A curve drawn in a plane is read the same way** (#249): `m coincident g`, `g` a spline or a
 /// traced curve drawn in `P` and `m` standing in space, draws `m` in `P` and the statement is the
 /// contact in `P` it always was; `l tangent g` draws `l`'s free ends there.  Neither has a contact
-/// in space, so a point kept there is refused with what keeps it (E062), its statement among
-/// those returned, said once.
+/// in space, so a point kept there is refused with what keeps it (E062), said once: its
+/// statement is the second set returned.
 pub(super) fn incidences(
     sk: &mut Sketch,
     res: &Resolver,
@@ -165,7 +166,7 @@ pub(super) fn incidences(
     deferred: &[super::Deferred],
     rings: &[crate::flatten::RingInfo],
     diags: &mut Vec<Diag>,
-) -> BTreeSet<usize> {
+) -> (BTreeSet<usize>, BTreeSet<usize>) {
     let ent = |r: &crate::syntax::Ref, sk: &Sketch| {
         res.entity(sk, r)
     };
@@ -191,101 +192,92 @@ pub(super) fn incidences(
                 .map(|e| (e.i(), "a `fix` holds it there")));
         }
     }
-    let mut lowered = BTreeSet::new();
+    let (mut lowered, mut refused) = (BTreeSet::new(), BTreeSet::new());
     for (i, st) in stating.iter().enumerate() {
         let StmtKind::Relation(r) = &st.kind else { continue };
         let Some(w) = r.form.written() else { continue };
-        let word = w.word.text.as_str();
-        if r.claim || r.along.is_some() || !matches!(word, "coincident" | "tangent")
-            || w.ops.len() != 2
+        if r.claim || r.along.is_some() || !matches!(w.word.text.as_str(), "coincident" | "tangent")
+            || w.ops.len() != 2 || w.bound().is_some()
         {
             continue;
         }
-        let ops = [ent(&w.ops[0], sk), ent(&w.ops[1], sk)];
-        let (Some(a), Some(b)) = (ops[0], ops[1]) else { continue };
-        let plane_of = match (a, b) {
-            (p, e) | (e, p) if p.kind == EntKind::Plane => Some((p.i(), e)),
-            _ => None,
-        };
-        if let Some((plane, what)) = plane_of {
-            if word != "coincident" || !w.args.is_empty() {
-                continue;
-            }
-            let points = match what.kind {
-                EntKind::Point => vec![what.i()],
-                EntKind::Line => sk.children(what).into_iter().map(|k| k.i()).collect(),
-                _ => continue,
-            };
-            // a point of another view is put on this plane in space; one of this plane's
-            // already is on it, which the row's own refusal says
-            if points.iter().any(|&p| sk.plane_of(p).is_some_and(|v| v != plane)) {
-                continue;
-            }
-            let free: Vec<usize> =
-                points.into_iter().filter(|&p| sk.plane_of(p).is_none()).collect();
-            if free.is_empty() || free.iter().any(|p| kept.contains_key(p)) {
-                continue;
-            }
-            for p in free {
-                sk.set_plane(p, Some(plane));
-                map.drawn.insert(p, plane);
-            }
-            lowered.insert(i);
-            continue;
-        }
-        // **a point on a curve drawn in a plane is in that plane** (#249): a spline or a
-        // traced curve has no contact in space, and a point of one is drawn where it is, so
-        // `m coincident g` of a point standing in space draws it in `g`'s plane, and `l tangent
-        // g` a line's free ends — the statement then the 2D contact it says.  A curve standing
-        // for a surface (a prism's side) is met in space as it is.
-        let curve_plane = |e: EntRef| match e.kind {
-            EntKind::Spline => plane_of_entity(sk, e),
-            EntKind::Curve if !sk.curves[e.i()].extrusion => sk.curve_view(e.i()),
-            _ => None,
-        };
-        let on = if word == "coincident" { EntKind::Point } else { EntKind::Line };
-        let (plane, curve, what) = match (curve_plane(a), curve_plane(b)) {
-            (Some(p), _) if b.kind == on => (p, a, b),
-            (_, Some(p)) if a.kind == on => (p, b, a),
+        let (Some(a), Some(b)) = (ent(&w.ops[0], sk), ent(&w.ops[1], sk)) else { continue };
+        // what the statement says is the kind it settles to, as `constrain` reads it: a word
+        // the operands do not take is left for `constrain` to refuse
+        let kind_of = |r: &crate::syntax::Ref| ent(r, sk).map(|e| e.kind);
+        let Ok((kind, _)) = super::relations::settle(w, &kind_of) else { continue };
+        let on_curve = match kind {
+            CKind::PointOnPlane | CKind::LineOnPlane if w.args.is_empty() => false,
+            CKind::PointOnSpline | CKind::PointOnCurve | CKind::SplineTangentLine
+            | CKind::CurveTangentLine => true,
             _ => continue,
         };
-        if w.args.iter().any(|a| matches!(a, crate::syntax::OpArg::Bound { .. })) {
-            continue;
-        }
-        let points: Vec<usize> = match what.kind {
+        // the operand drawn in a plane (the plane itself, a spline, a curve) and the point or
+        // line said to be on it
+        let (on, what) = if matches!(a.kind, EntKind::Point | EntKind::Line) { (b, a) } else { (a, b) };
+        let plane = match on.kind {
+            EntKind::Plane => on.i(),
+            // a curve standing for a surface (a prism's side) is met in space as it is
+            EntKind::Curve if sk.curves[on.i()].extrusion => continue,
+            _ => match drawn_plane(sk, on) {
+                Some(p) => p,
+                None => continue,
+            },
+        };
+        let points = match what.kind {
             EntKind::Point => vec![what.i()],
             _ => sk.children(what).into_iter().map(|k| k.i()).collect(),
         };
+        // a point of another view is put on this plane in space; one of this plane's already is
+        // on it, which the row's own refusal says
         if points.iter().any(|&p| sk.plane_of(p).is_some_and(|v| v != plane)) {
             continue;
         }
         let free: Vec<usize> = points.into_iter().filter(|&p| sk.plane_of(p).is_none()).collect();
-        if let Some((&p, why)) = free.iter().find_map(|p| kept.get_key_value(p)) {
-            let name = |e: EntRef| map.name_of(e).cloned().unwrap_or_else(|| io::entity_name(e));
-            let kind = if curve.kind == EntKind::Spline { "spline" } else { "curve" };
-            diags.push(Diag {
-                code: Code::E062,
-                span: st.span,
-                stmt: Some(st.id),
-                message: format!(
-                    "`{}` stands in space ({why}), and a {} `{}` is drawn in `{}`, the \
-                     plane the {kind} is drawn in: a {kind} has no contact in space",
-                    name(EntRef::point(p)),
-                    if on == EntKind::Point { "point on" } else { "line tangent to" },
-                    name(curve),
-                    name(EntRef::plane(plane)),
-                ),
-            });
-            // said here, so the relation is not read again to say it has no meaning in space
-            lowered.insert(i);
-            continue;
+        match free.iter().find_map(|p| kept.get_key_value(p)) {
+            // on a plane, a kept point's statement stays a row in space
+            Some(_) if !on_curve => continue,
+            // on a curve, which has no contact in space, it is refused here, said once
+            Some((&p, why)) => {
+                let name = |e: EntRef| map.name_of(e).cloned().unwrap_or_else(|| io::entity_name(e));
+                let kind = if on.kind == EntKind::Spline { "spline" } else { "curve" };
+                diags.push(Diag {
+                    code: Code::E062,
+                    span: st.span,
+                    stmt: Some(st.id),
+                    message: format!(
+                        "`{}` stands in space ({why}), and a {} `{}` is drawn in `{}`, the \
+                         plane the {kind} is drawn in: a {kind} has no contact in space",
+                        name(EntRef::point(p)),
+                        if what.kind == EntKind::Point { "point on" } else { "line tangent to" },
+                        name(on),
+                        name(EntRef::plane(plane)),
+                    ),
+                });
+                refused.insert(i);
+                continue;
+            }
+            None if free.is_empty() => continue,
+            None => {}
         }
         for p in free {
             sk.set_plane(p, Some(plane));
             map.drawn.insert(p, plane);
         }
+        if !on_curve {
+            lowered.insert(i);
+        }
     }
-    lowered
+    (lowered, refused)
+}
+
+/// The plane an entity is drawn in: a curve, owning no point, its tool's (`Sketch::curve_view`),
+/// and anything else the one every point of it is on.
+pub(crate) fn drawn_plane(sk: &Sketch, e: EntRef) -> Option<usize> {
+    match e.kind {
+        EntKind::Curve => sk.curve_view(e.i()),
+        _ => plane_of_entity(sk, e),
+    }
 }
 
 /// The one plane every point of an entity is on, or `None` — for a point, its own.

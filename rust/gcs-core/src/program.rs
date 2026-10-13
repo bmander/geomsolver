@@ -78,7 +78,7 @@ pub(crate) use entities::child_names;
 use entities::{build, crosses_views, settle_deferred, Deferred};
 pub(crate) use lift::{holds, lift_decl, lift_gauge, lift_relation, point_len};
 use planes::memberships;
-pub(crate) use planes::{plane_of_entity, plane_of_entity_by};
+pub(crate) use planes::{drawn_plane, plane_of_entity, plane_of_entity_by};
 use relations::{constrain, repeated, Gauges};
 use resolve::Resolver;
 use solids::{solid_claims, solids};
@@ -475,8 +475,9 @@ fn elaborate_in(
     // every point no `in` reached stands in space (`places`), and a plane written over a drawn
     // line has its hidden axis held along it
     memberships(&mut sk, &res, &map, &body, &skip, &mut diags);
-    // and `q coincident P` of a point in space is its membership of `P`, said another way
-    let drawn = planes::incidences(
+    // and `q coincident P` of a point in space is its membership of `P`, said another way — as
+    // is a point on a curve drawn in `P`, where one kept in space is refused (`kept_off`)
+    let (drawn, kept_off) = planes::incidences(
         &mut sk, &res, &mut map, &stating, &deferred, &expansion.rings, &mut diags,
     );
     // and a set drawn as an element is one only where what it reads says so (`lowering`)
@@ -559,7 +560,7 @@ fn elaborate_in(
             continue;
         }
         let StmtKind::Relation(r) = &st.kind else { continue };
-        if relations::is_fix(r) || drawn.contains(&i) {
+        if relations::is_fix(r) || drawn.contains(&i) || kept_off.contains(&i) {
             continue;
         }
         let (d, g) = (&mut duals, &mut gauges);
