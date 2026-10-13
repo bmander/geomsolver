@@ -34,6 +34,7 @@ mod apply;
 mod sets;
 mod faces;
 mod interfaces;
+mod keys;
 
 pub use faces::{FaceAxis, FacePlane};
 

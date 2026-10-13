@@ -364,7 +364,7 @@ impl<'a> Walk<'a> {
         // of one body stamped alike stay apart
         let id = sc.written.unwrap_or(st.id).0;
         for (k, (name, written)) in sets.iter().enumerate() {
-            let local = format!("#{id}.m{k}");
+            let local = keys::measured(id, k);
             let key = format!("{}{local}", sc.prefix());
             self.names.insert(key.clone());
             self.probes.push(key.clone());
@@ -393,7 +393,7 @@ impl<'a> Walk<'a> {
             // their points apart
             let mut usc = sc.clone();
             usc.held = true;
-            usc.prefixes.insert(0, format!("{}#{id}.m{k}.", sc.prefix()));
+            usc.prefixes.insert(0, keys::measured_prefix(sc.prefix(), id, k));
             if !usc.prefixes.iter().any(|p| p.is_empty()) {
                 usc.prefixes.push(String::new());
             }
@@ -432,7 +432,7 @@ impl<'a> Walk<'a> {
     /// plane, a side's surface, a grown side's the offset one — by its absolute name
     /// (`{abs}#surface`), made once.  An interval's two surfaces are no one surface: kept.
     fn surface_of(&mut self, abs: &str) -> String {
-        let key = format!("{abs}#surface");
+        let key = keys::surface(abs);
         if !self.sets.contains_key(&key) {
             let site = &self.sets[abs];
             let mut lit = site.lit.clone();
@@ -506,9 +506,9 @@ impl<'a> Walk<'a> {
         // body at the point — differentiated already where the use is in a body being
         // differentiated (a tangency there was refused above)
         let walks = if tangent {
-            self.bind_to_use(&app, "#line", other.clone(), &u);
+            self.bind_to_use(&app, keys::LINE, other.clone(), &u);
             self.contact(&app, st, &bound, at, path);
-            let toward = AlongBy::Line(local("#line", at));
+            let toward = AlongBy::Line(local(keys::LINE, at));
             let key = app.prefix().to_string();
             let made = Some(key.clone());
             vec![Pass::Itself, Pass::Along(Along { point: local(&bound, at), toward, key, made })]
@@ -576,7 +576,7 @@ impl<'a> Walk<'a> {
         // one derivative per direction, which both sets' rows share — under the statement as
         // written, so two tangencies of one body take directions apart
         let id = sc.written.unwrap_or(st.id).0;
-        let keys = [0u8, 1].map(|k| format!("{}#{id}.t{k}.", sc.prefix()));
+        let charts = [0u8, 1].map(|k| keys::chart(sc.prefix(), id, k));
         let worded = Worded {
             word: w.word.text.clone(),
             ops: Vec::new(),
@@ -592,7 +592,7 @@ impl<'a> Walk<'a> {
             let app = self.begin_nth(&u, &closure, n).of_set();
             let bound = lit.bound.text.clone();
             self.bind_to_use(&app, &bound, point.clone(), &u);
-            let along = |k: u8| charted(local(&bound, at), k, keys[k as usize].clone());
+            let along = |k: u8| charted(local(&bound, at), k, charts[k as usize].clone());
             let walks = [Pass::Made, along(0), along(1)];
             self.apply(&u, app, lit.body, &BTreeMap::new(), &walks, worded.clone(), depth);
         }
@@ -661,12 +661,12 @@ impl<'a> Walk<'a> {
         for (n, axis) in ["u", "v"].into_iter().enumerate() {
             let mut r = plane.clone();
             r.path.push(Seg::Field(Name { text: axis.to_string(), span: at }));
-            let name = format!("#{axis}");
+            let name = keys::plane_axis(axis);
             self.bind_to_use(&app, &name, r, &u);
             walks.push(Pass::Along(Along {
                 point: local(&bound, at),
                 toward: AlongBy::Line(local(&name, at)),
-                key: format!("{}#{id}.a{n}.", sc.prefix()),
+                key: keys::plane_along(sc.prefix(), id, n),
                 made: None,
             }));
         }
@@ -860,18 +860,18 @@ impl<'a> Walk<'a> {
                     .map(|sum| sum.as_dim(crate::units::Dim::LENGTH));
                 match moved {
                     Some(sum) => {
-                        *t = "#grow".to_string();
+                        *t = keys::GROW.to_string();
                         grow = sum;
                     }
-                    None => *t = format!("({t}) + #grow"),
+                    None => *t = format!("({t}) + {}", keys::GROW),
                 }
             }
             if let Some(cmp) = cmp {
-                let carried = (!distance).then(|| ("#grow".to_string(), at));
+                let carried = (!distance).then(|| (keys::GROW.to_string(), at));
                 measured.args.insert(n, OpArg::Bound { cmp, span: at, hi: None, grow: carried });
             }
             let mut app = self.begin(&u, &closure).of_set();
-            app.give("#grow", grow);
+            app.give(keys::GROW, grow);
             self.bind_to_use(&app, &bound, point, &u);
             let walks = vec![self.inherited_twin(&app, &u).into()];
             return self.apply(&u, app, lit.body, &BTreeMap::new(), &walks, worded, depth);
@@ -897,22 +897,22 @@ impl<'a> Walk<'a> {
             return self.once(Code::E040, at, m);
         }
         let mut app = self.begin(&u, &closure).of_set();
-        app.give("#reach", d);
-        self.bind_to_use(&app, "#p", point, &u);
-        self.bind_to_use(&app, "#set", w.ops[k].clone(), &u);
+        app.give(keys::REACH, d);
+        self.bind_to_use(&app, keys::POINT, point, &u);
+        self.bind_to_use(&app, keys::SET, w.ops[k].clone(), &u);
         // the foot, at the body's point, where the point is to start
-        self.hidden_point(&app, st, &bound, crate::syntax::AtRef::at(local("#p", at)), at, path);
+        self.hidden_point(&app, st, &bound, crate::syntax::AtRef::at(local(keys::POINT, at)), at, path);
         // the point at the distance from it, on the side named — and the foot, which stands on
         // the surface, seeded on its other side, so the two start apart the way they end; each
         // a statement of the body of its own, so the uses among them are applied apart
         // (`Scope::written`), stamped as the use's once walked
-        let dim = OpArg::Dim("#reach".to_string(), at);
-        let ops = vec![local("#p", at), local(&bound, at)];
+        let dim = OpArg::Dim(keys::REACH.to_string(), at);
+        let ops = vec![local(keys::POINT, at), local(&bound, at)];
         let (side, other) = if grows { ("outside", "inside") } else { ("inside", "outside") };
-        let set = local("#set", at);
+        let set = local(keys::SET, at);
         let made = [
             relation(("distance", at), Infix, ops, vec![dim], st.span),
-            relation((side, at), Infix, vec![local("#p", at), set.clone()], Vec::new(), st.span),
+            relation((side, at), Infix, vec![local(keys::POINT, at), set.clone()], Vec::new(), st.span),
             relation((other, at), Infix, vec![local(&bound, at), set], Vec::new(), st.span),
         ];
         for (n, r) in made.into_iter().enumerate() {
@@ -921,7 +921,7 @@ impl<'a> Walk<'a> {
             lit.body.push(Stmt { id, kind, span: st.span, chained: Chained::No });
         }
         // the body at the foot, then it and the distance along two directions there
-        let along = |k: u8| charted(local(&bound, at), k, format!("{}t{k}.", app.prefix()));
+        let along = |k: u8| charted(local(&bound, at), k, keys::foot_chart(app.prefix(), k));
         let walks = [Pass::Itself, along(0), along(1)];
         self.apply(&u, app, lit.body, &BTreeMap::new(), &walks, worded, depth);
     }
@@ -937,7 +937,7 @@ impl<'a> Walk<'a> {
     /// `l tangent S`'s contact: a point standing in space, on the line, seeded at its middle —
     /// declared at the bound name under the use's prefix, so the body reads it as its point.
     fn contact(&mut self, app: &Application, st: &Stmt, bound: &str, at: Span, path: &[PathStep]) {
-        let line = local("#line", at);
+        let line = local(keys::LINE, at);
         let end = |e: &str| {
             let mut r = line.clone();
             r.path.push(Seg::Field(Name { text: e.to_string(), span: at }));

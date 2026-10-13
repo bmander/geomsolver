@@ -649,7 +649,7 @@ impl<'a> Walk<'a> {
             self.err(Code::E103, b.span, format!("{n} copies is more than {MAX_FLAT}"));
             return;
         }
-        let block_prefix = format!("{}#{}.", scope.prefix(), st.id.0);
+        let block_prefix = keys::block(scope.prefix(), st.id.0);
         // a ring: copies the representative's turns.  One inside another is refused (E022) and
         // expanded as the cycle it is besides, so what it makes is still there to be named; and
         // its index, read anywhere in its body, varies nothing (E015)
@@ -912,10 +912,10 @@ impl Walk<'_> {
         }
         let set = set.clone();
         let at = Span::new(d.name.span().lo as usize, d.name.span().lo as usize);
-        let key = format!("{}#probe", d.name.key().text);
+        let key = keys::probe(&d.name.key().text);
         self.names.insert(key.clone());
         self.probes.push(key.clone());
-        let probe = format!("{local}#probe");
+        let probe = keys::probe(&local);
         d.children.clear();
         d.sweep = Some(Sweep::Region { probe: Ref::new(&probe) });
         // held at a place no drawing chooses (irrational, off every axis and plane through the

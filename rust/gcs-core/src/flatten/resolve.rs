@@ -936,7 +936,7 @@ impl<'a> Walk<'a> {
                     self.err(Code::E103, span, format!("`{key}` wants a set"));
                 }
             } else if !target.is_some_and(|t| self.group_names.contains(t)) {
-                let key = key.trim_end_matches("#given");
+                let key = key.trim_end_matches(keys::GIVEN);
                 self.err(Code::E103, span, format!("`{key}` wants a group or layout instance"));
             }
         }

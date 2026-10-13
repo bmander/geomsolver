@@ -257,18 +257,18 @@ impl Walk<'_> {
                 let Some((items, face_sc)) = t.faces.get(&face_abs) else {
                     return Err(format!("`{said}`: `{}` is not a face", written(r)));
                 };
-                (face_abs, items.clone(), face_sc.clone(), suffixed(r, "#plane", at))
+                (face_abs, items.clone(), face_sc.clone(), suffixed(r, keys::PLANE, at))
             }
             Some([Kid::Face { decl: f, .. }]) => {
                 let items = f.children.first().into_iter().flatten().filter_map(Kid::as_ref);
-                let face_abs = format!("{solid}#face");
-                let plane = local(format!("{face_abs}#plane"), at);
+                let face_abs = keys::written_face(&solid);
+                let plane = local(keys::face_plane(&face_abs), at);
                 (face_abs, items.cloned().collect(), sc.clone(), plane)
             }
             _ => return Err(format!("`{said}`: its profile is no face to draw on")),
         };
         // the plane the face is drawn in, under a name only the elaborator binds
-        let plane_key = format!("{face_abs}#plane");
+        let plane_key = keys::face_plane(&face_abs);
         if self.names.insert(plane_key.clone()) {
             let edges = items.iter().filter_map(|r| {
                 lookup_raw(r, &face_sc, &self.names, alias, self.units).map(|(a, rest)| {
@@ -314,7 +314,7 @@ impl Walk<'_> {
                                         set: sketch on a flat one"));
                 }
                 // square to the edge and along the face's plane: the side's own normal
-                let m_key = format!("{face_abs}#{edge}#m");
+                let m_key = keys::side_axis(&face_abs, edge);
                 if self.names.insert(m_key.clone()) {
                     let mut axis = Decl::point(DeclName::Key(Name { text: m_key.clone(), span: at }),
                                                [0.0; 2], None);

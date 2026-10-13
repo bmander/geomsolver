@@ -223,7 +223,7 @@ impl<'a> Walk<'a> {
                     // interface declares, the whole argument under a key no source writes, for
                     // what it asks of it to be judged once every name is known
                     if let Some(shape) = self.formal_shape(comp, f) {
-                        let given = format!("{key}#given");
+                        let given = keys::given(&key);
                         self.aliases.push((given.clone(), r.clone(), scope.clone()));
                         self.group_bindings.push((given.clone(), a.span, *ty));
                         self.typed(&shape, &key, r, scope);
