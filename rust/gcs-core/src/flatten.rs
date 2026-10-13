@@ -220,6 +220,10 @@ pub struct Expansion {
     pub lowered: Vec<Lowered>,
     /// Every point drawn in further planes and each of its twins, by absolute key (§6.7).
     pub twins: Vec<(String, String)>,
+    /// What every reference reading a member `normal` reads it of, absolute (`P.normal` gives
+    /// `P`): the planes among them mint their normal as they are built
+    /// (`Sketch::plane_normal`), and the rest are said to have none where they are read.
+    pub normals: BTreeSet<String>,
     /// Every region solid's probe, by absolute key: the point its set is applied to (§6.21).
     pub probes: Vec<String>,
     /// The solids a block runs over the faces of, whose faces were not given (#183 F4): the
@@ -391,6 +395,8 @@ struct Walk<'a> {
     applying_sets: bool,
     /// Every point drawn in further planes and each of its twins — see `Expansion::twins`.
     twins: Vec<(String, String)>,
+    /// See `Expansion::normals`.
+    normals: BTreeSet<String>,
     /// Every region solid's probe — see `Expansion::probes`.
     probes: Vec<String>,
     /// Each solid's faces, by the path they are named by from it, where the elaborator has said
@@ -527,6 +533,7 @@ impl<'a> Walk<'a> {
             unlowered: &NONE,
             applying_sets: false,
             twins: Vec::new(),
+            normals: BTreeSet::new(),
             probes: Vec::new(),
             faces: BTreeMap::new(),
             face_repeats: BTreeSet::new(),
@@ -596,6 +603,7 @@ impl<'a> Walk<'a> {
             rings: self.ring_infos,
             lowered,
             twins: self.twins,
+            normals: self.normals,
             probes: self.probes,
             face_repeats: self.face_repeats,
             face_planes: self.face_planes,

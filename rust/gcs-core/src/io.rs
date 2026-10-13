@@ -312,7 +312,7 @@ pub fn to_json(sk: &Sketch) -> Json {
         .map(|p| {
             let g = |k: u32| &sk.params[k as usize];
             // where it stands under the field names, `EntKind::fields`'s
-            object([
+            let mut o = object([
                 ("u", (p.u as i64).into()),
                 ("v", (p.v as i64).into()),
                 ("origin", (p.origin as i64).into()),
@@ -321,7 +321,12 @@ pub fn to_json(sk: &Sketch) -> Json {
                 ("z", Json::Num(g(p.o[2]).value)),
                 ("fixed", Json::Arr(p.o.iter().map(|&k| g(k).fixed.into()).collect())),
                 ("class", class_json(&p.class)),
-            ])
+            ]);
+            // its normal, by axis, only where one was read — a document with none dumps as it did
+            if let Some(n) = p.normal {
+                o.set("normal", (n as i64).into());
+            }
+            o
         })
         .collect();
     let user = sk.user_constraints();
@@ -581,12 +586,20 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
     }
     // the planes over their axes, each with its origin a point already read
     let nr = sk.axes.len();
+    let mut normals = Vec::new();
     for p in d.get("planes").unwrap_or(&empty).arr() {
         let g = |key: &str, n: usize| index(p.get(key).map(|v| v.as_i64()).unwrap_or(0), n, key);
         let o = ["x", "y", "z"].map(|k| p.get(k).map(|v| v.as_f64()).unwrap_or(0.0));
         let fixed = p.get("fixed").map(|v| v.arr()).unwrap_or_default();
         let held = [0, 1, 2].map(|k| fixed.get(k).map(|v| v.as_bool()).unwrap_or(false));
-        sk.plane_restored(g("u", nr)?, g("v", nr)?, o, held, g("origin", np)?, read_class(p));
+        let pi = sk.plane_restored(g("u", nr)?, g("v", nr)?, o, held, g("origin", np)?, read_class(p));
+        if p.get("normal").is_some() {
+            normals.push((pi, g("normal", nr)?));
+        }
+    }
+    // each normal held to its plane, its rows the plane's own and never written (`stand_normal`)
+    for (pi, n) in normals {
+        sk.stand_normal(pi, n);
     }
     for (ri, a, held) in places {
         sk.place_restored(ri, a, held);
@@ -941,6 +954,10 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
                                     p.class.clone());
         plane_map[i] = Some(ni);
         made.push(EntRef::plane(ni));
+        // its normal, where it came along too
+        if let Some(n) = p.normal.and_then(|n| axis_map[n as usize]) {
+            dst.stand_normal(ni, n);
+        }
     }
     for (ni, a, held) in places {
         dst.place_restored(ni, a, held);

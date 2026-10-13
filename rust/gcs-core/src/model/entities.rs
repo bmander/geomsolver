@@ -511,6 +511,9 @@ pub struct PlaneE {
     pub v: u32,
     pub o: [u32; 3],
     pub origin: u32,
+    /// Its normal `P.normal`, a hidden axis along `u × v` through its origin, where the document
+    /// reads one (`Sketch::plane_normal`): no field of the declaration, and drawn nowhere.
+    pub normal: Option<u32>,
     pub class: Classes,
 }
 

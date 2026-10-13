@@ -22,7 +22,13 @@ pub(super) struct Resolver {
     /// order, so `P.origin` resolves wherever it is read — before the plane is built, as a circle
     /// about it is.
     pub(super) origins: BTreeMap<String, usize>,
+    /// The planes whose normal the document reads (`Expansion::normals`), by key: each mints
+    /// `P.normal` as it is built, so a later declaration may name it.
+    pub(super) normals: std::collections::BTreeSet<String>,
 }
+
+/// A plane's member naming its normal, `P.normal`: `u × v`, an axis (`Sketch::plane_normal`).
+pub(crate) const NORMAL: &str = "normal";
 
 /// **What an operand names, resolved once** (#188): an entity, its fields followed; the faces of
 /// a solid a path past it names (`pad.plate.near`, `F.surface`); where the edge a set is ends
@@ -141,6 +147,12 @@ pub(super) fn follow_building(
                 return follow(sk, EntRef::point(o), &path[1..]);
             }
         }
+        if e.kind == EntKind::Plane && f.text == NORMAL {
+            return Err(format!(
+                "`{name}` is declared after this, and its normal is minted with it: declare \
+                 `{name}` first"
+            ));
+        }
         let Some(kid) = res.kid(&name, e.kind, &f.text)? else {
             return Err(format!(
                 "`{name}` does not name its {}, and `{name}` is not built yet: name the point \
@@ -196,6 +208,16 @@ pub(super) fn follow(sk: &Sketch, mut e: EntRef, path: &[Seg]) -> Result<EntRef,
             Seg::Index(_) => return Err("an index names a copy, not a part".to_string()),
             Seg::Member(m) => return Err(format!("{} has no `{}`", e.kind.a(), m.word())),
         };
+        // a plane's normal is no field of its declaration: an axis minted where it is read
+        if e.kind == EntKind::Plane && f.text == NORMAL {
+            match sk.planes.get(e.i()).and_then(|p| p.normal) {
+                Some(n) => {
+                    e = EntRef::new(EntKind::Axis, n as usize);
+                    continue;
+                }
+                None => return Err("a plane's normal is not built yet".to_string()),
+            }
+        }
         let fields = e.kind.fields();
         let mut at = 0usize;
         let mut found = None;

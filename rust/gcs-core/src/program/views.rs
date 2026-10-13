@@ -230,8 +230,16 @@ fn points(sk: &Sketch, e: EntRef, out: &mut Vec<usize>, depth: u32) {
 pub(crate) fn place(sk: &mut Sketch) -> Vec<bool> {
     use std::collections::BTreeSet;
     align(sk);
+    // a plane's normal is read off its axes, never solved for here: placed with them, and turned
+    // to them once they are
+    sk.seed_normals();
     let mut axis_placed: Vec<bool> =
         (0..sk.axes.len()).map(|r| held(sk, &sk.axes[r].d)).collect();
+    for pl in &sk.planes {
+        if let Some(n) = pl.normal {
+            axis_placed[n as usize] = axis_placed[pl.u as usize] && axis_placed[pl.v as usize];
+        }
+    }
     let mut plane_placed: Vec<bool> = (0..sk.planes.len()).map(|p| sk.plane_fixed(p)).collect();
     let turned = |sk: &Sketch, axis_placed: &[bool]| -> Vec<bool> {
         sk.planes.iter().map(|pl| axis_placed[pl.u as usize] && axis_placed[pl.v as usize]).collect()
@@ -244,9 +252,13 @@ pub(crate) fn place(sk: &mut Sketch) -> Vec<bool> {
     // point, whose hidden point follows the planes while it is solved
     struct Reads { id: u32, axes: Vec<usize>, planes: Vec<usize>, through: Vec<usize>, pts: Vec<usize> }
     let mut reads: Vec<Reads> = Vec::new();
+    let normals: BTreeSet<usize> = sk.planes.iter().filter_map(|p| p.normal.map(|n| n as usize)).collect();
     for c in sk.constraints.iter().filter(|c| c.acts()) {
         if matches!(c.kind, CKind::Lift | CKind::AxisUnit | CKind::AxisFoot | CKind::DragTarget
             | CKind::DragSeen) {
+            continue;
+        }
+        if c.intrinsic && c.entities().iter().any(|e| e.kind == EntKind::Axis && normals.contains(&e.i())) {
             continue;
         }
         // a point measured from a plane's origin in space — an ordinate, a height off it — is the
@@ -313,6 +325,15 @@ pub(crate) fn place(sk: &mut Sketch) -> Vec<bool> {
                 plane_placed[p] = true;
                 newly = true;
             }
+            if let Some(n) = pl.normal.map(|n| n as usize) {
+                if !axis_placed[n] && axis_placed[pl.u as usize] && axis_placed[pl.v as usize] {
+                    axis_placed[n] = true;
+                    newly = true;
+                }
+            }
+        }
+        if newly {
+            sk.seed_normals();
         }
         let before = taken.len();
         for r in &reads {
@@ -394,6 +415,7 @@ pub(crate) fn place(sk: &mut Sketch) -> Vec<bool> {
             }
         }
     }
+    sk.seed_normals();
     relift(sk);
     turned(sk, &axis_placed)
 }

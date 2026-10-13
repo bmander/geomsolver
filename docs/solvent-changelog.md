@@ -4,6 +4,13 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.89] A plane's normal is a member.** `P.normal` is the axis along `P.u × P.v` through
+`P.origin`, read wherever an axis is: `l parallel P.normal`, `t perpendicular std.front.normal`,
+`Q := plane(u: P.normal, v: P.u)`, `hint(dir: P.normal)` (§6.7). It adds no freedom and is never
+declared; the plane holds it square to its axes, on the side `u × v` is, and through its origin.
+Reading it before the plane's declaration is **E040**. Through 0.88 an axis along a plane's normal
+was declared and held `perpendicular` to both of the plane's axes by hand.
+
 **[0.88] A sweep may roll through what it cuts.** `removal := solid(tool, under: m, through:
 body)` sweeps `tool` under the motion `m` over the whole roll about 0 during which it meets
 `body`'s material — its stock and additions, never its cuts, as a through prism spans them — so a
