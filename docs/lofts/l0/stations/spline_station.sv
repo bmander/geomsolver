@@ -16,4 +16,4 @@ in std.top {
   fix((40mm, 30mm)) k3
   g := spline(k0, k1, k2, k3)
 }
-st := lofts.OnSpline(g, std.top, std.z, s: 0.5)
+st := lofts.OnSpline(g, std.z, s: 0.5)

@@ -95,6 +95,11 @@ fixtures.
    - Options:
      - read such a contact in space, as 0.74 reads `gear.M coincident q` (the twin rule);
      - or give a drawn entity a member naming its plane (`g.plane`).
+   - **Done for a spline and a traced curve** (#249): a point in space said on one is drawn in its
+     plane (membership, §6.21's one rule), and a line said tangent to one has its free ends drawn
+     there, so the probe's `OnSpline` takes no `view:`. `OnArc` still does: an arc's point in
+     space has its contact there (`PointOnCircle3`), but its `out` line and the angle from the
+     centre are drawn in the arc's plane.
 
 4. **A plane's own axes are not held square, and every station word has to say so.** The first
    drafts of `OnLine` and `OnHelix` came out DOF 1 and DOF 4 (the reducer's and the spring's
