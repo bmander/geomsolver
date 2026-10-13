@@ -391,8 +391,11 @@ a circle the conic its sum of distances makes (`bowed`, `Stroke::Conic`, a ratio
 profile edge: an extrusion face; turned in a ring, a revolution's; between two circles a
 Cartesian oval, refused) — carried on past each end until the plane faces it
 ends on cut it off (#195's meaning: a square one is the prism's end, one at a slant a half-space it
-is kept within, `Run::within`, the recipe's `"within"` as a point and a normal; a run-out); a face
-along the edge or a curved end refused, `unbuilt`), `Ring` (a circle where a
+is kept within, `Run::within`, the recipe's `"within"` as a point and a normal; a run-out); a
+cylinder or a sphere it ends on carried into until every line of its section's hull has crossed
+it, and kept within or outside that solid (#218, `Run::kept`, `Kept`, the recipe's `"kept"` built
+by `recipe::kept_by_solid`: `post.sv`, a D's flat, a quarter ball); a face along the edge or
+another curved end refused, `unbuilt`), `Ring` (a circle where a
 plane meets a coaxial cylinder or cone: the section in the meridian at its start turned through its
 angle, `Ring::angle`; a sphere centred on the axis is a circle in the meridian (`Trace::Circle`,
 `knob.sv`'s neck); a stretch only where its ends are seams or planes through the axis at its
@@ -421,13 +424,13 @@ this needs (ported from #79–#110): edges along a face cut where they cross its
 `trace_beside`/`unseen_beside`), equal crossing cylinders' ellipses split where they cross
 (`boolean::crossings_among`), `query::line_cylinder`, `Surface::offset`, a fitted edge read at its
 own `tol`. `cad::shifted` (the app's exact solid, built about its own origin) moves a lowered
-node's pieces, corners and balls with the rest (`shifted_node`). Open (#218): curved ends at a corner (a
-run-out onto a curved face, #110), corners where curved faces meet, a run
+node's pieces, corners and balls with the rest (`shifted_node`). Open (#218): a ring's stretch or a rolled
+run ending on a curved face, a corner beside a curved end, corners where curved faces meet, a run
 mitred against a ring's stretch on one cylinder (the union of coincident cylinder faces: a groove
 rounded at its ends), a flat along a traced edge, a rolled round beside other pieces in one
 region, the OCCT oracle. `tests/round_lowering.rs` is the gate (every volume the closed form's to
 1e-9, a rolled one #85's quadrature's to 1e-6: `slot.sv`, `pad.sv`, `rail.sv`, `knob.sv`,
-`tee.sv`, `bore.sv`, `runout.sv`, `twin.sv`).
+`tee.sv`, `bore.sv`, `runout.sv`, `twin.sv`, `post.sv`).
 **Distance from a set, offsets (§6.21, 0.64, #145 F4):** `p distance(d, side: outside|inside) S`
 (`distance` is a set use, `may_use`), `p inside(d) S` / `p outside(d) S` and `std.Offset(S, d)` are
 one bound on the signed distance from `S`'s surface (`Reach`: cmp toward the outside, whether

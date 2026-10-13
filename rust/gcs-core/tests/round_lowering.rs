@@ -374,6 +374,85 @@ fn simpson(f: impl Fn(f64) -> f64, a: f64, b: f64, n: usize) -> f64 {
     (f(a) + f(b) + inner) * h / 3.0
 }
 
+/// **A run cut off by a curved face** (#218's 2, #110), `post.sv`: the plate's top edge along its
+/// near side runs into the post standing there, whose axis the edge passes through. Each run is
+/// carried on into the post and kept outside its wall: at depth `u` in from the side, the run's
+/// section stands `30 − √(64 − u²)` long, so it takes `∫ h(u) (30 − √(64 − u²)) du` over the round's
+/// section (`h` its height at `u`; `u = r(1 − cos t)` makes it smooth for Simpson).
+#[test]
+fn a_run_cut_off_by_a_post_it_runs_into() {
+    let e = solved(include_str!("../../examples/rounds/post.sv"));
+    assert_eq!(lowered(&e).0, 1);
+    let b = exported(&e, "stand");
+    let (r, big) = (2.0, 8.0);
+    let run = simpson(|t: f64| {
+        let u = r * (1.0 - t.cos());
+        (r - r * t.sin()) * (30.0 - (big * big - u * u).sqrt()) * r * t.sin()
+    }, 0.0, PI / 2.0, 4000);
+    let want = 60.0 * 40.0 * 10.0 + PI * big * big * 30.0 - PI * big * big / 2.0 * 10.0 - 2.0 * run;
+    close(props::volume(&b), want);
+    // the app builds a solid about its own origin (`cad::shifted`): the post's wall the runs are
+    // cut off by moves with the rest
+    let recipe = gcs_core::solid::cad::recipe(&e.sketch, ent(&e, "stand").i()).unwrap();
+    let by = [5.0, 7.0, 11.0];
+    let walls = |r: &gcs_core::json::Json| -> Vec<[f64; 3]> {
+        r.get("nodes").unwrap().arr().iter().filter_map(|n| n.get("pieces")).flat_map(|p| p.arr().iter())
+            .filter_map(|p| p.get("kept")).flat_map(|w| w.arr().iter())
+            .map(|h| { let a = h.get("origin").unwrap().arr(); [a[0].as_f64(), a[1].as_f64(), a[2].as_f64()] })
+            .collect()
+    };
+    let (before, after) = (walls(&recipe), walls(&gcs_core::solid::cad::shifted(&recipe, by)));
+    assert_eq!(before.len(), 2);
+    assert!(before.iter().zip(&after).all(|(p, q)| (0..3).all(|k| (p[k] - by[k] - q[k]).abs() < 1e-12)));
+}
+
+/// The same within a curved face: a D-shaped shaft (a round of 10 about its axis with a flat 6
+/// from it), the flat's top edge rounded. The run ends on the round at both ends, from inside:
+/// carried on out of the shaft past its wall and kept within it. At depth `u` in from the flat its
+/// section is the chord `2√(100 − (6 − u)²)` long.
+#[test]
+fn a_run_cut_off_at_both_ends_by_the_round_it_lies_within() {
+    let e = solved("unit mm\nuse std (round)\nin std.top {\n\
+        o := point\nt := point\ns := point\nfix((0, 0)) o\nfix((6, 8)) t\nfix((6, -8)) s\n\
+        rim := arc(center: o, start: t, end: s) hint(r: 10)\nflat := line(s, t)\n}\n\
+        shaft := solid(face(rim, flat), from: 0mm, to: 20mm)\nshaft.near round(r: 2mm) shaft.flat\n");
+    assert_eq!(lowered(&e).0, 1);
+    let b = exported(&e, "shaft");
+    let (r, big, c): (f64, f64, f64) = (2.0, 10.0, 6.0);
+    let run = simpson(|t: f64| {
+        let u = r * (1.0 - t.cos());
+        (r - r * t.sin()) * 2.0 * (big * big - (c - u) * (c - u)).sqrt() * r * t.sin()
+    }, 0.0, PI / 2.0, 4000);
+    let segment = big * big * (c / big).acos() - c * (big * big - c * c).sqrt();
+    close(props::volume(&b), (PI * big * big - segment) * 20.0 - run);
+}
+
+/// And within a ball: a quarter of a ball of 10 (its half disc turned a quarter turn), the edge
+/// where its two flats meet rounded. The edge runs through the centre from pole to pole, ending on
+/// the sphere at both: the run carried on out of the ball and kept within it. At `(a, b)` from the
+/// edge its section is the chord `2√(100 − a² − b²)` long; over the section's height at `a` that
+/// is `[b√(A² − b²) + A² asin(b/A)]` from 0, `A² = 100 − a²`.
+#[test]
+fn a_run_cut_off_by_the_ball_it_lies_within() {
+    let e = solved("unit mm\nuse std (round)\nin std.front {\n\
+        a0 := point\na1 := point\nfix((0, -10)) a0\nfix((0, 10)) a1\nspindle := line(a0, a1)\n\
+        c0 := point\nfix((0, 0)) c0\nshell := arc(center: c0, start: a0, end: a1) hint(r: 10)\n\
+        shut := line(a1, a0)\n}\n\
+        wedge := solid(face(shell, shut), about: spindle, sweep: 90deg)\n\
+        wedge.start round(r: 2mm) wedge.end\n");
+    assert_eq!(lowered(&e).0, 1);
+    let b = exported(&e, "wedge");
+    let (r, big): (f64, f64) = (2.0, 10.0);
+    let run = simpson(|t: f64| {
+        let a = r * (1.0 - t.cos());
+        let (h, aa) = (r - r * t.sin(), big * big - a * a);
+        (h * (aa - h * h).sqrt() + aa * (h / aa.sqrt()).asin()) * r * t.sin()
+    }, 0.0, PI / 2.0, 4000);
+    close(props::volume(&b), PI * big * big * big / 3.0 - run);
+    assert_eq!(kinds(&b).get("sphere"), Some(&1), "{:?}", kinds(&b));
+}
+
+
 /// `knob.sv` chamfered instead (#218's 6, about an axis): the root's flat between the disc's top
 /// and the rod is a cone (its triangle turned, Pappus), and the neck's between the rod and the
 /// ball the conic `(x − 4) + (|q − c| − 8) = d` of the meridian turned — in polar about the

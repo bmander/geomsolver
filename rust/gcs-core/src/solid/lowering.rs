@@ -16,7 +16,8 @@
 //! named in pieces (a plate's top a rod splits) is a piece per edge. A run is where its nearest point of the faces' meeting is on the edge (the
 //! slab square to it over its stretch, a sector of a ring's) and on the side the edge runs on of
 //! each face at its ends: a straight run's prism is kept within each plane face standing at a slant
-//! there and reaching into it (a run-out), one leaning away leaving the slab's square end. A face
+//! there and reaching into it (a run-out), one leaning away leaving the slab's square end; one ending
+//! on a cylinder or a sphere is carried on into it and kept on its side of that solid (`Kept`). A face
 //! going on tangent from one of the run's is no end (a seam), so a round along an obround's flat
 //! side stops at the section the ring round its half circle starts from, and the two are glued
 //! there; a ring's stretch is turned through its circle's angle.
@@ -60,7 +61,8 @@ pub enum Stroke {
 /// (the edge's first end) square to the unit `along`, its loop `strokes` (each named, the name of
 /// the face it sweeps), carried over the stretch `span` of the edge (`0` its origin; the edge, or
 /// past its ends), and kept within each half-space `n·x <= d` of `within` (`(n, d)`, `n` a unit
-/// normal): the faces an end stands at a slant to cut it off.
+/// normal): the faces an end stands at a slant to cut it off; and on its side of each curved face
+/// of `kept` it ends on (#218's 2).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Run {
     pub origin: V,
@@ -68,6 +70,33 @@ pub struct Run {
     pub span: [f64; 2],
     pub strokes: Vec<(Stroke, &'static str)>,
     pub within: Vec<(V, f64)>,
+    pub kept: Vec<Kept>,
+}
+
+/// A curved face a run ends on, carried on into it and cut off by it (model units): the run kept
+/// within the solid its surface bounds (`inside`) or outside it — a cylinder of `radius` about the
+/// line through `origin` along the unit `axis`, or a ball about `origin` (`axis` none).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Kept {
+    pub origin: V,
+    pub axis: Option<V>,
+    pub radius: f64,
+    pub inside: bool,
+}
+
+impl Kept {
+    /// Where the line `q + s·along` crosses the surface: its two crossings in order, if it does.
+    fn crossings(&self, q: V, along: V) -> Option<[f64; 2]> {
+        let flat = |v: V| match self.axis { Some(d) => sub(v, scale(d, dot(v, d))), None => v };
+        let (w, a) = (flat(sub(q, self.origin)), flat(along));
+        let (aa, b, c) = (dot(a, a), dot(w, a), dot(w, w) - self.radius * self.radius);
+        let disc = b * b - aa * c;
+        if !(aa > 1e-18) || disc < 0.0 {
+            return None;
+        }
+        let root = disc.sqrt();
+        Some([(-b - root) / aa, (-b + root) / aa])
+    }
 }
 
 impl Run {
@@ -486,10 +515,16 @@ fn piece(body: &super::faces::BodyFaces, edge: u32, fa: usize, fb: usize, within
     if body.convex(edge) != Some(within) {
         return Ok(None);
     }
-    // the ends standing at `ps`, this edge's own (another edge's of the run are that edge's)
-    let ends = halves(body, ends)?;
+    // the ends standing at `ps`, this edge's own (another edge's of the run are that edge's):
+    // the planes, and the curved faces
+    let (flat, bent): (Vec<_>, Vec<_>) = ends.iter().copied().partition(|&(c, _)| body.plane(c).is_some());
+    let ends = halves(body, &flat)?;
     let own = |ps: [V; 2]| -> Vec<(V, f64)> {
         ends.iter().copied().filter(|&(n, d)| ps.iter().any(|&p| (dot(n, p) - d).abs() <= 1e-7 * (1.0 + norm(p))))
+            .collect()
+    };
+    let own_bent = |ps: [V; 2]| -> Vec<(usize, f64)> {
+        bent.iter().copied().filter(|&(c, _)| ps.iter().any(|&p| body.side(c, p).abs() <= 1e-7 * (1.0 + norm(p))))
             .collect()
     };
     // round a circle where a plane, a cylinder, a cone or a sphere meet about one axis: the section
@@ -507,7 +542,7 @@ fn piece(body: &super::faces::BodyFaces, edge: u32, fa: usize, fb: usize, within
         let meridian = |&(n, d): &(V, f64)| dot(n, axis).abs() <= 1e-9
             && (dot(n, centre) - d).abs() <= 1e-9 * (1.0 + norm(centre))
             && dot(n, body.middle(edge)) < d;
-        if !closed && !own([p0, p1]).iter().all(meridian) {
+        if !closed && (!own([p0, p1]).iter().all(meridian) || !own_bent([p0, p1]).is_empty()) {
             return unbuilt("a stretch of a circle cut off by a face at its end");
         }
         let radial = radial_at(t0);
@@ -554,11 +589,56 @@ fn piece(body: &super::faces::BodyFaces, edge: u32, fa: usize, fb: usize, within
             if slope > 0.0 { run.span[1] = run.span[1].max(s) } else { run.span[0] = run.span[0].min(s) }
         }
     }
+    // a curved face it ends on (#218's 2), a cylinder or a ball: carried on into it and kept on the
+    // side the edge runs on — until every line along the prism through its section has left the
+    // side kept. Into a solid kept outside of: as far as the deepest entry, short of every exit,
+    // so the prism's end lies wholly within it (the entry over the section is convex, the exit
+    // concave: each reads its extreme at the hull's points). Out of one kept within: past every
+    // exit and the section's width more (a line leaving a convex solid never comes back).
+    let width = outline.iter().map(|&q| distance(q, p0)).fold(0.0, f64::max);
+    for (c, sign) in own_bent([p0, p1]) {
+        let kept = kept_by(body, c, sign)?;
+        if run.kept.contains(&kept) {
+            continue;
+        }
+        // at each end on its surface (a D's flat ends on its round at both)
+        for (forward, p) in [(false, p0), (true, p1)] {
+            if body.side(c, p).abs() > 1e-7 * (1.0 + norm(p)) {
+                continue;
+            }
+            // each line's crossings, as far along the way it runs on from the edge's start
+            let way = if forward { along } else { scale(along, -1.0) };
+            let lines: Vec<Option<[f64; 2]>> = outline.iter().map(|&q| kept.crossings(q, way)).collect();
+            let to = if kept.inside {
+                let from = if forward { length } else { 0.0 };
+                lines.iter().flatten().map(|l| l[1]).fold(from, f64::max) + 2.0 * width
+            } else {
+                let deepest = lines.iter().flatten().map(|l| l[0]).fold(f64::NEG_INFINITY, f64::max);
+                if !lines.iter().all(|l| l.is_some_and(|l| deepest <= l[1])) {
+                    return unbuilt("a run its curved end does not cut off");
+                }
+                deepest
+            };
+            if forward { run.span[1] = run.span[1].max(to) } else { run.span[0] = run.span[0].min(-to) }
+        }
+        run.kept.push(kept);
+    }
     // only those reaching into the prism: a square end is the prism's own
     let hull = run.hull();
     run.within = halves.into_iter()
         .filter(|&(n, d)| hull.iter().any(|&p| dot(n, p) > d + 1e-9 * (1.0 + length))).collect();
     Ok(Some(Piece::Run(run)))
+}
+
+/// The curved face `c` a run ends on, kept on the side `sign` of (`end_sides`'): within the solid
+/// its surface bounds where that side holds its axis (its centre), else outside it.
+fn kept_by(body: &super::faces::BodyFaces, c: usize, sign: f64) -> Result<Kept, String> {
+    let (origin, axis, radius) = match (body.cylinder(c), body.sphere(c)) {
+        (Some((o, d, r)), _) => (o, Some(d), r),
+        (None, Some((o, r))) => (o, None, r),
+        _ => return unbuilt("an edge cut off by a face neither a plane, a cylinder nor a sphere"),
+    };
+    Ok(Kept { origin, axis, radius, inside: sign * body.side(c, origin) < 0.0 })
 }
 
 /// The half-spaces `n·x <= d` a run is kept within at its `ends` (`end_sides`' faces and the sides
@@ -687,7 +767,7 @@ fn cut(p0: V, along: V, traces: [Trace; 2], within: bool, section: Section) -> R
                  (Stroke::Line { from: qb, to: p0 }, "b")]
         }
     };
-    Ok(Run { origin: p0, along, span: [0.0; 2], strokes, within: Vec::new() })
+    Ok(Run { origin: p0, along, span: [0.0; 2], strokes, within: Vec::new(), kept: Vec::new() })
 }
 
 /// A chamfer's flat beside a curved face, in the section at `p0` square to `along`: the points
@@ -820,7 +900,8 @@ pub fn assemble<'a>(pieces: impl IntoIterator<Item = &'a Piece>) -> Assembly {
         && a.span.iter().zip(b.span).all(|(s, t)| (s - t).abs() <= 1e-9 * size) && a.strokes.len() == b.strokes.len()
         && a.strokes.iter().zip(&b.strokes).all(|((x, _), (y, _))| same_stroke(x, y))
         && a.within.len() == b.within.len()
-        && a.within.iter().zip(&b.within).all(|(x, y)| near(x.0, y.0) && (x.1 - y.1).abs() <= 1e-9 * size);
+        && a.within.iter().zip(&b.within).all(|(x, y)| near(x.0, y.0) && (x.1 - y.1).abs() <= 1e-9 * size)
+        && a.kept == b.kept;
     let mut out = Assembly::default();
     for p in pieces {
         match p {
@@ -886,9 +967,18 @@ impl Assembly {
             let [from, to] = r.span;
             let within = r.within.iter()
                 .map(|&(n, d)| object([("at", vector(scale(n, d * by))), ("normal", vector(n))])).collect();
+            let kept = r.kept.iter().map(|k| {
+                let mut o = object([("origin", vector(scale(k.origin, by))), ("radius", (k.radius * by).into()),
+                    ("inside", k.inside.into())]);
+                if let Some(d) = k.axis {
+                    o.set("axis", vector(d));
+                }
+                o
+            }).collect();
             Ok(object([
                 ("kind", "prism".into()), ("profile", profile(r)?.to_json(by)?),
                 ("from", (from * by).into()), ("to", (to * by).into()), ("within", Json::Arr(within)),
+                ("kept", Json::Arr(kept)),
             ]))
         }).collect::<Result<Vec<_>, String>>()?;
         for g in &self.rings {
