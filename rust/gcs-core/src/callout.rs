@@ -89,6 +89,9 @@ macro_rules! undrawn {
             | CKind::CurveCurvature
             | CKind::SplineTangentLine
             | CKind::SplineCurvature
+            | CKind::SplineTangentAt
+            | CKind::CurveTangentAt
+            | CKind::TangentCircleAt
             // the ordinate's zero states no number
             | CKind::Level
             | CKind::Project

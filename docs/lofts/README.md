@@ -80,7 +80,7 @@ fixtures.
      (finding 8) and any expression in `s` (`twist * (3 * s^2 - 2 * s^3)`), since `s` is a column
      the station holds fixed, not a free name of the drawing (which is affine only).
 
-2. **A point at a fraction of a line's or an arc's run.** *Done (#248, Solvent 0.79).*
+2. **A point at a fraction of a line's or an arc's run.** *Done (#248, Solvent 0.80).*
    - `m coincident(t == s) g` was refused on a line and on an arc ("`coincident` has no slot `t`").
      A spline's contact has `t`, and so does a curve's.
    - A line's and an arc's point contact now take `t` too, as a fraction from `p1` to `p2` (on past
@@ -106,7 +106,9 @@ fixtures.
    direction, its `v` along that one" would say it once; it is useful beyond lofts (any datum
    square to a line).
 
-5. **One station word over any path** (`pending.On`) needs three things:
+5. **One station word over any path** (`pending.On`) needs three things (the first and the
+   third done, #251 — `path` and `g tangent(at: m) l` over every kind, `tests/tangent_at.rs`; the
+   second is #248):
    - a `path` formal type: a line, an arc, a spline, a traced curve, an envelope, or a named chain;
    - finding 2's `t` on every kind;
    - **the tangent at a point** on every kind:
@@ -117,6 +119,12 @@ fixtures.
        a curve need `g tangent(at: m) l`.
    - `tl tangent g` is refused where `g tangent tl` is accepted. Operand order carries meaning by
      design, but for a symmetric tangency the refusal reads as a bug.
+
+   Done in #251: `g tangent(at: m) l` reads the place of the contact holding `m` (one row), of an
+   arc or a circle it is the radius square to `l`, of a line `parallel`; a line and a spline or a
+   curve touch whichever is written first. With the dependency gone the spline station read DOF 1:
+   the tangent line's own length, `q` sliding along it, which the dependency had hidden. The words
+   now draw it 10 mm long — finding 13's paper cut again, a direction with no word of its own.
 
 6. **A chain as one path** (`pipe.sv`). The station runs over a named chain link by link (`s` from
    0 to 5), so the joints need no gluing and the wall is one face per section edge across the

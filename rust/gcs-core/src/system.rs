@@ -503,6 +503,9 @@ pub fn build_kernel(sk: &Sketch, key: KernelKey) -> Kernel {
                 (FamilyKernel::Contact, kernels::FORMULA) => kernels::curve_kernel(n_theta, n_const),
                 (FamilyKernel::Contact, _) => kernels::point_on_body_kernel(n_theta, n_const, body),
                 (FamilyKernel::Tangent, _) => kernels::curve_tangent_kernel(n_theta, n_const, body),
+                (FamilyKernel::TangentAt, _) => {
+                    kernels::curve_tangent_at_kernel(n_theta, n_const, body)
+                }
                 (FamilyKernel::Curvature, _) => {
                     kernels::curve_curvature_kernel(n_theta, n_const, body, formed)
                 }

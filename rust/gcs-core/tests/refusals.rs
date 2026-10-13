@@ -357,7 +357,10 @@ fix((0, 0)) c
 }
 ";
     let (_, d) = read(&format!("{ARC}k tangent(at: banana) l\n"));
-    assert!(d.iter().any(|m| m == "E040: `at` is `start` or `end`, not `banana`"), "{d:?}");
+    // (a name there is a point the tangent is at, #251, so the refusal says both it could be)
+    let want = "E040: `at` is `start` or `end`, or a point on what is touched, and `banana` names \
+                nothing";
+    assert!(d.iter().any(|m| m == want), "{d:?}");
     for w in ["start", "end"] {
         assert!(read(&format!("{ARC}k tangent(at: {w}) l\n")).1.is_empty(), "{w}");
     }

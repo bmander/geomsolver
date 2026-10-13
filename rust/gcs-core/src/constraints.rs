@@ -129,6 +129,20 @@ pub enum CKind {
     /// curve's second and third derivatives, which a formula has and a trace does not: stated
     /// against a traced curve it is refused (`validate`).
     CurveCurvature,
+    /// **The tangent at a point already on a spline** (#251), `g tangent(at: m) l`: the line runs
+    /// along `C'(t)`, where `t` is the place of the contact holding `m` on the spline — **that
+    /// contact's own unknown**, shared rather than a second one (`Sketch::add`, #70's shared
+    /// place). One row, `SplineTangentLine`'s direction row alone, regular wherever `C' ≠ 0`:
+    /// beside the contact, the two-row tangency restates the point and is a double root. The
+    /// point is a slot so the statement names it, a graft keeps it and the contact is found.
+    SplineTangentAt,
+    /// The same over a curve written in the language: `CurveTangentLine`'s direction row, its
+    /// kernel the definition's (`FamilyKernel::TangentAt`).
+    CurveTangentAt,
+    /// And of a circle or an arc, at any point of it a relation holds there (#251): the radius
+    /// to `at` square to the line, `TangentArcLine`'s kernel with the point named rather than
+    /// chosen by `start`/`end` or `p1`/`p2`. No place to share: the point is on the round already.
+    TangentCircleAt,
     /// Two points are images of one point in space, each on the plane it is `in`: their
     /// coordinates along the fold line the two planes share agree (`plane::fold_line`).  One
     /// row over both points, with the fold line as constants: both planes fixed (where either
@@ -249,7 +263,7 @@ pub enum CKind {
     Cw,
 }
 
-/// Which of a curve definition's kernels a kind runs through: the table holds these four per
+/// Which of a curve definition's kernels a kind runs through: the table holds these five per
 /// definition, in this order (`System::kernel_table`), and `Constraint::kernel_id_in` counts
 /// them so — the one statement of what "a kind whose kernel is per definition" means.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -259,15 +273,23 @@ pub enum FamilyKernel {
     Curvature,
     /// A point in space on the surface the curve stands for (`CKind::PointOnExtrusion`).
     Extrusion,
+    /// The tangent at a point a contact already holds on the curve (`CKind::CurveTangentAt`).
+    TangentAt,
 }
 
 impl FamilyKernel {
-    pub const ALL: [FamilyKernel; 4] =
-        [FamilyKernel::Contact, FamilyKernel::Tangent, FamilyKernel::Curvature, FamilyKernel::Extrusion];
+    pub const ALL: [FamilyKernel; 5] = [
+        FamilyKernel::Contact,
+        FamilyKernel::Tangent,
+        FamilyKernel::Curvature,
+        FamilyKernel::Extrusion,
+        FamilyKernel::TangentAt,
+    ];
 
     /// Rows per constraint — a fact about the kind, not asked of a kernel it may not have yet.
     pub fn n_res(self) -> usize {
         match self {
+            FamilyKernel::TangentAt => 1,
             FamilyKernel::Contact | FamilyKernel::Tangent | FamilyKernel::Extrusion => 2,
             FamilyKernel::Curvature => 3,
         }
@@ -275,7 +297,7 @@ impl FamilyKernel {
 }
 
 /// Every concrete constraint type, in the order the registry lists them.
-pub const ALL_KINDS: [CKind; 70] = [
+pub const ALL_KINDS: [CKind; 73] = [
     CKind::Coincident,
     CKind::Distance,
     CKind::Midpoint,
@@ -342,6 +364,9 @@ pub const ALL_KINDS: [CKind; 70] = [
     CKind::CurveLength,
     CKind::Stationary,
     CKind::CurveTouchesLine,
+    CKind::SplineTangentAt,
+    CKind::CurveTangentAt,
+    CKind::TangentCircleAt,
     CKind::PointAlongLine,
     CKind::PointAlongArc,
     CKind::PointAlongLine3,
@@ -526,7 +551,7 @@ pub fn ordinate_word(kind: CKind, args: &[Arg]) -> &str {
 /// **The one table that turns a word and a pair of kinds into a constraint.**  It is the inverse
 /// of `CKind::operator`, and it is a table rather than a search because several kinds share a
 /// word and the operand kinds (and one selector) are what tell them apart: `coincident` is
-/// seventeen kinds, `distance` fifteen, `tangent` ten.
+/// seventeen kinds, `distance` fifteen, `tangent` thirteen.
 ///
 /// Operand order carries meaning, and that is a change worth seeing: `arc tangent line` is
 /// `TangentArcLine` and `line tangent circle` is `TangentLineCircle`.  Each named itself before
@@ -540,6 +565,7 @@ pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option
     let round = |k: EntKind| matches!(k, Circle | Arc);
     // an axis is in space, so a direction relation naming one is the relation in space
     let axes = |a: EntKind, b: EntKind| matches!((a, b), (Axis, Axis | Line) | (Line, Axis));
+    let at_point = sel("at").is_some_and(|w| w.is_empty());
     Some(match word {
         // incidence, and two points being one: what it means is the kinds of its operands
         "coincident" => match (a, b) {
@@ -585,6 +611,13 @@ pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option
             _ => return None,
         },
         "tangent" => match (a, b) {
+            // **the tangent at a point a relation already holds on the curve** (#251): the line
+            // runs along the curve there, one row — `at:` naming a point, which `Written::sel`
+            // reads as no word.  Of a line, its own direction
+            (Line, Line) if at_point => CKind::Parallel,
+            (k, Line) if round(k) && at_point => CKind::TangentCircleAt,
+            (Spline, Line) if at_point => CKind::SplineTangentAt,
+            (Curve, Line) if at_point => CKind::CurveTangentAt,
             // tangency at a named end of the line is the regular form; the bare pair is
             // rank-deficient at every solution, so `at:` is how a drawing says which
             (Line, k) if round(k) => match sel("at") {
@@ -1010,6 +1043,9 @@ impl CKind {
             CKind::PointOnCurve => "PointOnCurve",
             CKind::PointOnExtrusion => "PointOnExtrusion",
             CKind::CurveTangentLine => "CurveTangentLine",
+            CKind::SplineTangentAt => "SplineTangentAt",
+            CKind::CurveTangentAt => "CurveTangentAt",
+            CKind::TangentCircleAt => "TangentCircleAt",
             CKind::CurveCurvature => "CurveCurvature",
             CKind::Project => "Project",
             CKind::AxisOnPlane => "AxisOnPlane",
@@ -1183,6 +1219,16 @@ impl CKind {
             }
             CKind::PointOnCurve | CKind::PointOnExtrusion => &[("p", S::Point), ("curve", S::Curve), ("t", S::Param)],
             CKind::CurveTangentLine => &[("curve", S::Curve), ("line", S::Line), ("t", S::Param)],
+            // the point named, then the place: the contact's, which `Sketch::add` hands it
+            CKind::SplineTangentAt => {
+                &[("spline", S::Spline), ("line", S::Line), ("at", S::Point), ("t", S::Param)]
+            }
+            CKind::CurveTangentAt => {
+                &[("curve", S::Curve), ("line", S::Line), ("at", S::Point), ("t", S::Param)]
+            }
+            CKind::TangentCircleAt => {
+                &[("circle", S::CircleOrArc), ("line", S::Line), ("at", S::Point)]
+            }
             CKind::CurveCurvature => {
                 &[("curve", S::Curve), ("circle", S::CircleOrArc), ("t", S::Param)]
             }
@@ -1278,6 +1324,8 @@ impl CKind {
             | CKind::CurveCurvature
             | CKind::SplineTangentLine
             | CKind::SplineCurvature
+            | CKind::SplineTangentAt
+            | CKind::CurveTangentAt
             // a fraction of a run or a turn
             | CKind::PointAlongLine
             | CKind::PointAlongArc
@@ -1299,8 +1347,8 @@ impl CKind {
     /// `Sketch::place_axis`).
     ///
     /// Several kinds share a word, and that is where the saving is: **`coincident` is nineteen
-    /// kinds, `distance` nine, `tangent` ten**, and `horizontal`/`vertical` are a line's direction
-    /// prefixed and, between a pair of points infixed, the aliases of `level`.
+    /// kinds, `distance` nine, `tangent` thirteen**, and `horizontal`/`vertical` are a line's
+    /// direction prefixed and, between a pair of points infixed, the aliases of `level`.
     ///
     /// The **surface word and the wire name are different things**: `report::registry_json` goes
     /// on publishing the snake_case `name` that both the binding and the JSON export key on, and
@@ -1320,7 +1368,7 @@ impl CKind {
             | CKind::PointAlongArc
             | CKind::PointAlongLine3
             | CKind::PointAlongArc3 => ("coincident", Infix),
-            CKind::CurveTangentLine => ("tangent", Infix),
+            CKind::CurveTangentLine | CKind::CurveTangentAt => ("tangent", Infix),
             CKind::CurveCurvature => ("curvature", Infix),
             CKind::CurveTouchesLine => ("touches", Infix),
             // a measured separation: told apart by the pair and by `along:`, which makes it an
@@ -1333,12 +1381,14 @@ impl CKind {
             // the ordinate's zero; `horizontal` and `vertical` between points are the standard
             // library's words for two of its readings (§9.9)
             CKind::Level => ("level", Infix),
-            // touching: six kinds, told apart by the pair and by `at:`
+            // touching: seven kinds, told apart by the pair and by `at:`
             CKind::TangentLineCircle
             | CKind::TangentLineCircleAt
             | CKind::TangentCircleCircle
             | CKind::TangentArcLine
             | CKind::SplineTangentLine
+            | CKind::SplineTangentAt
+            | CKind::TangentCircleAt
             => ("tangent", Infix),
             CKind::EqualLength | CKind::EqualRadius => ("equal", Infix),
             CKind::SplineCurvature => ("curvature", Infix),
@@ -1641,6 +1691,7 @@ impl CKind {
             CKind::PointOnCurve => FamilyKernel::Contact,
             CKind::PointOnExtrusion => FamilyKernel::Extrusion,
             CKind::CurveTangentLine => FamilyKernel::Tangent,
+            CKind::CurveTangentAt => FamilyKernel::TangentAt,
             CKind::CurveCurvature => FamilyKernel::Curvature,
             _ => return None,
         })
@@ -1669,7 +1720,10 @@ impl CKind {
             | CKind::SplineTangentLine
             | CKind::SplineCurvature
             | CKind::CurveTangentLine
-            | CKind::CurveCurvature => true,
+            | CKind::CurveCurvature
+            | CKind::SplineTangentAt
+            | CKind::CurveTangentAt
+            | CKind::TangentCircleAt => true,
             CKind::Coincident
             | CKind::Distance
             | CKind::Midpoint
@@ -1780,7 +1834,11 @@ impl CKind {
     /// mistake the type system cannot catch, so it says so.
     pub fn kernel(self) -> K {
         match self {
-            CKind::PointOnCurve | CKind::PointOnExtrusion | CKind::CurveTangentLine | CKind::CurveCurvature => {
+            CKind::PointOnCurve
+            | CKind::PointOnExtrusion
+            | CKind::CurveTangentLine
+            | CKind::CurveTangentAt
+            | CKind::CurveCurvature => {
                 panic!("a curve contact's kernel belongs to its definition, not its type")
             }
             CKind::SplineLength => panic!("a spline length's kernel belongs to its spline's count"),
@@ -1813,9 +1871,12 @@ impl CKind {
             // the arc kernel unchanged: its columns were always a contact point, a centre and a
             // line, and a circle's contact is the line's own endpoint
             CKind::TangentLineCircleAt => K::TangentArcLine,
+            // and at a point named: the same three things
+            CKind::TangentCircleAt => K::TangentArcLine,
             CKind::Symmetric => K::Symmetric,
             CKind::PointOnSpline => K::PointOnSpline,
             CKind::SplineTangentLine => K::SplineTangentLine,
+            CKind::SplineTangentAt => K::SplineTangentAt,
             CKind::SplineCurvature => K::SplineCurvature,
             CKind::PointAlongLine => K::PointAlongLine,
             CKind::PointAlongArc => K::PointAlongArc,
@@ -1932,6 +1993,9 @@ impl CKind {
             | CKind::CurveCurvature
             | CKind::SplineTangentLine
             | CKind::SplineCurvature
+            | CKind::SplineTangentAt
+            | CKind::CurveTangentAt
+            | CKind::TangentCircleAt
             | CKind::PointAlongLine
             | CKind::PointAlongArc
             | CKind::PointAlongLine3
@@ -2689,6 +2753,30 @@ impl Constraint {
             .collect()
     }
 
+    /// A tangent at a point already on its curve (#251): the slot holding its place, the point
+    /// and the curve — the contact holding that point there owns the place (`Sketch::add`).
+    pub fn tangent_at(&self) -> Option<(usize, usize, EntRef)> {
+        match self.kind {
+            CKind::SplineTangentAt | CKind::CurveTangentAt => match (&self.args[0], &self.args[2]) {
+                (Arg::Ent(on), Arg::Ent(at)) => Some((3, at.i(), *on)),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    /// A contact holding a point on a spline or a curve — the point, the curve and its place,
+    /// once allocated: what a tangent at that point reads its place from (#251).
+    pub fn holds_on(&self) -> Option<(usize, EntRef, u32)> {
+        let on_curve = matches!(self.kind, CKind::PointOnSpline | CKind::PointOnCurve);
+        match &self.args[..] {
+            [Arg::Ent(at), Arg::Ent(on), Arg::Param(p), ..] if on_curve && self.states_rows() => {
+                Some((at.i(), *on, *p))
+            }
+            _ => None,
+        }
+    }
+
     /// Whether this constraint owns the Param `p` — `aux_params` asked of one index, building
     /// nothing.
     pub fn owns(&self, p: u32) -> bool {
@@ -3016,6 +3104,7 @@ impl Constraint {
                 let l = &sk.lines[self.args[0].ent().i()];
                 Some(if at(1) { l.p1 } else { l.p2 } as usize)
             }
+            CKind::TangentCircleAt => Some(self.args[2].ent().i()),
             _ => None,
         }
     }
@@ -3276,6 +3365,7 @@ impl Constraint {
             }
             // both say "the radius is perpendicular to the line at the contact", so both are
             // [contact point, centre, line] — the arc names the line second, the circle first
+            CKind::TangentCircleAt => [pt(2), centre(0), ln(1)].concat(),
             CKind::TangentArcLine | CKind::TangentLineCircleAt => {
                 let at = self.contact_point(sk).unwrap();
                 let line = if self.kind == CKind::TangentArcLine { 1 } else { 0 };
@@ -3302,6 +3392,14 @@ impl Constraint {
             // column order, so the gradients that come back are the row
             CKind::CurveTangentLine => {
                 [vec![self.args[2].param()], sk.entity_params(e(0)), ln(1)].concat()
+            }
+            // the place the contact holding the point owns, then the tangency's columns: the
+            // point is the contact's to hold, and no column here
+            CKind::CurveTangentAt => {
+                [vec![self.args[3].param()], sk.entity_params(e(0)), ln(1)].concat()
+            }
+            CKind::SplineTangentAt => {
+                [vec![self.args[3].param()], self.span_params(sk, span), ln(1)].concat()
             }
             CKind::CurveCurvature => {
                 [vec![self.args[2].param()], sk.entity_params(e(0)), centre(1), vec![rad(1)]].concat()
@@ -3619,6 +3717,16 @@ pub fn seed_param(sk: &Sketch, kind: CKind, args: &[Arg], i: usize) -> f64 {
         (CKind::CurveCurvature, 2) => {
             let (cx, cy) = sk.point_xy(sk.round_center(args[1].ent()));
             sk.curve_nearest_by(args[0].ent().i(), |px, py| (px - cx).dhypot(py - cy))
+        }
+        // the tangent at a point starts where the point is: the contact holding it owns the
+        // place, and a statement without one (`Sketch::add` found none yet) starts beside it
+        (CKind::SplineTangentAt, 3) => {
+            let (x, y) = sk.point_xy(args[2].ent().i());
+            crate::curve::closest(sk, args[0].ent().i(), x, y).0
+        }
+        (CKind::CurveTangentAt, 3) => {
+            let (x, y) = sk.point_xy(args[2].ent().i());
+            sk.curve_nearest_by(args[0].ent().i(), |px, py| (px - x).dhypot(py - y))
         }
         // a point on a curve starts where the curve passes nearest it
         (CKind::PointOnCurve, 2) => {

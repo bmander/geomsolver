@@ -256,6 +256,7 @@ fn form(kn: &Kernel) -> Option<Form> {
         // a contact on a spline, along its own parameter as well as the curve's points (#121)
         "point_on_spline" => Jet(point_on_spline),
         "spline_tangent_line" => Jet(spline_tangent_line),
+        "spline_tangent_at" => Jet(spline_tangent_at),
         "spline_curvature" => Jet(spline_curvature),
         // the kernels in space are written once over `Num`, their forms with them
         name => return crate::kernels::num_form(name).map(Jet),
@@ -561,6 +562,14 @@ fn spline_tangent_line(v: &[Jet], k: &[f64], r: &mut [Jet]) {
     let (dx, dy) = (v[11] - v[9], v[12] - v[10]);
     r[0] = point_line_gap(&[c[0], c[1], v[9], v[10], v[11], v[12]]);
     r[1] = (c1[0] * dy - c1[1] * dx) / Jet::line_len(dx, dy);
+}
+
+/// (t, c0x … c3y, ax, ay, bx, by): the curve along the line where a contact holds its point
+/// (#251) — `spline_tangent_line`'s second row.
+fn spline_tangent_at(v: &[Jet], k: &[f64], r: &mut [Jet]) {
+    let [_, c1, _] = span_frame(v[0], &v[1..9], k);
+    let (dx, dy) = (v[11] - v[9], v[12] - v[10]);
+    r[0] = (c1[0] * dy - c1[1] * dx) / Jet::line_len(dx, dy);
 }
 
 /// (t, c0x … c3y, cx, cy, r): the centre is the centre of curvature, and the radius its

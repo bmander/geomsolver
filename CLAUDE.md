@@ -1379,7 +1379,7 @@ Conventions:
   `SharedPlace`: the unknown and its curve) for every contact on that curve (E040 otherwise, and
   for a name a dimension also reads: `Fault::Place`). `remove` retires it with its last owner;
   `graft` and `lift` read `Sketch::owned_arg`, the JSON `"shared"`. `tests/shared_contact.rs`.
-  **A point at a fraction of a line's run or an arc's turn** (#248, 0.79): `m coincident(t == 0.25)
+  **A point at a fraction of a line's run or an arc's turn** (#248, 0.80): `m coincident(t == 0.25)
   g` is `PointAlongLine` / `PointAlongArc` (twins in space `PointAlongLine3` / `PointAlongArc3`,
   `reading::in_space` carrying the place), chosen in `infix_op` only where `t` is written (a pin or
   a seed, `relations::settle`'s `sel`), so plain `coincident` pays no column; kernels written once
@@ -1489,6 +1489,20 @@ Conventions:
   guard is inside `witness::screen`: at a solution, a tangency present, removals capped at what
   the matching cannot account for, at most `SCREEN_MAX`.  A double root's singular value is as
   small as a real freedom's, so a candidate is recognised only by trying it.
+  **The tangent at a point of any path** (#251): `g tangent(at: m) l`, the parser reading `at:`
+  as a point unless it is `start`/`end`/`p1`/`p2` — of a spline `SplineTangentAt` (the
+  `spline_tangent_at` kernel, `spline_tangent_line`'s direction row alone), of a curve
+  `CurveTangentAt` (`FamilyKernel::TangentAt`), of a circle or arc `TangentCircleAt` (the
+  `tangent_arc_line` kernel over `[at, centre, line]`), of a line `parallel`. The spline's and
+  curve's own `t` is **the contact's**: `Sketch::add` hands it the place of the contact holding
+  `m` on `g` (`Constraint::tangent_at`/`holds_on`, `Sketch::holding`), whichever comes first
+  (`share_place` re-points an earlier tangent), whatever it arrived carrying, so a graft, JSON and
+  a lifted program (which never writes its `t`) share it again; `remove` keeps a place free while
+  any constraint owns it. None holding it is E040 (`relations::tangents_at`). A line and a spline
+  or curve touch whichever is written first (`settle` puts the curve first). A **`path`** formal
+  (`Ty::Path`) is an entity formal judged by kind at elaboration: what the call gave it must be a
+  line, arc, circle, spline or curve (`Expansion::paths`, `relations::paths`, E103 at the
+  argument). `tests/tangent_at.rs` and `tests/curve_contact.rs` are the gates.
 - `Horizontal`/`Vertical` level a line; a `Level` along a view's own axis levels a *pair of
   points* with the same line kernels, and `cgraph` gives it a `virtual_line` in the ground
   x-axis's direction class, so a levelled pair decomposes rather than falling to the residue.
@@ -1655,7 +1669,7 @@ Conventions:
   place a slot is spelled, read by both printers, as `hint_of` is for the clause around it.
   **The shape is the library's**: every user-facing kind has one or two entity slots, always first
   in spec order, with `Symmetric` the single three-slot exception.  Several kinds share a word —
-  **`coincident` is fifteen kinds, `distance` nine, `tangent` six** (twins in space included; a set's uses besides) — and `horizontal`/`vertical` are
+  **`coincident` is fifteen kinds, `distance` nine, `tangent` nine** (twins in space included; a set's uses besides) — and `horizontal`/`vertical` are
   two each with the *fixity* doing the work.
   **What a word means is the kinds of its operands, and a name does not carry its kind until
   elaboration** — so the parser resolves *nothing*: it produces a `syntax::Written` and

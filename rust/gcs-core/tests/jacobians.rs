@@ -231,6 +231,17 @@ fn all_constraints(seed: u32) -> Sketch {
         Constraint::point_on_spline(&sk, qe, spwe),
         Constraint::spline_tangent_line(&sk, spwe, le2),
         Constraint::spline_curvature(&sk, spwe, ce2),
+        // the tangent at a point a contact holds on the curve (#251): its place the contact's
+        Constraint::new(
+            CKind::SplineTangentAt,
+            vec![e(spe), e(le2), e(pe), Arg::Seed { value: 0.5, pinned: false }],
+        ),
+        Constraint::new(
+            CKind::SplineTangentAt,
+            vec![e(spwe), e(le1), e(qe), Arg::Seed { value: 0.5, pinned: false }],
+        ),
+        Constraint::new(CKind::TangentCircleAt, vec![e(ae), e(le1), e(pe)]),
+        Constraint::new(CKind::TangentCircleAt, vec![e(ce1), e(le2), e(qe)]),
         // a projection between two held planes, and the lift over a free plane and a held one
         Constraint::project(&sk, EntRef::point(dp), pe).expect("two images on two planes that fold"),
         Constraint::new(CKind::Lift, vec![e(EntRef::point(lc)), e(pce)]),

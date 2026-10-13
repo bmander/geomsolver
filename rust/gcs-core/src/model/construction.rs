@@ -566,6 +566,14 @@ impl Sketch {
                 self.place_axis(r);
             }
         }
+        // **the tangent at a point reads the place of the contact holding that point** (#251): one
+        // unknown, the contact's, whatever this statement arrived carrying — a seed, a pin, a
+        // name — so a copy or a document read back shares it again
+        if let Some((t, at, on)) = c.tangent_at() {
+            if let Some(p) = self.holding(at, on) {
+                c.args[t] = Arg::Param(p);
+            }
+        }
         for (i, name) in c.kind.param_slots() {
             if matches!(c.args[i], Arg::Param(_)) {
                 continue;   // already allocated (a constraint moved between sketches)
@@ -608,10 +616,51 @@ impl Sketch {
             let p = self.param_scaled(v, pinned, &format!("c{id}.{name}"), scale);
             c.args[i] = Arg::Param(p as u32);
         }
+        // and a contact arriving after a tangent at its point gives that tangent its place
+        let holds = c.holds_on();
         self.constraints.push(c);
+        if let Some((at, on, p)) = holds {
+            self.share_place(at, on, p);
+        }
         // the private geometry's own row, moving as the use does
         self.twin_new_intrinsic(self.constraints.len() - 1);
         id
+    }
+
+    /// The place the contact holding point `at` on curve `on` owns: the first such contact's
+    /// unknown, where one is in the sketch.
+    pub fn holding(&self, at: usize, on: EntRef) -> Option<u32> {
+        self.constraints.iter().find_map(|c| match c.holds_on() {
+            Some((a, e, p)) if a == at && e == on => Some(p),
+            _ => None,
+        })
+    }
+
+    /// Every tangent at point `at` of curve `on` reads place `p` (#251): one stated before the
+    /// contact holding its point took an unknown of its own, retired here once nothing owns it.
+    fn share_place(&mut self, at: usize, on: EntRef, p: u32) {
+        // a second contact holding the point there leaves the tangent with the first's
+        if self.holding(at, on) != Some(p) {
+            return;
+        }
+        let mut retired = Vec::new();
+        for c in self.constraints.iter_mut() {
+            let Some((t, a, e)) = c.tangent_at() else { continue };
+            if a != at || e != on {
+                continue;
+            }
+            if let Arg::Param(q) = c.args[t] {
+                if q != p {
+                    retired.push(q);
+                }
+            }
+            c.args[t] = Arg::Param(p);
+        }
+        for q in retired {
+            if !self.constraints.iter().any(|c| c.owns(q)) {
+                self.params[q as usize].fixed = true;
+            }
+        }
     }
 
     /// Drop a constraint.  Its own unknowns stay in the parameter vector — every index above
@@ -631,10 +680,10 @@ impl Sketch {
                 self.unplace_axis(r);
             }
         }
-        // a shared unknown stays free while another contact still owns it
+        // a shared unknown stays free while another contact still owns it — one shared by name
+        // (`t == s`) or a contact's place read by a tangent at its point (#251)
         for p in own {
-            let shared = self.shared.values().any(|s| s.param == p);
-            if !shared || !self.constraints.iter().any(|c| c.owns(p)) {
+            if !self.constraints.iter().any(|c| c.owns(p)) {
                 self.params[p as usize].fixed = true;
             }
         }
