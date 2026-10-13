@@ -69,11 +69,14 @@ fn a_sweep_that_reaches_nothing_is_refused() {
     assert_eq!(r.condition,Condition::Reach);
 }
 
+/// A ball under a single rotation is no generating sweep but the ball's tube (#238,
+/// `solid::canal`): built exactly, so the body it cuts is static and the class is never asked
+/// (whose contact rows would find it stationary, as a ring's below).
 #[test]
-fn a_single_rotation_is_refused_as_stationary() {
-    let r = refused(admit(&document(&sphere(0.),motions::TURN_SPINDLE,"turn",-60.,60.)));
-    assert_eq!(r.condition,Condition::Stationary);
-    assert!(r.witness.is_some());
+fn a_single_rotation_of_a_ball_is_its_tube() {
+    let e = fixtures::read(&document(&sphere(0.),motions::TURN_SPINDLE,"turn",-60.,60.));
+    assert!(gcs_core::solid::canal::is_canal(&e.sketch,fixtures::solid(&e,"removal")));
+    assert!(!e.sketch.is_swept(fixtures::solid(&e,"part")));
 }
 
 /// A prism with no pocket is not asked the planar class's rows (#65): its cap is refused by T1.

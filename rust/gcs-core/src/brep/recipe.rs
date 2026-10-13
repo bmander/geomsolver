@@ -84,6 +84,9 @@ pub fn node_named(n: &Json,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64
             prism(&profile,from-pad,to+pad)
         }
         "body" => body(n,built,built_names,floor),
+        // a ball swept by a turn or a screw (`solid::canal`, #238): the tube about its centre's path
+        "canal" => super::build::canal(vec3(field(n,"centre")?),field(n,"radius")?.as_f64(),vec3(field(n,"origin")?),
+            vec3(field(n,"axis")?),field(n,"angle")?.as_f64(),field(n,"advance")?.as_f64(),field(n,"face")?.as_str()),
         "region" => {
             // a region in general position (`solid::bounded`, #238): the common of the primitives
             // it keeps within, less those it keeps outside, each bounded past its material
@@ -340,6 +343,34 @@ pub fn meridian(recipe: &Json,seam: V) -> Result<Result<(Brep,V,V),String>,Strin
     })
 }
 
+/// A ball, where recipe node `n` is one: a whole revolution of a profile of lines on its axis and
+/// arcs of one circle centred on it (`tol` mm) — its centre and its radius.
+pub fn ball_of(n: &Json,tol: f64) -> Result<Option<(V,f64)>,String> {
+    use crate::space::{cross,norm,scale,sub};
+    use super::build::ProfileEdge;
+    if field(n,"kind")?.as_str() != "revolve" || (field(n,"angle")?.as_f64().abs()-std::f64::consts::TAU).abs() > 1e-9 {
+        return Ok(None)
+    }
+    let a = vec3(field(n,"axis")?);
+    let (o,a) = (vec3(field(n,"origin")?),scale(a,1./norm(a)));
+    let on = |p: V| norm(cross(sub(p,o),a)) <= tol;
+    let mut found: Option<(V,f64)> = None;
+    for e in Profile::from_json(field(n,"profile")?)?.loops.iter().flatten() {
+        match *e {
+            ProfileEdge::Line {a: p,b: q} => if !on(p) || !on(q) { return Ok(None) },
+            ProfileEdge::Arc {frame,r,..} => {
+                if !on(frame.o) { return Ok(None) }
+                match found {
+                    None => found = Some((frame.o,r)),
+                    Some((c,q)) => if norm(sub(c,frame.o)) > tol || (q-r).abs() > tol { return Ok(None) },
+                }
+            }
+            ProfileEdge::Spline(_) => return Ok(None),
+        }
+    }
+    Ok(found)
+}
+
 /// `meridian`'s region: a profile in the half-plane of its line towards `seam` (its outer loop
 /// first), with the line's point and direction.
 pub fn meridian_region(recipe: &Json,seam: V) -> Result<Result<(Profile,V,V),String>,String> {
@@ -354,26 +385,7 @@ pub fn meridian_region(recipe: &Json,seam: V) -> Result<Result<(Profile,V,V),Str
         size = size.max(norm(vec3(field(n,"origin")?))+norm(vec3(field(n,"axis")?)));
     }
     let tol = 1e-9*size;
-    // a ball: a revolution of a profile of lines on its axis and arcs of one circle centred on it
-    let ball = |n: &Json| -> Result<Option<(V,f64)>,String> {
-        let (o,a) = (vec3(field(n,"origin")?),unit(vec3(field(n,"axis")?)));
-        let on = |p: V| norm(cross(sub(p,o),a)) <= tol;
-        let mut found: Option<(V,f64)> = None;
-        for e in Profile::from_json(field(n,"profile")?)?.loops.iter().flatten() {
-            match *e {
-                ProfileEdge::Line {a: p,b: q} => if !on(p) || !on(q) { return Ok(None) },
-                ProfileEdge::Arc {frame,r,..} => {
-                    if !on(frame.o) { return Ok(None) }
-                    match found {
-                        None => found = Some((frame.o,r)),
-                        Some((c,q)) => if norm(sub(c,frame.o)) > tol || (q-r).abs() > tol { return Ok(None) },
-                    }
-                }
-                ProfileEdge::Spline(_) => return Ok(None),
-            }
-        }
-        Ok(found)
-    };
+    let ball = |n: &Json| ball_of(n,tol);
     // a conic's arc: a rational quadratic Bézier, its ends weighed alike
     let conic = |b: &super::nurbs::BSpline| -> Option<([V;3],f64)> {
         if b.degree != 2 || b.poles.len() != 3 || b.knots.len() != 6 { return None }

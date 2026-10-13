@@ -798,6 +798,22 @@ blank's face span is on its generator (`FaceSpan`, ordinates along it); only P i
 for the tip relief's kinks (the crown is regions, #214).
 `tests/hypoid_layout.rs` is the gate. The mesh export refuses a sheet a placement
 carries inside the blank; CLI test readers zero the offset.
+**A ball swept is its tube** (#238, `solid::canal`): a sweep whose tool's recipe is one ball
+(`brep::recipe::ball_of`) under one turn about one axis (`Family::turning`: a rotation, or a screw)
+is the points within the radius of its centre's path — the ball's disc square to the path carried
+along it (a partial `revolve`, a whole torus past a whole turn, or a loft along `Guide::Screw` /
+`Carry::Screw`, a `Blend` carried by a turn and a step) united with the half ball beyond each end
+(`brep::build::canal`): exact, its end poses the construction's own, so no clearance (E1) is asked
+and a sweep may stand alone. Refused (left the field's) where the tube would meet itself: the
+centre within the radius of the axis, or a helix past a turn climbing no more than the diameter a
+turn. The recipe's `"canal"` node (`centre`, `radius`, axis `origin`/`axis`, `angle`, `advance`,
+the ball's `face` naming every face; native OCCT refuses it by name); gated by agreement with the
+sweep's field (`Sketch::canal_cache`); `cad::contains_sweep`, `swept_cut` and `sweeps_among` read
+such a sweep as static material. Seams run off the path's plane (`build::SEAM`) and each half
+ball is a ball turned about an axis leaning off the path (`half_ball`, kept by `recipe::kept`): a
+plane through a sphere's parameter pole is a meeting this kernel's Booleans do not split.
+`swept_groove.sv`, `swept_spring.sv`, `solid_generating_sweep.sv`; `tests/canal.rs` (Pappus, to
+1e-9) is the gate. Field-path tests sweep the ball along a line instead (`solid_sweep.rs::slid`).
 **Continuous motion solids:** `removal := solid(tool, under: generating, from: -30deg, to: 30deg)`
 is the union over the whole interval, not posed meshes; `at:` and intervals exclusive.
 `MaterialField::read` promotes static DAGs when a sweep appears; nested sweeps refused; caches

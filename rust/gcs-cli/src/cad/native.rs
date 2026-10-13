@@ -114,6 +114,10 @@ impl Session {
     }
     fn primitive(&self,node: &Json,shapes: &BTreeMap<i64,c_int>) -> Result<c_int,String> {
         let kind = field(node,"kind").as_str();
+        if kind == "canal" {
+            return Err("native CAD export does not build a ball's tube (a ball swept by a turn or a screw); the core's kernel \
+                builds it (`--kernel rust`), held to the sweep's field".into());
+        }
         if kind == "lowered" {
             return Err("native CAD export does not build a lowered round or chamfer; the core's kernel builds them \
                 (`--kernel rust`), and `tests/fillet_oracle.rs` holds them to OCCT's own fillet".into());

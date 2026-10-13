@@ -64,8 +64,10 @@ pub fn recipe_static(sk: &Sketch,root: usize) -> Result<StaticRecipe,String> {
     recipe_with(sk,root,true)
 }
 
+/// Whether solid `i` holds a continuous sweep among its operands that only the generating class
+/// or the field builds: a ball's sweep built as its tube (`canal`, #238) is static material.
 pub(crate) fn contains_sweep(sk: &Sketch,i: usize) -> bool {
-    matches!(sk.solids[i].def,SolidDef::Swept {..})
+    matches!(sk.solids[i].def,SolidDef::Swept {..}) && !super::canal::is_canal(sk,i)
         || sk.solids[i].operands().into_iter().any(|o| contains_sweep(sk,o as usize))
 }
 
@@ -81,7 +83,7 @@ pub(crate) fn swept_operands(sk: &Sketch,i: usize) -> Vec<usize> {
 pub(crate) fn swept_cut(sk: &Sketch,i: usize) -> Result<Option<SweptCut>,String> {
     let solid = &sk.solids[i];
     match &solid.def {
-        SolidDef::Swept {source,..} => {
+        SolidDef::Swept {source,..} if !super::canal::is_canal(sk,i) => {
             if contains_sweep(sk,*source as usize) {
                 return Err(format!("`{}`: nested continuous sweeps are not yet supported",solid.name));
             }
@@ -172,6 +174,8 @@ fn recipe_with(sk: &Sketch,root: usize,static_only: bool) -> Result<StaticRecipe
         }
         let solid = &sk.solids[i];
         let mut node = match &solid.def {
+            // a ball under one turn: the tube about its centre's path (#238)
+            SolidDef::Swept {..} if let Some(c) = super::canal::built(sk,i) => c?.node(scale),
             SolidDef::Swept {..} => return Err(format!(
                 "`{}`: native CAD boundary construction for continuous motion sweeps is not yet supported",solid.name)),
             SolidDef::Placed { source, motion, at } => {
@@ -341,6 +345,8 @@ fn shifted_node(n: &Json,by: [f64;3]) -> Json {
     };
     let mut n = n.clone();
     nearest(&mut n,"origin","axis",false);
+    // a canal's ball centre is a point
+    if let Some(c) = n.get("centre").map(&point) { n.set("centre",c); }
     for k in ["profile","end"] { if let Some(p) = n.get(k).filter(|p| matches!(p,Json::Obj(_))).map(&profile) { n.set(k,p); } }
     if let Some(g) = n.get("guide").map(|g| points(g,&["start","center"])) { n.set("guide",g); }
     if let Some(Json::Arr(m)) = n.get("matrix") {

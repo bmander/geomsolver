@@ -193,6 +193,11 @@ pub struct Sketch {
     pub(crate) bounded_cache: std::cell::RefCell<
         BTreeMap<usize, (Vec<f64>, Option<Result<std::rc::Rc<crate::solid::bounded::Bounded>, String>>)>,
     >,
+    /// Each ball's sweep built as its tube (`solid::canal::built`, #238), against `solid::reads`:
+    /// the sweep test, the recipe and the exact boundary each ask it, and its gate reads the field.
+    pub(crate) canal_cache: std::cell::RefCell<
+        BTreeMap<usize, (Vec<f64>, Option<Result<std::rc::Rc<crate::solid::canal::Canal>, String>>)>,
+    >,
     /// Each body's faces as regions read them (`solid::faces::BodyFaces`, #183), against
     /// `solid::reads`: every round over one body reads the same stratum.
     pub faces_cache: std::cell::RefCell<

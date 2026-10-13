@@ -1,7 +1,9 @@
 // A curved groove: a ball-end cutter swung through an arc about an upright axis, cut into the top
 // of a block. The groove is everything the ball passes through, and a ball half sunk in the top
-// face leaves a round-bottomed channel. Change a number and apply (⌘↵) to watch it refine again;
-// ⌘B shows it in the glass box. Keep `arc_r + ball_r` inside the block's half width.
+// face leaves a round-bottomed channel. What a ball sweeps is the tube about its centre's path —
+// here a stretch of a torus with the ball at each end, where the cutter stops inside the block —
+// so the part is built exactly. ⌘B shows it in the glass box. Keep `arc_r + ball_r` inside the
+// block's half width.
 unit mm
 use std (below, right_of)
 

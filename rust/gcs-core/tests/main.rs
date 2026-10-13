@@ -20,6 +20,7 @@ mod fillet_definition;
 mod region_solids;
 mod region_general;
 mod region_exact;
+mod canal;
 mod region_faces;
 mod rounds;
 mod face_names;

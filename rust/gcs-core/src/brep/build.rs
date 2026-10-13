@@ -30,6 +30,19 @@ pub struct Profile { pub origin: V,pub normal: V,pub loops: Vec<Vec<ProfileEdge>
     pub names: Vec<Vec<String>> }
 
 impl Profile {
+    /// The same section carried by `m`.
+    pub fn moved(&self,m: &Rigid) -> Profile {
+        let loops = self.loops.iter().map(|l| l.iter().map(|e| match e {
+            ProfileEdge::Line {a,b} => ProfileEdge::Line {a:m.point(*a),b:m.point(*b)},
+            ProfileEdge::Arc {frame,r,span} => ProfileEdge::Arc {frame:frame.moved(m),r:*r,span:*span},
+            ProfileEdge::Spline(b) => {
+                let mut b = (**b).clone();
+                b.poles = b.poles.iter().map(|p| m.point(*p)).collect();
+                ProfileEdge::Spline(Arc::new(b))
+            }
+        }).collect()).collect();
+        Profile {origin:m.point(self.origin),normal:m.vector(self.normal),loops,names:self.names.clone()}
+    }
     /// The name of loop `l`'s edge `k`, or nothing.
     pub fn name(&self,l: usize,k: usize) -> String { self.names.get(l).and_then(|n| n.get(k)).cloned().unwrap_or_default() }
     /// From a recipe's `profile` (millimetres).
@@ -412,12 +425,80 @@ pub fn revolve(p: &Profile,origin: V,axis: V,angle: f64) -> Result<Brep,String> 
 /// axis it turns about right-handedly and the angle it turns through). Where it starts is the
 /// start section's business, which the faceted kernel checks against it (`solid::loft`).
 #[derive(Clone,Copy,Debug)]
-pub enum Guide { Line { delta: V },Arc { center: V,axis: V,angle: f64 } }
+pub enum Guide { Line { delta: V },Arc { center: V,axis: V,angle: f64 },
+    /// A helix: the arc's turn and a step of `advance` along its axis with it (#238).
+    Screw { center: V,axis: V,angle: f64,advance: f64 } }
+
+/// **The tube a ball sweeps** (#238): the ball of radius `r` about `c` carried by the screw about the
+/// line through `origin` along `axis` — a turn by `angle` and a step of `advance` along it (none, a
+/// turn) — is the points within `r` of the path its centre runs, and those are the ball's disc
+/// square to the path carried along it (a point's nearest point on the path inside it lies in the
+/// disc there) with the ball where the path starts and where it ends: the disc turned (a torus's
+/// stretch, a whole torus past a whole turn) or lofted along the helix (`Guide::Screw`), each end's
+/// half ball beyond its disc united with it. Every face is named `name`. The caller's to know the
+/// tube meets itself nowhere: the path's centre stands off the axis by more than `r`, and a helix
+/// of more than a turn climbs more than `2 r` a turn.
+pub fn canal(c: V,r: f64,origin: V,axis: V,angle: f64,advance: f64,name: &str) -> Result<Brep,String> {
+    let a = unit(axis);
+    let radial = sub(c,add(origin,scale(a,dot(sub(c,origin),a))));
+    // the centre's velocity at the start, square to the radial line
+    let rate = add(scale(cross(a,radial),angle),scale(a,advance));
+    let named = |mut b: Brep| { for f in &mut b.faces { f.name = name.to_string(); } b };
+    // a centre that does not move sweeps the ball itself
+    if norm(rate) <= 1e-12*r.max(1.) { return Ok(named(ball(c,a,r)?)) }
+    let t = unit(rate);
+    // where the disc's circle starts, so where the tube's seams run: turned off the radial line by
+    // an angle no design's symmetry gives (on it, the arc the seam's vertex sweeps lies in the plane
+    // of the centre's path, which a face often does — a groove's floor's block top)
+    let x0 = if norm(radial) > 0. { unit(radial) } else { Frame::about(c,t).x };
+    let (s,k) = SEAM.dsin_cos();
+    let x = add(scale(x0,k),scale(cross(t,x0),s));
+    // the balls' poles: leaning off the path by the same angle, toward the seam
+    let w = add(scale(t,k),scale(x,s));
+    let disc = Profile {origin:c,normal:t,loops:vec![vec![ProfileEdge::Arc {frame:Frame::new(c,t,x),r,span:None}]],names:Vec::new()};
+    if advance == 0. && angle.abs() >= TAU-1e-12 {
+        return Ok(named(revolve(&disc,origin,a,TAU*angle.signum())?))
+    }
+    let tube = if advance == 0. { revolve(&disc,origin,a,angle)? }
+        else { loft(&disc,None,&Guide::Screw {center:origin,axis:a,angle,advance})? };
+    let end = screw(origin,a,angle,advance);
+    let union = |s: &Brep,b: Brep| super::recipe::combined(s,&named(b),super::boolean::Op::Union,0.);
+    union(&union(&named(tube),half_ball(c,scale(t,-1.),w,r)?)?,half_ball(c,t,w,r)?.moved(&end))
+}
+
+/// How far round from the radial line a ball's tube's seams run (radians): the golden angle's
+/// fraction of a turn, which no symmetry of a design's makes.
+const SEAM: f64 = 0.6180339887498949;
+
+/// The ball of radius `r` about `c`: a half disc turned once about the diameter along the unit `w`,
+/// its poles where `w` meets the sphere.
+fn ball(c: V,w: V,r: f64) -> Result<Brep,String> {
+    let f = Frame::about(c,w);
+    let arc = ProfileEdge::Arc {frame:Frame::new(c,f.y,f.z),r,span:Some([0.,std::f64::consts::PI])};
+    let shut = ProfileEdge::Line {a:f.at([0.,0.,-r]),b:f.at([0.,0.,r])};
+    revolve(&Profile {origin:c,normal:f.y,loops:vec![vec![arc,shut]],names:Vec::new()},c,f.z,TAU)
+}
+
+/// The half of the ball of radius `r` about `c` on the side the unit `n` points to: the ball turned
+/// about the unit `w` kept beyond the plane through `c` square to `n`. `w` leans off `n` and off
+/// that plane, so neither of the sphere's poles is on the disc's circle or on the line through the
+/// centre along the path — which lies in the path's plane, as a face of the design often does,
+/// and a plane through a pole is a meeting this kernel's Booleans do not split.
+fn half_ball(c: V,n: V,w: V,r: f64) -> Result<Brep,String> {
+    super::recipe::kept(&ball(c,w,r)?,c,n,0.)
+}
+
+/// The screw about the line through `c` along the unit `a`: a turn by `angle` and a step of `advance`
+/// along it.
+fn screw(c: V,a: V,angle: f64,advance: f64) -> Rigid {
+    Rigid::turn(c,a,angle).then(&Rigid {r:Rigid::identity().r,t:scale(a,advance)})
+}
 
 /// A section swept along a guide, or lofted from it to a second section at the guide's end (Solvent
 /// §6.9: the start section square to the guide at its start, the end square to it at its end).
-/// Without an end section a line's sweep is a prism and an arc's a revolution about its axis; with
-/// one, each start edge is joined to the end edge written in its place (`ruled`).
+/// Without an end section a line's sweep is a prism and an arc's a revolution about its axis, and a
+/// screw's carries the start section to its own image at the guide's end; with one, each start edge
+/// is joined to the end edge written in its place (`ruled`).
 pub fn loft(start: &Profile,end: Option<&Profile>,guide: &Guide) -> Result<Brep,String> {
     match (guide,end) {
         (Guide::Line {delta,..},None) => {
@@ -435,6 +516,14 @@ pub fn loft(start: &Profile,end: Option<&Profile>,guide: &Guide) -> Result<Brep,
         (Guide::Line {delta,..},Some(end)) => ruled(start,end,Carry::Line {delta:*delta}),
         (Guide::Arc {center,axis,angle,..},Some(end)) =>
             ruled(start,end,Carry::Arc {center:*center,axis:unit(*axis),angle:*angle}),
+        (&Guide::Screw {center,axis,angle,advance},end) => {
+            let carry = Carry::Screw {center,axis:unit(axis),angle,advance};
+            let end = match end {
+                Some(end) => end.clone(),
+                None => start.moved(&screw(center,unit(axis),angle,advance)),
+            };
+            ruled(start,&end,carry)
+        }
     }
 }
 
@@ -450,6 +539,7 @@ fn ruled(start: &Profile,end: &Profile,carry: Carry) -> Result<Brep,String> {
     let (back,line) = match carry {
         Carry::Line {delta} => (Rigid {r:Rigid::identity().r,t:scale(delta,-1.)},Some(unit(delta))),
         Carry::Arc {center,axis,angle} => (Rigid::turn(center,axis,-angle),None),
+        Carry::Screw {center,axis,angle,advance} => (screw(center,axis,-angle,-advance),None),
     };
     let tol = 1e-9*(start.size()+end.size()+norm(sub(end.origin,start.origin)));
     let frame = Frame::about(start.origin,n);
