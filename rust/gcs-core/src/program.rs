@@ -10,6 +10,7 @@ mod lift;
 mod planes;
 mod views;
 mod reading;
+mod regions;
 mod relations;
 mod resolve;
 mod solids;
@@ -468,7 +469,7 @@ fn elaborate_in(
         }
     }
     // the points region solids' sets are applied to, whose bounds are the solids' terms (§6.21)
-    let mut probes = relations::Probes {
+    let mut probes = regions::Probes {
         terms: expansion.probes.iter().filter_map(|key| res.of.get(key)).map(|p| (p.i(), Vec::new()))
             .collect(),
         idle: BTreeMap::new(),
@@ -561,7 +562,7 @@ fn elaborate_in(
         }
         // a bound on measurements is a term of the region solid whose point it reads (#183 F3)
         if let StmtKind::Measured(m) = &st.kind {
-            relations::measured_term(&sk, &res, m, st, &mut probes, &mut diags);
+            regions::measured_term(&sk, &res, m, st, &mut probes, &mut diags);
             continue;
         }
         let StmtKind::Relation(r) = &st.kind else { continue };

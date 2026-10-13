@@ -22,7 +22,7 @@ pub(super) fn solids(
     map: &mut SourceMap,
     body: &[&Stmt],
     skip: &BTreeSet<StmtId>,
-    probes: &mut super::relations::Probes,
+    probes: &mut super::regions::Probes,
     diags: &mut Vec<Diag>,
 ) {
     let has = body.iter().any(|st| {

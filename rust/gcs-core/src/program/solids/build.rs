@@ -7,7 +7,7 @@ pub(super) fn build_solid(
     res: &Resolver,
     d: &Decl,
     st: &Stmt,
-    probes: &mut super::super::relations::Probes,
+    probes: &mut super::super::regions::Probes,
     diags: &mut Vec<Diag>,
 ) -> Option<usize> {
     let kids = d.children.first().map(Vec::as_slice).unwrap_or(&[]);
@@ -101,7 +101,7 @@ pub(super) fn build_solid(
                 return None;
             };
             let mut terms = probes.terms.remove(&p.i()).unwrap_or_default();
-            if let Err(m) = super::super::relations::fill_sets(sk, &mut terms, probes, p.i(), 0) {
+            if let Err(m) = super::super::regions::fill_sets(sk, &mut terms, probes, p.i(), 0) {
                 say(Code::E040, st.span, m);
                 return None;
             }
