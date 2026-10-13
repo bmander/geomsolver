@@ -33,6 +33,9 @@ fn compile_curve(
         match fo.ty {
             Ty::Group | Ty::Set => return Err((fo.span,
                 "a curve needs fixed scalar or entity formals; pass the group's members individually".into())),
+            Ty::Path => return Err((fo.span,
+                "a curve cannot be written over a path: it has no fixed number of coordinates"
+                    .into())),
             Ty::Ent(k) => {
                 let names = k.scalar_names(&fo.name.text).ok_or_else(|| {
                     (
@@ -699,7 +702,7 @@ fn curve_entity(
     let numeric = comp
         .formals
         .iter()
-        .any(|f| f.name.text == swept && !matches!(f.ty, crate::syntax::Ty::Ent(_)));
+        .any(|f| f.name.text == swept && !matches!(f.ty, crate::syntax::Ty::Ent(_) | crate::syntax::Ty::Path));
     if !numeric {
         return Err((
             Code::E040,
@@ -715,7 +718,7 @@ fn curve_entity(
     let mut unknowns: Vec<String> = Vec::new();
     for fo in &comp.formals {
         let name = fo.name.text.as_str();
-        if name == swept || matches!(fo.ty, crate::syntax::Ty::Ent(_) | crate::syntax::Ty::Group | crate::syntax::Ty::Set) {
+        if name == swept || matches!(fo.ty, crate::syntax::Ty::Ent(_) | crate::syntax::Ty::Path | crate::syntax::Ty::Group | crate::syntax::Ty::Set) {
             continue;
         }
         let Some(a) = info.values.get(name) else { continue };

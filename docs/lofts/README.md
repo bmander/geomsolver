@@ -106,7 +106,9 @@ fixtures.
    square to the guide it is no conflict: the plane leans, its normal the guide's part square to
    `up`.
 
-5. **One station word over any path** (`pending.On`) needs three things:
+5. **One station word over any path** (`pending.On`) needs three things (the first and the
+   third done, #251 — `path` and `g tangent(at: m) l` over every kind, `tests/tangent_at.rs`; the
+   second is #248):
    - a `path` formal type: a line, an arc, a spline, a traced curve, an envelope, or a named chain;
    - finding 2's `t` on every kind;
    - **the tangent at a point** on every kind:
@@ -117,6 +119,12 @@ fixtures.
        a curve need `g tangent(at: m) l`.
    - `tl tangent g` is refused where `g tangent tl` is accepted. Operand order carries meaning by
      design, but for a symmetric tangency the refusal reads as a bug.
+
+   Done in #251: `g tangent(at: m) l` reads the place of the contact holding `m` (one row), of an
+   arc or a circle it is the radius square to `l`, of a line `parallel`; a line and a spline or a
+   curve touch whichever is written first. With the dependency gone the spline station read DOF 1:
+   the tangent line's own length, `q` sliding along it, which the dependency had hidden. The words
+   now draw it 10 mm long — finding 13's paper cut again, a direction with no word of its own.
 
 6. **A chain as one path** (`pipe.sv`). The station runs over a named chain link by link (`s` from
    0 to 5), so the joints need no gluing and the wall is one face per section edge across the

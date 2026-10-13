@@ -3,7 +3,7 @@
 #[allow(unused_imports)]
 use crate::fmath::Det;
 use super::boolean::{boolean,Op};
-use super::build::{loft,prism,revolve,Guide,Profile};
+use super::build::{drafted,loft,prism,revolve,Guide,Profile};
 use super::geom::{widen,Rigid,V,EMPTY};
 use super::topo::Brep;
 use crate::json::Json;
@@ -47,7 +47,8 @@ pub fn node_named(n: &Json,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64
         built.get(&field(n,k)?.as_i64()).ok_or(format!("recipe: `{k}` not built before its user"))
     };
     match kind {
-        "prism" => prism(&Profile::from_json(field(n,"profile")?)?,field(n,"from")?.as_f64(),field(n,"to")?.as_f64()),
+        "prism" => drafted(&Profile::from_json(field(n,"profile")?)?,field(n,"from")?.as_f64(),field(n,"to")?.as_f64(),
+            n.get("draft").map_or(0.,Json::as_f64)),
         "revolve" => revolve(&Profile::from_json(field(n,"profile")?)?,vec3(field(n,"origin")?),
             vec3(field(n,"axis")?),field(n,"angle")?.as_f64()),
         "loft" => {
@@ -84,6 +85,24 @@ pub fn node_named(n: &Json,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64
             prism(&profile,from-pad,to+pad)
         }
         "body" => body(n,built,built_names,floor),
+        // a ball swept by a turn or a screw (`solid::canal`, #238): the tube about its centre's path
+        "canal" => super::build::canal(vec3(field(n,"centre")?),field(n,"radius")?.as_f64(),vec3(field(n,"origin")?),
+            vec3(field(n,"axis")?),field(n,"angle")?.as_f64(),field(n,"advance")?.as_f64(),field(n,"face")?.as_str()),
+        "region" => {
+            // a region in general position (`solid::bounded`, #238): the common of the primitives
+            // it keeps within, less those it keeps outside, each bounded past its material
+            let mut solid: Option<Brep> = None;
+            for piece in field(n,"pieces")?.arr() {
+                let b = node_named(piece,built,built_names,floor)?;
+                let keep = matches!(field(piece,"keep")?,Json::Bool(true));
+                solid = Some(match solid {
+                    None if keep => b,
+                    None => return Err("recipe: a region's first piece is one it keeps within".into()),
+                    Some(s) => combined(&s,&b,if keep { Op::Common } else { Op::Cut },floor)?,
+                });
+            }
+            solid.ok_or_else(|| "recipe: a region of no pieces".to_string())
+        }
         "lowered" => {
             // a region set's pieces (`solid::lowering`, #194): each run a prism or a revolution,
             // each corner the ball's patch built where it stands; those joined (a run ending in the section a
@@ -221,13 +240,15 @@ fn surface_of(j: &Json) -> Result<super::geom::Surface,String> {
     Ok(match field(j,"kind")?.as_str() {
         "plane" => Surface::Plane(Frame::about(vec3(field(j,"origin")?),vec3(field(j,"normal")?))),
         "cylinder" => Surface::Cylinder(Frame::about(vec3(field(j,"origin")?),vec3(field(j,"axis")?)),radius()?),
+        "cone" => Surface::Cone(Frame::about(vec3(field(j,"origin")?),vec3(field(j,"axis")?)),radius()?,field(j,"half")?.as_f64()),
         "sphere" => Surface::Sphere(Frame::about(vec3(field(j,"origin")?),[0.,0.,1.]),radius()?),
         k => return Err(format!("recipe: a face on a surface of kind `{k}`")),
     })
 }
 
-/// `piece` kept within (`inside`) or outside the solid a cylinder or a sphere bounds: in common with
-/// it, or less it, the cylinder long enough to reach past the piece either way.
+/// `piece` kept within (`inside`) or outside the solid a cylinder, a cone or a sphere bounds: in
+/// common with it, or less it, the cylinder or the cone long enough to reach past the piece either
+/// way (a cone short of its apex).
 pub fn kept_by_solid(piece: &Brep,surface: &super::geom::Surface,inside: bool,floor: f64) -> Result<Brep,String> {
     use crate::space::{add,distance,dot,scale,sub};
     use super::build::ProfileEdge;
@@ -242,6 +263,18 @@ pub fn kept_by_solid(piece: &Brep,surface: &super::geom::Surface,inside: bool,fl
             let reach = distance(lo,hi)+radius;
             let circle = ProfileEdge::Arc {frame:Frame::about(foot,f.z),r:radius,span:None};
             prism(&Profile {origin:foot,normal:f.z,loops:vec![vec![circle]],names:Vec::new()},-reach,reach)?
+        }
+        Surface::Cone(f,radius,half) => {
+            // a frustum about the axis, lofted between its circles either side of the middle's foot
+            let h = dot(sub(middle,f.o),f.z);
+            let reach = distance(lo,hi)+radius;
+            let at = |k: f64| -> Result<Profile,String> {
+                let (o,r) = (add(f.o,scale(f.z,h+k)),radius+(h+k)*half.dtan());
+                if !(r > 0.) { return Err("a piece kept by a cone reaching past its apex".into()) }
+                Ok(Profile {origin:o,normal:f.z,loops:vec![vec![ProfileEdge::Arc {frame:Frame::about(o,f.z),r,span:None}]],
+                    names:Vec::new()})
+            };
+            loft(&at(-reach)?,Some(&at(reach)?),&Guide::Line {delta:scale(f.z,2.*reach)})?
         }
         Surface::Sphere(f,radius) => {
             // a half disc turned once about a line through the centre
@@ -325,6 +358,34 @@ pub fn meridian(recipe: &Json,seam: V) -> Result<Result<(Brep,V,V),String>,Strin
     })
 }
 
+/// A ball, where recipe node `n` is one: a whole revolution of a profile of lines on its axis and
+/// arcs of one circle centred on it (`tol` mm) — its centre and its radius.
+pub fn ball_of(n: &Json,tol: f64) -> Result<Option<(V,f64)>,String> {
+    use crate::space::{cross,norm,scale,sub};
+    use super::build::ProfileEdge;
+    if field(n,"kind")?.as_str() != "revolve" || (field(n,"angle")?.as_f64().abs()-std::f64::consts::TAU).abs() > 1e-9 {
+        return Ok(None)
+    }
+    let a = vec3(field(n,"axis")?);
+    let (o,a) = (vec3(field(n,"origin")?),scale(a,1./norm(a)));
+    let on = |p: V| norm(cross(sub(p,o),a)) <= tol;
+    let mut found: Option<(V,f64)> = None;
+    for e in Profile::from_json(field(n,"profile")?)?.loops.iter().flatten() {
+        match *e {
+            ProfileEdge::Line {a: p,b: q} => if !on(p) || !on(q) { return Ok(None) },
+            ProfileEdge::Arc {frame,r,..} => {
+                if !on(frame.o) { return Ok(None) }
+                match found {
+                    None => found = Some((frame.o,r)),
+                    Some((c,q)) => if norm(sub(c,frame.o)) > tol || (q-r).abs() > tol { return Ok(None) },
+                }
+            }
+            ProfileEdge::Spline(_) => return Ok(None),
+        }
+    }
+    Ok(found)
+}
+
 /// `meridian`'s region: a profile in the half-plane of its line towards `seam` (its outer loop
 /// first), with the line's point and direction.
 pub fn meridian_region(recipe: &Json,seam: V) -> Result<Result<(Profile,V,V),String>,String> {
@@ -339,26 +400,7 @@ pub fn meridian_region(recipe: &Json,seam: V) -> Result<Result<(Profile,V,V),Str
         size = size.max(norm(vec3(field(n,"origin")?))+norm(vec3(field(n,"axis")?)));
     }
     let tol = 1e-9*size;
-    // a ball: a revolution of a profile of lines on its axis and arcs of one circle centred on it
-    let ball = |n: &Json| -> Result<Option<(V,f64)>,String> {
-        let (o,a) = (vec3(field(n,"origin")?),unit(vec3(field(n,"axis")?)));
-        let on = |p: V| norm(cross(sub(p,o),a)) <= tol;
-        let mut found: Option<(V,f64)> = None;
-        for e in Profile::from_json(field(n,"profile")?)?.loops.iter().flatten() {
-            match *e {
-                ProfileEdge::Line {a: p,b: q} => if !on(p) || !on(q) { return Ok(None) },
-                ProfileEdge::Arc {frame,r,..} => {
-                    if !on(frame.o) { return Ok(None) }
-                    match found {
-                        None => found = Some((frame.o,r)),
-                        Some((c,q)) => if norm(sub(c,frame.o)) > tol || (q-r).abs() > tol { return Ok(None) },
-                    }
-                }
-                ProfileEdge::Spline(_) => return Ok(None),
-            }
-        }
-        Ok(found)
-    };
+    let ball = |n: &Json| ball_of(n,tol);
     // a conic's arc: a rational quadratic Bézier, its ends weighed alike
     let conic = |b: &super::nurbs::BSpline| -> Option<([V;3],f64)> {
         if b.degree != 2 || b.poles.len() != 3 || b.knots.len() != 6 { return None }

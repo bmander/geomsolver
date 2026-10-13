@@ -43,6 +43,15 @@ fn swept(c: V,a: V,b: Box3) -> Box3 {
     (std::array::from_fn(|k| c[k]+(h[0]*a[k]).min(h[1]*a[k])-across(k)),std::array::from_fn(|k| c[k]+(h[0]*a[k]).max(h[1]*a[k])+across(k)))
 }
 
+/// `swept`, the box also stepped up to `advance` along the axis: every point a screw about the line
+/// through `c` along `a` carries one of `b`'s, turned any way and stepped no further than that.
+fn screwed(c: V,a: V,advance: f64,b: Box3) -> Box3 {
+    let step = scale(unit(a),advance);
+    let mut out = swept(c,a,b);
+    widen(&mut out,swept(c,a,(add(b.0,step),add(b.1,step))));
+    out
+}
+
 /// Where in `[t0, t1]` `p cos t + q sin t` turns, and whether to its greatest (`φ + 2nπ`, `φ` the
 /// angle of `(p, q)`) or its least (`φ + (2n + 1)π`): none where it does not turn at all.
 fn turns(p: f64,q: f64,[t0,t1]: [f64;2]) -> impl Iterator<Item=(f64,bool)> {
@@ -152,9 +161,11 @@ pub enum Surface {
 }
 
 /// What carries a loft's blended section along its guide as `v` runs from 0 to 1: a step along a
-/// line, or a turn by `angle` about the axis through `center` along the unit `axis`.
+/// line, a turn by `angle` about the axis through `center` along the unit `axis`, or a screw — that
+/// turn and a step of `advance` along the axis with it (#238: a ball's normal disc carried along a
+/// helix).
 #[derive(Clone,Copy,Debug,PartialEq)]
-pub enum Carry { Line { delta: V },Arc { center: V,axis: V,angle: f64 } }
+pub enum Carry { Line { delta: V },Arc { center: V,axis: V,angle: f64 },Screw { center: V,axis: V,angle: f64,advance: f64 } }
 
 impl Carry {
     fn turn(axis: V,angle: f64,p: V) -> V {
@@ -166,20 +177,30 @@ impl Carry {
         match *self {
             Carry::Line {delta} => add(p,scale(delta,v)),
             Carry::Arc {center,axis,angle} => add(center,Carry::turn(axis,angle*v,sub(p,center))),
+            Carry::Screw {center,axis,angle,advance} =>
+                add(add(center,Carry::turn(axis,angle*v,sub(p,center))),scale(axis,advance*v)),
         }
     }
     /// A direction carried to `v` (turned, never moved).
     pub fn dir(&self,d: V,v: f64) -> V {
-        match *self { Carry::Line {..} => d,Carry::Arc {axis,angle,..} => Carry::turn(axis,angle*v,d) }
+        match *self {
+            Carry::Line {..} => d,
+            Carry::Arc {axis,angle,..} | Carry::Screw {axis,angle,..} => Carry::turn(axis,angle*v,d),
+        }
     }
     /// `d/dv` of `at(p, v)` for a fixed `p`, at the carried point `q = at(p, v)`.
     fn rate(&self,q: V) -> V {
-        match *self { Carry::Line {delta} => delta,Carry::Arc {center,axis,angle} => scale(cross(axis,sub(q,center)),angle) }
+        match *self {
+            Carry::Line {delta} => delta,
+            Carry::Arc {center,axis,angle} => scale(cross(axis,sub(q,center)),angle),
+            Carry::Screw {center,axis,angle,advance} => add(scale(cross(axis,sub(q,center)),angle),scale(axis,advance)),
+        }
     }
     pub fn moved(&self,m: &Rigid) -> Carry {
         match *self {
             Carry::Line {delta} => Carry::Line {delta:m.vector(delta)},
             Carry::Arc {center,axis,angle} => Carry::Arc {center:m.point(center),axis:m.vector(axis),angle},
+            Carry::Screw {center,axis,angle,advance} => Carry::Screw {center:m.point(center),axis:m.vector(axis),angle,advance},
         }
     }
 }
@@ -240,7 +261,7 @@ impl Blend {
     fn feature(&self) -> f64 {
         let edge = |c: &Curve| match c { Curve::Circle(_,r) => *r,Curve::BSpline(_) => least_radius(c),_ => f64::INFINITY };
         let mut f = edge(&self.a).min(edge(&self.b));
-        if let Carry::Arc {center,axis,..} = self.carry {
+        if let Carry::Arc {center,axis,..} | Carry::Screw {center,axis,..} = self.carry {
             for k in 0..=8 { for j in 0..=2 {
                 let x = self.d1([k as f64/8.,j as f64/2.]).0;
                 f = f.min(norm(cross(sub(x,center),axis)));
@@ -463,10 +484,13 @@ impl Surface {
     pub fn bounds_over(&self,range: impl FnOnce() -> [[f64;2];2]) -> Box3 {
         if self.ruled() { return EMPTY }
         if let Surface::Blend(_,b) = self {
-            let Carry::Arc {center,axis,..} = b.carry else { unreachable!() };
             let mut sections = b.a.bounds(b.ta);
             widen(&mut sections,b.b.bounds(b.tb));
-            return swept(center,axis,sections)
+            return match b.carry {
+                Carry::Arc {center,axis,..} => swept(center,axis,sections),
+                Carry::Screw {center,axis,advance,..} => screwed(center,axis,advance,sections),
+                Carry::Line {..} => unreachable!("a loft carried along a line is ruled"),
+            }
         }
         let [u,v] = range();
         let meridians = |f: &Frame,at: &dyn Fn(f64) -> Box3| -> Box3 {
@@ -1014,6 +1038,10 @@ impl Curve {
                 Carry::Arc {center,axis,..} => {
                     let ((a,_,_),(z,_,_)) = b.ends(u);
                     swept(center,axis,hull([t0,t1].map(|v| add(scale(a,1.-v),scale(z,v)))))
+                }
+                Carry::Screw {center,axis,advance,..} => {
+                    let ((a,_,_),(z,_,_)) = b.ends(u);
+                    screwed(center,axis,advance,hull([t0,t1].map(|v| add(scale(a,1.-v),scale(z,v)))))
                 }
             },
             Curve::Traced(ref c) => {

@@ -55,20 +55,31 @@ fn continuous_sweep_source_has_the_full_interval_and_endpoint_caps() {
         let got = material(&e.sketch,i,p);
         assert!(got[0] <= expected+1e-12 && got[1] >= expected-1e-12,"{p:?}: {got:?}, {expected}");
     }
-    assert!(solid::cad::recipe(&e.sketch,i).unwrap_err().contains("continuous motion sweeps"));
+    // a ball under one turn: its recipe the tube about its centre's arc (#238, `solid::canal`)
+    let recipe = solid::cad::recipe(&e.sketch,i).unwrap();
+    assert_eq!(recipe.get("nodes").unwrap().arr().last().unwrap().get("kind").unwrap().as_str(),"canal");
 }
+
+/// The ball of `solid_generating_sweep.sv` slid 2 along the spindle over the roll rather than
+/// turned about it: a capsule, π + 2π + 4π/3 = 10π/3, which no ball's tube builds (`canal` takes a
+/// turn), so its surface is the field's.
+fn slid() -> String {
+    include_str!("../../examples/solid_generating_sweep.sv")
+        .replace("generating := motion(about: spindle)","generating := motion(along: spindle, advance: 6mm)")
+}
+const CAPSULE: f64 = 10.*std::f64::consts::PI/3.;
 
 #[test]
 fn a_continuous_sweep_is_meshed_from_its_field() {
-    // A unit sphere swept along a circle of radius 3 through ±60°: a tube of length 2π and the
-    // two hemispherical caps, 2π² + 4π/3.
-    let e = read(include_str!("../../examples/solid_generating_sweep.sv"));
+    // A unit sphere slid 2 along the spindle: a capsule (`slid`).
+    let e = read(&slid());
     let i = e.map.ent_named("removal.body").unwrap().i();
+    assert!(e.sketch.is_swept(i));
     let solid = e.sketch.evaluated_solid(i,solid::ApproximationPolicy::Mesh).unwrap();
-    let exact = 2.*std::f64::consts::PI.powi(2)+4./3.*std::f64::consts::PI;
+    let exact = CAPSULE;
     assert!((solid.volume()-exact).abs() < 0.03*exact,"volume {} against {exact}",solid.volume());
     assert!(solid.contains_world(solid::WorldPoint([3.,0.,0.])));
-    assert!(solid.contains_world(solid::WorldPoint([1.5,2.598,0.])));
+    assert!(solid.contains_world(solid::WorldPoint([3.,0.2,1.6])));
     assert!(!solid.contains_world(solid::WorldPoint([-3.,0.,0.])));
     // Every pixel length a view asks with is the one field mesh.
     let view = e.sketch.evaluated_solid(i,solid::ApproximationPolicy::from_unit(0.01)).unwrap();
@@ -193,7 +204,7 @@ fn a_swept_surface_meshes_finer_when_asked() {
 
 #[test]
 fn a_swept_surface_is_refined_in_steps_and_supplied_to_the_drawing() {
-    let e = read(include_str!("../../examples/solid_generating_sweep.sv"));
+    let e = read(&slid());
     let i = e.map.ent_named("removal.body").unwrap().i();
     let mut mesher = solid::FieldMesher::new(&e.sketch,i).unwrap();
     let mut seen = Vec::new();
@@ -228,7 +239,7 @@ fn a_swept_surface_is_refined_in_steps_and_supplied_to_the_drawing() {
     e.sketch.supply_field(i,surface).unwrap();
     assert!(!e.sketch.field_provisional(i).unwrap());
     let done = e.sketch.evaluated_solid(i,solid::ApproximationPolicy::Mesh).unwrap();
-    let exact = 2.*std::f64::consts::PI.powi(2)+4./3.*std::f64::consts::PI;
+    let exact = CAPSULE;
     assert!(!done.provisional() && (done.volume()-exact).abs() < 0.03*exact,"{}",done.volume());
     assert!(done.stl().is_ok());
 }
@@ -238,7 +249,7 @@ fn a_swept_surface_is_refined_in_steps_and_supplied_to_the_drawing() {
 /// the drawing moves — and a supplied surface the core cannot use is refused with the reason.
 #[test]
 fn field_jobs_name_the_swept_objects_and_supplied_surfaces_are_checked() {
-    let source = include_str!("../../examples/solid_generating_sweep.sv");
+    let source = &slid();
     let e = read(source);
     let jobs = e.sketch.field_jobs();
     let i = e.map.ent_named("removal.body").unwrap().i();

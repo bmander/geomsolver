@@ -122,6 +122,8 @@ impl RegionField {
         Self { empty: true, terms: vec![never], support: None, size: 1.0 }
     }
     pub fn is_empty(&self) -> bool { self.empty }
+    /// The box the region lies within (`polytope_box`), where one is known.
+    pub fn support(&self) -> Option<[[f64; 2]; 3]> { self.support }
     pub fn value(&self, p: P3) -> f64 { self.value_piece(p).0 }
     /// The value and the term that decides it.
     pub fn value_piece(&self, p: P3) -> (f64, usize) {

@@ -263,8 +263,19 @@ designs, both members) are the gates.
 `SpatialField` leaf (each term its surface's exact signed distance, the largest; a box's enclosure
 the centre's value within its half-diagonal), its support the box of the planes every term lies
 within (`polytope_box`, refused unbounded). Evaluated as sweeps are (`sweeps_among`: the field's
-surface) unless the lowering table builds it (below); else no exact construction (`cad.rs` says so,
-naming the region). `tests/region_general.rs` is the gate.
+surface) unless the lowering table builds it (below) or **the common of its terms** does (#238,
+`solid::bounded`: every term a ball, a cylinder, a cone narrower than square or a half-space, no
+offset — each a primitive bounded past the support, kept within in common, kept outside taken
+away; the recipe's `"region"` node, `"pieces"` each with `"keep"`; gated by agreement with the
+field, `Sketch::bounded_cache`); else no exact construction (`cad.rs` says so, naming the region).
+**A sum of distances the meridian folds** (#238, `region::foci`): from one point, or two alike in
+weight, on its axis (the line through them chooses it when nothing else does) — a ball, an
+ellipsoid's half ellipse (two `Seg::Conic` quarters), the plane midway, or a hyperboloid's lobe
+(`lobe`: hyperbolic conic arcs, `w = cosh`, a unit of `u` each); held to the field as rounds are
+(`agrees`). A conic's `Seg::param` tells a hyperbola's other branch off its arc (both ends'
+barycentric coordinates below nothing). `tests/region_general.rs` and `tests/region_exact.rs`
+(closed forms to 1e-9) are the gates; `brep_census.rs::exact_census` (ignored) sorts every corpus
+object by its route.
 **A bound on measurements** (#183 F3): `distance(p, f1) + distance(p, f2) <= 10mm` in a set's
 body is `StmtKind::Measured`, **parsed once** (#190, `parser/measured.rs`, where a statement calls
 a measurement and compares outside every bracket, `compared_ahead`): each side a
@@ -468,6 +479,25 @@ plain declared name without building the alias table, and
 `region::in_general_position`/`folded` key a face-reading region on `reads_own` and the strata
 (`faces::cached`'s `Arc`s), never `reads` (which walks the body's every other round).
 `tests/conrod.rs` is the gate.
+**Draft (§6.9, 0.80, #245):** `solid(f, from:, to:, draft: θ)` (or `depth:`) is
+`SolidDef::Prism::draft` (radians; `None` undrafted): the section at ordinate `h` is `f` moved `|h|
+tan θ` into its material from its own plane, the parting plane (an outer loop in, a hole out). Every
+evaluator reads it: the facets (`primitive::prism`'s `taper`, `offset` by mitres, a side breaking at
+the plane; `drafted_away` refuses a side taken to nothing, at validation), the field
+(`ExtrudedField::drafted`: the side's value plus `|w| tan`, times the cosine — exact only where
+`PlanarField::draftable`: convex loops of lines and whole circles, else refused) and the exact
+kernel (the recipe's prism `"draft"`; `brep::build::drafted`: `offset` the profile — a line moved
+square, a circle's radius, corners where lines cross or where sides go on tangent, an arc at an
+angle refused — and `ruled` lofts each side of the plane, `boolean::glued` there; OCCT refuses it).
+Faces keep the prism's names, a side crossing the plane two pieces of one name; a round over such a
+face takes the pieces as one (`round(r) X` never rounds their crease), and the field's set distances
+read a face in pieces on several surfaces meeting convex surface by surface
+(`Reading::convex_pieces`, `conditions`: within, and at least `d` off where also within), else a
+projection flips between pieces at the crease. The lowering table's run ends on a cone
+(`Surf::Cone`, the recipe's `"kept"` cone a lofted frustum, `kept_by_solid`). A canal across the
+parting plane (two pieces each side, `brep::fillet::roll`) is refused, naming the turn (rung 3).
+Refused besides: a drafted side as a set or a carrier, an extruded surface or a tool. `rod.sv` is
+drafted 3°; `tests/draft.rs` is the gate.
 **Distance from a set, offsets (§6.21, 0.64, #145 F4):** `p distance(d, side: outside|inside) S`
 (`distance` is a set use, `may_use`), `p inside(d) S` / `p outside(d) S` and `std.Offset(S, d)` are
 one bound on the signed distance from `S`'s surface (`Reach`: cmp toward the outside, whether
@@ -795,6 +825,22 @@ in, and N for the tip relief's kinks (beyond C as their pitch points: `distance(
 to_inner)`). `tests/hypoid_layout.rs` is the gate (the recorded pair to 1e-9 from the words alone,
 from rough starts and from the wrong side of every bound). The mesh export refuses a sheet a
 placement carries inside the blank; CLI test readers zero the offset.
+**A ball swept is its tube** (#238, `solid::canal`): a sweep whose tool's recipe is one ball
+(`brep::recipe::ball_of`) under one turn about one axis (`Family::turning`: a rotation, or a screw)
+is the points within the radius of its centre's path — the ball's disc square to the path carried
+along it (a partial `revolve`, a whole torus past a whole turn, or a loft along `Guide::Screw` /
+`Carry::Screw`, a `Blend` carried by a turn and a step) united with the half ball beyond each end
+(`brep::build::canal`): exact, its end poses the construction's own, so no clearance (E1) is asked
+and a sweep may stand alone. Refused (left the field's) where the tube would meet itself: the
+centre within the radius of the axis, or a helix past a turn climbing no more than the diameter a
+turn. The recipe's `"canal"` node (`centre`, `radius`, axis `origin`/`axis`, `angle`, `advance`,
+the ball's `face` naming every face; native OCCT refuses it by name); gated by agreement with the
+sweep's field (`Sketch::canal_cache`); `cad::contains_sweep`, `swept_cut` and `sweeps_among` read
+such a sweep as static material. Seams run off the path's plane (`build::SEAM`) and each half
+ball is a ball turned about an axis leaning off the path (`half_ball`, kept by `recipe::kept`): a
+plane through a sphere's parameter pole is a meeting this kernel's Booleans do not split.
+`swept_groove.sv`, `swept_spring.sv`, `solid_generating_sweep.sv`; `tests/canal.rs` (Pappus, to
+1e-9) is the gate. Field-path tests sweep the ball along a line instead (`solid_sweep.rs::slid`).
 **Continuous motion solids:** `removal := solid(tool, under: generating, from: -30deg, to: 30deg)`
 is the union over the whole interval, not posed meshes; `at:` and intervals exclusive.
 `MaterialField::read` promotes static DAGs when a sweep appears; nested sweeps refused; caches
@@ -1479,6 +1525,20 @@ Conventions:
   guard is inside `witness::screen`: at a solution, a tangency present, removals capped at what
   the matching cannot account for, at most `SCREEN_MAX`.  A double root's singular value is as
   small as a real freedom's, so a candidate is recognised only by trying it.
+  **The tangent at a point of any path** (#251): `g tangent(at: m) l`, the parser reading `at:`
+  as a point unless it is `start`/`end`/`p1`/`p2` — of a spline `SplineTangentAt` (the
+  `spline_tangent_at` kernel, `spline_tangent_line`'s direction row alone), of a curve
+  `CurveTangentAt` (`FamilyKernel::TangentAt`), of a circle or arc `TangentCircleAt` (the
+  `tangent_arc_line` kernel over `[at, centre, line]`), of a line `parallel`. The spline's and
+  curve's own `t` is **the contact's**: `Sketch::add` hands it the place of the contact holding
+  `m` on `g` (`Constraint::tangent_at`/`holds_on`, `Sketch::holding`), whichever comes first
+  (`share_place` re-points an earlier tangent), whatever it arrived carrying, so a graft, JSON and
+  a lifted program (which never writes its `t`) share it again; `remove` keeps a place free while
+  any constraint owns it. None holding it is E040 (`relations::tangents_at`). A line and a spline
+  or curve touch whichever is written first (`settle` puts the curve first). A **`path`** formal
+  (`Ty::Path`) is an entity formal judged by kind at elaboration: what the call gave it must be a
+  line, arc, circle, spline or curve (`Expansion::paths`, `relations::paths`, E103 at the
+  argument). `tests/tangent_at.rs` and `tests/curve_contact.rs` are the gates.
 - `Horizontal`/`Vertical` level a line; a `Level` along a view's own axis levels a *pair of
   points* with the same line kernels, and `cgraph` gives it a `virtual_line` in the ground
   x-axis's direction class, so a levelled pair decomposes rather than falling to the residue.
@@ -1645,7 +1705,7 @@ Conventions:
   place a slot is spelled, read by both printers, as `hint_of` is for the clause around it.
   **The shape is the library's**: every user-facing kind has one or two entity slots, always first
   in spec order, with `Symmetric` the single three-slot exception.  Several kinds share a word —
-  **`coincident` is fifteen kinds, `distance` nine, `tangent` six** (twins in space included; a set's uses besides) — and `horizontal`/`vertical` are
+  **`coincident` is fifteen kinds, `distance` nine, `tangent` nine** (twins in space included; a set's uses besides) — and `horizontal`/`vertical` are
   two each with the *fixity* doing the work.
   **What a word means is the kinds of its operands, and a name does not carry its kind until
   elaboration** — so the parser resolves *nothing*: it produces a `syntax::Written` and

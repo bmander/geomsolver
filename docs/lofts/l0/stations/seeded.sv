@@ -46,7 +46,9 @@ component OnSpline(g: spline, view: plane, up: axis, s: Scalar) {
     q := point
     tl := line(m, q)
   }
-  g tangent(t == s) tl
+  g tangent(at: m) tl
+  // drawn a length, or `q` slides along it (finding 13: a direction has no word without one)
+  distance(10mm) tl
   n := plane
   n.origin coincident m
   n square(up: up) tl

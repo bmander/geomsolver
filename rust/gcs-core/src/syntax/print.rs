@@ -346,7 +346,7 @@ fn dim(a: &Arg) -> String {
 
 /// Sweep arguments are document expressions, preserved through canonical printing.
 fn sweep_parts(s: &Sweep) -> Vec<String> {
-    match s {
+    let mut parts = match s {
         Sweep::Swept {motion,from,to} => {
             let mut text = String::from("under: ");
             write_ref(&mut text,motion);
@@ -369,8 +369,8 @@ fn sweep_parts(s: &Sweep) -> Vec<String> {
             write_ref(&mut text, body);
             vec![text]
         },
-        Sweep::Prism { from, to } => vec![format!("from: {}", dim(from)), format!("to: {}", dim(to))],
-        Sweep::Depth { depth } => vec![format!("depth: {}", dim(depth))],
+        Sweep::Prism { from, to, .. } => vec![format!("from: {}", dim(from)), format!("to: {}", dim(to))],
+        Sweep::Depth { depth, .. } => vec![format!("depth: {}", dim(depth))],
         Sweep::Revolve { axis, sweep, sense } => {
             let mut about = String::from("about: ");
             write_ref(&mut about, axis);
@@ -383,7 +383,9 @@ fn sweep_parts(s: &Sweep) -> Vec<String> {
             }
             parts
         }
-    }
+    };
+    parts.extend(s.draft().map(|d| format!("draft: {}", dim(d))));
+    parts
 }
 
 /// One property of a style, as a `style` block writes it.
@@ -780,7 +782,15 @@ pub fn operator_text(kind: CKind, args: &[Option<Arg>]) -> String {
         if matches!(a, Arg::Word(w) if w.is_empty()) {
             continue;
         }
-        if sk.takes_ref() {
+        // and the place of a tangent at a point is the contact's, written with the contact
+        if sk.is_param() && matches!(kind, CKind::SplineTangentAt | CKind::CurveTangentAt) {
+            continue;
+        }
+        // the point a tangent is at goes in the parentheses by its name (#251), as written:
+        // unlabelled it would read as `symmetry`'s third entity
+        if sk.takes_ref() && *name == "at" {
+            parens.push(format!("at: {}", write_arg(name, *sk, a)));
+        } else if sk.takes_ref() {
             ents.push(write_arg(name, *sk, a));
         } else if sk.is_param() {
             let (pin, hint) = slot_text(name, a);

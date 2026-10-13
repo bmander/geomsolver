@@ -216,6 +216,10 @@ pub struct Expansion {
     pub face_planes: Vec<FacePlane>,
     /// The hidden axis each side used as a set is level along, for the elaborator to seed.
     pub face_axes: Vec<FaceAxis>,
+    /// Every `path` formal bound (#251): the absolute name of what the call gave it, where the
+    /// argument is written and the formal's name — for the elaborator to judge once it knows
+    /// what each name is (E103).
+    pub paths: Vec<(String, Span, String)>,
 }
 
 /// One instance, as bound: which component, under what prefix, given what.
@@ -298,6 +302,11 @@ struct Walk<'a> {
     /// A group or set formal's alias key, where it was given, and which of the two it wants:
     /// checked against what the alias reaches once every name is known (`resolve`).
     group_bindings: Vec<(String, Span, crate::syntax::Ty)>,
+    /// A `path` formal's alias key, where it was given and the formal's name: resolved with the
+    /// rest (`resolve`) into `Expansion::paths`.
+    path_bindings: Vec<(String, Span, String)>,
+    /// Those resolved.
+    paths: Vec<(String, Span, String)>,
     group_fields: Vec<(String, Span)>,
     /// The dotted names a dimension's text reads that nothing numeric in scope answers to, with
     /// where each was written and the scope to resolve it in: judged once every name is known
@@ -411,7 +420,7 @@ pub fn expand_component(prog: &Program, comp: &Component, units: Units) -> Expan
     let mut vals: BTreeMap<String, Aff> = BTreeMap::new();
     for f in &comp.formals {
         match f.ty {
-            Ty::Ent(_) | Ty::Group | Ty::Set => {
+            Ty::Ent(_) | Ty::Path | Ty::Group | Ty::Set => {
                 w.names.insert(f.name.text.clone());
             }
             // a variable of the curve: a free value named after itself, which the ordinary
@@ -460,6 +469,8 @@ impl<'a> Walk<'a> {
             standard_datums,
             group_names: BTreeSet::new(),
             group_bindings: Vec::new(),
+            path_bindings: Vec::new(),
+            paths: Vec::new(),
             group_fields: Vec::new(),
             dim_reads: Vec::new(),
             pending: Vec::new(),
@@ -551,6 +562,7 @@ impl<'a> Walk<'a> {
             face_repeats: self.face_repeats,
             face_planes: self.face_planes,
             face_axes: self.face_axes,
+            paths: self.paths,
         }
     }
 }

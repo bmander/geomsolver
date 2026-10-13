@@ -6,13 +6,18 @@ use lofts
 // The one word the three above stand in for: the plane square to any path `g` — a line, an arc, a
 // spline, a traced curve, an envelope, or a named chain of them run link by link — where its
 // parameter is `s`, its `v` along `up`. It asks two things of the language (README, findings 2
-// and 5): `coincident(t == s)` on every kind of path, and the tangent at a point of every kind.
+// and 5): `coincident(t == s)` on every kind of path (#248, and #249 for `m` in space), and the
+// tangent at a point of every kind — `path` and `g tangent(at: m) tl` are #251's, and this word
+// elaborates over a line, an arc and a spline once `m` is drawn in the guide's view
+// (`tests/tangent_at.rs`).
 component On(g: path, up: axis, s: Scalar) {
   m := point
   m coincident(t == s) g
   q := point
   tl := line(m, q)
   g tangent(at: m) tl
+  // drawn a length, or `q` slides along it (finding 13: a direction has no word without one)
+  distance(10mm) tl
   n := plane
   n.origin coincident m
   n square(up: up) tl

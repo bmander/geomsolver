@@ -102,7 +102,7 @@ fn every_constraint_type_is_printable() {
         if kind.soft_by_default() {
             continue; // soft, and never in a document — `user_constraints` filters it
         }
-        if matches!(kind, CKind::PointOnCurve | CKind::PointOnExtrusion | CKind::CurveTangentLine | CKind::CurveCurvature | CKind::CurveLength | CKind::Stationary | CKind::CurveTouchesLine) {
+        if matches!(kind, CKind::PointOnCurve | CKind::PointOnExtrusion | CKind::CurveTangentLine | CKind::CurveTangentAt | CKind::CurveCurvature | CKind::CurveLength | CKind::Stationary | CKind::CurveTouchesLine) {
             // a curve's contacts print, but the curve they name lifts as an instance of a
             // component the sketch does not hold the text of, so there is nothing for them to
             // round-trip against here; `tests/curve_contact.rs` prints them from a document (and
@@ -490,6 +490,10 @@ fn fixture(kind: CKind) -> (Sketch, Constraint) {
     // the third point of a Symmetric-shaped statement must not repeat the first two
     if kind == CKind::Symmetric {
         args[2] = Arg::Ent(EntRef::line(l2));
+    }
+    // the tangent at a point of a spline reads the place of the contact holding the point (#251)
+    if kind == CKind::SplineTangentAt {
+        sk.add(Constraint::point_on_spline(&sk, EntRef::point(p), EntRef::spline(sp)));
     }
     (sk, Constraint::new(kind, args))
 }
