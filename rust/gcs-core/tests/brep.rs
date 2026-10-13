@@ -1352,7 +1352,8 @@ fn solids_sharing_a_face_are_glued_along_it() {
 /// Where two faces touch at a point of both their boundaries and their meeting runs into neither
 /// beyond it, they meet there alone: a quarter torus whose start touches a block's side at its
 /// inner equator (the plane there crosses the torus in two branches, off both faces) is their
-/// union, as it was before the second-order reading refused it as nearly touching.
+/// union, as it was before the second-order reading refused it as nearly touching; and where one
+/// branch runs into both, it is traced up to the touch.
 #[test]
 fn a_quarter_torus_touching_a_block_at_a_corner_meets_it_there_alone() {
     use gcs_core::brep::boolean::{boolean,Op};
@@ -1364,9 +1365,20 @@ fn a_quarter_torus_touching_a_block_at_a_corner_meets_it_there_alone() {
     b.check(1e-8).unwrap();
     close(volume(&b),18.+1.5*PI*PI);
     // the block run on past y = 0: the torus cuts into it through that point, along a branch into
-    // both faces, which no trace follows through the touch: refused, never read as none
-    let crossed = boolean(&block([-1.,-3.,-1.],[2.,1.,1.]),&quarter,Op::Union,1e-9);
-    assert!(crossed.as_ref().is_err_and(|e| e.contains("nearly touching")),"{:?}",crossed.map(|b| volume(&b)));
+    // both faces — traced up to the touch and ended there (#218's 1). What they share: at each
+    // distance ρ from the axis the tube's section turned from where it leaves x ≤ 2 to where it
+    // leaves y ≤ 1, `asin(1/ρ) − acos(2/ρ)`, over ρ in (2, √5), by quadrature (ρ = 2 + (√5 − 2) u²)
+    let crossed = boolean(&block([-1.,-3.,-1.],[2.,1.,1.]),&quarter,Op::Union,1e-9).unwrap();
+    crossed.check(1e-8).unwrap();
+    let (lo,hi) = (2f64,5f64.sqrt());
+    let n = 20_000;
+    let g = |u: f64| {
+        let rho = lo+(hi-lo)*u*u;
+        let turn = ((1./rho).min(1.).asin()-(2./rho).min(1.).acos()).max(0.);
+        turn*rho*2.*(1.-(rho-3.)*(rho-3.)).max(0.).sqrt()*2.*(hi-lo)*u
+    };
+    let shared = (1..n).map(|k| if k%2 == 1 { 4. } else { 2. }*g(k as f64/n as f64)).sum::<f64>()/(3.*n as f64)+g(1.)/(3.*n as f64);
+    assert!((volume(&crossed)-(24.+1.5*PI*PI-shared)).abs() <= 1e-9*24.,"{} against {}",volume(&crossed),24.+1.5*PI*PI-shared);
 }
 
 /// A corner where a fillet rounds all three edges: the cell between the vertex and the ball's

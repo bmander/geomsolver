@@ -586,7 +586,7 @@ fn a_rods_sides_are_filled_where_it_splits_the_plates_top() {
 /// The same rod cut as a groove, its rims along the plate's top rounded: convex, so the same word
 /// takes them away — the ball within the plate and outside the groove, its section the fill's
 /// mirror. (Rounding its rims at the plate's ends too mitres a run against a ring's stretch on one
-/// cylinder, which this kernel's union does not yet resolve.)
+/// cylinder: `a_grooves_rims_rounded_all_round_mitre_on_the_groove`.)
 #[test]
 fn a_grooves_rims_are_rounded_away() {
     let src = include_str!("../../examples/rounds/rail.sv").replace("rod union rail", "rod cut rail")
@@ -597,21 +597,53 @@ fn a_grooves_rims_are_rounded_away() {
     close(props::volume(&b), 60.0 * 10.0 * 40.0 - PI * 36.0 / 2.0 * 40.0 - 2.0 * 40.0 * beside_cylinder(6.0, 2.0));
 }
 
+/// `∫ f` over `[a, b]` by adaptive Simpson's rule, to `tol`.
+fn simpson(f: &dyn Fn(f64) -> f64, a: f64, b: f64, tol: f64) -> f64 {
+    fn step(f: &dyn Fn(f64) -> f64, a: f64, b: f64, fa: f64, fm: f64, fb: f64, whole: f64, tol: f64, depth: u32) -> f64 {
+        let m = 0.5 * (a + b);
+        let (lm, rm) = (f(0.5 * (a + m)), f(0.5 * (m + b)));
+        let (left, right) = ((m - a) / 6.0 * (fa + 4.0 * lm + fm), (b - m) / 6.0 * (fm + 4.0 * rm + fb));
+        if depth == 0 || (left + right - whole).abs() <= 15.0 * tol {
+            return left + right + (left + right - whole) / 15.0;
+        }
+        step(f, a, m, fa, lm, fm, left, tol / 2.0, depth - 1) + step(f, m, b, fm, rm, fb, right, tol / 2.0, depth - 1)
+    }
+    let (fa, fm, fb) = (f(a), f(0.5 * (a + b)), f(b));
+    step(f, a, b, fa, fm, fb, (b - a) / 6.0 * (fa + 4.0 * fm + fb), tol, 48)
+}
+
 /// **A run mitred against a ring's stretch on one cylinder** (#218's 1): the groove's rims rounded
 /// all round — along the plate's top (two runs) and at its ends (two half rings). At each corner a
-/// run and a stretch meet, each with a face on the groove's cylinder; their union is found (the
-/// faces they share on one cylinder, the line where a run's round touches the groove taken once)
-/// up to where the two rounds meet, which ends where both touch the groove — three surfaces
-/// tangent at one point, which this kernel's trace does not follow (#58): refused, naming that.
+/// run and a stretch meet, each with a face on the groove's cylinder; their union shares those
+/// faces on the one cylinder, and the two rounds meet in a curve ending where both touch the
+/// groove — a point where the run's cylinder and the ring's torus touch, their meeting two branches
+/// crossing there (`ssi::touch`), one of which runs into both faces: traced up to it and ended there.
+///
+/// The volume: the plate less the groove, less the two runs and the two half rings, plus what a
+/// run and a stretch share at each of the four corners, counted twice. About the groove's axis at
+/// the corner, a point of the run's section at distance `ρ` (from 6 out to where the ball touches
+/// the top, √60) lies between the top and the run's ball, through the angle `φ(ρ) = α − acos((ρ² +
+/// 60)/16ρ)` below the top (`α` the ball's touch on the groove); the stretch takes along the groove
+/// from the end face `2 − √(4 − (ρ − 8)²)`. So each corner shares `∫ (2 − √(4 − (ρ − 8)²)) φ(ρ) ρ
+/// dρ`, by quadrature (`ρ = 6 + (√60 − 6) u²` for the root at 6).
 #[test]
-fn a_grooves_rims_rounded_all_round_are_refused_where_three_surfaces_touch() {
+fn a_grooves_rims_rounded_all_round_mitre_on_the_groove() {
     let src = include_str!("../../examples/rounds/rail.sv").replace("rod union rail", "rod cut rail");
     let e = solved(&src);
     assert_eq!(lowered(&e).0, 3);
-    let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
-    let refusal = export::exact(&e.sketch, ent(&e, "rail").i(), None, None, &say).err().expect("refused");
-    assert!(format!("{refusal:?}").contains("a cylinder and a torus meet at 0.00°")
-        && format!("{refusal:?}").contains("nearly touching: their meeting is ill-conditioned there"), "{refusal:?}");
+    let b = exported(&e, "rail");
+    let (top, alpha) = (60f64.sqrt(), 2f64.atan2(60f64.sqrt()));
+    let shared = |u: f64| {
+        let rho = 6.0 + (top - 6.0) * u * u;
+        let phi = alpha - ((rho * rho + 60.0) / (16.0 * rho)).min(1.0).acos();
+        let along = 2.0 - (4.0 - (rho - 8.0) * (rho - 8.0)).max(0.0).sqrt();
+        along * phi.max(0.0) * rho * 2.0 * (top - 6.0) * u
+    };
+    let corner = simpson(&shared, 0.0, 1.0, 1e-13);
+    let want = 60.0 * 10.0 * 40.0 - PI * 36.0 / 2.0 * 40.0 - 2.0 * 40.0 * beside_cylinder(6.0, 2.0)
+        - root_ring(6.0, 2.0) + 4.0 * corner;
+    close(props::volume(&b), want);
+    agrees_with_field(&e, "rail", 0.01);
 }
 
 /// The groove's rim at the plate's near face: a half circle, its round a stretch of a ring ending
@@ -827,3 +859,4 @@ fn a_corner_where_two_bores_meet_a_face_is_rounded() {
     assert!(k.get("sphere").is_some_and(|&n| n >= 4) && k.contains_key("torus"), "{k:?}");
     agrees_with_field(&e, "block", 0.01);
 }
+
