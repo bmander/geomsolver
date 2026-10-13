@@ -1,6 +1,6 @@
 # Continuous generating volumes: first experiment
 
-This work implemented the first investigation toward the spiral-bevel pair's solid.
+This work implements the first investigation in the [gear roadmap](spiral-bevel-roadmap.md).
 The solid remains defined by a continuous union of generator positions, followed by
 subtraction from the blank. No new public gear solid or boundary extractor is implemented
 by this experiment.

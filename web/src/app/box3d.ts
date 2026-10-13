@@ -21,6 +21,8 @@ import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js
 import { mesh, objects, preview } from '../core/mesh.js';
 import type { Face, Mesh } from '../core/mesh.js';
 import { overview3 } from '../core/overview.js';
+import { solidEdges } from '../core/workspace.js';
+import type { SolidEdge } from '../core/workspace.js';
 import type { Item3 } from '../core/overview.js';
 import { COL, chromeOf, inkOf } from './paint.js';
 import type { Combining, SketchView } from './view.js';
@@ -47,6 +49,9 @@ const GHOST = 0.4;
 /** A pane's frame, in screen pixels: the plane being drawn on is bold.  WebGL draws every
  *  `LineBasicMaterial` one pixel wide whatever it is asked, so a frame is a fat line. */
 const FRAME_PX = { plain: 1, current: 2.5 };
+
+/** An edge the Fillet or Chamfer tool has picked, or would pick under the pointer, in pixels. */
+const EDGE_PX = { picked: 3.5, hover: 2.5 };
 
 /** The kinds that stand in space and on no one plane, so are this renderer's to draw. */
 const IN_SPACE = new Set(['axis']);
@@ -103,10 +108,16 @@ export class Box3D {
    *  refused preview (a body with a swept operand, never previewed) leaves the target standing
    *  and the tools as ghosts, which say as much. */
   private preview: { key: string | null; shown: boolean } = { key: null, shown: false };
+  /** **The edges an edge tool has picked**, and the one under the pointer, lit over everything:
+   *  rebuilt when what is picked or hovered changes, or the objects are re-cut. */
+  private readonly litEdges = new THREE.Group();
+  private litKey: string | null = null;
+  /** Each object's edges, as the core gave them, kept until the objects are re-cut. */
+  private readonly edgesOf = new Map<number, SolidEdge[]>();
 
   constructor(readonly canvas: HTMLCanvasElement | null) {
     this.scene.background = new THREE.Color(INK.bg);
-    this.scene.add(this.datums, this.objects, this.previewed);
+    this.scene.add(this.datums, this.objects, this.previewed, this.litEdges);
     // a headlight and a soft fill: the object is read for its shape, so the light follows the
     // eye rather than standing somewhere in the world and leaving half of it dark
     this.scene.add(new THREE.AmbientLight(0xffffff, 1.6));
@@ -139,6 +150,7 @@ export class Box3D {
       if (objects) {
         this.buildObjects(v, overview3(v.sketch, 0, 'objects'));
         this.preview.key = null;          // a preview is of the objects as they stood
+        this.forgetLit();                 // and so are the edges lit on them
       }
       this.built = {
         sketch: v.sketch, solid: v.showSolid,
@@ -150,6 +162,11 @@ export class Box3D {
     const c = v.showSolid ? v.combining : null;
     const key = c && `${c.word} ${c.target.index} ${c.tools.map((t) => t.index).join(' ')}`;
     if (key !== this.preview.key) this.buildPreview(v, c, key);
+    const r = v.rounding;
+    const hover = v.hoverEdge;
+    const lit = r || hover
+      ? JSON.stringify([r && [r.solid, r.edges], hover && [hover.solid, hover.faces]]) : null;
+    if (lit !== this.litKey) this.buildLit(v, lit);
     this.aim(v);
     this.chrome(v, c);
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -293,6 +310,38 @@ export class Box3D {
     this.preview.shown = true;
   }
 
+  /** The edges an edge tool has picked, and the one under the pointer, as fat lines drawn over
+   *  the material: the core's stretches of each, read once per change. */
+  private buildLit(v: SketchView, key: string | null): void {
+    release(this.litEdges);
+    this.litKey = key;
+    const draw = (solid: number, pairs: [string, string][], color: string, px: number) => {
+      if (!this.edgesOf.has(solid)) this.edgesOf.set(solid, solidEdges(v.sketch, solid));
+      const pts: number[] = [];
+      for (const e of this.edgesOf.get(solid)!) {
+        if (!pairs.some(([a, b]) => e.faces[0] === a && e.faces[1] === b)) continue;
+        for (const seg of e.segs) pts.push(...seg);
+      }
+      if (!pts.length) return;
+      const g = new LineSegmentsGeometry();
+      g.setPositions(pts);
+      const m = new LineMaterial({ color, linewidth: px, depthTest: false, transparent: true });
+      m.resolution.set(v.width, v.height);
+      const line = new LineSegments2(g, m);
+      line.renderOrder = 10;
+      this.litEdges.add(line);
+    };
+    if (v.rounding) draw(v.rounding.solid, v.rounding.edges, COL.sel, EDGE_PX.picked);
+    if (v.hoverEdge) draw(v.hoverEdge.solid, [v.hoverEdge.faces], COL.highlight, EDGE_PX.hover);
+  }
+
+  /** The lit edges let go, with the edges they were read from: the objects were re-cut. */
+  private forgetLit(): void {
+    release(this.litEdges);
+    this.litKey = null;
+    this.edgesOf.clear();
+  }
+
   /** **What the app says about the scene, written per frame.**  The selection and the plane being
    *  drawn on change without the drawing changing, so they are a material write and never a
    *  rebuild: the ink rule itself is `paint.ts`'s, so a thing picked is lit the same colour here
@@ -333,6 +382,15 @@ export class Box3D {
       m.color.set(tool ? INK[c!.word] : INK.solid);
       m.emissive.set(tool ? INK[c!.word] : pick ? COL.sel : 0x000000);
       m.emissiveIntensity = tool ? 0.35 : !pick ? 0 : pick.face === path ? 0.55 : 0.18;
+      // a face an edge tool picked, whole — every edge of it
+      if (v.rounding?.solid === solid) {
+        const whole = v.rounding.faces.includes(path);
+        m.emissive.set(whole ? COL.sel : 0x000000);
+        m.emissiveIntensity = whole ? 0.55 : 0;
+      }
+    }
+    for (const line of this.litEdges.children as LineSegments2[]) {
+      line.material.resolution.set(v.width, v.height);
     }
   }
 
@@ -384,6 +442,7 @@ export class Box3D {
     release(this.objects);
     release(this.previewed);
     this.preview = { key: null, shown: false };
+    this.forgetLit();
   }
 }
 

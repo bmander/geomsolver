@@ -8,7 +8,8 @@ import { editDimension } from './commands.js';
 import { invalidateRows } from './lists.js';
 import { view } from './shell.js';
 import { toast } from './ui.js';
-import type { LiveDim, LiveExtent } from './view.js';
+import { roundsEdges } from './view.js';
+import type { LiveDim, LiveExtent, Rounding } from './view.js';
 
 /** A dimension's number as a person reads and writes it: what it was written as if it was
  *  written (`w` for a `param`, which is also what its callout says), else what the drawing says
@@ -85,6 +86,14 @@ class NumberBox {
     if (!this.el || !at) return;
     this.el.style.left = `${at[0] + dx}px`;
     this.el.style.top = `${at[1]}px`;
+  }
+
+  /** Give it the keyboard, its text selected until somebody types: a click on the canvas took
+   *  it, and what is typed next is the number. */
+  focus(): void {
+    if (!this.el) return;
+    this.el.focus();
+    if (!this.typed) this.el.select();
   }
 
   close(): void {
@@ -195,4 +204,38 @@ export function onExtent(live: LiveExtent | null, at: [number, number] | null): 
   if (!live) return extentBox.close();
   extentBox.show(io.fmt(live.d, 6));
   extentBox.place(at, 12);
+}
+
+const roundBox = new NumberBox('a round\'s radius, or how far a chamfer\'s flat runs along each '
+  + 'face: a number, or an expression over the document\'s numbers.\nClick more edges or faces '
+  + 'first if you like.\nEnter to write it, Esc to let them go',
+  (commit, keepOpen) => finishRound(commit, keepOpen));
+/** The edge tool's number.  Enter writes the word over what was picked, keeping the box open on a
+ *  refusal; Esc lets the picks go; a click away (another edge, perhaps) keeps what was typed for
+ *  the Enter that follows. */
+function finishRound(commit: boolean, keepOpen = false): void {
+  if (!roundBox.open) return;
+  const text = roundBox.text;
+  if (!commit) {
+    roundBox.close();
+    view.endRound();
+    view.tellRound();
+    return;
+  }
+  if (!keepOpen) {
+    const word = roundsEdges(view.tool);
+    if (word && text) view.roundSize[word] = text;
+    return;
+  }
+  const why = view.finishRound(text);
+  if (why) toast(why);
+}
+
+/** Edges or faces are picked for rounding, and this is where the number is asked and what it
+ *  offers — or nulls when nothing is.  Wired onto the view in `main`. */
+export function onRound(r: Rounding | null, at: [number, number] | null, size: string): void {
+  if (!r) return roundBox.close();
+  roundBox.show(size);
+  roundBox.place(at);
+  roundBox.focus();
 }

@@ -1,6 +1,6 @@
 //! What a solve says about planes that elaboration could not: two planes of a projection that
 //! came out parallel, two lines meant to have a common perpendicular that came out parallel
-//! (E065), and two planes that lie on one another (W113, #81).
+//! (E065), and two planes that lie on one another (W113, `docs/planes-plan.md`).
 
 #[allow(unused_imports)]
 use crate::fmath::Det;
@@ -206,7 +206,7 @@ fn points(sk: &Sketch, e: EntRef, out: &mut Vec<usize>, depth: u32) {
     }
 }
 
-/// **Where the planes stand, before the drawing is solved** (#81): a seed
+/// **Where the planes stand, before the drawing is solved** (`docs/planes-plan.md`): a seed
 /// that reads a place in another plane is read through that plane's pose, and a plane whose
 /// axes or place the document solves for starts where its seeds put it — a fold line at the
 /// world origin, say, when it stands on a line a hundred millimetres off.  So the statements

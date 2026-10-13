@@ -66,6 +66,7 @@ mod diagnose;
 mod drag;
 mod edit;
 mod edit_datums;
+mod edit_rounds;
 mod edit_solids;
 mod extrude;
 mod ellipse;

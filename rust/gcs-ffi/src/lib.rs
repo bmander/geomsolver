@@ -2342,6 +2342,52 @@ pub unsafe extern "C" fn gcs_workspace_pick_solid_json(h: *mut Sketch, az: f64, 
     })
 }
 
+/// Where two faces of object `solid` meet, in space: `[{faces: [a, b], segs: [[ax, ay, az, bx,
+/// by, bz]…]}…]` — `workspace::solid_edges`.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_workspace_solid_edges_json(h: *mut Sketch, solid: i32) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || {
+        let edges = usize::try_from(solid).map_or(Vec::new(), |i| {
+            gcs_core::overview::workspace::solid_edges(sk(h), i)
+        });
+        out_json(Json::Arr(edges.into_iter().map(|e| json::object([
+            ("faces", Json::Arr(vec![Json::Str(e.faces.0), Json::Str(e.faces.1)])),
+            ("segs", Json::Arr(e.segs.iter().map(|[a, b]| {
+                Json::Arr(a.iter().chain(b).map(|&x| Json::Num(x)).collect())
+            }).collect())),
+        ])).collect()))
+    })
+}
+
+/// The size a round or chamfer on object `solid` starts from, or NaN for none —
+/// `edit::round_size`.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_workspace_round_size(h: *mut Sketch, solid: i32) -> f64 {
+    guard(f64::NAN, move || {
+        let size = usize::try_from(solid).ok().and_then(|i| gcs_core::edit::round_size(sk(h), i));
+        size.unwrap_or(f64::NAN)
+    })
+}
+
+/// The edge of an object the eye sees nearest (x, y), within `tol` on the picture plane:
+/// `{solid, faces: [a, b], at: [x, y, z]}`, or `null` — `workspace::pick_edge`.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_workspace_pick_edge_json(h: *mut Sketch, az: f64, el: f64,
+                                                      x: f64, y: f64, tol: f64) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || {
+        let s = sk(h);
+        let proj = gcs_core::overview::workspace::Projection::new(s, az, el);
+        out_json(match gcs_core::overview::workspace::pick_edge(s, &proj, (x, y), tol) {
+            Some(hit) => json::object([
+                ("solid", Json::Int(hit.solid as i64)),
+                ("faces", Json::Arr(vec![Json::Str(hit.faces.0), Json::Str(hit.faces.1)])),
+                ("at", Json::Arr(hit.at.iter().map(|&x| Json::Num(x)).collect())),
+            ]),
+            None => Json::Null,
+        })
+    })
+}
+
 /// A point on the eye's picture plane, `[x, y]`.
 fn pt(p: (f64, f64)) -> Json {
     Json::Arr(vec![Json::Num(p.0), Json::Num(p.1)])
@@ -4430,6 +4476,35 @@ pub unsafe extern "C" fn gcs_elab_add_body_word(h: *mut Elaborated, ptr: *const 
         let what = v.get("what").map(strings).unwrap_or_default();
         let what: Vec<&str> = what.iter().map(String::as_str).collect();
         out_edit(gcs_core::edit::add_body_word(&(*h).program, word, &what, text("body")))
+    })
+}
+
+/// Round or chamfer edges of object `solid`, `{word: "round" | "chamfer", faces: [..], edges:
+/// [[a, b]..], size}` — faces and edges by the paths its mesh names them by — as the library's
+/// words, in one splice: `edit::add_rounds`, over the live drawing `s`.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_elab_add_rounds(h: *mut Elaborated, s: *mut Sketch, solid: i32,
+                                             ptr: *const u8, len: usize) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || {
+        let v = as_json(ptr, len);
+        let text = |k: &str| v.get(k).map(|x| x.as_str().to_string()).unwrap_or_default();
+        let Some(word) = gcs_core::edit::EdgeWord::parse(&text("word")) else {
+            set_error(format!("`{}` is not an edge word: round or chamfer", text("word")));
+            return std::ptr::null_mut();
+        };
+        let Ok(solid) = usize::try_from(solid) else {
+            set_error("no solid to round");
+            return std::ptr::null_mut();
+        };
+        let faces = v.get("faces").map(strings).unwrap_or_default();
+        let edges: Vec<(String, String)> = v.get("edges").map(|a| a.arr().iter().filter_map(|p| {
+            match &strings(p)[..] {
+                [a, b] => Some((a.clone(), b.clone())),
+                _ => None,
+            }
+        }).collect()).unwrap_or_default();
+        out_edit(gcs_core::edit::add_rounds(&(*h).program, sk(s), solid, word, &faces, &edges,
+                                            &text("size")))
     })
 }
 

@@ -574,8 +574,18 @@ pub fn add_use(prog: &Program, name: &str) -> Edit {
     if prog.uses.iter().any(|u| u.name == name) {
         return Edit::none(prog, None);
     }
+    Edit {
+        text: splice(prog.text(), vec![use_line(prog, &format!("use {name}"))]),
+        kind: Kind::Structural,
+        names: Vec::new(),
+        refused: None,
+    }
+}
+
+/// A `use` line written where `add_use` puts one: after the last `use` the document writes, or
+/// else before its first statement (below a heading comment and `unit`).
+fn use_line(prog: &Program, line: &str) -> Splice {
     let text = prog.text();
-    let line = format!("use {name}\n");
     let at = match prog.uses.iter().map(|u| u.span.hi as usize).filter(|&hi| hi <= text.len()).max() {
         // the end of the last `use`'s line
         Some(hi) => match text[hi..].find('\n') {
@@ -601,12 +611,7 @@ pub fn add_use(prog: &Program, name: &str) -> Edit {
         }
     };
     let lead = if at == text.len() && !text.is_empty() && !text.ends_with('\n') { "\n" } else { "" };
-    Edit {
-        text: splice(text, vec![Splice { at: Span::new(at, at), with: format!("{lead}{line}") }]),
-        kind: Kind::Structural,
-        names: Vec::new(),
-        refused: None,
-    }
+    Splice { at: Span::new(at, at), with: format!("{lead}{line}\n") }
 }
 
 /// `pN := point hint((…, …))`
@@ -806,15 +811,22 @@ fn append_checked(prog: &Program, stmts: &[StmtKind], names: Vec<String>) -> Res
 /// the elaborator raises inside `ours` (or at a statement that starts there) — the text the edit
 /// wrote.  An error elsewhere was there before the edit and is not its fault.
 fn checked(prog: &Program, text: String, ours: Span, names: Vec<String>) -> Result<Edit, String> {
+    checked_in(prog, text, &[ours], names)
+}
+
+/// `checked` over an edit that wrote in several places: refused for an error inside any of them.
+fn checked_in(prog: &Program, text: String, regions: &[Span], names: Vec<String>)
+    -> Result<Edit, String> {
+    let ours = |lo: u32| regions.iter().any(|r| r.contains(lo));
     let (mut next, errs) = syntax::parse(&text);
-    if let Some(e) = errs.iter().find(|e| ours.contains(e.span.lo)) {
+    if let Some(e) = errs.iter().find(|e| ours(e.span.lo)) {
         return Err(e.message.clone());
     }
     crate::modules::relink(&mut next, prog);
     let e = crate::program::elaborate(&next);
     let in_ours = |d: &crate::program::Diag| {
-        ours.contains(d.span.lo) || d.stmt.is_some_and(|id| {
-            next.stmts().find(|s| s.id == id).is_some_and(|s| ours.contains(s.span.lo))
+        ours(d.span.lo) || d.stmt.is_some_and(|id| {
+            next.stmts().find(|s| s.id == id).is_some_and(|s| ours(s.span.lo))
         })
     };
     let refused = e.errors().find(|d| in_ours(d)).map(|d| d.message.clone());
@@ -1449,6 +1461,184 @@ pub fn add_body_word(prog: &Program, word: syntax::BodyWord, what: &[&str], body
         span: Span::default(),
     })).collect();
     append_checked(prog, &stmts, Vec::new()).unwrap_or_else(|e| Edit::none(prog, Some(e)))
+}
+
+/// The library's two words a gesture writes along a solid's edges (`std.sv`): `round`, rounded
+/// by a ball of radius `r`, and `chamfer`, cut by a flat `d` along each face.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EdgeWord {
+    Round,
+    Chamfer,
+}
+
+impl EdgeWord {
+    pub fn parse(s: &str) -> Option<EdgeWord> {
+        match s {
+            "round" => Some(EdgeWord::Round),
+            "chamfer" => Some(EdgeWord::Chamfer),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            EdgeWord::Round => "round",
+            EdgeWord::Chamfer => "chamfer",
+        }
+    }
+
+    /// The word's one number, by its label: `round(r: 2mm)`, `chamfer(d: 1mm)`.
+    fn key(self) -> &'static str {
+        match self {
+            EdgeWord::Round => "r",
+            EdgeWord::Chamfer => "d",
+        }
+    }
+}
+
+/// **Round or chamfer edges** (the Fillet and Chamfer tools): edges of object `solid`, picked as
+/// whole faces (every edge of each) and as single edges (the two faces meeting there, as
+/// `mesh::face_edges` names them), written as the library's words over face paths, `size` the
+/// radius or the leg as typed:
+///
+/// ```text
+/// use std (round)
+/// block.near round(r: 2) block       // a face: every edge of it
+/// block.far round(r: 2) block.west   // an edge: where the two faces meet
+/// round(r: 2) block                  // every face: every edge, its corners a ball's
+/// ```
+///
+/// Each face once and each edge no face already gives once, so a chain of edges is a statement a
+/// link; which way each turns (a convex edge cut, a concave one filled) is the word's to read.
+/// `use std` is brought in naming the word, or made to name it.  One splice, held to the
+/// elaborator: a face with no name the source can write, faces that do not meet, two objects, or
+/// a size the language refuses is refused in its words.
+pub fn add_rounds(
+    prog: &Program,
+    sk: &Sketch,
+    solid: usize,
+    word: EdgeWord,
+    faces: &[String],
+    edges: &[(String, String)],
+    size: &str,
+) -> Edit {
+    rounds_edit(prog, sk, solid, word, faces, edges, size)
+        .unwrap_or_else(|why| Edit::none(prog, Some(why)))
+}
+
+fn rounds_edit(
+    prog: &Program,
+    sk: &Sketch,
+    solid: usize,
+    word: EdgeWord,
+    faces: &[String],
+    edges: &[(String, String)],
+    size: &str,
+) -> Result<Edit, String> {
+    let object = sk.solids.get(solid).ok_or("there is no such solid")?;
+    let body = object.name.clone();
+    let size = size.trim();
+    if size.is_empty() {
+        return Err(format!("a {} says how big: {}", word.as_str(), match word {
+            EdgeWord::Round => "its radius",
+            EdgeWord::Chamfer => "how far its flat runs along each face",
+        }));
+    }
+    if faces.is_empty() && edges.is_empty() {
+        return Err(format!("nothing to {}: pick edges or faces of `{body}`", word.as_str()));
+    }
+    let evaluated = sk.evaluated_solid(solid, crate::solid::ApproximationPolicy::Mesh)?;
+    let meets = evaluated.face_edges();
+    // the faces the document can name, by their paths from the object (`face_paths`, the walk the
+    // words' own `repeat` reads)
+    let named: std::collections::BTreeSet<String> = crate::solid::faces::face_paths(sk, solid)
+        .iter().map(|f| f.text()).filter(|p| !p.contains('#')).collect();
+    // every face of the object, by its mesh's path, and as the source writes it where it can
+    let all: Vec<(&str, Option<String>)> = evaluated.mesh().groups.iter().map(|g| {
+        (g.path.as_str(), evaluated.face_route(&g.path).filter(|r| named.contains(r)))
+    }).collect();
+    let written = |f: &str| -> Result<String, String> {
+        match all.iter().find(|(p, _)| *p == f) {
+            None => Err(format!("`{f}` is no face of `{body}`")),
+            Some((_, None)) => {
+                Err(format!("this face of `{body}` has no name the document can write"))
+            }
+            Some((_, Some(route))) => Ok(format!("{body}.{route}")),
+        }
+    };
+    let mut picked: Vec<(&str, String)> = Vec::new();
+    for f in faces {
+        if !picked.iter().any(|(p, _)| p == f) {
+            picked.push((f, written(f)?));
+        }
+    }
+    let said = |a: &str, b: &str| format!("{a} {}({}: {size}) {b}", word.as_str(), word.key());
+    let mut stmts: Vec<String> = Vec::new();
+    if all.iter().all(|(f, w)| w.is_none() || picked.iter().any(|(p, _)| p == f)) {
+        stmts.push(format!("{}({}: {size}) {body}", word.as_str(), word.key()));
+    } else {
+        stmts.extend(picked.iter().map(|(_, w)| said(w, &body)));
+        let mut seen: Vec<(&str, &str)> = Vec::new();
+        for (a, b) in edges {
+            let (wa, wb) = (written(a)?, written(b)?);
+            // in the order `face_edges` names a pair, whichever way a caller gave it
+            let pair = if a <= b { (a.as_str(), b.as_str()) } else { (b.as_str(), a.as_str()) };
+            if !meets.iter().any(|e| (e.faces.0.as_str(), e.faces.1.as_str()) == pair) {
+                return Err(format!("`{wa}` and `{wb}` do not meet at an edge"));
+            }
+            let covered = picked.iter().any(|(p, _)| *p == pair.0 || *p == pair.1);
+            if !covered && !seen.contains(&pair) {
+                seen.push(pair);
+                stmts.push(said(&wa, &wb));
+            }
+        }
+    }
+    let (at, lead) = append_at(prog);
+    let appended = Splice { at, with: format!("{lead}{}", stmts.join("\n")) };
+    // what the word's own body refuses is said at the `use` that brought the library in: the
+    // statements and the `use` are both what this edit wrote, each where it lands once the other
+    // is in
+    let (import, mut used) = imports(prog, word.as_str());
+    let grown = import.as_ref().map_or(0, |i| i.with.len());
+    let shift = |lo: u32, by: usize, past: u32| lo as usize + if past <= lo { by } else { 0 };
+    let lo = shift(at.lo, grown, import.as_ref().map_or(u32::MAX, |i| i.at.lo));
+    let mut regions = vec![Span::new(lo, lo + appended.with.len())];
+    if let Some(u) = used.as_mut() {
+        let lo = shift(u.lo, appended.with.len(), at.lo + 1);
+        regions.push(Span::new(lo, lo + (u.hi - u.lo) as usize + grown));
+    }
+    let text = splice(prog.text(), [Some(appended), import].into_iter().flatten().collect());
+    checked_in(prog, text, &regions, Vec::new())
+}
+
+/// A round or chamfer's size to start from on object `solid`: a tenth of its least extent, to one
+/// significant figure — what the tools offer before anybody types.  `None` for no object.
+pub fn round_size(sk: &Sketch, solid: usize) -> Option<f64> {
+    let s = sk.evaluated_solid(solid, crate::solid::ApproximationPolicy::Mesh).ok()?;
+    let b = s.world_bounds();
+    let least = (0..3).map(|k| b.hi[k] - b.lo[k]).filter(|d| *d > 0.0)
+        .fold(f64::INFINITY, f64::min);
+    least.is_finite().then(|| round_sig(least / 10.0, 1))
+}
+
+/// The splice that has the document's `use std` name `word` bare (§14.4) — its list grown, one
+/// written (`use std` becomes `use std (round)`), or a line of its own where `add_use` would put
+/// one; `None` where it already does — and the span of the `use std` the document writes.
+fn imports(prog: &Program, word: &str) -> (Option<Splice>, Option<Span>) {
+    let text = prog.text();
+    let Some(u) = prog.uses.iter().find(|u| u.name == "std" && (u.span.hi as usize) <= text.len())
+    else {
+        return (Some(use_line(prog, &format!("use std ({word})"))), None);
+    };
+    if u.names.iter().any(|n| n.text == word) {
+        return (None, Some(u.span));
+    }
+    let (lo, hi) = (u.span.lo as usize, u.span.hi as usize);
+    let (at, with) = match u.names.last() {
+        Some(n) => (n.span.hi as usize, format!(", {word}")),
+        None => (lo + text[lo..hi].trim_end().len(), format!(" ({word})")),
+    };
+    (Some(Splice { at: Span::new(at, at), with }), Some(u.span))
 }
 
 /// One constraint, written the way the registry names it.

@@ -19,6 +19,11 @@ What the words are built from:
   relation word whose body makes a solid and cuts it from (or adds it to) the body the faces are
   of.
 
+In the app the words are also tools: **Fillet** (⇧F) and **Chamfer** (⇧C) under Solids. Click
+the edges of a solid you want (a chain of them, or a face for every edge of it), type the size and
+press Enter, and the statements above are written into the document for you — one per edge or
+face, or `round(r: …) body` when every face is picked.
+
 A solid made from a set is a **region**. Where every term is about one axis it is a meridian
 turned once, and a round or chamfer between two of its own bounds is built exactly in that
 meridian. Otherwise the field reads it point by point — and where the set is one the lowering

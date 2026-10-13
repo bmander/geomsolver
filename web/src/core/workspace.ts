@@ -114,6 +114,40 @@ export function pickSolidSeen(sk: Sketch, az: number, el: number,
   return takeJson<SolidHit | null>(core().gcs_workspace_pick_solid_json(sk.handle, az, el, x, y));
 }
 
+/** An edge of an object the eye sees under the pointer: the object, the two faces meeting there
+ *  (by the paths its mesh names them by, in order) and the place on it nearest the pointer. */
+export interface EdgeHit {
+  solid: number;
+  faces: [string, string];
+  at: [number, number, number];
+}
+
+/** The edge of an object nearest `(x, y)` on the picture plane, within `tol` there, that the eye
+ *  sees — an edge behind the material is not picked through it — or null. */
+export function pickEdgeSeen(sk: Sketch, az: number, el: number, x: number, y: number,
+                             tol: number): EdgeHit | null {
+  return takeJson<EdgeHit | null>(
+    core().gcs_workspace_pick_edge_json(sk.handle, az, el, x, y, tol));
+}
+
+/** Where two faces of an object meet: the faces, and the stretches of it in space, each six
+ *  numbers (from, to). */
+export interface SolidEdge {
+  faces: [string, string];
+  segs: number[][];
+}
+
+/** Object `solid`'s edges. */
+export function solidEdges(sk: Sketch, solid: number): SolidEdge[] {
+  return takeJson<SolidEdge[] | null>(core().gcs_workspace_solid_edges_json(sk.handle, solid)) ?? [];
+}
+
+/** The size a round or chamfer on object `solid` starts from, or null. */
+export function roundSize(sk: Sketch, solid: number): number | null {
+  const size = core().gcs_workspace_round_size(sk.handle, solid);
+  return Number.isFinite(size) ? size : null;
+}
+
 /** The arrow a prism is sized by, as the eye sees it, and what it says: from its face's middle to
  *  its far end along the face's normal — no tip where the eye looks down the normal — which way
  *  it runs (null for extents none of the three ways say), and how thick it is. */

@@ -1,4 +1,4 @@
-//! One way to define a name: `NAME := VALUE` (Solvent §5, [0.29]).
+//! One way to define a name: `NAME := VALUE` (Solvent §5, [0.29]; `docs/definitions-plan.md`).
 //!
 //! The value says what the name is — a number, an element, a chain joined by `->`, an instance, a
 //! group, a curve — and `(NAME := VALUE)` is the value, so a chain link is named where it stands.

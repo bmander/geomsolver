@@ -1846,7 +1846,7 @@ impl Written {
         Ok(())
     }
 
-    /// **An ordinate's direction, where it was written** (Solvent [0.46]): `along:` an
+    /// **An ordinate's direction, where it was written** (`docs/ordinate-plan.md`): `along:` an
     /// ordinate is measured on and the parentheses of `level` hold a word of
     /// `constraints::ALONG` or a reference.  The word goes to the kind's word slot — the core
     /// infers the axis it names — and a reference to its direction slot.

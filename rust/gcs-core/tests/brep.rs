@@ -1,4 +1,4 @@
-//! The Rust B-rep kernel's primitives, held to arithmetic:
+//! The Rust B-rep kernel's primitives (docs/rust-kernel-plan.md, rung 1), held to arithmetic:
 //! every prism and revolution a valid closed boundary, and its volume — read off its loops by
 //! Green's theorem, nothing meshed — the closed form to rounding.
 use gcs_core::brep::build::{prism,revolve,Profile,ProfileEdge};

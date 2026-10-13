@@ -1,5 +1,5 @@
 //! Measuring an exported file against the exact surface of the body it was exported from
-//! (`gcs_core::solid::accuracy`). The samples are this
+//! (`gcs_core::solid::accuracy`, docs/native-hypoid-plan.md). The samples are this
 //! crate's to take — a STEP file's faces through the native kernel, an STL's triangles from its
 //! bytes — and every reading, and every word of the report, is the core's.
 #![cfg_attr(not(feature="occt"),allow(dead_code))]

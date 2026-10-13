@@ -1,4 +1,4 @@
-//! The export by the core's own kernel (the default; `--kernel occt` asks
+//! The export by the core's own kernel (docs/rust-kernel-plan.md, the default; `--kernel occt` asks
 //! for OCCT): a solid built by `gcs_core::brep` — from its CAD recipe, or with swept cuts of the
 //! generating class as one sector patterned — its STEP written and parsed back against it, its STL
 //! meshed within the tolerance's deflection and a swept body's held to its material field, by the

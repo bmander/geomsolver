@@ -1,4 +1,4 @@
-//! **Axes** (#81): a directed line in space with no start — a direction
+//! **Axes** (`docs/planes-plan.md`, #81): a directed line in space with no start — a direction
 //! and a place — placed by the relations every other entity takes, drawn on no sheet.  Held here
 //! against closed forms: the direction two relations leave, the place a point gives, the freedoms
 //! an axis counts (a direction alone is two, and a place nothing reads is none), the refusal of an

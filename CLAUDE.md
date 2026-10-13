@@ -16,7 +16,7 @@ has a top-level `.sv`. Source edits add geometry inside the preview, reusable de
 Hosts look for modules beside the model, then its ancestors, then the library.
 `web/tools/copy-examples.js` packages sources for static hosts; live files override them.
 
-**Points in space, planes from axes (0.42–0.43, #81, #84):** a point no `in`
+**Points in space, planes from axes (0.42–0.43, #81, #84, [plan](docs/planes-plan.md)):** a point no `in`
 reaches stands in space (`PointE.z`, given by `Sketch::give_place` once memberships are in; its
 own lift, no row); a 2D drawing is `use std` + `in std.front { … }`. There is no page: a point
 with neither plane nor `z` is only a 2D sketch's (JSON, hand-built tests), with no lift. An **axis**
@@ -590,7 +590,7 @@ meets the instances' cap (`MAX_FLAT`, E103), since a body of calls emits no stat
 (Penrose's P3 by Robinson triangles, two components each calling the other, held to the
 subdivision worked out directly).
 
-**Axes** (#81): `t := axis hint(dir: (x, y, z))` is a directed line in space,
+**Axes** (`docs/planes-plan.md`, #81): `t := axis hint(dir: (x, y, z))` is a directed line in space,
 `AxisE { d, a, placed }`: a unit direction (`axis_unit`, intrinsic, held like `quat_unit` when `fix`
 holds all three) and the point nearest the origin, fixed — no freedom — until a relation reads it
 (`CKind::place_slots`: `PointOnAxis`, `AxisCoincident`, `PlaneAxis`), when `Sketch::place_axis`
@@ -699,8 +699,8 @@ outward-rounded arithmetic; zero-straddling division, overflow and invalid domai
 circular-crown verifier and its rational checker establish nominal differential regularity, not
 source-error transfer, injectivity or interference (`docs/interval-geometry.md`).
 
-**Geometry validation contracts:** `docs/geometry-validation.md`.
-`interval::minimum::enclose` refines with an enclosure
+**Geometry validation contracts:** `docs/geometry-validation.md`; the spiral-bevel
+[roadmap](docs/spiral-bevel-roadmap.md). `interval::minimum::enclose` refines with an enclosure
 oracle; exhausted budgets keep bounds, never guess membership. `Family::bounds` / `MotionBounds`
 enclose mathematical poses and point boxes (coefficients private), not float evaluation or
 source error; past [-8,8] angles use `Interval::sin_cos_periodic`. `solid::PlanarField` /
@@ -847,7 +847,7 @@ its prism (`brep::sweep::planar`), metered as envelope × slab (`accuracy::Plana
 MOTION` advances the placements under it (`Sweep::motion`). A profile field's walls are boxed
 (`Boxes`); `ssi` cuts an extrusion square in closed form and `boolean` gives its iso edges straight
 pcurves. `rust/examples/wankel/`, `fixtures::wankel`, `tests/{bore,planar_envelope,wankel}.rs`.
-**Export tolerance:** `solventc --tolerance [LENGTH]` (default
+**Export tolerance ([plan](docs/native-hypoid-plan.md)):** `solventc --tolerance [LENGTH]` (default
 0.01 mm; bare number in document units); `solid::export::Tolerance` states every bar once. Sheets
 pass within half of it of withheld contacts (`contact_trace::Withheld::Sides`), normals within
 `Tolerance::turn`, refined where they miss (`marked`, `Grid::refined`, ≤4 times, 480×400). Fit:
@@ -856,7 +856,7 @@ half (OCCT's deflection is no bound), float32 rounding counted with it (`mesh::s
 `brep::export::written_within`: far from the origin refused, #60); the mesh contract counts clusters
 (`TinyTriangles::clustered`); the field is probed at max(2 tol, 2 µm).
 `--measure FILE` checks an export (`solid::accuracy`) and exits 1 over tolerance.
-**One sector, sewn round:** a body whose swept cuts are turns
+**One sector, sewn round ([plan](docs/native-speed-plan.md)):** a body whose swept cuts are turns
 of one placement about one axis (`solid::sector::indexing`), from a blank alike under the turn, is
 built as one sector (`cad/native/sweep_boundary/sector.rs`): its side runs midway across the gaps
 between neighbours' contacts (`sector::Boundary`, sliced by spheres about the blank's centres or
@@ -879,7 +879,7 @@ meridian section turned once (`Session::construct_meridian`, `solvent_cad_revolv
 `SOLVENT_BLANK=booleans`); field agreement probes one sector, reading cuts not proved positive
 (`agreement::Sector`, `MaterialField::without_cuts`; `SOLVENT_AGREEMENT=whole`); STEP text is
 formatted on every core, the kernel's to the byte (`SOLVENT_STEP_TEXT_CHECK`).
-**The Rust B-rep kernel**; clean-room — OCCT is LGPL, this repo
+**The Rust B-rep kernel** ([plan](docs/rust-kernel-plan.md)); clean-room — OCCT is LGPL, this repo
 MIT: its code is never translated, only its behaviour and conventions studied. `gcs_core::brep`:
 `geom` (surfaces parameterised as OCCT/STEP do, closed-form inverses, signed distances, `Traced`
 intersections), `topo` (`Brep`: oriented uses with pcurves, degenerate poles; `check`, `pinches`),
@@ -1112,7 +1112,7 @@ rolls `dist/app/main.js` into one `dist/app/bundle.js`, what the page loads.  Th
 from a CDN) so the app opens from a file.
 
 Conventions:
-- **A name is defined one way, `NAME := VALUE`** (Solvent §5,
+- **A name is defined one way, `NAME := VALUE`** ([plan](docs/definitions-plan.md), Solvent §5,
   [0.29]).  `w := 100` is a value (`StmtKind::Param`), `c := circle(…)` a declaration, `t :=
   Tooth(…)` an instance, `dims := {…}` a group (a brace after `:=` is a list, lexed across lines),
   `profile := (ab := line(a, b)) -> line -> close` a chain whose link is named in place, `k :=
@@ -1187,7 +1187,7 @@ Conventions:
   `tests/refusals.rs` is the gate.  `along:` also takes a reference (an axis, a line): see the
   ordinate below.
 - **An ordinate is one kind along any direction, and `level` its zero**
-  (Solvent [0.46]).  `a distance(d, along: t) b` is `CKind::Ordinate`,
+  ([plan](docs/ordinate-plan.md), Solvent [0.46]).  `a distance(d, along: t) b` is `CKind::Ordinate`,
   `(q − p)·t̂ − d`, signed along `t`; `a level(t) b` is `CKind::Level`, no number, no callout (the
   direction positional, as `symmetry(l)`'s line).  Slots `(p, q, t: SpecKind::Along, [d], along:
   Str, form: Int)`: `t` an axis, a line, or a plane standing for its normal (only via the word
@@ -1871,6 +1871,23 @@ Conventions:
   shared `face_groups`; `core/mesh.ts::preview`).  `box3d` draws it in the target's place, the
   tools as ghosts in their word's ink (`SketchView.combining` is the key).  `tests/booleans.rs`
   is the gate.
+- **Fillet, Chamfer** (`⇧F`, `⇧C`): an edge is where two faces of an object meet, read off its
+  mesh (`mesh::face_edges`: triangle sides two faces share, matched to the weld's tolerance,
+  turning past `EDGE_TURN` — a tangent seam is no edge; two stretches between one pair are one
+  edge, as the words read them), cached on `EvaluatedSolid::face_edges`.  `workspace::pick_edge`
+  picks one where the eye sees it, never through the material (a ray at it meeting a face nearer
+  the eye); `solid_edges` gives them in space for the box to light (`box3d`'s fat lines, drawn
+  over everything).  The tool's clicks toggle edges, or a face (every edge of it), on one object
+  (`SketchView.rounding`; another object starts over), the number asked beside the last click
+  (`dimbox`'s `roundBox`, focused, the pointer-down's default prevented so it keeps the
+  keyboard); Enter writes `edit::add_rounds`: the mesh's paths mapped to the document's through
+  the operand routes (`EvaluatedSolid::face_route`, the report's too; `plate.near` on `pad` is `pad.plate.near`, checked against `face_paths`; a
+  round's own faces have no name to write), `F round(r: d) body` per face, `a round(r: d) b` per
+  edge no face covers, `round(r: d) body` for every face, `use std` made to name the word — one
+  splice, held to the elaborator over both places (the library's errors are said at the `use`).
+  Corners where three rounded edges meet are a ball's only in that last form.  The offered size
+  is the last written, else `edit::round_size`.  `tests/edit_rounds.rs` and `app.test.ts` are the
+  gates.
 - **A face of a solid is a set** (#162 F5, [0.66], [0.68]): `b0.near`, `b0.far`, a straight side
   `b0.ab` and `body.b0.near` name the face, and `.surface` its carrier — the one a drawn point or
   plane reads, made by the flattener from the solid's own text before the uses are expanded
@@ -2348,7 +2365,7 @@ Conventions:
   in the solve path.  Every random draw comes from the seeded `rng::Rng`.
 - The trust-region loop is `newton::dogleg` over a `TrustRegion`; a new thing to minimise
   implements the trait rather than copying the loop.
-- **Block-triangular solve**:
+- **Block-triangular solve** ([docs/block-triangular-solve-plan.md](docs/block-triangular-solve-plan.md)):
   `System::block_order` (memoised per compile) is the DM-matched square part in strongly
   connected blocks (`graph::blocks`: Tarjan, lowest row first), over/under parts beside it.
   `System::subset` evaluates through the whole system's helpers, so its numbers match to the bit;
@@ -2357,7 +2374,7 @@ Conventions:
   failed DogLeg, before LM, only with `retry` and ≥2 blocks, kept only if it solves; `First` is
   for measurement only (it changes bits and roots). `BLOCK_XTOL` 1e-15, accepted at
   `acceptance_tol`. The spiral bevel relies on it (`hypoid_layout.rs` holds rough starts).
-- **Settled**:
+- **Settled** ([docs/iteration-limit-rescue-plan.md](docs/iteration-limit-rescue-plan.md)):
   `SolveResult::settled` is `success && status != 4`; a DogLeg accepted on its iteration limit
   can be 1e-3 of the extent off. With `retry` and `Rescue`, `System::block_rescue` tries the block
   pass on an unsettled DogLeg: a failure from the start, kept if it succeeds; a limit stop from

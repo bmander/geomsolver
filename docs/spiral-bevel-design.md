@@ -5,9 +5,10 @@ parameters. Solid design is separate from manufacturing: no cutter selection, to
 machine-axis access, feeds, or process allowances belong in the pair's interface.
 A generating surface is a mathematical construction; it does not prescribe a physical cutter.
 
-**Current direction:** the pair is built as a [generating sweep](generating-sweeps.md) and
-exported by the core's own B-rep kernel (`rust/examples/spiral_bevel/README.md`). The
-implementation history below remains evidence for analytic geometry and verification.
+**Current direction:** [the subproject roadmap](spiral-bevel-roadmap.md) evaluates continuous
+generating-volume subtraction as the primary solid representation. Further manual cap/face
+assembly is paused while that route is assessed. The implementation history below remains
+evidence for analytic geometry and verification; it does not establish a finished solid.
 
 ## Current implementation
 
@@ -128,7 +129,8 @@ own cone would roll at `1 / sin(gamma_p)`, which is not that ratio off the bevel
 mean_module / 2)`; `tests/hypoid_layout.rs` holds both ratios to `N_c / N` within 1e-12 at five
 designs. At E = 0 the pinion is the intersecting-axis one and every bevel number is unchanged.
 The configured pair is E = 25 mm with a 12.5° pressure shift and a 25° spiral, inside the
-generating-sweep class for both members (`admission::the_admission_grid` prints the grid).
+generating-sweep class for both members
+([the layout plan](spiral-bevel-layout-plan.md#the-true-hypoid) records the grid).
 
 ## Common-crown construction under investigation
 

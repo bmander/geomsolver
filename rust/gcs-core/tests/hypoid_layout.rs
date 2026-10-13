@@ -1,7 +1,7 @@
 //! The spiral-bevel pair laid out step by step (`spiral_bevel/layout.sv`: the pitch cones, the
 //! trace and the crown built from lines, circles and folds), held to the pair as it was computed
-//! with trigonometry before the layout replaced it: every named quantity the layout plan listed,
-//! at the configured hypoid, the bevel pair, the six-millimetre
+//! with trigonometry before the layout replaced it: every named quantity the layout plan lists
+//! (docs/spiral-bevel-layout-plan.md), at the configured hypoid, the bevel pair, the six-millimetre
 //! hypoid and the nine sizes and ratios the paired-envelope checks read, and the material both
 //! made at the configured design and the bevel.
 //!
@@ -429,7 +429,7 @@ fn record() {
     }
 }
 
-/// The true hypoid, read off the solved
+/// The true hypoid (docs/spiral-bevel-layout-plan.md, the true hypoid), read off the solved
 /// layout at designs across size, ratio and offset: the shafts square and the offset apart, the
 /// two pitch cones tangent to one pitch plane along their generators through M, the pinion's
 /// pitch radius the equal normal pitch's, and each member rolling on the common crown at the
@@ -583,7 +583,8 @@ fn seeds_on_the_wrong_side_land_on_the_recorded_pair() {
     }
 }
 
-/// **The layout solves from rough seeds in block-triangular order**.  Every design's equations, started from the seeds the same layout computes
+/// **The layout solves from rough seeds in block-triangular order** (docs/block-triangular-solve-
+/// plan.md, phase 2).  Every design's equations, started from the seeds the same layout computes
 /// at two fifths and at two and a half times its size (the mean module and the offset scaled):
 /// right in shape and wrong in size, which is what a seed a person writes by eye is.  Solved
 /// block by block, each block from what the blocks before it made, and polished whole, it lands
@@ -662,7 +663,7 @@ fn the_layout_solves_from_rough_seeds_in_block_order() {
 /// options, an interactive acceptance of 1e-6) and **converged**, not merely under that
 /// acceptance.  Rough seeds make the difference: a whole-system DogLeg that runs out of
 /// iterations at a residual of 1e-7 is a success by the interactive measure, and until such a
-/// stop was rescued, the preview drew a pose that is not the
+/// stop was rescued (docs/iteration-limit-rescue-plan.md) the preview drew a pose that is not the
 /// solution — which is what the crown previews did with tip seeds narrower than the tip (their
 /// tips all but vanished).
 #[test]
@@ -718,8 +719,8 @@ fn solved_design(label: &str) -> (usize,Elaborated) {
     (k,e)
 }
 
-/// **Where a rescue scenario starts is looked for, not recorded**.
-/// A scenario is a jittered start that stops a certain
+/// **Where a rescue scenario starts is looked for, not recorded**
+/// (docs/iteration-limit-rescue-plan.md).  A scenario is a jittered start that stops a certain
 /// way; which jitters do is a fact about the layout's rows, and any change to them moves it.  So
 /// each test walks the same starts in order — `jitters`, each at the first `SEARCH` seeds — and
 /// asks `attempt` of each: `None` where the start does not stop as the scenario asks, else

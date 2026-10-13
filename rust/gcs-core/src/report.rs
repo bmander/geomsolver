@@ -294,7 +294,6 @@ pub fn positions_where(sk: &Sketch, map: &crate::program::SourceMap, asked: &dyn
         let b = solid.world_bounds();
         // Boundary pieces retain the primitive's absolute name. Recover the route through
         // this body's operands instead of dropping the first segment of every primitive.
-        let paths = solid.provenance_paths();
         for n in names {
             out.insert(format!("{n}.volume"), solid.volume());
             out.insert(format!("{n}.area"), solid.area());
@@ -306,12 +305,7 @@ pub fn positions_where(sk: &Sketch, map: &crate::program::SourceMap, asked: &dyn
             }
             let mut faces: std::collections::BTreeMap<String, f64> = Default::default();
             for p in pieces {
-                if let Some((primitive, relative)) = paths.iter()
-                    .filter(|(primitive, _)| p.path.starts_with(&format!("{primitive}.")))
-                    .max_by_key(|(primitive, _)| primitive.len())
-                {
-                    let face = &p.path[primitive.len() + 1..];
-                    let tail = if relative.is_empty() { face.to_string() } else { format!("{relative}.{face}") };
+                if let Some(tail) = solid.face_route(&p.path) {
                     *faces.entry(tail).or_default() += p.area();
                 }
             }

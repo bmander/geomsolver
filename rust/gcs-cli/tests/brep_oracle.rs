@@ -1,4 +1,4 @@
-//! The Rust B-rep kernel held to OCCT (OCCT as the test-only oracle):
+//! The Rust B-rep kernel held to OCCT (docs/rust-kernel-plan.md: OCCT as the test-only oracle):
 //! every node of every corpus object's CAD recipe that the kernel builds, built by both, the
 //! volumes equal, faces equal by kind and the boundary valid; every object against the core's
 //! faceted kernel; every body written as STEP and parsed back against itself (read back by OCCT as
