@@ -194,7 +194,7 @@ pub(super) fn incidences(
         if let Some(e) = r.along.as_ref().and_then(|a| ent(&a.point, sk)) {
             kept.insert(e.i(), "a tangency's derivative moves it there");
         }
-        if super::relations::is_fix(r) {
+        if super::gauges::is_fix(r) {
             let held = r.form.written().and_then(|w| w.ops.first()).and_then(|o| ent(o, sk));
             kept.extend(held.filter(|e| e.kind == EntKind::Point)
                 .map(|e| (e.i(), "a `fix` holds it there")));

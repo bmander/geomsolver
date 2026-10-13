@@ -6,6 +6,7 @@
 mod curves;
 mod diagnostics;
 mod entities;
+mod gauges;
 mod lift;
 mod planes;
 mod views;
@@ -81,7 +82,8 @@ pub(crate) use lift::{holds, lift_decl, lift_gauge, lift_relation, point_len};
 use planes::memberships;
 pub(crate) use planes::{drawn_plane, plane_of_entity, plane_of_entity_by};
 pub(crate) use resolve::NORMAL;
-use relations::{constrain, repeated, Gauges};
+use gauges::Gauges;
+use relations::{constrain, repeated};
 use resolve::Resolver;
 use solids::{solid_claims, solids};
 use std::collections::{BTreeMap, BTreeSet};
@@ -514,7 +516,7 @@ fn elaborate_in(
     let mut gauges = Gauges::default();
     for st in &stating {
         let StmtKind::Relation(r) = &st.kind else { continue };
-        if relations::is_fix(r) {
+        if gauges::is_fix(r) {
             let (d, g) = (&mut duals, &mut gauges);
             constrain(&mut sk, &res, r, st, p, &map, d, g, &mut probes, &mut diags);
         }
@@ -566,7 +568,7 @@ fn elaborate_in(
             continue;
         }
         let StmtKind::Relation(r) = &st.kind else { continue };
-        if relations::is_fix(r) || drawn.contains(&i) || kept_off.contains(&i) {
+        if gauges::is_fix(r) || drawn.contains(&i) || kept_off.contains(&i) {
             continue;
         }
         let (d, g) = (&mut duals, &mut gauges);
