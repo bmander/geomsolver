@@ -432,7 +432,7 @@ impl<'a> P<'a> {
                         r.place = place;
                         r.place_span = match (place, open_end) {
                             (Some(_), _) => place_span,
-                            (None, true) => Span::new(whole.hi as usize, whole.hi as usize),
+                            (None, true) => Span::at(whole.hi as usize),
                             (None, false) => Span::default(),
                         };
                         r.class = class.clone();
@@ -724,7 +724,7 @@ impl<'a> P<'a> {
                 if chained {
                     decl.mint_close = Some(link.span.hi as usize);
                 } else {
-                    k.span = Span::new(whole.lo as usize, whole.lo as usize);
+                    k.span = Span::at(whole.lo as usize);
                 }
             }
             let Some(id) = self.mint_stmt(next_id, link.span) else { return };

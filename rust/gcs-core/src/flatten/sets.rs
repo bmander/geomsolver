@@ -123,7 +123,7 @@ impl<'a> Walk<'a> {
         // a set written in place, or an unnamed call, is named nothing the source can say
         let name = if outer.anonymous || written.text.starts_with('#') {
             let at = written.span.lo as usize;
-            DeclName::Key(Name { text: abs.to_string(), span: Span::new(at, at) })
+            DeclName::Key(Name { text: abs.to_string(), span: Span::at(at) })
         } else {
             DeclName::Written(written.clone()).prefixed(abs.to_string(), outer.copies)
         };
@@ -137,7 +137,7 @@ impl<'a> Walk<'a> {
         self.out.push((decl, path.to_vec(), sc.clone()));
         // drawn and edited where the number is written; a call that gives none draws what it
         // comes to
-        let span = radius.at(call).unwrap_or(Span::new(st.span.lo as usize, st.span.lo as usize));
+        let span = radius.at(call).unwrap_or(Span::at(st.span.lo as usize));
         let word = radius.word.span;
         let dim = crate::syntax::OpArg::Dim(radius.text.to_string(), span);
         let stated = relation(("radius", word), Prefix, vec![local(abs, word)], vec![dim], st.span);
@@ -369,9 +369,7 @@ impl<'a> Walk<'a> {
             self.names.insert(key.clone());
             self.probes.push(key.clone());
             let at = st.span;
-            let mut point = Decl::point(DeclName::Key(Name { text: key, span: Span::new(at.lo as usize, at.lo as usize) }), [0.0; 2], None);
-            point.seed = vec![0.7548776662, 0.5698402910, 0.4301597090];
-            point.seed_text = vec![None; 3];
+            let point = probe(key, Span::at(at.lo as usize));
             out.push((Stmt { kind: StmtKind::Decl(point), ..st.clone() }, path.to_vec(), sc.clone()));
             let set = match surfaces.get(name) {
                 // a set's surface, made beside it, by its absolute name
@@ -962,7 +960,7 @@ impl<'a> Walk<'a> {
     ) {
         let abs = format!("{}{bound}", app.prefix());
         self.names.insert(abs.clone());
-        let key = Name { text: abs, span: Span::new(at.lo as usize, at.lo as usize) };
+        let key = Name { text: abs, span: Span::at(at.lo as usize) };
         let decl = Decl::point(DeclName::Key(key), [0.0; 2], Some(seed));
         let kind = StmtKind::Decl(decl);
         let made = Stmt { id: st.id, kind, span: st.span, chained: Chained::No };
@@ -1205,6 +1203,18 @@ fn one_bound(lit: &SetLit) -> Option<(SetLit, bool)> {
     let w = r.form.written_mut()?;
     let cmp = w.equality()?;
     w.dim().is_some().then_some((bare, cmp == crate::syntax::Cmp::Ge))
+}
+
+/// **A probe** under `key`: a point standing in space, held at a place no drawing chooses
+/// (irrational, off every axis and plane through the origin), so a cone's line from an apex there
+/// to it has a length; where it stands decides nothing else — its bounds are terms, never rows.
+/// Not `scatter`'s unseeded place: an empty hint span would be written back into the statement
+/// that made it.
+pub(super) fn probe(key: String, at: Span) -> Decl {
+    let mut point = Decl::point(DeclName::Key(Name { text: key, span: at }), [0.0; 2], None);
+    point.seed = vec![0.7548776662, 0.5698402910, 0.4301597090];
+    point.seed_text = vec![None; 3];
+    point
 }
 
 /// The statement ids a distance's foot gives what it adds to the set's body (`expand_reach`), so

@@ -300,7 +300,6 @@ pub(crate) fn settle_integrand(
     Ok(text)
 }
 
-/// `substitute`, over whatever `of` says a word stands for.
 /// Whether a seed's text reads a scalar of the geometry — `k.center.x`, `pin.y`, `base.r` — which
 /// is the one kind of name a seed may keep past the flattener (§6.4): a dotted name, since a
 /// param and a formal are bare words and an entity's scalar never is.

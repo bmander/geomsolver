@@ -133,7 +133,7 @@ impl<'a> P<'a> {
             Some(n) => DeclName::Written(n),
             None => DeclName::Key(Name {
                 text: format!("#a{}", kw.hi),
-                span: Span::new(kw.lo as usize, kw.lo as usize),
+                span: Span::at(kw.lo as usize),
             }),
         };
         // how an error spells this statement's head — computed at the failure, since every
@@ -193,7 +193,7 @@ impl<'a> P<'a> {
             let computed = Some([x, y]);
             let end = self.prev_hi();
             let mut membership = Membership::default();
-            membership.set_span(Span::new(end, end));
+            membership.set_span(Span::at(end));
             return Some(Decl {
                 annotations: Default::default(),
                 kind,
@@ -208,12 +208,12 @@ impl<'a> P<'a> {
                 curve: None,
                 computed,
                 class: Classes::default(),
-                class_span: Span::new(end, end),
+                class_span: Span::at(end),
                 seed_at: None,
                 seed_names: Vec::new(),
                 sweep: None, motion: None, angular_span: None,
                 membership,
-                list_span: Span::new(end, end),
+                list_span: Span::at(end),
                 close: None,
                 mint_close: None,
             });
@@ -238,7 +238,7 @@ impl<'a> P<'a> {
         let mut close: Option<Span> = None;
         let name_end = self.prev_hi();
         let open = self.here().lo as usize;
-        let mut list_span = Span::new(name_end, name_end);
+        let mut list_span = Span::at(name_end);
         if self.eat_p('(') {
             let mut positional = 0usize;
             let mut in_holes = false;
@@ -423,7 +423,7 @@ impl<'a> P<'a> {
         let mut seed_at: Option<AtRef> = None;
         let mut membership = Membership::default();
         let insert = self.prev_hi();
-        let mut hint_span = Span::new(insert, insert);
+        let mut hint_span = Span::at(insert);
         loop {
             if let Some(lo) = self.eat_hint_clause() {
                 // `hint((0, 12))` — keyed, keys in any order, an omitted scalar is 0 — or a
@@ -665,7 +665,7 @@ impl<'a> P<'a> {
         // `class_span` for one offset
         if membership.span().is_empty() {
             let end = self.prev_hi();
-            membership.set_span(Span::new(end, end));
+            membership.set_span(Span::at(end));
         }
         Some(Decl {
             annotations: Default::default(),
@@ -681,7 +681,7 @@ impl<'a> P<'a> {
             curve: None,
             computed: None,
             class,
-            class_span: if class_span.is_empty() { Span::new(insert, insert) } else { class_span },
+            class_span: if class_span.is_empty() { Span::at(insert) } else { class_span },
             seed_at,
             seed_names: Vec::new(),
             sweep,
@@ -990,7 +990,7 @@ impl<'a> P<'a> {
     /// or its insertion point for source edits.
     pub(super) fn class_clause(&mut self, at: usize) -> (Classes, Span) {
         if !self.peek_word("class") {
-            return (Classes::default(), Span::new(at, at));
+            return (Classes::default(), Span::at(at));
         }
         let lo = self.here().lo as usize;
         self.i += 1;

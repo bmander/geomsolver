@@ -26,6 +26,11 @@ impl Span {
         Span { lo: lo as u32, hi: hi as u32 }
     }
 
+    /// The empty span at `at`: where something not written would go.
+    pub fn at(at: usize) -> Span {
+        Span::new(at, at)
+    }
+
     pub fn slice(self, text: &str) -> &str {
         text.get(self.lo as usize..self.hi as usize).unwrap_or("")
     }
@@ -388,12 +393,6 @@ impl Program {
             }
         }
         self.components.iter().find_map(|c| c.body.iter().find_map(|st| find(st, id)))
-    }
-
-    /// The innermost statement covering a byte offset — a caret, turned into what it is written
-    /// on.  A linear scan: this runs on a click, never on a frame.
-    pub fn at_offset(&self, off: u32) -> Option<&Stmt> {
-        self.stmts().filter(|s| s.span.contains(off)).min_by_key(|s| s.span.len())
     }
 
     /// Visit all statements, including nested blocks, in source order.

@@ -1611,9 +1611,6 @@ impl Member {
     /// Its spelling once resolved, where only text carries a name (a measurement's argument,
     /// `pad.plate.near.#surface`): a segment the source cannot write.
     pub fn key(self) -> String { format!("#{}", self.word()) }
-
-    /// The member a resolved name's segment is (`#surface`).
-    pub fn of_key(seg: &str) -> Option<Member> { seg.strip_prefix('#').and_then(Member::of) }
 }
 
 /// `branch(KEY, ±1)` — a recorded root choice under a key `decompose::branch_key_points` could

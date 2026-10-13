@@ -260,7 +260,7 @@ impl<'a> Walk<'a> {
 /// and editing it edits the argument, and every other at an empty place before the word — the
 /// number is drawn.
 fn dims_at(body: &mut [Stmt], dims: &BTreeMap<String, Span>, at: Span) {
-    let nowhere = Span::new(at.lo as usize, at.lo as usize);
+    let nowhere = Span::at(at.lo as usize);
     for st in body {
         let StmtKind::Relation(r) = &mut st.kind else { continue };
         let Some(w) = r.form.written_mut() else { continue };

@@ -49,7 +49,6 @@ fn rescope_seeds(
 /// into the text: a formal reads as its actual and a name inside a block copy as that copy's
 /// (`side.#282.0.small`, which the expression lexer reads as one name for this reason).
 #[allow(clippy::too_many_arguments)]
-#[allow(clippy::too_many_arguments)]
 fn rescope_measures(
     text: &mut String,
     span: Span,

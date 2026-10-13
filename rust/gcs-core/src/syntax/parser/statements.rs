@@ -205,7 +205,7 @@ impl<'a> P<'a> {
             // brackets are what it is a picture of, `in` is the trailer it already is
             "view" | "section" | "dimensions" => {
                 let at = self.here().lo as usize;
-                let name = DeclName::Key(Name { text: format!("#a{at}"), span: Span::new(at, at) });
+                let name = DeclName::Key(Name { text: format!("#a{at}"), span: Span::at(at) });
                 self.derived(name)
             }
             // `bore cut cyl`, `boss union cyl` — the body rule's own words, and the one statement
@@ -258,7 +258,7 @@ impl<'a> P<'a> {
             }) && !self.defined_prefix_ahead() =>
             {
                 let lo = self.here().lo as usize;
-                let name = Name { text: format!("#i{lo}"), span: Span::new(lo, lo) };
+                let name = Name { text: format!("#i{lo}"), span: Span::at(lo) };
                 self.instance(name, lo).map(StmtKind::Instance)
             }
             _ => self.relation().map(StmtKind::Relation),
@@ -499,7 +499,7 @@ impl<'a> P<'a> {
             self.i += 1;
             self.value_after_define()?
         } else {
-            (String::new(), Span::new(self.prev_hi(), self.prev_hi()))
+            (String::new(), Span::at(self.prev_hi()))
         };
         let seed = self.hint_value()?;
         self.end_of_stmt();
@@ -815,7 +815,7 @@ impl<'a> P<'a> {
             let inst = Instance {
                 annotations: Default::default(),
                 // a key the source cannot write, as an anonymous declaration's is
-                name: Name { text: format!("#c{at}"), span: Span::new(at, at) },
+                name: Name { text: format!("#c{at}"), span: Span::at(at) },
                 component,
                 args,
                 span: Span::new(lo, self.prev_hi()),
@@ -998,7 +998,7 @@ impl<'a> P<'a> {
         let left = self.refr()?;
         let word = self.ident()?;
         let at = self.here().lo as usize;
-        let key = |prefix: &str| Name { text: format!("#{prefix}{at}"), span: Span::new(at, at) };
+        let key = |prefix: &str| Name { text: format!("#{prefix}{at}"), span: Span::at(at) };
         let (name, kind) = if self.set_ahead() {
             let name = key("s");
             let lit = self.set_lit(next_id)?;
@@ -1112,7 +1112,7 @@ impl<'a> P<'a> {
             return Some(Block {
                 kind,
                 count: String::new(),
-                head: Span::new(lo, lo),
+                head: Span::at(lo),
                 over: Some(EdgesOf { var, chain, when }),
                 binder,
                 body,

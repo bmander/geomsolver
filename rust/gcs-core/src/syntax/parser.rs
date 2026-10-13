@@ -181,7 +181,7 @@ fn parse_at(src: &str, base: usize, first_id: u32, limits: ParseLimits) -> (Prog
         return (
             p,
             vec![SynErr {
-                span: Span::new(base, base),
+                span: Span::at(base),
                 message: format!("a program may not be longer than {MAX_TEXT} bytes"),
             }],
         );
@@ -376,7 +376,7 @@ impl<'a> P<'a> {
     }
 
     fn here(&self) -> Span {
-        self.t.get(self.i).map(|(_, s)| *s).unwrap_or(Span::new(self.src.len(), self.src.len()))
+        self.t.get(self.i).map(|(_, s)| *s).unwrap_or(Span::at(self.src.len()))
     }
 
     /// The source from an offset to wherever the last token ended.

@@ -102,7 +102,7 @@ impl<'a> P<'a> {
         // point, `Decl::hint_span`'s device, spliced by `reconcile` when a callout is dragged
         if place.is_none() {
             let at = self.prev_hi();
-            place_span = Span::new(at, at);
+            place_span = Span::at(at);
         }
         Some(Relation {
             place,
