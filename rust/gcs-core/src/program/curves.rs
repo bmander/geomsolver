@@ -367,7 +367,10 @@ fn compile_trace(
                 ),
             ));
         }
-        if r.kind.soft_by_default() || r.kind.built() || spec.iter().any(|(_, k)| k.is_param()) {
+        // a contact's place is the block's to state only where it is a fraction of a drawn
+        // run (#248): a spline or a curve is no entity a block draws or is written over
+        let placed = spec.iter().any(|(_, k)| k.is_param()) && r.kind.fraction_slots().is_none();
+        if r.kind.soft_by_default() || r.kind.built() || placed {
             return Err((st.span, format!("{} cannot appear in a trace block", r.kind.name())));
         }
         // the block is lowered through a scratch sketch of one plane, which has no place in
@@ -442,6 +445,26 @@ fn compile_trace(
                 (k, Some(Arg::Dim { text, span })) if k.is_dimension() => {
                     dim = Some((*k, tape(text, *span)?));
                     cargs.push(CArg::Num(0.0));
+                }
+                // **a place along a run** (#248) is stated as every number in the block is:
+                // pinned, and read as a dimension over `u` is, a column a tape computes (`w`),
+                // standing in a scratch Param the constraint's columns name
+                (k, given) if k.is_param() => {
+                    let place = match given {
+                        Some(Arg::Seed { value, pinned: true }) => constant(*value),
+                        Some(Arg::SeedExpr { text, pinned: true, span }) => tape(text, *span)?,
+                        Some(Arg::Tie { name, span, .. }) if vars.contains(name) => tape(name, *span)?,
+                        _ => {
+                            return Err((st.span, format!("`{name}` must be pinned in a trace \
+                                block, `{name} == u`: a trace block infers nothing, and a point \
+                                anywhere on the run is `coincident` with no `{name}`")))
+                        }
+                    };
+                    let p = sk.param(0.0, false, name) as u32;
+                    // every declaration was consumed in pass 1, so `n_q` is final here
+                    slot.insert(p, n_outer + n_q + w.len());
+                    w.push(place);
+                    cargs.push(CArg::Param(p));
                 }
                 // a slot the core would read off the geometry (a tangency's side or sense) is
                 // required too: there is no drawn geometry here to read it from, and a default

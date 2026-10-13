@@ -57,6 +57,15 @@ pub(crate) fn settle(
             // and `t perpendicular P` and `P perpendicular t` are one statement — the operands are
             // put in the order the kind names them
             let symmetric = matches!(word, "coincident" | "parallel" | "perpendicular");
+            // a selector by name, and a contact's place where it is written, pinned or seeded
+            // (`t == 0.25`, `hint(t: 0.3)`): what makes a point on a run a fraction of it (#248)
+            let place = w.slots().find(|(k, _)| k.text == "t").map(|(k, _)| k.span);
+            let sel = |n: &str| w.sel(n).or_else(|| (n == "t" && place.is_some()).then(String::new));
+            let circle = matches!((a, b), (EntKind::Point, EntKind::Circle) | (EntKind::Circle, EntKind::Point));
+            if let (true, Some(at)) = (word == "coincident" && circle, place) {
+                return Err((at, "a circle has no start or end, so no fraction of its turn: \
+                    draw an arc, whose `t` runs from its start to its end".to_string()));
+            }
             // **and a tangency between a line and a curve** (#251): the curve is named first
             // (`g tangent l`, `g tangent(at: m) l`), and a line written first is put second —
             // but for `l tangent c` of a circle, its own kind, and `arc tangent line`, at the arc's
@@ -71,14 +80,14 @@ pub(crate) fn settle(
                 swapped.ops.swap(0, 1);
                 return settle(&swapped, kind_of);
             }
-            if symmetric && crate::constraints::infix_op(word, a, b, &|n| w.sel(n)).is_none() {
-                if let Some(k) = crate::constraints::infix_op(word, b, a, &|n| w.sel(n)) {
+            if symmetric && crate::constraints::infix_op(word, a, b, &sel).is_none() {
+                if let Some(k) = crate::constraints::infix_op(word, b, a, &sel) {
                     let mut swapped = w.clone();
                     swapped.ops.swap(0, 1);
                     return Ok((k, swapped.assemble(k)?));
                 }
             }
-            crate::constraints::infix_op(word, a, b, &|n| w.sel(n)).ok_or_else(|| {
+            crate::constraints::infix_op(word, a, b, &sel).ok_or_else(|| {
                 (w.word.span, format!("`{word}` does not relate {} to {}", a.a(), b.a()))
             })?
         }
@@ -572,6 +581,10 @@ pub(super) fn constrain(
     // lives, shared with the document reader and the bindings' constraint records — and what
     // the model refuses once they are in, in its own words, given this statement's span
     let name = |e: EntRef| map.name_of(e).cloned().unwrap_or_else(|| io::entity_name(e));
+    if let Err(message) = crate::constraints::on_the_arc(ckind, &args, &name) {
+        diags.push(Diag { code: Code::E040, span: st.span, stmt: Some(st.id), message });
+        return None;
+    }
     if let Err(message) = io::seed_omitted_named(sk, ckind, &mut args, |i| left_out[i], &name) {
         diags.push(Diag { code: Code::E061, span: st.span, stmt: Some(st.id), message });
         return None;

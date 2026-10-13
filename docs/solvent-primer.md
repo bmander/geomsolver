@@ -265,6 +265,15 @@ contacts on one curve share it: with `param s: Angle hint(318)`, `path tangent(t
 `path curvature(t == s) osc` make the circle osculate the path *where* it touches the ground (a
 `hint(t: …)` beside the pin, or a contact on another curve pinned to `s`, is E040).
 
+**A point at a fraction of a line or an arc** writes the same `t` (0.82): `m coincident(t == 0.25)
+g` is a quarter of the way from `g.p1` to `g.p2`, and on an arc `t` is the fraction of its turn
+from `start` to `end` by angle. Without `t` the contact is plain `coincident` and owns nothing. A
+line's `t` runs on past its ends (`t == 1.5`, an external division); an arc's is held to `[0, 1]`
+and a pin outside it is E040, as is any `t` on a circle. One unknown may be the fraction of
+several lines and arcs (`m coincident(t == s) g`, `n coincident(t == s) h`: similar triangles).
+A point in another view or in space reads it in space, so a loft's station needs no length or
+sweep passed in.
+
 **Tangency trap.** If the contact point is already held on the circle, state the tangency *at* it:
 `line tangent(at: p2) circle`, `arc tangent(at: start) line`. `p coincident circle` plus a bare
 `line tangent circle` is rank-deficient at every solution (the diagnosis reports a motion "blocked

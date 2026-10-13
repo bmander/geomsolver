@@ -561,6 +561,15 @@ impl<'a> Walk<'a> {
                         let seed = self.unknowns.get(&name).and_then(|d| d.seed);
                         *a = crate::syntax::Arg::Tie { name, seed, span: *span };
                     }
+                    // a pin over the swept formal in a trace (`t == u * u`, #248) is a place
+                    // the block computes as it runs, kept as text as a dimension's is, for the
+                    // tape the trace reads it through
+                    (Err(_), _) if *pinned && self.sym.is_some() => {
+                        match self.settle_text(text, vals, scope) {
+                            Ok(t) => *text = t,
+                            Err((code, e)) => self.err(code, *span, format!("`{text}`: {e}")),
+                        }
+                    }
                     (Err(_), _)
                         if out_of_reach(bare, vals, scope).is_none()
                             && self.undeclared(bare, vals, scope) =>

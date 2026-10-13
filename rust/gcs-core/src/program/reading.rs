@@ -163,6 +163,9 @@ pub(super) fn in_space(
         CKind::Distance => CKind::Distance3,
         CKind::PointOnLine => CKind::PointOnLine3,
         CKind::PointOnCircle => CKind::PointOnCircle3,
+        // a point at a fraction of the way along, its place carried over (#248)
+        CKind::PointAlongLine => CKind::PointAlongLine3,
+        CKind::PointAlongArc => CKind::PointAlongArc3,
         CKind::Perpendicular => CKind::Perpendicular3,
         CKind::Parallel => CKind::Parallel3,
         CKind::EqualLength => CKind::EqualLength3,
@@ -198,6 +201,9 @@ pub(super) fn in_space(
     // the kind in space is inferred (a skew distance's side) or has its default
     let ents: Vec<Arg> = args.iter().filter(|a| matches!(a, Arg::Ent(_))).cloned().collect();
     let dim = kind.spec().iter().position(|(_, s)| s.is_dimension()).map(|i| args[i].clone());
+    // and the place a contact owns, where one is written: pinned, shared or seeded
+    let place = kind.spec().iter().position(|(_, s)| s.is_param()).map(|i| args[i].clone())
+        .filter(|a| matches!(a, Arg::Seed { .. } | Arg::Shared { .. }));
     let mut out = Vec::new();
     let mut left_out = Vec::new();
     let mut ents = ents.into_iter();
@@ -207,6 +213,9 @@ pub(super) fn in_space(
             left_out.push(false);
         } else if s.is_dimension() {
             out.push(dim.clone().expect("the two kinds state the same number"));
+            left_out.push(false);
+        } else if let Some(a) = place.as_ref().filter(|_| s.is_param()) {
+            out.push(a.clone());
             left_out.push(false);
         } else {
             out.push(k3.default_arg(i));

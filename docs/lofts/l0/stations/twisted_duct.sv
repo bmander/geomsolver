@@ -10,8 +10,8 @@ use lofts
 length := 40mm
 
 // The square at station `s`, turned `twist · s` from the station's own `u`.
-component TwistedSquare(g: line, up: axis, run: Length, half: Length, twist: Angle, s: Scalar) {
-  st := lofts.OnLine(g, up: up, run: run, s: s)
+component TwistedSquare(g: line, up: axis, half: Length, twist: Angle, s: Scalar) {
+  st := lofts.OnLine(g, up: up, s: s)
   in st.n {
     k := point
     k on_u(d: half) st.n
@@ -41,6 +41,6 @@ in std.top {
   vertical guide
   distance(length) guide
 }
-duct := TwistedSquare(guide, std.z, run: length, half: 10mm, twist: 90deg, s: 0.5)
+duct := TwistedSquare(guide, std.z, half: 10mm, twist: 90deg, s: 0.5)
 // Three and a half turns: no pairing can say this.
-auger := TwistedSquare(guide, std.z, run: length, half: 10mm, twist: 1260deg, s: 0.5)
+auger := TwistedSquare(guide, std.z, half: 10mm, twist: 1260deg, s: 0.5)

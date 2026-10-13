@@ -78,6 +78,11 @@ macro_rules! undrawn {
             | CKind::TangentLineCircleAt
             | CKind::Symmetric
             | CKind::PointOnSpline
+            // a place along a run is a number of the contact's own, never a dimension drawn
+            | CKind::PointAlongLine
+            | CKind::PointAlongArc
+            | CKind::PointAlongLine3
+            | CKind::PointAlongArc3
             | CKind::PointOnCurve
             | CKind::PointOnExtrusion
             | CKind::CurveTangentLine
