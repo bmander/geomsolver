@@ -117,19 +117,6 @@ impl Profile {
         Ok(object([("origin",v(self.origin,scale)),("normal",v(self.normal,1.)),("loops",Json::Arr(loops))]))
     }
 
-    /// The profile moved by `m`.
-    fn moved(&self,m: &Rigid) -> Profile {
-        let loops = self.loops.iter().map(|l| l.iter().map(|e| match e {
-            ProfileEdge::Line {a,b} => ProfileEdge::Line {a:m.point(*a),b:m.point(*b)},
-            ProfileEdge::Arc {frame,r,span} => ProfileEdge::Arc {frame:frame.moved(m),r:*r,span:*span},
-            ProfileEdge::Spline(b) => match Curve::BSpline(b.clone()).moved(m) {
-                Curve::BSpline(b) => ProfileEdge::Spline(b),
-                _ => unreachable!("a spline moved is a spline"),
-            },
-        }).collect()).collect();
-        Profile {origin:m.point(self.origin),normal:m.vector(self.normal),loops,names:self.names.clone()}
-    }
-
     /// A length the profile's tolerances are taken against.
     fn size(&self) -> f64 {
         let mut s: f64 = 0.;
