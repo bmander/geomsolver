@@ -472,7 +472,7 @@ fn validate_at(sk: &Sketch, si: usize, unit: f64) -> Result<std::collections::BT
                 pending.push((*source as usize,false));
                 continue;
             }
-            SolidDef::Prism { face, from, to } => {
+            SolidDef::Prism { face, from, to, .. } => {
                 if !from.value.is_finite() || !to.value.is_finite() || from.value == to.value {
                     return Err(fail("a prism needs two distinct finite ordinates"));
                 }
@@ -502,6 +502,16 @@ fn validate_at(sk: &Sketch, si: usize, unit: f64) -> Result<std::collections::BT
             return Err(fail(&format!(
                 "edge `{name}` collides with a sweep cap; rename the source edge"
             )));
+        }
+        // a draft that takes a side to nothing, or past it, is no solid of those sides
+        if let SolidDef::Prism { from, to, draft: Some(d), .. } = &s.def {
+            let reach = from.value.abs().max(to.value.abs());
+            for (k, p) in polys.iter().enumerate() {
+                if let Some(i) = primitive::drafted_away(&p.pts, reach, primitive::loop_taper(k, d.value.dtan())) {
+                    return Err(fail(&format!("a draft of `{}` takes the side `{}` to nothing \
+                        within the prism's ordinates", d.text, p.names[p.of[i].0])));
+                }
+            }
         }
         if let SolidDef::Revolve { face, axis, sweep, .. } = &s.def {
             if !sweep.value.is_finite() || sweep.value <= 0.0 {

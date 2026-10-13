@@ -145,9 +145,11 @@ fn face_loops(sk: &Sketch,face: usize) -> Result<(Basis,Vec<Vec<Edge>>),String> 
     Ok((basis,loops))
 }
 
-fn extruded(sk: &Sketch,face: usize,range: [f64;2]) -> Result<ExtrudedField,String> {
+fn extruded(sk: &Sketch,face: usize,range: [f64;2],draft: f64) -> Result<ExtrudedField,String> {
     let (basis,loops) = face_loops(sk,face)?;
+    if draft != 0. { PlanarField::draftable(&loops,0.)?; }
     ExtrudedField::new(PlanarField::from_loops(&loops,0.)?,basis.o,basis.u,basis.v,range)
+        .map(|f| f.drafted(draft))
         .map_err(|e| format!("material field: {e:?}"))
 }
 
@@ -204,15 +206,15 @@ fn read(sk: &Sketch,solid: usize,axis_tolerance: f64) -> Result<Snapshot,String>
                 }
                 SolidDef::Revolve {..} | SolidDef::Region {..} =>
                     Snapshot::Static(RevolvedRegion::read(sk,i,axis_tolerance)?.field()?.into()),
-                SolidDef::Prism {face,from,to} =>
-                    Snapshot::Static(extruded(sk,*face as usize,[from.value,to.value])?.into()),
+                SolidDef::Prism {face,from,to,draft} => Snapshot::Static(extruded(sk,*face as usize,
+                    [from.value,to.value],draft.as_ref().map_or(0.,|d| d.value))?.into()),
                 SolidDef::Through {face,..} => {
                     let supports = crate::solid::document::evaluation_operands(sk,i)?.into_iter()
                         .map(|o| get(o).support_bounds()).collect::<Result<Vec<_>,_>>()
                         .map_err(error)?;
                     let (basis,_) = face_loops(sk,*face as usize)?;
                     let range = through_range(&basis,&supports)?;
-                    Snapshot::Static(extruded(sk,*face as usize,range)?.into())
+                    Snapshot::Static(extruded(sk,*face as usize,range,0.)?.into())
                 }
                 SolidDef::Placed {source,motion,at} => get(*source)
                     .transformed(&Family::read(sk,*motion as usize)?,at.value).map_err(error)?,

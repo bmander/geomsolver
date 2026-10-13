@@ -234,9 +234,10 @@ impl Walk<'_> {
                                 operands' — `{}.<operand>.{face}`", public_path(&solid),
                                public_path(&solid)));
         };
-        let (from, to) = match &decl.sweep {
-            Some(Sweep::Depth { depth }) => (format!("-({})", arg_text(depth)), "0".to_string()),
-            Some(Sweep::Prism { from, to }) => (arg_text(from), arg_text(to)),
+        let (from, to, drafted) = match &decl.sweep {
+            Some(Sweep::Depth { depth, draft }) =>
+                (format!("-({})", arg_text(depth)), "0".to_string(), draft.is_some()),
+            Some(Sweep::Prism { from, to, draft }) => (arg_text(from), arg_text(to), draft.is_some()),
             Some(Sweep::Through { .. }) => {
                 return Err(format!("`{said}`: a `through:` solid's ends are known only once the \
                                     drawing is solved, so they are no set to draw on"));
@@ -294,6 +295,10 @@ impl Walk<'_> {
                                              Arg::Word("n".into()));
                     vec![relation("distance", vec![p, plane], vec![OpArg::Dim(d, at), along], at)]
                 }
+            }
+            _ if drafted => {
+                return Err(format!("`{said}` is a drafted side, which leans off the face's plane, \
+                                    and is not yet a set: sketch on a cap"));
             }
             edge => {
                 let leaf = |r: &Ref| written(r).rsplit('.').next() == Some(edge);

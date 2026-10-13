@@ -463,6 +463,25 @@ plain declared name without building the alias table, and
 `region::in_general_position`/`folded` key a face-reading region on `reads_own` and the strata
 (`faces::cached`'s `Arc`s), never `reads` (which walks the body's every other round).
 `tests/conrod.rs` is the gate.
+**Draft (§6.9, 0.80, #245):** `solid(f, from:, to:, draft: θ)` (or `depth:`) is
+`SolidDef::Prism::draft` (radians; `None` undrafted): the section at ordinate `h` is `f` moved `|h|
+tan θ` into its material from its own plane, the parting plane (an outer loop in, a hole out). Every
+evaluator reads it: the facets (`primitive::prism`'s `taper`, `offset` by mitres, a side breaking at
+the plane; `drafted_away` refuses a side taken to nothing, at validation), the field
+(`ExtrudedField::drafted`: the side's value plus `|w| tan`, times the cosine — exact only where
+`PlanarField::draftable`: convex loops of lines and whole circles, else refused) and the exact
+kernel (the recipe's prism `"draft"`; `brep::build::drafted`: `offset` the profile — a line moved
+square, a circle's radius, corners where lines cross or where sides go on tangent, an arc at an
+angle refused — and `ruled` lofts each side of the plane, `boolean::glued` there; OCCT refuses it).
+Faces keep the prism's names, a side crossing the plane two pieces of one name; a round over such a
+face takes the pieces as one (`round(r) X` never rounds their crease), and the field's set distances
+read a face in pieces on several surfaces meeting convex surface by surface
+(`Reading::convex_pieces`, `conditions`: within, and at least `d` off where also within), else a
+projection flips between pieces at the crease. The lowering table's run ends on a cone
+(`Surf::Cone`, the recipe's `"kept"` cone a lofted frustum, `kept_by_solid`). A canal across the
+parting plane (two pieces each side, `brep::fillet::roll`) is refused, naming the turn (rung 3).
+Refused besides: a drafted side as a set or a carrier, an extruded surface or a tool. `rod.sv` is
+drafted 3°; `tests/draft.rs` is the gate.
 **Distance from a set, offsets (§6.21, 0.64, #145 F4):** `p distance(d, side: outside|inside) S`
 (`distance` is a set use, `may_use`), `p inside(d) S` / `p outside(d) S` and `std.Offset(S, d)` are
 one bound on the signed distance from `S`'s surface (`Reach`: cmp toward the outside, whether

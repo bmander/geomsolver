@@ -104,6 +104,19 @@ impl Profile {
         Ok(object([("origin",v(self.origin,scale)),("normal",v(self.normal,1.)),("loops",Json::Arr(loops))]))
     }
 
+    /// The profile moved by `m`.
+    fn moved(&self,m: &Rigid) -> Profile {
+        let loops = self.loops.iter().map(|l| l.iter().map(|e| match e {
+            ProfileEdge::Line {a,b} => ProfileEdge::Line {a:m.point(*a),b:m.point(*b)},
+            ProfileEdge::Arc {frame,r,span} => ProfileEdge::Arc {frame:frame.moved(m),r:*r,span:*span},
+            ProfileEdge::Spline(b) => match Curve::BSpline(b.clone()).moved(m) {
+                Curve::BSpline(b) => ProfileEdge::Spline(b),
+                _ => unreachable!("a spline moved is a spline"),
+            },
+        }).collect()).collect();
+        Profile {origin:m.point(self.origin),normal:m.vector(self.normal),loops,names:self.names.clone()}
+    }
+
     /// A length the profile's tolerances are taken against.
     fn size(&self) -> f64 {
         let mut s: f64 = 0.;
@@ -236,6 +249,115 @@ pub fn prism(p: &Profile,from: f64,to: f64) -> Result<Brep,String> {
     b.faces.push(Face {surface:cap(h0),reversed:true,loops:bottom_loops,name:"far".into()});
     b.faces.push(Face {surface:cap(h1),reversed:false,loops:top_loops,name:"near".into()});
     Ok(b)
+}
+
+/// What names a drafted prism's section at its parting plane while its halves are built: gone once
+/// they are glued there.
+const PARTING: &str = "#parting";
+
+/// The profile swept along its normal from `from` to `to`, its sides tapered by `draft` (radians)
+/// from its own plane, the parting plane (#245): the section at ordinate `h` is the profile moved
+/// `|h| tan draft` into its material (`offset`), so a straight side is a plane and a circle's a
+/// cone, each leaning away from the plane either side of it. A prism crossing the plane is two
+/// lofts (`ruled`), one each side, glued at the section they share; its sides there are two faces
+/// of one name, its caps named as a prism's.
+pub fn drafted(p: &Profile,from: f64,to: f64,draft: f64) -> Result<Brep,String> {
+    if draft == 0. { return prism(p,from,to) }
+    let (h0,h1) = (from.min(to),from.max(to));
+    if !(h1 > h0) { return Err("a prism of no depth".into()) }
+    let n = unit(p.normal);
+    let taper = draft.dtan();
+    let section = |h: f64| -> Result<(f64,Profile),String> {
+        let q = offset(p,h.abs()*taper)?;
+        Ok((h,q.moved(&Rigid {r:Rigid::identity().r,t:scale(n,h)})))
+    };
+    let piece = |(a,start): &(f64,Profile),(b,end): &(f64,Profile)| -> Result<Brep,String> {
+        let mut s = ruled(start,end,Carry::Line {delta:scale(n,b-a)})?;
+        let k = s.faces.len();
+        s.faces[k-2].name = if *a == h0 { "far".into() } else { PARTING.into() };
+        s.faces[k-1].name = if *b == h1 { "near".into() } else { PARTING.into() };
+        Ok(s)
+    };
+    let (lo,hi) = (section(h0)?,section(h1)?);
+    if !(h0 < 0. && h1 > 0.) { return piece(&lo,&hi) }
+    let tol = 1e-9*(p.size()+h1-h0);
+    let parting = section(0.)?;
+    let b = super::boolean::glued(&piece(&lo,&parting)?,&piece(&parting,&hi)?,tol)
+        .ok_or("a drafted prism's halves do not meet at its parting plane")?;
+    if b.faces.iter().any(|f| f.name == PARTING) { return Err("a drafted prism's halves meet across more than its parting plane".into()) }
+    Ok(b)
+}
+
+/// The profile moved `d` into its material, each side along its own normal (#245): a line moved
+/// square to itself, a circle's radius less `d` where its material is inside it (more where it is
+/// outside, a hole's), each corner where the moved sides either side of it meet. Where those are
+/// two lines the corner is their crossing; where the sides go on tangent the corner moves square
+/// to both. An arc meeting another side at an angle is refused (its cone and the side's plane meet
+/// along a curve, which no loft carries), as is a spline, and a side the move takes to nothing.
+fn offset(p: &Profile,d: f64) -> Result<Profile,String> {
+    if d == 0. { return Ok(p.clone()) }
+    let n = unit(p.normal);
+    let frame = Frame::about(p.origin,n);
+    let walks = walks(p,&|q| { let l = frame.local(q); [l[0],l[1]] })?;
+    let tol = 1e-9*p.size();
+    let mut out = p.clone();
+    for (li,walk) in walks.iter().enumerate() {
+        let m = walk.len();
+        let named = |s: &Seg| match p.name(li,s.source) { x if x.is_empty() => "a side".to_string(),x => format!("`{x}`") };
+        // a step's direction along the walk at its parameter `t`, and into its material: its left
+        let along = |s: &Seg,t: f64| unit(scale(s.curve.tangent(t),if s.forward() { 1. } else { -1. }));
+        let inward = |s: &Seg,t: f64| cross(n,along(s,t));
+        for s in walk {
+            if !matches!(s.curve,Curve::Line {..} | Curve::Circle(..)) {
+                return Err(format!("{}: a drafted side of a spline is not built yet",named(s)))
+            }
+        }
+        // each corner, where step `k` starts
+        let corners: Vec<V> = (0..m).map(|k| -> Result<V,String> {
+            let (a,b) = (&walk[(k+m-1)%m],&walk[k]);
+            let c = b.start();
+            let (ta,tb) = (along(a,a.t[1]),along(b,b.t[0]));
+            if norm(cross(ta,tb)) <= 1e-9 && dot(ta,tb) > 0. { return Ok(add(c,scale(inward(b,b.t[0]),d))) }
+            let (Curve::Line {..},Curve::Line {..}) = (&a.curve,&b.curve) else {
+                return Err(format!("{} meets {} at an angle where one is an arc: a drafted corner there \
+                    is a curve where a cone meets a plane, not built yet",named(a),named(b)))
+            };
+            // the moved lines, each through the corner moved square to it, crossing
+            let (pa,pb) = (add(c,scale(inward(a,a.t[1]),d)),add(c,scale(inward(b,b.t[0]),d)));
+            let w = dot(cross(ta,tb),n);
+            if w.abs() <= 1e-12 { return Err(format!("{} turns straight back at a corner",named(b))) }
+            Ok(add(pa,scale(ta,dot(cross(sub(pb,pa),tb),n)/w)))
+        }).collect::<Result<_,_>>()?;
+        for (k,s) in walk.iter().enumerate() {
+            let (start,end) = (corners[k],corners[(k+1)%m]);
+            let gone = || format!("a draft takes {} to nothing",named(s));
+            out.loops[li][s.source] = match p.loops[li][s.source] {
+                ProfileEdge::Line {a,b} => {
+                    let (a2,b2) = if s.forward() { (start,end) } else { (end,start) };
+                    if dot(sub(b2,a2),sub(b,a)) <= tol*tol { return Err(gone()) }
+                    ProfileEdge::Line {a:a2,b:b2}
+                }
+                ProfileEdge::Arc {frame:f,r,span} => {
+                    let radial = unit(sub(s.start(),f.o));
+                    let r2 = r+d*dot(inward(s,s.t[0]),radial);
+                    if !(r2 > tol) { return Err(gone()) }
+                    let span = match span {
+                        None => None,
+                        Some([a0,a1]) => {
+                            let angle = |q: V,near: f64| super::geom::around(Curve::Circle(f,r2).inverse(q),near-0.5*TAU,TAU);
+                            let (q0,q1) = if s.forward() { (start,end) } else { (end,start) };
+                            let (b0,b1) = (angle(q0,a0),angle(q1,a1));
+                            if !(b1 > b0) { return Err(gone()) }
+                            Some([b0,b1])
+                        }
+                    };
+                    ProfileEdge::Arc {frame:f,r:r2,span}
+                }
+                ProfileEdge::Spline(_) => unreachable!("refused above"),
+            };
+        }
+    }
+    Ok(out)
 }
 
 /// What a profile step sweeps as it turns about the axis.

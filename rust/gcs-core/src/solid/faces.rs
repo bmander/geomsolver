@@ -302,6 +302,14 @@ impl BodyFaces {
         Some((self.back(f.o), f.z, r / self.mm))
     }
 
+    /// Face `fi`'s cone, where it lies on one: a point of its axis, the axis's unit direction,
+    /// its radius at that point (model units) and its half-angle, the radius growing along the
+    /// axis by its tangent (a drafted circle's side, #245).
+    pub fn cone(&self, fi: usize) -> Option<(V, V, f64, f64)> {
+        let crate::brep::geom::Surface::Cone(f, r, a) = &self.loc.b.faces[fi].surface else { return None };
+        Some((self.back(f.o), f.z, r / self.mm, *a))
+    }
+
     /// Face `fi`'s sphere, where it lies on one: its centre and radius (model units).
     pub fn sphere(&self, fi: usize) -> Option<(V, f64)> {
         let crate::brep::geom::Surface::Sphere(f, r) = &self.loc.b.faces[fi].surface else { return None };
@@ -433,6 +441,39 @@ impl Reading {
     /// The side of the face whose patch is nearest `p`, and its gradient.
     pub fn side_grad(&self, p: V) -> (f64, V) {
         self.nearest(p).map_or((f64::INFINITY, [0.0, 0.0, 1.0]), |fi| self.body.side_grad(fi, p))
+    }
+
+    /// Where the faces lie on more than one surface and every crease between those is convex (a
+    /// drafted side's pieces either side of its parting plane, #245): one face on each surface.
+    /// Within such faces the material is within every surface's side, and a point within them at
+    /// least `d` off them is at least `d` off each surface, so either condition holds surface by
+    /// surface — where the nearest piece's surface would turn from one to the other across the
+    /// crease, and a projection onto it with it. `None` where the faces are one surface's, or
+    /// meet otherwise.
+    pub fn convex_pieces(&self) -> Option<Vec<usize>> {
+        let b = &self.body.loc.b;
+        // each face's surface, by the first face on it
+        let mut pieces: Vec<usize> = Vec::new();
+        let group: Vec<usize> = self.faces.iter().map(|&fi| {
+            let (f, tol) = (&b.faces[fi], self.body.loc.tol);
+            pieces.iter().position(|&q| b.faces[q].reversed == f.reversed
+                && crate::brep::ssi::same(&b.faces[q].surface, &f.surface, tol))
+                .unwrap_or_else(|| { pieces.push(fi); pieces.len() - 1 })
+        }).collect();
+        if pieces.len() < 2 {
+            return None;
+        }
+        // every edge between two of the faces on different surfaces, convex
+        let group_of = |fi: usize| self.faces.iter().position(|&g| g == fi).map(|k| group[k]);
+        for (k, &fi) in self.faces.iter().enumerate() {
+            for &e in &self.body.edges[fi] {
+                let across = self.body.faces_of(e).iter().filter_map(|&o| group_of(o)).any(|g| g != group[k]);
+                if across && self.body.convex(e) != Some(true) {
+                    return None;
+                }
+            }
+        }
+        Some(pieces)
     }
 }
 
