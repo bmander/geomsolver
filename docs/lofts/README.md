@@ -80,7 +80,7 @@ fixtures.
      (finding 8) and any expression in `s` (`twist * (3 * s^2 - 2 * s^3)`), since `s` is a column
      the station holds fixed, not a free name of the drawing (which is affine only).
 
-2. **A point at a fraction of a line's or an arc's run.** *Done (#248, Solvent 0.80).*
+2. **A point at a fraction of a line's or an arc's run.** *Done (#248, Solvent 0.81).*
    - `m coincident(t == s) g` was refused on a line and on an arc ("`coincident` has no slot `t`").
      A spline's contact has `t`, and so does a curve's.
    - A line's and an arc's point contact now take `t` too, as a fraction from `p1` to `p2` (on past

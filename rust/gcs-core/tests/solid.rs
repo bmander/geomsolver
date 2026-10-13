@@ -37,7 +37,7 @@ fn circle_face(sk: &mut Sketch, c: (f64, f64), r: f64, name: &str) -> usize {
 
 fn prism(sk: &mut Sketch, face: usize, from: f64, to: f64, name: &str) -> usize {
     sk.solid(
-        SolidDef::Prism { face: face as u32, from: Extent::at(from), to: Extent::at(to) },
+        SolidDef::Prism { face: face as u32, from: Extent::at(from), to: Extent::at(to), draft: None },
         name,
     )
 }

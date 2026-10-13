@@ -1,4 +1,5 @@
-// Continuous material example. Native sweep boundary export is not connected yet.
+// Continuous material: a ball swept through a turn about the spindle, everything it passes through
+// — a stretch of a torus with the ball at each end, built exactly.
 unit mm
 use std (on_u)
 

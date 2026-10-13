@@ -265,7 +265,7 @@ contacts on one curve share it: with `param s: Angle hint(318)`, `path tangent(t
 `path curvature(t == s) osc` make the circle osculate the path *where* it touches the ground (a
 `hint(t: …)` beside the pin, or a contact on another curve pinned to `s`, is E040).
 
-**A point at a fraction of a line or an arc** writes the same `t` (0.80): `m coincident(t == 0.25)
+**A point at a fraction of a line or an arc** writes the same `t` (0.81): `m coincident(t == 0.25)
 g` is a quarter of the way from `g.p1` to `g.p2`, and on an arc `t` is the fraction of its turn
 from `start` to `end` by angle. Without `t` the contact is plain `coincident` and owns nothing. A
 line's `t` runs on past its ends (`t == 1.5`, an external division); an arc's is held to `[0, 1]`
@@ -1091,6 +1091,12 @@ k := Par(o).p over u in (-2mm, 2mm)
 - **Prism**, along the face's normal: `depth: 30mm` is the material *behind* the visible face,
   `from: -30mm, to: 0mm`; write `from:`/`to:` when the face is not at an end. `through: body` spans
   the target's stock and additions both ways and follows the solve.
+- **Draft**: `draft: 3deg` beside `from:`/`to:` or `depth:` tapers the sides from the face's own
+  plane (the parting plane, ordinate 0): the section at `h` is the face moved `|h| tan 3°` into its
+  material, so the sides lean away from that plane on both sides of it, a hole widening as the
+  outside narrows. Lines' sides stay planes and circles' become cones; faces keep their names, a
+  side crossing the plane two pieces of one name. An arc meeting a side at an angle (not tangent)
+  is refused by the exact kernel. `conrod/rod.sv` drafts its eyes and shank.
 - **Revolution**, about a line or axis **in the face's own plane**: `about: ax` is a full turn,
   `sweep: 90deg` a partial one (caps `start` and `end`), `sense: cw` reverses it. An axis lies in
   the plane when it is one of the plane's own (`about: std.z` on `std.front`) or the solve puts it
