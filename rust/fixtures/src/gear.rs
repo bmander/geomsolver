@@ -139,6 +139,18 @@ pub fn unsolved(text: &str) -> program::Elaborated {
 /// The pair as configured, offset and fabrication allowances and all.
 pub fn read_as_configured() -> program::Elaborated { read(&source()) }
 
+/// The Formate pair's document, `formate.sv` (#283, step 1): the gear formed, the pinion its blank
+/// less the gear's tooth swept under the mesh. It states the same inputs as `hypoid.sv`, so
+/// `configure`, `design` and `fabricated` set them, and imports the layout from it.
+pub fn formate_source() -> String { std::fs::read_to_string(project().join("formate.sv")).unwrap() }
+
+/// `text`, the Formate pair at some design, elaborated and solved accurately, `hypoid` read
+/// beside it as it stands.
+pub fn read_formate(text: &str) -> program::Elaborated { crate::read_beside(text,&project(),&mut |_,t| t) }
+
+/// The Formate pair as configured, offset and fabrication allowances and all.
+pub fn formate_as_configured() -> program::Elaborated { read_formate(&formate_source()) }
+
 /// The twelve designs the layout regression records (`tests/hypoid_layout.rs`), each a label and
 /// the document at it: the configured hypoid (with no fabrication allowances, as it was
 /// recorded), the bevel pair, the six-millimetre hypoid, and the bevel pair at three tooth pairs

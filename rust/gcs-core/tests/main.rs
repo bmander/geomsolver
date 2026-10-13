@@ -102,6 +102,7 @@ mod highlight;
 mod shorthand;
 mod homotopy;
 mod hypoid_layout;
+mod formate;
 mod io;
 mod interval;
 mod jacobians;
