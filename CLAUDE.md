@@ -463,7 +463,7 @@ plain declared name without building the alias table, and
 `region::in_general_position`/`folded` key a face-reading region on `reads_own` and the strata
 (`faces::cached`'s `Arc`s), never `reads` (which walks the body's every other round).
 `tests/conrod.rs` is the gate.
-**Draft (§6.9, 0.79, #245):** `solid(f, from:, to:, draft: θ)` (or `depth:`) is
+**Draft (§6.9, 0.80, #245):** `solid(f, from:, to:, draft: θ)` (or `depth:`) is
 `SolidDef::Prism::draft` (radians; `None` undrafted): the section at ordinate `h` is `f` moved `|h|
 tan θ` into its material from its own plane, the parting plane (an outer loop in, a hole out). Every
 evaluator reads it: the facets (`primitive::prism`'s `taper`, `offset` by mitres, a side breaking at
@@ -1493,6 +1493,20 @@ Conventions:
   guard is inside `witness::screen`: at a solution, a tangency present, removals capped at what
   the matching cannot account for, at most `SCREEN_MAX`.  A double root's singular value is as
   small as a real freedom's, so a candidate is recognised only by trying it.
+  **The tangent at a point of any path** (#251): `g tangent(at: m) l`, the parser reading `at:`
+  as a point unless it is `start`/`end`/`p1`/`p2` — of a spline `SplineTangentAt` (the
+  `spline_tangent_at` kernel, `spline_tangent_line`'s direction row alone), of a curve
+  `CurveTangentAt` (`FamilyKernel::TangentAt`), of a circle or arc `TangentCircleAt` (the
+  `tangent_arc_line` kernel over `[at, centre, line]`), of a line `parallel`. The spline's and
+  curve's own `t` is **the contact's**: `Sketch::add` hands it the place of the contact holding
+  `m` on `g` (`Constraint::tangent_at`/`holds_on`, `Sketch::holding`), whichever comes first
+  (`share_place` re-points an earlier tangent), whatever it arrived carrying, so a graft, JSON and
+  a lifted program (which never writes its `t`) share it again; `remove` keeps a place free while
+  any constraint owns it. None holding it is E040 (`relations::tangents_at`). A line and a spline
+  or curve touch whichever is written first (`settle` puts the curve first). A **`path`** formal
+  (`Ty::Path`) is an entity formal judged by kind at elaboration: what the call gave it must be a
+  line, arc, circle, spline or curve (`Expansion::paths`, `relations::paths`, E103 at the
+  argument). `tests/tangent_at.rs` and `tests/curve_contact.rs` are the gates.
 - `Horizontal`/`Vertical` level a line; a `Level` along a view's own axis levels a *pair of
   points* with the same line kernels, and `cgraph` gives it a `virtual_line` in the ground
   x-axis's direction class, so a levelled pair decomposes rather than falling to the residue.
@@ -1659,7 +1673,7 @@ Conventions:
   place a slot is spelled, read by both printers, as `hint_of` is for the clause around it.
   **The shape is the library's**: every user-facing kind has one or two entity slots, always first
   in spec order, with `Symmetric` the single three-slot exception.  Several kinds share a word —
-  **`coincident` is fifteen kinds, `distance` nine, `tangent` six** (twins in space included; a set's uses besides) — and `horizontal`/`vertical` are
+  **`coincident` is fifteen kinds, `distance` nine, `tangent` nine** (twins in space included; a set's uses besides) — and `horizontal`/`vertical` are
   two each with the *fixity* doing the work.
   **What a word means is the kinds of its operands, and a name does not carry its kind until
   elaboration** — so the parser resolves *nothing*: it produces a `syntax::Written` and

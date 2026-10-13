@@ -573,11 +573,12 @@ pub fn build(sk: &Sketch) -> ConstraintGraph {
             // (p on the line and |c − p| = r come from elsewhere).  One encoding for the arc's
             // own endpoint and for a line end held on a circle: the same statement, and
             // `relation_bound` has to count it the same way for both.
-            CKind::TangentArcLine | CKind::TangentLineCircleAt
-                if known(&g, c.args[if c.kind == CKind::TangentArcLine { 0 } else { 1 }].ent())
+            // and at a point named on a circle or an arc (#251), the round first as an arc's
+            CKind::TangentArcLine | CKind::TangentLineCircleAt | CKind::TangentCircleAt
+                if known(&g, c.args[if c.kind == CKind::TangentLineCircleAt { 1 } else { 0 }].ent())
                     .is_some() =>
             {
-                let arc = c.kind == CKind::TangentArcLine;
+                let arc = c.kind != CKind::TangentLineCircleAt;
                 let round = c.args[if arc { 0 } else { 1 }].ent();
                 let ln = c.args[if arc { 1 } else { 0 }].ent().i();
                 let Some(at) = c.contact_point(sk) else { continue };
