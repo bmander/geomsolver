@@ -16,7 +16,7 @@
 //! coefficient to `jac`, the higher ones to differences of `jac` along the path.  A kernel with
 //! no form is named where a curvature against a trace that uses it is refused.
 
-use crate::kernels::{Kernel, KERNELS, MIN_LINE_LEN};
+use crate::kernels::{KERNELS, MIN_LINE_LEN};
 
 /// Coefficients kept: the value and four orders.  A curvature's Jacobian reads `C'''`
 /// (`∂C''/∂u`), and a generated profile's third order reads the motion's translation one order
@@ -204,63 +204,21 @@ impl std::ops::Div for Jet {
     }
 }
 
-/// How a kernel is read over `Jet`s.
+/// A kernel's Taylor form, its rows over `Jet`s into `r`.
+pub type JetForm = fn(&[Jet], &[f64], &mut [Jet]);
+
+/// How a kernel is read over `Jet`s: what `Kernel::form` says, registered beside it.
 #[derive(Clone, Copy)]
-enum Form {
+pub enum Form {
     /// Affine in its columns: `r₀ = res(z₀)` and `r_k = J·z_k`, with `J` constant.
     Affine,
     /// Written out over `Jet`s: the residual rows, from the columns and the constants.
-    Jet(fn(&[Jet], &[f64], &mut [Jet])),
+    Jet(JetForm),
 }
 
-/// Each kernel's form, by id: read once from the names they are registered under.
+/// Kernel `kid`'s form, as it is registered (`Kernel::form`).
 fn form_of(kid: usize) -> Option<Form> {
-    static FORMS: std::sync::OnceLock<Vec<Option<Form>>> = std::sync::OnceLock::new();
-    FORMS.get_or_init(|| KERNELS.iter().map(form).collect()).get(kid).copied().flatten()
-}
-
-/// A kernel's form, by the name it is registered under — `None` for one that has none yet.
-fn form(kn: &Kernel) -> Option<Form> {
-    use Form::*;
-    Some(match kn.name {
-        "coincident" | "midpoint" | "horizontal" | "vertical" | "radius" | "equal_radius"
-        | "ordinate_u" | "ordinate_v" | "annular_distance" | "radius_free"
-        | "ordinate_u_free" | "ordinate_v_free" | "annular_distance_free" | "coincident3"
-        | "midpoint3" | "project" => Affine,
-        "distance" => Jet(distance),
-        "distance_free" => Jet(distance_free),
-        "parallel" => Jet(parallel),
-        "perpendicular" => Jet(perpendicular),
-        "angle" => Jet(angle),
-        "angle_free" => Jet(angle_free),
-        "equal_length" => Jet(equal_length),
-        "point_on_line" => Jet(point_on_line),
-        "point_on_circle" => Jet(point_on_circle),
-        "tangent_line_circle" => Jet(tangent_line_circle),
-        "tangent_circle_circle" => Jet(tangent_circle_circle),
-        "tangent_arc_line" => Jet(tangent_arc_line),
-        "symmetric" => Jet(symmetric),
-        "parallel_distance" => Jet(parallel_distance),
-        "parallel_distance_free" => Jet(parallel_distance_free),
-        "point_line_distance" => Jet(point_line_distance),
-        "point_line_distance_free" => Jet(point_line_distance_free),
-        "point_line_magnitude" => Jet(point_line_magnitude),
-        "point_line_magnitude_free" => Jet(point_line_magnitude_free),
-        "parallel_magnitude" => Jet(parallel_magnitude),
-        "parallel_magnitude_free" => Jet(parallel_magnitude_free),
-        "arc_length" => Jet(arc_length),
-        "ordinate_line" => Jet(ordinate_line),
-        "ordinate_line_free" => Jet(ordinate_line_free),
-        "arc_length_free" => Jet(arc_length_free),
-        "equal_angle" => Jet(equal_angle),
-        // a contact on a spline, along its own parameter as well as the curve's points (#121)
-        "point_on_spline" => Jet(point_on_spline),
-        "spline_tangent_line" => Jet(spline_tangent_line),
-        "spline_tangent_at" => Jet(spline_tangent_at),
-        "spline_curvature" => Jet(spline_curvature),
-        // the kernels in space are written once over `Num`, their forms with them
-        name => return crate::kernels::num_form(name).map(Jet),
-    })
+    KERNELS.get(kid).and_then(|kn| kn.form)
 }
 
 /// Whether kernel `kid`'s form is affine: its second order is zero, so a derivative of it along
@@ -379,11 +337,11 @@ fn ordinate_gap(v: &[Jet]) -> Jet {
     ((v[2] - v[0]) * dx + (v[3] - v[1]) * dy) / Jet::line_len(dx, dy)
 }
 
-fn ordinate_line(v: &[Jet], k: &[f64], r: &mut [Jet]) {
+pub(crate) fn ordinate_line(v: &[Jet], k: &[f64], r: &mut [Jet]) {
     r[0] = ordinate_gap(v).shift(-k[0]);
 }
 
-fn ordinate_line_free(v: &[Jet], k: &[f64], r: &mut [Jet]) {
+pub(crate) fn ordinate_line_free(v: &[Jet], k: &[f64], r: &mut [Jet]) {
     r[0] = ordinate_gap(v) - free_dim(v, k, 8);
 }
 
@@ -391,70 +349,70 @@ fn arc_sweep(v: &[Jet]) -> Jet {
     crate::kernels::arc_bearings(v).1
 }
 
-fn distance(v: &[Jet], k: &[f64], r: &mut [Jet]) {
+pub(crate) fn distance(v: &[Jet], k: &[f64], r: &mut [Jet]) {
     r[0] = dist_sq(v).shift(-k[0] * k[0]);
 }
 
-fn distance_free(v: &[Jet], k: &[f64], r: &mut [Jet]) {
+pub(crate) fn distance_free(v: &[Jet], k: &[f64], r: &mut [Jet]) {
     let d = free_dim(v, k, 4);
     r[0] = dist_sq(v) - d * d;
 }
 
-fn parallel(v: &[Jet], _k: &[f64], r: &mut [Jet]) {
+pub(crate) fn parallel(v: &[Jet], _k: &[f64], r: &mut [Jet]) {
     let (d1x, d1y, d2x, d2y) = dirs(v);
     r[0] = d1x * d2y - d1y * d2x;
 }
 
-fn perpendicular(v: &[Jet], _k: &[f64], r: &mut [Jet]) {
+pub(crate) fn perpendicular(v: &[Jet], _k: &[f64], r: &mut [Jet]) {
     let (d1x, d1y, d2x, d2y) = dirs(v);
     r[0] = d1x * d2x + d1y * d2y;
 }
 
-fn angle(v: &[Jet], k: &[f64], r: &mut [Jet]) {
+pub(crate) fn angle(v: &[Jet], k: &[f64], r: &mut [Jet]) {
     r[0] = angle_gap(v, Jet::constant(k[0]));
 }
 
-fn angle_free(v: &[Jet], k: &[f64], r: &mut [Jet]) {
+pub(crate) fn angle_free(v: &[Jet], k: &[f64], r: &mut [Jet]) {
     r[0] = angle_gap(v, free_dim(v, k, 8));
 }
 
-fn equal_angle(v: &[Jet], k: &[f64], r: &mut [Jet]) {
+pub(crate) fn equal_angle(v: &[Jet], k: &[f64], r: &mut [Jet]) {
     r[0] = wrap_turn(bearing_gap(v) - bearing_gap(&v[8..]) * k[0]);
 }
 
-fn equal_length(v: &[Jet], _k: &[f64], r: &mut [Jet]) {
+pub(crate) fn equal_length(v: &[Jet], _k: &[f64], r: &mut [Jet]) {
     let (d1x, d1y, d2x, d2y) = dirs(v);
     r[0] = d1x * d1x + d1y * d1y - d2x * d2x - d2y * d2y;
 }
 
-fn point_on_line(v: &[Jet], _k: &[f64], r: &mut [Jet]) {
+pub(crate) fn point_on_line(v: &[Jet], _k: &[f64], r: &mut [Jet]) {
     let (dx, dy) = (v[4] - v[2], v[5] - v[3]);
     let (wx, wy) = (v[0] - v[2], v[1] - v[3]);
     r[0] = dx * wy - dy * wx;
 }
 
-fn point_on_circle(v: &[Jet], _k: &[f64], r: &mut [Jet]) {
+pub(crate) fn point_on_circle(v: &[Jet], _k: &[f64], r: &mut [Jet]) {
     let (ux, uy) = (v[0] - v[2], v[1] - v[3]);
     r[0] = ux * ux + uy * uy - v[4] * v[4];
 }
 
-fn tangent_line_circle(v: &[Jet], k: &[f64], r: &mut [Jet]) {
+pub(crate) fn tangent_line_circle(v: &[Jet], k: &[f64], r: &mut [Jet]) {
     let (dx, dy) = (v[2] - v[0], v[3] - v[1]);
     let (wx, wy) = (v[4] - v[0], v[5] - v[1]);
     r[0] = (dx * wy - dy * wx) / Jet::line_len(dx, dy) - v[6] * k[0];
 }
 
-fn tangent_circle_circle(v: &[Jet], k: &[f64], r: &mut [Jet]) {
+pub(crate) fn tangent_circle_circle(v: &[Jet], k: &[f64], r: &mut [Jet]) {
     let (ux, uy) = (v[0] - v[3], v[1] - v[4]);
     let rr = v[2] + v[5] * k[0];
     r[0] = ux * ux + uy * uy - rr * rr;
 }
 
-fn tangent_arc_line(v: &[Jet], _k: &[f64], r: &mut [Jet]) {
+pub(crate) fn tangent_arc_line(v: &[Jet], _k: &[f64], r: &mut [Jet]) {
     r[0] = (v[0] - v[2]) * (v[6] - v[4]) + (v[1] - v[3]) * (v[7] - v[5]);
 }
 
-fn symmetric(v: &[Jet], _k: &[f64], r: &mut [Jet]) {
+pub(crate) fn symmetric(v: &[Jet], _k: &[f64], r: &mut [Jet]) {
     let (dx, dy) = (v[6] - v[4], v[7] - v[5]);
     let mx = v[0] + v[2] - v[4] * 2.0;
     let my = v[1] + v[3] - v[5] * 2.0;
@@ -462,43 +420,43 @@ fn symmetric(v: &[Jet], _k: &[f64], r: &mut [Jet]) {
     r[1] = (v[2] - v[0]) * dx + (v[3] - v[1]) * dy;
 }
 
-fn parallel_distance(v: &[Jet], k: &[f64], r: &mut [Jet]) {
+pub(crate) fn parallel_distance(v: &[Jet], k: &[f64], r: &mut [Jet]) {
     r[0] = parallel_gap(v).shift(-k[0]);
 }
 
-fn parallel_distance_free(v: &[Jet], k: &[f64], r: &mut [Jet]) {
+pub(crate) fn parallel_distance_free(v: &[Jet], k: &[f64], r: &mut [Jet]) {
     r[0] = parallel_gap(v) - free_dim(v, k, 8);
 }
 
-fn point_line_distance(v: &[Jet], k: &[f64], r: &mut [Jet]) {
+pub(crate) fn point_line_distance(v: &[Jet], k: &[f64], r: &mut [Jet]) {
     r[0] = point_line_gap(v).shift(-k[0]);
 }
 
-fn point_line_distance_free(v: &[Jet], k: &[f64], r: &mut [Jet]) {
+pub(crate) fn point_line_distance_free(v: &[Jet], k: &[f64], r: &mut [Jet]) {
     r[0] = point_line_gap(v) - free_dim(v, k, 6);
 }
 
-fn point_line_magnitude(v: &[Jet], k: &[f64], r: &mut [Jet]) {
+pub(crate) fn point_line_magnitude(v: &[Jet], k: &[f64], r: &mut [Jet]) {
     r[0] = point_line_gap(v).abs().shift(-k[0]);
 }
 
-fn point_line_magnitude_free(v: &[Jet], k: &[f64], r: &mut [Jet]) {
+pub(crate) fn point_line_magnitude_free(v: &[Jet], k: &[f64], r: &mut [Jet]) {
     r[0] = point_line_gap(v).abs() - free_dim(v, k, 6);
 }
 
-fn parallel_magnitude(v: &[Jet], k: &[f64], r: &mut [Jet]) {
+pub(crate) fn parallel_magnitude(v: &[Jet], k: &[f64], r: &mut [Jet]) {
     r[0] = parallel_gap(v).abs().shift(-k[0]);
 }
 
-fn parallel_magnitude_free(v: &[Jet], k: &[f64], r: &mut [Jet]) {
+pub(crate) fn parallel_magnitude_free(v: &[Jet], k: &[f64], r: &mut [Jet]) {
     r[0] = parallel_gap(v).abs() - free_dim(v, k, 8);
 }
 
-fn arc_length(v: &[Jet], k: &[f64], r: &mut [Jet]) {
+pub(crate) fn arc_length(v: &[Jet], k: &[f64], r: &mut [Jet]) {
     r[0] = (v[6] * arc_sweep(v)).shift(-k[0]);
 }
 
-fn arc_length_free(v: &[Jet], k: &[f64], r: &mut [Jet]) {
+pub(crate) fn arc_length_free(v: &[Jet], k: &[f64], r: &mut [Jet]) {
     r[0] = v[6] * arc_sweep(v) - free_dim(v, k, 7);
 }
 
@@ -549,7 +507,7 @@ fn span_frame(t: Jet, ctrl: &[Jet], k: &[f64]) -> [[Jet; 2]; 3] {
 }
 
 /// (px, py, t, c0x … c3y): `p − C(t)`.
-fn point_on_spline(v: &[Jet], k: &[f64], r: &mut [Jet]) {
+pub(crate) fn point_on_spline(v: &[Jet], k: &[f64], r: &mut [Jet]) {
     let [c, _, _] = span_frame(v[2], &v[3..], k);
     r[0] = v[0] - c[0];
     r[1] = v[1] - c[1];
@@ -557,7 +515,7 @@ fn point_on_spline(v: &[Jet], k: &[f64], r: &mut [Jet]) {
 
 /// (t, c0x … c3y, ax, ay, bx, by): the contact on the line, and the curve along it, each over
 /// the line's length.
-fn spline_tangent_line(v: &[Jet], k: &[f64], r: &mut [Jet]) {
+pub(crate) fn spline_tangent_line(v: &[Jet], k: &[f64], r: &mut [Jet]) {
     let [c, c1, _] = span_frame(v[0], &v[1..9], k);
     let (dx, dy) = (v[11] - v[9], v[12] - v[10]);
     r[0] = point_line_gap(&[c[0], c[1], v[9], v[10], v[11], v[12]]);
@@ -566,7 +524,7 @@ fn spline_tangent_line(v: &[Jet], k: &[f64], r: &mut [Jet]) {
 
 /// (t, c0x … c3y, ax, ay, bx, by): the curve along the line where a contact holds its point
 /// (#251) — `spline_tangent_line`'s second row.
-fn spline_tangent_at(v: &[Jet], k: &[f64], r: &mut [Jet]) {
+pub(crate) fn spline_tangent_at(v: &[Jet], k: &[f64], r: &mut [Jet]) {
     let [_, c1, _] = span_frame(v[0], &v[1..9], k);
     let (dx, dy) = (v[11] - v[9], v[12] - v[10]);
     r[0] = (c1[0] * dy - c1[1] * dx) / Jet::line_len(dx, dy);
@@ -574,7 +532,7 @@ fn spline_tangent_at(v: &[Jet], k: &[f64], r: &mut [Jet]) {
 
 /// (t, c0x … c3y, cx, cy, r): the centre is the centre of curvature, and the radius its
 /// distance.
-fn spline_curvature(v: &[Jet], k: &[f64], r: &mut [Jet]) {
+pub(crate) fn spline_curvature(v: &[Jet], k: &[f64], r: &mut [Jet]) {
     let [c, c1, c2] = span_frame(v[0], &v[1..9], k);
     let (tx, ty) = (c1[0], c1[1]);
     let (dx, dy) = (v[9] - c[0], v[10] - c[1]);

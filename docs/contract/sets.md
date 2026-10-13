@@ -88,7 +88,7 @@ missing its point or line is dropped with its rows), JSON (`"duals"`, `"along": 
 it, `to_program` drops it (a flat program cannot spell it).  Every static kernel but the drags
 has a Taylor form (the spline contacts' exact to every order, `taylor::span_frame`:
 the basis about `t₀` a cubic in the jet `τ`, over `Σ wB` by the quotient rule): the spatial `*_rows` are generic over
-`kernels::Num` (`Dual<N>` for res/jac, `Jet` for the form, `kernels::num_form`), the
+`kernels::Num` (`Dual<N>` for res/jac, `Jet` for the form, `Kernel::form`, `num_kernel!`), the
 hand-written spatial kernels have generic twins held to them by `tests/taylor.rs`.  Refused: a
 set named as an entity (E040 in `rewrite`), `coincident` between two sets, parentheses, a
 non-point `coincident`, a non-line or claimed `tangent`.  `tests/sets.rs` is the gate.

@@ -11,7 +11,7 @@
 
 #[allow(unused_imports)]
 use crate::fmath::Det;
-use crate::taylor::Jet;
+use crate::taylor::{self, Form, Jet};
 /// Kernel ids, in registration order.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(u8)]
@@ -148,6 +148,10 @@ pub struct Kernel {
     pub jac: fn(n: usize, v: &[f64], k: &[f64], j: &mut [f64]),
     /// n_res*n_par entries when the Jacobian is instance-independent.
     pub const_jac: Option<&'static [f64]>,
+    /// How the kernel is read over `Jet`s (`taylor::Form`): what a trace's higher orders and a
+    /// row's derivative read; `None` for one with no form yet, and for every kernel built
+    /// rather than registered.
+    pub form: Option<Form>,
 }
 
 impl Kernel {
@@ -196,6 +200,7 @@ pub fn curve_kernel(n_theta: usize, n_const: usize) -> Kernel {
         res: point_on_curve_res,
         jac: point_on_curve_jac,
         const_jac: None,
+        form: None,
     }
 }
 
@@ -225,6 +230,7 @@ pub fn dual_kernel(inner: usize) -> Kernel {
         res: dual_row_res,
         jac: dual_row_jac,
         const_jac: None,
+        form: None,
     }
 }
 
@@ -361,7 +367,7 @@ pub fn point_on_body_kernel(n_theta: usize, n_const: usize, body: u8) -> Kernel 
         EXTREMAL => ("point_on_extremal", point_on_body_res::<EXTREMAL>, point_on_body_jac::<EXTREMAL>),
         _ => ("point_on_trace", point_on_body_res::<TRACE>, point_on_body_jac::<TRACE>),
     };
-    Kernel { name, n_res: 2, n_par: 3 + n_theta, n_const, degree: 1, res, jac, const_jac: None }
+    Kernel { name, n_res: 2, n_par: 3 + n_theta, n_const, degree: 1, res, jac, const_jac: None, form: None }
 }
 
 /// The view's numbers a point on an extrusion reads before its contact's (`extrusion_kernel`):
@@ -388,6 +394,7 @@ pub fn extrusion_kernel(n_theta: usize, n_const: usize, body: u8) -> Kernel {
         res,
         jac,
         const_jac: None,
+        form: None,
     }
 }
 
@@ -401,7 +408,7 @@ pub fn curve_tangent_kernel(n_theta: usize, n_const: usize, body: u8) -> Kernel 
         EXTREMAL => ("extremal_tangent_line", curve_tangent_res::<EXTREMAL>, curve_tangent_jac::<EXTREMAL>),
         _ => ("curve_tangent_line", curve_tangent_res::<FORMULA>, curve_tangent_jac::<FORMULA>),
     };
-    Kernel { name, n_res: 2, n_par: 1 + n_theta + 4, n_const, degree: 1, res, jac, const_jac: None }
+    Kernel { name, n_res: 2, n_par: 1 + n_theta + 4, n_const, degree: 1, res, jac, const_jac: None, form: None }
 }
 
 /// The tangent at a point already on a curve written in the language (#251): `(u, θ…, ax, ay,
@@ -414,7 +421,7 @@ pub fn curve_tangent_at_kernel(n_theta: usize, n_const: usize, body: u8) -> Kern
         EXTREMAL => ("extremal_tangent_at", curve_tangent_at_res::<EXTREMAL>, curve_tangent_at_jac::<EXTREMAL>),
         _ => ("curve_tangent_at", curve_tangent_at_res::<FORMULA>, curve_tangent_at_jac::<FORMULA>),
     };
-    Kernel { name, n_res: 1, n_par: 1 + n_theta + 4, n_const, degree: 1, res, jac, const_jac: None }
+    Kernel { name, n_res: 1, n_par: 1 + n_theta + 4, n_const, degree: 1, res, jac, const_jac: None, form: None }
 }
 
 /// A kernel's residual or Jacobian, as the table holds it.
@@ -436,6 +443,7 @@ pub fn spline_length_kernel(n: usize, free: bool) -> Kernel {
         res: spline_length_res,
         jac: spline_length_jac,
         const_jac: None,
+        form: None,
     }
 }
 
@@ -486,6 +494,7 @@ pub fn curve_curvature_kernel(n_theta: usize, n_const: usize, body: u8, formed: 
         res,
         jac,
         const_jac: None,
+        form: None,
     }
 }
 
@@ -2966,26 +2975,10 @@ fn lift_rows<T: Num>(v: &[T], _k: &[f64]) -> [T; 3] {
     [0, 1, 2].map(|t| x[t] - (o[t] + a * u[t] + b * w[t]))
 }
 
-fn lift_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
-    dual_res::<14, 3, 0>(n, v, k, r, lift_rows)
-}
-
-fn lift_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
-    dual_jac::<14, 3, 0>(n, v, k, j, lift_rows)
-}
-
 /// Columns of `point_on_plane`: (X, o, du, dv).  `(X − o)·n̂`: a point on a plane in space.
 fn point_on_plane_rows<T: Num>(v: &[T], _k: &[f64]) -> [T; 1] {
     let (_, _, n) = frame(vec3(v, 6), vec3(v, 9));
     [vdot(vsub(vec3(v, 0), vec3(v, 3)), n)]
-}
-
-fn point_on_plane_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
-    dual_res::<12, 1, 0>(n, v, k, r, point_on_plane_rows)
-}
-
-fn point_on_plane_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
-    dual_jac::<12, 1, 0>(n, v, k, j, point_on_plane_rows)
 }
 
 /// Columns of `line_on_plane`: (A, B, o, du, dv).  Both ends on the plane: two rows.
@@ -2993,14 +2986,6 @@ fn line_on_plane_rows<T: Num>(v: &[T], _k: &[f64]) -> [T; 2] {
     let o = vec3(v, 6);
     let (_, _, n) = frame(vec3(v, 9), vec3(v, 12));
     [vdot(vsub(vec3(v, 0), o), n), vdot(vsub(vec3(v, 3), o), n)]
-}
-
-fn line_on_plane_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
-    dual_res::<15, 2, 0>(n, v, k, r, line_on_plane_rows)
-}
-
-fn line_on_plane_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
-    dual_jac::<15, 2, 0>(n, v, k, j, line_on_plane_rows)
 }
 
 /// Columns of `point_on_circle3`: (X, C, r, du, dv) — a hidden point, a circle's centre lifted
@@ -3013,14 +2998,6 @@ fn point_on_circle3_rows<T: Num>(v: &[T], _k: &[f64]) -> [T; 2] {
     [vdot(d, d).sqrt() - v[6], vdot(n, d)]
 }
 
-fn point_on_circle3_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
-    dual_res::<13, 2, 0>(n, v, k, r, point_on_circle3_rows)
-}
-
-fn point_on_circle3_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
-    dual_jac::<13, 2, 0>(n, v, k, j, point_on_circle3_rows)
-}
-
 /// Columns of `project_solved`: (X_A, X_B, du_A, dv_A, du_B, dv_B) — two images' hidden points
 /// and their planes.  `(n̂_A × n̂_B)·(X_A − X_B)`: the projector rule in space, the two images on
 /// one line square to the fold.  Degree 1.
@@ -3028,14 +3005,6 @@ fn project_solved_rows<T: Num>(v: &[T], _k: &[f64]) -> [T; 1] {
     let (_, _, na) = frame(vec3(v, 6), vec3(v, 9));
     let (_, _, nb) = frame(vec3(v, 12), vec3(v, 15));
     [vdot(vcross(na, nb), vsub(vec3(v, 0), vec3(v, 3)))]
-}
-
-fn project_solved_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
-    dual_res::<18, 1, 0>(n, v, k, r, project_solved_rows)
-}
-
-fn project_solved_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
-    dual_jac::<18, 1, 0>(n, v, k, j, project_solved_rows)
 }
 
 /// Columns of `project`: (p, q) — two images drawn in two fixed planes — K = (d_A, d_B, k), the
@@ -3081,22 +3050,6 @@ fn ordinate_line_rows<T: Num>(v: &[T], k: &[f64]) -> [T; 1] {
 /// The free twin's columns: (p, q, a, b, n), K = (m, c) — the number `m·n + c`.
 fn ordinate_line_free_rows<T: Num>(v: &[T], k: &[f64]) -> [T; 1] {
     [ordinate_line_gap(v) - free_num(v[8], k)]
-}
-
-fn ordinate_line_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
-    dual_res::<8, 1, 1>(n, v, k, r, ordinate_line_rows)
-}
-
-fn ordinate_line_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
-    dual_jac::<8, 1, 1>(n, v, k, j, ordinate_line_rows)
-}
-
-fn ordinate_line_free_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
-    dual_res::<9, 1, 2>(n, v, k, r, ordinate_line_free_rows)
-}
-
-fn ordinate_line_free_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
-    dual_jac::<9, 1, 2>(n, v, k, j, ordinate_line_free_rows)
 }
 
 /// Columns of `ordinate_space`: (X, Y, A, B), K = (D).  `(Y − X)·(B − A)/|B − A| − D`: how far
@@ -3156,70 +3109,6 @@ fn ordinate_frame_n_free_rows<T: Num>(v: &[T], k: &[f64]) -> [T; 1] {
     ordinate_frame_free_rows(v, k, 2)
 }
 
-fn ordinate_space_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
-    dual_res::<12, 1, 1>(n, v, k, r, ordinate_space_rows)
-}
-
-fn ordinate_space_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
-    dual_jac::<12, 1, 1>(n, v, k, j, ordinate_space_rows)
-}
-
-fn ordinate_space_free_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
-    dual_res::<13, 1, 2>(n, v, k, r, ordinate_space_free_rows)
-}
-
-fn ordinate_space_free_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
-    dual_jac::<13, 1, 2>(n, v, k, j, ordinate_space_free_rows)
-}
-
-fn ordinate_frame_u_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
-    dual_res::<12, 1, 1>(n, v, k, r, ordinate_frame_u_rows)
-}
-
-fn ordinate_frame_u_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
-    dual_jac::<12, 1, 1>(n, v, k, j, ordinate_frame_u_rows)
-}
-
-fn ordinate_frame_v_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
-    dual_res::<12, 1, 1>(n, v, k, r, ordinate_frame_v_rows)
-}
-
-fn ordinate_frame_v_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
-    dual_jac::<12, 1, 1>(n, v, k, j, ordinate_frame_v_rows)
-}
-
-fn ordinate_frame_n_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
-    dual_res::<12, 1, 1>(n, v, k, r, ordinate_frame_n_rows)
-}
-
-fn ordinate_frame_n_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
-    dual_jac::<12, 1, 1>(n, v, k, j, ordinate_frame_n_rows)
-}
-
-fn ordinate_frame_u_free_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
-    dual_res::<13, 1, 2>(n, v, k, r, ordinate_frame_u_free_rows)
-}
-
-fn ordinate_frame_u_free_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
-    dual_jac::<13, 1, 2>(n, v, k, j, ordinate_frame_u_free_rows)
-}
-
-fn ordinate_frame_v_free_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
-    dual_res::<13, 1, 2>(n, v, k, r, ordinate_frame_v_free_rows)
-}
-
-fn ordinate_frame_v_free_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
-    dual_jac::<13, 1, 2>(n, v, k, j, ordinate_frame_v_free_rows)
-}
-
-fn ordinate_frame_n_free_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
-    dual_res::<13, 1, 2>(n, v, k, r, ordinate_frame_n_free_rows)
-}
-
-fn ordinate_frame_n_free_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
-    dual_jac::<13, 1, 2>(n, v, k, j, ordinate_frame_n_free_rows)
-}
-
 /// Columns of `axis_on_plane`: (a, d, o, du, dv), K = (L) — an axis's place and direction, and the
 /// plane.  `(a − o)·n̂` and `(a + L·d − o)·n̂`: two points on the axis a drawing's extent `L` apart,
 /// each on the plane, so both rows are lengths and weigh alike.  Degree 1.
@@ -3229,14 +3118,6 @@ fn axis_on_plane_rows<T: Num>(v: &[T], k: &[f64]) -> [T; 2] {
     let l = T::cst(k[0]);
     let far = [a[0] + d[0] * l, a[1] + d[1] * l, a[2] + d[2] * l];
     [vdot(vsub(a, o), n), vdot(vsub(far, o), n)]
-}
-
-fn axis_on_plane_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
-    dual_res::<15, 2, 1>(n, v, k, r, axis_on_plane_rows)
-}
-
-fn axis_on_plane_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
-    dual_jac::<15, 2, 1>(n, v, k, j, axis_on_plane_rows)
 }
 
 /// Columns of `axis_coincident`: (a₁, d₁, a₂, d₂), K = (e₁, e₂, L) — two directions across the
@@ -3252,14 +3133,6 @@ fn axis_coincident_rows<T: Num>(v: &[T], k: &[f64]) -> [T; 4] {
     [vdot(along, e(0)) * l, vdot(along, e(1)) * l, vdot(off, e(0)), vdot(off, e(1))]
 }
 
-fn axis_coincident_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
-    dual_res::<12, 4, 7>(n, v, k, r, axis_coincident_rows)
-}
-
-fn axis_coincident_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
-    dual_jac::<12, 4, 7>(n, v, k, j, axis_coincident_rows)
-}
-
 /// Columns of `line_on_axis`: (A, B, a, d), K = (e₁, e₂) — two directions across the axis as it
 /// stood when compiled or refreshed.  Both ends on the axis's line, `point_on_axis`'s two rows
 /// for each: `((X − a) × d̂)·e_k`.  A line of no length is still on it.  Degree 1.
@@ -3268,14 +3141,6 @@ fn line_on_axis_rows<T: Num>(v: &[T], k: &[f64]) -> [T; 4] {
     let e = |t: usize| cst3(k, 3 * t);
     let (wp, wq) = (vcross(vsub(p, a), d), vcross(vsub(q, a), d));
     [vdot(wp, e(0)), vdot(wp, e(1)), vdot(wq, e(0)), vdot(wq, e(1))]
-}
-
-fn line_on_axis_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
-    dual_res::<12, 4, 6>(n, v, k, r, line_on_axis_rows)
-}
-
-fn line_on_axis_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
-    dual_jac::<12, 4, 6>(n, v, k, j, line_on_axis_rows)
 }
 
 /* -- a point at a fraction of a line's run and of an arc's turn (#248) ------------------------
@@ -3290,14 +3155,6 @@ fn line_on_axis_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
 fn point_along_line_rows<T: Num, const D: usize>(v: &[T], _k: &[f64]) -> [T; D] {
     let t = v[3 * D];
     std::array::from_fn(|c| v[c] - (v[D + c] + t * (v[2 * D + c] - v[D + c])))
-}
-
-fn point_along_line_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
-    dual_res::<7, 2, 0>(n, v, k, r, point_along_line_rows::<_, 2>)
-}
-
-fn point_along_line_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
-    dual_jac::<7, 2, 0>(n, v, k, j, point_along_line_rows::<_, 2>)
 }
 
 /// An arc's start bearing about its centre and its sweep counter-clockwise to its end, in
@@ -3326,28 +3183,12 @@ fn point_along_arc_rows<T: Num>(v: &[T], _k: &[f64]) -> [T; 2] {
     [v[0] - (v[2] + x), v[1] - (v[3] + y)]
 }
 
-fn point_along_arc_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
-    dual_res::<10, 2, 0>(n, v, k, r, point_along_arc_rows)
-}
-
-fn point_along_arc_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
-    dual_jac::<10, 2, 0>(n, v, k, j, point_along_arc_rows)
-}
-
 fn point_along_line_2<T: Num>(v: &[T], k: &[f64]) -> [T; 2] {
     point_along_line_rows::<T, 2>(v, k)
 }
 
 fn point_along_line_3<T: Num>(v: &[T], k: &[f64]) -> [T; 3] {
     point_along_line_rows::<T, 3>(v, k)
-}
-
-fn point_along_line3_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
-    dual_res::<10, 3, 0>(n, v, k, r, point_along_line_rows::<_, 3>)
-}
-
-fn point_along_line3_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
-    dual_jac::<10, 3, 0>(n, v, k, j, point_along_line_rows::<_, 3>)
 }
 
 /// Columns of `point_along_arc3`: (X, C, r, du, dv, c, s, e, t) — the point's hidden point, the
@@ -3361,26 +3202,10 @@ fn point_along_arc3_rows<T: Num>(v: &[T], _k: &[f64]) -> [T; 3] {
     [0, 1, 2].map(|t| x[t] - (c3[t] + cs * u[t] + sn * w[t]))
 }
 
-fn point_along_arc3_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
-    dual_res::<20, 3, 0>(n, v, k, r, point_along_arc3_rows)
-}
-
-fn point_along_arc3_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
-    dual_jac::<20, 3, 0>(n, v, k, j, point_along_arc3_rows)
-}
-
 /// Columns of `axis_parallel_plane`: (d, du, dv).  `d̂·n̂`: square to the plane's normal.  Degree 0.
 fn axis_parallel_plane_rows<T: Num>(v: &[T], _k: &[f64]) -> [T; 1] {
     let (_, _, n) = frame(vec3(v, 3), vec3(v, 6));
     [vdot(vunit(vec3(v, 0)), n)]
-}
-
-fn axis_parallel_plane_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
-    dual_res::<9, 1, 0>(n, v, k, r, axis_parallel_plane_rows)
-}
-
-fn axis_parallel_plane_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
-    dual_jac::<9, 1, 0>(n, v, k, j, axis_parallel_plane_rows)
 }
 
 /// Columns of `axis_perpendicular_plane`: (d, du, dv), K = (e₁, e₂) — two directions across the
@@ -3391,14 +3216,6 @@ fn axis_perpendicular_plane_rows<T: Num>(v: &[T], k: &[f64]) -> [T; 2] {
     let x = vcross(vunit(vec3(v, 0)), n);
     let e = |t: usize| cst3(k, 3 * t);
     [vdot(x, e(0)), vdot(x, e(1))]
-}
-
-fn axis_perpendicular_plane_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
-    dual_res::<9, 2, 6>(n, v, k, r, axis_perpendicular_plane_rows)
-}
-
-fn axis_perpendicular_plane_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
-    dual_jac::<9, 2, 6>(n, v, k, j, axis_perpendicular_plane_rows)
 }
 
 /// Columns of `plane_parallel`: (du_P, dv_P, du_Q, dv_Q), K = (e₁, e₂), two directions across
@@ -3412,14 +3229,6 @@ fn plane_parallel_rows<T: Num>(v: &[T], k: &[f64]) -> [T; 2] {
     [vdot(x, e(0)), vdot(x, e(1))]
 }
 
-fn plane_parallel_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
-    dual_res::<12, 2, 6>(n, v, k, r, plane_parallel_rows)
-}
-
-fn plane_parallel_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
-    dual_jac::<12, 2, 6>(n, v, k, j, plane_parallel_rows)
-}
-
 /// Columns of `plane_distance`: (o_P, du_P, dv_P, o_Q), K = (D).  `(o_Q − o_P)·n̂_P − D`: how far
 /// `Q`'s origin stands along `P`'s normal.  Degree 1.
 fn plane_distance_rows<T: Num>(v: &[T], k: &[f64]) -> [T; 1] {
@@ -3427,27 +3236,11 @@ fn plane_distance_rows<T: Num>(v: &[T], k: &[f64]) -> [T; 1] {
     [vdot(vsub(vec3(v, 9), vec3(v, 0)), n) - T::cst(k[0])]
 }
 
-fn plane_distance_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
-    dual_res::<12, 1, 1>(n, v, k, r, plane_distance_rows)
-}
-
-fn plane_distance_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
-    dual_jac::<12, 1, 1>(n, v, k, j, plane_distance_rows)
-}
-
 /// (o_P, du_P, dv_P, o_Q, a), K = (m, c): the gap `m·a + c`.
 fn plane_distance_free_rows<T: Num>(v: &[T], k: &[f64]) -> [T; 1] {
     let (_, _, n) = frame(vec3(v, 3), vec3(v, 6));
     let d = free_num(v[12], k);
     [vdot(vsub(vec3(v, 9), vec3(v, 0)), n) - d]
-}
-
-fn plane_distance_free_res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
-    dual_res::<13, 1, 2>(n, v, k, r, plane_distance_free_rows)
-}
-
-fn plane_distance_free_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
-    dual_jac::<13, 1, 2>(n, v, k, j, plane_distance_free_rows)
 }
 
 /* -- the hand-written kernels in space, read over `Num` --------------------------------------
@@ -3571,62 +3364,42 @@ fn symmetric3_rows<T: Num>(v: &[T], _k: &[f64]) -> [T; 3] {
     [0, 1, 2].map(|t| q[t] + p[t] - two * a[t] - two * s * eh[t])
 }
 
-/// A kernel's Taylor form, its rows over `Jet`s into `r`.
-pub(crate) type JetForm = fn(&[Jet], &[f64], &mut [Jet]);
-
-/// The form of a kernel written over `Num`, by the name it is registered under: its rows read
-/// over `Jet`s.
-pub(crate) fn num_form(name: &str) -> Option<JetForm> {
-    macro_rules! form {
-        ($rows:ident) => {
-            Some(|v: &[Jet], k: &[f64], r: &mut [Jet]| r.copy_from_slice(&$rows(v, k)))
-        };
-    }
-    match name {
-        "lift" => form!(lift_rows),
-        "distance3" => form!(distance3_rows),
-        "distance3_free" => form!(distance3_free_rows),
-        "point_line3" => form!(point_line3_rows),
-        "point_line3_free" => form!(point_line3_free_rows),
-        "line_line3" => form!(line_line3_rows),
-        "line_line3_free" => form!(line_line3_free_rows),
-        "angle3" => form!(angle3_rows),
-        "angle3_free" => form!(angle3_free_rows),
-        "perpendicular3" => form!(perpendicular3_rows),
-        "parallel3" => form!(parallel3_rows),
-        "point_on_plane" => form!(point_on_plane_rows),
-        "point_on_circle3" => form!(point_on_circle3_rows),
-        "project_solved" => form!(project_solved_rows),
-        "point_on_line3" => form!(point_on_line3_rows),
-        "equal_length3" => form!(equal_length3_rows),
-        "line_on_plane" => form!(line_on_plane_rows),
-        "symmetric3" => form!(symmetric3_rows),
-        "axis_unit" => form!(axis_unit_rows),
-        "axis_foot" => form!(axis_foot_rows),
-        "point_on_axis" => form!(point_on_axis_rows),
-        "ordinate_space" => form!(ordinate_space_rows),
-        "ordinate_space_free" => form!(ordinate_space_free_rows),
-        "ordinate_frame_u" => form!(ordinate_frame_u_rows),
-        "ordinate_frame_u_free" => form!(ordinate_frame_u_free_rows),
-        "ordinate_frame_v" => form!(ordinate_frame_v_rows),
-        "ordinate_frame_v_free" => form!(ordinate_frame_v_free_rows),
-        "ordinate_frame_n" => form!(ordinate_frame_n_rows),
-        "ordinate_frame_n_free" => form!(ordinate_frame_n_free_rows),
-        "axis_on_plane" => form!(axis_on_plane_rows),
-        "axis_parallel_plane" => form!(axis_parallel_plane_rows),
-        "axis_perpendicular_plane" => form!(axis_perpendicular_plane_rows),
-        "plane_distance" => form!(plane_distance_rows),
-        "plane_distance_free" => form!(plane_distance_free_rows),
-        "axis_coincident" => form!(axis_coincident_rows),
-        "plane_parallel" => form!(plane_parallel_rows),
-        "line_on_axis" => form!(line_on_axis_rows),
-        "point_along_line" => form!(point_along_line_2),
-        "point_along_arc" => form!(point_along_arc_rows),
-        "point_along_line3" => form!(point_along_line_3),
-        "point_along_arc3" => form!(point_along_arc3_rows),
-        _ => None,
-    }
+/// The Taylor form of a kernel written once over `Num` (`Kernel::form`): its rows read over
+/// `Jet`s.
+macro_rules! num_form {
+    ($rows:ident) => {
+        Some(Form::Jet(|v: &[Jet], k: &[f64], r: &mut [Jet]| r.copy_from_slice(&$rows(v, k))))
+    };
 }
+
+/// A table entry for a kernel written once over `Num` and read over `Dual`s: its values
+/// (`dual_res`) and Jacobian (`dual_jac`) at the sizes stated once, and its form: its rows read
+/// over `Jet`s unless another is given.
+macro_rules! num_kernel {
+    ($name:literal, $rows:ident, n_res: $r:literal, n_par: $n:literal, degree: $d:literal,
+     n_const: $c:literal) => {
+        num_kernel!($name, $rows, n_res: $r, n_par: $n, degree: $d, n_const: $c,
+                    form: num_form!($rows))
+    };
+    // a kernel whose form is written out over `Jet`s apart from its rows (`taylor.rs`)
+    ($name:literal, $rows:ident, n_res: $r:literal, n_par: $n:literal, degree: $d:literal,
+     n_const: $c:literal, form: $form:expr) => {
+        Kernel {
+            name: $name,
+            n_res: $r,
+            n_par: $n,
+            degree: $d,
+            n_const: $c,
+            res: |n, v, k, r| dual_res::<$n, $r, $c>(n, v, k, r, $rows),
+            jac: |n, v, k, j| dual_jac::<$n, $r, $c>(n, v, k, j, $rows),
+            const_jac: None,
+            form: $form,
+        }
+    };
+}
+
+/// An affine kernel's form (`Kernel::form`): its Jacobian.
+const AFFINE: Option<Form> = Some(Form::Affine);
 
 /* -- two directed angles equal, and an arc's length --------------------------------------- */
 
@@ -3722,95 +3495,95 @@ fn arc_length_free_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
 }
 
 pub static KERNELS: [Kernel; N_KERNELS] = [
-    Kernel { name: "coincident", n_res: 2, n_par: 4, degree: 1, n_const: 0, res: coincident::res, jac: coincident::jac, const_jac: Some(coincident::J) },
-    Kernel { name: "distance", n_res: 1, n_par: 4, degree: 2, n_const: 1, res: distance_res, jac: distance_jac, const_jac: None },
-    Kernel { name: "midpoint", n_res: 2, n_par: 6, degree: 1, n_const: 0, res: midpoint::res, jac: midpoint::jac, const_jac: Some(midpoint::J) },
-    Kernel { name: "drag", n_res: 2, n_par: 2, degree: 1, n_const: 3, res: drag_res, jac: drag_jac, const_jac: None },
-    Kernel { name: "horizontal", n_res: 1, n_par: 4, degree: 1, n_const: 0, res: horizontal::res, jac: horizontal::jac, const_jac: Some(horizontal::J) },
-    Kernel { name: "vertical", n_res: 1, n_par: 4, degree: 1, n_const: 0, res: vertical::res, jac: vertical::jac, const_jac: Some(vertical::J) },
-    Kernel { name: "parallel", n_res: 1, n_par: 8, degree: 2, n_const: 0, res: parallel_res, jac: parallel_jac, const_jac: None },
-    Kernel { name: "perpendicular", n_res: 1, n_par: 8, degree: 2, n_const: 0, res: perpendicular_res, jac: perpendicular_jac, const_jac: None },
-    Kernel { name: "angle", n_res: 1, n_par: 8, degree: 0, n_const: 1, res: angle_res, jac: angle_jac, const_jac: None },
-    Kernel { name: "equal_length", n_res: 1, n_par: 8, degree: 2, n_const: 0, res: equal_length_res, jac: equal_length_jac, const_jac: None },
-    Kernel { name: "point_on_line", n_res: 1, n_par: 6, degree: 2, n_const: 0, res: point_on_line_res, jac: point_on_line_jac, const_jac: None },
-    Kernel { name: "point_on_circle", n_res: 1, n_par: 5, degree: 2, n_const: 0, res: point_on_circle_res, jac: point_on_circle_jac, const_jac: None },
-    Kernel { name: "radius", n_res: 1, n_par: 1, degree: 1, n_const: 1, res: radius_res, jac: radius_jac, const_jac: Some(RADIUS_J) },
-    Kernel { name: "equal_radius", n_res: 1, n_par: 2, degree: 1, n_const: 0, res: equal_radius::res, jac: equal_radius::jac, const_jac: Some(equal_radius::J) },
-    Kernel { name: "tangent_line_circle", n_res: 1, n_par: 7, degree: 1, n_const: 1, res: tangent_line_circle_res, jac: tangent_line_circle_jac, const_jac: None },
-    Kernel { name: "tangent_circle_circle", n_res: 1, n_par: 6, degree: 2, n_const: 1, res: tangent_circle_circle_res, jac: tangent_circle_circle_jac, const_jac: None },
-    Kernel { name: "tangent_arc_line", n_res: 1, n_par: 8, degree: 2, n_const: 0, res: tangent_arc_line_res, jac: tangent_arc_line_jac, const_jac: None },
-    Kernel { name: "symmetric", n_res: 2, n_par: 8, degree: 2, n_const: 0, res: symmetric_res, jac: symmetric_jac, const_jac: None },
-    Kernel { name: "parallel_distance", n_res: 1, n_par: 8, degree: 1, n_const: 1, res: parallel_distance_res, jac: parallel_distance_jac, const_jac: None },
-    Kernel { name: "point_line_distance", n_res: 1, n_par: 6, degree: 1, n_const: 1, res: point_line_distance_res, jac: point_line_distance_jac, const_jac: None },
-    Kernel { name: "annular_distance", n_res: 1, n_par: 2, degree: 1, n_const: 1, res: annular_distance_res, jac: annular_distance_jac, const_jac: Some(ANNULAR_DISTANCE_J) },
-    Kernel { name: "point_on_spline", n_res: 2, n_par: N_PAR_ON_SPLINE, degree: 1, n_const: SPAN_C, res: point_on_spline_res, jac: point_on_spline_jac, const_jac: None },
-    Kernel { name: "spline_tangent_line", n_res: 2, n_par: N_PAR_SPLINE_LINE, degree: 1, n_const: SPAN_C, res: spline_tangent_line_res, jac: spline_tangent_line_jac, const_jac: None },
-    Kernel { name: "spline_curvature", n_res: 3, n_par: N_PAR_SPLINE_CURVE, degree: 1, n_const: SPAN_C, res: spline_curvature_res, jac: spline_curvature_jac, const_jac: None },
-    Kernel { name: "ordinate_u", n_res: 1, n_par: 4, degree: 1, n_const: 1, res: ordinate_u_res, jac: ordinate_u_jac, const_jac: Some(ORDINATE_U_J) },
-    Kernel { name: "ordinate_v", n_res: 1, n_par: 4, degree: 1, n_const: 1, res: ordinate_v_res, jac: ordinate_v_jac, const_jac: Some(ORDINATE_V_J) },
-    Kernel { name: "distance_free", n_res: 1, n_par: 5, degree: 2, n_const: 2, res: distance_free_res, jac: distance_free_jac, const_jac: None },
-    Kernel { name: "angle_free", n_res: 1, n_par: 9, degree: 0, n_const: 2, res: angle_free_res, jac: angle_free_jac, const_jac: None },
-    Kernel { name: "radius_free", n_res: 1, n_par: 2, degree: 1, n_const: 2, res: radius_free_res, jac: radius_free_jac, const_jac: None },
-    Kernel { name: "parallel_distance_free", n_res: 1, n_par: 9, degree: 1, n_const: 2, res: parallel_distance_free_res, jac: parallel_distance_free_jac, const_jac: None },
-    Kernel { name: "point_line_distance_free", n_res: 1, n_par: 7, degree: 1, n_const: 2, res: point_line_distance_free_res, jac: point_line_distance_free_jac, const_jac: None },
-    Kernel { name: "annular_distance_free", n_res: 1, n_par: 3, degree: 1, n_const: 2, res: annular_distance_free_res, jac: annular_distance_free_jac, const_jac: None },
-    Kernel { name: "ordinate_u_free", n_res: 1, n_par: 5, degree: 1, n_const: 2, res: ordinate_u_free_res, jac: ordinate_u_free_jac, const_jac: None },
-    Kernel { name: "ordinate_v_free", n_res: 1, n_par: 5, degree: 1, n_const: 2, res: ordinate_v_free_res, jac: ordinate_v_free_jac, const_jac: None },
-    Kernel { name: "project", n_res: 1, n_par: 4, degree: 1, n_const: 5, res: project_res, jac: project_jac, const_jac: None },
-    Kernel { name: "point_line_magnitude", n_res: 1, n_par: 6, degree: 1, n_const: 1, res: point_line_magnitude_res, jac: point_line_magnitude_jac, const_jac: None },
-    Kernel { name: "point_line_magnitude_free", n_res: 1, n_par: 7, degree: 1, n_const: 2, res: point_line_magnitude_free_res, jac: point_line_magnitude_free_jac, const_jac: None },
-    Kernel { name: "parallel_magnitude", n_res: 1, n_par: 8, degree: 1, n_const: 1, res: parallel_magnitude_res, jac: parallel_magnitude_jac, const_jac: None },
-    Kernel { name: "parallel_magnitude_free", n_res: 1, n_par: 9, degree: 1, n_const: 2, res: parallel_magnitude_free_res, jac: parallel_magnitude_free_jac, const_jac: None },
-    Kernel { name: "lift", n_res: 3, n_par: 14, degree: 1, n_const: 0, res: lift_res, jac: lift_jac, const_jac: None },
-    Kernel { name: "coincident3", n_res: 3, n_par: 6, degree: 1, n_const: 0, res: coincident3_res, jac: coincident3_jac, const_jac: None },
-    Kernel { name: "distance3", n_res: 1, n_par: 6, degree: 2, n_const: 1, res: distance3_res, jac: distance3_jac, const_jac: None },
-    Kernel { name: "distance3_free", n_res: 1, n_par: 7, degree: 2, n_const: 2, res: distance3_free_res, jac: distance3_free_jac, const_jac: None },
-    Kernel { name: "point_line3", n_res: 1, n_par: 9, degree: 1, n_const: 1, res: point_line3_res, jac: point_line3_jac, const_jac: None },
-    Kernel { name: "point_line3_free", n_res: 1, n_par: 10, degree: 1, n_const: 2, res: point_line3_free_res, jac: point_line3_free_jac, const_jac: None },
-    Kernel { name: "line_line3", n_res: 1, n_par: 12, degree: 1, n_const: 2, res: line_line3_res, jac: line_line3_jac, const_jac: None },
-    Kernel { name: "line_line3_free", n_res: 1, n_par: 13, degree: 1, n_const: 3, res: line_line3_free_res, jac: line_line3_free_jac, const_jac: None },
-    Kernel { name: "angle3", n_res: 1, n_par: 12, degree: 0, n_const: 1, res: angle3_res, jac: angle3_jac, const_jac: None },
-    Kernel { name: "angle3_free", n_res: 1, n_par: 13, degree: 0, n_const: 2, res: angle3_free_res, jac: angle3_free_jac, const_jac: None },
-    Kernel { name: "perpendicular3", n_res: 1, n_par: 12, degree: 0, n_const: 0, res: perpendicular3_res, jac: perpendicular3_jac, const_jac: None },
-    Kernel { name: "parallel3", n_res: 2, n_par: 12, degree: 0, n_const: 6, res: parallel3_res, jac: parallel3_jac, const_jac: None },
-    Kernel { name: "point_on_plane", n_res: 1, n_par: 12, degree: 1, n_const: 0, res: point_on_plane_res, jac: point_on_plane_jac, const_jac: None },
-    Kernel { name: "point_on_circle3", n_res: 2, n_par: 13, degree: 1, n_const: 0, res: point_on_circle3_res, jac: point_on_circle3_jac, const_jac: None },
-    Kernel { name: "project_solved", n_res: 1, n_par: 18, degree: 1, n_const: 0, res: project_solved_res, jac: project_solved_jac, const_jac: None },
-    Kernel { name: "point_on_line3", n_res: 2, n_par: 9, degree: 1, n_const: 6, res: point_on_line3_res, jac: point_on_line3_jac, const_jac: None },
-    Kernel { name: "equal_length3", n_res: 1, n_par: 12, degree: 2, n_const: 0, res: equal_length3_res, jac: equal_length3_jac, const_jac: None },
-    Kernel { name: "ordinate_line", n_res: 1, n_par: 8, degree: 1, n_const: 1, res: ordinate_line_res, jac: ordinate_line_jac, const_jac: None },
-    Kernel { name: "ordinate_line_free", n_res: 1, n_par: 9, degree: 1, n_const: 2, res: ordinate_line_free_res, jac: ordinate_line_free_jac, const_jac: None },
-    Kernel { name: "line_on_plane", n_res: 2, n_par: 15, degree: 1, n_const: 0, res: line_on_plane_res, jac: line_on_plane_jac, const_jac: None },
-    Kernel { name: "midpoint3", n_res: 3, n_par: 9, degree: 1, n_const: 0, res: midpoint3_res, jac: midpoint3_jac, const_jac: None },
-    Kernel { name: "symmetric3", n_res: 3, n_par: 12, degree: 1, n_const: 0, res: symmetric3_res, jac: symmetric3_jac, const_jac: None },
-    Kernel { name: "equal_angle", n_res: 1, n_par: 16, degree: 0, n_const: 1, res: equal_angle_res, jac: equal_angle_jac, const_jac: None },
-    Kernel { name: "arc_length", n_res: 1, n_par: 7, degree: 1, n_const: 1, res: arc_length_res, jac: arc_length_jac, const_jac: None },
-    Kernel { name: "arc_length_free", n_res: 1, n_par: 8, degree: 1, n_const: 2, res: arc_length_free_res, jac: arc_length_free_jac, const_jac: None },
-    Kernel { name: "axis_unit", n_res: 1, n_par: 3, degree: 0, n_const: 0, res: axis_unit_res, jac: axis_unit_jac, const_jac: None },
-    Kernel { name: "axis_foot", n_res: 1, n_par: 6, degree: 1, n_const: 0, res: axis_foot_res, jac: axis_foot_jac, const_jac: None },
-    Kernel { name: "point_on_axis", n_res: 2, n_par: 9, degree: 1, n_const: 6, res: point_on_axis_res, jac: point_on_axis_jac, const_jac: None },
-    Kernel { name: "ordinate_space", n_res: 1, n_par: 12, degree: 1, n_const: 1, res: ordinate_space_res, jac: ordinate_space_jac, const_jac: None },
-    Kernel { name: "ordinate_frame_u", n_res: 1, n_par: 12, degree: 1, n_const: 1, res: ordinate_frame_u_res, jac: ordinate_frame_u_jac, const_jac: None },
-    Kernel { name: "ordinate_space_free", n_res: 1, n_par: 13, degree: 1, n_const: 2, res: ordinate_space_free_res, jac: ordinate_space_free_jac, const_jac: None },
-    Kernel { name: "ordinate_frame_u_free", n_res: 1, n_par: 13, degree: 1, n_const: 2, res: ordinate_frame_u_free_res, jac: ordinate_frame_u_free_jac, const_jac: None },
-    Kernel { name: "ordinate_frame_v", n_res: 1, n_par: 12, degree: 1, n_const: 1, res: ordinate_frame_v_res, jac: ordinate_frame_v_jac, const_jac: None },
-    Kernel { name: "ordinate_frame_v_free", n_res: 1, n_par: 13, degree: 1, n_const: 2, res: ordinate_frame_v_free_res, jac: ordinate_frame_v_free_jac, const_jac: None },
-    Kernel { name: "ordinate_frame_n", n_res: 1, n_par: 12, degree: 1, n_const: 1, res: ordinate_frame_n_res, jac: ordinate_frame_n_jac, const_jac: None },
-    Kernel { name: "ordinate_frame_n_free", n_res: 1, n_par: 13, degree: 1, n_const: 2, res: ordinate_frame_n_free_res, jac: ordinate_frame_n_free_jac, const_jac: None },
-    Kernel { name: "axis_on_plane", n_res: 2, n_par: 15, degree: 1, n_const: 1, res: axis_on_plane_res, jac: axis_on_plane_jac, const_jac: None },
-    Kernel { name: "axis_parallel_plane", n_res: 1, n_par: 9, degree: 0, n_const: 0, res: axis_parallel_plane_res, jac: axis_parallel_plane_jac, const_jac: None },
-    Kernel { name: "axis_perpendicular_plane", n_res: 2, n_par: 9, degree: 0, n_const: 6, res: axis_perpendicular_plane_res, jac: axis_perpendicular_plane_jac, const_jac: None },
-    Kernel { name: "plane_distance", n_res: 1, n_par: 12, degree: 1, n_const: 1, res: plane_distance_res, jac: plane_distance_jac, const_jac: None },
-    Kernel { name: "plane_distance_free", n_res: 1, n_par: 13, degree: 1, n_const: 2, res: plane_distance_free_res, jac: plane_distance_free_jac, const_jac: None },
-    Kernel { name: "axis_coincident", n_res: 4, n_par: 12, degree: 1, n_const: 7, res: axis_coincident_res, jac: axis_coincident_jac, const_jac: None },
-    Kernel { name: "plane_parallel", n_res: 2, n_par: 12, degree: 0, n_const: 6, res: plane_parallel_res, jac: plane_parallel_jac, const_jac: None },
-    Kernel { name: "drag_seen", n_res: 3, n_par: 3, degree: 1, n_const: 13, res: drag_seen_res, jac: drag_seen_jac, const_jac: None },
-    Kernel { name: "line_on_axis", n_res: 4, n_par: 12, degree: 1, n_const: 6, res: line_on_axis_res, jac: line_on_axis_jac, const_jac: None },
-    Kernel { name: "spline_tangent_at", n_res: 1, n_par: N_PAR_SPLINE_LINE, degree: 1, n_const: SPAN_C, res: spline_tangent_at_res, jac: spline_tangent_at_jac, const_jac: None },
-    Kernel { name: "point_along_line", n_res: 2, n_par: 7, degree: 1, n_const: 0, res: point_along_line_res, jac: point_along_line_jac, const_jac: None },
-    Kernel { name: "point_along_arc", n_res: 2, n_par: 10, degree: 1, n_const: 0, res: point_along_arc_res, jac: point_along_arc_jac, const_jac: None },
-    Kernel { name: "point_along_line3", n_res: 3, n_par: 10, degree: 1, n_const: 0, res: point_along_line3_res, jac: point_along_line3_jac, const_jac: None },
-    Kernel { name: "point_along_arc3", n_res: 3, n_par: 20, degree: 1, n_const: 0, res: point_along_arc3_res, jac: point_along_arc3_jac, const_jac: None },
+    Kernel { name: "coincident", n_res: 2, n_par: 4, degree: 1, n_const: 0, res: coincident::res, jac: coincident::jac, const_jac: Some(coincident::J), form: AFFINE },
+    Kernel { name: "distance", n_res: 1, n_par: 4, degree: 2, n_const: 1, res: distance_res, jac: distance_jac, const_jac: None, form: Some(Form::Jet(taylor::distance)) },
+    Kernel { name: "midpoint", n_res: 2, n_par: 6, degree: 1, n_const: 0, res: midpoint::res, jac: midpoint::jac, const_jac: Some(midpoint::J), form: AFFINE },
+    Kernel { name: "drag", n_res: 2, n_par: 2, degree: 1, n_const: 3, res: drag_res, jac: drag_jac, const_jac: None, form: None },
+    Kernel { name: "horizontal", n_res: 1, n_par: 4, degree: 1, n_const: 0, res: horizontal::res, jac: horizontal::jac, const_jac: Some(horizontal::J), form: AFFINE },
+    Kernel { name: "vertical", n_res: 1, n_par: 4, degree: 1, n_const: 0, res: vertical::res, jac: vertical::jac, const_jac: Some(vertical::J), form: AFFINE },
+    Kernel { name: "parallel", n_res: 1, n_par: 8, degree: 2, n_const: 0, res: parallel_res, jac: parallel_jac, const_jac: None, form: Some(Form::Jet(taylor::parallel)) },
+    Kernel { name: "perpendicular", n_res: 1, n_par: 8, degree: 2, n_const: 0, res: perpendicular_res, jac: perpendicular_jac, const_jac: None, form: Some(Form::Jet(taylor::perpendicular)) },
+    Kernel { name: "angle", n_res: 1, n_par: 8, degree: 0, n_const: 1, res: angle_res, jac: angle_jac, const_jac: None, form: Some(Form::Jet(taylor::angle)) },
+    Kernel { name: "equal_length", n_res: 1, n_par: 8, degree: 2, n_const: 0, res: equal_length_res, jac: equal_length_jac, const_jac: None, form: Some(Form::Jet(taylor::equal_length)) },
+    Kernel { name: "point_on_line", n_res: 1, n_par: 6, degree: 2, n_const: 0, res: point_on_line_res, jac: point_on_line_jac, const_jac: None, form: Some(Form::Jet(taylor::point_on_line)) },
+    Kernel { name: "point_on_circle", n_res: 1, n_par: 5, degree: 2, n_const: 0, res: point_on_circle_res, jac: point_on_circle_jac, const_jac: None, form: Some(Form::Jet(taylor::point_on_circle)) },
+    Kernel { name: "radius", n_res: 1, n_par: 1, degree: 1, n_const: 1, res: radius_res, jac: radius_jac, const_jac: Some(RADIUS_J), form: AFFINE },
+    Kernel { name: "equal_radius", n_res: 1, n_par: 2, degree: 1, n_const: 0, res: equal_radius::res, jac: equal_radius::jac, const_jac: Some(equal_radius::J), form: AFFINE },
+    Kernel { name: "tangent_line_circle", n_res: 1, n_par: 7, degree: 1, n_const: 1, res: tangent_line_circle_res, jac: tangent_line_circle_jac, const_jac: None, form: Some(Form::Jet(taylor::tangent_line_circle)) },
+    Kernel { name: "tangent_circle_circle", n_res: 1, n_par: 6, degree: 2, n_const: 1, res: tangent_circle_circle_res, jac: tangent_circle_circle_jac, const_jac: None, form: Some(Form::Jet(taylor::tangent_circle_circle)) },
+    Kernel { name: "tangent_arc_line", n_res: 1, n_par: 8, degree: 2, n_const: 0, res: tangent_arc_line_res, jac: tangent_arc_line_jac, const_jac: None, form: Some(Form::Jet(taylor::tangent_arc_line)) },
+    Kernel { name: "symmetric", n_res: 2, n_par: 8, degree: 2, n_const: 0, res: symmetric_res, jac: symmetric_jac, const_jac: None, form: Some(Form::Jet(taylor::symmetric)) },
+    Kernel { name: "parallel_distance", n_res: 1, n_par: 8, degree: 1, n_const: 1, res: parallel_distance_res, jac: parallel_distance_jac, const_jac: None, form: Some(Form::Jet(taylor::parallel_distance)) },
+    Kernel { name: "point_line_distance", n_res: 1, n_par: 6, degree: 1, n_const: 1, res: point_line_distance_res, jac: point_line_distance_jac, const_jac: None, form: Some(Form::Jet(taylor::point_line_distance)) },
+    Kernel { name: "annular_distance", n_res: 1, n_par: 2, degree: 1, n_const: 1, res: annular_distance_res, jac: annular_distance_jac, const_jac: Some(ANNULAR_DISTANCE_J), form: AFFINE },
+    Kernel { name: "point_on_spline", n_res: 2, n_par: N_PAR_ON_SPLINE, degree: 1, n_const: SPAN_C, res: point_on_spline_res, jac: point_on_spline_jac, const_jac: None, form: Some(Form::Jet(taylor::point_on_spline)) },
+    Kernel { name: "spline_tangent_line", n_res: 2, n_par: N_PAR_SPLINE_LINE, degree: 1, n_const: SPAN_C, res: spline_tangent_line_res, jac: spline_tangent_line_jac, const_jac: None, form: Some(Form::Jet(taylor::spline_tangent_line)) },
+    Kernel { name: "spline_curvature", n_res: 3, n_par: N_PAR_SPLINE_CURVE, degree: 1, n_const: SPAN_C, res: spline_curvature_res, jac: spline_curvature_jac, const_jac: None, form: Some(Form::Jet(taylor::spline_curvature)) },
+    Kernel { name: "ordinate_u", n_res: 1, n_par: 4, degree: 1, n_const: 1, res: ordinate_u_res, jac: ordinate_u_jac, const_jac: Some(ORDINATE_U_J), form: AFFINE },
+    Kernel { name: "ordinate_v", n_res: 1, n_par: 4, degree: 1, n_const: 1, res: ordinate_v_res, jac: ordinate_v_jac, const_jac: Some(ORDINATE_V_J), form: AFFINE },
+    Kernel { name: "distance_free", n_res: 1, n_par: 5, degree: 2, n_const: 2, res: distance_free_res, jac: distance_free_jac, const_jac: None, form: Some(Form::Jet(taylor::distance_free)) },
+    Kernel { name: "angle_free", n_res: 1, n_par: 9, degree: 0, n_const: 2, res: angle_free_res, jac: angle_free_jac, const_jac: None, form: Some(Form::Jet(taylor::angle_free)) },
+    Kernel { name: "radius_free", n_res: 1, n_par: 2, degree: 1, n_const: 2, res: radius_free_res, jac: radius_free_jac, const_jac: None, form: AFFINE },
+    Kernel { name: "parallel_distance_free", n_res: 1, n_par: 9, degree: 1, n_const: 2, res: parallel_distance_free_res, jac: parallel_distance_free_jac, const_jac: None, form: Some(Form::Jet(taylor::parallel_distance_free)) },
+    Kernel { name: "point_line_distance_free", n_res: 1, n_par: 7, degree: 1, n_const: 2, res: point_line_distance_free_res, jac: point_line_distance_free_jac, const_jac: None, form: Some(Form::Jet(taylor::point_line_distance_free)) },
+    Kernel { name: "annular_distance_free", n_res: 1, n_par: 3, degree: 1, n_const: 2, res: annular_distance_free_res, jac: annular_distance_free_jac, const_jac: None, form: AFFINE },
+    Kernel { name: "ordinate_u_free", n_res: 1, n_par: 5, degree: 1, n_const: 2, res: ordinate_u_free_res, jac: ordinate_u_free_jac, const_jac: None, form: AFFINE },
+    Kernel { name: "ordinate_v_free", n_res: 1, n_par: 5, degree: 1, n_const: 2, res: ordinate_v_free_res, jac: ordinate_v_free_jac, const_jac: None, form: AFFINE },
+    Kernel { name: "project", n_res: 1, n_par: 4, degree: 1, n_const: 5, res: project_res, jac: project_jac, const_jac: None, form: AFFINE },
+    Kernel { name: "point_line_magnitude", n_res: 1, n_par: 6, degree: 1, n_const: 1, res: point_line_magnitude_res, jac: point_line_magnitude_jac, const_jac: None, form: Some(Form::Jet(taylor::point_line_magnitude)) },
+    Kernel { name: "point_line_magnitude_free", n_res: 1, n_par: 7, degree: 1, n_const: 2, res: point_line_magnitude_free_res, jac: point_line_magnitude_free_jac, const_jac: None, form: Some(Form::Jet(taylor::point_line_magnitude_free)) },
+    Kernel { name: "parallel_magnitude", n_res: 1, n_par: 8, degree: 1, n_const: 1, res: parallel_magnitude_res, jac: parallel_magnitude_jac, const_jac: None, form: Some(Form::Jet(taylor::parallel_magnitude)) },
+    Kernel { name: "parallel_magnitude_free", n_res: 1, n_par: 9, degree: 1, n_const: 2, res: parallel_magnitude_free_res, jac: parallel_magnitude_free_jac, const_jac: None, form: Some(Form::Jet(taylor::parallel_magnitude_free)) },
+    num_kernel!("lift", lift_rows, n_res: 3, n_par: 14, degree: 1, n_const: 0),
+    Kernel { name: "coincident3", n_res: 3, n_par: 6, degree: 1, n_const: 0, res: coincident3_res, jac: coincident3_jac, const_jac: None, form: AFFINE },
+    Kernel { name: "distance3", n_res: 1, n_par: 6, degree: 2, n_const: 1, res: distance3_res, jac: distance3_jac, const_jac: None, form: num_form!(distance3_rows) },
+    Kernel { name: "distance3_free", n_res: 1, n_par: 7, degree: 2, n_const: 2, res: distance3_free_res, jac: distance3_free_jac, const_jac: None, form: num_form!(distance3_free_rows) },
+    Kernel { name: "point_line3", n_res: 1, n_par: 9, degree: 1, n_const: 1, res: point_line3_res, jac: point_line3_jac, const_jac: None, form: num_form!(point_line3_rows) },
+    Kernel { name: "point_line3_free", n_res: 1, n_par: 10, degree: 1, n_const: 2, res: point_line3_free_res, jac: point_line3_free_jac, const_jac: None, form: num_form!(point_line3_free_rows) },
+    Kernel { name: "line_line3", n_res: 1, n_par: 12, degree: 1, n_const: 2, res: line_line3_res, jac: line_line3_jac, const_jac: None, form: num_form!(line_line3_rows) },
+    Kernel { name: "line_line3_free", n_res: 1, n_par: 13, degree: 1, n_const: 3, res: line_line3_free_res, jac: line_line3_free_jac, const_jac: None, form: num_form!(line_line3_free_rows) },
+    Kernel { name: "angle3", n_res: 1, n_par: 12, degree: 0, n_const: 1, res: angle3_res, jac: angle3_jac, const_jac: None, form: num_form!(angle3_rows) },
+    Kernel { name: "angle3_free", n_res: 1, n_par: 13, degree: 0, n_const: 2, res: angle3_free_res, jac: angle3_free_jac, const_jac: None, form: num_form!(angle3_free_rows) },
+    Kernel { name: "perpendicular3", n_res: 1, n_par: 12, degree: 0, n_const: 0, res: perpendicular3_res, jac: perpendicular3_jac, const_jac: None, form: num_form!(perpendicular3_rows) },
+    Kernel { name: "parallel3", n_res: 2, n_par: 12, degree: 0, n_const: 6, res: parallel3_res, jac: parallel3_jac, const_jac: None, form: num_form!(parallel3_rows) },
+    num_kernel!("point_on_plane", point_on_plane_rows, n_res: 1, n_par: 12, degree: 1, n_const: 0),
+    num_kernel!("point_on_circle3", point_on_circle3_rows, n_res: 2, n_par: 13, degree: 1, n_const: 0),
+    num_kernel!("project_solved", project_solved_rows, n_res: 1, n_par: 18, degree: 1, n_const: 0),
+    Kernel { name: "point_on_line3", n_res: 2, n_par: 9, degree: 1, n_const: 6, res: point_on_line3_res, jac: point_on_line3_jac, const_jac: None, form: num_form!(point_on_line3_rows) },
+    Kernel { name: "equal_length3", n_res: 1, n_par: 12, degree: 2, n_const: 0, res: equal_length3_res, jac: equal_length3_jac, const_jac: None, form: num_form!(equal_length3_rows) },
+    num_kernel!("ordinate_line", ordinate_line_rows, n_res: 1, n_par: 8, degree: 1, n_const: 1, form: Some(Form::Jet(taylor::ordinate_line))),
+    num_kernel!("ordinate_line_free", ordinate_line_free_rows, n_res: 1, n_par: 9, degree: 1, n_const: 2, form: Some(Form::Jet(taylor::ordinate_line_free))),
+    num_kernel!("line_on_plane", line_on_plane_rows, n_res: 2, n_par: 15, degree: 1, n_const: 0),
+    Kernel { name: "midpoint3", n_res: 3, n_par: 9, degree: 1, n_const: 0, res: midpoint3_res, jac: midpoint3_jac, const_jac: None, form: AFFINE },
+    Kernel { name: "symmetric3", n_res: 3, n_par: 12, degree: 1, n_const: 0, res: symmetric3_res, jac: symmetric3_jac, const_jac: None, form: num_form!(symmetric3_rows) },
+    Kernel { name: "equal_angle", n_res: 1, n_par: 16, degree: 0, n_const: 1, res: equal_angle_res, jac: equal_angle_jac, const_jac: None, form: Some(Form::Jet(taylor::equal_angle)) },
+    Kernel { name: "arc_length", n_res: 1, n_par: 7, degree: 1, n_const: 1, res: arc_length_res, jac: arc_length_jac, const_jac: None, form: Some(Form::Jet(taylor::arc_length)) },
+    Kernel { name: "arc_length_free", n_res: 1, n_par: 8, degree: 1, n_const: 2, res: arc_length_free_res, jac: arc_length_free_jac, const_jac: None, form: Some(Form::Jet(taylor::arc_length_free)) },
+    Kernel { name: "axis_unit", n_res: 1, n_par: 3, degree: 0, n_const: 0, res: axis_unit_res, jac: axis_unit_jac, const_jac: None, form: num_form!(axis_unit_rows) },
+    Kernel { name: "axis_foot", n_res: 1, n_par: 6, degree: 1, n_const: 0, res: axis_foot_res, jac: axis_foot_jac, const_jac: None, form: num_form!(axis_foot_rows) },
+    Kernel { name: "point_on_axis", n_res: 2, n_par: 9, degree: 1, n_const: 6, res: point_on_axis_res, jac: point_on_axis_jac, const_jac: None, form: num_form!(point_on_axis_rows) },
+    num_kernel!("ordinate_space", ordinate_space_rows, n_res: 1, n_par: 12, degree: 1, n_const: 1),
+    num_kernel!("ordinate_frame_u", ordinate_frame_u_rows, n_res: 1, n_par: 12, degree: 1, n_const: 1),
+    num_kernel!("ordinate_space_free", ordinate_space_free_rows, n_res: 1, n_par: 13, degree: 1, n_const: 2),
+    num_kernel!("ordinate_frame_u_free", ordinate_frame_u_free_rows, n_res: 1, n_par: 13, degree: 1, n_const: 2),
+    num_kernel!("ordinate_frame_v", ordinate_frame_v_rows, n_res: 1, n_par: 12, degree: 1, n_const: 1),
+    num_kernel!("ordinate_frame_v_free", ordinate_frame_v_free_rows, n_res: 1, n_par: 13, degree: 1, n_const: 2),
+    num_kernel!("ordinate_frame_n", ordinate_frame_n_rows, n_res: 1, n_par: 12, degree: 1, n_const: 1),
+    num_kernel!("ordinate_frame_n_free", ordinate_frame_n_free_rows, n_res: 1, n_par: 13, degree: 1, n_const: 2),
+    num_kernel!("axis_on_plane", axis_on_plane_rows, n_res: 2, n_par: 15, degree: 1, n_const: 1),
+    num_kernel!("axis_parallel_plane", axis_parallel_plane_rows, n_res: 1, n_par: 9, degree: 0, n_const: 0),
+    num_kernel!("axis_perpendicular_plane", axis_perpendicular_plane_rows, n_res: 2, n_par: 9, degree: 0, n_const: 6),
+    num_kernel!("plane_distance", plane_distance_rows, n_res: 1, n_par: 12, degree: 1, n_const: 1),
+    num_kernel!("plane_distance_free", plane_distance_free_rows, n_res: 1, n_par: 13, degree: 1, n_const: 2),
+    num_kernel!("axis_coincident", axis_coincident_rows, n_res: 4, n_par: 12, degree: 1, n_const: 7),
+    num_kernel!("plane_parallel", plane_parallel_rows, n_res: 2, n_par: 12, degree: 0, n_const: 6),
+    Kernel { name: "drag_seen", n_res: 3, n_par: 3, degree: 1, n_const: 13, res: drag_seen_res, jac: drag_seen_jac, const_jac: None, form: None },
+    num_kernel!("line_on_axis", line_on_axis_rows, n_res: 4, n_par: 12, degree: 1, n_const: 6),
+    Kernel { name: "spline_tangent_at", n_res: 1, n_par: N_PAR_SPLINE_LINE, degree: 1, n_const: SPAN_C, res: spline_tangent_at_res, jac: spline_tangent_at_jac, const_jac: None, form: Some(Form::Jet(taylor::spline_tangent_at)) },
+    num_kernel!("point_along_line", point_along_line_2, n_res: 2, n_par: 7, degree: 1, n_const: 0),
+    num_kernel!("point_along_arc", point_along_arc_rows, n_res: 2, n_par: 10, degree: 1, n_const: 0),
+    num_kernel!("point_along_line3", point_along_line_3, n_res: 3, n_par: 10, degree: 1, n_const: 0),
+    num_kernel!("point_along_arc3", point_along_arc3_rows, n_res: 3, n_par: 20, degree: 1, n_const: 0),
 ];
 
 /// One row of a kernel: residual and Jacobian for a single constraint's local values.  The

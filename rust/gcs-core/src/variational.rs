@@ -504,6 +504,7 @@ pub fn kernel(sk: &Sketch, cid: u32) -> Kernel {
         res: crate::extremal::transversal_res,
         jac: crate::extremal::transversal_jac,
         const_jac: None,
+        form: None,
     }
 }
 
