@@ -5,8 +5,7 @@ use gcs_core::{program,solve,solid::{RevolvedRegion,SweptField},interval::minimu
 fn read(source: &str) -> program::Elaborated {
     let (mut p,errors) = crate::common::parse(source);
     assert!(errors.is_empty(),"{errors:?}");
-    // the spiral bevel's modules, where a document uses one
-    assert!(gcs_core::modules::link(&mut p,&mut fixtures::gear::module).is_empty());
+    assert!(gcs_core::modules::link(&mut p,&mut |name| gcs_core::library::resolve(name)).is_empty());
     let mut e = program::elaborate(&p);
     assert!(e.ok(),"{:?}",e.diags);
     assert!(solve::solve(&mut e.sketch,Default::default()).success);
@@ -157,11 +156,11 @@ body := solid(profile,about: ax)
     }
 }
 
-/// A member's blank as its own step draws it (`spiral_bevel/blank/member.sv`): the pitch
+/// A member's blank as the spiral bevel's step drew it (`fixtures/member_blank.sv`): the pitch
 /// generator 50 along the page's x from the apex, the face width 10 about its mean point.
 #[test]
 fn declarative_bevel_blank_reads_without_gear_names_or_coordinate_adapters() {
-    let e = read(include_str!("../../../examples/spiral_bevel/blank/member.sv"));
+    let e = read(include_str!("../fixtures/member_blank.sv"));
     let blank = field(&e,"member.material");
     assert!(blank.support_bounds().unwrap().is_some());
     let rm = 50.;

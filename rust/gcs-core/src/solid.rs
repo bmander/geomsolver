@@ -36,6 +36,8 @@ pub use field_mesh::{FieldMesher, FieldMeshing, FieldProgress, FieldSurface, Exa
 pub use field_mesh::{first_pass as field_first_pass, creases as field_creases};
 pub mod cad;
 pub mod region;
+pub mod bounded;
+pub mod canal;
 pub mod lowering;
 pub mod faces;
 pub mod conditions;
@@ -437,13 +439,16 @@ pub(crate) fn has_sweep(sk: &Sketch, si: usize) -> bool {
     validate_at(sk, si, REPORT_UNIT).map(|ops| sweeps_among(sk, &ops)).unwrap_or(false)
 }
 
-/// Whether a continuous motion sweep, or a region read in general position (`region::in_general`)
-/// that no entry of the lowering table builds (`lowering::lowered`), is among `operands`
+/// Whether a continuous motion sweep no ball's tube builds (`canal::is_canal`), or a region read in
+/// general position (`region::in_general`)
+/// that neither an entry of the lowering table (`lowering::lowered`) nor the common of its terms
+/// (`bounded::built`) builds, is among `operands`
 /// (`validate_at`'s): their boundary is the field's.  The one test, asked by `has_sweep` and by an
 /// evaluation that has validated the operands already at its own unit.
 fn sweeps_among(sk: &Sketch, operands: &std::collections::BTreeSet<usize>) -> bool {
-    operands.iter().any(|&i| matches!(sk.solids[i].def, SolidDef::Swept { .. })
-        || region::in_general(sk, i) && !matches!(lowering::lowered(sk, i), Some(Ok(_))))
+    operands.iter().any(|&i| matches!(sk.solids[i].def, SolidDef::Swept { .. }) && !canal::is_canal(sk, i)
+        || region::in_general(sk, i) && !matches!(lowering::lowered(sk, i), Some(Ok(_)))
+            && !matches!(bounded::built(sk, i), Some(Ok(_))))
 }
 
 fn validate_at(sk: &Sketch, si: usize, unit: f64) -> Result<std::collections::BTreeSet<usize>, String> {
@@ -472,7 +477,7 @@ fn validate_at(sk: &Sketch, si: usize, unit: f64) -> Result<std::collections::BT
                 pending.push((*source as usize,false));
                 continue;
             }
-            SolidDef::Prism { face, from, to } => {
+            SolidDef::Prism { face, from, to, .. } => {
                 if !from.value.is_finite() || !to.value.is_finite() || from.value == to.value {
                     return Err(fail("a prism needs two distinct finite ordinates"));
                 }
@@ -502,6 +507,16 @@ fn validate_at(sk: &Sketch, si: usize, unit: f64) -> Result<std::collections::BT
             return Err(fail(&format!(
                 "edge `{name}` collides with a sweep cap; rename the source edge"
             )));
+        }
+        // a draft that takes a side to nothing, or past it, is no solid of those sides
+        if let SolidDef::Prism { from, to, draft: Some(d), .. } = &s.def {
+            let reach = from.value.abs().max(to.value.abs());
+            for (k, p) in polys.iter().enumerate() {
+                if let Some(i) = primitive::drafted_away(&p.pts, reach, primitive::loop_taper(k, d.value.dtan())) {
+                    return Err(fail(&format!("a draft of `{}` takes the side `{}` to nothing \
+                        within the prism's ordinates", d.text, p.names[p.of[i].0])));
+                }
+            }
         }
         if let SolidDef::Revolve { face, axis, sweep, .. } = &s.def {
             if !sweep.value.is_finite() || sweep.value <= 0.0 {

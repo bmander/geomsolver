@@ -208,14 +208,15 @@ length(40) arc1                     l1 angle(l3, l4) l2
 
 One word may name several constraints, told apart by the operands' kinds, by fixity, or by what
 stands in the parentheses. **Operand order carries meaning**: `arc tangent line` is a tangency at
-the arc's end, `line tangent circle` the ordinary one.
+the arc's end, `line tangent circle` the ordinary one. A line and a spline or a curve touch
+whichever is written first (`l tangent g` is `g tangent l`).
 
 | word | fixity | operands and options |
 |---|---|---|
 | `coincident` | infix | two points; a point to a line, circle, arc, spline or curve; in space, a point, line or axis to a plane, a point or line to an axis, two axes; a point to a set (1.13) |
 | `distance` | infix | two points (length; with `along:`, an **ordinate**: signed from the first to the second along an axis, a line, or a view's word `x`/`y`/`right`/`left`/`up`/`down`); a point and a line, or two lines (a magnitude, `side:` picks the side); two concentric circles or arcs; a point and a plane (`along: u`/`v`/`n`); two planes (along the first's normal) |
 | `distance` | prefix | a line: its length |
-| `tangent` | infix | line–circle/arc (`at: p1`/`p2` for tangency at that end; `side:` the centre's side); circle/arc–circle/arc (`external: true/false`); arc–line (`at: start`/`end`); spline or curve–line; a line or set to a set (1.13) |
+| `tangent` | infix | line–circle/arc (`at: p1`/`p2` for tangency at that end; `side:` the centre's side); circle/arc–circle/arc (`external: true/false`); arc–line (`at: start`/`end`); spline or curve–line; any path–line `at:` a point a relation holds on the path (below); a line or set to a set (1.13) |
 | `equal` | infix | two lines (length) or two circles/arcs (radius) |
 | `curvature` | infix | spline or curve and a circle/arc: the osculating circle there |
 | `horizontal`, `vertical` | prefix | a line. Between two points they are `std`'s words (1.9): `use std (horizontal)`, then `a horizontal b` |
@@ -268,6 +269,12 @@ contacts on one curve share it: with `param s: Angle hint(318)`, `path tangent(t
 `line tangent(at: p2) circle`, `arc tangent(at: start) line`. `p coincident circle` plus a bare
 `line tangent circle` is rank-deficient at every solution (the diagnosis reports a motion "blocked
 at second order").
+
+**The tangent at a point of any path**: `g tangent(at: m) l`, `m` a point a relation already holds
+on `g`, says `l` runs along `g` there — one equation. Of a spline or a curve it reads the place of
+the contact holding `m` (`m coincident g`, pinned or not; with none it is E040, naming it), so
+`m coincident(t == s) g` beside it determines the line where `g tangent(t == s) l` would restate the
+point; of a circle or an arc the radius to `m` is square to `l`; of a line it is `parallel`.
 
 #### Across views, a word means space
 
@@ -490,7 +497,9 @@ t0 := Rung(l0, r0, len: 50)
 ```
 
 - **Formals** are an entity kind (`point`, `line`, `circle`, `arc`, `plane`, …), a number type
-  (`Length`, `Angle`, `Int`, `Scalar`, `Side`), a `group` or a `set` (1.13).
+  (`Length`, `Angle`, `Int`, `Scalar`, `Side`), a `group` or a `set` (1.13), or a `path`: a line,
+  an arc, a circle, a spline or a curve, whose words are settled by what the call gives it
+  (`m coincident g`, `g tangent(at: m) l`); given anything else, E103 at the argument.
 - **Passing an entity is aliasing**: formal and actual are one entity, so a boundary costs nothing.
 - **Entities by position, numbers by label**: `Rung(l0, r0, len: 50)`, never `Rung(l0, r0, 50)`,
   and nothing positional after a label. Either mistake is **E004** at the argument.
@@ -761,6 +770,16 @@ from it following; off the solution the solve looks for a root where it holds, e
 bound does not hold`. The diagnosis lists violated and *active* bounds. Not on a `claim`, and not
 the only reader of an unknown. Inside a set's body a bound makes a region (1.13).
 
+**Words, not seeds.** A bound chooses the root of each block of the solve's block-triangular order
+it decides, so a drawing whose bounds, senses and signed ordinates say every root needs no seed at
+all: the solve constructs it a block at a time, searching a block's roots for the one its bounds
+allow. Say a side with a bound wherever a seed would have picked it — which side of a plane
+(`foot inside std.top`), which hand (`A distance(>= 0, along: v) std.top`), which way along a line
+(`A distance(>= 0, along: generator) M`) — and draw a line whose direction matters so that it runs
+by construction (to the foot of a point on it, `M level(ax) foot`), not by a bound on its end,
+which the solve cannot carry across by moving one point. A skew distance between two lines is a
+magnitude, its side such a choice. `spiral_bevel/hypoid.sv` seeds nothing.
+
 ### 1.12 Space, axes and planes
 
 **Standard datums.** `use std` gives the axes `std.x` (right), `std.y` (away from the front's
@@ -970,7 +989,7 @@ revolution, and `solid(tooth)` swept under a generating motion cuts a member exa
 has no tip line for `distance(>= d) tip`: draw the land's ends on the tip, the flanks through
 them, and bound the land between them (`eb distance(>= 0.01mm, along: left) ea`), which picks the
 root as the drawn section's bound did. Where the flanks go through points the drawing already
-places (the hypoid's pitch points, `spiral_bevel/crown/`), the land has no root to choose and
+places (the hypoid's pitch points, `spiral_bevel/hypoid.sv`), the land has no root to choose and
 needs no bound; a round's radius may read an unknown of the drawing (`r: 0.3 * mn`).
 
 ### 1.14 Faces and solids
@@ -1063,6 +1082,12 @@ k := Par(o).p over u in (-2mm, 2mm)
 - **Prism**, along the face's normal: `depth: 30mm` is the material *behind* the visible face,
   `from: -30mm, to: 0mm`; write `from:`/`to:` when the face is not at an end. `through: body` spans
   the target's stock and additions both ways and follows the solve.
+- **Draft**: `draft: 3deg` beside `from:`/`to:` or `depth:` tapers the sides from the face's own
+  plane (the parting plane, ordinate 0): the section at `h` is the face moved `|h| tan 3°` into its
+  material, so the sides lean away from that plane on both sides of it, a hole widening as the
+  outside narrows. Lines' sides stay planes and circles' become cones; faces keep their names, a
+  side crossing the plane two pieces of one name. An arc meeting a side at an angle (not tangent)
+  is refused by the exact kernel. `conrod/rod.sv` drafts its eyes and shank.
 - **Revolution**, about a line or axis **in the face's own plane**: `about: ax` is a full turn,
   `sweep: 90deg` a partial one (caps `start` and `end`), `sense: cw` reverses it. An axis lies in
   the plane when it is one of the plane's own (`about: std.z` on `std.front`) or the solve puts it
@@ -1179,9 +1204,10 @@ share none it is read point by point: it shows and meshes like any solid, but an
 (`--step`) refuses it — unless it is one the lowering table builds: the rounds and chamfers of
 `std` along straight edges between planes, round circles where a plane meets a cylinder or a
 cone, and at corners of three square faces are built exactly (recognised by what their sets say,
-so a round written by hand is built too). Its numbers may be the drawing's: leave a radius unbound and put a point on
-the set (`heel := std.Sphere(apex, r: hint(50mm))`, `span.heel coincident heel`), and the solid
-reads the solved radius — how the hypoid's blank is sized (`spiral_bevel/blank/member.sv`).
+so a round written by hand is built too). Its numbers may be the drawing's: leave a radius unbound and say where
+the set's surface is (`heel := std.Sphere(apex)`, `M distance(w / 2, side: inside) heel`), and the
+solid reads the solved radius — how the hypoid's blank is sized (`spiral_bevel/hypoid.sv`'s
+`Blank`).
 
 #### Sketching on a face
 

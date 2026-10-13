@@ -7,7 +7,7 @@ use gcs_core::{diagnose,model::EntRef,modules,program,solid::RevolvedSurface,sol
 fn read() -> program::Elaborated {
     let src = include_str!("../fixtures/crown_section.sv");
     let (mut p,errors) = crate::common::parse(src);
-    let link = modules::link(&mut p,&mut fixtures::gear::module);
+    let link = modules::link(&mut p,&mut |name| gcs_core::library::resolve(name));
     assert!(errors.is_empty() && link.is_empty(), "{errors:?} {link:?}");
     let mut e = program::elaborate(&p);
     assert!(e.ok(), "{:?}",e.diags);

@@ -280,22 +280,19 @@ fn a_measurement_must_come_to_its_slots_dimension_over_geometry_it_can_measure()
 
 #[test]
 fn the_spiral_bevel_rolls_measured_off_the_pitch_geometry_are_its_trig_ratios() {
-    // the bevel pair, whose rolls the layout measures off its pitch triangles
-    // (`generation.sv`), each written a second time with its ratio in closed form: a pitch
-    // cone's distance over its pitch radius is one over the sine of its pitch angle
-    let anchor = "  gear_generation := motion(crown_roll, relative_to: gear_roll)\n";
-    let e = fixtures::gear::read_configured_with(&mut |name,text| {
-        let text = fixtures::gear::bevel(name,text);
-        if name != "generation" { return text; }
-        assert!(text.contains(anchor));
-        text.replace(anchor,&format!("{anchor}\
-  trig_pinion_roll := motion(about: pinion.ax, ratio: 1 / sin(atan2(24, 48)))\n\
-  trig_gear_roll := motion(about: gear.ax, ratio: -1 / sin(atan2(48, 24)))\n"))
-    });
-    let find = |suffix: &str| e.sketch.motions.iter().position(|m| m.name.ends_with(suffix))
-        .unwrap_or_else(|| panic!("no motion `{suffix}`"));
+    // the bevel pair, whose rolls the layout measures off its pitch triangles (`hypoid.sv`'s
+    // step 5), each written a second time with its ratio in closed form: a pitch cone's
+    // distance over its pitch radius is one over the sine of its pitch angle
+    let anchor = "gear_generation := motion(crown_roll, relative_to: gear_roll)\n";
+    let text = fixtures::gear::bevel(&fixtures::gear::source());
+    assert!(text.contains(anchor));
+    let e = fixtures::gear::read(&text.replace(anchor,&format!("{anchor}\
+trig_pinion_roll := motion(about: pinion_ax, ratio: 1 / sin(atan2(24, 48)))\n\
+trig_gear_roll := motion(about: gear_ax, ratio: -1 / sin(atan2(48, 24)))\n")));
+    let find = |name: &str| e.sketch.motions.iter().position(|m| m.name == name)
+        .unwrap_or_else(|| panic!("no motion `{name}`"));
     for member in ["pinion_roll","gear_roll"] {
-        let (measured,trig) = (find(&format!(".{member}")),find(&format!(".trig_{member}")));
+        let (measured,trig) = (find(member),find(&format!("trig_{member}")));
         let MotionDef::Rotation {ratio,..} = e.sketch.motions[trig].def else { panic!() };
         let read = e.sketch.motions[measured].rotation(&e.sketch).unwrap().0;
         assert!((read-ratio).abs() < 1e-9*ratio.abs(),"{member}: {read} against {ratio}");

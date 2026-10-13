@@ -16,12 +16,7 @@ type V = [f64;3];
 
 /// The bevel pair at 24 and 48 teeth of module 2, one tooth space each.
 fn pair() -> Elaborated {
-    let configuration = fixtures::gear::configuration([24,48],2.,0.,0.,35.);
-    fixtures::read_beside(&fixtures::gear::source(),&fixtures::gear::project(),&mut |name,text| {
-        if name == "configuration" { configuration.clone() }
-        else if name == "members" { fixtures::gear::one_space(&text) }
-        else { text }
-    })
+    fixtures::gear::read(&fixtures::gear::one_space(&fixtures::gear::at([24,48],2.,0.,0.,35.)))
 }
 
 /// A point of face `fi` well inside it (model units), and the face's normal there: its surface at
@@ -86,7 +81,7 @@ fn a_swept_bodys_faces_lie_on_what_their_names_say() {
     let sk = &e.sketch;
     for (member,cut) in [("pinion",["inner","inner_round","tip","outer_round","outer"]),
         ("gear",["outer_crown.inner","outer_crown.inner_round","outer_crown.tip","neighbor.outer_round","neighbor.outer"])] {
-        let body = fixtures::solid(&e,&format!("pair.{member}.body"));
+        let body = fixtures::solid(&e,&format!("{member}.body"));
         let faces = BodyFaces::read(sk,body).unwrap_or_else(|why| panic!("{member}: {why}"));
         let named: Vec<String> = faces.paths().iter().map(|p| p.text()).collect();
         // every face the build named, and the definitions name it too

@@ -613,11 +613,11 @@ mm³. The chamfer bands read as exact in the STEP files and within 1.4 µm in th
 ```sh
 make solventc OCCT=1
 mkdir -p build/exports
-build/solventc rust/examples/spiral_bevel/gears.sv --solid pair.pinion.body --tolerance \
+build/solventc rust/examples/spiral_bevel/hypoid.sv --solid pinion.body --tolerance \
   --step build/exports/hypoid-pinion.step --stl build/exports/hypoid-pinion.stl --no-diagnose
-build/solventc rust/examples/spiral_bevel/gears.sv --solid pair.gear.body --tolerance \
+build/solventc rust/examples/spiral_bevel/hypoid.sv --solid gear.body --tolerance \
   --step build/exports/hypoid-gear.step --stl build/exports/hypoid-gear.stl --no-diagnose
-build/solventc rust/examples/spiral_bevel/gears.sv --solid pair.pinion.body --tolerance \
+build/solventc rust/examples/spiral_bevel/hypoid.sv --solid pinion.body --tolerance \
   --measure build/exports/hypoid-pinion.step --measure-samples 400000 --no-diagnose
 ```
 
@@ -800,9 +800,10 @@ tool nor the model says how. The flank ends down the tooth depth are not relieve
   `backend/*.cpp` (`remesh`, `mesh_sag`, `surface_grid`, `surface_feet_near`, `read_step`,
   `face_kind`, sliver sampling); `rust/gcs-cli/src/main.rs` (`--tolerance`, `--measure`,
   `--measure-samples`).
-- The model: `rust/examples/spiral_bevel/` — `configuration.sv` and `design.sv` (the allowances),
-  `crown/section.sv` and `crown/mate_section.sv` (backlash), `crown/relief.sv` (tip relief),
-  `blank/ends.sv` (end relief), `layout.sv` and `members.sv`.
+- The model: `rust/examples/spiral_bevel/hypoid.sv` (one file since #217; when this was built,
+  `configuration.sv` and `design.sv` (the allowances), `crown/section.sv` and
+  `crown/mate_section.sv` (backlash), `crown/relief.sv` (tip relief), `blank/ends.sv` (end relief),
+  `layout.sv` and `members.sv`).
 - Tests: core `accuracy.rs`, `contact_trace.rs`, `gear_crowns.rs`, `export_contracts.rs`,
   `admission.rs`, `block_order.rs`; CLI `native_measure.rs`, `cli.rs` (the slow tier's two 10 µm
   exports), `native_surfaces/gear_cells.rs`, `native_boundary.rs`, and the tool `pair_check.rs`.

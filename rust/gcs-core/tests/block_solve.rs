@@ -165,17 +165,19 @@ fn a_stop_on_the_iteration_limit_is_finished_where_it_stopped() {
 }
 
 /// **A stop the rescue cannot settle keeps its pose** (docs/iteration-limit-rescue-plan.md): the
-/// traced gear (`gear.sv`) seeded off by a unit and given five iterations stops its DogLeg on that
-/// limit under the interactive acceptance, a success.  At every such stop the default solve either
-/// settles by the block pass or returns the stop; and at some the block pass under the limit
-/// settles it from neither the stop nor the start, so the default solve returns the stop exactly
-/// as a solve without the rescue does — the same bits, status, success, residual, counts and
-/// method.  The spiral bevel's layout gave this case until its crown became regions (#214), after
-/// which its block pass settles every such stop.  The start is looked for, not recorded, as
-/// `hypoid_layout`'s are.
+/// belt over its pulleys (`belt_tangency.sv`) seeded off by a unit and given five iterations stops
+/// its DogLeg on that limit under the interactive acceptance, a success.  At every such stop the
+/// default solve either settles — by the block pass, or a bound steered after it — or returns the
+/// stop; and at some the block pass under the limit settles it from neither the stop nor the
+/// start, so the default solve returns the stop exactly as a solve without the rescue does — the
+/// same bits, status, success, residual, counts and method.  The spiral bevel's layout gave this
+/// case until its crown became regions (#214), and the traced gear (`gear.sv`) until a block's root
+/// was searched for (#217), after which the block pass settles every such stop of both.  The start
+/// is looked for, not recorded, as `hypoid_layout`'s are.
 #[test]
 fn a_stop_the_rescue_cannot_settle_keeps_its_pose() {
-    let e = build(include_str!("../../examples/gear.sv"));
+    let e = build(include_str!("../../examples/belt_tangency.sv"));
+    assert!(gcs_core::system::System::new(&e.sketch).block_order().blocks.len() >= 2, "the rescue runs");
     let limited = SolveOpts { max_iter: 5, ..SolveOpts::default() };
     let kept = (0..32).find(|&seed| {
         let mut start = e.sketch.clone();
@@ -185,9 +187,10 @@ fn a_stop_the_rescue_cannot_settle_keeps_its_pose() {
         if !(a.success && a.status == 4 && a.method == "dogleg") { return false; }
         let b = solve(&mut on, limited);
         let same = bits(&off) == bits(&on);
-        assert!(same || b.settled() && b.method == "blocks", "seed {seed}: {b:?}");
+        assert!(same || b.settled(), "seed {seed}: {b:?}");
         same && (a.success, a.status, a.max_residual.to_bits(), a.nfev, a.iterations, &a.method)
             == (b.success, b.status, b.max_residual.to_bits(), b.nfev, b.iterations, &b.method)
     });
     assert!(kept.is_some(), "no stop among the first 32 seeds the rescue keeps: widen the search");
 }
+

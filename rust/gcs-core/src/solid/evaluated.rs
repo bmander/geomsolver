@@ -725,7 +725,8 @@ fn round_features(
         let sol = &sk.solids[i];
         // Only a circular prism has the diameter of its source circle. A revolution of
         // a circular profile is a torus, not a bore of that diameter.
-        let (SolidDef::Prism { face, .. } | SolidDef::Through { face, .. }) = sol.def else {
+        // a drafted one's is the diameter at its parting plane only, and a cone's elsewhere
+        let (SolidDef::Prism { face, draft: None, .. } | SolidDef::Through { face, .. }) = sol.def else {
             continue;
         };
         let face = &sk.faces[face as usize];

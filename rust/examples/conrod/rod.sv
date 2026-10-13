@@ -1,7 +1,8 @@
 // A forged connecting rod, rounded in Solvent: #66's closing case and #183's L8, after X0's paper
-// program (docs/fillets/x0/conrod.sv). Two eyes joined by a tapering I-section shank, the shank
-// filled into both eyes, a pocket each side of the web rounded inside, the bores chamfered, and
-// the outside's edges rounded. Draft from the parting plane is left out (#66).
+// program (docs/fillets/x0/conrod.sv). Two eyes joined by a tapering I-section shank, the eyes'
+// and the shank's sides drafted from the parting plane as they come out of the die (#245), a
+// pocket each side of the web rounded inside, the bores chamfered, and the outside's edges
+// rounded.
 //
 // `engine/conrod.sv` draws a rod in its plane of swing, where the shank-to-eye fillets are 42
 // statement lines of 2D geometry. Here the sketch is the sharp outline, and every round and
@@ -27,10 +28,11 @@ wS := 22mm       // the small end's
 fl := 18mm       // the shank's width across: its flanges
 ft := 4mm        // flange thickness, and the pockets' clearance from each eye
 wt := 5mm        // web thickness
-rf := 6mm        // the shank into the eyes
+rf := 6mm        // the shank into the eyes (left sharp, below)
 rp := 2mm        // the pockets, inside
 re := 1mm        // the outside's edges
 ch := 1mm        // the bores' chamfers
+dr := 3deg       // draft: the eyes' and the shank's sides leaning from the plane of swing
 
 // The plane of swing: the eyes, the bores, the shank's outline and the pockets', sharp.
 in std.front {
@@ -76,9 +78,9 @@ in std.front {
   pocket := face(pr, kt, pl, kb)
 }
 
-big_end := solid(face(big), from: -wB / 2, to: wB / 2)
-small_end := solid(face(small), from: -wS / 2, to: wS / 2)
-shank := solid(face(foot, right, head, left), from: -fl / 2, to: fl / 2)
+big_end := solid(face(big), from: -wB / 2, to: wB / 2, draft: dr)
+small_end := solid(face(small), from: -wS / 2, to: wS / 2, draft: dr)
+shank := solid(face(foot, right, head, left), from: -fl / 2, to: fl / 2, draft: dr)
 big_hole := solid(face(big_bore), from: -wB, to: wB)
 small_hole := solid(face(small_bore), from: -wS, to: wS)
 // beyond half the web from the plane of swing, each side: a prism of the outline, so its walls
@@ -100,31 +102,32 @@ small_hole cut rod
 front_pocket cut rod
 back_pocket cut rod
 
-// The shank's sides into the eyes: the four upright edges in the plane of swing, concave, so
-// filled. Side by side rather than `rod.shank round(r: rf) rod.big_end`, which would also take the
-// edges where the shank's flat faces meet the eye's wall, where a 6 mm ball does not fit beside
-// the pockets.
-rod.shank.left round(r: rf) rod.big_end
-rod.shank.right round(r: rf) rod.big_end
-rod.shank.left round(r: rf) rod.small_end
-rod.shank.right round(r: rf) rod.small_end
 // The pockets inside: each floor's edges, its upright corners, and where three meet a ball's.
 round(r: rp) rod.front_pocket
 round(r: rp) rod.back_pocket
 // Both ends of each bore.
 rod.big_end chamfer(d: ch) rod.big_hole
 rod.small_end chamfer(d: ch) rod.small_hole
-// The eyes' rims and the flanges' four long edges, each run cut off by the eye it ends on.
+// The eyes' rims (where a cap meets a drafted eye's cone) and the flanges' four long edges, each
+// run cut off by the cone of the eye it ends on.
 round(r: re) rod.big_end
 round(r: re) rod.small_end
 round(r: re) rod.shank
+// The shank's flat faces into the eyes' walls, concave, so filled.
+rod.shank.near round(r: re) rod.big_end
+rod.shank.far round(r: re) rod.big_end
+rod.shank.near round(r: re) rod.small_end
+rod.shank.far round(r: re) rod.small_end
 
-// Two sets of edges are left sharp: each round reads the rod as its other terms leave it, never
-// another round, so where rounds of separate statements meet they cannot blend. Add either and
-// the field reads the rod as written, but the exact build refuses it, naming where the material
-// the rounds leave touches itself along a line (#218):
-//   rod.shank.near round(r: re) rod.big_end   (and `far`, and `small_end`: the shank's faces into
-//                                              the eyes, meeting the flanges' runs and the 6 mm
-//                                              fills at one vertex)
+// The shank's sides into the eyes are left sharp: the four upright edges in the plane of swing,
+// where a 6 mm fill would go. Drafted, each is two curves (a leaning plane meets a cone) turning
+// at the parting plane, where the ball's canal on one side would meet the other's in a mitre. The
+// field reads such a fill; the exact build refuses it, naming the turn (rung 3, #245):
+//   rod.shank.left round(r: rf) rod.big_end   (and `right`, and `small_end`)
+//
+// The pockets' rims are left sharp too: each round reads the rod as its other terms leave it,
+// never another round, so where rounds of separate statements meet they cannot blend. Add them
+// and the field reads the rod as written, but the exact build refuses it, naming where the
+// material the rounds leave touches itself along a line (#218):
 //   rod.front_pocket round(r: re) rod.shank   (and `back_pocket`: the pockets' rims, whose runs
 //                                              cut down past the corners' fills on both sides)

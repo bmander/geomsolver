@@ -451,3 +451,51 @@ fn brep_json_debug() {
         Err(e) => eprintln!("NOT MESHED: {e}"),
     }
 }
+
+/// **Every corpus solid an exact B-rep** (#238): each object of every example sorted by the route
+/// its evaluation takes — the exact B-rep of a static solid (`Sketch::exact_solid`), the exact
+/// B-rep of a swept one (`brep::export::exact`), the field mesher (swept, its build refused) or
+/// the facet term (static, its build refused) — and why each that is not exact is refused. A
+/// report, ignored: `cargo test exact_census -- --ignored --nocapture` (minutes).
+#[test]
+#[ignore]
+fn exact_census() {
+    use gcs_core::brep::{export, sweep::Say};
+    let mut routes: BTreeMap<&str, usize> = BTreeMap::new();
+    let mut refused: Vec<(String, String, &str, String)> = Vec::new();
+    for (name, e) in fixtures::examples() {
+        let Some(e) = e else { continue };
+        if !e.ok() { continue; }
+        let mut solved = e.sketch.clone();
+        gcs_core::solve::solve(&mut solved, gcs_core::solve::SolveOpts::default());
+        let sk: &Sketch = &solved;
+        for i in gcs_core::overview::objects(sk) {
+            let route = if sk.is_swept(i) {
+                let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
+                match export::exact(sk, i, None, None, &say) {
+                    Ok(_) => "exact, swept",
+                    Err(r) => {
+                        refused.push((name.clone(), sk.solid_name(i), "field mesher", format!("{r:?}")));
+                        "field mesher"
+                    }
+                }
+            } else {
+                match sk.exact_solid(i) {
+                    Ok(_) => "exact, static",
+                    Err(why) => {
+                        refused.push((name.clone(), sk.solid_name(i), "facet term", why));
+                        "facet term"
+                    }
+                }
+            };
+            *routes.entry(route).or_default() += 1;
+        }
+    }
+    let total: usize = routes.values().sum();
+    eprintln!("{total} objects");
+    for (route, n) in &routes { eprintln!("  {route}: {n}"); }
+    for (file, solid, route, why) in &refused {
+        let why: String = why.chars().take(200).collect();
+        eprintln!("{route}: {file} `{solid}`: {why}");
+    }
+}

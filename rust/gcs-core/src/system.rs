@@ -289,6 +289,7 @@ impl SparseConditioned {
 /// slices, the same summation order for a column a constraint names twice, and the same
 /// `row_scale` and `col_scale` — so a block solved through it is solved in the whole system's
 /// units, and a traced contact reads its constants at the address its memory is keyed by.
+#[derive(Clone)]
 pub struct Subset {
     /// (kernel block, first instance, count, first local row, first local kernel Jacobian output).
     runs: Vec<(usize, usize, usize, usize, usize)>,
@@ -499,6 +500,9 @@ pub fn build_kernel(sk: &Sketch, key: KernelKey) -> Kernel {
                 (FamilyKernel::Contact, kernels::FORMULA) => kernels::curve_kernel(n_theta, n_const),
                 (FamilyKernel::Contact, _) => kernels::point_on_body_kernel(n_theta, n_const, body),
                 (FamilyKernel::Tangent, _) => kernels::curve_tangent_kernel(n_theta, n_const, body),
+                (FamilyKernel::TangentAt, _) => {
+                    kernels::curve_tangent_at_kernel(n_theta, n_const, body)
+                }
                 (FamilyKernel::Curvature, _) => {
                     kernels::curve_curvature_kernel(n_theta, n_const, body, formed)
                 }
