@@ -39,7 +39,7 @@ pub use faces::{FaceAxis, FacePlane};
 pub(crate) use words::faults as word_faults;
 use crate::lowering::Lowered;
 
-pub(crate) use values::{substitute_with, value_aff};
+pub(crate) use values::{substitute_with, value_aff, value_read};
 use values::{free, typed, value_of, substitute, reads_geometry};
 use resolve::{lookup, lookup_raw, written};
 

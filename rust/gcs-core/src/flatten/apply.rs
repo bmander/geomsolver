@@ -192,9 +192,19 @@ impl<'a> Walk<'a> {
             ([one], _) | (_, [one]) => Some(*one),
             _ => None,
         };
+        // the sets a statement came through (#212): the use's, then those an inner use stamped
+        let through_all = |inner: Vec<String>| through.iter().cloned().chain(inner).collect();
         for (i, (st, p, sc)) in self.out.iter_mut().enumerate().skip(from) {
             // an energy the word states is the use's statement, as its relations are (#121)
-            if let StmtKind::Minimize(_) | StmtKind::Measured(_) = &st.kind {
+            let energy = match &mut st.kind {
+                StmtKind::Measured(m) => {
+                    m.through = through_all(std::mem::take(&mut m.through));
+                    true
+                }
+                StmtKind::Minimize(_) => true,
+                _ => false,
+            };
+            if energy {
                 sc.written.get_or_insert(st.id);
                 st.id = u.st.id;
                 st.span = u.st.span;
@@ -214,10 +224,8 @@ impl<'a> Walk<'a> {
             st.span = u.st.span;
             st.chained = u.st.chained;
             *p = u.path.to_vec();
-            // the sets it came through: the use's, then those an inner use stamped (#212)
             let inner = r.word.take().map_or(Vec::new(), |w| w.through);
-            let through = through.iter().cloned().chain(inner).collect();
-            r.word = Some(Worded { through, ..stamp.clone() });
+            r.word = Some(Worded { through: through_all(inner), ..stamp.clone() });
             // in space, a set's body (§6.21), which no later stamp undoes
             r.space |= set;
             r.claim |= u.rel.claim;

@@ -109,23 +109,25 @@ fn the_over_and_under_determined_parts_stand_apart() {
 }
 
 /// The configured hypoid's layout as recorded, with no backlash or tip relief; the relief's own
-/// geometry is `the_tip_relief_orders_whole`'s.
+/// geometry is `the_tip_relief_orders_whole`'s.  Since the crown is regions about the cutter's axis
+/// (#214) it draws no section: what was 204 rows in 64 blocks, 13 deep (three crown sections of
+/// sixteen), is the cutter's axis and its flank cones' apexes and feet.
 #[test]
-fn the_hypoid_layout_is_64_blocks_13_deep() {
+fn the_hypoid_layout_is_41_blocks_9_deep() {
     let e = fixtures::gear::read_configured_with(&mut |name, text| fixtures::gear::design(name, text, 25., 12.5, 25.));
     let mut sys = System::new(&e.sketch);
     let order = sys.block_order();
-    assert_eq!((sys.hard_rows().len(), sys.n_free), (204, 204));
+    assert_eq!((sys.hard_rows().len(), sys.n_free), (105, 105));
     assert!(order.over_rows.is_empty() && order.under_cols.is_empty());
-    assert_eq!(order.blocks.len(), 64);
-    assert_eq!(order.depth(), 13);
+    assert_eq!(order.blocks.len(), 41);
+    assert_eq!(order.depth(), 9);
     let mut sizes = std::collections::BTreeMap::new();
     for b in &order.blocks {
         assert_eq!(b.rows.len(), b.cols.len());
         *sizes.entry(b.rows.len()).or_insert(0) += 1;
     }
     // a plane's origin where its two axes meet is a block of three
-    let want = [(1, 20), (2, 19), (3, 15), (5, 4), (6, 1), (7, 1), (16, 3), (20, 1)];
+    let want = [(1, 15), (2, 9), (3, 15), (7, 1), (20, 1)];
     assert_eq!(sizes.into_iter().collect::<Vec<_>>(), want);
     // every block reads only the blocks before it: a column a block's rows touch that is not its
     // own is an earlier block's
@@ -147,8 +149,8 @@ fn the_hypoid_layout_is_64_blocks_13_deep() {
     }
 }
 
-/// The configured pair with its backlash and tip relief: the relief's chamfers, rounds and tops add
-/// blocks of their own, and the order is still square with nothing over or under-determined.
+/// The configured pair with its backlash and tip relief: the toppings' kinks and cones add blocks
+/// of their own, and the order is still square with nothing over or under-determined.
 #[test]
 fn the_tip_relief_orders_whole() {
     let e = fixtures::gear::read_as_configured();

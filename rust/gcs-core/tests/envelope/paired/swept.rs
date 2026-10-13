@@ -10,9 +10,96 @@ mod member;
 #[derive(Clone,Copy)]
 enum ProfileSide { Inner, Outer }
 
-/// Explicit support construction of this rounded generating section. This is not
-/// a general conversion of arbitrary Solvent profiles. The emitted coefficients
-/// specify the functional set independently of the numerical envelope workbench.
+/// A crown's meridian about the cutter's axis (`cutter.ax`, up from C) in (radius, height), as
+/// pieces of a functional profile: a half-plane per line (through a point, its normal outward) and
+/// a rounded corner per minor arc (its centre and radius and the two radii to its ends,
+/// counterclockwise), each by its face's name.  A step on the axis bounds nothing a revolution
+/// does not, and is left out.
+struct Pieces { origin: [f64;3], axis: [f64;3], planes: Vec<(String,[f64;2],[f64;2])>,
+    corners: Vec<(String,[f64;2],f64,[f64;2],[f64;2])> }
+
+impl Pieces {
+    fn read(pair: &Pair,rack: &str) -> Self {
+        use gcs_core::brep::planar::Seg;
+        let sk = &pair.model.sketch;
+        let ax = &sk.lines[pair.model.map.ent_named(&format!("{REF}.cutter.ax")).unwrap().i()];
+        let origin = sk.world_point(ax.p1 as usize);
+        let end = sk.world_point(ax.p2 as usize);
+        let axis: [f64;3] = std::array::from_fn(|k| end[k]-origin[k]);
+        let length = axis[0].hypot(axis[1]).hypot(axis[2]);
+        let unit = axis.map(|v| v/length);
+        let coordinate = |p: [f64;3]| {
+            let q: [f64;3] = std::array::from_fn(|k| p[k]-origin[k]);
+            let z = (0..3).map(|k| q[k]*unit[k]).sum::<f64>();
+            let r: [f64;3] = std::array::from_fn(|k| q[k]-z*unit[k]);
+            [r[0].hypot(r[1]).hypot(r[2]),z]
+        };
+        let crown = pair.model.map.ent_named(&format!("{REF}.{}",Pair::crown(rack))).unwrap().i();
+        let m = gcs_core::solid::region::meridian(sk,crown).unwrap();
+        let basis = gcs_core::plane::Basis {u: m.seam,v: m.axis,o: m.origin};
+        let at = |q: [f64;2]| coordinate(basis.lift(q[0],q[1]));
+        let steps: Vec<(String,Seg)> = m.region.loops.iter().flatten()
+            .map(|s| (m.name(s.tag).rsplit('.').next().unwrap().to_string(),s.seg)).collect();
+        // which way the meridian is walked in (radius,height): outward is to the right of a
+        // counterclockwise walk
+        let turn = steps.iter().map(|(_,s)| { let (a,b) = (at(s.start()),at(s.end())); a[0]*b[1]-a[1]*b[0] })
+            .sum::<f64>().signum();
+        let (mut planes,mut corners) = (vec![],vec![]);
+        for (name,seg) in &steps {
+            match *seg {
+                Seg::Line {a,b} => {
+                    let (a,b) = (at(a),at(b));
+                    if a[0].abs() < 1e-9*length && b[0].abs() < 1e-9*length { continue }
+                    planes.push((name.clone(),a,[turn*(b[1]-a[1]),turn*(a[0]-b[0])]));
+                }
+                Seg::Arc {c,r,..} => {
+                    let center = at(c);
+                    let [a,b] = [seg.start(),seg.end()].map(|q| { let p = at(q); [p[0]-center[0],p[1]-center[1]] });
+                    // a minor corner, walked counterclockwise in (radius,height)
+                    let [a,b] = if a[0]*b[1]-a[1]*b[0] > 0. { [a,b] } else { [b,a] };
+                    assert!(a[0]*b[1]-a[1]*b[0] > 0.,"this construction requires minor corners");
+                    corners.push((name.clone(),center,r,a,b));
+                }
+                Seg::Conic {..} => panic!("a crown has no conic"),
+            }
+        }
+        Pieces {origin,axis,planes,corners}
+    }
+
+    /// Keep only what `keep` says of each piece's face name.
+    fn only(mut self,keep: impl Fn(&str) -> bool) -> Self {
+        self.planes.retain(|p| keep(&p.0));
+        self.corners.retain(|c| keep(&c.0));
+        self
+    }
+
+    /// The profile: every half-plane within every rounded corner, and its coefficients.
+    fn field(&self,name: &str) -> (PlanarField,[f64;3],[f64;3],String) {
+        let mut fields = vec![];
+        let mut planes = vec![];
+        for (_,through,normal) in &self.planes {
+            fields.push(PlanarField::half_plane(*through,*normal).unwrap());
+            planes.push(format!("{{\"through\":{through:?},\"normal\":{normal:?}}}"));
+        }
+        let mut corners = vec![];
+        for (_,center,radius,a,b) in &self.corners {
+            let n0 = [-a[1],a[0]]; let n1 = [b[1],-b[0]];
+            let cap = PlanarField::disk(*center,*radius).unwrap()
+                .union(PlanarField::half_plane(*center,n0).unwrap()).unwrap()
+                .union(PlanarField::half_plane(*center,n1).unwrap()).unwrap();
+            fields.push(cap);
+            corners.push(format!("{{\"center\":{center:?},\"radius\":{radius},\"sector_normals\":[{n0:?},{n1:?}]}}"));
+        }
+        let profile = fields.into_iter().reduce(|a,b| a.intersection(b).unwrap()).unwrap();
+        let definition = format!("{{\"name\":\"{name}\",\"half_planes\":[{}],\"rounded_corners\":[{}]}}",planes.join(","),corners.join(","));
+        (profile,self.origin,self.axis,definition)
+    }
+}
+
+/// Explicit support construction of this rounded generating section: the crown's region, its
+/// meridian read as half-planes and rounded corners. This is not a general conversion of
+/// arbitrary Solvent regions. The emitted coefficients specify the functional set independently
+/// of the numerical envelope workbench.
 fn functional_profile(pair: &Pair,rack: &str) -> (PlanarField,[f64;3],[f64;3],String) {
     functional_profile_with_side(pair,rack,None)
 }
@@ -20,68 +107,55 @@ fn functional_profile(pair: &Pair,rack: &str) -> (PlanarField,[f64;3],[f64;3],St
 fn functional_profile_with_side(pair: &Pair,rack: &str,active: Option<ProfileSide>)
     -> (PlanarField,[f64;3],[f64;3],String) {
     let active = active.map(|side| match side { ProfileSide::Inner => "inner", ProfileSide::Outer => "outer" });
+    Pieces::read(pair,rack).only(|name| match active {
+        Some(side) => !(name.starts_with("inner") || name.starts_with("outer")) || name.starts_with(side),
+        None => true,
+    }).field(rack)
+}
+
+/// A mate tooth of the gear's crown whole, as the drawn sections had it (the rejected full-crown
+/// candidate's): the space cutter's side of it (`rack`, its cap left out), and its other flank
+/// the tooth's opposite one carried a tooth's width along the pitch line — through the pitch point
+/// reflected over the shared one, as the drawn mate's was — rounded into the mate's tip by the
+/// same radius.  At no backlash, as the pair is read.
+fn whole_mate(pair: &Pair,rack: &str) -> (PlanarField,[f64;3],[f64;3],String) {
+    let side = Pieces::read(pair,rack).only(|name| name != "cap");
+    let tooth = Pieces::read(pair,"pinion");
     let sk = &pair.model.sketch;
-    let axis_name = format!("{REF}.{}.ax",if rack == "pinion" { "tooth" } else { "mate" });
-    let axis = &sk.lines[pair.model.map.ent_named(&axis_name).unwrap().i()];
-    let origin = sk.world_point(axis.p1 as usize);
-    let end = sk.world_point(axis.p2 as usize);
-    let axis: [f64;3] = std::array::from_fn(|k| end[k]-origin[k]);
-    let length = axis[0].hypot(axis[1]).hypot(axis[2]);
-    let unit = axis.map(|v| v/length);
-    let coordinate = |id: u32| {
-        let p = sk.world_point(id as usize);
-        let q: [f64;3] = std::array::from_fn(|k| p[k]-origin[k]);
+    let point = |name: &str| sk.world_point(pair.model.map.ent_named(&format!("{REF}.{name}")).unwrap().i());
+    let unit = side.axis.map(|v| v/side.axis[0].hypot(side.axis[1]).hypot(side.axis[2]));
+    let radius = |p: [f64;3]| {
+        let q: [f64;3] = std::array::from_fn(|k| p[k]-side.origin[k]);
         let z = (0..3).map(|k| q[k]*unit[k]).sum::<f64>();
-        let r: [f64;3] = std::array::from_fn(|k| q[k]-z*unit[k]);
-        [r[0].hypot(r[1]).hypot(r[2]),z]
+        (0..3).map(|k| (q[k]-z*unit[k]).powi(2)).sum::<f64>().sqrt()
     };
-    let mut planes = vec![];
-    let mut fields = vec![];
-    let ends = |name: &str| {
-        let line = &sk.lines[pair.model.map.ent_named(&format!("{REF}.{}.{name}",Pair::section(rack))).unwrap().i()];
-        (coordinate(line.p1),coordinate(line.p2))
-    };
-    // Which way the profile is walked in (radius,height): the tooth's counterclockwise, and its
-    // mate's, drawn tip up in the view about an axis pointing the other way, clockwise — read
-    // off which side of the base the tip stands.
-    let ((a,b),(p,q)) = (ends("base"),ends("tip"));
-    let turn = ((b[0]-a[0])*((p[1]+q[1])/2.-a[1])-(b[1]-a[1])*((p[0]+q[0])/2.-a[0])).signum();
-    for name in ["base","outer","tip","inner"] {
-        if active.is_some_and(|side| (name == "outer" || name == "inner") && name != side) { continue; }
-        let (a,b) = ends(name);
-        // outward: to the right of a counterclockwise walk
-        let normal = [turn*(b[1]-a[1]),turn*(a[0]-b[0])];
-        fields.push(PlanarField::half_plane(a,normal).unwrap());
-        planes.push(format!("{{\"through\":{a:?},\"normal\":{normal:?}}}"));
-    }
-    let mut corners = vec![];
-    for name in ["outer_round","inner_round"] {
-        if active.is_some_and(|side| !name.starts_with(side)) { continue; }
-        let arc = &sk.arcs[pair.model.map.ent_named(&format!("{REF}.{}.{name}",Pair::section(rack))).unwrap().i()];
-        let center = coordinate(arc.center);
-        let radius = sk.params[arc.radius as usize].value;
-        let [a,b] = [arc.start,arc.end].map(|id| {
-            let p = coordinate(id); [p[0]-center[0],p[1]-center[1]]
-        });
-        // A minor corner, walked counterclockwise in (radius,height): the mate's arcs, drawn
-        // counterclockwise in the view about an axis pointing the other way, run clockwise here.
-        let [a,b] = if a[0]*b[1]-a[1]*b[0] > 0. { [a,b] } else { [b,a] };
-        assert!(a[0]*b[1]-a[1]*b[0] > 0.,"this construction requires minor corners");
-        let n0 = [-a[1],a[0]]; let n1 = [b[1],-b[0]];
-        let cap = PlanarField::disk(center,radius).unwrap()
-            .union(PlanarField::half_plane(center,n0).unwrap()).unwrap()
-            .union(PlanarField::half_plane(center,n1).unwrap()).unwrap();
-        fields.push(cap);
-        corners.push(format!("{{\"center\":{center:?},\"radius\":{radius},\"sector_normals\":[{n0:?},{n1:?}]}}"));
-    }
-    let profile = fields.into_iter().reduce(|a,b| a.intersection(b).unwrap()).unwrap();
-    let definition = format!("{{\"name\":\"{rack}\",\"half_planes\":[{}],\"rounded_corners\":[{}]}}",planes.join(","),corners.join(","));
-    (profile,origin,axis,definition)
+    let (ri,ro) = (radius(point("thickness.inner_pitch")),radius(point("thickness.outer_pitch")));
+    // the outer mate's other flank is the tooth's inner one moved out by two pitch gaps; the
+    // inner mate's, its outer one moved in
+    let (from,shift) = if rack == "gear_outer" { ("inner",2.*(ro-ri)) } else { ("outer",2.*(ri-ro)) };
+    let (_,through,tooth_normal) = tooth.planes.iter().find(|p| p.0 == from).unwrap().clone();
+    let through = [through[0]+shift,through[1]];
+    // outward from the mate: away from its own flank, which the tooth's opposite normal faces
+    let normal = tooth_normal.map(|x| -x);
+    let (_,tip_through,tip_normal) = side.planes.iter().find(|p| p.0 == "tip").unwrap().clone();
+    let rho = side.corners[0].2;
+    // the round's centre, `rho` inside both the flank and the tip; its ends, its feet on them
+    let n = |v: [f64;2]| { let l = v[0].hypot(v[1]); [v[0]/l,v[1]/l] };
+    let (nf,nt) = (n(normal),n(tip_normal));
+    let (cf,ct) = (nf[0]*through[0]+nf[1]*through[1]-rho,nt[0]*tip_through[0]+nt[1]*tip_through[1]-rho);
+    let det = nf[0]*nt[1]-nf[1]*nt[0];
+    let center = [(cf*nt[1]-ct*nf[1])/det,(nf[0]*ct-nt[0]*cf)/det];
+    let [a,b] = [nf,nt].map(|v| [rho*v[0],rho*v[1]]);
+    let [a,b] = if a[0]*b[1]-a[1]*b[0] > 0. { [a,b] } else { [b,a] };
+    let mut whole = side;
+    whole.planes.push(("other".into(),through,normal));
+    whole.corners.push(("other_round".into(),center,rho,a,b));
+    whole.field(rack)
 }
 
 fn functional_generator(pair: &Pair,member: usize) -> (RevolvedField,String) {
-    let racks = if member == 0 { vec!["pinion"] } else { vec!["gear_outer","gear_inner"] };
-    let mut profiles = racks.into_iter().map(|name| functional_profile(pair,name));
+    let mut profiles = if member == 0 { vec![functional_profile(pair,"pinion")] }
+        else { vec![whole_mate(pair,"gear_outer"),whole_mate(pair,"gear_inner")] }.into_iter();
     let (mut profile,origin,axis,first) = profiles.next().unwrap();
     let mut definitions = vec![first];
     for (other,o,a,definition) in profiles {

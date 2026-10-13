@@ -956,7 +956,9 @@ region is a bound, so a choice of root.
 **Offsets.** `p distance(4mm, side: outside) k` puts `p` 4mm off `k`'s surface (`side:` required);
 `p inside(2mm) pitch` is within 2mm outside it; `tip := std.Offset(pitch, d: 2mm)` is the set 2mm
 out. `S.surface` is `S` with each bound made an equality: of `{ q | q inside(2mm) pitch }`, the
-offset surface. A drawn point measured from a set gets a foot on it, found by the solve. A
+offset surface — a set like any, so `k coincident S.surface` puts a drawn point on it. A distance
+that comes to nothing (`std.Offset(S, d: 0mm)`) is `S` itself. A drawn point measured from a set
+gets a foot on it, found by the solve. A
 distance from `{ q | q outside S }` is from `S`'s surface, sides turned: so `std.Rounded(beyond,
 tip, r: 0.3mm)` rounds the corner where a region is outside `inner` (`beyond := { q | q outside
 inner }`).
@@ -967,7 +969,9 @@ p inside std.Rounded(beyond, above, r: …); p inside std.Rounded(outer, above, 
 revolution, and `solid(tooth)` swept under a generating motion cuts a member exactly. A region
 has no tip line for `distance(>= d) tip`: draw the land's ends on the tip, the flanks through
 them, and bound the land between them (`eb distance(>= 0.01mm, along: left) ea`), which picks the
-root as the drawn section's bound did.
+root as the drawn section's bound did. Where the flanks go through points the drawing already
+places (the hypoid's pitch points, `spiral_bevel/crown/`), the land has no root to choose and
+needs no bound; a round's radius may read an unknown of the drawing (`r: 0.3 * mn`).
 
 ### 1.14 Faces and solids
 

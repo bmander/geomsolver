@@ -561,6 +561,12 @@ pub fn literal(text: &str) -> Option<f64> {
     text.trim().parse::<f64>().ok().filter(|v| v.is_finite())
 }
 
+/// A number written as one — `3`, `0mm`, `3 1/8`, `30deg` — and not a name or an expression,
+/// which is the author's arithmetic.
+pub fn is_literal(text: &str) -> bool {
+    literal(text).is_some() || notation(text)
+}
+
 /// Recognize literal notation such as `3 1/8`, as distinct from an expression.
 /// Edits may replace literal notation, but must preserve computed expressions.
 pub fn notation(text: &str) -> bool {

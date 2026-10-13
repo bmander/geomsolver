@@ -1,6 +1,20 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.76 — October 2026**
+**Specification, Draft 0.77 — October 2026**
+
+**[0.77] A side's surface is a set a point is put on, and nothing is a distance.** `S.surface`
+(the set with each bound made its equality, §6.21) stands wherever a set is used by a drawn point,
+not only in a measurement: `kink coincident tooth.inner.surface` is on the surface of a side
+grown across a cone, the offset cone. A distance from a set that a number comes to nothing
+(`std.Offset(S, d: 0mm)`, an allowance of none) is the set's own side as a bound and `coincident`
+as a point's equality; a zero written so is still **E040**. A bound on measurements may read one
+unknown of the drawing in its number, as a region's other terms do (`std.Rounded(a, b, r: 0.3 *
+mn)` with the module the solve constructs), and the faces its term makes are named by the set the
+region's body used. `std.ConeThrough` holds its apex by the angle between its line and the
+generator through its point, its spine from the apex to the point's foot on the line: as long as
+the cone is, at any size. A seed's step from a point with no turn (`hint(at: c, along: l, by:
+f)`) is the step in space, so a point in space steps along a line square to the plane its `at:`
+point is drawn in (§6.4). The spiral bevel's crown tooth and gear space are regions so.
 
 **[0.76] A family's own geometry, and the crown's sets.** What a set family's body makes and
 states without reading its point — through what it declares — is the instance's, made once where
@@ -901,7 +915,7 @@ Two things that look like seeds and are not, and stay where they are. **`knots [
 
 `hint` keeps the cases inline cannot express — seeding an entity declared elsewhere, and seeding from an expression over other geometry (`hint t.lead(x: center.x + root.r, y: center.y)`).
 
-**[0.12] A seed may read geometry, and reads its seed.** The text in a `hint(…)` clause — a declaration's or a child slot's (`l := line(hint((p.x + 10, p.y)), …)`) — MAY name another entity's scalar by its dotted path: `p.x`, `p.y`, `k.center.x`, `k.r`, `e.b`. What it reads is that scalar's **own seed**, never a solved value, so the clause stays seed-class: delete it and the solution set is unchanged, as §4.3 requires. The same clause names a place outright **[0.14]**: `hint(at: REF)` — where another point starts — and `hint(at: K, bearing: β)`, the point on circle `K`'s edge at bearing `β` from the x axis of the plane the seeded point is drawn in. **[0.33]** A place may also be a **step** from the point `at:` names: `hint(at: A, toward: B, by: f, turn: θ)` is `A + f·R(θ)(B − A)`, the fraction `f` of the way to point `B` (1 if `by` is unsaid) turned `θ` about `A` (0 if unsaid); `hint(at: A, along: L, by: f, turn: θ)` steps by `f` times line `L`'s run from its `p1` to its `p2` instead. So `hint(at: a, toward: b, by: 0.5)` is the midpoint, `by: -1` the reflection of `b` through `a`, and `hint(at: o, toward: rim, turn: 90deg)` the rim turned a quarter about `o`. `toward` and `along` are one or the other, neither stands beside `bearing`, and `by`, `turn`, `toward`, `along` and `bearing` each need `at` — each refused at its key. **[0.33]** A place drawn in another view than the point it seeds (§6.7) is read **where it stands in space**, projected into the seeded point's view: a point of the pitch plane named in another view starts at its image there. An implementation settles such seeds once the memberships and the views' seeded poses are known, again in statement order. An arc's radius left unwritten is its centre to its start, read once the places are settled. `at`, `bearing`, `toward`, `along`, `by` and `turn` are keys beside `x`, `y`, `r` and `t`, and the rule of §4.3 is then lexical with no exception: a seed is what is inside `hint(…)`. A clause naming a place carries no coordinate (`hint(at: p, x: 3)` is an error at the key) **[0.42]** except a plane's: `hint(at: P, (3, 4))` is the place `(3, 4)` in plane `P`'s own coordinates, read in space and seen in the seeded point's plane, which is how a part seeds a point against the plane it is measured in. `bearing` without `at` is an error, and both are refused where they are written, as an unknown key is. (In 0.7–0.13 the place had a grammar of its own, `hint at REF [bearing (β)]`, which MUST NOT parse now; an implementation SHOULD say what the spelling became.) Both forms were a trace block's words (§6.5) and mean the same thing on the sheet. Seeds are settled once every declaration has one, in statement order, so a seed reading a seed that was itself read from a third comes out right when the three are written in the order they depend on; written the other way round it reads the earlier one's provisional seed (an unseeded point's scatter, an unwritten radius's default), which an implementation MAY warn about and MUST NOT refuse. A read of a scalar the entity has not (`l.r` of a line), or of nothing (`nobody.x`), is **E103**. A geometry read is a `Length` where the document names a `unit` (so it adds to `150mm` and not to `10`) and a bare number where it does not, since there no literal can be a length. Inside a component the names resolve as references do — a formal reads as the entity it aliases, a name inside a block's copy as that copy's. A seed written this way is an expression and is never written back by a solve.
+**[0.12] A seed may read geometry, and reads its seed.** The text in a `hint(…)` clause — a declaration's or a child slot's (`l := line(hint((p.x + 10, p.y)), …)`) — MAY name another entity's scalar by its dotted path: `p.x`, `p.y`, `k.center.x`, `k.r`, `e.b`. What it reads is that scalar's **own seed**, never a solved value, so the clause stays seed-class: delete it and the solution set is unchanged, as §4.3 requires. The same clause names a place outright **[0.14]**: `hint(at: REF)` — where another point starts — and `hint(at: K, bearing: β)`, the point on circle `K`'s edge at bearing `β` from the x axis of the plane the seeded point is drawn in. **[0.33]** A place may also be a **step** from the point `at:` names: `hint(at: A, toward: B, by: f, turn: θ)` is `A + f·R(θ)(B − A)`, the fraction `f` of the way to point `B` (1 if `by` is unsaid) turned `θ` about `A` (0 if unsaid); `hint(at: A, along: L, by: f, turn: θ)` steps by `f` times line `L`'s run from its `p1` to its `p2` instead. So `hint(at: a, toward: b, by: 0.5)` is the midpoint, `by: -1` the reflection of `b` through `a`, and `hint(at: o, toward: rim, turn: 90deg)` the rim turned a quarter about `o`. **[0.77]** For a point in space a step with no turn is taken in space, so it may run along a line square to the plane its `at:` point is drawn in. `toward` and `along` are one or the other, neither stands beside `bearing`, and `by`, `turn`, `toward`, `along` and `bearing` each need `at` — each refused at its key. **[0.33]** A place drawn in another view than the point it seeds (§6.7) is read **where it stands in space**, projected into the seeded point's view: a point of the pitch plane named in another view starts at its image there. An implementation settles such seeds once the memberships and the views' seeded poses are known, again in statement order. An arc's radius left unwritten is its centre to its start, read once the places are settled. `at`, `bearing`, `toward`, `along`, `by` and `turn` are keys beside `x`, `y`, `r` and `t`, and the rule of §4.3 is then lexical with no exception: a seed is what is inside `hint(…)`. A clause naming a place carries no coordinate (`hint(at: p, x: 3)` is an error at the key) **[0.42]** except a plane's: `hint(at: P, (3, 4))` is the place `(3, 4)` in plane `P`'s own coordinates, read in space and seen in the seeded point's plane, which is how a part seeds a point against the plane it is measured in. `bearing` without `at` is an error, and both are refused where they are written, as an unknown key is. (In 0.7–0.13 the place had a grammar of its own, `hint at REF [bearing (β)]`, which MUST NOT parse now; an implementation SHOULD say what the spelling became.) Both forms were a trace block's words (§6.5) and mean the same thing on the sheet. Seeds are settled once every declaration has one, in statement order, so a seed reading a seed that was itself read from a third comes out right when the three are written in the order they depend on; written the other way round it reads the earlier one's provisional seed (an unseeded point's scatter, an unwritten radius's default), which an implementation MAY warn about and MUST NOT refuse. A read of a scalar the entity has not (`l.r` of a line), or of nothing (`nobody.x`), is **E103**. A geometry read is a `Length` where the document names a `unit` (so it adds to `150mm` and not to `10`) and a bare number where it does not, since there no literal can be a length. Inside a component the names resolve as references do — a formal reads as the entity it aliases, a name inside a block's copy as that copy's. A seed written this way is an expression and is never written back by a solve.
 
 ### 6.5 Curves **[0.11]**
 
@@ -1997,7 +2011,9 @@ and a cone's is exact (§6.9); a **drawn point** has a **foot**, a point on `S` 
 `p` at `d` from it on the side named and `p − foot` square to `S` there — `S` tangent at the foot
 to the sphere about `p` through it, stated as two sets' tangency is. The foot is seeded on the far
 side of the surface from `p`, so the two start apart the way they end; it stands where `S` is
-smooth (a cone's apex is not). Refused (**E040**): no `side:`; a distance of zero (`coincident`);
+smooth (a cone's apex is not). **[0.77]** A distance a number comes to nothing is the set's own
+side as a bound and `coincident` as an equality. Refused (**E040**): no `side:`; a distance of zero
+written so (`coincident`);
 a region, which has no surface — but **[0.76]** a region that is one side of another set, `{ q |
 q outside S }` or `{ q | q inside S }`, whose surface is `S`'s, measured from with the sides turned
 round where it is the outside (so `std.Rounded(beyond, tip, r)` rounds where a region is outside a
@@ -2048,7 +2064,9 @@ it round, and a body of such bounds only is all of them under `inside`. A produc
 measurements, a measurement read through a function or a power, a statement reading two points,
 and one reading none of a region solid's are **E040**. **[0.73]** A bound whose measurements are
 all weighed nothing (`0 * distance(p, a) >= 0`) bounds nothing where it holds and is **E040** where
-it holds nowhere.
+it holds nowhere. **[0.77]** Its number may read one unknown of the drawing, affinely, as a
+region's other terms do (§6.9), read when the region is; its coefficients are numbers stated.
+The faces it bounds are named by the set the region's body used (`p inside inner_round`).
 
 **The distance from a set** **[0.69]**. A measurement may name a set, `distance(p, crease)`: the
 distance from `p` to the set's nearest point. The set is given a point of its own, which its body
@@ -2058,7 +2076,9 @@ face; and any conjunction of a face's side, a distance from a face's surface, a 
 distance from a point and the set's own bounds is read for its nearest point, exactly. `S.surface`
 of a region of one bound is its surface: **[0.71]** each bound made the equality at its number, a
 side's the surface it is a side of and a grown side's the offset surface (`{ q | q inside(1mm) S
-}.surface` is 1mm outside `S`); an interval's two surfaces are no one surface. The set's own
+}.surface` is 1mm outside `S`); an interval's two surfaces are no one surface. **[0.77]** Such a
+surface is a set wherever one is used, so a drawn point is put on it (`k coincident S.surface`).
+The set's own
 equalities are conditions on its point as its bounds are, each held at its number. A body stating anything else, or a set measured in terms
 of itself, is **E040**. `distance(p, E) <= distance(p, M)`, with `E` on faces whose surfaces `M`
 is on, is the points nearer the edge than wherever else the surfaces meet: by the edge, and not
@@ -2623,9 +2643,10 @@ A condition that reads a name nothing in scope gives a number is **E101**; one t
 
 ```
 when design.tip_relief > 0mm {
-  tooth_relief := crown.relief.ToothRelief(tooth, reach.cap, design, …) in n.view
+  n := views.FoldedView(p, trace.normal)
+  tooth_relief := crown.relief.ToothRelief(cutter, tooth, n.view, …)
 }
-pinion_relief := ReliefCut(pinion.body, …, reference.tooth_relief.body, …)   // in a `when` too
+pinion_relief := ReliefCut(pinion.body, …, reference.tooth_relief.relief.crown, …)   // in a `when` too
 ```
 
 **[0.75]** A `when` is what ends a recursion (§8): its condition reads the numbers the call gave, and a level where it does not hold makes no further call.

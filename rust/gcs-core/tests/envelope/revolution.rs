@@ -1,10 +1,11 @@
 //! The generating geometry comes from a solved Solvent component, including its fillets: the
-//! spiral bevel's crown tooth section (`spiral_bevel/crown/section.sv`), revolved in its preview.
+//! spiral bevel's crown tooth section as it was drawn (`fixtures/crown_section.sv`), revolved in
+//! its preview.
 use super::*;
 use gcs_core::{diagnose,model::EntRef,modules,program,solid::RevolvedSurface,solve};
 
 fn read() -> program::Elaborated {
-    let src = include_str!("../../../examples/spiral_bevel/crown/section.sv");
+    let src = include_str!("../fixtures/crown_section.sv");
     let (mut p,errors) = crate::common::parse(src);
     let link = modules::link(&mut p,&mut fixtures::gear::module);
     assert!(errors.is_empty() && link.is_empty(), "{errors:?} {link:?}");

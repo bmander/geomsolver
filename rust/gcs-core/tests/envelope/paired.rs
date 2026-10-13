@@ -40,9 +40,9 @@ struct Pair {
     edges: std::collections::BTreeMap<String,gcs_core::edge::SpatialEdge>,
     faces: std::collections::BTreeMap<String,gcs_core::spatial_face::SpatialFaceBoundary>,
     /// Each cutter face the checks read, by what they call it (`faces.pinion_outer`,
-    /// `faces.gear_inner_tip`): its surface (named so), the revolution it is a face of, and its
-    /// profile edge there.
-    surfaces: std::collections::BTreeMap<String,(RevolvedSurface,usize,gcs_core::model::EntRef)>,
+    /// `faces.gear_inner_tip`): its surface (named so), the region it is a face of, and its arc's
+    /// sweep in the region's meridian where it is a round (`cutter_faces`).
+    surfaces: std::collections::BTreeMap<String,(RevolvedSurface,usize,Option<f64>)>,
 }
 
 fn read_model(src: &str,teeth: [u32;2],module: f64) -> program::Elaborated { read_model_with(src,teeth,module,false) }
@@ -120,6 +120,51 @@ impl Built {
 /// cutter face, or one of its blank's, by its term.
 #[derive(Clone,Debug,PartialEq)]
 enum Role { Cut(String,usize),Wall(String) }
+
+/// A face of a region cutter as the checks read it: its name's last segment, its surface, and
+/// the sweep of its meridian's arc where it is a round.
+type CutterFace = (String,RevolvedSurface,Option<f64>);
+
+/// A region cutter's faces (`RevolvedSurface::meridian_loops`; a step on the axis `None`), walked
+/// counterclockwise in (radius, height) about the cutter's axis (`cutter.ax`, up from C) — the
+/// crown tooth's base, outer flank, round, tip, round and inner flank; its mate's base, inner
+/// flank, round, tip and so on — each face's `u` along the walk, as the drawn sections' were; and
+/// turned about the axis so each chart starts where the section stood in the normal view, on the
+/// axis's far side from the mean point, as a drawn section's revolution's did.
+fn cutter_faces(model: &program::Elaborated,solid: usize) -> Vec<Option<CutterFace>> {
+    use gcs_core::brep::planar::Seg;
+    let sk = &model.sketch;
+    let ax = &sk.lines[model.map.ent_named(&format!("{REF}.cutter.ax")).unwrap().i()];
+    let up = space::sub(sk.world_point(ax.p2 as usize),sk.world_point(ax.p1 as usize));
+    let mean = sk.world_point(model.map.ent_named(&format!("{REF}.gear.M")).unwrap().i());
+    let m = gcs_core::solid::region::meridian(sk,solid).unwrap();
+    let surfaces = RevolvedSurface::meridian_loops(&m,&sk.solids[solid].name);
+    let ([steps],[faces]) = (m.region.loops.as_slice(),surfaces.as_slice()) else { panic!("a cutter is one loop") };
+    // (radius, height up the axis) of a meridian point, its height signed by the cutter's axis
+    let sense = space::dot(m.axis,up).signum();
+    let rh = |q: [f64;2]| [q[0],sense*q[1]];
+    let area: f64 = steps.iter().map(|s| { let (a,b) = (rh(s.seg.start()),rh(s.seg.end())); a[0]*b[1]-a[1]*b[0] }).sum();
+    let mut walk: Vec<(Seg,Option<RevolvedSurface>)> = steps.iter().map(|s| s.seg).zip(faces.iter().cloned()).collect();
+    if area < 0. { walk.reverse(); }
+    let basis = gcs_core::plane::Basis {u: m.seam,v: m.axis,o: m.origin};
+    // the turn about the axis from the meridian's seam to the far side from the mean point
+    let axis = space::scale(m.axis,1./space::norm(m.axis));
+    let off = space::sub(mean,m.origin);
+    let away = space::sub(space::scale(axis,space::dot(off,axis)),off);
+    let angle = space::dot(space::cross(m.seam,away),axis).atan2(space::dot(m.seam,away));
+    let pose = Motion::translation(space::scale(m.origin,-1.),[0.;3]).unwrap()
+        .then(Motion::rotation(axis,angle,0.).unwrap()).then(Motion::translation(m.origin,[0.;3]).unwrap());
+    walk.into_iter().map(|(seg,surface)| {
+        let surface = surface?;
+        let first = if area < 0. { seg.end() } else { seg.start() };
+        let start = basis.lift(first[0],first[1]);
+        let ends = [0.,1.].map(|u| space::distance(surface.at(u,0.).unwrap().position,start));
+        let surface = if ends[0] <= ends[1] { surface } else { surface.reversed() };
+        let sweep = match seg { Seg::Arc {sweep,..} => Some(sweep.abs()),_ => None };
+        let name = surface.name.rsplit('.').next().unwrap().to_string();
+        Some((name,surface.placed(pose),sweep))
+    }).collect()
+}
 
 impl Pair {
     // Only explicit CAD export entry points consume these overrides; ordinary
@@ -202,25 +247,34 @@ impl Pair {
                 Role::Cut(label,solid) => Some((i,label.clone(),*solid)),
                 _ => None,
             }).collect();
-            let surface_of = |solid: usize,name: &str,label: &str| -> (RevolvedSurface,gcs_core::model::EntRef) {
-                let f = &sk.faces[sk.solids[solid].face().unwrap() as usize];
-                let edge = f.boundaries().find_map(|(es,ns)| es.iter().zip(ns).find(|(_,n)| *n == name).map(|(e,_)| *e))
+            // each cutter's faces, its region's meridian's steps in their walk (`cutter_faces`)
+            let cutters: std::collections::BTreeMap<usize,Vec<Option<CutterFace>>> = cut.iter()
+                .map(|&(_,_,solid)| (solid,cutter_faces(&model,solid))).collect();
+            let surface_of = |solid: usize,name: &str,label: &str| -> (RevolvedSurface,usize,Option<f64>) {
+                let faces = &cutters[&solid];
+                let k = faces.iter().position(|f| f.as_ref().is_some_and(|(n,..)| n == name))
                     .unwrap_or_else(|| panic!("`{}` has no `{name}`",sk.solids[solid].name));
-                let mut s = RevolvedSurface::read(sk,solid,edge).unwrap().spanned([90f64.to_radians(),270f64.to_radians()]).unwrap();
+                let (_,s,sweep) = faces[k].as_ref().unwrap();
+                let mut s = s.spanned([90f64.to_radians(),270f64.to_radians()]).unwrap();
                 s.name = label.to_string();
-                (s,edge)
+                (s,k,*sweep)
             };
-            let profile_name = |solid: usize,edge: gcs_core::model::EntRef| -> String {
-                let f = &sk.faces[sk.solids[solid].face().unwrap() as usize];
-                f.boundaries().find_map(|(es,ns)| es.iter().zip(ns).find(|(e,_)| **e == edge).map(|(_,n)| n.clone())).unwrap()
+            let profile_name = |solid: usize,k: usize| -> String {
+                cutters[&solid][k].as_ref().map(|f| f.0.clone()).unwrap_or_default()
             };
-            let neighbours = |solid: usize,edge: gcs_core::model::EntRef| -> Vec<(gcs_core::model::EntRef,usize,usize)> {
-                // the profile edges sharing an end with `edge`, and which end of each it is
-                let f = &sk.faces[sk.solids[solid].face().unwrap() as usize];
-                let (a,b) = gcs_core::model::edge_ends(sk,edge).unwrap();
-                f.boundaries().flat_map(|(es,_)| es.iter().copied()).filter(|&e| e != edge).filter_map(|e| {
-                    let (p,q) = gcs_core::model::edge_ends(sk,e)?;
-                    [(a,0),(b,1)].into_iter().find_map(|(x,i)| if x == p { Some((e,i,0)) } else if x == q { Some((e,i,1)) } else { None })
+            let neighbours = |solid: usize,k: usize| -> Vec<(usize,usize,usize)> {
+                // the faces either side of step `k` in the meridian, each with which end of
+                // step `k` and which of its own (its `u`, 0 or 1) is the corner they share
+                let faces = &cutters[&solid];
+                let ends = |f: &RevolvedSurface| [0.,1.].map(|u| f.at(u,0.).unwrap().position);
+                let this = ends(&faces[k].as_ref().unwrap().1);
+                let n = faces.len();
+                [(k+n-1)%n,(k+1)%n].into_iter().filter_map(|j| {
+                    let that = ends(&faces[j].as_ref()?.1);
+                    let (_,a,b) = (0..2).flat_map(|a| (0..2).map(move |b| (a,b)))
+                        .map(|(a,b)| (space::distance(this[a],that[b]),a,b))
+                        .min_by(|x,y| x.0.total_cmp(&y.0)).unwrap();
+                    Some((j,a,b))
                 }).collect()
             };
             let blank = gcs_core::solid::RevolvedRegion::read(sk,blanks[m],module*1e-10).unwrap();
@@ -231,26 +285,26 @@ impl Pair {
                 let label = format!("faces.{rack}_{flank_name}");
                 let &(flank_fi,_,solid) = cut.iter().find(|c| c.1 == label).unwrap_or_else(|| panic!("{member}: no `{label}` among {roles:?}"));
                 assert!(meets(&[flank_fi],&tips),"{member}: `{label}` meets no tip");
-                let (flank,flank_edge) = surface_of(solid,flank_name,&label);
+                let (flank,flank_edge,flank_sweep) = surface_of(solid,flank_name,&label);
                 // the round: the flank's neighbour in the profile that is a face of the cut it meets
                 let round_label = format!("faces.{rack}_{flank_name}_round");
                 let &(round_fi,..) = cut.iter().find(|c| c.1 == round_label).unwrap();
                 assert!(meets(&[flank_fi],&[round_fi]),"{member}: `{label}` meets no round");
                 let (round_edge,flank_end,round_end) = neighbours(solid,flank_edge).into_iter()
                     .find(|(e,..)| profile_name(solid,*e) == format!("{flank_name}_round")).unwrap();
-                let (round,_) = surface_of(solid,&format!("{flank_name}_round"),&round_label);
+                let (round,_,round_sweep) = surface_of(solid,&format!("{flank_name}_round"),&round_label);
                 // the root: the round's other neighbour in the profile, whose face the space's
                 // bottom is (the gear's two mates' tips lie in one plane, the space's one face)
                 let (root_edge,round_root_end,root_end) = neighbours(solid,round_edge).into_iter()
                     .find(|(e,..)| *e != flank_edge).unwrap();
                 let root_label = format!("faces.{rack}_tip");
-                let (root,_) = surface_of(solid,&profile_name(solid,root_edge),&root_label);
+                let (root,_,root_sweep) = surface_of(solid,&profile_name(solid,root_edge),&root_label);
                 let bottom: Vec<usize> = cut.iter().filter(|c| c.0 != flank_fi && c.0 != round_fi && meets(&[c.0],&[round_fi]))
                     .map(|c| c.0).collect();
                 assert_eq!(bottom.len(),1,"{member}: `{round_label}` meets {bottom:?}");
                 root_face.get_or_insert(bottom[0]);
                 assert_eq!(root_face,Some(bottom[0]),"{member}: the space has one bottom");
-                for (l,s,e) in [(&label,&flank,flank_edge),(&round_label,&round,round_edge),(&root_label,&root,root_edge)] {
+                for (l,s,e) in [(&label,&flank,flank_sweep),(&round_label,&round,round_sweep),(&root_label,&root,root_sweep)] {
                     let env = envelope::GeneratedEnvelope::new(format!("{l}_envelope"),s.clone(),motion_families[m].clone(),[-roll,roll]).unwrap();
                     regions.insert(l.clone(),gcs_core::patch::TrimmedPatch::of_envelope(format!("{l}_region"),env.clone(),vec![blank.clone()],vec![]));
                     envelopes.insert(l.clone(),env);
@@ -384,26 +438,24 @@ impl Pair {
     /// The revolution a cutter face the checks read is a face of.
     fn crown_of(&self,surface: &RevolvedSurface) -> usize { self.surfaces[&surface.name].1 }
 
-    /// The profile edge a cutter face the checks read is the revolution of.
-    fn edge_of(&self,surface: &RevolvedSurface) -> gcs_core::model::EntRef { self.surfaces[&surface.name].2 }
-
-    /// Where the layout keeps what the checks call a rack section, `pinion`, `gear_outer` or
-    /// `gear_inner`: the crown tooth's section and its mate's two.
-    fn section(rack: &str) -> &'static str {
-        match rack { "pinion" => "tooth.rack", "gear_outer" => "mate.outer", "gear_inner" => "mate.inner",
-            _ => panic!("no rack section `{rack}`") }
+    /// The sweep of the meridian's arc a round the checks read is the revolution of.
+    fn round_sweep(&self,surface: &RevolvedSurface) -> f64 {
+        self.surfaces[&surface.name].2.unwrap_or_else(|| panic!("`{}` is no round",surface.name))
     }
 
-    /// And the crown revolved from it.
+    /// Where the layout keeps what the checks call a rack section's crown, `pinion`, `gear_outer`
+    /// or `gear_inner`: the crown tooth, and its mate's two sides of the gear's space cutter (the
+    /// outer mate's region, closed at the reach's cap, and the inner's, its neighbour unturned).
     fn crown(rack: &str) -> &'static str {
-        match rack { "pinion" => "tooth.crown", "gear_outer" => "mate.outer_crown",
-            "gear_inner" => "mate.inner_crown", _ => panic!("no rack section `{rack}`") }
+        match rack { "pinion" => "tooth.crown", "gear_outer" => "gear_space.outer_crown",
+            "gear_inner" => "gear_space.inner_crown", _ => panic!("no rack section `{rack}`") }
     }
 
     /// The flank's `u` where it meets its round, which is also the round's where it meets the
-    /// tip: the crown tooth's section is walked counterclockwise about the cutter's axis, so its
-    /// outer flank ends at its round and its inner begins there, and its mate's the other way
-    /// round (`crown/mate_section.sv`).
+    /// tip: each crown's faces run along its meridian's counterclockwise walk about the cutter's
+    /// axis (`cutter_faces`), the tooth's from its base up its outer flank, its mate's (tip down)
+    /// from its base down its inner — so the tooth's outer flank ends at its round and its inner
+    /// begins there, and its mate's the other way round.
     fn flank_join(member: usize,outer: bool) -> f64 { if outer == (member == 0) { 1. } else { 0. } }
 
     /// Which way a crown surface's chart normal points against its crown's material, +1 out of
@@ -770,7 +822,7 @@ fn both_members_have_tangent_generated_root_transitions_on_both_sides() {
     }
 }
 
-/// The gear's inner mate is its space cutter's neighbour (crown/space.sv): the inner crown turned
+/// The gear's inner mate is its space cutter's neighbour (crown/mate.sv): the inner crown turned
 /// a crown pitch about the crown's axis, which the generating roll turns about too, so the
 /// neighbour's face generates the inner mate's envelope turned a gear tooth about the gear's
 /// axis — the face the indexed member's previous space leaves, which the checks read. Held here

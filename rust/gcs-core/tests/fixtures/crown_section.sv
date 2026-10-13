@@ -1,15 +1,22 @@
-// Step 4, the crown tooth's section, in the normal view: straight flanks at the pressure angle
-// split by the shift, a base and a tip at their depths, and the tip roundings. Revolved about
-// the cutter's axis the flanks are cones and the roundings tori.
+// The spiral bevel's crown tooth section as it was drawn before the crown became a region about
+// the cutter's axis (#214): a six-edge chain revolved about a line, its tip's corners rounded by
+// tangent arcs (`TipRounding`). Kept as a drawn revolution the envelope, field and fillet checks
+// read; the example's crown is `spiral_bevel/crown/tooth.sv`.
 //
-// Backlash: the flank lines through the pitch points `lp` (inner) and `rp` (outer) are the ones
-// the tooth shares with its mate (crown/mate_section.sv), and both stand each flank a quarter of
-// the backlash outside them. The two cutters overlap by half the backlash across each line, and
-// since the envelope of an offset surface is the offset of the envelope, each generated flank
-// stands a quarter inside its conjugate one: half the backlash between each flank pair, all of
-// it once one pair touches.
+// Straight flanks at the pressure angle split by the shift, a base and a tip at their depths,
+// and the tip roundings; revolved about the cutter's axis the flanks are cones and the roundings
+// tori. Each flank stands a quarter of the backlash outside the line through its pitch point.
 use std
-use crown.rounding
+
+component TipRounding(pitch: line, base: line, tip: line, first: arc, second: arc,
+                      design: group, normal_module: Length) {
+  base parallel pitch
+  base angle(180deg) tip
+  pitch.p1 distance(design.base * normal_module, side: left) base
+  pitch.p1 distance(design.dedendum * normal_module, side: left) tip
+  radius(design.rounding * normal_module) first
+  first equal second
+}
 
 component RackSection(lp: point, rp: point, design: group, normal_module: Length) {
   // Seeds only, rough, in pitch widths (the `pitch` line's run, half a normal pitch, so a
@@ -46,14 +53,14 @@ component RackSection(lp: point, rp: point, design: group, normal_module: Length
   // not the section (§9.6). A hundredth of a module; the narrowest land, the configured
   // hypoid's, is a sixth.
   distance(>= 0.01 * design.module) tip
-  rounding := crown.rounding.TipRounding(pitch, base, tip, outer_round, inner_round, design,
+  rounding := TipRounding(pitch, base, tip, outer_round, inner_round, design,
     normal_module: normal_module)
 }
 
 preview {
   unit mm
   // The 24:48 pair's crown at module 2, symmetric, revolved about the page's y axis at eight
-  // tenths of the cone distance; crown.svd draws it.
+  // tenths of the cone distance.
   pitch_radius := 0.8 * 2mm * hypot(24, 48) / 2
   proportions := {pressure: 20deg, shift: 0deg, module: 2mm,
                        base: 1, dedendum: 1, rounding: 0.3, backlash: 0mm}

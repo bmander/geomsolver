@@ -246,12 +246,12 @@ fn entity(e: &Elaborated, name: &str) -> usize {
     e.map.ent_named(name).unwrap_or_else(|| panic!("no `{name}`")).i()
 }
 
-/// #145's crown tip rounding (`crown/rounding.sv`'s preview): a section's two tip corners rounded
-/// by `TipRounding`'s drawn tangent arcs.  The sharp section, from the drawn lines' carriers,
+/// #145's crown tip rounding as it was drawn (`fixtures/tip_rounding.sv`'s preview): a section's
+/// two tip corners rounded by `TipRounding`'s drawn tangent arcs.  The sharp section, from the drawn lines' carriers,
 /// rounded by the prototype: the same centres and feet.
 #[test]
 fn the_crown_tip_rounding_is_the_balls() {
-    let e = fixtures::read(include_str!("../../examples/spiral_bevel/crown/rounding.sv"));
+    let e = fixtures::read(include_str!("fixtures/tip_rounding.sv"));
     let sk = &e.sketch;
     // std.front is the world's (x, z)
     let at = |name: &str| {
@@ -455,7 +455,7 @@ fn the_end_relief_lowered_is_the_region_read_point_by_point() {
 /// radius either side of an arc is on that side.
 #[test]
 fn the_crown_tip_rounding_is_the_words() {
-    let text = include_str!("../../examples/spiral_bevel/crown/rounding.sv").replacen("use std\n", "use std (round)\n", 1);
+    let text = include_str!("fixtures/tip_rounding.sv").replacen("use std\n", "use std (round)\n", 1);
     let close = text.rfind('}').unwrap();
     let more = "  in std.front {\n\
                     c1 := point hint((6.5, 2.5))\n    c2 := point hint((-0.5, 2.5))\n\

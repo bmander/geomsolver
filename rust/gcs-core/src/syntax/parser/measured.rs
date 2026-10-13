@@ -20,7 +20,7 @@ impl<'a> P<'a> {
         let cmp = self.closed_cmp()?;
         let rhs = self.measuring(self.level_end(false))?;
         self.end_of_stmt();
-        Some(Measured { lhs, cmp, rhs, span: Span::new(lo, self.prev_hi()) })
+        Some(Measured { lhs, cmp, rhs, span: Span::new(lo, self.prev_hi()), through: Vec::new() })
     }
 
     /// One side, every token up to `end`.

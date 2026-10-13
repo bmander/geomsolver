@@ -194,8 +194,9 @@ impl RevolvedSurface {
     }
 
     /// `of_meridian` loop by loop, in the meridian's order, a line on the axis `None`: the
-    /// profile a region tool's sweep is read over, as a revolution's faces' loops are.
-    pub(crate) fn meridian_loops(m: &super::region::Meridian,solid: &str)
+    /// profile a region tool's sweep is read over, as a revolution's faces' loops are — and the
+    /// faces a check reads off a region cutter, each beside its neighbours (#214).
+    pub fn meridian_loops(m: &super::region::Meridian,solid: &str)
         -> Vec<Vec<Option<Self>>> {
         use crate::brep::planar::Seg;
         let basis = Basis { u: m.seam,v: m.axis,o: m.origin };
@@ -214,6 +215,23 @@ impl RevolvedSurface {
             Some(Self {name,meridian,origin: m.origin,axis: m.axis,sweep: std::f64::consts::TAU,
                 v_domain: [0.,1.]})
         }).collect()).collect()
+    }
+
+    /// The same surface with its generating edge run the other way, `u` turned to `1 − u` (its
+    /// chart's normal turned with it): a region's face walked as its neighbours are, where its
+    /// meridian's step runs against the walk (#214).
+    pub fn reversed(&self) -> Self {
+        let meridian = match self.meridian {
+            Meridian::Line {start,delta} => Meridian::Line {start: add(start,delta),delta: scale(delta,-1.)},
+            // `c + a cos(s(1 − u)) + b sin(s(1 − u))`: the arc from its other end, the same way
+            // round about its centre's other side
+            Meridian::Round {center,a,b,sweep} => {
+                let (sn,cs) = sweep.dsin_cos();
+                Meridian::Round {center,a: add(scale(a,cs),scale(b,sn)),b: sub(scale(a,sn),scale(b,cs)),sweep}
+            }
+            Meridian::Conic {a,m,b,w} => Meridian::Conic {a: b,m,b: a,w},
+        };
+        Self {meridian,..self.clone()}
     }
 
     /// The surface over an angular span of its revolution (radians from its chart's start), as a

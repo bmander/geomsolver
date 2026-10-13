@@ -1,9 +1,10 @@
 //! Evaluate the document's expressions and maintain the free variables they read.
 
-use super::{eval, literal, parse_in, to_arg_units, to_user_units, Aff, Expr, Free, Parsed};
+use super::{eval, literal, parse_in, to_arg_units, to_user_units, Aff, Ast, Expr, Free, Parsed};
 use crate::constraints::{Arg, Constraint, SpecKind};
-use crate::model::Sketch;
+use crate::model::{Declared, Sketch};
 use crate::units::Dim;
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 
 /// Why an expression could not be used — sorted by what it means for the document, since the
@@ -106,6 +107,32 @@ struct Node {
     parsed: Result<Parsed, String>,
 }
 
+/// `env` with each declared unknown `ast` reads and `env` does not bind a free name of the
+/// dimension it was declared: how a text written over one (`(-1 * m + 0.2mm)`, `of_vals`) is read
+/// wherever it is read, the flattener's scopes and the sketch's alike.  `env` itself where the
+/// text reads none.
+pub(crate) fn with_declared<'e>(
+    ast: &Ast,
+    env: &'e BTreeMap<String, Aff>,
+    declared: &BTreeMap<String, Declared>,
+) -> Cow<'e, BTreeMap<String, Aff>> {
+    let mut read = ast.deps().into_iter()
+        .filter_map(|name| Some((declared.get(&name)?.dim, name)))
+        .filter(|(_, name)| !env.contains_key(name))
+        .peekable();
+    if read.peek().is_none() {
+        return Cow::Borrowed(env);
+    }
+    let mut env = env.clone();
+    env.extend(read.map(|(dim, name)| (name.clone(), Aff::free(name, dim))));
+    Cow::Owned(env)
+}
+
+/// A text worked out over no scope but the drawing's declared unknowns (`with_declared`).
+pub(crate) fn eval_declared(ast: &Ast, declared: &BTreeMap<String, Declared>) -> Result<Aff, ExprError> {
+    eval(ast, &with_declared(ast, &BTreeMap::new(), declared))
+}
+
 /// Evaluate every expression in the document, in document order.  A name an expression reads
 /// is an **unknown** (a free variable): nothing in an expression defines a name (the source
 /// defines numbers, and writes them in before a text reaches here), so what a name is worth is
@@ -152,7 +179,8 @@ pub fn evaluate(sk: &mut Sketch) -> Vec<ExprItem> {
                     // work it out, check what it came to against its slot, write it: three
                     // steps that fail the same way, so they are one chain and one error arm
                     None => match (|| -> Result<(f64, Aff), ExprError> {
-                        let a = eval(&p.body, &BTreeMap::new())?;
+                        // an unknown the source declared is what it was declared
+                        let a = eval_declared(&p.body, &sk.declared)?;
                         check_dim(sk, nd, &a, &mut free_dim)?;
                         Ok((write_value(sk, nd, &a, &mut bound)?, a))
                     })() {
@@ -202,7 +230,12 @@ fn check_dim(
     let Some(name) = a.free.clone() else {
         return a.dim.require(want, attr).map_err(ExprError::dimension);
     };
-    let d = want.div(a.dim);
+    // a declared unknown is read as declared, so the dimension it would have to be is what the
+    // slot wants over what the text came to, times what it is
+    let d = match sk.declared.get(&name) {
+        Some(decl) => want.div(a.dim).mul(decl.dim),
+        None => want.div(a.dim),
+    };
     if d != Dim::SCALAR && d != Dim::LENGTH && d != Dim::ANGLE {
         return Err(ExprError::dimension(format!(
             "`{name}` would have to be {} here, which is not a length, an angle or a plain number",

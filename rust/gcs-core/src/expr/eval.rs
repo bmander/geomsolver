@@ -60,7 +60,23 @@ impl Aff {
     }
 
     fn of(name: &str) -> Aff {
-        Aff { free: Some(name.to_string()), m: 1.0, c: 0.0, dim: Dim::SCALAR }
+        Aff::free(name, Dim::SCALAR)
+    }
+
+    /// A free name of this dimension: the unknown a declared number stands for.
+    pub fn free(name: impl Into<String>, dim: Dim) -> Aff {
+        Aff { free: Some(name.into()), m: 1.0, c: 0.0, dim }
+    }
+
+    /// This and `k` times `o` (`-1` subtracts), one affine form in this one's dimension, or why
+    /// not: two free names.  Whether the two agree is the caller's to ask.
+    pub fn plus(&self, o: &Aff, k: f64) -> Result<Aff, String> {
+        Ok(Aff { free: together(self, o)?, m: self.m + k * o.m, c: self.c + k * o.c, dim: self.dim })
+    }
+
+    /// This times a plain number.
+    pub fn times(&self, k: f64) -> Aff {
+        Aff { m: self.m * k, c: self.c * k, ..self.clone() }
     }
 
     /// The same value, said to be of this dimension.  What a declared formal and a named slot

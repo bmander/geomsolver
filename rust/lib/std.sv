@@ -191,20 +191,26 @@ component Cone(about: line, half: Angle) := { p |
 // nearer `about`.  The apex and the spine read nothing of the set's point, so they are the
 // instance's (`.apex`, `.spine`), made once and placed by `q` (§6.21); a point on it, a line
 // touching it, `inside`, `outside` and an offset read as a cone's.  `lean` is not 0: that is a
-// cylinder (`std.Cylinder`).  A gear cutter's flanks: the cones through the pitch points leaning
-// by the pressure angle.
+// cylinder (`std.Cylinder`); and `q` is off `about`.  A gear cutter's flanks: the cones through
+// the pitch points leaning by the pressure angle.
 //
 //   inner := std.ConeThrough(cut_ax, lp, lean: 20deg)
 //   p outside inner
 component ConeThrough(about: line, q: point, lean: Angle) := { p |
-  apex := point hint(at: about.p1)
-  private ahead := point hint(at: about.p2)
+  // Seed: the apex `about`'s length back from its start against the way the cone opens.
+  apex := point hint(at: about.p1, along: about, by: -lean / abs(lean))
+  private foot := point hint(at: about.p1)
   apex coincident about
-  ahead coincident about
-  apex distance(lean / abs(lean), along: about) ahead
-  construction spine := line(apex, ahead)
+  // the generator through `q` makes the lean with `about` where the cone opens along it, and its
+  // supplement where it opens against it: one apex either way
   private construction through := line(apex, q)
-  spine angle(abs(lean)) through
+  about angle(90deg - (90deg - abs(lean)) * lean / abs(lean)) through
+  // the spine, from the apex to `q`'s foot on `about`: the way the cone opens, as long as the
+  // cone is to `q`, whatever the drawing's size
+  foot coincident about
+  private construction across := line(foot, q)
+  across perpendicular about
+  construction spine := line(apex, foot)
   private construction g := line(apex, p)
   spine angle(abs(lean)) g
 }

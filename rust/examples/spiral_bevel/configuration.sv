@@ -16,7 +16,7 @@ pressure_shift := 12.5deg
 spiral_angle := 25deg
 // The allowances, each zero for the conjugate, sharp-edged pair. The normal backlash: the
 // flank clearance with the other flanks touching, a quarter of it off each crown flank
-// (crown/section.sv). The tip relief: the tips' flank edges chamfered this far down the tooth
+// (crown/tooth.sv). The tip relief: the tips' flank edges chamfered this far down the tooth
 // (crown/relief.sv). The end relief: the tips' toe and heel edges chamfered this far each way
 // (blank/member.sv).
 backlash := 0.05mm

@@ -1,6 +1,6 @@
-// Step 4, what every crown section shares: a base parallel to the pitch line and a tip running
-// back along it, at their depths, and two tip roundings of one radius. The chain walks the
-// section counter-clockwise, so the pitch line lies left of both.
+// The crown section's tip rounding as it was drawn before the crown became a region (#214): two
+// tangent arcs of one radius at a section's tip corners, the base and tip at their depths. Kept
+// for the fillet checks that hold the rounds' words to it.
 use std
 
 component TipRounding(pitch: line, base: line, tip: line, first: arc, second: arc,

@@ -138,8 +138,10 @@ gates.
 (`flatten::sets::instance_part`, called where `comp.set` makes the set): declarations and written
 relations reading nothing of the bound point, directly or through a declaration that does, are
 walked once as the instance's body, the rest is the set — so `std.ConeThrough(about, q, lean)`
-owns `.apex`/`.spine` (an ordinate of `lean / abs(lean)` along `about`, the cone opening the way it
-leans, half `abs(lean)`), one per instance, and a region reading it shares the `Cone` term's line.
+owns `.apex`/`.spine` (the apex held by the angle between `about` and the generator through `q`,
+`lean` or its supplement by which way it opens, and the spine from it to `q`'s foot on `about`, so
+the cone is held at any size, #214; half `abs(lean)`), one per instance, and a region reading it
+shares the `Cone` term's line.
 `std.Level(o, along, d)` is an ordinate along a line: `RegionShape::Plane { along: EntRef }` takes
 a plane (its `n`), a line or an axis (`RegionShape::normal`). A reach to `{ q | q outside S }`
 measures from `S`, sides turned (`Walk::side_of_set`, in `expand_reach`), so `std.Rounded(beyond,
@@ -147,6 +149,19 @@ tip, r)` lowers. A region tool's faces are its meridian's steps (`RevolvedSurfac
 `SweepContacts::read`'s `Region` arm); the cutter reads its `revolve` recipe as any. A region's tip
 land is a bound between its land's ends drawn on the tip, the flanks through them.
 `tests/crown_regions.rs` is the gate (a crown tooth region cutting a region blank within 10 µm).
+**The hypoid's crown is regions** (#214, 0.77): `crown/cutter.sv`'s `Cutter` (the axis up the
+crown's from C, the flank cones through the pitch points, the four levels), `crown/tooth.sv`'s
+`Tooth` and `crown/mate.sv`'s `Space` (beyond one cone grown, within the other, between two levels,
+rounded by `std.Rounded`; the space's outer mate to the reach's cylinder, its inner one turned a
+crown pitch), the relief's toppings the same over cones through kinks on the grown flanks
+(`kink coincident tooth.inner.surface`). What it needed: `S.surface` as any set use's operand
+(`set_use`, `surface_of`), a distance a number comes to nothing is the side or `coincident`
+(`expand_reach`), an offset's grow added as numbers so an unknown keeps its dimension, a bound on
+measurements reading one unknown (`linear`'s `Aff`, `TermNumber`) and named through its sets
+(`Measured::through`), `face_source` finding a region cutter's face under the cutter's own name,
+a seed's step in space (`place_of`), `RevolvedSurface::reversed`/`meridian_loops` for the checks.
+`hypoid_layout.rs` reads each crown's corners off its meridian (the recorded sections' to 1e-9);
+`envelope/paired.rs` reads a cutter's faces off its meridian in its walk (`cutter_faces`).
 **Sets (§6.21, 0.49, #101):** `S := { p | BODY }` (`StmtKind::Set`, `syntax::SetLit`; the lexer
 reads `{ NAME |` after `:=` as a body, not a group) and `component Name(F) := { p | … }`
 (`Component::set`, an empty body: the instance *is* the set).  Making one makes nothing
@@ -729,7 +744,8 @@ against the gear's (`pitch/pinion.sv`); members roll at `N_c / N` off the gear's
 `1 / sin`. **No axial views** (#215): the gear's triangle O–M–F and the pinion's two axes stand
 in space square to P on their generators (`O level(p.v) foot`; the pinion's axes square to `square`,
 level and square to their generator), each side a bound (`foot inside p`, `tip outside p`), and a
-blank's face span is on its generator (`FaceSpan`, ordinates along it); only P and N are drawn in.
+blank's face span is on its generator (`FaceSpan`, ordinates along it); only P is drawn in, and N
+for the tip relief's kinks (the crown is regions, #214).
 `tests/hypoid_layout.rs` is the gate. The mesh export refuses a sheet a placement
 carries inside the blank; CLI test readers zero the offset.
 **Continuous motion solids:** `removal := solid(tool, under: generating, from: -30deg, to: 30deg)`
@@ -801,8 +817,8 @@ construction needs `admission::Admission` (only `admit_body` makes one). Contrac
 `fixtures::gear::bevel` / `hypoid6` (`rust/fixtures`, dev-only);
 `tests/native_surfaces/gear_cells.rs` holds the recorded tooth-space volumes;
 `tests/generating_harness.rs` (ignored) locates refusals by stage.
-The pair carries **backlash** (`crown/section.sv`, `side: left`), **tip relief** (`crown/relief.sv`,
-`relieved`) and **end relief** (`blank/member.sv`'s `std.Chamfered`); `fixtures::gear::design` pins
+The pair carries **backlash** (`crown/tooth.sv`, `crown/mate.sv`: each flank cone grown a
+quarter of it), **tip relief** (`crown/relief.sv`, under `when`) and **end relief** (`blank/member.sv`'s `std.Chamfered`); `fixtures::gear::design` pins
 all to zero, `fixtures::gear::fabricated` sets them. Files:
 `build/exports/hypoid-{pinion,gear}.{step,stl}`; `gcs-cli/tests/pair_check.rs` (ignored) checks
 the pair from the STLs.
@@ -2124,7 +2140,9 @@ Conventions:
   **unknown**: `flatten::values::params` puts `free(name, ty)` in `vals` (as `bind` does for an
   unbound formal) and records a `model::Declared` (dimension, seed) in `Expansion::unknowns` →
   `Sketch::declared`, which `expr::evaluate` reads (the seed, skipping `settle`; the declared
-  dimension, checked in `check_dim`).  An unbound
+  dimension: a text is worked out over `expr::with_declared`, here and in the flattener's `value_read`, so
+  `values::of_vals`'s `(-1 * m + 0.2mm)` — the constant in the whole's unit — reads alike
+  everywhere; `check_dim`).  An unbound
   `param` states its type (`Length`/`Angle`/`Scalar`), takes the one keyless `hint(E)`; a seed on
   a bound one, an `Int` unknown and a module's unbound `param` are E040; `param` is refused by the
   parser inside a component (formals are its inputs) or block.  A call seeds a formal it leaves

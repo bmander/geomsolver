@@ -576,8 +576,11 @@ fn revolved(sk: &Sketch, p: usize, face: &str, pose: crate::envelope::Motion, na
             super::RevolvedSurface::read(sk, p, edge).map_err(Some)?
         }
         SolidDef::Region { .. } => {
+            // the term's face by its name in this region, whatever the face is called where it
+            // is read (a sweep's face is named under the sweep)
             let m = super::region::meridian(sk, p).map_err(Some)?;
-            super::RevolvedSurface::of_meridian(&m, &s.name).into_iter().find(|f| f.name == name).ok_or_else(none)?
+            let own = format!("{}.{face}", s.name);
+            super::RevolvedSurface::of_meridian(&m, &s.name).into_iter().find(|f| f.name == own).ok_or_else(none)?
         }
         _ => return Err(None),
     }.placed(pose);
